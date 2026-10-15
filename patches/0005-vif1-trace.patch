@@ -1,0 +1,113 @@
+diff --git a/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp b/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp
+index b02c7ca..ed3b865 100644
+--- a/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp
++++ b/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp
+@@ -1,7 +1,48 @@
+ // Based on Blackline Interactive implementation
++#include <cstdlib>
++#include <iostream>
+ #include "runtime/ps2_memory.h"
+ #include <cstring>
+ 
++namespace
++{
++    // PS2X_VIF_TRACE=1 logs VU1 microcode uploads (MPG) and program starts (MSCAL/MSCNT).
++    bool vifTraceEnabled()
++    {
++        static const bool enabled = []()
++        {
++            const char *value = std::getenv("PS2X_VIF_TRACE");
++            return value != nullptr && (value[0] == '1' || value[0] == '2');
++        }();
++        return enabled;
++    }
++
++    // PS2X_VIF_TRACE=2 additionally logs every VIF1 command (capped) to find stream desyncs.
++    bool vifTraceVerbose()
++    {
++        static const bool verbose = []()
++        {
++            const char *value = std::getenv("PS2X_VIF_TRACE");
++            return value != nullptr && value[0] == '2';
++        }();
++        return verbose;
++    }
++
++    bool vifTraceBudget()
++    {
++        static uint32_t s_lines = 0u;
++        return ++s_lines <= 6000u;
++    }
++
++    uint32_t readCodeWord(const uint8_t *code, uint32_t byteAddr, uint32_t size)
++    {
++        uint32_t value = 0u;
++        if (code && byteAddr + 4u <= size)
++            std::memcpy(&value, code + byteAddr, sizeof(value));
++        return value;
++    }
++}
++
+ enum VIFCmd : uint8_t
+ {
+     VIF_NOP = 0x00,
+@@ -297,6 +338,8 @@ void PS2Memory::processVIF1Data(uint32_t srcPhys, uint32_t sizeBytes)
+ 
+ void PS2Memory::processVIF1Data(const uint8_t *data, uint32_t sizeBytes)
+ {
++    if (vifTraceVerbose() && vifTraceBudget())
++        std::cerr << "[vif1:packet] size=0x" << std::hex << sizeBytes << std::dec << std::endl;
+     if (sizeBytes == 0u)
+         return;
+ 
+@@ -339,6 +382,9 @@ void PS2Memory::processVIF1Data(const uint8_t *data, uint32_t sizeBytes)
+         uint16_t imm = cmd & 0xFFFF;
+         uint8_t num = (cmd >> 16) & 0xFF;
+         const bool irq = (cmd & 0x80000000u) != 0u;
++        if (vifTraceVerbose() && vifTraceBudget())
++            std::cerr << "[vif1:cmd] pos=0x" << std::hex << (pos - 4u) << " code=0x" << cmd
++                      << " cycle=0x" << vif1_regs.cycle << " mode=0x" << vif1_regs.mode << std::dec << std::endl;
+ 
+         // Track most-recent command for VIFn_CODE emulation.
+         vif1_regs.code = cmd;
+@@ -416,6 +462,19 @@ void PS2Memory::processVIF1Data(const uint8_t *data, uint32_t sizeBytes)
+                 vif1_regs.tops = (vif1_regs.base + vif1_regs.ofst) & 0x3FFu;
+             vif1_regs.stat ^= (1u << 7); // toggle DBF
+ 
++            if (vifTraceEnabled())
++            {
++                static uint32_t s_lastPc = 0xFFFFFFFFu, s_lastLower = 0u, s_repeat = 0u;
++                const uint32_t lower = readCodeWord(m_vu1Code, startPC, PS2_VU1_CODE_SIZE);
++                const uint32_t upper = readCodeWord(m_vu1Code, startPC + 4u, PS2_VU1_CODE_SIZE);
++                if (startPC != s_lastPc || lower != s_lastLower || (++s_repeat % 1000u) == 0u)
++                {
++                    std::cerr << "[vif1:mscal] pc=0x" << std::hex << startPC << " code=0x" << upper << "_" << lower
++                              << " top=0x" << runTop << " itop=0x" << runItop << std::dec << std::endl;
++                    s_lastPc = startPC;
++                    s_lastLower = lower;
++                }
++            }
+             if (m_vu1MscalCallback)
+                 m_vu1MscalCallback(startPC, runTop, runItop);
+             continue;
+@@ -480,6 +539,20 @@ void PS2Memory::processVIF1Data(const uint8_t *data, uint32_t sizeBytes)
+                     markVU1CodeModified();
+                 }
+             }
++            if (vifTraceEnabled())
++            {
++                static uint64_t s_lastMpg = 0;
++                const uint32_t first = (pos + 8u <= sizeBytes) ? readCodeWord(data + pos, 0u, 8u) : 0u;
++                const uint32_t last = (pos + mpgBytes <= sizeBytes) ? readCodeWord(data + pos, mpgBytes - 8u, mpgBytes) : 0u;
++                const uint64_t key = (static_cast<uint64_t>(destAddr) << 48) ^ (static_cast<uint64_t>(instructionCount) << 32) ^ first ^ (static_cast<uint64_t>(last) << 16);
++                if (key != s_lastMpg)
++                {
++                    s_lastMpg = key;
++                    std::cerr << "[vif1:mpg] dest=0x" << std::hex << destAddr << " count=" << std::dec << instructionCount
++                              << " first=0x" << std::hex << first << " last=0x" << last
++                              << (pos + mpgBytes > sizeBytes ? " TRUNCATED" : "") << std::dec << std::endl;
++                }
++            }
+             pos += mpgBytes;
+             if (pos > sizeBytes)
+                 break;
