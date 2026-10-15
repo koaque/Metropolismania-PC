@@ -1,0 +1,6 @@
+{
+  "repo": "https://github.com/ran-j/PS2Recomp",
+  "commit": "eb8688b2fd191129f103a39543002c005b33409c",
+  "date": "2026-10-14",
+  "note": "Bump deliberately: re-run the pipeline and update docs/STATUS.md after changing this."
+}

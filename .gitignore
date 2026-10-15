@@ -1,0 +1,51 @@
+Metropolismania Source ROM - USA.cue
+Metropolismania Source ROM - USA.bin
+
+# ---- Added by setup: never commit game data, generated code or local tooling ----
+# Local AI/agent folders
+.claude/
+LOCAL-AI/
+PS2_PROJECT_STATE.md
+
+# Game data supplied by the user (bring your own disc)
+original/
+*.iso
+*.bin
+*.cue
+*.img
+*.IMG
+*.elf
+*.ELF
+SLUS_*
+SLES_*
+SLPS_*
+SLPM_*
+*.irx
+*.IRX
+*.pss
+*.PSS
+*.mcd
+*.ps2
+
+# Generated code and build output
+generated/
+build/
+out/
+logs/
+work/
+*.gscap
+
+# Upstream checkout managed by tools/pipeline.py
+ext/PS2Recomp-work/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Editors / OS
+.vs/
+.vscode/
+*.user
+Thumbs.db
+desktop.ini

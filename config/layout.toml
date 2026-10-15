@@ -1,0 +1,20 @@
+# Memory layout facts for SLUS_203.77 (ELF CRC32 4FA3F727) that the function map must respect.
+#
+# The ELF has a single read/write/execute load segment (0x00100000, 0xBDA00 bytes on disc), so Ghidra
+# treats data as executable and a few data labels end up exported as code entry points.
+# tools/pipeline.py analyze drops function-map rows listed here after Ghidra's export.
+# Only add entries you have checked (see docs/GAME_NOTES.md for the evidence).
+
+# Ranges [start, end) that contain no EE code.
+data_ranges = [
+  # After libscf (last EE function sceScfGetLocalTimefromRTC ends 0x001A3C58): VU microcode
+  # (0x001A3E98-0x001AB1B8) and the "PsIIlibkernl2430" string. Code resumes at 0x001AB5D8.
+  ["0x001A3C58", "0x001AB5D8"],
+]
+
+# Single exported entries that are data, not code. Recompiling them produced 1,323
+# unhandled-instruction errors (ASCII text and zero words decoded as instructions).
+exclude_entries = [
+  "0x001B1790",
+  "0x001B97F0",
+]

@@ -1,0 +1,13 @@
+(?i)sce
+(?i)lib[a-z]+
+(?i)sif
+(?i)rpc
+(?i)irx
+(?i)cdrom
+(?i)mpeg
+(?i)ipu
+(?i)\.a!
+(?i)tlb
+PsII
+(?i)thread
+(?i)sema

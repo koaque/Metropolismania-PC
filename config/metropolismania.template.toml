@@ -1,0 +1,34 @@
+# PS2Recomp configuration for Metropolismania (USA), SLUS-20377, disc VER 1.02.
+#
+# tools/pipeline.py renders this file into work/metropolismania.toml:
+#   @ELF@ -> original/SLUS_203.77
+#   @MAP@ -> config/funcmap.csv (Ghidra function map)
+#   @OUT@ -> generated/
+# Stubs that Ghidra's ExportPS2Functions.java classifies (work/ghidra_export.toml) are merged
+# into [general].stubs and [general].untracked_stubs.
+#
+# Every address here is only valid for this exact build (ELF CRC32 4FA3F727).
+
+[general]
+input = "@ELF@"
+output = "@OUT@"
+ghidra_output = "@MAP@"
+single_file_output = false
+low_memory_mode = false
+output_worker_threads = 0
+patch_syscalls = false
+patch_cop0 = true
+patch_cache = true
+
+# handler@0xADDR bindings to runtime handlers (see ps2xRuntime/include/ps2_call_list.h).
+# Triage helpers: ret0@0xADDR, ret1@0xADDR, reta0@0xADDR. Keep these few and documented.
+stubs = []
+
+# Extra function starts the analysis misses (for example functions only reached through tables).
+entry_points = []
+
+skip = []
+
+[patches]
+# Raw instruction replacements: { address = "0x...", value = "0x..." }
+instructions = []
