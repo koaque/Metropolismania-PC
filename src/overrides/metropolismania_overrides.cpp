@@ -93,9 +93,35 @@ namespace
         std::cerr << "[mm] trace mode on (MMPC_TRACE=1)" << std::endl;
     }
 
+    // ------------------------------------------------------------------ MMPC_SKIP_MOVIES=1
+    // Test aid while PSS movie playback is incomplete: the movie functions return "played" at once.
+    // mm_PlayMissionMovie(n) and mm_PlayOpeningMovie block until the movie ends and return 1.
+    constexpr uint32_t kPlayMissionMovie = 0x0019DE10u;
+    constexpr uint32_t kPlayOpeningMovie = 0x0019DFA0u;
+
+    void skipMovie(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+    {
+        (void)rdram;
+        (void)runtime;
+        std::cerr << "[mm] skipped movie (MMPC_SKIP_MOVIES=1), arg=" << getRegU32(ctx, 4) << std::endl;
+        setReturnS32(ctx, 1);
+        ctx->pc = getRegU32(ctx, 31);
+    }
+
+    void installMovieSkip(PS2Runtime &runtime)
+    {
+        const char *flag = std::getenv("MMPC_SKIP_MOVIES");
+        if (!flag || std::strcmp(flag, "1") != 0)
+            return;
+        runtime.registerFunction(kPlayMissionMovie, skipMovie);
+        runtime.registerFunction(kPlayOpeningMovie, skipMovie);
+        std::cerr << "[mm] movies will be skipped (MMPC_SKIP_MOVIES=1)" << std::endl;
+    }
+
     void applyMetropolismaniaOverrides(PS2Runtime &runtime)
     {
         installTrace(runtime);
+        installMovieSkip(runtime);
     }
 }
 

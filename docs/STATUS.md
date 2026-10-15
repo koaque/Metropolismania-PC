@@ -12,8 +12,8 @@ Last updated: 2026-10-15. Upstream PS2Recomp pinned at `eb8688b2` (2026-10-14).
 | M3 | First recompile and build | Done | Recompile: 0 errors, 467 control-flow warnings, 14,380 C++ files. `ps2EntryRunner.exe` builds with MSVC (RelWithDebInfo, 0 warnings) |
 | M4 | Boot to logos, title, memory card check | Done | Natsume logo, title screen, memory card check pass; New Game starts loading |
 | M5 | Title screen and input | Done (scripted) | Cross/Start reach New Game; keyboard and pad work |
-| M6 | City rendering (VU1 path, GS) | Next | VU1 executes data at pc 0x710; 224-line field display; colour issues |
-| M7 | Movies (PSS), sound (YYSOUND, HD/BD/SQ), memory card | Not started | |
+| M6 | City rendering (VU1 path, GS) | In progress | City scene and HUD run; 3D ground/buildings missing; 224-line field display; colour issues |
+| M7 | Movies (PSS), sound (YYSOUND, HD/BD/SQ), memory card | In progress | Memory card check passes; movies decode only a few frames (demux backpressure), garbled on screen; skip toggle `MMPC_SKIP_MOVIES=1` |
 | M8 | Performance, widescreen, hi-res, Linux, installer | Not started | |
 
 ## Recompile details (M3)
@@ -32,7 +32,7 @@ Last updated: 2026-10-15. Upstream PS2Recomp pinned at `eb8688b2` (2026-10-14).
 
 ## Boot triage log (M4)
 
-**Where it is now (2026-10-15):** boots, loads all 10 IOP modules on the IOP emulator, shows the **Natsume logo**, a second logo and the **title screen** (with "(c) 2002 Natsume Inc. (c) 2001 Indi Software / MEDIA FACTORY"), passes the memory card check, and **New Game** from the title starts loading the city. It then slows to a crawl with VU1 executing data (`pc=0x710`), so 3D rendering is the next blocker.
+**Where it is now (2026-10-15):** boots, loads all 10 IOP modules on the IOP emulator, shows the **Natsume logo**, a second logo and the **title screen** (with "(c) 2002 Natsume Inc. (c) 2001 Indi Software / MEDIA FACTORY"), passes the memory card check, starts a **New Game**, reaches the intro movie, and (with `MMPC_SKIP_MOVIES=1`) enters the **city game**: the HUD (Month 4, Year 1, Pop 0, Ar 50%) and cursor render over the sky. The 3D city itself (ground, buildings) does not show yet, and movies stall.
 
 Known graphics issues: the game renders interlaced 640x224 fields and the runtime shows them 1:1 (only the middle 224 lines of the window are used), some colours look off (Natsume logo background), dot artifacts on sprites, and the 3D title model (VU1) is missing.
 
@@ -42,4 +42,6 @@ Known graphics issues: the game renders interlaced 640x224 fields and the runtim
 3. **TODO handlers.** 25 SDK functions whose runtime handler is still a TODO (returns -1) are now left as recompiled original code instead (`pipeline.py` decides this from the runtime sources).
 4. **Memory card directory listing** (`patches/0003`). The game lists the card one entry per call (`sceMcGetDir` mode 0, 1, 2, ...); the runtime ignored the continue mode and returned the first entry forever, so the memory card check never finished.
 5. **Debugger overlay** (`patches/0004`). The runtime's ImGui debugger started open and covered the game; it now starts hidden (F1 toggles, `PS2X_DEBUG_UI=1` opens it).
+7. **VIF1 stream desync** (`patches/0006`). When a GIF IMAGE transfer was split over two VIF1 DIRECT commands, the runtime took the remaining image quadwords straight from the VIF stream, swallowing the next DIRECT's VIFcode quadword. The interpreter lost sync and garbage MPG/MSCAL commands overwrote VU1 microcode (VU1 ran data at `pc=0x710`). Found with `PS2X_VIF_TRACE=2` (`patches/0005`). After the fix the title flow completes and the game reaches scene B (intro movie).
+8. **Movies.** `mm_PlayMissionMovie` (`0x0019DE10`) plays `DATA\MPEG\MISSION<n>.PSS` in a blocking loop that polls the pad itself (Start/Cross fades it out). The runtime's MPEG path decodes only a few frames and the picture is garbled, so `MMPC_SKIP_MOVIES=1` (override module) returns "played" at once. With that, the game reaches **scene C, the city**.
 6. **Scripted input** (`patches/0002`). `PS2X_PAD_SCRIPT` feeds timed button presses for unattended tests (`pipeline.py run --pad file`).
