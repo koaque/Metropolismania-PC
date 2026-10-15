@@ -1,0 +1,55 @@
+diff --git a/ps2xRuntime/src/lib/Kernel/Stubs/MemoryCard.cpp b/ps2xRuntime/src/lib/Kernel/Stubs/MemoryCard.cpp
+index 564d873..690f0e8 100644
+--- a/ps2xRuntime/src/lib/Kernel/Stubs/MemoryCard.cpp
++++ b/ps2xRuntime/src/lib/Kernel/Stubs/MemoryCard.cpp
+@@ -1,6 +1,9 @@
+ #include "Common.h"
+ #include "MemoryCard.h"
+ 
++#include <array>
++#include <string>
++
+ namespace ps2_stubs
+ {
+     namespace
+@@ -699,8 +702,13 @@ namespace ps2_stubs
+         const int32_t port = static_cast<int32_t>(getRegU32(ctx, 4));
+         const int32_t slot = static_cast<int32_t>(getRegU32(ctx, 5));
+         const std::string rawPath = readPs2CStringBounded(rdram, getRegU32(ctx, 6), kMcMaxPathLen);
++        // mode ($a3): 0 starts a new listing, any other value continues the previous one.
++        const int32_t mode = static_cast<int32_t>(getRegU32(ctx, 7));
+         const int32_t maxEntries = static_cast<int32_t>(getRegU32(ctx, 8));
+         const uint32_t tableAddr = getRegU32(ctx, 9);
++        // Per-port continuation state for listings read in several calls (e.g. maxent=1 loops).
++        static std::array<size_t, 2> s_getDirCursor{};
++        static std::array<std::string, 2> s_getDirQuery{};
+ 
+         std::vector<SceMcTblGetDir> entries;
+         int32_t result = kMcResultNoEntry;
+@@ -821,15 +829,24 @@ namespace ps2_stubs
+                             entries.push_back(tableEntry);
+                         }
+ 
++                        size_t &cursor = s_getDirCursor[static_cast<size_t>(port) & 1u];
++                        std::string &lastQuery = s_getDirQuery[static_cast<size_t>(port) & 1u];
++                        if (mode == 0 || lastQuery != guestQuery)
++                        {
++                            cursor = 0u;
++                            lastQuery = guestQuery;
++                        }
++                        const size_t start = std::min(cursor, entries.size());
+                         const size_t entryCount =
+-                            std::min(entries.size(), maxEntries > 0 ? static_cast<size_t>(maxEntries) : 0u);
++                            std::min(entries.size() - start, maxEntries > 0 ? static_cast<size_t>(maxEntries) : 0u);
++                        cursor = start + entryCount;
+                         if (entryCount == 0u || tableAddr == 0u)
+                         {
+                             result = static_cast<int32_t>(entryCount);
+                         }
+                         else if (uint8_t *dst = getMemPtr(rdram, tableAddr))
+                         {
+-                            std::memcpy(dst, entries.data(), entryCount * sizeof(SceMcTblGetDir));
++                            std::memcpy(dst, entries.data() + start, entryCount * sizeof(SceMcTblGetDir));
+                             result = static_cast<int32_t>(entryCount);
+                         }
+                         else

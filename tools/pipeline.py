@@ -7,6 +7,7 @@ Steps, in order:
   extract     pull SLUS_203.77, SYSTEM.CNF and SYS/ from your disc image into original/
   symbols     merge ps2_analyzer's SDK signature names into config/symbols.csv
   analyze     Ghidra headless: import + analyze, apply config/symbols.csv, export config/funcmap.csv
+  pointers    add functions reached only through pointers (vtables, ctor/callback tables), re-analyze
   script      run one Ghidra script from tools/ghidra against the project (read-only by default)
   recompile   render config/metropolismania.template.toml and run ps2_recomp into generated/
   stage       copy generated code and src/overrides into the runtime tree
@@ -101,15 +102,18 @@ def upstream_lock() -> dict:
 
 def sync_tree(src: Path, dst: Path, keep: set[str] | None = None) -> int:
     """Make dst match src, touching only files whose bytes differ so incremental builds stay incremental.
-    Paths in `keep` (relative, posix) are never deleted from dst."""
+    Paths under a `keep` prefix (relative, posix) are owned by another step: never copied, never deleted."""
     keep = keep or set()
     changed = 0
     src_files = {p.relative_to(src).as_posix() for p in src.rglob("*") if p.is_file() and ".git" not in p.parts}
+    src_files = {rel for rel in src_files if not any(rel.startswith(k) for k in keep)}
     for rel in sorted(src_files):
         s, d = src / rel, dst / rel
         if not d.exists() or not filecmp.cmp(s, d, shallow=False):
             d.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(s, d)
+            # copyfile, not copy2: a changed file must get a fresh mtime or Ninja may skip it
+            # (files from git archive carry the old commit time).
+            shutil.copyfile(s, d)
             changed += 1
     if dst.exists():
         for p in dst.rglob("*"):
@@ -127,10 +131,24 @@ def cmd_bootstrap(_: argparse.Namespace) -> None:
         sys.exit(f"ext/PS2Recomp is at {head}, upstream.lock.json pins {lock['commit']}. Run: git submodule update --init")
     if STAGE.exists():
         shutil.rmtree(STAGE)
-    shutil.copytree(UPSTREAM, STAGE, ignore=shutil.ignore_patterns(".git"))
+    # Stage the exact committed bytes (git archive), not the working tree: on Windows checkouts
+    # core.autocrlf rewrites line endings, and patches/ are made against the committed files.
+    import io
+    import tarfile
+
+    # core.autocrlf=false: git archive would otherwise convert line endings too.
+    archive = subprocess.run(["git", "-c", "core.autocrlf=false", "-C", str(UPSTREAM), "archive", "--format=tar",
+                              lock["commit"]], capture_output=True, check=True).stdout
+    with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+        tar.extractall(STAGE, filter="data")
     patches = sorted((ROOT / "patches").glob("*.patch"))
+    stage_rel = STAGE.relative_to(ROOT).as_posix()
     for patch in patches:
-        run(["git", "apply", "--whitespace=nowarn", str(patch)], cwd=STAGE)
+        # work/stage lives inside this repository, and git apply resolves patch paths from the
+        # repository root, so point it at the stage explicitly. --check first: fail loudly.
+        cmd = ["git", "apply", "--whitespace=nowarn", f"--directory={stage_rel}", str(patch)]
+        run(cmd[:2] + ["--check"] + cmd[2:], cwd=ROOT)
+        run(cmd, cwd=ROOT)
     # Generated code and overrides are owned by the stage step; keep them.
     changed = sync_tree(STAGE, RUNTIME_TREE, keep={"ps2xRuntime/src/runner/", "ps2xRuntime/include/ps2_recompiled_"})
     shutil.rmtree(STAGE)
@@ -239,22 +257,59 @@ def cmd_symbols(_: argparse.Namespace) -> None:
             if match and not match.group(1).startswith("sub_"):
                 detected[int(match.group(2), 16)] = match.group(1)
 
+    merge_symbols("ps2_analyzer", detected)
+
+
+# Higher wins when two sources name the same address.
+SYMBOL_PRIORITY = {"manual": 3, "ps2_analyzer": 2, "pointer_sweep": 1}
+
+
+def merge_symbols(source: str, names: dict[int, str]) -> None:
+    """Replace all rows of `source` in config/symbols.csv with `names`, keeping higher-priority rows."""
+    import csv
+
     path = CONFIG / "symbols.csv"
-    header = [line for line in path.read_text().splitlines() if line.startswith("#")]
-    manual: dict[int, list[str]] = {}
-    for row in csv.reader(line for line in path.read_text().splitlines() if line and not line.startswith("#")):
+    text = path.read_text().splitlines()
+    header = [line for line in text if line.startswith("#")]
+    rows: dict[int, list[str]] = {}
+    for row in csv.reader(line for line in text if line and not line.startswith("#")):
         if row[0].lower() == "address":
             continue
-        source = row[3] if len(row) > 3 else "manual"
-        if source != "ps2_analyzer":
-            manual[int(row[0], 16)] = row[:3] + [source]
-    rows = dict(manual)
-    for addr, name in detected.items():
-        rows.setdefault(addr, [f"0x{addr:08X}", name, "func", "ps2_analyzer"])
-    lines = header + ["address,name,kind,source"]
-    lines += [",".join(rows[a]) for a in sorted(rows)]
+        row_source = row[3] if len(row) > 3 else "manual"
+        if row_source != source:
+            rows[int(row[0], 16)] = row[:3] + [row_source]
+    for addr, name in names.items():
+        existing = rows.get(addr)
+        if existing is None or SYMBOL_PRIORITY.get(existing[3], 0) < SYMBOL_PRIORITY.get(source, 0):
+            rows[addr] = [f"0x{addr:08X}", name, "func", source]
+    lines = header + ["address,name,kind,source"] + [",".join(rows[a]) for a in sorted(rows)]
     path.write_text("\n".join(lines) + "\n")
-    log(f"config/symbols.csv: {len(manual)} manual + {len(rows) - len(manual)} analyzer names")
+    counts: dict[str, int] = {}
+    for row in rows.values():
+        counts[row[3]] = counts.get(row[3], 0) + 1
+    log("config/symbols.csv: " + ", ".join(f"{n} {s}" for s, n in sorted(counts.items())))
+
+
+def cmd_pointers(args: argparse.Namespace) -> None:
+    """Find functions reached only through pointers (tools/find_code_pointers.py) and add them to
+    config/symbols.csv so Ghidra creates them. Repeats analyze until no new targets appear."""
+    import csv
+
+    for round_no in range(1, args.rounds + 1):
+        out = WORK / "pointer_candidates.csv"
+        run([sys.executable, "-I", str(ROOT / "tools/find_code_pointers.py"), str(ORIGINAL / ELF_NAME),
+             str(CONFIG / "funcmap.csv"), "--layout", str(CONFIG / "layout.toml"), "--write", str(out)])
+        found = {int(r["address"], 16) for r in csv.DictReader(line for line in out.read_text().splitlines() if not line.startswith("#"))}
+        previous = set()
+        for row in csv.reader(line for line in (CONFIG / "symbols.csv").read_text().splitlines() if line and not line.startswith("#")):
+            if len(row) > 3 and row[3] == "pointer_sweep":
+                previous.add(int(row[0], 16))
+        new = found - previous
+        log(f"pointer sweep round {round_no}: {len(found)} candidate(s), {len(new)} new")
+        if not new:
+            break
+        merge_symbols("pointer_sweep", {a: f"fn_{a:08X}" for a in previous | found})
+        cmd_analyze(argparse.Namespace(reimport=False))
 
 
 def cmd_script(args: argparse.Namespace) -> None:
@@ -286,17 +341,39 @@ def toml_value(value) -> str:
     raise TypeError(f"unsupported TOML value: {value!r}")
 
 
+def todo_handlers() -> set[str]:
+    """Runtime stub names whose handler is still TODO_NAMED in the pinned PS2Recomp runtime."""
+    import re
+
+    names: set[str] = set()
+    for path in (RUNTIME_TREE / "ps2xRuntime/src/lib").rglob("*.cpp"):
+        names.update(re.findall(r'TODO_NAMED\("([A-Za-z0-9_]+)"', path.read_text(errors="replace")))
+    return names
+
+
 def render_config() -> None:
     text = (CONFIG / "metropolismania.template.toml").read_text()
     for key, path in {"@ELF@": ORIGINAL / ELF_NAME, "@MAP@": CONFIG / "funcmap.csv", "@OUT@": GENERATED}.items():
         text = text.replace(key, path.as_posix())
     data = tomllib.loads(text)
+    options = data.pop("pipeline", {})
     general = data.setdefault("general", {})
     if GHIDRA_EXPORT_TOML.exists():
         export = tomllib.loads(GHIDRA_EXPORT_TOML.read_text()).get("general", {})
         for key in ("stubs", "untracked_stubs"):
             merged = list(dict.fromkeys(general.get(key, []) + export.get(key, [])))
             general[key] = merged
+    # Prefer the game's own (recompiled) SDK code over runtime handlers that are still TODO:
+    # a TODO handler only logs and returns -1, while the original code at least does the real work
+    # against the emulated hardware. [pipeline].keep_todo_stubs forces a binding anyway.
+    todo = todo_handlers()
+    keep = set(options.get("keep_todo_stubs", []))
+    unbound = [s for s in general.get("stubs", []) if s.split("@")[0] in todo and s.split("@")[0] not in keep]
+    general["stubs"] = [s for s in general.get("stubs", []) if s not in unbound]
+    general["entry_points"] = list(dict.fromkeys(general.get("entry_points", []) + unbound))
+    if unbound:
+        log(f"left {len(unbound)} SDK function(s) as recompiled code (runtime handler is TODO): "
+            + ", ".join(s.split("@")[0] for s in unbound))
     lines = ["# Rendered by tools/pipeline.py from config/metropolismania.template.toml. Do not edit.", ""]
     for section, table in data.items():
         scalars = {k: v for k, v in table.items() if not (isinstance(v, list) and v and isinstance(v[0], dict))}
@@ -351,23 +428,50 @@ def cmd_build(_: argparse.Namespace) -> None:
 
 
 def cmd_run(args: argparse.Namespace) -> None:
+    """Run the game in a normal, visible window, capture its log, optionally take screenshots
+    (--shots) and feed scripted pad input (--pad, see patches/0002-pad-scripted-input.patch)."""
+    import time
+
     LOGS.mkdir(exist_ok=True)
-    log_path = LOGS / f"run-{dt.datetime.now():%Y%m%d-%H%M%S}.log"
+    stamp = f"{dt.datetime.now():%Y%m%d-%H%M%S}"
+    log_path = LOGS / f"run-{stamp}.log"
+    shot_dir = LOGS / "shots" / stamp
     exe = tool("ps2EntryRunner")
+    env = dict(os.environ)
+    if args.pad:
+        env["PS2X_PAD_SCRIPT"] = str(Path(args.pad).resolve())
+    for item in args.env or []:
+        key, _, value = item.partition("=")
+        env[key] = value
     log(f"running {exe.name} for up to {args.timeout}s, log: {log_path}")
     with log_path.open("w", encoding="utf-8", errors="replace") as fh:
-        proc = subprocess.Popen([str(exe), str(ORIGINAL / ELF_NAME)], stdout=fh, stderr=subprocess.STDOUT, cwd=exe.parent)
-        try:
-            proc.wait(timeout=args.timeout)
-        except subprocess.TimeoutExpired:
+        proc = subprocess.Popen([str(exe), str(ORIGINAL / ELF_NAME)], stdout=fh, stderr=subprocess.STDOUT,
+                                cwd=exe.parent, env=env)
+        start = time.monotonic()
+        next_shot = args.shot_every
+        shots = 0
+        while proc.poll() is None:
+            elapsed = time.monotonic() - start
+            if elapsed >= args.timeout:
+                break
+            if shots < args.shots and elapsed >= next_shot:
+                shots += 1
+                next_shot += args.shot_every
+                subprocess.run([sys.executable, "-I", str(ROOT / "tools/screenshot.py"),
+                                str(shot_dir / f"t{int(elapsed):03d}s.png"), "--pid", str(proc.pid)],
+                               capture_output=True)
+            time.sleep(0.25)
+        if proc.poll() is None:
             proc.kill()
-            proc.wait()
-    log(f"exit code {proc.returncode}; last lines:")
-    print("\n".join(log_path.read_text(errors="replace").splitlines()[-40:]))
+        proc.wait()
+    log(f"exit code {proc.returncode}; log {log_path}")
+    if shots:
+        log(f"screenshots: {shot_dir}")
 
 
 def cmd_all(args: argparse.Namespace) -> None:
-    for step in (cmd_bootstrap, cmd_tools, cmd_extract, cmd_symbols, cmd_analyze, cmd_recompile, cmd_stage, cmd_build):
+    for step in (cmd_bootstrap, cmd_tools, cmd_extract, cmd_symbols, cmd_analyze, cmd_pointers,
+                 cmd_recompile, cmd_stage, cmd_build):
         step(args)
 
 
@@ -384,6 +488,9 @@ def main() -> int:
     p.add_argument("--reimport", action="store_true", help="re-import and re-analyze the ELF from scratch")
     p.set_defaults(func=cmd_analyze)
     sub.add_parser("symbols", help="merge ps2_analyzer SDK names into config/symbols.csv").set_defaults(func=cmd_symbols)
+    p = sub.add_parser("pointers", help="add functions reached only through pointers, re-analyze until stable")
+    p.add_argument("--rounds", type=int, default=4)
+    p.set_defaults(func=cmd_pointers)
     p = sub.add_parser("script", help="run a Ghidra script from tools/ghidra on the project")
     p.add_argument("--write", action="store_true", help="save changes to the Ghidra project")
     p.add_argument("name")
@@ -394,10 +501,15 @@ def main() -> int:
     sub.add_parser("build").set_defaults(func=cmd_build)
     p = sub.add_parser("run")
     p.add_argument("--timeout", type=int, default=20)
+    p.add_argument("--shots", type=int, default=0, help="number of window screenshots to take")
+    p.add_argument("--shot-every", type=float, default=5.0, help="seconds between screenshots")
+    p.add_argument("--pad", help="scripted pad input file (PS2X_PAD_SCRIPT)")
+    p.add_argument("--env", action="append", help="extra environment variable KEY=VALUE (repeatable), e.g. MMPC_TRACE=1")
     p.set_defaults(func=cmd_run)
     p = sub.add_parser("all")
     p.add_argument("image", nargs="?")
     p.add_argument("--reimport", action="store_true")
+    p.add_argument("--rounds", type=int, default=4)
     p.set_defaults(func=cmd_all)
     args = parser.parse_args()
     args.func(args)

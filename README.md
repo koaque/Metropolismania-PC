@@ -21,9 +21,10 @@ As far as we could find, this is the first recompilation or decompilation projec
 | Research, repo, pipeline | Done |
 | Disc extraction, Ghidra analysis, function map (2,091 functions) | Done |
 | First recompile (0 errors) and native build | Done: the runner builds, opens its window and starts executing |
-| Boot to logos | Next: first blocker identified ([docs/STATUS.md](docs/STATUS.md)) |
-| Title screen, input | Not started |
-| City rendering (VU1, GS), movies, sound, saves | Not started |
+| Boot to logos, title screen, memory card check | Done: Natsume logo, title, New Game |
+| Input | Works (keyboard, pad, scripted) |
+| City rendering (VU1, GS) | In progress: VU1 microcode issue |
+| Movies, sound, saves | Not started |
 | Widescreen, hi-res, performance, Linux | Not started |
 
 ## Requirements (Windows, for now)

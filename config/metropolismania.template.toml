@@ -32,3 +32,9 @@ skip = []
 [patches]
 # Raw instruction replacements: { address = "0x...", value = "0x..." }
 instructions = []
+
+[pipeline]
+# Read by tools/pipeline.py only; removed from the rendered config.
+# SDK functions whose runtime handler is still TODO are left as recompiled original code.
+# List a handler name here to bind it anyway.
+keep_todo_stubs = []

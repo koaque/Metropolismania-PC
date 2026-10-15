@@ -1,0 +1,22 @@
+diff --git a/ps2xRuntime/src/lib/ps2_debug_panel.cpp b/ps2xRuntime/src/lib/ps2_debug_panel.cpp
+index c9aa2c6..343af8c 100644
+--- a/ps2xRuntime/src/lib/ps2_debug_panel.cpp
++++ b/ps2xRuntime/src/lib/ps2_debug_panel.cpp
+@@ -20,6 +20,7 @@
+ #include <array>
+ #include <cstdint>
+ #include <cstdio>
++#include <cstdlib>
+ #include <cstring>
+ #include <filesystem>
+ #include <fstream>
+@@ -2183,6 +2184,9 @@ void PS2DebugPanel::initialize()
+     {
+         rlImGuiSetup(true);
+         m_initialized = true;
++        // Start hidden so the game is visible; F1 toggles. PS2X_DEBUG_UI=1 starts it open.
++        const char *debugUi = std::getenv("PS2X_DEBUG_UI");
++        m_visible = debugUi != nullptr && std::strcmp(debugUi, "1") == 0;
+     }
+ #endif
+ }

@@ -58,6 +58,16 @@ CD-ROM, Mode 2, 2352-byte sectors, ISO 9660 volume `1_02`, publisher `NATSUME IN
 
 `mm_OpenDiscFile` (`0x0019ED60`) resolves files with `sceCdSearchFile` and falls back to `sceOpen`/`sceLseek` ("Cannot open '%s'(sceCdSearchFile)").
 
+## Game flow (from Ghidra decompilation)
+
+- `mm_Main` (`0x0012AE20`): `mm_InitSystemModules`, then builds the game object on its stack (vtable `0x001BCE60`) and enters `mm_MainLoop` (`0x001854E0`), which never returns.
+- `mm_MainLoop`, every frame: pad update, file pump (`mm_FsPump`), memory card queue pump (`mm_McQueuePump`), sound paths, `sceGsSyncPath`, then the game object's `+0xC` method `mm_GameUpdate` (`0x0012ABA0`), then double-buffer swap of a 640x448 interlaced display (640x224 fields).
+- `mm_GameUpdate` is a state machine at `object+4`: 0/1 create scene A, 2 run scene A, 3/7 create scene B, 4 run scene B, 5/6 create and run scene C. Scene A is the boot/title flow; its sub-state lives at `sceneA+0xC0`:
+  0 load title assets (`DATA\A3D\INTRO\*`, ground/water textures) and start `TITLE.SQ/HD/BD`; 1 memory card check; 2-5 logos and title; 6 title menu; 9/10 New Game / Continue (calls the city init functions, with a loading gauge); 11/12 hand over to scene B.
+- Memory card access goes through a 64-entry async command queue at `0x001F5CF0` (`mm_McQueue*`), pumped once per frame with non-blocking `sceMcSync`. The card manager (`mm_McManagerUpdate`) lists each card one entry per call with `sceMcGetDir(port, "*", mode = 0, 1, 2, ...)` and looks for the game's save directory and its `icon.sys` (964 bytes).
+- Pad: `mm_PadUpdate` turns the pad's button bytes into `(data[2] << 8 | data[3]) ^ 0xFFFF`, so Cross = `0x0040`, Start = `0x0800`, and analog sticks add bits `0x100000`-`0x800000`.
+- Files: `mm_FsOpen` (`0x00184590`) opens `cdrom0:\...` with `sceOpen`; reads are pumped asynchronously by `mm_FsPump`.
+
 ## Hand-identified functions (config/symbols.csv, source = manual)
 
 | Address | Name | Evidence |
@@ -84,7 +94,7 @@ From `PCSX2/pcsx2_patches` (`SLUS-20377_46FFB836.pnach`, widescreen by Arapapa):
 
 ## Leads for later milestones
 
-- `ps2_analyzer` suggests 21 "potential self-modifying code" NOP patches inside libcdvd/libmc (`0x0011AC68` ... `0x0013E238`). Not applied; review them during boot triage (M4).
+- `ps2_analyzer` suggests 21 "potential self-modifying code" NOP patches (`0x0011AC68` ... `0x0013E238`). Checked: all 21 are ordinary `sw` stores to globals (libcdvd command state, the libmc busy flag in every `sceMc*` call, `__malloc_lock`/`__malloc_unlock`). They are flagged only because the single load segment is marked executable, so writes into `.data` look like writes into code. **Do not apply them**: they would break memory cards and malloc locking.
 - `ps2_analyzer` also emits 216 instruction-to-MMIO hints and one jump table at `0x001B54F0` (89 entries). The Ghidra flow does not use them yet.
 - `YYSOUND.IRX` (187 KB) is a custom sound driver, the largest IOP module; expect sound work there (M7).
 - Texture format (`.TEX`): see [rootlm/metropolismaniaresearch](https://github.com/rootlm/metropolismaniaresearch) for the palettized layout.

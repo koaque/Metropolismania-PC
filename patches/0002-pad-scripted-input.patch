@@ -1,0 +1,133 @@
+diff --git a/ps2xRuntime/src/lib/ps2_pad.cpp b/ps2xRuntime/src/lib/ps2_pad.cpp
+index 8590f14..0491ea8 100644
+--- a/ps2xRuntime/src/lib/ps2_pad.cpp
++++ b/ps2xRuntime/src/lib/ps2_pad.cpp
+@@ -1,6 +1,14 @@
+ #include "runtime/ps2_pad.h"
+ #include "ps2_host_backend.h"
++#include <chrono>
++#include <cstdlib>
+ #include <cstring>
++#include <fstream>
++#include <iostream>
++#include <mutex>
++#include <sstream>
++#include <string>
++#include <vector>
+ 
+ namespace
+ {
+@@ -23,6 +31,104 @@ namespace
+     constexpr uint16_t PAD_L1 = 0x0400u;
+     constexpr uint16_t PAD_R2 = 0x0200u;
+     constexpr uint16_t PAD_L2 = 0x0100u;
++
++    // Optional scripted input for unattended testing. PS2X_PAD_SCRIPT names a text file with
++    // one event per line: "<start_ms> <duration_ms> <BUTTON>[+<BUTTON>...]", times measured
++    // from the first pad read. Lines starting with # are comments. Scripted buttons are
++    // combined with keyboard/gamepad input.
++    struct PadScriptEvent
++    {
++        int64_t startMs = 0;
++        int64_t endMs = 0;
++        uint16_t mask = 0;
++    };
++
++    uint16_t padButtonMask(const std::string &name)
++    {
++        static const struct
++        {
++            const char *name;
++            uint16_t mask;
++        } kButtons[] = {
++            {"UP", PAD_UP}, {"DOWN", PAD_DOWN}, {"LEFT", PAD_LEFT}, {"RIGHT", PAD_RIGHT},
++            {"START", PAD_START}, {"SELECT", PAD_SELECT}, {"L3", PAD_L3}, {"R3", PAD_R3},
++            {"CROSS", PAD_CROSS}, {"CIRCLE", PAD_CIRCLE}, {"SQUARE", PAD_SQUARE}, {"TRIANGLE", PAD_TRIANGLE},
++            {"L1", PAD_L1}, {"R1", PAD_R1}, {"L2", PAD_L2}, {"R2", PAD_R2},
++        };
++        for (const auto &button : kButtons)
++        {
++            if (name == button.name)
++                return button.mask;
++        }
++        return 0;
++    }
++
++    class PadScript
++    {
++    public:
++        uint16_t activeMask()
++        {
++            std::call_once(m_loaded, [this]
++                           { load(); });
++            if (m_events.empty())
++                return 0;
++            const auto now = std::chrono::steady_clock::now();
++            if (!m_started)
++            {
++                m_start = now;
++                m_started = true;
++            }
++            const int64_t elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - m_start).count();
++            uint16_t mask = 0;
++            for (const PadScriptEvent &event : m_events)
++            {
++                if (elapsed >= event.startMs && elapsed < event.endMs)
++                    mask |= event.mask;
++            }
++            return mask;
++        }
++
++    private:
++        void load()
++        {
++            const char *path = std::getenv("PS2X_PAD_SCRIPT");
++            if (!path || !*path)
++                return;
++            std::ifstream file(path);
++            if (!file)
++            {
++                std::cerr << "[pad] could not open PS2X_PAD_SCRIPT " << path << std::endl;
++                return;
++            }
++            std::string line;
++            while (std::getline(file, line))
++            {
++                if (line.empty() || line[0] == '#')
++                    continue;
++                std::istringstream fields(line);
++                PadScriptEvent event;
++                int64_t duration = 0;
++                std::string buttons;
++                if (!(fields >> event.startMs >> duration >> buttons))
++                    continue;
++                event.endMs = event.startMs + duration;
++                std::stringstream split(buttons);
++                std::string button;
++                while (std::getline(split, button, '+'))
++                    event.mask |= padButtonMask(button);
++                if (event.mask != 0)
++                    m_events.push_back(event);
++            }
++            std::cerr << "[pad] loaded " << m_events.size() << " scripted input event(s) from " << path << std::endl;
++        }
++
++        std::once_flag m_loaded;
++        std::vector<PadScriptEvent> m_events;
++        std::chrono::steady_clock::time_point m_start{};
++        bool m_started = false;
++    };
++
++    PadScript g_padScript;
+ }
+ 
+ bool PSPadBackend::readState(int /*port*/, int /*slot*/, uint8_t *data, size_t size)
+@@ -119,6 +225,8 @@ bool PSPadBackend::readState(int /*port*/, int /*slot*/, uint8_t *data, size_t s
+             clearBit(PAD_SELECT);
+     }
+ 
++    btns &= static_cast<uint16_t>(~g_padScript.activeMask());
++
+     data[2] = static_cast<uint8_t>(btns & 0xFF);
+     data[3] = static_cast<uint8_t>(btns >> 8);
+     return true;
