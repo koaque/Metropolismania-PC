@@ -2,8 +2,10 @@
    unk_XX are not understood yet. docs/map/<subsystem>.md describes each struct. Keep sizes exact: they
    are checked again by static_assert when src/port/ overlays them on guest memory. */
 
+typedef struct Vec4 Vec4;
 typedef struct CityScene CityScene;
 typedef struct CityMap CityMap;
+typedef struct TileLists TileLists;
 typedef struct MapTile MapTile;
 typedef struct MapObject MapObject;
 typedef struct MapPerson MapPerson;
@@ -15,9 +17,18 @@ typedef struct TalkSession TalkSession;
 typedef struct TalkView TalkView;
 typedef struct TalkPose TalkPose;
 typedef struct WordsCtx WordsCtx;
+typedef struct Words Words;
 typedef struct Stamina Stamina;
 typedef struct MemberStatus MemberStatus;
 typedef struct CharTypeRecord CharTypeRecord;
+
+/* VU0-style vector (0x10 bytes); a 4x4 matrix is four of them. */
+struct Vec4 {
+    float x;                   /* +0x00 */
+    float y;                   /* +0x04 */
+    float z;                   /* +0x08 */
+    float w;                   /* +0x0C */
+};
 
 /* Map tile (0x18 bytes): 128 x 128 of them at CityMap +0x04. */
 struct MapTile {
@@ -69,22 +80,33 @@ struct MapPerson {
     uint8_t status;            /* +0x2F friendship status byte */
 };
 
+/* Object lists per claim item (0x8040 bytes) at CityMap +0x0C: 80 lists packed into one array. */
+struct TileLists {
+    uint16_t items[0x3F80];    /* +0x0000 object ids, list by list */
+    uint16_t start[0x50];      /* +0x7F00 first item of each list */
+    uint16_t count[0x50];      /* +0x7FA0 items in each list */
+};
+
 /* The city map object (0x2F90 bytes): tiles, objects, people, render and city levels in one object. */
 struct CityMap {
-    void *unk_00;
+    void *packedTiles;         /* +0x00 save buffer, 6 bytes per tile (mm_MapSave_*) */
     MapTile *tiles;            /* +0x04 */
     MapObject *objects;        /* +0x08 */
-    void *tileLists;           /* +0x0C */
+    TileLists *tileLists;      /* +0x0C */
     uint8_t unk_10[0x54];
     void *vtable;              /* +0x64 */
     MapPerson *people;         /* +0x68 */
     uint8_t unk_6C[8];
     int32_t population;        /* +0x74 */
     uint8_t unk_78[0x2EE8];
-    void *layers[7];           /* +0x2F60 render layers */
-    uint8_t unk_2F7C[0xC];
-    void *terrain;             /* +0x2F88 */
-    int32_t unk_2F8C;
+    void *packets[5];          /* +0x2F60 static DMA packets queued by mm_CityRender_DrawOverlays */
+    LayerD *sky;               /* +0x2F74 */
+    LayerE *layerE;            /* +0x2F78 */
+    LayerF *layerF;            /* +0x2F7C */
+    LayerG *water;             /* +0x2F80 */
+    LayerB *layerB;            /* +0x2F84 */
+    LayerC *buildings;         /* +0x2F88 */
+    LayerA *instances;         /* +0x2F8C */
 };
 
 /* Building type base (0x160 bytes): one object per type in the table at gp 0x1BDBF8; classes add fields after it. */
@@ -259,33 +281,47 @@ struct WordsCtx {
     int32_t friendshipChanged; /* +0x13C */
 };
 
+/* The WORDS script object at 0x1BDDF0 (gp-0x7B80); its methods take a pointer to it. */
+struct Words {
+    WordsCtx *ctx;             /* +0x00 0x140-byte context */
+    int32_t unk_04;
+    int32_t extraLoaded;       /* +0x08 */
+    int32_t bound;             /* +0x0C tables bound on first step */
+    uint16_t line;             /* +0x10 */
+    uint16_t unk_12;
+    uint16_t column;           /* +0x14 */
+    uint8_t unk_16[0xA];
+    void *extraTable;          /* +0x20 */
+    void *lineTable;           /* +0x24 */
+};
+
 /* City scene (0xD8 bytes), gp 0x1BDD00. */
 struct CityScene {
-    void *statusPanel;         /* +0x00 */
-    void *townPages;           /* +0x04 */
-    void *pauseMenu;           /* +0x08 */
+    StatusPanel *statusPanel;  /* +0x00 */
+    TownPages *townPages;      /* +0x04 */
+    PauseMenu *pauseMenu;      /* +0x08 */
     void *unk_0C;
     int32_t modeStack[5];      /* +0x10 */
     int32_t modeDepth;         /* +0x24 */
     int32_t unk_28;
     int32_t hudVisible[4];     /* +0x2C */
     TalkSession *talk;         /* +0x3C */
-    void *lights;              /* +0x40 */
-    void *camera;              /* +0x44 */
-    void *laptop;              /* +0x48 */
-    void *cityCamera;          /* +0x4C */
+    LightSet *lights;          /* +0x40 */
+    Camera *camera;            /* +0x44 */
+    Laptop *laptop;            /* +0x48 */
+    CityCamera *cityCamera;    /* +0x4C */
     CityMap *map;              /* +0x50 */
-    void *applicants;          /* +0x54 */
-    void *player;              /* +0x58 */
-    void *wants;               /* +0x5C wants window; starts with the wants list */
-    void *bag;                 /* +0x60 */
+    Applicants *applicants;    /* +0x54 */
+    Player *player;            /* +0x58 */
+    WantsWin *wants;           /* +0x5C wants window; starts with the wants list */
+    Bag *bag;                  /* +0x60 */
     Stamina *stamina;          /* +0x64 */
-    void *events;              /* +0x68 */
-    void *phoneCalls;          /* +0x6C */
-    void *cursor;              /* +0x70 */
-    void *minimap;             /* +0x74 */
-    void *markers;             /* +0x78 */
-    void *notice;              /* +0x7C */
+    EventMgr *events;          /* +0x68 */
+    PhoneCalls *phoneCalls;    /* +0x6C */
+    CityCursor *cursor;        /* +0x70 */
+    Minimap *minimap;          /* +0x74 */
+    Markers *markers;          /* +0x78 */
+    Notice *notice;            /* +0x7C */
     int32_t unk_80;
     int32_t clock;             /* +0x84 seconds, starts at 6:00 */
     int32_t monthCount;        /* +0x88 one month per in-game day */

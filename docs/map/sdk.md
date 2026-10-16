@@ -14,7 +14,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 3 functions (named 3). Blocks: 1 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
-| Address | Name | Size | Blocks | Notes |
+| Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
 | `0x00100008` | `_start` | 172 | yes |  |
 | `0x001000B8` | `sdk_libc__exit` | 8 | no | _exit(a0): Exit through 0x116C30 |
@@ -24,7 +24,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 32 functions (named 32). Blocks: 6 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
-| Address | Name | Size | Blocks | Notes |
+| Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
 | `0x0010E420` | `sdk_libc_StubEio1` | 40 | no | errno = EIO, returns -1 |
 | `0x0010E448` | `sdk_libc_close` | 8 | no | stub, returns -1 |
@@ -63,7 +63,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 4 functions (named 4). Blocks: 3 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
-| Address | Name | Size | Blocks | Notes |
+| Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
 | `0x0011A3F0` | `sdk_cdvd_Callback` | 160 | no | (provisional) command end callback, signals the command semaphore |
 | `0x0011ABF8` | `sdk_cdvd_NcmdPrologue` | 364 | yes | N command semaphore and RPC bind ("Libcdvd bind err N CMD") |
@@ -74,7 +74,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 7 functions (named 7). Blocks: 6 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
-| Address | Name | Size | Blocks | Notes |
+| Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
 | `0x00111BB8` | `sdk_fileio_Unlock` | 12 | yes | SignalSema on the file I/O semaphore |
 | `0x00111E50` | `sdk_fileio_CheckVersion` | 140 | no | (provisional) compares the IOP module version ("2430") |
@@ -88,7 +88,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 1 functions (named 1). Blocks: 0 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
-| Address | Name | Size | Blocks | Notes |
+| Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
 | `0x001000D0` | `sdk_fp_ltdf2` | 32 | no | double a0 < a1 through dpcmp |
 
@@ -96,7 +96,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 3 functions (named 3). Blocks: 0 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
-| Address | Name | Size | Blocks | Notes |
+| Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
 | `0x001028A0` | `sdk_sceGsGetGParam` | 12 | no | pointer to the libgraph parameters (0x1AB230) |
 | `0x00103730` | `sdk_sceGsSetHalfOffset` | 136 | no | (provisional) half-pixel XYOFFSET for the field in a draw environment |
@@ -106,7 +106,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 92 functions (named 92). Blocks: 9 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
-| Address | Name | Size | Blocks | Notes |
+| Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
 | `0x0010D960` | `SetGsCrt` | 16 | no |  |
 | `0x0010D980` | `_Exit` | 16 | no |  |
@@ -205,7 +205,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 9 functions (named 9). Blocks: 0 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
-| Address | Name | Size | Blocks | Notes |
+| Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
 | `0x00119948` | `sdk_libm_copysign` | 68 | no | copysign (double) |
 | `0x00119A50` | `sdk_libm_scalbn` | 464 | no | scalbn (double) |
@@ -221,7 +221,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 16 functions (named 16). Blocks: 5 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
-| Address | Name | Size | Blocks | Notes |
+| Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
 | `0x001077E0` | `sdk_mpeg_VdecMotionCode` | 28 | no | (provisional) _ipuVdec with table 3 (motion code) |
 | `0x00108428` | `sdk_mpeg_MotionVectorComponent` | 136 | no | (provisional) reconstructs one motion vector component |
@@ -244,7 +244,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 8 functions (named 8). Blocks: 0 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
-| Address | Name | Size | Blocks | Notes |
+| Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
 | `0x00104838` | `sdk_sceGifPkInit` | 16 | no | packet = base, no open DMA tag |
 | `0x00104848` | `sdk_sceGifPkReset` | 16 | no | back to the base |
@@ -259,7 +259,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 2 functions (named 2). Blocks: 0 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
-| Address | Name | Size | Blocks | Notes |
+| Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
 | `0x001A38F0` | `sdk_scf_BcdToTime` | 104 | no | converts the six BCD time fields (frombcd), used by AdjustTime |
 | `0x001A3958` | `sdk_scf_TimeToBcd` | 104 | no | converts back to BCD (tobcd), used by AdjustTime |
@@ -268,7 +268,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 13 functions (named 13). Blocks: 7 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
-| Address | Name | Size | Blocks | Notes |
+| Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
 | `0x0010E1E0` | `sdk_sif_ClearIopSyncFlag` | 12 | no | (provisional) clears 0x1AB5D0 |
 | `0x0010FFA8` | `sdk_sif_GetRpcSlot` | 24 | no | (provisional) entry a0 of the table at 0x1BF080 |
@@ -288,7 +288,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 1 functions (named 1). Blocks: 0 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
-| Address | Name | Size | Blocks | Notes |
+| Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
 | `0x0010F0E0` | `sdk_tty_InitDevice` | 36 | no | (provisional) fills the tty device record at 0x1BEA40 |
 
@@ -296,7 +296,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 3 functions (named 3). Blocks: 0 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
-| Address | Name | Size | Blocks | Notes |
+| Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
 | `0x00104BB0` | `sdk_sceVu0OuterProduct` | 28 | no | cross product |
 | `0x00104DA0` | `sdk_sceVu0ScaleVector` | 24 | no | vector times scalar |
@@ -306,7 +306,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 1 functions (named 1). Blocks: 1 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
-| Address | Name | Size | Blocks | Notes |
+| Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
 | `0x00100420` | `sdk_operator_delete` | 44 | yes | Metrowerks C++ runtime operator delete (calls free); destructors call it when their delete flag is > 0 |
 
@@ -314,7 +314,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 15 functions (named 15). Blocks: 8 can reach a thread switch, 1 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
-| Address | Name | Size | Blocks | Notes |
+| Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
 | `0x00100140` | `__destroy_global_chain` | 8 | indirect |  |
 | `0x00100150` | `sdk_crt0_InitCpp` | 36 | no | __initialize_cpp_rts with the ctor and exception tables |
@@ -336,7 +336,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 558 functions (named 558). Blocks: 223 can reach a thread switch, 18 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
-| Address | Name | Size | Blocks | Notes |
+| Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
 | `0x001000F0` | `_d_utod` | 76 | no |  |
 | `0x00100180` | `__construct_array` | 292 | indirect |  |

@@ -79,6 +79,7 @@ public class ApplyTypes extends GhidraScript {
         File sigFile = new File(args[1]);
         int applied = 0;
         int failed = 0;
+        int renamed = 0;
         Set<Address> typedBySignature = new HashSet<>();
         if (sigFile.isFile()) {
             List<String> lines = Files.readAllLines(sigFile.toPath(), StandardCharsets.UTF_8);
@@ -130,6 +131,7 @@ public class ApplyTypes extends GhidraScript {
                     applied++;
                     typedBySignature.add(addr);
                     setDefaultConvention(func);
+                    renamed += syncParameterNames(func, proto);
                 } else {
                     printerr("ApplyTypes: " + addr + ": " + cmd.getStatusMsg());
                     failed++;
@@ -140,11 +142,34 @@ public class ApplyTypes extends GhidraScript {
         if (args.length >= 3 && new File(args[2]).isFile()) {
             thisTyped = applyThisTypes(dtm, new File(args[2]), typedBySignature);
         }
-        println("ApplyTypes: " + headerCount + " header(s), " + applied + " signature(s) applied, " + failed
-            + " failed, " + thisTyped + " method(s) given a typed first parameter");
+        println("ApplyTypes: " + headerCount + " header(s), " + applied + " signature(s) applied (" + renamed
+            + " parameter name(s) set from the text), " + failed + " failed, " + thisTyped
+            + " method(s) given a typed first parameter");
         if (failed > 0) {
             throw new IllegalStateException("ApplyTypes: " + failed + " signature(s) failed");
         }
+    }
+
+    // The parser resolves a prototype to the function definition already stored from an earlier run when the
+    // types match, and definitions with the same types count as equivalent whatever their parameter names. A
+    // prototype that only renames parameters would then keep the old names, so set them from the text.
+    private int syncParameterNames(Function func, String proto) throws Exception {
+        String args = proto.substring(proto.indexOf('(') + 1, proto.lastIndexOf(')')).strip();
+        if (args.isEmpty() || args.equals("void")) {
+            return 0;
+        }
+        String[] decls = args.split(",");
+        Parameter[] params = func.getParameters();
+        int renamed = 0;
+        for (int i = 0; i < decls.length && i < params.length; i++) {
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\\w+)\\s*(\\[[^\\]]*\\])?$")
+                .matcher(decls[i].strip());
+            if (m.find() && !m.group(1).equals(params[i].getName())) {
+                params[i].setName(m.group(1), SourceType.USER_DEFINED);
+                renamed++;
+            }
+        }
+        return renamed;
     }
 
     // Prototypes parsed from C carry no calling convention; without one the decompiler warns that storage is

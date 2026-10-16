@@ -17,3 +17,35 @@ mm_TalkOccupantNear_ TalkView view
 mm_TalkPersonFar_ TalkView view
 mm_TalkPersonNear_ TalkView view
 mm_MyHome_ TalkView view
+mm_MsgWin_ MsgWin msgwin
+mm_MenuWin_ MenuWin menuwin
+mm_TalkCard_ TalkCard card
+mm_TalkMoney_ TalkMoney money
+mm_TalkConv_ TalkConv conv
+mm_SceneB_ SceneB scene
+mm_SceneA_ SceneA scene
+mm_TextBox_ TextBox textbox
+mm_Frame_ Frame frame
+mm_A3DObject_ A3DObject model except mm_A3DObject_Base
+mm_Camera_ Camera camera
+mm_CityCamera_ CityCamera camera
+mm_File_ GameFile file
+mm_TexSprite_ TexSprite sprite
+mm_LightSet_ LightSet lights
+mm_ListMenu_ ListMenu menu
+mm_LoadingScreen_ LoadingScreen loading
+mm_NameEntry_ NameEntry entry
+mm_Bag_ Bag bag except mm_Bag_CreateGlobal
+mm_StatusPanel_ StatusPanel panel
+mm_PauseMenu_ PauseMenu pause
+mm_Minimap_ Minimap minimap
+mm_CityCursor_ CityCursor cursor
+mm_PhoneCall_ PhoneCalls phone
+mm_EventMgr_ EventMgr events
+mm_WantsWin_ WantsWin wants
+mm_Laptop_ Laptop laptop except mm_Laptop_CountActive,mm_Laptop_InitEntries
+mm_Player_ Player player except mm_Player_CollideObjects,mm_Player_NearestObject
+mm_Applicants_ Applicants applicants
+mm_Markers_ Markers markers
+mm_Notice_ Notice notice
+mm_TownPages_ TownPages pages

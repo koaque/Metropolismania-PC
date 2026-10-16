@@ -8,10 +8,10 @@ time of year) are used by the talk script's shopping choices.
 
 ## Functions
 
-3 functions (named 3). Blocks: 1 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+3 functions (typed 3). Blocks: 1 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
-| Address | Name | Size | Blocks | Notes |
+| Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
-| `0x0013E380` | `mm_Goods_GetPrice` | 72 | no | price of goods item a0: byte +2 x 10^(byte +3) |
-| `0x0013E3D0` | `mm_Goods_GetRecordOffset` | 132 | no | advances *a3 to the record of item a1/a2 in group a0 |
-| `0x0013E460` | `mm_Goods_Load` | 192 | yes | loads DATA\BIN\GOODS.BIN and resolves its section offsets (0x1BDA9C..0x1BDAB4) |
+| `0x0013E380` | `int mm_Goods_GetPrice(int item)` | 72 | no | price of goods item a0: byte +2 x 10^(byte +3) |
+| `0x0013E3D0` | `int mm_Goods_GetRecordOffset(int group, int a1, int a2, int32_t *offset)` | 132 | no | advances *a3 to the record of item a1/a2 in group a0 |
+| `0x0013E460` | `void mm_Goods_Load(void)` | 192 | yes | loads DATA\BIN\GOODS.BIN and resolves its section offsets (0x1BDA9C..0x1BDAB4) |

@@ -4,7 +4,8 @@
 usage: map_docs.py --root ROOT
 
 Each page has a hand-written part (overview, structs, globals) above the marker line and a
-generated function table below it. Only the part below the marker is rewritten, so edit the
+generated function table below it, showing each function's prototype from config/signatures.txt
+when it has one. Only the part below the marker is rewritten, so edit the
 overview freely and keep function notes in config/port_status.csv (tools/map_apply.py).
 SDK subsystems (sdk:<lib>) share one page, docs/map/sdk.md, grouped by library.
 docs/map/README.md is generated whole.
@@ -24,11 +25,26 @@ def cell(text: str) -> str:
     return text.replace("|", "\\|").replace("\n", " ")
 
 
-def table(rows: list[dict[str, str]]) -> list[str]:
-    lines = ["| Address | Name | Size | Blocks | Notes |", "|---|---|---:|---|---|"]
+def table(rows: list[dict[str, str]], protos: dict[int, str]) -> list[str]:
+    lines = ["| Address | Function | Size | Blocks | Notes |", "|---|---|---:|---|---|"]
     for r in rows:
-        lines.append(f"| `{r['address']}` | `{r['name']}` | {r['size']} | {r['blocking']} | {cell(r['notes'])} |")
+        proto = protos.get(int(r["address"], 16), "")
+        if r["name"] + "(" not in proto:
+            proto = r["name"]
+        lines.append(f"| `{r['address']}` | `{cell(proto)}` | {r['size']} | {r['blocking']} | {cell(r['notes'])} |")
     return lines
+
+
+def load_prototypes(root: Path) -> dict[int, str]:
+    """address -> "ret name(params)" from config/signatures.txt (table() checks the name still matches)."""
+    protos = {}
+    path = root / "config/signatures.txt"
+    if path.exists():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.startswith("0x"):
+                addr, proto = line.split(" ", 1)
+                protos[int(addr, 16)] = proto.strip().rstrip(";")
+    return protos
 
 
 def summary(rows: list[dict[str, str]]) -> str:
@@ -59,6 +75,7 @@ def main() -> None:
     root = Path(args.root)
     with (root / "config/port_status.csv").open(encoding="utf-8", newline="") as fh:
         rows = list(csv.DictReader(fh))
+    protos = load_prototypes(root)
 
     by_sub: dict[str, list[dict[str, str]]] = defaultdict(list)
     sdk: dict[str, list[dict[str, str]]] = defaultdict(list)
@@ -83,7 +100,7 @@ def main() -> None:
     ]
     for sub in sorted(by_sub):
         items = sorted(by_sub[sub], key=lambda r: int(r["address"], 16))
-        write_page(out_dir / f"{sub}.md", sub, ["## Functions", "", summary(items), ""] + table(items))
+        write_page(out_dir / f"{sub}.md", sub, ["## Functions", "", summary(items), ""] + table(items, protos))
         block = sum(1 for r in items if r["blocking"] == "yes")
         index.append(f"| [{sub}]({sub}.md) | {len(items)} | {block} |")
 
@@ -92,7 +109,7 @@ def main() -> None:
     for lib in sorted(sdk):
         items = sorted(sdk[lib], key=lambda r: int(r["address"], 16))
         total += len(items)
-        body += [f"### {lib}", "", summary(items), ""] + table(items) + [""]
+        body += [f"### {lib}", "", summary(items), ""] + table(items, protos) + [""]
     write_page(out_dir / "sdk.md", "SDK", body)
     index.append(f"| [sdk](sdk.md) | {total} | - |")
     (out_dir / "README.md").write_text("\n".join(index) + "\n", encoding="utf-8", newline="\n")

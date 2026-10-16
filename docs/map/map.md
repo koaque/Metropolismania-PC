@@ -20,105 +20,105 @@ placement checks (`mm_Placement_*`) and the per-object history (`mm_MapObj_*`) a
 
 ## Functions
 
-98 functions (named 94, typed 4). Blocks: 12 can reach a thread switch, 8 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+98 functions (typed 98). Blocks: 12 can reach a thread switch, 8 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
-| Address | Name | Size | Blocks | Notes |
+| Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
-| `0x00137570` | `mm_TileLists_LoadState` | 92 | no | reads 0x7F00 + 0xA0 + 0xA0 bytes from the save file |
-| `0x001375D0` | `mm_TileLists_SaveState` | 92 | no | writes them |
-| `0x00137630` | `mm_TileLists_Remove` | 204 | no | removes item a1 from list a2 (shifts the rest down, fixes the starts); 1 if it was there |
-| `0x00137700` | `mm_TileLists_RemoveAll` | 92 | no | mm_TileLists_Remove of item a1 for each list in a zero-terminated pair list |
-| `0x00137760` | `mm_TileLists_InsertAll` | 172 | no | inserts item a1 at the start of each list in a zero-terminated pair list |
-| `0x00137810` | `mm_TileLists_Get` | 32 | no | start of list a1, count to *a2 |
-| `0x00137830` | `mm_TileLists_Clear` | 152 | no | empties all 80 lists |
-| `0x0013E520` | `mm_MapSave_UnpackTiles` | 1164 | yes | after loading: unpacks the 6-byte-per-tile save buffer (height/2048, first object, flags) into the tiles, then rebuilds |
-| `0x0013E9B0` | `mm_MapSave_AllocBuffer` | 48 | yes | allocates the 0x18000-byte packed tile buffer at CityMap +0 |
-| `0x0013E9E0` | `mm_MapSave_FreeBuffer` | 56 | yes | frees the packed tile buffer |
-| `0x0013EA20` | `mm_MapSave_PackTiles` | 808 | yes | before saving: packs every tile into 6 bytes (height * 2048, first object, flags) |
-| `0x0013ED50` | `mm_Map_LoadState` | 148 | no | reads the tile data, objects (0x6F200), tile lists, people (0x46500) and counters from the save file |
-| `0x0013EDF0` | `mm_Map_SaveState` | 148 | no | writes them |
-| `0x0013EE90` | `mm_TerrainGen_ScatterObjects` | 780 | no | (provisional) random object placement during terrain generation |
-| `0x0013F1A0` | `mm_Map_PlaceSmallGoods` | 108 | no | places Small Goods type 0x115 + a6 at (a2, a3) and stores a5 in the object (+0x10) |
-| `0x0013F210` | `mm_Map_PlaceRubbleArea` | 196 | no | places A Rubble Heap (type 10) over an a3 x a3 area |
-| `0x0013F2E0` | `mm_Map_PlaceRoad` | 28 | no | places Road (type 4) at even coordinates (2 x 2 road pieces) |
-| `0x0013F300` | `mm_Map_LevelArea` | 196 | no | places Leveled land (type 3) over an a3 x a3 area |
-| `0x0013F3D0` | `mm_CityMap_ClearObject` | 496 | no | city map slot +0xC: removes object a1's people and the object, refills its footprint with Wasteland |
-| `0x0013F5D0` | `mm_Map_ForEachTileInRect` | 264 | indirect | calls a function for each tile of a rectangle |
-| `0x0013F6E0` | `mm_Map_PlaceObject` | 376 | indirect | places an object of type a2 at (a3, a4) after the placement check (new or stacked), updates geometry; returns its index or 0x3F80 |
-| `0x0013F860` | `mm_Map_CanPlace` | 40 | no | placement test without placing (mm_Map_CheckPlacement) |
-| `0x0013F890` | `mm_TerrainGen_SampleSmooth` | 444 | no | (provisional) smoothed height sample |
-| `0x0013FA50` | `mm_TerrainGen_Smooth` | 796 | no | (provisional) smoothing pass |
-| `0x0013FD80` | `mm_TerrainGen_Hills` | 1800 | no | (provisional) random hills (mm_TerrainGen_ApplyBump x9, random x24) |
-| `0x00140490` | `mm_TerrainGen_River` | 1732 | no | (provisional) river/coast shape with rotations and sine/cosine |
-| `0x00140B60` | `mm_TerrainGen_Generate` | 1180 | no | (provisional) generates a stage's terrain from its parameter bytes |
-| `0x00141010` | `mm_CityMap_DeletingDtor` | 96 | yes | vtable 0x1BCED0, then the render-level destructor |
-| `0x00141070` | `mm_CityMap_ctor` | 52 | yes | render-level constructor, vtable 0x1BCED0 |
-| `0x001410B0` | `mm_Map_TileFlag20` | 92 | no | tile (a1, a2) flag 0x20 (0 off the map) |
-| `0x00141110` | `mm_Map_TileFlag01` | 92 | no | tile flag 0x01 |
-| `0x00141170` | `mm_Map_TileFlag08` | 92 | no | tile flag 0x08 |
-| `0x001411D0` | `mm_Map_TileFlag10` | 92 | no | tile flag 0x10 (checked by movement) |
-| `0x00141230` | `mm_Map_TileIndexFlag10` | 56 | no | flag 0x10 of tile index a1 |
-| `0x00141270` | `mm_Map_SetTileKind` | 100 | no | tile kind a2 (0..3) into tile flags 4 and 2 |
-| `0x001412E0` | `mm_Map_GetTileKind` | 80 | no | tile kind 0..3 from tile flags (flag 4 = 2, flag 2 = 1) |
-| `0x00141330` | `mm_Map_SetTileHeight` | 76 | no | tile a2's height word = a0, then updates its geometry |
-| `0x00141380` | `mm_Map_SetAreaHeight` | 244 | no | sets the height of an a4 x a4 area to a0 and updates the tile geometry |
-| `0x00141480` | `mm_Map_GetTileVertexClamped` | 144 | no | copies the tile's vertex data (+4..+0x10) at clamped coordinates into a3 |
-| `0x00141510` | `mm_Map_GetTileVertex` | 80 | no | tile a1's vertex data (+4..+0x10) into a2 |
-| `0x00141560` | `mm_Map_GetTileHeightWord` | 28 | no | tile a1's height word (+0) |
-| `0x00141580` | `mm_Map_GetHeightAt` | 92 | no | height word at clamped (a1, a2) |
-| `0x001415E0` | `mm_Map_SampleHeight` | 676 | no | terrain height at world (a0, a1), interpolated over the tile's triangles |
-| `0x001418D0` | `mm_Map_UpdateTileGeometry` | 1536 | no | recomputes tile (a1, a2)'s vertices and normals |
-| `0x00141ED0` | `mm_Map_UpdateAreaGeometry` | 136 | no | mm_Map_UpdateTileGeometry over a rectangle |
-| `0x00141F60` | `mm_TerrainGen_ApplyBump` | 1304 | no | (provisional) raises/lowers a round area |
-| `0x001424A0` | `mm_MapTiles_dtor` | 108 | yes | frees the tile array, base destructor |
-| `0x00142510` | `mm_MapTiles_ctor` | 84 | yes | allocates 128x128 tiles of 0x18 bytes |
-| `0x00142590` | `mm_Map_FindPartyGuests` | 496 | no | (provisional) people near a building for the farewell party event |
-| `0x00142790` | `mm_Map_FindPersonEntry` | 148 | no | (provisional) searches the people records for (a1, a2) |
-| `0x00142830` | `mm_Map_FindPersonObjectOnTile` | 216 | no | object on tile a2 whose people list holds person a1 (skipped for people with flag 0x800) |
-| `0x00142910` | `mm_Map_FindPersonOfFlaggedType` | 132 | no | (provisional) first person of a flag-1 character type whose home (+0x28) is a1 |
-| `0x001429A0` | `mm_Map_FindWorkerOnTile` | 200 | no | (provisional) walks a tile's objects for a person working at building a1 |
-| `0x00142A70` | `mm_People_RemoveChain` | 68 | no | marks every person in the chain from *a1 removed (flag 0x800) and clears the head |
-| `0x00142AC0` | `mm_People_Next` | 64 | no | *a1 = next person in its list (+0x10), unless it is 6000 |
-| `0x00142B00` | `mm_People_UnlinkFromList` | 96 | no | unlinks person a2 from the list starting at *a1 and flags it 0x800; 1 if found |
-| `0x00142B60` | `mm_MapObj_AddPerson` | 68 | no | pushes person a2 onto object a1's person list |
-| `0x00142BB0` | `mm_Map_UnlinkPersonFromTile` | 204 | no | removes person a2 from the tile's person list, flags it 0x800 |
-| `0x00142C90` | `mm_MapPeople_RemoveForObject` | 760 | no | deletes the people who work at object a1 (counters, occupancy +0x16/+0x17, residents), re-homes visitors |
-| `0x00143380` | `mm_MapPeople_Tick` | 408 | indirect | people level slot +8: ticks each person's class with time flags (1 every 600 s, 2 hourly, 4 daily, 8 yearly), member status, then the object level |
-| `0x00143520` | `mm_MapPeople_dtor` | 132 | yes | vtable 0x1BCEE0, frees the people array, object-level destructor |
-| `0x001435B0` | `mm_MapPeople_ctor` | 124 | yes | object-level constructor, vtable 0x1BCEE0, 6000 people of 0x30 bytes |
-| `0x00143690` | `mm_MapObj_GetHeight` | 192 | no | height of object a1: its tile's height minus 0.8 for each object stacked below it |
-| `0x00143750` | `mm_MapObj_PushHistory` | 52 | no | shifts the 6-byte history at +0x28 by one, new entry 0 |
-| `0x00143790` | `mm_MapObj_SumHistory` | 56 | no | sum of the 6 history bytes at +0x28 |
-| `0x001437D0` | `mm_MapObj_RayHit` | 500 | indirect | (provisional) box from the tile-kind table 0x1B2590 at the object, tested by the type's slot +0x30 (player pick) |
-| `0x00144270` | `mm_MapObj_GetMatrix` | 364 | no | 0x40-byte box matrix of object a1 from the tile-kind table, at its position and height |
-| `0x001443E0` | `mm_Map_CountObjectsBefore` | 92 | no | number of objects on tile (a1, a2) before object a3 |
-| `0x00144440` | `mm_Map_FindFamilyHome` | 128 | no | object (people-inside type) whose family field (+0xC) is a1, scanning objects 1..0x3F7F |
-| `0x001444C0` | `mm_Map_UnhighlightArea` | 164 | no | clears flag 1 on the top object of each tile in an a3 x a3 area (placement highlight) |
-| `0x00144570` | `mm_Map_HighlightArea` | 164 | no | sets flag 1 on the top object of each tile in an a3 x a3 area |
-| `0x00144620` | `mm_Map_GetTileList` | 8 | no | start and count of tile list a1 (map +0xC) |
-| `0x00144630` | `mm_Map_GetTileFirstObject` | 48 | no | object record of tile a1's first object |
-| `0x00144660` | `mm_Map_GetTileObject` | 96 | no | 128x128 grid of 0x18-byte tiles at map+4; tile +0x14 (u16) indexes the 0x1C-byte record table at map+8; coordinates outside 0..127 return record 0 |
-| `0x001446C0` | `mm_Map_GetRecord` | 24 | no | map+8 + index*0x1C (record table shared with mm_Map_GetTileObject) |
-| `0x001446E0` | `mm_Map_RemoveObjectFromTile` | 132 | no | unlinks object a2 from tile a1's object list |
-| `0x00144770` | `mm_Map_AppendObjectToTile` | 76 | no | links object a2 at the end of tile a1's object list |
-| `0x001447C0` | `mm_Map_CreateObject` | 908 | no | (provisional) creates an object record, links it to its tiles and registers it |
-| `0x00144B60` | `mm_Placement_CheckSlope` | 328 | no | (provisional) height differences under a footprint |
-| `0x00144CB0` | `mm_Map_CheckPlacement` | 760 | indirect | (provisional) full placement test: slope, neighbours, type rules |
-| `0x00144FB0` | `mm_Placement_CheckNeighbours` | 504 | no | (provisional) |
-| `0x001451B0` | `mm_Placement_CheckTypeRule` | 244 | no | (provisional) building type rule (+0x144) |
-| `0x001452B0` | `mm_MapObj_Delete` | 300 | no | removes object a1 from its claim lists, clears its type and lowers the object and per-category counters (+0x24, +0x30 + category * 4, +0x40, +0x5C) |
-| `0x001453E0` | `mm_MapObj_Init` | 472 | indirect | fills object record a1 (type, owner, position) and updates the tile lists |
-| `0x001455C0` | `mm_MapObj_FindFreeSlot` | 108 | no | advances the free object index (+0x10) to an empty record |
-| `0x00145630` | `mm_MapObjects_Slot0C` | 8 | no | vtable slot +0xC at the object level: empty |
-| `0x00145640` | `mm_MapObjects_Tick` | 608 | indirect | (provisional) vtable slot +8 at the object level: per-object updates, minimap marks, sounds |
-| `0x001458A0` | `mm_MapObjects_dtor` | 156 | yes | vtable 0x1BCEF0, frees objects and lists, tile-level destructor |
-| `0x00145940` | `mm_MapObjects_ctor` | 680 | yes | tile-level constructor, vtable 0x1BCEF0, object records and tile lists |
-| `0x00145C00` | `mm_Map_SetPlacementHighlight` | 8 | no | (provisional) footprint highlight on the terrain: mode a1 (1/2), rectangle a2, colour a3 (member +0x2F88) |
-| `0x00145C10` | `mm_Terrain_AddQuad` | 204 | no | (provisional) appends a quad to the terrain buffer (limit 0x9BD) |
-| `0x00145CE0` | `mm_Terrain_BuildStrip` | 2592 | no | (provisional) 2.5 KB terrain strip builder |
-| `0x00146700` | `mm_Terrain_DrawPatch` | 1064 | indirect | (provisional) builds one visible terrain patch |
-| `0x00146B30` | `mm_Terrain_Draw` | 2424 | no | (provisional) culls and draws the terrain around the camera |
-| `0x001474C0` | `mm_Terrain_BuildVu1PacketA` | 1556 | no | (provisional) VU1 packet referencing microcode at 0x1A76F0 |
-| `0x00147AE0` | `mm_Terrain_BuildVu1PacketB` | 1204 | no | (provisional) VU1 packet referencing microcode at 0x1A5EB0 |
-| `0x00147FA0` | `mm_Terrain_InitParams` | 336 | no | (provisional) default render parameters (+0x2E54..) |
-| `0x0014C8B0` | `mm_Map_HeightScale` | 40 | no | a0 * 0.6 + 0.08 |
+| `0x00137570` | `void mm_TileLists_LoadState(TileLists *lists, McManager *mc)` | 92 | no | reads 0x7F00 + 0xA0 + 0xA0 bytes from the save file |
+| `0x001375D0` | `void mm_TileLists_SaveState(TileLists *lists, McManager *mc)` | 92 | no | writes them |
+| `0x00137630` | `int mm_TileLists_Remove(TileLists *lists, uint32_t item, int list)` | 204 | no | removes item a1 from list a2 (shifts the rest down, fixes the starts); 1 if it was there |
+| `0x00137700` | `void mm_TileLists_RemoveAll(TileLists *lists, int item, int16_t *pairs)` | 92 | no | mm_TileLists_Remove of item a1 for each list in a zero-terminated pair list |
+| `0x00137760` | `void mm_TileLists_InsertAll(TileLists *lists, uint16_t item, uint16_t *pairs)` | 172 | no | inserts item a1 at the start of each list in a zero-terminated pair list |
+| `0x00137810` | `uint16_t *mm_TileLists_Get(TileLists *lists, int list, uint32_t *count)` | 32 | no | start of list a1, count to *a2 |
+| `0x00137830` | `TileLists *mm_TileLists_Clear(TileLists *lists)` | 152 | no | empties all 80 lists |
+| `0x0013E520` | `void mm_MapSave_UnpackTiles(CityMap *map)` | 1164 | yes | after loading: unpacks the 6-byte-per-tile save buffer (height/2048, first object, flags) into the tiles, then rebuilds |
+| `0x0013E9B0` | `void mm_MapSave_AllocBuffer(CityMap *map)` | 48 | yes | allocates the 0x18000-byte packed tile buffer at CityMap +0 |
+| `0x0013E9E0` | `void mm_MapSave_FreeBuffer(CityMap *map)` | 56 | yes | frees the packed tile buffer |
+| `0x0013EA20` | `void mm_MapSave_PackTiles(CityMap *map)` | 808 | yes | before saving: packs every tile into 6 bytes (height * 2048, first object, flags) |
+| `0x0013ED50` | `void mm_Map_LoadState(CityMap *map, McManager *mc)` | 148 | no | reads the tile data, objects (0x6F200), tile lists, people (0x46500) and counters from the save file |
+| `0x0013EDF0` | `void mm_Map_SaveState(CityMap *map, McManager *mc)` | 148 | no | writes them |
+| `0x0013EE90` | `void mm_TerrainGen_ScatterObjects(CityMap *map, int x, int z, int a3, float radius)` | 780 | no | (provisional) random object placement during terrain generation |
+| `0x0013F1A0` | `void mm_Map_PlaceSmallGoods(CityMap *map, int x, int z, int a3, uint8_t value, int kind)` | 108 | no | places Small Goods type 0x115 + a6 at (a2, a3) and stores a5 in the object (+0x10) |
+| `0x0013F210` | `void mm_Map_PlaceRubbleArea(CityMap *map, int x, int z, int size, int arg)` | 196 | no | places A Rubble Heap (type 10) over an a3 x a3 area |
+| `0x0013F2E0` | `void mm_Map_PlaceRoad(CityMap *map, uint32_t x, uint32_t z, int arg)` | 28 | no | places Road (type 4) at even coordinates (2 x 2 road pieces) |
+| `0x0013F300` | `void mm_Map_LevelArea(CityMap *map, int x, int z, int size, int arg)` | 196 | no | places Leveled land (type 3) over an a3 x a3 area |
+| `0x0013F3D0` | `void mm_CityMap_ClearObject(CityMap *map, int object)` | 496 | no | city map slot +0xC: removes object a1's people and the object, refills its footprint with Wasteland |
+| `0x0013F5D0` | `void mm_Map_ForEachTileInRect(CityMap *map, int x, int z, int size)` | 264 | indirect | calls a function for each tile of a rectangle |
+| `0x0013F6E0` | `int mm_Map_PlaceObject(CityMap *map, int owner, int type, int x, int z, int arg)` | 376 | indirect | places an object of type a2 at (a3, a4) after the placement check (new or stacked), updates geometry; returns its index or 0x3F80 |
+| `0x0013F860` | `int mm_Map_CanPlace(CityMap *map, int family, int typeIndex, int x, int z)` | 40 | no | placement test without placing (mm_Map_CheckPlacement) |
+| `0x0013F890` | `float mm_TerrainGen_SampleSmooth(CityMap *map, int x, int z)` | 444 | no | (provisional) smoothed height sample |
+| `0x0013FA50` | `void mm_TerrainGen_Smooth(CityMap *map, int a1, int a2, float f12, float f13, float f14)` | 796 | no | (provisional) smoothing pass |
+| `0x0013FD80` | `int mm_TerrainGen_Hills(CityMap *map, int cx, int cz, int high)` | 1800 | no | (provisional) random hills (mm_TerrainGen_ApplyBump x9, random x24) |
+| `0x00140490` | `void mm_TerrainGen_River(CityMap *map, int a1, int a2, int a3, int t0, int t1, int direction, int t3, int stack0)` | 1732 | no | (provisional) river/coast shape with rotations and sine/cosine |
+| `0x00140B60` | `void mm_TerrainGen_Generate(CityMap *map, uint8_t *params)` | 1180 | no | (provisional) generates a stage's terrain from its parameter bytes |
+| `0x00141010` | `CityMap *mm_CityMap_DeletingDtor(CityMap *map, int16_t deleteFlag)` | 96 | yes | vtable 0x1BCED0, then the render-level destructor |
+| `0x00141070` | `CityMap *mm_CityMap_ctor(CityMap *map)` | 52 | yes | render-level constructor, vtable 0x1BCED0 |
+| `0x001410B0` | `uint16_t mm_Map_TileFlag20(CityMap *map, int x, int z)` | 92 | no | tile (a1, a2) flag 0x20 (0 off the map) |
+| `0x00141110` | `uint16_t mm_Map_TileFlag01(CityMap *map, int x, int z)` | 92 | no | tile flag 0x01 |
+| `0x00141170` | `uint16_t mm_Map_TileFlag08(CityMap *map, int x, int z)` | 92 | no | tile flag 0x08 |
+| `0x001411D0` | `uint16_t mm_Map_TileFlag10(CityMap *map, int x, int z)` | 92 | no | tile flag 0x10 (checked by movement) |
+| `0x00141230` | `uint16_t mm_Map_TileIndexFlag10(CityMap *map, uint32_t tile)` | 56 | no | flag 0x10 of tile index a1 |
+| `0x00141270` | `void mm_Map_SetTileKind(CityMap *map, int tile, uint32_t kind)` | 100 | no | tile kind a2 (0..3) into tile flags 4 and 2 |
+| `0x001412E0` | `int mm_Map_GetTileKind(CityMap *map, int tile)` | 80 | no | tile kind 0..3 from tile flags (flag 4 = 2, flag 2 = 1) |
+| `0x00141330` | `void mm_Map_SetTileHeight(CityMap *map, uint32_t tile, float height)` | 76 | no | tile a2's height word = a0, then updates its geometry |
+| `0x00141380` | `void mm_Map_SetAreaHeight(CityMap *map, int x, int z, int size, float height)` | 244 | no | sets the height of an a4 x a4 area to a0 and updates the tile geometry |
+| `0x00141480` | `void mm_Map_GetTileVertexClamped(CityMap *map, int x, int z, uint32_t *out)` | 144 | no | copies the tile's vertex data (+4..+0x10) at clamped coordinates into a3 |
+| `0x00141510` | `float mm_Map_GetTileVertex(CityMap *map, int tile, uint32_t *out)` | 80 | no | tile a1's vertex data (+4..+0x10) into a2 |
+| `0x00141560` | `float mm_Map_GetTileHeightWord(CityMap *map, int tile)` | 28 | no | tile a1's height word (+0) |
+| `0x00141580` | `float mm_Map_GetHeightAt(CityMap *map, int x, int z)` | 92 | no | height word at clamped (a1, a2) |
+| `0x001415E0` | `float mm_Map_SampleHeight(CityMap *map, float x, float z)` | 676 | no | terrain height at world (a0, a1), interpolated over the tile's triangles |
+| `0x001418D0` | `void mm_Map_UpdateTileGeometry(CityMap *map, int x, int z)` | 1536 | no | recomputes tile (a1, a2)'s vertices and normals |
+| `0x00141ED0` | `int mm_Map_UpdateAreaGeometry(CityMap *map, int32_t *rect)` | 136 | no | mm_Map_UpdateTileGeometry over a rectangle |
+| `0x00141F60` | `float mm_TerrainGen_ApplyBump(CityMap *map, int x, int z, int mode, uint32_t flags, float height, float radius)` | 1304 | no | (provisional) raises/lowers a round area |
+| `0x001424A0` | `CityMap *mm_MapTiles_dtor(CityMap *map, int16_t deleteFlag)` | 108 | yes | frees the tile array, base destructor |
+| `0x00142510` | `CityMap *mm_MapTiles_ctor(CityMap *map)` | 84 | yes | allocates 128x128 tiles of 0x18 bytes |
+| `0x00142590` | `void mm_Map_FindPartyGuests(CityMap *map)` | 496 | no | (provisional) people near a building for the farewell party event |
+| `0x00142790` | `MapPerson *mm_Map_FindPersonEntry(CityMap *map, int16_t family, uint16_t member)` | 148 | no | (provisional) searches the people records for (a1, a2) |
+| `0x00142830` | `MapObject *mm_Map_FindPersonObjectOnTile(CityMap *map, uint32_t person, uint32_t tile)` | 216 | no | object on tile a2 whose people list holds person a1 (skipped for people with flag 0x800) |
+| `0x00142910` | `MapPerson *mm_Map_FindPersonOfFlaggedType(CityMap *map, int16_t home)` | 132 | no | (provisional) first person of a flag-1 character type whose home (+0x28) is a1 |
+| `0x001429A0` | `MapPerson *mm_Map_FindWorkerOnTile(CityMap *map, int16_t work, uint32_t tile)` | 200 | no | (provisional) walks a tile's objects for a person working at building a1 |
+| `0x00142A70` | `void mm_People_RemoveChain(CityMap *map, uint16_t *head)` | 68 | no | marks every person in the chain from *a1 removed (flag 0x800) and clears the head |
+| `0x00142AC0` | `MapPerson *mm_People_Next(CityMap *map, uint16_t *cursor)` | 64 | no | *a1 = next person in its list (+0x10), unless it is 6000 |
+| `0x00142B00` | `int mm_People_UnlinkFromList(CityMap *map, uint16_t *head, uint32_t person)` | 96 | no | unlinks person a2 from the list starting at *a1 and flags it 0x800; 1 if found |
+| `0x00142B60` | `void mm_MapObj_AddPerson(CityMap *map, int object, int person)` | 68 | no | pushes person a2 onto object a1's person list |
+| `0x00142BB0` | `uint16_t mm_Map_UnlinkPersonFromTile(CityMap *map, int tile, uint32_t person)` | 204 | no | removes person a2 from the tile's person list, flags it 0x800 |
+| `0x00142C90` | `void mm_MapPeople_RemoveForObject(CityMap *map, uint32_t object)` | 760 | no | deletes the people who work at object a1 (counters, occupancy +0x16/+0x17, residents), re-homes visitors |
+| `0x00143380` | `void mm_MapPeople_Tick(CityMap *map, CityScene *city)` | 408 | indirect | people level slot +8: ticks each person's class with time flags (1 every 600 s, 2 hourly, 4 daily, 8 yearly), member status, then the object level |
+| `0x00143520` | `CityMap *mm_MapPeople_dtor(CityMap *map, int16_t deleteFlag)` | 132 | yes | vtable 0x1BCEE0, frees the people array, object-level destructor |
+| `0x001435B0` | `CityMap *mm_MapPeople_ctor(CityMap *map)` | 124 | yes | object-level constructor, vtable 0x1BCEE0, 6000 people of 0x30 bytes |
+| `0x00143690` | `float mm_MapObj_GetHeight(CityMap *map, uint32_t object)` | 192 | no | height of object a1: its tile's height minus 0.8 for each object stacked below it |
+| `0x00143750` | `void mm_MapObj_PushHistory(CityMap *map)` | 52 | no | shifts the 6-byte history at +0x28 by one, new entry 0 |
+| `0x00143790` | `int mm_MapObj_SumHistory(CityMap *map)` | 56 | no | sum of the 6 history bytes at +0x28 |
+| `0x001437D0` | `int mm_MapObj_RayHit(CityMap *map, uint32_t tile, int a2, int a3, int t0)` | 500 | indirect | (provisional) box from the tile-kind table 0x1B2590 at the object, tested by the type's slot +0x30 (player pick) |
+| `0x00144270` | `void mm_MapObj_GetMatrix(CityMap *map, int object, Vec4 *matrix)` | 364 | no | 0x40-byte box matrix of object a1 from the tile-kind table, at its position and height |
+| `0x001443E0` | `int mm_Map_CountObjectsBefore(CityMap *map, int x, int z, uint16_t object)` | 92 | no | number of objects on tile (a1, a2) before object a3 |
+| `0x00144440` | `MapObject *mm_Map_FindFamilyHome(CityMap *map, uint16_t family)` | 128 | no | object (people-inside type) whose family field (+0xC) is a1, scanning objects 1..0x3F7F |
+| `0x001444C0` | `void mm_Map_UnhighlightArea(CityMap *map, int x, int z, int size)` | 164 | no | clears flag 1 on the top object of each tile in an a3 x a3 area (placement highlight) |
+| `0x00144570` | `void mm_Map_HighlightArea(CityMap *map, int x, int z, int size)` | 164 | no | sets flag 1 on the top object of each tile in an a3 x a3 area |
+| `0x00144620` | `uint16_t *mm_Map_GetTileList(CityMap *map, int list, uint32_t *count)` | 8 | no | start and count of tile list a1 (map +0xC) |
+| `0x00144630` | `MapObject *mm_Map_GetTileFirstObject(CityMap *map, int tile)` | 48 | no | object record of tile a1's first object |
+| `0x00144660` | `MapObject *mm_Map_GetTileObject(CityMap *map, int x, int z)` | 96 | no | 128x128 grid of 0x18-byte tiles at map+4; tile +0x14 (u16) indexes the 0x1C-byte record table at map+8; coordinates outside 0..127 return record 0 |
+| `0x001446C0` | `MapObject *mm_Map_GetRecord(CityMap *map, int object)` | 24 | no | map+8 + index*0x1C (record table shared with mm_Map_GetTileObject) |
+| `0x001446E0` | `void mm_Map_RemoveObjectFromTile(CityMap *map, int tile, uint32_t object)` | 132 | no | unlinks object a2 from tile a1's object list |
+| `0x00144770` | `void mm_Map_AppendObjectToTile(CityMap *map, int tile, uint16_t object)` | 76 | no | links object a2 at the end of tile a1's object list |
+| `0x001447C0` | `int mm_Map_CreateObject(CityMap *map, int owner, int type, int x, int z)` | 908 | no | (provisional) creates an object record, links it to its tiles and registers it |
+| `0x00144B60` | `int mm_Placement_CheckSlope(CityMap *map, int type, int x, int z)` | 328 | no | (provisional) height differences under a footprint |
+| `0x00144CB0` | `int mm_Map_CheckPlacement(CityMap *map, uint32_t type, int x, int z, int32_t *rect)` | 760 | indirect | (provisional) full placement test: slope, neighbours, type rules |
+| `0x00144FB0` | `int mm_Placement_CheckNeighbours(CityMap *map, int type, int x, int z, uint32_t *t0)` | 504 | no | (provisional) |
+| `0x001451B0` | `int mm_Placement_CheckTypeRule(CityMap *map, int type, int tile)` | 244 | no | (provisional) building type rule (+0x144) |
+| `0x001452B0` | `void mm_MapObj_Delete(CityMap *map, int object)` | 300 | no | removes object a1 from its claim lists, clears its type and lowers the object and per-category counters (+0x24, +0x30 + category * 4, +0x40, +0x5C) |
+| `0x001453E0` | `void mm_MapObj_Init(CityMap *map, int object, int type, uint16_t owner, uint16_t tile)` | 472 | indirect | fills object record a1 (type, owner, position) and updates the tile lists |
+| `0x001455C0` | `int mm_MapObj_FindFreeSlot(CityMap *map)` | 108 | no | advances the free object index (+0x10) to an empty record |
+| `0x00145630` | `void mm_MapObjects_Slot0C(CityMap *map)` | 8 | no | vtable slot +0xC at the object level: empty |
+| `0x00145640` | `void mm_MapObjects_Tick(CityMap *map, CityScene *city)` | 608 | indirect | (provisional) vtable slot +8 at the object level: per-object updates, minimap marks, sounds |
+| `0x001458A0` | `CityMap *mm_MapObjects_dtor(CityMap *map, int16_t deleteFlag)` | 156 | yes | vtable 0x1BCEF0, frees objects and lists, tile-level destructor |
+| `0x00145940` | `CityMap *mm_MapObjects_ctor(CityMap *map)` | 680 | yes | tile-level constructor, vtable 0x1BCEF0, object records and tile lists |
+| `0x00145C00` | `void mm_Map_SetPlacementHighlight(CityMap *map, int mode, int32_t *rect, uint32_t *colour)` | 8 | no | (provisional) footprint highlight on the terrain: mode a1 (1/2), rectangle a2, colour a3 (member +0x2F88) |
+| `0x00145C10` | `void mm_Terrain_AddQuad(int a0, uint32_t *a1, uint32_t *a2, uint32_t *a3, uint32_t *t0, int t1, int t2, int t3)` | 204 | no | (provisional) appends a quad to the terrain buffer (limit 0x9BD) |
+| `0x00145CE0` | `void mm_Terrain_BuildStrip(int a0, int a1, int a2, uint64_t *a3, uint64_t *t0, uint64_t *t1, uint64_t *t2)` | 2592 | no | (provisional) 2.5 KB terrain strip builder |
+| `0x00146700` | `void mm_Terrain_DrawPatch(CityMap *map, int x, int z, int a3, float f12, float f13, float f14)` | 1064 | indirect | (provisional) builds one visible terrain patch |
+| `0x00146B30` | `void mm_Terrain_Draw(CityMap *map, int a1, Vec4 *a2, int a3, int t0, int t1, float f12)` | 2424 | no | (provisional) culls and draws the terrain around the camera |
+| `0x001474C0` | `uint32_t *mm_Terrain_BuildVu1PacketA(int a0, uint32_t *a1)` | 1556 | no | (provisional) VU1 packet referencing microcode at 0x1A76F0 |
+| `0x00147AE0` | `uint32_t *mm_Terrain_BuildVu1PacketB(int a0, uint32_t *a1)` | 1204 | no | (provisional) VU1 packet referencing microcode at 0x1A5EB0 |
+| `0x00147FA0` | `void mm_Terrain_InitParams(int a0)` | 336 | no | (provisional) default render parameters (+0x2E54..) |
+| `0x0014C8B0` | `float mm_Map_HeightScale(float height)` | 40 | no | a0 * 0.6 + 0.08 |

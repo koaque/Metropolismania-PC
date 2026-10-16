@@ -6,8 +6,8 @@ Heap helper.
 
 ## Functions
 
-1 functions (named 1). Blocks: 1 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+1 functions (typed 1). Blocks: 1 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
-| Address | Name | Size | Blocks | Notes |
+| Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
-| `0x00184CD0` | `mm_Heap_Probe` | 84 | yes | malloc(0x17E5D70) then free; returns that size (checks the heap can hold it) |
+| `0x00184CD0` | `int mm_Heap_Probe(void)` | 84 | yes | malloc(0x17E5D70) then free; returns that size (checks the heap can hold it) |

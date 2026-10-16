@@ -7,15 +7,15 @@ Addresses are for SLUS_203.77 (CRC32 `4FA3F727`). Status and progress: [PORT_STA
 | Subsystem | Functions | Can block |
 |---|---:|---:|
 | [app](app.md) | 4 | 3 |
-| [bag](bag.md) | 14 | 5 |
+| [bag](bag.md) | 16 | 5 |
 | [boot](boot.md) | 2 | 2 |
 | [camera](camera.md) | 18 | 5 |
-| [char](char.md) | 83 | 19 |
-| [city](city.md) | 183 | 55 |
+| [char](char.md) | 84 | 19 |
+| [city](city.md) | 185 | 55 |
 | [claim](claim.md) | 6 | 1 |
 | [core](core.md) | 4 | 1 |
 | [event](event.md) | 148 | 20 |
-| [family](family.md) | 34 | 5 |
+| [family](family.md) | 36 | 5 |
 | [file](file.md) | 12 | 9 |
 | [font](font.md) | 3 | 2 |
 | [game](game.md) | 3 | 2 |
@@ -27,11 +27,11 @@ Addresses are for SLUS_203.77 (CRC32 `4FA3F727`). Status and progress: [PORT_STA
 | [movie](movie.md) | 80 | 46 |
 | [pad](pad.md) | 10 | 3 |
 | [random](random.md) | 4 | 0 |
-| [save](save.md) | 50 | 13 |
+| [save](save.md) | 48 | 13 |
 | [scene](scene.md) | 25 | 15 |
 | [sound](sound.md) | 57 | 4 |
 | [stage](stage.md) | 8 | 4 |
-| [talk](talk.md) | 320 | 86 |
-| [text](text.md) | 4 | 0 |
+| [talk](talk.md) | 322 | 86 |
+| [text](text.md) | 5 | 0 |
 | [ui](ui.md) | 168 | 62 |
 | [sdk](sdk.md) | 768 | - |

@@ -724,10 +724,10 @@ address,name,kind,source
 0x0012ABA0,mm_GameUpdate,func,manual
 0x0012ADE0,mm_GameInit,func,manual
 0x0012AE20,mm_Main,func,manual
-0x0012AE90,mm_Save_ReadBlock16C,func,manual
-0x0012AEB0,mm_Save_WriteBlock16C,func,manual
+0x0012AE90,mm_Bag_LoadState,func,manual
+0x0012AEB0,mm_Bag_SaveState,func,manual
 0x0012AED0,mm_Bag_RemoveSlot,func,manual
-0x0012AFC0,mm_Player_AddMusicTrack,func,manual
+0x0012AFC0,mm_Bag_AddMusicTrack,func,manual
 0x0012B080,mm_Bag_AddItem,func,manual
 0x0012B110,mm_Bag_FindItem,func,manual
 0x0012B1B0,mm_BagMenu_UpdateItemText,func,manual
@@ -877,6 +877,7 @@ address,name,kind,source
 0x0013C810,mm_Family_SaveState,func,manual
 0x0013C8B0,mm_Family_GetTypeIndex,func,manual
 0x0013C900,mm_Family_HasLeft,func,manual
+0x0013C950,mm_Family_SetKnown,func,manual
 0x0013C9A0,mm_Family_IsKnown,func,manual
 0x0013C9F0,mm_Family_SetFlagA,func,manual
 0x0013CA70,mm_Family_InCity,func,manual
@@ -889,6 +890,7 @@ address,name,kind,source
 0x0013CF20,mm_Family_PickIntroduction,func,manual
 0x0013D110,mm_Family_CanApply,func,manual
 0x0013D280,mm_Family_FriendAgrees,func,manual
+0x0013D330,mm_Family_MeterAgrees,func,manual
 0x0013D3D0,mm_Family_IsCached,func,manual
 0x0013D4A0,mm_Family_Prefetch,func,manual
 0x0013D6B0,mm_Family_Get,func,manual
@@ -1055,7 +1057,7 @@ address,name,kind,source
 0x0014CC10,mm_LayerB_Draw,func,manual
 0x0014CC60,mm_LayerB_DeletingDtor,func,manual
 0x0014CCC0,mm_LayerB_ctor,func,manual
-0x0014CD10,mm_Terrain_Nop14CD10,func,manual
+0x0014CD10,mm_LayerC_InTileRect,func,manual
 0x0014CD80,mm_Terrain_SetVec,func,manual
 0x0014CDA0,mm_LayerC_BuildPacket,func,manual
 0x0014CFF0,mm_LayerC_InitParams,func,manual
@@ -1219,7 +1221,7 @@ address,name,kind,source
 0x0015E500,mm_Person_TargetShop,func,manual
 0x0015E6D0,mm_Person_TargetHome,func,manual
 0x0015E800,mm_Person_ChooseDestination,func,manual
-0x0015EDE0,mm_Math_Rsqrt,func,manual
+0x0015EDE0,mm_Math_SqrtBits,func,manual
 0x0015EE10,mm_Schedule_QueryA,func,manual
 0x0015EFB0,mm_Schedule_QueryB,func,manual
 0x0015F130,mm_Schedule_GetActivity,func,manual
@@ -1263,6 +1265,7 @@ address,name,kind,source
 0x00162390,mm_Stamina_SaveState,func,manual
 0x001623B0,mm_Stamina_Tick,func,manual
 0x00162470,mm_Stamina_Eat,func,manual
+0x001624F0,mm_Stamina_Zero,func,manual
 0x00162500,mm_Stamina_HungerLevel,func,manual
 0x00162540,mm_Stamina_Init,func,manual
 0x00162560,mm_Stamina_CreateGlobal,func,manual
@@ -1293,6 +1296,7 @@ address,name,kind,source
 0x00164220,mm_BldgType_Draw,func,manual
 0x00164230,mm_BldgType_Tick,func,manual
 0x00164240,mm_BldgType_InitRecord,func,manual
+0x00164250,mm_BldgType_GetPostName,func,manual
 0x00164280,mm_BldgType_BaseDtor,func,manual
 0x00164310,mm_BldgType_BaseCtor,func,manual
 0x00164740,mm_Math_MulMatVecVu0,func,manual
@@ -1546,6 +1550,8 @@ address,name,kind,source
 0x001785E0,mm_TalkCard_ctor,func,manual
 0x001786C0,mm_Talk_SetViewLit,func,manual
 0x001786E0,mm_Talk_LookupPose,func,manual
+0x00178730,mm_Talk_SetPose,func,manual
+0x001787B0,mm_Talk_EndChoosing,func,manual
 0x001787D0,mm_Talk_SelectPerson,func,manual
 0x00178800,mm_Talk_ChooseInput,func,manual
 0x00178960,mm_Talk_Closed,func,manual
@@ -1699,7 +1705,7 @@ address,name,kind,source
 0x0017EFB0,mm_WordsFn_WeatherToday,func,manual
 0x0017EFC0,mm_WordsFn_CityFlag2,func,manual
 0x0017EFE0,mm_WordsFn_Month,func,manual
-0x0017F010,mm_WordsFn_Nop35,func,manual
+0x0017F010,mm_WordsFn_StaminaZero,func,manual
 0x0017F020,mm_WordsFn_StaminaTier,func,manual
 0x0017F030,mm_WordsFn_StoryFlagB,func,manual
 0x0017F080,mm_WordsFn_StoryFlagA,func,manual
@@ -1712,7 +1718,7 @@ address,name,kind,source
 0x0017F1F0,mm_WordsFn_BuildingCrowd,func,manual
 0x0017F300,mm_WordsFn_BuildingFlag100,func,manual
 0x0017F330,mm_WordsFn_TryFriendAgrees,func,manual
-0x0017F3E0,mm_WordsFn_Nop22,func,manual
+0x0017F3E0,mm_WordsFn_MeterAgrees,func,manual
 0x0017F420,mm_WordsFn_FindOutsideAcquaintance,func,manual
 0x0017F530,mm_WordsFn_GetIntroduction,func,manual
 0x0017F5C0,mm_WordsFn_BuildingFlag2,func,manual
@@ -1768,6 +1774,7 @@ address,name,kind,source
 0x001814C0,mm_CityScene_GetMode,func,manual
 0x001814D0,mm_CityScene_RecordPlacementScore,func,manual
 0x001815B0,mm_CityScene_AddApproval,func,manual
+0x001815C0,mm_CityScene_TalkEndChoosing,func,manual
 0x001815D0,mm_CityScene_TalkSelectPerson,func,manual
 0x001815E0,mm_CityScene_StartTalk,func,manual
 0x00181660,mm_CityScene_UpdateApproval,func,manual
@@ -1779,6 +1786,7 @@ address,name,kind,source
 0x00182BF0,mm_Collide_RayTriangleA,func,manual
 0x00182D20,mm_Collide_PointInTriangle,func,manual
 0x00182E90,mm_Collide_RayTriangleB,func,manual
+0x00183020,mm_Text_FormatTimeRange,func,manual
 0x001831E0,mm_Text_FormatMoney,func,manual
 0x00183270,mm_Text_FormatThousands,func,manual
 0x001833A0,mm_Text_SplitDigits,func,manual
