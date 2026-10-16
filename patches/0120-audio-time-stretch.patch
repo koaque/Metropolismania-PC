@@ -1,0 +1,280 @@
+diff --git a/ps2xRuntime/CMakeLists.txt b/ps2xRuntime/CMakeLists.txt
+index 5109c65..4ceda68 100644
+--- a/ps2xRuntime/CMakeLists.txt
++++ b/ps2xRuntime/CMakeLists.txt
+@@ -379,6 +379,7 @@ add_library(ps2_runtime STATIC
+     src/lib/game_overrides.cpp
+     src/lib/gs/ps2_gif_arbiter.cpp
+     src/lib/ps2_audio.cpp
++    src/lib/ps2_audio_stretch.cpp
+     src/lib/ps2_audio_vag.cpp
+     src/lib/gs/ps2_gs_memory.cpp
+     src/lib/gs/gs_frontend.cpp
+diff --git a/ps2xRuntime/include/ps2_audio_stretch.h b/ps2xRuntime/include/ps2_audio_stretch.h
+new file mode 100644
+index 0000000..8dbf13f
+--- /dev/null
++++ b/ps2xRuntime/include/ps2_audio_stretch.h
+@@ -0,0 +1,45 @@
++#pragma once
++
++#include <cstddef>
++#include <cstdint>
++#include <functional>
++#include <vector>
++
++// Keeps emulated audio continuous when the emulation runs slower than real time. The source (the
++// SPU2) produces samples on emulated time; the host plays them on real time. When fewer samples
++// arrive than the host plays, WSOLA time stretching (waveform-similarity overlap-add) slows the
++// tempo to match without changing the pitch, instead of leaving gaps. At full speed the samples
++// pass through unchanged.
++class AudioTimeStretcher
++{
++public:
++    // pull(buffer, frames) copies up to `frames` interleaved stereo frames and returns how many.
++    using PullFn = std::function<size_t(int16_t *, size_t)>;
++
++    explicit AudioTimeStretcher(PullFn pull);
++
++    // Fills `frames` interleaved stereo frames for the host (audio thread).
++    void render(int16_t *out, size_t frames);
++
++private:
++    static constexpr size_t kRate = 48000;
++    static constexpr size_t kSequence = kRate * 40 / 1000; // frames per processing step
++    static constexpr size_t kOverlap = kRate * 8 / 1000;   // cross-fade length
++    static constexpr size_t kSeek = kRate * 15 / 1000;     // search window for the best splice
++
++    void fetchInput();
++    void updateTempo(size_t requested);
++    bool processSequence();
++    size_t bestOffset() const;
++
++    PullFn m_pull;
++    std::vector<float> m_input;      // pending source frames (interleaved stereo)
++    std::vector<float> m_output;     // stretched frames ready for the host
++    std::vector<float> m_tail;       // last kOverlap frames of the previous sequence
++    bool m_haveTail = false;
++    double m_inputPosition = 0.0;    // fractional read position into m_input (frames)
++    double m_tempo = 1.0;            // source frames consumed per output frame
++    double m_arrivalRate = 1.0;      // smoothed source frames per host frame
++    size_t m_arrivedThisCall = 0;
++    std::vector<int16_t> m_scratch;
++};
+diff --git a/ps2xRuntime/src/lib/ps2_audio_stretch.cpp b/ps2xRuntime/src/lib/ps2_audio_stretch.cpp
+new file mode 100644
+index 0000000..b486a7f
+--- /dev/null
++++ b/ps2xRuntime/src/lib/ps2_audio_stretch.cpp
+@@ -0,0 +1,118 @@
++#include "ps2_audio_stretch.h"
++
++#include <algorithm>
++#include <cmath>
++
++AudioTimeStretcher::AudioTimeStretcher(PullFn pull)
++    : m_pull(std::move(pull))
++{
++    m_tail.resize(kOverlap * 2u);
++}
++
++void AudioTimeStretcher::fetchInput()
++{
++    // Keep at most about half a second of source audio queued; drop the oldest beyond that.
++    constexpr size_t kMaxQueued = kRate / 2u;
++    m_scratch.resize(4096u * 2u);
++    for (;;)
++    {
++        const size_t got = m_pull(m_scratch.data(), 4096u);
++        for (size_t i = 0; i < got * 2u; ++i)
++            m_input.push_back(static_cast<float>(m_scratch[i]));
++        m_arrivedThisCall += got;
++        if (got < 4096u)
++            break;
++    }
++    const size_t queued = m_input.size() / 2u;
++    if (queued > kMaxQueued + static_cast<size_t>(m_inputPosition))
++    {
++        const size_t drop = queued - kMaxQueued - static_cast<size_t>(m_inputPosition);
++        m_input.erase(m_input.begin(), m_input.begin() + static_cast<std::ptrdiff_t>(drop * 2u));
++    }
++}
++
++void AudioTimeStretcher::updateTempo(size_t requested)
++{
++    // Source frames per host frame, smoothed over roughly half a second.
++    const double ratio = requested ? static_cast<double>(m_arrivedThisCall) / static_cast<double>(requested) : 1.0;
++    m_arrivedThisCall = 0;
++    m_arrivalRate += (std::min(ratio, 2.0) - m_arrivalRate) * 0.05;
++
++    // Steer the queue towards about 100 ms beyond what one processing step needs.
++    const double queued = static_cast<double>(m_input.size() / 2u) - m_inputPosition;
++    const double target = static_cast<double>(kSeek + kSequence + kRate / 10u);
++    const double correction = std::clamp((queued - target) / target, -0.5, 0.5) * 0.1;
++    m_tempo = std::clamp(m_arrivalRate + correction, 0.2, 1.05);
++}
++
++size_t AudioTimeStretcher::bestOffset() const
++{
++    const size_t base = static_cast<size_t>(m_inputPosition);
++    size_t best = 0;
++    double bestScore = -1e300;
++    for (size_t offset = 0; offset < kSeek; ++offset)
++    {
++        double cross = 0.0, energy = 1e-9;
++        const float *x = m_input.data() + (base + offset) * 2u;
++        for (size_t i = 0; i < kOverlap; i += 2u)
++        {
++            const double sample = static_cast<double>(x[i * 2u]) + x[i * 2u + 1u];
++            const double tail = static_cast<double>(m_tail[i * 2u]) + m_tail[i * 2u + 1u];
++            cross += sample * tail;
++            energy += sample * sample;
++        }
++        const double score = cross / std::sqrt(energy);
++        if (score > bestScore)
++        {
++            bestScore = score;
++            best = offset;
++        }
++    }
++    return best;
++}
++
++bool AudioTimeStretcher::processSequence()
++{
++    const size_t base = static_cast<size_t>(m_inputPosition);
++    if (m_input.size() / 2u < base + kSeek + kSequence)
++        return false;
++
++    const size_t start = base + (m_haveTail ? bestOffset() : 0u);
++    const float *in = m_input.data() + start * 2u;
++    for (size_t i = 0; i < kOverlap; ++i)
++    {
++        const float w = static_cast<float>(i) / static_cast<float>(kOverlap);
++        for (size_t c = 0; c < 2u; ++c)
++        {
++            const float fresh = in[i * 2u + c];
++            m_output.push_back(m_haveTail ? m_tail[i * 2u + c] * (1.0f - w) + fresh * w : fresh);
++        }
++    }
++    m_output.insert(m_output.end(), in + kOverlap * 2u, in + (kSequence - kOverlap) * 2u);
++    std::copy(in + (kSequence - kOverlap) * 2u, in + kSequence * 2u, m_tail.begin());
++    m_haveTail = true;
++
++    m_inputPosition += static_cast<double>(kSequence - kOverlap) * m_tempo;
++    // Drop consumed input once enough has piled up.
++    const size_t consumed = static_cast<size_t>(m_inputPosition);
++    if (consumed > kRate / 4u)
++    {
++        m_input.erase(m_input.begin(), m_input.begin() + static_cast<std::ptrdiff_t>(consumed * 2u));
++        m_inputPosition -= static_cast<double>(consumed);
++    }
++    return true;
++}
++
++void AudioTimeStretcher::render(int16_t *out, size_t frames)
++{
++    fetchInput();
++    updateTempo(frames);
++    while (m_output.size() / 2u < frames && processSequence())
++    {
++    }
++    const size_t ready = std::min(frames, m_output.size() / 2u);
++    for (size_t i = 0; i < ready * 2u; ++i)
++        out[i] = static_cast<int16_t>(std::clamp(std::lround(m_output[i]), -32768l, 32767l));
++    std::fill(out + ready * 2u, out + frames * 2u, int16_t{0});
++    m_output.erase(m_output.begin(), m_output.begin() + static_cast<std::ptrdiff_t>(ready * 2u));
++}
+diff --git a/ps2xRuntime/src/lib/ps2_runtime.cpp b/ps2xRuntime/src/lib/ps2_runtime.cpp
+index d72fc1e..6fb30c9 100644
+--- a/ps2xRuntime/src/lib/ps2_runtime.cpp
++++ b/ps2xRuntime/src/lib/ps2_runtime.cpp
+@@ -13,6 +13,7 @@
+ #include "ps2_host_backend.h"
+ #include "ps2_iop_host.h"
+ #include "ps2x/iop/iop_subsystem.h"
++#include "ps2_audio_stretch.h"
+ 
+ #include <iostream>
+ #include <stdexcept>
+@@ -530,18 +531,48 @@ namespace
+ {
+     // SPU2 output (IOP emulator, 48 kHz stereo) played through a raylib audio stream whose callback
+     // pulls from the SPU2's ring buffer. PS2X_SPU2=0 leaves it off.
++    // When the emulation runs slower than real time the SPU2 produces fewer samples than the host
++    // plays; AudioTimeStretcher slows the tempo to match instead of leaving gaps
++    // (PS2X_SPU2_STRETCH=0 plays the samples as they come). PS2X_HOST_AUDIO_WAV=file.wav records
++    // what the host actually plays.
+     ps2x::iop::IopSubsystem *s_spu2Source = nullptr;
+     AudioStream s_spu2Stream{};
+     bool s_spu2StreamLoaded = false;
++    std::unique_ptr<AudioTimeStretcher> s_spu2Stretcher;
++    std::FILE *s_hostWav = nullptr;
++    uint32_t s_hostWavFrames = 0;
++
++    void writeHostWavHeader()
++    {
++        const uint32_t bytes = s_hostWavFrames * 4u;
++        const uint32_t header[11] = {0x46464952u, 36u + bytes, 0x45564157u, 0x20746D66u, 16u, 0x00020001u,
++                                     48000u, 192000u, 0x00100004u, 0x61746164u, bytes};
++        std::fseek(s_hostWav, 0, SEEK_SET);
++        std::fwrite(header, sizeof(header), 1, s_hostWav);
++        std::fseek(s_hostWav, 0, SEEK_END);
++        std::fflush(s_hostWav);
++    }
+ 
+     void spu2StreamCallback(void *buffer, unsigned int frames)
+     {
+         int16_t *out = static_cast<int16_t *>(buffer);
+         size_t pulled = 0;
+-        if (s_spu2Source)
++        if (s_spu2Source && s_spu2Stretcher)
++        {
++            s_spu2Stretcher->render(out, frames);
++            pulled = frames;
++        }
++        else if (s_spu2Source)
+             pulled = s_spu2Source->pullAudio(out, frames);
+         else
+             std::memset(out, 0, static_cast<size_t>(frames) * 4u);
++        if (s_hostWav)
++        {
++            std::fwrite(out, 4u, frames, s_hostWav);
++            s_hostWavFrames += frames;
++            if ((s_hostWavFrames / frames) % 64u == 0u)
++                writeHostWavHeader();
++        }
+         static bool s_announced = false;
+         if (pulled != 0u && !s_announced)
+         {
+@@ -556,6 +587,16 @@ namespace
+         if (s_spu2StreamLoaded || !source || !IsAudioDeviceReady() || (flag && flag[0] == '0'))
+             return;
+         s_spu2Source = source;
++        const char *stretch = std::getenv("PS2X_SPU2_STRETCH");
++        if (!(stretch && stretch[0] == '0'))
++            s_spu2Stretcher = std::make_unique<AudioTimeStretcher>([source](int16_t *buffer, size_t frames)
++                                                                   { return source->pullAudio(buffer, frames); });
++        if (const char *path = std::getenv("PS2X_HOST_AUDIO_WAV"); path && path[0] != '\0')
++        {
++            s_hostWav = std::fopen(path, "wb");
++            if (s_hostWav)
++                writeHostWavHeader();
++        }
+         SetAudioStreamBufferSizeDefault(1024);
+         s_spu2Stream = LoadAudioStream(48000, 16, 2);
+         SetAudioStreamCallback(s_spu2Stream, spu2StreamCallback);
+@@ -571,6 +612,13 @@ namespace
+         UnloadAudioStream(s_spu2Stream); // waits for the mixer, so the callback is no longer running
+         s_spu2StreamLoaded = false;
+         s_spu2Source = nullptr;
++        s_spu2Stretcher.reset();
++        if (s_hostWav)
++        {
++            writeHostWavHeader();
++            std::fclose(s_hostWav);
++            s_hostWav = nullptr;
++        }
+     }
+ }
+ #endif
