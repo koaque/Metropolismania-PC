@@ -738,488 +738,488 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001284E0,__make_dp,44,sdk,,named,no,1,1,
 0x00128510,dptofp,84,sdk,,named,no,1,2,
 0x00128568,dptoul,156,sdk,,named,no,1,1,
-0x00128640,FUN_00128640,788,game,ui,unnamed,no,1,6,"message window typewriter step: copies the next word into the text box (cursor +0x2AC), plays the message sound unless inside the quote characters at 0x1B5A70"
-0x00128960,FUN_00128960,212,game,ui,unnamed,no,2,4,"when waiting (state 3): takes the next line, scrolls the 4-line text box up by one line, state 6"
-0x00128A40,FUN_00128a40,68,game,ui,unnamed,indirect,0,0,"vtable callback: when the fade step (+8 object, slot +0x18, 0.1) finishes, state 0"
-0x00128A90,FUN_00128a90,68,game,ui,unnamed,indirect,0,0,"vtable callback: when the fade step finishes, state 3"
-0x00128AE0,FUN_00128ae0,108,game,ui,unnamed,no,1,3,"typing (state 6): button 0x40 skips the delay, then mm_MsgWin_TypeNext; other states run the base update (0x173450)"
-0x00128B50,FUN_00128b50,356,game,ui,unnamed,no,1,4,"in pass 2: fades the window model node by state (alpha via its matrix row 0x1B2550), draws it and the text box"
+0x00128640,mm_MsgWin_TypeNext,788,game,ui,named,no,1,6,"message window typewriter step: copies the next word into the text box (cursor +0x2AC), plays the message sound unless inside the quote characters at 0x1B5A70"
+0x00128960,mm_MsgWin_NextLine,212,game,ui,named,no,2,4,"when waiting (state 3): takes the next line, scrolls the 4-line text box up by one line, state 6"
+0x00128A40,mm_MsgWin_OnFadeInDone,68,game,ui,named,indirect,0,0,"vtable callback: when the fade step (+8 object, slot +0x18, 0.1) finishes, state 0"
+0x00128A90,mm_MsgWin_OnFadeOutDone,68,game,ui,named,indirect,0,0,"vtable callback: when the fade step finishes, state 3"
+0x00128AE0,mm_MsgWin_Update,108,game,ui,named,no,1,3,"typing (state 6): button 0x40 skips the delay, then mm_MsgWin_TypeNext; other states run the base update (0x173450)"
+0x00128B50,mm_MsgWin_Draw,356,game,ui,named,no,1,4,"in pass 2: fades the window model node by state (alpha via its matrix row 0x1B2550), draws it and the text box"
 0x00128CC0,mm_Mat4_Copy,36,game,math,named,no,29,0,copies a 4x4 float matrix (16 words) from a1 to a0
-0x00128CF0,FUN_00128cf0,136,game,ui,unnamed,no,2,2,"starts message a1 with sound code a2: resets buffers and cursors, clears the text box"
-0x00128D80,FUN_00128d80,148,game,ui,unnamed,yes,1,4,"vtable 0x1BCE10; deletes the frame (0x14C210) and the text box, base destructor 0x173560"
-0x00128E20,FUN_00128e20,184,game,ui,unnamed,yes,2,5,"vtable 0x1BCE10; text box 18x4 (style -2) at 0x7240,0x8240 and a 0xC0-byte window frame (0x14C270)"
-0x00128EE0,FUN_00128ee0,432,game,gfx,unnamed,no,1,2,"builds an image-upload packet in the packet buffer (mm_PacketBuf_Tell/Seek): DMA REF to the texture data, BITBLT/TRX registers, GIF IMAGE"
-0x00129090,FUN_00129090,48,game,gfx,unnamed,no,9,1,"queues packet a0[0], or a0[1] when a1 != 0"
-0x001290C0,FUN_001290c0,84,game,gfx,unnamed,yes,2,2,"base destructor 0x12AB40, then delete when the flag is > 0"
-0x00129120,FUN_00129120,228,game,gfx,unnamed,no,2,2,"(provisional) base init 0x12AB90; +0x190 = 0x110, +0x194 = 0xE0; 12 colour/direction slots and ambient set to 1.0"
-0x00129210,FUN_00129210,24,game,gfx,unnamed,no,9,0,word +0xC of mesh a1 in the model's mesh table (+0x50)
-0x00129230,FUN_00129230,816,game,gfx,unnamed,no,6,2,"(provisional, was mm_A3D_SineDeform) adds instances for mesh a2 of model a1 with sine-wave motion at time a0 (callers check the instance budget first)"
-0x00129570,FUN_00129570,988,game,gfx,unnamed,yes,2,3,"turns the loaded model's offsets into pointers, patches the addresses in its DMA chains (mm_DmaChain_*) and uploads its textures (mm_Dma_KickVif1Now)"
-0x00129950,FUN_00129950,96,game,gfx,unnamed,yes,6,1,CA3DObject::ChangeLuminusity (name from its error string): sets node a2's colour (node +0x60) to the vec4 at a1; prints an error for a bad node index
-0x001299B0,FUN_001299b0,104,game,gfx,unnamed,no,15,1,queues node a1's packet (node +0x50) and its mesh packet (mesh +0x10); nodes are 0xC0 bytes at model +8
-0x00129A20,FUN_00129a20,228,game,gfx,unnamed,no,10,2,updates every node's world matrix (mm_A3DObject_UpdateNodeMatrix) and queues all nodes
-0x00129B10,FUN_00129b10,248,game,gfx,unnamed,no,10,2,"world matrix of each node: root nodes = object matrix (this+0x10) x local, children via mm_A3DObject_UpdateNodeMatrix"
-0x00129C10,FUN_00129c10,116,game,math,unnamed,no,2,0,"a0 = a1 x a2 (4x4, VU0 macro mode)"
-0x00129C90,FUN_00129c90,412,game,gfx,unnamed,no,3,2,node world matrix = parent's world matrix x local (recursive)
-0x00129E30,FUN_00129e30,136,game,gfx,unnamed,yes,4,3,"frees the model data (+0) and the node array (+0x50), base destructor; delete when the flag is > 0"
-0x00129EC0,FUN_00129ec0,544,game,gfx,unnamed,yes,3,8,"asynchronous .A3D load from an open file, one step per call (state gp 0x1BD...80A0): header into 0x1C5100, then data; 0 = busy, -1 = error"
-0x0012A0E0,FUN_0012a0e0,380,game,gfx,unnamed,yes,3,12,"synchronous .A3D load: header (word counts), data and pointer table, then mm_A3D_Relocate"
-0x0012A260,FUN_0012a260,44,game,gfx,unnamed,no,2,1,(provisional) base init 0x12AB90 and clears 0x1BDA10
+0x00128CF0,mm_MsgWin_SetMessage,136,game,ui,named,no,2,2,"starts message a1 with sound code a2: resets buffers and cursors, clears the text box"
+0x00128D80,mm_MsgWin_dtor,148,game,ui,named,yes,1,4,"vtable 0x1BCE10; deletes the frame (0x14C210) and the text box, base destructor 0x173560"
+0x00128E20,mm_MsgWin_ctor,184,game,ui,named,yes,2,5,"vtable 0x1BCE10; text box 18x4 (style -2) at 0x7240,0x8240 and a 0xC0-byte window frame (0x14C270)"
+0x00128EE0,mm_Packet_BuildImageUpload,432,game,gfx,named,no,1,2,"builds an image-upload packet in the packet buffer (mm_PacketBuf_Tell/Seek): DMA REF to the texture data, BITBLT/TRX registers, GIF IMAGE"
+0x00129090,mm_Packet2_Draw,48,game,gfx,named,no,9,1,"queues packet a0[0], or a0[1] when a1 != 0"
+0x001290C0,mm_A3DObjectBase_DeletingDtor,84,game,gfx,named,yes,2,2,"base destructor 0x12AB40, then delete when the flag is > 0"
+0x00129120,mm_LightSet_Init,228,game,gfx,named,no,2,2,"(provisional, was mm_Unk129120_Init) base init; +0x190 = 0x110, +0x194 = 0xE0; 12 colour/direction slots and ambient set to 1.0"
+0x00129210,mm_A3D_GetMeshField0C,24,game,gfx,named,no,9,0,word +0xC of mesh a1 in the model's mesh table (+0x50)
+0x00129230,mm_Instance_DrawSwaying,816,game,gfx,named,no,6,2,"(provisional, was mm_A3D_SineDeform) adds instances for mesh a2 of model a1 with sine-wave motion at time a0 (callers check the instance budget first)"
+0x00129570,mm_A3D_Relocate,988,game,gfx,named,yes,2,3,"turns the loaded model's offsets into pointers, patches the addresses in its DMA chains (mm_DmaChain_*) and uploads its textures (mm_Dma_KickVif1Now)"
+0x00129950,mm_A3DObject_ChangeLuminosity,96,game,gfx,named,yes,6,1,CA3DObject::ChangeLuminusity (name from its error string): sets node a2's colour (node +0x60) to the vec4 at a1; prints an error for a bad node index
+0x001299B0,mm_A3DObject_DrawNode,104,game,gfx,named,no,15,1,queues node a1's packet (node +0x50) and its mesh packet (mesh +0x10); nodes are 0xC0 bytes at model +8
+0x00129A20,mm_A3DObject_Draw,228,game,gfx,named,no,10,2,updates every node's world matrix (mm_A3DObject_UpdateNodeMatrix) and queues all nodes
+0x00129B10,mm_A3DObject_UpdateMatrices,248,game,gfx,named,no,10,2,"world matrix of each node: root nodes = object matrix (this+0x10) x local, children via mm_A3DObject_UpdateNodeMatrix"
+0x00129C10,mm_Mat4_MulVu0,116,game,math,named,no,2,0,"a0 = a1 x a2 (4x4, VU0 macro mode)"
+0x00129C90,mm_A3DObject_UpdateNodeMatrix,412,game,gfx,named,no,3,2,node world matrix = parent's world matrix x local (recursive)
+0x00129E30,mm_A3DObject_dtor,136,game,gfx,named,yes,4,3,"frees the model data (+0) and the node array (+0x50), base destructor; delete when the flag is > 0"
+0x00129EC0,mm_A3DObject_LoadAsync,544,game,gfx,named,yes,3,8,"asynchronous .A3D load from an open file, one step per call (state gp 0x1BD...80A0): header into 0x1C5100, then data; 0 = busy, -1 = error"
+0x0012A0E0,mm_A3DObject_Load,380,game,gfx,named,yes,3,12,"synchronous .A3D load: header (word counts), data and pointer table, then mm_A3D_Relocate"
+0x0012A260,mm_Unk12A260_ctor,44,game,gfx,named,no,2,1,(provisional) base init 0x12AB90 and clears 0x1BDA10
 0x0012A290,mm_Camera_SetEyeTarget,24,game,camera,named,no,28,0,stores eye (this+0x130) and target (this+0x140) vectors
-0x0012A2B0,FUN_0012a2b0,8,game,gfx,unnamed,no,7,1,queues the packet whose address is the object's first word
-0x0012A2C0,FUN_0012a2c0,216,game,gfx,unnamed,no,1,2,builds a small A+D packet (register 0x3D ...) in the packet buffer
-0x0012A3A0,FUN_0012a3a0,572,game,camera,unnamed,no,2,2,builds the projection and screen matrices from the view parameters at +0x2F4..+0x300
-0x0012A5E0,FUN_0012a5e0,108,game,camera,unnamed,no,1,0,fog near a0 / far a1 (+0x308/+0x304) and the fog coefficients at +0x11C/+0x12C for a 0..255 fog value
-0x0012A650,FUN_0012a650,12,game,camera,unnamed,no,1,0,(provisional) (*this)+0x20 = a1
-0x0012A660,FUN_0012a660,88,game,camera,unnamed,no,1,2,sceVu0NormalLightMatrix from the three light directions (+0x160..) and sceVu0LightColorMatrix from the light colours and ambient (+0x190..)
+0x0012A2B0,mm_Packet_Draw,8,game,gfx,named,no,7,1,queues the packet whose address is the object's first word
+0x0012A2C0,mm_Packet_BuildA0,216,game,gfx,named,no,1,2,builds a small A+D packet (register 0x3D ...) in the packet buffer
+0x0012A3A0,mm_Camera_UpdateProjection,572,game,camera,named,no,2,2,builds the projection and screen matrices from the view parameters at +0x2F4..+0x300
+0x0012A5E0,mm_Camera_SetFogRange,108,game,camera,named,no,1,0,fog near a0 / far a1 (+0x308/+0x304) and the fog coefficients at +0x11C/+0x12C for a 0..255 fog value
+0x0012A650,mm_Unk12A650_SetField20,12,game,camera,named,no,1,0,(provisional) (*this)+0x20 = a1
+0x0012A660,mm_Camera_UpdateLightMatrices,88,game,camera,named,no,1,2,sceVu0NormalLightMatrix from the three light directions (+0x160..) and sceVu0LightColorMatrix from the light colours and ambient (+0x190..)
 0x0012A6C0,mm_Camera_UpdateMatrices,136,game,camera,named,no,29,2,"dir = normalize(target - eye); sceVu0CameraMatrix into this+0x1E0 with up vector this+0x150; this+0x10 = this+0x220 x view, this+0x50 = this+0x260 x view"
-0x0012A750,FUN_0012a750,84,game,camera,unnamed,yes,4,2,"base destructor, then delete when the flag is > 0"
-0x0012A7B0,FUN_0012a7b0,856,game,camera,unnamed,no,4,8,"default light directions/colours, eye/target, fog and projection, then all matrices"
-0x0012AB10,FUN_0012ab10,36,game,math,unnamed,no,1,0,"a0 = a1 / |a1| (VU0, xyz)"
-0x0012AB40,FUN_0012ab40,68,game,core,unnamed,yes,15,1,common base destructor: delete when the flag is > 0
-0x0012AB90,FUN_0012ab90,8,game,core,unnamed,no,16,0,common base constructor: returns this
+0x0012A750,mm_Camera_DeletingDtor,84,game,camera,named,yes,4,2,"base destructor, then delete when the flag is > 0"
+0x0012A7B0,mm_Camera_ctor,856,game,camera,named,no,4,8,"default light directions/colours, eye/target, fog and projection, then all matrices"
+0x0012AB10,mm_Vec3_Normalize,36,game,math,named,no,1,0,"a0 = a1 / |a1| (VU0, xyz)"
+0x0012AB40,mm_BaseObject_dtor,68,game,core,named,yes,15,1,common base destructor: delete when the flag is > 0
+0x0012AB90,mm_BaseObject_ctor,8,game,core,named,no,16,0,common base constructor: returns this
 0x0012ABA0,mm_GameUpdate,572,game,game,named,yes,0,12,"Game class (vtable 0x1BCE60) slot +0xC, once per frame: sound update, then the scene state machine (+4): creates/updates/deletes the title, intro and city scenes"
 0x0012ADE0,mm_GameInit,52,game,game,named,no,0,1,"Game slot +8: sound state init, scene state 0, no scenes"
 0x0012AE20,mm_Main,100,game,game,named,yes,1,6,"probes the heap, runs static init, constructs the App on the stack, switches it to the Game vtable 0x1BCE60, runs mm_MainLoop, destroys it"
-0x0012AE90,FUN_0012ae90,20,game,save,unnamed,no,1,1,"(provisional) 0x15BA70(a1, a0, 0x16C)"
-0x0012AEB0,FUN_0012aeb0,20,game,save,unnamed,no,1,1,"(provisional) 0x15BA90(a1, a0, 0x16C)"
-0x0012AED0,FUN_0012aed0,236,game,bag,unnamed,no,4,0,removes item slot a1 (16 bytes each from +4) and shifts the rest down; capacity per bag type from 0x1B5B08
-0x0012AFC0,FUN_0012afc0,180,game,bag,unnamed,no,1,1,"adds the track id of goods item (a1, a2) to the 10-entry list at +0x144 if missing and registers it with mm_Bgm_SetTrackSlot"
-0x0012B080,FUN_0012b080,136,game,bag,unnamed,no,2,0,"puts goods item (group a1, index a2) with count and flags into the first empty slot"
-0x0012B110,FUN_0012b110,148,game,bag,unnamed,no,0,0,slot holding the item whose id is a1
-0x0012B1B0,FUN_0012b1b0,380,game,bag,unnamed,no,1,1,"item name and the action text for the selected slot: ""Empty bag"", ""Eat"", ""Drink"", ""New clothes"", ""Set up"""
-0x0012B330,FUN_0012b330,124,game,bag,unnamed,yes,1,2,"after using an item: count - 1 when a1, removes the slot when empty, refreshes the list"
-0x0012B3B0,FUN_0012b3b0,180,game,bag,unnamed,no,1,0,for the item being used: kind 3/2/1 for goods categories 0x1C/0x1B/0x1A (placeable items)
-0x0012B470,FUN_0012b470,420,game,bag,unnamed,yes,1,5,"uses the selected item by goods category (placing, eating, ...), with sounds"
-0x0012B620,FUN_0012b620,312,game,bag,unnamed,yes,3,6,"rebuilds the item list text (""name * count"")"
-0x0012B760,FUN_0012b760,472,game,bag,unnamed,indirect,1,7,"draws the bag window model, its highlight and the four text boxes"
-0x0012B940,FUN_0012b940,2516,game,bag,unnamed,yes,1,29,"the bag screen: creates the windows, handles cursor, use/discard/keep prompts (""Set up"", ""Close"", ""Discard"", ""Keep it"")"
-0x0012C320,FUN_0012c320,112,game,bag,unnamed,no,1,0,empties the 10 item slots and sets the 10 track ids to 0xFFFF
-0x0012C390,FUN_0012c390,248,game,bag,unnamed,no,1,0,empty bag plus its window data (0x1F3B24 ...)
-0x0012C490,FUN_0012c490,56,game,bag,unnamed,yes,1,2,0x1BDA18 = new bag (0x1AC bytes)
-0x0012C4D0,FUN_0012c4d0,60,game,gfx,unnamed,no,6,1,mm_Instance_DrawSwaying when the model's nodes still fit in the 1800-instance budget
-0x0012C510,FUN_0012c510,400,game,gfx,unnamed,yes,1,1,"allocates the two instance buffers and pre-fills each slot's DMA/VIF header (CNT 5, STCYCL, UNPACK)"
-0x0012C6A0,FUN_0012c6a0,236,game,gfx,unnamed,no,15,1,writes matrix a1/a2 and colour into the next instance slot and queues it with the mesh packet
-0x0012C790,FUN_0012c790,240,game,gfx,unnamed,no,1,1,instance of node a2 of model a0 with colour a1
-0x0012C880,FUN_0012c880,324,game,gfx,unnamed,no,6,2,"updates the model's node matrices and adds an instance per node with a mesh, if the budget allows"
-0x0012C9D0,FUN_0012c9d0,68,game,gfx,unnamed,yes,2,2,model constructor; the first one allocates the instance buffers
-0x0012CA20,FUN_0012ca20,76,game,camera,unnamed,no,1,1,writes +0x530 (4 bytes) and +0x130 (0x1D4 bytes) with 0x15BA70
-0x0012CA70,FUN_0012ca70,76,game,camera,unnamed,no,1,1,reads the same two blocks with 0x15BA90
-0x0012CAC0,FUN_0012cac0,192,game,camera,unnamed,no,2,3,"height of the eye above the terrain (0x1415E0) as a zoom level: 0 above -1.15, 1 above -7.1, ..."
-0x0012CB80,FUN_0012cb80,2688,game,camera,unnamed,no,1,8,"pad-driven city camera: move, rotate, zoom, keeps the eye above the terrain, updates fog, projection and matrices"
-0x0012D600,FUN_0012d600,92,game,camera,unnamed,yes,1,2,"camera destructor, then delete when the flag is > 0"
-0x0012D660,FUN_0012d660,80,game,camera,unnamed,yes,1,1,"camera constructor (0x161250) with eye (0, -29, 1.6), zoom level 1"
-0x0012D6B0,FUN_0012d6b0,824,game,gfx,unnamed,no,2,2,"(provisional) second sine-wave instance variant, used by 0x133E80/0x1345E0"
-0x0012D9F0,FUN_0012d9f0,852,game,gfx,unnamed,no,1,1,(provisional) instances for all nodes of a model with per-node colours
-0x0012DD50,FUN_0012dd50,280,game,gfx,unnamed,no,1,1,"like mm_Instance_DrawNode, also capped by a second counter (gp)"
-0x0012DE70,FUN_0012de70,940,game,gfx,unnamed,no,4,2,(provisional) instances for a model with extra transform parameters
-0x0012E220,FUN_0012e220,120,game,gfx,unnamed,yes,1,1,mm_A3DObject_LoadAsync; when done (and a2 == 0) stores the frame count (+0x60 = data +4 / 13)
-0x0012E2A0,FUN_0012e2a0,40,game,gfx,unnamed,yes,1,1,mm_InstanceModel_ctor wrapper
-0x0012E2D0,FUN_0012e2d0,152,game,gfx,unnamed,no,1,1,"(provisional) 0x1BD980 tracks 0x1BD9B8: shrinks when it is above 95, else grows by 1; clamped to 0xFF..0x3A7"
-0x0012E370,FUN_0012e370,1092,game,map,unnamed,no,1,3,(provisional) scans map tiles along a direction for a2/a3 (returns a tile value)
-0x0012E7D0,FUN_0012e7d0,1588,game,map,unnamed,no,2,7,(provisional) walks the map tiles around a position using mm_Unk12E370_TileScan and the tile objects
-0x0012EE20,FUN_0012ee20,176,game,map,unnamed,no,2,0,"(provisional) VU0 test for tile (a1, a2)"
-0x0012EED0,fn_0012EED0,8,game,char,unnamed,no,0,0,base vtable slot +0x18: empty
-0x0012EEE0,fn_0012EEE0,8,game,char,unnamed,no,0,0,base slot +0x14: empty
-0x0012EEF0,fn_0012EEF0,8,game,char,unnamed,no,0,0,base slot +0x10: empty
-0x0012EF00,fn_0012EF00,8,game,char,unnamed,no,0,0,base slot +0xC: returns 0
-0x0012EF10,FUN_0012ef10,76,game,char,unnamed,yes,2,1,base vtable 0x1BCE70; delete when the flag is > 0
-0x0012EF60,FUN_0012ef60,180,game,char,unnamed,no,3,0,"base vtable 0x1BCE70; four model parts from the table 0x1F3B90 by record bytes 8/9/10/14, sizes from bytes 11-13, ids from bytes 2/4/0x14"
-0x0012F020,FUN_0012f020,3808,game,char,unnamed,no,1,4,"(provisional, was mm_Path_Search) tests the 8 neighbour tiles around a position for class-2 movement mode A"
-0x0012FF00,FUN_0012ff00,440,game,char,unnamed,no,2,2,"(provisional, was mm_Path_CheckNeighbour) neighbour tile test shared by both probe functions (tables 0x1AEFF0/0x1AF020)"
-0x001300C0,FUN_001300c0,3808,game,char,unnamed,no,1,4,(provisional) same as mode A for movement mode B
-0x00130FA0,FUN_00130fa0,2300,game,char,unnamed,no,1,8,(provisional) class-2 movement mode A: rotates the heading (sceVu0RotMatrixY) and probes ahead with mm_Char2_ProbeTilesA
-0x001318A0,FUN_001318a0,2280,game,char,unnamed,no,1,8,(provisional) class-2 movement mode B with mm_Char2_ProbeTilesB
-0x00132190,FUN_00132190,612,game,char,unnamed,no,0,4,"class 2 slot +0x10: instance of the character on the terrain (height from 0x1415E0), within the draw range (0x1BD980)"
-0x00132400,FUN_00132400,1048,game,char,unnamed,yes,0,10,class 2 slot +0xC: moves the character (mode A or B) and updates its tile
-0x00132820,FUN_00132820,96,game,char,unnamed,yes,0,2,"vtable 0x1BCE90, then the base destructor"
-0x00132880,FUN_00132880,52,game,char,unnamed,no,1,1,"base constructor, vtable 0x1BCE90"
-0x001328C0,FUN_001328c0,416,game,char,unnamed,yes,1,11,"loads DATA\BIN\CHARTYPE.BIN and creates one class object per 0x18-byte record (class 0 base, 1 person, 2 class 2) in the table at gp 0x1BDA3C"
-0x00132A70,FUN_00132a70,244,game,char,unnamed,yes,1,2,"(provisional) person vs. its target building record: flags 0x20/0x200/4, the building's state byte +0x27"
-0x00132B70,FUN_00132b70,300,game,char,unnamed,no,1,4,"(provisional) per-tick person counters (+0x25, +0x2F) and the spawn timer (gp)"
-0x00132CA0,FUN_00132ca0,248,game,char,unnamed,no,1,2,(provisional) tests the tile a person would step onto
-0x00132DA0,FUN_00132da0,3528,game,char,unnamed,no,1,10,(provisional) 3.5 KB walking movement for people over map tiles
-0x00133B70,FUN_00133b70,780,game,char,unnamed,no,1,5,(provisional) person's matrix from heading and terrain height
-0x00133E80,FUN_00133e80,700,game,char,unnamed,yes,0,9,class 1 slot +0x14: (provisional) extra drawing (shadow/marker) for a person
-0x00134140,FUN_00134140,92,game,char,unnamed,no,1,0,(provisional) resets the two 128-entry tables at 0x1C5110/0x1C5310
-0x001341A0,FUN_001341a0,184,game,char,unnamed,no,1,0,(provisional) fills the tables at 0x1C5110/0x1C5310 after loading CHARTYPE.BIN
-0x00134260,FUN_00134260,896,game,char,unnamed,no,1,2,"(provisional) walking pose matrices for a person (copies of the base matrix 0x1B2550, animation table 0x1C5180)"
-0x001345E0,FUN_001345e0,1088,game,char,unnamed,yes,0,11,"class 1 slot +0x10: person instances on the terrain, within the draw range"
-0x00134A20,FUN_00134a20,3032,game,char,unnamed,yes,0,20,"class 1 slot +0xC: a person's behaviour per tick: target building, walking, waiting, random choices"
-0x00135600,FUN_00135600,96,game,char,unnamed,yes,0,2,"vtable 0x1BCEB0, then the base destructor"
-0x00135660,FUN_00135660,136,game,char,unnamed,no,1,1,"base constructor, vtable 0x1BCEB0, walking speed +0x24 = record u16 +6 / 1e6"
-0x001356F0,FUN_001356f0,120,game,event,unnamed,no,2,0,(provisional) walks event a0's tile list (0x1BDA50/0x1BDA60) and clears a flag on each tile
-0x00135770,FUN_00135770,120,game,event,unnamed,no,5,0,"(provisional) same list, sets the flag"
-0x001357F0,FUN_001357f0,100,game,event,unnamed,no,3,0,(provisional) uses 0x1B26C0 and the globals 0x1BDA64/0x1BDA70
-0x00135860,FUN_00135860,84,game,claim,unnamed,no,1,0,entry variant by bit 0x8000 of a0 from the current speaker table (gp)
-0x001358C0,FUN_001358c0,124,game,claim,unnamed,no,3,0,"line a1 of claim a0 (8-byte items), variant by bit 0x8000"
-0x00135940,FUN_00135940,32,game,claim,unnamed,no,9,0,CLAIM.BIN entry a0 via the offset table at file +0xC
-0x00135960,FUN_00135960,40,game,claim,unnamed,no,5,0,CLAIM.BIN entry (a0 & 0x7FFF) via the offset table at file +0x10
-0x00135990,FUN_00135990,32,game,claim,unnamed,no,15,0,CLAIM.BIN entry a0 via the offset table at file +8
-0x001359B0,FUN_001359b0,184,game,claim,unnamed,yes,1,3,"loads DATA\BIN\CLAIM.BIN and resolves its section offsets (+8, +0xC, +0x10, +0x14, ...)"
-0x00135A70,FUN_00135a70,328,game,stage,unnamed,yes,1,7,"reads this stage's record from DATA\BIN\STAGE.BIN into 0x1C5380 (target population 0x1C554C, theme 0x1C5550, theme share 0x1C5554)"
-0x00135BC0,FUN_00135bc0,308,game,stage,unnamed,yes,1,3,"""%d people and %d%% must be the theme. Build a ..."" with the theme text (high-class, business, leisure, fishing, farming, industrial)"
-0x00135D00,FUN_00135d00,160,game,stage,unnamed,yes,1,2,"""Target\nBuild %s with more than %d people.\n%d%% of the buildings must be %s."""
-0x00135DA0,FUN_00135da0,24,game,stage,unnamed,no,1,1,writes the stage state (0x284 bytes at 0x1C5380)
-0x00135DC0,FUN_00135dc0,24,game,stage,unnamed,no,1,1,reads the stage state back
-0x00135DE0,FUN_00135de0,168,game,stage,unnamed,no,2,0,"defaults: no stage, 3000 and 2500, cleared tables"
-0x00135E90,FUN_00135e90,68,game,stage,unnamed,yes,4,1,delete when the flag is > 0
-0x00135EE0,FUN_00135ee0,16,game,stage,unnamed,no,4,0,clears 0x1C5380
-0x00135EF0,FUN_00135ef0,456,game,ui,unnamed,no,2,4,(provisional) cursor on tile a1: looks up the building record and triggers its event (mm_Event_Trigger)
-0x001360C0,FUN_001360c0,1272,game,ui,unnamed,yes,1,9,"(provisional) building info text (""%s %s""), values and gauges for the tile under the cursor"
-0x001365C0,FUN_001365c0,420,game,ui,unnamed,yes,1,9,(provisional) moves the cursor with the pad and keeps it on the map
-0x00136770,FUN_00136770,1292,game,ui,unnamed,yes,1,16,"(provisional) cursor mode per frame: move, select, info, sounds"
-0x00136C80,FUN_00136c80,44,game,ui,unnamed,no,1,0,"target id a2, kind a1 and position a3 (+0x1A4.., +0x1B0..)"
-0x00136CB0,FUN_00136cb0,60,game,math,unnamed,no,1,0,projects a 3D point with the given matrices (VU0)
-0x00136CF0,FUN_00136cf0,536,game,ui,unnamed,no,1,3,(provisional) places the info window next to the projected cursor position
-0x00136F10,FUN_00136f10,276,game,ui,unnamed,no,1,6,"(provisional) cursor model, info window, text, optional fade"
-0x00137030,FUN_00137030,268,game,ui,unnamed,yes,1,4,"(provisional) deletes its models, frames and text box"
-0x00137140,FUN_00137140,1064,game,ui,unnamed,yes,1,7,(provisional) loads DATA\A3D\DESTRUCT.A3D and creates the frames and text box
-0x00137570,FUN_00137570,92,game,map,unnamed,no,1,1,(provisional) writes 0x7F00 + 0xA0 + 0xA0 bytes
-0x001375D0,FUN_001375d0,92,game,map,unnamed,no,1,1,(provisional) reads them back
-0x00137630,FUN_00137630,204,game,map,unnamed,no,1,0,"(provisional) adds a1 to list a2 (u16 items; start offsets at +0x7F00, counts at +0x7FA0)"
-0x00137700,FUN_00137700,92,game,map,unnamed,no,1,1,(provisional) mm_TileLists_Add for each entry of a zero-terminated pair list
-0x00137760,FUN_00137760,172,game,map,unnamed,no,1,0,(provisional) removes an item from a list
-0x00137810,FUN_00137810,32,game,map,unnamed,no,0,0,"start of list a1, count to *a2"
-0x00137830,FUN_00137830,152,game,map,unnamed,no,1,0,(provisional) empties all lists
-0x001378D0,FUN_001378d0,1448,game,event,unnamed,indirect,1,5,(provisional) prepares the event queue and the active list when a city starts
-0x00137EA0,FUN_00137ea0,164,game,event,unnamed,indirect,1,1,"writes the queue (0x200), the active list (0x224) and a1 (0xA4) plus each active event's data"
-0x00137F50,FUN_00137f50,164,game,event,unnamed,indirect,1,1,reads them back
-0x00138000,FUN_00138000,128,game,event,unnamed,indirect,2,0,calls handler slot +0x14 of the type of active event a1
-0x00138080,FUN_00138080,128,game,event,unnamed,indirect,0,0,calls handler slot +0x10 of the type of active event a2
-0x00138100,FUN_00138100,2544,game,event,unnamed,indirect,1,13,"per frame: starts queued events whose conditions hold, runs and finishes active ones"
-0x00138AF0,FUN_00138af0,1712,game,event,unnamed,indirect,4,9,(provisional) checks an event type's start conditions against the city
-0x001391B0,FUN_001391b0,504,game,event,unnamed,indirect,1,3,(provisional) starts event a2 if its conditions hold
-0x001393B0,FUN_001393b0,708,game,event,unnamed,yes,1,2,(provisional) called by 0x180190
-0x00139680,FUN_00139680,128,game,event,unnamed,no,0,3,(provisional) clears an event list and its entries
-0x00139700,FUN_00139700,460,game,event,unnamed,indirect,1,4,(provisional) called by the script code (0x17CE30)
-0x001398D0,FUN_001398d0,296,game,event,unnamed,yes,1,4,"(provisional) text for event slot a1 (strings, 0x1C5990)"
-0x00139A00,FUN_00139a00,56,game,event,unnamed,no,2,0,"active entries (0x20 bytes each, up to 5) in the list"
-0x00139A40,FUN_00139a40,264,game,event,unnamed,no,2,3,(provisional) frees the tiles an event used
-0x00139B50,FUN_00139b50,356,game,event,unnamed,indirect,17,4,"ends active event a2: releases its tiles, calls its handler, removes it (called by the event handlers)"
-0x00139CC0,FUN_00139cc0,272,game,event,unnamed,indirect,1,4,(provisional) ends active event a2 without its normal finish
-0x00139DD0,FUN_00139dd0,820,game,event,unnamed,indirect,4,5,(provisional) triggers event a1 now or queues it
-0x0013A110,FUN_0013a110,204,game,event,unnamed,indirect,0,1,(provisional) calls a handler slot for active event a2
-0x0013A1E0,FUN_0013a1e0,104,game,event,unnamed,no,2,0,(provisional) whether id a1 is in the queue
-0x0013A250,FUN_0013a250,264,game,event,unnamed,yes,1,3,frees the event lists
-0x0013A360,FUN_0013a360,500,game,event,unnamed,yes,1,5,creates the event lists and handler objects
-0x0013A560,FUN_0013a560,516,game,event,unnamed,yes,1,10,loads DATA\BIN\EVENT.BIN (0x4C-byte type records)
-0x0013A770,FUN_0013a770,764,game,event,unnamed,no,1,1,(provisional) one of six similar list reorder routines (memmove)
-0x0013AA70,FUN_0013aa70,884,game,event,unnamed,no,1,1,(provisional)
-0x0013ADF0,FUN_0013adf0,788,game,event,unnamed,no,1,1,(provisional)
-0x0013B110,FUN_0013b110,844,game,event,unnamed,no,1,1,(provisional)
-0x0013B460,FUN_0013b460,804,game,event,unnamed,no,1,1,(provisional)
-0x0013B790,FUN_0013b790,788,game,event,unnamed,no,1,1,(provisional) used by mm_EventMgr_ctor
-0x0013BAB0,FUN_0013bab0,16,game,core,unnamed,no,1,0,two-byte element constructor (array init)
-0x0013BAC0,FUN_0013bac0,160,game,city,unnamed,no,1,0,(provisional) clears four words and a table at 0x1C59B0
-0x0013BB70,FUN_0013bb70,448,game,city,unnamed,no,6,0,"(provisional) entry for (a0, a1) in the table at 0x1F32F0; a status byte: bits 0-1, bits 2-3, level in bits 4-7"
-0x0013BD30,FUN_0013bd30,36,game,city,unnamed,no,1,1,(provisional) lookup then bits 0-1
-0x0013BD60,FUN_0013bd60,40,game,city,unnamed,no,1,1,(provisional) lookup then bits 2-3
-0x0013BD90,FUN_0013bd90,56,game,city,unnamed,no,1,1,(provisional) lookup then level > 13
-0x0013BDD0,FUN_0013bdd0,12,game,city,unnamed,no,2,0,bits 0-1 of *a0
-0x0013BDE0,FUN_0013bde0,16,game,city,unnamed,no,2,0,bits 2-3 of *a0
-0x0013BDF0,FUN_0013bdf0,36,game,city,unnamed,no,2,0,level (bits 4-7) > 13
-0x0013BE20,FUN_0013be20,168,game,city,unnamed,no,1,1,"(provisional) on the looked-up byte: level > 1 bumps bits 2-3 (up to 2), then updates bits 0-1"
-0x0013BED0,FUN_0013bed0,144,game,city,unnamed,no,1,0,(provisional) same on a byte pointer
-0x0013BF60,FUN_0013bf60,112,game,city,unnamed,no,1,2,"(provisional) when the looked-up level is above 11, calls 0x13CB40"
-0x0013BFD0,FUN_0013bfd0,52,game,city,unnamed,no,1,1,(provisional) same for a byte pointer
-0x0013C010,FUN_0013c010,64,unclassified,,unnamed,no,1,0,
-0x0013C050,FUN_0013c050,48,unclassified,,unnamed,no,1,0,
-0x0013C080,FUN_0013c080,108,unclassified,,unnamed,no,1,0,
-0x0013C0F0,FUN_0013c0f0,336,unclassified,,unnamed,no,1,0,
-0x0013C240,FUN_0013c240,732,unclassified,,unnamed,no,1,0,
-0x0013C520,FUN_0013c520,204,unclassified,,unnamed,no,1,0,
-0x0013C5F0,FUN_0013c5f0,352,unclassified,,unnamed,no,1,0,
-0x0013C770,FUN_0013c770,148,unclassified,,unnamed,no,1,1,
-0x0013C810,FUN_0013c810,148,unclassified,,unnamed,no,1,1,
-0x0013C8B0,FUN_0013c8b0,72,unclassified,,unnamed,no,20,0,
-0x0013C900,FUN_0013c900,80,unclassified,,unnamed,no,1,0,
-0x0013C9A0,FUN_0013c9a0,80,unclassified,,unnamed,no,3,0,
-0x0013C9F0,FUN_0013c9f0,116,unclassified,,unnamed,no,1,0,
-0x0013CA70,FUN_0013ca70,80,unclassified,,unnamed,no,13,0,
-0x0013CAC0,FUN_0013cac0,124,unclassified,,unnamed,no,7,0,
-0x0013CB40,FUN_0013cb40,648,unclassified,,unnamed,no,5,1,
-0x0013CDF0,FUN_0013cdf0,8,unclassified,,unnamed,no,2,0,
-0x0013CE00,FUN_0013ce00,60,unclassified,,unnamed,no,11,0,
-0x0013CE40,FUN_0013ce40,164,unclassified,,unnamed,no,1,0,
-0x0013CEF0,FUN_0013cef0,44,unclassified,,unnamed,no,1,0,
-0x0013CF20,FUN_0013cf20,480,unclassified,,unnamed,yes,5,3,
-0x0013D110,FUN_0013d110,364,unclassified,,unnamed,no,9,2,
-0x0013D280,FUN_0013d280,176,unclassified,,unnamed,no,3,0,
-0x0013D3D0,FUN_0013d3d0,196,unclassified,,unnamed,no,1,1,
-0x0013D4A0,FUN_0013d4a0,520,unclassified,,unnamed,yes,5,3,
-0x0013D6B0,FUN_0013d6b0,476,unclassified,,unnamed,yes,41,4,
-0x0013D890,FUN_0013d890,436,unclassified,,unnamed,no,2,0,
-0x0013DA50,FUN_0013da50,152,unclassified,,unnamed,yes,1,7,
-0x0013DAF0,fn_0013DAF0,80,unclassified,,unnamed,no,0,0,
-0x0013DB40,FUN_0013db40,1096,unclassified,,unnamed,no,1,0,
-0x0013DF90,FUN_0013df90,144,unclassified,,unnamed,no,1,1,
-0x0013E020,FUN_0013e020,388,unclassified,,unnamed,no,9,0,
-0x0013E1B0,FUN_0013e1b0,180,unclassified,,unnamed,no,1,2,
-0x0013E270,FUN_0013e270,84,unclassified,,unnamed,yes,1,2,
-0x0013E2D0,FUN_0013e2d0,172,unclassified,,unnamed,no,1,2,
-0x0013E380,FUN_0013e380,72,unclassified,,unnamed,no,5,3,
-0x0013E3D0,FUN_0013e3d0,132,unclassified,,unnamed,no,7,0,
-0x0013E460,FUN_0013e460,192,unclassified,,unnamed,yes,1,3,
-0x0013E520,FUN_0013e520,1164,unclassified,,unnamed,yes,1,2,
-0x0013E9B0,FUN_0013e9b0,48,unclassified,,unnamed,yes,1,1,
-0x0013E9E0,FUN_0013e9e0,56,unclassified,,unnamed,yes,1,1,
-0x0013EA20,FUN_0013ea20,808,unclassified,,unnamed,yes,1,2,
-0x0013ED50,FUN_0013ed50,148,unclassified,,unnamed,no,1,2,
-0x0013EDF0,FUN_0013edf0,148,unclassified,,unnamed,no,1,2,
-0x0013EE90,FUN_0013ee90,780,unclassified,,unnamed,no,1,3,
-0x0013F1A0,FUN_0013f1a0,108,unclassified,,unnamed,no,1,1,
-0x0013F210,FUN_0013f210,196,unclassified,,unnamed,no,2,1,
-0x0013F2E0,FUN_0013f2e0,28,unclassified,,unnamed,no,1,1,
-0x0013F300,FUN_0013f300,196,unclassified,,unnamed,no,1,1,
-0x0013F3D0,FUN_0013f3d0,496,unclassified,,unnamed,no,0,5,
-0x0013F5D0,FUN_0013f5d0,264,unclassified,,unnamed,indirect,1,0,
-0x0013F6E0,FUN_0013f6e0,376,unclassified,,unnamed,indirect,7,7,
-0x0013F860,FUN_0013f860,40,unclassified,,unnamed,no,4,1,
-0x0013F890,FUN_0013f890,444,unclassified,,unnamed,no,1,0,
-0x0013FA50,FUN_0013fa50,796,unclassified,,unnamed,no,1,2,
-0x0013FD80,FUN_0013fd80,1800,unclassified,,unnamed,no,1,2,
-0x00140490,FUN_00140490,1732,unclassified,,unnamed,no,1,10,
-0x00140B60,FUN_00140b60,1180,unclassified,,unnamed,no,1,7,
-0x00141010,FUN_00141010,96,unclassified,,unnamed,yes,1,2,
-0x00141070,FUN_00141070,52,unclassified,,unnamed,yes,1,1,
-0x001410B0,FUN_001410b0,92,unclassified,,unnamed,no,1,0,
-0x00141110,FUN_00141110,92,unclassified,,unnamed,no,1,0,
-0x00141170,FUN_00141170,92,unclassified,,unnamed,no,1,0,
-0x001411D0,FUN_001411d0,92,unclassified,,unnamed,no,6,0,
-0x00141230,FUN_00141230,56,unclassified,,unnamed,no,12,0,
-0x00141270,FUN_00141270,100,unclassified,,unnamed,no,2,0,
-0x001412E0,FUN_001412e0,80,unclassified,,unnamed,no,12,0,
-0x00141330,FUN_00141330,76,unclassified,,unnamed,no,1,1,
-0x00141380,FUN_00141380,244,unclassified,,unnamed,no,4,1,
-0x00141480,FUN_00141480,144,unclassified,,unnamed,no,1,0,
-0x00141510,FUN_00141510,80,unclassified,,unnamed,no,1,0,
-0x00141560,FUN_00141560,28,unclassified,,unnamed,no,13,0,
-0x00141580,FUN_00141580,92,unclassified,,unnamed,no,11,0,
-0x001415E0,FUN_001415e0,676,unclassified,,unnamed,no,9,3,
-0x00141890,FUN_00141890,60,unclassified,,unnamed,no,3,0,
-0x001418D0,FUN_001418d0,1536,unclassified,,unnamed,no,5,0,
-0x00141ED0,FUN_00141ed0,136,unclassified,,unnamed,no,5,1,
-0x00141F60,FUN_00141f60,1304,unclassified,,unnamed,no,2,4,
-0x001424A0,FUN_001424a0,108,unclassified,,unnamed,yes,1,3,
-0x00142510,FUN_00142510,84,unclassified,,unnamed,yes,1,3,
-0x00142590,FUN_00142590,496,unclassified,,unnamed,no,1,4,
-0x00142790,FUN_00142790,148,unclassified,,unnamed,no,24,0,
-0x00142830,FUN_00142830,216,unclassified,,unnamed,no,15,0,
-0x00142910,FUN_00142910,132,unclassified,,unnamed,no,1,0,
-0x001429A0,FUN_001429a0,200,unclassified,,unnamed,no,1,0,
-0x00142A70,FUN_00142a70,68,unclassified,,unnamed,no,1,0,
-0x00142AC0,FUN_00142ac0,64,unclassified,,unnamed,no,24,0,
-0x00142B00,FUN_00142b00,96,unclassified,,unnamed,no,2,0,
-0x00142B60,FUN_00142b60,68,unclassified,,unnamed,no,3,0,
-0x00142BB0,FUN_00142bb0,204,unclassified,,unnamed,no,7,1,
-0x00142C90,FUN_00142c90,760,unclassified,,unnamed,no,1,5,
-0x00142F90,FUN_00142f90,1004,unclassified,,unnamed,yes,1,5,
-0x00143380,FUN_00143380,408,unclassified,,unnamed,indirect,0,3,
-0x00143520,FUN_00143520,132,unclassified,,unnamed,yes,1,3,
-0x001435B0,FUN_001435b0,124,unclassified,,unnamed,yes,1,3,
-0x00143690,FUN_00143690,192,unclassified,,unnamed,no,4,1,
-0x00143750,FUN_00143750,52,unclassified,,unnamed,no,1,1,
-0x00143790,FUN_00143790,56,unclassified,,unnamed,no,1,0,
-0x001437D0,FUN_001437d0,500,unclassified,,unnamed,indirect,1,1,
-0x001439D0,FUN_001439d0,1048,unclassified,,unnamed,indirect,1,3,
-0x00143DF0,FUN_00143df0,1144,unclassified,,unnamed,indirect,1,3,
-0x00144270,FUN_00144270,364,unclassified,,unnamed,no,2,2,
-0x001443E0,FUN_001443e0,92,unclassified,,unnamed,no,2,0,
-0x00144440,FUN_00144440,128,unclassified,,unnamed,no,10,0,
-0x001444C0,FUN_001444c0,164,unclassified,,unnamed,no,2,0,
-0x00144570,FUN_00144570,164,unclassified,,unnamed,no,2,0,
-0x00144620,FUN_00144620,8,unclassified,,unnamed,no,18,0,
-0x00144630,FUN_00144630,48,unclassified,,unnamed,no,20,0,
+0x0012AE90,mm_Save_WriteBlock16C,20,game,save,named,no,1,1,"(provisional) 0x15BA70(a1, a0, 0x16C)"
+0x0012AEB0,mm_Save_ReadBlock16C,20,game,save,named,no,1,1,"(provisional) 0x15BA90(a1, a0, 0x16C)"
+0x0012AED0,mm_Bag_RemoveSlot,236,game,bag,named,no,4,0,removes item slot a1 (16 bytes each from +4) and shifts the rest down; capacity per bag type from 0x1B5B08
+0x0012AFC0,mm_Player_AddMusicTrack,180,game,bag,named,no,1,1,"adds the track id of goods item (a1, a2) to the 10-entry list at +0x144 if missing and registers it with mm_Bgm_SetTrackSlot"
+0x0012B080,mm_Bag_AddItem,136,game,bag,named,no,2,0,"puts goods item (group a1, index a2) with count and flags into the first empty slot"
+0x0012B110,mm_Bag_FindItem,148,game,bag,named,no,0,0,slot holding the item whose id is a1
+0x0012B1B0,mm_BagMenu_UpdateItemText,380,game,bag,named,no,1,1,"item name and the action text for the selected slot: ""Empty bag"", ""Eat"", ""Drink"", ""New clothes"", ""Set up"""
+0x0012B330,mm_BagMenu_FinishUse,124,game,bag,named,yes,1,2,"after using an item: count - 1 when a1, removes the slot when empty, refreshes the list"
+0x0012B3B0,mm_BagMenu_GetSetupKind,180,game,bag,named,no,1,0,for the item being used: kind 3/2/1 for goods categories 0x1C/0x1B/0x1A (placeable items)
+0x0012B470,mm_BagMenu_UseSelected,420,game,bag,named,yes,1,5,"uses the selected item by goods category (placing, eating, ...), with sounds"
+0x0012B620,mm_BagMenu_RefreshList,312,game,bag,named,yes,3,6,"rebuilds the item list text (""name * count"")"
+0x0012B760,mm_BagMenu_Draw,472,game,bag,named,indirect,1,7,"draws the bag window model, its highlight and the four text boxes"
+0x0012B940,mm_BagMenu_Update,2516,game,bag,named,yes,1,29,"the bag screen: creates the windows, handles cursor, use/discard/keep prompts (""Set up"", ""Close"", ""Discard"", ""Keep it"")"
+0x0012C320,mm_Bag_Clear,112,game,bag,named,no,1,0,empties the 10 item slots and sets the 10 track ids to 0xFFFF
+0x0012C390,mm_Bag_ctor,248,game,bag,named,no,1,0,empty bag plus its window data (0x1F3B24 ...)
+0x0012C490,mm_Bag_CreateGlobal,56,game,bag,named,yes,1,2,0x1BDA18 = new bag (0x1AC bytes)
+0x0012C4D0,mm_Instance_DrawSwayingIfRoom,60,game,gfx,named,no,6,1,mm_Instance_DrawSwaying when the model's nodes still fit in the 1800-instance budget
+0x0012C510,mm_InstanceBuf_Init,400,game,gfx,named,yes,1,1,"allocates the two instance buffers and pre-fills each slot's DMA/VIF header (CNT 5, STCYCL, UNPACK)"
+0x0012C6A0,mm_Instance_DrawMesh,236,game,gfx,named,no,15,1,writes matrix a1/a2 and colour into the next instance slot and queues it with the mesh packet
+0x0012C790,mm_Instance_DrawNode,240,game,gfx,named,no,1,1,instance of node a2 of model a0 with colour a1
+0x0012C880,mm_Instance_DrawModel,324,game,gfx,named,no,6,2,"updates the model's node matrices and adds an instance per node with a mesh, if the budget allows"
+0x0012C9D0,mm_InstanceModel_ctor,68,game,gfx,named,yes,2,2,model constructor; the first one allocates the instance buffers
+0x0012CA20,mm_CityCamera_Save,76,game,camera,named,no,1,1,writes +0x530 (4 bytes) and +0x130 (0x1D4 bytes) with 0x15BA70
+0x0012CA70,mm_CityCamera_Load,76,game,camera,named,no,1,1,reads the same two blocks with 0x15BA90
+0x0012CAC0,mm_CityCamera_GetZoomLevel,192,game,camera,named,no,2,3,"height of the eye above the terrain (0x1415E0) as a zoom level: 0 above -1.15, 1 above -7.1, ..."
+0x0012CB80,mm_CityCamera_Update,2688,game,camera,named,no,1,8,"pad-driven city camera: move, rotate, zoom, keeps the eye above the terrain, updates fog, projection and matrices"
+0x0012D600,mm_CityCamera_DeletingDtor,92,game,camera,named,yes,1,2,"camera destructor, then delete when the flag is > 0"
+0x0012D660,mm_CityCamera_ctor,80,game,camera,named,yes,1,1,"camera constructor (0x161250) with eye (0, -29, 1.6), zoom level 1"
+0x0012D6B0,mm_Instance_DrawSwaying2,824,game,gfx,named,no,2,2,"(provisional) second sine-wave instance variant, used by 0x133E80/0x1345E0"
+0x0012D9F0,mm_Instance_DrawModelLit,852,game,gfx,named,no,1,1,(provisional) instances for all nodes of a model with per-node colours
+0x0012DD50,mm_Instance_DrawNodeLimited,280,game,gfx,named,no,1,1,"like mm_Instance_DrawNode, also capped by a second counter (gp)"
+0x0012DE70,mm_Instance_DrawModelEx,940,game,gfx,named,no,4,2,(provisional) instances for a model with extra transform parameters
+0x0012E220,mm_InstanceModel_LoadAsync,120,game,gfx,named,yes,1,1,mm_A3DObject_LoadAsync; when done (and a2 == 0) stores the frame count (+0x60 = data +4 / 13)
+0x0012E2A0,mm_InstanceModel_ctor2,40,game,gfx,named,yes,1,1,mm_InstanceModel_ctor wrapper
+0x0012E2D0,mm_Perf_AdaptDrawRange,152,game,gfx,named,no,1,1,"(provisional) 0x1BD980 tracks 0x1BD9B8: shrinks when it is above 95, else grows by 1; clamped to 0xFF..0x3A7"
+0x0012E370,mm_Unk12E370_TileScan,1092,game,map,named,no,1,3,(provisional) scans map tiles along a direction for a2/a3 (returns a tile value)
+0x0012E7D0,mm_Unk12E7D0_TileVisibility,1588,game,map,named,no,2,7,(provisional) walks the map tiles around a position using mm_Unk12E370_TileScan and the tile objects
+0x0012EE20,mm_Unk12EE20_TileTest,176,game,map,named,no,2,0,"(provisional) VU0 test for tile (a1, a2)"
+0x0012EED0,mm_CharType_Slot18,8,game,char,named,no,0,0,base vtable slot +0x18: empty
+0x0012EEE0,mm_CharType_Draw2,8,game,char,named,no,0,0,base slot +0x14: empty
+0x0012EEF0,mm_CharType_Draw,8,game,char,named,no,0,0,base slot +0x10: empty
+0x0012EF00,mm_CharType_Update,8,game,char,named,no,0,0,base slot +0xC: returns 0
+0x0012EF10,mm_CharType_dtor,76,game,char,named,yes,2,1,base vtable 0x1BCE70; delete when the flag is > 0
+0x0012EF60,mm_CharType_ctor,180,game,char,named,no,3,0,"base vtable 0x1BCE70; four model parts from the table 0x1F3B90 by record bytes 8/9/10/14, sizes from bytes 11-13, ids from bytes 2/4/0x14"
+0x0012F020,mm_Char2_ProbeTilesA,3808,game,char,named,no,1,4,"(provisional, was mm_Path_Search) tests the 8 neighbour tiles around a position for class-2 movement mode A"
+0x0012FF00,mm_Char_CheckNeighbourTile,440,game,char,named,no,2,2,"(provisional, was mm_Path_CheckNeighbour) neighbour tile test shared by both probe functions (tables 0x1AEFF0/0x1AF020)"
+0x001300C0,mm_Char2_ProbeTilesB,3808,game,char,named,no,1,4,(provisional) same as mode A for movement mode B
+0x00130FA0,mm_Char2_MoveA,2300,game,char,named,no,1,8,(provisional) class-2 movement mode A: rotates the heading (sceVu0RotMatrixY) and probes ahead with mm_Char2_ProbeTilesA
+0x001318A0,mm_Char2_MoveB,2280,game,char,named,no,1,8,(provisional) class-2 movement mode B with mm_Char2_ProbeTilesB
+0x00132190,mm_Char2_Draw,612,game,char,named,no,0,4,"class 2 slot +0x10: instance of the character on the terrain (height from 0x1415E0), within the draw range (0x1BD980)"
+0x00132400,mm_Char2_Update,1048,game,char,named,yes,0,10,class 2 slot +0xC: moves the character (mode A or B) and updates its tile
+0x00132820,mm_Char2_dtor,96,game,char,named,yes,0,2,"vtable 0x1BCE90, then the base destructor"
+0x00132880,mm_Char2_ctor,52,game,char,named,no,1,1,"base constructor, vtable 0x1BCE90"
+0x001328C0,mm_CharType_LoadAll,416,game,char,named,yes,1,11,"loads DATA\BIN\CHARTYPE.BIN and creates one class object per 0x18-byte record (class 0 base, 1 person, 2 class 2) in the table at gp 0x1BDA3C"
+0x00132A70,mm_Person_CheckBuilding,244,game,char,named,yes,1,2,"(provisional) person vs. its target building record: flags 0x20/0x200/4, the building's state byte +0x27"
+0x00132B70,mm_Person_TickCounters,300,game,char,named,no,1,4,"(provisional) per-tick person counters (+0x25, +0x2F) and the spawn timer (gp)"
+0x00132CA0,mm_Person_ProbeTile,248,game,char,named,no,1,2,(provisional) tests the tile a person would step onto
+0x00132DA0,mm_Person_Walk,3528,game,char,named,no,1,10,(provisional) 3.5 KB walking movement for people over map tiles
+0x00133B70,mm_Person_UpdatePose,780,game,char,named,no,1,5,(provisional) person's matrix from heading and terrain height
+0x00133E80,mm_Person_Draw2,700,game,char,named,yes,0,9,class 1 slot +0x14: (provisional) extra drawing (shadow/marker) for a person
+0x00134140,mm_CharType_ResetLookup,92,game,char,named,no,1,0,(provisional) resets the two 128-entry tables at 0x1C5110/0x1C5310
+0x001341A0,mm_CharType_BuildLookup,184,game,char,named,no,1,0,(provisional) fills the tables at 0x1C5110/0x1C5310 after loading CHARTYPE.BIN
+0x00134260,mm_Person_BuildPose,896,game,char,named,no,1,2,"(provisional) walking pose matrices for a person (copies of the base matrix 0x1B2550, animation table 0x1C5180)"
+0x001345E0,mm_Person_Draw,1088,game,char,named,yes,0,11,"class 1 slot +0x10: person instances on the terrain, within the draw range"
+0x00134A20,mm_Person_Update,3032,game,char,named,yes,0,20,"class 1 slot +0xC: a person's behaviour per tick: target building, walking, waiting, random choices"
+0x00135600,mm_Person_dtor,96,game,char,named,yes,0,2,"vtable 0x1BCEB0, then the base destructor"
+0x00135660,mm_Person_ctor,136,game,char,named,no,1,1,"base constructor, vtable 0x1BCEB0, walking speed +0x24 = record u16 +6 / 1e6"
+0x001356F0,mm_Event_ClearTileFlags,120,game,event,named,no,2,0,(provisional) walks event a0's tile list (0x1BDA50/0x1BDA60) and clears a flag on each tile
+0x00135770,mm_Event_SetTileFlags,120,game,event,named,no,5,0,"(provisional) same list, sets the flag"
+0x001357F0,mm_Unk1357F0,100,game,event,named,no,3,0,(provisional) uses 0x1B26C0 and the globals 0x1BDA64/0x1BDA70
+0x00135860,mm_Claim_PickVariant,84,game,claim,named,no,1,0,entry variant by bit 0x8000 of a0 from the current speaker table (gp)
+0x001358C0,mm_Claim_GetLine,124,game,claim,named,no,3,0,"line a1 of claim a0 (8-byte items), variant by bit 0x8000"
+0x00135940,mm_Claim_GetSectionC,32,game,claim,named,no,9,0,CLAIM.BIN entry a0 via the offset table at file +0xC
+0x00135960,mm_Claim_GetSectionD,40,game,claim,named,no,5,0,CLAIM.BIN entry (a0 & 0x7FFF) via the offset table at file +0x10
+0x00135990,mm_Claim_GetSectionB,32,game,claim,named,no,15,0,CLAIM.BIN entry a0 via the offset table at file +8
+0x001359B0,mm_Claim_Load,184,game,claim,named,yes,1,3,"loads DATA\BIN\CLAIM.BIN and resolves its section offsets (+8, +0xC, +0x10, +0x14, ...)"
+0x00135A70,mm_Stage_Load,328,game,stage,named,yes,1,7,"reads this stage's record from DATA\BIN\STAGE.BIN into 0x1C5380 (target population 0x1C554C, theme 0x1C5550, theme share 0x1C5554)"
+0x00135BC0,mm_Stage_FormatGoalText,308,game,stage,named,yes,1,3,"""%d people and %d%% must be the theme. Build a ..."" with the theme text (high-class, business, leisure, fishing, farming, industrial)"
+0x00135D00,mm_Stage_FormatTargetText,160,game,stage,named,yes,1,2,"""Target\nBuild %s with more than %d people.\n%d%% of the buildings must be %s."""
+0x00135DA0,mm_Stage_Save,24,game,stage,named,no,1,1,writes the stage state (0x284 bytes at 0x1C5380)
+0x00135DC0,mm_Stage_LoadState,24,game,stage,named,no,1,1,reads the stage state back
+0x00135DE0,mm_Stage_Reset,168,game,stage,named,no,2,0,"defaults: no stage, 3000 and 2500, cleared tables"
+0x00135E90,mm_StageObj_DeletingDtor,68,game,stage,named,yes,4,1,delete when the flag is > 0
+0x00135EE0,mm_StageObj_ctor,16,game,stage,named,no,4,0,clears 0x1C5380
+0x00135EF0,mm_CityCursor_SelectTile,456,game,ui,named,no,2,4,(provisional) cursor on tile a1: looks up the building record and triggers its event (mm_Event_Trigger)
+0x001360C0,mm_CityCursor_UpdateInfo,1272,game,ui,named,yes,1,9,"(provisional) building info text (""%s %s""), values and gauges for the tile under the cursor"
+0x001365C0,mm_CityCursor_Move,420,game,ui,named,yes,1,9,(provisional) moves the cursor with the pad and keeps it on the map
+0x00136770,mm_CityCursor_Update,1292,game,ui,named,yes,1,16,"(provisional) cursor mode per frame: move, select, info, sounds"
+0x00136C80,mm_CityCursor_SetTarget,44,game,ui,named,no,1,0,"target id a2, kind a1 and position a3 (+0x1A4.., +0x1B0..)"
+0x00136CB0,mm_Math_ProjectPoint,60,game,math,named,no,1,0,projects a 3D point with the given matrices (VU0)
+0x00136CF0,mm_CityCursor_LayoutInfo,536,game,ui,named,no,1,3,(provisional) places the info window next to the projected cursor position
+0x00136F10,mm_CityCursor_Draw,276,game,ui,named,no,1,6,"(provisional) cursor model, info window, text, optional fade"
+0x00137030,mm_CityCursor_dtor,268,game,ui,named,yes,1,4,"(provisional) deletes its models, frames and text box"
+0x00137140,mm_CityCursor_ctor,1064,game,ui,named,yes,1,7,(provisional) loads DATA\A3D\DESTRUCT.A3D and creates the frames and text box
+0x00137570,mm_TileLists_Save,92,game,map,named,no,1,1,(provisional) writes 0x7F00 + 0xA0 + 0xA0 bytes
+0x001375D0,mm_TileLists_Load,92,game,map,named,no,1,1,(provisional) reads them back
+0x00137630,mm_TileLists_Add,204,game,map,named,no,1,0,"(provisional) adds a1 to list a2 (u16 items; start offsets at +0x7F00, counts at +0x7FA0)"
+0x00137700,mm_TileLists_AddAll,92,game,map,named,no,1,1,(provisional) mm_TileLists_Add for each entry of a zero-terminated pair list
+0x00137760,mm_TileLists_Remove,172,game,map,named,no,1,0,(provisional) removes an item from a list
+0x00137810,mm_TileLists_Get,32,game,map,named,no,0,0,"start of list a1, count to *a2"
+0x00137830,mm_TileLists_Clear,152,game,map,named,no,1,0,(provisional) empties all lists
+0x001378D0,mm_Event_InitForCity,1448,game,event,named,indirect,1,5,(provisional) prepares the event queue and the active list when a city starts
+0x00137EA0,mm_Event_SaveState,164,game,event,named,indirect,1,1,"writes the queue (0x200), the active list (0x224) and a1 (0xA4) plus each active event's data"
+0x00137F50,mm_Event_LoadState,164,game,event,named,indirect,1,1,reads them back
+0x00138000,mm_Event_CallSlot14,128,game,event,named,indirect,2,0,calls handler slot +0x14 of the type of active event a1
+0x00138080,mm_Event_CallSlot10,128,game,event,named,indirect,0,0,calls handler slot +0x10 of the type of active event a2
+0x00138100,mm_Event_Update,2544,game,event,named,indirect,1,13,"per frame: starts queued events whose conditions hold, runs and finishes active ones"
+0x00138AF0,mm_Event_CheckCondition,1712,game,event,named,indirect,4,9,(provisional) checks an event type's start conditions against the city
+0x001391B0,mm_Event_TryStart,504,game,event,named,indirect,1,3,(provisional) starts event a2 if its conditions hold
+0x001393B0,mm_Event_Unk1393B0,708,game,event,named,yes,1,2,(provisional) called by 0x180190
+0x00139680,mm_Event_ClearList,128,game,event,named,no,0,3,(provisional) clears an event list and its entries
+0x00139700,mm_Event_StartFromScript,460,game,event,named,indirect,1,4,(provisional) called by the script code (0x17CE30)
+0x001398D0,mm_Event_FormatText,296,game,event,named,yes,1,4,"(provisional) text for event slot a1 (strings, 0x1C5990)"
+0x00139A00,mm_Event_CountActive,56,game,event,named,no,2,0,"active entries (0x20 bytes each, up to 5) in the list"
+0x00139A40,mm_Event_ReleaseTiles,264,game,event,named,no,2,3,(provisional) frees the tiles an event used
+0x00139B50,mm_Event_Finish,356,game,event,named,indirect,17,4,"ends active event a2: releases its tiles, calls its handler, removes it (called by the event handlers)"
+0x00139CC0,mm_Event_Abort,272,game,event,named,indirect,1,4,(provisional) ends active event a2 without its normal finish
+0x00139DD0,mm_Event_Trigger,820,game,event,named,indirect,4,5,(provisional) triggers event a1 now or queues it
+0x0013A110,mm_Event_Unk13A110,204,game,event,named,indirect,0,1,(provisional) calls a handler slot for active event a2
+0x0013A1E0,mm_Event_IsQueued,104,game,event,named,no,2,0,(provisional) whether id a1 is in the queue
+0x0013A250,mm_EventMgr_dtor,264,game,event,named,yes,1,3,frees the event lists
+0x0013A360,mm_EventMgr_ctor,500,game,event,named,yes,1,5,creates the event lists and handler objects
+0x0013A560,mm_Event_LoadTypes,516,game,event,named,yes,1,10,loads DATA\BIN\EVENT.BIN (0x4C-byte type records)
+0x0013A770,mm_Event_ListOpA,764,game,event,named,no,1,1,(provisional) one of six similar list reorder routines (memmove)
+0x0013AA70,mm_Event_ListOpB,884,game,event,named,no,1,1,(provisional)
+0x0013ADF0,mm_Event_ListOpC,788,game,event,named,no,1,1,(provisional)
+0x0013B110,mm_Event_ListOpD,844,game,event,named,no,1,1,(provisional)
+0x0013B460,mm_Event_ListOpE,804,game,event,named,no,1,1,(provisional)
+0x0013B790,mm_Event_ListOpF,788,game,event,named,no,1,1,(provisional) used by mm_EventMgr_ctor
+0x0013BAB0,mm_Pair_ctor,16,game,core,named,no,1,0,two-byte element constructor (array init)
+0x0013BAC0,mm_Unk13BAC0_Init,160,game,city,named,no,1,0,(provisional) clears four words and a table at 0x1C59B0
+0x0013BB70,mm_Unk13BB70_Lookup,448,game,city,named,no,6,0,"(provisional) entry for (a0, a1) in the table at 0x1F32F0; a status byte: bits 0-1, bits 2-3, level in bits 4-7"
+0x0013BD30,mm_Unk13BB70_GetLow2,36,game,city,named,no,1,1,(provisional) lookup then bits 0-1
+0x0013BD60,mm_Unk13BB70_GetMid2,40,game,city,named,no,1,1,(provisional) lookup then bits 2-3
+0x0013BD90,mm_Unk13BB70_IsLevelAbove13,56,game,city,named,no,1,1,(provisional) lookup then level > 13
+0x0013BDD0,mm_StatusByte_Low2,12,game,city,named,no,2,0,bits 0-1 of *a0
+0x0013BDE0,mm_StatusByte_Mid2,16,game,city,named,no,2,0,bits 2-3 of *a0
+0x0013BDF0,mm_StatusByte_LevelAbove13,36,game,city,named,no,2,0,level (bits 4-7) > 13
+0x0013BE20,mm_Unk13BB70_Advance,168,game,city,named,no,1,1,"(provisional) on the looked-up byte: level > 1 bumps bits 2-3 (up to 2), then updates bits 0-1"
+0x0013BED0,mm_StatusByte_Advance,144,game,city,named,no,1,0,(provisional) same on a byte pointer
+0x0013BF60,mm_Unk13BB70_OnLevel12,112,game,city,named,no,1,2,"(provisional) when the looked-up level is above 11, calls 0x13CB40"
+0x0013BFD0,mm_StatusByte_OnLevel12,52,game,city,named,no,1,1,(provisional) same for a byte pointer
+0x0013C010,mm_StatusByte_IncHighLevel,64,unclassified,char,unnamed,no,1,0,(provisional) level 12..13 -> +1
+0x0013C050,mm_StatusByte_ClearMid2,48,unclassified,char,unnamed,no,1,0,clears bits 2-3 when set
+0x0013C080,mm_StatusByte_IncLevel,108,unclassified,char,unnamed,no,1,0,(provisional) level +1 below 12; above 1 clears bits 0-1
+0x0013C0F0,mm_Unk13C0F0_Table32F0,336,unclassified,family,unnamed,no,1,0,(provisional) pass over the 0x1F32F0 table (called by mm_MapPeople_Tick)
+0x0013C240,mm_Family_MonthlyPass,732,unclassified,family,unnamed,no,1,0,(provisional) pass over all member bytes (0x1C59B0) and bitset B
+0x0013C520,mm_Family_ResetForStage,204,unclassified,family,unnamed,no,1,0,clears bitsets A and C and the counters for a new stage
+0x0013C5F0,mm_Unk13C5F0_Hash,352,unclassified,family,unnamed,no,1,0,(provisional) value from a0 * 0x61 + 0x1B08 with the constant 0x121EAC0
+0x0013C770,mm_Family_SaveState,148,unclassified,family,unnamed,no,1,1,"writes the member bytes (60000), the three bitsets (0x4E4 each), 0x1F32F0 (0x400) and the counters (0xC)"
+0x0013C810,mm_Family_LoadState,148,unclassified,family,unnamed,no,1,1,reads them back
+0x0013C8B0,mm_Unk13C8B0_FindIndex,72,unclassified,family,unnamed,no,20,0,(provisional) index of the first entry above a0 in a sorted u16 table (gp)
+0x0013C900,mm_Family_IsFlagC,80,unclassified,family,unnamed,no,1,0,bit a0 of bitset C (0x1D4DF0)
+0x0013C9A0,mm_Family_IsFlagB,80,unclassified,family,unnamed,no,3,0,bit a0 of bitset B (0x1D4900)
+0x0013C9F0,mm_Family_SetFlagA,116,unclassified,family,unnamed,no,1,0,sets bit a0 of bitset A and updates the counters
+0x0013CA70,mm_Family_IsFlagA,80,unclassified,family,unnamed,no,13,0,bit a0 of bitset A (0x1D4410)
+0x0013CAC0,mm_Family_GetMemberGrade,124,unclassified,family,unnamed,no,7,0,"(provisional) grade from member byte (a0, a1), capped at 120"
+0x0013CB40,mm_Family_PickMember,648,unclassified,family,unnamed,no,5,1,(provisional) random member choice under conditions (twin of 0x13CDF0)
+0x0013CDF0,mm_Family_PickMember2,8,unclassified,family,unnamed,no,2,0,(provisional) variant of mm_Family_PickMember with one more argument
+0x0013CE00,mm_Family_GetMemberValue,60,unclassified,family,unnamed,no,11,0,"member byte (a0, a1) bits 0-6, capped at 120"
+0x0013CE40,mm_Family_SetFlagC,164,unclassified,family,unnamed,no,1,0,sets bit a0 of bitset C and updates the counters
+0x0013CEF0,mm_Family_ClearMemberFlag,44,unclassified,family,unnamed,no,1,0,"clears bit 7 of member byte (a0, a1)"
+0x0013CF20,mm_Family_MoveIn,480,unclassified,family,unnamed,yes,5,3,"(provisional) moves family a2 into the city (bitsets, messages 0x1550A0/0x155130)"
+0x0013D110,mm_Family_Retreat,364,unclassified,family,unnamed,no,9,2,"(provisional) family a0 leaves (bitsets, messages)"
+0x0013D280,mm_Family_TestMember,176,unclassified,family,unnamed,no,3,0,"(provisional) tests member byte (a0, a1) bit 7 and value ranges"
+0x0013D3D0,mm_Family_IsCached,196,unclassified,family,unnamed,no,1,1,whether family a0's record has finished loading into the cache
+0x0013D4A0,mm_Family_Prefetch,520,unclassified,family,unnamed,yes,5,3,starts an asynchronous load of family a0's record into the cache (LRU)
+0x0013D6B0,mm_Family_Get,476,unclassified,family,unnamed,yes,41,4,"family a0's record (0x1D4 bytes), loading it synchronously into the LRU cache if needed"
+0x0013D890,mm_Family_ResetState,436,unclassified,family,unnamed,no,2,0,"clears member bytes, bitsets, counters and the cache tables"
+0x0013DA50,mm_Family_Init,152,unclassified,family,unnamed,yes,1,7,"resets the family state, opens DATA\BIN\FAMILY.BIN and loads DATA\BIN\EACHSTR.BIN"
+0x0013DAF0,mm_StatusByte_ctorE0,80,unclassified,family,unnamed,no,0,0,sets byte 3 to level 14 with bits 0-3 clear
+0x0013DB40,mm_Minimap_BuildPacket,1096,unclassified,ui,unnamed,no,1,0,builds the minimap GS packet at +0x2000 (table 0x1AF180)
+0x0013DF90,mm_Minimap_SetView,144,unclassified,ui,unnamed,no,1,1,rotates the minimap by the camera (sceVu0RotMatrixZ) and offsets it by the position (scale 0.0105)
+0x0013E020,mm_Minimap_Plot,388,unclassified,ui,unnamed,no,9,0,marks tile a1 on the minimap with colour/size arguments
+0x0013E1B0,mm_Minimap_Draw,180,unclassified,ui,unnamed,no,1,2,draws the minimap models; marker colour blinks every 32 frames
+0x0013E270,mm_Minimap_DeletingDtor,84,unclassified,ui,unnamed,yes,1,2,"base destructor, then delete"
+0x0013E2D0,mm_Minimap_ctor,172,unclassified,ui,unnamed,no,1,2,"base constructor, models from 0x1F3B14/0x1F3B18, builds the packet"
+0x0013E380,mm_Goods_GetPrice,72,unclassified,goods,unnamed,no,5,3,price of goods item a0: byte +2 x 10^(byte +3)
+0x0013E3D0,mm_Goods_GetRecordOffset,132,unclassified,goods,unnamed,no,7,0,advances *a3 to the record of item a1/a2 in group a0
+0x0013E460,mm_Goods_Load,192,unclassified,goods,unnamed,yes,1,3,loads DATA\BIN\GOODS.BIN and resolves its section offsets (0x1BDA9C..0x1BDAB4)
+0x0013E520,mm_Map_RebuildAll,1164,unclassified,map,unnamed,yes,1,2,(provisional) rebuilds tile data from the building types and recomputes tile geometry
+0x0013E9B0,mm_MapVerts_Alloc,48,unclassified,map,unnamed,yes,1,1,(provisional) mallocs a 0x18000-byte buffer into *a0
+0x0013E9E0,mm_MapVerts_Free,56,unclassified,map,unnamed,yes,1,1,(provisional) frees *a0
+0x0013EA20,mm_MapVerts_Build,808,unclassified,map,unnamed,yes,1,2,(provisional) builds the 0x18000-byte buffer from tile data
+0x0013ED50,mm_Map_SaveState,148,unclassified,map,unnamed,no,1,2,"writes the tile data, objects (0x6F200), tile lists, people (0x46500) and counters"
+0x0013EDF0,mm_Map_LoadState,148,unclassified,map,unnamed,no,1,2,reads them back
+0x0013EE90,mm_TerrainGen_ScatterObjects,780,unclassified,map,unnamed,no,1,3,(provisional) random object placement during terrain generation
+0x0013F1A0,mm_Map_PlaceObjectKind,108,unclassified,map,unnamed,no,1,1,(provisional) places object kind a5 + 0x115 and stores a4 in its record
+0x0013F210,mm_Map_PlaceObjectArea,196,unclassified,map,unnamed,no,2,1,(provisional) places objects over an a3 x a3 area
+0x0013F2E0,mm_Map_PlaceObject4,28,unclassified,map,unnamed,no,1,1,(provisional) places object type 4 at even coordinates
+0x0013F300,mm_Map_PlaceObjectArea2,196,unclassified,map,unnamed,no,1,1,(provisional) second area placement variant
+0x0013F3D0,mm_CityMap_Slot0C,496,unclassified,map,unnamed,no,0,5,(provisional) city map vtable slot +0xC
+0x0013F5D0,mm_Map_ForEachTileInRect,264,unclassified,map,unnamed,indirect,1,0,calls a function for each tile of a rectangle
+0x0013F6E0,mm_Map_PlaceObject,376,unclassified,map,unnamed,indirect,7,7,"(provisional) places an object of type a2 at (a3, a4); returns its index or 0x3F80"
+0x0013F860,mm_Map_CanPlace,40,unclassified,map,unnamed,no,4,1,placement test without placing (mm_Map_CheckPlacement)
+0x0013F890,mm_TerrainGen_SampleSmooth,444,unclassified,map,unnamed,no,1,0,(provisional) smoothed height sample
+0x0013FA50,mm_TerrainGen_Smooth,796,unclassified,map,unnamed,no,1,2,(provisional) smoothing pass
+0x0013FD80,mm_TerrainGen_Hills,1800,unclassified,map,unnamed,no,1,2,"(provisional) random hills (mm_TerrainGen_ApplyBump x9, random x24)"
+0x00140490,mm_TerrainGen_River,1732,unclassified,map,unnamed,no,1,10,(provisional) river/coast shape with rotations and sine/cosine
+0x00140B60,mm_TerrainGen_Generate,1180,unclassified,map,unnamed,no,1,7,(provisional) generates a stage's terrain from its parameter bytes
+0x00141010,mm_CityMap_DeletingDtor,96,unclassified,map,unnamed,yes,1,2,"vtable 0x1BCED0, then the render-level destructor"
+0x00141070,mm_CityMap_ctor,52,unclassified,map,unnamed,yes,1,1,"render-level constructor, vtable 0x1BCED0"
+0x001410B0,mm_Map_TileFlag20,92,unclassified,map,unnamed,no,1,0,"tile (a1, a2) flag 0x20 (0 off the map)"
+0x00141110,mm_Map_TileFlag01,92,unclassified,map,unnamed,no,1,0,tile flag 0x01
+0x00141170,mm_Map_TileFlag08,92,unclassified,map,unnamed,no,1,0,tile flag 0x08
+0x001411D0,mm_Map_TileFlag10,92,unclassified,map,unnamed,no,6,0,tile flag 0x10 (checked by movement)
+0x00141230,mm_Map_TileIndexFlag10,56,unclassified,map,unnamed,no,12,0,flag 0x10 of tile index a1
+0x00141270,mm_Map_SetTileFlags,100,unclassified,map,unnamed,no,2,0,(provisional) rewrites tile flags 2 and 4 from a2
+0x001412E0,mm_Map_GetTileKind,80,unclassified,map,unnamed,no,12,0,"(provisional) 2 when tile flag 4 is set, ..."
+0x00141330,mm_Map_SetTileHeight,76,unclassified,map,unnamed,no,1,1,"tile a2's height word = a0, then updates its geometry"
+0x00141380,mm_Map_SetAreaHeight,244,unclassified,map,unnamed,no,4,1,(provisional) sets heights over an area and updates the geometry
+0x00141480,mm_Map_GetTileVertexClamped,144,unclassified,map,unnamed,no,1,0,(provisional) tile vertex data at clamped coordinates into a3
+0x00141510,mm_Map_GetTileVertex,80,unclassified,map,unnamed,no,1,0,tile a1's vertex data (+4..+0x10) into a2
+0x00141560,mm_Map_GetTileHeightWord,28,unclassified,map,unnamed,no,13,0,tile a1's height word (+0)
+0x00141580,mm_Map_GetHeightAt,92,unclassified,map,unnamed,no,11,0,"height word at clamped (a1, a2)"
+0x001415E0,mm_Map_SampleHeight,676,unclassified,map,unnamed,no,9,3,"terrain height at world (a0, a1), interpolated over the tile's triangles"
+0x00141890,mm_Math_TriangleHeight,60,unclassified,math,unnamed,no,3,0,(provisional) VU0 helper for mm_Map_SampleHeight
+0x001418D0,mm_Map_UpdateTileGeometry,1536,unclassified,map,unnamed,no,5,0,"recomputes tile (a1, a2)'s vertices and normals"
+0x00141ED0,mm_Map_UpdateAreaGeometry,136,unclassified,map,unnamed,no,5,1,mm_Map_UpdateTileGeometry over a rectangle
+0x00141F60,mm_TerrainGen_ApplyBump,1304,unclassified,map,unnamed,no,2,4,(provisional) raises/lowers a round area
+0x001424A0,mm_MapTiles_dtor,108,unclassified,map,unnamed,yes,1,3,"frees the tile array, base destructor"
+0x00142510,mm_MapTiles_ctor,84,unclassified,map,unnamed,yes,1,3,allocates 128x128 tiles of 0x18 bytes
+0x00142590,mm_Map_Unk142590,496,unclassified,map,unnamed,no,1,4,(provisional) used by the farewell party event
+0x00142790,mm_Map_FindPersonEntry,148,unclassified,map,unnamed,no,24,0,"(provisional) searches the people records for (a1, a2)"
+0x00142830,mm_Map_GetBuildingAt,216,unclassified,map,unnamed,no,15,0,(provisional) the building object on tile a2 for person a1 (people flag 0x800 skips)
+0x00142910,mm_Map_FindPersonOfFlaggedType,132,unclassified,map,unnamed,no,1,0,(provisional) first person whose char type has flag 1
+0x001429A0,mm_Map_Unk1429A0,200,unclassified,map,unnamed,no,1,0,(provisional) walks tile a2's object list
+0x00142A70,mm_People_RemoveChain,68,unclassified,map,unnamed,no,1,0,marks every person in the chain from *a1 removed (flag 0x800) and clears the head
+0x00142AC0,mm_People_Next,64,unclassified,map,unnamed,no,24,0,"*a1 = next person in its list (+0x10), unless it is 6000"
+0x00142B00,mm_People_ListContains,96,unclassified,map,unnamed,no,2,0,(provisional) whether the list from *a1 contains a2
+0x00142B60,mm_MapObj_AddPerson,68,unclassified,map,unnamed,no,3,0,pushes person a2 onto object a1's person list
+0x00142BB0,mm_Map_Unk142BB0,204,unclassified,map,unnamed,no,7,1,(provisional) object lookup on a tile
+0x00142C90,mm_MapPeople_Unk142C90,760,unclassified,map,unnamed,no,1,5,(provisional)
+0x00142F90,mm_Family_AssignHome,1004,unclassified,family,unnamed,yes,1,5,(provisional) family records and flags when a family is assigned a building
+0x00143380,mm_MapPeople_Tick,408,unclassified,map,unnamed,indirect,0,3,"(provisional) vtable slot +8 at the people level: random people updates, then the object level"
+0x00143520,mm_MapPeople_dtor,132,unclassified,map,unnamed,yes,1,3,"vtable 0x1BCEE0, frees the people array, object-level destructor"
+0x001435B0,mm_MapPeople_ctor,124,unclassified,map,unnamed,yes,1,3,"object-level constructor, vtable 0x1BCEE0, 6000 people of 0x30 bytes"
+0x00143690,mm_MapObj_GetHeight,192,unclassified,map,unnamed,no,4,1,(provisional) height for object a1 from its tiles
+0x00143750,mm_MapObj_PushHistory,52,unclassified,map,unnamed,no,1,1,"shifts the 6-byte history at +0x28 by one, new entry 0"
+0x00143790,mm_MapObj_SumHistory,56,unclassified,map,unnamed,no,1,0,sum of the 6 history bytes at +0x28
+0x001437D0,mm_Placement_CheckA,500,unclassified,map,unnamed,indirect,1,1,(provisional) placement rule check (table 0x1B2590)
+0x001439D0,mm_Placement_CheckB,1048,unclassified,map,unnamed,indirect,1,3,(provisional)
+0x00143DF0,mm_Placement_CheckC,1144,unclassified,map,unnamed,indirect,1,3,(provisional)
+0x00144270,mm_Placement_CheckD,364,unclassified,map,unnamed,no,2,2,(provisional)
+0x001443E0,mm_Map_CountObjectsBefore,92,unclassified,map,unnamed,no,2,0,"number of objects on tile (a1, a2) before object a3"
+0x00144440,mm_BuildingType_Find,128,unclassified,map,unnamed,no,10,0,(provisional) index of a building type matching a1
+0x001444C0,mm_Map_RectOpA,164,unclassified,map,unnamed,no,2,0,(provisional) loop over a rectangle of tiles
+0x00144570,mm_Map_RectOpB,164,unclassified,map,unnamed,no,2,0,(provisional) loop over a rectangle of tiles
+0x00144620,mm_Map_GetTileList,8,unclassified,map,unnamed,no,18,0,start and count of tile list a1 (map +0xC)
+0x00144630,mm_Map_GetTileFirstObject,48,unclassified,map,unnamed,no,20,0,object record of tile a1's first object
 0x00144660,mm_Map_GetTileObject,96,game,map,named,no,31,0,128x128 grid of 0x18-byte tiles at map+4; tile +0x14 (u16) indexes the 0x1C-byte record table at map+8; coordinates outside 0..127 return record 0
 0x001446C0,mm_Map_GetRecord,24,game,map,named,no,126,0,map+8 + index*0x1C (record table shared with mm_Map_GetTileObject)
-0x001446E0,FUN_001446e0,132,unclassified,,unnamed,no,1,0,
-0x00144770,FUN_00144770,76,unclassified,,unnamed,no,1,0,
-0x001447C0,FUN_001447c0,908,unclassified,,unnamed,no,4,2,
-0x00144B60,FUN_00144b60,328,unclassified,,unnamed,no,1,1,
-0x00144CB0,FUN_00144cb0,760,unclassified,,unnamed,indirect,2,5,
-0x00144FB0,FUN_00144fb0,504,unclassified,,unnamed,no,1,0,
-0x001451B0,FUN_001451b0,244,unclassified,,unnamed,no,1,0,
-0x001452B0,FUN_001452b0,300,unclassified,,unnamed,no,2,2,
-0x001453E0,FUN_001453e0,472,unclassified,,unnamed,indirect,3,2,
-0x001455C0,FUN_001455c0,108,unclassified,,unnamed,no,1,0,
-0x00145630,fn_00145630,8,unclassified,,unnamed,no,0,0,
-0x00145640,FUN_00145640,608,unclassified,,unnamed,indirect,1,4,
-0x001458A0,FUN_001458a0,156,unclassified,,unnamed,yes,1,3,
-0x00145940,FUN_00145940,680,unclassified,,unnamed,yes,1,8,
-0x00145C00,FUN_00145c00,8,unclassified,,unnamed,no,3,1,
-0x00145C10,FUN_00145c10,204,unclassified,,unnamed,no,1,0,
-0x00145CE0,FUN_00145ce0,2592,unclassified,,unnamed,no,1,0,
-0x00146700,FUN_00146700,1064,unclassified,,unnamed,indirect,1,3,
-0x00146B30,FUN_00146b30,2424,unclassified,,unnamed,no,1,6,
-0x001474C0,FUN_001474c0,1556,unclassified,,unnamed,no,1,0,
-0x00147AE0,FUN_00147ae0,1204,unclassified,,unnamed,no,1,0,
-0x00147FA0,FUN_00147fa0,336,unclassified,,unnamed,no,1,0,
-0x001480F0,FUN_001480f0,356,unclassified,,unnamed,no,1,0,
-0x00148260,FUN_00148260,568,unclassified,,unnamed,indirect,1,2,
-0x001484A0,FUN_001484a0,96,unclassified,,unnamed,no,1,2,
-0x00148500,FUN_00148500,1088,unclassified,,unnamed,indirect,1,3,
-0x00148950,FUN_00148950,20,unclassified,,unnamed,no,1,1,
-0x00148970,FUN_00148970,8,unclassified,,unnamed,no,1,1,
-0x00148980,FUN_00148980,36,unclassified,,unnamed,no,1,1,
-0x001489B0,FUN_001489b0,136,unclassified,,unnamed,no,1,3,
-0x00148A40,FUN_00148a40,364,unclassified,,unnamed,yes,1,10,
-0x00148BB0,FUN_00148bb0,436,unclassified,,unnamed,yes,1,16,
-0x00148D70,FUN_00148d70,856,unclassified,,unnamed,no,1,0,
+0x001446E0,mm_Map_RemoveObjectFromTile,132,unclassified,map,unnamed,no,1,0,unlinks object a2 from tile a1's object list
+0x00144770,mm_Map_AppendObjectToTile,76,unclassified,map,unnamed,no,1,0,links object a2 at the end of tile a1's object list
+0x001447C0,mm_Map_CreateObject,908,unclassified,map,unnamed,no,4,2,"(provisional) creates an object record, links it to its tiles and registers it"
+0x00144B60,mm_Placement_CheckSlope,328,unclassified,map,unnamed,no,1,1,(provisional) height differences under a footprint
+0x00144CB0,mm_Map_CheckPlacement,760,unclassified,map,unnamed,indirect,2,5,"(provisional) full placement test: slope, neighbours, type rules"
+0x00144FB0,mm_Placement_CheckNeighbours,504,unclassified,map,unnamed,no,1,0,(provisional)
+0x001451B0,mm_Placement_CheckTypeRule,244,unclassified,map,unnamed,no,1,0,(provisional) building type rule (+0x144)
+0x001452B0,mm_MapObj_RegisterLists,300,unclassified,map,unnamed,no,2,2,adds object a1 to its tile lists by its claim type
+0x001453E0,mm_MapObj_Init,472,unclassified,map,unnamed,indirect,3,2,"fills object record a1 (type, owner, position) and updates the tile lists"
+0x001455C0,mm_MapObj_FindFreeSlot,108,unclassified,map,unnamed,no,1,0,advances the free object index (+0x10) to an empty record
+0x00145630,mm_MapObjects_Slot0C,8,unclassified,map,unnamed,no,0,0,vtable slot +0xC at the object level: empty
+0x00145640,mm_MapObjects_Tick,608,unclassified,map,unnamed,indirect,1,4,"(provisional) vtable slot +8 at the object level: per-object updates, minimap marks, sounds"
+0x001458A0,mm_MapObjects_dtor,156,unclassified,map,unnamed,yes,1,3,"vtable 0x1BCEF0, frees objects and lists, tile-level destructor"
+0x00145940,mm_MapObjects_ctor,680,unclassified,map,unnamed,yes,1,8,"tile-level constructor, vtable 0x1BCEF0, object records and tile lists"
+0x00145C00,mm_Terrain_Unk145C00,8,unclassified,map,unnamed,no,3,1,(provisional) 0x14CD80 on member +0x2F88
+0x00145C10,mm_Terrain_AddQuad,204,unclassified,map,unnamed,no,1,0,(provisional) appends a quad to the terrain buffer (limit 0x9BD)
+0x00145CE0,mm_Terrain_BuildStrip,2592,unclassified,map,unnamed,no,1,0,(provisional) 2.5 KB terrain strip builder
+0x00146700,mm_Terrain_DrawPatch,1064,unclassified,map,unnamed,indirect,1,3,(provisional) builds one visible terrain patch
+0x00146B30,mm_Terrain_Draw,2424,unclassified,map,unnamed,no,1,6,(provisional) culls and draws the terrain around the camera
+0x001474C0,mm_Terrain_BuildVu1PacketA,1556,unclassified,map,unnamed,no,1,0,(provisional) VU1 packet referencing microcode at 0x1A76F0
+0x00147AE0,mm_Terrain_BuildVu1PacketB,1204,unclassified,map,unnamed,no,1,0,(provisional) VU1 packet referencing microcode at 0x1A5EB0
+0x00147FA0,mm_Terrain_InitParams,336,unclassified,map,unnamed,no,1,0,(provisional) default render parameters (+0x2E54..)
+0x001480F0,mm_CityRender_InitParams,356,unclassified,gfx,unnamed,no,1,0,GS register defaults of the render level (+0x2D60..)
+0x00148260,mm_CityRender_UpdatePeople,568,unclassified,gfx,unnamed,indirect,1,2,(provisional) per-frame pass over the people for drawing (char type lookup tables)
+0x001484A0,mm_CityRender_DrawSky,96,unclassified,gfx,unnamed,no,1,2,"(provisional) sky layer (+0x2F74) by the city clock (city +0x84), two variants by a2"
+0x00148500,mm_CityRender_CollectObjects,1088,unclassified,gfx,unnamed,indirect,1,3,(provisional) collects instances for the objects on visible tiles
+0x00148950,mm_CityRender_DrawWater,20,unclassified,gfx,unnamed,no,1,1,(provisional) water layer (+0x2F80) with city +0xB0
+0x00148970,mm_CityRender_DrawInstanceLayer,8,unclassified,gfx,unnamed,no,1,1,layer +0x2F8C draw
+0x00148980,mm_CityRender_DrawBuildings,36,unclassified,gfx,unnamed,no,1,1,(provisional) layer +0x2F88: buildings on the visible tiles
+0x001489B0,mm_CityRender_DrawOverlays,136,unclassified,gfx,unnamed,no,1,3,(provisional) queues the two-packet layers
+0x00148A40,mm_CityRender_dtor,364,unclassified,gfx,unnamed,yes,1,10,"vtable 0x1BCF00; deletes the seven layers and buffers, people-level destructor"
+0x00148BB0,mm_CityRender_ctor,436,unclassified,gfx,unnamed,yes,1,16,"people-level constructor, vtable 0x1BCF00; builds the terrain packets and the seven layers in the packet buffer"
+0x00148D70,mm_TexImage_Convert,856,unclassified,gfx,unnamed,no,1,0,"(provisional) converts the loaded image (+0x1000) for upload, size a1 x a2"
 0x001490D0,mm_Dma_KickVif1Now,8,unclassified,,named,no,1,0,
-0x001490E0,FUN_001490e0,100,unclassified,,unnamed,yes,1,2,
-0x00149150,FUN_00149150,132,unclassified,,unnamed,yes,1,4,
-0x001491E0,FUN_001491e0,280,unclassified,,unnamed,no,1,0,
-0x00149300,FUN_00149300,256,unclassified,,unnamed,no,1,2,
-0x00149400,FUN_00149400,800,unclassified,,unnamed,no,1,2,
-0x00149720,FUN_00149720,12,unclassified,,unnamed,no,1,0,
-0x00149730,FUN_00149730,84,unclassified,,unnamed,yes,1,2,
-0x00149790,FUN_00149790,512,unclassified,,unnamed,no,1,4,
-0x00149990,FUN_00149990,828,unclassified,,unnamed,no,1,1,
-0x00149CD0,FUN_00149cd0,2232,unclassified,,unnamed,yes,2,12,
-0x0014A590,FUN_0014a590,492,unclassified,,unnamed,no,1,6,
-0x0014A780,FUN_0014a780,184,unclassified,,unnamed,yes,1,3,
-0x0014A840,FUN_0014a840,828,unclassified,,unnamed,yes,1,9,
-0x0014AB80,FUN_0014ab80,68,unclassified,,unnamed,no,1,1,
-0x0014ABD0,FUN_0014abd0,68,unclassified,,unnamed,no,1,1,
-0x0014AC20,FUN_0014ac20,232,unclassified,,unnamed,no,5,0,
-0x0014AD10,FUN_0014ad10,108,unclassified,,unnamed,indirect,1,1,
-0x0014AE10,FUN_0014ae10,184,unclassified,,unnamed,no,1,0,
-0x0014AED0,FUN_0014aed0,256,unclassified,,unnamed,no,3,0,
-0x0014AFD0,FUN_0014afd0,356,unclassified,,unnamed,yes,1,5,
-0x0014B140,FUN_0014b140,772,unclassified,,unnamed,no,1,3,
-0x0014B450,FUN_0014b450,484,unclassified,,unnamed,no,1,6,
-0x0014B640,FUN_0014b640,1640,unclassified,,unnamed,yes,1,14,
-0x0014BCB0,FUN_0014bcb0,100,unclassified,,unnamed,yes,1,2,
-0x0014BD20,FUN_0014bd20,32,unclassified,,unnamed,no,1,0,
-0x0014BD40,FUN_0014bd40,216,unclassified,,unnamed,no,1,0,
-0x0014BE20,FUN_0014be20,644,unclassified,,unnamed,no,4,0,
-0x0014C0B0,FUN_0014c0b0,120,unclassified,,unnamed,no,2,0,
-0x0014C130,FUN_0014c130,124,unclassified,,unnamed,no,3,0,
-0x0014C1B0,FUN_0014c1b0,72,unclassified,,unnamed,no,4,0,
+0x001490E0,mm_TexImage_dtor,100,unclassified,gfx,unnamed,yes,1,2,frees the image data (+0x1000); delete when the flag is > 0
+0x00149150,mm_TexImage_Load,132,unclassified,gfx,unnamed,yes,1,4,loads file a1 whole into +0x1000 and converts it (a2 x a3)
+0x001491E0,mm_LayerA_BuildPacket,280,unclassified,gfx,unnamed,no,1,0,(provisional) packet for layer A (microcode 0x1A8330)
+0x00149300,mm_LayerA_Draw,256,unclassified,gfx,unnamed,no,1,2,(provisional) queues layer A and its mesh instances
+0x00149400,mm_LayerA_AddInstance,800,unclassified,gfx,unnamed,no,1,2,(provisional) adds a rotated instance to layer A
+0x00149720,mm_LayerA_SetSource,12,unclassified,gfx,unnamed,no,1,0,"+0x243C = a1, count +0x2430 = 0"
+0x00149730,mm_LayerA_DeletingDtor,84,unclassified,gfx,unnamed,yes,1,2,"base destructor, then delete"
+0x00149790,mm_LayerA_ctor,512,unclassified,gfx,unnamed,no,1,4,"base constructor, builds its packet in the packet buffer"
+0x00149990,mm_StatusPanel_BuildPacket,828,unclassified,ui,unnamed,no,1,1,"status panel packet (texture sizes via mm_Math_Log2, table 0x1AF3B0)"
+0x00149CD0,mm_StatusPanel_Update,2232,unclassified,ui,unnamed,yes,2,12,"status text: ""STATUS"", population vs target, theme share, salary, money, digits"
+0x0014A590,mm_StatusPanel_Draw,492,unclassified,ui,unnamed,no,1,6,panel models and its four text boxes
+0x0014A780,mm_StatusPanel_dtor,184,unclassified,ui,unnamed,yes,1,3,"deletes its four text boxes, base destructor"
+0x0014A840,mm_StatusPanel_ctor,828,unclassified,ui,unnamed,yes,1,9,"four text boxes (""Strength"" ...) and the panel packet"
+0x0014AB80,mm_Laptop_SaveState,68,unclassified,ui,unnamed,no,1,1,writes gp 0x1BDAB8.. (4 bytes) and the 14 laptop entries at 0x1F36F0 (0x38 bytes)
+0x0014ABD0,mm_Laptop_LoadState,68,unclassified,ui,unnamed,no,1,1,reads them back
+0x0014AC20,mm_Laptop_CountActive,232,unclassified,ui,unnamed,no,5,0,active laptop entries
+0x0014AD10,mm_Laptop_SetItemText,108,unclassified,ui,unnamed,indirect,1,1,"text for laptop item a2 (14 items, jump table 0x1B6570); default ""-Laptop Computer- Save or quit the game."""
+0x0014AE10,mm_Laptop_RemoveEntry,184,unclassified,ui,unnamed,no,1,0,(provisional) removes entry a1 from the list at 0x1F36F0
+0x0014AED0,mm_Laptop_AddEntry,256,unclassified,ui,unnamed,no,3,0,(provisional) adds entry a1 to the list at 0x1F36F0
+0x0014AFD0,mm_Laptop_Draw,356,unclassified,ui,unnamed,yes,1,5,"laptop model (luminosity per item), text, fade"
+0x0014B140,mm_Laptop_Animate,772,unclassified,ui,unnamed,no,1,3,opens/closes the laptop model (sceVu0RotMatrixX/Y)
+0x0014B450,mm_Laptop_RunEntry,484,unclassified,ui,unnamed,no,1,6,"runs the selected entry by its type (events, monthly pass, ...)"
+0x0014B640,mm_Laptop_Update,1640,unclassified,ui,unnamed,yes,1,14,"laptop menu: cursor with key repeat, select, sounds, texts"
+0x0014BCB0,mm_Laptop_dtor,100,unclassified,ui,unnamed,yes,1,2,deletes its text box
+0x0014BD20,mm_Laptop_ctor,32,unclassified,ui,unnamed,no,1,0,"model from 0x1F3B08, clears its state"
+0x0014BD40,mm_Laptop_InitEntries,216,unclassified,ui,unnamed,no,1,0,first-time defaults of the laptop entries (0x1AF640)
+0x0014BE20,mm_Frame_SetStyle,644,unclassified,ui,unnamed,no,4,0,(provisional) window frame style a1: sets its corner/edge parameters
+0x0014C0B0,mm_Frame_GetRect,120,unclassified,ui,unnamed,no,2,0,frame position and size in screen units (GS offsets removed)
+0x0014C130,mm_Frame_SetColor,124,unclassified,ui,unnamed,no,3,0,(provisional) frame colour bytes
+0x0014C1B0,mm_Frame_SetRect,72,unclassified,ui,unnamed,no,4,0,"frame at (a1, a2) size a3 x a4 (GS coordinates)"
 0x0014C200,mm_Dma_AppendCall,8,unclassified,,named,no,9,0,
-0x0014C210,FUN_0014c210,84,unclassified,,unnamed,yes,8,2,
-0x0014C270,FUN_0014c270,580,unclassified,,unnamed,no,8,2,
-0x0014C4C0,FUN_0014c4c0,68,unclassified,,unnamed,no,1,1,
-0x0014C510,FUN_0014c510,16,unclassified,,unnamed,no,1,1,
-0x0014C520,FUN_0014c520,16,unclassified,,unnamed,no,1,1,
-0x0014C530,FUN_0014c530,44,unclassified,,unnamed,yes,1,1,
-0x0014C560,FUN_0014c560,180,unclassified,,unnamed,yes,1,5,
-0x0014C620,FUN_0014c620,508,unclassified,,unnamed,no,1,1,
-0x0014C820,FUN_0014c820,84,unclassified,,unnamed,yes,2,2,
-0x0014C880,FUN_0014c880,40,unclassified,,unnamed,no,2,1,
-0x0014C8B0,FUN_0014c8b0,40,unclassified,,unnamed,no,2,0,
-0x0014C8E0,FUN_0014c8e0,372,unclassified,,unnamed,no,1,0,
-0x0014CA60,FUN_0014ca60,428,unclassified,,unnamed,no,1,0,
-0x0014CC10,FUN_0014cc10,76,unclassified,,unnamed,no,1,1,
-0x0014CC60,FUN_0014cc60,84,unclassified,,unnamed,yes,1,2,
-0x0014CCC0,FUN_0014ccc0,72,unclassified,,unnamed,no,1,5,
-0x0014CD10,FUN_0014cd10,108,unclassified,,unnamed,no,1,0,
-0x0014CD80,FUN_0014cd80,28,unclassified,,unnamed,no,1,0,
-0x0014CDA0,FUN_0014cda0,584,unclassified,,unnamed,no,1,0,
-0x0014CFF0,FUN_0014cff0,252,unclassified,,unnamed,no,1,0,
-0x0014D0F0,FUN_0014d0f0,548,unclassified,,unnamed,no,1,6,
-0x0014D320,FUN_0014d320,84,unclassified,,unnamed,yes,1,2,
-0x0014D380,FUN_0014d380,88,unclassified,,unnamed,no,1,5,
-0x0014D3E0,FUN_0014d3e0,1216,unclassified,,unnamed,no,1,0,
-0x0014D8A0,FUN_0014d8a0,1652,unclassified,,unnamed,no,1,0,
-0x0014DF20,FUN_0014df20,436,unclassified,,unnamed,no,1,2,
-0x0014E0E0,FUN_0014e0e0,84,unclassified,,unnamed,yes,1,2,
-0x0014E140,FUN_0014e140,88,unclassified,,unnamed,no,1,5,
-0x0014E1A0,FUN_0014e1a0,1796,unclassified,,unnamed,no,1,1,
-0x0014E8B0,FUN_0014e8b0,1280,unclassified,,unnamed,no,1,4,
-0x0014EDB0,FUN_0014edb0,752,unclassified,,unnamed,no,1,4,
-0x0014F0A0,FUN_0014f0a0,84,unclassified,,unnamed,yes,1,2,
-0x0014F100,FUN_0014f100,88,unclassified,,unnamed,no,1,5,
-0x0014F160,FUN_0014f160,296,unclassified,,unnamed,no,1,0,
-0x0014F290,FUN_0014f290,356,unclassified,,unnamed,no,1,0,
-0x0014F400,FUN_0014f400,48,unclassified,,unnamed,no,1,1,
-0x0014F430,FUN_0014f430,84,unclassified,,unnamed,yes,1,2,
-0x0014F490,FUN_0014f490,72,unclassified,,unnamed,no,1,5,
-0x0014F4E0,FUN_0014f4e0,776,unclassified,,unnamed,no,1,1,
-0x0014F7F0,FUN_0014f7f0,1796,unclassified,,unnamed,no,1,0,
-0x0014FF00,FUN_0014ff00,392,unclassified,,unnamed,no,1,0,
-0x00150090,FUN_00150090,64,unclassified,,unnamed,no,1,2,
-0x001500D0,FUN_001500d0,84,unclassified,,unnamed,yes,1,2,
-0x00150130,FUN_00150130,88,unclassified,,unnamed,no,1,5,
-0x00150190,FUN_00150190,272,unclassified,,unnamed,no,9,0,
-0x001502A0,FUN_001502a0,172,unclassified,,unnamed,no,1,0,
-0x00150350,FUN_00150350,208,unclassified,,unnamed,no,2,2,
-0x00150420,FUN_00150420,292,unclassified,,unnamed,no,8,1,
-0x00150550,FUN_00150550,256,unclassified,,unnamed,no,1,1,
-0x00150650,FUN_00150650,20,unclassified,,unnamed,no,1,1,
-0x00150670,FUN_00150670,20,unclassified,,unnamed,no,1,1,
-0x00150690,FUN_00150690,672,unclassified,,unnamed,no,1,2,
-0x00150940,FUN_00150940,52,unclassified,,unnamed,no,1,0,
-0x00150980,FUN_00150980,16,unclassified,,unnamed,no,1,0,
-0x00150990,FUN_00150990,80,unclassified,,unnamed,no,5,0,
-0x001509E0,FUN_001509e0,188,unclassified,,unnamed,no,7,0,
-0x00150AA0,FUN_00150aa0,216,unclassified,,unnamed,no,10,1,
-0x00150B80,FUN_00150b80,148,unclassified,,unnamed,no,7,1,
-0x00150C20,FUN_00150c20,384,unclassified,,unnamed,yes,4,3,
-0x00150DA0,FUN_00150da0,888,unclassified,,unnamed,no,8,4,
-0x00151140,FUN_00151140,340,unclassified,,unnamed,no,5,6,
-0x001512A0,FUN_001512a0,168,unclassified,,unnamed,yes,6,3,
-0x00151350,FUN_00151350,604,unclassified,,unnamed,yes,4,3,
-0x001515B0,FUN_001515b0,260,unclassified,,unnamed,yes,1,12,
-0x001516C0,FUN_001516c0,256,unclassified,,unnamed,yes,1,12,
-0x001517C0,FUN_001517c0,596,unclassified,,unnamed,yes,1,16,
-0x00151A20,FUN_00151a20,1064,unclassified,,unnamed,yes,1,19,
-0x00151E50,FUN_00151e50,452,unclassified,,unnamed,yes,1,4,
-0x00152020,FUN_00152020,1204,unclassified,,unnamed,yes,1,25,
-0x001524E0,FUN_001524e0,884,unclassified,,unnamed,yes,1,20,
-0x00152860,FUN_00152860,172,unclassified,,unnamed,yes,0,5,
-0x00152910,FUN_00152910,300,unclassified,,unnamed,yes,1,8,
-0x00152A50,FUN_00152a50,212,unclassified,,unnamed,yes,1,4,
-0x00152B30,FUN_00152b30,132,unclassified,,unnamed,no,1,2,
-0x00152BC0,FUN_00152bc0,2248,unclassified,,unnamed,yes,1,16,
-0x00153490,FUN_00153490,172,unclassified,,unnamed,yes,1,2,
-0x00153540,FUN_00153540,152,unclassified,,unnamed,no,1,1,
-0x001535E0,FUN_001535e0,276,unclassified,,unnamed,no,1,3,
-0x00153700,FUN_00153700,612,unclassified,,unnamed,no,1,10,
-0x00153970,FUN_00153970,524,unclassified,,unnamed,no,4,7,
-0x00153B80,FUN_00153b80,684,unclassified,,unnamed,yes,1,11,
-0x00153E30,FUN_00153e30,756,unclassified,,unnamed,yes,1,14,
-0x00154130,FUN_00154130,324,unclassified,,unnamed,yes,1,12,
-0x00154280,FUN_00154280,1356,unclassified,,unnamed,yes,2,17,
-0x001547D0,FUN_001547d0,192,unclassified,,unnamed,yes,3,6,
-0x00154890,FUN_00154890,1804,unclassified,,unnamed,yes,1,29,
-0x00154FA0,FUN_00154fa0,172,unclassified,,unnamed,yes,1,4,
-0x00155050,FUN_00155050,76,unclassified,,unnamed,no,1,1,
-0x001550A0,FUN_001550a0,68,unclassified,,unnamed,no,3,0,
-0x001550F0,FUN_001550f0,20,unclassified,,unnamed,no,1,1,
-0x00155110,FUN_00155110,20,unclassified,,unnamed,no,1,1,
-0x00155130,FUN_00155130,60,unclassified,,unnamed,no,3,0,
-0x00155170,FUN_00155170,100,unclassified,,unnamed,no,1,0,
-0x001551E0,FUN_001551e0,184,unclassified,,unnamed,yes,2,1,
-0x001552A0,FUN_001552a0,132,unclassified,,unnamed,no,1,0,
-0x00155330,FUN_00155330,820,unclassified,,unnamed,no,1,3,
-0x00155670,FUN_00155670,184,unclassified,,unnamed,yes,1,3,
-0x00155730,FUN_00155730,40,unclassified,,unnamed,yes,3,1,
-0x00155760,FUN_00155760,1008,unclassified,,unnamed,yes,3,9,
-0x00155B50,FUN_00155b50,260,unclassified,,unnamed,no,6,0,
-0x00155C60,FUN_00155c60,408,unclassified,,unnamed,no,2,2,
-0x00155E00,FUN_00155e00,1620,unclassified,,unnamed,yes,1,7,
-0x00156470,FUN_00156470,1540,unclassified,,unnamed,yes,1,14,
-0x00156A90,FUN_00156a90,124,unclassified,,unnamed,yes,1,3,
-0x00156B10,FUN_00156b10,320,unclassified,,unnamed,yes,1,5,
-0x00156C50,FUN_00156c50,52,unclassified,,unnamed,no,1,0,
-0x00156C90,FUN_00156c90,80,unclassified,,unnamed,no,1,1,
-0x00156CE0,FUN_00156ce0,148,unclassified,,unnamed,no,2,1,
-0x00156D80,FUN_00156d80,512,unclassified,,unnamed,yes,1,6,
-0x00156F80,FUN_00156f80,260,unclassified,,unnamed,yes,1,5,
-0x00157090,FUN_00157090,68,unclassified,,unnamed,yes,2,2,
-0x001570E0,FUN_001570e0,48,unclassified,,unnamed,no,1,0,
-0x00157110,FUN_00157110,1660,unclassified,,unnamed,yes,1,14,
-0x001577A0,FUN_001577a0,96,unclassified,,unnamed,yes,0,2,
-0x00157800,FUN_00157800,156,unclassified,,unnamed,yes,1,4,
-0x001578A0,FUN_001578a0,52,unclassified,,unnamed,no,3,0,
-0x001578E0,FUN_001578e0,924,unclassified,,unnamed,yes,3,8,
+0x0014C210,mm_Frame_DeletingDtor,84,unclassified,ui,unnamed,yes,8,2,"base destructor, then delete"
+0x0014C270,mm_Frame_ctor,580,unclassified,ui,unnamed,no,8,2,"window frame: position, size, style, colour"
+0x0014C4C0,mm_WaitText_Draw,68,unclassified,ui,unnamed,no,1,1,"blinking ""Please wait...."" text box (0x1BDAC4)"
+0x0014C510,mm_WaitText_Append,16,unclassified,ui,unnamed,no,1,1,appends a0 to the wait text
+0x0014C520,mm_WaitText_Set,16,unclassified,ui,unnamed,no,1,1,sets the wait text to a0
+0x0014C530,mm_WaitText_Delete,44,unclassified,ui,unnamed,yes,1,1,deletes the wait text box
+0x0014C560,mm_WaitText_Create,180,unclassified,ui,unnamed,yes,1,5,"creates the wait text box (""Please wait...."")"
+0x0014C620,mm_LightSet_UpdateByClock,508,unclassified,gfx,unnamed,no,1,1,"interpolates the light colours over the day (2-hour segments, tables 0x1B0550/0x1B0670)"
+0x0014C820,mm_LightSet_DeletingDtor,84,unclassified,gfx,unnamed,yes,2,2,"base destructor, then delete"
+0x0014C880,mm_LightSet_ctor,40,unclassified,gfx,unnamed,no,2,1,mm_LightSet_Init
+0x0014C8B0,mm_Map_HeightScale,40,unclassified,map,unnamed,no,2,0,a0 * 0.6 + 0.08
+0x0014C8E0,mm_LayerB_BuildPacket,372,unclassified,gfx,unnamed,no,1,0,(provisional) packet for layer B (microcode 0x1AA340)
+0x0014CA60,mm_LayerB_InitParams,428,unclassified,gfx,unnamed,no,1,0,(provisional) GS register defaults of layer B
+0x0014CC10,mm_LayerB_Draw,76,unclassified,gfx,unnamed,no,1,1,(provisional) queues its two packets around a1
+0x0014CC60,mm_LayerB_DeletingDtor,84,unclassified,gfx,unnamed,yes,1,2,"base destructor, then delete"
+0x0014CCC0,mm_LayerB_ctor,72,unclassified,gfx,unnamed,no,1,5,"base constructor, parameters, packet"
+0x0014CD10,mm_Terrain_Nop14CD10,108,unclassified,gfx,unnamed,no,1,0,empty
+0x0014CD80,mm_Terrain_SetVec,28,unclassified,gfx,unnamed,no,1,0,(provisional) copies vec4 a3 into a0 with a1
+0x0014CDA0,mm_LayerC_BuildPacket,584,unclassified,gfx,unnamed,no,1,0,(provisional) packet for layer C (microcode 0x1A7B30/0x1A8330)
+0x0014CFF0,mm_LayerC_InitParams,252,unclassified,gfx,unnamed,no,1,0,(provisional)
+0x0014D0F0,mm_LayerC_DrawBuildings,548,unclassified,gfx,unnamed,no,1,6,"(provisional) building models on visible tiles (map objects, node packets)"
+0x0014D320,mm_LayerC_DeletingDtor,84,unclassified,gfx,unnamed,yes,1,2,"base destructor, then delete"
+0x0014D380,mm_LayerC_ctor,88,unclassified,gfx,unnamed,no,1,5,"base constructor, parameters, packet"
+0x0014D3E0,mm_LayerD_BuildPacket,1216,unclassified,gfx,unnamed,no,1,0,(provisional) packet for layer D (microcode 0x1A8A00/0x1A8E20)
+0x0014D8A0,mm_LayerD_InitParams,1652,unclassified,gfx,unnamed,no,1,0,(provisional)
+0x0014DF20,mm_LayerD_DrawSkyByClock,436,unclassified,gfx,unnamed,no,1,2,(provisional) sky by the clock: day 5:00-19:00 variants
+0x0014E0E0,mm_LayerD_DeletingDtor,84,unclassified,gfx,unnamed,yes,1,2,"base destructor, then delete"
+0x0014E140,mm_LayerD_ctor,88,unclassified,gfx,unnamed,no,1,5,"base constructor, parameters, packet"
+0x0014E1A0,mm_LayerE_BuildPacket,1796,unclassified,gfx,unnamed,no,1,1,(provisional) packet for layer E (microcode 0x1A9A90/0x1A9F10)
+0x0014E8B0,mm_LayerE_InitParams,1280,unclassified,gfx,unnamed,no,1,4,(provisional) random placement with rotations (clouds or stars)
+0x0014EDB0,mm_LayerE_Draw,752,unclassified,gfx,unnamed,no,1,4,(provisional) projected layer draw
+0x0014F0A0,mm_LayerE_DeletingDtor,84,unclassified,gfx,unnamed,yes,1,2,"base destructor, then delete"
+0x0014F100,mm_LayerE_ctor,88,unclassified,gfx,unnamed,no,1,5,"base constructor, parameters, packet"
+0x0014F160,mm_LayerF_BuildPacket,296,unclassified,gfx,unnamed,no,1,0,(provisional) packet for layer F (microcode 0x1A91C0)
+0x0014F290,mm_LayerF_InitParams,356,unclassified,gfx,unnamed,no,1,0,(provisional)
+0x0014F400,mm_LayerF_Draw,48,unclassified,gfx,unnamed,no,1,1,(provisional) queues its packet around a1
+0x0014F430,mm_LayerF_DeletingDtor,84,unclassified,gfx,unnamed,yes,1,2,"base destructor, then delete"
+0x0014F490,mm_LayerF_ctor,72,unclassified,gfx,unnamed,no,1,5,"base constructor, parameters, packet"
+0x0014F4E0,mm_LayerG_AnimateWaves,776,unclassified,gfx,unnamed,no,1,1,(provisional) sine-wave animation state (0x1BDAD8..)
+0x0014F7F0,mm_LayerG_BuildPacket,1796,unclassified,gfx,unnamed,no,1,0,(provisional) packet for layer G (microcode 0x1A6440)
+0x0014FF00,mm_LayerG_InitParams,392,unclassified,gfx,unnamed,no,1,0,(provisional)
+0x00150090,mm_LayerG_Draw,64,unclassified,gfx,unnamed,no,1,2,(provisional) animates the waves and queues packet a1
+0x001500D0,mm_LayerG_DeletingDtor,84,unclassified,gfx,unnamed,yes,1,2,"base destructor, then delete"
+0x00150130,mm_LayerG_ctor,88,unclassified,gfx,unnamed,no,1,5,"base constructor, parameters, packet"
+0x00150190,mm_Vacancy_Remove,272,unclassified,city,unnamed,no,9,0,(provisional) removes entry a1 from slot list a2 (called when events end)
+0x001502A0,mm_Vacancy_TryAdd,172,unclassified,city,unnamed,no,1,0,(provisional) adds when the count is below 0x40 and capacity remains
+0x00150350,mm_Vacancy_CheckFamily,208,unclassified,city,unnamed,no,2,2,(provisional) family a2's state against flag A and its building record
+0x00150420,mm_Vacancy_Find,292,unclassified,city,unnamed,no,8,1,(provisional) search used by the script code
+0x00150550,mm_Vacancy_TryAdd4,256,unclassified,city,unnamed,no,1,1,(provisional) adds when 4 or more places remain
+0x00150650,mm_Vacancy_Save,20,unclassified,city,unnamed,no,1,1,writes 0x504 bytes
+0x00150670,mm_Vacancy_Load,20,unclassified,city,unnamed,no,1,1,reads 0x504 bytes
+0x00150690,mm_Vacancy_Notify,672,unclassified,city,unnamed,no,1,2,(provisional) posts messages for vacancy changes
+0x00150940,mm_Vacancy_HasRoom,52,unclassified,city,unnamed,no,1,0,count below 0x40 and at least a1 places left of 0x100
+0x00150980,mm_Vacancy_ctor,16,unclassified,city,unnamed,no,1,0,zeroes the two counters
+0x00150990,mm_ListMenu_ScrollTo,80,unclassified,ui,unnamed,no,5,0,"scroll so item a1 is visible (+0x264 count, +0x268 item height)"
+0x001509E0,mm_ListMenu_SetCursor,188,unclassified,ui,unnamed,no,7,0,cursor offset a1/a2 and colour a3
+0x00150AA0,mm_ListMenu_Highlight,216,unclassified,ui,unnamed,no,10,1,"highlights item a1, -1 = none (item text boxes at +0xEC, 0xC each)"
+0x00150B80,mm_ListMenu_SetItemText,148,unclassified,ui,unnamed,no,7,1,text of item a2 (-1 = selected)
+0x00150C20,mm_ListMenu_AddItems,384,unclassified,ui,unnamed,yes,4,3,creates the item text boxes
+0x00150DA0,mm_ListMenu_HandleInput,888,unclassified,ui,unnamed,no,8,4,"cursor with key repeat, select/cancel, sounds; returns the result"
+0x00151140,mm_ListMenu_Draw,340,unclassified,ui,unnamed,no,5,6,"frame, highlight bar and item text boxes"
+0x001512A0,mm_ListMenu_dtor,168,unclassified,ui,unnamed,yes,6,3,deletes item text boxes and the frame
+0x00151350,mm_ListMenu_ctor,604,unclassified,ui,unnamed,yes,4,3,list menu with a frame at the given position/size
+0x001515B0,mm_SceneB_ShowCityName,260,unclassified,scene,unnamed,yes,1,12,(provisional) title card with the city name (0x1C5680)
+0x001516C0,mm_SceneB_ShowStageTitle,256,unclassified,scene,unnamed,yes,1,12,"""STAGE n"" title card"
+0x001517C0,mm_SceneB_ShowApprovalRate,596,unclassified,scene,unnamed,yes,1,16,"""Your Approval Rate"" screen"
+0x00151A20,mm_SceneB_MissionBriefing,1064,unclassified,scene,unnamed,yes,1,19,the boss explains the mission in the message window
+0x00151E50,mm_SceneB_BuildBriefingText,452,unclassified,scene,unnamed,yes,1,4,"""Let me explain Mission %d to you."" + the goal text + ""That's all. Good luck to you!"""
+0x00152020,mm_SceneB_ShowTelop,1204,unclassified,scene,unnamed,yes,1,25,"(provisional) TELOP%d text screens with music (""Thanks to your Mr. ..."")"
+0x001524E0,mm_SceneB_Update,884,unclassified,scene,unnamed,yes,1,20,"stage transition scene: title cards, approval, briefing, mission movie, ending roll (END_ROLL.TEX)"
+0x00152860,mm_SceneB_dtor,172,unclassified,scene,unnamed,yes,0,5,"vtables 0x1BCF10/0x1BCF18; deletes camera, stage object, lights"
+0x00152910,mm_SceneB_ctor,300,unclassified,scene,unnamed,yes,1,8,"stage object, camera, light set; loads the stage"
+0x00152A50,mm_WantsWin_FormatLine,212,unclassified,ui,unnamed,yes,1,4,"""%s %s wants %s."" for a family's request (claims)"
+0x00152B30,mm_WantsWin_Draw,132,unclassified,ui,unnamed,no,1,2,window model and four text boxes
+0x00152BC0,mm_WantsWin_Update,2248,unclassified,ui,unnamed,yes,1,16,"residents' wants window: lists, cursor, values"
+0x00153490,mm_WantsWin_dtor,172,unclassified,ui,unnamed,yes,1,2,deletes its four text boxes
+0x00153540,mm_WantsWin_ctor,152,unclassified,ui,unnamed,no,1,1,model 0x1F3B04 and defaults
+0x001535E0,mm_WantsWin_DrawGauge,276,unclassified,ui,unnamed,no,1,3,(provisional) gauge at value/120 plus list frames
+0x00153700,mm_PauseMenu_StateMain,612,unclassified,ui,unnamed,no,1,10,Resume / Save / Quit selection
+0x00153970,mm_PauseMenu_ShowCardMessage,524,unclassified,ui,unnamed,no,4,7,"memory card messages: ""Failed to save."", ""Failed to format."", ""does not have enough space ... 1006KB"""
+0x00153B80,mm_PauseMenu_StateSave,684,unclassified,ui,unnamed,yes,1,11,"saving: memory card manager steps, results"
+0x00153E30,mm_PauseMenu_StateFormat,756,unclassified,ui,unnamed,yes,1,14,(provisional) format prompt and progress
+0x00154130,mm_PauseMenu_StateWait,324,unclassified,ui,unnamed,yes,1,12,(provisional) waits for a memory card operation
+0x00154280,mm_PauseMenu_StateSlotSelect,1356,unclassified,ui,unnamed,yes,2,17,"slot list and ""Do you wish to overwrite?"""
+0x001547D0,mm_PauseMenu_Reset,192,unclassified,ui,unnamed,yes,3,6,back to the top menu
+0x00154890,mm_PauseMenu_Update,1804,unclassified,ui,unnamed,yes,1,29,"pause menu state machine (Resume, Save, Quit ""Are you sure you want to quit?"")"
+0x00154FA0,mm_PauseMenu_dtor,172,unclassified,ui,unnamed,yes,1,4,deletes its menus and the card manager
+0x00155050,mm_PauseMenu_ctor,76,unclassified,ui,unnamed,no,1,1,"clears state, default name (0x1B73D0)"
+0x001550A0,mm_Applicants_CountMatching,68,unclassified,city,unnamed,no,3,0,(provisional) applicants (count +0x280) matching a0
+0x001550F0,mm_Applicants_Save,20,unclassified,city,unnamed,no,1,1,writes 0x284 bytes
+0x00155110,mm_Applicants_Load,20,unclassified,city,unnamed,no,1,1,reads 0x284 bytes
+0x00155130,mm_Applicants_Find,60,unclassified,city,unnamed,no,3,0,index of the applicant for family a1
+0x00155170,mm_Applicants_FindFrom,100,unclassified,city,unnamed,no,1,0,(provisional) next match from *a1 (32 entries)
+0x001551E0,mm_Applicants_Add,184,unclassified,city,unnamed,yes,2,1,adds family a1 (max 32 entries of 0x14 bytes)
+0x001552A0,mm_Applicants_Clear,132,unclassified,city,unnamed,no,1,0,empties the list
+0x00155330,mm_Applicants_Layout,820,unclassified,ui,unnamed,no,1,3,(provisional) positions the list text boxes
+0x00155670,mm_Applicants_Select,184,unclassified,ui,unnamed,yes,1,3,(provisional) selects entry a1 and refreshes the info
+0x00155730,mm_Applicants_SetMode,40,unclassified,ui,unnamed,yes,3,1,mode +0x29C; mode 1 refreshes the info text
+0x00155760,mm_Applicants_BuildInfo,1008,unclassified,ui,unnamed,yes,3,9,"info text: name, ""Month %s Year %s"", building or unit, size ""%sm"""
+0x00155B50,mm_Applicants_ScrollTo,260,unclassified,ui,unnamed,no,6,0,(provisional) scrolls to entry a1
+0x00155C60,mm_Applicants_PlaceAt,408,unclassified,ui,unnamed,no,2,2,(provisional) positions the panel at a screen point
+0x00155E00,mm_Applicants_DrawDetails,1620,unclassified,ui,unnamed,yes,1,7,(provisional) detail models and claim icons
+0x00156470,mm_Applicants_Draw,1540,unclassified,ui,unnamed,yes,1,14,the applicants panel
+0x00156A90,mm_ApplicantsBase_dtor,124,unclassified,ui,unnamed,yes,1,3,"vtable 0x1BCF60, deletes its text box"
+0x00156B10,mm_ApplicantsBase_ctor,320,unclassified,ui,unnamed,yes,1,5,"vtable 0x1BCF60, text box, empty list"
+0x00156C50,mm_Unk156C50_HasState2,52,unclassified,city,unnamed,no,1,0,(provisional) 1 if an entry has state 2
+0x00156C90,mm_Applicants_RemoveFamily,80,unclassified,city,unnamed,no,1,1,removes the entry for family a1
+0x00156CE0,mm_Applicants_RemoveAt,148,unclassified,city,unnamed,no,2,1,removes entry a1 and shifts the rest
+0x00156D80,mm_Applicants_AssignToBuilding,512,unclassified,city,unnamed,yes,1,6,"places the family's object and assigns its home building, then removes the entry"
+0x00156F80,mm_Applicants_StartPlacing,260,unclassified,city,unnamed,yes,1,5,(provisional) placement mode with input focus
+0x00157090,mm_Applicants_AddAndShow,68,unclassified,city,unnamed,yes,2,2,"mm_Applicants_Add, selected when a3 != 0"
+0x001570E0,mm_Applicants_GetSelected,48,unclassified,city,unnamed,no,1,0,selected entry or 0
+0x00157110,mm_Applicants_Update,1660,unclassified,ui,unnamed,yes,1,14,"the applicants panel per frame: cursor, prefetching family records, assigning"
+0x001577A0,mm_Applicants_dtor,96,unclassified,ui,unnamed,yes,0,2,"vtable 0x1BCF70, then the base destructor"
+0x00157800,mm_Applicants_ctor,156,unclassified,ui,unnamed,yes,1,4,"base constructor, vtable 0x1BCF70"
+0x001578A0,mm_Pad_GetData,52,unclassified,pad,unnamed,no,3,0,"port a0's 32-byte pad buffer (0x1F3AC0) when its state is ready (100), else 0"
+0x001578E0,mm_Pad_Poll,924,unclassified,pad,unnamed,yes,3,8,"scePadRead and the pad state machine: analog mode, actuator alignment, pressure mode"
 0x00157CB0,mm_PadInit,200,unclassified,,named,yes,1,3,
-0x00157D80,FUN_00157d80,20,unclassified,,unnamed,no,1,1,
-0x00157DA0,FUN_00157da0,20,unclassified,,unnamed,no,1,1,
-0x00157DC0,FUN_00157dc0,40,unclassified,,unnamed,no,8,0,
-0x00157DF0,FUN_00157df0,528,unclassified,,unnamed,no,1,3,
+0x00157D80,mm_Player_Save,20,unclassified,char,unnamed,no,1,1,writes 0x38 bytes
+0x00157DA0,mm_Player_Load,20,unclassified,char,unnamed,no,1,1,reads 0x38 bytes
+0x00157DC0,mm_Player_GetMatrix,40,unclassified,char,unnamed,no,8,0,the player model's matrix (object +0x88)
+0x00157DF0,mm_Player_PlayFootstep,528,unclassified,char,unnamed,no,1,3,footstep sound by the tile under the player
 0x00158000,FUN_00158000,880,unclassified,,unnamed,no,1,3,
 0x00158370,FUN_00158370,1704,unclassified,,unnamed,no,1,10,
 0x00158A20,FUN_00158a20,748,unclassified,,unnamed,no,1,1,
@@ -1870,8 +1870,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00186AA0,mm_McQueue_Pump,504,game,save,named,yes,2,13,"issues the request at the queue tail (sceMcGetInfo ... sceMcSeek by command 1-12), then polls sceMcSync for its result"
 0x00186CA0,FUN_00186ca0,68,unclassified,,unnamed,yes,1,1,
 0x00186CF0,FUN_00186cf0,8,unclassified,,unnamed,no,1,0,
-0x00186D00,FUN_00186d00,8,game,gfx,unnamed,no,11,0,sets the packet buffer write pointer (0x1BDCE8)
-0x00186D10,FUN_00186d10,8,game,gfx,unnamed,no,11,0,returns the packet buffer write pointer (0x1BDCE8)
+0x00186D00,mm_PacketBuf_Seek,8,game,gfx,named,no,11,0,sets the packet buffer write pointer (0x1BDCE8)
+0x00186D10,mm_PacketBuf_Tell,8,game,gfx,named,no,11,0,returns the packet buffer write pointer (0x1BDCE8)
 0x00186D20,mm_Dma_KickVif1Now,192,game,gfx,named,yes,2,2,"sends a two-tag chain (CALL a0, END) on VIF1 right away and waits for GS path idle before and after"
 0x00186DE0,mm_Dma_AppendCall,116,game,gfx,named,no,28,0,"appends a DMA CALL tag (id 5) to address a0 at the gp list pointer, then an END tag the next append overwrites; at most 0x4000 qwords per list"
 0x00186E60,mm_DmaList_QueueGsDefaults,124,game,gfx,named,no,6,0,"CALLs the static packet 0x1B2760: standard alpha blend in ALPHA_1/2, TEST_1/2 alpha != 0 and Z >="
@@ -1943,202 +1943,214 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0018F280,mm_Sound_LoadModules,452,game,sound,named,yes,1,2,"(was mm_LoadSoundModules) loads LIBSD, SDRDRV, MODMIDI, MODHSYN, MODSEIN, YYSOUND, retrying each until it loads"
 0x0018F450,mm_Sound_Shutdown,80,game,sound,named,yes,1,2,YYSound RPC function 0
 0x0018F4A0,mm_Sound_Init,300,game,sound,named,yes,1,6,"(was mm_InitSound) loads the modules, binds RPC 0x12346, sends function 1 with the status block address, clears the command ring"
-0x0018F5D0,fn_0018F5D0,32,unclassified,,unnamed,no,0,0,
-0x0018F5F0,FUN_0018f5f0,900,unclassified,,unnamed,yes,0,7,
-0x0018F980,FUN_0018f980,192,unclassified,,unnamed,no,0,3,
-0x0018FA40,FUN_0018fa40,116,unclassified,,unnamed,no,0,1,
-0x0018FAC0,FUN_0018fac0,460,unclassified,,unnamed,no,0,4,
-0x0018FC90,FUN_0018fc90,56,unclassified,,unnamed,yes,0,1,
-0x0018FCD0,FUN_0018fcd0,120,unclassified,,unnamed,no,0,1,
-0x0018FD50,FUN_0018fd50,400,unclassified,,unnamed,no,1,4,
-0x0018FEE0,FUN_0018fee0,1184,unclassified,,unnamed,yes,0,11,
-0x00190380,FUN_00190380,832,unclassified,,unnamed,no,0,4,
-0x001906C0,FUN_001906c0,140,unclassified,,unnamed,no,0,1,
-0x00190750,FUN_00190750,148,unclassified,,unnamed,no,0,3,
-0x001907F0,FUN_001907f0,768,unclassified,,unnamed,yes,0,6,
-0x00190AF0,FUN_00190af0,96,unclassified,,unnamed,no,0,3,
-0x00190B60,FUN_00190b60,612,unclassified,,unnamed,no,0,7,
-0x00190DD0,FUN_00190dd0,72,unclassified,,unnamed,indirect,0,0,
-0x00190F00,FUN_00190f00,492,unclassified,,unnamed,no,0,2,
-0x001910F0,FUN_001910f0,256,unclassified,,unnamed,no,0,1,
-0x001911F0,FUN_001911f0,292,unclassified,,unnamed,no,0,2,
-0x00191320,FUN_00191320,256,unclassified,,unnamed,no,0,2,
-0x00191420,FUN_00191420,48,unclassified,,unnamed,no,0,1,
-0x00191480,FUN_00191480,84,unclassified,,unnamed,no,0,1,
-0x00191550,FUN_00191550,68,unclassified,,unnamed,no,0,1,
-0x001915A0,FUN_001915a0,340,unclassified,,unnamed,no,0,4,
-0x00191720,FUN_00191720,36,unclassified,,unnamed,no,0,1,
-0x00191850,FUN_00191850,508,unclassified,,unnamed,yes,0,3,
-0x00191A50,FUN_00191a50,1652,unclassified,,unnamed,yes,0,12,
-0x001920D0,FUN_001920d0,192,unclassified,,unnamed,no,0,2,
-0x00192190,fn_00192190,8,unclassified,,unnamed,no,0,0,
-0x001921A0,FUN_001921a0,380,unclassified,,unnamed,no,0,4,
-0x00192320,FUN_00192320,76,unclassified,,unnamed,indirect,0,0,
-0x00192490,FUN_00192490,176,unclassified,,unnamed,no,0,1,
-0x00192540,FUN_00192540,328,unclassified,,unnamed,no,0,3,
-0x00192690,FUN_00192690,184,unclassified,,unnamed,no,0,2,
-0x00192750,FUN_00192750,116,unclassified,,unnamed,no,0,1,
-0x001927D0,FUN_001927d0,1272,unclassified,,unnamed,no,0,7,
-0x00192CD0,FUN_00192cd0,132,unclassified,,unnamed,no,0,1,
-0x00192D60,FUN_00192d60,696,unclassified,,unnamed,no,2,1,
-0x00193020,FUN_00193020,148,unclassified,,unnamed,no,5,1,
-0x001930C0,FUN_001930c0,340,unclassified,,unnamed,no,7,1,
-0x00193220,FUN_00193220,36,unclassified,,unnamed,no,0,1,
-0x00193250,FUN_00193250,72,unclassified,,unnamed,no,0,3,
-0x001932A0,FUN_001932a0,144,unclassified,,unnamed,yes,0,3,
-0x00193330,fn_00193330,60,unclassified,,unnamed,no,0,0,
-0x00193370,FUN_00193370,104,unclassified,,unnamed,indirect,0,1,
-0x001933E0,FUN_001933e0,1344,unclassified,,unnamed,yes,0,19,
-0x00193920,FUN_00193920,520,unclassified,,unnamed,no,0,5,
-0x00193B60,FUN_00193b60,96,unclassified,,unnamed,indirect,0,0,
-0x00193D00,FUN_00193d00,232,unclassified,,unnamed,no,0,1,
+0x0018F5D0,mm_EvShoppingTogether_Slot14,32,unclassified,event,unnamed,no,0,0,type 1: Slot14 (returns +0x28 when a3 == 0)
+0x0018F5F0,mm_EvShoppingTogether_Update,900,unclassified,event,unnamed,yes,0,7,type 1: Update
+0x0018F980,mm_EvShoppingTogether_End,192,unclassified,event,unnamed,no,0,3,type 1: End (clears the building marks)
+0x0018FA40,mm_EvShoppingTogether_Start,116,unclassified,event,unnamed,no,0,1,"type 1: Start (marks the two buildings, timer 180)"
+0x0018FAC0,mm_EvShoppingTogether_Check,460,unclassified,event,unnamed,no,0,4,"event type 1 ""Shopping together"": slot Check"
+0x0018FC90,mm_EvAlien_Slot14,56,unclassified,event,unnamed,yes,0,1,type 16: Slot14
+0x0018FCD0,mm_EvAlien_End,120,unclassified,event,unnamed,no,0,1,type 16: End (clears the building marks)
+0x0018FD50,mm_EvAlien_PickTarget,400,unclassified,event,unnamed,no,1,4,"(provisional) picks a building for the alien (footprint checks, table 0x1B3760)"
+0x0018FEE0,mm_EvAlien_Update,1184,unclassified,event,unnamed,yes,0,11,type 16: Update (finishes after 720 ticks)
+0x00190380,mm_EvAlien_Check,832,unclassified,event,unnamed,no,0,4,"type 16 ""Alien"": Check"
+0x001906C0,mm_EvBodyguard_Slot14,140,unclassified,event,unnamed,no,0,1,type 5: Slot14
+0x00190750,mm_EvEscort_End,148,unclassified,event,unnamed,no,0,3,End shared by types 2 and 5
+0x001907F0,mm_EvEscort_Update,768,unclassified,event,unnamed,yes,0,6,Update shared by types 2 and 5
+0x00190AF0,mm_EvEscort_Start,96,unclassified,event,unnamed,no,0,3,"Start shared by types 2 ""Forgetful Granny"" and 5 ""Bodyguard"""
+0x00190B50,mm_EvBodyguard_Check,,unclassified,event,named,,,,"type 5 ""Bodyguard"": Check"
+0x00190B60,mm_EvMsg_Slot14,612,unclassified,event,unnamed,no,0,7,"Slot14 shared by types 23, 29, 30, 35, 41"
+0x00190DD0,mm_EvPayday_Slot10,72,unclassified,event,unnamed,indirect,0,0,Slot10 shared by types 29 and 30
+0x00190F00,mm_EvPayday_Update,492,unclassified,event,unnamed,no,0,2,Update shared by types 29 and 30
+0x001910F0,mm_EvMsg_UpdateFinal,256,unclassified,event,unnamed,no,0,1,"Update for types 23 ""Begin a farewell party"", 35 ""Forcibly Retreat"", 41 ""Mission Cleared"""
+0x001911F0,mm_EvMsg_Update,292,unclassified,event,unnamed,no,0,2,"Update shared by most message events (25-28, 31-34, 36-40)"
+0x00191320,mm_EvNoRetreat_Update,256,unclassified,event,unnamed,no,0,2,"type 24 ""No retreat"": Update"
+0x00191420,mm_EvMsg_End,48,unclassified,event,unnamed,no,0,1,End shared by the message events
+0x00191450,mm_EvMsg_Start,,unclassified,event,named,,,,Start shared by the message events (types 23-41)
+0x00191480,mm_EvMissionCleared_Check,84,unclassified,event,unnamed,no,0,1,"type 41 ""Mission Cleared"": Check"
+0x001914E0,mm_EvQuota80_Check,,unclassified,event,named,,,,"type 40 ""80% of the quota"": Check"
+0x00191530,mm_EvForciblyRetreat_Check,,unclassified,event,named,,,,"type 35 ""Forcibly Retreat"": Check"
+0x00191550,mm_EvRetreat_Check,68,unclassified,event,unnamed,no,0,1,"type 34 ""Retreat"": Check"
+0x001915A0,mm_EvThreeUnsatisfied_Check,340,unclassified,event,unnamed,no,0,4,"type 33 ""3 Unsatisfied things"": Check"
+0x00191700,mm_EvNoOffer_Check,,unclassified,event,named,,,,"type 32 ""No Offer"": Check"
+0x00191720,mm_EvHunger_Check,36,unclassified,event,unnamed,no,0,1,"type 31 ""Hunger"": Check"
+0x00191750,mm_EvPayday_Check,,unclassified,event,named,,,,"type 30 ""Payday"": Check"
+0x001917B0,mm_EvFirstPayday_Check,,unclassified,event,named,,,,"type 29 ""Your First Payday"": Check"
+0x001917C0,mm_EvWoman_Check,,unclassified,event,named,,,,"type 28 ""Woman"": Check"
+0x001917F0,mm_EvRiddle_Check,,unclassified,event,named,,,,"type 27 ""Riddle"": Check"
+0x00191820,mm_EvPopularity_Check,,unclassified,event,named,,,,"type 26 ""Popularity"": Check"
+0x00191850,mm_EvCaveMan_Slot14,508,unclassified,event,unnamed,yes,0,3,type 15: Slot14
+0x00191A50,mm_EvCaveMan_Update,1652,unclassified,event,unnamed,yes,0,12,type 15: Update
+0x001920D0,mm_EvCaveMan_End,192,unclassified,event,unnamed,no,0,2,type 15: End
+0x00192190,mm_EvCaveMan_Start,8,unclassified,event,unnamed,no,0,0,type 15: Start
+0x001921A0,mm_EvCaveMan_Check,380,unclassified,event,unnamed,no,0,4,"type 15 ""Cave Man"": Check"
+0x00192320,mm_EvDeliveryMan_Slot14,76,unclassified,event,unnamed,indirect,0,0,type 3: Slot14
+0x00192490,mm_EvDeliveryMan_Slot10,176,unclassified,event,unnamed,no,0,1,type 3: Slot10
+0x00192540,mm_EvDeliveryMan_Update,328,unclassified,event,unnamed,no,0,3,type 3: Update
+0x00192690,mm_EvDeliveryMan_End,184,unclassified,event,unnamed,no,0,2,type 3: End
+0x00192750,mm_EvDeliveryMan_Start,116,unclassified,event,unnamed,no,0,1,type 3: Start
+0x001927D0,mm_EvDeliveryMan_Check,1272,unclassified,event,unnamed,no,0,7,"type 3 ""Delivery Man"": Check"
+0x00192CD0,mm_EvBugDamage_Check,132,unclassified,event,unnamed,no,0,1,"type 11 ""Bug damage"": Check (its only slot)"
+0x00192D60,mm_EventMgr_ListOpG,696,unclassified,event,unnamed,no,2,1,(provisional) list reorder used by the event manager constructor/destructor
+0x00193020,mm_EventQueue_RemoveAt,148,unclassified,event,unnamed,no,5,1,removes the id at a2 from queue level a1 and shifts the level starts
+0x001930C0,mm_EventQueue_InsertByPriority,340,unclassified,event,unnamed,no,7,1,inserts id *a1 into level a2 keeping the type priority order (type record +0x22)
+0x00193220,mm_PartyPopup_Draw,36,unclassified,event,unnamed,no,0,1,(provisional) vtable 0x1BD8E0 draw: queues its packet in pass 2
+0x00193250,mm_PartyPopup_Update,72,unclassified,event,unnamed,no,0,3,(provisional) refreshes its window; button 0x40 closes (0x181430)
+0x001932A0,mm_PartyPopup_dtor,144,unclassified,event,unnamed,yes,0,3,(provisional) vtable 0x1BD8E0 then base 0x1BD8B0; deletes its frame
+0x00193330,mm_EvFarewellParty_Slot14,60,unclassified,event,unnamed,no,0,0,type 19: Slot14
+0x00193370,mm_EvFarewellParty_End,104,unclassified,event,unnamed,indirect,0,1,type 19: End
+0x001933E0,mm_EvFarewellParty_Update,1344,unclassified,event,unnamed,yes,0,19,type 19: Update
+0x00193920,mm_EvFarewellParty_Start,520,unclassified,event,unnamed,no,0,5,"type 19 ""Farewell Party"": Start"
+0x00193B30,mm_EvForgetfulGranny_Check,,unclassified,event,named,,,,"type 2 ""Forgetful Granny"": Check"
+0x00193B60,mm_EvCrazyCult_Slot14,96,unclassified,event,unnamed,indirect,0,0,type 18: Slot14
+0x00193D00,mm_EvCrazyCult_End,232,unclassified,event,unnamed,no,0,1,type 18: End
 0x00193DF0,FUN_00193df0,324,unclassified,,unnamed,no,1,3,
 0x00193F40,FUN_00193f40,516,unclassified,,unnamed,no,1,3,
 0x00194150,FUN_00194150,352,unclassified,,unnamed,no,1,3,
-0x001942B0,FUN_001942b0,992,unclassified,,unnamed,no,0,6,
-0x00194690,fn_00194690,136,unclassified,,unnamed,no,0,0,
-0x00194720,FUN_00194720,116,unclassified,,unnamed,indirect,0,0,
-0x001949F0,FUN_001949f0,56,unclassified,,unnamed,no,0,1,
-0x00194A30,FUN_00194a30,1452,unclassified,,unnamed,no,0,7,
-0x00194FE0,FUN_00194fe0,184,unclassified,,unnamed,no,0,2,
-0x001950A0,fn_001950A0,48,unclassified,,unnamed,indirect,0,0,
-0x00195160,FUN_00195160,160,unclassified,,unnamed,no,0,1,
-0x00195200,FUN_00195200,140,unclassified,,unnamed,no,0,2,
-0x00195290,FUN_00195290,76,unclassified,,unnamed,no,0,1,
-0x00195300,FUN_00195300,276,unclassified,,unnamed,no,0,2,
-0x00195420,FUN_00195420,252,unclassified,,unnamed,no,0,3,
-0x00195520,FUN_00195520,1452,unclassified,,unnamed,yes,0,14,
-0x00195AD0,FUN_00195ad0,48,unclassified,,unnamed,no,0,1,
-0x00195B00,FUN_00195b00,380,unclassified,,unnamed,yes,0,3,
-0x00195C80,FUN_00195c80,284,unclassified,,unnamed,no,1,4,
-0x00195DA0,FUN_00195da0,800,unclassified,,unnamed,no,0,6,
-0x001960C0,FUN_001960c0,140,unclassified,,unnamed,no,0,2,
-0x00196150,FUN_00196150,276,unclassified,,unnamed,no,0,2,
-0x00196270,FUN_00196270,48,unclassified,,unnamed,no,0,1,
-0x001962A0,FUN_001962a0,192,unclassified,,unnamed,no,0,1,
-0x00196360,FUN_00196360,120,unclassified,,unnamed,indirect,0,0,
-0x001965E0,FUN_001965e0,128,unclassified,,unnamed,no,0,1,
-0x00196660,FUN_00196660,192,unclassified,,unnamed,no,0,2,
-0x00196720,FUN_00196720,592,unclassified,,unnamed,no,0,3,
-0x00196970,FUN_00196970,120,unclassified,,unnamed,no,0,1,
-0x001969F0,FUN_001969f0,1312,unclassified,,unnamed,indirect,0,8,
-0x00196F10,fn_00196F10,8,unclassified,,unnamed,no,0,0,
-0x00196F20,FUN_00196f20,8,unclassified,,unnamed,no,1,0,
-0x00196F30,FUN_00196f30,192,unclassified,,unnamed,yes,0,1,
-0x00196FF0,FUN_00196ff0,248,unclassified,,unnamed,no,0,2,
-0x001970F0,FUN_001970f0,5984,unclassified,,unnamed,yes,0,19,
-0x00198850,FUN_00198850,120,unclassified,,unnamed,no,0,1,
-0x001988D0,FUN_001988d0,680,unclassified,,unnamed,no,0,3,
-0x00198B80,FUN_00198b80,252,unclassified,,unnamed,no,0,1,
-0x00198C80,FUN_00198c80,180,unclassified,,unnamed,no,0,1,
-0x00198D40,FUN_00198d40,1964,unclassified,,unnamed,yes,0,12,
-0x001994F0,FUN_001994f0,492,unclassified,,unnamed,no,0,4,
-0x001996E0,FUN_001996e0,388,unclassified,,unnamed,no,0,3,
-0x00199870,FUN_00199870,564,unclassified,,unnamed,no,0,6,
-0x00199AB0,FUN_00199ab0,604,unclassified,,unnamed,no,0,6,
-0x00199D10,FUN_00199d10,604,unclassified,,unnamed,no,0,6,
-0x00199F70,FUN_00199f70,212,unclassified,,unnamed,no,19,3,
-0x0019A050,FUN_0019a050,236,unclassified,,unnamed,yes,8,3,
-0x0019A140,FUN_0019a140,108,unclassified,,unnamed,yes,2,2,
-0x0019A1B0,FUN_0019a1b0,752,unclassified,,unnamed,no,2,6,
-0x0019A4A0,FUN_0019a4a0,524,unclassified,,unnamed,no,2,5,
-0x0019A6B0,FUN_0019a6b0,84,unclassified,,unnamed,no,8,0,
-0x0019A710,FUN_0019a710,332,unclassified,,unnamed,no,3,1,
-0x0019A860,FUN_0019a860,308,unclassified,,unnamed,no,3,1,
-0x0019A9A0,FUN_0019a9a0,212,unclassified,,unnamed,no,3,1,
-0x0019AA80,FUN_0019aa80,160,unclassified,,unnamed,no,1,1,
-0x0019AB20,FUN_0019ab20,816,unclassified,,unnamed,no,10,4,
-0x0019AE50,FUN_0019ae50,212,unclassified,,unnamed,no,6,2,
-0x0019AF30,FUN_0019af30,232,unclassified,,unnamed,no,5,2,
-0x0019B020,FUN_0019b020,136,unclassified,,unnamed,no,1,3,
-0x0019B0B0,FUN_0019b0b0,424,unclassified,,unnamed,no,1,2,
-0x0019B260,FUN_0019b260,360,unclassified,,unnamed,no,7,3,
-0x0019B3D0,FUN_0019b3d0,104,unclassified,,unnamed,no,7,2,
-0x0019B440,FUN_0019b440,80,unclassified,,unnamed,no,1,2,
-0x0019B490,FUN_0019b490,84,unclassified,,unnamed,no,2,1,
-0x0019B4F0,FUN_0019b4f0,400,unclassified,,unnamed,no,1,3,
-0x0019B680,FUN_0019b680,448,unclassified,,unnamed,no,2,3,
-0x0019B840,FUN_0019b840,136,game,city,unnamed,no,10,0,"from a placed building (type a0[0], packed tile a0[2] = x | y<<7) and margin a1: x, y and the far corner from the type's size (type table gp, +0x142) into a2[0..3]"
-0x0019B8D0,FUN_0019b8d0,100,game,movie,unnamed,yes,1,1,sceSdRemote SetParam: master volume left/right (0x980/0xA80) of both cores to a0
-0x0019B940,FUN_0019b940,840,game,movie,unnamed,no,1,3,(sendToIOP2area) copies up to two EE ring areas into up to two IOP ring areas with sceSifSetDma and waits for each
-0x0019BC90,FUN_0019bc90,476,game,movie,unnamed,yes,1,2,"(audioDecSendToIOP) in preset or play state, sends as much PCM as fits behind the SPU2 AutoDMA play position (sceSdRemote 0x8100) in 1 KB units"
-0x0019BE70,FUN_0019be70,20,game,movie,unnamed,no,1,0,(audioDecIsPreset) true once the IOP buffer has been filled the first time
-0x0019BE90,FUN_0019be90,292,game,movie,unnamed,yes,1,1,(audioDecEndPut) commits a1 bytes; in header state collects the 0x28-byte SShd/SSbd header first and prints it
-0x0019BFC0,FUN_0019bfc0,188,game,movie,unnamed,no,1,0,"(audioDecBeginPut) free space as up to two areas: the header area while parsing it, else the EE ring (0xC000 bytes)"
-0x0019C080,FUN_0019c080,192,game,movie,unnamed,yes,1,1,"(audioDecReset) stops AutoDMA, records the play position, plays the zero buffer, clears all counters"
-0x0019C140,FUN_0019c140,136,game,movie,unnamed,yes,1,1,"(audioDecStart) full volume and starts AutoDMA looping over the IOP buffer, state 2 (play)"
-0x0019C1D0,FUN_0019c1d0,136,game,movie,unnamed,yes,1,1,"same as mm_Movie_AudioDecStart, used after a pause"
-0x0019C260,FUN_0019c260,52,game,movie,unnamed,yes,1,1,(audioDecDelete) frees the IOP buffers
-0x0019C2A0,FUN_0019c2a0,376,game,movie,unnamed,yes,1,8,"(audioDecCreate) EE ring a1/a2, allocates the IOP buffer (a3 bytes) and a 0x800-byte zero buffer on the IOP"
-0x0019C420,FUN_0019c420,12,game,movie,unnamed,no,1,0,"clears the display-running flags (0x1BDD68, 0x1BDD9C)"
-0x0019C430,FUN_0019c430,76,game,movie,unnamed,yes,2,1,"waits for the field a0 to pass, then sets the display-running flag"
-0x0019C480,FUN_0019c480,56,game,movie,unnamed,no,0,1,(handler_endimage) DMA interrupt handler: releases the shown picture (mm_Movie_VoBufDecCount)
-0x0019C4C0,FUN_0019c4c0,1328,game,movie,unnamed,yes,0,8,"(vblankHandler) VSync interrupt handler: picks the buffer by the GS CSR field bit, swaps, sends the next decoded picture and subtitles"
-0x0019C9F0,FUN_0019c9f0,376,game,movie,unnamed,no,1,1,lays out a subtitle string into glyph indices at 0x215F00 using the font
-0x0019CB70,FUN_0019cb70,1592,game,movie,unnamed,no,1,2,"builds the subtitle GS packet at 0x20C1A0 from the laid-out glyphs (font glyphs, positions)"
-0x0019D1B0,FUN_0019d1b0,596,game,movie,unnamed,yes,1,8,"sends the current picture and the subtitle packet to the GS (path 2 DMA, A+D setup)"
-0x0019D410,FUN_0019d410,1240,game,movie,unnamed,no,1,10,"turns a decoded RGB32 picture into a textured-sprite GS packet (strips, A+D registers)"
-0x0019D8F0,FUN_0019d8f0,684,game,movie,unnamed,yes,1,16,"clears both display buffers to black, swapping on vsync, reading the pad meanwhile"
-0x0019DBA0,FUN_0019dba0,624,game,movie,unnamed,yes,2,14,"(playPss) opens the PSS (cdrom0:), initialises, then pumps the demux and audio until the movie ends or a button skips it (""QuickView:%s"")"
+0x001942B0,mm_EvCrazyCult_Update,992,unclassified,event,unnamed,no,0,6,type 18: Update
+0x00194690,mm_EvCrazyCult_Start,136,unclassified,event,unnamed,no,0,0,"type 18 ""Crazy Cult"": Start"
+0x00194720,mm_EvAdoption_Slot14,116,unclassified,event,unnamed,indirect,0,0,type 12: Slot14
+0x001949F0,mm_EvAdoption_Slot10,56,unclassified,event,unnamed,no,0,1,type 12: Slot10
+0x00194A30,mm_EvAdoption_Update,1452,unclassified,event,unnamed,no,0,7,type 12: Update
+0x00194FE0,mm_EvAdoption_Start,184,unclassified,event,unnamed,no,0,2,"type 12 ""Adoption"": Start"
+0x001950A0,mm_EvUselessMiddleAged_Slot14,48,unclassified,event,unnamed,indirect,0,0,type 7: Slot14
+0x00195160,mm_EvUselessMiddleAged_Update,160,unclassified,event,unnamed,no,0,1,type 7: Update
+0x00195200,mm_EvUselessMiddleAged_End,140,unclassified,event,unnamed,no,0,2,type 7: End
+0x00195290,mm_EvUselessMiddleAged_Start,76,unclassified,event,unnamed,no,0,1,type 7: Start
+0x001952E0,mm_EvUselessMiddleAged_Check,,unclassified,event,named,,,,"type 7 ""Useless middle-aged"": Check"
+0x00195300,mm_EvMissingChildren_Slot14,276,unclassified,event,unnamed,no,0,2,type 6: Slot14
+0x00195420,mm_EvMissingChildren_End,252,unclassified,event,unnamed,no,0,3,type 6: End
+0x00195520,mm_EvMissingChildren_Update,1452,unclassified,event,unnamed,yes,0,14,type 6: Update
+0x00195AD0,mm_EvMissingChildren_Start,48,unclassified,event,unnamed,no,0,1,type 6: Start
+0x00195B00,mm_EvMissingChildren_Check,380,unclassified,event,unnamed,yes,0,3,"type 6 ""Finds missing children"": Check"
+0x00195C80,mm_EvAdvertise_PickClaimText,284,unclassified,event,unnamed,no,1,4,(provisional) claim lines for the two buildings' claim types (CLAIM.BIN sections)
+0x00195DA0,mm_EvAdvertise_Slot14,800,unclassified,event,unnamed,no,0,6,type 9: Slot14
+0x001960C0,mm_EvAdvertise_End,140,unclassified,event,unnamed,no,0,2,type 9: End
+0x00196150,mm_EvAdvertise_Update,276,unclassified,event,unnamed,no,0,2,type 9: Update
+0x00196270,mm_EvAdvertise_Start,48,unclassified,event,unnamed,no,0,1,type 9: Start
+0x001962A0,mm_EvAdvertise_Check,192,unclassified,event,unnamed,no,0,1,"type 9 ""To advertise"": Check"
+0x00196360,mm_EvShopping_Slot14,120,unclassified,event,unnamed,indirect,0,0,type 8: Slot14
+0x001965E0,mm_EvShopping_Slot10,128,unclassified,event,unnamed,no,0,1,type 8: Slot10
+0x00196660,mm_EvShopping_End,192,unclassified,event,unnamed,no,0,2,type 8: End
+0x00196720,mm_EvShopping_Update,592,unclassified,event,unnamed,no,0,3,type 8: Update
+0x00196970,mm_EvShopping_Start,120,unclassified,event,unnamed,no,0,1,type 8: Start
+0x001969F0,mm_EvShopping_Check,1312,unclassified,event,unnamed,indirect,0,8,"type 8 ""Shopping"": Check"
+0x00196F10,mm_Unk196F10_Ret7C,8,unclassified,event,unnamed,no,0,0,(provisional) returns 0x7C
+0x00196F20,mm_Unk196F20_Ret1C,8,unclassified,event,unnamed,no,1,0,(provisional) returns 0x1C; used by the event manager constructor
+0x00196F30,mm_EvNoodles_Slot14,192,unclassified,event,unnamed,yes,0,1,type 13: Slot14
+0x00196FF0,mm_EvNoodles_End,248,unclassified,event,unnamed,no,0,2,type 13: End
+0x001970F0,mm_EvNoodles_Update,5984,unclassified,event,unnamed,yes,0,19,type 13: Update
+0x00198850,mm_EvNoodles_Start,120,unclassified,event,unnamed,no,0,1,type 13: Start
+0x001988D0,mm_EvNoodles_Check,680,unclassified,event,unnamed,no,0,3,"type 13 ""Noodles"": Check"
+0x00198B80,mm_EvThief_Slot14,252,unclassified,event,unnamed,no,0,1,type 17: Slot14
+0x00198C80,mm_EvThief_End,180,unclassified,event,unnamed,no,0,1,type 17: End
+0x00198D40,mm_EvThief_Update,1964,unclassified,event,unnamed,yes,0,12,type 17: Update
+0x001994F0,mm_EvThief_Check,492,unclassified,event,unnamed,no,0,4,"type 17 ""Thief"": Check"
+0x001996E0,mm_EvRelationship_Slot14,388,unclassified,event,unnamed,no,0,3,Slot14 shared by types 20-22
+0x00199870,mm_EvAffair_Check,564,unclassified,event,unnamed,no,0,6,"type 22 ""An affair of"": Check"
+0x00199AB0,mm_EvBoyfriend_Check,604,unclassified,event,unnamed,no,0,6,"type 21 ""Boyfriend of"": Check"
+0x00199D10,mm_EvGirlfriend_Check,604,unclassified,event,unnamed,no,0,6,"type 20 ""Girlfriend of"": Check"
+0x00199F70,mm_EvActor_Notify,212,unclassified,event,unnamed,no,19,3,"(provisional) if the actor (person index, 6000 = none) is on a valid tile, posts message (a2/a3) through the message manager (city +0x6C, 0x16C5F0)"
+0x0019A050,mm_EvActor_PointCursor,236,unclassified,event,unnamed,yes,8,3,"(provisional) when nobody holds input focus, points the city cursor at the actor's building or position (0x1815E0)"
+0x0019A140,mm_EvActor_PointAtBuilding,108,unclassified,event,unnamed,yes,2,2,(provisional) points the cursor at building a2 and moves to the actor
+0x0019A1B0,mm_EvActor_Wander,752,unclassified,event,unnamed,no,2,6,(provisional) picks a random target building for the actor; sets night flag 0x40 by the time-of-day phase
+0x0019A4A0,mm_EvActor_FindShop,524,unclassified,event,unnamed,no,2,5,(provisional) searches all buildings with type flag 0x40 for a target for the actor
+0x0019A6B0,mm_EvActor_StopFollowing,84,unclassified,event,unnamed,no,8,0,"clears the follow flags (0x20, 0x80) and the follow target of person a1"
+0x0019A710,mm_EvActor_Follow,332,unclassified,event,unnamed,no,3,1,"person a1 leaves its building and follows person a2 (flag 0x20, target +0x20)"
+0x0019A860,mm_EvActor_Detach,308,unclassified,event,unnamed,no,3,1,"person a1 leaves its building, follow flag set with no target"
+0x0019A9A0,mm_EvActor_Release,212,unclassified,event,unnamed,no,3,1,person a1 leaves its building and drops flags 0x80/0x100
+0x0019AA80,mm_Person_ExitBuilding,160,unclassified,char,unnamed,no,1,1,if person a1 is inside a building: lowers the building's occupant count (+0x17) and marks the person outside
+0x0019AB20,mm_EvActor_MoveTo,816,unclassified,event,unnamed,no,10,4,moves person a1 towards building a2; 1 on arrival
+0x0019AE50,mm_Person_IsOnOpenTile,212,unclassified,char,unnamed,no,6,2,(provisional) the person's tile holds no building with type flag 0x40
+0x0019AF30,mm_Person_IsAtBuilding,232,unclassified,char,unnamed,no,5,2,person a1 (6000 counts as yes) stands at building a2
+0x0019B020,mm_Person_FindIdleOfType,136,unclassified,char,unnamed,no,1,3,first person of char type a2 whose home building is free (0x165660)
+0x0019B0B0,mm_Person_IsNearBuilding,424,unclassified,char,unnamed,no,1,2,person position within a3 tiles of building a2's footprint
+0x0019B260,mm_Player_DistanceToBuilding,360,unclassified,char,unnamed,no,7,3,distance in tiles from the player to building a1's footprint
+0x0019B3D0,mm_Player_DistanceToPerson,104,unclassified,char,unnamed,no,7,2,distance from the player to person a1 (sqrt)
+0x0019B440,mm_Player_DistanceToPoint,80,unclassified,char,unnamed,no,1,2,distance from the player to point a1
+0x0019B490,mm_Person_Distance,84,unclassified,char,unnamed,no,2,1,distance between persons a1 and a2
+0x0019B4F0,mm_EvAlien_FindBuilding,400,unclassified,event,unnamed,no,1,3,(provisional) a free building of type a2 whose footprint fits
+0x0019B680,mm_EvThief_FindBuilding,448,unclassified,event,unnamed,no,2,3,(provisional) a free building of category a1 (type +0x145) whose footprint fits
+0x0019B840,mm_Building_GetFootprint,136,game,city,named,no,10,0,"from a placed building (type a0[0], packed tile a0[2] = x | y<<7) and margin a1: x, y and the far corner from the type's size (type table gp, +0x142) into a2[0..3]"
+0x0019B8D0,mm_Movie_SetSpuMasterVolume,100,game,movie,named,yes,1,1,sceSdRemote SetParam: master volume left/right (0x980/0xA80) of both cores to a0
+0x0019B940,mm_Movie_SendToIop2Area,840,game,movie,named,no,1,3,(sendToIOP2area) copies up to two EE ring areas into up to two IOP ring areas with sceSifSetDma and waits for each
+0x0019BC90,mm_Movie_AudioDecSendToIop,476,game,movie,named,yes,1,2,"(audioDecSendToIOP) in preset or play state, sends as much PCM as fits behind the SPU2 AutoDMA play position (sceSdRemote 0x8100) in 1 KB units"
+0x0019BE70,mm_Movie_AudioDecIsPreset,20,game,movie,named,no,1,0,(audioDecIsPreset) true once the IOP buffer has been filled the first time
+0x0019BE90,mm_Movie_AudioDecEndPut,292,game,movie,named,yes,1,1,(audioDecEndPut) commits a1 bytes; in header state collects the 0x28-byte SShd/SSbd header first and prints it
+0x0019BFC0,mm_Movie_AudioDecBeginPut,188,game,movie,named,no,1,0,"(audioDecBeginPut) free space as up to two areas: the header area while parsing it, else the EE ring (0xC000 bytes)"
+0x0019C080,mm_Movie_AudioDecReset,192,game,movie,named,yes,1,1,"(audioDecReset) stops AutoDMA, records the play position, plays the zero buffer, clears all counters"
+0x0019C140,mm_Movie_AudioDecStart,136,game,movie,named,yes,1,1,"(audioDecStart) full volume and starts AutoDMA looping over the IOP buffer, state 2 (play)"
+0x0019C1D0,mm_Movie_AudioDecResume,136,game,movie,named,yes,1,1,"same as mm_Movie_AudioDecStart, used after a pause"
+0x0019C260,mm_Movie_AudioDecDelete,52,game,movie,named,yes,1,1,(audioDecDelete) frees the IOP buffers
+0x0019C2A0,mm_Movie_AudioDecCreate,376,game,movie,named,yes,1,8,"(audioDecCreate) EE ring a1/a2, allocates the IOP buffer (a3 bytes) and a 0x800-byte zero buffer on the IOP"
+0x0019C420,mm_Movie_DisplayStop,12,game,movie,named,no,1,0,"clears the display-running flags (0x1BDD68, 0x1BDD9C)"
+0x0019C430,mm_Movie_DisplayStart,76,game,movie,named,yes,2,1,"waits for the field a0 to pass, then sets the display-running flag"
+0x0019C480,mm_Movie_DmaEndHandler,56,game,movie,named,no,0,1,(handler_endimage) DMA interrupt handler: releases the shown picture (mm_Movie_VoBufDecCount)
+0x0019C4C0,mm_Movie_VblankHandler,1328,game,movie,named,yes,0,8,"(vblankHandler) VSync interrupt handler: picks the buffer by the GS CSR field bit, swaps, sends the next decoded picture and subtitles"
+0x0019C9F0,mm_Movie_LayoutSubtitle,376,game,movie,named,no,1,1,lays out a subtitle string into glyph indices at 0x215F00 using the font
+0x0019CB70,mm_Movie_BuildSubtitlePacket,1592,game,movie,named,no,1,2,"builds the subtitle GS packet at 0x20C1A0 from the laid-out glyphs (font glyphs, positions)"
+0x0019D1B0,mm_Movie_SendFrame,596,game,movie,named,yes,1,8,"sends the current picture and the subtitle packet to the GS (path 2 DMA, A+D setup)"
+0x0019D410,mm_Movie_BuildImagePacket,1240,game,movie,named,no,1,10,"turns a decoded RGB32 picture into a textured-sprite GS packet (strips, A+D registers)"
+0x0019D8F0,mm_Movie_ClearScreen,684,game,movie,named,yes,1,16,"clears both display buffers to black, swapping on vsync, reading the pad meanwhile"
+0x0019DBA0,mm_Movie_PlayPss,624,game,movie,named,yes,2,14,"(playPss) opens the PSS (cdrom0:), initialises, then pumps the demux and audio until the movie ends or a button skips it (""QuickView:%s"")"
 0x0019DE10,mm_PlayMissionMovie,400,game,movie,named,yes,1,10,"plays DATA\MPEG\MISSION<n>.PSS with its .BIN subtitles (n = a0), or ENDING.PSS for 6, once the sound driver is idle"
 0x0019DFA0,mm_PlayOpeningMovie,116,game,movie,named,yes,1,3,plays DATA\MPEG\OPENING.PSS at 640x448 once the sound driver is idle
-0x0019E020,FUN_0019e020,8,game,movie,unnamed,no,1,0,0x1BDD80 = a0
-0x0019E030,FUN_0019e030,16,game,movie,unnamed,yes,2,1,"(ErrMessage) prints ""[ Error ] %s"""
-0x0019E060,FUN_0019e060,8,game,movie,unnamed,no,2,0,(switchThread) RotateThreadReadyQueue syscall (0x2B)
-0x0019E070,FUN_0019e070,348,game,movie,unnamed,yes,1,18,"(termAll) waits for the decoder to drain, stops audio, removes the handlers, deletes the threads and closes the stream"
-0x0019E1D0,FUN_0019e1d0,172,game,movie,unnamed,yes,1,3,"one step of playback: pumps the demux until the decoder reports the end, then terminates"
-0x0019E280,FUN_0019e280,380,game,movie,unnamed,yes,2,12,"reads disc data into the read buffer (sceCdStRead), demuxes it (sceMpegDemuxPssRing), sends audio to the IOP and starts display and audio once both are preloaded"
-0x0019E400,FUN_0019e400,80,game,movie,unnamed,yes,1,2,restarts display and audio after a pause
-0x0019E450,FUN_0019e450,816,game,movie,unnamed,yes,1,18,"(initAll) display buffers, sceMpegInit, video decoder, audio decoder (when 0x1BD9E8 is set), stream callbacks, read and decode threads, VSync and DMA handlers"
-0x0019E780,FUN_0019e780,432,game,movie,unnamed,yes,0,3,"(pcmCallback) stream callback for audio: skips the 4-byte sub-stream header, copies the packet into the audio decoder (ring-aware); returns 0 when there is no room"
-0x0019E930,FUN_0019e930,504,game,movie,unnamed,yes,0,5,"(videoCallback) stream callback for video: copies the packet into the IPU input buffer, records its time stamp (""pts buffer overflow""); 0 when there is no room"
-0x0019EB30,FUN_0019eb30,60,game,movie,unnamed,no,1,0,(readBufEndGet) releases a1 bytes
-0x0019EB70,FUN_0019eb70,96,game,movie,unnamed,no,1,0,(readBufBeginGet) start of the readable data and its size
-0x0019EBD0,FUN_0019ebd0,112,game,movie,unnamed,no,1,0,(readBufEndPut) commits a1 written bytes
-0x0019EC40,FUN_0019ec40,60,game,movie,unnamed,no,1,0,(readBufBeginPut) write position unless the ring is full
-0x0019EC80,FUN_0019ec80,8,game,movie,unnamed,no,1,0,(readBufDelete) empty
-0x0019EC90,FUN_0019ec90,44,game,movie,unnamed,no,1,0,(readBufCreate) empty ring of 0x50000 bytes
-0x0019ECC0,FUN_0019ecc0,80,game,movie,unnamed,yes,1,2,(strFileRead) sceCdStRead of a1/2048 sectors (or sceRead for host files); flags a read error
-0x0019ED10,FUN_0019ed10,76,game,movie,unnamed,yes,2,3,(strFileClose) sceCdStStop and frees the stream buffer (or sceClose)
-0x0019ED60,mm_OpenDiscFile,756,game,movie,named,yes,1,18,"(strFileOpen, was mm_OpenDiscFile) cdrom0: files via sceCdSearchFile and CD streaming, host0: files via sceOpen"
-0x0019F060,FUN_0019f060,436,game,movie,unnamed,yes,1,2,(viBufGetTs) time stamp of the data the IPU is reading now
-0x0019F220,FUN_0019f220,300,game,movie,unnamed,yes,1,3,(viBufPutTs) records a time stamp for the data just written
-0x0019F350,FUN_0019f350,324,game,movie,unnamed,no,1,0,drops time stamps whose data the IPU has consumed
-0x0019F4A0,FUN_0019f4a0,80,game,movie,unnamed,yes,1,2,(viBufFlush) rounds the write offset up to 2 KB
-0x0019F4F0,FUN_0019f4f0,68,game,movie,unnamed,yes,1,2,(viBufCount) bytes waiting for the IPU
-0x0019F540,FUN_0019f540,144,game,movie,unnamed,no,1,3,"(viBufDelete) stops IPU DMA, deletes the semaphore"
-0x0019F5D0,FUN_0019f5d0,944,game,movie,unnamed,yes,1,4,(viBufRestartDMA) restarts the toIPU DMA where it stopped
-0x0019F980,FUN_0019f980,352,game,movie,unnamed,yes,1,4,(viBufStopDMA) stops the toIPU DMA and remembers its position
-0x0019FAE0,FUN_0019fae0,756,game,movie,unnamed,yes,1,5,"(viBufAddDMA) queues more ring data on the toIPU DMA chain (""DMA ADD not active"")"
-0x0019FDE0,FUN_0019fde0,92,game,movie,unnamed,yes,1,2,(viBufEndPut) commits a1 bytes
-0x0019FE40,FUN_0019fe40,244,game,movie,unnamed,yes,1,2,(viBufBeginPut) free space as up to two areas
-0x0019FF40,FUN_0019ff40,404,game,movie,unnamed,no,2,2,"(viBufReset) empties the ring and the time stamp table, builds the DMA tags"
-0x001A00E0,FUN_001a00e0,116,game,movie,unnamed,no,1,2,"(viBufCreate) ring a1 (uncached), DMA tag area, time stamp table, semaphore"
-0x001A0160,FUN_001a0160,68,game,movie,unnamed,yes,0,1,(mpegTS) libmpeg time stamp callback: mm_Movie_ViBufGetTs
-0x001A01B0,FUN_001a01b0,36,game,movie,unnamed,yes,0,1,(mpegRestartDMA) libmpeg callback
-0x001A01E0,FUN_001a01e0,36,game,movie,unnamed,yes,0,1,(mpegStopDMA) libmpeg callback
-0x001A0210,FUN_001a0210,44,game,movie,unnamed,yes,0,2,"(mpegNodata) libmpeg callback: switch threads, then queue more input"
-0x001A0240,FUN_001a0240,40,game,movie,unnamed,yes,0,1,(mpegError) libmpeg callback: prints the message
-0x001A0270,FUN_001a0270,692,game,movie,unnamed,yes,1,10,"(decBs0) decode thread loop: sceMpegGetPicture into the picture queue, builds image and subtitle packets, ends on sceMpegIsEnd (""decode thread: aborted"")"
-0x001A0530,FUN_001a0530,96,game,movie,unnamed,yes,0,3,"(videoDecMain) decode thread entry: resets the buffers, runs the loop, waits for the queue to drain, state 3 (done)"
-0x001A0590,FUN_001a0590,84,game,movie,unnamed,yes,1,2,input buffer empty and libmpeg has no more pictures
-0x001A05F0,FUN_001a05f0,400,game,movie,unnamed,yes,1,4,appends a sequence end code (0x1BD9F0) to the input once there is room; 0 until then
-0x001A0780,FUN_001a0780,60,game,movie,unnamed,yes,1,1,(videoDecPutTs) time stamp for input offset a3
-0x001A07C0,FUN_001a07c0,8,game,movie,unnamed,no,2,0,(videoDecGetState) +0xA8
-0x001A07D0,FUN_001a07d0,12,game,movie,unnamed,no,1,0,+0xA8 = 1
-0x001A07E0,FUN_001a07e0,52,game,movie,unnamed,no,1,2,(videoDecDelete) deletes the input buffer and the sceMpeg (0x10BF60)
-0x001A0820,FUN_001a0820,8,game,movie,unnamed,no,1,0,(videoDecEndPut) commits a1 bytes of input
-0x001A0830,FUN_001a0830,8,game,movie,unnamed,no,1,0,(videoDecBeginPut) input free space as up to two areas
-0x001A0840,FUN_001a0840,32,game,movie,unnamed,no,1,1,wrapper around sceMpegAddStrCallback; returns 1
-0x001A0860,FUN_001a0860,252,game,movie,unnamed,yes,1,3,"(videoDecCreate) sceMpegCreate, the five libmpeg callbacks, state 0, input buffer"
-0x001A0960,FUN_001a0960,32,game,movie,unnamed,no,1,0,(voBufDecCount) one shown picture released
-0x001A0980,FUN_001a0980,116,game,movie,unnamed,no,1,0,"(voBufGetTag) oldest decoded picture (0x39240-byte slots), 0 if none"
-0x001A0A00,FUN_001a0a00,72,game,movie,unnamed,no,1,0,"(voBufGetData) next free picture slot (0x12C000 bytes each), 0 if full"
-0x001A0A50,FUN_001a0a50,140,game,movie,unnamed,no,1,2,(voBufIncCount) marks the slot decoded and advances
-0x001A0AE0,FUN_001a0ae0,20,game,movie,unnamed,no,1,0,(voBufIsFull) count == size
-0x001A0B00,FUN_001a0b00,12,game,movie,unnamed,no,1,0,(voBufReset) empties the queue
-0x001A0B10,FUN_001a0b10,8,game,movie,unnamed,no,1,0,(voBufDelete) empty
-0x001A0B20,FUN_001a0b20,280,game,movie,unnamed,no,1,0,"(voBufCreate) picture data a1, tag area a2, a3 slots"
+0x0019E020,mm_Movie_SetSubtitleState,8,game,movie,named,no,1,0,0x1BDD80 = a0
+0x0019E030,mm_Movie_Error,16,game,movie,named,yes,2,1,"(ErrMessage) prints ""[ Error ] %s"""
+0x0019E060,mm_Movie_SwitchThread,8,game,movie,named,no,2,0,(switchThread) RotateThreadReadyQueue syscall (0x2B)
+0x0019E070,mm_Movie_TermAll,348,game,movie,named,yes,1,18,"(termAll) waits for the decoder to drain, stops audio, removes the handlers, deletes the threads and closes the stream"
+0x0019E1D0,mm_Movie_Update,172,game,movie,named,yes,1,3,"one step of playback: pumps the demux until the decoder reports the end, then terminates"
+0x0019E280,mm_Movie_ReadAndDemux,380,game,movie,named,yes,2,12,"reads disc data into the read buffer (sceCdStRead), demuxes it (sceMpegDemuxPssRing), sends audio to the IOP and starts display and audio once both are preloaded"
+0x0019E400,mm_Movie_ResumeAll,80,game,movie,named,yes,1,2,restarts display and audio after a pause
+0x0019E450,mm_Movie_InitAll,816,game,movie,named,yes,1,18,"(initAll) display buffers, sceMpegInit, video decoder, audio decoder (when 0x1BD9E8 is set), stream callbacks, read and decode threads, VSync and DMA handlers"
+0x0019E780,mm_Movie_PcmCallback,432,game,movie,named,yes,0,3,"(pcmCallback) stream callback for audio: skips the 4-byte sub-stream header, copies the packet into the audio decoder (ring-aware); returns 0 when there is no room"
+0x0019E930,mm_Movie_VideoCallback,504,game,movie,named,yes,0,5,"(videoCallback) stream callback for video: copies the packet into the IPU input buffer, records its time stamp (""pts buffer overflow""); 0 when there is no room"
+0x0019EB30,mm_Movie_ReadBufEndGet,60,game,movie,named,no,1,0,(readBufEndGet) releases a1 bytes
+0x0019EB70,mm_Movie_ReadBufBeginGet,96,game,movie,named,no,1,0,(readBufBeginGet) start of the readable data and its size
+0x0019EBD0,mm_Movie_ReadBufEndPut,112,game,movie,named,no,1,0,(readBufEndPut) commits a1 written bytes
+0x0019EC40,mm_Movie_ReadBufBeginPut,60,game,movie,named,no,1,0,(readBufBeginPut) write position unless the ring is full
+0x0019EC80,mm_Movie_ReadBufDelete,8,game,movie,named,no,1,0,(readBufDelete) empty
+0x0019EC90,mm_Movie_ReadBufCreate,44,game,movie,named,no,1,0,(readBufCreate) empty ring of 0x50000 bytes
+0x0019ECC0,mm_Movie_StrFileRead,80,game,movie,named,yes,1,2,(strFileRead) sceCdStRead of a1/2048 sectors (or sceRead for host files); flags a read error
+0x0019ED10,mm_Movie_StrFileClose,76,game,movie,named,yes,2,3,(strFileClose) sceCdStStop and frees the stream buffer (or sceClose)
+0x0019ED60,mm_Movie_StrFileOpen,756,game,movie,named,yes,1,18,"(strFileOpen, was mm_OpenDiscFile) cdrom0: files via sceCdSearchFile and CD streaming, host0: files via sceOpen"
+0x0019F060,mm_Movie_ViBufGetTs,436,game,movie,named,yes,1,2,(viBufGetTs) time stamp of the data the IPU is reading now
+0x0019F220,mm_Movie_ViBufPutTs,300,game,movie,named,yes,1,3,(viBufPutTs) records a time stamp for the data just written
+0x0019F350,mm_Movie_ViBufModifyPts,324,game,movie,named,no,1,0,drops time stamps whose data the IPU has consumed
+0x0019F4A0,mm_Movie_ViBufFlush,80,game,movie,named,yes,1,2,(viBufFlush) rounds the write offset up to 2 KB
+0x0019F4F0,mm_Movie_ViBufCount,68,game,movie,named,yes,1,2,(viBufCount) bytes waiting for the IPU
+0x0019F540,mm_Movie_ViBufDelete,144,game,movie,named,no,1,3,"(viBufDelete) stops IPU DMA, deletes the semaphore"
+0x0019F5D0,mm_Movie_ViBufRestartDma,944,game,movie,named,yes,1,4,(viBufRestartDMA) restarts the toIPU DMA where it stopped
+0x0019F980,mm_Movie_ViBufStopDma,352,game,movie,named,yes,1,4,(viBufStopDMA) stops the toIPU DMA and remembers its position
+0x0019FAE0,mm_Movie_ViBufAddDma,756,game,movie,named,yes,1,5,"(viBufAddDMA) queues more ring data on the toIPU DMA chain (""DMA ADD not active"")"
+0x0019FDE0,mm_Movie_ViBufEndPut,92,game,movie,named,yes,1,2,(viBufEndPut) commits a1 bytes
+0x0019FE40,mm_Movie_ViBufBeginPut,244,game,movie,named,yes,1,2,(viBufBeginPut) free space as up to two areas
+0x0019FF40,mm_Movie_ViBufReset,404,game,movie,named,no,2,2,"(viBufReset) empties the ring and the time stamp table, builds the DMA tags"
+0x001A00E0,mm_Movie_ViBufCreate,116,game,movie,named,no,1,2,"(viBufCreate) ring a1 (uncached), DMA tag area, time stamp table, semaphore"
+0x001A0160,mm_Movie_CbTimeStamp,68,game,movie,named,yes,0,1,(mpegTS) libmpeg time stamp callback: mm_Movie_ViBufGetTs
+0x001A01B0,mm_Movie_CbRestartDma,36,game,movie,named,yes,0,1,(mpegRestartDMA) libmpeg callback
+0x001A01E0,mm_Movie_CbStopDma,36,game,movie,named,yes,0,1,(mpegStopDMA) libmpeg callback
+0x001A0210,mm_Movie_CbNoData,44,game,movie,named,yes,0,2,"(mpegNodata) libmpeg callback: switch threads, then queue more input"
+0x001A0240,mm_Movie_CbError,40,game,movie,named,yes,0,1,(mpegError) libmpeg callback: prints the message
+0x001A0270,mm_Movie_DecodeLoop,692,game,movie,named,yes,1,10,"(decBs0) decode thread loop: sceMpegGetPicture into the picture queue, builds image and subtitle packets, ends on sceMpegIsEnd (""decode thread: aborted"")"
+0x001A0530,mm_Movie_VideoDecMain,96,game,movie,named,yes,0,3,"(videoDecMain) decode thread entry: resets the buffers, runs the loop, waits for the queue to drain, state 3 (done)"
+0x001A0590,mm_Movie_VideoDecIsDone,84,game,movie,named,yes,1,2,input buffer empty and libmpeg has no more pictures
+0x001A05F0,mm_Movie_VideoDecPutTerminator,400,game,movie,named,yes,1,4,appends a sequence end code (0x1BD9F0) to the input once there is room; 0 until then
+0x001A0780,mm_Movie_VideoDecPutTs,60,game,movie,named,yes,1,1,(videoDecPutTs) time stamp for input offset a3
+0x001A07C0,mm_Movie_VideoDecGetState,8,game,movie,named,no,2,0,(videoDecGetState) +0xA8
+0x001A07D0,mm_Movie_VideoDecSetStateStart,12,game,movie,named,no,1,0,+0xA8 = 1
+0x001A07E0,mm_Movie_VideoDecDelete,52,game,movie,named,no,1,2,(videoDecDelete) deletes the input buffer and the sceMpeg (0x10BF60)
+0x001A0820,mm_Movie_VideoDecEndPut,8,game,movie,named,no,1,0,(videoDecEndPut) commits a1 bytes of input
+0x001A0830,mm_Movie_VideoDecBeginPut,8,game,movie,named,no,1,0,(videoDecBeginPut) input free space as up to two areas
+0x001A0840,mm_Movie_VideoDecAddStrCallback,32,game,movie,named,no,1,1,wrapper around sceMpegAddStrCallback; returns 1
+0x001A0860,mm_Movie_VideoDecCreate,252,game,movie,named,yes,1,3,"(videoDecCreate) sceMpegCreate, the five libmpeg callbacks, state 0, input buffer"
+0x001A0960,mm_Movie_VoBufDecCount,32,game,movie,named,no,1,0,(voBufDecCount) one shown picture released
+0x001A0980,mm_Movie_VoBufGetTag,116,game,movie,named,no,1,0,"(voBufGetTag) oldest decoded picture (0x39240-byte slots), 0 if none"
+0x001A0A00,mm_Movie_VoBufGetData,72,game,movie,named,no,1,0,"(voBufGetData) next free picture slot (0x12C000 bytes each), 0 if full"
+0x001A0A50,mm_Movie_VoBufIncCount,140,game,movie,named,no,1,2,(voBufIncCount) marks the slot decoded and advances
+0x001A0AE0,mm_Movie_VoBufIsFull,20,game,movie,named,no,1,0,(voBufIsFull) count == size
+0x001A0B00,mm_Movie_VoBufReset,12,game,movie,named,no,1,0,(voBufReset) empties the queue
+0x001A0B10,mm_Movie_VoBufDelete,8,game,movie,named,no,1,0,(voBufDelete) empty
+0x001A0B20,mm_Movie_VoBufCreate,280,game,movie,named,no,1,0,"(voBufCreate) picture data a1, tag area a2, a3 slots"
 0x001A0C40,FUN_001a0c40,840,unclassified,,unnamed,no,1,2,
 0x001A0F90,FUN_001a0f90,580,unclassified,,unnamed,no,1,1,
 0x001A11E0,FUN_001a11e0,504,unclassified,,unnamed,no,1,1,

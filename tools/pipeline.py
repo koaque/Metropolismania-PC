@@ -245,9 +245,8 @@ def cmd_analyze(args: argparse.Namespace) -> None:
 
 
 def cmd_map(args: argparse.Namespace) -> None:
-    """analyze plus the call graph and a fresh decompilation of every function, then status."""
-    if DECOMP_DIR.exists():
-        shutil.rmtree(DECOMP_DIR)
+    """analyze plus the call graph and a fresh decompilation of every function, then status.
+    work/decomp/ is overwritten in place (files are named by address), so it stays readable meanwhile."""
     cmd_analyze(argparse.Namespace(reimport=False, map=True))
     cmd_status(args)
 

@@ -33,6 +33,14 @@ def main() -> None:
     graph = json.loads((ROOT / "work/map/graph.json").read_text(encoding="utf-8"))
     funcs = {int(f["entry"], 16): f for f in graph["functions"]}
     names = {a: f["name"] for a, f in funcs.items()}
+    # Names applied since the last pipeline.py map are in config/symbols.csv already.
+    import csv
+    sym_lines = [l for l in (ROOT / "config/symbols.csv").read_text(encoding="utf-8").splitlines() if l and not l.startswith("#")]
+    for row in csv.reader(sym_lines):
+        if row[0].lower() != "address" and int(row[0], 16) in names:
+            names[int(row[0], 16)] = row[1]
+    for a, f in funcs.items():
+        f["name"] = names[a]
 
     def nm(addr_hex: str) -> str:
         a = int(addr_hex, 16)

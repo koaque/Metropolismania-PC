@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Apply a batch of names, subsystems and notes from the mapping work.
 
-usage: map_apply.py <batch file> [--dry-run]
+usage: map_apply.py <batch file> [--dry-run] [--create]
 
 Batch file lines: 0xADDR | name | subsystem | notes      ('#' starts a comment)
   name       new function name, or '-' to keep the current one. New names must start with mm_
@@ -12,6 +12,9 @@ Batch file lines: 0xADDR | name | subsystem | notes      ('#' starts a comment)
 
 Writes config/symbols.csv (rows become source 'manual') and the subsystem/notes columns of
 config/port_status.csv. Names from the SDK signature scan are never replaced.
+--create accepts addresses that are not Ghidra functions yet (for example code reached only
+through a data table that Ghidra left as a label); ApplySymbols.java creates them on the next
+pipeline.py map, and their status row is added now so the subsystem and notes survive.
 """
 
 from __future__ import annotations
@@ -30,6 +33,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("batch")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--create", action="store_true", help="allow addresses that are not functions yet")
     args = ap.parse_args()
 
     sym_path = ROOT / "config/symbols.csv"
@@ -61,8 +65,11 @@ def main() -> None:
         addr = int(parts[0], 16)
         name, subsystem, notes = parts[1], parts[2], parts[3]
         if addr not in status:
-            errors.append(f"line {lineno}: 0x{addr:08X} is not a function entry")
-            continue
+            if not args.create or name == "-":
+                errors.append(f"line {lineno}: 0x{addr:08X} is not a function entry (use --create with a name)")
+                continue
+            status[addr] = {c: "" for c in columns}
+            status[addr].update({"address": f"0x{addr:08X}", "origin": "unclassified", "status": "named"})
         if name != "-":
             existing = rows.get(addr)
             if existing and existing[3] == "ps2_analyzer":
