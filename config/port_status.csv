@@ -781,8 +781,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0012ABA0,mm_GameUpdate,572,game,game,named,yes,0,12,"Game class (vtable 0x1BCE60) slot +0xC, once per frame: sound update, then the scene state machine (+4): creates/updates/deletes the title, intro and city scenes"
 0x0012ADE0,mm_GameInit,52,game,game,named,no,0,1,"Game slot +8: sound state init, scene state 0, no scenes"
 0x0012AE20,mm_Main,100,game,game,named,yes,1,6,"probes the heap, runs static init, constructs the App on the stack, switches it to the Game vtable 0x1BCE60, runs mm_MainLoop, destroys it"
-0x0012AE90,mm_Save_WriteBlock16C,20,game,save,named,no,1,1,"(provisional) 0x15BA70(a1, a0, 0x16C)"
-0x0012AEB0,mm_Save_ReadBlock16C,20,game,save,named,no,1,1,"(provisional) 0x15BA90(a1, a0, 0x16C)"
+0x0012AE90,mm_Save_ReadBlock16C,20,game,save,named,no,1,1,reads 0x16C bytes from the save file (0x15BA70)
+0x0012AEB0,mm_Save_WriteBlock16C,20,game,save,named,no,1,1,writes 0x16C bytes to the save file (0x15BA90)
 0x0012AED0,mm_Bag_RemoveSlot,236,game,bag,named,no,4,0,removes item slot a1 (16 bytes each from +4) and shifts the rest down; capacity per bag type from 0x1B5B08
 0x0012AFC0,mm_Player_AddMusicTrack,180,game,bag,named,no,1,1,"adds the track id of goods item (a1, a2) to the 10-entry list at +0x144 if missing and registers it with mm_Bgm_SetTrackSlot"
 0x0012B080,mm_Bag_AddItem,136,game,bag,named,no,2,0,"puts goods item (group a1, index a2) with count and flags into the first empty slot"
@@ -803,8 +803,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0012C790,mm_Instance_DrawNode,240,game,gfx,named,no,1,1,instance of node a2 of model a0 with colour a1
 0x0012C880,mm_Instance_DrawModel,324,game,gfx,named,no,6,2,"updates the model's node matrices and adds an instance per node with a mesh, if the budget allows"
 0x0012C9D0,mm_InstanceModel_ctor,68,game,gfx,named,yes,2,2,model constructor; the first one allocates the instance buffers
-0x0012CA20,mm_CityCamera_Save,76,game,camera,named,no,1,1,writes +0x530 (4 bytes) and +0x130 (0x1D4 bytes) with 0x15BA70
-0x0012CA70,mm_CityCamera_Load,76,game,camera,named,no,1,1,reads the same two blocks with 0x15BA90
+0x0012CA20,mm_CityCamera_LoadState,76,game,camera,named,no,1,1,reads +0x530 (4 bytes) and +0x130 (0x1D4 bytes) from the save file
+0x0012CA70,mm_CityCamera_SaveState,76,game,camera,named,no,1,1,writes the same two blocks
 0x0012CAC0,mm_CityCamera_GetZoomLevel,192,game,camera,named,no,2,3,"height of the eye above the terrain (0x1415E0) as a zoom level: 0 above -1.15, 1 above -7.1, ..."
 0x0012CB80,mm_CityCamera_Update,2688,game,camera,named,no,1,8,"pad-driven city camera: move, rotate, zoom, keeps the eye above the terrain, updates fog, projection and matrices"
 0x0012D600,mm_CityCamera_DeletingDtor,92,game,camera,named,yes,1,2,"camera destructor, then delete when the flag is > 0"
@@ -860,8 +860,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00135A70,mm_Stage_Load,328,game,stage,named,yes,1,7,"reads this stage's record from DATA\BIN\STAGE.BIN into 0x1C5380 (target population 0x1C554C, theme 0x1C5550, theme share 0x1C5554)"
 0x00135BC0,mm_Stage_FormatGoalText,308,game,stage,named,yes,1,3,"""%d people and %d%% must be the theme. Build a ..."" with the theme text (high-class, business, leisure, fishing, farming, industrial)"
 0x00135D00,mm_Stage_FormatTargetText,160,game,stage,named,yes,1,2,"""Target\nBuild %s with more than %d people.\n%d%% of the buildings must be %s."""
-0x00135DA0,mm_Stage_Save,24,game,stage,named,no,1,1,writes the stage state (0x284 bytes at 0x1C5380)
-0x00135DC0,mm_Stage_LoadState,24,game,stage,named,no,1,1,reads the stage state back
+0x00135DA0,mm_Stage_LoadState,24,game,stage,named,no,1,1,reads the stage state (0x284 bytes at 0x1C5380) from the save file
+0x00135DC0,mm_Stage_SaveState,24,game,stage,named,no,1,1,writes the stage state
 0x00135DE0,mm_Stage_Reset,168,game,stage,named,no,2,0,"defaults: no stage, 3000 and 2500, cleared tables"
 0x00135E90,mm_StageObj_DeletingDtor,68,game,stage,named,yes,4,1,delete when the flag is > 0
 0x00135EE0,mm_StageObj_ctor,16,game,stage,named,no,4,0,clears 0x1C5380
@@ -875,16 +875,16 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00136F10,mm_CityCursor_Draw,276,game,ui,named,no,1,6,"(provisional) cursor model, info window, text, optional fade"
 0x00137030,mm_CityCursor_dtor,268,game,ui,named,yes,1,4,"(provisional) deletes its models, frames and text box"
 0x00137140,mm_CityCursor_ctor,1064,game,ui,named,yes,1,7,(provisional) loads DATA\A3D\DESTRUCT.A3D and creates the frames and text box
-0x00137570,mm_TileLists_Save,92,game,map,named,no,1,1,(provisional) writes 0x7F00 + 0xA0 + 0xA0 bytes
-0x001375D0,mm_TileLists_Load,92,game,map,named,no,1,1,(provisional) reads them back
+0x00137570,mm_TileLists_LoadState,92,game,map,named,no,1,1,reads 0x7F00 + 0xA0 + 0xA0 bytes from the save file
+0x001375D0,mm_TileLists_SaveState,92,game,map,named,no,1,1,writes them
 0x00137630,mm_TileLists_Add,204,game,map,named,no,1,0,"(provisional) adds a1 to list a2 (u16 items; start offsets at +0x7F00, counts at +0x7FA0)"
 0x00137700,mm_TileLists_AddAll,92,game,map,named,no,1,1,(provisional) mm_TileLists_Add for each entry of a zero-terminated pair list
 0x00137760,mm_TileLists_Remove,172,game,map,named,no,1,0,(provisional) removes an item from a list
 0x00137810,mm_TileLists_Get,32,game,map,named,no,0,0,"start of list a1, count to *a2"
 0x00137830,mm_TileLists_Clear,152,game,map,named,no,1,0,(provisional) empties all lists
 0x001378D0,mm_Event_InitForCity,1448,game,event,named,indirect,1,5,(provisional) prepares the event queue and the active list when a city starts
-0x00137EA0,mm_Event_SaveState,164,game,event,named,indirect,1,1,"writes the queue (0x200), the active list (0x224) and a1 (0xA4) plus each active event's data"
-0x00137F50,mm_Event_LoadState,164,game,event,named,indirect,1,1,reads them back
+0x00137EA0,mm_Event_LoadState,164,game,event,named,indirect,1,1,"reads the queue (0x200), the active list (0x224), a1 (0xA4) and each active event's data from the save file"
+0x00137F50,mm_Event_SaveState,164,game,event,named,indirect,1,1,writes them
 0x00138000,mm_Event_CallSlot14,128,game,event,named,indirect,2,0,calls handler slot +0x14 of the type of active event a1
 0x00138080,mm_Event_CallSlot10,128,game,event,named,indirect,0,0,calls handler slot +0x10 of the type of active event a2
 0x00138100,mm_Event_Update,2544,game,event,named,indirect,1,13,"per frame: starts queued events whose conditions hold, runs and finishes active ones"
@@ -930,8 +930,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0013C240,mm_Family_MonthlyPass,732,unclassified,family,unnamed,no,1,0,(provisional) pass over all member bytes (0x1C59B0) and bitset B
 0x0013C520,mm_Family_ResetForStage,204,unclassified,family,unnamed,no,1,0,clears bitsets A and C and the counters for a new stage
 0x0013C5F0,mm_Unk13C5F0_Hash,352,unclassified,family,unnamed,no,1,0,(provisional) value from a0 * 0x61 + 0x1B08 with the constant 0x121EAC0
-0x0013C770,mm_Family_SaveState,148,unclassified,family,unnamed,no,1,1,"writes the member bytes (60000), the three bitsets (0x4E4 each), 0x1F32F0 (0x400) and the counters (0xC)"
-0x0013C810,mm_Family_LoadState,148,unclassified,family,unnamed,no,1,1,reads them back
+0x0013C770,mm_Family_LoadState,148,unclassified,family,unnamed,no,1,1,"reads the member bytes (60000), the three bitsets (0x4E4 each), 0x1F32F0 (0x400) and the counters (0xC) from the save file"
+0x0013C810,mm_Family_SaveState,148,unclassified,family,unnamed,no,1,1,writes them
 0x0013C8B0,mm_Unk13C8B0_FindIndex,72,unclassified,family,unnamed,no,20,0,(provisional) index of the first entry above a0 in a sorted u16 table (gp)
 0x0013C900,mm_Family_IsFlagC,80,unclassified,family,unnamed,no,1,0,bit a0 of bitset C (0x1D4DF0)
 0x0013C9A0,mm_Family_IsFlagB,80,unclassified,family,unnamed,no,3,0,bit a0 of bitset B (0x1D4900)
@@ -965,8 +965,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0013E9B0,mm_MapVerts_Alloc,48,unclassified,map,unnamed,yes,1,1,(provisional) mallocs a 0x18000-byte buffer into *a0
 0x0013E9E0,mm_MapVerts_Free,56,unclassified,map,unnamed,yes,1,1,(provisional) frees *a0
 0x0013EA20,mm_MapVerts_Build,808,unclassified,map,unnamed,yes,1,2,(provisional) builds the 0x18000-byte buffer from tile data
-0x0013ED50,mm_Map_SaveState,148,unclassified,map,unnamed,no,1,2,"writes the tile data, objects (0x6F200), tile lists, people (0x46500) and counters"
-0x0013EDF0,mm_Map_LoadState,148,unclassified,map,unnamed,no,1,2,reads them back
+0x0013ED50,mm_Map_LoadState,148,unclassified,map,unnamed,no,1,2,"reads the tile data, objects (0x6F200), tile lists, people (0x46500) and counters from the save file"
+0x0013EDF0,mm_Map_SaveState,148,unclassified,map,unnamed,no,1,2,writes them
 0x0013EE90,mm_TerrainGen_ScatterObjects,780,unclassified,map,unnamed,no,1,3,(provisional) random object placement during terrain generation
 0x0013F1A0,mm_Map_PlaceObjectKind,108,unclassified,map,unnamed,no,1,1,(provisional) places object kind a5 + 0x115 and stores a4 in its record
 0x0013F210,mm_Map_PlaceObjectArea,196,unclassified,map,unnamed,no,2,1,(provisional) places objects over an a3 x a3 area
@@ -1080,8 +1080,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0014A590,mm_StatusPanel_Draw,492,unclassified,ui,unnamed,no,1,6,panel models and its four text boxes
 0x0014A780,mm_StatusPanel_dtor,184,unclassified,ui,unnamed,yes,1,3,"deletes its four text boxes, base destructor"
 0x0014A840,mm_StatusPanel_ctor,828,unclassified,ui,unnamed,yes,1,9,"four text boxes (""Strength"" ...) and the panel packet"
-0x0014AB80,mm_Laptop_SaveState,68,unclassified,ui,unnamed,no,1,1,writes gp 0x1BDAB8.. (4 bytes) and the 14 laptop entries at 0x1F36F0 (0x38 bytes)
-0x0014ABD0,mm_Laptop_LoadState,68,unclassified,ui,unnamed,no,1,1,reads them back
+0x0014AB80,mm_Laptop_LoadState,68,unclassified,ui,unnamed,no,1,1,reads gp 0x1BDAB8.. (4 bytes) and the 14 laptop entries at 0x1F36F0 (0x38 bytes) from the save file
+0x0014ABD0,mm_Laptop_SaveState,68,unclassified,ui,unnamed,no,1,1,writes them
 0x0014AC20,mm_Laptop_CountActive,232,unclassified,ui,unnamed,no,5,0,active laptop entries
 0x0014AD10,mm_Laptop_SetItemText,108,unclassified,ui,unnamed,indirect,1,1,"text for laptop item a2 (14 items, jump table 0x1B6570); default ""-Laptop Computer- Save or quit the game."""
 0x0014AE10,mm_Laptop_RemoveEntry,184,unclassified,ui,unnamed,no,1,0,(provisional) removes entry a1 from the list at 0x1F36F0
@@ -1147,8 +1147,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00150350,mm_Vacancy_CheckFamily,208,unclassified,city,unnamed,no,2,2,(provisional) family a2's state against flag A and its building record
 0x00150420,mm_Vacancy_Find,292,unclassified,city,unnamed,no,8,1,(provisional) search used by the script code
 0x00150550,mm_Vacancy_TryAdd4,256,unclassified,city,unnamed,no,1,1,(provisional) adds when 4 or more places remain
-0x00150650,mm_Vacancy_Save,20,unclassified,city,unnamed,no,1,1,writes 0x504 bytes
-0x00150670,mm_Vacancy_Load,20,unclassified,city,unnamed,no,1,1,reads 0x504 bytes
+0x00150650,mm_Vacancy_LoadState,20,unclassified,city,unnamed,no,1,1,reads 0x504 bytes from the save file
+0x00150670,mm_Vacancy_SaveState,20,unclassified,city,unnamed,no,1,1,writes 0x504 bytes
 0x00150690,mm_Vacancy_Notify,672,unclassified,city,unnamed,no,1,2,(provisional) posts messages for vacancy changes
 0x00150940,mm_Vacancy_HasRoom,52,unclassified,city,unnamed,no,1,0,count below 0x40 and at least a1 places left of 0x100
 0x00150980,mm_Vacancy_ctor,16,unclassified,city,unnamed,no,1,0,zeroes the two counters
@@ -1187,8 +1187,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00154FA0,mm_PauseMenu_dtor,172,unclassified,ui,unnamed,yes,1,4,deletes its menus and the card manager
 0x00155050,mm_PauseMenu_ctor,76,unclassified,ui,unnamed,no,1,1,"clears state, default name (0x1B73D0)"
 0x001550A0,mm_Applicants_CountMatching,68,unclassified,city,unnamed,no,3,0,(provisional) applicants (count +0x280) matching a0
-0x001550F0,mm_Applicants_Save,20,unclassified,city,unnamed,no,1,1,writes 0x284 bytes
-0x00155110,mm_Applicants_Load,20,unclassified,city,unnamed,no,1,1,reads 0x284 bytes
+0x001550F0,mm_Applicants_LoadState,20,unclassified,city,unnamed,no,1,1,reads 0x284 bytes from the save file
+0x00155110,mm_Applicants_SaveState,20,unclassified,city,unnamed,no,1,1,writes 0x284 bytes
 0x00155130,mm_Applicants_Find,60,unclassified,city,unnamed,no,3,0,index of the applicant for family a1
 0x00155170,mm_Applicants_FindFrom,100,unclassified,city,unnamed,no,1,0,(provisional) next match from *a1 (32 entries)
 0x001551E0,mm_Applicants_Add,184,unclassified,city,unnamed,yes,2,1,adds family a1 (max 32 entries of 0x14 bytes)
@@ -1216,248 +1216,272 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001578A0,mm_Pad_GetData,52,unclassified,pad,unnamed,no,3,0,"port a0's 32-byte pad buffer (0x1F3AC0) when its state is ready (100), else 0"
 0x001578E0,mm_Pad_Poll,924,unclassified,pad,unnamed,yes,3,8,"scePadRead and the pad state machine: analog mode, actuator alignment, pressure mode"
 0x00157CB0,mm_PadInit,200,unclassified,,named,yes,1,3,
-0x00157D80,mm_Player_Save,20,unclassified,char,unnamed,no,1,1,writes 0x38 bytes
-0x00157DA0,mm_Player_Load,20,unclassified,char,unnamed,no,1,1,reads 0x38 bytes
+0x00157D80,mm_Player_LoadState,20,unclassified,char,unnamed,no,1,1,reads 0x38 bytes from the save file
+0x00157DA0,mm_Player_SaveState,20,unclassified,char,unnamed,no,1,1,writes 0x38 bytes
 0x00157DC0,mm_Player_GetMatrix,40,unclassified,char,unnamed,no,8,0,the player model's matrix (object +0x88)
 0x00157DF0,mm_Player_PlayFootstep,528,unclassified,char,unnamed,no,1,3,footstep sound by the tile under the player
-0x00158000,FUN_00158000,880,unclassified,,unnamed,no,1,3,
-0x00158370,FUN_00158370,1704,unclassified,,unnamed,no,1,10,
-0x00158A20,FUN_00158a20,748,unclassified,,unnamed,no,1,1,
-0x00158D10,FUN_00158d10,756,unclassified,,unnamed,yes,1,9,
-0x00159010,FUN_00159010,780,unclassified,,unnamed,yes,1,10,
-0x00159320,FUN_00159320,56,unclassified,,unnamed,no,4,1,
-0x00159360,FUN_00159360,8,unclassified,,unnamed,no,3,0,
-0x00159370,FUN_00159370,100,unclassified,,unnamed,no,1,3,
-0x001593E0,FUN_001593e0,1896,unclassified,,unnamed,no,1,2,
-0x00159B50,FUN_00159b50,428,unclassified,,unnamed,no,1,1,
-0x00159D00,FUN_00159d00,1988,unclassified,,unnamed,yes,1,24,
-0x0015A4D0,FUN_0015a4d0,68,unclassified,,unnamed,yes,1,1,
-0x0015A520,FUN_0015a520,92,unclassified,,unnamed,no,1,0,
-0x0015A580,FUN_0015a580,324,unclassified,,unnamed,yes,1,5,
-0x0015A6D0,FUN_0015a6d0,468,unclassified,,unnamed,yes,1,7,
-0x0015A8B0,FUN_0015a8b0,480,unclassified,,unnamed,no,1,0,
-0x0015AA90,FUN_0015aa90,448,unclassified,,unnamed,yes,1,6,
-0x0015AC50,FUN_0015ac50,448,unclassified,,unnamed,yes,1,6,
-0x0015AE10,FUN_0015ae10,356,unclassified,,unnamed,yes,2,7,
-0x0015AF80,FUN_0015af80,248,unclassified,,unnamed,no,1,1,
-0x0015B080,FUN_0015b080,1208,unclassified,,unnamed,yes,1,5,
-0x0015B540,FUN_0015b540,848,unclassified,,unnamed,yes,1,4,
-0x0015B890,FUN_0015b890,428,unclassified,,unnamed,no,1,4,
-0x0015BA40,FUN_0015ba40,8,unclassified,,unnamed,no,2,1,
-0x0015BA50,FUN_0015ba50,8,unclassified,,unnamed,no,2,1,
-0x0015BA60,FUN_0015ba60,16,unclassified,,unnamed,no,2,1,
-0x0015BA70,FUN_0015ba70,28,unclassified,,unnamed,no,13,1,
-0x0015BA90,FUN_0015ba90,28,unclassified,,unnamed,no,13,1,
-0x0015BAB0,FUN_0015bab0,24,unclassified,,unnamed,no,2,1,
-0x0015BAD0,FUN_0015bad0,140,unclassified,,unnamed,no,1,2,
-0x0015BB60,FUN_0015bb60,8,unclassified,,unnamed,no,1,0,
-0x0015BB70,FUN_0015bb70,12,unclassified,,unnamed,no,1,1,
-0x0015BB80,FUN_0015bb80,64,unclassified,,unnamed,no,1,1,
-0x0015BBC0,FUN_0015bbc0,56,unclassified,,unnamed,yes,1,1,
-0x0015BC00,FUN_0015bc00,1052,unclassified,,unnamed,yes,2,13,
-0x0015C020,FUN_0015c020,8,unclassified,,unnamed,no,6,0,
-0x0015C030,FUN_0015c030,108,unclassified,,unnamed,yes,1,1,
-0x0015C0A0,FUN_0015c0a0,128,unclassified,,unnamed,no,1,0,
-0x0015C120,FUN_0015c120,128,unclassified,,unnamed,no,1,0,
-0x0015C1A0,FUN_0015c1a0,68,unclassified,,unnamed,no,1,0,
-0x0015C1F0,FUN_0015c1f0,156,unclassified,,unnamed,no,7,0,
-0x0015C290,FUN_0015c290,1588,unclassified,,unnamed,yes,2,4,
-0x0015C8D0,FUN_0015c8d0,84,unclassified,,unnamed,no,2,0,
+0x00158000,mm_Player_UpdateAction,880,unclassified,char,unnamed,no,1,3,"(provisional) pad-held actions for the player (analog bits 0x100000-0x800000), with a sound"
+0x00158370,mm_Player_PickTarget,1704,unclassified,char,unnamed,no,1,10,"(provisional) what the player faces: building or person in front (ray, tiles, people), sets the cursor target"
+0x00158A20,mm_Placement_FindSpot,748,unclassified,city,unnamed,no,1,1,(provisional) searches for a valid spot with mm_Map_CanPlace
+0x00158D10,mm_Player_PlaceBagItem,756,unclassified,city,unnamed,yes,1,9,"placing an item from the bag: preview, confirm (button 0x40), place object, finish use"
+0x00159010,mm_Player_PlaceForApplicant,780,unclassified,city,unnamed,yes,1,10,(provisional) placing a home for the selected applicant
+0x00159320,mm_Player_SetMode,56,unclassified,char,unnamed,no,4,1,"mode a1 (-1 = previous), remembers the previous mode, resets the mode timer"
+0x00159360,mm_Player_GetMode,8,unclassified,char,unnamed,no,3,0,current mode
+0x00159370,mm_Player_Draw,100,unclassified,char,unnamed,no,1,3,player model instances
+0x001593E0,mm_Player_Move,1896,unclassified,char,unnamed,no,1,2,(provisional) walking/running with the pad and the analog stick
+0x00159B50,mm_Player_Turn,428,unclassified,char,unnamed,no,1,1,(provisional) turning with the pad
+0x00159D00,mm_Player_Update,1988,unclassified,char,unnamed,yes,1,24,"player per frame by mode: movement, camera, minimap, footsteps, placing items and homes"
+0x0015A4D0,mm_Player_DeletingDtor,68,unclassified,char,unnamed,yes,1,1,delete when the flag is > 0
+0x0015A520,mm_Player_ctor,92,unclassified,char,unnamed,no,1,0,"model 0x1F3CD4 at +0x88, cleared state"
+0x0015A580,mm_CityAssets_LoadMyHome,324,unclassified,city,unnamed,yes,1,5,async load step for DATA\BIN\MYHOME.A3L
+0x0015A6D0,mm_CityAssets_LoadChars,468,unclassified,city,unnamed,yes,1,7,async load step for DATA\A3D\CHAR.A3D
+0x0015A8B0,mm_CityAssets_BuildCharParts,480,unclassified,city,unnamed,no,1,0,fills the character part table 0x1F3B90 from CHAR.A3D
+0x0015AA90,mm_CityAssets_LoadCharObjs,448,unclassified,city,unnamed,yes,1,6,async load step for DATA\A3D\CHAROBJ.A3D
+0x0015AC50,mm_CityAssets_LoadObjects,448,unclassified,city,unnamed,yes,1,6,async load step for DATA\A3D\OBJECT.A3D
+0x0015AE10,mm_CityAssets_LoadStep,356,unclassified,city,unnamed,yes,2,7,state machine over the asset loads; returns when done
+0x0015AF80,mm_McManager_FindSave,248,unclassified,save,unnamed,no,1,1,(provisional) finds a save by name in the slot tables (0x1F3F00/0x1F4340/0x1F4780)
+0x0015B080,mm_McManager_FormatSaveInfo,1208,unclassified,save,unnamed,yes,1,5,"""Stage n Month m Year y ""name"" Population ... / Approval Rate ..."""
+0x0015B540,mm_McManager_FormatSlotLine,848,unclassified,save,unnamed,yes,1,4,"short slot line "" Stage n ""name"" Pop. ../A.R. ..%"", ""*Newest*"""
+0x0015B890,mm_McManager_BuildSaveHeader,428,unclassified,save,unnamed,no,1,4,fills the save header from the stage state (0x1C5380)
+0x0015BA40,mm_SaveFile_GetResult,8,unclassified,save,unnamed,no,2,1,result of the file's last memory card request
+0x0015BA50,mm_SaveFile_IsDone,8,unclassified,save,unnamed,no,2,1,whether the file's last request is done
+0x0015BA60,mm_SaveFile_Close,16,unclassified,save,unnamed,no,2,1,queues close of the file's descriptor (+0x24)
+0x0015BA70,mm_SaveFile_Read,28,unclassified,save,unnamed,no,13,1,queues sceMcRead of a2 bytes into a1 from the open save file
+0x0015BA90,mm_SaveFile_Write,28,unclassified,save,unnamed,no,13,1,queues sceMcWrite of a2 bytes from a1 to the open save file
+0x0015BAB0,mm_SaveFile_Open,24,unclassified,save,unnamed,no,2,1,"queues sceMcOpen of a1 on the current port/slot (gp), descriptor to +0x24"
+0x0015BAD0,mm_SaveFile_Format,140,unclassified,save,unnamed,no,1,2,format step machine; returns when done
+0x0015BB60,mm_SaveFile_ResetState,8,unclassified,save,unnamed,no,1,0,state +4 = 0
+0x0015BB70,mm_SaveFile_PollDone,12,unclassified,save,unnamed,no,1,1,whether request +0x14 is done
+0x0015BB80,mm_SaveFile_DeleteIconSys,64,unclassified,save,unnamed,no,1,1,queues delete of icon.sys in directory a1
+0x0015BBC0,mm_SaveFile_WriteIconSys,56,unclassified,save,unnamed,yes,1,1,writes icon.sys (mm_McSave_WriteIconSys)
+0x0015BC00,mm_SaveFile_PrepareDir,1052,unclassified,save,unnamed,yes,2,13,"step machine: card info, mkdir/chdir, copies DATA\STATIC.ICO to STATIC.ICO"
+0x0015C020,mm_McManager_ResetState,8,unclassified,save,unnamed,no,6,0,state +4 = 0
+0x0015C030,mm_McManager_PrepareNewSlot,108,unclassified,save,unnamed,yes,1,1,(provisional) fills the first empty slot of card a1 with a new save name
+0x0015C0A0,mm_McManager_FindSlotA,128,unclassified,save,unnamed,no,1,0,(provisional) slot lookup over the slot tables
+0x0015C120,mm_McManager_FindSlotB,128,unclassified,save,unnamed,no,1,0,(provisional) slot lookup over the slot tables
+0x0015C1A0,mm_McManager_IsCardUsable,68,unclassified,save,unnamed,no,1,0,(provisional) card a1 state 2 and no error
+0x0015C1F0,mm_McManager_GetCardStatus,156,unclassified,save,unnamed,no,7,0,"card a1 status for the menus (formatted, unformatted, none, ...)"
+0x0015C290,mm_McManager_FormatSlotText,1588,unclassified,save,unnamed,yes,2,4,"""Slot %d: %s %s%s, %s. %shrs %smins"" with the RTC time"
+0x0015C8D0,mm_McManager_HasAnySave,84,unclassified,save,unnamed,no,2,0,whether any slot holds a save
 0x0015C930,mm_McManagerUpdate,3200,unclassified,,named,no,7,13,
-0x0015D5B0,FUN_0015d5b0,848,unclassified,,unnamed,yes,1,5,
-0x0015D900,FUN_0015d900,160,unclassified,,unnamed,no,5,0,
-0x0015D9A0,FUN_0015d9a0,136,unclassified,,unnamed,no,1,0,
-0x0015DA30,FUN_0015da30,124,unclassified,,unnamed,yes,4,3,
-0x0015DAB0,FUN_0015dab0,128,unclassified,,unnamed,yes,3,4,
-0x0015DB30,FUN_0015db30,444,unclassified,,unnamed,no,2,4,
-0x0015DCF0,FUN_0015dcf0,800,unclassified,,unnamed,no,1,4,
-0x0015E010,FUN_0015e010,436,unclassified,,unnamed,no,1,6,
-0x0015E1D0,FUN_0015e1d0,292,unclassified,,unnamed,no,2,2,
-0x0015E300,FUN_0015e300,212,unclassified,,unnamed,no,1,2,
-0x0015E3E0,FUN_0015e3e0,276,unclassified,,unnamed,no,1,5,
-0x0015E500,FUN_0015e500,456,unclassified,,unnamed,no,1,4,
-0x0015E6D0,FUN_0015e6d0,296,unclassified,,unnamed,no,1,3,
-0x0015E800,FUN_0015e800,1492,unclassified,,unnamed,yes,1,14,
-0x0015EDE0,FUN_0015ede0,48,unclassified,,unnamed,no,1,0,
-0x0015EE10,FUN_0015ee10,416,unclassified,,unnamed,yes,1,2,
-0x0015EFB0,FUN_0015efb0,384,unclassified,,unnamed,yes,5,2,
-0x0015F130,FUN_0015f130,520,unclassified,,unnamed,yes,2,3,
-0x0015F340,FUN_0015f340,452,unclassified,,unnamed,yes,2,3,
-0x0015F510,FUN_0015f510,120,unclassified,,unnamed,no,1,0,
-0x0015F590,FUN_0015f590,828,unclassified,,unnamed,yes,7,2,
-0x0015F8D0,FUN_0015f8d0,68,unclassified,,unnamed,yes,1,3,
-0x0015F920,FUN_0015f920,104,unclassified,,unnamed,yes,2,2,
-0x0015F990,FUN_0015f990,248,unclassified,,unnamed,yes,2,3,
-0x0015FA90,FUN_0015fa90,268,unclassified,,unnamed,no,0,4,
-0x0015FBA0,FUN_0015fba0,92,unclassified,,unnamed,yes,0,1,
-0x0015FC00,FUN_0015fc00,68,unclassified,,unnamed,indirect,0,1,
-0x0015FC50,FUN_0015fc50,68,unclassified,,unnamed,indirect,0,0,
-0x0015FCA0,FUN_0015fca0,124,unclassified,,unnamed,yes,0,3,
-0x0015FD20,FUN_0015fd20,76,unclassified,,unnamed,no,2,1,
-0x0015FD70,FUN_0015fd70,184,unclassified,,unnamed,no,1,2,
-0x0015FE30,FUN_0015fe30,212,unclassified,,unnamed,no,1,3,
-0x0015FF10,FUN_0015ff10,76,unclassified,,unnamed,yes,0,1,
-0x0015FF60,FUN_0015ff60,216,unclassified,,unnamed,no,1,1,
-0x00160040,FUN_00160040,2544,unclassified,,unnamed,no,2,8,
-0x00160A30,FUN_00160a30,56,unclassified,,unnamed,no,1,1,
-0x00160A70,FUN_00160a70,1660,unclassified,,unnamed,no,1,1,
-0x001610F0,FUN_001610f0,344,unclassified,,unnamed,yes,1,4,
-0x00161250,FUN_00161250,52,unclassified,,unnamed,yes,1,3,
-0x00161290,FUN_00161290,152,unclassified,,unnamed,no,1,1,
-0x00161330,FUN_00161330,124,unclassified,,unnamed,no,1,1,
-0x001613B0,FUN_001613b0,148,unclassified,,unnamed,no,1,0,
-0x00161450,FUN_00161450,108,unclassified,,unnamed,no,3,0,
-0x001614C0,FUN_001614c0,24,unclassified,,unnamed,no,10,1,
-0x001614E0,FUN_001614e0,8,unclassified,,unnamed,no,14,1,
-0x001614F0,FUN_001614f0,2152,unclassified,,unnamed,no,4,2,
-0x00161D60,FUN_00161d60,136,unclassified,,unnamed,yes,0,2,
-0x00161DF0,FUN_00161df0,260,unclassified,,unnamed,yes,5,5,
-0x00161F00,FUN_00161f00,604,unclassified,,unnamed,no,1,8,
-0x00162160,FUN_00162160,12,unclassified,,unnamed,no,1,1,
-0x00162170,FUN_00162170,28,unclassified,,unnamed,no,1,1,
-0x00162190,FUN_00162190,48,unclassified,,unnamed,no,1,1,
-0x001621C0,FUN_001621c0,180,unclassified,,unnamed,yes,1,2,
-0x00162280,FUN_00162280,232,unclassified,,unnamed,yes,1,4,
-0x00162370,FUN_00162370,20,unclassified,,unnamed,no,1,1,
-0x00162390,FUN_00162390,20,unclassified,,unnamed,no,1,1,
-0x001623B0,FUN_001623b0,184,unclassified,,unnamed,no,1,1,
-0x00162470,FUN_00162470,124,unclassified,,unnamed,no,2,0,
-0x00162500,FUN_00162500,64,unclassified,,unnamed,no,1,0,
-0x00162540,FUN_00162540,24,unclassified,,unnamed,no,2,0,
-0x00162560,FUN_00162560,60,unclassified,,unnamed,yes,1,1,
-0x001625A0,FUN_001625a0,1712,unclassified,,unnamed,no,1,5,
-0x00162C50,FUN_00162c50,644,unclassified,,unnamed,no,1,7,
-0x00162EE0,FUN_00162ee0,240,unclassified,,unnamed,no,1,1,
-0x00162FD0,FUN_00162fd0,48,unclassified,,unnamed,no,1,0,
-0x00163000,FUN_00163000,912,unclassified,,unnamed,no,1,5,
-0x00163390,FUN_00163390,184,unclassified,,unnamed,yes,0,2,
-0x00163450,FUN_00163450,424,unclassified,,unnamed,yes,1,5,
-0x00163600,FUN_00163600,136,unclassified,,unnamed,yes,1,1,
-0x00163690,FUN_00163690,436,unclassified,,unnamed,no,1,1,
-0x00163850,FUN_00163850,444,unclassified,,unnamed,no,1,1,
-0x00163A20,FUN_00163a20,184,unclassified,,unnamed,no,1,0,
-0x00163AE0,FUN_00163ae0,52,unclassified,,unnamed,no,5,0,
-0x00163B20,FUN_00163b20,32,unclassified,,unnamed,no,1,0,
-0x00163B40,FUN_00163b40,256,unclassified,,unnamed,indirect,2,1,
-0x00163C40,FUN_00163c40,292,unclassified,,unnamed,no,1,0,
-0x00163D70,FUN_00163d70,400,unclassified,,unnamed,no,5,3,
-0x00163F00,FUN_00163f00,344,unclassified,,unnamed,no,2,2,
-0x001640B0,FUN_001640b0,356,unclassified,,unnamed,indirect,1,1,
-0x00164280,FUN_00164280,136,unclassified,,unnamed,yes,15,2,
-0x00164310,FUN_00164310,1068,unclassified,,unnamed,yes,8,6,
-0x00164740,FUN_00164740,44,unclassified,,unnamed,no,1,0,
-0x00164770,FUN_00164770,128,unclassified,,unnamed,yes,0,2,
-0x001647F0,FUN_001647f0,232,unclassified,,unnamed,no,0,3,
-0x001648E0,FUN_001648e0,524,unclassified,,unnamed,no,0,4,
-0x00164AF0,FUN_00164af0,64,unclassified,,unnamed,yes,1,1,
-0x00164B30,FUN_00164b30,112,unclassified,,unnamed,yes,0,2,
-0x00164BA0,FUN_00164ba0,128,unclassified,,unnamed,yes,0,2,
-0x00165140,FUN_00165140,132,unclassified,,unnamed,no,0,2,
-0x001651D0,FUN_001651d0,72,unclassified,,unnamed,yes,1,1,
-0x00165220,FUN_00165220,128,unclassified,,unnamed,yes,0,2,
-0x001652A0,FUN_001652a0,232,unclassified,,unnamed,no,0,3,
-0x00165390,FUN_00165390,524,unclassified,,unnamed,indirect,0,4,
-0x001655A0,FUN_001655a0,88,unclassified,,unnamed,yes,1,1,
-0x00165600,FUN_00165600,96,unclassified,,unnamed,yes,0,2,
-0x00165660,FUN_00165660,60,unclassified,,unnamed,no,15,0,
-0x001656A0,FUN_001656a0,932,unclassified,,unnamed,no,1,3,
-0x00165A50,FUN_00165a50,504,unclassified,,unnamed,no,1,3,
-0x00165C50,FUN_00165c50,552,unclassified,,unnamed,no,3,4,
-0x00165E80,FUN_00165e80,712,unclassified,,unnamed,no,1,5,
-0x00166150,FUN_00166150,1768,unclassified,,unnamed,no,1,5,
-0x00166840,FUN_00166840,628,unclassified,,unnamed,no,1,4,
-0x00166AC0,FUN_00166ac0,372,unclassified,,unnamed,no,4,2,
-0x00166C40,FUN_00166c40,12,unclassified,,unnamed,no,1,0,
-0x00166C50,FUN_00166c50,52,unclassified,,unnamed,yes,1,1,
-0x00166C90,FUN_00166c90,96,unclassified,,unnamed,yes,0,2,
-0x00166D50,FUN_00166d50,472,unclassified,,unnamed,indirect,0,1,
-0x00166F30,FUN_00166f30,564,unclassified,,unnamed,no,0,2,
-0x00167170,FUN_00167170,408,unclassified,,unnamed,no,0,3,
-0x00167310,FUN_00167310,348,unclassified,,unnamed,yes,1,2,
-0x00167470,FUN_00167470,128,unclassified,,unnamed,yes,0,2,
-0x001677B0,FUN_001677b0,236,unclassified,,unnamed,no,0,3,
-0x001678A0,FUN_001678a0,52,unclassified,,unnamed,yes,1,1,
-0x001678E0,FUN_001678e0,72,unclassified,,unnamed,no,0,1,
-0x001679C0,FUN_001679c0,368,unclassified,,unnamed,no,1,2,
-0x00167B40,FUN_00167b40,1452,unclassified,,unnamed,indirect,0,1,
-0x00168100,FUN_00168100,532,unclassified,,unnamed,no,0,3,
-0x00168320,FUN_00168320,1204,unclassified,,unnamed,no,4,11,
-0x001687E0,FUN_001687e0,44,unclassified,,unnamed,no,1,1,
-0x00168810,FUN_00168810,52,unclassified,,unnamed,yes,8,1,
-0x00168850,FUN_00168850,96,unclassified,,unnamed,yes,0,2,
-0x001688B0,FUN_001688b0,344,unclassified,,unnamed,no,0,2,
-0x00168A10,FUN_00168a10,52,unclassified,,unnamed,yes,1,1,
-0x00168A50,FUN_00168a50,96,unclassified,,unnamed,yes,0,2,
-0x00168AB0,FUN_00168ab0,1152,unclassified,,unnamed,no,1,1,
-0x00168F30,FUN_00168f30,132,unclassified,,unnamed,no,0,1,
-0x00168FC0,FUN_00168fc0,1128,unclassified,,unnamed,no,0,11,
-0x00169430,FUN_00169430,72,unclassified,,unnamed,yes,1,1,
-0x00169480,FUN_00169480,120,unclassified,,unnamed,indirect,1,0,
-0x00169500,FUN_00169500,716,unclassified,,unnamed,yes,1,16,
-0x001697D0,FUN_001697d0,140,unclassified,,unnamed,yes,1,1,
-0x00169860,FUN_00169860,248,unclassified,,unnamed,yes,1,6,
-0x00169960,FUN_00169960,128,unclassified,,unnamed,yes,0,2,
-0x00169F20,FUN_00169f20,372,unclassified,,unnamed,no,1,5,
-0x0016A0A0,FUN_0016a0a0,756,unclassified,,unnamed,no,2,7,
-0x0016A3A0,FUN_0016a3a0,160,unclassified,,unnamed,no,0,3,
-0x0016A440,FUN_0016a440,80,unclassified,,unnamed,no,0,1,
-0x0016A490,FUN_0016a490,52,unclassified,,unnamed,yes,1,1,
-0x0016A4D0,FUN_0016a4d0,128,unclassified,,unnamed,yes,0,2,
-0x0016A550,FUN_0016a550,376,unclassified,,unnamed,no,0,3,
-0x0016A6D0,FUN_0016a6d0,52,unclassified,,unnamed,yes,1,1,
-0x0016A710,FUN_0016a710,128,unclassified,,unnamed,yes,0,2,
-0x0016A790,FUN_0016a790,524,unclassified,,unnamed,no,0,4,
-0x0016A9A0,FUN_0016a9a0,64,unclassified,,unnamed,yes,1,1,
-0x0016A9E0,FUN_0016a9e0,96,unclassified,,unnamed,yes,0,2,
-0x0016AA40,FUN_0016aa40,296,unclassified,,unnamed,no,1,2,
-0x0016AB70,FUN_0016ab70,908,unclassified,,unnamed,indirect,0,5,
-0x0016AF10,FUN_0016af10,688,unclassified,,unnamed,no,0,1,
-0x0016B1C0,FUN_0016b1c0,1164,unclassified,,unnamed,no,0,7,
-0x0016B680,FUN_0016b680,88,unclassified,,unnamed,yes,1,1,
-0x0016B6E0,FUN_0016b6e0,96,unclassified,,unnamed,yes,0,2,
-0x0016B740,FUN_0016b740,64,unclassified,,unnamed,no,0,1,
-0x0016B780,FUN_0016b780,64,unclassified,,unnamed,no,0,1,
-0x0016B7C0,FUN_0016b7c0,316,unclassified,,unnamed,no,0,3,
-0x0016B900,FUN_0016b900,540,unclassified,,unnamed,no,0,7,
-0x0016BB20,FUN_0016bb20,52,unclassified,,unnamed,yes,1,1,
-0x0016BB60,FUN_0016bb60,96,unclassified,,unnamed,yes,0,2,
-0x0016BBC0,FUN_0016bbc0,296,unclassified,,unnamed,no,0,1,
-0x0016BCF0,FUN_0016bcf0,332,unclassified,,unnamed,no,1,2,
-0x0016BE40,FUN_0016be40,1120,unclassified,,unnamed,no,0,9,
-0x0016C2A0,FUN_0016c2a0,180,unclassified,,unnamed,no,0,1,
-0x0016C360,FUN_0016c360,52,unclassified,,unnamed,yes,1,1,
-0x0016C3A0,FUN_0016c3a0,204,unclassified,,unnamed,no,1,3,
-0x0016C470,FUN_0016c470,372,unclassified,,unnamed,no,1,4,
-0x0016C5F0,FUN_0016c5f0,124,unclassified,,unnamed,no,3,0,
-0x0016C670,FUN_0016c670,364,unclassified,,unnamed,yes,1,5,
-0x0016C7E0,FUN_0016c7e0,1940,unclassified,,unnamed,yes,1,13,
-0x0016CF80,FUN_0016cf80,68,unclassified,,unnamed,yes,1,1,
-0x0016CFD0,FUN_0016cfd0,52,unclassified,,unnamed,no,1,0,
-0x0016D010,FUN_0016d010,76,unclassified,,unnamed,no,1,1,
-0x0016D060,FUN_0016d060,56,unclassified,,unnamed,no,1,0,
-0x0016D0A0,FUN_0016d0a0,16,unclassified,,unnamed,no,5,0,
-0x0016D0B0,FUN_0016d0b0,168,unclassified,,unnamed,no,1,3,
-0x0016D160,FUN_0016d160,144,unclassified,,unnamed,no,1,3,
-0x0016D1F0,FUN_0016d1f0,180,unclassified,,unnamed,no,3,3,
-0x0016D2B0,FUN_0016d2b0,124,unclassified,,unnamed,yes,1,2,
-0x0016D330,FUN_0016d330,208,unclassified,,unnamed,yes,1,4,
-0x0016D400,FUN_0016d400,936,unclassified,,unnamed,no,1,14,
-0x0016D7B0,FUN_0016d7b0,760,unclassified,,unnamed,no,1,2,
-0x0016DAB0,FUN_0016dab0,1176,unclassified,,unnamed,no,1,22,
-0x0016DF50,FUN_0016df50,284,unclassified,,unnamed,no,2,3,
-0x0016E070,FUN_0016e070,508,unclassified,,unnamed,no,2,3,
-0x0016E270,FUN_0016e270,456,unclassified,,unnamed,no,4,6,
-0x0016E440,FUN_0016e440,1024,unclassified,,unnamed,yes,1,16,
-0x0016E840,FUN_0016e840,260,unclassified,,unnamed,no,1,5,
+0x0015D5B0,mm_McManager_NewSaveName,848,unclassified,save,unnamed,yes,1,5,(provisional) builds a new save directory name from the CD clock
+0x0015D900,mm_McManager_ClearSlots,160,unclassified,save,unnamed,no,5,0,resets the slot tables
+0x0015D9A0,mm_McManager_InitSlots,136,unclassified,save,unnamed,no,1,0,(provisional) initial slot tables
+0x0015DA30,mm_McManager_dtor,124,unclassified,save,unnamed,yes,4,3,deletes its sub-object and file
+0x0015DAB0,mm_McManager_ctor,128,unclassified,save,unnamed,yes,3,4,"sub-object, file, slot tables"
+0x0015DB30,mm_Person_FindBuildingInList,444,unclassified,char,unnamed,no,2,4,(provisional) a building of the wanted kind from a tile list near the person
+0x0015DCF0,mm_Person_PlaceHomeObject,800,unclassified,char,unnamed,no,1,4,(provisional) places an object for the person's home
+0x0015E010,mm_Person_RandomTarget,436,unclassified,char,unnamed,no,1,6,(provisional) random target along walkable tiles
+0x0015E1D0,mm_Person_TargetWork,292,unclassified,char,unnamed,no,2,2,(provisional)
+0x0015E300,mm_Person_TileHasCompanion,212,unclassified,char,unnamed,no,1,2,(provisional) people on the tile matching the person
+0x0015E3E0,mm_Person_TargetVisit,276,unclassified,char,unnamed,no,1,5,(provisional)
+0x0015E500,mm_Person_TargetShop,456,unclassified,char,unnamed,no,1,4,(provisional)
+0x0015E6D0,mm_Person_TargetHome,296,unclassified,char,unnamed,no,1,3,(provisional)
+0x0015E800,mm_Person_ChooseDestination,1492,unclassified,char,unnamed,yes,1,14,"(provisional) picks where a person goes next by schedule and needs, using the target helpers"
+0x0015EDE0,mm_Math_Rsqrt,48,unclassified,math,unnamed,no,1,0,(provisional) VU0 reciprocal square root of a0
+0x0015EE10,mm_Schedule_QueryA,416,unclassified,char,unnamed,yes,1,2,(provisional) schedule lookup for drawing
+0x0015EFB0,mm_Schedule_QueryB,384,unclassified,char,unnamed,yes,5,2,(provisional) schedule lookup used by the scripts
+0x0015F130,mm_Schedule_GetActivity,520,unclassified,char,unnamed,yes,2,3,(provisional) current activity of a person
+0x0015F340,mm_Schedule_GetBuildingActivity,452,unclassified,char,unnamed,yes,2,3,(provisional) current activity for a person and building
+0x0015F510,mm_Schedule_PickEntry,120,unclassified,char,unnamed,no,1,0,(provisional)
+0x0015F590,mm_Schedule_Evaluate,828,unclassified,char,unnamed,yes,7,2,"(provisional) schedule entry for a family member at the current time (family record, time globals 0x1BD9A4..)"
+0x0015F8D0,mm_Schedule_Load,68,unclassified,char,unnamed,yes,1,3,loads DATA\BIN\SCHEDULE.BIN
+0x0015F920,mm_MenuWin_FillItems,104,unclassified,ui,unnamed,yes,2,2,fills its list (13 or 14 items)
+0x0015F990,mm_MenuWin_Open,248,unclassified,ui,unnamed,yes,2,3,creates its list menus for menu id a1 (-2001 ...)
+0x0015FA90,mm_MenuWin_Draw,268,unclassified,ui,unnamed,no,0,4,window model and list menu in pass 2
+0x0015FBA0,mm_MenuWin_OnFadeOutDone,92,unclassified,ui,unnamed,yes,0,1,"after the fade, deletes the list menu"
+0x0015FC00,mm_MenuWin_Update,68,unclassified,ui,unnamed,indirect,0,1,list input; on a choice calls vtable slot +0x10
+0x0015FC50,mm_MenuWin_OnFadeInDone,68,unclassified,ui,unnamed,indirect,0,0,"after the fade, state 3"
+0x0015FCA0,mm_MenuWin_dtor,124,unclassified,ui,unnamed,yes,0,3,"vtable 0x1BCF80, deletes the list menu, base destructor"
+0x0015FD20,mm_MenuWin_ctor,76,unclassified,ui,unnamed,no,2,1,"base constructor, vtable 0x1BCF80"
+0x0015FD70,mm_Unk15FD70_Draw,184,unclassified,ui,unnamed,no,1,2,(provisional) model draw from the city update
+0x0015FE30,mm_Laptop_CheckOpen,212,unclassified,ui,unnamed,no,1,3,opens the laptop when Triangle (0x20) is held in mode 1 and it has entries
+0x0015FF10,mm_Unk15FF60_dtor,76,unclassified,ui,unnamed,yes,0,1,(provisional) vtable 0x1BCFC8 at +0x128
+0x0015FF60,mm_Unk15FF60_ctor,216,unclassified,ui,unnamed,no,1,1,"(provisional) vtable 0x1BCFC8 at +0x128, model 0x1F3B28, matrices from 0x1B0DB0"
+0x00160040,mm_CityCamera_UpdateTimeOfDay,2544,unclassified,camera,unnamed,no,2,8,"sky colour, fog and light directions/colours from the clock (tables 0x1B0E30..), then the light matrices"
+0x00160A30,mm_Sky_Draw,56,unclassified,camera,unnamed,no,1,1,"queues the three sky packets (+0x310, +0x470, +0x3D0)"
+0x00160A70,mm_Sky_BuildPackets,1660,unclassified,camera,unnamed,no,1,1,builds the sky packets (texture sizes via mm_Math_Log2)
+0x001610F0,mm_Sky_Load,344,unclassified,camera,unnamed,yes,1,4,loads DATA\A3D\SKY.A3D and uploads its textures
+0x00161250,mm_CityCamera_BaseCtor,52,unclassified,camera,unnamed,yes,1,3,camera constructor plus the sky
+0x00161290,mm_TexSprite_SetFrame,152,unclassified,gfx,unnamed,no,1,1,"(provisional) frame (+0x30/+0x34) within the image, then rebuilds"
+0x00161330,mm_TexSprite_SetClip,124,unclassified,gfx,unnamed,no,1,1,"(provisional) visible size (+0x28/+0x2C), then rebuilds"
+0x001613B0,mm_TexSprite_Unk1613B0,148,unclassified,gfx,unnamed,no,1,0,(provisional) palette pass over the image
+0x00161450,mm_TexSprite_SetAlpha,108,unclassified,gfx,unnamed,no,3,0,(provisional) palette alpha a1
+0x001614C0,mm_TexSprite_SetPosScale,24,unclassified,gfx,unnamed,no,10,1,"position a3..a5 and scale a0/a1, then rebuilds"
+0x001614E0,mm_TexSprite_Draw,8,unclassified,gfx,unnamed,no,14,1,queues the sprite packet (+8)
+0x001614F0,mm_TexSprite_BuildPacket,2152,unclassified,gfx,unnamed,no,4,2,builds the textured-sprite packet from the .TEX image
+0x00161D60,mm_TexSprite_dtor,136,unclassified,gfx,unnamed,yes,0,2,"vtable 0x1BCFD8, frees image and packet"
+0x00161DF0,mm_TexSprite_Load,260,unclassified,gfx,unnamed,yes,5,5,loads a .TEX file whole and builds its packet
+0x00161F00,mm_LoadingScreen_Update,604,unclassified,ui,unnamed,no,1,8,"loading screen animation and draw (rotating LOADINGT, text, fade)"
+0x00162160,mm_LoadingScreen_SetText,12,unclassified,ui,unnamed,no,1,1,text box text
+0x00162170,mm_LoadingScreen_SetTextPos,28,unclassified,ui,unnamed,no,1,1,text box position (screen coordinates)
+0x00162190,mm_LoadingScreen_SetSpritePos,48,unclassified,ui,unnamed,no,1,1,sprite position
+0x001621C0,mm_LoadingScreen_dtor,180,unclassified,ui,unnamed,yes,1,2,deletes text box and sprites
+0x00162280,mm_LoadingScreen_ctor,232,unclassified,ui,unnamed,yes,1,4,DATA\A3D\INTRO\LOADINGT.TEX sprites and a text box
+0x00162370,mm_Stamina_LoadState,20,unclassified,char,unnamed,no,1,1,reads the 0xC-byte stamina record from the save file
+0x00162390,mm_Stamina_SaveState,20,unclassified,char,unnamed,no,1,1,writes it
+0x001623B0,mm_Stamina_Tick,184,unclassified,char,unnamed,no,1,1,stamina +4 drops by stamina/100000 + 1 per tick (not below 0)
+0x00162470,mm_Stamina_Eat,124,unclassified,char,unnamed,no,2,0,eating goods of categories 0x11-0x14 adds to stamina
+0x00162500,mm_Stamina_HungerLevel,64,unclassified,char,unnamed,no,1,0,"0 below 100000, else a higher level (event ""Hunger"")"
+0x00162540,mm_Stamina_Init,24,unclassified,char,unnamed,no,2,0,stamina 399999
+0x00162560,mm_Stamina_CreateGlobal,60,unclassified,char,unnamed,yes,1,1,0x1BDBB8 = new stamina record
+0x001625A0,mm_NameEntry_HandleInput,1712,unclassified,ui,unnamed,no,1,5,(provisional) character grid input with sounds
+0x00162C50,mm_NameEntry_Draw,644,unclassified,ui,unnamed,no,1,7,(provisional) name entry grid and text boxes
+0x00162EE0,mm_NameEntry_Update,240,unclassified,ui,unnamed,no,1,1,"(provisional) open/close animation, then input"
+0x00162FD0,mm_NameEntry_Close,48,unclassified,ui,unnamed,no,1,0,(provisional) starts closing
+0x00163000,mm_NameEntry_Setup,912,unclassified,ui,unnamed,no,1,5,(provisional) fills the character grid (0x1B13E0) and texts
+0x00163390,mm_NameEntry_dtor,184,unclassified,ui,unnamed,yes,0,2,"(provisional) vtable 0x1BCFE8, deletes its text boxes"
+0x00163450,mm_NameEntry_CreateTexts,424,unclassified,ui,unnamed,yes,1,5,(provisional) creates its text boxes
+0x00163600,mm_NameEntry_ctor,136,unclassified,ui,unnamed,yes,1,1,(provisional) vtable 0x1BCFE8
+0x00163690,mm_Collide_SegmentA,436,unclassified,city,unnamed,no,1,1,(provisional) segment test against building geometry
+0x00163850,mm_Collide_SegmentB,444,unclassified,city,unnamed,no,1,1,(provisional) second segment test
+0x00163A10,mm_BldgType_Slot34,,unclassified,city,named,,,,base slot +0x34
+0x00163A20,mm_BldgType_IsOpenAt,184,unclassified,city,unnamed,no,1,0,(provisional) opening hours check against the clock
+0x00163AE0,mm_Clock_AddWrap,52,unclassified,city,unnamed,no,5,0,"a1 + a2 mod 3600, wrapped at 86400 (seconds per day)"
+0x00163B20,mm_BldgType_IsKind5to8,32,unclassified,city,unnamed,no,1,0,kind +0x134 in 5..8
+0x00163B40,mm_BldgType_DrawOccupants,256,unclassified,city,unnamed,indirect,2,1,(provisional) draws people at a building
+0x00163C40,mm_BldgType_OccupantMatrix,292,unclassified,city,unnamed,no,1,0,(provisional) matrix for an occupant
+0x00163D70,mm_BldgType_DrawOccupant,400,unclassified,city,unnamed,no,5,3,(provisional) one occupant on its tile
+0x00163F00,mm_BldgType_FindEntrance,344,unclassified,city,unnamed,no,2,2,"(provisional) entrance tile next to a building (walkable flag 0x10, tables 0x1B13F0/0x1B1400)"
+0x00164060,mm_BldgType_Slot30,,unclassified,city,named,,,,base slot +0x30
+0x00164070,mm_BldgType_CollideA,,unclassified,city,named,,,,base slot +0x2C
+0x00164080,mm_BldgType_CollideB,,unclassified,city,named,,,,base slot +0x28
+0x00164090,mm_BldgType_Slot1C,,unclassified,city,named,,,,base slot +0x1C
+0x001640A0,mm_BldgType_Slot20,,unclassified,city,named,,,,base slot +0x20
+0x001640B0,mm_BldgType_DrawOccupants2,356,unclassified,city,unnamed,indirect,1,1,(provisional)
+0x00164220,mm_BldgType_Draw,,unclassified,city,named,,,,base slot +0x14
+0x00164230,mm_BldgType_Tick,,unclassified,city,named,,,,base slot +0x10
+0x00164240,mm_BldgType_InitRecord,,unclassified,city,named,,,,base slot +0xC
+0x00164280,mm_BldgType_BaseDtor,136,unclassified,city,unnamed,yes,15,2,vtable 0x1BD000; releases the shared name data when the last type goes
+0x00164310,mm_BldgType_BaseCtor,1068,unclassified,city,unnamed,yes,8,6,"base constructor: shared DATA\BIN\POSTNAME.BIN, model and parameters"
+0x00164740,mm_Math_MulMatVecVu0,44,unclassified,math,unnamed,no,1,0,(provisional) VU0 matrix x vector
+0x00164770,mm_BldgAmusementPark_dtor,128,unclassified,city,unnamed,yes,0,2,"category 11 (Amusement Park), vtable 0x1BD040"
+0x001647F0,mm_BldgAmusementPark_DrawAnim,232,unclassified,city,unnamed,no,0,3,swaying ride animation between the opening hours
+0x001648E0,mm_BldgAmusementPark_Draw,524,unclassified,city,unnamed,no,0,4,instances for the park
+0x00164AF0,mm_BldgAmusementPark_ctor,64,unclassified,city,unnamed,yes,1,1,"Building constructor, vtable 0x1BD040"
+0x00164B30,mm_BldgBusiness_dtor,112,unclassified,city,unnamed,yes,0,2,"category 6 (factories, shops), vtable 0x1BD1C0"
+0x00164BA0,mm_BldgOffice_dtor,128,unclassified,city,unnamed,yes,0,2,"category 7 (offices), vtable 0x1BD080"
+0x00164C20,mm_BldgOffice_CollideA,,unclassified,city,named,,,,slot +0x2C
+0x00164D00,mm_BldgOffice_CollideB,,unclassified,city,named,,,,slot +0x28
+0x00164DE0,mm_BldgOffice_Draw,,unclassified,city,named,,,,slot +0x14
+0x00165140,mm_BldgOffice_Tick,132,unclassified,city,unnamed,no,0,2,Building tick plus a check of the tile's first object
+0x001651D0,mm_BldgOffice_ctor,72,unclassified,city,unnamed,yes,1,1,"Building constructor, vtable 0x1BD080, +0x160 from record byte 0x92"
+0x00165220,mm_BldgRanch_dtor,128,unclassified,city,unnamed,yes,0,2,"category 12 (Ranch), vtable 0x1BD0C0"
+0x001652A0,mm_BldgRanch_DrawAnim,232,unclassified,city,unnamed,no,0,3,animals' animation between the opening hours
+0x00165390,mm_BldgRanch_Draw,524,unclassified,city,unnamed,indirect,0,4,instances for the ranch
+0x001655A0,mm_BldgRanch_ctor,88,unclassified,city,unnamed,yes,1,1,"Building constructor, vtable 0x1BD0C0, models from 0x1F3B50.."
+0x00165600,mm_Bldg_dtor,96,unclassified,city,unnamed,yes,0,2,"intermediate Building class, vtable 0x1BD100"
+0x00165660,mm_IdRange_Classify,60,unclassified,city,unnamed,no,15,0,"(provisional) 0 below the range at 0x1BDA50, 1 inside, 2 above"
+0x001656A0,mm_BldgClaims_EvalA,932,unclassified,city,unnamed,no,1,3,(provisional) claim evaluation part A (CLAIM.BIN)
+0x00165A50,mm_BldgClaims_EvalB,504,unclassified,city,unnamed,no,1,3,"(provisional) part B, random"
+0x00165C50,mm_BldgClaims_CountNearby,552,unclassified,city,unnamed,no,3,4,(provisional) counts matching buildings in the claim's tile lists
+0x00165E80,mm_BldgClaims_EvalC,712,unclassified,city,unnamed,no,1,5,"(provisional) part C, minimap marks and sounds"
+0x00166150,mm_BldgClaims_EvalD,1768,unclassified,city,unnamed,no,1,5,(provisional) part D
+0x00166840,mm_BldgClaims_Evaluate,628,unclassified,city,unnamed,no,1,4,(provisional) runs the claim evaluations for a building
+0x00166AC0,mm_BldgClaims_DrawIcon,372,unclassified,city,unnamed,no,4,2,(provisional) claim icon above a building
+0x00166C40,mm_Bldg_InitRecordBase,12,unclassified,city,unnamed,no,1,0,record +0x12 = 0x18
+0x00166C50,mm_Bldg_ctor,52,unclassified,city,unnamed,yes,1,1,"base constructor, vtable 0x1BD100"
+0x00166C90,mm_BldgField_dtor,96,unclassified,city,unnamed,yes,0,2,"category 4 (crop fields), vtable 0x1BD140"
+0x00166CF0,mm_BldgField_Slot1C,,unclassified,city,named,,,,slot +0x1C
+0x00166D50,mm_BldgField_DrawPeople,472,unclassified,city,unnamed,indirect,0,1,slot +0x18: farm workers
+0x00166F30,mm_BldgField_Draw,564,unclassified,city,unnamed,no,0,2,crop instances
+0x00167170,mm_BldgField_Tick,408,unclassified,city,unnamed,no,0,3,marks residents on the minimap
+0x00167310,mm_BldgField_ctor,348,unclassified,city,unnamed,yes,1,2,"base constructor, vtable 0x1BD140, crop parameters from the record"
+0x00167470,mm_BldgPort_dtor,128,unclassified,city,unnamed,yes,0,2,"category 9 (fishing ports), vtable 0x1BD180"
+0x001674F0,mm_BldgPort_CollideA,,unclassified,city,named,,,,slot +0x2C
+0x00167550,mm_BldgPort_CollideB,,unclassified,city,named,,,,slot +0x28
+0x001675B0,mm_BldgPort_Draw,,unclassified,city,named,,,,slot +0x14
+0x001677B0,mm_BldgPort_Tick,236,unclassified,city,unnamed,no,0,3,Building tick plus terrain height changes at the shore
+0x001678A0,mm_BldgPort_ctor,52,unclassified,city,unnamed,yes,1,1,"Building constructor, vtable 0x1BD180"
+0x001678E0,mm_Bldg_IsOpen,72,unclassified,city,unnamed,no,0,1,slot +0x24: opening hours for a building or its type
+0x00167930,mm_Bldg_Slot30,,unclassified,city,named,,,,slot +0x30
+0x00167940,mm_Bldg_CollideA,,unclassified,city,named,,,,slot +0x2C
+0x00167980,mm_Bldg_CollideB,,unclassified,city,named,,,,slot +0x28
+0x001679C0,mm_BldgType_FindEntrance2,368,unclassified,city,unnamed,no,1,2,(provisional)
+0x00167B40,mm_Bldg_DrawPeople,1452,unclassified,city,unnamed,indirect,0,1,slot +0x18: people at the building
+0x00168100,mm_BldgBusiness_Draw,532,unclassified,city,unnamed,no,0,3,slot +0x14 for Business and My Home: instances and claim icon
+0x00168320,mm_Bldg_Tick,1204,unclassified,city,unnamed,no,4,11,"slot +0x10: entrance, minimap marks, terrain under the footprint, claims"
+0x001687E0,mm_Bldg_InitRecord,44,unclassified,city,unnamed,no,1,1,"slot +0xC: base init, record +0x14 = 0x4000"
+0x00168810,mm_BldgBusiness_ctor,52,unclassified,city,unnamed,yes,8,1,"Building constructor, vtable 0x1BD1C0"
+0x00168850,mm_BldgKeepOut_dtor,96,unclassified,city,unnamed,yes,0,2,"category 15 (Keep Out), vtable 0x1BD200"
+0x001688B0,mm_BldgKeepOut_Draw,344,unclassified,city,unnamed,no,0,2,fence instances
+0x00168A10,mm_BldgKeepOut_ctor,52,unclassified,city,unnamed,yes,1,1,"base constructor, vtable 0x1BD200"
+0x00168A50,mm_BldgLeveled_dtor,96,unclassified,city,unnamed,yes,0,2,"category 2 (leveled land), vtable 0x1BD240"
+0x00168AB0,mm_BldgLeveled_CheckArea,1152,unclassified,city,unnamed,no,1,1,(provisional) tests the 4 surrounding tile objects
+0x00168F30,mm_BldgLeveled_Draw,132,unclassified,city,unnamed,no,0,1,instances when the record flag 1 is set
+0x00168FC0,mm_BldgLeveled_Tick,1128,unclassified,city,unnamed,no,0,11,"(provisional) builds on leveled land for waiting applicants: levels the terrain, places the building"
+0x00169430,mm_BldgLeveled_ctor,72,unclassified,city,unnamed,yes,1,1,"base constructor, vtable 0x1BD240, +0x160 from record byte 0x90"
+0x00169480,mm_BldgType_CallAll,120,unclassified,city,unnamed,indirect,1,0,calls a virtual method on every building type
+0x00169500,mm_BldgType_Create,716,unclassified,city,unnamed,yes,1,16,building type object for a STRTYPE.BIN record by its category (+0x20)
+0x001697D0,mm_BldgType_DeleteAll,140,unclassified,city,unnamed,yes,1,1,deletes every building type object
+0x00169860,mm_BldgType_LoadAll,248,unclassified,city,unnamed,yes,1,6,"loads DATA\BIN\STRTYPE.BIN (0x9C-byte records, 281 types) and creates the type objects"
+0x00169960,mm_BldgHousing_dtor,128,unclassified,city,unnamed,yes,0,2,"category 8 (housing), vtable 0x1BD280"
+0x001699E0,mm_BldgHousing_CollideA,,unclassified,city,named,,,,slot +0x2C
+0x00169AB0,mm_BldgHousing_CollideB,,unclassified,city,named,,,,slot +0x28
+0x00169B80,mm_BldgHousing_Draw,,unclassified,city,named,,,,slot +0x14
+0x00169F20,mm_BldgHousing_UnitAt,372,unclassified,city,unnamed,no,1,5,(provisional) unit index of a tile within a housing block
+0x0016A0A0,mm_BldgHousing_CountUnits,756,unclassified,city,unnamed,no,2,7,(provisional) recursive walk over connected housing tiles
+0x0016A3A0,mm_BldgHousing_Tick,160,unclassified,city,unnamed,no,0,3,Building tick plus unit counting
+0x0016A440,mm_BldgHousing_InitRecord,80,unclassified,city,unnamed,no,0,1,Building init; variant +0x1A = (x/2) mod 3
+0x0016A490,mm_BldgHousing_ctor,52,unclassified,city,unnamed,yes,1,1,"Building constructor, vtable 0x1BD280"
+0x0016A4D0,mm_BldgMyHome_dtor,128,unclassified,city,unnamed,yes,0,2,"category 10 (My Home), vtable 0x1BD2C0"
+0x0016A550,mm_BldgMyHome_Tick,376,unclassified,city,unnamed,no,0,3,(provisional) Building tick for the player's home
+0x0016A6D0,mm_BldgMyHome_ctor,52,unclassified,city,unnamed,yes,1,1,"Building constructor, vtable 0x1BD2C0"
+0x0016A710,mm_BldgPigFarm_dtor,128,unclassified,city,unnamed,yes,0,2,"category 13 (Pig Farm), vtable 0x1BD300"
+0x0016A790,mm_BldgPigFarm_Draw,524,unclassified,city,unnamed,no,0,4,instances and claim icon
+0x0016A9A0,mm_BldgPigFarm_ctor,64,unclassified,city,unnamed,yes,1,1,"Building constructor, vtable 0x1BD300"
+0x0016A9E0,mm_BldgRoad_dtor,96,unclassified,city,unnamed,yes,0,2,"category 3 (road), vtable 0x1BD340"
+0x0016AA40,mm_BldgRoad_FindNeighbours,296,unclassified,city,unnamed,no,1,2,(provisional) walkable neighbours of a road tile (tables 0x1B13F0/0x1B1400)
+0x0016AB70,mm_BldgRoad_DrawPeople,908,unclassified,city,unnamed,indirect,0,5,(provisional) people walking on the road
+0x0016AF10,mm_BldgRoad_Draw,688,unclassified,city,unnamed,no,0,1,road piece instances by neighbour connections
+0x0016B1C0,mm_BldgRoad_Tick,1164,unclassified,city,unnamed,no,0,7,levels the road with its neighbours and marks the minimap
+0x0016B650,mm_BldgRoad_InitRecord,,unclassified,city,named,,,,slot +0xC
+0x0016B670,mm_BldgRoad_Slot1C,,unclassified,city,named,,,,slot +0x1C
+0x0016B680,mm_BldgRoad_ctor,88,unclassified,city,unnamed,yes,1,1,"base constructor, vtable 0x1BD340, two parameters from record bytes 0x90/0x91"
+0x0016B6E0,mm_BldgSmallGoods_dtor,96,unclassified,city,unnamed,yes,0,2,"category 14 (Small Goods), vtable 0x1BD380"
+0x0016B740,mm_BldgSmallGoods_CollideA,64,unclassified,city,unnamed,no,0,1,segment test A when record +0x10 > 0x26
+0x0016B780,mm_BldgSmallGoods_CollideB,64,unclassified,city,unnamed,no,0,1,segment test B when record +0x10 > 0x26
+0x0016B7C0,mm_BldgSmallGoods_Draw,316,unclassified,city,unnamed,no,0,3,item instances scaled by height
+0x0016B900,mm_BldgSmallGoods_Tick,540,unclassified,city,unnamed,no,0,7,"entrance, terrain, minimap"
+0x0016BB20,mm_BldgSmallGoods_ctor,52,unclassified,city,unnamed,yes,1,1,"base constructor, vtable 0x1BD380"
+0x0016BB60,mm_BldgWasteland_dtor,96,unclassified,city,unnamed,yes,0,2,"category 1 (wasteland), vtable 0x1BD3C0"
+0x0016BBC0,mm_BldgWasteland_Draw,296,unclassified,city,unnamed,no,0,1,weed/rock instances
+0x0016BCF0,mm_BldgWasteland_FindSpot,332,unclassified,city,unnamed,no,1,2,(provisional) walkable spot near a tile
+0x0016BE40,mm_BldgWasteland_Tick,1120,unclassified,city,unnamed,no,0,9,(provisional) random growth and object placement on wasteland
+0x0016C2A0,mm_BldgWasteland_InitRecord,180,unclassified,city,unnamed,no,0,1,random appearance bytes
+0x0016C360,mm_BldgWasteland_ctor,52,unclassified,city,unnamed,yes,1,1,"base constructor, vtable 0x1BD3C0"
+0x0016C3A0,mm_PhoneCall_Next,204,unclassified,ui,unnamed,no,1,3,shifts the call queue and drops input focus
+0x0016C470,mm_PhoneCall_Remove,372,unclassified,ui,unnamed,no,1,4,"removes the queued call for (a2, a3)"
+0x0016C5F0,mm_PhoneCall_Post,124,unclassified,ui,unnamed,no,3,0,queues a call (3 slots) from person a1 with message a2/a3
+0x0016C670,mm_PhoneCall_Draw,364,unclassified,ui,unnamed,yes,1,5,"phone model, ringing light and sound"
+0x0016C7E0,mm_PhoneCall_Update,1940,unclassified,ui,unnamed,yes,1,13,"ringing phone: ""Call from boss"", ""Call from stranger"", ""Call from %s"", answering, input focus"
+0x0016CF80,mm_PhoneCall_DeletingDtor,68,unclassified,ui,unnamed,yes,1,1,delete when the flag is > 0
+0x0016CFD0,mm_PhoneCall_ctor,52,unclassified,ui,unnamed,no,1,0,"model 0x1F3B08, empty queue"
+0x0016D010,mm_Notice_Draw,76,unclassified,ui,unnamed,no,1,1,its two text boxes while shown
+0x0016D060,mm_Notice_Tick,56,unclassified,ui,unnamed,no,1,0,"counts down the display timer, then hides"
+0x0016D0A0,mm_Notice_Clear,16,unclassified,ui,unnamed,no,5,0,"id -1, hidden"
+0x0016D0B0,mm_Notice_ShowCentered,168,unclassified,ui,unnamed,no,1,3,centred text for 300 frames
+0x0016D160,mm_Notice_ShowText,144,unclassified,ui,unnamed,no,1,3,text for 300 frames
+0x0016D1F0,mm_Notice_Show,180,unclassified,ui,unnamed,no,3,3,"notice a1 from the table at 0x1B81E0 (""A bit hungry."" ...), 300 frames"
+0x0016D2B0,mm_Notice_dtor,124,unclassified,ui,unnamed,yes,1,2,deletes its two text boxes
+0x0016D330,mm_Notice_ctor,208,unclassified,ui,unnamed,yes,1,4,creates its two text boxes
+0x0016D400,mm_SoundTest_BgmPage,936,unclassified,ui,unnamed,no,1,14,"sound test BGM page: loads banks, plays/stops sequences"
+0x0016D7B0,mm_SoundTest_SePage,760,unclassified,ui,unnamed,no,1,2,sound test SE page: plays effects with distance/pan
+0x0016DAB0,mm_SoundTest_Update,1176,unclassified,ui,unnamed,no,1,22,"""*** Sound Test ***"" screen"
+0x0016DF50,mm_SoundTest_BgmText,284,unclassified,ui,unnamed,no,2,3,"BGM page text (""BGM No:"")"
+0x0016E070,mm_SoundTest_SeText,508,unclassified,ui,unnamed,no,2,3,"SE page text (""SE No:"", ""R1/R2 Distance(+/-)"")"
+0x0016E270,mm_Title_DrawCommon,456,unclassified,scene,unnamed,no,4,6,"title screen layers, logo animation and fades"
+0x0016E440,mm_Title_LoadMenu,1024,unclassified,scene,unnamed,yes,1,16,load game screen: memory card slots and their info
+0x0016E840,mm_Title_PressStart,260,unclassified,scene,unnamed,no,1,5,"title idle screen (""[SELECT]SoundTest"")"
 0x0016E950,mm_SceneA_StartGame,764,unclassified,,named,yes,1,27,
-0x0016EC50,FUN_0016ec50,1300,unclassified,,unnamed,no,1,8,
-0x0016F170,FUN_0016f170,248,unclassified,,unnamed,no,1,2,
-0x0016F270,FUN_0016f270,424,unclassified,,unnamed,yes,1,9,
-0x0016F420,FUN_0016f420,520,unclassified,,unnamed,no,1,4,
-0x0016F630,FUN_0016f630,488,unclassified,,unnamed,no,2,2,
-0x0016F820,FUN_0016f820,640,unclassified,,unnamed,no,1,4,
-0x0016FAA0,FUN_0016faa0,696,unclassified,,unnamed,no,1,10,
-0x0016FD60,FUN_0016fd60,436,unclassified,,unnamed,no,1,2,
+0x0016EC50,mm_Title_NewGameIntro,1300,unclassified,scene,unnamed,no,1,8,new game intro scene with town models and loading text
+0x0016F170,mm_Title_RandomCharParts,248,unclassified,scene,unnamed,no,1,2,random character parts for the intro
+0x0016F270,mm_Title_OpeningMovieStep,424,unclassified,scene,unnamed,yes,1,9,"plays the opening movie, then loads TITLE.SQ/HD/BD"
+0x0016F420,mm_Title_MenuInput,520,unclassified,scene,unnamed,no,1,4,title menu cursor and selection
+0x0016F630,mm_Title_LogoAnimA,488,unclassified,scene,unnamed,no,2,2,logo sprite animation
+0x0016F820,mm_Title_LogoAnimB,640,unclassified,scene,unnamed,no,1,4,rotating logo sprite animation
+0x0016FAA0,mm_Title_Intro,696,unclassified,scene,unnamed,no,1,10,title intro sequence with music
+0x0016FD60,mm_Title_LogoLetters,436,unclassified,scene,unnamed,no,1,2,logo letter sprites (table 0x1B17E0)
 0x0016FF20,mm_SceneA_MemoryCardCheck,944,unclassified,,named,no,1,8,
 0x001702D0,FUN_001702d0,464,unclassified,,unnamed,yes,1,5,
 0x001704A0,mm_SceneA_Load,1852,unclassified,,named,yes,1,21,
@@ -1868,8 +1892,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001869F0,mm_McQueue_IsDone,72,game,save,named,no,6,0,1 when request a1 is no longer pending
 0x00186A40,mm_McQueue_Init,96,game,save,named,yes,1,1,sceMcInit and clears the 64 request slots
 0x00186AA0,mm_McQueue_Pump,504,game,save,named,yes,2,13,"issues the request at the queue tail (sceMcGetInfo ... sceMcSeek by command 1-12), then polls sceMcSync for its result"
-0x00186CA0,FUN_00186ca0,68,unclassified,,unnamed,yes,1,1,
-0x00186CF0,FUN_00186cf0,8,unclassified,,unnamed,no,1,0,
+0x00186CA0,mm_McManagerSub_DeletingDtor,68,unclassified,save,unnamed,yes,1,1,delete when the flag is > 0
+0x00186CF0,mm_McManagerSub_ctor,8,unclassified,save,unnamed,no,1,0,returns this
 0x00186D00,mm_PacketBuf_Seek,8,game,gfx,named,no,11,0,sets the packet buffer write pointer (0x1BDCE8)
 0x00186D10,mm_PacketBuf_Tell,8,game,gfx,named,no,11,0,returns the packet buffer write pointer (0x1BDCE8)
 0x00186D20,mm_Dma_KickVif1Now,192,game,gfx,named,yes,2,2,"sends a two-tag chain (CALL a0, END) on VIF1 right away and waits for GS path idle before and after"
