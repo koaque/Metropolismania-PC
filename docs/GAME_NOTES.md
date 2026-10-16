@@ -45,7 +45,7 @@ CD-ROM, Mode 2, 2352-byte sectors, ISO 9660 volume `1_02`, publisher `NATSUME IN
 
 ## Boot sequence (from call analysis)
 
-`mm_InitSystemModules` (`0x00185740`):
+`mm_App_ctor` (`0x00185740`):
 1. `sceSifInitRpc`.
 2. `sceSifRebootIop("cdrom0:\SYS\IOPRP243.IMG;1")` and `sceSifSyncIop`.
 3. `sceSifInitIopHeap`, `sceFsReset`.
@@ -54,23 +54,23 @@ CD-ROM, Mode 2, 2352-byte sectors, ISO 9660 volume `1_02`, publisher `NATSUME IN
 6. `sceGsResetGraph`, `sceGsResetPath`, `sceGsSetDefDBuffDc`, `sceDmaReset`.
 7. Calls `mm_InitSound`.
 
-`mm_InitSound` (`0x0018F4A0`) calls `mm_LoadSoundModules` (`0x0018F280`), which loads `LIBSD`, `SDRDRV`, `MODHSYN`, `MODMIDI`, `MODSEIN` and `YYSOUND` with `sceSifLoadModule`, printing "loading xxx.irx failed" on error. It then binds the game's sound RPC with `sceSifBindRpc`.
+`mm_Sound_Init` (`0x0018F4A0`) calls `mm_Sound_LoadModules` (`0x0018F280`), which loads `LIBSD`, `SDRDRV`, `MODHSYN`, `MODMIDI`, `MODSEIN` and `YYSOUND` with `sceSifLoadModule`, printing "loading xxx.irx failed" on error. It then binds the game's sound RPC with `sceSifBindRpc`.
 
-`mm_OpenDiscFile` (`0x0019ED60`) resolves files with `sceCdSearchFile` and falls back to `sceOpen`/`sceLseek` ("Cannot open '%s'(sceCdSearchFile)").
+`mm_Movie_StrFileOpen` (`0x0019ED60`) resolves files with `sceCdSearchFile` and falls back to `sceOpen`/`sceLseek` ("Cannot open '%s'(sceCdSearchFile)").
 
 ## Game flow (from Ghidra decompilation)
 
-- `mm_Main` (`0x0012AE20`): `mm_InitSystemModules`, then builds the game object on its stack (vtable `0x001BCE60`) and enters `mm_MainLoop` (`0x001854E0`), which never returns.
-- `mm_MainLoop`, every frame: pad update, file pump (`mm_FsPump`), memory card queue pump (`mm_McQueuePump`), sound paths, `sceGsSyncPath`, then the game object's `+0xC` method `mm_GameUpdate` (`0x0012ABA0`), then double-buffer swap of a 640x448 interlaced display (640x224 fields).
+- `mm_Main` (`0x0012AE20`): `mm_App_ctor`, then builds the game object on its stack (vtable `0x001BCE60`) and enters `mm_MainLoop` (`0x001854E0`), which never returns.
+- `mm_MainLoop`, every frame: pad update, file pump (`mm_FileQueue_Pump`), memory card queue pump (`mm_McQueue_Pump`), the YYSound command flush (`mm_SoundCmd_Flush`), `sceGsSyncPath`, then the game object's `+0xC` method `mm_GameUpdate` (`0x0012ABA0`), then double-buffer swap of a 640x448 interlaced display (640x224 fields).
 - Display: interlaced, SMODE2 = 3 (one 640x224 buffer per field, read every line). Two double buffers exist:
   - `0x001F5790`, swapped by `mm_MainLoop` once per game frame (`sceGsSetHalfOffset` = `0x00103730` and `0x00103998` on the draw environments, then `sceGsSwapDBuffDc`).
-  - `0x00717DC0`, swapped by the VSync interrupt handler `0x0019C4C0` on every field, picking the buffer from the GS CSR FIELD bit. The handler then DMA-sends a prebuilt display list for that field: `FUN_001A0980(0x00717DA0)` returns the current frame packet, and the two field packets sit `0x1C900` bytes apart (`+0x40` and `+0x1C940`). The city uses this path, so the same scene packet is re-sent (VIF1, VU1 and GS work included) on every field while the game logic runs much slower.
+  - `0x00717DC0`, swapped by the VSync interrupt handler `0x0019C4C0` on every field, picking the buffer from the GS CSR FIELD bit. The handler then DMA-sends a prebuilt display list for that field: `mm_Movie_VoBufGetTag(0x00717DA0)` returns the current frame packet, and the two field packets sit `0x1C900` bytes apart (`+0x40` and `+0x1C940`). The city uses this path, so the same scene packet is re-sent (VIF1, VU1 and GS work included) on every field while the game logic runs much slower.
   - Buffer layout from `sceGsSetDefDBuffDc` (HLE in the runtime): frame buffers at pages `0x0` and `0x46`, Z buffer at `0x8C`. The odd-field buffer is drawn with OFY `0x7908` (half a line lower than `0x7900`).
 - `mm_GameUpdate` is a state machine at `object+4`: 0/1 create scene A, 2 run scene A, 3/7 create scene B, 4 run scene B, 5/6 create and run scene C. Scene A is the boot/title flow; its sub-state lives at `sceneA+0xC0`:
   0 load title assets (`DATA\A3D\INTRO\*`, ground/water textures) and start `TITLE.SQ/HD/BD`; 1 memory card check; 2-5 logos and title; 6 title menu; 9/10 New Game / Continue (calls the city init functions, with a loading gauge); 11/12 hand over to scene B.
-- Memory card access goes through a 64-entry async command queue at `0x001F5CF0` (`mm_McQueue*`), pumped once per frame with non-blocking `sceMcSync`. The card manager (`mm_McManagerUpdate`) lists each card one entry per call with `sceMcGetDir(port, "*", mode = 0, 1, 2, ...)` and looks for the game's save directory and its `icon.sys` (964 bytes).
-- Pad: `mm_PadUpdate` turns the pad's button bytes into `(data[2] << 8 | data[3]) ^ 0xFFFF`, so Cross = `0x0040`, Start = `0x0800`, and analog sticks add bits `0x100000`-`0x800000`.
-- Files: `mm_FsOpen` (`0x00184590`) opens `cdrom0:\...` with `sceOpen`; reads are pumped asynchronously by `mm_FsPump`.
+- Memory card access goes through a 64-entry async command queue at `0x001F5CF0` (`mm_McQueue_*`), pumped once per frame with non-blocking `sceMcSync`. The card manager (`mm_McManagerUpdate`) lists each card one entry per call with `sceMcGetDir(port, "*", mode = 0, 1, 2, ...)` and looks for the game's save directory and its `icon.sys` (964 bytes).
+- Pad: `mm_Pad_Update` turns the pad's button bytes into `(data[2] << 8 | data[3]) ^ 0xFFFF`, so Cross = `0x0040`, Start = `0x0800`, and analog sticks add bits `0x100000`-`0x800000`.
+- Files: `mm_File_Open` (`0x00184590`) opens `cdrom0:\...` with `sceOpen`; reads are pumped asynchronously by `mm_FileQueue_Pump`.
 
 ## Hand-identified functions (config/symbols.csv, source = manual)
 
@@ -79,13 +79,13 @@ CD-ROM, Mode 2, 2352-byte sectors, ISO 9660 volume `1_02`, publisher `NATSUME IN
 | `0x0011B360` | `sceCdDiskReady` | Contains "Libcdvd bind err CdDiskReady" |
 | `0x001159B8` | `sceSifLoadModule` | 32-byte wrapper directly after `_sceSifLoadModule` (0x00115790), passes a stack slot for the module result; called 12 times by the sound loader with `cdrom0:\SYS\*.IRX` paths |
 | `0x001159D8` | `sceSifLoadStartModule` | Sibling wrapper of `_sceSifLoadModule` that passes the caller's result pointer through |
-| `0x00185740` | `mm_InitSystemModules` | References `IOPRP243.IMG`, `SIO2MAN/PADMAN/MCMAN/MCSERV.IRX`; calls the SIF, CDVD and GS init functions above |
-| `0x0018F280` | `mm_LoadSoundModules` | References the six sound IRX paths and their "loading ... failed" messages |
-| `0x0018F4A0` | `mm_InitSound` | Calls `mm_LoadSoundModules`, `sceSifInitRpc`, `sceSifBindRpc` ("error: sceSifBindRpc") |
-| `0x0018E1B0` | `mm_SetSoundDataPaths` | References `cdrom0:\DATA\SOUND\{,HD,BD,SQ}\` |
+| `0x00185740` | `mm_App_ctor` | References `IOPRP243.IMG`, `SIO2MAN/PADMAN/MCMAN/MCSERV.IRX`; calls the SIF, CDVD and GS init functions above |
+| `0x0018F280` | `mm_Sound_LoadModules` | References the six sound IRX paths and their "loading ... failed" messages |
+| `0x0018F4A0` | `mm_Sound_Init` | Calls `mm_LoadSoundModules`, `sceSifInitRpc`, `sceSifBindRpc` ("error: sceSifBindRpc") |
+| `0x0018E1B0` | `mm_SoundCmd_Flush` | Sends the queued YYSound commands; builds the `cdrom0:\DATA\SOUND\{,HD,BD,SQ}\` paths |
 | `0x0019DE10` | `mm_PlayMissionMovie` | References `DATA\MPEG\MISSION` and `ENDING.PSS` |
 | `0x0019DFA0` | `mm_PlayOpeningMovie` | References `DATA\MPEG\OPENING.PSS` |
-| `0x0019ED60` | `mm_OpenDiscFile` | See boot sequence |
+| `0x0019ED60` | `mm_Movie_StrFileOpen` | See boot sequence |
 
 Independent check: the SDK functions found from their own diagnostic strings (`sceGsSyncPath`, `sceGsPutDrawEnv`, `sceGsSetDefDispEnv`, `sceDmaSend` and the rest of libdma, `sceCdSearchFile`, `sceCdInit`, `sceCdReadClock`, `sceCdSt*`, `scePadInit`, `scePadPortOpen`, `sceMcInit`, `sceSdRemoteInit`) match the PS2Recomp analyzer's signature names at the same addresses in every case.
 
