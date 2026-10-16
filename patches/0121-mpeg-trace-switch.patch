@@ -1,0 +1,32 @@
+diff --git a/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp b/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp
+index 44eaef4..d0184d3 100644
+--- a/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp
++++ b/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp
+@@ -21,6 +21,27 @@ extern "C"
+ 
+ #include "Syscalls/Helpers/State.h"
+ 
++#include <cstdlib>
++
++// PS2X_MPEG_TRACE=1 turns this file's movie diagnostics on without an aggressive-log build.
++namespace
++{
++    bool mpegTraceEnabled()
++    {
++        static const bool enabled = std::getenv("PS2X_MPEG_TRACE") != nullptr;
++        return enabled;
++    }
++}
++#undef PS2_IF_AGRESSIVE_LOGS
++#define PS2_IF_AGRESSIVE_LOGS(code) \
++    do                              \
++    {                               \
++        if (mpegTraceEnabled())     \
++        {                           \
++            code                    \
++        }                           \
++    } while (0)
++
+ namespace ps2_stubs
+ {
+     namespace

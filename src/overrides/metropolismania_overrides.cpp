@@ -205,6 +205,11 @@ namespace
         {0x00103D08u, "sceGsSwapDBuffDc", nullptr},
         {0x0019C4C0u, "mm_VSyncHandler", nullptr},
         {0x001040F0u, "sceDmaSend", nullptr},
+        {0x0019C480u, "mm_MovieDmacRelease", nullptr},
+        {0x001A0960u, "mm_MovieBufferFree", nullptr},
+        {0x0010BF90u, "sceMpegGetPicture", nullptr},
+        {0x0019E060u, "mm_MovieYield", nullptr},
+        {0x0010DC10u, "RotateThreadReadyQueue", nullptr},
     };
     constexpr size_t kTracedCallCount = sizeof(g_tracedCalls) / sizeof(g_tracedCalls[0]);
 

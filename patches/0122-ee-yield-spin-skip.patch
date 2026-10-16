@@ -1,0 +1,94 @@
+diff --git a/ps2xRuntime/include/runtime/ee_scheduler.h b/ps2xRuntime/include/runtime/ee_scheduler.h
+index f247ff9..e1dea84 100644
+--- a/ps2xRuntime/include/runtime/ee_scheduler.h
++++ b/ps2xRuntime/include/runtime/ee_scheduler.h
+@@ -297,6 +297,7 @@ public:
+     int cancelWakeup(int id);
+     int changePriority(int id, int priority, bool interruptSafe, int &oldPriority);
+     int rotateReadyQueue(int priority, bool interruptSafe);
++    void noteYield();
+     int releaseWait(int id, bool interruptSafe);
+     void transferIfRequested(bool interruptSafe);
+ 
+@@ -424,6 +425,9 @@ private:
+     bool m_rescheduleRequested = false;
+     bool m_timeSliceExpired = false;
+     bool m_insideInterrupt = false;
++    // RotateThreadReadyQueue calls since the last wakeup, interrupt or scheduler event (see
++    // EeScheduler::noteYield).
++    uint32_t m_yieldsSinceEvent = 0;
+     uint32_t m_pendingEeTimerInterrupts = 0;
+     uint64_t m_eeCycle = 0;
+     uint64_t m_sliceEndCycle = kDefaultTimeSliceCycles;
+diff --git a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+index 8244928..3a369b0 100644
+--- a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
++++ b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+@@ -757,6 +757,15 @@ int EeScheduler::rotateReadyQueue(int priority, bool interruptSafe)
+     GuestThread *self = currentThread();
+     if (self && self->currentPriority == priority)
+     {
++        if (!interruptSafe && !m_insideInterrupt)
++            noteYield();
++        // Alone at its priority, the thread simply keeps running; skip the dispatcher transfer
++        // (an exception unwind, far more expensive than the yield it stands for).
++        if (m_readyQueues[priority].empty())
++        {
++            publishSnapshot();
++            return KE_OK;
++        }
+         enqueueReady(*self);
+         m_currentThreadId = 0;
+         m_rescheduleRequested = true;
+@@ -776,6 +785,27 @@ int EeScheduler::rotateReadyQueue(int priority, bool interruptSafe)
+     return KE_OK;
+ }
+ 
++// Threads that wait by yielding in a loop (RotateThreadReadyQueue until a flag changes) only move
++// emulated time forward by the few instructions between yields, while every yield costs real host
++// time, so the vsync or interrupt they wait for takes far too long to arrive (a movie ran at a few
++// fields per second). When many yields go by with no wakeup, interrupt or scheduler event in
++// between, nothing can change until the next scheduled event: skip ahead to it, at most one vsync
++// period. Host time still paces vsync, so this does not run the game faster than real time.
++void EeScheduler::noteYield()
++{
++    constexpr uint32_t kSpinYields = 200u;
++    if (++m_yieldsSinceEvent < kSpinYields)
++        return;
++    m_yieldsSinceEvent = 0;
++    const uint64_t next = m_nextDeadlineCycle.load(std::memory_order_acquire);
++    if (next > m_eeCycle)
++    {
++        const uint64_t skip = std::min<uint64_t>(next - m_eeCycle, kVBlankPeriodCycles);
++        accountCycles(static_cast<uint32_t>(skip));
++        m_checkpointPending.store(true, std::memory_order_release);
++    }
++}
++
+ int EeScheduler::releaseWait(int id, bool interruptSafe)
+ {
+     assertExecutor();
+@@ -1101,6 +1131,7 @@ int EeScheduler::cancelAlarm(int id)
+ void EeScheduler::queueInvocation(GuestInvocation invocation)
+ {
+     assertExecutor();
++    m_yieldsSinceEvent = 0;
+     invocation.sequence = ++m_invocationSequence;
+     m_pendingInvocations.push_back(std::move(invocation));
+     m_checkpointPending.store(true, std::memory_order_release);
+@@ -1693,6 +1724,7 @@ void EeScheduler::blockCurrent(EeWaitState wait)
+ 
+ void EeScheduler::makeReady(GuestThread &item, int result, bool interruptSafe)
+ {
++    m_yieldsSinceEvent = 0;
+     auto completion = std::move(item.wait.completion);
+     item.wait = {};
+     setReturnS32(&item.activeContext(), result);
+@@ -1861,6 +1893,7 @@ void EeScheduler::processDueDeadlines()
+ 
+ void EeScheduler::processEvent(const EeEvent &event)
+ {
++    m_yieldsSinceEvent = 0;
+     switch (event.type)
+     {
+     case EeEventType::Stop:
