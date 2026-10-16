@@ -504,6 +504,10 @@ def cmd_run(args: argparse.Namespace) -> None:
     shot_dir = LOGS / "shots" / stamp
     exe = tool("ps2EntryRunner")
     env = dict(os.environ)
+    # work/local.json "game_window_pos": [x, y] opens the game window there, unfocused (PS2X_WINDOW_POS).
+    window_pos = settings().get("game_window_pos")
+    if window_pos and "PS2X_WINDOW_POS" not in env:
+        env["PS2X_WINDOW_POS"] = f"{int(window_pos[0])},{int(window_pos[1])}"
     if args.pad:
         env["PS2X_PAD_SCRIPT"] = str(Path(args.pad).resolve())
     for item in args.env or []:

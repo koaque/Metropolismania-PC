@@ -1,0 +1,220 @@
+diff --git a/ps2xRuntime/include/runtime/gs/gs_backend.h b/ps2xRuntime/include/runtime/gs/gs_backend.h
+index 3f00d01..bc9e378 100644
+--- a/ps2xRuntime/include/runtime/gs/gs_backend.h
++++ b/ps2xRuntime/include/runtime/gs/gs_backend.h
+@@ -3,6 +3,7 @@
+ #include "runtime/gs/gs_types.h"
+ 
+ #include <cstdint>
++#include <functional>
+ #include <vector>
+ 
+ class GSRasterBackend
+@@ -24,6 +25,18 @@ public:
+     virtual void Sync(GSSyncReason reason) = 0;
+     virtual PresentationFrame Present(const GSPresentationRequest &request) = 0;
+ 
++    // Takes the frame to present at this point of the command stream; the returned function waits
++    // for it. A backend that draws on the caller's thread presents when the function is called.
++    virtual std::function<PresentationFrame()> QueuePresent(const GSPresentationRequest &request)
++    {
++        return [this, request]()
++        {
++            Flush();
++            Sync(GSSyncReason::Presentation);
++            return Present(request);
++        };
++    }
++
+     virtual bool ClearFramebuffer(const GSContext &context, uint32_t rgba) = 0;
+     virtual uint32_t ConsumeLocalToHostBytes(uint8_t *dst, uint32_t maxBytes) = 0;
+ 
+diff --git a/ps2xRuntime/include/runtime/gs/gs_cpu_backend.h b/ps2xRuntime/include/runtime/gs/gs_cpu_backend.h
+index b6de3e4..3dd0979 100644
+--- a/ps2xRuntime/include/runtime/gs/gs_cpu_backend.h
++++ b/ps2xRuntime/include/runtime/gs/gs_cpu_backend.h
+@@ -52,6 +52,9 @@ public:
+     void BandTextureFlush(BandContext &band);
+     void RestoreVram(const std::vector<uint8_t> &snapshot);
+ 
++    // Converts a VRAM snapshot (from SnapshotVram) into the frame Present would return for it.
++    static PresentationFrame PresentFromSnapshot(std::vector<uint8_t> &snapshot, const GSPresentationRequest &request);
++
+ private:
+     std::array<uint16_t, 512> &clutTable();
+     std::array<uint32_t, 2> &clutCbpTable();
+diff --git a/ps2xRuntime/include/runtime/gs/gs_threaded_backend.h b/ps2xRuntime/include/runtime/gs/gs_threaded_backend.h
+index 6016b26..f24ea1c 100644
+--- a/ps2xRuntime/include/runtime/gs/gs_threaded_backend.h
++++ b/ps2xRuntime/include/runtime/gs/gs_threaded_backend.h
+@@ -33,6 +33,7 @@ public:
+     void TextureFlush() override;
+     void Sync(GSSyncReason reason) override;
+     PresentationFrame Present(const GSPresentationRequest &request) override;
++    std::function<PresentationFrame()> QueuePresent(const GSPresentationRequest &request) override;
+ 
+     bool ClearFramebuffer(const GSContext &context, uint32_t rgba) override;
+     uint32_t ConsumeLocalToHostBytes(uint8_t *dst, uint32_t maxBytes) override;
+diff --git a/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp b/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp
+index fe5fea7..1320ee1 100644
+--- a/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp
+@@ -1975,6 +1975,11 @@ PresentationFrame GSCpuBackend::Present(const GSPresentationRequest &request)
+     // display conversion without holding the producer-side raster lock.
+     thread_local std::vector<uint8_t> snapshot;
+     SnapshotVram(snapshot);
++    return PresentFromSnapshot(snapshot, request);
++}
++
++PresentationFrame GSCpuBackend::PresentFromSnapshot(std::vector<uint8_t> &snapshot, const GSPresentationRequest &request)
++{
+     if (snapshot.empty())
+         return {};
+ 
+diff --git a/ps2xRuntime/src/lib/gs/gs_frontend.cpp b/ps2xRuntime/src/lib/gs/gs_frontend.cpp
+index b65e27f..fecf638 100644
+--- a/ps2xRuntime/src/lib/gs/gs_frontend.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_frontend.cpp
+@@ -794,6 +794,9 @@ GSPresentationRequest GS::buildPresentationRequestUnlocked() const
+ void GS::latchHostPresentationFrame()
+ {
+     GSPresentationRequest request{};
++    std::function<PresentationFrame()> pending;
++    // Keeps the backend alive and unswappable until the frame is taken.
++    std::unique_lock<std::mutex> backendLock(m_backendLifetimeMutex, std::defer_lock);
+     {
+         std::lock_guard<std::recursive_mutex> lock(m_stateMutex);
+         if (!m_backend || !m_privRegs)
+@@ -804,19 +807,16 @@ void GS::latchHostPresentationFrame()
+             m_hostPresentationWidth = m_hostPresentationHeight = 0u;
+             return;
+         }
++        // The request (DISPFB and friends) and the frame's place in the drawing stream are both
++        // taken under the state lock, which GIF processing holds, so they cannot drift apart while a
++        // threaded backend catches up.
++        backendLock.lock();
+         request = buildPresentationRequestUnlocked();
++        pending = m_backend->QueuePresent(request);
+     }
+ 
+-    PresentationFrame frame{};
+-    {
+-        std::lock_guard<std::mutex> backendLock(m_backendLifetimeMutex);
+-        if (m_backend)
+-        {
+-            m_backend->Flush();
+-            m_backend->Sync(GSSyncReason::Presentation);
+-            frame = m_backend->Present(request);
+-        }
+-    }
++    PresentationFrame frame = pending();
++    backendLock.unlock();
+     if (frame)
+         weaveInterlacedFields(request, frame);
+ 
+diff --git a/ps2xRuntime/src/lib/gs/gs_threaded_backend.cpp b/ps2xRuntime/src/lib/gs/gs_threaded_backend.cpp
+index 72482e1..ffdb625 100644
+--- a/ps2xRuntime/src/lib/gs/gs_threaded_backend.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_threaded_backend.cpp
+@@ -9,7 +9,9 @@
+ #include <cstdlib>
+ #include <cstring>
+ #include <deque>
++#include <future>
+ #include <iostream>
++#include <memory>
+ #include <mutex>
+ #include <thread>
+ #include <utility>
+@@ -27,6 +29,7 @@ namespace
+         Flush,
+         TextureFlush,
+         WriteVram,
++        Present,
+     };
+ 
+     struct ClutArgs
+@@ -40,13 +43,26 @@ namespace
+         uint32_t psm, base, bw, x, y, value;
+     };
+ 
++    struct PresentArgs
++    {
++        GSPresentationRequest request;
++        // With the CPU backend the worker only copies VRAM here and the caller converts it, so the
++        // conversion does not hold up drawing (or an EE waiting on a sync); otherwise `frame`.
++        bool snapshotOnly = false;
++        std::vector<uint8_t> snapshot;
++        PresentationFrame frame;
++        std::promise<void> done;
++    };
++
+     struct Command
+     {
+         Op op;
+         // XGKICK submits while the VU1 interpreter has rounding toward zero selected; the raster
+         // backend must see the same rounding mode as a synchronous call would.
+         int rounding;
+-        std::variant<std::monostate, GSPrimitiveBatch, ClutArgs, GSTransferCommand, std::vector<uint8_t>, PixelArgs> data;
++        std::variant<std::monostate, GSPrimitiveBatch, ClutArgs, GSTransferCommand, std::vector<uint8_t>, PixelArgs,
++                     std::shared_ptr<PresentArgs>>
++            data;
+     };
+ 
+     // Bound on queued commands; the producer waits when the worker falls this far behind.
+@@ -499,6 +515,29 @@ struct GSThreadedBackend::Impl
+             inner->WriteVram(p.psm, p.base, p.bw, p.x, p.y, p.value);
+             break;
+         }
++        case Op::Present:
++        {
++            PresentArgs &p = *std::get<std::shared_ptr<PresentArgs>>(command.data);
++            try
++            {
++                if (p.snapshotOnly)
++                {
++                    cpu->SnapshotVram(p.snapshot);
++                }
++                else
++                {
++                    inner->Flush();
++                    inner->Sync(GSSyncReason::Presentation);
++                    p.frame = inner->Present(p.request);
++                }
++                p.done.set_value();
++            }
++            catch (...)
++            {
++                p.done.set_exception(std::current_exception());
++            }
++            break;
++        }
+         }
+     }
+ 
+@@ -597,6 +636,25 @@ PresentationFrame GSThreadedBackend::Present(const GSPresentationRequest &reques
+     return m_impl->sync([&](GSRasterBackend &b) { return b.Present(request); });
+ }
+ 
++// The worker presents when it reaches this command, so the frame holds exactly what was drawn
++// before it, however far behind the worker is. Waiting first and reading VRAM afterwards (Present)
++// lets the EE run on during the wait: it can flip DISPFB and clear the buffer the request names.
++std::function<PresentationFrame()> GSThreadedBackend::QueuePresent(const GSPresentationRequest &request)
++{
++    auto args = std::make_shared<PresentArgs>();
++    args->request = request;
++    args->snapshotOnly = m_impl->cpu != nullptr;
++    std::shared_future<void> done = args->done.get_future().share();
++    m_impl->push(Command{Op::Present, std::fegetround(), args});
++    return [args, done]()
++    {
++        done.get();
++        if (args->snapshotOnly)
++            return GSCpuBackend::PresentFromSnapshot(args->snapshot, args->request);
++        return std::move(args->frame);
++    };
++}
++
+ bool GSThreadedBackend::ClearFramebuffer(const GSContext &context, uint32_t rgba)
+ {
+     return m_impl->sync([&](GSRasterBackend &b) { return b.ClearFramebuffer(context, rgba); });

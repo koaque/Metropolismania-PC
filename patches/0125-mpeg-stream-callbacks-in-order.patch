@@ -1,0 +1,159 @@
+diff --git a/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp b/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp
+index d0184d3..fc2bf75 100644
+--- a/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp
++++ b/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp
+@@ -16,6 +16,7 @@ extern "C"
+ }
+ #endif
+ 
++#include <atomic>
+ #include <deque>
+ #include <memory>
+ 
+@@ -1600,26 +1601,35 @@ namespace ps2_stubs
+             return true;
+         }
+ 
+-        void dispatchGuestStreamCallback(uint8_t *rdram,
+-                                         R5900Context *callerCtx,
+-                                         PS2Runtime *runtime,
+-                                         const MpegStreamCallbackEvent &event,
+-                                         const MpegRegisteredCallback &callback)
++        // Stream callbacks that returned 0. libmpeg stops demuxing there and
++        // offers the packet again later; this HLE has already consumed it, so
++        // each refusal is a dropped packet (audio callbacks refuse when their
++        // buffer is full).
++        std::atomic<uint64_t> g_mpegStreamCallbackCount{0u};
++        std::atomic<uint64_t> g_mpegStreamCallbackRefusals{0u};
++
++        bool makeGuestStreamCallback(uint8_t *rdram,
++                                     R5900Context *callerCtx,
++                                     PS2Runtime *runtime,
++                                     const MpegStreamCallbackEvent &event,
++                                     const MpegRegisteredCallback &callback,
++                                     uint32_t stackTop,
++                                     GuestInvocation &invocation)
+         {
+             if (!rdram || !callerCtx || !runtime || callback.func == 0u || !runtime->hasFunction(callback.func))
+             {
+-                return;
++                return false;
+             }
+ 
+             const uint32_t cbDataAddr = runtime->guestMalloc(kMpegCallbackDataSize, 16u);
+             if (cbDataAddr == 0u)
+             {
+-                return;
++                return false;
+             }
+             if (!writeMpegCallbackData(rdram, cbDataAddr, event))
+             {
+                 runtime->guestFree(cbDataAddr);
+-                return;
++                return false;
+             }
+ 
+             R5900Context callbackCtx = *callerCtx;
+@@ -1627,20 +1637,37 @@ namespace ps2_stubs
+             SET_GPR_U32(&callbackCtx, 5, cbDataAddr);
+             SET_GPR_U32(&callbackCtx, 6, callback.data);
+             SET_GPR_U32(&callbackCtx, 7, 0u);
+-            SET_GPR_U32(&callbackCtx, 29, 0u);
++            SET_GPR_U32(&callbackCtx, 29, stackTop);
+             SET_GPR_U32(&callbackCtx, 31, 0u);
+             callbackCtx.pc = callback.func;
+ 
+-            GuestInvocation invocation{};
+             invocation.kind = GuestInvocationKind::RpcCallback;
+             invocation.context = callbackCtx;
+-            invocation.onComplete = [runtime, cbDataAddr](const R5900Context &, R5900Context &)
++            const uint32_t streamType = event.streamType;
++            invocation.onComplete = [runtime, cbDataAddr, streamType](const R5900Context &completed, R5900Context &)
+             {
+                 runtime->guestFree(cbDataAddr);
++                const uint64_t calls = g_mpegStreamCallbackCount.fetch_add(1u, std::memory_order_relaxed) + 1u;
++                if (getRegU32(&completed, 2) == 0u)
++                {
++                    const uint64_t refusals = g_mpegStreamCallbackRefusals.fetch_add(1u, std::memory_order_relaxed) + 1u;
++                    if ((refusals & (refusals - 1u)) == 0u)
++                    {
++                        PS2_IF_AGRESSIVE_LOGS({
++                            std::cerr << "[MPEG:StrCallback:REFUSED] type=" << streamType
++                                      << " refusals=" << refusals << " of " << calls << std::endl;
++                        });
++                    }
++                }
+             };
+-            runtime->eeScheduler().queueInvocation(std::move(invocation));
++            return true;
+         }
+ 
++        // libmpeg runs these inside the demux call, in stream order, while the
++        // guest ring still holds their data. Queued, they ran after the call had
++        // returned and the game had already released and refilled that part of
++        // the ring, which turned movie audio into noise. Same fix as the
++        // stream-order change in ran-j/PS2Recomp#254.
+         void dispatchStreamCallbacks(uint8_t *rdram,
+                                      R5900Context *ctx,
+                                      PS2Runtime *runtime,
+@@ -1651,13 +1678,37 @@ namespace ps2_stubs
+                 return;
+             }
+ 
++            // They run one after another, so they share one stack; left to the scheduler, each would
++            // get its own, one per nesting depth, and a demux call can deliver dozens of packets.
++            // A caller outside guest code (a test) gets them queued instead.
++            EeScheduler &scheduler = runtime->eeScheduler();
++            const bool inGuest = scheduler.isExecutingGuest() && scheduler.currentThread() != nullptr;
++            const uint32_t stackTop = inGuest ? scheduler.invocationStackTop() : 0u;
++            std::vector<GuestInvocation> invocations;
+             for (const MpegStreamCallbackEvent &event : events)
+             {
+                 for (const MpegRegisteredCallback &callback : event.callbacks)
+                 {
+-                    dispatchGuestStreamCallback(rdram, ctx, runtime, event, callback);
++                    GuestInvocation invocation{};
++                    if (makeGuestStreamCallback(rdram, ctx, runtime, event, callback, stackTop, invocation))
++                    {
++                        invocations.push_back(std::move(invocation));
++                    }
+                 }
+             }
++            if (invocations.empty())
++            {
++                return;
++            }
++
++            if (inGuest)
++            {
++                scheduler.invokeCurrentSequence(std::move(invocations));
++            }
++            for (GuestInvocation &invocation : invocations)
++            {
++                scheduler.queueInvocation(std::move(invocation));
++            }
+         }
+ 
+         void dispatchStreamCallbacksUnlocked(uint8_t *rdram,
+@@ -2162,8 +2213,9 @@ namespace ps2_stubs
+             });
+         }
+ 
+-        dispatchStreamCallbacksUnlocked(rdram, ctx, runtime, callbackEvents);
++        // The callbacks run before the caller resumes, so set its result first.
+         setReturnS32(ctx, static_cast<int32_t>(consumed));
++        dispatchStreamCallbacksUnlocked(rdram, ctx, runtime, callbackEvents);
+     }
+ 
+     void sceMpegDemuxPssRing(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+@@ -2256,8 +2308,9 @@ namespace ps2_stubs
+             });
+         }
+ 
+-        dispatchStreamCallbacksUnlocked(rdram, ctx, runtime, callbackEvents);
++        // The callbacks run before the caller resumes, so set its result first.
+         setReturnS32(ctx, static_cast<int32_t>(consumed));
++        dispatchStreamCallbacksUnlocked(rdram, ctx, runtime, callbackEvents);
+     }
+ 
+     void sceMpegDispCenterOffX(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)

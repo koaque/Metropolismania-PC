@@ -64,6 +64,45 @@ namespace
     PS2Runtime::RecompiledFunction g_originalGameUpdate = nullptr;
     PS2Runtime::RecompiledFunction g_originalOpenDiscFile = nullptr;
 
+    // ------------------------------------------------------------------ MMPC_AUTOPLAY
+    // Test aid that presses buttons from the game's own state instead of wall-clock pad scripts:
+    // MMPC_AUTOPLAY=1 pulses Cross through scene A (logos, memory card check, title, New Game) and
+    // then lets go. MMPC_AUTOPLAY=city also pulses Start/Cross in states 3 to 5, which starts the
+    // intro movie and gets through the dialogue to the city. Presses only happen from GameUpdate,
+    // which the movie blocks, so the movie plays to its end (MMPC_SKIP_MOVIES=1 skips it).
+    enum class Autoplay
+    {
+        Off,
+        Title,
+        City,
+    };
+
+    Autoplay autoplayMode()
+    {
+        static const Autoplay mode = []()
+        {
+            const char *value = std::getenv("MMPC_AUTOPLAY");
+            if (!value || value[0] == '\0' || value[0] == '0')
+                return Autoplay::Off;
+            return std::strcmp(value, "city") == 0 ? Autoplay::City : Autoplay::Title;
+        }();
+        return mode;
+    }
+
+    void autoplayFrame(uint32_t state)
+    {
+        constexpr uint16_t kStart = 0x0008u, kCross = 0x4000u;
+        static uint32_t frame = 0;
+        ++frame;
+        const Autoplay mode = autoplayMode();
+        uint16_t buttons = 0;
+        if (state <= 2u && (frame % 24u) < 4u)
+            buttons = kCross;
+        else if (mode == Autoplay::City && state >= 3u && state <= 5u && (frame % 48u) < 4u)
+            buttons = (frame % 96u) < 48u ? kStart : kCross;
+        ps2xSetInjectedPadButtons(buttons);
+    }
+
     void tracedGameUpdate(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
     {
         // Game object layout (from FUN_0012aba0): +4 state, +8 scene C, +0xC scene A, +0x14 scene B.
@@ -74,6 +113,18 @@ namespace
         static auto lastLog = start;
         const uint32_t self = getRegU32(ctx, 4);
         const uint32_t state = guestRead32(rdram, self + 4u);
+        if (autoplayMode() != Autoplay::Off)
+            autoplayFrame(state);
+        static const bool traceOn = []()
+        {
+            const char *flag = std::getenv("MMPC_TRACE");
+            return flag && std::strcmp(flag, "1") == 0;
+        }();
+        if (!traceOn)
+        {
+            g_originalGameUpdate(rdram, ctx, runtime);
+            return;
+        }
         const uint32_t sceneA = guestRead32(rdram, self + 0xCu);
         const uint32_t sub = (state == 2u && sceneA != 0u) ? guestRead32(rdram, sceneA + 0xC0u) : 0xFFFFFFFFu;
         ++frames;
@@ -103,11 +154,15 @@ namespace
     void installTrace(PS2Runtime &runtime)
     {
         const char *flag = std::getenv("MMPC_TRACE");
-        if (!flag || std::strcmp(flag, "1") != 0)
+        const bool trace = flag && std::strcmp(flag, "1") == 0;
+        if (trace || autoplayMode() != Autoplay::Off)
+        {
+            g_originalGameUpdate = runtime.lookupFunction(kGameUpdate);
+            runtime.registerFunction(kGameUpdate, tracedGameUpdate);
+        }
+        if (!trace)
             return;
-        g_originalGameUpdate = runtime.lookupFunction(kGameUpdate);
         g_originalOpenDiscFile = runtime.lookupFunction(kOpenDiscFile);
-        runtime.registerFunction(kGameUpdate, tracedGameUpdate);
         runtime.registerFunction(kOpenDiscFile, tracedOpenDiscFile);
         std::cerr << "[mm] trace mode on (MMPC_TRACE=1)" << std::endl;
     }
@@ -210,6 +265,11 @@ namespace
         {0x0010BF90u, "sceMpegGetPicture", nullptr},
         {0x0019E060u, "mm_MovieYield", nullptr},
         {0x0010DC10u, "RotateThreadReadyQueue", nullptr},
+        {0x0019E450u, "mm_MovieSetup", nullptr},
+        {0x0019E780u, "mm_MovieAudioCallback", nullptr},
+        {0x0019C140u, "mm_MovieAudioStart", nullptr},
+        {0x0019BC90u, "mm_MovieAudioPump", nullptr},
+        {0x0019B940u, "mm_MovieAudioSend", nullptr},
     };
     constexpr size_t kTracedCallCount = sizeof(g_tracedCalls) / sizeof(g_tracedCalls[0]);
 
@@ -245,6 +305,8 @@ namespace
     void tracedCall(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
     {
         const uint32_t caller = getRegU32(ctx, 31);
+        if (g_tracedCalls[Index].address == 0x0019E450u)
+            std::cerr << "[mm:calls] movie setup: audio flag (0x1BD9E8) = " << guestRead32(rdram, 0x001BD9E8u) << std::endl;
         const auto start = std::chrono::steady_clock::now();
         g_tracedCalls[Index].original(rdram, ctx, runtime);
         reportCalls(Index, caller, std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count());

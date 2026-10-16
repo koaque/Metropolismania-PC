@@ -40,4 +40,7 @@ instructions = []
 keep_todo_stubs = []
 # fnmatch patterns of SDK functions to keep as the game's own recompiled code even when the
 # runtime has a handler for them.
-force_recompile = ["sceVu0*"]
+# sceVu0*: the runtime's HLE matrix library broke the city's camera (docs/STATUS.md, item 9).
+# sceSdRemote*: the runtime's HLE only fakes libsdr replies; the game loads the real SDRDRV on the
+# IOP emulator, so the game's own libsdr RPCs reach libsd and the SPU2 (movie sound needs this).
+force_recompile = ["sceVu0*", "sceSdRemote*"]

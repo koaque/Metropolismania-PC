@@ -1,0 +1,332 @@
+diff --git a/ps2xIOP/src/emulator/core/iop_memory.cpp b/ps2xIOP/src/emulator/core/iop_memory.cpp
+index 0fdebb3..a988927 100644
+--- a/ps2xIOP/src/emulator/core/iop_memory.cpp
++++ b/ps2xIOP/src/emulator/core/iop_memory.cpp
+@@ -24,9 +24,26 @@ namespace ps2x::iop::detail
+     IopMemory::IopMemory()
+         : m_ram(RamSize), m_owned(RamSize), m_scratch(ScratchSize)
+     {
++        m_spu2.setIopRam(m_ram.data(), RamSize);
+         reset();
+     }
+ 
++    std::vector<int> IopMemory::takeFinishedAutoDma()
++    {
++        std::vector<int> irqs;
++        for (int core = 0; core < 2; ++core)
++        {
++            if (!m_spu2.takeAdmaFinished(core))
++                continue;
++            const uint32_t chcr = core ? kDmaSpu1Chcr : kDmaSpu0Chcr;
++            const uint32_t madr = core ? kDmaSpu1Madr : kDmaSpu0Madr;
++            m_hardware[chcr] &= ~kDmaStart;
++            m_hardware[madr] = m_spu2.admaAddress(core);
++            irqs.push_back(core ? kDmaSpu1Irq : kDmaSpu0Irq);
++        }
++        return irqs;
++    }
++
+     void IopMemory::reset()
+     {
+         std::fill(m_ram.begin(), m_ram.end(), uint8_t{0});
+@@ -241,6 +258,9 @@ namespace ps2x::iop::detail
+ 
+     uint32_t IopMemory::readHardware32(uint32_t address) const
+     {
++        // A running AutoDMA stream: MADR shows how far the SPU2 has read.
++        if ((address == kDmaSpu0Madr || address == kDmaSpu1Madr) && m_spu2.admaActive(address == kDmaSpu1Madr ? 1 : 0))
++            return m_spu2.admaAddress(address == kDmaSpu1Madr ? 1 : 0);
+         const auto value = m_hardware.find(address);
+         if (value != m_hardware.end())
+             return value->second;
+@@ -279,6 +299,23 @@ namespace ps2x::iop::detail
+             return;
+ 
+         const bool secondCore = address == kDmaSpu1Chcr;
++        const int admaCore = secondCore ? 1 : 0;
++        if ((value & 1u) != 0u && m_spu2.admaEnabled(admaCore))
++        {
++            // AutoDMA: the SPU2 pulls the data at the playback rate; the channel stays busy and its
++            // interrupt is raised when the stream is used up (takeFinishedAutoDma).
++            const uint32_t blockControlAddr = address - sizeof(uint32_t);
++            uint32_t control = 0u;
++            if (const auto current = m_hardware.find(blockControlAddr); current != m_hardware.end())
++                control = current->second;
++            const uint32_t madrAddr = secondCore ? kDmaSpu1Madr : kDmaSpu0Madr;
++            uint32_t source = 0u;
++            if (const auto current = m_hardware.find(madrAddr); current != m_hardware.end())
++                source = current->second & 0x1FFFFFu;
++            const uint32_t bytes = std::max<uint32_t>(control & 0xFFFFu, 1u) * std::max<uint32_t>(control >> 16u, 1u) * 4u;
++            m_spu2.startAdma(admaCore, source, bytes);
++            return;
++        }
+         m_hardware[address] = value & ~kDmaStart;
+ 
+         const uint32_t blockControlAddress = address - sizeof(uint32_t);
+diff --git a/ps2xIOP/src/emulator/core/iop_memory.h b/ps2xIOP/src/emulator/core/iop_memory.h
+index 17526bd..54acd96 100644
+--- a/ps2xIOP/src/emulator/core/iop_memory.h
++++ b/ps2xIOP/src/emulator/core/iop_memory.h
+@@ -75,6 +75,8 @@ namespace ps2x::iop::detail
+         [[nodiscard]] static uint32_t physicalAddress(uint32_t address) noexcept;
+ 
+         [[nodiscard]] Spu2 &spu2() noexcept { return m_spu2; }
++        // IOP interrupts of SPU2 AutoDMA transfers the SPU2 has finished consuming.
++        [[nodiscard]] std::vector<int> takeFinishedAutoDma();
+ 
+     private:
+         [[nodiscard]] uint32_t readHardware32(uint32_t address) const;
+diff --git a/ps2xIOP/src/emulator/core/iop_spu2.cpp b/ps2xIOP/src/emulator/core/iop_spu2.cpp
+index 25e4a1b..39e692b 100644
+--- a/ps2xIOP/src/emulator/core/iop_spu2.cpp
++++ b/ps2xIOP/src/emulator/core/iop_spu2.cpp
+@@ -113,6 +113,7 @@ namespace ps2x::iop::detail
+         m_regs.fill(0u);
+         m_irqInfo = 0;
+         m_irqRaised = false;
++        m_adma = {};
+         m_outPos = 0;
+         m_haveCycle = false;
+         m_cycle = 0;
+@@ -502,6 +503,8 @@ namespace ps2x::iop::detail
+             break;
+         case kAdmas:
+             core.admas = value;
++            if ((value & static_cast<uint16_t>(coreIndex + 1)) == 0u)
++                m_adma[static_cast<size_t>(coreIndex)] = {}; // AutoDMA off: drop the stream
+             break;
+         case kEsa:
+             core.esa = setHigh(core.esa, value);
+@@ -623,6 +626,82 @@ namespace ps2x::iop::detail
+         core.tsa = (core.tsa + halfwords) & kAddressMask;
+     }
+ 
++    bool Spu2::admaEnabled(int coreIndex) const noexcept
++    {
++        return (m_cores[static_cast<size_t>(coreIndex)].admas & static_cast<uint16_t>(coreIndex + 1)) != 0u;
++    }
++
++    void Spu2::startAdma(int coreIndex, uint32_t madr, uint32_t bytes)
++    {
++        AdmaStream &stream = m_adma[static_cast<size_t>(coreIndex)];
++        stream.active = bytes >= 0x400u;
++        stream.finished = !stream.active;
++        stream.madr = madr;
++        stream.remaining = bytes & ~0x3FFu;
++        if (stream.active && !stream.primed)
++        {
++            // A new stream fills both halves of the input area before playback reads from it.
++            stream.inputPos = 0;
++            fillAdmaHalf(coreIndex, 0);
++            if (stream.active)
++                fillAdmaHalf(coreIndex, 1);
++            stream.primed = true;
++        }
++    }
++
++    // Copies the next 1 KB of the stream into one half of the core's input area: 256 left
++    // samples at 0x2000 + core * 0x400 (+ half * 0x100), then 256 right samples 0x200 further.
++    bool Spu2::fillAdmaHalf(int coreIndex, uint32_t half) noexcept
++    {
++        AdmaStream &stream = m_adma[static_cast<size_t>(coreIndex)];
++        if (!stream.active || !m_iopRam || stream.madr + 0x400u > m_iopRamSize)
++        {
++            stream.active = false;
++            stream.finished = true;
++            return false;
++        }
++        const uint32_t base = 0x2000u + static_cast<uint32_t>(coreIndex) * 0x400u + half * 0x100u;
++        std::memcpy(&m_ram[base], m_iopRam + stream.madr, 0x200u);
++        std::memcpy(&m_ram[base + 0x200u], m_iopRam + stream.madr + 0x200u, 0x200u);
++        checkIrqRange(base, 0x100u);
++        checkIrqRange(base + 0x200u, 0x100u);
++        stream.madr += 0x400u;
++        stream.remaining -= 0x400u;
++        if (stream.remaining == 0u)
++        {
++            stream.active = false;
++            stream.finished = true;
++        }
++        return true;
++    }
++
++    bool Spu2::takeAdmaFinished(int coreIndex) noexcept
++    {
++        AdmaStream &stream = m_adma[static_cast<size_t>(coreIndex)];
++        const bool finished = stream.finished;
++        stream.finished = false;
++        return finished;
++    }
++
++    Spu2::StereoSample Spu2::readInput(int coreIndex) noexcept
++    {
++        AdmaStream &stream = m_adma[static_cast<size_t>(coreIndex)];
++        if (!stream.primed)
++            return {};
++        const uint32_t base = 0x2000u + static_cast<uint32_t>(coreIndex) * 0x400u;
++        const StereoSample sample{static_cast<int16_t>(m_ram[base + stream.inputPos]),
++                                  static_cast<int16_t>(m_ram[base + 0x200u + stream.inputPos])};
++        stream.inputPos = (stream.inputPos + 1u) & 0x1FFu;
++        if ((stream.inputPos & 0xFFu) == 0u)
++        {
++            // The half just played is refilled from the stream; when the transfer is used up the
++            // DMA completes and the driver queues the next one (or playback has ended).
++            if (!fillAdmaHalf(coreIndex, (stream.inputPos >> 8) ^ 1u) && !stream.active)
++                stream.primed = (m_adma[static_cast<size_t>(coreIndex)].remaining != 0u);
++        }
++        return sample;
++    }
++
+     void Spu2::dmaFinished(int coreIndex)
+     {
+         Core &core = m_cores[static_cast<size_t>(coreIndex)];
+@@ -716,7 +795,7 @@ namespace ps2x::iop::detail
+         }
+     }
+ 
+-    Spu2::StereoSample Spu2::mixCore(int coreIndex, const StereoSample &external)
++    Spu2::StereoSample Spu2::mixCore(int coreIndex, const StereoSample &external, const StereoSample &input)
+     {
+         Core &core = m_cores[static_cast<size_t>(coreIndex)];
+         int32_t previousOut[24];
+@@ -814,12 +893,14 @@ namespace ps2x::iop::detail
+         // MMIX gates (PCSX2): bits 0-3 external input (core 1 only), 4-7 sound data input, 8-11 voices;
+         // within each group: wet R, wet L, dry R, dry L.
+         const uint32_t gates = core.mmix & (coreIndex == 0 ? 0xFF0u : 0xFFFu);
++        const int32_t inL = (input.left * core.bvolL) >> 15;
++        const int32_t inR = (input.right * core.bvolR) >> 15;
+         StereoSample dry;
+-        dry.left = ((gates & 0x800u) ? dryL : 0) + ((gates & 0x008u) ? external.left : 0);
+-        dry.right = ((gates & 0x400u) ? dryR : 0) + ((gates & 0x004u) ? external.right : 0);
++        dry.left = ((gates & 0x800u) ? dryL : 0) + ((gates & 0x080u) ? inL : 0) + ((gates & 0x008u) ? external.left : 0);
++        dry.right = ((gates & 0x400u) ? dryR : 0) + ((gates & 0x040u) ? inR : 0) + ((gates & 0x004u) ? external.right : 0);
+         StereoSample wet;
+-        wet.left = ((gates & 0x200u) ? wetL : 0) + ((gates & 0x002u) ? external.left : 0);
+-        wet.right = ((gates & 0x100u) ? wetR : 0) + ((gates & 0x001u) ? external.right : 0);
++        wet.left = ((gates & 0x200u) ? wetL : 0) + ((gates & 0x020u) ? inL : 0) + ((gates & 0x002u) ? external.left : 0);
++        wet.right = ((gates & 0x100u) ? wetR : 0) + ((gates & 0x010u) ? inR : 0) + ((gates & 0x001u) ? external.right : 0);
+         const StereoSample effect = reverb(coreIndex, wet);
+         dry.left += (effect.left * core.evolL) >> 15;
+         dry.right += (effect.right * core.evolR) >> 15;
+@@ -936,7 +1017,9 @@ namespace ps2x::iop::detail
+ 
+         Core &core0 = m_cores[0];
+         Core &core1 = m_cores[1];
+-        const StereoSample out0 = mixCore(0, StereoSample{});
++        const StereoSample in0 = readInput(0);
++        const StereoSample in1 = readInput(1);
++        const StereoSample out0 = mixCore(0, StereoSample{}, in0);
+         tickSweep(core0.masterL, core0.mvolL);
+         tickSweep(core0.masterR, core0.mvolR);
+         StereoSample external{clamp16((out0.left * core0.masterL.level) >> 15), clamp16((out0.right * core0.masterR.level) >> 15)};
+@@ -945,7 +1028,7 @@ namespace ps2x::iop::detail
+         external.left = (external.left * core1.avolL) >> 15;
+         external.right = (external.right * core1.avolR) >> 15;
+ 
+-        const StereoSample out1 = mixCore(1, external);
++        const StereoSample out1 = mixCore(1, external, in1);
+         tickSweep(core1.masterL, core1.mvolL);
+         tickSweep(core1.masterR, core1.mvolR);
+         const int32_t left = clamp16((out1.left * core1.masterL.level) >> 15);
+@@ -976,9 +1059,11 @@ namespace ps2x::iop::detail
+                     int active = 0;
+                     for (const Voice &voice : core.voices)
+                         active += voice.phase != Phase::Off ? 1 : 0;
+-                    std::fprintf(stderr, "[spu2] core%d attr=%04x mmix=%03x evol=%d/%d mvol=%d/%d esa=%05x eea=%05x voices=%d%s",
++                    const AdmaStream &adma = m_adma[static_cast<size_t>(c)];
++                    std::fprintf(stderr, "[spu2] core%d attr=%04x mmix=%03x evol=%d/%d mvol=%d/%d esa=%05x eea=%05x voices=%d admas=%x bvol=%d/%d adma=%d/%d%s",
+                                  c, core.attr, core.mmix, core.evolL, core.evolR, core.masterL.level, core.masterR.level,
+-                                 core.esa, core.eea, active, c == 0 ? " | " : "");
++                                 core.esa, core.eea, active, core.admas, core.bvolL, core.bvolR, adma.active ? 1 : 0,
++                                 adma.primed ? 1 : 0, c == 0 ? " | " : "");
+                 }
+                 std::fprintf(stderr, " peak=%u\n", peak);
+                 samples = 0;
+diff --git a/ps2xIOP/src/emulator/core/iop_spu2.h b/ps2xIOP/src/emulator/core/iop_spu2.h
+index fea434c..1dca481 100644
+--- a/ps2xIOP/src/emulator/core/iop_spu2.h
++++ b/ps2xIOP/src/emulator/core/iop_spu2.h
+@@ -15,7 +15,7 @@ namespace ps2x::iop::detail
+     // Implemented: voice playback (SPU-ADPCM decoding with loop flags, 4-point Gaussian
+     // interpolation, pitch and pitch modulation, noise, ADSR envelope, volume sweeps), the voice
+     // mixer and MMIX gates, reverb, core 0 feeding core 1, master volume, capture areas, manual and
+-    // DMA transfers, and the IRQA interrupt. Not yet: AutoDMA (streamed PCM) input.
++    // DMA transfers, AutoDMA (streamed PCM) input, and the IRQA interrupt.
+     class Spu2
+     {
+     public:
+@@ -42,6 +42,21 @@ namespace ps2x::iop::detail
+         void dmaRead(int core, uint16_t *data, uint32_t halfwords);
+         void dmaFinished(int core);
+ 
++        // AutoDMA: with the core's ADMAS bit set, a DMA write streams 16-bit PCM into the core's
++        // input area at the playback rate (1 KB, 256 left + 256 right samples, per 256 samples)
++        // instead of completing at once. The caller keeps the IOP DMA channel busy until
++        // takeAdmaFinished reports the stream has been consumed.
++        void setIopRam(const uint8_t *ram, uint32_t size) noexcept
++        {
++            m_iopRam = ram;
++            m_iopRamSize = size;
++        }
++        [[nodiscard]] bool admaEnabled(int core) const noexcept;
++        void startAdma(int core, uint32_t madr, uint32_t bytes);
++        [[nodiscard]] bool admaActive(int core) const noexcept { return m_adma[static_cast<size_t>(core)].active; }
++        [[nodiscard]] uint32_t admaAddress(int core) const noexcept { return m_adma[static_cast<size_t>(core)].madr; }
++        [[nodiscard]] bool takeAdmaFinished(int core) noexcept;
++
+         // Produces samples up to the given IOP cycle count.
+         void advanceTo(uint64_t iopCycle);
+         // True once for every SPU2 interrupt (IOP IRQ 9) raised since the last call.
+@@ -153,6 +168,19 @@ namespace ps2x::iop::detail
+             int32_t right = 0;
+         };
+ 
++        struct AdmaStream
++        {
++            bool active = false;
++            bool finished = false;
++            uint32_t madr = 0;      // next IOP address to read
++            uint32_t remaining = 0; // bytes left in this transfer
++            uint32_t inputPos = 0;  // read position in the input area (0..0x1FF)
++            bool primed = false;    // both halves of the input area hold stream data
++        };
++
++        bool fillAdmaHalf(int core, uint32_t half) noexcept;
++        StereoSample readInput(int core) noexcept;
++
+         static int32_t clamp16(int32_t value) noexcept;
+         static int32_t directVolume(uint16_t value) noexcept;
+         static void tickEnvelope(Envelope &envelope, uint32_t rate, uint32_t rateMask, bool decreasing, bool exponential, bool phaseNegative) noexcept;
+@@ -169,7 +197,7 @@ namespace ps2x::iop::detail
+         void decodeBlock(Voice &voice) noexcept;
+         void tickAdsr(Voice &voice) noexcept;
+         void tickNoise(Core &core) noexcept;
+-        StereoSample mixCore(int coreIndex, const StereoSample &external);
++        StereoSample mixCore(int coreIndex, const StereoSample &external, const StereoSample &input);
+         StereoSample reverb(int coreIndex, StereoSample input) noexcept;
+         uint32_t reverbIndex(const Core &core, int32_t offset) const noexcept;
+         void tickSample();
+@@ -191,6 +219,10 @@ namespace ps2x::iop::detail
+         std::atomic<uint32_t> m_ringWrite{0};
+         std::atomic<uint32_t> m_ringRead{0};
+ 
++        std::array<AdmaStream, 2> m_adma{};
++        const uint8_t *m_iopRam = nullptr;
++        uint32_t m_iopRamSize = 0;
++
+         std::FILE *m_wav = nullptr; // PS2X_SPU2_WAV=path: everything the SPU2 produced
+         uint32_t m_wavFrames = 0;
+     };
+diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_emulator.cpp
+index 1b4d06c..7656548 100644
+--- a/ps2xIOP/src/emulator/iop_emulator.cpp
++++ b/ps2xIOP/src/emulator/iop_emulator.cpp
+@@ -617,6 +617,8 @@ namespace ps2x::iop::detail
+             memory.spu2().advanceTo(totalCycles);
+             if (memory.spu2().takeIrq())
+                 pendingDmaInterrupts[kSpu2Irq] = totalCycles;
++            for (const int irq : memory.takeFinishedAutoDma())
++                pendingDmaInterrupts[irq] = totalCycles;
+         }
+ 
+         static constexpr int kSpu2Irq = 9;

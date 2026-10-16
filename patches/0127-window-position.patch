@@ -1,0 +1,33 @@
+diff --git a/ps2xRuntime/src/lib/ps2_runtime.cpp b/ps2xRuntime/src/lib/ps2_runtime.cpp
+index 6fb30c9..9ca5ec7 100644
+--- a/ps2xRuntime/src/lib/ps2_runtime.cpp
++++ b/ps2xRuntime/src/lib/ps2_runtime.cpp
+@@ -20,6 +20,7 @@
+ #include <fstream>
+ #include <algorithm>
+ #include <array>
++#include <cstdio>
+ #include <cstdlib>
+ #include <cstring>
+ #include <limits>
+@@ -833,8 +834,19 @@ bool PS2Runtime::initialize(const char *title)
+ #if defined(PLATFORM_VITA)
+         InitWindow(HOST_WINDOW_WIDTH, HOST_WINDOW_HEIGHT, title); // raylib vita does not support audio
+ #else
+-        SetConfigFlags(FLAG_WINDOW_RESIZABLE);
++        // PS2X_WINDOW_POS=x,y opens the window at that desktop position (another monitor, say), and
++        // without taking keyboard focus, so test runs do not get in the way.
++        int windowX = 0, windowY = 0;
++        const char *windowPos = std::getenv("PS2X_WINDOW_POS");
++        const bool placeWindow = windowPos != nullptr && std::sscanf(windowPos, "%d,%d", &windowX, &windowY) == 2;
++        SetConfigFlags(FLAG_WINDOW_RESIZABLE | (placeWindow ? FLAG_WINDOW_HIDDEN : 0u));
+         InitWindow(HOST_WINDOW_WIDTH, HOST_WINDOW_HEIGHT, title);
++        if (placeWindow)
++        {
++            SetWindowState(FLAG_WINDOW_UNFOCUSED); // shown below without focus
++            SetWindowPosition(windowX, windowY);
++            ClearWindowState(FLAG_WINDOW_HIDDEN);
++        }
+         InitAudioDevice();
+         m_audioBackend.setAudioReady(IsAudioDeviceReady());
+         startSpu2Stream(m_iopSubsystem.get());
