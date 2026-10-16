@@ -161,6 +161,12 @@ def main() -> None:
             "subsystem": subsystem, "status": status, "blocking": blocking[addr],
             "callers": str(len(f.get("callers", []))), "callees": str(len(f["callees"])), "notes": notes,
         })
+    # Rows added by map_apply.py --create are not Ghidra functions until the next pipeline.py map;
+    # keep them so their subsystem and notes survive a status run in between.
+    for addr, prev in previous.items():
+        if addr not in funcs and (prev.get("subsystem") or prev.get("notes")):
+            rows.append({c: prev.get(c, "") for c in COLUMNS})
+    rows.sort(key=lambda r: int(r["address"], 16))
 
     out_csv = root / "config/port_status.csv"
     with out_csv.open("w", encoding="utf-8", newline="") as fh:

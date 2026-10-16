@@ -1,10 +1,10 @@
 address,name,size,origin,subsystem,status,blocking,callers,callees,notes
-0x00100008,_start,172,unclassified,,named,yes,0,4,
+0x00100008,_start,172,sdk,sdk:crt0,named,yes,0,4,
 0x001000B8,sdk_libc__exit,8,sdk,sdk:crt0,named,no,1,1,_exit(a0): Exit through 0x116C30
 0x001000C0,sdk_crt0_ExitThread,16,sdk,sdk:crt0,named,no,0,0,"syscall 0x23 (ExitThread), the main thread's return address from _start"
 0x001000D0,sdk_fp_ltdf2,32,sdk,sdk:libgcc,named,no,2,1,double a0 < a1 through dpcmp
 0x001000F0,_d_utod,76,sdk,,named,no,1,2,
-0x00100140,__destroy_global_chain,8,unclassified,,named,indirect,1,0,
+0x00100140,__destroy_global_chain,8,sdk,sdk:mwrt,named,indirect,1,0,
 0x00100150,sdk_crt0_InitCpp,36,sdk,sdk:mwrt,named,no,1,1,__initialize_cpp_rts with the ctor and exception tables
 0x00100180,__construct_array,292,sdk,,named,indirect,0,1,
 0x001002B0,__construct_new_array,332,sdk,,named,indirect,3,0,
@@ -252,63 +252,63 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0010D618,sceIpuSync,104,sdk,,named,no,1,0,
 0x0010D680,setD4_CHCR,100,sdk,,named,no,1,2,
 0x0010D6E8,sceIpuInit,568,sdk,,named,no,1,1,
-0x0010D960,SetGsCrt,16,unclassified,,named,no,1,0,
-0x0010D980,_Exit,16,unclassified,,named,no,1,0,
-0x0010D9A0,_LoadExecPS2,16,unclassified,,named,no,1,0,
-0x0010DA10,SetVTLBRefillHandler,16,unclassified,,named,no,2,0,
-0x0010DA40,AddIntcHandler,16,unclassified,,named,no,1,0,
-0x0010DA60,RemoveIntcHandler,16,unclassified,,named,no,2,0,
-0x0010DA70,AddDmacHandler,16,unclassified,,named,no,2,0,
-0x0010DA80,AddDmacHandler,16,unclassified,,named,no,2,0,
-0x0010DA90,RemoveDmacHandler,16,unclassified,,named,no,4,0,
-0x0010DAA0,_EnableIntc,16,unclassified,,named,no,1,0,
-0x0010DAB0,_DisableIntc,16,unclassified,,named,no,1,0,
-0x0010DAC0,_EnableDmac,16,unclassified,,named,no,1,0,
-0x0010DAD0,_DisableDmac,16,unclassified,,named,no,1,0,
-0x0010DAE0,SetAlarm,16,unclassified,,named,no,2,0,
-0x0010DB00,_iEnableIntc,16,unclassified,,named,no,1,0,
-0x0010DB10,_iDisableIntc,16,unclassified,,named,no,1,0,
-0x0010DB20,_iEnableDmac,16,unclassified,,named,no,1,0,
-0x0010DB30,_iDisableDmac,16,unclassified,,named,no,1,0,
-0x0010DB60,CreateThread,16,unclassified,,named,no,3,0,
-0x0010DB70,DeleteThread,16,unclassified,,named,no,1,0,
-0x0010DB80,_StartThread,16,unclassified,,named,no,3,0,
-0x0010DBA0,ExitDeleteThread,16,unclassified,,named,yes,1,0,
-0x0010DBB0,TerminateThread,16,unclassified,,named,yes,1,0,
-0x0010DBF0,ChangeThreadPriority,16,unclassified,,named,yes,3,0,
-0x0010DC10,RotateThreadReadyQueue,16,unclassified,,named,yes,3,0,
-0x0010DC50,GetThreadId,16,unclassified,,named,no,6,0,
-0x0010DC60,ReferThreadStatus,16,unclassified,,named,no,4,0,
-0x0010DC80,SleepThread,16,unclassified,,named,yes,2,0,
-0x0010DC90,WakeupThread,16,unclassified,,named,yes,1,0,
-0x0010DCA0,_iWakeupThread,16,unclassified,,named,no,1,0,
-0x0010DCD0,SuspendThread,16,unclassified,,named,yes,1,0,
-0x0010DCE0,_iSuspendThread,16,unclassified,,named,no,1,0,
-0x0010DD40,EndOfHeap,16,unclassified,,named,no,1,0,
-0x0010DD60,CreateSema,16,unclassified,,named,no,33,0,
-0x0010DD70,DeleteSema,16,unclassified,,named,no,30,0,
-0x0010DD80,SignalSema,16,unclassified,,named,yes,49,0,
-0x0010DD90,iSignalSema,16,unclassified,,named,no,6,0,
-0x0010DDA0,WaitSema,16,unclassified,,named,yes,44,0,
-0x0010DDB0,PollSema,16,unclassified,,named,no,21,0,
-0x0010DE00,SetOsdConfigParam,16,unclassified,,named,no,1,0,
-0x0010DE10,GetOsdConfigParam,16,unclassified,,named,no,8,0,
-0x0010DFE0,FlushCache,16,unclassified,,named,no,22,0,
-0x0010E030,sceSifStopDma,16,unclassified,,named,no,1,0,
-0x0010E070,GetOsdConfigParam2,16,unclassified,,named,no,3,0,
-0x0010E0A0,GsPutIMR,16,unclassified,,named,no,1,0,
-0x0010E0D0,SetVSyncFlag,16,unclassified,,named,no,1,0,
-0x0010E100,sceSifDmaStat,16,unclassified,,named,no,4,0,
-0x0010E120,sceSifSetDma,16,unclassified,,named,no,7,0,
-0x0010E130,isceSifSetDma,16,unclassified,,named,no,1,0,
-0x0010E140,sceSifSetDChain,16,unclassified,,named,no,1,0,
-0x0010E150,isceSifSetDChain,16,unclassified,,named,no,1,0,
-0x0010E160,sceSifSetReg,16,unclassified,,named,no,3,0,
-0x0010E170,sceSifGetReg,16,unclassified,,named,no,5,0,
-0x0010E180,_ExecOSD,16,unclassified,,named,no,1,0,
-0x0010E190,Deci2Call,16,unclassified,,named,no,10,0,
-0x0010E1C0,GetMemorySize,16,unclassified,,named,no,1,0,
-0x0010E1D0,_InitTLB,16,unclassified,,named,no,1,0,
+0x0010D960,SetGsCrt,16,sdk,sdk:libkernl,named,no,1,0,
+0x0010D980,_Exit,16,sdk,sdk:libkernl,named,no,1,0,
+0x0010D9A0,_LoadExecPS2,16,sdk,sdk:libkernl,named,no,1,0,
+0x0010DA10,SetVTLBRefillHandler,16,sdk,sdk:libkernl,named,no,2,0,
+0x0010DA40,AddIntcHandler,16,sdk,sdk:libkernl,named,no,1,0,
+0x0010DA60,RemoveIntcHandler,16,sdk,sdk:libkernl,named,no,2,0,
+0x0010DA70,AddDmacHandler,16,sdk,sdk:libkernl,named,no,2,0,
+0x0010DA80,AddDmacHandler,16,sdk,sdk:libkernl,named,no,2,0,
+0x0010DA90,RemoveDmacHandler,16,sdk,sdk:libkernl,named,no,4,0,
+0x0010DAA0,_EnableIntc,16,sdk,sdk:libkernl,named,no,1,0,
+0x0010DAB0,_DisableIntc,16,sdk,sdk:libkernl,named,no,1,0,
+0x0010DAC0,_EnableDmac,16,sdk,sdk:libkernl,named,no,1,0,
+0x0010DAD0,_DisableDmac,16,sdk,sdk:libkernl,named,no,1,0,
+0x0010DAE0,SetAlarm,16,sdk,sdk:libkernl,named,no,2,0,
+0x0010DB00,_iEnableIntc,16,sdk,sdk:libkernl,named,no,1,0,
+0x0010DB10,_iDisableIntc,16,sdk,sdk:libkernl,named,no,1,0,
+0x0010DB20,_iEnableDmac,16,sdk,sdk:libkernl,named,no,1,0,
+0x0010DB30,_iDisableDmac,16,sdk,sdk:libkernl,named,no,1,0,
+0x0010DB60,CreateThread,16,sdk,sdk:libkernl,named,no,3,0,
+0x0010DB70,DeleteThread,16,sdk,sdk:libkernl,named,no,1,0,
+0x0010DB80,_StartThread,16,sdk,sdk:libkernl,named,no,3,0,
+0x0010DBA0,ExitDeleteThread,16,sdk,sdk:libkernl,named,yes,1,0,
+0x0010DBB0,TerminateThread,16,sdk,sdk:libkernl,named,yes,1,0,
+0x0010DBF0,ChangeThreadPriority,16,sdk,sdk:libkernl,named,yes,3,0,
+0x0010DC10,RotateThreadReadyQueue,16,sdk,sdk:libkernl,named,yes,3,0,
+0x0010DC50,GetThreadId,16,sdk,sdk:libkernl,named,no,6,0,
+0x0010DC60,ReferThreadStatus,16,sdk,sdk:libkernl,named,no,4,0,
+0x0010DC80,SleepThread,16,sdk,sdk:libkernl,named,yes,2,0,
+0x0010DC90,WakeupThread,16,sdk,sdk:libkernl,named,yes,1,0,
+0x0010DCA0,_iWakeupThread,16,sdk,sdk:libkernl,named,no,1,0,
+0x0010DCD0,SuspendThread,16,sdk,sdk:libkernl,named,yes,1,0,
+0x0010DCE0,_iSuspendThread,16,sdk,sdk:libkernl,named,no,1,0,
+0x0010DD40,EndOfHeap,16,sdk,sdk:libkernl,named,no,1,0,
+0x0010DD60,CreateSema,16,sdk,sdk:libkernl,named,no,33,0,
+0x0010DD70,DeleteSema,16,sdk,sdk:libkernl,named,no,30,0,
+0x0010DD80,SignalSema,16,sdk,sdk:libkernl,named,yes,49,0,
+0x0010DD90,iSignalSema,16,sdk,sdk:libkernl,named,no,6,0,
+0x0010DDA0,WaitSema,16,sdk,sdk:libkernl,named,yes,44,0,
+0x0010DDB0,PollSema,16,sdk,sdk:libkernl,named,no,21,0,
+0x0010DE00,SetOsdConfigParam,16,sdk,sdk:libkernl,named,no,1,0,
+0x0010DE10,GetOsdConfigParam,16,sdk,sdk:libkernl,named,no,8,0,
+0x0010DFE0,FlushCache,16,sdk,sdk:libkernl,named,no,22,0,
+0x0010E030,sceSifStopDma,16,sdk,sdk:libkernl,named,no,1,0,
+0x0010E070,GetOsdConfigParam2,16,sdk,sdk:libkernl,named,no,3,0,
+0x0010E0A0,GsPutIMR,16,sdk,sdk:libkernl,named,no,1,0,
+0x0010E0D0,SetVSyncFlag,16,sdk,sdk:libkernl,named,no,1,0,
+0x0010E100,sceSifDmaStat,16,sdk,sdk:libkernl,named,no,4,0,
+0x0010E120,sceSifSetDma,16,sdk,sdk:libkernl,named,no,7,0,
+0x0010E130,isceSifSetDma,16,sdk,sdk:libkernl,named,no,1,0,
+0x0010E140,sceSifSetDChain,16,sdk,sdk:libkernl,named,no,1,0,
+0x0010E150,isceSifSetDChain,16,sdk,sdk:libkernl,named,no,1,0,
+0x0010E160,sceSifSetReg,16,sdk,sdk:libkernl,named,no,3,0,
+0x0010E170,sceSifGetReg,16,sdk,sdk:libkernl,named,no,5,0,
+0x0010E180,_ExecOSD,16,sdk,sdk:libkernl,named,no,1,0,
+0x0010E190,Deci2Call,16,sdk,sdk:libkernl,named,no,10,0,
+0x0010E1C0,GetMemorySize,16,sdk,sdk:libkernl,named,no,1,0,
+0x0010E1D0,_InitTLB,16,sdk,sdk:libkernl,named,no,1,0,
 0x0010E1E0,sdk_sif_ClearIopSyncFlag,12,sdk,sdk:libsif,named,no,1,0,(provisional) clears 0x1AB5D0
 0x0010E1F0,VSync,144,sdk,,named,no,1,2,
 0x0010E280,VSync2,164,sdk,,named,no,1,3,
@@ -335,10 +335,10 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0010EA00,sdk_kernel_iDisableIntc,32,sdk,sdk:libkernl,named,no,0,1,iDisableIntc and sync
 0x0010EA20,sdk_kernel_iEnableDmac,32,sdk,sdk:libkernl,named,no,0,1,iEnableDmac and sync
 0x0010EA40,sdk_kernel_iDisableDmac,32,sdk,sdk:libkernl,named,no,0,1,iDisableDmac and sync
-0x0010EA60,RFU116_SetSyscall,16,unclassified,,named,no,1,0,
+0x0010EA60,RFU116_SetSyscall,16,sdk,sdk:libkernl,named,no,1,0,
 0x0010EA70,sdk_kernel_KCopy1,16,sdk,sdk:libkernl,named,no,1,0,"(provisional) syscall 0x5A (copy into kernel memory), from InitAlarm"
 0x0010EA80,kCopy,56,sdk,,named,no,0,0,
-0x0010EAB8,RFU091,16,unclassified,,named,no,1,0,
+0x0010EAB8,RFU091,16,sdk,sdk:libkernl,named,no,1,0,
 0x0010EAC8,InitAlarm,212,sdk,,named,no,1,4,
 0x0010EBA0,topThread,216,sdk,,named,yes,0,5,
 0x0010EC78,InitThread,212,sdk,,named,yes,1,6,
@@ -459,8 +459,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00115750,sdk_sceSifLoadModuleBuffer,28,sdk,sdk:libsif,named,yes,0,1,(provisional) _sceSifLoadModuleBuffer wrapper
 0x00115770,sdk_sceSifLoadStartModuleBuffer,28,sdk,sdk:libsif,named,yes,0,1,(provisional) _sceSifLoadModuleBuffer wrapper
 0x00115790,_sceSifLoadModule,548,sdk,,named,yes,2,5,
-0x001159B8,sceSifLoadModule,32,unclassified,,named,yes,2,1,
-0x001159D8,sceSifLoadStartModule,28,unclassified,,named,yes,0,1,
+0x001159B8,sceSifLoadModule,32,sdk,sdk:libsif,named,yes,2,1,
+0x001159D8,sceSifLoadStartModule,28,sdk,sdk:libsif,named,yes,0,1,
 0x001159F8,_sceSifLoadElfPart,260,sdk,,named,yes,2,4,
 0x00115B00,sdk_sceSifLoadElfPart,28,sdk,sdk:libsif,named,yes,0,1,(provisional) _sceSifLoadElfPart wrapper
 0x00115B20,sceSifLoadElf,40,sdk,,named,yes,0,1,
@@ -474,10 +474,10 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00116028,SetDebugHandler,132,sdk,,named,no,0,1,
 0x001160B0,sdk_kernel_KCopy2,16,sdk,sdk:libkernl,named,no,1,0,"(provisional) syscall 0x5A, from InitTLBFunctions"
 0x001160C0,kCopy,56,sdk,,named,no,0,0,
-0x001160F8,RFU091,16,unclassified,,named,no,1,0,
-0x00116108,RFU116_SetSyscall,16,unclassified,,named,no,1,0,
+0x001160F8,RFU091,16,sdk,sdk:libkernl,named,no,1,0,
+0x00116108,RFU116_SetSyscall,16,sdk,sdk:libkernl,named,no,1,0,
 0x00116118,InitTLBFunctions,180,sdk,,named,no,1,4,
-0x001161F0,RFU086_WaitEvnetFlag,16,unclassified,,named,no,2,0,
+0x001161F0,RFU086_WaitEvnetFlag,16,sdk,sdk:libkernl,named,no,2,0,
 0x00116200,SetTLBEntry,48,sdk,,named,no,0,1,
 0x00116290,InitTLB,64,sdk,,named,no,0,3,
 0x001162D0,InitTLB32MB,500,sdk,,named,no,1,3,
@@ -490,15 +490,15 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00116908,kFindAddress,52,sdk,,named,no,0,0,
 0x00116940,sdk_kernel_GetSyscall,16,sdk,sdk:libkernl,named,no,1,0,"(provisional) syscall 0x83, from GetSystemCallTableEntry"
 0x00116950,GetSystemCallTableEntry,60,sdk,,named,no,1,2,
-0x00116990,RFU116_SetSyscall,16,unclassified,,named,no,1,0,
+0x00116990,RFU116_SetSyscall,16,sdk,sdk:libkernl,named,no,1,0,
 0x001169C0,_InitSys,60,sdk,,named,yes,1,6,
-0x00116A00,RFU116_SetSyscall,16,unclassified,,named,no,1,0,
+0x00116A00,RFU116_SetSyscall,16,sdk,sdk:libkernl,named,no,1,0,
 0x00116A10,sdk_kernel_KCopy3,16,sdk,sdk:libkernl,named,no,1,0,"(provisional) syscall 0x5A, from InitExecPS2"
 0x00116A20,kCopy,56,sdk,,named,no,0,0,
-0x00116A58,RFU091,16,unclassified,,named,no,1,0,
+0x00116A58,RFU091,16,sdk,sdk:libkernl,named,no,1,0,
 0x00116A68,PatchIsNeeded,104,sdk,,named,no,1,2,
 0x00116AD0,InitExecPS2,172,sdk,,named,no,1,5,
-0x00116B80,InitTLB,8,unclassified,,named,no,4,0,
+0x00116B80,InitTLB,8,sdk,sdk:libkernl,named,no,4,0,
 0x00116B88,ExecPS2,92,sdk,,named,no,0,1,
 0x00116BE8,LoadExecPS2,72,sdk,,named,no,0,2,
 0x00116C30,sdk_kernel_Exit,40,sdk,sdk:libkernl,named,no,4,2,"InitTLB, then _Exit"
@@ -550,7 +550,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0011AEA0,sceCdSyncS,108,sdk,,named,yes,3,3,
 0x0011AF10,sdk_cdvd_ScmdPrologue,364,sdk,sdk:libcdvd,named,yes,2,8,"S command semaphore and RPC bind (""Libcdvd bind err S cmd"")"
 0x0011B080,sceCdInit,736,sdk,,named,yes,2,10,
-0x0011B360,sceCdDiskReady,500,unclassified,,named,yes,6,9,
+0x0011B360,sceCdDiskReady,500,sdk,sdk:libcdvd,named,yes,6,9,
 0x0011B558,sceCdMmode,196,sdk,,named,yes,2,4,
 0x0011B620,sceCdReadClock,248,sdk,,named,yes,1,4,
 0x0011B718,sceCdStInit,44,sdk,,named,yes,1,1,
@@ -738,9 +738,9 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001284E0,__make_dp,44,sdk,,named,no,1,1,
 0x00128510,dptofp,84,sdk,,named,no,1,2,
 0x00128568,dptoul,156,sdk,,named,no,1,1,
-0x00128610,mm_Widget_GetState,8,unclassified,,named,no,0,0,
-0x00128620,mm_Widget_IsIdle,16,unclassified,,named,no,0,0,
-0x00128630,mm_Widget_IsActive,16,unclassified,,named,no,0,0,
+0x00128610,mm_Widget_GetState,8,game,ui,typed,no,0,0,slot +0x1C: state
+0x00128620,mm_Widget_IsIdle,16,game,ui,typed,no,0,0,slot +0x24: state == 0
+0x00128630,mm_Widget_IsActive,16,game,ui,typed,no,0,0,slot +0x28: state == 3
 0x00128640,mm_MsgWin_TypeNext,788,game,ui,named,no,1,6,"message window typewriter step: copies the next word into the text box (cursor +0x2AC), plays the message sound unless inside the quote characters at 0x1B5A70"
 0x00128960,mm_MsgWin_NextLine,212,game,ui,named,no,2,4,"when waiting (state 3): takes the next line, scrolls the 4-line text box up by one line, state 6"
 0x00128A40,mm_MsgWin_Closing,68,game,ui,named,indirect,0,0,"state 4: Step(0.1), then idle"
@@ -767,13 +767,13 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00129E30,mm_A3DObject_dtor,136,game,gfx,named,yes,4,3,"frees the model data (+0) and the node array (+0x50), base destructor; delete when the flag is > 0"
 0x00129EC0,mm_A3DObject_LoadAsync,544,game,gfx,named,yes,3,8,"asynchronous .A3D load from an open file, one step per call (state gp 0x1BD...80A0): header into 0x1C5100, then data; 0 = busy, -1 = error"
 0x0012A0E0,mm_A3DObject_Load,380,game,gfx,named,yes,3,12,"synchronous .A3D load: header (word counts), data and pointer table, then mm_A3D_Relocate"
-0x0012A260,mm_Unk12A260_ctor,44,game,gfx,named,no,2,1,(provisional) base init 0x12AB90 and clears 0x1BDA10
+0x0012A260,mm_InstanceBase_ctor,44,game,gfx,named,no,2,1,"(provisional) base object constructor, clears 0x1BDA10"
 0x0012A290,mm_Camera_SetEyeTarget,24,game,camera,named,no,28,0,stores eye (this+0x130) and target (this+0x140) vectors
 0x0012A2B0,mm_Packet_Draw,8,game,gfx,named,no,7,1,queues the packet whose address is the object's first word
 0x0012A2C0,mm_Packet_BuildA0,216,game,gfx,named,no,1,2,builds a small A+D packet (register 0x3D ...) in the packet buffer
 0x0012A3A0,mm_Camera_UpdateProjection,572,game,camera,named,no,2,2,builds the projection and screen matrices from the view parameters at +0x2F4..+0x300
 0x0012A5E0,mm_Camera_SetFogRange,108,game,camera,named,no,1,0,fog near a0 / far a1 (+0x308/+0x304) and the fog coefficients at +0x11C/+0x12C for a 0..255 fog value
-0x0012A650,mm_Unk12A650_SetField20,12,game,camera,named,no,1,0,(provisional) (*this)+0x20 = a1
+0x0012A650,mm_LightSet_SetField20,12,game,gfx,named,no,1,0,"(provisional) (*this)+0x20 = a1, from the time-of-day update"
 0x0012A660,mm_Camera_UpdateLightMatrices,88,game,camera,named,no,1,2,sceVu0NormalLightMatrix from the three light directions (+0x160..) and sceVu0LightColorMatrix from the light colours and ambient (+0x190..)
 0x0012A6C0,mm_Camera_UpdateMatrices,136,game,camera,named,no,29,2,"dir = normalize(target - eye); sceVu0CameraMatrix into this+0x1E0 with up vector this+0x150; this+0x10 = this+0x220 x view, this+0x50 = this+0x260 x view"
 0x0012A750,mm_Camera_DeletingDtor,84,game,camera,named,yes,4,2,"base destructor, then delete when the flag is > 0"
@@ -819,9 +819,9 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0012E220,mm_InstanceModel_LoadAsync,120,game,gfx,named,yes,1,1,mm_A3DObject_LoadAsync; when done (and a2 == 0) stores the frame count (+0x60 = data +4 / 13)
 0x0012E2A0,mm_InstanceModel_ctor2,40,game,gfx,named,yes,1,1,mm_InstanceModel_ctor wrapper
 0x0012E2D0,mm_Perf_AdaptDrawRange,152,game,gfx,named,no,1,1,"(provisional) 0x1BD980 tracks 0x1BD9B8: shrinks when it is above 95, else grows by 1; clamped to 0xFF..0x3A7"
-0x0012E370,mm_Unk12E370_TileScan,1092,game,map,named,no,1,3,(provisional) scans map tiles along a direction for a2/a3 (returns a tile value)
-0x0012E7D0,mm_Unk12E7D0_TileVisibility,1588,game,map,named,no,2,7,(provisional) walks the map tiles around a position using mm_Unk12E370_TileScan and the tile objects
-0x0012EE20,mm_Unk12EE20_TileTest,176,game,map,named,no,2,0,"(provisional) VU0 test for tile (a1, a2)"
+0x0012E370,mm_Path_ScanLine,1092,game,char,named,no,1,3,(provisional) walks tiles along a line looking for a walkable tile (flag 0x10)
+0x0012E7D0,mm_Path_NextWaypoint,1588,game,char,named,no,2,7,next waypoint tile toward the person's building (+0x16); 0x4000 when none
+0x0012EE20,mm_Path_TileDistance,176,game,char,named,no,2,0,(provisional) VU0 distance test between tiles a1 and a2
 0x0012EED0,mm_CharType_Slot18,8,game,char,named,no,0,0,base vtable slot +0x18: empty
 0x0012EEE0,mm_CharType_Draw2,8,game,char,named,no,0,0,base slot +0x14: empty
 0x0012EEF0,mm_CharType_Draw,8,game,char,named,no,0,0,base slot +0x10: empty
@@ -853,7 +853,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00135660,mm_Person_ctor,136,game,char,named,no,1,1,"base constructor, vtable 0x1BCEB0, walking speed +0x24 = record u16 +6 / 1e6"
 0x001356F0,mm_Event_ClearTileFlags,120,game,event,named,no,2,0,(provisional) walks event a0's tile list (0x1BDA50/0x1BDA60) and clears a flag on each tile
 0x00135770,mm_Event_SetTileFlags,120,game,event,named,no,5,0,"(provisional) same list, sets the flag"
-0x001357F0,mm_Unk1357F0,100,game,event,named,no,3,0,(provisional) uses 0x1B26C0 and the globals 0x1BDA64/0x1BDA70
+0x001357F0,mm_ClaimIcon_GetColor,100,game,city,named,no,3,0,"(provisional) colour for a claim icon id (default 0x1B26C0, ids with 0x8000 use entry + 0x40)"
 0x00135860,mm_Claim_PickVariant,84,game,claim,named,no,1,0,entry variant by bit 0x8000 of a0 from the current speaker table (gp)
 0x001358C0,mm_Claim_GetLine,124,game,claim,named,no,3,0,"line a1 of claim a0 (8-byte items), variant by bit 0x8000"
 0x00135940,mm_Claim_GetSectionC,32,game,claim,named,no,9,0,CLAIM.BIN entry a0 via the offset table at file +0xC
@@ -893,7 +893,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00138100,mm_Event_Update,2544,game,event,named,indirect,1,13,"per frame: starts queued events whose conditions hold, runs and finishes active ones"
 0x00138AF0,mm_Event_CheckCondition,1712,game,event,named,indirect,4,9,(provisional) checks an event type's start conditions against the city
 0x001391B0,mm_Event_TryStart,504,game,event,named,indirect,1,3,(provisional) starts event a2 if its conditions hold
-0x001393B0,mm_Event_Unk1393B0,708,game,event,named,yes,1,2,(provisional) called by 0x180190
+0x001393B0,mm_Event_FindForFamily,708,game,event,named,yes,1,2,(provisional) the a2-th event the family can take part in (from the talk menu)
 0x00139680,mm_Event_ClearList,128,game,event,named,no,0,3,(provisional) clears an event list and its entries
 0x00139700,mm_Event_StartFromScript,460,game,event,named,indirect,1,4,(provisional) called by the script code (0x17CE30)
 0x001398D0,mm_Event_FormatText,296,game,event,named,yes,1,4,"(provisional) text for event slot a1 (strings, 0x1C5990)"
@@ -902,7 +902,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00139B50,mm_Event_Finish,356,game,event,named,indirect,17,4,"ends active event a2: releases its tiles, calls its handler, removes it (called by the event handlers)"
 0x00139CC0,mm_Event_Abort,272,game,event,named,indirect,1,4,(provisional) ends active event a2 without its normal finish
 0x00139DD0,mm_Event_Trigger,820,game,event,named,indirect,4,5,(provisional) triggers event a1 now or queues it
-0x0013A110,mm_Event_Unk13A110,204,game,event,named,indirect,0,1,(provisional) calls a handler slot for active event a2
+0x0013A110,mm_Event_CallHandlerSlot,204,game,event,named,indirect,0,1,(provisional) calls a handler slot for active event a2
 0x0013A1E0,mm_Event_IsQueued,104,game,event,named,no,2,0,(provisional) whether id a1 is in the queue
 0x0013A250,mm_EventMgr_dtor,264,game,event,named,yes,1,3,frees the event lists
 0x0013A360,mm_EventMgr_ctor,500,game,event,named,yes,1,5,creates the event lists and handler objects
@@ -914,28 +914,28 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0013B460,mm_Event_ListOpE,804,game,event,named,no,1,1,(provisional)
 0x0013B790,mm_Event_ListOpF,788,game,event,named,no,1,1,(provisional) used by mm_EventMgr_ctor
 0x0013BAB0,mm_Pair_ctor,16,game,core,named,no,1,0,two-byte element constructor (array init)
-0x0013BAC0,mm_Unk13BAC0_Init,160,game,city,named,no,1,0,(provisional) clears four words and a table at 0x1C59B0
-0x0013BB70,mm_Unk13BB70_Lookup,448,game,city,named,no,6,0,"(provisional) entry for (a0, a1) in the table at 0x1F32F0; a status byte: bits 0-1, bits 2-3, level in bits 4-7"
-0x0013BD30,mm_Unk13BB70_GetLow2,36,game,city,named,no,1,1,(provisional) lookup then bits 0-1
-0x0013BD60,mm_Unk13BB70_GetMid2,40,game,city,named,no,1,1,(provisional) lookup then bits 2-3
-0x0013BD90,mm_Unk13BB70_IsLevelAbove13,56,game,city,named,no,1,1,(provisional) lookup then level > 13
+0x0013BAC0,mm_MemberMeters_Reset,160,game,family,named,no,1,0,(provisional) clears four counters and the member meter table at 0x1C59B0
+0x0013BB70,mm_MemberStatus_Lookup,448,game,family,typed,no,6,0,entry for family a0 member a1 in the table at 0x1F32F0 (adds one when missing)
+0x0013BD30,mm_MemberStatus_GetLow2,36,game,family,named,no,1,1,"lookup, then bits 0-1"
+0x0013BD60,mm_MemberStatus_GetMid2,40,game,family,named,no,1,1,"lookup, then bits 2-3"
+0x0013BD90,mm_MemberStatus_IsLevelAbove13,56,game,family,named,no,1,1,"lookup, then level > 13"
 0x0013BDD0,mm_StatusByte_Low2,12,game,city,named,no,2,0,bits 0-1 of *a0
 0x0013BDE0,mm_StatusByte_Mid2,16,game,city,named,no,2,0,bits 2-3 of *a0
 0x0013BDF0,mm_StatusByte_LevelAbove13,36,game,city,named,no,2,0,level (bits 4-7) > 13
-0x0013BE20,mm_Unk13BB70_Advance,168,game,city,named,no,1,1,"(provisional) on the looked-up byte: level > 1 bumps bits 2-3 (up to 2), then updates bits 0-1"
+0x0013BE20,mm_MemberStatus_Advance,168,game,family,named,no,1,1,"level > 1 bumps bits 2-3 (up to 2), then updates bits 0-1"
 0x0013BED0,mm_StatusByte_Advance,144,game,city,named,no,1,0,(provisional) same on a byte pointer
-0x0013BF60,mm_Unk13BB70_OnLevel12,112,game,city,named,no,1,2,"(provisional) when the looked-up level is above 11, calls 0x13CB40"
+0x0013BF60,mm_MemberStatus_OnLevel12,112,game,family,named,no,1,2,"when the level is above 11, applies the friendship gain (0x13CB40)"
 0x0013BFD0,mm_StatusByte_OnLevel12,52,game,city,named,no,1,1,(provisional) same for a byte pointer
 0x0013C010,mm_StatusByte_IncHighLevel,64,game,char,named,no,1,0,(provisional) level 12..13 -> +1
 0x0013C050,mm_StatusByte_ClearMid2,48,game,char,named,no,1,0,clears bits 2-3 when set
 0x0013C080,mm_StatusByte_IncLevel,108,game,char,named,no,1,0,(provisional) level +1 below 12; above 1 clears bits 0-1
-0x0013C0F0,mm_Unk13C0F0_Table32F0,336,game,family,named,no,1,0,(provisional) pass over the 0x1F32F0 table (called by mm_MapPeople_Tick)
+0x0013C0F0,mm_MemberStatus_Tick,336,game,family,named,no,1,0,every 600 s the level rises (up to 12); daily and yearly resets of the low bits
 0x0013C240,mm_Family_MonthlyPass,732,game,family,named,no,1,0,(provisional) pass over all member bytes (0x1C59B0) and bitset B
 0x0013C520,mm_Family_ResetForStage,204,game,family,named,no,1,0,clears bitsets A and C and the counters for a new stage
-0x0013C5F0,mm_Unk13C5F0_Hash,352,game,family,named,no,1,0,(provisional) value from a0 * 0x61 + 0x1B08 with the constant 0x121EAC0
+0x0013C5F0,mm_Family_MakePhoneNumber,352,game,family,named,no,1,0,(provisional) phone number for the Town's Pages from the family id (a0 * 0x61 + 0x1B08)
 0x0013C770,mm_Family_LoadState,148,game,family,named,no,1,1,"reads the member bytes (60000), the three bitsets (0x4E4 each), 0x1F32F0 (0x400) and the counters (0xC) from the save file"
 0x0013C810,mm_Family_SaveState,148,game,family,named,no,1,1,writes them
-0x0013C8B0,mm_Unk13C8B0_FindIndex,72,game,family,named,no,20,0,(provisional) index of the first entry above a0 in a sorted u16 table (gp)
+0x0013C8B0,mm_Family_GetTypeIndex,72,game,family,typed,no,20,0,building type index of a family id: first entry above a0 in the sorted id table (gp)
 0x0013C900,mm_Family_IsFlagC,80,game,family,named,no,1,0,bit a0 of bitset C (0x1D4DF0)
 0x0013C9A0,mm_Family_IsFlagB,80,game,family,named,no,3,0,bit a0 of bitset B (0x1D4900)
 0x0013C9F0,mm_Family_SetFlagA,116,game,family,named,no,1,0,sets bit a0 of bitset A and updates the counters
@@ -951,7 +951,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0013D280,mm_Family_TestMember,176,game,family,named,no,3,0,"(provisional) tests member byte (a0, a1) bit 7 and value ranges"
 0x0013D3D0,mm_Family_IsCached,196,game,family,named,no,1,1,whether family a0's record has finished loading into the cache
 0x0013D4A0,mm_Family_Prefetch,520,game,family,named,yes,5,3,starts an asynchronous load of family a0's record into the cache (LRU)
-0x0013D6B0,mm_Family_Get,476,game,family,named,yes,41,4,"family a0's record (0x1D4 bytes), loading it synchronously into the LRU cache if needed"
+0x0013D6B0,mm_Family_Get,476,game,family,typed,yes,41,4,"family a0's record (0x1D4 bytes), loading it synchronously into the LRU cache if needed"
 0x0013D890,mm_Family_ResetState,436,game,family,named,no,2,0,"clears member bytes, bitsets, counters and the cache tables"
 0x0013DA50,mm_Family_Init,152,game,family,named,yes,1,7,"resets the family state, opens DATA\BIN\FAMILY.BIN and loads DATA\BIN\EACHSTR.BIN"
 0x0013DAF0,mm_StatusByte_ctorE0,80,game,family,named,no,0,0,sets byte 3 to level 14 with bits 0-3 clear
@@ -1006,17 +1006,17 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00141F60,mm_TerrainGen_ApplyBump,1304,game,map,named,no,2,4,(provisional) raises/lowers a round area
 0x001424A0,mm_MapTiles_dtor,108,game,map,named,yes,1,3,"frees the tile array, base destructor"
 0x00142510,mm_MapTiles_ctor,84,game,map,named,yes,1,3,allocates 128x128 tiles of 0x18 bytes
-0x00142590,mm_Map_Unk142590,496,game,map,named,no,1,4,(provisional) used by the farewell party event
-0x00142790,mm_Map_FindPersonEntry,148,game,map,named,no,24,0,"(provisional) searches the people records for (a1, a2)"
+0x00142590,mm_Map_FindPartyGuests,496,game,map,named,no,1,4,(provisional) people near a building for the farewell party event
+0x00142790,mm_Map_FindPersonEntry,148,game,map,typed,no,24,0,"(provisional) searches the people records for (a1, a2)"
 0x00142830,mm_Map_GetBuildingAt,216,game,map,named,no,15,0,(provisional) the building object on tile a2 for person a1 (people flag 0x800 skips)
 0x00142910,mm_Map_FindPersonOfFlaggedType,132,game,map,named,no,1,0,(provisional) first person whose char type has flag 1
-0x001429A0,mm_Map_Unk1429A0,200,game,map,named,no,1,0,(provisional) walks tile a2's object list
+0x001429A0,mm_Map_FindWorkerOnTile,200,game,map,named,no,1,0,(provisional) walks a tile's objects for a person working at building a1
 0x00142A70,mm_People_RemoveChain,68,game,map,named,no,1,0,marks every person in the chain from *a1 removed (flag 0x800) and clears the head
-0x00142AC0,mm_People_Next,64,game,map,named,no,24,0,"*a1 = next person in its list (+0x10), unless it is 6000"
+0x00142AC0,mm_People_Next,64,game,map,typed,no,24,0,"*a1 = next person in its list (+0x10), unless it is 6000"
 0x00142B00,mm_People_ListContains,96,game,map,named,no,2,0,(provisional) whether the list from *a1 contains a2
 0x00142B60,mm_MapObj_AddPerson,68,game,map,named,no,3,0,pushes person a2 onto object a1's person list
-0x00142BB0,mm_Map_Unk142BB0,204,game,map,named,no,7,1,(provisional) object lookup on a tile
-0x00142C90,mm_MapPeople_Unk142C90,760,game,map,named,no,1,5,(provisional)
+0x00142BB0,mm_Map_UnlinkPersonFromTile,204,game,map,named,no,7,1,"removes person a2 from the tile's person list, flags it 0x800"
+0x00142C90,mm_MapPeople_PlaceFamily,760,game,map,named,no,1,5,(provisional) places a family's people around its building (from the city map slot +0xC)
 0x00142F90,mm_Family_AssignHome,1004,game,family,named,yes,1,5,(provisional) family records and flags when a family is assigned a building
 0x00143380,mm_MapPeople_Tick,408,game,map,named,indirect,0,3,"(provisional) vtable slot +8 at the people level: random people updates, then the object level"
 0x00143520,mm_MapPeople_dtor,132,game,map,named,yes,1,3,"vtable 0x1BCEE0, frees the people array, object-level destructor"
@@ -1029,13 +1029,13 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00143DF0,mm_Placement_CheckC,1144,game,map,named,indirect,1,3,(provisional)
 0x00144270,mm_Placement_CheckD,364,game,map,named,no,2,2,(provisional)
 0x001443E0,mm_Map_CountObjectsBefore,92,game,map,named,no,2,0,"number of objects on tile (a1, a2) before object a3"
-0x00144440,mm_BuildingType_Find,128,game,map,named,no,10,0,(provisional) index of a building type matching a1
+0x00144440,mm_Map_FindFamilyHome,128,game,map,typed,no,10,0,"object (people-inside type) whose family field (+0xC) is a1, scanning objects 1..0x3F7F"
 0x001444C0,mm_Map_RectOpA,164,game,map,named,no,2,0,(provisional) loop over a rectangle of tiles
 0x00144570,mm_Map_RectOpB,164,game,map,named,no,2,0,(provisional) loop over a rectangle of tiles
 0x00144620,mm_Map_GetTileList,8,game,map,named,no,18,0,start and count of tile list a1 (map +0xC)
 0x00144630,mm_Map_GetTileFirstObject,48,game,map,named,no,20,0,object record of tile a1's first object
 0x00144660,mm_Map_GetTileObject,96,game,map,named,no,31,0,128x128 grid of 0x18-byte tiles at map+4; tile +0x14 (u16) indexes the 0x1C-byte record table at map+8; coordinates outside 0..127 return record 0
-0x001446C0,mm_Map_GetRecord,24,game,map,named,no,126,0,map+8 + index*0x1C (record table shared with mm_Map_GetTileObject)
+0x001446C0,mm_Map_GetRecord,24,game,map,typed,no,126,0,map+8 + index*0x1C (record table shared with mm_Map_GetTileObject)
 0x001446E0,mm_Map_RemoveObjectFromTile,132,game,map,named,no,1,0,unlinks object a2 from tile a1's object list
 0x00144770,mm_Map_AppendObjectToTile,76,game,map,named,no,1,0,links object a2 at the end of tile a1's object list
 0x001447C0,mm_Map_CreateObject,908,game,map,named,no,4,2,"(provisional) creates an object record, links it to its tiles and registers it"
@@ -1050,7 +1050,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00145640,mm_MapObjects_Tick,608,game,map,named,indirect,1,4,"(provisional) vtable slot +8 at the object level: per-object updates, minimap marks, sounds"
 0x001458A0,mm_MapObjects_dtor,156,game,map,named,yes,1,3,"vtable 0x1BCEF0, frees objects and lists, tile-level destructor"
 0x00145940,mm_MapObjects_ctor,680,game,map,named,yes,1,8,"tile-level constructor, vtable 0x1BCEF0, object records and tile lists"
-0x00145C00,mm_Terrain_Unk145C00,8,game,map,named,no,3,1,(provisional) 0x14CD80 on member +0x2F88
+0x00145C00,mm_Map_ApplyTerrainVec,8,game,map,named,no,3,1,(provisional) mm_Terrain_SetVec on member +0x2F88
 0x00145C10,mm_Terrain_AddQuad,204,game,map,named,no,1,0,(provisional) appends a quad to the terrain buffer (limit 0x9BD)
 0x00145CE0,mm_Terrain_BuildStrip,2592,game,map,named,no,1,0,(provisional) 2.5 KB terrain strip builder
 0x00146700,mm_Terrain_DrawPatch,1064,game,map,named,indirect,1,3,(provisional) builds one visible terrain patch
@@ -1069,7 +1069,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00148A40,mm_CityRender_dtor,364,game,gfx,named,yes,1,10,"vtable 0x1BCF00; deletes the seven layers and buffers, people-level destructor"
 0x00148BB0,mm_CityRender_ctor,436,game,gfx,named,yes,1,16,"people-level constructor, vtable 0x1BCF00; builds the terrain packets and the seven layers in the packet buffer"
 0x00148D70,mm_TexImage_Convert,856,game,gfx,named,no,1,0,"(provisional) converts the loaded image (+0x1000) for upload, size a1 x a2"
-0x001490D0,mm_Dma_KickVif1Now,8,unclassified,,named,no,1,0,
+0x001490D0,mm_Dma_KickVif1Now,8,game,gfx,named,no,1,0,
 0x001490E0,mm_TexImage_dtor,100,game,gfx,named,yes,1,2,frees the image data (+0x1000); delete when the flag is > 0
 0x00149150,mm_TexImage_Load,132,game,gfx,named,yes,1,4,loads file a1 whole into +0x1000 and converts it (a2 x a3)
 0x001491E0,mm_LayerA_BuildPacket,280,game,gfx,named,no,1,0,(provisional) packet for layer A (microcode 0x1A8330)
@@ -1100,7 +1100,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0014C0B0,mm_Frame_GetRect,120,game,ui,named,no,2,0,frame position and size in screen units (GS offsets removed)
 0x0014C130,mm_Frame_SetColor,124,game,ui,named,no,3,0,(provisional) frame colour bytes
 0x0014C1B0,mm_Frame_SetRect,72,game,ui,named,no,4,0,"frame at (a1, a2) size a3 x a4 (GS coordinates)"
-0x0014C200,mm_Dma_AppendCall,8,unclassified,,named,no,9,0,
+0x0014C200,mm_Dma_AppendCall,8,game,gfx,named,no,9,0,
 0x0014C210,mm_Frame_DeletingDtor,84,game,ui,named,yes,8,2,"base destructor, then delete"
 0x0014C270,mm_Frame_ctor,580,game,ui,named,no,8,2,"window frame: position, size, style, colour"
 0x0014C4C0,mm_WaitText_Draw,68,game,ui,named,no,1,1,"blinking ""Please wait...."" text box (0x1BDAC4)"
@@ -1206,7 +1206,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00156470,mm_Applicants_Draw,1540,game,ui,named,yes,1,14,the applicants panel
 0x00156A90,mm_ApplicantsBase_dtor,124,game,ui,named,yes,1,3,"vtable 0x1BCF60, deletes its text box"
 0x00156B10,mm_ApplicantsBase_ctor,320,game,ui,named,yes,1,5,"vtable 0x1BCF60, text box, empty list"
-0x00156C50,mm_Unk156C50_HasState2,52,game,city,named,no,1,0,(provisional) 1 if an entry has state 2
+0x00156C50,mm_Applicants_AnyWaiting,52,game,city,named,no,1,0,(provisional) 1 if an applicant entry has state 2
 0x00156C90,mm_Applicants_RemoveFamily,80,game,city,named,no,1,1,removes the entry for family a1
 0x00156CE0,mm_Applicants_RemoveAt,148,game,city,named,no,2,1,removes entry a1 and shifts the rest
 0x00156D80,mm_Applicants_AssignToBuilding,512,game,city,named,yes,1,6,"places the family's object and assigns its home building, then removes the entry"
@@ -1218,7 +1218,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00157800,mm_Applicants_ctor,156,game,ui,named,yes,1,4,"base constructor, vtable 0x1BCF70"
 0x001578A0,mm_Pad_GetData,52,game,pad,named,no,3,0,"port a0's 32-byte pad buffer (0x1F3AC0) when its state is ready (100), else 0"
 0x001578E0,mm_Pad_Poll,924,game,pad,named,yes,3,8,"scePadRead and the pad state machine: analog mode, actuator alignment, pressure mode"
-0x00157CB0,mm_PadInit,200,unclassified,,named,yes,1,3,
+0x00157CB0,mm_PadInit,200,game,pad,named,yes,1,3,
 0x00157D80,mm_Player_LoadState,20,game,char,named,no,1,1,reads 0x38 bytes from the save file
 0x00157DA0,mm_Player_SaveState,20,game,char,named,no,1,1,writes 0x38 bytes
 0x00157DC0,mm_Player_GetMatrix,40,game,char,named,no,8,0,the player model's matrix (object +0x88)
@@ -1266,7 +1266,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0015C1F0,mm_McManager_GetCardStatus,156,game,save,named,no,7,0,"card a1 status for the menus (formatted, unformatted, none, ...)"
 0x0015C290,mm_McManager_FormatSlotText,1588,game,save,named,yes,2,4,"""Slot %d: %s %s%s, %s. %shrs %smins"" with the RTC time"
 0x0015C8D0,mm_McManager_HasAnySave,84,game,save,named,no,2,0,whether any slot holds a save
-0x0015C930,mm_McManagerUpdate,3200,unclassified,,named,no,7,13,
+0x0015C930,mm_McManagerUpdate,3200,game,save,named,no,7,13,
 0x0015D5B0,mm_McManager_NewSaveName,848,game,save,named,yes,1,5,(provisional) builds a new save directory name from the CD clock
 0x0015D900,mm_McManager_ClearSlots,160,game,save,named,no,5,0,resets the slot tables
 0x0015D9A0,mm_McManager_InitSlots,136,game,save,named,no,1,0,(provisional) initial slot tables
@@ -1297,10 +1297,10 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0015FC50,mm_MenuWin_Opening,68,game,ui,named,indirect,0,0,"state 1: Step(0.1), then active"
 0x0015FCA0,mm_MenuWin_dtor,124,game,ui,named,yes,0,3,"vtable 0x1BCF80, deletes the list menu, base destructor"
 0x0015FD20,mm_MenuWin_ctor,76,game,ui,named,no,2,1,"base constructor, vtable 0x1BCF80"
-0x0015FD70,mm_Unk15FD70_Draw,184,game,ui,named,no,1,2,(provisional) model draw from the city update
+0x0015FD70,mm_Markers_Draw,184,game,city,named,no,1,2,(provisional) model 0x1F3B28 with up to four nodes placed by the city update
 0x0015FE30,mm_Laptop_CheckOpen,212,game,ui,named,no,1,3,opens the laptop when Triangle (0x20) is held in mode 1 and it has entries
-0x0015FF10,mm_Unk15FF60_dtor,76,game,ui,named,yes,0,1,(provisional) vtable 0x1BCFC8 at +0x128
-0x0015FF60,mm_Unk15FF60_ctor,216,game,ui,named,no,1,1,"(provisional) vtable 0x1BCFC8 at +0x128, model 0x1F3B28, matrices from 0x1B0DB0"
+0x0015FF10,mm_Markers_dtor,76,game,city,named,yes,0,1,(provisional) vtable 0x1BCFC8 at +0x128
+0x0015FF60,mm_Markers_ctor,216,game,city,named,no,1,1,"(provisional) vtable 0x1BCFC8 at +0x128, models 0x1F3B28/0x1F3B08, nodes 1-3"
 0x00160040,mm_CityCamera_UpdateTimeOfDay,2544,game,camera,named,no,2,8,"sky colour, fog and light directions/colours from the clock (tables 0x1B0E30..), then the light matrices"
 0x00160A30,mm_Sky_Draw,56,game,camera,named,no,1,1,"queues the three sky packets (+0x310, +0x470, +0x3D0)"
 0x00160A70,mm_Sky_BuildPackets,1660,game,camera,named,no,1,1,builds the sky packets (texture sizes via mm_Math_Log2)
@@ -1308,7 +1308,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00161250,mm_CityCamera_BaseCtor,52,game,camera,named,yes,1,3,camera constructor plus the sky
 0x00161290,mm_TexSprite_SetFrame,152,game,gfx,named,no,1,1,"(provisional) frame (+0x30/+0x34) within the image, then rebuilds"
 0x00161330,mm_TexSprite_SetClip,124,game,gfx,named,no,1,1,"(provisional) visible size (+0x28/+0x2C), then rebuilds"
-0x001613B0,mm_TexSprite_Unk1613B0,148,game,gfx,named,no,1,0,(provisional) palette pass over the image
+0x001613B0,mm_TexSprite_GreenToAlpha,148,game,gfx,named,no,1,0,(provisional) palette pass: grey-green entries become translucent (logo texture)
 0x00161450,mm_TexSprite_SetAlpha,108,game,gfx,named,no,3,0,(provisional) palette alpha a1
 0x001614C0,mm_TexSprite_SetPosScale,24,game,gfx,named,no,10,1,"position a3..a5 and scale a0/a1, then rebuilds"
 0x001614E0,mm_TexSprite_Draw,8,game,gfx,named,no,14,1,queues the sprite packet (+8)
@@ -1325,8 +1325,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00162390,mm_Stamina_SaveState,20,game,char,named,no,1,1,writes it
 0x001623B0,mm_Stamina_Tick,184,game,char,named,no,1,1,stamina +4 drops by stamina/100000 + 1 per tick (not below 0)
 0x00162470,mm_Stamina_Eat,124,game,char,named,no,2,0,eating goods of categories 0x11-0x14 adds to stamina
-0x00162500,mm_Stamina_HungerLevel,64,game,char,named,no,1,0,"0 below 100000, else a higher level (event ""Hunger"")"
-0x00162540,mm_Stamina_Init,24,game,char,named,no,2,0,stamina 399999
+0x00162500,mm_Stamina_HungerLevel,64,game,char,typed,no,1,0,"0 below 100000, else a higher level (event ""Hunger"")"
+0x00162540,mm_Stamina_Init,24,game,char,typed,no,2,0,stamina 399999
 0x00162560,mm_Stamina_CreateGlobal,60,game,char,named,yes,1,1,0x1BDBB8 = new stamina record
 0x001625A0,mm_NameEntry_HandleInput,1712,game,ui,named,no,1,5,(provisional) character grid input with sounds
 0x00162C50,mm_NameEntry_Draw,644,game,ui,named,no,1,7,(provisional) name entry grid and text boxes
@@ -1338,7 +1338,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00163600,mm_NameEntry_ctor,136,game,ui,named,yes,1,1,(provisional) vtable 0x1BCFE8
 0x00163690,mm_Collide_SegmentA,436,game,city,named,no,5,1,(provisional) segment test against building geometry
 0x00163850,mm_Collide_SegmentB,444,game,city,named,no,5,1,(provisional) second segment test
-0x00163A10,mm_BldgType_Slot34,8,unclassified,,named,no,0,0,
+0x00163A10,mm_BldgType_Slot34,8,game,city,named,no,0,0,base slot +0x34
 0x00163A20,mm_BldgType_IsOpenAt,184,game,city,named,no,1,0,(provisional) opening hours check against the clock
 0x00163AE0,mm_Clock_AddWrap,52,game,city,named,no,8,0,"a1 + a2 mod 3600, wrapped at 86400 (seconds per day)"
 0x00163B20,mm_BldgType_IsKind5to8,32,game,city,named,no,1,0,kind +0x134 in 5..8
@@ -1346,15 +1346,15 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00163C40,mm_BldgType_OccupantMatrix,292,game,city,named,no,1,0,(provisional) matrix for an occupant
 0x00163D70,mm_BldgType_DrawOccupant,400,game,city,named,no,5,3,(provisional) one occupant on its tile
 0x00163F00,mm_BldgType_FindEntrance,344,game,city,named,no,2,2,"(provisional) entrance tile next to a building (walkable flag 0x10, tables 0x1B13F0/0x1B1400)"
-0x00164060,mm_BldgType_Slot30,8,unclassified,,named,no,0,0,
-0x00164070,mm_BldgType_CollideA,8,unclassified,,named,no,0,0,
-0x00164080,mm_BldgType_CollideB,8,unclassified,,named,no,0,0,
-0x00164090,mm_BldgType_Slot1C,8,unclassified,,named,no,0,0,
-0x001640A0,mm_BldgType_Slot20,8,unclassified,,named,no,0,0,
+0x00164060,mm_BldgType_Slot30,8,game,city,named,no,0,0,base slot +0x30
+0x00164070,mm_BldgType_CollideA,8,game,city,named,no,0,0,base slot +0x2C
+0x00164080,mm_BldgType_CollideB,8,game,city,named,no,0,0,base slot +0x28
+0x00164090,mm_BldgType_Slot1C,8,game,city,named,no,0,0,base slot +0x1C
+0x001640A0,mm_BldgType_Slot20,8,game,city,named,no,0,0,base slot +0x20
 0x001640B0,mm_BldgType_DrawOccupants2,356,game,city,named,indirect,1,1,(provisional)
-0x00164220,mm_BldgType_Draw,8,unclassified,,named,no,0,0,
-0x00164230,mm_BldgType_Tick,8,unclassified,,named,no,0,0,
-0x00164240,mm_BldgType_InitRecord,8,unclassified,,named,no,0,0,
+0x00164220,mm_BldgType_Draw,8,game,city,named,no,0,0,base slot +0x14
+0x00164230,mm_BldgType_Tick,8,game,city,named,no,0,0,base slot +0x10
+0x00164240,mm_BldgType_InitRecord,8,game,city,named,no,0,0,base slot +0xC
 0x00164280,mm_BldgType_BaseDtor,136,game,city,named,yes,15,2,vtable 0x1BD000; releases the shared name data when the last type goes
 0x00164310,mm_BldgType_BaseCtor,1068,game,city,named,yes,8,6,"base constructor: shared DATA\BIN\POSTNAME.BIN, model and parameters"
 0x00164740,mm_Math_MulMatVecVu0,44,game,math,named,no,1,0,(provisional) VU0 matrix x vector
@@ -1364,9 +1364,9 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00164AF0,mm_BldgAmusementPark_ctor,64,game,city,named,yes,1,1,"Building constructor, vtable 0x1BD040"
 0x00164B30,mm_BldgBusiness_dtor,112,game,city,named,yes,0,2,"category 6 (factories, shops), vtable 0x1BD1C0"
 0x00164BA0,mm_BldgOffice_dtor,128,game,city,named,yes,0,2,"category 7 (offices), vtable 0x1BD080"
-0x00164C20,mm_BldgOffice_CollideA,224,unclassified,,named,no,0,1,
-0x00164D00,mm_BldgOffice_CollideB,224,unclassified,,named,no,0,1,
-0x00164DE0,mm_BldgOffice_Draw,852,unclassified,,named,no,0,3,
+0x00164C20,mm_BldgOffice_CollideA,224,game,city,named,no,0,1,slot +0x2C
+0x00164D00,mm_BldgOffice_CollideB,224,game,city,named,no,0,1,slot +0x28
+0x00164DE0,mm_BldgOffice_Draw,852,game,city,named,no,0,3,slot +0x14
 0x00165140,mm_BldgOffice_Tick,132,game,city,named,no,0,2,Building tick plus a check of the tile's first object
 0x001651D0,mm_BldgOffice_ctor,72,game,city,named,yes,1,1,"Building constructor, vtable 0x1BD080, +0x160 from record byte 0x92"
 0x00165220,mm_BldgRanch_dtor,128,game,city,named,yes,0,2,"category 12 (Ranch), vtable 0x1BD0C0"
@@ -1385,21 +1385,21 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00166C40,mm_Bldg_InitRecordBase,12,game,city,named,no,1,0,record +0x12 = 0x18
 0x00166C50,mm_Bldg_ctor,52,game,city,named,yes,1,1,"base constructor, vtable 0x1BD100"
 0x00166C90,mm_BldgField_dtor,96,game,city,named,yes,0,2,"category 4 (crop fields), vtable 0x1BD140"
-0x00166CF0,mm_BldgField_Slot1C,84,unclassified,,named,no,0,0,
+0x00166CF0,mm_BldgField_Slot1C,84,game,city,named,no,0,0,slot +0x1C
 0x00166D50,mm_BldgField_DrawPeople,472,game,city,named,indirect,0,1,slot +0x18: farm workers
 0x00166F30,mm_BldgField_Draw,564,game,city,named,no,0,2,crop instances
 0x00167170,mm_BldgField_Tick,408,game,city,named,no,0,3,marks residents on the minimap
 0x00167310,mm_BldgField_ctor,348,game,city,named,yes,1,2,"base constructor, vtable 0x1BD140, crop parameters from the record"
 0x00167470,mm_BldgPort_dtor,128,game,city,named,yes,0,2,"category 9 (fishing ports), vtable 0x1BD180"
-0x001674F0,mm_BldgPort_CollideA,84,unclassified,,named,no,0,1,
-0x00167550,mm_BldgPort_CollideB,84,unclassified,,named,no,0,1,
-0x001675B0,mm_BldgPort_Draw,504,unclassified,,named,no,0,3,
+0x001674F0,mm_BldgPort_CollideA,84,game,city,named,no,0,1,slot +0x2C
+0x00167550,mm_BldgPort_CollideB,84,game,city,named,no,0,1,slot +0x28
+0x001675B0,mm_BldgPort_Draw,504,game,city,named,no,0,3,slot +0x14
 0x001677B0,mm_BldgPort_Tick,236,game,city,named,no,0,3,Building tick plus terrain height changes at the shore
 0x001678A0,mm_BldgPort_ctor,52,game,city,named,yes,1,1,"Building constructor, vtable 0x1BD180"
 0x001678E0,mm_Bldg_IsOpen,72,game,city,named,no,0,1,slot +0x24: opening hours for a building or its type
-0x00167930,mm_Bldg_Slot30,8,unclassified,,named,no,0,0,
-0x00167940,mm_Bldg_CollideA,64,unclassified,,named,no,0,1,
-0x00167980,mm_Bldg_CollideB,64,unclassified,,named,no,0,1,
+0x00167930,mm_Bldg_Slot30,8,game,city,named,no,0,0,slot +0x30
+0x00167940,mm_Bldg_CollideA,64,game,city,named,no,0,1,slot +0x2C
+0x00167980,mm_Bldg_CollideB,64,game,city,named,no,0,1,slot +0x28
 0x001679C0,mm_BldgType_FindEntrance2,368,game,city,named,no,1,2,(provisional)
 0x00167B40,mm_Bldg_DrawPeople,1452,game,city,named,indirect,0,1,slot +0x18: people at the building
 0x00168100,mm_BldgBusiness_Draw,532,game,city,named,no,0,3,slot +0x14 for Business and My Home: instances and claim icon
@@ -1419,9 +1419,9 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001697D0,mm_BldgType_DeleteAll,140,game,city,named,yes,1,1,deletes every building type object
 0x00169860,mm_BldgType_LoadAll,248,game,city,named,yes,1,6,"loads DATA\BIN\STRTYPE.BIN (0x9C-byte records, 281 types) and creates the type objects"
 0x00169960,mm_BldgHousing_dtor,128,game,city,named,yes,0,2,"category 8 (housing), vtable 0x1BD280"
-0x001699E0,mm_BldgHousing_CollideA,196,unclassified,,named,no,0,1,
-0x00169AB0,mm_BldgHousing_CollideB,196,unclassified,,named,no,0,1,
-0x00169B80,mm_BldgHousing_Draw,928,unclassified,,named,no,0,3,
+0x001699E0,mm_BldgHousing_CollideA,196,game,city,named,no,0,1,slot +0x2C
+0x00169AB0,mm_BldgHousing_CollideB,196,game,city,named,no,0,1,slot +0x28
+0x00169B80,mm_BldgHousing_Draw,928,game,city,named,no,0,3,slot +0x14
 0x00169F20,mm_BldgHousing_UnitAt,372,game,city,named,no,1,5,(provisional) unit index of a tile within a housing block
 0x0016A0A0,mm_BldgHousing_CountUnits,756,game,city,named,no,2,7,(provisional) recursive walk over connected housing tiles
 0x0016A3A0,mm_BldgHousing_Tick,160,game,city,named,no,0,3,Building tick plus unit counting
@@ -1438,8 +1438,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0016AB70,mm_BldgRoad_DrawPeople,908,game,city,named,indirect,0,5,(provisional) people walking on the road
 0x0016AF10,mm_BldgRoad_Draw,688,game,city,named,no,0,1,road piece instances by neighbour connections
 0x0016B1C0,mm_BldgRoad_Tick,1164,game,city,named,no,0,7,levels the road with its neighbours and marks the minimap
-0x0016B650,mm_BldgRoad_InitRecord,24,unclassified,,named,no,0,0,
-0x0016B670,mm_BldgRoad_Slot1C,16,unclassified,,named,no,0,0,
+0x0016B650,mm_BldgRoad_InitRecord,24,game,city,named,no,0,0,slot +0xC
+0x0016B670,mm_BldgRoad_Slot1C,16,game,city,named,no,0,0,slot +0x1C
 0x0016B680,mm_BldgRoad_ctor,88,game,city,named,yes,1,1,"base constructor, vtable 0x1BD340, two parameters from record bytes 0x90/0x91"
 0x0016B6E0,mm_BldgSmallGoods_dtor,96,game,city,named,yes,0,2,"category 14 (Small Goods), vtable 0x1BD380"
 0x0016B740,mm_BldgSmallGoods_CollideA,64,game,city,named,no,0,1,segment test A when record +0x10 > 0x26
@@ -1476,7 +1476,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0016E270,mm_Title_DrawCommon,456,game,scene,named,no,4,6,"title screen layers, logo animation and fades"
 0x0016E440,mm_Title_LoadMenu,1024,game,scene,named,yes,1,16,load game screen: memory card slots and their info
 0x0016E840,mm_Title_PressStart,260,game,scene,named,no,1,5,"title idle screen (""[SELECT]SoundTest"")"
-0x0016E950,mm_SceneA_StartGame,764,unclassified,,named,yes,1,27,
+0x0016E950,mm_SceneA_StartGame,764,game,scene,named,yes,1,27,
 0x0016EC50,mm_Title_NewGameIntro,1300,game,scene,named,no,1,8,new game intro scene with town models and loading text
 0x0016F170,mm_Title_RandomCharParts,248,game,scene,named,no,1,2,random character parts for the intro
 0x0016F270,mm_Title_OpeningMovieStep,424,game,scene,named,yes,1,9,"plays the opening movie, then loads TITLE.SQ/HD/BD"
@@ -1485,12 +1485,12 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0016F820,mm_Title_LogoAnimB,640,game,scene,named,no,1,4,rotating logo sprite animation
 0x0016FAA0,mm_Title_Intro,696,game,scene,named,no,1,10,title intro sequence with music
 0x0016FD60,mm_Title_LogoLetters,436,game,scene,named,no,1,2,logo letter sprites (table 0x1B17E0)
-0x0016FF20,mm_SceneA_MemoryCardCheck,944,unclassified,,named,no,1,8,
+0x0016FF20,mm_SceneA_MemoryCardCheck,944,game,scene,named,no,1,8,
 0x001702D0,mm_SceneA_LogoStep,464,game,boot,named,yes,1,5,"one logo (a1: 0 NATSUME, 1 MF_US, else LOGO.TEX): load, fade in, hold 140 frames, fade out, free"
-0x001704A0,mm_SceneA_Load,1852,unclassified,,named,yes,1,21,
-0x00170BE0,mm_SceneA_Update,1004,unclassified,,named,yes,1,19,
+0x001704A0,mm_SceneA_Load,1852,game,scene,named,yes,1,21,
+0x00170BE0,mm_SceneA_Update,1004,game,scene,named,yes,1,19,
 0x00170FD0,mm_SceneA_dtor,588,game,boot,named,yes,1,9,"deletes camera, models, menus, memory card manager, loading screen and text boxes"
-0x00171220,mm_SceneA_ctor,640,unclassified,,named,yes,1,12,
+0x00171220,mm_SceneA_ctor,640,game,scene,named,yes,1,12,
 0x001714A0,mm_TownPages_SelectedEntry,440,game,ui,named,no,1,1,(provisional) resident index under the cursor (+0x5C) on the current page (+0x2C)
 0x00171660,mm_TownPages_ClampCursor,180,game,ui,named,no,1,0,cursor 0..10 limited by the entries on the page (+0x40); 10 = the CLOSE item
 0x00171720,mm_TownPages_BuildIndex,632,game,ui,named,yes,1,3,(provisional) allocates the occupation table (count 0x1BDA90) and fills it from known families
@@ -1500,19 +1500,19 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00172130,mm_TownPages_Update,4136,game,ui,named,yes,1,19,"open animation, page turning and cursor input, calling a resident (mm_CityScene_StartTalk)"
 0x00173160,mm_TownPages_dtor,268,game,ui,named,yes,1,3,"frame, entry table and six text boxes"
 0x00173270,mm_TownPages_Init,212,game,ui,named,yes,1,2,"book model 0x1F3B20, cursor frame, cleared state"
-0x00173350,mm_Widget_Step,92,unclassified,,named,no,0,0,
-0x001733B0,mm_Widget_Closed,24,unclassified,,named,indirect,0,0,
-0x001733D0,mm_Widget_Closing,24,unclassified,,named,indirect,0,0,
-0x001733F0,mm_Widget_Active,8,unclassified,,named,no,0,0,
-0x00173400,mm_Widget_Opened,24,unclassified,,named,indirect,0,0,
-0x00173420,mm_Widget_Opening,24,unclassified,,named,indirect,0,0,
-0x00173440,mm_Widget_Idle,8,unclassified,,named,no,0,0,
-0x00173450,mm_Widget_Update,212,game,ui,named,indirect,2,0,slot +0x14: calls the slot for the current state (+0x2C + state*4)
-0x00173530,mm_Widget_Draw,8,unclassified,,named,no,0,0,
-0x00173540,mm_Widget_Close,16,game,ui,named,no,6,0,"slot +0x10: state 4, timer 0"
-0x00173550,mm_Widget_Open,16,game,ui,named,no,9,0,"slot +0xC: state 1, timer 0"
-0x00173560,mm_Widget_dtor,76,game,ui,named,yes,7,1,vtable 0x1BD400
-0x001735B0,mm_Widget_ctor,28,game,ui,named,no,7,0,"vtable 0x1BD400 at +8, state and timer 0"
+0x00173350,mm_Widget_Step,92,game,ui,typed,no,0,0,"slot +0x18: timer += f12; at 1.0 timer = 0 and state + 1 (6 wraps to 0), returns 1"
+0x001733B0,mm_Widget_Closed,24,game,ui,named,indirect,0,0,base slot +0x40: Step(1.0)
+0x001733D0,mm_Widget_Closing,24,game,ui,named,indirect,0,0,base slot +0x3C: Step(1.0)
+0x001733F0,mm_Widget_Active,8,game,ui,named,no,0,0,base slot +0x38: nothing
+0x00173400,mm_Widget_Opened,24,game,ui,named,indirect,0,0,base slot +0x34: Step(1.0)
+0x00173420,mm_Widget_Opening,24,game,ui,named,indirect,0,0,base slot +0x30: Step(1.0)
+0x00173440,mm_Widget_Idle,8,game,ui,named,no,0,0,base slot +0x2C: nothing
+0x00173450,mm_Widget_Update,212,game,ui,typed,indirect,2,0,slot +0x14: calls the slot for the current state (+0x2C + state*4)
+0x00173530,mm_Widget_Draw,8,game,ui,named,no,0,0,slot +0x20: nothing
+0x00173540,mm_Widget_Close,16,game,ui,typed,no,6,0,"slot +0x10: state 4, timer 0"
+0x00173550,mm_Widget_Open,16,game,ui,typed,no,9,0,"slot +0xC: state 1, timer 0"
+0x00173560,mm_Widget_dtor,76,game,ui,typed,yes,7,1,vtable 0x1BD400
+0x001735B0,mm_Widget_ctor,28,game,ui,typed,no,7,0,"vtable 0x1BD400 at +8, state and timer 0"
 0x001735D0,mm_TalkView_CollectOccupants,492,game,talk,named,no,2,4,"(provisional) people at the building sorted by grade (+0x2E), up to 6"
 0x001737C0,mm_TalkView_ToggleAnim,88,game,talk,named,no,1,0,(provisional) flips the selected person's animation (7 -> 2/3)
 0x00173820,mm_TalkView_DrawPeople,3232,game,talk,named,yes,3,18,"people at the building or of the family in a row with names, grades and the cursor"
@@ -1813,27 +1813,27 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00180390,mm_Words_SetPerson,256,game,talk,named,yes,1,2,"subject A = person a1 with home building, clears the rest"
 0x00180490,mm_Words_dtor,84,game,talk,named,yes,0,1,frees the 0x140-byte context
 0x001804F0,mm_Words_ctor,48,game,talk,named,yes,1,1,allocates the 0x140-byte context
-0x00180520,mm_CityScene_GetFade,8,game,city,named,no,21,0,"fade counter (+0xCC), 0 when no fade runs"
-0x00180530,mm_CityScene_StartFade,52,game,city,named,no,21,0,starts a fade (out or in by +0xC8) at speed a1 when none runs
-0x00180570,mm_CityScene_HasFlag8,20,game,city,named,no,5,0,(provisional) city flag 8
+0x00180520,mm_CityScene_GetFade,8,game,city,typed,no,21,0,"fade counter (+0xCC), 0 when no fade runs"
+0x00180530,mm_CityScene_StartFade,52,game,city,typed,no,21,0,starts a fade (out or in by +0xC8) at speed a1 when none runs
+0x00180570,mm_CityScene_HasFlag8,20,game,city,typed,no,5,0,(provisional) city flag 8
 0x00180590,mm_CityScene_RetreatFamily,212,game,city,named,yes,5,2,applicant entry for family a1 and re-homes people who lived there
-0x00180670,mm_CityScene_MissionProgress,212,game,city,named,no,2,0,mission progress percent by goal type 0x1C5550 against goal 0x1F32E0
-0x00180750,mm_CityScene_PopulationRank,132,game,city,named,no,2,0,rank 1..8 from map +0x74 (100/300/500/1000/1500/2000/2500)
-0x001807E0,mm_CityScene_ApprovalTier,60,game,city,named,no,2,0,"approval below 0, up to 50, up to 100, higher"
-0x00180820,mm_CityScene_ScoreA8Tier,48,game,city,named,no,1,0,"placement score +0xA8 below 200, below 300, or higher"
-0x00180850,mm_CityScene_ScoreA0Tier,48,game,city,named,no,1,0,"placement score +0xA0 below 200, below 300, or higher"
+0x00180670,mm_CityScene_MissionProgress,212,game,city,typed,no,2,0,mission progress percent by goal type 0x1C5550 against goal 0x1F32E0
+0x00180750,mm_CityScene_PopulationRank,132,game,city,typed,no,2,0,rank 1..8 from map +0x74 (100/300/500/1000/1500/2000/2500)
+0x001807E0,mm_CityScene_ApprovalTier,60,game,city,typed,no,2,0,"approval below 0, up to 50, up to 100, higher"
+0x00180820,mm_CityScene_ScoreA8Tier,48,game,city,typed,no,1,0,"placement score +0xA8 below 200, below 300, or higher"
+0x00180850,mm_CityScene_ScoreA0Tier,48,game,city,typed,no,1,0,"placement score +0xA0 below 200, below 300, or higher"
 0x00180880,mm_CityScene_SaveGame,264,game,city,named,no,1,13,"writes the save: header, camera, stage, events, families, map, laptop, vacancies, applicants, player, stamina"
 0x00180990,mm_CityScene_LoadGame,2388,game,city,named,yes,1,50,load screen (REPORT.TEX) and loading every *_LoadState from the memory card
 0x001812F0,mm_CityScene_SaveStep,308,game,city,named,yes,1,6,"save from the pause menu: map vertex buffers, open, write, wait"
-0x00181430,mm_CityScene_PopMode,68,game,city,named,no,8,0,"pops the scene mode stack (+0x10.., depth +0x24)"
-0x00181480,mm_CityScene_PushMode,56,game,city,named,no,5,0,pushes mode a1 on the mode stack
-0x001814C0,mm_CityScene_GetMode,8,game,city,named,no,11,0,current mode (+0x10)
-0x001814D0,mm_CityScene_RecordPlacementScore,220,game,city,named,no,1,0,decaying averages +0xA0 (a2) and +0xA8 (a1) of placement scores
-0x001815B0,mm_CityScene_AddApproval,16,game,city,named,no,2,0,pending approval change +0xBC += a1
+0x00181430,mm_CityScene_PopMode,68,game,city,typed,no,8,0,"pops the scene mode stack (+0x10.., depth +0x24)"
+0x00181480,mm_CityScene_PushMode,56,game,city,typed,no,5,0,pushes mode a1 on the mode stack
+0x001814C0,mm_CityScene_GetMode,8,game,city,typed,no,11,0,current mode (+0x10)
+0x001814D0,mm_CityScene_RecordPlacementScore,220,game,city,typed,no,1,0,decaying averages +0xA0 (a2) and +0xA8 (a1) of placement scores
+0x001815B0,mm_CityScene_AddApproval,16,game,city,typed,no,2,0,pending approval change +0xBC += a1
 0x001815D0,mm_CityScene_TalkSelectPerson,8,game,city,named,no,1,0,talk view choice = slot of family a1 member a2
 0x001815E0,mm_CityScene_StartTalk,128,game,city,named,yes,6,1,"mm_Talk_Start, then pushes mode 5 and hides the HUD"
-0x00181660,mm_CityScene_UpdateApproval,204,game,city,named,yes,1,1,every 6 frames moves the approval rate one step toward the pending change
-0x00181730,mm_CityScene_TickClock,724,game,city,named,no,1,3,"clock, approval drift and events, new day: month, weather, map daily update"
+0x00181660,mm_CityScene_UpdateApproval,204,game,city,typed,yes,1,1,every 6 frames moves the approval rate one step toward the pending change
+0x00181730,mm_CityScene_TickClock,724,game,city,typed,no,1,3,"clock, approval drift and events, new day: month, weather, map daily update"
 0x00181A10,mm_CityScene_Update,2600,game,city,named,yes,1,58,"city frame by mode: camera, cursor, player, menus, windows, events, drawing"
 0x00182440,mm_CityScene_dtor,616,game,city,named,yes,1,18,deletes every city subsystem
 0x001826B0,__dt__Q23std9exceptionFv,76,sdk,,named,yes,0,1,
@@ -1997,7 +1997,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00190750,mm_EvEscort_End,148,game,event,named,no,0,3,End shared by types 2 and 5
 0x001907F0,mm_EvEscort_Update,768,game,event,named,yes,0,6,Update shared by types 2 and 5
 0x00190AF0,mm_EvEscort_Start,96,game,event,named,no,0,3,"Start shared by types 2 ""Forgetful Granny"" and 5 ""Bodyguard"""
-0x00190B50,mm_EvBodyguard_Check,8,unclassified,,named,no,0,0,
+0x00190B50,mm_EvBodyguard_Check,8,game,event,named,no,0,0,"type 5 ""Bodyguard"": Check"
 0x00190B60,mm_EvMsg_Slot14,612,game,event,named,no,0,7,"Slot14 shared by types 23, 29, 30, 35, 41"
 0x00190DD0,mm_EvPayday_Slot10,72,game,event,named,indirect,0,0,Slot10 shared by types 29 and 30
 0x00190F00,mm_EvPayday_Update,492,game,event,named,no,0,2,Update shared by types 29 and 30
@@ -2005,19 +2005,19 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001911F0,mm_EvMsg_Update,292,game,event,named,no,0,2,"Update shared by most message events (25-28, 31-34, 36-40)"
 0x00191320,mm_EvNoRetreat_Update,256,game,event,named,no,0,2,"type 24 ""No retreat"": Update"
 0x00191420,mm_EvMsg_End,48,game,event,named,no,0,1,End shared by the message events
-0x00191450,mm_EvMsg_Start,36,unclassified,,named,no,0,0,
+0x00191450,mm_EvMsg_Start,36,game,event,named,no,0,0,Start shared by the message events (types 23-41)
 0x00191480,mm_EvMissionCleared_Check,84,game,event,named,no,0,1,"type 41 ""Mission Cleared"": Check"
-0x001914E0,mm_EvQuota80_Check,72,unclassified,,named,no,0,0,
-0x00191530,mm_EvForciblyRetreat_Check,20,unclassified,,named,no,0,0,
+0x001914E0,mm_EvQuota80_Check,72,game,event,named,no,0,0,"type 40 ""80% of the quota"": Check"
+0x00191530,mm_EvForciblyRetreat_Check,20,game,event,named,no,0,0,"type 35 ""Forcibly Retreat"": Check"
 0x00191550,mm_EvRetreat_Check,68,game,event,named,no,0,1,"type 34 ""Retreat"": Check"
 0x001915A0,mm_EvThreeUnsatisfied_Check,340,game,event,named,no,0,4,"type 33 ""3 Unsatisfied things"": Check"
-0x00191700,mm_EvNoOffer_Check,20,unclassified,,named,no,0,0,
+0x00191700,mm_EvNoOffer_Check,20,game,event,named,no,0,0,"type 32 ""No Offer"": Check"
 0x00191720,mm_EvHunger_Check,36,game,event,named,no,0,1,"type 31 ""Hunger"": Check"
-0x00191750,mm_EvPayday_Check,96,unclassified,,named,no,0,0,
-0x001917B0,mm_EvFirstPayday_Check,16,unclassified,,named,no,0,0,
-0x001917C0,mm_EvWoman_Check,44,unclassified,,named,no,0,0,
-0x001917F0,mm_EvRiddle_Check,44,unclassified,,named,no,0,0,
-0x00191820,mm_EvPopularity_Check,40,unclassified,,named,no,0,0,
+0x00191750,mm_EvPayday_Check,96,game,event,named,no,0,0,"type 30 ""Payday"": Check"
+0x001917B0,mm_EvFirstPayday_Check,16,game,event,named,no,0,0,"type 29 ""Your First Payday"": Check"
+0x001917C0,mm_EvWoman_Check,44,game,event,named,no,0,0,"type 28 ""Woman"": Check"
+0x001917F0,mm_EvRiddle_Check,44,game,event,named,no,0,0,"type 27 ""Riddle"": Check"
+0x00191820,mm_EvPopularity_Check,40,game,event,named,no,0,0,"type 26 ""Popularity"": Check"
 0x00191850,mm_EvCaveMan_Slot14,508,game,event,named,yes,0,3,type 15: Slot14
 0x00191A50,mm_EvCaveMan_Update,1652,game,event,named,yes,0,12,type 15: Update
 0x001920D0,mm_EvCaveMan_End,192,game,event,named,no,0,2,type 15: End
@@ -2040,7 +2040,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00193370,mm_EvFarewellParty_End,104,game,event,named,indirect,0,1,type 19: End
 0x001933E0,mm_EvFarewellParty_Update,1344,game,event,named,yes,0,19,type 19: Update
 0x00193920,mm_EvFarewellParty_Start,520,game,event,named,no,0,5,"type 19 ""Farewell Party"": Start"
-0x00193B30,mm_EvForgetfulGranny_Check,44,unclassified,,named,no,0,0,
+0x00193B30,mm_EvForgetfulGranny_Check,44,game,event,named,no,0,0,"type 2 ""Forgetful Granny"": Check"
 0x00193B60,mm_EvCrazyCult_Slot14,96,game,event,named,indirect,0,0,type 18: Slot14
 0x00193D00,mm_EvCrazyCult_End,232,game,event,named,no,0,1,type 18: End
 0x00193DF0,mm_EvCrazyCult_Phase3,324,game,event,named,no,1,3,"(provisional) states 0x13-0x16: wait, mark the building, find the person"
@@ -2056,7 +2056,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00195160,mm_EvUselessMiddleAged_Update,160,game,event,named,no,0,1,type 7: Update
 0x00195200,mm_EvUselessMiddleAged_End,140,game,event,named,no,0,2,type 7: End
 0x00195290,mm_EvUselessMiddleAged_Start,76,game,event,named,no,0,1,type 7: Start
-0x001952E0,mm_EvUselessMiddleAged_Check,20,unclassified,,named,no,0,0,
+0x001952E0,mm_EvUselessMiddleAged_Check,20,game,event,named,no,0,0,"type 7 ""Useless middle-aged"": Check"
 0x00195300,mm_EvMissingChildren_Slot14,276,game,event,named,no,0,2,type 6: Slot14
 0x00195420,mm_EvMissingChildren_End,252,game,event,named,no,0,3,type 6: End
 0x00195520,mm_EvMissingChildren_Update,1452,game,event,named,yes,0,14,type 6: Update
@@ -2074,8 +2074,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00196720,mm_EvShopping_Update,592,game,event,named,no,0,3,type 8: Update
 0x00196970,mm_EvShopping_Start,120,game,event,named,no,0,1,type 8: Start
 0x001969F0,mm_EvShopping_Check,1312,game,event,named,indirect,0,8,"type 8 ""Shopping"": Check"
-0x00196F10,mm_Unk196F10_Ret7C,8,game,event,named,no,0,0,(provisional) returns 0x7C
-0x00196F20,mm_Unk196F20_Ret1C,8,game,event,named,no,1,0,(provisional) returns 0x1C; used by the event manager constructor
+0x00196F10,mm_EventData_GetSize7C,8,game,event,named,no,0,0,(provisional) vtable size slot: 0x7C
+0x00196F20,mm_EventData_GetSize1C,8,game,event,named,no,1,0,(provisional) vtable size slot: 0x1C (used by the event manager constructor)
 0x00196F30,mm_EvNoodles_Slot14,192,game,event,named,yes,0,1,type 13: Slot14
 0x00196FF0,mm_EvNoodles_End,248,game,event,named,no,0,2,type 13: End
 0x001970F0,mm_EvNoodles_Update,5984,game,event,named,yes,0,19,type 13: Update

@@ -1,3 +1,36 @@
 # Function prototypes for SLUS_203.77, applied to the Ghidra project by tools/ghidra/ApplyTypes.java.
 # One per line: 0xADDR <C prototype>;  Types come from config/types/. The function keeps the name
 # it has in config/symbols.csv; the name in the prototype is only for reading.
+0x00180520 int mm_CityScene_GetFade(CityScene *city);
+0x00180530 void mm_CityScene_StartFade(CityScene *city, int speed);
+0x00181480 void mm_CityScene_PushMode(CityScene *city, int mode);
+0x00181430 void mm_CityScene_PopMode(CityScene *city);
+0x001814C0 int mm_CityScene_GetMode(CityScene *city);
+0x001815B0 void mm_CityScene_AddApproval(CityScene *city, int delta);
+0x00180570 int mm_CityScene_HasFlag8(CityScene *city);
+0x00180670 int mm_CityScene_MissionProgress(CityScene *city);
+0x00180750 int mm_CityScene_PopulationRank(CityScene *city);
+0x001807E0 int mm_CityScene_ApprovalTier(CityScene *city);
+0x00180820 int mm_CityScene_ScoreA8Tier(CityScene *city);
+0x00180850 int mm_CityScene_ScoreA0Tier(CityScene *city);
+0x001814D0 void mm_CityScene_RecordPlacementScore(CityScene *city, int scoreA8, int scoreA0);
+0x00181660 void mm_CityScene_UpdateApproval(CityScene *city);
+0x00181730 void mm_CityScene_TickClock(CityScene *city);
+0x001735B0 Widget *mm_Widget_ctor(Widget *widget);
+0x00173560 Widget *mm_Widget_dtor(Widget *widget, short deleteFlag);
+0x00173550 void mm_Widget_Open(Widget *widget);
+0x00173540 void mm_Widget_Close(Widget *widget);
+0x00173450 int mm_Widget_Update(Widget *widget);
+0x00173350 int mm_Widget_Step(Widget *widget, float dt);
+0x00128610 int mm_Widget_GetState(Widget *widget);
+0x00128620 int mm_Widget_IsIdle(Widget *widget);
+0x00128630 int mm_Widget_IsActive(Widget *widget);
+0x00162540 void mm_Stamina_Init(Stamina *stamina);
+0x00162500 int mm_Stamina_HungerLevel(Stamina *stamina);
+0x001446C0 MapObject *mm_Map_GetRecord(CityMap *map, int object);
+0x00144440 MapObject *mm_Map_FindFamilyHome(CityMap *map, uint16_t family);
+0x00142790 MapPerson *mm_Map_FindPersonEntry(CityMap *map, int16_t family, uint16_t member);
+0x00142AC0 MapPerson *mm_People_Next(CityMap *map, uint16_t *cursor);
+0x0013D6B0 Family *mm_Family_Get(int family, int flags);
+0x0013C8B0 int mm_Family_GetTypeIndex(int family);
+0x0013BB70 uint8_t *mm_MemberStatus_Lookup(int family, int member);

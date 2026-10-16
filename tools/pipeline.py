@@ -10,7 +10,7 @@ Steps, in order:
               config/signatures.txt, export config/funcmap.csv
   map         analyze, then export the call graph (work/map/graph.json) and decompile every
               function (work/decomp/), then status
-  status      rebuild the per-function inventory: config/port_status.csv and docs/PORT_STATUS.md
+  status      rebuild the per-function inventory: config/port_status.csv, docs/PORT_STATUS.md, docs/map/
   pointers    add functions reached only through pointers (vtables, ctor/callback tables), re-analyze
   script      run one Ghidra script from tools/ghidra against the project (read-only by default)
   recompile   render config/metropolismania.template.toml and run ps2_recomp into generated/
@@ -53,6 +53,7 @@ GHIDRA_EXPORT_TOML = WORK / "ghidra_export.toml"
 RENDERED_TOML = WORK / "metropolismania.toml"
 TYPES_DIR = CONFIG / "types"
 SIGNATURES = CONFIG / "signatures.txt"
+THIS_TYPES = CONFIG / "this_types.txt"
 GRAPH_JSON = WORK / "map" / "graph.json"
 DECOMP_DIR = WORK / "decomp"
 BUILD_TYPE = "RelWithDebInfo"
@@ -234,7 +235,7 @@ def cmd_analyze(args: argparse.Namespace) -> None:
         cmd += ["-import", str(elf), "-overwrite", "-processor", GHIDRA_LANGUAGE, "-cspec", "default"]
     cmd += ["-scriptPath", script_path,
             "-postScript", "ApplySymbols.java", str(CONFIG / "symbols.csv"),
-            "-postScript", "ApplyTypes.java", str(TYPES_DIR), str(SIGNATURES),
+            "-postScript", "ApplyTypes.java", str(TYPES_DIR), str(SIGNATURES), str(THIS_TYPES),
             "-postScript", "ExportPS2Functions.java", str(GHIDRA_EXPORT_TOML), str(CONFIG / "funcmap.csv")]
     if getattr(args, "map", False):
         GRAPH_JSON.parent.mkdir(parents=True, exist_ok=True)
@@ -252,8 +253,9 @@ def cmd_map(args: argparse.Namespace) -> None:
 
 
 def cmd_status(_: argparse.Namespace) -> None:
-    """Rebuild config/port_status.csv and docs/PORT_STATUS.md (tools/port_status.py)."""
+    """Rebuild config/port_status.csv, docs/PORT_STATUS.md (tools/port_status.py) and docs/map/ (tools/map_docs.py)."""
     run([sys.executable, "-I", str(ROOT / "tools/port_status.py"), "--root", str(ROOT)])
+    run([sys.executable, "-I", str(ROOT / "tools/map_docs.py"), "--root", str(ROOT)])
 
 
 def filter_function_map() -> None:
@@ -584,7 +586,7 @@ def main() -> int:
     p.set_defaults(func=cmd_analyze)
     sub.add_parser("symbols", help="merge ps2_analyzer SDK names into config/symbols.csv").set_defaults(func=cmd_symbols)
     sub.add_parser("map", help="analyze + call graph + decompile all + status").set_defaults(func=cmd_map)
-    sub.add_parser("status", help="rebuild config/port_status.csv and docs/PORT_STATUS.md").set_defaults(func=cmd_status)
+    sub.add_parser("status", help="rebuild config/port_status.csv, docs/PORT_STATUS.md and docs/map/").set_defaults(func=cmd_status)
     p = sub.add_parser("pointers", help="add functions reached only through pointers, re-analyze until stable")
     p.add_argument("--rounds", type=int, default=4)
     p.set_defaults(func=cmd_pointers)

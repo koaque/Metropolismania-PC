@@ -19,12 +19,13 @@ As far as we could find, this is the first recompilation or decompilation projec
 | Milestone | State |
 |---|---|
 | Research, repo, pipeline | Done |
-| Disc extraction, Ghidra analysis, function map (2,091 functions) | Done |
+| Disc extraction, Ghidra analysis, function map (2,241 functions) | Done |
 | First recompile (0 errors) and native build | Done: the runner builds, opens its window and starts executing |
 | Boot to logos, title screen, memory card check | Done: Natsume logo, title, New Game |
 | Input | Works (keyboard, pad, scripted) |
 | City game (scene C) | Reached: HUD, cursor and the 3D terrain render, about 20 fps (CPU rendering on several threads) |
-| Movies, sound, saves | In progress: music and sound play through a new SPU2 emulation (no reverb yet); movies stall (skippable for testing); memory card check passes |
+| Movies, sound, saves | In progress: music, sound and the PSS movies (with their audio) play through a new SPU2 emulation; memory card check passes |
+| Readable source port | Mapping done: every function is named, classified and listed with notes in [docs/map](docs/map/README.md) (progress in [docs/PORT_STATUS.md](docs/PORT_STATUS.md)); types and porting next |
 | Widescreen, hi-res, Linux | Not started |
 
 ## Requirements (Windows, for now)
@@ -70,7 +71,7 @@ python tools/pipeline.py run                # timed run, log in logs/
 3. `ps2_recomp` translates every function to C++. The runtime provides memory, kernel syscalls, the GS, VU1, DMA and an IOP that runs the game's original IRX modules.
 4. Game-specific fixes live in `config/` and `src/overrides/`; changes to PS2Recomp itself live in `patches/`.
 
-More detail: [AGENTS.md](AGENTS.md), [docs/GAME_NOTES.md](docs/GAME_NOTES.md).
+More detail: [AGENTS.md](AGENTS.md), [docs/GAME_NOTES.md](docs/GAME_NOTES.md), [docs/map](docs/map/README.md).
 
 ## Credits
 

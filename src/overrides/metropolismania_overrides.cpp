@@ -35,7 +35,7 @@ namespace
 
     // Addresses in SLUS_203.77 (see docs/GAME_NOTES.md).
     constexpr uint32_t kGameUpdate = 0x0012ABA0u;   // game object vtable +0xC, called once per frame
-    constexpr uint32_t kOpenDiscFile = 0x0019ED60u; // mm_OpenDiscFile(path, ...)
+    constexpr uint32_t kOpenDiscFile = 0x0019ED60u; // mm_Movie_StrFileOpen(path, ...)
 
     // ------------------------------------------------------------------ trace mode (MMPC_TRACE=1)
     // Logs top-level game state changes and every file the game opens. Debug aid for boot triage;
@@ -105,7 +105,7 @@ namespace
 
     void tracedGameUpdate(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
     {
-        // Game object layout (from FUN_0012aba0): +4 state, +8 scene C, +0xC scene A, +0x14 scene B.
+        // Game object layout (from mm_GameUpdate): +4 state, +8 scene C, +0xC scene A, +0x14 scene B.
         // Scene A keeps its sub-state at +0xC0 and a counter at +0xC4.
         static uint32_t lastState = 0xFFFFFFFFu, lastSub = 0xFFFFFFFFu;
         static uint32_t frames = 0, lastLogFrame = 0;
@@ -253,23 +253,23 @@ namespace
         PS2Runtime::RecompiledFunction original;
     };
     TracedCall g_tracedCalls[] = {
-        {0x00187290u, "mm_KickFrameVif1", nullptr},
+        {0x00187290u, "mm_DmaList_KickFrame", nullptr},
         {0x0012ABA0u, "mm_GameUpdate", nullptr},
         {0x00103418u, "sceGsSyncPath", nullptr},
         {0x00103380u, "sceGsSyncV", nullptr},
         {0x00103D08u, "sceGsSwapDBuffDc", nullptr},
-        {0x0019C4C0u, "mm_VSyncHandler", nullptr},
+        {0x0019C4C0u, "mm_Movie_VblankHandler", nullptr},
         {0x001040F0u, "sceDmaSend", nullptr},
-        {0x0019C480u, "mm_MovieDmacRelease", nullptr},
-        {0x001A0960u, "mm_MovieBufferFree", nullptr},
+        {0x0019C480u, "mm_Movie_DmaEndHandler", nullptr},
+        {0x001A0960u, "mm_Movie_VoBufDecCount", nullptr},
         {0x0010BF90u, "sceMpegGetPicture", nullptr},
-        {0x0019E060u, "mm_MovieYield", nullptr},
+        {0x0019E060u, "mm_Movie_SwitchThread", nullptr},
         {0x0010DC10u, "RotateThreadReadyQueue", nullptr},
-        {0x0019E450u, "mm_MovieSetup", nullptr},
-        {0x0019E780u, "mm_MovieAudioCallback", nullptr},
-        {0x0019C140u, "mm_MovieAudioStart", nullptr},
-        {0x0019BC90u, "mm_MovieAudioPump", nullptr},
-        {0x0019B940u, "mm_MovieAudioSend", nullptr},
+        {0x0019E450u, "mm_Movie_InitAll", nullptr},
+        {0x0019E780u, "mm_Movie_PcmCallback", nullptr},
+        {0x0019C140u, "mm_Movie_AudioDecStart", nullptr},
+        {0x0019BC90u, "mm_Movie_AudioDecSendToIop", nullptr},
+        {0x0019B940u, "mm_Movie_SendToIop2Area", nullptr},
     };
     constexpr size_t kTracedCallCount = sizeof(g_tracedCalls) / sizeof(g_tracedCalls[0]);
 

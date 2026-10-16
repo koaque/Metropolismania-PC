@@ -1,0 +1,19 @@
+# Class methods whose first parameter is a pointer to a struct from config/types/, applied to the Ghidra
+# project by tools/ghidra/ApplyTypes.java (pipeline.py analyze). A function with a full prototype in
+# config/signatures.txt keeps that prototype instead.
+# Lines: <name prefix> <struct> <parameter name> [except <name>,<name>...]
+mm_CityScene_ CityScene city
+mm_Talk_ TalkSession talk
+mm_Widget_ Widget widget
+mm_WordsFn_ WordsCtx ctx except mm_WordsFn_VacancyWantedBody
+mm_Stamina_ Stamina stamina except mm_Stamina_CreateGlobal
+mm_TalkView_ TalkView view
+mm_TalkPhoneFamily_ TalkView view
+mm_TalkPhoneMember_ TalkView view
+mm_TalkBldgFar_ TalkView view
+mm_TalkBldgNear_ TalkView view
+mm_TalkOccupantFar_ TalkView view
+mm_TalkOccupantNear_ TalkView view
+mm_TalkPersonFar_ TalkView view
+mm_TalkPersonNear_ TalkView view
+mm_MyHome_ TalkView view

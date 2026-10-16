@@ -1,0 +1,77 @@
+# sound
+
+Sound on the EE side; the driver is YYSOUND on the IOP.
+
+- `mm_SoundCmd_*`: the YYSound command ring: 256 entries of 0xD0 bytes at `0x001FE6C0`, write index `0x001BDD44`,
+  read index `0x001BDD48`, flushed to the IOP over SIF RPC by `mm_SoundCmd_Flush`, which also builds the
+  `cdrom0:\DATA\SOUND\{,HD,BD,SQ}\` paths.
+- `mm_Se_*`: sound effects. Voice group A has 16 effect voices (stop is command 4); group B has voices 0-15, with 15
+  used by the BGM (stop is command `0xD`).
+- `mm_Bgm_*`: background music. `mm_Sound_*`: module loading (`LIBSD`, `SDRDRV`, `MODHSYN`, `MODMIDI`, `MODSEIN`,
+  `YYSOUND`), RPC binding and the per-city sound setup.
+
+<!-- Generated below by tools/map_docs.py from config/port_status.csv. Edit function notes there, not here. -->
+
+## Functions
+
+57 functions (named 57). Blocks: 4 can reach a thread switch, 1 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+
+| Address | Name | Size | Blocks | Notes |
+|---|---|---:|---|---|
+| `0x001876B0` | `mm_Sound_StopAllPlaying` | 156 | no | asks the driver for its status (0x18F200) and stops every voice whose bit is set in the two 16-bit masks at +4 and +8 |
+| `0x00187750` | `mm_Se_SetEnabled` | 196 | no | 0x1BDD20 = a0; a0 == 0 stops all 16 + 15 effect voices; a1 != 0 resets their volumes (0xFFF and 0x100) |
+| `0x00187820` | `mm_Se_SetVoice15Enabled` | 76 | no | same as mm_Se_SetEnabled for the single voice 15 (volume 0xC0) |
+| `0x00187870` | `mm_Se_UpdateCityAmbience` | 3152 | no | scans map tiles around the camera and requests ambient sounds by tile/building (mm_Se_Request); uses the time of day and the listener position |
+| `0x001884E0` | `mm_Se_UpdateListener` | 1092 | no | copies the city camera's eye and target (camera +0x130/+0x140) into the listener vectors at 0x1FC650 and derives its orientation |
+| `0x00188930` | `mm_Se_BuildingSoundState` | 1144 | indirect | for a building record a0 and its type a1: returns 0xFF (none), 0x4FF (already sounding) or a sound id, using time windows (mm_Se_InTimeWindow) |
+| `0x00188DB0` | `mm_Se_InTimeWindow` | 300 | no | checks the game clock (seconds of day mod 3600, 0x1BDD34) against a window [a1, a2) offset per object; 0xFF = outside, 0x100 = inside |
+| `0x00188EE0` | `mm_Se_RequestTileSounds` | 468 | no | requests the sounds of the objects on map tile (a2, a3), with a random extra cue when a4 != 0 |
+| `0x001890C0` | `mm_Se_PickTerrainAmbience` | 508 | no | ambient sound id for a position: above the city's level threshold (+0xB0) picks 0x1C/0x1D, else from the 5-byte table at 0x1B35F0 through mm_Se_MatchSchedule |
+| `0x001892D0` | `mm_Se_MatchSchedule` | 912 | no | 1 when the current month (city +0x88 mod 12) and hour/minute (0x1BDD34) fall inside the given month and time ranges |
+| `0x00189660` | `mm_Se_Request` | 1244 | no | adds a sound request (position, sound id, priority, volume, pitch, ...) to the request list at 0x1F8710 (count at gp 0x1BDD08); ids look up the 16-byte sound table 0x1B2EE0 |
+| `0x00189B40` | `mm_Se_StopOwner` | 260 | no | stops every effect voice (16 at 0x1F8140, 15 at 0x1F8440, 0x30 bytes each) and request owned by a0 |
+| `0x00189C50` | `mm_Se_RequestForObject` | 1876 | no | requests the sounds of a moving or placed object by its type and distance to the listener |
+| `0x0018A3B0` | `mm_Sound_PlaySe` | 148 | no | plays sound id a0 & 0xFF through 0x189660; ids flagged 0x10 in the 16-byte table 0x1B2EE0 get a rotating handle (0x1BDCFC, wraps at 255) |
+| `0x0018A450` | `mm_Se_PlayMessageSound` | 1456 | no | message window sound for code a0 (0x14, 0x0A, ...), several fixed sound ids |
+| `0x0018AA00` | `mm_Se_PlayVariant` | 1148 | no | plays one of a few sound ids (0x29 ...) chosen by a0, with a random pitch offset (0..199) |
+| `0x0018AE80` | `mm_Se_UpdateTimeOfDay` | 452 | no | time-of-day cues: fades sound 0x36 by the clock (silent 6:00-18:00), chime 0x37 at fixed times in months 7-8 |
+| `0x0018B050` | `mm_Se_UpdateVoices` | 2736 | no | per frame: starts, moves and stops the effect voices assigned by mm_Se_AssignVoices |
+| `0x0018BB10` | `mm_Se_ApplyVoiceParams` | 188 | no | voice a0: volume L/R clamped to 1..0x3FFF (flag 1, 0x18DD90) and pitch (flag 2, 0x18DC70) |
+| `0x0018BBD0` | `mm_Se_AssignVoices` | 2952 | no | sorts the frame's requests by priority into the 16 + 15 effect voice slots, stealing low-priority voices |
+| `0x0018C770` | `mm_Sound_Update` | 580 | no | per frame from mm_GameUpdate: assigns and updates effect voices, city ambience, time-of-day cues and the BGM state |
+| `0x0018C9C0` | `mm_Sound_SetCity` | 516 | no | sets the city object (0x1BDD00) used by the sound code; null stops all effect voices and resets their volumes |
+| `0x0018CBD0` | `mm_Sound_StopAllSequences` | 60 | no | queues cmd 0xB for sequence slots 7..0 |
+| `0x0018CC10` | `mm_Sound_LoadPlaylandBanks` | 88 | no | queues cmd 9 (load SQ/HD/BD bank) for the 4 bank name triples at 0x1B2E20 (PLAYLAND.SQ ...) |
+| `0x0018CC70` | `mm_Bgm_FadeOut` | 48 | no | cmd 0xE on voice 15 to volume 0 over a0, BGM state (gp 0x1BDCF4?) = 4 |
+| `0x0018CCA0` | `mm_Bgm_SetActive` | 132 | no | a0 == 0 fades the BGM out (state 4); otherwise stops a pending jingle, restores volume 0xC0 and sets state 3 |
+| `0x0018CD30` | `mm_Bgm_SetTrackSlot` | 360 | no | stores an 8-byte track descriptor for slot a0 + 6 in the table at 0x1F8120 and starts it when a2 != 0 |
+| `0x0018CEA0` | `mm_Bgm_Update` | 688 | no | picks the BGM for the city state (flags +0xB4, +0x8C) and switches banks (NOMAL_A.SQ/HD/BD ...) when the driver is idle |
+| `0x0018D150` | `mm_SoundCmd_02_Zero` | 12 | no | queues cmd 2 with zero arguments |
+| `0x0018D160` | `mm_Sound_ResetVoices` | 284 | no | queues cmd 1, resets all voice volumes (0xFFF group A, 0x100 group B, 0xC0 voice 15) and clears the effect voice tables |
+| `0x0018D280` | `mm_Se_BuildAmbienceMap` | 348 | no | clears the 4096-entry ambience grid at 0x1FC690 and fills it from the city map and the table at 0x1B35F0 |
+| `0x0018D3E0` | `mm_Sound_InitState` | 196 | no | called by mm_GameInit: marks all 31 effect voices free (0xFF) and clears the sound globals |
+| `0x0018D4B0` | `mm_SoundCmd_CancelPlayB` | 256 | no | removes queued cmd 3 entries for voice a0 from the ring |
+| `0x0018D5B0` | `mm_Sound_IsBusy` | 164 | no | refreshes the status copy (0x20B7C0 -> 0x20B840, merged with pending masks); true if the driver is busy or commands are queued |
+| `0x0018D660` | `mm_Sound_IsDriverBusy` | 128 | no | like mm_Sound_IsBusy but ignores queued commands |
+| `0x0018D6E0` | `mm_SoundCmd_SetDiscBusy` | 100 | no | queues cmd 0x18 with a0 & 0xFF; the file code sends 1 before waiting on the disc and 0 after |
+| `0x0018D750` | `mm_SoundCmd_11` | 140 | no | queues cmd 0x11 (voice a0, a1, a2) |
+| `0x0018D7E0` | `mm_SoundCmd_SetVolumeB` | 140 | no | queues cmd 0x10 (voice a0, volume a1, a2) |
+| `0x0018D870` | `mm_SoundCmd_0F` | 140 | no | queues cmd 0xF (voice a0, a1, a2), same layout as cmd 0x10 |
+| `0x0018D900` | `mm_SoundCmd_FadeB` | 144 | no | queues cmd 0xE (voice a0, target a1, time a2, a3) |
+| `0x0018D990` | `mm_SoundCmd_StopB` | 168 | no | queues cmd 0xD (voice a0, a1) |
+| `0x0018DA40` | `mm_SoundCmd_PlaySequence` | 168 | no | queues cmd 0xC (slot a0, a1, a2, a3, a4) and sets the slot's bit in the pending mask (gp) |
+| `0x0018DAF0` | `mm_SoundCmd_StopSequence` | 168 | no | queues cmd 0xB (slot a0, a1) |
+| `0x0018DBA0` | `mm_SoundCmd_LoadBank` | 200 | no | queues cmd 9: slot a0, SQ/HD/BD file names a1/a2/a3, flags a4 |
+| `0x0018DC70` | `mm_SoundCmd_SetPitchA` | 140 | no | queues cmd 8 (voice a0, pitch a1, a2) |
+| `0x0018DD00` | `mm_SoundCmd_SetVolumeA` | 140 | no | queues cmd 7 (voice a0, volume a1, a2) |
+| `0x0018DD90` | `mm_SoundCmd_SetVolumeLRA` | 144 | no | queues cmd 6 (voice a0, left a1, right a2, a3) |
+| `0x0018DE20` | `mm_SoundCmd_PlayA` | 152 | no | queues cmd 5 (voice a0 and five sound parameters) |
+| `0x0018DEC0` | `mm_SoundCmd_StopA` | 168 | no | queues cmd 4 (voice a0, a1) |
+| `0x0018DF70` | `mm_SoundCmd_PlayB` | 180 | no | queues cmd 3 (voice a0, bank a1, sound a2, ...) and sets the voice's bit in the pending mask (gp) |
+| `0x0018E030` | `mm_SoundCmd_02` | 168 | no | queues cmd 2 (a0, a1) |
+| `0x0018E0E0` | `mm_SoundCmd_01` | 204 | no | queues cmd 1 (a0, a1, a2, a3, a4) |
+| `0x0018E1B0` | `mm_SoundCmd_Flush` | 4164 | yes | (was mm_SetSoundDataPaths) sends the queued commands to YYSOUND over SIF RPC 0x12346 (paths cdrom0:\DATA\SOUND\SQ\|HD\|BD\), drops commands when too many are pending ("URGENT CUT", "ManyRequest") and refreshes the status block |
+| `0x0018F200` | `mm_Sound_GetStatus` | 124 | no | refreshes the status copy at 0x20B840 (merged with the pending masks) and returns it |
+| `0x0018F280` | `mm_Sound_LoadModules` | 452 | yes | (was mm_LoadSoundModules) loads LIBSD, SDRDRV, MODMIDI, MODHSYN, MODSEIN, YYSOUND, retrying each until it loads |
+| `0x0018F450` | `mm_Sound_Shutdown` | 80 | yes | YYSound RPC function 0 |
+| `0x0018F4A0` | `mm_Sound_Init` | 300 | yes | (was mm_InitSound) loads the modules, binds RPC 0x12346, sends function 1 with the status block address, clears the command ring |
