@@ -12,10 +12,10 @@ index 589d768..5109c65 100644
      src/lib/ps2_pad.cpp
 diff --git a/ps2xRuntime/include/runtime/gs/gs_threaded_backend.h b/ps2xRuntime/include/runtime/gs/gs_threaded_backend.h
 new file mode 100644
-index 0000000..39a9b6f
+index 0000000..b17bf46
 --- /dev/null
 +++ b/ps2xRuntime/include/runtime/gs/gs_threaded_backend.h
-@@ -0,0 +1,45 @@
+@@ -0,0 +1,46 @@
 +#pragma once
 +
 +#include "runtime/gs/gs_backend.h"
@@ -25,7 +25,8 @@ index 0000000..39a9b6f
 +// Runs a GS raster backend on a worker thread. Drawing, CLUT loads, transfers and VRAM writes are
 +// queued in order; calls that observe the result (presentation, VRAM reads and snapshots, local to
 +// host transfers, Sync, clears) first wait for everything queued before them and then run under the
-+// same execution lock as the worker. Enabled with PS2X_GS_THREAD=1 (see gs_frontend.cpp).
++// same execution lock as the worker. On by default; PS2X_GS_THREAD=0 rasterizes on the caller's
++// thread instead (see gs_frontend.cpp).
 +class GSThreadedBackend final : public GSRasterBackend
 +{
 +public:
@@ -59,7 +60,7 @@ index 0000000..39a9b6f
 +    std::unique_ptr<Impl> m_impl;
 +};
 +
-+// Wraps `inner` in a GSThreadedBackend when PS2X_GS_THREAD=1, otherwise returns it unchanged.
++// Wraps `inner` in a GSThreadedBackend unless PS2X_GS_THREAD=0, which returns it unchanged.
 +std::unique_ptr<GSRasterBackend> ps2xMaybeThreadedBackend(std::unique_ptr<GSRasterBackend> inner);
 diff --git a/ps2xRuntime/src/lib/gs/gs_frontend.cpp b/ps2xRuntime/src/lib/gs/gs_frontend.cpp
 index 1cb6e63..a831fc2 100644
@@ -99,7 +100,7 @@ index 1cb6e63..a831fc2 100644
      std::lock_guard<std::mutex> backendLock(m_backendLifetimeMutex);
 diff --git a/ps2xRuntime/src/lib/gs/gs_threaded_backend.cpp b/ps2xRuntime/src/lib/gs/gs_threaded_backend.cpp
 new file mode 100644
-index 0000000..49dd194
+index 0000000..78339a6
 --- /dev/null
 +++ b/ps2xRuntime/src/lib/gs/gs_threaded_backend.cpp
 @@ -0,0 +1,278 @@
@@ -377,7 +378,7 @@ index 0000000..49dd194
 +std::unique_ptr<GSRasterBackend> ps2xMaybeThreadedBackend(std::unique_ptr<GSRasterBackend> inner)
 +{
 +    const char *value = std::getenv("PS2X_GS_THREAD");
-+    if (value != nullptr && value[0] == '1')
-+        return std::make_unique<GSThreadedBackend>(std::move(inner));
-+    return inner;
++    if (value != nullptr && value[0] == '0')
++        return inner;
++    return std::make_unique<GSThreadedBackend>(std::move(inner));
 +}

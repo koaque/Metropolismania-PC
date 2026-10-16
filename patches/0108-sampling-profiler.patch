@@ -1,9 +1,9 @@
 diff --git a/ps2xRuntime/src/lib/Kernel/SamplingProfiler.cpp b/ps2xRuntime/src/lib/Kernel/SamplingProfiler.cpp
 new file mode 100644
-index 0000000..e1acd08
+index 0000000..bb70227
 --- /dev/null
 +++ b/ps2xRuntime/src/lib/Kernel/SamplingProfiler.cpp
-@@ -0,0 +1,152 @@
+@@ -0,0 +1,158 @@
 +// PS2X_PROFILE=1: a small sampling profiler for Windows builds. A background thread samples the
 +// instruction pointer of every other thread in the process about once per millisecond and, every
 +// 15 seconds, prints the hottest functions per thread (names resolved from the PDB with DbgHelp).
@@ -90,15 +90,21 @@ index 0000000..e1acd08
 +                    HANDLE thread = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION, FALSE, tid);
 +                    if (!thread)
 +                        continue;
++                    // Record the sample only after the thread runs again: allocating while it is
++                    // suspended deadlocks if it holds the heap lock.
++                    DWORD64 rip = 0;
++                    bool sampled = false;
 +                    if (SuspendThread(thread) != static_cast<DWORD>(-1))
 +                    {
 +                        CONTEXT context{};
 +                        context.ContextFlags = CONTEXT_CONTROL;
-+                        if (GetThreadContext(thread, &context))
-+                            ++samples[tid][context.Rip];
++                        sampled = GetThreadContext(thread, &context) != FALSE;
++                        rip = context.Rip;
 +                        ResumeThread(thread);
 +                    }
 +                    CloseHandle(thread);
++                    if (sampled)
++                        ++samples[tid][rip];
 +                }
 +
 +                if (now - lastReport > std::chrono::seconds(15))
