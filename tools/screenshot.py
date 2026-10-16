@@ -123,11 +123,19 @@ def main() -> int:
         t0 = time.perf_counter()
         frames.append(capture(hwnd))
         time.sleep(max(0.0, args.interval_ms / 1000.0 - (time.perf_counter() - t0)))
+    # diff_prev: mean absolute green difference against the previous capture (same sample grid).
+    # A still screen should stay near 0; field shimmer or black frames show up as spikes.
+    previous = None
     for i, (width, height, data) in enumerate(frames):
         out = args.out.with_name(f"{args.out.stem}_{i:03d}{args.out.suffix}")
         write_png(out, width, height, data)
-        luma = sum(data[1::40]) / max(1, len(data[1::40]))  # green channel sample
-        print(f"{out.name} mean_green={luma:.1f}")
+        sample = data[1::40]  # green channel sample
+        luma = sum(sample) / max(1, len(sample))
+        diff = ""
+        if previous is not None and len(previous) == len(sample):
+            diff = f" diff_prev={sum(abs(a - b) for a, b in zip(sample, previous)) / max(1, len(sample)):.2f}"
+        previous = sample
+        print(f"{out.name} mean_green={luma:.1f}{diff}")
     return 0
 
 

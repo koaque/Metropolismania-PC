@@ -1,0 +1,49 @@
+diff --git a/ps2xRuntime/src/lib/gs/gs_frontend.cpp b/ps2xRuntime/src/lib/gs/gs_frontend.cpp
+index a831fc2..a0713a5 100644
+--- a/ps2xRuntime/src/lib/gs/gs_frontend.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_frontend.cpp
+@@ -10,6 +10,7 @@
+ #include <cstring>
+ #include <iostream>
+ #include <sstream>
++#include <string>
+ #include <chrono>
+ #include <cstdlib>
+ #include <iostream>
+@@ -25,6 +26,7 @@ namespace
+         uint64_t draws = 0;
+         uint64_t byType[8] = {};
+         std::map<uint32_t, uint64_t> byFbp;
++        std::map<std::string, uint64_t> byFbpCtxt; // "fbp/ctxt/ztst/zbp/scissor"
+         uint64_t zte = 0;
+         uint64_t ztst[4] = {};
+         uint64_t ate = 0;
+@@ -56,6 +58,16 @@ namespace
+         ++s.draws;
+         ++s.byType[primType & 7u];
+         ++s.byFbp[batch.state.context.frame.fbp];
++        {
++            const GSContext &c = batch.state.context;
++            std::ostringstream key;
++            key << std::hex << "0x" << c.frame.fbp << "/c" << (batch.state.prim.ctxt ? 2 : 1)
++                << "/z" << (((c.test >> 16) & 1u) ? static_cast<int>((c.test >> 17) & 3u) : -1)
++                << "/zbp0x" << c.zbuf.zbp << (c.zbuf.zmask ? "m" : "")
++                << "/sc" << c.scissor.x0 << "-" << c.scissor.x1 << "," << c.scissor.y0 << "-" << c.scissor.y1
++                << "/ofy0x" << c.xyoffset.ofy;
++            ++s.byFbpCtxt[key.str()];
++        }
+         const uint64_t test = batch.state.context.test;
+         if (test & (1ull << 16))
+         {
+@@ -85,7 +97,10 @@ namespace
+         out << "} zte=" << s.zte << " ztst(never/always/ge/gt)=" << s.ztst[0] << "/" << s.ztst[1] << "/"
+             << s.ztst[2] << "/" << s.ztst[3] << " ate=" << s.ate << " tme=" << s.tme
+             << " x=[" << s.minX << "," << s.maxX << "] y=[" << s.minY << "," << s.maxY << "]"
+-            << " rasterms=" << static_cast<uint64_t>(s.submitSeconds * 1000.0);
++            << " rasterms=" << static_cast<uint64_t>(s.submitSeconds * 1000.0) << " split{";
++        for (const auto &[key, count] : s.byFbpCtxt)
++            out << key << ":" << count << " ";
++        out << "}";
+         std::cerr << out.str() << std::endl;
+         s = GsDrawStats{};
+         s.last = now;

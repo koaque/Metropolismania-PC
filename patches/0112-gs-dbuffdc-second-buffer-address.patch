@@ -1,0 +1,20 @@
+diff --git a/ps2xRuntime/src/lib/Kernel/Stubs/GS.cpp b/ps2xRuntime/src/lib/Kernel/Stubs/GS.cpp
+index 9c54919..6b43559 100644
+--- a/ps2xRuntime/src/lib/Kernel/Stubs/GS.cpp
++++ b/ps2xRuntime/src/lib/Kernel/Stubs/GS.cpp
+@@ -903,7 +903,14 @@ namespace ps2_stubs
+             zbufAddr = getRegU32(&temp, 2);
+         }
+ 
+-        const uint32_t fbp1 = zbufAddr;
++        // sceGszbufaddr returns the page after *both* frame buffers, so buffer 1 starts one buffer
++        // in (pages are 64x32 pixels, 64x64 for the 16-bit formats). Using zbufAddr itself put
++        // frame buffer 1 on top of the Z buffer: the odd field's depth writes wiped its colour and
++        // the display alternated between a picture and a black frame (heavy flicker).
++        const uint32_t pageRows = (psm & 2u) != 0u ? 64u : 32u;
++        const uint32_t fbp1 = fbw * ((h + pageRows - 1u) / pageRows);
++        if (zbufAddr < fbp1 * 2u)
++            zbufAddr = fbp1 * 2u;
+         const uint64_t dispfb0 = makeDispFb(fbp1, fbw, psm, 0u, 0u);
+         const uint64_t dispfb1 = makeDispFb(0u, fbw, psm, 0u, 0u);
+ 

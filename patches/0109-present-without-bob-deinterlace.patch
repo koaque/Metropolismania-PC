@@ -1,5 +1,5 @@
 diff --git a/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp b/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp
-index 9245313..6182a6a 100644
+index 9245313..01b3981 100644
 --- a/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp
 +++ b/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp
 @@ -1,3 +1,4 @@
@@ -7,13 +7,15 @@ index 9245313..6182a6a 100644
  #include "runtime/gs/gs_cpu_backend.h"
  #include "runtime/gs/ps2_gs_common.h"
  #include "runtime/gs/ps2_gs_psmct16.h"
-@@ -418,6 +419,16 @@ namespace
+@@ -418,6 +419,18 @@ namespace
  
      void applyFieldPresentation(std::vector<uint8_t> &pixels, uint32_t width, uint32_t height, bool oddField)
      {
-+        // Line-selecting "bob" output flickers on a progressive display, and games that render
-+        // each field into its own half-height buffer (e.g. 640x224) lose half of every field.
-+        // Present the whole buffer unless PS2X_DEINTERLACE=bob asks for the old behaviour.
++        // Interlaced with SMODE2.FFMD=0, each field reads every other line of one full-height
++        // buffer, so presenting the whole buffer already shows both fields woven together. The
++        // line-selecting "bob" output flickers on a progressive display; it is only used when
++        // PS2X_DEINTERLACE=bob asks for it. (FFMD=1 games, one half-height buffer per field, are
++        // woven in gs_frontend.cpp instead.)
 +        static const bool bob = []()
 +        {
 +            const char *value = std::getenv("PS2X_DEINTERLACE");

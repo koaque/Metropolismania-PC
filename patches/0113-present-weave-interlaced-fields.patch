@@ -1,0 +1,141 @@
+diff --git a/ps2xRuntime/src/lib/gs/gs_frontend.cpp b/ps2xRuntime/src/lib/gs/gs_frontend.cpp
+index a0713a5..08649cf 100644
+--- a/ps2xRuntime/src/lib/gs/gs_frontend.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_frontend.cpp
+@@ -15,6 +15,7 @@
+ #include <cstdlib>
+ #include <iostream>
+ #include <map>
++#include <mutex>
+ #include <sstream>
+ 
+ namespace
+@@ -110,6 +111,110 @@ namespace
+ namespace
+ {
+     static constexpr uint32_t kHostFrameWidth = 640u;
++    static constexpr uint32_t kHostFrameHeight = 512u;
++
++    // Per frame buffer page: 1 when the last draw into it used a half-line Y offset (OFY & 15 == 8),
++    // 0 when it used a whole-line offset, -1 when nothing was drawn there yet. Read by the field weave.
++    std::atomic<int8_t> s_drawHalfLine[512];
++    struct HalfLineInit
++    {
++        HalfLineInit()
++        {
++            for (auto &entry : s_drawHalfLine)
++                entry.store(-1, std::memory_order_relaxed);
++        }
++    } s_halfLineInit;
++
++    // Interlaced games with SMODE2.FFMD=1 read every line of a half-height buffer (e.g. 640x224) in
++    // each field. Many draw every field into its own buffer, with a half-line Y offset on the odd
++    // field, and flip DISPFB every vsync; shown one after the other on a progressive display, the two
++    // fields shimmer by half a line. While the display keeps alternating between two such buffers,
++    // weave the newest two fields into one full-height frame, the way a TV shows them: still images
++    // come out exact, motion combs like any weave. When the game is slower than the field rate (the
++    // same buffer stays up for several vsyncs) single fields are presented as before.
++    // PS2X_DEINTERLACE=off (or =bob, see gs_cpu_backend.cpp) always presents single fields.
++    void weaveInterlacedFields(const GSPresentationRequest &request, PresentationFrame &frame)
++    {
++        static const bool enabled = []()
++        {
++            const char *value = std::getenv("PS2X_DEINTERLACE");
++            return value == nullptr || (std::strcmp(value, "off") != 0 && std::strcmp(value, "bob") != 0);
++        }();
++        struct State
++        {
++            std::vector<uint8_t> current; // newest field of the displayed buffer
++            std::vector<uint8_t> other;   // newest field of the buffer displayed before it
++            uint32_t fbp = 0xFFFFFFFFu;
++            uint32_t otherFbp = 0xFFFFFFFFu;
++            uint32_t width = 0u;
++            uint32_t height = 0u;
++            uint64_t tick = 0u;
++            uint32_t flips = 0u; // buffer changes since the display last held one buffer for 3 vsyncs
++            uint32_t holds = 0u; // vsyncs in a row on the same buffer
++        };
++        static std::mutex mutex;
++        static State state;
++        static bool s_weaving = false;
++
++        const bool fieldBuffers = (request.smode2 & 0x3ull) == 0x3ull; // INT=1, FFMD=1
++        const size_t stride = static_cast<size_t>(kHostFrameWidth) * 4u;
++        std::lock_guard<std::mutex> lock(mutex);
++        if (!enabled || !fieldBuffers || frame.width > kHostFrameWidth || frame.height * 2u > kHostFrameHeight ||
++            frame.pixels.size() < stride * frame.height * 2u)
++        {
++            state.fbp = state.otherFbp = 0xFFFFFFFFu;
++            state.flips = state.holds = 0u;
++            return;
++        }
++
++        // Count flips with some hysteresis, so a game that drops a field now and then (A B B A B ...)
++        // keeps one presentation mode instead of toggling between woven and single fields.
++        const bool continuous = state.fbp != 0xFFFFFFFFu && request.vsyncTick > state.tick &&
++                                request.vsyncTick - state.tick <= 2u && frame.width == state.width && frame.height == state.height;
++        if (!continuous)
++        {
++            state.otherFbp = 0xFFFFFFFFu;
++            state.flips = state.holds = 0u;
++        }
++        else if (frame.displayFbp != state.fbp)
++        {
++            state.other.swap(state.current);
++            state.otherFbp = state.fbp;
++            ++state.flips;
++            state.holds = 0u;
++        }
++        else if (++state.holds >= 3u)
++        {
++            state.flips = 0u;
++        }
++        state.current.assign(frame.pixels.begin(), frame.pixels.begin() + stride * frame.height);
++        state.fbp = frame.displayFbp;
++        state.width = frame.width;
++        state.height = frame.height;
++        state.tick = request.vsyncTick;
++
++        const int8_t currentHalf = s_drawHalfLine[state.fbp & 0x1FFu].load(std::memory_order_relaxed);
++        const int8_t otherHalf =
++            state.otherFbp != 0xFFFFFFFFu ? s_drawHalfLine[state.otherFbp & 0x1FFu].load(std::memory_order_relaxed) : -1;
++        const bool weave = state.flips >= 2u && currentHalf >= 0 && otherHalf >= 0 && currentHalf != otherHalf;
++        if (weave != s_weaving)
++        {
++            s_weaving = weave;
++            std::cerr << "[gs:present] field weave " << (weave ? "on" : "off") << " at vsync " << request.vsyncTick << std::endl;
++        }
++        if (!weave)
++            return;
++        // The field drawn with the half-line offset samples the picture half a line lower: odd lines.
++        const uint8_t *even = currentHalf ? state.other.data() : state.current.data();
++        const uint8_t *odd = currentHalf ? state.current.data() : state.other.data();
++        const size_t rowBytes = static_cast<size_t>(frame.width) * 4u;
++        for (uint32_t y = 0; y < state.height; ++y)
++        {
++            std::memcpy(frame.pixels.data() + (2u * y) * stride, even + y * stride, rowBytes);
++            std::memcpy(frame.pixels.data() + (2u * y + 1u) * stride, odd + y * stride, rowBytes);
++        }
++        frame.height = state.height * 2u;
++    }
+ 
+     GSPrimReg decodePrimRegister(uint64_t value)
+     {
+@@ -647,6 +752,8 @@ void GS::latchHostPresentationFrame()
+             frame = m_backend->Present(request);
+         }
+     }
++    if (frame)
++        weaveInterlacedFields(request, frame);
+ 
+     const bool hasFrame = static_cast<bool>(frame);
+     const uint32_t displayFbp = frame.displayFbp;
+@@ -1672,6 +1779,8 @@ void GS::vertexKick(bool drawing)
+     if (drawing && m_backend)
+     {
+         GSPrimitiveBatch batch = buildDrawBatch(needed);
++        s_drawHalfLine[batch.state.context.frame.fbp & 0x1FFu].store(
++            (batch.state.context.xyoffset.ofy & 0xFu) >= 8u ? 1 : 0, std::memory_order_relaxed);
+         if (gsStatsEnabled())
+             gsStatsRecord(batch, static_cast<uint32_t>(m_prim.type));
+         updatePreferredDisplaySourceForDraw(batch);

@@ -134,10 +134,61 @@ namespace
         std::cerr << "[mm] movies will be skipped (MMPC_SKIP_MOVIES=1)" << std::endl;
     }
 
+    // ------------------------------------------------------------------ MMPC_TRACE_GS=1
+    // Logs the first double-buffer swaps: which buffer is displayed, where each context draws and
+    // what the clear packet targets (sceGsDBuffDc layout: disp[2] 0x00, giftag0 0x50, draw01 0x60,
+    // draw02 0xE0, clear0 0x160, giftag1 0x1C0, draw11 0x1D0, draw12 0x250, clear1 0x2D0).
+    constexpr uint32_t kGsSwapDBuffDc = 0x00103D08u;
+    PS2Runtime::RecompiledFunction g_originalSwapDBuffDc = nullptr;
+
+    uint64_t guestRead64(const uint8_t *rdram, uint32_t address)
+    {
+        uint64_t value = 0;
+        std::memcpy(&value, rdram + (address & 0x01FFFFF8u), sizeof(value));
+        return value;
+    }
+
+    void tracedSwapDBuffDc(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+    {
+        static uint32_t calls = 0;
+        const uint32_t db = getRegU32(ctx, 4);
+        const uint32_t which = getRegU32(ctx, 5) & 1u;
+        if (calls++ < 6u)
+        {
+            const uint32_t set = which ? 0x1D0u : 0x60u;
+            const uint32_t clear = which ? 0x2D0u : 0x160u;
+            const uint64_t dispfb = guestRead64(rdram, db + which * 40u + 16u);
+            const uint64_t otherDispfb = guestRead64(rdram, db + (which ^ 1u) * 40u + 16u);
+            const uint64_t frame1 = guestRead64(rdram, db + set);
+            const uint64_t frame2 = guestRead64(rdram, db + set + 0x80u);
+            const uint64_t xyoff1 = guestRead64(rdram, db + set + 0x20u);
+            const uint64_t xyoff2 = guestRead64(rdram, db + set + 0x80u + 0x20u);
+            const uint64_t prim = guestRead64(rdram, db + clear + 0x10u);
+            const uint64_t xyzA = guestRead64(rdram, db + clear + 0x30u);
+            const uint64_t xyzB = guestRead64(rdram, db + clear + 0x40u);
+            std::cerr << std::hex << "[mm:gs] swap which=" << which << " display.fbp=0x" << (dispfb & 0x1FF)
+                      << " (other disp.fbp=0x" << (otherDispfb & 0x1FF) << ") frame1.fbp=0x" << (frame1 & 0x1FF)
+                      << " frame2.fbp=0x" << (frame2 & 0x1FF) << " xyoff1=0x" << xyoff1 << " xyoff2=0x" << xyoff2
+                      << " clear.prim=0x" << prim << " ctxt=" << ((prim >> 9) & 1) << " xyzA=0x" << xyzA << " xyzB=0x" << xyzB
+                      << std::dec << std::endl;
+        }
+        g_originalSwapDBuffDc(rdram, ctx, runtime);
+    }
+
+    void installGsTrace(PS2Runtime &runtime)
+    {
+        const char *flag = std::getenv("MMPC_TRACE_GS");
+        if (!flag || std::strcmp(flag, "1") != 0)
+            return;
+        g_originalSwapDBuffDc = runtime.lookupFunction(kGsSwapDBuffDc);
+        runtime.registerFunction(kGsSwapDBuffDc, tracedSwapDBuffDc);
+    }
+
     void applyMetropolismaniaOverrides(PS2Runtime &runtime)
     {
         installTrace(runtime);
         installMovieSkip(runtime);
+        installGsTrace(runtime);
     }
 }
 
