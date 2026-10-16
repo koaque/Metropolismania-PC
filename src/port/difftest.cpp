@@ -2,7 +2,8 @@
 //
 // Capture: MMPC_CAPTURE=<names or 0xADDRs, comma separated, or "ported"> during a normal run records
 // MMPC_CAPTURE_MAX calls (default 8) of each listed function, every MMPC_CAPTURE_EVERY-th call (default 1,
-// so the first ones), into MMPC_CAPTURE_DIR/<name>/<n>.mmdt:
+// so the first ones; "exp" takes calls 1, 8, 64, 512 ... so busy and rare functions both spread over the run),
+// into MMPC_CAPTURE_DIR/<name>/<n>.mmdt:
 // the CPU context at entry, all of RDRAM (deflate) and the scratchpad. Ported functions are not installed
 // during a capture, so the records show the original code at work. Records are game-derived: they stay
 // in work/difftest/ and are never committed.
@@ -23,16 +24,20 @@
 
 #include <algorithm>
 #include <atomic>
+#include <bit>
 #include <chrono>
+#include <condition_variable>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <deque>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -105,26 +110,84 @@ namespace port
         std::map<uint32_t, CaptureTarget> g_targets;
         std::filesystem::path g_captureDir;
         uint32_t g_captureMax = 8;
-        uint32_t g_captureEvery = 1;
+        uint32_t g_captureEvery = 1; // 0: exponential, calls 1, 8, 64, 512 ...
 
-        void writeRecord(const std::filesystem::path &path, const R5900Context &ctx)
+        bool sampleCall(uint64_t call)
+        {
+            if (g_captureEvery != 0)
+                return call % g_captureEvery == 0;
+            // call is 0-based: record calls 1, 8, 64 ... (counted from 1), the powers of 8.
+            const uint64_t n = call + 1;
+            return (n & (n - 1)) == 0 && std::countr_zero(n) % 3 == 0;
+        }
+
+        // A record waiting to be compressed and written. The game thread only copies memory (a few ms);
+        // a writer thread does the slow part, so captures barely slow the game down.
+        struct PendingRecord
+        {
+            std::filesystem::path path;
+            R5900Context ctx;
+            std::vector<uint8_t> rdram;
+            std::vector<uint8_t> scratchpad;
+        };
+
+        std::mutex g_queueMutex;
+        std::condition_variable g_queueChanged;
+        std::deque<std::unique_ptr<PendingRecord>> g_queue;
+        constexpr size_t kMaxPending = 12; // 32 MB each
+
+        void writeRecord(const PendingRecord &rec)
         {
             int packedSize = 0;
-            unsigned char *packed = CompressData(g_rdram, static_cast<int>(PS2_RAM_SIZE), &packedSize);
+            unsigned char *packed = CompressData(rec.rdram.data(), static_cast<int>(rec.rdram.size()), &packedSize);
             if (!packed)
             {
-                std::cerr << "[difftest] compression failed for " << path.string() << std::endl;
+                std::cerr << "[difftest] compression failed for " << rec.path.string() << std::endl;
                 return;
             }
-            std::ofstream out(path, std::ios::binary);
-            const uint32_t header[4] = {kVersion, static_cast<uint32_t>(sizeof(R5900Context)), static_cast<uint32_t>(packedSize),
-                                        PS2_SCRATCHPAD_SIZE};
-            out.write(kMagic, 4);
-            out.write(reinterpret_cast<const char *>(header), sizeof(header));
-            out.write(reinterpret_cast<const char *>(&ctx), sizeof(R5900Context));
-            out.write(reinterpret_cast<const char *>(packed), packedSize);
-            out.write(reinterpret_cast<const char *>(g_scratchpad), PS2_SCRATCHPAD_SIZE);
+            const std::filesystem::path temp = rec.path.string() + ".part";
+            {
+                std::ofstream out(temp, std::ios::binary);
+                const uint32_t header[4] = {kVersion, static_cast<uint32_t>(sizeof(R5900Context)), static_cast<uint32_t>(packedSize),
+                                            PS2_SCRATCHPAD_SIZE};
+                out.write(kMagic, 4);
+                out.write(reinterpret_cast<const char *>(header), sizeof(header));
+                out.write(reinterpret_cast<const char *>(&rec.ctx), sizeof(R5900Context));
+                out.write(reinterpret_cast<const char *>(packed), packedSize);
+                out.write(reinterpret_cast<const char *>(rec.scratchpad.data()), PS2_SCRATCHPAD_SIZE);
+            }
             MemFree(packed);
+            std::error_code ec;
+            std::filesystem::rename(temp, rec.path, ec); // a killed run leaves only .part files behind
+        }
+
+        void writerLoop()
+        {
+            for (;;)
+            {
+                std::unique_ptr<PendingRecord> rec;
+                {
+                    std::unique_lock<std::mutex> lock(g_queueMutex);
+                    g_queueChanged.wait(lock, [] { return !g_queue.empty(); });
+                    rec = std::move(g_queue.front());
+                    g_queue.pop_front();
+                }
+                g_queueChanged.notify_all();
+                writeRecord(*rec);
+            }
+        }
+
+        void queueRecord(const std::filesystem::path &path, const R5900Context &ctx)
+        {
+            auto rec = std::make_unique<PendingRecord>();
+            rec->path = path;
+            rec->ctx = ctx;
+            rec->rdram.assign(g_rdram, g_rdram + PS2_RAM_SIZE);
+            rec->scratchpad.assign(g_scratchpad, g_scratchpad + PS2_SCRATCHPAD_SIZE);
+            std::unique_lock<std::mutex> lock(g_queueMutex);
+            g_queueChanged.wait(lock, [] { return g_queue.size() < kMaxPending; });
+            g_queue.push_back(std::move(rec));
+            g_queueChanged.notify_all();
         }
 
         void captureEntry(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
@@ -134,13 +197,13 @@ namespace port
             if (it == g_targets.end())
                 fatal("capture wrapper reached for an unknown address", address);
             CaptureTarget &target = it->second;
-            if (target.taken < g_captureMax && target.calls++ % g_captureEvery == 0)
+            if (target.taken < g_captureMax && sampleCall(target.calls++))
             {
                 const std::filesystem::path dir = g_captureDir / target.name;
                 std::filesystem::create_directories(dir);
                 char file[32];
                 std::snprintf(file, sizeof(file), "%03u.mmdt", target.taken);
-                writeRecord(dir / file, *ctx);
+                queueRecord(dir / file, *ctx);
                 ++target.taken;
                 std::cerr << "[difftest] captured " << target.name << " #" << target.taken << std::endl;
             }
@@ -203,6 +266,7 @@ namespace port
             std::vector<uint8_t> scratchpad;
             bool returned = false;
             bool switched = false;
+            std::string fault;
         };
 
         void runOnce(PS2Runtime &runtime, GuestFn fn, uint32_t address, const Record &rec, Outcome &out)
@@ -221,8 +285,12 @@ namespace port
             {
                 out.switched = true;
             }
+            catch (const Fault &e)
+            {
+                out.fault = e.what();
+            }
             runtime.eeScheduler().leaveNoPreempt();
-            out.returned = !out.switched && (out.ctx.pc == kReturnSentinel || out.ctx.pc == address);
+            out.returned = !out.switched && out.fault.empty() && (out.ctx.pc == kReturnSentinel || out.ctx.pc == address);
             out.rdram.assign(g_rdram, g_rdram + PS2_RAM_SIZE);
             out.scratchpad.assign(g_scratchpad, g_scratchpad + PS2_SCRATCHPAD_SIZE);
         }
@@ -249,6 +317,10 @@ namespace port
                 std::snprintf(text, sizeof(text), "0x%llx", static_cast<unsigned long long>(v));
                 return std::string(text);
             };
+            if (!a.fault.empty())
+                diffs.push_back("original faulted: " + a.fault);
+            if (!b.fault.empty())
+                diffs.push_back("ported faulted: " + b.fault);
             if (!a.returned || !b.returned)
                 diffs.push_back(std::string("did not return: original ") + (a.returned ? "returned" : a.switched ? "switched thread" : "stopped") +
                                 ", ported " + (b.returned ? "returned" : b.switched ? "switched thread" : "stopped"));
@@ -387,7 +459,7 @@ namespace port
         if (const char *max = env("MMPC_CAPTURE_MAX"))
             g_captureMax = static_cast<uint32_t>(std::strtoul(max, nullptr, 0));
         if (const char *every = env("MMPC_CAPTURE_EVERY"))
-            g_captureEvery = std::max<uint32_t>(1u, static_cast<uint32_t>(std::strtoul(every, nullptr, 0)));
+            g_captureEvery = std::strcmp(every, "exp") == 0 ? 0u : std::max<uint32_t>(1u, static_cast<uint32_t>(std::strtoul(every, nullptr, 0)));
         std::vector<uint32_t> addresses;
         for (const std::string &item : splitList(list))
         {
@@ -405,6 +477,9 @@ namespace port
             }
             addresses.push_back(address);
         }
+        if (!addresses.empty())
+            for (int i = 0; i < 4; ++i)
+                std::thread(writerLoop).detach();
         for (uint32_t address : addresses)
         {
             if (g_targets.count(address))
@@ -423,6 +498,7 @@ namespace port
         if (!dirText)
             return;
         const std::filesystem::path dir(dirText);
+        setFaultsThrow(true);
         size_t records = 0, failed = 0, functions = 0, untested = 0;
         // results.json: per function, how many records ran and failed (tools/port_status.py reads it).
         std::string results = "{\n";

@@ -24,7 +24,7 @@ Families: the residents who move into the city.
 
 ## Functions
 
-36 functions (ported 1, typed 33, verified 2). Blocks: 5 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+36 functions (typed 28, verified 8). Blocks: 5 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -35,7 +35,7 @@ Families: the residents who move into the city.
 | `0x0013BD90` | `int mm_MemberStatus_IsLevelAbove13(int family, int member)` | 56 | no | lookup, then level > 13 |
 | `0x0013BE20` | `void mm_MemberStatus_Advance(int family, int member)` | 168 | no | level > 1 bumps bits 2-3 (up to 2), then updates bits 0-1 |
 | `0x0013BF60` | `int mm_MemberStatus_OnLevel12(int family, int member, int a2, int a3)` | 112 | no | when the level is above 11, applies the friendship gain (0x13CB40) |
-| `0x0013C0F0` | `void mm_MemberStatus_Tick(int family, int member)` | 336 | no | every 600 s the level rises (up to 12); daily and yearly resets of the low bits |
+| `0x0013C0F0` | `void mm_MemberStatus_Tick(int clock, int month)` | 336 | no | every 600 s the level rises (up to 12); daily and yearly resets of the low bits |
 | `0x0013C240` | `void mm_Family_BefriendAll(void)` | 732 | no | every member becomes a friend with meter 64 and every family known (bitset B); from a laptop entry |
 | `0x0013C520` | `void mm_Family_ResetForStage(void)` | 204 | no | clears bitsets A and C and the counters for a new stage |
 | `0x0013C5F0` | `int mm_Family_MakePhoneNumber(int family)` | 352 | no | (provisional) phone number for the Town's Pages from the family id (a0 * 0x61 + 0x1B08) |

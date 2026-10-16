@@ -5,6 +5,7 @@
 #include "ps2_runtime.h"
 
 #include <cstdint>
+#include <stdexcept>
 #include <vector>
 
 namespace port
@@ -31,5 +32,14 @@ namespace port
     void install(PS2Runtime &runtime);
 
     const std::vector<Ported> &ported();
+
+    // A port error (a guest pointer into hardware registers, a guest callee that did not return, a thread
+    // switch inside ported code). In a game run it stops the process; during a difftest replay
+    // (faultsThrow) it is thrown and reported against the record instead.
+    struct Fault : std::runtime_error
+    {
+        using std::runtime_error::runtime_error;
+    };
+    void setFaultsThrow(bool on);
     const char *nameOf(uint32_t address);
 }

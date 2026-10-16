@@ -20,7 +20,7 @@ placement checks (`mm_Placement_*`) and the per-object history (`mm_MapObj_*`) a
 
 ## Functions
 
-98 functions (typed 98). Blocks: 12 can reach a thread switch, 8 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+98 functions (typed 71, verified 27). Blocks: 12 can reach a thread switch, 8 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -62,9 +62,9 @@ placement checks (`mm_Placement_*`) and the per-object history (`mm_MapObj_*`) a
 | `0x001412E0` | `int mm_Map_GetTileKind(CityMap *map, int tile)` | 80 | no | tile kind 0..3 from tile flags (flag 4 = 2, flag 2 = 1) |
 | `0x00141330` | `void mm_Map_SetTileHeight(CityMap *map, uint32_t tile, float height)` | 76 | no | tile a2's height word = a0, then updates its geometry |
 | `0x00141380` | `void mm_Map_SetAreaHeight(CityMap *map, int x, int z, int size, float height)` | 244 | no | sets the height of an a4 x a4 area to a0 and updates the tile geometry |
-| `0x00141480` | `void mm_Map_GetTileVertexClamped(CityMap *map, int x, int z, uint32_t *out)` | 144 | no | copies the tile's vertex data (+4..+0x10) at clamped coordinates into a3 |
-| `0x00141510` | `float mm_Map_GetTileVertex(CityMap *map, int tile, uint32_t *out)` | 80 | no | tile a1's vertex data (+4..+0x10) into a2 |
-| `0x00141560` | `float mm_Map_GetTileHeightWord(CityMap *map, int tile)` | 28 | no | tile a1's height word (+0) |
+| `0x00141480` | `void mm_Map_GetTileVertexClamped(CityMap *map, int x, int z, float *out)` | 144 | no | copies the tile's vertex data (+4..+0x10) at clamped coordinates into a3 |
+| `0x00141510` | `float mm_Map_GetTileVertex(CityMap *map, int tile, float *out)` | 80 | no | copies tile a1's four vertex floats (+4..+0x10) into a2 and returns the last one |
+| `0x00141560` | `float mm_Map_GetTileHeightWord(CityMap *map, int tile)` | 28 | no | tile a1's height (+0, a float, loaded with lwc1) |
 | `0x00141580` | `float mm_Map_GetHeightAt(CityMap *map, int x, int z)` | 92 | no | height word at clamped (a1, a2) |
 | `0x001415E0` | `float mm_Map_SampleHeight(CityMap *map, float x, float z)` | 676 | no | terrain height at world (a0, a1), interpolated over the tile's triangles |
 | `0x001418D0` | `void mm_Map_UpdateTileGeometry(CityMap *map, int x, int z)` | 1536 | no | recomputes tile (a1, a2)'s vertices and normals |
@@ -76,7 +76,7 @@ placement checks (`mm_Placement_*`) and the per-object history (`mm_MapObj_*`) a
 | `0x00142790` | `MapPerson *mm_Map_FindPersonEntry(CityMap *map, int16_t family, uint16_t member)` | 148 | no | (provisional) searches the people records for (a1, a2) |
 | `0x00142830` | `MapObject *mm_Map_FindPersonObjectOnTile(CityMap *map, uint32_t person, uint32_t tile)` | 216 | no | object on tile a2 whose people list holds person a1 (skipped for people with flag 0x800) |
 | `0x00142910` | `MapPerson *mm_Map_FindPersonOfFlaggedType(CityMap *map, int16_t home)` | 132 | no | (provisional) first person of a flag-1 character type whose home (+0x28) is a1 |
-| `0x001429A0` | `MapPerson *mm_Map_FindWorkerOnTile(CityMap *map, int16_t work, uint32_t tile)` | 200 | no | (provisional) walks a tile's objects for a person working at building a1 |
+| `0x001429A0` | `MapPerson *mm_Map_FindWorkerOnTile(CityMap *map, uint16_t work, uint32_t tile)` | 200 | no | (provisional) walks a tile's objects for a person working at building a1 |
 | `0x00142A70` | `void mm_People_RemoveChain(CityMap *map, uint16_t *head)` | 68 | no | marks every person in the chain from *a1 removed (flag 0x800) and clears the head |
 | `0x00142AC0` | `MapPerson *mm_People_Next(CityMap *map, uint16_t *cursor)` | 64 | no | *a1 = next person in its list (+0x10), unless it is 6000 |
 | `0x00142B00` | `int mm_People_UnlinkFromList(CityMap *map, uint16_t *head, uint32_t person)` | 96 | no | unlinks person a2 from the list starting at *a1 and flags it 0x800; 1 if found |
@@ -114,7 +114,7 @@ placement checks (`mm_Placement_*`) and the per-object history (`mm_MapObj_*`) a
 | `0x001458A0` | `CityMap *mm_MapObjects_dtor(CityMap *map, int16_t deleteFlag)` | 156 | yes | vtable 0x1BCEF0, frees objects and lists, tile-level destructor |
 | `0x00145940` | `CityMap *mm_MapObjects_ctor(CityMap *map)` | 680 | yes | tile-level constructor, vtable 0x1BCEF0, object records and tile lists |
 | `0x00145C00` | `void mm_Map_SetPlacementHighlight(CityMap *map, int mode, int32_t *rect, uint32_t *colour)` | 8 | no | (provisional) footprint highlight on the terrain: mode a1 (1/2), rectangle a2, colour a3 (member +0x2F88) |
-| `0x00145C10` | `void mm_Terrain_AddQuad(int a0, uint32_t *a1, uint32_t *a2, uint32_t *a3, uint32_t *t0, int t1, int t2, int t3)` | 204 | no | (provisional) appends a quad to the terrain buffer (limit 0x9BD) |
+| `0x00145C10` | `void mm_Terrain_AddQuad(CityMap *map, Vec4 *a, Vec4 *b, Vec4 *c, Vec4 *d, int t1, int t2, int t3)` | 204 | no | (provisional) appends a quad to the terrain buffer (limit 0x9BD) |
 | `0x00145CE0` | `void mm_Terrain_BuildStrip(int a0, int a1, int a2, uint64_t *a3, uint64_t *t0, uint64_t *t1, uint64_t *t2)` | 2592 | no | (provisional) 2.5 KB terrain strip builder |
 | `0x00146700` | `void mm_Terrain_DrawPatch(CityMap *map, int x, int z, int a3, float f12, float f13, float f14)` | 1064 | indirect | (provisional) builds one visible terrain patch |
 | `0x00146B30` | `void mm_Terrain_Draw(CityMap *map, int a1, Vec4 *a2, int a3, int t0, int t1, float f12)` | 2424 | no | (provisional) culls and draws the terrain around the camera |

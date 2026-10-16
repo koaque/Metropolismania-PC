@@ -8,6 +8,19 @@
 
 namespace mm
 {
+// ---- 02_math.h
+/* Math types shared by the game's structs; parsed before the classes that embed them. */
+
+struct Vec4;
+
+/* VU0-style vector (0x10 bytes); a 4x4 matrix is four of them. */
+struct Vec4 {
+    ps2f x;                   /* +0x00 */
+    ps2f y;                   /* +0x04 */
+    ps2f z;                   /* +0x08 */
+    ps2f w;                   /* +0x0C */
+};
+
 // ---- 05_classes.h
 /* Game classes whose layout is not mapped yet: named types at their real allocation sizes (from the
    operator new call before each constructor), so prototypes and decompiles carry the class name.
@@ -37,6 +50,7 @@ struct WantsWin;
 struct Laptop;
 struct Player;
 struct Applicants;
+struct ApplicantEntry;
 struct Markers;
 struct Notice;
 struct TownPages;
@@ -52,27 +66,77 @@ struct LayerF;
 struct LayerG;
 
 /* Text box (0x40 bytes), mm_TextBox_Init builds one. */
-struct TextBox { uint8_t data[0x40]; };
+struct TextBox {
+    uint8_t unk_00[0x2C];
+    int32_t cursor;            /* +0x2C reset by mm_TextBox_SetText */
+    uint8_t unk_30[0x10];
+};
 /* Window frame (0xC0 bytes). */
-struct Frame { uint8_t data[0xC0]; };
+struct Frame {
+    uint8_t unk_00[0x60];
+    uint32_t cornerA;          /* +0x60 GS XY of the top left (mm_Frame_SetRect), or colour bytes (mm_Frame_SetColor) */
+    uint8_t unk_64[0x1C];
+    uint32_t cornerB;          /* +0x80 GS XY of the bottom right, or colour bytes */
+    uint8_t unk_84[0x20];
+    int32_t x;                 /* +0xA4 */
+    int32_t y;                 /* +0xA8 */
+    int32_t width;             /* +0xAC */
+    int32_t height;            /* +0xB0 */
+    uint8_t unk_B4[0xC];
+};
 /* Model instance from a .A3D file (0x60 bytes). */
-struct A3DObject { uint8_t data[0x60]; };
+struct A3DObject {
+    GuestPtr<void> model;               /* +0x00 the loaded .A3D data (node array at +8) */
+    uint8_t unk_04[0xC];
+    Vec4 matrix[4];            /* +0x10 object matrix (mm_Player_GetMatrix) */
+    GuestPtr<void> meshes;              /* +0x50 table of mesh pointers (mm_A3D_GetMeshField0C) */
+    uint8_t unk_54[0xC];
+};
 /* Camera (0x310 bytes). */
-struct Camera { uint8_t data[0x310]; };
-/* City camera with the sky (0x540 bytes); eye at +0x130, target at +0x140. */
-struct CityCamera { uint8_t data[0x540]; };
+struct Camera {
+    uint8_t unk_000[0x110];
+    Vec4 fogA;                 /* +0x110 (0, 0, 0, fog coefficient) from mm_Camera_SetFogRange */
+    Vec4 fogB;                 /* +0x120 (0, 0, 0, fog coefficient) */
+    Vec4 eye;                  /* +0x130 */
+    Vec4 target;               /* +0x140 */
+    uint8_t unk_150[0x1B4];
+    ps2f fogFar;              /* +0x304 */
+    ps2f fogNear;             /* +0x308 */
+    uint8_t unk_30C[4];
+};
+/* City camera with the sky (0x540 bytes): a camera plus the zoom level and sky packets. */
+struct CityCamera {
+    Camera base;
+    uint8_t unk_310[0x220];
+    int32_t zoomLevel;         /* +0x530 0..3, L1/R1 and L2/R2 */
+    uint8_t unk_534[0xC];
+};
 /* Disc file handle (0x8 bytes), mm_File_*. */
-struct GameFile { uint8_t data[0x8]; };
+struct GameFile {
+    int32_t fd;                /* +0x00 -1 when closed */
+    int32_t async;             /* +0x04 requests go through the file queue */
+};
 /* Sprite from a .TEX file (0x38 bytes). */
 struct TexSprite { uint8_t data[0x38]; };
 /* Light set (0x1B0 bytes). */
-struct LightSet { uint8_t data[0x1B0]; };
+struct LightSet {
+    GuestPtr<void> unk_00;              /* +0x00 object whose +0x20 mm_LightSet_SetField20 sets */
+    uint8_t unk_04[0x1AC];
+};
 /* List menu widget (0x2A0 bytes). */
 struct ListMenu { uint8_t data[0x2A0]; };
 /* Loading screen (0x28 bytes). */
 struct LoadingScreen { uint8_t data[0x28]; };
 /* Memory card manager (0x28 bytes). */
-struct McManager { uint8_t data[0x28]; };
+struct McManager {
+    GuestPtr<void> queue;               /* +0x00 memory card request queue object */
+    int32_t state;             /* +0x04 step of the current operation */
+    uint8_t unk_08[0xC];
+    int32_t request;           /* +0x14 last queued request */
+    uint8_t unk_18[8];
+    GuestPtr<GameFile> file;            /* +0x20 */
+    int32_t fd;                /* +0x24 open save file descriptor */
+};
 /* Name entry window (0x124 bytes). */
 struct NameEntry { uint8_t data[0x124]; };
 /* Scene A: logos, memory card check, title (0x104 bytes). */
@@ -86,25 +150,66 @@ struct PauseMenu { uint8_t data[0x99C]; };
 /* Minimap (0x21DC bytes). */
 struct Minimap { uint8_t data[0x21DC]; };
 /* City cursor (0x1E0 bytes). */
-struct CityCursor { uint8_t data[0x1E0]; };
+struct CityCursor {
+    uint8_t unk_000[0x1A4];
+    int32_t targetId;          /* +0x1A4 */
+    uint16_t targetKind;       /* +0x1A8 */
+    uint8_t unk_1AA[6];
+    Vec4 targetPos;            /* +0x1B0 */
+    uint8_t unk_1C0[0x20];
+};
 /* Phone call manager (0x7C bytes). */
 struct PhoneCalls { uint8_t data[0x7C]; };
 /* Event manager (0xB0 bytes); +0xA4 and +0xA8 are the events the talk script works with. */
 struct EventMgr { uint8_t data[0xB0]; };
 /* Wants window (0x544 bytes); starts with the 0x504-byte wants list. */
-struct WantsWin { uint8_t data[0x544]; };
+struct WantsWin {
+    uint16_t counters[2];      /* +0x00 cleared by mm_Wants_ctor */
+    uint8_t unk_004[0x540];
+};
 /* Laptop menu (0x3E0 bytes). */
 struct Laptop { uint8_t data[0x3E0]; };
 /* Player character (0x90 bytes). */
-struct Player { uint8_t data[0x90]; };
-/* Applicants list (0x350 bytes): 32 entries of 0x14 bytes, count at +0x280. */
-struct Applicants { uint8_t data[0x350]; };
+struct Player {
+    int32_t mode;              /* +0x00 0 turn, 1 walk (Cross lays road), 2 place for applicant, 5 place bag item */
+    uint8_t unk_04[0xC];
+    Vec4 position;             /* +0x10 */
+    uint8_t unk_20[0x2C];
+    ps2f jumpSpeed;           /* +0x4C */
+    uint8_t unk_50[0x34];
+    int32_t jumps;             /* +0x84 */
+    GuestPtr<A3DObject> model;          /* +0x88 */
+    uint8_t unk_8C[4];
+};
+/* Applicant list entry (0x14 bytes). */
+struct ApplicantEntry {
+    uint16_t index;            /* +0x00 own index */
+    int16_t state;             /* +0x02 0 free, 2 waiting */
+    uint16_t family;           /* +0x04 */
+    uint8_t unk_06[0xE];
+};
+/* Applicants list (0x350 bytes). */
+struct Applicants {
+    ApplicantEntry entries[32]; /* +0x000 */
+    int32_t count;             /* +0x280 */
+    int32_t unk_284;           /* +0x284 */
+    uint8_t unk_288[0xC8];
+};
 /* Markers model (0x130 bytes). */
 struct Markers { uint8_t data[0x130]; };
 /* Notice line (0x14 bytes). */
-struct Notice { uint8_t data[0x14]; };
+struct Notice {
+    int32_t id;                /* +0x00 shown notice, -1 none */
+    int32_t timer;             /* +0x04 frames left */
+    uint8_t unk_08[8];
+    int32_t unk_10;            /* +0x10 */
+};
 /* Town's Pages phone book (0x64 bytes). */
-struct TownPages { uint8_t data[0x64]; };
+struct TownPages {
+    uint8_t unk_00[0x40];
+    int32_t pageEntries;       /* +0x40 entries on the current page (up to 10) */
+    uint8_t unk_44[0x20];
+};
 /* Per-event handler data (base 0x1C bytes; some handlers use 0x7C), the first argument of every mm_Ev*_ slot. */
 struct EventData { uint8_t data[0x1C]; };
 /* Character type class object (0x24 bytes; the person class is 0x28 with its walking speed at +0x24),
@@ -116,9 +221,22 @@ struct TexImage { uint8_t data[0x1010]; };
    A: rotated mesh instances (0x2440); B: two-packet layer (0x230); C: buildings on visible tiles (0x240);
    D: sky by the clock (0x410); E: projected, randomly placed sprites (0x6E0); F: single packet (0x140);
    G: animated water waves (0x2E0). */
-struct LayerA { uint8_t data[0x2440]; };
+struct LayerA {
+    uint8_t unk_0000[0x2430];
+    int32_t count;             /* +0x2430 instances this frame */
+    uint8_t unk_2434[8];
+    int32_t source;            /* +0x243C */
+};
 struct LayerB { uint8_t data[0x230]; };
-struct LayerC { uint8_t data[0x240]; };
+struct LayerC {
+    uint8_t unk_000[0x21C];
+    int32_t rectActive;        /* +0x21C 1: only tiles inside the rectangle (mm_LayerC_InTileRect) */
+    int32_t rectX0;            /* +0x220 */
+    int32_t rectZ0;            /* +0x224 */
+    int32_t rectX1;            /* +0x228 */
+    int32_t rectZ1;            /* +0x22C */
+    uint8_t unk_230[0x10];
+};
 struct LayerD { uint8_t data[0x410]; };
 struct LayerE { uint8_t data[0x6E0]; };
 struct LayerF { uint8_t data[0x140]; };
@@ -129,7 +247,6 @@ struct LayerG { uint8_t data[0x2E0]; };
    unk_XX are not understood yet. docs/map/<subsystem>.md describes each struct. Keep sizes exact: they
    are checked again by static_assert when src/port/ overlays them on guest memory. */
 
-struct Vec4;
 struct CityScene;
 struct CityMap;
 struct TileLists;
@@ -149,18 +266,10 @@ struct Stamina;
 struct MemberStatus;
 struct CharTypeRecord;
 
-/* VU0-style vector (0x10 bytes); a 4x4 matrix is four of them. */
-struct Vec4 {
-    ps2f x;                   /* +0x00 */
-    ps2f y;                   /* +0x04 */
-    ps2f z;                   /* +0x08 */
-    ps2f w;                   /* +0x0C */
-};
-
 /* Map tile (0x18 bytes): 128 x 128 of them at CityMap +0x04. */
 struct MapTile {
-    int32_t height;            /* +0x00 */
-    uint8_t verts[0x10];       /* +0x04 vertex data */
+    ps2f height;              /* +0x00 terrain height (loaded with lwc1, mm_Map_GetTileHeightWord) */
+    ps2f verts[4];            /* +0x04 vertex data (mm_Map_GetTileVertex) */
     uint16_t firstObject;      /* +0x14 0x3F80 = none */
     uint16_t flags;            /* +0x16 0x10 = walkable */
 };
@@ -225,7 +334,13 @@ struct CityMap {
     GuestPtr<MapPerson> people;         /* +0x68 */
     uint8_t unk_6C[8];
     int32_t population;        /* +0x74 */
-    uint8_t unk_78[0x2EE8];
+    uint8_t unk_78[0x2C8C];
+    int32_t terrainQuads;      /* +0x2D04 vertices in the terrain buffer this frame (limit 0x9BD) */
+    uint8_t unk_2D08[4];
+    GuestPtr<void> terrainBuffers[2];   /* +0x2D0C 0x9C00 bytes each */
+    GuestPtr<void> terrainWrite;        /* +0x2D14 write position (mm_Terrain_AddQuad) */
+    GuestPtr<void> buffers2D18[2];      /* +0x2D18 0x8700 bytes each */
+    uint8_t unk_2D20[0x240];
     GuestPtr<void> packets[5];          /* +0x2F60 static DMA packets queued by mm_CityRender_DrawOverlays */
     GuestPtr<LayerD> sky;               /* +0x2F74 */
     GuestPtr<LayerE> layerE;            /* +0x2F78 */
@@ -498,17 +613,47 @@ struct TalkMoney { Widget base; uint8_t data[0x10]; };
 struct TalkConv { MsgWin base; uint8_t data[0x23C]; };
 
 // ---- layout checks (guest offsets and sizes)
+static_assert(sizeof(Vec4) == 0x10, "Vec4 size");
+static_assert(offsetof(Vec4, x) == 0x00, "Vec4.x");
+static_assert(offsetof(Vec4, y) == 0x04, "Vec4.y");
+static_assert(offsetof(Vec4, z) == 0x08, "Vec4.z");
+static_assert(offsetof(Vec4, w) == 0x0C, "Vec4.w");
 static_assert(sizeof(TextBox) == 0x40, "TextBox size");
+static_assert(offsetof(TextBox, cursor) == 0x2C, "TextBox.cursor");
 static_assert(sizeof(Frame) == 0xC0, "Frame size");
+static_assert(offsetof(Frame, cornerA) == 0x60, "Frame.cornerA");
+static_assert(offsetof(Frame, cornerB) == 0x80, "Frame.cornerB");
+static_assert(offsetof(Frame, x) == 0xA4, "Frame.x");
+static_assert(offsetof(Frame, y) == 0xA8, "Frame.y");
+static_assert(offsetof(Frame, width) == 0xAC, "Frame.width");
+static_assert(offsetof(Frame, height) == 0xB0, "Frame.height");
 static_assert(sizeof(A3DObject) == 0x60, "A3DObject size");
+static_assert(offsetof(A3DObject, model) == 0x00, "A3DObject.model");
+static_assert(offsetof(A3DObject, matrix) == 0x10, "A3DObject.matrix");
+static_assert(offsetof(A3DObject, meshes) == 0x50, "A3DObject.meshes");
 static_assert(sizeof(Camera) == 0x310, "Camera size");
+static_assert(offsetof(Camera, fogA) == 0x110, "Camera.fogA");
+static_assert(offsetof(Camera, fogB) == 0x120, "Camera.fogB");
+static_assert(offsetof(Camera, eye) == 0x130, "Camera.eye");
+static_assert(offsetof(Camera, target) == 0x140, "Camera.target");
+static_assert(offsetof(Camera, fogFar) == 0x304, "Camera.fogFar");
+static_assert(offsetof(Camera, fogNear) == 0x308, "Camera.fogNear");
 static_assert(sizeof(CityCamera) == 0x540, "CityCamera size");
+static_assert(offsetof(CityCamera, zoomLevel) == 0x530, "CityCamera.zoomLevel");
 static_assert(sizeof(GameFile) == 0x8, "GameFile size");
+static_assert(offsetof(GameFile, fd) == 0x00, "GameFile.fd");
+static_assert(offsetof(GameFile, async) == 0x04, "GameFile.async");
 static_assert(sizeof(TexSprite) == 0x38, "TexSprite size");
 static_assert(sizeof(LightSet) == 0x1B0, "LightSet size");
+static_assert(offsetof(LightSet, unk_00) == 0x00, "LightSet.unk_00");
 static_assert(sizeof(ListMenu) == 0x2A0, "ListMenu size");
 static_assert(sizeof(LoadingScreen) == 0x28, "LoadingScreen size");
 static_assert(sizeof(McManager) == 0x28, "McManager size");
+static_assert(offsetof(McManager, queue) == 0x00, "McManager.queue");
+static_assert(offsetof(McManager, state) == 0x04, "McManager.state");
+static_assert(offsetof(McManager, request) == 0x14, "McManager.request");
+static_assert(offsetof(McManager, file) == 0x20, "McManager.file");
+static_assert(offsetof(McManager, fd) == 0x24, "McManager.fd");
 static_assert(sizeof(NameEntry) == 0x124, "NameEntry size");
 static_assert(sizeof(SceneA) == 0x104, "SceneA size");
 static_assert(sizeof(Bag) == 0x1AC, "Bag size");
@@ -516,21 +661,43 @@ static_assert(sizeof(StatusPanel) == 0xC0, "StatusPanel size");
 static_assert(sizeof(PauseMenu) == 0x99C, "PauseMenu size");
 static_assert(sizeof(Minimap) == 0x21DC, "Minimap size");
 static_assert(sizeof(CityCursor) == 0x1E0, "CityCursor size");
+static_assert(offsetof(CityCursor, targetId) == 0x1A4, "CityCursor.targetId");
+static_assert(offsetof(CityCursor, targetKind) == 0x1A8, "CityCursor.targetKind");
+static_assert(offsetof(CityCursor, targetPos) == 0x1B0, "CityCursor.targetPos");
 static_assert(sizeof(PhoneCalls) == 0x7C, "PhoneCalls size");
 static_assert(sizeof(EventMgr) == 0xB0, "EventMgr size");
 static_assert(sizeof(WantsWin) == 0x544, "WantsWin size");
+static_assert(offsetof(WantsWin, counters) == 0x00, "WantsWin.counters");
 static_assert(sizeof(Laptop) == 0x3E0, "Laptop size");
 static_assert(sizeof(Player) == 0x90, "Player size");
+static_assert(offsetof(Player, mode) == 0x00, "Player.mode");
+static_assert(offsetof(Player, position) == 0x10, "Player.position");
+static_assert(offsetof(Player, jumpSpeed) == 0x4C, "Player.jumpSpeed");
+static_assert(offsetof(Player, jumps) == 0x84, "Player.jumps");
+static_assert(offsetof(Player, model) == 0x88, "Player.model");
+static_assert(sizeof(ApplicantEntry) == 0x14, "ApplicantEntry size");
+static_assert(offsetof(ApplicantEntry, index) == 0x00, "ApplicantEntry.index");
+static_assert(offsetof(ApplicantEntry, state) == 0x02, "ApplicantEntry.state");
+static_assert(offsetof(ApplicantEntry, family) == 0x04, "ApplicantEntry.family");
 static_assert(sizeof(Applicants) == 0x350, "Applicants size");
+static_assert(offsetof(Applicants, entries) == 0x000, "Applicants.entries");
+static_assert(offsetof(Applicants, count) == 0x280, "Applicants.count");
+static_assert(offsetof(Applicants, unk_284) == 0x284, "Applicants.unk_284");
 static_assert(sizeof(Markers) == 0x130, "Markers size");
 static_assert(sizeof(Notice) == 0x14, "Notice size");
+static_assert(offsetof(Notice, id) == 0x00, "Notice.id");
+static_assert(offsetof(Notice, timer) == 0x04, "Notice.timer");
+static_assert(offsetof(Notice, unk_10) == 0x10, "Notice.unk_10");
 static_assert(sizeof(TownPages) == 0x64, "TownPages size");
+static_assert(offsetof(TownPages, pageEntries) == 0x40, "TownPages.pageEntries");
 static_assert(sizeof(TexImage) == 0x1010, "TexImage size");
-static_assert(sizeof(Vec4) == 0x10, "Vec4 size");
-static_assert(offsetof(Vec4, x) == 0x00, "Vec4.x");
-static_assert(offsetof(Vec4, y) == 0x04, "Vec4.y");
-static_assert(offsetof(Vec4, z) == 0x08, "Vec4.z");
-static_assert(offsetof(Vec4, w) == 0x0C, "Vec4.w");
+static_assert(offsetof(LayerA, count) == 0x2430, "LayerA.count");
+static_assert(offsetof(LayerA, source) == 0x243C, "LayerA.source");
+static_assert(offsetof(LayerC, rectActive) == 0x21C, "LayerC.rectActive");
+static_assert(offsetof(LayerC, rectX0) == 0x220, "LayerC.rectX0");
+static_assert(offsetof(LayerC, rectZ0) == 0x224, "LayerC.rectZ0");
+static_assert(offsetof(LayerC, rectX1) == 0x228, "LayerC.rectX1");
+static_assert(offsetof(LayerC, rectZ1) == 0x22C, "LayerC.rectZ1");
 static_assert(sizeof(MapTile) == 0x18, "MapTile size");
 static_assert(offsetof(MapTile, height) == 0x00, "MapTile.height");
 static_assert(offsetof(MapTile, verts) == 0x04, "MapTile.verts");
@@ -578,6 +745,10 @@ static_assert(offsetof(CityMap, tileLists) == 0x0C, "CityMap.tileLists");
 static_assert(offsetof(CityMap, vtable) == 0x64, "CityMap.vtable");
 static_assert(offsetof(CityMap, people) == 0x68, "CityMap.people");
 static_assert(offsetof(CityMap, population) == 0x74, "CityMap.population");
+static_assert(offsetof(CityMap, terrainQuads) == 0x2D04, "CityMap.terrainQuads");
+static_assert(offsetof(CityMap, terrainBuffers) == 0x2D0C, "CityMap.terrainBuffers");
+static_assert(offsetof(CityMap, terrainWrite) == 0x2D14, "CityMap.terrainWrite");
+static_assert(offsetof(CityMap, buffers2D18) == 0x2D18, "CityMap.buffers2D18");
 static_assert(offsetof(CityMap, packets) == 0x2F60, "CityMap.packets");
 static_assert(offsetof(CityMap, sky) == 0x2F74, "CityMap.sky");
 static_assert(offsetof(CityMap, layerE) == 0x2F78, "CityMap.layerE");

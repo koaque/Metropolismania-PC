@@ -655,7 +655,7 @@ def main() -> int:
     p = sub.add_parser("capture", help="visible run that records function calls for difftest")
     p.add_argument("--functions", default="ported", help='comma-separated names or 0xADDRs, or "ported" (default)')
     p.add_argument("--max", type=int, default=8, help="records per function")
-    p.add_argument("--every", type=int, default=1, help="record every Nth call (spreads records over the run)")
+    p.add_argument("--every", default="1", help='record every Nth call, or "exp" for calls 1, 8, 64, 512 ... (spreads records over the run)')
     p.add_argument("--autoplay", default="city", choices=["city", "load", "explore"],
                    help="city: a new game; load: the newest save in original/mc0 (tools/mc_extract.py); "
                         "explore: that save, then random play in the city")

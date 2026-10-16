@@ -35,6 +35,7 @@ namespace port
         uint8_t *rdram = nullptr;
         R5900Context *ctx = nullptr;
         PS2Runtime *runtime = nullptr;
+        uint32_t function = 0; // address of the innermost ported function, for messages
     };
     inline CallState g_call;
 
@@ -47,9 +48,9 @@ namespace port
     class PortedScope
     {
     public:
-        PortedScope(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime) : m_outer(g_call)
+        PortedScope(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime, uint32_t function) : m_outer(g_call)
         {
-            g_call = {rdram, ctx, runtime};
+            g_call = {rdram, ctx, runtime, function};
             enterPorted(runtime);
         }
         ~PortedScope()
@@ -114,14 +115,11 @@ namespace port
             // f12-f19; no function in this game takes more than eight float arguments.
             return T(ctx->f[12 + slot]);
         }
-        else if constexpr (std::is_pointer_v<T>)
-        {
-            const uint32_t address = static_cast<uint32_t>(intArg(ctx, slot));
-            return address ? reinterpret_cast<T>(host(address)) : nullptr;
-        }
+        else if constexpr (mm::kIsGuestPtr<T>)
+            return T{static_cast<uint32_t>(intArg(ctx, slot))};
         else
         {
-            static_assert(std::is_integral_v<T>, "unsupported parameter type");
+            static_assert(std::is_integral_v<T>, "unsupported parameter type (pointers are mm::GuestPtr)");
             return static_cast<T>(intArg(ctx, slot));
         }
     }
@@ -129,8 +127,8 @@ namespace port
     template <typename T>
     uint64_t toGuestInt(T value)
     {
-        if constexpr (std::is_pointer_v<T>)
-            return value ? guest(value) : 0u;
+        if constexpr (mm::kIsGuestPtr<T>)
+            return static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(value.address)));
         else if constexpr (sizeof(T) <= 4)
             return static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(value)));
         else
@@ -153,11 +151,8 @@ namespace port
             return;
         else if constexpr (kFloatArg<R>)
             return R(ctx->f[0]);
-        else if constexpr (std::is_pointer_v<R>)
-        {
-            const uint32_t address = static_cast<uint32_t>(gpr64(ctx, 2));
-            return address ? reinterpret_cast<R>(host(address)) : nullptr;
-        }
+        else if constexpr (mm::kIsGuestPtr<R>)
+            return R{static_cast<uint32_t>(gpr64(ctx, 2))};
         else
             return static_cast<R>(gpr64(ctx, 2));
     }
@@ -182,7 +177,7 @@ namespace port
         static void entry(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
             const uint32_t address = ctx->pc;
-            PortedScope scope(rdram, ctx, runtime);
+            PortedScope scope(rdram, ctx, runtime, address);
             try
             {
                 if constexpr (std::is_void_v<R>)

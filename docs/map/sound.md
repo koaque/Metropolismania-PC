@@ -14,7 +14,7 @@ Sound on the EE side; the driver is YYSOUND on the IOP.
 
 ## Functions
 
-57 functions (typed 56, verified 1). Blocks: 4 can reach a thread switch, 1 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+57 functions (ported 3, typed 37, verified 17). Blocks: 4 can reach a thread switch, 1 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -53,23 +53,23 @@ Sound on the EE side; the driver is YYSOUND on the IOP.
 | `0x0018D4B0` | `void mm_SoundCmd_CancelPlayB(char voice)` | 256 | no | removes queued cmd 3 entries for voice a0 from the ring |
 | `0x0018D5B0` | `int mm_Sound_IsBusy(void)` | 164 | no | refreshes the status copy (0x20B7C0 -> 0x20B840, merged with pending masks); true if the driver is busy or commands are queued |
 | `0x0018D660` | `int mm_Sound_IsDriverBusy(void)` | 128 | no | like mm_Sound_IsBusy but ignores queued commands |
-| `0x0018D6E0` | `void mm_SoundCmd_SetDiscBusy(uint32_t busy)` | 100 | no | queues cmd 0x18 with a0 & 0xFF; the file code sends 1 before waiting on the disc and 0 after |
+| `0x0018D6E0` | `int mm_SoundCmd_SetDiscBusy(uint32_t busy)` | 100 | no | queues cmd 0x18 with a0 & 0xFF; the file code sends 1 before waiting on the disc and 0 after |
 | `0x0018D750` | `int mm_SoundCmd_11(uint8_t voice, uint16_t a1, uint16_t a2)` | 140 | no | queues cmd 0x11 (voice a0, a1, a2) |
-| `0x0018D7E0` | `void mm_SoundCmd_SetVolumeB(uint8_t voice, int volume, uint16_t a2)` | 140 | no | queues cmd 0x10 (voice a0, volume a1, a2) |
+| `0x0018D7E0` | `int mm_SoundCmd_SetVolumeB(uint8_t voice, int volume, uint16_t a2)` | 140 | no | queues cmd 0x10 (voice a0, volume a1, a2) |
 | `0x0018D870` | `int mm_SoundCmd_0F(uint8_t voice, int a1, uint16_t a2)` | 140 | no | queues cmd 0xF (voice a0, a1, a2), same layout as cmd 0x10 |
-| `0x0018D900` | `void mm_SoundCmd_FadeB(uint8_t voice, uint16_t target, uint16_t time, uint16_t a3)` | 144 | no | queues cmd 0xE (voice a0, target a1, time a2, a3) |
-| `0x0018D990` | `void mm_SoundCmd_StopB(uint32_t voice, uint32_t a1)` | 168 | no | queues cmd 0xD (voice a0, a1) |
-| `0x0018DA40` | `void mm_SoundCmd_PlaySequence(uint32_t slot, uint8_t a1, uint8_t a2, int a3, uint16_t t0)` | 168 | no | queues cmd 0xC (slot a0, a1, a2, a3, a4) and sets the slot's bit in the pending mask (gp) |
-| `0x0018DAF0` | `void mm_SoundCmd_StopSequence(uint32_t slot, uint32_t a1)` | 168 | no | queues cmd 0xB (slot a0, a1) |
-| `0x0018DBA0` | `void mm_SoundCmd_LoadBank(uint32_t slot, int sqName, int hdName, int bdName, uint32_t flags)` | 200 | no | queues cmd 9: slot a0, SQ/HD/BD file names a1/a2/a3, flags a4 |
-| `0x0018DC70` | `void mm_SoundCmd_SetPitchA(uint8_t voice, uint16_t pitch, uint16_t a2)` | 140 | no | queues cmd 8 (voice a0, pitch a1, a2) |
-| `0x0018DD00` | `void mm_SoundCmd_SetVolumeA(uint8_t voice, int volume, uint16_t a2)` | 140 | no | queues cmd 7 (voice a0, volume a1, a2) |
-| `0x0018DD90` | `void mm_SoundCmd_SetVolumeLRA(uint8_t voice, int left, int right, uint16_t a3)` | 144 | no | queues cmd 6 (voice a0, left a1, right a2, a3) |
-| `0x0018DE20` | `void mm_SoundCmd_PlayA(uint8_t voice, uint16_t a1, uint16_t a2, uint16_t a3, uint16_t t0, uint16_t t1)` | 152 | no | queues cmd 5 (voice a0 and five sound parameters) |
-| `0x0018DEC0` | `void mm_SoundCmd_StopA(uint32_t voice, uint32_t a1)` | 168 | no | queues cmd 4 (voice a0, a1) |
-| `0x0018DF70` | `void mm_SoundCmd_PlayB(uint32_t voice, uint8_t bank, uint16_t sound, uint8_t a3, uint8_t t0, uint8_t t1, int t2, uint16_t t3)` | 180 | no | queues cmd 3 (voice a0, bank a1, sound a2, ...) and sets the voice's bit in the pending mask (gp) |
-| `0x0018E030` | `void mm_SoundCmd_02(uint32_t a0, uint32_t a1)` | 168 | no | queues cmd 2 (a0, a1) |
-| `0x0018E0E0` | `void mm_SoundCmd_01(uint32_t a0, uint32_t a1, int a2, int a3, uint32_t t0)` | 204 | no | queues cmd 1 (a0, a1, a2, a3, a4) |
+| `0x0018D900` | `int mm_SoundCmd_FadeB(uint8_t voice, uint16_t target, uint16_t time, uint16_t a3)` | 144 | no | queues cmd 0xE (voice a0, target a1, time a2, a3) |
+| `0x0018D990` | `int mm_SoundCmd_StopB(uint32_t voice, uint32_t a1)` | 168 | no | queues cmd 0xD (voice a0, a1) |
+| `0x0018DA40` | `int mm_SoundCmd_PlaySequence(uint32_t slot, uint8_t a1, uint8_t a2, int a3, uint16_t t0)` | 168 | no | queues cmd 0xC (slot a0, a1, a2, a3, a4) and sets the slot's bit in the pending mask (gp) |
+| `0x0018DAF0` | `int mm_SoundCmd_StopSequence(uint32_t slot, uint32_t a1)` | 168 | no | queues cmd 0xB (slot a0, a1) |
+| `0x0018DBA0` | `int mm_SoundCmd_LoadBank(uint32_t slot, int sqName, int hdName, int bdName, uint32_t flags)` | 200 | no | queues cmd 9: slot a0, SQ/HD/BD file names a1/a2/a3, flags a4 |
+| `0x0018DC70` | `int mm_SoundCmd_SetPitchA(uint8_t voice, uint16_t pitch, uint16_t a2)` | 140 | no | queues cmd 8 (voice a0, pitch a1, a2) |
+| `0x0018DD00` | `int mm_SoundCmd_SetVolumeA(uint8_t voice, int volume, uint16_t a2)` | 140 | no | queues cmd 7 (voice a0, volume a1, a2) |
+| `0x0018DD90` | `int mm_SoundCmd_SetVolumeLRA(uint8_t voice, int left, int right, uint16_t a3)` | 144 | no | queues cmd 6 (voice a0, left a1, right a2, a3) |
+| `0x0018DE20` | `int mm_SoundCmd_PlayA(uint8_t voice, uint16_t a1, uint16_t a2, uint16_t a3, uint16_t t0, uint16_t t1)` | 152 | no | queues cmd 5 (voice a0 and five sound parameters) |
+| `0x0018DEC0` | `int mm_SoundCmd_StopA(uint32_t voice, uint32_t a1)` | 168 | no | queues cmd 4 (voice a0, a1) |
+| `0x0018DF70` | `int mm_SoundCmd_PlayB(uint32_t voice, uint8_t bank, uint16_t sound, uint8_t a3, uint8_t t0, uint8_t t1, int t2, uint16_t t3)` | 180 | no | queues cmd 3 (voice a0, bank a1, sound a2, ...) and sets the voice's bit in the pending mask (gp) |
+| `0x0018E030` | `int mm_SoundCmd_02(uint32_t a0, uint32_t a1)` | 168 | no | queues cmd 2 (a0, a1) |
+| `0x0018E0E0` | `int mm_SoundCmd_01(uint32_t a0, uint32_t a1, int a2, int a3, uint32_t t0)` | 204 | no | queues cmd 1 (a0, a1, a2, a3, a4) |
 | `0x0018E1B0` | `void mm_SoundCmd_Flush(void)` | 4164 | yes | (was mm_SetSoundDataPaths) sends the queued commands to YYSOUND over SIF RPC 0x12346 (paths cdrom0:\DATA\SOUND\SQ\|HD\|BD\), drops commands when too many are pending ("URGENT CUT", "ManyRequest") and refreshes the status block |
 | `0x0018F200` | `int mm_Sound_GetStatus(void)` | 124 | no | refreshes the status copy at 0x20B840 (merged with the pending masks) and returns it |
 | `0x0018F280` | `void mm_Sound_LoadModules(void)` | 452 | yes | (was mm_LoadSoundModules) loads LIBSD, SDRDRV, MODMIDI, MODHSYN, MODSEIN, YYSOUND, retrying each until it loads |

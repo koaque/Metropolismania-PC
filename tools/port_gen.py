@@ -11,8 +11,8 @@ usage: port_gen.py [--check]
                              (a PORT_FN(<Name>) line) is only declared; every other one gets an inline
                              body that calls the generated function through the runtime's function table.
 
-Pointer parameters are host pointers in C++ (the wrapper converts guest addresses), float parameters
-and float pointees are mm::ps2f. tools/pipeline.py stage runs this before copying src/port/.
+Pointer parameters and results are mm::GuestPtr<T> (32-bit guest addresses), float parameters and
+float pointees are mm::ps2f. tools/pipeline.py stage runs this before copying src/port/.
 --check exits 1 when a header is out of date instead of writing it.
 """
 
@@ -117,7 +117,10 @@ def cpp_type(ctype: str, structs: set[str]) -> str:
     stars = t.count("*")
     if base == "float":
         base = "ps2f"
-    return base + (" " + "*" * stars if stars else "")
+    # Pointers are guest addresses: arithmetic on them wraps and is masked like the recompiled code's.
+    for _ in range(stars):
+        base = f"GuestPtr<{base}>"
+    return base
 
 
 def joined(ctype: str, name: str) -> str:

@@ -26,6 +26,8 @@ namespace port
     inline uint8_t *g_scratchpad = nullptr;
 
     [[noreturn]] void fatal(const char *what, uint32_t address);
+    // Addresses that are neither RDRAM nor the scratchpad (see port.cpp).
+    uint8_t *special(uint32_t address);
 
     // Host address of a guest address in RDRAM (any KSEG mirror) or the scratchpad. Ported code never
     // touches hardware registers through this; those go through the runtime like the original does.
@@ -34,7 +36,7 @@ namespace port
         if (address >= PS2_SCRATCHPAD_BASE && address < PS2_SCRATCHPAD_BASE + PS2_SCRATCHPAD_SIZE)
             return g_scratchpad + (address - PS2_SCRATCHPAD_BASE);
         if (PS2Runtime::isSpecialAddress(address))
-            fatal("guest pointer to a hardware address", address);
+            return special(address);
         return g_rdram + (address & PS2_RAM_MASK);
     }
 
@@ -66,22 +68,33 @@ namespace port
 
 namespace mm
 {
-    // A 32-bit pointer as the game stores it. Same size and layout as the guest's pointer, so structs
-    // that contain it keep the guest layout.
+    // A 32-bit pointer as the game stores it, and as ported functions take and return pointers. Same size
+    // and layout as the guest's pointer, so structs that contain it keep the guest layout. Arithmetic and
+    // indexing happen on the 32-bit guest address, which is masked into RDRAM on every access, the way the
+    // recompiled code does it: a wild index wraps instead of leaving guest memory, and address 0 is plain
+    // memory, as on the PS2. Test for null with `if (p)`.
     template <typename T>
     struct GuestPtr
     {
         uint32_t address;
 
-        T *get() const { return address ? reinterpret_cast<T *>(port::host(address)) : nullptr; }
+        T *get() const { return reinterpret_cast<T *>(port::host(address)); }
         T *operator->() const { return get(); }
         T &operator*() const { return *get(); }
-        T &operator[](std::ptrdiff_t i) const { return get()[i]; }
+        T &operator[](int32_t i) const { return *(*this + i); }
+        GuestPtr operator+(int32_t i) const
+        {
+            return GuestPtr{address + static_cast<uint32_t>(i) * static_cast<uint32_t>(sizeof(T))};
+        }
+        GuestPtr operator-(int32_t i) const { return *this + -i; }
+        GuestPtr &operator++() { return *this = *this + 1; }
         explicit operator bool() const { return address != 0; }
         bool operator==(const GuestPtr &other) const { return address == other.address; }
         bool operator!=(const GuestPtr &other) const { return address != other.address; }
 
-        static GuestPtr of(const T *pointer) { return GuestPtr{pointer ? port::guest(pointer) : 0u}; }
+        // The guest address of an object reached through guest memory (a field, an array element).
+        static GuestPtr of(const T *pointer) { return GuestPtr{port::guest(pointer)}; }
+        static GuestPtr of(const T &object) { return GuestPtr{port::guest(&object)}; }
     };
 
     template <>
@@ -89,11 +102,16 @@ namespace mm
     {
         uint32_t address;
 
-        void *get() const { return address ? port::host(address) : nullptr; }
+        void *get() const { return port::host(address); }
         explicit operator bool() const { return address != 0; }
         bool operator==(const GuestPtr &other) const { return address == other.address; }
         bool operator!=(const GuestPtr &other) const { return address != other.address; }
     };
+
+    template <typename T>
+    inline constexpr bool kIsGuestPtr = false;
+    template <typename T>
+    inline constexpr bool kIsGuestPtr<GuestPtr<T>> = true;
 
     static_assert(sizeof(GuestPtr<int>) == 4 && std::is_standard_layout_v<GuestPtr<int>> &&
                   std::is_trivially_copyable_v<GuestPtr<int>>);

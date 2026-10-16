@@ -2,7 +2,6 @@
    unk_XX are not understood yet. docs/map/<subsystem>.md describes each struct. Keep sizes exact: they
    are checked again by static_assert when src/port/ overlays them on guest memory. */
 
-typedef struct Vec4 Vec4;
 typedef struct CityScene CityScene;
 typedef struct CityMap CityMap;
 typedef struct TileLists TileLists;
@@ -22,18 +21,10 @@ typedef struct Stamina Stamina;
 typedef struct MemberStatus MemberStatus;
 typedef struct CharTypeRecord CharTypeRecord;
 
-/* VU0-style vector (0x10 bytes); a 4x4 matrix is four of them. */
-struct Vec4 {
-    float x;                   /* +0x00 */
-    float y;                   /* +0x04 */
-    float z;                   /* +0x08 */
-    float w;                   /* +0x0C */
-};
-
 /* Map tile (0x18 bytes): 128 x 128 of them at CityMap +0x04. */
 struct MapTile {
-    int32_t height;            /* +0x00 */
-    uint8_t verts[0x10];       /* +0x04 vertex data */
+    float height;              /* +0x00 terrain height (loaded with lwc1, mm_Map_GetTileHeightWord) */
+    float verts[4];            /* +0x04 vertex data (mm_Map_GetTileVertex) */
     uint16_t firstObject;      /* +0x14 0x3F80 = none */
     uint16_t flags;            /* +0x16 0x10 = walkable */
 };
@@ -98,7 +89,13 @@ struct CityMap {
     MapPerson *people;         /* +0x68 */
     uint8_t unk_6C[8];
     int32_t population;        /* +0x74 */
-    uint8_t unk_78[0x2EE8];
+    uint8_t unk_78[0x2C8C];
+    int32_t terrainQuads;      /* +0x2D04 vertices in the terrain buffer this frame (limit 0x9BD) */
+    uint8_t unk_2D08[4];
+    void *terrainBuffers[2];   /* +0x2D0C 0x9C00 bytes each */
+    void *terrainWrite;        /* +0x2D14 write position (mm_Terrain_AddQuad) */
+    void *buffers2D18[2];      /* +0x2D18 0x8700 bytes each */
+    uint8_t unk_2D20[0x240];
     void *packets[5];          /* +0x2F60 static DMA packets queued by mm_CityRender_DrawOverlays */
     LayerD *sky;               /* +0x2F74 */
     LayerE *layerE;            /* +0x2F78 */

@@ -8,7 +8,7 @@ The generic camera (`mm_Camera_*`: eye, target, view and projection matrices), t
 
 ## Functions
 
-18 functions (typed 18). Blocks: 5 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+18 functions (typed 16, verified 2). Blocks: 5 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|

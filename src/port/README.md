@@ -28,6 +28,10 @@ Do not edit the two generated headers; `pipeline.py stage` rewrites them.
    without `mm_` and with exactly the prototype from `game_functions.h`. Add `PORT_FN(Name);`.
 3. Rules that keep it exact:
    - Floats are `ps2f`. Never do arithmetic on plain `float`.
+   - Pointers are `GuestPtr<T>`, in prototypes and struct fields alike. Index them and add to them
+     as guest pointers (`map->objects + i`, `map->tiles[t]`): the arithmetic happens on the 32-bit
+     guest address and every access is masked into RDRAM, as in the recompiled code, so a wild
+     index wraps instead of crashing. Address 0 is plain memory; test for null with `if (p)`.
    - Game data stays in guest memory: use the structs from `game_types.h`, `port::load`/`store`
      and the addresses in `game_globals.h`, not host copies that outlive the call.
    - Call other game functions by name (`Family_InCity(f)`). Unported ones go through the

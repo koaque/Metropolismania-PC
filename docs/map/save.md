@@ -13,7 +13,7 @@ Saving and loading on the memory card.
 
 ## Functions
 
-48 functions (typed 48). Blocks: 13 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+48 functions (ported 4, typed 34, verified 10). Blocks: 13 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|

@@ -5,6 +5,7 @@
 #include "abi.h"
 #include "difftest.h"
 
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <iomanip>
@@ -71,28 +72,65 @@ namespace port
         registry().push_back({address, name, wrapper, result, nullptr});
     }
 
+    namespace
+    {
+        bool g_faultsThrow = false;
+
+        [[noreturn]] void fault(const std::string &message)
+        {
+            if (g_faultsThrow)
+                throw Fault(message);
+            std::cerr << "[port] fatal: " << message << std::endl;
+            std::abort();
+        }
+
+        std::string hex(uint32_t value)
+        {
+            char text[16];
+            std::snprintf(text, sizeof(text), "0x%08X", value);
+            return text;
+        }
+    }
+
+    void setFaultsThrow(bool on) { g_faultsThrow = on; }
+
     void enterPorted(PS2Runtime *runtime) { runtime->eeScheduler().enterNoPreempt(); }
     void leavePorted(PS2Runtime *runtime) { runtime->eeScheduler().leaveNoPreempt(); }
 
     void fatal(const char *what, uint32_t address)
     {
-        std::cerr << "[port] fatal: " << what << " (0x" << std::hex << std::setw(8) << std::setfill('0') << address
-                  << std::dec << ")" << std::endl;
-        std::abort();
+        fault(std::string(what) + " (" + hex(address) + ") in " + nameOf(g_call.function));
+    }
+
+    // Kernel segments 2 and 3 (0xC0000000 and up) map to nothing in the runtime: reads give 0 and writes
+    // are dropped. Ported code gets a scratch area for them that is cleared on every use, which behaves
+    // the same for the small reads and writes game code makes. Real hardware (I/O, VU, GS, BIOS) is an
+    // error: ported code must reach it through the runtime, as the original does.
+    uint8_t *special(uint32_t address)
+    {
+        if (address < 0xC0000000u)
+            fatal("guest pointer to a hardware address", address);
+        alignas(16) static uint8_t unmapped[256];
+        std::memset(unmapped, 0, sizeof(unmapped));
+        static int reported = 0;
+        if (reported < 16)
+        {
+            ++reported;
+            std::cerr << "[port] " << nameOf(g_call.function) << " touched unmapped address " << hex(address)
+                      << " (reads 0, writes dropped, as in the runtime)" << std::endl;
+        }
+        return unmapped;
     }
 
     void calleeDidNotReturn(uint32_t address, uint32_t pc)
     {
-        std::cerr << "[port] fatal: guest function 0x" << std::hex << address << " called from ported code did not return (pc 0x"
-                  << pc << ")" << std::dec << std::endl;
-        std::abort();
+        fault("guest function " + hex(address) + " called from ported code did not return (pc " + hex(pc) + ")");
     }
 
     void reachedThreadSwitch(uint32_t address)
     {
-        std::cerr << "[port] fatal: ported function " << nameOf(address) << " (0x" << std::hex << address << std::dec
-                  << ") reached a thread switch; blocking code waits for native threading (plan P6)" << std::endl;
-        std::abort();
+        fault(std::string("ported function ") + nameOf(address) + " (" + hex(address) +
+              ") reached a thread switch; blocking code waits for native threading (plan P6)");
     }
 
     void install(PS2Runtime &runtime)

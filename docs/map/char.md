@@ -21,7 +21,7 @@ People and the player character.
 
 ## Functions
 
-84 functions (typed 84). Blocks: 19 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+84 functions (typed 79, verified 5). Blocks: 19 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -50,7 +50,7 @@ People and the player character.
 | `0x00132DA0` | `void mm_Person_Walk(CharClass *cls, CityScene *city, MapPerson *person, int a3, int t0)` | 3528 | no | (provisional) 3.5 KB walking movement for people over map tiles |
 | `0x00133B70` | `void mm_Person_UpdatePose(CharClass *cls, CityScene *city, float *position, int a3, int t0)` | 780 | no | (provisional) person's matrix from heading and terrain height |
 | `0x00133E80` | `void mm_Person_Draw2(CharClass *cls, CityScene *city, MapPerson *person, uint32_t family, uint32_t member, Vec4 *matrix, int t2, int32_t *mesh, float *phase)` | 700 | yes | class 1 slot +0x14: (provisional) extra drawing (shadow/marker) for a person |
-| `0x00134140` | `void mm_CharType_ResetLookup(void)` | 92 | no | (provisional) resets the two 128-entry tables at 0x1C5110/0x1C5310 |
+| `0x00134140` | `void mm_CharType_ResetLookup(void)` | 92 | no | counts down the 25 character type slot timers (0x1C5310) and frees a slot (0x1C5110 = 6000) when its timer reaches 0 |
 | `0x001341A0` | `void mm_CharType_BuildLookup(void)` | 184 | no | (provisional) fills the tables at 0x1C5110/0x1C5310 after loading CHARTYPE.BIN |
 | `0x00134260` | `void mm_Person_BuildPose(CharClass *cls, CityScene *city, float *position)` | 896 | no | (provisional) walking pose matrices for a person (copies of the base matrix 0x1B2550, animation table 0x1C5180) |
 | `0x001345E0` | `void mm_Person_Draw(CharClass *cls, CityScene *city, MapPerson *person, int a3, int t0, int32_t *t1, int t2)` | 1088 | yes | class 1 slot +0x10: person instances on the terrain, within the draw range |
