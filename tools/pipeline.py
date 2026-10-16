@@ -656,8 +656,9 @@ def main() -> int:
     p.add_argument("--functions", default="ported", help='comma-separated names or 0xADDRs, or "ported" (default)')
     p.add_argument("--max", type=int, default=8, help="records per function")
     p.add_argument("--every", type=int, default=1, help="record every Nth call (spreads records over the run)")
-    p.add_argument("--autoplay", default="city", choices=["city", "load"],
-                   help="city: a new game; load: the newest save in original/mc0 (tools/mc_extract.py)")
+    p.add_argument("--autoplay", default="city", choices=["city", "load", "explore"],
+                   help="city: a new game; load: the newest save in original/mc0 (tools/mc_extract.py); "
+                        "explore: that save, then random play in the city")
     p.add_argument("--timeout", type=int, default=200)
     p.add_argument("--shots", type=int, default=0)
     p.add_argument("--shot-every", type=float, default=45.0)

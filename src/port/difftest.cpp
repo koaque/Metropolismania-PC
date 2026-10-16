@@ -22,6 +22,8 @@
 #include "raylib.h"
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -32,6 +34,8 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <thread>
+#include <unordered_map>
 #include <vector>
 
 namespace port
@@ -298,6 +302,78 @@ namespace port
                 diffs.push_back("scratchpad differs");
             return diffs;
         }
+    }
+
+    // ---------------------------------------------------------------- call counts
+    // MMPC_CALL_COUNTS=<file>: every game function is wrapped and its calls counted; the file is rewritten
+    // every 5 s (timed runs end with a kill) as "address name calls" lines, busiest first. Shows what a
+    // run reaches, to choose what to port and capture next.
+    namespace
+    {
+        struct Counted
+        {
+            const char *name;
+            GuestFn original;
+            std::atomic<uint64_t> calls{0};
+        };
+        std::unordered_map<uint32_t, Counted> g_counted;
+
+        void countedEntry(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            auto it = g_counted.find(ctx->pc);
+            if (it == g_counted.end())
+                fatal("call-count wrapper reached for an unknown address", ctx->pc);
+            it->second.calls.fetch_add(1, std::memory_order_relaxed);
+            it->second.original(rdram, ctx, runtime);
+        }
+
+        void writeCounts(const std::filesystem::path &path)
+        {
+            std::vector<std::pair<uint64_t, uint32_t>> rows;
+            for (const auto &[address, c] : g_counted)
+                if (const uint64_t n = c.calls.load(std::memory_order_relaxed))
+                    rows.emplace_back(n, address);
+            std::sort(rows.rbegin(), rows.rend());
+            const std::filesystem::path temp = path.string() + ".tmp";
+            {
+                std::ofstream out(temp);
+                for (const auto &[n, address] : rows)
+                {
+                    char line[160];
+                    std::snprintf(line, sizeof(line), "0x%08X %s %llu\n", address, g_counted.at(address).name,
+                                  static_cast<unsigned long long>(n));
+                    out << line;
+                }
+            }
+            std::error_code ec;
+            std::filesystem::rename(temp, path, ec);
+        }
+    }
+
+    void installCallCounts(PS2Runtime &runtime)
+    {
+        const char *file = env("MMPC_CALL_COUNTS");
+        if (!file)
+            return;
+        for (const mm::GameFunction &f : mm::kGameFunctions)
+        {
+            Counted &c = g_counted[f.address];
+            c.name = f.name;
+            c.original = runtime.lookupFunction(f.address);
+        }
+        for (const auto &[address, c] : g_counted)
+            runtime.registerFunction(address, countedEntry);
+        const std::filesystem::path path = std::filesystem::absolute(file);
+        std::thread([path]()
+                    {
+                        for (;;)
+                        {
+                            std::this_thread::sleep_for(std::chrono::seconds(5));
+                            writeCounts(path);
+                        }
+                    })
+            .detach();
+        std::cerr << "[difftest] counting calls of " << g_counted.size() << " game functions into " << path.string() << std::endl;
     }
 
     bool captureRequested() { return env("MMPC_CAPTURE") != nullptr; }

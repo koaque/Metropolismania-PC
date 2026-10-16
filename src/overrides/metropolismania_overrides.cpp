@@ -72,14 +72,17 @@ namespace
     // then lets go. MMPC_AUTOPLAY=city also pulses Start/Cross in states 3 to 5, which starts the
     // intro movie and gets through the dialogue to the city. MMPC_AUTOPLAY=load picks "Load" on the
     // title menu instead and loads the save the load screen preselects (the newest one in
-    // original/mc0, see tools/mc_extract.py). Presses only happen from GameUpdate, which the movie
-    // blocks, so the movie plays to its end (MMPC_SKIP_MOVIES=1 skips it).
+    // original/mc0, see tools/mc_extract.py). MMPC_AUTOPLAY=explore loads the same way and then plays
+    // the city at random (see exploreCity), so differential-test captures reach talks, menus and the
+    // build screens. Presses only happen from GameUpdate, which the movie blocks, so the movie plays to
+    // its end (MMPC_SKIP_MOVIES=1 skips it).
     enum class Autoplay
     {
         Off,
         Title,
         City,
         Load,
+        Explore,
     };
 
     Autoplay autoplayMode()
@@ -91,21 +94,120 @@ namespace
                 return Autoplay::Off;
             if (std::strcmp(value, "city") == 0)
                 return Autoplay::City;
+            if (std::strcmp(value, "explore") == 0)
+                return Autoplay::Explore;
             return std::strcmp(value, "load") == 0 ? Autoplay::Load : Autoplay::Title;
         }();
         return mode;
     }
 
-    void autoplayFrame(const uint8_t *rdram, uint32_t state, uint32_t sceneA)
+    // Raw pad bits; the game sees them byte-swapped (for example Down 0x4000, Cross 0x40, Start 0x800).
+    constexpr uint16_t kPadSelect = 0x0001u, kPadStart = 0x0008u, kPadUp = 0x0010u, kPadRight = 0x0020u,
+                       kPadDown = 0x0040u, kPadLeft = 0x0080u, kPadTriangle = 0x1000u, kPadCircle = 0x2000u,
+                       kPadCross = 0x4000u, kPadSquare = 0x8000u;
+
+    // Random play in the city (game state 6), driven by the city's mode (CityScene +0x10, see
+    // mm_CityScene_Update): 1 is the city view, 2 the laptop, 3/4 applicants, 5 a talk, 6 the pause
+    // menu, 7 the Town's Pages, 8 wants, 9/11 the bag. In the city view it walks or turns, lays road,
+    // selects (Cross: talk to what is targeted), opens the laptop (Square), the applicants (Circle+Down)
+    // or the Town's Pages (Circle+Right), jumps, zooms, or waits. In any other mode it picks among Up, Down, Cross and
+    // Triangle (cancel), and backs out with Triangle after 30 s. The pause menu only ever gets Triangle:
+    // confirming there can quit to the title. Seeded, so runs start the same way.
+    uint16_t exploreCity(const uint8_t *rdram, uint32_t city)
     {
-        // Raw pad bits; the game sees them byte-swapped (Down 0x4000, Cross 0x40, Start 0x800).
-        constexpr uint16_t kStart = 0x0008u, kDown = 0x0040u, kCross = 0x4000u;
+        static uint32_t rng = 0x2545F491u;
+        static uint32_t holdFrames = 0, gapFrames = 0, modeFrames = 0, lastMode = 0xFFFFFFFFu;
+        static uint16_t held = 0;
+        auto next = [](uint32_t range)
+        {
+            rng ^= rng << 13;
+            rng ^= rng >> 17;
+            rng ^= rng << 5;
+            return rng % range;
+        };
+        const uint32_t mode = guestRead32(rdram, city + 0x10u);
+        if (mode != lastMode)
+        {
+            std::cerr << "[mm:explore] city mode " << static_cast<int32_t>(lastMode) << " -> " << mode << std::endl;
+            lastMode = mode;
+            modeFrames = 0;
+        }
+        ++modeFrames;
+        if (holdFrames > 0)
+        {
+            --holdFrames;
+            return held;
+        }
+        if (gapFrames > 0) // released buttons between actions, so every press is a new edge
+        {
+            --gapFrames;
+            return 0;
+        }
+        gapFrames = 6;
+        holdFrames = 3;
+        if (mode == 6u || (mode != 1u && modeFrames > 30u * 60u))
+            return held = kPadTriangle;
+        if (mode == 1u)
+        {
+            // Player modes (mm_Player_Update): Circle+Left walks (holding Cross lays road), Circle+Up turns
+            // and picks targets for Cross. Triangle jumps, the shoulder buttons zoom.
+            static const uint16_t kDirections[] = {kPadUp, kPadRight, kPadDown, kPadLeft};
+            static const uint16_t kShoulders[] = {0x0100u, 0x0200u, 0x0400u, 0x0800u};
+            const uint32_t roll = next(100);
+            if (roll < 30)
+            {
+                holdFrames = 10 + next(50);
+                return held = kDirections[next(4)];
+            }
+            if (roll < 38)
+            {
+                holdFrames = 20 + next(60);
+                return held = static_cast<uint16_t>(kDirections[next(4)] | kPadCross);
+            }
+            if (roll < 52)
+                return held = kPadCross;
+            if (roll < 60)
+                return held = kPadSquare;
+            if (roll < 66)
+                return held = static_cast<uint16_t>(kPadCircle | kPadDown);
+            if (roll < 71)
+                return held = static_cast<uint16_t>(kPadCircle | kPadRight);
+            if (roll < 79)
+                return held = static_cast<uint16_t>(kPadCircle | kPadLeft);
+            if (roll < 83)
+                return held = static_cast<uint16_t>(kPadCircle | kPadUp);
+            if (roll < 86)
+                return held = kPadTriangle;
+            if (roll < 89)
+                return held = kShoulders[next(4)];
+            if (roll < 91)
+                return held = kPadSelect;
+            holdFrames = 0;
+            gapFrames = 10 + next(60); // let the city run
+            return held = 0;
+        }
+        const uint32_t roll = next(100);
+        if (roll < 30)
+            return held = kPadDown;
+        if (roll < 45)
+            return held = kPadUp;
+        if (roll < 75)
+            return held = kPadCross;
+        return held = kPadTriangle;
+    }
+
+    void autoplayFrame(const uint8_t *rdram, uint32_t state, uint32_t sceneA, uint32_t city)
+    {
+        constexpr uint16_t kStart = kPadStart, kDown = kPadDown, kCross = kPadCross;
         static uint32_t frame = 0;
         ++frame;
         const Autoplay mode = autoplayMode();
+        const bool loading = mode == Autoplay::Load || mode == Autoplay::Explore;
         const bool pulse = (frame % 24u) < 4u;
         uint16_t buttons = 0;
-        if (mode == Autoplay::Load && state <= 2u && sceneA != 0u && guestRead32(rdram, sceneA + 0xC0u) == 6u &&
+        if (mode == Autoplay::Explore && state == 6u && city != 0u)
+            buttons = exploreCity(rdram, city);
+        else if (loading && state <= 2u && sceneA != 0u && guestRead32(rdram, sceneA + 0xC0u) == 6u &&
             guestRead32(rdram, sceneA + 0x3Cu) == 0u)
             buttons = pulse ? kDown : 0; // title menu (scene A sub-state 6): cursor +0x3C from New Game to Load
         else if (state <= 2u && pulse)
@@ -126,7 +228,7 @@ namespace
         const uint32_t self = getRegU32(ctx, 4);
         const uint32_t state = guestRead32(rdram, self + 4u);
         if (autoplayMode() != Autoplay::Off)
-            autoplayFrame(rdram, state, guestRead32(rdram, self + 0xCu));
+            autoplayFrame(rdram, state, guestRead32(rdram, self + 0xCu), guestRead32(rdram, self + 8u));
         static const bool traceOn = []()
         {
             const char *flag = std::getenv("MMPC_TRACE");
@@ -345,6 +447,7 @@ namespace
         // The readable port (src/port/) first: the debug wrappers below wrap whatever is registered.
         port::install(runtime);
         port::installCapture(runtime);
+        port::installCallCounts(runtime);
         port::runDifftestIfRequested(runtime); // exits when MMPC_DIFFTEST is set
         installTrace(runtime);
         installMovieSkip(runtime);
