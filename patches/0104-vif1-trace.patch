@@ -1,5 +1,5 @@
 diff --git a/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp b/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp
-index b02c7ca..ed3b865 100644
+index 91cd64a..78f5bf8 100644
 --- a/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp
 +++ b/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp
 @@ -1,7 +1,48 @@
@@ -51,7 +51,7 @@ index b02c7ca..ed3b865 100644
  enum VIFCmd : uint8_t
  {
      VIF_NOP = 0x00,
-@@ -297,6 +338,8 @@ void PS2Memory::processVIF1Data(uint32_t srcPhys, uint32_t sizeBytes)
+@@ -334,6 +375,8 @@ void PS2Memory::forwardVif1DirectData(const uint8_t *data, uint32_t sizeBytes, b
  
  void PS2Memory::processVIF1Data(const uint8_t *data, uint32_t sizeBytes)
  {
@@ -60,7 +60,7 @@ index b02c7ca..ed3b865 100644
      if (sizeBytes == 0u)
          return;
  
-@@ -339,6 +382,9 @@ void PS2Memory::processVIF1Data(const uint8_t *data, uint32_t sizeBytes)
+@@ -382,6 +425,9 @@ void PS2Memory::processVIF1Data(const uint8_t *data, uint32_t sizeBytes)
          uint16_t imm = cmd & 0xFFFF;
          uint8_t num = (cmd >> 16) & 0xFF;
          const bool irq = (cmd & 0x80000000u) != 0u;
@@ -70,7 +70,7 @@ index b02c7ca..ed3b865 100644
  
          // Track most-recent command for VIFn_CODE emulation.
          vif1_regs.code = cmd;
-@@ -416,6 +462,19 @@ void PS2Memory::processVIF1Data(const uint8_t *data, uint32_t sizeBytes)
+@@ -463,6 +509,19 @@ void PS2Memory::processVIF1Data(const uint8_t *data, uint32_t sizeBytes)
                  vif1_regs.tops = (vif1_regs.base + vif1_regs.ofst) & 0x3FFu;
              vif1_regs.stat ^= (1u << 7); // toggle DBF
  
@@ -90,7 +90,7 @@ index b02c7ca..ed3b865 100644
              if (m_vu1MscalCallback)
                  m_vu1MscalCallback(startPC, runTop, runItop);
              continue;
-@@ -480,6 +539,20 @@ void PS2Memory::processVIF1Data(const uint8_t *data, uint32_t sizeBytes)
+@@ -527,6 +586,20 @@ void PS2Memory::processVIF1Data(const uint8_t *data, uint32_t sizeBytes)
                      markVU1CodeModified();
                  }
              }

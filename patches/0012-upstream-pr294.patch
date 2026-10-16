@@ -1,0 +1,95 @@
+From ran-j/PS2Recomp pull request #294: Read VIF1 registers from the VIF state (by @VariableDeclared)
+https://github.com/ran-j/PS2Recomp/pull/294 (open, not yet merged upstream). GPL-3.0, same as PS2Recomp.
+
+diff --git a/ps2xRuntime/src/lib/ps2_memory.cpp b/ps2xRuntime/src/lib/ps2_memory.cpp
+index 37b6a4d..05fee0d 100644
+--- a/ps2xRuntime/src/lib/ps2_memory.cpp
++++ b/ps2xRuntime/src/lib/ps2_memory.cpp
+@@ -1240,6 +1240,9 @@ bool PS2Memory::writeIORegister(uint32_t address, uint32_t value)
+                 vif1_regs.stat &= ~((1u << 8) | (1u << 9) | (1u << 10) | (1u << 11) | (1u << 12) | (1u << 13));
+             }
+             break;
++        case 0x10003C20u:
++            vif1_regs.err = value & 0x7u;
++            break;
+         case 0x10003C30u:
+             vif1_regs.mark = value & 0xFFFFu;
+             vif1_regs.stat &= ~(1u << 6); // clear MRK flag on CPU write
+@@ -2355,6 +2358,48 @@ uint32_t PS2Memory::readIORegister(uint32_t address)
+         return stat;
+     }
+ 
++    if (address >= 0x10003C00u && address < 0x10003D00u && (address & 0xFu) == 0u)
++    {
++        // VIF1 registers reflect the VIF's own state (MARK set by the MARK
++        // VIFcode, STAT bits, NUM/CODE of the last VIFcode...), not just the
++        // last CPU write.
++        switch (address)
++        {
++        case 0x10003C00u:
++            return vif1_regs.stat;
++        case 0x10003C10u: // FBRST is write-only
++            return 0u;
++        case 0x10003C20u:
++            return vif1_regs.err;
++        case 0x10003C30u:
++            return vif1_regs.mark;
++        case 0x10003C40u:
++            return vif1_regs.cycle;
++        case 0x10003C50u:
++            return vif1_regs.mode;
++        case 0x10003C60u:
++            return vif1_regs.num;
++        case 0x10003C70u:
++            return vif1_regs.mask;
++        case 0x10003C80u:
++            return vif1_regs.code;
++        case 0x10003C90u:
++            return vif1_regs.itops;
++        case 0x10003CA0u:
++            return vif1_regs.base;
++        case 0x10003CB0u:
++            return vif1_regs.ofst;
++        case 0x10003CC0u:
++            return vif1_regs.tops;
++        case 0x10003CD0u:
++            return vif1_regs.itop;
++        case 0x10003CE0u:
++            return vif1_regs.top;
++        default:
++            break;
++        }
++    }
++
+     if (address >= 0x10000000 && address < 0x10010000)
+     {
+         if (address >= 0x10008000 && address < 0x1000F000)
+diff --git a/ps2xTest/src/ps2_memory_tests.cpp b/ps2xTest/src/ps2_memory_tests.cpp
+index 0b22fe0..ff4ca29 100644
+--- a/ps2xTest/src/ps2_memory_tests.cpp
++++ b/ps2xTest/src/ps2_memory_tests.cpp
+@@ -440,6 +440,24 @@ void register_ps2_memory_tests()
+             t.IsTrue(matches, "UNPACK num=0 should copy 256 V4_32 vectors (4096 bytes)");
+         });
+ 
++        tc.Run("VIF1 register reads return the VIF state, not the last CPU write", [](TestCase &t)
++        {
++            PS2Memory mem;
++            t.IsTrue(mem.initialize(), "PS2Memory initialize should succeed");
++
++            mem.write32(0x10003C30u, 0x1111u); // CPU writes VIF1_MARK
++            std::vector<uint8_t> packet;
++            appendU32(packet, makeVifCmd(0x07u, 0u, 0x2222u)); // MARK VIFcode
++            mem.processVIF1Data(packet.data(), static_cast<uint32_t>(packet.size()));
++
++            t.Equals(mem.read32(0x10003C30u), 0x2222u, "VIF1_MARK should show the MARK VIFcode's value");
++            t.IsTrue((mem.read32(0x10003C00u) & (1u << 6)) != 0u, "VIF1_STAT.MRK should be visible to the CPU");
++            t.Equals(mem.read32(0x10003C80u), makeVifCmd(0x07u, 0u, 0x2222u), "VIF1_CODE should show the last VIFcode");
++
++            mem.write32(0x10003C20u, 0x1u);
++            t.Equals(mem.read32(0x10003C20u), 0x1u, "VIF1_ERR should read back what was written");
++        });
++
+         tc.Run("VIF control commands update MARK MASK ROW and COL registers", [](TestCase &t)
+         {
+             PS2Memory mem;

@@ -1,0 +1,40 @@
+From ran-j/PS2Recomp pull request #303: Route all four VU memories through the special-address path (by @VariableDeclared)
+https://github.com/ran-j/PS2Recomp/pull/303 (open, not yet merged upstream). GPL-3.0, same as PS2Recomp.
+
+diff --git a/ps2xRuntime/include/runtime/ps2_address.h b/ps2xRuntime/include/runtime/ps2_address.h
+index f7689e0..feb22e6 100644
+--- a/ps2xRuntime/include/runtime/ps2_address.h
++++ b/ps2xRuntime/include/runtime/ps2_address.h
+@@ -47,7 +47,9 @@ static inline constexpr bool Ps2IsPhysicalSpecialAddress(uint32_t physAddr)
+            Ps2AddressInRange(physAddr, PS2_SCRATCHPAD_BASE, PS2_SCRATCHPAD_SIZE) ||
+            Ps2AddressInRange(physAddr, PS2_IO_BASE, PS2_IO_SIZE) ||
+            Ps2AddressInRange(physAddr, PS2_GS_PRIV_REG_BASE, PS2_GS_PRIV_REG_SIZE) ||
+-           (physAddr >= PS2_VU0_DATA_BASE && physAddr < (PS2_VU1_CODE_BASE + PS2_VU1_CODE_SIZE));
++           // All four VU memories (VU0 code 0x11000000 .. VU1 data end 0x11010000) must take the slow
++           // path; otherwise VU0 microcode and VU1 data writes land in main RAM at 0x01000000+.
++           (physAddr >= PS2_VU0_CODE_BASE && physAddr < (PS2_VU1_DATA_BASE + PS2_VU1_DATA_SIZE));
+ }
+ 
+ static inline constexpr bool Ps2IsSpecialAddress(uint32_t addr)
+diff --git a/ps2xTest/src/ps2_memory_tests.cpp b/ps2xTest/src/ps2_memory_tests.cpp
+index f3fa04a..5d5e456 100644
+--- a/ps2xTest/src/ps2_memory_tests.cpp
++++ b/ps2xTest/src/ps2_memory_tests.cpp
+@@ -159,6 +159,17 @@ void register_ps2_memory_tests()
+ {
+     MiniTest::Case("PS2Memory", [](TestCase &tc)
+     {
++        tc.Run("all four VU memories take the special-address path", [](TestCase &t)
++        {
++            t.IsTrue(PS2Runtime::isSpecialAddress(0x11000000u), "VU0 code memory must not be treated as RAM");
++            t.IsTrue(PS2Runtime::isSpecialAddress(0x11000FF0u), "end of VU0 code memory must not be treated as RAM");
++            t.IsTrue(PS2Runtime::isSpecialAddress(0x11004000u), "VU0 data memory must not be treated as RAM");
++            t.IsTrue(PS2Runtime::isSpecialAddress(0x11008000u), "VU1 code memory must not be treated as RAM");
++            t.IsTrue(PS2Runtime::isSpecialAddress(0x1100C000u), "VU1 data memory must not be treated as RAM");
++            t.IsTrue(PS2Runtime::isSpecialAddress(0x1100FFF0u), "end of VU1 data memory must not be treated as RAM");
++            t.IsFalse(PS2Runtime::isSpecialAddress(0x01000000u), "main RAM at 16 MB is ordinary RAM");
++        });
++
+         tc.Run("uncached aliases map to same RDRAM bytes", [](TestCase &t)
+         {
+             PS2Memory mem;

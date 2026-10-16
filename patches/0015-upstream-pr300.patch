@@ -1,0 +1,86 @@
+From ran-j/PS2Recomp pull request #300: Fix VIF UNPACK V4-5 channel scaling and V2 z/w lanes (by @VariableDeclared)
+https://github.com/ran-j/PS2Recomp/pull/300 (open, not yet merged upstream). GPL-3.0, same as PS2Recomp.
+
+diff --git a/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp b/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp
+index 77caaaa..0fe9ef6 100644
+--- a/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp
++++ b/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp
+@@ -721,16 +721,24 @@ void PS2Memory::processVIF1Data(const uint8_t *data, uint32_t sizeBytes)
+                         // V4-5: packed color-like format in a single 16-bit value.
+                         uint16_t packed = 0;
+                         std::memcpy(&packed, srcVec, sizeof(packed));
+-                        decompressed[0] = packed & 0x1Fu;
+-                        decompressed[1] = (packed >> 5) & 0x1Fu;
+-                        decompressed[2] = (packed >> 10) & 0x1Fu;
+-                        decompressed[3] = (packed >> 15) & 0x01u;
++                        // Each channel is scaled to 8 bits (RGBA5551 -> RGBA8888 with zero low bits).
++                        decompressed[0] = (packed & 0x1Fu) << 3;
++                        decompressed[1] = (packed & 0x3E0u) >> 2;
++                        decompressed[2] = (packed & 0x7C00u) >> 7;
++                        decompressed[3] = (packed & 0x8000u) >> 8;
+                     }
+                     else
+                     {
+                         handledFormat = false;
+                     }
+ 
++                    // V2 fills every lane: the hardware writes x y x y.
++                    if (decoded && handledFormat && components == 2 && vl != 3u)
++                    {
++                        decompressed[2] = decompressed[0];
++                        decompressed[3] = decompressed[1];
++                    }
++
+                     // Unknown compressed format fallback: preserve legacy raw-copy behavior.
+                     if (!handledFormat && decoded && !maskEnable && (vif1_regs.mode == 0u || vif1_regs.mode == 3u))
+                     {
+diff --git a/ps2xTest/src/ps2_memory_tests.cpp b/ps2xTest/src/ps2_memory_tests.cpp
+index 17a3b83..f3fa04a 100644
+--- a/ps2xTest/src/ps2_memory_tests.cpp
++++ b/ps2xTest/src/ps2_memory_tests.cpp
+@@ -549,6 +549,45 @@ void register_ps2_memory_tests()
+             t.Equals(sw, 0x00008001u, "zero-extend w");
+         });
+ 
++        tc.Run("VIF UNPACK V2 writes x y x y", [](TestCase &t)
++        {
++            PS2Memory mem;
++            t.IsTrue(mem.initialize(), "PS2Memory initialize should succeed");
++            std::memset(mem.getVU1Data(), 0xEE, PS2_VU1_DATA_SIZE);
++
++            std::vector<uint8_t> packet;
++            appendU32(packet, makeVifCmd(0x64u, 1u, 0x0000u)); // UNPACK V2-32, num=1, addr=0
++            appendU32(packet, 0x11111111u);
++            appendU32(packet, 0x22222222u);
++            mem.processVIF1Data(packet.data(), static_cast<uint32_t>(packet.size()));
++
++            uint32_t lanes[4] = {};
++            std::memcpy(lanes, mem.getVU1Data(), sizeof(lanes));
++            t.Equals(lanes[0], 0x11111111u, "V2 x");
++            t.Equals(lanes[1], 0x22222222u, "V2 y");
++            t.Equals(lanes[2], 0x11111111u, "V2 z should repeat x");
++            t.Equals(lanes[3], 0x22222222u, "V2 w should repeat y");
++        });
++
++        tc.Run("VIF UNPACK V4-5 scales each channel to 8 bits", [](TestCase &t)
++        {
++            PS2Memory mem;
++            t.IsTrue(mem.initialize(), "PS2Memory initialize should succeed");
++            std::memset(mem.getVU1Data(), 0, PS2_VU1_DATA_SIZE);
++
++            std::vector<uint8_t> packet;
++            appendU32(packet, makeVifCmd(0x6Fu, 1u, 0x0000u)); // UNPACK V4-5, num=1, addr=0
++            appendU32(packet, 0x0000C03Fu);                     // r=0x1F g=0x01 b=0x10 a=1
++            mem.processVIF1Data(packet.data(), static_cast<uint32_t>(packet.size()));
++
++            uint32_t lanes[4] = {};
++            std::memcpy(lanes, mem.getVU1Data(), sizeof(lanes));
++            t.Equals(lanes[0], 0xF8u, "r << 3");
++            t.Equals(lanes[1], 0x08u, "g << 3");
++            t.Equals(lanes[2], 0x80u, "b << 3");
++            t.Equals(lanes[3], 0x80u, "a << 7");
++        });
++
+         tc.Run("VIF UNPACK bit15 adds TOPS to destination address", [](TestCase &t)
+         {
+             PS2Memory mem;

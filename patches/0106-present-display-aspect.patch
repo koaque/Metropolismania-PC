@@ -1,0 +1,45 @@
+diff --git a/ps2xRuntime/src/lib/ps2_runtime.cpp b/ps2xRuntime/src/lib/ps2_runtime.cpp
+index 66dfbca..5734b60 100644
+--- a/ps2xRuntime/src/lib/ps2_runtime.cpp
++++ b/ps2xRuntime/src/lib/ps2_runtime.cpp
+@@ -19,6 +19,7 @@
+ #include <fstream>
+ #include <algorithm>
+ #include <array>
++#include <cstdlib>
+ #include <cstring>
+ #include <limits>
+ #include <chrono>
+@@ -2434,9 +2435,29 @@ void PS2Runtime::run()
+         const float srcHeight = static_cast<float>(std::max<uint32_t>(1u, presentHeight));
+         const float screenWidth = static_cast<float>(GetScreenWidth());
+         const float screenHeight = static_cast<float>(GetScreenHeight());
+-        const float scale = std::min(screenWidth / srcWidth, screenHeight / srcHeight);
+-        const float dstWidth = srcWidth * scale;
+-        const float dstHeight = srcHeight * scale;
++        // Fit the PS2 output to the window at the display aspect ratio (4:3 TV by default), not the
++        // frame buffer's raw proportions: interlaced games present 640x224 fields that a TV shows
++        // at full height. PS2X_ASPECT=16:9 for widescreen patches, PS2X_ASPECT=stretch to fill.
++        static const float displayAspect = []()
++        {
++            const char *value = std::getenv("PS2X_ASPECT");
++            if (value && std::strcmp(value, "16:9") == 0)
++                return 16.0f / 9.0f;
++            if (value && std::strcmp(value, "stretch") == 0)
++                return 0.0f;
++            return 4.0f / 3.0f;
++        }();
++        float dstWidth = screenWidth;
++        float dstHeight = screenHeight;
++        if (displayAspect > 0.0f)
++        {
++            dstHeight = screenWidth / displayAspect;
++            if (dstHeight > screenHeight)
++            {
++                dstHeight = screenHeight;
++                dstWidth = screenHeight * displayAspect;
++            }
++        }
+         const Rectangle srcRect{0.0f, 0.0f, srcWidth, srcHeight};
+         const Rectangle dstRect{
+             (screenWidth - dstWidth) * 0.5f,

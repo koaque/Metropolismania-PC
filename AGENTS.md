@@ -18,6 +18,8 @@ A static recompilation of **Metropolismania** (PS2, USA, SLUS-20377, disc VER 1.
    - `src/overrides/`: per-game C++ overrides, matched by ELF name, entry point and CRC32.
    - `patches/`: changes to PS2Recomp itself. Keep them small and send them upstream when they are general.
 6. **Pinned upstream.** `ext/PS2Recomp` is a submodule pinned in `upstream.lock.json`. Bump both together, on purpose.
+   - `patches/00NN-upstream-prNNN.patch` are open, unmerged PS2Recomp pull requests that this game needs, applied in number order. Each file starts with the PR link, title and author. Drop a patch once its PR is merged and the pin is bumped past it.
+   - `patches/01NN-*.patch` are this project's own runtime changes, applied after the upstream ones. Send the general ones upstream.
 7. **Writing style.** No em dashes in docs, comments or commit messages.
 
 ## Layout

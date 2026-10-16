@@ -1,0 +1,290 @@
+From ran-j/PS2Recomp pull request #295: Raise INTC VIF1 and stall VIF1 on the VIFcode interrupt bit (by @VariableDeclared)
+https://github.com/ran-j/PS2Recomp/pull/295 (open, not yet merged upstream). GPL-3.0, same as PS2Recomp.
+Applied with a three-way merge on top of #294.
+
+diff --git a/ps2xRuntime/include/runtime/ps2_memory.h b/ps2xRuntime/include/runtime/ps2_memory.h
+index ea86a9c..e428678 100644
+--- a/ps2xRuntime/include/runtime/ps2_memory.h
++++ b/ps2xRuntime/include/runtime/ps2_memory.h
+@@ -345,6 +345,7 @@ public:
+     void processVIF1Data(const uint8_t *data, uint32_t sizeBytes);
+     void processPendingTransfers();
+     std::vector<uint32_t> consumeCompletedDmacCauses();
++    std::vector<uint32_t> consumeCompletedIntcCauses();
+ 
+     int pollDmaRegisters();
+ 
+@@ -423,6 +424,16 @@ public:
+     std::vector<PendingTransfer> m_pendingVif1Transfers;
+     std::mutex m_completedDmacMutex;
+     std::vector<uint32_t> m_completedDmacCauses;
++    std::vector<uint32_t> m_completedIntcCauses;
++    void queueIntcCause(uint32_t cause);
++    void completeVif1Dma();
++    void resumeVIF1AfterStall();
++    // VIF1 i-bit stall: data behind the stall, and whether the VIF1 DMA
++    // completion is held until the stall is released.
++    bool m_vif1IrqStallPending = false;
++    bool m_vif1Stalled = false;
++    bool m_vif1DmaHeld = false;
++    std::vector<uint8_t> m_vif1StalledData;
+ 
+     struct CodeRegion
+     {
+diff --git a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+index c5e31c4..8244928 100644
+--- a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
++++ b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+@@ -1867,6 +1867,9 @@ void EeScheduler::processEvent(const EeEvent &event)
+         requestStop();
+         break;
+     case EeEventType::VBlankStart:
++        // Safety net for interrupts queued by DMA/VIF work outside a guest
++        // store (e.g. from a stub) while the guest spins on loads only.
++        m_runtime.drainCompletedDmacHandlers(m_rdram);
+         ++m_vsyncTick;
+         m_runtime.memory().gs().vsyncTick.store(m_vsyncTick, std::memory_order_release);
+         if ((m_vsyncTick & 1u) != 0u)
+diff --git a/ps2xRuntime/src/lib/Kernel/Stubs/Helpers/Support.h b/ps2xRuntime/src/lib/Kernel/Stubs/Helpers/Support.h
+index b1bb6d8..71b90c0 100644
+--- a/ps2xRuntime/src/lib/Kernel/Stubs/Helpers/Support.h
++++ b/ps2xRuntime/src/lib/Kernel/Stubs/Helpers/Support.h
+@@ -1433,6 +1433,9 @@ namespace
+         {
+             ps2_syscalls::dispatchDmacHandlersForCause(rdram, runtime, completedCause);
+         }
++        // The transfer may also have raised INTC causes (a VIF1 i-bit stall
++        // waits on its handler); don't leave them for the next guest store.
++        runtime->drainCompletedDmacHandlers(rdram);
+ 
+         return 0;
+     }
+diff --git a/ps2xRuntime/src/lib/ps2_memory.cpp b/ps2xRuntime/src/lib/ps2_memory.cpp
+index 05fee0d..932700c 100644
+--- a/ps2xRuntime/src/lib/ps2_memory.cpp
++++ b/ps2xRuntime/src/lib/ps2_memory.cpp
+@@ -325,7 +325,12 @@ bool PS2Memory::initialize(size_t ramSize)
+     {
+         std::lock_guard<std::mutex> lock(m_completedDmacMutex);
+         m_completedDmacCauses.clear();
++        m_completedIntcCauses.clear();
+     }
++    m_vif1IrqStallPending = false;
++    m_vif1Stalled = false;
++    m_vif1DmaHeld = false;
++    m_vif1StalledData.clear();
+     m_codeRegions.clear();
+     m_path3Masked = false;
+     m_path3MaskedFifo.clear();
+@@ -1232,12 +1237,21 @@ bool PS2Memory::writeIORegister(uint32_t address, uint32_t value)
+                 m_vif1PendingPath2ImageQwc = 0u;
+                 m_vif1PendingPath2DirectHl = false;
+                 m_path3Masked = false;
++                m_vif1IrqStallPending = false;
++                m_vif1Stalled = false;
++                m_vif1StalledData.clear();
++                if (m_vif1DmaHeld)
++                {
++                    m_vif1DmaHeld = false;
++                    completeVif1Dma();
++                }
+                 if (wasPath3Masked)
+                     flushMaskedPath3Packets();
+             }
+             if (value & 0x8u) // STC
+             {
+                 vif1_regs.stat &= ~((1u << 8) | (1u << 9) | (1u << 10) | (1u << 11) | (1u << 12) | (1u << 13));
++                resumeVIF1AfterStall();
+             }
+             break;
+         case 0x10003C20u:
+@@ -1901,13 +1915,45 @@ void PS2Memory::processPendingTransfers()
+     }
+     if (hadVif1)
+     {
+-        raiseDStatChannel(1u); // VIF1 channel
+-        queueCompletedDmacCause(1u);
+-        m_ioRegisters[VIF1_CHANNEL + 0x00] &= ~0x100u;
+-        m_ioRegisters[VIF1_CHANNEL + 0x20] = 0;
++        // A transfer stalled on a VIFcode i-bit isn't finished until the
++        // CPU releases the stall (FBRST.STC).
++        if (m_vif1Stalled)
++            m_vif1DmaHeld = true;
++        else
++            completeVif1Dma();
+     }
+ }
+ 
++void PS2Memory::completeVif1Dma()
++{
++    constexpr uint32_t VIF1_CHANNEL = 0x10009000u;
++    constexpr uint32_t D_STAT = 0x1000E010u;
++    uint32_t dstat = m_ioRegisters.count(D_STAT) ? m_ioRegisters[D_STAT] : 0u;
++    dstat |= (1u << 1);
++    if (((dstat & 0x3FFu) & ((dstat >> 16) & 0x3FFu)) != 0u)
++        dstat |= (1u << 31);
++    else
++        dstat &= ~(1u << 31);
++    m_ioRegisters[D_STAT] = dstat;
++    queueCompletedDmacCause(1u);
++    m_ioRegisters[VIF1_CHANNEL + 0x00] &= ~0x100u;
++    m_ioRegisters[VIF1_CHANNEL + 0x20] = 0;
++}
++
++void PS2Memory::queueIntcCause(uint32_t cause)
++{
++    std::lock_guard<std::mutex> lock(m_completedDmacMutex);
++    m_completedIntcCauses.push_back(cause);
++}
++
++std::vector<uint32_t> PS2Memory::consumeCompletedIntcCauses()
++{
++    std::lock_guard<std::mutex> lock(m_completedDmacMutex);
++    std::vector<uint32_t> causes;
++    causes.swap(m_completedIntcCauses);
++    return causes;
++}
++
+ void PS2Memory::queueCompletedDmacCause(uint32_t cause)
+ {
+     std::lock_guard<std::mutex> lock(m_completedDmacMutex);
+diff --git a/ps2xRuntime/src/lib/ps2_runtime.cpp b/ps2xRuntime/src/lib/ps2_runtime.cpp
+index 45cb9d2..66dfbca 100644
+--- a/ps2xRuntime/src/lib/ps2_runtime.cpp
++++ b/ps2xRuntime/src/lib/ps2_runtime.cpp
+@@ -1489,6 +1489,10 @@ void PS2Runtime::drainCompletedDmacHandlers(uint8_t *rdram)
+     {
+         ps2_syscalls::dispatchDmacHandlersForCause(rdram, this, cause);
+     }
++    for (uint32_t cause : m_memory.consumeCompletedIntcCauses())
++    {
++        eeScheduler().dispatchIrq(false, cause);
++    }
+ }
+ 
+ void PS2Runtime::handleTrap(uint8_t *rdram, R5900Context *ctx)
+diff --git a/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp b/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp
+index b02c7ca..77caaaa 100644
+--- a/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp
++++ b/ps2xRuntime/src/lib/ps2_vif1_interpreter.cpp
+@@ -300,10 +300,27 @@ void PS2Memory::processVIF1Data(const uint8_t *data, uint32_t sizeBytes)
+     if (sizeBytes == 0u)
+         return;
+ 
++    // A VIFcode with the interrupt bit stalls VIF1 after it completes until
++    // the CPU writes FBRST.STC. Keep everything behind the stall (including
++    // later transfers) so it runs, in order, on resume.
++    if (m_vif1Stalled)
++    {
++        m_vif1StalledData.insert(m_vif1StalledData.end(), data, data + sizeBytes);
++        return;
++    }
++
+     uint32_t pos = 0;
+ 
+     while (pos + 4 <= sizeBytes)
+     {
++        if (m_vif1IrqStallPending)
++        {
++            m_vif1IrqStallPending = false;
++            m_vif1Stalled = true;
++            m_vif1StalledData.insert(m_vif1StalledData.end(), data + pos, data + sizeBytes);
++            return;
++        }
++
+         if (m_vif1PendingPath2ImageQwc != 0u)
+         {
+             const uint32_t availableQw = (sizeBytes - pos) / 16u;
+@@ -343,8 +360,12 @@ void PS2Memory::processVIF1Data(const uint8_t *data, uint32_t sizeBytes)
+         // Track most-recent command for VIFn_CODE emulation.
+         vif1_regs.code = cmd;
+         vif1_regs.num = num;
+-        if (irq)
+-            vif1_regs.stat |= (1u << 11); // INT
++        if (irq && (vif1_regs.err & 0x1u) == 0u) // ERR.MII masks the i-bit
++        {
++            vif1_regs.stat |= (1u << 11) | (1u << 10); // INT, VIS
++            m_vif1IrqStallPending = true;
++            queueIntcCause(5u); // INTC_VIF1
++        }
+ 
+         if (opcode == VIF_NOP)
+         {
+@@ -780,4 +801,27 @@ void PS2Memory::processVIF1Data(const uint8_t *data, uint32_t sizeBytes)
+             continue;
+         }
+     }
++
++    if (m_vif1IrqStallPending)
++    {
++        m_vif1IrqStallPending = false;
++        m_vif1Stalled = true;
++    }
++}
++
++void PS2Memory::resumeVIF1AfterStall()
++{
++    if (!m_vif1Stalled)
++        return;
++    m_vif1Stalled = false;
++    std::vector<uint8_t> rest;
++    rest.swap(m_vif1StalledData);
++    processVIF1Data(rest.data(), static_cast<uint32_t>(rest.size()));
++    if (m_gifArbiter)
++        m_gifArbiter->drain();
++    if (!m_vif1Stalled && m_vif1DmaHeld)
++    {
++        m_vif1DmaHeld = false;
++        completeVif1Dma();
++    }
+ }
+diff --git a/ps2xTest/src/ps2_memory_tests.cpp b/ps2xTest/src/ps2_memory_tests.cpp
+index ff4ca29..ff91222 100644
+--- a/ps2xTest/src/ps2_memory_tests.cpp
++++ b/ps2xTest/src/ps2_memory_tests.cpp
+@@ -787,6 +787,45 @@ void register_ps2_memory_tests()
+             t.IsTrue((mem.vif1_regs.stat & (1u << 11)) == 0u, "FBRST.STC should clear VIF1 STAT.INT");
+         });
+ 
++        tc.Run("VIF irq command raises INTC VIF1 and stalls until FBRST.STC", [](TestCase &t)
++        {
++            PS2Memory mem;
++            t.IsTrue(mem.initialize(), "PS2Memory initialize should succeed");
++
++            std::vector<uint8_t> packet;
++            appendU32(packet, 0x80000000u | makeVifCmd(0x07u, 0u, 0x1111u)); // MARK with the i-bit
++            appendU32(packet, makeVifCmd(0x07u, 0u, 0x2222u));               // runs after the stall
++            mem.processVIF1Data(packet.data(), static_cast<uint32_t>(packet.size()));
++
++            const std::vector<uint32_t> causes = mem.consumeCompletedIntcCauses();
++            t.IsTrue(causes.size() == 1u && causes[0] == 5u, "the i-bit should raise INTC cause 5 (VIF1)");
++            t.Equals(mem.vif1_regs.mark, 0x1111u, "the command with the i-bit should complete");
++            t.IsTrue((mem.vif1_regs.stat & (1u << 10)) != 0u, "VIF1 should be stalled (STAT.VIS)");
++
++            const uint32_t later = makeVifCmd(0x07u, 0u, 0x3333u);
++            mem.processVIF1Data(reinterpret_cast<const uint8_t *>(&later), sizeof(later));
++            t.Equals(mem.vif1_regs.mark, 0x1111u, "data behind the stall, including later transfers, should wait");
++
++            t.IsTrue(mem.writeIORegister(0x10003C10u, 0x8u), "FBRST STC write should succeed");
++            t.Equals(mem.vif1_regs.mark, 0x3333u, "FBRST.STC should run the held data in order");
++            t.IsTrue((mem.vif1_regs.stat & (1u << 10)) == 0u, "FBRST.STC should clear STAT.VIS");
++        });
++
++        tc.Run("VIF1_ERR.MII masks the VIFcode i-bit", [](TestCase &t)
++        {
++            PS2Memory mem;
++            t.IsTrue(mem.initialize(), "PS2Memory initialize should succeed");
++            t.IsTrue(mem.writeIORegister(0x10003C20u, 0x1u), "VIF1_ERR write should succeed");
++
++            std::vector<uint8_t> packet;
++            appendU32(packet, 0x80000000u | makeVifCmd(0x07u, 0u, 0x1111u));
++            appendU32(packet, makeVifCmd(0x07u, 0u, 0x2222u));
++            mem.processVIF1Data(packet.data(), static_cast<uint32_t>(packet.size()));
++
++            t.IsTrue(mem.consumeCompletedIntcCauses().empty(), "a masked i-bit should not raise an interrupt");
++            t.Equals(mem.vif1_regs.mark, 0x2222u, "a masked i-bit should not stall VIF1");
++        });
++
+         tc.Run("VIF FBRST RST clears VIF1 command state", [](TestCase &t)
+         {
+             PS2Memory mem;

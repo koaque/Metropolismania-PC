@@ -1,0 +1,199 @@
+diff --git a/ps2xRuntime/src/lib/gs/gs_frontend.cpp b/ps2xRuntime/src/lib/gs/gs_frontend.cpp
+index 40849ab..7603e02 100644
+--- a/ps2xRuntime/src/lib/gs/gs_frontend.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_frontend.cpp
+@@ -9,6 +9,79 @@
+ #include <cstring>
+ #include <iostream>
+ #include <sstream>
++#include <chrono>
++#include <cstdlib>
++#include <iostream>
++#include <map>
++#include <sstream>
++
++namespace
++{
++    // PS2X_GS_STATS=1: every 2 s, log how many primitives were drawn, by type, target frame
++    // buffer and test state, plus the vertex coordinate range. Debug aid for missing geometry.
++    struct GsDrawStats
++    {
++        uint64_t draws = 0;
++        uint64_t byType[8] = {};
++        std::map<uint32_t, uint64_t> byFbp;
++        uint64_t zte = 0;
++        uint64_t ztst[4] = {};
++        uint64_t ate = 0;
++        uint64_t tme = 0;
++        float minX = 1e30f, maxX = -1e30f, minY = 1e30f, maxY = -1e30f;
++        std::chrono::steady_clock::time_point last = std::chrono::steady_clock::now();
++    };
++
++    bool gsStatsEnabled()
++    {
++        static const bool enabled = []()
++        {
++            const char *value = std::getenv("PS2X_GS_STATS");
++            return value != nullptr && value[0] == '1';
++        }();
++        return enabled;
++    }
++
++    void gsStatsRecord(const GSPrimitiveBatch &batch, uint32_t primType)
++    {
++        static GsDrawStats s;
++        ++s.draws;
++        ++s.byType[primType & 7u];
++        ++s.byFbp[batch.state.context.frame.fbp];
++        const uint64_t test = batch.state.context.test;
++        if (test & (1ull << 16))
++        {
++            ++s.zte;
++            ++s.ztst[(test >> 17) & 3u];
++        }
++        if (test & 1ull)
++            ++s.ate;
++        if (batch.state.prim.tme)
++            ++s.tme;
++        for (uint32_t i = 0; i < batch.vertexCount && i < batch.vertices.size(); ++i)
++        {
++            s.minX = std::min(s.minX, batch.vertices[i].x);
++            s.maxX = std::max(s.maxX, batch.vertices[i].x);
++            s.minY = std::min(s.minY, batch.vertices[i].y);
++            s.maxY = std::max(s.maxY, batch.vertices[i].y);
++        }
++        const auto now = std::chrono::steady_clock::now();
++        if (now - s.last < std::chrono::seconds(2))
++            return;
++        std::ostringstream out;
++        out << "[gs:stats] draws=" << s.draws << " point/line/lstrip/tri/strip/fan/sprite="
++            << s.byType[0] << "/" << s.byType[1] << "/" << s.byType[2] << "/" << s.byType[3] << "/"
++            << s.byType[4] << "/" << s.byType[5] << "/" << s.byType[6] << " fbp{";
++        for (const auto &[fbp, count] : s.byFbp)
++            out << std::hex << "0x" << fbp << std::dec << ":" << count << " ";
++        out << "} zte=" << s.zte << " ztst(never/always/ge/gt)=" << s.ztst[0] << "/" << s.ztst[1] << "/"
++            << s.ztst[2] << "/" << s.ztst[3] << " ate=" << s.ate << " tme=" << s.tme
++            << " x=[" << s.minX << "," << s.maxX << "] y=[" << s.minY << "," << s.maxY << "]";
++        std::cerr << out.str() << std::endl;
++        s = GsDrawStats{};
++        s.last = now;
++    }
++}
+ 
+ namespace
+ {
+@@ -1575,6 +1648,8 @@ void GS::vertexKick(bool drawing)
+     if (drawing && m_backend)
+     {
+         GSPrimitiveBatch batch = buildDrawBatch(needed);
++        if (gsStatsEnabled())
++            gsStatsRecord(batch, static_cast<uint32_t>(m_prim.type));
+         updatePreferredDisplaySourceForDraw(batch);
+         m_backend->Submit(batch);
+         recordDrawDebugEventUnlocked(needed);
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+index 5c374b3..d94d5d6 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+@@ -13,6 +13,50 @@
+ #include <filesystem>
+ #include <limits>
+ #include <ps2_log.h>
++#include <chrono>
++#include <cstdlib>
++#include <iostream>
++
++namespace
++{
++    // PS2X_GS_STATS=1: every 2 s, log VU1 program runs and XGKICK traffic.
++    struct Vu1Stats
++    {
++        uint64_t runs = 0;
++        uint64_t xgkicks = 0;
++        uint64_t xgkickBytes = 0;
++        uint64_t aborted = 0;
++        std::chrono::steady_clock::time_point last = std::chrono::steady_clock::now();
++    };
++
++    Vu1Stats &vu1Stats()
++    {
++        static Vu1Stats stats;
++        return stats;
++    }
++
++    bool vu1StatsEnabled()
++    {
++        static const bool enabled = []()
++        {
++            const char *value = std::getenv("PS2X_GS_STATS");
++            return value != nullptr && value[0] == '1';
++        }();
++        return enabled;
++    }
++
++    void vu1StatsMaybeLog()
++    {
++        Vu1Stats &s = vu1Stats();
++        const auto now = std::chrono::steady_clock::now();
++        if (now - s.last < std::chrono::seconds(2))
++            return;
++        std::cerr << "[vu1:stats] runs=" << s.runs << " xgkicks=" << s.xgkicks << " bytes=" << s.xgkickBytes
++                  << " aborted=" << s.aborted << std::endl;
++        s = Vu1Stats{};
++        s.last = now;
++    }
++}
+ 
+ namespace
+ {
+@@ -898,6 +942,8 @@ void VU1Interpreter::progressXgkick()
+         if (m_xgkick.copiedBytes > XgkickPipeline::kBufferSize - 16u)
+         {
+             reportReservedInstruction(false, 0xFFFFFFFBu);
++            if (vu1StatsEnabled())
++                ++vu1Stats().aborted;
+             m_xgkick.active = false;
+             return;
+         }
+@@ -959,6 +1005,29 @@ void VU1Interpreter::finishXgkick()
+     if (!m_xgkick.active)
+         return;
+ 
++    if (vu1StatsEnabled())
++    {
++        ++vu1Stats().xgkicks;
++        vu1Stats().xgkickBytes += m_xgkick.totalBytes;
++        static uint64_t s_kickSerial = 0;
++        if ((++s_kickSerial % 2001u) == 1u)
++        {
++            uint64_t tagLo = 0, tagHi = 0;
++            std::memcpy(&tagLo, m_xgkick.packet.data(), 8);
++            std::memcpy(&tagHi, m_xgkick.packet.data() + 8, 8);
++            std::cerr << std::hex << "[vu1:kick] bytes=0x" << m_xgkick.totalBytes << " tag nloop=0x" << (tagLo & 0x7FFF)
++                      << " eop=" << ((tagLo >> 15) & 1) << " pre=" << ((tagLo >> 46) & 1) << " prim=0x" << ((tagLo >> 47) & 0x7FF)
++                      << " flg=" << ((tagLo >> 58) & 3) << " nreg=" << ((tagLo >> 60) & 0xF) << " regs=0x" << tagHi << " q:";
++            for (uint32_t q = 1; q < 5 && q * 16u + 16u <= m_xgkick.totalBytes; ++q)
++            {
++                uint64_t lo = 0, hi = 0;
++                std::memcpy(&lo, m_xgkick.packet.data() + q * 16u, 8);
++                std::memcpy(&hi, m_xgkick.packet.data() + q * 16u + 8, 8);
++                std::cerr << " " << hi << "_" << lo;
++            }
++            std::cerr << std::dec << std::endl;
++        }
++    }
+     if (m_activeMemory)
+         m_activeMemory->submitGifPacket(GifPathId::Path1, m_xgkick.packet.data(), m_xgkick.totalBytes);
+     else if (m_activeGs)
+@@ -1632,6 +1701,11 @@ void VU1Interpreter::execute(uint8_t *vuCode, uint32_t codeSize,
+                              uint32_t startPC, uint32_t top, uint32_t itop,
+                              uint32_t maxCycles)
+ {
++    if (vu1StatsEnabled())
++    {
++        ++vu1Stats().runs;
++        vu1StatsMaybeLog();
++    }
+     resetScheduler();
+     m_state.pc = startPC & microAddressMask();
+     m_state.ebit = false;

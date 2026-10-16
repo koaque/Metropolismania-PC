@@ -1,0 +1,199 @@
+From ran-j/PS2Recomp pull request #310: Fix VU0 macro LQI/LQD/SQI/SQD/ILWR/ISWR operand decoding and memory target (by @yanm1103)
+https://github.com/ran-j/PS2Recomp/pull/310 (open, not yet merged upstream). GPL-3.0, same as PS2Recomp.
+
+diff --git a/ps2xRecomp/src/lib/vu_translation_helpers.cpp b/ps2xRecomp/src/lib/vu_translation_helpers.cpp
+index 509fd07..7242ac7 100644
+--- a/ps2xRecomp/src/lib/vu_translation_helpers.cpp
++++ b/ps2xRecomp/src/lib/vu_translation_helpers.cpp
+@@ -111,14 +111,31 @@ namespace ps2recomp
+                            inst.rt, inst.rt);
+     }
+ 
++    // ILWR/ISWR address VU0 data memory (4 KB) in qwords through vi[is]; the dest field selects the
++    // 32-bit word inside the qword (x = +0, y = +4, z = +8, w = +12). Encoding: it = rt, is = rd.
++    static uint32_t vuFieldOffset(uint8_t destMask)
++    {
++        return (destMask & 0x8) ? 0u : (destMask & 0x4) ? 4u : (destMask & 0x2) ? 8u : 12u;
++    }
++
+     std::string CodeGenerator::translateVU_VILWR(const Instruction &inst)
+     {
+-        return fmt::format("{{ uint32_t addr = (uint32_t)(ctx->vi[{}] << 2) & 0x3FFC; ctx->vi[{}] = static_cast<uint16_t>(READ32(addr)); }}", inst.rd, inst.rt); // VILWR.<f> vit, (vis)
++        return fmt::format("{{ uint32_t addr = (((uint32_t)ctx->vi[{}] & 0xFF) << 4) + {}u; uint32_t v; std::memcpy(&v, runtime->memory().getVU0Data() + addr, 4); ctx->vi[{}] = static_cast<uint16_t>(v); }}",
++                           inst.rd, vuFieldOffset(inst.vectorInfo.vectorField), inst.rt); // VILWR.<f> vit, (vis)
+     }
+ 
+     std::string CodeGenerator::translateVU_VISWR(const Instruction &inst)
+     {
+-        return fmt::format("{{ uint32_t addr = (uint32_t)(ctx->vi[{}] << 2) & 0x3FFC; WRITE32(addr, (uint32_t)ctx->vi[{}]); }}", inst.rd, inst.rt); // VISWR.<f> vit, (vis)
++        // ISWR writes the zero-extended 16-bit value to every field selected in dest.
++        const uint8_t dest = inst.vectorInfo.vectorField;
++        std::string stores;
++        for (uint32_t i = 0; i < 4; ++i)
++        {
++            if (dest & (0x8u >> i))
++                stores += fmt::format("std::memcpy(vu0d + addr + {}u, &v, 4); ", i * 4u);
++        }
++        return fmt::format("{{ uint8_t *vu0d = runtime->memory().getVU0Data(); uint32_t addr = ((uint32_t)ctx->vi[{}] & 0xFF) << 4; uint32_t v = ctx->vi[{}]; {}}}",
++                           inst.rd, inst.rt, stores); // VISWR.<f> vit, (vis)
+     }
+ 
+     std::string CodeGenerator::translateVU_VIADD(const Instruction &inst)
+@@ -765,15 +782,18 @@ namespace ps2recomp
+                            inst.rt, inst.rt);
+     }
+ 
++    // Macro-mode LQI/LQD/SQI/SQD access VU0 data memory (4 KB, addressed in qwords by the VI register), not RDRAM.
++    // Encoding: LQI/LQD: ft = rt, is = rd. SQI/SQD: fs = rd, it = rt.
+     std::string CodeGenerator::translateVU_VLQI(const Instruction &inst)
+     {
+         uint8_t vis = inst.rd;
+         uint8_t dest_mask = inst.vectorInfo.vectorField;
+-        return fmt::format("{{ uint32_t addr = ((uint32_t)(ctx->vi[{}] & 0x3FF)) << 4; "
+-                           "__m128 res = _mm_castsi128_ps(READ128(addr)); "
++        return fmt::format("{{ const uint8_t *vu0d = runtime->memory().getVU0Data(); "
++                           "uint32_t addr = ((uint32_t)(ctx->vi[{}] & 0xFF)) << 4; "
++                           "__m128 res = _mm_loadu_ps(reinterpret_cast<const float *>(vu0d + addr)); "
+                            "__m128i mask = _mm_set_epi32({}, {}, {}, {}); "
+                            "ctx->vu0_vf[{}] = _mm_blendv_ps(ctx->vu0_vf[{}], res, _mm_castsi128_ps(mask)); "
+-                           "ctx->vi[{}] = (ctx->vi[{}] + 1) & 0x3FF; }}",
++                           "ctx->vi[{}] = static_cast<uint16_t>(ctx->vi[{}] + 1); }}",
+                            vis,
+                            (dest_mask & 0x1) ? -1 : 0, (dest_mask & 0x2) ? -1 : 0,
+                            (dest_mask & 0x4) ? -1 : 0, (dest_mask & 0x8) ? -1 : 0,
+@@ -783,27 +803,29 @@ namespace ps2recomp
+ 
+     std::string CodeGenerator::translateVU_VSQI(const Instruction &inst)
+     {
+-        uint8_t vis = inst.rd;
++        uint8_t vit = inst.rt;
+         uint8_t dest_mask = inst.vectorInfo.vectorField;
+-        return fmt::format("{{ uint32_t addr = ((uint32_t)(ctx->vi[{}] & 0x3FF)) << 4; "
+-                           "__m128i old_val = READ128(addr); "
+-                           "__m128 res = _mm_blendv_ps(_mm_castsi128_ps(old_val), ctx->vu0_vf[{}], _mm_castsi128_ps(_mm_set_epi32({}, {}, {}, {}))); "
+-                           "WRITE128(addr, _mm_castps_si128(res)); "
+-                           "ctx->vi[{}] = (ctx->vi[{}] + 1) & 0x3FF; }}",
+-                           vis,
+-                           inst.rt,
++        return fmt::format("{{ uint8_t *vu0d = runtime->memory().getVU0Data(); "
++                           "uint32_t addr = ((uint32_t)(ctx->vi[{}] & 0xFF)) << 4; "
++                           "__m128 old_val = _mm_loadu_ps(reinterpret_cast<const float *>(vu0d + addr)); "
++                           "__m128 res = _mm_blendv_ps(old_val, ctx->vu0_vf[{}], _mm_castsi128_ps(_mm_set_epi32({}, {}, {}, {}))); "
++                           "_mm_storeu_ps(reinterpret_cast<float *>(vu0d + addr), res); "
++                           "ctx->vi[{}] = static_cast<uint16_t>(ctx->vi[{}] + 1); }}",
++                           vit,
++                           inst.rd,
+                            (dest_mask & 0x1) ? -1 : 0, (dest_mask & 0x2) ? -1 : 0,
+                            (dest_mask & 0x4) ? -1 : 0, (dest_mask & 0x8) ? -1 : 0,
+-                           vis, vis);
++                           vit, vit);
+     }
+ 
+     std::string CodeGenerator::translateVU_VLQD(const Instruction &inst)
+     {
+         uint8_t vis = inst.rd;
+         uint8_t dest_mask = inst.vectorInfo.vectorField;
+-        return fmt::format("{{ ctx->vi[{}] = (ctx->vi[{}] - 1) & 0x3FF; "
+-                           "uint32_t addr = ((uint32_t)(ctx->vi[{}] & 0x3FF)) << 4; "
+-                           "__m128 res = _mm_castsi128_ps(READ128(addr)); "
++        return fmt::format("{{ const uint8_t *vu0d = runtime->memory().getVU0Data(); "
++                           "ctx->vi[{}] = static_cast<uint16_t>(ctx->vi[{}] - 1); "
++                           "uint32_t addr = ((uint32_t)(ctx->vi[{}] & 0xFF)) << 4; "
++                           "__m128 res = _mm_loadu_ps(reinterpret_cast<const float *>(vu0d + addr)); "
+                            "__m128i mask = _mm_set_epi32({}, {}, {}, {}); "
+                            "ctx->vu0_vf[{}] = _mm_blendv_ps(ctx->vu0_vf[{}], res, _mm_castsi128_ps(mask)); }}",
+                            vis, vis,
+@@ -815,16 +837,17 @@ namespace ps2recomp
+ 
+     std::string CodeGenerator::translateVU_VSQD(const Instruction &inst)
+     {
+-        uint8_t vis = inst.rd;
++        uint8_t vit = inst.rt;
+         uint8_t dest_mask = inst.vectorInfo.vectorField;
+-        return fmt::format("{{ ctx->vi[{}] = (ctx->vi[{}] - 1) & 0x3FF; "
+-                           "uint32_t addr = ((uint32_t)(ctx->vi[{}] & 0x3FF)) << 4; "
+-                           "__m128i old_val = READ128(addr); "
+-                           "__m128 res = _mm_blendv_ps(_mm_castsi128_ps(old_val), ctx->vu0_vf[{}], _mm_castsi128_ps(_mm_set_epi32({}, {}, {}, {}))); "
+-                           "WRITE128(addr, _mm_castps_si128(res)); }}",
+-                           vis, vis,
+-                           vis,
+-                           inst.rt,
++        return fmt::format("{{ uint8_t *vu0d = runtime->memory().getVU0Data(); "
++                           "ctx->vi[{}] = static_cast<uint16_t>(ctx->vi[{}] - 1); "
++                           "uint32_t addr = ((uint32_t)(ctx->vi[{}] & 0xFF)) << 4; "
++                           "__m128 old_val = _mm_loadu_ps(reinterpret_cast<const float *>(vu0d + addr)); "
++                           "__m128 res = _mm_blendv_ps(old_val, ctx->vu0_vf[{}], _mm_castsi128_ps(_mm_set_epi32({}, {}, {}, {}))); "
++                           "_mm_storeu_ps(reinterpret_cast<float *>(vu0d + addr), res); }}",
++                           vit, vit,
++                           vit,
++                           inst.rd,
+                            (dest_mask & 0x1) ? -1 : 0, (dest_mask & 0x2) ? -1 : 0,
+                            (dest_mask & 0x4) ? -1 : 0, (dest_mask & 0x8) ? -1 : 0);
+     }
+diff --git a/ps2xTest/src/code_generator_tests.cpp b/ps2xTest/src/code_generator_tests.cpp
+index b5ee8f1..3a0b3e6 100644
+--- a/ps2xTest/src/code_generator_tests.cpp
++++ b/ps2xTest/src/code_generator_tests.cpp
+@@ -1385,6 +1385,62 @@ void register_code_generator_tests()
+             t.IsTrue(out.find("ctx->vu0_vf[25]") == std::string::npos, "S1 q/i must not use rs(format) as register index");
+         });
+ 
++        tc.Run("VU0 LQI/LQD/SQI/SQD decode fields and use VU0 data memory", [](TestCase &t) {
++            CodeGenerator gen({}, {});
++
++            Instruction sq{};
++            sq.rd = 20; // fs
++            sq.rt = 3;  // it
++            sq.vectorInfo.vectorField = 0xF;
++            for (const std::string &out : {gen.translateVU_VSQI(sq), gen.translateVU_VSQD(sq)})
++            {
++                t.IsTrue(out.find("ctx->vu0_vf[20]") != std::string::npos, "SQI/SQD fs should come from rd");
++                t.IsTrue(out.find("ctx->vi[3]") != std::string::npos, "SQI/SQD it should come from rt");
++                t.IsTrue(out.find("ctx->vi[20]") == std::string::npos, "SQI/SQD must not index VI with the VF register");
++                t.IsTrue(out.find("getVU0Data()") != std::string::npos, "SQI/SQD should store to VU0 data memory");
++                t.IsTrue(out.find("WRITE128") == std::string::npos, "SQI/SQD must not store to RDRAM");
++            }
++
++            Instruction lq{};
++            lq.rd = 5;  // is
++            lq.rt = 21; // ft
++            lq.vectorInfo.vectorField = 0xF;
++            for (const std::string &out : {gen.translateVU_VLQI(lq), gen.translateVU_VLQD(lq)})
++            {
++                t.IsTrue(out.find("ctx->vu0_vf[21]") != std::string::npos, "LQI/LQD ft should come from rt");
++                t.IsTrue(out.find("ctx->vi[5]") != std::string::npos, "LQI/LQD is should come from rd");
++                t.IsTrue(out.find("getVU0Data()") != std::string::npos, "LQI/LQD should load from VU0 data memory");
++                t.IsTrue(out.find("READ128") == std::string::npos, "LQI/LQD must not load from RDRAM");
++            }
++        });
++
++        tc.Run("VU0 ILWR/ISWR address VU0 data memory by qword and field", [](TestCase &t) {
++            CodeGenerator gen({}, {});
++
++            Instruction ilwr{};
++            ilwr.rd = 4; // is
++            ilwr.rt = 6; // it
++            ilwr.vectorInfo.vectorField = 0x2; // z
++            const std::string load = gen.translateVU_VILWR(ilwr);
++            t.IsTrue(load.find("getVU0Data()") != std::string::npos, "ILWR should read VU0 data memory");
++            t.IsTrue(load.find("ctx->vi[4] & 0xFF) << 4) + 8u") != std::string::npos,
++                     "ILWR should address vi[is] in qwords plus the z field offset");
++            t.IsTrue(load.find("ctx->vi[6] =") != std::string::npos, "ILWR should write vi[it]");
++            t.IsTrue(load.find("READ32") == std::string::npos, "ILWR must not read RDRAM");
++
++            Instruction iswr{};
++            iswr.rd = 4; // is
++            iswr.rt = 6; // it
++            iswr.vectorInfo.vectorField = 0xA; // x and z
++            const std::string store = gen.translateVU_VISWR(iswr);
++            t.IsTrue(store.find("ctx->vi[4] & 0xFF) << 4") != std::string::npos, "ISWR should address vi[is] in qwords");
++            t.IsTrue(store.find("v = ctx->vi[6]") != std::string::npos, "ISWR should store vi[it]");
++            t.IsTrue(store.find("addr + 0u") != std::string::npos, "ISWR should write the x field");
++            t.IsTrue(store.find("addr + 8u") != std::string::npos, "ISWR should write the z field");
++            t.IsTrue(store.find("addr + 4u") == std::string::npos, "ISWR must not write unselected fields");
++            t.IsTrue(store.find("WRITE32") == std::string::npos, "ISWR must not write RDRAM");
++        });
++
+         tc.Run("VU0 destination MADD and MSUB forms preserve ACC", [](TestCase &t) {
+             Instruction inst{};
+             inst.rt = 7;

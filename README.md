@@ -75,6 +75,7 @@ More detail: [AGENTS.md](AGENTS.md), [docs/GAME_NOTES.md](docs/GAME_NOTES.md).
 ## Credits
 
 - [PS2Recomp](https://github.com/ran-j/PS2Recomp) by ran-j and contributors, which does the heavy lifting.
+- Open PS2Recomp pull requests carried in `patches/` until they are merged: VU0/VU1, VIF and GIF fixes by @VariableDeclared, @yanm1103, @Fiztba, @luisbraganca and @drakolordx7 (see each patch header).
 - [ghidra-emotionengine-reloaded](https://github.com/chaoticgd/ghidra-emotionengine-reloaded) by chaoticgd.
 - [PCSX2](https://github.com/PCSX2/pcsx2), the reference for how the hardware behaves, and Arapapa's widescreen patch for the known FOV addresses.
 - [rootlm/metropolismaniaresearch](https://github.com/rootlm/metropolismaniaresearch) for early notes on the texture format.
