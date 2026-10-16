@@ -1,0 +1,71 @@
+diff --git a/ps2xIOP/src/emulator/core/iop_kernel.cpp b/ps2xIOP/src/emulator/core/iop_kernel.cpp
+index 4832d8f..22d898c 100644
+--- a/ps2xIOP/src/emulator/core/iop_kernel.cpp
++++ b/ps2xIOP/src/emulator/core/iop_kernel.cpp
+@@ -478,6 +478,12 @@ namespace ps2x::iop::detail
+         return (mode & 1u) != 0u ? (event.bits & bits) != 0u : (event.bits & bits) == bits;
+     }
+ 
++    bool IopKernel::eventFlagReady(int id, uint32_t bits, uint32_t mode) const
++    {
++        const auto event = m_eventFlags.find(id);
++        return event == m_eventFlags.end() || eventSatisfied(event->second, bits, mode);
++    }
++
+     void IopKernel::wakeEventWaiters(EventFlag &event)
+     {
+         for (auto &[threadId, thread] : m_threads)
+diff --git a/ps2xIOP/src/emulator/core/iop_kernel.h b/ps2xIOP/src/emulator/core/iop_kernel.h
+index 4977102..52f4000 100644
+--- a/ps2xIOP/src/emulator/core/iop_kernel.h
++++ b/ps2xIOP/src/emulator/core/iop_kernel.h
+@@ -48,6 +48,10 @@ namespace ps2x::iop::detail
+     public:
+         explicit IopKernel(IopMemory &memory) noexcept;
+ 
++        [[nodiscard]] bool hasCurrentThread() const noexcept { return m_currentThread != nullptr; }
++        // True when WaitEventFlag(id, bits, mode) would return at once (or the flag does not exist).
++        [[nodiscard]] bool eventFlagReady(int id, uint32_t bits, uint32_t mode) const;
++
+         void reset();
+ 
+         [[nodiscard]] bool dispatchThreadImport(uint16_t ordinal, IopCpuState &cpu, uint64_t currentCycle);
+diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_emulator.cpp
+index 1338f97..1b4d06c 100644
+--- a/ps2xIOP/src/emulator/iop_emulator.cpp
++++ b/ps2xIOP/src/emulator/iop_emulator.cpp
+@@ -280,6 +280,8 @@ namespace ps2x::iop::detail
+             }
+             if (iequals(call.library, "thevent"))
+             {
++                if (call.ordinal == 10 && !kernel.hasCurrentThread())
++                    runUntilEventFlag(static_cast<int>(cpu.gpr[4]), cpu.gpr[5], cpu.gpr[6]);
+                 return kernel.dispatchEventImport(call.ordinal, cpu)
+                            ? ImportDisposition::Handled
+                            : ImportDisposition::Missing;
+@@ -590,6 +592,25 @@ namespace ps2x::iop::detail
+             }
+         }
+ 
++        // Module start code (and other guest code called synchronously) runs without a current
++        // IOP thread, so a WaitEventFlag there cannot block; the kernel would fail it at once. On
++        // hardware it would simply wait, usually for a DMA completion interrupt whose handler sets
++        // the flag (libsd's transfers, e.g. clearing the reverb work area at sound driver start).
++        // Let IOP time run to the pending interrupts until the flag is set.
++        void runUntilEventFlag(int id, uint32_t bits, uint32_t mode)
++        {
++            for (int guard = 0; guard < 64 && !kernel.eventFlagReady(id, bits, mode); ++guard)
++            {
++                if (pendingDmaInterrupts.empty())
++                    return;
++                uint64_t next = UINT64_MAX;
++                for (const auto &[irq, completionCycle] : pendingDmaInterrupts)
++                    next = std::min(next, completionCycle);
++                totalCycles = std::max(totalCycles, next);
++                servicePendingDmaInterrupts();
++            }
++        }
++
+         // The SPU2 runs on IOP time; its interrupt is IOP IRQ 9.
+         void advanceSpu2()
+         {
