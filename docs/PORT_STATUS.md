@@ -8,13 +8,39 @@ See `config/port_status.csv` for every function.
 
 | Origin | Functions | Named | Typed | Ported | Verified |
 |---|---:|---:|---:|---:|---:|
-| unclassified | 1631 | 5.9% | 0.0% | 0.0% | 0.0% |
-| sdk | 558 | 100.0% | 0.0% | 0.0% | 0.0% |
+| game | 404 | 35.9% | 0.0% | 0.0% | 0.0% |
+| unclassified | 1225 | 6.5% | 0.0% | 0.0% | 0.0% |
+| sdk | 560 | 100.0% | 0.0% | 0.0% | 0.0% |
 
-Blocking (game and unclassified functions that can reach a thread switch, deferred to native threading): indirect 78, no 1102, yes 451
+Blocking (game and unclassified functions that can reach a thread switch, deferred to native threading): indirect 78, no 1101, yes 450
 
 ## By subsystem
 
 | Subsystem | Functions | Named | Typed | Ported | Verified |
 |---|---:|---:|---:|---:|---:|
-| (unclassified) | 2189 | 29.9% | 0.0% | 0.0% | 0.0% |
+| (unclassified) | 1783 | 35.8% | 0.0% | 0.0% | 0.0% |
+| app | 4 | 100.0% | 0.0% | 0.0% | 0.0% |
+| bag | 14 | 0.0% | 0.0% | 0.0% | 0.0% |
+| camera | 14 | 14.3% | 0.0% | 0.0% | 0.0% |
+| char | 29 | 0.0% | 0.0% | 0.0% | 0.0% |
+| city | 13 | 0.0% | 0.0% | 0.0% | 0.0% |
+| claim | 6 | 0.0% | 0.0% | 0.0% | 0.0% |
+| core | 3 | 0.0% | 0.0% | 0.0% | 0.0% |
+| event | 31 | 0.0% | 0.0% | 0.0% | 0.0% |
+| file | 12 | 100.0% | 0.0% | 0.0% | 0.0% |
+| font | 3 | 100.0% | 0.0% | 0.0% | 0.0% |
+| game | 3 | 100.0% | 0.0% | 0.0% | 0.0% |
+| gfx | 48 | 31.2% | 0.0% | 0.0% | 0.0% |
+| map | 12 | 16.7% | 0.0% | 0.0% | 0.0% |
+| math | 6 | 50.0% | 0.0% | 0.0% | 0.0% |
+| mem | 1 | 100.0% | 0.0% | 0.0% | 0.0% |
+| movie | 80 | 3.8% | 0.0% | 0.0% | 0.0% |
+| pad | 7 | 100.0% | 0.0% | 0.0% | 0.0% |
+| random | 4 | 100.0% | 0.0% | 0.0% | 0.0% |
+| save | 18 | 88.9% | 0.0% | 0.0% | 0.0% |
+| sdk:libkernl | 1 | 100.0% | 0.0% | 0.0% | 0.0% |
+| sdk:mwcpp | 1 | 100.0% | 0.0% | 0.0% | 0.0% |
+| sound | 57 | 100.0% | 0.0% | 0.0% | 0.0% |
+| stage | 8 | 0.0% | 0.0% | 0.0% | 0.0% |
+| text | 4 | 100.0% | 0.0% | 0.0% | 0.0% |
+| ui | 27 | 33.3% | 0.0% | 0.0% | 0.0% |

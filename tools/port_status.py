@@ -214,7 +214,7 @@ def main() -> None:
         c = by_subsystem[name]
         t = c["total"]
         lines.append(f"| {name} | {t} | {pct(c['named'], t)} | {pct(c['typed'], t)} | {pct(c['ported'], t)} | {pct(c['verified'], t)} |")
-    (root / "docs/PORT_STATUS.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    (root / "docs/PORT_STATUS.md").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     total = len(rows)
     print(f"[port_status] {total} functions; config/port_status.csv and docs/PORT_STATUS.md written")
 
