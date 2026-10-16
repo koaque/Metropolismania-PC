@@ -56,39 +56,46 @@ index 7603e02..1cb6e63 100644
      }
  
 diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
-index d94d5d6..896618e 100644
+index d94d5d6..22495e5 100644
 --- a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
 +++ b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
-@@ -26,6 +26,7 @@ namespace
+@@ -26,6 +26,8 @@ namespace
          uint64_t xgkicks = 0;
          uint64_t xgkickBytes = 0;
          uint64_t aborted = 0;
 +        double runSeconds = 0.0;
++        uint64_t cycles = 0;
          std::chrono::steady_clock::time_point last = std::chrono::steady_clock::now();
      };
  
-@@ -52,7 +53,7 @@ namespace
+@@ -52,7 +54,8 @@ namespace
          if (now - s.last < std::chrono::seconds(2))
              return;
          std::cerr << "[vu1:stats] runs=" << s.runs << " xgkicks=" << s.xgkicks << " bytes=" << s.xgkickBytes
 -                  << " aborted=" << s.aborted << std::endl;
-+                  << " aborted=" << s.aborted << " vu1ms=" << static_cast<uint64_t>(s.runSeconds * 1000.0) << std::endl;
++                  << " aborted=" << s.aborted << " vu1ms=" << static_cast<uint64_t>(s.runSeconds * 1000.0)
++                  << " cycles=" << s.cycles << " Mcyc/s(host)=" << (s.runSeconds > 0.0 ? s.cycles / s.runSeconds / 1e6 : 0.0) << std::endl;
          s = Vu1Stats{};
          s.last = now;
      }
-@@ -1740,6 +1741,15 @@ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
+@@ -1740,6 +1743,20 @@ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
                           uint8_t *vuData, uint32_t dataSize,
                           GS &gs, PS2Memory *memory, uint32_t maxCycles)
  {
 +    struct RunTimer
 +    {
++        const uint64_t &cycleRef;
++        const uint64_t startCycle;
 +        std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 +        ~RunTimer()
 +        {
 +            if (vu1StatsEnabled())
++            {
 +                vu1Stats().runSeconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - begin).count();
++                vu1Stats().cycles += cycleRef - startCycle;
++            }
 +        }
-+    } runTimer;
++    } runTimer{m_cycle, m_cycle};
      m_activeVuData = vuData;
      m_activeVuDataSize = dataSize;
      m_activeGs = &gs;

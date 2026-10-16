@@ -1,0 +1,158 @@
+diff --git a/ps2xRuntime/src/lib/Kernel/SamplingProfiler.cpp b/ps2xRuntime/src/lib/Kernel/SamplingProfiler.cpp
+new file mode 100644
+index 0000000..e1acd08
+--- /dev/null
++++ b/ps2xRuntime/src/lib/Kernel/SamplingProfiler.cpp
+@@ -0,0 +1,152 @@
++// PS2X_PROFILE=1: a small sampling profiler for Windows builds. A background thread samples the
++// instruction pointer of every other thread in the process about once per millisecond and, every
++// 15 seconds, prints the hottest functions per thread (names resolved from the PDB with DbgHelp).
++// Debug aid for finding host-side hotspots (VU1 interpreter, GS rasterizer, generated code).
++
++#if defined(_WIN32)
++
++#define NOMINMAX
++#include <windows.h>
++#include <dbghelp.h>
++#include <tlhelp32.h>
++
++#include <algorithm>
++#include <atomic>
++#include <chrono>
++#include <cstdlib>
++#include <cstring>
++#include <iostream>
++#include <map>
++#include <mutex>
++#include <string>
++#include <thread>
++#include <unordered_map>
++#include <vector>
++
++#pragma comment(lib, "dbghelp.lib")
++
++// Referenced with /include from the game module so the linker keeps this object (nothing else
++// calls into it; the profiler starts from a static initializer).
++extern "C" int ps2x_sampling_profiler_anchor = 0;
++
++namespace
++{
++    class SamplingProfiler
++    {
++    public:
++        SamplingProfiler()
++        {
++            const char *flag = std::getenv("PS2X_PROFILE");
++            if (!flag || flag[0] != '1')
++                return;
++            m_thread = std::thread([this]
++                                   { loop(); });
++            m_thread.detach();
++        }
++
++    private:
++        void loop()
++        {
++            const DWORD self = GetCurrentThreadId();
++            const DWORD pid = GetCurrentProcessId();
++            HANDLE process = GetCurrentProcess();
++            SymSetOptions(SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS);
++            SymInitialize(process, nullptr, TRUE);
++
++            std::unordered_map<DWORD, std::unordered_map<DWORD64, uint32_t>> samples;
++            auto lastReport = std::chrono::steady_clock::now();
++            std::vector<DWORD> threads;
++            auto lastEnum = std::chrono::steady_clock::time_point{};
++            for (;;)
++            {
++                const auto now = std::chrono::steady_clock::now();
++                if (now - lastEnum > std::chrono::seconds(1))
++                {
++                    threads.clear();
++                    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
++                    THREADENTRY32 entry{};
++                    entry.dwSize = sizeof(entry);
++                    if (snap != INVALID_HANDLE_VALUE && Thread32First(snap, &entry))
++                    {
++                        do
++                        {
++                            if (entry.th32OwnerProcessID == pid && entry.th32ThreadID != self)
++                                threads.push_back(entry.th32ThreadID);
++                        } while (Thread32Next(snap, &entry));
++                    }
++                    if (snap != INVALID_HANDLE_VALUE)
++                        CloseHandle(snap);
++                    lastEnum = now;
++                }
++
++                for (DWORD tid : threads)
++                {
++                    HANDLE thread = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION, FALSE, tid);
++                    if (!thread)
++                        continue;
++                    if (SuspendThread(thread) != static_cast<DWORD>(-1))
++                    {
++                        CONTEXT context{};
++                        context.ContextFlags = CONTEXT_CONTROL;
++                        if (GetThreadContext(thread, &context))
++                            ++samples[tid][context.Rip];
++                        ResumeThread(thread);
++                    }
++                    CloseHandle(thread);
++                }
++
++                if (now - lastReport > std::chrono::seconds(15))
++                {
++                    report(process, samples);
++                    samples.clear();
++                    lastReport = now;
++                }
++                std::this_thread::sleep_for(std::chrono::milliseconds(1));
++            }
++        }
++
++        static std::string symbolFor(HANDLE process, DWORD64 address)
++        {
++            alignas(SYMBOL_INFO) char buffer[sizeof(SYMBOL_INFO) + 512] = {};
++            auto *symbol = reinterpret_cast<SYMBOL_INFO *>(buffer);
++            symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
++            symbol->MaxNameLen = 511;
++            DWORD64 displacement = 0;
++            if (SymFromAddr(process, address, &displacement, symbol))
++                return symbol->Name;
++            char fallback[32];
++            std::snprintf(fallback, sizeof(fallback), "0x%llx", static_cast<unsigned long long>(address));
++            return fallback;
++        }
++
++        static void report(HANDLE process, const std::unordered_map<DWORD, std::unordered_map<DWORD64, uint32_t>> &samples)
++        {
++            for (const auto &[tid, byAddress] : samples)
++            {
++                std::map<std::string, uint32_t> byFunction;
++                uint32_t total = 0;
++                for (const auto &[address, count] : byAddress)
++                {
++                    byFunction[symbolFor(process, address)] += count;
++                    total += count;
++                }
++                if (total < 200)
++                    continue;
++                std::vector<std::pair<std::string, uint32_t>> sorted(byFunction.begin(), byFunction.end());
++                std::sort(sorted.begin(), sorted.end(), [](const auto &a, const auto &b)
++                          { return a.second > b.second; });
++                std::cerr << "[profile] thread " << tid << " samples=" << total << std::endl;
++                for (size_t i = 0; i < sorted.size() && i < 25; ++i)
++                {
++                    std::cerr << "[profile]   " << (100.0 * sorted[i].second / total) << "% " << sorted[i].first << std::endl;
++                }
++            }
++        }
++
++        std::thread m_thread;
++    };
++
++    SamplingProfiler g_samplingProfiler;
++}
++
++#endif

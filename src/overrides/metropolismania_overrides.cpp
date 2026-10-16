@@ -20,6 +20,11 @@
 #include <iostream>
 #include <string>
 
+#if defined(_WIN32)
+// Keep the runtime's PS2X_PROFILE sampling profiler (patches/0108) in the link.
+#pragma comment(linker, "/include:ps2x_sampling_profiler_anchor")
+#endif
+
 namespace
 {
     constexpr uint32_t kEntryPoint = 0x00100008u;

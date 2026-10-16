@@ -1,0 +1,383 @@
+diff --git a/ps2xRuntime/CMakeLists.txt b/ps2xRuntime/CMakeLists.txt
+index 589d768..5109c65 100644
+--- a/ps2xRuntime/CMakeLists.txt
++++ b/ps2xRuntime/CMakeLists.txt
+@@ -383,6 +383,7 @@ add_library(ps2_runtime STATIC
+     src/lib/gs/ps2_gs_memory.cpp
+     src/lib/gs/gs_frontend.cpp
+     src/lib/gs/gs_cpu_backend.cpp
++    src/lib/gs/gs_threaded_backend.cpp
+     src/lib/ps2_iop_host.cpp
+     src/lib/ps2_memory.cpp
+     src/lib/ps2_pad.cpp
+diff --git a/ps2xRuntime/include/runtime/gs/gs_threaded_backend.h b/ps2xRuntime/include/runtime/gs/gs_threaded_backend.h
+new file mode 100644
+index 0000000..39a9b6f
+--- /dev/null
++++ b/ps2xRuntime/include/runtime/gs/gs_threaded_backend.h
+@@ -0,0 +1,45 @@
++#pragma once
++
++#include "runtime/gs/gs_backend.h"
++
++#include <memory>
++
++// Runs a GS raster backend on a worker thread. Drawing, CLUT loads, transfers and VRAM writes are
++// queued in order; calls that observe the result (presentation, VRAM reads and snapshots, local to
++// host transfers, Sync, clears) first wait for everything queued before them and then run under the
++// same execution lock as the worker. Enabled with PS2X_GS_THREAD=1 (see gs_frontend.cpp).
++class GSThreadedBackend final : public GSRasterBackend
++{
++public:
++    explicit GSThreadedBackend(std::unique_ptr<GSRasterBackend> inner);
++    ~GSThreadedBackend() override;
++
++    void Initialize(uint8_t *vram, uint32_t vramSize) override;
++    void Reset() override;
++
++    void Submit(const GSPrimitiveBatch &batch) override;
++    void LoadClut(const GSTex0Reg &tex0, const GSTexClutReg &texclut) override;
++
++    void BeginTransfer(const GSTransferCommand &command) override;
++    void UploadImage(const uint8_t *data, uint32_t sizeBytes) override;
++
++    void Flush() override;
++    void TextureFlush() override;
++    void Sync(GSSyncReason reason) override;
++    PresentationFrame Present(const GSPresentationRequest &request) override;
++
++    bool ClearFramebuffer(const GSContext &context, uint32_t rgba) override;
++    uint32_t ConsumeLocalToHostBytes(uint8_t *dst, uint32_t maxBytes) override;
++
++    uint32_t ReadVram(uint32_t psm, uint32_t base, uint32_t bw, uint32_t x, uint32_t y) const override;
++    void WriteVram(uint32_t psm, uint32_t base, uint32_t bw, uint32_t x, uint32_t y, uint32_t value) override;
++    void SnapshotVram(std::vector<uint8_t> &out) const override;
++    GSTransferSnapshot GetTransferSnapshot() const override;
++
++private:
++    struct Impl;
++    std::unique_ptr<Impl> m_impl;
++};
++
++// Wraps `inner` in a GSThreadedBackend when PS2X_GS_THREAD=1, otherwise returns it unchanged.
++std::unique_ptr<GSRasterBackend> ps2xMaybeThreadedBackend(std::unique_ptr<GSRasterBackend> inner);
+diff --git a/ps2xRuntime/src/lib/gs/gs_frontend.cpp b/ps2xRuntime/src/lib/gs/gs_frontend.cpp
+index 1cb6e63..a831fc2 100644
+--- a/ps2xRuntime/src/lib/gs/gs_frontend.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_frontend.cpp
+@@ -1,3 +1,4 @@
++#include "runtime/gs/gs_threaded_backend.h"
+ #include "runtime/gs/gs_frontend.h"
+ #include "runtime/gs/gs_cpu_backend.h"
+ #include "ps2_log.h"
+@@ -187,7 +188,7 @@ namespace
+ 
+ 
+ GS::GS()
+-    : m_backend(std::make_unique<GSCpuBackend>())
++    : m_backend(ps2xMaybeThreadedBackend(std::make_unique<GSCpuBackend>()))
+ {
+     reset();
+ }
+@@ -198,7 +199,7 @@ void GS::init(uint8_t *vram, uint32_t vramSize, GSRegisters *privRegs)
+     m_localMemorySize = vramSize;
+     m_privRegs = privRegs;
+     if (!m_backend)
+-        m_backend = std::make_unique<GSCpuBackend>();
++        m_backend = ps2xMaybeThreadedBackend(std::make_unique<GSCpuBackend>());
+     m_backend->Initialize(vram, vramSize);
+     reset();
+ }
+@@ -1727,7 +1728,7 @@ uint32_t GS::consumeLocalToHostBytes(uint8_t *dst, uint32_t maxBytes)
+ void GS::setRasterBackend(std::unique_ptr<GSRasterBackend> backend)
+ {
+     if (!backend)
+-        backend = std::make_unique<GSCpuBackend>();
++        backend = ps2xMaybeThreadedBackend(std::make_unique<GSCpuBackend>());
+ 
+     std::lock_guard<std::recursive_mutex> lock(m_stateMutex);
+     std::lock_guard<std::mutex> backendLock(m_backendLifetimeMutex);
+diff --git a/ps2xRuntime/src/lib/gs/gs_threaded_backend.cpp b/ps2xRuntime/src/lib/gs/gs_threaded_backend.cpp
+new file mode 100644
+index 0000000..49dd194
+--- /dev/null
++++ b/ps2xRuntime/src/lib/gs/gs_threaded_backend.cpp
+@@ -0,0 +1,278 @@
++#include "runtime/gs/gs_threaded_backend.h"
++
++#include <cfenv>
++#include <condition_variable>
++#include <cstdlib>
++#include <cstring>
++#include <deque>
++#include <mutex>
++#include <thread>
++#include <utility>
++#include <variant>
++
++namespace
++{
++    enum class Op : uint8_t
++    {
++        Submit,
++        LoadClut,
++        BeginTransfer,
++        UploadImage,
++        Flush,
++        TextureFlush,
++        WriteVram,
++    };
++
++    struct ClutArgs
++    {
++        GSTex0Reg tex0;
++        GSTexClutReg texclut;
++    };
++
++    struct PixelArgs
++    {
++        uint32_t psm, base, bw, x, y, value;
++    };
++
++    struct Command
++    {
++        Op op;
++        // XGKICK submits while the VU1 interpreter has rounding toward zero selected; the raster
++        // backend must see the same rounding mode as a synchronous call would.
++        int rounding;
++        std::variant<std::monostate, GSPrimitiveBatch, ClutArgs, GSTransferCommand, std::vector<uint8_t>, PixelArgs> data;
++    };
++
++    // Bound on queued commands; the producer waits when the worker falls this far behind.
++    constexpr size_t kMaxQueuedCommands = 1u << 16;
++}
++
++struct GSThreadedBackend::Impl
++{
++    std::unique_ptr<GSRasterBackend> inner;
++
++    mutable std::mutex queueMutex;
++    mutable std::condition_variable workAvailable;
++    mutable std::condition_variable progress;
++    std::deque<Command> queue;
++    uint64_t submitted = 0;          // commands pushed (guarded by queueMutex)
++    mutable uint64_t completed = 0;  // commands executed (guarded by queueMutex)
++    bool stopping = false;
++
++    // Held while commands execute on the worker and while synchronous calls use `inner`.
++    mutable std::mutex execMutex;
++
++    std::thread worker;
++
++    explicit Impl(std::unique_ptr<GSRasterBackend> backend)
++        : inner(std::move(backend))
++    {
++        worker = std::thread([this] { run(); });
++    }
++
++    ~Impl()
++    {
++        {
++            std::lock_guard<std::mutex> lock(queueMutex);
++            stopping = true;
++        }
++        workAvailable.notify_one();
++        if (worker.joinable())
++            worker.join();
++    }
++
++    void push(Command command)
++    {
++        std::unique_lock<std::mutex> lock(queueMutex);
++        if (queue.size() >= kMaxQueuedCommands)
++            progress.wait(lock, [&] { return queue.size() < kMaxQueuedCommands / 2u; });
++        const bool wasEmpty = queue.empty();
++        queue.push_back(std::move(command));
++        ++submitted;
++        if (wasEmpty)
++            workAvailable.notify_one();
++    }
++
++    // Waits until every command pushed before this call has executed.
++    void drain() const
++    {
++        std::unique_lock<std::mutex> lock(queueMutex);
++        const uint64_t target = submitted;
++        progress.wait(lock, [&] { return completed >= target; });
++    }
++
++    void execute(const Command &command, int &rounding)
++    {
++        if (command.rounding != rounding)
++        {
++            std::fesetround(command.rounding);
++            rounding = command.rounding;
++        }
++        switch (command.op)
++        {
++        case Op::Submit:
++            inner->Submit(std::get<GSPrimitiveBatch>(command.data));
++            break;
++        case Op::LoadClut:
++        {
++            const ClutArgs &args = std::get<ClutArgs>(command.data);
++            inner->LoadClut(args.tex0, args.texclut);
++            break;
++        }
++        case Op::BeginTransfer:
++            inner->BeginTransfer(std::get<GSTransferCommand>(command.data));
++            break;
++        case Op::UploadImage:
++        {
++            const std::vector<uint8_t> &bytes = std::get<std::vector<uint8_t>>(command.data);
++            inner->UploadImage(bytes.data(), static_cast<uint32_t>(bytes.size()));
++            break;
++        }
++        case Op::Flush:
++            inner->Flush();
++            break;
++        case Op::TextureFlush:
++            inner->TextureFlush();
++            break;
++        case Op::WriteVram:
++        {
++            const PixelArgs &p = std::get<PixelArgs>(command.data);
++            inner->WriteVram(p.psm, p.base, p.bw, p.x, p.y, p.value);
++            break;
++        }
++        }
++    }
++
++    void run()
++    {
++        int rounding = std::fegetround();
++        std::deque<Command> batch;
++        for (;;)
++        {
++            {
++                std::unique_lock<std::mutex> lock(queueMutex);
++                workAvailable.wait(lock, [&] { return stopping || !queue.empty(); });
++                if (queue.empty() && stopping)
++                    break;
++                batch.swap(queue);
++            }
++            progress.notify_all(); // a producer waiting on the queue bound can continue
++            {
++                std::lock_guard<std::mutex> exec(execMutex);
++                for (const Command &command : batch)
++                    execute(command, rounding);
++            }
++            const size_t done = batch.size();
++            batch.clear();
++            {
++                std::lock_guard<std::mutex> lock(queueMutex);
++                completed += done;
++            }
++            progress.notify_all();
++        }
++        std::fesetround(rounding);
++    }
++
++    template <class F>
++    auto sync(F &&fn) const
++    {
++        drain();
++        std::lock_guard<std::mutex> exec(execMutex);
++        return fn(*inner);
++    }
++};
++
++GSThreadedBackend::GSThreadedBackend(std::unique_ptr<GSRasterBackend> inner)
++    : m_impl(std::make_unique<Impl>(std::move(inner)))
++{
++}
++
++GSThreadedBackend::~GSThreadedBackend() = default;
++
++void GSThreadedBackend::Initialize(uint8_t *vram, uint32_t vramSize)
++{
++    m_impl->sync([&](GSRasterBackend &b) { b.Initialize(vram, vramSize); return 0; });
++}
++
++void GSThreadedBackend::Reset()
++{
++    m_impl->sync([&](GSRasterBackend &b) { b.Reset(); return 0; });
++}
++
++void GSThreadedBackend::Submit(const GSPrimitiveBatch &batch)
++{
++    m_impl->push(Command{Op::Submit, std::fegetround(), batch});
++}
++
++void GSThreadedBackend::LoadClut(const GSTex0Reg &tex0, const GSTexClutReg &texclut)
++{
++    m_impl->push(Command{Op::LoadClut, std::fegetround(), ClutArgs{tex0, texclut}});
++}
++
++void GSThreadedBackend::BeginTransfer(const GSTransferCommand &command)
++{
++    m_impl->push(Command{Op::BeginTransfer, std::fegetround(), command});
++}
++
++void GSThreadedBackend::UploadImage(const uint8_t *data, uint32_t sizeBytes)
++{
++    m_impl->push(Command{Op::UploadImage, std::fegetround(), std::vector<uint8_t>(data, data + sizeBytes)});
++}
++
++void GSThreadedBackend::Flush()
++{
++    m_impl->push(Command{Op::Flush, std::fegetround(), std::monostate{}});
++}
++
++void GSThreadedBackend::TextureFlush()
++{
++    m_impl->push(Command{Op::TextureFlush, std::fegetround(), std::monostate{}});
++}
++
++void GSThreadedBackend::Sync(GSSyncReason reason)
++{
++    m_impl->sync([&](GSRasterBackend &b) { b.Sync(reason); return 0; });
++}
++
++PresentationFrame GSThreadedBackend::Present(const GSPresentationRequest &request)
++{
++    return m_impl->sync([&](GSRasterBackend &b) { return b.Present(request); });
++}
++
++bool GSThreadedBackend::ClearFramebuffer(const GSContext &context, uint32_t rgba)
++{
++    return m_impl->sync([&](GSRasterBackend &b) { return b.ClearFramebuffer(context, rgba); });
++}
++
++uint32_t GSThreadedBackend::ConsumeLocalToHostBytes(uint8_t *dst, uint32_t maxBytes)
++{
++    return m_impl->sync([&](GSRasterBackend &b) { return b.ConsumeLocalToHostBytes(dst, maxBytes); });
++}
++
++uint32_t GSThreadedBackend::ReadVram(uint32_t psm, uint32_t base, uint32_t bw, uint32_t x, uint32_t y) const
++{
++    return m_impl->sync([&](GSRasterBackend &b) { return b.ReadVram(psm, base, bw, x, y); });
++}
++
++void GSThreadedBackend::WriteVram(uint32_t psm, uint32_t base, uint32_t bw, uint32_t x, uint32_t y, uint32_t value)
++{
++    m_impl->push(Command{Op::WriteVram, std::fegetround(), PixelArgs{psm, base, bw, x, y, value}});
++}
++
++void GSThreadedBackend::SnapshotVram(std::vector<uint8_t> &out) const
++{
++    m_impl->sync([&](GSRasterBackend &b) { b.SnapshotVram(out); return 0; });
++}
++
++GSTransferSnapshot GSThreadedBackend::GetTransferSnapshot() const
++{
++    return m_impl->sync([&](GSRasterBackend &b) { return b.GetTransferSnapshot(); });
++}
++
++std::unique_ptr<GSRasterBackend> ps2xMaybeThreadedBackend(std::unique_ptr<GSRasterBackend> inner)
++{
++    const char *value = std::getenv("PS2X_GS_THREAD");
++    if (value != nullptr && value[0] == '1')
++        return std::make_unique<GSThreadedBackend>(std::move(inner));
++    return inner;
++}

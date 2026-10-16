@@ -1,0 +1,26 @@
+diff --git a/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp b/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp
+index 9245313..6182a6a 100644
+--- a/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp
+@@ -1,3 +1,4 @@
++#include <cstdlib>
+ #include "runtime/gs/gs_cpu_backend.h"
+ #include "runtime/gs/ps2_gs_common.h"
+ #include "runtime/gs/ps2_gs_psmct16.h"
+@@ -418,6 +419,16 @@ namespace
+ 
+     void applyFieldPresentation(std::vector<uint8_t> &pixels, uint32_t width, uint32_t height, bool oddField)
+     {
++        // Line-selecting "bob" output flickers on a progressive display, and games that render
++        // each field into its own half-height buffer (e.g. 640x224) lose half of every field.
++        // Present the whole buffer unless PS2X_DEINTERLACE=bob asks for the old behaviour.
++        static const bool bob = []()
++        {
++            const char *value = std::getenv("PS2X_DEINTERLACE");
++            return value != nullptr && std::strcmp(value, "bob") == 0;
++        }();
++        if (!bob)
++            return;
+         if (pixels.empty() || width == 0u || height < 2u)
+             return;
+         const std::vector<uint8_t> source = pixels;

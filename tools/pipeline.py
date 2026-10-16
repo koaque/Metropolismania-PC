@@ -164,10 +164,16 @@ MSVC_FLAGS = "/Zi /O2 /Ob2 /Oi /DNDEBUG /arch:AVX2"
 
 def configure(env: dict[str, str]) -> None:
     cache = BUILD / "CMakeCache.txt"
-    if cache.exists() and f"CMAKE_CXX_FLAGS_RELWITHDEBINFO:STRING={MSVC_FLAGS}" in cache.read_text(errors="replace"):
+    text = cache.read_text(errors="replace") if cache.exists() else ""
+    if (f"CMAKE_CXX_FLAGS_RELWITHDEBINFO:STRING={MSVC_FLAGS}" in text
+            and "PS2X_ENABLE_AGRESSIVE_LOGS:BOOL=OFF" in text):
         return
+    # The runtime's "aggressive" logs write several lines per frame and add a log hook to every
+    # generated function; profiling showed ~20% of the game thread in NtWriteFile. Keep the normal
+    # runtime log, drop the aggressive one and the per-RPC trace.
     run(["cmake", "-S", str(RUNTIME_TREE), "-B", str(BUILD), "-G", "Ninja", f"-DCMAKE_BUILD_TYPE={BUILD_TYPE}",
          "-DPS2X_BUILD_TEST=OFF", "-DPS2X_BUILD_STUDIO=OFF",
+         "-DPS2X_ENABLE_AGRESSIVE_LOGS=OFF", "-DPS2X_ENABLE_IOP_RPC_TRACE=OFF",
          f"-DCMAKE_CXX_FLAGS_RELWITHDEBINFO={MSVC_FLAGS}", f"-DCMAKE_C_FLAGS_RELWITHDEBINFO={MSVC_FLAGS}"], env=env)
 
 

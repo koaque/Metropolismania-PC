@@ -97,18 +97,37 @@ def main() -> int:
     parser.add_argument("out", type=Path)
     parser.add_argument("--title-prefix", default="PS2-Recomp")
     parser.add_argument("--pid", type=int)
+    parser.add_argument("--burst", type=int, default=1, help="capture N frames (out gets _NNN suffixes)")
+    parser.add_argument("--interval-ms", type=int, default=50)
     args = parser.parse_args()
     ctypes.windll.user32.SetProcessDPIAware()
     hwnd = find_window(args.title_prefix, args.pid)
     if not hwnd:
         print("window not found", file=sys.stderr)
         return 1
-    width, height, data = capture(hwnd)
-    if width <= 0 or height <= 0:
-        print("window has no client area", file=sys.stderr)
-        return 1
-    write_png(args.out, width, height, data)
-    print(f"{args.out} {width}x{height}")
+    if args.burst <= 1:
+        width, height, data = capture(hwnd)
+        if width <= 0 or height <= 0:
+            print("window has no client area", file=sys.stderr)
+            return 1
+        write_png(args.out, width, height, data)
+        print(f"{args.out} {width}x{height}")
+        return 0
+
+    # Burst: capture first (fast), encode afterwards, and print per-frame brightness so flicker
+    # (frames that drop to black, or alternate) shows up without looking at every image.
+    import time
+
+    frames = []
+    for _ in range(args.burst):
+        t0 = time.perf_counter()
+        frames.append(capture(hwnd))
+        time.sleep(max(0.0, args.interval_ms / 1000.0 - (time.perf_counter() - t0)))
+    for i, (width, height, data) in enumerate(frames):
+        out = args.out.with_name(f"{args.out.stem}_{i:03d}{args.out.suffix}")
+        write_png(out, width, height, data)
+        luma = sum(data[1::40]) / max(1, len(data[1::40]))  # green channel sample
+        print(f"{out.name} mean_green={luma:.1f}")
     return 0
 
 
