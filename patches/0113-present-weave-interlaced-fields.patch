@@ -1,5 +1,5 @@
 diff --git a/ps2xRuntime/src/lib/gs/gs_frontend.cpp b/ps2xRuntime/src/lib/gs/gs_frontend.cpp
-index a0713a5..08649cf 100644
+index a0713a5..b65e27f 100644
 --- a/ps2xRuntime/src/lib/gs/gs_frontend.cpp
 +++ b/ps2xRuntime/src/lib/gs/gs_frontend.cpp
 @@ -15,6 +15,7 @@
@@ -10,7 +10,7 @@ index a0713a5..08649cf 100644
  #include <sstream>
  
  namespace
-@@ -110,6 +111,110 @@ namespace
+@@ -110,6 +111,175 @@ namespace
  namespace
  {
      static constexpr uint32_t kHostFrameWidth = 640u;
@@ -29,13 +29,39 @@ index a0713a5..08649cf 100644
 +    } s_halfLineInit;
 +
 +    // Interlaced games with SMODE2.FFMD=1 read every line of a half-height buffer (e.g. 640x224) in
-+    // each field. Many draw every field into its own buffer, with a half-line Y offset on the odd
-+    // field, and flip DISPFB every vsync; shown one after the other on a progressive display, the two
++    // each field. Many draw each field into its own buffer, with a half-line Y offset on the odd
++    // field, and flip DISPFB every field; shown one after the other on a progressive display, the two
 +    // fields shimmer by half a line. While the display keeps alternating between two such buffers,
-+    // weave the newest two fields into one full-height frame, the way a TV shows them: still images
-+    // come out exact, motion combs like any weave. When the game is slower than the field rate (the
-+    // same buffer stays up for several vsyncs) single fields are presented as before.
++    // weave the newest two fields into one full-height frame, the way a TV shows them. The two fields
++    // can come from different game frames (the runtime's vsync is paced by guest frames when they are
++    // slow), so the weave is motion adaptive: a pixel of the older field is kept where neither field
++    // changed since its previous frame, or where it fits between its vertical neighbours; elsewhere
++    // (combing on moving edges) the line is interpolated from the newer field. When the same buffer
++    // stays up for several vsyncs, single fields are presented as before.
 +    // PS2X_DEINTERLACE=off (or =bob, see gs_cpu_backend.cpp) always presents single fields.
++    struct WeaveField
++    {
++        std::vector<uint8_t> pixels;
++        bool valid = false;
++    };
++
++    inline bool pixelsClose(const uint8_t *a, const uint8_t *b, int tolerance)
++    {
++        return std::abs(a[0] - b[0]) <= tolerance && std::abs(a[1] - b[1]) <= tolerance && std::abs(a[2] - b[2]) <= tolerance;
++    }
++
++    inline bool pixelBetween(const uint8_t *value, const uint8_t *a, const uint8_t *b, int tolerance)
++    {
++        for (int c = 0; c < 3; ++c)
++        {
++            const int lo = std::min(a[c], b[c]) - tolerance;
++            const int hi = std::max(a[c], b[c]) + tolerance;
++            if (value[c] < lo || value[c] > hi)
++                return false;
++        }
++        return true;
++    }
++
 +    void weaveInterlacedFields(const GSPresentationRequest &request, PresentationFrame &frame)
 +    {
 +        static const bool enabled = []()
@@ -45,8 +71,10 @@ index a0713a5..08649cf 100644
 +        }();
 +        struct State
 +        {
-+            std::vector<uint8_t> current; // newest field of the displayed buffer
-+            std::vector<uint8_t> other;   // newest field of the buffer displayed before it
++            WeaveField current;     // newest field of the displayed buffer
++            WeaveField previous;    // the displayed buffer's field before that
++            WeaveField other;       // newest field of the buffer displayed before it
++            WeaveField otherBefore; // that buffer's field before that
 +            uint32_t fbp = 0xFFFFFFFFu;
 +            uint32_t otherFbp = 0xFFFFFFFFu;
 +            uint32_t width = 0u;
@@ -65,8 +93,7 @@ index a0713a5..08649cf 100644
 +        if (!enabled || !fieldBuffers || frame.width > kHostFrameWidth || frame.height * 2u > kHostFrameHeight ||
 +            frame.pixels.size() < stride * frame.height * 2u)
 +        {
-+            state.fbp = state.otherFbp = 0xFFFFFFFFu;
-+            state.flips = state.holds = 0u;
++            state = State{};
 +            return;
 +        }
 +
@@ -76,21 +103,29 @@ index a0713a5..08649cf 100644
 +                                request.vsyncTick - state.tick <= 2u && frame.width == state.width && frame.height == state.height;
 +        if (!continuous)
 +        {
++            state.previous.valid = state.other.valid = state.otherBefore.valid = false;
 +            state.otherFbp = 0xFFFFFFFFu;
 +            state.flips = state.holds = 0u;
++            std::swap(state.previous, state.current);
++            state.previous.valid = false;
 +        }
 +        else if (frame.displayFbp != state.fbp)
 +        {
-+            state.other.swap(state.current);
++            std::swap(state.otherBefore, state.previous);
++            std::swap(state.previous, state.other);
++            std::swap(state.other, state.current);
 +            state.otherFbp = state.fbp;
 +            ++state.flips;
 +            state.holds = 0u;
 +        }
-+        else if (++state.holds >= 3u)
++        else
 +        {
-+            state.flips = 0u;
++            std::swap(state.previous, state.current);
++            if (++state.holds >= 3u)
++                state.flips = 0u;
 +        }
-+        state.current.assign(frame.pixels.begin(), frame.pixels.begin() + stride * frame.height);
++        state.current.pixels.assign(frame.pixels.begin(), frame.pixels.begin() + stride * frame.height);
++        state.current.valid = true;
 +        state.fbp = frame.displayFbp;
 +        state.width = frame.width;
 +        state.height = frame.height;
@@ -99,7 +134,7 @@ index a0713a5..08649cf 100644
 +        const int8_t currentHalf = s_drawHalfLine[state.fbp & 0x1FFu].load(std::memory_order_relaxed);
 +        const int8_t otherHalf =
 +            state.otherFbp != 0xFFFFFFFFu ? s_drawHalfLine[state.otherFbp & 0x1FFu].load(std::memory_order_relaxed) : -1;
-+        const bool weave = state.flips >= 2u && currentHalf >= 0 && otherHalf >= 0 && currentHalf != otherHalf;
++        const bool weave = state.flips >= 2u && state.other.valid && currentHalf >= 0 && otherHalf >= 0 && currentHalf != otherHalf;
 +        if (weave != s_weaving)
 +        {
 +            s_weaving = weave;
@@ -107,21 +142,51 @@ index a0713a5..08649cf 100644
 +        }
 +        if (!weave)
 +            return;
++
 +        // The field drawn with the half-line offset samples the picture half a line lower: odd lines.
-+        const uint8_t *even = currentHalf ? state.other.data() : state.current.data();
-+        const uint8_t *odd = currentHalf ? state.current.data() : state.other.data();
-+        const size_t rowBytes = static_cast<size_t>(frame.width) * 4u;
-+        for (uint32_t y = 0; y < state.height; ++y)
++        constexpr int kTolerance = 10;
++        const bool otherIsOdd = currentHalf == 0;
++        const bool temporal = state.previous.valid && state.otherBefore.valid;
++        const uint32_t width = frame.width;
++        const uint32_t fieldHeight = state.height;
++        for (uint32_t y = 0; y < fieldHeight; ++y)
 +        {
-+            std::memcpy(frame.pixels.data() + (2u * y) * stride, even + y * stride, rowBytes);
-+            std::memcpy(frame.pixels.data() + (2u * y + 1u) * stride, odd + y * stride, rowBytes);
++            const uint8_t *cur = state.current.pixels.data() + y * stride;
++            std::memcpy(frame.pixels.data() + (otherIsOdd ? 2u * y : 2u * y + 1u) * stride, cur, width * 4u);
++
++            // Rows of the newer field just above and below this row of the older field.
++            const uint32_t aboveY = otherIsOdd ? y : (y > 0u ? y - 1u : 0u);
++            const uint32_t belowY = otherIsOdd ? std::min(y + 1u, fieldHeight - 1u) : y;
++            const uint8_t *above = state.current.pixels.data() + aboveY * stride;
++            const uint8_t *below = state.current.pixels.data() + belowY * stride;
++            const uint8_t *aboveBefore = temporal ? state.previous.pixels.data() + aboveY * stride : nullptr;
++            const uint8_t *belowBefore = temporal ? state.previous.pixels.data() + belowY * stride : nullptr;
++            const uint8_t *old = state.other.pixels.data() + y * stride;
++            const uint8_t *oldBefore = temporal ? state.otherBefore.pixels.data() + y * stride : nullptr;
++            uint8_t *out = frame.pixels.data() + (otherIsOdd ? 2u * y + 1u : 2u * y) * stride;
++            for (uint32_t x = 0; x < width; ++x)
++            {
++                const size_t i = static_cast<size_t>(x) * 4u;
++                const bool still = temporal && pixelsClose(old + i, oldBefore + i, kTolerance) &&
++                                   pixelsClose(above + i, aboveBefore + i, kTolerance) &&
++                                   pixelsClose(below + i, belowBefore + i, kTolerance);
++                if (still || pixelBetween(old + i, above + i, below + i, kTolerance))
++                {
++                    std::memcpy(out + i, old + i, 4u);
++                }
++                else
++                {
++                    for (size_t c = 0; c < 4u; ++c)
++                        out[i + c] = static_cast<uint8_t>((above[i + c] + below[i + c] + 1) >> 1);
++                }
++            }
 +        }
-+        frame.height = state.height * 2u;
++        frame.height = fieldHeight * 2u;
 +    }
  
      GSPrimReg decodePrimRegister(uint64_t value)
      {
-@@ -647,6 +752,8 @@ void GS::latchHostPresentationFrame()
+@@ -647,6 +817,8 @@ void GS::latchHostPresentationFrame()
              frame = m_backend->Present(request);
          }
      }
@@ -130,7 +195,7 @@ index a0713a5..08649cf 100644
  
      const bool hasFrame = static_cast<bool>(frame);
      const uint32_t displayFbp = frame.displayFbp;
-@@ -1672,6 +1779,8 @@ void GS::vertexKick(bool drawing)
+@@ -1672,6 +1844,8 @@ void GS::vertexKick(bool drawing)
      if (drawing && m_backend)
      {
          GSPrimitiveBatch batch = buildDrawBatch(needed);

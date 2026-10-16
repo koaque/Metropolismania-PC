@@ -18,7 +18,10 @@
 #include <cstring>
 #include <iomanip>
 #include <iostream>
+#include <map>
+#include <mutex>
 #include <string>
+#include <utility>
 
 #if defined(_WIN32)
 // Keep the runtime's PS2X_PROFILE sampling profiler (patches/0108) in the link.
@@ -184,11 +187,86 @@ namespace
         runtime.registerFunction(kGsSwapDBuffDc, tracedSwapDBuffDc);
     }
 
+    // ------------------------------------------------------------------ MMPC_TRACE_CALLS=1
+    // Every 2 s, logs how often a few frame-loop functions ran, by caller ($ra), and the host time
+    // spent inside them. The runtime processes DMA kicks (VIF1, VU1, GIF) synchronously, so the
+    // time inside the VIF1 kick and sceGsSyncPath shows where a game frame goes.
+    struct TracedCall
+    {
+        uint32_t address;
+        const char *name;
+        PS2Runtime::RecompiledFunction original;
+    };
+    TracedCall g_tracedCalls[] = {
+        {0x00187290u, "mm_KickFrameVif1", nullptr},
+        {0x0012ABA0u, "mm_GameUpdate", nullptr},
+        {0x00103418u, "sceGsSyncPath", nullptr},
+        {0x00103380u, "sceGsSyncV", nullptr},
+        {0x00103D08u, "sceGsSwapDBuffDc", nullptr},
+        {0x0019C4C0u, "mm_VSyncHandler", nullptr},
+        {0x001040F0u, "sceDmaSend", nullptr},
+    };
+    constexpr size_t kTracedCallCount = sizeof(g_tracedCalls) / sizeof(g_tracedCalls[0]);
+
+    struct CallStats
+    {
+        uint64_t calls = 0;
+        double seconds = 0.0;
+    };
+
+    void reportCalls(size_t index, uint32_t caller, double seconds)
+    {
+        static std::mutex mutex;
+        static std::map<std::pair<size_t, uint32_t>, CallStats> stats;
+        static auto lastReport = std::chrono::steady_clock::now();
+        std::lock_guard<std::mutex> lock(mutex);
+        CallStats &entry = stats[{index, caller}];
+        ++entry.calls;
+        entry.seconds += seconds;
+        const auto now = std::chrono::steady_clock::now();
+        if (now - lastReport < std::chrono::seconds(2))
+            return;
+        std::cerr << "[mm:calls] last " << std::fixed << std::setprecision(1)
+                  << std::chrono::duration<double>(now - lastReport).count() << " s:";
+        for (const auto &[key, value] : stats)
+            std::cerr << " " << g_tracedCalls[key.first].name << "<-0x" << std::hex << key.second << std::dec
+                      << " n=" << value.calls << " ms=" << static_cast<uint64_t>(value.seconds * 1000.0) << ";";
+        std::cerr << std::endl;
+        stats.clear();
+        lastReport = now;
+    }
+
+    template <size_t Index>
+    void tracedCall(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+    {
+        const uint32_t caller = getRegU32(ctx, 31);
+        const auto start = std::chrono::steady_clock::now();
+        g_tracedCalls[Index].original(rdram, ctx, runtime);
+        reportCalls(Index, caller, std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count());
+    }
+
+    template <size_t... Indices>
+    void installTracedCalls(PS2Runtime &runtime, std::index_sequence<Indices...>)
+    {
+        ((g_tracedCalls[Indices].original = runtime.lookupFunction(g_tracedCalls[Indices].address)), ...);
+        ((g_tracedCalls[Indices].original ? static_cast<void>(runtime.registerFunction(g_tracedCalls[Indices].address, tracedCall<Indices>)) : void()), ...);
+    }
+
+    void installCallTrace(PS2Runtime &runtime)
+    {
+        const char *flag = std::getenv("MMPC_TRACE_CALLS");
+        if (!flag || std::strcmp(flag, "1") != 0)
+            return;
+        installTracedCalls(runtime, std::make_index_sequence<kTracedCallCount>{});
+        std::cerr << "[mm] call trace on (MMPC_TRACE_CALLS=1)" << std::endl;
+    }
+
     void applyMetropolismaniaOverrides(PS2Runtime &runtime)
     {
         installTrace(runtime);
         installMovieSkip(runtime);
         installGsTrace(runtime);
+        installCallTrace(runtime);
     }
 }
 
