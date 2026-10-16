@@ -466,6 +466,33 @@ def cmd_build(_: argparse.Namespace) -> None:
     build_targets(["ps2EntryRunner"])
 
 
+BUILD_TESTS = ROOT / "build" / "ps2recomp-tests"
+# Unoptimized: MSVC 14.38 hits an internal compiler error on ps2_runtime_kernel_tests.cpp at /O2.
+# The tests check results, not speed (the runtime keeps exact float semantics either way).
+TEST_FLAGS = "/Zi /Od /DNDEBUG"
+
+
+def cmd_test(_: argparse.Namespace) -> None:
+    """Build and run PS2Recomp's own test suite (ps2xTest) against the patched runtime, in a
+    separate build directory so the game build keeps its settings."""
+    env = msvc_env()
+    if not (BUILD_TESTS / "CMakeCache.txt").exists():
+        run(["cmake", "-S", str(RUNTIME_TREE), "-B", str(BUILD_TESTS), "-G", "Ninja", f"-DCMAKE_BUILD_TYPE={BUILD_TYPE}",
+             "-DPS2X_BUILD_TEST=ON", "-DPS2X_BUILD_STUDIO=OFF",
+             "-DPS2X_ENABLE_AGRESSIVE_LOGS=OFF", "-DPS2X_ENABLE_IOP_RPC_TRACE=OFF",
+             f"-DCMAKE_CXX_FLAGS_RELWITHDEBINFO={TEST_FLAGS}", f"-DCMAKE_C_FLAGS_RELWITHDEBINFO={TEST_FLAGS}"], env=env)
+    run(["cmake", "--build", str(BUILD_TESTS), "--target", "ps2x_tests"], env=env)
+    exe = next(BUILD_TESTS.rglob("ps2x_tests.exe"))
+    LOGS.mkdir(exist_ok=True)
+    out = LOGS / f"tests-{dt.datetime.now():%Y%m%d-%H%M%S}.log"
+    # The GS tests read the VRAM buffer directly right after drawing, which only works when the GS
+    # rasterizes synchronously (the runtime itself always goes through the backend's sync points).
+    test_env = dict(env, PS2X_GS_THREAD="0")
+    with out.open("w", encoding="utf-8", errors="replace") as fh:
+        code = subprocess.run([str(exe)], cwd=exe.parent, stdout=fh, stderr=subprocess.STDOUT, env=test_env).returncode
+    log(f"ps2x_tests exit code {code}; log {out}")
+
+
 def cmd_run(args: argparse.Namespace) -> None:
     """Run the game in a normal, visible window, capture its log, optionally take screenshots
     (--shots) and feed scripted pad input (--pad, see patches/0002-pad-scripted-input.patch)."""
@@ -538,6 +565,7 @@ def main() -> int:
     sub.add_parser("recompile").set_defaults(func=cmd_recompile)
     sub.add_parser("stage").set_defaults(func=cmd_stage)
     sub.add_parser("build").set_defaults(func=cmd_build)
+    sub.add_parser("test", help="build and run the PS2Recomp test suite").set_defaults(func=cmd_test)
     p = sub.add_parser("run")
     p.add_argument("--timeout", type=int, default=20)
     p.add_argument("--shots", type=int, default=0, help="number of window screenshots to take")
