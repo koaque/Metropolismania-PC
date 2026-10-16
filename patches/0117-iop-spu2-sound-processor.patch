@@ -1250,7 +1250,7 @@ index 0000000..0f81132
 +}
 diff --git a/ps2xIOP/src/emulator/core/iop_spu2_gauss.inc b/ps2xIOP/src/emulator/core/iop_spu2_gauss.inc
 new file mode 100644
-index 0000000..9d398b9
+index 0000000..4e047bb
 --- /dev/null
 +++ b/ps2xIOP/src/emulator/core/iop_spu2_gauss.inc
 @@ -0,0 +1,65 @@
