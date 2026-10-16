@@ -23,9 +23,9 @@ As far as we could find, this is the first recompilation or decompilation projec
 | First recompile (0 errors) and native build | Done: the runner builds, opens its window and starts executing |
 | Boot to logos, title screen, memory card check | Done: Natsume logo, title, New Game |
 | Input | Works (keyboard, pad, scripted) |
-| City game (scene C) | Reached: HUD, cursor and the 3D terrain render |
-| Movies, sound, saves | In progress: movies stall (skippable for testing), memory card check passes |
-| Widescreen, hi-res, performance, Linux | Not started |
+| City game (scene C) | Reached: HUD, cursor and the 3D terrain render, about 20 fps (CPU rendering on several threads) |
+| Movies, sound, saves | In progress: music and sound play through a new SPU2 emulation (no reverb yet); movies stall (skippable for testing); memory card check passes |
+| Widescreen, hi-res, Linux | Not started |
 
 ## Requirements (Windows, for now)
 
@@ -76,6 +76,7 @@ More detail: [AGENTS.md](AGENTS.md), [docs/GAME_NOTES.md](docs/GAME_NOTES.md).
 
 - [PS2Recomp](https://github.com/ran-j/PS2Recomp) by ran-j and contributors, which does the heavy lifting.
 - Open PS2Recomp pull requests carried in `patches/` until they are merged: VU0/VU1, VIF and GIF fixes by @VariableDeclared, @yanm1103, @Fiztba, @luisbraganca and @drakolordx7 (see each patch header).
+- [psx-spx](https://psx-spx.consoledev.net/) (SPU voice pipeline, envelope and interpolation details) for the SPU2 emulation.
 - [ghidra-emotionengine-reloaded](https://github.com/chaoticgd/ghidra-emotionengine-reloaded) by chaoticgd.
 - [PCSX2](https://github.com/PCSX2/pcsx2), the reference for how the hardware behaves, and Arapapa's widescreen patch for the known FOV addresses.
 - [rootlm/metropolismaniaresearch](https://github.com/rootlm/metropolismaniaresearch) for early notes on the texture format.
