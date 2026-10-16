@@ -1,0 +1,33 @@
+diff --git a/ps2xRuntime/src/lib/ps2_runtime.cpp b/ps2xRuntime/src/lib/ps2_runtime.cpp
+--- a/ps2xRuntime/src/lib/ps2_runtime.cpp
++++ b/ps2xRuntime/src/lib/ps2_runtime.cpp
+@@ -839,17 +839,24 @@
+         int windowX = 0, windowY = 0;
+         const char *windowPos = std::getenv("PS2X_WINDOW_POS");
+         const bool placeWindow = windowPos != nullptr && std::sscanf(windowPos, "%d,%d", &windowX, &windowY) == 2;
+-        SetConfigFlags(FLAG_WINDOW_RESIZABLE | (placeWindow ? FLAG_WINDOW_HIDDEN : 0u));
++        // PS2X_HEADLESS=1 keeps the window hidden and opens no audio device, for tools that use the
++        // runtime without playing the game (a game's differential tests, for example).
++        const char *headlessFlag = std::getenv("PS2X_HEADLESS");
++        const bool headless = headlessFlag != nullptr && std::strcmp(headlessFlag, "1") == 0;
++        SetConfigFlags(FLAG_WINDOW_RESIZABLE | ((placeWindow || headless) ? FLAG_WINDOW_HIDDEN : 0u));
+         InitWindow(HOST_WINDOW_WIDTH, HOST_WINDOW_HEIGHT, title);
+-        if (placeWindow)
++        if (placeWindow && !headless)
+         {
+             SetWindowState(FLAG_WINDOW_UNFOCUSED); // shown below without focus
+             SetWindowPosition(windowX, windowY);
+             ClearWindowState(FLAG_WINDOW_HIDDEN);
+         }
+-        InitAudioDevice();
+-        m_audioBackend.setAudioReady(IsAudioDeviceReady());
+-        startSpu2Stream(m_iopSubsystem.get());
++        if (!headless)
++        {
++            InitAudioDevice();
++            m_audioBackend.setAudioReady(IsAudioDeviceReady());
++            startSpu2Stream(m_iopSubsystem.get());
++        }
+ #endif
+         SetTargetFPS(60);
+         if (m_debugUiInitCallback)

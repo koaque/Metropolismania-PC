@@ -1,0 +1,18 @@
+diff --git a/ps2xRuntime/CMakeLists.txt b/ps2xRuntime/CMakeLists.txt
+--- a/ps2xRuntime/CMakeLists.txt
++++ b/ps2xRuntime/CMakeLists.txt
+@@ -469,6 +469,14 @@
+         UNITY_BUILD ON
+         UNITY_BUILD_BATCH_SIZE "${PS2X_RUNNER_UNITY_BUILD_BATCH_SIZE}"
+     )
++    # Hand-written game sources staged as zz_port_*.cpp (a game's readable port) build as ordinary
++    # translation units, so file-local names in different files never meet in one unity batch.
++    foreach(PS2X_RUNNER_SRC IN LISTS RUNNER_SRC_FILES)
++        get_filename_component(PS2X_RUNNER_SRC_NAME "${PS2X_RUNNER_SRC}" NAME)
++        if(PS2X_RUNNER_SRC_NAME MATCHES "^zz_port_")
++            set_source_files_properties("${PS2X_RUNNER_SRC}" PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
++        endif()
++    endforeach()
+ endif()
+ 
+ if(PS2X_ENABLE_RUNNER_PCH)

@@ -936,11 +936,11 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0013C770,mm_Family_LoadState,148,game,family,typed,no,1,1,"reads the member bytes (60000), the three bitsets (0x4E4 each), 0x1F32F0 (0x400) and the counters (0xC) from the save file"
 0x0013C810,mm_Family_SaveState,148,game,family,typed,no,1,1,writes them
 0x0013C8B0,mm_Family_GetTypeIndex,72,game,family,typed,no,20,0,building type index of a family id: first entry above a0 in the sorted id table (gp)
-0x0013C900,mm_Family_HasLeft,80,game,family,typed,no,1,0,bitset C: the family moved away
+0x0013C900,mm_Family_HasLeft,80,game,family,verified,no,1,0,bitset C: the family moved away
 0x0013C950,mm_Family_SetKnown,76,game,family,typed,no,1,0,"sets bit a0 of bitset B (0x1D4900, families known through the Town's Pages); called by mm_WordsFn_MarkFamilyKnown"
-0x0013C9A0,mm_Family_IsKnown,80,game,family,typed,no,3,0,bitset B: the family is known (Town's Pages)
+0x0013C9A0,mm_Family_IsKnown,80,game,family,ported,no,3,0,bitset B: the family is known (Town's Pages)
 0x0013C9F0,mm_Family_SetFlagA,116,game,family,typed,no,1,0,sets bit a0 of bitset A and updates the counters
-0x0013CA70,mm_Family_InCity,80,game,family,typed,no,13,0,bitset A: the family lives in the city
+0x0013CA70,mm_Family_InCity,80,game,family,verified,no,13,0,bitset A: the family lives in the city
 0x0013CAC0,mm_Family_GetFriendshipBand,124,game,family,typed,no,7,0,"band 0..4 of member (a0, a1)'s meter (0, below 24, below 48, below 100, higher)"
 0x0013CB40,mm_Family_AddFriendship,648,game,family,typed,no,5,1,"adds a3 points to member (a0, a1)'s meter (clamped 0..120); rising may set the friend bit (chance from *a2, the approval)"
 0x0013CDF0,mm_Family_AddFriendshipScaled,8,game,family,typed,no,2,0,"mm_Family_AddFriendship with a3 * t0 (t0 = +1 gain, -1 loss)"
@@ -1881,9 +1881,9 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00184C40,mm_Font_Load,132,game,font,typed,yes,1,6,"loads DATA\FONT1222.GF (sprintf ""%d"" of 11222 with the first digit skipped) with mm_File_LoadWhole"
 0x00184CD0,mm_Heap_Probe,84,game,mem,typed,yes,1,2,malloc(0x17E5D70) then free; returns that size (checks the heap can hold it)
 0x00184D30,mm_Random_TimerMix,164,game,random,typed,no,9,0,mixes RCNT0 into a five-word running sum at 0x1B2520 and returns it
-0x00184DE0,mm_Random_Next,80,game,random,typed,no,20,1,"subtractive generator (Knuth/Numerical Recipes ran3, 55 entries at 0x1F55D0, modulus 1e9)"
-0x00184E30,mm_Random_Seed,160,game,random,typed,no,1,1,seeds the 55-entry table from a0 and stirs it three times
-0x00184ED0,mm_Random_Stir,140,game,random,typed,no,2,0,one ran3 refill pass over the 55 entries
+0x00184DE0,mm_Random_Next,80,game,random,verified,no,20,1,"subtractive generator (Knuth/Numerical Recipes ran3, 55 entries at 0x1F55D0, modulus 1e9)"
+0x00184E30,mm_Random_Seed,160,game,random,verified,no,1,1,seeds the 55-entry table from a0 and stirs it three times
+0x00184ED0,mm_Random_Stir,140,game,random,verified,no,2,0,one ran3 refill pass over the 55 entries
 0x00184F60,mm_Gs_InitDisplay,652,game,gfx,typed,yes,1,16,"(provisional) display and draw environments, double buffer, clears both buffers (from mm_MainLoop)"
 0x001851F0,mm_Pad_ClearBit40,40,game,pad,typed,no,4,0,sets 0x1BDCC0 = 1 and clears button bit 0x40 in the pad words 0x1BDCA0 and 0x1BDCA4
 0x00185220,mm_Pad_ReleaseFocus,40,game,pad,typed,no,10,0,drops input focus if owner a0 (or -1 = anyone) holds it (0x1BDCB0/0x1BDCB4)
@@ -1899,7 +1899,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001859D0,mm_Math_LinePlaneIntersect,724,game,math,typed,no,3,0,"intersection of a line with plane a0..a3 (a,b,c,d), handles axis-parallel cases"
 0x00185CB0,mm_Math_RayPlaneDistance,228,game,math,typed,no,1,1,"(provisional) normalised ray against a plane, distance to the hit"
 0x00185DA0,mm_Math_ProjectionMatrix,204,game,math,typed,no,2,1,"perspective matrix into a3: m0 = 2n/w, m5 = 2n/h, m10 = (f+n)/(f-n), m14 = -2fn/(f-n), m11 = 1, from a1 = near, a2 = far and the screen size in a4"
-0x00185E70,mm_Math_Log2,56,game,math,typed,no,5,0,floor(log2(a0)) for a0 >= 1
+0x00185E70,mm_Math_Log2,56,game,math,verified,no,5,0,floor(log2(a0)) for a0 >= 1
 0x00185EB0,mm_McSave_WriteIconSys,1120,game,save,typed,yes,1,7,"builds the icon.sys header ('PS2D', title, STATIC.ICO icons) in 0x1F65F0 and writes it through the memory card queue"
 0x00186310,mm_McQueue_Seek,152,game,save,typed,no,1,0,queues sceMcSeek (command 12); returns the request id
 0x001863B0,mm_McQueue_Write,152,game,save,typed,no,2,0,queues sceMcWrite (command 10)
@@ -1954,7 +1954,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0018B050,mm_Se_UpdateVoices,2736,game,sound,typed,no,1,9,"per frame: starts, moves and stops the effect voices assigned by mm_Se_AssignVoices"
 0x0018BB10,mm_Se_ApplyVoiceParams,188,game,sound,typed,no,1,2,"voice a0: volume L/R clamped to 1..0x3FFF (flag 1, 0x18DD90) and pitch (flag 2, 0x18DC70)"
 0x0018BBD0,mm_Se_AssignVoices,2952,game,sound,typed,no,1,2,"sorts the frame's requests by priority into the 16 + 15 effect voice slots, stealing low-priority voices"
-0x0018C770,mm_Sound_Update,580,game,sound,typed,no,1,11,"per frame from mm_GameUpdate: assigns and updates effect voices, city ambience, time-of-day cues and the BGM state"
+0x0018C770,mm_Sound_Update,580,game,sound,verified,no,1,11,"per frame from mm_GameUpdate: assigns and updates effect voices, city ambience, time-of-day cues and the BGM state"
 0x0018C9C0,mm_Sound_SetCity,516,game,sound,typed,no,2,8,sets the city object (0x1BDD00) used by the sound code; null stops all effect voices and resets their volumes
 0x0018CBD0,mm_Sound_StopAllSequences,60,game,sound,typed,no,3,1,queues cmd 0xB for sequence slots 7..0
 0x0018CC10,mm_Sound_LoadPlaylandBanks,88,game,sound,typed,no,2,1,queues cmd 9 (load SQ/HD/BD bank) for the 4 bank name triples at 0x1B2E20 (PLAYLAND.SQ ...)

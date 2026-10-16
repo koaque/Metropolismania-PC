@@ -24,7 +24,7 @@ Families: the residents who move into the city.
 
 ## Functions
 
-36 functions (typed 36). Blocks: 5 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+36 functions (ported 1, typed 33, verified 2). Blocks: 5 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|

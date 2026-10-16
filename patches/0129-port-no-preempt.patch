@@ -1,0 +1,39 @@
+diff --git a/ps2xRuntime/include/runtime/ee_scheduler.h b/ps2xRuntime/include/runtime/ee_scheduler.h
+--- a/ps2xRuntime/include/runtime/ee_scheduler.h
++++ b/ps2xRuntime/include/runtime/ee_scheduler.h
+@@ -280,6 +280,12 @@
+     void postEvent(EeEvent event);
+     [[nodiscard]] bool checkpointDue(uint32_t cycles = kGeneratedCheckpointCycles) noexcept;
+     void accountCycles(uint32_t cycles) noexcept;
++    // Hand-written (ported) game code cannot resume in the middle of a function the way generated
++    // code does, so no checkpoint fires while it runs: time is still counted and pending events are
++    // delivered at the first checkpoint after leaveNoPreempt(). Stop requests still go through.
++    void enterNoPreempt() noexcept { ++m_noPreemptDepth; }
++    void leaveNoPreempt() noexcept { --m_noPreemptDepth; }
++    [[nodiscard]] bool inNoPreempt() const noexcept { return m_noPreemptDepth != 0u; }
+     [[nodiscard]] bool isExecutingGuest() const noexcept;
+ 
+     // Kernel object API. All calls except postEvent/requestStop execute on the
+@@ -428,6 +434,7 @@
+     bool m_rescheduleRequested = false;
+     bool m_timeSliceExpired = false;
+     bool m_insideInterrupt = false;
++    uint32_t m_noPreemptDepth = 0;
+     // RotateThreadReadyQueue calls since the last wakeup, interrupt or scheduler event (see
+     // EeScheduler::noteYield).
+     uint32_t m_yieldsSinceEvent = 0;
+diff --git a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+--- a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
++++ b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+@@ -358,6 +358,11 @@
+ {
+     accountCycles(cycles);
+ 
++    if (m_noPreemptDepth != 0u)
++    {
++        return m_stopRequested.load(std::memory_order_acquire);
++    }
++
+     if (m_checkpointPending.load(std::memory_order_acquire) ||
+         m_stopRequested.load(std::memory_order_acquire))
+     {

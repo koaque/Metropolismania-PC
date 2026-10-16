@@ -14,9 +14,11 @@ Steps, in order:
   pointers    add functions reached only through pointers (vtables, ctor/callback tables), re-analyze
   script      run one Ghidra script from tools/ghidra against the project (read-only by default)
   recompile   render config/metropolismania.template.toml and run ps2_recomp into generated/
-  stage       copy generated code and src/overrides into the runtime tree
+  stage       copy generated code, src/overrides and src/port (after tools/port_gen.py) into the runtime tree
   build       build ps2EntryRunner
   run         start the runner with a timeout and capture a log in logs/
+  capture     visible run that records calls of chosen functions into work/difftest/
+  difftest    replay those records through ported and generated code, headless
   all         bootstrap, tools, extract, analyze, recompile, stage, build
 
 Everything under original/, generated/, work/, build/ and logs/ is git-ignored.
@@ -481,6 +483,14 @@ def cmd_stage(_: argparse.Namespace) -> None:
         shutil.copy2(cpp, staging / cpp.name)
     for cpp in (ROOT / "src/overrides").glob("*.cpp"):
         shutil.copy2(cpp, staging / f"game_{cpp.name}")
+    # The readable port: headers regenerated from config/, sources named to sort after the generated
+    # files (unity batches stay put) and built outside unity batches (patches/0131).
+    run([sys.executable, "-I", str(ROOT / "tools/port_gen.py")])
+    for src in (ROOT / "src/port").glob("*"):
+        if src.suffix == ".cpp":
+            shutil.copy2(src, staging / f"zz_port_{src.name}")
+        elif src.suffix == ".h":
+            shutil.copy2(src, staging / src.name)
     if not (staging / "register_functions.cpp").exists():
         sys.exit("generated/register_functions.cpp missing; run: pipeline.py recompile")
     changed = sync_tree(staging, runner)
@@ -570,6 +580,37 @@ def cmd_run(args: argparse.Namespace) -> None:
         log(f"screenshots: {shot_dir}")
 
 
+DIFFTEST = WORK / "difftest"
+
+
+def cmd_capture(args: argparse.Namespace) -> None:
+    """A visible run to the city that records the entry state of chosen functions (MMPC_CAPTURE) into
+    work/difftest/ for pipeline.py difftest. Ported functions stay unreplaced during a capture."""
+    args.env = [f"MMPC_CAPTURE={args.functions}", f"MMPC_CAPTURE_DIR={DIFFTEST}", f"MMPC_CAPTURE_MAX={args.max}",
+                f"MMPC_CAPTURE_EVERY={args.every}", "MMPC_AUTOPLAY=city", "MMPC_SKIP_MOVIES=1"] + (args.env or [])
+    args.pad = None
+    cmd_run(args)
+
+
+def cmd_difftest(_: argparse.Namespace) -> None:
+    """Replay the records in work/difftest/ through each ported function and its generated original,
+    headless (src/port/difftest.cpp). Exits non-zero when any record differs."""
+    LOGS.mkdir(exist_ok=True)
+    log_path = LOGS / f"difftest-{dt.datetime.now():%Y%m%d-%H%M%S}.log"
+    exe = tool("ps2EntryRunner")
+    env = dict(os.environ, MMPC_DIFFTEST=str(DIFFTEST), PS2X_HEADLESS="1")
+    env.pop("PS2X_WINDOW_POS", None)
+    with log_path.open("w", encoding="utf-8", errors="replace") as fh:
+        code = subprocess.run([str(exe), str(ORIGINAL / ELF_NAME)], stdout=fh, stderr=subprocess.STDOUT, cwd=exe.parent,
+                              env=env, timeout=1800).returncode
+    lines = [l for l in log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+             if l.startswith(("[difftest]", "    ", "[port]"))]
+    print("\n".join(lines))
+    log(f"difftest exit code {code}; log {log_path}")
+    if code != 0:
+        sys.exit(code)
+
+
 def cmd_all(args: argparse.Namespace) -> None:
     for step in (cmd_bootstrap, cmd_tools, cmd_extract, cmd_symbols, cmd_analyze, cmd_pointers,
                  cmd_recompile, cmd_stage, cmd_build):
@@ -610,6 +651,16 @@ def main() -> int:
     p.add_argument("--pad", help="scripted pad input file (PS2X_PAD_SCRIPT)")
     p.add_argument("--env", action="append", help="extra environment variable KEY=VALUE (repeatable), e.g. MMPC_TRACE=1")
     p.set_defaults(func=cmd_run)
+    p = sub.add_parser("capture", help="visible run that records function calls for difftest")
+    p.add_argument("--functions", default="ported", help='comma-separated names or 0xADDRs, or "ported" (default)')
+    p.add_argument("--max", type=int, default=8, help="records per function")
+    p.add_argument("--every", type=int, default=1, help="record every Nth call (spreads records over the run)")
+    p.add_argument("--timeout", type=int, default=200)
+    p.add_argument("--shots", type=int, default=0)
+    p.add_argument("--shot-every", type=float, default=45.0)
+    p.add_argument("--env", action="append", help="extra environment variable KEY=VALUE (repeatable)")
+    p.set_defaults(func=cmd_capture)
+    sub.add_parser("difftest", help="replay work/difftest records through ported and generated code").set_defaults(func=cmd_difftest)
     p = sub.add_parser("all")
     p.add_argument("image", nargs="?")
     p.add_argument("--reimport", action="store_true")

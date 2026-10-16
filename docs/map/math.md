@@ -6,7 +6,7 @@ Vector and matrix helpers (VU0 macro code in the original), line/plane and trian
 
 ## Functions
 
-14 functions (typed 14). Blocks: 0 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+14 functions (typed 13, verified 1). Blocks: 0 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|

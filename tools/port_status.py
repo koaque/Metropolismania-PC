@@ -44,7 +44,8 @@ BLOCKING_CALLS = {
     "sceMpegGetPicture", "sceMpegDemuxPss", "sceMpegDemuxPssRing",
 }
 PLACEHOLDER = re.compile(r"^(FUN|fn|entry|thunk_FUN)_[0-9A-Fa-f]{6,8}$")
-PORT_FN = re.compile(r"PORT_FN\(\s*0x([0-9A-Fa-f]{6,8})")
+PORT_FN = re.compile(r"^\s*PORT_FN\((\w+)\)", re.M)
+PROTO_NAME = re.compile(r"^(0x[0-9A-Fa-f]{8}) .*?\bmm_(\w+)\(")
 STATUS_ORDER = ["unnamed", "named", "typed", "ported", "verified"]
 COLUMNS = ["address", "name", "size", "origin", "subsystem", "status", "blocking", "callers", "callees", "notes"]
 
@@ -72,13 +73,28 @@ def load_signatures(path: Path) -> set[int]:
     return out
 
 
-def load_ported(port_dir: Path) -> set[int]:
+def load_ported(port_dir: Path, signatures_path: Path, sizes: dict[int, int]) -> set[int]:
+    """Addresses of the functions src/port/ registers with PORT_FN(Name). Name is the game name without
+    "mm_" (tools/port_gen.py adds _<ADDR> to the smaller of two functions that share a name)."""
+    by_name: dict[str, list[int]] = defaultdict(list)
+    if signatures_path.exists():
+        for line in signatures_path.read_text(encoding="utf-8").splitlines():
+            m = PROTO_NAME.match(line)
+            if m:
+                by_name[m.group(2)].append(int(m.group(1), 16))
     out: set[int] = set()
     if not port_dir.exists():
         return out
-    for path in port_dir.rglob("*"):
-        if path.suffix in (".cpp", ".h", ".hpp", ".inl"):
-            out.update(int(m.group(1), 16) for m in PORT_FN.finditer(path.read_text(encoding="utf-8", errors="replace")))
+    for path in port_dir.rglob("*.cpp"):
+        for m in PORT_FN.finditer(path.read_text(encoding="utf-8", errors="replace")):
+            name = m.group(1)
+            base, _, suffix = name.rpartition("_")
+            if base and suffix and all(c in "0123456789ABCDEF" for c in suffix) and int(suffix, 16) in by_name.get(base, []):
+                out.add(int(suffix, 16))
+            elif len(by_name.get(name, [])) == 1:
+                out.add(by_name[name][0])
+            elif by_name.get(name):
+                out.add(max(by_name[name], key=lambda a: sizes.get(a, 0)))  # as port_gen: the larger one
     return out
 
 
@@ -128,7 +144,7 @@ def main() -> None:
 
     symbols = load_symbols(root / "config/symbols.csv")
     signatures = load_signatures(root / "config/signatures.txt")
-    ported = load_ported(root / "src/port")
+    ported = load_ported(root / "src/port", root / "config/signatures.txt", {a: f["size"] for a, f in funcs.items()})
     results_path = root / "work/difftest/results.json"
     results = json.loads(results_path.read_text(encoding="utf-8")) if results_path.exists() else {}
     previous = load_previous(root / "config/port_status.csv")

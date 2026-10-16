@@ -8,7 +8,7 @@ See `config/port_status.csv` for every function.
 
 | Origin | Functions | Named | Typed | Ported | Verified |
 |---|---:|---:|---:|---:|---:|
-| game | 1481 | 100.0% | 100.0% | 0.0% | 0.0% |
+| game | 1481 | 100.0% | 100.0% | 0.5% | 0.5% |
 | sdk | 768 | 100.0% | 0.0% | 0.0% | 0.0% |
 
 Blocking (game and unclassified functions that can reach a thread switch, deferred to native threading): indirect 79, no 997, yes 405
@@ -27,18 +27,18 @@ Blocking (game and unclassified functions that can reach a thread switch, deferr
 | claim | 6 | 100.0% | 100.0% | 0.0% | 0.0% |
 | core | 4 | 100.0% | 100.0% | 0.0% | 0.0% |
 | event | 148 | 100.0% | 100.0% | 0.0% | 0.0% |
-| family | 36 | 100.0% | 100.0% | 0.0% | 0.0% |
+| family | 36 | 100.0% | 100.0% | 8.3% | 5.6% |
 | file | 12 | 100.0% | 100.0% | 0.0% | 0.0% |
 | font | 3 | 100.0% | 100.0% | 0.0% | 0.0% |
 | game | 3 | 100.0% | 100.0% | 0.0% | 0.0% |
 | gfx | 117 | 100.0% | 100.0% | 0.0% | 0.0% |
 | goods | 3 | 100.0% | 100.0% | 0.0% | 0.0% |
 | map | 98 | 100.0% | 100.0% | 0.0% | 0.0% |
-| math | 14 | 100.0% | 100.0% | 0.0% | 0.0% |
+| math | 14 | 100.0% | 100.0% | 7.1% | 7.1% |
 | mem | 1 | 100.0% | 100.0% | 0.0% | 0.0% |
 | movie | 80 | 100.0% | 100.0% | 0.0% | 0.0% |
 | pad | 10 | 100.0% | 100.0% | 0.0% | 0.0% |
-| random | 4 | 100.0% | 100.0% | 0.0% | 0.0% |
+| random | 4 | 100.0% | 100.0% | 75.0% | 75.0% |
 | save | 48 | 100.0% | 100.0% | 0.0% | 0.0% |
 | scene | 25 | 100.0% | 100.0% | 0.0% | 0.0% |
 | sdk:crt0 | 3 | 100.0% | 0.0% | 0.0% | 0.0% |
@@ -57,7 +57,7 @@ Blocking (game and unclassified functions that can reach a thread switch, deferr
 | sdk:libvu0 | 3 | 100.0% | 0.0% | 0.0% | 0.0% |
 | sdk:mwcpp | 1 | 100.0% | 0.0% | 0.0% | 0.0% |
 | sdk:mwrt | 15 | 100.0% | 0.0% | 0.0% | 0.0% |
-| sound | 57 | 100.0% | 100.0% | 0.0% | 0.0% |
+| sound | 57 | 100.0% | 100.0% | 1.8% | 1.8% |
 | stage | 8 | 100.0% | 100.0% | 0.0% | 0.0% |
 | talk | 322 | 100.0% | 100.0% | 0.0% | 0.0% |
 | text | 5 | 100.0% | 100.0% | 0.0% | 0.0% |

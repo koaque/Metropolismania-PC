@@ -25,7 +25,7 @@ As far as we could find, this is the first recompilation or decompilation projec
 | Input | Works (keyboard, pad, scripted) |
 | City game (scene C) | Reached: HUD, cursor and the 3D terrain render, about 20 fps (CPU rendering on several threads) |
 | Movies, sound, saves | In progress: music, sound and the PSS movies (with their audio) play through a new SPU2 emulation; memory card check passes |
-| Readable source port | Mapping done: every function is named and classified, every game function has a full C prototype (`config/signatures.txt`), and all are listed with notes in [docs/map](docs/map/README.md) (progress in [docs/PORT_STATUS.md](docs/PORT_STATUS.md)); porting next |
+| Readable source port | Mapping done: every function is named and classified, every game function has a full C prototype (`config/signatures.txt`), and all are listed with notes in [docs/map](docs/map/README.md) (progress in [docs/PORT_STATUS.md](docs/PORT_STATUS.md)). Porting has started: [src/port](src/port/README.md) replaces functions one at a time, each checked against the original by differential tests |
 | Widescreen, hi-res, Linux | Not started |
 
 ## Requirements (Windows, for now)

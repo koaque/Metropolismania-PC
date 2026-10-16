@@ -8,7 +8,9 @@
 // file when a binding needs custom logic. Remember that many handlers do not advance ctx->pc:
 // wrap them with registerFunction and fall back to $ra, as in the upstream walkthrough.
 
+#include "difftest.h"
 #include "game_overrides.h"
+#include "port.h"
 #include "ps2_runtime.h"
 #include "ps2_stubs.h"
 #include "ps2_syscalls.h"
@@ -330,6 +332,10 @@ namespace
 
     void applyMetropolismaniaOverrides(PS2Runtime &runtime)
     {
+        // The readable port (src/port/) first: the debug wrappers below wrap whatever is registered.
+        port::install(runtime);
+        port::installCapture(runtime);
+        port::runDifftestIfRequested(runtime); // exits when MMPC_DIFFTEST is set
         installTrace(runtime);
         installMovieSkip(runtime);
         installGsTrace(runtime);

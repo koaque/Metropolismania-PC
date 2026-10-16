@@ -1144,7 +1144,7 @@
 0x00184C40 int mm_Font_Load(void);
 0x00184CD0 int mm_Heap_Probe(void);
 0x00184D30 int mm_Random_TimerMix(void);
-0x00184DE0 int mm_Random_Next(void);
+0x00184DE0 int64_t mm_Random_Next(void);
 0x00184E30 void mm_Random_Seed(int seed);
 0x00184ED0 void mm_Random_Stir(void);
 0x00184F60 void mm_Gs_InitDisplay(uint16_t a0, int a1);
