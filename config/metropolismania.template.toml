@@ -38,3 +38,6 @@ instructions = []
 # SDK functions whose runtime handler is still TODO are left as recompiled original code.
 # List a handler name here to bind it anyway.
 keep_todo_stubs = []
+# fnmatch patterns of SDK functions to keep as the game's own recompiled code even when the
+# runtime has a handler for them.
+force_recompile = ["sceVu0*"]

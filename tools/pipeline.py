@@ -366,13 +366,39 @@ def render_config() -> None:
     # Prefer the game's own (recompiled) SDK code over runtime handlers that are still TODO:
     # a TODO handler only logs and returns -1, while the original code at least does the real work
     # against the emulated hardware. [pipeline].keep_todo_stubs forces a binding anyway.
+    # [pipeline].force_recompile (fnmatch patterns) also keeps matching SDK functions as recompiled
+    # code even when the runtime has a working handler, e.g. to compare an HLE library with the original.
+    import fnmatch
+
     todo = todo_handlers()
     keep = set(options.get("keep_todo_stubs", []))
-    unbound = [s for s in general.get("stubs", []) if s.split("@")[0] in todo and s.split("@")[0] not in keep]
+    forced = options.get("force_recompile", [])
+
+    def unbind(name: str) -> bool:
+        if any(fnmatch.fnmatchcase(name, pattern) for pattern in forced):
+            return True
+        return name in todo and name not in keep
+
+    unbound = [s for s in general.get("stubs", []) if unbind(s.split("@")[0])]
     general["stubs"] = [s for s in general.get("stubs", []) if s not in unbound]
-    general["entry_points"] = list(dict.fromkeys(general.get("entry_points", []) + unbound))
+    # ps2_recomp also binds a function to a runtime handler whenever its *name* matches one, so
+    # dropping it from [general].stubs is not enough: render a copy of the function map in which
+    # those functions get an "_lle" suffix (original code, low-level).
+    unbound_names = {s.split("@")[0] for s in unbound}
+    unbound_addrs = {int(s.split("@")[1], 16) for s in unbound if "@" in s}
+    rendered_map = WORK / "funcmap.rendered.csv"
+    map_lines = (CONFIG / "funcmap.csv").read_text().splitlines()
+    out_lines = [map_lines[0]]
+    for line in map_lines[1:]:
+        name, start, rest = line.split(",", 2)
+        if name in unbound_names and int(start, 16) in unbound_addrs:
+            name = f"{name}_lle"
+        out_lines.append(f"{name},{start},{rest}")
+    rendered_map.write_text("\n".join(out_lines) + "\n")
+    general["ghidra_output"] = rendered_map.as_posix()
+    general["entry_points"] = list(dict.fromkeys(general.get("entry_points", []) + [f"0x{a:08X}" for a in sorted(unbound_addrs)]))
     if unbound:
-        log(f"left {len(unbound)} SDK function(s) as recompiled code (runtime handler is TODO): "
+        log(f"left {len(unbound)} SDK function(s) as recompiled code (TODO handler or force_recompile): "
             + ", ".join(s.split("@")[0] for s in unbound))
     lines = ["# Rendered by tools/pipeline.py from config/metropolismania.template.toml. Do not edit.", ""]
     for section, table in data.items():

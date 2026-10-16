@@ -23,7 +23,7 @@ As far as we could find, this is the first recompilation or decompilation projec
 | First recompile (0 errors) and native build | Done: the runner builds, opens its window and starts executing |
 | Boot to logos, title screen, memory card check | Done: Natsume logo, title, New Game |
 | Input | Works (keyboard, pad, scripted) |
-| City game (scene C) | Reached: HUD and cursor render; 3D city not visible yet |
+| City game (scene C) | Reached: HUD, cursor and the 3D terrain render |
 | Movies, sound, saves | In progress: movies stall (skippable for testing), memory card check passes |
 | Widescreen, hi-res, performance, Linux | Not started |
 
