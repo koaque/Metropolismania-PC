@@ -1,0 +1,659 @@
+diff --git a/ps2xRuntime/include/runtime/gs/gs_cpu_backend.h b/ps2xRuntime/include/runtime/gs/gs_cpu_backend.h
+index 2421f9e..b6de3e4 100644
+--- a/ps2xRuntime/include/runtime/gs/gs_cpu_backend.h
++++ b/ps2xRuntime/include/runtime/gs/gs_cpu_backend.h
+@@ -33,7 +33,30 @@ public:
+     void SnapshotVram(std::vector<uint8_t> &out) const override;
+     GSTransferSnapshot GetTransferSnapshot() const override;
+ 
++    // Banded drawing, used by GSThreadedBackend to rasterize on several threads. Each band replays
++    // the same run of draws, CLUT loads and texture flushes, clipped to its own rows, with its own
++    // copy of the CLUT state and its own texture page cache. While bands run, nothing else may use
++    // the backend; the caller also keeps runs free of draws that read what the run itself draws.
++    struct BandContext
++    {
++        uint16_t y0 = 0;
++        uint16_t y1 = 0;
++        std::array<uint16_t, 512> clut{};
++        std::array<uint32_t, 2> clutCbp{};
++        GSMem::TexturePageCache textureCache;
++    };
++    void BeginBand(BandContext &band) const;
++    void EndBand(const BandContext &band);
++    void BandSubmit(BandContext &band, const GSPrimitiveBatch &batch);
++    void BandLoadClut(BandContext &band, const GSTex0Reg &tex0, const GSTexClutReg &texclut);
++    void BandTextureFlush(BandContext &band);
++    void RestoreVram(const std::vector<uint8_t> &snapshot);
++
+ private:
++    std::array<uint16_t, 512> &clutTable();
++    std::array<uint32_t, 2> &clutCbpTable();
++    GSMem::TexturePageCache &textureCache();
++    void LoadClutChecked(const GSTex0Reg &tex0, const GSTexClutReg &texclut);
+     void ResetUnlocked();
+     void LoadClutUnlocked(const GSTex0Reg &tex0, const GSTexClutReg &texclut);
+     uint32_t ReadVramUnlocked(uint32_t psm, uint32_t base, uint32_t bw, uint32_t x, uint32_t y) const;
+diff --git a/ps2xRuntime/include/runtime/gs/gs_threaded_backend.h b/ps2xRuntime/include/runtime/gs/gs_threaded_backend.h
+index b17bf46..6016b26 100644
+--- a/ps2xRuntime/include/runtime/gs/gs_threaded_backend.h
++++ b/ps2xRuntime/include/runtime/gs/gs_threaded_backend.h
+@@ -9,6 +9,11 @@
+ // host transfers, Sync, clears) first wait for everything queued before them and then run under the
+ // same execution lock as the worker. On by default; PS2X_GS_THREAD=0 rasterizes on the caller's
+ // thread instead (see gs_frontend.cpp).
++//
++// With the CPU backend, the worker also splits long runs of draws across several band threads,
++// each clipped to its own rows (PS2X_GS_BANDS=N, default up to 6; 1 turns banding off). Draws that
++// read VRAM the same run has drawn start a new run, and draws that read their own frame or depth
++// buffer are drawn alone on the worker.
+ class GSThreadedBackend final : public GSRasterBackend
+ {
+ public:
+diff --git a/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp b/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp
+index 01b3981..fe5fea7 100644
+--- a/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp
+@@ -565,6 +565,83 @@ void GSCpuBackend::Reset()
+     ResetUnlocked();
+ }
+ 
++namespace
++{
++    // The band this thread is drawing for (BandSubmit/BandLoadClut), or null for the normal path.
++    thread_local GSCpuBackend::BandContext *t_band = nullptr;
++
++    struct BandScope
++    {
++        explicit BandScope(GSCpuBackend::BandContext &band) { t_band = &band; }
++        ~BandScope() { t_band = nullptr; }
++    };
++}
++
++std::array<uint16_t, 512> &GSCpuBackend::clutTable()
++{
++    return t_band ? t_band->clut : m_clut;
++}
++
++std::array<uint32_t, 2> &GSCpuBackend::clutCbpTable()
++{
++    return t_band ? t_band->clutCbp : m_clutCbp;
++}
++
++GSMem::TexturePageCache &GSCpuBackend::textureCache()
++{
++    return t_band ? t_band->textureCache : m_texturePageCache;
++}
++
++void GSCpuBackend::BeginBand(BandContext &band) const
++{
++    band.clut = m_clut;
++    band.clutCbp = m_clutCbp;
++    band.textureCache.Invalidate();
++}
++
++void GSCpuBackend::EndBand(const BandContext &band)
++{
++    m_clut = band.clut;
++    m_clutCbp = band.clutCbp;
++    // The bands drew into VRAM behind the normal path's page cache.
++    m_texturePageCache.Invalidate();
++}
++
++void GSCpuBackend::BandSubmit(BandContext &band, const GSPrimitiveBatch &batch)
++{
++    if (!m_vram || batch.vertexCount == 0u)
++        return;
++    const GSScissorReg &scissor = batch.state.context.scissor;
++    if (scissor.y1 < band.y0 || scissor.y0 > band.y1)
++        return;
++    GSPrimitiveBatch clipped = batch;
++    clipped.state.context.scissor.y0 = std::max(scissor.y0, band.y0);
++    clipped.state.context.scissor.y1 = std::min(scissor.y1, band.y1);
++    BandScope scope(band);
++    DrawPrimitive(clipped);
++}
++
++void GSCpuBackend::BandLoadClut(BandContext &band, const GSTex0Reg &tex0, const GSTexClutReg &texclut)
++{
++    if (!m_vram)
++        return;
++    BandScope scope(band);
++    LoadClutChecked(tex0, texclut);
++}
++
++void GSCpuBackend::BandTextureFlush(BandContext &band)
++{
++    band.textureCache.Invalidate();
++}
++
++void GSCpuBackend::RestoreVram(const std::vector<uint8_t> &snapshot)
++{
++    std::lock_guard<std::mutex> lock(m_mutex);
++    if (m_vram && snapshot.size() == m_vramSize)
++        std::memcpy(m_vram, snapshot.data(), m_vramSize);
++    m_texturePageCache.Invalidate();
++}
++
+ void GSCpuBackend::ResetUnlocked()
+ {
+     m_clut.fill(0u);
+@@ -589,9 +666,17 @@ void GSCpuBackend::Submit(const GSPrimitiveBatch &batch)
+ void GSCpuBackend::LoadClut(const GSTex0Reg &tex0, const GSTexClutReg &texclut)
+ {
+     std::lock_guard<std::mutex> lock(m_mutex);
+-    if (!m_vram || (!isFourBitIndexedPsm(tex0.psm) && !isEightBitIndexedPsm(tex0.psm)))
++    if (!m_vram)
++        return;
++    LoadClutChecked(tex0, texclut);
++}
++
++void GSCpuBackend::LoadClutChecked(const GSTex0Reg &tex0, const GSTexClutReg &texclut)
++{
++    if (!isFourBitIndexedPsm(tex0.psm) && !isEightBitIndexedPsm(tex0.psm))
+         return;
+ 
++    std::array<uint32_t, 2> &clutCbp = clutCbpTable();
+     switch (tex0.cld)
+     {
+     case 0u:
+@@ -601,20 +686,20 @@ void GSCpuBackend::LoadClut(const GSTex0Reg &tex0, const GSTexClutReg &texclut)
+     case 1u:
+         break;
+     case 2u:
+-        m_clutCbp[0] = tex0.cbp;
++        clutCbp[0] = tex0.cbp;
+         break;
+     case 3u:
+-        m_clutCbp[1] = tex0.cbp;
++        clutCbp[1] = tex0.cbp;
+         break;
+     case 4u:
+-        if (m_clutCbp[0] == tex0.cbp)
++        if (clutCbp[0] == tex0.cbp)
+             return;
+-        m_clutCbp[0] = tex0.cbp;
++        clutCbp[0] = tex0.cbp;
+         break;
+     case 5u:
+-        if (m_clutCbp[1] == tex0.cbp)
++        if (clutCbp[1] == tex0.cbp)
+             return;
+-        m_clutCbp[1] = tex0.cbp;
++        clutCbp[1] = tex0.cbp;
+         break;
+     default:
+         return;
+@@ -637,6 +722,7 @@ void GSCpuBackend::LoadClutUnlocked(const GSTex0Reg &tex0, const GSTexClutReg &t
+ 
+     const bool loadCsm1Suffix = tex0.csm == 0u && thirtyTwoBit && !fourBit;
+     const uint32_t firstEntry = loadCsm1Suffix ? destinationBase : 0u;
++    std::array<uint16_t, 512> &clut = clutTable();
+ 
+     for (uint32_t entry = firstEntry; entry < entryCount; ++entry)
+     {
+@@ -661,12 +747,12 @@ void GSCpuBackend::LoadClutUnlocked(const GSTex0Reg &tex0, const GSTexClutReg &t
+         const uint32_t destination = (loadCsm1Suffix ? entry : destinationBase + entry) & (sixteenBit ? 0x1FFu : 0x0FFu);
+         if (sixteenBit)
+         {
+-            m_clut[destination] = static_cast<uint16_t>(raw);
++            clut[destination] = static_cast<uint16_t>(raw);
+         }
+         else
+         {
+-            m_clut[destination] = static_cast<uint16_t>(raw & 0xFFFFu);
+-            m_clut[destination + 256u] = static_cast<uint16_t>(raw >> 16u);
++            clut[destination] = static_cast<uint16_t>(raw & 0xFFFFu);
++            clut[destination + 256u] = static_cast<uint16_t>(raw >> 16u);
+         }
+     }
+ }
+@@ -705,7 +791,7 @@ uint32_t GSCpuBackend::ReadTextureVramUnlocked(uint32_t psm, uint32_t base, uint
+     if (!m_vram)
+         return 0u;
+ 
+-    return GSMem::ReadTexture(m_texturePageCache, m_vram, psm, base, bw, x, y);
++    return GSMem::ReadTexture(textureCache(), m_vram, psm, base, bw, x, y);
+ }
+ 
+ void GSCpuBackend::WriteVram(uint32_t psm, uint32_t base, uint32_t bw, uint32_t x, uint32_t y, uint32_t value)
+@@ -1065,6 +1151,7 @@ uint32_t GSCpuBackend::LookupCLUT(const GSDrawState &state,
+                                      : static_cast<uint32_t>(index);
+ 
+     uint32_t clutIndex = (clutBase + sourceIndex) & (sixteenBit ? 0x1FFu : 0x0FFu);
++    const std::array<uint16_t, 512> &clut = clutTable();
+     if (!sixteenBit && csm == 0u && isEightBitIndexedPsm(sourcePsm))
+     {
+         const uint32_t block = std::min((sourceIndex & 0xF0u) + clutBase, 240u);
+@@ -1075,17 +1162,17 @@ uint32_t GSCpuBackend::LookupCLUT(const GSDrawState &state,
+     {
+     case GS_PSM_CT32:
+     {
+-        const uint32_t raw = static_cast<uint32_t>(m_clut[clutIndex]) | (static_cast<uint32_t>(m_clut[clutIndex + 256u]) << 16u);
++        const uint32_t raw = static_cast<uint32_t>(clut[clutIndex]) | (static_cast<uint32_t>(clut[clutIndex + 256u]) << 16u);
+         return applyTexa(state.texa, cpsm, raw);
+     }
+     case GS_PSM_CT24:
+     {
+-        const uint32_t raw = static_cast<uint32_t>(m_clut[clutIndex]) | (static_cast<uint32_t>(m_clut[clutIndex + 256u]) << 16u);
++        const uint32_t raw = static_cast<uint32_t>(clut[clutIndex]) | (static_cast<uint32_t>(clut[clutIndex + 256u]) << 16u);
+         return applyTexa(state.texa, cpsm, raw & 0x00FFFFFFu);
+     }
+     case GS_PSM_CT16:
+     case GS_PSM_CT16S:
+-        return applyTexa(state.texa, cpsm, Rgba5551ToRgba8888(m_clut[clutIndex]));
++        return applyTexa(state.texa, cpsm, Rgba5551ToRgba8888(clut[clutIndex]));
+     default:
+         break;
+     }
+diff --git a/ps2xRuntime/src/lib/gs/gs_threaded_backend.cpp b/ps2xRuntime/src/lib/gs/gs_threaded_backend.cpp
+index 78339a6..72482e1 100644
+--- a/ps2xRuntime/src/lib/gs/gs_threaded_backend.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_threaded_backend.cpp
+@@ -1,14 +1,20 @@
+ #include "runtime/gs/gs_threaded_backend.h"
++#include "runtime/gs/gs_cpu_backend.h"
+ 
++#include <algorithm>
++#include <atomic>
+ #include <cfenv>
++#include <chrono>
+ #include <condition_variable>
+ #include <cstdlib>
+ #include <cstring>
+ #include <deque>
++#include <iostream>
+ #include <mutex>
+ #include <thread>
+ #include <utility>
+ #include <variant>
++#include <vector>
+ 
+ namespace
+ {
+@@ -45,6 +51,76 @@ namespace
+ 
+     // Bound on queued commands; the producer waits when the worker falls this far behind.
+     constexpr size_t kMaxQueuedCommands = 1u << 16;
++
++    // Banded rasterization (CPU backend only): runs of draws, CLUT loads and texture flushes are
++    // replayed by several threads, each clipped to its own rows. Shorter runs are drawn inline,
++    // where waking the band threads would cost more than it saves.
++    constexpr size_t kMinBandedDraws = 24u;
++    constexpr size_t kMaxRunCommands = 4096u;
++    constexpr uint32_t kVramBytes = 4u * 1024u * 1024u;
++    constexpr uint32_t kPageBytes = 8192u;
++
++    struct ByteRange
++    {
++        uint32_t begin = 0u;
++        uint32_t end = 0u;
++        bool overlaps(const ByteRange &other) const { return begin < other.end && other.begin < end; }
++    };
++
++    // Conservative VRAM byte range of a buffer: whole pages, plus one page when the base is not page
++    // aligned. Ranges that would wrap past the end of VRAM cover all of it.
++    ByteRange bufferRange(uint32_t baseBytes, uint32_t widthPixels, uint32_t heightPixels, uint8_t psm)
++    {
++        uint32_t pageWidth = 64u, pageHeight = 32u; // 32-bit formats, and T8H/T4HL/T4HH inside them
++        switch (psm)
++        {
++        case GS_PSM_CT16:
++        case GS_PSM_CT16S:
++        case GS_PSM_Z16:
++        case GS_PSM_Z16S:
++            pageHeight = 64u;
++            break;
++        case GS_PSM_T8:
++            pageWidth = 128u;
++            pageHeight = 64u;
++            break;
++        case GS_PSM_T4:
++            pageWidth = 128u;
++            pageHeight = 128u;
++            break;
++        default:
++            break;
++        }
++        const uint64_t pages = static_cast<uint64_t>((std::max(widthPixels, 1u) + pageWidth - 1u) / pageWidth) *
++                               ((std::max(heightPixels, 1u) + pageHeight - 1u) / pageHeight);
++        const uint64_t begin = baseBytes % kVramBytes;
++        const uint64_t end = begin + (pages + ((begin % kPageBytes) != 0u ? 1u : 0u)) * kPageBytes;
++        if (end > kVramBytes)
++            return {0u, kVramBytes};
++        return {static_cast<uint32_t>(begin), static_cast<uint32_t>(end)};
++    }
++
++    void drawWriteRanges(const GSDrawState &state, ByteRange out[2], size_t &count)
++    {
++        const GSContext &ctx = state.context;
++        const uint32_t width = std::max<uint32_t>(ctx.frame.fbw, 1u) * 64u;
++        const uint32_t height = static_cast<uint32_t>(ctx.scissor.y1) + 1u;
++        count = 0u;
++        out[count++] = bufferRange(ctx.frame.fbp * kPageBytes, width, height, ctx.frame.psm);
++        if (((ctx.test >> 16) & 1u) != 0u)
++            out[count++] = bufferRange(ctx.zbuf.zbp * kPageBytes, width, height, ctx.zbuf.psm);
++    }
++
++    ByteRange textureRange(const GSDrawState &state)
++    {
++        const GSTex0Reg &tex = state.context.tex0;
++        return bufferRange(tex.tbp0 * 256u, std::max<uint32_t>(tex.tbw, 1u) * 64u, state.textureHeight, tex.psm);
++    }
++
++    ByteRange clutRange(const GSTex0Reg &tex)
++    {
++        return bufferRange(tex.cbp * 256u, 64u, 32u, GS_PSM_CT32);
++    }
+ }
+ 
+ struct GSThreadedBackend::Impl
+@@ -64,9 +140,53 @@ struct GSThreadedBackend::Impl
+ 
+     std::thread worker;
+ 
++    // Banded rasterization state. The worker thread draws band 0 itself.
++    GSCpuBackend *cpu = nullptr;
++    std::vector<GSCpuBackend::BandContext> bands;
++    std::vector<std::thread> bandThreads;
++    std::mutex bandMutex;
++    std::condition_variable bandStart;
++    std::condition_variable bandDone;
++    uint64_t bandGeneration = 0;
++    bool bandStop = false;
++    std::atomic<size_t> bandsRemaining{0};
++    const std::deque<Command> *runCommands = nullptr;
++    size_t runBegin = 0;
++    size_t runEnd = 0;
++
++    // PS2X_GS_STATS=1: banded and inline runs, and draws kept serial because they read their own output.
++    uint64_t statBandedRuns = 0, statBandedDraws = 0, statInlineDraws = 0, statSerialDraws = 0;
++    uint64_t statBreakOp[8] = {}, statBreakTexture = 0, statBreakClut = 0;
++    std::chrono::steady_clock::time_point statLast = std::chrono::steady_clock::now();
++    const bool statsEnabled = []()
++    {
++        const char *value = std::getenv("PS2X_GS_STATS");
++        return value != nullptr && value[0] == '1';
++    }();
++    // PS2X_GS_BANDS_VERIFY=1 (debug): every banded run is redrawn serially from the same starting
++    // VRAM and CLUT state, and the two results are compared byte for byte. Slow.
++    const bool verifyBands = []()
++    {
++        const char *value = std::getenv("PS2X_GS_BANDS_VERIFY");
++        return value != nullptr && value[0] == '1';
++    }();
++    uint64_t verifyRuns = 0, verifyMismatchRuns = 0;
++
+     explicit Impl(std::unique_ptr<GSRasterBackend> backend)
+         : inner(std::move(backend))
+     {
++        cpu = dynamic_cast<GSCpuBackend *>(inner.get());
++        size_t bandCount = 1u;
++        if (cpu)
++        {
++            const unsigned hardware = std::thread::hardware_concurrency();
++            bandCount = hardware > 2u ? std::min<size_t>(hardware - 2u, 6u) : 1u;
++            if (const char *value = std::getenv("PS2X_GS_BANDS"))
++                bandCount = static_cast<size_t>(std::clamp(std::atoi(value), 1, 16));
++        }
++        bands.resize(bandCount);
++        for (size_t index = 1; index < bandCount; ++index)
++            bandThreads.emplace_back([this, index] { bandLoop(index); });
+         worker = std::thread([this] { run(); });
+     }
+ 
+@@ -79,6 +199,245 @@ struct GSThreadedBackend::Impl
+         workAvailable.notify_one();
+         if (worker.joinable())
+             worker.join();
++        {
++            std::lock_guard<std::mutex> lock(bandMutex);
++            bandStop = true;
++        }
++        bandStart.notify_all();
++        for (std::thread &thread : bandThreads)
++            thread.join();
++    }
++
++    static bool isRunOp(Op op)
++    {
++        return op == Op::Submit || op == Op::LoadClut || op == Op::TextureFlush || op == Op::Flush;
++    }
++
++    // Replays commands [runBegin, runEnd) for one band.
++    void drawBand(size_t index, int &rounding)
++    {
++        GSCpuBackend::BandContext &band = bands[index];
++        for (size_t i = runBegin; i < runEnd; ++i)
++        {
++            const Command &command = (*runCommands)[i];
++            if (command.rounding != rounding)
++            {
++                std::fesetround(command.rounding);
++                rounding = command.rounding;
++            }
++            switch (command.op)
++            {
++            case Op::Submit:
++                cpu->BandSubmit(band, std::get<GSPrimitiveBatch>(command.data));
++                break;
++            case Op::LoadClut:
++            {
++                const ClutArgs &args = std::get<ClutArgs>(command.data);
++                cpu->BandLoadClut(band, args.tex0, args.texclut);
++                break;
++            }
++            case Op::TextureFlush:
++                cpu->BandTextureFlush(band);
++                break;
++            default:
++                break;
++            }
++        }
++    }
++
++    void bandLoop(size_t index)
++    {
++        int rounding = std::fegetround();
++        uint64_t seen = 0;
++        for (;;)
++        {
++            {
++                std::unique_lock<std::mutex> lock(bandMutex);
++                bandStart.wait(lock, [&] { return bandStop || bandGeneration != seen; });
++                if (bandStop)
++                    break;
++                seen = bandGeneration;
++            }
++            drawBand(index, rounding);
++            if (bandsRemaining.fetch_sub(1u, std::memory_order_acq_rel) == 1u)
++            {
++                std::lock_guard<std::mutex> lock(bandMutex);
++                bandDone.notify_one();
++            }
++        }
++    }
++
++    // Executes a run of draws, CLUT loads and texture flushes, on all bands when it is long enough.
++    void executeRun(const std::deque<Command> &commands, size_t begin, size_t end, size_t draws, uint16_t maxY, int &rounding)
++    {
++        if (bands.size() < 2u || draws < kMinBandedDraws)
++        {
++            for (size_t i = begin; i < end; ++i)
++                execute(commands[i], rounding);
++            statInlineDraws += draws;
++            return;
++        }
++
++        std::vector<uint8_t> before;
++        GSCpuBackend::BandContext savedClut;
++        if (verifyBands)
++        {
++            cpu->SnapshotVram(before);
++            cpu->BeginBand(savedClut);
++        }
++
++        const size_t count = bands.size();
++        const uint32_t rows = static_cast<uint32_t>(maxY) + 1u;
++        for (size_t index = 0; index < count; ++index)
++        {
++            GSCpuBackend::BandContext &band = bands[index];
++            band.y0 = static_cast<uint16_t>(rows * index / count);
++            band.y1 = index + 1u == count ? static_cast<uint16_t>(0xFFFFu) : static_cast<uint16_t>(rows * (index + 1u) / count - 1u);
++            cpu->BeginBand(band);
++        }
++        runCommands = &commands;
++        runBegin = begin;
++        runEnd = end;
++        bandsRemaining.store(count - 1u, std::memory_order_release);
++        {
++            std::lock_guard<std::mutex> lock(bandMutex);
++            ++bandGeneration;
++        }
++        bandStart.notify_all();
++        drawBand(0u, rounding);
++        {
++            std::unique_lock<std::mutex> lock(bandMutex);
++            bandDone.wait(lock, [&] { return bandsRemaining.load(std::memory_order_acquire) == 0u; });
++        }
++        cpu->EndBand(bands[0]);
++        ++statBandedRuns;
++        statBandedDraws += draws;
++
++        if (verifyBands && !before.empty())
++        {
++            std::vector<uint8_t> banded;
++            cpu->SnapshotVram(banded);
++            const GSCpuBackend::BandContext bandedClut = bands[0];
++            cpu->RestoreVram(before);
++            cpu->EndBand(savedClut);
++            for (size_t i = begin; i < end; ++i)
++                execute(commands[i], rounding);
++            std::vector<uint8_t> serial;
++            cpu->SnapshotVram(serial);
++            size_t differing = 0, first = SIZE_MAX;
++            for (size_t i = 0; i < serial.size() && i < banded.size(); ++i)
++            {
++                if (serial[i] != banded[i])
++                {
++                    if (first == SIZE_MAX)
++                        first = i;
++                    ++differing;
++                }
++            }
++            ++verifyRuns;
++            if (differing != 0u || bandedClut.clut != bands[0].clut)
++            {
++                ++verifyMismatchRuns;
++                if (verifyMismatchRuns <= 20u)
++                    std::cerr << "[gs:bands] verify mismatch: run of " << (end - begin) << " commands (" << draws << " draws), "
++                              << differing << " bytes differ, first at 0x" << std::hex << first << std::dec << std::endl;
++            }
++            if ((verifyRuns % 200u) == 0u)
++                std::cerr << "[gs:bands] verify: " << verifyRuns << " runs checked, " << verifyMismatchRuns << " mismatched" << std::endl;
++        }
++    }
++
++    // Executes one batch of queued commands in order, grouping draws into banded runs.
++    void executeBatch(const std::deque<Command> &commands, int &rounding)
++    {
++        size_t i = 0;
++        while (i < commands.size())
++        {
++            if (!cpu || bands.size() < 2u || !isRunOp(commands[i].op))
++            {
++                execute(commands[i], rounding);
++                ++i;
++                continue;
++            }
++
++            // Grow the run until a command needs the VRAM state the run itself is producing.
++            std::vector<ByteRange> written;
++            size_t end = i;
++            size_t draws = 0;
++            uint16_t maxY = 0;
++            bool serialNext = false;
++            while (end < commands.size() && isRunOp(commands[end].op) && end - i < kMaxRunCommands)
++            {
++                const Command &command = commands[end];
++                if (command.op == Op::LoadClut)
++                {
++                    const ByteRange source = clutRange(std::get<ClutArgs>(command.data).tex0);
++                    if (std::any_of(written.begin(), written.end(), [&](const ByteRange &r) { return r.overlaps(source); }))
++                    {
++                        ++statBreakClut;
++                        break;
++                    }
++                }
++                else if (command.op == Op::Submit)
++                {
++                    const GSPrimitiveBatch &batch = std::get<GSPrimitiveBatch>(command.data);
++                    ByteRange own[2];
++                    size_t ownCount = 0;
++                    drawWriteRanges(batch.state, own, ownCount);
++                    if (batch.state.prim.tme)
++                    {
++                        const ByteRange texture = textureRange(batch.state);
++                        if (std::any_of(written.begin(), written.end(), [&](const ByteRange &r) { return r.overlaps(texture); }))
++                        {
++                            ++statBreakTexture;
++                            break;
++                        }
++                        if (own[0].overlaps(texture) || (ownCount > 1u && own[1].overlaps(texture)))
++                        {
++                            serialNext = true; // reads what it draws: keep it on one thread
++                            break;
++                        }
++                    }
++                    for (size_t k = 0; k < ownCount; ++k)
++                    {
++                        if (written.empty() || written.back().begin != own[k].begin || written.back().end != own[k].end)
++                            written.push_back(own[k]);
++                    }
++                    maxY = std::max(maxY, batch.state.context.scissor.y1);
++                    ++draws;
++                }
++                ++end;
++            }
++
++            if (end < commands.size() && !isRunOp(commands[end].op))
++                ++statBreakOp[static_cast<size_t>(commands[end].op) & 7u];
++            if (end > i)
++                executeRun(commands, i, end, draws, maxY, rounding);
++            i = end;
++            if (serialNext)
++            {
++                execute(commands[i], rounding);
++                ++statSerialDraws;
++                ++i;
++            }
++        }
++
++        if (statsEnabled)
++        {
++            const auto now = std::chrono::steady_clock::now();
++            if (now - statLast > std::chrono::seconds(2))
++            {
++                std::cerr << "[gs:bands] bands=" << bands.size() << " runs=" << statBandedRuns << " banded=" << statBandedDraws
++                          << " inline=" << statInlineDraws << " serial=" << statSerialDraws << " breaks: texture=" << statBreakTexture
++                          << " clut=" << statBreakClut << " transfer=" << statBreakOp[static_cast<size_t>(Op::BeginTransfer)]
++                          << " upload=" << statBreakOp[static_cast<size_t>(Op::UploadImage)]
++                          << " pixel=" << statBreakOp[static_cast<size_t>(Op::WriteVram)] << std::endl;
++                statBandedRuns = statBandedDraws = statInlineDraws = statSerialDraws = 0;
++                statBreakTexture = statBreakClut = 0;
++                std::fill(std::begin(statBreakOp), std::end(statBreakOp), 0u);
++                statLast = now;
++            }
++        }
+     }
+ 
+     void push(Command command)
+@@ -159,8 +518,7 @@ struct GSThreadedBackend::Impl
+             progress.notify_all(); // a producer waiting on the queue bound can continue
+             {
+                 std::lock_guard<std::mutex> exec(execMutex);
+-                for (const Command &command : batch)
+-                    execute(command, rounding);
++                executeBatch(batch, rounding);
+             }
+             const size_t done = batch.size();
+             batch.clear();
