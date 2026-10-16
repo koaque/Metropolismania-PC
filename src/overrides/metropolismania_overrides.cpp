@@ -13,8 +13,10 @@
 #include "ps2_stubs.h"
 #include "ps2_syscalls.h"
 
+#include <chrono>
 #include <cstdlib>
 #include <cstring>
+#include <iomanip>
 #include <iostream>
 #include <string>
 
@@ -59,18 +61,27 @@ namespace
         // Game object layout (from FUN_0012aba0): +4 state, +8 scene C, +0xC scene A, +0x14 scene B.
         // Scene A keeps its sub-state at +0xC0 and a counter at +0xC4.
         static uint32_t lastState = 0xFFFFFFFFu, lastSub = 0xFFFFFFFFu;
-        static uint32_t frames = 0;
+        static uint32_t frames = 0, lastLogFrame = 0;
+        static const auto start = std::chrono::steady_clock::now();
+        static auto lastLog = start;
         const uint32_t self = getRegU32(ctx, 4);
         const uint32_t state = guestRead32(rdram, self + 4u);
         const uint32_t sceneA = guestRead32(rdram, self + 0xCu);
         const uint32_t sub = (state == 2u && sceneA != 0u) ? guestRead32(rdram, sceneA + 0xC0u) : 0xFFFFFFFFu;
-        if (state != lastState || sub != lastSub || (++frames % 600u) == 0u)
+        ++frames;
+        if (state != lastState || sub != lastSub || (frames % 300u) == 0u)
         {
-            std::cerr << "[mm:scene] frame=" << std::dec << frames << " state=" << state
-                      << " sceneA=0x" << std::hex << sceneA << " sceneA.sub=" << std::dec
-                      << static_cast<int32_t>(sub) << std::endl;
+            const auto now = std::chrono::steady_clock::now();
+            const double elapsed = std::chrono::duration<double>(now - start).count();
+            const double span = std::chrono::duration<double>(now - lastLog).count();
+            const double fps = span > 0.0 ? (frames - lastLogFrame) / span : 0.0;
+            std::cerr << "[mm:scene] t=" << std::fixed << std::setprecision(1) << elapsed << "s frame=" << std::dec << frames
+                      << " fps=" << fps << " state=" << state << " sceneA=0x" << std::hex << sceneA
+                      << " sceneA.sub=" << std::dec << static_cast<int32_t>(sub) << std::endl;
             lastState = state;
             lastSub = sub;
+            lastLog = now;
+            lastLogFrame = frames;
         }
         g_originalGameUpdate(rdram, ctx, runtime);
     }

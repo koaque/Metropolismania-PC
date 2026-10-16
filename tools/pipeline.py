@@ -157,11 +157,18 @@ def cmd_bootstrap(_: argparse.Namespace) -> None:
 
 # ---------------------------------------------------------------- build helpers
 
+# RelWithDebInfo with full inlining and AVX2. Not /GL (link-time codegen over ~14k generated
+# functions is very slow) and not /fp:fast (the runtime emulates exact PS2 float semantics).
+MSVC_FLAGS = "/Zi /O2 /Ob2 /Oi /DNDEBUG /arch:AVX2"
+
+
 def configure(env: dict[str, str]) -> None:
-    if (BUILD / "CMakeCache.txt").exists():
+    cache = BUILD / "CMakeCache.txt"
+    if cache.exists() and f"CMAKE_CXX_FLAGS_RELWITHDEBINFO:STRING={MSVC_FLAGS}" in cache.read_text(errors="replace"):
         return
     run(["cmake", "-S", str(RUNTIME_TREE), "-B", str(BUILD), "-G", "Ninja", f"-DCMAKE_BUILD_TYPE={BUILD_TYPE}",
-         "-DPS2X_BUILD_TEST=OFF", "-DPS2X_BUILD_STUDIO=OFF"], env=env)
+         "-DPS2X_BUILD_TEST=OFF", "-DPS2X_BUILD_STUDIO=OFF",
+         f"-DCMAKE_CXX_FLAGS_RELWITHDEBINFO={MSVC_FLAGS}", f"-DCMAKE_C_FLAGS_RELWITHDEBINFO={MSVC_FLAGS}"], env=env)
 
 
 def build_targets(targets: list[str]) -> None:

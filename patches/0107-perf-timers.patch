@@ -1,0 +1,94 @@
+diff --git a/ps2xRuntime/src/lib/gs/gs_frontend.cpp b/ps2xRuntime/src/lib/gs/gs_frontend.cpp
+index 7603e02..1cb6e63 100644
+--- a/ps2xRuntime/src/lib/gs/gs_frontend.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_frontend.cpp
+@@ -28,6 +28,7 @@ namespace
+         uint64_t ztst[4] = {};
+         uint64_t ate = 0;
+         uint64_t tme = 0;
++        double submitSeconds = 0.0;
+         float minX = 1e30f, maxX = -1e30f, minY = 1e30f, maxY = -1e30f;
+         std::chrono::steady_clock::time_point last = std::chrono::steady_clock::now();
+     };
+@@ -42,9 +43,15 @@ namespace
+         return enabled;
+     }
+ 
+-    void gsStatsRecord(const GSPrimitiveBatch &batch, uint32_t primType)
++    GsDrawStats &gsStats()
+     {
+         static GsDrawStats s;
++        return s;
++    }
++
++    void gsStatsRecord(const GSPrimitiveBatch &batch, uint32_t primType)
++    {
++        GsDrawStats &s = gsStats();
+         ++s.draws;
+         ++s.byType[primType & 7u];
+         ++s.byFbp[batch.state.context.frame.fbp];
+@@ -76,7 +83,8 @@ namespace
+             out << std::hex << "0x" << fbp << std::dec << ":" << count << " ";
+         out << "} zte=" << s.zte << " ztst(never/always/ge/gt)=" << s.ztst[0] << "/" << s.ztst[1] << "/"
+             << s.ztst[2] << "/" << s.ztst[3] << " ate=" << s.ate << " tme=" << s.tme
+-            << " x=[" << s.minX << "," << s.maxX << "] y=[" << s.minY << "," << s.maxY << "]";
++            << " x=[" << s.minX << "," << s.maxX << "] y=[" << s.minY << "," << s.maxY << "]"
++            << " rasterms=" << static_cast<uint64_t>(s.submitSeconds * 1000.0);
+         std::cerr << out.str() << std::endl;
+         s = GsDrawStats{};
+         s.last = now;
+@@ -1651,7 +1659,16 @@ void GS::vertexKick(bool drawing)
+         if (gsStatsEnabled())
+             gsStatsRecord(batch, static_cast<uint32_t>(m_prim.type));
+         updatePreferredDisplaySourceForDraw(batch);
+-        m_backend->Submit(batch);
++        if (gsStatsEnabled())
++        {
++            const auto submitBegin = std::chrono::steady_clock::now();
++            m_backend->Submit(batch);
++            gsStats().submitSeconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - submitBegin).count();
++        }
++        else
++        {
++            m_backend->Submit(batch);
++        }
+         recordDrawDebugEventUnlocked(needed);
+     }
+ 
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+index d94d5d6..896618e 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+@@ -26,6 +26,7 @@ namespace
+         uint64_t xgkicks = 0;
+         uint64_t xgkickBytes = 0;
+         uint64_t aborted = 0;
++        double runSeconds = 0.0;
+         std::chrono::steady_clock::time_point last = std::chrono::steady_clock::now();
+     };
+ 
+@@ -52,7 +53,7 @@ namespace
+         if (now - s.last < std::chrono::seconds(2))
+             return;
+         std::cerr << "[vu1:stats] runs=" << s.runs << " xgkicks=" << s.xgkicks << " bytes=" << s.xgkickBytes
+-                  << " aborted=" << s.aborted << std::endl;
++                  << " aborted=" << s.aborted << " vu1ms=" << static_cast<uint64_t>(s.runSeconds * 1000.0) << std::endl;
+         s = Vu1Stats{};
+         s.last = now;
+     }
+@@ -1740,6 +1741,15 @@ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
+                          uint8_t *vuData, uint32_t dataSize,
+                          GS &gs, PS2Memory *memory, uint32_t maxCycles)
+ {
++    struct RunTimer
++    {
++        std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
++        ~RunTimer()
++        {
++            if (vu1StatsEnabled())
++                vu1Stats().runSeconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - begin).count();
++        }
++    } runTimer;
+     m_activeVuData = vuData;
+     m_activeVuDataSize = dataSize;
+     m_activeGs = &gs;
