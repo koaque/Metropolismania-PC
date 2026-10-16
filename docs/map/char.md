@@ -8,7 +8,7 @@ People and the player character.
 - People are the 0x30-byte records in the map object (`map`): `+0` x, `+8` z, `+0x10` next person on the tile,
   `+0x12` own index, `+0x14` workplace, `+0x16` building they are in (`0x3F80` = outside), `+0x1E` destination,
   `+0x20` follow target, `+0x22` flags, `+0x24` character type, `+0x26` schedule state, `+0x27` activity,
-  `+0x2A` family, `+0x28` home, `+0x2E` member, `+0x2F` friendship status byte.
+  `+0x28` home, `+0x2A` family, `+0x2C` family this resident can introduce, `+0x2E` member, `+0x2F` friendship status byte.
 - `mm_Person_*` moves people between home, work and other buildings by their schedules (`mm_Schedule_*`) and path
   waypoints (`mm_Path_*`, walkable tiles have flag `0x10`).
 - `mm_Player_*` is the player: walking, turning, picking the building or person in front, placing bag items and homes
@@ -21,7 +21,7 @@ People and the player character.
 
 ## Functions
 
-81 functions (named 79, typed 2). Blocks: 19 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+83 functions (named 81, typed 2). Blocks: 19 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Name | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -45,7 +45,7 @@ People and the player character.
 | `0x00132880` | `mm_Char2_ctor` | 52 | no | base constructor, vtable 0x1BCE90 |
 | `0x001328C0` | `mm_CharType_LoadAll` | 416 | yes | loads DATA\BIN\CHARTYPE.BIN and creates one class object per 0x18-byte record (class 0 base, 1 person, 2 class 2) in the table at gp 0x1BDA3C |
 | `0x00132A70` | `mm_Person_CheckBuilding` | 244 | yes | (provisional) person vs. its target building record: flags 0x20/0x200/4, the building's state byte +0x27 |
-| `0x00132B70` | `mm_Person_TickCounters` | 300 | no | (provisional) per-tick person counters (+0x25, +0x2F) and the spawn timer (gp) |
+| `0x00132B70` | `mm_Person_TickCounters` | 300 | no | friendship level tick (+0x2F), +0x25 countdown, and with city flag 4 the family a resident introduces phones to ask about moving in (up to 4 calls) |
 | `0x00132CA0` | `mm_Person_ProbeTile` | 248 | no | (provisional) tests the tile a person would step onto |
 | `0x00132DA0` | `mm_Person_Walk` | 3528 | no | (provisional) 3.5 KB walking movement for people over map tiles |
 | `0x00133B70` | `mm_Person_UpdatePose` | 780 | no | (provisional) person's matrix from heading and terrain height |
@@ -60,6 +60,8 @@ People and the player character.
 | `0x0013C010` | `mm_StatusByte_IncHighLevel` | 64 | no | (provisional) level 12..13 -> +1 |
 | `0x0013C050` | `mm_StatusByte_ClearMid2` | 48 | no | clears bits 2-3 when set |
 | `0x0013C080` | `mm_StatusByte_IncLevel` | 108 | no | (provisional) level +1 below 12; above 1 clears bits 0-1 |
+| `0x001439D0` | `mm_Player_CollideObjects` | 1048 | indirect | (provisional) objects on the 3 x 3 tiles around the player, collision push |
+| `0x00143DF0` | `mm_Player_NearestObject` | 1144 | indirect | (provisional) objects on the 3 x 3 tiles around the player, nearest hit distance (100 = none) |
 | `0x00157D80` | `mm_Player_LoadState` | 20 | no | reads 0x38 bytes from the save file |
 | `0x00157DA0` | `mm_Player_SaveState` | 20 | no | writes 0x38 bytes |
 | `0x00157DC0` | `mm_Player_GetMatrix` | 40 | no | the player model's matrix (object +0x88) |

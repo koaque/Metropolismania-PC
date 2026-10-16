@@ -32,12 +32,12 @@ struct MapObject {
     uint16_t type;             /* +0x00 building type index (table at gp 0x1BDBF8) */
     uint16_t id;               /* +0x02 own index */
     uint16_t tile;             /* +0x04 x = low 7 bits, z = bits 7 and up */
-    uint16_t flags;            /* +0x06 0x20 entrance marked, 0x200 used by an event */
+    uint16_t flags;            /* +0x06 1 highlight, 8 claim met, 0x20 entrance, 0x40 meter maxed, 0x200 event */
     uint16_t firstPerson;      /* +0x08 6000 = none */
     uint16_t nextOnTile;       /* +0x0A next object on the same tile */
     uint16_t family;           /* +0x0C family living here */
     uint16_t unk_0E;
-    uint16_t idRange;          /* +0x10 classified by mm_IdRange_Classify */
+    uint16_t claimMeter;       /* +0x10 rises while the claim is unmet (mm_ClaimMeter_Level) */
     uint8_t claimSlot;         /* +0x12 entry in the type's claim section */
     uint8_t unk_13;
     uint16_t entranceTile;     /* +0x14 (provisional) */
@@ -64,7 +64,7 @@ struct MapPerson {
     uint8_t activity;          /* +0x27 */
     uint16_t home;             /* +0x28 home object */
     uint16_t family;           /* +0x2A */
-    uint16_t place;            /* +0x2C place id used by move-in and retreat */
+    uint16_t introduces;       /* +0x2C family this resident can introduce */
     uint8_t member;            /* +0x2E */
     uint8_t status;            /* +0x2F friendship status byte */
 };
@@ -95,8 +95,8 @@ struct BuildingType {
     uint16_t kind;             /* +0x134 */
     uint16_t flags;            /* +0x136 0x20, 0x40 people inside, 0x100 */
     uint8_t unk_138[4];
-    uint16_t openHour;         /* +0x13C */
-    uint16_t closeHour;        /* +0x13E */
+    uint16_t openMinute;       /* +0x13C minutes of the day */
+    uint16_t closeMinute;      /* +0x13E */
     uint16_t capacity;         /* +0x140 */
     uint8_t size;              /* +0x142 footprint in tiles */
     uint8_t unk_143;
@@ -120,7 +120,7 @@ struct FamilyMember {
     uint8_t unk_05;
     uint8_t unk_06;
     uint8_t range;             /* +0x07 neighbourhood range index */
-    uint16_t wants[16];        /* +0x08 wanted building types, 0 ends */
+    uint16_t acquaintances[16]; /* +0x08 family ids this member can introduce, 0 ends */
     char name[16];             /* +0x28 */
     char name2[16];            /* +0x38 */
 };
@@ -255,7 +255,7 @@ struct WordsCtx {
     int32_t cancelAllowed;     /* +0x130 */
     int32_t flag134;           /* +0x134 */
     int16_t eventSlot;         /* +0x138 */
-    int16_t vacancyIndex;      /* +0x13A */
+    int16_t wantIndex;         /* +0x13A chosen want */
     int32_t friendshipChanged; /* +0x13C */
 };
 
@@ -277,7 +277,7 @@ struct CityScene {
     CityMap *map;              /* +0x50 */
     void *applicants;          /* +0x54 */
     void *player;              /* +0x58 */
-    void *wants;               /* +0x5C wants window, holds the vacancy table */
+    void *wants;               /* +0x5C wants window; starts with the wants list */
     void *bag;                 /* +0x60 */
     Stamina *stamina;          /* +0x64 */
     void *events;              /* +0x68 */
@@ -299,7 +299,7 @@ struct CityScene {
     int32_t scoreA8;           /* +0xA8 */
     int32_t scoreA8Count;      /* +0xAC */
     float unk_B0;
-    uint32_t flags;            /* +0xB4 */
+    uint32_t flags;            /* +0xB4 2 holiday month, 4 popular (approval 118+), 0x40 pad focus after a talk */
     int32_t unk_B8;
     int32_t pendingApproval;   /* +0xBC */
     int32_t unk_C0;

@@ -44,12 +44,12 @@ City events (visitors, requests, incidents, paydays).
 | `0x0013A250` | `mm_EventMgr_dtor` | 264 | yes | frees the event lists |
 | `0x0013A360` | `mm_EventMgr_ctor` | 500 | yes | creates the event lists and handler objects |
 | `0x0013A560` | `mm_Event_LoadTypes` | 516 | yes | loads DATA\BIN\EVENT.BIN (0x4C-byte type records) |
-| `0x0013A770` | `mm_Event_ListOpA` | 764 | no | (provisional) one of six similar list reorder routines (memmove) |
-| `0x0013AA70` | `mm_Event_ListOpB` | 884 | no | (provisional) |
-| `0x0013ADF0` | `mm_Event_ListOpC` | 788 | no | (provisional) |
-| `0x0013B110` | `mm_Event_ListOpD` | 844 | no | (provisional) |
-| `0x0013B460` | `mm_Event_ListOpE` | 804 | no | (provisional) |
-| `0x0013B790` | `mm_Event_ListOpF` | 788 | no | (provisional) used by mm_EventMgr_ctor |
+| `0x0013A770` | `mm_EventList_MoveDue` | 764 | no | (provisional) bucket a1 -> a2 for entries whose wait counter is at or below 0 |
+| `0x0013AA70` | `mm_EventList_MoveDueTo` | 884 | no | (provisional) like mm_EventList_MoveDue with an extra per-target test (a3[1]) |
+| `0x0013ADF0` | `mm_EventList_MoveOffRank` | 788 | no | (provisional) entries whose rank mask (+0x27) lacks the current rank bit |
+| `0x0013B110` | `mm_EventList_MoveOnRank` | 844 | no | (provisional) entries whose rank mask (+0x27) has the current rank bit |
+| `0x0013B460` | `mm_EventList_MoveOffRankB` | 804 | no | (provisional) second variant of the rank test, used to park entries in bucket 6 |
+| `0x0013B790` | `mm_EventList_MoveByMask26` | 788 | no | (provisional) entries whose mask at record +0x26 lacks a2[1] (event manager constructor) |
 | `0x0018F5D0` | `mm_EvShoppingTogether_Slot14` | 32 | no | type 1: Slot14 (returns +0x28 when a3 == 0) |
 | `0x0018F5F0` | `mm_EvShoppingTogether_Update` | 900 | yes | type 1: Update |
 | `0x0018F980` | `mm_EvShoppingTogether_End` | 192 | no | type 1: End (clears the building marks) |
@@ -97,7 +97,7 @@ City events (visitors, requests, incidents, paydays).
 | `0x00192750` | `mm_EvDeliveryMan_Start` | 116 | no | type 3: Start |
 | `0x001927D0` | `mm_EvDeliveryMan_Check` | 1272 | no | type 3 "Delivery Man": Check |
 | `0x00192CD0` | `mm_EvBugDamage_Check` | 132 | no | type 11 "Bug damage": Check (its only slot) |
-| `0x00192D60` | `mm_EventMgr_ListOpG` | 696 | no | (provisional) list reorder used by the event manager constructor/destructor |
+| `0x00192D60` | `mm_EventList_MoveAll` | 696 | no | (provisional) moves every entry from bucket a1 to a2 (event manager constructor and destructor) |
 | `0x00193020` | `mm_EventQueue_RemoveAt` | 148 | no | removes the id at a2 from queue level a1 and shifts the level starts |
 | `0x001930C0` | `mm_EventQueue_InsertByPriority` | 340 | no | inserts id *a1 into level a2 keeping the type priority order (type record +0x22) |
 | `0x00193220` | `mm_PartyPopup_Draw` | 36 | no | (provisional) vtable 0x1BD8E0 draw: queues its packet in pass 2 |

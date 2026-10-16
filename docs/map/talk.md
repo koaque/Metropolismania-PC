@@ -181,8 +181,8 @@ friendship changed. A is the person talked to.
 | `0x0017B600` | `mm_WordsFn_CitySetFlag40` | 20 | no | #146 act: city flag 0x40 (pad focus returns after the talk) |
 | `0x0017B620` | `mm_WordsFn_TalkEndChoosing` | 40 | no | #145 act: talk view choice cleared, session single target |
 | `0x0017B630` | `mm_WordsFn_TalkSelectActor` | 40 | no | #144 act: talk view choice = actor arg of event +0xA4 |
-| `0x0017B660` | `mm_WordsFn_EventRemoveVacancy` | 96 | no | #143 act: removes the vacancy for the event's building type |
-| `0x0017B6C0` | `mm_WordsFn_EventAddVacancy` | 96 | no | #142 act: adds a vacancy for the event's building type |
+| `0x0017B660` | `mm_WordsFn_EventRemoveWant` | 96 | no | #143 act: removes the want the event holds for its building type |
+| `0x0017B6C0` | `mm_WordsFn_EventAddWant` | 96 | no | #142 act: the event holds a want for its building type |
 | `0x0017B720` | `mm_WordsFn_ActorMoveTo` | 140 | no | #141 act: moves the subjects to actor arg's place |
 | `0x0017B7B0` | `mm_WordsFn_ClearPersonFlag20` | 20 | no | #140 act: clears person A flag 0x20 |
 | `0x0017B7D0` | `mm_WordsFn_ActorFollow` | 156 | no | #139 act: person A leaves the building and follows actor arg |
@@ -201,14 +201,14 @@ friendship changed. A is the person talked to.
 | `0x0017BB20` | `mm_WordsFn_PlaySe` | 24 | no | #126 act: sound effect arg |
 | `0x0017BB40` | `mm_WordsFn_GiveBagItem` | 332 | no | #125 act: gives the selected bag item, friendship by its price |
 | `0x0017BC90` | `mm_WordsFn_BuyGoods` | 620 | yes | #124 act: pays for goods item arg, friendship by price, then laptop/bag/stamina/music/applicant by kind |
-| `0x0017BF00` | `mm_WordsFn_AddVacancy` | 68 | no | #123 act: adds a vacancy for person A at building A, sound 0x15 |
-| `0x0017BF50` | `mm_WordsFn_RetreatFamily` | 92 | yes | #122 act: retreats family A, sound 0x17 |
-| `0x0017BFB0` | `mm_WordsFn_MoveInPerson` | 64 | yes | #121 act: moves person A's family in |
-| `0x0017BFF0` | `mm_WordsFn_RetreatPlace` | 108 | yes | #120 act: retreats the result place, clears the member flag, sound 0x17 |
+| `0x0017BF00` | `mm_WordsFn_AddWant` | 68 | no | #123 act: records person A's want (building A's claim), sound 0x15 |
+| `0x0017BF50` | `mm_WordsFn_InviteFamily` | 92 | yes | #122 act: family A becomes an applicant when it can apply, sound 0x17 |
+| `0x0017BFB0` | `mm_WordsFn_NewIntroduction` | 64 | yes | #121 act: person A picks a new family to introduce (+0x2C) |
+| `0x0017BFF0` | `mm_WordsFn_InviteIntroduced` | 108 | yes | #120 act: the family in the result word becomes an applicant, member A's flag cleared, sound 0x17 |
 | `0x0017C060` | `mm_WordsFn_SetPose` | 148 | no | #119 act: talk session pose entry for member A = arg |
 | `0x0017C080` | `mm_WordsFn_MarkFamilyKnown` | 52 | no | #118 act: (provisional) family bit via 0x13C950, sound 0x14 |
-| `0x0017C0C0` | `mm_WordsFn_FriendshipDown` | 132 | yes | #117 act: friendship loss for member A (type bonus + 3) |
-| `0x0017C150` | `mm_WordsFn_FriendshipUp` | 132 | yes | #116 act: friendship gain for member A (type bonus + 5) |
+| `0x0017C0C0` | `mm_WordsFn_FriendshipDown` | 132 | yes | #117 act: friendship loss for member A (character type bonus + 3) |
+| `0x0017C150` | `mm_WordsFn_FriendshipUp` | 132 | yes | #116 act: friendship gain for member A (character type bonus + 5) |
 | `0x0017C1E0` | `mm_WordsFn_SelectMemberB` | 72 | no | #115 act: subject B = member +0x1A of family A |
 | `0x0017C230` | `mm_WordsFn_SelectBuildingB` | 432 | no | #114 act: building B = A's (0), home (1), under the person (2), current (3), destination (4), result (5) |
 | `0x0017C3E0` | `mm_WordsFn_SetCancelAllowed` | 12 | no | #113 act: context +0x130 = arg (cancel button allowed) |
@@ -222,7 +222,7 @@ friendship changed. A is the person talked to.
 | `0x0017C530` | `mm_WordsFn_TextOpenHours` | 72 | no | #105 text: opening hours of the family's building type |
 | `0x0017C580` | `mm_WordsFn_TextBagItemName` | 68 | no | #104 text: name of the selected bag item |
 | `0x0017C5D0` | `mm_WordsFn_TextGoodsName` | 104 | no | #103 text: name of the goods item arg |
-| `0x0017C640` | `mm_WordsFn_TextVacancyClaim` | 160 | no | #102 text: claim line of the selected vacancy |
+| `0x0017C640` | `mm_WordsFn_TextWantClaim` | 160 | no | #102 text: claim line of the chosen want |
 | `0x0017C6E0` | `mm_WordsFn_TextPopulation` | 52 | no | #101 text: (provisional) map value +0x29 with thousands separators |
 | `0x0017C720` | `mm_WordsFn_TextClaimLine` | 60 | no | #100 text: claim line of building A/B |
 | `0x0017C760` | `mm_WordsFn_TextFamilyRecord` | 60 | no | #99 text: (provisional) cached family record (FAMILY.BIN 0x1D4 bytes) |
@@ -248,20 +248,20 @@ friendship changed. A is the person talked to.
 | `0x0017D070` | `mm_WordsFn_GoodsFitsBag` | 236 | no | #79 cond: (provisional) the goods item arg is a bag item and the bag has room |
 | `0x0017D160` | `mm_WordsFn_GoodsOwned` | 320 | no | #78 cond: (provisional) the goods item arg is already owned or unlocked |
 | `0x0017D2A0` | `mm_WordsFn_LaptopHasBit` | 64 | no | #77 cond: laptop entry bit arg is active |
-| `0x0017D2E0` | `mm_WordsFn_VacancyWantedC` | 8 | no | #76 cond: (provisional) selected vacancy wanted by any member of family A |
-| `0x0017D2F0` | `mm_WordsFn_VacancyWantedB` | 8 | no | #75 cond: (provisional) selected vacancy wanted by member A |
-| `0x0017D300` | `mm_WordsFn_VacancyWantedA` | 8 | no | #74 cond: (provisional) selected vacancy wanted by family A |
-| `0x0017D310` | `mm_WordsFn_VacancyWantedBody` | 896 | yes | shared body of #74/#75/#76 (entered past their prologues) |
-| `0x0017D6A0` | `mm_WordsFn_MemberWantsClaim` | 380 | yes | #73 cond: (provisional) member A wants a place matching building A's claim |
-| `0x0017D820` | `mm_WordsFn_VacancyClaimMatch` | 240 | no | #72 cond: a vacancy with the same claim as building A, else room check |
-| `0x0017D910` | `mm_WordsFn_HasVacancyForPerson` | 104 | no | #71 cond: a vacancy for person A exists |
-| `0x0017D980` | `mm_WordsFn_FindVacancy` | 52 | no | #70 act: first vacancy lookup (result unused) |
+| `0x0017D2E0` | `mm_WordsFn_AnyAcquaintanceSuppliesWant` | 8 | no | #76 cond: the same over every member of family A; result word and member index (+0x1A) |
+| `0x0017D2F0` | `mm_WordsFn_AcquaintanceSuppliesWant` | 8 | no | #75 cond: an acquaintance of member A who can apply supplies the chosen want's claim; result word |
+| `0x0017D300` | `mm_WordsFn_FamilySuppliesWant` | 8 | no | #74 cond: family A can apply and its type supplies the chosen want's claim |
+| `0x0017D310` | `mm_WordsFn_SuppliesWantBody` | 896 | yes | shared body of #74/#75/#76 (entered past their prologues) |
+| `0x0017D6A0` | `mm_WordsFn_AcquaintanceSuppliesClaim` | 380 | yes | #73 cond: an acquaintance of member A who can apply and whose type supplies building A's claim; stored as the person's introduction |
+| `0x0017D820` | `mm_WordsFn_WantClaimMatch` | 240 | no | #72 cond: an open want with the same claim as building A, else a room check |
+| `0x0017D910` | `mm_WordsFn_HasWantForPerson` | 104 | no | #71 cond: person A has an open want |
+| `0x0017D980` | `mm_WordsFn_FindWant` | 52 | no | #70 act: first want lookup (result unused) |
 | `0x0017D9C0` | `mm_WordsFn_ApplicantCountTier` | 56 | no | #69 cond: applicants: none, up to 8, up to 31, full |
 | `0x0017DA00` | `mm_WordsFn_BuildingOpen` | 204 | indirect | #68 cond: building B (or type) open now |
 | `0x0017DAD0` | `mm_WordsFn_BuildingsOverlap` | 204 | no | #67 cond: (provisional) footprints of buildings A and B overlap |
 | `0x0017DBA0` | `mm_WordsFn_FamilyModArg` | 32 | no | #66 cond: family id mod arg |
-| `0x0017DBC0` | `mm_WordsFn_PickClaimResident` | 1116 | yes | #65 cond: (provisional) resident whose wants match the selected vacancy's claim |
-| `0x0017E020` | `mm_WordsFn_PickTestableResident` | 564 | yes | #64 cond: (provisional) resident of a candidate building that passes TestMember, else random |
+| `0x0017DBC0` | `mm_WordsFn_PickClaimResident` | 1116 | yes | #65 cond: (provisional) resident whose wants match the chosen want's claim |
+| `0x0017E020` | `mm_WordsFn_PickTestableResident` | 564 | yes | #64 cond: a resident of a candidate home who agrees (mm_Family_FriendAgrees: 3), else a random resident (1) |
 | `0x0017E260` | `mm_WordsFn_PickByCandidates` | 48 | yes | #63 cond: collects candidate buildings and picks (0x17E3A0) |
 | `0x0017E290` | `mm_WordsFn_PickRandomResident` | 264 | yes | #62 cond: collects candidate buildings, picks a random resident as B |
 | `0x0017E3A0` | `mm_Words_PickResidentByType` | 488 | no | random resident of a candidate home whose character type matches arg (type or list 0x1BE950) |
@@ -277,14 +277,14 @@ friendship changed. A is the person talked to.
 | `0x0017EC70` | `mm_WordsFn_MemberCharType` | 104 | yes | #53 cond: member character type, folded (0x26 -> 13, others above 0x1D -> 0) |
 | `0x0017ECE0` | `mm_WordsFn_IsSpecialFamily` | 120 | no | #52 cond: (provisional) family equals one of three ids in a gp table (arg selects) |
 | `0x0017ED60` | `mm_WordsFn_IsApplicant` | 16 | no | #51 cond: the family is on the applicant list |
-| `0x0017ED70` | `mm_WordsFn_FamilyBitC` | 8 | no | #50 cond: (provisional) family bit set in 0x1D4DF0 |
-| `0x0017ED80` | `mm_WordsFn_FamilyBitB` | 8 | no | #49 cond: (provisional) family bit set in 0x1D4410 |
-| `0x0017ED90` | `mm_WordsFn_CanRetreat` | 116 | no | #48 cond: city flag 4, or flag 2 of 0x1C5600 with a family that can retreat |
+| `0x0017ED70` | `mm_WordsFn_FamilyHasLeft` | 8 | no | #50 cond: family A moved away (bitset C) |
+| `0x0017ED80` | `mm_WordsFn_FamilyInCity` | 8 | no | #49 cond: family A lives in the city (bitset A) |
+| `0x0017ED90` | `mm_WordsFn_CanApply` | 116 | no | #48 cond: city flag 4, or flag 2 of 0x1C5600 with family A able to apply |
 | `0x0017EE10` | `mm_WordsFn_ScoreA8Tier` | 8 | no | #47 cond: placement score +0xA8 below 200, below 300, or higher |
 | `0x0017EE20` | `mm_WordsFn_ScoreA0Tier` | 8 | no | #46 cond: placement score +0xA0 below 200, below 300, or higher |
 | `0x0017EE30` | `mm_WordsFn_ApprovalTier` | 60 | no | #45 cond: approval tier folded to 0..2 |
 | `0x0017EE70` | `mm_WordsFn_MapHistoryTier` | 76 | no | #44 cond: map history sum: none, up to 10, more |
-| `0x0017EEC0` | `mm_WordsFn_MissionGoalTier` | 84 | no | #43 cond: mission goal 0x1F32E0 in five bands (20/50/100/200) |
+| `0x0017EEC0` | `mm_WordsFn_FamilyCountTier` | 84 | no | #43 cond: families in the city (0x1F32E0) in five bands (20/50/100/200) |
 | `0x0017EF20` | `mm_WordsFn_PopulationRank` | 32 | no | #42 cond: population rank (1..8) minus 1 |
 | `0x0017EF40` | `mm_WordsFn_TimeOfDay` | 80 | no | #41 cond: 0 from 3:00 to 12:00, 1 to 18:00, else 2 |
 | `0x0017EF90` | `mm_WordsFn_BeforeSix` | 16 | no | #40 cond: clock before 6:00 |
@@ -304,17 +304,17 @@ friendship changed. A is the person talked to.
 | `0x0017F1E0` | `mm_WordsFn_False` | 8 | no | #26 cond: 0 |
 | `0x0017F1F0` | `mm_WordsFn_BuildingCrowd` | 260 | no | #25 cond: visitors at the building: none, some, over half capacity |
 | `0x0017F300` | `mm_WordsFn_BuildingFlag100` | 48 | no | #24 cond: building flag 0x100 |
-| `0x0017F330` | `mm_WordsFn_TestMember` | 164 | no | #23 act: (provisional) mm_Family_TestMember when there is room for applicants |
+| `0x0017F330` | `mm_WordsFn_TryFriendAgrees` | 164 | no | #23 act: mm_Family_FriendAgrees for member A when applicants and people have room |
 | `0x0017F3E0` | `mm_WordsFn_Nop22` | 204 | no | #22 nothing |
-| `0x0017F420` | `mm_WordsFn_TryRetreat` | 260 | yes | #21 cond: a member's category-5 place that can retreat |
-| `0x0017F530` | `mm_WordsFn_TryMoveIn` | 136 | yes | #20 cond: moves the subject in when not placed yet; nonzero result |
+| `0x0017F420` | `mm_WordsFn_FindOutsideAcquaintance` | 260 | yes | #21 cond: an acquaintance of member A from an Outside-category type who can apply; result word |
+| `0x0017F530` | `mm_WordsFn_GetIntroduction` | 136 | yes | #20 cond: the family subject A/B introduces (picks one when the person has none); nonzero when there is one |
 | `0x0017F5C0` | `mm_WordsFn_BuildingFlag2` | 48 | no | #19 cond: building flag 2 |
 | `0x0017F5F0` | `mm_WordsFn_ClaimIs50` | 108 | no | #18 cond: claim entry value 0x32 |
 | `0x0017F660` | `mm_WordsFn_BuildingClaim` | 100 | no | #17 cond: the building's claim entry (CLAIM.BIN section B) |
-| `0x0017F6D0` | `mm_WordsFn_BuildingState` | 128 | no | #16 cond: building flags 8/0x40 or its id range |
+| `0x0017F6D0` | `mm_WordsFn_BuildingState` | 128 | no | #16 cond: building flags 8 (claim met, 3) / 0x40 (meter maxed, 4), else its claim meter level |
 | `0x0017F750` | `mm_WordsFn_FriendshipTier` | 100 | no | #15 cond: friendship value below 48, below 100, or higher |
-| `0x0017F7C0` | `mm_WordsFn_MemberMeter` | 44 | no | #14 cond: (provisional) meter 0x1C59B0[family*6+member] in five bands |
-| `0x0017F7F0` | `mm_WordsFn_FamilyKnown` | 36 | no | #13 cond: (provisional) family bit set in 0x1D4900 |
+| `0x0017F7C0` | `mm_WordsFn_FriendshipBand` | 44 | no | #14 cond: band of member A/B's friendship meter |
+| `0x0017F7F0` | `mm_WordsFn_FamilyKnown` | 36 | no | #13 cond: family A/B is known (bitset B) |
 | `0x0017F820` | `mm_WordsFn_PersonFlag10` | 48 | no | #12 cond: person +0x22 flag 0x10 |
 | `0x0017F850` | `mm_WordsFn_IsBirthdayMonth` | 124 | no | #11 cond: (family + member) mod 12 equals the month |
 | `0x0017F8D0` | `mm_WordsFn_WorksAtHome` | 152 | no | #10 cond: (provisional) home equals workplace and the type has flag 0x20 |
@@ -333,7 +333,7 @@ friendship changed. A is the person talked to.
 | `0x00180090` | `mm_Words_CallAct` | 32 | no | calls an action through its member function pointer |
 | `0x001800B0` | `mm_Words_SetFlag134` | 16 | no | context +0x134 = 1 |
 | `0x001800C0` | `mm_Words_SelectBagItem` | 192 | no | context +0x24 = the a1-th bag item of kinds 0x10/0x11/0x13 |
-| `0x00180180` | `mm_Words_SetVacancyIndex` | 12 | no | context +0x13A = a1 (the chosen vacancy) |
+| `0x00180180` | `mm_Words_SetWantIndex` | 12 | no | context +0x13A = a1 (the chosen want) |
 | `0x00180190` | `mm_Words_SelectEvent` | 92 | yes | (provisional) context +0x138 = a1 - 1, event lookup for the family |
 | `0x001801F0` | `mm_Words_GetGoods` | 88 | no | goods record a1 for building type B this season |
 | `0x00180250` | `mm_Words_GetBuildingTypeB` | 12 | no | context +0x14 |
@@ -347,8 +347,8 @@ friendship changed. A is the person talked to.
 | `0x001A0C40` | `mm_Words_MatchTypedAnswer` | 840 | no | which answer of the current question matches the typed text (strcmp) |
 | `0x001A0F90` | `mm_Words_GetEntryDefault` | 580 | no | default text for a name entry question |
 | `0x001A11E0` | `mm_Words_GetEntryMode` | 504 | no | (provisional) first field of the name entry question (passed to mm_NameEntry_Setup) |
-| `0x001A13E0` | `mm_Words_GetChoiceText` | 1036 | yes | text of menu choice a3 for code a2: goods with prices ("Don't buy"), claims, vacancies, events |
-| `0x001A17F0` | `mm_Words_ApplyChoice` | 504 | yes | stores menu choice a3 for code a2 (bag item, vacancy, event, argument) and jumps |
+| `0x001A13E0` | `mm_Words_GetChoiceText` | 1036 | yes | text of menu choice a3 for code a2: goods with prices ("Don't buy"), claims, wants, events |
+| `0x001A17F0` | `mm_Words_ApplyChoice` | 504 | yes | stores menu choice a3 for code a2 (bag item, want, event, argument) and jumps |
 | `0x001A19F0` | `mm_Words_CountChoices` | 664 | no | number of menu choices for code a2 |
 | `0x001A1CA0` | `mm_Words_AppendClipped` | 312 | no | (provisional) appends a string to the message buffer within the line limit |
 | `0x001A1DE0` | `mm_Words_ExpandLine` | 2044 | no | expands a script line: conditions pick branches, text getters fill in names, actions run |

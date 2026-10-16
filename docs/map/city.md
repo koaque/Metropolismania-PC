@@ -15,12 +15,12 @@ City scene (`mm_CityScene_*`, object at gp `0x001BDD00`; it is also the `this` o
 | `+0x8C` | approval rate (-99..120), moved toward the pending change at `+0xBC` |
 | `+0x90`, `+0x94`, `+0x98` | weather today, tomorrow, yesterday (0 clear, 2 rain, 3 snow) |
 | `+0xA0`, `+0xA8` | placement scores (decaying averages, `mm_CityScene_RecordPlacementScore`) |
-| `+0xB4` | flags |
+| `+0xB4` | flags: 2 holiday month (months 0, 3, 7, 10), 4 popular city (approval 118 or more), 0x40 pad focus returns after a talk |
 | `+0xCC` | screen fade counter (`mm_CityScene_StartFade`) |
 
 Building types (`mm_BldgType_*` and the category classes `mm_Bldg<Category>_*`): one object per type in the table at
 gp `0x001BDBF8`, built from `DATA\BIN\STRTYPE.BIN` (0x9C-byte records, category at byte `+0x20`). Type fields:
-`+0x110` name, `+0x134` kind, `+0x136` flags (`0x40` = people live or work there), `+0x13C`/`+0x13E` opening hours,
+`+0x110` name, `+0x134` kind, `+0x136` flags (`0x40` = people live or work there), `+0x13C`/`+0x13E` opening and closing times in minutes (closed in holiday months, city flag 2, for types with flag `0x2000`),
 `+0x142` footprint size, `+0x145` category, `+0x147`/`+0x148` claim indexes, vtable at `+0x15C`. Vtable slots:
 `+8` dtor, `+0xC` InitRecord, `+0x10` Tick, `+0x14` Draw, `+0x18` DrawPeople, `+0x24` IsOpen, `+0x28`/`+0x2C`
 collision, `+0x34` DrawAnim. Categories and classes: 0 base (none, prohibited, rubble), 1 Wasteland `0x1BD3C0`,
@@ -29,9 +29,13 @@ collision, `+0x34` DrawAnim. Categories and classes: 0 base (none, prohibited, r
 `0x1BD040`, 12 Ranch `0x1BD0C0`, 13 Pig Farm `0x1BD300`, 14 Small Goods `0x1BD380`, 15 Keep Out `0x1BD200`;
 `0x1BD100` is the shared Building class of 6-13.
 
-Claims (`mm_BldgClaims_*`) evaluate what a building's residents want (`claim`). Vacancies (`mm_Vacancy_*`) are open
-places that families want, and applicants (`mm_Applicants_*`, list at city `+0x54`, 0x14-byte entries) are the
-families waiting to move in.
+Claims (`mm_BldgClaims_*`) evaluate what a building's residents want (`claim`). While a claim is unmet the object's
+claim meter (object `+0x10`) rises; `mm_ClaimMeter_Level` compares it with the thresholds at `*0x001BDA50`. A met
+claim sets object flag 8 (approval +3), a maxed meter (above 0xFE) flag 0x40. The wants list (`mm_Wants_*`,
+0x504 bytes at the start of the wants window, CityScene `+0x5C`) records the requests residents voice in
+conversations (person, workplace, family, member, claim slot) and the entries events hold; up to 64 entries in
+256 words. Applicants (`mm_Applicants_*`, list at city `+0x54`, 0x14-byte entries) are the families waiting to
+move in.
 
 <!-- Generated below by tools/map_docs.py from config/port_status.csv. Edit function notes there, not here. -->
 
@@ -41,39 +45,39 @@ families waiting to move in.
 
 | Address | Name | Size | Blocks | Notes |
 |---|---|---:|---|---|
-| `0x001357F0` | `mm_ClaimIcon_GetColor` | 100 | no | (provisional) colour for a claim icon id (default 0x1B26C0, ids with 0x8000 use entry + 0x40) |
+| `0x001357F0` | `mm_ClaimIcon_GetColor` | 100 | no | colour of a claim icon: id a0 (bit 15 selects the second half), level a1 (0 = white 0x1B26C0) |
 | `0x0013BDD0` | `mm_StatusByte_Low2` | 12 | no | bits 0-1 of *a0 |
 | `0x0013BDE0` | `mm_StatusByte_Mid2` | 16 | no | bits 2-3 of *a0 |
 | `0x0013BDF0` | `mm_StatusByte_LevelAbove13` | 36 | no | level (bits 4-7) > 13 |
-| `0x0013BED0` | `mm_StatusByte_Advance` | 144 | no | (provisional) same on a byte pointer |
-| `0x0013BFD0` | `mm_StatusByte_OnLevel12` | 52 | no | (provisional) same for a byte pointer |
-| `0x00150190` | `mm_Vacancy_Remove` | 272 | no | (provisional) removes entry a1 from slot list a2 (called when events end) |
-| `0x001502A0` | `mm_Vacancy_TryAdd` | 172 | no | (provisional) adds when the count is below 0x40 and capacity remains |
-| `0x00150350` | `mm_Vacancy_CheckFamily` | 208 | no | (provisional) family a2's state against flag A and its building record |
-| `0x00150420` | `mm_Vacancy_Find` | 292 | no | (provisional) search used by the script code |
-| `0x00150550` | `mm_Vacancy_TryAdd4` | 256 | no | (provisional) adds when 4 or more places remain |
-| `0x00150650` | `mm_Vacancy_LoadState` | 20 | no | reads 0x504 bytes from the save file |
-| `0x00150670` | `mm_Vacancy_SaveState` | 20 | no | writes 0x504 bytes |
-| `0x00150690` | `mm_Vacancy_Notify` | 672 | no | (provisional) posts messages for vacancy changes |
-| `0x00150940` | `mm_Vacancy_HasRoom` | 52 | no | count below 0x40 and at least a1 places left of 0x100 |
-| `0x00150980` | `mm_Vacancy_ctor` | 16 | no | zeroes the two counters |
-| `0x001550A0` | `mm_Applicants_CountMatching` | 68 | no | (provisional) applicants (count +0x280) matching a0 |
+| `0x0013BED0` | `mm_StatusByte_Advance` | 144 | no | the same advance on a status byte pointer |
+| `0x0013BFD0` | `mm_StatusByte_OnLevel12` | 52 | no | friendship gain when the byte's level is above 11 |
+| `0x00150190` | `mm_Wants_RemoveEventHold` | 272 | no | removes the entry an event holds for building type a1 with value a2 (events ending) |
+| `0x001502A0` | `mm_Wants_AddEventHold` | 172 | no | one-word entry held by an event for building type a1 (needs a free entry and word) |
+| `0x00150350` | `mm_Wants_CheckEntry` | 208 | no | a want's state: 0 open, 1 the building's claim is met or maxed (flags 0x48), 2 stale (family gone or claim changed), 3 claim meter above the high threshold |
+| `0x00150420` | `mm_Wants_Find` | 292 | no | next open resident want from iterator *a5: claim slot a2, object a3, person a4 |
+| `0x00150550` | `mm_Wants_AddForPerson` | 256 | no | records person a2's want (claim slot a3) when an entry and four words are free |
+| `0x00150650` | `mm_Wants_LoadState` | 20 | no | reads the 0x504-byte list from the save file |
+| `0x00150670` | `mm_Wants_SaveState` | 20 | no | writes it |
+| `0x00150690` | `mm_Wants_Prune` | 672 | no | every 120 frames drops stale wants (state 2) and compacts the list |
+| `0x00150940` | `mm_Wants_HasRoom` | 52 | no | entry count below 0x40 and at least a1 words left of 0x100 |
+| `0x00150980` | `mm_Wants_ctor` | 16 | no | zeroes the two counters |
+| `0x001550A0` | `mm_Applicants_CountActive` | 68 | no | applicants whose state (+2) is below 7 |
 | `0x001550F0` | `mm_Applicants_LoadState` | 20 | no | reads 0x284 bytes from the save file |
 | `0x00155110` | `mm_Applicants_SaveState` | 20 | no | writes 0x284 bytes |
 | `0x00155130` | `mm_Applicants_Find` | 60 | no | index of the applicant for family a1 |
-| `0x00155170` | `mm_Applicants_FindFrom` | 100 | no | (provisional) next match from *a1 (32 entries) |
+| `0x00155170` | `mm_Applicants_FindFrom` | 100 | no | next applicant from iterator *a1 whose state (+2) is a2 (32 entries) |
 | `0x001551E0` | `mm_Applicants_Add` | 184 | yes | adds family a1 (max 32 entries of 0x14 bytes) |
 | `0x001552A0` | `mm_Applicants_Clear` | 132 | no | empties the list |
 | `0x00156C50` | `mm_Applicants_AnyWaiting` | 52 | no | (provisional) 1 if an applicant entry has state 2 |
 | `0x00156C90` | `mm_Applicants_RemoveFamily` | 80 | no | removes the entry for family a1 |
 | `0x00156CE0` | `mm_Applicants_RemoveAt` | 148 | no | removes entry a1 and shifts the rest |
 | `0x00156D80` | `mm_Applicants_AssignToBuilding` | 512 | yes | places the family's object and assigns its home building, then removes the entry |
-| `0x00156F80` | `mm_Applicants_StartPlacing` | 260 | yes | (provisional) placement mode with input focus |
+| `0x00156F80` | `mm_Applicants_StartPlacing` | 260 | yes | placement mode: state 3 -> 6, highlights the footprint, takes pad focus, clears the notice |
 | `0x00157090` | `mm_Applicants_AddAndShow` | 68 | yes | mm_Applicants_Add, selected when a3 != 0 |
 | `0x001570E0` | `mm_Applicants_GetSelected` | 48 | no | selected entry or 0 |
-| `0x00158A20` | `mm_Placement_FindSpot` | 748 | no | (provisional) searches for a valid spot with mm_Map_CanPlace |
+| `0x00158A20` | `mm_Placement_FindSpot` | 748 | no | tries offsets around (a5, a6) until mm_Map_CanPlace returns 2; writes the footprint rectangle |
 | `0x00158D10` | `mm_Player_PlaceBagItem` | 756 | yes | placing an item from the bag: preview, confirm (button 0x40), place object, finish use |
-| `0x00159010` | `mm_Player_PlaceForApplicant` | 780 | yes | (provisional) placing a home for the selected applicant |
+| `0x00159010` | `mm_Player_PlaceForApplicant` | 780 | yes | placement preview for the selected applicant: footprint highlight green or red, then mm_Placement_FindSpot |
 | `0x0015A580` | `mm_CityAssets_LoadMyHome` | 324 | yes | async load step for DATA\BIN\MYHOME.A3L |
 | `0x0015A6D0` | `mm_CityAssets_LoadChars` | 468 | yes | async load step for DATA\A3D\CHAR.A3D |
 | `0x0015A8B0` | `mm_CityAssets_BuildCharParts` | 480 | no | fills the character part table 0x1F3B90 from CHAR.A3D |
@@ -86,9 +90,9 @@ families waiting to move in.
 | `0x00163690` | `mm_Collide_SegmentA` | 436 | no | (provisional) segment test against building geometry |
 | `0x00163850` | `mm_Collide_SegmentB` | 444 | no | (provisional) second segment test |
 | `0x00163A10` | `mm_BldgType_Slot34` | 8 | no | base slot +0x34 |
-| `0x00163A20` | `mm_BldgType_IsOpenAt` | 184 | no | (provisional) opening hours check against the clock |
+| `0x00163A20` | `mm_BldgType_IsOpenAt` | 184 | no | open between +0x13C and +0x13E (minutes of the day, a2 shifts the time); closed in holiday months (city flag 2) for types with flag 0x2000 |
 | `0x00163AE0` | `mm_Clock_AddWrap` | 52 | no | a1 + a2 mod 3600, wrapped at 86400 (seconds per day) |
-| `0x00163B20` | `mm_BldgType_IsKind5to8` | 32 | no | kind +0x134 in 5..8 |
+| `0x00163B20` | `mm_BldgType_IsMyHome` | 32 | no | type id/kind (+0x134) in 5..8, the My Home types |
 | `0x00163B40` | `mm_BldgType_DrawOccupants` | 256 | indirect | (provisional) draws people at a building |
 | `0x00163C40` | `mm_BldgType_OccupantMatrix` | 292 | no | (provisional) matrix for an occupant |
 | `0x00163D70` | `mm_BldgType_DrawOccupant` | 400 | no | (provisional) one occupant on its tile |
@@ -120,14 +124,14 @@ families waiting to move in.
 | `0x00165390` | `mm_BldgRanch_Draw` | 524 | indirect | instances for the ranch |
 | `0x001655A0` | `mm_BldgRanch_ctor` | 88 | yes | Building constructor, vtable 0x1BD0C0, models from 0x1F3B50.. |
 | `0x00165600` | `mm_Bldg_dtor` | 96 | yes | intermediate Building class, vtable 0x1BD100 |
-| `0x00165660` | `mm_IdRange_Classify` | 60 | no | (provisional) 0 below the range at 0x1BDA50, 1 inside, 2 above |
+| `0x00165660` | `mm_ClaimMeter_Level` | 60 | no | claim meter a0 against the thresholds at *0x1BDA50: 0 below low, 1 between, 2 above high |
 | `0x001656A0` | `mm_BldgClaims_EvalA` | 932 | no | (provisional) claim evaluation part A (CLAIM.BIN) |
 | `0x00165A50` | `mm_BldgClaims_EvalB` | 504 | no | (provisional) part B, random |
 | `0x00165C50` | `mm_BldgClaims_CountNearby` | 552 | no | (provisional) counts matching buildings in the claim's tile lists |
-| `0x00165E80` | `mm_BldgClaims_EvalC` | 712 | no | (provisional) part C, minimap marks and sounds |
+| `0x00165E80` | `mm_BldgClaims_EvalC` | 712 | no | checks whether the claim is met (nothing missing nearby): flag 8, approval +3, sound and minimap mark; else meter handling |
 | `0x00166150` | `mm_BldgClaims_EvalD` | 1768 | no | (provisional) part D |
-| `0x00166840` | `mm_BldgClaims_Evaluate` | 628 | no | (provisional) runs the claim evaluations for a building |
-| `0x00166AC0` | `mm_BldgClaims_DrawIcon` | 372 | no | (provisional) claim icon above a building |
+| `0x00166840` | `mm_BldgClaims_Evaluate` | 628 | no | per building: claim check (part C), meter rise by the rate, part D above the low threshold, flag 0x40 above 0xFE |
+| `0x00166AC0` | `mm_BldgClaims_DrawIcon` | 372 | no | claim icon colour from the meter level (1 slow pulse, 2 fast pulse) |
 | `0x00166C40` | `mm_Bldg_InitRecordBase` | 12 | no | record +0x12 = 0x18 |
 | `0x00166C50` | `mm_Bldg_ctor` | 52 | yes | base constructor, vtable 0x1BD100 |
 | `0x00166C90` | `mm_BldgField_dtor` | 96 | yes | category 4 (crop fields), vtable 0x1BD140 |
@@ -146,7 +150,7 @@ families waiting to move in.
 | `0x00167930` | `mm_Bldg_Slot30` | 8 | no | slot +0x30 |
 | `0x00167940` | `mm_Bldg_CollideA` | 64 | no | slot +0x2C |
 | `0x00167980` | `mm_Bldg_CollideB` | 64 | no | slot +0x28 |
-| `0x001679C0` | `mm_BldgType_FindEntrance2` | 368 | no | (provisional) |
+| `0x001679C0` | `mm_BldgType_FindEntrance2` | 368 | no | whether a building of flag 8 lies within 3 tiles beyond side a5 (stops at walkable tiles) |
 | `0x00167B40` | `mm_Bldg_DrawPeople` | 1452 | indirect | slot +0x18: people at the building |
 | `0x00168100` | `mm_BldgBusiness_Draw` | 532 | no | slot +0x14 for Business and My Home: instances and claim icon |
 | `0x00168320` | `mm_Bldg_Tick` | 1204 | no | slot +0x10: entrance, minimap marks, terrain under the footprint, claims |
@@ -202,13 +206,13 @@ families waiting to move in.
 | `0x00180520` | `mm_CityScene_GetFade` | 8 | no | fade counter (+0xCC), 0 when no fade runs |
 | `0x00180530` | `mm_CityScene_StartFade` | 52 | no | starts a fade (out or in by +0xC8) at speed a1 when none runs |
 | `0x00180570` | `mm_CityScene_HasFlag8` | 20 | no | (provisional) city flag 8 |
-| `0x00180590` | `mm_CityScene_RetreatFamily` | 212 | yes | applicant entry for family a1 and re-homes people who lived there |
-| `0x00180670` | `mm_CityScene_MissionProgress` | 212 | no | mission progress percent by goal type 0x1C5550 against goal 0x1F32E0 |
+| `0x00180590` | `mm_CityScene_AddApplicantFamily` | 212 | yes | adds family a1 to the applicants and gives the residents who introduced it a new introduction |
+| `0x00180670` | `mm_CityScene_MissionProgress` | 212 | no | percent: the map counter for the goal type 0x1C5550 over the families in the city (0x1F32E0), capped at 100 |
 | `0x00180750` | `mm_CityScene_PopulationRank` | 132 | no | rank 1..8 from map +0x74 (100/300/500/1000/1500/2000/2500) |
 | `0x001807E0` | `mm_CityScene_ApprovalTier` | 60 | no | approval below 0, up to 50, up to 100, higher |
 | `0x00180820` | `mm_CityScene_ScoreA8Tier` | 48 | no | placement score +0xA8 below 200, below 300, or higher |
 | `0x00180850` | `mm_CityScene_ScoreA0Tier` | 48 | no | placement score +0xA0 below 200, below 300, or higher |
-| `0x00180880` | `mm_CityScene_SaveGame` | 264 | no | writes the save: header, camera, stage, events, families, map, laptop, vacancies, applicants, player, stamina |
+| `0x00180880` | `mm_CityScene_SaveGame` | 264 | no | writes the save: header, camera, stage, events, families, map, laptop, wants, applicants, player, stamina |
 | `0x00180990` | `mm_CityScene_LoadGame` | 2388 | yes | load screen (REPORT.TEX) and loading every *_LoadState from the memory card |
 | `0x001812F0` | `mm_CityScene_SaveStep` | 308 | yes | save from the pause menu: map vertex buffers, open, write, wait |
 | `0x00181430` | `mm_CityScene_PopMode` | 68 | no | pops the scene mode stack (+0x10.., depth +0x24) |

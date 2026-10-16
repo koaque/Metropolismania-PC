@@ -10,7 +10,7 @@ Addresses are for SLUS_203.77 (CRC32 `4FA3F727`). Status and progress: [PORT_STA
 | [bag](bag.md) | 14 | 5 |
 | [boot](boot.md) | 2 | 2 |
 | [camera](camera.md) | 18 | 5 |
-| [char](char.md) | 81 | 19 |
+| [char](char.md) | 83 | 19 |
 | [city](city.md) | 183 | 55 |
 | [claim](claim.md) | 6 | 1 |
 | [core](core.md) | 4 | 1 |
@@ -21,7 +21,7 @@ Addresses are for SLUS_203.77 (CRC32 `4FA3F727`). Status and progress: [PORT_STA
 | [game](game.md) | 3 | 2 |
 | [gfx](gfx.md) | 117 | 29 |
 | [goods](goods.md) | 3 | 1 |
-| [map](map.md) | 100 | 12 |
+| [map](map.md) | 98 | 12 |
 | [math](math.md) | 14 | 0 |
 | [mem](mem.md) | 1 | 1 |
 | [movie](movie.md) | 80 | 46 |

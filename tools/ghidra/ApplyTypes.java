@@ -129,6 +129,7 @@ public class ApplyTypes extends GhidraScript {
                 if (cmd.applyTo(currentProgram, monitor)) {
                     applied++;
                     typedBySignature.add(addr);
+                    setDefaultConvention(func);
                 } else {
                     printerr("ApplyTypes: " + addr + ": " + cmd.getStatusMsg());
                     failed++;
@@ -143,6 +144,15 @@ public class ApplyTypes extends GhidraScript {
             + " failed, " + thisTyped + " method(s) given a typed first parameter");
         if (failed > 0) {
             throw new IllegalStateException("ApplyTypes: " + failed + " signature(s) failed");
+        }
+    }
+
+    // Prototypes parsed from C carry no calling convention; without one the decompiler warns that storage is
+    // locked under an unknown convention. Use the compiler spec's default convention.
+    private void setDefaultConvention(Function func) throws Exception {
+        String name = currentProgram.getCompilerSpec().getDefaultCallingConvention().getName();
+        if (!name.equals(func.getCallingConventionName())) {
+            func.setCallingConvention(name);
         }
     }
 
@@ -187,6 +197,7 @@ public class ApplyTypes extends GhidraScript {
                 }
                 func.replaceParameters(params, FunctionUpdateType.DYNAMIC_STORAGE_ALL_PARAMS, true,
                     SourceType.USER_DEFINED);
+                setDefaultConvention(func);
                 typed++;
             }
         }

@@ -459,6 +459,10 @@ def render_config() -> None:
 def cmd_recompile(_: argparse.Namespace) -> None:
     render_config()
     GENERATED.mkdir(exist_ok=True)
+    # ps2_recomp names files after the functions, so a rename leaves the old file behind; stale files then
+    # reference functions the new header no longer declares. Start from an empty output set.
+    for old in list(GENERATED.glob("*.cpp")) + list(GENERATED.glob("*.h")):
+        old.unlink()
     run([str(tool("ps2_recomp")), str(RENDERED_TOML)])
     cpp = len(list(GENERATED.rglob("*.cpp")))
     log(f"generated/: {cpp} .cpp file(s)")

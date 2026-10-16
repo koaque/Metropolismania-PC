@@ -5,10 +5,17 @@ Families: the residents who move into the city.
 - Family records come from `FAMILY.BIN` and are cached: 256 slots of 0x1D4 bytes at `0x001D52E0` (ids at
   `0x001F26E0`, LRU stamps at `0x001F2AE0`, pending reads at `0x001F2EE0`). Header: `+0x20` home building type,
   `+0x22` member count; members of 0x48 bytes from `+0x24`: `+0x24` character type, `+0x27` flags, `+0x28` role,
-  `+0x2C` .. `+0x4C` wanted building types, `+0x4C` name, `+0x5C` second name.
-- Family ids are grouped by building type: `mm_Family_GetTypeIndex` finds the type of an id in a sorted table.
-- Per-member meters at `0x001C59B0` (six bytes per family, value 0..120 in bits 0-6) and three family bitsets at
-  `0x001D4410`, `0x001D4900` and `0x001D4DF0`.
+  `+0x2C` .. `+0x4C` up to 16 acquaintances (family ids this member can introduce, often families from the next town), `+0x4C` name, `+0x5C` second name.
+- Family ids are grouped by building type (the business or home the family runs): `mm_Family_GetTypeIndex` finds the
+  type of an id in a sorted table.
+- Bitsets per family: A `0x001D4410` lives in the city, B `0x001D4900` known (Town's Pages), C `0x001D4DF0` moved away.
+  `0x001F32E0` counts the families in the city and `0x001F32E8` those that left.
+- Introductions: a resident (person `+0x2C`) can introduce an acquaintance's family; `mm_Family_CanApply` checks the
+  family is free to apply, `mm_CityScene_AddApplicantFamily` adds it to the applicants. In a popular city (approval
+  118 or more, city flag 4) introduced families phone to ask about moving in.
+- Friendship meters at `0x001C59B0`, six bytes per family: bits 0-6 hold 0..120, bit 7 marks a friend (their number
+  is in the Town's Pages). `mm_Family_AddFriendship` raises or lowers them (talks, gifts, purchases), and
+  `mm_Family_FriendAgrees` decides whether a friend agrees to a request.
 - Member status table (`mm_MemberStatus_*`): 256 four-byte entries at `0x001F32F0` (`+0` family, `+2` member,
   `+3` status byte) for members known by phone or outside the map; people on the map keep the same byte at
   person `+0x2F`.
@@ -29,25 +36,25 @@ Families: the residents who move into the city.
 | `0x0013BE20` | `mm_MemberStatus_Advance` | 168 | no | level > 1 bumps bits 2-3 (up to 2), then updates bits 0-1 |
 | `0x0013BF60` | `mm_MemberStatus_OnLevel12` | 112 | no | when the level is above 11, applies the friendship gain (0x13CB40) |
 | `0x0013C0F0` | `mm_MemberStatus_Tick` | 336 | no | every 600 s the level rises (up to 12); daily and yearly resets of the low bits |
-| `0x0013C240` | `mm_Family_MonthlyPass` | 732 | no | (provisional) pass over all member bytes (0x1C59B0) and bitset B |
+| `0x0013C240` | `mm_Family_BefriendAll` | 732 | no | every member becomes a friend with meter 64 and every family known (bitset B); from a laptop entry |
 | `0x0013C520` | `mm_Family_ResetForStage` | 204 | no | clears bitsets A and C and the counters for a new stage |
 | `0x0013C5F0` | `mm_Family_MakePhoneNumber` | 352 | no | (provisional) phone number for the Town's Pages from the family id (a0 * 0x61 + 0x1B08) |
 | `0x0013C770` | `mm_Family_LoadState` | 148 | no | reads the member bytes (60000), the three bitsets (0x4E4 each), 0x1F32F0 (0x400) and the counters (0xC) from the save file |
 | `0x0013C810` | `mm_Family_SaveState` | 148 | no | writes them |
 | `0x0013C8B0` | `mm_Family_GetTypeIndex` | 72 | no | building type index of a family id: first entry above a0 in the sorted id table (gp) |
-| `0x0013C900` | `mm_Family_IsFlagC` | 80 | no | bit a0 of bitset C (0x1D4DF0) |
-| `0x0013C9A0` | `mm_Family_IsFlagB` | 80 | no | bit a0 of bitset B (0x1D4900) |
+| `0x0013C900` | `mm_Family_HasLeft` | 80 | no | bitset C: the family moved away |
+| `0x0013C9A0` | `mm_Family_IsKnown` | 80 | no | bitset B: the family is known (Town's Pages) |
 | `0x0013C9F0` | `mm_Family_SetFlagA` | 116 | no | sets bit a0 of bitset A and updates the counters |
-| `0x0013CA70` | `mm_Family_IsFlagA` | 80 | no | bit a0 of bitset A (0x1D4410) |
-| `0x0013CAC0` | `mm_Family_GetMemberGrade` | 124 | no | (provisional) grade from member byte (a0, a1), capped at 120 |
-| `0x0013CB40` | `mm_Family_PickMember` | 648 | no | (provisional) random member choice under conditions (twin of 0x13CDF0) |
-| `0x0013CDF0` | `mm_Family_PickMember2` | 8 | no | (provisional) variant of mm_Family_PickMember with one more argument |
-| `0x0013CE00` | `mm_Family_GetMemberValue` | 60 | no | member byte (a0, a1) bits 0-6, capped at 120 |
-| `0x0013CE40` | `mm_Family_SetFlagC` | 164 | no | sets bit a0 of bitset C and updates the counters |
+| `0x0013CA70` | `mm_Family_InCity` | 80 | no | bitset A: the family lives in the city |
+| `0x0013CAC0` | `mm_Family_GetFriendshipBand` | 124 | no | band 0..4 of member (a0, a1)'s meter (0, below 24, below 48, below 100, higher) |
+| `0x0013CB40` | `mm_Family_AddFriendship` | 648 | no | adds a3 points to member (a0, a1)'s meter (clamped 0..120); rising may set the friend bit (chance from *a2, the approval) |
+| `0x0013CDF0` | `mm_Family_AddFriendshipScaled` | 8 | no | mm_Family_AddFriendship with a3 * t0 (t0 = +1 gain, -1 loss) |
+| `0x0013CE00` | `mm_Family_GetFriendship` | 60 | no | member (a0, a1)'s meter value, capped at 120 |
+| `0x0013CE40` | `mm_Family_MoveAway` | 164 | no | family a0 leaves: bitset A -> C, families in the city - 1, families left + 1 |
 | `0x0013CEF0` | `mm_Family_ClearMemberFlag` | 44 | no | clears bit 7 of member byte (a0, a1) |
-| `0x0013CF20` | `mm_Family_MoveIn` | 480 | yes | (provisional) moves family a2 into the city (bitsets, messages 0x1550A0/0x155130) |
-| `0x0013D110` | `mm_Family_Retreat` | 364 | no | (provisional) family a0 leaves (bitsets, messages) |
-| `0x0013D280` | `mm_Family_TestMember` | 176 | no | (provisional) tests member byte (a0, a1) bit 7 and value ranges |
+| `0x0013CF20` | `mm_Family_PickIntroduction` | 480 | yes | an acquaintance of member (a0, a1) who can apply (type limit from 0x1C5548); 0 when none |
+| `0x0013D110` | `mm_Family_CanApply` | 364 | no | family a0 is not in the city, has not left, is not already applying, and there is room for its people |
+| `0x0013D280` | `mm_Family_FriendAgrees` | 176 | no | friend bit set and meter at least 100, or at least 48 with approval a2 >= 0, or at least 24 with a2 >= 50 |
 | `0x0013D3D0` | `mm_Family_IsCached` | 196 | no | whether family a0's record has finished loading into the cache |
 | `0x0013D4A0` | `mm_Family_Prefetch` | 520 | yes | starts an asynchronous load of family a0's record into the cache (LRU) |
 | `0x0013D6B0` | `mm_Family_Get` | 476 | yes | family a0's record (0x1D4 bytes), loading it synchronously into the LRU cache if needed |
