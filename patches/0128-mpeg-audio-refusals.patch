@@ -1,0 +1,694 @@
+diff --git a/ps2xRuntime/include/runtime/ee_scheduler.h b/ps2xRuntime/include/runtime/ee_scheduler.h
+index e1dea84..6488438 100644
+--- a/ps2xRuntime/include/runtime/ee_scheduler.h
++++ b/ps2xRuntime/include/runtime/ee_scheduler.h
+@@ -319,6 +319,9 @@ public:
+     void queueInvocation(GuestInvocation invocation);
+     [[noreturn]] void invokeCurrent(GuestInvocation invocation);
+     [[noreturn]] void invokeCurrentSequence(std::vector<GuestInvocation> invocations);
++    // invokeCurrentSequence for host code that is not running guest code, such as an
++    // invocation's onComplete: the invocations run next on the current thread, and this returns.
++    void pushCurrentSequence(std::vector<GuestInvocation> invocations);
+     [[nodiscard]] bool hasInvocation(GuestInvocationKind kind, uint64_t tag) const;
+     [[nodiscard]] uint32_t invocationStackTop();
+ 
+diff --git a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+index 3a369b0..21d1daf 100644
+--- a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
++++ b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+@@ -1152,12 +1152,11 @@ void EeScheduler::queueInvocation(GuestInvocation invocation)
+     throw EeDispatcherTransfer{};
+ }
+ 
+-[[noreturn]] void EeScheduler::invokeCurrentSequence(std::vector<GuestInvocation> invocations)
++void EeScheduler::pushCurrentSequence(std::vector<GuestInvocation> invocations)
+ {
+     assertExecutor();
+     GuestThread *owner = currentThread();
+     assert(owner != nullptr);
+-    assert(!invocations.empty());
+     for (auto it = invocations.rbegin(); it != invocations.rend(); ++it)
+     {
+         if (getRegU32(&it->context, 29) == 0u)
+@@ -1167,6 +1166,12 @@ void EeScheduler::queueInvocation(GuestInvocation invocation)
+         it->sequence = ++m_invocationSequence;
+         owner->invocations.push_back(std::move(*it));
+     }
++}
++
++[[noreturn]] void EeScheduler::invokeCurrentSequence(std::vector<GuestInvocation> invocations)
++{
++    assert(!invocations.empty());
++    pushCurrentSequence(std::move(invocations));
+     publishSnapshot();
+     throw EeDispatcherTransfer{};
+ }
+diff --git a/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp b/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp
+index fc2bf75..64d966e 100644
+--- a/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp
++++ b/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp
+@@ -545,6 +545,7 @@ namespace ps2_stubs
+             uint64_t pts = 0xFFFFFFFFFFFFFFFFull;
+             uint64_t dts = 0xFFFFFFFFFFFFFFFFull;
+             std::vector<MpegRegisteredCallback> callbacks;
++            bool heldAudio = false; // the audio packet a demux step stopped after
+         };
+ 
+         struct MpegStubState
+@@ -570,6 +571,17 @@ namespace ps2_stubs
+         constexpr uint32_t kMpegPictureWaitType = 1u;
+         MpegStubState g_mpeg_stub_state;
+ 
++        // A demux step that stops after the next audio packet with a callback sets
++        // stopAfterAudio; processPssBuffer reports that packet here (see MpegDemuxSession).
++        // Guarded by g_mpeg_stub_mutex.
++        struct MpegDemuxHold
++        {
++            bool stopAfterAudio = false;
++            bool held = false;
++            size_t heldBytes = 0u;
++        };
++        MpegDemuxHold g_mpeg_demux_hold;
++
+         // TODO this resolution should follow runtime resolution
+         constexpr uint32_t kStubMovieWidth = 320u;
+         constexpr uint32_t kStubMovieHeight = 240u;
+@@ -1203,6 +1215,11 @@ namespace ps2_stubs
+ 
+             while (true)
+             {
++                if (g_mpeg_demux_hold.held)
++                {
++                    return;
++                }
++
+                 if (playback.streamEnded)
+                 {
+                     erasePssPrefix(playback, buffer.size());
+@@ -1336,6 +1353,7 @@ namespace ps2_stubs
+                     }
+                 }
+ 
++                bool holdAfterPacket = false;
+                 if (isVideoStreamId(streamId))
+                 {
+                     const MpegPesHeader pes = parsePesHeader(buffer.data(), packetEnd);
+@@ -1365,6 +1383,7 @@ namespace ps2_stubs
+                 {
+                     const MpegPesHeader pes = parsePesHeader(buffer.data(), packetEnd);
+                     const size_t payloadStart = pes.payloadOffset;
++                    const size_t eventsBefore = callbackEvents.size();
+                     if (payloadStart < packetEnd && payloadStart < playback.pssGuestAddrs.size())
+                     {
+                         queueStreamCallbackEvent(
+@@ -1384,9 +1403,23 @@ namespace ps2_stubs
+                             pes.pts90k,
+                             pes.dts90k);
+                     }
++                    if (g_mpeg_demux_hold.stopAfterAudio && callbackEvents.size() > eventsBefore)
++                    {
++                        for (size_t i = eventsBefore; i < callbackEvents.size(); ++i)
++                        {
++                            callbackEvents[i].heldAudio = true;
++                        }
++                        holdAfterPacket = true;
++                    }
+                 }
+ 
+                 erasePssPrefix(playback, packetEnd);
++                if (holdAfterPacket)
++                {
++                    g_mpeg_demux_hold.held = true;
++                    g_mpeg_demux_hold.heldBytes = packetEnd;
++                    return;
++                }
+             }
+         }
+ 
+@@ -1601,12 +1634,145 @@ namespace ps2_stubs
+             return true;
+         }
+ 
+-        // Stream callbacks that returned 0. libmpeg stops demuxing there and
+-        // offers the packet again later; this HLE has already consumed it, so
+-        // each refusal is a dropped packet (audio callbacks refuse when their
+-        // buffer is full).
++        // Stream callbacks that returned 0. A refused audio packet is offered again (see
++        // MpegDemuxSession). Other refusals are only counted: the video callback refuses once
++        // the game's IPU input buffer is full, and this HLE decodes from its own copy.
+         std::atomic<uint64_t> g_mpegStreamCallbackCount{0u};
+         std::atomic<uint64_t> g_mpegStreamCallbackRefusals{0u};
++        std::atomic<uint64_t> g_mpegAudioPacketsHeld{0u};
++        std::atomic<uint64_t> g_mpegAudioPacketsRefused{0u};
++
++        // One sceMpegDemuxPss/Ring call. libmpeg demuxes until a stream callback refuses its
++        // packet, then returns the bytes before that packet, so the game offers it again later.
++        // The audio callback refuses while the game's audio buffer is full. Dropping the packet
++        // instead throws the samples out of step (PSS audio packets can have odd lengths),
++        // which plays as noise. So in guest code a call demuxes in steps: each step stops after
++        // the next audio packet that has a callback, and the next step runs once that callback
++        // has accepted it. An incomplete packet at the end of the data is left to the caller,
++        // so a packet handed back is still in the caller's buffer when it is offered again.
++        struct MpegDemuxSession
++        {
++            uint32_t mpegAddr = 0u;
++            uint32_t dataAddr = 0u;
++            uint32_t available = 0u;
++            bool ring = false;
++            uint32_t ringBaseAddr = 0u;
++            uint32_t ringSize = 0u;
++            uint32_t consumed = 0u;       // bytes released to the caller, held packet included
++            uint32_t heldAudioBytes = 0u; // the audio packet that ends the last step
++            bool refused = false;
++        };
++
++        struct MpegDemuxStepResult
++        {
++            std::vector<MpegStreamCallbackEvent> events;
++            std::vector<uint32_t> completedMpegIds;
++            bool decodedChanged = false;
++            bool eofChanged = false;
++            bool backpressured = false;
++        };
++
++        uint32_t demuxSessionCursor(const MpegDemuxSession &session)
++        {
++            if (session.ring && session.ringBaseAddr != 0u && session.ringSize != 0u && session.ringSize <= PS2_RAM_SIZE)
++            {
++                const uint32_t ringOffset =
++                    ((session.dataAddr & PS2_RAM_MASK) - (session.ringBaseAddr & PS2_RAM_MASK)) & PS2_RAM_MASK;
++                if (ringOffset < session.ringSize)
++                {
++                    return session.ringBaseAddr + (ringOffset + session.consumed) % session.ringSize;
++                }
++            }
++            return session.dataAddr + session.consumed;
++        }
++
++        // Demuxes the rest of the session's data, stopping after the next audio packet that has
++        // a callback when holdAudio is set. Runs under g_mpeg_stub_mutex.
++        MpegDemuxStepResult demuxSessionStepUnlocked(const uint8_t *rdram, MpegDemuxSession &session, bool holdAudio)
++        {
++            // Read in pieces so a step that stops early has not copied the whole ring.
++            constexpr uint32_t kStepChunkBytes = 16u * 1024u;
++
++            MpegDemuxStepResult result;
++            session.heldAudioBytes = 0u;
++            session.refused = false;
++
++            MpegPlaybackState &playback = getPlaybackState(session.mpegAddr);
++            const size_t decodedBefore = playback.decodedFrames.size();
++            if (mpegDemuxBackpressured(playback))
++            {
++                result.backpressured = true;
++                return result;
++            }
++
++            g_mpeg_demux_hold = MpegDemuxHold{};
++            g_mpeg_demux_hold.stopAfterAudio = holdAudio;
++            size_t appended = 0u;
++            while (session.consumed + appended < session.available && !g_mpeg_demux_hold.held)
++            {
++                MpegDemuxSession cursor = session;
++                cursor.consumed += static_cast<uint32_t>(appended);
++                const uint32_t chunk = std::min<uint32_t>(kStepChunkBytes, session.available - cursor.consumed);
++                const uint32_t addr = demuxSessionCursor(cursor);
++                const size_t copied = session.ring
++                                          ? appendGuestRingBytes(session.mpegAddr, playback, rdram, addr, chunk,
++                                                                 session.ringBaseAddr, session.ringSize, result.events)
++                                          : appendGuestBytes(session.mpegAddr, playback, rdram, addr, chunk, result.events);
++                appended += copied;
++                if (copied < chunk)
++                {
++                    break;
++                }
++            }
++            const bool held = g_mpeg_demux_hold.held;
++            const size_t heldBytes = held ? g_mpeg_demux_hold.heldBytes : 0u;
++            g_mpeg_demux_hold = MpegDemuxHold{};
++
++            // Bytes not demuxed yet go back to the caller and come round again with the rest of
++            // their packet, unless the CD stream has ended and nothing more will follow.
++            const size_t tail = playback.pssBuffer.size();
++            size_t uncommitted = std::min(tail, appended);
++            if (!held && g_mpeg_stub_state.cdStreamEofPending &&
++                g_mpeg_stub_state.cdStreamBytesDemuxed + appended >= g_mpeg_stub_state.cdStreamBytesProduced)
++            {
++                uncommitted = 0u;
++            }
++            if (uncommitted != 0u)
++            {
++                const size_t keep = tail - uncommitted;
++                playback.pssBuffer.resize(keep);
++                playback.pssGuestAddrs.resize(std::min(playback.pssGuestAddrs.size(), keep));
++            }
++
++            const size_t committed = appended - uncommitted;
++            session.consumed += static_cast<uint32_t>(committed);
++            session.heldAudioBytes = static_cast<uint32_t>(std::min(heldBytes, committed));
++            if (held)
++            {
++                g_mpegAudioPacketsHeld.fetch_add(1u, std::memory_order_relaxed);
++            }
++            // A held packet counts once its callback has taken it.
++            recordCdStreamBytesDemuxedUnlocked(committed - session.heldAudioBytes, result.completedMpegIds, result.eofChanged);
++            result.decodedChanged = playback.decodedFrames.size() != decodedBefore;
++            return result;
++        }
++
++        void wakeMpegPictureWaiters(PS2Runtime *runtime, uint32_t mpegAddr, const MpegDemuxStepResult &result)
++        {
++            const bool currentStreamCompleted =
++                std::find(result.completedMpegIds.begin(), result.completedMpegIds.end(), mpegAddr) != result.completedMpegIds.end();
++            if (result.decodedChanged || result.eofChanged || currentStreamCompleted)
++            {
++                runtime->eeScheduler().completeExternalWait(kMpegPictureWaitType, mpegAddr, KE_OK);
++            }
++            for (const uint32_t completedMpegId : result.completedMpegIds)
++            {
++                if (completedMpegId != mpegAddr)
++                {
++                    runtime->eeScheduler().completeExternalWait(kMpegPictureWaitType, completedMpegId, KE_OK);
++                }
++            }
++        }
+ 
+         bool makeGuestStreamCallback(uint8_t *rdram,
+                                      R5900Context *callerCtx,
+@@ -1614,7 +1780,8 @@ namespace ps2_stubs
+                                      const MpegStreamCallbackEvent &event,
+                                      const MpegRegisteredCallback &callback,
+                                      uint32_t stackTop,
+-                                     GuestInvocation &invocation)
++                                     GuestInvocation &invocation,
++                                     std::shared_ptr<MpegDemuxSession> heldSession)
+         {
+             if (!rdram || !callerCtx || !runtime || callback.func == 0u || !runtime->hasFunction(callback.func))
+             {
+@@ -1644,12 +1811,16 @@ namespace ps2_stubs
+             invocation.kind = GuestInvocationKind::RpcCallback;
+             invocation.context = callbackCtx;
+             const uint32_t streamType = event.streamType;
+-            invocation.onComplete = [runtime, cbDataAddr, streamType](const R5900Context &completed, R5900Context &)
++            invocation.onComplete = [runtime, cbDataAddr, streamType, heldSession](const R5900Context &completed, R5900Context &)
+             {
+                 runtime->guestFree(cbDataAddr);
+                 const uint64_t calls = g_mpegStreamCallbackCount.fetch_add(1u, std::memory_order_relaxed) + 1u;
+                 if (getRegU32(&completed, 2) == 0u)
+                 {
++                    if (heldSession)
++                    {
++                        heldSession->refused = true;
++                    }
+                     const uint64_t refusals = g_mpegStreamCallbackRefusals.fetch_add(1u, std::memory_order_relaxed) + 1u;
+                     if ((refusals & (refusals - 1u)) == 0u)
+                     {
+@@ -1663,26 +1834,26 @@ namespace ps2_stubs
+             return true;
+         }
+ 
+-        // libmpeg runs these inside the demux call, in stream order, while the
+-        // guest ring still holds their data. Queued, they ran after the call had
+-        // returned and the game had already released and refilled that part of
+-        // the ring, which turned movie audio into noise. Same fix as the
+-        // stream-order change in ran-j/PS2Recomp#254.
+-        void dispatchStreamCallbacks(uint8_t *rdram,
+-                                     R5900Context *ctx,
+-                                     PS2Runtime *runtime,
+-                                     const std::vector<MpegStreamCallbackEvent> &events)
+-        {
+-            if (events.empty())
+-            {
+-                return;
+-            }
++        void continueDemuxSession(uint8_t *rdram, PS2Runtime *runtime,
++                                  const std::shared_ptr<MpegDemuxSession> &session, R5900Context &caller);
+ 
++        // libmpeg runs these inside the demux call, in stream order, while the caller's buffer
++        // still holds their data. Queued, they ran after the call had returned and the game had
++        // already released and refilled that part of the ring (same fix as the stream-order
++        // change in ran-j/PS2Recomp#254). fromStub: called by the demux stub, which hands
++        // control to them; otherwise by a finished callback, and they run next on this thread.
++        // A caller outside guest code (a test) gets them queued instead.
++        void dispatchDemuxStep(uint8_t *rdram,
++                               R5900Context *callerCtx,
++                               PS2Runtime *runtime,
++                               const std::shared_ptr<MpegDemuxSession> &session,
++                               const std::vector<MpegStreamCallbackEvent> &events,
++                               bool inGuest,
++                               bool fromStub)
++        {
+             // They run one after another, so they share one stack; left to the scheduler, each would
+             // get its own, one per nesting depth, and a demux call can deliver dozens of packets.
+-            // A caller outside guest code (a test) gets them queued instead.
+             EeScheduler &scheduler = runtime->eeScheduler();
+-            const bool inGuest = scheduler.isExecutingGuest() && scheduler.currentThread() != nullptr;
+             const uint32_t stackTop = inGuest ? scheduler.invocationStackTop() : 0u;
+             std::vector<GuestInvocation> invocations;
+             for (const MpegStreamCallbackEvent &event : events)
+@@ -1690,20 +1861,54 @@ namespace ps2_stubs
+                 for (const MpegRegisteredCallback &callback : event.callbacks)
+                 {
+                     GuestInvocation invocation{};
+-                    if (makeGuestStreamCallback(rdram, ctx, runtime, event, callback, stackTop, invocation))
++                    if (makeGuestStreamCallback(rdram, callerCtx, runtime, event, callback, stackTop, invocation,
++                                                event.heldAudio ? session : nullptr))
+                     {
+                         invocations.push_back(std::move(invocation));
+                     }
+                 }
+             }
++
++            if (session->heldAudioBytes != 0u)
++            {
++                if (invocations.empty())
++                {
++                    // Nothing can answer for the held packet, so it is let go.
++                    MpegDemuxStepResult released;
++                    {
++                        std::lock_guard<std::mutex> lock(g_mpeg_stub_mutex);
++                        recordCdStreamBytesDemuxedUnlocked(session->heldAudioBytes, released.completedMpegIds, released.eofChanged);
++                        session->heldAudioBytes = 0u;
++                    }
++                    wakeMpegPictureWaiters(runtime, session->mpegAddr, released);
++                    return;
++                }
++
++                // The held packet's callbacks run last; once they are done, demux on.
++                GuestInvocation &last = invocations.back();
++                auto inner = std::move(last.onComplete);
++                last.onComplete = [inner, rdram, runtime, session](const R5900Context &completed, R5900Context &caller)
++                {
++                    if (inner)
++                    {
++                        inner(completed, caller);
++                    }
++                    continueDemuxSession(rdram, runtime, session, caller);
++                };
++            }
++
+             if (invocations.empty())
+             {
+                 return;
+             }
+-
+             if (inGuest)
+             {
+-                scheduler.invokeCurrentSequence(std::move(invocations));
++                if (fromStub)
++                {
++                    scheduler.invokeCurrentSequence(std::move(invocations));
++                }
++                scheduler.pushCurrentSequence(std::move(invocations));
++                return;
+             }
+             for (GuestInvocation &invocation : invocations)
+             {
+@@ -1711,17 +1916,109 @@ namespace ps2_stubs
+             }
+         }
+ 
+-        void dispatchStreamCallbacksUnlocked(uint8_t *rdram,
+-                                             R5900Context *ctx,
+-                                             PS2Runtime *runtime,
+-                                             const std::vector<MpegStreamCallbackEvent> &events)
++        // After the held audio packet's callbacks: hand it back if one refused it, else demux on.
++        // caller is the demux call's context, which resumes once nothing is left to run.
++        void continueDemuxSession(uint8_t *rdram, PS2Runtime *runtime,
++                                  const std::shared_ptr<MpegDemuxSession> &session, R5900Context &caller)
+         {
+-            if (events.empty())
++            MpegDemuxStepResult result;
++            bool refused = false;
++            {
++                std::lock_guard<std::mutex> lock(g_mpeg_stub_mutex);
++                if (session->refused)
++                {
++                    session->consumed -= session->heldAudioBytes;
++                    session->heldAudioBytes = 0u;
++                    refused = true;
++                }
++                else
++                {
++                    std::vector<uint32_t> completedMpegIds;
++                    bool eofChanged = false;
++                    recordCdStreamBytesDemuxedUnlocked(session->heldAudioBytes, completedMpegIds, eofChanged);
++                    session->heldAudioBytes = 0u;
++                    result = demuxSessionStepUnlocked(rdram, *session, true);
++                    result.completedMpegIds.insert(result.completedMpegIds.end(), completedMpegIds.begin(), completedMpegIds.end());
++                    result.eofChanged = result.eofChanged || eofChanged;
++                }
++            }
++
++            setReturnS32(&caller, static_cast<int32_t>(session->consumed));
++            if (refused)
+             {
++                const uint64_t handedBack = g_mpegAudioPacketsRefused.fetch_add(1u, std::memory_order_relaxed) + 1u;
++                if ((handedBack & (handedBack - 1u)) == 0u)
++                {
++                    PS2_IF_AGRESSIVE_LOGS({
++                        std::cerr << "[MPEG:AudioHeld] packet refused, offered again later: refused="
++                                  << handedBack << " of held=" << g_mpegAudioPacketsHeld.load(std::memory_order_relaxed)
++                                  << std::endl;
++                    });
++                }
+                 return;
+             }
+ 
+-            dispatchStreamCallbacks(rdram, ctx, runtime, events);
++            wakeMpegPictureWaiters(runtime, session->mpegAddr, result);
++            if (!result.events.empty())
++            {
++                dispatchDemuxStep(rdram, &caller, runtime, session, result.events, true, false);
++            }
++        }
++
++        void runDemuxSession(uint8_t *rdram,
++                             R5900Context *ctx,
++                             PS2Runtime *runtime,
++                             const std::shared_ptr<MpegDemuxSession> &session)
++        {
++            EeScheduler &scheduler = runtime->eeScheduler();
++            const bool inGuest = scheduler.isExecutingGuest() && scheduler.currentThread() != nullptr;
++            MpegDemuxStepResult result;
++            size_t decodedCount = 0u;
++            uint32_t traceIdx = 0u;
++            {
++                std::lock_guard<std::mutex> lock(g_mpeg_stub_mutex);
++                result = demuxSessionStepUnlocked(rdram, *session, inGuest);
++                decodedCount = getPlaybackState(session->mpegAddr).decodedFrames.size();
++                traceIdx = session->ring ? g_mpeg_stub_state.demuxRingTraceCount++ : g_mpeg_stub_state.demuxPssTraceCount++;
++            }
++            const char *name = session->ring ? "DemuxPssRing" : "DemuxPss";
++
++            if (result.backpressured)
++            {
++                if (traceIdx < 32u)
++                {
++                    PS2_IF_AGRESSIVE_LOGS({
++                        std::cerr << "[MPEG:" << name << ":BACKPRESSURE] mpeg=0x" << std::hex << session->mpegAddr
++                                  << std::dec << " decoded=" << decodedCount
++                                  << " avail=" << session->available << std::endl;
++                    });
++                }
++                setReturnS32(ctx, 0);
++                return;
++            }
++            wakeMpegPictureWaiters(runtime, session->mpegAddr, result);
++
++            if (traceIdx < 32u)
++            {
++                PS2_IF_AGRESSIVE_LOGS({
++                    std::cerr << "[MPEG:" << name << "] mpeg=0x" << std::hex << session->mpegAddr
++                              << " data=0x" << session->dataAddr
++                              << " ring=0x" << session->ringBaseAddr << std::dec
++                              << " avail=" << session->available
++                              << " consumed=" << session->consumed
++                              << " held=" << session->heldAudioBytes
++                              << " decoded=" << decodedCount
++                              << " callbacks=" << result.events.size()
++                              << std::endl;
++                });
++            }
++
++            // The callbacks run before the caller resumes, so set its result first.
++            setReturnS32(ctx, static_cast<int32_t>(session->consumed));
++            if (!result.events.empty())
++            {
++                dispatchDemuxStep(rdram, ctx, runtime, session, result.events, inGuest, true);
++            }
+         }
+ 
+         void writeBlankMpegFrame(uint8_t *rdram, uint32_t destAddr, uint32_t width, uint32_t height)
+@@ -2150,72 +2447,11 @@ namespace ps2_stubs
+ 
+     void sceMpegDemuxPss(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+     {
+-        const uint32_t mpegAddr = getRegU32(ctx, 4);
+-        const uint32_t dataAddr = getRegU32(ctx, 5);
+-        const uint32_t byteCount = getRegU32(ctx, 6);
+-
+-        std::vector<MpegStreamCallbackEvent> callbackEvents;
+-        std::vector<uint32_t> completedMpegIds;
+-        size_t consumed = 0u;
+-        size_t decodedBefore = 0u;
+-        size_t decodedCount = 0u;
+-        uint32_t traceIdx = 0u;
+-        bool eofChanged = false;
+-        bool backpressured = false;
+-        {
+-            std::lock_guard<std::mutex> lock(g_mpeg_stub_mutex);
+-            MpegPlaybackState &playback = getPlaybackState(mpegAddr);
+-            decodedBefore = playback.decodedFrames.size();
+-            backpressured = mpegDemuxBackpressured(playback);
+-            if (!backpressured)
+-            {
+-                consumed = appendGuestBytes(mpegAddr, playback, rdram, dataAddr, byteCount, callbackEvents);
+-                recordCdStreamBytesDemuxedUnlocked(consumed, completedMpegIds, eofChanged);
+-            }
+-            decodedCount = playback.decodedFrames.size();
+-            traceIdx = g_mpeg_stub_state.demuxPssTraceCount++;
+-        }
+-
+-        if (backpressured)
+-        {
+-            if (traceIdx < 32u)
+-            {
+-                PS2_IF_AGRESSIVE_LOGS({
+-                    std::cerr << "[MPEG:DemuxPss:BACKPRESSURE] mpeg=0x" << std::hex << mpegAddr << std::dec << " decoded=" << decodedCount << std::endl;
+-                });
+-            }
+-            setReturnS32(ctx, 0);
+-            return;
+-        }
+-        const bool currentStreamCompleted = std::find(completedMpegIds.begin(), completedMpegIds.end(), mpegAddr) != completedMpegIds.end();
+-        if (decodedCount != decodedBefore || eofChanged || currentStreamCompleted)
+-        {
+-            runtime->eeScheduler().completeExternalWait(kMpegPictureWaitType, mpegAddr, KE_OK);
+-        }
+-        for (const uint32_t completedMpegId : completedMpegIds)
+-        {
+-            if (completedMpegId != mpegAddr)
+-            {
+-                runtime->eeScheduler().completeExternalWait(kMpegPictureWaitType, completedMpegId, KE_OK);
+-            }
+-        }
+-
+-        if (traceIdx < 32u)
+-        {
+-            PS2_IF_AGRESSIVE_LOGS({
+-                std::cerr << "[MPEG:DemuxPss] mpeg=0x" << std::hex << mpegAddr
+-                          << " data=0x" << dataAddr << std::dec
+-                          << " bytes=" << byteCount
+-                          << " consumed=" << consumed
+-                          << " decoded=" << decodedCount
+-                          << " callbacks=" << callbackEvents.size()
+-                          << std::endl;
+-            });
+-        }
+-
+-        // The callbacks run before the caller resumes, so set its result first.
+-        setReturnS32(ctx, static_cast<int32_t>(consumed));
+-        dispatchStreamCallbacksUnlocked(rdram, ctx, runtime, callbackEvents);
++        auto session = std::make_shared<MpegDemuxSession>();
++        session->mpegAddr = getRegU32(ctx, 4);
++        session->dataAddr = getRegU32(ctx, 5);
++        session->available = getRegU32(ctx, 6);
++        runDemuxSession(rdram, ctx, runtime, session);
+     }
+ 
+     void sceMpegDemuxPssRing(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+@@ -2232,85 +2468,14 @@ namespace ps2_stubs
+             });
+         }
+ 
+-        const uint32_t mpegAddr = getRegU32(ctx, 4);
+-        const uint32_t dataAddr = getRegU32(ctx, 5);
+-        const uint32_t availableBytes = getRegU32(ctx, 6);
+-        const uint32_t ringBaseAddr = getRegU32(ctx, 7);
+-        const uint32_t ringSize = readAbiArg4(rdram, ctx);
+-
+-        std::vector<MpegStreamCallbackEvent> callbackEvents;
+-        std::vector<uint32_t> completedMpegIds;
+-        size_t consumed = 0u;
+-        size_t decodedBefore = 0u;
+-        size_t decodedCount = 0u;
+-        uint32_t traceIdx = 0u;
+-        bool eofChanged = false;
+-        bool backpressured = false;
+-        {
+-            std::lock_guard<std::mutex> lock(g_mpeg_stub_mutex);
+-            MpegPlaybackState &playback = getPlaybackState(mpegAddr);
+-            decodedBefore = playback.decodedFrames.size();
+-            backpressured = mpegDemuxBackpressured(playback);
+-            if (!backpressured)
+-            {
+-                consumed = appendGuestRingBytes(
+-                    mpegAddr,
+-                    playback,
+-                    rdram,
+-                    dataAddr,
+-                    availableBytes,
+-                    ringBaseAddr,
+-                    ringSize,
+-                    callbackEvents);
+-                recordCdStreamBytesDemuxedUnlocked(consumed, completedMpegIds, eofChanged);
+-            }
+-            decodedCount = playback.decodedFrames.size();
+-            traceIdx = g_mpeg_stub_state.demuxRingTraceCount++;
+-        }
+-
+-        if (backpressured)
+-        {
+-            if (traceIdx < 32u)
+-            {
+-                PS2_IF_AGRESSIVE_LOGS({
+-                    std::cerr << "[MPEG:DemuxPssRing:BACKPRESSURE] mpeg=0x" << std::hex << mpegAddr
+-                              << std::dec << " decoded=" << decodedCount
+-                              << " avail=" << availableBytes << std::endl;
+-                });
+-            }
+-            setReturnS32(ctx, 0);
+-            return;
+-        }
+-        const bool currentStreamCompleted = std::find(completedMpegIds.begin(), completedMpegIds.end(), mpegAddr) != completedMpegIds.end();
+-        if (decodedCount != decodedBefore || eofChanged || currentStreamCompleted)
+-        {
+-            runtime->eeScheduler().completeExternalWait(kMpegPictureWaitType, mpegAddr, KE_OK);
+-        }
+-        for (const uint32_t completedMpegId : completedMpegIds)
+-        {
+-            if (completedMpegId != mpegAddr)
+-            {
+-                runtime->eeScheduler().completeExternalWait(kMpegPictureWaitType, completedMpegId, KE_OK);
+-            }
+-        }
+-
+-        if (traceIdx < 32u)
+-        {
+-            PS2_IF_AGRESSIVE_LOGS({
+-                std::cerr << "[MPEG:DemuxPssRing] mpeg=0x" << std::hex << mpegAddr
+-                          << " data=0x" << dataAddr
+-                          << " ring=0x" << ringBaseAddr << std::dec
+-                          << " avail=" << availableBytes
+-                          << " consumed=" << consumed
+-                          << " decoded=" << decodedCount
+-                          << " callbacks=" << callbackEvents.size()
+-                          << std::endl;
+-            });
+-        }
+-
+-        // The callbacks run before the caller resumes, so set its result first.
+-        setReturnS32(ctx, static_cast<int32_t>(consumed));
+-        dispatchStreamCallbacksUnlocked(rdram, ctx, runtime, callbackEvents);
++        auto session = std::make_shared<MpegDemuxSession>();
++        session->mpegAddr = getRegU32(ctx, 4);
++        session->dataAddr = getRegU32(ctx, 5);
++        session->available = getRegU32(ctx, 6);
++        session->ring = true;
++        session->ringBaseAddr = getRegU32(ctx, 7);
++        session->ringSize = readAbiArg4(rdram, ctx);
++        runDemuxSession(rdram, ctx, runtime, session);
+     }
+ 
+     void sceMpegDispCenterOffX(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
