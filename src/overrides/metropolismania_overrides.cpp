@@ -70,13 +70,16 @@ namespace
     // Test aid that presses buttons from the game's own state instead of wall-clock pad scripts:
     // MMPC_AUTOPLAY=1 pulses Cross through scene A (logos, memory card check, title, New Game) and
     // then lets go. MMPC_AUTOPLAY=city also pulses Start/Cross in states 3 to 5, which starts the
-    // intro movie and gets through the dialogue to the city. Presses only happen from GameUpdate,
-    // which the movie blocks, so the movie plays to its end (MMPC_SKIP_MOVIES=1 skips it).
+    // intro movie and gets through the dialogue to the city. MMPC_AUTOPLAY=load picks "Load" on the
+    // title menu instead and loads the save the load screen preselects (the newest one in
+    // original/mc0, see tools/mc_extract.py). Presses only happen from GameUpdate, which the movie
+    // blocks, so the movie plays to its end (MMPC_SKIP_MOVIES=1 skips it).
     enum class Autoplay
     {
         Off,
         Title,
         City,
+        Load,
     };
 
     Autoplay autoplayMode()
@@ -86,21 +89,28 @@ namespace
             const char *value = std::getenv("MMPC_AUTOPLAY");
             if (!value || value[0] == '\0' || value[0] == '0')
                 return Autoplay::Off;
-            return std::strcmp(value, "city") == 0 ? Autoplay::City : Autoplay::Title;
+            if (std::strcmp(value, "city") == 0)
+                return Autoplay::City;
+            return std::strcmp(value, "load") == 0 ? Autoplay::Load : Autoplay::Title;
         }();
         return mode;
     }
 
-    void autoplayFrame(uint32_t state)
+    void autoplayFrame(const uint8_t *rdram, uint32_t state, uint32_t sceneA)
     {
-        constexpr uint16_t kStart = 0x0008u, kCross = 0x4000u;
+        // Raw pad bits; the game sees them byte-swapped (Down 0x4000, Cross 0x40, Start 0x800).
+        constexpr uint16_t kStart = 0x0008u, kDown = 0x0040u, kCross = 0x4000u;
         static uint32_t frame = 0;
         ++frame;
         const Autoplay mode = autoplayMode();
+        const bool pulse = (frame % 24u) < 4u;
         uint16_t buttons = 0;
-        if (state <= 2u && (frame % 24u) < 4u)
+        if (mode == Autoplay::Load && state <= 2u && sceneA != 0u && guestRead32(rdram, sceneA + 0xC0u) == 6u &&
+            guestRead32(rdram, sceneA + 0x3Cu) == 0u)
+            buttons = pulse ? kDown : 0; // title menu (scene A sub-state 6): cursor +0x3C from New Game to Load
+        else if (state <= 2u && pulse)
             buttons = kCross;
-        else if (mode == Autoplay::City && state >= 3u && state <= 5u && (frame % 48u) < 4u)
+        else if (mode != Autoplay::Title && state >= 3u && state <= 5u && (frame % 48u) < 4u)
             buttons = (frame % 96u) < 48u ? kStart : kCross;
         ps2xSetInjectedPadButtons(buttons);
     }
@@ -116,7 +126,7 @@ namespace
         const uint32_t self = getRegU32(ctx, 4);
         const uint32_t state = guestRead32(rdram, self + 4u);
         if (autoplayMode() != Autoplay::Off)
-            autoplayFrame(state);
+            autoplayFrame(rdram, state, guestRead32(rdram, self + 0xCu));
         static const bool traceOn = []()
         {
             const char *flag = std::getenv("MMPC_TRACE");

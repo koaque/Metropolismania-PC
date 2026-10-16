@@ -37,7 +37,9 @@ Do not edit the two generated headers; `pipeline.py stage` rewrites them.
 4. `pipeline.py stage`, `build`, then `pipeline.py capture --functions <Name>` (a visible run that
    records calls of the original) and `pipeline.py difftest`. Every record must be exact. For a
    function that runs every frame, add `--every N` so the records spread over boot, title and city
-   instead of all coming from the first frames.
+   instead of all coming from the first frames. Most of the game only runs in a developed city: copy your own
+   saves into the runner with `python tools/mc_extract.py <card.ps2>` (a PCSX2 memory card image)
+   and capture with `--autoplay load`, which loads the newest one.
 5. Mark it in `config/port_status.csv` (`ported`, then `verified` once difftested).
 
 `MMPC_PORT_DISABLE=0xADDR,...` (or `all`) runs the generated code again for chosen functions, to

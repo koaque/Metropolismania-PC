@@ -55,9 +55,11 @@ python tools/pipeline.py recompile   # -> generated/
 python tools/pipeline.py stage       # generated/ + src/overrides -> runtime tree
 python tools/pipeline.py build       # ps2EntryRunner
 python tools/pipeline.py run         # timed run, log in logs/
-python tools/pipeline.py capture     # visible run recording calls of ported functions -> work/difftest/
+python tools/pipeline.py capture     # visible run recording calls of ported functions -> work/difftest/ (--autoplay load: newest save)
 python tools/pipeline.py difftest    # replay them through ported and generated code (headless)
 ```
+
+Saves: `python tools/mc_extract.py <card.ps2>` copies this game's save folders from a PCSX2 memory card image into `original/mc0` (the runner's card).
 
 `work/local.json` holds machine paths, for example `{"ghidra_install_dir": "C:/tools/ghidra_12.1.4_PUBLIC"}`.
 

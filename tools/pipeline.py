@@ -584,10 +584,11 @@ DIFFTEST = WORK / "difftest"
 
 
 def cmd_capture(args: argparse.Namespace) -> None:
-    """A visible run to the city that records the entry state of chosen functions (MMPC_CAPTURE) into
-    work/difftest/ for pipeline.py difftest. Ported functions stay unreplaced during a capture."""
+    """A visible run to the city (a new game, or the newest save with --autoplay load) that records the
+    entry state of chosen functions (MMPC_CAPTURE) into work/difftest/ for pipeline.py difftest.
+    Ported functions stay unreplaced during a capture."""
     args.env = [f"MMPC_CAPTURE={args.functions}", f"MMPC_CAPTURE_DIR={DIFFTEST}", f"MMPC_CAPTURE_MAX={args.max}",
-                f"MMPC_CAPTURE_EVERY={args.every}", "MMPC_AUTOPLAY=city", "MMPC_SKIP_MOVIES=1"] + (args.env or [])
+                f"MMPC_CAPTURE_EVERY={args.every}", f"MMPC_AUTOPLAY={args.autoplay}", "MMPC_SKIP_MOVIES=1"] + (args.env or [])
     args.pad = None
     cmd_run(args)
 
@@ -655,6 +656,8 @@ def main() -> int:
     p.add_argument("--functions", default="ported", help='comma-separated names or 0xADDRs, or "ported" (default)')
     p.add_argument("--max", type=int, default=8, help="records per function")
     p.add_argument("--every", type=int, default=1, help="record every Nth call (spreads records over the run)")
+    p.add_argument("--autoplay", default="city", choices=["city", "load"],
+                   help="city: a new game; load: the newest save in original/mc0 (tools/mc_extract.py)")
     p.add_argument("--timeout", type=int, default=200)
     p.add_argument("--shots", type=int, default=0)
     p.add_argument("--shot-every", type=float, default=45.0)
