@@ -1,0 +1,140 @@
+diff --git a/ps2xRuntime/include/runtime/ps2_vu1.h b/ps2xRuntime/include/runtime/ps2_vu1.h
+index d71808c..6831a6a 100644
+--- a/ps2xRuntime/include/runtime/ps2_vu1.h
++++ b/ps2xRuntime/include/runtime/ps2_vu1.h
+@@ -209,6 +209,14 @@ private:
+     uint64_t m_cachedCodeGeneration = 0;
+     bool m_decodedCodeCacheValid = false;
+     DecodedInstructionPair m_uncachedPair{}; // pairs decoded outside the cache (see getDecodedInstructionPairForPc)
++    // Operands of the upper instruction being executed, already normalized by execUpper. The FMAC
++    // flag helpers (exact result, product sticky flags) run inside execUpper and read these instead
++    // of normalizing VF[fs], VF[ft], ACC, Q and I again.
++    float m_fmacVs[4]{};
++    float m_fmacVt[4]{};
++    float m_fmacAcc[4]{};
++    float m_fmacQ = 0.0f;
++    float m_fmacI = 0.0f;
+ 
+     std::array<FlagPipelineEntry, kMaxFlagEntries> m_flagPipeline{};
+     ScalarPipelineEntry m_fdiv{};
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+index dc1b0a5..3c02069 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+@@ -284,28 +284,22 @@ bool VU1Interpreter::calculateFmacExactResult(uint32_t component,
+     const uint8_t special = op >= 0x3Cu
+                                 ? static_cast<uint8_t>((upper & 3u) | ((upper >> 4) & 0x7Cu))
+                                 : 0xFFu;
+-    const uint8_t fs = FS(upper);
+-    const uint8_t ft = FT(upper);
+-
+-    const auto operand = [this](float value)
++    // Operands as execUpper normalized them (this only runs inside execUpper).
++    const auto vs = [this](uint32_t lane)
+     {
+-        return static_cast<long double>(normalizeOperand(value));
++        return static_cast<long double>(m_fmacVs[lane]);
+     };
+-    const auto vs = [&](uint32_t lane)
++    const auto vt = [this](uint32_t lane)
+     {
+-        return operand(m_state.vf[fs][lane]);
++        return static_cast<long double>(m_fmacVt[lane]);
+     };
+-    const auto vt = [&](uint32_t lane)
++    const auto acc = [this](uint32_t lane)
+     {
+-        return operand(m_state.vf[ft][lane]);
+-    };
+-    const auto acc = [&](uint32_t lane)
+-    {
+-        return operand(m_state.acc[lane]);
++        return static_cast<long double>(m_fmacAcc[lane]);
+     };
+ 
+-    const long double q = operand(m_state.q);
+-    const long double i = operand(m_state.i);
++    const long double q = static_cast<long double>(m_fmacQ);
++    const long double i = static_cast<long double>(m_fmacI);
+ 
+     if (op < 0x3Cu)
+     {
+@@ -505,8 +499,7 @@ uint32_t VU1Interpreter::calculateFmacProductSticky(uint8_t dest) const
+     if (!productSum)
+         return 0u;
+ 
+-    const uint8_t fs = FS(upper);
+-    const uint8_t ft = FT(upper);
++    // Operands as execUpper normalized them (this only runs inside execUpper).
+     for (uint32_t component = 0; component < 4u; ++component)
+     {
+         if ((dest & laneForComponent(component)) == 0u)
+@@ -514,27 +507,27 @@ uint32_t VU1Interpreter::calculateFmacProductSticky(uint8_t dest) const
+         static constexpr uint8_t crossLeft[4] = {1u, 2u, 0u, 3u};
+         static constexpr uint8_t crossRight[4] = {2u, 0u, 1u, 3u};
+         const uint8_t leftComponent = op == 0x2Eu ? crossLeft[component] : static_cast<uint8_t>(component);
+-        const float left = normalizeOperand(m_state.vf[fs][leftComponent]);
++        const float left = m_fmacVs[leftComponent];
+         float right = 0.0f;
+         if ((op >= 0x08u && op <= 0x0Fu) || (special >= 0x08u && special <= 0x0Fu))
+         {
+-            right = normalizeOperand(m_state.vf[ft][(op >= 0x08u && op <= 0x0Fu ? op : special) & 3u]);
++            right = m_fmacVt[(op >= 0x08u && op <= 0x0Fu ? op : special) & 3u];
+         }
+         else if (op == 0x21u || op == 0x25u || special == 0x21u || special == 0x25u)
+         {
+-            right = normalizeOperand(m_state.q);
++            right = m_fmacQ;
+         }
+         else if (op == 0x23u || op == 0x27u || special == 0x23u || special == 0x27u)
+         {
+-            right = normalizeOperand(m_state.i);
++            right = m_fmacI;
+         }
+         else if (op == 0x2Eu)
+         {
+-            right = normalizeOperand(m_state.vf[ft][crossRight[component]]);
++            right = m_fmacVt[crossRight[component]];
+         }
+         else
+         {
+-            right = normalizeOperand(m_state.vf[ft][component]);
++            right = m_fmacVt[component];
+         }
+ 
+         float product = left * right;
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_upper.cpp b/ps2xRuntime/src/lib/vu/ps2_vu1_upper.cpp
+index 6974254..0ab1950 100644
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_upper.cpp
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_upper.cpp
+@@ -31,20 +31,19 @@ void VU1Interpreter::execUpper(uint32_t instr)
+     uint8_t op = instr & 0x3F;
+ 
+     float *vd = m_state.vf[fd];
+-    float normalizedVs[4];
+-    float normalizedVt[4];
+-    float normalizedAcc[4];
+     for (uint32_t component = 0; component < 4u; ++component)
+     {
+-        normalizedVs[component] = normalizeOperand(m_state.vf[fs][component]);
+-        normalizedVt[component] = normalizeOperand(m_state.vf[ft][component]);
+-        normalizedAcc[component] = normalizeOperand(m_state.acc[component]);
++        m_fmacVs[component] = normalizeOperand(m_state.vf[fs][component]);
++        m_fmacVt[component] = normalizeOperand(m_state.vf[ft][component]);
++        m_fmacAcc[component] = normalizeOperand(m_state.acc[component]);
+     }
+-    const float *vs = normalizedVs;
+-    const float *vt = normalizedVt;
+-    const float *acc = normalizedAcc;
+-    const float q = normalizeOperand(m_state.q);
+-    const float i = normalizeOperand(m_state.i);
++    m_fmacQ = normalizeOperand(m_state.q);
++    m_fmacI = normalizeOperand(m_state.i);
++    const float *vs = m_fmacVs;
++    const float *vt = m_fmacVt;
++    const float *acc = m_fmacAcc;
++    const float q = m_fmacQ;
++    const float i = m_fmacI;
+     float result[4];
+ 
+     // Upper opcode decoding (bits 5:0 of upper word)
