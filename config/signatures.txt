@@ -1,0 +1,3 @@
+# Function prototypes for SLUS_203.77, applied to the Ghidra project by tools/ghidra/ApplyTypes.java.
+# One per line: 0xADDR <C prototype>;  Types come from config/types/. The function keeps the name
+# it has in config/symbols.csv; the name in the prototype is only for reading.

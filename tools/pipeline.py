@@ -6,7 +6,11 @@ Steps, in order:
   tools       build ps2_analyzer and ps2_recomp
   extract     pull SLUS_203.77, SYSTEM.CNF and SYS/ from your disc image into original/
   symbols     merge ps2_analyzer's SDK signature names into config/symbols.csv
-  analyze     Ghidra headless: import + analyze, apply config/symbols.csv, export config/funcmap.csv
+  analyze     Ghidra headless: import + analyze, apply config/symbols.csv, config/types/ and
+              config/signatures.txt, export config/funcmap.csv
+  map         analyze, then export the call graph (work/map/graph.json) and decompile every
+              function (work/decomp/), then status
+  status      rebuild the per-function inventory: config/port_status.csv and docs/PORT_STATUS.md
   pointers    add functions reached only through pointers (vtables, ctor/callback tables), re-analyze
   script      run one Ghidra script from tools/ghidra against the project (read-only by default)
   recompile   render config/metropolismania.template.toml and run ps2_recomp into generated/
@@ -47,6 +51,10 @@ GHIDRA_PROJECT_NAME = "metropolismania"
 GHIDRA_LANGUAGE = "r5900:LE:32:default"
 GHIDRA_EXPORT_TOML = WORK / "ghidra_export.toml"
 RENDERED_TOML = WORK / "metropolismania.toml"
+TYPES_DIR = CONFIG / "types"
+SIGNATURES = CONFIG / "signatures.txt"
+GRAPH_JSON = WORK / "map" / "graph.json"
+DECOMP_DIR = WORK / "decomp"
 BUILD_TYPE = "RelWithDebInfo"
 
 
@@ -226,9 +234,27 @@ def cmd_analyze(args: argparse.Namespace) -> None:
         cmd += ["-import", str(elf), "-overwrite", "-processor", GHIDRA_LANGUAGE, "-cspec", "default"]
     cmd += ["-scriptPath", script_path,
             "-postScript", "ApplySymbols.java", str(CONFIG / "symbols.csv"),
+            "-postScript", "ApplyTypes.java", str(TYPES_DIR), str(SIGNATURES),
             "-postScript", "ExportPS2Functions.java", str(GHIDRA_EXPORT_TOML), str(CONFIG / "funcmap.csv")]
+    if getattr(args, "map", False):
+        GRAPH_JSON.parent.mkdir(parents=True, exist_ok=True)
+        cmd += ["-postScript", "ExportGraph.java", str(GRAPH_JSON),
+                "-postScript", "DecompileAll.java", str(DECOMP_DIR)]
     run(cmd)
     filter_function_map()
+
+
+def cmd_map(args: argparse.Namespace) -> None:
+    """analyze plus the call graph and a fresh decompilation of every function, then status."""
+    if DECOMP_DIR.exists():
+        shutil.rmtree(DECOMP_DIR)
+    cmd_analyze(argparse.Namespace(reimport=False, map=True))
+    cmd_status(args)
+
+
+def cmd_status(_: argparse.Namespace) -> None:
+    """Rebuild config/port_status.csv and docs/PORT_STATUS.md (tools/port_status.py)."""
+    run([sys.executable, "-I", str(ROOT / "tools/port_status.py"), "--root", str(ROOT)])
 
 
 def filter_function_map() -> None:
@@ -558,6 +584,8 @@ def main() -> int:
     p.add_argument("--reimport", action="store_true", help="re-import and re-analyze the ELF from scratch")
     p.set_defaults(func=cmd_analyze)
     sub.add_parser("symbols", help="merge ps2_analyzer SDK names into config/symbols.csv").set_defaults(func=cmd_symbols)
+    sub.add_parser("map", help="analyze + call graph + decompile all + status").set_defaults(func=cmd_map)
+    sub.add_parser("status", help="rebuild config/port_status.csv and docs/PORT_STATUS.md").set_defaults(func=cmd_status)
     p = sub.add_parser("pointers", help="add functions reached only through pointers, re-analyze until stable")
     p.add_argument("--rounds", type=int, default=4)
     p.set_defaults(func=cmd_pointers)
