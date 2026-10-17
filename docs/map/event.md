@@ -16,7 +16,7 @@ City events (visitors, requests, incidents, paydays).
 
 ## Functions
 
-148 functions (typed 142, verified 6). Blocks: 20 can reach a thread switch, 21 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+148 functions (typed 140, verified 8). Blocks: 20 can reach a thread switch, 21 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -99,7 +99,7 @@ City events (visitors, requests, incidents, paydays).
 | `0x00192CD0` | `int mm_EvBugDamage_Check(EventData *data, CityScene *city)` | 132 | no | type 11 "Bug damage": Check (its only slot) |
 | `0x00192D60` | `void mm_EventList_MoveAll(int list, int from, int to)` | 696 | no | (provisional) moves every entry from bucket a1 to a2 (event manager constructor and destructor) |
 | `0x00193020` | `void mm_EventQueue_RemoveAt(int queue, int level, int position)` | 148 | no | removes the id at a2 from queue level a1 and shifts the level starts |
-| `0x001930C0` | `int mm_EventQueue_InsertByPriority(int queue, uint8_t *id, int level, int a3)` | 340 | no | inserts id *a1 into level a2 keeping the type priority order (type record +0x22) |
+| `0x001930C0` | `void mm_EventQueue_InsertByPriority(int queue, uint8_t *id, int level, int start)` | 340 | no | inserts id *a1 into level a2 keeping the type priority order (type record +0x22) |
 | `0x00193220` | `void mm_PartyPopup_Draw(int popup, int pass)` | 36 | no | (provisional) vtable 0x1BD8E0 draw: queues its packet in pass 2 |
 | `0x00193250` | `void mm_PartyPopup_Update(int popup, CityScene *city)` | 72 | no | (provisional) refreshes its window; button 0x40 closes (0x181430) |
 | `0x001932A0` | `int mm_PartyPopup_dtor(int popup, int16_t deleteFlag)` | 144 | yes | (provisional) vtable 0x1BD8E0 then base 0x1BD8B0; deletes its frame |

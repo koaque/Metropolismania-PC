@@ -60,6 +60,7 @@ struct ApplicantEntry;
 struct Markers;
 struct Notice;
 struct TownPages;
+struct TownPagesIndex;
 struct EventData;
 struct CharClass;
 struct PersonClass;
@@ -94,12 +95,12 @@ struct Frame {
     uint8_t unk_00[0x50];
     ps2f stA[2];              /* +0x50 texture S, T of the top left (mm_Frame_SetStyle) */
     uint8_t unk_58[8];
-    uint32_t cornerA;          /* +0x60 GS XY of the top left (mm_Frame_SetRect), or colour bytes (mm_Frame_SetColor) */
+    uint32_t cornerA;          /* +0x60 GS XY of the top left (mm_Frame_SetRect, mm_Frame_SetCorners) */
     uint32_t colourA;          /* +0x64 (mm_Frame_ctor) */
     uint8_t unk_68[8];
     ps2f stB[2];              /* +0x70 texture S, T of the bottom right */
     uint8_t unk_78[8];
-    uint32_t cornerB;          /* +0x80 GS XY of the bottom right, or colour bytes */
+    uint32_t cornerB;          /* +0x80 GS XY of the bottom right */
     uint32_t colourB;          /* +0x84 */
     uint8_t unk_88[0x18];
     int32_t style;             /* +0xA0 icon cell of the frame texture (mm_Frame_SetStyle) */
@@ -119,7 +120,8 @@ struct A3DObject {
 };
 /* Camera (0x310 bytes). */
 struct Camera {
-    uint8_t unk_000[0x10];
+    uint32_t packet;           /* +0x000 VU1 packet: uploads +0x010..+0x12F to VU1 address 0 (mm_Camera_BuildPacket) */
+    uint8_t unk_004[0xC];
     Vec4 worldScreenA[4];      /* +0x010 view x screenA (mm_Camera_UpdateMatrices) */
     Vec4 worldScreenB[4];      /* +0x050 view x screenB */
     Vec4 normalLight[4];       /* +0x090 sceVu0NormalLightMatrix of lightDir (mm_Camera_UpdateLightMatrices) */
@@ -132,11 +134,22 @@ struct Camera {
     Vec4 lightDir[3];          /* +0x160 */
     Vec4 lightRgb[3];          /* +0x190 */
     Vec4 ambient;              /* +0x1C0 */
-    uint8_t unk_1D0[0x10];
+    ps2f viewWidth;           /* +0x1D0 (mm_Camera_UpdateProjection) */
+    ps2f viewHeight;          /* +0x1D4 */
+    uint8_t unk_1D8[8];
     Vec4 view[4];              /* +0x1E0 world to camera (sceVu0CameraMatrix) */
     Vec4 screenA[4];           /* +0x220 */
     Vec4 screenB[4];           /* +0x260 */
-    uint8_t unk_2A0[0x64];
+    Vec4 screenC[4];           /* +0x2A0 view size to screen scale (mm_Camera_UpdateProjection) */
+    ps2f distance;            /* +0x2E0 projection distance */
+    ps2f scaleX;              /* +0x2E4 */
+    ps2f scaleY;              /* +0x2E8 */
+    ps2f centreX;             /* +0x2EC screen centre */
+    ps2f centreY;             /* +0x2F0 */
+    ps2f depthMax;            /* +0x2F4 depth range (provisional) */
+    ps2f depthMin;            /* +0x2F8 */
+    ps2f zNear;               /* +0x2FC */
+    ps2f zFar;                /* +0x300 */
     ps2f fogFar;              /* +0x304 */
     ps2f fogNear;             /* +0x308 */
     uint8_t unk_30C[4];
@@ -175,15 +188,24 @@ struct InstanceSlot {
 /* One parity's half of the city cursor (0xD0 bytes): info lines, packets and the fade frame. */
 struct CityCursorView {
     GuestPtr<TextBox> lines[5];         /* +0x00 */
-    uint32_t linePackets[5];   /* +0x14 */
-    uint32_t packet;           /* +0x28 cursor packet */
+    GuestPtr<Frame> lineFrames[5];      /* +0x14 a frame behind each line (a frame's packet starts the frame) */
+    GuestPtr<Frame> frame;              /* +0x28 the info window's frame */
     GuestPtr<Frame> fadeFrame;          /* +0x2C */
     uint8_t extraPacket[0xA0]; /* +0x30 drawn in mode 4 */
 };
-/* Light set (0x1B0 bytes). */
+/* Light set (0x1B0 bytes): two light groups of 0xC0 bytes at +0x10 and +0xD0, coloured by the clock
+   (mm_LightSet_UpdateByClock). */
 struct LightSet {
     GuestPtr<void> unk_00;              /* +0x00 object whose +0x20 mm_LightSet_SetField20 sets */
-    uint8_t unk_04[0x1AC];
+    uint8_t unk_04[0x1C];
+    Vec4 colourA;              /* +0x20 from the table 0x1B0550 */
+    uint8_t unk_30[0x10];
+    Vec4 paramsA;              /* +0x40 (4, 1, 1, 2) */
+    uint8_t unk_50[0x90];
+    Vec4 colourB;              /* +0xE0 from the table 0x1B0670 */
+    Vec4 colourB2;             /* +0xF0 copy of colourB */
+    Vec4 paramsB;              /* +0x100 (4, 1, 1, 2) */
+    uint8_t unk_110[0xA0];
 };
 /* List menu item (0xC bytes). */
 struct ListMenuItem {
@@ -208,10 +230,13 @@ struct ListMenu {
     int32_t cursorDy;          /* +0x278 */
     int32_t cursorY;           /* +0x27C */
     int32_t depth;             /* +0x280 GS Z of the item texts */
-    uint8_t unk_284[8];
+    int32_t scrollStep;        /* +0x284 pixels the cursor or list still moves, 4 per frame (> 0 up, < 0 down) */
+    int32_t unk_288;
     int32_t nextItem;          /* +0x28C item the next mm_ListMenu_SetItemText(-1) fills */
     int32_t itemCount;         /* +0x290 */
-    uint8_t unk_294[0xC];
+    int32_t canCancel;         /* +0x294 Triangle cancels (mm_ListMenu_HandleInput) */
+    int32_t canSelect;         /* +0x298 Cross selects */
+    int32_t unk_29C;
 };
 /* Loading screen (0x28 bytes). */
 struct LoadingScreen {
@@ -238,7 +263,19 @@ struct McManager {
 /* Name entry window (0x124 bytes). */
 struct NameEntry { uint8_t data[0x124]; };
 /* Scene A: logos, memory card check, title (0x104 bytes). */
-struct SceneA { uint8_t data[0x104]; };
+struct SceneA {
+    uint8_t unk_00[0x10];
+    GuestPtr<TexSprite> logoLetters[3]; /* +0x10 the title logo's three bouncing letters (mm_Title_LogoLetters) */
+    GuestPtr<TexSprite> choices[2];     /* +0x1C the title menu's two choices (mm_Title_DrawChoices) */
+    uint8_t unk_24[0x18];
+    int32_t choice;            /* +0x3C selected choice */
+    int32_t choicePulsing;     /* +0x40 cleared when the selected choice's pulse ends */
+    int32_t choiceCount;       /* +0x44 (provisional) 1: only the first choice is shown */
+    int32_t pulseFrame;        /* +0x48 0..19 */
+    uint8_t unk_4C[0x8C];
+    int32_t introFrame;        /* +0xD8 frames since the logo intro started */
+    uint8_t unk_DC[0x28];
+};
 /* Player's bag (0x1AC bytes). */
 /* Bag item slot (0x10 bytes). */
 struct BagSlot {
@@ -268,9 +305,29 @@ struct Bag {
     uint8_t unk_1A8[4];
 };
 /* Status panel (0xC0 bytes). */
-struct StatusPanel { uint8_t data[0xC0]; };
+struct StatusPanel {
+    uint8_t packet[0x90];      /* +0x00 GS packet of the flashing alert (colours cycled in the table 0x1AF370) */
+    GuestPtr<A3DObject> model;          /* +0x90 panel model (from 0x1F3B0C) */
+    GuestPtr<A3DObject> alertModel;     /* +0x94 drawn with the alert packet (from 0x1F3B00) */
+    GuestPtr<A3DObject> detailModel;    /* +0x98 */
+    uint32_t panelPacket;      /* +0x9C appended before the panel model (mm_StatusPanel_BuildPacket) */
+    GuestPtr<TextBox> text[4];          /* +0xA0 the detail view's text boxes */
+    int32_t detail;            /* +0xB0 the detail view is shown */
+    int32_t alert;             /* +0xB4 */
+    int32_t markCount;         /* +0xB8 detail model nodes 1.. drawn */
+    int32_t unk_BC;
+};
 /* Pause and save menu (0x99C bytes). */
-struct PauseMenu { uint8_t data[0x99C]; };
+struct PauseMenu {
+    int32_t state;             /* +0x00 4: picking a save slot (mm_PauseMenu_StateSlotSelect) */
+    GuestPtr<ListMenu> mainMenu;        /* +0x04 */
+    GuestPtr<ListMenu> slotMenu;        /* +0x08 */
+    int32_t unk_0C;
+    GuestPtr<TextBox> message;          /* +0x10 */
+    uint8_t unk_14[0x18];
+    ps2f openTime;            /* +0x2C rises by 10 per frame; the window is fully in at 120 */
+    uint8_t unk_30[0x96C];     /* +0x30 starts with the save name, default from 0x1B73D0 (Shift-JIS) */
+};
 /* Minimap (0x21DC bytes). */
 struct Minimap {
     uint8_t cells[0x2000];     /* +0x0000 one nibble per tile (mm_Minimap_Plot) */
@@ -350,7 +407,7 @@ struct Player {
     int32_t mode;              /* +0x00 0 turn, 1 walk (Cross lays road), 2 place for applicant, 5 place bag item */
     int32_t previousMode;      /* +0x04 mm_Player_SetMode(-1) returns to it */
     int32_t unk_08;            /* +0x08 */
-    int32_t unk_0C;
+    ps2f heading;             /* +0x0C radians, -pi..pi (mm_Player_Turn) */
     Vec4 position;             /* +0x10 */
     uint8_t unk_20[0x14];
     ps2f swayPhase;           /* +0x34 passed to mm_Instance_DrawSwayingIfRoom */
@@ -361,7 +418,8 @@ struct Player {
     int32_t unk_48;            /* +0x48 */
     ps2f jumpSpeed;           /* +0x4C */
     int32_t unk_50;            /* +0x50 */
-    uint8_t unk_54[0x2C];
+    ps2f moveSpeed;           /* +0x54 step per frame (mm_Player_Turn) */
+    uint8_t unk_58[0x28];
     int32_t unk_80;            /* +0x80 */
     int32_t jumps;             /* +0x84 */
     GuestPtr<A3DObject> model;          /* +0x88 */
@@ -381,7 +439,12 @@ struct Applicants {
     ApplicantEntry entries[32]; /* +0x000 */
     int32_t count;             /* +0x280 */
     int32_t unk_284;           /* +0x284 */
-    uint8_t unk_288[0x2C];
+    uint8_t unk_288[0xC];
+    GuestPtr<TextBox> cardText;         /* +0x294 */
+    uint8_t unk_298[8];
+    GuestPtr<void> cardModelA;          /* +0x2A0 positioned by mm_Applicants_PlaceAt (+0x30) */
+    GuestPtr<void> cardModelB;          /* +0x2A4 */
+    uint8_t unk_2A8[0xC];
     ps2f unk_2B4;             /* +0x2B4 */
     uint8_t unk_2B8[4];
     int32_t unk_2BC;           /* +0x2BC */
@@ -412,11 +475,36 @@ struct Notice {
     GuestPtr<TextBox> text2;            /* +0x0C */
     int32_t unk_10;            /* +0x10 second line shown */
 };
-/* Town's Pages phone book (0x64 bytes). */
+/* Town's Pages index entry (8 bytes), one per family type (mm_TownPages_BuildIndex). */
+struct TownPagesIndex {
+    uint16_t count;            /* +0x00 known families of the type */
+    uint16_t firstFamily;      /* +0x02 the first of them */
+    uint16_t startPage;        /* +0x04 page the type's listing starts on */
+    uint16_t unk_06;
+};
+/* Town's Pages phone book (0x64 bytes): first the contents pages (the family types, 10 per page), then the
+   families, type by type. */
 struct TownPages {
-    uint8_t unk_00[0x40];
+    GuestPtr<A3DObject> book;           /* +0x00 book model (from 0x1F3B20) */
+    GuestPtr<TextBox> text[6];          /* +0x04 page texts; +0x18 is the list the cursor moves on */
+    int32_t mode;              /* +0x1C 6: no cursor */
+    int32_t unk_20;
+    GuestPtr<Vec4> bookMatrix;          /* +0x24 the book model's matrix */
+    ps2f openTime;            /* +0x28 frames since opening (open at 25) */
+    int32_t page;              /* +0x2C */
+    int32_t savedPage;         /* +0x30 */
+    GuestPtr<TownPagesIndex> index;     /* +0x34 */
+    int32_t contentsPages;     /* +0x38 */
+    int32_t pageCount;         /* +0x3C */
     int32_t pageEntries;       /* +0x40 entries on the current page (up to 10) */
-    uint8_t unk_44[0x20];
+    int32_t unk_44;
+    int32_t unk_48;
+    GuestPtr<Frame> cursorFrame;        /* +0x4C */
+    int32_t cursorX;           /* +0x50 */
+    int32_t cursorY;           /* +0x54 */
+    int32_t unk_58;
+    int32_t row;               /* +0x5C cursor row on the page */
+    int32_t savedRow;          /* +0x60 */
 };
 /* Per-event handler data (base 0x1C bytes; some handlers use 0x7C), the first argument of every mm_Ev*_ slot. */
 struct EventData { uint8_t data[0x1C]; };
@@ -444,7 +532,8 @@ struct CharClass {
     uint16_t unk_14;           /* +0x14 record byte 13 */
     uint8_t unk_16;            /* +0x16 record byte 2 */
     uint8_t unk_17;
-    uint16_t unk_18;           /* +0x18 record halfword 4 */
+    uint16_t flags;            /* +0x18 record halfword 4; 1: other people keep clear of this one
+                                  (mm_Char_CheckNeighbourTile, mm_Map_FindWorkerOnTile) */
     uint8_t unk_1A[2];
     uint32_t unk_1C;           /* +0x1C record word 0x14 */
     GuestPtr<void> vtable;              /* +0x20 */
@@ -490,7 +579,16 @@ struct LayerF {
     uint32_t packet;           /* +0x130 */
     uint8_t unk_134[0xC];
 };
-struct LayerG { uint8_t data[0x2E0]; };
+struct LayerG {
+    uint8_t unk_000[0x60];
+    Vec4 wavesA[12];           /* +0x060 wave points: x sways, y scrolls (mm_LayerG_AnimateWaves) */
+    Vec4 wavesB[12];           /* +0x120 second set, swaying the other way, scrolling back */
+    uint8_t unk_1E0[0x10];
+    Vec4 waveParamsA;          /* +0x1F0 (1, phase - pi/2, 1/pi, pi) */
+    Vec4 waveParamsB;          /* +0x200 (0.06 * direction, weather, phase, 0) */
+    uint8_t unk_210[0x10];
+    Vec4 waveBase[12];         /* +0x220 the points at rest */
+};
 
 // ---- 10_game.h
 /* Core game structs (guest view, 32-bit pointers). Offsets come from the decompiled code; fields named
@@ -541,8 +639,10 @@ struct MapObject {
     uint8_t unk_16[2];
     uint16_t variant;          /* +0x18 roads: shape, bit d = open towards direction d, 5 and 10 straight
                                   (added to the model index by mm_BldgRoad_Slot1C); buildings: bits 3-7 pick
-                                  the model variant (mm_Bldg_CollideA) */
-    uint16_t mesh;             /* +0x1A roads: mesh drawn (0 = none; street lamps and traffic lights by range) */
+                                  the model variant (mm_Bldg_CollideA); housing: the high byte is the unit
+                                  shape (mm_BldgHousing_UnitAt, table 0x1B14F0) */
+    uint16_t mesh;             /* +0x1A roads: mesh drawn (0 = none; street lamps and traffic lights by range);
+                                  housing: the low byte is the style, 26 meshes each (mm_BldgHousing_Draw) */
 };
 
 /* Person on the map (0x30 bytes): 6000 records at CityMap +0x68 (6000 = none). */
@@ -550,12 +650,13 @@ struct MapPerson {
     ps2f x;                   /* +0x00 */
     ps2f y;                   /* +0x04 height */
     ps2f z;                   /* +0x08 */
-    ps2f unk_0C;
+    ps2f heading;             /* +0x0C atan2 of the facing (mm_Person_UpdatePose) */
     uint16_t nextOnTile;       /* +0x10 */
     uint16_t index;            /* +0x12 own index */
     uint16_t work;             /* +0x14 workplace object */
     uint16_t inside;           /* +0x16 object the person is in, 0x3F80 = outside */
-    uint8_t unk_18[6];
+    uint16_t walkTile;         /* +0x18 tile the person walks to (mm_Person_UpdatePose) */
+    uint8_t unk_1A[4];
     uint16_t destination;      /* +0x1E */
     uint16_t follow;           /* +0x20 follow target */
     uint16_t flags;            /* +0x22 */
@@ -630,7 +731,9 @@ struct BuildingType {
     uint8_t claimC;            /* +0x148 claim section C index */
     uint8_t unk_149[7];
     uint8_t modelNode;         /* +0x150 */
-    uint8_t unk_151[7];
+    uint8_t entranceDrawMesh;  /* +0x151 businesses: mesh of the entrance (+1 for the closed sign, type flag 0x1000) */
+    uint8_t firstDrawMesh;     /* +0x152 businesses: first mesh of the other parts, plus their variant */
+    uint8_t unk_153[5];
     uint8_t entranceMesh;      /* +0x158 collision mesh of an entrance object (flag 0x20) */
     uint8_t firstMesh;         /* +0x159 first collision mesh of the other objects, plus their variant */
     uint8_t unk_15A[2];
@@ -717,7 +820,7 @@ struct TalkView {
     int32_t unk_9C;
     GuestPtr<void> personModel;         /* +0xA0 */
     ps2f zoom;                /* +0xA4 */
-    int32_t unk_A8;
+    ps2f idleTime;            /* +0xA8 counts frames, wraps at 180 */
     int32_t scrollMode;        /* +0xAC 1 zoom, 2 scroll */
     int32_t scrollDir;         /* +0xB0 */
     int32_t scrollStep;        /* +0xB4 */
@@ -726,7 +829,7 @@ struct TalkView {
     int32_t cursorX;           /* +0xC0 */
     int32_t choiceSlot;        /* +0xC4 */
     int32_t peopleCount;       /* +0xC8 */
-    int32_t unk_CC;
+    int32_t firstShown;        /* +0xCC first person in view (three are shown) */
     int32_t anim[32];          /* +0xD0 per slot, 7 = idle */
     int32_t animFlip[32];      /* +0x150 */
     ps2f animTime[32];        /* +0x1D0 */
@@ -923,6 +1026,7 @@ static_assert(offsetof(A3DObject, model) == 0x00, "A3DObject.model");
 static_assert(offsetof(A3DObject, matrix) == 0x10, "A3DObject.matrix");
 static_assert(offsetof(A3DObject, meshes) == 0x50, "A3DObject.meshes");
 static_assert(sizeof(Camera) == 0x310, "Camera size");
+static_assert(offsetof(Camera, packet) == 0x000, "Camera.packet");
 static_assert(offsetof(Camera, worldScreenA) == 0x010, "Camera.worldScreenA");
 static_assert(offsetof(Camera, worldScreenB) == 0x050, "Camera.worldScreenB");
 static_assert(offsetof(Camera, normalLight) == 0x090, "Camera.normalLight");
@@ -935,9 +1039,21 @@ static_assert(offsetof(Camera, up) == 0x150, "Camera.up");
 static_assert(offsetof(Camera, lightDir) == 0x160, "Camera.lightDir");
 static_assert(offsetof(Camera, lightRgb) == 0x190, "Camera.lightRgb");
 static_assert(offsetof(Camera, ambient) == 0x1C0, "Camera.ambient");
+static_assert(offsetof(Camera, viewWidth) == 0x1D0, "Camera.viewWidth");
+static_assert(offsetof(Camera, viewHeight) == 0x1D4, "Camera.viewHeight");
 static_assert(offsetof(Camera, view) == 0x1E0, "Camera.view");
 static_assert(offsetof(Camera, screenA) == 0x220, "Camera.screenA");
 static_assert(offsetof(Camera, screenB) == 0x260, "Camera.screenB");
+static_assert(offsetof(Camera, screenC) == 0x2A0, "Camera.screenC");
+static_assert(offsetof(Camera, distance) == 0x2E0, "Camera.distance");
+static_assert(offsetof(Camera, scaleX) == 0x2E4, "Camera.scaleX");
+static_assert(offsetof(Camera, scaleY) == 0x2E8, "Camera.scaleY");
+static_assert(offsetof(Camera, centreX) == 0x2EC, "Camera.centreX");
+static_assert(offsetof(Camera, centreY) == 0x2F0, "Camera.centreY");
+static_assert(offsetof(Camera, depthMax) == 0x2F4, "Camera.depthMax");
+static_assert(offsetof(Camera, depthMin) == 0x2F8, "Camera.depthMin");
+static_assert(offsetof(Camera, zNear) == 0x2FC, "Camera.zNear");
+static_assert(offsetof(Camera, zFar) == 0x300, "Camera.zFar");
 static_assert(offsetof(Camera, fogFar) == 0x304, "Camera.fogFar");
 static_assert(offsetof(Camera, fogNear) == 0x308, "Camera.fogNear");
 static_assert(sizeof(CityCamera) == 0x540, "CityCamera size");
@@ -959,12 +1075,16 @@ static_assert(offsetof(InstanceSlot, colour) == 0x10, "InstanceSlot.colour");
 static_assert(offsetof(InstanceSlot, matrix) == 0x20, "InstanceSlot.matrix");
 static_assert(sizeof(CityCursorView) == 0xD0, "CityCursorView size");
 static_assert(offsetof(CityCursorView, lines) == 0x00, "CityCursorView.lines");
-static_assert(offsetof(CityCursorView, linePackets) == 0x14, "CityCursorView.linePackets");
-static_assert(offsetof(CityCursorView, packet) == 0x28, "CityCursorView.packet");
+static_assert(offsetof(CityCursorView, lineFrames) == 0x14, "CityCursorView.lineFrames");
+static_assert(offsetof(CityCursorView, frame) == 0x28, "CityCursorView.frame");
 static_assert(offsetof(CityCursorView, fadeFrame) == 0x2C, "CityCursorView.fadeFrame");
 static_assert(offsetof(CityCursorView, extraPacket) == 0x30, "CityCursorView.extraPacket");
-static_assert(sizeof(LightSet) == 0x1B0, "LightSet size");
 static_assert(offsetof(LightSet, unk_00) == 0x00, "LightSet.unk_00");
+static_assert(offsetof(LightSet, colourA) == 0x20, "LightSet.colourA");
+static_assert(offsetof(LightSet, paramsA) == 0x40, "LightSet.paramsA");
+static_assert(offsetof(LightSet, colourB) == 0xE0, "LightSet.colourB");
+static_assert(offsetof(LightSet, colourB2) == 0xF0, "LightSet.colourB2");
+static_assert(offsetof(LightSet, paramsB) == 0x100, "LightSet.paramsB");
 static_assert(sizeof(ListMenuItem) == 0xC, "ListMenuItem size");
 static_assert(offsetof(ListMenuItem, textHeight) == 0x00, "ListMenuItem.textHeight");
 static_assert(offsetof(ListMenuItem, text) == 0x04, "ListMenuItem.text");
@@ -980,8 +1100,11 @@ static_assert(offsetof(ListMenu, cursorDx) == 0x274, "ListMenu.cursorDx");
 static_assert(offsetof(ListMenu, cursorDy) == 0x278, "ListMenu.cursorDy");
 static_assert(offsetof(ListMenu, cursorY) == 0x27C, "ListMenu.cursorY");
 static_assert(offsetof(ListMenu, depth) == 0x280, "ListMenu.depth");
+static_assert(offsetof(ListMenu, scrollStep) == 0x284, "ListMenu.scrollStep");
 static_assert(offsetof(ListMenu, nextItem) == 0x28C, "ListMenu.nextItem");
 static_assert(offsetof(ListMenu, itemCount) == 0x290, "ListMenu.itemCount");
+static_assert(offsetof(ListMenu, canCancel) == 0x294, "ListMenu.canCancel");
+static_assert(offsetof(ListMenu, canSelect) == 0x298, "ListMenu.canSelect");
 static_assert(sizeof(LoadingScreen) == 0x28, "LoadingScreen size");
 static_assert(offsetof(LoadingScreen, sprite) == 0x04, "LoadingScreen.sprite");
 static_assert(offsetof(LoadingScreen, text) == 0x08, "LoadingScreen.text");
@@ -997,6 +1120,13 @@ static_assert(offsetof(McManager, file) == 0x20, "McManager.file");
 static_assert(offsetof(McManager, fd) == 0x24, "McManager.fd");
 static_assert(sizeof(NameEntry) == 0x124, "NameEntry size");
 static_assert(sizeof(SceneA) == 0x104, "SceneA size");
+static_assert(offsetof(SceneA, logoLetters) == 0x10, "SceneA.logoLetters");
+static_assert(offsetof(SceneA, choices) == 0x1C, "SceneA.choices");
+static_assert(offsetof(SceneA, choice) == 0x3C, "SceneA.choice");
+static_assert(offsetof(SceneA, choicePulsing) == 0x40, "SceneA.choicePulsing");
+static_assert(offsetof(SceneA, choiceCount) == 0x44, "SceneA.choiceCount");
+static_assert(offsetof(SceneA, pulseFrame) == 0x48, "SceneA.pulseFrame");
+static_assert(offsetof(SceneA, introFrame) == 0xD8, "SceneA.introFrame");
 static_assert(sizeof(BagSlot) == 0x10, "BagSlot size");
 static_assert(offsetof(BagSlot, item) == 0x00, "BagSlot.item");
 static_assert(offsetof(BagShortcut, slot) == 0x00, "BagShortcut.slot");
@@ -1006,7 +1136,22 @@ static_assert(offsetof(Bag, model) == 0x16C, "Bag.model");
 static_assert(offsetof(Bag, matrix) == 0x198, "Bag.matrix");
 static_assert(offsetof(Bag, unk_1A4) == 0x1A4, "Bag.unk_1A4");
 static_assert(sizeof(StatusPanel) == 0xC0, "StatusPanel size");
+static_assert(offsetof(StatusPanel, packet) == 0x00, "StatusPanel.packet");
+static_assert(offsetof(StatusPanel, model) == 0x90, "StatusPanel.model");
+static_assert(offsetof(StatusPanel, alertModel) == 0x94, "StatusPanel.alertModel");
+static_assert(offsetof(StatusPanel, detailModel) == 0x98, "StatusPanel.detailModel");
+static_assert(offsetof(StatusPanel, panelPacket) == 0x9C, "StatusPanel.panelPacket");
+static_assert(offsetof(StatusPanel, text) == 0xA0, "StatusPanel.text");
+static_assert(offsetof(StatusPanel, detail) == 0xB0, "StatusPanel.detail");
+static_assert(offsetof(StatusPanel, alert) == 0xB4, "StatusPanel.alert");
+static_assert(offsetof(StatusPanel, markCount) == 0xB8, "StatusPanel.markCount");
 static_assert(sizeof(PauseMenu) == 0x99C, "PauseMenu size");
+static_assert(offsetof(PauseMenu, state) == 0x00, "PauseMenu.state");
+static_assert(offsetof(PauseMenu, mainMenu) == 0x04, "PauseMenu.mainMenu");
+static_assert(offsetof(PauseMenu, slotMenu) == 0x08, "PauseMenu.slotMenu");
+static_assert(offsetof(PauseMenu, message) == 0x10, "PauseMenu.message");
+static_assert(offsetof(PauseMenu, openTime) == 0x2C, "PauseMenu.openTime");
+static_assert(offsetof(PauseMenu, unk_30) == 0x30, "PauseMenu.unk_30");
 static_assert(sizeof(Minimap) == 0x21DC, "Minimap size");
 static_assert(offsetof(Minimap, cells) == 0x0000, "Minimap.cells");
 static_assert(offsetof(Minimap, packet) == 0x2000, "Minimap.packet");
@@ -1056,6 +1201,7 @@ static_assert(sizeof(Player) == 0x90, "Player size");
 static_assert(offsetof(Player, mode) == 0x00, "Player.mode");
 static_assert(offsetof(Player, previousMode) == 0x04, "Player.previousMode");
 static_assert(offsetof(Player, unk_08) == 0x08, "Player.unk_08");
+static_assert(offsetof(Player, heading) == 0x0C, "Player.heading");
 static_assert(offsetof(Player, position) == 0x10, "Player.position");
 static_assert(offsetof(Player, swayPhase) == 0x34, "Player.swayPhase");
 static_assert(offsetof(Player, swayArg) == 0x38, "Player.swayArg");
@@ -1065,6 +1211,7 @@ static_assert(offsetof(Player, unk_44) == 0x44, "Player.unk_44");
 static_assert(offsetof(Player, unk_48) == 0x48, "Player.unk_48");
 static_assert(offsetof(Player, jumpSpeed) == 0x4C, "Player.jumpSpeed");
 static_assert(offsetof(Player, unk_50) == 0x50, "Player.unk_50");
+static_assert(offsetof(Player, moveSpeed) == 0x54, "Player.moveSpeed");
 static_assert(offsetof(Player, unk_80) == 0x80, "Player.unk_80");
 static_assert(offsetof(Player, jumps) == 0x84, "Player.jumps");
 static_assert(offsetof(Player, model) == 0x88, "Player.model");
@@ -1077,6 +1224,9 @@ static_assert(sizeof(Applicants) == 0x350, "Applicants size");
 static_assert(offsetof(Applicants, entries) == 0x000, "Applicants.entries");
 static_assert(offsetof(Applicants, count) == 0x280, "Applicants.count");
 static_assert(offsetof(Applicants, unk_284) == 0x284, "Applicants.unk_284");
+static_assert(offsetof(Applicants, cardText) == 0x294, "Applicants.cardText");
+static_assert(offsetof(Applicants, cardModelA) == 0x2A0, "Applicants.cardModelA");
+static_assert(offsetof(Applicants, cardModelB) == 0x2A4, "Applicants.cardModelB");
 static_assert(offsetof(Applicants, unk_2B4) == 0x2B4, "Applicants.unk_2B4");
 static_assert(offsetof(Applicants, unk_2BC) == 0x2BC, "Applicants.unk_2BC");
 static_assert(offsetof(Applicants, cursor) == 0x2CC, "Applicants.cursor");
@@ -1095,8 +1245,25 @@ static_assert(offsetof(Notice, timer) == 0x04, "Notice.timer");
 static_assert(offsetof(Notice, text) == 0x08, "Notice.text");
 static_assert(offsetof(Notice, text2) == 0x0C, "Notice.text2");
 static_assert(offsetof(Notice, unk_10) == 0x10, "Notice.unk_10");
-static_assert(sizeof(TownPages) == 0x64, "TownPages size");
+static_assert(offsetof(TownPagesIndex, count) == 0x00, "TownPagesIndex.count");
+static_assert(offsetof(TownPagesIndex, firstFamily) == 0x02, "TownPagesIndex.firstFamily");
+static_assert(offsetof(TownPagesIndex, startPage) == 0x04, "TownPagesIndex.startPage");
+static_assert(offsetof(TownPages, book) == 0x00, "TownPages.book");
+static_assert(offsetof(TownPages, text) == 0x04, "TownPages.text");
+static_assert(offsetof(TownPages, mode) == 0x1C, "TownPages.mode");
+static_assert(offsetof(TownPages, bookMatrix) == 0x24, "TownPages.bookMatrix");
+static_assert(offsetof(TownPages, openTime) == 0x28, "TownPages.openTime");
+static_assert(offsetof(TownPages, page) == 0x2C, "TownPages.page");
+static_assert(offsetof(TownPages, savedPage) == 0x30, "TownPages.savedPage");
+static_assert(offsetof(TownPages, index) == 0x34, "TownPages.index");
+static_assert(offsetof(TownPages, contentsPages) == 0x38, "TownPages.contentsPages");
+static_assert(offsetof(TownPages, pageCount) == 0x3C, "TownPages.pageCount");
 static_assert(offsetof(TownPages, pageEntries) == 0x40, "TownPages.pageEntries");
+static_assert(offsetof(TownPages, cursorFrame) == 0x4C, "TownPages.cursorFrame");
+static_assert(offsetof(TownPages, cursorX) == 0x50, "TownPages.cursorX");
+static_assert(offsetof(TownPages, cursorY) == 0x54, "TownPages.cursorY");
+static_assert(offsetof(TownPages, row) == 0x5C, "TownPages.row");
+static_assert(offsetof(TownPages, savedRow) == 0x60, "TownPages.savedRow");
 static_assert(sizeof(StageName) == 0x10, "StageName size");
 static_assert(sizeof(StageState) == 0x284, "StageState size");
 static_assert(offsetof(StageState, names) == 0x000, "StageState.names");
@@ -1111,7 +1278,7 @@ static_assert(offsetof(CharClass, unk_10) == 0x10, "CharClass.unk_10");
 static_assert(offsetof(CharClass, unk_12) == 0x12, "CharClass.unk_12");
 static_assert(offsetof(CharClass, unk_14) == 0x14, "CharClass.unk_14");
 static_assert(offsetof(CharClass, unk_16) == 0x16, "CharClass.unk_16");
-static_assert(offsetof(CharClass, unk_18) == 0x18, "CharClass.unk_18");
+static_assert(offsetof(CharClass, flags) == 0x18, "CharClass.flags");
 static_assert(offsetof(CharClass, unk_1C) == 0x1C, "CharClass.unk_1C");
 static_assert(offsetof(CharClass, vtable) == 0x20, "CharClass.vtable");
 static_assert(sizeof(PersonClass) == 0x28, "PersonClass size");
@@ -1128,6 +1295,11 @@ static_assert(offsetof(LayerC, rectX1) == 0x228, "LayerC.rectX1");
 static_assert(offsetof(LayerC, rectZ1) == 0x22C, "LayerC.rectZ1");
 static_assert(offsetof(LayerC, unk_230) == 0x230, "LayerC.unk_230");
 static_assert(offsetof(LayerF, packet) == 0x130, "LayerF.packet");
+static_assert(offsetof(LayerG, wavesA) == 0x060, "LayerG.wavesA");
+static_assert(offsetof(LayerG, wavesB) == 0x120, "LayerG.wavesB");
+static_assert(offsetof(LayerG, waveParamsA) == 0x1F0, "LayerG.waveParamsA");
+static_assert(offsetof(LayerG, waveParamsB) == 0x200, "LayerG.waveParamsB");
+static_assert(offsetof(LayerG, waveBase) == 0x220, "LayerG.waveBase");
 static_assert(sizeof(MapTile) == 0x18, "MapTile size");
 static_assert(offsetof(MapTile, height) == 0x00, "MapTile.height");
 static_assert(offsetof(MapTile, verts) == 0x04, "MapTile.verts");
@@ -1150,10 +1322,12 @@ static_assert(sizeof(MapPerson) == 0x30, "MapPerson size");
 static_assert(offsetof(MapPerson, x) == 0x00, "MapPerson.x");
 static_assert(offsetof(MapPerson, y) == 0x04, "MapPerson.y");
 static_assert(offsetof(MapPerson, z) == 0x08, "MapPerson.z");
+static_assert(offsetof(MapPerson, heading) == 0x0C, "MapPerson.heading");
 static_assert(offsetof(MapPerson, nextOnTile) == 0x10, "MapPerson.nextOnTile");
 static_assert(offsetof(MapPerson, index) == 0x12, "MapPerson.index");
 static_assert(offsetof(MapPerson, work) == 0x14, "MapPerson.work");
 static_assert(offsetof(MapPerson, inside) == 0x16, "MapPerson.inside");
+static_assert(offsetof(MapPerson, walkTile) == 0x18, "MapPerson.walkTile");
 static_assert(offsetof(MapPerson, destination) == 0x1E, "MapPerson.destination");
 static_assert(offsetof(MapPerson, follow) == 0x20, "MapPerson.follow");
 static_assert(offsetof(MapPerson, flags) == 0x22, "MapPerson.flags");
@@ -1205,6 +1379,8 @@ static_assert(offsetof(BuildingType, category) == 0x145, "BuildingType.category"
 static_assert(offsetof(BuildingType, claimB) == 0x147, "BuildingType.claimB");
 static_assert(offsetof(BuildingType, claimC) == 0x148, "BuildingType.claimC");
 static_assert(offsetof(BuildingType, modelNode) == 0x150, "BuildingType.modelNode");
+static_assert(offsetof(BuildingType, entranceDrawMesh) == 0x151, "BuildingType.entranceDrawMesh");
+static_assert(offsetof(BuildingType, firstDrawMesh) == 0x152, "BuildingType.firstDrawMesh");
 static_assert(offsetof(BuildingType, entranceMesh) == 0x158, "BuildingType.entranceMesh");
 static_assert(offsetof(BuildingType, firstMesh) == 0x159, "BuildingType.firstMesh");
 static_assert(offsetof(BuildingType, vtable) == 0x15C, "BuildingType.vtable");
@@ -1242,6 +1418,7 @@ static_assert(offsetof(TalkView, frames) == 0x88, "TalkView.frames");
 static_assert(offsetof(TalkView, cursorFrame) == 0x98, "TalkView.cursorFrame");
 static_assert(offsetof(TalkView, personModel) == 0xA0, "TalkView.personModel");
 static_assert(offsetof(TalkView, zoom) == 0xA4, "TalkView.zoom");
+static_assert(offsetof(TalkView, idleTime) == 0xA8, "TalkView.idleTime");
 static_assert(offsetof(TalkView, scrollMode) == 0xAC, "TalkView.scrollMode");
 static_assert(offsetof(TalkView, scrollDir) == 0xB0, "TalkView.scrollDir");
 static_assert(offsetof(TalkView, scrollStep) == 0xB4, "TalkView.scrollStep");
@@ -1250,6 +1427,7 @@ static_assert(offsetof(TalkView, cursorSlot) == 0xBC, "TalkView.cursorSlot");
 static_assert(offsetof(TalkView, cursorX) == 0xC0, "TalkView.cursorX");
 static_assert(offsetof(TalkView, choiceSlot) == 0xC4, "TalkView.choiceSlot");
 static_assert(offsetof(TalkView, peopleCount) == 0xC8, "TalkView.peopleCount");
+static_assert(offsetof(TalkView, firstShown) == 0xCC, "TalkView.firstShown");
 static_assert(offsetof(TalkView, anim) == 0xD0, "TalkView.anim");
 static_assert(offsetof(TalkView, animFlip) == 0x150, "TalkView.animFlip");
 static_assert(offsetof(TalkView, animTime) == 0x1D0, "TalkView.animTime");

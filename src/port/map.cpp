@@ -2,14 +2,13 @@
 
 #include "game_functions.h"
 #include "game_globals.h"
+#include "sdk.h"
 
 namespace mm
 {
     namespace
     {
         constexpr int kMapSize = 128;
-        constexpr uint16_t kNoPerson = 6000;
-        constexpr uint16_t kNoObject = 0x3F80;
 
         bool onMap(int x, int z) { return x >= 0 && x < kMapSize && z >= 0 && z < kMapSize; }
         int clampToMap(int v) { return v < 0 ? 0 : v >= kMapSize ? kMapSize - 1 : v; }
@@ -69,6 +68,80 @@ namespace mm
     ps2f Map_GetHeightAt(GuestPtr<CityMap> map, int x, int z) { return tileAt(map, clampToMap(x), clampToMap(z)).height; }
 
     ps2f Map_HeightScale(ps2f height) { return ps2f(0.08f) + ps2f(0.6f) * height; }
+
+    // The ground height at world (x, z): the tile's four corner heights make two triangles split along a
+    // diagonal, and the plane of the one the point is in gives the height (scaled by Map_HeightScale when
+    // above 0). Off the map, the edge tile and edge coordinate are used. The corners and the plane go through
+    // stack vectors as in the original: their w lanes are never written and VU0 loads them.
+    ps2f Map_SampleHeight(GuestPtr<CityMap> map, ps2f x, ps2f z)
+    {
+        // Declared in this order, they take the original's slots, entry sp - 0x10 down to - 0x50.
+        port::GuestLocal<Vec4> plane;
+        port::GuestLocal<Vec4> d;
+        port::GuestLocal<Vec4> c;
+        port::GuestLocal<Vec4> b;
+        port::GuestLocal<Vec4> a;
+        ps2f pz = z + ps2f(0.001f);
+        ps2f px = x + ps2f(0.001f);
+        int ix = sdk::fptosi(ps2f(64.0f) + px);
+        int iz = sdk::fptosi(ps2f(64.0f) - pz);
+        if (ix < 0)
+        {
+            px = -64.0f;
+            ix = 0;
+        }
+        else if (ix >= kMapSize)
+        {
+            px = 64.0f;
+            ix = kMapSize - 1;
+        }
+        if (iz < 0)
+        {
+            pz = 64.0f;
+            iz = 0;
+        }
+        else if (iz >= kMapSize)
+        {
+            pz = -64.0f;
+            iz = kMapSize - 1;
+        }
+        const ps2f half = 0.5f;
+        const ps2f xMid = half + (fromInt(ix) - ps2f(64.0f));
+        const ps2f x0 = xMid - half;
+        const ps2f zMid = (fromInt(kMapSize - iz) - ps2f(64.0f)) - half;
+        const ps2f z0 = half + zMid;
+        const ps2f x1 = half + xMid;
+        const ps2f z1 = zMid - half;
+        a->x = x0;
+        a->z = z0;
+        b->x = x1;
+        b->z = z0;
+        c->x = x1;
+        c->z = z1;
+        d->x = x0;
+        d->z = z1;
+        const MapTile &tile = map->tiles[ix + iz * kMapSize];
+        a->y = tile.verts[0];
+        b->y = tile.verts[1];
+        c->y = tile.verts[2];
+        d->y = tile.verts[3];
+        GuestPtr<Vec4> corner;
+        if (pz <= d->z + (px - d->x))
+        {
+            Math_TriangleNormal(plane, b, c, d);
+            corner = b;
+        }
+        else
+        {
+            Math_TriangleNormal(plane, a, b, d);
+            corner = a;
+        }
+        plane->w = (-plane->x * corner->x - plane->y * corner->y) - plane->z * corner->z;
+        const ps2f height = -(plane->w + (plane->x * px + plane->z * pz)) / plane->y;
+        if (height <= ps2f(0.0f))
+            return height;
+        return Map_HeightScale(height);
+    }
 
     // The tile's four vertex values; returns the last one.
     ps2f Map_GetTileVertex(GuestPtr<CityMap> map, int tile, GuestPtr<ps2f> out)
@@ -210,8 +283,8 @@ namespace mm
             for (uint16_t p = map->objects[o].firstPerson; p != kNoPerson; p = map->people[p].nextOnTile)
             {
                 const MapPerson &person = map->people[p];
-                const uint32_t charClass = port::load<uint32_t>(globals::charClassTable.get() + 4u * person.charType);
-                if (work == person.work && (port::load<uint16_t>(charClass + 0x18u) & 1u) != 0)
+                const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person.charType)};
+                if (work == person.work && (cls->flags & 1u) != 0)
                     return map->people + p;
             }
         return GuestPtr<MapPerson>{0};
@@ -408,6 +481,7 @@ namespace mm
     PORT_FN(Map_GetTileHeightWord);
     PORT_FN(Map_GetHeightAt);
     PORT_FN(Map_HeightScale);
+    PORT_FN(Map_SampleHeight);
     PORT_FN(Map_GetTileVertex);
     PORT_FN(Map_GetTileVertexClamped);
     PORT_FN(Map_GetRecord);

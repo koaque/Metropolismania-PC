@@ -18,7 +18,7 @@ Rendering below the scene level.
 
 ## Functions
 
-117 functions (typed 72, verified 45). Blocks: 29 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+117 functions (typed 69, verified 48). Blocks: 29 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -39,7 +39,7 @@ Rendering below the scene level.
 | `0x0012A0E0` | `int32_t *mm_A3DObject_Load(A3DObject *model, int file, int a2)` | 380 | yes | synchronous .A3D load: header (word counts), data and pointer table, then mm_A3D_Relocate |
 | `0x0012A260` | `A3DObject *mm_InstanceBase_ctor(A3DObject *model)` | 44 | no | (provisional) base object constructor, clears 0x1BDA10 |
 | `0x0012A2B0` | `void mm_Packet_Draw(uint32_t *a0)` | 8 | no | queues the packet whose address is the object's first word |
-| `0x0012A2C0` | `void mm_Packet_BuildA0(uint32_t *a0)` | 216 | no | builds a small A+D packet (register 0x3D ...) in the packet buffer |
+| `0x0012A2C0` | `void mm_Camera_BuildPacket(Camera *camera)` | 216 | no | the camera's VU1 packet: a GS register write, then +0x10..+0x12F (matrices, fog) unpacked to VU1 address 0 |
 | `0x0012A650` | `void mm_LightSet_SetField20(LightSet *lights, int value)` | 12 | no | (provisional) (*this)+0x20 = a1, from the time-of-day update |
 | `0x0012C4D0` | `void mm_Instance_DrawSwayingIfRoom(A3DObject *model, int a1, float phase)` | 60 | no | mm_Instance_DrawSwaying when the model's nodes still fit in the 1800-instance budget |
 | `0x0012C510` | `void mm_InstanceBuf_Init(void)` | 400 | yes | allocates the two instance buffers and pre-fills each slot's DMA/VIF header (CNT 5, STCYCL, UNPACK) |
@@ -75,7 +75,7 @@ Rendering below the scene level.
 | `0x00149730` | `LayerA *mm_LayerA_DeletingDtor(LayerA *layer, int16_t deleteFlag)` | 84 | yes | base destructor, then delete |
 | `0x00149790` | `LayerA *mm_LayerA_ctor(LayerA *layer)` | 512 | no | base constructor, builds its packet in the packet buffer |
 | `0x0014C200` | `void mm_Dma_AppendCall(int address)` | 8 | no |  |
-| `0x0014C620` | `int mm_LightSet_UpdateByClock(LightSet *lights, int clock, int a2)` | 508 | no | interpolates the light colours over the day (2-hour segments, tables 0x1B0550/0x1B0670) |
+| `0x0014C620` | `void mm_LightSet_UpdateByClock(LightSet *lights, int clock, int weather)` | 508 | no | interpolates the light colours over the day (2-hour segments, tables 0x1B0550/0x1B0670) |
 | `0x0014C820` | `LightSet *mm_LightSet_DeletingDtor(LightSet *lights, int16_t deleteFlag)` | 84 | yes | base destructor, then delete |
 | `0x0014C880` | `LightSet *mm_LightSet_ctor(LightSet *lights)` | 40 | no | mm_LightSet_Init |
 | `0x0014C8E0` | `uint32_t *mm_LayerB_BuildPacket(LayerB *layer, uint32_t *packet)` | 372 | no | (provisional) packet for layer B (microcode 0x1AA340) |

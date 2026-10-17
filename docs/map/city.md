@@ -41,7 +41,7 @@ move in.
 
 ## Functions
 
-185 functions (typed 136, verified 49). Blocks: 55 can reach a thread switch, 7 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+185 functions (typed 130, verified 55). Blocks: 55 can reach a thread switch, 7 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -117,7 +117,7 @@ move in.
 | `0x00164BA0` | `BuildingType *mm_BldgOffice_dtor(BuildingType *btype, int16_t deleteFlag)` | 128 | yes | category 7 (offices), vtable 0x1BD080 |
 | `0x00164C20` | `int mm_BldgOffice_CollideA(BuildingType *btype, MapObject *obj, int a2, int a3, int t0, int t1, float f12)` | 224 | no | slot +0x2C |
 | `0x00164D00` | `int mm_BldgOffice_CollideB(BuildingType *btype, MapObject *obj, int a2, int a3, int t0, int t1, int t2, float f12)` | 224 | no | slot +0x28 |
-| `0x00164DE0` | `void mm_BldgOffice_Draw(BuildingType *btype, int layer, CityScene *city, MapObject *obj, uint32_t *t0, int t1, float x, float y, float z)` | 852 | no | slot +0x14 |
+| `0x00164DE0` | `void mm_BldgOffice_Draw(BuildingType *btype, int layer, CityScene *city, MapObject *obj, uint32_t *part, int flags, float x, float y, float z)` | 852 | no | slot +0x14 |
 | `0x00165140` | `int mm_BldgOffice_Tick(BuildingType *btype, CityScene *city, MapObject *obj, int timeFlags)` | 132 | no | Building tick plus a check of the tile's first object |
 | `0x001651D0` | `BuildingType *mm_BldgOffice_ctor(BuildingType *btype, uint8_t *record, int id)` | 72 | yes | Building constructor, vtable 0x1BD080, +0x160 from record byte 0x92 |
 | `0x00165220` | `BuildingType *mm_BldgRanch_dtor(BuildingType *btype, int16_t deleteFlag)` | 128 | yes | category 12 (Ranch), vtable 0x1BD0C0 |
@@ -172,7 +172,7 @@ move in.
 | `0x00169960` | `BuildingType *mm_BldgHousing_dtor(BuildingType *btype, int16_t deleteFlag)` | 128 | yes | category 8 (housing), vtable 0x1BD280 |
 | `0x001699E0` | `int mm_BldgHousing_CollideA(BuildingType *btype, MapObject *obj, int a2, int a3, int t0, int t1, float f12)` | 196 | no | slot +0x2C |
 | `0x00169AB0` | `int mm_BldgHousing_CollideB(BuildingType *btype, MapObject *obj, int a2, int a3, int t0, int t1, int t2, float f12)` | 196 | no | slot +0x28 |
-| `0x00169B80` | `void mm_BldgHousing_Draw(BuildingType *btype, int layer, CityScene *city, MapObject *obj, uint32_t *t0, int t1, float x, float y, float z)` | 928 | no | slot +0x14 |
+| `0x00169B80` | `void mm_BldgHousing_Draw(BuildingType *btype, int layer, CityScene *city, MapObject *obj, uint32_t *part, int flags, float x, float y, float z)` | 928 | no | slot +0x14 |
 | `0x00169F20` | `uint8_t mm_BldgHousing_UnitAt(BuildingType *btype, int kind, int x, int z, int count, uint16_t rule, CityScene *city, uint32_t *isUnit, float height)` | 372 | no | (provisional) unit index of a tile within a housing block |
 | `0x0016A0A0` | `void mm_BldgHousing_CountUnits(BuildingType *btype, CityScene *city, MapObject *obj)` | 756 | no | (provisional) recursive walk over connected housing tiles |
 | `0x0016A3A0` | `int mm_BldgHousing_Tick(BuildingType *btype, CityScene *city, MapObject *obj, int timeFlags)` | 160 | no | Building tick plus unit counting |

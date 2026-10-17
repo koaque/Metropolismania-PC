@@ -95,6 +95,58 @@ namespace mm
         Instance_DrawModelLit(player->model, GuestPtr<uint32_t>{player.address + 0x20u}, player->mode, city->bag->unk_002);
     }
 
+    // The camera's three projection matrices from its view size, distance, scale, centre, depth range and near
+    // and far planes: screenA (a perspective divide by z, then scale, centre and depth mapping, multiplied
+    // on VU0 through a stack matrix), screenB (near/far projection) and screenC (view size to screen).
+    void Camera_UpdateProjection(GuestPtr<Camera> camera)
+    {
+        // Declared in this order, the rows take the original's stack matrix at entry sp - 0x40.
+        port::GuestLocal<Vec4> row3;
+        port::GuestLocal<Vec4> row2;
+        port::GuestLocal<Vec4> row1;
+        port::GuestLocal<Vec4> row0;
+        const ps2f zNear = camera->zNear, depthMin = camera->depthMin, zFar = camera->zFar, depthMax = camera->depthMax;
+        const ps2f halfHeight = zNear * camera->viewHeight / camera->distance;
+        const ps2f halfWidth = zNear * camera->viewWidth / camera->distance;
+        const ps2f span = -zNear + zFar;
+        const ps2f depthOffset = (-depthMin * zNear + depthMax * zFar) / span;
+        const auto matrix = [](Vec4 &row0Of) { return GuestPtr<Vec4>::of(row0Of).address; };
+
+        sdk::sceVu0UnitMatrix(matrix(camera->screenA[0]));
+        camera->screenA[0].x = camera->distance;
+        camera->screenA[1].y = camera->distance;
+        camera->screenA[2].z = 0.0f;
+        camera->screenA[3].w = 0.0f;
+        camera->screenA[3].z = 1.0f;
+        camera->screenA[2].w = 1.0f;
+        const GuestPtr<Vec4> scale = row0.ptr();
+        sdk::sceVu0UnitMatrix(scale.address);
+        scale[0].x = camera->scaleX;
+        scale[1].y = camera->scaleY;
+        scale[2].z = zFar * zNear * (-depthMax + depthMin) / span;
+        scale[3].x = camera->centreX;
+        scale[3].y = camera->centreY;
+        scale[3].z = depthOffset;
+        sdk::sceVu0MulMatrix(matrix(camera->screenA[0]), scale.address, matrix(camera->screenA[0]));
+
+        sdk::sceVu0UnitMatrix(matrix(camera->screenB[0]));
+        camera->screenB[0].x = ps2f(2.0f) * camera->zNear / (halfWidth + halfWidth);
+        camera->screenB[1].y = ps2f(2.0f) * camera->zNear / (halfHeight + halfHeight);
+        camera->screenB[2].z = (camera->zFar + camera->zNear) / (camera->zFar - camera->zNear);
+        camera->screenB[3].z = ps2f(-2.0f) * (camera->zFar * camera->zNear) / (camera->zFar - camera->zNear);
+        camera->screenB[2].w = 1.0f;
+        camera->screenB[3].w = 0.0f;
+
+        sdk::sceVu0UnitMatrix(matrix(camera->screenC[0]));
+        camera->screenC[0].x = halfWidth * (camera->distance * camera->scaleX) / camera->zNear;
+        camera->screenC[1].y = halfHeight * (camera->distance * camera->scaleY) / camera->zNear;
+        camera->screenC[2].z = (-camera->depthMin + camera->depthMax) / ps2f(2.0f);
+        camera->screenC[3].z = (camera->depthMin + camera->depthMax) / ps2f(2.0f);
+        camera->screenC[3].x = camera->centreX;
+        camera->screenC[3].y = camera->centreY;
+        camera->screenC[3].w = 1.0f;
+    }
+
     // Fog range: stores near and far and the two fog coefficients the renderer uses,
     // (255 - 255 (far + near) / (far - near)) / 2 and 255 far near / (far - near), in that operation order.
     void Camera_SetFogRange(GuestPtr<Camera> camera, ps2f fogNear, ps2f fogFar)
@@ -345,9 +397,103 @@ namespace mm
         cls->unk_12 = record[12];
         cls->unk_14 = record[13];
         cls->unk_16 = record[2];
-        cls->unk_18 = port::load<uint16_t>(record.address + 4u);
+        cls->flags = port::load<uint16_t>(record.address + 4u);
         cls->unk_1C = port::load<uint32_t>(record.address + 0x14u);
         return cls;
+    }
+
+    // char: the nearest building (city-block distance from (x, z), within the list's own range at 0x1B0D30)
+    // of tile list `list` whose family lives in the city, other than skipA and skipB. Mode 0 also wants
+    // room for visitors (+0x16 below type +0x14A), mode 1 room for occupants (+0x17 below the capacity).
+    // Ties go to the later entry. Returns 0x3F80 when none qualifies.
+    int16_t Person_FindBuildingInList(GuestPtr<CityScene> city, int list, int x, int z, int mode, int16_t skipA, int16_t skipB)
+    {
+        uint16_t best = 0x3F80;
+        int bestDistance = port::load<uint16_t>(0x001B0D30u + 2u * static_cast<uint32_t>(list));
+        port::GuestLocal<uint32_t> count;
+        const GuestPtr<uint16_t> items = Map_GetTileList(city->map, list, count);
+        for (int i = 0; i < static_cast<int>(*count); ++i)
+        {
+            const uint16_t id = items[i];
+            if (id == static_cast<uint16_t>(skipA) || id == static_cast<uint16_t>(skipB))
+                continue;
+            const GuestPtr<MapObject> obj = Map_GetRecord(city->map, id);
+            if (Family_InCity(obj->family) == 0)
+                continue;
+            const uint32_t btype = globals::buildingTypeAddress(obj->type);
+            const GuestPtr<uint8_t> people{obj.address + 0x16u}; // [0] visitors, [1] occupants
+            if (mode == 0 && people[0] >= port::load<uint8_t>(btype + 0x14Au))
+                continue;
+            if (mode == 1 && people[1] >= port::load<uint16_t>(btype + 0x140u))
+                continue;
+            const int distance = sdk::abs((obj->tile & 0x7F) - x) + sdk::abs((obj->tile >> 7) - z);
+            if (distance <= bestDistance)
+            {
+                best = items[i];
+                bestDistance = distance;
+            }
+        }
+        return static_cast<int16_t>(best);
+    }
+
+    // char: turning and moving with the pad unless Circle is held: up and down set the z step, the analog
+    // stick's sideways bits the x step, right and left turn by 0.02 (wrapping at pi).
+    void Player_Turn(GuestPtr<Player> player, GuestPtr<ps2f> move)
+    {
+        if ((Pad_Held(0) & 0x20u) != 0)
+            return;
+        if ((Pad_Held(0) & 0x1000u) != 0 || (Pad_Held(0) & 0x100000u) != 0)
+            move[2] = -player->moveSpeed;
+        if ((Pad_Held(0) & 0x4000u) != 0 || (Pad_Held(0) & 0x400000u) != 0)
+            move[2] = player->moveSpeed;
+        if ((Pad_Held(0) & 0x200000u) != 0)
+            move[0] = -player->moveSpeed;
+        if ((Pad_Held(0) & 0x800000u) != 0)
+            move[0] = player->moveSpeed;
+        const ps2f pi = 3.14159274f;
+        if ((Pad_Held(0) & 0x2000u) != 0)
+        {
+            player->heading = player->heading + ps2f(0.02f);
+            if (!(player->heading < pi))
+                player->heading = -pi;
+        }
+        if ((Pad_Held(0) & 0x8000u) != 0)
+        {
+            player->heading = player->heading - ps2f(0.02f);
+            if (player->heading < -pi)
+                player->heading = pi;
+        }
+    }
+
+    // events: three different kinds of claim unmet at once on buildings of type flag 8 (claim slot 0x18 =
+    // none), counting the claim kinds in the claim section entries.
+    int EvThreeUnsatisfied_Check(GuestPtr<EventData>, GuestPtr<CityScene> city)
+    {
+        int8_t first = 0, second = 0;
+        for (int list = 0; list < 0x50; ++list)
+        {
+            port::GuestLocal<uint32_t> count;
+            GuestPtr<uint16_t> item = Map_GetTileList(city->map, list, count);
+            const GuestPtr<uint16_t> end = item + static_cast<int>(*count);
+            for (; item.address < end.address; item = item + 1)
+            {
+                const GuestPtr<MapObject> obj = Map_GetRecord(city->map, *item);
+                const GuestPtr<BuildingType> btype{globals::buildingTypeAddress(obj->type)};
+                if ((btype->flags & 8u) == 0 || obj->claimSlot == 0x18 || ClaimMeter_Level(obj->claimMeter) == 0)
+                    continue;
+                const int8_t kind = port::load<int8_t>(static_cast<uint32_t>(Claim_GetSectionB(btype->claimB)) + 8u * obj->claimSlot);
+                if (first == 0)
+                    first = kind;
+                else if (kind != first)
+                {
+                    if (second == 0)
+                        second = kind;
+                    else if (kind != second)
+                        return 1;
+                }
+            }
+        }
+        return 0;
     }
 
     // char: a person without a target of its own (none, or the workplace) picks a building near work from
@@ -405,7 +551,7 @@ namespace mm
         player->unk_08 = 0;
         player->unk_80 = 0;
         player->swayPhase = 0.0f;
-        player->unk_0C = 0;
+        player->heading = 0.0f;
         player->position.x = 0.0f;
         player->position.y = 0.0f;
         player->position.z = 0.0f;
@@ -542,6 +688,171 @@ namespace mm
         return stage;
     }
 
+    namespace
+    {
+        // How far `other` stands from `person` on the ground, on VU0 through the 16-byte stack slot as in the
+        // original: only x and z are stored, so the slot's y and w (the last result, or what was there) go into
+        // vf4 as well, and the slot ends up holding the distance in every lane.
+        ps2f groundDistance(const MapPerson &person, const MapPerson &other, GuestPtr<Vec4> slot)
+        {
+            using namespace vu0;
+            slot->x = other.x - person.x;
+            slot->z = other.z - person.z;
+            vf(4) = load(slot);
+            set(vf(5), mul(vf(4), vf(4)), X | Z);
+            set(vf(6), add(vf(5), lane(vf(5), 2)), X);
+            q() = sqrtQ(x(vf(6)));
+            set(vf(7), add(vf(0), _mm_set1_ps(q())), XYZW);
+            store(slot, vf(7));
+            return slot->x;
+        }
+
+        GuestPtr<CharClass> charClassOf(const MapPerson &person)
+        {
+            return GuestPtr<CharClass>{port::load<uint32_t>(globals::charClassTable.get() + 4u * person.charType)};
+        }
+    }
+
+    // char: on every 8th frame (by the person's index), turns the person towards the middle of the building on
+    // the tile it walks to and moves it one step along its facing (VU0, the matrix times the step vector): the
+    // class's walking speed plus (index & 3) / 2000, times 8, doubled while running (flag 0x80). A person that
+    // left `tile` is unlinked from it, unless flag 0x800 holds it there. The heading follows the facing.
+    void Person_UpdatePose(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, int, int tile)
+    {
+        using namespace vu0;
+        if ((person->index & 7) != (globals::frameCounter.get() & 7))
+            return;
+        // Declared in this order, they take the original's slots (entry sp - 0x10 down to - 0x70).
+        port::GuestLocal<Vec4> moved;
+        port::GuestLocal<Vec4> row3;
+        port::GuestLocal<Vec4> row2;
+        port::GuestLocal<Vec4> row1;
+        port::GuestLocal<Vec4> row0;
+        port::GuestLocal<Vec4> position;
+        port::GuestLocal<Vec4> facing;
+        const GuestPtr<Vec4> matrix = row0.ptr();
+        const int walkTile = person->walkTile;
+        const GuestPtr<MapObject> obj = Map_GetTileFirstObject(city->map, walkTile);
+        const GuestPtr<BuildingType> type{port::load<uint32_t>(globals::buildingTypeTable.get() + 4u * obj->type)};
+        const ps2f size = fromInt(type->size);
+        facing->w = 1.0f;
+        facing->z = (fromInt(128 - (walkTile >> 7)) - ps2f(64.0f)) - size / ps2f(2.0f);
+        facing->y = 0.0f;
+        facing->x = (fromInt(walkTile & 0x7F) - ps2f(64.0f)) + size / ps2f(2.0f);
+        position->w = 1.0f;
+        position->z = person->z;
+        position->y = 0.0f;
+        position->x = person->x;
+        vf(4) = load(facing);
+        vf(5) = load(position);
+        set(vf(4), sub(vf(4), vf(5)), XYZW);
+        store(facing, vf(4));
+        vf(1) = load(facing);
+        set(vf(2), mul(vf(1), vf(1)), XYZW);
+        set(vf(2), add(vf(2), lane(vf(2), 1)), X);
+        set(vf(2), add(vf(2), lane(vf(2), 2)), X);
+        q() = rsqrt(x(vf(2)));
+        set(vf(2), mul(vf(1), _mm_set1_ps(q())), XYZ);
+        store(facing, vf(2));
+        Mat4_Copy(matrix, GuestPtr<Vec4>{globals::kIdentityMatrix});
+        const ps2f fz = facing->z, fx = facing->x;
+        matrix[0].x = -fz;
+        matrix[0].z = fx;
+        matrix[2].x = -fx;
+        matrix[2].z = -fz;
+        const ps2f walkSpeed = GuestPtr<PersonClass>{cls.address}->walkSpeed;
+        ps2f step = ps2f(8.0f) * -(walkSpeed + fromInt(person->index & 3) / ps2f(2000.0f));
+        if ((person->flags & 0x80u) != 0)
+            step = step * ps2f(2.0f);
+        const GuestPtr<Vec4> walkStep{globals::kWalkStep};
+        walkStep->z = step;
+        for (int row = 0; row < 4; ++row)
+            vf(1 + row) = load(matrix + row);
+        vf(5) = load(walkStep);
+        set(acc(), mul(vf(1), lane(vf(5), 0)), XYZW);
+        set(acc(), add(acc(), mul(vf(2), lane(vf(5), 1))), XYZW);
+        set(acc(), add(acc(), mul(vf(3), lane(vf(5), 2))), XYZW);
+        set(vf(9), add(acc(), mul(vf(4), lane(vf(5), 3))), XYZW);
+        store(moved, vf(9));
+        person->x = person->x + moved->x;
+        person->z = person->z + moved->z;
+        if ((person->flags & 0x800u) == 0)
+        {
+            const int x = sdk::fptosi(ps2f(64.0f) + person->x);
+            const int z = sdk::fptosi(ps2f(64.0f) - person->z);
+            if (tile != x + z * 128)
+                Map_UnlinkPersonFromTile(city->map, tile, person->index);
+        }
+        person->heading = sdk::atan2f(-facing->x, -facing->z);
+    }
+
+    // event: inserts the two-byte entry `id` (event type, data byte) into level `level` of the queue, searching
+    // from `start` within the level for the first entry whose type has no lower priority; the later levels' starts
+    // move up one entry. The queue keeps nine level starts (in entries; the ninth is the entry count) and the
+    // entries from +0x24.
+    void EventQueue_InsertByPriority(int queue, GuestPtr<uint8_t> id, int level, int start)
+    {
+        const GuestPtr<int32_t> levels{static_cast<uint32_t>(queue)};
+        const uint32_t entries = static_cast<uint32_t>(queue) + 0x24u;
+        const auto priority = [](uint8_t type) { return port::load<int8_t>(globals::eventTypes.get() + 0x4Cu * type + 0x22u); };
+        uint32_t slot = entries + 2u * static_cast<uint32_t>(levels[level] + start);
+        const uint32_t end = entries + 2u * static_cast<uint32_t>(levels[level + 1]);
+        const int8_t own = priority(id[0]);
+        while (slot < end && priority(port::load<uint8_t>(slot)) < own)
+            slot += 2u;
+        const int bytes = static_cast<int32_t>(entries + 2u * static_cast<uint32_t>(levels[8]) - slot) / 2 * 2;
+        sdk::memmove(slot + 2u, slot, bytes);
+        port::store<uint8_t>(slot, id[0]);
+        port::store<uint8_t>(slot + 1u, id[1]);
+        for (int l = level + 1; l < 9; ++l)
+            ++levels[l];
+    }
+
+    // char: whether someone with a higher index stands within 0.25 of `person` on the tile it would step onto.
+    // The list is walked in index order: the first lower or equal index ends the search.
+    int Person_ProbeTile(GuestPtr<CharClass>, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, uint32_t tile)
+    {
+        port::GuestLocal<uint16_t> cursor; // declared first: the offset lands on the original's stack slot
+        port::GuestLocal<Vec4> offset;
+        const int t = static_cast<int32_t>(tile);
+        *cursor = Map_GetTileObject(city->map, t % 128, t / 128)->firstPerson;
+        while (const GuestPtr<MapPerson> other = People_Next(city->map, cursor))
+        {
+            if (!(person->index < other->index))
+                return 0;
+            if (groundDistance(*person, *other, offset) <= ps2f(0.25f))
+                return 1;
+        }
+        return 0;
+    }
+
+    // char: whether, on the tile (x, z) or the eight around it, someone with a higher index who is outdoors and
+    // whose character class has flag 1 stands within 0.8 of `person`.
+    int Char_CheckNeighbourTile(GuestPtr<CharClass>, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, int x, int z)
+    {
+        port::GuestLocal<uint16_t> cursor;
+        port::GuestLocal<Vec4> offset;
+        for (uint32_t i = 0; i < 9; ++i)
+        {
+            const int stepX = port::load<int32_t>(globals::kNeighbourStepX + 4u * i);
+            const int stepZ = port::load<int32_t>(globals::kNeighbourStepZ + 4u * i);
+            *cursor = Map_GetTileObject(city->map, x + stepX, z + stepZ)->firstPerson;
+            for (;;)
+            {
+                GuestPtr<MapPerson> other;
+                do
+                    other = People_Next(city->map, cursor);
+                while (other && (other->index == person->index || (charClassOf(*other)->flags & 1u) == 0));
+                if (!other)
+                    break;
+                if (person->index < other->index && other->inside != kNoObject &&
+                    groundDistance(*person, *other, offset) <= ps2f(0.8f))
+                    return 1;
+            }
+        }
+        return 0;
+    }
+
     PORT_FN(BaseObject_ctor);
     PORT_FN(Pair_ctor);
     PORT_FN(Player_GetMatrix);
@@ -553,6 +864,7 @@ namespace mm
     PORT_FN(McQueue_GetResult);
     PORT_FN(McManager_ResetState);
     PORT_FN(Camera_SetFogRange);
+    PORT_FN(Camera_UpdateProjection);
     PORT_FN(McQueue_IsDone);
     PORT_FN(FileQueue_IsDone);
     PORT_FN(StatusByte_ctorE0);
@@ -588,4 +900,11 @@ namespace mm
     PORT_FN(Stamina_Tick);
     PORT_FN(CityCamera_GetZoomLevel);
     PORT_FN(Person_TargetWork);
+    PORT_FN(Person_FindBuildingInList);
+    PORT_FN(Player_Turn);
+    PORT_FN(EvThreeUnsatisfied_Check);
+    PORT_FN(Person_UpdatePose);
+    PORT_FN(EventQueue_InsertByPriority);
+    PORT_FN(Person_ProbeTile);
+    PORT_FN(Char_CheckNeighbourTile);
 }

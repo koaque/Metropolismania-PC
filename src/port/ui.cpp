@@ -392,15 +392,16 @@ namespace mm
         return frame;
     }
 
-    // Colour components outside 0..0xFFFF zero their pair (r with b, g with a).
-    void Frame_SetColor(GuestPtr<Frame> frame, int r, int g, int b, int a)
+    // The frame's corners in GS units, (x0, y0) top left and (x1, y1) bottom right. When either x (or either
+    // y) is outside 0..0xFFFF, both become 0.
+    void Frame_SetCorners(GuestPtr<Frame> frame, int x0, int y0, int x1, int y1)
     {
-        if (r < 0 || b < 0 || r > 0xFFFF || b > 0xFFFF)
-            r = b = 0;
-        if (g < 0 || a < 0 || g > 0xFFFF || a > 0xFFFF)
-            g = a = 0;
-        frame->cornerA = static_cast<uint32_t>(r) | (static_cast<uint32_t>(g) << 16);
-        frame->cornerB = static_cast<uint32_t>(b) | (static_cast<uint32_t>(a) << 16);
+        if (x0 < 0 || x1 < 0 || x0 > 0xFFFF || x1 > 0xFFFF)
+            x0 = x1 = 0;
+        if (y0 < 0 || y1 < 0 || y0 > 0xFFFF || y1 > 0xFFFF)
+            y0 = y1 = 0;
+        frame->cornerA = static_cast<uint32_t>(x0) | (static_cast<uint32_t>(y0) << 16);
+        frame->cornerB = static_cast<uint32_t>(x1) | (static_cast<uint32_t>(y1) << 16);
     }
 
     // The cursor's info window for this frame: its packet and info lines, then either the extra packet over
@@ -411,13 +412,13 @@ namespace mm
             return;
         const uint32_t parity = port::load<uint32_t>(0x001BDCD0u) & 1u;
         const GuestPtr<CityCursorView> view = GuestPtr<CityCursorView>::of(cursor->views[parity]);
-        Dma_AppendCall(static_cast<int>(view->packet));
+        Dma_AppendCall(static_cast<int>(view->frame.address));
         // lineCount is not checked against 5, so the lines are read as guest addresses like the original.
-        const GuestPtr<uint32_t> lines{view.address}, linePackets{view.address + 0x14u};
+        const GuestPtr<uint32_t> lines{view.address}, lineFrames{view.address + 0x14u};
         for (int i = 0; i < cursor->lineCount; ++i)
         {
             TextBox_Draw(GuestPtr<TextBox>{lines[i]});
-            Dma_AppendCall(static_cast<int>(linePackets[i]));
+            Dma_AppendCall(static_cast<int>(lineFrames[i]));
         }
         if (cursor->mode == 4)
         {
@@ -428,9 +429,59 @@ namespace mm
         {
             DmaList_QueueFade(0x40, 0);
             const int top = cursor->frameY - cursor->frameStep * 16;
-            Frame_SetColor(view->fadeFrame, cursor->frameX, top, cursor->frameX + 0x180, top + 0xC0);
+            Frame_SetCorners(view->fadeFrame, cursor->frameX, top, cursor->frameX + 0x180, top + 0xC0);
             Dma_AppendCall(static_cast<int>(view->fadeFrame.address));
         }
+    }
+
+    // Places the info window next to the projected cursor point (GS units, 4 fraction bits): x kept within
+    // 0x7080..0x9140, the lines stacked upwards from 24 pixels above it, or from 12 pixels below it when they
+    // would run off the top (y 0x7A60 at least), and kept above y 0x8700 at the bottom. The fade frame goes 0x6C0
+    // to the left, each line's frame behind its text, and the window frame from the point 0x180 to the left.
+    void CityCursor_LayoutInfo(GuestPtr<CityCursor> cursor, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix)
+    {
+        port::GuestLocal<Vec4> screen;
+        const uint32_t sx = screen.ptr().address, sy = sx + 4u;
+        Math_ProjectPoint(static_cast<int>(cursor.address), screen, point, matrix);
+        int x = port::load<int32_t>(sx);
+        x = x < 0x7080 ? 0x7080 : x > 0x9140 ? 0x9140 : x;
+        port::store<int32_t>(sx, x);
+        const int column = (x & 0xFFF0);
+        cursor->frameX = column - 0x6C0;
+        const int pixelY = port::load<int32_t>(sy) / 16;
+        cursor->frameY = (pixelY - 24) * 16;
+        int windowTop = pixelY - 12;
+        int lineY = pixelY - 24;
+        const int lines = cursor->lineCount;
+        if (windowTop - lines * 12 < 0x7A6)
+        {
+            if (windowTop < 0x7A6)
+                port::store<int32_t>(sy, 0x7A60);
+            const int below = port::load<int32_t>(sy) / 16;
+            windowTop = below + 12;
+            lineY = below + lines * 12;
+            cursor->frameY = lineY * 16;
+        }
+        else if (windowTop >= 0x865)
+        {
+            port::store<int32_t>(sy, 0x8700);
+            windowTop = 0x864;
+            lineY = 0x864 - lines * 12;
+            cursor->frameY = lineY * 16;
+        }
+        const uint32_t parity = port::load<uint32_t>(0x001BDCD0u) & 1u;
+        const GuestPtr<CityCursorView> view = GuestPtr<CityCursorView>::of(cursor->views[parity]);
+        // As in CityCursor_Draw, lineCount is not checked against 5.
+        const GuestPtr<uint32_t> lineText{view.address}, lineFrames{view.address + 0x14u};
+        int y = lineY << 4;
+        for (int i = 0; i < cursor->lineCount; ++i)
+        {
+            TextBox_SetPos(GuestPtr<TextBox>{lineText[i]}, column - 0x400, y, -0x100000);
+            Frame_SetCorners(GuestPtr<Frame>{lineFrames[i]}, column - 0x580, y, column - 0x400, y + 0xC0);
+            y -= 0xC0;
+        }
+        x = port::load<int32_t>(sx);
+        Frame_SetCorners(view->frame, x - 0x180, windowTop << 4, x, port::load<int32_t>(sy));
     }
 
     void CityCursor_SetTarget(GuestPtr<CityCursor> cursor, uint16_t kind, int id, GuestPtr<Vec4> position)
@@ -517,6 +568,303 @@ namespace mm
         return pause;
     }
 
+    // The pause menu: the window (node 0 of the shared window model, scaled by 4) slides from its closed to its
+    // open position as the menu opens (+0x2C reaching 120), then the slot list while picking a slot (state 4)
+    // or else the main menu, then the message box.
+    void PauseMenu_Draw(GuestPtr<PauseMenu> pause)
+    {
+        const GuestPtr<A3DObject> window = globals::menuWindowModel.get();
+        const ps2f t = pause->openTime / ps2f(120.0f);
+        const ps2f rest = ps2f(1.0f) - t;
+        const GuestPtr<Vec4> open{globals::kPauseWindowOpen}, closed{globals::kPauseWindowClosed};
+        const GuestPtr<Vec4> matrix{port::load<uint32_t>(window->model.address + 8u) + 0x70u};
+        matrix[3].x = rest * closed->x + t * open->x;
+        matrix[3].y = rest * closed->y + t * open->y;
+        matrix[3].z = rest * closed->z + t * open->z;
+        matrix[3].w = 1.0f;
+        matrix[2].z = 4.0f;
+        matrix[1].y = 4.0f;
+        matrix[0].x = 4.0f;
+        A3DObject_DrawNode(window, 0);
+        if (pause->state == 4 && pause->slotMenu)
+            ListMenu_Draw(pause->slotMenu);
+        else if (pause->mainMenu)
+            ListMenu_Draw(pause->mainMenu);
+        if (pause->message)
+            TextBox_Draw(pause->message);
+    }
+
+    namespace
+    {
+        // Node `node` of the model, unrotated and unscaled at (x, y, z).
+        void placeNode(GuestPtr<A3DObject> model, int node, ps2f x, ps2f y, ps2f z)
+        {
+            const GuestPtr<Vec4> matrix{port::load<uint32_t>(model->model.address + 8u) + static_cast<uint32_t>(node) * 0xC0u + 0x70u};
+            Mat4_Copy(matrix, GuestPtr<Vec4>{globals::kIdentityMatrix});
+            matrix[3].x = x;
+            matrix[3].y = y;
+            matrix[3].z = z;
+        }
+    }
+
+    // The status panel: in the detail view, node 0x15 of the detail model with the four text boxes, then node 0
+    // and one more node per mark; then the panel model after a depth clear and, during an alert, the flashing
+    // packet and the alert model.
+    void StatusPanel_Draw(GuestPtr<StatusPanel> panel)
+    {
+        if (panel->detail != 0)
+        {
+            placeNode(panel->detailModel, 0x15, 0.18f, -0.04f, -4.28f);
+            A3DObject_DrawNode(panel->detailModel, 0x15);
+            for (int i = 0; i < 4; ++i)
+                TextBox_Draw(panel->text[i]);
+            placeNode(panel->detailModel, 0, 0.145f, 0.14f, -4.4f);
+            A3DObject_DrawNode(panel->detailModel, 0);
+            for (int i = 0; i < panel->markCount; ++i)
+            {
+                placeNode(panel->detailModel, i + 1, 0.145f, 0.14f, -4.4f);
+                A3DObject_DrawNode(panel->detailModel, i + 1);
+            }
+        }
+        DmaList_QueueClearZ();
+        Dma_AppendCall(static_cast<int>(panel->panelPacket));
+        A3DObject_Draw(panel->model);
+        if (panel->alert == 0)
+            return;
+        // The colours move one entry along. The copy runs downwards through the table it reads from, so, as in
+        // the original, entry 0's colour drops out and entries 0 and 1 both take entry 14's.
+        int dest = 0;
+        for (int source = 14; source >= 0; --source)
+        {
+            port::store<uint32_t>(globals::kAlertColours + 4u * static_cast<uint32_t>(dest),
+                                  port::load<uint32_t>(globals::kAlertColours + 4u * static_cast<uint32_t>(source)));
+            if (--dest < 0)
+                dest = 14;
+        }
+        Dma_AppendCall(static_cast<int>(panel.address));
+        A3DObject_Draw(panel->alertModel);
+    }
+
+    // title: the logo's three letters bounce in turn (a size step every 5 frames from the 8-step table) and hop
+    // to the next of five places every 40 frames. The third letter waits for frame 11 and stops at 185. Returns
+    // 1 once 200 frames have passed.
+    int Title_LogoLetters(GuestPtr<SceneA> scene)
+    {
+        ++scene->introFrame;
+        if (scene->introFrame >= 200)
+            return 1;
+        const int step = scene->introFrame % 40 / 5;
+        for (uint32_t i = 0; i < 3; ++i)
+        {
+            if (i == 2 && scene->introFrame < 11)
+                return 0;
+            if (i == 2 && scene->introFrame >= 185)
+                break;
+            const uint16_t size = port::load<uint16_t>(globals::kLogoLetterSteps + 0x10u * i + 2u * static_cast<uint32_t>(step));
+            if (size == 0)
+                continue;
+            const uint32_t place = globals::kLogoLetterPlaces + 0x14u * i + 4u * static_cast<uint32_t>(scene->introFrame / 40 % 5);
+            int x = port::load<uint16_t>(place), y = port::load<uint16_t>(place + 2u);
+            ps2f scale = 1.0f;
+            if (size == 1)
+            {
+                scale = 0.6f;
+                x += 4;
+                y += 4;
+            }
+            else if (size == 2)
+            {
+                scale = 0.8f;
+                x += 2;
+                y += 2;
+            }
+            TexSprite_SetPosScale(scene->logoLetters[i], x, y, 0x3F00, scale, scale);
+            TexSprite_Draw(scene->logoLetters[i]);
+        }
+        return 0;
+    }
+
+    // title: the menu choices. The selected one pulses (scale up to 1.09 over 10 frames and back, moving left
+    // and up with it) and the other is drawn at 0.6; with a single choice only the first is shown. Returns 1
+    // once the 20-frame pulse is over (then it rests at scale 1).
+    int Title_DrawChoices(GuestPtr<SceneA> scene)
+    {
+        const int frame = scene->pulseFrame;
+        int dx;
+        ps2f scale;
+        if (frame < 10)
+        {
+            dx = -frame;
+            scale = ps2f(1.0f) + fromInt(frame) / ps2f(100.0f);
+        }
+        else
+        {
+            dx = frame % 10 - 9;
+            scale = ps2f(1.09f) - fromInt(frame % 10) / ps2f(100.0f);
+        }
+        const int dy = dx / 2;
+        if (scene->choiceCount == 1 && scene->choice == 0)
+        {
+            TexSprite_SetPosScale(scene->choices[0], dx + 0xBE, dy + 0x154, 0x3F00, scale, scale);
+            TexSprite_Draw(scene->choices[0]);
+        }
+        else if (scene->choice == 0)
+        {
+            TexSprite_SetPosScale(scene->choices[0], dx + 0xBE, dy + 0x13C, 0x3F00, scale, scale);
+            TexSprite_SetPosScale(scene->choices[1], 0xF0, 0x178, 0x3F00, 0.6f, 0.6f);
+            TexSprite_Draw(scene->choices[0]);
+            TexSprite_Draw(scene->choices[1]);
+        }
+        else
+        {
+            TexSprite_SetPosScale(scene->choices[0], 0xF0, 0x146, 0x3F00, 0.6f, 0.6f);
+            TexSprite_SetPosScale(scene->choices[1], dx + 0xBE, dy + 0x168, 0x3F00, scale, scale);
+            TexSprite_Draw(scene->choices[0]);
+            TexSprite_Draw(scene->choices[1]);
+        }
+        ++scene->pulseFrame;
+        if (scene->pulseFrame < 20)
+            return 0;
+        scene->choicePulsing = 0;
+        --scene->pulseFrame;
+        return 1;
+    }
+
+    namespace
+    {
+        // One frame of a list move: the cursor bar moves 4 pixels, or, at the top or bottom of the shown
+        // items, the list scrolls; the last frame takes what is left of the step.
+        void stepListMove(GuestPtr<ListMenu> menu)
+        {
+            if (menu->scrollStep > 0) // up
+            {
+                menu->scrollStep -= 4;
+                if (menu->cursorY > 0)
+                {
+                    menu->cursorY -= 4;
+                    if (menu->scrollStep < 0)
+                    {
+                        menu->cursorY -= menu->scrollStep;
+                        menu->scrollStep = 0;
+                    }
+                }
+                else
+                {
+                    menu->cursorY = 0;
+                    if (menu->scroll < 0)
+                    {
+                        menu->scroll += 4;
+                        if (menu->scrollStep < 0)
+                        {
+                            menu->scroll += menu->scrollStep;
+                            menu->scrollStep = 0;
+                        }
+                    }
+                    else
+                    {
+                        menu->scroll = 0;
+                        menu->scrollStep = 0;
+                    }
+                }
+                return;
+            }
+            menu->scrollStep += 4; // down
+            const int shown = menu->itemCount < menu->visibleItems ? menu->itemCount : menu->visibleItems;
+            const int lastY = (shown - 1) * menu->itemHeight;
+            if (menu->cursorY < lastY)
+            {
+                menu->cursorY += 4;
+                if (menu->scrollStep > 0)
+                {
+                    menu->cursorY += menu->scrollStep;
+                    menu->scrollStep = 0;
+                }
+                return;
+            }
+            menu->cursorY = lastY;
+            const int lowest = menu->itemHeight * (menu->visibleItems - menu->itemCount);
+            if (lowest < menu->scroll)
+            {
+                menu->scroll -= 4;
+                if (menu->scrollStep > 0)
+                {
+                    menu->scroll -= menu->scrollStep;
+                    menu->scrollStep = 0;
+                }
+            }
+            else
+            {
+                menu->scroll = lowest;
+                menu->scrollStep = 0;
+            }
+        }
+    }
+
+    // A list's input for one frame. *choice is the item under the cursor. While a move is under way it goes on;
+    // otherwise a cursor past the end goes to the last item, then Cross selects (returns 1, if allowed),
+    // Triangle cancels (*choice = -1, returns 1, if allowed), and up or down (with key repeat) start a move of
+    // one item, with a sound.
+    int ListMenu_HandleInput(GuestPtr<ListMenu> menu, GuestPtr<int32_t> choice)
+    {
+        if (menu->itemCount == 0)
+            return 0;
+        *choice = divide(menu->cursorY - menu->scroll, menu->itemHeight);
+        if (menu->scrollStep != 0)
+        {
+            stepListMove(menu);
+            return 0;
+        }
+        const int count = menu->itemCount;
+        if (*choice >= count)
+        {
+            if (count - 1 < menu->visibleItems)
+            {
+                menu->scroll = 0;
+                menu->cursorY = (menu->itemCount - 1) * menu->itemHeight;
+            }
+            else
+            {
+                menu->scroll = menu->itemHeight * (menu->visibleItems - count);
+                menu->cursorY = (menu->visibleItems - 1) * menu->itemHeight;
+            }
+        }
+        if ((Pad_Pressed(0) & 0x40u) != 0) // Cross
+        {
+            if (menu->canSelect == 0)
+                return 0;
+            Pad_ClearBit40();
+            Sound_PlaySe(1, 0, 0x3C, 0.0f, 0.0f);
+            return 1;
+        }
+        if ((Pad_Pressed(0) & 0x10u) != 0) // Triangle
+        {
+            if (menu->canCancel == 0)
+                return 0;
+            Sound_PlaySe(2, 0, 0x3C, 0.0f, 0.0f);
+            *choice = -1;
+            return 1;
+        }
+        if ((Pad_GetRepeat() & 0x1000) != 0) // up
+        {
+            if (menu->cursorY > 0 || menu->scroll < 0)
+            {
+                menu->scrollStep = menu->itemHeight;
+                Sound_PlaySe(0, 0, 0x3C, 0.0f, 0.0f);
+            }
+            return 0;
+        }
+        if ((Pad_GetRepeat() & 0x4000) != 0) // down
+        {
+            const int shown = menu->itemCount < menu->visibleItems ? menu->itemCount : menu->visibleItems;
+            if (menu->cursorY < (shown - 1) * menu->itemHeight || menu->itemHeight * (menu->visibleItems - menu->itemCount) < menu->scroll)
+            {
+                menu->scrollStep = -menu->itemHeight;
+                Sound_PlaySe(0, 0, 0x3C, 0.0f, 0.0f);
+            }
+        }
+        return 0;
+    }
+
     // Counts the shown notice down and hides it when the time is up.
     void Notice_Tick(GuestPtr<Notice> notice)
     {
@@ -555,7 +903,7 @@ namespace mm
     PORT_FN(TexSprite_SetAlpha);
     PORT_FN(TexSprite_GreenToAlpha);
     PORT_FN(Frame_SetRect);
-    PORT_FN(Frame_SetColor);
+    PORT_FN(Frame_SetCorners);
     PORT_FN(Frame_ctor);
     PORT_FN(CityCursor_SetTarget);
     PORT_FN(CityCursor_Draw);
@@ -567,4 +915,10 @@ namespace mm
     PORT_FN(Minimap_ctor);
     PORT_FN(Minimap_Draw);
     PORT_FN(PauseMenu_ctor);
+    PORT_FN(PauseMenu_Draw);
+    PORT_FN(StatusPanel_Draw);
+    PORT_FN(Title_LogoLetters);
+    PORT_FN(CityCursor_LayoutInfo);
+    PORT_FN(Title_DrawChoices);
+    PORT_FN(ListMenu_HandleInput);
 }

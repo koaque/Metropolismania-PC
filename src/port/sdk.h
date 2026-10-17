@@ -11,7 +11,10 @@ namespace mm::sdk
     namespace addr
     {
         inline constexpr uint32_t abs = 0x0011E810u;
+        inline constexpr uint32_t atan2f = 0x0011A2C0u;
+        inline constexpr uint32_t fmodf = 0x0011A2D8u;
         inline constexpr uint32_t fptosi = 0x00127828u;
+        inline constexpr uint32_t sinf = 0x0011A1A8u;
         inline constexpr uint32_t memcpy = 0x00121B90u;
         inline constexpr uint32_t memmove = 0x00121C40u;
         inline constexpr uint32_t memset = 0x00121D48u;
@@ -24,6 +27,11 @@ namespace mm::sdk
         inline constexpr uint32_t sceVu0NormalLightMatrix = 0x00105220u;
         inline constexpr uint32_t sceVu0LightColorMatrix = 0x001052E0u;
     }
+
+    // libm.
+    inline ps2f atan2f(ps2f y, ps2f x) { return port::callGuest<ps2f>(addr::atan2f, y, x); }
+    inline ps2f fmodf(ps2f x, ps2f y) { return port::callGuest<ps2f>(addr::fmodf, x, y); }
+    inline ps2f sinf(ps2f x) { return port::callGuest<ps2f>(addr::sinf, x); }
 
     // Float to int conversion helper of the compiler runtime.
     inline int fptosi(ps2f value) { return port::callGuest<int>(addr::fptosi, value); }

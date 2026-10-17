@@ -36,6 +36,7 @@ typedef struct ApplicantEntry ApplicantEntry;
 typedef struct Markers Markers;
 typedef struct Notice Notice;
 typedef struct TownPages TownPages;
+typedef struct TownPagesIndex TownPagesIndex;
 typedef struct EventData EventData;
 typedef struct CharClass CharClass;
 typedef struct PersonClass PersonClass;
@@ -70,12 +71,12 @@ struct Frame {
     uint8_t unk_00[0x50];
     float stA[2];              /* +0x50 texture S, T of the top left (mm_Frame_SetStyle) */
     uint8_t unk_58[8];
-    uint32_t cornerA;          /* +0x60 GS XY of the top left (mm_Frame_SetRect), or colour bytes (mm_Frame_SetColor) */
+    uint32_t cornerA;          /* +0x60 GS XY of the top left (mm_Frame_SetRect, mm_Frame_SetCorners) */
     uint32_t colourA;          /* +0x64 (mm_Frame_ctor) */
     uint8_t unk_68[8];
     float stB[2];              /* +0x70 texture S, T of the bottom right */
     uint8_t unk_78[8];
-    uint32_t cornerB;          /* +0x80 GS XY of the bottom right, or colour bytes */
+    uint32_t cornerB;          /* +0x80 GS XY of the bottom right */
     uint32_t colourB;          /* +0x84 */
     uint8_t unk_88[0x18];
     int32_t style;             /* +0xA0 icon cell of the frame texture (mm_Frame_SetStyle) */
@@ -95,7 +96,8 @@ struct A3DObject {
 };
 /* Camera (0x310 bytes). */
 struct Camera {
-    uint8_t unk_000[0x10];
+    uint32_t packet;           /* +0x000 VU1 packet: uploads +0x010..+0x12F to VU1 address 0 (mm_Camera_BuildPacket) */
+    uint8_t unk_004[0xC];
     Vec4 worldScreenA[4];      /* +0x010 view x screenA (mm_Camera_UpdateMatrices) */
     Vec4 worldScreenB[4];      /* +0x050 view x screenB */
     Vec4 normalLight[4];       /* +0x090 sceVu0NormalLightMatrix of lightDir (mm_Camera_UpdateLightMatrices) */
@@ -108,11 +110,22 @@ struct Camera {
     Vec4 lightDir[3];          /* +0x160 */
     Vec4 lightRgb[3];          /* +0x190 */
     Vec4 ambient;              /* +0x1C0 */
-    uint8_t unk_1D0[0x10];
+    float viewWidth;           /* +0x1D0 (mm_Camera_UpdateProjection) */
+    float viewHeight;          /* +0x1D4 */
+    uint8_t unk_1D8[8];
     Vec4 view[4];              /* +0x1E0 world to camera (sceVu0CameraMatrix) */
     Vec4 screenA[4];           /* +0x220 */
     Vec4 screenB[4];           /* +0x260 */
-    uint8_t unk_2A0[0x64];
+    Vec4 screenC[4];           /* +0x2A0 view size to screen scale (mm_Camera_UpdateProjection) */
+    float distance;            /* +0x2E0 projection distance */
+    float scaleX;              /* +0x2E4 */
+    float scaleY;              /* +0x2E8 */
+    float centreX;             /* +0x2EC screen centre */
+    float centreY;             /* +0x2F0 */
+    float depthMax;            /* +0x2F4 depth range (provisional) */
+    float depthMin;            /* +0x2F8 */
+    float zNear;               /* +0x2FC */
+    float zFar;                /* +0x300 */
     float fogFar;              /* +0x304 */
     float fogNear;             /* +0x308 */
     uint8_t unk_30C[4];
@@ -151,15 +164,24 @@ struct InstanceSlot {
 /* One parity's half of the city cursor (0xD0 bytes): info lines, packets and the fade frame. */
 struct CityCursorView {
     TextBox *lines[5];         /* +0x00 */
-    uint32_t linePackets[5];   /* +0x14 */
-    uint32_t packet;           /* +0x28 cursor packet */
+    Frame *lineFrames[5];      /* +0x14 a frame behind each line (a frame's packet starts the frame) */
+    Frame *frame;              /* +0x28 the info window's frame */
     Frame *fadeFrame;          /* +0x2C */
     uint8_t extraPacket[0xA0]; /* +0x30 drawn in mode 4 */
 };
-/* Light set (0x1B0 bytes). */
+/* Light set (0x1B0 bytes): two light groups of 0xC0 bytes at +0x10 and +0xD0, coloured by the clock
+   (mm_LightSet_UpdateByClock). */
 struct LightSet {
     void *unk_00;              /* +0x00 object whose +0x20 mm_LightSet_SetField20 sets */
-    uint8_t unk_04[0x1AC];
+    uint8_t unk_04[0x1C];
+    Vec4 colourA;              /* +0x20 from the table 0x1B0550 */
+    uint8_t unk_30[0x10];
+    Vec4 paramsA;              /* +0x40 (4, 1, 1, 2) */
+    uint8_t unk_50[0x90];
+    Vec4 colourB;              /* +0xE0 from the table 0x1B0670 */
+    Vec4 colourB2;             /* +0xF0 copy of colourB */
+    Vec4 paramsB;              /* +0x100 (4, 1, 1, 2) */
+    uint8_t unk_110[0xA0];
 };
 /* List menu item (0xC bytes). */
 struct ListMenuItem {
@@ -184,10 +206,13 @@ struct ListMenu {
     int32_t cursorDy;          /* +0x278 */
     int32_t cursorY;           /* +0x27C */
     int32_t depth;             /* +0x280 GS Z of the item texts */
-    uint8_t unk_284[8];
+    int32_t scrollStep;        /* +0x284 pixels the cursor or list still moves, 4 per frame (> 0 up, < 0 down) */
+    int32_t unk_288;
     int32_t nextItem;          /* +0x28C item the next mm_ListMenu_SetItemText(-1) fills */
     int32_t itemCount;         /* +0x290 */
-    uint8_t unk_294[0xC];
+    int32_t canCancel;         /* +0x294 Triangle cancels (mm_ListMenu_HandleInput) */
+    int32_t canSelect;         /* +0x298 Cross selects */
+    int32_t unk_29C;
 };
 /* Loading screen (0x28 bytes). */
 struct LoadingScreen {
@@ -214,7 +239,19 @@ struct McManager {
 /* Name entry window (0x124 bytes). */
 struct NameEntry { uint8_t data[0x124]; };
 /* Scene A: logos, memory card check, title (0x104 bytes). */
-struct SceneA { uint8_t data[0x104]; };
+struct SceneA {
+    uint8_t unk_00[0x10];
+    TexSprite *logoLetters[3]; /* +0x10 the title logo's three bouncing letters (mm_Title_LogoLetters) */
+    TexSprite *choices[2];     /* +0x1C the title menu's two choices (mm_Title_DrawChoices) */
+    uint8_t unk_24[0x18];
+    int32_t choice;            /* +0x3C selected choice */
+    int32_t choicePulsing;     /* +0x40 cleared when the selected choice's pulse ends */
+    int32_t choiceCount;       /* +0x44 (provisional) 1: only the first choice is shown */
+    int32_t pulseFrame;        /* +0x48 0..19 */
+    uint8_t unk_4C[0x8C];
+    int32_t introFrame;        /* +0xD8 frames since the logo intro started */
+    uint8_t unk_DC[0x28];
+};
 /* Player's bag (0x1AC bytes). */
 /* Bag item slot (0x10 bytes). */
 struct BagSlot {
@@ -244,9 +281,29 @@ struct Bag {
     uint8_t unk_1A8[4];
 };
 /* Status panel (0xC0 bytes). */
-struct StatusPanel { uint8_t data[0xC0]; };
+struct StatusPanel {
+    uint8_t packet[0x90];      /* +0x00 GS packet of the flashing alert (colours cycled in the table 0x1AF370) */
+    A3DObject *model;          /* +0x90 panel model (from 0x1F3B0C) */
+    A3DObject *alertModel;     /* +0x94 drawn with the alert packet (from 0x1F3B00) */
+    A3DObject *detailModel;    /* +0x98 */
+    uint32_t panelPacket;      /* +0x9C appended before the panel model (mm_StatusPanel_BuildPacket) */
+    TextBox *text[4];          /* +0xA0 the detail view's text boxes */
+    int32_t detail;            /* +0xB0 the detail view is shown */
+    int32_t alert;             /* +0xB4 */
+    int32_t markCount;         /* +0xB8 detail model nodes 1.. drawn */
+    int32_t unk_BC;
+};
 /* Pause and save menu (0x99C bytes). */
-struct PauseMenu { uint8_t data[0x99C]; };
+struct PauseMenu {
+    int32_t state;             /* +0x00 4: picking a save slot (mm_PauseMenu_StateSlotSelect) */
+    ListMenu *mainMenu;        /* +0x04 */
+    ListMenu *slotMenu;        /* +0x08 */
+    int32_t unk_0C;
+    TextBox *message;          /* +0x10 */
+    uint8_t unk_14[0x18];
+    float openTime;            /* +0x2C rises by 10 per frame; the window is fully in at 120 */
+    uint8_t unk_30[0x96C];     /* +0x30 starts with the save name, default from 0x1B73D0 (Shift-JIS) */
+};
 /* Minimap (0x21DC bytes). */
 struct Minimap {
     uint8_t cells[0x2000];     /* +0x0000 one nibble per tile (mm_Minimap_Plot) */
@@ -326,7 +383,7 @@ struct Player {
     int32_t mode;              /* +0x00 0 turn, 1 walk (Cross lays road), 2 place for applicant, 5 place bag item */
     int32_t previousMode;      /* +0x04 mm_Player_SetMode(-1) returns to it */
     int32_t unk_08;            /* +0x08 */
-    int32_t unk_0C;
+    float heading;             /* +0x0C radians, -pi..pi (mm_Player_Turn) */
     Vec4 position;             /* +0x10 */
     uint8_t unk_20[0x14];
     float swayPhase;           /* +0x34 passed to mm_Instance_DrawSwayingIfRoom */
@@ -337,7 +394,8 @@ struct Player {
     int32_t unk_48;            /* +0x48 */
     float jumpSpeed;           /* +0x4C */
     int32_t unk_50;            /* +0x50 */
-    uint8_t unk_54[0x2C];
+    float moveSpeed;           /* +0x54 step per frame (mm_Player_Turn) */
+    uint8_t unk_58[0x28];
     int32_t unk_80;            /* +0x80 */
     int32_t jumps;             /* +0x84 */
     A3DObject *model;          /* +0x88 */
@@ -357,7 +415,12 @@ struct Applicants {
     ApplicantEntry entries[32]; /* +0x000 */
     int32_t count;             /* +0x280 */
     int32_t unk_284;           /* +0x284 */
-    uint8_t unk_288[0x2C];
+    uint8_t unk_288[0xC];
+    TextBox *cardText;         /* +0x294 */
+    uint8_t unk_298[8];
+    void *cardModelA;          /* +0x2A0 positioned by mm_Applicants_PlaceAt (+0x30) */
+    void *cardModelB;          /* +0x2A4 */
+    uint8_t unk_2A8[0xC];
     float unk_2B4;             /* +0x2B4 */
     uint8_t unk_2B8[4];
     int32_t unk_2BC;           /* +0x2BC */
@@ -388,11 +451,36 @@ struct Notice {
     TextBox *text2;            /* +0x0C */
     int32_t unk_10;            /* +0x10 second line shown */
 };
-/* Town's Pages phone book (0x64 bytes). */
+/* Town's Pages index entry (8 bytes), one per family type (mm_TownPages_BuildIndex). */
+struct TownPagesIndex {
+    uint16_t count;            /* +0x00 known families of the type */
+    uint16_t firstFamily;      /* +0x02 the first of them */
+    uint16_t startPage;        /* +0x04 page the type's listing starts on */
+    uint16_t unk_06;
+};
+/* Town's Pages phone book (0x64 bytes): first the contents pages (the family types, 10 per page), then the
+   families, type by type. */
 struct TownPages {
-    uint8_t unk_00[0x40];
+    A3DObject *book;           /* +0x00 book model (from 0x1F3B20) */
+    TextBox *text[6];          /* +0x04 page texts; +0x18 is the list the cursor moves on */
+    int32_t mode;              /* +0x1C 6: no cursor */
+    int32_t unk_20;
+    Vec4 *bookMatrix;          /* +0x24 the book model's matrix */
+    float openTime;            /* +0x28 frames since opening (open at 25) */
+    int32_t page;              /* +0x2C */
+    int32_t savedPage;         /* +0x30 */
+    TownPagesIndex *index;     /* +0x34 */
+    int32_t contentsPages;     /* +0x38 */
+    int32_t pageCount;         /* +0x3C */
     int32_t pageEntries;       /* +0x40 entries on the current page (up to 10) */
-    uint8_t unk_44[0x20];
+    int32_t unk_44;
+    int32_t unk_48;
+    Frame *cursorFrame;        /* +0x4C */
+    int32_t cursorX;           /* +0x50 */
+    int32_t cursorY;           /* +0x54 */
+    int32_t unk_58;
+    int32_t row;               /* +0x5C cursor row on the page */
+    int32_t savedRow;          /* +0x60 */
 };
 /* Per-event handler data (base 0x1C bytes; some handlers use 0x7C), the first argument of every mm_Ev*_ slot. */
 struct EventData { uint8_t data[0x1C]; };
@@ -420,7 +508,8 @@ struct CharClass {
     uint16_t unk_14;           /* +0x14 record byte 13 */
     uint8_t unk_16;            /* +0x16 record byte 2 */
     uint8_t unk_17;
-    uint16_t unk_18;           /* +0x18 record halfword 4 */
+    uint16_t flags;            /* +0x18 record halfword 4; 1: other people keep clear of this one
+                                  (mm_Char_CheckNeighbourTile, mm_Map_FindWorkerOnTile) */
     uint8_t unk_1A[2];
     uint32_t unk_1C;           /* +0x1C record word 0x14 */
     void *vtable;              /* +0x20 */
@@ -466,4 +555,13 @@ struct LayerF {
     uint32_t packet;           /* +0x130 */
     uint8_t unk_134[0xC];
 };
-struct LayerG { uint8_t data[0x2E0]; };
+struct LayerG {
+    uint8_t unk_000[0x60];
+    Vec4 wavesA[12];           /* +0x060 wave points: x sways, y scrolls (mm_LayerG_AnimateWaves) */
+    Vec4 wavesB[12];           /* +0x120 second set, swaying the other way, scrolling back */
+    uint8_t unk_1E0[0x10];
+    Vec4 waveParamsA;          /* +0x1F0 (1, phase - pi/2, 1/pi, pi) */
+    Vec4 waveParamsB;          /* +0x200 (0.06 * direction, weather, phase, 0) */
+    uint8_t unk_210[0x10];
+    Vec4 waveBase[12];         /* +0x220 the points at rest */
+};

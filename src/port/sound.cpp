@@ -282,21 +282,88 @@ namespace mm
     }
 
     // Plays effect `sound`; sounds flagged 0x10 get the next owner id (wrapping at 0xFF) so they can be
-    // stopped later.
-    // (Callers never read the result; Se_Request leaves v0 unset for sound 0xFF.)
-    void Sound_PlaySe(int sound, int a1, int a2, ps2f angle, ps2f distance)
+    // stopped later. Returns Se_Request's result, which matters: the talk script's actions that end with a
+    // sound (buying goods, adding a want, inviting a family ...) pass it on, and the script adds an action's
+    // result to its line (0 here: no skip). Where Se_Request queues nothing it returns v0 as it found it, so
+    // v0 is first set as the original has it there: the flag test (0), or the new owner id.
+    int Sound_PlaySe(int sound, int a1, int a2, ps2f angle, ps2f distance)
     {
         const uint8_t flags = port::load<uint8_t>(globals::kSoundTable + 0x10u * static_cast<uint32_t>(sound & 0xFF));
         if ((flags & 0x10u) == 0)
         {
-            Se_Request(0, 0, static_cast<uint8_t>(sound), 0, 0, static_cast<uint16_t>(a1), static_cast<uint8_t>(a2), 0, angle, distance);
-            return;
+            port::setGuestV0(0);
+            return Se_Request(0, 0, static_cast<uint8_t>(sound), 0, 0, static_cast<uint16_t>(a1), static_cast<uint8_t>(a2), 0, angle, distance);
         }
         const uint16_t owner = globals::soundNextOwner.get();
         globals::soundNextOwner.set(static_cast<uint16_t>(owner + 1));
-        Se_Request(owner, 0, static_cast<uint8_t>(sound), 0, 0, static_cast<uint16_t>(a1), static_cast<uint8_t>(a2), 0, angle, distance);
+        port::setGuestV0(owner + 1);
+        const int result = Se_Request(owner, 0, static_cast<uint8_t>(sound), 0, 0, static_cast<uint16_t>(a1), static_cast<uint8_t>(a2), 0, angle, distance);
         if (globals::soundNextOwner.get() == 0xFF)
             globals::soundNextOwner.set(0);
+        return result;
+    }
+
+    // Rain (weather 2): sound 0x36 at a distance that falls from 16 between 2:00 and 6:00, is 0 by day,
+    // rises from 0 between 18:00 and 22:00 and is out of range (100) otherwise; in months 7 and 8 also
+    // sound 0x37 at 13:00 and 15:00, shifted by the month count's minutes.
+    void Se_UpdateTimeOfDay()
+    {
+        if (globals::soundCity.get()->weatherToday != 2)
+            return;
+        const int clock = globals::soundClock.get();
+        ps2f distance = 100.0f;
+        if (clock >= 7200)
+        {
+            if (clock < 21600)
+                distance = ps2f(16.0f) - fromInt((clock - 7200) / 650);
+            else if (clock < 64800)
+                distance = 0.0f;
+            else if (clock < 79200)
+                distance = fromInt((clock - 64800) / 650);
+        }
+        if (distance <= ps2f(16.0f))
+            Se_Request(0, 0, 0x36, 0, 0, 0, 0x3C, 5, 0.0f, distance);
+        const int months = globals::soundCity.get()->monthCount;
+        const int month = months % 12 + 1;
+        if (month < 7 || month >= 9)
+            return;
+        const int offset = (months % 60) * 60;
+        if (clock == offset + 46800 || clock == offset + 54000)
+            Se_Request(0, 0, 0x37, 0, 0, 0, 0x3C, 0, 0.0f, 0.0f);
+    }
+
+    // The ambience sound for a map position (0xFF: none). Ground above the water level (city +0xB0) gets
+    // 0x1C, or 0x1D on tiles without flag 0x20. Lower ground looks up its 2x2 block in the ambience grid: the
+    // cell's sound must exist and match `variant` (1-based, 0 = 0), and the sound's schedule must hold now
+    // for today's weather (hours per weather in its table entry), with the start inside the hour staggered
+    // by the cell. A sound past the lead part of its window comes back with 0x100 added.
+    uint32_t Se_PickTerrainAmbience(int x, int z, int variant)
+    {
+        const GuestPtr<CityScene> city = globals::soundCity.get();
+        if (!city)
+            return 0xFF;
+        const ps2f height = Map_GetHeightAt(globals::soundCity.get()->map, x, z);
+        if (globals::soundCity.get()->unk_B0 < height)
+            return Map_TileFlag20(globals::soundCity.get()->map, x, z) != 0 ? 0x1C : 0x1D;
+        const uint32_t wanted = variant != 0 ? static_cast<uint32_t>(variant - 1) & 0xFFu : 0u;
+        const int cell = x / 2 + (z / 2) * 64;
+        const uint32_t gridCell = globals::kAmbienceGrid + 2u * static_cast<uint32_t>(cell);
+        const uint8_t sound = port::load<uint8_t>(gridCell);
+        if (sound == 0 || wanted != port::load<uint8_t>(gridCell + 1u))
+            return 0xFF;
+        const int weather = globals::soundCity.get()->weatherToday;
+        const uint32_t weatherIndex = weather == 1 || weather == 2 || weather == 3 ? static_cast<uint32_t>(weather) : 0u;
+        const uint32_t entry = globals::kAmbienceCounts + 0x1Cu * ((sound - 1u) & 0xFFu);
+        const uint8_t hourFrom = port::load<uint8_t>(entry + 8u + 2u * weatherIndex);
+        if (hourFrom == 0xFF)
+            return 0xFF;
+        const int match = Se_MatchSchedule(port::load<uint8_t>(entry + 1u), port::load<uint8_t>(entry + 2u), hourFrom,
+                                           port::load<uint8_t>(entry + 9u + 2u * weatherIndex), port::load<uint8_t>(entry + 3u),
+                                           static_cast<uint32_t>(cell % 6) & 0xFFu, port::load<uint8_t>(entry + 4u));
+        if (match == 0)
+            return 0xFF;
+        const uint32_t id = port::load<uint8_t>(entry);
+        return match == 2 ? (id + 0x100u) & 0xFFFFu : id;
     }
 
     // Whether a scheduled sound plays now: within the months monthFrom..monthTo (0 = any), the hours
@@ -381,6 +448,8 @@ namespace mm
     }
 
     PORT_FN(Se_MatchSchedule);
+    PORT_FN(Se_PickTerrainAmbience);
+    PORT_FN(Se_UpdateTimeOfDay);
     PORT_FN(Sound_GetStatus);
     PORT_FN(Sound_IsBusy);
     PORT_FN(Sound_PlaySe);

@@ -163,4 +163,23 @@ namespace mm
     inline ps2f fromInt(int32_t i) { return FPU_CVT_S_W(i); }
 
     static_assert(sizeof(ps2f) == 4 && std::is_trivially_copyable_v<ps2f>);
+
+    // Signed div as the recompiled code does it, for divisors that come from data: a zero divisor gives
+    // quotient -1 (1 for a negative dividend) and the dividend as remainder; INT32_MIN / -1 stays INT32_MIN.
+    inline int32_t divide(int32_t dividend, int32_t divisor)
+    {
+        if (divisor == 0)
+            return dividend < 0 ? 1 : -1;
+        if (divisor == -1 && dividend == INT32_MIN)
+            return INT32_MIN;
+        return dividend / divisor;
+    }
+    inline int32_t remainder(int32_t dividend, int32_t divisor)
+    {
+        if (divisor == 0)
+            return dividend;
+        if (divisor == -1 && dividend == INT32_MIN)
+            return 0;
+        return dividend % divisor;
+    }
 }

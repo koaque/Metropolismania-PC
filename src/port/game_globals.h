@@ -7,6 +7,13 @@
 
 #include <cstdint>
 
+namespace mm
+{
+    // Index sentinels: no person (MapPerson), no object (MapObject; also "outside" and "none" in object fields).
+    inline constexpr uint16_t kNoPerson = 6000;
+    inline constexpr uint16_t kNoObject = 0x3F80;
+}
+
 namespace mm::globals
 {
     // family: three bitsets with one bit per family id (0x4E4 bytes each).
@@ -171,11 +178,53 @@ namespace mm::globals
     inline constexpr uint32_t kBuildingMatrices = 0x001B2590u;
     inline constexpr GuestVar<GuestPtr<A3DObject>> cityPartsModel{0x001BDBD0u};
     inline constexpr GuestVar<GuestPtr<A3DObject>> wastelandModel{0x001BDBCCu};
+    inline constexpr GuestVar<GuestPtr<A3DObject>> entranceModel{0x001BDBC4u};   // business entrances
+    inline constexpr GuestVar<GuestPtr<A3DObject>> blockModel{0x001BDBC8u};      // office and housing block parts
+    inline constexpr GuestVar<GuestPtr<A3DObject>> parkRideModel{0x001BDBE0u};   // theme park ride (animated)
     inline constexpr uint32_t kBlockStepX = 0x001B13F0u; // int[4]: 0, 2, 0, -2
     inline constexpr uint32_t kBlockStepZ = 0x001B1400u; // int[4]: -2, 0, 2, 0
+    // Housing blocks: mesh offset of each of the four block parts, per unit shape (int8[11][4]).
+    inline constexpr uint32_t kHousingPartMesh = 0x001B14F0u;
+    // The eight tiles around a tile and the tile itself, as x and z steps (int[9] each).
+    inline constexpr uint32_t kNeighbourStepX = 0x001AEFF0u;
+    inline constexpr uint32_t kNeighbourStepZ = 0x001AF020u;
 
     // gfx: start of the packet buffer (mm_DmaList_BeginScene rewinds to it).
     inline constexpr GuestVar<uint32_t> packetBufBase{0x001BDCE4u};
+
+    // ui: the window model shared by the pause menu and phone calls, and where the pause window starts its
+    // slide (closed) and ends it (open), as Vec4 positions.
+    inline constexpr GuestVar<GuestPtr<A3DObject>> menuWindowModel{0x001F3B08u};
+    inline constexpr uint32_t kPauseWindowOpen = 0x001B0910u;
+    inline constexpr uint32_t kPauseWindowClosed = 0x001B0920u;
+    // ui: the status panel alert's 15 colours (a pulse), moved along one entry per frame.
+    inline constexpr uint32_t kAlertColours = 0x001AF370u;
+
+    // title: the logo letters' size steps (uint16[3][8]: 0 hidden, 1 small, 2 medium, 3 full) and their five
+    // places (uint16 x, y; 0x14 bytes per letter).
+    inline constexpr uint32_t kLogoLetterSteps = 0x001B1820u;
+    inline constexpr uint32_t kLogoLetterPlaces = 0x001B17E0u;
+
+    // char: a person's walking step in its own frame, (0, 0, -speed, 1); mm_Person_UpdatePose sets z.
+    inline constexpr uint32_t kWalkStep = 0x001AF0B0u;
+
+    // gfx: light colours at the start of each 2-hour segment of the day (12 RGB float triples per table; a
+    // second set 0x90 bytes on for bad weather).
+    inline constexpr uint32_t kLightColoursA = 0x001B0550u;
+    inline constexpr uint32_t kLightColoursB = 0x001B0670u;
+
+    // gfx: the water wave animation's function statics, each a float and its "initialised" byte 4 bytes on:
+    // the phase (-pi/2 .. pi/2), the sway direction (+1 / -1) and the two scroll offsets.
+    inline constexpr uint32_t kWavePhase = 0x001BDAD8u;
+    inline constexpr uint32_t kWaveDirection = 0x001BDAE0u;
+    inline constexpr uint32_t kWaveScrollA = 0x001BDAE8u;
+    inline constexpr uint32_t kWaveScrollB = 0x001BDAF0u;
+
+    // event: the event types loaded from EVENT.BIN (96 records of 0x4C bytes; priority is the signed byte at +0x22).
+    inline constexpr GuestVar<uint32_t> eventTypes{0x001BDA84u};
+
+    // gfx: an identity matrix (four Vec4).
+    inline constexpr uint32_t kIdentityMatrix = 0x001B2550u;
 
     // char: model parts loaded from CHAR.A3D (pointer table, indexed by CHARTYPE.BIN record bytes).
     inline constexpr uint32_t kCharParts = 0x001F3B90u;

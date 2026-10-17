@@ -710,7 +710,7 @@ address,name,kind,source
 0x0012A260,mm_InstanceBase_ctor,func,manual
 0x0012A290,mm_Camera_SetEyeTarget,func,manual
 0x0012A2B0,mm_Packet_Draw,func,manual
-0x0012A2C0,mm_Packet_BuildA0,func,manual
+0x0012A2C0,mm_Camera_BuildPacket,func,manual
 0x0012A3A0,mm_Camera_UpdateProjection,func,manual
 0x0012A5E0,mm_Camera_SetFogRange,func,manual
 0x0012A650,mm_LightSet_SetField20,func,manual
@@ -1039,7 +1039,7 @@ address,name,kind,source
 0x0014BD40,mm_Laptop_InitEntries,func,manual
 0x0014BE20,mm_Frame_SetStyle,func,manual
 0x0014C0B0,mm_Frame_GetRect,func,manual
-0x0014C130,mm_Frame_SetColor,func,manual
+0x0014C130,mm_Frame_SetCorners,func,manual
 0x0014C1B0,mm_Frame_SetRect,func,manual
 0x0014C210,mm_Frame_DeletingDtor,func,manual
 0x0014C270,mm_Frame_ctor,func,manual
@@ -1118,7 +1118,7 @@ address,name,kind,source
 0x00152BC0,mm_WantsWin_Update,func,manual
 0x00153490,mm_WantsWin_dtor,func,manual
 0x00153540,mm_WantsWin_ctor,func,manual
-0x001535E0,mm_WantsWin_DrawGauge,func,manual
+0x001535E0,mm_PauseMenu_Draw,func,manual
 0x00153700,mm_PauseMenu_StateMain,func,manual
 0x00153970,mm_PauseMenu_ShowCardMessage,func,manual
 0x00153B80,mm_PauseMenu_StateSave,func,manual
@@ -1423,7 +1423,7 @@ address,name,kind,source
 0x0016F170,mm_Title_RandomCharParts,func,manual
 0x0016F270,mm_Title_OpeningMovieStep,func,manual
 0x0016F420,mm_Title_MenuInput,func,manual
-0x0016F630,mm_Title_LogoAnimA,func,manual
+0x0016F630,mm_Title_DrawChoices,func,manual
 0x0016F820,mm_Title_LogoAnimB,func,manual
 0x0016FAA0,mm_Title_Intro,func,manual
 0x0016FD60,mm_Title_LogoLetters,func,manual

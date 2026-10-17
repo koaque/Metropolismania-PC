@@ -17,7 +17,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 
 ## Functions
 
-168 functions (typed 124, verified 44). Blocks: 62 can reach a thread switch, 10 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+168 functions (typed 117, verified 51). Blocks: 62 can reach a thread switch, 10 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -38,7 +38,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x001365C0` | `void mm_CityCursor_Move(CityCursor *cursor, CityScene *city, int a2)` | 420 | yes | (provisional) moves the cursor with the pad and keeps it on the map |
 | `0x00136770` | `void mm_CityCursor_Update(CityCursor *cursor, CityScene *city, int a2)` | 1292 | yes | (provisional) cursor mode per frame: move, select, info, sounds |
 | `0x00136C80` | `void mm_CityCursor_SetTarget(CityCursor *cursor, uint16_t kind, int id, Vec4 *position)` | 44 | no | target id a2, kind a1 and position a3 (+0x1A4.., +0x1B0..) |
-| `0x00136CF0` | `void mm_CityCursor_LayoutInfo(CityCursor *cursor, Vec4 *a1, Vec4 *a2)` | 536 | no | (provisional) places the info window next to the projected cursor position |
+| `0x00136CF0` | `void mm_CityCursor_LayoutInfo(CityCursor *cursor, Vec4 *point, Vec4 *matrix)` | 536 | no | (provisional) places the info window next to the projected cursor position |
 | `0x00136F10` | `void mm_CityCursor_Draw(CityCursor *cursor)` | 276 | no | (provisional) cursor model, info window, text, optional fade |
 | `0x00137030` | `CityCursor *mm_CityCursor_dtor(CityCursor *cursor, int16_t deleteFlag)` | 268 | yes | (provisional) deletes its models, frames and text box |
 | `0x00137140` | `CityCursor *mm_CityCursor_ctor(CityCursor *cursor)` | 1064 | yes | (provisional) loads DATA\A3D\DESTRUCT.A3D and creates the frames and text box |
@@ -68,7 +68,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x0014BD40` | `void mm_Laptop_InitEntries(void)` | 216 | no | first-time defaults of the laptop entries (0x1AF640) |
 | `0x0014BE20` | `void mm_Frame_SetStyle(Frame *frame, int style)` | 644 | no | (provisional) window frame style a1: sets its corner/edge parameters |
 | `0x0014C0B0` | `void mm_Frame_GetRect(Frame *frame, uint32_t *x, uint32_t *y, uint32_t *width, uint32_t *height)` | 120 | no | frame position and size in screen units (GS offsets removed) |
-| `0x0014C130` | `void mm_Frame_SetColor(Frame *frame, int r, int g, int b, int a)` | 124 | no | (provisional) frame colour bytes |
+| `0x0014C130` | `void mm_Frame_SetCorners(Frame *frame, int x0, int y0, int x1, int y1)` | 124 | no | GS XY of two corners; a pair outside 0..0xFFFF is zeroed |
 | `0x0014C1B0` | `void mm_Frame_SetRect(Frame *frame, int x, int y, int width, int height)` | 72 | no | frame at (a1, a2) size a3 x a4 (GS coordinates) |
 | `0x0014C210` | `Frame *mm_Frame_DeletingDtor(Frame *frame, int16_t deleteFlag)` | 84 | yes | base destructor, then delete |
 | `0x0014C270` | `Frame *mm_Frame_ctor(Frame *frame, int style, int x, int y, int width, int height, uint32_t colour)` | 580 | no | window frame: position, size, style, colour |
@@ -91,7 +91,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x00152BC0` | `void mm_WantsWin_Update(WantsWin *wants, CityScene *city)` | 2248 | yes | residents' wants window: lists, cursor, values |
 | `0x00153490` | `WantsWin *mm_WantsWin_dtor(WantsWin *wants, int16_t deleteFlag)` | 172 | yes | deletes its four text boxes |
 | `0x00153540` | `WantsWin *mm_WantsWin_ctor(WantsWin *wants)` | 152 | no | model 0x1F3B04 and defaults |
-| `0x001535E0` | `void mm_WantsWin_DrawGauge(WantsWin *wants)` | 276 | no | (provisional) gauge at value/120 plus list frames |
+| `0x001535E0` | `void mm_PauseMenu_Draw(PauseMenu *pause)` | 276 | no | window sliding in as it opens (+0x2C / 120), the main or slot menu, the message box |
 | `0x00153700` | `void mm_PauseMenu_StateMain(PauseMenu *pause)` | 612 | no | Resume / Save / Quit selection |
 | `0x00153970` | `void mm_PauseMenu_ShowCardMessage(PauseMenu *pause, int message)` | 524 | no | memory card messages: "Failed to save.", "Failed to format.", "does not have enough space ... 1006KB" |
 | `0x00153B80` | `int mm_PauseMenu_StateSave(PauseMenu *pause, CityScene *city)` | 684 | yes | saving: memory card manager steps, results |
@@ -163,7 +163,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x00171720` | `void mm_TownPages_BuildIndex(TownPages *pages)` | 632 | yes | (provisional) allocates the occupation table (count 0x1BDA90) and fills it from known families |
 | `0x001719A0` | `void mm_TownPages_FillContents(TownPages *pages)` | 604 | no | contents pages: occupations with page numbers and the help text |
 | `0x00171C10` | `void mm_TownPages_FillPage(TownPages *pages)` | 1064 | yes | page text, one resident per line ("%s\n TEL:%s") |
-| `0x00172040` | `int mm_TownPages_Draw(TownPages *pages)` | 228 | no | book model, text boxes and the cursor frame |
+| `0x00172040` | `void mm_TownPages_Draw(TownPages *pages)` | 228 | no | book model, text boxes and the cursor frame |
 | `0x00172130` | `void mm_TownPages_Update(TownPages *pages, CityScene *city)` | 4136 | yes | open animation, page turning and cursor input, calling a resident (mm_CityScene_StartTalk) |
 | `0x00173160` | `TownPages *mm_TownPages_dtor(TownPages *pages, int16_t deleteFlag)` | 268 | yes | frame, entry table and six text boxes |
 | `0x00173270` | `TownPages *mm_TownPages_Init(TownPages *pages)` | 212 | yes | book model 0x1F3B20, cursor frame, cleared state |

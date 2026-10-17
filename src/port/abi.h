@@ -104,6 +104,15 @@ namespace port
         ctx->r[reg] = _mm_set_epi64x(0, static_cast<int64_t>(value));
     }
 
+    // Sets the guest v0 as a 32-bit instruction would (sign-extended into the low 64 bits, upper half kept).
+    // Some game functions leave v0 as they found it on some paths and their callers pass it on: ported code
+    // that calls one sets v0 first to what the original had in it at that point.
+    inline void setGuestV0(int32_t value)
+    {
+        const int64_t low = value;
+        std::memcpy(&g_call.ctx->r[2], &low, sizeof(low));
+    }
+
     // Integer-class argument k: a0-a3, t0-t3 (GPR 4-11), then the caller's stack slots.
     inline uint64_t intArg(const R5900Context *ctx, int k)
     {

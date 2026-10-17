@@ -8,7 +8,7 @@ introduction (city name, stage title, approval rate) and the mission briefing te
 
 ## Functions
 
-25 functions (typed 25). Blocks: 15 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+25 functions (typed 23, verified 2). Blocks: 15 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -29,7 +29,7 @@ introduction (city name, stage title, approval rate) and the mission briefing te
 | `0x0016F170` | `int mm_Title_RandomCharParts(SceneA *scene)` | 248 | no | random character parts for the intro |
 | `0x0016F270` | `int mm_Title_OpeningMovieStep(SceneA *scene)` | 424 | yes | plays the opening movie, then loads TITLE.SQ/HD/BD |
 | `0x0016F420` | `int mm_Title_MenuInput(SceneA *scene)` | 520 | no | title menu cursor and selection |
-| `0x0016F630` | `int mm_Title_LogoAnimA(SceneA *scene)` | 488 | no | logo sprite animation |
+| `0x0016F630` | `int mm_Title_DrawChoices(SceneA *scene)` | 488 | no | the title menu choices: the selected one pulses for 20 frames (then returns 1), the other at 0.6 |
 | `0x0016F820` | `int mm_Title_LogoAnimB(SceneA *scene)` | 640 | no | rotating logo sprite animation |
 | `0x0016FAA0` | `int mm_Title_Intro(SceneA *scene)` | 696 | no | title intro sequence with music |
 | `0x0016FD60` | `int mm_Title_LogoLetters(SceneA *scene)` | 436 | no | logo letter sprites (table 0x1B17E0) |

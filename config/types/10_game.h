@@ -46,8 +46,10 @@ struct MapObject {
     uint8_t unk_16[2];
     uint16_t variant;          /* +0x18 roads: shape, bit d = open towards direction d, 5 and 10 straight
                                   (added to the model index by mm_BldgRoad_Slot1C); buildings: bits 3-7 pick
-                                  the model variant (mm_Bldg_CollideA) */
-    uint16_t mesh;             /* +0x1A roads: mesh drawn (0 = none; street lamps and traffic lights by range) */
+                                  the model variant (mm_Bldg_CollideA); housing: the high byte is the unit
+                                  shape (mm_BldgHousing_UnitAt, table 0x1B14F0) */
+    uint16_t mesh;             /* +0x1A roads: mesh drawn (0 = none; street lamps and traffic lights by range);
+                                  housing: the low byte is the style, 26 meshes each (mm_BldgHousing_Draw) */
 };
 
 /* Person on the map (0x30 bytes): 6000 records at CityMap +0x68 (6000 = none). */
@@ -55,12 +57,13 @@ struct MapPerson {
     float x;                   /* +0x00 */
     float y;                   /* +0x04 height */
     float z;                   /* +0x08 */
-    float unk_0C;
+    float heading;             /* +0x0C atan2 of the facing (mm_Person_UpdatePose) */
     uint16_t nextOnTile;       /* +0x10 */
     uint16_t index;            /* +0x12 own index */
     uint16_t work;             /* +0x14 workplace object */
     uint16_t inside;           /* +0x16 object the person is in, 0x3F80 = outside */
-    uint8_t unk_18[6];
+    uint16_t walkTile;         /* +0x18 tile the person walks to (mm_Person_UpdatePose) */
+    uint8_t unk_1A[4];
     uint16_t destination;      /* +0x1E */
     uint16_t follow;           /* +0x20 follow target */
     uint16_t flags;            /* +0x22 */
@@ -135,7 +138,9 @@ struct BuildingType {
     uint8_t claimC;            /* +0x148 claim section C index */
     uint8_t unk_149[7];
     uint8_t modelNode;         /* +0x150 */
-    uint8_t unk_151[7];
+    uint8_t entranceDrawMesh;  /* +0x151 businesses: mesh of the entrance (+1 for the closed sign, type flag 0x1000) */
+    uint8_t firstDrawMesh;     /* +0x152 businesses: first mesh of the other parts, plus their variant */
+    uint8_t unk_153[5];
     uint8_t entranceMesh;      /* +0x158 collision mesh of an entrance object (flag 0x20) */
     uint8_t firstMesh;         /* +0x159 first collision mesh of the other objects, plus their variant */
     uint8_t unk_15A[2];
@@ -222,7 +227,7 @@ struct TalkView {
     int32_t unk_9C;
     void *personModel;         /* +0xA0 */
     float zoom;                /* +0xA4 */
-    int32_t unk_A8;
+    float idleTime;            /* +0xA8 counts frames, wraps at 180 */
     int32_t scrollMode;        /* +0xAC 1 zoom, 2 scroll */
     int32_t scrollDir;         /* +0xB0 */
     int32_t scrollStep;        /* +0xB4 */
@@ -231,7 +236,7 @@ struct TalkView {
     int32_t cursorX;           /* +0xC0 */
     int32_t choiceSlot;        /* +0xC4 */
     int32_t peopleCount;       /* +0xC8 */
-    int32_t unk_CC;
+    int32_t firstShown;        /* +0xCC first person in view (three are shown) */
     int32_t anim[32];          /* +0xD0 per slot, 7 = idle */
     int32_t animFlip[32];      /* +0x150 */
     float animTime[32];        /* +0x1D0 */

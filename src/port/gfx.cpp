@@ -160,6 +160,92 @@ namespace mm
         return layer;
     }
 
+    // The water waves (layer G). A phase runs from -pi/2 to pi/2 in steps of 0.05, then starts over with the
+    // sway direction flipped; sin(phase) and sin(phase + pi/2) (wrapped, flipping its own direction) give two
+    // sway offsets of up to 0.05. The first point set sways by one and scrolls forward 0.002 a frame, the
+    // second (1.2 times the sway, 0.7 to the side) by the other and scrolls back 0.001; points at x 0.5 take
+    // the other offset. Both scrolls wrap at 1.
+    void LayerG_AnimateWaves(GuestPtr<LayerG> layer, ps2f weather)
+    {
+        const auto initOnce = [](uint32_t address, uint32_t bits) {
+            if (port::load<int8_t>(address + 4u) == 0)
+            {
+                port::store<uint32_t>(address, bits);
+                port::store<int8_t>(address + 4u, 1);
+            }
+        };
+        initOnce(globals::kWavePhase, 0xBFC90FDBu); // -pi/2
+        initOnce(globals::kWaveDirection, 0x3F800000u); // 1
+        initOnce(globals::kWaveScrollA, 0);
+        initOnce(globals::kWaveScrollB, 0);
+        ps2f &phase = *GuestPtr<ps2f>{globals::kWavePhase};
+        ps2f &direction = *GuestPtr<ps2f>{globals::kWaveDirection};
+        ps2f &scrollA = *GuestPtr<ps2f>{globals::kWaveScrollA};
+        ps2f &scrollB = *GuestPtr<ps2f>{globals::kWaveScrollB};
+        const ps2f halfPi = 1.57079637050628662109375f, pi = 3.1415927410125732421875f;
+        phase = phase + ps2f(0.05f);
+        if (!(phase < halfPi))
+        {
+            direction = direction * ps2f(-1.0f);
+            phase = -halfPi;
+        }
+        layer->waveParamsA.w = pi;
+        layer->waveParamsA.z = 0.3183098733425140380859375f; // 1/pi
+        layer->waveParamsA.y = phase - halfPi;
+        layer->waveParamsA.x = 1.0f;
+        layer->waveParamsB.w = 0.0f;
+        layer->waveParamsB.z = phase;
+        layer->waveParamsB.y = weather;
+        layer->waveParamsB.x = ps2f(0.06f) * direction;
+        ps2f angleB = halfPi + phase;
+        ps2f directionB = direction;
+        if (!(angleB < halfPi))
+        {
+            angleB = angleB - pi;
+            directionB = directionB * ps2f(-1.0f);
+        }
+        const ps2f swayA = direction * (ps2f(0.05f) * sdk::sinf(phase));
+        const ps2f swayB = directionB * (ps2f(0.05f) * sdk::sinf(angleB));
+        scrollA = scrollA + ps2f(0.002f);
+        if (!(scrollA < ps2f(1.0f)))
+            scrollA = 0.0f;
+        scrollB = scrollB - ps2f(0.001f);
+        if (scrollB < ps2f(0.0f))
+            scrollB = scrollB + ps2f(1.0f);
+        for (int i = 0; i < 12; ++i)
+        {
+            layer->wavesA[i].y = layer->waveBase[i].y + scrollA;
+            const ps2f x = layer->waveBase[i].x;
+            layer->wavesA[i].x = ps2f(0.5f) == x ? x + swayB : x + swayA;
+        }
+        const ps2f swayA2 = ps2f(1.2f) * swayA, swayB2 = ps2f(1.2f) * swayB;
+        for (int i = 0; i < 12; ++i)
+        {
+            layer->wavesB[i].y = layer->waveBase[i].y + scrollB;
+            const ps2f x = layer->waveBase[i].x;
+            layer->wavesB[i].x = ps2f(0.7f) + (x + (ps2f(0.5f) == x ? swayA2 : swayB2));
+        }
+    }
+
+    // The camera's VU1 packet, built in the packet buffer: a DMA cnt with a GIF A+D write of 0 to GS register
+    // 0x3D, a ref to the camera's 0x12 quadwords from +0x10 (both screen matrices, the light matrices, the fog
+    // vectors) unpacked to VU1 address 0, and a ret.
+    void Camera_BuildPacket(GuestPtr<Camera> camera)
+    {
+        camera->packet = static_cast<uint32_t>(PacketBuf_Tell());
+        const GuestPtr<uint32_t> p{camera->packet};
+        const uint32_t words[20] = {
+            0x10000002u, 0, 0x11000000u, 0x50000002u,                       // cnt 2; VIF flush, direct 2
+            0x00008001u, 0x10000000u, 0x0000000Eu, 0,                       // GIF tag: 1 loop, eop, A+D
+            0, 0, 0x0000003Du, 0,                                            // register 0x3D = 0
+            0x30000012u, (camera.address + 0x10u) & 0x7FFFFFFFu, 0x01000101u, 0x6C120000u, // ref 0x12; stcycl, unpack v4-32
+            0x60000000u, 0, 0, 0,                                            // ret
+        };
+        for (uint32_t i = 0; i < 20; ++i)
+            p[i] = words[i];
+        PacketBuf_Seek(static_cast<int>((p + 20).address));
+    }
+
     // ---- drawing: queue an object's prebuilt packet on the DMA list
 
     void Packet_Draw(GuestPtr<uint32_t> packets) { Dma_AppendCall(static_cast<int>(*packets)); }
@@ -410,15 +496,51 @@ namespace mm
         layer->count = 0;
     }
 
+    // The light colours for the time of day: blended between the colours at the start of the current 2-hour
+    // segment and the next (the second table set in rain or snow). Both groups get fixed parameters.
+    void LightSet_UpdateByClock(GuestPtr<LightSet> lights, int clock, int weather)
+    {
+        const uint32_t set = weather != 0 ? 0x90u : 0u;
+        const ps2f t = sdk::fmodf(fromInt(clock), 7200.0f);
+        const int segment = clock / 7200;
+        int next = segment + 1;
+        if (next >= 12)
+            next -= 12;
+        const ps2f rest = ps2f(7200.0f) - t;
+        const auto blend = [&](uint32_t table, uint32_t component) {
+            const ps2f now = GuestPtr<ps2f>{table + set + 12u * static_cast<uint32_t>(segment) + 4u * component}[0];
+            const ps2f then = GuestPtr<ps2f>{table + set + 12u * static_cast<uint32_t>(next) + 4u * component}[0];
+            return (rest * now + t * then) / ps2f(7200.0f);
+        };
+        lights->colourA.x = blend(globals::kLightColoursA, 0);
+        lights->colourA.y = blend(globals::kLightColoursA, 1);
+        lights->colourA.z = blend(globals::kLightColoursA, 2);
+        lights->colourA.w = 1.0f;
+        lights->colourB.x = blend(globals::kLightColoursB, 0);
+        lights->colourB.y = blend(globals::kLightColoursB, 1);
+        lights->colourB.z = blend(globals::kLightColoursB, 2);
+        lights->colourB.w = 1.0f;
+        lights->colourB2 = lights->colourB;
+        for (Vec4 *params : {&lights->paramsA, &lights->paramsB})
+        {
+            params->x = 4.0f;
+            params->y = 1.0f;
+            params->z = 1.0f;
+            params->w = 2.0f;
+        }
+    }
+
     void LightSet_SetField20(GuestPtr<LightSet> lights, int value) { port::store<int32_t>(lights->unk_00.address + 0x20u, value); }
 
     PORT_FN(DmaList_BeginScene);
+    PORT_FN(Camera_BuildPacket);
     PORT_FN(LayerB_ctor);
     PORT_FN(LayerC_ctor);
     PORT_FN(LayerD_ctor);
     PORT_FN(LayerE_ctor);
     PORT_FN(LayerF_ctor);
     PORT_FN(LayerG_ctor);
+    PORT_FN(LayerG_AnimateWaves);
     PORT_FN(CityRender_DrawOverlays);
     PORT_FN(A3DObject_DrawNode);
     PORT_FN(A3DObject_Draw);
@@ -456,4 +578,5 @@ namespace mm
     PORT_FN(PacketBuf_Tell);
     PORT_FN(LayerA_SetSource);
     PORT_FN(LightSet_SetField20);
+    PORT_FN(LightSet_UpdateByClock);
 }

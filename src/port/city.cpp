@@ -3,6 +3,7 @@
 
 #include "game_functions.h"
 #include "game_globals.h"
+#include "sdk.h"
 
 namespace mm
 {
@@ -123,6 +124,63 @@ namespace mm
         return cursor;
     }
 
+    // The entry under the cursor. On a contents page: the family type in row `row`, counting only types with
+    // known families, 10 per page. On a family page: the family id, counting known families from the first one
+    // of the type whose listing the page belongs to.
+    int TownPages_SelectedEntry(GuestPtr<TownPages> pages)
+    {
+        const int page = pages->page;
+        if (page < pages->contentsPages)
+        {
+            const GuestPtr<TownPagesIndex> index = pages->index;
+            int type = 0;
+            for (int n = 0; n < page * 10; ++n)
+            {
+                while (index[type].count == 0)
+                    ++type;
+                ++type;
+            }
+            for (int row = 0;; ++row, ++type)
+            {
+                while (index[type].count == 0)
+                    ++type;
+                if (row >= pages->row)
+                    return type;
+            }
+        }
+        const GuestPtr<TownPagesIndex> index = pages->index;
+        int type = 0;
+        while (type < globals::familyTypeCount.get() && !(index[type].count != 0 && page < index[type].startPage))
+            ++type;
+        do
+            --type;
+        while (index[type].count == 0);
+        const int first = index[type].firstFamily;
+        const int skip = pages->row + (page - index[type].startPage) * 10;
+        int offset = 0;
+        for (int n = 0; n < skip; ++n)
+        {
+            do
+                ++offset;
+            while (Family_IsKnown(static_cast<uint32_t>(first + offset)) == 0);
+        }
+        return first + offset;
+    }
+
+    // The book, its texts and, while the list has a cursor, the cursor frame over the current entry.
+    void TownPages_Draw(GuestPtr<TownPages> pages)
+    {
+        A3DObject_Draw(pages->book);
+        for (const int i : {0, 1, 3, 4, 2, 5})
+            if (pages->text[i])
+                TextBox_Draw(pages->text[i]);
+        if (pages->text[5] && pages->mode != 6)
+        {
+            Frame_SetRect(pages->cursorFrame, pages->cursorX + 0x46, pages->cursorY + 0x4E, 0x18, 0xC);
+            Dma_AppendCall(static_cast<int>(pages->cursorFrame.address));
+        }
+    }
+
     // 0 while the meter is at or below the first threshold, 1 up to the second, 2 above it. The two
     // thresholds are the first two halfwords of CLAIM.BIN.
     int ClaimMeter_Level(uint16_t meter)
@@ -235,6 +293,28 @@ namespace mm
         const GuestPtr<uint16_t> claims = GuestPtr<uint16_t>::of(applicants->claims[0]);
         for (int i = 0; i < applicants->count; ++i)
             claims[i] = GuestPtr<BuildingType>{globals::buildingTypeAddress(entries[i].type)}->claimC;
+    }
+
+    // Places the applicant card at `point`: both card models there (+0x30), and the card text positioned and
+    // sized from the point's x, y and depth (z) through fixed factors.
+    void Applicants_PlaceAt(GuestPtr<Applicants> applicants, GuestPtr<ps2f> point)
+    {
+        for (uint32_t axis = 0; axis < 3; ++axis)
+        {
+            port::store<float>(applicants->cardModelA.address + 0x30u + 4u * axis, static_cast<float>(point[axis]));
+            port::store<float>(applicants->cardModelB.address + 0x30u + 4u * axis, static_cast<float>(point[axis]));
+        }
+        const ps2f depth = point[2];
+        const auto scaled = [](float factor, ps2f value) { return sdk::fptosi(ps2f(factor) * value); };
+        const int x = scaled(144.0f, point[0]) + 0x77E;
+        const int left = (x + scaled(45.0f, depth)) << 4;
+        const int y = scaled(72.0f, point[1]) + 0x7D6;
+        const int top = (y - scaled(7.1f, depth)) << 4;
+        const int charWidth = 0xC0 - scaled(16.8f, depth);
+        const int charHeight = 0xB0 - scaled(16.0f, depth);
+        const int pitchX = 0xB0 - scaled(14.7f, depth);
+        const int pitchY = 0xC0 - scaled(16.3f, depth);
+        TextBox_SetPosAndSize(applicants->cardText, left, top, charWidth, charHeight, pitchX, pitchY, -0x100000);
     }
 
     // Removes entry `index`, moving the later ones up, and frees the last slot.
@@ -617,6 +697,253 @@ namespace mm
         return result;
     }
 
+    // Shops and offices: tinted by their claim icon colour when the city shows claims (flag 1). The entrance
+    // is lit (colour w word 12, object flag 0x10) outside 4:00..16:59 while open by the building's own
+    // shifted clock, and drawn from the entrance model, with the closed-sign mesh after hours for type flag
+    // 0x1000; other parts draw their variant from the city parts model.
+    namespace
+    {
+        GuestPtr<BuildingType> typeOf(GuestPtr<MapObject> obj)
+        {
+            return GuestPtr<BuildingType>{port::load<uint32_t>(globals::buildingTypeTable.get() + 4u * obj->type)};
+        }
+
+        // The draw slots' instance colour: the claim icon tint while the city shows claims (flag 1), else untinted.
+        void buildingColour(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, GuestPtr<Vec4> colour)
+        {
+            if ((city->flags & 1u) != 0)
+                BldgClaims_DrawIcon(btype, obj, colour);
+            else
+                *colour = *GuestPtr<Vec4>{globals::kDefaultColour};
+        }
+
+        // A lit instance: colour w word 12.
+        void setLit(GuestPtr<Vec4> colour) { port::store<int32_t>(colour.address + 0xCu, 12); }
+
+        // Business hours lighting: unlit 4:00..16:59 and while closed, by the object's shifted clock.
+        bool litAfterDark(int time, int open, int close)
+        {
+            const bool daytime = time < 0xEF10 && time >= 0x3840;
+            return !(daytime || time < open || time >= close);
+        }
+
+        // Places the layer's matrix at the building's position.
+        GuestPtr<Vec4> placeLayer(int layer, ps2f x, ps2f y, ps2f z)
+        {
+            const GuestPtr<Vec4> matrix = layerMatrix(static_cast<uint32_t>(layer));
+            matrix[3].x = x;
+            matrix[3].y = y;
+            matrix[3].z = z;
+            return matrix;
+        }
+
+        // A part that is not the entrance: its variant (bits 3-7 of +0x18) from the city parts model.
+        void drawPlainPart(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> matrix, GuestPtr<Vec4> colour, int flags)
+        {
+            Instance_DrawMesh(globals::cityPartsModel.get(), matrix, colour, btype->firstDrawMesh + ((obj->variant & 0xFFu) >> 3), flags);
+        }
+    }
+
+    void BldgBusiness_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
+                           ps2f x, ps2f y, ps2f z)
+    {
+        port::GuestLocal<Vec4> colour;
+        buildingColour(btype, city, obj, colour);
+        const int time = Clock_AddWrap(static_cast<int>(btype.address), city->clock, obj->id);
+        const int open = btype->openMinute * 60, close = btype->closeMinute * 60;
+        if (litAfterDark(time, open, close) && (obj->flags & 0x20u) != 0)
+        {
+            setLit(colour);
+            obj->flags |= 0x10u;
+        }
+        else
+            obj->flags &= 0xFFEFu;
+        const GuestPtr<Vec4> matrix = placeLayer(layer, x, y, z);
+        if ((obj->flags & 0x20u) == 0)
+        {
+            drawPlainPart(btype, obj, matrix, colour, flags);
+            return;
+        }
+        int mesh = btype->entranceDrawMesh;
+        if ((btype->flags & 0x1000u) != 0 && (time < open || close < time))
+            ++mesh;
+        Instance_DrawMesh(globals::entranceModel.get(), matrix, colour, mesh, flags);
+    }
+
+    // Ports: like a business, lit after dark while open (hours of the object's own type), drawn 2.5 lower; the
+    // entrance from the entrance model.
+    void BldgPort_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
+                       ps2f x, ps2f y, ps2f z)
+    {
+        const GuestPtr<BuildingType> type = typeOf(obj);
+        port::GuestLocal<Vec4> colour;
+        buildingColour(btype, city, obj, colour);
+        const int time = Clock_AddWrap(static_cast<int>(btype.address), city->clock, obj->id);
+        if (litAfterDark(time, type->openMinute * 60, type->closeMinute * 60))
+        {
+            setLit(colour);
+            obj->flags |= 0x10u;
+        }
+        else
+            obj->flags &= 0xFFEFu;
+        const GuestPtr<Vec4> matrix = placeLayer(layer, x, y - ps2f(2.5f), z);
+        if ((obj->flags & 0x20u) != 0)
+            Instance_DrawMesh(globals::entranceModel.get(), matrix, colour, btype->entranceDrawMesh, flags);
+        else
+            drawPlainPart(btype, obj, matrix, colour, flags);
+    }
+
+    // Theme parks: lit like a port; the entrance is the animated ride model, moved to the building.
+    void BldgAmusementPark_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
+                                ps2f x, ps2f y, ps2f z)
+    {
+        const GuestPtr<BuildingType> type = typeOf(obj);
+        port::GuestLocal<Vec4> colour;
+        buildingColour(btype, city, obj, colour);
+        const int time = Clock_AddWrap(static_cast<int>(btype.address), city->clock, obj->id);
+        if (litAfterDark(time, type->openMinute * 60, type->closeMinute * 60))
+        {
+            setLit(colour);
+            obj->flags |= 0x10u;
+        }
+        else
+            obj->flags &= 0xFFEFu;
+        const GuestPtr<Vec4> matrix = placeLayer(layer, x, y, z);
+        if ((obj->flags & 0x20u) == 0)
+        {
+            drawPlainPart(btype, obj, matrix, colour, flags);
+            return;
+        }
+        const GuestPtr<A3DObject> ride = globals::parkRideModel.get();
+        for (int row = 0; row < 4; ++row)
+            ride->matrix[row] = matrix[row];
+        Instance_DrawModel(ride, colour, 0, flags);
+    }
+
+    namespace
+    {
+        // Office and housing blocks: windows lit from 17:00 to 23:00 while someone is inside.
+        void litWhileOccupied(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, GuestPtr<Vec4> colour)
+        {
+            const int time = Clock_AddWrap(static_cast<int>(btype.address), city->clock, obj->id);
+            if (time >= 0xEF10 && time < 82801 && obj->firstPerson != kNoPerson)
+                setLit(colour);
+        }
+
+        // The highlight frame of a selected block (object flag 1), sized by the type.
+        void drawBlockHighlight(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> matrix, GuestPtr<Vec4> colour, int flags)
+        {
+            if ((obj->flags & 1u) != 0)
+                Instance_DrawMesh(globals::cityPartsModel.get(), matrix, colour, btype->size + 0x19, flags);
+        }
+    }
+
+    // Offices: `part` is the block part being drawn (bits 0-2: 0..4; bit 3, set here for kind 0xC3, adds mesh
+    // 0x67 on the parts with a second mesh). Parts choose up to two meshes from the entrance mesh on, varied by
+    // the block's position along the street ((tile / size) % 3); a type extra mesh (+0x160) goes with the first.
+    // Part 0 of a non-entrance object draws its variant, untinted.
+    void BldgOffice_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, GuestPtr<uint32_t> part,
+                         int flags, ps2f x, ps2f y, ps2f z)
+    {
+        if (btype->kind == 0xC3)
+            *part |= 8u;
+        int first = 0, second = 0;
+        const int entrance = btype->entranceDrawMesh;
+        switch (*part & 7u)
+        {
+        case 0: first = entrance; second = entrance + 3; break;
+        case 1: first = entrance; break;
+        case 2: first = entrance + 1; break;
+        case 3: first = entrance + 1; second = entrance + 2; break;
+        case 4: first = entrance + 1; second = entrance + 3; break;
+        default: break;
+        }
+        port::GuestLocal<Vec4> colour;
+        buildingColour(btype, city, obj, colour);
+        litWhileOccupied(btype, city, obj, colour);
+        const GuestPtr<Vec4> matrix = placeLayer(layer, x, y, z);
+        if ((*part & 7u) == 0 && (obj->flags & 0x20u) == 0)
+        {
+            drawPlainPart(btype, obj, matrix, GuestPtr<Vec4>{globals::kDefaultColour}, flags);
+            return;
+        }
+        const int shift = divide(obj->tile, btype->size) % 3 * 4;
+        if (first != 0)
+        {
+            Instance_DrawMesh(globals::blockModel.get(), matrix, colour, first + shift, flags);
+            const int extra = port::load<int32_t>(btype.address + 0x160u);
+            if (extra != 0)
+                Instance_DrawMesh(globals::blockModel.get(), matrix, colour, extra, flags);
+        }
+        if (second != 0)
+        {
+            Instance_DrawMesh(globals::blockModel.get(), matrix, colour, second + shift, flags);
+            if ((*part & 8u) != 0)
+                Instance_DrawMesh(globals::blockModel.get(), matrix, colour, 0x67, flags);
+        }
+        drawBlockHighlight(btype, obj, matrix, colour, flags);
+    }
+
+    // Housing: parts 0..4 take one mesh (parts 3 and 4 two) from the entrance mesh on, offset per unit shape
+    // (the high byte of +0x18, table 0x1B14F0) and by 26 per style (the low byte of +0x1A).
+    void BldgHousing_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, GuestPtr<uint32_t> part,
+                          int flags, ps2f x, ps2f y, ps2f z)
+    {
+        const int shape = obj->variant >> 8;
+        const int base = btype->entranceDrawMesh + (obj->mesh & 0xFFu) * 26;
+        const auto partMesh = [&](int index) { return base + port::load<int8_t>(globals::kHousingPartMesh + 4u * shape + index); };
+        int first = -1, second = -1;
+        switch (*part & 7u)
+        {
+        case 0: first = partMesh(0); break;
+        case 1: first = partMesh(1); break;
+        case 2: first = partMesh(2); break;
+        case 3:
+        case 4: first = partMesh(2); second = partMesh(3); break;
+        default: break;
+        }
+        port::GuestLocal<Vec4> colour;
+        buildingColour(btype, city, obj, colour);
+        litWhileOccupied(btype, city, obj, colour);
+        const GuestPtr<Vec4> matrix = placeLayer(layer, x, y, z);
+        if ((*part & 7u) == 0 && (obj->flags & 0x20u) == 0)
+        {
+            drawPlainPart(btype, obj, matrix, GuestPtr<Vec4>{globals::kDefaultColour}, flags);
+            return;
+        }
+        if (first != -1)
+            Instance_DrawMesh(globals::blockModel.get(), matrix, colour, first, flags);
+        if (second != -1)
+            Instance_DrawMesh(globals::blockModel.get(), matrix, colour, second, flags);
+        drawBlockHighlight(btype, obj, matrix, colour, flags);
+    }
+
+    // Whether the tile (x, z) holds a unit of the same housing block: same rule, flag-1 tile, terrain kind and
+    // height, and an entrance object (then *isUnit = 1). Returns its unit shape when more than `count` objects
+    // come before it on the tile, else 6.
+    uint8_t BldgHousing_UnitAt(GuestPtr<BuildingType>, int kind, int x, int z, int count, uint16_t rule, GuestPtr<CityScene> city,
+                               GuestPtr<uint32_t> isUnit, ps2f height)
+    {
+        constexpr uint8_t kNone = 6;
+        const GuestPtr<MapObject> obj = Map_GetTileObject(city->map, x, z);
+        const GuestPtr<BuildingType> type = typeOf(obj);
+        *isUnit = 0;
+        if (rule != type->rule)
+            return kNone;
+        if (Map_TileFlag01(city->map, x, z) == 0)
+            return kNone;
+        if (kind != Map_GetTileKind(city->map, obj->tile))
+            return kNone;
+        if (!(height == ps2f(Map_GetTileHeightWord(city->map, obj->tile))))
+            return kNone;
+        if ((obj->flags & 0x20u) == 0)
+            return kNone;
+        *isUnit = 1;
+        if (count < Map_CountObjectsBefore(city->map, x, z, kNoObject))
+            return static_cast<uint8_t>(obj->variant >> 8);
+        return kNone;
+    }
+
     // Theme park and ranch rides: the animation runs while open (stopping 1000 seconds before closing),
     // finishes its cycle after hours and wraps at the length the model keeps in mesh 0 (+0xC).
     namespace
@@ -643,7 +970,7 @@ namespace mm
 
     void BldgAmusementPark_DrawAnim(GuestPtr<BuildingType> btype, int time)
     {
-        drawRide(btype, time, GuestVar<GuestPtr<A3DObject>>{0x001BDBE0u}, GuestVar<float>{0x001BDBE4u});
+        drawRide(btype, time, globals::parkRideModel, GuestVar<float>{0x001BDBE4u});
     }
 
     void BldgRanch_DrawAnim(GuestPtr<BuildingType> btype, int time)
@@ -735,6 +1062,8 @@ namespace mm
     PORT_FN(CityScene_RecordPlacementScore);
     PORT_FN(Laptop_CountActive);
     PORT_FN(TownPages_ClampCursor);
+    PORT_FN(TownPages_SelectedEntry);
+    PORT_FN(TownPages_Draw);
     PORT_FN(BldgType_IsOpenAt);
     PORT_FN(ClaimIcon_GetColor);
     PORT_FN(Applicants_Find);
@@ -742,6 +1071,7 @@ namespace mm
     PORT_FN(Applicants_Clear);
     PORT_FN(Applicants_ScrollTo);
     PORT_FN(Applicants_RemoveAt);
+    PORT_FN(Applicants_PlaceAt);
     PORT_FN(Laptop_CheckOpen);
     PORT_FN(WantsWin_ctor);
     PORT_FN(BldgWasteland_InitRecord);
@@ -758,6 +1088,12 @@ namespace mm
     PORT_FN(BldgPort_Tick);
     PORT_FN(BldgAmusementPark_DrawAnim);
     PORT_FN(BldgRanch_DrawAnim);
+    PORT_FN(BldgBusiness_Draw);
+    PORT_FN(BldgPort_Draw);
+    PORT_FN(BldgAmusementPark_Draw);
+    PORT_FN(BldgOffice_Draw);
+    PORT_FN(BldgHousing_Draw);
+    PORT_FN(BldgHousing_UnitAt);
     PORT_FN(Schedule_PickEntry);
     PORT_FN(Stamina_HungerLevel);
     PORT_FN(Clock_AddWrap);

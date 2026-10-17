@@ -130,6 +130,74 @@ namespace mm
         cameraOnBuilding(view);
     }
 
+    // Picking a person at the building: left and right (with key repeat, or towards a forced choice) move the
+    // cursor over the three people in view, 16 pixels a frame for 10 frames, or past the edge zoom the view
+    // by 0.03 a frame for 10 frames while the people shift by one. The idle timer runs on throughout.
+    void TalkView_HandleInput(GuestPtr<TalkView> view)
+    {
+        const int mode = view->scrollMode;
+        if (mode == 2)
+        {
+            view->cursorX += view->scrollDir == 1 ? 16 : -16;
+            if (++view->scrollStep >= 10)
+                view->scrollMode = 0;
+        }
+        else if (mode == 1)
+        {
+            if (view->scrollDir == 1)
+                view->zoom = view->zoom + ps2f(0.03f);
+            else
+                view->zoom = view->zoom - ps2f(0.03f);
+            if (++view->scrollStep >= 10)
+                view->scrollMode = 0;
+        }
+        else if (mode == 0)
+        {
+            const bool left = view->forcedChoice < 0 ? (Pad_GetRepeat() & 0x8000) != 0 : view->forcedChoice < view->cursorSlot;
+            if (left)
+            {
+                if (view->choiceSlot > 0)
+                {
+                    view->scrollMode = 2;
+                    --view->choiceSlot;
+                    view->scrollDir = -1;
+                    view->scrollStep = 0;
+                    --view->cursorSlot;
+                }
+                else if (view->firstShown > 0)
+                {
+                    view->scrollMode = 1;
+                    view->scrollStep = 0;
+                    view->scrollDir = 1;
+                    --view->firstShown;
+                    --view->cursorSlot;
+                }
+            }
+            else if (view->forcedChoice < 0 ? (Pad_GetRepeat() & 0x2000) != 0 : view->cursorSlot < view->forcedChoice)
+            {
+                if (view->choiceSlot < 2 && view->choiceSlot < view->peopleCount - 1)
+                {
+                    view->scrollMode = 2;
+                    ++view->choiceSlot;
+                    view->scrollDir = 1;
+                    view->scrollStep = 0;
+                    ++view->cursorSlot;
+                }
+                else if (view->firstShown < view->peopleCount - 3)
+                {
+                    view->scrollMode = 1;
+                    view->scrollStep = 0;
+                    view->scrollDir = -1;
+                    ++view->firstShown;
+                    ++view->cursorSlot;
+                }
+            }
+        }
+        view->idleTime = view->idleTime + ps2f(1.0f);
+        if (!(view->idleTime < ps2f(180.0f)))
+            view->idleTime = 0.0f;
+    }
+
     void TalkBldgFar_Active(GuestPtr<TalkView> view)
     {
         cameraOnBuilding(view);
@@ -177,6 +245,7 @@ namespace mm
     PORT_FN(TalkBldgFar_Close);
     PORT_FN(TalkBldgFar_Opening);
     PORT_FN(TalkBldgFar_Opened);
+    PORT_FN(TalkView_HandleInput);
     PORT_FN(TalkBldgFar_Active);
     PORT_FN(TalkBldgFar_Closing);
     PORT_FN(TalkBldgFar_Closed);
