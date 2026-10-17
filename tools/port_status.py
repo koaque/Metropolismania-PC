@@ -153,8 +153,8 @@ def main() -> None:
     rows = []
     for addr in sorted(funcs):
         f = funcs[addr]
-        name = f["name"]
-        source = symbols.get(addr, (name, ""))[1]
+        # config/symbols.csv is the source of names; the graph only learns a rename at the next pipeline.py map.
+        name, source = symbols.get(addr, (f["name"], ""))
         prev = previous.get(addr, {})
         subsystem = prev.get("subsystem", "")
         notes = prev.get("notes", "")

@@ -844,8 +844,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00132DA0,mm_Person_Walk,3528,game,char,typed,no,1,10,(provisional) 3.5 KB walking movement for people over map tiles
 0x00133B70,mm_Person_UpdatePose,780,game,char,typed,no,1,5,(provisional) person's matrix from heading and terrain height
 0x00133E80,mm_Person_Draw2,700,game,char,typed,yes,0,9,class 1 slot +0x14: (provisional) extra drawing (shadow/marker) for a person
-0x00134140,mm_CharType_ResetLookup,92,game,char,verified,no,1,0,counts down the 25 character type slot timers (0x1C5310) and frees a slot (0x1C5110 = 6000) when its timer reaches 0
-0x001341A0,mm_CharType_BuildLookup,184,game,char,verified,no,1,0,frees all 25 character type slots (0x1C5110 = 6000) and clears their timers (0x1C5310)
+0x00134140,mm_CharType_TickSlots,92,game,char,verified,no,1,0,counts down the 25 character type slot timers (0x1C5310) and frees a slot (0x1C5110 = 6000) when its timer reaches 0
+0x001341A0,mm_CharType_ClearSlots,184,game,char,verified,no,1,0,frees all 25 character type slots (0x1C5110 = 6000) and clears their timers (0x1C5310)
 0x00134260,mm_Person_BuildPose,896,game,char,typed,no,1,2,"(provisional) walking pose matrices for a person (copies of the base matrix 0x1B2550, animation table 0x1C5180)"
 0x001345E0,mm_Person_Draw,1088,game,char,typed,yes,0,11,"class 1 slot +0x10: person instances on the terrain, within the draw range"
 0x00134A20,mm_Person_Update,3032,game,char,typed,yes,0,20,"class 1 slot +0xC: a person's behaviour per tick: target building, walking, waiting, random choices"
@@ -1002,7 +1002,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00141560,mm_Map_GetTileHeightWord,28,game,map,verified,no,13,0,"tile a1's height (+0, a float, loaded with lwc1)"
 0x00141580,mm_Map_GetHeightAt,92,game,map,verified,no,11,0,"height word at clamped (a1, a2)"
 0x001415E0,mm_Map_SampleHeight,676,game,map,typed,no,9,3,"terrain height at world (a0, a1), interpolated over the tile's triangles"
-0x00141890,mm_Math_TriangleHeight,60,game,math,verified,no,3,0,"unit normal of triangle (a, b, c) in out.xyz via VU0; out.w = (w of vf6 as earlier VU0 code left it) squared (used by mm_Map_SampleHeight)"
+0x00141890,mm_Math_TriangleNormal,60,game,math,verified,no,3,0,"unit normal of triangle (a, b, c) in out.xyz via VU0; out.w = (w of vf6 as earlier VU0 code left it) squared (used by mm_Map_SampleHeight)"
 0x001418D0,mm_Map_UpdateTileGeometry,1536,game,map,typed,no,5,0,"recomputes tile (a1, a2)'s vertices and normals"
 0x00141ED0,mm_Map_UpdateAreaGeometry,136,game,map,typed,no,5,1,mm_Map_UpdateTileGeometry over a rectangle
 0x00141F60,mm_TerrainGen_ApplyBump,1304,game,map,typed,no,2,4,(provisional) raises/lowers a round area
@@ -1159,7 +1159,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00150980,mm_Wants_ctor,16,game,city,verified,no,1,0,zeroes the two counters
 0x00150990,mm_ListMenu_ScrollTo,80,game,ui,verified,no,5,0,"scroll so item a1 is visible (+0x264 count, +0x268 item height)"
 0x001509E0,mm_ListMenu_SetCursor,188,game,ui,verified,no,7,0,cursor offset a1/a2 and colour a3
-0x00150AA0,mm_ListMenu_Highlight,216,game,ui,verified,no,10,1,"empties the text of item a1 (the last one is popped), or of every item and resets the counts (-1)"
+0x00150AA0,mm_ListMenu_ClearItem,216,game,ui,verified,no,10,1,"empties the text of item a1 (the last one is popped), or of every item and resets the counts (-1)"
 0x00150B80,mm_ListMenu_SetItemText,148,game,ui,verified,no,7,1,text of item a2 (-1 = selected)
 0x00150C20,mm_ListMenu_AddItems,384,game,ui,typed,yes,4,3,creates the item text boxes
 0x00150DA0,mm_ListMenu_HandleInput,888,game,ui,typed,no,8,4,"cursor with key repeat, select/cancel, sounds; returns the result"

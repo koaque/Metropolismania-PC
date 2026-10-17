@@ -79,7 +79,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x0014C560` | `void mm_WaitText_Create(char *text)` | 180 | yes | creates the wait text box ("Please wait....") |
 | `0x00150990` | `void mm_ListMenu_ScrollTo(ListMenu *menu, int item)` | 80 | no | scroll so item a1 is visible (+0x264 count, +0x268 item height) |
 | `0x001509E0` | `void mm_ListMenu_SetCursor(ListMenu *menu, int dx, int dy, int depth)` | 188 | no | cursor offset a1/a2 and colour a3 |
-| `0x00150AA0` | `mm_ListMenu_Highlight` | 216 | no | empties the text of item a1 (the last one is popped), or of every item and resets the counts (-1) |
+| `0x00150AA0` | `void mm_ListMenu_ClearItem(ListMenu *menu, int item)` | 216 | no | empties the text of item a1 (the last one is popped), or of every item and resets the counts (-1) |
 | `0x00150B80` | `void mm_ListMenu_SetItemText(ListMenu *menu, char *text, int item)` | 148 | no | text of item a2 (-1 = selected) |
 | `0x00150C20` | `void mm_ListMenu_AddItems(ListMenu *menu, int a1, int a2, int a3, int t0, int t1, int t2)` | 384 | yes | creates the item text boxes |
 | `0x00150DA0` | `int mm_ListMenu_HandleInput(ListMenu *menu, int32_t *choice)` | 888 | no | cursor with key repeat, select/cancel, sounds; returns the result |
