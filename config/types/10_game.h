@@ -43,7 +43,11 @@ struct MapObject {
     uint8_t claimSlot;         /* +0x12 entry in the type's claim section */
     uint8_t unk_13;
     uint16_t entranceTile;     /* +0x14 (provisional) */
-    uint8_t unk_16[6];
+    uint8_t unk_16[2];
+    uint16_t variant;          /* +0x18 roads: shape, bit d = open towards direction d, 5 and 10 straight
+                                  (added to the model index by mm_BldgRoad_Slot1C); buildings: bits 3-7 pick
+                                  the model variant (mm_Bldg_CollideA) */
+    uint16_t mesh;             /* +0x1A roads: mesh drawn (0 = none; street lamps and traffic lights by range) */
 };
 
 /* Person on the map (0x30 bytes): 6000 records at CityMap +0x68 (6000 = none). */
@@ -126,7 +130,10 @@ struct BuildingType {
     uint8_t claimC;            /* +0x148 claim section C index */
     uint8_t unk_149[7];
     uint8_t modelNode;         /* +0x150 */
-    uint8_t unk_151[0xB];
+    uint8_t unk_151[7];
+    uint8_t entranceMesh;      /* +0x158 collision mesh of an entrance object (flag 0x20) */
+    uint8_t firstMesh;         /* +0x159 first collision mesh of the other objects, plus their variant */
+    uint8_t unk_15A[2];
     void *vtable;              /* +0x15C */
 };
 

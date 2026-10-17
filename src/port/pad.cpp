@@ -53,6 +53,15 @@ namespace mm
         return static_cast<int>(globals::padRepeat.get());
     }
 
+    // Consumes a Cross press (0x40): it disappears from this frame's buttons and stays out of the held ones
+    // until it is released, so the next screen does not see it again.
+    void Pad_ClearBit40()
+    {
+        globals::padSwallowCross.set(1);
+        globals::padHeld.set(globals::padHeld.get() & ~0x40u);
+        globals::padPressed.set(globals::padPressed.get() & ~0x40u);
+    }
+
     // The port's pad buffer once the pad is ready (state 100), else 0.
     int Pad_GetData(int padPort)
     {
@@ -62,6 +71,7 @@ namespace mm
         return static_cast<int>(globals::kPadBuffers + 0x20u * index);
     }
 
+    PORT_FN(Pad_ClearBit40);
     PORT_FN(Pad_Pressed);
     PORT_FN(Pad_Held);
     PORT_FN(Pad_ReleaseFocus);

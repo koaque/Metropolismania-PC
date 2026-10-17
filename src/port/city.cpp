@@ -73,6 +73,33 @@ namespace mm
         return bits;
     }
 
+    // While Circle alone (0x20) is held in the city view (and `allowed`), HUD element 2 is hidden and +0x120 set,
+    // once per press; any other input clears both again. Returns +0x120.
+    int Laptop_CheckOpen(GuestPtr<Laptop> laptop, GuestPtr<CityScene> city, int allowed)
+    {
+        const uint32_t held = Pad_Held(0);
+        if (held == 0x20u && CityScene_GetMode(city) == 1 && allowed != 0)
+        {
+            if (laptop->circleHeld == 0)
+            {
+                city->hudVisible[2] = 0;
+                laptop->circleActive = 1;
+                if ((Laptop_CountActive() & 0x10u) != 0)
+                    laptop->unk_11C = 4;
+            }
+        }
+        else
+        {
+            laptop->circleHeld = (held & 0x20u) != 0 ? 1 : 0;
+            if (laptop->circleActive != 0)
+            {
+                city->hudVisible[2] = 1;
+                laptop->circleActive = 0;
+            }
+        }
+        return laptop->circleActive;
+    }
+
     // Town's Pages cursor: entries 0..4 left, 5..9 right, 10 the CLOSE button. Off-page entries move to the
     // last entry, or to CLOSE when moving on (direction 2) or, on a short page, sideways (1).
     int TownPages_ClampCursor(GuestPtr<TownPages> pages, int cursor, int direction)
@@ -152,6 +179,46 @@ namespace mm
         return 0;
     }
 
+    // After entry `index` left the list (-1: none did): pulls the two list positions back over it, clamps
+    // them to the list and refreshes each entry's claim section.
+    void Applicants_ScrollTo(GuestPtr<Applicants> applicants, int index)
+    {
+        if (index != -1)
+        {
+            if (index < applicants->top)
+                --applicants->top;
+            if (index < applicants->cursor)
+                --applicants->cursor;
+        }
+        if (applicants->count == 0)
+            return;
+        const auto clamp = [&](int value)
+        {
+            const int last = applicants->count - 1;
+            return value < 0 ? 0 : (last < value ? last : value);
+        };
+        applicants->cursor = clamp(applicants->cursor);
+        applicants->top = clamp(applicants->top);
+        if (applicants->unk_2B4 == ps2f(0.0f))
+            applicants->unk_2BC = 1;
+        const GuestPtr<ApplicantEntry> entries = GuestPtr<ApplicantEntry>::of(applicants->entries[0]);
+        const GuestPtr<uint16_t> claims = GuestPtr<uint16_t>::of(applicants->claims[0]);
+        for (int i = 0; i < applicants->count; ++i)
+            claims[i] = GuestPtr<BuildingType>{globals::buildingTypeAddress(entries[i].type)}->claimC;
+    }
+
+    // Removes entry `index`, moving the later ones up, and frees the last slot.
+    void Applicants_RemoveAt(GuestPtr<Applicants> applicants, int index)
+    {
+        const GuestPtr<ApplicantEntry> entries = GuestPtr<ApplicantEntry>::of(applicants->entries[0]);
+        int i = index;
+        for (; i < applicants->count - 1; ++i)
+            entries[i] = entries[i + 1];
+        entries[i].state = 0;
+        --applicants->count;
+        Applicants_ScrollTo(applicants, index);
+    }
+
     int Applicants_Clear(GuestPtr<Applicants> applicants)
     {
         applicants->count = 0;
@@ -198,6 +265,283 @@ namespace mm
         return wants;
     }
 
+    // The wants window: the list, its model (from 0x1F3B04) placed at 0x1B0900, and cleared state.
+    GuestPtr<WantsWin> WantsWin_ctor(GuestPtr<WantsWin> wants)
+    {
+        Wants_ctor(wants);
+        wants->model = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B04u)};
+        wants->unk_51C = 0;
+        wants->matrix = GuestPtr<Vec4>{wants->model.address + 0x10u};
+        const GuestPtr<Vec4> place{0x001B0900u};
+        wants->matrix[3].x = place->x;
+        wants->matrix[3].y = place->y;
+        wants->matrix[3].z = place->z;
+        wants->unk_528 = 0;
+        for (int32_t &value : wants->unk_508)
+            value = 0;
+        wants->unk_52C = 0;
+        wants->unk_538 = 10;
+        wants->unk_518 = 0;
+        return wants;
+    }
+
+    // Wasteland plots get a random look, kept in the bytes other buildings use for their claim (+0x10..+0x16).
+    void BldgWasteland_InitRecord(GuestPtr<BuildingType>, GuestPtr<MapObject> obj)
+    {
+        const auto random = [] { return static_cast<int32_t>(Random_Next()); };
+        const GuestPtr<uint8_t> look{obj.address + 0x10u};
+        look[0] = static_cast<uint8_t>(random());
+        look[1] = static_cast<uint8_t>(random());
+        look[2] = static_cast<uint8_t>(random() % 4);
+        look[3] = 0;
+        look[4] = 0;
+        look[5] = static_cast<uint8_t>(random() % 3);
+        look[6] = static_cast<uint8_t>(random() % 10);
+    }
+
+    // ---- building drawing and road links
+
+    namespace
+    {
+        GuestPtr<Vec4> layerMatrix(uint32_t layer) { return GuestPtr<Vec4>{globals::kBuildingMatrices + 0x40u * layer}; }
+        int blockStepX(int dir) { return port::load<int32_t>(globals::kBlockStepX + 4u * static_cast<uint32_t>(dir)); }
+        int blockStepZ(int dir) { return port::load<int32_t>(globals::kBlockStepZ + 4u * static_cast<uint32_t>(dir)); }
+
+        // Straight road pieces (variants 5 and 10) continue a road; anything else ends it.
+        bool isStraightRoad(uint16_t variant) { return variant == 5 || variant == 10; }
+    }
+
+    // Leveled ground: mesh +0x160 of the type, when the object's flag 1 is set.
+    void BldgLeveled_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene>, GuestPtr<MapObject> obj, int, int flags,
+                          ps2f x, ps2f y, ps2f z)
+    {
+        if ((obj->flags & 1u) == 0)
+            return;
+        const GuestPtr<Vec4> matrix = layerMatrix(static_cast<uint32_t>(layer));
+        matrix[3].x = x;
+        matrix[3].y = y;
+        matrix[3].z = z;
+        Instance_DrawMesh(globals::cityPartsModel.get(), matrix, GuestPtr<Vec4>{globals::kDefaultColour},
+                          port::load<int32_t>(btype.address + 0x160u), flags);
+    }
+
+    // Wasteland: one of the weed and rock meshes (row look[4] - 1, column look[5]) under one of four matrices
+    // (look[2]), nudged by look[0] and look[1] / 400 (see mm_BldgWasteland_InitRecord). Nothing while look[4]
+    // is 0.
+    void BldgWasteland_Draw(GuestPtr<BuildingType>, int, GuestPtr<CityScene>, GuestPtr<MapObject> obj, int, int flags,
+                            ps2f x, ps2f y, ps2f z)
+    {
+        const GuestPtr<uint8_t> look{obj.address + 0x10u};
+        if (look[4] == 0)
+            return;
+        layerMatrix(look[2])[3].x = x + fromInt(look[0]) / ps2f(400.0f);
+        layerMatrix(look[2])[3].y = y;
+        layerMatrix(look[2])[3].z = z + fromInt(look[1]) / ps2f(400.0f);
+        Instance_DrawMesh(globals::wastelandModel.get(), layerMatrix(look[2]), GuestPtr<Vec4>{globals::kDefaultColour},
+                          look[5] + (look[4] - 1) * 3, flags);
+    }
+
+    // A straight road within three blocks of (x, z), searching outwards. Each direction is given up at the
+    // first walkable block that is not straight road, and the search of a ring stops at the first direction
+    // given up. Returns 1 with the direction in `spot`.
+    int BldgWasteland_FindSpot(GuestPtr<BuildingType>, GuestPtr<CityScene> city, int, uint32_t x, uint32_t z, GuestPtr<uint32_t> spot)
+    {
+        const int bx = static_cast<int>(x & 0xFFFEu), bz = static_cast<int>(z & 0xFFFEu);
+        uint32_t open = 0xF;
+        for (int ring = 0; ring < 4; ++ring)
+            for (int dir = 0; dir < 4; ++dir)
+            {
+                const uint32_t bit = 1u << dir;
+                if ((open & bit) == 0)
+                    break;
+                const int tx = bx + ring * blockStepX(dir), tz = bz + ring * blockStepZ(dir);
+                if (Map_TileFlag10(city->map, tx, tz) == 0)
+                    continue;
+                if (isStraightRoad(Map_GetTileObject(city->map, tx, tz)->variant))
+                {
+                    *spot = static_cast<uint32_t>(dir);
+                    return 1;
+                }
+                open &= ~bit;
+            }
+        return 0;
+    }
+
+    // The walkable tile next to a building's footprint (size tiles from (x, z)), trying the four sides at
+    // distance 0, then 1 and 2 blocks out. Returns its object's tile and the side, or 0x4000 and side 0.
+    uint16_t BldgType_FindEntrance(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, int x, int z, GuestPtr<int32_t> side)
+    {
+        for (int ring = 0; ring < 3; ++ring)
+            for (int s = 0; s < 4; ++s)
+            {
+                int tx = x + ring * blockStepX(s), tz = z + ring * blockStepZ(s);
+                if (s == 0)
+                    tz -= 1;
+                else if (s == 1)
+                    tx += btype->size;
+                else if (s == 2)
+                    tz += btype->size;
+                else
+                    tx -= 1;
+                if (Map_TileFlag10(city->map, tx, tz) != 0)
+                {
+                    *side = s;
+                    return Map_GetTileObject(city->map, tx, tz)->tile;
+                }
+            }
+        *side = 0;
+        return 0x4000;
+    }
+
+    // A road piece's links (+0x10, one tile per direction, 0x4000 = none): for each direction its shape opens
+    // to (bit d of the variant), the first road block along it that is not straight road.
+    void BldgRoad_FindNeighbours(GuestPtr<BuildingType>, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int x, int z)
+    {
+        const GuestPtr<uint16_t> links{obj.address + 0x10u};
+        for (int dir = 0; dir < 4; ++dir)
+        {
+            links[dir] = 0x4000;
+            if ((obj->variant & (1u << dir)) == 0)
+                continue;
+            int tx = x, tz = z;
+            for (;;)
+            {
+                tz += blockStepZ(dir);
+                tx += blockStepX(dir);
+                const uint32_t tile = static_cast<uint32_t>(tx + tz * 0x80);
+                if (Map_TileIndexFlag10(city->map, tile) == 0)
+                    break;
+                const GuestPtr<MapObject> next = Map_GetTileFirstObject(city->map, static_cast<int>(tile));
+                if (next->variant == 0)
+                    break;
+                if (!isStraightRoad(next->variant))
+                {
+                    links[dir] = next->tile;
+                    break;
+                }
+            }
+        }
+    }
+
+    // Whether a building of type flag 8 stands on the blocks beyond `side` of a footprint, up to two blocks
+    // out; a walkable tile in between ends the search.
+    int BldgType_FindEntrance2(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, int x, int z, int side)
+    {
+        for (int ring = 0; ring < 3; ++ring)
+        {
+            int tz = z + ring * blockStepZ(side), tx = x + ring * blockStepX(side);
+            if (side == 3)
+                tx -= 1;
+            else if (side == 2)
+                tz += btype->size;
+            else if (side == 1)
+                tx += btype->size;
+            else if (side == 0)
+                tz -= 1;
+            if (Map_TileFlag10(city->map, tx, tz) != 0)
+                return 0;
+            if ((globals::buildingTypeFlags(Map_GetTileObject(city->map, tx, tz)->type) & 8u) != 0)
+                return 1;
+        }
+        return 0;
+    }
+
+    // A field is worked from 7:00 to 15:59 on ordinary days (weather 0 or 1, not a holiday): its meter (+0x10)
+    // drops by 1 (8 when its family is not in the city) and every resident who lives there adds 6, or 25
+    // once the field is established (+0x12); at 120 it becomes established with the meter at 250. Marks the
+    // field on the minimap and returns 1 when the meter has fallen below -49.
+    int BldgField_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
+    {
+        if ((city->flags & 2u) != 0)
+            return 0;
+        if (city->weatherToday != 0 && city->weatherToday != 1)
+            return 0;
+        const int hour = city->clock / 3600;
+        if (hour < 7 || hour >= 16)
+            return 0;
+        port::GuestLocal<uint16_t> cursor;
+        *cursor = obj->firstPerson;
+        int16_t &meter = reinterpret_cast<int16_t &>(obj->claimMeter);
+        meter = static_cast<int16_t>(meter - (Family_InCity(obj->family) != 0 ? 1 : 8));
+        for (;;)
+        {
+            const GuestPtr<MapPerson> person = People_Next(city->map, cursor);
+            if (!person)
+                break;
+            if (person->home != obj->id)
+                continue;
+            meter = static_cast<int16_t>(meter + (obj->claimSlot != 0 ? 25 : 6));
+            if (meter >= 120)
+            {
+                obj->claimSlot = 1;
+                meter = 250;
+                break;
+            }
+        }
+        Minimap_Plot(city->minimap, obj->tile, btype->size, 1, 0);
+        return meter < -49 ? 1 : 0;
+    }
+
+    namespace
+    {
+        // Street lamps light up at 18:00 after three flickers (18:00:01-29, 18:01:21-39, 18:02:01-19, on from
+        // 18:02:41) and stay on until 5:00. `time` is seconds of the day.
+        bool streetLampLit(int time)
+        {
+            return (time > 0xFD20 && time < 0xFD3E) || (time > 0xFD70 && time < 0xFD84) || (time > 0xFD98 && time < 0xFDAC) ||
+                   time > 0xFDC0 || time < 18000;
+        }
+    }
+
+    // A road piece: its mesh under the layer 0 matrix. Street lamps (four meshes from type +0x160) are drawn
+    // lit (colour w word 12, object flag 0x10) after dark, each block a little later than the last; traffic
+    // lights (five meshes from +0x164) are drawn lit as two signal meshes chosen by the light phase (city
+    // +0xC0, 0..3) from the table at 0x1B1540, the second under the layer 3 matrix.
+    void BldgRoad_Draw(GuestPtr<BuildingType> btype, int, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
+                       ps2f x, ps2f y, ps2f z)
+    {
+        const GuestPtr<Vec4> matrix = layerMatrix(0);
+        matrix[3].x = x;
+        matrix[3].y = y;
+        matrix[3].z = z;
+        if (obj->mesh == 0)
+            return;
+        port::GuestLocal<Vec4> colour;
+        *colour = *GuestPtr<Vec4>{globals::kDefaultColour};
+        const auto drawLit = [&] { port::store<int32_t>(colour.ptr().address + 0xCu, 12); };
+        obj->flags &= 0xFFEFu;
+        const int mesh = obj->mesh;
+        const int lamps = port::load<int32_t>(btype.address + 0x160u);
+        if (mesh >= lamps && mesh <= lamps + 3)
+        {
+            const int tile = obj->tile;
+            int time = city->clock + ((tile % 128 + tile / 128) / 2) * 60;
+            if (time >= 86400)
+                time -= 86400;
+            if (streetLampLit(time))
+            {
+                drawLit();
+                obj->flags |= 0x10u;
+            }
+            Instance_DrawMesh(globals::cityPartsModel.get(), matrix, colour, obj->mesh, flags);
+            return;
+        }
+        const auto lights = [&] { return port::load<int32_t>(btype.address + 0x164u); };
+        if (mesh < lights() || mesh > lights() + 4)
+        {
+            Instance_DrawMesh(globals::cityPartsModel.get(), matrix, colour, mesh, flags);
+            return;
+        }
+        drawLit();
+        const uint32_t signals = 0x001B1540u + 4u * static_cast<uint32_t>(city->unk_C0 * 2 + (obj->mesh - lights()) * 8);
+        Instance_DrawMesh(globals::cityPartsModel.get(), matrix, colour, lights() + port::load<int32_t>(signals), flags);
+        const GuestPtr<Vec4> second = layerMatrix(3);
+        second[3].x = x;
+        second[3].y = y;
+        second[3].z = z;
+        Instance_DrawMesh(globals::cityPartsModel.get(), second, colour, lights() + port::load<int32_t>(signals + 4u), flags);
+    }
+
     // Building type base class: slots the subclasses override.
     void BldgType_InitRecord(GuestPtr<BuildingType>) {}
     int BldgType_Tick(GuestPtr<BuildingType>) { return 0; }
@@ -233,10 +577,44 @@ namespace mm
     // The My Home types are kinds 5 to 8.
     int BldgType_IsMyHome(GuestPtr<BuildingType> btype) { return btype->kind > 4 && btype->kind < 9; }
 
-    // The road class adds the halfword at +0x18 of the map object (a1) to the base value.
+    // The road class adds the map object's (a1) variant to the base value.
     int BldgRoad_Slot1C(GuestPtr<BuildingType> btype, int a1)
     {
-        return btype->unk_143 + port::load<uint16_t>(static_cast<uint32_t>(a1) + 0x18u);
+        return btype->unk_143 + GuestPtr<MapObject>{static_cast<uint32_t>(a1)}->variant;
+    }
+
+    // Collision against a building's mesh: the entrance mesh for entrance objects, else the first mesh plus
+    // the object's variant (two meshes per variant).
+    namespace
+    {
+        int collisionMesh(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj)
+        {
+            if ((obj->flags & 0x20u) != 0)
+                return btype->entranceMesh * 2;
+            return (btype->firstMesh + ((obj->variant & 0xFFu) >> 3)) * 2;
+        }
+    }
+
+    int Bldg_CollideA(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
+                      GuestPtr<uint32_t> hit, ps2f lift)
+    {
+        return Collide_SegmentA(static_cast<int>(btype.address), collisionMesh(btype, obj), point, matrix, hit, lift);
+    }
+
+    int Bldg_CollideB(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
+                      GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, ps2f f12)
+    {
+        return Collide_SegmentB(static_cast<int>(btype.address), collisionMesh(btype, obj), point, matrix, hit, distance, f12);
+    }
+
+    // Open hours apply to the building as a whole (no object) and to its entrance; other parts are never open.
+    int Bldg_IsOpen(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
+    {
+        if (!obj)
+            return BldgType_IsOpenAt(btype, city, obj);
+        if ((obj->flags & 0x20u) == 0)
+            return 0;
+        return BldgType_IsOpenAt(btype, city, obj);
     }
 
     PORT_FN(CityScene_GetMode);
@@ -253,6 +631,19 @@ namespace mm
     PORT_FN(Applicants_Find);
     PORT_FN(Applicants_FindFrom);
     PORT_FN(Applicants_Clear);
+    PORT_FN(Applicants_ScrollTo);
+    PORT_FN(Applicants_RemoveAt);
+    PORT_FN(Laptop_CheckOpen);
+    PORT_FN(WantsWin_ctor);
+    PORT_FN(BldgWasteland_InitRecord);
+    PORT_FN(BldgLeveled_Draw);
+    PORT_FN(BldgWasteland_Draw);
+    PORT_FN(BldgWasteland_FindSpot);
+    PORT_FN(BldgType_FindEntrance);
+    PORT_FN(BldgRoad_FindNeighbours);
+    PORT_FN(BldgRoad_Draw);
+    PORT_FN(BldgType_FindEntrance2);
+    PORT_FN(BldgField_Tick);
     PORT_FN(Schedule_PickEntry);
     PORT_FN(Stamina_HungerLevel);
     PORT_FN(Clock_AddWrap);
@@ -269,4 +660,7 @@ namespace mm
     PORT_FN(BldgType_Slot34);
     PORT_FN(BldgType_IsMyHome);
     PORT_FN(BldgRoad_Slot1C);
+    PORT_FN(Bldg_CollideA);
+    PORT_FN(Bldg_CollideB);
+    PORT_FN(Bldg_IsOpen);
 }

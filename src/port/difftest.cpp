@@ -11,8 +11,9 @@
 // Replay: MMPC_DIFFTEST=<dir> (with PS2X_HEADLESS=1) replays, right after the ELF is loaded, every record of
 // every ported function twice from the same state: through the generated function and through the ported
 // one. It compares RDRAM and the scratchpad (except the free stack below the entry sp, where the two use
-// different frames), the result register (v0 or f0, unless the function returns void), sp, ra and the
-// callee-saved registers (s0-s7, gp, fp, f20-f31). The process exits with the number of failing records.
+// different frames), the result register (v0 or f0, unless the function returns void), sp, ra, the
+// callee-saved registers (s0-s7, gp, fp, f20-f31) and the VU0 registers (vf1-vf31, ACC, Q). The process exits
+// with the number of failing records.
 // Side effects outside guest memory (GS, IOP, files) are not compared yet.
 
 #include "difftest.h"
@@ -335,6 +336,16 @@ namespace port
             for (int f = 20; f < 32; ++f)
                 if (std::memcmp(&a.ctx.f[f], &b.ctx.f[f], 4) != 0)
                     diffs.push_back("f" + std::to_string(f) + " differs");
+            // VU0 registers carry over from one function to the next: some code reads lanes it never wrote (the w
+            // of vf6 in mm_Math_TriangleNormal, all of vf12 in mm_BldgField_Draw), so a port leaves them as the
+            // original does.
+            for (int v = 1; v < 32; ++v)
+                if (std::memcmp(&a.ctx.vu0_vf[v], &b.ctx.vu0_vf[v], sizeof(a.ctx.vu0_vf[v])) != 0)
+                    diffs.push_back("vf" + std::to_string(v) + " differs");
+            if (std::memcmp(&a.ctx.vu0_acc, &b.ctx.vu0_acc, sizeof(a.ctx.vu0_acc)) != 0)
+                diffs.push_back("ACC differs");
+            if (std::memcmp(&a.ctx.vu0_q, &b.ctx.vu0_q, sizeof(a.ctx.vu0_q)) != 0)
+                diffs.push_back("Q differs");
 
             const uint32_t sp = static_cast<uint32_t>(gpr64(&rec.ctx, 29)) & PS2_RAM_MASK;
             const uint32_t freeLow = sp > kFreeStackBytes ? sp - kFreeStackBytes : 0u;

@@ -13,7 +13,7 @@ Saving and loading on the memory card.
 
 ## Functions
 
-48 functions (ported 4, typed 34, verified 10). Blocks: 13 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+48 functions (ported 4, typed 23, verified 21). Blocks: 13 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -26,7 +26,7 @@ Saving and loading on the memory card.
 | `0x0015BA60` | `int mm_SaveFile_Close(McManager *mc)` | 16 | no | queues close of the file's descriptor (+0x24) |
 | `0x0015BA70` | `int mm_SaveFile_Read(McManager *mc, int buffer, int size)` | 28 | no | queues sceMcRead of a2 bytes into a1 from the open save file |
 | `0x0015BA90` | `int mm_SaveFile_Write(McManager *mc, int buffer, int size)` | 28 | no | queues sceMcWrite of a2 bytes from a1 to the open save file |
-| `0x0015BAB0` | `int mm_SaveFile_Open(McManager *mc, int name)` | 24 | no | queues sceMcOpen of a1 on the current port/slot (gp), descriptor to +0x24 |
+| `0x0015BAB0` | `int mm_SaveFile_Open(McManager *mc, int mode)` | 24 | no | queues sceMcOpen of a1 on the current port/slot (gp), descriptor to +0x24 |
 | `0x0015BAD0` | `int mm_SaveFile_Format(McManager *mc, int port)` | 140 | no | format step machine; returns when done |
 | `0x0015BB60` | `void mm_SaveFile_ResetState(McManager *mc)` | 8 | no | state +4 = 0 |
 | `0x0015BB70` | `int mm_SaveFile_PollDone(McManager *mc)` | 12 | no | whether request +0x14 is done |
@@ -35,7 +35,7 @@ Saving and loading on the memory card.
 | `0x0015BC00` | `int mm_SaveFile_PrepareDir(McManager *mc, int a1, int a2, int a3)` | 1052 | yes | step machine: card info, mkdir/chdir, copies DATA\STATIC.ICO to STATIC.ICO |
 | `0x0015C020` | `void mm_McManager_ResetState(McManager *mc)` | 8 | no | state +4 = 0 |
 | `0x0015C030` | `int mm_McManager_PrepareNewSlot(McManager *mc, int card)` | 108 | yes | (provisional) fills the first empty slot of card a1 with a new save name |
-| `0x0015C0A0` | `int mm_McManager_FindSlotA(McManager *mc, int a1, int32_t *slot)` | 128 | no | (provisional) slot lookup over the slot tables |
+| `0x0015C0A0` | `int mm_McManager_FindSlotA(McManager *mc, int index, int32_t *card)` | 128 | no | (provisional) slot lookup over the slot tables |
 | `0x0015C120` | `int mm_McManager_FindSlotB(McManager *mc, int a1, int32_t *slot)` | 128 | no | (provisional) slot lookup over the slot tables |
 | `0x0015C1A0` | `int mm_McManager_IsCardUsable(McManager *mc, int card)` | 68 | no | (provisional) card a1 state 2 and no error |
 | `0x0015C1F0` | `uint8_t mm_McManager_GetCardStatus(McManager *mc, int card)` | 156 | no | card a1 status for the menus (formatted, unformatted, none, ...) |

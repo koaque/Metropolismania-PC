@@ -151,7 +151,7 @@ namespace mm
     }
 
     // char: counts down the 25 character type slot timers and frees a slot (6000) when its time is up.
-    void CharType_ResetLookup()
+    void CharType_TickSlots()
     {
         for (uint32_t i = 0; i < 25; ++i)
         {
@@ -166,6 +166,239 @@ namespace mm
     // event: the data size of the event handler classes (vtable slot).
     int EventData_GetSize1C() { return 0x1C; }
     int EventData_GetSize7C() { return 0x7C; }
+
+    // Static constructor: the 256 member status bytes (4 bytes apart; __construct_array in the original).
+    void StaticInit_StatusBytes()
+    {
+        for (uint32_t i = 0; i < 0x100; ++i)
+            StatusByte_ctorE0(static_cast<int>(globals::kMemberStatus + 4u * i));
+    }
+
+    // core: the game object's sound state and scene pointers start empty.
+    void GameInit(int game)
+    {
+        Sound_InitState();
+        const uint32_t g = static_cast<uint32_t>(game);
+        port::store<int32_t>(g + 0x4, 0);
+        port::store<int32_t>(g + 0xC, 0);
+        port::store<int32_t>(g + 0x10, 0);
+        port::store<int32_t>(g + 0x8, 0);
+    }
+
+    // char: the second character class type, a CharType with its own vtable.
+    GuestPtr<CharClass> Char2_ctor(GuestPtr<CharClass> cls, GuestPtr<uint8_t> record)
+    {
+        CharType_ctor(cls, record);
+        cls->vtable = GuestPtr<void>{0x001BCE90u};
+        return cls;
+    }
+
+    // char: switches the player to `mode` (-1: back to the previous one) and swallows the Cross press that
+    // chose it.
+    void Player_SetMode(GuestPtr<Player> player, int mode)
+    {
+        if (mode == -1)
+            mode = player->previousMode;
+        player->previousMode = player->mode;
+        player->mode = mode;
+        player->unk_80 = 0;
+        player->unk_08 = 0;
+        player->unk_34 = 0;
+        player->unk_40 = -1;
+        Pad_ClearBit40();
+    }
+
+    // file: empties the disc request queue.
+    void FileQueue_Init()
+    {
+        for (uint32_t i = 0; i < 0x40; ++i)
+            port::store<int32_t>(globals::kFileRequests + 0x1Cu * i, 0);
+        globals::fileQueueTail.set(0);
+        globals::fileQueueHead.set(0);
+        globals::fileQueueCount.set(0);
+    }
+
+    // laptop
+    GuestPtr<Laptop> Laptop_ctor(GuestPtr<Laptop> laptop)
+    {
+        laptop->unk_00 = GuestPtr<void>{port::load<uint32_t>(0x001F3B08u)};
+        laptop->unk_3C = 0;
+        laptop->unk_44 = 0;
+        laptop->unk_3D0 = 0;
+        return laptop;
+    }
+
+    // events: hunger fires when the player's stamina is out; quota-80 once the population reaches 80% of the
+    // stage's quota (0x1C554C).
+    int EvHunger_Check(GuestPtr<EventData>, GuestPtr<CityScene> city) { return Stamina_HungerLevel(city->stamina) == 0; }
+
+    int EvQuota80_Check(GuestPtr<EventData>, GuestPtr<CityScene> city)
+    {
+        const ps2f target = ps2f(0.8f) * fromInt(globals::stageState()->quota);
+        return !(fromInt(city->map->population) < target);
+    }
+
+    // Paydays fall in months 5 and 11 of each year (one month per in-game day); in stage 0 not before month 11.
+    int EvPayday_Check(GuestPtr<EventData>, GuestPtr<CityScene> city)
+    {
+        if (globals::stageState()->stage == 0 && city->monthCount < 11)
+            return 0;
+        const int month = city->monthCount % 12;
+        return month == 5 || month == 11;
+    }
+
+    // stage: no stage loaded, empty names, and the two starting values.
+    void Stage_Reset()
+    {
+        const GuestPtr<StageState> stage = globals::stageState();
+        stage->stage = -1;
+        stage->unk_1C0 = 3000;
+        stage->unk_1C4 = 2500;
+        stage->unk_280 = 0;
+        for (StageName &name : stage->names)
+            name.text[0] = '\0';
+    }
+
+    // char: a character type from its CHARTYPE.BIN record.
+    GuestPtr<CharClass> CharType_ctor(GuestPtr<CharClass> cls, GuestPtr<uint8_t> record)
+    {
+        const auto part = [](uint8_t index) { return GuestPtr<void>{port::load<uint32_t>(globals::kCharParts + 4u * index)}; };
+        cls->vtable = GuestPtr<void>{0x001BCE70u};
+        cls->parts[0] = part(record[8]);
+        cls->parts[1] = part(record[9]);
+        cls->parts[2] = part(record[10]);
+        cls->parts[3] = part(record[14]);
+        cls->unk_10 = record[11];
+        cls->unk_12 = record[12];
+        cls->unk_14 = record[13];
+        cls->unk_16 = record[2];
+        cls->unk_18 = port::load<uint16_t>(record.address + 4u);
+        cls->unk_1C = port::load<uint32_t>(record.address + 0x14u);
+        return cls;
+    }
+
+    // char: the person type adds its walking speed, record halfword 6 in millionths.
+    GuestPtr<PersonClass> Person_ctor(GuestPtr<PersonClass> cls, GuestPtr<uint8_t> record)
+    {
+        CharType_ctor(GuestPtr<CharClass>::of(cls->base), record);
+        cls->base.vtable = GuestPtr<void>{0x001BCEB0u};
+        cls->walkSpeed = fromInt(port::load<uint16_t>(record.address + 6u)) / ps2f(1000000.0f);
+        return cls;
+    }
+
+    // char: frees all 25 character type slots.
+    void CharType_ClearSlots()
+    {
+        for (uint32_t i = 0; i < 25; ++i)
+        {
+            port::store<int32_t>(globals::kCharTypeSlots + 4u * i, 6000);
+            port::store<int32_t>(globals::kCharTypeTimers + 4u * i, 0);
+        }
+    }
+
+    // char: the player starts in mode 0 at the origin, with its model from 0x1F3CD4.
+    GuestPtr<Player> Player_ctor(GuestPtr<Player> player)
+    {
+        player->model = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3CD4u)};
+        player->mode = 0;
+        player->previousMode = 0;
+        player->unk_08 = 0;
+        player->unk_80 = 0;
+        player->unk_34 = 0;
+        player->unk_0C = 0;
+        player->position.x = 0.0f;
+        player->position.y = 0.0f;
+        player->position.z = 0.0f;
+        player->position.w = 0.0f;
+        player->unk_3C = 0;
+        player->unk_40 = -1;
+        player->unk_44 = 0;
+        player->unk_48 = 0;
+        player->unk_50 = 0;
+        player->jumpSpeed = 0.0f;
+        player->jumps = 0;
+        return player;
+    }
+
+    // phone: an empty call queue.
+    GuestPtr<PhoneCalls> PhoneCall_ctor(GuestPtr<PhoneCalls> phone)
+    {
+        phone->unk_00 = GuestPtr<void>{port::load<uint32_t>(0x001F3B08u)};
+        for (PhoneCallEntry &call : phone->calls)
+            call.family = 0;
+        phone->unk_04 = 0;
+        phone->unk_08 = 0;
+        phone->unk_0C = 0;
+        phone->unk_40 = 0;
+        return phone;
+    }
+
+    // bag: empty slots, no shortcuts, and the bag model scaled by 7 at its place from 0x1AEF10.
+    GuestPtr<Bag> Bag_ctor(GuestPtr<Bag> bag)
+    {
+        for (BagSlot &slot : bag->slots)
+            slot.item = 0;
+        for (BagShortcut &shortcut : bag->shortcuts)
+            shortcut.slot = -1;
+        bag->model = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B24u)};
+        bag->unk_194 = 0;
+        bag->matrix = GuestPtr<Vec4>{bag->model.address + 0x10u};
+        bag->matrix[2].z = 7.0f;
+        bag->matrix[1].y = 7.0f;
+        bag->matrix[0].x = 7.0f;
+        const GuestPtr<Vec4> place{0x001AEF10u};
+        bag->matrix[3].x = place->x;
+        bag->matrix[3].y = place->y;
+        bag->matrix[3].z = place->z;
+        bag->unk_19C = 0;
+        bag->unk_174 = 0;
+        bag->unk_178 = 0;
+        bag->unk_170 = 0;
+        bag->unk_000 = 0;
+        bag->unk_1A0 = 0;
+        bag->unk_002 = 0;
+        for (uint8_t &b : bag->unk_17C)
+            b = 0;
+        bag->unk_1A4 = -1;
+        return bag;
+    }
+
+    // markers: four marker matrices, identity moved to the offsets at 0x1B0DB0 and 0.1 down.
+    GuestPtr<Markers> Markers_ctor(GuestPtr<Markers> markers)
+    {
+        markers->vtable = GuestPtr<void>{0x001BCFC8u};
+        markers->model = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B28u)};
+        markers->unk_004 = GuestPtr<void>{port::load<uint32_t>(0x001F3B08u)};
+        markers->unk_110 = 1;
+        markers->unk_114 = 2;
+        markers->unk_118 = 3;
+        markers->unk_11C = -1;
+        const GuestPtr<ps2f> offsets{0x001B0DB0u};
+        for (int i = 0; i < 4; ++i)
+        {
+            const GuestPtr<Vec4> matrix = GuestPtr<Vec4>::of(markers->matrices[4 * i]);
+            Mat4_Copy(matrix, GuestPtr<Vec4>{0x001B2550u}); // identity
+            matrix[3].x = offsets[2 * i];
+            matrix[3].y = offsets[2 * i + 1];
+            matrix[3].z = -0.1f;
+        }
+        markers->unk_120 = 0;
+        markers->unk_124 = 0;
+        return markers;
+    }
+
+    // laptop: the first-time entries from the template; the default count is 4 until something changes it.
+    void Laptop_InitEntries()
+    {
+        if (globals::laptopDefaultSet.get() == 0)
+        {
+            globals::laptopDefaultCount.set(4);
+            globals::laptopDefaultSet.set(1);
+        }
+        for (uint32_t i = 0; i < 14; ++i)
+            port::store<uint32_t>(globals::kLaptopEntries + 4u * i, port::load<uint32_t>(globals::kLaptopTemplate + 4u * i));
+        globals::laptopEntryCount.set(globals::laptopDefaultCount.get());
+    }
 
     // stage: the stage object starts with an empty city name.
     int StageObj_ctor(int stage)
@@ -189,9 +422,27 @@ namespace mm
     PORT_FN(FileQueue_IsDone);
     PORT_FN(StatusByte_ctorE0);
     PORT_FN(StatusByte_IncLevel);
-    PORT_FN(CharType_ResetLookup);
+    PORT_FN(CharType_TickSlots);
     PORT_FN(MemberStatus_Tick);
     PORT_FN(EventData_GetSize1C);
     PORT_FN(EventData_GetSize7C);
     PORT_FN(StageObj_ctor);
+    PORT_FN(StaticInit_StatusBytes);
+    PORT_FN(GameInit);
+    PORT_FN(Char2_ctor);
+    PORT_FN(Player_SetMode);
+    PORT_FN(FileQueue_Init);
+    PORT_FN(Laptop_ctor);
+    PORT_FN(EvHunger_Check);
+    PORT_FN(EvQuota80_Check);
+    PORT_FN(EvPayday_Check);
+    PORT_FN(Stage_Reset);
+    PORT_FN(CharType_ctor);
+    PORT_FN(CharType_ClearSlots);
+    PORT_FN(Player_ctor);
+    PORT_FN(PhoneCall_ctor);
+    PORT_FN(Bag_ctor);
+    PORT_FN(Laptop_InitEntries);
+    PORT_FN(Person_ctor);
+    PORT_FN(Markers_ctor);
 }

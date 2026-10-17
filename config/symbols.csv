@@ -784,8 +784,8 @@ address,name,kind,source
 0x00132DA0,mm_Person_Walk,func,manual
 0x00133B70,mm_Person_UpdatePose,func,manual
 0x00133E80,mm_Person_Draw2,func,manual
-0x00134140,mm_CharType_ResetLookup,func,manual
-0x001341A0,mm_CharType_BuildLookup,func,manual
+0x00134140,mm_CharType_TickSlots,func,manual
+0x001341A0,mm_CharType_ClearSlots,func,manual
 0x00134260,mm_Person_BuildPose,func,manual
 0x001345E0,mm_Person_Draw,func,manual
 0x00134A20,mm_Person_Update,func,manual
@@ -942,7 +942,7 @@ address,name,kind,source
 0x00141560,mm_Map_GetTileHeightWord,func,manual
 0x00141580,mm_Map_GetHeightAt,func,manual
 0x001415E0,mm_Map_SampleHeight,func,manual
-0x00141890,mm_Math_TriangleHeight,func,manual
+0x00141890,mm_Math_TriangleNormal,func,manual
 0x001418D0,mm_Map_UpdateTileGeometry,func,manual
 0x00141ED0,mm_Map_UpdateAreaGeometry,func,manual
 0x00141F60,mm_TerrainGen_ApplyBump,func,manual
@@ -1097,7 +1097,7 @@ address,name,kind,source
 0x00150980,mm_Wants_ctor,func,manual
 0x00150990,mm_ListMenu_ScrollTo,func,manual
 0x001509E0,mm_ListMenu_SetCursor,func,manual
-0x00150AA0,mm_ListMenu_Highlight,func,manual
+0x00150AA0,mm_ListMenu_ClearItem,func,manual
 0x00150B80,mm_ListMenu_SetItemText,func,manual
 0x00150C20,mm_ListMenu_AddItems,func,manual
 0x00150DA0,mm_ListMenu_HandleInput,func,manual

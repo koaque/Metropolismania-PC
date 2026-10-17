@@ -6,7 +6,7 @@ Vector and matrix helpers (VU0 macro code in the original), line/plane and trian
 
 ## Functions
 
-14 functions (typed 12, verified 2). Blocks: 0 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+14 functions (typed 6, verified 8). Blocks: 0 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -14,7 +14,7 @@ Vector and matrix helpers (VU0 macro code in the original), line/plane and trian
 | `0x00129C10` | `void mm_Mat4_MulVu0(Vec4 *out, Vec4 *a, Vec4 *b)` | 116 | no | a0 = a1 x a2 (4x4, VU0 macro mode) |
 | `0x0012AB10` | `void mm_Vec3_Normalize(Vec4 *out, Vec4 *v)` | 36 | no | a0 = a1 / \|a1\| (VU0, xyz) |
 | `0x00136CB0` | `void mm_Math_ProjectPoint(int unused_a0, Vec4 *out, Vec4 *point, Vec4 *matrix)` | 60 | no | projects a 3D point with the given matrices (VU0) |
-| `0x00141890` | `void mm_Math_TriangleHeight(Vec4 *a0, Vec4 *a1, Vec4 *a2, Vec4 *a3)` | 60 | no | (provisional) VU0 helper for mm_Map_SampleHeight |
+| `0x00141890` | `mm_Math_TriangleHeight` | 60 | no | unit normal of triangle (a, b, c) in out.xyz via VU0; out.w = (w of vf6 as earlier VU0 code left it) squared (used by mm_Map_SampleHeight) |
 | `0x0015EDE0` | `uint32_t mm_Math_SqrtBits(int value)` | 48 | no | bit pattern of sqrtf((float)a0) (VU0 VSQRT), returned in v0; mm_Person_ChooseDestination uses it mod 3600 as a per-person time offset |
 | `0x00164740` | `void mm_Math_MulMatVecVu0(Vec4 *out, Vec4 *matrix, Vec4 *v)` | 44 | no | (provisional) VU0 matrix x vector |
 | `0x00182BF0` | `int mm_Collide_RayTriangleA(int a0, Vec4 *a1, Vec4 *a2, Vec4 *a3, int t0, float *t1, float f12)` | 304 | no | (provisional) ray against a triangle's plane, then inside test |

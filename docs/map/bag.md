@@ -7,7 +7,7 @@ city `+0x60`), `mm_BagMenu_*` is the bag window. Item kinds come from the goods 
 
 ## Functions
 
-16 functions (typed 16). Blocks: 5 can reach a thread switch, 1 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+16 functions (typed 14, verified 2). Blocks: 5 can reach a thread switch, 1 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|

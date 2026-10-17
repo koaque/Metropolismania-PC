@@ -194,6 +194,34 @@ namespace port
         }
     };
 
+    // A local the code hands to a guest function by pointer, where the original kept it in its stack frame:
+    // guest memory reserved below the guest stack pointer for the scope, with the stack pointer moved below it
+    // so callees do not overwrite it. That area is free stack, which the difftest leaves out.
+    template <typename T>
+    class GuestLocal
+    {
+    public:
+        GuestLocal()
+            : ctx_(g_call.ctx), savedSp_(gpr64(g_call.ctx, 29)),
+              address_((static_cast<uint32_t>(savedSp_) - static_cast<uint32_t>((sizeof(T) + 15u) & ~size_t{15})) & ~15u)
+        {
+            setGpr64(ctx_, 29, static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(address_))));
+        }
+        ~GuestLocal() { setGpr64(ctx_, 29, savedSp_); }
+        GuestLocal(const GuestLocal &) = delete;
+        GuestLocal &operator=(const GuestLocal &) = delete;
+
+        mm::GuestPtr<T> ptr() const { return mm::GuestPtr<T>{address_}; }
+        operator mm::GuestPtr<T>() const { return ptr(); }
+        T &operator*() const { return *ptr(); }
+        T *operator->() const { return &*ptr(); }
+
+    private:
+        R5900Context *ctx_;
+        uint64_t savedSp_;
+        uint32_t address_;
+    };
+
     // Return address given to guest callees; never a real code address.
     inline constexpr uint32_t kReturnSentinel = 0x00000FF0u;
 

@@ -9,6 +9,7 @@ namespace mm
     {
         constexpr int kMapSize = 128;
         constexpr uint16_t kNoPerson = 6000;
+        constexpr uint16_t kNoObject = 0x3F80;
 
         bool onMap(int x, int z) { return x >= 0 && x < kMapSize && z >= 0 && z < kMapSize; }
         int clampToMap(int v) { return v < 0 ? 0 : v >= kMapSize ? kMapSize - 1 : v; }
@@ -38,6 +39,19 @@ namespace mm
     {
         const uint16_t flags = map->tiles[tile].flags;
         return ((flags & 4) ? 2 : 0) + ((flags & 2) ? 1 : 0);
+    }
+
+    // Roads go on even tiles only (2x2 blocks), owned by nobody, type 4.
+    void Map_PlaceRoad(GuestPtr<CityMap> map, uint32_t x, uint32_t z, int arg)
+    {
+        Map_PlaceObject(map, 0, 4, static_cast<int>(x & ~1u), static_cast<int>(z & ~1u), arg);
+    }
+
+    void Map_SetTileHeight(GuestPtr<CityMap> map, uint32_t tile, ps2f height)
+    {
+        map->tiles[tile].height = height;
+        const int index = static_cast<int>(tile);
+        Map_UpdateTileGeometry(map, index % kMapSize, index / kMapSize);
     }
 
     void Map_SetTileKind(GuestPtr<CityMap> map, int tile, uint32_t kind)
@@ -120,6 +134,41 @@ namespace mm
         const GuestPtr<MapPerson> person = map->people + *cursor;
         *cursor = person->nextOnTile;
         return person;
+    }
+
+    // Objects on one tile stack: each one sits 0.8 below the one before it in the tile's list. 0 when the
+    // object is not in its own tile's list.
+    ps2f MapObj_GetHeight(GuestPtr<CityMap> map, uint32_t object)
+    {
+        const uint16_t tile = map->objects[object].tile;
+        ps2f height = Map_GetTileHeightWord(map, tile);
+        for (uint16_t id = map->tiles[tile].firstObject; id != kNoObject; id = map->objects[id].nextOnTile)
+        {
+            if (id == object)
+                return height;
+            height = height - ps2f(0.8f);
+        }
+        return 0.0f;
+    }
+
+    // Takes `person` out of the person list of whichever object on `tile` holds it, and flags it 0x800.
+    // Returns that object's id, or 0x3F80 when no object on the tile has the person.
+    uint16_t Map_UnlinkPersonFromTile(GuestPtr<CityMap> map, int tile, uint32_t person)
+    {
+        for (GuestPtr<MapObject> obj = Map_GetTileFirstObject(map, tile);; obj = map->objects + obj->nextOnTile)
+        {
+            for (uint16_t *link = &obj->firstPerson; *link != kNoPerson; link = &map->people[*link].nextOnTile)
+                if (*link == person)
+                {
+                    MapPerson &entry = map->people[*link];
+                    *link = entry.nextOnTile;
+                    entry.nextOnTile = kNoPerson;
+                    entry.flags |= 0x800u;
+                    return obj->id;
+                }
+            if (obj->nextOnTile == kNoObject)
+                return kNoObject;
+        }
     }
 
     void MapObj_AddPerson(GuestPtr<CityMap> map, int object, int person)
@@ -255,6 +304,8 @@ namespace mm
     PORT_FN(Map_TileIndexFlag10);
     PORT_FN(Map_GetTileKind);
     PORT_FN(Map_SetTileKind);
+    PORT_FN(Map_PlaceRoad);
+    PORT_FN(Map_SetTileHeight);
     PORT_FN(Map_GetTileHeightWord);
     PORT_FN(Map_GetHeightAt);
     PORT_FN(Map_HeightScale);
@@ -268,6 +319,8 @@ namespace mm
     PORT_FN(Map_FindFamilyHome);
     PORT_FN(People_Next);
     PORT_FN(MapObj_AddPerson);
+    PORT_FN(MapObj_GetHeight);
+    PORT_FN(Map_UnlinkPersonFromTile);
     PORT_FN(People_RemoveChain);
     PORT_FN(TileLists_Clear);
     PORT_FN(TileLists_InsertAll);

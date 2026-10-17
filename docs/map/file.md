@@ -7,7 +7,7 @@ queue (`mm_FileQueue_*`) that `mm_MainLoop` pumps every frame; `mm_FileQueue_Wai
 
 ## Functions
 
-12 functions (typed 10, verified 2). Blocks: 9 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+12 functions (typed 9, verified 3). Blocks: 9 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|

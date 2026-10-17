@@ -48,6 +48,49 @@ namespace mm
         return 0;
     }
 
+    // A family moves in: its bit in bitset A and both moved-in counters.
+    void Family_SetFlagA(uint32_t family)
+    {
+        const int32_t id = static_cast<int32_t>(family);
+        const uint32_t word = globals::kFamiliesInCity + static_cast<uint32_t>(4 * (id / 32));
+        port::store<uint32_t>(word, port::load<uint32_t>(word) | (1u << (id & 31)));
+        globals::familiesMovedIn.set(globals::familiesMovedIn.get() + 1);
+        globals::familiesMovedInEvent.set(globals::familiesMovedInEvent.get() + 1);
+    }
+
+    // The family's number in the Town's Pages: 19 followed by the low six digits of 97 * family + 6920, with
+    // digits 1 to 5 in reverse order (digit k of the source lands at kPlace[k]).
+    int Family_MakePhoneNumber(int family)
+    {
+        static constexpr int kPlace[6] = {1, 100000, 10000, 1000, 100, 10};
+        int source = family * 0x61 + 0x1B08;
+        int number = 0;
+        for (int digit = 0; digit < 6; ++digit, source /= 10)
+            number += (source % 10) * kPlace[digit];
+        return number + 19000000;
+    }
+
+    // Forgets every family: the three bitsets, the two family tables, the member bytes and the counters.
+    void Family_ResetState()
+    {
+        for (uint32_t i = 0; i < 0x139; ++i)
+        {
+            port::store<uint32_t>(globals::kFamiliesKnown + 4u * i, 0);
+            port::store<uint32_t>(globals::kFamiliesInCity + 4u * i, 0);
+            port::store<uint32_t>(globals::kFamiliesLeft + 4u * i, 0);
+        }
+        for (uint32_t i = 0; i < 0x100; ++i)
+        {
+            port::store<uint32_t>(globals::kFamilyTableB + 4u * i, 0);
+            port::store<uint32_t>(globals::kFamilyTableA + 4u * i, 0);
+        }
+        for (uint32_t i = 0; i < 60000; ++i)
+            port::store<uint8_t>(globals::kMemberBytes + i, 0);
+        globals::familiesMovedIn.set(0);
+        globals::familiesMovedInEvent.set(0);
+        globals::familiesLeftEvent.set(0);
+    }
+
     int Family_HasLeft(uint32_t family) { return familyBit(globals::kFamiliesLeft, family); }
     int Family_IsKnown(uint32_t family) { return familyBit(globals::kFamiliesKnown, family); }
     int Family_InCity(uint32_t family) { return familyBit(globals::kFamiliesInCity, family); }
@@ -58,4 +101,7 @@ namespace mm
     PORT_FN(Family_HasLeft);
     PORT_FN(Family_IsKnown);
     PORT_FN(Family_InCity);
+    PORT_FN(Family_SetFlagA);
+    PORT_FN(Family_MakePhoneNumber);
+    PORT_FN(Family_ResetState);
 }

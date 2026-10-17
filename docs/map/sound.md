@@ -14,7 +14,7 @@ Sound on the EE side; the driver is YYSOUND on the IOP.
 
 ## Functions
 
-57 functions (ported 3, typed 37, verified 17). Blocks: 4 can reach a thread switch, 1 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+57 functions (ported 3, typed 31, verified 23). Blocks: 4 can reach a thread switch, 1 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -36,18 +36,18 @@ Sound on the EE side; the driver is YYSOUND on the IOP.
 | `0x0018AA00` | `void mm_Se_PlayVariant(uint8_t variant)` | 1148 | no | plays one of a few sound ids (0x29 ...) chosen by a0, with a random pitch offset (0..199) |
 | `0x0018AE80` | `void mm_Se_UpdateTimeOfDay(void)` | 452 | no | time-of-day cues: fades sound 0x36 by the clock (silent 6:00-18:00), chime 0x37 at fixed times in months 7-8 |
 | `0x0018B050` | `void mm_Se_UpdateVoices(void)` | 2736 | no | per frame: starts, moves and stops the effect voices assigned by mm_Se_AssignVoices |
-| `0x0018BB10` | `int mm_Se_ApplyVoiceParams(uint32_t voice)` | 188 | no | voice a0: volume L/R clamped to 1..0x3FFF (flag 1, 0x18DD90) and pitch (flag 2, 0x18DC70) |
+| `0x0018BB10` | `void mm_Se_ApplyVoiceParams(uint32_t voice)` | 188 | no | voice a0: volume L/R clamped to 1..0x3FFF (flag 1, 0x18DD90) and pitch (flag 2, 0x18DC70) |
 | `0x0018BBD0` | `void mm_Se_AssignVoices(void)` | 2952 | no | sorts the frame's requests by priority into the 16 + 15 effect voice slots, stealing low-priority voices |
 | `0x0018C770` | `void mm_Sound_Update(void)` | 580 | no | per frame from mm_GameUpdate: assigns and updates effect voices, city ambience, time-of-day cues and the BGM state |
 | `0x0018C9C0` | `void mm_Sound_SetCity(CityScene *city)` | 516 | no | sets the city object (0x1BDD00) used by the sound code; null stops all effect voices and resets their volumes |
 | `0x0018CBD0` | `int mm_Sound_StopAllSequences(void)` | 60 | no | queues cmd 0xB for sequence slots 7..0 |
-| `0x0018CC10` | `int mm_Sound_LoadPlaylandBanks(void)` | 88 | no | queues cmd 9 (load SQ/HD/BD bank) for the 4 bank name triples at 0x1B2E20 (PLAYLAND.SQ ...) |
+| `0x0018CC10` | `void mm_Sound_LoadPlaylandBanks(void)` | 88 | no | queues cmd 9 (load SQ/HD/BD bank) for the 4 bank name triples at 0x1B2E20 (PLAYLAND.SQ ...) |
 | `0x0018CC70` | `void mm_Bgm_FadeOut(int time)` | 48 | no | cmd 0xE on voice 15 to volume 0 over a0, BGM state (gp 0x1BDCF4?) = 4 |
 | `0x0018CCA0` | `int mm_Bgm_SetActive(int active)` | 132 | no | a0 == 0 fades the BGM out (state 4); otherwise stops a pending jingle, restores volume 0xC0 and sets state 3 |
-| `0x0018CD30` | `void mm_Bgm_SetTrackSlot(char slot, int a1, int a2)` | 360 | no | stores an 8-byte track descriptor for slot a0 + 6 in the table at 0x1F8120 and starts it when a2 != 0 |
+| `0x0018CD30` | `void mm_Bgm_SetTrackSlot(char slot, int play, int enable)` | 360 | no | sets or adds track slot + 6 in the music table (0x1F8120, entries 3..12 of (id, enabled)); with play: fades voice 15 out with it next, or queues it (0x1BDCF0) |
 | `0x0018CEA0` | `int mm_Bgm_Update(void)` | 688 | no | picks the BGM for the city state (flags +0xB4, +0x8C) and switches banks (NOMAL_A.SQ/HD/BD ...) when the driver is idle |
 | `0x0018D150` | `int mm_SoundCmd_02_Zero(void)` | 12 | no | queues cmd 2 with zero arguments |
-| `0x0018D160` | `int mm_Sound_ResetVoices(int a0)` | 284 | no | queues cmd 1, resets all voice volumes (0xFFF group A, 0x100 group B, 0xC0 voice 15) and clears the effect voice tables |
+| `0x0018D160` | `void mm_Sound_ResetVoices(int bankSet)` | 284 | no | queues cmd 1, resets all voice volumes (0xFFF group A, 0x100 group B, 0xC0 voice 15) and clears the effect voice tables |
 | `0x0018D280` | `void mm_Se_BuildAmbienceMap(void)` | 348 | no | clears the 4096-entry ambience grid at 0x1FC690 and fills it from the city map and the table at 0x1B35F0 |
 | `0x0018D3E0` | `void mm_Sound_InitState(void)` | 196 | no | called by mm_GameInit: marks all 31 effect voices free (0xFF) and clears the sound globals |
 | `0x0018D4B0` | `void mm_SoundCmd_CancelPlayB(char voice)` | 256 | no | removes queued cmd 3 entries for voice a0 from the ring |

@@ -97,6 +97,156 @@ namespace mm
     void DmaList_QueueClearScreen() { appendDmaCall(0x001B28E0u); } // full-screen sprite writing colour 0
     void DmaList_QueueClearZ() { appendDmaCall(0x001B26D0u); }      // full-screen sprite writing only Z
 
+    // Start of a frame's drawing: the packet buffer rewinds and the list begins with the GS defaults.
+    void DmaList_BeginScene()
+    {
+        globals::packetBufPos.set(static_cast<int32_t>(globals::packetBufBase.get()));
+        DmaList_QueueGsDefaults();
+    }
+
+    // ---- drawing: queue an object's prebuilt packet on the DMA list
+
+    void Packet_Draw(GuestPtr<uint32_t> packets) { Dma_AppendCall(static_cast<int>(*packets)); }
+    void Packet2_Draw(GuestPtr<uint32_t> packets, int second) { Dma_AppendCall(static_cast<int>(packets[second == 0 ? 0 : 1])); }
+    void TexSprite_Draw(GuestPtr<TexSprite> sprite) { Dma_AppendCall(static_cast<int>(sprite->packet)); }
+
+    void LayerF_Draw(GuestPtr<LayerF> layer, int packet)
+    {
+        Dma_AppendCall(static_cast<int>(layer->packet));
+        Dma_AppendCall(packet);
+    }
+
+    void LayerB_Draw(GuestPtr<LayerB> layer, int packet)
+    {
+        Dma_AppendCall(static_cast<int>(layer->packetA));
+        Dma_AppendCall(packet);
+        Dma_AppendCall(static_cast<int>(layer->packetB));
+        Dma_AppendCall(packet);
+    }
+
+    // The three sky packets built into the city camera.
+    void Sky_Draw(GuestPtr<CityCamera> camera)
+    {
+        Dma_AppendCall(static_cast<int>(camera.address + 0x310u));
+        Dma_AppendCall(static_cast<int>(camera.address + 0x470u));
+        Dma_AppendCall(static_cast<int>(camera.address + 0x3D0u));
+    }
+
+    // City render passes; the frame parity (0x1BDCD0) picks one of two packet sets.
+    void CityRender_DrawInstanceLayer(GuestPtr<CityMap> map) { LayerA_Draw(map->instances); }
+
+    void CityRender_DrawWater(GuestPtr<CityMap> map, GuestPtr<CityScene> city)
+    {
+        LayerG_Draw(map->water, static_cast<int>(port::load<uint32_t>(0x001BDCD0u) & 1u), city->unk_B0);
+    }
+
+    void CityRender_DrawBuildings(GuestPtr<CityMap> map, int pass)
+    {
+        const uint32_t parity = port::load<uint32_t>(0x001BDCD0u) & 1u;
+        LayerC_DrawBuildings(map->buildings, static_cast<int>(map->packets[parity].address), map, pass);
+    }
+
+    void Map_SetPlacementHighlight(GuestPtr<CityMap> map, int mode, GuestPtr<int32_t> rect, GuestPtr<uint32_t> colour)
+    {
+        Terrain_SetVec(GuestPtr<uint32_t>{map->buildings.address}, mode, GuestPtr<uint32_t>{rect.address}, colour);
+    }
+
+    // Static overlay packets, then the two-packet layers B and F with this frame's packet.
+    void CityRender_DrawOverlays(GuestPtr<CityMap> map, GuestPtr<CityScene>)
+    {
+        const uint32_t parity = port::load<uint32_t>(0x001BDCD0u) & 1u;
+        const int packet = static_cast<int>(map->packets[parity].address);
+        Dma_AppendCall(static_cast<int>(map->packets[2].address));
+        Dma_AppendCall(packet);
+        Dma_AppendCall(static_cast<int>(map->packets[parity + 3].address));
+        LayerB_Draw(map->layerB, packet);
+        LayerF_Draw(map->layerF, packet);
+    }
+
+    // ---- model instances
+
+    // One node of a model: the node's own packet (nodes are 0xC0 bytes, packet at +0x50), then its mesh's
+    // packet (+0x10) if it has a mesh.
+    void A3DObject_DrawNode(GuestPtr<A3DObject> model, int node)
+    {
+        const uint32_t offset = static_cast<uint32_t>(node) * 0xC0u;
+        Dma_AppendCall(static_cast<int>(port::load<uint32_t>(model->model.address + 8u) + offset + 0x50u));
+        const uint32_t mesh = port::load<uint32_t>(port::load<uint32_t>(model->model.address + 8u) + offset + 4u);
+        if (mesh != 0)
+            Dma_AppendCall(static_cast<int>(mesh + 0x10u));
+    }
+
+    GuestPtr<A3DObject> InstanceBase_ctor(GuestPtr<A3DObject> model)
+    {
+        BaseObject_ctor(static_cast<int>(model.address));
+        port::store<uint32_t>(0x001BDA10u, 0);
+        return model;
+    }
+
+    // Draws a swaying model only while its nodes still fit in this frame's instance slots.
+    void Instance_DrawSwayingIfRoom(GuestPtr<A3DObject> model, int a1, ps2f phase)
+    {
+        const int16_t nodes = port::load<int16_t>(model->model.address + 0x18u);
+        if (nodes < 0x708 - globals::instanceCount.get())
+            Instance_DrawSwaying(model, a1, phase);
+    }
+
+    namespace
+    {
+        constexpr int kMaxInstances = 0x708;
+
+        uint32_t modelNodes(GuestPtr<A3DObject> model) { return port::load<uint32_t>(model->model.address + 8u); }
+
+        // Fills the next instance slot with a matrix, flags and colour and queues it, then the mesh's packet.
+        void queueInstance(GuestPtr<A3DObject> model, GuestPtr<Vec4> matrix, GuestPtr<Vec4> colour, int mesh, int flags)
+        {
+            const uint32_t buffer = port::load<uint32_t>(globals::kInstanceBuffers + 4u * static_cast<uint32_t>(globals::instanceBuffer.get()));
+            const GuestPtr<InstanceSlot> slot = GuestPtr<InstanceSlot>{buffer} + globals::instanceCount.get();
+            for (int row = 0; row < 4; ++row)
+                slot->matrix[row] = matrix[row];
+            port::store<int32_t>(slot.address + 0x5Cu, flags);
+            slot->colour = *colour;
+            Dma_AppendCall(static_cast<int>(slot.address));
+            const uint32_t meshData = port::load<uint32_t>(modelNodes(model) + static_cast<uint32_t>(mesh) * 0xC0u + 4u);
+            if (meshData != 0)
+                Dma_AppendCall(static_cast<int>(meshData + 0x10u));
+            globals::instanceCount.set(globals::instanceCount.get() + 1);
+        }
+
+        // A node's own matrix (nodes are 0xC0 bytes, matrix at +0x70).
+        GuestPtr<Vec4> nodeMatrix(GuestPtr<A3DObject> model, int node)
+        {
+            return GuestPtr<Vec4>{modelNodes(model) + static_cast<uint32_t>(node) * 0xC0u + 0x70u};
+        }
+    }
+
+    void Instance_DrawMesh(GuestPtr<A3DObject> model, GuestPtr<Vec4> matrix, GuestPtr<Vec4> colour, int mesh, int flags)
+    {
+        if (globals::instanceCount.get() < kMaxInstances)
+            queueInstance(model, matrix, colour, mesh, flags);
+    }
+
+    void Instance_DrawNode(GuestPtr<A3DObject> model, GuestPtr<Vec4> colour, int node, int flags)
+    {
+        if (globals::instanceCount.get() < kMaxInstances)
+            queueInstance(model, nodeMatrix(model, node), colour, node, flags);
+    }
+
+    // As Instance_DrawNode, also within a second count and limit.
+    void Instance_DrawNodeLimited(GuestPtr<A3DObject> model, GuestPtr<Vec4> colour, int node, int flags)
+    {
+        if (globals::instanceCount.get() >= kMaxInstances || globals::instanceLimitedCount.get() >= globals::instanceLimit.get())
+            return;
+        queueInstance(model, nodeMatrix(model, node), colour, node, flags);
+        globals::instanceLimitedCount.set(globals::instanceLimitedCount.get() + 1);
+    }
+
+    GuestPtr<LightSet> LightSet_ctor(GuestPtr<LightSet> lights)
+    {
+        LightSet_Init(lights);
+        return lights;
+    }
+
     // Building layer: whether a tile lies in the layer's active rectangle.
     int LayerC_InTileRect(GuestPtr<LayerC> layer, int x, int z)
     {
@@ -124,6 +274,25 @@ namespace mm
 
     void LightSet_SetField20(GuestPtr<LightSet> lights, int value) { port::store<int32_t>(lights->unk_00.address + 0x20u, value); }
 
+    PORT_FN(DmaList_BeginScene);
+    PORT_FN(CityRender_DrawOverlays);
+    PORT_FN(A3DObject_DrawNode);
+    PORT_FN(Packet_Draw);
+    PORT_FN(Packet2_Draw);
+    PORT_FN(TexSprite_Draw);
+    PORT_FN(LayerF_Draw);
+    PORT_FN(LayerB_Draw);
+    PORT_FN(Sky_Draw);
+    PORT_FN(CityRender_DrawInstanceLayer);
+    PORT_FN(CityRender_DrawWater);
+    PORT_FN(CityRender_DrawBuildings);
+    PORT_FN(Map_SetPlacementHighlight);
+    PORT_FN(InstanceBase_ctor);
+    PORT_FN(Instance_DrawSwayingIfRoom);
+    PORT_FN(Instance_DrawMesh);
+    PORT_FN(Instance_DrawNode);
+    PORT_FN(Instance_DrawNodeLimited);
+    PORT_FN(LightSet_ctor);
     PORT_FN(DmaList_QueueFade);
     PORT_FN(DmaChain_Next);
     PORT_FN(Dma_AppendCall);

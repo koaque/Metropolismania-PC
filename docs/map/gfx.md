@@ -18,12 +18,12 @@ Rendering below the scene level.
 
 ## Functions
 
-117 functions (typed 102, verified 15). Blocks: 29 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+117 functions (typed 82, verified 35). Blocks: 29 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
 | `0x00128EE0` | `void mm_Packet_BuildImageUpload(uint32_t *a0)` | 432 | no | builds an image-upload packet in the packet buffer (mm_PacketBuf_Tell/Seek): DMA REF to the texture data, BITBLT/TRX registers, GIF IMAGE |
-| `0x00129090` | `int mm_Packet2_Draw(uint32_t *packets, int second)` | 48 | no | queues packet a0[0], or a0[1] when a1 != 0 |
+| `0x00129090` | `void mm_Packet2_Draw(uint32_t *packets, int second)` | 48 | no | queues packet a0[0], or a0[1] when a1 != 0 |
 | `0x001290C0` | `A3DObject *mm_A3DObjectBase_DeletingDtor(A3DObject *model, int16_t deleteFlag)` | 84 | yes | base destructor 0x12AB40, then delete when the flag is > 0 |
 | `0x00129120` | `int mm_LightSet_Init(LightSet *lights)` | 228 | no | (provisional, was mm_Unk129120_Init) base init; +0x190 = 0x110, +0x194 = 0xE0; 12 colour/direction slots and ambient set to 1.0 |
 | `0x00129210` | `float mm_A3D_GetMeshField0C(A3DObject *model, int mesh)` | 24 | no | word +0xC of mesh a1 in the model's mesh table (+0x50) |
@@ -43,13 +43,13 @@ Rendering below the scene level.
 | `0x0012A650` | `void mm_LightSet_SetField20(LightSet *lights, int value)` | 12 | no | (provisional) (*this)+0x20 = a1, from the time-of-day update |
 | `0x0012C4D0` | `void mm_Instance_DrawSwayingIfRoom(A3DObject *model, int a1, float phase)` | 60 | no | mm_Instance_DrawSwaying when the model's nodes still fit in the 1800-instance budget |
 | `0x0012C510` | `void mm_InstanceBuf_Init(void)` | 400 | yes | allocates the two instance buffers and pre-fills each slot's DMA/VIF header (CNT 5, STCYCL, UNPACK) |
-| `0x0012C6A0` | `int mm_Instance_DrawMesh(A3DObject *model, uint64_t *matrix, uint64_t *colour, int mesh, int t0)` | 236 | no | writes matrix a1/a2 and colour into the next instance slot and queues it with the mesh packet |
-| `0x0012C790` | `int mm_Instance_DrawNode(A3DObject *model, uint64_t *colour, int node, int a3)` | 240 | no | instance of node a2 of model a0 with colour a1 |
+| `0x0012C6A0` | `void mm_Instance_DrawMesh(A3DObject *model, Vec4 *matrix, Vec4 *colour, int mesh, int flags)` | 236 | no | writes matrix a1/a2 and colour into the next instance slot and queues it with the mesh packet |
+| `0x0012C790` | `void mm_Instance_DrawNode(A3DObject *model, Vec4 *colour, int node, int flags)` | 240 | no | instance of node a2 of model a0 with colour a1 |
 | `0x0012C880` | `int mm_Instance_DrawModel(A3DObject *model, uint32_t *colour, int a2, int a3)` | 324 | no | updates the model's node matrices and adds an instance per node with a mesh, if the budget allows |
 | `0x0012C9D0` | `A3DObject *mm_InstanceModel_ctor(A3DObject *model)` | 68 | yes | model constructor; the first one allocates the instance buffers |
 | `0x0012D6B0` | `void mm_Instance_DrawSwaying2(A3DObject *model, int a1, float phase)` | 824 | no | (provisional) second sine-wave instance variant, used by 0x133E80/0x1345E0 |
 | `0x0012D9F0` | `void mm_Instance_DrawModelLit(A3DObject *model, uint32_t *colour, int a2, int a3)` | 852 | no | (provisional) instances for all nodes of a model with per-node colours |
-| `0x0012DD50` | `void mm_Instance_DrawNodeLimited(A3DObject *model, uint64_t *colour, int node, int a3)` | 280 | no | like mm_Instance_DrawNode, also capped by a second counter (gp) |
+| `0x0012DD50` | `void mm_Instance_DrawNodeLimited(A3DObject *model, Vec4 *colour, int node, int flags)` | 280 | no | like mm_Instance_DrawNode, also capped by a second counter (gp) |
 | `0x0012DE70` | `void mm_Instance_DrawModelEx(A3DObject *model, int a1, int a2, int a3, int t0, int t1, int t2, int t3)` | 940 | no | (provisional) instances for a model with extra transform parameters |
 | `0x0012E220` | `int mm_InstanceModel_LoadAsync(A3DObject *model, GameFile *gamefile, int a2)` | 120 | yes | mm_A3DObject_LoadAsync; when done (and a2 == 0) stores the frame count (+0x60 = data +4 / 13) |
 | `0x0012E2A0` | `A3DObject *mm_InstanceModel_ctor2(A3DObject *model)` | 40 | yes | mm_InstanceModel_ctor wrapper |
@@ -114,10 +114,10 @@ Rendering below the scene level.
 | `0x00161290` | `void mm_TexSprite_SetFrame(TexSprite *sprite, int frameX, int frameY)` | 152 | no | (provisional) frame (+0x30/+0x34) within the image, then rebuilds |
 | `0x00161330` | `void mm_TexSprite_SetClip(TexSprite *sprite, uint32_t width, uint32_t height)` | 124 | no | (provisional) visible size (+0x28/+0x2C), then rebuilds |
 | `0x001613B0` | `void mm_TexSprite_GreenToAlpha(TexSprite *sprite)` | 148 | no | (provisional) palette pass: grey-green entries become translucent (logo texture) |
-| `0x00161450` | `void mm_TexSprite_SetAlpha(TexSprite *sprite, uint8_t alpha, int a2)` | 108 | no | (provisional) palette alpha a1 |
-| `0x001614C0` | `int mm_TexSprite_SetPosScale(TexSprite *sprite, int a1, int a2, int a3, float f12, float f13)` | 24 | no | position a3..a5 and scale a0/a1, then rebuilds |
+| `0x00161450` | `void mm_TexSprite_SetAlpha(TexSprite *sprite, uint8_t alpha, int keepClear)` | 108 | no | (provisional) palette alpha a1 |
+| `0x001614C0` | `int mm_TexSprite_SetPosScale(TexSprite *sprite, int x, int y, int z, float scaleX, float scaleY)` | 24 | no | position a3..a5 and scale a0/a1, then rebuilds |
 | `0x001614E0` | `void mm_TexSprite_Draw(TexSprite *sprite)` | 8 | no | queues the sprite packet (+8) |
-| `0x001614F0` | `void mm_TexSprite_BuildPacket(TexSprite *sprite)` | 2152 | no | builds the textured-sprite packet from the .TEX image |
+| `0x001614F0` | `int mm_TexSprite_BuildPacket(TexSprite *sprite)` | 2152 | no | builds the textured-sprite packet from the .TEX image |
 | `0x00161D60` | `TexSprite *mm_TexSprite_dtor(TexSprite *sprite, int16_t deleteFlag)` | 136 | yes | vtable 0x1BCFD8, frees image and packet |
 | `0x00161DF0` | `int mm_TexSprite_Load(TexSprite *sprite, int file, int a2)` | 260 | yes | loads a .TEX file whole and builds its packet |
 | `0x00184030` | `int mm_DmaChain_Next(int reader)` | 208 | no | steps a DMA chain reader (+4 = current tag): CNT skips qwc+1, END stays, RET returns 0; caches tag id/qwc/words at +8..+0x24 |

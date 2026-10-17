@@ -66,9 +66,14 @@ namespace mm::globals
     inline constexpr GuestVar<int32_t> mcQueueTail{0x001BDCD4u};
     inline constexpr GuestVar<int32_t> mcQueueHead{0x001BDCD8u};
 
-    // file: the disc request queue, same scheme.
+    // file: the disc request queue, same scheme (0x1C-byte slots, 64 of them, state word first).
+    inline constexpr uint32_t kFileRequests = 0x001F4ED0u;
     inline constexpr GuestVar<int32_t> fileQueueTail{0x001BDC88u};
     inline constexpr GuestVar<int32_t> fileQueueHead{0x001BDC8Cu};
+    inline constexpr GuestVar<int32_t> fileQueueCount{0x001BDC90u}; // requests queued so far
+
+    // pad: set by mm_Pad_ClearBit40; mm_Pad_Update keeps Cross (0x40) out of the held buttons until it is released.
+    inline constexpr GuestVar<int32_t> padSwallowCross{0x001BDCC0u};
 
     // pad: auto-repeat (mm_Pad_GetRepeat).
     inline constexpr GuestVar<int32_t> padRepeatTimer{0x001BDCC4u};
@@ -86,7 +91,8 @@ namespace mm::globals
     // claim icons: colour set per icon id (bytes) and the colour table (Vec4, two levels per set).
     inline constexpr GuestVar<uint32_t> claimIconSets{0x001BDA64u};
     inline constexpr GuestVar<uint32_t> claimIconColours{0x001BDA70u};
-    inline constexpr uint32_t kClaimIconNoColour = 0x001B26C0u;          // Vec4 for level 0
+    inline constexpr uint32_t kDefaultColour = 0x001B26C0u;              // Vec4: untinted instances
+    inline constexpr uint32_t kClaimIconNoColour = kDefaultColour;       // Vec4 for level 0
 
     // family: thresholds that map family ids to building type indexes (sorted u16 table and its length).
     inline constexpr GuestVar<uint32_t> familyTypeTable{0x001BDA8Cu};
@@ -112,4 +118,60 @@ namespace mm::globals
     // stage: the stage state saved with the city (0x284 bytes); it starts with the city's name (saves show
     // "Forest Hills", "Rhinecliff" ... there), then the mayor's name at +0x10.
     inline constexpr uint32_t kStageState = 0x001C5380u;
+    inline GuestPtr<StageState> stageState() { return GuestPtr<StageState>{kStageState}; }
+
+    // family: counters bumped with the bitsets (provisional names): families moved in (read by
+    // mm_WordsFn_FamilyCountTier), the same count for the event code, and families that left.
+    inline constexpr GuestVar<int32_t> familiesMovedIn{0x001F32E0u};
+    inline constexpr GuestVar<int32_t> familiesMovedInEvent{0x001F32E4u};
+    inline constexpr GuestVar<int32_t> familiesLeftEvent{0x001F32E8u};
+    inline constexpr uint32_t kFamilyTableA = 0x001F26E0u; // 256 words, cleared by mm_Family_ResetState
+    inline constexpr uint32_t kFamilyTableB = 0x001F2AE0u; // 256 words
+
+    // save: per card port (two words each): card type (2 = PS2 memory card), free space, formatted, the
+    // type at the last check, and the last result (-1, -2: no card).
+    inline constexpr uint32_t kCardType = 0x001BDB60u;
+    inline constexpr uint32_t kCardFree = 0x001BDB68u;
+    inline constexpr uint32_t kCardFormatted = 0x001BDB70u;
+    inline constexpr uint32_t kCardTypeChecked = 0x001BDB78u;
+    inline constexpr uint32_t kCardResult = 0x001BDB88u;
+    // save: the 16 save slots (8 per card): size (-4 = unknown), name (0x44 bytes) and header (0x40 bytes).
+    inline constexpr uint32_t kSaveSlotSizes = 0x001F4780u;
+    inline constexpr uint32_t kSaveSlotNames = 0x001F4340u;
+    inline constexpr uint32_t kSaveSlotHeaders = 0x001F3F00u;
+
+    // sound: the 31 effect voices (0x30 bytes, first byte 0xFF = free), and the ambience grid: 4096 cells of
+    // (sound + 1, variant), filled from the per-sound counts at 0x1B35F0 (11 rows of 0x1C bytes, six counts
+    // from +0x10).
+    inline constexpr uint32_t kSeVoices = 0x001F8140u;
+    inline constexpr uint32_t kAmbienceGrid = 0x001FC690u;
+    inline constexpr uint32_t kAmbienceCounts = 0x001B35F0u;
+
+    // gfx: model instance slots for this frame: the two buffers (by frame), which one is current, how many are
+    // used (0x708 at most), and a second count with its own limit for mm_Instance_DrawNodeLimited.
+    inline constexpr uint32_t kInstanceBuffers = 0x001BDA20u;
+    inline constexpr GuestVar<int32_t> instanceCount{0x001BDA28u};
+    inline constexpr GuestVar<int32_t> instanceBuffer{0x001BDA30u};
+    inline constexpr GuestVar<int32_t> instanceLimitedCount{0x001BDA34u};
+    inline constexpr GuestVar<int32_t> instanceLimit{0x001BD980u};
+
+    // city: building drawing. Matrices the draw slots fill in (one 4x4 per layer, translation in the last
+    // row), the models holding the road and building meshes and the wasteland meshes, and the steps to the
+    // four neighbouring 2x2 blocks (north, east, south, west).
+    inline constexpr uint32_t kBuildingMatrices = 0x001B2590u;
+    inline constexpr GuestVar<GuestPtr<A3DObject>> cityPartsModel{0x001BDBD0u};
+    inline constexpr GuestVar<GuestPtr<A3DObject>> wastelandModel{0x001BDBCCu};
+    inline constexpr uint32_t kBlockStepX = 0x001B13F0u; // int[4]: 0, 2, 0, -2
+    inline constexpr uint32_t kBlockStepZ = 0x001B1400u; // int[4]: -2, 0, 2, 0
+
+    // gfx: start of the packet buffer (mm_DmaList_BeginScene rewinds to it).
+    inline constexpr GuestVar<uint32_t> packetBufBase{0x001BDCE4u};
+
+    // char: model parts loaded from CHAR.A3D (pointer table, indexed by CHARTYPE.BIN record bytes).
+    inline constexpr uint32_t kCharParts = 0x001F3B90u;
+
+    // laptop: the default entry count (4 the first time) and its "set" flag; the entry template.
+    inline constexpr GuestVar<int32_t> laptopDefaultCount{0x001BDABCu};
+    inline constexpr GuestVar<int8_t> laptopDefaultSet{0x001BDAC0u};
+    inline constexpr uint32_t kLaptopTemplate = 0x001AF640u;
 }
