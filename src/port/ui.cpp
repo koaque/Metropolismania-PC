@@ -179,12 +179,78 @@ namespace mm
         TextBox_SetPos(loading->text, (x + 0x6C0) << 4, (y + 0x790) << 4, -0x100000);
     }
 
-    void LoadingScreen_SetSpritePos(GuestPtr<LoadingScreen> loading, int sprite, int x, int y)
+    void LoadingScreen_SetSpritePos(GuestPtr<LoadingScreen> loading, int x, int y, int z)
     {
-        loading->spriteId = sprite;
         loading->spriteX = x;
         loading->spriteY = y;
-        TexSprite_SetPosScale(loading->sprite, loading->spriteId, loading->spriteX, loading->spriteY, 1.0f, 1.0f);
+        loading->spriteZ = z;
+        TexSprite_SetPosScale(loading->sprite, loading->spriteX, loading->spriteY, loading->spriteZ, 1.0f, 1.0f);
+    }
+
+    // The loading screen each frame; for the first 20 frames nothing (0). Then the sprite moves by its style:
+    // circling (the vector (0, -10) turned about z once per 188 frames, x tripled, around its place), pulsing
+    // (alpha from 128 down to 64 and back up over 128 frames), or still; background and sprite are drawn.
+    // With `fadeIn` the screen fade rises by 4 a frame to 128, else it falls by 4 to 0; while it is not 0 the
+    // fade (after a z clear) is queued, else the text box is drawn when shown. Returns 2 while the fade moves,
+    // otherwise 0 after fading in and 1 after fading out. The original's frame is reserved whole.
+    int LoadingScreen_Update(GuestPtr<LoadingScreen> loading, int fadeIn)
+    {
+        port::GuestFrame<0xA0> frame;
+        const uint32_t sp = frame.ptr().address;
+        loading->frame = loading->frame + 1;
+        if (loading->frame < 20)
+            return 0;
+        const int style = loading->style;
+        if (style == 1)
+        {
+            int alpha = (loading->frame % 128) & 0xFF;
+            if (alpha < 0x40)
+                alpha = (0x80 - alpha) & 0xFF;
+            TexSprite_SetAlpha(loading->sprite, static_cast<uint8_t>(alpha), 1);
+        }
+        else if (style == 0)
+        {
+            const ps2f pi = 0x1.921FB6p+1f;
+            const GuestPtr<Vec4> offset{sp + 0x50u}, turn{sp + 0x60u};
+            *offset = *GuestPtr<Vec4>{globals::kLoadingCircle};
+            sdk::sceVu0RotMatrixZ(turn.address, globals::kIdentityMatrix, fromInt(loading->frame % 188) / ps2f(30.0f) - pi);
+            Math_MulMatVecVu0(offset, turn, offset);
+            const int x = sdk::fptosi(ps2f(3.0f) * offset->x);
+            const int placeX = loading->spriteX + x;
+            const int y = sdk::fptosi(offset->y);
+            TexSprite_SetPosScale(loading->sprite, placeX, loading->spriteY + y, loading->spriteZ, 1.0f, 1.0f);
+        }
+        TexSprite_Draw(loading->background);
+        TexSprite_Draw(loading->sprite);
+        int result = 1;
+        if (fadeIn != 0)
+        {
+            result = 0;
+            if (loading->fade < 128)
+            {
+                loading->fade = loading->fade + 4;
+                if (loading->fade < 129)
+                    result = 2;
+                else
+                    loading->fade = 128;
+            }
+        }
+        else if (loading->fade > 0)
+        {
+            loading->fade = loading->fade - 4;
+            if (loading->fade >= 0)
+                result = 2;
+            else
+                loading->fade = 0;
+        }
+        if (loading->fade != 0)
+        {
+            DmaList_QueueClearZ();
+            DmaList_QueueFade(loading->fade, 0);
+        }
+        else if (loading->showText != 0)
+            TextBox_Draw(loading->text);
+        return result;
     }
 
     // The blinking "please wait" line: its text box (0x1BDAC4), shown flag (0x1BDACC) and frame counter (0x1BDAC8).
@@ -881,6 +947,80 @@ namespace mm
         return -1;
     }
 
+    // title: the logo intro, one step (+0xC4) per frame. 0 starts the intro music (sequence slot 15) and goes
+    // straight on to 1: the logo model's animation under the title layers until mm_Title_DrawCommon reports
+    // them done. 2 plays the rest of the animation; 3 fades the title sprite in (alpha 0 to 127, one a frame),
+    // then plays sound 0x4F; 4 shows it while the logo letters bounce in; 5 holds it 50 frames and returns 1
+    // (every other frame 0). In steps 1 and 2 each timed effect plays as the animation reaches its frame.
+    int Title_Intro(GuestPtr<SceneA> scene)
+    {
+        const auto playDueSound = [&] {
+            const int next = scene->logoSound;
+            if (scene->logoTime < ps2f(port::load<float>(globals::kIntroSoundFrames + 4u * static_cast<uint32_t>(next))))
+                return;
+            scene->logoSound = next + 1;
+            Sound_PlaySe(port::load<uint8_t>(globals::kIntroSounds + static_cast<uint32_t>(next)), 0, 0x3C, 0.0f, 0.0f);
+        };
+        switch (scene->pressStep)
+        {
+        case 0:
+            SoundCmd_0F(0xF, 0x1800, 0);
+            SoundCmd_PlaySequence(0xF, 7, 0, 0, 0);
+            scene->logoTime = 0.0f;
+            scene->logoSound = 0;
+            scene->pressStep = scene->pressStep + 1;
+            [[fallthrough]];
+        case 1:
+            Instance_DrawSwaying(scene->logoModel, 0, scene->logoTime);
+            playDueSound();
+            scene->logoTime = scene->logoTime + ps2f(1.0f);
+            if (Title_DrawCommon(scene, 0x14) == 1)
+                scene->pressStep = scene->pressStep + 1;
+            return 0;
+        case 2:
+        {
+            Instance_DrawSwaying(scene->logoModel, 0, scene->logoTime);
+            A3DObject_Draw(scene->logoModel);
+            playDueSound();
+            scene->logoTime = scene->logoTime + ps2f(1.0f);
+            const ps2f length = A3D_GetMeshField0C(scene->logoModel, 0);
+            if (scene->logoTime < length)
+                return 0;
+            scene->pressStep = scene->pressStep + 1;
+            scene->introFrame = 0;
+            return 0;
+        }
+        case 3:
+        {
+            Instance_DrawSwaying(scene->logoModel, 0, scene->logoTime);
+            A3DObject_Draw(scene->logoModel);
+            const int alpha = scene->introFrame;
+            scene->introFrame = alpha + 1;
+            TexSprite_SetAlpha(scene->titleSprite, static_cast<uint8_t>(alpha), 0);
+            TexSprite_Draw(scene->titleSprite);
+            if (scene->introFrame < 0x80)
+                return 0;
+            scene->pressStep = scene->pressStep + 1;
+            scene->introFrame = 5;
+            Sound_PlaySe(0x4F, 0, 0x3C, 0.0f, 0.0f);
+            return 0;
+        }
+        case 4:
+            TexSprite_Draw(scene->titleSprite);
+            if (Title_LogoLetters(scene) == 0)
+                return 0;
+            scene->pressStep = scene->pressStep + 1;
+            scene->introFrame = 50;
+            return 0;
+        case 5:
+            TexSprite_Draw(scene->titleSprite);
+            scene->introFrame = scene->introFrame - 1;
+            return scene->introFrame > 0 ? 0 : 1;
+        default:
+            return 0;
+        }
+    }
+
     // title: the logo's three letters bounce in turn (a size step every 5 frames from the 8-step table) and hop
     // to the next of five places every 40 frames. The third letter waits for frame 11 and stops at 185. Returns
     // 1 once 200 frames have passed.
@@ -918,6 +1058,200 @@ namespace mm
             TexSprite_Draw(scene->logoLetters[i]);
         }
         return 0;
+    }
+
+    // title: the menu choices at rest. The selected one, at full size, wobbles: its offset is the vectors
+    // (0, -5) and (0, -10) turned about z (one turn per 62 and per 188 frames), the first giving y and both
+    // adding up for x. The other is drawn at 0.6, and with a single choice only the first is shown, as in
+    // mm_Title_DrawChoices; +0x48 counts the frames. The original's frame is reserved whole and its two
+    // vectors and two matrices kept at their offsets in it, as sceVu0RotMatrixZ runs as guest code.
+    void Title_DrawChoicesIdle(GuestPtr<SceneA> scene)
+    {
+        port::GuestFrame<0xF0> frame;
+        const uint32_t sp = frame.ptr().address;
+        const GuestPtr<Vec4> small{sp + 0x50u}, large{sp + 0x60u}, turnSmall{sp + 0x70u}, turnLarge{sp + 0xB0u};
+        scene->pulseFrame = scene->pulseFrame + 1;
+        *small = *GuestPtr<Vec4>{globals::kChoiceWobbleSmall};
+        *large = *GuestPtr<Vec4>{globals::kChoiceWobbleLarge};
+        const int count = scene->pulseFrame;
+        const ps2f pi = 3.14159265f;
+        const ps2f angleSmall = fromInt(count % 62) / ps2f(10.0f) - pi;
+        const ps2f angleLarge = fromInt(count % 188) / ps2f(30.0f) - pi;
+        sdk::sceVu0RotMatrixZ(turnSmall.address, globals::kIdentityMatrix, angleSmall);
+        sdk::sceVu0RotMatrixZ(turnLarge.address, globals::kIdentityMatrix, angleLarge);
+        Math_MulMatVecVu0(small, turnSmall, small);
+        Math_MulMatVecVu0(large, turnLarge, large);
+        const int dx = sdk::fptosi(fromInt(sdk::fptosi(small->x)) + large->x);
+        const int dy = sdk::fptosi(small->y);
+        if (scene->choiceCount == 1)
+        {
+            TexSprite_SetPosScale(scene->choices[0], dx + 0xBE, dy + 0x154, 0x3F00, 1.0f, 1.0f);
+            TexSprite_Draw(scene->choices[0]);
+        }
+        else if (scene->choice == 0)
+        {
+            TexSprite_SetPosScale(scene->choices[0], dx + 0xBE, dy + 0x13C, 0x3F00, 1.0f, 1.0f);
+            TexSprite_SetPosScale(scene->choices[1], 0xF0, 0x178, 0x3F00, 0.6f, 0.6f);
+            TexSprite_Draw(scene->choices[0]);
+            TexSprite_Draw(scene->choices[1]);
+        }
+        else
+        {
+            TexSprite_SetPosScale(scene->choices[0], 0xF0, 0x146, 0x3F00, 0.6f, 0.6f);
+            TexSprite_SetPosScale(scene->choices[1], dx + 0xBE, dy + 0x168, 0x3F00, 1.0f, 1.0f);
+            TexSprite_Draw(scene->choices[0]);
+            TexSprite_Draw(scene->choices[1]);
+        }
+    }
+
+    // boot: the memory card check before the title, one step (+0xC4) per call; returns 1 when the game may go
+    // on. 0: on at once when the card manager reports a save or a slot is fine; waits while a card is still
+    // being read; else places the warning box. 1: the warning: no card in either slot, or which slot lacks the
+    // space (both, 1 or 2), and "press Cross". 2: moves on when a save or a fine card turns up, goes back to 1
+    // when a slot's status changes (and is not being read), and moves on with Cross (sound 1) too. 3: after 40
+    // more frames empties the box. 4: done. With `noPolling` set, step 0 waits and step 2 only takes Cross.
+    int SceneA_MemoryCardCheck(GuestPtr<SceneA> scene, int noPolling)
+    {
+        const auto fine = [](int status) { return status == 0 || status == 3; };
+        const auto text = [](uint32_t address) { return GuestPtr<char>{address}; };
+        switch (scene->pressStep)
+        {
+        case 0:
+            if (noPolling != 0)
+                return 0;
+            if (McManager_HasAnySave() != 0)
+                return 1;
+            globals::cardStatus0.set(McManager_GetCardStatus(scene->mc, 0));
+            if (fine(globals::cardStatus0.get()))
+                return 1;
+            globals::cardStatus1.set(McManager_GetCardStatus(scene->mc, 1));
+            if (fine(globals::cardStatus1.get()))
+                return 1;
+            if (globals::cardStatus0.get() == 4 || globals::cardStatus1.get() == 4)
+                return 0;
+            TextBox_SetPos(scene->hintText, 0x6FC0, 0x7C20, static_cast<int>(0xFFF00000u));
+            scene->pressStep = scene->pressStep + 1;
+            return 0;
+        case 1:
+            TextBox_SetText(scene->hintText, text(globals::kCardTextHeading), 0);
+            if (globals::cardStatus0.get() == 2 && globals::cardStatus1.get() == 2)
+                TextBox_AppendText(scene->hintText, text(globals::kCardTextNoCard), 0);
+            else
+            {
+                TextBox_AppendText(scene->hintText, text(globals::kCardTextSlot), 0);
+                const int first = globals::cardStatus0.get();
+                if (first == 1 && globals::cardStatus1.get() == 1)
+                    TextBox_AppendText(scene->hintText, text(globals::kCardTextBoth), 0);
+                else if (first == 1)
+                    TextBox_AppendText(scene->hintText, text(globals::kCardTextSlot1), 0);
+                else
+                    TextBox_AppendText(scene->hintText, text(globals::kCardTextSlot2), 0);
+                TextBox_AppendText(scene->hintText, text(globals::kCardTextNoSpace), 0);
+            }
+            TextBox_AppendText(scene->hintText, text(globals::kCardTextEnd), 0);
+            TextBox_Draw(scene->hintText);
+            scene->pressStep = scene->pressStep + 1;
+            return 0;
+        case 2:
+            if (noPolling == 0)
+            {
+                const int first = McManager_GetCardStatus(scene->mc, 0);
+                const int second = McManager_GetCardStatus(scene->mc, 1);
+                if (McManager_HasAnySave() != 0 || fine(first) || fine(second))
+                    scene->pressStep = scene->pressStep + 1;
+                else if ((globals::cardStatus0.get() != first || globals::cardStatus1.get() != second) && first != 4 && second != 4)
+                {
+                    globals::cardStatus0.set(first);
+                    globals::cardStatus1.set(second);
+                    scene->pressStep = scene->pressStep - 1;
+                }
+            }
+            if (Pad_Pressed(0) == 0x40) // cross
+            {
+                Sound_PlaySe(1, 0, 0x3C, 0.0f, 0.0f);
+                scene->pressStep = scene->pressStep + 1;
+                scene->waitFrames = 0;
+            }
+            TextBox_Draw(scene->hintText);
+            return 0;
+        case 3:
+            scene->waitFrames = scene->waitFrames + 1;
+            if (scene->waitFrames < 41)
+                return 0;
+            TextBox_SetText(scene->hintText, text(globals::kEmptyText), 0);
+            TextBox_Draw(scene->hintText);
+            scene->pressStep = scene->pressStep + 1;
+            return 0;
+        case 4:
+            scene->waitFrames = 0;
+            return 1;
+        default:
+            return 0;
+        }
+    }
+
+    // title: the menu's input. Entering the sound test code (kSoundTestCode; a wrong button starts it over)
+    // shows the "[SELECT]SoundTest" line, with sound 0x50. While the selected choice pulses: -2, then the choice
+    // once the pulse is over. Otherwise Up and Down move the cursor (sound 0) when there is more than one choice,
+    // the choices are drawn at rest, and Cross or Start start the pulse (sound 1). Returns -2 after Up, Down,
+    // Cross or Start, 10 for Select while the sound test line shows, else -1.
+    int Title_MenuInput(GuestPtr<SceneA> scene)
+    {
+        const uint32_t pressed = Pad_Pressed(0);
+        const auto codeButton = [](int step) { return port::load<uint32_t>(globals::kSoundTestCode + 4u * static_cast<uint32_t>(step)); };
+        int result = -1;
+        if (pressed != 0)
+        {
+            const int step = scene->codeStep;
+            if (pressed != codeButton(step))
+                scene->codeStep = 0;
+            else
+            {
+                scene->codeStep = static_cast<uint8_t>(step + 1);
+                if (codeButton(scene->codeStep) == 0)
+                {
+                    scene->showHint = 1;
+                    Sound_PlaySe(0x50, 0, 0x3C, 0.0f, 0.0f);
+                }
+            }
+        }
+        if (scene->choicePulsing != 0)
+            return Title_DrawChoices(scene) == 0 ? -2 : scene->choice;
+        const int count = scene->choiceCount;
+        if (count >= 2)
+        {
+            if (pressed == 0x1000) // up
+            {
+                if (scene->choice > 0)
+                {
+                    scene->choice = scene->choice - 1;
+                    Sound_PlaySe(0, 0, 0x3C, 0.0f, 0.0f);
+                }
+            }
+            else if (pressed == 0x4000) // down
+            {
+                if (scene->choice + 1 < count)
+                {
+                    scene->choice = scene->choice + 1;
+                    Sound_PlaySe(0, 0, 0x3C, 0.0f, 0.0f);
+                }
+            }
+        }
+        if (pressed == 0x1000 || pressed == 0x4000)
+            result = -2;
+        if (!(scene->choice < scene->choiceCount))
+            scene->choice = scene->choiceCount - 1;
+        Title_DrawChoicesIdle(scene);
+        if (pressed == 0x40 || pressed == 0x800) // cross, start
+        {
+            Sound_PlaySe(1, 0, 0x3C, 0.0f, 0.0f);
+            scene->choicePulsing = 1;
+            scene->pulseFrame = 0;
+            result = -2;
+        }
+        if (scene->showHint != 0 && pressed == 0x100) // select
+            result = 10;
+        return result;
     }
 
     // title: the menu choices. The selected one pulses (scale up to 1.09 over 10 frames and back, moving left
@@ -1131,6 +1465,7 @@ namespace mm
     PORT_FN(TexSprite_SetPosScale);
     PORT_FN(LoadingScreen_SetTextPos);
     PORT_FN(LoadingScreen_SetSpritePos);
+    PORT_FN(LoadingScreen_Update);
     PORT_FN(WaitText_Set);
     PORT_FN(WaitText_Draw);
     PORT_FN(Notice_Draw);
@@ -1159,6 +1494,10 @@ namespace mm
     PORT_FN(PauseMenu_Draw);
     PORT_FN(StatusPanel_Draw);
     PORT_FN(Title_LogoLetters);
+    PORT_FN(Title_Intro);
+    PORT_FN(Title_DrawChoicesIdle);
+    PORT_FN(Title_MenuInput);
+    PORT_FN(SceneA_MemoryCardCheck);
     PORT_FN(CityCursor_LayoutInfo);
     PORT_FN(Title_DrawChoices);
     PORT_FN(Title_DrawCommon);

@@ -3,6 +3,9 @@
 #include "game_functions.h"
 #include "game_globals.h"
 #include "sdk.h"
+#include "vu0.h"
+
+#include <algorithm>
 
 namespace mm
 {
@@ -304,6 +307,235 @@ namespace mm
         return GuestPtr<MapPerson>{0};
     }
 
+    // Fills object record `object` for a new `type` object owned by `owner` (a family) on `tile` and runs the
+    // type's InitRecord slot (+0xC), then counts it the way MapObj_Delete uncounts it: a type with flag 8 adds to
+    // the flag-8 objects and this period's history entry (up to 255) and marks the objects changed, one with flag
+    // 2 starts the refresh delay (0x81 ticks); the object goes into its claim section's tile lists, the object
+    // count and its category count.
+    void MapObj_Init(GuestPtr<CityMap> map, int object, int type, uint16_t owner, uint16_t tile)
+    {
+        const auto record = [&] { return map->objects + object; };
+        record()->type = static_cast<uint16_t>(type);
+        record()->id = static_cast<uint16_t>(map->nextId);
+        record()->tile = tile;
+        record()->firstPerson = kNoPerson;
+        record()->nextOnTile = kNoObject;
+        record()->flags = 0;
+        port::store<uint32_t>(record().address + 0x10u, 0);
+        port::store<uint32_t>(record().address + 0x14u, 0);
+        port::store<uint32_t>(record().address + 0x18u, 0);
+        record()->family = owner;
+        const GuestPtr<BuildingType> btype{globals::buildingTypeAddress(static_cast<uint32_t>(type))};
+        port::callGuest<void>(port::load<uint32_t>(btype->vtable.address + 0xCu), btype.address, record().address);
+        if ((btype->flags & 8u) != 0)
+        {
+            ++map->flag8Objects;
+            map->objectsChanged = 1;
+            if (map->flag8History[0] < 0xFF)
+                ++map->flag8History[0];
+        }
+        else if ((btype->flags & 2u) != 0)
+            map->refreshDelay = 0x81;
+        TileLists_InsertAll(map->tileLists, static_cast<uint16_t>(object),
+                            GuestPtr<uint16_t>{static_cast<uint32_t>(Claim_GetSectionC(btype->claimC))});
+        ++map->objectCount;
+        const GuestPtr<int32_t> categoryCount = GuestPtr<int32_t>::of(map->categoryCount[0]) + btype->category;
+        if (btype->category == 4)
+        {
+            if ((btype->flags & 0x80u) == 0)
+                ++*categoryCount;
+            return;
+        }
+        if (btype->category == 5 && btype->size >= 3)
+            ++map->bigCategory5Count;
+        ++*categoryCount;
+    }
+
+    // Terrain generation: marks the objects of the low tiles (height 0.1 or below) whose centres lie within
+    // `radius` of tile (x, z)'s with a scenery kind (the object's +0x14 byte). Kind 2 only where none is set,
+    // kind 0 clears; other kinds take each tile with a chance falling off with the distance (a random 0..9 at
+    // most ten times the fraction of the radius left). Distances on VU0; the original's frame is reserved
+    // whole and its two points kept at their offsets.
+    void TerrainGen_ScatterObjects(GuestPtr<CityMap> map, int x, int z, int kind, ps2f radius)
+    {
+        using namespace vu0;
+        port::GuestFrame<0xC0> frame;
+        const uint32_t sp = frame.ptr().address;
+        const GuestPtr<Vec4> centre{sp + 0x80u}, point{sp + 0x90u}, distance{sp + 0xB0u};
+        const ps2f half = 0.5f, middle = 64.0f;
+        const auto toFloat = [](int v) { return ps2f(static_cast<float>(v)); };
+        const auto place = [&](GuestPtr<Vec4> at, int tx, int tz) {
+            at->x = half + (toFloat(tx) - middle);
+            at->y = 0.0f;
+            at->z = (toFloat(kMapSize - tz) - middle) - half;
+            at->w = 1.0f;
+        };
+        place(centre, x, z);
+        const int reach = sdk::fptosi(ps2f(1.0f) + radius);
+        const int x0 = std::max(x - reach - 4, 0);
+        const int z0 = std::max(z - reach - 4, 0);
+        const int x1 = x + reach + 4 < kMapSize ? x + reach + 4 : kMapSize - 1;
+        const int z1 = z + reach + 4 < kMapSize ? z + reach + 4 : kMapSize - 1;
+        for (int tz = z0; tz < z1; ++tz)
+        {
+            if (tz < 0 || tz >= kMapSize)
+                continue;
+            for (int tx = x0; tx < x1; ++tx)
+            {
+                if (tx < 0 || tx >= kMapSize)
+                    continue;
+                if (ps2f(0.1f) < tileAt(map, tx, tz).height)
+                    continue;
+                place(point, tx, tz);
+                vf(4) = load(centre);
+                vf(5) = load(point);
+                set(vf(6), sub(vf(5), vf(4)), XYZW);
+                set(vf(7), mul(vf(6), vf(6)), XYZ);
+                set(vf(8), add(vf(7), lane(vf(7), 1)), X);
+                set(vf(8), add(vf(8), lane(vf(7), 2)), X);
+                q() = sqrtQ(vu0::x(vf(8)));
+                set(vf(9), add(vf(0), _mm_set1_ps(q())), XYZW);
+                store(distance, vf(9));
+                const ps2f d = distance->x;
+                if (!(d < radius))
+                    continue;
+                const GuestPtr<uint8_t> mark{Map_GetTileObject(map, tx, tz).address + 0x14u};
+                if (kind == 2)
+                {
+                    if (*mark == 0)
+                        *mark = 2;
+                }
+                else if (kind == 0)
+                    *mark = 0;
+                else
+                {
+                    const int chance = sdk::fptosi(ps2f(10.0f) * (ps2f(1.0f) - d / radius));
+                    const int roll = static_cast<int32_t>(Random_Next()) % 10;
+                    if (!(chance < roll))
+                        *mark = static_cast<uint8_t>(kind);
+                }
+            }
+        }
+    }
+
+    // A tile's four corner heights (verts 0..3: the corners towards (x-1, z-1), (x+1, z-1), (x+1, z+1) and
+    // (x-1, z+1)), from the 3 x 3 block of heights around it (edges clamped). A tile with flag 8 is flat at its
+    // own height. Otherwise each corner is the mean of the four tiles sharing it, or, for a tile with flag 0x10,
+    // the mean of those that also have flag 0x10, summed in the vertex itself one tile at a time.
+    void Map_UpdateTileGeometry(GuestPtr<CityMap> map, int x, int z)
+    {
+        x = clampToMap(x);
+        z = clampToMap(z);
+        MapTile &tile = tileAt(map, x, z);
+        if ((tile.flags & 8u) != 0)
+        {
+            for (int v = 0; v < 4; ++v)
+                tile.verts[v] = tile.height;
+            return;
+        }
+        ps2f height[9];
+        bool flagged[9];
+        for (int r = 0; r < 3; ++r)
+        {
+            const int row = x + clampToMap(z + r - 1) * kMapSize;
+            const int cells[3] = {row - (x != 0 ? 1 : 0), row, row + (x != kMapSize - 1 ? 1 : 0)};
+            for (int c = 0; c < 3; ++c)
+            {
+                height[3 * r + c] = map->tiles[cells[c]].height;
+                flagged[3 * r + c] = (map->tiles[cells[c]].flags & 0x10u) != 0;
+            }
+        }
+        if ((tile.flags & 0x10u) == 0)
+        {
+            const ps2f four = 4.0f;
+            tile.verts[0] = (height[4] + (height[3] + (height[0] + height[1]))) / four;
+            tile.verts[1] = (height[5] + (height[4] + (height[1] + height[2]))) / four;
+            tile.verts[2] = (height[8] + (height[7] + (height[4] + height[5]))) / four;
+            tile.verts[3] = (height[7] + (height[6] + (height[3] + height[4]))) / four;
+            return;
+        }
+        static constexpr int kCorner[4][4] = {{0, 1, 3, 4}, {1, 2, 4, 5}, {4, 5, 7, 8}, {3, 4, 6, 7}};
+        for (int v = 0; v < 4; ++v)
+            tile.verts[v] = 0.0f;
+        for (int v = 0; v < 4; ++v)
+        {
+            ps2f count = 0.0f;
+            for (const int i : kCorner[v])
+                if (flagged[i])
+                {
+                    count = count + ps2f(1.0f);
+                    tile.verts[v] = tile.verts[v] + height[i];
+                }
+            tile.verts[v] = tile.verts[v] / count;
+        }
+    }
+
+    // Places a new `type` object for `owner` at (x, z): the next free object record (the search wraps from 0x3F80
+    // to 1 and gives record 0 after 0x3F81 tries) is filled (MapObj_Init) and covers the size x size block. Each
+    // tile's old object is deleted, the tile points at the new one, keeps only flag 0x20 and gains 8 (type flag 1)
+    // or 0x10 (type flag 2). The block is levelled to the mean over its tiles of each one's average neighbour
+    // height (the eight around it that are on the map), and the corner tile gets flag 1. Returns the record.
+    int Map_CreateObject(GuestPtr<CityMap> map, int owner, int type, int x, int z)
+    {
+        const int corner = x + z * kMapSize;
+        const GuestPtr<BuildingType> btype{globals::buildingTypeAddress(static_cast<uint32_t>(type))};
+        const int size = btype->size;
+        int object;
+        for (int tries = 0;;)
+        {
+            object = map->nextId;
+            if (map->objects[object].type == 0)
+                break;
+            ++tries;
+            map->nextId = map->nextId + 1;
+            if (tries >= 0x3F81)
+            {
+                object = 0;
+                break;
+            }
+            if (map->nextId >= 0x3F80)
+                map->nextId = 1;
+        }
+        MapObj_Init(map, object, type, static_cast<uint16_t>(owner), static_cast<uint16_t>(corner));
+        const int xEnd = x + size, zEnd = z + size;
+        for (int tz = z; tz < zEnd; ++tz)
+            for (int tx = x; tx < xEnd; ++tx)
+            {
+                MapTile &tile = map->tiles[tx + tz * kMapSize];
+                MapObj_Delete(map, tile.firstObject);
+                tile.firstObject = static_cast<uint16_t>(object);
+                tile.flags &= 0x20u;
+                if ((btype->flags & 1u) != 0)
+                    tile.flags |= 8u;
+                else if ((btype->flags & 2u) != 0)
+                    tile.flags |= 0x10u;
+            }
+        ps2f total = 0.0f;
+        for (int tz = z; tz < zEnd; ++tz)
+            for (int tx = x; tx < xEnd; ++tx)
+            {
+                ps2f sum = 0.0f, count = 0.0f;
+                for (uint32_t k = 0; k < 8; ++k)
+                {
+                    const int nz = tz + port::load<int32_t>(globals::kRingStepZ + 4u * k);
+                    if (nz < 0 || nz >= kMapSize)
+                        continue;
+                    const int nx = tx + port::load<int32_t>(globals::kRingStepX + 4u * k);
+                    if (nx < 0 || nx >= kMapSize)
+                        continue;
+                    count = count + ps2f(1.0f);
+                    sum = sum + map->tiles[nx + nz * kMapSize].height;
+                }
+                total = total + sum / count;
+            }
+        total = total / fromInt(size * size);
+        for (int tz = z; tz < zEnd; ++tz)
+            for (int tx = x; tx < xEnd; ++tx)
+                map->tiles[tx + tz * kMapSize].height = total;
+        map->tiles[corner].flags |= 1u;
+        return object;
+    }
+
     // Removes object record `object` (1..0x3F7F): out of its claim section's tile lists, type cleared, and the
     // map's object and category counts lowered.
     void MapObj_Delete(GuestPtr<CityMap> map, int object)
@@ -518,6 +750,10 @@ namespace mm
     PORT_FN(Placement_CheckNeighbours);
     PORT_FN(TileLists_RemoveAll);
     PORT_FN(Map_SetAreaHeight);
+    PORT_FN(MapObj_Init);
+    PORT_FN(Map_CreateObject);
+    PORT_FN(Map_UpdateTileGeometry);
+    PORT_FN(TerrainGen_ScatterObjects);
     PORT_FN(MapObj_Delete);
     PORT_FN(Map_UpdateAreaGeometry);
     PORT_FN(Terrain_AddQuad);

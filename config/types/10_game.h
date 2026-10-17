@@ -21,11 +21,12 @@ typedef struct Stamina Stamina;
 typedef struct MemberStatus MemberStatus;
 typedef struct CharTypeRecord CharTypeRecord;
 typedef struct SeRequest SeRequest;
+typedef struct ClaimThresholds ClaimThresholds;
 
 /* Map tile (0x18 bytes): 128 x 128 of them at CityMap +0x04. */
 struct MapTile {
     float height;              /* +0x00 terrain height (loaded with lwc1, mm_Map_GetTileHeightWord) */
-    float verts[4];            /* +0x04 vertex data (mm_Map_GetTileVertex) */
+    float verts[4];            /* +0x04 corner heights towards (-x,-z), (+x,-z), (+x,+z), (-x,+z) (mm_Map_UpdateTileGeometry) */
     uint16_t firstObject;      /* +0x14 0x3F80 = none */
     uint16_t flags;            /* +0x16 0x10 = walkable */
 };
@@ -42,7 +43,7 @@ struct MapObject {
     uint16_t unk_0E;
     uint16_t claimMeter;       /* +0x10 rises while the claim is unmet (mm_ClaimMeter_Level) */
     uint8_t claimSlot;         /* +0x12 entry in the type's claim section */
-    uint8_t unk_13;
+    uint8_t claimTimer;        /* +0x13 runs down while the claim is met or the meter maxed; its tenth speeds the meter (mm_BldgClaims_Evaluate) */
     uint16_t entranceTile;     /* +0x14 (provisional) */
     uint8_t unk_16[2];
     uint16_t variant;          /* +0x18 roads: shape, bit d = open towards direction d, 5 and 10 straight
@@ -63,8 +64,9 @@ struct MapPerson {
     uint16_t index;            /* +0x12 own index */
     uint16_t work;             /* +0x14 workplace object */
     uint16_t inside;           /* +0x16 object the person is in, 0x3F80 = outside */
-    uint16_t walkTile;         /* +0x18 tile the person walks to (mm_Person_UpdatePose) */
-    uint8_t unk_1A[4];
+    uint16_t walkTile;         /* +0x18 tile the person walks to (mm_Person_UpdatePose); the waypoint (mm_Path_NextWaypoint) */
+    uint16_t previousTile;     /* +0x1A the waypoint before it; mm_Path_PickRoadLink never leads back there */
+    uint8_t unk_1C[2];
     uint16_t destination;      /* +0x1E */
     uint16_t follow;           /* +0x20 follow target */
     uint16_t flags;            /* +0x22 */
@@ -92,9 +94,15 @@ struct CityMap {
     MapTile *tiles;            /* +0x04 */
     MapObject *objects;        /* +0x08 */
     TileLists *tileLists;      /* +0x0C */
-    uint8_t unk_10[0x14];
+    int32_t nextId;            /* +0x10 next record to try for a new object (mm_Map_CreateObject); its low half is the object's id */
+    int32_t unk_14;
+    int32_t flag8Objects;      /* +0x18 objects of types with flag 8 */
+    int32_t unk_1C;            /* +0x1C set while there are any */
+    int16_t objectsChanged;    /* +0x20 objects were added or removed (mm_MapObjects_Tick then starts the claim re-check) */
+    int16_t claimRecheck;      /* +0x22 frames of claim section C re-checks left (0x80 after a change) */
     int32_t objectCount;       /* +0x24 object records in use (of 0x3F80) */
-    uint8_t unk_28[8];
+    uint8_t flag8History[6];   /* +0x28 new flag-8 objects per period, newest first (mm_MapObj_PushHistory) */
+    int16_t refreshDelay;      /* +0x2E frames until objectsChanged is set (0x81 after a flag-2 type is placed) */
     int32_t categoryCount[11]; /* +0x30 buildings per STRTYPE.BIN category (mm_MapObj_Delete; category 4 only without type flag 0x80) */
     int32_t bigCategory5Count; /* +0x5C category 5 buildings of size 3 and up */
     uint8_t unk_60[4];
@@ -310,6 +318,15 @@ struct Words {
     uint8_t unk_16[0xA];
     void *extraTable;          /* +0x20 */
     void *lineTable;           /* +0x24 */
+};
+
+/* The claim meter limits at the start of the claim data (gp 0x1BDA50). */
+struct ClaimThresholds {
+    uint16_t low;              /* +0x00 above it the claim shows (band 1) */
+    uint16_t high;             /* +0x02 above it band 2 */
+    uint8_t step;              /* +0x04 meter rise per evaluation */
+    uint8_t unk_05[2];
+    uint8_t holdTime;          /* +0x07 claim timer once the meter maxes out */
 };
 
 /* Sound effect request (0x1C bytes): the frame's requests at 0x1F8710, kept in priority order by

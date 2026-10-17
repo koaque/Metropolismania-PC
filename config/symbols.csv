@@ -759,7 +759,7 @@ address,name,kind,source
 0x0012E220,mm_InstanceModel_LoadAsync,func,manual
 0x0012E2A0,mm_InstanceModel_ctor2,func,manual
 0x0012E2D0,mm_Perf_AdaptDrawRange,func,manual
-0x0012E370,mm_Path_ScanLine,func,manual
+0x0012E370,mm_Path_PickRoadLink,func,manual
 0x0012E7D0,mm_Path_NextWaypoint,func,manual
 0x0012EE20,mm_Path_TileDistance,func,manual
 0x0012EED0,mm_CharType_Slot18,func,manual
@@ -786,7 +786,7 @@ address,name,kind,source
 0x00133E80,mm_Person_Draw2,func,manual
 0x00134140,mm_CharType_TickSlots,func,manual
 0x001341A0,mm_CharType_ClearSlots,func,manual
-0x00134260,mm_Person_BuildPose,func,manual
+0x00134260,mm_Person_TurnToPlayer,func,manual
 0x001345E0,mm_Person_Draw,func,manual
 0x00134A20,mm_Person_Update,func,manual
 0x00135600,mm_Person_dtor,func,manual
@@ -1424,7 +1424,7 @@ address,name,kind,source
 0x0016F270,mm_Title_OpeningMovieStep,func,manual
 0x0016F420,mm_Title_MenuInput,func,manual
 0x0016F630,mm_Title_DrawChoices,func,manual
-0x0016F820,mm_Title_LogoAnimB,func,manual
+0x0016F820,mm_Title_DrawChoicesIdle,func,manual
 0x0016FAA0,mm_Title_Intro,func,manual
 0x0016FD60,mm_Title_LogoLetters,func,manual
 0x0016FF20,mm_SceneA_MemoryCardCheck,func,manual

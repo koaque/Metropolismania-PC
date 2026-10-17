@@ -756,14 +756,14 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001290C0,mm_A3DObjectBase_DeletingDtor,84,game,gfx,typed,yes,2,2,"base destructor 0x12AB40, then delete when the flag is > 0"
 0x00129120,mm_LightSet_Init,228,game,gfx,verified,no,2,2,"(provisional, was mm_Unk129120_Init) base init; +0x190 = 0x110, +0x194 = 0xE0; 12 colour/direction slots and ambient set to 1.0"
 0x00129210,mm_A3D_GetMeshField0C,24,game,gfx,verified,no,9,0,word +0xC of mesh a1 in the model's mesh table (+0x50)
-0x00129230,mm_Instance_DrawSwaying,816,game,gfx,typed,no,6,2,"(provisional, was mm_A3D_SineDeform) adds instances for mesh a2 of model a1 with sine-wave motion at time a0 (callers check the instance budget first)"
+0x00129230,mm_Instance_DrawSwaying,816,game,gfx,verified,no,6,2,"(provisional, was mm_A3D_SineDeform) adds instances for mesh a2 of model a1 with sine-wave motion at time a0 (callers check the instance budget first)"
 0x00129570,mm_A3D_Relocate,988,game,gfx,typed,yes,2,3,"turns the loaded model's offsets into pointers, patches the addresses in its DMA chains (mm_DmaChain_*) and uploads its textures (mm_Dma_KickVif1Now)"
 0x00129950,mm_A3DObject_ChangeLuminosity,96,game,gfx,typed,yes,6,1,CA3DObject::ChangeLuminusity (name from its error string): sets node a2's colour (node +0x60) to the vec4 at a1; prints an error for a bad node index
 0x001299B0,mm_A3DObject_DrawNode,104,game,gfx,verified,no,15,1,queues node a1's packet (node +0x50) and its mesh packet (mesh +0x10); nodes are 0xC0 bytes at model +8
 0x00129A20,mm_A3DObject_Draw,228,game,gfx,verified,no,10,2,updates every node's world matrix (mm_A3DObject_UpdateNodeMatrix) and queues all nodes
 0x00129B10,mm_A3DObject_UpdateMatrices,248,game,gfx,verified,no,10,2,"world matrix of each node: root nodes = object matrix (this+0x10) x local, children via mm_A3DObject_UpdateNodeMatrix"
 0x00129C10,mm_Mat4_MulVu0,116,game,math,verified,no,2,0,"a0 = a1 x a2 (4x4, VU0 macro mode)"
-0x00129C90,mm_A3DObject_UpdateNodeMatrix,412,game,gfx,typed,no,3,2,node world matrix = parent's world matrix x local (recursive)
+0x00129C90,mm_A3DObject_UpdateNodeMatrix,412,game,gfx,verified,no,3,2,node world matrix = parent's world matrix x local (recursive)
 0x00129E30,mm_A3DObject_dtor,136,game,gfx,typed,yes,4,3,"frees the model data (+0) and the node array (+0x50), base destructor; delete when the flag is > 0"
 0x00129EC0,mm_A3DObject_LoadAsync,544,game,gfx,typed,yes,3,8,"asynchronous .A3D load from an open file, one step per call (state gp 0x1BD...80A0): header into 0x1C5100, then data; 0 = busy, -1 = error"
 0x0012A0E0,mm_A3DObject_Load,380,game,gfx,typed,yes,3,12,"synchronous .A3D load: header (word counts), data and pointer table, then mm_A3D_Relocate"
@@ -777,7 +777,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0012A660,mm_Camera_UpdateLightMatrices,88,game,camera,verified,no,1,2,sceVu0NormalLightMatrix from the three light directions (+0x160..) and sceVu0LightColorMatrix from the light colours and ambient (+0x190..)
 0x0012A6C0,mm_Camera_UpdateMatrices,136,game,camera,verified,no,29,2,"dir = normalize(target - eye); sceVu0CameraMatrix into this+0x1E0 with up vector this+0x150; this+0x10 = this+0x220 x view, this+0x50 = this+0x260 x view"
 0x0012A750,mm_Camera_DeletingDtor,84,game,camera,typed,yes,4,2,"base destructor, then delete when the flag is > 0"
-0x0012A7B0,mm_Camera_ctor,856,game,camera,typed,no,4,8,"default light directions/colours, eye/target, fog and projection, then all matrices"
+0x0012A7B0,mm_Camera_ctor,856,game,camera,verified,no,4,8,"default light directions/colours, eye/target, fog and projection, then all matrices"
 0x0012AB10,mm_Vec3_Normalize,36,game,math,verified,no,1,0,"a0 = a1 / |a1| (VU0, xyz)"
 0x0012AB40,mm_BaseObject_dtor,68,game,core,typed,yes,15,1,common base destructor: delete when the flag is > 0
 0x0012AB90,mm_BaseObject_ctor,8,game,core,verified,no,16,0,common base constructor: returns this
@@ -812,15 +812,15 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0012CB80,mm_CityCamera_Update,2688,game,camera,typed,no,1,8,"pad-driven city camera: move, rotate, zoom, keeps the eye above the terrain, updates fog, projection and matrices"
 0x0012D600,mm_CityCamera_DeletingDtor,92,game,camera,typed,yes,1,2,"camera destructor, then delete when the flag is > 0"
 0x0012D660,mm_CityCamera_ctor,80,game,camera,typed,yes,1,1,"camera constructor (0x161250) with eye (0, -29, 1.6), zoom level 1"
-0x0012D6B0,mm_Instance_DrawSwaying2,824,game,gfx,typed,no,2,2,"(provisional) second sine-wave instance variant, used by 0x133E80/0x1345E0"
-0x0012D9F0,mm_Instance_DrawModelLit,852,game,gfx,typed,no,1,1,(provisional) instances for all nodes of a model with per-node colours
+0x0012D6B0,mm_Instance_DrawSwaying2,824,game,gfx,verified,no,2,2,"(provisional) second sine-wave instance variant, used by 0x133E80/0x1345E0"
+0x0012D9F0,mm_Instance_DrawModelLit,852,game,gfx,verified,no,1,1,"(provisional) instances of a model whose nodes hold mesh-table indexes: nodes 0-2 with their own meshes (node 0 offset, node 2 only for style 0), later nodes from the style's group of 13"
 0x0012DD50,mm_Instance_DrawNodeLimited,280,game,gfx,verified,no,1,1,"like mm_Instance_DrawNode, also capped by a second counter (gp)"
-0x0012DE70,mm_Instance_DrawModelEx,940,game,gfx,typed,no,4,2,(provisional) instances for a model with extra transform parameters
+0x0012DE70,mm_Instance_DrawModelEx,940,game,gfx,verified,no,4,2,"(provisional) as mm_Instance_DrawModelLit with per-call mesh offsets and flags, an optional attached part (0x1F3B80) at node 2, later nodes by group x the size at +0x60"
 0x0012E220,mm_InstanceModel_LoadAsync,120,game,gfx,typed,yes,1,1,mm_A3DObject_LoadAsync; when done (and a2 == 0) stores the frame count (+0x60 = data +4 / 13)
 0x0012E2A0,mm_InstanceModel_ctor2,40,game,gfx,typed,yes,1,1,mm_InstanceModel_ctor wrapper
 0x0012E2D0,mm_Perf_AdaptDrawRange,152,game,gfx,verified,no,1,1,"(provisional) 0x1BD980 tracks 0x1BD9B8: shrinks when it is above 95, else grows by 1; clamped to 0xFF..0x3A7"
-0x0012E370,mm_Path_ScanLine,1092,game,char,typed,no,1,3,(provisional) walks tiles along a line looking for a walkable tile (flag 0x10)
-0x0012E7D0,mm_Path_NextWaypoint,1588,game,char,typed,no,2,7,next waypoint tile toward the person's building (+0x16); 0x4000 when none
+0x0012E370,mm_Path_PickRoadLink,1092,game,char,verified,no,1,3,"the road link to take from one road block towards another: follows each link through bends, up to 9 blocks, nearest junction wins (was mm_Path_ScanLine)"
+0x0012E7D0,mm_Path_NextWaypoint,1588,game,char,verified,no,2,7,"the person's next waypoint towards its building (+0x16), every 8th frame (else 0x4000): road entrance, shared links or mm_Path_PickRoadLink on roads, nearest road off them; sets +0x18 and +0x1A"
 0x0012EE20,mm_Path_TileDistance,176,game,char,verified,no,2,0,(provisional) VU0 distance test between tiles a1 and a2
 0x0012EED0,mm_CharType_Slot18,8,game,char,typed,no,0,0,base vtable slot +0x18: empty
 0x0012EEE0,mm_CharType_Draw2,8,game,char,typed,no,0,0,base slot +0x14: empty
@@ -833,7 +833,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001300C0,mm_Char2_ProbeTilesB,3808,game,char,typed,no,1,4,(provisional) same as mode A for movement mode B
 0x00130FA0,mm_Char2_MoveA,2300,game,char,typed,no,1,8,(provisional) class-2 movement mode A: rotates the heading (sceVu0RotMatrixY) and probes ahead with mm_Char2_ProbeTilesA
 0x001318A0,mm_Char2_MoveB,2280,game,char,typed,no,1,8,(provisional) class-2 movement mode B with mm_Char2_ProbeTilesB
-0x00132190,mm_Char2_Draw,612,game,char,typed,no,0,4,"class 2 slot +0x10: instance of the character on the terrain (height from 0x1415E0), within the draw range (0x1BD980)"
+0x00132190,mm_Char2_Draw,612,game,char,verified,no,0,4,"class 2 slot +0x10: instance of the character on the terrain (height from 0x1415E0), within the draw range (0x1BD980)"
 0x00132400,mm_Char2_Update,1048,game,char,typed,yes,0,10,class 2 slot +0xC: moves the character (mode A or B) and updates its tile
 0x00132820,mm_Char2_dtor,96,game,char,typed,yes,0,2,"vtable 0x1BCE90, then the base destructor"
 0x00132880,mm_Char2_ctor,52,game,char,verified,no,1,1,"base constructor, vtable 0x1BCE90"
@@ -846,7 +846,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00133E80,mm_Person_Draw2,700,game,char,typed,yes,0,9,class 1 slot +0x14: (provisional) extra drawing (shadow/marker) for a person
 0x00134140,mm_CharType_TickSlots,92,game,char,verified,no,1,0,counts down the 25 character type slot timers (0x1C5310) and frees a slot (0x1C5110 = 6000) when its timer reaches 0
 0x001341A0,mm_CharType_ClearSlots,184,game,char,verified,no,1,0,frees all 25 character type slots (0x1C5110 = 6000) and clears their timers (0x1C5310)
-0x00134260,mm_Person_BuildPose,896,game,char,typed,no,1,2,"(provisional) walking pose matrices for a person (copies of the base matrix 0x1B2550, animation table 0x1C5180)"
+0x00134260,mm_Person_TurnToPlayer,896,game,char,verified,no,1,2,"turns a person's model part (nodes 0 and 3) to face the player, blended 9:1 with the direction kept in its slot (0x1C5110/0x1C5180/0x1C5310) (was mm_Person_BuildPose)"
 0x001345E0,mm_Person_Draw,1088,game,char,typed,yes,0,11,"class 1 slot +0x10: person instances on the terrain, within the draw range"
 0x00134A20,mm_Person_Update,3032,game,char,typed,yes,0,20,"class 1 slot +0xC: a person's behaviour per tick: target building, walking, waiting, random choices"
 0x00135600,mm_Person_dtor,96,game,char,typed,yes,0,2,"vtable 0x1BCEB0, then the base destructor"
@@ -972,7 +972,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0013EA20,mm_MapSave_PackTiles,808,game,map,typed,yes,1,2,"before saving: packs every tile into 6 bytes (height * 2048, first object, flags)"
 0x0013ED50,mm_Map_LoadState,148,game,map,verified,no,1,2,"reads the tile data, objects (0x6F200), tile lists, people (0x46500) and counters from the save file"
 0x0013EDF0,mm_Map_SaveState,148,game,map,typed,no,1,2,writes them
-0x0013EE90,mm_TerrainGen_ScatterObjects,780,game,map,typed,no,1,3,(provisional) random object placement during terrain generation
+0x0013EE90,mm_TerrainGen_ScatterObjects,780,game,map,verified,no,1,3,"marks the objects of low tiles (height <= 0.1) within a radius with a scenery kind (+0x14 byte): 2 where unset, 0 clears, others by a distance-weighted random chance"
 0x0013F1A0,mm_Map_PlaceSmallGoods,108,game,map,typed,no,1,1,"places Small Goods type 0x115 + a6 at (a2, a3) and stores a5 in the object (+0x10)"
 0x0013F210,mm_Map_PlaceRubbleArea,196,game,map,typed,no,2,1,places A Rubble Heap (type 10) over an a3 x a3 area
 0x0013F2E0,mm_Map_PlaceRoad,28,game,map,verified,no,1,1,places Road (type 4) at even coordinates (2 x 2 road pieces)
@@ -1003,7 +1003,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00141580,mm_Map_GetHeightAt,92,game,map,verified,no,11,0,"height word at clamped (a1, a2)"
 0x001415E0,mm_Map_SampleHeight,676,game,map,verified,no,9,3,"terrain height at world (a0, a1), interpolated over the tile's triangles"
 0x00141890,mm_Math_TriangleNormal,60,game,math,verified,no,3,0,"unit normal of triangle (a, b, c) in out.xyz via VU0; out.w = (w of vf6 as earlier VU0 code left it) squared (used by mm_Map_SampleHeight)"
-0x001418D0,mm_Map_UpdateTileGeometry,1536,game,map,typed,no,5,0,"recomputes tile (a1, a2)'s vertices and normals"
+0x001418D0,mm_Map_UpdateTileGeometry,1536,game,map,verified,no,5,0,"recomputes tile (x, z)'s four corner heights from its 3 x 3 neighbourhood"
 0x00141ED0,mm_Map_UpdateAreaGeometry,136,game,map,verified,no,5,1,mm_Map_UpdateTileGeometry over a rectangle
 0x00141F60,mm_TerrainGen_ApplyBump,1304,game,map,typed,no,2,4,(provisional) raises/lowers a round area
 0x001424A0,mm_MapTiles_dtor,108,game,map,typed,yes,1,3,"frees the tile array, base destructor"
@@ -1040,13 +1040,13 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001446C0,mm_Map_GetRecord,24,game,map,verified,no,126,0,map+8 + index*0x1C (record table shared with mm_Map_GetTileObject)
 0x001446E0,mm_Map_RemoveObjectFromTile,132,game,map,typed,no,1,0,unlinks object a2 from tile a1's object list
 0x00144770,mm_Map_AppendObjectToTile,76,game,map,typed,no,1,0,links object a2 at the end of tile a1's object list
-0x001447C0,mm_Map_CreateObject,908,game,map,typed,no,4,2,"(provisional) creates an object record, links it to its tiles and registers it"
+0x001447C0,mm_Map_CreateObject,908,game,map,verified,no,4,2,"(provisional) creates an object record, links it to its tiles and registers it"
 0x00144B60,mm_Placement_CheckSlope,328,game,map,typed,no,1,1,(provisional) height differences under a footprint
 0x00144CB0,mm_Map_CheckPlacement,760,game,map,typed,indirect,2,5,"(provisional) full placement test: slope, neighbours, type rules"
 0x00144FB0,mm_Placement_CheckNeighbours,504,game,map,verified,no,1,0,(provisional)
 0x001451B0,mm_Placement_CheckTypeRule,244,game,map,verified,no,1,0,(provisional) building type rule (+0x144)
 0x001452B0,mm_MapObj_Delete,300,game,map,verified,no,2,2,"removes object a1 from its claim lists, clears its type and lowers the object and per-category counters (+0x24, +0x30 + category * 4, +0x40, +0x5C)"
-0x001453E0,mm_MapObj_Init,472,game,map,typed,indirect,3,2,"fills object record a1 (type, owner, position) and updates the tile lists"
+0x001453E0,mm_MapObj_Init,472,game,map,verified,indirect,3,2,"fills object record a1 (type, owner, position) and updates the tile lists"
 0x001455C0,mm_MapObj_FindFreeSlot,108,game,map,typed,no,1,0,advances the free object index (+0x10) to an empty record
 0x00145630,mm_MapObjects_Slot0C,8,game,map,typed,no,0,0,vtable slot +0xC at the object level: empty
 0x00145640,mm_MapObjects_Tick,608,game,map,typed,indirect,1,4,"(provisional) vtable slot +8 at the object level: per-object updates, minimap marks, sounds"
@@ -1092,7 +1092,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0014AE10,mm_Laptop_RemoveEntry,184,game,ui,typed,no,1,0,(provisional) removes entry a1 from the list at 0x1F36F0
 0x0014AED0,mm_Laptop_AddEntry,256,game,ui,typed,no,3,0,(provisional) adds entry a1 to the list at 0x1F36F0
 0x0014AFD0,mm_Laptop_Draw,356,game,ui,typed,yes,1,5,"laptop model (luminosity per item), text, fade"
-0x0014B140,mm_Laptop_Animate,772,game,ui,typed,no,1,3,opens/closes the laptop model (sceVu0RotMatrixX/Y)
+0x0014B140,mm_Laptop_Animate,772,game,ui,verified,no,1,3,"the laptop entries' carousel matrices: turn about y by slot and +0x30, pi/12 tilt, radius + centre, scale +0x38; the selected entry lifted in state 2"
 0x0014B450,mm_Laptop_RunEntry,484,game,ui,typed,no,1,6,"runs the selected entry by its type (events, monthly pass, ...)"
 0x0014B640,mm_Laptop_Update,1640,game,ui,typed,yes,1,14,"laptop menu: cursor with key repeat, select, sounds, texts"
 0x0014BCB0,mm_Laptop_dtor,100,game,ui,typed,yes,1,2,deletes its text box
@@ -1225,7 +1225,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00157DA0,mm_Player_SaveState,20,game,char,typed,no,1,1,writes 0x38 bytes
 0x00157DC0,mm_Player_GetMatrix,40,game,char,verified,no,8,0,the player model's matrix (object +0x88)
 0x00157DF0,mm_Player_PlayFootstep,528,game,char,typed,no,1,3,footstep sound by the tile under the player
-0x00158000,mm_Player_UpdateAction,880,game,char,typed,no,1,3,"(provisional) pad-held actions for the player (analog bits 0x100000-0x800000), with a sound"
+0x00158000,mm_Player_UpdateAction,880,game,char,verified,no,1,3,"the player's animation from its movement, pad direction and height (idle 0-2, moving 4-15), advances its frame; sound 5 while walking with pad 0x40"
 0x00158370,mm_Player_PickTarget,1704,game,char,typed,no,1,10,"(provisional) what the player faces: building or person in front (ray, tiles, people), sets the cursor target"
 0x00158A20,mm_Placement_FindSpot,748,game,city,typed,no,1,1,"tries offsets around (a5, a6) until mm_Map_CanPlace returns 2; writes the footprint rectangle"
 0x00158D10,mm_Player_PlaceBagItem,756,game,city,typed,yes,1,9,"placing an item from the bag: preview, confirm (button 0x40), place object, finish use"
@@ -1233,7 +1233,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00159320,mm_Player_SetMode,56,game,char,verified,no,4,1,"mode a1 (-1 = previous), remembers the previous mode, resets the mode timer"
 0x00159360,mm_Player_GetMode,8,game,char,typed,no,3,0,current mode
 0x00159370,mm_Player_Draw,100,game,char,verified,no,1,3,player model instances
-0x001593E0,mm_Player_Move,1896,game,char,typed,no,1,2,(provisional) walking/running with the pad and the analog stick
+0x001593E0,mm_Player_Move,1896,game,char,verified,no,1,2,"the player's grid steps: the pad starts a step (forward/back/sideways 2/speed frames, turns 32 frames); idle, eases onto the block middle and a quarter turn; the step moves the move vector or turns pi/64"
 0x00159B50,mm_Player_Turn,428,game,char,verified,no,1,1,(provisional) turning with the pad
 0x00159D00,mm_Player_Update,1988,game,char,typed,yes,1,24,"player per frame by mode: movement, camera, minimap, footsteps, placing items and homes"
 0x0015A4D0,mm_Player_DeletingDtor,68,game,char,typed,yes,1,1,delete when the flag is > 0
@@ -1303,7 +1303,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0015FE30,mm_Laptop_CheckOpen,212,game,ui,verified,no,1,3,(provisional) while Circle alone (0x20) is held in city mode 1 (and a2): hides HUD element 2 and sets +0x120; restores both on release
 0x0015FF10,mm_Markers_dtor,76,game,city,typed,yes,0,1,(provisional) vtable 0x1BCFC8 at +0x128
 0x0015FF60,mm_Markers_ctor,216,game,city,verified,no,1,1,"(provisional) vtable 0x1BCFC8 at +0x128, models 0x1F3B28/0x1F3B08, nodes 1-3"
-0x00160040,mm_CityCamera_UpdateTimeOfDay,2544,game,camera,typed,no,2,8,"sky colour, fog and light directions/colours from the clock (tables 0x1B0E30..), then the light matrices"
+0x00160040,mm_CityCamera_UpdateTimeOfDay,2544,game,camera,verified,no,2,8,"lights and sky by the clock: colours blended between two-hour slot tables (0x1B0E30.. 0x1B12B0), sun directions turned by the day's angle, sky packet colours, horizon, scroll and shimmer"
 0x00160A30,mm_Sky_Draw,56,game,camera,verified,no,1,1,"queues the three sky packets (+0x310, +0x470, +0x3D0)"
 0x00160A70,mm_Sky_BuildPackets,1660,game,camera,typed,no,1,1,builds the sky packets (texture sizes via mm_Math_Log2)
 0x001610F0,mm_Sky_Load,344,game,camera,typed,yes,1,4,loads DATA\A3D\SKY.A3D and uploads its textures
@@ -1317,7 +1317,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001614F0,mm_TexSprite_BuildPacket,2152,game,gfx,typed,no,4,2,builds the textured-sprite packet from the .TEX image
 0x00161D60,mm_TexSprite_dtor,136,game,gfx,typed,yes,0,2,"vtable 0x1BCFD8, frees image and packet"
 0x00161DF0,mm_TexSprite_Load,260,game,gfx,typed,yes,5,5,loads a .TEX file whole and builds its packet
-0x00161F00,mm_LoadingScreen_Update,604,game,ui,typed,no,1,8,"loading screen animation and draw (rotating LOADINGT, text, fade)"
+0x00161F00,mm_LoadingScreen_Update,604,game,ui,verified,no,1,8,"loading screen frame: sprite circling or pulsing, background and sprite drawn, fade in or out by 4 (2 while fading, then 0 or 1), text once clear"
 0x00162160,mm_LoadingScreen_SetText,12,game,ui,typed,no,1,1,text box text
 0x00162170,mm_LoadingScreen_SetTextPos,28,game,ui,verified,no,1,1,text box position (screen coordinates)
 0x00162190,mm_LoadingScreen_SetSpritePos,48,game,ui,verified,no,1,1,sprite position
@@ -1384,7 +1384,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00165C50,mm_BldgClaims_CountNearby,552,game,city,typed,no,3,4,(provisional) counts matching buildings in the claim's tile lists
 0x00165E80,mm_BldgClaims_EvalC,712,game,city,typed,no,1,5,"checks whether the claim is met (nothing missing nearby): flag 8, approval +3, sound and minimap mark; else meter handling"
 0x00166150,mm_BldgClaims_EvalD,1768,game,city,typed,no,1,5,(provisional) part D
-0x00166840,mm_BldgClaims_Evaluate,628,game,city,typed,no,1,4,"per building: claim check (part C), meter rise by the rate, part D above the low threshold, flag 0x40 above 0xFE"
+0x00166840,mm_BldgClaims_Evaluate,628,game,city,verified,no,1,4,"per building: claim check (part C), meter rise by the rate, part D above the low threshold, flag 0x40 above 0xFE"
 0x00166AC0,mm_BldgClaims_DrawIcon,372,game,city,verified,no,7,2,"claim icon colour from the meter level (1 slow pulse, 2 fast pulse)"
 0x00166C40,mm_Bldg_InitRecordBase,12,game,city,typed,no,1,0,record +0x12 = 0x18
 0x00166C50,mm_Bldg_ctor,52,game,city,typed,yes,1,1,"base constructor, vtable 0x1BD100"
@@ -1407,7 +1407,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001679C0,mm_BldgType_FindEntrance2,368,game,city,verified,no,1,2,whether a building of flag 8 lies within 3 tiles beyond side a5 (stops at walkable tiles)
 0x00167B40,mm_Bldg_DrawPeople,1452,game,city,typed,indirect,0,1,slot +0x18: people at the building
 0x00168100,mm_BldgBusiness_Draw,532,game,city,verified,no,0,3,slot +0x14 for Business and My Home: instances and claim icon
-0x00168320,mm_Bldg_Tick,1204,game,city,typed,no,4,11,"slot +0x10: entrance, minimap marks, terrain under the footprint, claims"
+0x00168320,mm_Bldg_Tick,1204,game,city,verified,no,4,11,"slot +0x10: main part finds its entrance and side (road-grid parity), levels the ground under the footprint (0.1 / multiples of 0.5); entrance part runs the claims (result), others count +0x18; minimap colour by claim level"
 0x001687E0,mm_Bldg_InitRecord,44,game,city,typed,no,1,1,"slot +0xC: base init, record +0x14 = 0x4000"
 0x00168810,mm_BldgBusiness_ctor,52,game,city,typed,yes,8,1,"Building constructor, vtable 0x1BD1C0"
 0x00168850,mm_BldgKeepOut_dtor,96,game,city,typed,yes,0,2,"category 15 (Keep Out), vtable 0x1BD200"
@@ -1441,7 +1441,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0016AA40,mm_BldgRoad_FindNeighbours,296,game,city,verified,no,1,2,(provisional) walkable neighbours of a road tile (tables 0x1B13F0/0x1B1400)
 0x0016AB70,mm_BldgRoad_DrawPeople,908,game,city,typed,indirect,0,5,(provisional) people walking on the road
 0x0016AF10,mm_BldgRoad_Draw,688,game,city,verified,no,0,1,road piece instances by neighbour connections
-0x0016B1C0,mm_BldgRoad_Tick,1164,game,city,typed,no,0,7,levels the road with its neighbours and marks the minimap
+0x0016B1C0,mm_BldgRoad_Tick,1164,game,city,verified,no,0,7,"road shape from neighbouring road blocks, flattens its tiles to 0, picks the lamp, traffic-light or slope mesh, marks the minimap"
 0x0016B650,mm_BldgRoad_InitRecord,24,game,city,typed,no,0,0,slot +0xC
 0x0016B670,mm_BldgRoad_Slot1C,16,game,city,verified,no,0,0,slot +0x1C
 0x0016B680,mm_BldgRoad_ctor,88,game,city,typed,yes,1,1,"base constructor, vtable 0x1BD340, two parameters from record bytes 0x90/0x91"
@@ -1484,12 +1484,12 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0016EC50,mm_Title_NewGameIntro,1300,game,scene,typed,no,1,8,new game intro scene with town models and loading text
 0x0016F170,mm_Title_RandomCharParts,248,game,scene,typed,no,1,2,random character parts for the intro
 0x0016F270,mm_Title_OpeningMovieStep,424,game,scene,typed,yes,1,9,"plays the opening movie, then loads TITLE.SQ/HD/BD"
-0x0016F420,mm_Title_MenuInput,520,game,scene,typed,no,1,4,title menu cursor and selection
+0x0016F420,mm_Title_MenuInput,520,game,scene,verified,no,1,4,"title menu input: cursor, Cross/Start pulse, and the sound test code (Up Up Down Down Left Right Left Right L1 R1, table 0x1B1790) that shows the Select hint; 10 opens the sound test"
 0x0016F630,mm_Title_DrawChoices,488,game,scene,verified,no,2,2,"the title menu choices: the selected one pulses for 20 frames (then returns 1), the other at 0.6"
-0x0016F820,mm_Title_LogoAnimB,640,game,scene,typed,no,1,4,rotating logo sprite animation
-0x0016FAA0,mm_Title_Intro,696,game,scene,typed,no,1,10,title intro sequence with music
+0x0016F820,mm_Title_DrawChoicesIdle,640,game,scene,verified,no,1,4,"the title menu choices at rest: the selected one wobbles on two circles (sceVu0RotMatrixZ), the other at 0.6 (was mm_Title_LogoAnimB)"
+0x0016FAA0,mm_Title_Intro,696,game,scene,verified,no,1,10,"title logo intro, six steps: music, logo model animation with timed effects (0x1B1A20), title sprite fade-in, bouncing letters, 50-frame hold; returns 1 when done"
 0x0016FD60,mm_Title_LogoLetters,436,game,scene,verified,no,1,2,logo letter sprites (table 0x1B17E0)
-0x0016FF20,mm_SceneA_MemoryCardCheck,944,game,scene,typed,no,1,8,
+0x0016FF20,mm_SceneA_MemoryCardCheck,944,game,scene,verified,no,1,8,"boot memory card check: goes on when a save or a fine card is found, else shows which slot has no card or too little space and waits for Cross (card states at 0x1BDC04/08)"
 0x001702D0,mm_SceneA_LogoStep,464,game,boot,typed,yes,1,5,"one logo (a1: 0 NATSUME, 1 MF_US, else LOGO.TEX): load, fade in, hold 140 frames, fade out, free"
 0x001704A0,mm_SceneA_Load,1852,game,scene,typed,yes,1,21,
 0x00170BE0,mm_SceneA_Update,1004,game,scene,typed,yes,1,19,
@@ -1498,7 +1498,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001714A0,mm_TownPages_SelectedEntry,440,game,ui,verified,no,1,1,(provisional) resident index under the cursor (+0x5C) on the current page (+0x2C)
 0x00171660,mm_TownPages_ClampCursor,180,game,ui,verified,no,1,0,cursor 0..10 limited by the entries on the page (+0x40); 10 = the CLOSE item
 0x00171720,mm_TownPages_BuildIndex,632,game,ui,typed,yes,1,3,(provisional) allocates the occupation table (count 0x1BDA90) and fills it from known families
-0x001719A0,mm_TownPages_FillContents,604,game,ui,typed,no,1,6,contents pages: occupations with page numbers and the help text
+0x001719A0,mm_TownPages_FillContents,604,game,ui,verified,no,1,6,"a contents page: ten family types with known families, name and start page each, five per column; an empty book gets the explanation and the cursor on CLOSE"
 0x00171C10,mm_TownPages_FillPage,1064,game,ui,typed,yes,1,11,"page text, one resident per line (""%s\n TEL:%s"")"
 0x00172040,mm_TownPages_Draw,228,game,ui,verified,no,1,4,"book model, text boxes and the cursor frame"
 0x00172130,mm_TownPages_Update,4136,game,ui,typed,yes,1,19,"open animation, page turning and cursor input, calling a resident (mm_CityScene_StartTalk)"
@@ -1517,7 +1517,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00173550,mm_Widget_Open,16,game,ui,verified,no,9,0,"slot +0xC: state 1, timer 0"
 0x00173560,mm_Widget_dtor,76,game,ui,typed,yes,7,1,vtable 0x1BD400
 0x001735B0,mm_Widget_ctor,28,game,ui,verified,no,7,0,"vtable 0x1BD400 at +8, state and timer 0"
-0x001735D0,mm_TalkView_CollectOccupants,492,game,talk,typed,no,2,4,"(provisional) people at the building sorted by grade (+0x2E), up to 6"
+0x001735D0,mm_TalkView_CollectOccupants,492,game,talk,verified,no,2,4,"the talk building's workers (outside or in it, class without flag 1), sorted by their +0x2E byte, are moved off its tile into it"
 0x001737C0,mm_TalkView_ToggleAnim,88,game,talk,typed,no,1,0,(provisional) flips the selected person's animation (7 -> 2/3)
 0x00173820,mm_TalkView_DrawPeople,3232,game,talk,typed,yes,3,18,"people at the building or of the family in a row with names, grades and the cursor"
 0x001744E0,mm_TalkView_NobodyHome,296,game,talk,typed,yes,2,4,"(provisional) 1 when no one of the family or building is there (schedule, outside flags)"
@@ -1530,7 +1530,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00175170,mm_TalkView_FindPersonSlot,260,game,talk,typed,no,1,2,slot of the person with family a1 and member a2
 0x00175280,mm_TalkView_CountPeople,200,game,talk,typed,yes,1,3,"people present (+0xC8), or family members when by family"
 0x00175350,mm_TalkView_SetTarget,288,game,talk,typed,yes,3,4,"building a1 / family a2, name text boxes and frames"
-0x00175470,mm_TalkView_PersonCamera,620,game,talk,typed,no,3,3,(provisional) camera eye and target facing a person at a building
+0x00175470,mm_TalkView_PersonCamera,620,game,talk,verified,no,3,3,"the camera for a talk at a building: target at the footprint middle below the object's height, eye 0.4 back along the view's flattened direction"
 0x001756E0,mm_TalkView_DrawMember,448,game,talk,typed,yes,1,4,(provisional) family member model in front of the camera
 0x001758A0,mm_TalkView_DrawPerson,436,game,talk,typed,indirect,2,3,(provisional) person model in front of the camera
 0x00175A60,mm_TalkView_DrawPersonTurned,268,game,talk,typed,indirect,2,2,(provisional) person model rotated by a0
@@ -1938,7 +1938,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00187750,mm_Se_SetEnabled,196,game,sound,typed,no,3,4,0x1BDD20 = a0; a0 == 0 stops all 16 + 15 effect voices; a1 != 0 resets their volumes (0xFFF and 0x100)
 0x00187820,mm_Se_SetVoice15Enabled,76,game,sound,typed,no,1,2,same as mm_Se_SetEnabled for the single voice 15 (volume 0xC0)
 0x00187870,mm_Se_UpdateCityAmbience,3152,game,sound,typed,no,1,8,scans map tiles around the camera and requests ambient sounds by tile/building (mm_Se_Request); uses the time of day and the listener position
-0x001884E0,mm_Se_UpdateListener,1092,game,sound,typed,no,2,1,copies the city camera's eye and target (camera +0x130/+0x140) into the listener vectors at 0x1FC650 and derives its orientation
+0x001884E0,mm_Se_UpdateListener,1092,game,sound,verified,no,2,1,copies the city camera's eye and target (camera +0x130/+0x140) into the listener vectors at 0x1FC650 and derives its orientation
 0x00188930,mm_Se_BuildingSoundState,1144,game,sound,typed,indirect,1,1,"for a building record a0 and its type a1: returns 0xFF (none), 0x4FF (already sounding) or a sound id, using time windows (mm_Se_InTimeWindow)"
 0x00188DB0,mm_Se_InTimeWindow,300,game,sound,verified,no,1,0,"checks the game clock (seconds of day mod 3600, 0x1BDD34) against a window [a1, a2) offset per object; 0xFF = outside, 0x100 = inside"
 0x00188EE0,mm_Se_RequestTileSounds,468,game,sound,typed,no,1,4,"requests the sounds of the objects on map tile (a2, a3), with a random extra cue when a4 != 0"

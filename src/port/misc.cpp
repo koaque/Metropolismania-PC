@@ -76,6 +76,7 @@ namespace mm
         const int zoom = camera->zoomLevel;
         if (zoom < 2)
             return zoom;
+        port::GuestFrame<0x20> frame; // Map_SampleHeight's stack vectors land where they did in the original
         const ps2f height = camera->base.eye.y - Map_SampleHeight(city->map, camera->base.eye.x, camera->base.eye.z);
         if (ps2f(-1.15f) < height)
             return 0;
@@ -92,7 +93,366 @@ namespace mm
             return;
         Instance_DrawSwayingIfRoom(player->model, player->swayArg, player->swayPhase);
         A3DObject_UpdateMatrices(player->model);
-        Instance_DrawModelLit(player->model, GuestPtr<uint32_t>{player.address + 0x20u}, player->mode, city->bag->unk_002);
+        Instance_DrawModelLit(player->model, GuestPtr<Vec4>{player.address + 0x20u}, player->mode, city->bag->unk_002);
+    }
+
+    // char: the player's animation (+0x38) from its movement and the pad. Standing still: 1 when at least 0.4
+    // above the city's +0xB0 level, else 2 while approval is below 0, else 0. Moving, by direction (pad bits
+    // or the player's +0x08 code): 0x400000, 0x4000 or code 2 gives 5; 0x800000 or code 5 gives 7; 0x200000
+    // or code 6 gives 6; 0x100000, 0x1000 or code 1 gives 4; plus 8 while walking (mode 1) with pad 0x40 held,
+    // else plus 4 when at least 0.4 above the level. A changed animation restarts at frame 0 (+0x34); frames
+    // advance by 1 and wrap to 0, or to a fifth of the length (mm_A3D_GetMeshField0C) for animations 4 and up.
+    // Walking with pad 0x40 held while moving plays sound 5.
+    void Player_UpdateAction(GuestPtr<Player> player, GuestPtr<Vec4> move, GuestPtr<CityScene> city)
+    {
+        const bool high = !(player->position.y < ps2f(0.4f) + city->unk_B0);
+        const auto still = [&] { return move->x == ps2f(0.0f) && move->z == ps2f(0.0f); };
+        int anim = 0;
+        if (still())
+            anim = high ? 1 : (city->approval < 0 ? 2 : 0);
+        else
+        {
+            const auto pick = [&](int base) {
+                if (player->mode == 1 && (Pad_Held(0) & 0x40u) != 0)
+                    return base + 8;
+                return high ? base + 4 : base;
+            };
+            if ((Pad_Held(0) & 0x400000u) != 0 || (Pad_Held(0) & 0x4000u) != 0 || player->step == 2)
+                anim = pick(5);
+            else if ((Pad_Held(0) & 0x800000u) != 0 || player->step == 5)
+                anim = pick(7);
+            else if ((Pad_Held(0) & 0x200000u) != 0 || player->step == 6)
+                anim = pick(6);
+            else if ((Pad_Held(0) & 0x100000u) != 0 || (Pad_Held(0) & 0x1000u) != 0 || player->step == 1)
+                anim = pick(4);
+        }
+        if (player->swayArg != anim)
+        {
+            player->swayArg = anim;
+            player->swayPhase = 0.0f;
+        }
+        const ps2f length = A3D_GetMeshField0C(player->model, player->swayArg);
+        player->swayPhase = player->swayPhase + ps2f(1.0f);
+        if (!(player->swayPhase < length))
+            player->swayPhase = player->swayArg < 4 ? ps2f(0.0f) : length / ps2f(5.0f);
+        if (player->mode != 1 || (Pad_Held(0) & 0x40u) == 0 || still())
+            return;
+        Sound_PlaySe(5, 0, 0x3C, 0.0f, 0.0f);
+    }
+
+    // char: the player's grid steps. With no step under way and pad 0x20 not held, the pad starts one, each test
+    // in turn and the last match winning: Up or 0x100000 forwards (1), Down or 0x400000 back (2), 0x200000 (6)
+    // and 0x800000 (5) to the sides, each lasting 2 / speed frames; Right (3) and Left (4) turn for 32 frames.
+    // With no step under way the position also eases onto the middle of its 2 x 2 block (at most the speed per
+    // frame) and the heading onto the nearest quarter turn (pi/64 per frame). The step then moves the move
+    // vector by the speed along z or x, or turns the heading by pi/64 (kept within -pi..pi), until its frames
+    // run out.
+    void Player_Move(GuestPtr<Player> player, GuestPtr<Vec4> move)
+    {
+        // The float constants of the original: pi and its quarters, and the turn step pi/64.
+        const ps2f pi = 0x1.921FB6p+1f, halfPi = 0x1.921FB6p+0f, quarterPi = 0x1.921FB6p-1f, threeQuarterPi = 0x1.2D97C8p+1f;
+        const ps2f twoPi = 0x1.921FB6p+2f, turn = 0x1.921FB6p-5f, zero = 0.0f;
+        if (player->step == 0)
+        {
+            if ((Pad_Held(0) & 0x20u) == 0)
+            {
+                const auto start = [&](int step) {
+                    player->stepFrames = ps2f(2.0f) / player->moveSpeed;
+                    player->step = step;
+                };
+                if ((Pad_Held(0) & 0x1000u) != 0 || (Pad_Held(0) & 0x100000u) != 0) // up
+                    start(1);
+                if ((Pad_Held(0) & 0x4000u) != 0 || (Pad_Held(0) & 0x400000u) != 0) // down
+                    start(2);
+                if ((Pad_Held(0) & 0x200000u) != 0)
+                    start(6);
+                if ((Pad_Held(0) & 0x800000u) != 0)
+                    start(5);
+                if ((Pad_Held(0) & 0x2000u) != 0) // right
+                {
+                    player->step = 3;
+                    player->stepFrames = 32.0f;
+                }
+                if ((Pad_Held(0) & 0x8000u) != 0) // left
+                {
+                    player->step = 4;
+                    player->stepFrames = 32.0f;
+                }
+            }
+            const ps2f centre = 64.0f, half = 0.5f;
+            const auto toFloat = [](int v) { return ps2f(static_cast<float>(v)); };
+            const ps2f x = player->position.x;
+            const ps2f targetX = (half + (toFloat(sdk::fptosi(centre + x) | 1) - centre)) - half;
+            const int column = sdk::fptosi(centre - player->position.z) | 1;
+            const ps2f targetZ = half + ((toFloat(128 - column) - centre) - half);
+            const ps2f speed = player->moveSpeed;
+            const ps2f dx = x - targetX;
+            if (!(dx <= speed))
+                player->position.x = player->position.x - speed;
+            else if (dx <= -speed)
+                player->position.x = player->position.x + speed;
+            else
+                player->position.x = targetX;
+            const ps2f z = player->position.z;
+            const ps2f zSpeed = player->moveSpeed;
+            const ps2f dz = z - targetZ;
+            if (!(dz <= zSpeed))
+                player->position.z = z - zSpeed;
+            else if (dz <= -zSpeed)
+                player->position.z = z + zSpeed;
+            else
+                player->position.z = targetZ;
+
+            const ps2f h = player->heading;
+            ps2f heading;
+            if (!(h <= threeQuarterPi))
+                heading = pi - h <= turn ? -pi : h + turn;
+            else if (!(h <= halfPi))
+                heading = h - halfPi <= turn ? halfPi : h - turn;
+            else if (!(h <= quarterPi))
+                heading = halfPi - h <= turn ? halfPi : h + turn;
+            else if (!(h <= zero))
+                heading = h <= turn ? zero : h - turn;
+            else if (!(h <= -quarterPi))
+                heading = h < -turn ? h + turn : zero;
+            else if (!(h <= -halfPi))
+                heading = halfPi + h <= turn ? -halfPi : h - turn;
+            else if (!(h <= -threeQuarterPi))
+                heading = -halfPi - h <= turn ? -halfPi : h + turn;
+            else
+                heading = pi + h <= turn ? -pi : h - turn;
+            player->heading = heading;
+        }
+        const auto countDown = [&] {
+            const ps2f left = player->stepFrames - ps2f(1.0f);
+            player->stepFrames = left;
+            if (left <= zero)
+            {
+                player->stepFrames = zero;
+                player->step = 0;
+            }
+        };
+        switch (player->step)
+        {
+        case 1:
+            move->z = move->z - player->moveSpeed;
+            countDown();
+            break;
+        case 2:
+            move->z = move->z + player->moveSpeed;
+            countDown();
+            break;
+        case 3:
+        {
+            const ps2f h = player->heading + turn;
+            player->heading = h;
+            if (!(h < pi))
+                player->heading = h - twoPi;
+            countDown();
+            break;
+        }
+        case 4:
+        {
+            const ps2f h = player->heading - turn;
+            player->heading = h;
+            if (h < -pi)
+                player->heading = h + twoPi;
+            countDown();
+            break;
+        }
+        case 5:
+            move->x = move->x + player->moveSpeed;
+            countDown();
+            break;
+        case 6:
+            move->x = move->x - player->moveSpeed;
+            countDown();
+            break;
+        default:
+            break;
+        }
+    }
+
+    // A camera's defaults: three light directions and colours with an ambient level (and their matrices, as
+    // mm_Camera_UpdateLightMatrices, which the original has inline), the projection (distance 768, scale 1 by
+    // 0.47, centre 2048, depth 1 to 16777000, near 0.01, far 50, view 2046 by 2046), an eye at (0, 0, -5)
+    // looking at the origin with y up (view and world-to-screen matrices), fog from 24 to 28 and the VU1
+    // packet. The original's frame is reserved whole: the view direction is its slot at sp + 0x20.
+    GuestPtr<Camera> Camera_ctor(GuestPtr<Camera> camera)
+    {
+        using namespace vu0;
+        port::GuestFrame<0x30> frame;
+        const GuestPtr<Vec4> direction{frame.ptr().address + 0x20u};
+        const auto at = [&](const Vec4 &v) { return GuestPtr<Vec4>::of(v).address; };
+        const auto set4 = [](Vec4 &v, float x, float y, float z, float w) {
+            v.x = x;
+            v.y = y;
+            v.z = z;
+            v.w = w;
+        };
+        BaseObject_ctor(static_cast<int>(camera.address));
+        set4(camera->lightDir[0], 0.0f, 1.5f, 0.5f, 1.0f);
+        set4(camera->lightDir[1], 1.5f, -0.5f, 0.5f, 1.0f);
+        set4(camera->lightDir[2], -1.5f, 0.5f, 0.5f, 1.0f);
+        set4(camera->lightRgb[0], 0.5f, 0.5f, 0.5f, 1.0f);
+        set4(camera->lightRgb[1], 0.2f, 0.2f, 0.2f, 1.0f);
+        set4(camera->lightRgb[2], 0.2f, 0.2f, 0.2f, 1.0f);
+        set4(camera->ambient, 0.45f, 0.45f, 0.45f, 1.0f);
+        Camera_UpdateLightMatrices(camera);
+        camera->distance = 768.0f;
+        camera->scaleX = 1.0f;
+        camera->scaleY = 0.47f;
+        camera->centreX = 2048.0f;
+        camera->centreY = 2048.0f;
+        camera->depthMax = 1.0f;
+        camera->depthMin = 16777000.0f;
+        camera->zNear = 0.01f;
+        camera->zFar = 50.0f;
+        camera->viewWidth = 2046.0f;
+        camera->viewHeight = 2046.0f;
+        camera->unk_1D8 = 1.0f;
+        camera->unk_1DC = 10.0f;
+        Camera_UpdateProjection(camera);
+        set4(camera->eye, 0.0f, 0.0f, -5.0f, 1.0f);
+        set4(camera->target, 0.0f, 0.0f, 0.0f, 1.0f);
+        set4(camera->up, 0.0f, 1.0f, 0.0f, 1.0f);
+        vf(4) = load(GuestPtr<Vec4>::of(camera->target));
+        vf(5) = load(GuestPtr<Vec4>::of(camera->eye));
+        set(vf(4), sub(vf(4), vf(5)), XYZW);
+        store(direction, vf(4));
+        Vec3_Normalize(direction, direction);
+        sdk::sceVu0CameraMatrix(at(camera->view[0]), at(camera->eye), direction.address, at(camera->up));
+        sdk::sceVu0MulMatrix(at(camera->worldScreenA[0]), at(camera->screenA[0]), at(camera->view[0]));
+        sdk::sceVu0MulMatrix(at(camera->worldScreenB[0]), at(camera->screenB[0]), at(camera->view[0]));
+        camera->fogNear = 24.0f;
+        camera->fogFar = 28.0f;
+        set4(camera->fogA, 0.0f, 0.0f, 0.0f, -1530.0f);
+        set4(camera->fogB, 0.0f, 0.0f, 0.0f, 42840.0f);
+        Camera_BuildPacket(camera);
+        return camera;
+    }
+
+    // The city's lights and sky by the clock, each frame. The tables hold twelve two-hour slots per day (and
+    // twelve more for weather other than clear); every colour is blended between this slot's and the next
+    // slot's entry by the seconds t into the slot, ((7200 - t) x this + t x next) / 7200. Lights 0 and 1 point along (0, 1, 0) and (0, -1, 0) turned by the day's angle about z and pi/8
+    // about x, light 2 straight up in 0.2 grey, and the light matrices follow. The sky packet (from +0x340)
+    // gets its two colours (x 256 as GS bytes), its horizon from the view's pitch, its scroll from a frame
+    // counter and the view's heading, and a shimmering grey. The original's frame is reserved whole.
+    void CityCamera_UpdateTimeOfDay(GuestPtr<CityCamera> camera, GuestPtr<CityScene> city)
+    {
+        using namespace vu0;
+        port::GuestFrame<0x170> frame;
+        const uint32_t sp = frame.ptr().address;
+        const GuestPtr<Vec4> dir0{sp + 0xC0u}, dir1{sp + 0xD0u}, turn{sp + 0xE0u}, tilt{sp + 0x120u}, view{sp + 0x160u};
+        const GuestPtr<Vec4> identity{globals::kIdentityMatrix};
+        // The float constants of the original: pi, 2 pi, pi/8, the scroll step (2 pi per 69120 frames) and 3/pi.
+        const ps2f pi = 0x1.921FB6p+1f, twoPi = 0x1.921FB6p+2f, eighthPi = 0x1.921FB6p-2f;
+        const ps2f scrollStep = 0x1.7D45E4p-14f, toUnits = 0x1.E8EC8Ap-1f, one = 1.0f;
+        if (globals::timeOfDayStarted.get() == 0)
+        {
+            globals::timeOfDayFrames.set(0);
+            globals::timeOfDayStarted.set(1);
+        }
+        globals::timeOfDayFrames.set(globals::timeOfDayFrames.get() + 1);
+        const ps2f slotLength = 7200.0f;
+        const ps2f t = sdk::fmodf(fromInt(city->clock), slotLength);
+        int slot = city->clock / 7200;
+        int next = slot + 1;
+        if (!(next < 12))
+            next -= 12;
+        if (city->weatherToday != 0)
+        {
+            slot += 12;
+            next += 12;
+        }
+        const auto blend = [&](uint32_t table, uint32_t lane) {
+            const ps2f now = port::load<float>(table + 12u * static_cast<uint32_t>(slot) + 4u * lane);
+            const ps2f later = port::load<float>(table + 12u * static_cast<uint32_t>(next) + 4u * lane);
+            return ((slotLength - t) * now + t * later) / slotLength;
+        };
+        const auto setColour = [&](Vec4 &out, uint32_t table) {
+            out.x = blend(table, 0);
+            out.y = blend(table, 1);
+            out.z = blend(table, 2);
+            out.w = one;
+        };
+
+        *dir0 = *GuestPtr<Vec4>{globals::kSunDirections};
+        *dir1 = *GuestPtr<Vec4>{globals::kSunDirections + 0x10u};
+        sdk::sceVu0RotMatrixZ(turn.address, identity.address, (twoPi * fromInt(city->clock)) / ps2f(86400.0f) - pi);
+        sdk::sceVu0RotMatrixX(tilt.address, identity.address, eighthPi);
+        Mat4_MulVu0(turn, tilt, turn);
+        Math_MulMatVecVu0(dir0, turn, dir0);
+        Math_MulMatVecVu0(dir1, turn, dir1);
+        Camera &base = camera->base;
+        base.lightDir[0] = *dir0;
+        setColour(base.lightRgb[0], globals::kLightColourBySlot0);
+        base.lightDir[1] = *dir1;
+        setColour(base.lightRgb[1], globals::kLightColourBySlot1);
+        base.lightDir[2].x = 0.0f;
+        base.lightDir[2].y = one;
+        base.lightDir[2].z = 0.0f;
+        base.lightDir[2].w = one;
+        base.lightRgb[2].x = 0.2f;
+        base.lightRgb[2].y = 0.2f;
+        base.lightRgb[2].z = 0.2f;
+        base.lightRgb[2].w = one;
+        setColour(base.ambient, globals::kAmbientBySlot);
+        Camera_UpdateLightMatrices(GuestPtr<Camera>{camera.address});
+
+        const auto skyByte = [&](uint32_t table, uint32_t lane) { return sdk::fptoui(ps2f(256.0f) * blend(table, lane)); };
+        const uint32_t topR = skyByte(globals::kSkyColourBySlotA, 0);
+        const uint32_t topG = skyByte(globals::kSkyColourBySlotA, 1);
+        const uint32_t topB = skyByte(globals::kSkyColourBySlotA, 2);
+        const uint32_t lowR = skyByte(globals::kSkyColourBySlotB, 0);
+        const uint32_t lowG = skyByte(globals::kSkyColourBySlotB, 1);
+        const uint32_t lowB = skyByte(globals::kSkyColourBySlotB, 2);
+        const uint32_t sky = camera.address;
+        const uint32_t lowColour = lowR | lowG << 8 | lowB << 16 | 0x80000000u;
+        port::store<uint32_t>(sky + 0x340u, topR | topG << 8 | topB << 16 | 0x80000000u);
+        port::store<uint32_t>(sky + 0x370u, lowColour);
+        LightSet_SetField20(GuestPtr<LightSet>{camera.address}, port::load<int32_t>(sky + 0x370u)); // into the camera's own packet
+
+        vf(4) = load(GuestPtr<Vec4>::of(base.target));
+        vf(5) = load(GuestPtr<Vec4>::of(base.eye));
+        set(vf(4), sub(vf(4), vf(5)), XYZW);
+        store(view, vf(4));
+        Vec3_Normalize(view, view);
+        int horizon = static_cast<int>(0u - static_cast<uint32_t>(sdk::fptosi(ps2f(2048.0f) * view->y)));
+        if (horizon < -0x400)
+            horizon = -0x400;
+        else if (!(horizon < 0x201))
+            horizon = 0x200;
+        const uint32_t high = static_cast<uint32_t>(horizon) << 16;
+        port::store<uint32_t>(sky + 0x350u, high + 0x77006C00u);
+        port::store<uint32_t>(sky + 0x360u, high + 0x77009400u);
+        port::store<uint32_t>(sky + 0x380u, high + 0x7E006C00u);
+        port::store<uint32_t>(sky + 0x390u, high + 0x7E009400u);
+
+        const int scroll = globals::timeOfDayFrames.get() % 0x10E00;
+        const ps2f heading = sdk::atan2f(-view->x, -view->z);
+        ps2f angle = (scrollStep * fromInt(scroll) - pi) + heading;
+        if (!(angle <= pi))
+            angle = angle - twoPi;
+        else if (angle <= -pi)
+            angle = angle + twoPi;
+        const ps2f scrollUnits = toUnits * angle;
+        port::store<float>(sky + 0x420u, static_cast<float>(scrollUnits));
+        port::store<float>(sky + 0x440u, static_cast<float>(one + scrollUnits));
+        const uint32_t lift = static_cast<uint32_t>(sdk::fptosi(ps2f(4096.0f) * -view->y)) << 16;
+        port::store<uint32_t>(sky + 0x430u, lift + 0x70806A00u);
+        port::store<uint32_t>(sky + 0x450u, lift + 0x81009400u);
+        port::store<uint32_t>(sky + 0x4E0u, lift + 0x70806A00u);
+        port::store<uint32_t>(sky + 0x500u, lift + 0x81009400u);
+        port::store<uint32_t>(sky + 0x3F0u, lowColour);
+        const ps2f turnUnits = toUnits * heading;
+        port::store<float>(sky + 0x4D0u, static_cast<float>(turnUnits));
+        port::store<float>(sky + 0x4F0u, static_cast<float>(one + turnUnits));
+        int shimmer = globals::timeOfDayFrames.get() % 30;
+        if (!(shimmer < 15))
+            shimmer = 30 - shimmer;
+        const uint32_t grey = 0xEAu - (topB + static_cast<uint32_t>(shimmer) * 2u);
+        port::store<uint32_t>(sky + 0x4A0u, grey << 24 | grey << 16 | grey << 8 | grey);
     }
 
     // The camera's three projection matrices from its view size, distance, scale, centre, depth range and near
@@ -280,6 +640,87 @@ namespace mm
         }
     }
 
+    // char: turns a person's model to face the player. The direction from the person to the player (or, when
+    // the model's matrix faces away from the player, the way its first node faces already), blended 9:1 with
+    // the direction its slot keeps from before, becomes the rotation of nodes 0 and 3 of the model part chosen
+    // by flags & 3 (part 3 when that is 0 and the family's bit 0 is clear). The person's slot (timer 2) keeps
+    // the new direction; a person without a slot claims every free one, as in the original. The original's
+    // frame is reserved whole and its vectors and matrices kept at their offsets.
+    void Person_TurnToPlayer(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
+    {
+        using namespace vu0;
+        port::GuestFrame<0xF0> frame;
+        const uint32_t sp = frame.ptr().address;
+        const GuestPtr<Vec4> direction{sp + 0x40u}, facing{sp + 0x50u}, playerMatrix{sp + 0x60u}, turn{sp + 0xA0u}, dot{sp + 0xE0u};
+        const int pose = static_cast<int16_t>(person->flags) & 3;
+        const int part = (pose != 0 || (person->family & 1u) != 0) ? pose : 3;
+        const GuestPtr<A3DObject> model{cls->parts[part].address};
+        Player_GetMatrix(city->player, playerMatrix);
+        *direction = *GuestPtr<Vec4>{globals::kOriginPoint};
+        direction->x = playerMatrix[3].x - person->x;
+        direction->z = playerMatrix[3].z - person->z;
+        Vec3_Normalize(direction, direction);
+        *facing = *GuestPtr<Vec4>{globals::kOriginPoint};
+        facing->x = model->matrix[0].z;
+        facing->z = -model->matrix[0].x;
+        vf(4) = load(direction);
+        vf(5) = load(facing);
+        set(vf(4), mul(vf(4), vf(5)), XYZ);
+        set(vf(4), add(vf(4), lane(vf(4), 1)), X);
+        set(vf(4), add(vf(4), lane(vf(4), 2)), X);
+        store(dot, vf(4));
+        const auto nodes = [&] { return port::load<uint32_t>(model->model.address + 8u); };
+        if (dot->x < ps2f(0.0f))
+        {
+            direction->x = port::load<float>(nodes() + 0x78u);
+            direction->z = -ps2f(port::load<float>(nodes() + 0x70u));
+            Vec3_Normalize(direction, direction);
+        }
+        const auto slotPerson = [](int i) { return GuestPtr<int32_t>{globals::kCharTypeSlots + 4u * static_cast<uint32_t>(i)}; };
+        const auto slotTimer = [](int i) { return GuestPtr<int32_t>{globals::kCharTypeTimers + 4u * static_cast<uint32_t>(i)}; };
+        const auto slotFacing = [](int i) { return GuestPtr<Vec4>{globals::kCharTypeFacings + 0x10u * static_cast<uint32_t>(i)}; };
+        int slot = -1;
+        for (int i = 0; i < 25; ++i)
+            if (*slotPerson(i) == person->index)
+            {
+                slot = i;
+                break;
+            }
+        if (slot != -1)
+        {
+            const ps2f keep = 0.9f, take = 0.1f;
+            direction->x = keep * slotFacing(slot)->x + take * direction->x;
+            direction->z = keep * slotFacing(slot)->z + take * direction->z;
+            Vec3_Normalize(direction, direction);
+        }
+        Mat4_Copy(turn, GuestPtr<Vec4>{globals::kIdentityMatrix});
+        const ps2f dz = -direction->z;
+        turn[0].x = dz;
+        turn[0].z = direction->x;
+        turn[2].x = -direction->x;
+        turn[2].z = dz;
+        for (uint32_t row = 0; row < 3; ++row)
+            GuestPtr<Vec4>{nodes() + 0x70u + 0x10u * row}[0] = turn[row];
+        for (uint32_t row = 0; row < 3; ++row)
+            GuestPtr<Vec4>{nodes() + 0x2B0u + 0x10u * row}[0] = turn[row];
+        const int index = person->index;
+        if (slot != -1)
+        {
+            *slotPerson(slot) = index;
+            *slotTimer(slot) = 2;
+            *slotFacing(slot) = *direction;
+            return;
+        }
+        for (int i = 0; i < 25; ++i)
+        {
+            if (*slotTimer(i) != 0)
+                continue;
+            *slotPerson(i) = index;
+            *slotTimer(i) = 2;
+            *slotFacing(i) = *direction;
+        }
+    }
+
     // event: the data size of the event handler classes (vtable slot).
     int EventData_GetSize1C() { return 0x1C; }
     int EventData_GetSize7C() { return 0x7C; }
@@ -310,6 +751,57 @@ namespace mm
         return cls;
     }
 
+    // char: class 2 slot +0x10, a character of this class on the terrain, while there is room for another
+    // instance (fewer than 1800 queued, fewer than the limit at 0x1BD980 of the limited ones). Marks the person
+    // drawn (flag 0x1000) and eases its height towards the ground: 0.1 per frame within 0.2 of it, straight
+    // onto it beyond. Only a person at height 0.5 or below is drawn: lit (colour w word 12) before 4:00 and
+    // from 17:00 unless +0x28 holds 6000 (compared as a person id here), as node 7 or 8 of the first model
+    // part when its workplace is of type 0xAF or 0xB1, else node (own index % 7), turned by place.w about y
+    // and moved to place.xyz.
+    void Char2_Draw(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, GuestPtr<Vec4> colour,
+                    int flags, GuestPtr<Vec4> place)
+    {
+        if (!(globals::instanceCount.get() + 1 < 0x708))
+            return;
+        if (!(globals::instanceLimitedCount.get() + 1 < globals::instanceLimit.get()))
+            return;
+        person->flags |= 0x1000u;
+        port::GuestFrame<0x70> frame; // Map_SampleHeight's stack vectors land where they did in the original
+        const ps2f ground = Map_SampleHeight(city->map, person->x, person->z);
+        const ps2f y = person->y;
+        const ps2f snap = 0.2f, ease = 0.1f;
+        if (y < ground)
+        {
+            const ps2f raised = y + ease;
+            if (!(ground - y <= snap) || !(raised <= ground))
+                person->y = ground;
+            else
+                person->y = raised;
+        }
+        else if (!(y <= ground))
+        {
+            const ps2f lowered = y - ease;
+            if (!(y - ground <= snap) || lowered < ground)
+                person->y = ground;
+            else
+                person->y = lowered;
+        }
+        if (!(person->y <= ps2f(0.5f)))
+            return;
+        const int clock = city->clock;
+        const bool night = clock >= 61200 || clock < 14400;
+        port::store<int32_t>(colour.address + 0xCu, night && person->target != kNoPerson ? 12 : 0);
+        const int workType = Map_GetRecord(city->map, person->work)->type;
+        const int node = workType == 0xAF ? 7 : workType == 0xB1 ? 8 : person->index % 7;
+        const GuestPtr<A3DObject> model{cls->parts[0].address};
+        const GuestPtr<Vec4> matrix{port::load<uint32_t>(model->model.address + 8u) + static_cast<uint32_t>(node) * 0xC0u + 0x70u};
+        sdk::sceVu0RotMatrixY(matrix.address, globals::kIdentityMatrix, place->w);
+        matrix[3].x = place->x;
+        matrix[3].y = place->y;
+        matrix[3].z = place->z;
+        Instance_DrawNodeLimited(GuestPtr<A3DObject>{cls->parts[0].address}, colour, node, flags);
+    }
+
     // char: switches the player to `mode` (-1: back to the previous one) and swallows the Cross press that
     // chose it.
     void Player_SetMode(GuestPtr<Player> player, int mode)
@@ -318,8 +810,8 @@ namespace mm
             mode = player->previousMode;
         player->previousMode = player->mode;
         player->mode = mode;
-        player->unk_80 = 0;
-        player->unk_08 = 0;
+        player->stepFrames = 0.0f;
+        player->step = 0;
         player->swayPhase = 0.0f;
         player->unk_40 = -1;
         Pad_ClearBit40();
@@ -339,9 +831,9 @@ namespace mm
     GuestPtr<Laptop> Laptop_ctor(GuestPtr<Laptop> laptop)
     {
         laptop->unk_00 = GuestPtr<void>{port::load<uint32_t>(0x001F3B08u)};
-        laptop->unk_3C = 0;
+        laptop->state = 0;
         laptop->unk_44 = 0;
-        laptop->unk_3D0 = 0;
+        laptop->selected = 0;
         return laptop;
     }
 
@@ -548,8 +1040,8 @@ namespace mm
         player->model = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3CD4u)};
         player->mode = 0;
         player->previousMode = 0;
-        player->unk_08 = 0;
-        player->unk_80 = 0;
+        player->step = 0;
+        player->stepFrames = 0.0f;
         player->swayPhase = 0.0f;
         player->heading = 0.0f;
         player->position.x = 0.0f;
@@ -846,33 +1338,249 @@ namespace mm
             ++levels[l];
     }
 
-    // path: the distance between two tiles on the ground plane, on VU0. As in the original only x and z go into
-    // the two stack vectors, so their y and w lanes (converted and subtracted too) are whatever the stack held:
-    // the slots are declared to land where the original's are (entry sp - 0x10, - 0x20, - 0x30).
+    namespace
+    {
+        // path: the distance between two tiles on the ground plane, on VU0, through three stack slots of the
+        // caller's: only x and z go into `from` and `to`, so their y and w lanes (converted and subtracted too)
+        // are whatever the stack held, and callers keep the slots where the original had them.
+        ps2f tileDistanceIn(GuestPtr<Vec4> from, GuestPtr<Vec4> to, GuestPtr<Vec4> result, uint32_t tileA, uint32_t tileB)
+        {
+            using namespace vu0;
+            const auto put = [](GuestPtr<Vec4> slot, uint32_t tile) {
+                const int t = static_cast<int>(tile & 0xFFFFu);
+                port::store<int32_t>(slot.address, t % 128);
+                port::store<int32_t>(slot.address + 8u, t / 128);
+            };
+            put(from, tileA);
+            put(to, tileB);
+            vf(4) = load(from);
+            vf(5) = load(to);
+            set(vf(4), itof0(vf(4)), XYZW);
+            set(vf(5), itof0(vf(5)), XYZW);
+            set(vf(6), sub(vf(5), vf(4)), XYZW);
+            set(vf(7), mul(vf(6), vf(6)), X | Z);
+            set(vf(8), add(vf(7), lane(vf(7), 2)), X);
+            q() = sqrtQ(x(vf(8)));
+            set(vf(9), add(vf(0), _mm_set1_ps(q())), XYZW);
+            store(result, vf(9));
+            return result->x;
+        }
+    }
+
+    // path: the distance between two tiles on the ground plane (tileDistanceIn), its slots declared to land
+    // where the original's are (result at entry sp - 0x10, to at - 0x20, from at - 0x30).
     ps2f Path_TileDistance(int, uint32_t tileA, uint32_t tileB)
     {
-        using namespace vu0;
         port::GuestLocal<Vec4> result;
         port::GuestLocal<Vec4> to;
         port::GuestLocal<Vec4> from;
-        const auto put = [](GuestPtr<Vec4> slot, uint32_t tile) {
-            const int t = static_cast<int>(tile & 0xFFFFu);
-            port::store<int32_t>(slot.address, t % 128);
-            port::store<int32_t>(slot.address + 8u, t / 128);
+        return tileDistanceIn(from, to, result, tileA, tileB);
+    }
+
+    // path: the link (+0x10, a road block tile) to take from road block `from` towards road block `target`.
+    // Each link of `from` is followed, turning at bends (shapes 3, 6, 9, 0xC), for up to 9 blocks; skipped
+    // are the direction of the block edge the person stands within 0.05 of, and paths that reach the person's
+    // previous waypoint (+0x1A), no road, or a dead end. Reaching one of `target`'s links returns that first link at once;
+    // reaching a junction (shapes 7, 0xB, 0xD, 0xE, 0xF) keeps it when the junction lies nearer to one of
+    // `target`'s links than any before (within 128 tiles). Returns 0x4000 when nothing qualifies. The tile
+    // distance goes through this function's own slots, as in the original: from (link) at entry sp - 0x10, to
+    // (junction) at - 0x20, result at - 0x30. They are declared before the first guest call so that fmodf's
+    // frame stays below them, as in the original.
+    uint16_t Path_PickRoadLink(GuestPtr<CharClass>, GuestPtr<CityScene> city, GuestPtr<MapObject> target, GuestPtr<MapObject> from,
+                               GuestPtr<MapPerson> person)
+    {
+        port::GuestLocal<Vec4> linkSlot;
+        port::GuestLocal<Vec4> junctionSlot;
+        port::GuestLocal<Vec4> distanceSlot;
+        const ps2f blockSize = 2.0f, edge = 0.05f, farEdge = 1.95f;
+        const ps2f inX = sdk::fmodf(ps2f(128.0f) + person->x, blockSize);
+        const ps2f inZ = sdk::fmodf(ps2f(128.0f) + person->z, blockSize);
+        int skip = -1;
+        if (inZ < edge)
+            skip = 2;
+        else if (!(inZ <= farEdge))
+            skip = 0;
+        else if (inX < edge)
+            skip = 3;
+        else if (!(inX <= farEdge))
+            skip = 1;
+
+        const auto links = [](GuestPtr<MapObject> block) { return GuestPtr<uint16_t>{block.address + 0x10u}; };
+        ps2f nearest = 128.0f;
+        uint16_t result = 0x4000;
+        for (int dir = 0; dir < 4; ++dir)
+        {
+            if (dir == skip)
+                continue;
+            uint16_t tile = links(from)[dir];
+            int heading = dir;
+            for (int step = 1; step < 10; ++step)
+            {
+                if (tile == 0x4000 || tile == person->previousTile)
+                    break;
+                if (Map_TileIndexFlag10(city->map, tile) == 0)
+                    break;
+                const GuestPtr<MapObject> block = Map_GetTileFirstObject(city->map, tile);
+                for (int i = 0; i < 4; ++i)
+                    if (links(target)[i] == tile)
+                        return links(from)[dir];
+                const int shape = block->variant;
+                if (shape == 7 || shape == 0xB || shape == 0xD || shape == 0xE || shape == 0xF)
+                {
+                    for (int i = 0; i < 4; ++i)
+                    {
+                        const uint16_t link = links(target)[i];
+                        if (link == 0x4000)
+                            continue;
+                        const ps2f distance = tileDistanceIn(linkSlot, junctionSlot, distanceSlot, link, tile);
+                        if (distance < nearest)
+                        {
+                            result = links(from)[dir];
+                            nearest = distance;
+                        }
+                    }
+                    break;
+                }
+                if (shape == 3)
+                    heading = heading == 2 ? 1 : heading == 3 ? 0 : heading;
+                else if (shape == 6)
+                    heading = heading == 0 ? 1 : heading == 3 ? 2 : heading;
+                else if (shape == 9)
+                    heading = heading == 1 ? 0 : heading == 2 ? 3 : heading;
+                else if (shape == 0xC)
+                    heading = heading == 0 ? 3 : heading == 1 ? 2 : heading;
+                else
+                    break;
+                tile = links(block)[heading];
+            }
+        }
+        return result;
+    }
+
+    // path: the next waypoint for `person` at `tile`, towards the building it is bound for (+0x16). Each person
+    // gets one every eighth frame (index % 8 = frame counter % 8); other frames return 0x4000 and change nothing.
+    // The waypoint becomes its +0x18 and the old one its +0x1A, except that on a bend +0x1A stays.
+    //  - On a road, to a building with people inside (type flag 0x40) and a road entrance: the building itself
+    //    from the entrance block; the entrance block when it links to this one; else this block's link that the
+    //    entrance block links to as well (the entrance block when the two line up in x or z); else
+    //    mm_Path_PickRoadLink's link, or the entrance block when it finds none.
+    //  - On a road, to any other building: this block's link (not back to +0x1A) nearest the building, when
+    //    nearer than this block; else the building.
+    //  - Off the road: a building with people inside and a road entrance is left by it; within 8 tiles the
+    //    building itself; else the first road within two block steps (by distance, then direction), or the first
+    //    tile of another object stepping diagonally towards the building.
+    // The original's frame is reserved whole: the tile distances use its slots and those of the callees.
+    uint16_t Path_NextWaypoint(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, int tile)
+    {
+        port::GuestFrame<0xF0> frame;
+        if ((person->index & 7) != (globals::frameCounter.get() & 7))
+            return 0x4000;
+        const uint32_t sp = frame.ptr().address;
+        const GuestPtr<MapObject> dest = Map_GetRecord(city->map, person->inside);
+        const auto links = [](GuestPtr<MapObject> block) { return GuestPtr<uint16_t>{block.address + 0x10u}; };
+        const auto linksTo = [&](GuestPtr<MapObject> block, uint16_t to) {
+            for (int i = 0; i < 4; ++i)
+                if (links(block)[i] == to)
+                    return true;
+            return false;
         };
-        put(from, tileA);
-        put(to, tileB);
-        vf(4) = load(from);
-        vf(5) = load(to);
-        set(vf(4), itof0(vf(4)), XYZW);
-        set(vf(5), itof0(vf(5)), XYZW);
-        set(vf(6), sub(vf(5), vf(4)), XYZW);
-        set(vf(7), mul(vf(6), vf(6)), X | Z);
-        set(vf(8), add(vf(7), lane(vf(7), 2)), X);
-        q() = sqrtQ(x(vf(8)));
-        set(vf(9), add(vf(0), _mm_set1_ps(q())), XYZW);
-        store(result, vf(9));
-        return result->x;
+        const auto peopleInside = [](GuestPtr<MapObject> obj) { return (globals::buildingTypeFlags(obj->type) & 0x40u) != 0; };
+        const auto advance = [&](uint16_t waypoint) {
+            person->previousTile = person->walkTile;
+            person->walkTile = waypoint;
+            return waypoint;
+        };
+
+        GuestPtr<MapObject> here = Map_GetTileFirstObject(city->map, tile);
+        if (Map_TileIndexFlag10(city->map, static_cast<uint32_t>(tile)) != 0)
+        {
+            if (peopleInside(dest) && Map_TileIndexFlag10(city->map, dest->entranceTile) != 0)
+            {
+                const GuestPtr<MapObject> entrance = Map_GetTileFirstObject(city->map, dest->entranceTile);
+                uint16_t waypoint;
+                if (entrance->tile == here->tile)
+                    waypoint = dest->tile;
+                else if (linksTo(entrance, here->tile))
+                    waypoint = entrance->tile;
+                else
+                {
+                    uint16_t shared = 0x4000;
+                    for (int i = 0; i < 4; ++i)
+                        if (links(here)[i] != 0x4000 && linksTo(entrance, links(here)[i]))
+                        {
+                            shared = links(here)[i];
+                            break;
+                        }
+                    if (shared != 0x4000)
+                    {
+                        const bool inLine = here->tile % 128 == entrance->tile % 128 || here->tile / 128 == entrance->tile / 128;
+                        waypoint = inLine ? entrance->tile : shared;
+                    }
+                    else
+                    {
+                        const uint16_t pick = Path_PickRoadLink(cls, city, entrance, here, person);
+                        waypoint = pick != 0x4000 ? pick : entrance->tile;
+                    }
+                }
+                const int shape = here->variant;
+                if (shape == 3 || shape == 6 || shape == 9 || shape == 0xC)
+                {
+                    person->walkTile = waypoint;
+                    return waypoint;
+                }
+                return advance(waypoint);
+            }
+            const uint16_t back = person->previousTile;
+            const uint16_t goal = dest->tile;
+            uint16_t waypoint = goal;
+            ps2f nearest = Path_TileDistance(static_cast<int>(cls.address), here->tile, goal);
+            for (int dir = 0; dir < 4; ++dir)
+            {
+                const uint16_t link = links(here)[dir];
+                if (link == 0x4000 || link == back)
+                    continue;
+                const ps2f distance = Path_TileDistance(static_cast<int>(cls.address), link, goal);
+                if (distance < nearest)
+                {
+                    waypoint = links(here)[dir];
+                    nearest = distance;
+                }
+            }
+            return advance(waypoint);
+        }
+
+        here = Map_GetTileFirstObject(city->map, tile);
+        if (peopleInside(here) && Map_TileIndexFlag10(city->map, here->entranceTile) != 0)
+            return advance(here->entranceTile);
+        const GuestPtr<Vec4> from{sp + 0xE0u}, to{sp + 0xD0u}, result{sp + 0xC0u};
+        if (tileDistanceIn(from, to, result, here->tile, dest->tile) < ps2f(8.0f))
+            return advance(dest->tile);
+        const int x = here->tile % 128, z = here->tile / 128;
+        for (int ring = 0; ring < 3; ++ring)
+            for (int dir = 0; dir < 4; ++dir)
+            {
+                const int tx = x + ring * port::load<int32_t>(globals::kPathStepX + 4u * static_cast<uint32_t>(dir));
+                const int tz = z + ring * port::load<int32_t>(globals::kPathStepZ + 4u * static_cast<uint32_t>(dir));
+                if (Map_TileFlag10(city->map, tx, tz) == 0)
+                    continue;
+                const uint16_t road = Map_GetTileObject(city->map, tx, tz)->tile;
+                if (road != 0x4000)
+                    return advance(road);
+                ring = 3; // a road object without a tile: on to the stepping below, as in the original
+                break;
+            }
+        const int goalX = dest->tile % 128, goalZ = dest->tile / 128;
+        const int stepX = goalX < x ? -1 : (x < goalX ? 1 : 0);
+        const int stepZ = goalZ < z ? -1 : (z < goalZ ? 1 : 0);
+        int tx = x, tz = z;
+        uint16_t next;
+        do
+        {
+            tx += stepX;
+            tz += stepZ;
+            next = Map_GetTileObject(city->map, tx, tz)->tile;
+        } while (next == here->tile);
+        return advance(next);
     }
 
     // char: whether someone with a higher index stands within 0.25 of `person` on the tile it would step onto.
@@ -932,6 +1640,8 @@ namespace mm
     PORT_FN(McManager_ResetState);
     PORT_FN(Camera_SetFogRange);
     PORT_FN(Camera_UpdateProjection);
+    PORT_FN(Camera_ctor);
+    PORT_FN(CityCamera_UpdateTimeOfDay);
     PORT_FN(McQueue_IsDone);
     PORT_FN(FileQueue_IsDone);
     PORT_FN(StatusByte_ctorE0);
@@ -944,6 +1654,9 @@ namespace mm
     PORT_FN(StaticInit_StatusBytes);
     PORT_FN(GameInit);
     PORT_FN(Char2_ctor);
+    PORT_FN(Char2_Draw);
+    PORT_FN(Player_UpdateAction);
+    PORT_FN(Player_Move);
     PORT_FN(Player_SetMode);
     PORT_FN(FileQueue_Init);
     PORT_FN(Laptop_ctor);
@@ -974,6 +1687,9 @@ namespace mm
     PORT_FN(Person_UpdatePose);
     PORT_FN(EventQueue_InsertByPriority);
     PORT_FN(Path_TileDistance);
+    PORT_FN(Path_PickRoadLink);
+    PORT_FN(Path_NextWaypoint);
+    PORT_FN(Person_TurnToPlayer);
     PORT_FN(Person_ProbeTile);
     PORT_FN(Char_CheckNeighbourTile);
 }

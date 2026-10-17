@@ -20,7 +20,7 @@ placement checks (`mm_Placement_*`) and the per-object history (`mm_MapObj_*`) a
 
 ## Functions
 
-98 functions (typed 57, verified 41). Blocks: 12 can reach a thread switch, 8 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+98 functions (typed 53, verified 45). Blocks: 12 can reach a thread switch, 8 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -37,7 +37,7 @@ placement checks (`mm_Placement_*`) and the per-object history (`mm_MapObj_*`) a
 | `0x0013EA20` | `void mm_MapSave_PackTiles(CityMap *map)` | 808 | yes | before saving: packs every tile into 6 bytes (height * 2048, first object, flags) |
 | `0x0013ED50` | `void mm_Map_LoadState(CityMap *map, McManager *mc)` | 148 | no | reads the tile data, objects (0x6F200), tile lists, people (0x46500) and counters from the save file |
 | `0x0013EDF0` | `void mm_Map_SaveState(CityMap *map, McManager *mc)` | 148 | no | writes them |
-| `0x0013EE90` | `void mm_TerrainGen_ScatterObjects(CityMap *map, int x, int z, int a3, float radius)` | 780 | no | (provisional) random object placement during terrain generation |
+| `0x0013EE90` | `void mm_TerrainGen_ScatterObjects(CityMap *map, int x, int z, int kind, float radius)` | 780 | no | marks the objects of low tiles (height <= 0.1) within a radius with a scenery kind (+0x14 byte): 2 where unset, 0 clears, others by a distance-weighted random chance |
 | `0x0013F1A0` | `void mm_Map_PlaceSmallGoods(CityMap *map, int x, int z, int a3, uint8_t value, int kind)` | 108 | no | places Small Goods type 0x115 + a6 at (a2, a3) and stores a5 in the object (+0x10) |
 | `0x0013F210` | `void mm_Map_PlaceRubbleArea(CityMap *map, int x, int z, int size, int arg)` | 196 | no | places A Rubble Heap (type 10) over an a3 x a3 area |
 | `0x0013F2E0` | `void mm_Map_PlaceRoad(CityMap *map, uint32_t x, uint32_t z, int arg)` | 28 | no | places Road (type 4) at even coordinates (2 x 2 road pieces) |
@@ -67,7 +67,7 @@ placement checks (`mm_Placement_*`) and the per-object history (`mm_MapObj_*`) a
 | `0x00141560` | `float mm_Map_GetTileHeightWord(CityMap *map, int tile)` | 28 | no | tile a1's height (+0, a float, loaded with lwc1) |
 | `0x00141580` | `float mm_Map_GetHeightAt(CityMap *map, int x, int z)` | 92 | no | height word at clamped (a1, a2) |
 | `0x001415E0` | `float mm_Map_SampleHeight(CityMap *map, float x, float z)` | 676 | no | terrain height at world (a0, a1), interpolated over the tile's triangles |
-| `0x001418D0` | `void mm_Map_UpdateTileGeometry(CityMap *map, int x, int z)` | 1536 | no | recomputes tile (a1, a2)'s vertices and normals |
+| `0x001418D0` | `void mm_Map_UpdateTileGeometry(CityMap *map, int x, int z)` | 1536 | no | recomputes tile (x, z)'s four corner heights from its 3 x 3 neighbourhood |
 | `0x00141ED0` | `void mm_Map_UpdateAreaGeometry(CityMap *map, int32_t *rect)` | 136 | no | mm_Map_UpdateTileGeometry over a rectangle |
 | `0x00141F60` | `float mm_TerrainGen_ApplyBump(CityMap *map, int x, int z, int mode, uint32_t flags, float height, float radius)` | 1304 | no | (provisional) raises/lowers a round area |
 | `0x001424A0` | `CityMap *mm_MapTiles_dtor(CityMap *map, int16_t deleteFlag)` | 108 | yes | frees the tile array, base destructor |

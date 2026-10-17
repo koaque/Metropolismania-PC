@@ -3,6 +3,7 @@
 #include "game_functions.h"
 #include "game_globals.h"
 #include "sdk.h"
+#include "vu0.h"
 
 #include <utility>
 
@@ -632,6 +633,67 @@ namespace mm
         return inWindow();
     }
 
+    // The listener for positional effects, from the city camera. [0] is the eye moved to the centre of its
+    // tile and [1] the eye as it is; both get the height in steps of 6 (eye height / 12, truncated, times 6).
+    // [2] and [3] are the directions to the target, the target moved like [0] and at [0]'s height for [2], as
+    // it is at [1]'s height for [3]; each is normalized, turned by building matrix 3 (whose translation is
+    // cleared first) and normalized again. Keeps the eye's tile (unclamped) and height step; returns the step.
+    int Se_UpdateListener()
+    {
+        using namespace vu0;
+        const GuestPtr<CityCamera> camera = globals::soundCity.get()->cityCamera;
+        const GuestPtr<Vec4> listener{globals::kListener};
+        port::GuestLocal<Vec4> rawTarget;
+        port::GuestLocal<Vec4> target;
+        listener[0] = camera->base.eye;
+        *target = camera->base.target;
+        listener[1] = camera->base.eye;
+        *rawTarget = camera->base.target;
+
+        const ps2f centre = 64.0f, half = 0.5f, step = 12.0f;
+        const auto clampTile = [](int tile) { return tile < 0 ? 0 : tile >= 128 ? 127 : tile; };
+        const auto toFloat = [](int value) { return ps2f(static_cast<float>(value)); };
+        globals::listenerTileX.set(sdk::fptosi(centre + listener[0].x));
+        globals::listenerTileZ.set(sdk::fptosi(centre - listener[0].z));
+        const int targetX = sdk::fptosi(centre + target->x);
+        const int targetZ = sdk::fptosi(centre - target->z);
+        listener[0].x = half + (toFloat(clampTile(globals::listenerTileX.get())) - centre);
+        listener[0].z = (toFloat(128 - clampTile(globals::listenerTileZ.get())) - centre) - half;
+        target->x = half + (toFloat(clampTile(targetX)) - centre);
+        target->z = (toFloat(128 - clampTile(targetZ)) - centre) - half;
+
+        listener[0].y = listener[0].y / step;
+        globals::listenerLevel.set(sdk::fptosi(listener[0].y));
+        listener[1].y = listener[1].y / step;
+        listener[0].y = toFloat(globals::listenerLevel.get() * 6);
+        const int level = sdk::fptosi(listener[1].y);
+        const GuestPtr<Vec4> turn{globals::kBuildingMatrices + 3u * 0x40u};
+        turn[3].x = 0.0f;
+        turn[3].y = 0.0f;
+        turn[3].z = 0.0f;
+        globals::listenerLevel.set(level);
+        target->y = listener[0].y;
+        listener[1].y = toFloat(level * 6);
+        rawTarget->y = listener[1].y;
+
+        vf(4) = load(target.ptr());
+        vf(5) = load(listener);
+        set(vf(4), sub(vf(4), vf(5)), XYZW);
+        store(listener + 2, vf(4));
+        vf(4) = load(rawTarget.ptr());
+        vf(5) = load(listener + 1);
+        set(vf(4), sub(vf(4), vf(5)), XYZW);
+        store(listener + 3, vf(4));
+        Vec3_Normalize(listener + 2, listener + 2);
+        Vec3_Normalize(listener + 3, listener + 3);
+        Math_MulMatVecVu0(listener + 2, turn, listener + 2);
+        Math_MulMatVecVu0(listener + 3, turn, listener + 3);
+        Vec3_Normalize(listener + 2, listener + 2);
+        Vec3_Normalize(listener + 3, listener + 3);
+        return level;
+    }
+
+    PORT_FN(Se_UpdateListener);
     PORT_FN(Se_MatchSchedule);
     PORT_FN(Se_PickTerrainAmbience);
     PORT_FN(Se_UpdateTimeOfDay);

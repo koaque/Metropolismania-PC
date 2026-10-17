@@ -21,12 +21,12 @@ People and the player character.
 
 ## Functions
 
-84 functions (typed 61, verified 23). Blocks: 19 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+84 functions (typed 55, verified 29). Blocks: 19 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
-| `0x0012E370` | `uint16_t mm_Path_ScanLine(CharClass *cls, CityScene *city, MapPerson *person, int a3, float *position)` | 1092 | no | (provisional) walks tiles along a line looking for a walkable tile (flag 0x10) |
-| `0x0012E7D0` | `uint16_t mm_Path_NextWaypoint(CharClass *cls, CityScene *city, MapPerson *person, int tile)` | 1588 | no | next waypoint tile toward the person's building (+0x16); 0x4000 when none |
+| `0x0012E370` | `uint16_t mm_Path_PickRoadLink(CharClass *cls, CityScene *city, MapObject *target, MapObject *from, MapPerson *person)` | 1092 | no | the road link to take from one road block towards another: follows each link through bends, up to 9 blocks, nearest junction wins (was mm_Path_ScanLine) |
+| `0x0012E7D0` | `uint16_t mm_Path_NextWaypoint(CharClass *cls, CityScene *city, MapPerson *person, int tile)` | 1588 | no | the person's next waypoint towards its building (+0x16), every 8th frame (else 0x4000): road entrance, shared links or mm_Path_PickRoadLink on roads, nearest road off them; sets +0x18 and +0x1A |
 | `0x0012EE20` | `float mm_Path_TileDistance(int a0, uint32_t tileA, uint32_t tileB)` | 176 | no | (provisional) VU0 distance test between tiles a1 and a2 |
 | `0x0012EED0` | `void mm_CharType_Slot18(CharClass *cls)` | 8 | no | base vtable slot +0x18: empty |
 | `0x0012EEE0` | `void mm_CharType_Draw2(CharClass *cls)` | 8 | no | base slot +0x14: empty |
@@ -39,7 +39,7 @@ People and the player character.
 | `0x001300C0` | `float mm_Char2_ProbeTilesB(CharClass *cls, CityScene *city, MapPerson *person, MapObject *obj, int t0, float f12, float f13)` | 3808 | no | (provisional) same as mode A for movement mode B |
 | `0x00130FA0` | `void mm_Char2_MoveA(CharClass *cls, CityScene *city, MapPerson *person, int a3, int t0)` | 2300 | no | (provisional) class-2 movement mode A: rotates the heading (sceVu0RotMatrixY) and probes ahead with mm_Char2_ProbeTilesA |
 | `0x001318A0` | `void mm_Char2_MoveB(CharClass *cls, CityScene *city, MapPerson *person, int a3, int t0)` | 2280 | no | (provisional) class-2 movement mode B with mm_Char2_ProbeTilesB |
-| `0x00132190` | `void mm_Char2_Draw(CharClass *cls, CityScene *city, MapPerson *person, int a3, int t0, uint32_t *t1)` | 612 | no | class 2 slot +0x10: instance of the character on the terrain (height from 0x1415E0), within the draw range (0x1BD980) |
+| `0x00132190` | `void mm_Char2_Draw(CharClass *cls, CityScene *city, MapPerson *person, Vec4 *colour, int flags, Vec4 *place)` | 612 | no | class 2 slot +0x10: instance of the character on the terrain (height from 0x1415E0), within the draw range (0x1BD980) |
 | `0x00132400` | `void mm_Char2_Update(CharClass *cls, CityScene *city, MapPerson *person, uint32_t timeFlags)` | 1048 | yes | class 2 slot +0xC: moves the character (mode A or B) and updates its tile |
 | `0x00132820` | `CharClass *mm_Char2_dtor(CharClass *cls, int16_t deleteFlag)` | 96 | yes | vtable 0x1BCE90, then the base destructor |
 | `0x00132880` | `CharClass *mm_Char2_ctor(CharClass *cls, uint8_t *record)` | 52 | no | base constructor, vtable 0x1BCE90 |
@@ -52,7 +52,7 @@ People and the player character.
 | `0x00133E80` | `void mm_Person_Draw2(CharClass *cls, CityScene *city, MapPerson *person, uint32_t family, uint32_t member, Vec4 *matrix, int t2, int32_t *mesh, float *phase)` | 700 | yes | class 1 slot +0x14: (provisional) extra drawing (shadow/marker) for a person |
 | `0x00134140` | `void mm_CharType_TickSlots(void)` | 92 | no | counts down the 25 character type slot timers (0x1C5310) and frees a slot (0x1C5110 = 6000) when its timer reaches 0 |
 | `0x001341A0` | `void mm_CharType_ClearSlots(void)` | 184 | no | frees all 25 character type slots (0x1C5110 = 6000) and clears their timers (0x1C5310) |
-| `0x00134260` | `void mm_Person_BuildPose(CharClass *cls, CityScene *city, float *position)` | 896 | no | (provisional) walking pose matrices for a person (copies of the base matrix 0x1B2550, animation table 0x1C5180) |
+| `0x00134260` | `void mm_Person_TurnToPlayer(CharClass *cls, CityScene *city, MapPerson *person)` | 896 | no | turns a person's model part (nodes 0 and 3) to face the player, blended 9:1 with the direction kept in its slot (0x1C5110/0x1C5180/0x1C5310) (was mm_Person_BuildPose) |
 | `0x001345E0` | `void mm_Person_Draw(CharClass *cls, CityScene *city, MapPerson *person, int a3, int t0, int32_t *t1, int t2)` | 1088 | yes | class 1 slot +0x10: person instances on the terrain, within the draw range |
 | `0x00134A20` | `void mm_Person_Update(CharClass *cls, CityScene *city, MapPerson *person, uint32_t timeFlags)` | 3032 | yes | class 1 slot +0xC: a person's behaviour per tick: target building, walking, waiting, random choices |
 | `0x00135600` | `CharClass *mm_Person_dtor(CharClass *cls, int16_t deleteFlag)` | 96 | yes | vtable 0x1BCEB0, then the base destructor |
@@ -66,12 +66,12 @@ People and the player character.
 | `0x00157DA0` | `void mm_Player_SaveState(Player *player, McManager *mc)` | 20 | no | writes 0x38 bytes |
 | `0x00157DC0` | `void mm_Player_GetMatrix(Player *player, Vec4 *matrix)` | 40 | no | the player model's matrix (object +0x88) |
 | `0x00157DF0` | `void mm_Player_PlayFootstep(Player *player, CityScene *city)` | 528 | no | footstep sound by the tile under the player |
-| `0x00158000` | `void mm_Player_UpdateAction(Player *player, float *move, int a2)` | 880 | no | (provisional) pad-held actions for the player (analog bits 0x100000-0x800000), with a sound |
+| `0x00158000` | `void mm_Player_UpdateAction(Player *player, Vec4 *move, CityScene *city)` | 880 | no | the player's animation from its movement, pad direction and height (idle 0-2, moving 4-15), advances its frame; sound 5 while walking with pad 0x40 |
 | `0x00158370` | `void mm_Player_PickTarget(Player *player, CityScene *city)` | 1704 | no | (provisional) what the player faces: building or person in front (ray, tiles, people), sets the cursor target |
 | `0x00159320` | `void mm_Player_SetMode(Player *player, int mode)` | 56 | no | mode a1 (-1 = previous), remembers the previous mode, resets the mode timer |
 | `0x00159360` | `int mm_Player_GetMode(Player *player)` | 8 | no | current mode |
 | `0x00159370` | `void mm_Player_Draw(Player *player, CityScene *city)` | 100 | no | player model instances |
-| `0x001593E0` | `void mm_Player_Move(Player *player, float *move)` | 1896 | no | (provisional) walking/running with the pad and the analog stick |
+| `0x001593E0` | `void mm_Player_Move(Player *player, Vec4 *move)` | 1896 | no | the player's grid steps: the pad starts a step (forward/back/sideways 2/speed frames, turns 32 frames); idle, eases onto the block middle and a quarter turn; the step moves the move vector or turns pi/64 |
 | `0x00159B50` | `void mm_Player_Turn(Player *player, float *move)` | 428 | no | (provisional) turning with the pad |
 | `0x00159D00` | `void mm_Player_Update(Player *player, CityScene *city)` | 1988 | yes | player per frame by mode: movement, camera, minimap, footsteps, placing items and homes |
 | `0x0015A4D0` | `Player *mm_Player_DeletingDtor(Player *player, int16_t deleteFlag)` | 68 | yes | delete when the flag is > 0 |

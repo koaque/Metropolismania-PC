@@ -56,7 +56,11 @@ Do not edit the two generated headers; `pipeline.py stage` rewrites them.
    - When the original only partly fills such a local and VU0 then loads all of it (the lanes it
      never wrote are whatever the stack held), declare the locals so they take the original's
      slots: the first `GuestLocal` lands at entry sp - 16, each next one 16 bytes (or its size)
-     below. `mm_Map_SampleHeight` and `mm_Person_ProbeTile` do this.
+     below. `mm_Map_SampleHeight` and `mm_Person_ProbeTile` do this. Declare them before the
+     first guest call, so that the callee's frame stays below them as it did in the original.
+   - A function that calls such a function (directly, or through `callGuest`) reserves its own
+     original frame first with `port::GuestFrame<Size>` (the size from its `addiu $sp, $sp, -Size`),
+     so the callee's slots land over the same leftover stack data (`mm_Char2_Draw`).
 4. `pipeline.py stage`, `build`, then `pipeline.py capture --functions <Name>` (a visible run that
    records calls of the original) and `pipeline.py difftest`. Every record must be exact. For a
    function that runs every frame, add `--every N` so the records spread over boot, title and city

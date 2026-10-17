@@ -50,7 +50,7 @@
 0x001290C0 A3DObject *mm_A3DObjectBase_DeletingDtor(A3DObject *model, int16_t deleteFlag);
 0x00129120 int mm_LightSet_Init(LightSet *lights);
 0x00129210 float mm_A3D_GetMeshField0C(A3DObject *model, int mesh);
-0x00129230 float mm_Instance_DrawSwaying(A3DObject *model, int a1, float phase);
+0x00129230 void mm_Instance_DrawSwaying(A3DObject *model, int anim, float time);
 0x00129570 void mm_A3D_Relocate(int32_t *data, int base);
 0x00129950 int mm_A3DObject_ChangeLuminosity(A3DObject *model, uint32_t *colour, int a2);
 0x001299B0 void mm_A3DObject_DrawNode(A3DObject *model, int node);
@@ -106,14 +106,14 @@
 0x0012CB80 void mm_CityCamera_Update(CityCamera *camera, CityScene *city);
 0x0012D600 CityCamera *mm_CityCamera_DeletingDtor(CityCamera *camera, int16_t deleteFlag);
 0x0012D660 CityCamera *mm_CityCamera_ctor(CityCamera *camera);
-0x0012D6B0 void mm_Instance_DrawSwaying2(A3DObject *model, int a1, float phase);
-0x0012D9F0 void mm_Instance_DrawModelLit(A3DObject *model, uint32_t *colour, int a2, int a3);
+0x0012D6B0 void mm_Instance_DrawSwaying2(A3DObject *model, int anim, float time);
+0x0012D9F0 void mm_Instance_DrawModelLit(A3DObject *model, Vec4 *colour, int variant, int style);
 0x0012DD50 void mm_Instance_DrawNodeLimited(A3DObject *model, Vec4 *colour, int node, int flags);
-0x0012DE70 void mm_Instance_DrawModelEx(A3DObject *model, int a1, int a2, int a3, int t0, int t1, int t2, int t3);
+0x0012DE70 void mm_Instance_DrawModelEx(A3DObject *model, Vec4 *colour, int flags, int offset0, int group, int offset3, int attach, int offset1);
 0x0012E220 int mm_InstanceModel_LoadAsync(A3DObject *model, GameFile *gamefile, int a2);
 0x0012E2A0 A3DObject *mm_InstanceModel_ctor2(A3DObject *model);
 0x0012E2D0 void mm_Perf_AdaptDrawRange(void);
-0x0012E370 uint16_t mm_Path_ScanLine(CharClass *cls, CityScene *city, MapPerson *person, int a3, float *position);
+0x0012E370 uint16_t mm_Path_PickRoadLink(CharClass *cls, CityScene *city, MapObject *target, MapObject *from, MapPerson *person);
 0x0012E7D0 uint16_t mm_Path_NextWaypoint(CharClass *cls, CityScene *city, MapPerson *person, int tile);
 0x0012EE20 float mm_Path_TileDistance(int a0, uint32_t tileA, uint32_t tileB);
 0x0012EED0 void mm_CharType_Slot18(CharClass *cls);
@@ -127,7 +127,7 @@
 0x001300C0 float mm_Char2_ProbeTilesB(CharClass *cls, CityScene *city, MapPerson *person, MapObject *obj, int t0, float f12, float f13);
 0x00130FA0 void mm_Char2_MoveA(CharClass *cls, CityScene *city, MapPerson *person, int a3, int t0);
 0x001318A0 void mm_Char2_MoveB(CharClass *cls, CityScene *city, MapPerson *person, int a3, int t0);
-0x00132190 void mm_Char2_Draw(CharClass *cls, CityScene *city, MapPerson *person, int a3, int t0, uint32_t *t1);
+0x00132190 void mm_Char2_Draw(CharClass *cls, CityScene *city, MapPerson *person, Vec4 *colour, int flags, Vec4 *place);
 0x00132400 void mm_Char2_Update(CharClass *cls, CityScene *city, MapPerson *person, uint32_t timeFlags);
 0x00132820 CharClass *mm_Char2_dtor(CharClass *cls, int16_t deleteFlag);
 0x00132880 CharClass *mm_Char2_ctor(CharClass *cls, uint8_t *record);
@@ -140,7 +140,7 @@
 0x00133E80 void mm_Person_Draw2(CharClass *cls, CityScene *city, MapPerson *person, uint32_t family, uint32_t member, Vec4 *matrix, int t2, int32_t *mesh, float *phase);
 0x00134140 void mm_CharType_TickSlots(void);
 0x001341A0 void mm_CharType_ClearSlots(void);
-0x00134260 void mm_Person_BuildPose(CharClass *cls, CityScene *city, float *position);
+0x00134260 void mm_Person_TurnToPlayer(CharClass *cls, CityScene *city, MapPerson *person);
 0x001345E0 void mm_Person_Draw(CharClass *cls, CityScene *city, MapPerson *person, int a3, int t0, int32_t *t1, int t2);
 0x00134A20 void mm_Person_Update(CharClass *cls, CityScene *city, MapPerson *person, uint32_t timeFlags);
 0x00135600 CharClass *mm_Person_dtor(CharClass *cls, int16_t deleteFlag);
@@ -263,7 +263,7 @@
 0x0013EA20 void mm_MapSave_PackTiles(CityMap *map);
 0x0013ED50 void mm_Map_LoadState(CityMap *map, McManager *mc);
 0x0013EDF0 void mm_Map_SaveState(CityMap *map, McManager *mc);
-0x0013EE90 void mm_TerrainGen_ScatterObjects(CityMap *map, int x, int z, int a3, float radius);
+0x0013EE90 void mm_TerrainGen_ScatterObjects(CityMap *map, int x, int z, int kind, float radius);
 0x0013F1A0 void mm_Map_PlaceSmallGoods(CityMap *map, int x, int z, int a3, uint8_t value, int kind);
 0x0013F210 void mm_Map_PlaceRubbleArea(CityMap *map, int x, int z, int size, int arg);
 0x0013F2E0 void mm_Map_PlaceRoad(CityMap *map, uint32_t x, uint32_t z, int arg);
@@ -379,7 +379,7 @@
 0x0014AE10 void mm_Laptop_RemoveEntry(Laptop *laptop, int entry);
 0x0014AED0 void mm_Laptop_AddEntry(Laptop *laptop, int entry);
 0x0014AFD0 int mm_Laptop_Draw(Laptop *laptop);
-0x0014B140 int mm_Laptop_Animate(Laptop *laptop);
+0x0014B140 void mm_Laptop_Animate(Laptop *laptop);
 0x0014B450 int mm_Laptop_RunEntry(Laptop *laptop, CityScene *city);
 0x0014B640 int mm_Laptop_Update(Laptop *laptop, CityScene *city);
 0x0014BCB0 Laptop *mm_Laptop_dtor(Laptop *laptop, int16_t deleteFlag);
@@ -512,7 +512,7 @@
 0x00157DA0 void mm_Player_SaveState(Player *player, McManager *mc);
 0x00157DC0 void mm_Player_GetMatrix(Player *player, Vec4 *matrix);
 0x00157DF0 void mm_Player_PlayFootstep(Player *player, CityScene *city);
-0x00158000 void mm_Player_UpdateAction(Player *player, float *move, int a2);
+0x00158000 void mm_Player_UpdateAction(Player *player, Vec4 *move, CityScene *city);
 0x00158370 void mm_Player_PickTarget(Player *player, CityScene *city);
 0x00158A20 int mm_Placement_FindSpot(Player *player, CityScene *city, int family, int typeIndex, int x, int z, int half, int32_t *rect);
 0x00158D10 void mm_Player_PlaceBagItem(Player *player, CityScene *city);
@@ -520,7 +520,7 @@
 0x00159320 void mm_Player_SetMode(Player *player, int mode);
 0x00159360 int mm_Player_GetMode(Player *player);
 0x00159370 void mm_Player_Draw(Player *player, CityScene *city);
-0x001593E0 void mm_Player_Move(Player *player, float *move);
+0x001593E0 void mm_Player_Move(Player *player, Vec4 *move);
 0x00159B50 void mm_Player_Turn(Player *player, float *move);
 0x00159D00 void mm_Player_Update(Player *player, CityScene *city);
 0x0015A4D0 Player *mm_Player_DeletingDtor(Player *player, int16_t deleteFlag);
@@ -604,10 +604,10 @@
 0x001614F0 int mm_TexSprite_BuildPacket(TexSprite *sprite);
 0x00161D60 TexSprite *mm_TexSprite_dtor(TexSprite *sprite, int16_t deleteFlag);
 0x00161DF0 int mm_TexSprite_Load(TexSprite *sprite, int file, int a2);
-0x00161F00 int mm_LoadingScreen_Update(LoadingScreen *loading, int a1);
+0x00161F00 int mm_LoadingScreen_Update(LoadingScreen *loading, int fadeIn);
 0x00162160 int mm_LoadingScreen_SetText(LoadingScreen *loading, char *text);
 0x00162170 void mm_LoadingScreen_SetTextPos(LoadingScreen *loading, int x, int y);
-0x00162190 void mm_LoadingScreen_SetSpritePos(LoadingScreen *loading, int sprite, int x, int y);
+0x00162190 void mm_LoadingScreen_SetSpritePos(LoadingScreen *loading, int x, int y, int z);
 0x001621C0 LoadingScreen *mm_LoadingScreen_dtor(LoadingScreen *loading, int16_t deleteFlag);
 0x00162280 LoadingScreen *mm_LoadingScreen_ctor(LoadingScreen *loading, int a1, uint8_t a2);
 0x00162370 void mm_Stamina_LoadState(Stamina *stamina, McManager *mc);
@@ -726,7 +726,7 @@
 0x0016AA40 void mm_BldgRoad_FindNeighbours(BuildingType *btype, CityScene *city, MapObject *obj, int x, int z);
 0x0016AB70 void mm_BldgRoad_DrawPeople(BuildingType *btype, int layer, CityScene *city, MapObject *obj, int t0, int t1, int t2, float x, float y, float z);
 0x0016AF10 void mm_BldgRoad_Draw(BuildingType *btype, int layer, CityScene *city, MapObject *obj, int t0, int t1, float x, float y, float z);
-0x0016B1C0 void mm_BldgRoad_Tick(BuildingType *btype, CityScene *city, MapObject *obj);
+0x0016B1C0 int mm_BldgRoad_Tick(BuildingType *btype, CityScene *city, MapObject *obj);
 0x0016B650 void mm_BldgRoad_InitRecord(BuildingType *btype, MapObject *obj);
 0x0016B670 int mm_BldgRoad_Slot1C(BuildingType *btype, int a1);
 0x0016B680 BuildingType *mm_BldgRoad_ctor(BuildingType *btype, uint8_t *record, int id);
@@ -771,10 +771,10 @@
 0x0016F270 int mm_Title_OpeningMovieStep(SceneA *scene);
 0x0016F420 int mm_Title_MenuInput(SceneA *scene);
 0x0016F630 int mm_Title_DrawChoices(SceneA *scene);
-0x0016F820 int mm_Title_LogoAnimB(SceneA *scene);
+0x0016F820 void mm_Title_DrawChoicesIdle(SceneA *scene);
 0x0016FAA0 int mm_Title_Intro(SceneA *scene);
 0x0016FD60 int mm_Title_LogoLetters(SceneA *scene);
-0x0016FF20 int mm_SceneA_MemoryCardCheck(SceneA *scene, int a1);
+0x0016FF20 int mm_SceneA_MemoryCardCheck(SceneA *scene, int noPolling);
 0x001702D0 int mm_SceneA_LogoStep(SceneA *scene, char logo);
 0x001704A0 int mm_SceneA_Load(SceneA *scene, int a1);
 0x00170BE0 int mm_SceneA_Update(SceneA *scene);
@@ -809,7 +809,7 @@
 0x00175170 uint32_t mm_TalkView_FindPersonSlot(TalkView *view, uint32_t family, uint32_t member);
 0x00175280 void mm_TalkView_CountPeople(TalkView *view);
 0x00175350 void mm_TalkView_SetTarget(TalkView *view, int building, int family);
-0x00175470 void mm_TalkView_PersonCamera(TalkView *view, int object, Vec4 *a2, Vec4 *a3);
+0x00175470 void mm_TalkView_PersonCamera(TalkView *view, int object, Vec4 *target, Vec4 *eye);
 0x001756E0 void mm_TalkView_DrawMember(TalkView *view, int family, int member);
 0x001758A0 void mm_TalkView_DrawPerson(TalkView *view, int person);
 0x00175A60 void mm_TalkView_DrawPersonTurned(TalkView *view, int person, float angle);

@@ -2,6 +2,7 @@
 
 #include "game_functions.h"
 #include "game_globals.h"
+#include "vu0.h"
 
 namespace mm
 {
@@ -269,7 +270,95 @@ namespace mm
         Widget_Close(GuestPtr<Widget>::of(view->base));
     }
 
+    // The camera for a talk at building `object`: the target at the middle of its footprint, half a unit below
+    // the object's height (2.5 lower for type flag 0x10); the eye at the target plus 0.4 back along the view's
+    // direction (its open target minus eye, flattened and normalized). The original's frame is reserved whole
+    // and its vectors and matrix kept at their offsets.
+    void TalkView_PersonCamera(GuestPtr<TalkView> view, int object, GuestPtr<Vec4> target, GuestPtr<Vec4> eye)
+    {
+        using namespace vu0;
+        port::GuestFrame<0xE0> frame;
+        const uint32_t sp = frame.ptr().address;
+        const GuestPtr<Vec4> direction{sp + 0x80u}, back{sp + 0x90u}, turn{sp + 0xA0u};
+        const GuestPtr<MapObject> obj = Map_GetRecord(view->city->map, object);
+        const GuestPtr<BuildingType> btype{globals::buildingTypeAddress(obj->type)};
+        const ps2f size = fromInt(btype->size);
+        const ps2f half = size / ps2f(2.0f), centre = 64.0f;
+        target->x = (fromInt(obj->tile % 128) - centre) + half;
+        target->y = MapObj_GetHeight(view->city->map, static_cast<uint32_t>(object)) - ps2f(0.5f);
+        target->z = (fromInt(128 - obj->tile / 128) - centre) - size / ps2f(2.0f);
+        target->w = 1.0f;
+        if ((btype->flags & 0x10u) != 0)
+            target->y = target->y - ps2f(2.5f);
+        *eye = *target;
+        back->x = 0.0f;
+        back->y = 0.0f;
+        back->z = 0.4f;
+        back->w = 0.0f;
+        vf(4) = load(GuestPtr<Vec4>{view.address + 0x20u});
+        vf(5) = load(GuestPtr<Vec4>{view.address + 0x10u});
+        set(vf(4), sub(vf(4), vf(5)), XYZW);
+        store(direction, vf(4));
+        direction->y = 0.0f;
+        Vec3_Normalize(direction, direction);
+        Mat4_Copy(turn, GuestPtr<Vec4>{globals::kIdentityMatrix});
+        const ps2f dz = -direction->z;
+        turn[0].x = dz;
+        turn[0].z = direction->x;
+        turn[2].x = -direction->x;
+        turn[2].z = dz;
+        Math_MulMatVecVu0(back, turn, back);
+        vf(4) = load(eye);
+        vf(5) = load(back);
+        set(vf(4), add(vf(4), vf(5)), XYZW);
+        store(eye, vf(4));
+    }
+
+    // For a talk at a building (+0x70; 0x3F80, a talk with a family, has nothing to do): the building's workers
+    // among the people listed at it, outside or already in it and of a class without flag 1, are sorted by
+    // their +0x2E byte, highest first, then each is unlinked from the building's tile and, when it was linked
+    // there, added to the building. The sorted list sits in the original's frame (sp + 0x60, its cursor at
+    // + 0x7E), and as in the original an insertion only shifts the entries up to the 6th, however long the list.
+    void TalkView_CollectOccupants(GuestPtr<TalkView> view)
+    {
+        if (view->building == kNoObject)
+            return;
+        port::GuestFrame<0x80> frame;
+        const uint32_t sp = frame.ptr().address;
+        const GuestPtr<uint16_t> list{sp + 0x60u};
+        const GuestPtr<uint16_t> cursor{sp + 0x7Eu};
+        const GuestPtr<MapObject> obj = Map_GetRecord(view->city->map, view->building);
+        *cursor = obj->firstPerson;
+        int count = 0;
+        while (*cursor != kNoPerson)
+        {
+            const GuestPtr<MapPerson> person = People_Next(view->city->map, cursor);
+            if (!person)
+                break;
+            const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)};
+            if ((cls->flags & 1u) != 0)
+                continue;
+            if (person->inside != kNoObject && person->inside != view->building)
+                continue;
+            if (person->work != obj->id)
+                continue;
+            int at = 0;
+            while (at < count && !(view->city->map->people[list[at]].member < person->member))
+                ++at;
+            if (at < count && at < 6)
+                for (int k = 5; k >= at; --k)
+                    list[k + 1] = list[k];
+            list[at] = person->index;
+            ++count;
+        }
+        for (int i = 0; i < count; ++i)
+            if (Map_UnlinkPersonFromTile(view->city->map, obj->tile, list[i]) != kNoObject)
+                MapObj_AddPerson(view->city->map, obj->id, list[i]);
+    }
+
     PORT_FN(Talk_LookupPose);
+    PORT_FN(TalkView_CollectOccupants);
+    PORT_FN(TalkView_PersonCamera);
     PORT_FN(Talk_ctor);
     PORT_FN(TalkView_ctor);
     PORT_FN(TalkView_DrawCursor);

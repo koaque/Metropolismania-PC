@@ -273,6 +273,12 @@ namespace port
         uint32_t address_;
     };
 
+    // The original function's own stack frame (`Size` bytes), reserved for a scope. Needed before calling a
+    // function that reads stack memory it never wrote (VU0 loads of half-filled stack vectors): its frame then
+    // lands where it did under the original, over the same leftover data.
+    template <uint32_t Size>
+    using GuestFrame = GuestLocal<std::array<uint8_t, Size>>;
+
     // Return address given to guest callees; never a real code address.
     inline constexpr uint32_t kReturnSentinel = 0x00000FF0u;
 

@@ -311,6 +311,36 @@ namespace mm
     // the model's matrix for a root node, into the node's world matrix. A parent whose last word (+0xAC) is
     // still 0 is brought up to date first (A3DObject_UpdateNodeMatrix); every node's last word is cleared
     // before.
+    // A node's world matrix (+0x70): its local matrix (+0x10) times its parent's world matrix, or the model's for a
+    // root. A parent whose world matrix is not done yet (+0xAC still 0) is done first, its own parent recursively.
+    // (The original multiplies inline with the same VU0 registers as Mat4_MulVu0.)
+    void A3DObject_UpdateNodeMatrix(GuestPtr<A3DObject> model, GuestPtr<int32_t> node)
+    {
+        const auto world = [](uint32_t of) { return GuestPtr<Vec4>{of + 0x70u}; };
+        const auto local = [](uint32_t of) { return GuestPtr<Vec4>{of + 0x10u}; };
+        const auto done = [](uint32_t of) { return !(ps2f(port::load<float>(of + 0xACu)) == ps2f(0.0f)); };
+        const uint32_t self = node.address;
+        const uint32_t parent = port::load<uint32_t>(self);
+        if (parent == 0)
+        {
+            Mat4_MulVu0(world(self), local(self), GuestPtr<Vec4>::of(model->matrix[0]));
+            return;
+        }
+        if (!done(parent))
+        {
+            const uint32_t grandparent = port::load<uint32_t>(parent);
+            if (grandparent == 0)
+                Mat4_MulVu0(world(parent), local(parent), GuestPtr<Vec4>::of(model->matrix[0]));
+            else
+            {
+                if (!done(grandparent))
+                    A3DObject_UpdateNodeMatrix(model, GuestPtr<int32_t>{grandparent});
+                Mat4_MulVu0(world(parent), local(parent), world(grandparent));
+            }
+        }
+        Mat4_MulVu0(world(self), local(self), world(parent));
+    }
+
     void A3DObject_UpdateMatrices(GuestPtr<A3DObject> model)
     {
         const auto count = [&] { return port::load<int16_t>(model->model.address + 0x18u); };
@@ -373,6 +403,74 @@ namespace mm
         return model;
     }
 
+    // Keyframe animation `anim` of a model at `time`. Each node track (0x10 bytes: key count, node, keys) holds keys
+    // of 0x20 bytes (position xyz, time, rotation quaternion xyzw); the pair around the time sets the node's
+    // matrix (rotation rows at +0x10, position at +0x40). The quaternions are taken the short way round (the later
+    // key is negated in place when the dot product is below 0) and slerped, or blended linearly when nearly
+    // equal (1 - dot <= 0.001); the position is blended linearly. Instance_DrawSwaying2 is the same code, only
+    // skipping tracks without keys a step earlier.
+    void Instance_DrawSwaying(GuestPtr<A3DObject> model, int anim, ps2f time)
+    {
+        uint32_t track = port::load<uint32_t>(model->meshes.address + 4u * static_cast<uint32_t>(anim));
+        for (int i = 0; i < port::load<int32_t>(model.address + 8u); ++i, track += 0x10u)
+        {
+            const int keys = port::load<int32_t>(track);
+            const GuestPtr<ps2f> node{port::load<uint32_t>(track + 4u)};
+            uint32_t key = port::load<uint32_t>(track + 8u);
+            for (int k = 0; k < keys - 1; ++k, key += 0x20u)
+            {
+                const GuestPtr<ps2f> a{key}, b{key + 0x20u};
+                if (!(time <= b[3]))
+                    continue;
+                const ps2f t = (time - a[3]) / (b[3] - a[3]);
+                ps2f dot = (a[6] * b[6] + (a[4] * b[4] + a[5] * b[5])) + a[7] * b[7];
+                if (dot < ps2f(0.0f))
+                {
+                    b[4] = -b[4];
+                    dot = -dot;
+                    b[5] = -b[5];
+                    b[6] = -b[6];
+                    b[7] = -b[7];
+                }
+                const ps2f rest = ps2f(1.0f) - t;
+                ps2f weightA = rest, weightB = t;
+                if (!(ps2f(1.0f) - dot <= ps2f(0.001f)))
+                {
+                    const ps2f angle = sdk::acosf(dot);
+                    const ps2f partA = sdk::sinf(angle * weightA);
+                    weightA = partA / sdk::sinf(angle);
+                    const ps2f partB = sdk::sinf(angle * t);
+                    weightB = partB / sdk::sinf(angle);
+                }
+                const ps2f x = weightA * a[4] + weightB * b[4];
+                const ps2f y = weightA * a[5] + weightB * b[5];
+                const ps2f z = weightA * a[6] + weightB * b[6];
+                const ps2f w = weightA * a[7] + weightB * b[7];
+                const ps2f yy = y * y, xy = x * y, yz = y * z, wy = w * y, zz = z * z, wx = w * x, wz = w * z, xx = x * x, xz = x * z;
+                const ps2f two = 2.0f, one = 1.0f;
+                node[4] = one - two * (yy + zz);
+                node[5] = two * (xy - wz);
+                node[6] = two * (xz + wy);
+                node[8] = two * (xy + wz);
+                node[9] = one - two * (xx + zz);
+                node[10] = two * (yz - wx);
+                node[12] = two * (xz - wy);
+                node[13] = two * (yz + wx);
+                node[14] = one - two * (xx + yy);
+                node[15] = 0.0f;
+                node[11] = 0.0f;
+                node[7] = 0.0f;
+                node[16] = rest * a[0] + t * b[0];
+                node[17] = rest * a[1] + t * b[1];
+                node[18] = rest * a[2] + t * b[2];
+                node[19] = one;
+                break;
+            }
+        }
+    }
+
+    void Instance_DrawSwaying2(GuestPtr<A3DObject> model, int anim, ps2f time) { Instance_DrawSwaying(model, anim, time); }
+
     // Draws a swaying model only while its nodes still fit in this frame's instance slots.
     void Instance_DrawSwayingIfRoom(GuestPtr<A3DObject> model, int a1, ps2f phase)
     {
@@ -387,8 +485,8 @@ namespace mm
 
         uint32_t modelNodes(GuestPtr<A3DObject> model) { return port::load<uint32_t>(model->model.address + 8u); }
 
-        // Fills the next instance slot with a matrix, flags and colour and queues it, then the mesh's packet.
-        void queueInstance(GuestPtr<A3DObject> model, GuestPtr<Vec4> matrix, GuestPtr<Vec4> colour, int mesh, int flags)
+        // Fills the next instance slot with a matrix, flags and colour and queues it.
+        void queueSlot(GuestPtr<Vec4> matrix, GuestPtr<Vec4> colour, int flags)
         {
             const uint32_t buffer = port::load<uint32_t>(globals::kInstanceBuffers + 4u * static_cast<uint32_t>(globals::instanceBuffer.get()));
             const GuestPtr<InstanceSlot> slot = GuestPtr<InstanceSlot>{buffer} + globals::instanceCount.get();
@@ -397,9 +495,25 @@ namespace mm
             port::store<int32_t>(slot.address + 0x5Cu, flags);
             slot->colour = *colour;
             Dma_AppendCall(static_cast<int>(slot.address));
+        }
+
+        // An instance slot, then the mesh's packet (the node's +4, when set).
+        void queueInstance(GuestPtr<A3DObject> model, GuestPtr<Vec4> matrix, GuestPtr<Vec4> colour, int mesh, int flags)
+        {
+            queueSlot(matrix, colour, flags);
             const uint32_t meshData = port::load<uint32_t>(modelNodes(model) + static_cast<uint32_t>(mesh) * 0xC0u + 4u);
             if (meshData != 0)
                 Dma_AppendCall(static_cast<int>(meshData + 0x10u));
+            globals::instanceCount.set(globals::instanceCount.get() + 1);
+        }
+
+        // For models whose nodes hold mesh indexes at +4 (-1 = none): an instance slot, then the packet of mesh
+        // `index` from the model data's mesh table (+0xC).
+        void queueTableMesh(GuestPtr<A3DObject> model, GuestPtr<Vec4> matrix, GuestPtr<Vec4> colour, int index, int flags)
+        {
+            queueSlot(matrix, colour, flags);
+            const uint32_t table = port::load<uint32_t>(model->model.address + 0xCu);
+            Dma_AppendCall(static_cast<int>(port::load<uint32_t>(table + 4u * static_cast<uint32_t>(index)) + 0x10u));
             globals::instanceCount.set(globals::instanceCount.get() + 1);
         }
 
@@ -454,6 +568,64 @@ namespace mm
             if (globals::instanceCount.get() >= kMaxInstances)
                 return;
         }
+    }
+
+    // A model whose nodes hold mesh indexes, with no room check (the callers make it): nodes 0 and 1, and node 2
+    // for style 0, each with its own mesh, node 0's offset by `variant`; then each later node that has a mesh,
+    // with the meshes of the style's group of 13 in turn. Flags 0. The second count rises by the node count.
+    // Used for the player (mm_Player_Draw: variant = its mode, style = the bag's item).
+    void Instance_DrawModelLit(GuestPtr<A3DObject> model, GuestPtr<Vec4> colour, int variant, int style)
+    {
+        const uint32_t nodes = modelNodes(model);
+        const auto node = [&](int i) { return nodes + static_cast<uint32_t>(i) * 0xC0u; };
+        const auto matrix = [&](int i) { return GuestPtr<Vec4>{node(i) + 0x70u}; };
+        const auto meshOf = [&](int i) { return port::load<int32_t>(node(i) + 4u); };
+        const auto count = [&] { return port::load<int16_t>(model->model.address + 0x18u); };
+        queueTableMesh(model, matrix(0), colour, meshOf(0) + variant, 0);
+        queueTableMesh(model, matrix(1), colour, meshOf(1), 0);
+        if (style == 0)
+            queueTableMesh(model, matrix(2), colour, meshOf(2), 0);
+        int mesh = style * 13;
+        for (int i = 0; i < count() - 3; ++i)
+        {
+            if (meshOf(3 + i) == -1)
+                continue;
+            queueTableMesh(model, matrix(3 + i), colour, mesh, 0);
+            ++mesh;
+        }
+        globals::instanceLimitedCount.set(globals::instanceLimitedCount.get() + count());
+    }
+
+    // The same kind of model with the offsets passed in, all with `flags`: node 0 with its mesh + `offset0`;
+    // node 1 with its mesh + `offset1` unless that is 4 or more; when `attach` is set, mesh 0 of the part model
+    // at 0x1F3B80 (also kept at 0x1BDA38) at node 2; node 3 with its mesh + `offset3`; then each later node that
+    // has a mesh, with mesh (its place from node 4) + group x the group size at +0x60 (past the A3DObject base).
+    // No room check; the second count rises by the node count.
+    void Instance_DrawModelEx(GuestPtr<A3DObject> model, GuestPtr<Vec4> colour, int flags, int offset0, int group, int offset3,
+                              int attach, int offset1)
+    {
+        const uint32_t nodes = modelNodes(model);
+        const auto node = [&](int i) { return nodes + static_cast<uint32_t>(i) * 0xC0u; };
+        const auto matrix = [&](int i) { return GuestPtr<Vec4>{node(i) + 0x70u}; };
+        const auto meshOf = [&](int i) { return port::load<int32_t>(node(i) + 4u); };
+        const auto count = [&] { return port::load<int16_t>(model->model.address + 0x18u); };
+        queueTableMesh(model, matrix(0), colour, meshOf(0) + offset0, flags);
+        if (offset1 < 4)
+            queueTableMesh(model, matrix(1), colour, meshOf(1) + offset1, flags);
+        if (attach != 0)
+        {
+            const uint32_t part = port::load<uint32_t>(0x001F3B80u);
+            port::store<uint32_t>(0x001BDA38u, part);
+            Instance_DrawMesh(GuestPtr<A3DObject>{part}, matrix(2), colour, 0, flags);
+        }
+        queueTableMesh(model, matrix(3), colour, meshOf(3) + offset3, flags);
+        for (int i = 0; i < count() - 4; ++i)
+        {
+            if (meshOf(4 + i) == -1)
+                continue;
+            queueTableMesh(model, matrix(4 + i), colour, i + group * port::load<int32_t>(model.address + 0x60u), flags);
+        }
+        globals::instanceLimitedCount.set(globals::instanceLimitedCount.get() + count());
     }
 
     // As Instance_DrawNode, also within a second count and limit.
@@ -592,6 +764,7 @@ namespace mm
     PORT_FN(CityRender_DrawOverlays);
     PORT_FN(A3DObject_DrawNode);
     PORT_FN(A3DObject_Draw);
+    PORT_FN(A3DObject_UpdateNodeMatrix);
     PORT_FN(A3DObject_UpdateMatrices);
     PORT_FN(Packet_Draw);
     PORT_FN(Packet2_Draw);
@@ -604,10 +777,14 @@ namespace mm
     PORT_FN(CityRender_DrawBuildings);
     PORT_FN(Map_SetPlacementHighlight);
     PORT_FN(InstanceBase_ctor);
+    PORT_FN(Instance_DrawSwaying);
+    PORT_FN(Instance_DrawSwaying2);
     PORT_FN(Instance_DrawSwayingIfRoom);
     PORT_FN(Instance_DrawMesh);
     PORT_FN(Instance_DrawNode);
     PORT_FN(Instance_DrawNodeLimited);
+    PORT_FN(Instance_DrawModelLit);
+    PORT_FN(Instance_DrawModelEx);
     PORT_FN(Instance_DrawModel);
     PORT_FN(Perf_AdaptDrawRange);
     PORT_FN(LightSet_BuildPackets);

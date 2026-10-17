@@ -4,6 +4,7 @@
 #include "game_functions.h"
 #include "game_globals.h"
 #include "sdk.h"
+#include "vu0.h"
 
 namespace mm
 {
@@ -101,6 +102,64 @@ namespace mm
         return laptop->circleActive;
     }
 
+    // The laptop's entries on a carousel, each frame. Entry i stands at angle (2 pi / count) x (count - i) plus
+    // the carousel's turn, kept within -pi..pi; its matrix (from +0x50, 0x40 bytes each) is that turn about y
+    // times a tilt of pi/12 about x, placed at the turned radius vector plus the centre and scaled by +0x38. In
+    // state 2 the selected entry moves by kLaptopLift. The original's frame is reserved whole and its matrices
+    // kept at their offsets; like the original it also builds a scale-5 matrix there that nothing reads.
+    void Laptop_Animate(GuestPtr<Laptop> laptop)
+    {
+        using namespace vu0;
+        port::GuestFrame<0x160> frame;
+        const uint32_t sp = frame.ptr().address;
+        const GuestPtr<Vec4> turnY{sp + 0x40u}, tilt{sp + 0x80u}, scale{sp + 0xC0u}, unused{sp + 0x100u}, place{sp + 0x140u},
+            radius{sp + 0x150u};
+        const GuestPtr<Vec4> identity{globals::kIdentityMatrix};
+        // The float constants of the original: pi, 2 pi and pi/12.
+        const ps2f pi = 0x1.921FB6p+1f, twoPi = 0x1.921FB6p+2f, tiltAngle = 0x1.0C1524p-2f;
+        sdk::sceVu0RotMatrixX(tilt.address, identity.address, tiltAngle);
+        Mat4_Copy(scale, identity);
+        const ps2f size = laptop->scale;
+        scale[2].z = size;
+        scale[1].y = size;
+        scale[0].x = size;
+        Mat4_Copy(unused, identity);
+        unused[2].z = 5.0f;
+        unused[1].y = 5.0f;
+        unused[0].x = 5.0f;
+        for (int i = 0; i < globals::laptopEntryCount.get(); ++i)
+        {
+            const int count = globals::laptopEntryCount.get();
+            ps2f angle = (twoPi / fromInt(count)) * fromInt(count - i);
+            if (!(angle < pi))
+                angle = (angle - pi) - pi;
+            angle = angle + laptop->turn;
+            if (angle < -pi)
+                angle = angle + twoPi;
+            else if (!(angle < pi))
+                angle = (angle - pi) - pi;
+            sdk::sceVu0RotMatrixY(turnY.address, identity.address, angle);
+            Mat4_MulVu0(turnY, turnY, tilt);
+            *radius = laptop->radius;
+            Math_MulMatVecVu0(place, turnY, radius);
+            vf(4) = load(place);
+            vf(5) = load(GuestPtr<Vec4>::of(laptop->centre));
+            set(vf(4), add(vf(4), vf(5)), XYZW);
+            store(place, vf(4));
+            const GuestPtr<Vec4> entry{laptop.address + 0x50u + 0x40u * static_cast<uint32_t>(i)};
+            Mat4_Copy(entry, identity);
+            entry[3] = *place;
+            Mat4_MulVu0(entry, entry, scale);
+            if (laptop->state == 2 && i == laptop->selected)
+            {
+                vf(4) = load(entry + 3);
+                vf(5) = load(GuestPtr<Vec4>{globals::kLaptopLift});
+                set(vf(4), add(vf(4), vf(5)), XYZW);
+                store(entry + 3, vf(4));
+            }
+        }
+    }
+
     // Town's Pages cursor: entries 0..4 left, 5..9 right, 10 the CLOSE button. Off-page entries move to the
     // last entry, or to CLOSE when moving on (direction 2) or, on a short page, sideways (1).
     int TownPages_ClampCursor(GuestPtr<TownPages> pages, int cursor, int direction)
@@ -165,6 +224,59 @@ namespace mm
             while (Family_IsKnown(static_cast<uint32_t>(first + offset)) == 0);
         }
         return first + offset;
+    }
+
+    // A contents page (the current page): the next ten family types with known families, five per column, each
+    // as the building type of the same number's name (cut after 18 characters with an 0xCD byte), then a line
+    // of dashes and the page its listing starts on (2 x startPage + 1, padded with '-'). A page without any
+    // gets the two explanation texts and the cursor on CLOSE (row 10). The lines are built in the original's
+    // frame (sp + 0x60, the page number at + 0xA0).
+    void TownPages_FillContents(GuestPtr<TownPages> pages)
+    {
+        port::GuestFrame<0xB0> frame;
+        const uint32_t line = frame.ptr().address + 0x60u, number = frame.ptr().address + 0xA0u;
+        const int types = globals::familyTypeCount.get();
+        TextBox_SetText(pages->text[2], GuestPtr<char>{globals::kTownPagesHeading}, 0);
+        TextBox_SetText(pages->text[5], GuestPtr<char>{globals::kTownPagesClose}, 0);
+        int type = 0;
+        const auto skipEmpty = [&] {
+            while (pages->index[type].count == 0)
+                ++type;
+        };
+        const int skip = pages->page * 10;
+        for (int n = 0; n < skip; ++n, ++type)
+            skipEmpty();
+        int row = 0;
+        for (; row < 10; ++row, ++type)
+        {
+            skipEmpty();
+            if (!(type < types))
+                break;
+            const uint32_t name = port::load<uint32_t>(globals::buildingTypeTable.get() + 4u * static_cast<uint32_t>(type)) + 0x110u;
+            Text_FormatPadded(GuestPtr<char>{number}, pages->index[type].startPage * 2 + 1, 4);
+            for (uint32_t c = number; port::load<int8_t>(c) == ' '; ++c)
+                port::store<uint8_t>(c, '-');
+            sdk::strcpy(line, name);
+            if (static_cast<uint32_t>(sdk::strlen(name)) >= 19)
+            {
+                port::store<uint8_t>(line + 18u, 0xCD);
+                port::store<uint8_t>(line + 19u, 0);
+            }
+            sdk::strcat(line, globals::kTownPagesDashes);
+            sdk::strcat(line, number);
+            sdk::strcat(line, globals::kTownPagesNewline);
+            TextBox_AppendText(row < 5 ? pages->text[0] : pages->text[1], GuestPtr<char>{line}, 0);
+        }
+        if (row == 0)
+        {
+            TextBox_AppendText(pages->text[0], GuestPtr<char>{globals::kTownPagesEmptyLeft}, 0);
+            TextBox_AppendText(pages->text[1], GuestPtr<char>{globals::kTownPagesEmptyRight}, 0);
+            pages->unk_58 = 10;
+            pages->row = 10;
+            pages->cursorX = port::load<int32_t>(globals::kTownPagesCursor + 8u * static_cast<uint32_t>(pages->row));
+            pages->cursorY = port::load<int32_t>(globals::kTownPagesCursor + 4u + 8u * static_cast<uint32_t>(pages->row));
+        }
+        pages->pageEntries = row;
     }
 
     // The book, its texts and, while the list has a cursor, the cursor frame over the current entry.
@@ -652,6 +764,190 @@ namespace mm
         Instance_DrawMesh(globals::cityPartsModel.get(), second, colour, lights() + port::load<int32_t>(signals + 4u), flags);
     }
 
+    // A road block each tick. Its shape (variant) gets bit d for each direction d whose next block is road
+    // (Map_TileFlag10) and its links are refreshed. Unless all four of its tiles are at or below height 0, they
+    // are flattened to 0 and the ground from one tile before to three after is rebuilt. The mesh follows the
+    // shape: traffic lights (type +0x164, +0 to +4) at crossings and T-junctions; on straight road the slope
+    // mesh (+0x168, +1 along x) where the ground on either side rises more than 0.8 above the road, else a
+    // street lamp (+0x160, +0/+1 along z, +2/+3 along x) on every eighth tile and the one two after it; none
+    // on bends and dead ends. The block is then plotted on the minimap. Returns 0.
+    int BldgRoad_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
+    {
+        const int x = obj->tile & 0x7F, z = obj->tile >> 7;
+        int shape = 0;
+        for (int dir = 0; dir < 4; ++dir)
+            if (Map_TileFlag10(city->map, x + blockStepX(dir), z + blockStepZ(dir)) != 0)
+                shape += port::load<int32_t>(globals::kBlockDirBit + 4u * static_cast<uint32_t>(dir));
+        obj->variant = static_cast<uint16_t>(shape);
+        BldgRoad_FindNeighbours(btype, city, obj, x, z);
+        const ps2f level = 0.0f;
+        if (!(Map_GetHeightAt(city->map, x, z) <= level && Map_GetHeightAt(city->map, x + 1, z) <= level &&
+              Map_GetHeightAt(city->map, x, z + 1) <= level && Map_GetHeightAt(city->map, x + 1, z + 1) <= level))
+        {
+            Map_SetAreaHeight(city->map, x, z, 1, level);
+            Map_SetAreaHeight(city->map, x + 1, z, 1, level);
+            Map_SetAreaHeight(city->map, x, z + 1, 1, level);
+            Map_SetAreaHeight(city->map, x + 1, z + 1, 1, level);
+            port::GuestLocal<Vec4> rectSlot; // four int32 (x0, z0, x1, z1) on the guest stack
+            const GuestPtr<int32_t> rect{rectSlot.ptr().address};
+            rect[0] = x - 1;
+            rect[1] = z - 1;
+            rect[2] = x + 3;
+            rect[3] = z + 3;
+            Map_UpdateAreaGeometry(city->map, rect);
+        }
+        obj->mesh = 0;
+        const int lamps = port::load<int16_t>(btype.address + 0x160u);
+        const int lights = port::load<int16_t>(btype.address + 0x164u);
+        const int slope = port::load<int16_t>(btype.address + 0x168u);
+        const ps2f rise = 0.8f;
+        switch (obj->variant)
+        {
+        case 0xF:
+            obj->mesh = static_cast<uint16_t>(lights);
+            break;
+        case 0xE:
+            obj->mesh = static_cast<uint16_t>(lights + 1);
+            break;
+        case 0xD:
+            obj->mesh = static_cast<uint16_t>(lights + 2);
+            break;
+        case 0xB:
+            obj->mesh = static_cast<uint16_t>(lights + 3);
+            break;
+        case 0x7:
+            obj->mesh = static_cast<uint16_t>(lights + 4);
+            break;
+        case 0x5: // along z
+        {
+            const ps2f road = Map_GetTileHeightWord(city->map, obj->tile);
+            const ps2f before = Map_GetHeightAt(city->map, x - 1, z);
+            const ps2f after = Map_GetHeightAt(city->map, x + btype->size, z);
+            if (!(before - road <= rise) || !(after - road <= rise))
+                obj->mesh = static_cast<uint16_t>(slope);
+            else if (z % 8 == 0)
+                obj->mesh = static_cast<uint16_t>(lamps);
+            else if (z % 8 == 2)
+                obj->mesh = static_cast<uint16_t>(lamps + 1);
+            break;
+        }
+        case 0xA: // along x
+        {
+            const ps2f road = Map_GetTileHeightWord(city->map, obj->tile);
+            const ps2f before = Map_GetHeightAt(city->map, x, z - 1);
+            const ps2f after = Map_GetHeightAt(city->map, x, z + btype->size);
+            if (!(before - road <= rise) || !(after - road <= rise))
+                obj->mesh = static_cast<uint16_t>(slope + 1);
+            else if (x % 8 == 0)
+                obj->mesh = static_cast<uint16_t>(lamps + 2);
+            else if (x % 8 == 2)
+                obj->mesh = static_cast<uint16_t>(lamps + 3);
+            break;
+        }
+        default:
+            break;
+        }
+        Minimap_Plot(city->minimap, obj->tile, btype->size, 3, 0);
+        return 0;
+    }
+
+    // A building part each tick (type slot +0x10). The main part (its tile's first object) finds its entrance
+    // tile (+0x14) and side; unless the type has flag 0x20 and the second entrance test fails, the side is then
+    // set from where the footprint sits in the 4-tile grid of road blocks, and kept as the tile's kind. The
+    // ground under the footprint is levelled: above 0 to 0.1, else onto a multiple of 0.5 (with fmodf), and the
+    // geometry around it rebuilt when that changed it. Other parts take the main part's entrance tile. The
+    // entrance part (flag 0x20) clears +0x17 from 23:00:01, between 6:00 and 7:00 drops flag 0x100 (minimap
+    // colour 5), and returns mm_BldgClaims_Evaluate's result; other parts count +0x18 up from 7:00 to 18:59
+    // and at 24 are flagged 0x120 and start again. Last, the minimap colour by the claim meter's level (2: 10,
+    // 1: 9, else 5). The original's frame is reserved whole: the side and the rectangle are its slots.
+    int Bldg_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int timeFlags)
+    {
+        port::GuestFrame<0xB0> frame;
+        const uint32_t sp = frame.ptr().address;
+        const GuestPtr<int32_t> side{sp + 0xACu};
+        const int x = obj->tile % 128, z = obj->tile / 128;
+        int result = 0;
+        const GuestPtr<MapObject> first = Map_GetTileFirstObject(city->map, obj->tile);
+        if (first->id != obj->id)
+            obj->entranceTile = first->entranceTile;
+        else
+        {
+            obj->entranceTile = BldgType_FindEntrance(btype, city, x, z, side);
+            if ((btype->flags & 0x20u) == 0 || BldgType_FindEntrance2(btype, city, x, z, *side) != 0)
+            {
+                const int size = btype->size;
+                if ((*side & 1) != 0)
+                {
+                    const int z4 = z % 4;
+                    *side = z4 == 2 ? 0 : (z + size) % 4 == 1 ? 2 : z4 == 1 ? 0 : 2;
+                }
+                else
+                {
+                    const int x4 = x % 4;
+                    *side = x4 == 2 ? 1 : (x + size) % 4 == 1 ? 3 : x4 == 1 ? 1 : 3;
+                }
+            }
+            Map_SetTileKind(city->map, obj->tile, static_cast<uint32_t>(*side));
+            const ps2f height = Map_GetTileHeightWord(city->map, obj->tile);
+            ps2f level = height;
+            if (!(height <= ps2f(0.0f)))
+                level = 0.1f;
+            else
+            {
+                const ps2f frac = sdk::fmodf(height, 0.5f);
+                if (!(ps2f(0.0f) == frac))
+                {
+                    if (!(frac <= ps2f(0.1f)))
+                        level = height - ps2f(0.1f);
+                    else if (frac <= ps2f(-0.4f))
+                        level = (height - frac) - ps2f(0.5f);
+                    else
+                        level = height - frac;
+                }
+            }
+            if (!(level == height))
+            {
+                Map_SetAreaHeight(city->map, x, z, btype->size, level);
+                const GuestPtr<int32_t> rect{sp + 0x90u}; // x0, z0, x1, z1
+                rect[0] = x - 1;
+                rect[1] = z + btype->size - 1;
+                rect[2] = rect[0] + btype->size + 2;
+                rect[3] = rect[1] + btype->size + 2;
+                Map_UpdateAreaGeometry(city->map, rect);
+            }
+        }
+        if ((obj->flags & 0x20u) != 0)
+        {
+            if (!(city->clock < 82801))
+                port::store<uint8_t>(obj.address + 0x17u, 0);
+            const uint16_t flags = obj->flags;
+            if ((flags & 0x100u) != 0 && city->clock < 25200 && !(city->clock < 21600))
+            {
+                obj->flags = static_cast<uint16_t>(flags & 0xFEFFu);
+                Minimap_Plot(city->minimap, obj->tile, btype->size, 5, 0);
+            }
+            result = BldgClaims_Evaluate(btype, city, obj, timeFlags);
+        }
+        else if (!(city->clock < 25200) && city->clock < 68400)
+        {
+            const uint32_t counter = obj.address + 0x18u;
+            port::store<uint8_t>(counter, static_cast<uint8_t>(port::load<uint8_t>(counter) + 1));
+            if (port::load<uint8_t>(counter) >= 24)
+            {
+                obj->flags |= 0x120u;
+                port::store<uint8_t>(counter, 0);
+            }
+        }
+        const int meter = ClaimMeter_Level(obj->claimMeter);
+        if (meter == 2)
+            Minimap_Plot(city->minimap, obj->tile, btype->size, 10, 0);
+        else if (meter == 1)
+            Minimap_Plot(city->minimap, obj->tile, btype->size, 9, 1);
+        else
+            Minimap_Plot(city->minimap, obj->tile, btype->size, 5, 1);
+        return result;
+    }
+
     // Offices tick like any building; a part that is no longer its tile's first object (and not the
     // entrance) is flagged 0x120 and its variant byte cleared.
     int BldgOffice_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int timeFlags)
@@ -944,6 +1240,72 @@ namespace mm
         return kNone;
     }
 
+    namespace
+    {
+        // Claim meter band: 0 at or below the low threshold, 1 up to the high one, 2 above it.
+        int claimBand(uint16_t meter)
+        {
+            const GuestPtr<ClaimThresholds> limits = globals::claimThresholds();
+            if (!(limits->low < meter))
+                return 0;
+            return meter <= limits->high ? 1 : 2;
+        }
+    }
+
+    // A building's claim, once per evaluation. While the claim is met (flag 8) or its meter maxed out (0x40) the
+    // claim timer runs down; when it runs out a met claim just ends, a maxed one is settled (EvalA: returns 1 and
+    // lowers the city's pending approval). Otherwise section C is re-checked while the map asks for it, and with
+    // `rise` set the meter climbs: by the step, or by a tenth of the timer once that is ten steps or more. Past the
+    // low threshold EvalD runs; at 255 the meter maxes out (flag 0x40, the timer set to the hold time). Moving up a
+    // band lowers the pending approval (from band 0 only while approval is positive). Slot 0x18 means no claim:
+    // EvalB then.
+    int BldgClaims_Evaluate(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int rise)
+    {
+        if ((obj->flags & 0x48u) != 0)
+        {
+            if (--obj->claimTimer != 0)
+                return 0;
+            if ((obj->flags & 8u) != 0)
+            {
+                obj->flags &= 0xFFF7u;
+                obj->claimSlot = 0x18;
+                return 0;
+            }
+            BldgClaims_EvalA(btype, city, obj);
+            obj->flags &= 0xFFBFu;
+            obj->claimSlot = 0x18;
+            --city->pendingApproval;
+            return 1;
+        }
+        if (city->map->claimRecheck > 0 && obj->claimSlot != 0x18)
+            BldgClaims_EvalC(btype, city, obj);
+        if (rise == 0)
+            return 0;
+        if (obj->claimSlot == 0x18)
+        {
+            BldgClaims_EvalB(btype, city, obj);
+            return 0;
+        }
+        if ((obj->flags & 0x208u) != 0)
+            return 0;
+        const int before = claimBand(obj->claimMeter);
+        const uint8_t step = globals::claimThresholds()->step;
+        const uint16_t increase = obj->claimTimer < step * 10 ? step : static_cast<uint16_t>(obj->claimTimer / 10);
+        obj->claimMeter = static_cast<uint16_t>(obj->claimMeter + increase);
+        if (globals::claimThresholds()->low < obj->claimMeter)
+            BldgClaims_EvalD(btype, city, obj);
+        if (obj->claimMeter >= 0xFF)
+        {
+            obj->flags |= 0x40u;
+            obj->claimTimer = globals::claimThresholds()->holdTime;
+            obj->claimMeter = 0xFF;
+        }
+        const int after = claimBand(obj->claimMeter);
+        if (before < after && (before != 0 || city->approval > 0))
+            --city->pendingApproval;
+        return 0;
+    }
+
     // Every frame: slot 0x34 of each building type with the time of day (the ride animations; others do nothing).
     void BldgType_CallAll(int time)
     {
@@ -1130,6 +1492,7 @@ namespace mm
     PORT_FN(Laptop_CountActive);
     PORT_FN(TownPages_ClampCursor);
     PORT_FN(TownPages_SelectedEntry);
+    PORT_FN(TownPages_FillContents);
     PORT_FN(TownPages_Draw);
     PORT_FN(BldgType_IsOpenAt);
     PORT_FN(ClaimIcon_GetColor);
@@ -1140,6 +1503,7 @@ namespace mm
     PORT_FN(Applicants_RemoveAt);
     PORT_FN(Applicants_PlaceAt);
     PORT_FN(Laptop_CheckOpen);
+    PORT_FN(Laptop_Animate);
     PORT_FN(WantsWin_ctor);
     PORT_FN(BldgWasteland_InitRecord);
     PORT_FN(BldgLeveled_Draw);
@@ -1148,6 +1512,8 @@ namespace mm
     PORT_FN(BldgType_FindEntrance);
     PORT_FN(BldgRoad_FindNeighbours);
     PORT_FN(BldgRoad_Draw);
+    PORT_FN(BldgRoad_Tick);
+    PORT_FN(Bldg_Tick);
     PORT_FN(BldgType_FindEntrance2);
     PORT_FN(BldgField_Tick);
     PORT_FN(BldgOffice_Tick);
@@ -1163,6 +1529,7 @@ namespace mm
     PORT_FN(BldgHousing_UnitAt);
     PORT_FN(BldgType_DrawOccupant);
     PORT_FN(BldgType_CallAll);
+    PORT_FN(BldgClaims_Evaluate);
     PORT_FN(BldgType_DrawOccupants2);
     PORT_FN(Schedule_PickEntry);
     PORT_FN(Stamina_HungerLevel);

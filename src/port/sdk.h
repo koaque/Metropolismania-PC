@@ -11,6 +11,7 @@ namespace mm::sdk
     namespace addr
     {
         inline constexpr uint32_t abs = 0x0011E810u;
+        inline constexpr uint32_t acosf = 0x0011A2A8u;
         inline constexpr uint32_t atan2f = 0x0011A2C0u;
         inline constexpr uint32_t fmodf = 0x0011A2D8u;
         inline constexpr uint32_t fptosi = 0x00127828u;
@@ -27,12 +28,15 @@ namespace mm::sdk
         inline constexpr uint32_t sceVu0MulMatrix = 0x00104B68u;
         inline constexpr uint32_t sceVu0UnitMatrix = 0x00104E60u;
         inline constexpr uint32_t sceVu0RotMatrixZ = 0x00104F00u;
+        inline constexpr uint32_t sceVu0RotMatrixY = 0x00105050u;
+        inline constexpr uint32_t sceVu0RotMatrixX = 0x00104FA8u;
         inline constexpr uint32_t sceVu0CameraMatrix = 0x00105170u;
         inline constexpr uint32_t sceVu0NormalLightMatrix = 0x00105220u;
         inline constexpr uint32_t sceVu0LightColorMatrix = 0x001052E0u;
     }
 
     // libm.
+    inline ps2f acosf(ps2f x) { return port::callGuest<ps2f>(addr::acosf, x); }
     inline ps2f atan2f(ps2f y, ps2f x) { return port::callGuest<ps2f>(addr::atan2f, y, x); }
     inline ps2f fmodf(ps2f x, ps2f y) { return port::callGuest<ps2f>(addr::fmodf, x, y); }
     inline ps2f sinf(ps2f x) { return port::callGuest<ps2f>(addr::sinf, x); }
@@ -56,6 +60,8 @@ namespace mm::sdk
     inline void sceVu0MulMatrix(uint32_t out, uint32_t a, uint32_t b) { port::callGuest<void>(addr::sceVu0MulMatrix, out, a, b); }
     inline void sceVu0UnitMatrix(uint32_t out) { port::callGuest<void>(addr::sceVu0UnitMatrix, out); }
     inline void sceVu0RotMatrixZ(uint32_t out, uint32_t in, ps2f angle) { port::callGuest<void>(addr::sceVu0RotMatrixZ, out, in, angle); }
+    inline void sceVu0RotMatrixY(uint32_t out, uint32_t in, ps2f angle) { port::callGuest<void>(addr::sceVu0RotMatrixY, out, in, angle); }
+    inline void sceVu0RotMatrixX(uint32_t out, uint32_t in, ps2f angle) { port::callGuest<void>(addr::sceVu0RotMatrixX, out, in, angle); }
     inline void sceVu0CameraMatrix(uint32_t out, uint32_t eye, uint32_t direction, uint32_t up)
     {
         port::callGuest<void>(addr::sceVu0CameraMatrix, out, eye, direction, up);

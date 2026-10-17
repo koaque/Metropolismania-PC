@@ -139,7 +139,8 @@ struct Camera {
     Vec4 ambient;              /* +0x1C0 */
     ps2f viewWidth;           /* +0x1D0 (mm_Camera_UpdateProjection) */
     ps2f viewHeight;          /* +0x1D4 */
-    uint8_t unk_1D8[8];
+    ps2f unk_1D8;             /* +0x1D8 1.0 from mm_Camera_ctor */
+    ps2f unk_1DC;             /* +0x1DC 10.0 from mm_Camera_ctor */
     Vec4 view[4];              /* +0x1E0 world to camera (sceVu0CameraMatrix) */
     Vec4 screenA[4];           /* +0x220 */
     Vec4 screenB[4];           /* +0x260 */
@@ -244,14 +245,17 @@ struct ListMenu {
 };
 /* Loading screen (0x28 bytes). */
 struct LoadingScreen {
-    uint8_t unk_00[4];
+    GuestPtr<TexSprite> background;     /* +0x00 drawn under the sprite (mm_LoadingScreen_Update) */
     GuestPtr<TexSprite> sprite;         /* +0x04 */
     GuestPtr<TextBox> text;             /* +0x08 */
-    uint8_t unk_0C[8];
-    int32_t spriteId;          /* +0x14 */
-    int32_t spriteX;           /* +0x18 */
-    int32_t spriteY;           /* +0x1C */
-    uint8_t unk_20[8];
+    int32_t fade;              /* +0x0C screen fade level, 0..128 */
+    int32_t frame;             /* +0x10 frames shown */
+    int32_t spriteX;           /* +0x14 sprite place (mm_LoadingScreen_SetSpritePos) */
+    int32_t spriteY;           /* +0x18 */
+    int32_t spriteZ;           /* +0x1C */
+    uint8_t style;             /* +0x20 sprite animation: 0 circling, 1 pulsing, other none */
+    uint8_t unk_21[3];
+    int32_t showText;          /* +0x24 the text box is drawn once the fade is clear */
 };
 /* Memory card manager (0x28 bytes). */
 struct McManager {
@@ -275,24 +279,29 @@ struct SceneA {
     GuestPtr<TexSprite> choices[2];     /* +0x1C the title menu's two choices (mm_Title_DrawChoices) */
     GuestPtr<A3DObject> menuModel;      /* +0x24 layer set 0x28/0x29 */
     GuestPtr<A3DObject> logoModel;      /* +0x28 layer set 0x14/0x15 */
-    uint8_t unk_2C[0x10];
+    uint8_t unk_2C[0xC];
+    ps2f logoTime;            /* +0x38 frame of the logo model's intro animation (mm_Title_Intro) */
     int32_t choice;            /* +0x3C selected choice */
     int32_t choicePulsing;     /* +0x40 cleared when the selected choice's pulse ends */
     int32_t choiceCount;       /* +0x44 (provisional) 1: only the first choice is shown */
-    int32_t pulseFrame;        /* +0x48 0..19 */
-    uint8_t unk_4C[0xC];
+    int32_t pulseFrame;        /* +0x48 0..19 while the choice pulses (mm_Title_DrawChoices), then the frames of its idle wobble (mm_Title_DrawChoicesIdle) */
+    uint8_t unk_4C[4];
+    int32_t logoSound;         /* +0x50 next timed effect of the logo intro (mm_Title_Intro) */
+    uint8_t unk_54[4];
     int32_t showHint;          /* +0x58 the "[SELECT]SoundTest" line is drawn (mm_Title_PressStart) */
-    uint8_t unk_5C[0x54];
+    uint8_t unk_5C[0x14];
+    uint8_t codeStep;          /* +0x70 buttons of the sound test code entered so far (mm_Title_MenuInput) */
+    uint8_t unk_71[0x3F];
     GuestPtr<ListMenu> loadMenu;        /* +0xB0 layer set 0x28/0x29 */
     GuestPtr<McManager> mc;             /* +0xB4 */
     GuestPtr<TextBox> hintText;         /* +0xB8 */
     uint8_t unk_BC[8];
-    int32_t pressStep;         /* +0xC4 0 before the title's first frame, 1 after */
-    uint8_t unk_C8[4];
+    int32_t pressStep;         /* +0xC4 step of the current sequence: mm_Title_Intro 0..5; the title 0 before its first frame, 1 after */
+    int32_t waitFrames;        /* +0xC8 frames the memory card warning stays after Cross (mm_SceneA_MemoryCardCheck) */
     int32_t fade;              /* +0xCC screen fade alpha (mm_Title_DrawCommon) */
     int32_t layers;            /* +0xD0 layer set drawn */
     int32_t idleTimer;         /* +0xD4 idle frames (restarted at 1800; provisional) */
-    int32_t introFrame;        /* +0xD8 frames since the logo intro started */
+    int32_t introFrame;        /* +0xD8 logo intro counter: title sprite alpha, then frames of the letters, then frames left (mm_Title_Intro) */
     uint8_t unk_DC[0x28];
 };
 /* Player's bag (0x1AC bytes). */
@@ -409,8 +418,13 @@ struct WantsWin {
 /* Laptop menu (0x3E0 bytes). */
 struct Laptop {
     GuestPtr<void> unk_00;              /* +0x00 from 0x1F3B08 at construction */
-    uint8_t unk_04[0x38];
-    int32_t unk_3C;            /* +0x3C */
+    uint8_t unk_04[0xC];
+    Vec4 radius;               /* +0x10 an entry's offset from the centre before its turn (mm_Laptop_Animate) */
+    Vec4 centre;               /* +0x20 the carousel's centre */
+    ps2f turn;                /* +0x30 the carousel's turn, radians */
+    uint8_t unk_34[4];
+    ps2f scale;               /* +0x38 the entries' scale */
+    int32_t state;             /* +0x3C 2: the selected entry is lifted */
     uint8_t unk_40[4];
     int32_t unk_44;            /* +0x44 */
     uint8_t unk_48[0xD4];
@@ -418,19 +432,19 @@ struct Laptop {
     int32_t circleActive;      /* +0x120 set while Circle alone is held in the city view, cleared on release */
     int32_t circleHeld;        /* +0x124 Circle was held last frame, so holding it does not set +0x120 again */
     uint8_t unk_128[0x2A8];
-    int32_t unk_3D0;           /* +0x3D0 */
+    int32_t selected;          /* +0x3D0 the selected entry */
     uint8_t unk_3D4[0xC];
 };
 /* Player character (0x90 bytes). */
 struct Player {
     int32_t mode;              /* +0x00 0 turn, 1 walk (Cross lays road), 2 place for applicant, 5 place bag item */
     int32_t previousMode;      /* +0x04 mm_Player_SetMode(-1) returns to it */
-    int32_t unk_08;            /* +0x08 */
+    int32_t step;              /* +0x08 grid step in progress: 0 none, 1/2 along z, 5/6 along x, 3/4 turning (mm_Player_Move) */
     ps2f heading;             /* +0x0C radians, -pi..pi (mm_Player_Turn) */
     Vec4 position;             /* +0x10 */
     uint8_t unk_20[0x14];
-    ps2f swayPhase;           /* +0x34 passed to mm_Instance_DrawSwayingIfRoom */
-    int32_t swayArg;           /* +0x38 */
+    ps2f swayPhase;           /* +0x34 animation frame, passed to mm_Instance_DrawSwayingIfRoom (mm_Player_UpdateAction) */
+    int32_t swayArg;           /* +0x38 animation: 0-2 standing, 4-15 moving (mm_Player_UpdateAction) */
     int32_t visible;           /* +0x3C drawn when non-zero (mm_Player_Draw) */
     int32_t unk_40;            /* +0x40 */
     int32_t unk_44;            /* +0x44 */
@@ -439,7 +453,7 @@ struct Player {
     int32_t unk_50;            /* +0x50 */
     ps2f moveSpeed;           /* +0x54 step per frame (mm_Player_Turn) */
     uint8_t unk_58[0x28];
-    int32_t unk_80;            /* +0x80 */
+    ps2f stepFrames;          /* +0x80 frames left of the step (mm_Player_Move) */
     int32_t jumps;             /* +0x84 */
     GuestPtr<A3DObject> model;          /* +0x88 */
     uint8_t unk_8C[4];
@@ -635,11 +649,12 @@ struct Stamina;
 struct MemberStatus;
 struct CharTypeRecord;
 struct SeRequest;
+struct ClaimThresholds;
 
 /* Map tile (0x18 bytes): 128 x 128 of them at CityMap +0x04. */
 struct MapTile {
     ps2f height;              /* +0x00 terrain height (loaded with lwc1, mm_Map_GetTileHeightWord) */
-    ps2f verts[4];            /* +0x04 vertex data (mm_Map_GetTileVertex) */
+    ps2f verts[4];            /* +0x04 corner heights towards (-x,-z), (+x,-z), (+x,+z), (-x,+z) (mm_Map_UpdateTileGeometry) */
     uint16_t firstObject;      /* +0x14 0x3F80 = none */
     uint16_t flags;            /* +0x16 0x10 = walkable */
 };
@@ -656,7 +671,7 @@ struct MapObject {
     uint16_t unk_0E;
     uint16_t claimMeter;       /* +0x10 rises while the claim is unmet (mm_ClaimMeter_Level) */
     uint8_t claimSlot;         /* +0x12 entry in the type's claim section */
-    uint8_t unk_13;
+    uint8_t claimTimer;        /* +0x13 runs down while the claim is met or the meter maxed; its tenth speeds the meter (mm_BldgClaims_Evaluate) */
     uint16_t entranceTile;     /* +0x14 (provisional) */
     uint8_t unk_16[2];
     uint16_t variant;          /* +0x18 roads: shape, bit d = open towards direction d, 5 and 10 straight
@@ -677,8 +692,9 @@ struct MapPerson {
     uint16_t index;            /* +0x12 own index */
     uint16_t work;             /* +0x14 workplace object */
     uint16_t inside;           /* +0x16 object the person is in, 0x3F80 = outside */
-    uint16_t walkTile;         /* +0x18 tile the person walks to (mm_Person_UpdatePose) */
-    uint8_t unk_1A[4];
+    uint16_t walkTile;         /* +0x18 tile the person walks to (mm_Person_UpdatePose); the waypoint (mm_Path_NextWaypoint) */
+    uint16_t previousTile;     /* +0x1A the waypoint before it; mm_Path_PickRoadLink never leads back there */
+    uint8_t unk_1C[2];
     uint16_t destination;      /* +0x1E */
     uint16_t follow;           /* +0x20 follow target */
     uint16_t flags;            /* +0x22 */
@@ -706,9 +722,15 @@ struct CityMap {
     GuestPtr<MapTile> tiles;            /* +0x04 */
     GuestPtr<MapObject> objects;        /* +0x08 */
     GuestPtr<TileLists> tileLists;      /* +0x0C */
-    uint8_t unk_10[0x14];
+    int32_t nextId;            /* +0x10 next record to try for a new object (mm_Map_CreateObject); its low half is the object's id */
+    int32_t unk_14;
+    int32_t flag8Objects;      /* +0x18 objects of types with flag 8 */
+    int32_t unk_1C;            /* +0x1C set while there are any */
+    int16_t objectsChanged;    /* +0x20 objects were added or removed (mm_MapObjects_Tick then starts the claim re-check) */
+    int16_t claimRecheck;      /* +0x22 frames of claim section C re-checks left (0x80 after a change) */
     int32_t objectCount;       /* +0x24 object records in use (of 0x3F80) */
-    uint8_t unk_28[8];
+    uint8_t flag8History[6];   /* +0x28 new flag-8 objects per period, newest first (mm_MapObj_PushHistory) */
+    int16_t refreshDelay;      /* +0x2E frames until objectsChanged is set (0x81 after a flag-2 type is placed) */
     int32_t categoryCount[11]; /* +0x30 buildings per STRTYPE.BIN category (mm_MapObj_Delete; category 4 only without type flag 0x80) */
     int32_t bigCategory5Count; /* +0x5C category 5 buildings of size 3 and up */
     uint8_t unk_60[4];
@@ -926,6 +948,15 @@ struct Words {
     GuestPtr<void> lineTable;           /* +0x24 */
 };
 
+/* The claim meter limits at the start of the claim data (gp 0x1BDA50). */
+struct ClaimThresholds {
+    uint16_t low;              /* +0x00 above it the claim shows (band 1) */
+    uint16_t high;             /* +0x02 above it band 2 */
+    uint8_t step;              /* +0x04 meter rise per evaluation */
+    uint8_t unk_05[2];
+    uint8_t holdTime;          /* +0x07 claim timer once the meter maxes out */
+};
+
 /* Sound effect request (0x1C bytes): the frame's requests at 0x1F8710, kept in priority order by
    mm_Se_Request, count at 0x1BDD08 (up to 578). */
 struct SeRequest {
@@ -1097,6 +1128,8 @@ static_assert(offsetof(Camera, lightRgb) == 0x190, "Camera.lightRgb");
 static_assert(offsetof(Camera, ambient) == 0x1C0, "Camera.ambient");
 static_assert(offsetof(Camera, viewWidth) == 0x1D0, "Camera.viewWidth");
 static_assert(offsetof(Camera, viewHeight) == 0x1D4, "Camera.viewHeight");
+static_assert(offsetof(Camera, unk_1D8) == 0x1D8, "Camera.unk_1D8");
+static_assert(offsetof(Camera, unk_1DC) == 0x1DC, "Camera.unk_1DC");
 static_assert(offsetof(Camera, view) == 0x1E0, "Camera.view");
 static_assert(offsetof(Camera, screenA) == 0x220, "Camera.screenA");
 static_assert(offsetof(Camera, screenB) == 0x260, "Camera.screenB");
@@ -1163,11 +1196,16 @@ static_assert(offsetof(ListMenu, itemCount) == 0x290, "ListMenu.itemCount");
 static_assert(offsetof(ListMenu, canCancel) == 0x294, "ListMenu.canCancel");
 static_assert(offsetof(ListMenu, canSelect) == 0x298, "ListMenu.canSelect");
 static_assert(sizeof(LoadingScreen) == 0x28, "LoadingScreen size");
+static_assert(offsetof(LoadingScreen, background) == 0x00, "LoadingScreen.background");
 static_assert(offsetof(LoadingScreen, sprite) == 0x04, "LoadingScreen.sprite");
 static_assert(offsetof(LoadingScreen, text) == 0x08, "LoadingScreen.text");
-static_assert(offsetof(LoadingScreen, spriteId) == 0x14, "LoadingScreen.spriteId");
-static_assert(offsetof(LoadingScreen, spriteX) == 0x18, "LoadingScreen.spriteX");
-static_assert(offsetof(LoadingScreen, spriteY) == 0x1C, "LoadingScreen.spriteY");
+static_assert(offsetof(LoadingScreen, fade) == 0x0C, "LoadingScreen.fade");
+static_assert(offsetof(LoadingScreen, frame) == 0x10, "LoadingScreen.frame");
+static_assert(offsetof(LoadingScreen, spriteX) == 0x14, "LoadingScreen.spriteX");
+static_assert(offsetof(LoadingScreen, spriteY) == 0x18, "LoadingScreen.spriteY");
+static_assert(offsetof(LoadingScreen, spriteZ) == 0x1C, "LoadingScreen.spriteZ");
+static_assert(offsetof(LoadingScreen, style) == 0x20, "LoadingScreen.style");
+static_assert(offsetof(LoadingScreen, showText) == 0x24, "LoadingScreen.showText");
 static_assert(sizeof(McManager) == 0x28, "McManager size");
 static_assert(offsetof(McManager, queue) == 0x00, "McManager.queue");
 static_assert(offsetof(McManager, state) == 0x04, "McManager.state");
@@ -1183,15 +1221,19 @@ static_assert(offsetof(SceneA, logoLetters) == 0x10, "SceneA.logoLetters");
 static_assert(offsetof(SceneA, choices) == 0x1C, "SceneA.choices");
 static_assert(offsetof(SceneA, menuModel) == 0x24, "SceneA.menuModel");
 static_assert(offsetof(SceneA, logoModel) == 0x28, "SceneA.logoModel");
+static_assert(offsetof(SceneA, logoTime) == 0x38, "SceneA.logoTime");
 static_assert(offsetof(SceneA, choice) == 0x3C, "SceneA.choice");
 static_assert(offsetof(SceneA, choicePulsing) == 0x40, "SceneA.choicePulsing");
 static_assert(offsetof(SceneA, choiceCount) == 0x44, "SceneA.choiceCount");
 static_assert(offsetof(SceneA, pulseFrame) == 0x48, "SceneA.pulseFrame");
+static_assert(offsetof(SceneA, logoSound) == 0x50, "SceneA.logoSound");
 static_assert(offsetof(SceneA, showHint) == 0x58, "SceneA.showHint");
+static_assert(offsetof(SceneA, codeStep) == 0x70, "SceneA.codeStep");
 static_assert(offsetof(SceneA, loadMenu) == 0xB0, "SceneA.loadMenu");
 static_assert(offsetof(SceneA, mc) == 0xB4, "SceneA.mc");
 static_assert(offsetof(SceneA, hintText) == 0xB8, "SceneA.hintText");
 static_assert(offsetof(SceneA, pressStep) == 0xC4, "SceneA.pressStep");
+static_assert(offsetof(SceneA, waitFrames) == 0xC8, "SceneA.waitFrames");
 static_assert(offsetof(SceneA, fade) == 0xCC, "SceneA.fade");
 static_assert(offsetof(SceneA, layers) == 0xD0, "SceneA.layers");
 static_assert(offsetof(SceneA, idleTimer) == 0xD4, "SceneA.idleTimer");
@@ -1260,16 +1302,20 @@ static_assert(offsetof(WantsWin, unk_52C) == 0x52C, "WantsWin.unk_52C");
 static_assert(offsetof(WantsWin, unk_538) == 0x538, "WantsWin.unk_538");
 static_assert(sizeof(Laptop) == 0x3E0, "Laptop size");
 static_assert(offsetof(Laptop, unk_00) == 0x00, "Laptop.unk_00");
-static_assert(offsetof(Laptop, unk_3C) == 0x3C, "Laptop.unk_3C");
+static_assert(offsetof(Laptop, radius) == 0x10, "Laptop.radius");
+static_assert(offsetof(Laptop, centre) == 0x20, "Laptop.centre");
+static_assert(offsetof(Laptop, turn) == 0x30, "Laptop.turn");
+static_assert(offsetof(Laptop, scale) == 0x38, "Laptop.scale");
+static_assert(offsetof(Laptop, state) == 0x3C, "Laptop.state");
 static_assert(offsetof(Laptop, unk_44) == 0x44, "Laptop.unk_44");
 static_assert(offsetof(Laptop, unk_11C) == 0x11C, "Laptop.unk_11C");
 static_assert(offsetof(Laptop, circleActive) == 0x120, "Laptop.circleActive");
 static_assert(offsetof(Laptop, circleHeld) == 0x124, "Laptop.circleHeld");
-static_assert(offsetof(Laptop, unk_3D0) == 0x3D0, "Laptop.unk_3D0");
+static_assert(offsetof(Laptop, selected) == 0x3D0, "Laptop.selected");
 static_assert(sizeof(Player) == 0x90, "Player size");
 static_assert(offsetof(Player, mode) == 0x00, "Player.mode");
 static_assert(offsetof(Player, previousMode) == 0x04, "Player.previousMode");
-static_assert(offsetof(Player, unk_08) == 0x08, "Player.unk_08");
+static_assert(offsetof(Player, step) == 0x08, "Player.step");
 static_assert(offsetof(Player, heading) == 0x0C, "Player.heading");
 static_assert(offsetof(Player, position) == 0x10, "Player.position");
 static_assert(offsetof(Player, swayPhase) == 0x34, "Player.swayPhase");
@@ -1281,7 +1327,7 @@ static_assert(offsetof(Player, unk_48) == 0x48, "Player.unk_48");
 static_assert(offsetof(Player, jumpSpeed) == 0x4C, "Player.jumpSpeed");
 static_assert(offsetof(Player, unk_50) == 0x50, "Player.unk_50");
 static_assert(offsetof(Player, moveSpeed) == 0x54, "Player.moveSpeed");
-static_assert(offsetof(Player, unk_80) == 0x80, "Player.unk_80");
+static_assert(offsetof(Player, stepFrames) == 0x80, "Player.stepFrames");
 static_assert(offsetof(Player, jumps) == 0x84, "Player.jumps");
 static_assert(offsetof(Player, model) == 0x88, "Player.model");
 static_assert(sizeof(ApplicantEntry) == 0x14, "ApplicantEntry size");
@@ -1385,6 +1431,7 @@ static_assert(offsetof(MapObject, nextOnTile) == 0x0A, "MapObject.nextOnTile");
 static_assert(offsetof(MapObject, family) == 0x0C, "MapObject.family");
 static_assert(offsetof(MapObject, claimMeter) == 0x10, "MapObject.claimMeter");
 static_assert(offsetof(MapObject, claimSlot) == 0x12, "MapObject.claimSlot");
+static_assert(offsetof(MapObject, claimTimer) == 0x13, "MapObject.claimTimer");
 static_assert(offsetof(MapObject, entranceTile) == 0x14, "MapObject.entranceTile");
 static_assert(offsetof(MapObject, variant) == 0x18, "MapObject.variant");
 static_assert(offsetof(MapObject, mesh) == 0x1A, "MapObject.mesh");
@@ -1398,6 +1445,7 @@ static_assert(offsetof(MapPerson, index) == 0x12, "MapPerson.index");
 static_assert(offsetof(MapPerson, work) == 0x14, "MapPerson.work");
 static_assert(offsetof(MapPerson, inside) == 0x16, "MapPerson.inside");
 static_assert(offsetof(MapPerson, walkTile) == 0x18, "MapPerson.walkTile");
+static_assert(offsetof(MapPerson, previousTile) == 0x1A, "MapPerson.previousTile");
 static_assert(offsetof(MapPerson, destination) == 0x1E, "MapPerson.destination");
 static_assert(offsetof(MapPerson, follow) == 0x20, "MapPerson.follow");
 static_assert(offsetof(MapPerson, flags) == 0x22, "MapPerson.flags");
@@ -1419,7 +1467,14 @@ static_assert(offsetof(CityMap, packedTiles) == 0x00, "CityMap.packedTiles");
 static_assert(offsetof(CityMap, tiles) == 0x04, "CityMap.tiles");
 static_assert(offsetof(CityMap, objects) == 0x08, "CityMap.objects");
 static_assert(offsetof(CityMap, tileLists) == 0x0C, "CityMap.tileLists");
+static_assert(offsetof(CityMap, nextId) == 0x10, "CityMap.nextId");
+static_assert(offsetof(CityMap, flag8Objects) == 0x18, "CityMap.flag8Objects");
+static_assert(offsetof(CityMap, unk_1C) == 0x1C, "CityMap.unk_1C");
+static_assert(offsetof(CityMap, objectsChanged) == 0x20, "CityMap.objectsChanged");
+static_assert(offsetof(CityMap, claimRecheck) == 0x22, "CityMap.claimRecheck");
 static_assert(offsetof(CityMap, objectCount) == 0x24, "CityMap.objectCount");
+static_assert(offsetof(CityMap, flag8History) == 0x28, "CityMap.flag8History");
+static_assert(offsetof(CityMap, refreshDelay) == 0x2E, "CityMap.refreshDelay");
 static_assert(offsetof(CityMap, categoryCount) == 0x30, "CityMap.categoryCount");
 static_assert(offsetof(CityMap, bigCategory5Count) == 0x5C, "CityMap.bigCategory5Count");
 static_assert(offsetof(CityMap, vtable) == 0x64, "CityMap.vtable");
@@ -1551,6 +1606,10 @@ static_assert(offsetof(Words, line) == 0x10, "Words.line");
 static_assert(offsetof(Words, column) == 0x14, "Words.column");
 static_assert(offsetof(Words, extraTable) == 0x20, "Words.extraTable");
 static_assert(offsetof(Words, lineTable) == 0x24, "Words.lineTable");
+static_assert(offsetof(ClaimThresholds, low) == 0x00, "ClaimThresholds.low");
+static_assert(offsetof(ClaimThresholds, high) == 0x02, "ClaimThresholds.high");
+static_assert(offsetof(ClaimThresholds, step) == 0x04, "ClaimThresholds.step");
+static_assert(offsetof(ClaimThresholds, holdTime) == 0x07, "ClaimThresholds.holdTime");
 static_assert(offsetof(SeRequest, sound) == 0x00, "SeRequest.sound");
 static_assert(offsetof(SeRequest, voice) == 0x01, "SeRequest.voice");
 static_assert(offsetof(SeRequest, owner) == 0x04, "SeRequest.owner");

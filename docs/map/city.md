@@ -41,7 +41,7 @@ move in.
 
 ## Functions
 
-185 functions (typed 127, verified 58). Blocks: 55 can reach a thread switch, 7 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+185 functions (typed 124, verified 61). Blocks: 55 can reach a thread switch, 7 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -154,7 +154,7 @@ move in.
 | `0x001679C0` | `int mm_BldgType_FindEntrance2(BuildingType *btype, CityScene *city, int x, int z, int side)` | 368 | no | whether a building of flag 8 lies within 3 tiles beyond side a5 (stops at walkable tiles) |
 | `0x00167B40` | `void mm_Bldg_DrawPeople(BuildingType *btype, int layer, CityScene *city, MapObject *obj, int t0, int t1, int t2, float x, float y, float z)` | 1452 | indirect | slot +0x18: people at the building |
 | `0x00168100` | `void mm_BldgBusiness_Draw(BuildingType *btype, int layer, CityScene *city, MapObject *obj, int t0, int t1, float x, float y, float z)` | 532 | no | slot +0x14 for Business and My Home: instances and claim icon |
-| `0x00168320` | `int mm_Bldg_Tick(BuildingType *btype, CityScene *city, MapObject *obj, int timeFlags)` | 1204 | no | slot +0x10: entrance, minimap marks, terrain under the footprint, claims |
+| `0x00168320` | `int mm_Bldg_Tick(BuildingType *btype, CityScene *city, MapObject *obj, int timeFlags)` | 1204 | no | slot +0x10: main part finds its entrance and side (road-grid parity), levels the ground under the footprint (0.1 / multiples of 0.5); entrance part runs the claims (result), others count +0x18; minimap colour by claim level |
 | `0x001687E0` | `void mm_Bldg_InitRecord(BuildingType *btype, MapObject *obj)` | 44 | no | slot +0xC: base init, record +0x14 = 0x4000 |
 | `0x00168810` | `BuildingType *mm_BldgBusiness_ctor(BuildingType *btype, uint8_t *record, int id)` | 52 | yes | Building constructor, vtable 0x1BD1C0 |
 | `0x00168850` | `BuildingType *mm_BldgKeepOut_dtor(BuildingType *btype, int16_t deleteFlag)` | 96 | yes | category 15 (Keep Out), vtable 0x1BD200 |
@@ -188,7 +188,7 @@ move in.
 | `0x0016AA40` | `void mm_BldgRoad_FindNeighbours(BuildingType *btype, CityScene *city, MapObject *obj, int x, int z)` | 296 | no | (provisional) walkable neighbours of a road tile (tables 0x1B13F0/0x1B1400) |
 | `0x0016AB70` | `void mm_BldgRoad_DrawPeople(BuildingType *btype, int layer, CityScene *city, MapObject *obj, int t0, int t1, int t2, float x, float y, float z)` | 908 | indirect | (provisional) people walking on the road |
 | `0x0016AF10` | `void mm_BldgRoad_Draw(BuildingType *btype, int layer, CityScene *city, MapObject *obj, int t0, int t1, float x, float y, float z)` | 688 | no | road piece instances by neighbour connections |
-| `0x0016B1C0` | `void mm_BldgRoad_Tick(BuildingType *btype, CityScene *city, MapObject *obj)` | 1164 | no | levels the road with its neighbours and marks the minimap |
+| `0x0016B1C0` | `int mm_BldgRoad_Tick(BuildingType *btype, CityScene *city, MapObject *obj)` | 1164 | no | road shape from neighbouring road blocks, flattens its tiles to 0, picks the lamp, traffic-light or slope mesh, marks the minimap |
 | `0x0016B650` | `void mm_BldgRoad_InitRecord(BuildingType *btype, MapObject *obj)` | 24 | no | slot +0xC |
 | `0x0016B670` | `int mm_BldgRoad_Slot1C(BuildingType *btype, int a1)` | 16 | no | slot +0x1C |
 | `0x0016B680` | `BuildingType *mm_BldgRoad_ctor(BuildingType *btype, uint8_t *record, int id)` | 88 | yes | base constructor, vtable 0x1BD340, two parameters from record bytes 0x90/0x91 |

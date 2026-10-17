@@ -18,7 +18,7 @@ Rendering below the scene level.
 
 ## Functions
 
-117 functions (typed 67, verified 50). Blocks: 29 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+117 functions (typed 62, verified 55). Blocks: 29 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -27,7 +27,7 @@ Rendering below the scene level.
 | `0x001290C0` | `A3DObject *mm_A3DObjectBase_DeletingDtor(A3DObject *model, int16_t deleteFlag)` | 84 | yes | base destructor 0x12AB40, then delete when the flag is > 0 |
 | `0x00129120` | `int mm_LightSet_Init(LightSet *lights)` | 228 | no | (provisional, was mm_Unk129120_Init) base init; +0x190 = 0x110, +0x194 = 0xE0; 12 colour/direction slots and ambient set to 1.0 |
 | `0x00129210` | `float mm_A3D_GetMeshField0C(A3DObject *model, int mesh)` | 24 | no | word +0xC of mesh a1 in the model's mesh table (+0x50) |
-| `0x00129230` | `float mm_Instance_DrawSwaying(A3DObject *model, int a1, float phase)` | 816 | no | (provisional, was mm_A3D_SineDeform) adds instances for mesh a2 of model a1 with sine-wave motion at time a0 (callers check the instance budget first) |
+| `0x00129230` | `void mm_Instance_DrawSwaying(A3DObject *model, int anim, float time)` | 816 | no | (provisional, was mm_A3D_SineDeform) adds instances for mesh a2 of model a1 with sine-wave motion at time a0 (callers check the instance budget first) |
 | `0x00129570` | `void mm_A3D_Relocate(int32_t *data, int base)` | 988 | yes | turns the loaded model's offsets into pointers, patches the addresses in its DMA chains (mm_DmaChain_*) and uploads its textures (mm_Dma_KickVif1Now) |
 | `0x00129950` | `int mm_A3DObject_ChangeLuminosity(A3DObject *model, uint32_t *colour, int a2)` | 96 | yes | CA3DObject::ChangeLuminusity (name from its error string): sets node a2's colour (node +0x60) to the vec4 at a1; prints an error for a bad node index |
 | `0x001299B0` | `void mm_A3DObject_DrawNode(A3DObject *model, int node)` | 104 | no | queues node a1's packet (node +0x50) and its mesh packet (mesh +0x10); nodes are 0xC0 bytes at model +8 |
@@ -47,10 +47,10 @@ Rendering below the scene level.
 | `0x0012C790` | `void mm_Instance_DrawNode(A3DObject *model, Vec4 *colour, int node, int flags)` | 240 | no | instance of node a2 of model a0 with colour a1 |
 | `0x0012C880` | `void mm_Instance_DrawModel(A3DObject *model, Vec4 *colour, int reserve, int flags)` | 324 | no | updates the model's node matrices and adds an instance per node with a mesh, if the budget allows |
 | `0x0012C9D0` | `A3DObject *mm_InstanceModel_ctor(A3DObject *model)` | 68 | yes | model constructor; the first one allocates the instance buffers |
-| `0x0012D6B0` | `void mm_Instance_DrawSwaying2(A3DObject *model, int a1, float phase)` | 824 | no | (provisional) second sine-wave instance variant, used by 0x133E80/0x1345E0 |
-| `0x0012D9F0` | `void mm_Instance_DrawModelLit(A3DObject *model, uint32_t *colour, int a2, int a3)` | 852 | no | (provisional) instances for all nodes of a model with per-node colours |
+| `0x0012D6B0` | `void mm_Instance_DrawSwaying2(A3DObject *model, int anim, float time)` | 824 | no | (provisional) second sine-wave instance variant, used by 0x133E80/0x1345E0 |
+| `0x0012D9F0` | `void mm_Instance_DrawModelLit(A3DObject *model, Vec4 *colour, int variant, int style)` | 852 | no | (provisional) instances of a model whose nodes hold mesh-table indexes: nodes 0-2 with their own meshes (node 0 offset, node 2 only for style 0), later nodes from the style's group of 13 |
 | `0x0012DD50` | `void mm_Instance_DrawNodeLimited(A3DObject *model, Vec4 *colour, int node, int flags)` | 280 | no | like mm_Instance_DrawNode, also capped by a second counter (gp) |
-| `0x0012DE70` | `void mm_Instance_DrawModelEx(A3DObject *model, int a1, int a2, int a3, int t0, int t1, int t2, int t3)` | 940 | no | (provisional) instances for a model with extra transform parameters |
+| `0x0012DE70` | `void mm_Instance_DrawModelEx(A3DObject *model, Vec4 *colour, int flags, int offset0, int group, int offset3, int attach, int offset1)` | 940 | no | (provisional) as mm_Instance_DrawModelLit with per-call mesh offsets and flags, an optional attached part (0x1F3B80) at node 2, later nodes by group x the size at +0x60 |
 | `0x0012E220` | `int mm_InstanceModel_LoadAsync(A3DObject *model, GameFile *gamefile, int a2)` | 120 | yes | mm_A3DObject_LoadAsync; when done (and a2 == 0) stores the frame count (+0x60 = data +4 / 13) |
 | `0x0012E2A0` | `A3DObject *mm_InstanceModel_ctor2(A3DObject *model)` | 40 | yes | mm_InstanceModel_ctor wrapper |
 | `0x0012E2D0` | `void mm_Perf_AdaptDrawRange(void)` | 152 | no | (provisional) 0x1BD980 tracks 0x1BD9B8: shrinks when it is above 95, else grows by 1; clamped to 0xFF..0x3A7 |

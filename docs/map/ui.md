@@ -17,7 +17,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 
 ## Functions
 
-168 functions (typed 114, verified 54). Blocks: 62 can reach a thread switch, 10 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+168 functions (typed 111, verified 57). Blocks: 62 can reach a thread switch, 10 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -60,7 +60,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x0014AE10` | `void mm_Laptop_RemoveEntry(Laptop *laptop, int entry)` | 184 | no | (provisional) removes entry a1 from the list at 0x1F36F0 |
 | `0x0014AED0` | `void mm_Laptop_AddEntry(Laptop *laptop, int entry)` | 256 | no | (provisional) adds entry a1 to the list at 0x1F36F0 |
 | `0x0014AFD0` | `int mm_Laptop_Draw(Laptop *laptop)` | 356 | yes | laptop model (luminosity per item), text, fade |
-| `0x0014B140` | `int mm_Laptop_Animate(Laptop *laptop)` | 772 | no | opens/closes the laptop model (sceVu0RotMatrixX/Y) |
+| `0x0014B140` | `void mm_Laptop_Animate(Laptop *laptop)` | 772 | no | the laptop entries' carousel matrices: turn about y by slot and +0x30, pi/12 tilt, radius + centre, scale +0x38; the selected entry lifted in state 2 |
 | `0x0014B450` | `int mm_Laptop_RunEntry(Laptop *laptop, CityScene *city)` | 484 | no | runs the selected entry by its type (events, monthly pass, ...) |
 | `0x0014B640` | `int mm_Laptop_Update(Laptop *laptop, CityScene *city)` | 1640 | yes | laptop menu: cursor with key repeat, select, sounds, texts |
 | `0x0014BCB0` | `Laptop *mm_Laptop_dtor(Laptop *laptop, int16_t deleteFlag)` | 100 | yes | deletes its text box |
@@ -124,10 +124,10 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x0015FCA0` | `MenuWin *mm_MenuWin_dtor(MenuWin *menuwin, int16_t deleteFlag)` | 124 | yes | vtable 0x1BCF80, deletes the list menu, base destructor |
 | `0x0015FD20` | `MenuWin *mm_MenuWin_ctor(MenuWin *menuwin)` | 76 | no | base constructor, vtable 0x1BCF80 |
 | `0x0015FE30` | `int mm_Laptop_CheckOpen(Laptop *laptop, CityScene *city, int a2)` | 212 | no | (provisional) while Circle alone (0x20) is held in city mode 1 (and a2): hides HUD element 2 and sets +0x120; restores both on release |
-| `0x00161F00` | `int mm_LoadingScreen_Update(LoadingScreen *loading, int a1)` | 604 | no | loading screen animation and draw (rotating LOADINGT, text, fade) |
+| `0x00161F00` | `int mm_LoadingScreen_Update(LoadingScreen *loading, int fadeIn)` | 604 | no | loading screen frame: sprite circling or pulsing, background and sprite drawn, fade in or out by 4 (2 while fading, then 0 or 1), text once clear |
 | `0x00162160` | `int mm_LoadingScreen_SetText(LoadingScreen *loading, char *text)` | 12 | no | text box text |
 | `0x00162170` | `void mm_LoadingScreen_SetTextPos(LoadingScreen *loading, int x, int y)` | 28 | no | text box position (screen coordinates) |
-| `0x00162190` | `void mm_LoadingScreen_SetSpritePos(LoadingScreen *loading, int sprite, int x, int y)` | 48 | no | sprite position |
+| `0x00162190` | `void mm_LoadingScreen_SetSpritePos(LoadingScreen *loading, int x, int y, int z)` | 48 | no | sprite position |
 | `0x001621C0` | `LoadingScreen *mm_LoadingScreen_dtor(LoadingScreen *loading, int16_t deleteFlag)` | 180 | yes | deletes text box and sprites |
 | `0x00162280` | `LoadingScreen *mm_LoadingScreen_ctor(LoadingScreen *loading, int a1, uint8_t a2)` | 232 | yes | DATA\A3D\INTRO\LOADINGT.TEX sprites and a text box |
 | `0x001625A0` | `void mm_NameEntry_HandleInput(NameEntry *entry)` | 1712 | no | (provisional) character grid input with sounds |
@@ -161,7 +161,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x001714A0` | `int mm_TownPages_SelectedEntry(TownPages *pages)` | 440 | no | (provisional) resident index under the cursor (+0x5C) on the current page (+0x2C) |
 | `0x00171660` | `int mm_TownPages_ClampCursor(TownPages *pages, int cursor, int direction)` | 180 | no | cursor 0..10 limited by the entries on the page (+0x40); 10 = the CLOSE item |
 | `0x00171720` | `void mm_TownPages_BuildIndex(TownPages *pages)` | 632 | yes | (provisional) allocates the occupation table (count 0x1BDA90) and fills it from known families |
-| `0x001719A0` | `void mm_TownPages_FillContents(TownPages *pages)` | 604 | no | contents pages: occupations with page numbers and the help text |
+| `0x001719A0` | `void mm_TownPages_FillContents(TownPages *pages)` | 604 | no | a contents page: ten family types with known families, name and start page each, five per column; an empty book gets the explanation and the cursor on CLOSE |
 | `0x00171C10` | `void mm_TownPages_FillPage(TownPages *pages)` | 1064 | yes | page text, one resident per line ("%s\n TEL:%s") |
 | `0x00172040` | `void mm_TownPages_Draw(TownPages *pages)` | 228 | no | book model, text boxes and the cursor frame |
 | `0x00172130` | `void mm_TownPages_Update(TownPages *pages, CityScene *city)` | 4136 | yes | open animation, page turning and cursor input, calling a resident (mm_CityScene_StartTalk) |

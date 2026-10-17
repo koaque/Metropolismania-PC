@@ -40,11 +40,11 @@ friendship changed. A is the person talked to.
 
 ## Functions
 
-322 functions (typed 307, verified 15). Blocks: 86 can reach a thread switch, 27 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+322 functions (typed 305, verified 17). Blocks: 86 can reach a thread switch, 27 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
-| `0x001735D0` | `void mm_TalkView_CollectOccupants(TalkView *view)` | 492 | no | (provisional) people at the building sorted by grade (+0x2E), up to 6 |
+| `0x001735D0` | `void mm_TalkView_CollectOccupants(TalkView *view)` | 492 | no | the talk building's workers (outside or in it, class without flag 1), sorted by their +0x2E byte, are moved off its tile into it |
 | `0x001737C0` | `void mm_TalkView_ToggleAnim(TalkView *view)` | 88 | no | (provisional) flips the selected person's animation (7 -> 2/3) |
 | `0x00173820` | `void mm_TalkView_DrawPeople(TalkView *view)` | 3232 | yes | people at the building or of the family in a row with names, grades and the cursor |
 | `0x001744E0` | `int mm_TalkView_NobodyHome(TalkView *view, int byFamily, int target)` | 296 | yes | (provisional) 1 when no one of the family or building is there (schedule, outside flags) |
@@ -57,7 +57,7 @@ friendship changed. A is the person talked to.
 | `0x00175170` | `uint32_t mm_TalkView_FindPersonSlot(TalkView *view, uint32_t family, uint32_t member)` | 260 | no | slot of the person with family a1 and member a2 |
 | `0x00175280` | `void mm_TalkView_CountPeople(TalkView *view)` | 200 | yes | people present (+0xC8), or family members when by family |
 | `0x00175350` | `void mm_TalkView_SetTarget(TalkView *view, int building, int family)` | 288 | yes | building a1 / family a2, name text boxes and frames |
-| `0x00175470` | `void mm_TalkView_PersonCamera(TalkView *view, int object, Vec4 *a2, Vec4 *a3)` | 620 | no | (provisional) camera eye and target facing a person at a building |
+| `0x00175470` | `void mm_TalkView_PersonCamera(TalkView *view, int object, Vec4 *target, Vec4 *eye)` | 620 | no | the camera for a talk at a building: target at the footprint middle below the object's height, eye 0.4 back along the view's flattened direction |
 | `0x001756E0` | `void mm_TalkView_DrawMember(TalkView *view, int family, int member)` | 448 | yes | (provisional) family member model in front of the camera |
 | `0x001758A0` | `void mm_TalkView_DrawPerson(TalkView *view, int person)` | 436 | indirect | (provisional) person model in front of the camera |
 | `0x00175A60` | `void mm_TalkView_DrawPersonTurned(TalkView *view, int person, float angle)` | 268 | indirect | (provisional) person model rotated by a0 |

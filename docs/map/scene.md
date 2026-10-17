@@ -8,7 +8,7 @@ introduction (city name, stage title, approval rate) and the mission briefing te
 
 ## Functions
 
-25 functions (typed 21, verified 4). Blocks: 15 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+25 functions (typed 17, verified 8). Blocks: 15 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -28,12 +28,12 @@ introduction (city name, stage title, approval rate) and the mission briefing te
 | `0x0016EC50` | `int mm_Title_NewGameIntro(SceneA *scene)` | 1300 | no | new game intro scene with town models and loading text |
 | `0x0016F170` | `int mm_Title_RandomCharParts(SceneA *scene)` | 248 | no | random character parts for the intro |
 | `0x0016F270` | `int mm_Title_OpeningMovieStep(SceneA *scene)` | 424 | yes | plays the opening movie, then loads TITLE.SQ/HD/BD |
-| `0x0016F420` | `int mm_Title_MenuInput(SceneA *scene)` | 520 | no | title menu cursor and selection |
+| `0x0016F420` | `int mm_Title_MenuInput(SceneA *scene)` | 520 | no | title menu input: cursor, Cross/Start pulse, and the sound test code (Up Up Down Down Left Right Left Right L1 R1, table 0x1B1790) that shows the Select hint; 10 opens the sound test |
 | `0x0016F630` | `int mm_Title_DrawChoices(SceneA *scene)` | 488 | no | the title menu choices: the selected one pulses for 20 frames (then returns 1), the other at 0.6 |
-| `0x0016F820` | `int mm_Title_LogoAnimB(SceneA *scene)` | 640 | no | rotating logo sprite animation |
-| `0x0016FAA0` | `int mm_Title_Intro(SceneA *scene)` | 696 | no | title intro sequence with music |
+| `0x0016F820` | `void mm_Title_DrawChoicesIdle(SceneA *scene)` | 640 | no | the title menu choices at rest: the selected one wobbles on two circles (sceVu0RotMatrixZ), the other at 0.6 (was mm_Title_LogoAnimB) |
+| `0x0016FAA0` | `int mm_Title_Intro(SceneA *scene)` | 696 | no | title logo intro, six steps: music, logo model animation with timed effects (0x1B1A20), title sprite fade-in, bouncing letters, 50-frame hold; returns 1 when done |
 | `0x0016FD60` | `int mm_Title_LogoLetters(SceneA *scene)` | 436 | no | logo letter sprites (table 0x1B17E0) |
-| `0x0016FF20` | `int mm_SceneA_MemoryCardCheck(SceneA *scene, int a1)` | 944 | no |  |
+| `0x0016FF20` | `int mm_SceneA_MemoryCardCheck(SceneA *scene, int noPolling)` | 944 | no | boot memory card check: goes on when a save or a fine card is found, else shows which slot has no card or too little space and waits for Cross (card states at 0x1BDC04/08) |
 | `0x001704A0` | `int mm_SceneA_Load(SceneA *scene, int a1)` | 1852 | yes |  |
 | `0x00170BE0` | `int mm_SceneA_Update(SceneA *scene)` | 1004 | yes |  |
 | `0x00171220` | `SceneA *mm_SceneA_ctor(SceneA *scene, int a1)` | 640 | yes |  |

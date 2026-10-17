@@ -41,6 +41,12 @@ namespace mm::globals
     inline constexpr GuestVar<int32_t> bgmPlaying{0x001BDD1Cu};      // cleared when the fade-out stops voice 15
     inline constexpr GuestVar<int32_t> seEnabled{0x001BDD20u};       // mm_Se_SetEnabled
     inline constexpr GuestVar<int32_t> ambienceEnabled{0x001BDD24u};
+    // sound: the listener (mm_Se_UpdateListener): the eye's tile (unclamped) and height step, and four vectors:
+    // the eye at its tile centre, the eye, the direction to the target from each (turned by building matrix 3).
+    inline constexpr GuestVar<int32_t> listenerTileX{0x001BDD28u};
+    inline constexpr GuestVar<int32_t> listenerLevel{0x001BDD2Cu};
+    inline constexpr GuestVar<int32_t> listenerTileZ{0x001BDD30u};
+    inline constexpr uint32_t kListener = 0x001FC650u;
 
     // sound: commands for the YYSOUND driver, queued in a ring of 256 entries (0xD0 bytes) and sent by
     // mm_SoundCmd_Flush. Each entry: +0 command, +4 state, +8 and +0xC words, arguments from +0x10.
@@ -75,6 +81,7 @@ namespace mm::globals
     inline constexpr GuestVar<uint32_t> fontData{0x001BDC98u};       // 0x90 bytes per glyph; the first is the blank
     inline constexpr uint32_t kWordDelimiters = 0x001B9AE0u;         // characters that end a word when text wraps
     inline constexpr GuestVar<uint32_t> claimData{0x001BDA50u};      // starts with the two claim meter thresholds (u16)
+    inline GuestPtr<ClaimThresholds> claimThresholds() { return GuestPtr<ClaimThresholds>{claimData.get()}; }
     inline constexpr GuestVar<uint32_t> claimSectionC{0x001BDA58u};  // offset table (words) into claimData
 
     // core: frames since start (counted by mm_MainLoop); blinking effects use it.
@@ -140,13 +147,16 @@ namespace mm::globals
     // laptop: the active entries (one word each) and their count.
     inline constexpr uint32_t kLaptopEntries = 0x001F36F0u;
     inline constexpr GuestVar<int32_t> laptopEntryCount{0x001BDAB8u};
+    inline constexpr uint32_t kLaptopLift = 0x001AF680u; // (1.86, 0.45, -7.8, 0): the selected entry's offset (mm_Laptop_Animate)
 
     // sound: the city clock as the sound code keeps it (seconds of the day).
     inline constexpr GuestVar<int32_t> soundClock{0x001BDD34u};
 
-    // char: 25 recently used character type slots (6000 = free) and their timers.
+    // char: 25 slots of people recently turned to face the player (person index, 6000 = free), their timers and
+    // the direction each faces (Vec4; mm_Person_TurnToPlayer).
     inline constexpr uint32_t kCharTypeSlots = 0x001C5110u;
     inline constexpr uint32_t kCharTypeTimers = 0x001C5310u;
+    inline constexpr uint32_t kCharTypeFacings = 0x001C5180u;
 
     // stage: the stage state saved with the city (0x284 bytes); it starts with the city's name (saves show
     // "Forest Hills", "Rhinecliff" ... there), then the mayor's name at +0x10.
@@ -209,10 +219,16 @@ namespace mm::globals
     inline constexpr GuestVar<GuestPtr<A3DObject>> parkRideModel{0x001BDBE0u};   // theme park ride (animated)
     inline constexpr uint32_t kBlockStepX = 0x001B13F0u; // int[4]: 0, 2, 0, -2
     inline constexpr uint32_t kBlockStepZ = 0x001B1400u; // int[4]: -2, 0, 2, 0
+    inline constexpr uint32_t kBlockDirBit = 0x001B1410u; // int[4]: 1, 2, 4, 8 (road shape bit per direction)
+    inline constexpr uint32_t kPathStepX = 0x001AEFD0u; // int[4]: 0, 2, 0, -2 (the same steps, mm_Path_NextWaypoint's copy)
+    inline constexpr uint32_t kPathStepZ = 0x001AEFE0u; // int[4]: -2, 0, 2, 0
     // Housing blocks: mesh offset of each of the four block parts, per unit shape (int8[11][4]).
     inline constexpr uint32_t kHousingPartMesh = 0x001B14F0u;
     // The eight tiles around a tile and the tile itself, as x and z steps (int[9] each).
     inline constexpr uint32_t kNeighbourStepX = 0x001AEFF0u;
+    // The eight tiles around a tile, without itself (int[8] each), clockwise from the south.
+    inline constexpr uint32_t kRingStepX = 0x001AF2A0u;
+    inline constexpr uint32_t kRingStepZ = 0x001AF2C0u;
     inline constexpr uint32_t kNeighbourStepZ = 0x001AF020u;
 
     // gfx: start of the packet buffer (mm_DmaList_BeginScene rewinds to it).
@@ -230,6 +246,26 @@ namespace mm::globals
     // places (uint16 x, y; 0x14 bytes per letter).
     inline constexpr uint32_t kLogoLetterSteps = 0x001B1820u;
     inline constexpr uint32_t kLogoLetterPlaces = 0x001B17E0u;
+    // title: the logo intro's timed effects: the animation frame of each (float, 84 to 664, then 9000 as an
+    // end mark) and its sound (uint8).
+    inline constexpr uint32_t kIntroSoundFrames = 0x001B1A20u;
+    inline constexpr uint32_t kIntroSounds = 0x001B1A10u;
+    // title: the idle wobble of the selected choice, (0, -5, 0, 1) and (0, -10, 0, 1) (mm_Title_DrawChoicesIdle).
+    inline constexpr uint32_t kChoiceWobbleSmall = 0x001B1850u;
+    inline constexpr uint32_t kChoiceWobbleLarge = 0x001B1860u;
+    // title: the sound test code, pad words ending in 0: Up, Up, Down, Down, Left, Right, Left, Right, L1, R1.
+    inline constexpr uint32_t kSoundTestCode = 0x001B1790u;
+    // the loading screen sprite's circling offset, (0, -10, 0, 1) (mm_LoadingScreen_Update).
+    inline constexpr uint32_t kLoadingCircle = 0x001B13D0u;
+    // Town's Pages contents (mm_TownPages_FillContents): the heading, CLOSE, the dashes line before a page
+    // number, a newline, the two explanation texts of an empty book, and the cursor place per row (x, y).
+    inline constexpr uint32_t kTownPagesHeading = 0x001B8E90u;
+    inline constexpr uint32_t kTownPagesClose = 0x001B8EA0u;
+    inline constexpr uint32_t kTownPagesDashes = 0x001B8EB0u;
+    inline constexpr uint32_t kTownPagesNewline = 0x001B8EC0u;
+    inline constexpr uint32_t kTownPagesEmptyLeft = 0x001B8ED0u;
+    inline constexpr uint32_t kTownPagesEmptyRight = 0x001B8F30u;
+    inline constexpr uint32_t kTownPagesCursor = 0x001B1A70u;
 
     // char: a person's walking step in its own frame, (0, 0, -speed, 1); mm_Person_UpdatePose sets z.
     inline constexpr uint32_t kWalkStep = 0x001AF0B0u;
@@ -252,9 +288,37 @@ namespace mm::globals
     // title: the "[SELECT]SoundTest" hint, and a function static of mm_Title_PressStart (word, then its byte flag).
     inline constexpr uint32_t kSoundTestHint = 0x001B89E0u;
     inline constexpr uint32_t kPressStartStatic = 0x001BDC0Cu;
+    // boot: the memory card check (mm_SceneA_MemoryCardCheck): each slot's status as last shown (mm_McManager_GetCardStatus:
+    // 0 and 3 fine, 1 not enough space, 2 no card, 4 still being read) and the warning's pieces: heading, no card
+    // in either slot, "the card in slot", then "s" (both), " 1" or " 2", "has not enough space", the closing line
+    // (press Cross), and an empty text.
+    inline constexpr GuestVar<int32_t> cardStatus0{0x001BDC04u};
+    inline constexpr GuestVar<int32_t> cardStatus1{0x001BDC08u};
+    inline constexpr uint32_t kCardTextHeading = 0x001B8A70u;
+    inline constexpr uint32_t kCardTextNoCard = 0x001B8A90u;
+    inline constexpr uint32_t kCardTextSlot = 0x001B8B30u;
+    inline constexpr uint32_t kCardTextBoth = 0x001B8B78u;
+    inline constexpr uint32_t kCardTextSlot1 = 0x001B8B80u;
+    inline constexpr uint32_t kCardTextSlot2 = 0x001B8B88u;
+    inline constexpr uint32_t kCardTextNoSpace = 0x001B8B90u;
+    inline constexpr uint32_t kCardTextEnd = 0x001B8C20u;
+    inline constexpr uint32_t kEmptyText = 0x001B8330u;
 
     // gfx: an identity matrix (four Vec4).
     inline constexpr uint32_t kIdentityMatrix = 0x001B2550u;
+    inline constexpr uint32_t kOriginPoint = 0x001B26A0u; // (0, 0, 0, 1)
+    // city lights and sky by the time of day (mm_CityCamera_UpdateTimeOfDay): the two sun directions (0, 1, 0, 1)
+    // and (0, -1, 0, 1), and per two-hour slot (12 for clear weather, then 12 for the rest) three floats each for
+    // the ambient level, lights 0 and 1, and the sky's two colours; a frame counter (started on first use) drives
+    // the sky scroll and shimmer.
+    inline constexpr uint32_t kSunDirections = 0x001B0E10u;
+    inline constexpr uint32_t kAmbientBySlot = 0x001B0E30u;
+    inline constexpr uint32_t kLightColourBySlot0 = 0x001B0F50u;
+    inline constexpr uint32_t kLightColourBySlot1 = 0x001B1070u;
+    inline constexpr uint32_t kSkyColourBySlotA = 0x001B1190u;
+    inline constexpr uint32_t kSkyColourBySlotB = 0x001B12B0u;
+    inline constexpr GuestVar<int32_t> timeOfDayFrames{0x001BDBB0u};
+    inline constexpr GuestVar<int8_t> timeOfDayStarted{0x001BDBB4u};
 
     // char: model parts loaded from CHAR.A3D (pointer table, indexed by CHARTYPE.BIN record bytes).
     inline constexpr uint32_t kCharParts = 0x001F3B90u;

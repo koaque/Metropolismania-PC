@@ -115,7 +115,8 @@ struct Camera {
     Vec4 ambient;              /* +0x1C0 */
     float viewWidth;           /* +0x1D0 (mm_Camera_UpdateProjection) */
     float viewHeight;          /* +0x1D4 */
-    uint8_t unk_1D8[8];
+    float unk_1D8;             /* +0x1D8 1.0 from mm_Camera_ctor */
+    float unk_1DC;             /* +0x1DC 10.0 from mm_Camera_ctor */
     Vec4 view[4];              /* +0x1E0 world to camera (sceVu0CameraMatrix) */
     Vec4 screenA[4];           /* +0x220 */
     Vec4 screenB[4];           /* +0x260 */
@@ -220,14 +221,17 @@ struct ListMenu {
 };
 /* Loading screen (0x28 bytes). */
 struct LoadingScreen {
-    uint8_t unk_00[4];
+    TexSprite *background;     /* +0x00 drawn under the sprite (mm_LoadingScreen_Update) */
     TexSprite *sprite;         /* +0x04 */
     TextBox *text;             /* +0x08 */
-    uint8_t unk_0C[8];
-    int32_t spriteId;          /* +0x14 */
-    int32_t spriteX;           /* +0x18 */
-    int32_t spriteY;           /* +0x1C */
-    uint8_t unk_20[8];
+    int32_t fade;              /* +0x0C screen fade level, 0..128 */
+    int32_t frame;             /* +0x10 frames shown */
+    int32_t spriteX;           /* +0x14 sprite place (mm_LoadingScreen_SetSpritePos) */
+    int32_t spriteY;           /* +0x18 */
+    int32_t spriteZ;           /* +0x1C */
+    uint8_t style;             /* +0x20 sprite animation: 0 circling, 1 pulsing, other none */
+    uint8_t unk_21[3];
+    int32_t showText;          /* +0x24 the text box is drawn once the fade is clear */
 };
 /* Memory card manager (0x28 bytes). */
 struct McManager {
@@ -251,24 +255,29 @@ struct SceneA {
     TexSprite *choices[2];     /* +0x1C the title menu's two choices (mm_Title_DrawChoices) */
     A3DObject *menuModel;      /* +0x24 layer set 0x28/0x29 */
     A3DObject *logoModel;      /* +0x28 layer set 0x14/0x15 */
-    uint8_t unk_2C[0x10];
+    uint8_t unk_2C[0xC];
+    float logoTime;            /* +0x38 frame of the logo model's intro animation (mm_Title_Intro) */
     int32_t choice;            /* +0x3C selected choice */
     int32_t choicePulsing;     /* +0x40 cleared when the selected choice's pulse ends */
     int32_t choiceCount;       /* +0x44 (provisional) 1: only the first choice is shown */
-    int32_t pulseFrame;        /* +0x48 0..19 */
-    uint8_t unk_4C[0xC];
+    int32_t pulseFrame;        /* +0x48 0..19 while the choice pulses (mm_Title_DrawChoices), then the frames of its idle wobble (mm_Title_DrawChoicesIdle) */
+    uint8_t unk_4C[4];
+    int32_t logoSound;         /* +0x50 next timed effect of the logo intro (mm_Title_Intro) */
+    uint8_t unk_54[4];
     int32_t showHint;          /* +0x58 the "[SELECT]SoundTest" line is drawn (mm_Title_PressStart) */
-    uint8_t unk_5C[0x54];
+    uint8_t unk_5C[0x14];
+    uint8_t codeStep;          /* +0x70 buttons of the sound test code entered so far (mm_Title_MenuInput) */
+    uint8_t unk_71[0x3F];
     ListMenu *loadMenu;        /* +0xB0 layer set 0x28/0x29 */
     McManager *mc;             /* +0xB4 */
     TextBox *hintText;         /* +0xB8 */
     uint8_t unk_BC[8];
-    int32_t pressStep;         /* +0xC4 0 before the title's first frame, 1 after */
-    uint8_t unk_C8[4];
+    int32_t pressStep;         /* +0xC4 step of the current sequence: mm_Title_Intro 0..5; the title 0 before its first frame, 1 after */
+    int32_t waitFrames;        /* +0xC8 frames the memory card warning stays after Cross (mm_SceneA_MemoryCardCheck) */
     int32_t fade;              /* +0xCC screen fade alpha (mm_Title_DrawCommon) */
     int32_t layers;            /* +0xD0 layer set drawn */
     int32_t idleTimer;         /* +0xD4 idle frames (restarted at 1800; provisional) */
-    int32_t introFrame;        /* +0xD8 frames since the logo intro started */
+    int32_t introFrame;        /* +0xD8 logo intro counter: title sprite alpha, then frames of the letters, then frames left (mm_Title_Intro) */
     uint8_t unk_DC[0x28];
 };
 /* Player's bag (0x1AC bytes). */
@@ -385,8 +394,13 @@ struct WantsWin {
 /* Laptop menu (0x3E0 bytes). */
 struct Laptop {
     void *unk_00;              /* +0x00 from 0x1F3B08 at construction */
-    uint8_t unk_04[0x38];
-    int32_t unk_3C;            /* +0x3C */
+    uint8_t unk_04[0xC];
+    Vec4 radius;               /* +0x10 an entry's offset from the centre before its turn (mm_Laptop_Animate) */
+    Vec4 centre;               /* +0x20 the carousel's centre */
+    float turn;                /* +0x30 the carousel's turn, radians */
+    uint8_t unk_34[4];
+    float scale;               /* +0x38 the entries' scale */
+    int32_t state;             /* +0x3C 2: the selected entry is lifted */
     uint8_t unk_40[4];
     int32_t unk_44;            /* +0x44 */
     uint8_t unk_48[0xD4];
@@ -394,19 +408,19 @@ struct Laptop {
     int32_t circleActive;      /* +0x120 set while Circle alone is held in the city view, cleared on release */
     int32_t circleHeld;        /* +0x124 Circle was held last frame, so holding it does not set +0x120 again */
     uint8_t unk_128[0x2A8];
-    int32_t unk_3D0;           /* +0x3D0 */
+    int32_t selected;          /* +0x3D0 the selected entry */
     uint8_t unk_3D4[0xC];
 };
 /* Player character (0x90 bytes). */
 struct Player {
     int32_t mode;              /* +0x00 0 turn, 1 walk (Cross lays road), 2 place for applicant, 5 place bag item */
     int32_t previousMode;      /* +0x04 mm_Player_SetMode(-1) returns to it */
-    int32_t unk_08;            /* +0x08 */
+    int32_t step;              /* +0x08 grid step in progress: 0 none, 1/2 along z, 5/6 along x, 3/4 turning (mm_Player_Move) */
     float heading;             /* +0x0C radians, -pi..pi (mm_Player_Turn) */
     Vec4 position;             /* +0x10 */
     uint8_t unk_20[0x14];
-    float swayPhase;           /* +0x34 passed to mm_Instance_DrawSwayingIfRoom */
-    int32_t swayArg;           /* +0x38 */
+    float swayPhase;           /* +0x34 animation frame, passed to mm_Instance_DrawSwayingIfRoom (mm_Player_UpdateAction) */
+    int32_t swayArg;           /* +0x38 animation: 0-2 standing, 4-15 moving (mm_Player_UpdateAction) */
     int32_t visible;           /* +0x3C drawn when non-zero (mm_Player_Draw) */
     int32_t unk_40;            /* +0x40 */
     int32_t unk_44;            /* +0x44 */
@@ -415,7 +429,7 @@ struct Player {
     int32_t unk_50;            /* +0x50 */
     float moveSpeed;           /* +0x54 step per frame (mm_Player_Turn) */
     uint8_t unk_58[0x28];
-    int32_t unk_80;            /* +0x80 */
+    float stepFrames;          /* +0x80 frames left of the step (mm_Player_Move) */
     int32_t jumps;             /* +0x84 */
     A3DObject *model;          /* +0x88 */
     uint8_t unk_8C[4];

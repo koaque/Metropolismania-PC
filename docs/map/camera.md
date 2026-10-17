@@ -8,7 +8,7 @@ The generic camera (`mm_Camera_*`: eye, target, view and projection matrices), t
 
 ## Functions
 
-18 functions (typed 10, verified 8). Blocks: 5 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+18 functions (typed 8, verified 10). Blocks: 5 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -25,7 +25,7 @@ The generic camera (`mm_Camera_*`: eye, target, view and projection matrices), t
 | `0x0012CB80` | `void mm_CityCamera_Update(CityCamera *camera, CityScene *city)` | 2688 | no | pad-driven city camera: move, rotate, zoom, keeps the eye above the terrain, updates fog, projection and matrices |
 | `0x0012D600` | `CityCamera *mm_CityCamera_DeletingDtor(CityCamera *camera, int16_t deleteFlag)` | 92 | yes | camera destructor, then delete when the flag is > 0 |
 | `0x0012D660` | `CityCamera *mm_CityCamera_ctor(CityCamera *camera)` | 80 | yes | camera constructor (0x161250) with eye (0, -29, 1.6), zoom level 1 |
-| `0x00160040` | `void mm_CityCamera_UpdateTimeOfDay(CityCamera *camera, CityScene *city)` | 2544 | no | sky colour, fog and light directions/colours from the clock (tables 0x1B0E30..), then the light matrices |
+| `0x00160040` | `void mm_CityCamera_UpdateTimeOfDay(CityCamera *camera, CityScene *city)` | 2544 | no | lights and sky by the clock: colours blended between two-hour slot tables (0x1B0E30.. 0x1B12B0), sun directions turned by the day's angle, sky packet colours, horizon, scroll and shimmer |
 | `0x00160A30` | `void mm_Sky_Draw(CityCamera *camera)` | 56 | no | queues the three sky packets (+0x310, +0x470, +0x3D0) |
 | `0x00160A70` | `void mm_Sky_BuildPackets(CityCamera *camera)` | 1660 | no | builds the sky packets (texture sizes via mm_Math_Log2) |
 | `0x001610F0` | `void mm_Sky_Load(void)` | 344 | yes | loads DATA\A3D\SKY.A3D and uploads its textures |
