@@ -95,6 +95,9 @@ namespace mm
         // The guest address of an object reached through guest memory (a field, an array element).
         static GuestPtr of(const T *pointer) { return GuestPtr{port::guest(pointer)}; }
         static GuestPtr of(const T &object) { return GuestPtr{port::guest(&object)}; }
+        // Any other type would convert to a temporary T, whose address is not in guest memory.
+        template <typename U>
+        static GuestPtr of(const U &) = delete;
     };
 
     template <>

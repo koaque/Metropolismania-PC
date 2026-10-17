@@ -61,6 +61,22 @@ namespace mm
         return randomEntry(next);
     }
 
+    // Steps the cascade and adds the count of timer 0 (T0_COUNT, the low 16 bits) into its first word, which
+    // is the result: noise for sound variations and footsteps, independent of the generator above.
+    int Random_TimerMix()
+    {
+        constexpr uint32_t kTimer0Count = 0x10000000u;
+        const uint32_t timer = port::readHardware32(kTimer0Count);
+        const GuestPtr<uint32_t> mix{globals::kTimerMix};
+        mix[1] += mix[0];
+        mix[2] += mix[1];
+        mix[3] += mix[2];
+        mix[4] += mix[3];
+        mix[0] = timer + (mix[4] + mix[0]);
+        return static_cast<int>(mix[0]);
+    }
+
+    PORT_FN(Random_TimerMix);
     PORT_FN(Random_Stir);
     PORT_FN(Random_Seed);
     PORT_FN(Random_Next);

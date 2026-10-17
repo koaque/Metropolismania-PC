@@ -192,6 +192,35 @@ namespace mm
         return advance(index);
     }
 
+    // Removes the PlayB commands (3) not yet sent from the ring, moving the later entries up over them, and sets
+    // the write index after the last one kept. It matches the voice against byte 3 of the command word, which is
+    // 0 for every command, rather than the voice byte at +0x12: called with 0, it drops every queued PlayB.
+    void SoundCmd_CancelPlayB(char voice)
+    {
+        const int32_t end = globals::soundCmdIndex.get();
+        int32_t kept = globals::soundCmdSent.get();
+        for (int32_t index = kept; index != end;)
+        {
+            const uint32_t entry = entryAt(index);
+            const int32_t command = port::load<int32_t>(entry);
+            const bool cancel = command == 3 && port::load<uint8_t>(entry + 3u) == static_cast<uint8_t>(voice);
+            if (!cancel)
+            {
+                if (kept != index)
+                {
+                    const uint32_t to = entryAt(kept);
+                    for (uint32_t offset = 0; offset < 0xD0u; offset += 4u)
+                        port::store<uint32_t>(to + offset, port::load<uint32_t>(entry + offset));
+                }
+                if (!(++kept < 0x100))
+                    kept = 0;
+            }
+            if (!(++index < 0x100))
+                index = 0;
+        }
+        globals::soundCmdIndex.set(kept);
+    }
+
     PORT_FN(SoundCmd_01);
     PORT_FN(SoundCmd_02);
     PORT_FN(SoundCmd_02_Zero);
@@ -210,4 +239,5 @@ namespace mm
     PORT_FN(SoundCmd_SetVolumeB);
     PORT_FN(SoundCmd_11);
     PORT_FN(SoundCmd_SetDiscBusy);
+    PORT_FN(SoundCmd_CancelPlayB);
 }

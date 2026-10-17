@@ -86,3 +86,15 @@ original and the ported function from that same state and compares guest memory 
 stack below the entry stack pointer), the result register, the stack pointer, the return address,
 the callee-saved registers and the VU0 registers (vf1-vf31, ACC, Q). Effects outside guest memory
 (GS, sound, files) are not compared yet. Records are game-derived data and stay in `work/difftest/`.
+
+Paths the explore runs never reach get records made from captured ones with `tools/record_patch.py`:
+the same state with an argument register or a few RDRAM words changed (a building with workers to
+demolish, a counter about to run out, a listener moved next to the vehicles), or a captured record
+copied under another function's name with that function's arguments (a callee the capture only
+reached through its caller). Such records are named `sNN.mmdt`. `pipeline.py difftest --changes
+<Names>` lists the RDRAM each record's original run changed, which shows whether a made record
+reaches the path it was made for: a record that passes but changes nothing (and returns nothing
+compared) proves nothing. `--only <Names>` replays just those functions (results.json is then left
+alone), and a replay that does not return within 60 s (`MMPC_DIFFTEST_HANG_SECONDS`) is reported as
+HANG and ends the run: a made state can send the original into a wait that never ends, for instance
+when it reaches blocking code.

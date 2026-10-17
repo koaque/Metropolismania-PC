@@ -6,7 +6,7 @@ Vector and matrix helpers (VU0 macro code in the original), line/plane and trian
 
 ## Functions
 
-14 functions (typed 1, verified 13). Blocks: 0 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+14 functions (verified 14). Blocks: 0 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -21,6 +21,6 @@ Vector and matrix helpers (VU0 macro code in the original), line/plane and trian
 | `0x00182D20` | `int mm_Collide_PointInTriangle(Vec4 *p, Vec4 *a, Vec4 *b, Vec4 *c)` | 356 | no | (provisional) same-side cross product test |
 | `0x00182E90` | `int mm_Collide_RayTriangleB(Vec4 *start, Vec4 *end, Vec4 *a, Vec4 *b, Vec4 *c, Vec4 *hit)` | 400 | no | (provisional) second ray/triangle test |
 | `0x001859D0` | `int mm_Math_LinePlaneIntersect(float *point, float *out, float dx, float dy, float dz, float a, float b, float c, float d)` | 724 | no | intersection of a line with plane a0..a3 (a,b,c,d), handles axis-parallel cases |
-| `0x00185CB0` | `float mm_Math_RayPlaneDistance(Vec4 *a0, Vec4 *a1, Vec4 *a2, int a3, uint32_t *t0)` | 228 | no | (provisional) normalised ray against a plane, distance to the hit |
+| `0x00185CB0` | `float mm_Math_RayPlaneDistance(Vec4 *from, Vec4 *to, Vec4 *planePoint, Vec4 *hit, float *distance)` | 228 | no | (from, to, planePoint, hit, *distance): where the ray from `from` towards `to` meets the plane through planePoint facing along it; returns (f0) and stores the distance from planePoint to that point, v0 = 1 |
 | `0x00185DA0` | `void mm_Math_ProjectionMatrix(float *matrix, float *screen, float distance, float zNear, float zFar)` | 204 | no | perspective matrix into a3: m0 = 2n/w, m5 = 2n/h, m10 = (f+n)/(f-n), m14 = -2fn/(f-n), m11 = 1, from a1 = near, a2 = far and the screen size in a4 |
 | `0x00185E70` | `int mm_Math_Log2(int value)` | 56 | no | floor(log2(a0)) for a0 >= 1 |

@@ -1,6 +1,6 @@
 // Exports the program's call graph and data references as JSON, one record per function:
 //   entry, end, size, name, prototype, instructions
-//   callees      direct calls {entry: count}; callers is the reverse
+//   callees      direct calls and tail jumps {entry: count}; callers is the reverse
 //   indirect_calls  calls through a register (CALLIND in the decompiled p-code)
 //   globals      memory the function reads or writes directly {address: r|w|rw}
 //   strings      string constants it uses {address: text}
@@ -153,11 +153,15 @@ public class ExportGraph extends GhidraScript {
                     Instruction insn = it.next();
                     instructions++;
                     for (Reference ref : insn.getReferencesFrom()) {
-                        if (!ref.getReferenceType().isCall() || !ref.getToAddress().isMemoryAddress()) {
+                        // Calls, and tail jumps (j) to another function's entry, which hand that function the
+                        // caller's return: both make it a callee (blocking flags follow callees).
+                        boolean call = ref.getReferenceType().isCall();
+                        boolean tailJump = ref.getReferenceType().isJump() && !func.getBody().contains(ref.getToAddress());
+                        if (!(call || tailJump) || !ref.getToAddress().isMemoryAddress()) {
                             continue;
                         }
                         Function callee = getFunctionAt(ref.getToAddress());
-                        if (callee != null) {
+                        if (callee != null && (call || callee != func)) {
                             long to = ref.getToAddress().getOffset();
                             callees.merge(hex(to), "1", (a, b) -> Integer.toString(Integer.parseInt(a) + 1));
                             callers.computeIfAbsent(to, k -> new TreeSet<>()).add(hex(entry));

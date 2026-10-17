@@ -4,6 +4,8 @@
 #include "game_globals.h"
 #include "sdk.h"
 
+#include <initializer_list>
+
 namespace mm
 {
     // Word +0xC of mesh `mesh` in the model's mesh table, as a float.
@@ -252,6 +254,236 @@ namespace mm
     void Packet2_Draw(GuestPtr<uint32_t> packets, int second) { Dma_AppendCall(static_cast<int>(packets[second == 0 ? 0 : 1])); }
     void TexSprite_Draw(GuestPtr<TexSprite> sprite) { Dma_AppendCall(static_cast<int>(sprite->packet)); }
 
+    namespace
+    {
+        // Writes `words` from p on and returns the address after them.
+        GuestPtr<uint32_t> emitWords(GuestPtr<uint32_t> p, std::initializer_list<uint32_t> words)
+        {
+            int32_t i = 0;
+            for (const uint32_t word : words)
+                p[i++] = word;
+            return p + i;
+        }
+    }
+
+    // Two static packets (at 0x1F69C0) that each draw a 640 x 224 picture held in the GS as 5 x 7 textured
+    // sprites of 128 x 32: a GS state header (A+D: 0x47, 0x14, 0x42, colour 0x60808080, 0x56), the 35 sprites
+    // (TEX0 from block 0x8000, the second picture 0x8C0 blocks on, then ST and XYZ2 of two corners) and a footer
+    // restoring the test and alpha state.
+    void DmaList_InitPackets()
+    {
+        GuestPtr<uint32_t> p{globals::kFramePictures};
+        for (uint32_t picture = 0; picture < 2; ++picture)
+        {
+            p = emitWords(p, {0x100000B8, 0, 0x11000000, 0x500000B8,
+                              0x80B7, 0x10000000, 0xE, 0,
+                              0x5000F, 0, 0x47, 0,
+                              0, 0, 0x14, 0,
+                              100, 0x50, 0x42, 0,
+                              0x60808080, 0x3F800000, 1, 0,
+                              0x56, 0, 0, 0});
+            for (uint32_t row = 0; row < 7; ++row)
+                for (uint32_t column = 0; column < 5; ++column)
+                {
+                    const uint32_t block = picture * 0x8C0u + (row * 5 + column) * 0x40u;
+                    const uint32_t top = 0x78FCu + row * 0x200u, left = 0x6BF8u + column * 0x800u;
+                    p = emitWords(p, {block + 0x5C008000u, 5, 6, 0,
+                                      0, 0, 2, 0,
+                                      (top << 16) | left, 0, 4, 0,
+                                      0x3F800000, 0x3F800000, 2, 0,
+                                      ((top + 0x200u) << 16) | (left + 0x800u), 0, 4, 0});
+                }
+            p = emitWords(p, {0x60, 0, 0x14, 0,
+                              0x5000F, 0, 0x47, 0,
+                              0x44, 0x20, 0x42, 0,
+                              0x60000000, 0, 0, 0});
+        }
+    }
+
+    // The DMA packet (written over the start of `image`) that uploads a loaded texture file to the GS: its palette
+    // (8 x 2 for 4-bit texels, else 16 x 16) to block `clutBlock`, then the texels (PSMT8 0x13, PSMT4 0x14,
+    // else PSMCT32) as square images of the file's side, one transfer per part, to `textureBlock` onwards, and
+    // a texture flush.
+    void TexImage_Convert(GuestPtr<TexImage> image, uint32_t textureBlock, uint32_t clutBlock)
+    {
+        const GuestPtr<TexImageFile> file = image->file;
+        const uint32_t palette = file.address + 0x20u;
+        uint32_t texels = palette + 4u * static_cast<uint32_t>(file->paletteEntries);
+        GuestPtr<uint32_t> p{image.address};
+        if (file->paletteEntries != 0)
+        {
+            const bool small = file->bitsPerPixel == 4;
+            const uint32_t width = small ? 8 : 16, height = small ? 2 : 16, qwc = small ? 4 : 0x40;
+            p = emitWords(p, {0x10000005, 0, 0x11000000, 0x50000005,
+                              3, 0x10000000, 0xE, 0,
+                              width, height, 0x52, 0,
+                              0, clutBlock | 0x10000u, 0x50, 0,
+                              0, 0, 0x53, 0,
+                              qwc + 0x8000u, 0x08000000, 0, 0,
+                              qwc | 0x30000000u, palette & 0x7FFFFFFFu, 0, qwc | 0x50000000u});
+        }
+        if (file->hasTexels != 0)
+        {
+            const uint32_t side = file->side;
+            const uint32_t psm = file->bitsPerPixel == 8 ? 0x13 : (file->bitsPerPixel == 4 ? 0x14 : 0);
+            p = emitWords(p, {0x10000002, 0, 0x11000000, 0x50000002,
+                              0x8001, 0x10000000, 0xE, 0,
+                              side, side, 0x52, 0});
+            uint32_t words = side * side;
+            if (file->bitsPerPixel == 8)
+                words >>= 2;
+            else if (file->bitsPerPixel == 4)
+                words >>= 3;
+            const uint32_t qwc = words >> 2;
+            for (int32_t done = 0; done < file->uploadSpan; done += 0x40)
+            {
+                p = emitWords(p, {0x10000004, 0, 0, 0x50000004,
+                                  2, 0x10000000, 0xE, 0,
+                                  0, (psm << 24) | textureBlock | ((side >> 6) << 16), 0x50, 0,
+                                  0, 0, 0x53, 0,
+                                  qwc | 0x8000u, 0x08000000, 0, 0,
+                                  qwc | 0x30000000u, texels & 0x7FFFFFFFu, 0, qwc | 0x50000000u});
+                texels += words * 4u;
+                textureBlock += words >> 6;
+            }
+            p = emitWords(p, {0x10000002, 0, 0, 0x50000002,
+                              0x8001, 0x10000000, 0xE, 0,
+                              0, 0, 0x3F, 0});
+        }
+        emitWords(p, {0x60000000, 0, 0, 0});
+    }
+
+    // The sprite's DMA packet, rebuilt after each change. With a palette (16 entries as 8 x 2, 256 as 16 x 16)
+    // an image transfer of it to GS block 0x1E00 comes first, and the texels are 4- or 8-bit, else 32-bit. Then
+    // for each tile from the first frame tile up to the clip tile (used as an end here), row by row: an image
+    // transfer of its texels above the palette, a texture flush, and a sprite with TEX0 (the tile's size as
+    // powers of two, the palette, CLUT load 2), ST from 0 to 1 and the tile's place: (x, y, z) plus the tile's
+    // index times its scaled size (x and y in 1/16 and 1/8 units, from 0x6C00 and 0x7900). Tiles are clamped
+    // while drawn and textures repeat again after; the sprite blends when +0x24 is set. The texel source
+    // (+0x20) walks through the file as it goes. Returns the scaled tile height.
+    int TexSprite_BuildPacket(GuestPtr<TexSprite> sprite)
+    {
+        GuestPtr<uint32_t> p{sprite->packet};
+        const GuestPtr<TexFileHeader> image = sprite->image;
+        uint32_t texelBase = 0x1E00;
+        uint32_t tileQwords = static_cast<uint32_t>(static_cast<int32_t>(static_cast<uint32_t>(image->tileWidth) * image->tileHeight) / 4);
+        const int log2Width = Math_Log2(image->tileWidth);
+        const int log2Height = Math_Log2(image->tileHeight);
+        const uint32_t palette = image.address + 0x20u;
+        sprite->upload = palette;
+        int bufferWidth = image->tileWidth / 64;
+        if (bufferWidth == 0)
+            bufferWidth = 1;
+        const uint32_t drawWidth = sdk::fptoui(fromInt(image->tileWidth) * sprite->scaleX);
+        const uint32_t drawHeight = sdk::fptoui(fromInt(image->tileHeight) * sprite->scaleY);
+
+        uint32_t psm = 0;
+        if (image->paletteSize != 0)
+        {
+            const uint32_t entries = image->paletteSize, quarter = entries / 4u;
+            const bool small = entries == 16;
+            p = emitWords(p, {
+                0x10000006u, 0, 0x11000000u, 0x50000006u,                     // cnt 6; VIF flush, direct 6
+                0x00000004u, 0x10000000u, 0x0000000Eu, 0,                     // GIF tag: 4 loops, A+D
+                0, 0, 0x51u, 0,                                                // TRXPOS 0
+                small ? 8u : 16u, small ? 2u : 16u, 0x52u, 0,                  // TRXREG: the palette's size
+                0, 0x00011E00u, 0x50u, 0,                                      // BITBLTBUF: block 0x1E00, width 1, 32-bit
+                0, 0, 0x53u, 0,                                                // TRXDIR: host to local
+                quarter + 0x8000u, 0x08000000u, 0, 0,                          // GIF tag: image, eop
+                (entries >> 2) | 0x30000000u, palette & 0x7FFFFFFFu, 0, quarter | 0x50000000u, // ref the entries; direct
+            });
+            sprite->upload = sprite->upload + 4u * entries;
+            texelBase += quarter;
+            psm = small ? 0x14u : 0x13u;
+            tileQwords >>= small ? 3 : 2;
+        }
+        p = emitWords(p, {
+            0x10000004u, 0, 0, 0x50000004u,                                    // cnt 4; VIF direct 4
+            0x00008003u, 0x10000000u, 0x0000000Eu, 0,                          // GIF tag: 3 loops, eop, A+D
+            image->tileWidth, image->tileHeight, 0x52u, 0,                     // TRXREG: one tile
+            5, 0, 0x08u, 0,                                                    // CLAMP_1: clamp
+            sprite->blend != 0 ? 0x56u : 0x16u, 0, 0, 0,                       // PRIM: textured sprite (blended)
+        });
+        sprite->upload = sprite->upload + image->tilesAcross * (image->tileWords * sprite->frameY) * 4u;
+
+        const uint32_t bitblt = texelBase + (psm << 24) + (static_cast<uint32_t>(bufferWidth) << 16);
+        const uint64_t tex0 = (texelBase & 0x3FFFu) | (static_cast<uint64_t>(bufferWidth & 0x3F) << 14) | (static_cast<uint64_t>(psm & 0x3Fu) << 20) |
+                              (static_cast<uint64_t>(log2Width & 0xF) << 26) | (static_cast<uint64_t>(log2Height & 0xF) << 30) |
+                              (1ull << 34) | (0x1E00ull << 37) | (2ull << 61); // TCC 1, CBP 0x1E00, CLD 2
+        for (uint32_t row = sprite->frameY; row < sprite->clipHeight; ++row)
+        {
+            const uint32_t top = row * drawHeight;
+            sprite->upload = sprite->upload + image->tileWords * sprite->frameX * 4u;
+            for (uint32_t column = sprite->frameX; column < sprite->clipWidth; ++column)
+            {
+                const uint32_t left = static_cast<uint32_t>(sprite->x) + column * drawWidth;
+                const uint32_t y0 = (static_cast<uint32_t>(sprite->y) + top) << 3, x0 = left << 4;
+                const uint32_t y1 = y0 + (drawHeight << 3), x1 = x0 + (drawWidth << 4);
+                p = emitWords(p, {
+                    0x10000004u, 0, 0x11000000u, 0x50000004u,                  // cnt 4; flush, direct 4
+                    0x00000002u, 0x10000000u, 0x0000000Eu, 0,                  // GIF tag: 2 loops, A+D
+                    0, bitblt, 0x50u, 0,                                        // BITBLTBUF: above the palette
+                    0, 0, 0x53u, 0,                                             // TRXDIR
+                    tileQwords + 0x8000u, 0x08000000u, 0, 0,                    // GIF tag: image, eop
+                    tileQwords | 0x30000000u, sprite->upload & 0x7FFFFFFFu, 0, tileQwords | 0x50000000u, // ref the texels
+                    0x10000002u, 0, 0, 0x50000002u,                             // cnt 2; direct 2
+                    0x00008001u, 0x10000000u, 0x0000000Eu, 0,                   // GIF tag: 1 loop, eop, A+D
+                    0, 0, 0x3Fu, 0,                                             // TEXFLUSH
+                    0x10000008u, 0, 0x11000000u, 0x50000008u,                   // cnt 8; flush, direct 8
+                    0x00008007u, 0x10000000u, 0x0000000Eu, 0,                   // GIF tag: 7 loops, eop, A+D
+                    0, 0, 0x3Fu, 0,                                             // TEXFLUSH
+                    0x80808080u, 0x3F800000u, 0x01u, 0,                         // RGBAQ: grey, Q 1
+                    static_cast<uint32_t>(tex0), static_cast<uint32_t>(tex0 >> 32), 0x06u, 0, // TEX0_1
+                    0, 0, 0x02u, 0,                                             // ST 0, 0
+                    ((y0 + 0x7900u) << 16) | (x0 + 0x6C00u), static_cast<uint32_t>(sprite->z), 0x05u, 0, // XYZ2
+                    0x3F800000u, 0x3F800000u, 0x02u, 0,                         // ST 1, 1
+                    ((y1 + 0x7900u) << 16) | (x1 + 0x6C00u), static_cast<uint32_t>(sprite->z), 0x05u, 0, // XYZ2
+                });
+                sprite->upload = sprite->upload + image->tileWords * 4u;
+            }
+            sprite->upload = sprite->upload + image->tileWords * (image->tilesAcross - sprite->clipWidth) * 4u;
+        }
+        emitWords(p, {
+            0x10000002u, 0, 0x11000000u, 0x50000002u,                          // cnt 2; flush, direct 2
+            0x00008001u, 0x10000000u, 0x0000000Eu, 0,                          // GIF tag: 1 loop, eop, A+D
+            0, 0, 0x08u, 0,                                                    // CLAMP_1: repeat
+            0x60000000u, 0, 0, 0,                                              // ret
+        });
+        return static_cast<int>(drawHeight);
+    }
+
+    // The first tile shown, kept within the image, with the shown tiles trimmed to fit past it; then the packet
+    // is rebuilt (its result passed on).
+    int TexSprite_SetFrame(GuestPtr<TexSprite> sprite, int frameX, int frameY)
+    {
+        const GuestPtr<TexFileHeader> image = sprite->image;
+        sprite->frameX = static_cast<uint32_t>(frameX);
+        sprite->frameY = static_cast<uint32_t>(frameY);
+        if (!(sprite->frameX < image->tilesAcross))
+            sprite->frameX = image->tilesAcross - 1u;
+        if (!(sprite->frameY < image->tilesDown))
+            sprite->frameY = image->tilesDown - 1u;
+        if (image->tilesAcross < sprite->frameX + sprite->clipWidth)
+            sprite->clipWidth = image->tilesAcross - sprite->frameX;
+        if (image->tilesDown < sprite->frameY + sprite->clipHeight)
+            sprite->clipHeight = image->tilesDown - sprite->frameY;
+        return TexSprite_BuildPacket(sprite);
+    }
+
+    // The tiles shown: all past the first tile, or `width` and `height` when non-zero and fewer; then the packet
+    // is rebuilt (its result passed on).
+    int TexSprite_SetClip(GuestPtr<TexSprite> sprite, uint32_t width, uint32_t height)
+    {
+        const GuestPtr<TexFileHeader> image = sprite->image;
+        sprite->clipWidth = image->tilesAcross - sprite->frameX;
+        sprite->clipHeight = image->tilesDown - sprite->frameY;
+        if (width != 0 && width < image->tilesAcross - sprite->frameX)
+            sprite->clipWidth = width;
+        if (height != 0 && height < image->tilesDown - sprite->frameY)
+            sprite->clipHeight = height;
+        return TexSprite_BuildPacket(sprite);
+    }
+
     void LayerF_Draw(GuestPtr<LayerF> layer, int packet)
     {
         Dma_AppendCall(static_cast<int>(layer->packet));
@@ -279,7 +511,7 @@ namespace mm
 
     void CityRender_DrawWater(GuestPtr<CityMap> map, GuestPtr<CityScene> city)
     {
-        LayerG_Draw(map->water, static_cast<int>(port::load<uint32_t>(0x001BDCD0u) & 1u), city->unk_B0);
+        LayerG_Draw(map->water, static_cast<int>(port::load<uint32_t>(0x001BDCD0u) & 1u), city->waterLevel);
     }
 
     void CityRender_DrawBuildings(GuestPtr<CityMap> map, int pass)
@@ -769,6 +1001,11 @@ namespace mm
     PORT_FN(Packet_Draw);
     PORT_FN(Packet2_Draw);
     PORT_FN(TexSprite_Draw);
+    PORT_FN(TexSprite_BuildPacket);
+    PORT_FN(TexImage_Convert);
+    PORT_FN(DmaList_InitPackets);
+    PORT_FN(TexSprite_SetFrame);
+    PORT_FN(TexSprite_SetClip);
     PORT_FN(LayerF_Draw);
     PORT_FN(LayerB_Draw);
     PORT_FN(Sky_Draw);

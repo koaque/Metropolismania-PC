@@ -41,7 +41,7 @@ move in.
 
 ## Functions
 
-185 functions (typed 124, verified 61). Blocks: 55 can reach a thread switch, 7 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+185 functions (ported 1, typed 120, verified 64). Blocks: 55 can reach a thread switch, 7 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -53,12 +53,12 @@ move in.
 | `0x0013BFD0` | `void mm_StatusByte_OnLevel12(int family, int member, uint8_t *status, int amount, uint32_t *approval)` | 52 | no | friendship gain when the byte's level is above 11 |
 | `0x00150190` | `void mm_Wants_RemoveEventHold(WantsWin *wants, uint16_t buildingType, int value)` | 272 | no | removes the entry an event holds for building type a1 with value a2 (events ending) |
 | `0x001502A0` | `int mm_Wants_AddEventHold(WantsWin *wants, uint16_t buildingType, int value)` | 172 | no | one-word entry held by an event for building type a1 (needs a free entry and word) |
-| `0x00150350` | `int mm_Wants_CheckEntry(WantsWin *wants, CityScene *city, uint16_t *entry)` | 208 | no | a want's state: 0 open, 1 the building's claim is met or maxed (flags 0x48), 2 stale (family gone or claim changed), 3 claim meter above the high threshold |
+| `0x00150350` | `int mm_Wants_CheckEntry(WantsWin *wants, CityScene *city, uint16_t *entry)` | 208 | no | a want's state: 2 no longer holds (family gone, claim changed, meter not above the low threshold), 1 met (flags 0x48), 3 meter above the high threshold and not phoned yet, else 0 |
 | `0x00150420` | `int mm_Wants_Find(WantsWin *wants, CityScene *city, uint32_t *claimSlot, uint32_t *object, uint32_t *person, int32_t *iterator)` | 292 | no | next open resident want from iterator *a5: claim slot a2, object a3, person a4 |
 | `0x00150550` | `int mm_Wants_AddForPerson(WantsWin *wants, CityScene *city, MapPerson *person, int claimSlot)` | 256 | no | records person a2's want (claim slot a3) when an entry and four words are free |
 | `0x00150650` | `void mm_Wants_LoadState(WantsWin *wants, McManager *mc)` | 20 | no | reads the 0x504-byte list from the save file |
 | `0x00150670` | `void mm_Wants_SaveState(WantsWin *wants, McManager *mc)` | 20 | no | writes it |
-| `0x00150690` | `void mm_Wants_Prune(WantsWin *wants, CityScene *city)` | 672 | no | every 120 frames drops stale wants (state 2) and compacts the list |
+| `0x00150690` | `void mm_Wants_Prune(WantsWin *wants, CityScene *city)` | 672 | no | every 121st call: wants no longer holding are removed, met ones once the family's call is queued; pressing ones (state 3) get the call once |
 | `0x00150940` | `int mm_Wants_HasRoom(WantsWin *wants, int words)` | 52 | no | entry count below 0x40 and at least a1 words left of 0x100 |
 | `0x00150980` | `WantsWin *mm_Wants_ctor(WantsWin *wants)` | 16 | no | zeroes the two counters |
 | `0x001550A0` | `int mm_Applicants_CountActive(Applicants *applicants)` | 68 | no | applicants whose state (+2) is below 7 |
@@ -174,7 +174,7 @@ move in.
 | `0x00169AB0` | `int mm_BldgHousing_CollideB(BuildingType *btype, MapObject *obj, int a2, int a3, int t0, int t1, int t2, float f12)` | 196 | no | slot +0x28 |
 | `0x00169B80` | `void mm_BldgHousing_Draw(BuildingType *btype, int layer, CityScene *city, MapObject *obj, uint32_t *part, int flags, float x, float y, float z)` | 928 | no | slot +0x14 |
 | `0x00169F20` | `uint8_t mm_BldgHousing_UnitAt(BuildingType *btype, int kind, int x, int z, int count, uint16_t rule, CityScene *city, uint32_t *isUnit, float height)` | 372 | no | (provisional) unit index of a tile within a housing block |
-| `0x0016A0A0` | `void mm_BldgHousing_CountUnits(BuildingType *btype, CityScene *city, MapObject *obj)` | 756 | no | (provisional) recursive walk over connected housing tiles |
+| `0x0016A0A0` | `void mm_BldgHousing_CountUnits(BuildingType *btype, CityScene *city, MapObject *obj)` | 756 | no | a housing object's unit shape (variant high byte) from the units two tiles away along its terrain axis (tables 0x1B1480, 0x1B14C0); a changed shape passes style (mesh low byte) on and recurses into the neighbours |
 | `0x0016A3A0` | `int mm_BldgHousing_Tick(BuildingType *btype, CityScene *city, MapObject *obj, int timeFlags)` | 160 | no | Building tick plus unit counting |
 | `0x0016A440` | `void mm_BldgHousing_InitRecord(BuildingType *btype, MapObject *obj)` | 80 | no | Building init; variant +0x1A = (x/2) mod 3 |
 | `0x0016A490` | `BuildingType *mm_BldgHousing_ctor(BuildingType *btype, uint8_t *record, int id)` | 52 | yes | Building constructor, vtable 0x1BD280 |
@@ -201,7 +201,7 @@ move in.
 | `0x0016BB60` | `BuildingType *mm_BldgWasteland_dtor(BuildingType *btype, int16_t deleteFlag)` | 96 | yes | category 1 (wasteland), vtable 0x1BD3C0 |
 | `0x0016BBC0` | `void mm_BldgWasteland_Draw(BuildingType *btype, int layer, CityScene *city, MapObject *obj, int t0, int t1, float x, float y, float z)` | 296 | no | weed/rock instances |
 | `0x0016BCF0` | `int mm_BldgWasteland_FindSpot(BuildingType *btype, CityScene *city, int a2, uint32_t x, uint32_t z, uint32_t *spot)` | 332 | no | (provisional) walkable spot near a tile |
-| `0x0016BE40` | `void mm_BldgWasteland_Tick(BuildingType *btype, CityScene *city, MapObject *obj)` | 1120 | no | (provisional) random growth and object placement on wasteland |
+| `0x0016BE40` | `int mm_BldgWasteland_Tick(BuildingType *btype, CityScene *city, MapObject *obj)` | 1120 | no | drops the mark (+0x14) of wasteland on a sloping tile (VU0 normals), plots its minimap colour by how much of it lies above the water level, and under water may place a type 3 object by a straight road |
 | `0x0016C2A0` | `void mm_BldgWasteland_InitRecord(BuildingType *btype, MapObject *obj)` | 180 | no | random appearance bytes |
 | `0x0016C360` | `BuildingType *mm_BldgWasteland_ctor(BuildingType *btype, uint8_t *record, int id)` | 52 | yes | base constructor, vtable 0x1BD3C0 |
 | `0x00180520` | `int mm_CityScene_GetFade(CityScene *city)` | 8 | no | fade counter (+0xCC), 0 when no fade runs |

@@ -9,6 +9,7 @@ typedef struct Camera Camera;
 typedef struct CityCamera CityCamera;
 typedef struct GameFile GameFile;
 typedef struct TexSprite TexSprite;
+typedef struct TexFileHeader TexFileHeader;
 typedef struct LightSet LightSet;
 typedef struct InstanceSlot InstanceSlot;
 typedef struct ListMenu ListMenu;
@@ -28,7 +29,12 @@ typedef struct CityCursorView CityCursorView;
 typedef struct PhoneCalls PhoneCalls;
 typedef struct PhoneCallEntry PhoneCallEntry;
 typedef struct EventMgr EventMgr;
+typedef struct EventEntry EventEntry;
+typedef struct EventSlot EventSlot;
+typedef struct EventActor EventActor;
 typedef struct WantsWin WantsWin;
+typedef struct WantsIndex WantsIndex;
+typedef struct Want Want;
 typedef struct Laptop Laptop;
 typedef struct Player Player;
 typedef struct Applicants Applicants;
@@ -43,6 +49,7 @@ typedef struct PersonClass PersonClass;
 typedef struct StageName StageName;
 typedef struct StageState StageState;
 typedef struct TexImage TexImage;
+typedef struct TexImageFile TexImageFile;
 typedef struct LayerA LayerA;
 typedef struct LayerB LayerB;
 typedef struct LayerC LayerC;
@@ -55,7 +62,7 @@ typedef struct LayerG LayerG;
 struct TextBox {
     uint8_t unk_00[8];
     uint32_t packet;           /* +0x08 GS packet the box draws (mm_TextBox_Draw) */
-    int32_t style;             /* +0x0C passed to mm_TextBox_Build */
+    int32_t clut;              /* +0x0C palette uploaded before the glyphs (16 entries), 0 = none (mm_TextBox_Build) */
     int32_t charWidth;         /* +0x10 */
     int32_t charHeight;        /* +0x14 */
     int32_t x;                 /* +0x18 GS units */
@@ -64,7 +71,7 @@ struct TextBox {
     int32_t pitchX;            /* +0x24 */
     int32_t pitchY;            /* +0x28 */
     int32_t cursor;            /* +0x2C reset by mm_TextBox_SetText */
-    uint8_t unk_30[4];
+    uint32_t sprites;          /* +0x30 the cells' sprite data in the packet, 0x50 bytes each (mm_TextBox_Build) */
     uint32_t cells;            /* +0x34 character cells, 0x60 bytes each, glyph pointer at +0x54 (mm_TextBox_AppendText) */
     int32_t columns;           /* +0x38 */
     int32_t rows;              /* +0x3C */
@@ -146,17 +153,34 @@ struct GameFile {
     int32_t fd;                /* +0x00 -1 when closed */
     int32_t async;             /* +0x04 requests go through the file queue */
 };
+/* .TEX image header (0x20 bytes): the palette, then the tiles row by row, each tileWords words. */
+struct TexFileHeader {
+    uint8_t unk_00[4];
+    uint16_t paletteSize;      /* +0x04 entries: 0 (32-bit texels), 16 (4-bit) or 256 (8-bit) */
+    uint8_t unk_06[2];
+    uint32_t tileWords;        /* +0x08 words per tile */
+    uint16_t tilesAcross;      /* +0x0C */
+    uint16_t tilesDown;        /* +0x0E */
+    uint16_t tileWidth;        /* +0x10 pixels */
+    uint16_t tileHeight;       /* +0x12 */
+    uint8_t unk_14[0xC];
+};
 /* Sprite from a .TEX file (0x38 bytes). */
 struct TexSprite {
     uint8_t unk_00[4];
-    void *image;               /* +0x04 TEX image: +4 palette entries, +0x10 width, +0x12 height, colours from +0x20 */
+    TexFileHeader *image;      /* +0x04 the loaded .TEX file */
     uint32_t packet;           /* +0x08 GS packet (mm_TexSprite_Draw) */
     int32_t x;                 /* +0x0C */
     int32_t y;                 /* +0x10 */
     int32_t z;                 /* +0x14 */
     float scaleX;              /* +0x18 */
     float scaleY;              /* +0x1C */
-    uint8_t unk_20[0x18];
+    uint32_t upload;           /* +0x20 next texels to upload while the packet is built (mm_TexSprite_BuildPacket) */
+    int32_t blend;             /* +0x24 non-zero: alpha blended */
+    uint32_t clipWidth;        /* +0x28 tiles shown (mm_TexSprite_SetClip), used as the end tile by mm_TexSprite_BuildPacket */
+    uint32_t clipHeight;       /* +0x2C */
+    uint32_t frameX;           /* +0x30 first tile (mm_TexSprite_SetFrame) */
+    uint32_t frameY;           /* +0x34 */
 };
 /* Model instance slot (0x70 bytes): one per mesh drawn this frame, at most 0x708, in two buffers by frame. */
 struct InstanceSlot {
@@ -237,8 +261,9 @@ struct LoadingScreen {
 struct McManager {
     void *queue;               /* +0x00 memory card request queue object */
     int32_t state;             /* +0x04 step of the current operation */
-    int32_t unk_08;            /* +0x08 cleared by mm_McManager_ClearSlots */
-    uint8_t unk_0C[8];
+    int32_t scanState;         /* +0x08 step of the card and save slot scan (mm_McManagerUpdate); 0 idle */
+    int32_t scanSlot;          /* +0x0C save slot being filled, 8 per card port */
+    int32_t dirIndex;          /* +0x10 next directory entry to ask for on the card */
     int32_t request;           /* +0x14 last queued request */
     uint8_t unk_18[8];
     GameFile *file;            /* +0x20 */
@@ -374,11 +399,59 @@ struct PhoneCalls {
     uint8_t unk_44[0x38];
 };
 /* Event manager (0xB0 bytes); +0xA4 and +0xA8 are the events the talk script works with. */
-struct EventMgr { uint8_t data[0xB0]; };
+/* One actor of a running event (8 bytes). */
+struct EventActor {
+    uint16_t family;           /* +0x00 */
+    uint16_t member;           /* +0x02 */
+    uint8_t unk_04[4];
+};
+/* An event the talk works with (EventMgr talkA, talkB); the actor list runs on past the two shown. */
+struct EventEntry {
+    uint8_t unk_00[8];
+    uint8_t kind;              /* +0x08 row of the event table (gp-0x7EEC, 0x4C bytes each) */
+    uint8_t unk_09;
+    uint8_t var;               /* +0x0A a value talk scripts set and test */
+    uint8_t unk_0B[5];
+    EventActor actors[2];      /* +0x10 */
+};
+/* One of the event manager's five slots (0x20 bytes). */
+struct EventSlot {
+    uint8_t unk_00[5];
+    int8_t stage;              /* +0x05 talk scripts read 3 - stage (mm_WordsFn_EventCountdown) */
+    uint8_t unk_06[2];
+    uint16_t familyA;          /* +0x08 the persons a talk script selects (mm_WordsFn_SelectEventPersonA/B) */
+    uint16_t memberA;          /* +0x0A */
+    uint16_t familyB;          /* +0x0C */
+    uint16_t memberB;          /* +0x0E */
+    uint8_t unk_10[0x10];
+};
+struct EventMgr {
+    EventSlot slots[5];        /* +0x00 */
+    uint8_t unk_A0[4];
+    EventEntry *talkA;         /* +0xA4 the events the talk script works with */
+    EventEntry *talkB;         /* +0xA8 */
+    uint8_t unk_AC[4];
+};
+/* Want (0x10 bytes) in the wants list's data area. */
+struct Want {
+    uint16_t person;           /* +0x00 who wants it (passed to mm_PhoneCall_Post) */
+    uint16_t object;           /* +0x02 the building whose claim it is */
+    uint16_t family;           /* +0x04 */
+    uint16_t member;           /* +0x06 */
+    uint32_t claimSlot;        /* +0x08 must still match the building's claim slot (mm_Wants_CheckEntry) */
+    uint32_t called;           /* +0x0C the family has phoned about it */
+};
+/* Wants list index entry (4 bytes). */
+struct WantsIndex {
+    uint16_t offset;           /* +0x00 the want's position in the data area, in words */
+    uint16_t held;             /* +0x02 non-zero: mm_Wants_Prune leaves it */
+};
 /* Wants window (0x544 bytes); starts with the 0x504-byte wants list. */
 struct WantsWin {
-    uint16_t counters[2];      /* +0x00 cleared by mm_Wants_ctor */
-    uint8_t unk_004[0x500];
+    uint16_t count;            /* +0x00 wants in the index (cleared by mm_Wants_ctor) */
+    uint16_t wordsUsed;        /* +0x02 of the data area */
+    WantsIndex index[64];      /* +0x004 */
+    uint32_t data[256];        /* +0x104 the wants (Want, four words each) */
     A3DObject *model;          /* +0x504 window model (from 0x1F3B04) */
     int32_t unk_508[4];        /* +0x508 */
     int32_t unk_518;           /* +0x518 */
@@ -422,8 +495,8 @@ struct Player {
     float swayPhase;           /* +0x34 animation frame, passed to mm_Instance_DrawSwayingIfRoom (mm_Player_UpdateAction) */
     int32_t swayArg;           /* +0x38 animation: 0-2 standing, 4-15 moving (mm_Player_UpdateAction) */
     int32_t visible;           /* +0x3C drawn when non-zero (mm_Player_Draw) */
-    int32_t unk_40;            /* +0x40 */
-    int32_t unk_44;            /* +0x44 */
+    int32_t target;            /* +0x40 object or person the cursor points at, -1 none (mm_Player_PickTarget) */
+    int32_t targetIsPerson;    /* +0x44 */
     int32_t unk_48;            /* +0x48 */
     float jumpSpeed;           /* +0x4C */
     int32_t unk_50;            /* +0x50 */
@@ -554,8 +627,24 @@ struct PersonClass {
     CharClass base;
     float walkSpeed;           /* +0x24 record halfword 6 / 1e6 */
 };
-/* Texture image loaded whole and converted for upload (0x1010 bytes, often on the stack): image data pointer at +0x1000. */
-struct TexImage { uint8_t data[0x1010]; };
+/* Texture image loaded whole and converted for upload (0x1010 bytes, often on the stack): the DMA packet that uploads
+   it (mm_TexImage_Convert), then at +0x1000 the loaded file (TexImageFile). */
+struct TexImage {
+    uint8_t packet[0x1000];    /* +0x000 */
+    TexImageFile *file;        /* +0x1000 */
+    uint8_t unk_1004[0xC];
+};
+/* Header of a texture image file (0x20 bytes), followed by its palette (32-bit entries) and the texels. */
+struct TexImageFile {
+    uint32_t unk_00;
+    int32_t bitsPerPixel;      /* +0x04 4, 8, or 32 for anything else */
+    int32_t paletteEntries;    /* +0x08 0 = no palette */
+    int32_t hasTexels;         /* +0x0C */
+    uint32_t unk_10;
+    uint32_t side;             /* +0x14 width and height in pixels */
+    int32_t uploadSpan;        /* +0x18 uploads continue while 0x40 per upload so far stays below it */
+    uint32_t unk_1C;
+};
 /* City render layers, built by mm_CityRender_ctor, each with its own VU1 packet (names provisional).
    A: rotated mesh instances (0x2440); B: two-packet layer (0x230); C: buildings on visible tiles (0x240);
    D: sky by the clock (0x410); E: projected, randomly placed sprites (0x6E0); F: single packet (0x140);

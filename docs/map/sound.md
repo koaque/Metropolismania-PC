@@ -14,18 +14,18 @@ Sound on the EE side; the driver is YYSOUND on the IOP.
 
 ## Functions
 
-57 functions (ported 3, typed 22, verified 32). Blocks: 4 can reach a thread switch, 1 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+57 functions (ported 6, typed 13, verified 38). Blocks: 4 can reach a thread switch, 1 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
 | `0x001876B0` | `void mm_Sound_StopAllPlaying(void)` | 156 | no | asks the driver for its status (0x18F200) and stops every voice whose bit is set in the two 16-bit masks at +4 and +8 |
-| `0x00187750` | `int mm_Se_SetEnabled(int enabled, int a1)` | 196 | no | 0x1BDD20 = a0; a0 == 0 stops all 16 + 15 effect voices; a1 != 0 resets their volumes (0xFFF and 0x100) |
+| `0x00187750` | `void mm_Se_SetEnabled(int enabled, int resetVolumes)` | 196 | no | 0x1BDD20 = a0; a0 == 0 stops all 16 + 15 effect voices; a1 != 0 resets their volumes (0xFFF and 0x100) |
 | `0x00187820` | `int mm_Se_SetVoice15Enabled(int enabled, int a1)` | 76 | no | same as mm_Se_SetEnabled for the single voice 15 (volume 0xC0) |
-| `0x00187870` | `void mm_Se_UpdateCityAmbience(int a0)` | 3152 | no | scans map tiles around the camera and requests ambient sounds by tile/building (mm_Se_Request); uses the time of day and the listener position |
+| `0x00187870` | `void mm_Se_UpdateCityAmbience(int advance)` | 3152 | no | one quarter of the 2x2 blocks within 16 tiles of the listener per frame: building sounds (group 2), terrain sounds (group 3) and, within 8 tiles, vehicles; VU0 bearings from the listener; 17:00 chime 0x3B for busy cities |
 | `0x001884E0` | `int mm_Se_UpdateListener(void)` | 1092 | no | copies the city camera's eye and target (camera +0x130/+0x140) into the listener vectors at 0x1FC650 and derives its orientation |
-| `0x00188930` | `uint32_t mm_Se_BuildingSoundState(MapObject *obj, BuildingType *btype)` | 1144 | indirect | for a building record a0 and its type a1: returns 0xFF (none), 0x4FF (already sounding) or a sound id, using time windows (mm_Se_InTimeWindow) |
+| `0x00188930` | `uint32_t mm_Se_BuildingSoundState(MapObject *obj, BuildingType *btype)` | 1144 | indirect | a building object's ambient sound this frame: low byte the sound (0xFF none), 0x100 after the lead of its window, 0x200 entrance, 0x400 the type's own (+0x14E); each object once per frame (flag 4, again 0x4FF); the sound's schedule (SeSound +0x02) decides |
 | `0x00188DB0` | `int mm_Se_InTimeWindow(MapObject *obj, uint32_t start, int length)` | 300 | no | checks the game clock (seconds of day mod 3600, 0x1BDD34) against a window [a1, a2) offset per object; 0xFF = outside, 0x100 = inside |
-| `0x00188EE0` | `int mm_Se_RequestTileSounds(int x, int z, int a2, float angle, float distance)` | 468 | no | requests the sounds of the objects on map tile (a2, a3), with a random extra cue when a4 != 0 |
+| `0x00188EE0` | `int mm_Se_RequestTileSounds(int x, int z, int horn, float angle, float distance)` | 468 | no | the vehicles on map tile (x, z) unless its object already has a request: engine 0x18 pitched by speed; the horn 0x1A at one-in-four while still allowed; returns what is left of the horn flag |
 | `0x001890C0` | `uint32_t mm_Se_PickTerrainAmbience(int x, int z, int a2)` | 508 | no | ambient sound id for a position: above the city's level threshold (+0xB0) picks 0x1C/0x1D, else from the 5-byte table at 0x1B35F0 through mm_Se_MatchSchedule |
 | `0x001892D0` | `int mm_Se_MatchSchedule(uint32_t monthFrom, uint32_t monthTo, uint32_t hourFrom, uint32_t hourTo, uint32_t length, uint32_t start10, int lead)` | 912 | no | 1 when the current month (city +0x88 mod 12) and hour/minute (0x1BDD34) fall inside the given month and time ranges |
 | `0x00189660` | `int mm_Se_Request(uint16_t owner, uint32_t group, uint8_t sound, uint8_t param0A, uint8_t param18, uint16_t param0C, uint8_t param0B, uint8_t param19, float angle, float distance)` | 1244 | no | adds a sound request (position, sound id, priority, volume, pitch, ...) to the request list at 0x1F8710 (count at gp 0x1BDD08); ids look up the 16-byte sound table 0x1B2EE0 |
@@ -33,9 +33,9 @@ Sound on the EE side; the driver is YYSOUND on the IOP.
 | `0x00189C50` | `void mm_Se_RequestForObject(uint32_t a0, uint32_t a1, uint32_t a2, int a3, int t0, int t1)` | 1876 | no | requests the sounds of a moving or placed object by its type and distance to the listener |
 | `0x0018A3B0` | `int mm_Sound_PlaySe(int sound, int a1, int a2, float angle, float distance)` | 148 | no | plays sound id a0 & 0xFF through 0x189660; ids flagged 0x10 in the 16-byte table 0x1B2EE0 get a rotating handle (0x1BDCFC, wraps at 255) |
 | `0x0018A450` | `void mm_Se_PlayMessageSound(char code)` | 1456 | no | message window sound for code a0 (0x14, 0x0A, ...), several fixed sound ids |
-| `0x0018AA00` | `void mm_Se_PlayVariant(uint8_t variant)` | 1148 | no | plays one of a few sound ids (0x29 ...) chosen by a0, with a random pitch offset (0..199) |
+| `0x0018AA00` | `void mm_Se_PlayVariant(uint8_t variant)` | 1148 | no | plays one of seven effects (0x29, 0x2A, 0x2B, 0x2D with a random pitch 0..199 from mm_Random_TimerMix; 0x3E, 0x2C, 0x2E) |
 | `0x0018AE80` | `void mm_Se_UpdateTimeOfDay(void)` | 452 | no | time-of-day cues: fades sound 0x36 by the clock (silent 6:00-18:00), chime 0x37 at fixed times in months 7-8 |
-| `0x0018B050` | `void mm_Se_UpdateVoices(void)` | 2736 | no | per frame: starts, moves and stops the effect voices assigned by mm_Se_AssignVoices |
+| `0x0018B050` | `void mm_Se_UpdateVoices(void)` | 2736 | no | per frame, by priority class: one step of each busy voice's sound script (0x1B3410, 0x18 bytes by voiceParam low byte): start, wait, branch at random, pitch slides, volume offset, stop |
 | `0x0018BB10` | `void mm_Se_ApplyVoiceParams(uint32_t voice)` | 188 | no | voice a0: volume L/R clamped to 1..0x3FFF (flag 1, 0x18DD90) and pitch (flag 2, 0x18DC70) |
 | `0x0018BBD0` | `void mm_Se_AssignVoices(void)` | 2952 | no | sorts the frame's requests by priority into the 16 + 15 effect voice slots, stealing low-priority voices |
 | `0x0018C770` | `void mm_Sound_Update(void)` | 580 | no | per frame from mm_GameUpdate: assigns and updates effect voices, city ambience, time-of-day cues and the BGM state |
@@ -50,7 +50,7 @@ Sound on the EE side; the driver is YYSOUND on the IOP.
 | `0x0018D160` | `void mm_Sound_ResetVoices(int bankSet)` | 284 | no | queues cmd 1, resets all voice volumes (0xFFF group A, 0x100 group B, 0xC0 voice 15) and clears the effect voice tables |
 | `0x0018D280` | `void mm_Se_BuildAmbienceMap(void)` | 348 | no | clears the 4096-entry ambience grid at 0x1FC690 and fills it from the city map and the table at 0x1B35F0 |
 | `0x0018D3E0` | `void mm_Sound_InitState(void)` | 196 | no | called by mm_GameInit: marks all 31 effect voices free (0xFF) and clears the sound globals |
-| `0x0018D4B0` | `void mm_SoundCmd_CancelPlayB(char voice)` | 256 | no | removes queued cmd 3 entries for voice a0 from the ring |
+| `0x0018D4B0` | `void mm_SoundCmd_CancelPlayB(char voice)` | 256 | no | drops the unsent PlayB commands (3) from the ring and closes the gap; matches the voice against byte 3 of the command word (always 0), so called with 0 it drops every queued PlayB |
 | `0x0018D5B0` | `int mm_Sound_IsBusy(void)` | 164 | no | refreshes the status copy (0x20B7C0 -> 0x20B840, merged with pending masks); true if the driver is busy or commands are queued |
 | `0x0018D660` | `int mm_Sound_IsDriverBusy(void)` | 128 | no | like mm_Sound_IsBusy but ignores queued commands |
 | `0x0018D6E0` | `int mm_SoundCmd_SetDiscBusy(uint32_t busy)` | 100 | no | queues cmd 0x18 with a0 & 0xFF; the file code sends 1 before waiting on the disc and 0 after |

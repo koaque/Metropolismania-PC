@@ -48,6 +48,22 @@ namespace mm
         return 0;
     }
 
+    // A family living in the city moves away: its bit goes from bitset A to bitset C, the moved-in count drops and
+    // the left count rises.
+    void Family_MoveAway(uint32_t family)
+    {
+        const int32_t id = static_cast<int32_t>(family);
+        const uint32_t offset = static_cast<uint32_t>(4 * (id / 32));
+        const uint32_t bit = 1u << (id & 31);
+        const uint32_t inCity = port::load<uint32_t>(globals::kFamiliesInCity + offset);
+        if ((inCity & bit) == 0)
+            return;
+        port::store<uint32_t>(globals::kFamiliesInCity + offset, inCity & ~bit);
+        port::store<uint32_t>(globals::kFamiliesLeft + offset, port::load<uint32_t>(globals::kFamiliesLeft + offset) | bit);
+        globals::familiesMovedIn.set(globals::familiesMovedIn.get() - 1);
+        globals::familiesLeftEvent.set(globals::familiesLeftEvent.get() + 1);
+    }
+
     // A family moves in: its bit in bitset A and both moved-in counters.
     void Family_SetFlagA(uint32_t family)
     {
@@ -102,6 +118,7 @@ namespace mm
     PORT_FN(Family_IsKnown);
     PORT_FN(Family_InCity);
     PORT_FN(Family_SetFlagA);
+    PORT_FN(Family_MoveAway);
     PORT_FN(Family_MakePhoneNumber);
     PORT_FN(Family_ResetState);
 }

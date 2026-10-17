@@ -768,9 +768,9 @@ address,name,kind,source
 0x0012EF00,mm_CharType_Update,func,manual
 0x0012EF10,mm_CharType_dtor,func,manual
 0x0012EF60,mm_CharType_ctor,func,manual
-0x0012F020,mm_Char2_ProbeTilesA,func,manual
+0x0012F020,mm_Char2_UpdateSpeedA,func,manual
 0x0012FF00,mm_Char_CheckNeighbourTile,func,manual
-0x001300C0,mm_Char2_ProbeTilesB,func,manual
+0x001300C0,mm_Char2_UpdateSpeedB,func,manual
 0x00130FA0,mm_Char2_MoveA,func,manual
 0x001318A0,mm_Char2_MoveB,func,manual
 0x00132190,mm_Char2_Draw,func,manual

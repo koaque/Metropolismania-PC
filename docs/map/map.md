@@ -20,7 +20,7 @@ placement checks (`mm_Placement_*`) and the per-object history (`mm_MapObj_*`) a
 
 ## Functions
 
-98 functions (typed 53, verified 45). Blocks: 12 can reach a thread switch, 8 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+98 functions (ported 1, typed 41, verified 56). Blocks: 12 can reach a thread switch, 8 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -89,7 +89,7 @@ placement checks (`mm_Placement_*`) and the per-object history (`mm_MapObj_*`) a
 | `0x00143690` | `float mm_MapObj_GetHeight(CityMap *map, uint32_t object)` | 192 | no | height of object a1: its tile's height minus 0.8 for each object stacked below it |
 | `0x00143750` | `void mm_MapObj_PushHistory(CityMap *map)` | 52 | no | shifts the 6-byte history at +0x28 by one, new entry 0 |
 | `0x00143790` | `int mm_MapObj_SumHistory(CityMap *map)` | 56 | no | sum of the 6 history bytes at +0x28 |
-| `0x001437D0` | `int mm_MapObj_RayHit(CityMap *map, uint32_t tile, int a2, int a3, int t0)` | 500 | indirect | (provisional) box from the tile-kind table 0x1B2590 at the object, tested by the type's slot +0x30 (player pick) |
+| `0x001437D0` | `int mm_MapObj_RayHit(CityMap *map, uint32_t tile, int a2, int a3, int arg)` | 500 | indirect | whether the type of the first object on a tile reports a ray hit (vtable +0x30) with the object's matrix: building matrix of its terrain kind (0x1B2590) at the footprint middle |
 | `0x00144270` | `void mm_MapObj_GetMatrix(CityMap *map, int object, Vec4 *matrix)` | 364 | no | 0x40-byte box matrix of object a1 from the tile-kind table, at its position and height |
 | `0x001443E0` | `int mm_Map_CountObjectsBefore(CityMap *map, int x, int z, uint16_t object)` | 92 | no | number of objects on tile (a1, a2) before object a3 |
 | `0x00144440` | `MapObject *mm_Map_FindFamilyHome(CityMap *map, uint16_t family)` | 128 | no | object (people-inside type) whose family field (+0xC) is a1, scanning objects 1..0x3F7F |
@@ -102,8 +102,8 @@ placement checks (`mm_Placement_*`) and the per-object history (`mm_MapObj_*`) a
 | `0x001446E0` | `void mm_Map_RemoveObjectFromTile(CityMap *map, int tile, uint32_t object)` | 132 | no | unlinks object a2 from tile a1's object list |
 | `0x00144770` | `void mm_Map_AppendObjectToTile(CityMap *map, int tile, uint16_t object)` | 76 | no | links object a2 at the end of tile a1's object list |
 | `0x001447C0` | `int mm_Map_CreateObject(CityMap *map, int owner, int type, int x, int z)` | 908 | no | (provisional) creates an object record, links it to its tiles and registers it |
-| `0x00144B60` | `int mm_Placement_CheckSlope(CityMap *map, int type, int x, int z)` | 328 | no | (provisional) height differences under a footprint |
-| `0x00144CB0` | `int mm_Map_CheckPlacement(CityMap *map, uint32_t type, int x, int z, int32_t *rect)` | 760 | indirect | (provisional) full placement test: slope, neighbours, type rules |
+| `0x00144B60` | `int mm_Placement_CheckSlope(CityMap *map, int x, int z, int size)` | 328 | no | (map, x, z, size): whether any tile just beyond a side of the footprint lies lower than 0.5 |
+| `0x00144CB0` | `int mm_Map_CheckPlacement(CityMap *map, uint32_t type, int x, int z, int32_t *rect)` | 760 | indirect | 1 when type a1 can stand at (a2, a3), 2 when its type rule forbids the tile, else 0: footprint on the map, neighbours, every footprint object of another unlocked flag-4 type that the type accepts (vtable +0x20), raised ground needing lower ground beside it |
 | `0x00144FB0` | `int mm_Placement_CheckNeighbours(CityMap *map, int x, int z, int size, int32_t *box)` | 504 | no | (provisional) |
 | `0x001451B0` | `int mm_Placement_CheckTypeRule(CityMap *map, int type, int tile)` | 244 | no | (provisional) building type rule (+0x144) |
 | `0x001452B0` | `void mm_MapObj_Delete(CityMap *map, int object)` | 300 | no | removes object a1 from its claim lists, clears its type and lowers the object and per-category counters (+0x24, +0x30 + category * 4, +0x40, +0x5C) |
@@ -115,8 +115,8 @@ placement checks (`mm_Placement_*`) and the per-object history (`mm_MapObj_*`) a
 | `0x00145940` | `CityMap *mm_MapObjects_ctor(CityMap *map)` | 680 | yes | tile-level constructor, vtable 0x1BCEF0, object records and tile lists |
 | `0x00145C00` | `void mm_Map_SetPlacementHighlight(CityMap *map, int mode, int32_t *rect, uint32_t *colour)` | 8 | no | (provisional) footprint highlight on the terrain: mode a1 (1/2), rectangle a2, colour a3 (member +0x2F88) |
 | `0x00145C10` | `void mm_Terrain_AddQuad(CityMap *map, Vec4 *a, Vec4 *b, Vec4 *c, Vec4 *d, int t1, int t2, int t3)` | 204 | no | (provisional) appends a quad to the terrain buffer (limit 0x9BD) |
-| `0x00145CE0` | `void mm_Terrain_BuildStrip(int a0, int a1, int a2, uint64_t *a3, uint64_t *t0, uint64_t *t1, uint64_t *t2)` | 2592 | no | (provisional) 2.5 KB terrain strip builder |
-| `0x00146700` | `void mm_Terrain_DrawPatch(CityMap *map, int x, int z, int a3, float f12, float f13, float f14)` | 1064 | indirect | (provisional) builds one visible terrain patch |
+| `0x00145CE0` | `void mm_Terrain_BuildStrip(CityMap *map, int x, int z, Vec4 *corner0, Vec4 *corner1, Vec4 *corner2, Vec4 *corner3)` | 2592 | no | the cliff sides of terrain tile (x, z): towards each neighbour whose facing corners stand higher, up to two triangles into the side buffer (CityMap +0x2D20, 0x86E vertices) |
+| `0x00146700` | `void mm_Terrain_DrawPatch(CityMap *map, int x, int z, int object, float centreX, float centreZ, float level)` | 1064 | indirect | one terrain tile's quad (mm_Terrain_AddQuad) with its draw flags (texture from the object type's vtable +0x1C, above the level, above 0, building layer, flag 0x10), edge-flattened off the map; tiles with an object also get their cliff sides |
 | `0x00146B30` | `void mm_Terrain_Draw(CityMap *map, int a1, Vec4 *a2, int a3, int t0, int t1, float f12)` | 2424 | no | (provisional) culls and draws the terrain around the camera |
 | `0x001474C0` | `uint32_t *mm_Terrain_BuildVu1PacketA(int a0, uint32_t *a1)` | 1556 | no | (provisional) VU1 packet referencing microcode at 0x1A76F0 |
 | `0x00147AE0` | `uint32_t *mm_Terrain_BuildVu1PacketB(int a0, uint32_t *a1)` | 1204 | no | (provisional) VU1 packet referencing microcode at 0x1A5EB0 |

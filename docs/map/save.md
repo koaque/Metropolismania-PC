@@ -13,7 +13,7 @@ Saving and loading on the memory card.
 
 ## Functions
 
-48 functions (ported 4, typed 21, verified 23). Blocks: 13 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+48 functions (ported 4, typed 20, verified 24). Blocks: 13 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -41,7 +41,7 @@ Saving and loading on the memory card.
 | `0x0015C1F0` | `uint8_t mm_McManager_GetCardStatus(McManager *mc, int card)` | 156 | no | card a1 status for the menus (formatted, unformatted, none, ...) |
 | `0x0015C290` | `int mm_McManager_FormatSlotText(McManager *mc, int32_t *a1, int a2, uint32_t *a3)` | 1588 | yes | "Slot %d: %s %s%s, %s. %shrs %smins" with the RTC time |
 | `0x0015C8D0` | `int mm_McManager_HasAnySave(void)` | 84 | no | whether any slot holds a save |
-| `0x0015C930` | `int mm_McManagerUpdate(McManager *mc)` | 3200 | no |  |
+| `0x0015C930` | `int mm_McManagerUpdate(McManager *mc)` | 3200 | no | memory card scan, a step a frame: card info, then each port's save folders (prefix, file sizes) into the 16 save slots; 0 idle, 1 busy, 2 inside a save folder |
 | `0x0015D5B0` | `void mm_McManager_NewSaveName(McManager *mc, uint32_t card)` | 848 | yes | (provisional) builds a new save directory name from the CD clock |
 | `0x0015D900` | `void mm_McManager_ClearSlots(McManager *mc)` | 160 | no | resets the slot tables |
 | `0x0015D9A0` | `void mm_McManager_InitSlots(void)` | 136 | no | (provisional) initial slot tables |

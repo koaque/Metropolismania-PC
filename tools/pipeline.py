@@ -596,7 +596,8 @@ def cmd_capture(args: argparse.Namespace) -> None:
 def cmd_difftest(args: argparse.Namespace) -> None:
     """Replay the records in work/difftest/ through each ported function and its generated original,
     headless (src/port/difftest.cpp). Exits non-zero when any record differs. --fuzz N also replays each
-    record N times with mutated float and integer arguments for the --fuzz-functions named."""
+    record N times with mutated float and integer arguments for the --fuzz-functions named. --changes lists
+    what each record's original run changed, for the functions named."""
     LOGS.mkdir(exist_ok=True)
     log_path = LOGS / f"difftest-{dt.datetime.now():%Y%m%d-%H%M%S}.log"
     exe = tool("ps2EntryRunner")
@@ -604,6 +605,10 @@ def cmd_difftest(args: argparse.Namespace) -> None:
     if args.fuzz:
         env["MMPC_DIFFTEST_FUZZ"] = str(args.fuzz)
         env["MMPC_DIFFTEST_FUZZ_FUNCTIONS"] = args.fuzz_functions or "all"
+    if args.changes:
+        env["MMPC_DIFFTEST_CHANGES"] = args.changes
+    if args.only:
+        env["MMPC_DIFFTEST_ONLY"] = args.only
     env.pop("PS2X_WINDOW_POS", None)
     with log_path.open("w", encoding="utf-8", errors="replace") as fh:
         code = subprocess.run([str(exe), str(ORIGINAL / ELF_NAME)], stdout=fh, stderr=subprocess.STDOUT, cwd=exe.parent,
@@ -671,6 +676,9 @@ def main() -> int:
     p = sub.add_parser("difftest", help="replay work/difftest records through ported and generated code")
     p.add_argument("--fuzz", type=int, default=0, help="also replay each record N times with mutated arguments")
     p.add_argument("--fuzz-functions", default="", help="comma-separated names to fuzz (default: all)")
+    p.add_argument("--changes", default="", help="comma-separated names (or all) whose records list the RDRAM ranges "
+                   "the original run changed")
+    p.add_argument("--only", default="", help="comma-separated names: replay only these (results.json is left as it was)")
     p.set_defaults(func=cmd_difftest)
     p = sub.add_parser("all")
     p.add_argument("image", nargs="?")

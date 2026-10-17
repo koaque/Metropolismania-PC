@@ -4,6 +4,8 @@
 #include "game_globals.h"
 #include "sdk.h"
 
+#include <initializer_list>
+
 namespace mm
 {
     // Widget states: 0 idle, 1 opening, 2 opened, 3 active, 4 closing, 5 closed.
@@ -127,13 +129,103 @@ namespace mm
 
     void TextBox_Draw(GuestPtr<TextBox> textbox) { Dma_AppendCall(static_cast<int>(textbox->packet)); }
 
+    namespace
+    {
+        // Writes `words` from p on and returns the address after them.
+        GuestPtr<uint32_t> emitWords(GuestPtr<uint32_t> p, std::initializer_list<uint32_t> words)
+        {
+            int32_t i = 0;
+            for (const uint32_t word : words)
+                p[i++] = word;
+            return p + i;
+        }
+
+        // A cell position on the GS's 16-bit screen axis: one that is negative or whose far edge leaves it
+        // restarts at 0.
+        int keepOnAxis(int position, int size)
+        {
+            const int32_t end = static_cast<int32_t>(static_cast<uint32_t>(position) + static_cast<uint32_t>(size));
+            return position < 0 || end >= 0x10000 ? 0 : position;
+        }
+    }
+
+    // The box's DMA packet. With a palette (`clut`, 16 entries as 8 x 2) an image transfer of it to GS block 0x1E00
+    // comes first. Then come the glyph uploads: one transfer per cell of a 32 x 32 4-bit glyph to block 0x1E01 + 2
+    // per cell. Each cell's entry is 0x60 bytes, starting at `cells`; the glyph's address goes in at +0x54
+    // (mm_TextBox_AppendText). Then the draw: a texture flush, register 8, grey, and a packed GIF tag over the
+    // cells (at `sprites`). Each cell is a TEX0 and two (ST, XYZ2) corners of a sprite, row by row at the pitches.
+    void TextBox_Build(GuestPtr<TextBox> textbox, int clut)
+    {
+        GuestPtr<uint32_t> p{textbox->packet};
+        const int cells = textbox->columns * textbox->rows;
+        if (clut != 0)
+            p = emitWords(p, {0x10000006, 0, 0x11000000, 0x50000006,
+                              4, 0x10000000, 0xE, 0,
+                              0, 0, 0x51, 0,
+                              8, 2, 0x52, 0,
+                              0, 0x11E00, 0x50, 0,
+                              0, 0, 0x53, 0,
+                              0x8004, 0x08000000, 0, 0,
+                              0x30000004, static_cast<uint32_t>(clut) & 0x7FFFFFFFu, 0, 0x50000004});
+        p = emitWords(p, {0x10000002, 0, 0x11000000, 0x50000002,
+                          0x8001, 0x10000000, 0xE, 0,
+                          0xC, 0x16, 0x52, 0});
+        textbox->cells = p.address;
+        for (int i = 0; i < cells; ++i)
+        {
+            emitWords(p, {0x10000004, 0, 0x11000000, 0x50000004,
+                          2, 0x10000000, 0xE, 0,
+                          0, 0x14011E01u + 2u * static_cast<uint32_t>(i), 0x50, 0,
+                          0, 0, 0x53, 0,
+                          0x8009, 0x08000000, 0, 0,
+                          0x30000009});
+            p[22] = 0;
+            p[23] = 0x50000009;
+            p = p + 24;
+        }
+        const uint32_t qwc = static_cast<uint32_t>(cells * 5 + 7);
+        p = emitWords(p, {qwc | 0x10000000u, 0, 0x11000000, qwc | 0x50000000u,
+                          3, 0x10000000, 0xE, 0,
+                          0, 0, 0x3F, 0,
+                          0x4C00A, 0x54, 8, 0,
+                          0x80808080u, 0x3F800000, 1, 0,
+                          static_cast<uint32_t>(cells), 0x500B4000, 0x52526, 0});
+        textbox->sprites = p.address;
+
+        // TEX0: TBW 1, PSMT4 (0x14), 32 x 32, TCC 1, CLUT at block 0x1E00 loaded (CLD 2); TBP0 per cell.
+        constexpr uint64_t kTex0 = (1ull << 14) | (0x14ull << 20) | (5ull << 26) | (5ull << 30) | (1ull << 34) |
+                                   (0x1E00ull << 37) | (2ull << 61);
+        int y = textbox->y;
+        for (int row = 0; row < textbox->rows; ++row, y += textbox->pitchY)
+        {
+            y = keepOnAxis(y, textbox->charHeight);
+            int x = textbox->x;
+            for (int column = 0; column < textbox->columns; ++column, x += textbox->pitchX)
+            {
+                x = keepOnAxis(x, textbox->charWidth);
+                const uint32_t block = static_cast<uint32_t>((column + row * textbox->columns) * 2 + 0x1E01) & 0x3FFFu;
+                const uint64_t tex0 = kTex0 | block;
+                const uint32_t z = static_cast<uint32_t>(textbox->z);
+                p = emitWords(p, {static_cast<uint32_t>(tex0), static_cast<uint32_t>(tex0 >> 32), 6, 0,
+                                  0, 0, 0, 0,
+                                  static_cast<uint32_t>(x), static_cast<uint32_t>(y), z, 0xFF,
+                                  0x3EC00000, 0x3F300000, 0, 0,
+                                  static_cast<uint32_t>(x) + static_cast<uint32_t>(textbox->charWidth),
+                                  static_cast<uint32_t>(y) + static_cast<uint32_t>(textbox->charHeight), z, 0xFF});
+            }
+        }
+        emitWords(p, {0x8001, 0x10000000, 0xE, 0,
+                      0, 0, 8, 0,
+                      0x60000000, 0, 0, 0});
+    }
+
     // Each layout setter rebuilds the box's packet.
     void TextBox_SetPos(GuestPtr<TextBox> textbox, int x, int y, int z)
     {
         textbox->x = x;
         textbox->y = y;
         textbox->z = z;
-        TextBox_Build(textbox, textbox->style);
+        TextBox_Build(textbox, textbox->clut);
     }
 
     void TextBox_SetPosAndSize(GuestPtr<TextBox> textbox, int x, int y, int charWidth, int charHeight, int pitchX,
@@ -146,7 +238,7 @@ namespace mm
         textbox->charHeight = charHeight;
         textbox->pitchX = pitchX;
         textbox->pitchY = pitchY;
-        TextBox_Build(textbox, textbox->style);
+        TextBox_Build(textbox, textbox->clut);
     }
 
     // Values of 0 or less keep the current setting.
@@ -160,7 +252,7 @@ namespace mm
             textbox->pitchX = pitchX;
         if (pitchY > 0)
             textbox->pitchY = pitchY;
-        TextBox_Build(textbox, textbox->style);
+        TextBox_Build(textbox, textbox->clut);
     }
 
     int TexSprite_SetPosScale(GuestPtr<TexSprite> sprite, int x, int y, int z, ps2f scaleX, ps2f scaleY)
@@ -726,6 +818,45 @@ namespace mm
         matrix[3].y = ps2f(1.02f) + ps2f(0.0105f) * camera[2];
     }
 
+    // The minimap's DMA packet: the 16-colour palette at 0x1AF180 (8 x 2) to GS block 0x1E00, the cells as a
+    // 128 x 128 4-bit image to block 0x1E01, a texture flush, then the map drawn as one sprite: GS state (A+D
+    // 0x56), grey, TEX0 (PSMT4 128 x 128, CLUT at 0x1E00) and two (ST, XYZ2) corners.
+    void Minimap_BuildPacket(GuestPtr<Minimap> minimap)
+    {
+        constexpr uint64_t kTex0 = 0x1E01ull | (2ull << 14) | (0x14ull << 20) | (7ull << 26) | (7ull << 30) | (1ull << 34) |
+                                   (0x1E00ull << 37) | (2ull << 61);
+        emitWords(GuestPtr<uint32_t>{minimap.address + 0x2000u},
+                  {0x10000006, 0, 0x11000000, 0x50000006,
+                   4, 0x10000000, 0xE, 0,
+                   0, 0, 0x51, 0,
+                   8, 2, 0x52, 0,
+                   0, 0x11E00, 0x50, 0,
+                   0, 0, 0x53, 0,
+                   0x8004, 0x08000000, 0, 0,
+                   0x30000004, 0x001AF180u & 0x7FFFFFFFu, 0, 0x50000004,
+                   0x10000006, 0, 0x11000000, 0x50000006,
+                   4, 0x10000000, 0xE, 0,
+                   0, 0, 0x51, 0,
+                   0x80, 0x80, 0x52, 0,
+                   0, 0x14021E01, 0x50, 0,
+                   0, 0, 0x53, 0,
+                   0x8200, 0x08000000, 0, 0,
+                   0x30000200, minimap.address & 0x7FFFFFFFu, 0, 0x50000200,
+                   0x10000002, 0, 0, 0x50000002,
+                   0x8001, 0x10000000, 0xE, 0,
+                   0, 0, 0x3F, 0,
+                   0x10000008, 0, 0x11000000, 0x50000008,
+                   0x8007, 0x10000000, 0xE, 0,
+                   0x56, 0, 0, 0,
+                   0x80808080u, 0x3F800000, 1, 0,
+                   static_cast<uint32_t>(kTex0), static_cast<uint32_t>(kTex0 >> 32), 6, 0,
+                   0x3F800000, 0x3F800000, 2, 0,
+                   0x812087A0u, 0x10, 5, 0,
+                   0, 0, 2, 0,
+                   0x85809060u, 0x10, 5, 0,
+                   0x60000000, 0, 0, 0});
+    }
+
     // The laptop minimap: its frame and map models (0x1F3B18, 0x1F3B14), every cell set to colour 1 (both
     // nibbles), and the packet of the map image built.
     GuestPtr<Minimap> Minimap_ctor(GuestPtr<Minimap> minimap)
@@ -841,6 +972,47 @@ namespace mm
         }
         Dma_AppendCall(static_cast<int>(panel.address));
         A3DObject_Draw(panel->alertModel);
+    }
+
+    // The status panel's packet at `packet` (kept at +0x9C): grey RGBAQ, TEX0 for its 256 x 128 8-bit texture
+    // at block 0x3F7C (palette at 0x3FFC, CLUT load 1), PRIM textured sprite, then the table's 19 sprites at
+    // depth 0xFFF000, with the colour set again before the 16th and 19th; a ret ends it. Returns the address
+    // after it.
+    GuestPtr<uint32_t> StatusPanel_BuildPacket(GuestPtr<StatusPanel> panel, GuestPtr<uint32_t> packet)
+    {
+        panel->panelPacket = packet.address;
+        const uint64_t tex0 = 0x3F7Cu | (4ull << 14) | (0x13ull << 20) | (static_cast<uint64_t>(Math_Log2(0x100) & 0xF) << 26) |
+                              (static_cast<uint64_t>(Math_Log2(0x80) & 0xF) << 30) | (1ull << 34) | (0x3FFCull << 37) | (1ull << 61);
+        const uint32_t header[20] = {
+            0x10000053u, 0, 0x11000000u, 0x50000053u,                                 // cnt 0x53; VIF flush, direct 0x53
+            0x00008052u, 0x10000000u, 0x0000000Eu, 0,                                 // GIF tag: 0x52 loops, eop, A+D
+            0x80808080u, 0x3F800000u, 0x01u, 0,                                       // RGBAQ: grey, Q 1
+            static_cast<uint32_t>(tex0), static_cast<uint32_t>(tex0 >> 32), 0x06u, 0, // TEX0_1
+            0x16u, 0, 0, 0,                                                           // PRIM: textured sprite
+        };
+        GuestPtr<uint32_t> p = packet;
+        for (int32_t i = 0; i < 20; ++i)
+            p[i] = header[i];
+        p = p + 20;
+        const auto put = [&](uint32_t a, uint32_t b, uint32_t reg) {
+            p[0] = a;
+            p[1] = b;
+            p[2] = reg;
+            p[3] = 0;
+            p = p + 4;
+        };
+        for (uint32_t i = 0; i < 19; ++i)
+        {
+            if (i == 15 || i == 18)
+                put(0x80808080u, 0x3F800000u, 0x01u);
+            const GuestPtr<uint32_t> sprite{globals::kStatusPanelSprites + 0x20u * i};
+            put(sprite[0], sprite[1], 0x02u);                               // ST
+            put(sprite[4] | sprite[5] << 16, 0x00FFF000u, 0x05u);            // XYZ2
+            put(sprite[2], sprite[3], 0x02u);
+            put(sprite[6] | sprite[7] << 16, 0x00FFF000u, 0x05u);
+        }
+        put(0x60000000u, 0, 0);                                             // ret
+        return p;
     }
 
     // title: draws a layer set (0x0A/0x0B logo sprite, 0x14/0x15 logo model, 0x1E/0x1F title, 0x20/0x21 title and
@@ -1459,6 +1631,7 @@ namespace mm
     PORT_FN(TextBox_SetText);
     PORT_FN(TextBox_AppendText);
     PORT_FN(TextBox_Draw);
+    PORT_FN(TextBox_Build);
     PORT_FN(TextBox_SetPos);
     PORT_FN(TextBox_SetPosAndSize);
     PORT_FN(TextBox_SetCharSize);
@@ -1489,10 +1662,12 @@ namespace mm
     PORT_FN(Minimap_Plot);
     PORT_FN(Minimap_SetView);
     PORT_FN(Minimap_ctor);
+    PORT_FN(Minimap_BuildPacket);
     PORT_FN(Minimap_Draw);
     PORT_FN(PauseMenu_ctor);
     PORT_FN(PauseMenu_Draw);
     PORT_FN(StatusPanel_Draw);
+    PORT_FN(StatusPanel_BuildPacket);
     PORT_FN(Title_LogoLetters);
     PORT_FN(Title_Intro);
     PORT_FN(Title_DrawChoicesIdle);

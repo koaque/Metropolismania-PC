@@ -314,6 +314,48 @@ namespace mm
         store(eye, vf(4));
     }
 
+    // The camera for a talk at building `object`, eye first. The target is the middle of the footprint at the
+    // object's height, the eye an offset turned by the tile's facing (the building matrix of its tile kind,
+    // translation row reset): the shared one (2.5 lower for type flag 0x10) for an object without the
+    // entrance flag (0x20), the type's own for an entrance of a type with flag 0x4000. The target then takes
+    // the eye's height. Other entrances use the person camera, which takes the target first.
+    void TalkView_BuildingCamera(GuestPtr<TalkView> view, int object, GuestPtr<Vec4> eye, GuestPtr<Vec4> target)
+    {
+        using namespace vu0;
+        const GuestPtr<MapObject> obj = Map_GetRecord(view->city->map, object);
+        const GuestPtr<BuildingType> btype{globals::buildingTypeAddress(obj->type)};
+        const bool entrance = (obj->flags & 0x20u) != 0;
+        if (entrance && (btype->flags & 0x4000u) == 0)
+        {
+            TalkView_PersonCamera(view, object, target, eye);
+            return;
+        }
+        const ps2f half = fromInt(btype->size) / ps2f(2.0f), centre = 64.0f;
+        target->x = (fromInt(obj->tile % 128) - centre) + half;
+        target->y = MapObj_GetHeight(view->city->map, static_cast<uint32_t>(object));
+        target->z = (fromInt(128 - obj->tile / 128) - centre) - half;
+        target->w = 1.0f;
+        const auto kind = static_cast<uint32_t>(Map_GetTileKind(view->city->map, obj->tile));
+        const GuestPtr<Vec4> turn{globals::kBuildingMatrices + 0x40u * kind};
+        turn[3] = *GuestPtr<Vec4>{globals::kOriginPoint};
+        if (!entrance)
+        {
+            Math_MulMatVecVu0(eye, turn, GuestPtr<Vec4>{globals::kTalkEyeOffset});
+            if ((btype->flags & 0x10u) != 0)
+                eye->y = eye->y - ps2f(2.5f);
+        }
+        else
+        {
+            Math_MulMatVecVu0(eye, turn, GuestPtr<Vec4>::of(btype->talkEye));
+        }
+        vf(4) = load(target);
+        vf(5) = load(eye);
+        set(vf(4), add(vf(4), vf(5)), XYZW);
+        store(eye, vf(4));
+        target->y = eye->y;
+        eye->w = 1.0f;
+    }
+
     // For a talk at a building (+0x70; 0x3F80, a talk with a family, has nothing to do): the building's workers
     // among the people listed at it, outside or already in it and of a class without flag 1, are sorted by
     // their +0x2E byte, highest first, then each is unlinked from the building's tile and, when it was linked
@@ -358,6 +400,7 @@ namespace mm
 
     PORT_FN(Talk_LookupPose);
     PORT_FN(TalkView_CollectOccupants);
+    PORT_FN(TalkView_BuildingCamera);
     PORT_FN(TalkView_PersonCamera);
     PORT_FN(Talk_ctor);
     PORT_FN(TalkView_ctor);

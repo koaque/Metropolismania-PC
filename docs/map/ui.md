@@ -17,7 +17,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 
 ## Functions
 
-168 functions (typed 111, verified 57). Blocks: 62 can reach a thread switch, 10 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+168 functions (ported 1, typed 107, verified 60). Blocks: 62 can reach a thread switch, 10 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -42,7 +42,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x00136F10` | `void mm_CityCursor_Draw(CityCursor *cursor)` | 276 | no | (provisional) cursor model, info window, text, optional fade |
 | `0x00137030` | `CityCursor *mm_CityCursor_dtor(CityCursor *cursor, int16_t deleteFlag)` | 268 | yes | (provisional) deletes its models, frames and text box |
 | `0x00137140` | `CityCursor *mm_CityCursor_ctor(CityCursor *cursor)` | 1064 | yes | (provisional) loads DATA\A3D\DESTRUCT.A3D and creates the frames and text box |
-| `0x0013DB40` | `void mm_Minimap_BuildPacket(Minimap *minimap)` | 1096 | no | builds the minimap GS packet at +0x2000 (table 0x1AF180) |
+| `0x0013DB40` | `void mm_Minimap_BuildPacket(Minimap *minimap)` | 1096 | no | builds the minimap DMA packet at +0x2000: palette 0x1AF180 to block 0x1E00, the cells as a 128 x 128 4-bit image to 0x1E01, then one sprite |
 | `0x0013DF90` | `void mm_Minimap_SetView(Minimap *minimap, float *camera, float angle)` | 144 | no | rotates the minimap by the camera (sceVu0RotMatrixZ) and offsets it by the position (scale 0.0105) |
 | `0x0013E020` | `void mm_Minimap_Plot(Minimap *minimap, uint32_t tile, int size, int colour, int keepHigher)` | 388 | no | marks tile a1 on the minimap with colour/size arguments |
 | `0x0013E1B0` | `void mm_Minimap_Draw(Minimap *minimap)` | 180 | no | draws the minimap models; marker colour blinks every 32 frames |
@@ -140,7 +140,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x00163600` | `NameEntry *mm_NameEntry_ctor(NameEntry *entry)` | 136 | yes | (provisional) vtable 0x1BCFE8 |
 | `0x0016C3A0` | `void mm_PhoneCall_Next(PhoneCalls *phone, int a1)` | 204 | no | shifts the call queue and drops input focus |
 | `0x0016C470` | `void mm_PhoneCall_Remove(PhoneCalls *phone, int a1, uint32_t family, uint32_t member)` | 372 | no | removes the queued call for (a2, a3) |
-| `0x0016C5F0` | `int mm_PhoneCall_Post(PhoneCalls *phone, int person, uint32_t family, uint16_t member, int t0)` | 124 | no | queues a call (3 slots) from person a1 with message a2/a3 |
+| `0x0016C5F0` | `int mm_PhoneCall_Post(PhoneCalls *phone, int person, uint32_t family, uint16_t member, int t0)` | 124 | no | queues a call from a family member (4 entries; none when the family already has one); 1 when queued |
 | `0x0016C670` | `void mm_PhoneCall_Draw(PhoneCalls *phone)` | 364 | yes | phone model, ringing light and sound |
 | `0x0016C7E0` | `int mm_PhoneCall_Update(PhoneCalls *phone, CityScene *city)` | 1940 | yes | ringing phone: "Call from boss", "Call from stranger", "Call from %s", answering, input focus |
 | `0x0016CF80` | `PhoneCalls *mm_PhoneCall_DeletingDtor(PhoneCalls *phone, int16_t deleteFlag)` | 68 | yes | delete when the flag is > 0 |
@@ -180,7 +180,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x00173550` | `void mm_Widget_Open(Widget *widget)` | 16 | no | slot +0xC: state 1, timer 0 |
 | `0x00173560` | `Widget *mm_Widget_dtor(Widget *widget, short deleteFlag)` | 76 | yes | vtable 0x1BD400 |
 | `0x001735B0` | `Widget *mm_Widget_ctor(Widget *widget)` | 28 | no | vtable 0x1BD400 at +8, state and timer 0 |
-| `0x00183500` | `void mm_TextBox_Build(TextBox *textbox, int a1)` | 1556 | no | rebuilds the text box's GS packet (this+8): GIF header when a1 != 0, then one sprite per glyph cell (cols +0x38 x rows +0x3C) |
+| `0x00183500` | `void mm_TextBox_Build(TextBox *textbox, int clut)` | 1556 | no | rebuilds the text box's DMA packet: palette upload (when clut != 0), one glyph upload per cell to GS block 0x1E01 + 2n, then a packed GIF tag of one textured sprite per cell |
 | `0x00183B20` | `void mm_TextBox_Draw(TextBox *textbox)` | 8 | no | queues the text box packet (this+8) with mm_Dma_AppendCall |
 | `0x00183B30` | `void mm_TextBox_AppendText(TextBox *textbox, char *text, int raw)` | 692 | no | lays out text from the cursor (+0x2C) on, wrapping words at ' \n\r'; glyphs from mm_Font_GetGlyph |
 | `0x00183DF0` | `void mm_TextBox_SetText(TextBox *textbox, char *text, int raw)` | 8 | no | resets the cursor (+0x2C) and lays out the text like mm_TextBox_AppendText |

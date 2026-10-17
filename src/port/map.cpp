@@ -281,6 +281,252 @@ namespace mm
         }
     }
 
+    // Takes `person` out of the list at `head`, ending its link and flagging it removed (0x800); 1 if it was in it.
+    int People_UnlinkFromList(GuestPtr<CityMap> map, GuestPtr<uint16_t> head, uint32_t person)
+    {
+        for (uint16_t *link = &*head; *link != kNoPerson;)
+        {
+            MapPerson &entry = map->people[*link];
+            if (*link == person)
+            {
+                *link = entry.nextOnTile;
+                entry.nextOnTile = kNoPerson;
+                entry.flags |= 0x800u;
+                return 1;
+            }
+            link = &entry.nextOnTile;
+        }
+        return 0;
+    }
+
+    // Whether ground lower than 0.5 lies just outside the footprint: one tile beyond each side, at the side's
+    // corner, (x, z - 1), (x + size, z), (x, z + size) and (x - 1, z), counting tiles on the map only.
+    int Placement_CheckSlope(GuestPtr<CityMap> map, int x, int z, int size)
+    {
+        port::GuestFrame<0x70> frame;
+        const int xs[4] = {x, x + size, x, x - 1};
+        const int zs[4] = {z - 1, z, z + size, z};
+        for (int i = 0; i < 4; ++i)
+        {
+            if (xs[i] < 0 || xs[i] >= 0x80 || zs[i] < 0 || zs[i] >= 0x80)
+                continue;
+            const GuestPtr<MapObject> obj = map->objects + map->tiles[xs[i] + zs[i] * 128].firstObject;
+            if (Map_GetTileHeightWord(map, obj->tile) < ps2f(0.5f))
+                return 1;
+        }
+        return 0;
+    }
+
+    // Whether `type` can stand at (x, z): 1 yes, 2 when its type rule forbids the tile, 0 when its footprint
+    // leaves the map, the map holds 0x3F80 objects, the neighbours forbid it (mm_Placement_CheckNeighbours,
+    // which also widens `rect`), or a footprint tile's object is of the same type, locked (flag 1), of a type
+    // without flag 4, on ground at or below 0 for a type with flag 0x10, or refused by the type (vtable
+    // +0x20). Other than ground (2) and wasteland (3), a type placed above height 0.5 also needs lower ground
+    // beside it (mm_Placement_CheckSlope).
+    int Map_CheckPlacement(GuestPtr<CityMap> map, uint32_t type, int x, int z, GuestPtr<int32_t> rect)
+    {
+        port::GuestFrame<0xE0> frame;
+        const int tile = x + z * 128;
+        const GuestPtr<BuildingType> btype{globals::buildingTypeAddress(type)};
+        const int size = btype->size;
+        if (x < 0 || z < 0 || x + size >= 0x80 || z + size >= 0x80)
+            return 0;
+        if (map->objectCount >= 0x3F80)
+            return 0;
+        if (Placement_CheckTypeRule(map, static_cast<int>(type), tile) != 0)
+            return 2;
+        if (Placement_CheckNeighbours(map, x, z, size, rect) == 0)
+            return 0;
+        for (int tz = z; tz < z + size; ++tz)
+            for (int tx = x; tx < x + size; ++tx)
+            {
+                const GuestPtr<MapObject> obj = map->objects + map->tiles[tx + tz * 128].firstObject;
+                if (type == obj->type || (obj->flags & 1u) != 0)
+                    return 0;
+                if ((GuestPtr<BuildingType>{globals::buildingTypeAddress(obj->type)}->flags & 4u) == 0)
+                    return 0;
+                if ((btype->flags & 0x10u) != 0 && Map_GetHeightAt(map, tx, tz) <= ps2f(0.0f))
+                    return 0;
+                const uint32_t accepts = port::load<uint32_t>(btype->vtable.address + 0x20u);
+                if (port::callGuest<int64_t>(accepts, btype, obj, type, map, tx, tz) == 0)
+                    return 0;
+            }
+        if (type == 2 || type == 3)
+            return 1;
+        if (Map_GetTileHeightWord(map, tile) <= ps2f(0.5f))
+            return 1;
+        return Placement_CheckSlope(map, x, z, size) != 0 ? 1 : 0;
+    }
+
+    // Links `object` at the end of tile `tile`'s object list.
+    void Map_AppendObjectToTile(GuestPtr<CityMap> map, int tile, uint16_t object)
+    {
+        uint16_t *link = &map->tiles[tile].firstObject;
+        while (*link != kNoObject)
+            link = &map->objects[*link].nextOnTile;
+        *link = object;
+    }
+
+    // Moves the next-record index on to a free object record (type 0), wrapping from 0x3F80 to 1, and returns it;
+    // 0 when 0x3F81 tries find none.
+    int MapObj_FindFreeSlot(GuestPtr<CityMap> map)
+    {
+        for (int tries = 0; map->objects[map->nextId].type != 0;)
+        {
+            ++map->nextId;
+            if (++tries >= 0x3F81)
+                return 0;
+            if (map->nextId >= 0x3F80)
+                map->nextId = 1;
+        }
+        return map->nextId;
+    }
+
+    // Places an object of `type` at (x, z) for `owner` when the placement test allows it (0x3F80 when not):
+    // result 1 clears the footprint and creates the object normally; any other result puts a new record on top
+    // of the tile's list. The touched area's geometry is then rebuilt and the type is told (vtable +0x10, with
+    // `arg` and the object).
+    int Map_PlaceObject(GuestPtr<CityMap> map, int owner, int type, int x, int z, int arg)
+    {
+        port::GuestFrame<0x80> frame;
+        const GuestPtr<int32_t> rect{frame.ptr().address + 0x70u};
+        rect[0] = 0x7F;
+        rect[1] = 0x7F;
+        rect[2] = 0;
+        rect[3] = 0;
+        const int placement = Map_CheckPlacement(map, static_cast<uint32_t>(type), x, z, rect);
+        if (placement == 0)
+            return kNoObject;
+        int object;
+        if (placement == 1)
+        {
+            Map_ClearArea(map, x, z, GuestPtr<BuildingType>{globals::buildingTypeAddress(static_cast<uint32_t>(type))}->size);
+            object = Map_CreateObject(map, owner, type, x, z);
+        }
+        else
+        {
+            const int tile = x + z * 128;
+            object = MapObj_FindFreeSlot(map);
+            MapObj_Init(map, object, type, static_cast<uint16_t>(owner), static_cast<uint16_t>(tile));
+            Map_AppendObjectToTile(map, tile, static_cast<uint16_t>(object));
+        }
+        Map_UpdateAreaGeometry(map, rect);
+        if (object != kNoObject)
+        {
+            const GuestPtr<MapObject> obj = map->objects + object;
+            const GuestPtr<BuildingType> btype{globals::buildingTypeAddress(obj->type)};
+            port::callGuest<void>(port::load<uint32_t>(btype->vtable.address + 0x10u), btype, arg, obj, 0);
+        }
+        map->unk_60 = 0;
+        return object;
+    }
+
+    // Unlinks `object` from the object list of `tile`, ending its own link.
+    void Map_RemoveObjectFromTile(GuestPtr<CityMap> map, int tile, uint32_t object)
+    {
+        for (uint16_t *link = &map->tiles[tile].firstObject; *link != kNoObject; link = &map->objects[*link].nextOnTile)
+            if (*link == object)
+            {
+                MapObject &obj = map->objects[*link];
+                const uint16_t next = obj.nextOnTile;
+                obj.nextOnTile = kNoObject;
+                *link = next;
+                return;
+            }
+    }
+
+    // A building goes. Its workers (work = object) are taken off the tile they stand on and freed (charType 0);
+    // for residents (classes without flag 1) the building they were heading for loses one from its +0x16 count,
+    // the one they were in (a type with flag 0x40) one from +0x17, and the population drops. Everyone else in it
+    // is put outside, and targets and destinations naming it are cleared. If a worker went, the building's
+    // family moves away.
+    void MapPeople_RemoveForObject(GuestPtr<CityMap> map, uint32_t object)
+    {
+        bool workerLeft = false;
+        for (int i = 0; i < 6000; ++i)
+        {
+            MapPerson &person = map->people[i];
+            if (person.charType == 0)
+                continue;
+            const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person.charType)};
+            if (person.work != object)
+            {
+                if (person.inside == object)
+                {
+                    person.inside = kNoObject;
+                    person.destination = kNoObject;
+                    person.walkTile = 0x4000;
+                    person.previousTile = 0x4000;
+                    person.flags &= 0xFEFFu;
+                }
+                if ((cls->flags & 1u) == 0 && person.target == object)
+                    person.target = kNoObject;
+                if (person.destination == object)
+                    person.destination = kNoObject;
+                continue;
+            }
+
+            const int z = sdk::fptosi(ps2f(64.0f) - person.z);
+            const int x = sdk::fptosi(ps2f(64.0f) + person.x);
+            for (GuestPtr<MapObject> obj = Map_GetTileFirstObject(map, x + z * 128);; obj = map->objects + obj->nextOnTile)
+                if (People_UnlinkFromList(map, GuestPtr<uint16_t>::of(obj->firstPerson), static_cast<uint32_t>(i)) != 0 ||
+                    obj->nextOnTile == kNoObject)
+                    break;
+            person.charType = 0;
+            if ((cls->flags & 1u) == 0)
+            {
+                if (person.target != kNoObject && person.target != object)
+                {
+                    const GuestPtr<MapObject> heading = Map_GetRecord(map, person.target);
+                    if (heading->unk_16[0] != 0)
+                        --heading->unk_16[0];
+                }
+                const uint16_t inside = person.inside;
+                if (inside != kNoObject && inside != object && inside != person.target)
+                {
+                    const GuestPtr<MapObject> in = Map_GetRecord(map, inside);
+                    if ((GuestPtr<BuildingType>{globals::buildingTypeAddress(in->type)}->flags & 0x40u) != 0 && in->unk_16[1] != 0)
+                        --in->unk_16[1];
+                }
+                --map->population;
+            }
+            --map->peopleInUse;
+            workerLeft = true;
+        }
+        if (workerLeft)
+            Family_MoveAway(map->objects[object].family);
+    }
+
+    // Clears an object off the map: its people (its own list and everyone tied to it), then, unless it is ground
+    // (type 2), its tile link and footprint, whose tiles take the first object left on its tile; the record is
+    // deleted, and a footprint left empty is filled with ground objects. A type with flag 8 marks the objects
+    // changed.
+    void CityMap_ClearObject(GuestPtr<CityMap> map, int object)
+    {
+        const uint16_t tile = map->objects[object].tile;
+        const GuestPtr<BuildingType> btype{globals::buildingTypeAddress(map->objects[object].type)};
+        if ((btype->flags & 8u) != 0)
+            map->objectsChanged = 1;
+        People_RemoveChain(map, GuestPtr<uint16_t>::of(map->objects[object].firstPerson));
+        MapPeople_RemoveForObject(map, static_cast<uint32_t>(object));
+        if (map->objects[object].type == 2)
+            return;
+        Map_RemoveObjectFromTile(map, tile, static_cast<uint32_t>(object));
+        const uint16_t first = map->tiles[tile].firstObject;
+        const int size = btype->size;
+        const int tileX = tile & 0x7F, tileZ = tile >> 7;
+        for (int z = tileZ; z < tileZ + size; ++z)
+            for (int x = tileX; x < tileX + size; ++x)
+                map->tiles[x + z * 128].firstObject = first;
+        MapObj_Delete(map, object);
+        if (map->tiles[tile].firstObject != kNoObject)
+            return;
+        const int refill = btype->size;
+        for (int z = tileZ; z < tileZ + refill; ++z)
+            for (int x = tileX; x < tileX + refill; ++x)
+                Map_CreateObject(map, 0, 2, x, z);
+    }
+
     // The object on a tile whose people list holds `person`; none for a person marked removed (0x800).
     GuestPtr<MapObject> Map_FindPersonObjectOnTile(GuestPtr<CityMap> map, uint32_t person, uint32_t tile)
     {
@@ -681,6 +927,186 @@ namespace mm
         map->terrainQuads += 4;
     }
 
+    namespace
+    {
+        // One side of a terrain tile with corners a and b: where the neighbouring tile's corners on that side stand
+        // higher (heightA, heightB), up to two triangles close the gap into the cliff-side buffer (0x86E vertices).
+        // The w words carry draw data: the first vertex a texture entry (0x2698 with the base at 0x1BD990), the
+        // second 0x21 or 0x24 (+6 on odd rows or columns), the third 1. `raisedFirst` (the +z side) starts each
+        // triangle with the raised corner instead of the tile's own.
+        void terrainSide(GuestPtr<CityMap> map, GuestPtr<Vec4> a, ps2f heightA, GuestPtr<Vec4> b, ps2f heightB, uint32_t odd,
+                         bool raisedFirst)
+        {
+            const auto raise = [](GuestPtr<Vec4> corner, ps2f height) {
+                Vec4 v = *corner;
+                v.y = static_cast<float>(height);
+                v.w = 1.0f;
+                return v;
+            };
+            const auto triangle = [&](const Vec4 &v0, const Vec4 &v1, uint32_t w1, const Vec4 &v2) {
+                if (map->sideVertices >= 0x86E)
+                    return;
+                const uint32_t w[3] = {port::load<uint32_t>(0x001BD990u) | 0x2698u, w1, 1u};
+                const Vec4 *v[3] = {&v0, &v1, &v2};
+                for (int i = 0; i < 3; ++i)
+                {
+                    const GuestPtr<Vec4> dst{map->sideWrite.address};
+                    *dst = *v[i];
+                    port::store<uint32_t>(dst.address + 0xCu, w[i]);
+                    map->sideWrite.address += 16u;
+                }
+                map->sideVertices += 3;
+            };
+            const uint32_t near = odd * 6 + 0x21, far = odd * 6 + 0x24;
+            if (!(heightA <= a->y))
+            {
+                const Vec4 upA = raise(a, heightA);
+                if (raisedFirst)
+                    triangle(upA, *a, far, *b);
+                else
+                    triangle(*a, upA, far, *b);
+                if (!(heightB <= b->y))
+                {
+                    const Vec4 upB = raise(b, heightB);
+                    if (raisedFirst)
+                        triangle(upB, upA, near, *b);
+                    else
+                        triangle(*b, upA, near, upB);
+                }
+            }
+            else if (!(heightB <= b->y))
+            {
+                const Vec4 upB = raise(b, heightB);
+                if (raisedFirst)
+                    triangle(upB, *a, far, *b);
+                else
+                    triangle(*b, *a, near, upB);
+            }
+        }
+    }
+
+    // The cliff sides of terrain tile (x, z), whose corners are corner0 (-x,-z), corner1 (+x,-z), corner2 (+x,+z)
+    // and corner3 (-x,+z): towards -z, +z, -x and +x in turn, against the neighbouring tile's facing corners (the
+    // tile itself at the map's edge).
+    void Terrain_BuildStrip(GuestPtr<CityMap> map, int x, int z, GuestPtr<Vec4> corner0, GuestPtr<Vec4> corner1,
+                            GuestPtr<Vec4> corner2, GuestPtr<Vec4> corner3)
+    {
+        const auto tile = [&](int tx, int tz) -> const MapTile & { return map->tiles[tx + tz * 128]; };
+        const uint32_t oddX = static_cast<uint32_t>(x) & 1u, oddZ = static_cast<uint32_t>(z) & 1u;
+        const MapTile &back = tile(x, z < 1 ? 0 : z - 1);
+        terrainSide(map, corner0, back.verts[3], corner1, back.verts[2], oddX, false);
+        const MapTile &front = tile(x, z > 0x7E ? 0x7F : z + 1);
+        terrainSide(map, corner3, front.verts[0], corner2, front.verts[1], oddX, true);
+        const MapTile &left = tile(x < 1 ? 0 : x - 1, z);
+        terrainSide(map, corner3, left.verts[2], corner0, left.verts[1], oddZ, false);
+        const MapTile &right = tile(x < 0x7F ? x + 1 : 0x7F, z);
+        terrainSide(map, corner1, right.verts[0], corner2, right.verts[3], oddZ, false);
+    }
+
+    // One terrain tile's quad around (centreX, centreZ): its corners take the tile's corner heights. With no
+    // object (outside the map) the nearest tile's are used, flattened along the edge it lies beyond. The draw
+    // flags (t3 of mm_Terrain_AddQuad) start at 8: +1 when the object's type gives a texture (vtable +0x1C,
+    // with the object; passed on as the texture), 2 when a corner rises above `level`, 0x20 or 0x40 (tile flag 0x20 or not) when a
+    // corner is above 0 on a type without flag 1, 4 inside the buildings layer's tile rectangle, 0x10 when the
+    // tile and its first object both have flag 0x10. A tile with an object also gets its cliff sides.
+    void Terrain_DrawPatch(GuestPtr<CityMap> map, int x, int z, int object, ps2f centreX, ps2f centreZ, ps2f level)
+    {
+        port::GuestFrame<0xE0> frame;
+        const uint32_t sp = frame.ptr().address;
+        const GuestPtr<Vec4> a{sp + 0xA0u}, b{sp + 0xB0u}, c{sp + 0xC0u}, d{sp + 0xD0u};
+        const ps2f half = 0.5f;
+        const ps2f left = centreX - half, right = half + centreX, near = half + centreZ, far = centreZ - half;
+        *a = Vec4{static_cast<float>(left), 0.0f, static_cast<float>(near), 1.0f};
+        *b = Vec4{static_cast<float>(right), 0.0f, static_cast<float>(near), 1.0f};
+        *c = Vec4{static_cast<float>(right), 0.0f, static_cast<float>(far), 1.0f};
+        *d = Vec4{static_cast<float>(left), 0.0f, static_cast<float>(far), 1.0f};
+        int tile;
+        if (object == 0)
+        {
+            tile = std::clamp(x, 0, 0x7F) + std::clamp(z, 0, 0x7F) * 128;
+            const MapTile &t = map->tiles[tile];
+            a->y = t.verts[0];
+            b->y = t.verts[1];
+            c->y = t.verts[2];
+            d->y = t.verts[3];
+            if (x < 0)
+            {
+                b->y = a->y;
+                c->y = d->y;
+            }
+            else if (x >= 0x80)
+            {
+                a->y = b->y;
+                d->y = c->y;
+            }
+            if (z < 0)
+            {
+                d->y = a->y;
+                c->y = b->y;
+            }
+            else if (z >= 0x80)
+            {
+                a->y = d->y;
+                b->y = c->y;
+            }
+        }
+        else
+        {
+            tile = x + z * 128;
+            const MapTile &t = map->tiles[tile];
+            a->y = t.verts[0];
+            b->y = t.verts[1];
+            c->y = t.verts[2];
+            d->y = t.verts[3];
+        }
+
+        const GuestPtr<BuildingType> btype{globals::buildingTypeAddress(map->objects[object].type)};
+        const int64_t texture = port::callGuest<int64_t>(port::load<uint32_t>(btype->vtable.address + 0x1Cu), btype, map->objects + object);
+        uint32_t flags = texture != 0 ? 9u : 8u;
+        const ps2f heights[4] = {a->y, b->y, c->y, d->y};
+        for (const ps2f h : heights)
+            if (level < h)
+            {
+                flags |= 2u;
+                break;
+            }
+        if ((btype->flags & 1u) == 0)
+            for (const ps2f h : heights)
+                if (ps2f(0.0f) < h)
+                {
+                    flags |= (map->tiles[tile].flags & 0x20u) != 0 ? 0x20u : 0x40u;
+                    break;
+                }
+        if (LayerC_InTileRect(map->buildings, x, z) != 0)
+            flags |= 4u;
+        if ((map->tiles[tile].flags & 0x10u) != 0 && (map->objects[map->tiles[tile].firstObject].flags & 0x10u) != 0)
+            flags |= 0x10u;
+        Terrain_AddQuad(map, a, b, c, d, static_cast<int>(texture), (z & 1) + (x & 1) * 2, static_cast<int>(flags));
+        if (object != 0)
+            Terrain_BuildStrip(map, x, z, a, b, c, d);
+    }
+
+    // Whether a ray hits the first object on `tile` (record 0 off the map): the object's type tests it (vtable
+    // +0x30, passed a2, a3, arg and the object's matrix: the building matrix of its terrain kind with the
+    // footprint's middle as translation, y 0). 1 or 0.
+    int MapObj_RayHit(GuestPtr<CityMap> map, uint32_t tile, int a2, int a3, int arg)
+    {
+        port::GuestFrame<0x90> frame;
+        const GuestPtr<Vec4> matrix{frame.ptr().address + 0x50u};
+        const int tx = static_cast<int>(tile & 0x7Fu), tz = static_cast<int>((tile & 0xFFFFu) >> 7);
+        const GuestPtr<MapObject> obj = tz < 0x80 && tx < 0x80 ? map->objects + map->tiles[tx + tz * 128].firstObject : map->objects;
+        const int kind = Map_GetTileKind(map, obj->tile);
+        for (int row = 0; row < 4; ++row)
+            matrix[row] = GuestPtr<Vec4>{globals::kBuildingMatrices + 0x40u * static_cast<uint32_t>(kind)}[row];
+        const GuestPtr<BuildingType> btype{globals::buildingTypeAddress(obj->type)};
+        const ps2f half = fromInt(btype->size) / ps2f(2.0f);
+        matrix[3].x = static_cast<float>((fromInt(obj->tile & 0x7F) - ps2f(64.0f)) + half);
+        port::store<uint32_t>(matrix.address + 0x34u, 0);
+        matrix[3].z = static_cast<float>((fromInt(128 - (obj->tile >> 7)) - ps2f(64.0f)) - half);
+        const uint32_t test = port::load<uint32_t>(btype->vtable.address + 0x30u);
+        return port::callGuest<int64_t>(test, btype, obj, a2, a3, matrix, arg) != 0 ? 1 : 0;
+    }
+
     // ---- tile lists
 
     // Inserts `item` at the start of each list in `pairs` (list ids at even positions, 0 ends): the items
@@ -721,6 +1147,7 @@ namespace mm
     PORT_FN(Map_TileFlag20);
     PORT_FN(Map_TileIndexFlag10);
     PORT_FN(Map_GetTileKind);
+    PORT_FN(MapObj_RayHit);
     PORT_FN(Map_SetTileKind);
     PORT_FN(Map_PlaceRoad);
     PORT_FN(Map_SetTileHeight);
@@ -755,6 +1182,17 @@ namespace mm
     PORT_FN(Map_UpdateTileGeometry);
     PORT_FN(TerrainGen_ScatterObjects);
     PORT_FN(MapObj_Delete);
+    PORT_FN(People_UnlinkFromList);
+    PORT_FN(Map_AppendObjectToTile);
+    PORT_FN(MapObj_FindFreeSlot);
+    PORT_FN(Map_PlaceObject);
+    PORT_FN(Placement_CheckSlope);
+    PORT_FN(Map_CheckPlacement);
+    PORT_FN(Map_RemoveObjectFromTile);
+    PORT_FN(MapPeople_RemoveForObject);
+    PORT_FN(CityMap_ClearObject);
     PORT_FN(Map_UpdateAreaGeometry);
     PORT_FN(Terrain_AddQuad);
+    PORT_FN(Terrain_BuildStrip);
+    PORT_FN(Terrain_DrawPatch);
 }

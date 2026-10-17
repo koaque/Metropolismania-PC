@@ -482,9 +482,77 @@ namespace mm
 
     GuestPtr<WantsWin> Wants_ctor(GuestPtr<WantsWin> wants)
     {
-        wants->counters[0] = 0;
-        wants->counters[1] = 0;
+        wants->count = 0;
+        wants->wordsUsed = 0;
         return wants;
+    }
+
+    // How a want stands: 2 when it no longer holds (the family left, the building's claim changed, or its
+    // meter is not above the low threshold), 1 when the building has flag 0x48 (the claim is met), 3 when the
+    // meter is above the high threshold and the family has not phoned yet, else 0.
+    int Wants_CheckEntry(GuestPtr<WantsWin>, GuestPtr<CityScene> city, GuestPtr<uint16_t> entry)
+    {
+        const GuestPtr<Want> want{entry.address};
+        if (Family_InCity(want->family) == 0)
+            return 2;
+        const GuestPtr<MapObject> obj = Map_GetRecord(city->map, want->object);
+        if (obj->claimSlot != want->claimSlot)
+            return 2;
+        if ((obj->flags & 0x48u) != 0)
+            return 1;
+        const int meter = obj->claimMeter;
+        const GuestPtr<ClaimThresholds> thresholds = globals::claimThresholds();
+        if (!(thresholds->low < meter))
+            return 2;
+        if (want->called != 0)
+            return 0;
+        return thresholds->high < meter ? 3 : 0;
+    }
+
+    // Every 121st call, checks each want not held (mm_Wants_CheckEntry): one that no longer holds is removed,
+    // a met one is removed once its family gets a phone call queued, and for a pressing one the family phones
+    // (once). Removing closes the gap in the data area (four words) and in the index, whose later offsets move
+    // down by four.
+    void Wants_Prune(GuestPtr<WantsWin> wants, GuestPtr<CityScene> city)
+    {
+        if (globals::wantsPruneStarted.get() == 0)
+        {
+            globals::wantsPruneTimer.set(0);
+            globals::wantsPruneStarted.set(1);
+        }
+        globals::wantsPruneTimer.set(globals::wantsPruneTimer.get() + 1);
+        if (globals::wantsPruneTimer.get() < 121)
+            return;
+        globals::wantsPruneTimer.set(0);
+        const auto remove = [&](int i) {
+            for (int k = wants->index[i].offset; k + 4 < 0x100; ++k)
+                wants->data[k] = wants->data[k + 4];
+            wants->wordsUsed = static_cast<uint16_t>(wants->wordsUsed - 4);
+            for (int k = i; k + 1 < 64; ++k)
+            {
+                wants->index[k] = wants->index[k + 1];
+                if (wants->index[k].offset != 0)
+                    wants->index[k].offset = static_cast<uint16_t>(wants->index[k].offset - 4);
+            }
+            wants->count = static_cast<uint16_t>(wants->count - 1);
+        };
+        for (int i = 0; i < wants->count; ++i)
+        {
+            if (wants->index[i].held != 0)
+                continue;
+            const GuestPtr<Want> want{wants.address + 0x104u + 4u * wants->index[i].offset};
+            const int state = Wants_CheckEntry(wants, city, GuestPtr<uint16_t>{want.address});
+            const auto phone = [&] { return PhoneCall_Post(city->phoneCalls, want->person, want->family, want->member, 0) != 0; };
+            if (state == 2)
+                remove(i--);
+            else if (state == 1)
+            {
+                if (phone())
+                    remove(i--);
+            }
+            else if (state == 3 && phone())
+                want->called = 1;
+        }
     }
 
     // The wants window: the list, its model (from 0x1F3B04) placed at 0x1B0900, and cleared state.
@@ -586,6 +654,91 @@ namespace mm
                 }
                 open &= ~bit;
             }
+        return 0;
+    }
+
+    // Wasteland each tick. A marked one (+0x14) loses its mark unless both triangles of its tile face straight
+    // down within 0.96 (VU0 cross products of the corner edges). The tile and its four neighbours are counted
+    // above the water level: all five plot colour 0 on the minimap, some 8. With none, a roll of 6..10 out of
+    // 32 by a straight road (mm_BldgWasteland_FindSpot) whose block has flag 0x10 or 8 places a type 3 object
+    // here, and the colour goes by the mark: 0 gives 1, 1, 3 and 7 up give 2, the others 6. Returns 0.
+    int BldgWasteland_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
+    {
+        port::GuestFrame<0x120> frame;
+        const uint32_t sp = frame.ptr().address;
+        const GuestPtr<ps2f> corners{sp + 0x70u};
+        const GuestPtr<uint32_t> spot{sp + 0x11Cu};
+        const int x = obj->tile & 0x7F, z = obj->tile >> 7;
+        Map_GetTileVertex(city->map, obj->tile, corners);
+        if (static_cast<uint8_t>(obj->entranceTile) != 0)
+        {
+            using namespace vu0;
+            Map_GetTileVertex(city->map, obj->tile, corners);
+            const ps2f half = 0.5f, centre = 64.0f;
+            const ps2f cx = half + (fromInt(x) - centre);
+            const ps2f cz = (fromInt(128 - z) - centre) - half;
+            const ps2f left = cx - half, right = half + cx, near = half + cz, far = cz - half;
+            const auto corner = [&](ps2f px, int i, ps2f pz) {
+                return _mm_setr_ps(static_cast<float>(px), static_cast<float>(corners[i]), static_cast<float>(pz), 1.0f);
+            };
+            const __m128 a = corner(left, 0, near), b = corner(right, 1, near), c = corner(right, 2, far), d = corner(left, 3, far);
+            const auto difference = [](__m128 to, __m128 from) {
+                vf(4) = to;
+                vf(5) = from;
+                set(vf(4), sub(vf(4), vf(5)), XYZW);
+                return vf(4);
+            };
+            const auto normal = [](__m128 u, __m128 v) {
+                vf(1) = u;
+                vf(2) = v;
+                set(acc(), mul(yzx(vf(1)), zxy(vf(2))), XYZ);
+                set(vf(3), sub(acc(), mul(yzx(vf(2)), zxy(vf(1)))), XYZ);
+                set(vf(4), mul(vf(3), vf(3)), XYZW);
+                set(vf(4), add(vf(4), lane(vf(4), 1)), X);
+                set(vf(4), add(vf(4), lane(vf(4), 2)), X);
+                q() = rsqrt(vu0::x(vf(4)));
+                set(vf(4), mul(vf(3), _mm_set1_ps(q())), XYZ);
+                return ps2f(vu0::x(lane(vf(4), 1)));
+            };
+            const __m128 ab = difference(a, b), cb = difference(c, b), cd = difference(c, d);
+            const ps2f firstY = normal(ab, cb);
+            const ps2f secondY = normal(cb, cd);
+            const ps2f steep = -0x1.EB851Ep-1f;
+            if (!(firstY <= steep) || !(secondY <= steep))
+                port::store<uint8_t>(obj.address + 0x14u, 0);
+        }
+
+        Map_GetTileHeightWord(city->map, obj->tile);
+        int above = 0;
+        const auto count = [&](ps2f height) {
+            if (!(height <= ps2f(city->waterLevel)))
+                ++above;
+        };
+        count(Map_GetTileHeightWord(city->map, obj->tile));
+        count(Map_GetHeightAt(city->map, x + 1, z));
+        count(Map_GetHeightAt(city->map, x - 1, z));
+        count(Map_GetHeightAt(city->map, x, z + 1));
+        count(Map_GetHeightAt(city->map, x, z - 1));
+        int colour = 0;
+        if (above != 5)
+        {
+            colour = 8;
+            if (above == 0)
+            {
+                const int roll = static_cast<int32_t>(Random_Next()) & 0x1F;
+                if (roll >= 6 && roll < 11 && BldgWasteland_FindSpot(btype, city, static_cast<int>(obj.address), static_cast<uint32_t>(x),
+                                                                     static_cast<uint32_t>(z), spot) != 0)
+                {
+                    const int sx = x + port::load<int32_t>(0x001B1770u + 4u * *spot);
+                    const int sz = z + port::load<int32_t>(0x001B1780u + 4u * *spot);
+                    if (Map_TileFlag10(city->map, sx, sz) != 0 || Map_TileFlag08(city->map, sx, sz) != 0)
+                        Map_PlaceObject(city->map, 0, 3, x, z, static_cast<int>(city.address));
+                }
+                const uint8_t mark = static_cast<uint8_t>(obj->entranceTile);
+                colour = mark == 1 || mark == 3 || mark >= 7 ? 2 : (mark != 0 ? 6 : 1);
+            }
+        }
+        Minimap_Plot(city->minimap, obj->tile, btype->size, colour, 0);
         return 0;
     }
 
@@ -755,7 +908,7 @@ namespace mm
             return;
         }
         drawLit();
-        const uint32_t signals = 0x001B1540u + 4u * static_cast<uint32_t>(city->unk_C0 * 2 + (obj->mesh - lights()) * 8);
+        const uint32_t signals = 0x001B1540u + 4u * static_cast<uint32_t>(city->trafficPhase * 2 + (obj->mesh - lights()) * 8);
         Instance_DrawMesh(globals::cityPartsModel.get(), matrix, colour, lights() + port::load<int32_t>(signals), flags);
         const GuestPtr<Vec4> second = layerMatrix(3);
         second[3].x = x;
@@ -1240,6 +1393,70 @@ namespace mm
         return kNone;
     }
 
+    // Works out a housing object's unit shape (variant high byte) from the units two tiles away on either side
+    // along its terrain kind's axis (table 0x1B1480, 7 x 7), merged with the shape of the tile's first object
+    // when they differ (table 0x1B14C0, 6 per row). When the shape changed, the neighbouring units take or give
+    // the style (mesh low byte) and are worked out again in turn, each object on their tiles. An object that
+    // is not its tile's first takes that one's style.
+    void BldgHousing_CountUnits(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
+    {
+        const auto shapeOf = [](GuestPtr<MapObject> o) { return static_cast<uint8_t>(o->variant >> 8); };
+        const auto setShape = [](GuestPtr<MapObject> o, uint8_t shape) { port::store<uint8_t>(o.address + 0x19u, shape); };
+        const auto styleOf = [](GuestPtr<MapObject> o) { return static_cast<uint8_t>(o->mesh); };
+        const auto setStyle = [](GuestPtr<MapObject> o, uint8_t style) { port::store<uint8_t>(o.address + 0x1Au, style); };
+
+        port::GuestFrame<0xF0> frame;
+        const uint32_t sp = frame.ptr().address;
+        const GuestPtr<uint32_t> isUnitA{sp + 0xE8u}, isUnitB{sp + 0xECu};
+        const uint8_t oldShape = shapeOf(obj);
+        const int x = obj->tile & 0x7F, z = obj->tile >> 7;
+        const int count = Map_CountObjectsBefore(city->map, x, z, obj->id);
+        const int kind = Map_GetTileKind(city->map, obj->tile);
+        const ps2f height = Map_GetTileHeightWord(city->map, obj->tile);
+        const GuestPtr<BuildingType> own = typeOf(obj);
+        int xA = x, zA = z, xB = x, zB = z;
+        switch (kind)
+        {
+        case 0: xA = x - 2, xB = x + 2; break;
+        case 1: zA = z - 2, zB = z + 2; break;
+        case 2: xA = x + 2, xB = x - 2; break;
+        case 3: zA = z + 2, zB = z - 2; break;
+        }
+        const uint8_t shapeA = BldgHousing_UnitAt(btype, kind, xA, zA, count, own->rule, city, isUnitA, height);
+        const uint8_t shapeB = BldgHousing_UnitAt(btype, kind, xB, zB, count, own->rule, city, isUnitB, height);
+        setShape(obj, port::load<uint8_t>(0x001B1480u + 7u * shapeB + shapeA));
+        const GuestPtr<MapObject> first = Map_GetTileObject(city->map, x, z);
+        if (shapeOf(first) != shapeOf(obj))
+            setShape(obj, port::load<uint8_t>(0x001B14C0u + 6u * shapeOf(obj) + shapeOf(first)));
+        if (shapeOf(obj) != oldShape)
+        {
+            if (*isUnitA != 0)
+            {
+                GuestPtr<MapObject> unit = Map_GetTileObject(city->map, xA, zA);
+                setStyle(obj, styleOf(unit));
+                for (;; unit = Map_GetRecord(city->map, unit->nextOnTile))
+                {
+                    BldgHousing_CountUnits(own, city, unit);
+                    if (unit->nextOnTile == kNoObject)
+                        break;
+                }
+            }
+            if (*isUnitB != 0)
+            {
+                GuestPtr<MapObject> unit = Map_GetTileObject(city->map, xB, zB);
+                setStyle(unit, styleOf(obj));
+                for (;; unit = Map_GetRecord(city->map, unit->nextOnTile))
+                {
+                    BldgHousing_CountUnits(own, city, unit);
+                    if (unit->nextOnTile == kNoObject)
+                        break;
+                }
+            }
+        }
+        if (first->id != obj->id)
+            setStyle(obj, styleOf(first));
+    }
+
     namespace
     {
         // Claim meter band: 0 at or below the low threshold, 1 up to the high one, 2 above it.
@@ -1509,6 +1726,7 @@ namespace mm
     PORT_FN(BldgLeveled_Draw);
     PORT_FN(BldgWasteland_Draw);
     PORT_FN(BldgWasteland_FindSpot);
+    PORT_FN(BldgWasteland_Tick);
     PORT_FN(BldgType_FindEntrance);
     PORT_FN(BldgRoad_FindNeighbours);
     PORT_FN(BldgRoad_Draw);
@@ -1527,6 +1745,7 @@ namespace mm
     PORT_FN(BldgOffice_Draw);
     PORT_FN(BldgHousing_Draw);
     PORT_FN(BldgHousing_UnitAt);
+    PORT_FN(BldgHousing_CountUnits);
     PORT_FN(BldgType_DrawOccupant);
     PORT_FN(BldgType_CallAll);
     PORT_FN(BldgClaims_Evaluate);
@@ -1538,6 +1757,8 @@ namespace mm
     PORT_FN(BldgClaims_DrawIcon);
     PORT_FN(Applicants_AnyWaiting);
     PORT_FN(Wants_ctor);
+    PORT_FN(Wants_CheckEntry);
+    PORT_FN(Wants_Prune);
     PORT_FN(BldgType_InitRecord);
     PORT_FN(BldgType_Tick);
     PORT_FN(BldgType_Draw);

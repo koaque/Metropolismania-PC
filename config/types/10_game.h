@@ -21,6 +21,8 @@ typedef struct Stamina Stamina;
 typedef struct MemberStatus MemberStatus;
 typedef struct CharTypeRecord CharTypeRecord;
 typedef struct SeRequest SeRequest;
+typedef struct SeVoice SeVoice;
+typedef struct SeSound SeSound;
 typedef struct ClaimThresholds ClaimThresholds;
 
 /* Map tile (0x18 bytes): 128 x 128 of them at CityMap +0x04. */
@@ -76,7 +78,7 @@ struct MapPerson {
     uint8_t activity;          /* +0x27 */
     uint16_t target;           /* +0x28 building the person heads for, 0x3F80 = none (mm_Person_TargetWork) */
     uint16_t family;           /* +0x2A */
-    uint16_t introduces;       /* +0x2C family this resident can introduce */
+    uint16_t introduces;       /* +0x2C family this resident can introduce; a vehicle's speed (mm_Char2_UpdateSpeedA) */
     uint8_t member;            /* +0x2E */
     uint8_t status;            /* +0x2F friendship status byte */
 };
@@ -105,18 +107,20 @@ struct CityMap {
     int16_t refreshDelay;      /* +0x2E frames until objectsChanged is set (0x81 after a flag-2 type is placed) */
     int32_t categoryCount[11]; /* +0x30 buildings per STRTYPE.BIN category (mm_MapObj_Delete; category 4 only without type flag 0x80) */
     int32_t bigCategory5Count; /* +0x5C category 5 buildings of size 3 and up */
-    uint8_t unk_60[4];
+    int32_t unk_60;            /* +0x60 cleared after each placement (mm_Map_PlaceObject) */
     void *vtable;              /* +0x64 */
     MapPerson *people;         /* +0x68 */
-    uint8_t unk_6C[8];
-    int32_t population;        /* +0x74 */
+    uint8_t unk_6C[4];
+    int32_t peopleInUse;       /* +0x70 person records in use, vehicles too (mm_MapPeople_RemoveForObject) */
+    int32_t population;        /* +0x74 residents: people records of classes without flag 1 */
     uint8_t unk_78[0x2C8C];
     int32_t terrainQuads;      /* +0x2D04 vertices in the terrain buffer this frame (limit 0x9BD) */
-    uint8_t unk_2D08[4];
+    int32_t sideVertices;      /* +0x2D08 vertices in the cliff-side buffer this frame (limit 0x86E, mm_Terrain_BuildStrip) */
     void *terrainBuffers[2];   /* +0x2D0C 0x9C00 bytes each */
     void *terrainWrite;        /* +0x2D14 write position (mm_Terrain_AddQuad) */
-    void *buffers2D18[2];      /* +0x2D18 0x8700 bytes each */
-    uint8_t unk_2D20[0x240];
+    void *sideBuffers[2];      /* +0x2D18 cliff-side vertex buffers, 0x8700 bytes each */
+    void *sideWrite;           /* +0x2D20 write position in the cliff-side buffer (mm_Terrain_BuildStrip) */
+    uint8_t unk_2D24[0x23C];
     void *packets[5];          /* +0x2F60 static DMA packets queued by mm_CityRender_DrawOverlays */
     LayerD *sky;               /* +0x2F74 */
     LayerE *layerE;            /* +0x2F78 */
@@ -129,11 +133,12 @@ struct CityMap {
 
 /* Building type base (0x160 bytes): one object per type in the table at gp 0x1BDBF8; classes add fields after it. */
 struct BuildingType {
-    uint8_t unk_000[0x110];
+    uint8_t unk_000[0x100];
+    Vec4 talkEye;              /* +0x100 eye offset from the building for a talk, type flag 0x4000 (mm_TalkView_BuildingCamera) */
     char name[0x20];           /* +0x110 */
     uint8_t unk_130[4];
     uint16_t kind;             /* +0x134 */
-    uint16_t flags;            /* +0x136 0x20, 0x40 people inside, 0x100 */
+    uint16_t flags;            /* +0x136 0x10 talk camera 2.5 lower, 0x20, 0x40 people inside, 0x100, 0x4000 own talk eye (talkEye) */
     uint8_t unk_138[4];
     uint16_t openMinute;       /* +0x13C minutes of the day */
     uint16_t closeMinute;      /* +0x13E */
@@ -145,7 +150,9 @@ struct BuildingType {
     uint8_t unk_146;
     uint8_t claimB;            /* +0x147 claim section B index */
     uint8_t claimC;            /* +0x148 claim section C index */
-    uint8_t unk_149[7];
+    uint8_t unk_149[5];
+    uint8_t ambientSound;      /* +0x14E sound id, 0xFF = none (mm_Se_BuildingSoundState) */
+    uint8_t unk_14F;
     uint8_t modelNode;         /* +0x150 */
     uint8_t entranceDrawMesh;  /* +0x151 businesses: mesh of the entrance (+1 for the closed sign, type flag 0x1000) */
     uint8_t firstDrawMesh;     /* +0x152 businesses: first mesh of the other parts, plus their variant */
@@ -337,15 +344,55 @@ struct SeRequest {
     uint8_t unk_02[2];
     uint32_t owner;            /* +0x04 owner id (0xFFFF for sounds with flag 0x20) + (group * 16 + voice index) << 16 */
     uint16_t priority;         /* +0x08 the sound's priority bits << 8 + half the distance; lower comes first */
-    uint8_t param0A;           /* +0x0A mm_Se_Request's a3 */
+    uint8_t param0A;           /* +0x0A mm_Se_Request's a3; non-zero only updates a voice already playing it (mm_Se_AssignVoices) */
     uint8_t param0B;           /* +0x0B t2 (0x3C from mm_Sound_PlaySe) */
-    int16_t param0C;           /* +0x0C t1 */
+    int16_t param0C;           /* +0x0C t1, the voice's pitch */
     uint16_t voiceParam;       /* +0x0E second voice list byte + (sound flags & 0xF0) << 4 */
     int32_t volumeLeft;        /* +0x10 1..0x3FFF */
     int32_t volumeRight;       /* +0x14 */
-    uint8_t param18;           /* +0x18 t0 */
-    uint8_t param19;           /* +0x19 t3 */
+    uint8_t param18;           /* +0x18 t0, frames before the sound can start again */
+    uint8_t param19;           /* +0x19 t3, frames the voice is kept without requests */
     uint8_t unk_1A[2];
+};
+
+/* Effect voice (0x30 bytes): 16 of group A (driver voices 0..15) then 15 of group B at 0x1F8140, given to the
+   frame's requests by mm_Se_AssignVoices. */
+struct SeVoice {
+    uint8_t sound;             /* +0x00 0xFF = free */
+    uint8_t voice;             /* +0x01 */
+    uint8_t unk_02[2];
+    uint32_t owner;            /* +0x04 as SeRequest */
+    uint16_t priority;         /* +0x08 the highest is stolen first */
+    int16_t pitch;             /* +0x0A group A, sent with flag 2 (mm_Se_ApplyVoiceParams) */
+    uint8_t param0B;           /* +0x0C group A */
+    uint8_t scriptStep;        /* +0x0D step in the sound script (mm_Se_UpdateVoices) */
+    uint16_t scriptTimer;      /* +0x0E frames left in a wait step; pitch slides keep a step count in the high byte */
+    uint16_t voiceParam;       /* +0x10 low byte: sound script (0x1B3410 + 0x18 each); 0x100 (sound flag 0x10): kept
+                                  until stopped; 0x800: a group A wait step holds after the sound ends */
+    int16_t volumeOffset;      /* +0x12 added to both volumes */
+    int32_t volumeLeft;        /* +0x14 */
+    int32_t volumeRight;       /* +0x18 */
+    uint8_t flags;             /* +0x1C 1 volume changed, 2 pitch changed, 0x80 requested this frame; 0 stops it */
+    uint8_t hold;              /* +0x1D frames left without requests */
+    uint8_t unk_1E[2];
+    int32_t heldLeft;          /* +0x20 loudest volumes requested while held, taken on ambience phase 3 */
+    int32_t heldRight;         /* +0x24 */
+    int16_t heldPitch;         /* +0x28 group A: the pitch of the loudest */
+    uint8_t rest;              /* +0x2A group A: frames before a freed voice is reused (20 when started) */
+    uint8_t unk_2B[5];
+};
+
+/* Sound table entry (0x10 bytes) at 0x1B2EE0, by sound id (83). */
+struct SeSound {
+    uint8_t flags;             /* +0x00 0x0F priority, 0x10 owned (an owner id, kept until stopped), 0x20 shared owner */
+    uint8_t maxVoices;         /* +0x01 requests started while playing is below it */
+    uint8_t schedule;          /* +0x02 when a building's ambient sound plays (mm_Se_BuildingSoundState): 1 while open,
+                                  2/3/4 a window in each hour, 5/10 on the hour, 11/12 in a month at night */
+    uint8_t volume;            /* +0x03 percent, 0 = 100 */
+    uint8_t playing;           /* +0x04 owned voices and requests started this frame (mm_Se_AssignVoices) */
+    uint8_t cooldown;          /* +0x05 frames before it can start again */
+    uint8_t unk_06[2];
+    uint8_t voices[8];         /* +0x08 up to four (voice, parameter) pairs, voice 0xFF = none, 200 and up group B */
 };
 
 /* City scene (0xD8 bytes), gp 0x1BDD00. */
@@ -387,12 +434,12 @@ struct CityScene {
     int32_t scoreA0Count;      /* +0xA4 */
     int32_t scoreA8;           /* +0xA8 */
     int32_t scoreA8Count;      /* +0xAC */
-    float unk_B0;
+    float waterLevel;          /* +0xB0 height of the water surface (mm_LayerG_Draw, mm_Se_PickTerrainAmbience) */
     uint32_t flags;            /* +0xB4 2 holiday month, 4 popular (approval 118+), 0x40 pad focus after a talk */
     int32_t unk_B8;
     int32_t pendingApproval;   /* +0xBC */
-    int32_t unk_C0;
-    int32_t unk_C4;
+    int32_t trafficPhase;      /* +0xC0 traffic lights: 0 lets traffic along z through, 2 along x, 1 and 3 neither (mm_Char2_UpdateSpeedA) */
+    int32_t trafficTimer;      /* +0xC4 0..999 per tick: phase 0 below 400, 1 below 500, 2 below 900, then 3 */
     int32_t fadeLevel;         /* +0xC8 */
     int32_t fade;              /* +0xCC fade counter, 0 = none */
     int32_t fadeSpeed;         /* +0xD0 */

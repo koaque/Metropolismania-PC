@@ -39,6 +39,10 @@ namespace port
     };
     inline CallState g_call;
 
+    // A 32-bit read of a hardware register (a timer, a DMA channel), made through the runtime as the original
+    // makes it.
+    inline uint32_t readHardware32(uint32_t address) { return g_call.runtime->Load32(g_call.rdram, g_call.ctx, address); }
+
     void registerPorted(uint32_t address, const char *name, GuestFn wrapper, ResultKind result, MutateFn mutate);
     void enterPorted(PS2Runtime *runtime);
     void leavePorted(PS2Runtime *runtime);

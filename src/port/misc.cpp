@@ -97,7 +97,7 @@ namespace mm
     }
 
     // char: the player's animation (+0x38) from its movement and the pad. Standing still: 1 when at least 0.4
-    // above the city's +0xB0 level, else 2 while approval is below 0, else 0. Moving, by direction (pad bits
+    // above the water level, else 2 while approval is below 0, else 0. Moving, by direction (pad bits
     // or the player's +0x08 code): 0x400000, 0x4000 or code 2 gives 5; 0x800000 or code 5 gives 7; 0x200000
     // or code 6 gives 6; 0x100000, 0x1000 or code 1 gives 4; plus 8 while walking (mode 1) with pad 0x40 held,
     // else plus 4 when at least 0.4 above the level. A changed animation restarts at frame 0 (+0x34); frames
@@ -105,7 +105,7 @@ namespace mm
     // Walking with pad 0x40 held while moving plays sound 5.
     void Player_UpdateAction(GuestPtr<Player> player, GuestPtr<Vec4> move, GuestPtr<CityScene> city)
     {
-        const bool high = !(player->position.y < ps2f(0.4f) + city->unk_B0);
+        const bool high = !(player->position.y < ps2f(0.4f) + city->waterLevel);
         const auto still = [&] { return move->x == ps2f(0.0f) && move->z == ps2f(0.0f); };
         int anim = 0;
         if (still())
@@ -138,6 +138,220 @@ namespace mm
         if (player->mode != 1 || (Pad_Held(0) & 0x40u) == 0 || still())
             return;
         Sound_PlaySe(5, 0, 0x3C, 0.0f, 0.0f);
+    }
+
+    // char: the player's footsteps (mm_Se_PlayVariant), on frames 10 and 30 of animations 4-7 and frame 10 of
+    // animations 8-11 (3), and only on the ground (jump speed 0..0.01). For 4-7, at or above the water level
+    // gives 4; below it the object on the tile decides: a road (type 4) or a type with flag 0x40 gives 0, type 2
+    // with +0x14 at 1..9 gives 2, anything else 1. In snow (weather 3) from 3:00 to 23:00, 0 becomes 1.
+    void Player_PlayFootstep(GuestPtr<Player> player, GuestPtr<CityScene> city)
+    {
+        const int anim = player->swayArg;
+        uint8_t variant;
+        if (anim >= 4 && anim < 8)
+        {
+            if (!(player->swayPhase == ps2f(10.0f)) && !(player->swayPhase == ps2f(30.0f)))
+                return;
+            variant = 4;
+            if (player->position.y < city->waterLevel)
+            {
+                const int z = sdk::fptosi(ps2f(64.0f) - player->position.z);
+                const int x = sdk::fptosi(ps2f(64.0f) + player->position.x);
+                const GuestPtr<MapObject> obj = Map_GetTileObject(city->map, x, z);
+                const uint16_t type = obj->type;
+                const uint8_t kind = static_cast<uint8_t>(obj->entranceTile);
+                if (type == 4 || (GuestPtr<BuildingType>{globals::buildingTypeAddress(type)}->flags & 0x40u) != 0)
+                    variant = 0;
+                else
+                    variant = type == 2 && kind != 0 && kind < 10 ? 2 : 1;
+            }
+            if (city->weatherToday == 3 && variant == 0 && city->clock >= 10800 && city->clock <= 82800)
+                variant = 1;
+        }
+        else if (anim >= 8 && anim < 12 && player->swayPhase == ps2f(10.0f))
+            variant = 3;
+        else
+            return;
+        if (player->jumpSpeed < ps2f(0.0f) || !(player->jumpSpeed <= ps2f(0x1.47AE14p-7f)))
+            return;
+        Se_PlayVariant(variant);
+    }
+
+    // char: what the player points at. A kept target is dropped when it is gone (an empty record, a person not
+    // found on its tile or inside a building with flag 0x40) or after 30 frames more than pi/8 off the
+    // player's heading. Then a ray steps from the player along the heading (0x1B0930 turned by it) towards a
+    // point 8 ahead, tile by tile, until it leaves the map or reaches that point's tile: an object of a
+    // type with flag 0x40 it hits (mm_MapObj_RayHit) becomes the target; on other tiles, while walking (mode
+    // 0), the nearest resident whose distance to the ray is at most 0.3 and who is less than 10 away. The
+    // city cursor is then set to the target.
+    void Player_PickTarget(GuestPtr<Player> player, GuestPtr<CityScene> city)
+    {
+        using namespace vu0;
+        port::GuestFrame<0x170> frame;
+        const uint32_t sp = frame.ptr().address;
+        const GuestPtr<Vec4> aim{sp + 0x90u}, from{sp + 0xB0u}, to{sp + 0xC0u}, walk{sp + 0xD0u}, hit{sp + 0xE0u};
+        const GuestPtr<Vec4> turn{sp + 0xF0u}, step{sp + 0x130u};
+        const GuestPtr<uint32_t> hitData{sp + 0x140u};
+        const GuestPtr<ps2f> distance{sp + 0x168u};
+        const GuestPtr<uint16_t> cursor{sp + 0x16Eu};
+
+        if (globals::pickTimerStarted.get() == 0)
+        {
+            globals::pickOffFrames.set(0);
+            globals::pickTimerStarted.set(1);
+        }
+        const auto dropTarget = [&] {
+            player->target = -1;
+            globals::pickOffFrames.set(0);
+        };
+        bool checkAim = false;
+        if (player->target != -1)
+        {
+            if (player->targetIsPerson == 0)
+            {
+                const GuestPtr<MapObject> obj = Map_GetRecord(city->map, player->target);
+                if (obj->type == 0)
+                    dropTarget();
+                else
+                {
+                    const ps2f half = fromInt(GuestPtr<BuildingType>{globals::buildingTypeAddress(obj->type)}->size) / ps2f(2.0f);
+                    aim->x = static_cast<float>((fromInt(obj->tile & 0x7F) - ps2f(64.0f)) + half);
+                    port::store<uint32_t>(aim.address + 4u, 0);
+                    aim->z = static_cast<float>((fromInt(128 - (obj->tile >> 7)) - ps2f(64.0f)) - half);
+                    aim->w = 1.0f;
+                }
+                // A target found empty still takes the heading test, on the vector left in the frame.
+                checkAim = true;
+            }
+            else
+            {
+                const GuestPtr<MapPerson> person = city->map->people + player->target;
+                const int tx = sdk::fptosi(ps2f(64.0f) + person->x);
+                const int tz = sdk::fptosi(ps2f(64.0f) - person->z);
+                const GuestPtr<MapObject> obj = Map_FindPersonObjectOnTile(city->map, person->index, static_cast<uint32_t>(tx + tz * 128) & 0xFFFFu);
+                if (!obj || (GuestPtr<BuildingType>{globals::buildingTypeAddress(obj->type)}->flags & 0x40u) != 0)
+                    dropTarget();
+                else
+                {
+                    aim->x = person->x;
+                    port::store<uint32_t>(aim.address + 4u, 0);
+                    aim->z = person->z;
+                    aim->w = 1.0f;
+                    checkAim = true;
+                }
+            }
+        }
+        if (checkAim)
+        {
+            const GuestPtr<Vec4> direction{sp + 0xA0u};
+            vf(4) = load(aim);
+            vf(5) = load(GuestPtr<Vec4>{player.address + 0x10u});
+            set(vf(4), sub(vf(4), vf(5)), XYZW);
+            vf(1) = vf(4);
+            set(vf(2), mul(vf(1), vf(1)), XYZW);
+            set(vf(2), add(vf(2), lane(vf(2), 1)), X);
+            set(vf(2), add(vf(2), lane(vf(2), 2)), X);
+            q() = rsqrt(x(vf(2)));
+            set(vf(2), mul(vf(1), _mm_set1_ps(q())), XYZ);
+            store(direction, vf(2));
+            const ps2f angle = sdk::atan2f(direction->x, direction->z);
+            const ps2f off = (ps2f(0x1.921FB6p+0f) + (-angle)) - player->heading;
+            if (off <= ps2f(-0x1.921FB6p-2f) || !(off < ps2f(0x1.921FB6p-2f)))
+            {
+                globals::pickOffFrames.set(globals::pickOffFrames.get() + 1);
+                if (globals::pickOffFrames.get() >= 30)
+                    dropTarget();
+            }
+        }
+
+        sdk::sceVu0RotMatrixY(turn.address, globals::kIdentityMatrix, player->heading);
+        from->x = player->position.x;
+        port::store<uint32_t>(from.address + 4u, 0);
+        from->z = player->position.z;
+        from->w = 1.0f;
+        port::store<uint32_t>(to.address, 0);
+        port::store<uint32_t>(to.address + 4u, 0);
+        to->z = -8.0f;
+        to->w = 1.0f;
+        Math_MulMatVecVu0(to, turn, to);
+        vf(4) = load(to);
+        vf(5) = load(from);
+        set(vf(4), add(vf(4), vf(5)), XYZW);
+        store(to, vf(4));
+        *step = *GuestPtr<Vec4>{globals::kPickStep};
+        Math_MulMatVecVu0(step, turn, step);
+        *walk = *GuestPtr<Vec4>{player.address + 0x10u};
+        const int endX = sdk::fptosi(ps2f(64.0f) + to->x);
+        const int endZ = sdk::fptosi(ps2f(64.0f) - to->z);
+
+        GuestPtr<MapObject> last{0};
+        for (;;)
+        {
+            walk->x = static_cast<float>(ps2f(walk->x) + step->x);
+            walk->z = static_cast<float>(ps2f(walk->z) + step->z);
+            const int tx = sdk::fptosi(ps2f(64.0f) + walk->x);
+            const int tz = sdk::fptosi(ps2f(64.0f) - walk->z);
+            if (tx < 0 || tx >= 0x80 || tz < 0 || tz >= 0x80 || (tx == endX && tz == endZ))
+                break;
+            const GuestPtr<MapObject> obj = Map_GetTileObject(city->map, tx, tz);
+            if (last == obj)
+                continue;
+            last = obj;
+            const GuestPtr<BuildingType> btype{globals::buildingTypeAddress(obj->type)};
+            if (btype->kind == 0x118)
+                continue;
+            if ((btype->flags & 0x40u) != 0)
+            {
+                if (MapObj_RayHit(city->map, obj->tile, static_cast<int>(from.address), static_cast<int>(to.address),
+                                  static_cast<int>(hitData.address)) == 0)
+                    continue;
+                player->target = obj->id;
+                player->targetIsPerson = 0;
+                break;
+            }
+            if (player->mode != 0)
+                continue;
+            *cursor = obj->firstPerson;
+            ps2f best = 10.0f;
+            uint16_t nearest = kNoPerson;
+            while (const GuestPtr<MapPerson> person = People_Next(city->map, cursor))
+            {
+                const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)};
+                if ((cls->flags & 1u) == 0)
+                {
+                    aim->x = person->x;
+                    port::store<uint32_t>(aim.address + 4u, 0);
+                    aim->z = person->z;
+                    aim->w = 1.0f;
+                    Math_RayPlaneDistance(from, to, aim, hit, distance);
+                    if (*distance <= ps2f(0x1.333334p-2f))
+                    {
+                        vf(4) = load(from);
+                        vf(5) = load(hit);
+                        set(vf(6), sub(vf(5), vf(4)), XYZW);
+                        set(vf(7), mul(vf(6), vf(6)), XYZ);
+                        set(vf(8), add(vf(7), lane(vf(7), 1)), X);
+                        set(vf(8), add(vf(8), lane(vf(7), 2)), X);
+                        q() = sqrtQ(x(vf(8)));
+                        set(vf(9), add(vf(0), _mm_set1_ps(q())), XYZW);
+                        const ps2f along = x(vf(9));
+                        *distance = along;
+                        if (!(best <= along))
+                        {
+                            nearest = person->index;
+                            best = along;
+                        }
+                    }
+                }
+                *cursor = person->nextOnTile;
+            }
+            if (nearest == kNoPerson)
+                continue;
+            player->target = nearest;
+            player->targetIsPerson = 1;
+            break;
+        }
+        CityCursor_SetTarget(city->cursor, static_cast<uint16_t>(player->target), player->targetIsPerson, to);
     }
 
     // char: the player's grid steps. With no step under way and pad 0x20 not held, the pad starts one, each test
@@ -453,6 +667,281 @@ namespace mm
             shimmer = 30 - shimmer;
         const uint32_t grey = 0xEAu - (topB + static_cast<uint32_t>(shimmer) * 2u);
         port::store<uint32_t>(sky + 0x4A0u, grey << 24 | grey << 16 | grey << 8 | grey);
+    }
+
+    // The sky's three packets in the city camera, filled in each frame by mm_CityCamera_UpdateTimeOfDay: at +0x310
+    // a gouraud strip of two bands (colours at +0x340 and +0x370); at +0x3D0 a blended sprite of the 512 x 128
+    // 4-bit texture at block 0x3EAE (palette 0x3F2E); at +0x470 an additive sprite (ALPHA 0x48, fixed 0x30) of
+    // the 256 x 128 texture at 0x3F2F (palette 0x3F6F), the usual blend (0x44) restored after it. The sprites'
+    // ST and heights are rewritten later.
+    void Sky_BuildPackets(GuestPtr<CityCamera> camera)
+    {
+        const auto tex0 = [](uint32_t block, uint32_t width, int log2W, int log2H, uint32_t palette) {
+            return block | (static_cast<uint64_t>(width) << 14) | (0x14ull << 20) | (static_cast<uint64_t>(log2W & 0xF) << 26) |
+                   (static_cast<uint64_t>(log2H & 0xF) << 30) | (1ull << 34) | (static_cast<uint64_t>(palette) << 37) | (1ull << 61);
+        };
+        const int skyW = Math_Log2(0x200), skyH = Math_Log2(0x80);
+        const uint64_t skyTex = tex0(0x3EAE, 8, skyW, skyH, 0x3F2E);
+        const int glowW = Math_Log2(0x100), glowH = Math_Log2(0x80);
+        const uint64_t glowTex = tex0(0x3F2F, 4, glowW, glowH, 0x3F6F);
+        const uint32_t words[] = {
+            // +0x310: the bands
+            0x1000000Au, 0, 0x11000000u, 0x5000000Au,                         // cnt 10; VIF flush, direct 10
+            0x00008009u, 0x10000000u, 0x0000000Eu, 0,                         // GIF tag: 9 loops, eop, A+D
+            0x0Cu, 0, 0, 0,                                                   // PRIM: gouraud triangle strip
+            0x80800000u, 0x3F800000u, 0x01u, 0,                               // RGBAQ: the top colour
+            0x79006C00u, 1, 0x04u, 0,                                         // XYZ2 (heights from the view's pitch)
+            0x79009400u, 1, 0x04u, 0,
+            0x80000000u, 0x3F800000u, 0x01u, 0,                               // RGBAQ: the low colour
+            0x7E006C00u, 1, 0x04u, 0,
+            0x7E009400u, 1, 0x04u, 0,
+            0x87006C00u, 1, 0x04u, 0,
+            0x87009400u, 1, 0x04u, 0,
+            0x60000000u, 0, 0, 0,                                             // ret
+            // +0x3D0: the sky texture
+            0x10000008u, 0, 0x11000000u, 0x50000008u,                         // cnt 8; flush, direct 8
+            0x00008007u, 0x10000000u, 0x0000000Eu, 0,                         // GIF tag: 7 loops, eop, A+D
+            0x70808080u, 0x3F800000u, 0x01u, 0,                               // RGBAQ
+            static_cast<uint32_t>(skyTex), static_cast<uint32_t>(skyTex >> 32), 0x06u, 0, // TEX0_1
+            0x56u, 0, 0, 0,                                                   // PRIM: blended textured sprite
+            0, 0, 0x02u, 0,                                                   // ST (the scroll)
+            0x79006C00u, 1, 0x04u, 0,                                         // XYZ2
+            0x3F800000u, 0x3F800000u, 0x02u, 0,                               // ST
+            0x80009400u, 1, 0x04u, 0,                                         // XYZ2
+            0x60000000u, 0, 0, 0,                                             // ret
+            // +0x470: the glow
+            0x1000000Au, 0, 0x11000000u, 0x5000000Au,                         // cnt 10; flush, direct 10
+            0x00008009u, 0x10000000u, 0x0000000Eu, 0,                         // GIF tag: 9 loops, eop, A+D
+            0x48u, 0x30u, 0x42u, 0,                                           // ALPHA_1: additive, fixed 0x30
+            0xFFFFFFFFu, 0x3F800000u, 0x01u, 0,                               // RGBAQ
+            static_cast<uint32_t>(glowTex), static_cast<uint32_t>(glowTex >> 32), 0x06u, 0, // TEX0_1
+            0x56u, 0, 0, 0,                                                   // PRIM
+            0, 0, 0x02u, 0,                                                   // ST (the heading)
+            0x79006C00u, 1, 0x04u, 0,                                         // XYZ2
+            0x3F800000u, 0x3F800000u, 0x02u, 0,                               // ST
+            0x80009400u, 1, 0x04u, 0,                                         // XYZ2
+            0x44u, 0x20u, 0x42u, 0,                                           // ALPHA_1: the usual blend
+            0x60000000u, 0, 0, 0,                                             // ret
+        };
+        const GuestPtr<uint32_t> p{camera.address + 0x310u};
+        for (int32_t i = 0; i < static_cast<int32_t>(sizeof(words) / sizeof(words[0])); ++i)
+            p[i] = words[i];
+    }
+
+    // The city camera each frame (heights grow downwards). The projection is reset, then the pad steps the
+    // zoom level: L1 or R1 out to 3, L2 or R2 in to 0. Each level has an eye offset in the player's frame, from
+    // the clear weather table or the other one, blended over the last two hours of a day before bad weather
+    // and the first two after it. At levels 2 and 3 the offset shortens while the player is below 0, down to
+    // level 3's. The wanted eye stays no higher than level 3's height and at least 0.6 above the ground, and
+    // the camera's eye moves towards it by at most 0.8 a frame (0.1 in mode 13): height first, rising 1.5
+    // times as fast, while sinking lets the sideways step grow by 1.3. Level 0 holds the eye 0.5 above the
+    // player. The target is 0.7 above the player at levels 2 and 3; at 0 and 1 it is 2 ahead of the player
+    // (level 1 at that point's height), eased a fifth of the way a frame to 0.7 above the ground there (level
+    // 0: two thirds of the eye's height less 0.5, if that is higher, and at once while the player jumps), and
+    // at least 0.2 above zero. The fog's far distance is interpolated by the eye's height between the levels'
+    // heights, its near distance 3 closer, and 14 more in bad weather (ramped over the same two hours). The
+    // original's frame is reserved whole: the level table sits at sp + 0xF0 and the fog search reads past it.
+    void CityCamera_Update(GuestPtr<CityCamera> camera, GuestPtr<CityScene> city)
+    {
+        using namespace vu0;
+        port::GuestFrame<0x150> frame;
+        const uint32_t sp = frame.ptr().address;
+        const GuestPtr<Vec4> playerMatrix{sp + 0x50u}, turn{sp + 0x90u}, position{sp + 0xD0u}, wanted{sp + 0xE0u};
+        const GuestPtr<Vec4> levels{sp + 0xF0u}, ahead{sp + 0x130u}, distance{sp + 0x140u};
+        Camera &base = camera->base;
+        const GuestPtr<Camera> cam = GuestPtr<Camera>::of(base);
+        base.viewWidth = 2046.0f;
+        base.viewHeight = 2046.0f;
+        base.unk_1D8 = 1.0f;
+        base.unk_1DC = 10.0f;
+        base.depthMin = 16770000.0f;
+        base.zNear = 0.1f;
+        Camera_UpdateProjection(cam);
+        Player_GetMatrix(city->player, playerMatrix);
+        if ((Pad_Pressed(0) & 0x4u) != 0 || (Pad_Pressed(0) & 0x8u) != 0)
+        {
+            camera->zoomLevel = camera->zoomLevel + 1;
+            if (!(camera->zoomLevel < 4))
+                camera->zoomLevel = 3;
+        }
+        if ((Pad_Pressed(0) & 0x1u) != 0 || (Pad_Pressed(0) & 0x2u) != 0)
+        {
+            camera->zoomLevel = camera->zoomLevel - 1;
+            if (camera->zoomLevel < 0)
+                camera->zoomLevel = 0;
+        }
+
+        const ps2f slotLength = 7200.0f, one = 1.0f;
+        const auto copyLevels = [&](uint32_t table) {
+            for (int i = 0; i < 4; ++i)
+                levels[i] = GuestPtr<Vec4>{table}[i];
+        };
+        const auto blendLevels = [&](uint32_t from, uint32_t to, ps2f t) {
+            const ps2f keep = one - t;
+            for (int i = 0; i < 4; ++i)
+            {
+                const Vec4 &a = GuestPtr<Vec4>{from}[i], &b = GuestPtr<Vec4>{to}[i];
+                levels[i].x = keep * a.x + t * b.x;
+                levels[i].y = keep * a.y + t * b.y;
+                levels[i].z = keep * a.z + t * b.z;
+                levels[i].w = one;
+            }
+        };
+        const bool lateBeforeWeather = city->weatherTomorrow != 0 && city->clock > 79200;
+        const bool earlyAfterWeather = city->weatherYesterday != 0 && city->clock < 7200;
+        if (city->weatherToday != 0)
+            copyLevels(globals::kCameraLevelsWeather);
+        else if (lateBeforeWeather)
+            blendLevels(globals::kCameraLevelsClear, globals::kCameraLevelsWeather, fromInt(city->clock - 79200) / slotLength);
+        else if (earlyAfterWeather)
+            blendLevels(globals::kCameraLevelsWeather, globals::kCameraLevelsClear, fromInt(city->clock) / slotLength);
+        else
+            copyLevels(globals::kCameraLevelsClear);
+
+        // The player's matrix without its translation, and its position.
+        turn[0] = playerMatrix[0];
+        turn[1] = playerMatrix[1];
+        turn[2] = playerMatrix[2];
+        store(GuestPtr<Vec4>{turn.address + 0x30u}, vf(0));
+        *position = playerMatrix[3];
+        const int zoom = camera->zoomLevel;
+        *wanted = levels[zoom];
+        if (!(zoom < 2) && position->y < ps2f(0.0f))
+        {
+            const ps2f z = wanted->z + position->y;
+            wanted->z = z;
+            if (z < levels[3].z)
+                wanted->z = levels[3].z;
+        }
+        Math_MulMatVecVu0(wanted, turn, wanted);
+        vf(4) = load(position);
+        vf(5) = load(wanted);
+        set(vf(4), add(vf(4), vf(5)), XYZW);
+        store(wanted, vf(4));
+        if (wanted->y < levels[3].y)
+            wanted->y = levels[3].y;
+        const ps2f eyeGround = Map_SampleHeight(city->map, wanted->x, wanted->z) - ps2f(0.6f);
+        if (!(wanted->y <= eyeGround))
+            wanted->y = eyeGround;
+
+        ps2f step = 0.8f;
+        if (CityScene_GetMode(city) == 13)
+            step = 0.1f;
+        vf(4) = load(GuestPtr<Vec4>::of(base.eye));
+        vf(5) = load(wanted);
+        set(vf(6), sub(vf(5), vf(4)), XYZW);
+        set(vf(7), mul(vf(6), vf(6)), XYZ);
+        set(vf(8), add(vf(7), lane(vf(7), 1)), X);
+        set(vf(8), add(vf(8), lane(vf(7), 2)), X);
+        q() = sqrtQ(x(vf(8)));
+        set(vf(9), add(vf(0), _mm_set1_ps(q())), XYZW);
+        store(distance, vf(9));
+        if (distance->x <= step)
+            step = distance->x;
+        if (zoom == 0)
+            base.eye.y = playerMatrix[3].y - ps2f(0.5f);
+        else
+        {
+            const ps2f y = base.eye.y;
+            if (!(y <= wanted->y))
+            {
+                const ps2f risen = y - ps2f(1.5f) * step;
+                base.eye.y = risen;
+                if (risen < wanted->y)
+                    base.eye.y = wanted->y;
+            }
+            else if (y < wanted->y)
+            {
+                const ps2f sunk = y + step;
+                base.eye.y = sunk;
+                if (!(sunk <= wanted->y))
+                    base.eye.y = wanted->y;
+                step = step * ps2f(1.3f);
+            }
+        }
+        const auto approach = [&](ps2f &value, ps2f goal) {
+            const ps2f v = value;
+            if (!(v <= goal))
+            {
+                value = v - step;
+                if (value < goal)
+                    value = goal;
+            }
+            else if (v < goal)
+            {
+                value = v + step;
+                if (!(value <= goal))
+                    value = goal;
+            }
+        };
+        approach(base.eye.x, wanted->x);
+        approach(base.eye.z, wanted->z);
+
+        if (!(zoom < 2))
+        {
+            base.target = *position;
+            base.target.y = base.target.y - ps2f(0.7f);
+        }
+        else
+        {
+            *ahead = *GuestPtr<Vec4>{globals::kCameraLookAhead};
+            Math_MulMatVecVu0(ahead, turn, ahead);
+            base.target.x = position->x + ahead->x;
+            base.target.z = position->z + ahead->z;
+            if (zoom == 1)
+                base.target.y = position->y + ahead->y;
+            const ps2f targetGround = Map_SampleHeight(city->map, base.target.x, base.target.z) - ps2f(0.7f);
+            const auto ease = [&](ps2f goal) {
+                const ps2f y = base.target.y;
+                if (y < goal)
+                {
+                    const ps2f eased = y + (goal - y) / ps2f(5.0f);
+                    base.target.y = eased;
+                    if (!(eased <= goal))
+                        base.target.y = goal;
+                }
+                else if (!(y <= goal))
+                {
+                    const ps2f eased = y + (goal - y) / ps2f(5.0f);
+                    base.target.y = eased;
+                    if (eased < goal)
+                        base.target.y = goal;
+                }
+            };
+            if (zoom == 0)
+            {
+                ps2f goal = ps2f(2.0f) * (base.eye.y / ps2f(3.0f)) - ps2f(0.5f);
+                if (!(goal <= targetGround))
+                    goal = targetGround;
+                if (ps2f(0.0f) == city->player->jumpSpeed)
+                    ease(goal);
+                else
+                    base.target.y = goal;
+            }
+            else
+                ease(targetGround);
+            if (!(base.target.y <= ps2f(-0.2f)))
+                base.target.y = -0.2f;
+        }
+        Camera_UpdateMatrices(cam);
+
+        const ps2f eyeY = base.eye.y;
+        int level = 0;
+        while (eyeY < levels[level + 1].y)
+            ++level;
+        const ps2f low = levels[level].y;
+        const ps2f u = (eyeY - low) / (levels[level + 1].y - low);
+        const auto fogAt = [](int i) { return ps2f(port::load<float>(globals::kFogFarByLevel + 4u * static_cast<uint32_t>(i))); };
+        const ps2f fogFar = (one - u) * fogAt(level) + u * fogAt(level + 1);
+        ps2f extra = 0.0f;
+        if (city->weatherToday != 0)
+            extra = 14.0f;
+        else if (lateBeforeWeather)
+            extra = fromInt(city->clock - 79200) / ps2f(512.0f);
+        else if (earlyAfterWeather)
+            extra = ps2f(14.0f) - fromInt(city->clock) / ps2f(512.0f);
+        Camera_SetFogRange(cam, fogFar - (ps2f(3.0f) + extra), fogFar);
+        CityCamera_UpdateTimeOfDay(camera, city);
     }
 
     // The camera's three projection matrices from its view size, distance, scale, centre, depth range and near
@@ -813,7 +1302,7 @@ namespace mm
         player->stepFrames = 0.0f;
         player->step = 0;
         player->swayPhase = 0.0f;
-        player->unk_40 = -1;
+        player->target = -1;
         Pad_ClearBit40();
     }
 
@@ -1015,6 +1504,69 @@ namespace mm
         return person->target;
     }
 
+    // char: a resident's home, kept in its target field. The current one stands while it is a home type (flag 0x80)
+    // of the person's family with its claim meter below 120. Otherwise, around the workplace (24 offsets, 0x1B0C50
+    // and 0x1B0CB0): a home of the family with the meter below 60 is taken, or, where the four tiles of the block
+    // (0x1B0D10 and 0x1B0D20) are ground, wasteland or type 10 lying flat (corners within 0.05), a new home of the
+    // workplace type's home type (+0x13A) is placed. Failing all, the workplace. Returns the home.
+    uint32_t Person_PlaceHomeObject(GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
+    {
+        const auto homeOfFamily = [&](GuestPtr<MapObject> obj, int meterBelow) {
+            return (GuestPtr<BuildingType>{globals::buildingTypeAddress(obj->type)}->flags & 0x80u) != 0 &&
+                   obj->family == person->family && obj->claimMeter < meterBelow;
+        };
+        if (person->target != kNoObject && person->target != person->work &&
+            homeOfFamily(Map_GetRecord(city->map, person->target), 120))
+            return person->target;
+
+        port::GuestFrame<0xD0> frame;
+        const GuestPtr<ps2f> corners{frame.ptr().address + 0xC0u};
+        const GuestPtr<MapObject> work = Map_GetRecord(city->map, person->work);
+        const GuestPtr<BuildingType> workType{globals::buildingTypeAddress(work->type)};
+        const int x = work->tile & 0x7F, z = work->tile >> 7;
+        for (int i = 0; i < 24; ++i)
+        {
+            const int bx = x + port::load<int32_t>(0x001B0C50u + 4u * i);
+            const int bz = z + port::load<int32_t>(0x001B0CB0u + 4u * i);
+            const GuestPtr<MapObject> here = Map_GetTileObject(city->map, bx, bz);
+            if (homeOfFamily(here, 60))
+            {
+                person->target = here->id;
+                return here->id;
+            }
+            bool open = true;
+            for (int k = 0; k < 4 && open; ++k)
+            {
+                const int tx = bx + port::load<int32_t>(0x001B0D10u + 4u * k);
+                const int tz = bz + port::load<int32_t>(0x001B0D20u + 4u * k);
+                const uint16_t type = Map_GetTileObject(city->map, tx, tz)->type;
+                if (type != 2 && type != 3 && type != 10)
+                {
+                    open = false;
+                    break;
+                }
+                Map_GetTileVertexClamped(city->map, tx, tz, corners);
+                for (int c = 0; c < 4; ++c)
+                    if (!(corners[c] <= ps2f(0x1.99999Ap-5f)))
+                    {
+                        open = false;
+                        break;
+                    }
+            }
+            if (!open)
+                continue;
+            const int placed = Map_PlaceObject(city->map, person->family, port::load<uint16_t>(workType.address + 0x13Au), bx, bz,
+                                               static_cast<int>(city.address));
+            if (placed != kNoObject)
+            {
+                person->target = static_cast<uint16_t>(placed);
+                return static_cast<uint32_t>(placed) & 0xFFFFu;
+            }
+        }
+        person->target = person->work;
+        return person->work;
+    }
+
     // char: the person type adds its walking speed, record halfword 6 in millionths.
     GuestPtr<PersonClass> Person_ctor(GuestPtr<PersonClass> cls, GuestPtr<uint8_t> record)
     {
@@ -1049,8 +1601,8 @@ namespace mm
         player->position.z = 0.0f;
         player->position.w = 0.0f;
         player->visible = 0;
-        player->unk_40 = -1;
-        player->unk_44 = 0;
+        player->target = -1;
+        player->targetIsPerson = 0;
         player->unk_48 = 0;
         player->unk_50 = 0;
         player->jumpSpeed = 0.0f;
@@ -1059,6 +1611,27 @@ namespace mm
     }
 
     // phone: an empty call queue.
+    // Queues a phone call from a family member, unless that family already has one queued: the first free entry
+    // (family 0) of four. 1 when queued.
+    int PhoneCall_Post(GuestPtr<PhoneCalls> phone, int person, uint32_t family, uint16_t member, int t0)
+    {
+        for (int i = 0; i < 4; ++i)
+            if (phone->calls[i].family == family)
+                return 0;
+        for (int i = 0; i < 4; ++i)
+        {
+            PhoneCallEntry &call = phone->calls[i];
+            if (call.family != 0)
+                continue;
+            call.person = person;
+            call.family = static_cast<uint16_t>(family);
+            call.member = member;
+            call.unk_08 = t0;
+            return 1;
+        }
+        return 0;
+    }
+
     GuestPtr<PhoneCalls> PhoneCall_ctor(GuestPtr<PhoneCalls> phone)
     {
         phone->unk_00 = GuestPtr<void>{port::load<uint32_t>(0x001F3B08u)};
@@ -1314,6 +1887,175 @@ namespace mm
                 Map_UnlinkPersonFromTile(city->map, tile, person->index);
         }
         person->heading = sdk::atan2f(-facing->x, -facing->z);
+    }
+
+    // char: a person's walk each frame. It aims at the middle of the building on the tile it walks to; when
+    // following (flag 0x20) someone now on its own tile (the player when it follows no one, kept within 62 of
+    // the middle), at that one instead, though as in the original the followed z lands in the aim's y, so only
+    // x follows. The aim runs straight along an axis when within 0.01. On road it keeps to a pavement lane by
+    // its offset across its two-tile block (0 to 2), heading pi/8 to one side or the other: one way in 0.5 to 1
+    // or above 1.875, the other in 1 to 1.5 or below 0.125; in between straight on, unless the tile ahead is
+    // taken (mm_Person_ProbeTile), when the quarter it is in decides. It turns by the gap scaled by its
+    // distance to the aim (up to 2) over 2 (a gap past pi wrapped as the original does), taking the aim
+    // outright when that is within 0.04, else turning by the gap squared over 40 but at least 0.04. It steps
+    // the class's walking speed plus (index & 3) / 2000 (twice when running, flag 0x80) along its heading,
+    // through the shared step vector, and a person that left `tile` is unlinked from it unless flag 0x800
+    // holds it there. The original's frame is reserved whole.
+    void Person_Walk(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, GuestPtr<MapObject> obj, int tile)
+    {
+        using namespace vu0;
+        port::GuestFrame<0x150> frame;
+        const uint32_t sp = frame.ptr().address;
+        const GuestPtr<Vec4> goal{sp + 0x80u}, here{sp + 0x90u}, way{sp + 0xA0u}, playerMatrix{sp + 0xB0u};
+        const GuestPtr<Vec4> turn{sp + 0xF0u}, moved{sp + 0x130u}, distance{sp + 0x140u};
+        const ps2f pi = 0x1.921FB6p+1f, twoPi = 0x1.921FB6p+2f, halfPi = 0x1.921FB6p+0f;
+        const ps2f quarterPi = 0x1.921FB6p-1f, threeQuartersPi = 0x1.2D97C8p+1f;
+        const ps2f eighthPi = 0x1.921FB6p-2f, threeEighthsPi = 0x1.2D97C8p+0f;
+        const ps2f fiveEighthsPi = 0x1.F6A7A4p+0f, sevenEighthsPi = 0x1.5FDBC0p+1f;
+        const ps2f centre = 64.0f, two = 2.0f;
+
+        const GuestPtr<MapObject> target = Map_GetTileFirstObject(city->map, person->walkTile);
+        const ps2f size = fromInt(GuestPtr<BuildingType>{globals::buildingTypeAddress(target->type)}->size);
+        goal->w = 1.0f;
+        goal->z = (fromInt(128 - person->walkTile / 128) - centre) - size / two;
+        goal->y = 0.0f;
+        goal->x = (fromInt(person->walkTile % 128) - centre) + size / two;
+        if ((person->flags & 0x20u) != 0)
+        {
+            ps2f fx, fz;
+            if (person->follow == kNoPerson)
+            {
+                Player_GetMatrix(city->player, playerMatrix);
+                const ps2f edge = 62.0f;
+                const auto clampToMap = [&](ps2f v) {
+                    if (v < -edge)
+                        return -edge;
+                    return v <= edge ? v : edge;
+                };
+                fx = clampToMap(playerMatrix[3].x);
+                fz = clampToMap(playerMatrix[3].z);
+            }
+            else
+            {
+                const MapPerson &followed = city->map->people[person->follow];
+                fx = followed.x;
+                fz = followed.z;
+            }
+            const int tileZ = sdk::fptosi(centre - fz);
+            const int tileX = sdk::fptosi(centre + fx);
+            if (Map_GetTileObject(city->map, tileX, tileZ)->tile == obj->tile)
+            {
+                goal->x = fx;
+                goal->y = fz;
+            }
+        }
+        here->w = 1.0f;
+        here->z = person->z;
+        here->y = 0.0f;
+        here->x = person->x;
+        vf(4) = load(goal);
+        vf(5) = load(here);
+        set(vf(4), sub(vf(4), vf(5)), XYZW);
+        store(way, vf(4));
+        const ps2f nearZero = 0.01f;
+        ps2f aim = 0.0f;
+        if (way->x < nearZero && !(way->x <= -nearZero))
+            aim = way->z <= aim ? aim : -pi;
+        else if (way->z < nearZero && !(way->z <= -nearZero))
+            aim = way->x <= ps2f(0.0f) ? halfPi : -halfPi;
+        else
+        {
+            Vec3_Normalize(way, way);
+            aim = sdk::atan2f(-way->x, -way->z);
+        }
+
+        const ps2f offset = 128.0f;
+        const ps2f acrossX = sdk::fmodf(offset + person->x, two);
+        const ps2f acrossZ = sdk::fmodf(offset + person->z, two);
+        const int blocked = Person_ProbeTile(cls, city, person, obj->tile);
+        if (Map_TileIndexFlag10(city->map, obj->tile) != 0)
+        {
+            const auto pavement = [&](ps2f f, ps2f oneSide, ps2f otherSide, ps2f straight) {
+                if ((!(f < ps2f(0.5f)) && f <= ps2f(1.0f)) || !(f <= ps2f(1.875f)))
+                    return oneSide;
+                if ((!(f <= ps2f(1.0f)) && f <= ps2f(1.5f)) || f < ps2f(0.125f))
+                    return otherSide;
+                if (blocked == 0)
+                    return straight;
+                if (f < ps2f(0.25f))
+                    return otherSide;
+                if (f < ps2f(1.0f))
+                    return oneSide;
+                return f < ps2f(1.75f) ? otherSide : oneSide;
+            };
+            if (!(aim < -quarterPi) && aim < quarterPi)
+                aim = pavement(acrossX, eighthPi, -eighthPi, 0.0f);
+            else if (!(aim < -quarterPi) && aim < threeQuartersPi)
+                aim = pavement(acrossZ, threeEighthsPi, fiveEighthsPi, halfPi);
+            else if (!(aim < -threeQuartersPi) && aim < threeQuartersPi)
+                aim = pavement(acrossZ, -threeEighthsPi, -fiveEighthsPi, -halfPi);
+            else
+                aim = pavement(acrossX, sevenEighthsPi, -sevenEighthsPi, -pi);
+        }
+
+        vf(4) = load(goal);
+        vf(5) = load(here);
+        set(vf(6), sub(vf(5), vf(4)), XYZW);
+        set(vf(7), mul(vf(6), vf(6)), XYZ);
+        set(vf(8), add(vf(7), lane(vf(7), 1)), X);
+        set(vf(8), add(vf(8), lane(vf(7), 2)), X);
+        q() = sqrtQ(x(vf(8)));
+        set(vf(9), add(vf(0), _mm_set1_ps(q())), XYZW);
+        store(distance, vf(9));
+        ps2f reach = distance->x;
+        if (!(reach <= two))
+            reach = two;
+        ps2f gap = aim - person->heading;
+        const ps2f scale = reach / two;
+        if (!(gap <= pi))
+            gap = pi - gap;
+        else if (gap <= -pi)
+            gap = -pi - gap;
+        const ps2f step = gap * scale, least = 0.04f;
+        if (step <= least && !(step < -least))
+            person->heading = aim;
+        else
+        {
+            ps2f amount = gap * gap / ps2f(40.0f);
+            if (amount < least)
+                amount = least;
+            if (!(gap <= ps2f(0.0f)))
+            {
+                const ps2f h = person->heading + amount;
+                person->heading = h;
+                if (!(h < pi))
+                    person->heading = h - twoPi;
+            }
+            else
+            {
+                const ps2f h = person->heading - amount;
+                person->heading = h;
+                if (h <= -pi)
+                    person->heading = h + twoPi;
+            }
+        }
+
+        sdk::sceVu0RotMatrixY(turn.address, globals::kIdentityMatrix, person->heading);
+        const ps2f walkSpeed = GuestPtr<PersonClass>{cls.address}->walkSpeed;
+        ps2f stride = -(walkSpeed + fromInt(person->index & 3) / ps2f(2000.0f));
+        if ((person->flags & 0x80u) != 0)
+            stride = stride * two;
+        const GuestPtr<Vec4> walkStride{globals::kWalkStride};
+        walkStride->z = stride;
+        Math_MulMatVecVu0(moved, turn, walkStride);
+        person->x = person->x + moved->x;
+        person->z = person->z + moved->z;
+        if ((person->flags & 0x800u) != 0)
+            return;
+        const int tileX = sdk::fptosi(centre + person->x);
+        const int tileZ = sdk::fptosi(centre - person->z);
+        if (static_cast<uint32_t>(tile) != static_cast<uint32_t>(tileX) + (static_cast<uint32_t>(tileZ) << 7))
+            Map_UnlinkPersonFromTile(city->map, tile, person->index);
     }
 
     // event: inserts the two-byte entry `id` (event type, data byte) into level `level` of the queue, searching
@@ -1628,7 +2370,317 @@ namespace mm
         return 0;
     }
 
+    namespace
+    {
+        // How hard a class 2 vehicle brakes, slows, follows and speeds up (movement modes A and B).
+        struct SpeedRules
+        {
+            int brake;  // nearer than 1.2 to a vehicle ahead, or close to a junction against the lights
+            int slow;   // further from a vehicle ahead on its block, or early on a junction's approach
+            int follow; // speed divisor behind a vehicle on the next block
+            int gain;   // on straight road, or with the tiles around clear
+        };
+
+        // A vehicle's speed (+0x2C) for its step from block `obj` in direction `dir` (0..3: tile z down, x up,
+        // z up, x down; world z runs against tile z), `dx` and `dz` its offset within its two-tile block
+        // (-1..1). Other vehicles (class flag 1) count when heading within 3pi/8 of the same way: the first
+        // ahead of it on its block brakes it (to as low as 0) when nearer than 1.2, else slows it (to 150);
+        // failing that, when the next block is road, the first anywhere on it brakes it the same or slows it
+        // by its speed over `follow` (direction 3: only within 3). Else the next block decides: straight road
+        // (shape 5 along z, 10 along x) here, there and on the block after speeds it up; a junction (shapes 7,
+        // 11, 13, 14 and 15) against the lights (traffic phase 0 lets z through, 2 lets x) brakes it within a
+        // quarter block of the junction, else slows it by 50 past its block's middle or by `slow`. Anything
+        // else costs 5. Direction 4: a vehicle close by on the tiles around slows it by 15 (to 1), else it
+        // speeds up to at most 300. The speed stays within that floor (otherwise 300) and 800.
+        void updateVehicleSpeed(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj,
+                                int dir, ps2f dx, ps2f dz, const SpeedRules &rules)
+        {
+            port::GuestFrame<0xD0> frame; // the people cursor sits at the original's sp + 0xCE
+            const GuestPtr<uint16_t> cursor{frame.ptr().address + 0xCEu};
+            const int speed = vehicle->introduces;
+            const int x = obj->tile % 128, z = obj->tile / 128;
+            int change = -5, floor = 300, ceiling = 800;
+            const auto brake = [&](ps2f gap, int slow) {
+                if (gap < ps2f(1.2f))
+                {
+                    change = rules.brake;
+                    floor = 0;
+                }
+                else
+                {
+                    change = slow;
+                    floor = 150;
+                }
+            };
+
+            const auto lookAhead = [&] {
+                static constexpr int kStepX[4] = {0, 1, 0, -1}, kStepZ[4] = {-1, 0, 1, 0};
+                const bool alongZ = dir == 0 || dir == 2;
+                const GuestPtr<MapObject> nextBlock = Map_GetTileObject(city->map, x + 2 * kStepX[dir], z + 2 * kStepZ[dir]);
+                const GuestPtr<MapObject> blockAfter = Map_GetTileObject(city->map, x + 4 * kStepX[dir], z + 4 * kStepZ[dir]);
+                // Headings within 3pi/8 of the way (as the original compares them, NaN included) and the gap ahead.
+                const ps2f fiveEighthsPi = 0x1.F6A7A4p+0f, threeEighthsPi = 0x1.2D97C8p+0f;
+                const ps2f eighthPi = 0x1.921FB6p-2f, sevenEighthsPi = 0x1.5FDBC0p+1f;
+                const auto sameWay = [&](ps2f h) {
+                    switch (dir)
+                    {
+                    case 0: return h < -fiveEighthsPi || !(h < fiveEighthsPi);
+                    case 1: return !(h < -sevenEighthsPi) && h < -eighthPi;
+                    case 2: return !(h < -threeEighthsPi) && h < threeEighthsPi;
+                    default: return !(h < eighthPi) && h < sevenEighthsPi;
+                    }
+                };
+                const auto gapTo = [&](const MapPerson &other) -> ps2f {
+                    switch (dir)
+                    {
+                    case 0: return other.z - vehicle->z;
+                    case 1: return other.x - vehicle->x;
+                    case 2: return vehicle->z - other.z;
+                    default: return vehicle->x - other.x;
+                    }
+                };
+                const auto inFront = [&](const MapPerson &other) {
+                    switch (dir)
+                    {
+                    case 0: return !(other.z <= vehicle->z);
+                    case 1: return !(other.x <= vehicle->x);
+                    case 2: return other.z < vehicle->z;
+                    default: return other.x < vehicle->x;
+                    }
+                };
+                const auto nextVehicle = [&] {
+                    GuestPtr<MapPerson> other;
+                    do
+                        other = People_Next(city->map, cursor);
+                    while (other && (other->index == vehicle->index || (charClassOf(*other)->flags & 1u) == 0));
+                    return other;
+                };
+
+                *cursor = obj->firstPerson;
+                while (const GuestPtr<MapPerson> other = nextVehicle())
+                    if (sameWay(other->heading) && inFront(*other))
+                    {
+                        brake(gapTo(*other), rules.slow);
+                        return;
+                    }
+                if (Map_TileIndexFlag10(city->map, nextBlock->tile) == 0)
+                    return;
+                *cursor = nextBlock->firstPerson;
+                while (const GuestPtr<MapPerson> other = nextVehicle())
+                    if (sameWay(other->heading))
+                    {
+                        const ps2f gap = gapTo(*other);
+                        if (dir != 3 || gap < ps2f(3.0f))
+                            brake(gap, -(speed / rules.follow));
+                        return;
+                    }
+
+                const uint16_t straight = alongZ ? 5 : 10;
+                const uint16_t shape = nextBlock->variant;
+                if (shape == straight)
+                {
+                    if (obj->variant == straight && Map_TileIndexFlag10(city->map, blockAfter->tile) != 0 && blockAfter->variant == straight)
+                        change = rules.gain;
+                    return;
+                }
+                const bool junction = shape == 7 || shape == 11 || shape == 13 || shape == 14 || shape == 15;
+                if (!junction || city->trafficPhase == (alongZ ? 0 : 2))
+                    return;
+                const ps2f along = alongZ ? dz : dx;
+                const bool rising = dir == 0 || dir == 1;
+                const bool close = rising ? !(along <= ps2f(0.5f)) : along < ps2f(-0.5f);
+                const bool pastMiddle = rising ? !(along <= ps2f(0.0f)) : along < ps2f(0.0f);
+                if (close)
+                {
+                    change = rules.brake;
+                    floor = 0;
+                }
+                else
+                {
+                    change = pastMiddle ? -50 : rules.slow;
+                    floor = 150;
+                }
+            };
+            if (dir == 4)
+            {
+                if (Char_CheckNeighbourTile(cls, city, vehicle, x, z) != 0)
+                {
+                    change = -15;
+                    floor = 1;
+                }
+                else
+                {
+                    change = rules.gain;
+                    ceiling = 300;
+                }
+            }
+            else if (dir >= 0 && dir < 4)
+                lookAhead();
+
+            const int next = speed + change;
+            if (next < floor)
+                vehicle->introduces = static_cast<uint16_t>(floor);
+            else
+                vehicle->introduces = static_cast<uint16_t>(ceiling < next ? ceiling : next);
+        }
+    }
+
+    namespace
+    {
+        using SpeedUpdate = void (*)(GuestPtr<CharClass>, GuestPtr<CityScene>, GuestPtr<MapPerson>, GuestPtr<MapObject>, int, ps2f, ps2f);
+
+        // A class 2 vehicle's step from tile `tile` (object `obj`). When it steers (mode A: on one frame in
+        // four, by its index), it aims at the middle of its waypoint's object (+0x18), straight along an axis
+        // when that is within 0.01, and its speed is updated for its offset within its two-tile block: off
+        // road with the tiles-around test; on road for the way it heads (within pi/4), aiming pi/8 off that
+        // way to get back into its lane (0.2 to 0.3 from the block's middle line, to the same side of its
+        // heading whichever way it goes, so opposite ways keep apart). It turns by at most `turnStep` a frame
+        // (taking the aim outright when that is nearer, or when the gap is at least 2 pi less a step). Every
+        // frame it moves a 10000th of its speed along its heading, and leaves the tile's list when the move
+        // takes it to another tile (unless flagged 0x800). The original's frame is reserved whole.
+        void moveVehicle(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj,
+                         int tile, bool everyFourthFrame, ps2f turnStep, ps2f snapLimit, SpeedUpdate updateSpeed)
+        {
+            using namespace vu0;
+            port::GuestFrame<0xF0> frame;
+            const uint32_t sp = frame.ptr().address;
+            const GuestPtr<Vec4> turn{sp + 0x70u}, goal{sp + 0xB0u}, here{sp + 0xC0u}, way{sp + 0xD0u}, step{sp + 0xE0u};
+            const ps2f pi = 0x1.921FB6p+1f, twoPi = 0x1.921FB6p+2f, halfPi = 0x1.921FB6p+0f;
+            const ps2f quarterPi = 0x1.921FB6p-1f, threeQuartersPi = 0x1.2D97C8p+1f;
+            const ps2f eighthPi = 0x1.921FB6p-2f, threeEighthsPi = 0x1.2D97C8p+0f;
+            const ps2f fiveEighthsPi = 0x1.F6A7A4p+0f, sevenEighthsPi = 0x1.5FDBC0p+1f;
+            if (!everyFourthFrame || (vehicle->index & 3u) == (static_cast<uint32_t>(globals::frameCounter.get()) & 3u))
+            {
+                const GuestPtr<MapObject> target = Map_GetTileFirstObject(city->map, vehicle->walkTile);
+                const ps2f size = fromInt(GuestPtr<BuildingType>{globals::buildingTypeAddress(target->type)}->size);
+                const ps2f centre = 64.0f;
+                goal->w = 1.0f;
+                goal->z = (fromInt(128 - vehicle->walkTile / 128) - centre) - size / ps2f(2.0f);
+                goal->y = 0.0f;
+                here->w = 1.0f;
+                goal->x = (fromInt(vehicle->walkTile % 128) - centre) + size / ps2f(2.0f);
+                here->z = vehicle->z;
+                here->y = 0.0f;
+                here->x = vehicle->x;
+                vf(4) = load(goal);
+                vf(5) = load(here);
+                set(vf(4), sub(vf(4), vf(5)), XYZW);
+                store(way, vf(4));
+                const ps2f nearZero = 0.01f;
+                ps2f aim = 0.0f;
+                if (way->x < nearZero && !(way->x <= -nearZero))
+                    aim = way->z <= aim ? aim : -pi;
+                else if (way->z < nearZero && !(way->z <= -nearZero))
+                    aim = way->x <= ps2f(0.0f) ? halfPi : -halfPi;
+                else
+                {
+                    Vec3_Normalize(way, way);
+                    aim = sdk::atan2f(-way->x, -way->z);
+                }
+
+                const ps2f one = 1.0f, two = 2.0f, offset = 128.0f;
+                const ps2f dx = sdk::fmodf(offset + vehicle->x, two) - one;
+                const ps2f dz = sdk::fmodf(offset + vehicle->z, two) - one;
+                if (Map_TileIndexFlag10(city->map, obj->tile) == 0)
+                    updateSpeed(cls, city, vehicle, obj, 4, dx, dz);
+                else
+                {
+                    // Below `low` steer one way, up to `high` straight on, past it the other way.
+                    const auto lane = [](ps2f along, ps2f low, ps2f high, ps2f below, ps2f straight, ps2f above) {
+                        if (along < low)
+                            return below;
+                        return along <= high ? straight : above;
+                    };
+                    int dir;
+                    if (!(aim < -quarterPi) && aim < quarterPi)
+                    {
+                        dir = 2;
+                        aim = lane(dx, 0.2f, 0.3f, -eighthPi, 0.0f, eighthPi);
+                    }
+                    else if (!(aim < -quarterPi) && aim < threeQuartersPi)
+                    {
+                        dir = 3;
+                        aim = lane(dz, -0.3f, -0.2f, fiveEighthsPi, halfPi, threeEighthsPi);
+                    }
+                    else if (!(aim < -threeQuartersPi) && aim < threeQuartersPi)
+                    {
+                        dir = 1;
+                        aim = lane(dz, 0.2f, 0.3f, -fiveEighthsPi, -halfPi, -threeEighthsPi);
+                    }
+                    else
+                    {
+                        dir = 0;
+                        aim = lane(dx, -0.3f, -0.2f, -sevenEighthsPi, -pi, sevenEighthsPi);
+                    }
+                    updateSpeed(cls, city, vehicle, obj, dir, dx, dz);
+                }
+
+                const ps2f gap = (pi + aim) - (pi + vehicle->heading);
+                if ((!(gap < -turnStep) && gap < turnStep) || gap <= -snapLimit || !(gap < snapLimit))
+                    vehicle->heading = aim;
+                else if (gap < -pi || (!(gap < ps2f(0.0f)) && gap < pi))
+                {
+                    const ps2f h = vehicle->heading + turnStep;
+                    vehicle->heading = h;
+                    if (!(h < pi))
+                        vehicle->heading = h - twoPi;
+                }
+                else
+                {
+                    const ps2f h = vehicle->heading - turnStep;
+                    vehicle->heading = h;
+                    if (h < -pi)
+                        vehicle->heading = h + twoPi;
+                }
+            }
+
+            sdk::sceVu0RotMatrixY(turn.address, globals::kIdentityMatrix, vehicle->heading);
+            step->w = 1.0f;
+            step->z = fromInt(-static_cast<int32_t>(vehicle->introduces)) / ps2f(10000.0f);
+            step->y = 0.0f;
+            step->x = 0.0f;
+            Math_MulMatVecVu0(step, turn, step);
+            vehicle->x = vehicle->x + step->x;
+            vehicle->z = vehicle->z + step->z;
+            if ((vehicle->flags & 0x800u) != 0)
+                return;
+            const int tileX = sdk::fptosi(ps2f(64.0f) + vehicle->x);
+            const int tileZ = sdk::fptosi(ps2f(64.0f) - vehicle->z);
+            if (static_cast<uint32_t>(tile) != static_cast<uint32_t>(tileX) + (static_cast<uint32_t>(tileZ) << 7))
+                Map_UnlinkPersonFromTile(city->map, tile, vehicle->index);
+        }
+    }
+
+    // char (class 2): movement modes A and B. A steers on one frame in four and turns up to 0.16, B steers
+    // every frame and turns up to 0.04 (with their own speed rules).
+    void Char2_MoveA(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj, int tile)
+    {
+        moveVehicle(cls, city, vehicle, obj, tile, true, 0.16f, 0x1.87E246p+2f, Char2_UpdateSpeedA);
+    }
+
+    void Char2_MoveB(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj, int tile)
+    {
+        moveVehicle(cls, city, vehicle, obj, tile, false, 0.04f, 0x1.8F905Ap+2f, Char2_UpdateSpeedB);
+    }
+
+    // char (class 2): the vehicle speed of movement modes A and B, which differ only in their rules.
+    void Char2_UpdateSpeedA(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj,
+                            int dir, ps2f dx, ps2f dz)
+    {
+        updateVehicleSpeed(cls, city, vehicle, obj, dir, dx, dz, {-180, -60, 40, 40});
+    }
+
+    void Char2_UpdateSpeedB(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj,
+                            int dir, ps2f dx, ps2f dz)
+    {
+        updateVehicleSpeed(cls, city, vehicle, obj, dir, dx, dz, {-80, -20, 20, 10});
+    }
+
     PORT_FN(BaseObject_ctor);
+    PORT_FN(Char2_UpdateSpeedA);
+    PORT_FN(Char2_UpdateSpeedB);
+    PORT_FN(Char2_MoveA);
+    PORT_FN(Char2_MoveB);
     PORT_FN(Pair_ctor);
     PORT_FN(Player_GetMatrix);
     PORT_FN(Camera_SetEyeTarget);
@@ -1642,6 +2694,8 @@ namespace mm
     PORT_FN(Camera_UpdateProjection);
     PORT_FN(Camera_ctor);
     PORT_FN(CityCamera_UpdateTimeOfDay);
+    PORT_FN(CityCamera_Update);
+    PORT_FN(Sky_BuildPackets);
     PORT_FN(McQueue_IsDone);
     PORT_FN(FileQueue_IsDone);
     PORT_FN(StatusByte_ctorE0);
@@ -1656,6 +2710,8 @@ namespace mm
     PORT_FN(Char2_ctor);
     PORT_FN(Char2_Draw);
     PORT_FN(Player_UpdateAction);
+    PORT_FN(Player_PlayFootstep);
+    PORT_FN(Player_PickTarget);
     PORT_FN(Player_Move);
     PORT_FN(Player_SetMode);
     PORT_FN(FileQueue_Init);
@@ -1668,6 +2724,7 @@ namespace mm
     PORT_FN(CharType_ClearSlots);
     PORT_FN(Player_ctor);
     PORT_FN(PhoneCall_ctor);
+    PORT_FN(PhoneCall_Post);
     PORT_FN(Bag_ctor);
     PORT_FN(Laptop_InitEntries);
     PORT_FN(Person_ctor);
@@ -1680,11 +2737,13 @@ namespace mm
     PORT_FN(Stamina_Tick);
     PORT_FN(CityCamera_GetZoomLevel);
     PORT_FN(Person_TargetWork);
+    PORT_FN(Person_PlaceHomeObject);
     PORT_FN(Person_FindBuildingInList);
     PORT_FN(Player_Turn);
     PORT_FN(EvThreeUnsatisfied_Check);
     PORT_FN(Person_TickCounters);
     PORT_FN(Person_UpdatePose);
+    PORT_FN(Person_Walk);
     PORT_FN(EventQueue_InsertByPriority);
     PORT_FN(Path_TileDistance);
     PORT_FN(Path_PickRoadLink);

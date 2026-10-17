@@ -18,7 +18,7 @@ Rendering below the scene level.
 
 ## Functions
 
-117 functions (typed 62, verified 55). Blocks: 29 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+117 functions (typed 57, verified 60). Blocks: 29 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -64,7 +64,7 @@ Rendering below the scene level.
 | `0x001489B0` | `void mm_CityRender_DrawOverlays(CityMap *map, CityScene *city)` | 136 | no | (provisional) queues the two-packet layers |
 | `0x00148A40` | `CityMap *mm_CityRender_dtor(CityMap *map, int16_t deleteFlag)` | 364 | yes | vtable 0x1BCF00; deletes the seven layers and buffers, people-level destructor |
 | `0x00148BB0` | `CityMap *mm_CityRender_ctor(CityMap *map)` | 436 | yes | people-level constructor, vtable 0x1BCF00; builds the terrain packets and the seven layers in the packet buffer |
-| `0x00148D70` | `void mm_TexImage_Convert(uint32_t *image, uint32_t width, uint32_t height)` | 856 | no | (provisional) converts the loaded image (+0x1000) for upload, size a1 x a2 |
+| `0x00148D70` | `void mm_TexImage_Convert(TexImage *image, uint32_t textureBlock, uint32_t clutBlock)` | 856 | no | (image, textureBlock, clutBlock): DMA packet over the start of the image that uploads its palette and texels (PSMT4/PSMT8/32-bit, square) to the given GS blocks |
 | `0x001490D0` | `int mm_Dma_KickVif1Now(uint32_t address)` | 8 | no |  |
 | `0x001490E0` | `TexImage *mm_TexImage_dtor(TexImage *image, int16_t deleteFlag)` | 100 | yes | frees the image data (+0x1000); delete when the flag is > 0 |
 | `0x00149150` | `int mm_TexImage_Load(TexImage *image, char *name, int a2, int a3)` | 132 | yes | loads file a1 whole into +0x1000 and converts it (a2 x a3) |
@@ -111,13 +111,13 @@ Rendering below the scene level.
 | `0x00150090` | `void mm_LayerG_Draw(LayerG *layer, int pass, float weather)` | 64 | no | (provisional) animates the waves and queues packet a1 |
 | `0x001500D0` | `LayerG *mm_LayerG_DeletingDtor(LayerG *layer, int16_t deleteFlag)` | 84 | yes | base destructor, then delete |
 | `0x00150130` | `LayerG *mm_LayerG_ctor(LayerG *layer, int buffers)` | 88 | no | base constructor, parameters, packet |
-| `0x00161290` | `void mm_TexSprite_SetFrame(TexSprite *sprite, int frameX, int frameY)` | 152 | no | (provisional) frame (+0x30/+0x34) within the image, then rebuilds |
-| `0x00161330` | `void mm_TexSprite_SetClip(TexSprite *sprite, uint32_t width, uint32_t height)` | 124 | no | (provisional) visible size (+0x28/+0x2C), then rebuilds |
+| `0x00161290` | `int mm_TexSprite_SetFrame(TexSprite *sprite, int frameX, int frameY)` | 152 | no | first tile (+0x30/+0x34, within the image), trims the shown tiles to fit, then rebuilds |
+| `0x00161330` | `int mm_TexSprite_SetClip(TexSprite *sprite, uint32_t width, uint32_t height)` | 124 | no | tiles shown (+0x28/+0x2C, up to the image's tiles past the frame), then rebuilds; mm_TexSprite_BuildPacket uses them as end tiles |
 | `0x001613B0` | `void mm_TexSprite_GreenToAlpha(TexSprite *sprite)` | 148 | no | (provisional) palette pass: grey-green entries become translucent (logo texture) |
 | `0x00161450` | `void mm_TexSprite_SetAlpha(TexSprite *sprite, uint8_t alpha, int keepClear)` | 108 | no | (provisional) palette alpha a1 |
 | `0x001614C0` | `int mm_TexSprite_SetPosScale(TexSprite *sprite, int x, int y, int z, float scaleX, float scaleY)` | 24 | no | position a3..a5 and scale a0/a1, then rebuilds |
 | `0x001614E0` | `void mm_TexSprite_Draw(TexSprite *sprite)` | 8 | no | queues the sprite packet (+8) |
-| `0x001614F0` | `int mm_TexSprite_BuildPacket(TexSprite *sprite)` | 2152 | no | builds the textured-sprite packet from the .TEX image |
+| `0x001614F0` | `int mm_TexSprite_BuildPacket(TexSprite *sprite)` | 2152 | no | builds the sprite's DMA packet: palette upload to block 0x1E00, then per tile a texel upload, texture flush and a textured sprite (TEX0, ST, XYZ2); returns the scaled tile height |
 | `0x00161D60` | `TexSprite *mm_TexSprite_dtor(TexSprite *sprite, int16_t deleteFlag)` | 136 | yes | vtable 0x1BCFD8, frees image and packet |
 | `0x00161DF0` | `int mm_TexSprite_Load(TexSprite *sprite, int file, int a2)` | 260 | yes | loads a .TEX file whole and builds its packet |
 | `0x00184030` | `int mm_DmaChain_Next(int reader)` | 208 | no | steps a DMA chain reader (+4 = current tag): CNT skips qwc+1, END stays, RET returns 0; caches tag id/qwc/words at +8..+0x24 |
@@ -137,5 +137,5 @@ Rendering below the scene level.
 | `0x00187200` | `void mm_DmaList_BeginScene(void)` | 132 | no | rewinds the 0x8000-byte packet buffer (0x1BDCE4 -> 0x1BDCE8) and queues the default GS state |
 | `0x00187290` | `void mm_DmaList_KickFrame(void)` | 220 | no | appends the default GS state, then starts the current list on VIF1 (chain mode); the city's VU1/GS work happens under this kick |
 | `0x00187370` | `void mm_DmaList_Free(void)` | 92 | yes | frees both lists and the packet buffer |
-| `0x001873D0` | `void mm_DmaList_InitPackets(void)` | 616 | no | prebuilds the GIF packet templates at 0x1F69C0 |
+| `0x001873D0` | `void mm_DmaList_InitPackets(void)` | 616 | no | builds two static packets at 0x1F69C0 that draw a 640 x 224 picture from GS block 0x8000 (+0x8C0) as 5 x 7 sprites of 128 x 32 |
 | `0x00187640` | `void mm_DmaList_Init(void)` | 104 | yes | allocates the two 64 KB lists and the 0x8000-byte packet buffer, then builds the overlay packets (0x1873D0) |

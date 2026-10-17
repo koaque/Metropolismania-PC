@@ -99,6 +99,39 @@ namespace mm
         return 1;
     }
 
+    // The ray from `from` towards `to` meets the plane through `planePoint` that faces along the ray at `hit`
+    // (mm_Math_LinePlaneIntersect); returns the distance from planePoint to hit, also stored to *distance.
+    // The direction is normalised and the distance taken in VU0, as the original; v0 is left at 1.
+    ps2f Math_RayPlaneDistance(GuestPtr<Vec4> from, GuestPtr<Vec4> to, GuestPtr<Vec4> planePoint, GuestPtr<Vec4> hit,
+                               GuestPtr<ps2f> distance)
+    {
+        using namespace vu0;
+        vf(4) = load(to);
+        vf(5) = load(from);
+        set(vf(4), sub(vf(4), vf(5)), XYZW);
+        vf(1) = vf(4);
+        set(vf(2), mul(vf(1), vf(1)), XYZW);
+        set(vf(2), add(vf(2), lane(vf(2), 1)), X);
+        set(vf(2), add(vf(2), lane(vf(2), 2)), X);
+        q() = rsqrt(x(vf(2)));
+        set(vf(2), mul(vf(1), _mm_set1_ps(q())), XYZ);
+        const ps2f dx = x(vf(2)), dy = x(lane(vf(2), 1)), dz = x(lane(vf(2), 2));
+        const ps2f d = ((-dx) * planePoint->x - dy * planePoint->y) - dz * planePoint->z;
+        Math_LinePlaneIntersect(GuestPtr<ps2f>{from.address}, GuestPtr<ps2f>{hit.address}, dx, dy, dz, dx, dy, dz, d);
+        vf(4) = load(hit);
+        vf(5) = load(planePoint);
+        set(vf(6), sub(vf(5), vf(4)), XYZW);
+        set(vf(7), mul(vf(6), vf(6)), XYZ);
+        set(vf(8), add(vf(7), lane(vf(7), 1)), X);
+        set(vf(8), add(vf(8), lane(vf(7), 2)), X);
+        q() = sqrtQ(x(vf(8)));
+        set(vf(9), add(vf(0), _mm_set1_ps(q())), XYZW);
+        const ps2f result = x(vf(9));
+        *distance = result;
+        port::setGuestV0(1);
+        return result;
+    }
+
     // Perspective projection for a screen half-size (screen[0], screen[1]) at `distance`, with near and far
     // planes: the identity, then the scale, depth and perspective terms.
     void Math_ProjectionMatrix(GuestPtr<ps2f> matrix, GuestPtr<ps2f> screen, ps2f distance, ps2f zNear, ps2f zFar)
@@ -349,6 +382,7 @@ namespace mm
     PORT_FN(Math_MulMatVecVu0);
     PORT_FN(Vec3_Normalize);
     PORT_FN(Math_TriangleNormal);
+    PORT_FN(Math_RayPlaneDistance);
     PORT_FN(Collide_PointInTriangle);
     PORT_FN(Collide_RayTriangleA);
     PORT_FN(Collide_RayTriangleB);

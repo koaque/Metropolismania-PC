@@ -25,11 +25,15 @@ namespace mm::globals
     // index of the last value handed out (gp-0x7CD4).
     inline constexpr uint32_t kRandomTable = 0x001F55D0u;
     inline constexpr uint32_t kRandomNext = 0x001BDC9Cu;
+    // Five words that mm_Random_TimerMix runs as a cascade (each adds the one before it), with timer 0 mixed
+    // into the first.
+    inline constexpr uint32_t kTimerMix = 0x001B2520u;
 
     // sound: front-end state (gp-relative, gp = 0x1C5970).
     inline constexpr GuestVar<uint8_t> bgmTrack{0x001BDCF0u};        // last city track played (index into kBgmTracks)
     inline constexpr GuestVar<uint8_t> bgmState{0x001BDCF4u};        // mood: 0 normal, 1 city flag 4, 2 approval below 0, 3; 4 = fading out (mm_Bgm_FadeOut)
     inline constexpr GuestVar<uint8_t> bgmPlayedState{0x001BDCF8u};  // mood the playing music was chosen for
+    inline constexpr GuestVar<int32_t> ambiencePhase{0x001BDD38u};   // 0..3: the city ambience's four-frame cycle; on 3 held voices take their loudest volumes
     inline constexpr GuestVar<int32_t> bgmStarted{0x001BDD3Cu};      // a sequence was started; cleared when the driver reports it over
     inline constexpr GuestVar<int32_t> bgmBankLoaded{0x001BDD40u};   // the music bank in slot 7 is loaded
     inline constexpr GuestVar<GuestPtr<CityScene>> soundCity{0x001BDD00u}; // set by mm_Sound_SetCity
@@ -81,6 +85,9 @@ namespace mm::globals
     inline constexpr GuestVar<uint32_t> fontData{0x001BDC98u};       // 0x90 bytes per glyph; the first is the blank
     inline constexpr uint32_t kWordDelimiters = 0x001B9AE0u;         // characters that end a word when text wraps
     inline constexpr GuestVar<uint32_t> claimData{0x001BDA50u};      // starts with the two claim meter thresholds (u16)
+    // mm_Wants_Prune: frames since its last pass (one every 121) and whether that count was started.
+    inline constexpr GuestVar<int32_t> wantsPruneTimer{0x001BDAF8u};
+    inline constexpr GuestVar<int8_t> wantsPruneStarted{0x001BDAFCu};
     inline GuestPtr<ClaimThresholds> claimThresholds() { return GuestPtr<ClaimThresholds>{claimData.get()}; }
     inline constexpr GuestVar<uint32_t> claimSectionC{0x001BDA58u};  // offset table (words) into claimData
 
@@ -89,6 +96,7 @@ namespace mm::globals
 
     // gfx: the two 64 KB DMA lists, which one is current and where it is written, and the packet buffer.
     inline constexpr uint32_t kDmaLists = 0x001BD9C0u;               // two list addresses
+    inline constexpr uint32_t kFramePictures = 0x001F69C0u;          // two packets drawing a 640 x 224 picture (mm_DmaList_InitPackets)
     inline constexpr GuestVar<uint32_t> dmaListIndex{0x001BDCECu};
     inline constexpr GuestVar<uint32_t> dmaListPtr{0x001BDCE0u};     // write position in the current list
     inline constexpr GuestVar<int32_t> packetBufPos{0x001BDCE8u};
@@ -162,6 +170,7 @@ namespace mm::globals
     // "Forest Hills", "Rhinecliff" ... there), then the mayor's name at +0x10.
     inline constexpr uint32_t kStageState = 0x001C5380u;
     inline GuestPtr<StageState> stageState() { return GuestPtr<StageState>{kStageState}; }
+    inline constexpr GuestVar<int16_t> talkScriptVar{0x001C5602u};  // stage state +0x282: set and tested by talk scripts
 
     // family: counters bumped with the bitsets (provisional names): families moved in (read by
     // mm_WordsFn_FamilyCountTier), the same count for the event code, and families that left.
@@ -172,14 +181,28 @@ namespace mm::globals
     inline constexpr uint32_t kFamilyTableB = 0x001F2AE0u; // 256 words
 
     // save: per card port (two words each): card type (2 = PS2 memory card), free space, formatted, the
-    // type at the last check, and the last result (-1, -2: no card).
+    // type at the last check, the type when the save slot scan ended, and the last result (-1, -2: a new
+    // card); then the entries returned by the scan's last directory read.
     inline constexpr uint32_t kCardType = 0x001BDB60u;
     inline constexpr uint32_t kCardFree = 0x001BDB68u;
     inline constexpr uint32_t kCardFormatted = 0x001BDB70u;
     inline constexpr uint32_t kCardTypeChecked = 0x001BDB78u;
+    inline constexpr uint32_t kCardTypeScanned = 0x001BDB80u;
     inline constexpr uint32_t kCardResult = 0x001BDB88u;
-    // save: the 16 save slots (8 per card): size (-4 = unknown), name (0x44 bytes) and header (0x40 bytes).
+    inline constexpr GuestVar<int32_t> cardDirEntries{0x001BDB90u};
+    // save: the 16 save slots (8 per card): entries found when scanned (1 for a save, -4 = unknown), title
+    // (0x44 bytes, from icon.sys), directory entry (0x40 bytes, its name from +0x20) and folder name (0x20).
     inline constexpr uint32_t kSaveSlotSizes = 0x001F4780u;
+    inline constexpr uint32_t kSaveSlotFolders = 0x001F3CF0u;
+    // save: the slot scan's names: the parent directory "..", "*" for any entry, "icon.sys"; the game's save
+    // folder prefix (a pointer); the directory entry read (0x40 bytes) and the icon.sys buffer (0x3C4 bytes,
+    // the title at +0xC0).
+    inline constexpr uint32_t kParentDirName = 0x001B7EC8u;
+    inline constexpr uint32_t kAnyEntryName = 0x001B7ED0u;
+    inline constexpr uint32_t kIconSysName = 0x001B7E18u;
+    inline constexpr GuestVar<uint32_t> saveFolderPrefix{0x001BD9A0u};
+    inline constexpr uint32_t kScanDirEntry = 0x001F4300u;
+    inline constexpr uint32_t kIconSysBuffer = 0x001F47C0u;
     // save: the save title's prefix and default name, and the full-width (Shift-JIS) form of ASCII 0x20..0x7D
     // (two bytes each) with the stand-in for other characters.
     inline constexpr uint32_t kSaveTitlePrefix = 0x001B7C50u;
@@ -193,11 +216,16 @@ namespace mm::globals
     // (sound + 1, variant), filled from the per-sound counts at 0x1B35F0 (11 rows of 0x1C bytes, six counts
     // from +0x10).
     inline constexpr uint32_t kSeVoices = 0x001F8140u;
+    // Sound scripts (0x18 bytes, picked by a voice's voiceParam low byte): eight opcodes, then a uint16_t argument
+    // for each (mm_Se_UpdateVoices).
+    inline constexpr uint32_t kSeScripts = 0x001B3410u;
     // sound: this frame's effect requests (SeRequest, 578 and one spare) and their count.
     inline constexpr uint32_t kSeRequests = 0x001F8710u;
     inline constexpr GuestVar<uint16_t> seRequestCount{0x001BDD08u};
     inline constexpr uint32_t kAmbienceGrid = 0x001FC690u;
     inline constexpr uint32_t kAmbienceCounts = 0x001B35F0u;
+    // Terrain ambience variant by an object's +0x14 byte (10 entries; 0 = decide by the object's type).
+    inline constexpr uint32_t kAmbienceKinds = 0x001B3728u;
 
     // gfx: model instance slots for this frame: the two buffers (by frame), which one is current, how many are
     // used (0x708 at most), and a second count with its own limit for mm_Instance_DrawNodeLimited.
@@ -220,6 +248,13 @@ namespace mm::globals
     inline constexpr uint32_t kBlockStepX = 0x001B13F0u; // int[4]: 0, 2, 0, -2
     inline constexpr uint32_t kBlockStepZ = 0x001B1400u; // int[4]: -2, 0, 2, 0
     inline constexpr uint32_t kBlockDirBit = 0x001B1410u; // int[4]: 1, 2, 4, 8 (road shape bit per direction)
+    // city camera (mm_CityCamera_Update): per zoom level the eye's offset in the player's frame, for clear
+    // weather and for the rest (four Vec4 each); the near levels' target, 2 ahead of the player (0, 0, -2, 0);
+    // the fog's far distance by level height, 29.5, 29.5, 32.5 and 40.5.
+    inline constexpr uint32_t kCameraLevelsClear = 0x001AEF30u;
+    inline constexpr uint32_t kCameraLevelsWeather = 0x001AEF70u;
+    inline constexpr uint32_t kCameraLookAhead = 0x001AEFB0u;
+    inline constexpr uint32_t kFogFarByLevel = 0x001AEFC0u;
     inline constexpr uint32_t kPathStepX = 0x001AEFD0u; // int[4]: 0, 2, 0, -2 (the same steps, mm_Path_NextWaypoint's copy)
     inline constexpr uint32_t kPathStepZ = 0x001AEFE0u; // int[4]: -2, 0, 2, 0
     // Housing blocks: mesh offset of each of the four block parts, per unit shape (int8[11][4]).
@@ -241,6 +276,9 @@ namespace mm::globals
     inline constexpr uint32_t kPauseWindowClosed = 0x001B0920u;
     // ui: the status panel alert's 15 colours (a pulse), moved along one entry per frame.
     inline constexpr uint32_t kAlertColours = 0x001AF370u;
+    // ui: the status panel's 19 sprites (0x20 bytes each: two ST float pairs, then two XY word pairs in 1/16
+    // pixel units), drawn from its packet (mm_StatusPanel_BuildPacket).
+    inline constexpr uint32_t kStatusPanelSprites = 0x001AF3B0u;
 
     // title: the logo letters' size steps (uint16[3][8]: 0 hidden, 1 small, 2 medium, 3 full) and their five
     // places (uint16 x, y; 0x14 bytes per letter).
@@ -269,6 +307,13 @@ namespace mm::globals
 
     // char: a person's walking step in its own frame, (0, 0, -speed, 1); mm_Person_UpdatePose sets z.
     inline constexpr uint32_t kWalkStep = 0x001AF0B0u;
+    // The same for mm_Person_Walk, which keeps its own copy and sets z to the stride.
+    inline constexpr uint32_t kWalkStride = 0x001AF0C0u;
+    // mm_Player_PickTarget: the ray's step in the player's own frame, and the frames a kept target has been off
+    // the heading (with the flag that the count was started).
+    inline constexpr uint32_t kPickStep = 0x001B0930u;
+    inline constexpr GuestVar<int32_t> pickOffFrames{0x001BDB38u};
+    inline constexpr GuestVar<int8_t> pickTimerStarted{0x001BDB3Cu};
 
     // gfx: light colours at the start of each 2-hour segment of the day (12 RGB float triples per table; a
     // second set 0x90 bytes on for bad weather).
@@ -307,6 +352,9 @@ namespace mm::globals
     // gfx: an identity matrix (four Vec4).
     inline constexpr uint32_t kIdentityMatrix = 0x001B2550u;
     inline constexpr uint32_t kOriginPoint = 0x001B26A0u; // (0, 0, 0, 1)
+    // talk: the eye's offset from a building object without the entrance flag (1.01, -0.59, 0.01, 1), turned
+    // by the tile's facing (mm_TalkView_BuildingCamera).
+    inline constexpr uint32_t kTalkEyeOffset = 0x001B1AF0u;
     // city lights and sky by the time of day (mm_CityCamera_UpdateTimeOfDay): the two sun directions (0, 1, 0, 1)
     // and (0, -1, 0, 1), and per two-hour slot (12 for clear weather, then 12 for the rest) three floats each for
     // the ambient level, lights 0 and 1, and the sky's two colours; a frame counter (started on first use) drives

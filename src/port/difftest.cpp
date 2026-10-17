@@ -19,6 +19,14 @@
 // record N times with the float and integer arguments mutated (zero often, sign flips, small and large
 // values, within each parameter's type); pointers keep their recorded values. That reaches branches the
 // recorded calls never take. Only for functions whose integer arguments are not loop bounds.
+//
+// Subset: MMPC_DIFFTEST_ONLY=<names> replays only those functions (results.json is then left as it was).
+// A replay that does not return within MMPC_DIFFTEST_HANG_SECONDS (default 60) is reported as HANG and ends the
+// run: a record edited into a state the game never reaches can leave the original waiting forever.
+//
+// Changes: MMPC_DIFFTEST_CHANGES=<names or "all"> prints, for each record of those functions, the RDRAM ranges
+// the original run changed (outside the free stack). A record that passes but changes nothing, or not what
+// it was made for (a record edited to reach a rare branch), is not evidence for that path.
 // Side effects outside guest memory (GS, IOP, files) are not compared yet.
 
 #include "difftest.h"
@@ -395,6 +403,43 @@ namespace port
         }
     }
 
+    namespace
+    {
+        // "N bytes in K ranges: addr+len ..." for the RDRAM the run changed from the record (free stack excluded).
+        std::string describeChanges(const Record &rec, const Outcome &run)
+        {
+            const uint32_t sp = static_cast<uint32_t>(gpr64(&rec.ctx, 29)) & PS2_RAM_MASK;
+            const uint32_t freeLow = sp > kFreeStackBytes ? sp - kFreeStackBytes : 0u;
+            std::string listed;
+            size_t ranges = 0, bytes = 0;
+            for (uint32_t i = 0; i < PS2_RAM_SIZE;)
+            {
+                if (i >= freeLow && i < sp)
+                {
+                    i = sp;
+                    continue;
+                }
+                if (rec.rdram[i] == run.rdram[i])
+                {
+                    ++i;
+                    continue;
+                }
+                uint32_t end = i;
+                while (end < PS2_RAM_SIZE && !(end >= freeLow && end < sp) && rec.rdram[end] != run.rdram[end])
+                    ++end;
+                bytes += end - i;
+                if (ranges++ < 12)
+                {
+                    char part[32];
+                    std::snprintf(part, sizeof(part), " %X+%u", i, end - i);
+                    listed += part;
+                }
+                i = end;
+            }
+            return std::to_string(bytes) + " bytes in " + std::to_string(ranges) + " ranges:" + listed;
+        }
+    }
+
     // ---------------------------------------------------------------- call counts
     // MMPC_CALL_COUNTS=<file>: every game function is wrapped and its calls counted; the file is rewritten
     // every 5 s (timed runs end with a kill) as "address name calls" lines, busiest first. Shows what a
@@ -534,6 +579,59 @@ namespace port
                     fuzzNames.insert(item);
             }
         }
+        std::set<std::string> onlyNames;
+        if (const char *names = env("MMPC_DIFFTEST_ONLY"))
+        {
+            std::stringstream list(names);
+            for (std::string item; std::getline(list, item, ',');)
+                if (!item.empty())
+                    onlyNames.insert(item);
+        }
+        struct Watch
+        {
+            std::mutex mutex;
+            std::string what;
+            std::chrono::steady_clock::time_point since;
+            bool active = false;
+        };
+        static Watch watch;
+        const int hangSeconds = env("MMPC_DIFFTEST_HANG_SECONDS") ? std::atoi(env("MMPC_DIFFTEST_HANG_SECONDS")) : 60;
+        std::thread([hangSeconds] {
+            for (;;)
+            {
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+                std::lock_guard<std::mutex> lock(watch.mutex);
+                if (watch.active && std::chrono::steady_clock::now() - watch.since > std::chrono::seconds(hangSeconds))
+                {
+                    std::cout << "[difftest] HANG " << watch.what << " (no return within " << hangSeconds << " s)" << std::endl;
+                    std::cout.flush();
+                    std::_Exit(124);
+                }
+            }
+        }).detach();
+        const auto watchStart = [](const std::string &what) {
+            std::lock_guard<std::mutex> lock(watch.mutex);
+            watch.what = what;
+            watch.since = std::chrono::steady_clock::now();
+            watch.active = true;
+        };
+        const auto watchStop = [] {
+            std::lock_guard<std::mutex> lock(watch.mutex);
+            watch.active = false;
+        };
+        std::set<std::string> changeNames;
+        bool changesAll = false;
+        if (const char *names = env("MMPC_DIFFTEST_CHANGES"))
+        {
+            std::stringstream list(names);
+            for (std::string item; std::getline(list, item, ',');)
+            {
+                if (item == "all")
+                    changesAll = true;
+                else if (!item.empty())
+                    changeNames.insert(item);
+            }
+        }
         size_t records = 0, failed = 0, functions = 0, untested = 0;
         // results.json: per function, how many records ran and failed (tools/port_status.py reads it).
         std::string results = "{\n";
@@ -546,6 +644,8 @@ namespace port
         };
         for (const Ported &p : ported())
         {
+            if (!onlyNames.empty() && onlyNames.count(p.name) == 0)
+                continue;
             const std::filesystem::path sub = dir / p.name;
             std::vector<std::filesystem::path> files;
             if (std::filesystem::is_directory(sub))
@@ -578,11 +678,16 @@ namespace port
                 // The original run uses generated code throughout, the ported run ported code wherever it
                 // exists, so a ported callee cannot hide a difference in its caller.
                 Outcome original, portedRun;
+                watchStart(std::string(p.name) + " " + file.filename().string());
                 useGenerated(runtime, true);
                 runOnce(runtime, p.original, p.address, rec, rec.ctx, original);
                 useGenerated(runtime, false);
                 runOnce(runtime, p.wrapper, p.address, rec, rec.ctx, portedRun);
+                watchStop();
                 const std::vector<std::string> diffs = compare(p, rec, original, portedRun);
+                if (changesAll || changeNames.count(p.name) != 0)
+                    std::cout << "[difftest] " << p.name << " " << file.filename().string() << " changes "
+                              << describeChanges(rec, original) << std::endl;
                 if (diffs.empty())
                     ++ok;
                 else
@@ -599,10 +704,12 @@ namespace port
                     R5900Context start = rec.ctx;
                     p.mutate(&start, 0x9E3779B9u * static_cast<uint32_t>((&file - files.data()) * 1009 + variant + 1));
                     Outcome a, b;
+                    watchStart(std::string(p.name) + " " + file.filename().string() + " fuzz " + std::to_string(variant));
                     useGenerated(runtime, true);
                     runOnce(runtime, p.original, p.address, rec, start, a);
                     useGenerated(runtime, false);
                     runOnce(runtime, p.wrapper, p.address, rec, start, b);
+                    watchStop();
                     ++fuzzRuns;
                     const std::vector<std::string> fd = compare(p, rec, a, b);
                     if (fd.empty())
@@ -632,7 +739,8 @@ namespace port
             addResult(p, files.size(), failed - failedBefore);
         }
         results += "\n}\n";
-        std::ofstream(dir / "results.json", std::ios::binary) << results;
+        if (onlyNames.empty())
+            std::ofstream(dir / "results.json", std::ios::binary) << results;
         std::cout << "[difftest] " << functions << " function(s) tested, " << untested << " without records; " << records
                   << " record(s), " << failed << " failed" << std::endl;
         std::cout.flush();
