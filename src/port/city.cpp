@@ -944,6 +944,73 @@ namespace mm
         return kNone;
     }
 
+    // Every frame: slot 0x34 of each building type with the time of day (the ride animations; others do nothing).
+    void BldgType_CallAll(int time)
+    {
+        for (int i = 0; i < globals::buildingTypeCount.get(); ++i)
+        {
+            const uint32_t btype = port::load<uint32_t>(globals::buildingTypeTable.get() + 4u * static_cast<uint32_t>(i));
+            if (btype == 0)
+                continue;
+            port::callGuest<void>(port::load<uint32_t>(port::load<uint32_t>(btype + 0x15Cu) + 0x34u), btype, time);
+        }
+    }
+
+    // A building occupant's colour: set by the occupant slot of the first lit object (flag 0x10) on the person's
+    // tile or on the four tiles beside the block (north, east, south, west); otherwise untinted with w 0. (The
+    // original also fetches a fifth tile, from past the end of its offset table, and never looks at it.)
+    void BldgType_DrawOccupant(GuestPtr<BuildingType> btype, GuestPtr<Vec4> colour, GuestPtr<MapPerson> person, GuestPtr<CityScene> city)
+    {
+        const int x = sdk::fptosi(ps2f(64.0f) + person->x);
+        const int z = sdk::fptosi(ps2f(64.0f) - person->z);
+        GuestPtr<MapObject> obj = Map_GetTileObject(city->map, x, z);
+        const int tile = obj->tile;
+        const int size = btype->size;
+        const int stepX[4] = {0, size, 0, -1};
+        const int stepZ[4] = {-1, 0, size, 0};
+        for (int i = 0;; ++i)
+        {
+            if ((obj->flags & 0x10u) != 0)
+            {
+                BldgType_OccupantMatrix(typeOf(obj), colour, GuestPtr<Vec4>{person.address}, obj->tile);
+                return;
+            }
+            if (i == 4)
+                break;
+            obj = Map_GetTileObject(city->map, (tile & 0x7F) + stepX[i], (tile >> 7) + stepZ[i]);
+        }
+        *colour = *GuestPtr<Vec4>{globals::kDefaultColour};
+        colour->w = 0.0f;
+    }
+
+    // The people inside a building: each one's colour (BldgType_DrawOccupant), then its character class's draw
+    // slot (+0x10) at its position and heading, in pose 6 (flag 0x40), 1 (running, 0x80) or 0.
+    void BldgType_DrawOccupants2(GuestPtr<BuildingType> btype, int, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
+                                 GuestPtr<MapPerson> people)
+    {
+        port::GuestLocal<Vec4> colour; // the original's slots: entry sp - 0x10 and - 0x20
+        port::GuestLocal<Vec4> position;
+        for (GuestPtr<uint16_t> link = GuestPtr<uint16_t>::of(obj->firstPerson); *link != kNoPerson;
+             link = GuestPtr<uint16_t>::of(people[*link].nextOnTile))
+        {
+            const GuestPtr<MapPerson> person = people + *link;
+            *colour = *GuestPtr<Vec4>{globals::kDefaultColour};
+            const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)};
+            position->x = person->x;
+            position->y = person->y;
+            position->z = person->z;
+            position->w = person->heading;
+            int pose = 0;
+            if ((person->flags & 0x40u) != 0)
+                pose = 6;
+            else if ((person->flags & 0x80u) != 0)
+                pose = 1;
+            BldgType_DrawOccupant(btype, colour, person, city);
+            const uint32_t draw = port::load<uint32_t>(cls->vtable.address + 0x10u);
+            port::callGuest<void>(draw, cls.address, city.address, person.address, colour.ptr().address, flags, position.ptr().address, pose);
+        }
+    }
+
     // Theme park and ranch rides: the animation runs while open (stopping 1000 seconds before closing),
     // finishes its cycle after hours and wraps at the length the model keeps in mesh 0 (+0xC).
     namespace
@@ -1094,6 +1161,9 @@ namespace mm
     PORT_FN(BldgOffice_Draw);
     PORT_FN(BldgHousing_Draw);
     PORT_FN(BldgHousing_UnitAt);
+    PORT_FN(BldgType_DrawOccupant);
+    PORT_FN(BldgType_CallAll);
+    PORT_FN(BldgType_DrawOccupants2);
     PORT_FN(Schedule_PickEntry);
     PORT_FN(Stamina_HungerLevel);
     PORT_FN(Clock_AddWrap);

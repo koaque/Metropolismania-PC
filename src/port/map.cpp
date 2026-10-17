@@ -69,6 +69,20 @@ namespace mm
 
     ps2f Map_HeightScale(ps2f height) { return ps2f(0.08f) + ps2f(0.6f) * height; }
 
+    // Clears a size x size square at (x, z): each tile loses its first object (the map's ClearObject slot, +0xC)
+    // until a type-2 object (wasteland) comes first.
+    void Map_ClearArea(GuestPtr<CityMap> map, int x, int z, int size)
+    {
+        for (int tz = z; tz < z + size; ++tz)
+            for (int tx = x; tx < x + size; ++tx)
+            {
+                const int tile = tx + tz * kMapSize;
+                do
+                    port::callGuest<void>(port::load<uint32_t>(map->vtable.address + 0xCu), map.address, map->tiles[tile].firstObject);
+                while (map->objects[map->tiles[tile].firstObject].type != 2);
+            }
+    }
+
     // The ground height at world (x, z): the tile's four corner heights make two triangles split along a
     // diagonal, and the plane of the one the point is in gives the height (scaled by Map_HeightScale when
     // above 0). Off the map, the edge tile and edge coordinate are used. The corners and the plane go through
@@ -482,6 +496,7 @@ namespace mm
     PORT_FN(Map_GetHeightAt);
     PORT_FN(Map_HeightScale);
     PORT_FN(Map_SampleHeight);
+    PORT_FN(Map_ClearArea);
     PORT_FN(Map_GetTileVertex);
     PORT_FN(Map_GetTileVertexClamped);
     PORT_FN(Map_GetRecord);

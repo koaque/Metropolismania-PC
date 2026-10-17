@@ -62,6 +62,37 @@ namespace mm
         return 0;
     }
 
+    // The save's title for the memory card browser: the prefix, then the city name in full-width characters
+    // (anything outside ASCII 0x20..0x7D as a stand-in) or a default when it has none; cut at 0x3C bytes,
+    // followed by the month count, approval, population and stage as little-endian bytes.
+    void McManager_BuildSaveHeader(GuestPtr<McManager>, GuestPtr<CityScene> city, GuestPtr<char> out)
+    {
+        sdk::strcpy(out.address, globals::kSaveTitlePrefix);
+        if (port::load<int8_t>(globals::kStageState) == 0)
+            sdk::strcat(out.address, globals::kSaveTitleDefault);
+        else
+        {
+            uint32_t dst = out.address + static_cast<uint32_t>(sdk::strlen(out.address));
+            for (uint32_t src = globals::kStageState; port::load<int8_t>(src) != 0; ++src, dst += 2u)
+            {
+                const int8_t c = port::load<int8_t>(src);
+                const uint32_t glyph = c < 0x20 || c >= 0x7E ? globals::kFullWidthUnknown
+                                                             : globals::kFullWidthAscii + 2u * static_cast<uint32_t>(c - 0x20);
+                sdk::memcpy(dst, glyph, 2);
+            }
+            port::store<uint8_t>(dst, 0);
+        }
+        const auto putShort = [&](uint32_t offset, int32_t value) {
+            out[offset] = static_cast<char>(value);
+            out[offset + 1] = static_cast<char>(value / 256);
+        };
+        out[0x3C] = 0;
+        putShort(0x3D, city->monthCount);
+        out[0x3F] = static_cast<char>(city->approval);
+        putShort(0x40, city->map->population);
+        putShort(0x42, globals::stageState()->stage);
+    }
+
     // The header of the save named `name` on a card (slots 0-7 for card 0, 8-15 for card 1), or 0.
     int McManager_FindSave(GuestPtr<McManager>, GuestPtr<char> name, int card)
     {
@@ -180,6 +211,7 @@ namespace mm
     PORT_FN(McManager_HasAnySave);
     PORT_FN(McManager_FindSlotA);
     PORT_FN(McManager_FindSave);
+    PORT_FN(McManager_BuildSaveHeader);
     PORT_FN(McManager_GetCardStatus);
     PORT_FN(McManager_InitSlots);
     PORT_FN(McManager_ClearSlots);

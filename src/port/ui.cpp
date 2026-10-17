@@ -28,12 +28,101 @@ namespace mm
     }
 
     int Widget_GetState(GuestPtr<Widget> widget) { return widget->state; }
+
+    // Runs the handler for the widget's state (vtable +0x2C idle, +0x30 opening, +0x34 opened, +0x38 active,
+    // +0x3C closing, +0x40 closed) and returns the state after it.
+    int Widget_Update(GuestPtr<Widget> widget)
+    {
+        const uint32_t state = static_cast<uint32_t>(widget->state);
+        if (state < 6)
+            port::callGuest<void>(port::load<uint32_t>(widget->vtable.address + 0x2Cu + 4u * state), widget.address);
+        return widget->state;
+    }
     void Widget_Idle(GuestPtr<Widget>) {}
 
-    int TextBox_SetText(GuestPtr<TextBox> textbox, GuestPtr<char> text, int a2)
+    void TextBox_SetText(GuestPtr<TextBox> textbox, GuestPtr<char> text, int raw)
     {
         textbox->cursor = 0;
-        return TextBox_AppendText(textbox, text, a2);
+        TextBox_AppendText(textbox, text, raw);
+    }
+
+    // Lays `text` out from the cursor on, then blanks the cells after it. `raw` puts it character by
+    // character; otherwise it wraps: a word (up to the next delimiter) that would run past the line's end
+    // starts the next line, the rest of the line blanked and the character the word starts with (its space)
+    // dropped; a word that ends exactly at the line's end drops the character after it; CR and LF end a line.
+    void TextBox_AppendText(GuestPtr<TextBox> textbox, GuestPtr<char> text, int raw)
+    {
+        const auto cellAt = [&](int index) { return textbox->cells + 0x60u * static_cast<uint32_t>(index) + 0x50u; };
+        const auto capacity = [&] { return textbox->columns * textbox->rows; };
+        const auto blankFrom = [&](int from, int to) {
+            uint32_t cell = cellAt(from);
+            for (int i = from; i < to; ++i, cell += 0x60u)
+                port::store<uint32_t>(cell + 4u, globals::fontData.get());
+        };
+        uint32_t cell = cellAt(textbox->cursor);
+        const auto put = [&](uint8_t c) {
+            port::store<uint32_t>(cell + 4u, static_cast<uint32_t>(Font_GetGlyph(c)));
+            cell += 0x60u;
+            ++textbox->cursor;
+        };
+        uint32_t p = text.address;
+        if (raw != 0)
+        {
+            while (port::load<int8_t>(p) != 0 && textbox->cursor < capacity())
+            {
+                const uint8_t c = port::load<uint8_t>(p);
+                ++p;
+                put(c);
+            }
+        }
+        else
+        {
+            bool skipNext = false;
+            uint32_t wordEnd = p;
+            for (; port::load<int8_t>(p) != 0 && textbox->cursor < capacity(); ++p)
+            {
+                if (p != wordEnd)
+                {
+                    put(port::load<uint8_t>(p));
+                    continue;
+                }
+                if (skipNext)
+                {
+                    skipNext = false;
+                    ++wordEnd;
+                    continue;
+                }
+                const int8_t c = port::load<int8_t>(p);
+                bool lineBreak = true;
+                if (c == '\n' || c == '\r')
+                    ++wordEnd;
+                else
+                {
+                    wordEnd += static_cast<uint32_t>(sdk::strcspn(p + 1u, globals::kWordDelimiters)) + 1u;
+                    const int reach = static_cast<int32_t>(wordEnd + static_cast<uint32_t>(remainder(textbox->cursor, textbox->columns)) - p);
+                    lineBreak = textbox->columns < reach;
+                    if (!lineBreak && reach == textbox->columns)
+                        skipNext = true;
+                }
+                if (!lineBreak)
+                {
+                    put(port::load<uint8_t>(p));
+                    continue;
+                }
+                const int start = textbox->cursor;
+                const int fill = textbox->columns - remainder(start, textbox->columns);
+                int end = start + fill;
+                textbox->cursor = start;
+                if (end == -1)
+                    end = capacity();
+                blankFrom(start, end);
+                cell += 0x60u * static_cast<uint32_t>(fill);
+                textbox->cursor = textbox->cursor + fill;
+            }
+        }
+        const int last = textbox->cursor;
+        textbox->cursor = last;
+        blankFrom(last, capacity());
     }
 
     void TextBox_Draw(GuestPtr<TextBox> textbox) { Dma_AppendCall(static_cast<int>(textbox->packet)); }
@@ -99,7 +188,7 @@ namespace mm
     }
 
     // The blinking "please wait" line: its text box (0x1BDAC4), shown flag (0x1BDACC) and frame counter (0x1BDAC8).
-    int WaitText_Set(GuestPtr<char> text) { return TextBox_SetText(GuestPtr<TextBox>{port::load<uint32_t>(0x001BDAC4u)}, text, 0); }
+    void WaitText_Set(GuestPtr<char> text) { TextBox_SetText(GuestPtr<TextBox>{port::load<uint32_t>(0x001BDAC4u)}, text, 0); }
 
     void WaitText_Draw()
     {
@@ -311,6 +400,49 @@ namespace mm
     // Message windows draw in pass 2: the window node, scaled in x by the open (state 1) or close (state 4)
     // timer, then while shown the text and, in state 3, the "more" arrow blinking every 16 frames (a frame
     // counter at 0x1BDA00, set up on first use like a static local, flag 0x1BDA04).
+    // The message window's update (vtable slot 0x14). While typing (state 6), Cross skips the typing delay and
+    // the next character goes out; the result is then whatever the caller had in s0, which the original hands
+    // back without setting v0 (its caller compares it with 7). Otherwise the widget update and its state.
+    int MsgWin_Update(GuestPtr<MsgWin> msgwin)
+    {
+        const int callerS0 = port::guestS0();
+        if (msgwin->base.state == 6)
+        {
+            if ((Pad_Pressed(0) & 0x40u) != 0)
+                msgwin->typeDelay = 0;
+            MsgWin_TypeNext(msgwin);
+            return callerS0;
+        }
+        return Widget_Update(GuestPtr<Widget>::of(msgwin->base));
+    }
+
+    // The talk session's view and conversation, each through its widget draw slot (+0x20).
+    void Talk_Draw(GuestPtr<TalkSession> talk, int pass)
+    {
+        const auto draw = [&](uint32_t widget) {
+            if (widget != 0)
+                port::callGuest<void>(port::load<uint32_t>(port::load<uint32_t>(widget + 8u) + 0x20u), widget, pass);
+        };
+        draw(talk->view.address);
+        draw(talk->conversation.address);
+    }
+
+    // A conversation: its message window, the menu, the card, the panel while set and, in pass 2 while a name is
+    // entered (state 8), the name entry.
+    void TalkConv_Draw(GuestPtr<TalkConv> conv, int pass)
+    {
+        MsgWin_Draw(GuestPtr<MsgWin>::of(conv->base), pass);
+        const auto draw = [&](uint32_t widget) {
+            port::callGuest<void>(port::load<uint32_t>(port::load<uint32_t>(widget + 8u) + 0x20u), widget, pass);
+        };
+        draw(conv->menu.address);
+        draw(conv->card.address);
+        if (conv->panel)
+            draw(conv->panel.address);
+        if (pass == 2 && conv->nameEntry && conv->base.base.state == 8)
+            NameEntry_Draw(conv->nameEntry);
+    }
+
     void MsgWin_Draw(GuestPtr<MsgWin> msgwin, int pass)
     {
         if (pass != 2 || msgwin->base.state == 0)
@@ -645,6 +777,110 @@ namespace mm
         A3DObject_Draw(panel->alertModel);
     }
 
+    // title: draws a layer set (0x0A/0x0B logo sprite, 0x14/0x15 logo model, 0x1E/0x1F title, 0x20/0x21 title and
+    // menu choices, 0x28/0x29 title, model and load menu) and runs the screen fade. A new layer set restarts
+    // the fade at -0x80 (even sets) or 0 (odd), then it moves by the set's step each frame (1, 2 or 4). Returns
+    // 1 when the fade is through (parked at -1 or 0x7F), 2 in its first step from 0x40 on, else 0.
+    int Title_DrawCommon(GuestPtr<SceneA> scene, int layers)
+    {
+        if (scene->layers != layers)
+        {
+            scene->layers = layers;
+            scene->fade = (scene->layers & 1) == 0 ? -0x80 : 0;
+        }
+        int step = 4;
+        switch (scene->layers)
+        {
+        case 0x29:
+        case 0x28:
+            step = 2;
+            TexSprite_Draw(scene->titleSprite);
+            A3DObject_Draw(scene->menuModel);
+            ListMenu_Draw(scene->loadMenu);
+            break;
+        case 0x21:
+        case 0x20:
+            step = 2;
+            TexSprite_Draw(scene->titleSprite);
+            Title_DrawChoices(scene);
+            break;
+        case 0x1F:
+        case 0x1E:
+            TexSprite_Draw(scene->titleSprite);
+            break;
+        case 0x15:
+        case 0x14:
+            step = 1;
+            A3DObject_Draw(scene->logoModel);
+            break;
+        case 0x0B:
+        case 0x0A:
+            TexSprite_Draw(scene->logoSprite);
+            break;
+        default:
+            break;
+        }
+        if (layers != 0)
+            scene->fade += step;
+        DmaList_QueueClearZ();
+        DmaList_QueueFade(scene->fade < 0 ? -scene->fade : scene->fade, 0);
+        const int fade = scene->fade;
+        if (fade == 0)
+        {
+            scene->fade = -1;
+            return 1;
+        }
+        if (fade >= 0x80)
+        {
+            scene->fade = 0x7F;
+            return 1;
+        }
+        if (fade < 0x40)
+            return 0;
+        return fade < step + 0x40 ? 2 : 0;
+    }
+
+    // title: the title screen waiting for input. The first frame sets up the "[SELECT]SoundTest" hint and the idle
+    // timer; then the menu runs, with two choices once a save exists (the cursor moving to the second if only one
+    // was shown before). Returns the menu input's result, its idle restart (-2) as -1 with the timer restarted.
+    int Title_PressStart(GuestPtr<SceneA> scene)
+    {
+        if (port::load<int8_t>(globals::kPressStartStatic + 4u) == 0)
+        {
+            port::store<int32_t>(globals::kPressStartStatic, 0);
+            port::store<int8_t>(globals::kPressStartStatic + 4u, 1);
+        }
+        TexSprite_Draw(scene->titleSprite);
+        if (scene->showHint != 0)
+            TextBox_Draw(scene->hintText);
+        if (scene->pressStep == 1)
+        {
+            if (McManager_HasAnySave() == 0)
+                scene->choiceCount = 1;
+            else
+            {
+                if (scene->choiceCount == 1)
+                    scene->choice = 1;
+                scene->choiceCount = 2;
+            }
+            int result = Title_MenuInput(scene);
+            if (result == -2)
+            {
+                scene->idleTimer = 1800;
+                result = -1;
+            }
+            return result;
+        }
+        if (scene->pressStep == 0)
+        {
+            scene->idleTimer = 1800;
+            scene->choiceCount = 1;
+            ++scene->pressStep;
+            TextBox_SetText(scene->hintText, GuestPtr<char>{globals::kSoundTestHint}, 0);
+        }
+        return -1;
+    }
+
     // title: the logo's three letters bounce in turn (a size step every 5 frames from the 8-step table) and hop
     // to the next of five places every 40 frames. The third letter waits for frame 11 and stops at 185. Returns
     // 1 once 200 frames have passed.
@@ -881,8 +1117,13 @@ namespace mm
     PORT_FN(Widget_Open);
     PORT_FN(Widget_Close);
     PORT_FN(Widget_GetState);
+    PORT_FN(Widget_Update);
+    PORT_FN(MsgWin_Update);
+    PORT_FN(Talk_Draw);
+    PORT_FN(TalkConv_Draw);
     PORT_FN(Widget_Idle);
     PORT_FN(TextBox_SetText);
+    PORT_FN(TextBox_AppendText);
     PORT_FN(TextBox_Draw);
     PORT_FN(TextBox_SetPos);
     PORT_FN(TextBox_SetPosAndSize);
@@ -920,5 +1161,7 @@ namespace mm
     PORT_FN(Title_LogoLetters);
     PORT_FN(CityCursor_LayoutInfo);
     PORT_FN(Title_DrawChoices);
+    PORT_FN(Title_DrawCommon);
+    PORT_FN(Title_PressStart);
     PORT_FN(ListMenu_HandleInput);
 }

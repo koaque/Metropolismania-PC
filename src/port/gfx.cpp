@@ -465,6 +465,54 @@ namespace mm
         globals::instanceLimitedCount.set(globals::instanceLimitedCount.get() + 1);
     }
 
+    // The light set's two VU1 packets, one per render program: each uploads the set's 26 quadwords from +0x10 to
+    // VU1 address 0x12, calls the program's DMA chain and sets the VIF double-buffer base and offset.
+    void LightSet_BuildPackets(GuestPtr<LightSet> lights)
+    {
+        const uint32_t data = (lights.address + 0x10u) & 0x7FFFFFFFu;
+        const auto build = [&](uint32_t chain, uint32_t base, uint32_t offset) {
+            const GuestPtr<uint32_t> p{static_cast<uint32_t>(PacketBuf_Tell())};
+            const uint32_t words[20] = {
+                0x10000000u, 0, 0, 0x11000000u,                   // cnt 0; VIF flush
+                0x3000001Au, data, 0x01000101u, 0x6C1A0012u,      // ref 26 quadwords; stcycl, unpack v4-32 to 0x12
+                0x10000000u, 0, 0, 0x11000000u,                   // cnt 0; flush
+                0x50000000u, chain, 0, 0,                         // call the program's chain
+                0x60000000u, 0, 0x03000000u | base, 0x02000000u | offset, // ret; VIF base, offset
+            };
+            for (uint32_t i = 0; i < 20; ++i)
+                p[i] = words[i];
+            PacketBuf_Seek(static_cast<int>((p + 20).address));
+            return p.address;
+        };
+        lights->packetA = build(0x001A3C80u, 0x42, 0x1DF);
+        lights->packetB = build(0x001A4780u, 0xEA, 0x18B);
+    }
+
+    // Light set base setup: 0x110 and 0xE0 at +0x190/+0x194, every colour of both groups (twelve vectors each from
+    // +0x10 and +0xD0) and the vector at +0x1A0 set to 1, then its image-upload packet. Returns the set.
+    int LightSet_Init(GuestPtr<LightSet> lights)
+    {
+        BaseObject_ctor(static_cast<int>(lights.address));
+        port::store<int32_t>(lights.address + 0x190u, 0x110);
+        port::store<int32_t>(lights.address + 0x194u, 0xE0);
+        const GuestPtr<Vec4> groupA{lights.address + 0x10u}, groupB{lights.address + 0xD0u};
+        for (int i = 0; i < 12; ++i)
+            for (const GuestPtr<Vec4> colour : {groupA + i, groupB + i})
+            {
+                colour->w = 1.0f;
+                colour->z = 1.0f;
+                colour->y = 1.0f;
+                colour->x = 1.0f;
+            }
+        const GuestPtr<Vec4> last{lights.address + 0x1A0u};
+        last->w = 1.0f;
+        last->z = 1.0f;
+        last->y = 1.0f;
+        last->x = 1.0f;
+        LightSet_BuildPackets(lights);
+        return static_cast<int>(lights.address);
+    }
+
     GuestPtr<LightSet> LightSet_ctor(GuestPtr<LightSet> lights)
     {
         LightSet_Init(lights);
@@ -530,7 +578,7 @@ namespace mm
         }
     }
 
-    void LightSet_SetField20(GuestPtr<LightSet> lights, int value) { port::store<int32_t>(lights->unk_00.address + 0x20u, value); }
+    void LightSet_SetField20(GuestPtr<LightSet> lights, int value) { port::store<int32_t>(lights->packetA + 0x20u, value); }
 
     PORT_FN(DmaList_BeginScene);
     PORT_FN(Camera_BuildPacket);
@@ -562,6 +610,8 @@ namespace mm
     PORT_FN(Instance_DrawNodeLimited);
     PORT_FN(Instance_DrawModel);
     PORT_FN(Perf_AdaptDrawRange);
+    PORT_FN(LightSet_BuildPackets);
+    PORT_FN(LightSet_Init);
     PORT_FN(LightSet_ctor);
     PORT_FN(DmaList_QueueFade);
     PORT_FN(DmaChain_Next);

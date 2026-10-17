@@ -21,7 +21,7 @@ People and the player character.
 
 ## Functions
 
-84 functions (typed 63, verified 21). Blocks: 19 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+84 functions (typed 61, verified 23). Blocks: 19 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -45,7 +45,7 @@ People and the player character.
 | `0x00132880` | `CharClass *mm_Char2_ctor(CharClass *cls, uint8_t *record)` | 52 | no | base constructor, vtable 0x1BCE90 |
 | `0x001328C0` | `void mm_CharType_LoadAll(void)` | 416 | yes | loads DATA\BIN\CHARTYPE.BIN and creates one class object per 0x18-byte record (class 0 base, 1 person, 2 class 2) in the table at gp 0x1BDA3C |
 | `0x00132A70` | `void mm_Person_CheckBuilding(CharClass *cls, CityScene *city, MapPerson *person)` | 244 | yes | (provisional) person vs. its target building record: flags 0x20/0x200/4, the building's state byte +0x27 |
-| `0x00132B70` | `int mm_Person_TickCounters(CharClass *cls, CityScene *city, MapPerson *person)` | 300 | no | friendship level tick (+0x2F), +0x25 countdown, and with city flag 4 the family a resident introduces phones to ask about moving in (up to 4 calls) |
+| `0x00132B70` | `void mm_Person_TickCounters(CharClass *cls, CityScene *city, MapPerson *person)` | 300 | no | friendship level tick (+0x2F), +0x25 countdown, and with city flag 4 the family a resident introduces phones to ask about moving in (up to 4 calls) |
 | `0x00132CA0` | `int mm_Person_ProbeTile(CharClass *cls, CityScene *city, MapPerson *person, uint32_t tile)` | 248 | no | (provisional) tests the tile a person would step onto |
 | `0x00132DA0` | `void mm_Person_Walk(CharClass *cls, CityScene *city, MapPerson *person, int a3, int t0)` | 3528 | no | (provisional) 3.5 KB walking movement for people over map tiles |
 | `0x00133B70` | `void mm_Person_UpdatePose(CharClass *cls, CityScene *city, MapPerson *person, int a3, int tile)` | 780 | no | (provisional) person's matrix from heading and terrain height |

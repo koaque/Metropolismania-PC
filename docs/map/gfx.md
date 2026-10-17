@@ -18,11 +18,11 @@ Rendering below the scene level.
 
 ## Functions
 
-117 functions (typed 69, verified 48). Blocks: 29 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+117 functions (typed 67, verified 50). Blocks: 29 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
-| `0x00128EE0` | `void mm_Packet_BuildImageUpload(uint32_t *a0)` | 432 | no | builds an image-upload packet in the packet buffer (mm_PacketBuf_Tell/Seek): DMA REF to the texture data, BITBLT/TRX registers, GIF IMAGE |
+| `0x00128EE0` | `void mm_LightSet_BuildPackets(LightSet *lights)` | 432 | no | two VU1 packets: the set's 26 quadwords from +0x10 to VU1 0x12, a call of the program chain (0x1A3C80 / 0x1A4780), VIF base and offset |
 | `0x00129090` | `void mm_Packet2_Draw(uint32_t *packets, int second)` | 48 | no | queues packet a0[0], or a0[1] when a1 != 0 |
 | `0x001290C0` | `A3DObject *mm_A3DObjectBase_DeletingDtor(A3DObject *model, int16_t deleteFlag)` | 84 | yes | base destructor 0x12AB40, then delete when the flag is > 0 |
 | `0x00129120` | `int mm_LightSet_Init(LightSet *lights)` | 228 | no | (provisional, was mm_Unk129120_Init) base init; +0x190 = 0x110, +0x194 = 0xE0; 12 colour/direction slots and ambient set to 1.0 |

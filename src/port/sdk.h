@@ -14,12 +14,16 @@ namespace mm::sdk
         inline constexpr uint32_t atan2f = 0x0011A2C0u;
         inline constexpr uint32_t fmodf = 0x0011A2D8u;
         inline constexpr uint32_t fptosi = 0x00127828u;
+        inline constexpr uint32_t fptoui = 0x00127918u;
         inline constexpr uint32_t sinf = 0x0011A1A8u;
         inline constexpr uint32_t memcpy = 0x00121B90u;
         inline constexpr uint32_t memmove = 0x00121C40u;
         inline constexpr uint32_t memset = 0x00121D48u;
+        inline constexpr uint32_t strcat = 0x00123660u;
         inline constexpr uint32_t strcmp = 0x00123920u;
         inline constexpr uint32_t strcpy = 0x00123A68u;
+        inline constexpr uint32_t strcspn = 0x00123B80u;
+        inline constexpr uint32_t strlen = 0x00123C00u;
         inline constexpr uint32_t sceVu0MulMatrix = 0x00104B68u;
         inline constexpr uint32_t sceVu0UnitMatrix = 0x00104E60u;
         inline constexpr uint32_t sceVu0RotMatrixZ = 0x00104F00u;
@@ -35,6 +39,7 @@ namespace mm::sdk
 
     // Float to int conversion helper of the compiler runtime.
     inline int fptosi(ps2f value) { return port::callGuest<int>(addr::fptosi, value); }
+    inline uint32_t fptoui(ps2f value) { return port::callGuest<uint32_t>(addr::fptoui, value); }
 
     // libc: the guest addresses of the buffers.
     inline uint32_t memcpy(uint32_t dst, uint32_t src, int size) { return port::callGuest<uint32_t>(addr::memcpy, dst, src, size); }
@@ -43,6 +48,9 @@ namespace mm::sdk
     inline int strcmp(uint32_t a, uint32_t b) { return port::callGuest<int>(addr::strcmp, a, b); }
     inline int abs(int value) { return port::callGuest<int>(addr::abs, value); }
     inline uint32_t strcpy(uint32_t dst, uint32_t src) { return port::callGuest<uint32_t>(addr::strcpy, dst, src); }
+    inline uint32_t strcat(uint32_t dst, uint32_t src) { return port::callGuest<uint32_t>(addr::strcat, dst, src); }
+    inline int strlen(uint32_t s) { return port::callGuest<int>(addr::strlen, s); }
+    inline int strcspn(uint32_t s, uint32_t reject) { return port::callGuest<int>(addr::strcspn, s, reject); }
 
     // libvu0 (matrices are 4 Vec4 rows).
     inline void sceVu0MulMatrix(uint32_t out, uint32_t a, uint32_t b) { port::callGuest<void>(addr::sceVu0MulMatrix, out, a, b); }

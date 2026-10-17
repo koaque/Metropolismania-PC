@@ -54,7 +54,7 @@ Families: the residents who move into the city.
 | `0x0013CE40` | `void mm_Family_MoveAway(uint32_t family)` | 164 | no | family a0 leaves: bitset A -> C, families in the city - 1, families left + 1 |
 | `0x0013CEF0` | `void mm_Family_ClearMemberFlag(int family, int member)` | 44 | no | clears bit 7 of member byte (a0, a1) |
 | `0x0013CF20` | `uint32_t mm_Family_PickIntroduction(int family, int member, int a2)` | 480 | yes | an acquaintance of member (a0, a1) who can apply (type limit from 0x1C5548); 0 when none |
-| `0x0013D110` | `int mm_Family_CanApply(uint32_t family, int a1)` | 364 | no | family a0 is not in the city, has not left, is not already applying, and there is room for its people |
+| `0x0013D110` | `int mm_Family_CanApply(uint32_t family, CityScene *city)` | 364 | no | family a0 is not in the city, has not left, is not already applying, and there is room for its people |
 | `0x0013D280` | `int mm_Family_FriendAgrees(int family, int member, int approval)` | 176 | no | friend bit set and meter at least 100, or at least 48 with approval a2 >= 0, or at least 24 with a2 >= 50 |
 | `0x0013D330` | `int mm_Family_MeterAgrees(int family, int member, int approval)` | 152 | no | member (a0, a1)'s meter (capped at 120) is at least 100, or at least 48 with approval a2 >= 0, or at least 24 with a2 >= 50; mm_Family_FriendAgrees without the friend bit |
 | `0x0013D3D0` | `int mm_Family_IsCached(int family)` | 196 | no | whether family a0's record has finished loading into the cache |

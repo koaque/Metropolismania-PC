@@ -4,6 +4,8 @@
 #include "game_globals.h"
 #include "sdk.h"
 
+#include <utility>
+
 namespace mm
 {
     // Whether an object's sound plays at the current time: a window of `length` seconds from `start`
@@ -124,7 +126,7 @@ namespace mm
         for (uint32_t voice = 0; voice < 31; ++voice)
             port::store<uint8_t>(globals::kSeVoices + 0x30u * voice, 0xFF);
         globals::soundLastClock.set(-1);
-        port::store<uint16_t>(0x001BDD08u, 0);
+        globals::seRequestCount.set(0);
         globals::soundNextOwner.set(0);
         globals::soundCity.set(GuestPtr<CityScene>{0});
         globals::clockStopped.set(0);
@@ -198,7 +200,7 @@ namespace mm
         SoundCmd_SetVolumeB(15, 0xC0, 0);
         for (uint32_t voice = 0; voice < 31; ++voice)
             port::store<uint8_t>(globals::kSeVoices + 0x30u * voice, 0xFF);
-        port::store<uint16_t>(0x001BDD08u, 0);
+        globals::seRequestCount.set(0);
     }
 
     // Sends a voice's changed parameters to the driver: volume (flag 1; left and right plus the offset,
@@ -223,7 +225,7 @@ namespace mm
     // next one, or queues it (bit 7) behind a fade already running (provisional reading of 0x1BDCF0).
     void Bgm_SetTrackSlot(char slot, int play, int enable)
     {
-        constexpr uint32_t kTable = 0x001F8120u;
+        constexpr uint32_t kTable = globals::kBgmTracks;
         const uint8_t id = static_cast<uint8_t>(slot + 6);
         const uint8_t enabled = enable != 0 ? 1 : 0;
         int found = -1;
@@ -279,6 +281,189 @@ namespace mm
         if (port::load<int32_t>(globals::kSoundStatusView + 0xCu) != 0)
             return 1;
         return globals::soundCmdSent.get() != globals::soundCmdIndex.get();
+    }
+
+    // City music, every frame while music plays: the mood follows the city (flag 4: 1; approval below 0: 2;
+    // else 0), and a change of mood fades the music out. When the driver reports the sequence over, the next
+    // one starts: in the mood-7 city mode with mood 0 the current track again; otherwise mood 0 moves on to
+    // the next enabled track, moods 1 to 3 have their own banks (3, 4, 5, played once).
+    void Bgm_Update()
+    {
+        if (globals::bgmPlaying.get() == 0)
+            return;
+        const GuestPtr<uint32_t> status{static_cast<uint32_t>(Sound_GetStatus())};
+        const GuestPtr<CityScene> city = globals::soundCity.get();
+        uint8_t mood = 0;
+        if ((city->flags & 4u) != 0)
+            mood = 1;
+        else if (city->approval < 0)
+            mood = 2;
+        if (globals::bgmState.get() < 3 && globals::bgmState.get() != mood)
+        {
+            SoundCmd_FadeB(15, 0, 200, 0);
+            globals::bgmState.set(mood);
+        }
+        const bool sequenceOver = (status[1] & 0x8000u) != 0;
+        if (globals::bgmStarted.get() != 0)
+        {
+            if (sequenceOver)
+                globals::bgmStarted.set(0);
+            return;
+        }
+        if (sequenceOver)
+            return;
+        const auto trackBank = [](uint8_t track) { return port::load<uint8_t>(globals::kBgmTracks + 2u * track); };
+        const auto tempo = [](uint32_t bank) { return port::load<int32_t>(globals::kBgmTempos + 4u * bank); };
+        if (CityScene_GetMode(globals::soundCity.get()) == 7 && globals::bgmState.get() == 0 && globals::bgmPlayedState.get() == 0)
+        {
+            SoundCmd_0F(15, tempo(trackBank(globals::bgmTrack.get())), 0);
+            SoundCmd_PlaySequence(15, 7, 1, 0, 1);
+            globals::bgmStarted.set(1);
+            return;
+        }
+        if (globals::bgmBankLoaded.get() != 0)
+        {
+            globals::bgmBankLoaded.set(0);
+            SoundCmd_StopSequence(7, 0);
+        }
+        uint32_t bank = 0xFF;
+        uint8_t loop = 1;
+        switch (globals::bgmState.get())
+        {
+        case 3: bank = 5; loop = 0; break;
+        case 2: bank = 4; loop = 0; break;
+        case 1: bank = 3; loop = 0; break;
+        case 0:
+        {
+            globals::bgmTrack.set(globals::bgmTrack.get() & 0x7F);
+            uint8_t track;
+            do
+            {
+                globals::bgmTrack.set(static_cast<uint8_t>(globals::bgmTrack.get() + 1));
+                if (globals::bgmTrack.get() >= 13)
+                    globals::bgmTrack.set(0);
+                track = globals::bgmTrack.get();
+            } while (trackBank(track) == 0xFF || port::load<uint8_t>(globals::kBgmTracks + 2u * track + 1u) == 0);
+            bank = trackBank(track);
+            break;
+        }
+        default: break;
+        }
+        if (bank == 0xFF)
+            return;
+        const uint32_t names = globals::kBgmBanks + 0x30u * bank;
+        SoundCmd_LoadBank(7, static_cast<int>(names), static_cast<int>(names + 0x10u), static_cast<int>(names + 0x20u), 0);
+        SoundCmd_0F(15, tempo(bank), 0);
+        SoundCmd_PlaySequence(15, 7, loop, 0, 1);
+        globals::bgmStarted.set(1);
+        globals::bgmBankLoaded.set(1);
+        globals::bgmPlayedState.set(globals::bgmState.get());
+    }
+
+    namespace
+    {
+        // Two requests trade places field by field (their padding stays put).
+        void swapRequests(SeRequest &a, SeRequest &b)
+        {
+            std::swap(a.sound, b.sound);
+            std::swap(a.voice, b.voice);
+            std::swap(a.owner, b.owner);
+            std::swap(a.priority, b.priority);
+            std::swap(a.param0A, b.param0A);
+            std::swap(a.param0B, b.param0B);
+            std::swap(a.param0C, b.param0C);
+            std::swap(a.voiceParam, b.voiceParam);
+            std::swap(a.volumeLeft, b.volumeLeft);
+            std::swap(a.volumeRight, b.volumeRight);
+            std::swap(a.param18, b.param18);
+            std::swap(a.param19, b.param19);
+        }
+
+        // One side's volume: `level` less the attenuation, scaled to the sound's volume in percent and kept
+        // within 1..0x3FFF (in 32-bit arithmetic, as the original).
+        int32_t requestVolume(uint32_t level, uint32_t attenuation, int32_t percent)
+        {
+            const int32_t scaled = static_cast<int32_t>((level - attenuation) * static_cast<uint32_t>(percent)) / 100;
+            return scaled < 1 ? 1 : scaled >= 0x4000 ? 0x3FFF : scaled;
+        }
+    }
+
+    // Queues effect `sound` for this frame: a request per voice in the sound's list (up to four; 0xFF ends it),
+    // with a priority (the sound's priority bits, then half the distance; lower comes first) and left and right
+    // volumes from the pan (angle * 4) and the priority's low byte, scaled by the sound's volume (0 = 100%).
+    // A request for the same owner and sound already queued keeps the louder volumes instead; otherwise the new
+    // one goes into the list by priority and the count rises, up to 578. Sounds beyond distance 16, sound 0xFF
+    // and groups from 4 on are ignored. Returns the last voice's fptoui result (the pan for a sound without
+    // voices); when it queues nothing, v0 as it found it.
+    int Se_Request(uint16_t owner, uint32_t group, uint8_t sound, uint8_t param0A, uint8_t param18, uint16_t param0C,
+                   uint8_t param0B, uint8_t param19, ps2f angle, ps2f distance)
+    {
+        if (!(distance <= ps2f(16.0f)) || sound == 0xFF || (group & 0xFFu) >= 4)
+            return port::guestV0();
+        const uint32_t entry = globals::kSoundTable + 0x10u * sound;
+        const GuestPtr<SeRequest> requests{globals::kSeRequests};
+        const int pan = sdk::fptosi(ps2f(4.0f) * angle);
+        int result = pan;
+        uint32_t channel = (group << 4) & 0xFFu;
+        for (uint32_t k = 0; k < 4; ++k, ++channel)
+        {
+            const uint8_t voice = port::load<uint8_t>(entry + 8u + 2u * k);
+            if (voice == 0xFF)
+                return result;
+            const uint8_t flags = port::load<uint8_t>(entry);
+            SeRequest &request = requests[globals::seRequestCount.get()];
+            request.sound = sound;
+            request.voice = voice;
+            request.owner = ((flags & 0x20u) != 0 ? 0xFFFFu : owner) + ((channel & 0xFFu) << 16);
+            request.voiceParam = static_cast<uint16_t>(port::load<uint8_t>(entry + 9u + 2u * k) + ((flags & 0xF0u) << 4));
+            const uint32_t half = sdk::fptoui(distance / ps2f(2.0f));
+            result = static_cast<int>(half);
+            request.priority = static_cast<uint16_t>(((flags & 0xFu) << 8) + half);
+            request.param0A = param0A;
+            request.param0C = static_cast<int16_t>(param0C);
+            request.param0B = param0B;
+            request.param18 = param18;
+            request.param19 = param19;
+
+            const uint32_t low = request.priority & 0xFFu;
+            const uint8_t tableVolume = port::load<uint8_t>(globals::kSoundTable + 0x10u * request.sound + 3u);
+            const int32_t percent = tableVolume != 0 ? tableVolume : 100;
+            const uint32_t panShare = static_cast<uint32_t>(pan) * low * 416u;
+            uint32_t left = 0x3FFF, right = 0x3FFF;
+            if (pan < 0)
+                right = 0x3FFFu + panShare;
+            if (pan > 0)
+                left = 0x3FFFu - panShare;
+            const uint32_t attenuation = (low * 1984u) & 0xFFFFu;
+            request.volumeLeft = requestVolume(left, attenuation, percent);
+            request.volumeRight = requestVolume(right, attenuation, percent);
+
+            bool merged = false;
+            const int count = globals::seRequestCount.get();
+            for (int i = 0; i < count; ++i)
+            {
+                SeRequest &queued = requests[i];
+                if (queued.sound == 0xFF || request.owner != queued.owner || request.sound != queued.sound)
+                    continue;
+                if (queued.volumeLeft < request.volumeLeft)
+                    queued.volumeLeft = request.volumeLeft;
+                if (queued.volumeRight < request.volumeRight)
+                    queued.volumeRight = request.volumeRight;
+                merged = true;
+                break;
+            }
+            if (merged)
+                continue;
+            for (int i = 0; i < globals::seRequestCount.get(); ++i)
+            {
+                SeRequest &queued = requests[i];
+                if (queued.sound != 0xFF && request.priority < queued.priority)
+                    swapRequests(queued, request);
+            }
+            if (globals::seRequestCount.get() < 0x242)
+                globals::seRequestCount.set(static_cast<uint16_t>(globals::seRequestCount.get() + 1));
+        }
+        return result;
     }
 
     // Plays effect `sound`; sounds flagged 0x10 get the next owner id (wrapping at 0xFF) so they can be
@@ -452,6 +637,8 @@ namespace mm
     PORT_FN(Se_UpdateTimeOfDay);
     PORT_FN(Sound_GetStatus);
     PORT_FN(Sound_IsBusy);
+    PORT_FN(Bgm_Update);
+    PORT_FN(Se_Request);
     PORT_FN(Sound_PlaySe);
     PORT_FN(Bgm_SetTrackSlot);
     PORT_FN(Sound_LoadPlaylandBanks);

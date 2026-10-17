@@ -16,7 +16,8 @@ struct MsgWin {
     A3DObject *model;          /* +0x0C window model */
     TextBox *text;             /* +0x10 */
     uint32_t arrowPacket;      /* +0x14 blinking "more" arrow */
-    uint8_t unk_018[0x2AC];
+    uint8_t unk_018[0x2A8];
+    int32_t typeDelay;         /* +0x2C0 frames before the next character; Cross clears it (mm_MsgWin_Update) */
     int32_t node;              /* +0x2C4 model node drawn as the window */
     uint8_t unk_2C8[4];
 };
@@ -34,4 +35,13 @@ struct TalkCard { Widget base; uint8_t data[0x2C]; };
 /* Talk money panel (0x1C bytes), a widget. */
 struct TalkMoney { Widget base; uint8_t data[0x10]; };
 /* Talk conversation (0x508 bytes), a message window. */
-struct TalkConv { MsgWin base; uint8_t data[0x23C]; };
+struct TalkConv {
+    MsgWin base;
+    CityScene *city;           /* +0x2CC */
+    int32_t unk_2D0;
+    MenuWin *menu;             /* +0x2D4 */
+    Widget *panel;             /* +0x2D8 drawn while set (provisional: the money panel) */
+    NameEntry *nameEntry;      /* +0x2DC while entering a name (state 8) */
+    TalkCard *card;            /* +0x2E0 */
+    uint8_t unk_2E4[0x224];
+};

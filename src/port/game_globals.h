@@ -27,7 +27,11 @@ namespace mm::globals
     inline constexpr uint32_t kRandomNext = 0x001BDC9Cu;
 
     // sound: front-end state (gp-relative, gp = 0x1C5970).
-    inline constexpr GuestVar<uint8_t> bgmState{0x001BDCF4u};        // 4 = fading out (mm_Bgm_FadeOut)
+    inline constexpr GuestVar<uint8_t> bgmTrack{0x001BDCF0u};        // last city track played (index into kBgmTracks)
+    inline constexpr GuestVar<uint8_t> bgmState{0x001BDCF4u};        // mood: 0 normal, 1 city flag 4, 2 approval below 0, 3; 4 = fading out (mm_Bgm_FadeOut)
+    inline constexpr GuestVar<uint8_t> bgmPlayedState{0x001BDCF8u};  // mood the playing music was chosen for
+    inline constexpr GuestVar<int32_t> bgmStarted{0x001BDD3Cu};      // a sequence was started; cleared when the driver reports it over
+    inline constexpr GuestVar<int32_t> bgmBankLoaded{0x001BDD40u};   // the music bank in slot 7 is loaded
     inline constexpr GuestVar<GuestPtr<CityScene>> soundCity{0x001BDD00u}; // set by mm_Sound_SetCity
     inline constexpr GuestVar<int32_t> soundDelay{0x001BDD04u};      // frames before city sounds start
     inline constexpr GuestVar<int32_t> soundLastClock{0x001BDD0Cu};  // city clock seen last frame
@@ -47,6 +51,11 @@ namespace mm::globals
     inline constexpr GuestVar<uint32_t> soundSlotsQueued{0x001BDD50u};  // bit per sequence slot with a queued play (cmd 0xC)
     inline constexpr GuestVar<uint32_t> soundStopsQueued{0x001BDD54u};  // a third mask of queued commands (mm_Sound_GetStatus)
     inline constexpr GuestVar<uint16_t> soundNextOwner{0x001BDCFCu};    // owner id for the next owned effect, wraps at 0xFF
+    // sound: the city music: 13 tracks of (bank, enabled), the bank file names (SQ, HD, BD, 0x10 bytes each,
+    // 0x30 per bank) and each bank's tempo word.
+    inline constexpr uint32_t kBgmTracks = 0x001F8120u;
+    inline constexpr uint32_t kBgmBanks = 0x001B2A10u;
+    inline constexpr uint32_t kBgmTempos = 0x001B2DD0u;
     inline constexpr uint32_t kSoundTable = 0x001B2EE0u;                // 0x10 bytes per sound id; flag 0x10 = owned
     inline constexpr uint32_t kSoundStatus = 0x0020B7C0u;               // driver status block (0x40 bytes) as received
     inline constexpr uint32_t kSoundStatusView = 0x0020B840u;           // the same with the queued commands merged in
@@ -63,7 +72,8 @@ namespace mm::globals
     inline constexpr uint32_t kMemberBytes = 0x001C59B0u;
 
     // font, claims: data loaded from DATA\FONT1222.GF and DATA\BIN\CLAIM.BIN.
-    inline constexpr GuestVar<uint32_t> fontData{0x001BDC98u};       // 0x90 bytes per glyph
+    inline constexpr GuestVar<uint32_t> fontData{0x001BDC98u};       // 0x90 bytes per glyph; the first is the blank
+    inline constexpr uint32_t kWordDelimiters = 0x001B9AE0u;         // characters that end a word when text wraps
     inline constexpr GuestVar<uint32_t> claimData{0x001BDA50u};      // starts with the two claim meter thresholds (u16)
     inline constexpr GuestVar<uint32_t> claimSectionC{0x001BDA58u};  // offset table (words) into claimData
 
@@ -97,6 +107,7 @@ namespace mm::globals
 
     // city: the building type objects, one per type id (STRTYPE.BIN), and the schedule data.
     inline constexpr GuestVar<uint32_t> buildingTypeTable{0x001BDBF8u}; // array of BuildingType pointers
+    inline constexpr GuestVar<int32_t> buildingTypeCount{0x001BDBFCu};
     inline constexpr GuestVar<uint32_t> scheduleData{0x001BDBACu};      // 0x60-byte entries
 
     // Guest address of the building type object for a type id.
@@ -113,6 +124,12 @@ namespace mm::globals
     // family: thresholds that map family ids to building type indexes (sorted u16 table and its length).
     inline constexpr GuestVar<uint32_t> familyTypeTable{0x001BDA8Cu};
     inline constexpr GuestVar<int32_t> familyTypeCount{0x001BDA90u};
+
+    // char: the introduction calls: the tick count the next call waits for (0 = none; one more after each try),
+    // the ticks counted and the calls made (four at most).
+    inline constexpr GuestVar<int32_t> introCallDue{0x001BDA44u};
+    inline constexpr GuestVar<int32_t> introCallTick{0x001BDA48u};
+    inline constexpr GuestVar<int32_t> introCallCount{0x001BDA4Cu};
 
     // char: the character class objects, one per CHARTYPE.BIN record (pointer table).
     inline constexpr GuestVar<uint32_t> charClassTable{0x001BDA3Cu};
@@ -153,6 +170,12 @@ namespace mm::globals
     inline constexpr uint32_t kCardResult = 0x001BDB88u;
     // save: the 16 save slots (8 per card): size (-4 = unknown), name (0x44 bytes) and header (0x40 bytes).
     inline constexpr uint32_t kSaveSlotSizes = 0x001F4780u;
+    // save: the save title's prefix and default name, and the full-width (Shift-JIS) form of ASCII 0x20..0x7D
+    // (two bytes each) with the stand-in for other characters.
+    inline constexpr uint32_t kSaveTitlePrefix = 0x001B7C50u;
+    inline constexpr uint32_t kSaveTitleDefault = 0x001B7E00u;
+    inline constexpr uint32_t kFullWidthAscii = 0x001B7C70u;
+    inline constexpr uint32_t kFullWidthUnknown = 0x001B7D6Cu;
     inline constexpr uint32_t kSaveSlotNames = 0x001F4340u;
     inline constexpr uint32_t kSaveSlotHeaders = 0x001F3F00u;
 
@@ -160,6 +183,9 @@ namespace mm::globals
     // (sound + 1, variant), filled from the per-sound counts at 0x1B35F0 (11 rows of 0x1C bytes, six counts
     // from +0x10).
     inline constexpr uint32_t kSeVoices = 0x001F8140u;
+    // sound: this frame's effect requests (SeRequest, 578 and one spare) and their count.
+    inline constexpr uint32_t kSeRequests = 0x001F8710u;
+    inline constexpr GuestVar<uint16_t> seRequestCount{0x001BDD08u};
     inline constexpr uint32_t kAmbienceGrid = 0x001FC690u;
     inline constexpr uint32_t kAmbienceCounts = 0x001B35F0u;
 
@@ -222,6 +248,10 @@ namespace mm::globals
 
     // event: the event types loaded from EVENT.BIN (96 records of 0x4C bytes; priority is the signed byte at +0x22).
     inline constexpr GuestVar<uint32_t> eventTypes{0x001BDA84u};
+
+    // title: the "[SELECT]SoundTest" hint, and a function static of mm_Title_PressStart (word, then its byte flag).
+    inline constexpr uint32_t kSoundTestHint = 0x001B89E0u;
+    inline constexpr uint32_t kPressStartStatic = 0x001BDC0Cu;
 
     // gfx: an identity matrix (four Vec4).
     inline constexpr uint32_t kIdentityMatrix = 0x001B2550u;

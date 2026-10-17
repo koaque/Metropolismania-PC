@@ -691,7 +691,7 @@ address,name,kind,source
 0x00128CF0,mm_MsgWin_SetMessage,func,manual
 0x00128D80,mm_MsgWin_dtor,func,manual
 0x00128E20,mm_MsgWin_ctor,func,manual
-0x00128EE0,mm_Packet_BuildImageUpload,func,manual
+0x00128EE0,mm_LightSet_BuildPackets,func,manual
 0x00129090,mm_Packet2_Draw,func,manual
 0x001290C0,mm_A3DObjectBase_DeletingDtor,func,manual
 0x00129120,mm_LightSet_Init,func,manual
@@ -918,7 +918,7 @@ address,name,kind,source
 0x0013F2E0,mm_Map_PlaceRoad,func,manual
 0x0013F300,mm_Map_LevelArea,func,manual
 0x0013F3D0,mm_CityMap_ClearObject,func,manual
-0x0013F5D0,mm_Map_ForEachTileInRect,func,manual
+0x0013F5D0,mm_Map_ClearArea,func,manual
 0x0013F6E0,mm_Map_PlaceObject,func,manual
 0x0013F860,mm_Map_CanPlace,func,manual
 0x0013F890,mm_TerrainGen_SampleSmooth,func,manual

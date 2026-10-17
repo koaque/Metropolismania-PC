@@ -745,16 +745,16 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00128960,mm_MsgWin_NextLine,212,game,ui,typed,no,2,4,"when waiting (state 3): takes the next line, scrolls the 4-line text box up by one line, state 6"
 0x00128A40,mm_MsgWin_Closing,68,game,ui,typed,indirect,0,0,"state 4: Step(0.1), then idle"
 0x00128A90,mm_MsgWin_Opening,68,game,ui,typed,indirect,0,0,"state 1: Step(0.1), then active"
-0x00128AE0,mm_MsgWin_Update,108,game,ui,typed,no,1,3,"typing (state 6): button 0x40 skips the delay, then mm_MsgWin_TypeNext; other states run the base update (0x173450)"
+0x00128AE0,mm_MsgWin_Update,108,game,ui,verified,no,1,3,"typing (state 6): button 0x40 skips the delay, then mm_MsgWin_TypeNext; other states run the base update (0x173450)"
 0x00128B50,mm_MsgWin_Draw,356,game,ui,verified,no,1,4,"in pass 2: fades the window model node by state (alpha via its matrix row 0x1B2550), draws it and the text box"
 0x00128CC0,mm_Mat4_Copy,36,game,math,verified,no,29,0,copies a 4x4 float matrix (16 words) from a1 to a0
 0x00128CF0,mm_MsgWin_SetMessage,136,game,ui,typed,no,2,2,"starts message a1 with sound code a2: resets buffers and cursors, clears the text box"
 0x00128D80,mm_MsgWin_dtor,148,game,ui,typed,yes,1,4,"vtable 0x1BCE10; deletes the frame (0x14C210) and the text box, base destructor 0x173560"
 0x00128E20,mm_MsgWin_ctor,184,game,ui,typed,yes,2,5,"vtable 0x1BCE10; text box 18x4 (style -2) at 0x7240,0x8240 and a 0xC0-byte window frame (0x14C270)"
-0x00128EE0,mm_Packet_BuildImageUpload,432,game,gfx,typed,no,1,2,"builds an image-upload packet in the packet buffer (mm_PacketBuf_Tell/Seek): DMA REF to the texture data, BITBLT/TRX registers, GIF IMAGE"
+0x00128EE0,mm_LightSet_BuildPackets,432,game,gfx,verified,no,1,2,"two VU1 packets: the set's 26 quadwords from +0x10 to VU1 0x12, a call of the program chain (0x1A3C80 / 0x1A4780), VIF base and offset"
 0x00129090,mm_Packet2_Draw,48,game,gfx,verified,no,9,1,"queues packet a0[0], or a0[1] when a1 != 0"
 0x001290C0,mm_A3DObjectBase_DeletingDtor,84,game,gfx,typed,yes,2,2,"base destructor 0x12AB40, then delete when the flag is > 0"
-0x00129120,mm_LightSet_Init,228,game,gfx,typed,no,2,2,"(provisional, was mm_Unk129120_Init) base init; +0x190 = 0x110, +0x194 = 0xE0; 12 colour/direction slots and ambient set to 1.0"
+0x00129120,mm_LightSet_Init,228,game,gfx,verified,no,2,2,"(provisional, was mm_Unk129120_Init) base init; +0x190 = 0x110, +0x194 = 0xE0; 12 colour/direction slots and ambient set to 1.0"
 0x00129210,mm_A3D_GetMeshField0C,24,game,gfx,verified,no,9,0,word +0xC of mesh a1 in the model's mesh table (+0x50)
 0x00129230,mm_Instance_DrawSwaying,816,game,gfx,typed,no,6,2,"(provisional, was mm_A3D_SineDeform) adds instances for mesh a2 of model a1 with sine-wave motion at time a0 (callers check the instance budget first)"
 0x00129570,mm_A3D_Relocate,988,game,gfx,typed,yes,2,3,"turns the loaded model's offsets into pointers, patches the addresses in its DMA chains (mm_DmaChain_*) and uploads its textures (mm_Dma_KickVif1Now)"
@@ -821,7 +821,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0012E2D0,mm_Perf_AdaptDrawRange,152,game,gfx,verified,no,1,1,"(provisional) 0x1BD980 tracks 0x1BD9B8: shrinks when it is above 95, else grows by 1; clamped to 0xFF..0x3A7"
 0x0012E370,mm_Path_ScanLine,1092,game,char,typed,no,1,3,(provisional) walks tiles along a line looking for a walkable tile (flag 0x10)
 0x0012E7D0,mm_Path_NextWaypoint,1588,game,char,typed,no,2,7,next waypoint tile toward the person's building (+0x16); 0x4000 when none
-0x0012EE20,mm_Path_TileDistance,176,game,char,typed,no,2,0,(provisional) VU0 distance test between tiles a1 and a2
+0x0012EE20,mm_Path_TileDistance,176,game,char,verified,no,2,0,(provisional) VU0 distance test between tiles a1 and a2
 0x0012EED0,mm_CharType_Slot18,8,game,char,typed,no,0,0,base vtable slot +0x18: empty
 0x0012EEE0,mm_CharType_Draw2,8,game,char,typed,no,0,0,base slot +0x14: empty
 0x0012EEF0,mm_CharType_Draw,8,game,char,typed,no,0,0,base slot +0x10: empty
@@ -839,7 +839,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00132880,mm_Char2_ctor,52,game,char,verified,no,1,1,"base constructor, vtable 0x1BCE90"
 0x001328C0,mm_CharType_LoadAll,416,game,char,typed,yes,1,11,"loads DATA\BIN\CHARTYPE.BIN and creates one class object per 0x18-byte record (class 0 base, 1 person, 2 class 2) in the table at gp 0x1BDA3C"
 0x00132A70,mm_Person_CheckBuilding,244,game,char,typed,yes,1,2,"(provisional) person vs. its target building record: flags 0x20/0x200/4, the building's state byte +0x27"
-0x00132B70,mm_Person_TickCounters,300,game,char,typed,no,1,4,"friendship level tick (+0x2F), +0x25 countdown, and with city flag 4 the family a resident introduces phones to ask about moving in (up to 4 calls)"
+0x00132B70,mm_Person_TickCounters,300,game,char,verified,no,1,4,"friendship level tick (+0x2F), +0x25 countdown, and with city flag 4 the family a resident introduces phones to ask about moving in (up to 4 calls)"
 0x00132CA0,mm_Person_ProbeTile,248,game,char,verified,no,1,2,(provisional) tests the tile a person would step onto
 0x00132DA0,mm_Person_Walk,3528,game,char,typed,no,1,10,(provisional) 3.5 KB walking movement for people over map tiles
 0x00133B70,mm_Person_UpdatePose,780,game,char,verified,no,1,5,(provisional) person's matrix from heading and terrain height
@@ -978,7 +978,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0013F2E0,mm_Map_PlaceRoad,28,game,map,verified,no,1,1,places Road (type 4) at even coordinates (2 x 2 road pieces)
 0x0013F300,mm_Map_LevelArea,196,game,map,typed,no,1,1,places Leveled land (type 3) over an a3 x a3 area
 0x0013F3D0,mm_CityMap_ClearObject,496,game,map,typed,no,0,5,"city map slot +0xC: removes object a1's people and the object, refills its footprint with Wasteland"
-0x0013F5D0,mm_Map_ForEachTileInRect,264,game,map,typed,indirect,1,0,calls a function for each tile of a rectangle
+0x0013F5D0,mm_Map_ClearArea,264,game,map,verified,indirect,1,0,removes objects from each tile of a size x size square (the map's ClearObject slot) until wasteland (type 2) comes first
 0x0013F6E0,mm_Map_PlaceObject,376,game,map,typed,indirect,7,7,"places an object of type a2 at (a3, a4) after the placement check (new or stacked), updates geometry; returns its index or 0x3F80"
 0x0013F860,mm_Map_CanPlace,40,game,map,typed,no,4,1,placement test without placing (mm_Map_CheckPlacement)
 0x0013F890,mm_TerrainGen_SampleSmooth,444,game,map,typed,no,1,0,(provisional) smoothed height sample
@@ -1247,7 +1247,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0015AF80,mm_McManager_FindSave,248,game,save,verified,no,1,1,(provisional) finds a save by name in the slot tables (0x1F3F00/0x1F4340/0x1F4780)
 0x0015B080,mm_McManager_FormatSaveInfo,1208,game,save,typed,yes,1,5,"""Stage n Month m Year y ""name"" Population ... / Approval Rate ..."""
 0x0015B540,mm_McManager_FormatSlotLine,848,game,save,typed,yes,1,4,"short slot line "" Stage n ""name"" Pop. ../A.R. ..%"", ""*Newest*"""
-0x0015B890,mm_McManager_BuildSaveHeader,428,game,save,typed,no,1,4,fills the save header from the stage state (0x1C5380)
+0x0015B890,mm_McManager_BuildSaveHeader,428,game,save,verified,no,1,4,fills the save header from the stage state (0x1C5380)
 0x0015BA40,mm_SaveFile_GetResult,8,game,save,verified,no,2,1,result of the file's last memory card request
 0x0015BA50,mm_SaveFile_IsDone,8,game,save,verified,no,2,1,whether the file's last request is done
 0x0015BA60,mm_SaveFile_Close,16,game,save,verified,no,2,1,queues close of the file's descriptor (+0x24)
@@ -1347,14 +1347,14 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00163B20,mm_BldgType_IsMyHome,32,game,city,verified,no,1,0,"type id/kind (+0x134) in 5..8, the My Home types"
 0x00163B40,mm_BldgType_DrawOccupants,256,game,city,typed,indirect,2,1,(provisional) draws people at a building
 0x00163C40,mm_BldgType_OccupantMatrix,292,game,city,typed,no,1,0,(provisional) matrix for an occupant
-0x00163D70,mm_BldgType_DrawOccupant,400,game,city,typed,no,5,3,(provisional) one occupant on its tile
+0x00163D70,mm_BldgType_DrawOccupant,400,game,city,verified,no,5,3,(provisional) one occupant on its tile
 0x00163F00,mm_BldgType_FindEntrance,344,game,city,verified,no,2,2,"(provisional) entrance tile next to a building (walkable flag 0x10, tables 0x1B13F0/0x1B1400)"
 0x00164060,mm_BldgType_Slot30,8,game,city,typed,no,0,0,base slot +0x30
 0x00164070,mm_BldgType_CollideA,8,game,city,verified,no,0,0,base slot +0x2C
 0x00164080,mm_BldgType_CollideB,8,game,city,verified,no,0,0,base slot +0x28
 0x00164090,mm_BldgType_Slot1C,8,game,city,verified,no,0,0,base slot +0x1C
 0x001640A0,mm_BldgType_Slot20,8,game,city,verified,no,0,0,base slot +0x20
-0x001640B0,mm_BldgType_DrawOccupants2,356,game,city,typed,indirect,1,1,(provisional)
+0x001640B0,mm_BldgType_DrawOccupants2,356,game,city,verified,indirect,1,1,(provisional)
 0x00164220,mm_BldgType_Draw,8,game,city,verified,no,0,0,base slot +0x14
 0x00164230,mm_BldgType_Tick,8,game,city,verified,no,0,0,base slot +0x10
 0x00164240,mm_BldgType_InitRecord,8,game,city,verified,no,0,0,base slot +0xC
@@ -1418,7 +1418,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00168F30,mm_BldgLeveled_Draw,132,game,city,verified,no,0,1,instances when the record flag 1 is set
 0x00168FC0,mm_BldgLeveled_Tick,1128,game,city,typed,no,0,11,"(provisional) builds on leveled land for waiting applicants: levels the terrain, places the building"
 0x00169430,mm_BldgLeveled_ctor,72,game,city,typed,yes,1,1,"base constructor, vtable 0x1BD240, +0x160 from record byte 0x90"
-0x00169480,mm_BldgType_CallAll,120,game,city,typed,indirect,1,0,calls a virtual method on every building type
+0x00169480,mm_BldgType_CallAll,120,game,city,verified,indirect,1,0,calls a virtual method on every building type
 0x00169500,mm_BldgType_Create,716,game,city,typed,yes,1,16,building type object for a STRTYPE.BIN record by its category (+0x20)
 0x001697D0,mm_BldgType_DeleteAll,140,game,city,typed,yes,1,1,deletes every building type object
 0x00169860,mm_BldgType_LoadAll,248,game,city,typed,yes,1,6,"loads DATA\BIN\STRTYPE.BIN (0x9C-byte records, 281 types) and creates the type objects"
@@ -1477,9 +1477,9 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0016DAB0,mm_SoundTest_Update,1176,game,ui,typed,no,1,22,"""*** Sound Test ***"" screen"
 0x0016DF50,mm_SoundTest_BgmText,284,game,ui,typed,no,2,3,"BGM page text (""BGM No:"")"
 0x0016E070,mm_SoundTest_SeText,508,game,ui,typed,no,2,3,"SE page text (""SE No:"", ""R1/R2 Distance(+/-)"")"
-0x0016E270,mm_Title_DrawCommon,456,game,scene,typed,no,4,6,"title screen layers, logo animation and fades"
+0x0016E270,mm_Title_DrawCommon,456,game,scene,verified,no,4,6,"title screen layers, logo animation and fades"
 0x0016E440,mm_Title_LoadMenu,1024,game,scene,typed,yes,1,16,load game screen: memory card slots and their info
-0x0016E840,mm_Title_PressStart,260,game,scene,typed,no,1,5,"title idle screen (""[SELECT]SoundTest"")"
+0x0016E840,mm_Title_PressStart,260,game,scene,verified,no,1,5,"title idle screen (""[SELECT]SoundTest"")"
 0x0016E950,mm_SceneA_StartGame,764,game,scene,typed,yes,1,27,
 0x0016EC50,mm_Title_NewGameIntro,1300,game,scene,typed,no,1,8,new game intro scene with town models and loading text
 0x0016F170,mm_Title_RandomCharParts,248,game,scene,typed,no,1,2,random character parts for the intro
@@ -1511,7 +1511,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00173400,mm_Widget_Opened,24,game,ui,typed,indirect,0,0,base slot +0x34: Step(1.0)
 0x00173420,mm_Widget_Opening,24,game,ui,typed,indirect,0,0,base slot +0x30: Step(1.0)
 0x00173440,mm_Widget_Idle,8,game,ui,verified,no,0,0,base slot +0x2C: nothing
-0x00173450,mm_Widget_Update,212,game,ui,typed,indirect,2,0,slot +0x14: calls the slot for the current state (+0x2C + state*4)
+0x00173450,mm_Widget_Update,212,game,ui,verified,indirect,2,0,slot +0x14: calls the slot for the current state (+0x2C + state*4)
 0x00173530,mm_Widget_Draw,8,game,ui,typed,no,0,0,slot +0x20: nothing
 0x00173540,mm_Widget_Close,16,game,ui,verified,no,6,0,"slot +0x10: state 4, timer 0"
 0x00173550,mm_Widget_Open,16,game,ui,verified,no,9,0,"slot +0xC: state 1, timer 0"
@@ -1616,14 +1616,14 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001787B0,mm_Talk_EndChoosing,24,game,talk,typed,no,0,0,"view (+0x10) choice (+0xB8) = -1, +0x3C = 1"
 0x001787D0,mm_Talk_SelectPerson,44,game,talk,typed,no,0,1,forces the view's choice (+0xB8) to the slot of family a1 member a2
 0x00178800,mm_Talk_ChooseInput,348,game,talk,typed,yes,1,3,"choosing a person: confirm (0x40) starts the conversation, cancel (0x10) closes"
-0x00178960,mm_Talk_Closed,240,game,talk,typed,indirect,0,2,"state 5: when the view is idle, pops the scene mode, deletes view and conversation, restores HUD"
+0x00178960,mm_Talk_Closed,240,game,talk,verified,indirect,0,2,"state 5: when the view is idle, pops the scene mode, deletes view and conversation, restores HUD"
 0x00178A50,mm_Talk_Closing,120,game,talk,typed,indirect,0,0,"state 4: when the conversation is idle, closes the view or goes back to choosing"
 0x00178AD0,mm_Talk_Active,104,game,talk,typed,indirect,0,1,"state 3: person animation while talking, closes when the conversation does"
 0x00178B40,mm_Talk_Opened,104,game,talk,typed,indirect,0,0,state 2: waits for the conversation to open
 0x00178BB0,mm_Talk_Opening,168,game,talk,typed,yes,0,1,"state 1: when the view is active, starts the conversation or choosing"
 0x00178C60,mm_Talk_Update,228,game,talk,typed,yes,0,2,"updates view and conversation, then the state machine"
 0x00178D50,mm_Talk_Start,1332,game,talk,typed,yes,1,17,"target building a2/person a3 or family a2/member a3; picks the view class (near/far, home, person) and the conversation"
-0x00179290,mm_Talk_Draw,96,game,talk,typed,indirect,0,0,draws view and conversation
+0x00179290,mm_Talk_Draw,96,game,talk,verified,indirect,0,0,draws view and conversation
 0x001792F0,mm_Talk_dtor,180,game,talk,typed,yes,0,2,vtable 0x1BD770
 0x001793B0,mm_Talk_ctor,68,game,talk,verified,no,1,1,vtable 0x1BD770
 0x00179400,mm_TalkMoney_Draw,156,game,talk,typed,no,0,6,vtable 0x1BD7C0: panel model and the money text
@@ -1644,7 +1644,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0017A610,mm_MyHome_Close,136,game,talk,typed,no,0,4,"refills stamina (mm_Stamina_Init) when below the maximum, clears the entrance, closes"
 0x0017A6A0,mm_MyHome_dtor,96,game,talk,typed,yes,0,2,vtable 0x1BD810
 0x0017A700,mm_MyHome_ctor,600,game,talk,typed,no,1,5,"vtable 0x1BD810, building a2, camera start from its entrance"
-0x0017A960,mm_TalkConv_Draw,164,game,talk,typed,indirect,0,2,"vtable 0x1BD860: message window, menu, name entry, card and money panel"
+0x0017A960,mm_TalkConv_Draw,164,game,talk,verified,indirect,0,2,"vtable 0x1BD860: message window, menu, name entry, card and money panel"
 0x0017AA10,mm_TalkConv_Closing,448,game,talk,typed,yes,0,5,Step(0.1); then friendship status updates for the person or family member
 0x0017ABD0,mm_TalkConv_Active,848,game,talk,typed,yes,0,16,"script code handling: choice menus, money panel, name entry, end of talk"
 0x0017AF20,mm_TalkConv_Opening,80,game,talk,typed,yes,0,1,"Step(0.1), then active and the first line"
@@ -1845,9 +1845,9 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00182440,mm_CityScene_dtor,616,game,city,typed,yes,1,18,deletes every city subsystem
 0x001826B0,__dt__Q23std9exceptionFv,76,sdk,,named,yes,0,1,
 0x00182700,mm_CityScene_ctor,1252,game,city,typed,yes,1,27,"creates camera, map, terrain, cursor, events, menus, windows, player, talk session"
-0x00182BF0,mm_Collide_RayTriangleA,304,game,math,typed,no,2,3,"(provisional) ray against a triangle's plane, then inside test"
-0x00182D20,mm_Collide_PointInTriangle,356,game,math,typed,no,2,0,(provisional) same-side cross product test
-0x00182E90,mm_Collide_RayTriangleB,400,game,math,typed,no,2,3,(provisional) second ray/triangle test
+0x00182BF0,mm_Collide_RayTriangleA,304,game,math,verified,no,2,3,"(provisional) ray against a triangle's plane, then inside test"
+0x00182D20,mm_Collide_PointInTriangle,356,game,math,verified,no,2,0,(provisional) same-side cross product test
+0x00182E90,mm_Collide_RayTriangleB,400,game,math,verified,no,2,3,(provisional) second ray/triangle test
 0x00183020,mm_Text_FormatTimeRange,444,game,text,typed,no,1,2,"""H:MM"" of minute a1, glyph 0xC2 (0x1B9AD8) as separator, then ""H:MM"" of minute a2, into a0; used by mm_WordsFn_TextOpenHours"
 0x001831E0,mm_Text_FormatMoney,144,game,text,verified,no,5,3,'$' + mm_Text_FormatThousands(value); right-aligns to width a2 with spaces unless a3 != 0
 0x00183270,mm_Text_FormatThousands,296,game,text,verified,no,2,2,"decimal string with ',' every three digits; negative values via abs (0x11E810)"
@@ -1855,7 +1855,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00183450,mm_Text_FormatPadded,176,game,text,verified,no,12,0,"right-aligned decimal with leading spaces, width a2 (powers of ten at 0x1B9AB0)"
 0x00183500,mm_TextBox_Build,1556,game,ui,typed,no,4,0,"rebuilds the text box's GS packet (this+8): GIF header when a1 != 0, then one sprite per glyph cell (cols +0x38 x rows +0x3C)"
 0x00183B20,mm_TextBox_Draw,8,game,ui,verified,no,28,1,queues the text box packet (this+8) with mm_Dma_AppendCall
-0x00183B30,mm_TextBox_AppendText,692,game,ui,typed,no,16,2,"lays out text from the cursor (+0x2C) on, wrapping words at ' \n\r'; glyphs from mm_Font_GetGlyph"
+0x00183B30,mm_TextBox_AppendText,692,game,ui,verified,no,16,2,"lays out text from the cursor (+0x2C) on, wrapping words at ' \n\r'; glyphs from mm_Font_GetGlyph"
 0x00183DF0,mm_TextBox_SetText,8,game,ui,verified,no,50,0,resets the cursor (+0x2C) and lays out the text like mm_TextBox_AppendText
 0x00183E00,mm_TextBox_SetCharSize,56,game,ui,verified,no,19,1,"glyph size +0x10/+0x14 and pitch +0x24/+0x28 (values <= 0 keep the old one), then rebuilds"
 0x00183E40,mm_TextBox_SetPos,20,game,ui,verified,no,32,1,"x +0x18, y +0x1C, z +0x20 in GS units, then rebuilds"
@@ -1944,7 +1944,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00188EE0,mm_Se_RequestTileSounds,468,game,sound,typed,no,1,4,"requests the sounds of the objects on map tile (a2, a3), with a random extra cue when a4 != 0"
 0x001890C0,mm_Se_PickTerrainAmbience,508,game,sound,verified,no,1,3,"ambient sound id for a position: above the city's level threshold (+0xB0) picks 0x1C/0x1D, else from the 5-byte table at 0x1B35F0 through mm_Se_MatchSchedule"
 0x001892D0,mm_Se_MatchSchedule,912,game,sound,verified,no,1,0,1 when the current month (city +0x88 mod 12) and hour/minute (0x1BDD34) fall inside the given month and time ranges
-0x00189660,mm_Se_Request,1244,game,sound,typed,no,7,2,"adds a sound request (position, sound id, priority, volume, pitch, ...) to the request list at 0x1F8710 (count at gp 0x1BDD08); ids look up the 16-byte sound table 0x1B2EE0"
+0x00189660,mm_Se_Request,1244,game,sound,verified,no,7,2,"adds a sound request (position, sound id, priority, volume, pitch, ...) to the request list at 0x1F8710 (count at gp 0x1BDD08); ids look up the 16-byte sound table 0x1B2EE0"
 0x00189B40,mm_Se_StopOwner,260,game,sound,typed,no,1,2,"stops every effect voice (16 at 0x1F8140, 15 at 0x1F8440, 0x30 bytes each) and request owned by a0"
 0x00189C50,mm_Se_RequestForObject,1876,game,sound,typed,no,2,3,requests the sounds of a moving or placed object by its type and distance to the listener
 0x0018A3B0,mm_Sound_PlaySe,148,game,sound,verified,no,30,1,"plays sound id a0 & 0xFF through 0x189660; ids flagged 0x10 in the 16-byte table 0x1B2EE0 get a rotating handle (0x1BDCFC, wraps at 255)"
@@ -1961,7 +1961,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0018CC70,mm_Bgm_FadeOut,48,game,sound,typed,no,1,1,"cmd 0xE on voice 15 to volume 0 over a0, BGM state (gp 0x1BDCF4?) = 4"
 0x0018CCA0,mm_Bgm_SetActive,132,game,sound,typed,no,1,4,"a0 == 0 fades the BGM out (state 4); otherwise stops a pending jingle, restores volume 0xC0 and sets state 3"
 0x0018CD30,mm_Bgm_SetTrackSlot,360,game,sound,verified,no,2,1,"sets or adds track slot + 6 in the music table (0x1F8120, entries 3..12 of (id, enabled)); with play: fades voice 15 out with it next, or queues it (0x1BDCF0)"
-0x0018CEA0,mm_Bgm_Update,688,game,sound,typed,no,1,7,"picks the BGM for the city state (flags +0xB4, +0x8C) and switches banks (NOMAL_A.SQ/HD/BD ...) when the driver is idle"
+0x0018CEA0,mm_Bgm_Update,688,game,sound,verified,no,1,7,"picks the BGM for the city state (flags +0xB4, +0x8C) and switches banks (NOMAL_A.SQ/HD/BD ...) when the driver is idle"
 0x0018D150,mm_SoundCmd_02_Zero,12,game,sound,verified,no,6,1,queues cmd 2 with zero arguments
 0x0018D160,mm_Sound_ResetVoices,284,game,sound,verified,no,4,3,"queues cmd 1, resets all voice volumes (0xFFF group A, 0x100 group B, 0xC0 voice 15) and clears the effect voice tables"
 0x0018D280,mm_Se_BuildAmbienceMap,348,game,sound,verified,no,2,0,clears the 4096-entry ambience grid at 0x1FC690 and fills it from the city map and the table at 0x1B35F0

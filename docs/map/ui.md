@@ -17,7 +17,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 
 ## Functions
 
-168 functions (typed 117, verified 51). Blocks: 62 can reach a thread switch, 10 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+168 functions (typed 114, verified 54). Blocks: 62 can reach a thread switch, 10 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -74,7 +74,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x0014C270` | `Frame *mm_Frame_ctor(Frame *frame, int style, int x, int y, int width, int height, uint32_t colour)` | 580 | no | window frame: position, size, style, colour |
 | `0x0014C4C0` | `void mm_WaitText_Draw(void)` | 68 | no | blinking "Please wait...." text box (0x1BDAC4) |
 | `0x0014C510` | `int mm_WaitText_Append(char *text)` | 16 | no | appends a0 to the wait text |
-| `0x0014C520` | `int mm_WaitText_Set(char *text)` | 16 | no | sets the wait text to a0 |
+| `0x0014C520` | `void mm_WaitText_Set(char *text)` | 16 | no | sets the wait text to a0 |
 | `0x0014C530` | `int mm_WaitText_Delete(void)` | 44 | yes | deletes the wait text box |
 | `0x0014C560` | `void mm_WaitText_Create(char *text)` | 180 | yes | creates the wait text box ("Please wait....") |
 | `0x00150990` | `void mm_ListMenu_ScrollTo(ListMenu *menu, int item)` | 80 | no | scroll so item a1 is visible (+0x264 count, +0x268 item height) |
@@ -182,8 +182,8 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x001735B0` | `Widget *mm_Widget_ctor(Widget *widget)` | 28 | no | vtable 0x1BD400 at +8, state and timer 0 |
 | `0x00183500` | `void mm_TextBox_Build(TextBox *textbox, int a1)` | 1556 | no | rebuilds the text box's GS packet (this+8): GIF header when a1 != 0, then one sprite per glyph cell (cols +0x38 x rows +0x3C) |
 | `0x00183B20` | `void mm_TextBox_Draw(TextBox *textbox)` | 8 | no | queues the text box packet (this+8) with mm_Dma_AppendCall |
-| `0x00183B30` | `int mm_TextBox_AppendText(TextBox *textbox, char *text, int a2)` | 692 | no | lays out text from the cursor (+0x2C) on, wrapping words at ' \n\r'; glyphs from mm_Font_GetGlyph |
-| `0x00183DF0` | `int mm_TextBox_SetText(TextBox *textbox, char *text, int a2)` | 8 | no | resets the cursor (+0x2C) and lays out the text like mm_TextBox_AppendText |
+| `0x00183B30` | `void mm_TextBox_AppendText(TextBox *textbox, char *text, int raw)` | 692 | no | lays out text from the cursor (+0x2C) on, wrapping words at ' \n\r'; glyphs from mm_Font_GetGlyph |
+| `0x00183DF0` | `void mm_TextBox_SetText(TextBox *textbox, char *text, int raw)` | 8 | no | resets the cursor (+0x2C) and lays out the text like mm_TextBox_AppendText |
 | `0x00183E00` | `void mm_TextBox_SetCharSize(TextBox *textbox, int width, int height, int pitchX, int pitchY)` | 56 | no | glyph size +0x10/+0x14 and pitch +0x24/+0x28 (values <= 0 keep the old one), then rebuilds |
 | `0x00183E40` | `void mm_TextBox_SetPos(TextBox *textbox, int x, int y, int z)` | 20 | no | x +0x18, y +0x1C, z +0x20 in GS units, then rebuilds |
 | `0x00183E60` | `void mm_TextBox_SetPosAndSize(TextBox *textbox, int x, int y, int charWidth, int charHeight, int pitchX, int pitchY, int z)` | 36 | no | position, glyph size and pitch at once, then rebuilds |

@@ -186,6 +186,127 @@ namespace mm
         store(out, vf(7));
     }
 
+    // Whether point p lies inside triangle (a, b, c), on VU0: the normals (a - p) x (c - p), (b - a) x (c - a)
+    // and (p - b) x (c - b) must all face the same way (no dot product of neighbours below 0). The original keeps
+    // its vectors in stack temporaries it always writes in full before reading them back, so only the register
+    // sequence matters, including the w lanes the xyz operations leave alone.
+    int Collide_PointInTriangle(GuestPtr<Vec4> p, GuestPtr<Vec4> a, GuestPtr<Vec4> b, GuestPtr<Vec4> c)
+    {
+        using namespace vu0;
+        const auto difference = [](GuestPtr<Vec4> to, GuestPtr<Vec4> from) {
+            vf(4) = load(to);
+            vf(5) = load(from);
+            set(vf(4), sub(vf(4), vf(5)), XYZ);
+            return vf(4);
+        };
+        const auto cross = [](__m128 u, __m128 v) {
+            vf(1) = u;
+            vf(2) = v;
+            set(acc(), mul(yzx(vf(1)), zxy(vf(2))), XYZ);
+            set(vf(3), sub(acc(), mul(yzx(vf(2)), zxy(vf(1)))), XYZ);
+            return vf(3);
+        };
+        const auto dot = [](__m128 u, __m128 v) {
+            vf(4) = u;
+            vf(5) = v;
+            set(vf(4), mul(vf(4), vf(5)), XYZ);
+            set(vf(4), add(vf(4), lane(vf(4), 1)), X);
+            set(vf(4), add(vf(4), lane(vf(4), 2)), X);
+            return ps2f(x(vf(4)));
+        };
+        const __m128 edgeA = difference(a, p);
+        const __m128 edgeC = difference(c, p);
+        const __m128 n0 = cross(edgeA, edgeC);
+        const __m128 edgeAB = difference(b, a);
+        const __m128 edgeAC = difference(c, a);
+        const __m128 n1 = cross(edgeAB, edgeAC);
+        if (dot(n0, n1) < ps2f(0.0f))
+            return 0;
+        const __m128 edgeBP = difference(p, b);
+        const __m128 edgeBC = difference(c, b);
+        const __m128 n2 = cross(edgeBP, edgeBC);
+        if (dot(n1, n2) < ps2f(0.0f))
+            return 0;
+        return dot(n2, n0) < ps2f(0.0f) ? 0 : 1;
+    }
+
+    // Whether the line from `origin` along the triangle's normal meets triangle (a, b, c) closer than `range`: the
+    // triangle's plane, the line-plane intersection into `hit`, the distance to it (VU0) into *distance, then the
+    // point-in-triangle test.
+    int Collide_RayTriangleA(GuestPtr<Vec4> origin, GuestPtr<Vec4> a, GuestPtr<Vec4> b, GuestPtr<Vec4> c, GuestPtr<Vec4> hit,
+                             GuestPtr<ps2f> distance, ps2f range)
+    {
+        using namespace vu0;
+        port::GuestLocal<Vec4> length; // declared in this order: the original's slots, entry sp - 0x10 and - 0x20
+        port::GuestLocal<Vec4> plane;
+        Math_TriangleNormal(plane, a, b, c);
+        plane->w = (-plane->x * a->x - plane->y * a->y) - plane->z * a->z;
+        if (Math_LinePlaneIntersect(GuestPtr<ps2f>{origin.address}, GuestPtr<ps2f>{hit.address}, -plane->x, -plane->y, -plane->z,
+                                    plane->x, plane->y, plane->z, plane->w) == 0)
+            return 0;
+        vf(4) = load(hit);
+        vf(5) = load(origin);
+        set(vf(6), sub(vf(5), vf(4)), XYZW);
+        set(vf(7), mul(vf(6), vf(6)), XYZ);
+        set(vf(8), add(vf(7), lane(vf(7), 1)), X);
+        set(vf(8), add(vf(8), lane(vf(7), 2)), X);
+        q() = sqrtQ(x(vf(8)));
+        set(vf(9), add(vf(0), _mm_set1_ps(q())), XYZW);
+        store(length, vf(9));
+        *distance = length->x;
+        if (!(length->x < range))
+            return 0;
+        return Collide_PointInTriangle(a, b, c, hit);
+    }
+
+    // Whether the segment from `start` to `end` crosses triangle (a, b, c): the line along the segment's unit
+    // direction meets the triangle's plane at `hit`, which must lie between the ends (the vectors to them point
+    // apart) and inside the triangle.
+    int Collide_RayTriangleB(GuestPtr<Vec4> start, GuestPtr<Vec4> end, GuestPtr<Vec4> a, GuestPtr<Vec4> b, GuestPtr<Vec4> c,
+                             GuestPtr<Vec4> hit)
+    {
+        using namespace vu0;
+        // Declared in this order, they take the original's slots, entry sp - 0x10 down to - 0x50.
+        port::GuestLocal<Vec4> product;
+        port::GuestLocal<Vec4> toStart;
+        port::GuestLocal<Vec4> toEnd;
+        port::GuestLocal<Vec4> plane;
+        port::GuestLocal<Vec4> direction;
+        vf(4) = load(end);
+        vf(5) = load(start);
+        set(vf(4), sub(vf(4), vf(5)), XYZW);
+        store(direction, vf(4));
+        vf(1) = load(direction);
+        set(vf(2), mul(vf(1), vf(1)), XYZW);
+        set(vf(2), add(vf(2), lane(vf(2), 1)), X);
+        set(vf(2), add(vf(2), lane(vf(2), 2)), X);
+        q() = rsqrt(x(vf(2)));
+        set(vf(2), mul(vf(1), _mm_set1_ps(q())), XYZ);
+        store(direction, vf(2));
+        Math_TriangleNormal(plane, a, b, c);
+        plane->w = (-plane->x * a->x - plane->y * a->y) - plane->z * a->z;
+        if (Math_LinePlaneIntersect(GuestPtr<ps2f>{start.address}, GuestPtr<ps2f>{hit.address}, direction->x, direction->y, direction->z,
+                                    plane->x, plane->y, plane->z, plane->w) == 0)
+            return 0;
+        vf(4) = load(hit);
+        vf(5) = load(start);
+        set(vf(4), sub(vf(4), vf(5)), XYZW);
+        store(toStart, vf(4));
+        vf(4) = load(hit);
+        vf(5) = load(end);
+        set(vf(4), sub(vf(4), vf(5)), XYZW);
+        store(toEnd, vf(4));
+        vf(4) = load(toStart);
+        vf(5) = load(toEnd);
+        set(vf(4), mul(vf(4), vf(5)), XYZ);
+        set(vf(4), add(vf(4), lane(vf(4), 1)), X);
+        set(vf(4), add(vf(4), lane(vf(4), 2)), X);
+        store(product, vf(4));
+        if (!(product->x <= ps2f(0.0f)))
+            return 0;
+        return Collide_PointInTriangle(a, b, c, hit) != 0 ? 1 : 0;
+    }
+
     // Screen position of a point: point x matrix, divided by its w, in 12.4 fixed point (out as four ints).
     // A w of 0 gives 0 (the runtime's vdiv).
     void Math_ProjectPoint(int, GuestPtr<Vec4> out, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix)
@@ -228,4 +349,7 @@ namespace mm
     PORT_FN(Math_MulMatVecVu0);
     PORT_FN(Vec3_Normalize);
     PORT_FN(Math_TriangleNormal);
+    PORT_FN(Collide_PointInTriangle);
+    PORT_FN(Collide_RayTriangleA);
+    PORT_FN(Collide_RayTriangleB);
 }

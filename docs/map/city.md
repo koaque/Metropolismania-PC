@@ -41,7 +41,7 @@ move in.
 
 ## Functions
 
-185 functions (typed 130, verified 55). Blocks: 55 can reach a thread switch, 7 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+185 functions (typed 127, verified 58). Blocks: 55 can reach a thread switch, 7 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -94,15 +94,15 @@ move in.
 | `0x00163AE0` | `int mm_Clock_AddWrap(int a0, int time, int offset)` | 52 | no | a1 + a2 mod 3600, wrapped at 86400 (seconds per day) |
 | `0x00163B20` | `int mm_BldgType_IsMyHome(BuildingType *btype)` | 32 | no | type id/kind (+0x134) in 5..8, the My Home types |
 | `0x00163B40` | `void mm_BldgType_DrawOccupants(BuildingType *btype, int layer, CityScene *city, MapPerson *person, int t0)` | 256 | indirect | (provisional) draws people at a building |
-| `0x00163C40` | `void mm_BldgType_OccupantMatrix(BuildingType *btype, Vec4 *out, Vec4 *position, uint32_t tile)` | 292 | no | (provisional) matrix for an occupant |
-| `0x00163D70` | `void mm_BldgType_DrawOccupant(BuildingType *btype, Vec4 *matrix, MapPerson *person, CityScene *city)` | 400 | no | (provisional) one occupant on its tile |
+| `0x00163C40` | `void mm_BldgType_OccupantMatrix(BuildingType *btype, Vec4 *colour, Vec4 *position, uint32_t tile)` | 292 | no | (provisional) matrix for an occupant |
+| `0x00163D70` | `void mm_BldgType_DrawOccupant(BuildingType *btype, Vec4 *colour, MapPerson *person, CityScene *city)` | 400 | no | (provisional) one occupant on its tile |
 | `0x00163F00` | `uint16_t mm_BldgType_FindEntrance(BuildingType *btype, CityScene *city, int x, int z, int32_t *side)` | 344 | no | (provisional) entrance tile next to a building (walkable flag 0x10, tables 0x1B13F0/0x1B1400) |
 | `0x00164060` | `int mm_BldgType_Slot30(BuildingType *btype)` | 8 | no | base slot +0x30 |
 | `0x00164070` | `int mm_BldgType_CollideA(BuildingType *btype)` | 8 | no | base slot +0x2C |
 | `0x00164080` | `int mm_BldgType_CollideB(BuildingType *btype)` | 8 | no | base slot +0x28 |
 | `0x00164090` | `uint8_t mm_BldgType_Slot1C(BuildingType *btype)` | 8 | no | base slot +0x1C |
 | `0x001640A0` | `int mm_BldgType_Slot20(BuildingType *btype)` | 8 | no | base slot +0x20 |
-| `0x001640B0` | `void mm_BldgType_DrawOccupants2(BuildingType *btype, int layer, CityScene *city, MapObject *obj, int t0, int t1, MapPerson *people)` | 356 | indirect | (provisional) |
+| `0x001640B0` | `void mm_BldgType_DrawOccupants2(BuildingType *btype, int layer, CityScene *city, MapObject *obj, int t0, int flags, MapPerson *people)` | 356 | indirect | (provisional) |
 | `0x00164220` | `void mm_BldgType_Draw(BuildingType *btype)` | 8 | no | base slot +0x14 |
 | `0x00164230` | `int mm_BldgType_Tick(BuildingType *btype)` | 8 | no | base slot +0x10 |
 | `0x00164240` | `void mm_BldgType_InitRecord(BuildingType *btype)` | 8 | no | base slot +0xC |
@@ -165,7 +165,7 @@ move in.
 | `0x00168F30` | `void mm_BldgLeveled_Draw(BuildingType *btype, int layer, CityScene *city, MapObject *obj, int t0, int t1, float x, float y, float z)` | 132 | no | instances when the record flag 1 is set |
 | `0x00168FC0` | `void mm_BldgLeveled_Tick(BuildingType *btype, CityScene *city, MapObject *obj)` | 1128 | no | (provisional) builds on leveled land for waiting applicants: levels the terrain, places the building |
 | `0x00169430` | `BuildingType *mm_BldgLeveled_ctor(BuildingType *btype, uint8_t *record, int id)` | 72 | yes | base constructor, vtable 0x1BD240, +0x160 from record byte 0x90 |
-| `0x00169480` | `void mm_BldgType_CallAll(CityScene *city)` | 120 | indirect | calls a virtual method on every building type |
+| `0x00169480` | `void mm_BldgType_CallAll(int time)` | 120 | indirect | calls a virtual method on every building type |
 | `0x00169500` | `BuildingType *mm_BldgType_Create(int id, uint8_t *record)` | 716 | yes | building type object for a STRTYPE.BIN record by its category (+0x20) |
 | `0x001697D0` | `void mm_BldgType_DeleteAll(void)` | 140 | yes | deletes every building type object |
 | `0x00169860` | `void mm_BldgType_LoadAll(void)` | 248 | yes | loads DATA\BIN\STRTYPE.BIN (0x9C-byte records, 281 types) and creates the type objects |

@@ -64,7 +64,10 @@ struct TextBox {
     int32_t pitchX;            /* +0x24 */
     int32_t pitchY;            /* +0x28 */
     int32_t cursor;            /* +0x2C reset by mm_TextBox_SetText */
-    uint8_t unk_30[0x10];
+    uint8_t unk_30[4];
+    uint32_t cells;            /* +0x34 character cells, 0x60 bytes each, glyph pointer at +0x54 (mm_TextBox_AppendText) */
+    int32_t columns;           /* +0x38 */
+    int32_t rows;              /* +0x3C */
 };
 /* Window frame (0xC0 bytes). */
 struct Frame {
@@ -172,8 +175,9 @@ struct CityCursorView {
 /* Light set (0x1B0 bytes): two light groups of 0xC0 bytes at +0x10 and +0xD0, coloured by the clock
    (mm_LightSet_UpdateByClock). */
 struct LightSet {
-    void *unk_00;              /* +0x00 object whose +0x20 mm_LightSet_SetField20 sets */
-    uint8_t unk_04[0x1C];
+    uint32_t packetA;          /* +0x00 VU1 packets (mm_LightSet_BuildPackets); mm_LightSet_SetField20 sets word 8 of A */
+    uint32_t packetB;          /* +0x04 */
+    uint8_t unk_08[0x18];
     Vec4 colourA;              /* +0x20 from the table 0x1B0550 */
     uint8_t unk_30[0x10];
     Vec4 paramsA;              /* +0x40 (4, 1, 1, 2) */
@@ -240,15 +244,30 @@ struct McManager {
 struct NameEntry { uint8_t data[0x124]; };
 /* Scene A: logos, memory card check, title (0x104 bytes). */
 struct SceneA {
-    uint8_t unk_00[0x10];
+    uint8_t unk_00[8];
+    TexSprite *logoSprite;     /* +0x08 drawn in layer set 0x0A/0x0B (mm_Title_DrawCommon) */
+    TexSprite *titleSprite;    /* +0x0C layer sets 0x1E..0x29 */
     TexSprite *logoLetters[3]; /* +0x10 the title logo's three bouncing letters (mm_Title_LogoLetters) */
     TexSprite *choices[2];     /* +0x1C the title menu's two choices (mm_Title_DrawChoices) */
-    uint8_t unk_24[0x18];
+    A3DObject *menuModel;      /* +0x24 layer set 0x28/0x29 */
+    A3DObject *logoModel;      /* +0x28 layer set 0x14/0x15 */
+    uint8_t unk_2C[0x10];
     int32_t choice;            /* +0x3C selected choice */
     int32_t choicePulsing;     /* +0x40 cleared when the selected choice's pulse ends */
     int32_t choiceCount;       /* +0x44 (provisional) 1: only the first choice is shown */
     int32_t pulseFrame;        /* +0x48 0..19 */
-    uint8_t unk_4C[0x8C];
+    uint8_t unk_4C[0xC];
+    int32_t showHint;          /* +0x58 the "[SELECT]SoundTest" line is drawn (mm_Title_PressStart) */
+    uint8_t unk_5C[0x54];
+    ListMenu *loadMenu;        /* +0xB0 layer set 0x28/0x29 */
+    McManager *mc;             /* +0xB4 */
+    TextBox *hintText;         /* +0xB8 */
+    uint8_t unk_BC[8];
+    int32_t pressStep;         /* +0xC4 0 before the title's first frame, 1 after */
+    uint8_t unk_C8[4];
+    int32_t fade;              /* +0xCC screen fade alpha (mm_Title_DrawCommon) */
+    int32_t layers;            /* +0xD0 layer set drawn */
+    int32_t idleTimer;         /* +0xD4 idle frames (restarted at 1800; provisional) */
     int32_t introFrame;        /* +0xD8 frames since the logo intro started */
     uint8_t unk_DC[0x28];
 };
@@ -424,7 +443,9 @@ struct Applicants {
     float unk_2B4;             /* +0x2B4 */
     uint8_t unk_2B8[4];
     int32_t unk_2BC;           /* +0x2BC */
-    uint8_t unk_2C0[0xC];
+    uint8_t unk_2C0[9];
+    uint8_t enabled;           /* +0x2C9 cleared while a menu or a talk is open */
+    uint8_t unk_2CA[2];
     int32_t cursor;            /* +0x2CC (provisional) */
     int32_t top;               /* +0x2D0 (provisional) */
     uint8_t unk_2D4[8];

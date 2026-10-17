@@ -20,6 +20,7 @@ typedef struct Words Words;
 typedef struct Stamina Stamina;
 typedef struct MemberStatus MemberStatus;
 typedef struct CharTypeRecord CharTypeRecord;
+typedef struct SeRequest SeRequest;
 
 /* Map tile (0x18 bytes): 128 x 128 of them at CityMap +0x04. */
 struct MapTile {
@@ -68,7 +69,7 @@ struct MapPerson {
     uint16_t follow;           /* +0x20 follow target */
     uint16_t flags;            /* +0x22 */
     uint8_t charType;          /* +0x24 index into the character type table (gp 0x1BDA3C) */
-    uint8_t unk_25;
+    uint8_t cooldown;          /* +0x25 counts down one per tick to 0 (mm_Person_TickCounters) */
     uint8_t schedState;        /* +0x26 */
     uint8_t activity;          /* +0x27 */
     uint16_t target;           /* +0x28 building the person heads for, 0x3F80 = none (mm_Person_TargetWork) */
@@ -140,7 +141,9 @@ struct BuildingType {
     uint8_t modelNode;         /* +0x150 */
     uint8_t entranceDrawMesh;  /* +0x151 businesses: mesh of the entrance (+1 for the closed sign, type flag 0x1000) */
     uint8_t firstDrawMesh;     /* +0x152 businesses: first mesh of the other parts, plus their variant */
-    uint8_t unk_153[5];
+    uint8_t unk_153;
+    int8_t callFlags;          /* +0x154 bit 7: families of this type phone when introduced (mm_Person_TickCounters) */
+    uint8_t unk_155[3];
     uint8_t entranceMesh;      /* +0x158 collision mesh of an entrance object (flag 0x20) */
     uint8_t firstMesh;         /* +0x159 first collision mesh of the other objects, plus their variant */
     uint8_t unk_15A[2];
@@ -307,6 +310,25 @@ struct Words {
     uint8_t unk_16[0xA];
     void *extraTable;          /* +0x20 */
     void *lineTable;           /* +0x24 */
+};
+
+/* Sound effect request (0x1C bytes): the frame's requests at 0x1F8710, kept in priority order by
+   mm_Se_Request, count at 0x1BDD08 (up to 578). */
+struct SeRequest {
+    uint8_t sound;             /* +0x00 0xFF = none */
+    uint8_t voice;             /* +0x01 from the sound's voice list */
+    uint8_t unk_02[2];
+    uint32_t owner;            /* +0x04 owner id (0xFFFF for sounds with flag 0x20) + (group * 16 + voice index) << 16 */
+    uint16_t priority;         /* +0x08 the sound's priority bits << 8 + half the distance; lower comes first */
+    uint8_t param0A;           /* +0x0A mm_Se_Request's a3 */
+    uint8_t param0B;           /* +0x0B t2 (0x3C from mm_Sound_PlaySe) */
+    int16_t param0C;           /* +0x0C t1 */
+    uint16_t voiceParam;       /* +0x0E second voice list byte + (sound flags & 0xF0) << 4 */
+    int32_t volumeLeft;        /* +0x10 1..0x3FFF */
+    int32_t volumeRight;       /* +0x14 */
+    uint8_t param18;           /* +0x18 t0 */
+    uint8_t param19;           /* +0x19 t3 */
+    uint8_t unk_1A[2];
 };
 
 /* City scene (0xD8 bytes), gp 0x1BDD00. */

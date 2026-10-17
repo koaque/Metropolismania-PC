@@ -198,6 +198,38 @@ namespace mm
             view->idleTime = 0.0f;
     }
 
+    // Talk session state 5: once the view reports idle, the scene mode is popped, the conversation and the view
+    // are deleted, the HUD and the applicants panel come back, and if the talk took the pad focus (city flag
+    // 0x40) it goes back to the city.
+    void Talk_Closed(GuestPtr<TalkSession> talk)
+    {
+        const auto slot = [](uint32_t widget, uint32_t offset) { return port::load<uint32_t>(port::load<uint32_t>(widget + 8u) + offset); };
+        const uint32_t view = talk->view.address;
+        if (port::callGuest<int>(slot(view, 0x1Cu), view) != 0)
+            return;
+        CityScene_PopMode(talk->city);
+        talk->base.state = 0;
+        if (const uint32_t conversation = talk->conversation.address)
+        {
+            port::callGuest<void>(slot(conversation, 8u), conversation, 1);
+            talk->conversation = GuestPtr<Widget>{0};
+        }
+        if (const uint32_t remaining = talk->view.address)
+        {
+            port::callGuest<void>(slot(remaining, 8u), remaining, 1);
+            talk->view = GuestPtr<TalkView>{0};
+        }
+        talk->city->hudVisible[1] = 1;
+        talk->city->hudVisible[2] = 1;
+        talk->city->hudVisible[3] = 1;
+        talk->city->applicants->enabled = 1;
+        if ((talk->city->flags & 0x40u) != 0)
+        {
+            Pad_TakeFocus(4, 0x1F0);
+            talk->city->flags &= ~0x40u;
+        }
+    }
+
     void TalkBldgFar_Active(GuestPtr<TalkView> view)
     {
         cameraOnBuilding(view);
@@ -245,6 +277,7 @@ namespace mm
     PORT_FN(TalkBldgFar_Close);
     PORT_FN(TalkBldgFar_Opening);
     PORT_FN(TalkBldgFar_Opened);
+    PORT_FN(Talk_Closed);
     PORT_FN(TalkView_HandleInput);
     PORT_FN(TalkBldgFar_Active);
     PORT_FN(TalkBldgFar_Closing);

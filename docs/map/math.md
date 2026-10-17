@@ -6,7 +6,7 @@ Vector and matrix helpers (VU0 macro code in the original), line/plane and trian
 
 ## Functions
 
-14 functions (typed 4, verified 10). Blocks: 0 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+14 functions (typed 1, verified 13). Blocks: 0 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -17,9 +17,9 @@ Vector and matrix helpers (VU0 macro code in the original), line/plane and trian
 | `0x00141890` | `void mm_Math_TriangleNormal(Vec4 *out, Vec4 *a, Vec4 *b, Vec4 *c)` | 60 | no | unit normal of triangle (a, b, c) in out.xyz via VU0; out.w = (w of vf6 as earlier VU0 code left it) squared (used by mm_Map_SampleHeight) |
 | `0x0015EDE0` | `uint32_t mm_Math_SqrtBits(int value)` | 48 | no | bit pattern of sqrtf((float)a0) (VU0 VSQRT), returned in v0; mm_Person_ChooseDestination uses it mod 3600 as a per-person time offset |
 | `0x00164740` | `void mm_Math_MulMatVecVu0(Vec4 *out, Vec4 *matrix, Vec4 *v)` | 44 | no | (provisional) VU0 matrix x vector |
-| `0x00182BF0` | `int mm_Collide_RayTriangleA(int a0, Vec4 *a1, Vec4 *a2, Vec4 *a3, int t0, float *t1, float f12)` | 304 | no | (provisional) ray against a triangle's plane, then inside test |
-| `0x00182D20` | `int mm_Collide_PointInTriangle(Vec4 *a0, Vec4 *a1, Vec4 *a2, Vec4 *a3)` | 356 | no | (provisional) same-side cross product test |
-| `0x00182E90` | `int mm_Collide_RayTriangleB(int a0, Vec4 *a1, Vec4 *a2, Vec4 *a3, Vec4 *t0, int t1)` | 400 | no | (provisional) second ray/triangle test |
+| `0x00182BF0` | `int mm_Collide_RayTriangleA(Vec4 *origin, Vec4 *a, Vec4 *b, Vec4 *c, Vec4 *hit, float *distance, float range)` | 304 | no | (provisional) ray against a triangle's plane, then inside test |
+| `0x00182D20` | `int mm_Collide_PointInTriangle(Vec4 *p, Vec4 *a, Vec4 *b, Vec4 *c)` | 356 | no | (provisional) same-side cross product test |
+| `0x00182E90` | `int mm_Collide_RayTriangleB(Vec4 *start, Vec4 *end, Vec4 *a, Vec4 *b, Vec4 *c, Vec4 *hit)` | 400 | no | (provisional) second ray/triangle test |
 | `0x001859D0` | `int mm_Math_LinePlaneIntersect(float *point, float *out, float dx, float dy, float dz, float a, float b, float c, float d)` | 724 | no | intersection of a line with plane a0..a3 (a,b,c,d), handles axis-parallel cases |
 | `0x00185CB0` | `float mm_Math_RayPlaneDistance(Vec4 *a0, Vec4 *a1, Vec4 *a2, int a3, uint32_t *t0)` | 228 | no | (provisional) normalised ray against a plane, distance to the hit |
 | `0x00185DA0` | `void mm_Math_ProjectionMatrix(float *matrix, float *screen, float distance, float zNear, float zFar)` | 204 | no | perspective matrix into a3: m0 = 2n/w, m5 = 2n/h, m10 = (f+n)/(f-n), m14 = -2fn/(f-n), m11 = 1, from a1 = near, a2 = far and the screen size in a4 |

@@ -20,7 +20,7 @@ placement checks (`mm_Placement_*`) and the per-object history (`mm_MapObj_*`) a
 
 ## Functions
 
-98 functions (typed 58, verified 40). Blocks: 12 can reach a thread switch, 8 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+98 functions (typed 57, verified 41). Blocks: 12 can reach a thread switch, 8 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -43,7 +43,7 @@ placement checks (`mm_Placement_*`) and the per-object history (`mm_MapObj_*`) a
 | `0x0013F2E0` | `void mm_Map_PlaceRoad(CityMap *map, uint32_t x, uint32_t z, int arg)` | 28 | no | places Road (type 4) at even coordinates (2 x 2 road pieces) |
 | `0x0013F300` | `void mm_Map_LevelArea(CityMap *map, int x, int z, int size, int arg)` | 196 | no | places Leveled land (type 3) over an a3 x a3 area |
 | `0x0013F3D0` | `void mm_CityMap_ClearObject(CityMap *map, int object)` | 496 | no | city map slot +0xC: removes object a1's people and the object, refills its footprint with Wasteland |
-| `0x0013F5D0` | `void mm_Map_ForEachTileInRect(CityMap *map, int x, int z, int size)` | 264 | indirect | calls a function for each tile of a rectangle |
+| `0x0013F5D0` | `void mm_Map_ClearArea(CityMap *map, int x, int z, int size)` | 264 | indirect | removes objects from each tile of a size x size square (the map's ClearObject slot) until wasteland (type 2) comes first |
 | `0x0013F6E0` | `int mm_Map_PlaceObject(CityMap *map, int owner, int type, int x, int z, int arg)` | 376 | indirect | places an object of type a2 at (a3, a4) after the placement check (new or stacked), updates geometry; returns its index or 0x3F80 |
 | `0x0013F860` | `int mm_Map_CanPlace(CityMap *map, int family, int typeIndex, int x, int z)` | 40 | no | placement test without placing (mm_Map_CheckPlacement) |
 | `0x0013F890` | `float mm_TerrainGen_SampleSmooth(CityMap *map, int x, int z)` | 444 | no | (provisional) smoothed height sample |

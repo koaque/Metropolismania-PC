@@ -112,6 +112,10 @@ namespace port
         const int64_t low = value;
         std::memcpy(&g_call.ctx->r[2], &low, sizeof(low));
     }
+    // The guest v0 as the function found it on entry (for paths that return it unchanged).
+    inline int32_t guestV0() { return static_cast<int32_t>(gpr64(g_call.ctx, 2)); }
+    // The caller's s0, which a few game functions hand back as their result on paths that never set v0.
+    inline int32_t guestS0() { return static_cast<int32_t>(gpr64(g_call.ctx, 16)); }
 
     // Integer-class argument k: a0-a3, t0-t3 (GPR 4-11), then the caller's stack slots.
     inline uint64_t intArg(const R5900Context *ctx, int k)

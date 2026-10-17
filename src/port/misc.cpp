@@ -713,6 +713,44 @@ namespace mm
         }
     }
 
+    // char: a resident's tick. Friendship rises (+0x2F), the countdown at +0x25 runs down, and while the city has
+    // flag 4 the introduction calls go on: when the tick count reaches the next call's, the family this resident
+    // introduces phones about moving in, provided it can apply, the applicants have room (under 32) and its type
+    // phones (+0x154 bit 7); each call lowers the city's pending approval, and after four they stop. The wait
+    // grows by one tick after every try.
+    void Person_TickCounters(GuestPtr<CharClass>, GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
+    {
+        StatusByte_IncLevel(GuestPtr<uint8_t>::of(person->status));
+        if (person->cooldown != 0)
+            --person->cooldown;
+        if (globals::introCallDue.get() == 0)
+            return;
+        globals::introCallTick.set(globals::introCallTick.get() + 1);
+        if (globals::introCallTick.get() != globals::introCallDue.get())
+            return;
+        if ((city->flags & 4u) == 0)
+        {
+            globals::introCallDue.set(0);
+            return;
+        }
+        if (city->applicants->count < 0x20 && Family_CanApply(person->introduces, city) != 0)
+        {
+            const uint32_t type = port::load<uint32_t>(globals::buildingTypeTable.get() + 4u * static_cast<uint32_t>(Family_GetTypeIndex(person->introduces)));
+            if (GuestPtr<BuildingType>{type}->callFlags < 0 && PhoneCall_Post(city->phoneCalls, kNoPerson, person->introduces, 0, 1) != 0)
+            {
+                globals::introCallCount.set(globals::introCallCount.get() + 1);
+                if (globals::introCallCount.get() >= 4)
+                {
+                    globals::introCallDue.set(0);
+                    globals::introCallCount.set(0);
+                }
+                --city->pendingApproval;
+            }
+        }
+        if (globals::introCallDue.get() != 0)
+            globals::introCallDue.set(globals::introCallDue.get() + 1);
+    }
+
     // char: on every 8th frame (by the person's index), turns the person towards the middle of the building on
     // the tile it walks to and moves it one step along its facing (VU0, the matrix times the step vector): the
     // class's walking speed plus (index & 3) / 2000, times 8, doubled while running (flag 0x80). A person that
@@ -806,6 +844,35 @@ namespace mm
         port::store<uint8_t>(slot + 1u, id[1]);
         for (int l = level + 1; l < 9; ++l)
             ++levels[l];
+    }
+
+    // path: the distance between two tiles on the ground plane, on VU0. As in the original only x and z go into
+    // the two stack vectors, so their y and w lanes (converted and subtracted too) are whatever the stack held:
+    // the slots are declared to land where the original's are (entry sp - 0x10, - 0x20, - 0x30).
+    ps2f Path_TileDistance(int, uint32_t tileA, uint32_t tileB)
+    {
+        using namespace vu0;
+        port::GuestLocal<Vec4> result;
+        port::GuestLocal<Vec4> to;
+        port::GuestLocal<Vec4> from;
+        const auto put = [](GuestPtr<Vec4> slot, uint32_t tile) {
+            const int t = static_cast<int>(tile & 0xFFFFu);
+            port::store<int32_t>(slot.address, t % 128);
+            port::store<int32_t>(slot.address + 8u, t / 128);
+        };
+        put(from, tileA);
+        put(to, tileB);
+        vf(4) = load(from);
+        vf(5) = load(to);
+        set(vf(4), itof0(vf(4)), XYZW);
+        set(vf(5), itof0(vf(5)), XYZW);
+        set(vf(6), sub(vf(5), vf(4)), XYZW);
+        set(vf(7), mul(vf(6), vf(6)), X | Z);
+        set(vf(8), add(vf(7), lane(vf(7), 2)), X);
+        q() = sqrtQ(x(vf(8)));
+        set(vf(9), add(vf(0), _mm_set1_ps(q())), XYZW);
+        store(result, vf(9));
+        return result->x;
     }
 
     // char: whether someone with a higher index stands within 0.25 of `person` on the tile it would step onto.
@@ -903,8 +970,10 @@ namespace mm
     PORT_FN(Person_FindBuildingInList);
     PORT_FN(Player_Turn);
     PORT_FN(EvThreeUnsatisfied_Check);
+    PORT_FN(Person_TickCounters);
     PORT_FN(Person_UpdatePose);
     PORT_FN(EventQueue_InsertByPriority);
+    PORT_FN(Path_TileDistance);
     PORT_FN(Person_ProbeTile);
     PORT_FN(Char_CheckNeighbourTile);
 }

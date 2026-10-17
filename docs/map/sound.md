@@ -14,7 +14,7 @@ Sound on the EE side; the driver is YYSOUND on the IOP.
 
 ## Functions
 
-57 functions (ported 3, typed 25, verified 29). Blocks: 4 can reach a thread switch, 1 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+57 functions (ported 3, typed 23, verified 31). Blocks: 4 can reach a thread switch, 1 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -28,7 +28,7 @@ Sound on the EE side; the driver is YYSOUND on the IOP.
 | `0x00188EE0` | `int mm_Se_RequestTileSounds(int x, int z, int a2, float angle, float distance)` | 468 | no | requests the sounds of the objects on map tile (a2, a3), with a random extra cue when a4 != 0 |
 | `0x001890C0` | `uint32_t mm_Se_PickTerrainAmbience(int x, int z, int a2)` | 508 | no | ambient sound id for a position: above the city's level threshold (+0xB0) picks 0x1C/0x1D, else from the 5-byte table at 0x1B35F0 through mm_Se_MatchSchedule |
 | `0x001892D0` | `int mm_Se_MatchSchedule(uint32_t monthFrom, uint32_t monthTo, uint32_t hourFrom, uint32_t hourTo, uint32_t length, uint32_t start10, int lead)` | 912 | no | 1 when the current month (city +0x88 mod 12) and hour/minute (0x1BDD34) fall inside the given month and time ranges |
-| `0x00189660` | `int mm_Se_Request(uint16_t owner, uint32_t group, uint8_t sound, uint8_t a3, uint8_t t0, uint16_t t1, uint8_t t2, uint8_t t3, float angle, float distance)` | 1244 | no | adds a sound request (position, sound id, priority, volume, pitch, ...) to the request list at 0x1F8710 (count at gp 0x1BDD08); ids look up the 16-byte sound table 0x1B2EE0 |
+| `0x00189660` | `int mm_Se_Request(uint16_t owner, uint32_t group, uint8_t sound, uint8_t param0A, uint8_t param18, uint16_t param0C, uint8_t param0B, uint8_t param19, float angle, float distance)` | 1244 | no | adds a sound request (position, sound id, priority, volume, pitch, ...) to the request list at 0x1F8710 (count at gp 0x1BDD08); ids look up the 16-byte sound table 0x1B2EE0 |
 | `0x00189B40` | `void mm_Se_StopOwner(char owner)` | 260 | no | stops every effect voice (16 at 0x1F8140, 15 at 0x1F8440, 0x30 bytes each) and request owned by a0 |
 | `0x00189C50` | `void mm_Se_RequestForObject(uint32_t a0, uint32_t a1, uint32_t a2, int a3, int t0, int t1)` | 1876 | no | requests the sounds of a moving or placed object by its type and distance to the listener |
 | `0x0018A3B0` | `int mm_Sound_PlaySe(int sound, int a1, int a2, float angle, float distance)` | 148 | no | plays sound id a0 & 0xFF through 0x189660; ids flagged 0x10 in the 16-byte table 0x1B2EE0 get a rotating handle (0x1BDCFC, wraps at 255) |
@@ -45,7 +45,7 @@ Sound on the EE side; the driver is YYSOUND on the IOP.
 | `0x0018CC70` | `void mm_Bgm_FadeOut(int time)` | 48 | no | cmd 0xE on voice 15 to volume 0 over a0, BGM state (gp 0x1BDCF4?) = 4 |
 | `0x0018CCA0` | `int mm_Bgm_SetActive(int active)` | 132 | no | a0 == 0 fades the BGM out (state 4); otherwise stops a pending jingle, restores volume 0xC0 and sets state 3 |
 | `0x0018CD30` | `void mm_Bgm_SetTrackSlot(char slot, int play, int enable)` | 360 | no | sets or adds track slot + 6 in the music table (0x1F8120, entries 3..12 of (id, enabled)); with play: fades voice 15 out with it next, or queues it (0x1BDCF0) |
-| `0x0018CEA0` | `int mm_Bgm_Update(void)` | 688 | no | picks the BGM for the city state (flags +0xB4, +0x8C) and switches banks (NOMAL_A.SQ/HD/BD ...) when the driver is idle |
+| `0x0018CEA0` | `void mm_Bgm_Update(void)` | 688 | no | picks the BGM for the city state (flags +0xB4, +0x8C) and switches banks (NOMAL_A.SQ/HD/BD ...) when the driver is idle |
 | `0x0018D150` | `int mm_SoundCmd_02_Zero(void)` | 12 | no | queues cmd 2 with zero arguments |
 | `0x0018D160` | `void mm_Sound_ResetVoices(int bankSet)` | 284 | no | queues cmd 1, resets all voice volumes (0xFFF group A, 0x100 group B, 0xC0 voice 15) and clears the effect voice tables |
 | `0x0018D280` | `void mm_Se_BuildAmbienceMap(void)` | 348 | no | clears the 4096-entry ambience grid at 0x1FC690 and fills it from the city map and the table at 0x1B35F0 |
