@@ -14,7 +14,7 @@ Sound on the EE side; the driver is YYSOUND on the IOP.
 
 ## Functions
 
-57 functions (ported 3, typed 31, verified 23). Blocks: 4 can reach a thread switch, 1 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+57 functions (ported 3, typed 27, verified 27). Blocks: 4 can reach a thread switch, 1 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -27,11 +27,11 @@ Sound on the EE side; the driver is YYSOUND on the IOP.
 | `0x00188DB0` | `int mm_Se_InTimeWindow(MapObject *obj, uint32_t start, int length)` | 300 | no | checks the game clock (seconds of day mod 3600, 0x1BDD34) against a window [a1, a2) offset per object; 0xFF = outside, 0x100 = inside |
 | `0x00188EE0` | `int mm_Se_RequestTileSounds(int x, int z, int a2, float angle, float distance)` | 468 | no | requests the sounds of the objects on map tile (a2, a3), with a random extra cue when a4 != 0 |
 | `0x001890C0` | `uint32_t mm_Se_PickTerrainAmbience(int x, int z, int a2)` | 508 | no | ambient sound id for a position: above the city's level threshold (+0xB0) picks 0x1C/0x1D, else from the 5-byte table at 0x1B35F0 through mm_Se_MatchSchedule |
-| `0x001892D0` | `int mm_Se_MatchSchedule(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t t0, uint32_t t1, int t2)` | 912 | no | 1 when the current month (city +0x88 mod 12) and hour/minute (0x1BDD34) fall inside the given month and time ranges |
+| `0x001892D0` | `int mm_Se_MatchSchedule(uint32_t monthFrom, uint32_t monthTo, uint32_t hourFrom, uint32_t hourTo, uint32_t length, uint32_t start10, int lead)` | 912 | no | 1 when the current month (city +0x88 mod 12) and hour/minute (0x1BDD34) fall inside the given month and time ranges |
 | `0x00189660` | `int mm_Se_Request(uint16_t owner, uint32_t group, uint8_t sound, uint8_t a3, uint8_t t0, uint16_t t1, uint8_t t2, uint8_t t3, float angle, float distance)` | 1244 | no | adds a sound request (position, sound id, priority, volume, pitch, ...) to the request list at 0x1F8710 (count at gp 0x1BDD08); ids look up the 16-byte sound table 0x1B2EE0 |
 | `0x00189B40` | `void mm_Se_StopOwner(char owner)` | 260 | no | stops every effect voice (16 at 0x1F8140, 15 at 0x1F8440, 0x30 bytes each) and request owned by a0 |
 | `0x00189C50` | `void mm_Se_RequestForObject(uint32_t a0, uint32_t a1, uint32_t a2, int a3, int t0, int t1)` | 1876 | no | requests the sounds of a moving or placed object by its type and distance to the listener |
-| `0x0018A3B0` | `int mm_Sound_PlaySe(int sound, int a1, int a2, float angle, float distance)` | 148 | no | plays sound id a0 & 0xFF through 0x189660; ids flagged 0x10 in the 16-byte table 0x1B2EE0 get a rotating handle (0x1BDCFC, wraps at 255) |
+| `0x0018A3B0` | `void mm_Sound_PlaySe(int sound, int a1, int a2, float angle, float distance)` | 148 | no | plays sound id a0 & 0xFF through 0x189660; ids flagged 0x10 in the 16-byte table 0x1B2EE0 get a rotating handle (0x1BDCFC, wraps at 255) |
 | `0x0018A450` | `void mm_Se_PlayMessageSound(char code)` | 1456 | no | message window sound for code a0 (0x14, 0x0A, ...), several fixed sound ids |
 | `0x0018AA00` | `void mm_Se_PlayVariant(uint8_t variant)` | 1148 | no | plays one of a few sound ids (0x29 ...) chosen by a0, with a random pitch offset (0..199) |
 | `0x0018AE80` | `void mm_Se_UpdateTimeOfDay(void)` | 452 | no | time-of-day cues: fades sound 0x36 by the clock (silent 6:00-18:00), chime 0x37 at fixed times in months 7-8 |

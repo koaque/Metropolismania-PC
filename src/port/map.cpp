@@ -217,6 +217,105 @@ namespace mm
         return GuestPtr<MapPerson>{0};
     }
 
+    // Removes object record `object` (1..0x3F7F): out of its claim section's tile lists, type cleared, and the
+    // map's object and category counts lowered.
+    void MapObj_Delete(GuestPtr<CityMap> map, int object)
+    {
+        if (object <= 0 || object >= kNoObject)
+            return;
+        const GuestPtr<BuildingType> btype{globals::buildingTypeAddress(map->objects[object].type)};
+        TileLists_RemoveAll(map->tileLists, object, GuestPtr<int16_t>{static_cast<uint32_t>(Claim_GetSectionC(btype->claimC))});
+        map->objects[object].type = 0;
+        --map->objectCount;
+        const GuestPtr<int32_t> categoryCount = GuestPtr<int32_t>::of(map->categoryCount[0]) + btype->category;
+        if (btype->category == 4)
+        {
+            if ((btype->flags & 0x80u) == 0)
+                --*categoryCount;
+            return;
+        }
+        if (btype->category == 5 && btype->size >= 3)
+            --map->bigCategory5Count;
+        --*categoryCount;
+    }
+
+    // Sets the height of a size x size block of tiles from (x, z), skipping tiles off the map, and rebuilds
+    // each one's geometry.
+    void Map_SetAreaHeight(GuestPtr<CityMap> map, int x, int z, int size, ps2f height)
+    {
+        for (int row = 0; row < size; ++row)
+            for (int col = 0; col < size; ++col)
+            {
+                const int tz = z + row, tx = x + col;
+                if (!onMap(tx, tz))
+                    continue;
+                tileAt(map, tx, tz).height = height;
+                Map_UpdateTileGeometry(map, tx, tz);
+            }
+    }
+
+    // Takes `item` out of the tile lists named by a zero-terminated list of (list, unused) halfword pairs.
+    void TileLists_RemoveAll(GuestPtr<TileLists> lists, int item, GuestPtr<int16_t> pairs)
+    {
+        for (; *pairs != 0; pairs = pairs + 2)
+            TileLists_Remove(lists, static_cast<uint32_t>(item), static_cast<uint16_t>(*pairs));
+    }
+
+    // Recomputes the geometry of every tile in rect = (x0, z0, x1, z1), inclusive.
+    void Map_UpdateAreaGeometry(GuestPtr<CityMap> map, GuestPtr<int32_t> rect)
+    {
+        for (int z = rect[1]; z <= rect[3]; ++z)
+            for (int x = rect[0]; x <= rect[2]; ++x)
+                Map_UpdateTileGeometry(map, x, z);
+    }
+
+    // Before placing over the size x size block at (x, z): the box around every object standing there
+    // (box = min x, min z, max x, max z, widened by two tiles within the map) and whether the cells those
+    // objects cover stay below the free object records plus the objects found. A tile whose first object is
+    // record 0 counts as empty, and an object is counted once per tile of the block it covers, as in the
+    // original.
+    int Placement_CheckNeighbours(GuestPtr<CityMap> map, int x, int z, int size, GuestPtr<int32_t> box)
+    {
+        box[3] = 0;
+        box[2] = 0;
+        box[1] = 0x7F;
+        box[0] = 0x7F;
+        int cells = 0, objects = 0;
+        for (int row = z; row < z + size; ++row)
+            for (int col = x, tile = x + row * kMapSize; col < x + size; ++col, ++tile)
+            {
+                const uint16_t id = map->tiles[tile].firstObject;
+                if (id == 0)
+                    continue;
+                ++objects;
+                const MapObject &obj = map->objects[id];
+                const int objSize = port::load<uint8_t>(globals::buildingTypeAddress(obj.type) + 0x142u);
+                const int ox = obj.tile & 0x7F, oz = obj.tile >> 7;
+                for (int cz = oz; cz < oz + objSize; ++cz)
+                    for (int cx = ox; cx < ox + objSize; ++cx)
+                    {
+                        if (cx < box[0])
+                            box[0] = cx;
+                        if (cz < box[1])
+                            box[1] = cz;
+                        if (box[2] < cx)
+                            box[2] = cx;
+                        if (box[3] < cz)
+                            box[3] = cz;
+                        ++cells;
+                    }
+            }
+        if (box[0] >= 2)
+            box[0] -= 2;
+        if (box[1] >= 2)
+            box[1] -= 2;
+        if (box[2] < 0x7F)
+            box[2] += 2;
+        if (box[3] < 0x7F)
+            box[3] += 2;
+        return cells < (0x3F80 - map->objectCount) + objects;
+    }
+
     // Placement rule (type +0x144) for stacking: the tile's top object must be an entrance (0x20), not
     // highlighted (1), of a type with the same rule, and the stack below the type's limit (+0x138) - 1.
     int Placement_CheckTypeRule(GuestPtr<CityMap> map, int type, int tile)
@@ -327,5 +426,10 @@ namespace mm
     PORT_FN(Map_FindPersonObjectOnTile);
     PORT_FN(Map_FindWorkerOnTile);
     PORT_FN(Placement_CheckTypeRule);
+    PORT_FN(Placement_CheckNeighbours);
+    PORT_FN(TileLists_RemoveAll);
+    PORT_FN(Map_SetAreaHeight);
+    PORT_FN(MapObj_Delete);
+    PORT_FN(Map_UpdateAreaGeometry);
     PORT_FN(Terrain_AddQuad);
 }

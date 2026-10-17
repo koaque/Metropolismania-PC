@@ -58,6 +58,10 @@ Do not edit the two generated headers; `pipeline.py stage` rewrites them.
    and capture with `--autoplay load`, which loads the newest one, or `--autoplay explore`, which
    then plays the city at random (talks, menus, building) so far more functions get called.
    `MMPC_CALL_COUNTS=<file>` on any run writes how often each game function was called.
+   For a function with branches on its float or integer arguments, also run `pipeline.py difftest
+   --fuzz 30 --fuzz-functions <Name>`: every record is replayed 30 more times with mutated arguments
+   (pointers unchanged), which reaches cases the recorded calls never take. Leave out functions whose
+   integer arguments are loop bounds or sizes.
 5. Mark it in `config/port_status.csv` (`ported`, then `verified` once difftested).
 
 `MMPC_PORT_DISABLE=0xADDR,...` (or `all`) runs the generated code again for chosen functions, to

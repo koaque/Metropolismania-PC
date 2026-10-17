@@ -3,6 +3,7 @@
 
 #include "game_functions.h"
 #include "game_globals.h"
+#include "sdk.h"
 
 namespace mm
 {
@@ -57,6 +58,20 @@ namespace mm
                 return static_cast<int>(globals::kSaveSlotHeaders + 0x40u * s);
             }
             ++found;
+        }
+        return 0;
+    }
+
+    // The header of the save named `name` on a card (slots 0-7 for card 0, 8-15 for card 1), or 0.
+    int McManager_FindSave(GuestPtr<McManager>, GuestPtr<char> name, int card)
+    {
+        const uint32_t first = card != 0 ? 8u : 0u, end = card != 0 ? 16u : 8u;
+        for (uint32_t slot = first; slot < end; ++slot)
+        {
+            const uint32_t header = globals::kSaveSlotHeaders + 0x40u * slot;
+            if (port::load<int32_t>(globals::kSaveSlotSizes + 4u * slot) >= 1 && port::load<char>(globals::kSaveSlotNames + 0x44u * slot) != 0 &&
+                sdk::strcmp(header + 0x20u, name.address) == 0)
+                return static_cast<int>(header);
         }
         return 0;
     }
@@ -164,6 +179,7 @@ namespace mm
     PORT_FN(McManagerSub_ctor);
     PORT_FN(McManager_HasAnySave);
     PORT_FN(McManager_FindSlotA);
+    PORT_FN(McManager_FindSave);
     PORT_FN(McManager_GetCardStatus);
     PORT_FN(McManager_InitSlots);
     PORT_FN(McManager_ClearSlots);

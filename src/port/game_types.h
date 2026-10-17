@@ -119,12 +119,24 @@ struct A3DObject {
 };
 /* Camera (0x310 bytes). */
 struct Camera {
-    uint8_t unk_000[0x110];
+    uint8_t unk_000[0x10];
+    Vec4 worldScreenA[4];      /* +0x010 view x screenA (mm_Camera_UpdateMatrices) */
+    Vec4 worldScreenB[4];      /* +0x050 view x screenB */
+    Vec4 normalLight[4];       /* +0x090 sceVu0NormalLightMatrix of lightDir (mm_Camera_UpdateLightMatrices) */
+    Vec4 lightColour[4];       /* +0x0D0 sceVu0LightColorMatrix of lightRgb and ambient */
     Vec4 fogA;                 /* +0x110 (0, 0, 0, fog coefficient) from mm_Camera_SetFogRange */
     Vec4 fogB;                 /* +0x120 (0, 0, 0, fog coefficient) */
     Vec4 eye;                  /* +0x130 */
     Vec4 target;               /* +0x140 */
-    uint8_t unk_150[0x1B4];
+    Vec4 up;                   /* +0x150 for sceVu0CameraMatrix */
+    Vec4 lightDir[3];          /* +0x160 */
+    Vec4 lightRgb[3];          /* +0x190 */
+    Vec4 ambient;              /* +0x1C0 */
+    uint8_t unk_1D0[0x10];
+    Vec4 view[4];              /* +0x1E0 world to camera (sceVu0CameraMatrix) */
+    Vec4 screenA[4];           /* +0x220 */
+    Vec4 screenB[4];           /* +0x260 */
+    uint8_t unk_2A0[0x64];
     ps2f fogFar;              /* +0x304 */
     ps2f fogNear;             /* +0x308 */
     uint8_t unk_30C[4];
@@ -260,7 +272,13 @@ struct StatusPanel { uint8_t data[0xC0]; };
 /* Pause and save menu (0x99C bytes). */
 struct PauseMenu { uint8_t data[0x99C]; };
 /* Minimap (0x21DC bytes). */
-struct Minimap { uint8_t data[0x21DC]; };
+struct Minimap {
+    uint8_t cells[0x2000];     /* +0x0000 one nibble per tile (mm_Minimap_Plot) */
+    uint8_t packet[0x1D0];     /* +0x2000 GS packet of the map image (mm_Minimap_BuildPacket) */
+    GuestPtr<A3DObject> model;          /* +0x21D0 placed by mm_Minimap_SetView */
+    GuestPtr<A3DObject> frameModel;     /* +0x21D4 */
+    int32_t blink;             /* +0x21D8 frame counter for the blinking markers */
+};
 /* City cursor (0x1E0 bytes). */
 struct CityCursor {
     CityCursorView views[2];   /* +0x000 one per frame parity (0x1BDCD0 & 1) */
@@ -335,9 +353,9 @@ struct Player {
     int32_t unk_0C;
     Vec4 position;             /* +0x10 */
     uint8_t unk_20[0x14];
-    int32_t unk_34;            /* +0x34 */
-    uint8_t unk_38[4];
-    int32_t unk_3C;            /* +0x3C */
+    ps2f swayPhase;           /* +0x34 passed to mm_Instance_DrawSwayingIfRoom */
+    int32_t swayArg;           /* +0x38 */
+    int32_t visible;           /* +0x3C drawn when non-zero (mm_Player_Draw) */
     int32_t unk_40;            /* +0x40 */
     int32_t unk_44;            /* +0x44 */
     int32_t unk_48;            /* +0x48 */
@@ -377,14 +395,11 @@ struct Applicants {
 /* Markers model (0x130 bytes). */
 struct Markers {
     GuestPtr<A3DObject> model;          /* +0x000 from 0x1F3B28 */
-    GuestPtr<void> unk_004;             /* +0x004 from 0x1F3B08 */
+    GuestPtr<A3DObject> markerModel;    /* +0x004 from 0x1F3B08: the marker nodes */
     uint8_t unk_008[8];
     Vec4 matrices[16];         /* +0x010 four 4x4 matrices, one per marker */
-    int32_t unk_110;           /* +0x110 1 at construction */
-    int32_t unk_114;           /* +0x114 2 */
-    int32_t unk_118;           /* +0x118 3 */
-    int32_t unk_11C;           /* +0x11C -1 */
-    int32_t unk_120;
+    int32_t nodes[4];          /* +0x110 node of markerModel per marker, -1 = none (1, 2, 3, -1 at construction) */
+    int32_t visible;           /* +0x120 */
     int32_t unk_124;
     GuestPtr<void> vtable;              /* +0x128 */
     uint8_t unk_12C[4];
@@ -415,7 +430,9 @@ struct StageState {
     int32_t unk_1C4;           /* +0x1C4 2500 at reset */
     int32_t stage;             /* +0x1C8 stage number, -1 = none */
     int32_t quota;             /* +0x1CC population target (mm_EvQuota80_Check) */
-    uint8_t unk_1D0[0xB0];
+    uint8_t unk_1D0[4];
+    int32_t missionTarget;     /* +0x1D4 compared with mm_CityScene_MissionProgress (mm_EvMissionCleared_Check) */
+    uint8_t unk_1D8[0xA8];
     int32_t unk_280;           /* +0x280 */
 };
 /* Character type class object (0x24 bytes; the person class is 0x28 with its walking speed at +0x24),
@@ -463,7 +480,8 @@ struct LayerC {
     int32_t rectZ0;            /* +0x224 */
     int32_t rectX1;            /* +0x228 */
     int32_t rectZ1;            /* +0x22C */
-    uint8_t unk_230[0x10];
+    GuestPtr<void> unk_230;             /* +0x230 from 0x1F3B1C at construction */
+    uint8_t unk_234[0xC];
 };
 struct LayerD { uint8_t data[0x410]; };
 struct LayerE { uint8_t data[0x6E0]; };
@@ -545,7 +563,7 @@ struct MapPerson {
     uint8_t unk_25;
     uint8_t schedState;        /* +0x26 */
     uint8_t activity;          /* +0x27 */
-    uint16_t home;             /* +0x28 home object */
+    uint16_t target;           /* +0x28 building the person heads for, 0x3F80 = none (mm_Person_TargetWork) */
     uint16_t family;           /* +0x2A */
     uint16_t introduces;       /* +0x2C family this resident can introduce */
     uint8_t member;            /* +0x2E */
@@ -565,7 +583,12 @@ struct CityMap {
     GuestPtr<MapTile> tiles;            /* +0x04 */
     GuestPtr<MapObject> objects;        /* +0x08 */
     GuestPtr<TileLists> tileLists;      /* +0x0C */
-    uint8_t unk_10[0x54];
+    uint8_t unk_10[0x14];
+    int32_t objectCount;       /* +0x24 object records in use (of 0x3F80) */
+    uint8_t unk_28[8];
+    int32_t categoryCount[11]; /* +0x30 buildings per STRTYPE.BIN category (mm_MapObj_Delete; category 4 only without type flag 0x80) */
+    int32_t bigCategory5Count; /* +0x5C category 5 buildings of size 3 and up */
+    uint8_t unk_60[4];
     GuestPtr<void> vtable;              /* +0x64 */
     GuestPtr<MapPerson> people;         /* +0x68 */
     uint8_t unk_6C[8];
@@ -900,10 +923,21 @@ static_assert(offsetof(A3DObject, model) == 0x00, "A3DObject.model");
 static_assert(offsetof(A3DObject, matrix) == 0x10, "A3DObject.matrix");
 static_assert(offsetof(A3DObject, meshes) == 0x50, "A3DObject.meshes");
 static_assert(sizeof(Camera) == 0x310, "Camera size");
+static_assert(offsetof(Camera, worldScreenA) == 0x010, "Camera.worldScreenA");
+static_assert(offsetof(Camera, worldScreenB) == 0x050, "Camera.worldScreenB");
+static_assert(offsetof(Camera, normalLight) == 0x090, "Camera.normalLight");
+static_assert(offsetof(Camera, lightColour) == 0x0D0, "Camera.lightColour");
 static_assert(offsetof(Camera, fogA) == 0x110, "Camera.fogA");
 static_assert(offsetof(Camera, fogB) == 0x120, "Camera.fogB");
 static_assert(offsetof(Camera, eye) == 0x130, "Camera.eye");
 static_assert(offsetof(Camera, target) == 0x140, "Camera.target");
+static_assert(offsetof(Camera, up) == 0x150, "Camera.up");
+static_assert(offsetof(Camera, lightDir) == 0x160, "Camera.lightDir");
+static_assert(offsetof(Camera, lightRgb) == 0x190, "Camera.lightRgb");
+static_assert(offsetof(Camera, ambient) == 0x1C0, "Camera.ambient");
+static_assert(offsetof(Camera, view) == 0x1E0, "Camera.view");
+static_assert(offsetof(Camera, screenA) == 0x220, "Camera.screenA");
+static_assert(offsetof(Camera, screenB) == 0x260, "Camera.screenB");
 static_assert(offsetof(Camera, fogFar) == 0x304, "Camera.fogFar");
 static_assert(offsetof(Camera, fogNear) == 0x308, "Camera.fogNear");
 static_assert(sizeof(CityCamera) == 0x540, "CityCamera size");
@@ -974,6 +1008,11 @@ static_assert(offsetof(Bag, unk_1A4) == 0x1A4, "Bag.unk_1A4");
 static_assert(sizeof(StatusPanel) == 0xC0, "StatusPanel size");
 static_assert(sizeof(PauseMenu) == 0x99C, "PauseMenu size");
 static_assert(sizeof(Minimap) == 0x21DC, "Minimap size");
+static_assert(offsetof(Minimap, cells) == 0x0000, "Minimap.cells");
+static_assert(offsetof(Minimap, packet) == 0x2000, "Minimap.packet");
+static_assert(offsetof(Minimap, model) == 0x21D0, "Minimap.model");
+static_assert(offsetof(Minimap, frameModel) == 0x21D4, "Minimap.frameModel");
+static_assert(offsetof(Minimap, blink) == 0x21D8, "Minimap.blink");
 static_assert(sizeof(CityCursor) == 0x1E0, "CityCursor size");
 static_assert(offsetof(CityCursor, views) == 0x000, "CityCursor.views");
 static_assert(offsetof(CityCursor, visible) == 0x1A0, "CityCursor.visible");
@@ -1018,8 +1057,9 @@ static_assert(offsetof(Player, mode) == 0x00, "Player.mode");
 static_assert(offsetof(Player, previousMode) == 0x04, "Player.previousMode");
 static_assert(offsetof(Player, unk_08) == 0x08, "Player.unk_08");
 static_assert(offsetof(Player, position) == 0x10, "Player.position");
-static_assert(offsetof(Player, unk_34) == 0x34, "Player.unk_34");
-static_assert(offsetof(Player, unk_3C) == 0x3C, "Player.unk_3C");
+static_assert(offsetof(Player, swayPhase) == 0x34, "Player.swayPhase");
+static_assert(offsetof(Player, swayArg) == 0x38, "Player.swayArg");
+static_assert(offsetof(Player, visible) == 0x3C, "Player.visible");
 static_assert(offsetof(Player, unk_40) == 0x40, "Player.unk_40");
 static_assert(offsetof(Player, unk_44) == 0x44, "Player.unk_44");
 static_assert(offsetof(Player, unk_48) == 0x48, "Player.unk_48");
@@ -1044,12 +1084,10 @@ static_assert(offsetof(Applicants, top) == 0x2D0, "Applicants.top");
 static_assert(offsetof(Applicants, claims) == 0x2DC, "Applicants.claims");
 static_assert(sizeof(Markers) == 0x130, "Markers size");
 static_assert(offsetof(Markers, model) == 0x000, "Markers.model");
-static_assert(offsetof(Markers, unk_004) == 0x004, "Markers.unk_004");
+static_assert(offsetof(Markers, markerModel) == 0x004, "Markers.markerModel");
 static_assert(offsetof(Markers, matrices) == 0x010, "Markers.matrices");
-static_assert(offsetof(Markers, unk_110) == 0x110, "Markers.unk_110");
-static_assert(offsetof(Markers, unk_114) == 0x114, "Markers.unk_114");
-static_assert(offsetof(Markers, unk_118) == 0x118, "Markers.unk_118");
-static_assert(offsetof(Markers, unk_11C) == 0x11C, "Markers.unk_11C");
+static_assert(offsetof(Markers, nodes) == 0x110, "Markers.nodes");
+static_assert(offsetof(Markers, visible) == 0x120, "Markers.visible");
 static_assert(offsetof(Markers, vtable) == 0x128, "Markers.vtable");
 static_assert(sizeof(Notice) == 0x14, "Notice size");
 static_assert(offsetof(Notice, id) == 0x00, "Notice.id");
@@ -1066,6 +1104,7 @@ static_assert(offsetof(StageState, unk_1C0) == 0x1C0, "StageState.unk_1C0");
 static_assert(offsetof(StageState, unk_1C4) == 0x1C4, "StageState.unk_1C4");
 static_assert(offsetof(StageState, stage) == 0x1C8, "StageState.stage");
 static_assert(offsetof(StageState, quota) == 0x1CC, "StageState.quota");
+static_assert(offsetof(StageState, missionTarget) == 0x1D4, "StageState.missionTarget");
 static_assert(offsetof(StageState, unk_280) == 0x280, "StageState.unk_280");
 static_assert(offsetof(CharClass, parts) == 0x00, "CharClass.parts");
 static_assert(offsetof(CharClass, unk_10) == 0x10, "CharClass.unk_10");
@@ -1087,6 +1126,7 @@ static_assert(offsetof(LayerC, rectX0) == 0x220, "LayerC.rectX0");
 static_assert(offsetof(LayerC, rectZ0) == 0x224, "LayerC.rectZ0");
 static_assert(offsetof(LayerC, rectX1) == 0x228, "LayerC.rectX1");
 static_assert(offsetof(LayerC, rectZ1) == 0x22C, "LayerC.rectZ1");
+static_assert(offsetof(LayerC, unk_230) == 0x230, "LayerC.unk_230");
 static_assert(offsetof(LayerF, packet) == 0x130, "LayerF.packet");
 static_assert(sizeof(MapTile) == 0x18, "MapTile size");
 static_assert(offsetof(MapTile, height) == 0x00, "MapTile.height");
@@ -1120,7 +1160,7 @@ static_assert(offsetof(MapPerson, flags) == 0x22, "MapPerson.flags");
 static_assert(offsetof(MapPerson, charType) == 0x24, "MapPerson.charType");
 static_assert(offsetof(MapPerson, schedState) == 0x26, "MapPerson.schedState");
 static_assert(offsetof(MapPerson, activity) == 0x27, "MapPerson.activity");
-static_assert(offsetof(MapPerson, home) == 0x28, "MapPerson.home");
+static_assert(offsetof(MapPerson, target) == 0x28, "MapPerson.target");
 static_assert(offsetof(MapPerson, family) == 0x2A, "MapPerson.family");
 static_assert(offsetof(MapPerson, introduces) == 0x2C, "MapPerson.introduces");
 static_assert(offsetof(MapPerson, member) == 0x2E, "MapPerson.member");
@@ -1134,6 +1174,9 @@ static_assert(offsetof(CityMap, packedTiles) == 0x00, "CityMap.packedTiles");
 static_assert(offsetof(CityMap, tiles) == 0x04, "CityMap.tiles");
 static_assert(offsetof(CityMap, objects) == 0x08, "CityMap.objects");
 static_assert(offsetof(CityMap, tileLists) == 0x0C, "CityMap.tileLists");
+static_assert(offsetof(CityMap, objectCount) == 0x24, "CityMap.objectCount");
+static_assert(offsetof(CityMap, categoryCount) == 0x30, "CityMap.categoryCount");
+static_assert(offsetof(CityMap, bigCategory5Count) == 0x5C, "CityMap.bigCategory5Count");
 static_assert(offsetof(CityMap, vtable) == 0x64, "CityMap.vtable");
 static_assert(offsetof(CityMap, people) == 0x68, "CityMap.people");
 static_assert(offsetof(CityMap, population) == 0x74, "CityMap.population");

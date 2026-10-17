@@ -3,6 +3,7 @@
 
 #include "game_functions.h"
 #include "game_globals.h"
+#include "sdk.h"
 
 namespace mm
 {
@@ -47,6 +48,55 @@ namespace mm
         out[1] = '\0';
     }
 
+    // The value in decimal with a comma every three digits, built from the right by prepending each
+    // character (memmove of the string so far); a minus sign for negative values. Returns the length.
+    int Text_FormatThousands(GuestPtr<char> out, int value)
+    {
+        const bool negative = value < 0;
+        out[0] = '\0';
+        if (negative)
+            value = sdk::abs(value);
+        int length = 0;
+        const auto prepend = [&](char c)
+        {
+            ++length;
+            sdk::memmove(out.address + 1u, out.address, length);
+            out[0] = c;
+        };
+        int digits = 0;
+        do
+        {
+            const int digit = value % 10;
+            value /= 10;
+            if (digits != 0 && digits % 3 == 0)
+                prepend(',');
+            prepend(static_cast<char>('0' + digit));
+            ++digits;
+        } while (value != 0);
+        if (negative)
+            prepend('-');
+        return length;
+    }
+
+    // "$" and the value with thousands separators; right-aligned in `width` characters (padded with spaces)
+    // unless leftAlign.
+    void Text_FormatMoney(GuestPtr<char> out, int value, int width, int leftAlign)
+    {
+        const int length = Text_FormatThousands(out, value) + 1; // with the terminator
+        sdk::memmove(out.address + 1u, out.address, length);
+        out[0] = '$';
+        if (leftAlign != 0)
+            return;
+        const int pad = width - length;
+        if (pad > 0)
+        {
+            sdk::memmove(out.address + static_cast<uint32_t>(pad), out.address, length + 1);
+            sdk::memset(out.address, ' ', pad);
+        }
+    }
+
     PORT_FN(Text_SplitDigits);
+    PORT_FN(Text_FormatMoney);
+    PORT_FN(Text_FormatThousands);
     PORT_FN(Text_FormatPadded);
 }

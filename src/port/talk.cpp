@@ -85,6 +85,77 @@ namespace mm
         Dma_AppendCall(static_cast<int>(view->cursorFrame.address));
     }
 
+    // The far view of a building (allocated 0x2A0 bytes) keeps the camera to return to: the eye in the base
+    // view's last 16 bytes (+0x260, over targetObject and targetPerson) and the target at +0x270. The
+    // building is at +0x280.
+    namespace
+    {
+        GuestPtr<Vec4> farReturnEye(GuestPtr<TalkView> view) { return GuestPtr<Vec4>{view.address + 0x260u}; }
+        GuestPtr<Vec4> farReturnTarget(GuestPtr<TalkView> view) { return GuestPtr<Vec4>{view.address + 0x270u}; }
+        int farBuilding(GuestPtr<TalkView> view) { return port::load<int32_t>(view.address + 0x280u); }
+        GuestPtr<Camera> cityCamera(GuestPtr<TalkView> view) { return GuestPtr<Camera>{view->city->cityCamera.address}; }
+
+        void cameraOnBuilding(GuestPtr<TalkView> view)
+        {
+            port::GuestLocal<Vec4> target; // declared first: the same stack slots as the original's frame
+            port::GuestLocal<Vec4> eye;
+            TalkView_BuildingCamera(view, farBuilding(view), eye, target);
+            Camera_SetEyeTarget(cityCamera(view), eye, target);
+            Camera_UpdateMatrices(cityCamera(view));
+        }
+
+        void cameraBack(GuestPtr<TalkView> view)
+        {
+            Camera_SetEyeTarget(cityCamera(view), farReturnEye(view), farReturnTarget(view));
+            Camera_UpdateMatrices(cityCamera(view));
+        }
+    }
+
+    // Widget states of the far view: 1 opening (fade out), 2 opened (camera moves to the building, fade in),
+    // 3 active, 4 closing, 5 closed (camera back, HUD element 1 shown again).
+    void TalkBldgFar_Opening(GuestPtr<TalkView> view)
+    {
+        if (CityScene_GetFade(view->city) == 0)
+        {
+            CityScene_StartFade(view->city, 8);
+            view->base.state = 2;
+        }
+        cameraBack(view);
+    }
+
+    void TalkBldgFar_Opened(GuestPtr<TalkView> view)
+    {
+        if (CityScene_GetFade(view->city) == 0)
+            view->base.state = 3;
+        cameraOnBuilding(view);
+    }
+
+    void TalkBldgFar_Active(GuestPtr<TalkView> view)
+    {
+        cameraOnBuilding(view);
+        TalkView_HandleInput(view);
+    }
+
+    void TalkBldgFar_Closing(GuestPtr<TalkView> view)
+    {
+        if (CityScene_GetFade(view->city) == 0)
+        {
+            CityScene_StartFade(view->city, 8);
+            view->base.state = 5;
+        }
+        cameraOnBuilding(view);
+    }
+
+    void TalkBldgFar_Closed(GuestPtr<TalkView> view)
+    {
+        if (CityScene_GetFade(view->city) == 0)
+        {
+            view->base.state = 0;
+            view->city->hudVisible[1] = 1;
+        }
+        cameraBack(view);
+    }
+
     // The far view of a building fades the city (speed 8) as it opens and closes.
     void TalkBldgFar_Open(GuestPtr<TalkView> view)
     {
@@ -104,4 +175,9 @@ namespace mm
     PORT_FN(TalkView_DrawCursor);
     PORT_FN(TalkBldgFar_Open);
     PORT_FN(TalkBldgFar_Close);
+    PORT_FN(TalkBldgFar_Opening);
+    PORT_FN(TalkBldgFar_Opened);
+    PORT_FN(TalkBldgFar_Active);
+    PORT_FN(TalkBldgFar_Closing);
+    PORT_FN(TalkBldgFar_Closed);
 }

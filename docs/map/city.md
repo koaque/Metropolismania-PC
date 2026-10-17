@@ -41,7 +41,7 @@ move in.
 
 ## Functions
 
-185 functions (typed 143, verified 42). Blocks: 55 can reach a thread switch, 7 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+185 functions (typed 136, verified 49). Blocks: 55 can reach a thread switch, 7 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -110,7 +110,7 @@ move in.
 | `0x00164280` | `BuildingType *mm_BldgType_BaseDtor(BuildingType *btype, int16_t deleteFlag)` | 136 | yes | vtable 0x1BD000; releases the shared name data when the last type goes |
 | `0x00164310` | `BuildingType *mm_BldgType_BaseCtor(BuildingType *btype, uint8_t *record, uint16_t id)` | 1068 | yes | base constructor: shared DATA\BIN\POSTNAME.BIN, model and parameters |
 | `0x00164770` | `BuildingType *mm_BldgAmusementPark_dtor(BuildingType *btype, int16_t deleteFlag)` | 128 | yes | category 11 (Amusement Park), vtable 0x1BD040 |
-| `0x001647F0` | `void mm_BldgAmusementPark_DrawAnim(BuildingType *btype, CityScene *city)` | 232 | no | swaying ride animation between the opening hours |
+| `0x001647F0` | `void mm_BldgAmusementPark_DrawAnim(BuildingType *btype, int time)` | 232 | no | swaying ride animation between the opening hours |
 | `0x001648E0` | `void mm_BldgAmusementPark_Draw(BuildingType *btype, int layer, CityScene *city, MapObject *obj, int t0, int t1, float x, float y, float z)` | 524 | no | instances for the park |
 | `0x00164AF0` | `BuildingType *mm_BldgAmusementPark_ctor(BuildingType *btype, uint8_t *record, int id)` | 64 | yes | Building constructor, vtable 0x1BD040 |
 | `0x00164B30` | `BuildingType *mm_BldgBusiness_dtor(BuildingType *btype, int16_t deleteFlag)` | 112 | yes | category 6 (factories, shops), vtable 0x1BD1C0 |
@@ -121,7 +121,7 @@ move in.
 | `0x00165140` | `int mm_BldgOffice_Tick(BuildingType *btype, CityScene *city, MapObject *obj, int timeFlags)` | 132 | no | Building tick plus a check of the tile's first object |
 | `0x001651D0` | `BuildingType *mm_BldgOffice_ctor(BuildingType *btype, uint8_t *record, int id)` | 72 | yes | Building constructor, vtable 0x1BD080, +0x160 from record byte 0x92 |
 | `0x00165220` | `BuildingType *mm_BldgRanch_dtor(BuildingType *btype, int16_t deleteFlag)` | 128 | yes | category 12 (Ranch), vtable 0x1BD0C0 |
-| `0x001652A0` | `void mm_BldgRanch_DrawAnim(BuildingType *btype, CityScene *city)` | 232 | no | animals' animation between the opening hours |
+| `0x001652A0` | `void mm_BldgRanch_DrawAnim(BuildingType *btype, int time)` | 232 | no | animals' animation between the opening hours |
 | `0x00165390` | `void mm_BldgRanch_Draw(BuildingType *btype, int layer, CityScene *city, MapObject *obj, int t0, int t1, float x, float y, float z)` | 524 | indirect | instances for the ranch |
 | `0x001655A0` | `BuildingType *mm_BldgRanch_ctor(BuildingType *btype, uint8_t *record, int id)` | 88 | yes | Building constructor, vtable 0x1BD0C0, models from 0x1F3B50.. |
 | `0x00165600` | `BuildingType *mm_Bldg_dtor(BuildingType *btype, int16_t deleteFlag)` | 96 | yes | intermediate Building class, vtable 0x1BD100 |
@@ -132,7 +132,7 @@ move in.
 | `0x00165E80` | `void mm_BldgClaims_EvalC(BuildingType *btype, CityScene *city, MapObject *obj)` | 712 | no | checks whether the claim is met (nothing missing nearby): flag 8, approval +3, sound and minimap mark; else meter handling |
 | `0x00166150` | `void mm_BldgClaims_EvalD(BuildingType *btype, CityScene *city, MapObject *obj)` | 1768 | no | (provisional) part D |
 | `0x00166840` | `int mm_BldgClaims_Evaluate(BuildingType *btype, CityScene *city, MapObject *obj, int rise)` | 628 | no | per building: claim check (part C), meter rise by the rate, part D above the low threshold, flag 0x40 above 0xFE |
-| `0x00166AC0` | `int mm_BldgClaims_DrawIcon(BuildingType *btype, MapObject *obj, Vec4 *colour)` | 372 | no | claim icon colour from the meter level (1 slow pulse, 2 fast pulse) |
+| `0x00166AC0` | `void mm_BldgClaims_DrawIcon(BuildingType *btype, MapObject *obj, Vec4 *colour)` | 372 | no | claim icon colour from the meter level (1 slow pulse, 2 fast pulse) |
 | `0x00166C40` | `void mm_Bldg_InitRecordBase(BuildingType *btype, MapObject *obj)` | 12 | no | record +0x12 = 0x18 |
 | `0x00166C50` | `BuildingType *mm_Bldg_ctor(BuildingType *btype, uint8_t *record, int id)` | 52 | yes | base constructor, vtable 0x1BD100 |
 | `0x00166C90` | `BuildingType *mm_BldgField_dtor(BuildingType *btype, int16_t deleteFlag)` | 96 | yes | category 4 (crop fields), vtable 0x1BD140 |

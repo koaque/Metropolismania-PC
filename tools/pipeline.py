@@ -593,13 +593,17 @@ def cmd_capture(args: argparse.Namespace) -> None:
     cmd_run(args)
 
 
-def cmd_difftest(_: argparse.Namespace) -> None:
+def cmd_difftest(args: argparse.Namespace) -> None:
     """Replay the records in work/difftest/ through each ported function and its generated original,
-    headless (src/port/difftest.cpp). Exits non-zero when any record differs."""
+    headless (src/port/difftest.cpp). Exits non-zero when any record differs. --fuzz N also replays each
+    record N times with mutated float and integer arguments for the --fuzz-functions named."""
     LOGS.mkdir(exist_ok=True)
     log_path = LOGS / f"difftest-{dt.datetime.now():%Y%m%d-%H%M%S}.log"
     exe = tool("ps2EntryRunner")
     env = dict(os.environ, MMPC_DIFFTEST=str(DIFFTEST), PS2X_HEADLESS="1")
+    if args.fuzz:
+        env["MMPC_DIFFTEST_FUZZ"] = str(args.fuzz)
+        env["MMPC_DIFFTEST_FUZZ_FUNCTIONS"] = args.fuzz_functions or "all"
     env.pop("PS2X_WINDOW_POS", None)
     with log_path.open("w", encoding="utf-8", errors="replace") as fh:
         code = subprocess.run([str(exe), str(ORIGINAL / ELF_NAME)], stdout=fh, stderr=subprocess.STDOUT, cwd=exe.parent,
@@ -664,7 +668,10 @@ def main() -> int:
     p.add_argument("--shot-every", type=float, default=45.0)
     p.add_argument("--env", action="append", help="extra environment variable KEY=VALUE (repeatable)")
     p.set_defaults(func=cmd_capture)
-    sub.add_parser("difftest", help="replay work/difftest records through ported and generated code").set_defaults(func=cmd_difftest)
+    p = sub.add_parser("difftest", help="replay work/difftest records through ported and generated code")
+    p.add_argument("--fuzz", type=int, default=0, help="also replay each record N times with mutated arguments")
+    p.add_argument("--fuzz-functions", default="", help="comma-separated names to fuzz (default: all)")
+    p.set_defaults(func=cmd_difftest)
     p = sub.add_parser("all")
     p.add_argument("image", nargs="?")
     p.add_argument("--reimport", action="store_true")

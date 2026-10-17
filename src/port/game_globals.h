@@ -35,8 +35,14 @@ namespace mm::globals
     // mm_SoundCmd_Flush. Each entry: +0 command, +4 state, +8 and +0xC words, arguments from +0x10.
     inline constexpr uint32_t kSoundCmds = 0x001FE6C0u;
     inline constexpr GuestVar<int32_t> soundCmdIndex{0x001BDD44u};   // next entry to write
+    inline constexpr GuestVar<int32_t> soundCmdSent{0x001BDD48u};    // entries before it have been sent (mm_SoundCmd_Flush)
     inline constexpr GuestVar<uint32_t> soundVoicesQueued{0x001BDD4Cu}; // bit per voice with a queued play (cmd 3)
     inline constexpr GuestVar<uint32_t> soundSlotsQueued{0x001BDD50u};  // bit per sequence slot with a queued play (cmd 0xC)
+    inline constexpr GuestVar<uint32_t> soundStopsQueued{0x001BDD54u};  // a third mask of queued commands (mm_Sound_GetStatus)
+    inline constexpr GuestVar<uint16_t> soundNextOwner{0x001BDCFCu};    // owner id for the next owned effect, wraps at 0xFF
+    inline constexpr uint32_t kSoundTable = 0x001B2EE0u;                // 0x10 bytes per sound id; flag 0x10 = owned
+    inline constexpr uint32_t kSoundStatus = 0x0020B7C0u;               // driver status block (0x40 bytes) as received
+    inline constexpr uint32_t kSoundStatusView = 0x0020B840u;           // the same with the queued commands merged in
 
     // pad: button words as the game uses them (the raw pad word byte-swapped, analog sticks folded in).
     inline constexpr GuestVar<uint32_t> padHeld{0x001BDCA0u};
@@ -53,6 +59,9 @@ namespace mm::globals
     inline constexpr GuestVar<uint32_t> fontData{0x001BDC98u};       // 0x90 bytes per glyph
     inline constexpr GuestVar<uint32_t> claimData{0x001BDA50u};      // starts with the two claim meter thresholds (u16)
     inline constexpr GuestVar<uint32_t> claimSectionC{0x001BDA58u};  // offset table (words) into claimData
+
+    // core: frames since start (counted by mm_MainLoop); blinking effects use it.
+    inline constexpr GuestVar<int32_t> frameCounter{0x001BDCACu};
 
     // gfx: the two 64 KB DMA lists, which one is current and where it is written, and the packet buffer.
     inline constexpr uint32_t kDmaLists = 0x001BD9C0u;               // two list addresses
@@ -154,6 +163,7 @@ namespace mm::globals
     inline constexpr GuestVar<int32_t> instanceBuffer{0x001BDA30u};
     inline constexpr GuestVar<int32_t> instanceLimitedCount{0x001BDA34u};
     inline constexpr GuestVar<int32_t> instanceLimit{0x001BD980u};
+    inline constexpr GuestVar<float> frameLoad{0x001BD9B8u};          // last frame's load in percent (provisional)
 
     // city: building drawing. Matrices the draw slots fill in (one 4x4 per layer, translation in the last
     // row), the models holding the road and building meshes and the wasteland meshes, and the steps to the

@@ -14,6 +14,11 @@
 // different frames), the result register (v0 or f0, unless the function returns void), sp, ra, the
 // callee-saved registers (s0-s7, gp, fp, f20-f31) and the VU0 registers (vf1-vf31, ACC, Q). The process exits
 // with the number of failing records.
+//
+// Fuzzing: MMPC_DIFFTEST_FUZZ=N with MMPC_DIFFTEST_FUZZ_FUNCTIONS=<names or "all"> also replays each
+// record N times with the float and integer arguments mutated (zero often, sign flips, small and large
+// values, within each parameter's type); pointers keep their recorded values. That reaches branches the
+// recorded calls never take. Only for functions whose integer arguments are not loop bounds.
 // Side effects outside guest memory (GS, IOP, files) are not compared yet.
 
 #include "difftest.h"
@@ -39,6 +44,8 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <set>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -270,17 +277,18 @@ namespace port
             std::string fault;
         };
 
-        void runOnce(PS2Runtime &runtime, GuestFn fn, uint32_t address, const Record &rec, Outcome &out)
+        void runOnce(PS2Runtime &runtime, GuestFn fn, uint32_t address, const Record &rec, const R5900Context &start, Outcome &out)
         {
             std::memcpy(g_rdram, rec.rdram.data(), PS2_RAM_SIZE);
             std::memcpy(g_scratchpad, rec.scratchpad.data(), PS2_SCRATCHPAD_SIZE);
-            out.ctx = rec.ctx;
+            out.ctx = start;
             setGpr64(&out.ctx, 31, kReturnSentinel);
             out.ctx.pc = address;
             runtime.eeScheduler().enterNoPreempt();
             try
             {
                 fn(g_rdram, &out.ctx, &runtime);
+                finishGuestCall(g_rdram, &out.ctx, &runtime, address, kReturnSentinel);
             }
             catch (const EeDispatcherTransfer &)
             {
@@ -510,6 +518,22 @@ namespace port
             return;
         const std::filesystem::path dir(dirText);
         setFaultsThrow(true);
+        // MMPC_DIFFTEST_FUZZ=N replays every record N more times with mutated arguments, for the functions
+        // named in MMPC_DIFFTEST_FUZZ_FUNCTIONS (comma separated, or "all").
+        const int fuzzCount = env("MMPC_DIFFTEST_FUZZ") ? std::atoi(env("MMPC_DIFFTEST_FUZZ")) : 0;
+        std::set<std::string> fuzzNames;
+        bool fuzzAll = false;
+        if (const char *names = env("MMPC_DIFFTEST_FUZZ_FUNCTIONS"))
+        {
+            std::stringstream list(names);
+            for (std::string item; std::getline(list, item, ',');)
+            {
+                if (item == "all")
+                    fuzzAll = true;
+                else if (!item.empty())
+                    fuzzNames.insert(item);
+            }
+        }
         size_t records = 0, failed = 0, functions = 0, untested = 0;
         // results.json: per function, how many records ran and failed (tools/port_status.py reads it).
         std::string results = "{\n";
@@ -537,8 +561,9 @@ namespace port
                 continue;
             }
             ++functions;
-            size_t ok = 0;
+            size_t ok = 0, fuzzRuns = 0, fuzzOk = 0, fuzzReported = 0;
             const size_t failedBefore = failed;
+            const bool fuzzThis = fuzzCount > 0 && p.mutate && (fuzzAll || fuzzNames.count(p.name) != 0);
             for (const auto &file : files)
             {
                 Record rec;
@@ -554,21 +579,56 @@ namespace port
                 // exists, so a ported callee cannot hide a difference in its caller.
                 Outcome original, portedRun;
                 useGenerated(runtime, true);
-                runOnce(runtime, p.original, p.address, rec, original);
+                runOnce(runtime, p.original, p.address, rec, rec.ctx, original);
                 useGenerated(runtime, false);
-                runOnce(runtime, p.wrapper, p.address, rec, portedRun);
+                runOnce(runtime, p.wrapper, p.address, rec, rec.ctx, portedRun);
                 const std::vector<std::string> diffs = compare(p, rec, original, portedRun);
                 if (diffs.empty())
-                {
                     ++ok;
-                    continue;
+                else
+                {
+                    ++failed;
+                    std::cout << "[difftest] FAIL " << p.name << " " << file.filename().string() << std::endl;
+                    for (const std::string &d : diffs)
+                        std::cout << "    " << d << std::endl;
                 }
-                ++failed;
-                std::cout << "[difftest] FAIL " << p.name << " " << file.filename().string() << std::endl;
-                for (const std::string &d : diffs)
-                    std::cout << "    " << d << std::endl;
+
+                // Fuzzing: the same record with other float and integer arguments (pointers unchanged).
+                for (int variant = 0; fuzzThis && variant < fuzzCount; ++variant)
+                {
+                    R5900Context start = rec.ctx;
+                    p.mutate(&start, 0x9E3779B9u * static_cast<uint32_t>((&file - files.data()) * 1009 + variant + 1));
+                    Outcome a, b;
+                    useGenerated(runtime, true);
+                    runOnce(runtime, p.original, p.address, rec, start, a);
+                    useGenerated(runtime, false);
+                    runOnce(runtime, p.wrapper, p.address, rec, start, b);
+                    ++fuzzRuns;
+                    const std::vector<std::string> fd = compare(p, rec, a, b);
+                    if (fd.empty())
+                    {
+                        ++fuzzOk;
+                        continue;
+                    }
+                    ++failed;
+                    if (fuzzReported++ < 3)
+                    {
+                        std::cout << "[difftest] FAIL " << p.name << " " << file.filename().string() << " fuzz " << variant << ": a0-t3";
+                        for (int reg = 4; reg < 12; ++reg)
+                            std::cout << " " << std::hex << gpr64(&start, reg) << std::dec;
+                        std::cout << ", f12-f19";
+                        for (int f = 12; f < 20; ++f)
+                            std::cout << " " << start.f[f];
+                        std::cout << std::endl;
+                        for (const std::string &d : fd)
+                            std::cout << "    " << d << std::endl;
+                    }
+                }
             }
-            std::cout << "[difftest] " << p.name << ": " << ok << "/" << files.size() << " exact" << std::endl;
+            std::cout << "[difftest] " << p.name << ": " << ok << "/" << files.size() << " exact";
+            if (fuzzThis)
+                std::cout << ", fuzzed " << fuzzOk << "/" << fuzzRuns << " exact";
+            std::cout << std::endl;
             addResult(p, files.size(), failed - failedBefore);
         }
         results += "\n}\n";

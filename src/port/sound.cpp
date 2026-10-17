@@ -2,6 +2,7 @@
 
 #include "game_functions.h"
 #include "game_globals.h"
+#include "sdk.h"
 
 namespace mm
 {
@@ -124,7 +125,7 @@ namespace mm
             port::store<uint8_t>(globals::kSeVoices + 0x30u * voice, 0xFF);
         globals::soundLastClock.set(-1);
         port::store<uint16_t>(0x001BDD08u, 0);
-        port::store<uint16_t>(0x001BDCFCu, 0);
+        globals::soundNextOwner.set(0);
         globals::soundCity.set(GuestPtr<CityScene>{0});
         globals::clockStopped.set(0);
         globals::bgmFadeCounter.set(0);
@@ -250,6 +251,139 @@ namespace mm
             port::store<uint8_t>(0x001BDCF0u, static_cast<uint8_t>(found + 0x7F));
     }
 
+    // The driver's status block as the game reads it: a copy with the plays, slots and third command group
+    // still waiting in the command ring merged in (words 1, 2 and 6).
+    namespace
+    {
+        void refreshStatusView()
+        {
+            sdk::memcpy(globals::kSoundStatusView, globals::kSoundStatus, 0x40);
+            const auto merge = [](uint32_t offset, uint32_t queued)
+            { port::store<uint32_t>(globals::kSoundStatusView + offset, port::load<uint32_t>(globals::kSoundStatus + offset) | queued); };
+            merge(0x4, globals::soundSlotsQueued.get());
+            merge(0x8, globals::soundVoicesQueued.get());
+            merge(0x18, globals::soundStopsQueued.get());
+        }
+    }
+
+    int Sound_GetStatus()
+    {
+        refreshStatusView();
+        return static_cast<int>(globals::kSoundStatusView);
+    }
+
+    // Busy while the driver reports work (status word 3) or commands are still waiting to be sent.
+    int Sound_IsBusy()
+    {
+        refreshStatusView();
+        if (port::load<int32_t>(globals::kSoundStatusView + 0xCu) != 0)
+            return 1;
+        return globals::soundCmdSent.get() != globals::soundCmdIndex.get();
+    }
+
+    // Plays effect `sound`; sounds flagged 0x10 get the next owner id (wrapping at 0xFF) so they can be
+    // stopped later.
+    // (Callers never read the result; Se_Request leaves v0 unset for sound 0xFF.)
+    void Sound_PlaySe(int sound, int a1, int a2, ps2f angle, ps2f distance)
+    {
+        const uint8_t flags = port::load<uint8_t>(globals::kSoundTable + 0x10u * static_cast<uint32_t>(sound & 0xFF));
+        if ((flags & 0x10u) == 0)
+        {
+            Se_Request(0, 0, static_cast<uint8_t>(sound), 0, 0, static_cast<uint16_t>(a1), static_cast<uint8_t>(a2), 0, angle, distance);
+            return;
+        }
+        const uint16_t owner = globals::soundNextOwner.get();
+        globals::soundNextOwner.set(static_cast<uint16_t>(owner + 1));
+        Se_Request(owner, 0, static_cast<uint8_t>(sound), 0, 0, static_cast<uint16_t>(a1), static_cast<uint8_t>(a2), 0, angle, distance);
+        if (globals::soundNextOwner.get() == 0xFF)
+            globals::soundNextOwner.set(0);
+    }
+
+    // Whether a scheduled sound plays now: within the months monthFrom..monthTo (0 = any), the hours
+    // hourFrom..hourTo (wrapping past midnight) and, inside the hour, a window starting at start10 * 10
+    // minutes for `length` minutes (0 = the whole hour range). Returns 0 outside, 2 inside the window but
+    // past the first `lead` minutes of it, else 1 (lead 0: always 1 inside). Every value is a byte, as in
+    // the original. A month range that wraps past December never excludes anything there (the test can
+    // never be true), also as in the original.
+    int Se_MatchSchedule(uint32_t monthFrom, uint32_t monthTo, uint32_t hourFrom, uint32_t hourTo, uint32_t length,
+                         uint32_t start10, int lead)
+    {
+        const int month = (static_cast<int8_t>(globals::soundCity.get()->monthCount % 12) + 1) & 0xFF;
+        if (monthFrom != 0)
+        {
+            const int from = monthFrom & 0xFF, to = monthTo & 0xFF;
+            if (to < from)
+            {
+                if (from < month && month < to)
+                    return 0;
+            }
+            else if (month < from || to < month)
+                return 0;
+        }
+
+        const int hFrom = hourFrom & 0xFF, hTo = hourTo & 0xFF;
+        const int clock = globals::soundClock.get();
+        const int hour = (clock / 3600) & 0xFF;
+        const int minute = ((clock / 60) % 60) & 0xFF;
+        if (hTo < hFrom)
+        {
+            if (hTo < hour && hour < hFrom)
+                return 0;
+            if (static_cast<int>(monthFrom & 0xFF) == month && hour < hFrom)
+                return 0;
+            if (static_cast<int>(monthTo & 0xFF) == month && hTo < hour)
+                return 0;
+        }
+        else if (hTo < hour || hour < hFrom)
+            return 0;
+
+        const int start = static_cast<int>(start10 & 0xFF) * 10 & 0xFF;
+        const int len = length & 0xFF;
+        const int end = (start + len) & 0xFF;
+        const int leadEnd = (start + static_cast<int8_t>(lead)) & 0xFF;
+        // Inside the window: 1 during the lead, 2 after it.
+        const auto inWindow = [&]
+        {
+            if (leadEnd < 60)
+            {
+                if (lead == 0)
+                    return 1;
+                return start <= minute && minute < leadEnd ? 1 : 2;
+            }
+            if (lead == 0 || minute < ((leadEnd - 60) & 0xFF))
+                return 1;
+            return start <= minute ? 1 : 2;
+        };
+        if (len == 0)
+        {
+            if (hour == hFrom && minute < start)
+                return 0;
+            if (hour == hTo && end <= minute)
+                return 0;
+            return inWindow();
+        }
+        if (end < 60)
+        {
+            if (minute < start || end <= minute)
+                return 0;
+            if (lead == 0)
+                return 1;
+            return minute < leadEnd ? 1 : 2;
+        }
+        const int wrappedEnd = (end - 60) & 0xFF;
+        if (minute < start && wrappedEnd <= minute)
+            return 0;
+        if (hour == hFrom && minute < start)
+            return 0;
+        if (hour == hTo && wrappedEnd <= minute)
+            return 0;
+        return inWindow();
+    }
+
+    PORT_FN(Se_MatchSchedule);
+    PORT_FN(Sound_GetStatus);
+    PORT_FN(Sound_IsBusy);
+    PORT_FN(Sound_PlaySe);
     PORT_FN(Bgm_SetTrackSlot);
     PORT_FN(Sound_LoadPlaylandBanks);
     PORT_FN(Sound_ResetVoices);

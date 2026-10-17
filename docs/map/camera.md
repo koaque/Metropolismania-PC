@@ -8,7 +8,7 @@ The generic camera (`mm_Camera_*`: eye, target, view and projection matrices), t
 
 ## Functions
 
-18 functions (typed 14, verified 4). Blocks: 5 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+18 functions (typed 11, verified 7). Blocks: 5 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -16,7 +16,7 @@ The generic camera (`mm_Camera_*`: eye, target, view and projection matrices), t
 | `0x0012A3A0` | `void mm_Camera_UpdateProjection(Camera *camera)` | 572 | no | builds the projection and screen matrices from the view parameters at +0x2F4..+0x300 |
 | `0x0012A5E0` | `void mm_Camera_SetFogRange(Camera *camera, float fogNear, float fogFar)` | 108 | no | fog near a0 / far a1 (+0x308/+0x304) and the fog coefficients at +0x11C/+0x12C for a 0..255 fog value |
 | `0x0012A660` | `void mm_Camera_UpdateLightMatrices(Camera *camera)` | 88 | no | sceVu0NormalLightMatrix from the three light directions (+0x160..) and sceVu0LightColorMatrix from the light colours and ambient (+0x190..) |
-| `0x0012A6C0` | `int mm_Camera_UpdateMatrices(Camera *camera)` | 136 | no | dir = normalize(target - eye); sceVu0CameraMatrix into this+0x1E0 with up vector this+0x150; this+0x10 = this+0x220 x view, this+0x50 = this+0x260 x view |
+| `0x0012A6C0` | `void mm_Camera_UpdateMatrices(Camera *camera)` | 136 | no | dir = normalize(target - eye); sceVu0CameraMatrix into this+0x1E0 with up vector this+0x150; this+0x10 = this+0x220 x view, this+0x50 = this+0x260 x view |
 | `0x0012A750` | `Camera *mm_Camera_DeletingDtor(Camera *camera, int16_t deleteFlag)` | 84 | yes | base destructor, then delete when the flag is > 0 |
 | `0x0012A7B0` | `Camera *mm_Camera_ctor(Camera *camera)` | 856 | no | default light directions/colours, eye/target, fog and projection, then all matrices |
 | `0x0012CA20` | `void mm_CityCamera_LoadState(CityCamera *camera, McManager *mc)` | 76 | no | reads +0x530 (4 bytes) and +0x130 (0x1D4 bytes) from the save file |

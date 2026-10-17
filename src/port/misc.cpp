@@ -3,6 +3,8 @@
 
 #include "game_functions.h"
 #include "game_globals.h"
+#include "sdk.h"
+#include "vu0.h"
 
 namespace mm
 {
@@ -28,6 +30,69 @@ namespace mm
     {
         camera->eye = *eye;
         camera->target = *target;
+    }
+
+    // The light matrices from the three light directions and colours (the colour matrix's w column is
+    // cleared afterwards).
+    void Camera_UpdateLightMatrices(GuestPtr<Camera> camera)
+    {
+        const auto at = [&](const Vec4 &v) { return GuestPtr<Vec4>::of(v).address; };
+        sdk::sceVu0NormalLightMatrix(at(camera->normalLight[0]), at(camera->lightDir[0]), at(camera->lightDir[1]), at(camera->lightDir[2]));
+        sdk::sceVu0LightColorMatrix(at(camera->lightColour[0]), at(camera->lightRgb[0]), at(camera->lightRgb[1]), at(camera->lightRgb[2]),
+                                    at(camera->ambient));
+        camera->lightColour[0].w = 0.0f;
+        camera->lightColour[1].w = 0.0f;
+        camera->lightColour[2].w = 0.0f;
+    }
+
+    // The view matrix from eye, target and up, and the two world-to-screen matrices. The view direction is
+    // normalized on VU0 through a 16-byte stack slot, as in the original (its w ends up squared).
+    void Camera_UpdateMatrices(GuestPtr<Camera> camera)
+    {
+        using namespace vu0;
+        const auto at = [&](const Vec4 &v) { return GuestPtr<Vec4>::of(v).address; };
+        port::GuestLocal<Vec4> direction;
+        vf(4) = load(GuestPtr<Vec4>::of(camera->target));
+        vf(5) = load(GuestPtr<Vec4>::of(camera->eye));
+        set(vf(4), sub(vf(4), vf(5)), XYZW);
+        store(direction, vf(4));
+        vf(1) = load(direction);
+        set(vf(2), mul(vf(1), vf(1)), XYZW);
+        set(vf(2), add(vf(2), lane(vf(2), 1)), X);
+        set(vf(2), add(vf(2), lane(vf(2), 2)), X);
+        q() = rsqrt(x(vf(2)));
+        set(vf(2), mul(vf(1), _mm_set1_ps(q())), XYZ);
+        store(direction, vf(2));
+        sdk::sceVu0CameraMatrix(at(camera->view[0]), at(camera->eye), direction.ptr().address, at(camera->up));
+        sdk::sceVu0MulMatrix(at(camera->worldScreenA[0]), at(camera->screenA[0]), at(camera->view[0]));
+        sdk::sceVu0MulMatrix(at(camera->worldScreenB[0]), at(camera->screenB[0]), at(camera->view[0]));
+    }
+
+    // Zoom levels 0 and 1 are kept; from 2 on, the camera's height above the ground decides: within 1.15
+    // level 0, within 7.1 level 1, else 2. (The original then compares the height with -20.5 in double
+    // precision through the SDK's soft-float helpers, but returns 2 either way.)
+    int CityCamera_GetZoomLevel(GuestPtr<CityCamera> camera, GuestPtr<CityScene> city)
+    {
+        const int zoom = camera->zoomLevel;
+        if (zoom < 2)
+            return zoom;
+        const ps2f height = camera->base.eye.y - Map_SampleHeight(city->map, camera->base.eye.x, camera->base.eye.z);
+        if (ps2f(-1.15f) < height)
+            return 0;
+        if (ps2f(-7.1f) < height)
+            return 1;
+        return 2;
+    }
+
+    // char: the player's model, swaying while there is room for it, lit, holding the bag's current item
+    // (bag +2, provisional).
+    void Player_Draw(GuestPtr<Player> player, GuestPtr<CityScene> city)
+    {
+        if (player->visible == 0)
+            return;
+        Instance_DrawSwayingIfRoom(player->model, player->swayArg, player->swayPhase);
+        A3DObject_UpdateMatrices(player->model);
+        Instance_DrawModelLit(player->model, GuestPtr<uint32_t>{player.address + 0x20u}, player->mode, city->bag->unk_002);
     }
 
     // Fog range: stores near and far and the two fog coefficients the renderer uses,
@@ -203,7 +268,7 @@ namespace mm
         player->mode = mode;
         player->unk_80 = 0;
         player->unk_08 = 0;
-        player->unk_34 = 0;
+        player->swayPhase = 0.0f;
         player->unk_40 = -1;
         Pad_ClearBit40();
     }
@@ -236,6 +301,14 @@ namespace mm
     {
         const ps2f target = ps2f(0.8f) * fromInt(globals::stageState()->quota);
         return !(fromInt(city->map->population) < target);
+    }
+
+    // Mission cleared: the population has reached the quota and the mission progress its target.
+    int EvMissionCleared_Check(GuestPtr<EventData>, GuestPtr<CityScene> city)
+    {
+        if (city->map->population < globals::stageState()->quota)
+            return 0;
+        return !(CityScene_MissionProgress(city) < globals::stageState()->missionTarget);
     }
 
     // Paydays fall in months 5 and 11 of each year (one month per in-game day); in stage 0 not before month 11.
@@ -277,6 +350,33 @@ namespace mm
         return cls;
     }
 
+    // char: a person without a target of its own (none, or the workplace) picks a building near work from
+    // the list for its schedule state (2..6: lists 0x17..0x1B, else 0x1B); the chosen building counts one
+    // more visitor (+0x16). Returns the target.
+    uint16_t Person_TargetWork(GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
+    {
+        if (person->target != 0x3F80 && person->target != person->work)
+            return person->target;
+        const GuestPtr<MapObject> work = Map_GetRecord(city->map, person->work);
+        int list = 0x1B;
+        switch (person->schedState)
+        {
+        case 2: list = 0x17; break;
+        case 3: list = 0x18; break;
+        case 4: list = 0x19; break;
+        case 5: list = 0x1A; break;
+        default: break;
+        }
+        person->target = static_cast<uint16_t>(
+            Person_FindBuildingInList(city, list, work->tile & 0x7F, work->tile >> 7, 0, static_cast<int16_t>(person->work), 0x3F80));
+        if (person->target != 0x3F80)
+        {
+            const GuestPtr<uint8_t> visitors{Map_GetRecord(city->map, person->target).address + 0x16u};
+            ++*visitors;
+        }
+        return person->target;
+    }
+
     // char: the person type adds its walking speed, record halfword 6 in millionths.
     GuestPtr<PersonClass> Person_ctor(GuestPtr<PersonClass> cls, GuestPtr<uint8_t> record)
     {
@@ -304,13 +404,13 @@ namespace mm
         player->previousMode = 0;
         player->unk_08 = 0;
         player->unk_80 = 0;
-        player->unk_34 = 0;
+        player->swayPhase = 0.0f;
         player->unk_0C = 0;
         player->position.x = 0.0f;
         player->position.y = 0.0f;
         player->position.z = 0.0f;
         player->position.w = 0.0f;
-        player->unk_3C = 0;
+        player->visible = 0;
         player->unk_40 = -1;
         player->unk_44 = 0;
         player->unk_48 = 0;
@@ -368,11 +468,11 @@ namespace mm
     {
         markers->vtable = GuestPtr<void>{0x001BCFC8u};
         markers->model = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B28u)};
-        markers->unk_004 = GuestPtr<void>{port::load<uint32_t>(0x001F3B08u)};
-        markers->unk_110 = 1;
-        markers->unk_114 = 2;
-        markers->unk_118 = 3;
-        markers->unk_11C = -1;
+        markers->markerModel = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B08u)};
+        markers->nodes[0] = 1;
+        markers->nodes[1] = 2;
+        markers->nodes[2] = 3;
+        markers->nodes[3] = -1;
         const GuestPtr<ps2f> offsets{0x001B0DB0u};
         for (int i = 0; i < 4; ++i)
         {
@@ -382,9 +482,44 @@ namespace mm
             matrix[3].y = offsets[2 * i + 1];
             matrix[3].z = -0.1f;
         }
-        markers->unk_120 = 0;
+        markers->visible = 0;
         markers->unk_124 = 0;
         return markers;
+    }
+
+    // markers: the base model, then each marker's node with its matrix.
+    void Markers_Draw(GuestPtr<Markers> markers)
+    {
+        if (markers->visible == 0)
+            return;
+        A3DObject_Draw(markers->model);
+        for (int i = 0; i < 4; ++i)
+        {
+            const int node = markers->nodes[i];
+            if (node == -1)
+                continue;
+            const GuestPtr<A3DObject> model = markers->markerModel;
+            const GuestPtr<Vec4> nodeMatrix{port::load<uint32_t>(model->model.address + 8u) + static_cast<uint32_t>(node) * 0xC0u + 0x70u};
+            for (int row = 0; row < 4; ++row)
+                nodeMatrix[row] = markers->matrices[4 * i + row];
+            A3DObject_DrawNode(model, node);
+        }
+    }
+
+    // char: stamina drains by 1 + 1/100000 of itself per tick; the notice (city notice line, id 0) comes when
+    // it drops below a 100000 step, at most every 8000 ticks.
+    void Stamina_Tick(GuestPtr<Stamina> stamina, GuestPtr<CityScene> city)
+    {
+        const int before = stamina->value;
+        stamina->value = before - (before / 100000 + 1);
+        if (stamina->value < 0)
+            stamina->value = 0;
+        ++stamina->unk_08;
+        if (stamina->value < before - before % 100000 && stamina->unk_08 > 8000)
+        {
+            Notice_Show(city->notice, 0);
+            stamina->unk_08 = 0;
+        }
     }
 
     // laptop: the first-time entries from the template; the default count is 4 until something changes it.
@@ -445,4 +580,12 @@ namespace mm
     PORT_FN(Laptop_InitEntries);
     PORT_FN(Person_ctor);
     PORT_FN(Markers_ctor);
+    PORT_FN(Camera_UpdateLightMatrices);
+    PORT_FN(Camera_UpdateMatrices);
+    PORT_FN(Player_Draw);
+    PORT_FN(EvMissionCleared_Check);
+    PORT_FN(Markers_Draw);
+    PORT_FN(Stamina_Tick);
+    PORT_FN(CityCamera_GetZoomLevel);
+    PORT_FN(Person_TargetWork);
 }

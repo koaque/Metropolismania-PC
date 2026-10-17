@@ -39,7 +39,7 @@ namespace port
     };
     inline CallState g_call;
 
-    void registerPorted(uint32_t address, const char *name, GuestFn wrapper, ResultKind result);
+    void registerPorted(uint32_t address, const char *name, GuestFn wrapper, ResultKind result, MutateFn mutate);
     void enterPorted(PS2Runtime *runtime);
     void leavePorted(PS2Runtime *runtime);
     [[noreturn]] void reachedThreadSwitch(uint32_t address);
@@ -67,11 +67,16 @@ namespace port
 
     struct AutoRegister
     {
-        AutoRegister(uint32_t address, const char *name, GuestFn wrapper, ResultKind result)
+        AutoRegister(uint32_t address, const char *name, GuestFn wrapper, ResultKind result, MutateFn mutate)
         {
-            registerPorted(address, name, wrapper, result);
+            registerPorted(address, name, wrapper, result, mutate);
         }
     };
+
+    // Difftest fuzzing (port.cpp): new values for one float argument, or for one integer argument within
+    // its type's range (bytes 1, 2, 4 or 8, signed or not). Zero comes up often, to reach the special cases.
+    void fuzzFloat(float &value, uint32_t &state);
+    int64_t fuzzInt(int64_t value, int bytes, bool isSigned, uint32_t &state);
 
     template <typename T>
     inline constexpr bool kFloatArg = std::is_same_v<T, float> || std::is_same_v<T, mm::ps2f>;
@@ -174,6 +179,39 @@ namespace port
             return Fn(fromGuest<Args>(ctx, slots[I])...);
         }
 
+        // Fuzzing touches float and plain integer arguments passed in registers; pointers keep their
+        // recorded values, so the call still works on real game data.
+        static constexpr bool kFuzzable =
+            ((kFloatArg<Args> || (std::is_integral_v<Args> && !mm::kIsGuestPtr<Args>)) || ... || false);
+
+        template <typename T>
+        static void mutateArg(R5900Context *ctx, int slot, uint32_t &state)
+        {
+            if constexpr (kFloatArg<T>)
+                fuzzFloat(ctx->f[12 + slot], state);
+            else if constexpr (!mm::kIsGuestPtr<T>)
+            {
+                if (slot >= 8)
+                    return;
+                const int64_t value = fuzzInt(static_cast<int64_t>(gpr64(ctx, 4 + slot)), static_cast<int>(sizeof(T)),
+                                              std::is_signed_v<T>, state);
+                setGpr64(ctx, 4 + slot, toGuestInt(static_cast<T>(value)));
+            }
+        }
+
+        template <size_t... I>
+        static void mutateAll(R5900Context *ctx, uint32_t &state, std::index_sequence<I...>)
+        {
+            constexpr auto slots = argSlots<Args...>();
+            (mutateArg<Args>(ctx, slots[I], state), ...);
+        }
+
+        static void mutate(R5900Context *ctx, uint32_t seed)
+        {
+            uint32_t state = seed ? seed : 1u;
+            mutateAll(ctx, state, std::index_sequence_for<Args...>{});
+        }
+
         static void entry(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
             const uint32_t address = ctx->pc;
@@ -227,6 +265,24 @@ namespace port
 
     [[noreturn]] void calleeDidNotReturn(uint32_t address, uint32_t pc);
 
+    // After a guest function at `entry` was entered: recompiled code sometimes hands the call back to the
+    // dispatcher before it is finished (a recursive call is compiled as a jump inside the function, so its
+    // return lands on a resume point). Like the runtime's dispatcher, keep entering the code at ctx->pc until
+    // it returns to `until`. Runtime handlers that do not advance pc count as returned. False when ctx->pc
+    // stops at an address without code.
+    inline bool finishGuestCall(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime, uint32_t entry, uint32_t until)
+    {
+        if (ctx->pc == entry)
+            return true;
+        while (ctx->pc != until)
+        {
+            if (!runtime->hasFunction(ctx->pc))
+                return false;
+            runtime->lookupFunction(ctx->pc)(rdram, ctx, runtime);
+        }
+        return true;
+    }
+
     template <typename R, typename... Args>
     R callGuest(uint32_t address, Args... args)
     {
@@ -260,8 +316,7 @@ namespace port
         ctx->pc = address;
         GuestFn fn = g_call.runtime->lookupFunction(address);
         fn(g_call.rdram, ctx, g_call.runtime);
-        // Runtime handlers that do not advance pc count as returned, as in dispatchGuestBranch.
-        if (ctx->pc != kReturnSentinel && ctx->pc != address)
+        if (!finishGuestCall(g_call.rdram, ctx, g_call.runtime, address, kReturnSentinel))
             calleeDidNotReturn(address, ctx->pc);
         setGpr64(ctx, 31, savedRa);
         setGpr64(ctx, 29, savedSp);
@@ -275,4 +330,5 @@ namespace port
 // PORT_FN(Name): mm::Name replaces the generated function at mm::addr::Name.
 #define PORT_FN(NAME)                                                                           \
     static const port::AutoRegister PORT_JOIN(kPortRegistration_, __COUNTER__)(                    \
-        mm::addr::NAME, #NAME, &port::Wrapper<&mm::NAME>::entry, port::Wrapper<&mm::NAME>::kResult)
+        mm::addr::NAME, #NAME, &port::Wrapper<&mm::NAME>::entry, port::Wrapper<&mm::NAME>::kResult,  \
+        port::Wrapper<&mm::NAME>::kFuzzable ? &port::Wrapper<&mm::NAME>::mutate : nullptr)

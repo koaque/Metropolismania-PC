@@ -95,12 +95,24 @@ struct A3DObject {
 };
 /* Camera (0x310 bytes). */
 struct Camera {
-    uint8_t unk_000[0x110];
+    uint8_t unk_000[0x10];
+    Vec4 worldScreenA[4];      /* +0x010 view x screenA (mm_Camera_UpdateMatrices) */
+    Vec4 worldScreenB[4];      /* +0x050 view x screenB */
+    Vec4 normalLight[4];       /* +0x090 sceVu0NormalLightMatrix of lightDir (mm_Camera_UpdateLightMatrices) */
+    Vec4 lightColour[4];       /* +0x0D0 sceVu0LightColorMatrix of lightRgb and ambient */
     Vec4 fogA;                 /* +0x110 (0, 0, 0, fog coefficient) from mm_Camera_SetFogRange */
     Vec4 fogB;                 /* +0x120 (0, 0, 0, fog coefficient) */
     Vec4 eye;                  /* +0x130 */
     Vec4 target;               /* +0x140 */
-    uint8_t unk_150[0x1B4];
+    Vec4 up;                   /* +0x150 for sceVu0CameraMatrix */
+    Vec4 lightDir[3];          /* +0x160 */
+    Vec4 lightRgb[3];          /* +0x190 */
+    Vec4 ambient;              /* +0x1C0 */
+    uint8_t unk_1D0[0x10];
+    Vec4 view[4];              /* +0x1E0 world to camera (sceVu0CameraMatrix) */
+    Vec4 screenA[4];           /* +0x220 */
+    Vec4 screenB[4];           /* +0x260 */
+    uint8_t unk_2A0[0x64];
     float fogFar;              /* +0x304 */
     float fogNear;             /* +0x308 */
     uint8_t unk_30C[4];
@@ -236,7 +248,13 @@ struct StatusPanel { uint8_t data[0xC0]; };
 /* Pause and save menu (0x99C bytes). */
 struct PauseMenu { uint8_t data[0x99C]; };
 /* Minimap (0x21DC bytes). */
-struct Minimap { uint8_t data[0x21DC]; };
+struct Minimap {
+    uint8_t cells[0x2000];     /* +0x0000 one nibble per tile (mm_Minimap_Plot) */
+    uint8_t packet[0x1D0];     /* +0x2000 GS packet of the map image (mm_Minimap_BuildPacket) */
+    A3DObject *model;          /* +0x21D0 placed by mm_Minimap_SetView */
+    A3DObject *frameModel;     /* +0x21D4 */
+    int32_t blink;             /* +0x21D8 frame counter for the blinking markers */
+};
 /* City cursor (0x1E0 bytes). */
 struct CityCursor {
     CityCursorView views[2];   /* +0x000 one per frame parity (0x1BDCD0 & 1) */
@@ -311,9 +329,9 @@ struct Player {
     int32_t unk_0C;
     Vec4 position;             /* +0x10 */
     uint8_t unk_20[0x14];
-    int32_t unk_34;            /* +0x34 */
-    uint8_t unk_38[4];
-    int32_t unk_3C;            /* +0x3C */
+    float swayPhase;           /* +0x34 passed to mm_Instance_DrawSwayingIfRoom */
+    int32_t swayArg;           /* +0x38 */
+    int32_t visible;           /* +0x3C drawn when non-zero (mm_Player_Draw) */
     int32_t unk_40;            /* +0x40 */
     int32_t unk_44;            /* +0x44 */
     int32_t unk_48;            /* +0x48 */
@@ -353,14 +371,11 @@ struct Applicants {
 /* Markers model (0x130 bytes). */
 struct Markers {
     A3DObject *model;          /* +0x000 from 0x1F3B28 */
-    void *unk_004;             /* +0x004 from 0x1F3B08 */
+    A3DObject *markerModel;    /* +0x004 from 0x1F3B08: the marker nodes */
     uint8_t unk_008[8];
     Vec4 matrices[16];         /* +0x010 four 4x4 matrices, one per marker */
-    int32_t unk_110;           /* +0x110 1 at construction */
-    int32_t unk_114;           /* +0x114 2 */
-    int32_t unk_118;           /* +0x118 3 */
-    int32_t unk_11C;           /* +0x11C -1 */
-    int32_t unk_120;
+    int32_t nodes[4];          /* +0x110 node of markerModel per marker, -1 = none (1, 2, 3, -1 at construction) */
+    int32_t visible;           /* +0x120 */
     int32_t unk_124;
     void *vtable;              /* +0x128 */
     uint8_t unk_12C[4];
@@ -391,7 +406,9 @@ struct StageState {
     int32_t unk_1C4;           /* +0x1C4 2500 at reset */
     int32_t stage;             /* +0x1C8 stage number, -1 = none */
     int32_t quota;             /* +0x1CC population target (mm_EvQuota80_Check) */
-    uint8_t unk_1D0[0xB0];
+    uint8_t unk_1D0[4];
+    int32_t missionTarget;     /* +0x1D4 compared with mm_CityScene_MissionProgress (mm_EvMissionCleared_Check) */
+    uint8_t unk_1D8[0xA8];
     int32_t unk_280;           /* +0x280 */
 };
 /* Character type class object (0x24 bytes; the person class is 0x28 with its walking speed at +0x24),
@@ -439,7 +456,8 @@ struct LayerC {
     int32_t rectZ0;            /* +0x224 */
     int32_t rectX1;            /* +0x228 */
     int32_t rectZ1;            /* +0x22C */
-    uint8_t unk_230[0x10];
+    void *unk_230;             /* +0x230 from 0x1F3B1C at construction */
+    uint8_t unk_234[0xC];
 };
 struct LayerD { uint8_t data[0x410]; };
 struct LayerE { uint8_t data[0x6E0]; };

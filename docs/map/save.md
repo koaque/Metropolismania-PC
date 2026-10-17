@@ -13,11 +13,11 @@ Saving and loading on the memory card.
 
 ## Functions
 
-48 functions (ported 4, typed 23, verified 21). Blocks: 13 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+48 functions (ported 4, typed 22, verified 22). Blocks: 13 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
-| `0x0015AF80` | `int mm_McManager_FindSave(McManager *mc, int a1, int a2)` | 248 | no | (provisional) finds a save by name in the slot tables (0x1F3F00/0x1F4340/0x1F4780) |
+| `0x0015AF80` | `int mm_McManager_FindSave(McManager *mc, char *name, int card)` | 248 | no | (provisional) finds a save by name in the slot tables (0x1F3F00/0x1F4340/0x1F4780) |
 | `0x0015B080` | `void mm_McManager_FormatSaveInfo(McManager *mc, int a1, char *out)` | 1208 | yes | "Stage n Month m Year y "name" Population ... / Approval Rate ..." |
 | `0x0015B540` | `void mm_McManager_FormatSlotLine(McManager *mc, int slot, char *out, int a3)` | 848 | yes | short slot line " Stage n "name" Pop. ../A.R. ..%", "*Newest*" |
 | `0x0015B890` | `void mm_McManager_BuildSaveHeader(McManager *mc, int a1, char *out)` | 428 | no | fills the save header from the stage state (0x1C5380) |

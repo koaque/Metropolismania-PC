@@ -21,7 +21,7 @@ People and the player character.
 
 ## Functions
 
-84 functions (typed 71, verified 13). Blocks: 19 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+84 functions (typed 68, verified 16). Blocks: 19 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -70,7 +70,7 @@ People and the player character.
 | `0x00158370` | `void mm_Player_PickTarget(Player *player, CityScene *city)` | 1704 | no | (provisional) what the player faces: building or person in front (ray, tiles, people), sets the cursor target |
 | `0x00159320` | `void mm_Player_SetMode(Player *player, int mode)` | 56 | no | mode a1 (-1 = previous), remembers the previous mode, resets the mode timer |
 | `0x00159360` | `int mm_Player_GetMode(Player *player)` | 8 | no | current mode |
-| `0x00159370` | `void mm_Player_Draw(Player *player, int pass)` | 100 | no | player model instances |
+| `0x00159370` | `void mm_Player_Draw(Player *player, CityScene *city)` | 100 | no | player model instances |
 | `0x001593E0` | `void mm_Player_Move(Player *player, float *move)` | 1896 | no | (provisional) walking/running with the pad and the analog stick |
 | `0x00159B50` | `void mm_Player_Turn(Player *player, float *move)` | 428 | no | (provisional) turning with the pad |
 | `0x00159D00` | `void mm_Player_Update(Player *player, CityScene *city)` | 1988 | yes | player per frame by mode: movement, camera, minimap, footsteps, placing items and homes |
@@ -94,7 +94,7 @@ People and the player character.
 | `0x0015F8D0` | `void mm_Schedule_Load(void)` | 68 | yes | loads DATA\BIN\SCHEDULE.BIN |
 | `0x00162370` | `void mm_Stamina_LoadState(Stamina *stamina, McManager *mc)` | 20 | no | reads the 0xC-byte stamina record from the save file |
 | `0x00162390` | `void mm_Stamina_SaveState(Stamina *stamina, McManager *mc)` | 20 | no | writes it |
-| `0x001623B0` | `void mm_Stamina_Tick(Stamina *stamina, int a1)` | 184 | no | stamina +4 drops by stamina/100000 + 1 per tick (not below 0) |
+| `0x001623B0` | `void mm_Stamina_Tick(Stamina *stamina, CityScene *city)` | 184 | no | stamina +4 drops by stamina/100000 + 1 per tick (not below 0) |
 | `0x00162470` | `void mm_Stamina_Eat(Stamina *stamina, uint8_t *goods)` | 124 | no | eating goods of categories 0x11-0x14 adds to stamina |
 | `0x001624F0` | `int mm_Stamina_Zero(Stamina *stamina)` | 8 | no | returns 0 (8 bytes); only reached by the tail call in mm_WordsFn_StaminaZero |
 | `0x00162500` | `int mm_Stamina_HungerLevel(Stamina *stamina)` | 64 | no | 0 below 100000, else a higher level (event "Hunger") |

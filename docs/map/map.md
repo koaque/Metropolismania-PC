@@ -20,7 +20,7 @@ placement checks (`mm_Placement_*`) and the per-object history (`mm_MapObj_*`) a
 
 ## Functions
 
-98 functions (typed 64, verified 34). Blocks: 12 can reach a thread switch, 8 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+98 functions (typed 59, verified 39). Blocks: 12 can reach a thread switch, 8 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -68,7 +68,7 @@ placement checks (`mm_Placement_*`) and the per-object history (`mm_MapObj_*`) a
 | `0x00141580` | `float mm_Map_GetHeightAt(CityMap *map, int x, int z)` | 92 | no | height word at clamped (a1, a2) |
 | `0x001415E0` | `float mm_Map_SampleHeight(CityMap *map, float x, float z)` | 676 | no | terrain height at world (a0, a1), interpolated over the tile's triangles |
 | `0x001418D0` | `void mm_Map_UpdateTileGeometry(CityMap *map, int x, int z)` | 1536 | no | recomputes tile (a1, a2)'s vertices and normals |
-| `0x00141ED0` | `int mm_Map_UpdateAreaGeometry(CityMap *map, int32_t *rect)` | 136 | no | mm_Map_UpdateTileGeometry over a rectangle |
+| `0x00141ED0` | `void mm_Map_UpdateAreaGeometry(CityMap *map, int32_t *rect)` | 136 | no | mm_Map_UpdateTileGeometry over a rectangle |
 | `0x00141F60` | `float mm_TerrainGen_ApplyBump(CityMap *map, int x, int z, int mode, uint32_t flags, float height, float radius)` | 1304 | no | (provisional) raises/lowers a round area |
 | `0x001424A0` | `CityMap *mm_MapTiles_dtor(CityMap *map, int16_t deleteFlag)` | 108 | yes | frees the tile array, base destructor |
 | `0x00142510` | `CityMap *mm_MapTiles_ctor(CityMap *map)` | 84 | yes | allocates 128x128 tiles of 0x18 bytes |
@@ -104,7 +104,7 @@ placement checks (`mm_Placement_*`) and the per-object history (`mm_MapObj_*`) a
 | `0x001447C0` | `int mm_Map_CreateObject(CityMap *map, int owner, int type, int x, int z)` | 908 | no | (provisional) creates an object record, links it to its tiles and registers it |
 | `0x00144B60` | `int mm_Placement_CheckSlope(CityMap *map, int type, int x, int z)` | 328 | no | (provisional) height differences under a footprint |
 | `0x00144CB0` | `int mm_Map_CheckPlacement(CityMap *map, uint32_t type, int x, int z, int32_t *rect)` | 760 | indirect | (provisional) full placement test: slope, neighbours, type rules |
-| `0x00144FB0` | `int mm_Placement_CheckNeighbours(CityMap *map, int type, int x, int z, uint32_t *t0)` | 504 | no | (provisional) |
+| `0x00144FB0` | `int mm_Placement_CheckNeighbours(CityMap *map, int x, int z, int size, int32_t *box)` | 504 | no | (provisional) |
 | `0x001451B0` | `int mm_Placement_CheckTypeRule(CityMap *map, int type, int tile)` | 244 | no | (provisional) building type rule (+0x144) |
 | `0x001452B0` | `void mm_MapObj_Delete(CityMap *map, int object)` | 300 | no | removes object a1 from its claim lists, clears its type and lowers the object and per-category counters (+0x24, +0x30 + category * 4, +0x40, +0x5C) |
 | `0x001453E0` | `void mm_MapObj_Init(CityMap *map, int object, int type, uint16_t owner, uint16_t tile)` | 472 | indirect | fills object record a1 (type, owner, position) and updates the tile lists |

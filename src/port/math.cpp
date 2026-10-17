@@ -1,6 +1,7 @@
 // Math helpers, and the vector and matrix routines that run on VU0 in macro mode.
 
 #include "game_functions.h"
+#include "sdk.h"
 #include "vu0.h"
 
 namespace mm
@@ -12,6 +13,107 @@ namespace mm
         for (; value > 1; value >>= 1)
             ++bits;
         return bits;
+    }
+
+    // Where the line through `point` with direction (dx, dy, dz) meets the plane a x + b y + c z + d = 0:
+    // out = (x, y, z, 1) and 1, or 0 (out untouched) when the line runs parallel to the plane. Directions
+    // with zero components take their own formulas. Every step keeps the original's operation order (PS2
+    // rounding), and point is read again after each store to out, as the original does.
+    int Math_LinePlaneIntersect(GuestPtr<ps2f> point, GuestPtr<ps2f> out, ps2f dx, ps2f dy, ps2f dz, ps2f a, ps2f b, ps2f c, ps2f d)
+    {
+        const ps2f zero = 0.0f;
+        const ps2f adx = a * dx, bdy = b * dy, cdz = c * dz;
+        const ps2f adxBdy = adx + bdy;
+        const ps2f denom = cdz + adxBdy;
+        if (denom == zero)
+            return 0;
+        if (dz * (dx * dy) != zero)
+        {
+            // x from the plane, then y and z along the line.
+            const ps2f byCz = bdy + cdz;
+            const ps2f numerator = point[0] * byCz - dx * (d + (b * point[1] + c * point[2]));
+            const ps2f x = numerator / denom;
+            out[0] = x;
+            out[1] = point[1] + dy * (x - point[0]) / dx;
+            out[2] = point[2] + dz * (out[0] - point[0]) / dx;
+        }
+        else if (dx == zero)
+        {
+            if (dy * dz != zero)
+            {
+                // x fixed; y from the plane, z along the line.
+                const ps2f byCz = bdy + cdz;
+                out[0] = point[0];
+                const ps2f dPlusAx = d + a * point[0];
+                const ps2f cross = dz * point[1] - dy * point[2];
+                const ps2f y = (c * cross + -dy * dPlusAx) / byCz;
+                out[1] = y;
+                out[2] = point[2] + dz * (y - point[1]) / dy;
+            }
+            else if (dy == zero)
+            {
+                // Along z only.
+                out[0] = point[0];
+                out[1] = point[1];
+                out[2] = -(d + (a * point[0] + b * point[1])) / c;
+            }
+            else
+            {
+                // Along y only.
+                out[0] = point[0];
+                out[1] = -(d + (a * point[0] + c * point[2])) / b;
+                out[2] = point[2];
+            }
+        }
+        else if (dy == zero)
+        {
+            if (dx * dz != zero)
+            {
+                // y fixed; x from the plane, z along the line.
+                const ps2f axCz = adx + cdz;
+                const ps2f dPlusBy = d + b * point[1];
+                const ps2f cross = dz * point[0] - dx * point[2];
+                out[0] = (-dx * dPlusBy + c * cross) / axCz;
+                out[1] = point[1];
+                out[2] = point[2] + dz * (out[0] - point[0]) / dx;
+            }
+            else
+            {
+                // Along x only.
+                out[0] = -(d + (b * point[1] + c * point[2])) / a;
+                out[1] = point[1];
+                out[2] = point[2];
+            }
+        }
+        else
+        {
+            // z fixed; x from the plane, y along the line.
+            const ps2f dPlusCz = d + c * point[2];
+            const ps2f cross = dy * point[0] - dx * point[1];
+            const ps2f x = (b * cross - dx * dPlusCz) / adxBdy;
+            out[0] = x;
+            out[1] = point[1] + dy * (x - point[0]) / dx;
+            out[2] = point[2];
+        }
+        out[3] = 1.0f;
+        return 1;
+    }
+
+    // Perspective projection for a screen half-size (screen[0], screen[1]) at `distance`, with near and far
+    // planes: the identity, then the scale, depth and perspective terms.
+    void Math_ProjectionMatrix(GuestPtr<ps2f> matrix, GuestPtr<ps2f> screen, ps2f distance, ps2f zNear, ps2f zFar)
+    {
+        const ps2f halfWidth = zNear * screen[0] / distance;
+        const ps2f halfHeight = zNear * screen[1] / distance;
+        sdk::sceVu0UnitMatrix(matrix.address);
+        const ps2f twoNear = ps2f(2.0f) * zNear;
+        matrix[0] = twoNear / (halfWidth + halfWidth);
+        matrix[5] = twoNear / (halfHeight + halfHeight);
+        const ps2f depth = zFar - zNear;
+        matrix[10] = (zFar + zNear) / depth;
+        matrix[14] = ps2f(-2.0f) * (zFar * zNear) / depth;
+        matrix[11] = 1.0f;
+        matrix[15] = 0.0f;
     }
 
     // ---- VU0 (registers as the original leaves them: vf1-vf12, ACC, Q)
@@ -118,6 +220,8 @@ namespace mm
     }
 
     PORT_FN(Math_Log2);
+    PORT_FN(Math_LinePlaneIntersect);
+    PORT_FN(Math_ProjectionMatrix);
     PORT_FN(Math_ProjectPoint);
     PORT_FN(Math_SqrtBits);
     PORT_FN(Mat4_MulVu0);

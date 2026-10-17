@@ -18,7 +18,7 @@ Rendering below the scene level.
 
 ## Functions
 
-117 functions (typed 82, verified 35). Blocks: 29 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+117 functions (typed 72, verified 45). Blocks: 29 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -32,7 +32,7 @@ Rendering below the scene level.
 | `0x00129950` | `int mm_A3DObject_ChangeLuminosity(A3DObject *model, uint32_t *colour, int a2)` | 96 | yes | CA3DObject::ChangeLuminusity (name from its error string): sets node a2's colour (node +0x60) to the vec4 at a1; prints an error for a bad node index |
 | `0x001299B0` | `void mm_A3DObject_DrawNode(A3DObject *model, int node)` | 104 | no | queues node a1's packet (node +0x50) and its mesh packet (mesh +0x10); nodes are 0xC0 bytes at model +8 |
 | `0x00129A20` | `void mm_A3DObject_Draw(A3DObject *model)` | 228 | no | updates every node's world matrix (mm_A3DObject_UpdateNodeMatrix) and queues all nodes |
-| `0x00129B10` | `int mm_A3DObject_UpdateMatrices(A3DObject *model)` | 248 | no | world matrix of each node: root nodes = object matrix (this+0x10) x local, children via mm_A3DObject_UpdateNodeMatrix |
+| `0x00129B10` | `void mm_A3DObject_UpdateMatrices(A3DObject *model)` | 248 | no | world matrix of each node: root nodes = object matrix (this+0x10) x local, children via mm_A3DObject_UpdateNodeMatrix |
 | `0x00129C90` | `void mm_A3DObject_UpdateNodeMatrix(A3DObject *model, int32_t *node)` | 412 | no | node world matrix = parent's world matrix x local (recursive) |
 | `0x00129E30` | `A3DObject *mm_A3DObject_dtor(A3DObject *model, int16_t deleteFlag)` | 136 | yes | frees the model data (+0) and the node array (+0x50), base destructor; delete when the flag is > 0 |
 | `0x00129EC0` | `int mm_A3DObject_LoadAsync(A3DObject *model, GameFile *gamefile, int a2)` | 544 | yes | asynchronous .A3D load from an open file, one step per call (state gp 0x1BD...80A0): header into 0x1C5100, then data; 0 = busy, -1 = error |
@@ -45,7 +45,7 @@ Rendering below the scene level.
 | `0x0012C510` | `void mm_InstanceBuf_Init(void)` | 400 | yes | allocates the two instance buffers and pre-fills each slot's DMA/VIF header (CNT 5, STCYCL, UNPACK) |
 | `0x0012C6A0` | `void mm_Instance_DrawMesh(A3DObject *model, Vec4 *matrix, Vec4 *colour, int mesh, int flags)` | 236 | no | writes matrix a1/a2 and colour into the next instance slot and queues it with the mesh packet |
 | `0x0012C790` | `void mm_Instance_DrawNode(A3DObject *model, Vec4 *colour, int node, int flags)` | 240 | no | instance of node a2 of model a0 with colour a1 |
-| `0x0012C880` | `int mm_Instance_DrawModel(A3DObject *model, uint32_t *colour, int a2, int a3)` | 324 | no | updates the model's node matrices and adds an instance per node with a mesh, if the budget allows |
+| `0x0012C880` | `void mm_Instance_DrawModel(A3DObject *model, Vec4 *colour, int reserve, int flags)` | 324 | no | updates the model's node matrices and adds an instance per node with a mesh, if the budget allows |
 | `0x0012C9D0` | `A3DObject *mm_InstanceModel_ctor(A3DObject *model)` | 68 | yes | model constructor; the first one allocates the instance buffers |
 | `0x0012D6B0` | `void mm_Instance_DrawSwaying2(A3DObject *model, int a1, float phase)` | 824 | no | (provisional) second sine-wave instance variant, used by 0x133E80/0x1345E0 |
 | `0x0012D9F0` | `void mm_Instance_DrawModelLit(A3DObject *model, uint32_t *colour, int a2, int a3)` | 852 | no | (provisional) instances for all nodes of a model with per-node colours |
@@ -53,7 +53,7 @@ Rendering below the scene level.
 | `0x0012DE70` | `void mm_Instance_DrawModelEx(A3DObject *model, int a1, int a2, int a3, int t0, int t1, int t2, int t3)` | 940 | no | (provisional) instances for a model with extra transform parameters |
 | `0x0012E220` | `int mm_InstanceModel_LoadAsync(A3DObject *model, GameFile *gamefile, int a2)` | 120 | yes | mm_A3DObject_LoadAsync; when done (and a2 == 0) stores the frame count (+0x60 = data +4 / 13) |
 | `0x0012E2A0` | `A3DObject *mm_InstanceModel_ctor2(A3DObject *model)` | 40 | yes | mm_InstanceModel_ctor wrapper |
-| `0x0012E2D0` | `int mm_Perf_AdaptDrawRange(void)` | 152 | no | (provisional) 0x1BD980 tracks 0x1BD9B8: shrinks when it is above 95, else grows by 1; clamped to 0xFF..0x3A7 |
+| `0x0012E2D0` | `void mm_Perf_AdaptDrawRange(void)` | 152 | no | (provisional) 0x1BD980 tracks 0x1BD9B8: shrinks when it is above 95, else grows by 1; clamped to 0xFF..0x3A7 |
 | `0x001480F0` | `void mm_CityRender_InitParams(CityMap *map)` | 356 | no | GS register defaults of the render level (+0x2D60..) |
 | `0x00148260` | `void mm_CityRender_UpdatePeople(CityMap *map, CityScene *city)` | 568 | indirect | (provisional) per-frame pass over the people for drawing (char type lookup tables) |
 | `0x001484A0` | `void mm_CityRender_DrawSky(CityMap *map, CityScene *city, int pass, Vec4 *a3)` | 96 | no | (provisional) sky layer (+0x2F74) by the city clock (city +0x84), two variants by a2 |

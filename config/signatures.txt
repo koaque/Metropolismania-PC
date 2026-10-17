@@ -55,7 +55,7 @@
 0x00129950 int mm_A3DObject_ChangeLuminosity(A3DObject *model, uint32_t *colour, int a2);
 0x001299B0 void mm_A3DObject_DrawNode(A3DObject *model, int node);
 0x00129A20 void mm_A3DObject_Draw(A3DObject *model);
-0x00129B10 int mm_A3DObject_UpdateMatrices(A3DObject *model);
+0x00129B10 void mm_A3DObject_UpdateMatrices(A3DObject *model);
 0x00129C10 void mm_Mat4_MulVu0(Vec4 *out, Vec4 *a, Vec4 *b);
 0x00129C90 void mm_A3DObject_UpdateNodeMatrix(A3DObject *model, int32_t *node);
 0x00129E30 A3DObject *mm_A3DObject_dtor(A3DObject *model, int16_t deleteFlag);
@@ -69,7 +69,7 @@
 0x0012A5E0 void mm_Camera_SetFogRange(Camera *camera, float fogNear, float fogFar);
 0x0012A650 void mm_LightSet_SetField20(LightSet *lights, int value);
 0x0012A660 void mm_Camera_UpdateLightMatrices(Camera *camera);
-0x0012A6C0 int mm_Camera_UpdateMatrices(Camera *camera);
+0x0012A6C0 void mm_Camera_UpdateMatrices(Camera *camera);
 0x0012A750 Camera *mm_Camera_DeletingDtor(Camera *camera, int16_t deleteFlag);
 0x0012A7B0 Camera *mm_Camera_ctor(Camera *camera);
 0x0012AB10 void mm_Vec3_Normalize(Vec4 *out, Vec4 *v);
@@ -98,7 +98,7 @@
 0x0012C510 void mm_InstanceBuf_Init(void);
 0x0012C6A0 void mm_Instance_DrawMesh(A3DObject *model, Vec4 *matrix, Vec4 *colour, int mesh, int flags);
 0x0012C790 void mm_Instance_DrawNode(A3DObject *model, Vec4 *colour, int node, int flags);
-0x0012C880 int mm_Instance_DrawModel(A3DObject *model, uint32_t *colour, int a2, int a3);
+0x0012C880 void mm_Instance_DrawModel(A3DObject *model, Vec4 *colour, int reserve, int flags);
 0x0012C9D0 A3DObject *mm_InstanceModel_ctor(A3DObject *model);
 0x0012CA20 void mm_CityCamera_LoadState(CityCamera *camera, McManager *mc);
 0x0012CA70 void mm_CityCamera_SaveState(CityCamera *camera, McManager *mc);
@@ -112,7 +112,7 @@
 0x0012DE70 void mm_Instance_DrawModelEx(A3DObject *model, int a1, int a2, int a3, int t0, int t1, int t2, int t3);
 0x0012E220 int mm_InstanceModel_LoadAsync(A3DObject *model, GameFile *gamefile, int a2);
 0x0012E2A0 A3DObject *mm_InstanceModel_ctor2(A3DObject *model);
-0x0012E2D0 int mm_Perf_AdaptDrawRange(void);
+0x0012E2D0 void mm_Perf_AdaptDrawRange(void);
 0x0012E370 uint16_t mm_Path_ScanLine(CharClass *cls, CityScene *city, MapPerson *person, int a3, float *position);
 0x0012E7D0 uint16_t mm_Path_NextWaypoint(CharClass *cls, CityScene *city, MapPerson *person, int tile);
 0x0012EE20 float mm_Path_TileDistance(int a0, uint32_t tileA, uint32_t tileB);
@@ -249,7 +249,7 @@
 0x0013DA50 void mm_Family_Init(void);
 0x0013DAF0 int mm_StatusByte_ctorE0(int status);
 0x0013DB40 void mm_Minimap_BuildPacket(Minimap *minimap);
-0x0013DF90 void mm_Minimap_SetView(Minimap *minimap, float *camera);
+0x0013DF90 void mm_Minimap_SetView(Minimap *minimap, float *camera, float angle);
 0x0013E020 void mm_Minimap_Plot(Minimap *minimap, uint32_t tile, int size, int colour, int keepHigher);
 0x0013E1B0 void mm_Minimap_Draw(Minimap *minimap);
 0x0013E270 Minimap *mm_Minimap_DeletingDtor(Minimap *minimap, int16_t deleteFlag);
@@ -295,7 +295,7 @@
 0x001415E0 float mm_Map_SampleHeight(CityMap *map, float x, float z);
 0x00141890 void mm_Math_TriangleNormal(Vec4 *out, Vec4 *a, Vec4 *b, Vec4 *c);
 0x001418D0 void mm_Map_UpdateTileGeometry(CityMap *map, int x, int z);
-0x00141ED0 int mm_Map_UpdateAreaGeometry(CityMap *map, int32_t *rect);
+0x00141ED0 void mm_Map_UpdateAreaGeometry(CityMap *map, int32_t *rect);
 0x00141F60 float mm_TerrainGen_ApplyBump(CityMap *map, int x, int z, int mode, uint32_t flags, float height, float radius);
 0x001424A0 CityMap *mm_MapTiles_dtor(CityMap *map, int16_t deleteFlag);
 0x00142510 CityMap *mm_MapTiles_ctor(CityMap *map);
@@ -330,7 +330,7 @@
 0x001447C0 int mm_Map_CreateObject(CityMap *map, int owner, int type, int x, int z);
 0x00144B60 int mm_Placement_CheckSlope(CityMap *map, int type, int x, int z);
 0x00144CB0 int mm_Map_CheckPlacement(CityMap *map, uint32_t type, int x, int z, int32_t *rect);
-0x00144FB0 int mm_Placement_CheckNeighbours(CityMap *map, int type, int x, int z, uint32_t *t0);
+0x00144FB0 int mm_Placement_CheckNeighbours(CityMap *map, int x, int z, int size, int32_t *box);
 0x001451B0 int mm_Placement_CheckTypeRule(CityMap *map, int type, int tile);
 0x001452B0 void mm_MapObj_Delete(CityMap *map, int object);
 0x001453E0 void mm_MapObj_Init(CityMap *map, int object, int type, uint16_t owner, uint16_t tile);
@@ -519,7 +519,7 @@
 0x00159010 void mm_Player_PlaceForApplicant(Player *player, CityScene *city);
 0x00159320 void mm_Player_SetMode(Player *player, int mode);
 0x00159360 int mm_Player_GetMode(Player *player);
-0x00159370 void mm_Player_Draw(Player *player, int pass);
+0x00159370 void mm_Player_Draw(Player *player, CityScene *city);
 0x001593E0 void mm_Player_Move(Player *player, float *move);
 0x00159B50 void mm_Player_Turn(Player *player, float *move);
 0x00159D00 void mm_Player_Update(Player *player, CityScene *city);
@@ -531,7 +531,7 @@
 0x0015AA90 void mm_CityAssets_LoadCharObjs(void);
 0x0015AC50 void mm_CityAssets_LoadObjects(void);
 0x0015AE10 int mm_CityAssets_LoadStep(void);
-0x0015AF80 int mm_McManager_FindSave(McManager *mc, int a1, int a2);
+0x0015AF80 int mm_McManager_FindSave(McManager *mc, char *name, int card);
 0x0015B080 void mm_McManager_FormatSaveInfo(McManager *mc, int a1, char *out);
 0x0015B540 void mm_McManager_FormatSlotLine(McManager *mc, int slot, char *out, int a3);
 0x0015B890 void mm_McManager_BuildSaveHeader(McManager *mc, int a1, char *out);
@@ -612,7 +612,7 @@
 0x00162280 LoadingScreen *mm_LoadingScreen_ctor(LoadingScreen *loading, int a1, uint8_t a2);
 0x00162370 void mm_Stamina_LoadState(Stamina *stamina, McManager *mc);
 0x00162390 void mm_Stamina_SaveState(Stamina *stamina, McManager *mc);
-0x001623B0 void mm_Stamina_Tick(Stamina *stamina, int a1);
+0x001623B0 void mm_Stamina_Tick(Stamina *stamina, CityScene *city);
 0x00162470 void mm_Stamina_Eat(Stamina *stamina, uint8_t *goods);
 0x001624F0 int mm_Stamina_Zero(Stamina *stamina);
 0x00162560 void mm_Stamina_CreateGlobal(void);
@@ -648,7 +648,7 @@
 0x00164310 BuildingType *mm_BldgType_BaseCtor(BuildingType *btype, uint8_t *record, uint16_t id);
 0x00164740 void mm_Math_MulMatVecVu0(Vec4 *out, Vec4 *matrix, Vec4 *v);
 0x00164770 BuildingType *mm_BldgAmusementPark_dtor(BuildingType *btype, int16_t deleteFlag);
-0x001647F0 void mm_BldgAmusementPark_DrawAnim(BuildingType *btype, CityScene *city);
+0x001647F0 void mm_BldgAmusementPark_DrawAnim(BuildingType *btype, int time);
 0x001648E0 void mm_BldgAmusementPark_Draw(BuildingType *btype, int layer, CityScene *city, MapObject *obj, int t0, int t1, float x, float y, float z);
 0x00164AF0 BuildingType *mm_BldgAmusementPark_ctor(BuildingType *btype, uint8_t *record, int id);
 0x00164B30 BuildingType *mm_BldgBusiness_dtor(BuildingType *btype, int16_t deleteFlag);
@@ -659,7 +659,7 @@
 0x00165140 int mm_BldgOffice_Tick(BuildingType *btype, CityScene *city, MapObject *obj, int timeFlags);
 0x001651D0 BuildingType *mm_BldgOffice_ctor(BuildingType *btype, uint8_t *record, int id);
 0x00165220 BuildingType *mm_BldgRanch_dtor(BuildingType *btype, int16_t deleteFlag);
-0x001652A0 void mm_BldgRanch_DrawAnim(BuildingType *btype, CityScene *city);
+0x001652A0 void mm_BldgRanch_DrawAnim(BuildingType *btype, int time);
 0x00165390 void mm_BldgRanch_Draw(BuildingType *btype, int layer, CityScene *city, MapObject *obj, int t0, int t1, float x, float y, float z);
 0x001655A0 BuildingType *mm_BldgRanch_ctor(BuildingType *btype, uint8_t *record, int id);
 0x00165600 BuildingType *mm_Bldg_dtor(BuildingType *btype, int16_t deleteFlag);
@@ -670,7 +670,7 @@
 0x00165E80 void mm_BldgClaims_EvalC(BuildingType *btype, CityScene *city, MapObject *obj);
 0x00166150 void mm_BldgClaims_EvalD(BuildingType *btype, CityScene *city, MapObject *obj);
 0x00166840 int mm_BldgClaims_Evaluate(BuildingType *btype, CityScene *city, MapObject *obj, int rise);
-0x00166AC0 int mm_BldgClaims_DrawIcon(BuildingType *btype, MapObject *obj, Vec4 *colour);
+0x00166AC0 void mm_BldgClaims_DrawIcon(BuildingType *btype, MapObject *obj, Vec4 *colour);
 0x00166C40 void mm_Bldg_InitRecordBase(BuildingType *btype, MapObject *obj);
 0x00166C50 BuildingType *mm_Bldg_ctor(BuildingType *btype, uint8_t *record, int id);
 0x00166C90 BuildingType *mm_BldgField_dtor(BuildingType *btype, int16_t deleteFlag);
@@ -1159,7 +1159,7 @@
 0x001856C0 void mm_App_OnInit(void);
 0x001856D0 int mm_App_dtor(int app, int16_t deleteFlag);
 0x00185740 int mm_App_ctor(int app);
-0x001859D0 float mm_Math_LinePlaneIntersect(float *point, float *out, float dx, float dy, float dz, float a, float b, float c, float d);
+0x001859D0 int mm_Math_LinePlaneIntersect(float *point, float *out, float dx, float dy, float dz, float a, float b, float c, float d);
 0x00185CB0 float mm_Math_RayPlaneDistance(Vec4 *a0, Vec4 *a1, Vec4 *a2, int a3, uint32_t *t0);
 0x00185DA0 void mm_Math_ProjectionMatrix(float *matrix, float *screen, float distance, float zNear, float zFar);
 0x00185E70 int mm_Math_Log2(int value);
@@ -1206,11 +1206,11 @@
 0x00188DB0 int mm_Se_InTimeWindow(MapObject *obj, uint32_t start, int length);
 0x00188EE0 int mm_Se_RequestTileSounds(int x, int z, int a2, float angle, float distance);
 0x001890C0 uint32_t mm_Se_PickTerrainAmbience(int x, int z, int a2);
-0x001892D0 int mm_Se_MatchSchedule(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t t0, uint32_t t1, int t2);
+0x001892D0 int mm_Se_MatchSchedule(uint32_t monthFrom, uint32_t monthTo, uint32_t hourFrom, uint32_t hourTo, uint32_t length, uint32_t start10, int lead);
 0x00189660 int mm_Se_Request(uint16_t owner, uint32_t group, uint8_t sound, uint8_t a3, uint8_t t0, uint16_t t1, uint8_t t2, uint8_t t3, float angle, float distance);
 0x00189B40 void mm_Se_StopOwner(char owner);
 0x00189C50 void mm_Se_RequestForObject(uint32_t a0, uint32_t a1, uint32_t a2, int a3, int t0, int t1);
-0x0018A3B0 int mm_Sound_PlaySe(int sound, int a1, int a2, float angle, float distance);
+0x0018A3B0 void mm_Sound_PlaySe(int sound, int a1, int a2, float angle, float distance);
 0x0018A450 void mm_Se_PlayMessageSound(char code);
 0x0018AA00 void mm_Se_PlayVariant(uint8_t variant);
 0x0018AE80 void mm_Se_UpdateTimeOfDay(void);

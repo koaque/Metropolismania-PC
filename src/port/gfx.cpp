@@ -2,6 +2,7 @@
 
 #include "game_functions.h"
 #include "game_globals.h"
+#include "sdk.h"
 
 namespace mm
 {
@@ -104,6 +105,61 @@ namespace mm
         DmaList_QueueGsDefaults();
     }
 
+    // ---- city render layers: each constructor sets its parameters and builds its VU1 packet in the packet
+    // buffer, which then moves past it. D, E and G also get the city map's vertex buffers.
+
+    GuestPtr<LayerB> LayerB_ctor(GuestPtr<LayerB> layer)
+    {
+        BaseObject_ctor(static_cast<int>(layer.address));
+        LayerB_InitParams(layer);
+        PacketBuf_Seek(static_cast<int>(LayerB_BuildPacket(layer, GuestPtr<uint32_t>{static_cast<uint32_t>(PacketBuf_Tell())}).address));
+        return layer;
+    }
+
+    GuestPtr<LayerC> LayerC_ctor(GuestPtr<LayerC> layer)
+    {
+        BaseObject_ctor(static_cast<int>(layer.address));
+        LayerC_InitParams(layer);
+        PacketBuf_Seek(static_cast<int>(LayerC_BuildPacket(layer, GuestPtr<uint32_t>{static_cast<uint32_t>(PacketBuf_Tell())}).address));
+        layer->unk_230 = GuestPtr<void>{port::load<uint32_t>(0x001F3B1Cu)};
+        return layer;
+    }
+
+    GuestPtr<LayerD> LayerD_ctor(GuestPtr<LayerD> layer, int buffers)
+    {
+        BaseObject_ctor(static_cast<int>(layer.address));
+        LayerD_InitParams(layer);
+        const GuestPtr<uint32_t> packet{static_cast<uint32_t>(PacketBuf_Tell())};
+        PacketBuf_Seek(static_cast<int>(LayerD_BuildPacket(layer, packet, GuestPtr<int32_t>{static_cast<uint32_t>(buffers)}).address));
+        return layer;
+    }
+
+    GuestPtr<LayerE> LayerE_ctor(GuestPtr<LayerE> layer, int buffers)
+    {
+        BaseObject_ctor(static_cast<int>(layer.address));
+        LayerE_InitParams(layer);
+        const GuestPtr<uint32_t> packet{static_cast<uint32_t>(PacketBuf_Tell())};
+        PacketBuf_Seek(static_cast<int>(LayerE_BuildPacket(layer, packet, GuestPtr<int32_t>{static_cast<uint32_t>(buffers)}).address));
+        return layer;
+    }
+
+    GuestPtr<LayerF> LayerF_ctor(GuestPtr<LayerF> layer)
+    {
+        BaseObject_ctor(static_cast<int>(layer.address));
+        LayerF_InitParams(layer);
+        PacketBuf_Seek(static_cast<int>(LayerF_BuildPacket(layer, GuestPtr<uint32_t>{static_cast<uint32_t>(PacketBuf_Tell())}).address));
+        return layer;
+    }
+
+    GuestPtr<LayerG> LayerG_ctor(GuestPtr<LayerG> layer, int buffers)
+    {
+        BaseObject_ctor(static_cast<int>(layer.address));
+        LayerG_InitParams(layer);
+        const GuestPtr<uint32_t> packet{static_cast<uint32_t>(PacketBuf_Tell())};
+        PacketBuf_Seek(static_cast<int>(LayerG_BuildPacket(layer, packet, GuestPtr<int32_t>{static_cast<uint32_t>(buffers)}).address));
+        return layer;
+    }
+
     // ---- drawing: queue an object's prebuilt packet on the DMA list
 
     void Packet_Draw(GuestPtr<uint32_t> packets) { Dma_AppendCall(static_cast<int>(*packets)); }
@@ -164,6 +220,54 @@ namespace mm
     }
 
     // ---- model instances
+
+    // A model's node matrices: each node's local matrix (+0x10) times its parent's world matrix (+0x70), or
+    // the model's matrix for a root node, into the node's world matrix. A parent whose last word (+0xAC) is
+    // still 0 is brought up to date first (A3DObject_UpdateNodeMatrix); every node's last word is cleared
+    // before.
+    void A3DObject_UpdateMatrices(GuestPtr<A3DObject> model)
+    {
+        const auto count = [&] { return port::load<int16_t>(model->model.address + 0x18u); };
+        const auto nodes = [&] { return port::load<uint32_t>(model->model.address + 8u); };
+        for (int i = 0; i < count(); ++i)
+            port::store<int32_t>(nodes() + static_cast<uint32_t>(i) * 0xC0u + 0xACu, 0);
+        for (int i = 0; i < count(); ++i)
+        {
+            const uint32_t node = nodes() + static_cast<uint32_t>(i) * 0xC0u;
+            const uint32_t parent = port::load<uint32_t>(node);
+            if (parent == 0)
+            {
+                Mat4_MulVu0(GuestPtr<Vec4>{node + 0x70u}, GuestPtr<Vec4>{node + 0x10u}, GuestPtr<Vec4>::of(model->matrix[0]));
+                continue;
+            }
+            if (ps2f(port::load<float>(parent + 0xACu)) == ps2f(0.0f))
+                A3DObject_UpdateNodeMatrix(model, GuestPtr<int32_t>{parent});
+            Mat4_MulVu0(GuestPtr<Vec4>{node + 0x70u}, GuestPtr<Vec4>{node + 0x10u}, GuestPtr<Vec4>{parent + 0x70u});
+        }
+    }
+
+    // A whole model: every node's matrix is cleared in its last word (+0xAC) and updated, then every node
+    // with a mesh is queued with its mesh. The node count is read again on every step, as in the original.
+    void A3DObject_Draw(GuestPtr<A3DObject> model)
+    {
+        const auto count = [&] { return port::load<int16_t>(model->model.address + 0x18u); };
+        const auto nodes = [&] { return port::load<uint32_t>(model->model.address + 8u); };
+        for (int i = 0; i < count(); ++i)
+            port::store<int32_t>(nodes() + static_cast<uint32_t>(i) * 0xC0u + 0xACu, 0);
+        for (int i = 0; i < count(); ++i)
+            A3DObject_UpdateNodeMatrix(model, GuestPtr<int32_t>{nodes() + static_cast<uint32_t>(i) * 0xC0u});
+        const uint32_t first = nodes();
+        for (int i = 0; i < count(); ++i)
+        {
+            const uint32_t node = first + static_cast<uint32_t>(i) * 0xC0u;
+            const uint32_t mesh = port::load<uint32_t>(node + 4u);
+            if (mesh != 0)
+            {
+                Dma_AppendCall(static_cast<int>(node + 0x50u));
+                Dma_AppendCall(static_cast<int>(mesh + 0x10u));
+            }
+        }
+    }
 
     // One node of a model: the node's own packet (nodes are 0xC0 bytes, packet at +0x50), then its mesh's
     // packet (+0x10) if it has a mesh.
@@ -232,6 +336,40 @@ namespace mm
             queueInstance(model, nodeMatrix(model, node), colour, node, flags);
     }
 
+    // Once a frame: the second instance limit follows the frame load, dropping by 12 per percent above 95,
+    // else rising by 1, within 255..935 (the second count restarts).
+    void Perf_AdaptDrawRange()
+    {
+        globals::instanceLimitedCount.set(0);
+        const ps2f load = globals::frameLoad.get();
+        if (load <= ps2f(95.0f))
+            globals::instanceLimit.set(globals::instanceLimit.get() + 1);
+        else
+            globals::instanceLimit.set(sdk::fptosi(fromInt(globals::instanceLimit.get()) - ps2f(12.0f) * (load - ps2f(95.0f))));
+        const int limit = globals::instanceLimit.get();
+        globals::instanceLimit.set(limit < 0xFF ? 0xFF : (limit < 0x3A8 ? limit : 0x3A7));
+    }
+
+    // A whole model as instances, when its nodes plus `reserve` still fit in this frame's slots: matrices
+    // updated, then every node with a mesh queued with its world matrix, until the slots run out.
+    void Instance_DrawModel(GuestPtr<A3DObject> model, GuestPtr<Vec4> colour, int reserve, int flags)
+    {
+        const auto count = [&] { return port::load<int16_t>(model->model.address + 0x18u); };
+        if (count() + reserve >= kMaxInstances - globals::instanceCount.get())
+            return;
+        A3DObject_UpdateMatrices(model);
+        const uint32_t nodes = modelNodes(model);
+        for (int i = 0; i < count(); ++i)
+        {
+            const uint32_t node = nodes + static_cast<uint32_t>(i) * 0xC0u;
+            if (port::load<uint32_t>(node + 4u) == 0)
+                continue;
+            queueInstance(model, GuestPtr<Vec4>{node + 0x70u}, colour, i, flags);
+            if (globals::instanceCount.get() >= kMaxInstances)
+                return;
+        }
+    }
+
     // As Instance_DrawNode, also within a second count and limit.
     void Instance_DrawNodeLimited(GuestPtr<A3DObject> model, GuestPtr<Vec4> colour, int node, int flags)
     {
@@ -275,8 +413,16 @@ namespace mm
     void LightSet_SetField20(GuestPtr<LightSet> lights, int value) { port::store<int32_t>(lights->unk_00.address + 0x20u, value); }
 
     PORT_FN(DmaList_BeginScene);
+    PORT_FN(LayerB_ctor);
+    PORT_FN(LayerC_ctor);
+    PORT_FN(LayerD_ctor);
+    PORT_FN(LayerE_ctor);
+    PORT_FN(LayerF_ctor);
+    PORT_FN(LayerG_ctor);
     PORT_FN(CityRender_DrawOverlays);
     PORT_FN(A3DObject_DrawNode);
+    PORT_FN(A3DObject_Draw);
+    PORT_FN(A3DObject_UpdateMatrices);
     PORT_FN(Packet_Draw);
     PORT_FN(Packet2_Draw);
     PORT_FN(TexSprite_Draw);
@@ -292,6 +438,8 @@ namespace mm
     PORT_FN(Instance_DrawMesh);
     PORT_FN(Instance_DrawNode);
     PORT_FN(Instance_DrawNodeLimited);
+    PORT_FN(Instance_DrawModel);
+    PORT_FN(Perf_AdaptDrawRange);
     PORT_FN(LightSet_ctor);
     PORT_FN(DmaList_QueueFade);
     PORT_FN(DmaChain_Next);

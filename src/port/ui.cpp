@@ -2,6 +2,7 @@
 
 #include "game_functions.h"
 #include "game_globals.h"
+#include "sdk.h"
 
 namespace mm
 {
@@ -466,6 +467,56 @@ namespace mm
         }
     }
 
+    // The laptop's minimap model follows the camera: turned by `angle`, moved against the camera's x and z.
+    void Minimap_SetView(GuestPtr<Minimap> minimap, GuestPtr<ps2f> camera, ps2f angle)
+    {
+        const GuestPtr<Vec4> matrix = GuestPtr<Vec4>::of(minimap->model->matrix[0]);
+        sdk::sceVu0RotMatrixZ(matrix.address, 0x001B2550u, angle); // from the identity
+        matrix[3].z = 2.0f;
+        matrix[3].x = ps2f(1.75f) - ps2f(0.0105f) * camera[0];
+        matrix[3].y = ps2f(1.02f) + ps2f(0.0105f) * camera[2];
+    }
+
+    // The laptop minimap: its frame and map models (0x1F3B18, 0x1F3B14), every cell set to colour 1 (both
+    // nibbles), and the packet of the map image built.
+    GuestPtr<Minimap> Minimap_ctor(GuestPtr<Minimap> minimap)
+    {
+        BaseObject_ctor(static_cast<int>(minimap.address));
+        minimap->model = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B14u)};
+        minimap->frameModel = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B18u)};
+        minimap->frameModel->matrix[3].x = 1.8f;
+        minimap->frameModel->matrix[3].y = 1.0f;
+        minimap->frameModel->matrix[3].z = 2.2f;
+        minimap->blink = 0;
+        for (uint8_t &cell : minimap->cells)
+            cell = 0x11;
+        Minimap_BuildPacket(minimap);
+        return minimap;
+    }
+
+    // Two colours of the map image's palette (0x1AF1A4, 0x1AF1A8) blink, every 32 and every 8 frames.
+    void Minimap_Draw(GuestPtr<Minimap> minimap)
+    {
+        const uint32_t blink = static_cast<uint32_t>(++minimap->blink);
+        if ((blink & 0x1Fu) == 0)
+            port::store<uint32_t>(0x001AF1A4u, (blink & 0x20u) != 0 ? 0x6000C0C0u : 0x60545AA3u);
+        if ((blink & 7u) == 0)
+            port::store<uint32_t>(0x001AF1A8u, (blink & 8u) != 0 ? 0x6000F0F0u : 0x60545AA3u);
+        A3DObject_Draw(minimap->frameModel);
+        Dma_AppendCall(static_cast<int>(GuestPtr<uint8_t>::of(minimap->packet[0]).address));
+        A3DObject_Draw(minimap->model);
+    }
+
+    // The pause menu starts cleared, with the default save name from 0x1B73D0 (Shift-JIS).
+    GuestPtr<PauseMenu> PauseMenu_ctor(GuestPtr<PauseMenu> pause)
+    {
+        for (uint32_t offset = 0; offset < 0x14; offset += 4)
+            port::store<uint32_t>(pause.address + offset, 0);
+        port::store<uint32_t>(pause.address + 0x2Cu, 0);
+        sdk::strcpy(pause.address + 0x30u, 0x001B73D0u);
+        return pause;
+    }
+
     // Counts the shown notice down and hides it when the time is up.
     void Notice_Tick(GuestPtr<Notice> notice)
     {
@@ -512,4 +563,8 @@ namespace mm
     PORT_FN(MenuWin_Draw);
     PORT_FN(Notice_Tick);
     PORT_FN(Minimap_Plot);
+    PORT_FN(Minimap_SetView);
+    PORT_FN(Minimap_ctor);
+    PORT_FN(Minimap_Draw);
+    PORT_FN(PauseMenu_ctor);
 }

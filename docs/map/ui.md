@@ -17,7 +17,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 
 ## Functions
 
-168 functions (typed 128, verified 40). Blocks: 62 can reach a thread switch, 10 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+168 functions (typed 124, verified 44). Blocks: 62 can reach a thread switch, 10 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -43,7 +43,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x00137030` | `CityCursor *mm_CityCursor_dtor(CityCursor *cursor, int16_t deleteFlag)` | 268 | yes | (provisional) deletes its models, frames and text box |
 | `0x00137140` | `CityCursor *mm_CityCursor_ctor(CityCursor *cursor)` | 1064 | yes | (provisional) loads DATA\A3D\DESTRUCT.A3D and creates the frames and text box |
 | `0x0013DB40` | `void mm_Minimap_BuildPacket(Minimap *minimap)` | 1096 | no | builds the minimap GS packet at +0x2000 (table 0x1AF180) |
-| `0x0013DF90` | `void mm_Minimap_SetView(Minimap *minimap, float *camera)` | 144 | no | rotates the minimap by the camera (sceVu0RotMatrixZ) and offsets it by the position (scale 0.0105) |
+| `0x0013DF90` | `void mm_Minimap_SetView(Minimap *minimap, float *camera, float angle)` | 144 | no | rotates the minimap by the camera (sceVu0RotMatrixZ) and offsets it by the position (scale 0.0105) |
 | `0x0013E020` | `void mm_Minimap_Plot(Minimap *minimap, uint32_t tile, int size, int colour, int keepHigher)` | 388 | no | marks tile a1 on the minimap with colour/size arguments |
 | `0x0013E1B0` | `void mm_Minimap_Draw(Minimap *minimap)` | 180 | no | draws the minimap models; marker colour blinks every 32 frames |
 | `0x0013E270` | `Minimap *mm_Minimap_DeletingDtor(Minimap *minimap, int16_t deleteFlag)` | 84 | yes | base destructor, then delete |

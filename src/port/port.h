@@ -18,6 +18,9 @@ namespace port
         Float,
     };
 
+    // Gives a call's float and integer arguments new values (difftest fuzzing); pointers are left alone.
+    using MutateFn = void (*)(R5900Context *ctx, uint32_t seed);
+
     struct Ported
     {
         uint32_t address;
@@ -25,6 +28,7 @@ namespace port
         PS2Runtime::RecompiledFunction wrapper;
         ResultKind result;
         PS2Runtime::RecompiledFunction original; // the generated function, set by install()
+        MutateFn mutate;                         // null when no argument can be fuzzed
     };
 
     // Installs every PORT_FN function in place of its generated counterpart (unless listed in

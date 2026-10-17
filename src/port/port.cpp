@@ -67,9 +67,66 @@ namespace port
         return "?";
     }
 
-    void registerPorted(uint32_t address, const char *name, GuestFn wrapper, ResultKind result)
+    void registerPorted(uint32_t address, const char *name, GuestFn wrapper, ResultKind result, MutateFn mutate)
     {
-        registry().push_back({address, name, wrapper, result, nullptr});
+        registry().push_back({address, name, wrapper, result, nullptr, mutate});
+    }
+
+    namespace
+    {
+        uint32_t nextRandom(uint32_t &state)
+        {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            return state;
+        }
+    }
+
+    void fuzzFloat(float &value, uint32_t &state)
+    {
+        switch (nextRandom(state) % 10)
+        {
+        case 0:
+        case 1:
+        case 2: value = 0.0f; break;
+        case 3: value = -value; break;
+        case 4: value = 1.0f; break;
+        case 5: value = -1.0f; break;
+        case 6: value = static_cast<float>(static_cast<int>(nextRandom(state) % 2001) - 1000) / 8.0f; break;
+        case 7: value = value * 2.0f; break;
+        case 8: value = static_cast<float>(static_cast<int>(nextRandom(state) % 129) - 64); break;
+        default: break; // as recorded
+        }
+    }
+
+    int64_t fuzzInt(int64_t value, int bytes, bool isSigned, uint32_t &state)
+    {
+        int64_t v = value;
+        switch (nextRandom(state) % 10)
+        {
+        case 0: v = 0; break;
+        case 1: v = 1; break;
+        case 2: v = -1; break;
+        case 3: v = value + 1; break;
+        case 4: v = value - 1; break;
+        case 5: v = nextRandom(state) % 256; break;
+        case 6: v = nextRandom(state) % 65536; break;
+        case 7: v = static_cast<int32_t>(nextRandom(state)); break;
+        case 8: v = (nextRandom(state) & 1) ? 0x80 : 0xFF; break;
+        default: break; // as recorded
+        }
+        // Keep it a value of the parameter's type, as a caller would pass it.
+        if (bytes < 8)
+        {
+            const int bits = bytes * 8;
+            const uint64_t mask = (uint64_t{1} << bits) - 1;
+            uint64_t u = static_cast<uint64_t>(v) & mask;
+            if (isSigned && (u >> (bits - 1)) != 0)
+                u |= ~mask;
+            v = static_cast<int64_t>(u);
+        }
+        return v;
     }
 
     namespace

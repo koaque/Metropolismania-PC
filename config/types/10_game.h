@@ -68,7 +68,7 @@ struct MapPerson {
     uint8_t unk_25;
     uint8_t schedState;        /* +0x26 */
     uint8_t activity;          /* +0x27 */
-    uint16_t home;             /* +0x28 home object */
+    uint16_t target;           /* +0x28 building the person heads for, 0x3F80 = none (mm_Person_TargetWork) */
     uint16_t family;           /* +0x2A */
     uint16_t introduces;       /* +0x2C family this resident can introduce */
     uint8_t member;            /* +0x2E */
@@ -88,7 +88,12 @@ struct CityMap {
     MapTile *tiles;            /* +0x04 */
     MapObject *objects;        /* +0x08 */
     TileLists *tileLists;      /* +0x0C */
-    uint8_t unk_10[0x54];
+    uint8_t unk_10[0x14];
+    int32_t objectCount;       /* +0x24 object records in use (of 0x3F80) */
+    uint8_t unk_28[8];
+    int32_t categoryCount[11]; /* +0x30 buildings per STRTYPE.BIN category (mm_MapObj_Delete; category 4 only without type flag 0x80) */
+    int32_t bigCategory5Count; /* +0x5C category 5 buildings of size 3 and up */
+    uint8_t unk_60[4];
     void *vtable;              /* +0x64 */
     MapPerson *people;         /* +0x68 */
     uint8_t unk_6C[8];

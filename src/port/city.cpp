@@ -133,6 +133,36 @@ namespace mm
         return meter <= port::load<uint16_t>(thresholds + 2) ? 1 : 2;
     }
 
+    // A building's claim icon colour: the plain colour while the claim meter is low, else the claim's icon
+    // colour pulsing with the frame counter: level 1 between 0.70 and 1.00 over 60 frames, level 2 between
+    // 50/60 and 60/60 over 20 frames (alpha unchanged).
+    void BldgClaims_DrawIcon(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> colour)
+    {
+        const int level = ClaimMeter_Level(obj->claimMeter);
+        if (level == 0)
+        {
+            *colour = *GuestPtr<Vec4>{globals::kDefaultColour};
+            return;
+        }
+        const uint32_t claim = static_cast<uint32_t>(Claim_GetSectionB(btype->claimB)) + 8u * obj->claimSlot;
+        ClaimIcon_GetColor(port::load<uint16_t>(claim + 2u), level, colour);
+        ps2f scale;
+        if (level == 1)
+        {
+            const int phase = globals::frameCounter.get() % 60;
+            scale = fromInt(phase < 31 ? phase + 70 : 130 - phase) / ps2f(100.0f);
+        }
+        else
+        {
+            const int phase = globals::frameCounter.get() % 20;
+            scale = fromInt(phase < 11 ? phase + 50 : 70 - phase) / ps2f(60.0f);
+        }
+        colour->x = colour->x * scale;
+        colour->y = colour->y * scale;
+        colour->z = colour->z * scale;
+        colour->w = colour->w;
+    }
+
     // Colour of a claim icon at a level: level 0 has a fixed colour; otherwise the icon's colour set picks
     // two entries of the colour table (ids with bit 15 use the sets from 0x40 on).
     void ClaimIcon_GetColor(uint32_t icon, int level, GuestPtr<Vec4> colour)
@@ -447,9 +477,9 @@ namespace mm
     }
 
     // A field is worked from 7:00 to 15:59 on ordinary days (weather 0 or 1, not a holiday): its meter (+0x10)
-    // drops by 1 (8 when its family is not in the city) and every resident who lives there adds 6, or 25
-    // once the field is established (+0x12); at 120 it becomes established with the meter at 250. Marks the
-    // field on the minimap and returns 1 when the meter has fallen below -49.
+    // drops by 1 (8 when its family is not in the city) and every person on it who is headed for it adds 6,
+    // or 25 once the field is established (+0x12); at 120 it becomes established with the meter at 250.
+    // Marks the field on the minimap and returns 1 when the meter has fallen below -49.
     int BldgField_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
     {
         if ((city->flags & 2u) != 0)
@@ -468,7 +498,7 @@ namespace mm
             const GuestPtr<MapPerson> person = People_Next(city->map, cursor);
             if (!person)
                 break;
-            if (person->home != obj->id)
+            if (person->target != obj->id)
                 continue;
             meter = static_cast<int16_t>(meter + (obj->claimSlot != 0 ? 25 : 6));
             if (meter >= 120)
@@ -540,6 +570,85 @@ namespace mm
         second[3].y = y;
         second[3].z = z;
         Instance_DrawMesh(globals::cityPartsModel.get(), second, colour, lights() + port::load<int32_t>(signals + 4u), flags);
+    }
+
+    // Offices tick like any building; a part that is no longer its tile's first object (and not the
+    // entrance) is flagged 0x120 and its variant byte cleared.
+    int BldgOffice_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int timeFlags)
+    {
+        const int result = Bldg_Tick(btype, city, obj, timeFlags);
+        if ((obj->flags & 0x20u) == 0 && obj->id != Map_GetTileFirstObject(city->map, obj->tile)->id)
+        {
+            obj->flags |= 0x120u;
+            port::store<uint8_t>(obj.address + 0x18u, 0);
+        }
+        return result;
+    }
+
+    // Housing ticks like any building; its entrance recounts the units, other parts that are no longer
+    // their tile's first object are flagged 0x120 with the variant byte cleared.
+    int BldgHousing_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int timeFlags)
+    {
+        const int result = Bldg_Tick(btype, city, obj, timeFlags);
+        if ((obj->flags & 0x20u) != 0)
+            BldgHousing_CountUnits(btype, city, obj);
+        else if (obj->id != Map_GetTileFirstObject(city->map, obj->tile)->id)
+        {
+            obj->flags |= 0x120u;
+            port::store<uint8_t>(obj.address + 0x18u, 0);
+        }
+        return result;
+    }
+
+    // Ports level their 3x3 block to height 2.5 and rebuild the ground around it, the rectangle reaching
+    // four tiles beyond the building (offset by its size towards +z, as in the original).
+    int BldgPort_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int timeFlags)
+    {
+        const int result = Bldg_Tick(btype, city, obj, timeFlags);
+        const int x = obj->tile & 0x7F, z = obj->tile >> 7;
+        Map_SetAreaHeight(city->map, x, z, 3, 2.5f);
+        port::GuestLocal<Vec4> rectSlot; // four int32 (x0, z0, x1, z1) on the guest stack
+        const GuestPtr<int32_t> rect{rectSlot.ptr().address};
+        rect[0] = x - 4;
+        rect[1] = z + btype->size - 4;
+        rect[2] = rect[0] + btype->size + 8;
+        rect[3] = rect[1] + btype->size + 8;
+        Map_UpdateAreaGeometry(city->map, rect);
+        return result;
+    }
+
+    // Theme park and ranch rides: the animation runs while open (stopping 1000 seconds before closing),
+    // finishes its cycle after hours and wraps at the length the model keeps in mesh 0 (+0xC).
+    namespace
+    {
+        void drawRide(GuestPtr<BuildingType> btype, int time, GuestVar<GuestPtr<A3DObject>> model, GuestVar<float> frame)
+        {
+            const int open = btype->openMinute * 60, close = btype->closeMinute * 60;
+            if (open < time && time < close)
+            {
+                if (time < close - 1000)
+                    frame.set(static_cast<float>(ps2f(frame.get()) + ps2f(1.0f)));
+            }
+            else if (ps2f(frame.get()) != ps2f(0.0f))
+                frame.set(static_cast<float>(ps2f(frame.get()) + ps2f(1.0f)));
+            if (!model.get())
+                return;
+            const ps2f length = A3D_GetMeshField0C(model.get(), 0);
+            if (!(ps2f(frame.get()) < length))
+                frame.set(0.0f);
+            Instance_DrawSwayingIfRoom(model.get(), 0, frame.get());
+            A3DObject_UpdateMatrices(model.get());
+        }
+    }
+
+    void BldgAmusementPark_DrawAnim(GuestPtr<BuildingType> btype, int time)
+    {
+        drawRide(btype, time, GuestVar<GuestPtr<A3DObject>>{0x001BDBE0u}, GuestVar<float>{0x001BDBE4u});
+    }
+
+    void BldgRanch_DrawAnim(GuestPtr<BuildingType> btype, int time)
+    {
+        drawRide(btype, time, GuestVar<GuestPtr<A3DObject>>{0x001BDBECu}, GuestVar<float>{0x001BDBF4u});
     }
 
     // Building type base class: slots the subclasses override.
@@ -644,10 +753,16 @@ namespace mm
     PORT_FN(BldgRoad_Draw);
     PORT_FN(BldgType_FindEntrance2);
     PORT_FN(BldgField_Tick);
+    PORT_FN(BldgOffice_Tick);
+    PORT_FN(BldgHousing_Tick);
+    PORT_FN(BldgPort_Tick);
+    PORT_FN(BldgAmusementPark_DrawAnim);
+    PORT_FN(BldgRanch_DrawAnim);
     PORT_FN(Schedule_PickEntry);
     PORT_FN(Stamina_HungerLevel);
     PORT_FN(Clock_AddWrap);
     PORT_FN(ClaimMeter_Level);
+    PORT_FN(BldgClaims_DrawIcon);
     PORT_FN(Applicants_AnyWaiting);
     PORT_FN(Wants_ctor);
     PORT_FN(BldgType_InitRecord);
