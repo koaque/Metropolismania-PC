@@ -371,14 +371,20 @@ struct StatusPanel {
 };
 /* Pause and save menu (0x99C bytes). */
 struct PauseMenu {
-    int32_t state;             /* +0x00 4: picking a save slot (mm_PauseMenu_StateSlotSelect) */
+    int32_t state;             /* +0x00 4: picking a save slot (mm_PauseMenu_StateSlotSelect), 10: a card message */
     GuestPtr<ListMenu> mainMenu;        /* +0x04 */
     GuestPtr<ListMenu> slotMenu;        /* +0x08 */
-    int32_t unk_0C;
+    GuestPtr<McManager> mc;             /* +0x0C */
     GuestPtr<TextBox> message;          /* +0x10 */
-    uint8_t unk_14[0x18];
+    uint8_t unk_14[8];
+    int32_t unk_1C;            /* +0x1C message 5 names a card by it (mm_PauseMenu_ShowCardMessage) */
+    uint8_t unk_20[4];
+    int32_t waitFrames;        /* +0x24 frames in the card message state (mm_PauseMenu_StateMain) */
+    uint8_t unk_28[4];
     ps2f openTime;            /* +0x2C rises by 10 per frame; the window is fully in at 120 */
-    uint8_t unk_30[0x96C];     /* +0x30 starts with the save name, default from 0x1B73D0 (Shift-JIS) */
+    uint8_t unk_30[0x44];      /* +0x30 starts with the save name, default from 0x1B73D0 (Shift-JIS) */
+    int32_t cardMessage;       /* +0x74 the message shown (mm_PauseMenu_ShowCardMessage) */
+    uint8_t unk_78[0x924];
 };
 /* Minimap (0x21DC bytes). */
 struct Minimap {
@@ -399,10 +405,11 @@ struct CityCursor {
     int32_t lineCount;         /* +0x1C0 info lines shown */
     int32_t mode;              /* +0x1C4 0 plain, 4 with the extra packet, else with the fade frame */
     int32_t frameStep;         /* +0x1C8 moves the fade frame up 16 per step */
-    int32_t unk_1CC;
+    int32_t openTimer;         /* +0x1CC 30 when a building is picked (mm_CityCursor_SelectTile) */
     int32_t frameX;            /* +0x1D0 */
     int32_t frameY;            /* +0x1D4 */
-    uint8_t unk_1D8[8];
+    int32_t picked;            /* +0x1D8 the building picked */
+    uint8_t unk_1DC[4];
 };
 /* Phone call manager (0x7C bytes). */
 /* Queued phone call (0xC bytes, mm_PhoneCall_Post). */
@@ -1055,7 +1062,8 @@ struct ClaimThresholds {
     uint16_t low;              /* +0x00 above it the claim shows (band 1) */
     uint16_t high;             /* +0x02 above it band 2 */
     uint8_t step;              /* +0x04 meter rise per evaluation */
-    uint8_t unk_05[2];
+    uint8_t switchFactor;      /* +0x05 a building takes the neighbours' claim when its meter times this is below their weighted meters (mm_BldgClaims_EvalD) */
+    uint8_t spreadStep;        /* +0x06 meter rise per weight of a claiming neighbour (mm_BldgClaims_EvalA) */
     uint8_t holdTime;          /* +0x07 claim timer once the meter maxes out */
 };
 
@@ -1202,8 +1210,22 @@ struct MenuWin {
     int32_t unk_18;            /* +0x18 */
     int32_t unk_1C;            /* +0x1C */
 };
-/* Talk person card (0x38 bytes), a widget. */
-struct TalkCard { Widget base; uint8_t data[0x2C]; };
+/* Talk person card (0x38 bytes, vtable 0x1BD720), a widget: name, age and gauges of the person or family member
+   chosen in a talk. */
+struct TalkCard {
+    Widget base;
+    int32_t person;            /* +0x0C person record, 6000 = a family member by phone */
+    int32_t family;            /* +0x10 */
+    int32_t member;            /* +0x14 */
+    int32_t slot;              /* +0x18 place on the screen: x from the table at 0x1B1B28 */
+    GuestPtr<void> model;               /* +0x1C the talk building model (0x1F3B2C) */
+    GuestPtr<TextBox> lowerText;        /* +0x20 at y 0x7D60 */
+    GuestPtr<TextBox> upperText;        /* +0x24 at y 0x7C00 */
+    GuestPtr<CityScene> city;           /* +0x28 */
+    ps2f friendship;          /* +0x2C the friendship meter */
+    GuestPtr<Frame> frame;              /* +0x30 */
+    int32_t mood;              /* +0x34 gauge face: 0 none, 1 to 4 (mm_TalkCard_Show) */
+};
 /* Talk money panel (0x1C bytes, vtable 0x1BD7C0), a widget: the shown amount counts towards the real one
    by 100 a frame (mm_TalkMoney_Active). */
 struct TalkMoney {
@@ -1426,9 +1448,13 @@ static_assert(sizeof(PauseMenu) == 0x99C, "PauseMenu size");
 static_assert(offsetof(PauseMenu, state) == 0x00, "PauseMenu.state");
 static_assert(offsetof(PauseMenu, mainMenu) == 0x04, "PauseMenu.mainMenu");
 static_assert(offsetof(PauseMenu, slotMenu) == 0x08, "PauseMenu.slotMenu");
+static_assert(offsetof(PauseMenu, mc) == 0x0C, "PauseMenu.mc");
 static_assert(offsetof(PauseMenu, message) == 0x10, "PauseMenu.message");
+static_assert(offsetof(PauseMenu, unk_1C) == 0x1C, "PauseMenu.unk_1C");
+static_assert(offsetof(PauseMenu, waitFrames) == 0x24, "PauseMenu.waitFrames");
 static_assert(offsetof(PauseMenu, openTime) == 0x2C, "PauseMenu.openTime");
 static_assert(offsetof(PauseMenu, unk_30) == 0x30, "PauseMenu.unk_30");
+static_assert(offsetof(PauseMenu, cardMessage) == 0x74, "PauseMenu.cardMessage");
 static_assert(sizeof(Minimap) == 0x21DC, "Minimap size");
 static_assert(offsetof(Minimap, cells) == 0x0000, "Minimap.cells");
 static_assert(offsetof(Minimap, packet) == 0x2000, "Minimap.packet");
@@ -1444,8 +1470,10 @@ static_assert(offsetof(CityCursor, targetPos) == 0x1B0, "CityCursor.targetPos");
 static_assert(offsetof(CityCursor, lineCount) == 0x1C0, "CityCursor.lineCount");
 static_assert(offsetof(CityCursor, mode) == 0x1C4, "CityCursor.mode");
 static_assert(offsetof(CityCursor, frameStep) == 0x1C8, "CityCursor.frameStep");
+static_assert(offsetof(CityCursor, openTimer) == 0x1CC, "CityCursor.openTimer");
 static_assert(offsetof(CityCursor, frameX) == 0x1D0, "CityCursor.frameX");
 static_assert(offsetof(CityCursor, frameY) == 0x1D4, "CityCursor.frameY");
+static_assert(offsetof(CityCursor, picked) == 0x1D8, "CityCursor.picked");
 static_assert(sizeof(PhoneCallEntry) == 0xC, "PhoneCallEntry size");
 static_assert(offsetof(PhoneCallEntry, person) == 0x00, "PhoneCallEntry.person");
 static_assert(offsetof(PhoneCallEntry, family) == 0x04, "PhoneCallEntry.family");
@@ -1821,6 +1849,8 @@ static_assert(offsetof(Words, lineTable) == 0x24, "Words.lineTable");
 static_assert(offsetof(ClaimThresholds, low) == 0x00, "ClaimThresholds.low");
 static_assert(offsetof(ClaimThresholds, high) == 0x02, "ClaimThresholds.high");
 static_assert(offsetof(ClaimThresholds, step) == 0x04, "ClaimThresholds.step");
+static_assert(offsetof(ClaimThresholds, switchFactor) == 0x05, "ClaimThresholds.switchFactor");
+static_assert(offsetof(ClaimThresholds, spreadStep) == 0x06, "ClaimThresholds.spreadStep");
 static_assert(offsetof(ClaimThresholds, holdTime) == 0x07, "ClaimThresholds.holdTime");
 static_assert(offsetof(SeRequest, sound) == 0x00, "SeRequest.sound");
 static_assert(offsetof(SeRequest, voice) == 0x01, "SeRequest.voice");
@@ -1916,7 +1946,17 @@ static_assert(offsetof(MenuWin, list) == 0x10, "MenuWin.list");
 static_assert(offsetof(MenuWin, size) == 0x14, "MenuWin.size");
 static_assert(offsetof(MenuWin, unk_18) == 0x18, "MenuWin.unk_18");
 static_assert(offsetof(MenuWin, unk_1C) == 0x1C, "MenuWin.unk_1C");
-static_assert(sizeof(TalkCard) == 0x38, "TalkCard size");
+static_assert(offsetof(TalkCard, person) == 0x0C, "TalkCard.person");
+static_assert(offsetof(TalkCard, family) == 0x10, "TalkCard.family");
+static_assert(offsetof(TalkCard, member) == 0x14, "TalkCard.member");
+static_assert(offsetof(TalkCard, slot) == 0x18, "TalkCard.slot");
+static_assert(offsetof(TalkCard, model) == 0x1C, "TalkCard.model");
+static_assert(offsetof(TalkCard, lowerText) == 0x20, "TalkCard.lowerText");
+static_assert(offsetof(TalkCard, upperText) == 0x24, "TalkCard.upperText");
+static_assert(offsetof(TalkCard, city) == 0x28, "TalkCard.city");
+static_assert(offsetof(TalkCard, friendship) == 0x2C, "TalkCard.friendship");
+static_assert(offsetof(TalkCard, frame) == 0x30, "TalkCard.frame");
+static_assert(offsetof(TalkCard, mood) == 0x34, "TalkCard.mood");
 static_assert(offsetof(TalkMoney, shown) == 0x0C, "TalkMoney.shown");
 static_assert(offsetof(TalkMoney, amount) == 0x10, "TalkMoney.amount");
 static_assert(offsetof(TalkMoney, model) == 0x14, "TalkMoney.model");

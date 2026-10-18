@@ -201,7 +201,7 @@
 0x0013A250 EventMgr *mm_EventMgr_dtor(EventMgr *events, int16_t deleteFlag);
 0x0013A360 EventMgr *mm_EventMgr_ctor(EventMgr *events);
 0x0013A560 void mm_Event_LoadTypes(void);
-0x0013A770 int mm_EventList_MoveDue(int list, int from, int to, int32_t *ctx);
+0x0013A770 void mm_EventList_MoveDue(int list, int from, int to, int32_t *ctx);
 0x0013AA70 void mm_EventList_MoveDueTo(int list, int from, int to, int32_t *ctx);
 0x0013ADF0 void mm_EventList_MoveOffRank(int list, int from, int to, int32_t *ctx);
 0x0013B110 void mm_EventList_MoveOnRank(int list, int from, int to, int32_t *ctx);
@@ -234,7 +234,7 @@
 0x0013C9F0 void mm_Family_SetFlagA(uint32_t family);
 0x0013CA70 int mm_Family_InCity(uint32_t family);
 0x0013CAC0 int mm_Family_GetFriendshipBand(int family, int member);
-0x0013CB40 int mm_Family_AddFriendship(int family, int member, int32_t *approval, int points);
+0x0013CB40 int64_t mm_Family_AddFriendship(int family, int member, int32_t *approval, int points);
 0x0013CDF0 int mm_Family_AddFriendshipScaled(int family, int member, int32_t *approval, int points, int sign);
 0x0013CE00 uint8_t mm_Family_GetFriendship(int family, int member);
 0x0013CE40 void mm_Family_MoveAway(uint32_t family);
@@ -299,7 +299,7 @@
 0x00141F60 float mm_TerrainGen_ApplyBump(CityMap *map, int x, int z, int mode, uint32_t flags, float height, float radius);
 0x001424A0 CityMap *mm_MapTiles_dtor(CityMap *map, int16_t deleteFlag);
 0x00142510 CityMap *mm_MapTiles_ctor(CityMap *map);
-0x00142590 void mm_Map_FindPartyGuests(CityMap *map);
+0x00142590 void mm_Map_ReturnPeopleToWork(CityMap *map);
 0x00142830 MapObject *mm_Map_FindPersonObjectOnTile(CityMap *map, uint32_t person, uint32_t tile);
 0x00142910 MapPerson *mm_Map_FindPersonOfFlaggedType(CityMap *map, int16_t home);
 0x001429A0 MapPerson *mm_Map_FindWorkerOnTile(CityMap *map, uint16_t work, uint32_t tile);
@@ -620,7 +620,7 @@
 0x00162C50 void mm_NameEntry_Draw(NameEntry *entry);
 0x00162EE0 int mm_NameEntry_Update(NameEntry *entry);
 0x00162FD0 void mm_NameEntry_Close(NameEntry *entry);
-0x00163000 int mm_NameEntry_Setup(NameEntry *entry, uint32_t mode, uint8_t maxLength, int a3, int t0, char *text);
+0x00163000 void mm_NameEntry_Setup(NameEntry *entry, uint32_t mode, uint8_t maxLength, int a3, int t0, char *text);
 0x00163390 NameEntry *mm_NameEntry_dtor(NameEntry *entry, int16_t deleteFlag);
 0x00163450 void mm_NameEntry_CreateTexts(NameEntry *entry);
 0x00163600 NameEntry *mm_NameEntry_ctor(NameEntry *entry);
@@ -1299,7 +1299,7 @@
 0x00192540 void mm_EvDeliveryMan_Update(EventData *data, CityScene *city);
 0x00192690 void mm_EvDeliveryMan_End(EventData *data, CityScene *city);
 0x00192750 void mm_EvDeliveryMan_Start(EventData *data, CityScene *city);
-0x001927D0 int mm_EvDeliveryMan_Check(EventData *data, CityScene *city, int a2);
+0x001927D0 int mm_EvDeliveryMan_Check(EventData *data, CityScene *city, MapPerson *person);
 0x00192CD0 int mm_EvBugDamage_Check(EventData *data, CityScene *city);
 0x00192D60 void mm_EventList_MoveAll(int list, int from, int to);
 0x00193020 void mm_EventQueue_RemoveAt(int queue, int level, uint16_t *entry);
@@ -1357,9 +1357,9 @@
 0x00198D40 void mm_EvThief_Update(EventData *data, CityScene *city);
 0x001994F0 int mm_EvThief_Check(EventData *data, CityScene *city);
 0x001996E0 int mm_EvRelationship_Slot14(EventData *data, CityScene *city, ActorRef *actor, int mode);
-0x00199870 int mm_EvAffair_Check(EventData *data, CityScene *city, int a2);
-0x00199AB0 int mm_EvBoyfriend_Check(EventData *data, CityScene *city, int a2);
-0x00199D10 int mm_EvGirlfriend_Check(EventData *data, CityScene *city, int a2);
+0x00199870 int mm_EvAffair_Check(EventData *data, CityScene *city, MapPerson *person);
+0x00199AB0 int mm_EvBoyfriend_Check(EventData *data, CityScene *city, MapPerson *person);
+0x00199D10 int mm_EvGirlfriend_Check(EventData *data, CityScene *city, MapPerson *person);
 0x00199F70 int mm_EvActor_Notify(CityScene *city, ActorRef *actor);
 0x0019A050 int mm_EvActor_PointCursor(CityScene *city, ActorRef *actor);
 0x0019A140 int mm_EvActor_PointAtBuilding(CityScene *city, int actorPerson, int building);
@@ -1374,7 +1374,7 @@
 0x0019AE50 int mm_Person_IsOnOpenTile(CityScene *city, ActorRef *actor);
 0x0019AF30 int mm_Person_IsAtBuilding(CityScene *city, ActorRef *actor, ActorRef *target);
 0x0019B020 MapPerson *mm_Person_FindIdleOfType(CityScene *city, MapObject *building, uint32_t charType);
-0x0019B0B0 int mm_Person_IsNearBuilding(CityScene *city, float *position, MapObject *obj, int range);
+0x0019B0B0 int mm_Person_IsNearBuilding(CityScene *city, MapPerson *person, MapObject *obj, int range);
 0x0019B260 int mm_Player_DistanceToBuilding(CityScene *city, ActorRef *actor);
 0x0019B3D0 float mm_Player_DistanceToPerson(CityScene *city, ActorRef *actor);
 0x0019B440 float mm_Player_DistanceToPoint(CityScene *city, float *point);
@@ -1462,9 +1462,9 @@
 0x001A0B00 void mm_Movie_VoBufReset(int vobuf);
 0x001A0B10 void mm_Movie_VoBufDelete(void);
 0x001A0B20 void mm_Movie_VoBufCreate(uint32_t *vobuf, int data, int tags, int size);
-0x001A0C40 int mm_Words_MatchTypedAnswer(int script, char *typed);
+0x001A0C40 void mm_Words_MatchTypedAnswer(int script, char *typed);
 0x001A0F90 char *mm_Words_GetEntryDefault(void);
-0x001A11E0 uint16_t mm_Words_GetEntryMode(void);
+0x001A11E0 int16_t mm_Words_GetEntryMode(void);
 0x001A13E0 char *mm_Words_GetChoiceText(int script, CityScene *city, int code, int index);
 0x001A17F0 void mm_Words_ApplyChoice(int script, CityScene *city, int code, int choice);
 0x001A19F0 int mm_Words_CountChoices(int script, CityScene *city, int code);

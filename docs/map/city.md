@@ -37,11 +37,19 @@ conversations (person, workplace, family, member, claim slot) and the entries ev
 256 words. Applicants (`mm_Applicants_*`, list at city `+0x54`, 0x14-byte entries) are the families waiting to
 move in.
 
+Claim data (`DATA\BIN\CLAIM.BIN`, at `*0x001BDA50`) starts with the `ClaimThresholds` (low, high, meter step,
+switch factor, spread step, hold time). Per building type, section B (`+0x147`) lists claim entries of 8 bytes: a flag
+byte (0 a need, set a wish), the claimed id (from 0x8000 a group of ids in section D), a start value and a reach in
+tiles; section C (`+0x148`) lists the ids the type provides with their values. `mm_BldgClaims_CountNearby` counts a
+claim among the buildings of the id's tile lists that overlap the reach; `mm_BldgClaims_EvalB` draws the building's
+claim by those weights, `EvalC` checks it, `EvalD` weighs it against the neighbours' and `EvalA` spreads it to them
+over a 13 x 13 grid of weights at `0x001B8060`. Claim slot 0x18 means none, id 0x32 is "no entrance".
+
 <!-- Generated below by tools/map_docs.py from config/port_status.csv. Edit function notes there, not here. -->
 
 ## Functions
 
-185 functions (ported 1, typed 75, verified 109). Blocks: 55 can reach a thread switch, 7 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+185 functions (ported 1, typed 64, verified 120). Blocks: 55 can reach a thread switch, 7 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -126,11 +134,11 @@ move in.
 | `0x001655A0` | `BuildingType *mm_BldgRanch_ctor(BuildingType *btype, uint8_t *record, int id)` | 88 | yes | Building constructor, vtable 0x1BD0C0, models from 0x1F3B50.. |
 | `0x00165600` | `BuildingType *mm_Bldg_dtor(BuildingType *btype, int16_t deleteFlag)` | 96 | yes | intermediate Building class, vtable 0x1BD100 |
 | `0x00165660` | `int mm_ClaimMeter_Level(uint16_t meter)` | 60 | no | claim meter a0 against the thresholds at *0x1BDA50: 0 below low, 1 between, 2 above high |
-| `0x001656A0` | `void mm_BldgClaims_EvalA(BuildingType *btype, CityScene *city, MapObject *obj)` | 932 | no | (provisional) claim evaluation part A (CLAIM.BIN) |
-| `0x00165A50` | `void mm_BldgClaims_EvalB(BuildingType *btype, CityScene *city, MapObject *obj)` | 504 | no | (provisional) part B, random |
-| `0x00165C50` | `uint32_t mm_BldgClaims_CountNearby(BuildingType *btype, CityScene *city, char *claimEntry, int32_t *rect)` | 552 | no | (provisional) counts matching buildings in the claim's tile lists |
+| `0x001656A0` | `void mm_BldgClaims_EvalA(BuildingType *btype, CityScene *city, MapObject *obj)` | 932 | no | the building's claim spreads to its neighbours: over the 13 x 13 weight grid (every other tile) each building first met there, and the objects stacked on it, with the same claim (flag and id), above the low threshold and not maxed, get their meter raised by weight x spread step; at 0xFF it maxes out (flag 0x40, hold time); a claim rising a band costs a point of approval |
+| `0x00165A50` | `void mm_BldgClaims_EvalB(BuildingType *btype, CityScene *city, MapObject *obj)` | 504 | no | draws the building's claim: each section B entry weighs its value among the nearby buildings (mm_BldgClaims_CountNearby; id 0x32 weighs its start value while the building has no entrance), one is drawn by weight as the claim slot and timer, a need not at its start value marks the building (flag 2) |
+| `0x00165C50` | `uint32_t mm_BldgClaims_CountNearby(BuildingType *btype, CityScene *city, char *claimEntry, int32_t *rect)` | 552 | no | the value of a claim entry (flag, id or section D group, start value, reach) among the buildings of its tile lists overlapping the rectangle: a need counts down from the start by each building's section C value (0 once met), a wish counts up (cap 0xFF) |
 | `0x00165E80` | `void mm_BldgClaims_EvalC(BuildingType *btype, CityScene *city, MapObject *obj)` | 712 | no | checks whether the claim is met (nothing missing nearby): flag 8, approval +3, sound and minimap mark; else meter handling |
-| `0x00166150` | `void mm_BldgClaims_EvalD(BuildingType *btype, CityScene *city, MapObject *obj)` | 1768 | no | (provisional) part D |
+| `0x00166150` | `void mm_BldgClaims_EvalD(BuildingType *btype, CityScene *city, MapObject *obj)` | 1768 | no | weighs the building's claims against its neighbours': the table at 0x1F4B90 sums, per claim, the weights and weighted meters of the neighbours holding it; the heaviest wins: the building's own claim moves its meter towards their average by half a step, another is taken when the meter is low enough (switch factor) |
 | `0x00166840` | `int mm_BldgClaims_Evaluate(BuildingType *btype, CityScene *city, MapObject *obj, int rise)` | 628 | no | per building: claim check (part C), meter rise by the rate, part D above the low threshold, flag 0x40 above 0xFE |
 | `0x00166AC0` | `void mm_BldgClaims_DrawIcon(BuildingType *btype, MapObject *obj, Vec4 *colour)` | 372 | no | claim icon colour from the meter level (1 slow pulse, 2 fast pulse) |
 | `0x00166C40` | `void mm_Bldg_InitRecordBase(BuildingType *btype, MapObject *obj)` | 12 | no | record +0x12 = 0x18 |

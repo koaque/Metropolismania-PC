@@ -333,7 +333,8 @@ struct ClaimThresholds {
     uint16_t low;              /* +0x00 above it the claim shows (band 1) */
     uint16_t high;             /* +0x02 above it band 2 */
     uint8_t step;              /* +0x04 meter rise per evaluation */
-    uint8_t unk_05[2];
+    uint8_t switchFactor;      /* +0x05 a building takes the neighbours' claim when its meter times this is below their weighted meters (mm_BldgClaims_EvalD) */
+    uint8_t spreadStep;        /* +0x06 meter rise per weight of a claiming neighbour (mm_BldgClaims_EvalA) */
     uint8_t holdTime;          /* +0x07 claim timer once the meter maxes out */
 };
 

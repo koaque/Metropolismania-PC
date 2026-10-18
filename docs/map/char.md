@@ -21,7 +21,7 @@ People and the player character.
 
 ## Functions
 
-84 functions (typed 24, verified 60). Blocks: 19 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+84 functions (typed 21, verified 63). Blocks: 19 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -104,7 +104,7 @@ People and the player character.
 | `0x0019AE50` | `int mm_Person_IsOnOpenTile(CityScene *city, ActorRef *actor)` | 212 | no | (provisional) the person's tile holds no building with type flag 0x40 |
 | `0x0019AF30` | `int mm_Person_IsAtBuilding(CityScene *city, ActorRef *actor, ActorRef *target)` | 232 | no | person a1 (6000 counts as yes) stands at building a2 |
 | `0x0019B020` | `MapPerson *mm_Person_FindIdleOfType(CityScene *city, MapObject *building, uint32_t charType)` | 136 | no | first person of char type a2 whose home building is free (0x165660) |
-| `0x0019B0B0` | `int mm_Person_IsNearBuilding(CityScene *city, float *position, MapObject *obj, int range)` | 424 | no | person position within a3 tiles of building a2's footprint |
+| `0x0019B0B0` | `int mm_Person_IsNearBuilding(CityScene *city, MapPerson *person, MapObject *obj, int range)` | 424 | no | person position within a3 tiles of building a2's footprint |
 | `0x0019B260` | `int mm_Player_DistanceToBuilding(CityScene *city, ActorRef *actor)` | 360 | no | tiles between the player and the building of actor a1 (footprint aware); a0 is the city |
 | `0x0019B3D0` | `float mm_Player_DistanceToPerson(CityScene *city, ActorRef *actor)` | 104 | no | distance from the player to person a1 (sqrt) |
 | `0x0019B440` | `float mm_Player_DistanceToPoint(CityScene *city, float *point)` | 80 | no | distance from the player to point a1 |

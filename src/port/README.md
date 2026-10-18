@@ -40,6 +40,12 @@ Do not edit the two generated headers; `pipeline.py stage` rewrites them.
      and the addresses in `game_globals.h`, not host copies that outlive the call.
    - Call other game functions by name (`Family_InCity(f)`). Unported ones go through the
      function table to the recompiled code; ported ones are plain C++ calls.
+   - Some functions leave the result register as they find it (a call that ends in a callee's
+     work, a helper that returns nothing). Their port returns `port::guestV0()`. A caller that gets
+     its own result from such a call has to put it there first with `port::setGuestV0(...)`:
+     the recompiled caller had the callee's value in v0, a ported caller calling a ported callee
+     does not (`mm_MemberStatus_OnLevel12` returns the status address through
+     `mm_Family_AddFriendship`).
    - Nothing that can block or switch threads (the `Blocks` column in `docs/map/`): those
      functions wait for plan step P6.
    - VU0 registers are shared state. Some game code reads lanes it never wrote: the w of vf6 in

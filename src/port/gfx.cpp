@@ -1273,4 +1273,226 @@ namespace mm
     PORT_FN(LayerG_InitParams);
     PORT_FN(CityRender_InitParams);
     PORT_FN(Terrain_InitParams);
+
+    // Layer B's draw parameters: a colour, register words, a GIF tag and the texture coordinates of its strips.
+    void LayerB_InitParams(GuestPtr<LayerB> layer)
+    {
+        const uint32_t l = layer.address;
+        putFloats(l + 0x0u, {128.0f, 128.0f, 128.0f, 128.0f});
+        putWords(l + 0x10u, {0x9930a698u, 0x4004b085u, 0x0u, 0x0u});
+        putWords(l + 0x20u, {0x68u, 0x0u, 0x0u, 0x0u});
+        putWords(l + 0x30u, {0x801au, 0xe0000000u, 0x41241206u, 0x412412u});
+        putWords(l + 0x40u, {0x3cu, 0x0u, 0x0u, 0x0u});
+        putWords(l + 0x50u, {0x0u, 0x0u, 0x3f800000u, 0x0u});
+        putFloats(l + 0x60u, {0.5f, 0.0f, 1.0f, 0.0f});
+        putFloats(l + 0x70u, {0.0f, 0.5f, 1.0f, 0.0f});
+        putFloats(l + 0x80u, {0.5f, 0.5f, 1.0f, 0.0f});
+        putFloats(l + 0x90u, {0.0f, 1.0f, 1.0f, 0.0f});
+        putFloats(l + 0xa0u, {0.5f, 1.0f, 1.0f, 0.0f});
+        putFloats(l + 0xb0u, {0.5f, 0.0f, 1.0f, 0.0f});
+        putFloats(l + 0xc0u, {1.0f, 0.0f, 1.0f, 0.0f});
+        putFloats(l + 0xd0u, {0.5f, 0.5f, 1.0f, 0.0f});
+        putFloats(l + 0xe0u, {1.0f, 0.5f, 1.0f, 0.0f});
+        putFloats(l + 0xf0u, {0.5f, 1.0f, 1.0f, 0.0f});
+        putFloats(l + 0x100u, {1.0f, 1.0f, 1.0f, 0.0f});
+        putWords(l + 0x110u, {0x0u, 0x0u, 0x0u, 0x20u});
+        putFloats(l + 0x120u, {0.6f, 0.08f, 0.0f, 0.0f});
+        putWords(l + 0x200u, {0x0u, 0x0u, 0x0u, 0x40u});
+        putWords(l + 0x210u, {0x9930a708u, 0x4004b085u, 0x0u, 0x0u});
+    }
+
+    // Layer D's draw parameters, built like layer B's.
+    void LayerD_InitParams(GuestPtr<LayerD> layer)
+    {
+        const uint32_t l = layer.address;
+        putWords(l + 0x0u, {0x8060u, 0x4034c000u, 0x4141u, 0x0u});
+        putFloats(l + 0x10u, {765.0f, 765.0f, 765.0f, 40.0f});
+        putFloats(l + 0x20u, {765.0f, 765.0f, 765.0f, 0.0f});
+        port::store<int32_t>(l + 0x30u, 8);
+        putFloats(l + 0x40u, {40.0f, 0.1f, 0.0f, 0.0f});
+        putFloats(l + 0x50u, {40.0f, 35.4f, 0.0f, 0.0f});
+        putFloats(l + 0x60u, {40.0f, 9.6f, 0.0f, 0.0f});
+        putFloats(l + 0x70u, {40.0f, 15.8f, 0.0f, 0.0f});
+        putFloats(l + 0x80u, {40.0f, 1.3f, 0.0f, 0.0f});
+        putFloats(l + 0x90u, {40.0f, 24.6f, 0.0f, 0.0f});
+        putFloats(l + 0xa0u, {40.0f, 13.3f, 0.0f, 0.0f});
+        putFloats(l + 0xb0u, {40.0f, 8.7f, 0.0f, 0.0f});
+        putFloats(l + 0xc0u, {40.0f, 36.8f, 0.0f, 0.0f});
+        putFloats(l + 0xd0u, {40.0f, 18.1f, 0.0f, 0.0f});
+        putFloats(l + 0xe0u, {40.0f, 28.0f, 0.0f, 0.0f});
+        putFloats(l + 0xf0u, {40.0f, 11.6f, 0.0f, 0.0f});
+        putFloats(l + 0x100u, {40.0f, 28.8f, 0.0f, 0.0f});
+        putFloats(l + 0x110u, {40.0f, 31.5f, 0.0f, 0.0f});
+        putFloats(l + 0x120u, {40.0f, 4.2f, 0.0f, 0.0f});
+        putFloats(l + 0x130u, {40.0f, 7.9f, 0.0f, 0.0f});
+        putFloats(l + 0x140u, {-0.277647f, -36.85f, 0.186816f, 1.0f});
+        putFloats(l + 0x150u, {-0.077647f, -38.449997f, 0.186816f, 1.0f});
+        putFloats(l + 0x160u, {0.278509f, -33.95f, 1.083412f, 1.0f});
+        putFloats(l + 0x170u, {0.478509f, -35.55f, 1.083412f, 1.0f});
+        putFloats(l + 0x180u, {-0.702686f, -30.399998f, 0.219903f, 1.0f});
+        putWords(l + 0x190u, {0xbf00b008u, 0xc1ffffffu, 0x3e612e41u, 0x3f800000u});
+        putFloats(l + 0x1a0u, {0.823469f, -27.699999f, -0.033502f, 1.0f});
+        putFloats(l + 0x1b0u, {1.023469f, -29.3f, -0.033502f, 1.0f});
+        putFloats(l + 0x1c0u, {-0.437529f, -24.25f, 0.511663f, 1.0f});
+        putFloats(l + 0x1d0u, {-0.237529f, -25.849998f, 0.511663f, 1.0f});
+        putFloats(l + 0x1e0u, {0.617897f, -20.5f, -0.409993f, 1.0f});
+        putFloats(l + 0x1f0u, {0.817897f, -22.099998f, -0.409993f, 1.0f});
+        putFloats(l + 0x200u, {0.373105f, -16.600002f, 0.141843f, 1.0f});
+        putFloats(l + 0x210u, {0.573105f, -18.2f, 0.141843f, 1.0f});
+        putFloats(l + 0x220u, {0.179452f, -11.45f, -0.877998f, 1.0f});
+        putFloats(l + 0x230u, {0.379452f, -13.049998f, -0.877998f, 1.0f});
+        putFloats(l + 0x240u, {0.8f, -7.15f, 1.0f, 1.0f});
+        putFloats(l + 0x250u, {1.0f, -8.75f, 1.0f, 1.0f});
+        putFloats(l + 0x260u, {-0.85f, -14.650001f, 0.7f, 1.0f});
+        putFloats(l + 0x270u, {-0.65f, -16.25f, 0.7f, 1.0f});
+        putFloats(l + 0x280u, {-0.55f, -4.3f, -0.6f, 1.0f});
+        putFloats(l + 0x290u, {-0.35f, -5.9f, -0.6f, 1.0f});
+        putFloats(l + 0x2a0u, {-0.2f, -0.6f, -0.25f, 1.0f});
+        putFloats(l + 0x2b0u, {0.0f, -2.2f, -0.25f, 1.0f});
+        putFloats(l + 0x2d0u, {128.0f, 128.0f, 128.0f, 128.0f});
+        putWords(l + 0x2e0u, {0x9930a7b8u, 0x4004f685u, 0x0u, 0x0u});
+        putWords(l + 0x2f0u, {0x68u, 0x0u, 0x0u, 0x0u});
+        putWords(l + 0x300u, {0x801au, 0xe0000000u, 0x41241206u, 0x412412u});
+        putWords(l + 0x310u, {0x7cu, 0x0u, 0x0u, 0x0u});
+        putWords(l + 0x320u, {0x0u, 0x0u, 0x3f800000u, 0x0u});
+        putFloats(l + 0x330u, {0.5f, 0.0f, 1.0f, 0.0f});
+        putFloats(l + 0x340u, {0.0f, 0.5f, 1.0f, 0.0f});
+        putFloats(l + 0x350u, {0.5f, 0.5f, 1.0f, 0.0f});
+        putFloats(l + 0x360u, {0.0f, 1.0f, 1.0f, 0.0f});
+        putFloats(l + 0x370u, {0.5f, 1.0f, 1.0f, 0.0f});
+        putFloats(l + 0x380u, {0.5f, 0.0f, 1.0f, 0.0f});
+        putFloats(l + 0x390u, {1.0f, 0.0f, 1.0f, 0.0f});
+        putFloats(l + 0x3a0u, {0.5f, 0.5f, 1.0f, 0.0f});
+        putFloats(l + 0x3b0u, {1.0f, 0.5f, 1.0f, 0.0f});
+        putFloats(l + 0x3c0u, {0.5f, 1.0f, 1.0f, 0.0f});
+        putFloats(l + 0x3d0u, {1.0f, 1.0f, 1.0f, 0.0f});
+        putWords(l + 0x3e0u, {0x0u, 0x0u, 0x0u, 0x1u});
+        putFloats(l + 0x3f0u, {0.0f, -0.01f, 0.0f, 1.0f});
+    }
+
+    PORT_FN(LayerB_InitParams);
+    PORT_FN(LayerD_InitParams);
+
+    // Layer C's three packets, one after the other (their addresses at +0x210, +0x218 and +0x214): ALPHA_1 set to
+    // 0x30_00000048, the chain at 0x1A7B30 and the layer's first seven quadwords to VU1 0x1C with the program started;
+    // ALPHA_1 set to 0x20_00000044; ALPHA_1 back to 0x30_00000048, the layer's 26 quadwords from +0x70 to VU1 0x12 and the
+    // chain at 0x1A8330. Returns the end of the packets.
+    GuestPtr<uint32_t> LayerC_BuildPacket(GuestPtr<LayerC> layer, GuestPtr<uint32_t> packet)
+    {
+        const uint32_t l = layer.address, p = packet.address;
+        port::store<uint32_t>(l + 0x210u, p);
+        port::store<uint32_t>(l + 0x214u, p + 0xc0u);
+        port::store<uint32_t>(l + 0x218u, p + 0x80u);
+        putWords(p + 0x0u, {0x10000000u, 0x0u, 0x0u, 0x11000000u});
+        putWords(p + 0x10u, {0x10000002u, 0x0u, 0x11000000u, 0x50000002u});
+        putWords(p + 0x20u, {0x8001u, 0x10000000u, 0xeu, 0x0u});
+        putWords(p + 0x30u, {0x48u, 0x30u, 0x42u, 0x0u});
+        putWords(p + 0x40u, {0x50000000u, 0x1a7b30u, 0x0u, 0x0u});
+        putWords(p + 0x50u, {0x30000007u, (l) & 0x7FFFFFFFu, 0x1000101u, 0x6c07001cu});
+        putWords(p + 0x60u, {0x10000000u, 0x0u, 0x3000056u, 0x20001d5u});
+        putWords(p + 0x70u, {0x60000000u, 0x0u, 0x14000000u, 0x11000000u});
+        putWords(p + 0x80u, {0x10000002u, 0x0u, 0x11000000u, 0x50000002u});
+        putWords(p + 0x90u, {0x8001u, 0x10000000u, 0xeu, 0x0u});
+        putWords(p + 0xa0u, {0x44u, 0x20u, 0x42u, 0x0u});
+        putWords(p + 0xb0u, {0x60000000u, 0x0u, 0x0u, 0x0u});
+        putWords(p + 0xc0u, {0x3000001au, (l + 0x70u) & 0x7FFFFFFFu, 0x1000101u, 0x6c1a0012u});
+        putWords(p + 0xd0u, {0x10000000u, 0x0u, 0x0u, 0x11000000u});
+        putWords(p + 0xe0u, {0x10000002u, 0x0u, 0x11000000u, 0x50000002u});
+        putWords(p + 0xf0u, {0x8001u, 0x10000000u, 0xeu, 0x0u});
+        putWords(p + 0x100u, {0x48u, 0x30u, 0x42u, 0x0u});
+        putWords(p + 0x110u, {0x50000000u, 0x1a8330u, 0x0u, 0x0u});
+        putWords(p + 0x120u, {0x60000000u, 0x0u, 0x3000042u, 0x20001dfu});
+        return GuestPtr<uint32_t>{p + 0x130u};
+    }
+
+    PORT_FN(LayerC_BuildPacket);
+
+    // ---- drawing layer C (batch 39)
+
+    // Layer C draws the highlighted rectangle: in mode 1 (pass 0) its three packets around the map's own for this
+    // frame; in mode 2 (pass 1) the placement marker, node 0 of the marker model (node 1 for a size 3 building) put
+    // at the middle of the footprint at (rectX0, rectZ0), 0.8 below the tile for the ground and below each object
+    // stacked on it.
+    void LayerC_DrawBuildings(GuestPtr<LayerC> layer, int packet, GuestPtr<CityMap> map, int pass)
+    {
+        const uint32_t l = layer.address;
+        if (layer->rectActive == 1 && pass == 0)
+        {
+            Dma_AppendCall(port::load<int32_t>(l + 0x210u));
+            Dma_AppendCall(packet);
+            Dma_AppendCall(port::load<int32_t>(l + 0x218u));
+        }
+        else if (layer->rectActive == 2 && pass == 1)
+        {
+            ps2f height = Map_GetHeightAt(map, layer->rectX0, layer->rectZ0) - ps2f(0.8f);
+            GuestPtr<MapObject> obj = Map_GetTileObject(map, layer->rectX0, layer->rectZ0);
+            const GuestPtr<BuildingType> type{globals::buildingTypeAddress(obj->type)};
+            const int node = type->size == 3 ? 1 : 0;
+            for (; obj->nextOnTile != kNoObject; obj = Map_GetRecord(map, obj->nextOnTile))
+                height = height - ps2f(0.8f);
+            const GuestPtr<A3DObject> model{port::load<uint32_t>(l + 0x230u)};
+            const uint32_t nodeRecord = port::load<uint32_t>(model->model.address + 8u) + 0xC0u * static_cast<uint32_t>(node);
+            Mat4_Copy(GuestPtr<Vec4>{nodeRecord + 0x70u}, GuestPtr<Vec4>{globals::kIdentityMatrix});
+            port::store<float>(nodeRecord + 0xA0u, static_cast<float>(fromInt(layer->rectX0) - ps2f(64.0f) + fromInt(type->size) / ps2f(2.0f)));
+            port::store<float>(nodeRecord + 0xA4u, static_cast<float>(height));
+            port::store<float>(nodeRecord + 0xA8u, static_cast<float>(fromInt(0x80 - layer->rectZ0) - ps2f(64.0f) - fromInt(type->size) / ps2f(2.0f)));
+            Dma_AppendCall(port::load<int32_t>(l + 0x214u));
+            A3DObject_DrawNode(model, node);
+            Dma_AppendCall(port::load<int32_t>(l + 0x218u));
+        }
+    }
+
+    PORT_FN(LayerC_DrawBuildings);
+
+    // ---- the sky by the clock (batch 39)
+
+    // The sky layer for the time of day (clock in seconds): the seconds up to 5:00 (18000), the distance from midnight
+    // after 18:00 (0x15180 less the clock; before that the clock held at 18000) set its three colour scale words
+    // (0x443F4000) and the day fraction (clock / 450, +0x1C), and the packet's word +0x24 (clock / 600); the sixteen
+    // cloud offsets (+0x44, 0x10 apart) drift 0.4 a frame within 40; the horizon's VIF code (+0x2E0..) is rebuilt with
+    // a position that cycles every twelve frames; then the pass's packet, the map's, the shared one (+0x408) and the
+    // pass's second packet (+0x2C0) are queued.
+    void LayerD_DrawSkyByClock(GuestPtr<LayerD> layer, int pass, int packet, int clock)
+    {
+        const uint32_t l = layer.address;
+        if (clock < 0x10B30)
+        {
+            if (clock > 18000)
+                clock = 18000;
+        }
+        else
+            clock = std::abs(clock - 0x15180);
+        const uint32_t slot = 4u * static_cast<uint32_t>(pass);
+        port::store<float>(l + 0x1Cu, static_cast<float>(fromInt(clock) / ps2f(450.0f)));
+        port::store<uint32_t>(l + 0x18u, 0x443F4000u);
+        port::store<uint32_t>(l + 0x14u, 0x443F4000u);
+        port::store<uint32_t>(l + 0x10u, 0x443F4000u);
+        port::store<int32_t>(port::load<uint32_t>(l + 0x400u + slot) + 0x24u, clock / 600);
+        for (uint32_t cloud = l + 0x44u; cloud < l + 0x44u + 0x100u; cloud += 0x10u)
+        {
+            ps2f offset = ps2f(port::load<float>(cloud)) + ps2f(0.4f);
+            port::store<float>(cloud, static_cast<float>(offset));
+            if (ps2f(40.0f) <= offset)
+                port::store<float>(cloud, static_cast<float>(offset - ps2f(40.0f)));
+        }
+        if (port::load<int8_t>(0x001BDAD4u) == 0)
+        {
+            port::store<int32_t>(0x001BDAD0u, 0);
+            port::store<int8_t>(0x001BDAD4u, 1);
+        }
+        port::store<int32_t>(0x001BDAD0u, port::load<int32_t>(0x001BDAD0u) + 1);
+        int32_t cycle = ((port::load<int32_t>(0x001BDAD0u) >> 1) % 6) * 0x40;
+        if (cycle < 0)
+            cycle += 3;
+        port::store<int32_t>(l + 0x2ECu, 0);
+        port::store<int32_t>(l + 0x2E8u, 0);
+        port::store<uint32_t>(l + 0x2E4u, 0x4004F685u);
+        port::store<uint32_t>(l + 0x2E0u, static_cast<uint32_t>((cycle >> 2) + 0x27B8) | 0x99308000u);
+        Dma_AppendCall(port::load<int32_t>(l + 0x400u + slot));
+        Dma_AppendCall(packet);
+        Dma_AppendCall(port::load<int32_t>(l + 0x408u));
+        Dma_AppendCall(port::load<int32_t>(l + 0x2C0u + slot));
+    }
+
+    PORT_FN(LayerD_DrawSkyByClock);
 }

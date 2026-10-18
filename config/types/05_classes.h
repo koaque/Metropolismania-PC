@@ -347,14 +347,20 @@ struct StatusPanel {
 };
 /* Pause and save menu (0x99C bytes). */
 struct PauseMenu {
-    int32_t state;             /* +0x00 4: picking a save slot (mm_PauseMenu_StateSlotSelect) */
+    int32_t state;             /* +0x00 4: picking a save slot (mm_PauseMenu_StateSlotSelect), 10: a card message */
     ListMenu *mainMenu;        /* +0x04 */
     ListMenu *slotMenu;        /* +0x08 */
-    int32_t unk_0C;
+    McManager *mc;             /* +0x0C */
     TextBox *message;          /* +0x10 */
-    uint8_t unk_14[0x18];
+    uint8_t unk_14[8];
+    int32_t unk_1C;            /* +0x1C message 5 names a card by it (mm_PauseMenu_ShowCardMessage) */
+    uint8_t unk_20[4];
+    int32_t waitFrames;        /* +0x24 frames in the card message state (mm_PauseMenu_StateMain) */
+    uint8_t unk_28[4];
     float openTime;            /* +0x2C rises by 10 per frame; the window is fully in at 120 */
-    uint8_t unk_30[0x96C];     /* +0x30 starts with the save name, default from 0x1B73D0 (Shift-JIS) */
+    uint8_t unk_30[0x44];      /* +0x30 starts with the save name, default from 0x1B73D0 (Shift-JIS) */
+    int32_t cardMessage;       /* +0x74 the message shown (mm_PauseMenu_ShowCardMessage) */
+    uint8_t unk_78[0x924];
 };
 /* Minimap (0x21DC bytes). */
 struct Minimap {
@@ -375,10 +381,11 @@ struct CityCursor {
     int32_t lineCount;         /* +0x1C0 info lines shown */
     int32_t mode;              /* +0x1C4 0 plain, 4 with the extra packet, else with the fade frame */
     int32_t frameStep;         /* +0x1C8 moves the fade frame up 16 per step */
-    int32_t unk_1CC;
+    int32_t openTimer;         /* +0x1CC 30 when a building is picked (mm_CityCursor_SelectTile) */
     int32_t frameX;            /* +0x1D0 */
     int32_t frameY;            /* +0x1D4 */
-    uint8_t unk_1D8[8];
+    int32_t picked;            /* +0x1D8 the building picked */
+    uint8_t unk_1DC[4];
 };
 /* Phone call manager (0x7C bytes). */
 /* Queued phone call (0xC bytes, mm_PhoneCall_Post). */

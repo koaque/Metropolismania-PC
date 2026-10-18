@@ -250,6 +250,7 @@ namespace mm::globals
     inline constexpr GuestVar<GuestPtr<A3DObject>> blockModel{0x001BDBC8u};      // office and housing block parts
     inline constexpr GuestVar<GuestPtr<A3DObject>> parkRideModel{0x001BDBE0u};   // theme park ride (animated)
     inline constexpr GuestVar<GuestPtr<A3DObject>> propsModel{0x001BDBD4u};      // small goods stalls and keep-out parts
+    inline constexpr GuestVar<GuestPtr<A3DObject>> pigFarmModel{0x001BDC00u};    // the pig farm entrance
     inline constexpr uint32_t kBlockStepX = 0x001B13F0u; // int[4]: 0, 2, 0, -2
     inline constexpr uint32_t kBlockStepZ = 0x001B1400u; // int[4]: -2, 0, 2, 0
     inline constexpr uint32_t kBlockDirBit = 0x001B1410u; // int[4]: 1, 2, 4, 8 (road shape bit per direction)
@@ -336,6 +337,7 @@ namespace mm::globals
     // and a second copy of that pointer the handlers' End slots read (gp-0x7C10).
     inline constexpr GuestVar<uint32_t> eventTypes{0x001BDA84u};
     inline constexpr GuestVar<uint32_t> eventTypesCopy{0x001BDD60u};
+    inline constexpr GuestVar<int32_t> popularityTicks{0x001BDC50u}; // clock ticks since the last popularity check (every 110)
     // event: the waiting queue (event ids, uint16_t) and its length; the queue object handed to
     // mm_EventQueue_InsertByPriority; the offsets (words) into claimData of each event's tile list
     // (mm_Event_SetTileFlags).

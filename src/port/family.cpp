@@ -260,4 +260,63 @@ namespace mm
     }
 
     PORT_FN(Family_SetKnown);
+
+    // ---- friendship (batch 39)
+
+    // Adds friendship points to a member's meter byte: the level (bits 3-6, steps of 8) carries a fraction in its low
+    // three bits, so points move it in eighths (a negative sum takes one step more than it divides into). A member
+    // who is not a friend yet and gains a step becomes one with a chance of the larger of the level and the approval
+    // in 120. The level stays within 0..120 (the byte 1..0x7F) and the approval moves by the change of the
+    // friendship band (a first band gained counts one less). The result is v0 as it came in, or the random entry
+    // when one was drawn.
+    int64_t Family_AddFriendship(int family, int member, GuestPtr<int32_t> approval, int points)
+    {
+        int64_t result = static_cast<int64_t>(port::gpr64(port::g_call.ctx, 2));
+        const uint32_t meter = globals::kMemberBytes + static_cast<uint32_t>(member + family * 6);
+        const uint8_t byte = port::load<uint8_t>(meter);
+        const int sum = (byte & 7) + points;
+        uint8_t isFriend = byte & 0x80u;
+        int level = byte & 0x78;
+        const int steps = sum < 0 ? sum / 8 - 1 : sum / 8;
+        const int fraction = sum & 7;
+        if (isFriend == 0 && steps > 0)
+        {
+            const int chance = level < *approval ? static_cast<int>(*approval) : level;
+            result = Random_Next();
+            if (static_cast<int32_t>(result) % 120 < chance)
+                isFriend = 0x80u;
+        }
+        level += steps * 8;
+        if (level < 0)
+            level = 0;
+        else if (level >= 121)
+            level = 120;
+        const int before = Family_GetFriendshipBand(family, member);
+        int value = level | fraction;
+        if (value <= 0)
+            value = 1;
+        else if (value >= 0x80)
+            value = 0x7F;
+        port::store<uint8_t>(meter, static_cast<uint8_t>(isFriend | value));
+        const int after = Family_GetFriendshipBand(family, member);
+        int change = after - before;
+        if (change > 0 && before == 0)
+            --change;
+        *approval = *approval + change;
+        return result;
+    }
+
+    // Every family (ids below 10000) becomes known, with member 0 a friend at 64 points (0xC0).
+    void Family_BefriendAll()
+    {
+        for (int family = 0; family < 10000; ++family)
+        {
+            const uint32_t word = globals::kFamiliesKnown + 4u * static_cast<uint32_t>(family / 32);
+            port::store<uint32_t>(word, port::load<uint32_t>(word) | (1u << (family & 31)));
+            port::store<uint8_t>(globals::kMemberBytes + 6u * static_cast<uint32_t>(family), 0xC0);
+        }
+    }
+
+    PORT_FN(Family_AddFriendship);
+    PORT_FN(Family_BefriendAll);
 }

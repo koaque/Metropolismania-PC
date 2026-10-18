@@ -2043,4 +2043,784 @@ namespace mm
 
     PORT_FN(Title_RandomCharParts);
     PORT_FN(SoundTest_BgmText);
+
+    // ---- the city cursor (batch 39)
+
+    // Picking a building: one marked by an event (flag 0x200) queues event 0x106; otherwise the building menu opens
+    // (mode 0xA) for it, the cursor in mode 4 with its open timer at 30, and this frame's info window rectangle is
+    // set from the frame (grown by 100 and 25 per step of the timer run so far, 15 at most; a rectangle reaching
+    // outside 0..0xFFFF becomes 0) into the extra packet's words +0x60 (left, top) and +0x80 (right, bottom).
+    void CityCursor_SelectTile(GuestPtr<CityCursor> cursor, int object, GuestPtr<CityScene> city)
+    {
+        if ((Map_GetRecord(city->map, object)->flags & 0x200u) != 0)
+        {
+            Event_Trigger(city->events, 0x106, city, GuestPtr<MapPerson>{0});
+            return;
+        }
+        cursor->picked = object;
+        CityScene_PushMode(city, 0xA);
+        cursor->mode = 4;
+        cursor->openTimer = 30;
+        port::GuestFrame<0x60> frame;
+        const uint32_t sp = frame.ptr().address;
+        const GuestPtr<int32_t> rect{sp + 0x4Cu};
+        const uint32_t view = cursor.address + 0xD0u * (port::load<uint32_t>(0x001BDCD0u) & 1u);
+        Frame_GetRect(GuestPtr<Frame>{port::load<uint32_t>(view + 0x28u)}, GuestPtr<uint32_t>{rect.address}, GuestPtr<uint32_t>{rect.address + 4u},
+                      GuestPtr<uint32_t>{rect.address + 8u}, GuestPtr<uint32_t>{rect.address + 12u});
+        int steps = 30 - cursor->openTimer;
+        if (steps >= 16)
+            steps = 15;
+        const int grow = 25 * steps, wide = 4 * grow;
+        const int x = rect[0], y = rect[1];
+        rect[0] = x - wide;
+        rect[1] = y - grow;
+        rect[2] = x + wide;
+        rect[3] = y + grow;
+        const auto outside = [](int32_t a, int32_t b) { return a < 0 || b < 0 || a >= 0x10000 || b >= 0x10000; };
+        if (outside(rect[0], rect[2]))
+        {
+            rect[2] = 0;
+            rect[0] = 0;
+        }
+        if (outside(rect[1], rect[3]))
+        {
+            rect[3] = 0;
+            rect[1] = 0;
+        }
+        port::store<uint32_t>(view + 0x90u, static_cast<uint32_t>(rect[0]) | (static_cast<uint32_t>(rect[1]) << 16));
+        port::store<uint32_t>(view + 0xB0u, static_cast<uint32_t>(rect[2]) | (static_cast<uint32_t>(rect[3]) << 16));
+    }
+
+    PORT_FN(CityCursor_SelectTile);
+
+    // ---- the sound test's effect page (batch 39)
+
+    // The effect page's text: the controls, then the pan (+0x68, signed: "L" or "R" and 2 digits, or "Center"), the
+    // distance (+0x69, 2 wide), the note (+0x60, 3 wide), the pitch (+0x5E, signed, 5 wide) and the effect number
+    // (+0x5D, 3 wide).
+    void SoundTest_SeText(int test)
+    {
+        const auto t = static_cast<uint32_t>(test);
+        const auto box = [t] { return GuestPtr<TextBox>{port::load<uint32_t>(t + 0xB8u)}; };
+        const auto append = [&](uint32_t text) { TextBox_AppendText(box(), GuestPtr<char>{text}, 0); };
+        port::GuestFrame<0x20> frame;
+        const GuestPtr<char> number{frame.ptr().address + 0x10u};
+        TextBox_SetText(box(), GuestPtr<char>{0x001B8820u}, 0); // "*** SE Test ***" and the controls
+        const int pan = port::load<int8_t>(t + 0x68u);
+        if (pan > 0)
+        {
+            Text_FormatPadded(number, pan, 2);
+            append(0x001B88A8u); // "R"
+            append(number.address);
+        }
+        else if (pan < 0)
+        {
+            Text_FormatPadded(number, -pan, 2);
+            append(0x001B88B0u); // "L"
+            append(number.address);
+        }
+        else
+            append(0x001B88B8u); // "Center"
+        append(0x001B88C0u); // "R1/R2 Distance(+/-)"
+        Text_FormatPadded(number, port::load<uint8_t>(t + 0x69u), 2);
+        append(number.address);
+        append(0x001B88E0u); // "Note(+/-)"
+        Text_FormatPadded(number, port::load<uint8_t>(t + 0x60u), 3);
+        append(number.address);
+        append(0x001B8900u); // "Pitch(+/-)"
+        const int pitch = port::load<int16_t>(t + 0x5Eu);
+        append(pitch < 0 ? 0x001B8800u : 0x001B87F8u); // "-" or " "
+        Text_FormatPadded(number, pitch < 0 ? -pitch : pitch, 5);
+        append(number.address);
+        append(0x001B8918u); // "SE No:"
+        Text_FormatPadded(number, port::load<uint8_t>(t + 0x5Du), 3);
+        append(number.address);
+    }
+
+    // The effect page's input (pads repeated, pressed, held): up and down pick the effect (0 to 0x47, wrapping),
+    // the note moves within 0..0x7F (reset to 0x3C), the pitch by 10 within +-0x4000 (reset to 0), the pan within
+    // -10..10 and the distance within 0..16 (both reset with their two keys held). Pressing 0x40 plays the effect
+    // (with the key held instead for effects whose flag 0x10 is clear at 0x1B2EE0), 0x10 stops it. Returns 1 when
+    // the page changed.
+    int SoundTest_SePage(int test, uint32_t repeated, uint32_t pressed, uint32_t held)
+    {
+        const auto t = static_cast<uint32_t>(test);
+        const auto u8at = [t](uint32_t offset) { return port::load<uint8_t>(t + offset); };
+        const auto set8 = [t](uint32_t offset, int value) { port::store<uint8_t>(t + offset, static_cast<uint8_t>(value)); };
+        int changed = 0;
+        if (repeated == 0x1000)
+        {
+            set8(0x5D, u8at(0x5D) + 1);
+            changed = 1;
+            if (u8at(0x5D) > 0x47)
+                set8(0x5D, 0);
+        }
+        if (repeated == 0x4000)
+        {
+            set8(0x5D, u8at(0x5D) == 0 ? 0x47 : u8at(0x5D) - 1);
+            changed = 1;
+        }
+        if ((repeated & 0x200000u) != 0)
+        {
+            changed = 1;
+            if (u8at(0x60) < 0x7F)
+                set8(0x60, u8at(0x60) + 1);
+        }
+        else if ((repeated & 0x800000u) != 0)
+        {
+            changed = 1;
+            if (u8at(0x60) != 0)
+                set8(0x60, u8at(0x60) - 1);
+        }
+        if ((pressed & 0x400u) != 0)
+        {
+            set8(0x60, 0x3C);
+            changed = 1;
+        }
+        const int pitch = port::load<int16_t>(t + 0x5Eu);
+        if ((repeated & 0x2000u) != 0)
+        {
+            changed = 1;
+            if (pitch + 10 < 0x4000)
+                port::store<int16_t>(t + 0x5Eu, static_cast<int16_t>(pitch + 10));
+        }
+        else if ((repeated & 0x8000u) != 0)
+        {
+            changed = 1;
+            if (-0x4000 < pitch + 10)
+                port::store<int16_t>(t + 0x5Eu, static_cast<int16_t>(pitch - 10));
+        }
+        if ((pressed & 0x200u) != 0)
+        {
+            port::store<int16_t>(t + 0x5Eu, 0);
+            changed = 1;
+        }
+        const int pan = port::load<int8_t>(t + 0x68u);
+        if ((held & 4u) != 0 && (held & 1u) != 0)
+        {
+            set8(0x68, 0);
+            changed = 1;
+        }
+        else if ((repeated & 4u) != 0)
+        {
+            changed = 1;
+            if (-10 < pan)
+                set8(0x68, pan - 1);
+        }
+        else if ((repeated & 1u) != 0)
+        {
+            changed = 1;
+            if (pan < 10)
+                set8(0x68, pan + 1);
+        }
+        if ((held & 8u) != 0 && (held & 2u) != 0)
+        {
+            set8(0x69, 0);
+            changed = 1;
+        }
+        else if ((repeated & 8u) != 0)
+        {
+            changed = 1;
+            if (u8at(0x69) != 0)
+                set8(0x69, u8at(0x69) - 1);
+        }
+        else if ((repeated & 2u) != 0)
+        {
+            changed = 1;
+            if (u8at(0x69) < 0x10)
+                set8(0x69, u8at(0x69) + 1);
+        }
+        const ps2f panScale = fromInt(port::load<int8_t>(t + 0x68u)) / ps2f(10.0f);
+        const ps2f distance = fromInt(u8at(0x69));
+        const uint8_t effect = u8at(0x5D);
+        const bool onPress = (port::load<uint8_t>(0x001B2EE0u + 0x10u * effect) & 0x10u) != 0;
+        if (onPress ? pressed == 0x40 : (held & 0x40u) != 0)
+            Sound_PlaySe(effect, port::load<int16_t>(t + 0x5Eu), u8at(0x60), panScale, distance);
+        if (pressed == 0x10)
+            Se_StopOwner(static_cast<char>(u8at(0x5D)));
+        return changed;
+    }
+
+    PORT_FN(SoundTest_SeText);
+    PORT_FN(SoundTest_SePage);
+
+    // ---- the pause menu's memory card states (batch 39)
+
+    // Shows a memory card message: the card manager and its slots are reset, the wait counter cleared, the main menu
+    // emptied and the message box placed (and for 6 to 8, "Memory card ... in slot 1/2 does not have enough space to
+    // save" moved left). Messages 0 and 2 to 5 pick their text (5 names a card by +0x1C, then "."), 1 and anything
+    // above 8 have none. The state becomes 10.
+    void PauseMenu_ShowCardMessage(GuestPtr<PauseMenu> pause, int message)
+    {
+        McManager_ResetState(pause->mc);
+        McManager_ClearSlots(pause->mc);
+        pause->waitFrames = 0;
+        ListMenu_ClearItem(pause->mainMenu, -1);
+        TextBox_SetPos(pause->message, 0x74C0, 0x7E00, -0x100000);
+        TextBox_SetCharSize(pause->message, 0, 0xD0, 0, 0xE0);
+        pause->cardMessage = message;
+        const auto set = [&](uint32_t text) { TextBox_SetText(pause->message, GuestPtr<char>{text}, 0); };
+        const auto append = [&](uint32_t text) { TextBox_AppendText(pause->message, GuestPtr<char>{text}, 0); };
+        switch (message)
+        {
+        case 0:
+            set(0x001B7450u);
+            break;
+        case 2:
+            set(0x001B74A0u);
+            break;
+        case 3:
+            set(0x001B74F0u); // "Failed to save."
+            break;
+        case 4:
+            set(0x001B7510u); // "Failed to format."
+            break;
+        case 5:
+            set(0x001B7530u);
+            append(pause->unk_1C == 0 ? 0x001B7588u : 0x001B7580u); // "1" or "2"
+            append(0x001B7590u);                                      // "."
+            break;
+        case 6:
+        case 7:
+        case 8:
+            TextBox_SetPos(pause->message, 0x7240, 0x7E00, -0x100000);
+            set(0x001B75A0u);
+            append(message == 6 ? 0x001B75E0u : message == 7 ? 0x001B75E8u : 0x001B75F0u); // " 1", " 2" or "s"
+            append(0x001B7600u); // "does not have enough space to save"
+            break;
+        default:
+            break;
+        }
+        pause->state = 10;
+    }
+
+    // Waiting out a card message: after a pad press or 210 frames, or when the card status (mm_McManager_GetCardStatus)
+    // suits the message, the main menu comes back (Resume, Save, Quit, the cursor on Save) and the state becomes 2.
+    // Message 6 waits for card 0 to leave statuses 4 and 1, 7 the same for card 1, 0 for neither card to be at 4
+    // and not both at 2, 8 for neither at 4 and not both at 1.
+    void PauseMenu_StateMain(GuestPtr<PauseMenu> pause)
+    {
+        pause->waitFrames = pause->waitFrames + 1;
+        bool done = Pad_Pressed(0) != 0 || pause->waitFrames > 0xD2;
+        if (!done)
+        {
+            McManagerUpdate(pause->mc);
+            const uint8_t card0 = McManager_GetCardStatus(pause->mc, 0), card1 = McManager_GetCardStatus(pause->mc, 1);
+            switch (pause->cardMessage)
+            {
+            case 8:
+                done = card0 != 4 && card1 != 4 && (card0 != 1 || card1 != 1);
+                break;
+            case 0:
+                done = card0 != 4 && card1 != 4 && (card0 != 2 || card1 != 2);
+                break;
+            case 7:
+                done = card1 != 4 && card1 != 1;
+                break;
+            case 6:
+                done = card0 != 4 && card0 != 1;
+                break;
+            default:
+                break;
+            }
+        }
+        if (!done)
+            return;
+        TextBox_SetText(pause->message, GuestPtr<char>{0x001B73C0u}, 0);
+        ListMenu_ClearItem(pause->mainMenu, -1);
+        ListMenu_SetCursor(pause->mainMenu, 0x104, 0x3C, 0xFF0000);
+        ListMenu_SetItemText(pause->mainMenu, GuestPtr<char>{0x001B73F0u}, -1); // "Resume"
+        ListMenu_SetItemText(pause->mainMenu, GuestPtr<char>{0x001B73F8u}, -1); // "Save"
+        ListMenu_SetItemText(pause->mainMenu, GuestPtr<char>{0x001B7400u}, -1); // "Quit"
+        ListMenu_ScrollTo(pause->mainMenu, 1);
+        McManager_ResetState(pause->mc);
+        McManager_ClearSlots(pause->mc);
+        pause->state = 2;
+    }
+
+    PORT_FN(PauseMenu_ShowCardMessage);
+    PORT_FN(PauseMenu_StateMain);
+
+    // ---- the sound test (batch 39)
+
+    namespace
+    {
+        // The sound test screen's text for its current page (0 effects, 1 music); beyond that, the waiting text.
+        void soundTestText(uint32_t test)
+        {
+            const auto box = [test] { return GuestPtr<TextBox>{port::load<uint32_t>(test + 0xB8u)}; };
+            const uint32_t page = port::load<uint32_t>(test + 0x74u);
+            if (page < 100)
+            {
+                if (page == 1)
+                    SoundTest_BgmText(static_cast<int>(test));
+                else if (page == 0)
+                    SoundTest_SeText(static_cast<int>(test));
+                return;
+            }
+            TextBox_SetText(box(), GuestPtr<char>{0x001B86F0u}, 0);       // "*** Sound Test ***"
+            TextBox_AppendText(box(), GuestPtr<char>{0x001B8710u}, 0);    // "Just a moment..."
+        }
+    }
+
+    // The music page's input: up and down pick the song (0 to 0x13, wrapping), left and right the tempo (+0x62, within
+    // +-0xFF, reset on 0x200), the two keys 4 and 1 the volume (+0x64, by 100 within 0..0x3FFF, both held 0x27FF). The
+    // song plays on 0x40 (the same song again just plays; another first fades out and loads its bank once it is
+    // out) and stops on 0x10. While a bank loads (+0x78) the page waits for the driver. Returns 1 when the page
+    // changed (the text is then rebuilt and drawn here, so 0 is returned when it drew).
+    int SoundTest_BgmPage(int test, uint32_t repeated, uint32_t pressed, uint32_t held)
+    {
+        const auto t = static_cast<uint32_t>(test);
+        const auto u8at = [t](uint32_t offset) { return port::load<uint8_t>(t + offset); };
+        int changed = 0;
+        const auto setTempo = [&](int tempo) {
+            port::store<int16_t>(t + 0x62u, static_cast<int16_t>(tempo));
+            SoundCmd_11(0xF, static_cast<uint16_t>(tempo), 0);
+            changed = 1;
+        };
+        const auto setVolume = [&](int volume) {
+            port::store<int32_t>(t + 0x64u, volume);
+            SoundCmd_0F(0xF, volume, 0);
+            changed = 1;
+        };
+        if (repeated == 0x1000)
+        {
+            port::store<uint8_t>(t + 0x5Cu, static_cast<uint8_t>(u8at(0x5C) + 1));
+            changed = 1;
+            if (u8at(0x5C) > 0x13)
+                port::store<uint8_t>(t + 0x5Cu, 0);
+        }
+        if (repeated == 0x4000)
+        {
+            port::store<uint8_t>(t + 0x5Cu, u8at(0x5C) == 0 ? 0x13 : static_cast<uint8_t>(u8at(0x5C) - 1));
+            changed = 1;
+        }
+        const int tempo = port::load<int16_t>(t + 0x62u);
+        if ((repeated & 0x2000u) != 0)
+        {
+            if (tempo < 0xFF)
+                setTempo(tempo + 1);
+        }
+        else if ((repeated & 0x8000u) != 0 && -0xFF < tempo)
+            setTempo(tempo - 1);
+        if ((pressed & 0x200u) != 0)
+            setTempo(0);
+        const int volume = port::load<int32_t>(t + 0x64u);
+        if ((held & 4u) != 0 && (held & 1u) != 0)
+            setVolume(0x27FF);
+        else if ((held & 4u) != 0)
+            setVolume(volume + 100 > 0x3FFF ? 0x3FFF : volume + 100);
+        else if ((held & 1u) != 0)
+            setVolume(volume - 100 < 0 ? 0 : volume - 100);
+        const auto play = [&] {
+            if (pressed == 0x40 && Sound_IsBusy() == 0)
+            {
+                if (port::load<uint32_t>(t + 0x6Cu) == u8at(0x5C))
+                {
+                    SoundCmd_0F(0xF, port::load<int32_t>(t + 0x64u), 0);
+                    SoundCmd_11(0xF, port::load<uint16_t>(t + 0x62u), 0);
+                    SoundCmd_PlaySequence(0xF, 7, 0, 0, 0);
+                }
+                else
+                {
+                    SoundCmd_FadeB(0xF, 0, 100, 0);
+                    port::store<uint32_t>(t + 0x6Cu, u8at(0x5C));
+                    port::store<int32_t>(t + 0x78u, 1);
+                }
+            }
+            if (pressed == 0x10 && Sound_IsBusy() == 0)
+                SoundCmd_StopB(0xF, 0);
+        };
+        if (port::load<int32_t>(t + 0x78u) == 0)
+        {
+            play();
+            return changed;
+        }
+        if ((port::load<uint32_t>(static_cast<uint32_t>(Sound_GetStatus()) + 4u) & 0x8000u) == 0)
+        {
+            port::store<int32_t>(t + 0x78u, 0);
+            SoundCmd_StopSequence(7, 0);
+            const int offset = 0x30 * u8at(0x6C);
+            SoundCmd_LoadBank(7, 0x001B2A10 + offset, 0x001B2A20 + offset, 0x001B2A30 + offset, 0);
+            SoundCmd_0F(0xF, port::load<int32_t>(t + 0x64u), 0);
+            SoundCmd_11(0xF, port::load<uint16_t>(t + 0x62u), 0);
+            SoundCmd_PlaySequence(0xF, 7, 0, 0, 0);
+            play();
+            return changed;
+        }
+        if (changed != 0)
+            soundTestText(t);
+        TextBox_Draw(GuestPtr<TextBox>{port::load<uint32_t>(t + 0xB8u)});
+        return 0;
+    }
+
+    // The sound test screen, every frame: the backdrop and model, then the page (the pad is read here). 0x800
+    // starts leaving (page 200: the music and sequences stop and the menu banks load, 201 waits for them to be
+    // out and sets the play-land banks up again at 0x65, 0x66 for the screen back); 0x100 swaps between the
+    // effects and music pages unless a bank is loading; 100 resets the controls. Returns 1 when leaving is done (page
+    // 300).
+    int SoundTest_Update(int test)
+    {
+        const auto t = static_cast<uint32_t>(test);
+        if (port::load<int8_t>(0x001BDC18u) == 0)
+        {
+            port::store<int32_t>(0x001BDC14u, 0);
+            port::store<int8_t>(0x001BDC18u, 1);
+        }
+        int changed = 0;
+        TexSprite_Draw(GuestPtr<TexSprite>{port::load<uint32_t>(t + 0xCu)});
+        A3DObject_Draw(GuestPtr<A3DObject>{port::load<uint32_t>(t + 0x24u)});
+        const uint32_t pressed = Pad_Pressed(0);
+        const uint32_t repeated = static_cast<uint32_t>(Pad_GetRepeat());
+        const uint32_t held = Pad_Held(0);
+        const auto box = [t] { return GuestPtr<TextBox>{port::load<uint32_t>(t + 0xB8u)}; };
+        const auto page = [t] { return port::load<uint32_t>(t + 0x74u); };
+        const auto setPage = [t](uint32_t value) { port::store<uint32_t>(t + 0x74u, value); };
+        if (pressed == 0x800 && page() < 100 && port::load<int32_t>(t + 0x78u) == 0)
+            setPage(200);
+        switch (page())
+        {
+        case 0xC9:
+            if (Sound_IsBusy() == 0)
+                setPage(300);
+            break;
+        case 200:
+            TextBox_SetText(box(), GuestPtr<char>{0x001B86F0u}, 0);
+            TextBox_AppendText(box(), GuestPtr<char>{0x001B8710u}, 0);
+            SoundCmd_StopB(0xF, 0);
+            SoundCmd_StopSequence(7, 0);
+            Sound_StopAllSequences();
+            SoundCmd_02_Zero();
+            Sound_ResetVoices(1);
+            SoundCmd_LoadBank(7, 0x001B8728, 0x001B8738, 0x001B8748, 0);
+            setPage(page() + 1);
+            break;
+        case 0x66:
+            if (Sound_IsBusy() == 0)
+            {
+                setPage(0);
+                soundTestText(t);
+            }
+            break;
+        case 0x65:
+            if ((port::load<uint32_t>(static_cast<uint32_t>(Sound_GetStatus()) + 4u) & 0x8000u) == 0)
+            {
+                SoundCmd_StopSequence(7, 0);
+                SoundCmd_02_Zero();
+                Sound_ResetVoices(0);
+                Sound_LoadPlaylandBanks();
+                setPage(page() + 1);
+            }
+            break;
+        case 100:
+            port::store<int32_t>(t + 0x78u, 0);
+            soundTestText(t);
+            SoundCmd_FadeB(0xF, 0, 0x10, 0);
+            port::store<uint8_t>(t + 0x5Du, 0);
+            port::store<uint8_t>(t + 0x5Cu, 0);
+            port::store<int16_t>(t + 0x5Eu, 0);
+            port::store<int16_t>(t + 0x62u, 0);
+            port::store<int32_t>(t + 0x64u, 0x27FF);
+            port::store<uint8_t>(t + 0x68u, 0);
+            port::store<uint8_t>(t + 0x69u, 0);
+            port::store<uint32_t>(t + 0x6Cu, 0xFFFFFFFFu);
+            setPage(page() + 1);
+            break;
+        default:
+            break;
+        }
+        if (page() > 99)
+        {
+            TextBox_Draw(box());
+            return page() == 300 ? 1 : 0;
+        }
+        bool swap = false;
+        if (pressed == 0x100 && port::load<int32_t>(t + 0x78u) == 0)
+        {
+            swap = true;
+            changed = 1;
+        }
+        if (page() == 1)
+        {
+            if (swap)
+                setPage(0);
+            else
+                changed = SoundTest_BgmPage(test, repeated, pressed, held);
+        }
+        else if (page() == 0)
+        {
+            if (swap)
+                setPage(1);
+            else
+                changed = SoundTest_SePage(test, repeated, pressed, held);
+        }
+        if (changed != 0)
+            soundTestText(t);
+        TextBox_Draw(box());
+        return 0;
+    }
+
+    PORT_FN(SoundTest_BgmPage);
+    PORT_FN(SoundTest_Update);
+
+    // ---- the name entry screen (batch 39)
+
+    // Draws the name entry (state +0x40; 0 draws nothing, 1 is typing, else only the board model): the typed name
+    // (+0x1C) padded to its length (byte +0x68) with filler glyphs (0x1B8038), the character under the cursor (+0x5C)
+    // blinking between a space and '*' at the 16th frame of its 32-frame cycle (+0x6C); every ten frames the scrolling
+    // line (position +0x104, text +0x84, shown ten characters wide) moves on a character; then the text boxes, the board
+    // model's meshes (the cursor too while the cycle is before frame 16) and the name box.
+    void NameEntry_Draw(GuestPtr<NameEntry> entry)
+    {
+        const uint32_t e = entry.address;
+        if (port::load<int32_t>(e + 0x40u) == 0)
+            return;
+        port::GuestFrame<0x150> frame;
+        const uint32_t sp = frame.ptr().address;
+        const GuestPtr<char> name{sp + 0x30u}, scroll{sp + 0x50u};
+        DmaList_QueueClearZ();
+        const auto model = [e] { return GuestPtr<A3DObject>{port::load<uint32_t>(e)}; };
+        const auto box = [e](uint32_t offset) { return GuestPtr<TextBox>{port::load<uint32_t>(e + offset)}; };
+        const auto mesh = [&](uint32_t matrixOffset, int index) {
+            Instance_DrawMesh(model(), GuestPtr<Vec4>{port::load<uint32_t>(e + matrixOffset)}, GuestPtr<Vec4>{globals::kDefaultColour}, index, 0);
+        };
+        if (port::load<int32_t>(e + 0x40u) == 1)
+        {
+            if ((port::load<uint32_t>(e + 0x6Cu) & 0xFu) == 0)
+            {
+                sdk::strcpy(name.address, e + 0x1Cu);
+                for (int length = sdk::strlen(e + 0x1Cu); length < static_cast<int>(port::load<uint8_t>(e + 0x68u)); ++length)
+                    sdk::strcat(name.address, 0x001B8038u);
+                if (port::load<int32_t>(e + 0x6Cu) == 0x10)
+                {
+                    const uint32_t cursor = name.address + static_cast<uint32_t>(port::load<int32_t>(e + 0x5Cu));
+                    if (port::load<int8_t>(cursor) != 0)
+                        port::store<int8_t>(cursor, port::load<int8_t>(cursor) == ' ' ? '*' : ' ');
+                }
+                TextBox_SetText(box(0xC), name, 1);
+            }
+            if (port::load<int32_t>(e + 0x104u) >= 0)
+            {
+                port::store<uint8_t>(e + 0x108u, static_cast<uint8_t>(port::load<uint8_t>(e + 0x108u) + 1));
+                if (port::load<uint8_t>(e + 0x108u) > 9)
+                {
+                    port::store<uint8_t>(e + 0x108u, 0);
+                    sdk::strcpy(scroll.address, e + static_cast<uint32_t>(port::load<int32_t>(e + 0x104u)) + 0x84u);
+                    sdk::strcat(scroll.address, e + 0x84u);
+                    port::store<uint8_t>(scroll.address + 10u, 0);
+                    TextBox_SetText(box(4), scroll, 1);
+                    port::store<int32_t>(e + 0x104u, port::load<int32_t>(e + 0x104u) + 1);
+                    if (static_cast<uint32_t>(sdk::strlen(e + 0x84u)) <= port::load<uint32_t>(e + 0x104u))
+                        port::store<int32_t>(e + 0x104u, 0);
+                }
+            }
+            TextBox_Draw(box(4));
+            TextBox_Draw(box(0x10));
+            mesh(0x14, 0);
+            TextBox_Draw(box(8));
+            if (port::load<int32_t>(e + 0x6Cu) < 0x10)
+                mesh(0x18, 1);
+            if (port::load<int32_t>(e + 0x60u) != 0)
+                mesh(0x14, 3);
+            if (port::load<int32_t>(e + 0x64u) != 0)
+                mesh(0x14, 2);
+            mesh(0x14, 4);
+            TextBox_Draw(box(0xC));
+        }
+        else
+            mesh(0x14, 0);
+        port::store<int32_t>(e + 0x6Cu, port::load<int32_t>(e + 0x6Cu) + 1);
+        if (port::load<int32_t>(e + 0x6Cu) >= 0x20)
+            port::store<int32_t>(e + 0x6Cu, 0);
+    }
+
+    PORT_FN(NameEntry_Draw);
+
+    // ---- typing a message (batch 39)
+
+    // Types the next character of the message into the lines (36 columns, 4 lines): every `typeDelay` frames (a counter
+    // at 0x1BDA08) a character moves from the text (read at +0x2AC) to the line buffer (+0x218, written at +0x2B4). A
+    // message outside brackets (the bracket glyph pairs at 0x1B5A70 and 0x1B5A72) plays its sound for the character.
+    // At the end of a word (up to the next delimiter, 0x1B5A78) that does not fit the line, the rest of the line is
+    // padded with spaces first (+0x2B8 marks a word that exactly fills it); a line break pads the same. At the end of
+    // the text the state becomes 3 and the last line is padded. With four lines full, the oldest scrolls away.
+    void MsgWin_TypeNext(GuestPtr<MsgWin> msgwin)
+    {
+        const uint32_t w = msgwin.address;
+        uint32_t cursor = port::load<uint32_t>(w + 0x2ACu);
+        const auto typeAt = [](uint32_t at) { return port::load<int8_t>(at); };
+        if (typeAt(cursor) != 0)
+        {
+            if (port::load<int32_t>(w + 0x2BCu) == 0)
+            {
+                if (typeAt(cursor) == typeAt(0x001B5A70u) || typeAt(cursor) == typeAt(0x001B5A72u))
+                    port::store<int32_t>(w + 0x2BCu, 1);
+            }
+            else if (typeAt(cursor) == typeAt(0x001B5A71u) || typeAt(cursor) == typeAt(0x001B5A73u))
+                port::store<int32_t>(w + 0x2BCu, 0);
+            if (port::load<int32_t>(w + 0x2BCu) == 0)
+                Se_PlayMessageSound(static_cast<char>(port::load<int8_t>(w + 0x2C8u)));
+        }
+        if (port::load<int8_t>(0x001BDA0Cu) == 0)
+        {
+            port::store<int32_t>(0x001BDA08u, 0);
+            port::store<int8_t>(0x001BDA0Cu, 1);
+        }
+        port::store<int32_t>(0x001BDA08u, port::load<int32_t>(0x001BDA08u) + 1);
+        if (msgwin->typeDelay > port::load<int32_t>(0x001BDA08u))
+            return;
+        port::store<int32_t>(0x001BDA08u, 0);
+        cursor = port::load<uint32_t>(w + 0x2ACu);
+        const uint32_t text = port::load<uint32_t>(w + 0x2B4u);
+        const uint32_t lines = w + 0x218u;
+        bool newLine = false;
+        if (cursor < port::load<uint32_t>(w + 0x2B0u))
+        {
+            port::store<uint32_t>(w + 0x2B4u, text + 1u);
+            port::store<int8_t>(text, typeAt(cursor));
+        }
+        else if (typeAt(cursor) == 0)
+        {
+            port::store<int32_t>(w + 0x2BCu, 0);
+            port::store<int32_t>(w, 3);
+            const int32_t column = static_cast<int32_t>(port::load<uint32_t>(w + 0x2B4u) - lines) % 0x24;
+            if (column != 0)
+            {
+                const int32_t pad = 0x24 - column;
+                sdk::memset(port::load<uint32_t>(w + 0x2B4u), 0x20, pad);
+                port::store<uint32_t>(w + 0x2B4u, port::load<uint32_t>(w + 0x2B4u) + static_cast<uint32_t>(pad));
+            }
+            port::store<int32_t>(w + 0x2B8u, 0);
+        }
+        else
+        {
+            int word = sdk::strcspn(cursor + 1u, 0x001B5A78u) + 1;
+            if (word > 0x23)
+                word = 0x23;
+            if (port::load<int32_t>(w + 0x2B8u) == 0)
+            {
+                const uint32_t at = port::load<uint32_t>(w + 0x2B4u);
+                const int8_t c = typeAt(port::load<uint32_t>(w + 0x2ACu));
+                const int32_t room = 0x24 - static_cast<int32_t>(at - lines) % 0x24;
+                if (c == '\n' || c == '\r' || room - word < 0)
+                {
+                    sdk::memset(at, 0x20, room);
+                    newLine = true;
+                    port::store<uint32_t>(w + 0x2B4u, port::load<uint32_t>(w + 0x2B4u) + static_cast<uint32_t>(room));
+                }
+                else if (room == word)
+                {
+                    port::store<int32_t>(w + 0x2B8u, 1);
+                    const uint32_t write = port::load<uint32_t>(w + 0x2B4u);
+                    const int8_t next = typeAt(port::load<uint32_t>(w + 0x2ACu));
+                    port::store<uint32_t>(w + 0x2B4u, write + 1u);
+                    port::store<int8_t>(write, next);
+                }
+                else
+                {
+                    port::store<uint32_t>(w + 0x2B4u, at + 1u);
+                    port::store<int8_t>(at, c);
+                }
+            }
+            else
+            {
+                port::store<int32_t>(w + 0x2B8u, 0);
+                newLine = true;
+            }
+            port::store<uint32_t>(w + 0x2B0u, port::load<uint32_t>(w + 0x2B0u) + static_cast<uint32_t>(word));
+        }
+        port::store<uint32_t>(w + 0x2ACu, port::load<uint32_t>(w + 0x2ACu) + 1u);
+        port::store<int8_t>(port::load<uint32_t>(w + 0x2B4u), 0);
+        if (newLine && static_cast<int32_t>(port::load<uint32_t>(w + 0x2B4u) - lines) / 0x24 > 3 && typeAt(port::load<uint32_t>(w + 0x2ACu)) != 0)
+        {
+            sdk::memmove(lines, w + 0x23Cu, 0x6D);
+            TextBox_SetText(msgwin->text, GuestPtr<char>{lines}, 1);
+            port::store<uint32_t>(w + 0x2B4u, port::load<uint32_t>(w + 0x2B4u) - 0x24u);
+        }
+        else
+            TextBox_AppendText(msgwin->text, GuestPtr<char>{text}, 1);
+    }
+
+    PORT_FN(MsgWin_TypeNext);
+
+    // ---- starting the name entry (batch 39)
+
+    // Opens the name entry: the keyboard set (`mode`, the text pointer table at 0x1B13E0), the name length (up to 24, byte
+    // +0x68) with the name cleared or taken from `text`, the scrolling hint (`hint`, else empty; scrolled when longer than
+    // 10 characters), the cursor at the end of the name, the state (+0x40: 3 when `a3` is 0, else 1) with the board model
+    // placed (its y at +0x34, 0.3 higher in state 3), the keyboard text from its first line (6 characters a line) and the
+    // arrows for more lines above and below (+0x60, +0x64).
+    void NameEntry_Setup(GuestPtr<NameEntry> entry, uint32_t mode, uint8_t maxLength, int a3, int hint, GuestPtr<char> text)
+    {
+        const uint32_t e = entry.address;
+        const auto box = [e](uint32_t offset) { return GuestPtr<TextBox>{port::load<uint32_t>(e + offset)}; };
+        const auto empty = [] { return GuestPtr<char>{0x001B7F90u}; };
+        port::store<uint32_t>(e + 0x44u, mode & 0xFFu);
+        port::store<int32_t>(e + 0x6Cu, 0);
+        if (maxLength > 0x18)
+            maxLength = 0x18;
+        port::store<uint8_t>(e + 0x68u, maxLength);
+        for (int i = 0; i < maxLength + 1; ++i)
+            port::store<uint8_t>(e + 0x1Cu + static_cast<uint32_t>(i), 0);
+        port::store<int32_t>(e + 0x74u, a3);
+        port::store<int32_t>(e + 0x70u, 0);
+        port::store<int32_t>(e + 0x60u, 0);
+        port::store<int32_t>(e + 0x64u, 0);
+        sdk::strcpy(e + 0x84u, hint == 0 ? 0x001B7F90u : static_cast<uint32_t>(hint));
+        port::store<uint8_t>(e + 0x108u, 0);
+        GuestPtr<TextBox> shown;
+        if (static_cast<uint32_t>(sdk::strlen(e + 0x84u)) < 0xB)
+        {
+            port::store<int32_t>(e + 0x104u, -1);
+            TextBox_SetText(box(4), GuestPtr<char>{e + 0x84u}, 1);
+            shown = box(0xC);
+        }
+        else
+        {
+            port::store<int32_t>(e + 0x104u, 0);
+            port::store<uint8_t>(e + 0x108u, 1); // the first scroll step only counts (it moves every tenth frame)
+            shown = box(0xC);
+        }
+        TextBox_SetText(shown, empty(), 0);
+        if (!text)
+            TextBox_SetText(box(0xC), empty(), 0);
+        else
+        {
+            sdk::strcpy(e + 0x1Cu, text.address);
+            TextBox_SetText(box(0xC), GuestPtr<char>{e + 0x1Cu}, 1);
+        }
+        port::store<int32_t>(e + 0x5Cu, sdk::strlen(e + 0x1Cu));
+        if (static_cast<int32_t>(port::load<uint8_t>(e + 0x68u)) <= port::load<int32_t>(e + 0x5Cu))
+            port::store<int32_t>(e + 0x5Cu, port::load<int32_t>(e + 0x5Cu) - 1);
+        for (int length = sdk::strlen(e + 0x1Cu); length < static_cast<int>(port::load<uint8_t>(e + 0x68u)); ++length)
+            TextBox_AppendText(box(0xC), GuestPtr<char>{0x001B8038u}, 0);
+        const uint32_t board = port::load<uint32_t>(e + 0x14u);
+        if (port::load<int32_t>(e + 0x74u) == 0)
+        {
+            port::store<float>(board + 0x34u, static_cast<float>(ps2f(port::load<float>(e + 0x78u)) + ps2f(0.3f)));
+            port::store<int32_t>(e + 0x40u, 3);
+        }
+        else
+        {
+            port::store<uint32_t>(board + 0x34u, port::load<uint32_t>(e + 0x78u));
+            port::store<int32_t>(e + 0x40u, 1);
+        }
+        TextBox_SetText(box(0x10), empty(), 0);
+        port::store<int32_t>(e + 0x48u, 0);
+        port::store<int32_t>(e + 0x4Cu, 0);
+        port::store<int32_t>(e + 0x50u, 0);
+        const uint32_t keys = port::load<uint32_t>(0x001B13E0u + 4u * port::load<uint32_t>(e + 0x44u));
+        port::store<int32_t>(e + 0x58u, sdk::strlen(keys));
+        port::store<int32_t>(e + 0x54u, port::load<int32_t>(e + 0x58u) / 6);
+        if (port::load<int32_t>(e + 0x58u) % 6 != 0)
+            port::store<int32_t>(e + 0x54u, port::load<int32_t>(e + 0x54u) + 1);
+        TextBox_SetText(box(8), GuestPtr<char>{keys + 6u * port::load<uint32_t>(e + 0x50u)}, 1);
+        const uint32_t arrow = port::load<uint32_t>(e + 0x18u);
+        port::store<uint32_t>(arrow + 0x30u, port::load<uint32_t>(e + 0x7Cu));
+        port::store<uint32_t>(arrow + 0x34u, port::load<uint32_t>(e + 0x80u));
+        port::store<int32_t>(e + 0x60u, port::load<int32_t>(e + 0x50u) != 0 ? 1 : 0);
+        port::store<int32_t>(e + 0x64u, port::load<int32_t>(e + 0x50u) + 4 < port::load<int32_t>(e + 0x54u) ? 1 : 0);
+    }
+
+    PORT_FN(NameEntry_Setup);
 }

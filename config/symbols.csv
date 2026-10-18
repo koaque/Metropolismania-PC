@@ -948,7 +948,7 @@ address,name,kind,source
 0x00141F60,mm_TerrainGen_ApplyBump,func,manual
 0x001424A0,mm_MapTiles_dtor,func,manual
 0x00142510,mm_MapTiles_ctor,func,manual
-0x00142590,mm_Map_FindPartyGuests,func,manual
+0x00142590,mm_Map_ReturnPeopleToWork,func,manual
 0x00142790,mm_Map_FindPersonEntry,func,manual
 0x00142830,mm_Map_FindPersonObjectOnTile,func,manual
 0x00142910,mm_Map_FindPersonOfFlaggedType,func,manual

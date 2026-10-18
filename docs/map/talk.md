@@ -40,7 +40,7 @@ friendship changed. A is the person talked to.
 
 ## Functions
 
-322 functions (typed 126, verified 196). Blocks: 92 can reach a thread switch, 27 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+322 functions (typed 120, verified 202). Blocks: 92 can reach a thread switch, 27 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -346,9 +346,9 @@ friendship changed. A is the person talked to.
 | `0x00180390` | `void mm_Words_SetPerson(Words *words, MapPerson *person, int arg4, CityScene *city)` | 256 | yes | subject A = person a1 with home building, clears the rest |
 | `0x00180490` | `Words *mm_Words_dtor(Words *words, int16_t deleteFlag)` | 84 | yes | frees the 0x140-byte context |
 | `0x001804F0` | `Words *mm_Words_ctor(Words *words)` | 48 | yes | allocates the 0x140-byte context |
-| `0x001A0C40` | `int mm_Words_MatchTypedAnswer(int script, char *typed)` | 840 | no | which answer of the current question matches the typed text (strcmp) |
+| `0x001A0C40` | `void mm_Words_MatchTypedAnswer(int script, char *typed)` | 840 | no | which answer of the current question matches the typed text (strcmp) |
 | `0x001A0F90` | `char *mm_Words_GetEntryDefault(void)` | 580 | no | default text for a name entry question |
-| `0x001A11E0` | `uint16_t mm_Words_GetEntryMode(void)` | 504 | no | (provisional) first field of the name entry question (passed to mm_NameEntry_Setup) |
+| `0x001A11E0` | `int16_t mm_Words_GetEntryMode(void)` | 504 | no | (provisional) first field of the name entry question (passed to mm_NameEntry_Setup) |
 | `0x001A13E0` | `char *mm_Words_GetChoiceText(int script, CityScene *city, int code, int index)` | 1036 | yes | text of menu choice a3 for code a2: goods with prices ("Don't buy"), claims, wants, events |
 | `0x001A17F0` | `void mm_Words_ApplyChoice(int script, CityScene *city, int code, int choice)` | 504 | yes | stores menu choice a3 for code a2 (bag item, want, event, argument) and jumps |
 | `0x001A19F0` | `int mm_Words_CountChoices(int script, CityScene *city, int code)` | 664 | no | number of menu choices for code a2 |

@@ -575,6 +575,7 @@ namespace mm
         const GuestPtr<uint8_t> status = MemberStatus_Lookup(family, member);
         if (statusHigh(*status) < 12)
             return static_cast<int>(status.address);
+        port::setGuestV0(static_cast<int32_t>(status.address)); // Family_AddFriendship leaves v0 as it finds it
         return Family_AddFriendship(family, member, GuestPtr<int32_t>{static_cast<uint32_t>(approval)}, points);
     }
 
@@ -635,4 +636,45 @@ namespace mm
     PORT_FN(MemberMeters_Reset);
     PORT_FN(McManager_FindSlotB);
     PORT_FN(McManager_IsCardUsable);
+
+    // ---- member status table (batch 39)
+
+    // The status byte of a family member in the table at 0x1F32F0 (256 entries: family, member, status). A member
+    // without an entry takes the first free one (family 0). With the table full, the entry of the highest level
+    // (ties: the lower middle field, then the lower low field; the first on a full tie) is reused with its status
+    // reset to level 14 and both fields 0; its family and member stay as they were.
+    GuestPtr<uint8_t> MemberStatus_Lookup(int family, int member)
+    {
+        const auto entry = [](uint32_t i) { return globals::kMemberStatus + 4u * i; };
+        for (uint32_t i = 0; i < 256; ++i)
+            if (static_cast<int>(port::load<uint16_t>(entry(i))) == family && static_cast<int>(port::load<uint8_t>(entry(i) + 2u)) == member)
+                return GuestPtr<uint8_t>{entry(i) + 3u};
+        for (uint32_t i = 0; i < 256; ++i)
+        {
+            if (port::load<uint16_t>(entry(i)) != 0)
+                continue;
+            port::store<uint16_t>(entry(i), static_cast<uint16_t>(family));
+            port::store<uint8_t>(entry(i) + 2u, static_cast<uint8_t>(member));
+            return GuestPtr<uint8_t>{entry(i) + 3u};
+        }
+        uint32_t worst = 0;
+        for (uint32_t i = 1; i < 256; ++i)
+        {
+            const uint8_t mine = port::load<uint8_t>(entry(i) + 3u), theirs = port::load<uint8_t>(entry(worst) + 3u);
+            if ((theirs >> 4) < (mine >> 4))
+                worst = i;
+            else if ((theirs >> 4) == (mine >> 4))
+            {
+                if (((mine >> 2) & 3u) < ((theirs >> 2) & 3u))
+                    worst = i;
+                else if (((mine >> 2) & 3u) == ((theirs >> 2) & 3u) && (mine & 3u) < (theirs & 3u))
+                    worst = i;
+            }
+        }
+        const uint32_t status = entry(worst) + 3u;
+        port::store<uint8_t>(status, 0xE0);
+        return GuestPtr<uint8_t>{status};
+    }
+
+    PORT_FN(MemberStatus_Lookup);
 }

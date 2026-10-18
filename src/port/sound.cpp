@@ -1714,4 +1714,60 @@ namespace mm
     PORT_FN(Sound_IsDriverBusy);
     PORT_FN(Sound_StopAllPlaying);
     PORT_FN(Sound_StopAllSequences);
+
+    // ---- message sounds (batch 39)
+
+    // The sound for a character typed in a message: the code picks a voice (0x3F for 0x14, 0xA, 8, 6 and 1 to 4, else
+    // 0x13) and its pitch (+300 for 0x14, -300 for 0xA and 9, -100 for 8 and 7, +100 for 1 to 4, else 0). A voice owned
+    // by its caller (table flag 0x10) takes the next owner id (counted up, back to 0 at 0xFF); otherwise it has none.
+    void Se_PlayMessageSound(char code)
+    {
+        uint8_t sound = 0x13;
+        uint16_t pitch = 0;
+        switch (code)
+        {
+        case 0x14:
+            sound = 0x3F;
+            pitch = 300;
+            break;
+        case 0x0A:
+            sound = 0x3F;
+            pitch = 0xFED4;
+            break;
+        case 0x09:
+            pitch = 0xFED4;
+            break;
+        case 0x08:
+            sound = 0x3F;
+            pitch = 0xFF9C;
+            break;
+        case 0x07:
+            pitch = 0xFF9C;
+            break;
+        case 0x06:
+            sound = 0x3F;
+            break;
+        case 0x04:
+        case 0x03:
+        case 0x02:
+        case 0x01:
+            sound = 0x3F;
+            pitch = 100;
+            break;
+        default:
+            break;
+        }
+        if ((port::load<uint8_t>(globals::kSoundTable + 0x10u * sound) & 0x10u) == 0)
+        {
+            Se_Request(0, 0, sound, 0, 0, pitch, 0x3C, 0, 0.0f, 0.0f);
+            return;
+        }
+        const uint16_t owner = globals::soundNextOwner.get();
+        globals::soundNextOwner.set(static_cast<uint16_t>(owner + 1));
+        Se_Request(owner, 0, sound, 0, 0, pitch, 0x3C, 0, 0.0f, 0.0f);
+        if (globals::soundNextOwner.get() == 0xFF)
+            globals::soundNextOwner.set(0);
+    }
+
+    PORT_FN(Se_PlayMessageSound);
 }

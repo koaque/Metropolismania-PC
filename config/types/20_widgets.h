@@ -30,8 +30,22 @@ struct MenuWin {
     int32_t unk_18;            /* +0x18 */
     int32_t unk_1C;            /* +0x1C */
 };
-/* Talk person card (0x38 bytes), a widget. */
-struct TalkCard { Widget base; uint8_t data[0x2C]; };
+/* Talk person card (0x38 bytes, vtable 0x1BD720), a widget: name, age and gauges of the person or family member
+   chosen in a talk. */
+struct TalkCard {
+    Widget base;
+    int32_t person;            /* +0x0C person record, 6000 = a family member by phone */
+    int32_t family;            /* +0x10 */
+    int32_t member;            /* +0x14 */
+    int32_t slot;              /* +0x18 place on the screen: x from the table at 0x1B1B28 */
+    void *model;               /* +0x1C the talk building model (0x1F3B2C) */
+    TextBox *lowerText;        /* +0x20 at y 0x7D60 */
+    TextBox *upperText;        /* +0x24 at y 0x7C00 */
+    CityScene *city;           /* +0x28 */
+    float friendship;          /* +0x2C the friendship meter */
+    Frame *frame;              /* +0x30 */
+    int32_t mood;              /* +0x34 gauge face: 0 none, 1 to 4 (mm_TalkCard_Show) */
+};
 /* Talk money panel (0x1C bytes, vtable 0x1BD7C0), a widget: the shown amount counts towards the real one
    by 100 a frame (mm_TalkMoney_Active). */
 struct TalkMoney {

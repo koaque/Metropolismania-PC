@@ -306,7 +306,7 @@ inline constexpr uint32_t Map_UpdateAreaGeometry = 0x00141ED0u;
 inline constexpr uint32_t TerrainGen_ApplyBump = 0x00141F60u;
 inline constexpr uint32_t MapTiles_dtor = 0x001424A0u;
 inline constexpr uint32_t MapTiles_ctor = 0x00142510u;
-inline constexpr uint32_t Map_FindPartyGuests = 0x00142590u;
+inline constexpr uint32_t Map_ReturnPeopleToWork = 0x00142590u;
 inline constexpr uint32_t Map_FindPersonObjectOnTile = 0x00142830u;
 inline constexpr uint32_t Map_FindPersonOfFlaggedType = 0x00142910u;
 inline constexpr uint32_t Map_FindWorkerOnTile = 0x001429A0u;
@@ -2113,7 +2113,6 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Map_CountObjectsBefore", addr::Map_CountObjectsBefore},
     {"Map_CreateObject", addr::Map_CreateObject},
     {"Map_FindFamilyHome", addr::Map_FindFamilyHome},
-    {"Map_FindPartyGuests", addr::Map_FindPartyGuests},
     {"Map_FindPersonEntry", addr::Map_FindPersonEntry},
     {"Map_FindPersonObjectOnTile", addr::Map_FindPersonObjectOnTile},
     {"Map_FindPersonOfFlaggedType", addr::Map_FindPersonOfFlaggedType},
@@ -2136,6 +2135,7 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Map_PlaceRubbleArea", addr::Map_PlaceRubbleArea},
     {"Map_PlaceSmallGoods", addr::Map_PlaceSmallGoods},
     {"Map_RemoveObjectFromTile", addr::Map_RemoveObjectFromTile},
+    {"Map_ReturnPeopleToWork", addr::Map_ReturnPeopleToWork},
     {"Map_SampleHeight", addr::Map_SampleHeight},
     {"Map_SaveState", addr::Map_SaveState},
     {"Map_SetAreaHeight", addr::Map_SetAreaHeight},
@@ -2995,6 +2995,7 @@ int CityScene_ApprovalTier(GuestPtr<CityScene> city);
 int CityScene_ScoreA8Tier(GuestPtr<CityScene> city);
 int CityScene_ScoreA0Tier(GuestPtr<CityScene> city);
 void CityScene_RecordPlacementScore(GuestPtr<CityScene> city, int scoreA8, int scoreA0);
+void CityScene_TickClock(GuestPtr<CityScene> city);
 GuestPtr<Widget> Widget_ctor(GuestPtr<Widget> widget);
 void Widget_Open(GuestPtr<Widget> widget);
 void Widget_Close(GuestPtr<Widget> widget);
@@ -3010,6 +3011,8 @@ GuestPtr<MapObject> Map_FindFamilyHome(GuestPtr<CityMap> map, uint16_t family);
 GuestPtr<MapPerson> Map_FindPersonEntry(GuestPtr<CityMap> map, int16_t family, uint16_t member);
 GuestPtr<MapPerson> People_Next(GuestPtr<CityMap> map, GuestPtr<uint16_t> cursor);
 int Family_GetTypeIndex(int family);
+GuestPtr<uint8_t> MemberStatus_Lookup(int family, int member);
+void MsgWin_TypeNext(GuestPtr<MsgWin> msgwin);
 int MsgWin_NextLine(GuestPtr<MsgWin> msgwin, GuestPtr<char> text);
 int MsgWin_Update(GuestPtr<MsgWin> msgwin);
 void MsgWin_Draw(GuestPtr<MsgWin> msgwin, int pass);
@@ -3096,6 +3099,7 @@ void Stage_LoadState(int stage, GuestPtr<McManager> mc);
 void Stage_SaveState(int stage, GuestPtr<McManager> mc);
 void Stage_Reset();
 int StageObj_ctor(int stage);
+void CityCursor_SelectTile(GuestPtr<CityCursor> cursor, int tile, GuestPtr<CityScene> city);
 void CityCursor_SetTarget(GuestPtr<CityCursor> cursor, uint16_t kind, int id, GuestPtr<Vec4> position);
 void Math_ProjectPoint(int unused_a0, GuestPtr<Vec4> out, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix);
 void CityCursor_LayoutInfo(GuestPtr<CityCursor> cursor, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix);
@@ -3111,6 +3115,12 @@ void EventMgr_RequeueFirst(GuestPtr<EventMgr> events);
 int Event_CountActive(GuestPtr<EventMgr> events);
 void Event_ReleaseTiles(GuestPtr<CityScene> city);
 int EventQueue_Find(GuestPtr<EventMgr> events, int16_t id);
+void EventList_MoveDue(int list, int from, int to, GuestPtr<int32_t> ctx);
+void EventList_MoveDueTo(int list, int from, int to, GuestPtr<int32_t> ctx);
+void EventList_MoveOffRank(int list, int from, int to, GuestPtr<int32_t> ctx);
+void EventList_MoveOnRank(int list, int from, int to, GuestPtr<int32_t> ctx);
+void EventList_MoveOffRankB(int list, int from, int to, GuestPtr<int32_t> ctx);
+void EventList_MoveByMask26(int list, int from, int to, GuestPtr<int32_t> ctx);
 int Pair_ctor(int pair);
 void MemberMeters_Reset(GuestPtr<int32_t> meters);
 uint8_t MemberStatus_GetLow2(int family, int member);
@@ -3127,6 +3137,7 @@ void StatusByte_IncHighLevel(GuestPtr<uint8_t> status);
 void StatusByte_ClearMid2(GuestPtr<uint8_t> status);
 void StatusByte_IncLevel(GuestPtr<uint8_t> status);
 void MemberStatus_Tick(int clock, int month);
+void Family_BefriendAll();
 void Family_ResetForStage();
 int Family_MakePhoneNumber(int family);
 void Family_LoadState(GuestPtr<McManager> mc);
@@ -3137,6 +3148,7 @@ int Family_IsKnown(uint32_t family);
 void Family_SetFlagA(uint32_t family);
 int Family_InCity(uint32_t family);
 int Family_GetFriendshipBand(int family, int member);
+int64_t Family_AddFriendship(int family, int member, GuestPtr<int32_t> approval, int points);
 int Family_AddFriendshipScaled(int family, int member, GuestPtr<int32_t> approval, int points, int sign);
 uint8_t Family_GetFriendship(int family, int member);
 void Family_MoveAway(uint32_t family);
@@ -3182,6 +3194,7 @@ ps2f Map_SampleHeight(GuestPtr<CityMap> map, ps2f x, ps2f z);
 void Math_TriangleNormal(GuestPtr<Vec4> out, GuestPtr<Vec4> a, GuestPtr<Vec4> b, GuestPtr<Vec4> c);
 void Map_UpdateTileGeometry(GuestPtr<CityMap> map, int x, int z);
 void Map_UpdateAreaGeometry(GuestPtr<CityMap> map, GuestPtr<int32_t> rect);
+void Map_ReturnPeopleToWork(GuestPtr<CityMap> map);
 GuestPtr<MapObject> Map_FindPersonObjectOnTile(GuestPtr<CityMap> map, uint32_t person, uint32_t tile);
 GuestPtr<MapPerson> Map_FindPersonOfFlaggedType(GuestPtr<CityMap> map, int16_t home);
 GuestPtr<MapPerson> Map_FindWorkerOnTile(GuestPtr<CityMap> map, uint16_t work, uint32_t tile);
@@ -3235,6 +3248,7 @@ uint32_t Laptop_CountActive();
 void Laptop_RemoveEntry(GuestPtr<Laptop> laptop, int entry);
 void Laptop_AddEntry(GuestPtr<Laptop> laptop, int entry);
 void Laptop_Animate(GuestPtr<Laptop> laptop);
+int Laptop_RunEntry(GuestPtr<Laptop> laptop, GuestPtr<CityScene> city);
 GuestPtr<Laptop> Laptop_ctor(GuestPtr<Laptop> laptop);
 void Laptop_InitEntries();
 void Frame_SetStyle(GuestPtr<Frame> frame, int style);
@@ -3250,12 +3264,17 @@ void LightSet_UpdateByClock(GuestPtr<LightSet> lights, int clock, int weather);
 GuestPtr<LightSet> LightSet_ctor(GuestPtr<LightSet> lights);
 ps2f Map_HeightScale(ps2f height);
 GuestPtr<uint32_t> LayerB_BuildPacket(GuestPtr<LayerB> layer, GuestPtr<uint32_t> packet);
+void LayerB_InitParams(GuestPtr<LayerB> layer);
 void LayerB_Draw(GuestPtr<LayerB> layer, int packet);
 GuestPtr<LayerB> LayerB_ctor(GuestPtr<LayerB> layer);
 int LayerC_InTileRect(GuestPtr<LayerC> layer, int x, int z);
 void Terrain_SetVec(GuestPtr<uint32_t> a0, int a1, GuestPtr<uint32_t> a2, GuestPtr<uint32_t> a3);
+GuestPtr<uint32_t> LayerC_BuildPacket(GuestPtr<LayerC> layer, GuestPtr<uint32_t> packet);
 void LayerC_InitParams(GuestPtr<LayerC> layer);
+void LayerC_DrawBuildings(GuestPtr<LayerC> layer, int packet, GuestPtr<CityMap> map, int pass);
 GuestPtr<LayerC> LayerC_ctor(GuestPtr<LayerC> layer);
+void LayerD_InitParams(GuestPtr<LayerD> layer);
+void LayerD_DrawSkyByClock(GuestPtr<LayerD> layer, int pass, int packet, int clock);
 GuestPtr<LayerD> LayerD_ctor(GuestPtr<LayerD> layer, int buffers);
 GuestPtr<LayerE> LayerE_ctor(GuestPtr<LayerE> layer, int buffers);
 GuestPtr<uint32_t> LayerF_BuildPacket(GuestPtr<LayerF> layer, GuestPtr<uint32_t> packet);
@@ -3285,6 +3304,8 @@ void ListMenu_Draw(GuestPtr<ListMenu> menu);
 void WantsWin_Draw(GuestPtr<WantsWin> wants);
 GuestPtr<WantsWin> WantsWin_ctor(GuestPtr<WantsWin> wants);
 void PauseMenu_Draw(GuestPtr<PauseMenu> pause);
+void PauseMenu_StateMain(GuestPtr<PauseMenu> pause);
+void PauseMenu_ShowCardMessage(GuestPtr<PauseMenu> pause, int message);
 GuestPtr<PauseMenu> PauseMenu_ctor(GuestPtr<PauseMenu> pause);
 int Applicants_CountActive(GuestPtr<Applicants> applicants);
 void Applicants_LoadState(GuestPtr<Applicants> applicants, GuestPtr<McManager> mc);
@@ -3292,6 +3313,7 @@ void Applicants_SaveState(GuestPtr<Applicants> applicants, GuestPtr<McManager> m
 int Applicants_Find(GuestPtr<Applicants> applicants, uint32_t family);
 int Applicants_FindFrom(GuestPtr<Applicants> applicants, GuestPtr<uint32_t> iterator, uint32_t state);
 int Applicants_Clear(GuestPtr<Applicants> applicants);
+void Applicants_Layout(GuestPtr<Applicants> applicants);
 void Applicants_ScrollTo(GuestPtr<Applicants> applicants, int index);
 void Applicants_PlaceAt(GuestPtr<Applicants> applicants, GuestPtr<ps2f> point);
 int Applicants_AnyWaiting(GuestPtr<Applicants> applicants);
@@ -3305,6 +3327,7 @@ void Player_GetMatrix(GuestPtr<Player> player, GuestPtr<Vec4> matrix);
 void Player_PlayFootstep(GuestPtr<Player> player, GuestPtr<CityScene> city);
 void Player_UpdateAction(GuestPtr<Player> player, GuestPtr<Vec4> move, GuestPtr<CityScene> city);
 void Player_PickTarget(GuestPtr<Player> player, GuestPtr<CityScene> city);
+int Placement_FindSpot(GuestPtr<Player> player, GuestPtr<CityScene> city, int family, int typeIndex, int x, int z, int half, GuestPtr<int32_t> rect);
 void Player_SetMode(GuestPtr<Player> player, int mode);
 int Player_GetMode(GuestPtr<Player> player);
 void Player_Draw(GuestPtr<Player> player, GuestPtr<CityScene> city);
@@ -3334,9 +3357,11 @@ void McManager_ClearSlots(GuestPtr<McManager> mc);
 void McManager_InitSlots();
 int16_t Person_FindBuildingInList(GuestPtr<CityScene> city, int list, int x, int z, int mode, int16_t skipA, int16_t skipB);
 uint32_t Person_PlaceHomeObject(GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
+uint16_t Person_RandomTarget(GuestPtr<CityScene> city, GuestPtr<MapPerson> person, int a2, int a3);
 uint16_t Person_TargetWork(GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
 int Person_TileHasCompanion(GuestPtr<CityScene> city, GuestPtr<MapPerson> person, GuestPtr<MapObject> building);
 uint16_t Person_TargetVisit(GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
+uint16_t Person_TargetShop(GuestPtr<CityScene> city, GuestPtr<MapPerson> person, int a2, int a3);
 int16_t Person_TargetHome(GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
 uint32_t Math_SqrtBits(int value);
 int Schedule_PickEntry(int a0, int a1, int a2, int a3, int t0, int t1);
@@ -3364,8 +3389,10 @@ void Stamina_SaveState(GuestPtr<Stamina> stamina, GuestPtr<McManager> mc);
 void Stamina_Tick(GuestPtr<Stamina> stamina, GuestPtr<CityScene> city);
 void Stamina_Eat(GuestPtr<Stamina> stamina, GuestPtr<uint8_t> goods);
 int Stamina_Zero(GuestPtr<Stamina> stamina);
+void NameEntry_Draw(GuestPtr<NameEntry> entry);
 int NameEntry_Update(GuestPtr<NameEntry> entry);
 void NameEntry_Close(GuestPtr<NameEntry> entry);
+void NameEntry_Setup(GuestPtr<NameEntry> entry, uint32_t mode, uint8_t maxLength, int a3, int t0, GuestPtr<char> text);
 void BldgType_Slot34(GuestPtr<BuildingType> btype);
 int BldgType_IsOpenAt(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj);
 int Clock_AddWrap(int a0, int time, int offset);
@@ -3392,6 +3419,11 @@ void BldgOffice_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene
 int BldgOffice_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int timeFlags);
 void BldgRanch_DrawAnim(GuestPtr<BuildingType> btype, int time);
 int ClaimMeter_Level(uint16_t meter);
+void BldgClaims_EvalA(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj);
+void BldgClaims_EvalB(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj);
+uint32_t BldgClaims_CountNearby(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<char> claimEntry, GuestPtr<int32_t> rect);
+void BldgClaims_EvalC(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj);
+void BldgClaims_EvalD(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj);
 int BldgClaims_Evaluate(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int rise);
 void BldgClaims_DrawIcon(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> colour);
 void Bldg_InitRecordBase(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj);
@@ -3410,7 +3442,9 @@ void BldgBusiness_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CitySce
 int Bldg_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int timeFlags);
 void Bldg_InitRecord(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj);
 void BldgKeepOut_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int t0, int t1, ps2f x, ps2f y, ps2f z);
+int BldgLeveled_CheckArea(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, int x, int z, int size, int t1);
 void BldgLeveled_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int t0, int t1, ps2f x, ps2f y, ps2f z);
+void BldgLeveled_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj);
 void BldgType_CallAll(int time);
 int BldgHousing_CollideA(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit, GuestPtr<uint32_t> part, ps2f lift);
 int BldgHousing_CollideB(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, GuestPtr<uint32_t> part, ps2f f12);
@@ -3420,6 +3454,7 @@ void BldgHousing_CountUnits(GuestPtr<BuildingType> btype, GuestPtr<CityScene> ci
 int BldgHousing_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int timeFlags);
 void BldgHousing_InitRecord(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj);
 int BldgMyHome_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj);
+void BldgPigFarm_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int t0, int t1, ps2f x, ps2f y, ps2f z);
 void BldgRoad_FindNeighbours(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int x, int z);
 void BldgRoad_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int t0, int t1, ps2f x, ps2f y, ps2f z);
 int BldgRoad_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj);
@@ -3428,6 +3463,7 @@ int BldgRoad_Slot1C(GuestPtr<BuildingType> btype, int a1);
 int BldgSmallGoods_CollideA(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit, ps2f lift);
 int BldgSmallGoods_CollideB(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, ps2f f12);
 void BldgSmallGoods_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int t0, int t1, ps2f x, ps2f y, ps2f z);
+void BldgSmallGoods_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj);
 void BldgWasteland_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int t0, int t1, ps2f x, ps2f y, ps2f z);
 int BldgWasteland_FindSpot(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, int a2, uint32_t x, uint32_t z, GuestPtr<uint32_t> spot);
 int BldgWasteland_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj);
@@ -3442,7 +3478,11 @@ void Notice_Clear(GuestPtr<Notice> notice);
 void Notice_ShowCentered(GuestPtr<Notice> notice, GuestPtr<char> text, int a2);
 void Notice_ShowText(GuestPtr<Notice> notice, GuestPtr<char> text);
 void Notice_Show(GuestPtr<Notice> notice, int id);
+int SoundTest_BgmPage(int a0, uint32_t a1, uint32_t a2, uint32_t a3);
+int SoundTest_SePage(int a0, uint32_t a1, uint32_t a2, uint32_t a3);
+int SoundTest_Update(int a0);
 void SoundTest_BgmText(int a0);
+void SoundTest_SeText(int a0);
 int Title_DrawCommon(GuestPtr<SceneA> scene, int layers);
 int Title_PressStart(GuestPtr<SceneA> scene);
 int Title_RandomCharParts(GuestPtr<SceneA> scene);
@@ -3512,6 +3552,7 @@ void TalkPersonFar_Opening(GuestPtr<TalkView> view);
 void TalkPersonFar_Open(GuestPtr<TalkView> view);
 void TalkPersonNear_Draw(GuestPtr<TalkView> view, int pass);
 void TalkPersonNear_Active(GuestPtr<TalkView> view);
+void TalkCard_Show(GuestPtr<TalkCard> card, int person, int family, int member, int slot);
 void Talk_SetViewLit(GuestPtr<TalkSession> talk);
 int Talk_LookupPose(GuestPtr<TalkSession> talk, uint32_t family, uint32_t member, GuestPtr<uint32_t> pose);
 void Talk_SetPose(GuestPtr<TalkSession> talk, uint16_t family, uint8_t member, uint8_t pose);
@@ -3592,6 +3633,7 @@ int WordsFn_ApplicantCountTier(GuestPtr<WordsCtx> ctx);
 int WordsFn_BuildingOpen(GuestPtr<WordsCtx> ctx);
 int WordsFn_BuildingsOverlap(GuestPtr<WordsCtx> ctx);
 int WordsFn_FamilyModArg(GuestPtr<WordsCtx> ctx);
+int Words_PickResidentByType(GuestPtr<WordsCtx> ctx);
 int WordsFn_PersonFlagBit(GuestPtr<WordsCtx> ctx);
 int WordsFn_HomeIsType104(GuestPtr<WordsCtx> ctx);
 int WordsFn_Arg4(GuestPtr<WordsCtx> ctx);
@@ -3658,6 +3700,7 @@ int CityScene_TalkSelectPerson(GuestPtr<CityScene> city, int family, int member)
 int Collide_RayTriangleA(GuestPtr<Vec4> origin, GuestPtr<Vec4> a, GuestPtr<Vec4> b, GuestPtr<Vec4> c, GuestPtr<Vec4> hit, GuestPtr<ps2f> distance, ps2f range);
 int Collide_PointInTriangle(GuestPtr<Vec4> p, GuestPtr<Vec4> a, GuestPtr<Vec4> b, GuestPtr<Vec4> c);
 int Collide_RayTriangleB(GuestPtr<Vec4> start, GuestPtr<Vec4> end, GuestPtr<Vec4> a, GuestPtr<Vec4> b, GuestPtr<Vec4> c, GuestPtr<Vec4> hit);
+void Text_FormatTimeRange(GuestPtr<char> out, int fromMinute, int toMinute);
 void Text_FormatMoney(GuestPtr<char> out, int value, int width, int leftAlign);
 int Text_FormatThousands(GuestPtr<char> out, int value);
 void Text_SplitDigits(GuestPtr<uint8_t> out, int value, int count);
@@ -3728,6 +3771,7 @@ int Se_MatchSchedule(uint32_t monthFrom, uint32_t monthTo, uint32_t hourFrom, ui
 int Se_Request(uint16_t owner, uint32_t group, uint8_t sound, uint8_t param0A, uint8_t param18, uint16_t param0C, uint8_t param0B, uint8_t param19, ps2f angle, ps2f distance);
 void Se_StopOwner(char owner);
 int Sound_PlaySe(int sound, int a1, int a2, ps2f angle, ps2f distance);
+void Se_PlayMessageSound(char code);
 void Se_PlayVariant(uint8_t variant);
 void Se_UpdateTimeOfDay();
 void Se_UpdateVoices();
@@ -3772,10 +3816,12 @@ void EvShoppingTogether_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city
 int EvShoppingTogether_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
 void EvAlien_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 GuestPtr<MapObject> EvAlien_PickTarget(GuestPtr<CityScene> city, int x, int z);
+int EvAlien_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvBodyguard_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
 void EvEscort_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvEscort_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvBodyguard_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city);
+int EvMsg_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
 void EvPayday_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvMsg_UpdateFinal(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvMsg_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
@@ -3801,18 +3847,24 @@ GuestPtr<char> EvDeliveryMan_Slot10(GuestPtr<EventData> data, GuestPtr<CityScene
 void EvDeliveryMan_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvDeliveryMan_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvDeliveryMan_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
+int EvDeliveryMan_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
 int EvBugDamage_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city);
+void EventList_MoveAll(int list, int from, int to);
 void EventQueue_RemoveAt(int queue, int level, GuestPtr<uint16_t> entry);
 void EventQueue_InsertByPriority(int queue, GuestPtr<uint8_t> id, int level, int start);
 void PartyPopup_Draw(int popup, int pass);
 void PartyPopup_Update(int popup, GuestPtr<CityScene> city);
 int EvFarewellParty_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
+void EvFarewellParty_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvForgetfulGranny_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
 void EvCrazyCult_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvCrazyCult_Phase3(GuestPtr<EventData> data, GuestPtr<CityScene> city);
+void EvCrazyCult_Phase2(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvCrazyCult_Phase1(GuestPtr<EventData> data, GuestPtr<CityScene> city);
+void EvCrazyCult_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvCrazyCult_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvAdoption_Slot10(GuestPtr<EventData> data, GuestPtr<CityScene> city, int index);
+void EvAdoption_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvAdoption_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvUselessMiddleAged_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvUselessMiddleAged_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
@@ -3822,31 +3874,40 @@ int EvMissingChildren_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city,
 void EvMissingChildren_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvMissingChildren_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvAdvertise_ClaimsMatch(GuestPtr<CityScene> city, GuestPtr<ActorRef> actorA, GuestPtr<ActorRef> actorB);
+int EvAdvertise_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
 void EvAdvertise_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvAdvertise_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvAdvertise_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvAdvertise_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
 GuestPtr<char> EvShopping_Slot10(GuestPtr<EventData> data, GuestPtr<CityScene> city, int index);
 void EvShopping_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
+void EvShopping_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvShopping_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EventData_GetSize7C();
 int EventData_GetSize1C();
 void EvNoodles_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvNoodles_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
+int EvNoodles_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvThief_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
 void EvThief_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvThief_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvRelationship_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
+int EvAffair_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
+int EvBoyfriend_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
+int EvGirlfriend_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
 int EvActor_Notify(GuestPtr<CityScene> city, GuestPtr<ActorRef> actor);
+void EvActor_Wander(GuestPtr<CityScene> city, GuestPtr<ActorRef> actor);
 int EvActor_FindShop(GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
 void EvActor_StopFollowing(GuestPtr<CityScene> city, GuestPtr<ActorRef> actor);
 int EvActor_Follow(GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, GuestPtr<ActorRef> target);
 int EvActor_Detach(GuestPtr<CityScene> city, GuestPtr<ActorRef> actor);
 void EvActor_Release(GuestPtr<CityScene> city, GuestPtr<ActorRef> actor);
 void Person_ExitBuilding(GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
+int EvActor_MoveTo(GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, GuestPtr<ActorRef> target, int arrive);
 int Person_IsOnOpenTile(GuestPtr<CityScene> city, GuestPtr<ActorRef> actor);
 int Person_IsAtBuilding(GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, GuestPtr<ActorRef> target);
 GuestPtr<MapPerson> Person_FindIdleOfType(GuestPtr<CityScene> city, GuestPtr<MapObject> building, uint32_t charType);
+int Person_IsNearBuilding(GuestPtr<CityScene> city, GuestPtr<MapPerson> person, GuestPtr<MapObject> obj, int range);
 int Player_DistanceToBuilding(GuestPtr<CityScene> city, GuestPtr<ActorRef> actor);
 ps2f Player_DistanceToPerson(GuestPtr<CityScene> city, GuestPtr<ActorRef> actor);
 ps2f Player_DistanceToPoint(GuestPtr<CityScene> city, GuestPtr<ps2f> point);
@@ -3854,6 +3915,10 @@ ps2f Person_Distance(GuestPtr<CityScene> city, GuestPtr<ActorRef> actorA, GuestP
 GuestPtr<MapObject> EvAlien_FindBuilding(GuestPtr<CityScene> city, int list, uint32_t type, GuestPtr<int32_t> rect);
 GuestPtr<MapObject> EvThief_FindBuilding(GuestPtr<CityScene> city, uint32_t category, GuestPtr<int32_t> rect);
 void Building_GetFootprint(GuestPtr<MapObject> obj, int a1, GuestPtr<uint32_t> rect);
+void Words_MatchTypedAnswer(int script, GuestPtr<char> typed);
+GuestPtr<char> Words_GetEntryDefault();
+int16_t Words_GetEntryMode();
+int Words_CountChoices(int script, GuestPtr<CityScene> city, int code);
 void Words_AppendClipped(GuestPtr<char> buffer, GuestPtr<char> text);
 int Words_FriendshipChanged();
 int Words_CancelAllowed();
@@ -3861,11 +3926,8 @@ void StaticInit_StatusBytes();
 
 // Not ported yet: the generated function, through the runtime's function table.
 inline void CityScene_UpdateApproval(GuestPtr<CityScene> city) { port::callGuest<void>(addr::CityScene_UpdateApproval, city); }
-inline void CityScene_TickClock(GuestPtr<CityScene> city) { port::callGuest<void>(addr::CityScene_TickClock, city); }
 inline GuestPtr<Widget> Widget_dtor(GuestPtr<Widget> widget, short deleteFlag) { return port::callGuest<GuestPtr<Widget>>(addr::Widget_dtor, widget, deleteFlag); }
 inline GuestPtr<Family> Family_Get(int family, int flags) { return port::callGuest<GuestPtr<Family>>(addr::Family_Get, family, flags); }
-inline GuestPtr<uint8_t> MemberStatus_Lookup(int family, int member) { return port::callGuest<GuestPtr<uint8_t>>(addr::MemberStatus_Lookup, family, member); }
-inline void MsgWin_TypeNext(GuestPtr<MsgWin> msgwin) { port::callGuest<void>(addr::MsgWin_TypeNext, msgwin); }
 inline void MsgWin_Closing(GuestPtr<MsgWin> msgwin) { port::callGuest<void>(addr::MsgWin_Closing, msgwin); }
 inline void MsgWin_Opening(GuestPtr<MsgWin> msgwin) { port::callGuest<void>(addr::MsgWin_Opening, msgwin); }
 inline GuestPtr<MsgWin> MsgWin_dtor(GuestPtr<MsgWin> msgwin, int16_t deleteFlag) { return port::callGuest<GuestPtr<MsgWin>>(addr::MsgWin_dtor, msgwin, deleteFlag); }
@@ -3906,7 +3968,6 @@ inline void Stage_Load() { port::callGuest<void>(addr::Stage_Load); }
 inline void Stage_FormatGoalText(int stage, GuestPtr<char> out) { port::callGuest<void>(addr::Stage_FormatGoalText, stage, out); }
 inline void Stage_FormatTargetText(int stage, GuestPtr<char> out) { port::callGuest<void>(addr::Stage_FormatTargetText, stage, out); }
 inline int StageObj_DeletingDtor(int stage, int16_t deleteFlag) { return port::callGuest<int>(addr::StageObj_DeletingDtor, stage, deleteFlag); }
-inline void CityCursor_SelectTile(GuestPtr<CityCursor> cursor, int tile, GuestPtr<CityScene> city) { port::callGuest<void>(addr::CityCursor_SelectTile, cursor, tile, city); }
 inline int CityCursor_UpdateInfo(GuestPtr<CityCursor> cursor, GuestPtr<CityScene> city) { return port::callGuest<int>(addr::CityCursor_UpdateInfo, cursor, city); }
 inline void CityCursor_Move(GuestPtr<CityCursor> cursor, GuestPtr<CityScene> city, int a2) { port::callGuest<void>(addr::CityCursor_Move, cursor, city, a2); }
 inline void CityCursor_Update(GuestPtr<CityCursor> cursor, GuestPtr<CityScene> city, int a2) { port::callGuest<void>(addr::CityCursor_Update, cursor, city, a2); }
@@ -3930,14 +3991,6 @@ inline void Event_CallHandlerSlot(GuestPtr<EventMgr> events, GuestPtr<CityScene>
 inline GuestPtr<EventMgr> EventMgr_dtor(GuestPtr<EventMgr> events, int16_t deleteFlag) { return port::callGuest<GuestPtr<EventMgr>>(addr::EventMgr_dtor, events, deleteFlag); }
 inline GuestPtr<EventMgr> EventMgr_ctor(GuestPtr<EventMgr> events) { return port::callGuest<GuestPtr<EventMgr>>(addr::EventMgr_ctor, events); }
 inline void Event_LoadTypes() { port::callGuest<void>(addr::Event_LoadTypes); }
-inline int EventList_MoveDue(int list, int from, int to, GuestPtr<int32_t> ctx) { return port::callGuest<int>(addr::EventList_MoveDue, list, from, to, ctx); }
-inline void EventList_MoveDueTo(int list, int from, int to, GuestPtr<int32_t> ctx) { port::callGuest<void>(addr::EventList_MoveDueTo, list, from, to, ctx); }
-inline void EventList_MoveOffRank(int list, int from, int to, GuestPtr<int32_t> ctx) { port::callGuest<void>(addr::EventList_MoveOffRank, list, from, to, ctx); }
-inline void EventList_MoveOnRank(int list, int from, int to, GuestPtr<int32_t> ctx) { port::callGuest<void>(addr::EventList_MoveOnRank, list, from, to, ctx); }
-inline void EventList_MoveOffRankB(int list, int from, int to, GuestPtr<int32_t> ctx) { port::callGuest<void>(addr::EventList_MoveOffRankB, list, from, to, ctx); }
-inline void EventList_MoveByMask26(int list, int from, int to, GuestPtr<int32_t> ctx) { port::callGuest<void>(addr::EventList_MoveByMask26, list, from, to, ctx); }
-inline void Family_BefriendAll() { port::callGuest<void>(addr::Family_BefriendAll); }
-inline int Family_AddFriendship(int family, int member, GuestPtr<int32_t> approval, int points) { return port::callGuest<int>(addr::Family_AddFriendship, family, member, approval, points); }
 inline uint32_t Family_PickIntroduction(int family, int member, int a2) { return port::callGuest<uint32_t>(addr::Family_PickIntroduction, family, member, a2); }
 inline int Family_Prefetch(int family, int flags) { return port::callGuest<int>(addr::Family_Prefetch, family, flags); }
 inline void Family_Init() { port::callGuest<void>(addr::Family_Init); }
@@ -3957,7 +4010,6 @@ inline GuestPtr<CityMap> CityMap_ctor(GuestPtr<CityMap> map) { return port::call
 inline ps2f TerrainGen_ApplyBump(GuestPtr<CityMap> map, int x, int z, int mode, uint32_t flags, ps2f height, ps2f radius) { return port::callGuest<ps2f>(addr::TerrainGen_ApplyBump, map, x, z, mode, flags, height, radius); }
 inline GuestPtr<CityMap> MapTiles_dtor(GuestPtr<CityMap> map, int16_t deleteFlag) { return port::callGuest<GuestPtr<CityMap>>(addr::MapTiles_dtor, map, deleteFlag); }
 inline GuestPtr<CityMap> MapTiles_ctor(GuestPtr<CityMap> map) { return port::callGuest<GuestPtr<CityMap>>(addr::MapTiles_ctor, map); }
-inline void Map_FindPartyGuests(GuestPtr<CityMap> map) { port::callGuest<void>(addr::Map_FindPartyGuests, map); }
 inline void Family_AssignHome(GuestPtr<CityMap> map, GuestPtr<CityScene> city, int family, int object) { port::callGuest<void>(addr::Family_AssignHome, map, city, family, object); }
 inline void MapPeople_Tick(GuestPtr<CityMap> map, GuestPtr<CityScene> city) { port::callGuest<void>(addr::MapPeople_Tick, map, city); }
 inline GuestPtr<CityMap> MapPeople_dtor(GuestPtr<CityMap> map, int16_t deleteFlag) { return port::callGuest<GuestPtr<CityMap>>(addr::MapPeople_dtor, map, deleteFlag); }
@@ -3985,21 +4037,15 @@ inline GuestPtr<StatusPanel> StatusPanel_dtor(GuestPtr<StatusPanel> panel, int16
 inline GuestPtr<StatusPanel> StatusPanel_ctor(GuestPtr<StatusPanel> panel) { return port::callGuest<GuestPtr<StatusPanel>>(addr::StatusPanel_ctor, panel); }
 inline int Laptop_SetItemText(GuestPtr<Laptop> laptop, int a1, uint32_t item) { return port::callGuest<int>(addr::Laptop_SetItemText, laptop, a1, item); }
 inline int Laptop_Draw(GuestPtr<Laptop> laptop) { return port::callGuest<int>(addr::Laptop_Draw, laptop); }
-inline int Laptop_RunEntry(GuestPtr<Laptop> laptop, GuestPtr<CityScene> city) { return port::callGuest<int>(addr::Laptop_RunEntry, laptop, city); }
 inline int Laptop_Update(GuestPtr<Laptop> laptop, GuestPtr<CityScene> city) { return port::callGuest<int>(addr::Laptop_Update, laptop, city); }
 inline GuestPtr<Laptop> Laptop_dtor(GuestPtr<Laptop> laptop, int16_t deleteFlag) { return port::callGuest<GuestPtr<Laptop>>(addr::Laptop_dtor, laptop, deleteFlag); }
 inline GuestPtr<Frame> Frame_DeletingDtor(GuestPtr<Frame> frame, int16_t deleteFlag) { return port::callGuest<GuestPtr<Frame>>(addr::Frame_DeletingDtor, frame, deleteFlag); }
 inline int WaitText_Delete() { return port::callGuest<int>(addr::WaitText_Delete); }
 inline void WaitText_Create(GuestPtr<char> text) { port::callGuest<void>(addr::WaitText_Create, text); }
 inline GuestPtr<LightSet> LightSet_DeletingDtor(GuestPtr<LightSet> lights, int16_t deleteFlag) { return port::callGuest<GuestPtr<LightSet>>(addr::LightSet_DeletingDtor, lights, deleteFlag); }
-inline void LayerB_InitParams(GuestPtr<LayerB> layer) { port::callGuest<void>(addr::LayerB_InitParams, layer); }
 inline GuestPtr<LayerB> LayerB_DeletingDtor(GuestPtr<LayerB> layer, int16_t deleteFlag) { return port::callGuest<GuestPtr<LayerB>>(addr::LayerB_DeletingDtor, layer, deleteFlag); }
-inline GuestPtr<uint32_t> LayerC_BuildPacket(GuestPtr<LayerC> layer, GuestPtr<uint32_t> packet) { return port::callGuest<GuestPtr<uint32_t>>(addr::LayerC_BuildPacket, layer, packet); }
-inline void LayerC_DrawBuildings(GuestPtr<LayerC> layer, int packet, GuestPtr<CityMap> map, int pass) { port::callGuest<void>(addr::LayerC_DrawBuildings, layer, packet, map, pass); }
 inline GuestPtr<LayerC> LayerC_DeletingDtor(GuestPtr<LayerC> layer, int16_t deleteFlag) { return port::callGuest<GuestPtr<LayerC>>(addr::LayerC_DeletingDtor, layer, deleteFlag); }
 inline GuestPtr<uint32_t> LayerD_BuildPacket(GuestPtr<LayerD> layer, GuestPtr<uint32_t> packet, GuestPtr<int32_t> a2) { return port::callGuest<GuestPtr<uint32_t>>(addr::LayerD_BuildPacket, layer, packet, a2); }
-inline void LayerD_InitParams(GuestPtr<LayerD> layer) { port::callGuest<void>(addr::LayerD_InitParams, layer); }
-inline void LayerD_DrawSkyByClock(GuestPtr<LayerD> layer, int pass, int packet, int clock) { port::callGuest<void>(addr::LayerD_DrawSkyByClock, layer, pass, packet, clock); }
 inline GuestPtr<LayerD> LayerD_DeletingDtor(GuestPtr<LayerD> layer, int16_t deleteFlag) { return port::callGuest<GuestPtr<LayerD>>(addr::LayerD_DeletingDtor, layer, deleteFlag); }
 inline GuestPtr<uint32_t> LayerE_BuildPacket(GuestPtr<LayerE> layer, GuestPtr<uint32_t> packet, GuestPtr<int32_t> a2) { return port::callGuest<GuestPtr<uint32_t>>(addr::LayerE_BuildPacket, layer, packet, a2); }
 inline void LayerE_InitParams(GuestPtr<LayerE> layer) { port::callGuest<void>(addr::LayerE_InitParams, layer); }
@@ -4023,8 +4069,6 @@ inline GuestPtr<SceneB> SceneB_ctor(GuestPtr<SceneB> scene, int a1) { return por
 inline void WantsWin_FormatLine(GuestPtr<WantsWin> wants, int a1, int a2, int a3) { port::callGuest<void>(addr::WantsWin_FormatLine, wants, a1, a2, a3); }
 inline void WantsWin_Update(GuestPtr<WantsWin> wants, GuestPtr<CityScene> city) { port::callGuest<void>(addr::WantsWin_Update, wants, city); }
 inline GuestPtr<WantsWin> WantsWin_dtor(GuestPtr<WantsWin> wants, int16_t deleteFlag) { return port::callGuest<GuestPtr<WantsWin>>(addr::WantsWin_dtor, wants, deleteFlag); }
-inline void PauseMenu_StateMain(GuestPtr<PauseMenu> pause) { port::callGuest<void>(addr::PauseMenu_StateMain, pause); }
-inline void PauseMenu_ShowCardMessage(GuestPtr<PauseMenu> pause, int message) { port::callGuest<void>(addr::PauseMenu_ShowCardMessage, pause, message); }
 inline int PauseMenu_StateSave(GuestPtr<PauseMenu> pause, GuestPtr<CityScene> city) { return port::callGuest<int>(addr::PauseMenu_StateSave, pause, city); }
 inline void PauseMenu_StateFormat(GuestPtr<PauseMenu> pause) { port::callGuest<void>(addr::PauseMenu_StateFormat, pause); }
 inline void PauseMenu_StateWait(GuestPtr<PauseMenu> pause) { port::callGuest<void>(addr::PauseMenu_StateWait, pause); }
@@ -4033,7 +4077,6 @@ inline void PauseMenu_Reset(GuestPtr<PauseMenu> pause) { port::callGuest<void>(a
 inline int PauseMenu_Update(GuestPtr<PauseMenu> pause, GuestPtr<CityScene> city) { return port::callGuest<int>(addr::PauseMenu_Update, pause, city); }
 inline GuestPtr<PauseMenu> PauseMenu_dtor(GuestPtr<PauseMenu> pause, int16_t deleteFlag) { return port::callGuest<GuestPtr<PauseMenu>>(addr::PauseMenu_dtor, pause, deleteFlag); }
 inline int Applicants_Add(GuestPtr<Applicants> applicants, int family, int month, uint16_t state) { return port::callGuest<int>(addr::Applicants_Add, applicants, family, month, state); }
-inline void Applicants_Layout(GuestPtr<Applicants> applicants) { port::callGuest<void>(addr::Applicants_Layout, applicants); }
 inline void Applicants_Select(GuestPtr<Applicants> applicants, int index) { port::callGuest<void>(addr::Applicants_Select, applicants, index); }
 inline void Applicants_SetMode(GuestPtr<Applicants> applicants, int mode) { port::callGuest<void>(addr::Applicants_SetMode, applicants, mode); }
 inline void Applicants_BuildInfo(GuestPtr<Applicants> applicants) { port::callGuest<void>(addr::Applicants_BuildInfo, applicants); }
@@ -4049,7 +4092,6 @@ inline GuestPtr<Applicants> Applicants_dtor(GuestPtr<Applicants> applicants, int
 inline GuestPtr<Applicants> Applicants_ctor(GuestPtr<Applicants> applicants) { return port::callGuest<GuestPtr<Applicants>>(addr::Applicants_ctor, applicants); }
 inline int Pad_Poll() { return port::callGuest<int>(addr::Pad_Poll); }
 inline void PadInit() { port::callGuest<void>(addr::PadInit); }
-inline int Placement_FindSpot(GuestPtr<Player> player, GuestPtr<CityScene> city, int family, int typeIndex, int x, int z, int half, GuestPtr<int32_t> rect) { return port::callGuest<int>(addr::Placement_FindSpot, player, city, family, typeIndex, x, z, half, rect); }
 inline void Player_PlaceBagItem(GuestPtr<Player> player, GuestPtr<CityScene> city) { port::callGuest<void>(addr::Player_PlaceBagItem, player, city); }
 inline void Player_PlaceForApplicant(GuestPtr<Player> player, GuestPtr<CityScene> city) { port::callGuest<void>(addr::Player_PlaceForApplicant, player, city); }
 inline void Player_Update(GuestPtr<Player> player, GuestPtr<CityScene> city) { port::callGuest<void>(addr::Player_Update, player, city); }
@@ -4069,8 +4111,6 @@ inline int McManager_FormatSlotText(GuestPtr<McManager> mc, GuestPtr<int32_t> a1
 inline void McManager_NewSaveName(GuestPtr<McManager> mc, uint32_t card) { port::callGuest<void>(addr::McManager_NewSaveName, mc, card); }
 inline GuestPtr<McManager> McManager_dtor(GuestPtr<McManager> mc, int16_t deleteFlag) { return port::callGuest<GuestPtr<McManager>>(addr::McManager_dtor, mc, deleteFlag); }
 inline GuestPtr<McManager> McManager_ctor(GuestPtr<McManager> mc) { return port::callGuest<GuestPtr<McManager>>(addr::McManager_ctor, mc); }
-inline uint16_t Person_RandomTarget(GuestPtr<CityScene> city, GuestPtr<MapPerson> person, int a2, int a3) { return port::callGuest<uint16_t>(addr::Person_RandomTarget, city, person, a2, a3); }
-inline uint16_t Person_TargetShop(GuestPtr<CityScene> city, GuestPtr<MapPerson> person, int a2, int a3) { return port::callGuest<uint16_t>(addr::Person_TargetShop, city, person, a2, a3); }
 inline int16_t Person_ChooseDestination(GuestPtr<CityScene> city, GuestPtr<MapPerson> person, GuestPtr<uint32_t> a2, int a3) { return port::callGuest<int16_t>(addr::Person_ChooseDestination, city, person, a2, a3); }
 inline uint8_t Schedule_QueryA(GuestPtr<CityScene> city, uint32_t family, int member) { return port::callGuest<uint8_t>(addr::Schedule_QueryA, city, family, member); }
 inline uint8_t Schedule_QueryB(GuestPtr<CityScene> city, uint32_t family, int member) { return port::callGuest<uint8_t>(addr::Schedule_QueryB, city, family, member); }
@@ -4093,8 +4133,6 @@ inline GuestPtr<LoadingScreen> LoadingScreen_dtor(GuestPtr<LoadingScreen> loadin
 inline GuestPtr<LoadingScreen> LoadingScreen_ctor(GuestPtr<LoadingScreen> loading, int a1, uint8_t a2) { return port::callGuest<GuestPtr<LoadingScreen>>(addr::LoadingScreen_ctor, loading, a1, a2); }
 inline void Stamina_CreateGlobal() { port::callGuest<void>(addr::Stamina_CreateGlobal); }
 inline void NameEntry_HandleInput(GuestPtr<NameEntry> entry) { port::callGuest<void>(addr::NameEntry_HandleInput, entry); }
-inline void NameEntry_Draw(GuestPtr<NameEntry> entry) { port::callGuest<void>(addr::NameEntry_Draw, entry); }
-inline int NameEntry_Setup(GuestPtr<NameEntry> entry, uint32_t mode, uint8_t maxLength, int a3, int t0, GuestPtr<char> text) { return port::callGuest<int>(addr::NameEntry_Setup, entry, mode, maxLength, a3, t0, text); }
 inline GuestPtr<NameEntry> NameEntry_dtor(GuestPtr<NameEntry> entry, int16_t deleteFlag) { return port::callGuest<GuestPtr<NameEntry>>(addr::NameEntry_dtor, entry, deleteFlag); }
 inline void NameEntry_CreateTexts(GuestPtr<NameEntry> entry) { port::callGuest<void>(addr::NameEntry_CreateTexts, entry); }
 inline GuestPtr<NameEntry> NameEntry_ctor(GuestPtr<NameEntry> entry) { return port::callGuest<GuestPtr<NameEntry>>(addr::NameEntry_ctor, entry); }
@@ -4112,11 +4150,6 @@ inline GuestPtr<BuildingType> BldgRanch_dtor(GuestPtr<BuildingType> btype, int16
 inline void BldgRanch_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int t0, int t1, ps2f x, ps2f y, ps2f z) { port::callGuest<void>(addr::BldgRanch_Draw, btype, layer, city, obj, t0, t1, x, y, z); }
 inline GuestPtr<BuildingType> BldgRanch_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id) { return port::callGuest<GuestPtr<BuildingType>>(addr::BldgRanch_ctor, btype, record, id); }
 inline GuestPtr<BuildingType> Bldg_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag) { return port::callGuest<GuestPtr<BuildingType>>(addr::Bldg_dtor, btype, deleteFlag); }
-inline void BldgClaims_EvalA(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj) { port::callGuest<void>(addr::BldgClaims_EvalA, btype, city, obj); }
-inline void BldgClaims_EvalB(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj) { port::callGuest<void>(addr::BldgClaims_EvalB, btype, city, obj); }
-inline uint32_t BldgClaims_CountNearby(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<char> claimEntry, GuestPtr<int32_t> rect) { return port::callGuest<uint32_t>(addr::BldgClaims_CountNearby, btype, city, claimEntry, rect); }
-inline void BldgClaims_EvalC(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj) { port::callGuest<void>(addr::BldgClaims_EvalC, btype, city, obj); }
-inline void BldgClaims_EvalD(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj) { port::callGuest<void>(addr::BldgClaims_EvalD, btype, city, obj); }
 inline GuestPtr<BuildingType> Bldg_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id) { return port::callGuest<GuestPtr<BuildingType>>(addr::Bldg_ctor, btype, record, id); }
 inline GuestPtr<BuildingType> BldgField_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag) { return port::callGuest<GuestPtr<BuildingType>>(addr::BldgField_dtor, btype, deleteFlag); }
 inline void BldgField_DrawPeople(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int t0, int t1, int t2, ps2f x, ps2f y, ps2f z) { port::callGuest<void>(addr::BldgField_DrawPeople, btype, layer, city, obj, t0, t1, t2, x, y, z); }
@@ -4129,8 +4162,6 @@ inline GuestPtr<BuildingType> BldgBusiness_ctor(GuestPtr<BuildingType> btype, Gu
 inline GuestPtr<BuildingType> BldgKeepOut_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag) { return port::callGuest<GuestPtr<BuildingType>>(addr::BldgKeepOut_dtor, btype, deleteFlag); }
 inline GuestPtr<BuildingType> BldgKeepOut_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id) { return port::callGuest<GuestPtr<BuildingType>>(addr::BldgKeepOut_ctor, btype, record, id); }
 inline GuestPtr<BuildingType> BldgLeveled_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag) { return port::callGuest<GuestPtr<BuildingType>>(addr::BldgLeveled_dtor, btype, deleteFlag); }
-inline int BldgLeveled_CheckArea(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, int x, int z, int size, int t1) { return port::callGuest<int>(addr::BldgLeveled_CheckArea, btype, city, x, z, size, t1); }
-inline void BldgLeveled_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj) { port::callGuest<void>(addr::BldgLeveled_Tick, btype, city, obj); }
 inline GuestPtr<BuildingType> BldgLeveled_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id) { return port::callGuest<GuestPtr<BuildingType>>(addr::BldgLeveled_ctor, btype, record, id); }
 inline GuestPtr<BuildingType> BldgType_Create(int id, GuestPtr<uint8_t> record) { return port::callGuest<GuestPtr<BuildingType>>(addr::BldgType_Create, id, record); }
 inline void BldgType_DeleteAll() { port::callGuest<void>(addr::BldgType_DeleteAll); }
@@ -4140,13 +4171,11 @@ inline GuestPtr<BuildingType> BldgHousing_ctor(GuestPtr<BuildingType> btype, Gue
 inline GuestPtr<BuildingType> BldgMyHome_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag) { return port::callGuest<GuestPtr<BuildingType>>(addr::BldgMyHome_dtor, btype, deleteFlag); }
 inline GuestPtr<BuildingType> BldgMyHome_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id) { return port::callGuest<GuestPtr<BuildingType>>(addr::BldgMyHome_ctor, btype, record, id); }
 inline GuestPtr<BuildingType> BldgPigFarm_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag) { return port::callGuest<GuestPtr<BuildingType>>(addr::BldgPigFarm_dtor, btype, deleteFlag); }
-inline void BldgPigFarm_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int t0, int t1, ps2f x, ps2f y, ps2f z) { port::callGuest<void>(addr::BldgPigFarm_Draw, btype, layer, city, obj, t0, t1, x, y, z); }
 inline GuestPtr<BuildingType> BldgPigFarm_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id) { return port::callGuest<GuestPtr<BuildingType>>(addr::BldgPigFarm_ctor, btype, record, id); }
 inline GuestPtr<BuildingType> BldgRoad_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag) { return port::callGuest<GuestPtr<BuildingType>>(addr::BldgRoad_dtor, btype, deleteFlag); }
 inline void BldgRoad_DrawPeople(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int t0, int t1, int t2, ps2f x, ps2f y, ps2f z) { port::callGuest<void>(addr::BldgRoad_DrawPeople, btype, layer, city, obj, t0, t1, t2, x, y, z); }
 inline GuestPtr<BuildingType> BldgRoad_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id) { return port::callGuest<GuestPtr<BuildingType>>(addr::BldgRoad_ctor, btype, record, id); }
 inline GuestPtr<BuildingType> BldgSmallGoods_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag) { return port::callGuest<GuestPtr<BuildingType>>(addr::BldgSmallGoods_dtor, btype, deleteFlag); }
-inline void BldgSmallGoods_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj) { port::callGuest<void>(addr::BldgSmallGoods_Tick, btype, city, obj); }
 inline GuestPtr<BuildingType> BldgSmallGoods_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id) { return port::callGuest<GuestPtr<BuildingType>>(addr::BldgSmallGoods_ctor, btype, record, id); }
 inline GuestPtr<BuildingType> BldgWasteland_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag) { return port::callGuest<GuestPtr<BuildingType>>(addr::BldgWasteland_dtor, btype, deleteFlag); }
 inline GuestPtr<BuildingType> BldgWasteland_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id) { return port::callGuest<GuestPtr<BuildingType>>(addr::BldgWasteland_ctor, btype, record, id); }
@@ -4155,10 +4184,6 @@ inline int PhoneCall_Update(GuestPtr<PhoneCalls> phone, GuestPtr<CityScene> city
 inline GuestPtr<PhoneCalls> PhoneCall_DeletingDtor(GuestPtr<PhoneCalls> phone, int16_t deleteFlag) { return port::callGuest<GuestPtr<PhoneCalls>>(addr::PhoneCall_DeletingDtor, phone, deleteFlag); }
 inline GuestPtr<Notice> Notice_dtor(GuestPtr<Notice> notice, int16_t deleteFlag) { return port::callGuest<GuestPtr<Notice>>(addr::Notice_dtor, notice, deleteFlag); }
 inline GuestPtr<Notice> Notice_ctor(GuestPtr<Notice> notice) { return port::callGuest<GuestPtr<Notice>>(addr::Notice_ctor, notice); }
-inline int SoundTest_BgmPage(int a0, uint32_t a1, uint32_t a2, uint32_t a3) { return port::callGuest<int>(addr::SoundTest_BgmPage, a0, a1, a2, a3); }
-inline int SoundTest_SePage(int a0, uint32_t a1, uint32_t a2, uint32_t a3) { return port::callGuest<int>(addr::SoundTest_SePage, a0, a1, a2, a3); }
-inline int SoundTest_Update(int a0) { return port::callGuest<int>(addr::SoundTest_Update, a0); }
-inline void SoundTest_SeText(int a0) { port::callGuest<void>(addr::SoundTest_SeText, a0); }
 inline int Title_LoadMenu(GuestPtr<SceneA> scene) { return port::callGuest<int>(addr::Title_LoadMenu, scene); }
 inline int SceneA_StartGame(GuestPtr<SceneA> scene, int newGame) { return port::callGuest<int>(addr::SceneA_StartGame, scene, newGame); }
 inline int Title_NewGameIntro(GuestPtr<SceneA> scene) { return port::callGuest<int>(addr::Title_NewGameIntro, scene); }
@@ -4214,7 +4239,6 @@ inline GuestPtr<TalkView> TalkPersonNear_ctor(GuestPtr<TalkView> view, GuestPtr<
 inline void TalkCard_FillText(GuestPtr<TalkCard> card) { port::callGuest<void>(addr::TalkCard_FillText, card); }
 inline void TalkCard_DrawGauges(GuestPtr<TalkCard> card) { port::callGuest<void>(addr::TalkCard_DrawGauges, card); }
 inline void TalkCard_Draw(GuestPtr<TalkCard> card, int pass) { port::callGuest<void>(addr::TalkCard_Draw, card, pass); }
-inline void TalkCard_Show(GuestPtr<TalkCard> card, int person, int family, int member, int slot) { port::callGuest<void>(addr::TalkCard_Show, card, person, family, member, slot); }
 inline GuestPtr<TalkCard> TalkCard_dtor(GuestPtr<TalkCard> card, int16_t deleteFlag) { return port::callGuest<GuestPtr<TalkCard>>(addr::TalkCard_dtor, card, deleteFlag); }
 inline GuestPtr<TalkCard> TalkCard_ctor(GuestPtr<TalkCard> card, GuestPtr<CityScene> city) { return port::callGuest<GuestPtr<TalkCard>>(addr::TalkCard_ctor, card, city); }
 inline int Talk_ChooseInput(GuestPtr<TalkSession> talk) { return port::callGuest<int>(addr::Talk_ChooseInput, talk); }
@@ -4266,7 +4290,6 @@ inline int WordsFn_PickClaimResident(GuestPtr<WordsCtx> ctx) { return port::call
 inline int WordsFn_PickTestableResident(GuestPtr<WordsCtx> ctx) { return port::callGuest<int>(addr::WordsFn_PickTestableResident, ctx); }
 inline int WordsFn_PickByCandidates(GuestPtr<WordsCtx> ctx) { return port::callGuest<int>(addr::WordsFn_PickByCandidates, ctx); }
 inline int WordsFn_PickRandomResident(GuestPtr<WordsCtx> ctx) { return port::callGuest<int>(addr::WordsFn_PickRandomResident, ctx); }
-inline int Words_PickResidentByType(GuestPtr<WordsCtx> ctx) { return port::callGuest<int>(addr::Words_PickResidentByType, ctx); }
 inline void Words_CollectNearbyHomes(GuestPtr<WordsCtx> ctx, GuestPtr<MapObject> building) { port::callGuest<void>(addr::Words_CollectNearbyHomes, ctx, building); }
 inline int WordsFn_PickOtherResident(GuestPtr<WordsCtx> ctx) { return port::callGuest<int>(addr::WordsFn_PickOtherResident, ctx); }
 inline int WordsFn_ScheduleIs(GuestPtr<WordsCtx> ctx) { return port::callGuest<int>(addr::WordsFn_ScheduleIs, ctx); }
@@ -4293,7 +4316,6 @@ inline int CityScene_StartTalk(GuestPtr<CityScene> city, int byFamily, int targe
 inline uint32_t CityScene_Update(GuestPtr<CityScene> city) { return port::callGuest<uint32_t>(addr::CityScene_Update, city); }
 inline GuestPtr<CityScene> CityScene_dtor(GuestPtr<CityScene> city, int16_t deleteFlag) { return port::callGuest<GuestPtr<CityScene>>(addr::CityScene_dtor, city, deleteFlag); }
 inline GuestPtr<CityScene> CityScene_ctor(GuestPtr<CityScene> city) { return port::callGuest<GuestPtr<CityScene>>(addr::CityScene_ctor, city); }
-inline void Text_FormatTimeRange(GuestPtr<char> out, int fromMinute, int toMinute) { port::callGuest<void>(addr::Text_FormatTimeRange, out, fromMinute, toMinute); }
 inline GuestPtr<TextBox> TextBox_dtor(GuestPtr<TextBox> textbox, int16_t deleteFlag) { return port::callGuest<GuestPtr<TextBox>>(addr::TextBox_dtor, textbox, deleteFlag); }
 inline GuestPtr<TextBox> TextBox_Init(GuestPtr<TextBox> textbox, int columns, int rows, int style) { return port::callGuest<GuestPtr<TextBox>>(addr::TextBox_Init, textbox, columns, rows, style); }
 inline int File_Seek(GuestPtr<GameFile> file, int offset, int whence, uint16_t t0) { return port::callGuest<int>(addr::File_Seek, file, offset, whence, t0); }
@@ -4323,7 +4345,6 @@ inline void DmaList_KickFrame() { port::callGuest<void>(addr::DmaList_KickFrame)
 inline void DmaList_Free() { port::callGuest<void>(addr::DmaList_Free); }
 inline void DmaList_Init() { port::callGuest<void>(addr::DmaList_Init); }
 inline void Se_RequestForObject(uint32_t a0, uint32_t a1, uint32_t a2, int a3, int t0, int t1) { port::callGuest<void>(addr::Se_RequestForObject, a0, a1, a2, a3, t0, t1); }
-inline void Se_PlayMessageSound(char code) { port::callGuest<void>(addr::Se_PlayMessageSound, code); }
 inline void SoundCmd_Flush() { port::callGuest<void>(addr::SoundCmd_Flush); }
 inline void Sound_LoadModules() { port::callGuest<void>(addr::Sound_LoadModules); }
 inline void Sound_Shutdown() { port::callGuest<void>(addr::Sound_Shutdown); }
@@ -4331,43 +4352,26 @@ inline void Sound_Init() { port::callGuest<void>(addr::Sound_Init); }
 inline void EvShoppingTogether_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvShoppingTogether_Update, data, city); }
 inline void EvAlien_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode) { port::callGuest<void>(addr::EvAlien_Slot14, data, city, actor, mode); }
 inline void EvAlien_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvAlien_Update, data, city); }
-inline int EvAlien_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city) { return port::callGuest<int>(addr::EvAlien_Check, data, city); }
 inline void EvEscort_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvEscort_Update, data, city); }
-inline int EvMsg_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode) { return port::callGuest<int>(addr::EvMsg_Slot14, data, city, actor, mode); }
 inline int EvPayday_Slot10(GuestPtr<EventData> data, GuestPtr<CityScene> city, uint32_t a2) { return port::callGuest<int>(addr::EvPayday_Slot10, data, city, a2); }
 inline uint32_t EvCaveMan_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode) { return port::callGuest<uint32_t>(addr::EvCaveMan_Slot14, data, city, actor, mode); }
 inline void EvCaveMan_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvCaveMan_Update, data, city); }
 inline int EvDeliveryMan_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode) { return port::callGuest<int>(addr::EvDeliveryMan_Slot14, data, city, actor, mode); }
-inline int EvDeliveryMan_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, int a2) { return port::callGuest<int>(addr::EvDeliveryMan_Check, data, city, a2); }
-inline void EventList_MoveAll(int list, int from, int to) { port::callGuest<void>(addr::EventList_MoveAll, list, from, to); }
 inline int PartyPopup_dtor(int popup, int16_t deleteFlag) { return port::callGuest<int>(addr::PartyPopup_dtor, popup, deleteFlag); }
 inline void EvFarewellParty_End(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvFarewellParty_End, data, city); }
 inline void EvFarewellParty_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvFarewellParty_Update, data, city); }
-inline void EvFarewellParty_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvFarewellParty_Start, data, city); }
 inline int EvCrazyCult_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode) { return port::callGuest<int>(addr::EvCrazyCult_Slot14, data, city, actor, mode); }
-inline void EvCrazyCult_Phase2(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvCrazyCult_Phase2, data, city); }
-inline void EvCrazyCult_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvCrazyCult_Update, data, city); }
 inline int EvAdoption_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode) { return port::callGuest<int>(addr::EvAdoption_Slot14, data, city, actor, mode); }
-inline void EvAdoption_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvAdoption_Update, data, city); }
 inline uint32_t EvUselessMiddleAged_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode) { return port::callGuest<uint32_t>(addr::EvUselessMiddleAged_Slot14, data, city, actor, mode); }
 inline void EvMissingChildren_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvMissingChildren_Update, data, city); }
 inline int EvMissingChildren_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, int a2) { return port::callGuest<int>(addr::EvMissingChildren_Check, data, city, a2); }
-inline int EvAdvertise_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode) { return port::callGuest<int>(addr::EvAdvertise_Slot14, data, city, actor, mode); }
 inline int EvShopping_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode) { return port::callGuest<int>(addr::EvShopping_Slot14, data, city, actor, mode); }
-inline void EvShopping_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvShopping_Update, data, city); }
 inline int EvShopping_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person) { return port::callGuest<int>(addr::EvShopping_Check, data, city, person); }
 inline void EvNoodles_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode) { port::callGuest<void>(addr::EvNoodles_Slot14, data, city, actor, mode); }
 inline void EvNoodles_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvNoodles_Update, data, city); }
-inline int EvNoodles_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city) { return port::callGuest<int>(addr::EvNoodles_Check, data, city); }
 inline void EvThief_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvThief_Update, data, city); }
-inline int EvAffair_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, int a2) { return port::callGuest<int>(addr::EvAffair_Check, data, city, a2); }
-inline int EvBoyfriend_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, int a2) { return port::callGuest<int>(addr::EvBoyfriend_Check, data, city, a2); }
-inline int EvGirlfriend_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, int a2) { return port::callGuest<int>(addr::EvGirlfriend_Check, data, city, a2); }
 inline int EvActor_PointCursor(GuestPtr<CityScene> city, GuestPtr<ActorRef> actor) { return port::callGuest<int>(addr::EvActor_PointCursor, city, actor); }
 inline int EvActor_PointAtBuilding(GuestPtr<CityScene> city, int actorPerson, int building) { return port::callGuest<int>(addr::EvActor_PointAtBuilding, city, actorPerson, building); }
-inline void EvActor_Wander(GuestPtr<CityScene> city, GuestPtr<ActorRef> actor) { port::callGuest<void>(addr::EvActor_Wander, city, actor); }
-inline int EvActor_MoveTo(GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, GuestPtr<ActorRef> target, int arrive) { return port::callGuest<int>(addr::EvActor_MoveTo, city, actor, target, arrive); }
-inline int Person_IsNearBuilding(GuestPtr<CityScene> city, GuestPtr<ps2f> position, GuestPtr<MapObject> obj, int range) { return port::callGuest<int>(addr::Person_IsNearBuilding, city, position, obj, range); }
 inline void Movie_SetSpuMasterVolume(int volume) { port::callGuest<void>(addr::Movie_SetSpuMasterVolume, volume); }
 inline int Movie_SendToIop2Area(int iop0, int iopSize0, int iop1, int iopSize1, int ee0, int eeSize0, int ee1, int eeSize1) { return port::callGuest<int>(addr::Movie_SendToIop2Area, iop0, iopSize0, iop1, iopSize1, ee0, eeSize0, ee1, eeSize1); }
 inline int Movie_AudioDecSendToIop(GuestPtr<int32_t> audio, int a1, int a2, int a3) { return port::callGuest<int>(addr::Movie_AudioDecSendToIop, audio, a1, a2, a3); }
@@ -4448,12 +4452,8 @@ inline int Movie_VoBufIsFull(int vobuf) { return port::callGuest<int>(addr::Movi
 inline void Movie_VoBufReset(int vobuf) { port::callGuest<void>(addr::Movie_VoBufReset, vobuf); }
 inline void Movie_VoBufDelete() { port::callGuest<void>(addr::Movie_VoBufDelete); }
 inline void Movie_VoBufCreate(GuestPtr<uint32_t> vobuf, int data, int tags, int size) { port::callGuest<void>(addr::Movie_VoBufCreate, vobuf, data, tags, size); }
-inline int Words_MatchTypedAnswer(int script, GuestPtr<char> typed) { return port::callGuest<int>(addr::Words_MatchTypedAnswer, script, typed); }
-inline GuestPtr<char> Words_GetEntryDefault() { return port::callGuest<GuestPtr<char>>(addr::Words_GetEntryDefault); }
-inline uint16_t Words_GetEntryMode() { return port::callGuest<uint16_t>(addr::Words_GetEntryMode); }
 inline GuestPtr<char> Words_GetChoiceText(int script, GuestPtr<CityScene> city, int code, int index) { return port::callGuest<GuestPtr<char>>(addr::Words_GetChoiceText, script, city, code, index); }
 inline void Words_ApplyChoice(int script, GuestPtr<CityScene> city, int code, int choice) { port::callGuest<void>(addr::Words_ApplyChoice, script, city, code, choice); }
-inline int Words_CountChoices(int script, GuestPtr<CityScene> city, int code) { return port::callGuest<int>(addr::Words_CountChoices, script, city, code); }
 inline uint32_t Words_ExpandLine(int a0, int a1, int a2) { return port::callGuest<uint32_t>(addr::Words_ExpandLine, a0, a1, a2); }
 inline int16_t Words_StepImpl(GuestPtr<int32_t> script, GuestPtr<char> buffer) { return port::callGuest<int16_t>(addr::Words_StepImpl, script, buffer); }
 inline int16_t Words_Step(GuestPtr<int32_t> script, GuestPtr<char> buffer) { return port::callGuest<int16_t>(addr::Words_Step, script, buffer); }

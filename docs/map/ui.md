@@ -17,7 +17,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 
 ## Functions
 
-168 functions (ported 1, typed 84, verified 83). Blocks: 62 can reach a thread switch, 10 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+168 functions (ported 1, typed 72, verified 95). Blocks: 62 can reach a thread switch, 10 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -134,7 +134,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x00162C50` | `void mm_NameEntry_Draw(NameEntry *entry)` | 644 | no | (provisional) name entry grid and text boxes |
 | `0x00162EE0` | `int mm_NameEntry_Update(NameEntry *entry)` | 240 | no | (provisional) open/close animation, then input |
 | `0x00162FD0` | `void mm_NameEntry_Close(NameEntry *entry)` | 48 | no | (provisional) starts closing |
-| `0x00163000` | `int mm_NameEntry_Setup(NameEntry *entry, uint32_t mode, uint8_t maxLength, int a3, int t0, char *text)` | 912 | no | (provisional) fills the character grid (0x1B13E0) and texts |
+| `0x00163000` | `void mm_NameEntry_Setup(NameEntry *entry, uint32_t mode, uint8_t maxLength, int a3, int t0, char *text)` | 912 | no | (provisional) fills the character grid (0x1B13E0) and texts |
 | `0x00163390` | `NameEntry *mm_NameEntry_dtor(NameEntry *entry, int16_t deleteFlag)` | 184 | yes | (provisional) vtable 0x1BCFE8, deletes its text boxes |
 | `0x00163450` | `void mm_NameEntry_CreateTexts(NameEntry *entry)` | 424 | yes | (provisional) creates its text boxes |
 | `0x00163600` | `NameEntry *mm_NameEntry_ctor(NameEntry *entry)` | 136 | yes | (provisional) vtable 0x1BCFE8 |

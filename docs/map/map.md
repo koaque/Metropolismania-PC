@@ -20,7 +20,7 @@ placement checks (`mm_Placement_*`) and the per-object history (`mm_MapObj_*`) a
 
 ## Functions
 
-98 functions (ported 1, typed 24, verified 73). Blocks: 12 can reach a thread switch, 8 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+98 functions (ported 1, typed 23, verified 74). Blocks: 12 can reach a thread switch, 8 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -72,7 +72,7 @@ placement checks (`mm_Placement_*`) and the per-object history (`mm_MapObj_*`) a
 | `0x00141F60` | `float mm_TerrainGen_ApplyBump(CityMap *map, int x, int z, int mode, uint32_t flags, float height, float radius)` | 1304 | no | (provisional) raises/lowers a round area |
 | `0x001424A0` | `CityMap *mm_MapTiles_dtor(CityMap *map, int16_t deleteFlag)` | 108 | yes | frees the tile array, base destructor |
 | `0x00142510` | `CityMap *mm_MapTiles_ctor(CityMap *map)` | 84 | yes | allocates 128x128 tiles of 0x18 bytes |
-| `0x00142590` | `void mm_Map_FindPartyGuests(CityMap *map)` | 496 | no | (provisional) people near a building for the farewell party event |
+| `0x00142590` | `void mm_Map_ReturnPeopleToWork(CityMap *map)` | 496 | no | every person leaves the building lists they are in and stands on their workplace tile (centre, height 0), outside, walk and flags reset; vehicles target 6000 (farewell party) |
 | `0x00142790` | `MapPerson *mm_Map_FindPersonEntry(CityMap *map, int16_t family, uint16_t member)` | 148 | no | (provisional) searches the people records for (a1, a2) |
 | `0x00142830` | `MapObject *mm_Map_FindPersonObjectOnTile(CityMap *map, uint32_t person, uint32_t tile)` | 216 | no | object on tile a2 whose people list holds person a1 (skipped for people with flag 0x800) |
 | `0x00142910` | `MapPerson *mm_Map_FindPersonOfFlaggedType(CityMap *map, int16_t home)` | 132 | no | (provisional) first person of a flag-1 character type whose home (+0x28) is a1 |

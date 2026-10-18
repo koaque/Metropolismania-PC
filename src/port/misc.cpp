@@ -3303,4 +3303,215 @@ namespace mm
     }
 
     PORT_FN(Person_ExitBuilding);
+
+    // ---- people's targets (batch 39)
+
+    // 1 when the person is outside the building's footprint widened by `range`, or stands on another building (of a
+    // category other than 0); 0 on the building itself, on nothing or on plain ground.
+    int Person_IsNearBuilding(GuestPtr<CityScene> city, GuestPtr<MapPerson> person, GuestPtr<MapObject> obj, int range)
+    {
+        const int size = GuestPtr<BuildingType>{globals::buildingTypeAddress(obj->type)}->size;
+        const int x0 = obj->tile % 128 - range, z0 = obj->tile / 128 - range;
+        const int x1 = range + (obj->tile % 128 + size), z1 = range + (obj->tile / 128 + size);
+        const int z = sdk::fptosi(ps2f(64.0f) - ps2f(person->z));
+        const int x = sdk::fptosi(ps2f(64.0f) + ps2f(person->x));
+        if (x < x0 || x >= x1 || z < z0 || z >= z1)
+            return 1;
+        const GuestPtr<MapObject> on = Map_FindPersonObjectOnTile(city->map, person->index, (static_cast<uint32_t>(x) + (static_cast<uint32_t>(z) << 7)) & 0xFFFFu);
+        if (!on || GuestPtr<BuildingType>{globals::buildingTypeAddress(on->type)}->category == 0)
+            return 0;
+        return on->id != obj->id ? 1 : 0;
+    }
+
+    // A shop for someone at (x, z): tile lists from a random one on (64 tries), a shop (type flag 0x40) with a
+    // walkable entrance 5 to 9 tiles away (along x plus along z), taken with a one-in-three chance. 0x3F80 for none.
+    uint16_t Person_RandomTarget(GuestPtr<CityScene> city, GuestPtr<MapPerson>, int x, int z)
+    {
+        port::GuestLocal<uint32_t> count;
+        int list = Random_TimerMix() & 0x3F;
+        for (int tries = 0; tries < 0x40; ++tries)
+        {
+            const uint32_t items = Map_GetTileList(city->map, list, count).address;
+            if (++list >= 0x40)
+                list = 0;
+            for (uint32_t i = 0, item = items; static_cast<int32_t>(i) < static_cast<int32_t>(*count); ++i, item += 2u)
+            {
+                const GuestPtr<MapObject> shop = Map_GetRecord(city->map, port::load<uint16_t>(item));
+                if ((GuestPtr<BuildingType>{globals::buildingTypeAddress(shop->type)}->flags & 0x40u) == 0 ||
+                    Map_TileIndexFlag10(city->map, shop->entranceTile) == 0)
+                    continue;
+                const GuestPtr<MapObject> at = Map_GetTileFirstObject(city->map, shop->entranceTile);
+                const int distance = std::abs(at->tile % 128 - x) + std::abs(at->tile / 128 - z);
+                if (distance >= 10 || distance < 5)
+                    continue;
+                if ((Random_TimerMix() & 0xFFFF) < 0x5555)
+                    return at->id;
+            }
+        }
+        return kNoObject;
+    }
+
+    namespace
+    {
+        // A family member of the person among the people listed at the building, free to go along (a resident in
+        // schedule state 2).
+        GuestPtr<MapPerson> companionAt(GuestPtr<CityScene> city, GuestPtr<MapObject> building, GuestPtr<MapPerson> person,
+                                        GuestPtr<uint16_t> cursor)
+        {
+            *cursor = building->firstPerson;
+            while (*cursor != kNoPerson)
+            {
+                const GuestPtr<MapPerson> member = People_Next(city->map, cursor);
+                const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * member->charType)};
+                if ((cls->flags & 1u) == 0 && member->family == person->family && member->schedState == 2)
+                    return member;
+            }
+            return GuestPtr<MapPerson>{0};
+        }
+    }
+
+    // Shopping together: at the building on tile (x, z), unless it is the person's workplace, a family member free
+    // to go along follows the person, who waits (flag 0x200), and the workplace is the target. Otherwise the first
+    // shop of tile list 0x17 with such a member there; 0x3F80 for none.
+    uint16_t Person_TargetShop(GuestPtr<CityScene> city, GuestPtr<MapPerson> person, int x, int z)
+    {
+        port::GuestLocal<uint16_t> cursor;
+        const GuestPtr<MapObject> here = Map_GetTileObject(city->map, x, z);
+        if (person->work != here->id)
+        {
+            if (const GuestPtr<MapPerson> member = companionAt(city, here, person, cursor))
+            {
+                member->flags |= 0x20u;
+                member->follow = person->index;
+                person->flags |= 0x200u;
+                person->follow = member->index;
+                return person->work;
+            }
+        }
+        port::GuestLocal<uint32_t> count;
+        const uint32_t items = Map_GetTileList(city->map, 0x17, count).address;
+        for (uint32_t i = 0, item = items; static_cast<int32_t>(i) < static_cast<int32_t>(*count); ++i, item += 2u)
+        {
+            const GuestPtr<MapObject> shop = Map_GetRecord(city->map, port::load<uint16_t>(item));
+            if (companionAt(city, shop, person, cursor))
+                return shop->id;
+        }
+        return kNoObject;
+    }
+
+    // Everyone goes back to work: each person leaves the building lists of the tile they stand on and stands at the
+    // middle of their workplace tile (height 0), outside, with walk tiles and flags reset; residents lose their
+    // target, vehicles get 6000.
+    void Map_ReturnPeopleToWork(GuestPtr<CityMap> map)
+    {
+        for (int i = 0; i < 6000; ++i)
+        {
+            const GuestPtr<MapPerson> person = map->people + i;
+            if (person->charType == 0)
+                continue;
+            const uint16_t index = person->index;
+            const int z = sdk::fptosi(ps2f(64.0f) - ps2f(person->z));
+            const int x = sdk::fptosi(ps2f(64.0f) + ps2f(person->x));
+            GuestPtr<MapObject> obj = Map_GetTileFirstObject(map, static_cast<uint32_t>(x + (z << 7)));
+            while (People_UnlinkFromList(map, GuestPtr<uint16_t>::of(obj->firstPerson), index) == 0 && obj->nextOnTile != kNoObject)
+                obj = map->objects + obj->nextOnTile;
+            const GuestPtr<MapObject> work = Map_GetRecord(map, person->work);
+            person->x = ps2f(0.5f) + (fromInt(work->tile % 128) - ps2f(64.0f));
+            person->y = 0.0f;
+            person->z = (fromInt(128 - work->tile / 128) - ps2f(64.0f)) - ps2f(0.5f);
+            person->inside = kNoObject;
+            person->destination = kNoObject;
+            person->walkTile = 0x4000;
+            person->previousTile = 0x4000;
+            person->cooldown = 0;
+            person->flags &= 0xFC1Bu;
+            const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)};
+            person->target = (cls->flags & 1u) != 0 ? kNoPerson : kNoObject;
+        }
+    }
+
+    // "H:MM", the separator glyph 0xC2 (0x1B9AD8) and "H:MM" of two minutes of the day (an hour of 10 and up takes
+    // two digits).
+    void Text_FormatTimeRange(GuestPtr<char> out, int fromMinute, int toMinute)
+    {
+        const auto put = [](uint32_t at, int minute) {
+            const int hour = minute / 60;
+            if (hour / 10 != 0)
+                port::store<uint8_t>(at++, static_cast<uint8_t>('0' + hour / 10));
+            port::store<uint8_t>(at, static_cast<uint8_t>('0' + hour % 10));
+            port::store<uint8_t>(at + 1u, ':');
+            port::store<uint8_t>(at + 2u, static_cast<uint8_t>('0' + minute % 60 / 10));
+            port::store<uint8_t>(at + 3u, static_cast<uint8_t>('0' + minute % 60 % 10));
+            port::store<uint8_t>(at + 4u, 0);
+        };
+        put(out.address, fromMinute);
+        sdk::strcat(out.address, 0x001B9AD8u);
+        put(out.address + static_cast<uint32_t>(sdk::strlen(out.address)), toMinute);
+    }
+
+    PORT_FN(Person_IsNearBuilding);
+    PORT_FN(Person_RandomTarget);
+    PORT_FN(Person_TargetShop);
+    PORT_FN(Map_ReturnPeopleToWork);
+    PORT_FN(Text_FormatTimeRange);
+
+    // ---- the laptop's menu (batch 39)
+
+    // Runs the selected laptop entry (+0x3D0 into the entry list) and returns the scene mode to go to (the current one
+    // when nothing changes): 0 mode 6; 1, 2, 9 and 11 put the player in mode 0, 1, 3 or 4 (mode 1); 3 mode 3; 4 mode 7;
+    // 5 toggles stage flag 1; 6 to 8 mode 9; 10 mode 8; 12 queues event 6 and drops its entry (mode 1). 13 is a debug
+    // unlock: every family a friend, stage flag 2, entries 4, 5, 8, 9, 0xA and 0xC added and 0xD dropped, the largest
+    // bag and 1000000000 money.
+    int Laptop_RunEntry(GuestPtr<Laptop> laptop, GuestPtr<CityScene> city)
+    {
+        int mode = CityScene_GetMode(city);
+        const uint32_t entry = port::load<uint32_t>(globals::kLaptopEntries + 4u * port::load<uint32_t>(laptop.address + 0x3D0u));
+        const auto player = [&](int playerMode) {
+            Player_SetMode(city->player, playerMode);
+            return 1;
+        };
+        switch (entry)
+        {
+        case 0:
+            return 6;
+        case 1:
+            return player(0);
+        case 2:
+            return player(1);
+        case 3:
+            return 3;
+        case 4:
+            return 7;
+        case 5:
+            globals::stageFlags.set(static_cast<uint16_t>(globals::stageFlags.get() ^ 1u));
+            return mode;
+        case 6:
+        case 7:
+        case 8:
+            return 9;
+        case 9:
+            return player(3);
+        case 10:
+            return 8;
+        case 11:
+            return player(4);
+        case 12:
+            Event_Trigger(city->events, 6, city, GuestPtr<MapPerson>{0});
+            Laptop_RemoveEntry(laptop, 0xC);
+            return 1;
+        case 13:
+            Family_BefriendAll();
+            globals::stageFlags.set(static_cast<uint16_t>(globals::stageFlags.get() | 2u));
+            for (const int added : {4, 5, 8, 9, 0xA, 0xC})
+                Laptop_AddEntry(laptop, added);
+            Laptop_RemoveEntry(laptop, 0xD);
+            port::store<uint16_t>(city->bag.address, 3);
+            globals::stageState()->money = 1000000000;
+            return mode;
+        default:
+            return mode;
+        }
+    }
+
+    PORT_FN(Laptop_RunEntry);
 }

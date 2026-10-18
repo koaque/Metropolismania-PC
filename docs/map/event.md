@@ -20,7 +20,7 @@ City events (visitors, requests, incidents, paydays).
 
 ## Functions
 
-148 functions (typed 63, verified 85). Blocks: 20 can reach a thread switch, 21 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+148 functions (typed 41, verified 107). Blocks: 20 can reach a thread switch, 21 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -48,7 +48,7 @@ City events (visitors, requests, incidents, paydays).
 | `0x0013A250` | `EventMgr *mm_EventMgr_dtor(EventMgr *events, int16_t deleteFlag)` | 264 | yes | frees the event lists |
 | `0x0013A360` | `EventMgr *mm_EventMgr_ctor(EventMgr *events)` | 500 | yes | creates the event lists and handler objects |
 | `0x0013A560` | `void mm_Event_LoadTypes(void)` | 516 | yes | loads DATA\BIN\EVENT.BIN (0x4C-byte type records) |
-| `0x0013A770` | `int mm_EventList_MoveDue(int list, int from, int to, int32_t *ctx)` | 764 | no | (provisional) bucket a1 -> a2 for entries whose wait counter is at or below 0 |
+| `0x0013A770` | `void mm_EventList_MoveDue(int list, int from, int to, int32_t *ctx)` | 764 | no | (provisional) bucket a1 -> a2 for entries whose wait counter is at or below 0 |
 | `0x0013AA70` | `void mm_EventList_MoveDueTo(int list, int from, int to, int32_t *ctx)` | 884 | no | (provisional) like mm_EventList_MoveDue with an extra per-target test (a3[1]) |
 | `0x0013ADF0` | `void mm_EventList_MoveOffRank(int list, int from, int to, int32_t *ctx)` | 788 | no | (provisional) entries whose rank mask (+0x27) lacks the current rank bit |
 | `0x0013B110` | `void mm_EventList_MoveOnRank(int list, int from, int to, int32_t *ctx)` | 844 | no | (provisional) entries whose rank mask (+0x27) has the current rank bit |
@@ -99,7 +99,7 @@ City events (visitors, requests, incidents, paydays).
 | `0x00192540` | `void mm_EvDeliveryMan_Update(EventData *data, CityScene *city)` | 328 | no | type 3: Update |
 | `0x00192690` | `void mm_EvDeliveryMan_End(EventData *data, CityScene *city)` | 184 | no | type 3: End |
 | `0x00192750` | `void mm_EvDeliveryMan_Start(EventData *data, CityScene *city)` | 116 | no | type 3: Start |
-| `0x001927D0` | `int mm_EvDeliveryMan_Check(EventData *data, CityScene *city, int a2)` | 1272 | no | type 3 "Delivery Man": Check |
+| `0x001927D0` | `int mm_EvDeliveryMan_Check(EventData *data, CityScene *city, MapPerson *person)` | 1272 | no | type 3 "Delivery Man": Check |
 | `0x00192CD0` | `int mm_EvBugDamage_Check(EventData *data, CityScene *city)` | 132 | no | type 11 "Bug damage": Check (its only slot) |
 | `0x00192D60` | `void mm_EventList_MoveAll(int list, int from, int to)` | 696 | no | (provisional) moves every entry from bucket a1 to a2 (event manager constructor and destructor) |
 | `0x00193020` | `void mm_EventQueue_RemoveAt(int queue, int level, uint16_t *entry)` | 148 | no | removes the id at a2 from queue level a1 and shifts the level starts |
@@ -157,9 +157,9 @@ City events (visitors, requests, incidents, paydays).
 | `0x00198D40` | `void mm_EvThief_Update(EventData *data, CityScene *city)` | 1964 | yes | type 17: Update |
 | `0x001994F0` | `int mm_EvThief_Check(EventData *data, CityScene *city)` | 492 | no | type 17 "Thief": Check |
 | `0x001996E0` | `int mm_EvRelationship_Slot14(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 388 | no | Slot14 shared by types 20-22 |
-| `0x00199870` | `int mm_EvAffair_Check(EventData *data, CityScene *city, int a2)` | 564 | no | type 22 "An affair of": Check |
-| `0x00199AB0` | `int mm_EvBoyfriend_Check(EventData *data, CityScene *city, int a2)` | 604 | no | type 21 "Boyfriend of": Check |
-| `0x00199D10` | `int mm_EvGirlfriend_Check(EventData *data, CityScene *city, int a2)` | 604 | no | type 20 "Girlfriend of": Check |
+| `0x00199870` | `int mm_EvAffair_Check(EventData *data, CityScene *city, MapPerson *person)` | 564 | no | type 22 "An affair of": Check |
+| `0x00199AB0` | `int mm_EvBoyfriend_Check(EventData *data, CityScene *city, MapPerson *person)` | 604 | no | type 21 "Boyfriend of": Check |
+| `0x00199D10` | `int mm_EvGirlfriend_Check(EventData *data, CityScene *city, MapPerson *person)` | 604 | no | type 20 "Girlfriend of": Check |
 | `0x00199F70` | `int mm_EvActor_Notify(CityScene *city, ActorRef *actor)` | 212 | no | phones the player for the actor (mm_PhoneCall_Post) unless their person stands on no building of theirs (then 0); actors without a person always call |
 | `0x0019A050` | `int mm_EvActor_PointCursor(CityScene *city, ActorRef *actor)` | 236 | yes | (provisional) when nobody holds input focus, points the city cursor at the actor's building or position (0x1815E0) |
 | `0x0019A140` | `int mm_EvActor_PointAtBuilding(CityScene *city, int actorPerson, int building)` | 108 | yes | (provisional) points the cursor at building a2 and moves to the actor |

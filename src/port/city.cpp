@@ -2306,4 +2306,690 @@ namespace mm
     }
 
     PORT_FN(BldgType_OccupantMatrix);
+
+    // ---- the clock (batch 39)
+
+    // One tick of the city clock: 30 seconds before 6:00, then 3. Every 110 ticks the popular flag (4) is checked: a
+    // popular city loses a point of approval and the flag below 100 (or with flag 8); otherwise, without flag 8, it
+    // becomes popular at 118 and event 0x206 is queued from 100. At midnight the month advances: holiday months (0,
+    // 3, 7, 10) get flag 2, the weather moves on a day (tomorrow rain on every fifth month from the second, snow in
+    // months 11, 0 and 1), the placement history moves, and in months 9 to 2 flag 0x20 is set with a one-in-two
+    // chance. The traffic lights then step (+0xC4 counts to 1000; phases from 0, 400, 500 and 900).
+    void CityScene_TickClock(GuestPtr<CityScene> city)
+    {
+        city->clock = city->clock + (city->clock < 21600 ? 30 : 3);
+        globals::popularityTicks.set(globals::popularityTicks.get() + 1);
+        if (globals::popularityTicks.get() >= 110)
+        {
+            const uint32_t flags = city->flags;
+            if ((flags & 4u) != 0)
+            {
+                city->approval = city->approval - 1;
+                if (city->approval < 100 || (city->flags & 8u) != 0)
+                    city->flags = city->flags & ~4u;
+            }
+            else if ((flags & 8u) == 0)
+            {
+                if (city->approval >= 118)
+                    city->flags = flags | 4u;
+                else if (city->approval >= 100)
+                    Event_Trigger(city->events, 0x206, city, GuestPtr<MapPerson>{0});
+            }
+            globals::popularityTicks.set(0);
+        }
+        if (city->clock >= 86400)
+        {
+            city->clock = city->clock - 86400;
+            city->monthCount = city->monthCount + 1;
+            const int month = city->monthCount % 12;
+            if (month == 0 || month == 3 || month == 7 || month == 10)
+                city->flags = city->flags | 2u;
+            else
+                city->flags = city->flags & ~2u;
+            city->weatherYesterday = city->weatherToday;
+            city->weatherToday = city->weatherTomorrow;
+            if (city->monthCount % 5 == 2)
+            {
+                const int m = city->monthCount % 12;
+                city->weatherTomorrow = m == 11 || m == 0 || m == 1 ? 3 : 2;
+            }
+            else
+                city->weatherTomorrow = 0;
+            MapObj_PushHistory(city->map);
+            city->flags = city->flags & ~0x20u;
+            if ((month < 3 || month >= 9) && (Random_TimerMix() & 0x100) < 0x40)
+                city->flags = city->flags | 0x20u;
+        }
+        city->trafficTimer = city->trafficTimer + 1;
+        if (city->trafficTimer >= 1000)
+            city->trafficTimer = 0;
+        const int timer = city->trafficTimer;
+        city->trafficPhase = timer < 400 ? 0 : timer < 500 ? 1 : timer < 900 ? 2 : 3;
+    }
+
+    PORT_FN(CityScene_TickClock);
+
+    // ---- claims (batch 39)
+
+    // How a claim entry (section B: a flag byte, the claimed id or a section D group from 0x8000, a start value, a
+    // reach) stands among the buildings of its tile lists overlapping the rectangle: each one's section C value
+    // for the id is taken off the start (a claim of need, flag 0: 0 as soon as it is met) or added to it (flag set:
+    // 0xFF from 0xFF on). The result is never below 0.
+    uint32_t BldgClaims_CountNearby(GuestPtr<BuildingType>, GuestPtr<CityScene> city, GuestPtr<char> claimEntry, GuestPtr<int32_t> rect)
+    {
+        const uint32_t entry = claimEntry.address;
+        const bool wish = port::load<uint8_t>(entry) != 0;
+        int32_t total = wish ? -static_cast<int32_t>(port::load<uint16_t>(entry + 4u)) : static_cast<int32_t>(port::load<uint16_t>(entry + 4u));
+        const uint16_t claimed = port::load<uint16_t>(entry + 2u);
+        uint32_t id = entry + 2u;
+        if (claimed >= 0x8000)
+            id = static_cast<uint32_t>(Claim_GetSectionD(claimed));
+        port::GuestLocal<uint32_t> count;
+        do
+        {
+            uint32_t item = Map_GetTileList(city->map, port::load<uint16_t>(id), count).address;
+            for (int i = 0; i < static_cast<int32_t>(*count); ++i, item += 2u)
+            {
+                const GuestPtr<MapObject> building = Map_GetRecord(city->map, port::load<uint16_t>(item));
+                const GuestPtr<BuildingType> type{globals::buildingTypeAddress(building->type)};
+                const int x = building->tile & 0x7F, z = building->tile >> 7, size = type->size;
+                if (!(rect[0] < x + size && x < rect[2] && rect[1] < z + size && z < rect[3]))
+                    continue;
+                uint32_t value = static_cast<uint32_t>(Claim_GetSectionC(type->claimC));
+                while (port::load<uint16_t>(value) != port::load<uint16_t>(id))
+                    value += 4u;
+                if (!wish)
+                {
+                    total -= port::load<uint16_t>(value + 2u);
+                    if (total < 1)
+                        return 0;
+                }
+                else
+                {
+                    total += port::load<uint16_t>(value + 2u);
+                    if (total > 0xFE)
+                        return 0xFF;
+                }
+            }
+            if (claimed < 0x8000)
+                break;
+            id += 2u;
+        } while (port::load<uint16_t>(id) != 0);
+        return total < 0 ? 0u : static_cast<uint32_t>(total);
+    }
+
+    // Picks the building's claim: each entry of its section B weighs its value among the nearby buildings
+    // (mm_BldgClaims_CountNearby over the footprint widened by the entry's reach), or for id 0x32 its start value
+    // while the building has no entrance (0x4000). One is drawn by weight: it becomes the claim slot, its weight
+    // the claim timer, and a claim of need not at its start value marks the building (flag 2).
+    void BldgClaims_EvalB(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
+    {
+        port::GuestFrame<0x40> frame;
+        const uint32_t sp = frame.ptr().address;
+        const GuestPtr<uint8_t> weights{sp};
+        const GuestPtr<int32_t> rect{sp + 0x30u};
+        const uint32_t section = static_cast<uint32_t>(Claim_GetSectionB(btype->claimB));
+        const int x0 = obj->tile & 0x7F, z0 = obj->tile >> 7, x1 = x0 + btype->size, z1 = z0 + btype->size;
+        int sum = 0;
+        uint32_t k = 0;
+        for (uint32_t entry = section; port::load<uint16_t>(entry + 2u) != 0; entry += 8u, ++k)
+        {
+            if (port::load<uint16_t>(entry + 2u) == 0x32)
+                weights[k] = obj->entranceTile == 0x4000 ? static_cast<uint8_t>(port::load<uint16_t>(entry + 4u)) : 0;
+            else
+            {
+                const int reach = port::load<uint16_t>(entry + 6u);
+                rect[0] = x0 - reach;
+                rect[1] = z0 - reach;
+                rect[2] = x1 + reach;
+                rect[3] = z1 + reach;
+                weights[k] = static_cast<uint8_t>(BldgClaims_CountNearby(btype, city, GuestPtr<char>{entry}, rect));
+            }
+            sum += weights[k];
+        }
+        if (sum == 0)
+            return;
+        int draw = static_cast<int32_t>(Random_Next()) % sum;
+        uint8_t slot = 0;
+        while ((draw -= weights[slot]) >= 0)
+            ++slot;
+        obj->claimSlot = slot;
+        obj->claimTimer = weights[slot];
+        const uint32_t chosen = section + 8u * slot;
+        if (port::load<uint8_t>(chosen) == 0 && obj->claimTimer != port::load<uint16_t>(chosen + 4u))
+            obj->flags |= 2u;
+    }
+
+    // The building's claim spreads to its neighbours: over a 13 x 13 grid of every other tile around its middle
+    // (weights at 0x1B8060), each building (type flag 8) met first there, and every object stacked on its tile,
+    // whose own claim is the same (flag byte and id), above the low threshold, not in slot 0x18 and not maxed,
+    // has its meter raised by weight x spread step; at 0xFF it is maxed (flag 0x40, hold time). A claim rising a
+    // band costs a point of pending approval. Stops at the map's far rows.
+    void BldgClaims_EvalA(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
+    {
+        port::GuestFrame<0x180> frame;
+        const GuestPtr<uint16_t> seen{frame.ptr().address + 0x20u};
+        int seenCount = 0;
+        const GuestPtr<ClaimThresholds> limits = globals::claimThresholds();
+        const uint32_t claim = static_cast<uint32_t>(Claim_GetSectionB(btype->claimB)) + 8u * obj->claimSlot;
+        const uint16_t tile = obj->tile;
+        const int half = btype->size >> 1;
+        uint32_t weight = 0x001B8060u;
+        for (int dz = -12; dz <= 12; dz += 2)
+        {
+            const int z = (tile >> 7) + half + dz;
+            if (z < 0)
+            {
+                weight += 13u;
+                continue;
+            }
+            if (z > 0x7F)
+                return;
+            for (int dx = -12; dx < 13; dx += 2, ++weight)
+            {
+                const int x = (tile & 0x7F) + half + dx;
+                if (x < 0)
+                    continue;
+                if (x > 0x7F)
+                {
+                    weight += static_cast<uint32_t>((12 - dx) / 2 + 1);
+                    break;
+                }
+                if (port::load<uint8_t>(weight) == 0)
+                    continue;
+                GuestPtr<MapObject> other = Map_GetTileObject(city->map, x, z);
+                if ((GuestPtr<BuildingType>{globals::buildingTypeAddress(other->type)}->flags & 8u) == 0)
+                    continue;
+                bool already = false;
+                for (int i = 0; i < seenCount; ++i)
+                    if (other->id == seen[i])
+                        already = true;
+                if (already)
+                    continue;
+                seen[seenCount++] = other->id;
+                for (;;)
+                {
+                    if (other->claimSlot != 0x18 && limits->low < other->claimMeter && (other->flags & 0x40u) == 0)
+                    {
+                        const GuestPtr<BuildingType> type{globals::buildingTypeAddress(other->type)};
+                        const uint32_t theirs = static_cast<uint32_t>(Claim_GetSectionB(type->claimB)) + 8u * other->claimSlot;
+                        if (port::load<int16_t>(theirs + 2u) == port::load<int16_t>(claim + 2u) && port::load<int8_t>(theirs) == port::load<int8_t>(claim))
+                        {
+                            const int before = claimBand(other->claimMeter);
+                            other->claimMeter = static_cast<uint16_t>(other->claimMeter + port::load<uint8_t>(weight) * limits->spreadStep);
+                            if (other->claimMeter > 0xFE)
+                            {
+                                other->flags |= 0x40u;
+                                other->claimTimer = limits->holdTime;
+                                other->claimMeter = 0xFF;
+                            }
+                            if (before < claimBand(other->claimMeter))
+                                city->pendingApproval = city->pendingApproval - 1;
+                        }
+                    }
+                    if (other->nextOnTile == kNoObject)
+                        break;
+                    other = Map_GetRecord(city->map, other->nextOnTile);
+                }
+            }
+        }
+    }
+
+    PORT_FN(BldgClaims_CountNearby);
+    PORT_FN(BldgClaims_EvalB);
+    PORT_FN(BldgClaims_EvalA);
+
+    // ---- claims, continued (batch 39)
+
+    namespace
+    {
+        // A claim entry's value now: for id 0x32 its start value while the building has no entrance, else its value
+        // among the nearby buildings (the footprint widened by the entry's reach; the rectangle in `rect`).
+        uint32_t claimValue(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, uint32_t entry, GuestPtr<int32_t> rect)
+        {
+            if (port::load<uint16_t>(entry + 2u) == 0x32)
+                return obj->entranceTile == 0x4000 ? port::load<uint16_t>(entry + 4u) : 0u;
+            const int reach = port::load<uint16_t>(entry + 6u);
+            const int x = obj->tile & 0x7F, z = obj->tile >> 7;
+            rect[0] = x - reach;
+            rect[1] = z - reach;
+            rect[2] = x + btype->size + reach;
+            rect[3] = z + btype->size + reach;
+            return BldgClaims_CountNearby(btype, city, GuestPtr<char>{entry}, rect);
+        }
+
+        // A claim is met: the building is marked (8, claim timer 100), the approval gains 3 and the payday score a
+        // point, the meter clears, the variant's low byte becomes 1, with a sound and a minimap mark.
+        void claimMet(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
+        {
+            obj->flags |= 8u;
+            obj->claimTimer = 100;
+            CityScene_AddApproval(city, 3);
+            obj->claimMeter = 0;
+            city->paydayScore = city->paydayScore + 1;
+            port::store<uint8_t>(obj.address + 0x18u, 1);
+            Se_RequestForObject(obj->tile, 3, 0x1B, 0, 1, 0x28);
+            Minimap_Plot(city->minimap, obj->tile, btype->size, 5, 0);
+        }
+    }
+
+    // Re-checks the building's claim: below its timer value, a claim above the low threshold is met when nothing is
+    // missing any more, or (a claim of need not yet marked) is marked as met with flag 2; otherwise the timer takes
+    // the value. Below the threshold the claim is dropped (slot 0x18). Above the timer value the timer follows,
+    // and a marked claim back at its start value loses flag 2.
+    void BldgClaims_EvalC(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
+    {
+        port::GuestFrame<0x20> frame;
+        const uint32_t claim = static_cast<uint32_t>(Claim_GetSectionB(btype->claimB)) + 8u * obj->claimSlot;
+        const int value = static_cast<int>(claimValue(btype, city, obj, claim, GuestPtr<int32_t>{frame.ptr().address + 0x10u}));
+        const int timer = obj->claimTimer;
+        if (value < timer)
+        {
+            if (!(globals::claimThresholds()->low < obj->claimMeter))
+            {
+                obj->claimMeter = 0;
+                obj->claimSlot = 0x18;
+            }
+            else if (value == 0)
+            {
+                claimMet(btype, city, obj);
+                obj->flags &= 0xFFFDu;
+            }
+            else if (port::load<uint8_t>(claim) == 0 && (obj->flags & 2u) == 0)
+            {
+                obj->flags |= 2u;
+                claimMet(btype, city, obj);
+            }
+            else
+                obj->claimTimer = static_cast<uint8_t>(value);
+        }
+        else if (timer < value)
+        {
+            obj->claimTimer = static_cast<uint8_t>(value);
+            if ((obj->flags & 2u) != 0 && value == port::load<uint16_t>(claim + 4u))
+                obj->flags &= 0xFFFDu;
+        }
+    }
+
+    // Weighs the building's claims against its neighbours': the table at 0x1F4B90 (0x300 bytes; per claim id, ids
+    // from 0x8000 as 0x40 on, a need and a wish slot of four bytes: present, summed weights, weighted meters)
+    // marks the claims the building has a value for, then the neighbours over the weighted 13 x 13 grid (as in
+    // mm_BldgClaims_EvalA, stopping once a slot's weights pass 200) add their meters to the slots of their claims.
+    // The heaviest slot wins: when it is the building's own claim the meter moves towards the neighbours' average
+    // by half a step (the threshold step, or a tenth of a larger claim timer); otherwise, with the meter at most
+    // the high threshold and its share (meter x switch factor) below the slot's weighted meters, the building
+    // takes that claim.
+    void BldgClaims_EvalD(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
+    {
+        port::GuestFrame<0x1C0> frame;
+        const uint32_t sp = frame.ptr().address;
+        const GuestPtr<uint8_t> weights{sp + 0x20u};
+        const GuestPtr<int32_t> rect{sp + 0x50u};
+        const GuestPtr<uint16_t> seen{sp + 0x60u};
+        const GuestPtr<ClaimThresholds> limits = globals::claimThresholds();
+        const auto slotOf = [](uint32_t entry) {
+            uint32_t id = port::load<uint16_t>(entry + 2u);
+            if (id >= 0x8000)
+                id -= 0x7FC0;
+            return 0x001F4B90u + 4u * port::load<uint8_t>(entry) + 8u * id;
+        };
+        sdk::memset(0x001F4B90u, 0, 0x300);
+        const uint32_t section = static_cast<uint32_t>(Claim_GetSectionB(btype->claimB));
+        uint32_t k = 0;
+        for (uint32_t entry = section; port::load<uint16_t>(entry + 2u) != 0; entry += 8u, ++k)
+        {
+            weights[k] = static_cast<uint8_t>(claimValue(btype, city, obj, entry, rect));
+            if (weights[k] != 0)
+                port::store<uint8_t>(slotOf(entry), 1);
+        }
+        int seenCount = 0;
+        const uint16_t tile = obj->tile;
+        const int half = btype->size >> 1;
+        uint32_t weight = 0x001B8060u;
+        bool full = false;
+        for (int dz = -12; dz <= 12 && !full; dz += 2)
+        {
+            const int z = (tile >> 7) + half + dz;
+            if (z < 0)
+            {
+                weight += 13u;
+                continue;
+            }
+            if (z > 0x7F)
+                break;
+            for (int dx = -12; dx < 13 && !full; dx += 2, ++weight)
+            {
+                const int x = (tile & 0x7F) + half + dx;
+                if (x < 0)
+                    continue;
+                if (x > 0x7F)
+                {
+                    weight += static_cast<uint32_t>((12 - dx) / 2 + 1);
+                    break;
+                }
+                if (port::load<uint8_t>(weight) == 0)
+                    continue;
+                GuestPtr<MapObject> other = Map_GetTileObject(city->map, x, z);
+                if ((GuestPtr<BuildingType>{globals::buildingTypeAddress(other->type)}->flags & 8u) == 0)
+                    continue;
+                bool already = false;
+                for (int i = 0; i < seenCount; ++i)
+                    if (other->id == seen[i])
+                        already = true;
+                if (already)
+                    continue;
+                seen[seenCount++] = other->id;
+                for (;;)
+                {
+                    if (other->id != obj->id && other->claimSlot != 0x18 && limits->low < other->claimMeter)
+                    {
+                        const GuestPtr<BuildingType> type{globals::buildingTypeAddress(other->type)};
+                        const uint32_t slot = slotOf(static_cast<uint32_t>(Claim_GetSectionB(type->claimB)) + 8u * other->claimSlot);
+                        if (port::load<uint8_t>(slot) != 0)
+                        {
+                            port::store<uint16_t>(slot + 2u, static_cast<uint16_t>(port::load<uint16_t>(slot + 2u) + other->claimMeter * port::load<uint8_t>(weight)));
+                            port::store<uint8_t>(slot + 1u, static_cast<uint8_t>(port::load<uint8_t>(slot + 1u) + port::load<uint8_t>(weight)));
+                            if (port::load<uint8_t>(slot + 1u) > 200)
+                            {
+                                full = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (other->nextOnTile == kNoObject)
+                        break;
+                    other = Map_GetRecord(city->map, other->nextOnTile);
+                }
+                if (full)
+                    break;
+            }
+        }
+        uint32_t bestId = 0, bestFlag = 0, bestMeters = 0, bestWeights = 0;
+        for (uint32_t i = 0; i < 0xC0u; ++i)
+        {
+            const uint32_t slot = 0x001F4B90u + 4u * i;
+            if (port::load<uint8_t>(slot) == 0 || !(bestMeters < port::load<uint16_t>(slot + 2u)))
+                continue;
+            bestId = i >> 1;
+            bestFlag = i & 1u;
+            bestWeights = port::load<uint8_t>(slot + 1u);
+            bestMeters = port::load<uint16_t>(slot + 2u);
+        }
+        if (bestWeights == 0)
+            return;
+        if (static_cast<int32_t>(bestId) > 0x3F)
+            bestId += 0x7FC0;
+        const uint32_t own = section + 8u * obj->claimSlot;
+        if (bestId == port::load<uint16_t>(own + 2u) && bestFlag == port::load<uint8_t>(own))
+        {
+            const uint32_t average = bestMeters / bestWeights;
+            uint32_t step = limits->step;
+            if (!(static_cast<uint32_t>(obj->claimTimer) < step * 10u))
+                step = obj->claimTimer / 10u;
+            const uint32_t meter = obj->claimMeter;
+            const auto halfStep = static_cast<uint16_t>(static_cast<int32_t>(step) >> 1);
+            if (!(average < meter * 2u) || !(static_cast<int32_t>(average - (step >> 1)) < static_cast<int32_t>(meter)))
+                obj->claimMeter = static_cast<uint16_t>(obj->claimMeter + halfStep);
+            else if (average + step < meter)
+                obj->claimMeter = static_cast<uint16_t>(obj->claimMeter - halfStep);
+            return;
+        }
+        if (!(obj->claimMeter <= limits->high) || !(static_cast<uint32_t>(obj->claimMeter) * limits->switchFactor < bestMeters))
+            return;
+        int index = 0;
+        for (uint32_t entry = section; port::load<uint16_t>(entry + 2u) != 0; entry += 8u, ++index)
+        {
+            if (port::load<uint16_t>(entry + 2u) != bestId || port::load<uint8_t>(entry) != bestFlag)
+                continue;
+            obj->claimSlot = static_cast<uint8_t>(index);
+            obj->claimTimer = weights[index];
+            if (port::load<uint8_t>(entry) == 0 && obj->claimTimer != port::load<uint16_t>(entry + 4u))
+                obj->flags |= 2u;
+            else
+                obj->flags &= 0xFFFDu;
+            return;
+        }
+    }
+
+    PORT_FN(BldgClaims_EvalC);
+    PORT_FN(BldgClaims_EvalD);
+
+    // ---- small goods and leveled ground (batch 39)
+
+    namespace
+    {
+        // The height a flat building settles to. Above ground (a positive tile height) it is `aboveGround`.
+        // Below, the height is cut to the half-unit grid: a remainder (fmod 0.5) over 0.1 takes 0.1 off, one of
+        // -0.4 or less goes down to the lower half unit, any other takes the remainder off.
+        ps2f settledHeight(ps2f height, ps2f aboveGround)
+        {
+            if (!(height <= ps2f(0.0f)))
+                return aboveGround;
+            const ps2f remainder = sdk::fmodf(height, ps2f(0.5f));
+            if (ps2f(0.0f) == remainder)
+                return height;
+            if (!(remainder <= ps2f(0.1f)))
+                return height - ps2f(0.1f);
+            if (remainder <= ps2f(-0.4f))
+                return (height - remainder) - ps2f(0.5f);
+            return height - remainder;
+        }
+    }
+
+    // Small goods: the tile kind from the entrance search, and for a type with flag 1 the ground under it settles
+    // (0.1 above ground) and the area around it is rebuilt; then the minimap shows it (colour 1).
+    void BldgSmallGoods_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
+    {
+        port::GuestFrame<0x90> frame;
+        const uint32_t sp = frame.ptr().address;
+        const int x = obj->tile & 0x7F, z = obj->tile >> 7;
+        const GuestPtr<int32_t> side{sp + 0x8Cu};
+        BldgType_FindEntrance(btype, city, x, z, side);
+        Map_SetTileKind(city->map, obj->tile, static_cast<uint32_t>(*side));
+        if ((btype->flags & 1u) != 0)
+        {
+            const ps2f ground = Map_GetTileHeightWord(city->map, obj->tile);
+            const ps2f height = settledHeight(ground, ps2f(0.1f));
+            if (height != ground)
+            {
+                Map_SetAreaHeight(city->map, x, z, btype->size, height);
+                const GuestPtr<int32_t> rect{sp + 0x70u};
+                rect[0] = x - 1;
+                rect[1] = z + btype->size - 1;
+                rect[2] = rect[0] + btype->size + 2;
+                rect[3] = rect[1] + btype->size + 2;
+                Map_UpdateAreaGeometry(city->map, rect);
+            }
+        }
+        Minimap_Plot(city->minimap, obj->tile, btype->size, 1, 0);
+    }
+
+    // Whether leveled ground can go on an area of `size` at (x, z): the ring around it is counted per side, how
+    // many of the `size` tiles along each side carry an object of a type with flag 2, with flag 0x40, and
+    // that are not roads (type 3). Sides that are full count; which sides are needed depends on the map's placement
+    // mode (+0x60): below 2 two sides of flag 2 or 0x40 (and with `needsFlag2`, one of flag 2), 2 the same
+    // or one of flag 2 with another not road, above that any two sides of the three kinds with one of flag 2 or 0x40.
+    int BldgLeveled_CheckArea(GuestPtr<BuildingType>, GuestPtr<CityScene> city, int x, int z, int size, int needsFlag2)
+    {
+        int stop[4] = {}, flag2[4] = {}, notRoad[4] = {};
+        for (int i = 0; i < size; ++i)
+        {
+            const GuestPtr<MapObject> beside[4] = {
+                Map_GetTileObject(city->map, x + i, z - 1), Map_GetTileObject(city->map, x + size, z + i),
+                Map_GetTileObject(city->map, x + i, z + size), Map_GetTileObject(city->map, x - 1, z + i)};
+            for (int side = 0; side < 4; ++side)
+            {
+                const uint16_t flags = GuestPtr<BuildingType>{globals::buildingTypeAddress(beside[side]->type)}->flags;
+                if ((flags & 2u) != 0)
+                    ++flag2[side];
+                if ((flags & 0x40u) != 0)
+                    ++stop[side];
+                if (beside[side]->type != 3)
+                    ++notRoad[side];
+            }
+        }
+        int fullFlag2 = 0, fullStop = 0, fullNotRoad = 0;
+        for (int side = 0; side < 4; ++side)
+        {
+            if (size <= flag2[side])
+                ++fullFlag2;
+            if (size <= stop[side])
+                ++fullStop;
+            if (size <= notRoad[side])
+                ++fullNotRoad;
+        }
+        const int mode = city->map->unk_60;
+        if (mode < 2)
+        {
+            if (needsFlag2 == 0 || fullFlag2 != 0)
+                return fullFlag2 + fullStop > 1 ? 1 : 0;
+            return 0;
+        }
+        if (mode == 2)
+            return (fullFlag2 + fullStop > 1 || (fullFlag2 != 0 && fullFlag2 + fullNotRoad > 1)) ? 1 : 0;
+        return (fullStop + fullFlag2 != 0 && fullFlag2 + fullNotRoad + fullStop > 1) ? 1 : 0;
+    }
+
+    // Leveled ground: the claim word at +0x10 (meter, slot and timer as one signed word) takes the smallest of the
+    // neighbours' (x + 1, z), (x + 1, z + 1) and (x, z + 1) that are leveled ground at the same height (else 0), plus
+    // one while the object has no flag 1. The ground settles (0.05 above ground), and every waiting applicant
+    // (state 2) whose home would fit (its size within that word, CheckArea and Map_CanPlace) gets the area
+    // highlighted and its state 3 with this tile. The minimap shows it (colour 4).
+    void BldgLeveled_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
+    {
+        const int x = obj->tile & 0x7F, z = obj->tile >> 7;
+        const ps2f ground = Map_GetTileHeightWord(city->map, obj->tile);
+        const uint16_t flags = obj->flags;
+        const GuestPtr<MapObject> neighbour[3] = {Map_GetTileObject(city->map, x + 1, z), Map_GetTileObject(city->map, x + 1, z + 1),
+                                                  Map_GetTileObject(city->map, x, z + 1)};
+        const ps2f heightAt[3] = {Map_GetHeightAt(city->map, x + 1, z), Map_GetHeightAt(city->map, x + 1, z + 1), Map_GetHeightAt(city->map, x, z + 1)};
+        int32_t word[3];
+        for (int k = 0; k < 3; ++k)
+        {
+            const bool open = neighbour[k]->type == 3 && (neighbour[k]->flags & 1u) == 0;
+            word[k] = open && heightAt[k] == ground ? port::load<int32_t>(neighbour[k].address + 0x10u) : 0;
+        }
+        int32_t least = word[0] < word[1] ? (word[2] <= word[0] ? word[2] : word[0]) : (word[2] <= word[1] ? word[2] : word[1]);
+        port::store<int32_t>(obj.address + 0x10u, least + ((flags & 1u) == 0 ? 1 : 0));
+        const ps2f height = settledHeight(ground, ps2f(0.05f));
+        if (height != ground)
+            Map_SetTileHeight(city->map, obj->tile, height);
+        port::GuestLocal<uint32_t> cursor;
+        *cursor = 0;
+        for (uint32_t applicant = static_cast<uint32_t>(Applicants_FindFrom(city->applicants, cursor, 2)); applicant != 0;
+             applicant = static_cast<uint32_t>(Applicants_FindFrom(city->applicants, cursor, 2)))
+        {
+            const uint32_t family = port::load<uint16_t>(applicant + 4u);
+            const GuestPtr<BuildingType> home{globals::buildingTypeAddress(static_cast<uint16_t>(Family_GetTypeIndex(static_cast<int>(family))))};
+            const uint32_t claim = static_cast<uint32_t>(port::load<int32_t>(obj.address + 0x10u));
+            if (!(home->size <= claim))
+                continue;
+            if (BldgLeveled_CheckArea(btype, city, x, z, home->size, home->flags & 0x20u) == 0)
+                continue;
+            if (Map_CanPlace(city->map, static_cast<int>(family), port::load<uint16_t>(applicant + 0xAu), x, z) == 0)
+                continue;
+            Map_HighlightArea(city->map, x, z, home->size);
+            port::store<int16_t>(applicant + 2u, 3);
+            port::store<uint16_t>(applicant + 6u, obj->tile);
+        }
+        Minimap_Plot(city->minimap, obj->tile, btype->size, 4, 0);
+    }
+
+    PORT_FN(BldgSmallGoods_Tick);
+    PORT_FN(BldgLeveled_CheckArea);
+    PORT_FN(BldgLeveled_Tick);
+
+    // ---- the applicants card (batch 39)
+
+    namespace
+    {
+        // The applicants card text: its place and size follow the card model's values (x at +0x30, y at +0x34, scale
+        // at +0x38 of the record at Applicants +0x2A8): the pixel offsets scale with the model, the text box
+        // shrinks with it.
+        void placeCardText(GuestPtr<Applicants> applicants, int x, int y, ps2f scale)
+        {
+            const int xOffset = sdk::fptosi(ps2f(45.0f) * scale);
+            const int yOffset = sdk::fptosi(ps2f(7.1f) * scale);
+            const int width1 = 0xC0 - sdk::fptosi(ps2f(16.8f) * scale);
+            const int width2 = 0xB0 - sdk::fptosi(ps2f(16.0f) * scale);
+            const int width3 = 0xB0 - sdk::fptosi(ps2f(14.7f) * scale);
+            const int width4 = 0xC0 - sdk::fptosi(ps2f(16.3f) * scale);
+            TextBox_SetPosAndSize(GuestPtr<TextBox>{port::load<uint32_t>(applicants.address + 0x294u)}, (x + 0x77E + xOffset) * 0x10,
+                                  ((y + 0x7D6) - yOffset) * 0x10, width1, width2, width3, width4, -0x100000);
+        }
+    }
+
+    // The card slides in over the first 20 frames of its counter (+0x2C0; its x grows by 0.15 a frame), stays, and from
+    // frame 60 for 6 frames drifts (its y grows by 0.4 a frame); after that the counter and +0x2B8 clear, the
+    // cursor and the top entry take the saved entry (+0x2C4) and the list scrolls back to its first entry.
+    void Applicants_Layout(GuestPtr<Applicants> applicants)
+    {
+        const uint32_t a = applicants.address;
+        port::store<int32_t>(a + 0x2C0u, port::load<int32_t>(a + 0x2C0u) + 1);
+        const int32_t frame = port::load<int32_t>(a + 0x2C0u);
+        const uint32_t model = port::load<uint32_t>(a + 0x2A8u);
+        if (frame < 0x14)
+        {
+            port::store<float>(model + 0x30u, static_cast<float>(ps2f(port::load<float>(model + 0x30u)) + ps2f(0.15f)));
+            const ps2f x = port::load<float>(model + 0x30u), scale = port::load<float>(model + 0x38u), y = port::load<float>(model + 0x34u);
+            const int pixelX = sdk::fptosi(ps2f(144.0f) * (ps2f(0.015f) + ps2f(1.1f) * x));
+            const int pixelY = sdk::fptosi(ps2f(72.0f) * (y - ps2f(0.03f)));
+            placeCardText(applicants, pixelX, pixelY, scale);
+        }
+        else if (frame >= 0x3C)
+        {
+            if (frame < 0x42)
+            {
+                port::store<float>(model + 0x34u, static_cast<float>(ps2f(port::load<float>(model + 0x34u)) + ps2f(0.4f)));
+                const ps2f x = port::load<float>(model + 0x30u), scale = port::load<float>(model + 0x38u), y = port::load<float>(model + 0x34u);
+                const int pixelX = sdk::fptosi(ps2f(144.0f) * x);
+                const int pixelY = sdk::fptosi(ps2f(72.0f) * (ps2f(1.11f) * y - ps2f(0.1f) * y));
+                placeCardText(applicants, pixelX, pixelY, scale);
+            }
+            else
+            {
+                port::store<int32_t>(a + 0x2B8u, 0);
+                const int32_t saved = port::load<int32_t>(a + 0x2C4u);
+                port::store<int32_t>(a + 0x2D0u, saved);
+                port::store<int32_t>(a + 0x2CCu, saved);
+                port::store<int32_t>(a + 0x2C0u, 0);
+                Applicants_ScrollTo(applicants, -1);
+                port::store<int32_t>(a + 0x29Cu, 0);
+            }
+        }
+    }
+
+    PORT_FN(Applicants_Layout);
+
+    // ---- the pig farm (batch 39)
+
+    // Pig farms are drawn like theme parks: lit after dark within the opening hours of the object's type, the
+    // entrance from its own model (placed by the object's matrix), the other parts from the city parts.
+    void BldgPigFarm_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
+                          ps2f x, ps2f y, ps2f z)
+    {
+        const GuestPtr<BuildingType> type = typeOf(obj);
+        port::GuestLocal<Vec4> colour;
+        buildingColour(btype, city, obj, colour);
+        const int time = Clock_AddWrap(static_cast<int>(btype.address), city->clock, obj->id);
+        if (litAfterDark(time, type->openMinute * 60, type->closeMinute * 60))
+        {
+            setLit(colour);
+            obj->flags |= 0x10u;
+        }
+        else
+            obj->flags &= 0xFFEFu;
+        const GuestPtr<Vec4> matrix = placeLayer(layer, x, y, z);
+        if ((obj->flags & 0x20u) == 0)
+        {
+            drawPlainPart(btype, obj, matrix, colour, flags);
+            return;
+        }
+        const GuestPtr<A3DObject> model = globals::pigFarmModel.get();
+        for (int row = 0; row < 4; ++row)
+            model->matrix[row] = matrix[row];
+        Instance_DrawModel(model, colour, 0, flags);
+    }
+
+    PORT_FN(BldgPigFarm_Draw);
 }

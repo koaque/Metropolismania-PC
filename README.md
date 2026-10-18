@@ -45,7 +45,7 @@ Progress per subsystem is tracked in [docs/PORT_STATUS.md](docs/PORT_STATUS.md).
 | Movies, music, sound effects | Play, through a new SPU2 emulation (with reverb) |
 | Saves | Memory card check passes; loading a save from a PCSX2 memory card works |
 | Mapping (names, types, prototypes) | Done for every game function |
-| Readable source port | In progress: more than half of the game's functions rewritten and verified ([details](docs/PORT_STATUS.md)) |
+| Readable source port | In progress: 927 of the game's 1,481 functions rewritten and verified (63%) ([details](docs/PORT_STATUS.md)) |
 | VU1 microcode and sound driver translation | Not started |
 | Widescreen, hi-res, Linux | Not started |
 

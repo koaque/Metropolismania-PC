@@ -1248,4 +1248,179 @@ namespace mm
     PORT_FN(Words_GetGoods);
     PORT_FN(Words_SelectBagItem);
     PORT_FN(Words_AppendClipped);
+
+    // ---- script banks: entries, answers, choice counts (batch 39)
+
+    namespace
+    {
+        // The WORDS text banks: records of 0x18 bytes at 0x7181C0, each with tables of line offsets (+0) into line
+        // codes (+4), choice ranges (+8), answer records (+0xC, four bytes: mode, first string), string offsets
+        // (+0x10) and strings (+0x14). Bank 2 belongs to the building type of the talk: its tables are indexed
+        // through per-type remap tables (type records of 8 bytes at *0x718220; remaps for lines *0x718224, choices
+        // *0x718228, answers *0x71822C).
+        uint32_t bankTable(int bank, uint32_t field) { return port::load<uint32_t>(0x007181C0u + 0x18u * static_cast<uint32_t>(bank) + field); }
+
+        uint32_t remapped(uint32_t remap, int index, uint32_t part)
+        {
+            const uint32_t type = port::load<uint32_t>(0x00718220u) + 8u * Words_GetBuildingTypeB(GuestPtr<Words>{0x001BDDF0u});
+            return port::load<uint16_t>(port::load<uint32_t>(remap) + 2u * static_cast<uint32_t>(index + port::load<uint16_t>(type + part)));
+        }
+
+        // The code at the script's current line (Words +0x10) and column (+0x14) of its line table (+0x24).
+        int currentCode()
+        {
+            const int code = port::load<int16_t>(port::load<uint32_t>(0x001BDE14u) + 2u * port::load<uint16_t>(0x001BDE00u)) - 5000;
+            const uint32_t column = port::load<uint16_t>(0x001BDE04u);
+            const int bank = code / 1000, index = code % 1000;
+            const uint32_t line = bank == 2 ? remapped(0x00718224u, index, 0) : port::load<uint16_t>(bankTable(bank, 0) + 2u * static_cast<uint32_t>(index));
+            return port::load<int16_t>(bankTable(bank, 4) + 2u * (column + line));
+        }
+
+        // The answer record of an answer code (5000 and up).
+        uint32_t answerRecord(int code)
+        {
+            const int bank = (code - 5000) / 1000, index = (code - 5000) % 1000;
+            if (bank == 2)
+                return bankTable(2, 0xC) + 4u * remapped(0x0071822Cu, index, 4);
+            return bankTable(bank, 0xC) + 4u * static_cast<uint32_t>(index);
+        }
+
+        uint32_t bankString(int bank, uint32_t index) { return bankTable(bank, 0x14) + port::load<uint16_t>(bankTable(bank, 0x10) + 2u * index); }
+    }
+
+    // The answer mode of the current entry.
+    int16_t Words_GetEntryMode() { return port::load<int16_t>(answerRecord(currentCode())); }
+
+    // The default answer of the current entry: its first string.
+    GuestPtr<char> Words_GetEntryDefault()
+    {
+        const int code = currentCode();
+        return GuestPtr<char>{bankString((code - 5000) / 1000, port::load<uint16_t>(answerRecord(code) + 2u))};
+    }
+
+    // Checks a typed answer against the current entry's other strings (from its second up to the next entry's
+    // first); the column moves on once, and once more on a match.
+    void Words_MatchTypedAnswer(int, GuestPtr<char> typed)
+    {
+        const int code = currentCode();
+        const int bank = (code - 5000) / 1000;
+        const uint32_t record = answerRecord(code);
+        const int strings = port::load<uint16_t>(record + 6u) - port::load<uint16_t>(record + 2u);
+        for (int i = 1; i < strings; ++i)
+        {
+            if (sdk::strcmp(typed.address, bankString(bank, port::load<uint16_t>(answerRecord(code) + 2u) + static_cast<uint32_t>(i))) == 0)
+            {
+                port::store<uint16_t>(0x001BDE04u, static_cast<uint16_t>(port::load<uint16_t>(0x001BDE04u) + 1));
+                break;
+            }
+        }
+        port::store<uint16_t>(0x001BDE04u, static_cast<uint16_t>(port::load<uint16_t>(0x001BDE04u) + 1));
+    }
+
+    // The number of choices of a choice code: from bank choice ranges for codes below -2005; for -2005 the entries
+    // of bank 1's first range not yet answered (the mask byte at Words +0x28); for -2004 the running events plus
+    // one; for -2003 the wants that still hold; for -2002 one more than the bag's food (goods categories 0x10, 0x11
+    // and 0x13); otherwise 5.
+    int Words_CountChoices(int, GuestPtr<CityScene> city, int code)
+    {
+        if (code < -2005)
+        {
+            const int bank = (code + 6000) / 1000, index = (code + 6000) % 1000;
+            const uint32_t range = bank == 2 ? bankTable(2, 8) + 2u * remapped(0x00718228u, index, 2)
+                                             : bankTable(bank, 8) + 2u * static_cast<uint32_t>(index);
+            return port::load<uint16_t>(range + 2u) - port::load<uint16_t>(range);
+        }
+        if (code == -2005)
+        {
+            const uint32_t range = bankTable(1, 8);
+            const int entries = port::load<uint16_t>(range + 2u) - port::load<uint16_t>(range);
+            int left = entries;
+            for (int i = 0; i < entries; ++i)
+                if ((port::load<uint8_t>(0x001BDE18u) & (1u << (i & 31))) != 0)
+                    --left;
+            return left;
+        }
+        if (code == -2004)
+            return Event_CountActive(city->events) + 1;
+        if (code == -2003)
+        {
+            port::GuestFrame<0x20> frame;
+            const uint32_t sp = frame.ptr().address;
+            const GuestPtr<int32_t> iterator{sp + 0xCu};
+            *iterator = 0;
+            int found = 0;
+            while (Wants_Find(city->wants, city, GuestPtr<uint32_t>{sp}, GuestPtr<uint32_t>{sp + 4u}, GuestPtr<uint32_t>{sp + 8u}, iterator) != 0)
+                ++found;
+            return found;
+        }
+        if (code != -2002)
+            return 5;
+        const GuestPtr<Bag> bag = city->bag;
+        const uint32_t groups = port::load<uint32_t>(0x001BDA9Cu), records = port::load<uint32_t>(0x001BDAA0u);
+        const uint32_t end = bag.address + 4u + 16u * port::load<uint8_t>(globals::kBagSlotsBySize + bag->size);
+        int count = 1;
+        for (uint32_t slot = bag.address + 4u; port::load<uint16_t>(slot) != 0 && slot < end; slot += 16u)
+        {
+            const uint32_t record = port::load<uint16_t>(groups + 4u * port::load<uint16_t>(slot)) + port::load<uint16_t>(slot + 2u);
+            const uint8_t category = port::load<uint8_t>(records + 0x88u * record + 4u);
+            if (category == 0x10 || category == 0x11 || category == 0x13)
+                ++count;
+        }
+        return count;
+    }
+
+    // Person B: from a random one of the candidate buildings on (each once), a resident of the building's family
+    // whose character type fits the argument: a negative argument names a zero-ended type list (pointer table
+    // 0x1BE950, indexed back from it), up to 1000 is the type itself, above that type arg / 3 with person flags & 3
+    // equal to arg % 3. Person B, its building and their family, member and type are set; 0 when none fits.
+    int Words_PickResidentByType(GuestPtr<WordsCtx> ctx)
+    {
+        const int32_t random = static_cast<int32_t>(Random_Next());
+        const int count = ctx->candidateCount;
+        int pick = count != 0 ? random % count : 0;
+        port::GuestLocal<uint16_t> cursor;
+        for (int tries = 0; tries < ctx->candidateCount; ++tries, ++pick)
+        {
+            if (pick >= ctx->candidateCount)
+                pick = 0;
+            const GuestPtr<MapObject> building = Map_GetRecord(ctx->city->map, ctx->candidates[pick]);
+            *cursor = building->firstPerson;
+            while (const GuestPtr<MapPerson> person = People_Next(ctx->city->map, cursor))
+            {
+                const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)};
+                if ((cls->flags & 1u) != 0 || person->family != building->family)
+                    continue;
+                const int arg = ctx->arg;
+                bool fits = false;
+                if (arg < 0)
+                {
+                    for (uint32_t type = port::load<uint32_t>(0x001BE950u + 4u * static_cast<uint32_t>(arg)); port::load<uint8_t>(type) != 0; ++type)
+                        if (person->charType == port::load<uint8_t>(type))
+                        {
+                            fits = true;
+                            break;
+                        }
+                }
+                else if (arg < 1001)
+                    fits = person->charType == arg;
+                else
+                    fits = person->charType == arg / 3 && arg % 3 == static_cast<int>(person->flags & 3u);
+                if (!fits)
+                    continue;
+                ctx->personB = person;
+                ctx->familyB = person->family;
+                ctx->memberB = person->member;
+                ctx->buildingB = building;
+                ctx->buildingTypeB = building->type;
+                return 1;
+            }
+        }
+        return 0;
+    }
+
+    PORT_FN(Words_GetEntryMode);
+    PORT_FN(Words_GetEntryDefault);
+    PORT_FN(Words_MatchTypedAnswer);
+    PORT_FN(Words_CountChoices);
+    PORT_FN(Words_PickResidentByType);
 }

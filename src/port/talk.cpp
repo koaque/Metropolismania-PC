@@ -815,4 +815,47 @@ namespace mm
     PORT_FN(TalkBldgFar_Active);
     PORT_FN(TalkBldgFar_Closing);
     PORT_FN(TalkBldgFar_Closed);
+
+    // ---- the person card (batch 39)
+
+    // Opens the card for a person (6000: the family member `family`, `member`) at a place on the screen: the two
+    // texts and the face frame move to the column from the table at 0x1B1B28; the friendship is kept as a float,
+    // and for a person on the map the mood face shows how well the member is known: none when the member is not a
+    // friend yet or their level is above 13, else 4 or 3 by the level when they are at stage 0 of both low and middle
+    // status, 2 with a middle status, 1 with a low one.
+    void TalkCard_Show(GuestPtr<TalkCard> card, int person, int family, int member, int slot)
+    {
+        Widget_Open(GuestPtr<Widget>::of(card->base));
+        card->person = person;
+        card->family = family;
+        card->member = member;
+        card->slot = slot;
+        const int column = port::load<int32_t>(0x001B1B28u + 4u * static_cast<uint32_t>(card->slot));
+        TextBox_SetPos(card->upperText, (column + 0x6C0) * 0x10, 0x7C00, -0x100000);
+        TextBox_SetPos(card->lowerText, (column + 0x6C0) * 0x10, 0x7D60, -0x100000);
+        Frame_SetRect(card->frame, column + 0xB0, 0x45, 0x18, 0xC);
+        if (card->person == 6000)
+        {
+            card->friendship = fromInt(static_cast<int8_t>(Family_GetFriendship(card->family, card->member)));
+            return;
+        }
+        const GuestPtr<MapPerson> record = card->city->map->people + card->person;
+        card->friendship = fromInt(static_cast<int8_t>(Family_GetFriendship(record->family, record->member)));
+        const GuestPtr<uint8_t> status{record.address + 0x2Fu};
+        int level = StatusByte_LevelAbove13(status);
+        if (Family_GetFriendship(record->family, record->member) == 0)
+            level = 2;
+        const uint32_t middle = StatusByte_Mid2(status);
+        const uint8_t low = StatusByte_Low2(status);
+        if (level == 2)
+            card->mood = 0;
+        else if (low != 0)
+            card->mood = 1;
+        else if (middle != 0)
+            card->mood = 2;
+        else
+            card->mood = level == 0 ? 3 : 4;
+    }
+
+    PORT_FN(TalkCard_Show);
 }

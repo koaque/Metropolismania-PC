@@ -1381,4 +1381,53 @@ namespace mm
     PORT_FN(TileLists_Remove);
     PORT_FN(TileLists_SaveState);
     PORT_FN(Terrain_SetVec);
+
+    // ---- placement search (batch 39)
+
+    // A spot to put a building of the family's type near (x, z): for a size 2 home the four tiles from one back
+    // along each axis, for size 3 the 5 x 5 tiles starting from the side of the player (a start of -3 when the
+    // player stands left of the tile `half` from x, or beyond the one `half` from z, else -1; wrapping 2 and up
+    // round to the other end), the first where the map answers 2 (placeable and highlighted). The rectangle (x, z,
+    // x + size, z + size) is filled in and 1 returned; other sizes and failures give 0.
+    int Placement_FindSpot(GuestPtr<Player> player, GuestPtr<CityScene> city, int family, int typeIndex, int x, int z, int half,
+                           GuestPtr<int32_t> rect)
+    {
+        const GuestPtr<BuildingType> type{globals::buildingTypeAddress(typeIndex)};
+        const auto found = [&](int tileX, int tileZ) {
+            rect[0] = tileX;
+            rect[1] = tileZ;
+            rect[2] = rect[0] + type->size;
+            rect[3] = rect[1] + type->size;
+            return 1;
+        };
+        if (type->size == 2)
+        {
+            for (int dz = -1; dz < 2; ++dz)
+                for (int dx = -1; dx < 2; ++dx)
+                    if (Map_CanPlace(city->map, family, typeIndex, x + dx, z + dz) == 2)
+                        return found(x + dx, z + dz);
+        }
+        else if (type->size == 3)
+        {
+            const int startX = ps2f(player->position.x) < fromInt(x - half) - ps2f(64.0f) + ps2f(1.5f) ? -3 : -1;
+            const int startZ = fromInt(0x80 - (z - half)) - ps2f(64.0f) - ps2f(1.5f) < ps2f(player->position.z) ? -3 : -1;
+            for (int j = 0; j < 5; ++j)
+            {
+                int dz = startZ + j;
+                if (dz > 1)
+                    dz -= 5;
+                for (int i = 0; i < 5; ++i)
+                {
+                    int dx = startX + i;
+                    if (dx > 1)
+                        dx -= 5;
+                    if (Map_CanPlace(city->map, family, typeIndex, x + dx, z + dz) == 2)
+                        return found(x + dx, z + dz);
+                }
+            }
+        }
+        return 0;
+    }
+
+    PORT_FN(Placement_FindSpot);
 }
