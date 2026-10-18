@@ -274,8 +274,8 @@
 0x0013F860 int mm_Map_CanPlace(CityMap *map, int family, int typeIndex, int x, int z);
 0x0013F890 float mm_TerrainGen_SampleSmooth(CityMap *map, int x, int z);
 0x0013FA50 void mm_TerrainGen_Smooth(CityMap *map, int a1, int a2, float f12, float f13, float f14);
-0x0013FD80 int mm_TerrainGen_Hills(CityMap *map, int cx, int cz, int high);
-0x00140490 void mm_TerrainGen_River(CityMap *map, int a1, int a2, int a3, int t0, int t1, int direction, int t3, int stack0);
+0x0013FD80 void mm_TerrainGen_Hills(CityMap *map, int cx, int cz, int high);
+0x00140490 void mm_TerrainGen_River(CityMap *map, int edge, int start, int width, int curveA, int curveB, int direction, int wobbleA, int wobbleB);
 0x00140B60 void mm_TerrainGen_Generate(CityMap *map, uint8_t *params);
 0x00141010 CityMap *mm_CityMap_DeletingDtor(CityMap *map, int16_t deleteFlag);
 0x00141070 CityMap *mm_CityMap_ctor(CityMap *map);
@@ -296,7 +296,7 @@
 0x00141890 void mm_Math_TriangleNormal(Vec4 *out, Vec4 *a, Vec4 *b, Vec4 *c);
 0x001418D0 void mm_Map_UpdateTileGeometry(CityMap *map, int x, int z);
 0x00141ED0 void mm_Map_UpdateAreaGeometry(CityMap *map, int32_t *rect);
-0x00141F60 float mm_TerrainGen_ApplyBump(CityMap *map, int x, int z, int mode, uint32_t flags, float height, float radius);
+0x00141F60 void mm_TerrainGen_ApplyBump(CityMap *map, int x, int z, int mode, uint32_t flags, float height, float radius);
 0x001424A0 CityMap *mm_MapTiles_dtor(CityMap *map, int16_t deleteFlag);
 0x00142510 CityMap *mm_MapTiles_ctor(CityMap *map);
 0x00142590 void mm_Map_ReturnPeopleToWork(CityMap *map);
@@ -343,7 +343,7 @@
 0x00145C10 void mm_Terrain_AddQuad(CityMap *map, Vec4 *a, Vec4 *b, Vec4 *c, Vec4 *d, int t1, int t2, int t3);
 0x00145CE0 void mm_Terrain_BuildStrip(CityMap *map, int x, int z, Vec4 *corner0, Vec4 *corner1, Vec4 *corner2, Vec4 *corner3);
 0x00146700 void mm_Terrain_DrawPatch(CityMap *map, int x, int z, int object, float centreX, float centreZ, float level);
-0x00146B30 void mm_Terrain_Draw(CityMap *map, int a1, Vec4 *a2, int a3, int t0, int t1, float f12);
+0x00146B30 void mm_Terrain_Draw(CityMap *map, Vec4 *view, Vec4 *camera, int zoom, int variant, int extra, float level);
 0x001474C0 uint32_t *mm_Terrain_BuildVu1PacketA(int a0, uint32_t *a1);
 0x00147AE0 uint32_t *mm_Terrain_BuildVu1PacketB(int a0, uint32_t *a1);
 0x00147FA0 void mm_Terrain_InitParams(int a0);
@@ -766,7 +766,7 @@
 0x0016E440 int mm_Title_LoadMenu(SceneA *scene);
 0x0016E840 int mm_Title_PressStart(SceneA *scene);
 0x0016E950 int mm_SceneA_StartGame(SceneA *scene, int newGame);
-0x0016EC50 int mm_Title_NewGameIntro(SceneA *scene);
+0x0016EC50 void mm_Title_NewGameIntro(SceneA *scene);
 0x0016F170 int mm_Title_RandomCharParts(SceneA *scene);
 0x0016F270 int mm_Title_OpeningMovieStep(SceneA *scene);
 0x0016F420 int mm_Title_MenuInput(SceneA *scene);
@@ -1209,7 +1209,7 @@
 0x001892D0 int mm_Se_MatchSchedule(uint32_t monthFrom, uint32_t monthTo, uint32_t hourFrom, uint32_t hourTo, uint32_t length, uint32_t start10, int lead);
 0x00189660 int mm_Se_Request(uint16_t owner, uint32_t group, uint8_t sound, uint8_t param0A, uint8_t param18, uint16_t param0C, uint8_t param0B, uint8_t param19, float angle, float distance);
 0x00189B40 void mm_Se_StopOwner(char owner);
-0x00189C50 void mm_Se_RequestForObject(uint32_t a0, uint32_t a1, uint32_t a2, int a3, int t0, int t1);
+0x00189C50 void mm_Se_RequestForObject(uint32_t object, uint32_t group, uint32_t sound, int pitch, int clampFar, int param18);
 0x0018A3B0 int mm_Sound_PlaySe(int sound, int a1, int a2, float angle, float distance);
 0x0018A450 void mm_Se_PlayMessageSound(char code);
 0x0018AA00 void mm_Se_PlayVariant(uint8_t variant);
@@ -1395,7 +1395,7 @@
 0x0019C2A0 int mm_Movie_AudioDecCreate(uint32_t *audio, int ring, int ringSize, int iopSize);
 0x0019C420 void mm_Movie_DisplayStop(void);
 0x0019C430 int mm_Movie_DisplayStart(int field);
-0x0019C480 void mm_Movie_DmaEndHandler(void);
+0x0019C480 int mm_Movie_DmaEndHandler(void);
 0x0019C4C0 void mm_Movie_VblankHandler(void);
 0x0019C9F0 void mm_Movie_LayoutSubtitle(char *text);
 0x0019CB70 void mm_Movie_BuildSubtitlePacket(void);
@@ -1452,7 +1452,7 @@
 0x001A07E0 int mm_Movie_VideoDecDelete(int videoDec);
 0x001A0820 void mm_Movie_VideoDecEndPut(int videoDec, int size);
 0x001A0830 void mm_Movie_VideoDecBeginPut(int videoDec, int32_t *ptr0, int32_t *len0, int32_t *ptr1, int32_t *len1);
-0x001A0840 int mm_Movie_VideoDecAddStrCallback(void);
+0x001A0840 int mm_Movie_VideoDecAddStrCallback(int a0, int a1, int a2, int a3);
 0x001A0860 int mm_Movie_VideoDecCreate(int videoDec, int mpegWork, int mpegWorkSize, int data, int tags, int tagSize, int ts, int tsCount);
 0x001A0960 void mm_Movie_VoBufDecCount(int vobuf);
 0x001A0980 int mm_Movie_VoBufGetTag(int vobuf);

@@ -71,6 +71,22 @@ namespace mm::vu0
 
     inline float x(__m128 v) { return _mm_cvtss_f32(v); }
 
+    // vclipw.xyz vf<reg>, vf<reg>w: whether x, y and z lie outside plus or minus the register's own w, as six bits
+    // pushed into the clipping flag (which holds the last four results of six bits each).
+    inline void clipw(int reg)
+    {
+        const __m128 fs = vf(reg);
+        const __m128 ft = _mm_and_ps(lane(fs, 3), _mm_castsi128_ps(_mm_set1_epi32(0x7FFFFFFF)));
+        const __m128 negFt = _mm_xor_ps(ft, _mm_castsi128_ps(_mm_set1_epi32(static_cast<int>(0x80000000u))));
+        const uint32_t gt = static_cast<uint32_t>(_mm_movemask_ps(_mm_cmpgt_ps(fs, ft)));
+        const uint32_t lt = static_cast<uint32_t>(_mm_movemask_ps(_mm_cmplt_ps(fs, negFt)));
+        const uint32_t flags = ((gt & 0x1u) << 0) | ((lt & 0x1u) << 1) | ((gt & 0x2u) << 1) | ((lt & 0x2u) << 2) | ((gt & 0x4u) << 2) |
+                               ((lt & 0x4u) << 3);
+        context().vu0_clip_flags = ((context().vu0_clip_flags << 6) | (flags & 0x3Fu)) & 0xFFFFFFu;
+    }
+    // cfc2 vi18: the clipping flag.
+    inline uint32_t clipFlags() { return context().vu0_clip_flags & 0xFFFFFFu; }
+
     // lqc2 / sqc2.
     inline __m128 load(GuestPtr<Vec4> p)
     {

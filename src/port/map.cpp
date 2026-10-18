@@ -6,6 +6,7 @@
 #include "vu0.h"
 
 #include <algorithm>
+#include <bit>
 
 namespace mm
 {
@@ -1180,6 +1181,599 @@ namespace mm
     PORT_FN(MapObj_Init);
     PORT_FN(Map_CreateObject);
     PORT_FN(Map_UpdateTileGeometry);
+    // Terrain generation: how far, in tiles, the nearest land (a tile above height 0) lies from tile (x, z) along the four
+    // axes, up to 15 (100 when there is none; the distance counts the steps all four directions were clear for).
+    ps2f TerrainGen_SampleSmooth(GuestPtr<CityMap> map, int x, int z)
+    {
+        const auto land = [&](int tx, int tz) {
+            if (tx < 0 || tx >= kMapSize || tz < 0 || tz >= kMapSize)
+                return false;
+            return !(tileAt(map, tx, tz).height <= ps2f(0.0f));
+        };
+        ps2f steps(0.0f);
+        for (int d = 0; d < 16; ++d)
+        {
+            if (land(x + d, z) || land(x - d, z) || land(x, z + d) || land(x, z - d))
+                return steps;
+            steps = steps + ps2f(1.0f);
+        }
+        return ps2f(100.0f);
+    }
+
+    // Terrain generation: pulls the tiles within `radius` of tile (x, z)'s centre (the tiles in a window `reach` + 4 wide) down
+    // towards the sea: a tile with land `s` steps away (SampleSmooth, above 0) takes strength * (radius - distance) /
+    // radius, no lower than -0.022 * s * s and than `floor`, when that is below its height. Distances on VU0, as the
+    // scatter; the original's frame is reserved whole and its points kept at their offsets.
+    void TerrainGen_Smooth(GuestPtr<CityMap> map, int cx, int cz, ps2f strength, ps2f radius, ps2f floorHeight)
+    {
+        using namespace vu0;
+        port::GuestFrame<0x90> frame;
+        const uint32_t sp = frame.ptr().address;
+        const GuestPtr<Vec4> centre{sp + 0x50u}, point{sp + 0x60u}, distance{sp + 0x80u};
+        const ps2f half = 0.5f, middle = 64.0f;
+        const auto place = [&](GuestPtr<Vec4> at, int tx, int tz) {
+            at->x = half + (fromInt(tx) - middle);
+            at->y = 0.0f;
+            at->z = (fromInt(kMapSize - tz) - middle) - half;
+            at->w = 1.0f;
+        };
+        place(centre, cx, cz);
+        const int reach = sdk::fptosi(ps2f(1.0f) + radius);
+        const int x0 = std::max(cx - reach - 4, 0);
+        const int z0 = std::max(cz - reach - 4, 0);
+        const int x1 = cx + reach + 4 < kMapSize ? cx + reach + 4 : kMapSize;
+        const int z1 = cz + reach + 4 < kMapSize ? cz + reach + 4 : kMapSize;
+        for (int z = z0; z < z1; ++z)
+        {
+            if (z < 0 || z >= kMapSize)
+                continue;
+            for (int x = x0; x < x1; ++x)
+            {
+                if (x < 0 || x >= kMapSize)
+                    continue;
+                place(point, x, z);
+                vf(4) = load(centre);
+                vf(5) = load(point);
+                set(vf(6), sub(vf(5), vf(4)), XYZW);
+                set(vf(7), mul(vf(6), vf(6)), XYZ);
+                set(vf(8), add(vf(7), lane(vf(7), 1)), X);
+                set(vf(8), add(vf(8), lane(vf(7), 2)), X);
+                q() = sqrtQ(vu0::x(vf(8)));
+                set(vf(9), add(vf(0), _mm_set1_ps(q())), XYZW);
+                store(distance, vf(9));
+                const ps2f d = distance->x;
+                if (!(d < radius))
+                    continue;
+                const ps2f land = TerrainGen_SampleSmooth(map, x, z);
+                if (land <= ps2f(0.0f))
+                    continue;
+                const ps2f squared = land * land;
+                ps2f pull = (strength * (radius - d)) / radius;
+                const ps2f cap = -(ps2f(std::bit_cast<float>(0x3CB43958u)) * squared);
+                if (pull <= cap)
+                    pull = cap;
+                if (pull <= floorHeight)
+                    pull = floorHeight;
+                if (pull < tileAt(map, x, z).height)
+                    tileAt(map, x, z).height = pull;
+            }
+        }
+    }
+
+    // Terrain generation: a round bump of strength `height` and reach `radius` at tile (x, z)'s centre. Each tile within the
+    // radius takes a pull: the height scaled by the fraction of the radius left (at most 3.2), or for mode 3 the fourth power
+    // of that fraction cut to 0..1 after scaling by 4, and from then on, for every later tile too, the mode is 0. When the pull is larger in size than the
+    // tile's height (soft doubles), mode 0 averages the two, 1 takes the smaller, 2 the larger, other modes leave the tile;
+    // every tile is then held to 3.2 at most, and with flag 0x20 a tile above sea level gets its tile flag 0x20. (The
+    // original leaves a float in f0, which its callers do not read.)
+    void TerrainGen_ApplyBump(GuestPtr<CityMap> map, int x, int z, int mode, uint32_t flags, ps2f height, ps2f radius)
+    {
+        using namespace vu0;
+        port::GuestFrame<0xD0> frame;
+        const uint32_t sp = frame.ptr().address;
+        const GuestPtr<Vec4> centre{sp + 0x90u}, point{sp + 0xA0u}, distance{sp + 0xC0u};
+        const ps2f half = 0.5f, middle = 64.0f;
+        const auto place = [&](GuestPtr<Vec4> at, int tx, int tz) {
+            at->x = half + (fromInt(tx) - middle);
+            at->y = 0.0f;
+            at->z = (fromInt(kMapSize - tz) - middle) - half;
+            at->w = 1.0f;
+        };
+        place(centre, x, z);
+        const int reach = sdk::fptosi(ps2f(1.0f) + radius);
+        const int x0 = std::max(x - reach - 4, 0);
+        const int z0 = std::max(z - reach - 4, 0);
+        const int x1 = x + reach + 4 < kMapSize ? x + reach + 4 : kMapSize;
+        const int z1 = z + reach + 4 < kMapSize ? z + reach + 4 : kMapSize;
+        const ps2f cap(std::bit_cast<float>(0x404CCCCDu));
+        for (int tz = z0; tz < z1; ++tz)
+        {
+            if (tz < 0 || tz >= kMapSize)
+                continue;
+            for (int tx = x0; tx < x1; ++tx)
+            {
+                if (tx < 0 || tx >= kMapSize)
+                    continue;
+                place(point, tx, tz);
+                vf(4) = load(centre);
+                vf(5) = load(point);
+                set(vf(6), sub(vf(5), vf(4)), XYZW);
+                set(vf(7), mul(vf(6), vf(6)), XYZ);
+                set(vf(8), add(vf(7), lane(vf(7), 1)), X);
+                set(vf(8), add(vf(8), lane(vf(7), 2)), X);
+                q() = sqrtQ(vu0::x(vf(8)));
+                set(vf(9), add(vf(0), _mm_set1_ps(q())), XYZW);
+                store(distance, vf(9));
+                const ps2f d = distance->x;
+                if (!(d < radius))
+                    continue;
+                ps2f pull;
+                if (mode != 3)
+                {
+                    pull = (height * (radius - d)) / radius;
+                    if (!(pull <= cap))
+                        pull = cap;
+                }
+                else
+                {
+                    ps2f t = ps2f(1.0f) - d / radius;
+                    if (ps2f(4.0f) * t < ps2f(0.0f))
+                        t = ps2f(0.0f);
+                    else if (ps2f(4.0f) * t <= ps2f(1.0f))
+                        t = ps2f(4.0f) * t;
+                    else
+                        t = ps2f(1.0f);
+                    t = t * t;
+                    mode = 0; // the original's register: every tile after the first one takes the plain formula and the average
+                    pull = height * (t * t);
+                }
+                MapTile &tile = tileAt(map, tx, tz);
+                const uint64_t tileSize = sdk::fabs(sdk::fptodp(tile.height));
+                const uint64_t pullSize = sdk::fabs(sdk::fptodp(pull));
+                if (sdk::fpLtdf2(tileSize, pullSize) == 0)
+                    continue;
+                if (mode == 2)
+                    tile.height = pull <= tile.height ? tile.height : pull;
+                else if (mode == 1)
+                    tile.height = pull < tile.height ? pull : tile.height;
+                else if (mode == 0)
+                    tile.height = (pull + tile.height) / ps2f(2.0f);
+                if (!(tile.height <= cap))
+                    tile.height = cap;
+                if ((flags & 0x20u) != 0 && !(tile.height <= ps2f(0.0f)))
+                    tile.flags = static_cast<uint16_t>(tile.flags | 0x20u);
+            }
+        }
+    }
+
+    // Terrain generation: a hill on the 16-tile block (cx, cz): a bump of height 5 and reach 9 at its middle, then a ring of
+    // radius 7 walked as a midpoint circle (x from 7 down, y from 0 up) with a size-and-position-jittered bump (mode 2) on
+    // each of the eight mirror points of every step. The jitter is up to 2 tiles either way and the size wobbles by up to 5
+    // (the first bump of a step) or 3 (the rest); `high` sets tile flag 0x20 on the land the bumps raise. The original
+    // returns whatever its last bump left in v0, which its one caller (Generate) never reads.
+    void TerrainGen_Hills(GuestPtr<CityMap> map, int cx, int cz, int high)
+    {
+        port::GuestFrame<0x110> frame;
+        const int centreX = (cx << 4) + 8, centreZ = (cz << 4) + 8;
+        const uint32_t flags = high != 0 ? 0x20u : 0u;
+        const ps2f wobbleUnit(std::bit_cast<float>(0x38D1B717u)), shrink(std::bit_cast<float>(0x3E99999Au)), base(5.0f);
+        const auto draw = [] { return static_cast<int32_t>(Random_Next()); };
+        const auto jitter = [&] { return draw() % 4 - 2; };
+        // The draws come in this order: the size, the x jitter, the z jitter.
+        const auto bump = [&](int modulus, int offsetX, int offsetZ) {
+            const ps2f wobble = wobbleUnit * fromInt(draw() % modulus);
+            const int dx = jitter();
+            const int dz = jitter();
+            const ps2f radius = base + wobble;
+            TerrainGen_ApplyBump(map, dx + (centreX + offsetX), dz + (centreZ + offsetZ), 2, flags, shrink * radius, radius);
+        };
+        TerrainGen_ApplyBump(map, centreX, centreZ, 0, flags, base, ps2f(9.0f));
+        int x = 7, y = 0, error = 7;
+        do
+        {
+            bump(0xC350, x, y);
+            bump(0x7530, x, -y);
+            bump(0x7530, -x, y);
+            bump(0x7530, -x, -y);
+            bump(0x7530, y, x);
+            bump(0x7530, y, -x);
+            bump(0x7530, -y, x);
+            bump(0x7530, -y, -x);
+            error -= 2 * y - 1;
+            ++y;
+            if (error < 0)
+            {
+                error += 2 * (x - 1);
+                --x;
+            }
+        } while (x >= y);
+    }
+
+    // Terrain generation: one river. It starts on the map's edge at a point set by `start` and walks in steps. Each step
+    // moves the position by (0, 0, 1.5 + width) turned by two Y rotations, one swaying with sin(phase) and one turning with
+    // cos(heading), and drops a mode 3 bump of reach 1.5 + width + |cos(phase)| (and 1.4 times that for height, at least 3.2)
+    // at the tile the position falls on. `edge` says how the walk's axes lie on the map (0 to 3), `direction` where the
+    // heading starts (0, 90, 180, -90 degrees). The first bump waits for a tile at or below height 1; later bumps stop the
+    // river when they land on tiles above 1.6, and so does leaving the map by more than four tiles.
+    // curveA, curveB, wobbleA and wobbleB are the river's shape (the turning rate and the sway). The original's frame is kept
+    // for its two matrices and the position vectors.
+    void TerrainGen_River(GuestPtr<CityMap> map, int edge, int start, int width, int curveA, int curveB, int direction,
+                          int wobbleA, int wobbleB)
+    {
+        using namespace vu0;
+        port::GuestFrame<0x190> frame;
+        const uint32_t sp = frame.ptr().address;
+        const auto F = [](uint32_t bits) { return ps2f(std::bit_cast<float>(bits)); };
+        const GuestPtr<Vec4> position{sp + 0x160u}, step{sp + 0x170u}, moved{sp + 0x180u};
+        const GuestPtr<Vec4> turnA{sp + 0xE0u}, turnB{sp + 0x120u};
+        const ps2f widthF = fromInt(width);
+        position->x = F(0x3F000000u) + (fromInt(start << 5) - F(0x42800000u));
+        position->y = 0.0f;
+        position->z = F(0xC28A0000u);
+        position->w = F(0x3F800000u);
+        const ps2f three = F(0x40400000u);
+        const ps2f curveB_F = fromInt(curveB), curveA_F = fromInt(curveA);
+        // The soft doubles are the original's: the turning scale, the heading's step and the sway.
+        const ps2f turnBase = sdk::dptofp(sdk::dpadd(0x3FDC28F5C28F5C29ull, sdk::fptodp(F(0x3D23D70Au) * (three - widthF))));
+        const ps2f turnScale = curveB_F * turnBase;
+        const ps2f headingStep = ((F(0x3CCCCCCDu) + F(0x3CB1C433u) * widthF) + curveA_F * (F(0x3C75C28Fu) + F(0x3C09A027u) * widthF)) +
+                                 (three - curveB_F) * (F(0x3C54FDF4u) + F(0x3C1374BCu) * widthF);
+        ps2f heading(0.0f);
+        switch (direction)
+        {
+        case 3: heading = F(0xBFC90FDBu); break;
+        case 2: heading = F(0x40490FDBu); break;
+        case 1: heading = F(0x3FC90FDBu); break;
+        case 0: heading = F(0u); break;
+        }
+        const ps2f wobbleF = fromInt(wobbleA);
+        const ps2f lead = sdk::dptofp(sdk::dpadd(0x3FC999999999999Aull, sdk::fptodp(F(0x3D89374Cu) * widthF)));
+        const ps2f phaseStep = lead + wobbleF * (F(0x3D0F5C29u) + F(0x3D3851ECu) * widthF);
+        const uint64_t swayBase = sdk::dpmul(0x3FD5604189374BC7ull, sdk::fptodp(fromInt(wobbleB)));
+        const ps2f swayScale = sdk::dptofp(sdk::dpadd(swayBase, sdk::fptodp(F(0x3DCCCCCDu) * wobbleF)));
+        const ps2f reach = F(0x3FC00000u) + widthF;
+        const ps2f pi = F(0x40490FDBu), twoPi = F(0x40C90FDBu), mapHalf = F(0x42800000u);
+        ps2f phase(0.0f);
+        bool first = true;
+        int x = 0, z = 0; // kept between steps for an `edge` outside 0 to 3
+        for (;;)
+        {
+            step->x = 0.0f;
+            step->y = 0.0f;
+            step->z = reach;
+            step->w = 0.0f;
+            sdk::sceVu0RotMatrixY(turnA.address, globals::kIdentityMatrix, swayScale * sdk::sinf(phase));
+            sdk::sceVu0RotMatrixY(turnB.address, globals::kIdentityMatrix, turnScale * sdk::cosf(heading));
+            applyMatrix(turnA, step, moved);
+            applyMatrix(turnB, moved, moved);
+            vf(4) = load(position);
+            vf(5) = load(moved);
+            set(vf(4), add(vf(4), vf(5)), XYZW);
+            store(position, vf(4));
+            const ps2f across = sdk::dptofp(sdk::fabs(sdk::fptodp(sdk::cosf(phase))));
+            const int tileX = sdk::fptosi(mapHalf + position->x);
+            const int tileZ = sdk::fptosi(mapHalf + position->z);
+            switch (edge)
+            {
+            case 3: x = kMapSize - tileZ; z = tileX; break;
+            case 2: x = tileX; z = tileZ; break;
+            case 1: x = tileZ; z = tileX; break;
+            case 0: x = tileX; z = kMapSize - tileZ; break;
+            }
+            const auto bump = [&] {
+                const ps2f radius = reach + across;
+                ps2f height = F(0x3FB33333u) * radius;
+                if (height < F(0x404CCCCDu))
+                    height = F(0x404CCCCDu);
+                TerrainGen_ApplyBump(map, x, z, 3, 0, height, radius);
+            };
+            if (first)
+            {
+                if (onMap(x, z) && tileAt(map, x, z).height <= F(0x3F800000u))
+                {
+                    bump();
+                    first = false;
+                }
+            }
+            else
+            {
+                ps2f ground(0.0f);
+                if (onMap(x, z))
+                    ground = tileAt(map, x, z).height;
+                bump();
+                if (!(ground <= F(0x3FCCCCCDu)))
+                    return;
+            }
+            if (tileX < -4 || tileX >= kMapSize + 4 || tileZ < -4 || tileZ >= kMapSize + 4)
+                return;
+            phase = phase + phaseStep;
+            if (!(phase <= pi))
+                phase = phase - twoPi;
+            heading = heading + headingStep;
+            if (!(heading <= pi))
+                heading = heading - twoPi;
+        }
+    }
+
+    // Terrain generation: builds the whole map from a 10 x 10 grid of cells (16 tiles each) behind a 4-byte river header
+    // (`params`). A cell byte holds the terrain type in bits 0..2 (6 and 7: hills, 7 the high kind; 1 to 4: smoothed
+    // towards the sea) and a plant style in bits 4..6. In turn: hills, the two rivers (header bytes 0..3), the smoothing, 16
+    // plant spots per cell (style 0 none, 1 kind 2, 2 and 3 a kind drawn from a table, any other keeps the last kind) each
+    // with a scatter of kind 2 and the drawn kind, the border objects (type 11) on the edge tiles, and every tile's geometry.
+    void TerrainGen_Generate(GuestPtr<CityMap> map, GuestPtr<uint8_t> params)
+    {
+        port::GuestFrame<0x110> frame;
+        const auto cell = [&](int row, int column) -> unsigned { return params[4 + row * 10 + column]; };
+        for (int row = 8; row >= -1; --row)
+            for (int column = 8; column >= -1; --column)
+            {
+                const unsigned type = cell(8 - row, 8 - column) & 7u;
+                if (type == 7)
+                    TerrainGen_Hills(map, column, row, 1);
+                else if (type == 6)
+                    TerrainGen_Hills(map, column, row, 0);
+            }
+        for (int i = 0; i < 2; ++i)
+        {
+            const unsigned b0 = params[2 * i], b1 = params[2 * i + 1];
+            if ((b0 & 3u) != 0)
+                TerrainGen_River(map, (b0 >> 2) & 3, b0 & 3, (b0 >> 4) & 3, (b0 >> 6) & 3, b1 & 3, (b1 >> 2) & 3,
+                                 (b1 >> 4) & 3, b1 >> 6);
+        }
+        for (int row = 0; row < 10; ++row)
+            for (int column = 0; column < 10; ++column)
+            {
+                const unsigned type = cell(row, column) & 7u;
+                if (type == 0 || type >= 5)
+                    continue;
+                TerrainGen_Smooth(map, 0x88 - 16 * column, 0x88 - 16 * row,
+                                  port::load<float>(globals::kSmoothStrength + 4 * type),
+                                  port::load<float>(globals::kSmoothRadius + 4 * type),
+                                  port::load<float>(globals::kSmoothFloor + 4 * type));
+            }
+        int kind = 0; // the original's register: styles 4 to 7 keep whatever was drawn last
+        for (int row = 0; row < 10; ++row)
+            for (int column = 0; column < 10; ++column)
+            {
+                const unsigned data = cell(row, column);
+                if ((data & 7u) >= 5)
+                    continue;
+                const unsigned style = (data >> 4) & 7u;
+                for (int i = 0; i < 4; ++i)
+                    for (int j = 0; j < 4; ++j)
+                    {
+                        if (style == 3)
+                            kind = port::load<int32_t>(globals::kScatterKindsStyle3 + 4 * (static_cast<int32_t>(Random_Next()) % 16));
+                        else if (style == 2)
+                            kind = port::load<int32_t>(globals::kScatterKindsStyle2 + 4 * (static_cast<int32_t>(Random_Next()) % 16));
+                        else if (style == 1)
+                            kind = 2;
+                        else if (style == 0)
+                            kind = 0;
+                        const int x = 0x80 - 16 * column + 4 * i + 2;
+                        const int z = 0x80 - 16 * row + 4 * j + 2;
+                        TerrainGen_ScatterObjects(map, x, z, 2, ps2f(4.0f));
+                        TerrainGen_ScatterObjects(map, x, z, kind, ps2f(4.0f));
+                    }
+            }
+        for (int i = 1, p = 0x10; i < 8; ++i, p += 0x10)
+        {
+            Map_CreateObject(map, 0, 0xB, 2, p);
+            Map_CreateObject(map, 0, 0xB, 0x7D, p);
+            Map_CreateObject(map, 0, 0xB, p, 2);
+            Map_CreateObject(map, 0, 0xB, p, 0x7D);
+        }
+        for (int z = 0; z < kMapSize; ++z)
+            for (int x = 0; x < kMapSize; ++x)
+                Map_UpdateTileGeometry(map, x, z);
+    }
+
+    // Terrain drawing: the city's terrain patches around the camera, one frame. `zoom` is the camera step; steps 0 and 1 read
+    // their projection and reach straight from the tables, the others blend between two table rows by the camera height
+    // (`variant` picks the far-distance and height tables). Two projection matrices (the second 200 wider) are built, the
+    // view direction moved to the camera's tile gives the window of tiles (reach tiles around it), and for every tile in the
+    // window the distance to the camera (VU0, with the clip flags of the tile's centre against both projections) decides
+    // whether the patch is drawn: it is linked into the distance bucket (a quarter-tile each, 150 buckets) and handed to
+    // mm_Terrain_DrawPatch, until 600 tiles or the quad buffer are full. Tiles with an object that has flag 0x80 are skipped,
+    // tiles with an object are centred on its footprint. The unused rest of both buffers gets its draw flag cleared.
+    // The original's frame holds the matrices and vectors; vf1 to vf9 keep the two matrices and the camera through the
+    // loop (the callees leave them alone), `extra` is passed on to the patch in a register it ignores.
+    void Terrain_Draw(GuestPtr<CityMap> map, GuestPtr<Vec4> view, GuestPtr<Vec4> camera, int zoom, int variant, int extra,
+                      ps2f level)
+    {
+        using namespace vu0;
+        (void)extra;
+        port::GuestFrame<0x1A0> frame;
+        const uint32_t sp = frame.ptr().address;
+        const auto F = [](uint32_t bits) { return ps2f(std::bit_cast<float>(bits)); };
+        const uint32_t farTable = variant == 0 ? globals::kTerrainFarA : globals::kTerrainFarB;
+        const uint32_t heights = variant == 0 ? globals::kTerrainZoomHeightsA : globals::kTerrainZoomHeightsB;
+        const GuestPtr<Vec4> screen{sp + 0x80u}, offset{sp + 0x90u}, distance{sp + 0xA0u};
+        const GuestPtr<Vec4> projection{sp + 0xB0u}, projectionWide{sp + 0xF0u}, inverse{sp + 0x140u};
+        const GuestPtr<Vec4> here{sp + 0x180u}, centre{sp + 0x190u};
+        screen->z = F(0x3F800000u);
+        screen->w = F(0x3F800000u);
+        offset->x = F(0u);
+        offset->y = F(0u);
+        offset->z = F(0u);
+        offset->w = F(0x3F800000u);
+        ps2f farDistance;
+        int reach;
+        if (zoom < 2)
+        {
+            const uint32_t i = 4u * static_cast<uint32_t>(zoom);
+            screen->x = port::load<float>(globals::kTerrainScreenX + i);
+            screen->y = port::load<float>(globals::kTerrainScreenY + i);
+            offset->z = port::load<float>(globals::kTerrainCameraZ + i);
+            farDistance = port::load<float>(farTable + i);
+            reach = port::load<int32_t>(globals::kTerrainReach + i);
+        }
+        else
+        {
+            // The first step whose height the camera has reached; the blend runs from there to the next.
+            int k = 1;
+            while (camera->y < port::load<float>(heights + 4u * static_cast<uint32_t>(k + 1)))
+                ++k;
+            const uint32_t i = 4u * static_cast<uint32_t>(k);
+            const ps2f low = port::load<float>(heights + i), high = port::load<float>(heights + i + 4u);
+            const ps2f t = (ps2f(camera->y) - low) / (high - low);
+            const ps2f rest = F(0x3F800000u) - t;
+            const auto blend = [&](uint32_t table) {
+                return (rest * port::load<float>(table + i)) + t * port::load<float>(table + i + 4u);
+            };
+            screen->x = blend(globals::kTerrainScreenX);
+            screen->y = blend(globals::kTerrainScreenY);
+            farDistance = blend(farTable);
+            offset->z = blend(globals::kTerrainCameraZ);
+            reach = t < F(0x3F000000u) ? port::load<int32_t>(globals::kTerrainReach + i)
+                                       : port::load<int32_t>(globals::kTerrainReach + i + 4u);
+        }
+        Math_ProjectionMatrix(GuestPtr<ps2f>{projection.address}, GuestPtr<ps2f>{screen.address}, F(0x44400000u), F(0x3DCCCCCDu), farDistance);
+        sdk::sceVu0MulMatrix(projection.address, projection.address, view.address);
+        screen->x = ps2f(screen->x) + F(0x43480000u);
+        Math_ProjectionMatrix(GuestPtr<ps2f>{projectionWide.address}, GuestPtr<ps2f>{screen.address}, F(0x44400000u), F(0x3DCCCCCDu), farDistance);
+        sdk::sceVu0MulMatrix(projectionWide.address, projectionWide.address, view.address);
+        // The view's rotation, inverted, turns the offset to where the camera looks from.
+        std::memcpy(inverse.get(), view.get(), 3 * sizeof(Vec4));
+        store(GuestPtr<Vec4>{inverse.address + 0x30u}, vf(0));
+        sdk::sceVu0InversMatrix(inverse.address, inverse.address);
+        applyMatrix(inverse, offset, offset);
+        offset->x = ps2f(offset->x) + ps2f(camera->x);
+        offset->z = ps2f(offset->z) + ps2f(camera->z);
+        const ps2f mapHalf = F(0x42800000u), half = F(0x3F000000u), one = F(0x3F800000u);
+        const int tileX = sdk::fptosi(mapHalf + ps2f(offset->x));
+        const int tileZ = sdk::fptosi(mapHalf - ps2f(offset->z));
+        const int left = tileX - reach, top = tileZ - reach, right = tileX + reach, bottom = tileZ + reach;
+        const ps2f startX = (fromInt(left) - mapHalf) - half;
+        // The distance buckets: a chain of 150 empty nodes.
+        for (int i = 0; i < 150; ++i)
+        {
+            TerrainNode &node = map->buckets[i];
+            const uint32_t at = GuestPtr<TerrainNode>::of(node).address;
+            node.next = i == 149 ? 0u : at + sizeof(TerrainNode);
+            node.prev = i == 0 ? 0u : at - sizeof(TerrainNode);
+            node.object = 0;
+        }
+        map->sortedCount = 0;
+        map->terrainQuads = 0;
+        const uint32_t parity = port::load<uint32_t>(globals::kFrameParity) & 1u;
+        map->terrainWrite = map->terrainBuffers[parity];
+        map->sideVertices = 0;
+        map->sideWrite = map->sideBuffers[parity];
+        vf(1) = load(projection);
+        vf(2) = load(GuestPtr<Vec4>{projection.address + 0x10u});
+        vf(3) = load(GuestPtr<Vec4>{projection.address + 0x20u});
+        vf(4) = load(GuestPtr<Vec4>{projection.address + 0x30u});
+        vf(5) = load(projectionWide);
+        vf(6) = load(GuestPtr<Vec4>{projectionWide.address + 0x10u});
+        vf(7) = load(GuestPtr<Vec4>{projectionWide.address + 0x20u});
+        vf(8) = load(GuestPtr<Vec4>{projectionWide.address + 0x30u});
+        vf(9) = load(camera);
+        here->z = half + (fromInt(0x80 - top) - mapHalf);
+        here->w = one;
+        bool full = false;
+        for (int row = top; row < bottom && !full; ++row)
+        {
+            here->z = ps2f(here->z) - one;
+            here->x = startX;
+            for (int col = left; col < right; ++col)
+            {
+                here->x = ps2f(here->x) + one;
+                const ps2f height = Map_GetHeightAt(map, col, row);
+                here->y = height;
+                uint32_t object = 0;
+                if (onMap(col, row))
+                {
+                    object = tileAt(map, col, row).firstObject;
+                    const GuestPtr<MapObject> placed = map->objects + static_cast<int>(object);
+                    const GuestPtr<BuildingType> type{
+                        port::load<uint32_t>(globals::buildingTypeTable.get() + 4u * static_cast<uint32_t>(placed->type))};
+                    if ((placed->flags & 0x80u) != 0)
+                        continue;
+                    const ps2f size = fromInt(type->size);
+                    centre->x = ((fromInt(placed->tile & 0x7F) - mapHalf) + size / F(0x40000000u));
+                    centre->y = height;
+                    centre->z = (fromInt(0x80 - (placed->tile >> 7)) - mapHalf) - size / F(0x40000000u);
+                }
+                else
+                {
+                    centre->x = here->x;
+                    centre->y = here->y;
+                    centre->z = here->z;
+                }
+                vf(10) = load(centre);
+                vf(11) = load(here);
+                set(vf(10), sub(vf(10), vf(9)), XYZW);
+                set(acc(), mul(vf(1), lane(vf(11), 0)), XYZW);
+                set(acc(), add(acc(), mul(vf(2), lane(vf(11), 1))), XYZW);
+                set(acc(), add(acc(), mul(vf(3), lane(vf(11), 2))), XYZW);
+                set(vf(10), mul(vf(10), vf(10)), X | Z);
+                set(vf(12), add(acc(), mul(vf(4), lane(vf(11), 3))), XYZW);
+                set(acc(), mul(vf(5), lane(vf(11), 0)), XYZW);
+                set(acc(), add(acc(), mul(vf(6), lane(vf(11), 1))), XYZW);
+                set(vf(10), add(vf(10), lane(vf(10), 2)), X);
+                set(acc(), add(acc(), mul(vf(7), lane(vf(11), 2))), XYZW);
+                set(vf(13), add(acc(), mul(vf(8), lane(vf(11), 3))), XYZW);
+                clipw(12);
+                q() = sqrtQ(vu0::x(vf(10)));
+                clipw(13);
+                set(vf(10), add(vf(0), _mm_set1_ps(q())), XYZW);
+                const uint32_t clip = clipFlags();
+                store(distance, vf(10));
+                const ps2f dist = distance->x;
+                bool draw;
+                if (!(ps2f(camera->y) <= F(0xC1200000u)))
+                {
+                    if (dist < F(0x41100000u))
+                        draw = (clip & 0x3Bu) == 0 || dist <= F(0x40000000u);
+                    else
+                        draw = dist <= farDistance && (clip & 0xFC0u) == 0;
+                }
+                else
+                    draw = (clip & 0xFC0u) == 0;
+                if (!draw)
+                    continue;
+                const int entry = map->sortedCount;
+                TerrainEntry &node = map->sorted[entry];
+                node.object = object;
+                node.distance = dist;
+                int bucket = sdk::fptosi(F(0x40800000u) * dist);
+                bucket = bucket < 0 ? 0 : bucket >= 150 ? 149 : bucket;
+                TerrainNode &head = map->buckets[bucket];
+                const uint32_t at = GuestPtr<TerrainEntry>::of(node).address;
+                node.next = head.next;
+                head.next = at;
+                node.prev = head.prev;
+                head.prev = at;
+                Terrain_DrawPatch(map, col, row, static_cast<int>(object), here->x, here->z, level);
+                map->sortedCount = entry + 1;
+                if (map->sortedCount >= 600 || map->terrainQuads >= 0x9C0)
+                {
+                    full = true;
+                    break;
+                }
+            }
+        }
+        // What the frame did not fill keeps its draw flag cleared.
+        for (int quads = map->terrainQuads; quads < 0x9C0; quads += 4)
+        {
+            port::store<uint32_t>(map->terrainWrite.address + 0x2Cu, 0u);
+            map->terrainWrite = GuestPtr<void>{map->terrainWrite.address + 0x40u};
+        }
+        for (int sides = map->sideVertices; sides < 0x870; sides += 3)
+        {
+            port::store<uint32_t>(map->sideWrite.address + 0x2Cu, 0u);
+            map->sideWrite = GuestPtr<void>{map->sideWrite.address + 0x30u};
+        }
+    }
+
+    PORT_FN(TerrainGen_ApplyBump);
+    PORT_FN(Terrain_Draw);
+    PORT_FN(TerrainGen_River);
+    PORT_FN(TerrainGen_Generate);
+    PORT_FN(TerrainGen_Hills);
+    PORT_FN(TerrainGen_SampleSmooth);
+    PORT_FN(TerrainGen_Smooth);
     PORT_FN(TerrainGen_ScatterObjects);
     PORT_FN(MapObj_Delete);
     PORT_FN(People_UnlinkFromList);

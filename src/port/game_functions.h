@@ -3193,6 +3193,11 @@ void CityMap_ClearObject(GuestPtr<CityMap> map, int object);
 void Map_ClearArea(GuestPtr<CityMap> map, int x, int z, int size);
 int Map_PlaceObject(GuestPtr<CityMap> map, int owner, int type, int x, int z, int arg);
 int Map_CanPlace(GuestPtr<CityMap> map, int family, int typeIndex, int x, int z);
+ps2f TerrainGen_SampleSmooth(GuestPtr<CityMap> map, int x, int z);
+void TerrainGen_Smooth(GuestPtr<CityMap> map, int a1, int a2, ps2f f12, ps2f f13, ps2f f14);
+void TerrainGen_Hills(GuestPtr<CityMap> map, int cx, int cz, int high);
+void TerrainGen_River(GuestPtr<CityMap> map, int edge, int start, int width, int curveA, int curveB, int direction, int wobbleA, int wobbleB);
+void TerrainGen_Generate(GuestPtr<CityMap> map, GuestPtr<uint8_t> params);
 uint16_t Map_TileFlag20(GuestPtr<CityMap> map, int x, int z);
 uint16_t Map_TileFlag01(GuestPtr<CityMap> map, int x, int z);
 uint16_t Map_TileFlag08(GuestPtr<CityMap> map, int x, int z);
@@ -3210,6 +3215,7 @@ ps2f Map_SampleHeight(GuestPtr<CityMap> map, ps2f x, ps2f z);
 void Math_TriangleNormal(GuestPtr<Vec4> out, GuestPtr<Vec4> a, GuestPtr<Vec4> b, GuestPtr<Vec4> c);
 void Map_UpdateTileGeometry(GuestPtr<CityMap> map, int x, int z);
 void Map_UpdateAreaGeometry(GuestPtr<CityMap> map, GuestPtr<int32_t> rect);
+void TerrainGen_ApplyBump(GuestPtr<CityMap> map, int x, int z, int mode, uint32_t flags, ps2f height, ps2f radius);
 void Map_ReturnPeopleToWork(GuestPtr<CityMap> map);
 GuestPtr<MapObject> Map_FindPersonObjectOnTile(GuestPtr<CityMap> map, uint32_t person, uint32_t tile);
 GuestPtr<MapPerson> Map_FindPersonOfFlaggedType(GuestPtr<CityMap> map, int16_t home);
@@ -3249,6 +3255,9 @@ void Map_SetPlacementHighlight(GuestPtr<CityMap> map, int mode, GuestPtr<int32_t
 void Terrain_AddQuad(GuestPtr<CityMap> map, GuestPtr<Vec4> a, GuestPtr<Vec4> b, GuestPtr<Vec4> c, GuestPtr<Vec4> d, int t1, int t2, int t3);
 void Terrain_BuildStrip(GuestPtr<CityMap> map, int x, int z, GuestPtr<Vec4> corner0, GuestPtr<Vec4> corner1, GuestPtr<Vec4> corner2, GuestPtr<Vec4> corner3);
 void Terrain_DrawPatch(GuestPtr<CityMap> map, int x, int z, int object, ps2f centreX, ps2f centreZ, ps2f level);
+void Terrain_Draw(GuestPtr<CityMap> map, GuestPtr<Vec4> view, GuestPtr<Vec4> camera, int zoom, int variant, int extra, ps2f level);
+GuestPtr<uint32_t> Terrain_BuildVu1PacketA(int a0, GuestPtr<uint32_t> a1);
+GuestPtr<uint32_t> Terrain_BuildVu1PacketB(int a0, GuestPtr<uint32_t> a1);
 void Terrain_InitParams(int a0);
 void CityRender_InitParams(GuestPtr<CityMap> map);
 void CityRender_UpdatePeople(GuestPtr<CityMap> map, GuestPtr<CityScene> city);
@@ -3527,6 +3536,7 @@ void SoundTest_BgmText(int a0);
 void SoundTest_SeText(int a0);
 int Title_DrawCommon(GuestPtr<SceneA> scene, int layers);
 int Title_PressStart(GuestPtr<SceneA> scene);
+void Title_NewGameIntro(GuestPtr<SceneA> scene);
 int Title_RandomCharParts(GuestPtr<SceneA> scene);
 int Title_MenuInput(GuestPtr<SceneA> scene);
 int Title_DrawChoices(GuestPtr<SceneA> scene);
@@ -3826,6 +3836,7 @@ void DmaList_QueueFade(int alpha, int a1);
 void DmaList_QueueClearZ();
 void DmaList_Flip();
 void DmaList_BeginScene();
+void DmaList_KickFrame();
 void DmaList_InitPackets();
 void Sound_StopAllPlaying();
 void Se_SetEnabled(int enabled, int resetVolumes);
@@ -3839,6 +3850,7 @@ uint32_t Se_PickTerrainAmbience(int x, int z, int a2);
 int Se_MatchSchedule(uint32_t monthFrom, uint32_t monthTo, uint32_t hourFrom, uint32_t hourTo, uint32_t length, uint32_t start10, int lead);
 int Se_Request(uint16_t owner, uint32_t group, uint8_t sound, uint8_t param0A, uint8_t param18, uint16_t param0C, uint8_t param0B, uint8_t param19, ps2f angle, ps2f distance);
 void Se_StopOwner(char owner);
+void Se_RequestForObject(uint32_t object, uint32_t group, uint32_t sound, int pitch, int clampFar, int param18);
 int Sound_PlaySe(int sound, int a1, int a2, ps2f angle, ps2f distance);
 void Se_PlayMessageSound(char code);
 void Se_PlayVariant(uint8_t variant);
@@ -3992,9 +4004,14 @@ ps2f Person_Distance(GuestPtr<CityScene> city, GuestPtr<ActorRef> actorA, GuestP
 GuestPtr<MapObject> EvAlien_FindBuilding(GuestPtr<CityScene> city, int list, uint32_t type, GuestPtr<int32_t> rect);
 GuestPtr<MapObject> EvThief_FindBuilding(GuestPtr<CityScene> city, uint32_t category, GuestPtr<int32_t> rect);
 void Building_GetFootprint(GuestPtr<MapObject> obj, int a1, GuestPtr<uint32_t> rect);
+int Movie_SendToIop2Area(int iop0, int iopSize0, int iop1, int iopSize1, int ee0, int eeSize0, int ee1, int eeSize1);
 int Movie_AudioDecIsPreset(int audio);
 void Movie_AudioDecBeginPut(GuestPtr<int32_t> audio, GuestPtr<int32_t> ptr0, GuestPtr<int32_t> len0, GuestPtr<int32_t> ptr1, GuestPtr<int32_t> len1);
 void Movie_DisplayStop();
+int Movie_DmaEndHandler();
+void Movie_LayoutSubtitle(GuestPtr<char> text);
+void Movie_BuildSubtitlePacket();
+void Movie_BuildImagePacket(uint32_t packet, uint32_t image, int half, int width, int height);
 void Movie_SetSubtitleState(uint16_t state);
 int Movie_ReadBufEndGet(int readBuf, int size);
 int Movie_ReadBufBeginGet(int readBuf, GuestPtr<int32_t> ptr);
@@ -4003,11 +4020,17 @@ int Movie_ReadBufBeginPut(int readBuf, GuestPtr<int32_t> ptr);
 void Movie_ReadBufDelete();
 void Movie_ReadBufCreate(int readBuf);
 int Movie_ViBufModifyPts(int vibuf, int ts);
+int Movie_ViBufDelete(int vibuf);
+int Movie_ViBufReset(GuestPtr<int32_t> vibuf);
+int Movie_ViBufCreate(int vibuf, int data, int tags, int size, int ts, int tsCount);
 int Movie_VideoDecGetState(int videoDec);
 void Movie_VideoDecSetStateStart(int videoDec);
+int Movie_VideoDecDelete(int videoDec);
+int Movie_VideoDecAddStrCallback(int a0, int a1, int a2, int a3);
 void Movie_VoBufDecCount(int vobuf);
 int Movie_VoBufGetTag(int vobuf);
 int Movie_VoBufGetData(GuestPtr<int32_t> vobuf);
+void Movie_VoBufIncCount(int vobuf);
 int Movie_VoBufIsFull(int vobuf);
 void Movie_VoBufReset(int vobuf);
 void Movie_VoBufDelete();
@@ -4020,6 +4043,7 @@ void Words_AppendClipped(GuestPtr<char> buffer, GuestPtr<char> text);
 int Words_FriendshipChanged();
 int Words_CancelAllowed();
 void StaticInit_StatusBytes();
+void StaticInit_WordsTable();
 
 // Not ported yet: the generated function, through the runtime's function table.
 inline void CityScene_UpdateApproval(GuestPtr<CityScene> city) { port::callGuest<void>(addr::CityScene_UpdateApproval, city); }
@@ -4081,14 +4105,8 @@ inline void MapSave_UnpackTiles(GuestPtr<CityMap> map) { port::callGuest<void>(a
 inline void MapSave_AllocBuffer(GuestPtr<CityMap> map) { port::callGuest<void>(addr::MapSave_AllocBuffer, map); }
 inline void MapSave_FreeBuffer(GuestPtr<CityMap> map) { port::callGuest<void>(addr::MapSave_FreeBuffer, map); }
 inline void MapSave_PackTiles(GuestPtr<CityMap> map) { port::callGuest<void>(addr::MapSave_PackTiles, map); }
-inline ps2f TerrainGen_SampleSmooth(GuestPtr<CityMap> map, int x, int z) { return port::callGuest<ps2f>(addr::TerrainGen_SampleSmooth, map, x, z); }
-inline void TerrainGen_Smooth(GuestPtr<CityMap> map, int a1, int a2, ps2f f12, ps2f f13, ps2f f14) { port::callGuest<void>(addr::TerrainGen_Smooth, map, a1, a2, f12, f13, f14); }
-inline int TerrainGen_Hills(GuestPtr<CityMap> map, int cx, int cz, int high) { return port::callGuest<int>(addr::TerrainGen_Hills, map, cx, cz, high); }
-inline void TerrainGen_River(GuestPtr<CityMap> map, int a1, int a2, int a3, int t0, int t1, int direction, int t3, int stack0) { port::callGuest<void>(addr::TerrainGen_River, map, a1, a2, a3, t0, t1, direction, t3, stack0); }
-inline void TerrainGen_Generate(GuestPtr<CityMap> map, GuestPtr<uint8_t> params) { port::callGuest<void>(addr::TerrainGen_Generate, map, params); }
 inline GuestPtr<CityMap> CityMap_DeletingDtor(GuestPtr<CityMap> map, int16_t deleteFlag) { return port::callGuest<GuestPtr<CityMap>>(addr::CityMap_DeletingDtor, map, deleteFlag); }
 inline GuestPtr<CityMap> CityMap_ctor(GuestPtr<CityMap> map) { return port::callGuest<GuestPtr<CityMap>>(addr::CityMap_ctor, map); }
-inline ps2f TerrainGen_ApplyBump(GuestPtr<CityMap> map, int x, int z, int mode, uint32_t flags, ps2f height, ps2f radius) { return port::callGuest<ps2f>(addr::TerrainGen_ApplyBump, map, x, z, mode, flags, height, radius); }
 inline GuestPtr<CityMap> MapTiles_dtor(GuestPtr<CityMap> map, int16_t deleteFlag) { return port::callGuest<GuestPtr<CityMap>>(addr::MapTiles_dtor, map, deleteFlag); }
 inline GuestPtr<CityMap> MapTiles_ctor(GuestPtr<CityMap> map) { return port::callGuest<GuestPtr<CityMap>>(addr::MapTiles_ctor, map); }
 inline void Family_AssignHome(GuestPtr<CityMap> map, GuestPtr<CityScene> city, int family, int object) { port::callGuest<void>(addr::Family_AssignHome, map, city, family, object); }
@@ -4096,9 +4114,6 @@ inline GuestPtr<CityMap> MapPeople_dtor(GuestPtr<CityMap> map, int16_t deleteFla
 inline GuestPtr<CityMap> MapPeople_ctor(GuestPtr<CityMap> map) { return port::callGuest<GuestPtr<CityMap>>(addr::MapPeople_ctor, map); }
 inline GuestPtr<CityMap> MapObjects_dtor(GuestPtr<CityMap> map, int16_t deleteFlag) { return port::callGuest<GuestPtr<CityMap>>(addr::MapObjects_dtor, map, deleteFlag); }
 inline GuestPtr<CityMap> MapObjects_ctor(GuestPtr<CityMap> map) { return port::callGuest<GuestPtr<CityMap>>(addr::MapObjects_ctor, map); }
-inline void Terrain_Draw(GuestPtr<CityMap> map, int a1, GuestPtr<Vec4> a2, int a3, int t0, int t1, ps2f f12) { port::callGuest<void>(addr::Terrain_Draw, map, a1, a2, a3, t0, t1, f12); }
-inline GuestPtr<uint32_t> Terrain_BuildVu1PacketA(int a0, GuestPtr<uint32_t> a1) { return port::callGuest<GuestPtr<uint32_t>>(addr::Terrain_BuildVu1PacketA, a0, a1); }
-inline GuestPtr<uint32_t> Terrain_BuildVu1PacketB(int a0, GuestPtr<uint32_t> a1) { return port::callGuest<GuestPtr<uint32_t>>(addr::Terrain_BuildVu1PacketB, a0, a1); }
 inline GuestPtr<CityMap> CityRender_dtor(GuestPtr<CityMap> map, int16_t deleteFlag) { return port::callGuest<GuestPtr<CityMap>>(addr::CityRender_dtor, map, deleteFlag); }
 inline GuestPtr<CityMap> CityRender_ctor(GuestPtr<CityMap> map) { return port::callGuest<GuestPtr<CityMap>>(addr::CityRender_ctor, map); }
 inline int Dma_KickVif1Now_1490D0(uint32_t address) { return port::callGuest<int>(addr::Dma_KickVif1Now_1490D0, address); }
@@ -4241,7 +4256,6 @@ inline GuestPtr<Notice> Notice_dtor(GuestPtr<Notice> notice, int16_t deleteFlag)
 inline GuestPtr<Notice> Notice_ctor(GuestPtr<Notice> notice) { return port::callGuest<GuestPtr<Notice>>(addr::Notice_ctor, notice); }
 inline int Title_LoadMenu(GuestPtr<SceneA> scene) { return port::callGuest<int>(addr::Title_LoadMenu, scene); }
 inline int SceneA_StartGame(GuestPtr<SceneA> scene, int newGame) { return port::callGuest<int>(addr::SceneA_StartGame, scene, newGame); }
-inline int Title_NewGameIntro(GuestPtr<SceneA> scene) { return port::callGuest<int>(addr::Title_NewGameIntro, scene); }
 inline int Title_OpeningMovieStep(GuestPtr<SceneA> scene) { return port::callGuest<int>(addr::Title_OpeningMovieStep, scene); }
 inline int SceneA_LogoStep(GuestPtr<SceneA> scene, char logo) { return port::callGuest<int>(addr::SceneA_LogoStep, scene, logo); }
 inline int SceneA_Load(GuestPtr<SceneA> scene, int a1) { return port::callGuest<int>(addr::SceneA_Load, scene, a1); }
@@ -4369,10 +4383,8 @@ inline int McQueue_Pump() { return port::callGuest<int>(addr::McQueue_Pump); }
 inline int McManagerSub_DeletingDtor(int queue, int16_t deleteFlag) { return port::callGuest<int>(addr::McManagerSub_DeletingDtor, queue, deleteFlag); }
 inline int Dma_KickVif1Now(uint32_t address) { return port::callGuest<int>(addr::Dma_KickVif1Now, address); }
 inline void DmaList_Rewind() { port::callGuest<void>(addr::DmaList_Rewind); }
-inline void DmaList_KickFrame() { port::callGuest<void>(addr::DmaList_KickFrame); }
 inline void DmaList_Free() { port::callGuest<void>(addr::DmaList_Free); }
 inline void DmaList_Init() { port::callGuest<void>(addr::DmaList_Init); }
-inline void Se_RequestForObject(uint32_t a0, uint32_t a1, uint32_t a2, int a3, int t0, int t1) { port::callGuest<void>(addr::Se_RequestForObject, a0, a1, a2, a3, t0, t1); }
 inline void SoundCmd_Flush() { port::callGuest<void>(addr::SoundCmd_Flush); }
 inline void Sound_LoadModules() { port::callGuest<void>(addr::Sound_LoadModules); }
 inline void Sound_Shutdown() { port::callGuest<void>(addr::Sound_Shutdown); }
@@ -4393,7 +4405,6 @@ inline void EvThief_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) {
 inline int EvActor_PointCursor(GuestPtr<CityScene> city, GuestPtr<ActorRef> actor) { return port::callGuest<int>(addr::EvActor_PointCursor, city, actor); }
 inline int EvActor_PointAtBuilding(GuestPtr<CityScene> city, int actorPerson, int building) { return port::callGuest<int>(addr::EvActor_PointAtBuilding, city, actorPerson, building); }
 inline void Movie_SetSpuMasterVolume(int volume) { port::callGuest<void>(addr::Movie_SetSpuMasterVolume, volume); }
-inline int Movie_SendToIop2Area(int iop0, int iopSize0, int iop1, int iopSize1, int ee0, int eeSize0, int ee1, int eeSize1) { return port::callGuest<int>(addr::Movie_SendToIop2Area, iop0, iopSize0, iop1, iopSize1, ee0, eeSize0, ee1, eeSize1); }
 inline int Movie_AudioDecSendToIop(GuestPtr<int32_t> audio, int a1, int a2, int a3) { return port::callGuest<int>(addr::Movie_AudioDecSendToIop, audio, a1, a2, a3); }
 inline void Movie_AudioDecEndPut(GuestPtr<int32_t> audio, uint32_t size) { port::callGuest<void>(addr::Movie_AudioDecEndPut, audio, size); }
 inline void Movie_AudioDecReset(GuestPtr<uint32_t> audio) { port::callGuest<void>(addr::Movie_AudioDecReset, audio); }
@@ -4402,12 +4413,8 @@ inline void Movie_AudioDecResume(GuestPtr<uint32_t> audio) { port::callGuest<voi
 inline int Movie_AudioDecDelete(int audio) { return port::callGuest<int>(addr::Movie_AudioDecDelete, audio); }
 inline int Movie_AudioDecCreate(GuestPtr<uint32_t> audio, int ring, int ringSize, int iopSize) { return port::callGuest<int>(addr::Movie_AudioDecCreate, audio, ring, ringSize, iopSize); }
 inline int Movie_DisplayStart(int field) { return port::callGuest<int>(addr::Movie_DisplayStart, field); }
-inline void Movie_DmaEndHandler() { port::callGuest<void>(addr::Movie_DmaEndHandler); }
 inline void Movie_VblankHandler() { port::callGuest<void>(addr::Movie_VblankHandler); }
-inline void Movie_LayoutSubtitle(GuestPtr<char> text) { port::callGuest<void>(addr::Movie_LayoutSubtitle, text); }
-inline void Movie_BuildSubtitlePacket() { port::callGuest<void>(addr::Movie_BuildSubtitlePacket); }
 inline int16_t Movie_SendFrame(int picture) { return port::callGuest<int16_t>(addr::Movie_SendFrame, picture); }
-inline void Movie_BuildImagePacket(uint32_t packet, uint32_t image, int half, int width, int height) { port::callGuest<void>(addr::Movie_BuildImagePacket, packet, image, half, width, height); }
 inline void Movie_ClearScreen() { port::callGuest<void>(addr::Movie_ClearScreen); }
 inline void Movie_PlayPss(GuestPtr<char> name, int16_t a1, int16_t a2, int width, int16_t height, int fadeAudio, uint16_t skipButtons, int16_t fadeStep, int stack0, int stack8) { port::callGuest<void>(addr::Movie_PlayPss, name, a1, a2, width, height, fadeAudio, skipButtons, fadeStep, stack0, stack8); }
 inline int PlayMissionMovie(char mission) { return port::callGuest<int>(addr::PlayMissionMovie, mission); }
@@ -4428,14 +4435,11 @@ inline int Movie_ViBufGetTs(GuestPtr<int32_t> vibuf, GuestPtr<uint64_t> ts) { re
 inline int Movie_ViBufPutTs(int vibuf, int ts) { return port::callGuest<int>(addr::Movie_ViBufPutTs, vibuf, ts); }
 inline void Movie_ViBufFlush(int vibuf) { port::callGuest<void>(addr::Movie_ViBufFlush, vibuf); }
 inline int Movie_ViBufCount(int vibuf) { return port::callGuest<int>(addr::Movie_ViBufCount, vibuf); }
-inline int Movie_ViBufDelete(int vibuf) { return port::callGuest<int>(addr::Movie_ViBufDelete, vibuf); }
 inline int Movie_ViBufRestartDma(GuestPtr<uint32_t> vibuf) { return port::callGuest<int>(addr::Movie_ViBufRestartDma, vibuf); }
 inline int Movie_ViBufStopDma(int vibuf) { return port::callGuest<int>(addr::Movie_ViBufStopDma, vibuf); }
 inline int Movie_ViBufAddDma(GuestPtr<int32_t> vibuf) { return port::callGuest<int>(addr::Movie_ViBufAddDma, vibuf); }
 inline void Movie_ViBufEndPut(int vibuf, int size) { port::callGuest<void>(addr::Movie_ViBufEndPut, vibuf, size); }
 inline void Movie_ViBufBeginPut(GuestPtr<int32_t> vibuf, GuestPtr<int32_t> ptr0, GuestPtr<int32_t> len0, GuestPtr<int32_t> ptr1, GuestPtr<int32_t> len1) { port::callGuest<void>(addr::Movie_ViBufBeginPut, vibuf, ptr0, len0, ptr1, len1); }
-inline int Movie_ViBufReset(GuestPtr<int32_t> vibuf) { return port::callGuest<int>(addr::Movie_ViBufReset, vibuf); }
-inline int Movie_ViBufCreate(int vibuf, int data, int tags, int size, int ts, int tsCount) { return port::callGuest<int>(addr::Movie_ViBufCreate, vibuf, data, tags, size, ts, tsCount); }
 inline int Movie_CbTimeStamp(int mpeg, int cbdata) { return port::callGuest<int>(addr::Movie_CbTimeStamp, mpeg, cbdata); }
 inline int Movie_CbRestartDma() { return port::callGuest<int>(addr::Movie_CbRestartDma); }
 inline int Movie_CbStopDma() { return port::callGuest<int>(addr::Movie_CbStopDma); }
@@ -4446,12 +4450,9 @@ inline void Movie_VideoDecMain(int videoDec) { port::callGuest<void>(addr::Movie
 inline int Movie_VideoDecIsDone(int videoDec) { return port::callGuest<int>(addr::Movie_VideoDecIsDone, videoDec); }
 inline int Movie_VideoDecPutTerminator(int videoDec) { return port::callGuest<int>(addr::Movie_VideoDecPutTerminator, videoDec); }
 inline int Movie_VideoDecPutTs(int videoDec, int pts, int dts, int start, int length) { return port::callGuest<int>(addr::Movie_VideoDecPutTs, videoDec, pts, dts, start, length); }
-inline int Movie_VideoDecDelete(int videoDec) { return port::callGuest<int>(addr::Movie_VideoDecDelete, videoDec); }
 inline void Movie_VideoDecEndPut(int videoDec, int size) { port::callGuest<void>(addr::Movie_VideoDecEndPut, videoDec, size); }
 inline void Movie_VideoDecBeginPut(int videoDec, GuestPtr<int32_t> ptr0, GuestPtr<int32_t> len0, GuestPtr<int32_t> ptr1, GuestPtr<int32_t> len1) { port::callGuest<void>(addr::Movie_VideoDecBeginPut, videoDec, ptr0, len0, ptr1, len1); }
-inline int Movie_VideoDecAddStrCallback() { return port::callGuest<int>(addr::Movie_VideoDecAddStrCallback); }
 inline int Movie_VideoDecCreate(int videoDec, int mpegWork, int mpegWorkSize, int data, int tags, int tagSize, int ts, int tsCount) { return port::callGuest<int>(addr::Movie_VideoDecCreate, videoDec, mpegWork, mpegWorkSize, data, tags, tagSize, ts, tsCount); }
-inline void Movie_VoBufIncCount(int vobuf) { port::callGuest<void>(addr::Movie_VoBufIncCount, vobuf); }
 inline GuestPtr<char> Words_GetChoiceText(int script, GuestPtr<CityScene> city, int code, int index) { return port::callGuest<GuestPtr<char>>(addr::Words_GetChoiceText, script, city, code, index); }
 inline void Words_ApplyChoice(int script, GuestPtr<CityScene> city, int code, int choice) { port::callGuest<void>(addr::Words_ApplyChoice, script, city, code, choice); }
 inline uint32_t Words_ExpandLine(int a0, int a1, int a2) { return port::callGuest<uint32_t>(addr::Words_ExpandLine, a0, a1, a2); }
@@ -4463,6 +4464,5 @@ inline int Words_LoadForPerson(GuestPtr<MapPerson> person, int arg5, GuestPtr<Ci
 inline GuestPtr<uint32_t> Words_ReadBlock(int a0) { return port::callGuest<GuestPtr<uint32_t>>(addr::Words_ReadBlock, a0); }
 inline int Words_OpenFiles(int a0) { return port::callGuest<int>(addr::Words_OpenFiles, a0); }
 inline void Words_Init() { port::callGuest<void>(addr::Words_Init); }
-inline void StaticInit_WordsTable() { port::callGuest<void>(addr::StaticInit_WordsTable); }
 inline void StaticInit_Words() { port::callGuest<void>(addr::StaticInit_Words); }
 }

@@ -3,7 +3,9 @@
 #include "game_functions.h"
 #include "game_globals.h"
 #include "sdk.h"
+#include "vu0.h"
 
+#include <bit>
 #include <initializer_list>
 
 namespace mm
@@ -2042,6 +2044,94 @@ namespace mm
         TextBox_AppendText(box(), number, 0);
     }
 
+    // The new-game screen's character preview (picked by mm_Title_RandomCharParts), drawn every frame at (turn, 0.94, 0.36)
+    // in three phases (+0xF4). 0: it slides in from the left, turned a quarter away and swinging round as turn passes
+    // -0.1, until turn reaches 0, when it waits (8) with the part's own loading text. 8: its animation plays once
+    // through (time +2 a frame), then it turns out (1) under the empty text: the quarter turn comes back while turn
+    // (stepping twice as fast) passes 0.2, and at 1.4 the model is dropped. Phases 0 and 1 keep the animation looping
+    // from a fifth of its length. The turn is a Y rotation of -90 degrees times a ramp, multiplied into an identity matrix on
+    // VU0 (vf1 to vf12); the original returns the last call's v0, which its caller overwrites.
+    void Title_NewGameIntro(GuestPtr<SceneA> scene)
+    {
+        using namespace vu0;
+        if (Title_RandomCharParts(scene) == 0)
+            return;
+        port::GuestFrame<0xB0> frame;
+        const uint32_t sp = frame.ptr().address;
+        const auto F = [](uint32_t bits) { return ps2f(std::bit_cast<float>(bits)); };
+        const GuestPtr<Vec4> colour{sp + 0x20u}, matrix{sp + 0x30u}, turnMatrix{sp + 0x70u};
+        const auto rowOf = [](GuestPtr<Vec4> base, int i) { return GuestPtr<Vec4>{base.address + 0x10u * static_cast<uint32_t>(i)}; };
+        *colour = *GuestPtr<Vec4>{0x001B26C0u};
+        Mat4_Copy(matrix, GuestPtr<Vec4>{globals::kIdentityMatrix});
+        const int state = scene->previewState;
+        if (state != 0 && state != 1 && state != 8)
+            return;
+        if (state != 8)
+        {
+            ps2f angle = F(0xBFC90FDBu);
+            if (state == 1)
+            {
+                if (scene->previewTurn < F(0x3E4CCCCDu))
+                    angle = angle * (F(0x40A00000u) * ps2f(scene->previewTurn));
+            }
+            else if (!(scene->previewTurn < F(0xBDCCCCCDu)))
+                angle = angle * (F(0xC1200000u) * ps2f(scene->previewTurn));
+            sdk::sceVu0RotMatrixY(turnMatrix.address, globals::kIdentityMatrix, angle);
+            for (int i = 0; i < 4; ++i)
+                vf(1 + i) = load(rowOf(matrix, i));
+            for (int i = 0; i < 4; ++i)
+                vf(5 + i) = load(rowOf(turnMatrix, i));
+            for (int i = 0; i < 4; ++i)
+            {
+                set(acc(), mul(vf(5), lane(vf(1 + i), 0)), XYZW);
+                set(acc(), add(acc(), mul(vf(6), lane(vf(1 + i), 1))), XYZW);
+                set(acc(), add(acc(), mul(vf(7), lane(vf(1 + i), 2))), XYZW);
+                set(vf(9 + i), add(acc(), mul(vf(8), lane(vf(1 + i), 3))), XYZW);
+            }
+            for (int i = 0; i < 4; ++i)
+                store(rowOf(matrix, i), vf(9 + i));
+        }
+        const GuestPtr<Vec4> position = rowOf(matrix, 3);
+        position->x = scene->previewTurn;
+        position->y = F(0x3F70A3D7u);
+        position->z = F(0x3EB851ECu);
+        position->w = F(0x3F800000u);
+        const GuestPtr<A3DObject> model = scene->previewModel;
+        for (int i = 0; i < 4; ++i)
+            model->matrix[i] = *rowOf(matrix, i);
+        Instance_DrawSwayingIfRoom(model, scene->previewState, scene->previewTime);
+        A3DObject_UpdateMatrices(model);
+        Instance_DrawModelEx(model, colour, 0, 0, 0, 0, 0, 4);
+        scene->previewTime = ps2f(scene->previewTime) + F(0x40000000u);
+        if (state == 8)
+        {
+            if (ps2f(scene->previewTime) <= ps2f(scene->previewEnd))
+                return;
+            scene->previewState = 1;
+            scene->previewTime = ps2f(scene->previewEnd) / F(0x40A00000u);
+            scene->previewEnd = A3D_GetMeshField0C(model, scene->previewState);
+            LoadingScreen_SetText(scene->loading, GuestPtr<char>{globals::kEmptyText});
+            return;
+        }
+        if (!(ps2f(scene->previewTime) <= ps2f(scene->previewEnd)))
+            scene->previewTime = ps2f(scene->previewEnd) / F(0x40A00000u);
+        if (state == 1)
+        {
+            scene->previewTurn = ps2f(scene->previewTurn) + F(0x40000000u) * ps2f(scene->previewTurnStep);
+            if (!(scene->previewTurn < F(0x3FB33333u)))
+                scene->previewModel = GuestPtr<A3DObject>{0};
+            return;
+        }
+        scene->previewTurn = ps2f(scene->previewTurn) + ps2f(scene->previewTurnStep);
+        if (scene->previewTurn < F(0u))
+            return;
+        scene->previewState = 8;
+        scene->previewTime = F(0u);
+        scene->previewEnd = A3D_GetMeshField0C(model, scene->previewState);
+        LoadingScreen_SetText(scene->loading, GuestPtr<char>{scene->previewText.address});
+    }
+
+    PORT_FN(Title_NewGameIntro);
     PORT_FN(Title_RandomCharParts);
     PORT_FN(SoundTest_BgmText);
 

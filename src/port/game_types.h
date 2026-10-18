@@ -303,7 +303,8 @@ struct SceneA {
     GuestPtr<TexSprite> choices[2];     /* +0x1C the title menu's two choices (mm_Title_DrawChoices) */
     GuestPtr<A3DObject> menuModel;      /* +0x24 layer set 0x28/0x29 */
     GuestPtr<A3DObject> logoModel;      /* +0x28 layer set 0x14/0x15 */
-    uint8_t unk_2C[0xC];
+    GuestPtr<LoadingScreen> loading;    /* +0x2C text and spinner shown while loading (mm_Title_NewGameIntro sets its text) */
+    uint8_t unk_30[8];
     ps2f logoTime;            /* +0x38 frame of the logo model's intro animation (mm_Title_Intro) */
     int32_t choice;            /* +0x3C selected choice */
     int32_t choicePulsing;     /* +0x40 cleared when the selected choice's pulse ends */
@@ -326,7 +327,15 @@ struct SceneA {
     int32_t layers;            /* +0xD0 layer set drawn */
     int32_t idleTimer;         /* +0xD4 idle frames (restarted at 1800; provisional) */
     int32_t introFrame;        /* +0xD8 logo intro counter: title sprite alpha, then frames of the letters, then frames left (mm_Title_Intro) */
-    uint8_t unk_DC[0x28];
+    uint8_t unk_DC[8];
+    ps2f previewTime;         /* +0xE4 frame of the new-game preview model's animation (mm_Title_NewGameIntro) */
+    ps2f previewEnd;          /* +0xE8 the animation's last frame */
+    GuestPtr<A3DObject> previewModel;   /* +0xEC the character preview, 0 once it has turned away */
+    uint8_t unk_F0[4];
+    int32_t previewState;      /* +0xF4 animation: 0 turns in, 8 waits, 1 turns out */
+    ps2f previewTurn;         /* +0xF8 turn progress, also the model's x */
+    ps2f previewTurnStep;     /* +0xFC added per frame (doubled while turning out) */
+    GuestPtr<char> previewText;         /* +0x100 loading text shown once the preview waits */
 };
 /* Player's bag (0x1AC bytes). */
 /* Bag item slot (0x10 bytes). */
@@ -733,6 +742,8 @@ struct LayerG {
 
 struct CityScene;
 struct CityMap;
+struct TerrainNode;
+struct TerrainEntry;
 struct TileLists;
 struct MapTile;
 struct MapObject;
@@ -755,6 +766,22 @@ struct SeRequest;
 struct SeVoice;
 struct SeSound;
 struct ClaimThresholds;
+
+/* A distance bucket of the terrain draw list (mm_Terrain_Draw): 150 of them at CityMap +0x78, chained through the first two words
+   at the start of each frame; tiles are linked in by the distance from the camera. */
+struct TerrainNode {
+    uint32_t next;             /* +0x00 */
+    uint32_t prev;             /* +0x04 */
+    uint32_t object;           /* +0x08 0 for a bucket */
+};
+
+/* A drawn tile of the terrain draw list (600 of them at CityMap +0x780). */
+struct TerrainEntry {
+    uint32_t next;             /* +0x00 the bucket's first entry when this one was linked in */
+    uint32_t prev;             /* +0x04 the bucket's second link at that time */
+    uint32_t object;           /* +0x08 object record index of the tile (0 for none) */
+    ps2f distance;            /* +0x0C from the camera */
+};
 
 /* Map tile (0x18 bytes): 128 x 128 of them at CityMap +0x04. */
 struct MapTile {
@@ -845,7 +872,9 @@ struct CityMap {
     uint8_t unk_6C[4];
     int32_t peopleInUse;       /* +0x70 person records in use, vehicles too (mm_MapPeople_RemoveForObject) */
     int32_t population;        /* +0x74 residents: people records of classes without flag 1 */
-    uint8_t unk_78[0x2C8C];
+    TerrainNode buckets[150];  /* +0x78 */
+    TerrainEntry sorted[600];  /* +0x780 */
+    int32_t sortedCount;       /* +0x2D00 entries in use this frame (limit 600) */
     int32_t terrainQuads;      /* +0x2D04 vertices in the terrain buffer this frame (limit 0x9BD) */
     int32_t sideVertices;      /* +0x2D08 vertices in the cliff-side buffer this frame (limit 0x86E, mm_Terrain_BuildStrip) */
     GuestPtr<void> terrainBuffers[2];   /* +0x2D0C 0x9C00 bytes each */
@@ -1429,6 +1458,7 @@ static_assert(offsetof(SceneA, logoLetters) == 0x10, "SceneA.logoLetters");
 static_assert(offsetof(SceneA, choices) == 0x1C, "SceneA.choices");
 static_assert(offsetof(SceneA, menuModel) == 0x24, "SceneA.menuModel");
 static_assert(offsetof(SceneA, logoModel) == 0x28, "SceneA.logoModel");
+static_assert(offsetof(SceneA, loading) == 0x2C, "SceneA.loading");
 static_assert(offsetof(SceneA, logoTime) == 0x38, "SceneA.logoTime");
 static_assert(offsetof(SceneA, choice) == 0x3C, "SceneA.choice");
 static_assert(offsetof(SceneA, choicePulsing) == 0x40, "SceneA.choicePulsing");
@@ -1446,6 +1476,13 @@ static_assert(offsetof(SceneA, fade) == 0xCC, "SceneA.fade");
 static_assert(offsetof(SceneA, layers) == 0xD0, "SceneA.layers");
 static_assert(offsetof(SceneA, idleTimer) == 0xD4, "SceneA.idleTimer");
 static_assert(offsetof(SceneA, introFrame) == 0xD8, "SceneA.introFrame");
+static_assert(offsetof(SceneA, previewTime) == 0xE4, "SceneA.previewTime");
+static_assert(offsetof(SceneA, previewEnd) == 0xE8, "SceneA.previewEnd");
+static_assert(offsetof(SceneA, previewModel) == 0xEC, "SceneA.previewModel");
+static_assert(offsetof(SceneA, previewState) == 0xF4, "SceneA.previewState");
+static_assert(offsetof(SceneA, previewTurn) == 0xF8, "SceneA.previewTurn");
+static_assert(offsetof(SceneA, previewTurnStep) == 0xFC, "SceneA.previewTurnStep");
+static_assert(offsetof(SceneA, previewText) == 0x100, "SceneA.previewText");
 static_assert(sizeof(BagSlot) == 0x10, "BagSlot size");
 static_assert(offsetof(BagSlot, item) == 0x00, "BagSlot.item");
 static_assert(offsetof(BagShortcut, slot) == 0x00, "BagShortcut.slot");
@@ -1668,6 +1705,13 @@ static_assert(offsetof(LayerG, wavesB) == 0x120, "LayerG.wavesB");
 static_assert(offsetof(LayerG, waveParamsA) == 0x1F0, "LayerG.waveParamsA");
 static_assert(offsetof(LayerG, waveParamsB) == 0x200, "LayerG.waveParamsB");
 static_assert(offsetof(LayerG, waveBase) == 0x220, "LayerG.waveBase");
+static_assert(offsetof(TerrainNode, next) == 0x00, "TerrainNode.next");
+static_assert(offsetof(TerrainNode, prev) == 0x04, "TerrainNode.prev");
+static_assert(offsetof(TerrainNode, object) == 0x08, "TerrainNode.object");
+static_assert(offsetof(TerrainEntry, next) == 0x00, "TerrainEntry.next");
+static_assert(offsetof(TerrainEntry, prev) == 0x04, "TerrainEntry.prev");
+static_assert(offsetof(TerrainEntry, object) == 0x08, "TerrainEntry.object");
+static_assert(offsetof(TerrainEntry, distance) == 0x0C, "TerrainEntry.distance");
 static_assert(sizeof(MapTile) == 0x18, "MapTile size");
 static_assert(offsetof(MapTile, height) == 0x00, "MapTile.height");
 static_assert(offsetof(MapTile, verts) == 0x04, "MapTile.verts");
@@ -1736,6 +1780,9 @@ static_assert(offsetof(CityMap, vtable) == 0x64, "CityMap.vtable");
 static_assert(offsetof(CityMap, people) == 0x68, "CityMap.people");
 static_assert(offsetof(CityMap, peopleInUse) == 0x70, "CityMap.peopleInUse");
 static_assert(offsetof(CityMap, population) == 0x74, "CityMap.population");
+static_assert(offsetof(CityMap, buckets) == 0x78, "CityMap.buckets");
+static_assert(offsetof(CityMap, sorted) == 0x780, "CityMap.sorted");
+static_assert(offsetof(CityMap, sortedCount) == 0x2D00, "CityMap.sortedCount");
 static_assert(offsetof(CityMap, terrainQuads) == 0x2D04, "CityMap.terrainQuads");
 static_assert(offsetof(CityMap, sideVertices) == 0x2D08, "CityMap.sideVertices");
 static_assert(offsetof(CityMap, terrainBuffers) == 0x2D0C, "CityMap.terrainBuffers");

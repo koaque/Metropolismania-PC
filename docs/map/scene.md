@@ -8,7 +8,7 @@ introduction (city name, stage title, approval rate) and the mission briefing te
 
 ## Functions
 
-25 functions (typed 16, verified 9). Blocks: 15 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+25 functions (typed 15, verified 10). Blocks: 15 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -25,7 +25,7 @@ introduction (city name, stage title, approval rate) and the mission briefing te
 | `0x0016E440` | `int mm_Title_LoadMenu(SceneA *scene)` | 1024 | yes | load game screen: memory card slots and their info |
 | `0x0016E840` | `int mm_Title_PressStart(SceneA *scene)` | 260 | no | title idle screen ("[SELECT]SoundTest") |
 | `0x0016E950` | `int mm_SceneA_StartGame(SceneA *scene, int newGame)` | 764 | yes |  |
-| `0x0016EC50` | `int mm_Title_NewGameIntro(SceneA *scene)` | 1300 | no | new game intro scene with town models and loading text |
+| `0x0016EC50` | `void mm_Title_NewGameIntro(SceneA *scene)` | 1300 | no | new game intro scene with town models and loading text |
 | `0x0016F170` | `int mm_Title_RandomCharParts(SceneA *scene)` | 248 | no | random character parts for the intro |
 | `0x0016F270` | `int mm_Title_OpeningMovieStep(SceneA *scene)` | 424 | yes | plays the opening movie, then loads TITLE.SQ/HD/BD |
 | `0x0016F420` | `int mm_Title_MenuInput(SceneA *scene)` | 520 | no | title menu input: cursor, Cross/Start pulse, and the sound test code (Up Up Down Down Left Right Left Right L1 R1, table 0x1B1790) that shows the Select hint; 10 opens the sound test |

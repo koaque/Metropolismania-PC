@@ -20,7 +20,7 @@ placement checks (`mm_Placement_*`) and the per-object history (`mm_MapObj_*`) a
 
 ## Functions
 
-98 functions (ported 1, typed 21, verified 76). Blocks: 12 can reach a thread switch, 8 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+98 functions (ported 1, typed 12, verified 85). Blocks: 12 can reach a thread switch, 8 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -48,8 +48,8 @@ placement checks (`mm_Placement_*`) and the per-object history (`mm_MapObj_*`) a
 | `0x0013F860` | `int mm_Map_CanPlace(CityMap *map, int family, int typeIndex, int x, int z)` | 40 | no | placement test without placing (mm_Map_CheckPlacement) |
 | `0x0013F890` | `float mm_TerrainGen_SampleSmooth(CityMap *map, int x, int z)` | 444 | no | (provisional) smoothed height sample |
 | `0x0013FA50` | `void mm_TerrainGen_Smooth(CityMap *map, int a1, int a2, float f12, float f13, float f14)` | 796 | no | (provisional) smoothing pass |
-| `0x0013FD80` | `int mm_TerrainGen_Hills(CityMap *map, int cx, int cz, int high)` | 1800 | no | (provisional) random hills (mm_TerrainGen_ApplyBump x9, random x24) |
-| `0x00140490` | `void mm_TerrainGen_River(CityMap *map, int a1, int a2, int a3, int t0, int t1, int direction, int t3, int stack0)` | 1732 | no | (provisional) river/coast shape with rotations and sine/cosine |
+| `0x0013FD80` | `void mm_TerrainGen_Hills(CityMap *map, int cx, int cz, int high)` | 1800 | no | (provisional) random hills (mm_TerrainGen_ApplyBump x9, random x24) |
+| `0x00140490` | `void mm_TerrainGen_River(CityMap *map, int edge, int start, int width, int curveA, int curveB, int direction, int wobbleA, int wobbleB)` | 1732 | no | (provisional) river/coast shape with rotations and sine/cosine |
 | `0x00140B60` | `void mm_TerrainGen_Generate(CityMap *map, uint8_t *params)` | 1180 | no | (provisional) generates a stage's terrain from its parameter bytes |
 | `0x00141010` | `CityMap *mm_CityMap_DeletingDtor(CityMap *map, int16_t deleteFlag)` | 96 | yes | vtable 0x1BCED0, then the render-level destructor |
 | `0x00141070` | `CityMap *mm_CityMap_ctor(CityMap *map)` | 52 | yes | render-level constructor, vtable 0x1BCED0 |
@@ -69,7 +69,7 @@ placement checks (`mm_Placement_*`) and the per-object history (`mm_MapObj_*`) a
 | `0x001415E0` | `float mm_Map_SampleHeight(CityMap *map, float x, float z)` | 676 | no | terrain height at world (a0, a1), interpolated over the tile's triangles |
 | `0x001418D0` | `void mm_Map_UpdateTileGeometry(CityMap *map, int x, int z)` | 1536 | no | recomputes tile (x, z)'s four corner heights from its 3 x 3 neighbourhood |
 | `0x00141ED0` | `void mm_Map_UpdateAreaGeometry(CityMap *map, int32_t *rect)` | 136 | no | mm_Map_UpdateTileGeometry over a rectangle |
-| `0x00141F60` | `float mm_TerrainGen_ApplyBump(CityMap *map, int x, int z, int mode, uint32_t flags, float height, float radius)` | 1304 | no | (provisional) raises/lowers a round area |
+| `0x00141F60` | `void mm_TerrainGen_ApplyBump(CityMap *map, int x, int z, int mode, uint32_t flags, float height, float radius)` | 1304 | no | (provisional) raises/lowers a round area |
 | `0x001424A0` | `CityMap *mm_MapTiles_dtor(CityMap *map, int16_t deleteFlag)` | 108 | yes | frees the tile array, base destructor |
 | `0x00142510` | `CityMap *mm_MapTiles_ctor(CityMap *map)` | 84 | yes | allocates 128x128 tiles of 0x18 bytes |
 | `0x00142590` | `void mm_Map_ReturnPeopleToWork(CityMap *map)` | 496 | no | every person leaves the building lists they are in and stands on their workplace tile (centre, height 0), outside, walk and flags reset; vehicles target 6000 (farewell party) |
@@ -117,7 +117,7 @@ placement checks (`mm_Placement_*`) and the per-object history (`mm_MapObj_*`) a
 | `0x00145C10` | `void mm_Terrain_AddQuad(CityMap *map, Vec4 *a, Vec4 *b, Vec4 *c, Vec4 *d, int t1, int t2, int t3)` | 204 | no | (provisional) appends a quad to the terrain buffer (limit 0x9BD) |
 | `0x00145CE0` | `void mm_Terrain_BuildStrip(CityMap *map, int x, int z, Vec4 *corner0, Vec4 *corner1, Vec4 *corner2, Vec4 *corner3)` | 2592 | no | the cliff sides of terrain tile (x, z): towards each neighbour whose facing corners stand higher, up to two triangles into the side buffer (CityMap +0x2D20, 0x86E vertices) |
 | `0x00146700` | `void mm_Terrain_DrawPatch(CityMap *map, int x, int z, int object, float centreX, float centreZ, float level)` | 1064 | indirect | one terrain tile's quad (mm_Terrain_AddQuad) with its draw flags (texture from the object type's vtable +0x1C, above the level, above 0, building layer, flag 0x10), edge-flattened off the map; tiles with an object also get their cliff sides |
-| `0x00146B30` | `void mm_Terrain_Draw(CityMap *map, int a1, Vec4 *a2, int a3, int t0, int t1, float f12)` | 2424 | no | (provisional) culls and draws the terrain around the camera |
+| `0x00146B30` | `void mm_Terrain_Draw(CityMap *map, Vec4 *view, Vec4 *camera, int zoom, int variant, int extra, float level)` | 2424 | no | (provisional) culls and draws the terrain around the camera |
 | `0x001474C0` | `uint32_t *mm_Terrain_BuildVu1PacketA(int a0, uint32_t *a1)` | 1556 | no | (provisional) VU1 packet referencing microcode at 0x1A76F0 |
 | `0x00147AE0` | `uint32_t *mm_Terrain_BuildVu1PacketB(int a0, uint32_t *a1)` | 1204 | no | (provisional) VU1 packet referencing microcode at 0x1A5EB0 |
 | `0x00147FA0` | `void mm_Terrain_InitParams(int a0)` | 336 | no | (provisional) default render parameters (+0x2E54..) |

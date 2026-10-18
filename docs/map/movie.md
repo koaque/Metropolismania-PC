@@ -10,7 +10,7 @@ stream file `0x00717C40`, video decoder `0x00717C80` (sceMpeg plus the video buf
 
 ## Functions
 
-80 functions (typed 60, verified 20). Blocks: 49 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+80 functions (typed 49, verified 31). Blocks: 49 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -27,7 +27,7 @@ stream file `0x00717C40`, video decoder `0x00717C80` (sceMpeg plus the video buf
 | `0x0019C2A0` | `int mm_Movie_AudioDecCreate(uint32_t *audio, int ring, int ringSize, int iopSize)` | 376 | yes | (audioDecCreate) EE ring a1/a2, allocates the IOP buffer (a3 bytes) and a 0x800-byte zero buffer on the IOP |
 | `0x0019C420` | `void mm_Movie_DisplayStop(void)` | 12 | no | clears the display-running flags (0x1BDD68, 0x1BDD9C) |
 | `0x0019C430` | `int mm_Movie_DisplayStart(int field)` | 76 | yes | waits for the field a0 to pass, then sets the display-running flag |
-| `0x0019C480` | `void mm_Movie_DmaEndHandler(void)` | 56 | no | (handler_endimage) DMA interrupt handler: releases the shown picture (mm_Movie_VoBufDecCount) |
+| `0x0019C480` | `int mm_Movie_DmaEndHandler(void)` | 56 | no | (handler_endimage) DMA interrupt handler: releases the shown picture (mm_Movie_VoBufDecCount) |
 | `0x0019C4C0` | `void mm_Movie_VblankHandler(void)` | 1328 | yes | (vblankHandler) VSync interrupt handler: picks the buffer by the GS CSR field bit, swaps, sends the next decoded picture and subtitles |
 | `0x0019C9F0` | `void mm_Movie_LayoutSubtitle(char *text)` | 376 | no | lays out a subtitle string into glyph indices at 0x215F00 using the font |
 | `0x0019CB70` | `void mm_Movie_BuildSubtitlePacket(void)` | 1592 | no | builds the subtitle GS packet at 0x20C1A0 from the laid-out glyphs (font glyphs, positions) |
@@ -84,7 +84,7 @@ stream file `0x00717C40`, video decoder `0x00717C80` (sceMpeg plus the video buf
 | `0x001A07E0` | `int mm_Movie_VideoDecDelete(int videoDec)` | 52 | no | (videoDecDelete) deletes the input buffer and the sceMpeg (0x10BF60) |
 | `0x001A0820` | `void mm_Movie_VideoDecEndPut(int videoDec, int size)` | 8 | yes | (videoDecEndPut) commits a1 bytes of input |
 | `0x001A0830` | `void mm_Movie_VideoDecBeginPut(int videoDec, int32_t *ptr0, int32_t *len0, int32_t *ptr1, int32_t *len1)` | 8 | yes | (videoDecBeginPut) input free space as up to two areas |
-| `0x001A0840` | `int mm_Movie_VideoDecAddStrCallback(void)` | 32 | no | wrapper around sceMpegAddStrCallback; returns 1 |
+| `0x001A0840` | `int mm_Movie_VideoDecAddStrCallback(int a0, int a1, int a2, int a3)` | 32 | no | wrapper around sceMpegAddStrCallback; returns 1 |
 | `0x001A0860` | `int mm_Movie_VideoDecCreate(int videoDec, int mpegWork, int mpegWorkSize, int data, int tags, int tagSize, int ts, int tsCount)` | 252 | yes | (videoDecCreate) sceMpegCreate, the five libmpeg callbacks, state 0, input buffer |
 | `0x001A0960` | `void mm_Movie_VoBufDecCount(int vobuf)` | 32 | no | (voBufDecCount) one shown picture released |
 | `0x001A0980` | `int mm_Movie_VoBufGetTag(int vobuf)` | 116 | no | (voBufGetTag) oldest decoded picture (0x39240-byte slots), 0 if none |

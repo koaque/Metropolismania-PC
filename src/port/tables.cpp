@@ -1,0 +1,74 @@
+// Constant tables the game copies into working memory at start-up.
+
+#include "game_functions.h"
+
+namespace mm
+{
+    // The start-up copy of 147 three-float vectors (12 bytes each, 16 apart in the constants at 0x1B1B48 to 0x1B2478) into a
+    // packed array at 0x1B9100 to 0x1B97EC. (The symbol name, a words table, was a guess from its size; it holds no text.)
+    // The original does it as 147 x 3 loads and stores in a straight line; the copies here are in its order.
+    void StaticInit_WordsTable()
+    {
+        struct Copy
+        {
+            uint32_t destination;
+            uint32_t source;
+            uint32_t size;
+        };
+        static constexpr Copy kCopies[] = {
+        {0x001B9100u, 0x001B1B48u, 12}, {0x001B910Cu, 0x001B1B58u, 12}, {0x001B9118u, 0x001B1B68u, 12},
+        {0x001B9124u, 0x001B1B78u, 12}, {0x001B9130u, 0x001B1B88u, 12}, {0x001B913Cu, 0x001B1B98u, 12},
+        {0x001B9148u, 0x001B1BA8u, 12}, {0x001B9154u, 0x001B1BB8u, 12}, {0x001B9160u, 0x001B1BC8u, 12},
+        {0x001B916Cu, 0x001B1BD8u, 12}, {0x001B9178u, 0x001B1BE8u, 12}, {0x001B9184u, 0x001B1BF8u, 12},
+        {0x001B9190u, 0x001B1C08u, 12}, {0x001B919Cu, 0x001B1C18u, 12}, {0x001B91A8u, 0x001B1C28u, 12},
+        {0x001B91B4u, 0x001B1C38u, 12}, {0x001B91C0u, 0x001B1C48u, 12}, {0x001B91CCu, 0x001B1C58u, 12},
+        {0x001B91D8u, 0x001B1C68u, 12}, {0x001B91E4u, 0x001B1C78u, 12}, {0x001B91F0u, 0x001B1C88u, 12},
+        {0x001B91FCu, 0x001B1C98u, 12}, {0x001B9208u, 0x001B1CA8u, 12}, {0x001B9214u, 0x001B1CB8u, 12},
+        {0x001B9220u, 0x001B1CC8u, 12}, {0x001B922Cu, 0x001B1CD8u, 12}, {0x001B9238u, 0x001B1CE8u, 12},
+        {0x001B9244u, 0x001B1CF8u, 12}, {0x001B9250u, 0x001B1D08u, 12}, {0x001B925Cu, 0x001B1D18u, 12},
+        {0x001B9268u, 0x001B1D28u, 12}, {0x001B9274u, 0x001B1D38u, 12}, {0x001B9280u, 0x001B1D48u, 12},
+        {0x001B928Cu, 0x001B1D58u, 12}, {0x001B9298u, 0x001B1D68u, 12}, {0x001B92A4u, 0x001B1D78u, 12},
+        {0x001B92B0u, 0x001B1D88u, 12}, {0x001B92BCu, 0x001B1D98u, 12}, {0x001B92C8u, 0x001B1DA8u, 12},
+        {0x001B92D4u, 0x001B1DB8u, 12}, {0x001B92E0u, 0x001B1DC8u, 12}, {0x001B92ECu, 0x001B1DD8u, 12},
+        {0x001B92F8u, 0x001B1DE8u, 12}, {0x001B9304u, 0x001B1DF8u, 12}, {0x001B9310u, 0x001B1E08u, 12},
+        {0x001B931Cu, 0x001B1E18u, 12}, {0x001B9328u, 0x001B1E28u, 12}, {0x001B9334u, 0x001B1E38u, 12},
+        {0x001B9340u, 0x001B1E48u, 12}, {0x001B934Cu, 0x001B1E58u, 12}, {0x001B9358u, 0x001B1E68u, 12},
+        {0x001B9364u, 0x001B1E78u, 12}, {0x001B9370u, 0x001B1E88u, 12}, {0x001B937Cu, 0x001B1E98u, 12},
+        {0x001B9388u, 0x001B1EA8u, 12}, {0x001B9394u, 0x001B1EB8u, 12}, {0x001B93A0u, 0x001B1EC8u, 12},
+        {0x001B93ACu, 0x001B1ED8u, 12}, {0x001B93B8u, 0x001B1EE8u, 12}, {0x001B93C4u, 0x001B1EF8u, 12},
+        {0x001B93D0u, 0x001B1F08u, 12}, {0x001B93DCu, 0x001B1F18u, 12}, {0x001B93E8u, 0x001B1F28u, 12},
+        {0x001B93F4u, 0x001B1F38u, 12}, {0x001B9400u, 0x001B1F48u, 12}, {0x001B940Cu, 0x001B1F58u, 12},
+        {0x001B9418u, 0x001B1F68u, 12}, {0x001B9424u, 0x001B1F78u, 12}, {0x001B9430u, 0x001B1F88u, 12},
+        {0x001B943Cu, 0x001B1F98u, 12}, {0x001B9448u, 0x001B1FA8u, 12}, {0x001B9454u, 0x001B1FB8u, 12},
+        {0x001B9460u, 0x001B1FC8u, 12}, {0x001B946Cu, 0x001B1FD8u, 12}, {0x001B9478u, 0x001B1FE8u, 12},
+        {0x001B9484u, 0x001B1FF8u, 12}, {0x001B9490u, 0x001B2008u, 12}, {0x001B949Cu, 0x001B2018u, 12},
+        {0x001B94A8u, 0x001B2028u, 12}, {0x001B94B4u, 0x001B2038u, 12}, {0x001B94C0u, 0x001B2048u, 12},
+        {0x001B94CCu, 0x001B2058u, 12}, {0x001B94D8u, 0x001B2068u, 12}, {0x001B94E4u, 0x001B2078u, 12},
+        {0x001B94F0u, 0x001B2088u, 12}, {0x001B94FCu, 0x001B2098u, 12}, {0x001B9508u, 0x001B20A8u, 12},
+        {0x001B9514u, 0x001B20B8u, 12}, {0x001B9520u, 0x001B20C8u, 12}, {0x001B952Cu, 0x001B20D8u, 12},
+        {0x001B9538u, 0x001B20E8u, 12}, {0x001B9544u, 0x001B20F8u, 12}, {0x001B9550u, 0x001B2108u, 12},
+        {0x001B955Cu, 0x001B2118u, 12}, {0x001B9570u, 0x001B2128u, 12}, {0x001B957Cu, 0x001B2138u, 12},
+        {0x001B9588u, 0x001B2148u, 12}, {0x001B9594u, 0x001B2158u, 12}, {0x001B95A0u, 0x001B2168u, 12},
+        {0x001B95ACu, 0x001B2178u, 12}, {0x001B95B8u, 0x001B2188u, 12}, {0x001B95C4u, 0x001B2198u, 12},
+        {0x001B95D0u, 0x001B21A8u, 12}, {0x001B95DCu, 0x001B21B8u, 12}, {0x001B95E8u, 0x001B21C8u, 12},
+        {0x001B95F4u, 0x001B21D8u, 12}, {0x001B9600u, 0x001B21E8u, 12}, {0x001B960Cu, 0x001B21F8u, 12},
+        {0x001B9618u, 0x001B2208u, 12}, {0x001B9624u, 0x001B2218u, 12}, {0x001B9630u, 0x001B2228u, 12},
+        {0x001B963Cu, 0x001B2238u, 12}, {0x001B9648u, 0x001B2248u, 12}, {0x001B9654u, 0x001B2258u, 12},
+        {0x001B9660u, 0x001B2268u, 12}, {0x001B966Cu, 0x001B2278u, 12}, {0x001B9678u, 0x001B2288u, 12},
+        {0x001B9684u, 0x001B2298u, 12}, {0x001B9690u, 0x001B22A8u, 12}, {0x001B969Cu, 0x001B22B8u, 12},
+        {0x001B96A8u, 0x001B22C8u, 12}, {0x001B96B4u, 0x001B22D8u, 12}, {0x001B96C0u, 0x001B22E8u, 12},
+        {0x001B96CCu, 0x001B22F8u, 12}, {0x001B96D8u, 0x001B2308u, 12}, {0x001B96E4u, 0x001B2318u, 12},
+        {0x001B96F0u, 0x001B2328u, 12}, {0x001B96FCu, 0x001B2338u, 12}, {0x001B9708u, 0x001B2348u, 12},
+        {0x001B9714u, 0x001B2358u, 12}, {0x001B9720u, 0x001B2368u, 12}, {0x001B972Cu, 0x001B2378u, 12},
+        {0x001B9738u, 0x001B2388u, 12}, {0x001B9744u, 0x001B2398u, 12}, {0x001B9750u, 0x001B23A8u, 12},
+        {0x001B975Cu, 0x001B23B8u, 12}, {0x001B9768u, 0x001B23C8u, 12}, {0x001B9774u, 0x001B23D8u, 12},
+        {0x001B9780u, 0x001B23E8u, 12}, {0x001B978Cu, 0x001B23F8u, 12}, {0x001B9798u, 0x001B2408u, 12},
+        {0x001B97A4u, 0x001B2418u, 12}, {0x001B97B0u, 0x001B2428u, 12}, {0x001B97BCu, 0x001B2438u, 12},
+        {0x001B97C8u, 0x001B2448u, 12}, {0x001B97D4u, 0x001B2458u, 12}, {0x001B97E0u, 0x001B2468u, 12},
+        };
+        for (const Copy &copy : kCopies)
+            std::memmove(port::host(copy.destination), port::host(copy.source), copy.size);
+    }
+
+    PORT_FN(StaticInit_WordsTable);
+}

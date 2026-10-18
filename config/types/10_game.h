@@ -4,6 +4,8 @@
 
 typedef struct CityScene CityScene;
 typedef struct CityMap CityMap;
+typedef struct TerrainNode TerrainNode;
+typedef struct TerrainEntry TerrainEntry;
 typedef struct TileLists TileLists;
 typedef struct MapTile MapTile;
 typedef struct MapObject MapObject;
@@ -26,6 +28,22 @@ typedef struct SeRequest SeRequest;
 typedef struct SeVoice SeVoice;
 typedef struct SeSound SeSound;
 typedef struct ClaimThresholds ClaimThresholds;
+
+/* A distance bucket of the terrain draw list (mm_Terrain_Draw): 150 of them at CityMap +0x78, chained through the first two words
+   at the start of each frame; tiles are linked in by the distance from the camera. */
+struct TerrainNode {
+    uint32_t next;             /* +0x00 */
+    uint32_t prev;             /* +0x04 */
+    uint32_t object;           /* +0x08 0 for a bucket */
+};
+
+/* A drawn tile of the terrain draw list (600 of them at CityMap +0x780). */
+struct TerrainEntry {
+    uint32_t next;             /* +0x00 the bucket's first entry when this one was linked in */
+    uint32_t prev;             /* +0x04 the bucket's second link at that time */
+    uint32_t object;           /* +0x08 object record index of the tile (0 for none) */
+    float distance;            /* +0x0C from the camera */
+};
 
 /* Map tile (0x18 bytes): 128 x 128 of them at CityMap +0x04. */
 struct MapTile {
@@ -116,7 +134,9 @@ struct CityMap {
     uint8_t unk_6C[4];
     int32_t peopleInUse;       /* +0x70 person records in use, vehicles too (mm_MapPeople_RemoveForObject) */
     int32_t population;        /* +0x74 residents: people records of classes without flag 1 */
-    uint8_t unk_78[0x2C8C];
+    TerrainNode buckets[150];  /* +0x78 */
+    TerrainEntry sorted[600];  /* +0x780 */
+    int32_t sortedCount;       /* +0x2D00 entries in use this frame (limit 600) */
     int32_t terrainQuads;      /* +0x2D04 vertices in the terrain buffer this frame (limit 0x9BD) */
     int32_t sideVertices;      /* +0x2D08 vertices in the cliff-side buffer this frame (limit 0x86E, mm_Terrain_BuildStrip) */
     void *terrainBuffers[2];   /* +0x2D0C 0x9C00 bytes each */

@@ -374,6 +374,16 @@ namespace port
             if (vu0Compared && std::memcmp(&a.ctx.vu0_q, &b.ctx.vu0_q, sizeof(a.ctx.vu0_q)) != 0)
                 diffs.push_back("Q differs");
 
+            // The semaphore id Movie_ViBufCreate stores at +0x40 of its buffer counts up in the kernel, which the replay does not
+            // reset between the generated run and the ported one: the ported run always gets the next id.
+            uint32_t ignoreLow = 0, ignoreHigh = 0;
+            if (p.name == "Movie_ViBufCreate")
+            {
+                ignoreLow = (static_cast<uint32_t>(gpr64(&rec.ctx, 4)) + 0x40u) & PS2_RAM_MASK;
+                ignoreHigh = ignoreLow + 4u;
+            }
+            const auto same = [&](uint32_t k) { return a.rdram[k] == b.rdram[k] || (k >= ignoreLow && k < ignoreHigh); };
+
             const uint32_t sp = static_cast<uint32_t>(gpr64(&rec.ctx, 29)) & PS2_RAM_MASK;
             const uint32_t freeLow = sp > kFreeStackBytes ? sp - kFreeStackBytes : 0u;
             size_t reported = 0, total = 0;
@@ -384,13 +394,13 @@ namespace port
                     i = sp;
                     continue;
                 }
-                if (a.rdram[i] == b.rdram[i])
+                if (same(i))
                 {
                     ++i;
                     continue;
                 }
                 uint32_t end = i;
-                while (end < PS2_RAM_SIZE && !(end >= freeLow && end < sp) && a.rdram[end] != b.rdram[end])
+                while (end < PS2_RAM_SIZE && !(end >= freeLow && end < sp) && !same(end))
                     ++end;
                 total += end - i;
                 if (reported++ < 8)
@@ -408,6 +418,23 @@ namespace port
             }
             if (reported > 8)
                 diffs.push_back("RDRAM: " + std::to_string(reported) + " differing ranges, " + std::to_string(total) + " bytes");
+            // MMPC_DIFFTEST_DUMP=<address>:<words> adds those words (hex and float) of both runs to a failing record.
+            if (const char *dump = env("MMPC_DIFFTEST_DUMP"); dump != nullptr && !diffs.empty())
+            {
+                unsigned long address = 0, words = 0;
+                if (std::sscanf(dump, "%lx:%lu", &address, &words) == 2)
+                    for (unsigned long k = 0; k < words; ++k)
+                    {
+                        uint32_t original, ported;
+                        std::memcpy(&original, &a.rdram[(address + 4 * k) & PS2_RAM_MASK], 4);
+                        std::memcpy(&ported, &b.rdram[(address + 4 * k) & PS2_RAM_MASK], 4);
+                        float originalFloat, portedFloat;
+                        std::memcpy(&originalFloat, &original, 4);
+                        std::memcpy(&portedFloat, &ported, 4);
+                        diffs.push_back("dump " + hex(address + 4 * k) + ": original " + hex(original) + " (" + std::to_string(originalFloat) +
+                                        ") ported " + hex(ported) + " (" + std::to_string(portedFloat) + ")");
+                    }
+            }
             if (a.scratchpad != b.scratchpad)
                 diffs.push_back("scratchpad differs");
             return diffs;

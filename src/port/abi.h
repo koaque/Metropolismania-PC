@@ -43,6 +43,8 @@ namespace port
     // A 32-bit read of a hardware register (a timer, a DMA channel), made through the runtime as the original
     // makes it.
     inline uint32_t readHardware32(uint32_t address) { return g_call.runtime->Load32(g_call.rdram, g_call.ctx, address); }
+    // The matching 32-bit write (a DMA channel's registers start the transfer).
+    inline void writeHardware32(uint32_t address, uint32_t value) { g_call.runtime->Store32(g_call.rdram, g_call.ctx, address, value); }
 
     void registerPorted(uint32_t address, const char *name, GuestFn wrapper, ResultKind result, MutateFn mutate);
     void enterPorted(PS2Runtime *runtime);
@@ -82,6 +84,13 @@ namespace port
     // its type's range (bytes 1, 2, 4 or 8, signed or not). Zero comes up often, to reach the special cases.
     void fuzzFloat(float &value, uint32_t &state);
     int64_t fuzzInt(int64_t value, int bytes, bool isSigned, uint32_t &state);
+
+    // A 128-bit argument (the GIF tag a packet builder passes whole): both halves of the guest register.
+    struct Quad
+    {
+        uint64_t low;
+        uint64_t high;
+    };
 
     template <typename T>
     inline constexpr bool kFloatArg = std::is_same_v<T, float> || std::is_same_v<T, mm::ps2f>;
@@ -350,6 +359,12 @@ namespace port
                 const int slot = slots[k++];
                 if constexpr (kFloatArg<T>)
                     ctx->f[12 + slot] = static_cast<float>(value);
+                else if constexpr (std::is_same_v<T, Quad>)
+                {
+                    if (slot >= 8)
+                        fatal("a 128-bit argument on the stack", address);
+                    ctx->r[4 + slot] = _mm_set_epi64x(static_cast<int64_t>(value.high), static_cast<int64_t>(value.low));
+                }
                 else if (slot < 8)
                     setGpr64(ctx, 4 + slot, toGuestInt(value));
                 else

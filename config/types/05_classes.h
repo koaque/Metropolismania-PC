@@ -279,7 +279,8 @@ struct SceneA {
     TexSprite *choices[2];     /* +0x1C the title menu's two choices (mm_Title_DrawChoices) */
     A3DObject *menuModel;      /* +0x24 layer set 0x28/0x29 */
     A3DObject *logoModel;      /* +0x28 layer set 0x14/0x15 */
-    uint8_t unk_2C[0xC];
+    LoadingScreen *loading;    /* +0x2C text and spinner shown while loading (mm_Title_NewGameIntro sets its text) */
+    uint8_t unk_30[8];
     float logoTime;            /* +0x38 frame of the logo model's intro animation (mm_Title_Intro) */
     int32_t choice;            /* +0x3C selected choice */
     int32_t choicePulsing;     /* +0x40 cleared when the selected choice's pulse ends */
@@ -302,7 +303,15 @@ struct SceneA {
     int32_t layers;            /* +0xD0 layer set drawn */
     int32_t idleTimer;         /* +0xD4 idle frames (restarted at 1800; provisional) */
     int32_t introFrame;        /* +0xD8 logo intro counter: title sprite alpha, then frames of the letters, then frames left (mm_Title_Intro) */
-    uint8_t unk_DC[0x28];
+    uint8_t unk_DC[8];
+    float previewTime;         /* +0xE4 frame of the new-game preview model's animation (mm_Title_NewGameIntro) */
+    float previewEnd;          /* +0xE8 the animation's last frame */
+    A3DObject *previewModel;   /* +0xEC the character preview, 0 once it has turned away */
+    uint8_t unk_F0[4];
+    int32_t previewState;      /* +0xF4 animation: 0 turns in, 8 waits, 1 turns out */
+    float previewTurn;         /* +0xF8 turn progress, also the model's x */
+    float previewTurnStep;     /* +0xFC added per frame (doubled while turning out) */
+    char *previewText;         /* +0x100 loading text shown once the preview waits */
 };
 /* Player's bag (0x1AC bytes). */
 /* Bag item slot (0x10 bytes). */

@@ -939,6 +939,34 @@ namespace mm
         globals::dmaListPtr.set(port::load<uint32_t>(globals::kDmaLists + 4u * index));
     }
 
+    // Ends the DMA list being built (a REF tag to the static end packet, then an END tag, unless it is already 0x4000
+    // words long) and starts it on the VIF1 channel: QWC cleared, the tag address set to the list start, the DMA status
+    // bit 1 acknowledged and the channel started in chain mode (0x145) after the cache is flushed.
+    void DmaList_KickFrame()
+    {
+        constexpr uint32_t kQwc = 0x10009020u, kTadr = 0x10009030u, kChcr = 0x10009000u, kStat = 0x1000E010u;
+        const uint32_t start = port::load<uint32_t>(globals::kDmaLists + 4u * globals::dmaListIndex.get());
+        uint32_t cursor = globals::dmaListPtr.get();
+        if (static_cast<int32_t>(cursor - start) / 4 < 0x4000)
+        {
+            port::store<uint32_t>(cursor + 0xCu, 0u);
+            port::store<uint32_t>(cursor + 8u, 0u);
+            port::store<uint32_t>(cursor + 4u, 0x001B2760u & 0x7FFFFFFFu);
+            port::store<uint32_t>(cursor, 0x50000000u);
+            port::store<uint32_t>(cursor + 0x1Cu, 0u);
+            port::store<uint32_t>(cursor + 0x18u, 0u);
+            port::store<uint32_t>(cursor + 0x14u, 0u);
+            port::store<uint32_t>(cursor + 0x10u, 0x70000000u);
+            cursor += 0x10u;
+            globals::dmaListPtr.set(cursor);
+        }
+        sdk::FlushCache(0);
+        port::writeHardware32(kQwc, 0u);
+        port::writeHardware32(kTadr, start & 0x7FFFFFFFu);
+        port::writeHardware32(kStat, 2u);
+        port::writeHardware32(kChcr, 0x145u);
+    }
+
     void PacketBuf_Seek(int address) { globals::packetBufPos.set(address); }
     int PacketBuf_Tell() { return globals::packetBufPos.get(); }
 
@@ -985,6 +1013,7 @@ namespace mm
     void LightSet_SetField20(GuestPtr<LightSet> lights, int value) { port::store<int32_t>(lights->packetA + 0x20u, value); }
 
     PORT_FN(DmaList_BeginScene);
+    PORT_FN(DmaList_KickFrame);
     PORT_FN(Camera_BuildPacket);
     PORT_FN(LayerB_ctor);
     PORT_FN(LayerC_ctor);
@@ -1614,6 +1643,102 @@ namespace mm
     }
 
     PORT_FN(LayerG_BuildPacket);
+
+    // ---- the terrain's VU1 packets (batch 41): the same shape as the layers' packets, two sections of vertex chunks
+
+    // Terrain packet A (microcode 0x1A76F0, parameters at +0x2E50): a header upload, then the first vertex buffer
+    // (+0x2D18) in 20 chunks of 0x6C0 bytes (2 groups of 8, 4 singles) and an end marker, the header again and the second
+    // buffer (+0x2D1C) the same. The terrain keeps the start at +0x2F6C and, for the second section, the start again at
+    // +0x2F70. Returns the end.
+    GuestPtr<uint32_t> Terrain_BuildVu1PacketA(int terrainAddress, GuestPtr<uint32_t> packet)
+    {
+        const uint32_t terrain = static_cast<uint32_t>(terrainAddress);
+        const uint32_t tag = (terrain + 0x2E50u) & 0x7FFFFFFFu;
+        const auto header = [&](uint32_t at) {
+            putWords(at + 0x0u, {0x10000000u, 0x0u, 0x0u, 0x11000000u});
+            putWords(at + 0x10u, {0x50000000u, 0x1A76F0u, 0x0u, 0x0u});
+            putWords(at + 0x20u, {0x30000011u, tag, 0x1000101u, 0x6C11001Cu});
+            putWords(at + 0x30u, {0x10000000u, 0x0u, 0x3000056u, 0x20001D5u});
+            putWords(at + 0x40u, {0x10000000u, 0x0u, 0x14000000u, 0x11000000u});
+            putWords(at + 0x50u, {0x10000000u, 0x0u, 0x1000101u, 0x0u});
+        };
+        const auto chunk = [](uint32_t at, uint32_t source) {
+            putWords(at + 0x0u, {0x3000006Cu, source & 0x7FFFFFFFu, 0x0u, 0x6C6C8000u});
+            putWords(at + 0x10u, {0x10000000u, 0x0u, 0x0u, 0x17000000u});
+        };
+        uint32_t at = packet.address;
+        port::store<uint32_t>(terrain + 0x2F6Cu, at);
+        header(at);
+        at += 0x60u;
+        for (uint32_t section = 0; section < 2; ++section)
+        {
+            uint32_t source = port::load<uint32_t>(terrain + 0x2D18u + 4u * section);
+            uint32_t chunks = 0;
+            for (; chunks < 0xC; chunks += 8)
+            {
+                for (uint32_t k = 0; k < 8; ++k)
+                    chunk(at + 0x20u * k, source + 0x6C0u * k);
+                at += 0x100u;
+                source += 0x3600u;
+            }
+            for (; chunks < 0x14; ++chunks)
+            {
+                chunk(at, source);
+                at += 0x20u;
+                source += 0x6C0u;
+            }
+            putWords(at + 0x0u, {0x60000000u, 0x0u, 0x0u, 0x0u});
+            if (section == 1)
+                return GuestPtr<uint32_t>{at + 0x10u};
+            port::store<uint32_t>(terrain + 0x2F70u, packet.address);
+            header(at + 0x10u);
+            at += 0x70u;
+        }
+        return GuestPtr<uint32_t>{at};
+    }
+
+    // Terrain packet B (microcode 0x1A5EB0, parameters at +0x2D30): a header with an end marker, the first buffer (+0x2D0C)
+    // in 24 chunks of 0x680 bytes (3 groups of 8) and an end marker, then the second buffer (+0x2D10) the same. The
+    // terrain keeps the start at +0x2F68, where the chunks begin at +0x2F60 and where the second section begins at
+    // +0x2F64. Returns the end.
+    GuestPtr<uint32_t> Terrain_BuildVu1PacketB(int terrainAddress, GuestPtr<uint32_t> packet)
+    {
+        const uint32_t terrain = static_cast<uint32_t>(terrainAddress);
+        const auto chunk = [](uint32_t at, uint32_t source) {
+            putWords(at + 0x0u, {0x30000068u, source & 0x7FFFFFFFu, 0x0u, 0x6C688000u});
+            putWords(at + 0x10u, {0x10000000u, 0x0u, 0x0u, 0x17000000u});
+        };
+        uint32_t at = packet.address;
+        port::store<uint32_t>(terrain + 0x2F68u, at);
+        putWords(at + 0x0u, {0x10000000u, 0x0u, 0x0u, 0x11000000u});
+        putWords(at + 0x10u, {0x50000000u, 0x1A5EB0u, 0x0u, 0x0u});
+        putWords(at + 0x20u, {0x30000012u, (terrain + 0x2D30u) & 0x7FFFFFFFu, 0x1000101u, 0x6C12001Cu});
+        putWords(at + 0x30u, {0x10000000u, 0x0u, 0x3000056u, 0x20001D5u});
+        putWords(at + 0x40u, {0x10000000u, 0x0u, 0x14000000u, 0x11000000u});
+        putWords(at + 0x50u, {0x60000000u, 0x0u, 0x0u, 0x0u});
+        at += 0x60u;
+        port::store<uint32_t>(terrain + 0x2F60u, at);
+        for (uint32_t section = 0; section < 2; ++section)
+        {
+            uint32_t source = port::load<uint32_t>(terrain + 0x2D0Cu + 4u * section);
+            for (uint32_t chunks = 0; chunks < 0x18; chunks += 8)
+            {
+                for (uint32_t k = 0; k < 8; ++k)
+                    chunk(at + 0x20u * k, source + 0x680u * k);
+                at += 0x100u;
+                source += 0x3400u;
+            }
+            putWords(at + 0x0u, {0x60000000u, 0x0u, 0x0u, 0x0u});
+            if (section == 1)
+                return GuestPtr<uint32_t>{at + 0x10u};
+            at += 0x10u;
+            port::store<uint32_t>(terrain + 0x2F64u, at);
+        }
+        return GuestPtr<uint32_t>{at};
+    }
+
+    PORT_FN(Terrain_BuildVu1PacketA);
+    PORT_FN(Terrain_BuildVu1PacketB);
 
     // ---- drawing layer C (batch 39)
 

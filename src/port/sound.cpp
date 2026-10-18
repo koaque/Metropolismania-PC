@@ -1214,6 +1214,88 @@ namespace mm
         }
     }
 
+    // Asks for a sound by what makes it. `group` says how `object` is read: 1 a person (the sound is at the person), 2 a
+    // building object (the type's own sound when `sound` is 0xFF; at the footprint's middle), 3 a map tile, 10 a plain
+    // effect without a place (owned by a running counter that wraps at 0xFF), anything else a plain request too (group 0,
+    // owner `object`). Group 10 and the others skip sound 0xFF; groups 1 to 3 do nothing while the owner already has a
+    // request this frame (group in bits 20 to 23 of the owner key). Placed sounds get their bearing and distance from
+    // the listener (VU0), the distance cut to 15.5 from 16 up when `clampFar` is set. Without a city nothing happens.
+    void Se_RequestForObject(uint32_t object, uint32_t group, uint32_t sound, int pitch, int clampFar, int param18)
+    {
+        using namespace vu0;
+        const GuestPtr<CityScene> city = globals::soundCity.get();
+        if (!city)
+            return;
+        port::GuestFrame<0x100> frame;
+        const GuestPtr<Vec4> listener{globals::kListener};
+        const GuestPtr<SeRequest> requests{globals::kSeRequests};
+        group &= 0xFF;
+        const uint32_t key = (object & 0xFFFFu) + group * 0x100000u;
+        const uint16_t owner = static_cast<uint16_t>(object);
+        const auto alreadyRequested = [&] {
+            const uint32_t count = globals::seRequestCount.get();
+            for (uint32_t i = 0; i < count; i = (i + 1) & 0xFFFFu)
+                if (key == (requests[static_cast<int32_t>(i)].owner & 0xF0FFFFu))
+                    return true;
+            return false;
+        };
+        const auto place = [&](uint32_t placedGroup, uint32_t placedSound, __m128 position) {
+            const Bearing b = bearing(position, listener + 1, listener + 3);
+            ps2f distance = b.distance;
+            if (!(distance < ps2f(16.0f)) && clampFar != 0)
+                distance = ps2f(15.5f);
+            Se_Request(owner, placedGroup, static_cast<uint8_t>(placedSound), 0, static_cast<uint8_t>(param18),
+                       static_cast<uint16_t>(pitch), 0x3C, 0, b.cosine, distance);
+        };
+        const ps2f centre = 64.0f;
+        if (group == 10)
+        {
+            if ((sound & 0xFFu) != 0xFF)
+            {
+                const uint16_t next = globals::soundNextOwner.get();
+                globals::soundNextOwner.set(static_cast<uint16_t>(next + 1));
+                Se_Request(next, 0, static_cast<uint8_t>(sound), 0, static_cast<uint8_t>(param18), static_cast<uint16_t>(pitch),
+                           0x3C, 0, 0.0f, 0.0f);
+                if (globals::soundNextOwner.get() == 0xFF)
+                    globals::soundNextOwner.set(0);
+            }
+        }
+        else if (group == 3)
+        {
+            if (alreadyRequested())
+                return;
+            const uint32_t tile = object & 0xFFFFu;
+            const ps2f x = ps2f(0.5f) + (fromInt(static_cast<int32_t>(tile & 0x7Fu)) - centre);
+            const ps2f z = (fromInt(128 - static_cast<int32_t>(tile >> 7)) - centre) - ps2f(0.5f);
+            const ps2f y = Map_GetTileHeightWord(city->map, static_cast<int>(tile));
+            place(3, sound, soundPosition(x, y, z));
+        }
+        else if (group == 2)
+        {
+            const GuestPtr<MapObject> obj = Map_GetRecord(city->map, static_cast<int>(object & 0xFFFFu));
+            const GuestPtr<BuildingType> btype{port::load<uint32_t>(globals::buildingTypeTable.get() + 4u * obj->type)};
+            if ((sound & 0xFFu) == 0xFF)
+                sound = btype->ambientSound;
+            if ((sound & 0xFFu) == 0xFF || alreadyRequested())
+                return;
+            const ps2f size = fromInt(btype->size);
+            const ps2f x = (fromInt(obj->tile & 0x7F) - centre) + size / ps2f(2.0f);
+            const ps2f z = (fromInt(128 - (obj->tile >> 7)) - centre) - size / ps2f(2.0f);
+            const ps2f y = Map_GetTileHeightWord(city->map, obj->tile);
+            place(2, sound, soundPosition(x, y, z));
+        }
+        else if (group == 1)
+        {
+            if (alreadyRequested())
+                return;
+            const GuestPtr<MapPerson> person = city->map->people + static_cast<int>(object & 0xFFFFu);
+            place(1, sound, soundPosition(person->x, person->y, person->z));
+        }
+        else if ((sound & 0xFFu) != 0xFF)
+            Se_Request(owner, 0, static_cast<uint8_t>(sound), 0, static_cast<uint8_t>(param18), static_cast<uint16_t>(pitch),
+                       0x3C, 0, 0.0f, 0.0f);
+    }
+
     // The city ambience: each frame one quarter of the 2 x 2 blocks within 16 tiles of the listener (`advance`: the
     // next quarter; 0: the quarter from the clock; phase 4 would be all of them). For each block:
     //  - the building object's ambient sound (mm_Se_BuildingSoundState) from its footprint's middle, group 2;
@@ -1575,6 +1657,7 @@ namespace mm
     PORT_FN(Se_SetEnabled);
     PORT_FN(Sound_SetCity);
     PORT_FN(Se_RequestTileSounds);
+    PORT_FN(Se_RequestForObject);
     PORT_FN(Se_BuildingSoundState);
     PORT_FN(Se_UpdateCityAmbience);
     PORT_FN(Se_PlayVariant);

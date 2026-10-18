@@ -380,6 +380,26 @@ namespace mm::globals
     // gfx: an identity matrix (four Vec4).
     inline constexpr uint32_t kIdentityMatrix = 0x001B2550u;
     inline constexpr uint32_t kOriginPoint = 0x001B26A0u; // (0, 0, 0, 1)
+    // terrain generation (mm_TerrainGen_Generate): by terrain type 0..4, the Smooth strength, radius and floor
+    // (floats), and for the plants of a cell the 16 object kinds (ints) drawn for plant style 2 and 3.
+    inline constexpr uint32_t kSmoothStrength = 0x001AF1C0u;
+    inline constexpr uint32_t kSmoothRadius = 0x001AF1E0u;
+    inline constexpr uint32_t kSmoothFloor = 0x001AF200u;
+    inline constexpr uint32_t kScatterKindsStyle2 = 0x001AF220u;
+    inline constexpr uint32_t kScatterKindsStyle3 = 0x001AF260u;
+    // terrain drawing (mm_Terrain_Draw), by camera zoom step: the projection's x and y extent, the camera's z offset (floats),
+    // the reach in tiles (ints) and the far distance in two sets (picked by the caller), plus the camera heights where
+    // the zoom steps change, in two sets.
+    inline constexpr uint32_t kTerrainScreenX = 0x001AF300u;
+    inline constexpr uint32_t kTerrainScreenY = 0x001AF310u;
+    inline constexpr uint32_t kTerrainCameraZ = 0x001AF320u;
+    inline constexpr uint32_t kTerrainReach = 0x001AF330u;
+    inline constexpr uint32_t kTerrainFarA = 0x001AF2E0u;
+    inline constexpr uint32_t kTerrainFarB = 0x001AF2F0u;
+    inline constexpr uint32_t kTerrainZoomHeightsA = 0x001AF340u;
+    inline constexpr uint32_t kTerrainZoomHeightsB = 0x001AF350u;
+    // The frame counter whose low bit picks the double buffers (0x1BDCD0).
+    inline constexpr uint32_t kFrameParity = 0x001BDCD0u;
     // talk: the eye's offset from a building object without the entrance flag (1.01, -0.59, 0.01, 1), turned
     // by the tile's facing (mm_TalkView_BuildingCamera).
     inline constexpr uint32_t kTalkEyeOffset = 0x001B1AF0u;

@@ -981,11 +981,11 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0013F5D0,mm_Map_ClearArea,264,game,map,verified,indirect,1,0,removes objects from each tile of a size x size square (the map's ClearObject slot) until wasteland (type 2) comes first
 0x0013F6E0,mm_Map_PlaceObject,376,game,map,verified,indirect,7,7,"places an object of type a2 at (a3, a4) after the placement check (new or stacked), updates geometry; returns its index or 0x3F80"
 0x0013F860,mm_Map_CanPlace,40,game,map,verified,no,4,1,placement test without placing (mm_Map_CheckPlacement)
-0x0013F890,mm_TerrainGen_SampleSmooth,444,game,map,typed,no,1,0,(provisional) smoothed height sample
-0x0013FA50,mm_TerrainGen_Smooth,796,game,map,typed,no,1,2,(provisional) smoothing pass
-0x0013FD80,mm_TerrainGen_Hills,1800,game,map,typed,no,1,2,"(provisional) random hills (mm_TerrainGen_ApplyBump x9, random x24)"
-0x00140490,mm_TerrainGen_River,1732,game,map,typed,no,1,10,(provisional) river/coast shape with rotations and sine/cosine
-0x00140B60,mm_TerrainGen_Generate,1180,game,map,typed,no,1,7,(provisional) generates a stage's terrain from its parameter bytes
+0x0013F890,mm_TerrainGen_SampleSmooth,444,game,map,verified,no,1,0,(provisional) smoothed height sample
+0x0013FA50,mm_TerrainGen_Smooth,796,game,map,verified,no,1,2,(provisional) smoothing pass
+0x0013FD80,mm_TerrainGen_Hills,1800,game,map,verified,no,1,2,"(provisional) random hills (mm_TerrainGen_ApplyBump x9, random x24)"
+0x00140490,mm_TerrainGen_River,1732,game,map,verified,no,1,10,(provisional) river/coast shape with rotations and sine/cosine
+0x00140B60,mm_TerrainGen_Generate,1180,game,map,verified,no,1,7,(provisional) generates a stage's terrain from its parameter bytes
 0x00141010,mm_CityMap_DeletingDtor,96,game,map,typed,yes,1,2,"vtable 0x1BCED0, then the render-level destructor"
 0x00141070,mm_CityMap_ctor,52,game,map,typed,yes,1,1,"render-level constructor, vtable 0x1BCED0"
 0x001410B0,mm_Map_TileFlag20,92,game,map,verified,no,1,0,"tile (a1, a2) flag 0x20 (0 off the map)"
@@ -1005,7 +1005,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00141890,mm_Math_TriangleNormal,60,game,math,verified,no,3,0,"unit normal of triangle (a, b, c) in out.xyz via VU0; out.w = (w of vf6 as earlier VU0 code left it) squared (used by mm_Map_SampleHeight)"
 0x001418D0,mm_Map_UpdateTileGeometry,1536,game,map,verified,no,5,0,"recomputes tile (x, z)'s four corner heights from its 3 x 3 neighbourhood"
 0x00141ED0,mm_Map_UpdateAreaGeometry,136,game,map,verified,no,5,1,mm_Map_UpdateTileGeometry over a rectangle
-0x00141F60,mm_TerrainGen_ApplyBump,1304,game,map,typed,no,2,4,(provisional) raises/lowers a round area
+0x00141F60,mm_TerrainGen_ApplyBump,1304,game,map,verified,no,2,4,(provisional) raises/lowers a round area
 0x001424A0,mm_MapTiles_dtor,108,game,map,typed,yes,1,3,"frees the tile array, base destructor"
 0x00142510,mm_MapTiles_ctor,84,game,map,typed,yes,1,3,allocates 128x128 tiles of 0x18 bytes
 0x00142590,mm_Map_ReturnPeopleToWork,496,game,map,verified,no,1,4,"every person leaves the building lists they are in and stands on their workplace tile (centre, height 0), outside, walk and flags reset; vehicles target 6000 (farewell party)"
@@ -1056,9 +1056,9 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00145C10,mm_Terrain_AddQuad,204,game,map,verified,no,1,0,(provisional) appends a quad to the terrain buffer (limit 0x9BD)
 0x00145CE0,mm_Terrain_BuildStrip,2592,game,map,verified,no,1,0,"the cliff sides of terrain tile (x, z): towards each neighbour whose facing corners stand higher, up to two triangles into the side buffer (CityMap +0x2D20, 0x86E vertices)"
 0x00146700,mm_Terrain_DrawPatch,1064,game,map,verified,indirect,1,3,"one terrain tile's quad (mm_Terrain_AddQuad) with its draw flags (texture from the object type's vtable +0x1C, above the level, above 0, building layer, flag 0x10), edge-flattened off the map; tiles with an object also get their cliff sides"
-0x00146B30,mm_Terrain_Draw,2424,game,map,typed,no,1,6,(provisional) culls and draws the terrain around the camera
-0x001474C0,mm_Terrain_BuildVu1PacketA,1556,game,map,typed,no,1,0,(provisional) VU1 packet referencing microcode at 0x1A76F0
-0x00147AE0,mm_Terrain_BuildVu1PacketB,1204,game,map,typed,no,1,0,(provisional) VU1 packet referencing microcode at 0x1A5EB0
+0x00146B30,mm_Terrain_Draw,2424,game,map,verified,no,1,6,(provisional) culls and draws the terrain around the camera
+0x001474C0,mm_Terrain_BuildVu1PacketA,1556,game,map,verified,no,1,0,(provisional) VU1 packet referencing microcode at 0x1A76F0
+0x00147AE0,mm_Terrain_BuildVu1PacketB,1204,game,map,verified,no,1,0,(provisional) VU1 packet referencing microcode at 0x1A5EB0
 0x00147FA0,mm_Terrain_InitParams,336,game,map,verified,no,1,0,(provisional) default render parameters (+0x2E54..)
 0x001480F0,mm_CityRender_InitParams,356,game,gfx,verified,no,1,0,GS register defaults of the render level (+0x2D60..)
 0x00148260,mm_CityRender_UpdatePeople,568,game,gfx,verified,indirect,1,2,(provisional) per-frame pass over the people for drawing (char type lookup tables)
@@ -1076,10 +1076,10 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00149150,mm_TexImage_Load,132,game,gfx,typed,yes,1,4,loads file a1 whole into +0x1000 and converts it (a2 x a3)
 0x001491E0,mm_LayerA_BuildPacket,280,game,gfx,verified,no,1,0,(provisional) packet for layer A (microcode 0x1A8330)
 0x00149300,mm_LayerA_Draw,256,game,gfx,verified,no,1,2,(provisional) queues layer A and its mesh instances
-0x00149400,mm_LayerA_AddInstance,800,game,gfx,typed,no,1,2,(provisional) adds a rotated instance to layer A
+0x00149400,mm_LayerA_AddInstance,800,game,gfx,verified,no,1,2,(provisional) adds a rotated instance to layer A
 0x00149720,mm_LayerA_SetSource,12,game,gfx,verified,no,1,0,"+0x243C = a1, count +0x2430 = 0"
 0x00149730,mm_LayerA_DeletingDtor,84,game,gfx,typed,yes,1,2,"base destructor, then delete"
-0x00149790,mm_LayerA_ctor,512,game,gfx,typed,no,1,4,"base constructor, builds its packet in the packet buffer"
+0x00149790,mm_LayerA_ctor,512,game,gfx,verified,no,1,4,"base constructor, builds its packet in the packet buffer"
 0x00149990,mm_StatusPanel_BuildPacket,828,game,ui,verified,no,1,1,"status panel packet (texture sizes via mm_Math_Log2, table 0x1AF3B0)"
 0x00149CD0,mm_StatusPanel_Update,2232,game,ui,typed,yes,2,12,"status text: ""STATUS"", population vs target, theme share, salary, money, digits"
 0x0014A590,mm_StatusPanel_Draw,492,game,ui,verified,no,1,6,panel models and its four text boxes
@@ -1126,14 +1126,14 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0014D0F0,mm_LayerC_DrawBuildings,548,game,gfx,verified,no,1,6,"(provisional) building models on visible tiles (map objects, node packets)"
 0x0014D320,mm_LayerC_DeletingDtor,84,game,gfx,typed,yes,1,2,"base destructor, then delete"
 0x0014D380,mm_LayerC_ctor,88,game,gfx,verified,no,1,5,"base constructor, parameters, packet"
-0x0014D3E0,mm_LayerD_BuildPacket,1216,game,gfx,typed,no,1,0,(provisional) packet for layer D (microcode 0x1A8A00/0x1A8E20)
+0x0014D3E0,mm_LayerD_BuildPacket,1216,game,gfx,verified,no,1,0,(provisional) packet for layer D (microcode 0x1A8A00/0x1A8E20)
 0x0014D8A0,mm_LayerD_InitParams,1652,game,gfx,verified,no,1,0,(provisional)
 0x0014DF20,mm_LayerD_DrawSkyByClock,436,game,gfx,verified,no,1,2,(provisional) sky by the clock: day 5:00-19:00 variants
 0x0014E0E0,mm_LayerD_DeletingDtor,84,game,gfx,typed,yes,1,2,"base destructor, then delete"
 0x0014E140,mm_LayerD_ctor,88,game,gfx,verified,no,1,5,"base constructor, parameters, packet"
-0x0014E1A0,mm_LayerE_BuildPacket,1796,game,gfx,typed,no,1,1,(provisional) packet for layer E (microcode 0x1A9A90/0x1A9F10)
-0x0014E8B0,mm_LayerE_InitParams,1280,game,gfx,typed,no,1,4,(provisional) random placement with rotations (clouds or stars)
-0x0014EDB0,mm_LayerE_Draw,752,game,gfx,typed,no,1,4,(provisional) projected layer draw
+0x0014E1A0,mm_LayerE_BuildPacket,1796,game,gfx,verified,no,1,1,(provisional) packet for layer E (microcode 0x1A9A90/0x1A9F10)
+0x0014E8B0,mm_LayerE_InitParams,1280,game,gfx,verified,no,1,4,(provisional) random placement with rotations (clouds or stars)
+0x0014EDB0,mm_LayerE_Draw,752,game,gfx,verified,no,1,4,(provisional) projected layer draw
 0x0014F0A0,mm_LayerE_DeletingDtor,84,game,gfx,typed,yes,1,2,"base destructor, then delete"
 0x0014F100,mm_LayerE_ctor,88,game,gfx,verified,no,1,5,"base constructor, parameters, packet"
 0x0014F160,mm_LayerF_BuildPacket,296,game,gfx,verified,no,1,0,(provisional) packet for layer F (microcode 0x1A91C0)
@@ -1142,7 +1142,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0014F430,mm_LayerF_DeletingDtor,84,game,gfx,typed,yes,1,2,"base destructor, then delete"
 0x0014F490,mm_LayerF_ctor,72,game,gfx,verified,no,1,5,"base constructor, parameters, packet"
 0x0014F4E0,mm_LayerG_AnimateWaves,776,game,gfx,verified,no,1,1,(provisional) sine-wave animation state (0x1BDAD8..)
-0x0014F7F0,mm_LayerG_BuildPacket,1796,game,gfx,typed,no,1,0,(provisional) packet for layer G (microcode 0x1A6440)
+0x0014F7F0,mm_LayerG_BuildPacket,1796,game,gfx,verified,no,1,0,(provisional) packet for layer G (microcode 0x1A6440)
 0x0014FF00,mm_LayerG_InitParams,392,game,gfx,verified,no,1,0,(provisional)
 0x00150090,mm_LayerG_Draw,64,game,gfx,verified,no,1,2,(provisional) animates the waves and queues packet a1
 0x001500D0,mm_LayerG_DeletingDtor,84,game,gfx,typed,yes,1,2,"base destructor, then delete"
@@ -1391,7 +1391,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00166C90,mm_BldgField_dtor,96,game,city,typed,yes,0,2,"category 4 (crop fields), vtable 0x1BD140"
 0x00166CF0,mm_BldgField_Slot1C,84,game,city,verified,no,0,0,slot +0x1C
 0x00166D50,mm_BldgField_DrawPeople,472,game,city,verified,indirect,0,1,slot +0x18: farm workers
-0x00166F30,mm_BldgField_Draw,564,game,city,typed,no,0,2,crop instances
+0x00166F30,mm_BldgField_Draw,564,game,city,verified,no,0,2,crop instances
 0x00167170,mm_BldgField_Tick,408,game,city,verified,no,0,3,marks residents on the minimap
 0x00167310,mm_BldgField_ctor,348,game,city,typed,yes,1,2,"base constructor, vtable 0x1BD140, crop parameters from the record"
 0x00167470,mm_BldgPort_dtor,128,game,city,typed,yes,0,2,"category 9 (fishing ports), vtable 0x1BD180"
@@ -1481,7 +1481,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0016E440,mm_Title_LoadMenu,1024,game,scene,typed,yes,1,16,load game screen: memory card slots and their info
 0x0016E840,mm_Title_PressStart,260,game,scene,verified,no,1,5,"title idle screen (""[SELECT]SoundTest"")"
 0x0016E950,mm_SceneA_StartGame,764,game,scene,typed,yes,1,27,
-0x0016EC50,mm_Title_NewGameIntro,1300,game,scene,typed,no,1,8,new game intro scene with town models and loading text
+0x0016EC50,mm_Title_NewGameIntro,1300,game,scene,verified,no,1,8,new game intro scene with town models and loading text
 0x0016F170,mm_Title_RandomCharParts,248,game,scene,verified,no,1,2,random character parts for the intro
 0x0016F270,mm_Title_OpeningMovieStep,424,game,scene,typed,yes,1,9,"plays the opening movie, then loads TITLE.SQ/HD/BD"
 0x0016F420,mm_Title_MenuInput,520,game,scene,verified,no,1,4,"title menu input: cursor, Cross/Start pulse, and the sound test code (Up Up Down Down Left Right Left Right L1 R1, table 0x1B1790) that shows the Select hint; 10 opens the sound test"
@@ -1930,7 +1930,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00187190,mm_DmaList_Rewind,56,game,gfx,typed,yes,1,1,"waits for GS path idle, then resets the write pointer to the start of the current list"
 0x001871D0,mm_DmaList_Flip,40,game,gfx,verified,no,2,0,switches to the other of the two 64 KB lists (0x1BD9C0/0x1BD9C4)
 0x00187200,mm_DmaList_BeginScene,132,game,gfx,verified,no,1,0,rewinds the 0x8000-byte packet buffer (0x1BDCE4 -> 0x1BDCE8) and queues the default GS state
-0x00187290,mm_DmaList_KickFrame,220,game,gfx,typed,no,1,1,"appends the default GS state, then starts the current list on VIF1 (chain mode); the city's VU1/GS work happens under this kick"
+0x00187290,mm_DmaList_KickFrame,220,game,gfx,verified,no,1,1,"appends the default GS state, then starts the current list on VIF1 (chain mode); the city's VU1/GS work happens under this kick"
 0x00187370,mm_DmaList_Free,92,game,gfx,typed,yes,1,1,frees both lists and the packet buffer
 0x001873D0,mm_DmaList_InitPackets,616,game,gfx,verified,no,1,0,builds two static packets at 0x1F69C0 that draw a 640 x 224 picture from GS block 0x8000 (+0x8C0) as 5 x 7 sprites of 128 x 32
 0x00187640,mm_DmaList_Init,104,game,gfx,typed,yes,1,2,"allocates the two 64 KB lists and the 0x8000-byte packet buffer, then builds the overlay packets (0x1873D0)"
@@ -1946,7 +1946,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001892D0,mm_Se_MatchSchedule,912,game,sound,verified,no,1,0,1 when the current month (city +0x88 mod 12) and hour/minute (0x1BDD34) fall inside the given month and time ranges
 0x00189660,mm_Se_Request,1244,game,sound,verified,no,7,2,"adds a sound request (position, sound id, priority, volume, pitch, ...) to the request list at 0x1F8710 (count at gp 0x1BDD08); ids look up the 16-byte sound table 0x1B2EE0"
 0x00189B40,mm_Se_StopOwner,260,game,sound,verified,no,1,2,"stops every effect voice (16 at 0x1F8140, 15 at 0x1F8440, 0x30 bytes each) and request owned by a0"
-0x00189C50,mm_Se_RequestForObject,1876,game,sound,typed,no,2,3,requests the sounds of a moving or placed object by its type and distance to the listener
+0x00189C50,mm_Se_RequestForObject,1876,game,sound,verified,no,2,3,requests the sounds of a moving or placed object by its type and distance to the listener
 0x0018A3B0,mm_Sound_PlaySe,148,game,sound,verified,no,31,1,"plays sound id a0 & 0xFF through 0x189660; ids flagged 0x10 in the 16-byte table 0x1B2EE0 get a rotating handle (0x1BDCFC, wraps at 255)"
 0x0018A450,mm_Se_PlayMessageSound,1456,game,sound,verified,no,1,1,"message window sound for code a0 (0x14, 0x0A, ...), several fixed sound ids"
 0x0018AA00,mm_Se_PlayVariant,1148,game,sound,verified,no,2,2,"plays one of seven effects (0x29, 0x2A, 0x2B, 0x2D with a random pitch 0..199 from mm_Random_TimerMix; 0x3E, 0x2C, 0x2E)"
@@ -2120,7 +2120,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0019B680,mm_EvThief_FindBuilding,448,game,event,verified,no,2,3,(provisional) a free building of category a1 (type +0x145) whose footprint fits
 0x0019B840,mm_Building_GetFootprint,136,game,city,verified,no,10,0,"from a placed building (type a0[0], packed tile a0[2] = x | y<<7) and margin a1: x, y and the far corner from the type's size (type table gp, +0x142) into a2[0..3]"
 0x0019B8D0,mm_Movie_SetSpuMasterVolume,100,game,movie,typed,yes,1,1,sceSdRemote SetParam: master volume left/right (0x980/0xA80) of both cores to a0
-0x0019B940,mm_Movie_SendToIop2Area,840,game,movie,typed,no,1,3,(sendToIOP2area) copies up to two EE ring areas into up to two IOP ring areas with sceSifSetDma and waits for each
+0x0019B940,mm_Movie_SendToIop2Area,840,game,movie,verified,no,1,3,(sendToIOP2area) copies up to two EE ring areas into up to two IOP ring areas with sceSifSetDma and waits for each
 0x0019BC90,mm_Movie_AudioDecSendToIop,476,game,movie,typed,yes,1,2,"(audioDecSendToIOP) in preset or play state, sends as much PCM as fits behind the SPU2 AutoDMA play position (sceSdRemote 0x8100) in 1 KB units"
 0x0019BE70,mm_Movie_AudioDecIsPreset,20,game,movie,verified,no,1,0,(audioDecIsPreset) true once the IOP buffer has been filled the first time
 0x0019BE90,mm_Movie_AudioDecEndPut,292,game,movie,typed,yes,1,1,(audioDecEndPut) commits a1 bytes; in header state collects the 0x28-byte SShd/SSbd header first and prints it
@@ -2132,12 +2132,12 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0019C2A0,mm_Movie_AudioDecCreate,376,game,movie,typed,yes,1,8,"(audioDecCreate) EE ring a1/a2, allocates the IOP buffer (a3 bytes) and a 0x800-byte zero buffer on the IOP"
 0x0019C420,mm_Movie_DisplayStop,12,game,movie,verified,no,1,0,"clears the display-running flags (0x1BDD68, 0x1BDD9C)"
 0x0019C430,mm_Movie_DisplayStart,76,game,movie,typed,yes,2,1,"waits for the field a0 to pass, then sets the display-running flag"
-0x0019C480,mm_Movie_DmaEndHandler,56,game,movie,typed,no,0,1,(handler_endimage) DMA interrupt handler: releases the shown picture (mm_Movie_VoBufDecCount)
+0x0019C480,mm_Movie_DmaEndHandler,56,game,movie,verified,no,0,1,(handler_endimage) DMA interrupt handler: releases the shown picture (mm_Movie_VoBufDecCount)
 0x0019C4C0,mm_Movie_VblankHandler,1328,game,movie,typed,yes,0,8,"(vblankHandler) VSync interrupt handler: picks the buffer by the GS CSR field bit, swaps, sends the next decoded picture and subtitles"
-0x0019C9F0,mm_Movie_LayoutSubtitle,376,game,movie,typed,no,1,1,lays out a subtitle string into glyph indices at 0x215F00 using the font
-0x0019CB70,mm_Movie_BuildSubtitlePacket,1592,game,movie,typed,no,1,2,"builds the subtitle GS packet at 0x20C1A0 from the laid-out glyphs (font glyphs, positions)"
+0x0019C9F0,mm_Movie_LayoutSubtitle,376,game,movie,verified,no,1,1,lays out a subtitle string into glyph indices at 0x215F00 using the font
+0x0019CB70,mm_Movie_BuildSubtitlePacket,1592,game,movie,verified,no,1,2,"builds the subtitle GS packet at 0x20C1A0 from the laid-out glyphs (font glyphs, positions)"
 0x0019D1B0,mm_Movie_SendFrame,596,game,movie,typed,yes,1,8,"sends the current picture and the subtitle packet to the GS (path 2 DMA, A+D setup)"
-0x0019D410,mm_Movie_BuildImagePacket,1240,game,movie,typed,no,1,10,"turns a decoded RGB32 picture into a textured-sprite GS packet (strips, A+D registers)"
+0x0019D410,mm_Movie_BuildImagePacket,1240,game,movie,verified,no,1,10,"turns a decoded RGB32 picture into a textured-sprite GS packet (strips, A+D registers)"
 0x0019D8F0,mm_Movie_ClearScreen,684,game,movie,typed,yes,1,16,"clears both display buffers to black, swapping on vsync, reading the pad meanwhile"
 0x0019DBA0,mm_Movie_PlayPss,624,game,movie,typed,yes,2,14,"(playPss) opens the PSS (cdrom0:), initialises, then pumps the demux and audio until the movie ends or a button skips it (""QuickView:%s"")"
 0x0019DE10,mm_PlayMissionMovie,400,game,movie,typed,yes,1,10,"plays DATA\MPEG\MISSION<n>.PSS with its .BIN subtitles (n = a0), or ENDING.PSS for 6, once the sound driver is idle"
@@ -2166,14 +2166,14 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0019F350,mm_Movie_ViBufModifyPts,324,game,movie,verified,no,1,0,drops time stamps whose data the IPU has consumed
 0x0019F4A0,mm_Movie_ViBufFlush,80,game,movie,typed,yes,1,2,(viBufFlush) rounds the write offset up to 2 KB
 0x0019F4F0,mm_Movie_ViBufCount,68,game,movie,typed,yes,1,2,(viBufCount) bytes waiting for the IPU
-0x0019F540,mm_Movie_ViBufDelete,144,game,movie,typed,no,1,3,"(viBufDelete) stops IPU DMA, deletes the semaphore"
+0x0019F540,mm_Movie_ViBufDelete,144,game,movie,verified,no,1,3,"(viBufDelete) stops IPU DMA, deletes the semaphore"
 0x0019F5D0,mm_Movie_ViBufRestartDma,944,game,movie,typed,yes,1,4,(viBufRestartDMA) restarts the toIPU DMA where it stopped
 0x0019F980,mm_Movie_ViBufStopDma,352,game,movie,typed,yes,1,4,(viBufStopDMA) stops the toIPU DMA and remembers its position
 0x0019FAE0,mm_Movie_ViBufAddDma,756,game,movie,typed,yes,1,5,"(viBufAddDMA) queues more ring data on the toIPU DMA chain (""DMA ADD not active"")"
 0x0019FDE0,mm_Movie_ViBufEndPut,92,game,movie,typed,yes,2,2,(viBufEndPut) commits a1 bytes
 0x0019FE40,mm_Movie_ViBufBeginPut,244,game,movie,typed,yes,2,2,(viBufBeginPut) free space as up to two areas
-0x0019FF40,mm_Movie_ViBufReset,404,game,movie,typed,no,2,2,"(viBufReset) empties the ring and the time stamp table, builds the DMA tags"
-0x001A00E0,mm_Movie_ViBufCreate,116,game,movie,typed,no,1,2,"(viBufCreate) ring a1 (uncached), DMA tag area, time stamp table, semaphore"
+0x0019FF40,mm_Movie_ViBufReset,404,game,movie,verified,no,2,2,"(viBufReset) empties the ring and the time stamp table, builds the DMA tags"
+0x001A00E0,mm_Movie_ViBufCreate,116,game,movie,verified,no,1,2,"(viBufCreate) ring a1 (uncached), DMA tag area, time stamp table, semaphore"
 0x001A0160,mm_Movie_CbTimeStamp,68,game,movie,typed,yes,0,1,(mpegTS) libmpeg time stamp callback: mm_Movie_ViBufGetTs
 0x001A01B0,mm_Movie_CbRestartDma,36,game,movie,typed,yes,0,1,(mpegRestartDMA) libmpeg callback
 0x001A01E0,mm_Movie_CbStopDma,36,game,movie,typed,yes,0,1,(mpegStopDMA) libmpeg callback
@@ -2186,15 +2186,15 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001A0780,mm_Movie_VideoDecPutTs,60,game,movie,typed,yes,1,1,(videoDecPutTs) time stamp for input offset a3
 0x001A07C0,mm_Movie_VideoDecGetState,8,game,movie,verified,no,2,0,(videoDecGetState) +0xA8
 0x001A07D0,mm_Movie_VideoDecSetStateStart,12,game,movie,verified,no,1,0,+0xA8 = 1
-0x001A07E0,mm_Movie_VideoDecDelete,52,game,movie,typed,no,1,2,(videoDecDelete) deletes the input buffer and the sceMpeg (0x10BF60)
+0x001A07E0,mm_Movie_VideoDecDelete,52,game,movie,verified,no,1,2,(videoDecDelete) deletes the input buffer and the sceMpeg (0x10BF60)
 0x001A0820,mm_Movie_VideoDecEndPut,8,game,movie,typed,yes,1,1,(videoDecEndPut) commits a1 bytes of input
 0x001A0830,mm_Movie_VideoDecBeginPut,8,game,movie,typed,yes,1,1,(videoDecBeginPut) input free space as up to two areas
-0x001A0840,mm_Movie_VideoDecAddStrCallback,32,game,movie,typed,no,1,1,wrapper around sceMpegAddStrCallback; returns 1
+0x001A0840,mm_Movie_VideoDecAddStrCallback,32,game,movie,verified,no,1,1,wrapper around sceMpegAddStrCallback; returns 1
 0x001A0860,mm_Movie_VideoDecCreate,252,game,movie,typed,yes,1,3,"(videoDecCreate) sceMpegCreate, the five libmpeg callbacks, state 0, input buffer"
 0x001A0960,mm_Movie_VoBufDecCount,32,game,movie,verified,no,1,0,(voBufDecCount) one shown picture released
 0x001A0980,mm_Movie_VoBufGetTag,116,game,movie,verified,no,1,0,"(voBufGetTag) oldest decoded picture (0x39240-byte slots), 0 if none"
 0x001A0A00,mm_Movie_VoBufGetData,72,game,movie,verified,no,1,0,"(voBufGetData) next free picture slot (0x12C000 bytes each), 0 if full"
-0x001A0A50,mm_Movie_VoBufIncCount,140,game,movie,typed,no,1,2,(voBufIncCount) marks the slot decoded and advances
+0x001A0A50,mm_Movie_VoBufIncCount,140,game,movie,verified,no,1,2,(voBufIncCount) marks the slot decoded and advances
 0x001A0AE0,mm_Movie_VoBufIsFull,20,game,movie,verified,no,1,0,(voBufIsFull) count == size
 0x001A0B00,mm_Movie_VoBufReset,12,game,movie,verified,no,1,0,(voBufReset) empties the queue
 0x001A0B10,mm_Movie_VoBufDelete,8,game,movie,verified,no,1,0,(voBufDelete) empty
@@ -2246,5 +2246,5 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001AC868,sdk_kpatch_ResetHardware,208,sdk,sdk:libkernl,named,indirect,0,0,"(provisional) kernel patch: waits for the timer interrupt, then resets through kernel calls"
 0x001AC938,sdk_kpatch_TerminateThreads,484,sdk,sdk:libkernl,named,indirect,0,0,(provisional) kernel patch: terminates and deletes threads 1..255
 0x001BAEA0,mm_StaticInit_StatusBytes,32,game,core,verified,no,0,1,constructs the 256 status bytes at 0x1F32F0
-0x001BAEC0,mm_StaticInit_WordsTable,7884,game,talk,typed,no,0,0,copies the WORDS member function table template (0x1B1B48) to 0x1B9100
+0x001BAEC0,mm_StaticInit_WordsTable,7884,game,talk,verified,no,0,0,copies the WORDS member function table template (0x1B1B48) to 0x1B9100
 0x001BCD90,mm_StaticInit_Words,52,game,talk,typed,yes,0,2,constructs the WORDS object (0x1BDDF0) and registers its destructor
