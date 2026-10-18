@@ -1,32 +1,63 @@
 # Metropolismania PC
 
-A native PC port of **Metropolismania** (PlayStation 2, Indi / Natsume, 2002), made by statically recompiling the game's MIPS R5900 code to C++ with [PS2Recomp](https://github.com/ran-j/PS2Recomp).
+A native PC version of **Metropolismania** (PlayStation 2, Indi, 2001), being rebuilt as readable C++ source code, one function at a time.
 
 > [!IMPORTANT]
-> This repository contains **no game files**: no disc image, executable, IOP modules, movies, textures or BIOS, and none of the C++ generated from them. You need **your own copy** of Metropolismania for the PS2 (USA, SLUS-20377). Everything game-derived is produced locally from your disc and stays out of Git.
+> This repository contains **no game files**: no disc image, executable, IOP modules, movies, textures or BIOS, and none of the code generated from them. You need **your own copy** of Metropolismania for the PS2 (USA, SLUS-20377). Everything game-derived is produced locally from your disc and stays out of Git.
 
 > [!WARNING]
-> Very early, experimental work. Nothing is playable yet. See [docs/STATUS.md](docs/STATUS.md).
+> Early, experimental work. The game boots and reaches the city, but it is not ready to play through. See [docs/STATUS.md](docs/STATUS.md).
 
-## Why
+## The game
 
-Metropolismania (Machi-ing Maker in Japan) is a small, odd city builder where you grow a town by befriending its residents. It already runs well in PCSX2, so this project is not about making it playable. It is about a native build: preservation, modding, widescreen and higher resolution without an emulator.
+Metropolismania (街ingメーカー, *Machi-ing Maker*, in Japan) was made by Indi and published by Media Factory in Japan (2001) and by Natsume in North America and Europe (2002). It is a city builder played on foot. You are the town planner: you walk the streets, put up homes, shops and offices, and then have to talk people into actually living and working in them. A town only grows if its residents are happy.
 
-As far as we could find, this is the first recompilation or decompilation project for the game ([research notes](docs/RESEARCH.md)).
+Taking the game apart shows how much simulation sits under that small premise:
+
+- **Families, not population numbers.** Every resident belongs to a family from `FAMILY.BIN`, with a home building, members, jobs and a daily schedule. Each family has a friendship meter (0 to 120); close friends get listed in your Town's Pages, where you can phone them, and they can introduce other families or agree to favours.
+- **Buildings with opinions.** Businesses raise claims when their needs go unmet, and a claim meter keeps rising until the problem is fixed.
+- **A calendar and a mood.** Each in-game day is a month, with weather, holiday months and a town approval rating from -99 to 120. At 118 and up the town counts as popular and families start calling to ask about moving in.
+- **96 kinds of events.** Paydays and farewell parties, but also a thief, a forgetful granny, missing children, a crazy cult, a caveman and an alien, each with its own handlers.
+- **Talking is the core.** Visiting a building or stopping someone in the street opens a talk view, and conversations run on the game's own little script language stored in `WORDS*.BIN`.
+- **Mission goals per town.** Each stage sets a population target and a theme share (high-class, business, leisure, fishing, farming or industrial).
+
+The full picture, subsystem by subsystem, is in [docs/map](docs/map/README.md). Disc layout and data formats are in [docs/GAME_NOTES.md](docs/GAME_NOTES.md).
+
+## The goal
+
+It already runs well in PCSX2, so this project is not about making the game playable. It is about understanding it completely and giving it a native, readable codebase that can be fixed, modded and extended: widescreen, higher resolutions and other platforms without an emulator.
+
+The approach is the one OpenRCT2 used for RollerCoaster Tycoon 2: keep the game running at every step and replace its code piece by piece.
+
+1. **Map everything.** Every function in the game is named, classified by subsystem and given a full C prototype (`config/signatures.txt`), with its structs in `config/types/`. This step is done for all 1,481 game functions.
+2. **Rewrite by hand.** [src/port](src/port/README.md) holds the game's code as readable C++, organised by subsystem (city, families, events, talks, the WORDS script, saves, sound, UI). Each rewritten function takes over from the original at its address.
+3. **Prove it matches.** Every rewritten function is checked against the original by differential tests: calls recorded from a running game are replayed through both versions, and memory, registers and results must come out identical before the function counts as done.
+
+Progress per subsystem is tracked in [docs/PORT_STATUS.md](docs/PORT_STATUS.md). As far as we could find, this is the first decompilation or recompilation project for the game ([research notes](docs/RESEARCH.md)).
 
 ## Status
 
-| Milestone | State |
+| Area | State |
 |---|---|
-| Research, repo, pipeline | Done |
-| Disc extraction, Ghidra analysis, function map (2,249 functions) | Done |
-| First recompile (0 errors) and native build | Done: the runner builds, opens its window and starts executing |
-| Boot to logos, title screen, memory card check | Done: Natsume logo, title, New Game |
+| Boot, logos, title screen, memory card check | Works |
 | Input | Works (keyboard, pad, scripted) |
-| City game (scene C) | Reached: HUD, cursor and the 3D terrain render, about 20 fps (CPU rendering on several threads) |
-| Movies, sound, saves | In progress: music, sound and the PSS movies (with their audio) play through a new SPU2 emulation; memory card check passes |
-| Readable source port | Mapping done: every function is named and classified, every game function has a full C prototype (`config/signatures.txt`), and all are listed with notes in [docs/map](docs/map/README.md) (progress in [docs/PORT_STATUS.md](docs/PORT_STATUS.md)). Porting has started: [src/port](src/port/README.md) replaces functions one at a time, each checked against the original by differential tests |
+| The city | Reached: HUD, cursor and 3D terrain render, about 20 fps (CPU rendering) |
+| Movies, music, sound effects | Play, through a new SPU2 emulation (with reverb) |
+| Saves | Memory card check passes; loading a save from a PCSX2 memory card works |
+| Mapping (names, types, prototypes) | Done for every game function |
+| Readable source port | In progress: more than half of the game's functions rewritten and verified ([details](docs/PORT_STATUS.md)) |
+| VU1 microcode and sound driver translation | Not started |
 | Widescreen, hi-res, Linux | Not started |
+
+## How it works
+
+The starting point is a static recompilation made with [PS2Recomp](https://github.com/ran-j/PS2Recomp): the game's MIPS R5900 code is translated to C++ from your disc and linked against PS2Recomp's runtime, which provides memory, the kernel, graphics, VU1, DMA and an IOP that runs the game's original IOP modules (sound, pad, memory card). That machine-translated code is the scaffolding that keeps the game running. The readable port in `src/port/` replaces it function by function; once a function is rewritten, its generated version is kept only as the reference the differential tests compare against.
+
+- `tools/extract_disc.py` reads the files straight from your BIN/CUE or ISO.
+- Ghidra (with the Emotion Engine extension) finds the functions in the stripped executable and applies the names, types and prototypes from `config/`.
+- Game-specific fixes live in `config/` and `src/overrides/`; changes to PS2Recomp itself live in `patches/`.
+
+Conventions for contributors (and coding agents) are in [AGENTS.md](AGENTS.md).
 
 ## Requirements (Windows, for now)
 
@@ -57,30 +88,24 @@ python tools/pipeline.py extract path/to/your/game.cue   # -> original/ (checks 
 python tools/pipeline.py symbols            # SDK names from PS2Recomp's signature scan -> config/symbols.csv
 python tools/pipeline.py analyze            # Ghidra headless -> config/funcmap.csv
 python tools/pipeline.py recompile          # -> generated/
-python tools/pipeline.py stage              # generated code + overrides -> runtime tree
+python tools/pipeline.py stage              # generated code + overrides + src/port -> runtime tree
 python tools/pipeline.py build              # ps2EntryRunner
 python tools/pipeline.py run                # timed run, log in logs/
 ```
 
+To copy your saves over from PCSX2: `python tools/mc_extract.py path/to/Mcd001.ps2`. The port's own tests (`capture`, `difftest`) are described in [src/port/README.md](src/port/README.md).
+
 `original/`, `generated/`, `work/`, `build/` and `logs/` are git-ignored.
-
-## How it works
-
-1. `tools/extract_disc.py` reads the ISO 9660 filesystem straight from your BIN/CUE or ISO and pulls out the boot ELF and IOP modules.
-2. Ghidra (with the Emotion Engine extension) finds function boundaries in the stripped ELF. `config/symbols.csv` names SDK functions first, so the exporter can bind them to PS2Recomp's runtime handlers.
-3. `ps2_recomp` translates every function to C++. The runtime provides memory, kernel syscalls, the GS, VU1, DMA and an IOP that runs the game's original IRX modules.
-4. Game-specific fixes live in `config/` and `src/overrides/`; changes to PS2Recomp itself live in `patches/`.
-
-More detail: [AGENTS.md](AGENTS.md), [docs/GAME_NOTES.md](docs/GAME_NOTES.md), [docs/map](docs/map/README.md).
 
 ## Credits
 
-- [PS2Recomp](https://github.com/ran-j/PS2Recomp) by ran-j and contributors, which does the heavy lifting.
+- [PS2Recomp](https://github.com/ran-j/PS2Recomp) by ran-j and contributors, the recompiler and runtime this project starts from.
 - Open PS2Recomp pull requests carried in `patches/` until they are merged: VU0/VU1, VIF and GIF fixes by @VariableDeclared, @yanm1103, @Fiztba, @luisbraganca and @drakolordx7 (see each patch header).
 - [psx-spx](https://psx-spx.consoledev.net/) (SPU voice pipeline, envelope and interpolation details) for the SPU2 emulation.
 - [ghidra-emotionengine-reloaded](https://github.com/chaoticgd/ghidra-emotionengine-reloaded) by chaoticgd.
 - [PCSX2](https://github.com/PCSX2/pcsx2), the reference for how the hardware behaves, and Arapapa's widescreen patch for the known FOV addresses.
 - [rootlm/metropolismaniaresearch](https://github.com/rootlm/metropolismaniaresearch) for early notes on the texture format.
+- [OpenRCT2](https://github.com/OpenRCT2/OpenRCT2), whose function-by-function approach this port follows.
 
 ## License and disclaimer
 
