@@ -8,10 +8,10 @@ See `config/port_status.csv` for every function.
 
 | Origin | Functions | Named | Typed | Ported | Verified |
 |---|---:|---:|---:|---:|---:|
-| game | 1481 | 100.0% | 100.0% | 36.5% | 35.6% |
+| game | 1481 | 100.0% | 100.0% | 42.3% | 41.4% |
 | sdk | 768 | 100.0% | 0.0% | 0.0% | 0.0% |
 
-Blocking (game and unclassified functions that can reach a thread switch, deferred to native threading): indirect 79, no 997, yes 405
+Blocking (game and unclassified functions that can reach a thread switch, deferred to native threading): indirect 79, no 987, yes 415
 
 ## By subsystem
 
@@ -26,7 +26,7 @@ Blocking (game and unclassified functions that can reach a thread switch, deferr
 | city | 185 | 100.0% | 100.0% | 35.1% | 34.6% |
 | claim | 6 | 100.0% | 100.0% | 16.7% | 16.7% |
 | core | 4 | 100.0% | 100.0% | 75.0% | 75.0% |
-| event | 148 | 100.0% | 100.0% | 5.4% | 5.4% |
+| event | 148 | 100.0% | 100.0% | 43.9% | 43.9% |
 | family | 36 | 100.0% | 100.0% | 36.1% | 33.3% |
 | file | 12 | 100.0% | 100.0% | 25.0% | 25.0% |
 | font | 3 | 100.0% | 100.0% | 33.3% | 33.3% |
@@ -59,6 +59,6 @@ Blocking (game and unclassified functions that can reach a thread switch, deferr
 | sdk:mwrt | 15 | 100.0% | 0.0% | 0.0% | 0.0% |
 | sound | 57 | 100.0% | 100.0% | 77.2% | 66.7% |
 | stage | 8 | 100.0% | 100.0% | 37.5% | 37.5% |
-| talk | 322 | 100.0% | 100.0% | 32.9% | 32.9% |
+| talk | 322 | 100.0% | 100.0% | 41.9% | 41.9% |
 | text | 5 | 100.0% | 100.0% | 80.0% | 80.0% |
 | ui | 168 | 100.0% | 100.0% | 36.3% | 35.7% |

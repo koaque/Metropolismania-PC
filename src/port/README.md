@@ -92,9 +92,10 @@ the same state with an argument register or a few RDRAM words changed (a buildin
 demolish, a counter about to run out, a listener moved next to the vehicles), or a captured record
 copied under another function's name with that function's arguments (a callee the capture only
 reached through its caller). Such records are named `sNN.mmdt`. `pipeline.py difftest --changes
-<Names>` lists the RDRAM each record's original run changed, which shows whether a made record
-reaches the path it was made for: a record that passes but changes nothing (and returns nothing
-compared) proves nothing. `--only <Names>` replays just those functions (results.json is then left
+<Names>` lists the RDRAM each record's original run changed, and its v0 for a function with an
+integer result, which shows whether a made record reaches the path it was made for: a record that
+passes but changes nothing (and returns nothing compared) proves nothing, and records that all
+return the same value may all take the same path. `--only <Names>` replays just those functions (results.json is then left
 alone), and a replay that does not return within 60 s (`MMPC_DIFFTEST_HANG_SECONDS`) is reported as
 HANG and ends the run: a made state can send the original into a wait that never ends, for instance
 when it reaches blocking code.

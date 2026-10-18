@@ -834,7 +834,7 @@ address,name,kind,source
 0x00138AF0,mm_Event_CheckCondition,func,manual
 0x001391B0,mm_Event_TryStart,func,manual
 0x001393B0,mm_Event_FindForFamily,func,manual
-0x00139680,mm_Event_ClearList,func,manual
+0x00139680,mm_EventMgr_RequeueFirst,func,manual
 0x00139700,mm_Event_StartFromScript,func,manual
 0x001398D0,mm_Event_FormatText,func,manual
 0x00139A00,mm_Event_CountActive,func,manual
@@ -843,7 +843,7 @@ address,name,kind,source
 0x00139CC0,mm_Event_Abort,func,manual
 0x00139DD0,mm_Event_Trigger,func,manual
 0x0013A110,mm_Event_CallHandlerSlot,func,manual
-0x0013A1E0,mm_Event_IsQueued,func,manual
+0x0013A1E0,mm_EventQueue_Find,func,manual
 0x0013A250,mm_EventMgr_dtor,func,manual
 0x0013A360,mm_EventMgr_ctor,func,manual
 0x0013A560,mm_Event_LoadTypes,func,manual
@@ -1644,12 +1644,12 @@ address,name,kind,source
 0x0017C8A0,mm_WordsFn_TextMemberName2,func,manual
 0x0017C920,mm_WordsFn_TextMemberName,func,manual
 0x0017C9A0,mm_WordsFn_TextNameSlot,func,manual
-0x0017C9C0,mm_WordsFn_EventCallSlot14Off,func,manual
+0x0017C9C0,mm_WordsFn_EventA4Slot14,func,manual
 0x0017CA40,mm_WordsFn_EventSetActor,func,manual
 0x0017CB90,mm_WordsFn_EventActorIs,func,manual
 0x0017CBE0,mm_WordsFn_EventA4Var,func,manual
 0x0017CC00,mm_WordsFn_EventA4IsTalk,func,manual
-0x0017CC50,mm_WordsFn_EventCallSlot14On,func,manual
+0x0017CC50,mm_WordsFn_EventA8Slot14,func,manual
 0x0017CCD0,mm_WordsFn_EventA8Var,func,manual
 0x0017CCF0,mm_WordsFn_EventA8Kind,func,manual
 0x0017CD50,mm_WordsFn_EventCountdown,func,manual
@@ -1658,7 +1658,7 @@ address,name,kind,source
 0x0017CE70,mm_WordsFn_EventsActive,func,manual
 0x0017CEA0,mm_WordsFn_LikesBagItem,func,manual
 0x0017CFF0,mm_WordsFn_CanAfford,func,manual
-0x0017D070,mm_WordsFn_GoodsFitsBag,func,manual
+0x0017D070,mm_WordsFn_GoodsBagFull,func,manual
 0x0017D160,mm_WordsFn_GoodsOwned,func,manual
 0x0017D2A0,mm_WordsFn_LaptopHasBit,func,manual
 0x0017D2E0,mm_WordsFn_AnyAcquaintanceSuppliesWant,func,manual

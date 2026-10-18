@@ -47,7 +47,8 @@ struct MapObject {
     uint8_t claimSlot;         /* +0x12 entry in the type's claim section */
     uint8_t claimTimer;        /* +0x13 runs down while the claim is met or the meter maxed; its tenth speeds the meter (mm_BldgClaims_Evaluate) */
     uint16_t entranceTile;     /* +0x14 (provisional) */
-    uint8_t unk_16[2];
+    uint8_t headingHere;       /* +0x16 people whose target it is (mm_MapPeople_RemoveForObject) */
+    uint8_t occupants;         /* +0x17 people inside, kept by types with flag 0x40 (mm_EvActor_Release) */
     uint16_t variant;          /* +0x18 roads: shape, bit d = open towards direction d, 5 and 10 straight
                                   (added to the model index by mm_BldgRoad_Slot1C); buildings: bits 3-7 pick
                                   the model variant (mm_Bldg_CollideA); housing: the high byte is the unit

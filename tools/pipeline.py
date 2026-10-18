@@ -274,7 +274,7 @@ def filter_function_map() -> None:
             dropped.append(line.split(",")[0])
         else:
             kept.append(line)
-    path.write_text("\n".join(kept) + "\n")
+    path.write_text("\n".join(kept) + "\n", encoding="utf-8", newline="\n")
     log(f"config/funcmap.csv: {len(kept) - 1} entries ({len(dropped)} dropped by config/layout.toml: {', '.join(dropped) or 'none'})")
 
 
@@ -325,7 +325,7 @@ def merge_symbols(source: str, names: dict[int, str]) -> None:
         if existing is None or SYMBOL_PRIORITY.get(existing[3], 0) < SYMBOL_PRIORITY.get(source, 0):
             rows[addr] = [f"0x{addr:08X}", name, "func", source]
     lines = header + ["address,name,kind,source"] + [",".join(rows[a]) for a in sorted(rows)]
-    path.write_text("\n".join(lines) + "\n")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     counts: dict[str, int] = {}
     for row in rows.values():
         counts[row[3]] = counts.get(row[3], 0) + 1

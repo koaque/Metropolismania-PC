@@ -120,6 +120,8 @@ namespace port
     inline int32_t guestV0() { return static_cast<int32_t>(gpr64(g_call.ctx, 2)); }
     // The caller's s0, which a few game functions hand back as their result on paths that never set v0.
     inline int32_t guestS0() { return static_cast<int32_t>(gpr64(g_call.ctx, 16)); }
+    // The caller's a3 (for a function with fewer arguments whose callee is handed a3 as it came in).
+    inline uint32_t guestA3() { return static_cast<uint32_t>(gpr64(g_call.ctx, 7)); }
 
     // Integer-class argument k: a0-a3, t0-t3 (GPR 4-11), then the caller's stack slots.
     inline uint64_t intArg(const R5900Context *ctx, int k)

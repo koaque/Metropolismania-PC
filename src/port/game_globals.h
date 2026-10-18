@@ -171,6 +171,10 @@ namespace mm::globals
     inline constexpr uint32_t kStageState = 0x001C5380u;
     inline GuestPtr<StageState> stageState() { return GuestPtr<StageState>{kStageState}; }
     inline constexpr GuestVar<int16_t> talkScriptVar{0x001C5602u};  // stage state +0x282: set and tested by talk scripts
+    inline constexpr GuestVar<uint16_t> stageFlags{0x001C5600u};    // stage state +0x280: bit 2 lets families apply (mm_WordsFn_CanApply)
+
+    // bag: the slots of each bag size (bytes 0, 4, 10, 20 for sizes 0 to 3).
+    inline constexpr uint32_t kBagSlotsBySize = 0x001B5B08u;
 
     // family: counters bumped with the bitsets (provisional names): families moved in (read by
     // mm_WordsFn_FamilyCountTier), the same count for the event code, and families that left.
@@ -327,8 +331,25 @@ namespace mm::globals
     inline constexpr uint32_t kWaveScrollA = 0x001BDAE8u;
     inline constexpr uint32_t kWaveScrollB = 0x001BDAF0u;
 
-    // event: the event types loaded from EVENT.BIN (96 records of 0x4C bytes; priority is the signed byte at +0x22).
+    // event: the event types loaded from EVENT.BIN (96 records of 0x4C bytes; priority is the signed byte at +0x22),
+    // and a second copy of that pointer the handlers' End slots read (gp-0x7C10).
     inline constexpr GuestVar<uint32_t> eventTypes{0x001BDA84u};
+    inline constexpr GuestVar<uint32_t> eventTypesCopy{0x001BDD60u};
+    // event: the waiting queue (event ids, uint16_t) and its length; the queue object handed to
+    // mm_EventQueue_InsertByPriority; the offsets (words) into claimData of each event's tile list
+    // (mm_Event_SetTileFlags).
+    inline constexpr uint32_t kEventQueue = 0x001C5790u;
+    inline constexpr GuestVar<int32_t> eventQueueLength{0x001BDA80u};
+    inline constexpr GuestVar<uint32_t> eventQueueObject{0x001BDA88u};
+    inline constexpr GuestVar<uint32_t> eventTileLists{0x001BDA60u};
+    // event: the delivery man's catalogue (0x184 bytes per entry, 0x20 per item: text at +4, price at +0x22), the
+    // adoption event's 24 starting bytes, and the two buffers the handlers format money into.
+    inline constexpr uint32_t kDeliveryCatalogue = 0x001BA090u;
+    inline constexpr uint32_t kAdoptionStart = 0x001B37D0u;
+    inline constexpr uint32_t kEventMoneyTextA = 0x0020B8A0u;
+    inline constexpr uint32_t kEventMoneyTextB = 0x0020B8C0u;
+    // event: the shopping event's goods texts (0x28 bytes per shop, halfword offsets into the names from +0x20).
+    inline constexpr GuestVar<uint32_t> shoppingTexts{0x001BDAB4u};
 
     // title: the "[SELECT]SoundTest" hint, and a function static of mm_Title_PressStart (word, then its byte flag).
     inline constexpr uint32_t kSoundTestHint = 0x001B89E0u;

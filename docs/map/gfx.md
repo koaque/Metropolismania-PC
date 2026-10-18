@@ -18,7 +18,7 @@ Rendering below the scene level.
 
 ## Functions
 
-117 functions (typed 57, verified 60). Blocks: 29 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+117 functions (typed 57, verified 60). Blocks: 30 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -65,7 +65,7 @@ Rendering below the scene level.
 | `0x00148A40` | `CityMap *mm_CityRender_dtor(CityMap *map, int16_t deleteFlag)` | 364 | yes | vtable 0x1BCF00; deletes the seven layers and buffers, people-level destructor |
 | `0x00148BB0` | `CityMap *mm_CityRender_ctor(CityMap *map)` | 436 | yes | people-level constructor, vtable 0x1BCF00; builds the terrain packets and the seven layers in the packet buffer |
 | `0x00148D70` | `void mm_TexImage_Convert(TexImage *image, uint32_t textureBlock, uint32_t clutBlock)` | 856 | no | (image, textureBlock, clutBlock): DMA packet over the start of the image that uploads its palette and texels (PSMT4/PSMT8/32-bit, square) to the given GS blocks |
-| `0x001490D0` | `int mm_Dma_KickVif1Now(uint32_t address)` | 8 | no |  |
+| `0x001490D0` | `int mm_Dma_KickVif1Now(uint32_t address)` | 8 | yes |  |
 | `0x001490E0` | `TexImage *mm_TexImage_dtor(TexImage *image, int16_t deleteFlag)` | 100 | yes | frees the image data (+0x1000); delete when the flag is > 0 |
 | `0x00149150` | `int mm_TexImage_Load(TexImage *image, char *name, int a2, int a3)` | 132 | yes | loads file a1 whole into +0x1000 and converts it (a2 x a3) |
 | `0x001491E0` | `uint32_t *mm_LayerA_BuildPacket(LayerA *layer, uint32_t *packet)` | 280 | no | (provisional) packet for layer A (microcode 0x1A8330) |

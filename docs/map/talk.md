@@ -40,7 +40,7 @@ friendship changed. A is the person talked to.
 
 ## Functions
 
-322 functions (typed 216, verified 106). Blocks: 86 can reach a thread switch, 27 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+322 functions (typed 187, verified 135). Blocks: 92 can reach a thread switch, 27 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -185,11 +185,11 @@ friendship changed. A is the person talked to.
 | `0x0017B630` | `int mm_WordsFn_TalkSelectActor(WordsCtx *ctx)` | 40 | no | #144 act: talk view choice = actor arg of event +0xA4 |
 | `0x0017B660` | `int mm_WordsFn_EventRemoveWant(WordsCtx *ctx)` | 96 | no | #143 act: removes the want the event holds for its building type |
 | `0x0017B6C0` | `int mm_WordsFn_EventAddWant(WordsCtx *ctx)` | 96 | no | #142 act: the event holds a want for its building type |
-| `0x0017B720` | `void mm_WordsFn_ActorMoveTo(WordsCtx *ctx)` | 140 | no | #141 act: moves the subjects to actor arg's place |
+| `0x0017B720` | `int mm_WordsFn_ActorMoveTo(WordsCtx *ctx)` | 140 | no | #141 act: moves the subjects to actor arg's place |
 | `0x0017B7B0` | `int mm_WordsFn_ClearPersonFlag20(WordsCtx *ctx)` | 20 | no | #140 act: clears person A flag 0x20 |
-| `0x0017B7D0` | `void mm_WordsFn_ActorFollow(WordsCtx *ctx)` | 156 | no | #139 act: person A leaves the building and follows actor arg |
-| `0x0017B870` | `void mm_WordsFn_ActorDetach(WordsCtx *ctx)` | 108 | no | #138 act: detaches the subjects from the event |
-| `0x0017B8E0` | `void mm_WordsFn_SelectEventActor(WordsCtx *ctx)` | 168 | no | #137 act: subjects B from actor arg of event +0xA4 |
+| `0x0017B7D0` | `int mm_WordsFn_ActorFollow(WordsCtx *ctx)` | 156 | no | #139 act: person A leaves the building and follows actor arg |
+| `0x0017B870` | `int mm_WordsFn_ActorDetach(WordsCtx *ctx)` | 108 | no | #138 act: detaches the subjects from the event |
+| `0x0017B8E0` | `int mm_WordsFn_SelectEventActor(WordsCtx *ctx)` | 168 | no | #137 act: subjects B from actor arg of event +0xA4 |
 | `0x0017B990` | `int mm_WordsFn_EndEventA4Result(WordsCtx *ctx)` | 16 | indirect | #136 act: ends event slot +0xA4 with its result code |
 | `0x0017B9A0` | `int mm_WordsFn_StartEventA4(WordsCtx *ctx)` | 20 | indirect | #135 act: starts event slot +0xA4 (tiles, handler Start) |
 | `0x0017B9C0` | `int mm_WordsFn_EndEventA4(WordsCtx *ctx)` | 16 | indirect | #134 act: ends event slot +0xA4 |
@@ -201,7 +201,7 @@ friendship changed. A is the person talked to.
 | `0x0017BAA0` | `int mm_WordsFn_SelectEventPersonA(WordsCtx *ctx)` | 100 | no | #128 act: subject B = the event's first person |
 | `0x0017BB10` | `int mm_WordsFn_EventQueueShift(WordsCtx *ctx)` | 12 | no | #127 act: (provisional) requeues the first event and shifts the list |
 | `0x0017BB20` | `int mm_WordsFn_PlaySe(WordsCtx *ctx)` | 24 | no | #126 act: sound effect arg |
-| `0x0017BB40` | `void mm_WordsFn_GiveBagItem(WordsCtx *ctx)` | 332 | no | #125 act: gives the selected bag item, friendship by its price |
+| `0x0017BB40` | `int mm_WordsFn_GiveBagItem(WordsCtx *ctx)` | 332 | no | #125 act: gives the selected bag item, friendship by its price |
 | `0x0017BC90` | `void mm_WordsFn_BuyGoods(WordsCtx *ctx)` | 620 | yes | #124 act: pays for goods item arg, friendship by price, then laptop/bag/stamina/music/applicant by kind |
 | `0x0017BF00` | `int mm_WordsFn_AddWant(WordsCtx *ctx)` | 68 | no | #123 act: records person A's want (building A's claim), sound 0x15 |
 | `0x0017BF50` | `void mm_WordsFn_InviteFamily(WordsCtx *ctx)` | 92 | yes | #122 act: family A becomes an applicant when it can apply, sound 0x17 |
@@ -212,7 +212,7 @@ friendship changed. A is the person talked to.
 | `0x0017C0C0` | `void mm_WordsFn_FriendshipDown(WordsCtx *ctx)` | 132 | yes | #117 act: friendship loss for member A (character type bonus + 3) |
 | `0x0017C150` | `void mm_WordsFn_FriendshipUp(WordsCtx *ctx)` | 132 | yes | #116 act: friendship gain for member A (character type bonus + 5) |
 | `0x0017C1E0` | `int mm_WordsFn_SelectMemberB(WordsCtx *ctx)` | 72 | no | #115 act: subject B = member +0x1A of family A |
-| `0x0017C230` | `void mm_WordsFn_SelectBuildingB(WordsCtx *ctx)` | 432 | no | #114 act: building B = A's (0), home (1), under the person (2), current (3), destination (4), result (5) |
+| `0x0017C230` | `int mm_WordsFn_SelectBuildingB(WordsCtx *ctx)` | 432 | no | #114 act: building B = A's (0), home (1), under the person (2), current (3), destination (4), result (5) |
 | `0x0017C3E0` | `int mm_WordsFn_SetCancelAllowed(WordsCtx *ctx)` | 12 | no | #113 act: context +0x130 = arg (cancel button allowed) |
 | `0x0017C3F0` | `int mm_WordsFn_SetStoryFlagB(WordsCtx *ctx)` | 80 | no | #112 act: sets bit arg of 0x1C5530 |
 | `0x0017C440` | `int mm_WordsFn_ClearStoryFlagB(WordsCtx *ctx)` | 84 | no | #111 act: clears bit arg of 0x1C5530 |
@@ -220,46 +220,46 @@ friendship changed. A is the person talked to.
 | `0x0017C4B0` | `int mm_WordsFn_EventA4Slot10(WordsCtx *ctx)` | 20 | indirect | #109 act: event slot +0xA4 handler Slot10 with arg |
 | `0x0017C4D0` | `char *mm_WordsFn_TextEventA4Name(WordsCtx *ctx)` | 48 | no | #108 text: name of the event in slot +0xA4 |
 | `0x0017C500` | `int mm_WordsFn_EventA8Slot10(WordsCtx *ctx)` | 20 | indirect | #107 act: event slot +0xA8 handler Slot10 with arg |
-| `0x0017C520` | `char *mm_WordsFn_TextEventTitle(WordsCtx *ctx)` | 16 | no | #106 text: event title, with the member name when it has one |
+| `0x0017C520` | `char *mm_WordsFn_TextEventTitle(WordsCtx *ctx)` | 16 | yes | #106 text: event title, with the member name when it has one |
 | `0x0017C530` | `char *mm_WordsFn_TextOpenHours(WordsCtx *ctx)` | 72 | no | #105 text: opening hours of the family's building type |
 | `0x0017C580` | `char *mm_WordsFn_TextBagItemName(WordsCtx *ctx)` | 68 | no | #104 text: name of the selected bag item |
 | `0x0017C5D0` | `char *mm_WordsFn_TextGoodsName(WordsCtx *ctx)` | 104 | no | #103 text: name of the goods item arg |
 | `0x0017C640` | `char *mm_WordsFn_TextWantClaim(WordsCtx *ctx)` | 160 | no | #102 text: claim line of the chosen want |
 | `0x0017C6E0` | `char *mm_WordsFn_TextPopulation(WordsCtx *ctx)` | 52 | no | #101 text: (provisional) map value +0x29 with thousands separators |
 | `0x0017C720` | `char *mm_WordsFn_TextClaimLine(WordsCtx *ctx)` | 60 | no | #100 text: claim line of building A/B |
-| `0x0017C760` | `char *mm_WordsFn_TextFamilyRecord(WordsCtx *ctx)` | 60 | no | #99 text: (provisional) cached family record (FAMILY.BIN 0x1D4 bytes) |
+| `0x0017C760` | `char *mm_WordsFn_TextFamilyRecord(WordsCtx *ctx)` | 60 | yes | #99 text: (provisional) cached family record (FAMILY.BIN 0x1D4 bytes) |
 | `0x0017C7A0` | `char *mm_WordsFn_TextOccupation(WordsCtx *ctx)` | 144 | yes | #98 text: (provisional) occupation from the home type and member role |
 | `0x0017C830` | `char *mm_WordsFn_TextBuildingName(WordsCtx *ctx)` | 104 | no | #97 text: building type name (+0x110) |
 | `0x0017C8A0` | `char *mm_WordsFn_TextMemberName2(WordsCtx *ctx)` | 120 | yes | #96 text: (provisional) member second name (+0x5C) |
 | `0x0017C920` | `char *mm_WordsFn_TextMemberName(WordsCtx *ctx)` | 120 | yes | #95 text: member name (+0x4C) of A, B or the result family |
 | `0x0017C9A0` | `char *mm_WordsFn_TextNameSlot(WordsCtx *ctx)` | 24 | no | #94 text: name slot arg |
-| `0x0017C9C0` | `void mm_WordsFn_EventCallSlot14Off(WordsCtx *ctx)` | 120 | no | #93 act: event Slot14 for the subjects with arg, mode 0 |
+| `0x0017C9C0` | `int mm_WordsFn_EventA4Slot14(WordsCtx *ctx)` | 120 | no | #93 act: handler slot +0x14 of the talk's first event (talkA) with person A and arg |
 | `0x0017CA40` | `int mm_WordsFn_EventSetActor(WordsCtx *ctx)` | 324 | no | #92 cond: sets actor arg of event +0xA4 to the subjects, marks the building |
 | `0x0017CB90` | `int mm_WordsFn_EventActorIs(WordsCtx *ctx)` | 76 | no | #91 cond: actor arg of event +0xA4 is subject A |
 | `0x0017CBE0` | `int mm_WordsFn_EventA4Var(WordsCtx *ctx)` | 20 | no | #90 cond: event slot +0xA4 variable (+10) |
 | `0x0017CC00` | `int mm_WordsFn_EventA4IsTalk(WordsCtx *ctx)` | 80 | no | #89 cond: (provisional) event slot +0xA4 kind is 1 or 2 |
-| `0x0017CC50` | `void mm_WordsFn_EventCallSlot14On(WordsCtx *ctx)` | 120 | no | #88 act: event Slot14 for the subjects with arg, mode 1 |
+| `0x0017CC50` | `int mm_WordsFn_EventA8Slot14(WordsCtx *ctx)` | 120 | no | #88 act: handler slot +0x14 of the talk's second event (talkB) with person A and arg |
 | `0x0017CCD0` | `int mm_WordsFn_EventA8Var(WordsCtx *ctx)` | 20 | no | #87 cond: event slot +0xA8 variable (+10) |
 | `0x0017CCF0` | `int mm_WordsFn_EventA8Kind(WordsCtx *ctx)` | 96 | no | #86 cond: (provisional) kind of event slot +0xA8 plus 1 |
 | `0x0017CD50` | `int mm_WordsFn_EventCountdown(WordsCtx *ctx)` | 36 | no | #85 cond: (provisional) 3 minus the event's counter |
-| `0x0017CD80` | `uint32_t mm_WordsFn_EventStage(WordsCtx *ctx)` | 168 | no | #84 cond: (provisional) stage of the context's event |
+| `0x0017CD80` | `int mm_WordsFn_EventStage(WordsCtx *ctx)` | 168 | no | #84 cond: (provisional) stage of the context's event |
 | `0x0017CE30` | `int mm_WordsFn_StartEvent(WordsCtx *ctx)` | 60 | no | #83 act: starts an event from the script for person A |
 | `0x0017CE70` | `int mm_WordsFn_EventsActive(WordsCtx *ctx)` | 36 | no | #82 cond: any event active |
 | `0x0017CEA0` | `int mm_WordsFn_LikesBagItem(WordsCtx *ctx)` | 332 | yes | #81 cond: (provisional) the person likes the selected bag item |
 | `0x0017CFF0` | `int mm_WordsFn_CanAfford(WordsCtx *ctx)` | 124 | no | #80 cond: player money covers the goods item arg |
-| `0x0017D070` | `int mm_WordsFn_GoodsFitsBag(WordsCtx *ctx)` | 236 | no | #79 cond: (provisional) the goods item arg is a bag item and the bag has room |
+| `0x0017D070` | `int mm_WordsFn_GoodsBagFull(WordsCtx *ctx)` | 236 | no | goods carried in the bag: whether its last slot is taken (bag size table 0x1B5B08) |
 | `0x0017D160` | `int mm_WordsFn_GoodsOwned(WordsCtx *ctx)` | 320 | no | #78 cond: (provisional) the goods item arg is already owned or unlocked |
 | `0x0017D2A0` | `int mm_WordsFn_LaptopHasBit(WordsCtx *ctx)` | 64 | no | #77 cond: laptop entry bit arg is active |
-| `0x0017D2E0` | `int mm_WordsFn_AnyAcquaintanceSuppliesWant(WordsCtx *ctx)` | 8 | no | #76 cond: the same over every member of family A; result word and member index (+0x1A) |
-| `0x0017D2F0` | `int mm_WordsFn_AcquaintanceSuppliesWant(WordsCtx *ctx)` | 8 | no | #75 cond: an acquaintance of member A who can apply supplies the chosen want's claim; result word |
-| `0x0017D300` | `int mm_WordsFn_FamilySuppliesWant(WordsCtx *ctx)` | 8 | no | #74 cond: family A can apply and its type supplies the chosen want's claim |
+| `0x0017D2E0` | `int mm_WordsFn_AnyAcquaintanceSuppliesWant(WordsCtx *ctx)` | 8 | yes | #76 cond: the same over every member of family A; result word and member index (+0x1A) |
+| `0x0017D2F0` | `int mm_WordsFn_AcquaintanceSuppliesWant(WordsCtx *ctx)` | 8 | yes | #75 cond: an acquaintance of member A who can apply supplies the chosen want's claim; result word |
+| `0x0017D300` | `int mm_WordsFn_FamilySuppliesWant(WordsCtx *ctx)` | 8 | yes | #74 cond: family A can apply and its type supplies the chosen want's claim |
 | `0x0017D310` | `int mm_WordsFn_SuppliesWantBody(WordsCtx *ctx, int a1)` | 896 | yes | shared body of #74/#75/#76 (entered past their prologues) |
 | `0x0017D6A0` | `int mm_WordsFn_AcquaintanceSuppliesClaim(WordsCtx *ctx)` | 380 | yes | #73 cond: an acquaintance of member A who can apply and whose type supplies building A's claim; stored as the person's introduction |
 | `0x0017D820` | `int mm_WordsFn_WantClaimMatch(WordsCtx *ctx)` | 240 | no | #72 cond: an open want with the same claim as building A, else a room check |
 | `0x0017D910` | `int mm_WordsFn_HasWantForPerson(WordsCtx *ctx)` | 104 | no | #71 cond: person A has an open want |
 | `0x0017D980` | `int mm_WordsFn_FindWant(WordsCtx *ctx)` | 52 | no | #70 act: first want lookup (result unused) |
 | `0x0017D9C0` | `int mm_WordsFn_ApplicantCountTier(WordsCtx *ctx)` | 56 | no | #69 cond: applicants: none, up to 8, up to 31, full |
-| `0x0017DA00` | `uint32_t mm_WordsFn_BuildingOpen(WordsCtx *ctx)` | 204 | indirect | #68 cond: building B (or type) open now |
+| `0x0017DA00` | `int mm_WordsFn_BuildingOpen(WordsCtx *ctx)` | 204 | indirect | #68 cond: building B (or type) open now |
 | `0x0017DAD0` | `int mm_WordsFn_BuildingsOverlap(WordsCtx *ctx)` | 204 | no | #67 cond: (provisional) footprints of buildings A and B overlap |
 | `0x0017DBA0` | `int mm_WordsFn_FamilyModArg(WordsCtx *ctx)` | 32 | no | #66 cond: family id mod arg |
 | `0x0017DBC0` | `int mm_WordsFn_PickClaimResident(WordsCtx *ctx)` | 1116 | yes | #65 cond: (provisional) resident whose wants match the chosen want's claim |
@@ -281,7 +281,7 @@ friendship changed. A is the person talked to.
 | `0x0017ED60` | `int mm_WordsFn_IsApplicant(WordsCtx *ctx)` | 16 | no | #51 cond: the family is on the applicant list |
 | `0x0017ED70` | `int mm_WordsFn_FamilyHasLeft(WordsCtx *ctx)` | 8 | no | #50 cond: family A moved away (bitset C) |
 | `0x0017ED80` | `int mm_WordsFn_FamilyInCity(WordsCtx *ctx)` | 8 | no | #49 cond: family A lives in the city (bitset A) |
-| `0x0017ED90` | `uint8_t mm_WordsFn_CanApply(WordsCtx *ctx)` | 116 | no | #48 cond: city flag 4, or flag 2 of 0x1C5600 with family A able to apply |
+| `0x0017ED90` | `int mm_WordsFn_CanApply(WordsCtx *ctx)` | 116 | no | #48 cond: city flag 4, or flag 2 of 0x1C5600 with family A able to apply |
 | `0x0017EE10` | `int mm_WordsFn_ScoreA8Tier(WordsCtx *ctx)` | 8 | no | #47 cond: placement score +0xA8 below 200, below 300, or higher |
 | `0x0017EE20` | `int mm_WordsFn_ScoreA0Tier(WordsCtx *ctx)` | 8 | no | #46 cond: placement score +0xA0 below 200, below 300, or higher |
 | `0x0017EE30` | `int mm_WordsFn_ApprovalTier(WordsCtx *ctx)` | 60 | no | #45 cond: approval tier folded to 0..2 |
@@ -306,7 +306,7 @@ friendship changed. A is the person talked to.
 | `0x0017F1E0` | `int mm_WordsFn_False(WordsCtx *ctx)` | 8 | no | #26 cond: 0 |
 | `0x0017F1F0` | `int mm_WordsFn_BuildingCrowd(WordsCtx *ctx)` | 260 | no | #25 cond: visitors at the building: none, some, over half capacity |
 | `0x0017F300` | `int mm_WordsFn_BuildingFlag100(WordsCtx *ctx)` | 48 | no | #24 cond: building flag 0x100 |
-| `0x0017F330` | `void mm_WordsFn_TryFriendAgrees(WordsCtx *ctx)` | 164 | no | #23 act: mm_Family_FriendAgrees for member A when applicants and people have room |
+| `0x0017F330` | `int mm_WordsFn_TryFriendAgrees(WordsCtx *ctx)` | 164 | no | #23 act: mm_Family_FriendAgrees for member A when applicants and people have room |
 | `0x0017F3E0` | `int mm_WordsFn_MeterAgrees(WordsCtx *ctx)` | 52 | no | #22 cond: mm_Family_MeterAgrees for member B when arg (+0x2A) != 0, else member A, with the city's approval (was mm_WordsFn_Nop22: it only sets v0, so a void prototype hid it) |
 | `0x0017F420` | `int mm_WordsFn_FindOutsideAcquaintance(WordsCtx *ctx)` | 260 | yes | #21 cond: an acquaintance of member A from an Outside-category type who can apply; result word |
 | `0x0017F530` | `int mm_WordsFn_GetIntroduction(WordsCtx *ctx)` | 136 | yes | #20 cond: the family subject A/B introduces (picks one when the person has none); nonzero when there is one |
@@ -355,7 +355,7 @@ friendship changed. A is the person talked to.
 | `0x001A1CA0` | `void mm_Words_AppendClipped(char *buffer, char *text)` | 312 | no | (provisional) appends a string to the message buffer within the line limit |
 | `0x001A1DE0` | `uint32_t mm_Words_ExpandLine(int a0, int a1, int a2)` | 2044 | no | expands a script line: conditions pick branches, text getters fill in names, actions run |
 | `0x001A2620` | `int16_t mm_Words_StepImpl(int32_t *script, char *buffer)` | 888 | yes | binds the loaded tables on first use, then runs codes until the next message or end code |
-| `0x001A29B0` | `int16_t mm_Words_Step(int32_t *script, char *buffer)` | 8 | no | next message of the running script (to mm_Words_StepImpl) |
+| `0x001A29B0` | `int16_t mm_Words_Step(int32_t *script, char *buffer)` | 8 | yes | next message of the running script (to mm_Words_StepImpl) |
 | `0x001A29C0` | `int mm_Words_FriendshipChanged(void)` | 8 | no | global context +0x13C |
 | `0x001A29D0` | `int mm_Words_CancelAllowed(void)` | 8 | no | global context +0x130 |
 | `0x001A29E0` | `int mm_Words_LoadForWants(int a0, uint16_t a1, int a2, int a3)` | 596 | yes | script for a wants window line (event or default), reads its block |

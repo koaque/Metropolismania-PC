@@ -29,9 +29,8 @@ typedef struct CityCursorView CityCursorView;
 typedef struct PhoneCalls PhoneCalls;
 typedef struct PhoneCallEntry PhoneCallEntry;
 typedef struct EventMgr EventMgr;
-typedef struct EventEntry EventEntry;
 typedef struct EventSlot EventSlot;
-typedef struct EventActor EventActor;
+typedef struct ActorRef ActorRef;
 typedef struct WantsWin WantsWin;
 typedef struct WantsIndex WantsIndex;
 typedef struct Want Want;
@@ -317,7 +316,7 @@ struct BagShortcut {
     int16_t unk_02;
 };
 struct Bag {
-    uint16_t unk_000;
+    uint16_t size;             /* +0x000 0 none, 1..3: 4, 10 or 20 slots (byte table 0x1B5B08, mm_WordsFn_GoodsBagFull) */
     uint16_t unk_002;
     BagSlot slots[20];         /* +0x004 */
     BagShortcut shortcuts[10]; /* +0x144 */
@@ -400,36 +399,44 @@ struct PhoneCalls {
 };
 /* Event manager (0xB0 bytes); +0xA4 and +0xA8 are the events the talk script works with. */
 /* One actor of a running event (8 bytes). */
-struct EventActor {
-    uint16_t family;           /* +0x00 */
-    uint16_t member;           /* +0x02 */
-    uint8_t unk_04[4];
+/* A person as the event code passes them around (8 bytes): the person record, the building, the family and the
+   member. The talk callbacks build one for person A in their stack frame (mm_WordsFn_ActorDetach). */
+struct ActorRef {
+    uint16_t person;           /* +0x00 person record, 6000 = none */
+    uint16_t object;           /* +0x02 building, 0x3F80 = none */
+    uint16_t family;           /* +0x04 */
+    uint16_t member;           /* +0x06 */
 };
-/* An event the talk works with (EventMgr talkA, talkB); the actor list runs on past the two shown. */
-struct EventEntry {
+/* An active event (0x1C bytes; some types keep more state, up to 0x7C, mm_EventData_GetSize7C): the first argument of
+   every mm_Ev*_ handler slot, and the two the talk works with (EventMgr talkA, talkB). */
+struct EventData {
     uint8_t unk_00[8];
     uint8_t kind;              /* +0x08 row of the event table (gp-0x7EEC, 0x4C bytes each) */
     uint8_t unk_09;
-    uint8_t var;               /* +0x0A a value talk scripts set and test */
-    uint8_t unk_0B[5];
-    EventActor actors[2];      /* +0x10 */
+    uint8_t var;               /* +0x0A a value talk scripts set and test; some types keep their phase in it
+                                  (mm_EvUselessMiddleAged_Update) */
+    uint8_t unk_0B;
+    ActorRef actor;            /* +0x0C the main actor; types with more list them on from here, 8 bytes each, over the
+                                  words below (talk scripts pick them by index, mm_WordsFn_SelectEventActor) */
+    int32_t unk_14;            /* +0x14 per type: a month (mm_EvUselessMiddleAged_Start) */
+    int32_t unk_18;            /* +0x18 per type: a timer, a distance (mm_EvBodyguard_Slot14) */
 };
-/* One of the event manager's five slots (0x20 bytes). */
+/* One of the event manager's five talk slots (0x20 bytes). */
 struct EventSlot {
-    uint8_t unk_00[5];
-    int8_t stage;              /* +0x05 talk scripts read 3 - stage (mm_WordsFn_EventCountdown) */
-    uint8_t unk_06[2];
-    uint16_t familyA;          /* +0x08 the persons a talk script selects (mm_WordsFn_SelectEventPersonA/B) */
-    uint16_t memberA;          /* +0x0A */
-    uint16_t familyB;          /* +0x0C */
-    uint16_t memberB;          /* +0x0E */
-    uint8_t unk_10[0x10];
+    uint8_t kind;              /* +0x00 row of the event table, 0 = free (mm_Event_CountActive, mm_WordsFn_EventStage) */
+    int8_t stage;              /* +0x01 talk scripts read 3 - stage (mm_WordsFn_EventCountdown) */
+    uint8_t unk_02[2];
+    uint16_t familyA;          /* +0x04 the persons a talk script selects (mm_WordsFn_SelectEventPersonA/B) */
+    uint16_t memberA;          /* +0x06 */
+    uint16_t familyB;          /* +0x08 */
+    uint16_t memberB;          /* +0x0A */
+    uint8_t unk_0C[0x14];
 };
 struct EventMgr {
-    EventSlot slots[5];        /* +0x00 */
-    uint8_t unk_A0[4];
-    EventEntry *talkA;         /* +0xA4 the events the talk script works with */
-    EventEntry *talkB;         /* +0xA8 */
+    int32_t unk_00;
+    EventSlot slots[5];        /* +0x04 filled from the front; mm_EventMgr_RequeueFirst drops the first */
+    EventData *talkA;          /* +0xA4 the events the talk script works with */
+    EventData *talkB;          /* +0xA8 */
     uint8_t unk_AC[4];
 };
 /* Want (0x10 bytes) in the wants list's data area. */
@@ -590,15 +597,13 @@ struct TownPages {
     int32_t row;               /* +0x5C cursor row on the page */
     int32_t savedRow;          /* +0x60 */
 };
-/* Per-event handler data (base 0x1C bytes; some handlers use 0x7C), the first argument of every mm_Ev*_ slot. */
-struct EventData { uint8_t data[0x1C]; };
 /* Name in the stage state (0x10 bytes). */
 struct StageName { char text[0x10]; };
 /* Stage state at 0x1C5380, saved with the city (0x284 bytes). */
 struct StageState {
     StageName names[26];       /* +0x000 the city's name, the mayor's name, ... (cleared by mm_Stage_Reset) */
     uint8_t unk_1A0[0x20];
-    int32_t unk_1C0;           /* +0x1C0 3000 at reset */
+    int32_t money;             /* +0x1C0 3000 at reset; goods are affordable up to it (mm_WordsFn_CanAfford) */
     int32_t unk_1C4;           /* +0x1C4 2500 at reset */
     int32_t stage;             /* +0x1C8 stage number, -1 = none */
     int32_t quota;             /* +0x1CC population target (mm_EvQuota80_Check) */

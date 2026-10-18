@@ -13,6 +13,11 @@ namespace mm
     namespace
     {
         GuestPtr<EventMgr> eventsOf(GuestPtr<WordsCtx> ctx) { return ctx->city->events; }
+        // Actor `index` of the talk's first event (EventData::actors, by guest address for any index).
+        GuestPtr<ActorRef> talkActor(GuestPtr<WordsCtx> ctx, int index)
+        {
+            return GuestPtr<ActorRef>{eventsOf(ctx)->talkA.address + 0x0Cu + 8u * static_cast<uint32_t>(index)};
+        }
     }
 
     // ---- conditions and values
@@ -56,8 +61,7 @@ namespace mm
     // Steps left of the event in the talk's event slot (3 - its stage).
     int WordsFn_EventCountdown(GuestPtr<WordsCtx> ctx)
     {
-        const uint32_t entry = eventsOf(ctx).address + static_cast<uint32_t>(ctx->eventSlot) * 0x20u;
-        return 3 - port::load<int8_t>(entry + 5u);
+        return 3 - eventsOf(ctx)->slots[ctx->eventSlot].stage;
     }
 
     // Whether family B (arg non-zero) or family A is known through the Town's Pages.
@@ -124,7 +128,7 @@ namespace mm
         return port::callGuest<int>(addr::CityScene_TalkEndChoosing, ctx->city);
     }
 
-    int WordsFn_EventQueueShift(GuestPtr<WordsCtx> ctx) { return port::callGuest<int>(addr::Event_ClearList, eventsOf(ctx)); }
+    int WordsFn_EventQueueShift(GuestPtr<WordsCtx> ctx) { return port::callGuest<int>(addr::EventMgr_RequeueFirst, eventsOf(ctx)); }
 
     // End the talk's first (A4) or second (A8) event, finishing it or abandoning it.
     int WordsFn_EndEventA4Result(GuestPtr<WordsCtx> ctx) { return port::callGuest<int>(addr::Event_Finish, eventsOf(ctx), ctx->city, 0); }
@@ -158,9 +162,9 @@ namespace mm
     // Selects actor `arg` of the talk's first event as the person talked to.
     int WordsFn_TalkSelectActor(GuestPtr<WordsCtx> ctx)
     {
-        const uint32_t actor = eventsOf(ctx)->talkA.address + static_cast<uint32_t>(ctx->arg) * 8u + 0x10u;
-        return port::callGuest<int>(addr::CityScene_TalkSelectPerson, ctx->city, static_cast<int>(port::load<uint16_t>(actor)),
-                                    static_cast<int>(port::load<uint16_t>(actor + 2u)));
+        const GuestPtr<ActorRef> actor = talkActor(ctx, ctx->arg);
+        return port::callGuest<int>(addr::CityScene_TalkSelectPerson, ctx->city, static_cast<int>(actor->family),
+                                    static_cast<int>(actor->member));
     }
 
     // ---- second group: conditions and values
@@ -253,10 +257,10 @@ namespace mm
     // Whether actor `arg` of the talk's first event is person A (family and member).
     int WordsFn_EventActorIs(GuestPtr<WordsCtx> ctx)
     {
-        const uint32_t actor = eventsOf(ctx)->talkA.address + static_cast<uint32_t>(ctx->arg) * 8u + 0x10u;
-        if (port::load<uint16_t>(actor) != ctx->familyA)
+        const GuestPtr<ActorRef> actor = talkActor(ctx, ctx->arg);
+        if (actor->family != ctx->familyA)
             return 0;
-        return port::load<uint16_t>(actor + 2u) == ctx->memberA ? 1 : 0;
+        return actor->member == ctx->memberA ? 1 : 0;
     }
 
     // Objects new in the last periods: none 0, up to 10 1, more 2.
@@ -419,25 +423,37 @@ namespace mm
         return GuestPtr<char>{typeAt(type).address + 0x110u};
     }
 
-    // The bag item's name: its group's first record (0x1BDA9C) plus its index, 0x88-byte records (0x1BDAA0)
-    // whose first halfword is the offset into the names (0x1BDAA4).
-    GuestPtr<char> WordsFn_TextBagItemName(GuestPtr<WordsCtx> ctx)
+    namespace
     {
-        const uint32_t slot = ctx->bagSlot.address;
-        const uint32_t first = port::load<uint16_t>(port::load<uint32_t>(0x001BDA9Cu) + 4u * port::load<uint16_t>(slot));
-        const uint32_t record = port::load<uint32_t>(0x001BDAA0u) + 0x88u * (port::load<uint16_t>(slot + 2u) + first);
-        return GuestPtr<char>{port::load<uint32_t>(0x001BDAA4u) + port::load<uint16_t>(record)};
+        // The bag item's goods record: its group's first record (0x1BDA9C) plus its index, 0x88-byte records
+        // (0x1BDAA0) whose first halfword is the offset into the names (0x1BDAA4).
+        uint32_t bagItemRecord(GuestPtr<WordsCtx> ctx)
+        {
+            const uint32_t slot = ctx->bagSlot.address;
+            const uint32_t first = port::load<uint16_t>(port::load<uint32_t>(0x001BDA9Cu) + 4u * port::load<uint16_t>(slot));
+            return port::load<uint32_t>(0x001BDAA0u) + 0x88u * (port::load<uint16_t>(slot + 2u) + first);
+        }
+
+        // The goods record of building type B for family B in the season (month / 4), with the argument as the
+        // offset in and out: a local in the caller's frame at `slot`.
+        uint32_t goodsRecord(GuestPtr<WordsCtx> ctx, uint32_t slot)
+        {
+            const GuestPtr<int32_t> offset{slot};
+            *offset = ctx->arg;
+            const int season = (ctx->city->monthCount % 12) / 4;
+            return static_cast<uint32_t>(Goods_GetRecordOffset(ctx->buildingTypeB, ctx->familyB, season, offset));
+        }
     }
 
-    // The goods' name: the goods record of building type B for family B in the season (month / 4), with the
-    // argument as the offset in and out.
+    GuestPtr<char> WordsFn_TextBagItemName(GuestPtr<WordsCtx> ctx)
+    {
+        return GuestPtr<char>{port::load<uint32_t>(0x001BDAA4u) + port::load<uint16_t>(bagItemRecord(ctx))};
+    }
+
     GuestPtr<char> WordsFn_TextGoodsName(GuestPtr<WordsCtx> ctx)
     {
         port::GuestFrame<0x20> frame;
-        const GuestPtr<int32_t> offset{frame.ptr().address + 0x1Cu};
-        *offset = ctx->arg;
-        const int season = (ctx->city->monthCount % 12) / 4;
-        const uint32_t record = static_cast<uint32_t>(Goods_GetRecordOffset(ctx->buildingTypeB, ctx->familyB, season, offset));
+        const uint32_t record = goodsRecord(ctx, frame.ptr().address + 0x1Cu);
         return GuestPtr<char>{port::load<uint32_t>(0x001BDAA4u) + port::load<uint16_t>(record)};
     }
 
@@ -515,6 +531,548 @@ namespace mm
         return static_cast<int>(person.address);
     }
 
+    // ---- third group: event actors
+    //
+    // The functions these hand on to leave v0 alone on some paths, so v0 is set first to what the original holds
+    // there at the call: the last halfword of person A's actor (the member), or the target actor's entry less 0xC.
+
+    namespace
+    {
+        // Person A as an event actor, written at `slot` (the original builds it in its own stack frame): the person
+        // record and the building (6000 and 0x3F80 without them), the family and the member.
+        GuestPtr<ActorRef> actorA(GuestPtr<WordsCtx> ctx, uint32_t slot)
+        {
+            const GuestPtr<ActorRef> actor{slot};
+            actor->person = ctx->personA ? ctx->personA->index : kNoPerson;
+            actor->object = ctx->buildingA ? ctx->buildingA->id : kNoObject;
+            actor->family = ctx->familyA;
+            actor->member = ctx->memberA;
+            return actor;
+        }
+
+        int eventCallSlot14(GuestPtr<WordsCtx> ctx, int index)
+        {
+            port::GuestFrame<0x20> frame;
+            const GuestPtr<ActorRef> actor = actorA(ctx, frame.ptr().address + 0x18u);
+            port::setGuestV0(ctx->memberA);
+            return port::callGuest<int>(addr::Event_CallSlot14, eventsOf(ctx), ctx->city, actor, static_cast<int>(ctx->arg), index);
+        }
+    }
+
+    int WordsFn_ActorDetach(GuestPtr<WordsCtx> ctx)
+    {
+        port::GuestFrame<0x20> frame;
+        const GuestPtr<ActorRef> actor = actorA(ctx, frame.ptr().address + 0x18u);
+        port::setGuestV0(ctx->memberA);
+        return EvActor_Detach(ctx->city, actor);
+    }
+
+    // Person A walks to actor `arg` of the talk's first event.
+    int WordsFn_ActorMoveTo(GuestPtr<WordsCtx> ctx)
+    {
+        port::GuestFrame<0x20> frame;
+        const GuestPtr<ActorRef> actor = actorA(ctx, frame.ptr().address + 0x18u);
+        const GuestPtr<ActorRef> target = talkActor(ctx, ctx->arg);
+        port::setGuestV0(static_cast<int32_t>(target.address - 0x0Cu));
+        return EvActor_MoveTo(ctx->city, actor, target, 1);
+    }
+
+    // Person A leaves the building it is in and follows actor `arg` of the talk's first event.
+    int WordsFn_ActorFollow(GuestPtr<WordsCtx> ctx)
+    {
+        port::GuestFrame<0x30> frame;
+        Person_ExitBuilding(ctx->city, ctx->personA);
+        const GuestPtr<ActorRef> actor = actorA(ctx, frame.ptr().address + 0x28u);
+        const GuestPtr<ActorRef> target = talkActor(ctx, ctx->arg);
+        port::setGuestV0(static_cast<int32_t>(target.address - 0x0Cu));
+        return EvActor_Follow(ctx->city, actor, target);
+    }
+
+    // Handler slot +0x14 of the talk's first (A4) or second (A8) event, with person A and the argument.
+    // mm_Event_CallSlot14 returns nothing the port knows of; its v0 is the callbacks' result.
+    int WordsFn_EventA4Slot14(GuestPtr<WordsCtx> ctx) { return eventCallSlot14(ctx, 0); }
+    int WordsFn_EventA8Slot14(GuestPtr<WordsCtx> ctx) { return eventCallSlot14(ctx, 1); }
+
+    // Person A becomes actor `arg` of the talk's first event and building A takes part (flag 0x200). Not for a
+    // building with flag 0x40, and not over an actor at object 0 when object 0 has flag 0x200.
+    int WordsFn_EventSetActor(GuestPtr<WordsCtx> ctx)
+    {
+        if (ctx->buildingA && (ctx->buildingA->flags & 0x40u) != 0)
+            return 0;
+        const GuestPtr<ActorRef> actor = talkActor(ctx, ctx->arg);
+        const uint16_t object = actor->object;
+        if (object == 0 && (Map_GetRecord(ctx->city->map, object)->flags & 0x200u) != 0)
+            return 0;
+        actorA(ctx, actor.address);
+        if (ctx->buildingA)
+            ctx->buildingA->flags |= 0x200u;
+        return 1;
+    }
+
+    // Person B, family and member B, building B and type B become actor `arg` of the talk's first event.
+    int WordsFn_SelectEventActor(GuestPtr<WordsCtx> ctx)
+    {
+        const GuestPtr<ActorRef> actor = talkActor(ctx, ctx->arg);
+        ctx->personB = actor->person < kNoPerson ? ctx->city->map->people + actor->person : GuestPtr<MapPerson>{0};
+        ctx->familyB = actor->family;
+        ctx->memberB = actor->member;
+        ctx->buildingB = actor->object < kNoObject ? Map_GetRecord(ctx->city->map, actor->object) : GuestPtr<MapObject>{0};
+        const int type = Family_GetTypeIndex(ctx->familyB);
+        ctx->buildingTypeB = static_cast<uint16_t>(type);
+        return type;
+    }
+
+    // The stage of the event in the talk's slot (event table +0x21); for events of kind 5 (+0x20) plus the queue
+    // position of event 5 less that of event 4 (the queue's length for one that is not queued).
+    int WordsFn_EventStage(GuestPtr<WordsCtx> ctx)
+    {
+        const GuestPtr<EventMgr> events = eventsOf(ctx);
+        const uint32_t type = eventType(events->slots[ctx->eventSlot].kind);
+        const int stage = port::load<uint8_t>(type + 0x21u);
+        if (port::load<uint8_t>(type + 0x20u) != 5)
+            return stage;
+        const int at5 = EventQueue_Find(events, 5);
+        return stage + at5 - EventQueue_Find(events, 4);
+    }
+
+    // ---- third group: buildings, people and goods
+
+    namespace
+    {
+        GuestPtr<MapPerson> personByArg(GuestPtr<WordsCtx> ctx) { return ctx->arg != 0 ? ctx->personB : ctx->personA; }
+
+        // The building's claim: the halfword at +2 of its entry in claim section B of its type.
+        int claimOf(GuestPtr<MapObject> building)
+        {
+            const int section = Claim_GetSectionB(typeOfObject(building)->claimB);
+            return port::load<uint16_t>(static_cast<uint32_t>(section) + 8u * building->claimSlot + 2u);
+        }
+
+        // Whether the clock is within type B's opening hours, which may run past midnight.
+        bool withinOpeningHours(GuestPtr<WordsCtx> ctx)
+        {
+            const GuestPtr<BuildingType> type = typeAt(ctx->buildingTypeB);
+            const int minute = ctx->city->clock / 60;
+            const int open = type->openMinute, close = type->closeMinute;
+            if (close < open)
+                return minute >= open || minute < close;
+            return minute >= open && minute < close;
+        }
+
+        // A building's own opening test: slot +0x24 of its type, called with (type, city, building, a3). v0 holds the
+        // type's entry in the type table at the call.
+        int callOpenSlot(GuestPtr<WordsCtx> ctx, GuestPtr<MapObject> building, uint32_t a3)
+        {
+            const GuestPtr<BuildingType> type = typeOfObject(building);
+            port::setGuestV0(static_cast<int32_t>(globals::buildingTypeTable.get() + 4u * building->type));
+            return port::callGuest<int>(port::load<uint32_t>(type->vtable.address + 0x24u), type, ctx->city, building, a3);
+        }
+
+        // The person's building on their tile (mm_Map_FindPersonObjectOnTile), the tile from the position as
+        // (x + 64, 64 - z).
+        GuestPtr<MapObject> buildingUnderPerson(GuestPtr<WordsCtx> ctx, GuestPtr<MapPerson> person)
+        {
+            const int x = sdk::fptosi(ps2f(64.0f) + ps2f(person->x));
+            const int z = sdk::fptosi(ps2f(64.0f) - ps2f(person->z));
+            const uint32_t tile = (static_cast<uint32_t>(x) + (static_cast<uint32_t>(z) << 7)) & 0xFFFFu;
+            return Map_FindPersonObjectOnTile(ctx->city->map, person->index, tile);
+        }
+
+        // Building B, family B and type B become the building's.
+        int setBuildingB(GuestPtr<WordsCtx> ctx, GuestPtr<MapObject> building)
+        {
+            ctx->buildingB = building;
+            ctx->familyB = ctx->buildingB->family;
+            ctx->buildingTypeB = ctx->buildingB->type;
+            return static_cast<int>(building.address);
+        }
+    }
+
+    int WordsFn_ClaimIs50(GuestPtr<WordsCtx> ctx) { return claimOf(buildingByArg(ctx)) == 0x32 ? 1 : 0; }
+
+    // Whether family A may apply: always while the city is popular (flag 4), and with stage flag 2 when
+    // mm_Family_CanApply agrees.
+    int WordsFn_CanApply(GuestPtr<WordsCtx> ctx)
+    {
+        int agrees = 0;
+        if ((globals::stageFlags.get() & 2u) != 0)
+            agrees = Family_CanApply(ctx->familyA, ctx->city) != 0 ? 1 : 0;
+        return ((ctx->city->flags & 4u) != 0 ? 1 : 0) | agrees;
+    }
+
+    // Whether family A is entry 0xFF (argument 0), 0xB7 (1) or 0x104 (2) of the family type table.
+    int WordsFn_IsSpecialFamily(GuestPtr<WordsCtx> ctx)
+    {
+        uint32_t type;
+        switch (ctx->arg)
+        {
+        case 0:
+            type = 0xFF;
+            break;
+        case 1:
+            type = 0xB7;
+            break;
+        case 2:
+            type = 0x104;
+            break;
+        default:
+            return 0;
+        }
+        return port::load<uint16_t>(globals::familyTypeTable.get() + 2u * type) == ctx->familyA ? 1 : 0;
+    }
+
+    // Whether the money covers the goods' price.
+    int WordsFn_CanAfford(GuestPtr<WordsCtx> ctx)
+    {
+        port::GuestFrame<0x30> frame;
+        const uint32_t record = goodsRecord(ctx, frame.ptr().address + 0x2Cu);
+        const int32_t money = globals::stageState()->money;
+        return money < Goods_GetPrice(static_cast<int>(record)) ? 0 : 1;
+    }
+
+    // For goods carried in the bag (category, record +4, from 0x10 except 0x12, 0x14, 0x16 and 0x19), whether the
+    // bag is full: the last slot of its size holds an item.
+    int WordsFn_GoodsBagFull(GuestPtr<WordsCtx> ctx)
+    {
+        port::GuestFrame<0x30> frame;
+        const uint32_t record = goodsRecord(ctx, frame.ptr().address + 0x2Cu);
+        const uint8_t category = port::load<uint8_t>(record + 4u);
+        if (category < 0x10 || category == 0x12 || category == 0x16 || category == 0x14 || category == 0x19)
+            return 0;
+        const GuestPtr<Bag> bag = ctx->city->bag;
+        if (bag->size == 0)
+            return 0;
+        const uint32_t slots = port::load<uint8_t>(globals::kBagSlotsBySize + bag->size);
+        return port::load<uint16_t>(bag.address + 4u + 16u * (slots - 1u)) != 0 ? 1 : 0; // slots[slots - 1].item
+    }
+
+    // Whether the goods are owned already: laptop goods by the active laptop entries (bit `category`, and
+    // categories 6 and 7 by entries 7 and 8), category 0x16 when a bag shortcut holds record +5, category 0x19 when
+    // mm_Family_CanApply refuses record +5.
+    int WordsFn_GoodsOwned(GuestPtr<WordsCtx> ctx)
+    {
+        port::GuestFrame<0x40> frame;
+        const uint32_t record = goodsRecord(ctx, frame.ptr().address + 0x3Cu);
+        const uint32_t active = Laptop_CountActive();
+        const uint8_t category = port::load<uint8_t>(record + 4u);
+        if ((active & (1u << (category & 31u))) != 0)
+            return 1;
+        if (category >= 6 && category < 8)
+            return (Laptop_CountActive() & 0x180u) != 0 ? 1 : 0;
+        const uint8_t which = port::load<uint8_t>(record + 5u);
+        if (category == 0x16)
+        {
+            for (const BagShortcut &shortcut : ctx->city->bag->shortcuts)
+                if (static_cast<uint16_t>(shortcut.slot) == which)
+                    return 1;
+            return 0;
+        }
+        if (category == 0x19)
+            return Family_CanApply(which, ctx->city) == 0 ? 1 : 0;
+        return 0;
+    }
+
+    // Person A is given the bag item: friendship points by its price (three per step: 1 below 1001, 2 below 5001,
+    // 3 below 10001, 4 below 50001, 5 below 100001, 10 below 500001, 20 below 1000001, 30 below 5000001, else 50),
+    // then the item leaves the bag. mm_Bag_RemoveSlot returns nothing the port knows of and its v0 is the result: the
+    // city pointer the original holds in v0 at the call, unless it changes it.
+    int WordsFn_GiveBagItem(GuestPtr<WordsCtx> ctx)
+    {
+        const int price = Goods_GetPrice(static_cast<int>(bagItemRecord(ctx)));
+        int steps;
+        if (price < 1001)
+            steps = 1;
+        else if (price < 5001)
+            steps = 2;
+        else if (price < 10001)
+            steps = 3;
+        else if (price < 50001)
+            steps = 4;
+        else if (price < 100001)
+            steps = 5;
+        else if (price < 500001)
+            steps = 10;
+        else if (price < 1000001)
+            steps = 20;
+        else if (price < 5000001)
+            steps = 30;
+        else
+            steps = 50;
+        Family_AddFriendship(ctx->familyA, ctx->memberA, GuestPtr<int32_t>::of(ctx->city->approval), steps * 3);
+        port::setGuestV0(static_cast<int32_t>(ctx->city.address));
+        const int removed = port::callGuest<int>(addr::Bag_RemoveSlot, ctx->city->bag, ctx->bagSlot);
+        ctx->bagSlot = GuestPtr<void>{0};
+        return removed;
+    }
+
+    // Whether (family + member) % 12 of person A (or B) is this month.
+    int WordsFn_IsBirthdayMonth(GuestPtr<WordsCtx> ctx)
+    {
+        const Who who = whoByArg(ctx);
+        return (who.family + who.member) % 12 == ctx->city->monthCount % 12 ? 1 : 0;
+    }
+
+    // The building's state (B with an argument, else A): 0 without one, 3 with its claim met (flag 8), 4 with its
+    // meter maxed (flag 0x40), else its claim meter level.
+    int WordsFn_BuildingState(GuestPtr<WordsCtx> ctx)
+    {
+        const GuestPtr<MapObject> building = buildingByArg(ctx);
+        if (!building)
+            return 0;
+        if ((building->flags & 8u) != 0)
+            return 3;
+        if ((building->flags & 0x40u) != 0)
+            return 4;
+        return ClaimMeter_Level(building->claimMeter);
+    }
+
+    // 2 for a member without friendship yet, else whether their friendship level is above 13.
+    int WordsFn_FriendLevelHigh(GuestPtr<WordsCtx> ctx)
+    {
+        const Who who = whoByArg(ctx);
+        if (Family_GetFriendship(who.family, who.member) == 0)
+            return 2;
+        return memberStatus(ctx, addr::MemberStatus_IsLevelAbove13, addr::StatusByte_LevelAbove13);
+    }
+
+    // The target of person A (or B): 0 none, 1 a building other than their workplace, else whether the type of
+    // building A (or B) has flag 0x20.
+    int WordsFn_WorksAtHome(GuestPtr<WordsCtx> ctx)
+    {
+        const GuestPtr<MapPerson> person = personByArg(ctx);
+        if (person->target == kNoObject)
+            return 0;
+        if (person->target != person->work)
+            return 1;
+        return (typeOfObject(buildingByArg(ctx))->flags & 0x20u) != 0 ? 1 : 0;
+    }
+
+    // Where person A (or B) heads: 0 without a person, 3 nowhere, 0 to work, 1 to their target, else 2 or 3 by the
+    // destination type's flag 0x40.
+    int WordsFn_PersonHeading(GuestPtr<WordsCtx> ctx)
+    {
+        const GuestPtr<MapPerson> person = personByArg(ctx);
+        if (!person)
+            return 0;
+        const uint16_t destination = person->destination;
+        if (destination == kNoObject)
+            return 3;
+        if (destination == person->work)
+            return 0;
+        if (destination == person->target)
+            return 1;
+        return (typeOfObject(Map_GetRecord(ctx->city->map, destination))->flags & 0x40u) != 0 ? 2 : 3;
+    }
+
+    // Where person A (or B) is: 1 without a person, 3 outside, 0 in their target, 1 at work, else 2 or 3 by the
+    // type flag 0x40 of the building they are in.
+    int WordsFn_PersonWhere(GuestPtr<WordsCtx> ctx)
+    {
+        const GuestPtr<MapPerson> person = personByArg(ctx);
+        if (!person)
+            return 1;
+        const uint16_t inside = person->inside;
+        if (inside == kNoObject)
+            return 3;
+        if (inside == person->target)
+            return 0;
+        if (inside == person->work)
+            return 1;
+        return (typeOfObject(Map_GetRecord(ctx->city->map, inside))->flags & 0x40u) != 0 ? 2 : 3;
+    }
+
+    // Whether building B is open (its type decides), or without one whether type B's hours hold the clock.
+    int WordsFn_BuildingOpen(GuestPtr<WordsCtx> ctx)
+    {
+        const GuestPtr<MapObject> building = ctx->buildingB;
+        if (building)
+            return callOpenSlot(ctx, building, port::guestA3());
+        return withinOpeningHours(ctx) ? 1 : 0;
+    }
+
+    // Whether building A's footprint overlaps a type B footprint at building B's tile.
+    int WordsFn_BuildingsOverlap(GuestPtr<WordsCtx> ctx)
+    {
+        const GuestPtr<MapObject> a = ctx->buildingA, b = ctx->buildingB;
+        const int ax = a->tile & 0x7F, az = a->tile >> 7, sizeA = typeOfObject(a)->size;
+        const int bx = b->tile & 0x7F, bz = b->tile >> 7, sizeB = typeAt(ctx->buildingTypeB)->size;
+        return ax < bx + sizeB && bx < ax + sizeA && az < bz + sizeB && bz < az + sizeA ? 1 : 0;
+    }
+
+    // Whether family A's (or B's) member agrees to come as a friend: never with 32 applicants, nor when the person
+    // records in use plus seven for each active applicant and seven more would reach 6000.
+    int WordsFn_TryFriendAgrees(GuestPtr<WordsCtx> ctx)
+    {
+        const GuestPtr<Applicants> applicants = ctx->city->applicants;
+        if (applicants->count >= 32)
+            return 0;
+        const uint32_t people = static_cast<uint32_t>(ctx->city->map->peopleInUse);
+        const uint32_t needed = 7u * static_cast<uint32_t>(Applicants_CountActive(applicants)) + people + 7u;
+        if (static_cast<int32_t>(needed) >= kNoPerson)
+            return 0;
+        const Who who = whoByArg(ctx);
+        return Family_FriendAgrees(who.family, who.member, ctx->city->approval);
+    }
+
+    // How crowded the building (B with an argument, else A) is with visitors: residents (classes without flag 1)
+    // whose target and workplace are elsewhere. 0 none, 1 up to half the type's capacity, 2 more.
+    int WordsFn_BuildingCrowd(GuestPtr<WordsCtx> ctx)
+    {
+        const GuestPtr<MapObject> building = buildingByArg(ctx);
+        const int capacity = typeOfObject(building)->capacity;
+        port::GuestLocal<uint16_t> cursor;
+        *cursor = building->firstPerson;
+        int visitors = 0;
+        while (const GuestPtr<MapPerson> person = People_Next(ctx->city->map, cursor))
+        {
+            const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)};
+            if ((cls->flags & 1u) != 0 || person->target == building->id || person->work == building->id)
+                continue;
+            ++visitors;
+        }
+        if (visitors == 0)
+            return 0;
+        return visitors <= capacity / 2 ? 1 : 2;
+    }
+
+    // 2 when a want's building has building A's claim, else whether the wants list has room for 4 more words.
+    int WordsFn_WantClaimMatch(GuestPtr<WordsCtx> ctx)
+    {
+        port::GuestFrame<0x50> frame;
+        const uint32_t sp = frame.ptr().address;
+        const int claim = claimOf(ctx->buildingA);
+        port::store<uint32_t>(sp + 0x4Cu, 0);
+        while (Wants_Find(ctx->city->wants, ctx->city, GuestPtr<uint32_t>{sp + 0x40u}, GuestPtr<uint32_t>{sp + 0x44u},
+                          GuestPtr<uint32_t>{sp + 0x48u}, GuestPtr<int32_t>{sp + 0x4Cu}) != 0)
+        {
+            if (claimOf(Map_GetRecord(ctx->city->map, static_cast<int>(port::load<uint32_t>(sp + 0x44u)))) == claim)
+                return 2;
+        }
+        return Wants_HasRoom(ctx->city->wants, 4);
+    }
+
+    // The claim line of the chosen want's building (want number wantIndex in the wants list), 0 past the end.
+    GuestPtr<char> WordsFn_TextWantClaim(GuestPtr<WordsCtx> ctx)
+    {
+        port::GuestFrame<0x40> frame;
+        const uint32_t sp = frame.ptr().address;
+        port::store<uint32_t>(sp + 0x3Cu, 0);
+        for (int i = 0; Wants_Find(ctx->city->wants, ctx->city, GuestPtr<uint32_t>{sp + 0x30u}, GuestPtr<uint32_t>{sp + 0x34u},
+                                   GuestPtr<uint32_t>{sp + 0x38u}, GuestPtr<int32_t>{sp + 0x3Cu}) != 0;
+             ++i)
+        {
+            if (i != ctx->wantIndex)
+                continue;
+            const GuestPtr<MapObject> building = Map_GetRecord(ctx->city->map, static_cast<int>(port::load<uint32_t>(sp + 0x34u)));
+            return GuestPtr<char>{static_cast<uint32_t>(Claim_GetLine(typeOfObject(building)->claimB, building->claimSlot))};
+        }
+        return GuestPtr<char>{0};
+    }
+
+    // Building B (with family B and type B) becomes, by the argument: 0 building A, 1 person A's target, 2 the
+    // building person A stands at, 3 the one they are in, 4 their destination, 5 none, with family B the result's
+    // family. Otherwise nothing changes.
+    int WordsFn_SelectBuildingB(GuestPtr<WordsCtx> ctx)
+    {
+        switch (ctx->arg)
+        {
+        case 0:
+            ctx->familyB = ctx->familyA;
+            ctx->buildingB = ctx->buildingA;
+            ctx->buildingTypeB = ctx->buildingB->type;
+            return port::guestV0();
+        case 1:
+            return setBuildingB(ctx, Map_GetRecord(ctx->city->map, ctx->personA->target));
+        case 2:
+        {
+            const GuestPtr<MapObject> building = buildingUnderPerson(ctx, ctx->personA);
+            ctx->buildingB = building;
+            ctx->familyB = ctx->buildingB ? ctx->buildingB->family : 0;
+            ctx->buildingTypeB = ctx->buildingB ? ctx->buildingB->type : 0;
+            return static_cast<int>(building.address);
+        }
+        case 3:
+            return setBuildingB(ctx, Map_GetRecord(ctx->city->map, ctx->personA->inside));
+        case 4:
+            return setBuildingB(ctx, Map_GetRecord(ctx->city->map, ctx->personA->destination));
+        case 5:
+        {
+            ctx->familyB = ctx->result;
+            ctx->buildingB = GuestPtr<MapObject>{0};
+            const int type = Family_GetTypeIndex(ctx->result);
+            ctx->buildingTypeB = static_cast<uint16_t>(type);
+            return type;
+        }
+        default:
+            return port::guestV0();
+        }
+    }
+
+    // Where person A (or B) stands: 1 without a person, 0 off any building of theirs or inside another one, at
+    // their workplace 1 (or 2 when it is their target, its type has flag 0x20 and building B is open), 2 at their
+    // target, 3 at a building whose type has flag 0x40, else 0. Without an argument building B and type B become
+    // the building stood at.
+    int WordsFn_PersonAtBuilding(GuestPtr<WordsCtx> ctx)
+    {
+        const GuestPtr<MapPerson> person = personByArg(ctx);
+        if (!person)
+            return 1;
+        const GuestPtr<MapObject> building = buildingUnderPerson(ctx, person);
+        if (!building)
+            return 0;
+        if (ctx->arg == 0)
+        {
+            ctx->buildingB = Map_GetRecord(ctx->city->map, building->id);
+            ctx->buildingTypeB = ctx->buildingB->type;
+        }
+        if (person->inside != kNoObject && person->inside != building->id)
+            return 0;
+        const GuestPtr<BuildingType> type = typeOfObject(building);
+        if (building->id == person->work)
+        {
+            if (person->work != person->target || (type->flags & 0x20u) == 0)
+                return 1;
+            int open;
+            if (const GuestPtr<MapObject> b = ctx->buildingB)
+                open = callOpenSlot(ctx, b, globals::buildingTypeTable.get()); // a3 holds the type table here
+            else
+                open = withinOpeningHours(ctx) ? 1 : 0;
+            return open != 0 ? 2 : 1;
+        }
+        if (building->id == person->target)
+            return 2;
+        return (type->flags & 0x40u) != 0 ? 3 : 0;
+    }
+
+    PORT_FN(WordsFn_ActorDetach);
+    PORT_FN(WordsFn_ActorMoveTo);
+    PORT_FN(WordsFn_ActorFollow);
+    PORT_FN(WordsFn_EventA4Slot14);
+    PORT_FN(WordsFn_EventA8Slot14);
+    PORT_FN(WordsFn_EventSetActor);
+    PORT_FN(WordsFn_SelectEventActor);
+    PORT_FN(WordsFn_EventStage);
+    PORT_FN(WordsFn_ClaimIs50);
+    PORT_FN(WordsFn_CanApply);
+    PORT_FN(WordsFn_IsSpecialFamily);
+    PORT_FN(WordsFn_CanAfford);
+    PORT_FN(WordsFn_GoodsBagFull);
+    PORT_FN(WordsFn_GoodsOwned);
+    PORT_FN(WordsFn_GiveBagItem);
+    PORT_FN(WordsFn_IsBirthdayMonth);
+    PORT_FN(WordsFn_BuildingState);
+    PORT_FN(WordsFn_FriendLevelHigh);
+    PORT_FN(WordsFn_WorksAtHome);
+    PORT_FN(WordsFn_PersonHeading);
+    PORT_FN(WordsFn_PersonWhere);
+    PORT_FN(WordsFn_BuildingOpen);
+    PORT_FN(WordsFn_BuildingsOverlap);
+    PORT_FN(WordsFn_TryFriendAgrees);
+    PORT_FN(WordsFn_BuildingCrowd);
+    PORT_FN(WordsFn_WantClaimMatch);
+    PORT_FN(WordsFn_TextWantClaim);
+    PORT_FN(WordsFn_SelectBuildingB);
+    PORT_FN(WordsFn_PersonAtBuilding);
     PORT_FN(WordsFn_FriendshipBand);
     PORT_FN(WordsFn_FriendshipTier);
     PORT_FN(WordsFn_MeterAgrees);

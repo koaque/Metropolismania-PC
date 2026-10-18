@@ -478,15 +478,15 @@ namespace mm
                 if (person.target != kNoObject && person.target != object)
                 {
                     const GuestPtr<MapObject> heading = Map_GetRecord(map, person.target);
-                    if (heading->unk_16[0] != 0)
-                        --heading->unk_16[0];
+                    if (heading->headingHere != 0)
+                        --heading->headingHere;
                 }
                 const uint16_t inside = person.inside;
                 if (inside != kNoObject && inside != object && inside != person.target)
                 {
                     const GuestPtr<MapObject> in = Map_GetRecord(map, inside);
-                    if ((GuestPtr<BuildingType>{globals::buildingTypeAddress(in->type)}->flags & 0x40u) != 0 && in->unk_16[1] != 0)
-                        --in->unk_16[1];
+                    if ((GuestPtr<BuildingType>{globals::buildingTypeAddress(in->type)}->flags & 0x40u) != 0 && in->occupants != 0)
+                        --in->occupants;
                 }
                 --map->population;
             }

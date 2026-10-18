@@ -25,8 +25,9 @@
 // run: a record edited into a state the game never reaches can leave the original waiting forever.
 //
 // Changes: MMPC_DIFFTEST_CHANGES=<names or "all"> prints, for each record of those functions, the RDRAM ranges
-// the original run changed (outside the free stack). A record that passes but changes nothing, or not what
-// it was made for (a record edited to reach a rare branch), is not evidence for that path.
+// the original run changed (outside the free stack), and its v0 for functions with an integer result. A record
+// that passes but changes nothing, or not what it was made for (a record edited to reach a rare branch), is not
+// evidence for that path.
 // Side effects outside guest memory (GS, IOP, files) are not compared yet.
 
 #include "difftest.h"
@@ -686,8 +687,17 @@ namespace port
                 watchStop();
                 const std::vector<std::string> diffs = compare(p, rec, original, portedRun);
                 if (changesAll || changeNames.count(p.name) != 0)
+                {
                     std::cout << "[difftest] " << p.name << " " << file.filename().string() << " changes "
-                              << describeChanges(rec, original) << std::endl;
+                              << describeChanges(rec, original);
+                    if (p.result == ResultKind::Int)
+                    {
+                        char v0[32];
+                        std::snprintf(v0, sizeof(v0), "; v0 %llX", static_cast<unsigned long long>(gpr64(&original.ctx, 2)));
+                        std::cout << v0;
+                    }
+                    std::cout << std::endl;
+                }
                 if (diffs.empty())
                     ++ok;
                 else

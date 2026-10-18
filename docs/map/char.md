@@ -101,11 +101,11 @@ People and the player character.
 | `0x00162540` | `void mm_Stamina_Init(Stamina *stamina)` | 24 | no | stamina 399999 |
 | `0x00162560` | `void mm_Stamina_CreateGlobal(void)` | 60 | yes | 0x1BDBB8 = new stamina record |
 | `0x0019AA80` | `void mm_Person_ExitBuilding(CityScene *city, MapPerson *person)` | 160 | no | if person a1 is inside a building: lowers the building's occupant count (+0x17) and marks the person outside |
-| `0x0019AE50` | `int mm_Person_IsOnOpenTile(CityScene *city, uint16_t *actor)` | 212 | no | (provisional) the person's tile holds no building with type flag 0x40 |
-| `0x0019AF30` | `int mm_Person_IsAtBuilding(CityScene *city, uint16_t *actor, int building)` | 232 | no | person a1 (6000 counts as yes) stands at building a2 |
+| `0x0019AE50` | `int mm_Person_IsOnOpenTile(CityScene *city, ActorRef *actor)` | 212 | no | (provisional) the person's tile holds no building with type flag 0x40 |
+| `0x0019AF30` | `int mm_Person_IsAtBuilding(CityScene *city, ActorRef *actor, int building)` | 232 | no | person a1 (6000 counts as yes) stands at building a2 |
 | `0x0019B020` | `int mm_Person_FindIdleOfType(CityScene *city, int a1, uint32_t charType)` | 136 | no | first person of char type a2 whose home building is free (0x165660) |
 | `0x0019B0B0` | `int mm_Person_IsNearBuilding(CityScene *city, float *position, MapObject *obj, int range)` | 424 | no | person position within a3 tiles of building a2's footprint |
-| `0x0019B260` | `int mm_Player_DistanceToBuilding(Player *player, int building)` | 360 | no | distance in tiles from the player to building a1's footprint |
-| `0x0019B3D0` | `float mm_Player_DistanceToPerson(Player *player, uint16_t *actor)` | 104 | no | distance from the player to person a1 (sqrt) |
+| `0x0019B260` | `int mm_Player_DistanceToBuilding(CityScene *city, ActorRef *actor)` | 360 | no | tiles between the player and the building of actor a1 (footprint aware); a0 is the city |
+| `0x0019B3D0` | `float mm_Player_DistanceToPerson(Player *player, ActorRef *actor)` | 104 | no | distance from the player to person a1 (sqrt) |
 | `0x0019B440` | `float mm_Player_DistanceToPoint(Player *player, float *point)` | 80 | no | distance from the player to point a1 |
-| `0x0019B490` | `float mm_Person_Distance(int a0, uint16_t *actorA, uint16_t *actorB)` | 84 | no | distance between persons a1 and a2 |
+| `0x0019B490` | `float mm_Person_Distance(int a0, ActorRef *actorA, ActorRef *actorB)` | 84 | no | distance between persons a1 and a2 |

@@ -1358,7 +1358,7 @@ namespace mm
     {
         const GuestPtr<StageState> stage = globals::stageState();
         stage->stage = -1;
-        stage->unk_1C0 = 3000;
+        stage->money = 3000;
         stage->unk_1C4 = 2500;
         stage->unk_280 = 0;
         for (StageName &name : stage->names)
@@ -1665,7 +1665,7 @@ namespace mm
         bag->unk_174 = 0;
         bag->unk_178 = 0;
         bag->unk_170 = 0;
-        bag->unk_000 = 0;
+        bag->size = 0;
         bag->unk_1A0 = 0;
         bag->unk_002 = 0;
         for (uint8_t &b : bag->unk_17C)
