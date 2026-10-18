@@ -250,4 +250,63 @@ namespace mm
     PORT_FN(Bag_RemoveSlot);
     PORT_FN(BagMenu_GetSetupKind);
     PORT_FN(BagMenu_UpdateItemText);
+
+    // ---- the bag menu's draw (batch 40)
+
+    // The bag in the city menu: the bag model's matrix (node 0) is copied to the frame node of the size (size + 5, or 6 for
+    // no bag) of the shared bag-slot model, which is drawn. While the menu is in a state below 5 the list's backdrop (node 1
+    // of the bag model, matrix reset, 4.4 away, with the Z buffer cleared first), its list and text, the selected slot's
+    // packets and texts (the item name and, with the flag in +0x1A8, its description) and the closing widget are drawn.
+    void BagMenu_Draw(GuestPtr<Bag> bag)
+    {
+        const uint32_t b = bag.address;
+        const GuestPtr<A3DObject> frameModel{port::load<uint32_t>(0x001F3B08u)};
+        A3DObject_UpdateMatrices(GuestPtr<A3DObject>{port::load<uint32_t>(b + 0x16Cu)});
+        int node = bag->size + 5;
+        const uint32_t source = port::load<uint32_t>(port::load<uint32_t>(port::load<uint32_t>(b + 0x16Cu)) + 8u) + 0x70u;
+        if (node == 5)
+            ++node;
+        const uint32_t dest = port::load<uint32_t>(port::load<uint32_t>(frameModel.address) + 8u) + 0xC0u * static_cast<uint32_t>(node);
+        for (uint32_t row = 0; row < 0x40; row += 0x10)
+            *GuestPtr<Vec4>{dest + 0x70u + row} = *GuestPtr<Vec4>{source + row};
+        A3DObject_DrawNode(frameModel, node);
+        if (port::load<uint32_t>(b + 0x194u) >= 5)
+            return;
+        const auto packet = [&](uint32_t offset) {
+            if (port::load<int32_t>(b + offset) != 0)
+                Dma_AppendCall(port::load<int32_t>(b + offset));
+        };
+        const auto text = [&](uint32_t offset) {
+            if (port::load<uint32_t>(b + offset) != 0)
+                TextBox_Draw(GuestPtr<TextBox>{port::load<uint32_t>(b + offset)});
+        };
+        if (port::load<uint32_t>(b + 0x174u) != 0)
+        {
+            DmaList_QueueClearZ();
+            const uint32_t nodes = port::load<uint32_t>(port::load<uint32_t>(port::load<uint32_t>(b + 0x16Cu)) + 8u) + 0x130u;
+            Mat4_Copy(GuestPtr<Vec4>{nodes}, GuestPtr<Vec4>{globals::kIdentityMatrix});
+            port::store<uint32_t>(nodes + 0x38u, 0xC08CCCCDu);
+            A3DObject_DrawNode(GuestPtr<A3DObject>{port::load<uint32_t>(b + 0x16Cu)}, 1);
+        }
+        if (port::load<uint32_t>(b + 0x174u) != 0)
+            ListMenu_Draw(GuestPtr<ListMenu>{port::load<uint32_t>(b + 0x174u)});
+        text(0x170u);
+        if (port::load<uint16_t>(b + 16u * port::load<uint32_t>(b + 0x1A0u) + 4u) != 0)
+        {
+            packet(0x184u);
+            text(0x190u);
+            if (port::load<uint32_t>(b + 0x1A8u) != 0)
+            {
+                packet(0x17Cu);
+                text(0x188u);
+            }
+        }
+        packet(0x180u);
+        text(0x18Cu);
+        const uint32_t closing = port::load<uint32_t>(b + 0x178u);
+        if (closing != 0)
+            port::callGuest<void>(port::load<uint32_t>(port::load<uint32_t>(closing + 8u) + 0x20u), closing, 2);
+    }
+
+    PORT_FN(BagMenu_Draw);
 }

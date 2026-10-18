@@ -20,7 +20,7 @@ City events (visitors, requests, incidents, paydays).
 
 ## Functions
 
-148 functions (typed 41, verified 107). Blocks: 20 can reach a thread switch, 21 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+148 functions (typed 20, verified 128). Blocks: 20 can reach a thread switch, 21 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -29,10 +29,10 @@ City events (visitors, requests, incidents, paydays).
 | `0x001378D0` | `void mm_Event_InitForCity(EventMgr *events)` | 1448 | indirect | (provisional) prepares the event queue and the active list when a city starts |
 | `0x00137EA0` | `void mm_Event_LoadState(EventMgr *events, McManager *mc)` | 164 | indirect | reads the queue (0x200), the active list (0x224), a1 (0xA4) and each active event's data from the save file |
 | `0x00137F50` | `void mm_Event_SaveState(EventMgr *events, McManager *mc)` | 164 | indirect | writes them |
-| `0x00138000` | `void mm_Event_CallSlot14(EventMgr *events, CityScene *city, ActorRef *actor, int arg, int index)` | 128 | indirect | calls handler slot +0x14 of the talk's event a4 (0 talkA, 1 talkB) with (event, city, actor, arg) |
-| `0x00138080` | `void mm_Event_CallSlot10(EventMgr *events, CityScene *city, int index, int arg)` | 128 | indirect | calls handler slot +0x10 of the type of active event a2 |
+| `0x00138000` | `int64_t mm_Event_CallSlot14(EventMgr *events, CityScene *city, ActorRef *actor, int arg, int index)` | 128 | indirect | calls handler slot +0x14 of the talk's event a4 (0 talkA, 1 talkB) with (event, city, actor, arg) |
+| `0x00138080` | `int64_t mm_Event_CallSlot10(EventMgr *events, CityScene *city, int index, int arg)` | 128 | indirect | calls handler slot +0x10 of the type of active event a2 |
 | `0x00138100` | `void mm_Event_Update(EventMgr *events, CityScene *city)` | 2544 | indirect | per frame: starts queued events whose conditions hold, runs and finishes active ones |
-| `0x00138AF0` | `int mm_Event_CheckCondition(uint16_t *queue, CityScene *city, uint8_t *type, MapPerson *person)` | 1712 | indirect | (provisional) checks an event type's start conditions against the city |
+| `0x00138AF0` | `int64_t mm_Event_CheckCondition(EventMgr *events, CityScene *city, uint8_t *type, MapPerson *person)` | 1712 | indirect | (provisional) checks an event type's start conditions against the city |
 | `0x001391B0` | `uint8_t mm_Event_TryStart(EventMgr *events, CityScene *city, MapPerson *person)` | 504 | indirect | (provisional) starts event a2 if its conditions hold |
 | `0x001393B0` | `int mm_Event_FindForFamily(EventMgr *events, CityScene *city, int choice, int16_t *familyMember)` | 708 | yes | (provisional) the a2-th event the family can take part in (from the talk menu) |
 | `0x00139680` | `void mm_EventMgr_RequeueFirst(EventMgr *events)` | 128 | no | puts the first talk slot's event back in the queue (priority level 2), moves the other slots up and clears the last |
@@ -43,7 +43,7 @@ City events (visitors, requests, incidents, paydays).
 | `0x00139B50` | `void mm_Event_Finish(EventMgr *events, CityScene *city, int index)` | 356 | indirect | ends active event a2: releases its tiles, calls its handler, removes it (called by the event handlers) |
 | `0x00139CC0` | `void mm_Event_Abort(EventMgr *events, CityScene *city, int index)` | 272 | indirect | (provisional) ends active event a2 without its normal finish |
 | `0x00139DD0` | `int mm_Event_Trigger(EventMgr *events, int16_t id, CityScene *city, MapPerson *person)` | 820 | indirect | (provisional) triggers event a1 now or queues it |
-| `0x0013A110` | `void mm_Event_CallHandlerSlot(EventMgr *events, CityScene *city, int index, int arg)` | 204 | indirect | (provisional) calls a handler slot for active event a2 |
+| `0x0013A110` | `int64_t mm_Event_CallHandlerSlot(EventMgr *events, CityScene *city, int index, int arg)` | 204 | indirect | (provisional) calls a handler slot for active event a2 |
 | `0x0013A1E0` | `int mm_EventQueue_Find(EventMgr *events, int16_t id)` | 104 | no | position of id a1 in the waiting queue (0x1C5790, length 0x1BDA80), the length when it is not there |
 | `0x0013A250` | `EventMgr *mm_EventMgr_dtor(EventMgr *events, int16_t deleteFlag)` | 264 | yes | frees the event lists |
 | `0x0013A360` | `EventMgr *mm_EventMgr_ctor(EventMgr *events)` | 500 | yes | creates the event lists and handler objects |
@@ -57,9 +57,9 @@ City events (visitors, requests, incidents, paydays).
 | `0x0018F5D0` | `int mm_EvShoppingTogether_Slot14(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 32 | no | type 1: Slot14 (returns +0x28 when a3 == 0) |
 | `0x0018F5F0` | `void mm_EvShoppingTogether_Update(EventData *data, CityScene *city)` | 900 | yes | type 1: Update |
 | `0x0018F980` | `void mm_EvShoppingTogether_End(EventData *data, CityScene *city)` | 192 | no | type 1: End (clears the building marks) |
-| `0x0018FA40` | `void mm_EvShoppingTogether_Start(EventData *data, CityScene *city)` | 116 | no | type 1: Start (marks the two buildings, timer 180) |
+| `0x0018FA40` | `MapObject *mm_EvShoppingTogether_Start(EventData *data, CityScene *city)` | 116 | no | type 1: Start (marks the two buildings, timer 180) |
 | `0x0018FAC0` | `int mm_EvShoppingTogether_Check(EventData *data, CityScene *city, MapPerson *person)` | 460 | no | event type 1 "Shopping together": slot Check |
-| `0x0018FC90` | `void mm_EvAlien_Slot14(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 56 | yes | type 16: Slot14 |
+| `0x0018FC90` | `int mm_EvAlien_Slot14(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 56 | yes | type 16: Slot14 |
 | `0x0018FCD0` | `void mm_EvAlien_End(EventData *data, CityScene *city)` | 120 | no | type 16: End (clears the building marks) |
 | `0x0018FD50` | `MapObject *mm_EvAlien_PickTarget(CityScene *city, int x, int z)` | 400 | no | (provisional) picks a building for the alien (footprint checks, table 0x1B3760) |
 | `0x0018FEE0` | `void mm_EvAlien_Update(EventData *data, CityScene *city)` | 1184 | yes | type 16: Update (finishes after 720 ticks) |
@@ -67,16 +67,16 @@ City events (visitors, requests, incidents, paydays).
 | `0x001906C0` | `int mm_EvBodyguard_Slot14(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 140 | no | type 5: Slot14 |
 | `0x00190750` | `void mm_EvEscort_End(EventData *data, CityScene *city)` | 148 | no | End shared by types 2 and 5 |
 | `0x001907F0` | `void mm_EvEscort_Update(EventData *data, CityScene *city)` | 768 | yes | Update shared by types 2 and 5 |
-| `0x00190AF0` | `void mm_EvEscort_Start(EventData *data, CityScene *city)` | 96 | no | Start shared by types 2 "Forgetful Granny" and 5 "Bodyguard" |
+| `0x00190AF0` | `int mm_EvEscort_Start(EventData *data, CityScene *city)` | 96 | no | Start shared by types 2 "Forgetful Granny" and 5 "Bodyguard" |
 | `0x00190B50` | `int mm_EvBodyguard_Check(EventData *data, CityScene *city)` | 8 | no | type 5 "Bodyguard": Check |
 | `0x00190B60` | `int mm_EvMsg_Slot14(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 612 | no | Slot14 shared by types 23, 29, 30, 35, 41 |
-| `0x00190DD0` | `int mm_EvPayday_Slot10(EventData *data, CityScene *city, uint32_t a2)` | 72 | indirect | Slot10 shared by types 29 and 30 |
+| `0x00190DD0` | `char *mm_EvPayday_Slot10(EventData *data, CityScene *city, uint32_t value)` | 72 | indirect | Slot10 shared by types 29 and 30 |
 | `0x00190F00` | `void mm_EvPayday_Update(EventData *data, CityScene *city)` | 492 | no | Update shared by types 29 and 30 |
 | `0x001910F0` | `void mm_EvMsg_UpdateFinal(EventData *data, CityScene *city)` | 256 | no | Update for types 23 "Begin a farewell party", 35 "Forcibly Retreat", 41 "Mission Cleared" |
 | `0x001911F0` | `void mm_EvMsg_Update(EventData *data, CityScene *city)` | 292 | no | Update shared by most message events (25-28, 31-34, 36-40) |
 | `0x00191320` | `void mm_EvNoRetreat_Update(EventData *data, CityScene *city)` | 256 | no | type 24 "No retreat": Update |
 | `0x00191420` | `void mm_EvMsg_End(EventData *data, CityScene *city)` | 48 | no | End shared by the message events |
-| `0x00191450` | `void mm_EvMsg_Start(EventData *data, CityScene *city)` | 36 | no | Start shared by the message events (types 23-41) |
+| `0x00191450` | `int64_t mm_EvMsg_Start(EventData *data, CityScene *city)` | 36 | no | Start shared by the message events (types 23-41) |
 | `0x00191480` | `int mm_EvMissionCleared_Check(EventData *data, CityScene *city)` | 84 | no | type 41 "Mission Cleared": Check |
 | `0x001914E0` | `int mm_EvQuota80_Check(EventData *data, CityScene *city)` | 72 | no | type 40 "80% of the quota": Check |
 | `0x00191530` | `int mm_EvForciblyRetreat_Check(EventData *data, CityScene *city)` | 20 | no | type 35 "Forcibly Retreat": Check |
@@ -92,13 +92,13 @@ City events (visitors, requests, incidents, paydays).
 | `0x00191850` | `uint32_t mm_EvCaveMan_Slot14(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 508 | yes | type 15: Slot14 |
 | `0x00191A50` | `void mm_EvCaveMan_Update(EventData *data, CityScene *city)` | 1652 | yes | type 15: Update |
 | `0x001920D0` | `void mm_EvCaveMan_End(EventData *data, CityScene *city)` | 192 | no | type 15: End |
-| `0x00192190` | `void mm_EvCaveMan_Start(EventData *data, CityScene *city)` | 8 | no | type 15: Start |
+| `0x00192190` | `int64_t mm_EvCaveMan_Start(EventData *data, CityScene *city)` | 8 | no | type 15: Start |
 | `0x001921A0` | `int mm_EvCaveMan_Check(EventData *data, CityScene *city)` | 380 | no | type 15 "Cave Man": Check |
 | `0x00192320` | `int mm_EvDeliveryMan_Slot14(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 76 | indirect | type 3: Slot14 |
 | `0x00192490` | `char *mm_EvDeliveryMan_Slot10(EventData *data, CityScene *city, int index)` | 176 | no | type 3: Slot10 |
 | `0x00192540` | `void mm_EvDeliveryMan_Update(EventData *data, CityScene *city)` | 328 | no | type 3: Update |
 | `0x00192690` | `void mm_EvDeliveryMan_End(EventData *data, CityScene *city)` | 184 | no | type 3: End |
-| `0x00192750` | `void mm_EvDeliveryMan_Start(EventData *data, CityScene *city)` | 116 | no | type 3: Start |
+| `0x00192750` | `MapObject *mm_EvDeliveryMan_Start(EventData *data, CityScene *city)` | 116 | no | type 3: Start |
 | `0x001927D0` | `int mm_EvDeliveryMan_Check(EventData *data, CityScene *city, MapPerson *person)` | 1272 | no | type 3 "Delivery Man": Check |
 | `0x00192CD0` | `int mm_EvBugDamage_Check(EventData *data, CityScene *city)` | 132 | no | type 11 "Bug damage": Check (its only slot) |
 | `0x00192D60` | `void mm_EventList_MoveAll(int list, int from, int to)` | 696 | no | (provisional) moves every entry from bucket a1 to a2 (event manager constructor and destructor) |
@@ -110,7 +110,7 @@ City events (visitors, requests, incidents, paydays).
 | `0x00193330` | `int mm_EvFarewellParty_Slot14(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 60 | no | type 19: Slot14 |
 | `0x00193370` | `void mm_EvFarewellParty_End(EventData *data, CityScene *city)` | 104 | indirect | type 19: End |
 | `0x001933E0` | `void mm_EvFarewellParty_Update(EventData *data, CityScene *city)` | 1344 | yes | type 19: Update |
-| `0x00193920` | `void mm_EvFarewellParty_Start(EventData *data, CityScene *city)` | 520 | no | type 19 "Farewell Party": Start |
+| `0x00193920` | `MapObject *mm_EvFarewellParty_Start(EventData *data, CityScene *city)` | 520 | no | type 19 "Farewell Party": Start |
 | `0x00193B30` | `int mm_EvForgetfulGranny_Check(EventData *data, CityScene *city, MapPerson *person)` | 44 | no | type 2 "Forgetful Granny": Check |
 | `0x00193B60` | `int mm_EvCrazyCult_Slot14(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 96 | indirect | type 18: Slot14 |
 | `0x00193D00` | `void mm_EvCrazyCult_End(EventData *data, CityScene *city)` | 232 | no | type 18: End |
@@ -118,39 +118,39 @@ City events (visitors, requests, incidents, paydays).
 | `0x00193F40` | `void mm_EvCrazyCult_Phase2(EventData *data, CityScene *city)` | 516 | no | (provisional) states 0xA-0xE: timed actor notifications |
 | `0x00194150` | `void mm_EvCrazyCult_Phase1(EventData *data, CityScene *city)` | 352 | no | (provisional) states 4-8: timed actor notifications, mark the building |
 | `0x001942B0` | `void mm_EvCrazyCult_Update(EventData *data, CityScene *city)` | 992 | no | type 18: Update |
-| `0x00194690` | `void mm_EvCrazyCult_Start(EventData *data, CityScene *city)` | 136 | no | type 18 "Crazy Cult": Start |
+| `0x00194690` | `int64_t mm_EvCrazyCult_Start(EventData *data, CityScene *city)` | 136 | no | type 18 "Crazy Cult": Start |
 | `0x00194720` | `int mm_EvAdoption_Slot14(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 116 | indirect | type 12: Slot14 |
 | `0x001949F0` | `int mm_EvAdoption_Slot10(EventData *data, CityScene *city, int index)` | 56 | no | type 12: Slot10 |
 | `0x00194A30` | `void mm_EvAdoption_Update(EventData *data, CityScene *city)` | 1452 | no | type 12: Update |
-| `0x00194FE0` | `void mm_EvAdoption_Start(EventData *data, CityScene *city)` | 184 | no | type 12 "Adoption": Start |
+| `0x00194FE0` | `uint32_t mm_EvAdoption_Start(EventData *data, CityScene *city)` | 184 | no | type 12 "Adoption": Start |
 | `0x001950A0` | `uint32_t mm_EvUselessMiddleAged_Slot14(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 48 | indirect | type 7: Slot14 |
 | `0x00195160` | `void mm_EvUselessMiddleAged_Update(EventData *data, CityScene *city)` | 160 | no | type 7: Update |
 | `0x00195200` | `void mm_EvUselessMiddleAged_End(EventData *data, CityScene *city)` | 140 | no | type 7: End |
-| `0x00195290` | `void mm_EvUselessMiddleAged_Start(EventData *data, CityScene *city)` | 76 | no | type 7: Start |
+| `0x00195290` | `MapObject *mm_EvUselessMiddleAged_Start(EventData *data, CityScene *city)` | 76 | no | type 7: Start |
 | `0x001952E0` | `int mm_EvUselessMiddleAged_Check(EventData *data, CityScene *city)` | 20 | no | type 7 "Useless middle-aged": Check |
 | `0x00195300` | `int mm_EvMissingChildren_Slot14(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 276 | no | type 6: Slot14 |
 | `0x00195420` | `void mm_EvMissingChildren_End(EventData *data, CityScene *city)` | 252 | no | type 6: End |
 | `0x00195520` | `void mm_EvMissingChildren_Update(EventData *data, CityScene *city)` | 1452 | yes | type 6: Update |
-| `0x00195AD0` | `void mm_EvMissingChildren_Start(EventData *data, CityScene *city)` | 48 | no | type 6: Start |
+| `0x00195AD0` | `MapObject *mm_EvMissingChildren_Start(EventData *data, CityScene *city)` | 48 | no | type 6: Start |
 | `0x00195B00` | `int mm_EvMissingChildren_Check(EventData *data, CityScene *city, int a2)` | 380 | yes | type 6 "Finds missing children": Check |
 | `0x00195C80` | `int mm_EvAdvertise_ClaimsMatch(CityScene *city, ActorRef *actorA, ActorRef *actorB)` | 284 | no | whether an active entry (first byte 0) of building A's claim section B names an id, or a section D group of ids (0x8000 and up), that building B's section C lists |
 | `0x00195DA0` | `int mm_EvAdvertise_Slot14(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 800 | no | type 9: Slot14 |
 | `0x001960C0` | `void mm_EvAdvertise_End(EventData *data, CityScene *city)` | 140 | no | type 9: End |
 | `0x00196150` | `void mm_EvAdvertise_Update(EventData *data, CityScene *city)` | 276 | no | type 9: Update |
-| `0x00196270` | `void mm_EvAdvertise_Start(EventData *data, CityScene *city)` | 48 | no | type 9: Start |
+| `0x00196270` | `MapObject *mm_EvAdvertise_Start(EventData *data, CityScene *city)` | 48 | no | type 9: Start |
 | `0x001962A0` | `int mm_EvAdvertise_Check(EventData *data, CityScene *city, MapPerson *person)` | 192 | no | type 9 "To advertise": Check |
 | `0x00196360` | `int mm_EvShopping_Slot14(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 120 | indirect | type 8: Slot14 |
 | `0x001965E0` | `char *mm_EvShopping_Slot10(EventData *data, CityScene *city, int index)` | 128 | no | type 8: Slot10 |
 | `0x00196660` | `void mm_EvShopping_End(EventData *data, CityScene *city)` | 192 | no | type 8: End |
 | `0x00196720` | `void mm_EvShopping_Update(EventData *data, CityScene *city)` | 592 | no | type 8: Update |
-| `0x00196970` | `void mm_EvShopping_Start(EventData *data, CityScene *city)` | 120 | no | type 8: Start |
+| `0x00196970` | `int64_t mm_EvShopping_Start(EventData *data, CityScene *city)` | 120 | no | type 8: Start |
 | `0x001969F0` | `int mm_EvShopping_Check(EventData *data, CityScene *city, MapPerson *person)` | 1312 | indirect | type 8 "Shopping": Check |
 | `0x00196F10` | `int mm_EventData_GetSize7C(void)` | 8 | no | (provisional) vtable size slot: 0x7C |
 | `0x00196F20` | `int mm_EventData_GetSize1C(void)` | 8 | no | (provisional) vtable size slot: 0x1C (used by the event manager constructor) |
-| `0x00196F30` | `void mm_EvNoodles_Slot14(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 192 | yes | type 13: Slot14 |
+| `0x00196F30` | `int mm_EvNoodles_Slot14(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 192 | yes | type 13: Slot14 |
 | `0x00196FF0` | `void mm_EvNoodles_End(EventData *data, CityScene *city)` | 248 | no | type 13: End |
 | `0x001970F0` | `void mm_EvNoodles_Update(EventData *data, CityScene *city)` | 5984 | yes | type 13: Update |
-| `0x00198850` | `void mm_EvNoodles_Start(EventData *data, CityScene *city)` | 120 | no | type 13: Start |
+| `0x00198850` | `int64_t mm_EvNoodles_Start(EventData *data, CityScene *city)` | 120 | no | type 13: Start |
 | `0x001988D0` | `int mm_EvNoodles_Check(EventData *data, CityScene *city)` | 680 | no | type 13 "Noodles": Check |
 | `0x00198B80` | `int mm_EvThief_Slot14(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 252 | no | type 17: Slot14 |
 | `0x00198C80` | `void mm_EvThief_End(EventData *data, CityScene *city)` | 180 | no | type 17: End |

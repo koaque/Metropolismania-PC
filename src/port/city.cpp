@@ -2778,7 +2778,7 @@ namespace mm
 
     // Small goods: the tile kind from the entrance search, and for a type with flag 1 the ground under it settles
     // (0.1 above ground) and the area around it is rebuilt; then the minimap shows it (colour 1).
-    void BldgSmallGoods_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
+    int BldgSmallGoods_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
     {
         port::GuestFrame<0x90> frame;
         const uint32_t sp = frame.ptr().address;
@@ -2802,6 +2802,7 @@ namespace mm
             }
         }
         Minimap_Plot(city->minimap, obj->tile, btype->size, 1, 0);
+        return 0;
     }
 
     // Whether leveled ground can go on an area of `size` at (x, z): the ring around it is counted per side, how
@@ -2855,8 +2856,9 @@ namespace mm
     // one while the object has no flag 1. The ground settles (0.05 above ground), and every waiting applicant
     // (state 2) whose home would fit (its size within that word, CheckArea and Map_CanPlace) gets the area
     // highlighted and its state 3 with this tile. The minimap shows it (colour 4).
-    void BldgLeveled_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
+    int BldgLeveled_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
     {
+        port::GuestFrame<0xC0> frame; // the original's frame; the applicant cursor sits at +0xBC
         const int x = obj->tile & 0x7F, z = obj->tile >> 7;
         const ps2f ground = Map_GetTileHeightWord(city->map, obj->tile);
         const uint16_t flags = obj->flags;
@@ -2874,7 +2876,7 @@ namespace mm
         const ps2f height = settledHeight(ground, ps2f(0.05f));
         if (height != ground)
             Map_SetTileHeight(city->map, obj->tile, height);
-        port::GuestLocal<uint32_t> cursor;
+        const GuestPtr<uint32_t> cursor{frame.ptr().address + 0xBCu};
         *cursor = 0;
         for (uint32_t applicant = static_cast<uint32_t>(Applicants_FindFrom(city->applicants, cursor, 2)); applicant != 0;
              applicant = static_cast<uint32_t>(Applicants_FindFrom(city->applicants, cursor, 2)))
@@ -2893,6 +2895,7 @@ namespace mm
             port::store<uint16_t>(applicant + 6u, obj->tile);
         }
         Minimap_Plot(city->minimap, obj->tile, btype->size, 4, 0);
+        return 0;
     }
 
     PORT_FN(BldgSmallGoods_Tick);
@@ -2992,4 +2995,319 @@ namespace mm
     }
 
     PORT_FN(BldgPigFarm_Draw);
+
+    // ---- the laptop's item text (batch 40)
+
+    // The text of laptop item `item` is the item's line of the table at 0x1AF6B0 (0x80 bytes each, 14 items), or the line
+    // 14 further on when the item's alternative applies: item 1 while the player's mode is 0, item 2 in mode 1, item 5 when
+    // the stage flag 1 is set, item 9 in mode 3, item 11 in mode 4. Items past 13 use their own line the same way.
+    void Laptop_SetItemText(GuestPtr<Laptop> laptop, GuestPtr<CityScene> city, uint32_t item)
+    {
+        uint32_t line = item;
+        if (item < 14)
+        {
+            const auto modeIs = [&](int mode) { return Player_GetMode(city->player) == mode; };
+            switch (item)
+            {
+            case 1:
+                if (modeIs(0))
+                    line += 14;
+                break;
+            case 2:
+                if (modeIs(1))
+                    line += 14;
+                break;
+            case 5:
+                if ((globals::stageFlags.get() & 1u) != 0)
+                    line += 14;
+                break;
+            case 9:
+                if (modeIs(3))
+                    line += 14;
+                break;
+            case 11:
+                if (modeIs(4))
+                    line += 14;
+                break;
+            default:
+                break;
+            }
+        }
+        TextBox_SetText(GuestPtr<TextBox>{port::load<uint32_t>(laptop.address + 0x44u)}, GuestPtr<char>{0x001AF6B0u + (line << 7)}, 0);
+    }
+
+    PORT_FN(Laptop_SetItemText);
+
+    // ---- the people of a building (batch 40)
+
+    namespace
+    {
+        GuestPtr<CharClass> classOf(GuestPtr<MapPerson> person)
+        {
+            return GuestPtr<CharClass>{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)};
+        }
+
+        // The character class's draw slot (+0x10 of its vtable at +0x20) for `person`: drawn at `position` (x, y, z, heading)
+        // with `colour` in the given pose.
+        void drawPerson(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, uint32_t colour, int flags, uint32_t position, int pose)
+        {
+            port::callGuest<void>(port::load<uint32_t>(port::load<uint32_t>(cls.address + 0x20u) + 0x10u), cls.address, city.address, person.address, colour, flags, position, pose);
+        }
+    }
+
+    // One person in a building's crowd: the colour of BldgType_DrawOccupant at the person's own position and heading, in
+    // pose 6 (flag 0x40), 1 (flag 0x80) or 0.
+    void BldgType_DrawOccupants(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject>, GuestPtr<MapPerson> person, int flags)
+    {
+        port::GuestFrame<0x80> frame; // the colour at +0x60 and the position at +0x70
+        const uint32_t base = frame.ptr().address;
+        const GuestPtr<Vec4> colour{base + 0x60u}, position{base + 0x70u};
+        *colour = *GuestPtr<Vec4>{globals::kDefaultColour};
+        const GuestPtr<CharClass> cls = classOf(person);
+        position->x = person->x;
+        position->y = person->y;
+        position->z = person->z;
+        position->w = person->heading;
+        int pose = 0;
+        if ((person->flags & 0x40u) != 0)
+            pose = 6;
+        else if ((person->flags & 0x80u) != 0)
+            pose = 1;
+        BldgType_DrawOccupant(btype, colour, person, city);
+        drawPerson(cls, city, person, colour.address, flags, position.address, pose);
+    }
+
+    // The people of a field: residents that are not class-flag-1 and stand on it (outside, or inside it) with no activity
+    // are laid out at fixed spots round the field (the spot by their member, the first two members have their own, the
+    // rest share the second) and drawn in pose 5 (9 when the field has a claim, lifted by the type's float at +0x164);
+    // anyone else is drawn as an occupant.
+    void BldgField_DrawPeople(GuestPtr<BuildingType> btype, int, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
+                              GuestPtr<MapPerson> people, ps2f x, ps2f y, ps2f z)
+    {
+        port::GuestFrame<0xA0> frame; // the colour at +0x80 and the position at +0x90
+        const uint32_t base = frame.ptr().address;
+        for (uint32_t link = obj.address + 8u; port::load<uint16_t>(link) != kNoPerson;)
+        {
+            const GuestPtr<MapPerson> person = people + port::load<uint16_t>(link);
+            const GuestPtr<CharClass> cls = classOf(person);
+            const bool onField = (cls->flags & 1u) == 0 && person->activity == 0 && (person->inside == kNoObject || person->inside == obj->id);
+            if (!onField)
+            {
+                BldgType_DrawOccupants(btype, city, obj, person, flags);
+                link = person.address + 0x10u;
+                continue;
+            }
+            const GuestPtr<Vec4> colour{base + 0x80u};
+            *colour = *GuestPtr<Vec4>{globals::kDefaultColour};
+            const uint32_t spot = 0x001B1460u + (person->member < 2 ? static_cast<uint32_t>(person->member) << 4 : 0x10u);
+            const ps2f px = x + ps2f(port::load<float>(spot));
+            port::store<float>(person.address, static_cast<float>(px));
+            port::store<float>(base + 0x90u, static_cast<float>(px));
+            const ps2f py = y + ps2f(port::load<float>(spot + 4u));
+            port::store<float>(person.address + 4u, static_cast<float>(py));
+            port::store<float>(base + 0x94u, static_cast<float>(py));
+            const ps2f pz = z + ps2f(port::load<float>(spot + 8u));
+            port::store<float>(person.address + 8u, static_cast<float>(pz));
+            port::store<float>(base + 0x98u, static_cast<float>(pz));
+            port::store<float>(base + 0x9Cu, port::load<float>(person.address + 0xCu));
+            int pose = 5;
+            if (obj->claimSlot != 0)
+            {
+                pose = 9;
+                port::store<float>(base + 0x94u, static_cast<float>(ps2f(port::load<float>(base + 0x94u)) + ps2f(port::load<float>(btype.address + 0x164u))));
+            }
+            drawPerson(cls, city, person, colour.address, flags, base + 0x90u, pose);
+            link = person.address + 0x10u;
+        }
+    }
+
+    // The ranch: its mesh from the city parts model, or for its entrance part the ranch models (the first always, then one
+    // of two by the type's answer in vtable +0x24), each at the building's place.
+    void BldgRanch_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
+                        ps2f x, ps2f y, ps2f z)
+    {
+        port::GuestFrame<0x80> frame; // the colour at +0x70
+        const GuestPtr<Vec4> colour{frame.ptr().address + 0x70u};
+        buildingColour(btype, city, obj, colour);
+        Clock_AddWrap(static_cast<int>(btype.address), city->clock, obj->id);
+        const GuestPtr<Vec4> matrix = placeLayer(layer, x, y, z);
+        if ((obj->flags & 0x20u) == 0)
+        {
+            drawPlainPart(btype, obj, matrix, colour, flags);
+            return;
+        }
+        const auto drawAt = [&](GuestPtr<A3DObject> model) {
+            for (int row = 0; row < 4; ++row)
+                model->matrix[row] = matrix[row];
+            Instance_DrawModel(model, colour, 0, flags);
+        };
+        drawAt(globals::ranchModelA.get());
+        const int64_t open = port::callGuest<int64_t>(port::load<uint32_t>(btype->vtable.address + 0x24u), btype, city, obj);
+        drawAt(open == 0 ? globals::ranchModelC.get() : globals::ranchModelB.get());
+    }
+
+    // A road: with the city flag 8 off its people are drawn as in a building (BldgType_DrawOccupants2); with it on, the
+    // residents that are neither class flag 1 nor person flag 0x100 are gathered by person index (up to four are drawn)
+    // and placed on the road by its shape (the corner table at 0x1B1670, 4 slots a shape) in pose 8, each at its ground
+    // height facing the table's way; the others are drawn as occupants.
+    void BldgRoad_DrawPeople(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int t0, int flags,
+                             GuestPtr<MapPerson> people, ps2f x, ps2f y, ps2f z)
+    {
+        port::GuestFrame<0x120> frame; // the gathered indexes at +0xC0, the position at +0x100, the colour at +0x110
+        const uint32_t base = frame.ptr().address;
+        if (CityScene_HasFlag8(city) == 0)
+        {
+            BldgType_DrawOccupants2(btype, layer, city, obj, t0, flags, people);
+            return;
+        }
+        const uint32_t list = base + 0xC0u;
+        int count = 0;
+        for (uint32_t link = obj.address + 8u; port::load<uint16_t>(link) != kNoPerson;)
+        {
+            const GuestPtr<MapPerson> person = people + port::load<uint16_t>(link);
+            if ((classOf(person)->flags & 1u) != 0 || (person->flags & 0x100u) != 0)
+            {
+                BldgType_DrawOccupants(btype, city, obj, person, flags);
+                link = person.address + 0x10u;
+                continue;
+            }
+            int place = 0;
+            for (uint32_t at = list; count > 0;)
+            {
+                if (person->index < port::load<uint16_t>(at))
+                {
+                    for (int k = count; k > place; --k)
+                        port::store<uint16_t>(list + 2u * static_cast<uint32_t>(k), port::load<uint16_t>(list + 2u * static_cast<uint32_t>(k - 1)));
+                    break;
+                }
+                ++place;
+                if (!(place < count))
+                    break;
+                at += 2u;
+            }
+            port::store<uint16_t>(list + 2u * static_cast<uint32_t>(place), person->index);
+            ++count;
+            link = person.address + 0x10u;
+        }
+        const uint32_t position = base + 0x100u;
+        for (int i = 0; i < count && i < 4; ++i)
+        {
+            const GuestPtr<MapPerson> person = people + port::load<uint16_t>(list + 2u * static_cast<uint32_t>(i));
+            const uint32_t slot = 0x001B1670u + (static_cast<uint32_t>(obj->variant) << 4) + 4u * static_cast<uint32_t>(i);
+            const ps2f px = x + ps2f(port::load<float>(0x001B15E0u + 4u * port::load<uint32_t>(slot)));
+            port::store<float>(person.address, static_cast<float>(px));
+            port::store<float>(position, static_cast<float>(px));
+            const ps2f pz = z + ps2f(port::load<float>(0x001B1610u + 4u * port::load<uint32_t>(slot)));
+            port::store<float>(person.address + 8u, static_cast<float>(pz));
+            port::store<float>(position + 8u, static_cast<float>(pz));
+            const ps2f py = Map_SampleHeight(city->map, ps2f(port::load<float>(person.address)), ps2f(port::load<float>(person.address + 8u)));
+            port::store<float>(person.address + 4u, static_cast<float>(py));
+            port::store<float>(position + 4u, static_cast<float>(py));
+            const float heading = port::load<float>(0x001B2690u + 4u * port::load<uint32_t>(0x001B1640u + 4u * port::load<uint32_t>(slot)));
+            port::store<float>(person.address + 0xCu, heading);
+            port::store<float>(position + 0xCu, heading);
+            const GuestPtr<Vec4> colour{base + 0x110u};
+            *colour = *GuestPtr<Vec4>{globals::kDefaultColour};
+            BldgType_DrawOccupant(btype, colour, person, city);
+            drawPerson(classOf(person), city, person, colour.address, flags, position, 8);
+        }
+    }
+
+    PORT_FN(BldgType_DrawOccupants);
+    PORT_FN(BldgField_DrawPeople);
+    PORT_FN(BldgRanch_Draw);
+    PORT_FN(BldgRoad_DrawPeople);
+
+    // ---- the people of a building with an entrance (batch 40)
+
+    // Buildings of type flag 0x800 with their entrance part: the people standing in it (or outside, on it) are sorted into
+    // four groups, by class flag 1 (vehicles and the like) and by whether this is their workplace: 0 residents working here,
+    // 1 other residents, 2 flagged workers, 3 other flagged. Each group has room for `unk_130[group]` people (up to four)
+    // that are placed at fixed spots of the type (records of 16 bytes: x, y, z, a heading added to the table's at 0x1B2690),
+    // drawn in pose 4. Group 0 is kept in order of the people's member numbers, the others by person index, but a person
+    // inserted always lands in slot 0 (the original writes slot 0 after shifting the ones below it up). Groups with no
+    // entrance answer (vtable +0x24) are skipped, except group 2. The spot record number runs on over the groups drawn.
+    void Bldg_DrawPeople(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
+                         GuestPtr<MapPerson> people, ps2f x, ps2f y, ps2f z)
+    {
+        port::GuestFrame<0x250> frame; // counts +0x110, the groups' lists +0x120 (0x40 each), the position +0x220, the colour +0x230, the slots +0x248
+        const uint32_t base = frame.ptr().address;
+        if ((btype->flags & 0x800u) == 0 || (obj->flags & 0x20u) == 0)
+            return;
+        const int32_t hasEntrance = static_cast<int32_t>(port::callGuest<int64_t>(port::load<uint32_t>(btype->vtable.address + 0x24u), btype, city, obj));
+        const uint32_t counts = base + 0x110u, lists = base + 0x120u, slots = base + 0x248u;
+        for (uint32_t k = 0; k < 4; ++k)
+            port::store<int32_t>(counts + 4u * k, 0);
+        for (uint32_t link = obj.address + 8u; port::load<uint16_t>(link) != kNoPerson;)
+        {
+            const GuestPtr<MapPerson> person = people + port::load<uint16_t>(link);
+            link = person.address + 0x10u;
+            if (person->inside != obj->id && person->inside != kNoObject)
+                continue;
+            const bool flagged = (classOf(person)->flags & 1u) != 0;
+            const uint32_t group = (flagged ? 2u : 0u) + (person->work == obj->id ? 0u : 1u);
+            const uint32_t n = static_cast<uint32_t>(port::load<int32_t>(counts + 4u * group));
+            port::store<uint16_t>(lists + 0x40u * group + 2u * n, person->index);
+            port::store<int32_t>(counts + 4u * group, static_cast<int32_t>(n + 1));
+        }
+        uint32_t running = static_cast<uint32_t>(layer);
+        for (uint32_t group = 0; group < 4; ++group)
+        {
+            if (hasEntrance == 0 && group != 2)
+                continue;
+            const uint32_t limit = port::load<uint8_t>(btype.address + 0x130u + group);
+            if (limit == 0 || port::load<int32_t>(counts + 4u * group) == 0)
+                continue;
+            for (uint32_t i = 0; i < limit; ++i)
+                port::store<uint16_t>(slots + 2u * i, kNoPerson);
+            for (int32_t c = 0; c < port::load<int32_t>(counts + 4u * group); ++c)
+            {
+                const uint32_t candidate = port::load<uint16_t>(lists + 0x40u * group + 2u * static_cast<uint32_t>(c));
+                for (uint32_t pos = 0; pos < limit; ++pos)
+                {
+                    const uint32_t held = port::load<uint16_t>(slots + 2u * pos);
+                    if (held != kNoPerson)
+                    {
+                        const bool before = group == 0 ? (port::load<uint8_t>(people.address + 0x30u * candidate + 0x2Eu) < port::load<uint8_t>(people.address + 0x30u * held + 0x2Eu))
+                                                       : candidate < held;
+                        if (!before)
+                            continue;
+                    }
+                    for (uint32_t k = limit - 1; pos < k; --k)
+                        port::store<uint16_t>(slots + 2u * k, port::load<uint16_t>(slots + 2u * (k - 1)));
+                    port::store<uint16_t>(slots, static_cast<uint16_t>(candidate));
+                    break;
+                }
+            }
+            for (uint32_t i = 0; i < limit; ++i, running += 4u)
+            {
+                const uint32_t held = port::load<uint16_t>(slots + 2u * i);
+                if (held == kNoPerson)
+                    continue;
+                const GuestPtr<MapPerson> person = people + held;
+                const uint32_t spot = btype.address + 16u * running;
+                port::store<float>(base + 0x220u, static_cast<float>(x + ps2f(port::load<float>(spot))));
+                port::store<float>(base + 0x224u, static_cast<float>(y + ps2f(port::load<float>(spot + 4u))));
+                port::store<float>(base + 0x228u, static_cast<float>(z + ps2f(port::load<float>(spot + 8u))));
+                const ps2f heading = ps2f(port::load<float>(0x001B2690u + 4u * static_cast<uint32_t>(layer))) + ps2f(port::load<float>(spot + 0xCu));
+                port::store<float>(person.address + 0xCu, static_cast<float>(heading));
+                const ps2f pi = ps2f(3.1415927f);
+                if (heading <= -pi)
+                    port::store<float>(base + 0x22Cu, static_cast<float>(heading + pi));
+                else if (heading <= pi)
+                    port::store<float>(base + 0x22Cu, static_cast<float>(heading));
+                else
+                {
+                    port::store<float>(base + 0x22Cu, static_cast<float>(heading));
+                    port::store<float>(base + 0x22Cu, static_cast<float>(ps2f(port::load<float>(base + 0x22Cu)) - ps2f(6.2831855f)));
+                }
+                const GuestPtr<Vec4> colour{base + 0x230u};
+                *colour = *GuestPtr<Vec4>{globals::kDefaultColour};
+                BldgType_DrawOccupant(btype, colour, person, city);
+                drawPerson(classOf(person), city, person, colour.address, flags, base + 0x220u, 4);
+            }
+        }
+    }
+
+    PORT_FN(Bldg_DrawPeople);
 }

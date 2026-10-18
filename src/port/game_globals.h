@@ -251,6 +251,9 @@ namespace mm::globals
     inline constexpr GuestVar<GuestPtr<A3DObject>> parkRideModel{0x001BDBE0u};   // theme park ride (animated)
     inline constexpr GuestVar<GuestPtr<A3DObject>> propsModel{0x001BDBD4u};      // small goods stalls and keep-out parts
     inline constexpr GuestVar<GuestPtr<A3DObject>> pigFarmModel{0x001BDC00u};    // the pig farm entrance
+    inline constexpr GuestVar<GuestPtr<A3DObject>> ranchModelA{0x001BDBE8u};     // the ranch entrance, always drawn
+    inline constexpr GuestVar<GuestPtr<A3DObject>> ranchModelB{0x001BDBECu};     // drawn on top when the type's slot +0x24 answers yes
+    inline constexpr GuestVar<GuestPtr<A3DObject>> ranchModelC{0x001BDBF0u};     // drawn on top when it answers no
     inline constexpr uint32_t kBlockStepX = 0x001B13F0u; // int[4]: 0, 2, 0, -2
     inline constexpr uint32_t kBlockStepZ = 0x001B1400u; // int[4]: -2, 0, 2, 0
     inline constexpr uint32_t kBlockDirBit = 0x001B1410u; // int[4]: 1, 2, 4, 8 (road shape bit per direction)

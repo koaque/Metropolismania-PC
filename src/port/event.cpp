@@ -6,6 +6,7 @@
 #include "game_functions.h"
 #include "game_globals.h"
 #include "sdk.h"
+#include "vu0.h"
 
 namespace mm
 {
@@ -17,15 +18,24 @@ namespace mm
             return GuestPtr<ActorRef>{data.address + 0x0Cu + 8u * static_cast<uint32_t>(index)};
         }
 
-        void markBuilding(GuestPtr<CityScene> city, uint16_t object) { Map_GetRecord(city->map, object)->flags |= 0x200u; }
+        // Marks the object record and hands it back: the start slots leave it in v0, which the talk script reads.
+        GuestPtr<MapObject> markBuilding(GuestPtr<CityScene> city, uint16_t object)
+        {
+            const GuestPtr<MapObject> record = Map_GetRecord(city->map, object);
+            record->flags |= 0x200u;
+            return record;
+        }
         void unmarkBuilding(GuestPtr<CityScene> city, uint16_t object) { Map_GetRecord(city->map, object)->flags &= 0xFDFFu; }
 
-        // The buildings of the event's first `count` actors, those that have one.
-        void markActorBuildings(GuestPtr<CityScene> city, GuestPtr<EventData> data, int first, int count)
+        // The buildings of `count` actors from `first`, those that have one. Returns the last record marked, or the
+        // register as it was on entry when none was (so call it first in a start slot).
+        int64_t markActorBuildings(GuestPtr<CityScene> city, GuestPtr<EventData> data, int first, int count)
         {
+            int64_t result = port::guestV0Wide();
             for (int i = first; i < first + count; ++i)
                 if (actorAt(data, i)->object != kNoObject)
-                    markBuilding(city, actorAt(data, i)->object);
+                    result = markBuilding(city, actorAt(data, i)->object).address;
+            return result;
         }
 
         void unmarkActorBuildings(GuestPtr<CityScene> city, GuestPtr<EventData> data, int count)
@@ -464,61 +474,71 @@ namespace mm
 
     // ---- Start slots
 
-    void EvCaveMan_Start(GuestPtr<EventData>, GuestPtr<CityScene>) {}
+    // The start slots below leave a result in v0 that the talk script action reads (Event_CallHandlerSlot passes
+    // it on): the record they marked last, or the register as found.
+    int64_t EvCaveMan_Start(GuestPtr<EventData>, GuestPtr<CityScene>) { return port::guestV0Wide(); }
 
     // The message comes from family type entry 0xB1's first member, with no person or building.
-    void EvMsg_Start(GuestPtr<EventData> data, GuestPtr<CityScene>)
+    int64_t EvMsg_Start(GuestPtr<EventData> data, GuestPtr<CityScene>)
     {
+        const int64_t found = port::guestV0Wide();
         data->actor.person = kNoPerson;
         data->actor.object = kNoObject;
         data->actor.family = familyTypeEntry(0xB1);
         data->actor.member = 0;
+        return found;
     }
 
-    void EvMissingChildren_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city) { markBuilding(city, data->actor.object); }
-    void EvAdvertise_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city) { markBuilding(city, data->actor.object); }
+    GuestPtr<MapObject> EvMissingChildren_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city) { return markBuilding(city, data->actor.object); }
+    GuestPtr<MapObject> EvAdvertise_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city) { return markBuilding(city, data->actor.object); }
 
     // Marks the building and remembers the month it started in.
-    void EvUselessMiddleAged_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city)
+    GuestPtr<MapObject> EvUselessMiddleAged_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
-        markBuilding(city, data->actor.object);
+        const GuestPtr<MapObject> record = markBuilding(city, data->actor.object);
         data->unk_14 = city->monthCount;
+        return record;
     }
 
     // Marks the building, detaches the actor and keeps their distance from the player.
-    void EvEscort_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city)
+    int EvEscort_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
         markBuilding(city, data->actor.object);
         const GuestPtr<ActorRef> actor = GuestPtr<ActorRef>::of(data->actor);
         EvActor_Detach(city, actor);
-        data->unk_18 = Player_DistanceToBuilding(city, actor);
+        const int distance = Player_DistanceToBuilding(city, actor);
+        data->unk_18 = distance;
+        return distance;
     }
 
     // Marks both actors' buildings and sets the timer (+0x1C) to 180.
-    void EvShoppingTogether_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city)
+    GuestPtr<MapObject> EvShoppingTogether_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
         markBuilding(city, actorAt(data, 0)->object);
-        markBuilding(city, actorAt(data, 1)->object);
+        const GuestPtr<MapObject> second = markBuilding(city, actorAt(data, 1)->object);
         port::store<int32_t>(data.address + 0x1Cu, 180);
+        return second;
     }
 
     // Marks both actors' buildings; the delivery state (+0x34) starts at 2.
-    void EvDeliveryMan_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city)
+    GuestPtr<MapObject> EvDeliveryMan_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
         markBuilding(city, actorAt(data, 0)->object);
-        markBuilding(city, actorAt(data, 1)->object);
+        const GuestPtr<MapObject> second = markBuilding(city, actorAt(data, 1)->object);
         port::store<int32_t>(data.address + 0x34u, 2);
+        return second;
     }
 
-    void EvShopping_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city) { markActorBuildings(city, data, 0, 5); }
+    int64_t EvShopping_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city) { return markActorBuildings(city, data, 0, 5); }
 
     // The noodle shop event lists its six buildings from +0x2C (actors 4 to 9).
-    void EvNoodles_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city) { markActorBuildings(city, data, 4, 6); }
+    int64_t EvNoodles_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city) { return markActorBuildings(city, data, 4, 6); }
 
     // Six actors without person or building: the first two from family type entries 0xAB and 0xAC, the others
     // from entry 0xAD and the three after it (members unchanged).
-    void EvCrazyCult_Start(GuestPtr<EventData> data, GuestPtr<CityScene>)
+    int64_t EvCrazyCult_Start(GuestPtr<EventData> data, GuestPtr<CityScene>)
     {
+        const int64_t found = port::guestV0Wide();
         actorAt(data, 0)->family = familyTypeEntry(0xAB);
         actorAt(data, 1)->family = familyTypeEntry(0xAC);
         for (int i = 0; i < 4; ++i)
@@ -528,12 +548,15 @@ namespace mm
             actorAt(data, i)->person = kNoPerson;
             actorAt(data, i)->object = kNoObject;
         }
+        return found;
     }
 
     // The adoption comes from family type entry 0xB1's first member; the applicants (families 0 to 9999 with an
-    // application) are listed as words from +0x24, then 24 bytes from 0x1B37D0 are copied to +0x4C.
-    void EvAdoption_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city)
+    // application) are listed as words from +0x24, then 24 bytes from 0x1B37D0 are copied to +0x4C (through the
+    // original stack, then by memcpy, whose result, the destination, is what the start slot returns).
+    uint32_t EvAdoption_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
+        port::GuestFrame<0x70> frame;
         data->actor.person = kNoPerson;
         data->actor.object = kNoObject;
         data->actor.family = familyTypeEntry(0xB1);
@@ -546,8 +569,10 @@ namespace mm
             port::store<uint32_t>(out, family);
             out += 4u;
         }
+        const uint32_t scratch = frame.ptr().address + 0x50u;
         for (uint32_t i = 0; i < 0x18u; i += 4u)
-            port::store<uint32_t>(data.address + 0x4Cu + i, port::load<uint32_t>(globals::kAdoptionStart + i));
+            port::store<uint32_t>(scratch + i, port::load<uint32_t>(globals::kAdoptionStart + i));
+        return sdk::memcpy(data.address + 0x4Cu, scratch, 0x18);
     }
 
     // ---- Update slots
@@ -2077,7 +2102,7 @@ namespace mm
     // 0xB9 and 0x105 with its claim meter at level 0, are the guests (+0x28 counts them); of those in schedule state
     // 6 and up the best friend is actor 1 (the first on a tie) and their workplace is marked. The party starts at
     // 13:00 plus an hour per 50 guests (+0x2C, seconds, 19:00 at the latest); +0x1C becomes 0xFFFF.
-    void EvFarewellParty_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city)
+    GuestPtr<MapObject> EvFarewellParty_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
         PhoneCall_Next(city->phoneCalls, city);
         data->actor.person = kNoPerson;
@@ -2109,11 +2134,12 @@ namespace mm
                 best = person;
         }
         setActorFromPerson(actorAt(data, 1), best);
-        Map_GetRecord(city->map, actorAt(data, 1)->object)->flags |= 0x200u;
+        const GuestPtr<MapObject> record = markBuilding(city, actorAt(data, 1)->object);
         port::store<int32_t>(data.address + 0x2Cu, (port::load<int32_t>(data.address + 0x28u) / 50 + 13) * 3600);
         if (68400 < port::load<int32_t>(data.address + 0x2Cu))
             port::store<int32_t>(data.address + 0x2Cu, 68400);
         port::store<uint16_t>(data.address + 0x1Cu, 0xFFFF);
+        return record;
     }
 
     // Shopping: actor 0 keeps heading for its building; by phase (jump table 0x1BA8A0) 1 waits until four hours
@@ -2496,4 +2522,1261 @@ namespace mm
     }
 
     PORT_FN(EvAdoption_Update);
+
+    // ---- the handler slot dispatch and the jump-table slots (batch 40)
+
+    namespace
+    {
+        // Event handler classes (table 0x1AF0D0, one vtable per handler id): Check, Start (+4), Update, End, Slot10
+        // (+0x10), Slot14 (+0x14). An event type's handler id is the byte at +0x24 of its row, 0 = none.
+        constexpr uint32_t kEventHandlers = 0x001AF0D0u;
+
+        // The talk event in manager slot `index` (talkA, talkB) and its handler slot at vtable `offset`; 0 when the
+        // event type has no handler or the handler lacks the slot.
+        uint32_t handlerSlot(GuestPtr<EventData> data, uint32_t offset)
+        {
+            const uint32_t id = port::load<uint8_t>(globals::eventTypes.get() + 0x4Cu * data->kind + 0x24u);
+            if (id == 0)
+                return 0;
+            return port::load<uint32_t>(port::load<uint32_t>(kEventHandlers + 4u * id) + offset);
+        }
+
+        GuestPtr<EventData> talkEvent(GuestPtr<EventMgr> events, int index)
+        {
+            return GuestPtr<EventData>{port::load<uint32_t>(events.address + 0xA4u + 4u * static_cast<uint32_t>(index))};
+        }
+
+        // The money changes by `delta` and, when that leaves it negative, becomes 0 (or the largest value when the
+        // delta was positive: the sum wrapped).
+        void changeMoney(int32_t delta)
+        {
+            const GuestPtr<StageState> stage = globals::stageState();
+            const int32_t sum = static_cast<int32_t>(static_cast<uint32_t>(stage->money) + static_cast<uint32_t>(delta));
+            stage->money = sum;
+            if (sum < 0)
+                stage->money = delta > 0 ? 0x7FFFFFFF : 0;
+        }
+    }
+
+    // The talk's event runs its Slot14 handler (0 when it has none); a is the actor asked about, mode the question.
+    int64_t Event_CallSlot14(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int arg, int mode)
+    {
+        const GuestPtr<EventData> data = talkEvent(events, mode);
+        const uint32_t slot = handlerSlot(data, 0x14u);
+        if (slot == 0)
+            return 0;
+        return port::callGuest<int64_t>(slot, data, city, actor, arg);
+    }
+
+    // The same for the Slot10 handler of the event in slot `index`.
+    int64_t Event_CallSlot10(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, int index, int arg)
+    {
+        const GuestPtr<EventData> data = talkEvent(events, index);
+        const uint32_t slot = handlerSlot(data, 0x10u);
+        if (slot == 0)
+            return 0;
+        return port::callGuest<int64_t>(slot, data, city, arg);
+    }
+
+    // The talk starts the event's own handler (the Start slot at +4): its tile flags are set, the event's var becomes 1
+    // and the handler runs. Without a handler the result register stays as it was (after the tile flags call).
+    int64_t Event_CallHandlerSlot(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, int index, int arg)
+    {
+        const uint32_t cell = events.address + 0xA4u + 4u * static_cast<uint32_t>(index);
+        const uint32_t row = globals::eventTypes.get() + 0x4Cu * GuestPtr<EventData>{port::load<uint32_t>(cell)}->kind;
+        const uint32_t tileFlags = port::load<uint8_t>(row + 0x25u);
+        if (tileFlags != 0)
+        {
+            port::setGuestV0(static_cast<int32_t>(tileFlags));
+            Event_SetTileFlags(static_cast<int>(tileFlags) - 1);
+        }
+        port::store<uint8_t>(port::load<uint32_t>(cell) + 0xAu, 1);
+        const uint32_t id = port::load<uint8_t>(row + 0x24u);
+        if (id != 0)
+        {
+            const uint32_t slot = port::load<uint32_t>(port::load<uint32_t>(kEventHandlers + 4u * id) + 4u);
+            if (slot != 0)
+                return port::callGuest<int64_t>(slot, GuestPtr<EventData>{port::load<uint32_t>(cell)}, city, arg);
+        }
+        return port::guestV0Wide();
+    }
+
+    // Type 7 (the useless middle-aged man) answers the talk: modes 0-3 store the mode in +0x1C, 4 reads it back, 5 takes
+    // 100 from the money, 6 gives 50, 7 gives 200.
+    uint32_t EvUselessMiddleAged_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene>, GuestPtr<ActorRef>, int mode)
+    {
+        if (static_cast<uint32_t>(mode) >= 8)
+            return 0;
+        switch (mode)
+        {
+        case 4:
+            return port::load<uint32_t>(data.address + 0x1Cu);
+        case 5:
+            changeMoney(-100);
+            return 0;
+        case 6:
+            changeMoney(50);
+            return 0;
+        case 7:
+            changeMoney(200);
+            return 0;
+        default:
+            port::store<int32_t>(data.address + 0x1Cu, mode);
+            return 0;
+        }
+    }
+
+    // Slot10 shared by types 29 and 30 (payday): formats a number into the event text buffer and returns it: the
+    // families that moved in / left, the payday score, the score with the families counted (two for each moved in, four
+    // for each left). Other values give an empty text.
+    GuestPtr<char> EvPayday_Slot10(GuestPtr<EventData>, GuestPtr<CityScene> city, uint32_t value)
+    {
+        constexpr uint32_t kEventText = 0x0020B890u;
+        const GuestPtr<char> out{kEventText};
+        switch (value)
+        {
+        case 0:
+            Text_FormatThousands(out, 2);
+            break;
+        case 1:
+            Text_FormatThousands(out, 4);
+            break;
+        case 2:
+            Text_FormatThousands(out, 1);
+            break;
+        case 3:
+            Text_FormatThousands(out, globals::familiesMovedInEvent.get());
+            break;
+        case 4:
+            Text_FormatThousands(out, globals::familiesLeftEvent.get());
+            break;
+        case 5:
+            Text_FormatThousands(out, city->paydayScore);
+            break;
+        case 6:
+            Text_FormatThousands(out, static_cast<int>(static_cast<uint32_t>(city->paydayScore) +
+                                                       2u * static_cast<uint32_t>(globals::familiesMovedInEvent.get()) -
+                                                       4u * static_cast<uint32_t>(globals::familiesLeftEvent.get())));
+            break;
+        default:
+            port::store<uint8_t>(kEventText, 0);
+            break;
+        }
+        return out;
+    }
+
+    // Type 3 (the delivery man) answers the talk: 0 the catalogue entry (+0x1C), 1 and 2 whether the player is within 1 of
+    // actor 1 / actor 0, 3 and 4 add / take the price of the delivered goods (the catalogue entry's item for the month in
+    // +0x20, a halfword at 0x1BA0B2 + 0x184 * entry + 0x20 * month) to / from the money, 5 reads +0x34.
+    int EvDeliveryMan_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef>, int mode)
+    {
+        const auto price = [&] {
+            const uint32_t entry = port::load<uint32_t>(data.address + 0x1Cu), month = port::load<uint32_t>(data.address + 0x20u);
+            return static_cast<int32_t>(port::load<uint16_t>(0x001BA0B2u + 0x184u * entry + 0x20u * month));
+        };
+        switch (static_cast<uint32_t>(mode))
+        {
+        case 0:
+            return port::load<int32_t>(data.address + 0x1Cu);
+        case 1:
+            return Player_DistanceToBuilding(city, actorAt(data, 1)) < 2 ? 1 : 0;
+        case 2:
+            return Player_DistanceToBuilding(city, actorAt(data, 0)) < 2 ? 1 : 0;
+        case 3:
+            changeMoney(price());
+            return 0;
+        case 4:
+            changeMoney(-price());
+            return 0;
+        case 5:
+            return port::load<int32_t>(data.address + 0x34u);
+        default:
+            return 0;
+        }
+    }
+
+    // Type 18 (the crazy cult) answers the talk: 0, 1, 3 and 4 add the families stored in the event data to the
+    // applicants, 2 asks whether at least three more applicants fit, 5 counts the asked actor's family among the three
+    // actors (list at 0x1B37C0, as for the event's phases): the first time each one is asked bit k of +0x50 is set (the
+    // answer 0); asking again answers 1, and with all three bits set (7) the event moves to its next var (0x12) and sets +0x40.
+    int EvCrazyCult_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode)
+    {
+        const auto apply = [&](uint32_t offset) { CityScene_AddApplicantFamily(city, port::load<uint16_t>(data.address + offset), 1); };
+        switch (static_cast<uint32_t>(mode))
+        {
+        case 0:
+            apply(0x20u);
+            return 0;
+        case 1:
+            apply(0x28u);
+            return 0;
+        case 2:
+            return 0x20 - city->applicants->count >= 3 ? 1 : 0;
+        case 3:
+            apply(0x30u);
+            apply(0x38u);
+            apply(0x18u);
+            return 0;
+        case 4:
+            apply(0x10u);
+            return 0;
+        case 5:
+            for (uint32_t k = 0;; ++k)
+            {
+                const int32_t number = port::load<int32_t>(0x001B37C0u + 4u * k);
+                if (number == 0)
+                    return 0;
+                if (actor->family != port::load<uint16_t>(data.address + 0x10u + 8u * static_cast<uint32_t>(number)))
+                    continue;
+                const int32_t bit = 1 << k;
+                const int32_t bits = port::load<int32_t>(data.address + 0x50u);
+                if ((bits & bit) != 0)
+                    return 1;
+                port::store<int32_t>(data.address + 0x50u, bits | bit);
+                if (port::load<int32_t>(data.address + 0x50u) >= 7)
+                {
+                    port::store<uint8_t>(data.address + 0xAu, 0x12);
+                    port::store<int32_t>(data.address + 0x40u, 0x6270);
+                }
+                return 0;
+            }
+        default:
+            return 0;
+        }
+    }
+
+    // Type 12 (adoption) answers the talk. The list at +0x4C has up to six entries of four bytes (a byte flag at +0, a
+    // halfword at +2 that picks a family of the family type table at 0x1BDA8C); the family tried is that table entry, or
+    // the next one the city lets apply.
+    //   0: 1 when no orphanage (type 4) exists, 0 when there is one but no building of a type with flag 8 (type flags
+    //      +0x136), else 2
+    //   1: 1 when the asked actor's family is in the zero-ended family list at +0x24
+    //   2: 1 while +0x60 is 0
+    //   3: the family of list entry +0x20 is added to the applicants, the entry removed (list shifted down)
+    //   4: 1 while the halfword +0x4E is 0
+    //   5: 0 when one of the list's entries from the second on has no flag byte, checked once more than there is room
+    //      for applicants, else 1
+    //   6: the families of all list entries are added to the applicants
+    int EvAdoption_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode)
+    {
+        // The first family at or after the entry's table family that the city lets apply.
+        const auto familyFor = [&](uint32_t entry) {
+            uint32_t family = port::load<uint16_t>(globals::familyTypeTable.get() + 2u * port::load<uint16_t>(entry + 2u) - 2u);
+            while (Family_CanApply(family & 0xFFFFu, city) == 0)
+                family = (family + 1u) & 0xFFFFu;
+            return family & 0xFFFFu;
+        };
+        switch (static_cast<uint32_t>(mode))
+        {
+        case 0:
+        {
+            bool orphanage = false, special = false;
+            const uint32_t first = Map_GetRecord(city->map, 0).address;
+            for (uint32_t record = first; record < first + 0x6F200u; record += 0x1Cu)
+            {
+                const uint32_t type = port::load<uint16_t>(record);
+                if (!orphanage && type == 4)
+                {
+                    orphanage = true;
+                    if (special)
+                        break;
+                }
+                if (special)
+                    continue;
+                if ((globals::buildingTypeFlags(type) & 8u) != 0)
+                {
+                    special = true;
+                    if (orphanage)
+                        break;
+                }
+            }
+            return !orphanage ? 1 : !special ? 0 : 2;
+        }
+        case 1:
+            for (uint32_t entry = data.address + 0x24u; port::load<int32_t>(entry) != 0; entry += 4u)
+                if (port::load<int32_t>(entry) == actor->family)
+                    return 1;
+            return 0;
+        case 2:
+            return port::load<uint8_t>(data.address + 0x60u) == 0 ? 1 : 0;
+        case 3:
+        {
+            const uint32_t base = data.address + 0x4Cu;
+            const int32_t index = port::load<int32_t>(data.address + 0x20u);
+            const uint32_t entry = base + 4u * static_cast<uint32_t>(index);
+            CityScene_AddApplicantFamily(city, familyFor(entry), 1);
+            sdk::memmove(entry, entry + 4u, (6 - index) * 4);
+            return 0;
+        }
+        case 4:
+            return port::load<uint16_t>(data.address + 0x4Eu) == 0 ? 1 : 0;
+        case 5:
+        {
+            int32_t room = 0x20 - city->applicants->count;
+            for (uint32_t entry = data.address + 0x50u; room >= 0; entry += 4u, --room)
+                if (port::load<uint8_t>(entry) == 0)
+                    return 0;
+            return 1;
+        }
+        case 6:
+            for (uint32_t entry = data.address + 0x4Cu; port::load<uint8_t>(entry) != 0; entry += 4u)
+                CityScene_AddApplicantFamily(city, familyFor(entry), 1);
+            return 0;
+        default:
+            return 0;
+        }
+    }
+
+    // Type 1x (shopping) answers the talk. The shop's record (0x28 bytes in the table at 0x1BDAB4, index +0x34) lists four
+    // goods (halfwords at +0x20). Modes: 0 the count at +0x38 less one; 1 how many of the goods the bag lacks; 2 to 5 whether
+    // the bag lacks good 0 to 3; 6 adds +0x4C to the money, 7 takes it, 8 takes +0x4C and +0x50; 9 moves the goods found in
+    // the bag out of it into the money counter at +0x50 (their prices).
+    int EvShopping_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef>, int mode)
+    {
+        const uint32_t goods = globals::shoppingTexts.get() + 0x28u * port::load<uint32_t>(data.address + 0x34u) + 0x20u;
+        const auto bag = [&] { return GuestPtr<Bag>{port::load<uint32_t>(city.address + 0x60u)}; };
+        const auto at = [&](uint32_t offset) { return port::load<int32_t>(data.address + offset); };
+        switch (static_cast<uint32_t>(mode))
+        {
+        case 0:
+            return at(0x38u) - 1;
+        case 1:
+        {
+            int missing = 0;
+            for (uint32_t entry = goods; port::load<uint16_t>(entry) != 0 && entry < goods + 8u; entry += 2u)
+                if (Bag_FindItem(bag(), port::load<uint16_t>(entry)) == 0)
+                    ++missing;
+            return missing;
+        }
+        case 2:
+        case 3:
+        case 4:
+        case 5:
+            return Bag_FindItem(bag(), port::load<uint16_t>(goods + 2u * static_cast<uint32_t>(mode - 2))) != 0 ? 0 : 1;
+        case 6:
+            changeMoney(at(0x4Cu));
+            return 0;
+        case 7:
+            changeMoney(static_cast<int32_t>(0u - static_cast<uint32_t>(at(0x4Cu))));
+            return 0;
+        case 8:
+            changeMoney(static_cast<int32_t>(0u - (static_cast<uint32_t>(at(0x4Cu)) + static_cast<uint32_t>(at(0x50u)))));
+            return 0;
+        case 9:
+            for (uint32_t entry = goods; entry < goods + 8u; entry += 2u)
+            {
+                const int found = Bag_FindItem(bag(), port::load<uint16_t>(entry));
+                if (found == 0)
+                    continue;
+                const uint32_t slot = static_cast<uint32_t>(found);
+                const uint32_t first = port::load<uint16_t>(port::load<uint32_t>(0x001BDA9Cu) + 4u * port::load<uint16_t>(slot));
+                const uint32_t record = port::load<uint32_t>(0x001BDAA0u) + 0x88u * (port::load<uint16_t>(slot + 2u) + first);
+                port::store<int32_t>(data.address + 0x50u, static_cast<int32_t>(static_cast<uint32_t>(at(0x50u)) + static_cast<uint32_t>(Goods_GetPrice(static_cast<int>(record)))));
+                Bag_RemoveSlot(bag(), GuestPtr<uint16_t>{slot});
+            }
+            return 0;
+        default:
+            return 0;
+        }
+    }
+
+    // The farewell party's end: the city's party object (+0x80) is destroyed (vtable +8, flag 1) and the party
+    // building loses its event mark.
+    void EvFarewellParty_End(GuestPtr<EventData> data, GuestPtr<CityScene> city)
+    {
+        const uint32_t party = static_cast<uint32_t>(city->unk_80);
+        if (party != 0)
+        {
+            port::callGuest<void>(port::load<uint32_t>(port::load<uint32_t>(party) + 8u), party, 1);
+            city->unk_80 = 0;
+        }
+        Map_GetRecord(city->map, port::load<uint16_t>(data.address + 0x16u))->flags &= 0xFDFFu;
+    }
+
+    PORT_FN(Event_CallSlot14);
+    PORT_FN(Event_CallSlot10);
+    PORT_FN(Event_CallHandlerSlot);
+    PORT_FN(EvUselessMiddleAged_Slot14);
+    PORT_FN(EvPayday_Slot10);
+    PORT_FN(EvDeliveryMan_Slot14);
+    PORT_FN(EvCrazyCult_Slot14);
+    PORT_FN(EvAdoption_Slot14);
+    PORT_FN(EvShopping_Slot14);
+    PORT_FN(EvFarewellParty_End);
+
+    // ---- starting, ending and saving events (batch 40)
+
+    namespace
+    {
+        // A queued event's entry (type, wait counter) becomes the running event `talk`: its type, the type's first
+        // var byte (+0x29, stored at +9), var 0, the Update slot of its handler at +4 and, for a person, the first actor
+        // (person index, workplace, family, member).
+        void fillEvent(GuestPtr<EventData> talk, uint32_t entry, GuestPtr<MapPerson> person)
+        {
+            const uint8_t type = port::load<uint8_t>(entry);
+            const uint32_t row = globals::eventTypes.get() + 0x4Cu * type;
+            talk->kind = type;
+            port::store<int8_t>(talk.address + 9u, port::load<int8_t>(row + 0x29u));
+            port::store<uint8_t>(talk.address + 0xAu, 0);
+            const uint32_t id = port::load<uint8_t>(row + 0x24u);
+            port::store<uint32_t>(talk.address + 4u, id == 0 ? 0u : port::load<uint32_t>(port::load<uint32_t>(kEventHandlers + 4u * id) + 8u));
+            if (person)
+            {
+                port::store<uint16_t>(talk.address + 0xCu, person->index);
+                port::store<uint16_t>(talk.address + 0xEu, person->work);
+                port::store<uint16_t>(talk.address + 0x10u, person->family);
+                port::store<uint16_t>(talk.address + 0x12u, person->member);
+            }
+        }
+
+        // The running event's size (vtable +8) of its handler class, for clearing it.
+        int eventSize(uint32_t talk) { return port::callGuest<int>(port::load<uint32_t>(port::load<uint32_t>(talk) + 8u), talk); }
+
+        // The event in cell `cell` has its handler's slot at `offset` called with (event, city, third), if it has one.
+        void callHandler(uint32_t row, uint32_t offset, GuestPtr<EventData> talk, GuestPtr<CityScene> city, uint32_t third)
+        {
+            const uint32_t id = port::load<uint8_t>(row + 0x24u);
+            if (id == 0)
+                return;
+            const uint32_t slot = port::load<uint32_t>(port::load<uint32_t>(kEventHandlers + 4u * id) + offset);
+            if (slot != 0)
+                port::callGuest<void>(slot, talk, city, third);
+        }
+
+        // The event type's own ending (handler slot +0xC), its tile flags cleared and released.
+        void endEventHandler(uint32_t row, GuestPtr<EventData> talk, GuestPtr<CityScene> city)
+        {
+            callHandler(row, 0xCu, talk, city, talk->kind); // a2 is the type byte the original had just loaded
+            const uint32_t tileFlags = port::load<uint8_t>(row + 0x25u);
+            if (tileFlags != 0)
+            {
+                Event_ClearTileFlags(static_cast<int>(tileFlags) - 1);
+                Event_ReleaseTiles(city);
+            }
+        }
+
+        // The finished event leaves the manager: its id goes back to the queue at `level` and its data is cleared.
+        void returnEvent(uint32_t cell, uint32_t level)
+        {
+            EventQueue_InsertByPriority(static_cast<int>(globals::eventQueueObject.get()), GuestPtr<uint8_t>{port::load<uint32_t>(cell) + 8u}, static_cast<int>(level), 0);
+            const uint32_t talk = port::load<uint32_t>(cell);
+            sdk::memset(talk + 8u, 0, eventSize(talk));
+        }
+    }
+
+    // The event queue, its object (0x224 bytes), the manager (0xA4 bytes) and the two running events' data go to the
+    // memory card, or come back from it.
+    void Event_LoadState(GuestPtr<EventMgr> events, GuestPtr<McManager> mc)
+    {
+        SaveFile_Read(mc, static_cast<int>(globals::kEventQueue), 0x200);
+        SaveFile_Read(mc, static_cast<int>(globals::eventQueueObject.get()), 0x224);
+        SaveFile_Read(mc, static_cast<int>(events.address), 0xA4);
+        for (uint32_t i = 0; i < 2; ++i)
+        {
+            const uint32_t talk = port::load<uint32_t>(events.address + 0xA4u + 4u * i);
+            const int size = eventSize(talk);
+            SaveFile_Read(mc, static_cast<int>(port::load<uint32_t>(events.address + 0xA4u + 4u * i) + 8u), size);
+        }
+    }
+
+    void Event_SaveState(GuestPtr<EventMgr> events, GuestPtr<McManager> mc)
+    {
+        SaveFile_Write(mc, static_cast<int>(globals::kEventQueue), 0x200);
+        SaveFile_Write(mc, static_cast<int>(globals::eventQueueObject.get()), 0x224);
+        SaveFile_Write(mc, static_cast<int>(events.address), 0xA4);
+        for (uint32_t i = 0; i < 2; ++i)
+        {
+            const uint32_t talk = port::load<uint32_t>(events.address + 0xA4u + 4u * i);
+            const int size = eventSize(talk);
+            SaveFile_Write(mc, static_cast<int>(port::load<uint32_t>(events.address + 0xA4u + 4u * i) + 8u), size);
+        }
+    }
+
+    // The talk event in slot `index` is cut short: its handler ends it, and it goes back to the waiting queue (level 3
+    // for a type with level 4) as it was.
+    void Event_Abort(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, int index)
+    {
+        const uint32_t cell = events.address + 0xA4u + 4u * static_cast<uint32_t>(index);
+        const GuestPtr<EventData> talk{port::load<uint32_t>(cell)};
+        const uint32_t row = globals::eventTypes.get() + 0x4Cu * talk->kind;
+        endEventHandler(row, talk, city);
+        uint32_t level = port::load<uint8_t>(row + 0x23u);
+        if (level == 4)
+            level = 3;
+        returnEvent(cell, level);
+    }
+
+    // The talk event in slot `index` finishes. Its var byte (+0x28 of the type, signed) says where it queues next: above
+    // 0 level 4, 0 its own level (3 for a type with level 4), -1 level 6, -2 level 7, any other value leaves the level
+    // register as the caller had it.
+    void Event_Finish(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, int index)
+    {
+        const uint32_t cell = events.address + 0xA4u + 4u * static_cast<uint32_t>(index);
+        const GuestPtr<EventData> talk{port::load<uint32_t>(cell)};
+        const uint32_t row = globals::eventTypes.get() + 0x4Cu * talk->kind;
+        endEventHandler(row, talk, city);
+        const int8_t next = port::load<int8_t>(row + 0x28u);
+        port::store<int8_t>(port::load<uint32_t>(cell) + 9u, next);
+        uint32_t level = static_cast<uint32_t>(port::guestS1());
+        if (next > 0)
+            level = 4;
+        else if (next == 0)
+        {
+            level = port::load<uint8_t>(row + 0x23u);
+            if (level == 4)
+                level = 3;
+        }
+        else if (next == -1)
+            level = 6;
+        else if (next == -2)
+            level = 7;
+        returnEvent(cell, level);
+    }
+
+    // With no event running in the first talk slot, the first event waiting at level 3 whose condition holds for the
+    // person starts there; one that starts at level 3 also sets its tile flags and runs its Start slot. The result is
+    // the running event's type.
+    uint8_t Event_TryStart(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
+    {
+        if (GuestPtr<EventData>{port::load<uint32_t>(events.address + 0xA4u)}->kind == 0)
+        {
+            const uint32_t queue = globals::eventQueueObject.get();
+            const uint32_t end = bucketEntry(queue, port::load<int32_t>(bucketStart(queue, 4)));
+            for (uint32_t entry = bucketEntry(queue, port::load<int32_t>(bucketStart(queue, 3))); entry < end; entry += 2u)
+            {
+                if (Event_CheckCondition(events, city, GuestPtr<uint8_t>{entry}, person) == 0)
+                    continue;
+                fillEvent(GuestPtr<EventData>{port::load<uint32_t>(events.address + 0xA4u)}, entry, person);
+                EventQueue_RemoveAt(static_cast<int>(queue), 3, GuestPtr<uint16_t>{entry});
+                const GuestPtr<EventData> talk{port::load<uint32_t>(events.address + 0xA4u)};
+                const uint32_t row = globals::eventTypes.get() + 0x4Cu * talk->kind;
+                if (port::load<uint8_t>(row + 0x23u) == 3)
+                {
+                    const uint32_t tileFlags = port::load<uint8_t>(row + 0x25u);
+                    if (tileFlags != 0)
+                        Event_SetTileFlags(static_cast<int>(tileFlags) - 1);
+                    port::store<uint8_t>(port::load<uint32_t>(events.address + 0xA4u) + 0xAu, 1);
+                    callHandler(row, 4u, GuestPtr<EventData>{port::load<uint32_t>(events.address + 0xA4u)}, city, person.address);
+                }
+                break;
+            }
+        }
+        return GuestPtr<EventData>{port::load<uint32_t>(events.address + 0xA4u)}->kind;
+    }
+
+    // A talk script starts an event for the person: with fewer than five events running and none of them waiting on the
+    // person's character type (a halfword at +0x38 of the type), the first event waiting at level 2 whose condition holds
+    // takes the first running slot (the others move up), with the person as actor A and the event data at +0xAC as B.
+    int Event_StartFromScript(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
+    {
+        const uint32_t slots = events.address + 4u, slotsEnd = slots + 0xA0u;
+        int running = 0;
+        for (uint32_t slot = slots; port::load<uint8_t>(slot) != 0 && slot < slotsEnd; slot += 0x20u)
+            ++running;
+        if (running >= 5)
+            return 0;
+        const uint32_t types = globals::eventTypes.get();
+        for (uint32_t slot = slots; port::load<uint8_t>(slot) != 0 && slot < slotsEnd; slot += 0x20u)
+            if (person->charType == port::load<uint16_t>(types + 0x4Cu * port::load<uint8_t>(slot) + 0x38u))
+                return 0;
+        const uint32_t queue = globals::eventQueueObject.get();
+        uint32_t entry = bucketEntry(queue, port::load<int32_t>(bucketStart(queue, 2)));
+        const uint32_t end = bucketEntry(queue, port::load<int32_t>(bucketStart(queue, 3)));
+        if (entry == end)
+            return 0;
+        do
+        {
+            if (Event_CheckCondition(events, city, GuestPtr<uint8_t>{entry}, person) != 0)
+            {
+                sdk::memmove(events.address + 0x24u, slots, 0x80);
+                sdk::memset(slots, 0, 0x20);
+                port::store<int8_t>(entry + 1u, 3);
+                port::store<uint8_t>(slots, port::load<uint8_t>(entry));
+                port::store<int8_t>(slots + 1u, port::load<int8_t>(entry + 1u));
+                port::store<uint16_t>(events.address + 8u, person->family);
+                port::store<uint16_t>(events.address + 0xAu, person->member);
+                const uint32_t other = port::load<uint32_t>(events.address + 0xACu);
+                port::store<uint16_t>(events.address + 0xCu, port::load<uint16_t>(other + 0x10u));
+                port::store<uint16_t>(events.address + 0xEu, port::load<uint16_t>(other + 0x12u));
+                const uint32_t talk = port::load<uint32_t>(events.address + 0xACu);
+                sdk::memset(talk + 8u, 0, eventSize(talk));
+                EventQueue_RemoveAt(static_cast<int>(queue), 2, GuestPtr<uint16_t>{entry});
+                return 1;
+            }
+            entry += 2u;
+        } while (entry != end);
+        return 0;
+    }
+
+    // An event id (the position in the event list of the loaded EVENT.BIN) is triggered from outside (a script, a talk):
+    // the waiting entries of that id in bucket 5 are tried; the first whose condition holds takes the talk slot (1 for
+    // id 6, else 0) when that is free or its event has a higher priority value (it is aborted for slot 1, else finished
+    // first), runs its Start slot and the call returns 1.
+    int Event_Trigger(GuestPtr<EventMgr> events, int16_t id, GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
+    {
+        const uint32_t index = static_cast<uint8_t>(id) == 6 ? 1u : 0u;
+        uint32_t position = 0;
+        const uint32_t list = globals::kEventQueue, listEnd = list + 2u * static_cast<uint32_t>(globals::eventQueueLength.get());
+        if (list < listEnd)
+        {
+            uint32_t at = list;
+            do
+            {
+                if (port::load<uint16_t>(at) == static_cast<uint16_t>(id))
+                    break;
+                at += 2u;
+                ++position;
+            } while (at < listEnd);
+        }
+        const uint32_t queue = globals::eventQueueObject.get();
+        uint32_t entry = bucketEntry(queue, port::load<int32_t>(bucketStart(queue, 5)));
+        const uint32_t end = bucketEntry(queue, port::load<int32_t>(bucketStart(queue, 6)));
+        if (!(entry < end))
+            return 0;
+        const uint32_t cell = events.address + 0xA4u + 4u * index;
+        do
+        {
+            if (port::load<uint8_t>(entry) == position && Event_CheckCondition(events, city, GuestPtr<uint8_t>{entry}, person) != 0)
+            {
+                const uint8_t running = GuestPtr<EventData>{port::load<uint32_t>(cell)}->kind;
+                bool start = true;
+                if (running != 0)
+                {
+                    const uint32_t types = globals::eventTypes.get();
+                    const int8_t newPriority = port::load<int8_t>(types + 0x4Cu * port::load<uint8_t>(entry) + 0x22u);
+                    const int8_t oldPriority = port::load<int8_t>(types + 0x4Cu * running + 0x22u);
+                    if (newPriority < oldPriority)
+                    {
+                        if (index == 1)
+                            Event_Abort(events, city, 1);
+                        else
+                            Event_Finish(events, city, static_cast<int>(index));
+                        if (port::load<uint8_t>(entry) != position)
+                            entry += 2u;
+                    }
+                    else
+                        start = false;
+                }
+                if (start)
+                {
+                    fillEvent(GuestPtr<EventData>{port::load<uint32_t>(cell)}, entry, person);
+                    EventQueue_RemoveAt(static_cast<int>(queue), 5, GuestPtr<uint16_t>{entry});
+                    const uint32_t row = globals::eventTypes.get() + 0x4Cu * GuestPtr<EventData>{port::load<uint32_t>(cell)}->kind;
+                    const uint32_t tileFlags = port::load<uint8_t>(row + 0x25u);
+                    if (tileFlags != 0)
+                        Event_SetTileFlags(static_cast<int>(tileFlags) - 1);
+                    port::store<uint8_t>(port::load<uint32_t>(cell) + 0xAu, 1);
+                    callHandler(row, 4u, GuestPtr<EventData>{port::load<uint32_t>(cell)}, city, person.address);
+                    return 1;
+                }
+            }
+            entry += 2u;
+        } while (entry < end);
+        return 0;
+    }
+
+    PORT_FN(Event_LoadState);
+    PORT_FN(Event_SaveState);
+    PORT_FN(Event_Abort);
+    PORT_FN(Event_Finish);
+    PORT_FN(Event_TryStart);
+    PORT_FN(Event_StartFromScript);
+    PORT_FN(Event_Trigger);
+
+    // ---- the event scheduler (batch 40)
+
+    // Whether the event type at `type` (a queue entry) may start now, for the person (null for a script-less start).
+    // The checks, in order, all on the type's 0x4C-byte record:
+    //   the time window +0x2A..+0x2C against the minute counter (not for the levels 1 and 5), the population +0x30, the
+    //   laptop modules +0x32, and for a person: the character types listed at +0x38 (one for level 2, else four), the
+    //   gender +0x40, the friendship band +0x42, the claim meter of the workplace +0x41, the workplace types at +0x44,
+    //   and where the person stands (+0x43: 1 in its workplace, 2 in its target, 3 away from the building it is
+    //   between, 4 outside its workplace at least 8 from its middle), then the score tiers +0x35, +0x36 and the
+    //   approval tier +0x34, and finally the handler's own Check slot (the handler of level 2 and of types of group 6
+    //   pass the actor of the talk event 2 or 1, else the first).
+    int64_t Event_CheckCondition(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, GuestPtr<uint8_t> type, GuestPtr<MapPerson> person)
+    {
+        port::GuestFrame<0xA0> frame; // the original's frame: the stack vectors below keep their leftover lanes
+        const uint32_t row = globals::eventTypes.get() + 0x4Cu * *type;
+        const auto byteAt = [&](uint32_t offset) { return static_cast<uint32_t>(port::load<uint8_t>(row + offset)); };
+        const auto halfAt = [&](uint32_t offset) { return static_cast<uint32_t>(port::load<uint16_t>(row + offset)); };
+        const uint32_t level = byteAt(0x23);
+        if (level != 1 && level != 5)
+        {
+            const uint32_t start = halfAt(0x2A), end = halfAt(0x2C), now = port::load<uint16_t>(events.address);
+            if (end < start)
+            {
+                if (end <= now && now < start)
+                    return 0;
+            }
+            else if (now < start || end <= now)
+                return 0;
+        }
+        if (city->map->population < static_cast<int32_t>(halfAt(0x30)))
+            return 0;
+        const uint32_t modules = halfAt(0x32);
+        if (modules != (halfAt(0x32) & Laptop_CountActive()))
+            return 0;
+        if (person)
+        {
+            if (halfAt(0x38) != 0)
+            {
+                const uint32_t listed = level == 2 ? 1u : 4u;
+                bool found = false;
+                const uint32_t end = row + 0x38u + 2u * listed;
+                for (uint32_t at = row + 0x38u; port::load<uint16_t>(at) != 0 && at < end; at += 2u)
+                    if (port::load<uint16_t>(at) == person->charType)
+                    {
+                        found = true;
+                        break;
+                    }
+                if (!found)
+                    return 0;
+            }
+            if (byteAt(0x40) != 0 && static_cast<int32_t>(byteAt(0x40)) != (static_cast<int16_t>(person->flags) & 3) + 1)
+                return 0;
+            if (byteAt(0x42) != 0)
+            {
+                const int band = Family_GetFriendshipBand(person->family, person->member);
+                if (byteAt(0x42) == 1 && band < 1)
+                    return 0;
+            }
+            const GuestPtr<MapObject> work = Map_GetRecord(city->map, person->work);
+            if (byteAt(0x41) != 0)
+            {
+                const int meter = ClaimMeter_Level(work->claimMeter);
+                if (byteAt(0x41) == 1 && meter != 0)
+                    return 0;
+            }
+            if (halfAt(0x44) != 0)
+            {
+                bool found = false;
+                for (uint32_t at = row + 0x44u; port::load<uint16_t>(at) != 0 && at < row + 0x4Cu; at += 2u)
+                    if (port::load<uint16_t>(at) == work->type)
+                    {
+                        found = true;
+                        break;
+                    }
+                if (!found)
+                    return 0;
+            }
+            if (byteAt(0x43) != 0)
+            {
+                const int tileX = sdk::fptosi(ps2f(64.0f) + ps2f(person->x));
+                const int tileZ = sdk::fptosi(ps2f(64.0f) - ps2f(person->z));
+                const GuestPtr<MapObject> here = Map_FindPersonObjectOnTile(city->map, person->index, static_cast<uint32_t>(tileX + (tileZ << 7)) & 0xFFFFu);
+                if (!here)
+                    return 0;
+                const GuestPtr<BuildingType> hereType{globals::buildingTypeAddress(here->type)};
+                const bool hasEntrance = (hereType->flags & 0x20u) != 0;
+                const auto entranceAnswer = [&] { return port::callGuest<int64_t>(port::load<uint32_t>(hereType->vtable.address + 0x24u), hereType, city, here); };
+                switch (byteAt(0x43))
+                {
+                case 1:
+                    if (here->id != person->work)
+                        return 0;
+                    if (person->work == person->target && hasEntrance && entranceAnswer() != 0)
+                        return 0;
+                    break;
+                case 2:
+                    if (here->id != person->target)
+                        return 0;
+                    if (hasEntrance && entranceAnswer() == 0)
+                        return 0;
+                    break;
+                case 3:
+                    if (person->inside == kNoObject || person->destination == kNoObject || here->id == person->inside || here->id == person->destination)
+                        return 0;
+                    break;
+                case 4:
+                {
+                    if (person->inside != person->work || here->id == person->inside)
+                        return 0;
+                    using namespace vu0;
+                    const ps2f size = fromInt(GuestPtr<BuildingType>{globals::buildingTypeAddress(work->type)}->size);
+                    const uint32_t base = frame.ptr().address;
+                    const uint32_t tile = work->tile;
+                    const GuestPtr<float> a{base + 0x80u}, b{base + 0x70u};
+                    port::store<float>(a.address, static_cast<float>(person->x));
+                    port::store<float>(b.address, static_cast<float>((fromInt(static_cast<int32_t>(tile & 0x7F)) - ps2f(64.0f)) + size / ps2f(2.0f)));
+                    port::store<float>(a.address + 8u, static_cast<float>(person->z));
+                    port::store<float>(b.address + 8u, static_cast<float>((fromInt(0x80 - static_cast<int32_t>(tile >> 7)) - ps2f(64.0f)) - size / ps2f(2.0f)));
+                    vf(4) = load(GuestPtr<Vec4>{a.address});
+                    vf(5) = load(GuestPtr<Vec4>{b.address});
+                    set(vf(6), sub(vf(5), vf(4)), XYZW);
+                    set(vf(7), mul(vf(6), vf(6)), XYZ);
+                    set(vf(8), add(vf(7), lane(vf(7), 2)), X);
+                    q() = sqrtQ(x(vf(8)));
+                    set(vf(9), add(vf(0), _mm_set1_ps(q())), XYZW);
+                    store(GuestPtr<Vec4>{base + 0x90u}, vf(9));
+                    if (ps2f(port::load<float>(base + 0x90u)) < ps2f(8.0f))
+                        return 0;
+                    break;
+                }
+                default:
+                    return 0;
+                }
+            }
+        }
+        if (byteAt(0x35) != 0 && static_cast<int>(byteAt(0x35)) - 1 != CityScene_ScoreA0Tier(city))
+            return 0;
+        if (byteAt(0x36) != 0 && static_cast<int>(byteAt(0x36)) - 1 != CityScene_ScoreA8Tier(city))
+            return 0;
+        if (byteAt(0x34) != 0 && static_cast<int>(byteAt(0x34)) - 1 != CityScene_ApprovalTier(city))
+            return 0;
+        const uint32_t handler = byteAt(0x24);
+        if (handler == 0)
+            return 1;
+        const uint32_t which = level == 2 ? 2u : byteAt(0x20) == 6 ? 1u : 0u;
+        const uint32_t check = port::load<uint32_t>(port::load<uint32_t>(kEventHandlers + 4u * handler));
+        if (check == 0)
+            return 1;
+        return port::callGuest<int64_t>(check, GuestPtr<EventData>{port::load<uint32_t>(events.address + 0xA4u + 4u * which)}, city, person);
+    }
+
+    namespace
+    {
+        // The talk event `cell` takes the first waiting entry of bucket `bucket` whose condition holds (no person):
+        // the entry leaves the bucket. Returns whether one did.
+        bool startFromBucket(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, uint32_t cell, int bucket)
+        {
+            const uint32_t queue = globals::eventQueueObject.get();
+            const uint32_t end = bucketEntry(queue, port::load<int32_t>(bucketStart(queue, bucket + 1)));
+            for (uint32_t entry = bucketEntry(queue, port::load<int32_t>(bucketStart(queue, bucket))); entry < end; entry += 2u)
+            {
+                if (Event_CheckCondition(events, city, GuestPtr<uint8_t>{entry}, GuestPtr<MapPerson>{0}) == 0)
+                    continue;
+                fillEvent(GuestPtr<EventData>{port::load<uint32_t>(cell)}, entry, GuestPtr<MapPerson>{0});
+                EventQueue_RemoveAt(static_cast<int>(queue), bucket, GuestPtr<uint16_t>{entry});
+                return true;
+            }
+            return false;
+        }
+
+        // A running event that has not begun (var 0) begins when its start time has come: its tile flags are set and
+        // its Start slot runs (with the person slot 0).
+        void beginEvent(uint32_t row, GuestPtr<EventData> talk, GuestPtr<CityScene> city)
+        {
+            const uint32_t tileFlags = port::load<uint8_t>(row + 0x25u);
+            if (tileFlags != 0)
+                Event_SetTileFlags(static_cast<int>(tileFlags) - 1);
+            port::store<uint8_t>(talk.address + 0xAu, 1);
+            callHandler(row, 4u, talk, city, 0);
+        }
+    }
+
+    // The scheduler, called every frame. The minute counter (events +0) follows the city clock. When the clock wraps
+    // to a new day, the waiting lists are reorganised (the population rank, the due waits) and the running events'
+    // counters tick; every minute of the day (at the hour) the first fitting waiting entry takes the second talk slot,
+    // and when the first talk slot is free one from the next bucket, or a postponed event from the running list,
+    // takes it. Last, each talk event begins when its start time has come, ends when its end time has, or updates.
+    void Event_Update(GuestPtr<EventMgr> events, GuestPtr<CityScene> city)
+    {
+        const uint32_t queue = globals::eventQueueObject.get();
+        const uint32_t types = globals::eventTypes.get();
+        const int32_t minute = city->clock / 60;
+        const uint32_t counter = port::load<uint16_t>(events.address);
+        if (static_cast<uint32_t>(minute) == counter)
+            return;
+        const uint32_t cellA = events.address + 0xA4u, cellB = events.address + 0xA8u;
+        const auto talkKind = [&](uint32_t cell) { return port::load<uint8_t>(port::load<uint32_t>(cell) + 8u); };
+        port::GuestFrame<0x90> frame;
+        const uint32_t ctx = frame.ptr().address;
+        if (!((static_cast<uint32_t>(minute) & 0xFFFFu) < counter))
+        {
+            // The same day: the counter follows the clock; on the hour a second event may start.
+            port::store<uint16_t>(events.address, static_cast<uint16_t>(minute));
+            if (port::load<uint16_t>(events.address) % 60 == 0 && talkKind(cellB) == 0)
+            {
+                const uint8_t running = talkKind(cellA);
+                if (running == 0 || port::load<uint8_t>(types + 0x4Cu * running + 0x20u) != 3)
+                    startFromBucket(events, city, cellB, 0);
+            }
+        }
+        else
+        {
+            port::store<uint16_t>(events.address, static_cast<uint16_t>(minute));
+            const uint32_t rank = port::load<uint8_t>(events.address + 2u);
+            if (static_cast<int32_t>(rank) < CityScene_PopulationRank(city))
+            {
+                port::store<uint8_t>(events.address + 2u, static_cast<uint8_t>(CityScene_PopulationRank(city)));
+                const auto mask = [&] { return static_cast<int32_t>(1u << ((port::load<uint8_t>(events.address + 2u) - 1u) & 0x1Fu)); };
+                port::store<int32_t>(ctx + 0x60u, static_cast<int32_t>(types));
+                port::store<int32_t>(ctx + 0x64u, mask());
+                for (int bucket = 0; bucket < 4; ++bucket)
+                    EventList_MoveOffRankB(static_cast<int>(queue), bucket, 6, GuestPtr<int32_t>{ctx + 0x60u});
+                EventList_MoveOffRankB(static_cast<int>(queue), 4, 6, GuestPtr<int32_t>{ctx + 0x60u});
+                for (int to = 0; to < 3; ++to)
+                {
+                    port::store<int32_t>(ctx + 0x68u, static_cast<int32_t>(types));
+                    port::store<int32_t>(ctx + 0x6Cu, mask());
+                    port::store<int32_t>(ctx + 0x70u, to);
+                    EventList_MoveOnRank(static_cast<int>(queue), 5, to, GuestPtr<int32_t>{ctx + 0x68u});
+                }
+                port::store<int32_t>(ctx + 0x78u, static_cast<int32_t>(types));
+                port::store<int32_t>(ctx + 0x7Cu, mask());
+                EventList_MoveOffRank(static_cast<int>(queue), 5, 3, GuestPtr<int32_t>{ctx + 0x78u});
+            }
+            // The entries waiting in bucket 4 count their wait down.
+            for (uint32_t entry = bucketEntry(queue, port::load<int32_t>(bucketStart(queue, 4))); entry != bucketEntry(queue, port::load<int32_t>(bucketStart(queue, 5))); entry += 2u)
+                port::store<int8_t>(entry + 1u, static_cast<int8_t>(port::load<int8_t>(entry + 1u) - 1));
+            for (int to = 0; to < 3; ++to)
+            {
+                port::store<int32_t>(ctx + 0x80u, static_cast<int32_t>(port::load<uint32_t>(0x001BDA84u)));
+                port::store<int32_t>(ctx + 0x84u, to);
+                EventList_MoveDueTo(static_cast<int>(queue), 4, to, GuestPtr<int32_t>{ctx + 0x80u});
+            }
+            port::store<int32_t>(ctx + 0x8Cu, static_cast<int32_t>(port::load<uint32_t>(0x001BDA84u)));
+            EventList_MoveDue(static_cast<int>(queue), 4, 3, GuestPtr<int32_t>{ctx + 0x8Cu});
+            // The postponed events (the running list) count down and return to bucket 4 when they run out.
+            const uint32_t slotsEnd = events.address + 4u + 0xA0u;
+            for (uint32_t slot = events.address + 4u; port::load<uint8_t>(slot) != 0 && slot < slotsEnd;)
+            {
+                const int8_t left = static_cast<int8_t>(port::load<int8_t>(slot + 1u) - 1);
+                port::store<int8_t>(slot + 1u, left);
+                if (left > 0)
+                {
+                    slot += 0x20u;
+                    continue;
+                }
+                port::store<int8_t>(slot + 1u, port::load<int8_t>(globals::eventTypes.get() + 0x4Cu * port::load<uint8_t>(slot) + 0x28u));
+                EventQueue_InsertByPriority(static_cast<int>(queue), GuestPtr<uint8_t>{slot}, 4, 0);
+                const uint32_t last = events.address + 0x84u;
+                if (slot < last)
+                    sdk::memmove(slot, slot + 0x20u, (static_cast<int32_t>(last - slot) >> 5) << 5);
+                sdk::memset(last, 0, 0x20);
+            }
+            // The second talk event: while it runs its var +9 counts down (and finishes it at 0); when free, one may start.
+            const GuestPtr<EventData> talkB{port::load<uint32_t>(cellB)};
+            bool talkBDone = false;
+            if (talkB->kind != 0)
+            {
+                const int8_t counted = port::load<int8_t>(talkB.address + 9u);
+                if (counted > 0)
+                {
+                    port::store<int8_t>(talkB.address + 9u, static_cast<int8_t>(counted - 1));
+                    if (!(static_cast<int8_t>(counted - 1) > 0))
+                        Event_Finish(events, city, 1);
+                }
+                talkBDone = true;
+            }
+            if (!talkBDone)
+            {
+                const uint8_t running = talkKind(cellA);
+                if (running == 0 || port::load<uint8_t>(types + 0x4Cu * running + 0x20u) != 3)
+                    startFromBucket(events, city, cellB, 0);
+            }
+            // The first talk event: while it runs the same countdown; when free, one from the next bucket, else a
+            // postponed event with a timer of type level 4 takes it (the last in the list first).
+            const GuestPtr<EventData> talkA{port::load<uint32_t>(cellA)};
+            if (talkA->kind == 0)
+            {
+                if (!startFromBucket(events, city, cellA, 1))
+                {
+                    const GuestPtr<EventData> now{port::load<uint32_t>(cellA)};
+                    if (now->kind == 0)
+                    {
+                        const uint32_t first = events.address + 4u;
+                        for (uint32_t slot = events.address + 0x84u; slot >= first; slot -= 0x20u)
+                        {
+                            const uint8_t kind = port::load<uint8_t>(slot);
+                            if (kind == 0 || port::load<uint16_t>(slot + 0x1Cu) == 0)
+                                continue;
+                            const uint32_t row = types + 0x4Cu * kind;
+                            if (port::load<uint8_t>(row + 0x20u) != 4)
+                                continue;
+                            now->kind = kind;
+                            port::store<int8_t>(now.address + 9u, port::load<int8_t>(row + 0x29u));
+                            port::store<uint8_t>(now.address + 0xAu, 0);
+                            const uint32_t handler = port::load<uint8_t>(row + 0x24u);
+                            port::store<uint32_t>(now.address + 4u, handler == 0 ? 0u : port::load<uint32_t>(port::load<uint32_t>(kEventHandlers + 4u * handler) + 8u));
+                            const GuestPtr<ActorRef> actors{port::load<uint32_t>(cellA) + 0xCu};
+                            uint32_t actor = actors.address;
+                            for (uint32_t from = slot + 4u; from < slot + 0x20u; from += 4u, actor += 8u)
+                            {
+                                port::store<uint16_t>(actor + 4u, port::load<uint16_t>(from));
+                                port::store<uint16_t>(actor + 6u, port::load<uint16_t>(from + 2u));
+                                port::store<uint16_t>(actor, 6000);
+                                port::store<uint16_t>(actor + 2u, kNoObject);
+                            }
+                            const uint32_t last = events.address + 0x84u;
+                            if (slot < last)
+                                sdk::memmove(slot, slot + 0x20u, (static_cast<int32_t>(last - slot) >> 5) << 5);
+                            sdk::memset(last, 0, 0x20);
+                            beginEvent(types + 0x4Cu * talkKind(cellA), GuestPtr<EventData>{port::load<uint32_t>(cellA)}, city);
+                            break;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                const int8_t counted = port::load<int8_t>(talkA.address + 9u);
+                if (counted > 0)
+                {
+                    port::store<int8_t>(talkA.address + 9u, static_cast<int8_t>(counted - 1));
+                    if (!(static_cast<int8_t>(counted - 1) > 0))
+                        Event_Finish(events, city, 0);
+                }
+            }
+        }
+        // Each talk event: one that has not begun (var 0) begins at its start time; a running one whose var +9 says
+        // 1 finishes at its end time; otherwise its Update slot runs.
+        for (uint32_t i = 0; i < 2; ++i)
+        {
+            const GuestPtr<EventData> talk{port::load<uint32_t>(events.address + 0xA4u + 4u * i)};
+            if (talk->kind == 0)
+                continue;
+            const uint32_t row = types + 0x4Cu * talk->kind;
+            const uint32_t now = port::load<uint16_t>(events.address);
+            if (port::load<uint8_t>(talk.address + 0xAu) == 0)
+            {
+                if (!(now < port::load<uint16_t>(row + 0x2Au)))
+                    beginEvent(row, GuestPtr<EventData>{port::load<uint32_t>(events.address + 0xA4u + 4u * i)}, city);
+            }
+            else if (port::load<int8_t>(talk.address + 9u) == 1 && !(now < port::load<uint16_t>(row + 0x2Eu)))
+                Event_Finish(events, city, static_cast<int>(i));
+            else if (const uint32_t update = port::load<uint32_t>(talk.address + 4u))
+                port::callGuest<void>(update, talk, city);
+        }
+    }
+
+    // After a game is loaded the event lists are matched with the event table of this build: the ids saved with the game
+    // (the list at 0x1C5790, one halfword per type record) against the table's. A type that was not in the saved list is
+    // put in the waiting queue (by its rank and level) and every stored type number from it on goes up by one; a saved
+    // type no longer in the table loses its running event or queue entry and the numbers above it go down. A changed
+    // list is stored again; last, the running events get their Update slot back (and the first its tile flags).
+    void Event_InitForCity(GuestPtr<EventMgr> events)
+    {
+        port::GuestFrame<0x90> frame;
+        const uint32_t queue = globals::eventQueueObject.get();
+        const uint32_t types = globals::eventTypes.get();
+        const uint32_t tableEnd = types + 0x4Cu * static_cast<uint32_t>(globals::eventQueueLength.get());
+        const auto talkAt = [&](uint32_t i) { return port::load<uint32_t>(events.address + 0xA4u + 4u * i); };
+        const auto queueStart = [&] { return bucketEntry(queue, port::load<int32_t>(bucketStart(queue, 0))); };
+        const auto queueEnd = [&] { return bucketEntry(queue, port::load<int32_t>(bucketStart(queue, 8))); };
+        const uint32_t slotsEnd = events.address + 4u + 0xA0u;
+        uint32_t saved = globals::kEventQueue;
+        uint32_t record = types;
+        int32_t index = 0;
+        bool changed = false;
+        while (record < tableEnd)
+        {
+            const uint32_t current = port::load<uint16_t>(record + 0x20u), old = port::load<uint16_t>(saved);
+            if (old == current)
+            {
+                record += 0x4Cu;
+                ++index;
+                saved += 2u;
+                continue;
+            }
+            if (old > current && current != 0)
+            {
+                // A type new to the saved game goes into the queue and the numbers from its index up shift.
+                const uint32_t rank = port::load<uint8_t>(events.address + 2u);
+                const uint32_t mask = rank == 0 ? 0u : 1u << ((rank - 1u) & 0x1Fu);
+                const uint32_t rankMask = port::load<uint8_t>(record + 0x27u);
+                uint32_t level = 6;
+                if ((rankMask & mask & 0xFFu) == 0)
+                {
+                    if ((mask & 0xFFu) < rankMask)
+                        level = 5;
+                }
+                else
+                {
+                    level = port::load<uint8_t>(record + 0x23u);
+                    if (level == 4)
+                        level = 3;
+                }
+                const uint32_t entry = frame.ptr().address + 0x8Cu;
+                port::store<uint8_t>(entry, static_cast<uint8_t>(index));
+                port::store<int8_t>(entry + 1u, port::load<int8_t>(record + 0x28u));
+                EventQueue_InsertByPriority(static_cast<int>(queue), GuestPtr<uint8_t>{entry}, static_cast<int>(level), 0);
+                for (uint32_t i = 0; i < 2; ++i)
+                {
+                    const uint32_t talk = talkAt(i);
+                    const uint32_t kind = port::load<uint8_t>(talk + 8u);
+                    if (kind != 0 && static_cast<int32_t>(kind) >= index)
+                        port::store<uint8_t>(talk + 8u, static_cast<uint8_t>(kind + 1));
+                }
+                for (uint32_t slot = events.address + 4u; port::load<uint8_t>(slot) != 0 && slot < slotsEnd; slot += 0x20u)
+                    if (static_cast<int32_t>(port::load<uint8_t>(slot)) >= index)
+                        port::store<uint8_t>(slot, static_cast<uint8_t>(port::load<uint8_t>(slot) + 1));
+                for (uint32_t at = queueStart(), end = queueEnd(); at < end; at += 2u)
+                    if (static_cast<int32_t>(port::load<uint8_t>(at)) >= index)
+                        port::store<uint8_t>(at, static_cast<uint8_t>(port::load<uint8_t>(at) + 1));
+                record += 0x4Cu;
+                ++index;
+                changed = true;
+                continue;
+            }
+            // A saved type that is no longer in the table: its running event, postponed event or queue entry goes.
+            const GuestPtr<EventData> talkA{talkAt(0)}, talkB{talkAt(1)};
+            if (index == talkA->kind)
+                sdk::memset(talkA.address + 8u, 0, eventSize(talkA.address));
+            else if (index == talkB->kind)
+                sdk::memset(talkB.address + 8u, 0, eventSize(talkB.address));
+            else
+            {
+                bool removed = false;
+                for (uint32_t slot = events.address + 4u; port::load<uint8_t>(slot) != 0 && slot < slotsEnd; slot += 0x20u)
+                {
+                    if (static_cast<int32_t>(port::load<uint8_t>(slot)) != index)
+                        continue;
+                    const uint32_t last = events.address + 0x84u;
+                    if (slot < last)
+                        sdk::memmove(slot, slot + 0x20u, (static_cast<int32_t>(last - slot) >> 5) << 5);
+                    sdk::memset(last, 0, 0x20);
+                    removed = true;
+                    break;
+                }
+                for (int bucket = 0; !removed && bucket < 8; ++bucket)
+                {
+                    const uint32_t end = bucketEntry(queue, port::load<int32_t>(bucketStart(queue, bucket + 1)));
+                    for (uint32_t at = bucketEntry(queue, port::load<int32_t>(bucketStart(queue, bucket))); at < end; at += 2u)
+                        if (static_cast<int32_t>(port::load<uint8_t>(at)) == index)
+                        {
+                            EventQueue_RemoveAt(static_cast<int>(queue), bucket, GuestPtr<uint16_t>{at});
+                            removed = true;
+                            break;
+                        }
+                }
+            }
+            for (uint32_t i = 0; i < 2; ++i)
+            {
+                const uint32_t talk = talkAt(i);
+                const uint32_t kind = port::load<uint8_t>(talk + 8u);
+                if (kind != 0 && index < static_cast<int32_t>(kind))
+                    port::store<uint8_t>(talk + 8u, static_cast<uint8_t>(kind - 1));
+            }
+            for (uint32_t slot = events.address + 4u; port::load<uint8_t>(slot) != 0 && slot < slotsEnd; slot += 0x20u)
+                if (index < static_cast<int32_t>(port::load<uint8_t>(slot)))
+                    port::store<uint8_t>(slot, static_cast<uint8_t>(port::load<uint8_t>(slot) - 1));
+            for (uint32_t at = queueStart(), end = queueEnd(); at < end; at += 2u)
+                if (index < static_cast<int32_t>(port::load<uint8_t>(at)))
+                    port::store<uint8_t>(at, static_cast<uint8_t>(port::load<uint8_t>(at) - 1));
+            saved += 2u;
+            changed = true;
+        }
+        if (changed)
+        {
+            sdk::memset(globals::kEventQueue, 0, 0x100);
+            uint32_t out = globals::kEventQueue;
+            for (uint32_t at = types, end = types + 0x4Cu * static_cast<uint32_t>(globals::eventQueueLength.get()); at < end; at += 0x4Cu, out += 2u)
+            {
+                port::store<uint8_t>(out, port::load<uint8_t>(at + 0x20u));
+                port::store<uint8_t>(out + 1u, port::load<uint8_t>(at + 0x21u));
+            }
+        }
+        for (uint32_t i = 0; i < 2; ++i)
+        {
+            const uint32_t talk = talkAt(i);
+            const uint32_t kind = port::load<uint8_t>(talk + 8u);
+            if (kind == 0)
+                continue;
+            const uint32_t row = globals::eventTypes.get() + 0x4Cu * kind;
+            const uint32_t handler = port::load<uint8_t>(row + 0x24u);
+            port::store<uint32_t>(talk + 4u, handler == 0 ? 0u : port::load<uint32_t>(port::load<uint32_t>(kEventHandlers + 4u * handler) + 8u));
+            if (i == 0 && port::load<uint8_t>(talkAt(0) + 0xAu) != 0 && port::load<uint8_t>(row + 0x25u) != 0)
+                Event_SetTileFlags(static_cast<int>(port::load<uint8_t>(row + 0x25u)) - 1);
+        }
+    }
+
+    PORT_FN(Event_CheckCondition);
+    PORT_FN(Event_Update);
+    PORT_FN(Event_InitForCity);
+
+    // ---- the shopping event's start (batch 40)
+
+    // A person at a shop (a building of category 5) starts a shopping trip: the person is the first actor and the shop
+    // record (0x28 bytes each in the table at 0x1BDAB4, taken in turn: counter 0x1BDD5C) lists up to four goods (halfwords
+    // at +0x20, stored in the event's +0x34 as the record number and counted in +0x38). The buildings round the shop (a
+    // square 30 tiles wider than its footprint) that are shops with an entrance and neither flag 0x240 are searched, in
+    // the order of the map's 80 tile lists, for a resident family that sells the wanted goods this season: each item found
+    // takes an actor slot in the event data (+0x8 * item + 0xC: person index, +0xE: shop, +0x10: family), its price goes to
+    // +0x3C + 4 * item and the total (+0x4C). When every item has a seller the total is rounded up to the next thousand
+    // and the event starts (1); when the whole map has been searched without that the event data is cleared (0).
+    int EvShopping_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
+    {
+        port::GuestFrame<0x130> frame; // the wanted goods at +0x120, the tile list count at +0x128, a goods offset at +0x12C, the footprint at +0x110
+        const uint32_t base = frame.ptr().address;
+        const GuestPtr<MapObject> work = Map_GetRecord(city->map, person->work);
+        const GuestPtr<BuildingType> shop{globals::buildingTypeAddress(work->type)};
+        if (shop->category != 5)
+            return 0;
+        port::store<uint16_t>(data.address + 0xCu, person->index);
+        port::store<uint16_t>(data.address + 0xEu, person->work);
+        port::store<uint16_t>(data.address + 0x10u, person->family);
+        port::store<uint16_t>(data.address + 0x12u, person->member);
+        constexpr uint32_t kSerial = 0x001BDD5Cu, kShopCount = 0x001BDAB0u;
+        const int32_t serial = port::load<int32_t>(kSerial);
+        port::store<int32_t>(data.address + 0x34u, serial);
+        const uint32_t record = globals::shoppingTexts.get() + 0x28u * static_cast<uint32_t>(serial);
+        port::store<int32_t>(kSerial, serial + 1);
+        if (!(serial + 1 < port::load<int32_t>(kShopCount)))
+            port::store<int32_t>(kSerial, 0);
+        sdk::memcpy(base + 0x120u, record + 0x20u, 8);
+        int remaining = 0;
+        for (uint32_t at = base + 0x120u; port::load<uint16_t>(at) != 0 && at < base + 0x128u; at += 2u)
+            ++remaining;
+        port::store<int32_t>(data.address + 0x38u, remaining);
+        // The area the shop is searched round: its tile, its size and 30 tiles more on every side.
+        const int32_t tile = work->tile;
+        const int32_t areaX0 = (tile & 0x7F) - 30, areaZ0 = (tile >> 7) - 30;
+        const int32_t areaX1 = (tile & 0x7F) + shop->size + 30, areaZ1 = (tile >> 7) + shop->size + 30;
+        const uint32_t footprint = base + 0x110u;
+        for (int list = 0; list < 0x50; ++list)
+        {
+            const uint32_t items = Map_GetTileList(city->map, list, GuestPtr<uint32_t>{base + 0x128u}).address;
+            const uint32_t end = items + 2u * port::load<uint32_t>(base + 0x128u);
+            for (uint32_t at = items; at < end; at += 2u)
+            {
+                const GuestPtr<MapObject> obj = Map_GetRecord(city->map, port::load<uint16_t>(at));
+                if (port::load<uint8_t>(port::load<uint32_t>(0x001BDA9Cu) + 4u * obj->type + 2u) == 0)
+                    continue;
+                if ((obj->flags & 0x20u) == 0 || (obj->flags & 0x240u) != 0)
+                    continue;
+                Building_GetFootprint(obj, 0, GuestPtr<uint32_t>{footprint});
+                const int32_t fx0 = port::load<int32_t>(footprint), fz0 = port::load<int32_t>(footprint + 4u);
+                const int32_t fx1 = port::load<int32_t>(footprint + 8u), fz1 = port::load<int32_t>(footprint + 12u);
+                if (!(areaX0 < fx1 && fx0 < areaX1 && areaZ0 < fz1 && fz0 < areaZ1))
+                    continue;
+                if (!Map_FindPersonEntry(city->map, static_cast<int16_t>(obj->family), 0))
+                    continue;
+                for (int pass = 0; pass < 4; ++pass)
+                {
+                    port::store<int32_t>(base + 0x12Cu, pass);
+                    const int32_t month = remainder(city->monthCount, 12);
+                    const int goods = Goods_GetRecordOffset(obj->type, obj->family, (month < 0 ? month + 3 : month) >> 2, GuestPtr<int32_t>{base + 0x12Cu});
+                    for (uint32_t entry = base + 0x120u; entry < base + 0x128u; entry += 2u)
+                    {
+                        const uint32_t wanted = port::load<uint16_t>(entry);
+                        if (wanted == 0 || wanted != port::load<uint16_t>(static_cast<uint32_t>(goods)))
+                            continue;
+                        const uint32_t number = (entry + 2u - (base + 0x120u)) >> 1;
+                        port::store<uint16_t>(entry, 0);
+                        const uint32_t slot = data.address + 8u * number;
+                        port::store<uint16_t>(slot + 0xEu, obj->id);
+                        port::store<uint16_t>(slot + 0x10u, obj->family);
+                        port::store<uint16_t>(slot + 0x12u, 0);
+                        const GuestPtr<MapPerson> seller = Map_FindPersonEntry(city->map, static_cast<int16_t>(port::load<uint16_t>(slot + 0x10u)), port::load<uint16_t>(slot + 0x12u));
+                        port::store<uint16_t>(slot + 0xCu, seller->index);
+                        port::store<int32_t>(data.address + 4u * ((entry + 0x14u - (base + 0x120u)) >> 1) + 0x14u, Goods_GetPrice(goods));
+                        --remaining;
+                        port::store<int32_t>(data.address + 0x4Cu, static_cast<int32_t>(static_cast<uint32_t>(port::load<int32_t>(data.address + 0x4Cu)) + static_cast<uint32_t>(Goods_GetPrice(goods))));
+                        if (remaining <= 0)
+                        {
+                            const uint32_t thousands = static_cast<uint32_t>(port::load<int32_t>(data.address + 0x4Cu) / 1000) + 1u;
+                            port::store<uint32_t>(data.address + 0x4Cu, thousands * 1000u);
+                            return 1;
+                        }
+                    }
+                }
+            }
+        }
+        sdk::memset(data.address + 8u, 0, eventSize(data.address));
+        return 0;
+    }
+
+    PORT_FN(EvShopping_Check);
 }

@@ -10,7 +10,7 @@ stream file `0x00717C40`, video decoder `0x00717C80` (sceMpeg plus the video buf
 
 ## Functions
 
-80 functions (typed 80). Blocks: 49 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+80 functions (typed 60, verified 20). Blocks: 49 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -58,7 +58,7 @@ stream file `0x00717C40`, video decoder `0x00717C80` (sceMpeg plus the video buf
 | `0x0019ED60` | `int mm_Movie_StrFileOpen(int32_t *file, int name)` | 756 | yes | (strFileOpen, was mm_OpenDiscFile) cdrom0: files via sceCdSearchFile and CD streaming, host0: files via sceOpen |
 | `0x0019F060` | `int mm_Movie_ViBufGetTs(int32_t *vibuf, uint64_t *ts)` | 436 | yes | (viBufGetTs) time stamp of the data the IPU is reading now |
 | `0x0019F220` | `int mm_Movie_ViBufPutTs(int vibuf, int ts)` | 300 | yes | (viBufPutTs) records a time stamp for the data just written |
-| `0x0019F350` | `void mm_Movie_ViBufModifyPts(int vibuf, int ts)` | 324 | no | drops time stamps whose data the IPU has consumed |
+| `0x0019F350` | `int mm_Movie_ViBufModifyPts(int vibuf, int ts)` | 324 | no | drops time stamps whose data the IPU has consumed |
 | `0x0019F4A0` | `void mm_Movie_ViBufFlush(int vibuf)` | 80 | yes | (viBufFlush) rounds the write offset up to 2 KB |
 | `0x0019F4F0` | `int mm_Movie_ViBufCount(int vibuf)` | 68 | yes | (viBufCount) bytes waiting for the IPU |
 | `0x0019F540` | `int mm_Movie_ViBufDelete(int vibuf)` | 144 | no | (viBufDelete) stops IPU DMA, deletes the semaphore |

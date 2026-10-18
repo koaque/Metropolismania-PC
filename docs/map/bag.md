@@ -7,7 +7,7 @@ city `+0x60`), `mm_BagMenu_*` is the bag window. Item kinds come from the goods 
 
 ## Functions
 
-16 functions (typed 6, verified 10). Blocks: 5 can reach a thread switch, 1 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+16 functions (typed 5, verified 11). Blocks: 5 can reach a thread switch, 1 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -22,7 +22,7 @@ city `+0x60`), `mm_BagMenu_*` is the bag window. Item kinds come from the goods 
 | `0x0012B3B0` | `uint32_t mm_BagMenu_GetSetupKind(Bag *bag, uint32_t *a1)` | 180 | no | for the item being used: kind 3/2/1 for goods categories 0x1C/0x1B/0x1A (placeable items) |
 | `0x0012B470` | `void mm_BagMenu_UseSelected(Bag *bag, CityScene *city)` | 420 | yes | uses the selected item by goods category (placing, eating, ...), with sounds |
 | `0x0012B620` | `int mm_BagMenu_RefreshList(Bag *bag)` | 312 | yes | rebuilds the item list text ("name * count") |
-| `0x0012B760` | `int mm_BagMenu_Draw(Bag *bag)` | 472 | indirect | draws the bag window model, its highlight and the four text boxes |
+| `0x0012B760` | `void mm_BagMenu_Draw(Bag *bag)` | 472 | indirect | draws the bag window model, its highlight and the four text boxes |
 | `0x0012B940` | `void mm_BagMenu_Update(Bag *bag, CityScene *city)` | 2516 | yes | the bag screen: creates the windows, handles cursor, use/discard/keep prompts ("Set up", "Close", "Discard", "Keep it") |
 | `0x0012C320` | `void mm_Bag_Clear(Bag *bag)` | 112 | no | empties the 10 item slots and sets the 10 track ids to 0xFFFF |
 | `0x0012C390` | `Bag *mm_Bag_ctor(Bag *bag)` | 248 | no | empty bag plus its window data (0x1F3B24 ...) |

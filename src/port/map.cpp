@@ -1430,4 +1430,370 @@ namespace mm
     }
 
     PORT_FN(Placement_FindSpot);
+
+    // ---- the player against the objects round it (batch 40)
+
+    namespace
+    {
+        // Visits every object stack on the 3x3 tiles round the position, each object once (a list of the ids seen is
+        // kept in the caller's frame at `list`), the stack's objects from the bottom up. For each the tile's placement
+        // matrix (the layer matrix of the tile's kind, its position row set to the footprint's middle, the ground height
+        // plus the lift (0.8 for each object above the first) and the footprint's far edge) is built at `matrix`, and a
+        // flag word at `flagsAt` is kept: 1 for the first object, 2 for those above, with 3 or 4 added to the top one
+        // (3 when its depth equals the type's halfword at +0x138, else 4; the first object alone keeps its 1) and bit 8
+        // carried over. `visit(btype, obj)` returns true to stop the walk.
+        template <typename Visit>
+        bool eachObjectNear(GuestPtr<CityMap> map, GuestPtr<ps2f> position, uint32_t list, uint32_t matrix, uint32_t flagsAt, Visit visit)
+        {
+            const int tileX = sdk::fptosi(ps2f(64.0f) + ps2f(position[0]));
+            const int tileZ = sdk::fptosi(ps2f(64.0f) - ps2f(position[2]));
+            int count = 0;
+            uint32_t listEnd = list;
+            for (int dz = -1; dz < 2; ++dz)
+            {
+                const int z = tileZ + dz;
+                for (int dx = -1; dx < 2; ++dx)
+                {
+                    GuestPtr<MapObject> obj = map->objects;
+                    if (z >= 0 && z < 0x80 && tileX + dx >= 0 && tileX + dx < 0x80)
+                        obj = map->objects + map->tiles[tileX + dx + z * 0x80].firstObject;
+                    const uint32_t firstType = globals::buildingTypeAddress(obj->type);
+                    bool seen = false;
+                    for (int k = 0; k < count; ++k)
+                        if (obj->id == port::load<uint16_t>(list + 2u * static_cast<uint32_t>(k)))
+                        {
+                            seen = true;
+                            break;
+                        }
+                    if (seen)
+                        continue;
+                    ps2f lift = 0.0f;
+                    ++count;
+                    uint32_t depth = 0;
+                    port::store<uint16_t>(listEnd, obj->id);
+                    listEnd += 2u;
+                    port::store<uint32_t>(flagsAt, 1);
+                    for (;;)
+                    {
+                        ++depth;
+                        if (obj->nextOnTile == kNoObject)
+                        {
+                            const uint32_t flags = port::load<uint32_t>(flagsAt);
+                            if ((flags & 7u) == 1)
+                                port::store<uint32_t>(flagsAt, flags & 8u);
+                            else
+                                port::store<uint32_t>(flagsAt, (flags & 8u) | (depth == port::load<uint16_t>(firstType + 0x138u) ? 3u : 4u));
+                        }
+                        const int kind = Map_GetTileKind(map, obj->tile);
+                        for (uint32_t row = 0; row < 0x40; row += 0x10)
+                            *GuestPtr<Vec4>{matrix + row} = *GuestPtr<Vec4>{0x001B2590u + static_cast<uint32_t>(kind) * 0x40u + row};
+                        const GuestPtr<BuildingType> btype{globals::buildingTypeAddress(obj->type)};
+                        const ps2f half = fromInt(btype->size) / ps2f(2.0f);
+                        const uint32_t tile = obj->tile;
+                        port::store<float>(matrix + 0x30u, static_cast<float>((fromInt(static_cast<int32_t>(tile & 0x7F)) - ps2f(64.0f)) + half));
+                        port::store<float>(matrix + 0x34u, static_cast<float>(lift + Map_GetHeightAt(map, tileX + dx, z)));
+                        port::store<float>(matrix + 0x38u, static_cast<float>((fromInt(0x80 - static_cast<int32_t>(tile >> 7)) - ps2f(64.0f)) - half));
+                        if (visit(btype, obj))
+                            return true;
+                        if (obj->nextOnTile == kNoObject)
+                            break;
+                        lift = lift - ps2f(0.8f);
+                        obj = map->objects + obj->nextOnTile;
+                        port::store<uint32_t>(flagsAt, (port::load<uint32_t>(flagsAt) & 8u) | 2u);
+                    }
+                }
+            }
+            return false;
+        }
+    }
+
+    // Whether the player's circle (position, radius) touches one of the objects round it: each object's type is asked
+    // (vtable +0x2C) with the position, the placement matrix, a2 and the flag word.
+    int Player_CollideObjects(GuestPtr<CityMap> map, GuestPtr<ps2f> position, int a2, ps2f radius)
+    {
+        port::GuestFrame<0x190> frame; // the list of ids at +0x120, the matrix at +0x140, the flag word at +0x18C
+        const uint32_t base = frame.ptr().address;
+        const bool hit = eachObjectNear(map, position, base + 0x120u, base + 0x140u, base + 0x18Cu, [&](GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj) {
+            return port::callGuest<int64_t>(port::load<uint32_t>(btype->vtable.address + 0x2Cu), btype, obj, position, GuestPtr<Vec4>{base + 0x140u}, a2, base + 0x18Cu, radius) != 0;
+        });
+        return hit ? 1 : 0;
+    }
+
+    // The nearest hit among the objects round the player: *distance starts at 100 and takes the smallest distance an
+    // object's type reports (vtable +0x28, with the hit point and the distance as outputs); *hit gets the hit point
+    // (four words). The answer is whether anything was hit.
+    int Player_NearestObject(GuestPtr<CityMap> map, GuestPtr<ps2f> position, GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, ps2f radius)
+    {
+        port::GuestFrame<0x1B0> frame; // the list at +0x140, the matrix at +0x160, the hit point at +0x130, its distance at +0x1A8, flags at +0x1AC
+        const uint32_t base = frame.ptr().address;
+        *distance = 100.0f;
+        eachObjectNear(map, position, base + 0x140u, base + 0x160u, base + 0x1ACu, [&](GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj) {
+            const int64_t answer = port::callGuest<int64_t>(port::load<uint32_t>(btype->vtable.address + 0x28u), btype, obj, position, GuestPtr<Vec4>{base + 0x160u}, base + 0x130u, base + 0x1A8u, base + 0x1ACu, radius);
+            if (answer != 0 && ps2f(port::load<float>(base + 0x1A8u)) < ps2f(*distance))
+            {
+                *distance = port::load<float>(base + 0x1A8u);
+                *GuestPtr<Vec4>{hit.address} = *GuestPtr<Vec4>{base + 0x130u};
+            }
+            return false;
+        });
+        return ps2f(*distance) == ps2f(100.0f) ? 0 : 1;
+    }
+
+    PORT_FN(Player_CollideObjects);
+    PORT_FN(Player_NearestObject);
+
+    // ---- the map's ticks (batch 40)
+
+    // Every object that stands in the scan's current column of 128 (unk_14, stepping through 128 stripes; the scan is
+    // 0x3F80 records) asks its building type (vtable +0x10, with the "any flag-8 object" word) whether it falls down; if
+    // so, a sound is requested (unless the type is flag 0x80), the minimap plots the lot, the object is removed (map slot
+    // +0xC) and rubble is laid where it stood. After the scan has covered all 128 columns the flag-8 count and the
+    // approval it gave drop by one, the applicants' counter is reset when nobody waits or the clock is outside
+    // 7:36..18:12 (or counts to 4 then wraps), and the claim re-check counter counts down.
+    void MapObjects_Tick(GuestPtr<CityMap> map, GuestPtr<CityScene> city)
+    {
+        port::GuestFrame<0x60> frame; // the original's frame: the type slots' callees keep the stack they read
+        if (map->refreshDelay > 0)
+        {
+            map->refreshDelay = static_cast<int16_t>(map->refreshDelay - 1);
+            if (!(map->refreshDelay > 0))
+                map->objectsChanged = 1;
+        }
+        if (map->objectsChanged != 0)
+        {
+            map->claimRecheck = 0x80;
+            map->objectsChanged = 0;
+        }
+        for (int32_t scan = map->unk_14; scan < 0x3F80; scan += 0x80)
+        {
+            const GuestPtr<MapObject> obj = map->objects + scan;
+            if (obj->type == 0)
+                continue;
+            const GuestPtr<BuildingType> btype{globals::buildingTypeAddress(obj->type)};
+            const int64_t falls = port::callGuest<int64_t>(port::load<uint32_t>(btype->vtable.address + 0x10u), btype, city, obj, map->unk_1C);
+            if (falls == 0)
+                continue;
+            if ((btype->flags & 0x80u) == 0)
+                Se_RequestForObject(map->objects[scan].tile, 3, 0x44, 0, 1, 10);
+            Minimap_Plot(city->minimap, map->objects[scan].tile, btype->size, 4, 0);
+            port::callGuest<void>(port::load<uint32_t>(map->vtable.address + 0xCu), map, map->objects[scan].id);
+            const uint32_t tile = map->objects[scan].tile;
+            Map_PlaceRubbleArea(map, static_cast<int>(tile & 0x7Fu), static_cast<int>(tile >> 7), btype->size, static_cast<int>(city.address));
+        }
+        map->unk_14 = map->unk_14 + 1;
+        if (map->unk_14 >= 0x80)
+        {
+            if (map->unk_1C != 0 && map->flag8Objects > 0)
+            {
+                map->flag8Objects = map->flag8Objects - 1;
+                city->pendingApproval = city->pendingApproval - 1;
+            }
+            map->unk_1C = map->flag8Objects > 0 ? 1 : 0;
+            map->unk_14 = 0;
+            if (Applicants_AnyWaiting(city->applicants) == 0)
+                map->unk_60 = 0;
+            if (city->clock < 0x6270 || !(city->clock < 0x10B30))
+                map->unk_60 = 0;
+            map->unk_60 = map->unk_60 + 1;
+            if (!(map->unk_60 < 5))
+                map->unk_60 = 0;
+        }
+        if (map->claimRecheck > 0)
+            map->claimRecheck = static_cast<int16_t>(map->claimRecheck - 1);
+    }
+
+    // Once a second: bit 1 flags the 600-tick marks (every 600 ticks, and with at least two people on the map and
+    // the city flag 4 the intro call timer restarts at a random point in the first half of the people), 2 the hours, 4
+    // the days and 8 the first day of a twelve-month cycle. Every person's class then ticks it (vtable +0xC), the
+    // member statuses follow and the map's objects tick.
+    void MapPeople_Tick(GuestPtr<CityMap> map, GuestPtr<CityScene> city)
+    {
+        port::GuestFrame<0x60> frame; // the original's frame, as for the objects
+        uint32_t marks = 0;
+        if (remainder(city->clock, 600) == 0)
+        {
+            const int32_t inUse = map->peopleInUse;
+            marks = 1;
+            if (inUse >= 2 && (city->flags & 4u) != 0)
+            {
+                const int32_t random = static_cast<int32_t>(Random_Next());
+                globals::introCallTick.set(0);
+                globals::introCallDue.set(remainder(random, (inUse >= 0 ? inUse : inUse + 1) >> 1) + 1);
+            }
+        }
+        const int32_t clock = city->clock;
+        if (remainder(clock, 0xE10) == 0)
+            marks |= 2;
+        if (remainder(clock, 0x15180) == 0)
+            marks |= 4;
+        if (clock == 0 && remainder(city->monthCount, 12) == 0)
+            marks |= 8;
+        for (int32_t i = 0; i < 6000; ++i)
+        {
+            const GuestPtr<MapPerson> person = map->people + i;
+            if (person->charType == 0)
+                continue;
+            const uint32_t cls = port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType);
+            port::callGuest<void>(port::load<uint32_t>(port::load<uint32_t>(cls + 0x20u) + 0xCu), cls, city, person, marks);
+        }
+        MemberStatus_Tick(city->clock, city->monthCount);
+        MapObjects_Tick(map, city);
+    }
+
+    PORT_FN(MapObjects_Tick);
+    PORT_FN(MapPeople_Tick);
+
+    // ---- the city renderer's object walks (batch 40)
+
+    namespace
+    {
+        // The camera's list of what is in view starts at the map's +0x78: nodes with the next node at +0 (and a second
+        // list from +0x774 with the next at +4), the object index at +8 and the camera distance at +0xC; the objects
+        // drawn this frame are listed from +0x788 (count at +0x2D00, 16 bytes apart) and lose their "drawn" flag 4 at the end.
+        void clearDrawnFlags(GuestPtr<CityMap> map)
+        {
+            for (int i = 0; i < port::load<int32_t>(map.address + 0x2D00u); ++i)
+            {
+                const GuestPtr<MapObject> obj = map->objects + port::load<uint32_t>(map.address + 0x788u + 0x10u * static_cast<uint32_t>(i));
+                obj->flags = static_cast<uint16_t>(obj->flags & 0xFFFBu);
+            }
+        }
+
+        // The tile's centre of the object's footprint: x = tile x - 64 + size / 2, z = 64 - tile z' - size / 2 (z' counted
+        // from the other side, 128 - z).
+        ps2f footprintX(uint32_t tile, ps2f half) { return (fromInt(static_cast<int32_t>(tile & 0x7F)) - ps2f(64.0f)) + half; }
+        ps2f footprintZ(uint32_t tile, ps2f half) { return (fromInt(0x80 - static_cast<int32_t>(tile >> 7)) - ps2f(64.0f)) - half; }
+    }
+
+    // Every object in view that is not drawn yet this frame (flag 4 marks it) has its type's draw-people slot (vtable
+    // +0x18) called with the footprint's middle and the ground height, the tile kind, the city, the object, a flag word
+    // (0) and the detail level (2 when the camera distance + 1 is past the fog start, else 0).
+    void CityRender_UpdatePeople(GuestPtr<CityMap> map, GuestPtr<CityScene> city)
+    {
+        port::GuestFrame<0x70> frame; // the flag word at +0x6C
+        const uint32_t flagsAt = frame.ptr().address + 0x6Cu;
+        const ps2f fogNear = city->cityCamera->base.fogNear;
+        uint32_t node = map.address + 0x78u;
+        do
+        {
+            const uint32_t index = port::load<uint32_t>(node + 8u);
+            if (index != 0)
+            {
+                const GuestPtr<MapObject> obj = map->objects + index;
+                if ((obj->flags & 4u) == 0)
+                {
+                    obj->flags = static_cast<uint16_t>(obj->flags | 4u);
+                    const int kind = Map_GetTileKind(map, obj->tile);
+                    const GuestPtr<BuildingType> btype{globals::buildingTypeAddress(obj->type)};
+                    const uint32_t tile = obj->tile;
+                    const ps2f half = fromInt(btype->size) / ps2f(2.0f);
+                    const ps2f x = footprintX(tile, half);
+                    const ps2f y = map->tiles[tile].height;
+                    const ps2f z = footprintZ(tile, half);
+                    const int mode = ps2f(1.0f) + ps2f(port::load<float>(node + 0xCu)) <= fogNear ? 0 : 2;
+                    port::store<uint32_t>(flagsAt, 0);
+                    const GuestPtr<MapObject> current = map->objects + port::load<uint32_t>(node + 8u);
+                    const GuestPtr<BuildingType> type{globals::buildingTypeAddress(current->type)};
+                    port::callGuest<void>(port::load<uint32_t>(type->vtable.address + 0x18u),
+                                          x, y, z, type, kind, city, current, flagsAt, mode, map->people);
+                }
+            }
+            node = port::load<uint32_t>(node);
+        } while (node != 0);
+        clearDrawnFlags(map);
+        CharType_TickSlots();
+    }
+
+    // The same walk for drawing the buildings: objects not marked yet and without flag 0x80 go through every object of
+    // their stack (bottom up, 0.8 lower for each above the first) with the type's draw slot (vtable +0x14), the flag word
+    // as in the collision walks (1 for the first, then 2, with 3 or 4 added to the top one), and the detail level 2 when
+    // the camera is below -10 or the object is past the fog start, 1 when the camera is within the footprint's reach, else
+    // 0. A flag-8 entrance with a counting variant byte (+0x18, up to 0x2D) also asks LayerA for an instance at the highest
+    // object that counts.
+    void CityRender_CollectObjects(GuestPtr<CityMap> map, GuestPtr<CityScene> city)
+    {
+        port::GuestFrame<0xE0> frame; // the flag word at +0xDC
+        const uint32_t flagsAt = frame.ptr().address + 0xDCu;
+        const GuestPtr<CityCamera> camera = city->cityCamera;
+        const ps2f fogNear = camera->base.fogNear;
+        LayerA_SetSource(map->instances, static_cast<int>(port::load<uint32_t>(0x001BDCD0u) & 1u));
+        GuestPtr<BuildingType> lastType;
+        ps2f bestHeight = 0.0f;
+        uint32_t node = map.address + 0x774u;
+        do
+        {
+            const uint32_t index = port::load<uint32_t>(node + 8u);
+            if (index != 0)
+            {
+                const GuestPtr<MapObject> obj = map->objects + index;
+                if ((obj->flags & 4u) == 0)
+                {
+                    obj->flags = static_cast<uint16_t>(obj->flags | 4u);
+                    if ((obj->flags & 0x80u) == 0)
+                    {
+                        const int kind = Map_GetTileKind(map, obj->tile);
+                        GuestPtr<BuildingType> btype{globals::buildingTypeAddress(obj->type)};
+                        const ps2f size = fromInt(btype->size);
+                        const uint32_t tile = obj->tile;
+                        const ps2f half = size / ps2f(2.0f);
+                        ps2f y = map->tiles[tile].height;
+                        const ps2f x = footprintX(tile, half);
+                        const ps2f z = footprintZ(tile, half);
+                        uint32_t reached = port::load<uint32_t>(node + 8u);
+                        port::store<uint32_t>(flagsAt, 1);
+                        const ps2f distance = port::load<float>(node + 0xCu);
+                        int mode;
+                        if (ps2f(port::load<float>(camera.address + 0x134u)) < ps2f(-10.0f) || fogNear < distance + half)
+                            mode = 2;
+                        else
+                            mode = distance < size + half ? 1 : 0;
+                        uint32_t depth = 0, best = 0;
+                        lastType = btype;
+                        while (reached != kNoObject)
+                        {
+                            ++depth;
+                            const GuestPtr<MapObject> level = map->objects + reached;
+                            if (level->nextOnTile == kNoObject)
+                            {
+                                const uint32_t flags = port::load<uint32_t>(flagsAt);
+                                if ((flags & 7u) == 1)
+                                    port::store<uint32_t>(flagsAt, flags & 8u);
+                                else
+                                    port::store<uint32_t>(flagsAt, (flags & 8u) | (depth == port::load<uint16_t>(lastType.address + 0x138u) ? 3u : 4u));
+                            }
+                            lastType = GuestPtr<BuildingType>{globals::buildingTypeAddress(level->type)};
+                            port::callGuest<void>(port::load<uint32_t>(lastType->vtable.address + 0x14u), x, y, z, lastType, kind, city, level, flagsAt, mode);
+                            const GuestPtr<MapObject> after = map->objects + reached;
+                            if ((after->flags & 8u) != 0 && (after->flags & 0x20u) != 0)
+                            {
+                                const uint32_t count = after->variant & 0xFFu;
+                                if (count != 0)
+                                {
+                                    if (best < count)
+                                    {
+                                        best = count;
+                                        bestHeight = y;
+                                    }
+                                    const uint32_t next = (count + 1u) & 0xFFu;
+                                    port::store<uint8_t>(after.address + 0x18u, static_cast<uint8_t>(next));
+                                    if (next >= 0x2E)
+                                        port::store<uint8_t>(after.address + 0x18u, 0);
+                                }
+                            }
+                            port::store<uint32_t>(flagsAt, (port::load<uint32_t>(flagsAt) & 8u) | 2u);
+                            y = y - ps2f(0.8f);
+                            reached = (map->objects + reached)->nextOnTile;
+                        }
+                        if (best != 0)
+                            LayerA_AddInstance(map->instances, lastType->size, static_cast<int>(best), x, bestHeight, z);
+                    }
+                }
+            }
+            node = port::load<uint32_t>(node + 4u);
+        } while (node != 0);
+        clearDrawnFlags(map);
+    }
+
+    PORT_FN(CityRender_UpdatePeople);
+    PORT_FN(CityRender_CollectObjects);
 }

@@ -2,6 +2,7 @@
 
 #include "game_functions.h"
 #include "game_globals.h"
+#include "sdk.h"
 #include "vu0.h"
 
 namespace mm
@@ -858,4 +859,344 @@ namespace mm
     }
 
     PORT_FN(TalkCard_Show);
+
+    // ---- widget state callbacks (batch 40)
+
+    namespace
+    {
+        uint32_t widgetSlot(GuestPtr<Widget> widget, uint32_t offset) { return port::load<uint32_t>(widget->vtable.address + offset); }
+
+        // The widget step (vtable +0x18) moves the timer by dt and says (1) when the state is over.
+        int64_t widgetStep(GuestPtr<Widget> widget, float dt) { return port::callGuest<int64_t>(widgetSlot(widget, 0x18u), widget, dt); }
+
+        // The conversation's status (its vtable +0x1C) as the session reads it.
+        int64_t conversationStatus(GuestPtr<TalkSession> talk) { return port::callGuest<int64_t>(widgetSlot(talk->conversation, 0x1Cu), talk->conversation); }
+    }
+
+    // The four timed states of a plain widget just run the step by a whole second at once; the result is the step's.
+    void Widget_Closed(GuestPtr<Widget> widget) { widgetStep(widget, 1.0f); }
+    void Widget_Closing(GuestPtr<Widget> widget) { widgetStep(widget, 1.0f); }
+    void Widget_Opened(GuestPtr<Widget> widget) { widgetStep(widget, 1.0f); }
+    void Widget_Opening(GuestPtr<Widget> widget) { widgetStep(widget, 1.0f); }
+
+    // The windows fade in and out by a tenth a frame: when the step ends they are open (state 3) or gone (0).
+    void MsgWin_Closing(GuestPtr<MsgWin> msgwin)
+    {
+        if (widgetStep(GuestPtr<Widget>::of(msgwin->base), 0.1f) != 0)
+            msgwin->base.state = 0;
+    }
+
+    void MsgWin_Opening(GuestPtr<MsgWin> msgwin)
+    {
+        if (widgetStep(GuestPtr<Widget>::of(msgwin->base), 0.1f) != 0)
+            msgwin->base.state = 3;
+    }
+
+    void MenuWin_Opening(GuestPtr<MenuWin> menuwin)
+    {
+        if (widgetStep(GuestPtr<Widget>::of(menuwin->base), 0.1f) != 0)
+            menuwin->base.state = 3;
+    }
+
+    void TalkMoney_Closing(GuestPtr<TalkMoney> money)
+    {
+        if (widgetStep(GuestPtr<Widget>::of(money->base), 0.1f) != 0)
+            money->base.state = 0;
+    }
+
+    void TalkMoney_Opening(GuestPtr<TalkMoney> money)
+    {
+        if (widgetStep(GuestPtr<Widget>::of(money->base), 0.1f) != 0)
+            money->base.state = 3;
+    }
+
+    // The menu window's update: a pressed choice runs the close (vtable +0x10).
+    void MenuWin_Update(GuestPtr<MenuWin> menuwin)
+    {
+        if (ListMenu_HandleInput(menuwin->list, GuestPtr<int32_t>{menuwin.address + 0x18u}) != 0)
+            port::callGuest<void>(widgetSlot(GuestPtr<Widget>::of(menuwin->base), 0x10u), menuwin);
+    }
+
+    // The talk session follows its conversation: while the conversation shows its message (state 6) the people
+    // keep their idle animation going; status 4 asks the session to close (vtable +0x10), 3 or 6 mean the session
+    // is open, 0 that the close can finish (a single target closes the view too, else the view's choice resets).
+    void Talk_Active(GuestPtr<TalkSession> talk)
+    {
+        if (talk->conversation->state == 6)
+            TalkView_ToggleAnim(talk->view);
+        if (conversationStatus(talk) == 4)
+            port::callGuest<void>(widgetSlot(GuestPtr<Widget>::of(talk->base), 0x10u), talk);
+    }
+
+    void Talk_Opened(GuestPtr<TalkSession> talk)
+    {
+        if (conversationStatus(talk) == 3 || conversationStatus(talk) == 6)
+            talk->base.state = 3;
+    }
+
+    void Talk_Closing(GuestPtr<TalkSession> talk)
+    {
+        if (conversationStatus(talk) != 0)
+            return;
+        if (talk->singleTarget == 0)
+        {
+            talk->base.state = 6;
+            talk->view->chosenSlot = -1;
+        }
+        else
+        {
+            port::callGuest<void>(widgetSlot(GuestPtr<Widget>::of(talk->view->base), 0x10u), talk->view);
+            talk->base.state = 5;
+        }
+    }
+
+    // ---- the near views opening and closing (batch 40)
+
+    namespace
+    {
+        // The camera moves between the one the view opened with (eye +0x10, target +0x20) and the near one stored
+        // after the base view (eye +0x270, target +0x280), blended by the widget timer t as (1 - t) * a + t * b:
+        // opening from the first to the second, closing back (a and b swapped). The vectors are built in the
+        // caller's 0x40-byte frame (eye at +0x20, target at +0x30), w 1.0; then the camera is set and updated and
+        // the city's word +0x28 raised.
+        void blendNearCamera(GuestPtr<TalkView> view, bool opening, uint32_t eyeAt, uint32_t targetAt)
+        {
+            const auto blend = [&](uint32_t out, uint32_t current, uint32_t dest) {
+                for (uint32_t lane = 0; lane < 12; lane += 4)
+                {
+                    const ps2f t = view->base.timer;
+                    const ps2f u = ps2f(1.0f) - t;
+                    const ps2f from = port::load<float>((opening ? current : dest) + lane);
+                    const ps2f to = port::load<float>((opening ? dest : current) + lane);
+                    port::store<float>(out + lane, static_cast<float>(u * from + t * to));
+                }
+                port::store<uint32_t>(out + 12u, 0x3F800000u);
+            };
+            blend(eyeAt, view.address + 0x10u, view.address + 0x270u);
+            blend(targetAt, view.address + 0x20u, view.address + 0x280u);
+            cameraAt(view, GuestPtr<Vec4>{eyeAt}, GuestPtr<Vec4>{targetAt});
+            view->city->unk_28 = 1;
+        }
+
+        int64_t stepNearView(GuestPtr<TalkView> view) { return widgetStep(GuestPtr<Widget>::of(view->base), 0.1f); }
+
+        // A near view that closes hands the camera back and goes idle.
+        void closeNearView(GuestPtr<TalkView> view)
+        {
+            port::GuestFrame<0x40> frame;
+            blendNearCamera(view, false, frame.ptr().address + 0x20u, frame.ptr().address + 0x30u);
+            if (stepNearView(view) != 0)
+            {
+                view->city->unk_28 = 0;
+                view->base.state = 0;
+            }
+        }
+
+        void openNearView(GuestPtr<TalkView> view)
+        {
+            port::GuestFrame<0x40> frame;
+            blendNearCamera(view, true, frame.ptr().address + 0x20u, frame.ptr().address + 0x30u);
+            stepNearView(view);
+        }
+    }
+
+    void TalkBldgNear_Opening(GuestPtr<TalkView> view) { openNearView(view); }
+    void TalkOccupantNear_Opening(GuestPtr<TalkView> view) { openNearView(view); }
+    void TalkBldgNear_Closing(GuestPtr<TalkView> view) { closeNearView(view); }
+    void TalkOccupantNear_Closing(GuestPtr<TalkView> view) { closeNearView(view); }
+    void TalkPersonNear_Closing(GuestPtr<TalkView> view) { closeNearView(view); }
+
+    // The person's near view is active as soon as the step ends.
+    void TalkPersonNear_Opening(GuestPtr<TalkView> view)
+    {
+        port::GuestFrame<0x40> frame;
+        blendNearCamera(view, true, frame.ptr().address + 0x20u, frame.ptr().address + 0x30u);
+        if (stepNearView(view) != 0)
+            view->base.state = 3;
+    }
+
+    // My Home: opening marks the entrance once the step ends (if the home has its entrance flag); closing also
+    // shows the HUD again.
+    void MyHome_Opening(GuestPtr<TalkView> view)
+    {
+        port::GuestFrame<0x40> frame;
+        blendNearCamera(view, true, frame.ptr().address + 0x20u, frame.ptr().address + 0x30u);
+        if (stepNearView(view) != 0 && (Map_GetRecord(view->city->map, view->targetObject)->flags & 0x20u) != 0)
+            MyHome_MarkEntrance(view, 1);
+    }
+
+    void MyHome_Closing(GuestPtr<TalkView> view)
+    {
+        port::GuestFrame<0x40> frame;
+        blendNearCamera(view, false, frame.ptr().address + 0x20u, frame.ptr().address + 0x30u);
+        view->city->hudVisible[0] = 1;
+        if (stepNearView(view) != 0)
+        {
+            view->city->unk_28 = 0;
+            view->base.state = 0;
+        }
+    }
+
+    PORT_FN(Widget_Closed);
+    PORT_FN(Widget_Closing);
+    PORT_FN(Widget_Opened);
+    PORT_FN(Widget_Opening);
+    PORT_FN(MsgWin_Closing);
+    PORT_FN(MsgWin_Opening);
+    PORT_FN(MenuWin_Opening);
+    PORT_FN(MenuWin_Update);
+    PORT_FN(TalkMoney_Closing);
+    PORT_FN(TalkMoney_Opening);
+    PORT_FN(Talk_Active);
+    PORT_FN(Talk_Opened);
+    PORT_FN(Talk_Closing);
+    PORT_FN(TalkBldgNear_Opening);
+    PORT_FN(TalkOccupantNear_Opening);
+    PORT_FN(TalkBldgNear_Closing);
+    PORT_FN(TalkOccupantNear_Closing);
+    PORT_FN(TalkPersonNear_Opening);
+    PORT_FN(TalkPersonNear_Closing);
+    PORT_FN(MyHome_Opening);
+    PORT_FN(MyHome_Closing);
+
+    // ---- the person shown in a talk view (batch 40)
+
+    namespace
+    {
+        // After the person's draw: its first animation slot, when it has run out its time, returns to the idle animation.
+        void idleAfterDraw(GuestPtr<TalkView> view)
+        {
+            if (ps2f(0.0f) == view->animTime[0] && view->anim[0] != 7)
+                view->anim[0] = 7;
+        }
+    }
+
+    // The person at record `person` is drawn in front of the camera at (0, 0.4, -3.65): the character class's draw slot
+    // (vtable +0x14) with an identity matrix moved there, the default colour and the view's animation slots. A class with
+    // flag 2 also gets the view's person model placed there first (and the person is then 0.15 lower).
+    void TalkView_DrawPerson(GuestPtr<TalkView> view, int person)
+    {
+        port::GuestFrame<0xD0> frame; // the matrix at +0x90, its position row at +0xC0
+        const uint32_t base = frame.ptr().address;
+        const GuestPtr<MapPerson> who = view->city->map->people + person;
+        if (!who)
+            return;
+        const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * who->charType)};
+        Dma_AppendCall(static_cast<int>(view.address + 0x50u));
+        const GuestPtr<Vec4> matrix{base + 0x90u};
+        Mat4_Copy(matrix, GuestPtr<Vec4>{globals::kIdentityMatrix});
+        port::store<uint32_t>(base + 0xC0u, 0);
+        port::store<uint32_t>(base + 0xC4u, 0x3ECCCCCDu);
+        port::store<uint32_t>(base + 0xC8u, 0xC069999Au);
+        port::store<uint32_t>(base + 0xCCu, 0x3F800000u);
+        if ((cls->flags & 2u) != 0)
+        {
+            const uint32_t model = view->personModel.address;
+            Mat4_Copy(GuestPtr<Vec4>{model + 0x10u}, GuestPtr<Vec4>{globals::kIdentityMatrix});
+            port::store<uint32_t>(model + 0x40u, port::load<uint32_t>(base + 0xC0u)); // the position row of the matrix at +0x10
+            port::store<uint32_t>(model + 0x44u, port::load<uint32_t>(base + 0xC4u));
+            port::store<uint32_t>(model + 0x48u, port::load<uint32_t>(base + 0xC8u));
+            Instance_DrawModel(GuestPtr<A3DObject>{view->personModel.address}, GuestPtr<Vec4>{globals::kDefaultColour}, 0, 0);
+            port::store<float>(base + 0xC4u, static_cast<float>(ps2f(port::load<float>(base + 0xC4u)) - ps2f(0.15f)));
+        }
+        port::callGuest<void>(port::load<uint32_t>(port::load<uint32_t>(cls.address + 0x20u) + 0x14u), cls.address, view->city.address, who.address, 0, 0,
+                              matrix.address, globals::kDefaultColour, view.address + 0xD0u, view.address + 0x1D0u);
+        idleAfterDraw(view);
+    }
+
+    // The same for a person turned by `angle` about y, at its own position.
+    void TalkView_DrawPersonTurned(GuestPtr<TalkView> view, int person, ps2f angle)
+    {
+        port::GuestFrame<0xA0> frame; // the matrix at +0x60, its position row at +0x90
+        const uint32_t base = frame.ptr().address;
+        const GuestPtr<MapPerson> who = view->city->map->people + person;
+        if (!who)
+            return;
+        const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * who->charType)};
+        Dma_AppendCall(static_cast<int>(view.address + 0x50u));
+        sdk::sceVu0RotMatrixY(base + 0x60u, globals::kIdentityMatrix, angle);
+        port::store<float>(base + 0x90u, static_cast<float>(who->x));
+        port::store<float>(base + 0x94u, static_cast<float>(who->y));
+        port::store<float>(base + 0x98u, static_cast<float>(who->z));
+        port::callGuest<void>(port::load<uint32_t>(port::load<uint32_t>(cls.address + 0x20u) + 0x14u), cls.address, view->city.address, who.address, 0, 0,
+                              base + 0x60u, globals::kDefaultColour, view.address + 0xD0u, view.address + 0x1D0u);
+        idleAfterDraw(view);
+    }
+
+    PORT_FN(TalkView_DrawPerson);
+    PORT_FN(TalkView_DrawPersonTurned);
+
+    // ---- the friendship gauge on the talk card (batch 40)
+
+    // The card's friendship meter follows the real friendship of the person (or the family member by phone when
+    // the person is 6000) towards it: up by 0.02 a frame below 1, else 0.1 (and down by 0.1), snapping on arrival. The
+    // face frame takes the friendship band (style 0, or the band + 9). The gauge node of the building model (node 9) is then
+    // laid out as a bar whose length is the meter within its band (below 1: nothing; 1..24 over 23, 24..48 over 24, 48..100
+    // over 52, above 100 over 20), at the card's slot, 1.5 long and 1.3 high.
+    void TalkCard_DrawGauges(GuestPtr<TalkCard> card)
+    {
+        int friendship, band;
+        if (card->person == 6000)
+        {
+            friendship = static_cast<int8_t>(Family_GetFriendship(card->family, card->member));
+            band = Family_GetFriendshipBand(card->family, card->member);
+        }
+        else
+        {
+            const GuestPtr<MapPerson> who = card->city->map->people + card->person;
+            if (!who)
+                return;
+            friendship = static_cast<int8_t>(Family_GetFriendship(who->family, who->member));
+            band = Family_GetFriendshipBand(who->family, who->member);
+        }
+        Frame_SetStyle(card->frame, band == 0 ? 0 : band + 9);
+        const ps2f target = fromInt(friendship);
+        const ps2f shown = card->friendship;
+        if (!(target <= shown))
+        {
+            const ps2f step = shown < ps2f(1.0f) ? ps2f(0.02f) : ps2f(0.1f);
+            card->friendship = target - shown <= step ? target : shown + step;
+        }
+        else
+            card->friendship = shown - target <= ps2f(0.1f) ? target : shown - ps2f(0.1f);
+        ps2f along = card->friendship;
+        ps2f span = 1.0f;
+        if (!(along < ps2f(1.0f)))
+        {
+            if (along < ps2f(24.0f))
+            {
+                along = along - span;
+                span = 23.0f;
+            }
+            else if (along < ps2f(48.0f))
+            {
+                along = along - ps2f(24.0f);
+                span = 24.0f;
+            }
+            else if (along < ps2f(100.0f))
+            {
+                along = along - ps2f(48.0f);
+                span = 52.0f;
+            }
+            else
+            {
+                along = along - ps2f(100.0f);
+                span = 20.0f;
+            }
+        }
+        if (along < ps2f(0.01f))
+            along = 0.0001f;
+        const uint32_t node = port::load<uint32_t>(port::load<uint32_t>(card->model.address) + 8u) + 0x730u;
+        Mat4_Copy(GuestPtr<Vec4>{node}, GuestPtr<Vec4>{globals::kIdentityMatrix});
+        const ps2f length = along / span;
+        port::store<float>(node + 0x30u, port::load<float>(0x001B1B38u + 4u * static_cast<uint32_t>(card->slot)));
+        port::store<uint32_t>(node + 0x34u, 0xBD79DB23u);
+        port::store<uint32_t>(node + 0x38u, 0xC08CCCCDu);
+        port::store<float>(node, static_cast<float>(length));
+        port::store<float>(node, static_cast<float>(ps2f(port::load<float>(node)) * ps2f(1.5f)));
+        port::store<float>(node + 0x14u, static_cast<float>(ps2f(port::load<float>(node + 0x14u)) * ps2f(1.3f)));
+        A3DObject_DrawNode(GuestPtr<A3DObject>{card->model.address}, 9);
+    }
+
+    PORT_FN(TalkCard_DrawGauges);
 }

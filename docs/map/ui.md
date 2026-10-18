@@ -17,7 +17,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 
 ## Functions
 
-168 functions (ported 1, typed 72, verified 95). Blocks: 62 can reach a thread switch, 10 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+168 functions (ported 1, typed 62, verified 105). Blocks: 62 can reach a thread switch, 10 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -56,7 +56,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x0014AB80` | `void mm_Laptop_LoadState(Laptop *laptop, McManager *mc)` | 68 | no | reads gp 0x1BDAB8.. (4 bytes) and the 14 laptop entries at 0x1F36F0 (0x38 bytes) from the save file |
 | `0x0014ABD0` | `void mm_Laptop_SaveState(Laptop *laptop, McManager *mc)` | 68 | no | writes them |
 | `0x0014AC20` | `uint32_t mm_Laptop_CountActive(void)` | 232 | no | active laptop entries |
-| `0x0014AD10` | `int mm_Laptop_SetItemText(Laptop *laptop, int a1, uint32_t item)` | 108 | indirect | text for laptop item a2 (14 items, jump table 0x1B6570); default "-Laptop Computer- Save or quit the game." |
+| `0x0014AD10` | `void mm_Laptop_SetItemText(Laptop *laptop, CityScene *city, uint32_t item)` | 108 | indirect | text for laptop item a2 (14 items, jump table 0x1B6570); default "-Laptop Computer- Save or quit the game." |
 | `0x0014AE10` | `void mm_Laptop_RemoveEntry(Laptop *laptop, int entry)` | 184 | no | (provisional) removes entry a1 from the list at 0x1F36F0 |
 | `0x0014AED0` | `void mm_Laptop_AddEntry(Laptop *laptop, int entry)` | 256 | no | (provisional) adds entry a1 to the list at 0x1F36F0 |
 | `0x0014AFD0` | `int mm_Laptop_Draw(Laptop *laptop)` | 356 | yes | laptop model (luminosity per item), text, fade |
@@ -177,7 +177,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x00173450` | `int mm_Widget_Update(Widget *widget)` | 212 | indirect | slot +0x14: calls the slot for the current state (+0x2C + state*4) |
 | `0x00173530` | `void mm_Widget_Draw(Widget *widget, int pass)` | 8 | no | slot +0x20: nothing |
 | `0x00173540` | `void mm_Widget_Close(Widget *widget)` | 16 | no | slot +0x10: state 4, timer 0 |
-| `0x00173550` | `void mm_Widget_Open(Widget *widget)` | 16 | no | slot +0xC: state 1, timer 0 |
+| `0x00173550` | `int mm_Widget_Open(Widget *widget)` | 16 | no | slot +0xC: state 1, timer 0 |
 | `0x00173560` | `Widget *mm_Widget_dtor(Widget *widget, short deleteFlag)` | 76 | yes | vtable 0x1BD400 |
 | `0x001735B0` | `Widget *mm_Widget_ctor(Widget *widget)` | 28 | no | vtable 0x1BD400 at +8, state and timer 0 |
 | `0x00183500` | `void mm_TextBox_Build(TextBox *textbox, int clut)` | 1556 | no | rebuilds the text box's DMA packet: palette upload (when clut != 0), one glyph upload per cell to GS block 0x1E01 + 2n, then a packed GIF tag of one textured sprite per cell |

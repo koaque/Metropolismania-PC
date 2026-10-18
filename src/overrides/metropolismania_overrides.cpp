@@ -68,8 +68,8 @@ namespace
 
     // ------------------------------------------------------------------ MMPC_AUTOPLAY
     // Test aid that presses buttons from the game's own state instead of wall-clock pad scripts:
-    // MMPC_AUTOPLAY=1 pulses Cross through scene A (logos, memory card check, title, New Game) and
-    // then lets go. MMPC_AUTOPLAY=city also pulses Start/Cross in states 3 to 5, which starts the
+    // MMPC_AUTOPLAY=1 pulses Cross through scene A (logos, memory card check, title, New Game; the cursor
+    // is moved up to New Game first when a save makes the menu start on Load) and then lets go. MMPC_AUTOPLAY=city also pulses Start/Cross in states 3 to 5, which starts the
     // intro movie and gets through the dialogue to the city. MMPC_AUTOPLAY=load picks "Load" on the
     // title menu instead and loads the save the load screen preselects (the newest one in
     // original/mc0, see tools/mc_extract.py). MMPC_AUTOPLAY=explore loads the same way and then plays
@@ -198,7 +198,7 @@ namespace
 
     void autoplayFrame(const uint8_t *rdram, uint32_t state, uint32_t sceneA, uint32_t city)
     {
-        constexpr uint16_t kStart = kPadStart, kDown = kPadDown, kCross = kPadCross;
+        constexpr uint16_t kStart = kPadStart, kDown = kPadDown, kUp = kPadUp, kCross = kPadCross;
         static uint32_t frame = 0;
         ++frame;
         const Autoplay mode = autoplayMode();
@@ -210,6 +210,9 @@ namespace
         else if (loading && state <= 2u && sceneA != 0u && guestRead32(rdram, sceneA + 0xC0u) == 6u &&
             guestRead32(rdram, sceneA + 0x3Cu) == 0u)
             buttons = pulse ? kDown : 0; // title menu (scene A sub-state 6): cursor +0x3C from New Game to Load
+        else if (!loading && state <= 2u && sceneA != 0u && guestRead32(rdram, sceneA + 0xC0u) == 6u &&
+                 guestRead32(rdram, sceneA + 0x3Cu) != 0u)
+            buttons = pulse ? kUp : 0; // title menu: with a save on the card the cursor starts on Load (Title_PressStart); up to New Game
         else if (state <= 2u && pulse)
             buttons = kCross;
         else if (mode != Autoplay::Title && state >= 3u && state <= 5u && (frame % 48u) < 4u)

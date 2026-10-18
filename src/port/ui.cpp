@@ -17,10 +17,11 @@ namespace mm
         return widget;
     }
 
-    void Widget_Open(GuestPtr<Widget> widget)
+    int Widget_Open(GuestPtr<Widget> widget)
     {
         widget->timer = 0.0f;
         widget->state = 1;
+        return 1; // the original leaves the 1 it stored in v0
     }
 
     void Widget_Close(GuestPtr<Widget> widget)
@@ -2823,4 +2824,167 @@ namespace mm
     }
 
     PORT_FN(NameEntry_Setup);
+
+    // ---- the name entry's input (batch 40)
+
+    // One frame of the name entry. The keyboard is a grid of 6 columns (+0x48 the cursor column, +0x4C its row, +0x50
+    // the first row shown of the +0x54 rows, 4 shown) over the keys of the set at 0x1B13E0 (+0x44; +0x58 keys; a key
+    // byte of 0xFF is "done", 0xFE a space, 0xFD a delete). Held directions (the pad's repeat bits) move the cursor
+    // (up and down scroll the key text and set the arrows +0x60 / +0x64), the square-like bits 8 and 2 step over or put
+    // a space, 4 and 1 delete, and then the pressed buttons: 0x40 types the key under the cursor, 0x10 finishes
+    // (state +0x40 becomes 2). The name is at +0x1C with its length in +0x5C (at most the byte +0x68); +0x6C restarts
+    // the cursor blink. The marker (object +0x18) follows the cursor column (0.016 a column) and row (0.0227 a row)
+    // from the bases at +0x7C / +0x80.
+    void NameEntry_HandleInput(GuestPtr<NameEntry> entry)
+    {
+        const uint32_t e = entry.address;
+        bool moved = false, stayed = false;
+        const uint32_t pressed = Pad_Pressed(0);
+        const uint32_t repeat = static_cast<uint32_t>(Pad_GetRepeat());
+        const auto word = [&](uint32_t offset) { return port::load<int32_t>(e + offset); };
+        const auto set = [&](uint32_t offset, int32_t value) { port::store<int32_t>(e + offset, value); };
+        const auto click = [&](int sound) { Sound_PlaySe(sound, 0, 0x3C, 0.0f, 0.0f); };
+        const auto keys = [&] { return port::load<uint32_t>(0x001B13E0u + 4u * static_cast<uint32_t>(word(0x44u))); };
+        const auto arrows = [&] {
+            set(0x60u, word(0x50u) != 0 ? 1 : 0);
+            set(0x64u, word(0x50u) + 4 < word(0x54u) ? 1 : 0);
+        };
+        const auto keysText = [&] { TextBox_SetText(GuestPtr<TextBox>{port::load<uint32_t>(e + 8u)}, GuestPtr<char>{keys() + 6u * static_cast<uint32_t>(word(0x50u))}, 1); };
+        // A space: step over the character under the cursor, or put a space at the end if there is room.
+        const auto space = [&] {
+            if (port::load<int8_t>(e + 0x1Cu + static_cast<uint32_t>(word(0x5Cu))) != 0)
+            {
+                set(0x6Cu, 0);
+                set(0x5Cu, word(0x5Cu) + 1);
+            }
+            else if (word(0x5Cu) < port::load<uint8_t>(e + 0x68u))
+            {
+                set(0x6Cu, 0);
+                const int32_t at = word(0x5Cu);
+                set(0x5Cu, at + 1);
+                port::store<uint8_t>(e + 0x1Cu + static_cast<uint32_t>(at), ' ');
+            }
+            if (!(word(0x5Cu) < port::load<uint8_t>(e + 0x68u)))
+                set(0x5Cu, word(0x5Cu) - 1);
+            click(0);
+        };
+        const auto erase = [&] {
+            set(0x5Cu, sdk::strlen(e + 0x1Cu));
+            const int32_t at = word(0x5Cu);
+            if (at == 0)
+                return;
+            set(0x5Cu, at - 1);
+            port::store<uint8_t>(e + 0x1Cu + static_cast<uint32_t>(at - 1), 0);
+            set(0x6Cu, 0);
+            click(0);
+        };
+        if ((repeat & 0x1000u) != 0)
+        {
+            if (word(0x4Cu) != 0)
+            {
+                set(0x6Cu, 0);
+                set(0x4Cu, word(0x4Cu) - 1);
+                if (word(0x4Cu) < word(0x50u))
+                {
+                    set(0x50u, word(0x50u) - 1);
+                    keysText();
+                }
+                else
+                    stayed = true;
+                arrows();
+                click(0);
+            }
+        }
+        else if ((repeat & 0x4000u) != 0)
+        {
+            if (word(0x4Cu) + 1 < word(0x54u))
+            {
+                set(0x6Cu, 0);
+                set(0x4Cu, word(0x4Cu) + 1);
+                if (!(word(0x48u) + word(0x4Cu) * 6 < word(0x58u)))
+                {
+                    moved = true;
+                    set(0x48u, remainder(word(0x58u) - 1, 6));
+                }
+                if (word(0x4Cu) < word(0x50u) + 4)
+                    stayed = true;
+                else
+                {
+                    set(0x50u, word(0x50u) + 1);
+                    keysText();
+                }
+                arrows();
+                click(0);
+            }
+        }
+        else if ((repeat & 0x8000u) != 0)
+        {
+            set(0x6Cu, 0);
+            set(0x48u, word(0x48u) - 1);
+            if (word(0x48u) < 0)
+            {
+                set(0x48u, 5);
+                if (!(word(0x48u) + word(0x4Cu) * 6 < word(0x58u)))
+                    set(0x48u, remainder(word(0x58u) - 1, 6));
+            }
+            click(0);
+            moved = true;
+        }
+        else if ((repeat & 0x2000u) != 0)
+        {
+            set(0x6Cu, 0);
+            set(0x48u, word(0x48u) + 1);
+            if (!(word(0x48u) < 6))
+                set(0x48u, 0);
+            if (!(word(0x48u) + word(0x4Cu) * 6 < word(0x58u)))
+                set(0x48u, 0);
+            click(0);
+            moved = true;
+        }
+        else if ((repeat & 8u) != 0 || (repeat & 2u) != 0)
+            space();
+        else if ((repeat & 4u) != 0 || (repeat & 1u) != 0)
+            erase();
+        else if ((pressed & 0x40u) != 0)
+        {
+            const uint32_t key = keys() + static_cast<uint32_t>(word(0x48u) + word(0x4Cu) * 6);
+            const uint8_t code = port::load<uint8_t>(key);
+            if (code == 0xFF)
+            {
+                set(0x40u, 2);
+                click(1);
+            }
+            else if (code == 0xFE)
+                space();
+            else if (code == 0xFD)
+                erase();
+            else if (word(0x5Cu) < port::load<uint8_t>(e + 0x68u))
+            {
+                set(0x6Cu, 0);
+                const int32_t at = word(0x5Cu);
+                set(0x5Cu, at + 1);
+                port::store<uint8_t>(e + 0x1Cu + static_cast<uint32_t>(at), port::load<uint8_t>(key));
+                if (!(word(0x5Cu) < port::load<uint8_t>(e + 0x68u)))
+                    set(0x5Cu, word(0x5Cu) - 1);
+                click(0);
+            }
+        }
+        else if ((pressed & 0x10u) != 0)
+        {
+            click(1);
+            set(0x40u, 2);
+        }
+        if (moved)
+        {
+            const uint32_t marker = port::load<uint32_t>(e + 0x18u);
+            port::store<float>(marker + 0x30u, static_cast<float>(ps2f(port::load<float>(e + 0x7Cu)) + ps2f(0.016f) * fromInt(word(0x48u))));
+        }
+        if (stayed)
+        {
+            const uint32_t marker = port::load<uint32_t>(e + 0x18u);
+            port::store<float>(marker + 0x34u, static_cast<float>(ps2f(port::load<float>(e + 0x80u)) + ps2f(0.0227f) * fromInt(word(0x4Cu) - word(0x50u))));
+        }
+    }
+
+    PORT_FN(NameEntry_HandleInput);
 }

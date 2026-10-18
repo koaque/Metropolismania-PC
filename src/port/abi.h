@@ -36,6 +36,7 @@ namespace port
         R5900Context *ctx = nullptr;
         PS2Runtime *runtime = nullptr;
         uint32_t function = 0; // address of the innermost ported function, for messages
+        uint32_t frameBottom = 0; // sp of the GuestFrame in force, so callGuest puts stack arguments inside it
     };
     inline CallState g_call;
 
@@ -118,8 +119,12 @@ namespace port
     }
     // The guest v0 as the function found it on entry (for paths that return it unchanged).
     inline int32_t guestV0() { return static_cast<int32_t>(gpr64(g_call.ctx, 2)); }
+    // All 64 bits of it, for a function whose result is declared 64-bit.
+    inline int64_t guestV0Wide() { return static_cast<int64_t>(gpr64(g_call.ctx, 2)); }
     // The caller's s0, which a few game functions hand back as their result on paths that never set v0.
     inline int32_t guestS0() { return static_cast<int32_t>(gpr64(g_call.ctx, 16)); }
+    // The caller's s1, for a path where the function leaves it unset (the decompiler shows it as unaffected).
+    inline int32_t guestS1() { return static_cast<int32_t>(gpr64(g_call.ctx, 17)); }
     // The caller's a3 (for a function with fewer arguments whose callee is handed a3 as it came in).
     inline uint32_t guestA3() { return static_cast<uint32_t>(gpr64(g_call.ctx, 7)); }
 
@@ -282,8 +287,20 @@ namespace port
     // The original function's own stack frame (`Size` bytes), reserved for a scope. Needed before calling a
     // function that reads stack memory it never wrote (VU0 loads of half-filled stack vectors): its frame then
     // lands where it did under the original, over the same leftover data.
+    // While it is the innermost reservation, callGuest passes stack arguments at its bottom (sp + 0), where the
+    // original's compiler put them, so a callee's own frame starts at the same address as under the original.
     template <uint32_t Size>
-    using GuestFrame = GuestLocal<std::array<uint8_t, Size>>;
+    class GuestFrame : public GuestLocal<std::array<uint8_t, Size>>
+    {
+    public:
+        GuestFrame() : outerBottom_(g_call.frameBottom) { g_call.frameBottom = this->ptr().address; }
+        ~GuestFrame() { g_call.frameBottom = outerBottom_; }
+        GuestFrame(const GuestFrame &) = delete;
+        GuestFrame &operator=(const GuestFrame &) = delete;
+
+    private:
+        uint32_t outerBottom_;
+    };
 
     // Return address given to guest callees; never a real code address.
     inline constexpr uint32_t kReturnSentinel = 0x00000FF0u;
@@ -318,10 +335,12 @@ namespace port
         constexpr auto slots = argSlots<Args...>();
         const uint64_t savedRa = gpr64(ctx, 31);
         const uint64_t savedSp = gpr64(ctx, 29);
-        // Stack arguments go in a new 16-byte aligned area below the current guest stack pointer.
+        // Stack arguments go at the bottom of the GuestFrame in force when the stack pointer is still at its bottom (the
+        // original keeps them in its own frame), else in a new 16-byte aligned area below the guest stack pointer.
         constexpr uint32_t stackBytes = ints > 8 ? ((8u * static_cast<uint32_t>(ints - 8)) + 15u) & ~15u : 0u;
-        const uint32_t sp = static_cast<uint32_t>(savedSp) - stackBytes;
-        if constexpr (stackBytes != 0)
+        const bool inFrame = stackBytes != 0 && g_call.frameBottom == static_cast<uint32_t>(savedSp);
+        const uint32_t sp = inFrame ? static_cast<uint32_t>(savedSp) : static_cast<uint32_t>(savedSp) - stackBytes;
+        if (stackBytes != 0 && !inFrame)
             setGpr64(ctx, 29, static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(sp))));
         int k = 0;
         (

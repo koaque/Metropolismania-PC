@@ -79,4 +79,20 @@ namespace mm::vu0
         return v;
     }
     inline void store(GuestPtr<Vec4> p, __m128 v) { std::memcpy(p.get(), &v, sizeof(v)); }
+
+    // A point through a matrix as the game does it in macro mode: the four rows in vf1 to vf4, the point in vf5,
+    // the sum of the first three products in the accumulator and the result (plus row 4 times w) in vf9.
+    inline void applyMatrix(GuestPtr<Vec4> matrix, GuestPtr<Vec4> point, GuestPtr<Vec4> out)
+    {
+        vf(1) = load(matrix);
+        vf(2) = load(GuestPtr<Vec4>{matrix.address + 0x10u});
+        vf(3) = load(GuestPtr<Vec4>{matrix.address + 0x20u});
+        vf(4) = load(GuestPtr<Vec4>{matrix.address + 0x30u});
+        vf(5) = load(point);
+        set(acc(), mul(vf(1), lane(vf(5), 0)), XYZW);
+        set(acc(), add(acc(), mul(vf(2), lane(vf(5), 1))), XYZW);
+        set(acc(), add(acc(), mul(vf(3), lane(vf(5), 2))), XYZW);
+        set(vf(9), add(acc(), mul(vf(4), lane(vf(5), 3))), XYZW);
+        store(out, vf(9));
+    }
 }

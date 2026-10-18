@@ -14,6 +14,8 @@ typedef struct FamilyMember FamilyMember;
 typedef struct Widget Widget;
 typedef struct TalkSession TalkSession;
 typedef struct TalkView TalkView;
+typedef struct MyHomeView MyHomeView;
+typedef struct TalkPersonView TalkPersonView;
 typedef struct TalkPose TalkPose;
 typedef struct WordsCtx WordsCtx;
 typedef struct Words Words;
@@ -266,6 +268,25 @@ struct TalkView {
     int32_t targetObject;      /* +0x260 */
     int32_t targetPerson;      /* +0x264 */
     uint8_t unk_268[8];
+};
+
+/* The near and far views of a person (allocated 0x290 and 0x2A0 bytes): the talk view plus the camera. */
+struct TalkPersonView {
+    TalkView base;
+    Vec4 eye;                  /* +0x270 behind the person, 1.3 along the view direction from 0.55 under the person */
+    Vec4 target;               /* +0x280 the person, 0.9 under the position */
+    float facing;              /* +0x290 atan2 of the view direction (x, z) */
+};
+
+/* The view inside a home (0x2A0 bytes, vtable 0x1BD810): the talk view plus the walk-around state (mm_MyHome_ctor). */
+struct MyHomeView {
+    TalkView base;
+    Vec4 position;             /* +0x270 viewer position, from the home's entrance */
+    Vec4 target;               /* +0x280 looked-at point (position minus 0.1 along the facing) */
+    float facing;              /* +0x290 turn about y, from the tile kind */
+    float pitch;               /* +0x294 looking up and down, -0.05 to 0.1 */
+    void *collision;           /* +0x298 the interior's triangle blob (table at 0x1F3CE0) */
+    int32_t size;              /* +0x29C building size */
 };
 
 /* Talk session (0xC0 bytes, vtable 0x1BD770), one per city at CityScene +0x3C. */

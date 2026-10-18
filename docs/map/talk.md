@@ -40,7 +40,7 @@ friendship changed. A is the person talked to.
 
 ## Functions
 
-322 functions (typed 120, verified 202). Blocks: 92 can reach a thread switch, 27 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+322 functions (typed 97, verified 225). Blocks: 92 can reach a thread switch, 27 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -161,7 +161,7 @@ friendship changed. A is the person talked to.
 | `0x00179630` | `TalkMoney *mm_TalkMoney_ctor(TalkMoney *money, int amount)` | 188 | yes | vtable 0x1BD7C0, amount a1 (player money 0x1C5540) |
 | `0x001796F0` | `void mm_MyHome_EntranceRect(TalkView *view, int facing, int x, int z, int size, int32_t *rect)` | 360 | no | tile rectangle in front of a building by facing (0-3), clamped to the map |
 | `0x00179860` | `void mm_MyHome_MarkEntrance(TalkView *view, int set)` | 300 | no | sets (a1 1) or clears tile flag 0x80 in front of the home |
-| `0x00179990` | `float mm_MyHome_FloorHit(TalkView *view, Vec4 *matrix, uint32_t *hit)` | 492 | no | (provisional) ray against the interior floor triangles (collision 0x1F3CE0) |
+| `0x00179990` | `int mm_MyHome_FloorHit(TalkView *view, Vec4 *matrix, uint32_t *hit)` | 492 | no | (provisional) ray against the interior floor triangles (collision 0x1F3CE0) |
 | `0x00179B80` | `int mm_MyHome_WallHit(TalkView *view, Vec4 *matrix, uint32_t *hit, float *distance)` | 488 | no | (provisional) ray against the interior wall triangles |
 | `0x00179D70` | `void mm_MyHome_Collide(TalkView *view)` | 412 | no | (provisional) pushes the viewer out of the interior walls |
 | `0x00179F10` | `void mm_MyHome_Draw(TalkView *view, int pass)` | 232 | no | vtable 0x1BD810: the home interior model while active |

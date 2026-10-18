@@ -743,6 +743,8 @@ struct FamilyMember;
 struct Widget;
 struct TalkSession;
 struct TalkView;
+struct MyHomeView;
+struct TalkPersonView;
 struct TalkPose;
 struct WordsCtx;
 struct Words;
@@ -995,6 +997,25 @@ struct TalkView {
     int32_t targetObject;      /* +0x260 */
     int32_t targetPerson;      /* +0x264 */
     uint8_t unk_268[8];
+};
+
+/* The near and far views of a person (allocated 0x290 and 0x2A0 bytes): the talk view plus the camera. */
+struct TalkPersonView {
+    TalkView base;
+    Vec4 eye;                  /* +0x270 behind the person, 1.3 along the view direction from 0.55 under the person */
+    Vec4 target;               /* +0x280 the person, 0.9 under the position */
+    ps2f facing;              /* +0x290 atan2 of the view direction (x, z) */
+};
+
+/* The view inside a home (0x2A0 bytes, vtable 0x1BD810): the talk view plus the walk-around state (mm_MyHome_ctor). */
+struct MyHomeView {
+    TalkView base;
+    Vec4 position;             /* +0x270 viewer position, from the home's entrance */
+    Vec4 target;               /* +0x280 looked-at point (position minus 0.1 along the facing) */
+    ps2f facing;              /* +0x290 turn about y, from the tile kind */
+    ps2f pitch;               /* +0x294 looking up and down, -0.05 to 0.1 */
+    GuestPtr<void> collision;           /* +0x298 the interior's triangle blob (table at 0x1F3CE0) */
+    int32_t size;              /* +0x29C building size */
 };
 
 /* Talk session (0xC0 bytes, vtable 0x1BD770), one per city at CityScene +0x3C. */
@@ -1803,6 +1824,16 @@ static_assert(offsetof(TalkView, choosing) == 0x254, "TalkView.choosing");
 static_assert(offsetof(TalkView, forceLit) == 0x258, "TalkView.forceLit");
 static_assert(offsetof(TalkView, targetObject) == 0x260, "TalkView.targetObject");
 static_assert(offsetof(TalkView, targetPerson) == 0x264, "TalkView.targetPerson");
+static_assert(offsetof(TalkPersonView, eye) == 0x270, "TalkPersonView.eye");
+static_assert(offsetof(TalkPersonView, target) == 0x280, "TalkPersonView.target");
+static_assert(offsetof(TalkPersonView, facing) == 0x290, "TalkPersonView.facing");
+static_assert(sizeof(MyHomeView) == 0x2A0, "MyHomeView size");
+static_assert(offsetof(MyHomeView, position) == 0x270, "MyHomeView.position");
+static_assert(offsetof(MyHomeView, target) == 0x280, "MyHomeView.target");
+static_assert(offsetof(MyHomeView, facing) == 0x290, "MyHomeView.facing");
+static_assert(offsetof(MyHomeView, pitch) == 0x294, "MyHomeView.pitch");
+static_assert(offsetof(MyHomeView, collision) == 0x298, "MyHomeView.collision");
+static_assert(offsetof(MyHomeView, size) == 0x29C, "MyHomeView.size");
 static_assert(sizeof(TalkSession) == 0xC0, "TalkSession size");
 static_assert(offsetof(TalkSession, city) == 0x0C, "TalkSession.city");
 static_assert(offsetof(TalkSession, view) == 0x10, "TalkSession.view");
