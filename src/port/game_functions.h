@@ -3261,7 +3261,9 @@ void CityRender_DrawOverlays(GuestPtr<CityMap> map, GuestPtr<CityScene> city);
 void TexImage_Convert(GuestPtr<TexImage> image, uint32_t textureBlock, uint32_t clutBlock);
 GuestPtr<uint32_t> LayerA_BuildPacket(GuestPtr<LayerA> layer, GuestPtr<uint32_t> packet);
 void LayerA_Draw(GuestPtr<LayerA> layer);
+void LayerA_AddInstance(GuestPtr<LayerA> layer, int a1, int a2, ps2f x, ps2f y, ps2f z);
 void LayerA_SetSource(GuestPtr<LayerA> layer, int source);
+GuestPtr<LayerA> LayerA_ctor(GuestPtr<LayerA> layer);
 GuestPtr<uint32_t> StatusPanel_BuildPacket(GuestPtr<StatusPanel> panel, GuestPtr<uint32_t> packet);
 void StatusPanel_Draw(GuestPtr<StatusPanel> panel);
 void Laptop_LoadState(GuestPtr<Laptop> laptop, GuestPtr<McManager> mc);
@@ -3296,15 +3298,20 @@ GuestPtr<uint32_t> LayerC_BuildPacket(GuestPtr<LayerC> layer, GuestPtr<uint32_t>
 void LayerC_InitParams(GuestPtr<LayerC> layer);
 void LayerC_DrawBuildings(GuestPtr<LayerC> layer, int packet, GuestPtr<CityMap> map, int pass);
 GuestPtr<LayerC> LayerC_ctor(GuestPtr<LayerC> layer);
+GuestPtr<uint32_t> LayerD_BuildPacket(GuestPtr<LayerD> layer, GuestPtr<uint32_t> packet, GuestPtr<int32_t> a2);
 void LayerD_InitParams(GuestPtr<LayerD> layer);
 void LayerD_DrawSkyByClock(GuestPtr<LayerD> layer, int pass, int packet, int clock);
 GuestPtr<LayerD> LayerD_ctor(GuestPtr<LayerD> layer, int buffers);
+GuestPtr<uint32_t> LayerE_BuildPacket(GuestPtr<LayerE> layer, GuestPtr<uint32_t> packet, GuestPtr<int32_t> a2);
+void LayerE_InitParams(GuestPtr<LayerE> layer);
+void LayerE_Draw(GuestPtr<LayerE> layer, int pass, int packet, int a3, GuestPtr<Vec4> t0);
 GuestPtr<LayerE> LayerE_ctor(GuestPtr<LayerE> layer, int buffers);
 GuestPtr<uint32_t> LayerF_BuildPacket(GuestPtr<LayerF> layer, GuestPtr<uint32_t> packet);
 void LayerF_InitParams(GuestPtr<LayerF> layer);
 void LayerF_Draw(GuestPtr<LayerF> layer, int packet);
 GuestPtr<LayerF> LayerF_ctor(GuestPtr<LayerF> layer);
 void LayerG_AnimateWaves(GuestPtr<LayerG> layer, ps2f weather);
+GuestPtr<uint32_t> LayerG_BuildPacket(GuestPtr<LayerG> layer, GuestPtr<uint32_t> packet, GuestPtr<int32_t> a2);
 void LayerG_InitParams(GuestPtr<LayerG> layer);
 void LayerG_Draw(GuestPtr<LayerG> layer, int pass, ps2f weather);
 GuestPtr<LayerG> LayerG_ctor(GuestPtr<LayerG> layer, int buffers);
@@ -3460,6 +3467,7 @@ void BldgClaims_DrawIcon(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, 
 void Bldg_InitRecordBase(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj);
 uint8_t BldgField_Slot1C(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj);
 void BldgField_DrawPeople(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int t0, int flags, GuestPtr<MapPerson> people, ps2f x, ps2f y, ps2f z);
+void BldgField_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int t0, int t1, ps2f x, ps2f y, ps2f z);
 int BldgField_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj);
 int BldgPort_CollideA(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit, ps2f lift);
 int BldgPort_CollideB(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, ps2f f12);
@@ -4096,9 +4104,7 @@ inline GuestPtr<CityMap> CityRender_ctor(GuestPtr<CityMap> map) { return port::c
 inline int Dma_KickVif1Now_1490D0(uint32_t address) { return port::callGuest<int>(addr::Dma_KickVif1Now_1490D0, address); }
 inline GuestPtr<TexImage> TexImage_dtor(GuestPtr<TexImage> image, int16_t deleteFlag) { return port::callGuest<GuestPtr<TexImage>>(addr::TexImage_dtor, image, deleteFlag); }
 inline int TexImage_Load(GuestPtr<TexImage> image, GuestPtr<char> name, int a2, int a3) { return port::callGuest<int>(addr::TexImage_Load, image, name, a2, a3); }
-inline void LayerA_AddInstance(GuestPtr<LayerA> layer, int a1, int a2, ps2f x, ps2f y, ps2f z) { port::callGuest<void>(addr::LayerA_AddInstance, layer, a1, a2, x, y, z); }
 inline GuestPtr<LayerA> LayerA_DeletingDtor(GuestPtr<LayerA> layer, int16_t deleteFlag) { return port::callGuest<GuestPtr<LayerA>>(addr::LayerA_DeletingDtor, layer, deleteFlag); }
-inline GuestPtr<LayerA> LayerA_ctor(GuestPtr<LayerA> layer) { return port::callGuest<GuestPtr<LayerA>>(addr::LayerA_ctor, layer); }
 inline void StatusPanel_Update(GuestPtr<StatusPanel> panel, GuestPtr<CityScene> city) { port::callGuest<void>(addr::StatusPanel_Update, panel, city); }
 inline GuestPtr<StatusPanel> StatusPanel_dtor(GuestPtr<StatusPanel> panel, int16_t deleteFlag) { return port::callGuest<GuestPtr<StatusPanel>>(addr::StatusPanel_dtor, panel, deleteFlag); }
 inline GuestPtr<StatusPanel> StatusPanel_ctor(GuestPtr<StatusPanel> panel) { return port::callGuest<GuestPtr<StatusPanel>>(addr::StatusPanel_ctor, panel); }
@@ -4111,14 +4117,9 @@ inline void WaitText_Create(GuestPtr<char> text) { port::callGuest<void>(addr::W
 inline GuestPtr<LightSet> LightSet_DeletingDtor(GuestPtr<LightSet> lights, int16_t deleteFlag) { return port::callGuest<GuestPtr<LightSet>>(addr::LightSet_DeletingDtor, lights, deleteFlag); }
 inline GuestPtr<LayerB> LayerB_DeletingDtor(GuestPtr<LayerB> layer, int16_t deleteFlag) { return port::callGuest<GuestPtr<LayerB>>(addr::LayerB_DeletingDtor, layer, deleteFlag); }
 inline GuestPtr<LayerC> LayerC_DeletingDtor(GuestPtr<LayerC> layer, int16_t deleteFlag) { return port::callGuest<GuestPtr<LayerC>>(addr::LayerC_DeletingDtor, layer, deleteFlag); }
-inline GuestPtr<uint32_t> LayerD_BuildPacket(GuestPtr<LayerD> layer, GuestPtr<uint32_t> packet, GuestPtr<int32_t> a2) { return port::callGuest<GuestPtr<uint32_t>>(addr::LayerD_BuildPacket, layer, packet, a2); }
 inline GuestPtr<LayerD> LayerD_DeletingDtor(GuestPtr<LayerD> layer, int16_t deleteFlag) { return port::callGuest<GuestPtr<LayerD>>(addr::LayerD_DeletingDtor, layer, deleteFlag); }
-inline GuestPtr<uint32_t> LayerE_BuildPacket(GuestPtr<LayerE> layer, GuestPtr<uint32_t> packet, GuestPtr<int32_t> a2) { return port::callGuest<GuestPtr<uint32_t>>(addr::LayerE_BuildPacket, layer, packet, a2); }
-inline void LayerE_InitParams(GuestPtr<LayerE> layer) { port::callGuest<void>(addr::LayerE_InitParams, layer); }
-inline void LayerE_Draw(GuestPtr<LayerE> layer, int pass, int packet, int a3, GuestPtr<Vec4> t0) { port::callGuest<void>(addr::LayerE_Draw, layer, pass, packet, a3, t0); }
 inline GuestPtr<LayerE> LayerE_DeletingDtor(GuestPtr<LayerE> layer, int16_t deleteFlag) { return port::callGuest<GuestPtr<LayerE>>(addr::LayerE_DeletingDtor, layer, deleteFlag); }
 inline GuestPtr<LayerF> LayerF_DeletingDtor(GuestPtr<LayerF> layer, int16_t deleteFlag) { return port::callGuest<GuestPtr<LayerF>>(addr::LayerF_DeletingDtor, layer, deleteFlag); }
-inline GuestPtr<uint32_t> LayerG_BuildPacket(GuestPtr<LayerG> layer, GuestPtr<uint32_t> packet, GuestPtr<int32_t> a2) { return port::callGuest<GuestPtr<uint32_t>>(addr::LayerG_BuildPacket, layer, packet, a2); }
 inline GuestPtr<LayerG> LayerG_DeletingDtor(GuestPtr<LayerG> layer, int16_t deleteFlag) { return port::callGuest<GuestPtr<LayerG>>(addr::LayerG_DeletingDtor, layer, deleteFlag); }
 inline void ListMenu_AddItems(GuestPtr<ListMenu> menu, int a1, int a2, int a3, int t0, int t1, int t2) { port::callGuest<void>(addr::ListMenu_AddItems, menu, a1, a2, a3, t0, t1, t2); }
 inline GuestPtr<ListMenu> ListMenu_dtor(GuestPtr<ListMenu> menu, int16_t deleteFlag) { return port::callGuest<GuestPtr<ListMenu>>(addr::ListMenu_dtor, menu, deleteFlag); }
@@ -4210,7 +4211,6 @@ inline GuestPtr<BuildingType> BldgRanch_ctor(GuestPtr<BuildingType> btype, Guest
 inline GuestPtr<BuildingType> Bldg_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag) { return port::callGuest<GuestPtr<BuildingType>>(addr::Bldg_dtor, btype, deleteFlag); }
 inline GuestPtr<BuildingType> Bldg_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id) { return port::callGuest<GuestPtr<BuildingType>>(addr::Bldg_ctor, btype, record, id); }
 inline GuestPtr<BuildingType> BldgField_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag) { return port::callGuest<GuestPtr<BuildingType>>(addr::BldgField_dtor, btype, deleteFlag); }
-inline void BldgField_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int t0, int t1, ps2f x, ps2f y, ps2f z) { port::callGuest<void>(addr::BldgField_Draw, btype, layer, city, obj, t0, t1, x, y, z); }
 inline GuestPtr<BuildingType> BldgField_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id) { return port::callGuest<GuestPtr<BuildingType>>(addr::BldgField_ctor, btype, record, id); }
 inline GuestPtr<BuildingType> BldgPort_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag) { return port::callGuest<GuestPtr<BuildingType>>(addr::BldgPort_dtor, btype, deleteFlag); }
 inline GuestPtr<BuildingType> BldgPort_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id) { return port::callGuest<GuestPtr<BuildingType>>(addr::BldgPort_ctor, btype, record, id); }

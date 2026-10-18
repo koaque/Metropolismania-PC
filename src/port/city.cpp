@@ -3214,6 +3214,58 @@ namespace mm
     }
 
     PORT_FN(BldgType_DrawOccupants);
+    // The crops of a field (nothing while its object has no claim slot): the matrix of the layer is put at the field's
+    // place (a little higher by the type's +0x160), and the month cycle (twelve steps, two to a stage of six) picks the
+    // stage: its mesh from the type's table at +0x180 is drawn as it is; the growing crop of table +0x186 follows with
+    // its height blended between this stage and the next by the day's progress (the clock over two days, the second
+    // day of a two day cycle counting double), the layer matrix scaled by it.
+    void BldgField_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
+                        ps2f x, ps2f y, ps2f z)
+    {
+        using namespace vu0;
+        port::GuestFrame<0xD0> frame; // the scale matrix at +0x90, then the product with the layer matrix
+        const uint32_t base = frame.ptr().address;
+        if (obj->claimSlot == 0)
+            return;
+        int step = remainder(city->monthCount, 12) + 1;
+        if (step == 12)
+            step = 0;
+        const GuestPtr<Vec4> matrix = layerMatrix(static_cast<uint32_t>(layer));
+        matrix[3].x = x;
+        matrix[3].y = y + ps2f(port::load<float>(btype.address + 0x160u));
+        matrix[3].z = z;
+        const int stage = step >> 1;
+        const uint8_t mesh = port::load<uint8_t>(btype.address + 0x180u + static_cast<uint32_t>(stage));
+        if (mesh != 0)
+            Instance_DrawMesh(globals::fieldModel.get(), matrix, GuestPtr<Vec4>{globals::kDefaultColour}, mesh, flags);
+        const uint32_t growing = btype.address + 0x186u + static_cast<uint32_t>(stage);
+        if (port::load<uint8_t>(growing) == 0)
+            return;
+        const ps2f progress = fromInt(static_cast<int32_t>(static_cast<uint32_t>((step & 1) + 1) * static_cast<uint32_t>(city->clock))) / ps2f(172800.0f);
+        const GuestPtr<Vec4> scale{base + 0x90u};
+        Mat4_Copy(scale, GuestPtr<Vec4>{globals::kIdentityMatrix});
+        const int next = stage + 1 < 6 ? stage + 1 : 0;
+        const ps2f following(port::load<float>(btype.address + 0x168u + 4u * static_cast<uint32_t>(next)));
+        const ps2f current(port::load<float>(btype.address + 0x168u + 4u * static_cast<uint32_t>(stage)));
+        port::store<float>(base + 0xA4u, static_cast<float>(progress * following + (ps2f(1.0f) - progress) * current));
+        for (int row = 0; row < 4; ++row)
+            vf(1 + row) = load(GuestPtr<Vec4>{matrix.address + 0x10u * static_cast<uint32_t>(row)});
+        for (int row = 0; row < 4; ++row)
+            vf(5 + row) = load(GuestPtr<Vec4>{scale.address + 0x10u * static_cast<uint32_t>(row)});
+        for (int row = 0; row < 3; ++row)
+        {
+            set(acc(), mul(vf(5), lane(vf(1 + row), 0)), XYZW);
+            set(acc(), add(acc(), mul(vf(6), lane(vf(1 + row), 1))), XYZW);
+            set(acc(), add(acc(), mul(vf(7), lane(vf(1 + row), 2))), XYZW);
+            set(vf(9 + row), add(acc(), mul(vf(8), lane(vf(1 + row), 3))), XYZW);
+        }
+        for (int row = 0; row < 4; ++row)
+            store(GuestPtr<Vec4>{scale.address + 0x10u * static_cast<uint32_t>(row)}, vf(9 + row));
+        scale[3] = matrix[3];
+        Instance_DrawMesh(globals::fieldModel.get(), scale, GuestPtr<Vec4>{globals::kDefaultColour}, port::load<uint8_t>(growing), flags);
+    }
+
+    PORT_FN(BldgField_Draw);
     PORT_FN(BldgField_DrawPeople);
     PORT_FN(BldgRanch_Draw);
     PORT_FN(BldgRoad_DrawPeople);

@@ -1407,6 +1407,214 @@ namespace mm
 
     PORT_FN(LayerC_BuildPacket);
 
+    // Layer D (the sky): for each of its two buffers, the packet starts with its layer-parameters upload and the first
+    // microcode (0x1A8A00); then the buffer's vertex data goes to VU1 in 78 chunks of 0x200 bytes (9 groups of 8, each
+    // chunk a REF tag, the UNPACK and a MSCAL, then 6 singles), the second microcode (0x1A8E20) follows with the
+    // parameters (+0x2D0) and the packet ends. The layer keeps the start of each buffer's packet at +0x2C0 and the
+    // second tail at +0x400, the end of the last at +0x408. Returns the end of the packets.
+    GuestPtr<uint32_t> LayerD_BuildPacket(GuestPtr<LayerD> layer, GuestPtr<uint32_t> packet, GuestPtr<int32_t> buffers)
+    {
+        const uint32_t layerAddress = layer.address;
+        const uint32_t layerTag = layerAddress & 0x7FFFFFFFu;
+        const uint32_t paramsTag = (layerAddress + 0x2D0u) & 0x7FFFFFFFu;
+        const auto chunk = [](uint32_t at, uint32_t source) {
+            putWords(at + 0x0u, {0x30000020u, source & 0x7FFFFFFFu, 0x0u, 0x6C208000u});
+            putWords(at + 0x10u, {0x10000000u, 0x0u, 0x0u, 0x17000000u});
+        };
+        uint32_t at = packet.address;
+        for (uint32_t buffer = 0; buffer < 2; ++buffer)
+        {
+            const uint32_t slot = layerAddress + 4u * buffer;
+            port::store<uint32_t>(slot + 0x2C0u, at);
+            putWords(at + 0x0u, {0x10000000u, 0x0u, 0x0u, 0x11000000u});
+            putWords(at + 0x10u, {0x50000000u, 0x1A8A00u, 0x0u, 0x0u});
+            putWords(at + 0x20u, {0x3000002Cu, layerTag, 0x1000101u, 0x6C2C0012u});
+            putWords(at + 0x30u, {0x10000000u, 0x0u, 0x30000BEu, 0x20001A1u});
+            putWords(at + 0x40u, {0x10000000u, 0x0u, 0x14000000u, 0x11000000u});
+            uint32_t source = port::load<uint32_t>(buffers.address + 4u * buffer);
+            at += 0x50u;
+            uint32_t chunks = 0;
+            for (; chunks < 0x46; chunks += 8)
+            {
+                for (uint32_t k = 0; k < 8; ++k)
+                    chunk(at + 0x20u * k, source + 0x200u * k);
+                at += 0x100u;
+                source += 0x1000u;
+            }
+            for (; chunks < 0x4E; ++chunks)
+            {
+                chunk(at, source);
+                at += 0x20u;
+                source += 0x200u;
+            }
+            putWords(at + 0x0u, {0x60000000u, 0x0u, 0x0u, 0x0u});
+            port::store<uint32_t>(slot + 0x400u, at + 0x10u);
+            putWords(at + 0x10u, {0x10000002u, 0x0u, 0x11000000u, 0x50000002u});
+            putWords(at + 0x20u, {0x8001u, 0x10000000u, 0xEu, 0x0u});
+            putWords(at + 0x30u, {0x64u, 0xFFu, 0x42u, 0x0u});
+            putWords(at + 0x40u, {0x10000000u, 0x0u, 0x0u, 0x11000000u});
+            putWords(at + 0x50u, {0x50000000u, 0x1A8E20u, 0x0u, 0x0u});
+            putWords(at + 0x60u, {0x30000013u, paramsTag, 0x1000101u, 0x6C13001Cu});
+            putWords(at + 0x70u, {0x10000000u, 0x0u, 0x3000056u, 0x20001D5u});
+            putWords(at + 0x80u, {0x10000000u, 0x0u, 0x14000000u, 0x11000000u});
+            putWords(at + 0x90u, {0x60000000u, 0x0u, 0x0u, 0x0u});
+            at += 0xA0u;
+        }
+        port::store<uint32_t>(layerAddress + 0x408u, at);
+        putWords(at + 0x0u, {0x10000002u, 0x0u, 0x11000000u, 0x50000002u});
+        putWords(at + 0x10u, {0x8001u, 0x10000000u, 0xEu, 0x0u});
+        putWords(at + 0x20u, {0x44u, 0x20u, 0x42u, 0x0u});
+        putWords(at + 0x30u, {0x60000000u, 0x0u, 0x0u, 0x0u});
+        return GuestPtr<uint32_t>{at + 0x40u};
+    }
+
+    PORT_FN(LayerD_BuildPacket);
+
+    // Layer E (clouds and stars): like layer D, for each of the two buffers a packet that uploads the layer's parameters
+    // (the GS TEX0 of its texture is built field by field: base 0x3F70, width 1, format 0x14, 2^5 by 2^5, colour with
+    // alpha, its palette at 0x3F72) and the microcode at 0x1A9A90, then the buffer's vertex data in chunks and the
+    // microcode at 0x1A9F10 with the parameters (+0x570). The starts are kept at +0x560, the second tails at +0x6A0 and
+    // the end at +0x6A8. Returns the end of the packets.
+    GuestPtr<uint32_t> LayerE_BuildPacket(GuestPtr<LayerE> layer, GuestPtr<uint32_t> packet, GuestPtr<int32_t> buffers)
+    {
+        const uint32_t layerAddress = layer.address;
+        const uint32_t layerTag = layerAddress & 0x7FFFFFFFu;
+        const uint32_t paramsTag = (layerAddress + 0x570u) & 0x7FFFFFFFu;
+        const auto chunk = [](uint32_t at, uint32_t source) {
+            putWords(at + 0x0u, {0x30000020u, source & 0x7FFFFFFFu, 0x0u, 0x6C208000u});
+            putWords(at + 0x10u, {0x10000000u, 0x0u, 0x0u, 0x17000000u});
+        };
+        uint32_t at = packet.address;
+        for (uint32_t buffer = 0; buffer < 2; ++buffer)
+        {
+            const uint32_t slot = layerAddress + 4u * buffer;
+            port::store<uint32_t>(slot + 0x560u, at);
+            putWords(at + 0x0u, {0x10000004u, 0x0u, 0x11000000u, 0x50000004u});
+            putWords(at + 0x10u, {0x8003u, 0x10000000u, 0xEu, 0x0u});
+            putWords(at + 0x20u, {0x80808080u, 0x3F800000u, 0x1u, 0x0u});
+            putWords(at + 0x30u, {0x48u, 0x30u, 0x42u, 0x0u});
+            putWords(at + 0x40u, {0x0u, 0x0u, 0x6u, 0x0u});
+            const auto field16 = [&](uint32_t offset, uint16_t keep, uint16_t value) {
+                port::store<uint16_t>(at + offset, static_cast<uint16_t>((port::load<uint16_t>(at + offset) & keep) | value));
+            };
+            const auto field8 = [&](uint32_t offset, uint8_t keep, uint8_t value) {
+                port::store<uint8_t>(at + offset, static_cast<uint8_t>((port::load<uint8_t>(at + offset) & keep) | value));
+            };
+            const auto field64 = [&](uint64_t keep, uint64_t value) {
+                port::store<uint64_t>(at + 0x40u, (port::load<uint64_t>(at + 0x40u) & keep) | value);
+            };
+            field16(0x40u, 0xC000u, 0x3F70u);                                      // TBP0
+            field64(0xFFFFFFFFFFF03FFFull, 1ull << 14);                            // TBW
+            field16(0x42u, 0xFC0Fu, 0x140u);                                       // PSM
+            field8(0x43u, 0xC3u, static_cast<uint8_t>((Math_Log2(0x20) & 0xF) << 2)); // TW
+            field64(0xFFFFFFFC3FFFFFFFull, static_cast<uint64_t>(Math_Log2(0x20) & 0xF) << 30); // TH
+            field8(0x44u, 0xFBu, 0x4u);                                            // TCC
+            field8(0x44u, 0xE7u, 0x0u);                                            // TFX
+            field64(0xFFF8001FFFFFFFFFull, 0x3F72ull << 37);                       // CBP
+            field8(0x46u, 0x87u, 0x0u);                                            // CPSM
+            field8(0x46u, 0x7Fu, 0x0u);                                            // CSM
+            field8(0x47u, 0xE0u, 0x0u);                                            // CSA
+            field8(0x47u, 0x1Fu, 0x20u);                                           // CLD
+            putWords(at + 0x50u, {0x50000000u, 0x1A9A90u, 0x0u, 0x0u});
+            putWords(at + 0x60u, {0x30000056u, layerTag, 0x1000101u, 0x6C560012u});
+            putWords(at + 0x70u, {0x10000000u, 0x0u, 0x300007Cu, 0x20001C2u});
+            putWords(at + 0x80u, {0x10000000u, 0x0u, 0x14000000u, 0x11000000u});
+            uint32_t source = port::load<uint32_t>(buffers.address + 4u * buffer);
+            at += 0x90u;
+            uint32_t chunks = 0;
+            for (; chunks < 0x46; chunks += 8)
+            {
+                for (uint32_t k = 0; k < 8; ++k)
+                    chunk(at + 0x20u * k, source + 0x200u * k);
+                at += 0x100u;
+                source += 0x1000u;
+            }
+            for (; chunks < 0x4E; ++chunks)
+            {
+                chunk(at, source);
+                at += 0x20u;
+                source += 0x200u;
+            }
+            port::store<uint32_t>(slot + 0x6A0u, at + 0x10u);
+            putWords(at + 0x0u, {0x60000000u, 0x0u, 0x0u, 0x0u});
+            putWords(at + 0x10u, {0x10000002u, 0x0u, 0x11000000u, 0x50000002u});
+            putWords(at + 0x20u, {0x8001u, 0x10000000u, 0xEu, 0x0u});
+            putWords(at + 0x30u, {0x64u, 0x60u, 0x42u, 0x0u});
+            putWords(at + 0x40u, {0x10000000u, 0x0u, 0x0u, 0x11000000u});
+            putWords(at + 0x50u, {0x50000000u, 0x1A9F10u, 0x0u, 0x0u});
+            putWords(at + 0x60u, {0x30000013u, paramsTag, 0x1000101u, 0x6C13001Cu});
+            putWords(at + 0x70u, {0x10000000u, 0x0u, 0x3000056u, 0x20001D5u});
+            putWords(at + 0x80u, {0x10000000u, 0x0u, 0x14000000u, 0x11000000u});
+            putWords(at + 0x90u, {0x60000000u, 0x0u, 0x0u, 0x0u});
+            at += 0xA0u;
+        }
+        port::store<uint32_t>(layerAddress + 0x6A8u, at);
+        putWords(at + 0x0u, {0x10000002u, 0x0u, 0x11000000u, 0x50000002u});
+        putWords(at + 0x10u, {0x8001u, 0x10000000u, 0xEu, 0x0u});
+        putWords(at + 0x20u, {0x44u, 0x20u, 0x42u, 0x0u});
+        putWords(at + 0x30u, {0x60000000u, 0x0u, 0x0u, 0x0u});
+        return GuestPtr<uint32_t>{at + 0x40u};
+    }
+
+    PORT_FN(LayerE_BuildPacket);
+
+    // Layer G (the water): two sections, one per vertex buffer. Each starts with the layer's parameters upload and the
+    // microcode at 0x1A6440 (the packet words of the layer's GS state: two copies of the same register pair, ALPHA and
+    // the rest), then the buffer's vertex data in 39 chunks of 0x400 bytes (4 groups of 8, then 7 singles) and an end
+    // marker. The layer keeps the start of the first section at +0x210 and of the second at +0x214. Returns the end.
+    GuestPtr<uint32_t> LayerG_BuildPacket(GuestPtr<LayerG> layer, GuestPtr<uint32_t> packet, GuestPtr<int32_t> buffers)
+    {
+        const uint32_t layerAddress = layer.address;
+        const uint32_t layerTag = layerAddress & 0x7FFFFFFFu;
+        const auto header = [&](uint32_t at) {
+            putWords(at + 0x0u, {0x10000005u, 0x0u, 0x11000000u, 0x50000005u});
+            putWords(at + 0x10u, {0x8004u, 0x10000000u, 0xEu, 0x0u});
+            putWords(at + 0x20u, {0x48u, 0x50u, 0x42u, 0x0u});
+            putWords(at + 0x30u, {0x64u, 0x50u, 0x43u, 0x0u});
+            putWords(at + 0x40u, {0x9930A78Cu, 0x4004F105u, 0x6u, 0x0u});
+            putWords(at + 0x50u, {0x9930A78Cu, 0x4004F105u, 0x7u, 0x0u});
+            putWords(at + 0x60u, {0x50000000u, 0x1A6440u, 0x0u, 0x0u});
+            putWords(at + 0x70u, {0x30000021u, layerTag, 0x1000101u, 0x6C21001Cu});
+            putWords(at + 0x80u, {0x10000000u, 0x0u, 0x300003Eu, 0x20001E1u});
+            putWords(at + 0x90u, {0x10000000u, 0x0u, 0x14000000u, 0x11000000u});
+        };
+        const auto chunk = [](uint32_t at, uint32_t source) {
+            putWords(at + 0x0u, {0x30000040u, source & 0x7FFFFFFFu, 0x0u, 0x6C408000u});
+            putWords(at + 0x10u, {0x10000000u, 0x0u, 0x0u, 0x17000000u});
+        };
+        uint32_t at = packet.address;
+        port::store<uint32_t>(layerAddress + 0x210u, at);
+        header(at);
+        at += 0xA0u;
+        for (uint32_t section = 0; section < 2; ++section)
+        {
+            uint32_t source = port::load<uint32_t>(buffers.address + 4u * section);
+            uint32_t chunks = 0;
+            for (; chunks < 0x1F; chunks += 8)
+            {
+                for (uint32_t k = 0; k < 8; ++k)
+                    chunk(at + 0x20u * k, source + 0x400u * k);
+                at += 0x100u;
+                source += 0x2000u;
+            }
+            for (; chunks < 0x27; ++chunks)
+            {
+                chunk(at, source);
+                at += 0x20u;
+                source += 0x400u;
+            }
+            putWords(at + 0x0u, {0x60000000u, 0x0u, 0x0u, 0x0u});
+            if (section == 1)
+                return GuestPtr<uint32_t>{at + 0x10u};
+            port::store<uint32_t>(layerAddress + 0x214u, at + 0x10u);
+            header(at + 0x10u);
+            at += 0xB0u;
+        }
+        return GuestPtr<uint32_t>{at};
+    }
+
+    PORT_FN(LayerG_BuildPacket);
+
     // ---- drawing layer C (batch 39)
 
     // Layer C draws the highlighted rectangle: in mode 1 (pass 0) its three packets around the map's own for this

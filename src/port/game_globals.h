@@ -250,6 +250,7 @@ namespace mm::globals
     inline constexpr GuestVar<GuestPtr<A3DObject>> blockModel{0x001BDBC8u};      // office and housing block parts
     inline constexpr GuestVar<GuestPtr<A3DObject>> parkRideModel{0x001BDBE0u};   // theme park ride (animated)
     inline constexpr GuestVar<GuestPtr<A3DObject>> propsModel{0x001BDBD4u};      // small goods stalls and keep-out parts
+    inline constexpr GuestVar<GuestPtr<A3DObject>> fieldModel{0x001BDBD8u};      // the crops of a field
     inline constexpr GuestVar<GuestPtr<A3DObject>> pigFarmModel{0x001BDC00u};    // the pig farm entrance
     inline constexpr GuestVar<GuestPtr<A3DObject>> ranchModelA{0x001BDBE8u};     // the ranch entrance, always drawn
     inline constexpr GuestVar<GuestPtr<A3DObject>> ranchModelB{0x001BDBECu};     // drawn on top when the type's slot +0x24 answers yes
