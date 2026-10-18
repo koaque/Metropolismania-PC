@@ -1772,4 +1772,538 @@ namespace mm
     PORT_FN(Bldg_CollideA);
     PORT_FN(Bldg_CollideB);
     PORT_FN(Bldg_IsOpen);
+
+    // ---- building records and collision slots (batch 38)
+
+    void Bldg_InitRecordBase(GuestPtr<BuildingType>, GuestPtr<MapObject> obj) { obj->claimSlot = 0x18; }
+
+    void Bldg_InitRecord(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj)
+    {
+        Bldg_InitRecordBase(btype, obj);
+        obj->entranceTile = 0x4000;
+    }
+
+    int Bldg_Slot30(GuestPtr<BuildingType>) { return 1; }
+
+    // Housing blocks take one of three styles by their tile ((tile / 2) % 3).
+    void BldgHousing_InitRecord(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj)
+    {
+        Bldg_InitRecord(btype, obj);
+        port::store<uint8_t>(obj.address + 0x1Au, static_cast<uint8_t>((obj->tile / 2) % 3));
+    }
+
+    void BldgRoad_InitRecord(GuestPtr<BuildingType>, GuestPtr<MapObject> obj)
+    {
+        for (uint32_t offset = 0x10u; offset <= 0x16u; offset += 2u)
+            port::store<uint16_t>(obj.address + offset, 0x4000);
+    }
+
+    // A field's model by its claim: the type's own (+0x143) while a claim is set, else by the claim meter: below 2,
+    // 30 and 60, then the full one.
+    uint8_t BldgField_Slot1C(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj)
+    {
+        if (obj->claimSlot != 0)
+            return port::load<uint8_t>(btype.address + 0x143u);
+        const int16_t meter = static_cast<int16_t>(obj->claimMeter);
+        if (meter < 2)
+            return 0x11;
+        if (meter < 30)
+            return 0x16;
+        return meter < 60 ? 0x17 : 0x18;
+    }
+
+    namespace
+    {
+        // The variant part of a building's collision mesh (the low byte of +0x18, in steps of 8).
+        uint32_t variantMesh(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj)
+        {
+            return btype->firstMesh + (port::load<uint8_t>(obj.address + 0x18u) >> 3);
+        }
+
+        // Housing: part 0 is the block itself (or its entrance), parts 1 and 2 and up take the unit shape's two
+        // entrance meshes (signed offsets from the type's entrance mesh, table 0x1B1520 by the shape at +0x19).
+        int housingMesh(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, uint32_t part)
+        {
+            const uint32_t which = part & 7u;
+            const uint32_t shape = 0x001B1520u + 2u * port::load<uint8_t>(obj.address + 0x19u);
+            if (which == 0)
+            {
+                if ((obj->flags & 0x20u) == 0)
+                    return static_cast<int>(variantMesh(btype, obj) * 2u);
+                return (btype->entranceMesh + port::load<int8_t>(shape)) * 2;
+            }
+            return (btype->entranceMesh + port::load<int8_t>(shape + (which == 1 ? 0u : 1u))) * 2;
+        }
+
+        // Offices: the block's mesh set (three per set) from the size's table of three by the tile, then part 0 the
+        // block (its entrance one on), parts 1 and 2 the set's first, 3 its third, 4 its second.
+        int officeMesh(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, uint32_t part, uint32_t table)
+        {
+            const int size = btype->size;
+            const int column = remainder(divide(obj->tile, size), 3);
+            const uint32_t set = port::load<uint32_t>(table + 12u * static_cast<uint32_t>(size) + 4u * static_cast<uint32_t>(column));
+            uint32_t mesh = btype->entranceMesh + 3u * set;
+            switch (part & 7u)
+            {
+            case 0:
+                mesh = (obj->flags & 0x20u) != 0 ? mesh + 1u : variantMesh(btype, obj);
+                break;
+            case 3:
+                mesh += 2u;
+                break;
+            case 4:
+                mesh += 1u;
+                break;
+            default:
+                break;
+            }
+            return static_cast<int>(mesh * 2u);
+        }
+    }
+
+    int BldgHousing_CollideA(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
+                             GuestPtr<uint32_t> hit, GuestPtr<uint32_t> part, ps2f lift)
+    {
+        return Collide_SegmentA(static_cast<int>(btype.address), housingMesh(btype, obj, *part), point, matrix, hit, lift);
+    }
+
+    int BldgHousing_CollideB(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
+                             GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, GuestPtr<uint32_t> part, ps2f f12)
+    {
+        return Collide_SegmentB(static_cast<int>(btype.address), housingMesh(btype, obj, *part), point, matrix, hit, distance, f12);
+    }
+
+    int BldgOffice_CollideA(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
+                            GuestPtr<uint32_t> hit, GuestPtr<uint32_t> part, ps2f lift)
+    {
+        return Collide_SegmentA(static_cast<int>(btype.address), officeMesh(btype, obj, *part, 0x001B1428u), point, matrix, hit, lift);
+    }
+
+    int BldgOffice_CollideB(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
+                            GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, GuestPtr<uint32_t> part, ps2f f12)
+    {
+        return Collide_SegmentB(static_cast<int>(btype.address), officeMesh(btype, obj, *part, 0x001B1408u), point, matrix, hit, distance, f12);
+    }
+
+    // Ports collide 2.5 lower: the matrix's translation y is lowered first (and stays lowered).
+    int BldgPort_CollideA(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
+                          GuestPtr<uint32_t> hit, ps2f lift)
+    {
+        const int mesh = (obj->flags & 0x20u) != 0 ? btype->entranceMesh * 2 : static_cast<int>(variantMesh(btype, obj) * 2u);
+        matrix[3].y = ps2f(matrix[3].y) - ps2f(2.5f);
+        return Collide_SegmentA(static_cast<int>(btype.address), mesh, point, matrix, hit, lift);
+    }
+
+    int BldgPort_CollideB(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
+                          GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, ps2f f12)
+    {
+        const int mesh = (obj->flags & 0x20u) != 0 ? btype->entranceMesh * 2 : static_cast<int>(variantMesh(btype, obj) * 2u);
+        matrix[3].y = ps2f(matrix[3].y) - ps2f(2.5f);
+        return Collide_SegmentB(static_cast<int>(btype.address), mesh, point, matrix, hit, distance, f12);
+    }
+
+    // Small goods stacks collide only from 0x27 goods (low byte of +0x10) on, one mesh per count.
+    int BldgSmallGoods_CollideA(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
+                                GuestPtr<uint32_t> hit, ps2f lift)
+    {
+        const uint8_t count = port::load<uint8_t>(obj.address + 0x10u);
+        if (count < 0x27)
+            return 0;
+        return Collide_SegmentA(static_cast<int>(btype.address), (btype->entranceMesh + count - 0x27) * 2, point, matrix, hit, lift);
+    }
+
+    int BldgSmallGoods_CollideB(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
+                                GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, ps2f f12)
+    {
+        const uint8_t count = port::load<uint8_t>(obj.address + 0x10u);
+        if (count < 0x27)
+            return 0;
+        return Collide_SegmentB(static_cast<int>(btype.address), (btype->entranceMesh + count - 0x27) * 2, point, matrix, hit, distance, f12);
+    }
+
+    PORT_FN(Bldg_InitRecordBase);
+    PORT_FN(Bldg_InitRecord);
+    PORT_FN(Bldg_Slot30);
+    PORT_FN(BldgHousing_InitRecord);
+    PORT_FN(BldgRoad_InitRecord);
+    PORT_FN(BldgField_Slot1C);
+    PORT_FN(BldgHousing_CollideA);
+    PORT_FN(BldgHousing_CollideB);
+    PORT_FN(BldgOffice_CollideA);
+    PORT_FN(BldgOffice_CollideB);
+    PORT_FN(BldgPort_CollideA);
+    PORT_FN(BldgPort_CollideB);
+    PORT_FN(BldgSmallGoods_CollideA);
+    PORT_FN(BldgSmallGoods_CollideB);
+
+    // ---- city scene values (batch 38)
+
+    void CityScene_AddApproval(GuestPtr<CityScene> city, int delta) { city->pendingApproval += delta; }
+
+    // Approval below 0: 0, below 51: 1, below 101: 2, else 3.
+    int CityScene_ApprovalTier(GuestPtr<CityScene> city)
+    {
+        const int approval = city->approval;
+        if (approval < 0)
+            return 0;
+        if (approval < 51)
+            return 1;
+        return approval < 101 ? 2 : 3;
+    }
+
+    // Residents: below 100 rank 1, then 300, 500, 1000, 1500, 2000 and 2500 (rank 8 beyond).
+    int CityScene_PopulationRank(GuestPtr<CityScene> city)
+    {
+        static constexpr int kLimits[] = {100, 300, 500, 1000, 1500, 2000, 2500};
+        const int population = city->map->population;
+        for (int rank = 0; rank < 7; ++rank)
+            if (population < kLimits[rank])
+                return rank + 1;
+        return 8;
+    }
+
+    int CityScene_ScoreA0Tier(GuestPtr<CityScene> city)
+    {
+        if (city->scoreA0 < 200)
+            return 0;
+        return city->scoreA0 < 300 ? 1 : 2;
+    }
+
+    int CityScene_ScoreA8Tier(GuestPtr<CityScene> city)
+    {
+        if (city->scoreA8 < 200)
+            return 0;
+        return city->scoreA8 < 300 ? 1 : 2;
+    }
+
+    // The mission's progress in percent (0..100): by the stage's mission kind (stage state +0x1D0) a building count
+    // of the map (kind 0 is always 100), times 100 over the target (0x1F32E0); 0 without a target. Unknown kinds use
+    // v0 as it came in.
+    int CityScene_MissionProgress(GuestPtr<CityScene> city)
+    {
+        int32_t value = port::guestV0();
+        switch (port::load<uint32_t>(globals::kStageState + 0x1D0u))
+        {
+        case 0:
+            return 100;
+        case 1:
+            value = city->map->categoryCount[1];
+            break;
+        case 2:
+            value = city->map->categoryCount[7];
+            break;
+        case 3:
+            value = city->map->categoryCount[3];
+            break;
+        case 4:
+            value = city->map->categoryCount[4];
+            break;
+        case 5:
+            value = city->map->bigCategory5Count;
+            break;
+        default:
+            break;
+        }
+        const int32_t target = globals::familiesMovedIn.get();
+        if (target == 0)
+            return 0;
+        int32_t percent = divide(static_cast<int32_t>(static_cast<uint32_t>(value) * 100u), target);
+        if (percent >= 101)
+            percent = 100;
+        return percent < 0 ? 0 : percent;
+    }
+
+    // Saving the city: the pending approval is applied (kept within -99..120), then every part writes its state and
+    // the save file is closed (its result returned).
+    int CityScene_SaveGame(GuestPtr<CityScene> city, GuestPtr<McManager> mc)
+    {
+        if (city->pendingApproval != 0)
+        {
+            city->approval += city->pendingApproval;
+            city->pendingApproval = 0;
+            if (city->approval < -99)
+                city->approval = -99;
+            else if (city->approval >= 121)
+                city->approval = 120;
+        }
+        Stage_SaveState(static_cast<int>(city.address), mc);
+        SaveFile_Write(mc, static_cast<int>(city.address + 0x84u), 0x34);
+        CityCamera_SaveState(city->cityCamera, mc);
+        Player_SaveState(city->player, mc);
+        Applicants_SaveState(city->applicants, mc);
+        Wants_SaveState(city->wants, mc);
+        Family_SaveState(mc);
+        Map_SaveState(city->map, mc);
+        Bag_SaveState(city->bag, mc);
+        Stamina_SaveState(city->stamina, mc);
+        Laptop_SaveState(city->laptop, mc);
+        Event_SaveState(city->events, mc);
+        return SaveFile_Close(mc);
+    }
+
+    void CityCamera_SaveState(GuestPtr<CityCamera> camera, GuestPtr<McManager> mc)
+    {
+        SaveFile_Write(mc, static_cast<int>(camera.address + 0x530u), 4);
+        SaveFile_Write(mc, static_cast<int>(camera.address + 0x130u), 0x1D4);
+    }
+
+    // Hand on to the talk; the callees' v0 is left as they leave it.
+    // The result is v0 as it came in.
+    int CityScene_TalkEndChoosing(GuestPtr<CityScene> city)
+    {
+        Talk_EndChoosing(city->talk);
+        return port::guestV0();
+    }
+
+    // The result is the slot found (what mm_Talk_SelectPerson leaves in v0).
+    int CityScene_TalkSelectPerson(GuestPtr<CityScene> city, int family, int member)
+    {
+        Talk_SelectPerson(city->talk, static_cast<uint32_t>(family), static_cast<uint32_t>(member));
+        return port::load<int32_t>(city->talk->view.address + 0xB8u);
+    }
+
+    PORT_FN(CityScene_AddApproval);
+    PORT_FN(CityScene_ApprovalTier);
+    PORT_FN(CityScene_PopulationRank);
+    PORT_FN(CityScene_ScoreA0Tier);
+    PORT_FN(CityScene_ScoreA8Tier);
+    PORT_FN(CityScene_MissionProgress);
+    PORT_FN(CityScene_SaveGame);
+    PORT_FN(CityCamera_SaveState);
+    PORT_FN(CityScene_TalkEndChoosing);
+    PORT_FN(CityScene_TalkSelectPerson);
+
+    // ---- batch 38
+
+    // The name of a post (job) at a building type, from POSTNAME.BIN (loaded at 0x1BDBC0): an offset table by
+    // post group (type byte +0x146), each group an offset table by post.
+    GuestPtr<char> BldgType_GetPostName(GuestPtr<BuildingType> btype, int post)
+    {
+        const uint32_t names = port::load<uint32_t>(0x001BDBC0u);
+        const uint32_t group = names + port::load<uint16_t>(names + 2u * btype->postGroup);
+        return GuestPtr<char>{names + port::load<uint16_t>(group + 2u * static_cast<uint32_t>(post))};
+    }
+
+    int BldgType_Slot30(GuestPtr<BuildingType>) { return 0; }
+
+    PORT_FN(BldgType_GetPostName);
+    PORT_FN(BldgType_Slot30);
+
+    // ---- the wants list (batch 38): up to 64 index entries over a data area of 256 words. A want takes four
+    // words; an event hold takes one, with the building type in the index entry's held field.
+
+    // Room for an entry of `words` words.
+    int Wants_HasRoom(GuestPtr<WantsWin> wants, int words)
+    {
+        if (wants->count >= 64)
+            return 0;
+        return 256 - wants->wordsUsed < words ? 0 : 1;
+    }
+
+    // Holds wants for a building type during an event: a one-word entry with the value.
+    int Wants_AddEventHold(GuestPtr<WantsWin> wants, uint16_t buildingType, int value)
+    {
+        if (wants->count >= 64 || 256 - wants->wordsUsed <= 0)
+            return 0;
+        wants->index[wants->count].offset = wants->wordsUsed;
+        wants->index[wants->count].held = buildingType;
+        wants->data[wants->wordsUsed] = static_cast<uint32_t>(value);
+        wants->count = static_cast<uint16_t>(wants->count + 1);
+        wants->wordsUsed = static_cast<uint16_t>(wants->wordsUsed + 1);
+        return 1;
+    }
+
+    // Removes the event holds of a building type with the value. As in the original, the entry that moves into a
+    // removed one's place is skipped, and the later entries' offsets go down by one (those at 0 stay).
+    void Wants_RemoveEventHold(GuestPtr<WantsWin> wants, uint16_t buildingType, int value)
+    {
+        for (int i = 0; i < wants->count; ++i)
+        {
+            if (wants->index[i].held != buildingType)
+                continue;
+            const uint32_t offset = wants->index[i].offset;
+            if (wants->data[offset] != static_cast<uint32_t>(value))
+                continue;
+            for (uint32_t j = offset; j + 1 < 256; ++j)
+                wants->data[j] = wants->data[j + 1];
+            wants->wordsUsed = static_cast<uint16_t>(wants->wordsUsed - 1);
+            for (int k = i; k + 1 < 64; ++k)
+            {
+                port::store<uint32_t>(wants.address + 4u + 4u * static_cast<uint32_t>(k),
+                                      port::load<uint32_t>(wants.address + 8u + 4u * static_cast<uint32_t>(k)));
+                if (wants->index[k].offset != 0)
+                    wants->index[k].offset = static_cast<uint16_t>(wants->index[k].offset - 1);
+            }
+            wants->count = static_cast<uint16_t>(wants->count - 1);
+        }
+    }
+
+    // The want of a person for the claim of their workplace. It counts as phoned about already when the claim
+    // meter is above the high threshold.
+    int Wants_AddForPerson(GuestPtr<WantsWin> wants, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, int claimSlot)
+    {
+        if (Wants_HasRoom(wants, 4) == 0)
+            return 0;
+        const GuestPtr<Want> want{wants.address + 0x104u + 4u * wants->wordsUsed};
+        want->person = person->index;
+        want->object = person->work;
+        want->family = person->family;
+        want->member = person->member;
+        want->claimSlot = static_cast<uint32_t>(claimSlot);
+        const GuestPtr<MapObject> obj = Map_GetRecord(city->map, want->object);
+        want->called = globals::claimThresholds()->high < obj->claimMeter ? 1 : 0;
+        wants->index[wants->count].offset = wants->wordsUsed;
+        wants->index[wants->count].held = 0;
+        wants->count = static_cast<uint16_t>(wants->count + 1);
+        wants->wordsUsed = static_cast<uint16_t>(wants->wordsUsed + 4);
+        return 1;
+    }
+
+    // The next want (from *iterator on, which it advances) that still holds or is pressing: its claim slot,
+    // building and person. Event holds are passed over. 0 when there is none left.
+    int Wants_Find(GuestPtr<WantsWin> wants, GuestPtr<CityScene> city, GuestPtr<uint32_t> claimSlot, GuestPtr<uint32_t> object,
+                   GuestPtr<uint32_t> person, GuestPtr<int32_t> iterator)
+    {
+        for (;;)
+        {
+            const int32_t i = *iterator;
+            if (!(i < wants->count))
+                return 0;
+            *iterator = i + 1;
+            if (wants->index[i].held != 0)
+                continue;
+            const GuestPtr<Want> want{wants.address + 0x104u + 4u * wants->index[i].offset};
+            const int state = Wants_CheckEntry(wants, city, GuestPtr<uint16_t>{want.address});
+            if (state == 0 || state == 3)
+            {
+                *claimSlot = want->claimSlot;
+                *object = want->object;
+                *person = want->person;
+                return 1;
+            }
+        }
+    }
+
+    void Wants_SaveState(GuestPtr<WantsWin> wants, GuestPtr<McManager> mc) { SaveFile_Write(mc, static_cast<int>(wants.address), 0x504); }
+
+    // The window model, and while shown (+0x518) its four text boxes.
+    void WantsWin_Draw(GuestPtr<WantsWin> wants)
+    {
+        A3DObject_Draw(wants->model);
+        if (wants->unk_518 == 0)
+            return;
+        for (int i = 0; i < 4; ++i)
+            if (const uint32_t text = static_cast<uint32_t>(wants->unk_508[i]))
+                TextBox_Draw(GuestPtr<TextBox>{text});
+    }
+
+    PORT_FN(Wants_HasRoom);
+    PORT_FN(Wants_AddEventHold);
+    PORT_FN(Wants_RemoveEventHold);
+    PORT_FN(Wants_AddForPerson);
+    PORT_FN(Wants_Find);
+    PORT_FN(Wants_SaveState);
+    PORT_FN(WantsWin_Draw);
+
+    // ---- more building types (batch 38)
+
+    // Keep-out parts face the map edge they stand on (x 2, z 2, x 125, else matrix 0). On low ground
+    // (tile height 0.8 or less) the entrance mesh; otherwise the other mesh, at the water level.
+    void BldgKeepOut_Draw(GuestPtr<BuildingType> btype, int, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
+                          ps2f x, ps2f y, ps2f z)
+    {
+        const int tileX = obj->tile % 128, tileZ = obj->tile / 128;
+        const uint32_t facing = tileX == 2 ? 1u : tileZ == 2 ? 2u : tileX == 125 ? 3u : 0u;
+        const GuestPtr<Vec4> matrix = layerMatrix(facing);
+        matrix[3].x = x;
+        matrix[3].y = y;
+        matrix[3].z = z;
+        if (Map_GetTileHeightWord(city->map, obj->tile) <= ps2f(0.8f))
+        {
+            Instance_DrawMesh(globals::propsModel.get(), matrix, GuestPtr<Vec4>{globals::kDefaultColour}, btype->entranceDrawMesh, flags);
+            return;
+        }
+        matrix[3].y = city->waterLevel;
+        Instance_DrawMesh(globals::propsModel.get(), matrix, GuestPtr<Vec4>{globals::kDefaultColour}, btype->firstDrawMesh, flags);
+    }
+
+    // Small goods: mesh look[0] (object +0x10), raised by the height scale above ground unless the type has
+    // flag 1. At night (before 4:00 or from 17:00) the colour's last word becomes the integer 12.
+    void BldgSmallGoods_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
+                             ps2f x, ps2f y, ps2f z)
+    {
+        if ((btype->flags & 1u) == 0 && !(y <= ps2f(0.0f)))
+            y = Map_HeightScale(y);
+        const GuestPtr<Vec4> matrix = placeLayer(layer, x, y, z);
+        port::GuestLocal<Vec4> colour;
+        *colour = *GuestPtr<Vec4>{globals::kDefaultColour};
+        const int time = Clock_AddWrap(static_cast<int>(btype.address), city->clock, obj->id);
+        if (time >= 0xEF10 || time < 0x3840)
+            port::store<int32_t>(colour.ptr().address + 0xCu, 12);
+        Instance_DrawMesh(globals::propsModel.get(), matrix, colour, port::load<uint8_t>(obj.address + 0x10u), flags);
+    }
+
+    // My Home: the common tick, and when it has nothing to report, the objects of type 2 along the side the home
+    // faces (the row or column next to it, one tile past each corner) get their byte +0x14 cleared.
+    int BldgMyHome_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
+    {
+        const int result = Bldg_Tick(btype, city, obj, 0);
+        const int facing = Map_GetTileKind(city->map, obj->tile);
+        if (result != 0)
+            return result;
+        const int tileX = obj->tile % 128, tileZ = obj->tile / 128, size = btype->size;
+        for (int i = -1; i < size + 1; ++i)
+        {
+            GuestPtr<MapObject> beside{0};
+            if (facing == 3)
+                beside = Map_GetTileObject(city->map, tileX - 1, tileZ + i);
+            else if (facing == 2)
+                beside = Map_GetTileObject(city->map, tileX + i, tileZ + size);
+            else if (facing == 1)
+                beside = Map_GetTileObject(city->map, tileX + size, tileZ + i);
+            else if (facing == 0)
+                beside = Map_GetTileObject(city->map, tileX + i, tileZ - 1);
+            if (beside->type == 2)
+                port::store<uint8_t>(beside.address + 0x14u, 0);
+        }
+        return result;
+    }
+
+    PORT_FN(BldgKeepOut_Draw);
+    PORT_FN(BldgSmallGoods_Draw);
+    PORT_FN(BldgMyHome_Tick);
+
+    // ---- batch 38
+
+    // The shade of a person drawn at a building: 2.5 - min(max(d, 0), 1.5) in every lane, d being the horizontal
+    // distance from the footprint's centre to `position`; the last word then becomes the integer 12. The centre
+    // (height 1.5, w 2.5) goes through the stack and VU0 is left as the original leaves it (vf4 to vf11, Q).
+    void BldgType_OccupantMatrix(GuestPtr<BuildingType> btype, GuestPtr<Vec4> colour, GuestPtr<Vec4> position, uint32_t tile)
+    {
+        using namespace vu0;
+        const ps2f size = fromInt(btype->size);
+        const int tileX = static_cast<int>(tile & 0xFFFFu) % 128, tileZ = static_cast<int>(tile & 0xFFFFu) / 128;
+        port::GuestLocal<Vec4> centre;
+        centre->x = (fromInt(tileX) - ps2f(64.0f)) + size / ps2f(2.0f);
+        centre->y = 1.5f;
+        centre->z = (fromInt(128 - tileZ) - ps2f(64.0f)) - size / ps2f(2.0f);
+        centre->w = 2.5f;
+        vf(4) = load(centre);
+        vf(5) = load(position);
+        set(vf(6), sub(vf(5), vf(4)), XYZW);
+        set(vf(7), mul(vf(6), vf(6)), X | Z);
+        set(vf(8), add(vf(7), lane(vf(7), 2)), X);
+        q() = sqrtQ(x(vf(8)));
+        set(vf(10), add(vf(0), lane(vf(4), 1)), XYZW);
+        set(vf(11), add(vf(0), lane(vf(0), 3)), XYZW);
+        set(vf(9), add(vf(0), _mm_set1_ps(q())), XYZW);
+        vf(9) = _mm_max_ps(vf(9), lane(vf(0), 0)); // vmaxx and vminiy, as the runtime evaluates them
+        vf(9) = _mm_min_ps(vf(9), lane(vf(4), 1));
+        set(vf(9), sub(vf(10), vf(9)), XYZW);
+        set(vf(9), add(vf(9), lane(vf(0), 3)), XYZW);
+        store(colour, vf(9));
+        port::store<int32_t>(colour.address + 0xCu, 12);
+    }
+
+    PORT_FN(BldgType_OccupantMatrix);
 }

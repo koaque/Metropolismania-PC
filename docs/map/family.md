@@ -24,7 +24,7 @@ Families: the residents who move into the city.
 
 ## Functions
 
-36 functions (ported 1, typed 23, verified 12). Blocks: 5 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+36 functions (ported 1, typed 8, verified 27). Blocks: 5 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -49,7 +49,7 @@ Families: the residents who move into the city.
 | `0x0013CA70` | `int mm_Family_InCity(uint32_t family)` | 80 | no | bitset A: the family lives in the city |
 | `0x0013CAC0` | `int mm_Family_GetFriendshipBand(int family, int member)` | 124 | no | band 0..4 of member (a0, a1)'s meter (0, below 24, below 48, below 100, higher) |
 | `0x0013CB40` | `int mm_Family_AddFriendship(int family, int member, int32_t *approval, int points)` | 648 | no | adds a3 points to member (a0, a1)'s meter (clamped 0..120); rising may set the friend bit (chance from *a2, the approval) |
-| `0x0013CDF0` | `int mm_Family_AddFriendshipScaled(int family, int member, uint32_t *a2, int points, int sign)` | 8 | no | mm_Family_AddFriendship with a3 * t0 (t0 = +1 gain, -1 loss) |
+| `0x0013CDF0` | `int mm_Family_AddFriendshipScaled(int family, int member, int32_t *approval, int points, int sign)` | 8 | no | mm_Family_AddFriendship with a3 * t0 (t0 = +1 gain, -1 loss) |
 | `0x0013CE00` | `uint8_t mm_Family_GetFriendship(int family, int member)` | 60 | no | member (a0, a1)'s meter value, capped at 120 |
 | `0x0013CE40` | `void mm_Family_MoveAway(uint32_t family)` | 164 | no | family a0 leaves: bitset A -> C, families in the city - 1, families left + 1 |
 | `0x0013CEF0` | `void mm_Family_ClearMemberFlag(int family, int member)` | 44 | no | clears bit 7 of member byte (a0, a1) |

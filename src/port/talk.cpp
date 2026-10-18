@@ -96,20 +96,24 @@ namespace mm
         int farBuilding(GuestPtr<TalkView> view) { return port::load<int32_t>(view.address + 0x280u); }
         GuestPtr<Camera> cityCamera(GuestPtr<TalkView> view) { return GuestPtr<Camera>{view->city->cityCamera.address}; }
 
-        void cameraOnBuilding(GuestPtr<TalkView> view)
+        void cameraOnObject(GuestPtr<TalkView> view, int object)
         {
             port::GuestLocal<Vec4> target; // declared first: the same stack slots as the original's frame
             port::GuestLocal<Vec4> eye;
-            TalkView_BuildingCamera(view, farBuilding(view), eye, target);
+            TalkView_BuildingCamera(view, object, eye, target);
             Camera_SetEyeTarget(cityCamera(view), eye, target);
             Camera_UpdateMatrices(cityCamera(view));
         }
 
-        void cameraBack(GuestPtr<TalkView> view)
+        void cameraOnBuilding(GuestPtr<TalkView> view) { cameraOnObject(view, farBuilding(view)); }
+
+        void cameraAt(GuestPtr<TalkView> view, GuestPtr<Vec4> eye, GuestPtr<Vec4> target)
         {
-            Camera_SetEyeTarget(cityCamera(view), farReturnEye(view), farReturnTarget(view));
+            Camera_SetEyeTarget(cityCamera(view), eye, target);
             Camera_UpdateMatrices(cityCamera(view));
         }
+
+        void cameraBack(GuestPtr<TalkView> view) { cameraAt(view, farReturnEye(view), farReturnTarget(view)); }
     }
 
     // Widget states of the far view: 1 opening (fade out), 2 opened (camera moves to the building, fade in),
@@ -398,6 +402,403 @@ namespace mm
                 MapObj_AddPerson(view->city->map, obj->id, list[i]);
     }
 
+    // ---- the other talk views (batch 38)
+
+    // Occupant, person and phone views keep a camera of their own after the base view, eye at +0x270 and target
+    // at +0x280: the far views return to it, the near views look through it. Person views draw the person
+    // (+0x260) turned by the angle at +0x290.
+    namespace
+    {
+        GuestPtr<Vec4> ownEye(GuestPtr<TalkView> view) { return GuestPtr<Vec4>{view.address + 0x270u}; }
+        GuestPtr<Vec4> ownTarget(GuestPtr<TalkView> view) { return GuestPtr<Vec4>{view.address + 0x280u}; }
+        float personAngle(GuestPtr<TalkView> view) { return port::load<float>(view.address + 0x290u); }
+
+        bool fadeDone(GuestPtr<TalkView> view) { return CityScene_GetFade(view->city) == 0; }
+
+        // Starts the next fade (speed 8) and moves on to `state`.
+        void fadeTo(GuestPtr<TalkView> view, int state)
+        {
+            CityScene_StartFade(view->city, 8);
+            view->base.state = state;
+        }
+
+        // The view is done: idle, and HUD element 1 shown again.
+        void closed(GuestPtr<TalkView> view)
+        {
+            view->base.state = 0;
+            view->city->hudVisible[1] = 1;
+        }
+
+        void fadeOpen(GuestPtr<TalkView> view)
+        {
+            CityScene_StartFade(view->city, 8);
+            Widget_Open(GuestPtr<Widget>::of(view->base));
+        }
+
+        void fadeClose(GuestPtr<TalkView> view)
+        {
+            CityScene_StartFade(view->city, 8);
+            Widget_Close(GuestPtr<Widget>::of(view->base));
+        }
+
+        // The next person of a talk at a building, in list order: outside or inside it, of a class without
+        // flag 1. 0 at the end of the list.
+        GuestPtr<MapPerson> nextTalkPerson(GuestPtr<TalkView> view, GuestPtr<uint16_t> cursor)
+        {
+            for (;;)
+            {
+                const GuestPtr<MapPerson> person = People_Next(view->city->map, cursor);
+                if (!person)
+                    return person;
+                const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)};
+                if ((cls->flags & 1u) != 0)
+                    continue;
+                if (person->inside != kNoObject && person->inside != view->building)
+                    continue;
+                return person;
+            }
+        }
+    }
+
+    // The person under the cursor in a talk at a building, 0x3F80 when there is none.
+    uint16_t TalkView_CursorPerson(GuestPtr<TalkView> view)
+    {
+        port::GuestLocal<uint16_t> cursor;
+        *cursor = Map_GetRecord(view->city->map, view->building)->firstPerson;
+        for (int slot = 0;; ++slot)
+        {
+            const GuestPtr<MapPerson> person = nextTalkPerson(view, cursor);
+            if (!person)
+                return kNoObject;
+            if (slot == view->cursorSlot)
+                return person->index;
+        }
+    }
+
+    // The slot of a family member in the talk: at a building their place among its people (0 when not
+    // there), in a talk with a family the member number itself. 0 while nobody is in the talk.
+    uint32_t TalkView_FindPersonSlot(GuestPtr<TalkView> view, uint32_t family, uint32_t member)
+    {
+        if (view->peopleCount == 0)
+            return 0;
+        if (view->building == kNoObject)
+            return member;
+        port::GuestLocal<uint16_t> cursor;
+        *cursor = Map_GetRecord(view->city->map, view->building)->firstPerson;
+        for (uint32_t slot = 0;; ++slot)
+        {
+            const GuestPtr<MapPerson> person = nextTalkPerson(view, cursor);
+            if (!person)
+                return 0;
+            if (person->family == family && person->member == member)
+                return slot;
+        }
+    }
+
+    // The choice made, if any: none while the cursor moves, while it is off a forced choice or with nobody in
+    // the talk. Otherwise the person (in a talk with a family, the cursor slot) and the column, and the cursor
+    // slot becomes the chosen one.
+    int TalkView_GetChoice(GuestPtr<TalkView> view, GuestPtr<uint32_t> person, GuestPtr<uint32_t> slot)
+    {
+        if (view->scrollMode != 0)
+            return 0;
+        if (view->forcedChoice >= 0 && view->cursorSlot != view->forcedChoice)
+            return 0;
+        if (view->peopleCount == 0)
+            return 0;
+        if (view->building == kNoObject)
+            *person = static_cast<uint32_t>(view->cursorSlot);
+        else
+            *person = TalkView_CursorPerson(view);
+        *slot = static_cast<uint32_t>(view->choiceSlot);
+        view->chosenSlot = view->cursorSlot;
+        return 1;
+    }
+
+    // The chosen person (slot 0 when none), when idle, plays animation 2 or 3 by turns from its start.
+    void TalkView_ToggleAnim(GuestPtr<TalkView> view)
+    {
+        const int slot = view->chosenSlot == -1 ? 0 : view->chosenSlot;
+        if (view->anim[slot] != 7)
+            return;
+        view->anim[slot] = view->animFlip[slot] == 0 ? 2 : 3;
+        view->animTime[slot] = 0.0f;
+        view->animFlip[slot] = view->animFlip[slot] ^ 1;
+    }
+
+    // The near views look through their camera and clear the city's word +0x28 every frame; the near view of a
+    // building also takes the cursor input.
+    void TalkBldgNear_Active(GuestPtr<TalkView> view)
+    {
+        cameraOnObject(view, view->targetObject);
+        view->city->unk_28 = 0;
+        TalkView_HandleInput(view);
+    }
+
+    void TalkOccupantNear_Active(GuestPtr<TalkView> view)
+    {
+        cameraOnObject(view, view->targetObject);
+        view->city->unk_28 = 0;
+    }
+
+    void TalkPersonNear_Active(GuestPtr<TalkView> view)
+    {
+        cameraAt(view, ownEye(view), ownTarget(view));
+        view->city->unk_28 = 0;
+    }
+
+    void TalkPersonNear_Draw(GuestPtr<TalkView> view, int pass)
+    {
+        if (pass == 1)
+            TalkView_DrawPersonTurned(view, view->targetObject, personAngle(view));
+    }
+
+    // The near view of a building's occupant (vtable 0x1BD630) sets its camera on the building once, as for a
+    // person there.
+    GuestPtr<TalkView> TalkOccupantNear_ctor(GuestPtr<TalkView> view, GuestPtr<CityScene> city, int object, int person)
+    {
+        TalkView_ctor(view, city);
+        view->base.vtable = GuestPtr<void>{0x001BD630u};
+        view->targetObject = object;
+        view->targetPerson = person;
+        TalkView_PersonCamera(view, object, ownTarget(view), ownEye(view));
+        return view;
+    }
+
+    // The far view of a building's occupant (vtable 0x1BD5E0) keeps the city camera to return to and looks at
+    // the building like the far view of a building, without cursor input.
+    GuestPtr<TalkView> TalkOccupantFar_ctor(GuestPtr<TalkView> view, GuestPtr<CityScene> city, int object, int person)
+    {
+        TalkView_ctor(view, city);
+        view->base.vtable = GuestPtr<void>{0x001BD5E0u};
+        view->targetObject = object;
+        view->targetPerson = person;
+        const uint32_t camera = city->cityCamera.address;
+        *ownEye(view) = *GuestPtr<Vec4>{camera + 0x130u};
+        *ownTarget(view) = *GuestPtr<Vec4>{camera + 0x140u};
+        return view;
+    }
+
+    void TalkOccupantFar_Open(GuestPtr<TalkView> view) { fadeOpen(view); }
+    void TalkOccupantFar_Close(GuestPtr<TalkView> view) { fadeClose(view); }
+
+    void TalkOccupantFar_Opening(GuestPtr<TalkView> view)
+    {
+        if (fadeDone(view))
+            fadeTo(view, 2);
+        cameraAt(view, ownEye(view), ownTarget(view));
+    }
+
+    void TalkOccupantFar_Opened(GuestPtr<TalkView> view)
+    {
+        if (fadeDone(view))
+            view->base.state = 3;
+        cameraOnObject(view, view->targetObject);
+    }
+
+    void TalkOccupantFar_Active(GuestPtr<TalkView> view) { cameraOnObject(view, view->targetObject); }
+
+    void TalkOccupantFar_Closing(GuestPtr<TalkView> view)
+    {
+        if (fadeDone(view))
+            fadeTo(view, 5);
+        cameraOnObject(view, view->targetObject);
+    }
+
+    void TalkOccupantFar_Closed(GuestPtr<TalkView> view)
+    {
+        if (fadeDone(view))
+            closed(view);
+        cameraAt(view, ownEye(view), ownTarget(view));
+    }
+
+    // The far view of a person changes the camera only under the fades: to its own camera as it opens, back to
+    // the city camera it opened from as it closes. The person is drawn while it is open (states 2 to 4).
+    void TalkPersonFar_Open(GuestPtr<TalkView> view) { fadeOpen(view); }
+    void TalkPersonFar_Close(GuestPtr<TalkView> view) { fadeClose(view); }
+
+    void TalkPersonFar_Opening(GuestPtr<TalkView> view)
+    {
+        if (!fadeDone(view))
+            return;
+        cameraAt(view, ownEye(view), ownTarget(view));
+        fadeTo(view, 2);
+    }
+
+    void TalkPersonFar_Opened(GuestPtr<TalkView> view)
+    {
+        if (fadeDone(view))
+            view->base.state = 3;
+    }
+
+    void TalkPersonFar_Active(GuestPtr<TalkView>) {}
+
+    void TalkPersonFar_Closing(GuestPtr<TalkView> view)
+    {
+        if (!fadeDone(view))
+            return;
+        cameraAt(view, GuestPtr<Vec4>{view.address + 0x10u}, GuestPtr<Vec4>{view.address + 0x20u});
+        fadeTo(view, 5);
+    }
+
+    void TalkPersonFar_Closed(GuestPtr<TalkView> view)
+    {
+        if (fadeDone(view))
+            closed(view);
+    }
+
+    void TalkPersonFar_Draw(GuestPtr<TalkView> view, int pass)
+    {
+        if (pass == 1 && view->base.state >= 2 && view->base.state < 5)
+            TalkView_DrawPersonTurned(view, view->targetObject, personAngle(view));
+    }
+
+    // The phone views (a whole family, or one member: vtable 0x1BD4F0, the family and member in the object and
+    // person slots) only fade in and out; picking in the family one takes the cursor input.
+    void TalkPhoneFamily_Open(GuestPtr<TalkView> view) { fadeOpen(view); }
+    void TalkPhoneFamily_Close(GuestPtr<TalkView> view) { fadeClose(view); }
+
+    void TalkPhoneFamily_Opening(GuestPtr<TalkView> view)
+    {
+        if (fadeDone(view))
+            fadeTo(view, 2);
+    }
+
+    void TalkPhoneFamily_Opened(GuestPtr<TalkView> view)
+    {
+        if (fadeDone(view))
+            view->base.state = 3;
+    }
+
+    void TalkPhoneFamily_Active(GuestPtr<TalkView> view) { TalkView_HandleInput(view); }
+
+    void TalkPhoneFamily_Closing(GuestPtr<TalkView> view)
+    {
+        if (fadeDone(view))
+            fadeTo(view, 5);
+    }
+
+    void TalkPhoneFamily_Closed(GuestPtr<TalkView> view)
+    {
+        if (fadeDone(view))
+            closed(view);
+    }
+
+    GuestPtr<TalkView> TalkPhoneMember_ctor(GuestPtr<TalkView> view, GuestPtr<CityScene> city, int family, int member)
+    {
+        TalkView_ctor(view, city);
+        view->base.vtable = GuestPtr<void>{0x001BD4F0u};
+        view->targetObject = family;
+        view->targetPerson = member;
+        return view;
+    }
+
+    void TalkPhoneMember_Open(GuestPtr<TalkView> view) { fadeOpen(view); }
+    void TalkPhoneMember_Close(GuestPtr<TalkView> view) { fadeClose(view); }
+
+    void TalkPhoneMember_Opening(GuestPtr<TalkView> view)
+    {
+        if (fadeDone(view))
+            fadeTo(view, 2);
+    }
+
+    void TalkPhoneMember_Opened(GuestPtr<TalkView> view)
+    {
+        if (fadeDone(view))
+            view->base.state = 3;
+    }
+
+    void TalkPhoneMember_Active(GuestPtr<TalkView>) {}
+
+    void TalkPhoneMember_Closing(GuestPtr<TalkView> view)
+    {
+        if (fadeDone(view))
+            fadeTo(view, 5);
+    }
+
+    void TalkPhoneMember_Closed(GuestPtr<TalkView> view)
+    {
+        if (fadeDone(view))
+            closed(view);
+    }
+
+    // The money panel's amount counts 100 a frame towards the real one, never past it.
+    void TalkMoney_Active(GuestPtr<TalkMoney> money)
+    {
+        if (money->amount < money->shown)
+        {
+            money->shown = money->shown - 100;
+            if (money->shown < money->amount)
+                money->shown = money->amount;
+        }
+        else if (money->shown < money->amount)
+        {
+            money->shown = money->shown + 100;
+            if (money->amount < money->shown)
+                money->shown = money->amount;
+        }
+    }
+
+    // Pass 2: over a cleared depth buffer, node 7 of the talk building model (nodes of 0xD0 bytes; its matrix
+    // set to the identity moved 4.4 back) and the shown amount as money, 15 wide.
+    void TalkMoney_Draw(GuestPtr<TalkMoney> money, int pass)
+    {
+        if (pass != 2)
+            return;
+        port::GuestFrame<0x40> frame;
+        const GuestPtr<char> text{frame.ptr().address + 0x30u};
+        DmaList_QueueClearZ();
+        const GuestPtr<Vec4> matrix{port::load<uint32_t>(money->model->model.address + 8u) + 0x5B0u};
+        Mat4_Copy(matrix, GuestPtr<Vec4>{globals::kIdentityMatrix});
+        matrix[3].z = -4.4f;
+        A3DObject_DrawNode(money->model, 7);
+        Text_FormatMoney(text, money->shown, 15, 0);
+        TextBox_SetText(money->text, text, 1);
+        TextBox_Draw(money->text);
+    }
+
+    PORT_FN(TalkView_CursorPerson);
+    PORT_FN(TalkView_FindPersonSlot);
+    PORT_FN(TalkView_GetChoice);
+    PORT_FN(TalkView_ToggleAnim);
+    PORT_FN(TalkBldgNear_Active);
+    PORT_FN(TalkOccupantNear_Active);
+    PORT_FN(TalkPersonNear_Active);
+    PORT_FN(TalkPersonNear_Draw);
+    PORT_FN(TalkOccupantNear_ctor);
+    PORT_FN(TalkOccupantFar_ctor);
+    PORT_FN(TalkOccupantFar_Open);
+    PORT_FN(TalkOccupantFar_Close);
+    PORT_FN(TalkOccupantFar_Opening);
+    PORT_FN(TalkOccupantFar_Opened);
+    PORT_FN(TalkOccupantFar_Active);
+    PORT_FN(TalkOccupantFar_Closing);
+    PORT_FN(TalkOccupantFar_Closed);
+    PORT_FN(TalkPersonFar_Open);
+    PORT_FN(TalkPersonFar_Close);
+    PORT_FN(TalkPersonFar_Opening);
+    PORT_FN(TalkPersonFar_Opened);
+    PORT_FN(TalkPersonFar_Active);
+    PORT_FN(TalkPersonFar_Closing);
+    PORT_FN(TalkPersonFar_Closed);
+    PORT_FN(TalkPersonFar_Draw);
+    PORT_FN(TalkPhoneFamily_Open);
+    PORT_FN(TalkPhoneFamily_Close);
+    PORT_FN(TalkPhoneFamily_Opening);
+    PORT_FN(TalkPhoneFamily_Opened);
+    PORT_FN(TalkPhoneFamily_Active);
+    PORT_FN(TalkPhoneFamily_Closing);
+    PORT_FN(TalkPhoneFamily_Closed);
+    PORT_FN(TalkPhoneMember_ctor);
+    PORT_FN(TalkPhoneMember_Open);
+    PORT_FN(TalkPhoneMember_Close);
+    PORT_FN(TalkPhoneMember_Opening);
+    PORT_FN(TalkPhoneMember_Opened);
+    PORT_FN(TalkPhoneMember_Active);
+    PORT_FN(TalkPhoneMember_Closing);
+    PORT_FN(TalkPhoneMember_Closed);
+    PORT_FN(TalkMoney_Active);
+    PORT_FN(TalkMoney_Draw);
     PORT_FN(Talk_LookupPose);
     PORT_FN(TalkView_CollectOccupants);
     PORT_FN(TalkView_BuildingCamera);

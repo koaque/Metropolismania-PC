@@ -77,4 +77,15 @@ namespace mm
     PORT_FN(Pad_ReleaseFocus);
     PORT_FN(Pad_GetRepeat);
     PORT_FN(Pad_GetData);
+
+    // Takes the pad focus for `owner` (buttons in `mask` hidden from others) unless someone holds it.
+    void Pad_TakeFocus(int owner, int mask)
+    {
+        if (globals::padFocusOwner.get() != 0)
+            return;
+        globals::padFocusOwner.set(owner);
+        globals::padFocusMask.set(static_cast<uint32_t>(mask));
+    }
+
+    PORT_FN(Pad_TakeFocus);
 }

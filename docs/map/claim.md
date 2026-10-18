@@ -9,7 +9,7 @@ returns a claim's text line.
 
 ## Functions
 
-6 functions (typed 5, verified 1). Blocks: 1 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+6 functions (typed 1, verified 5). Blocks: 1 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|

@@ -870,7 +870,7 @@ struct BuildingType {
     uint8_t unk_143;
     uint8_t rule;              /* +0x144 */
     uint8_t category;          /* +0x145 STRTYPE.BIN category */
-    uint8_t unk_146;
+    uint8_t postGroup;         /* +0x146 group in POSTNAME.BIN (mm_BldgType_GetPostName) */
     uint8_t claimB;            /* +0x147 claim section B index */
     uint8_t claimC;            /* +0x148 claim section C index */
     uint8_t unk_149[5];
@@ -1204,8 +1204,15 @@ struct MenuWin {
 };
 /* Talk person card (0x38 bytes), a widget. */
 struct TalkCard { Widget base; uint8_t data[0x2C]; };
-/* Talk money panel (0x1C bytes), a widget. */
-struct TalkMoney { Widget base; uint8_t data[0x10]; };
+/* Talk money panel (0x1C bytes, vtable 0x1BD7C0), a widget: the shown amount counts towards the real one
+   by 100 a frame (mm_TalkMoney_Active). */
+struct TalkMoney {
+    Widget base;
+    int32_t shown;             /* +0x0C */
+    int32_t amount;            /* +0x10 */
+    GuestPtr<A3DObject> model;          /* +0x14 the talk building model (0x1F3B2C) */
+    GuestPtr<TextBox> text;             /* +0x18 */
+};
 /* Talk conversation (0x508 bytes), a message window. */
 struct TalkConv {
     MsgWin base;
@@ -1705,6 +1712,7 @@ static_assert(offsetof(BuildingType, capacity) == 0x140, "BuildingType.capacity"
 static_assert(offsetof(BuildingType, size) == 0x142, "BuildingType.size");
 static_assert(offsetof(BuildingType, rule) == 0x144, "BuildingType.rule");
 static_assert(offsetof(BuildingType, category) == 0x145, "BuildingType.category");
+static_assert(offsetof(BuildingType, postGroup) == 0x146, "BuildingType.postGroup");
 static_assert(offsetof(BuildingType, claimB) == 0x147, "BuildingType.claimB");
 static_assert(offsetof(BuildingType, claimC) == 0x148, "BuildingType.claimC");
 static_assert(offsetof(BuildingType, ambientSound) == 0x14E, "BuildingType.ambientSound");
@@ -1909,7 +1917,10 @@ static_assert(offsetof(MenuWin, size) == 0x14, "MenuWin.size");
 static_assert(offsetof(MenuWin, unk_18) == 0x18, "MenuWin.unk_18");
 static_assert(offsetof(MenuWin, unk_1C) == 0x1C, "MenuWin.unk_1C");
 static_assert(sizeof(TalkCard) == 0x38, "TalkCard size");
-static_assert(sizeof(TalkMoney) == 0x1C, "TalkMoney size");
+static_assert(offsetof(TalkMoney, shown) == 0x0C, "TalkMoney.shown");
+static_assert(offsetof(TalkMoney, amount) == 0x10, "TalkMoney.amount");
+static_assert(offsetof(TalkMoney, model) == 0x14, "TalkMoney.model");
+static_assert(offsetof(TalkMoney, text) == 0x18, "TalkMoney.text");
 static_assert(sizeof(TalkConv) == 0x508, "TalkConv size");
 static_assert(offsetof(TalkConv, city) == 0x2CC, "TalkConv.city");
 static_assert(offsetof(TalkConv, menu) == 0x2D4, "TalkConv.menu");

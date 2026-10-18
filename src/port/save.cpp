@@ -497,4 +497,142 @@ namespace mm
     PORT_FN(TileLists_LoadState);
     PORT_FN(Family_LoadState);
     PORT_FN(Map_LoadState);
+
+    // ---- save file requests (batch 38)
+
+    // Writes a block to the open save file (a queued request without a result word).
+    int SaveFile_Write(GuestPtr<McManager> mc, int buffer, int size)
+    {
+        return McQueue_Write(static_cast<int>(mc->queue.address), mc->fd, buffer, size, GuestPtr<int32_t>{0});
+    }
+
+    int SaveFile_PollDone(GuestPtr<McManager> mc) { return McQueue_IsDone(static_cast<int>(mc->queue.address), mc->request); }
+
+    void SaveFile_ResetState(GuestPtr<McManager> mc) { mc->state = 0; }
+
+    // Deletes icon.sys from the directory; both card types are to be checked again (-1).
+    void SaveFile_DeleteIconSys(GuestPtr<McManager> mc, int dir)
+    {
+        mc->request = McQueue_Delete(static_cast<int>(mc->queue.address), dir, static_cast<int>(globals::kIconSysName));
+        port::store<int32_t>(globals::kCardTypeChecked, -1);
+        port::store<int32_t>(globals::kCardTypeChecked + 4u, -1);
+    }
+
+    // Formatting in two steps: state 0 queues it (returning 0), state 1 polls: 0 while busy, then 1 for success or 2
+    // when the result word (0x1BDBA8) is set.
+    int SaveFile_Format(GuestPtr<McManager> mc, int port)
+    {
+        if (mc->state == 0)
+        {
+            mc->request = McQueue_Format(static_cast<int>(mc->queue.address), port, GuestPtr<int32_t>{0x001BDBA8u});
+            ++mc->state;
+            return 0;
+        }
+        if (mc->state != 1 || McQueue_IsDone(static_cast<int>(mc->queue.address), mc->request) == 0)
+            return 0;
+        mc->state = 0;
+        return port::load<int32_t>(0x001BDBA8u) != 0 ? 2 : 1;
+    }
+
+    PORT_FN(SaveFile_Write);
+    PORT_FN(SaveFile_PollDone);
+    PORT_FN(SaveFile_ResetState);
+    PORT_FN(SaveFile_DeleteIconSys);
+    PORT_FN(SaveFile_Format);
+
+    // ---- member status, memory card slots (batch 38)
+
+    namespace
+    {
+        uint8_t statusHigh(uint8_t status) { return static_cast<uint8_t>((status >> 4) & 0xFu); }
+    }
+
+    uint8_t MemberStatus_GetLow2(int family, int member) { return *MemberStatus_Lookup(family, member) & 3u; }
+    uint32_t MemberStatus_GetMid2(int family, int member) { return (*MemberStatus_Lookup(family, member) >> 2) & 3u; }
+    int MemberStatus_IsLevelAbove13(int family, int member) { return statusHigh(*MemberStatus_Lookup(family, member)) >= 14 ? 1 : 0; }
+
+    // Advances the low fields (each up to 2; the middle pair only once the level is 2 or more), then the level
+    // (high nibble) starts over.
+    void MemberStatus_Advance(int family, int member)
+    {
+        const GuestPtr<uint8_t> status = MemberStatus_Lookup(family, member);
+        if (statusHigh(*status) >= 2)
+        {
+            const uint32_t mid = (*status >> 2) & 3u;
+            if (mid < 2)
+                *status = static_cast<uint8_t>((*status & 0xF3u) | (((mid + 1u) & 3u) << 2));
+        }
+        const uint32_t low = *status & 3u;
+        if (low < 2)
+            *status = static_cast<uint8_t>((*status & 0xFCu) | ((low + 1u) & 3u));
+        *status = static_cast<uint8_t>(*status & 0x0Fu);
+    }
+
+    // From level 12 the member gains friendship points (mm_Family_AddFriendship); below it the result is the status
+    // byte address (what the original leaves in v0).
+    int MemberStatus_OnLevel12(int family, int member, int points, int approval)
+    {
+        const GuestPtr<uint8_t> status = MemberStatus_Lookup(family, member);
+        if (statusHigh(*status) < 12)
+            return static_cast<int>(status.address);
+        return Family_AddFriendship(family, member, GuestPtr<int32_t>{static_cast<uint32_t>(approval)}, points);
+    }
+
+    // Counts the member bytes (all 60000, friend flag included) by band: 2 to 24, 25 to 48, 49 to 100, 101 and up.
+    void MemberMeters_Reset(GuestPtr<int32_t> meters)
+    {
+        for (int i = 0; i < 4; ++i)
+            meters[i] = 0;
+        for (uint32_t i = 0; i < 60000u; ++i)
+        {
+            const uint8_t value = port::load<uint8_t>(globals::kMemberBytes + i);
+            if (value >= 101)
+                ++meters[3];
+            else if (value >= 49)
+                ++meters[2];
+            else if (value >= 25)
+                ++meters[1];
+            else if (value >= 2)
+                ++meters[0];
+        }
+    }
+
+    // The save slot number `index` among those with entries and a title (16 slots, 8 per card): its folder name,
+    // and its card.
+    int McManager_FindSlotB(GuestPtr<McManager>, int index, GuestPtr<int32_t> card)
+    {
+        int found = 0;
+        for (int i = 0; i < 16; ++i)
+        {
+            if (port::load<int32_t>(globals::kSaveSlotSizes + 4u * static_cast<uint32_t>(i)) <= 0)
+                continue;
+            if (port::load<int8_t>(globals::kSaveSlotNames + 0x44u * static_cast<uint32_t>(i)) == 0)
+                continue;
+            if (found != index)
+            {
+                ++found;
+                continue;
+            }
+            *card = i / 8;
+            return static_cast<int>(globals::kSaveSlotFolders + 0x20u * static_cast<uint32_t>(i));
+        }
+        return 0;
+    }
+
+    // A card is usable when it is a PS2 memory card (type 2) and its word at kCardFormatted is 0.
+    int McManager_IsCardUsable(GuestPtr<McManager>, int card)
+    {
+        if (port::load<int32_t>(globals::kCardType + 4u * static_cast<uint32_t>(card)) != 2)
+            return 0;
+        return port::load<int32_t>(globals::kCardFormatted + 4u * static_cast<uint32_t>(card)) != 0 ? 0 : 1;
+    }
+
+    PORT_FN(MemberStatus_GetLow2);
+    PORT_FN(MemberStatus_GetMid2);
+    PORT_FN(MemberStatus_IsLevelAbove13);
+    PORT_FN(MemberStatus_Advance);
+    PORT_FN(MemberStatus_OnLevel12);
+    PORT_FN(MemberMeters_Reset);
+    PORT_FN(McManager_FindSlotB);
+    PORT_FN(McManager_IsCardUsable);
 }

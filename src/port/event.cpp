@@ -813,7 +813,7 @@ namespace mm
     {
         if (port::load<uint32_t>(data.address + 0x1Cu) == 0)
             return;
-        PhoneCall_Remove(city->phoneCalls, static_cast<int>(city.address), data->actor.family, data->actor.member);
+        PhoneCall_Remove(city->phoneCalls, city, data->actor.family, data->actor.member);
     }
 
     // ---- Slot10: texts for the talk
@@ -1023,4 +1023,332 @@ namespace mm
     PORT_FN(EvMissingChildren_Slot14);
     PORT_FN(PartyPopup_Draw);
     PORT_FN(PartyPopup_Update);
+
+    // ---- building finders, more talk values and phases (batch 38)
+
+    namespace
+    {
+        // Whether the building's footprint overlaps the rectangle (x0, z0, x1, z1; the ends excluded).
+        bool overlapsRect(GuestPtr<MapObject> building, GuestPtr<int32_t> rect)
+        {
+            const int size = typeOf(building)->size;
+            const int x = building->tile & 0x7F, z = building->tile >> 7;
+            return rect[0] < x + size && x < rect[2] && rect[1] < z + size && z < rect[3];
+        }
+
+        // A building that can take part: its family lives in the city and it has no claim met and no maxed meter.
+        bool available(GuestPtr<MapObject> building) { return Family_InCity(building->family) != 0 && (building->flags & 0x240u) == 0; }
+    }
+
+    // The first available building of `type` in tile list `list` that overlaps the rectangle.
+    GuestPtr<MapObject> EvAlien_FindBuilding(GuestPtr<CityScene> city, int list, uint32_t type, GuestPtr<int32_t> rect)
+    {
+        port::GuestFrame<0x80> frame;
+        const GuestPtr<uint32_t> count{frame.ptr().address + 0x7Cu};
+        const uint32_t items = Map_GetTileList(city->map, list, count).address;
+        const uint32_t end = items + 2u * *count;
+        for (uint32_t item = items; item < end; item += 2u)
+        {
+            const GuestPtr<MapObject> building = Map_GetRecord(city->map, port::load<uint16_t>(item));
+            if (building->type == type && available(building) && overlapsRect(building, rect))
+                return building;
+        }
+        return GuestPtr<MapObject>{0};
+    }
+
+    // The first available building of `category` in any of the 80 tile lists that overlaps the rectangle.
+    GuestPtr<MapObject> EvThief_FindBuilding(GuestPtr<CityScene> city, uint32_t category, GuestPtr<int32_t> rect)
+    {
+        port::GuestFrame<0x90> frame;
+        const GuestPtr<uint32_t> count{frame.ptr().address + 0x8Cu};
+        for (int list = 0; list < 80; ++list)
+        {
+            const uint32_t items = Map_GetTileList(city->map, list, count).address;
+            const uint32_t end = items + 2u * *count;
+            for (uint32_t item = items; item < end; item += 2u)
+            {
+                const GuestPtr<MapObject> building = Map_GetRecord(city->map, port::load<uint16_t>(item));
+                if (typeOf(building)->category == category && available(building) && overlapsRect(building, rect))
+                    return building;
+            }
+        }
+        return GuestPtr<MapObject>{0};
+    }
+
+    // The building the alien lands on at (x, z): of the (tile list, type) pairs at 0x1B3760 (ended by list 0), the
+    // first building whose family lives in the city, without a maxed meter, whose footprint widened by 1 holds the
+    // point.
+    GuestPtr<MapObject> EvAlien_PickTarget(GuestPtr<CityScene> city, int x, int z)
+    {
+        port::GuestFrame<0xC0> frame;
+        const GuestPtr<uint32_t> count{frame.ptr().address + 0xBCu};
+        const GuestPtr<int32_t> rect{frame.ptr().address + 0xA0u};
+        for (uint32_t pair = 0x001B3760u; port::load<uint16_t>(pair) != 0; pair += 4u)
+        {
+            const uint32_t items = Map_GetTileList(city->map, port::load<uint16_t>(pair), count).address;
+            const uint32_t end = items + 2u * *count;
+            for (uint32_t item = items; item < end; item += 2u)
+            {
+                const GuestPtr<MapObject> building = Map_GetRecord(city->map, port::load<uint16_t>(item));
+                if (building->type != port::load<uint16_t>(pair + 2u) || Family_InCity(building->family) == 0 || (building->flags & 0x40u) != 0)
+                    continue;
+                Building_GetFootprint(building, 1, GuestPtr<uint32_t>{rect.address});
+                if (x >= rect[0] && x < rect[2] && z >= rect[1] && z < rect[3])
+                    return building;
+            }
+        }
+        return GuestPtr<MapObject>{0};
+    }
+
+    // Argument 0: whether the actor's home (widened by 10) and the event's home overlap, or else whether the actor's
+    // person and the event's head for the same building.
+    int EvRelationship_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode)
+    {
+        if (mode != 0)
+            return 0;
+        port::GuestFrame<0x90> frame;
+        const GuestPtr<MapObject> homeA = Map_FindFamilyHome(city->map, actor->family);
+        if (homeA)
+        {
+            const GuestPtr<MapObject> homeB = Map_FindFamilyHome(city->map, data->actor.family);
+            if (homeB)
+            {
+                const GuestPtr<int32_t> a{frame.ptr().address + 0x70u}, b{frame.ptr().address + 0x80u};
+                Building_GetFootprint(homeA, 10, GuestPtr<uint32_t>{a.address});
+                Building_GetFootprint(homeB, 0, GuestPtr<uint32_t>{b.address});
+                if (a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3])
+                    return 1;
+            }
+        }
+        const GuestPtr<MapPerson> first = findPerson(city, actor->family, actor->member);
+        if (!first || first->target == kNoObject)
+            return 0;
+        const GuestPtr<MapPerson> second = findPerson(city, data->actor.family, data->actor.member);
+        if (!second)
+            return 0;
+        return second->target == first->target ? 1 : 0;
+    }
+
+    // Whether there is a shop (type flag 0x40) with a walkable entrance, other than the person's workplace, that the
+    // person is not within 5 tiles of (the shop at the entrance tile, its footprint widened by 5).
+    int EvActor_FindShop(GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
+    {
+        port::GuestFrame<0xC0> frame;
+        const GuestPtr<uint32_t> count{frame.ptr().address + 0xBCu};
+        for (int list = 0; list < 80; ++list)
+        {
+            const uint32_t items = Map_GetTileList(city->map, list, count).address;
+            const uint32_t end = items + 2u * *count;
+            for (uint32_t item = items; item < end; item += 2u)
+            {
+                const GuestPtr<MapObject> shop = Map_GetRecord(city->map, port::load<uint16_t>(item));
+                if ((typeOf(shop)->flags & 0x40u) == 0 || Map_TileIndexFlag10(city->map, shop->entranceTile) == 0 || shop->id == person->work)
+                    continue;
+                const GuestPtr<MapObject> at = Map_GetTileFirstObject(city->map, shop->entranceTile);
+                const int size = typeOf(at)->size;
+                const int x0 = at->tile & 0x7F, z0 = at->tile >> 7;
+                const int z = sdk::fptosi(ps2f(64.0f) - ps2f(person->z));
+                const int x = sdk::fptosi(ps2f(64.0f) + ps2f(person->x));
+                if (!(x >= x0 - 5 && x < x0 + size + 5 && z >= z0 - 5 && z < z0 + size + 5))
+                    return 1;
+            }
+        }
+        return 0;
+    }
+
+    namespace
+    {
+        // The crazy cult's waiting phases (shared by phases 1 and 3): wait for the month (+0x3C) and the time
+        // (+0x40), tell the actor (then 60 frames, the time six hours later), or count those frames back down a
+        // phase (the time six hours back).
+        void cultWait(GuestPtr<EventData> data, GuestPtr<CityScene> city, uint32_t actor)
+        {
+            if (city->monthCount < port::load<int32_t>(data.address + 0x3Cu) || city->clock < port::load<int32_t>(data.address + 0x40u))
+                return;
+            if (EvActor_Notify(city, GuestPtr<ActorRef>{actor}) == 0)
+                return;
+            ++data->var;
+            port::store<int32_t>(data.address + 0x44u, 60);
+            port::store<int32_t>(data.address + 0x40u, port::load<int32_t>(data.address + 0x40u) + 21600);
+        }
+
+        void cultCountDown(GuestPtr<EventData> data)
+        {
+            const int32_t frames = port::load<int32_t>(data.address + 0x44u) - 1;
+            port::store<int32_t>(data.address + 0x44u, frames);
+            if (frames > 0)
+                return;
+            port::store<int32_t>(data.address + 0x40u, port::load<int32_t>(data.address + 0x40u) - 21600);
+            --data->var;
+        }
+    }
+
+    // Phases 4 to 9: actor 2 waits and is told (4 to 7), then actor 3's family home is found (8) and its person (9,
+    // which sets the next wait to the next month at 7:00).
+    void EvCrazyCult_Phase1(GuestPtr<EventData> data, GuestPtr<CityScene> city)
+    {
+        switch (data->var)
+        {
+        case 4:
+        case 6:
+            cultWait(data, city, data.address + 0x1Cu);
+            break;
+        case 5:
+        case 7:
+            cultCountDown(data);
+            break;
+        case 8:
+            if (const GuestPtr<MapObject> home = Map_FindFamilyHome(city->map, port::load<uint16_t>(data.address + 0x28u)))
+            {
+                port::store<uint16_t>(data.address + 0x26u, home->id);
+                home->flags |= 0x200u;
+                data->var = 9;
+            }
+            break;
+        case 9:
+            if (const GuestPtr<MapPerson> person = findPerson(city, port::load<uint16_t>(data.address + 0x28u), port::load<uint16_t>(data.address + 0x2Au)))
+            {
+                port::store<uint16_t>(data.address + 0x24u, person->index);
+                data->var = 10;
+                port::store<int32_t>(data.address + 0x3Cu, city->monthCount + 1);
+                port::store<int32_t>(data.address + 0x40u, 25200);
+            }
+            break;
+        default:
+            break;
+        }
+    }
+
+    // Phases 0x12 to 0x15: actor 0 waits and is told (0x12, 0x13), then its family home is found (0x14) and its
+    // person (0x15).
+    void EvCrazyCult_Phase3(GuestPtr<EventData> data, GuestPtr<CityScene> city)
+    {
+        switch (data->var)
+        {
+        case 0x12:
+            cultWait(data, city, data.address + 0x0Cu);
+            break;
+        case 0x13:
+            cultCountDown(data);
+            break;
+        case 0x14:
+            if (const GuestPtr<MapObject> home = Map_FindFamilyHome(city->map, data->actor.family))
+            {
+                data->actor.object = home->id;
+                home->flags |= 0x200u;
+                data->var = 0x15;
+            }
+            break;
+        case 0x15:
+            if (const GuestPtr<MapPerson> person = findPerson(city, data->actor.family, data->actor.member))
+            {
+                data->actor.person = person->index;
+                data->var = 0x16;
+            }
+            break;
+        default:
+            break;
+        }
+    }
+
+    // The delivery man's phases (jump table 0x1BA6C0): 1 walks to actor 1 for 120 frames, 2 and 5 tell actor 0
+    // (60 frames), 3 and 6 count down, 4 waits 60 frames, 7 ends the event after 240.
+    void EvDeliveryMan_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city)
+    {
+        const auto tick = [&](uint32_t offset) {
+            const int32_t value = port::load<int32_t>(data.address + offset) + 1;
+            port::store<int32_t>(data.address + offset, value);
+            return value;
+        };
+        switch (data->var)
+        {
+        case 1:
+            EvActor_MoveTo(city, actorAt(data, 1), actorAt(data, 1), 0);
+            if (tick(0x28u) < 120)
+                break;
+            port::store<int32_t>(data.address + 0x34u, 0);
+            ++data->var;
+            break;
+        case 2:
+        case 5:
+            if (EvActor_Notify(city, GuestPtr<ActorRef>::of(data->actor)) == 0)
+                break;
+            port::store<int32_t>(data.address + 0x24u, 60);
+            ++data->var;
+            break;
+        case 3:
+        case 6:
+        {
+            const int32_t frames = port::load<int32_t>(data.address + 0x24u) - 1;
+            port::store<int32_t>(data.address + 0x24u, frames);
+            if (frames <= 0)
+                --data->var;
+            break;
+        }
+        case 4:
+            if (tick(0x2Cu) < 60)
+                break;
+            port::store<int32_t>(data.address + 0x34u, 1);
+            ++data->var;
+            break;
+        case 7:
+            if (tick(0x30u) >= 240)
+                Event_Finish(city->events, city, 0);
+            break;
+        default:
+            break;
+        }
+    }
+
+    PORT_FN(EvAlien_FindBuilding);
+    PORT_FN(EvThief_FindBuilding);
+    PORT_FN(EvAlien_PickTarget);
+    PORT_FN(EvRelationship_Slot14);
+    PORT_FN(EvActor_FindShop);
+    PORT_FN(EvCrazyCult_Phase1);
+    PORT_FN(EvCrazyCult_Phase3);
+    PORT_FN(EvDeliveryMan_Update);
+
+    // ---- batch 38
+
+    namespace
+    {
+        // Whether a claim section C (four-byte entries, the id in the low half, ending at 0) lists the id.
+        bool sectionCLists(uint32_t sectionC, uint16_t id)
+        {
+            for (uint32_t entry = sectionC; port::load<uint16_t>(entry) != 0; entry += 4u)
+                if (port::load<uint16_t>(entry) == id)
+                    return true;
+            return false;
+        }
+    }
+
+    // Whether an active entry (first byte 0) of building A's claim section B (eight-byte entries, ending at id 0)
+    // names an id, or a group of ids (0x8000 and up, listed in section D), that building B's section C lists.
+    // The original lists a single id on the stack with the zero word at 0x1BDD58 as its end.
+    int EvAdvertise_ClaimsMatch(GuestPtr<CityScene> city, GuestPtr<ActorRef> actorA, GuestPtr<ActorRef> actorB)
+    {
+        const GuestPtr<MapObject> objB = Map_GetRecord(city->map, actorB->object);
+        const auto sectionC = static_cast<uint32_t>(Claim_GetSectionC(GuestPtr<BuildingType>{globals::buildingTypeAddress(objB->type)}->claimC));
+        const GuestPtr<MapObject> objA = Map_GetRecord(city->map, actorA->object);
+        for (auto entry = static_cast<uint32_t>(Claim_GetSectionB(GuestPtr<BuildingType>{globals::buildingTypeAddress(objA->type)}->claimB));
+             port::load<uint16_t>(entry + 2u) != 0; entry += 8u)
+        {
+            if (port::load<uint8_t>(entry) != 0)
+                continue;
+            const uint16_t id = port::load<uint16_t>(entry + 2u);
+            if (id < 0x8000)
+            {
+                if (sectionCLists(sectionC, id))
+                    return 1;
+                continue;
+            }
+            for (auto group = static_cast<uint32_t>(Claim_GetSectionD(id)); port::load<uint16_t>(group) != 0; group += 2u)
+                if (sectionCLists(sectionC, port::load<uint16_t>(group)))
+                    return 1;
+        }
+        return 0;
+    }
+
+    PORT_FN(EvAdvertise_ClaimsMatch);
 }

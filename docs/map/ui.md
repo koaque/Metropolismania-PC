@@ -17,7 +17,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 
 ## Functions
 
-168 functions (ported 1, typed 107, verified 60). Blocks: 62 can reach a thread switch, 10 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+168 functions (ported 1, typed 84, verified 83). Blocks: 62 can reach a thread switch, 10 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -25,7 +25,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x00128620` | `int mm_Widget_IsIdle(Widget *widget)` | 16 | no | slot +0x24: state == 0 |
 | `0x00128630` | `int mm_Widget_IsActive(Widget *widget)` | 16 | no | slot +0x28: state == 3 |
 | `0x00128640` | `void mm_MsgWin_TypeNext(MsgWin *msgwin)` | 788 | no | message window typewriter step: copies the next word into the text box (cursor +0x2AC), plays the message sound unless inside the quote characters at 0x1B5A70 |
-| `0x00128960` | `int mm_MsgWin_NextLine(MsgWin *msgwin)` | 212 | no | when waiting (state 3): takes the next line, scrolls the 4-line text box up by one line, state 6 |
+| `0x00128960` | `int mm_MsgWin_NextLine(MsgWin *msgwin, char *text)` | 212 | no | when waiting (state 3): takes the next line, scrolls the 4-line text box up by one line, state 6 |
 | `0x00128A40` | `void mm_MsgWin_Closing(MsgWin *msgwin)` | 68 | indirect | state 4: Step(0.1), then idle |
 | `0x00128A90` | `void mm_MsgWin_Opening(MsgWin *msgwin)` | 68 | indirect | state 1: Step(0.1), then active |
 | `0x00128AE0` | `int mm_MsgWin_Update(MsgWin *msgwin)` | 108 | no | typing (state 6): button 0x40 skips the delay, then mm_MsgWin_TypeNext; other states run the base update (0x173450) |
@@ -87,7 +87,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x001512A0` | `ListMenu *mm_ListMenu_dtor(ListMenu *menu, int16_t deleteFlag)` | 168 | yes | deletes item text boxes and the frame |
 | `0x00151350` | `ListMenu *mm_ListMenu_ctor(ListMenu *menu, int a1, int a2, int a3, int t0, int t1, int t2)` | 604 | yes | list menu with a frame at the given position/size |
 | `0x00152A50` | `void mm_WantsWin_FormatLine(WantsWin *wants, int a1, int a2, int a3)` | 212 | yes | "%s %s wants %s." for a family's request (claims) |
-| `0x00152B30` | `int mm_WantsWin_Draw(WantsWin *wants)` | 132 | no | window model and four text boxes |
+| `0x00152B30` | `void mm_WantsWin_Draw(WantsWin *wants)` | 132 | no | window model and four text boxes |
 | `0x00152BC0` | `void mm_WantsWin_Update(WantsWin *wants, CityScene *city)` | 2248 | yes | residents' wants window: lists, cursor, values |
 | `0x00153490` | `WantsWin *mm_WantsWin_dtor(WantsWin *wants, int16_t deleteFlag)` | 172 | yes | deletes its four text boxes |
 | `0x00153540` | `WantsWin *mm_WantsWin_ctor(WantsWin *wants)` | 152 | no | model 0x1F3B04 and defaults |
@@ -138,8 +138,8 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x00163390` | `NameEntry *mm_NameEntry_dtor(NameEntry *entry, int16_t deleteFlag)` | 184 | yes | (provisional) vtable 0x1BCFE8, deletes its text boxes |
 | `0x00163450` | `void mm_NameEntry_CreateTexts(NameEntry *entry)` | 424 | yes | (provisional) creates its text boxes |
 | `0x00163600` | `NameEntry *mm_NameEntry_ctor(NameEntry *entry)` | 136 | yes | (provisional) vtable 0x1BCFE8 |
-| `0x0016C3A0` | `void mm_PhoneCall_Next(PhoneCalls *phone, int a1)` | 204 | no | shifts the call queue and drops input focus |
-| `0x0016C470` | `void mm_PhoneCall_Remove(PhoneCalls *phone, int a1, uint32_t family, uint32_t member)` | 372 | no | removes the queued call for (a2, a3) |
+| `0x0016C3A0` | `void mm_PhoneCall_Next(PhoneCalls *phone, CityScene *city)` | 204 | no | shifts the call queue and drops input focus |
+| `0x0016C470` | `void mm_PhoneCall_Remove(PhoneCalls *phone, CityScene *city, uint32_t family, uint32_t member)` | 372 | no | removes the queued call for (a2, a3) |
 | `0x0016C5F0` | `int mm_PhoneCall_Post(PhoneCalls *phone, int person, uint32_t family, uint16_t member, int t0)` | 124 | no | queues a call from a family member (4 entries; none when the family already has one); 1 when queued |
 | `0x0016C670` | `void mm_PhoneCall_Draw(PhoneCalls *phone)` | 364 | yes | phone model, ringing light and sound |
 | `0x0016C7E0` | `int mm_PhoneCall_Update(PhoneCalls *phone, CityScene *city)` | 1940 | yes | ringing phone: "Call from boss", "Call from stranger", "Call from %s", answering, input focus |
@@ -150,13 +150,13 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x0016D0A0` | `void mm_Notice_Clear(Notice *notice)` | 16 | no | id -1, hidden |
 | `0x0016D0B0` | `void mm_Notice_ShowCentered(Notice *notice, char *text, int a2)` | 168 | no | centred text for 300 frames |
 | `0x0016D160` | `void mm_Notice_ShowText(Notice *notice, char *text)` | 144 | no | text for 300 frames |
-| `0x0016D1F0` | `int mm_Notice_Show(Notice *notice, int id)` | 180 | no | notice a1 from the table at 0x1B81E0 ("A bit hungry." ...), 300 frames |
+| `0x0016D1F0` | `void mm_Notice_Show(Notice *notice, int id)` | 180 | no | notice a1 from the table at 0x1B81E0 ("A bit hungry." ...), 300 frames |
 | `0x0016D2B0` | `Notice *mm_Notice_dtor(Notice *notice, int16_t deleteFlag)` | 124 | yes | deletes its two text boxes |
 | `0x0016D330` | `Notice *mm_Notice_ctor(Notice *notice)` | 208 | yes | creates its two text boxes |
 | `0x0016D400` | `int mm_SoundTest_BgmPage(int a0, uint32_t a1, uint32_t a2, uint32_t a3)` | 936 | no | sound test BGM page: loads banks, plays/stops sequences |
 | `0x0016D7B0` | `int mm_SoundTest_SePage(int a0, uint32_t a1, uint32_t a2, uint32_t a3)` | 760 | no | sound test SE page: plays effects with distance/pan |
 | `0x0016DAB0` | `int mm_SoundTest_Update(int a0)` | 1176 | no | "*** Sound Test ***" screen |
-| `0x0016DF50` | `int mm_SoundTest_BgmText(int a0)` | 284 | no | BGM page text ("BGM No:") |
+| `0x0016DF50` | `void mm_SoundTest_BgmText(int a0)` | 284 | no | BGM page text ("BGM No:") |
 | `0x0016E070` | `void mm_SoundTest_SeText(int a0)` | 508 | no | SE page text ("SE No:", "R1/R2 Distance(+/-)") |
 | `0x001714A0` | `int mm_TownPages_SelectedEntry(TownPages *pages)` | 440 | no | (provisional) resident index under the cursor (+0x5C) on the current page (+0x2C) |
 | `0x00171660` | `int mm_TownPages_ClampCursor(TownPages *pages, int cursor, int direction)` | 180 | no | cursor 0..10 limited by the entries on the page (+0x40); 10 = the CLOSE item |

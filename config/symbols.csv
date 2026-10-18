@@ -2008,7 +2008,7 @@ address,name,kind,source
 0x00195520,mm_EvMissingChildren_Update,func,manual
 0x00195AD0,mm_EvMissingChildren_Start,func,manual
 0x00195B00,mm_EvMissingChildren_Check,func,manual
-0x00195C80,mm_EvAdvertise_PickClaimText,func,manual
+0x00195C80,mm_EvAdvertise_ClaimsMatch,func,manual
 0x00195DA0,mm_EvAdvertise_Slot14,func,manual
 0x001960C0,mm_EvAdvertise_End,func,manual
 0x00196150,mm_EvAdvertise_Update,func,manual

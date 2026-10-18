@@ -2751,4 +2751,556 @@ namespace mm
     PORT_FN(Person_TurnToPlayer);
     PORT_FN(Person_ProbeTile);
     PORT_FN(Char_CheckNeighbourTile);
+
+    // ---- claim data lookups (batch 38)
+
+    namespace
+    {
+        // The claim texts (0x1BDA74): two halfword tables of offsets into the texts, the second for codes with bit 15.
+        int claimText(uint32_t code)
+        {
+            const uint32_t texts = port::load<uint32_t>(0x001BDA74u);
+            const uint32_t table = texts + 2u * port::load<uint16_t>(texts + ((code & 0x8000u) != 0 ? 2u : 0u));
+            return static_cast<int>(texts + port::load<uint16_t>(table + 2u * (code & 0xFFFF7FFFu)));
+        }
+    }
+
+    int Claim_PickVariant(uint32_t claim) { return claimText(claim); }
+
+    int Claim_GetSectionB(int index)
+    {
+        return static_cast<int>(globals::claimData.get() + 4u * port::load<uint32_t>(port::load<uint32_t>(0x001BDA54u) + 4u * static_cast<uint32_t>(index)));
+    }
+
+    int Claim_GetSectionD(uint32_t index)
+    {
+        return static_cast<int>(globals::claimData.get() + 4u * port::load<uint32_t>(port::load<uint32_t>(0x001BDA5Cu) + 4u * (index & 0x7FFFu)));
+    }
+
+    // The text of line `line` of claim `claim` (section B entry +2, 8 bytes per line).
+    int Claim_GetLine(int claim, int line)
+    {
+        const uint32_t entry = static_cast<uint32_t>(Claim_GetSectionB(claim)) + 8u * static_cast<uint32_t>(line);
+        return claimText(port::load<uint16_t>(entry + 2u));
+    }
+
+    PORT_FN(Claim_PickVariant);
+    PORT_FN(Claim_GetSectionB);
+    PORT_FN(Claim_GetSectionD);
+    PORT_FN(Claim_GetLine);
+
+    // ---- laptop entries (batch 38)
+
+    namespace
+    {
+        GuestPtr<int32_t> laptopEntry(int i) { return GuestPtr<int32_t>{globals::kLaptopEntries + 4u * static_cast<uint32_t>(i)}; }
+    }
+
+    // Adds an entry (14 slots, -1 free) unless it is there. Entries 6 to 8 are tiers of one thing: a better one
+    // replaces a worse, a worse one is not added.
+    void Laptop_AddEntry(GuestPtr<Laptop>, int entry)
+    {
+        for (int i = 0; i < 14; ++i)
+            if (*laptopEntry(i) == entry)
+                return;
+        if (entry >= 6 && entry < 9)
+        {
+            for (int i = 0; i < 14; ++i)
+            {
+                const int32_t existing = *laptopEntry(i);
+                if (existing < 6)
+                    continue;
+                if (entry >= existing)
+                {
+                    *laptopEntry(i) = entry;
+                    return;
+                }
+                if (existing < 9)
+                    return;
+            }
+        }
+        for (int i = 0; i < 14; ++i)
+        {
+            if (*laptopEntry(i) != -1)
+                continue;
+            *laptopEntry(i) = entry;
+            globals::laptopEntryCount.set(globals::laptopEntryCount.get() + 1);
+            return;
+        }
+    }
+
+    // Removes the entry: the ones after it move up, the last slot is freed, and the cursor (+0x3D0) steps back when
+    // nothing follows.
+    void Laptop_RemoveEntry(GuestPtr<Laptop> laptop, int entry)
+    {
+        for (int i = 0; i < 14; ++i)
+        {
+            if (*laptopEntry(i) != entry)
+                continue;
+            int last = i;
+            for (; last < 13; ++last)
+                *laptopEntry(last) = *laptopEntry(last + 1);
+            *laptopEntry(last) = -1;
+            globals::laptopEntryCount.set(globals::laptopEntryCount.get() - 1);
+            if (*laptopEntry(i) == -1)
+                port::store<int32_t>(laptop.address + 0x3D0u, port::load<int32_t>(laptop.address + 0x3D0u) - 1);
+            return;
+        }
+    }
+
+    void Laptop_SaveState(GuestPtr<Laptop>, GuestPtr<McManager> mc)
+    {
+        SaveFile_Write(mc, static_cast<int>(globals::laptopEntryCount.address), 4);
+        SaveFile_Write(mc, static_cast<int>(globals::kLaptopEntries), 0x38);
+    }
+
+    PORT_FN(Laptop_AddEntry);
+    PORT_FN(Laptop_RemoveEntry);
+    PORT_FN(Laptop_SaveState);
+
+    // ---- people: visits, idle workers, room in a building (batch 38)
+
+    namespace
+    {
+        // The person tile from the position (x + 64, 64 - z; z converted first, as the originals do).
+        uint32_t personTileZFirst(GuestPtr<MapPerson> person)
+        {
+            const int z = sdk::fptosi(ps2f(64.0f) - ps2f(person->z));
+            const int x = sdk::fptosi(ps2f(64.0f) + ps2f(person->x));
+            return (static_cast<uint32_t>(x) + (static_cast<uint32_t>(z) << 7)) & 0xFFFFu;
+        }
+
+        bool isResidentClass(GuestPtr<MapPerson> person)
+        {
+            const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)};
+            return (cls->flags & 1u) == 0;
+        }
+    }
+
+    // Whether the building on a walkable tile has room: fewer than four residents inside (people with flag 0x100
+    // not counted).
+    int Person_TileHasCompanion(GuestPtr<CityScene> city, GuestPtr<MapPerson>, GuestPtr<MapObject> building)
+    {
+        if (Map_TileIndexFlag10(city->map, building->tile) == 0)
+            return 0;
+        port::GuestLocal<uint16_t> cursor;
+        *cursor = building->firstPerson;
+        int inside = 0;
+        for (;;)
+        {
+            const GuestPtr<MapPerson> person = People_Next(city->map, cursor);
+            if (!person)
+                return 1;
+            if ((person->flags & 0x100u) != 0 || person->inside != building->id || !isResidentClass(person))
+                continue;
+            if (++inside >= 4)
+                return 0;
+        }
+    }
+
+    // Where the person goes visiting: a target kept while the building there has room, else (friendship 48 and
+    // up, the workplace claim meter at level 0, its entrance building with room) the entrance building, else the
+    // workplace. The workplace itself is never kept as a target.
+    uint16_t Person_TargetVisit(GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
+    {
+        if (person->target == person->work)
+            person->target = kNoObject;
+        const GuestPtr<MapObject> work = Map_GetRecord(city->map, person->work);
+        if (person->target != kNoObject)
+        {
+            if (Person_TileHasCompanion(city, person, Map_GetRecord(city->map, person->target)) == 0)
+                person->target = person->work;
+            return person->target;
+        }
+        if (Family_GetFriendship(person->family, person->member) < 48 || ClaimMeter_Level(work->claimMeter) != 0 ||
+            work->entranceTile == kNoObject)
+        {
+            person->target = person->work;
+            return person->target;
+        }
+        const GuestPtr<MapObject> entrance = Map_GetTileFirstObject(city->map, work->entranceTile);
+        person->target = Person_TileHasCompanion(city, person, entrance) != 0 ? entrance->id : person->work;
+        return person->target;
+    }
+
+    // Pairs the person with a free family member at their workplace (a resident of the family in schedule state
+    // 2): that member heads for their target (or their work target) and follows the person, who waits for them
+    // (flag 0x200). Returns the target, 0x3F80 when nobody fits.
+    int16_t Person_TargetHome(GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
+    {
+        port::GuestLocal<uint16_t> cursor;
+        *cursor = Map_GetRecord(city->map, person->work)->firstPerson;
+        while (*cursor != kNoPerson)
+        {
+            const GuestPtr<MapPerson> member = People_Next(city->map, cursor);
+            if (!isResidentClass(member) || member->family != person->family || member->schedState != 2)
+                continue;
+            uint16_t target = member->target;
+            if (target == kNoObject || target == member->work)
+                target = Person_TargetWork(city, member);
+            if (target == kNoObject)
+                continue;
+            member->flags |= 0x20u;
+            member->follow = person->index;
+            person->flags |= 0x200u;
+            person->follow = member->index;
+            return static_cast<int16_t>(target);
+        }
+        return static_cast<int16_t>(kNoObject);
+    }
+
+    // A person of the character type working at the building whose workplace claim meter is at level 0, or 0.
+    GuestPtr<MapPerson> Person_FindIdleOfType(GuestPtr<CityScene> city, GuestPtr<MapObject> building, uint32_t charType)
+    {
+        port::GuestLocal<uint16_t> cursor;
+        *cursor = building->firstPerson;
+        while (const GuestPtr<MapPerson> person = People_Next(city->map, cursor))
+        {
+            if (person->charType != charType)
+                continue;
+            if (ClaimMeter_Level(Map_GetRecord(city->map, person->work)->claimMeter) == 0)
+                return person;
+        }
+        return GuestPtr<MapPerson>{0};
+    }
+
+    // Whether the actor (or an actor without a person) is at the target building: inside it, or not inside
+    // anything and standing on it.
+    int Person_IsAtBuilding(GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, GuestPtr<ActorRef> target)
+    {
+        if (actor->person == kNoPerson)
+            return 1;
+        const GuestPtr<CityMap> map = city->map;
+        const GuestPtr<MapPerson> person = map->people + actor->person;
+        if (person->inside != kNoObject && person->inside != target->object)
+            return 0;
+        const GuestPtr<MapObject> on = Map_FindPersonObjectOnTile(map, person->index, personTileZFirst(person));
+        if (!on)
+            return 0;
+        return on->id == target->object ? 1 : 0;
+    }
+
+    // Whether the actor stands on a building of theirs that does not keep its people inside (type flag 0x40),
+    // never while flag 4 is set.
+    int Person_IsOnOpenTile(GuestPtr<CityScene> city, GuestPtr<ActorRef> actor)
+    {
+        const GuestPtr<CityMap> map = city->map;
+        const GuestPtr<MapPerson> person = map->people + actor->person;
+        if ((person->flags & 4u) != 0)
+            return 0;
+        const GuestPtr<MapObject> on = Map_FindPersonObjectOnTile(map, person->index, personTileZFirst(person));
+        if (!on)
+            return 0;
+        return (GuestPtr<BuildingType>{globals::buildingTypeAddress(on->type)}->flags & 0x40u) != 0 ? 0 : 1;
+    }
+
+    PORT_FN(Person_TileHasCompanion);
+    PORT_FN(Person_TargetVisit);
+    PORT_FN(Person_TargetHome);
+    PORT_FN(Person_FindIdleOfType);
+    PORT_FN(Person_IsAtBuilding);
+    PORT_FN(Person_IsOnOpenTile);
+
+    // ---- phone calls, the player, distances (batch 38)
+
+    namespace
+    {
+        // The queued calls (four of 0xC bytes from +0x10: a word, two halfwords, a word) move up one; the last is
+        // left as it was except its first halfword cleared.
+        void shiftCalls(uint32_t phone)
+        {
+            for (uint32_t entry = phone + 0x10u; entry < phone + 0x34u; entry += 0xCu)
+            {
+                port::store<uint32_t>(entry, port::load<uint32_t>(entry + 0xCu));
+                port::store<uint16_t>(entry + 4u, port::load<uint16_t>(entry + 0x10u));
+                port::store<uint16_t>(entry + 6u, port::load<uint16_t>(entry + 0x12u));
+                port::store<uint32_t>(entry + 8u, port::load<uint32_t>(entry + 0x14u));
+            }
+            port::store<uint16_t>(phone + 0x38u, 0);
+        }
+
+        // Ending the call being shown: the queue moves up, the pad focus is released, the call state (+4, +0xC)
+        // cleared, +0x40 negated and the notice cleared.
+        void endShownCall(uint32_t phone, GuestPtr<CityScene> city)
+        {
+            shiftCalls(phone);
+            Pad_ReleaseFocus(1);
+            port::store<int32_t>(phone + 0xCu, 0);
+            port::store<int32_t>(phone + 4u, 0);
+            port::store<int32_t>(phone + 0x40u, -port::load<int32_t>(phone + 0x40u));
+            Notice_Clear(city->notice);
+        }
+    }
+
+    // The shown call ends (if one is shown) and the whole queue is cleared.
+    void PhoneCall_Next(GuestPtr<PhoneCalls> phone, GuestPtr<CityScene> city)
+    {
+        if (port::load<int32_t>(phone.address + 4u) != 0)
+            endShownCall(phone.address, city);
+        sdk::memset(phone.address + 0x10u, 0, 0x30);
+    }
+
+    // Withdraws the queued call of the family member: the shown one ends, another is cut out of the queue.
+    void PhoneCall_Remove(GuestPtr<PhoneCalls> phone, GuestPtr<CityScene> city, uint32_t family, uint32_t member)
+    {
+        const uint32_t first = phone.address + 0x10u, end = first + 0x30u;
+        for (uint32_t entry = first; entry < end; entry += 0xCu)
+        {
+            if (port::load<uint16_t>(entry + 4u) != family || port::load<uint16_t>(entry + 6u) != member)
+                continue;
+            if (entry == first && port::load<int32_t>(phone.address + 4u) != 0)
+            {
+                endShownCall(phone.address, city);
+                return;
+            }
+            const int32_t left = static_cast<int32_t>(end - entry) / 12;
+            if (left < 2)
+                sdk::memset(entry, 0, 12);
+            else
+                sdk::memmove(entry, entry + 12u, (left - 1) * 12);
+            return;
+        }
+    }
+
+    int Player_GetMode(GuestPtr<Player> player) { return port::load<int32_t>(player.address); }
+
+    void Player_SaveState(GuestPtr<Player> player, GuestPtr<McManager> mc) { SaveFile_Write(mc, static_cast<int>(player.address), 0x38); }
+
+    // Tiles from the player to the actor building: 0 on it, else the largest of the four distances beyond its
+    // footprint edges.
+    int Player_DistanceToBuilding(GuestPtr<CityScene> city, GuestPtr<ActorRef> actor)
+    {
+        port::GuestFrame<0xA0> frame;
+        const GuestPtr<MapObject> building = Map_GetRecord(city->map, actor->object);
+        const int size = GuestPtr<BuildingType>{globals::buildingTypeAddress(building->type)}->size;
+        const int x0 = building->tile & 0x7F, z0 = building->tile >> 7, x1 = x0 + size, z1 = z0 + size;
+        const GuestPtr<Vec4> matrix{frame.ptr().address + 0x60u};
+        Player_GetMatrix(city->player, matrix);
+        const int px = sdk::fptosi(ps2f(64.0f) + ps2f(matrix[3].x));
+        const int pz = sdk::fptosi(ps2f(64.0f) - ps2f(matrix[3].z));
+        if (px >= x0 && px < x1 && pz >= z0 && pz < z1)
+            return 0;
+        int distance = x0 - px;
+        if (distance < px - x1)
+            distance = px - x1;
+        if (distance < z0 - pz)
+            distance = z0 - pz;
+        if (distance < pz - z1)
+            distance = pz - z1;
+        return distance;
+    }
+
+    namespace
+    {
+        // The horizontal distance between a point and the player (the player matrix in the frame at +0x20).
+        ps2f distanceToPlayer(GuestPtr<CityScene> city, uint32_t frameBase, uint32_t point)
+        {
+            const GuestPtr<Vec4> matrix{frameBase + 0x20u};
+            Player_GetMatrix(city->player, matrix);
+            const ps2f dx = ps2f(port::load<float>(point)) - ps2f(matrix[3].x);
+            const ps2f dz = ps2f(port::load<float>(point + 8u)) - ps2f(matrix[3].z);
+            return sdk::sqrtf(dx * dx + dz * dz);
+        }
+    }
+
+    ps2f Player_DistanceToPerson(GuestPtr<CityScene> city, GuestPtr<ActorRef> actor)
+    {
+        port::GuestFrame<0x60> frame;
+        return distanceToPlayer(city, frame.ptr().address, (city->map->people + actor->person).address);
+    }
+
+    ps2f Player_DistanceToPoint(GuestPtr<CityScene> city, GuestPtr<ps2f> point)
+    {
+        port::GuestFrame<0x60> frame;
+        return distanceToPlayer(city, frame.ptr().address, point.address);
+    }
+
+    // The horizontal distance between two actors.
+    ps2f Person_Distance(GuestPtr<CityScene> city, GuestPtr<ActorRef> actorA, GuestPtr<ActorRef> actorB)
+    {
+        const GuestPtr<MapPerson> a = city->map->people + actorA->person, b = city->map->people + actorB->person;
+        const ps2f dx = ps2f(a->x) - ps2f(b->x);
+        const ps2f dz = ps2f(a->z) - ps2f(b->z);
+        return sdk::sqrtf(dx * dx + dz * dz);
+    }
+
+    PORT_FN(PhoneCall_Next);
+    PORT_FN(PhoneCall_Remove);
+    PORT_FN(Player_GetMode);
+    PORT_FN(Player_SaveState);
+    PORT_FN(Player_DistanceToBuilding);
+    PORT_FN(Player_DistanceToPerson);
+    PORT_FN(Player_DistanceToPoint);
+    PORT_FN(Person_Distance);
+
+    // ---- stamina, status bytes, talk helpers (batch 38)
+
+    void Stage_SaveState(int, GuestPtr<McManager> mc) { SaveFile_Write(mc, static_cast<int>(globals::kStageState), 0x284); }
+
+    void Stamina_Init(GuestPtr<Stamina> stamina)
+    {
+        port::store<int32_t>(stamina.address, 0);
+        port::store<int32_t>(stamina.address + 4u, 0x61A7F); // 399999
+        port::store<int32_t>(stamina.address + 8u, 0);
+    }
+
+    void Stamina_SaveState(GuestPtr<Stamina> stamina, GuestPtr<McManager> mc) { SaveFile_Write(mc, static_cast<int>(stamina.address), 0xC); }
+
+    int Stamina_Zero(GuestPtr<Stamina>) { return 0; }
+
+    // Food (goods categories 0x11 to 0x14) adds 1000 per point (goods +5), up to 2000000; any goods clear +8.
+    void Stamina_Eat(GuestPtr<Stamina> stamina, GuestPtr<uint8_t> goods)
+    {
+        const uint8_t category = goods[4];
+        if (category >= 0x11 && category <= 0x14)
+        {
+            const uint32_t value = stamina.address + 4u;
+            port::store<int32_t>(value, static_cast<int32_t>(static_cast<uint32_t>(port::load<int32_t>(value)) + 1000u * goods[5]));
+            if (port::load<int32_t>(value) > 2000000)
+                port::store<int32_t>(value, 2000000);
+        }
+        port::store<int32_t>(stamina.address + 8u, 0);
+    }
+
+    namespace
+    {
+        uint32_t statusLevel(uint8_t status) { return (status >> 4) & 0xFu; }
+    }
+
+    uint8_t StatusByte_Low2(GuestPtr<uint8_t> status) { return *status & 3u; }
+    uint32_t StatusByte_Mid2(GuestPtr<uint8_t> status) { return (*status >> 2) & 3u; }
+    int StatusByte_LevelAbove13(GuestPtr<uint8_t> status) { return statusLevel(*status) >= 14 ? 1 : 0; }
+
+    // Advances the low fields (each up to 2; the middle pair only from level 2), then the level starts over.
+    void StatusByte_Advance(GuestPtr<uint8_t> status)
+    {
+        if (statusLevel(*status) >= 2)
+        {
+            const uint32_t mid = (*status >> 2) & 3u;
+            if (mid < 2)
+                *status = static_cast<uint8_t>((*status & 0xF3u) | (((mid + 1u) & 3u) << 2));
+        }
+        const uint32_t low = *status & 3u;
+        if (low < 2)
+            *status = static_cast<uint8_t>((*status & 0xFCu) | ((low + 1u) & 3u));
+        *status = static_cast<uint8_t>(*status & 0x0Fu);
+    }
+
+    void StatusByte_ClearMid2(GuestPtr<uint8_t> status)
+    {
+        if (((*status >> 2) & 3u) != 0)
+            *status = static_cast<uint8_t>(*status & 0xF3u);
+    }
+
+    // Levels 12 and 13 go one up (14 is the top).
+    void StatusByte_IncHighLevel(GuestPtr<uint8_t> status)
+    {
+        const uint32_t level = statusLevel(*status);
+        if (level < 12 || level >= 14)
+            return;
+        *status = static_cast<uint8_t>((*status & 0x0Fu) | (((level + 1u) & 0xFu) << 4));
+    }
+
+    // From level 12 the member gains `amount` friendship points.
+    void StatusByte_OnLevel12(int family, int member, GuestPtr<uint8_t> status, int amount, GuestPtr<uint32_t> approval)
+    {
+        if (statusLevel(*status) >= 12)
+            Family_AddFriendship(family, member, GuestPtr<int32_t>{approval.address}, amount);
+    }
+
+    // The talk view (+0x10) has no person chosen (-1) and the choosing ends (+0x3C).
+    void Talk_EndChoosing(GuestPtr<TalkSession> talk)
+    {
+        const uint32_t view = port::load<uint32_t>(talk.address + 0x10u);
+        port::store<int32_t>(view + 0xB8u, -1);
+        port::store<int32_t>(talk.address + 0x3Cu, 1);
+    }
+
+    void Talk_SelectPerson(GuestPtr<TalkSession> talk, uint32_t family, uint32_t member)
+    {
+        const uint32_t view = port::load<uint32_t>(talk.address + 0x10u);
+        port::store<int32_t>(view + 0xB8u, TalkView_FindPersonSlot(GuestPtr<TalkView>{view}, family, member));
+    }
+
+    void Talk_SetViewLit(GuestPtr<TalkSession> talk)
+    {
+        const uint32_t view = port::load<uint32_t>(talk.address + 0x10u);
+        if (view != 0)
+            port::store<int32_t>(view + 0x258u, 1);
+    }
+
+    // The pose of a family member in the talk (32 entries of family, member, pose from +0x40): the entry of the
+    // member, else the first free one (family 0).
+    void Talk_SetPose(GuestPtr<TalkSession> talk, uint16_t family, uint8_t member, uint8_t pose)
+    {
+        for (uint32_t i = 0; i < 32; ++i)
+        {
+            const uint32_t entry = talk.address + 0x40u + 4u * i;
+            if (port::load<uint16_t>(entry) == family && port::load<uint8_t>(entry + 2u) == member)
+            {
+                port::store<uint8_t>(entry + 3u, pose);
+                return;
+            }
+        }
+        for (uint32_t i = 0; i < 32; ++i)
+        {
+            const uint32_t entry = talk.address + 0x40u + 4u * i;
+            if (port::load<uint16_t>(entry) != 0)
+                continue;
+            port::store<uint16_t>(entry, family);
+            port::store<uint8_t>(entry + 2u, member);
+            port::store<uint8_t>(entry + 3u, pose);
+            return;
+        }
+    }
+
+    PORT_FN(Stage_SaveState);
+    PORT_FN(Stamina_Init);
+    PORT_FN(Stamina_SaveState);
+    PORT_FN(Stamina_Zero);
+    PORT_FN(Stamina_Eat);
+    PORT_FN(StatusByte_Low2);
+    PORT_FN(StatusByte_Mid2);
+    PORT_FN(StatusByte_LevelAbove13);
+    PORT_FN(StatusByte_Advance);
+    PORT_FN(StatusByte_ClearMid2);
+    PORT_FN(StatusByte_IncHighLevel);
+    PORT_FN(StatusByte_OnLevel12);
+    PORT_FN(Talk_EndChoosing);
+    PORT_FN(Talk_SelectPerson);
+    PORT_FN(Talk_SetViewLit);
+    PORT_FN(Talk_SetPose);
+
+    // ---- empty base methods (batch 38)
+
+    void App_OnInit() {}
+    void CharType_Draw(GuestPtr<CharClass>) {}
+    void CharType_Draw2(GuestPtr<CharClass>) {}
+    void CharType_Slot18(GuestPtr<CharClass>) {}
+    int CharType_Update(GuestPtr<CharClass>) { return 0; }
+
+    PORT_FN(App_OnInit);
+    PORT_FN(CharType_Draw);
+    PORT_FN(CharType_Draw2);
+    PORT_FN(CharType_Slot18);
+    PORT_FN(CharType_Update);
+
+    // ---- batch 38
+
+    // The person leaves the building they are in: a building that keeps its people inside (type flag 0x40) has
+    // one occupant fewer, unless it is their workplace or their target. The walk restarts (tiles 0x4000).
+    void Person_ExitBuilding(GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
+    {
+        if (person->inside == kNoObject)
+            return;
+        const GuestPtr<MapObject> obj = Map_GetRecord(city->map, person->inside);
+        if (obj->id != person->work && obj->id != person->target &&
+            (GuestPtr<BuildingType>{globals::buildingTypeAddress(obj->type)}->flags & 0x40u) != 0 && obj->occupants > 0)
+            obj->occupants = static_cast<uint8_t>(obj->occupants - 1);
+        person->walkTile = 0x4000;
+        person->previousTile = 0x4000;
+        person->inside = kNoObject;
+    }
+
+    PORT_FN(Person_ExitBuilding);
 }

@@ -1678,4 +1678,369 @@ namespace mm
     PORT_FN(Title_DrawCommon);
     PORT_FN(Title_PressStart);
     PORT_FN(ListMenu_HandleInput);
+
+    // ---- batch 38
+
+    // The frame's place and size: x and y from the word at +0x60, width and height from +0x80 (halfwords each);
+    // y and height go through -0x8000 and back, as the original does.
+    void Frame_GetRect(GuestPtr<Frame> frame, GuestPtr<uint32_t> x, GuestPtr<uint32_t> y, GuestPtr<uint32_t> width, GuestPtr<uint32_t> height)
+    {
+        *x = port::load<uint32_t>(frame.address + 0x60u) & 0xFFFFu;
+        *y = static_cast<uint32_t>(port::load<int32_t>(frame.address + 0x60u) >> 16) & 0xFFFFu;
+        *width = port::load<uint16_t>(frame.address + 0x80u);
+        *height = static_cast<uint32_t>(port::load<int32_t>(frame.address + 0x80u) >> 16) & 0xFFFFu;
+        *y = *y - 0x8000u;
+        *height = *height - 0x8000u;
+        *y = *y + 0x8000u;
+        *height = *height + 0x8000u;
+    }
+
+    PORT_FN(Frame_GetRect);
+
+    // ---- batch 38
+
+    // ---- the message window: a 0x200-byte text being typed (+0x18), the shown lines (+0x218, four of 0x24)
+
+    // Starts the next text (in state 3): copied in, typing from its start up to the first delimiter (0x1B5A78);
+    // with four lines shown the oldest scrolls away. Returns 1, or 0 in other states.
+    int MsgWin_NextLine(GuestPtr<MsgWin> msgwin, GuestPtr<char> text)
+    {
+        const uint32_t w = msgwin.address;
+        if (port::load<int32_t>(w) != 3)
+            return 0;
+        sdk::strcpy(w + 0x18u, text.address);
+        port::store<int32_t>(w, 6);
+        port::store<uint32_t>(w + 0x2ACu, w + 0x18u);
+        const int length = sdk::strcspn(port::load<uint32_t>(w + 0x2ACu), 0x001B5A78u);
+        port::store<uint32_t>(w + 0x2B0u, port::load<uint32_t>(w + 0x2ACu) + static_cast<uint32_t>(length));
+        if (static_cast<int32_t>(port::load<uint32_t>(w + 0x2B4u) - (w + 0x218u)) / 36 >= 4)
+        {
+            sdk::memmove(w + 0x218u, w + 0x23Cu, 0x6D);
+            TextBox_SetText(msgwin->text, GuestPtr<char>{w + 0x218u}, 1);
+            port::store<uint32_t>(w + 0x2B4u, port::load<uint32_t>(w + 0x2B4u) - 0x24u);
+        }
+        msgwin->typeDelay = 4;
+        return 1;
+    }
+
+    // Opens the window for model node `node` with sound `sound`: nothing typed or shown yet, the waiting text
+    // (0x1B5A80) in the text box. Returns 1.
+    int MsgWin_SetMessage(GuestPtr<MsgWin> msgwin, int node, uint8_t sound)
+    {
+        const uint32_t w = msgwin.address;
+        Widget_Open(GuestPtr<Widget>{w});
+        msgwin->node = node;
+        port::store<uint8_t>(w + 0x2C8u, sound);
+        port::store<int32_t>(w + 0x2BCu, 0);
+        msgwin->typeDelay = 0;
+        port::store<uint8_t>(w + 0x18u, 0);
+        port::store<uint8_t>(w + 0x218u, 0);
+        port::store<uint32_t>(w + 0x2ACu, w + 0x18u);
+        port::store<uint32_t>(w + 0x2B0u, port::load<uint32_t>(w + 0x2ACu));
+        port::store<uint32_t>(w + 0x2B4u, w + 0x218u);
+        port::store<int32_t>(w + 0x2B8u, 0);
+        TextBox_SetText(msgwin->text, GuestPtr<char>{0x001B5A80u}, 1);
+        return 1;
+    }
+
+    // ---- the home view (TalkView: +0x30 model, +0x34 city, +0x260 the home object)
+
+    namespace
+    {
+        GuestPtr<CityScene> viewCity(GuestPtr<TalkView> view) { return GuestPtr<CityScene>{port::load<uint32_t>(view.address + 0x34u)}; }
+        uint32_t viewObject(GuestPtr<TalkView> view) { return port::load<uint32_t>(view.address + 0x260u); }
+    }
+
+    // The tiles before the home entrance, by the facing: the footprint widened by one more than its size on three
+    // sides (the facing side kept), clamped to the map (0..128).
+    void MyHome_EntranceRect(GuestPtr<TalkView>, int facing, int x, int z, int size, GuestPtr<int32_t> rect)
+    {
+        const int e = size + 1;
+        switch (facing)
+        {
+        case 0:
+            rect[0] = x - e;
+            rect[1] = z;
+            rect[2] = e + (x + size);
+            rect[3] = e + (z + size);
+            break;
+        case 1:
+            rect[0] = x - e;
+            rect[1] = z - e;
+            rect[2] = x + size;
+            rect[3] = e + (z + size);
+            break;
+        case 2:
+            rect[0] = x - e;
+            rect[1] = z - e;
+            rect[2] = e + (x + size);
+            rect[3] = z + size;
+            break;
+        case 3:
+            rect[0] = x;
+            rect[1] = z - e;
+            rect[2] = e + (x + size);
+            rect[3] = e + (z + size);
+            break;
+        default:
+            break;
+        }
+        for (int i = 0; i < 4; ++i)
+        {
+            const int32_t value = rect[i];
+            rect[i] = value < 0 ? 0 : (value < 129 ? value : 128);
+        }
+    }
+
+    // The top objects before the home entrance get or lose flag 0x80.
+    void MyHome_MarkEntrance(GuestPtr<TalkView> view, int set)
+    {
+        port::GuestFrame<0x60> frame;
+        const GuestPtr<CityMap> map = viewCity(view)->map;
+        const GuestPtr<MapObject> home = Map_GetRecord(map, static_cast<int>(viewObject(view)));
+        const GuestPtr<BuildingType> type{globals::buildingTypeAddress(home->type)};
+        const int facing = Map_GetTileKind(map, home->tile);
+        const GuestPtr<int32_t> rect{frame.ptr().address + 0x50u};
+        MyHome_EntranceRect(view, facing, home->tile & 0x7F, home->tile >> 7, type->size, rect);
+        for (int z = rect[1]; z < rect[3]; ++z)
+        {
+            for (int x = rect[0]; x < rect[2]; ++x)
+            {
+                const GuestPtr<MapObject> object = Map_GetTileObject(viewCity(view)->map, x, z);
+                if (set != 0)
+                    object->flags |= 0x80u;
+                else
+                    object->flags &= 0xFF7Fu;
+            }
+        }
+    }
+
+    // Leaving home: stamina below 399999 is refilled, the entrance marks are cleared, the view closes.
+    void MyHome_Close(GuestPtr<TalkView> view)
+    {
+        const GuestPtr<Stamina> stamina = viewCity(view)->stamina;
+        if (port::load<int32_t>(stamina.address + 4u) < 0x61A7F)
+            Stamina_Init(stamina);
+        if ((Map_GetRecord(viewCity(view)->map, static_cast<int>(viewObject(view)))->flags & 0x20u) != 0)
+            MyHome_MarkEntrance(view, 0);
+        Widget_Close(GuestPtr<Widget>{view.address});
+    }
+
+    // Pass 1, while open (state 3): the light packets and, for a home with an entrance, its model node (the type
+    // node + 0x19) placed by the object matrix (w set to 1) and drawn.
+    void MyHome_Draw(GuestPtr<TalkView> view, int pass)
+    {
+        if (pass != 1 || port::load<int32_t>(view.address) != 3)
+            return;
+        Packet2_Draw(GuestPtr<uint32_t>{port::load<uint32_t>(viewCity(view).address + 0x40u)}, 1);
+        const GuestPtr<MapObject> home = Map_GetRecord(viewCity(view)->map, static_cast<int>(viewObject(view)));
+        if ((home->flags & 0x20u) == 0)
+            return;
+        const GuestPtr<BuildingType> type{globals::buildingTypeAddress(home->type)};
+        const uint32_t model = port::load<uint32_t>(view.address + 0x30u);
+        const uint32_t node = static_cast<uint32_t>(type->modelNode) + 0x19u;
+        const uint32_t matrix = port::load<uint32_t>(port::load<uint32_t>(model) + 8u) + 0xC0u * node + 0x70u;
+        MapObj_GetMatrix(viewCity(view)->map, static_cast<int>(viewObject(view)), GuestPtr<Vec4>{matrix});
+        port::store<int32_t>(matrix + 0x3Cu, 1);
+        A3DObject_DrawNode(GuestPtr<A3DObject>{model}, static_cast<int>(node));
+    }
+
+    // ---- the name entry (+0x40 state, +0x70 slide frames, +0x78 rest height, +0x14 matrix)
+
+    void NameEntry_Close(GuestPtr<NameEntry> entry)
+    {
+        const uint32_t e = entry.address;
+        if (port::load<int32_t>(e + 0x40u) == 0)
+            return;
+        port::store<int32_t>(e + 0x70u, 25);
+        port::store<int32_t>(e + 0x40u, port::load<int32_t>(e + 0x74u) != 0 ? 0 : 4);
+    }
+
+    // States 3 and 4 slide the panel in (26 frames, then input) and out (to closed); state 1 takes input. Returns
+    // the state.
+    int NameEntry_Update(GuestPtr<NameEntry> entry)
+    {
+        const uint32_t e = entry.address;
+        const int32_t state = port::load<int32_t>(e + 0x40u);
+        if (state == 1)
+        {
+            NameEntry_HandleInput(entry);
+            return port::load<int32_t>(e + 0x40u);
+        }
+        if (state != 3 && state != 4)
+            return port::load<int32_t>(e + 0x40u);
+        const ps2f height = ps2f(0x1.333334p-2f) + ps2f(port::load<float>(e + 0x78u)) -  // 0.3
+                            ps2f(0x1.89374cp-7f) * fromInt(port::load<int32_t>(e + 0x70u));    // 0.012 per frame
+        port::store<float>(port::load<uint32_t>(e + 0x14u) + 0x34u, static_cast<float>(height));
+        if (port::load<int32_t>(e + 0x40u) == 3)
+        {
+            port::store<int32_t>(e + 0x70u, port::load<int32_t>(e + 0x70u) + 1);
+            if (port::load<int32_t>(e + 0x70u) >= 26)
+                port::store<int32_t>(e + 0x40u, 1);
+        }
+        else
+        {
+            port::store<int32_t>(e + 0x70u, port::load<int32_t>(e + 0x70u) - 1);
+            if (port::load<int32_t>(e + 0x70u) < 0)
+                port::store<int32_t>(e + 0x40u, 0);
+        }
+        return port::load<int32_t>(e + 0x40u);
+    }
+
+    // ---- notices: one line (text) centred by its length for 300 frames, an optional second line
+
+    namespace
+    {
+        // The x that centres `length` characters (13 units each, in 1/16 pixel from 0x800).
+        int noticeX(int length, bool unsignedShift)
+        {
+            const int32_t width = length * 26;
+            const int32_t half = unsignedShift ? static_cast<int32_t>(static_cast<uint32_t>(width) >> 2) : width / 4;
+            return (0x800 - half) << 4;
+        }
+    }
+
+    void Notice_Clear(GuestPtr<Notice> notice)
+    {
+        notice->id = -1;
+        notice->unk_10 = 0;
+    }
+
+    // Notice `id` from the notice texts (48 bytes each from 0x1B81E0).
+    void Notice_Show(GuestPtr<Notice> notice, int id)
+    {
+        notice->id = id;
+        TextBox_SetText(notice->text, GuestPtr<char>{0x001B81E0u + 48u * static_cast<uint32_t>(notice->id)}, 0);
+        notice->timer = 300;
+        const int length = sdk::strlen(0x001B81E0u + 48u * static_cast<uint32_t>(notice->id));
+        TextBox_SetPos(notice->text, noticeX(length, false), 0x84E0, -1);
+    }
+
+    void Notice_ShowText(GuestPtr<Notice> notice, GuestPtr<char> text)
+    {
+        notice->id = -2;
+        TextBox_SetText(notice->text, text, 0);
+        notice->timer = 300;
+        TextBox_SetPos(notice->text, noticeX(sdk::strlen(text.address), false), 0x84E0, -1);
+    }
+
+    // A higher line and a second text below it.
+    void Notice_ShowCentered(GuestPtr<Notice> notice, GuestPtr<char> text, int second)
+    {
+        notice->id = -2;
+        TextBox_SetText(notice->text, text, 0);
+        notice->timer = 300;
+        TextBox_SetPos(notice->text, noticeX(sdk::strlen(text.address), true), 0x8440, -1);
+        TextBox_SetText(notice->text2, GuestPtr<char>{static_cast<uint32_t>(second)}, 0);
+        notice->unk_10 = 1;
+    }
+
+    PORT_FN(MsgWin_NextLine);
+    PORT_FN(MsgWin_SetMessage);
+    PORT_FN(MyHome_EntranceRect);
+    PORT_FN(MyHome_MarkEntrance);
+    PORT_FN(MyHome_Close);
+    PORT_FN(MyHome_Draw);
+    PORT_FN(NameEntry_Close);
+    PORT_FN(NameEntry_Update);
+    PORT_FN(Notice_Clear);
+    PORT_FN(Notice_Show);
+    PORT_FN(Notice_ShowText);
+    PORT_FN(Notice_ShowCentered);
+
+    // ---- widget base methods, wait and loading texts (batch 38)
+
+    void Widget_Active(GuestPtr<Widget>) {}
+    void Widget_Draw(GuestPtr<Widget>, int) {}
+    int Widget_IsActive(GuestPtr<Widget> widget) { return widget->state == 3 ? 1 : 0; }
+    int Widget_IsIdle(GuestPtr<Widget> widget) { return widget->state == 0 ? 1 : 0; }
+
+    // The opening and closing states run on the timer: dt is added, and at 1 the timer starts over and the state
+    // moves on (past 5, closed, back to 0, idle). Returns 1 when the state moved.
+    int Widget_Step(GuestPtr<Widget> widget, ps2f dt)
+    {
+        const ps2f timer = widget->timer + dt;
+        widget->timer = timer;
+        if (timer < ps2f(1.0f))
+            return 0;
+        widget->timer = 0.0f;
+        widget->state = widget->state + 1;
+        if (widget->state >= 6)
+            widget->state = 0;
+        return 1;
+    }
+
+    // Both forward to the text box; the result is whatever v0 the text box call left.
+    int WaitText_Append(GuestPtr<char> text)
+    {
+        TextBox_AppendText(GuestPtr<TextBox>{port::load<uint32_t>(0x001BDAC4u)}, text, 0);
+        return port::guestV0();
+    }
+
+    int LoadingScreen_SetText(GuestPtr<LoadingScreen> loading, GuestPtr<char> text)
+    {
+        TextBox_SetText(GuestPtr<TextBox>{port::load<uint32_t>(loading.address + 8u)}, text, 0);
+        return port::guestV0();
+    }
+
+    PORT_FN(Widget_Active);
+    PORT_FN(Widget_Draw);
+    PORT_FN(Widget_IsActive);
+    PORT_FN(Widget_IsIdle);
+    PORT_FN(Widget_Step);
+    PORT_FN(WaitText_Append);
+    PORT_FN(LoadingScreen_SetText);
+
+    // ---- batch 38
+
+    // The intro's character: while none is shown (+0xEC), one of the loaded character parts (the 48 at 0x1F3B90,
+    // up to the last one loaded) at random, from mesh 0 (+0xF4), at height -1.4 (+0xF8), its timer (+0xE4)
+    // cleared, the mesh value at +0xE8 and the part's two values from 0x1B1870 (a float) and 0x1B1930. 0 when no
+    // part is loaded.
+    int Title_RandomCharParts(GuestPtr<SceneA> scene)
+    {
+        const uint32_t s = scene.address;
+        if (port::load<uint32_t>(s + 0xECu) != 0)
+            return 1;
+        int last = -1;
+        for (int i = 0; i < 0x30; ++i)
+            if (port::load<uint32_t>(globals::kCharParts + 4u * static_cast<uint32_t>(i)) != 0)
+                last = i;
+        if (last < 0)
+            return 0;
+        const uint32_t pick = static_cast<uint32_t>(Random_TimerMix()) % static_cast<uint32_t>(last + 1);
+        port::store<uint32_t>(s + 0xECu, port::load<uint32_t>(globals::kCharParts + 4u * pick));
+        port::store<int32_t>(s + 0xF4u, 0);
+        port::store<float>(s + 0xF8u, -1.4f);
+        port::store<int32_t>(s + 0xE4u, 0);
+        const ps2f meshValue = A3D_GetMeshField0C(GuestPtr<A3DObject>{port::load<uint32_t>(s + 0xECu)}, port::load<int32_t>(s + 0xF4u));
+        port::store<float>(s + 0xE8u, static_cast<float>(meshValue));
+        port::store<float>(s + 0xFCu, port::load<float>(0x001B1870u + 4u * pick));
+        port::store<uint32_t>(s + 0x100u, port::load<uint32_t>(0x001B1930u + 4u * pick));
+        return 1;
+    }
+
+    // The BGM page of the sound test (`test`, its text box at +0xB8): the controls, then the volume (+0x64, 5
+    // wide), the tempo (+0x62, signed, 3 wide) and the song number (+0x5C, 2 wide).
+    void SoundTest_BgmText(int test)
+    {
+        const auto t = static_cast<uint32_t>(test);
+        const auto box = [t] { return GuestPtr<TextBox>{port::load<uint32_t>(t + 0xB8u)}; };
+        port::GuestFrame<0x30> frame;
+        const GuestPtr<char> number{frame.ptr().address + 0x20u};
+        TextBox_SetText(box(), GuestPtr<char>{0x001B8760u}, 0); // "*** BGM Test ***", the controls, "Volume(+/-) "
+        Text_FormatPadded(number, port::load<int32_t>(t + 0x64u), 5);
+        TextBox_AppendText(box(), number, 0);
+        TextBox_AppendText(box(), GuestPtr<char>{0x001B87E0u}, 0); // "Tempo(+/-)"
+        const int tempo = port::load<int16_t>(t + 0x62u);
+        TextBox_AppendText(box(), GuestPtr<char>{tempo >= 0 ? 0x001B87F8u : 0x001B8800u}, 0); // " " or "-"
+        Text_FormatPadded(number, tempo >= 0 ? tempo : -tempo, 3);
+        TextBox_AppendText(box(), number, 0);
+        TextBox_AppendText(box(), GuestPtr<char>{0x001B8808u}, 0); // "BGM No:"
+        Text_FormatPadded(number, port::load<uint8_t>(t + 0x5Cu), 2);
+        TextBox_AppendText(box(), number, 0);
+    }
+
+    PORT_FN(Title_RandomCharParts);
+    PORT_FN(SoundTest_BgmText);
 }

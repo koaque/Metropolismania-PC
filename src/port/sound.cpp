@@ -1596,4 +1596,122 @@ namespace mm
     PORT_FN(Sound_InitState);
     PORT_FN(Se_BuildAmbienceMap);
     PORT_FN(Se_InTimeWindow);
+
+    // ---- batch 38
+
+    // Stops the music (sequence voice 15) fading over `time`; the mood becomes "fading out".
+    void Bgm_FadeOut(int time)
+    {
+        SoundCmd_FadeB(15, 0, static_cast<uint16_t>(time), 0);
+        globals::bgmState.set(4);
+    }
+
+    // On: the loaded city bank is dropped (voice 15 and sequence slot 7 stopped), the music plays again at
+    // volume 0xC0 (mood 3). Off: a fade over 8 (mood 4). The result is the last command's.
+    int Bgm_SetActive(int active)
+    {
+        if (active == 0)
+        {
+            const int result = SoundCmd_FadeB(15, 0, 8, 0);
+            globals::bgmState.set(4);
+            return result;
+        }
+        if (globals::bgmBankLoaded.get() != 0)
+        {
+            globals::bgmBankLoaded.set(0);
+            SoundCmd_StopB(15, 0);
+            SoundCmd_StopSequence(7, 0);
+        }
+        globals::bgmPlaying.set(1);
+        globals::bgmFadeCounter.set(0);
+        const int result = SoundCmd_SetVolumeB(15, 0xC0, 0);
+        globals::bgmState.set(3);
+        return result;
+    }
+
+    // Voice 15 (the music) on or off; a volume of 0xC0 when `volume` is set. The result is v0 as the last command
+    // left it (unchanged when none ran).
+    int Se_SetVoice15Enabled(int enabled, int volume)
+    {
+        int32_t result = port::guestV0();
+        globals::bgmPlaying.set(enabled);
+        globals::bgmFadeCounter.set(0);
+        if (enabled == 0)
+            result = SoundCmd_StopB(15, 0);
+        if (volume != 0)
+            result = SoundCmd_SetVolumeB(15, 0xC0, 0);
+        return result;
+    }
+
+    // Stops everything an owner plays: its effect voices 0..15 are silenced (play command with no sound), voices
+    // 16..30 stopped, and its pending requests dropped (0xFF frees them).
+    void Se_StopOwner(char owner)
+    {
+        const uint8_t id = static_cast<uint8_t>(owner);
+        if (id == 0xFF)
+            return;
+        for (uint32_t voice = 0; voice < 16; ++voice)
+        {
+            const uint32_t slot = globals::kSeVoices + 0x30u * voice;
+            if (port::load<uint8_t>(slot) != id)
+                continue;
+            SoundCmd_PlayA(static_cast<uint8_t>(voice), 0, 0, 0x800, 0x800, 0);
+            port::store<uint8_t>(slot, 0xFF);
+        }
+        for (uint32_t voice = 0; voice < 15; ++voice)
+        {
+            const uint32_t slot = globals::kSeVoices + 0x300u + 0x30u * voice;
+            if (port::load<uint8_t>(slot) != id)
+                continue;
+            SoundCmd_StopB(voice & 0xFFu, 0);
+            port::store<uint8_t>(slot, 0xFF);
+        }
+        const int count = globals::seRequestCount.get();
+        for (int i = 0; i < count; ++i)
+        {
+            const uint32_t request = globals::kSeRequests + 0x1Cu * static_cast<uint32_t>(i);
+            if (port::load<uint8_t>(request) == id)
+                port::store<uint8_t>(request, 0xFF);
+        }
+    }
+
+    // The driver status as the game sees it (the received block with the queued commands merged in); busy while its
+    // word +0xC is set.
+    int Sound_IsDriverBusy()
+    {
+        sdk::memcpy(globals::kSoundStatusView, globals::kSoundStatus, 0x40);
+        port::store<uint32_t>(globals::kSoundStatusView + 4u, port::load<uint32_t>(globals::kSoundStatus + 4u) | globals::soundSlotsQueued.get());
+        port::store<uint32_t>(globals::kSoundStatusView + 8u, port::load<uint32_t>(globals::kSoundStatus + 8u) | globals::soundVoicesQueued.get());
+        port::store<uint32_t>(globals::kSoundStatusView + 0x18u, port::load<uint32_t>(globals::kSoundStatus + 0x18u) | globals::soundStopsQueued.get());
+        return port::load<uint32_t>(globals::kSoundStatusView + 0xCu) != 0 ? 1 : 0;
+    }
+
+    // Stops every playing voice: the B voices of status word +4, then the A voices of word +8.
+    void Sound_StopAllPlaying()
+    {
+        const uint32_t status = static_cast<uint32_t>(Sound_GetStatus());
+        for (uint32_t voice = 0; voice < 16; ++voice)
+            if ((port::load<uint32_t>(status + 4u) & (1u << voice)) != 0)
+                SoundCmd_StopB(voice & 0xFFu, 0);
+        for (uint32_t voice = 0; voice < 16; ++voice)
+            if ((port::load<uint32_t>(status + 8u) & (1u << voice)) != 0)
+                SoundCmd_StopA(voice & 0xFFu, 0);
+    }
+
+    // Stops sequence slots 7 down to 0; the result is the last command's.
+    int Sound_StopAllSequences()
+    {
+        int result = 0;
+        for (int slot = 7; slot >= 0; --slot)
+            result = SoundCmd_StopSequence(static_cast<uint32_t>(slot) & 0xFFu, 0);
+        return result;
+    }
+
+    PORT_FN(Bgm_FadeOut);
+    PORT_FN(Bgm_SetActive);
+    PORT_FN(Se_SetVoice15Enabled);
+    PORT_FN(Se_StopOwner);
+    PORT_FN(Sound_IsDriverBusy);
+    PORT_FN(Sound_StopAllPlaying);
+    PORT_FN(Sound_StopAllSequences);
 }

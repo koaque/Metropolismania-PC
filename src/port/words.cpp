@@ -1161,4 +1161,91 @@ namespace mm
     PORT_FN(WordsFn_EventA8Slot10);
     PORT_FN(WordsFn_SetPose);
     PORT_FN(WordsFn_TalkSelectActor);
+
+    // ---- context accessors and text joining (batch 38)
+
+    uint16_t Words_GetBuildingTypeB(GuestPtr<Words> words) { return words->ctx->buildingTypeB; }
+    int Words_GetCancelAllowed(GuestPtr<Words> words) { return words->ctx->cancelAllowed; }
+    int Words_GetFriendshipChanged(GuestPtr<Words> words) { return words->ctx->friendshipChanged; }
+    void Words_SetArg(GuestPtr<Words> words, uint16_t arg) { words->ctx->arg = static_cast<int16_t>(arg); }
+    void Words_SetFlag134(GuestPtr<Words> words) { words->ctx->flag134 = 1; }
+    void Words_SetWantIndex(GuestPtr<Words> words, uint16_t index) { words->ctx->wantIndex = static_cast<int16_t>(index); }
+
+    // The same, for the game's one WORDS object.
+    int Words_CancelAllowed() { return Words_GetCancelAllowed(GuestPtr<Words>{0x001BDDF0u}); }
+    int Words_FriendshipChanged() { return Words_GetFriendshipChanged(GuestPtr<Words>{0x001BDDF0u}); }
+
+    // The goods record of building type B for family B and the time of year ((month mod 12) / 4), entry `index`.
+    int Words_GetGoods(GuestPtr<Words> words, int index)
+    {
+        port::GuestLocal<int32_t> offset;
+        *offset = index;
+        const GuestPtr<WordsCtx> ctx = words->ctx;
+        const int quarter = ctx->city->monthCount % 12 / 4;
+        return Goods_GetRecordOffset(ctx->buildingTypeB, ctx->familyB, quarter, offset);
+    }
+
+    // Points the context's bag slot at the index-th item of goods category 0x10, 0x11 or 0x13 in the bag, looking
+    // up to the first empty slot.
+    void Words_SelectBagItem(GuestPtr<Words> words, int index)
+    {
+        const GuestPtr<WordsCtx> ctx = words->ctx;
+        const GuestPtr<Bag> bag = ctx->city->bag;
+        const uint32_t groups = port::load<uint32_t>(0x001BDA9Cu), records = port::load<uint32_t>(0x001BDAA0u);
+        const uint32_t first = bag.address + 4u;
+        const uint32_t end = first + 16u * port::load<uint8_t>(globals::kBagSlotsBySize + bag->size);
+        int count = 0;
+        for (uint32_t slot = first; port::load<uint16_t>(slot) != 0 && slot < end; slot += 16u)
+        {
+            const uint32_t record = port::load<uint16_t>(groups + 4u * port::load<uint16_t>(slot)) + port::load<uint16_t>(slot + 2u);
+            const uint8_t category = port::load<uint8_t>(records + 0x88u * record + 4u);
+            if (category != 0x10 && category != 0x11 && category != 0x13)
+                continue;
+            if (count++ == index)
+            {
+                ctx->bagSlot = GuestPtr<void>{slot};
+                return;
+            }
+        }
+    }
+
+    // Appends a piece of text to a line being built, joined the way English wants it: a space between words, none
+    // after a line break, '(' or '<', or before a line break or punctuation ('.', '?', ',', ')', '>', an
+    // apostrophe). Two full stops make one, and a word ending in s takes "'s" as a bare "'".
+    void Words_AppendClipped(GuestPtr<char> buffer, GuestPtr<char> text)
+    {
+        if (!text)
+            return;
+        uint32_t from = text.address;
+        const int length = sdk::strlen(buffer.address);
+        if (length != 0)
+        {
+            const uint32_t lastAt = buffer.address + static_cast<uint32_t>(length) - 1u;
+            const int8_t last = port::load<int8_t>(lastAt), first = port::load<int8_t>(from);
+            const bool joined = last == '\n' || last == '\r' || last == '(' || last == '<' || first == '\n' || first == '\r' ||
+                                first == '.' || first == '?' || first == ',' || first == ')' || first == '>' || first == '\'';
+            if (!joined)
+                sdk::strcat(buffer.address, 0x001BAD78u); // " "
+            else if (last == '.' && first == '.')
+                port::store<int8_t>(lastAt, 0);
+            else if (first == '\'' && last == 's' && port::load<int8_t>(from + 1u) == 's')
+            {
+                sdk::strcat(buffer.address, 0x001BAD80u); // "'"
+                from += 2u;
+            }
+        }
+        sdk::strcat(buffer.address, from);
+    }
+
+    PORT_FN(Words_GetBuildingTypeB);
+    PORT_FN(Words_GetCancelAllowed);
+    PORT_FN(Words_GetFriendshipChanged);
+    PORT_FN(Words_SetArg);
+    PORT_FN(Words_SetFlag134);
+    PORT_FN(Words_SetWantIndex);
+    PORT_FN(Words_CancelAllowed);
+    PORT_FN(Words_FriendshipChanged);
+    PORT_FN(Words_GetGoods);
+    PORT_FN(Words_SelectBagItem);
+    PORT_FN(Words_AppendClipped);
 }

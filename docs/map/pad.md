@@ -8,7 +8,7 @@ Cross is `0x0040` and Start is `0x0800`; the analog sticks add bits `0x100000` .
 
 ## Functions
 
-10 functions (typed 4, verified 6). Blocks: 3 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+10 functions (typed 3, verified 7). Blocks: 3 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|

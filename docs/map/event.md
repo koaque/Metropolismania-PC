@@ -20,7 +20,7 @@ City events (visitors, requests, incidents, paydays).
 
 ## Functions
 
-148 functions (typed 72, verified 76). Blocks: 20 can reach a thread switch, 21 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+148 functions (typed 63, verified 85). Blocks: 20 can reach a thread switch, 21 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -61,7 +61,7 @@ City events (visitors, requests, incidents, paydays).
 | `0x0018FAC0` | `int mm_EvShoppingTogether_Check(EventData *data, CityScene *city, MapPerson *person)` | 460 | no | event type 1 "Shopping together": slot Check |
 | `0x0018FC90` | `void mm_EvAlien_Slot14(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 56 | yes | type 16: Slot14 |
 | `0x0018FCD0` | `void mm_EvAlien_End(EventData *data, CityScene *city)` | 120 | no | type 16: End (clears the building marks) |
-| `0x0018FD50` | `int mm_EvAlien_PickTarget(CityScene *city, int a1, int a2)` | 400 | no | (provisional) picks a building for the alien (footprint checks, table 0x1B3760) |
+| `0x0018FD50` | `MapObject *mm_EvAlien_PickTarget(CityScene *city, int x, int z)` | 400 | no | (provisional) picks a building for the alien (footprint checks, table 0x1B3760) |
 | `0x0018FEE0` | `void mm_EvAlien_Update(EventData *data, CityScene *city)` | 1184 | yes | type 16: Update (finishes after 720 ticks) |
 | `0x00190380` | `int mm_EvAlien_Check(EventData *data, CityScene *city)` | 832 | no | type 16 "Alien": Check |
 | `0x001906C0` | `int mm_EvBodyguard_Slot14(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 140 | no | type 5: Slot14 |
@@ -114,9 +114,9 @@ City events (visitors, requests, incidents, paydays).
 | `0x00193B30` | `int mm_EvForgetfulGranny_Check(EventData *data, CityScene *city, MapPerson *person)` | 44 | no | type 2 "Forgetful Granny": Check |
 | `0x00193B60` | `int mm_EvCrazyCult_Slot14(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 96 | indirect | type 18: Slot14 |
 | `0x00193D00` | `void mm_EvCrazyCult_End(EventData *data, CityScene *city)` | 232 | no | type 18: End |
-| `0x00193DF0` | `int mm_EvCrazyCult_Phase3(int a0, CityScene *city)` | 324 | no | (provisional) states 0x13-0x16: wait, mark the building, find the person |
-| `0x00193F40` | `void mm_EvCrazyCult_Phase2(int a0, CityScene *city)` | 516 | no | (provisional) states 0xA-0xE: timed actor notifications |
-| `0x00194150` | `void mm_EvCrazyCult_Phase1(int a0, CityScene *city)` | 352 | no | (provisional) states 4-8: timed actor notifications, mark the building |
+| `0x00193DF0` | `void mm_EvCrazyCult_Phase3(EventData *data, CityScene *city)` | 324 | no | (provisional) states 0x13-0x16: wait, mark the building, find the person |
+| `0x00193F40` | `void mm_EvCrazyCult_Phase2(EventData *data, CityScene *city)` | 516 | no | (provisional) states 0xA-0xE: timed actor notifications |
+| `0x00194150` | `void mm_EvCrazyCult_Phase1(EventData *data, CityScene *city)` | 352 | no | (provisional) states 4-8: timed actor notifications, mark the building |
 | `0x001942B0` | `void mm_EvCrazyCult_Update(EventData *data, CityScene *city)` | 992 | no | type 18: Update |
 | `0x00194690` | `void mm_EvCrazyCult_Start(EventData *data, CityScene *city)` | 136 | no | type 18 "Crazy Cult": Start |
 | `0x00194720` | `int mm_EvAdoption_Slot14(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 116 | indirect | type 12: Slot14 |
@@ -133,7 +133,7 @@ City events (visitors, requests, incidents, paydays).
 | `0x00195520` | `void mm_EvMissingChildren_Update(EventData *data, CityScene *city)` | 1452 | yes | type 6: Update |
 | `0x00195AD0` | `void mm_EvMissingChildren_Start(EventData *data, CityScene *city)` | 48 | no | type 6: Start |
 | `0x00195B00` | `int mm_EvMissingChildren_Check(EventData *data, CityScene *city, int a2)` | 380 | yes | type 6 "Finds missing children": Check |
-| `0x00195C80` | `int mm_EvAdvertise_PickClaimText(CityScene *city, int a1, int a2)` | 284 | no | (provisional) claim lines for the two buildings' claim types (CLAIM.BIN sections) |
+| `0x00195C80` | `int mm_EvAdvertise_ClaimsMatch(CityScene *city, ActorRef *actorA, ActorRef *actorB)` | 284 | no | whether an active entry (first byte 0) of building A's claim section B names an id, or a section D group of ids (0x8000 and up), that building B's section C lists |
 | `0x00195DA0` | `int mm_EvAdvertise_Slot14(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 800 | no | type 9: Slot14 |
 | `0x001960C0` | `void mm_EvAdvertise_End(EventData *data, CityScene *city)` | 140 | no | type 9: End |
 | `0x00196150` | `void mm_EvAdvertise_Update(EventData *data, CityScene *city)` | 276 | no | type 9: Update |
@@ -164,11 +164,11 @@ City events (visitors, requests, incidents, paydays).
 | `0x0019A050` | `int mm_EvActor_PointCursor(CityScene *city, ActorRef *actor)` | 236 | yes | (provisional) when nobody holds input focus, points the city cursor at the actor's building or position (0x1815E0) |
 | `0x0019A140` | `int mm_EvActor_PointAtBuilding(CityScene *city, int actorPerson, int building)` | 108 | yes | (provisional) points the cursor at building a2 and moves to the actor |
 | `0x0019A1B0` | `void mm_EvActor_Wander(CityScene *city, ActorRef *actor)` | 752 | no | (provisional) picks a random target building for the actor; sets night flag 0x40 by the time-of-day phase |
-| `0x0019A4A0` | `int mm_EvActor_FindShop(CityScene *city, float *position)` | 524 | no | (provisional) searches all buildings with type flag 0x40 for a target for the actor |
+| `0x0019A4A0` | `int mm_EvActor_FindShop(CityScene *city, MapPerson *person)` | 524 | no | (provisional) searches all buildings with type flag 0x40 for a target for the actor |
 | `0x0019A6B0` | `void mm_EvActor_StopFollowing(CityScene *city, ActorRef *actor)` | 84 | no | the actor's person stops following (flags 0x20 and 0x80 cleared, follow target none); a0 is the city |
 | `0x0019A710` | `int mm_EvActor_Follow(CityScene *city, ActorRef *actor, ActorRef *target)` | 332 | no | person a1 leaves its building and follows person a2 (flag 0x20, target +0x20) |
 | `0x0019A860` | `int mm_EvActor_Detach(CityScene *city, ActorRef *actor)` | 308 | no | person a1 leaves its building, follow flag set with no target |
 | `0x0019A9A0` | `void mm_EvActor_Release(CityScene *city, ActorRef *actor)` | 212 | no | person a1 leaves its building and drops flags 0x80/0x100 |
 | `0x0019AB20` | `int mm_EvActor_MoveTo(CityScene *city, ActorRef *actor, ActorRef *target, int arrive)` | 816 | no | moves person a1 towards building a2; 1 on arrival |
-| `0x0019B4F0` | `int mm_EvAlien_FindBuilding(CityScene *city, int a1, uint32_t type, int32_t *rect)` | 400 | no | (provisional) a free building of type a2 whose footprint fits |
+| `0x0019B4F0` | `MapObject *mm_EvAlien_FindBuilding(CityScene *city, int list, uint32_t type, int32_t *rect)` | 400 | no | (provisional) a free building of type a2 whose footprint fits |
 | `0x0019B680` | `MapObject *mm_EvThief_FindBuilding(CityScene *city, uint32_t category, int32_t *rect)` | 448 | no | (provisional) a free building of category a1 (type +0x145) whose footprint fits |

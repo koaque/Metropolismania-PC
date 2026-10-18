@@ -1195,4 +1195,190 @@ namespace mm
     PORT_FN(Terrain_AddQuad);
     PORT_FN(Terrain_BuildStrip);
     PORT_FN(Terrain_DrawPatch);
+
+    // ---- areas, people lookups, history, saving (batch 38)
+
+    // Whether type `typeIndex` can be placed at (x, z) (mm_Map_CheckPlacement, its rectangle in this frame).
+    int Map_CanPlace(GuestPtr<CityMap> map, int, int typeIndex, int x, int z)
+    {
+        port::GuestFrame<0x20> frame;
+        return Map_CheckPlacement(map, static_cast<uint32_t>(typeIndex), x, z, GuestPtr<int32_t>{frame.ptr().address + 0x10u});
+    }
+
+    // The resident (a class without flag 1) of the family and member, or 0.
+    GuestPtr<MapPerson> Map_FindPersonEntry(GuestPtr<CityMap> map, int16_t family, uint16_t member)
+    {
+        for (int i = 0; i < kNoPerson; ++i)
+        {
+            const GuestPtr<MapPerson> person = map->people + i;
+            if (person->charType == 0)
+                continue;
+            const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)};
+            if ((cls->flags & 1u) == 0 && person->family == static_cast<uint16_t>(family) && person->member == member)
+                return person;
+        }
+        return GuestPtr<MapPerson>{0};
+    }
+
+    // The first non-resident (a class with flag 1, a vehicle) heading for `home`.
+    GuestPtr<MapPerson> Map_FindPersonOfFlaggedType(GuestPtr<CityMap> map, int16_t home)
+    {
+        const uint32_t end = map->people.address + 6000u * 0x30u;
+        for (uint32_t p = map->people.address; p < end; p += 0x30u)
+        {
+            const GuestPtr<MapPerson> person{p};
+            if (person->charType == 0)
+                continue;
+            const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)};
+            if ((cls->flags & 1u) != 0 && person->target == static_cast<uint16_t>(home))
+                return person;
+        }
+        return GuestPtr<MapPerson>{0};
+    }
+
+    namespace
+    {
+        // The top object of each tile of a size x size area (the last in the tile list) gets or loses flag 1.
+        void markArea(GuestPtr<CityMap> map, int x, int z, int size, bool on)
+        {
+            for (int dz = 0; dz < size; ++dz)
+            {
+                for (int dx = 0; dx < size; ++dx)
+                {
+                    uint16_t object = map->tiles[(z + dz) * 128 + x + dx].firstObject;
+                    while (map->objects[object].nextOnTile != kNoObject)
+                        object = map->objects[object].nextOnTile;
+                    if (on)
+                        map->objects[object].flags |= 1u;
+                    else
+                        map->objects[object].flags &= 0xFFFEu;
+                }
+            }
+        }
+
+        // Places object type `type` on every tile of a size x size area.
+        void fillArea(GuestPtr<CityMap> map, int x, int z, int size, int type, int arg)
+        {
+            for (int dz = 0; dz < size; ++dz)
+                for (int dx = 0; dx < size; ++dx)
+                    Map_PlaceObject(map, 0, type, x + dx, z + dz, arg);
+        }
+    }
+
+    void Map_HighlightArea(GuestPtr<CityMap> map, int x, int z, int size) { markArea(map, x, z, size, true); }
+    void Map_UnhighlightArea(GuestPtr<CityMap> map, int x, int z, int size) { markArea(map, x, z, size, false); }
+    void Map_LevelArea(GuestPtr<CityMap> map, int x, int z, int size, int arg) { fillArea(map, x, z, size, 3, arg); }
+    void Map_PlaceRubbleArea(GuestPtr<CityMap> map, int x, int z, int size, int arg) { fillArea(map, x, z, size, 0xA, arg); }
+
+    // Places small goods of `kind` (types 0x115 on) and gives the new object its count (byte +0x10).
+    void Map_PlaceSmallGoods(GuestPtr<CityMap> map, int x, int z, int a3, uint8_t value, int kind)
+    {
+        const int object = Map_PlaceObject(map, 0, kind + 0x115, x, z, a3);
+        if (object != kNoObject)
+            port::store<uint8_t>((map->objects + object).address + 0x10u, value);
+    }
+
+    void Map_SaveState(GuestPtr<CityMap> map, GuestPtr<McManager> mc)
+    {
+        SaveFile_Write(mc, static_cast<int>(map->packedTiles.address), 0x18000);
+        SaveFile_Write(mc, static_cast<int>(map.address + 0x10u), 0x20);
+        SaveFile_Write(mc, static_cast<int>(map->objects.address), 0x6F200);
+        TileLists_SaveState(map->tileLists, mc);
+        SaveFile_Write(mc, static_cast<int>(map->people.address), 0x46500);
+        SaveFile_Write(mc, static_cast<int>(map.address + 0x6Cu), 0xC);
+    }
+
+    // The object matrix: the building matrix of the tile kind, moved to the footprint centre on the terrain.
+    void MapObj_GetMatrix(GuestPtr<CityMap> map, int object, GuestPtr<Vec4> matrix)
+    {
+        const GuestPtr<MapObject> obj = map->objects + object;
+        const int kind = Map_GetTileKind(map, obj->tile);
+        for (uint32_t i = 0; i < 0x40u; i += 4u)
+            port::store<uint32_t>(matrix.address + i, port::load<uint32_t>(globals::kBuildingMatrices + 0x40u * static_cast<uint32_t>(kind) + i));
+        const int x = obj->tile & 0x7F, z = obj->tile >> 7;
+        const ps2f half = fromInt(GuestPtr<BuildingType>{globals::buildingTypeAddress(obj->type)}->size) / ps2f(2.0f);
+        matrix[3].x = fromInt(x) - ps2f(64.0f) + half;
+        matrix[3].y = Map_GetHeightAt(map, x, z);
+        matrix[3].z = fromInt(128 - z) - ps2f(64.0f) - half;
+    }
+
+    // The new-object history: one period older (the bytes move up one) and an empty newest period.
+    void MapObj_PushHistory(GuestPtr<CityMap> map)
+    {
+        sdk::memmove(map.address + 0x29u, map.address + 0x28u, 5);
+        map->flag8History[0] = 0;
+    }
+
+    int MapObj_SumHistory(GuestPtr<CityMap> map)
+    {
+        int sum = 0;
+        for (const uint8_t count : map->flag8History)
+            sum += count;
+        return sum;
+    }
+
+    void MapObjects_Slot0C(GuestPtr<CityMap>) {}
+
+    PORT_FN(Map_CanPlace);
+    PORT_FN(Map_FindPersonEntry);
+    PORT_FN(Map_FindPersonOfFlaggedType);
+    PORT_FN(Map_HighlightArea);
+    PORT_FN(Map_UnhighlightArea);
+    PORT_FN(Map_LevelArea);
+    PORT_FN(Map_PlaceRubbleArea);
+    PORT_FN(Map_PlaceSmallGoods);
+    PORT_FN(Map_SaveState);
+    PORT_FN(MapObj_GetMatrix);
+    PORT_FN(MapObj_PushHistory);
+    PORT_FN(MapObj_SumHistory);
+    PORT_FN(MapObjects_Slot0C);
+
+    // ---- tile lists, terrain (batch 38)
+
+    // The items of a list (their count through `count`).
+    GuestPtr<uint16_t> TileLists_Get(GuestPtr<TileLists> lists, int list, GuestPtr<uint32_t> count)
+    {
+        *count = lists->count[list];
+        return GuestPtr<uint16_t>{lists.address + 2u * lists->start[list]};
+    }
+
+    // Removes the first `item` of a list: everything after it moves down one and the later lists start one
+    // earlier. Returns 1 if it was there.
+    int TileLists_Remove(GuestPtr<TileLists> lists, uint32_t item, int list)
+    {
+        const uint32_t start = lists->start[list], count = lists->count[list];
+        for (uint32_t i = 0; i < count; ++i)
+        {
+            const uint32_t at = start + i;
+            if (lists->items[at] != item)
+                continue;
+            for (uint32_t j = at; j < 0x3F7Eu; ++j)
+                lists->items[j] = lists->items[j + 1];
+            for (int k = list + 1; k < 0x50; ++k)
+                lists->start[k] = static_cast<uint16_t>(lists->start[k] - 1);
+            lists->count[list] = static_cast<uint16_t>(lists->count[list] - 1);
+            return 1;
+        }
+        return 0;
+    }
+
+    void TileLists_SaveState(GuestPtr<TileLists> lists, GuestPtr<McManager> mc)
+    {
+        SaveFile_Write(mc, static_cast<int>(lists.address), 0x7F00);
+        SaveFile_Write(mc, static_cast<int>(lists.address + 0x7F00u), 0xA0);
+        SaveFile_Write(mc, static_cast<int>(lists.address + 0x7FA0u), 0xA0);
+    }
+
+    // A terrain layer's vectors (`a` at +0, `b` at +0x220) and its word +0x21C.
+    void Terrain_SetVec(GuestPtr<uint32_t> layer, int value, GuestPtr<uint32_t> b, GuestPtr<uint32_t> a)
+    {
+        *GuestPtr<Vec4>{layer.address} = *GuestPtr<Vec4>{a.address};
+        *GuestPtr<Vec4>{layer.address + 0x220u} = *GuestPtr<Vec4>{b.address};
+        port::store<int32_t>(layer.address + 0x21Cu, value);
+    }
+
+    PORT_FN(TileLists_Get);
+    PORT_FN(TileLists_Remove);
+    PORT_FN(TileLists_SaveState);
+    PORT_FN(Terrain_SetVec);
 }

@@ -148,7 +148,7 @@ struct BuildingType {
     uint8_t unk_143;
     uint8_t rule;              /* +0x144 */
     uint8_t category;          /* +0x145 STRTYPE.BIN category */
-    uint8_t unk_146;
+    uint8_t postGroup;         /* +0x146 group in POSTNAME.BIN (mm_BldgType_GetPostName) */
     uint8_t claimB;            /* +0x147 claim section B index */
     uint8_t claimC;            /* +0x148 claim section C index */
     uint8_t unk_149[5];

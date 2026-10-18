@@ -1043,4 +1043,234 @@ namespace mm
     PORT_FN(LayerA_SetSource);
     PORT_FN(LightSet_SetField20);
     PORT_FN(LightSet_UpdateByClock);
+
+    // The other frame's 640 x 224 picture packet (the one not drawn into this frame).
+    void DmaList_QueueOtherOverlay() { appendDmaCall(globals::kFramePictures + 0xBA0u * (globals::dmaListIndex.get() ^ 1u)); }
+
+    PORT_FN(DmaList_QueueOtherOverlay);
+
+    // ---- batch 38
+
+    // The sky by the clock: pass 0 the sky layer, other passes layer E, each with this frame's packet (by the
+    // parity of 0x1BDCD0).
+    void CityRender_DrawSky(GuestPtr<CityMap> map, GuestPtr<CityScene> city, int pass, GuestPtr<Vec4> a3)
+    {
+        const uint32_t parity = port::load<uint32_t>(0x001BDCD0u) & 1u;
+        const int packet = static_cast<int>(map->packets[parity].address);
+        if (pass != 0)
+            LayerE_Draw(map->layerE, static_cast<int>(parity), packet, city->clock, a3);
+        else
+            LayerD_DrawSkyByClock(map->sky, static_cast<int>(parity), packet, city->clock);
+    }
+
+    PORT_FN(CityRender_DrawSky);
+
+    // ---- batch 38
+
+    // The water: the waves move with the weather, then this frame's packet (+0x210, one per pass) is queued.
+    void LayerG_Draw(GuestPtr<LayerG> layer, int pass, ps2f weather)
+    {
+        LayerG_AnimateWaves(layer, weather);
+        Dma_AppendCall(static_cast<int>(port::load<uint32_t>(layer.address + 0x210u + 4u * static_cast<uint32_t>(pass))));
+    }
+
+    PORT_FN(LayerG_Draw);
+
+    // ---- layer packets and draw parameter templates (batch 38)
+
+    namespace
+    {
+        void putWords(uint32_t at, std::initializer_list<uint32_t> words)
+        {
+            for (const uint32_t word : words)
+            {
+                port::store<uint32_t>(at, word);
+                at += 4u;
+            }
+        }
+
+        void putFloats(uint32_t at, std::initializer_list<float> values)
+        {
+            for (const float value : values)
+            {
+                port::store<float>(at, value);
+                at += 4u;
+            }
+        }
+
+        // Texture coordinates (s, t, q 1, 0) for a quad drawn as two strips: the left half (s 0 to 0.5) top to
+        // bottom, then the right half.
+        void putHalvesStq(uint32_t at)
+        {
+            static constexpr float kST[12][2] = {{0, 0},    {0.5f, 0}, {0, 0.5f},    {0.5f, 0.5f}, {0, 1},    {0.5f, 1},
+                                                 {0.5f, 0}, {1, 0},    {0.5f, 0.5f}, {1, 0.5f},    {0.5f, 1}, {1, 1}};
+            for (const auto &st : kST)
+            {
+                putFloats(at, {st[0], st[1], 1.0f, 0.0f});
+                at += 16u;
+            }
+        }
+    }
+
+    // Layer A's packets: the start (+0x2434) uploads the layer's two quadwords at +0x2410 to VU1 address 0x2A,
+    // flushes, calls the chain at 0x1A8330 and sets the VIF base and offset; the end (+0x2438) sets ALPHA_1
+    // (0x20_00000044) through the GIF.
+    GuestPtr<uint32_t> LayerA_BuildPacket(GuestPtr<LayerA> layer, GuestPtr<uint32_t> packet)
+    {
+        port::store<uint32_t>(layer.address + 0x2434u, packet.address);
+        putWords(packet.address, {
+            0x30000002u, (layer.address + 0x2410u) & 0x7FFFFFFFu, 0x01000101u, 0x6C02002Au, // ref 2 quadwords; stcycl, unpack v4-32 to 0x2A
+            0x10000000u, 0, 0, 0x11000000u,                                                 // cnt 0; VIF flush
+            0x50000000u, 0x001A8330u, 0, 0,                                                 // call
+            0x60000000u, 0, 0x03000042u, 0x020001DFu,                                       // ret; VIF base 0x42, offset 0x1DF
+        });
+        port::store<uint32_t>(layer.address + 0x2438u, packet.address + 0x40u);
+        putWords(packet.address + 0x40u, {
+            0x10000002u, 0, 0x11000000u, 0x50000002u, // cnt 2 quadwords; flush, direct 2
+            0x8001u, 0x10000000u, 0xEu, 0,            // GIF tag: one A+D register
+            0x44u, 0x20u, 0x42u, 0,                   // ALPHA_1
+            0x60000000u, 0, 0, 0,                     // ret
+        });
+        return packet + 0x20;
+    }
+
+    // Layer A: the start packet, then for each of its entries (+0x2430; 0x90 bytes each, in banks of 32 picked by
+    // +0x243C) the entry's packet (+0x60) and its two meshes (2n and 2n + 1 for n at +0x10) under its matrix
+    // (+0x20), then the end packet.
+    void LayerA_Draw(GuestPtr<LayerA> layer)
+    {
+        const uint32_t l = layer.address;
+        if (port::load<int32_t>(l + 0x2430u) == 0)
+            return;
+        Dma_AppendCall(port::load<int32_t>(l + 0x2434u));
+        for (int i = 0; i < port::load<int32_t>(l + 0x2430u); ++i)
+        {
+            const auto entry = [&] { return l + 0x1200u * port::load<uint32_t>(l + 0x243Cu) + 0x90u * static_cast<uint32_t>(i); };
+            Dma_AppendCall(static_cast<int>(entry() + 0x60u));
+            const auto model = [&] { return GuestPtr<A3DObject>{port::load<uint32_t>(l)}; };
+            Instance_DrawMesh(model(), GuestPtr<Vec4>{entry() + 0x20u}, GuestPtr<Vec4>{globals::kDefaultColour}, port::load<int32_t>(entry() + 0x10u) * 2, 0);
+            Instance_DrawMesh(model(), GuestPtr<Vec4>{entry() + 0x20u}, GuestPtr<Vec4>{globals::kDefaultColour}, port::load<int32_t>(entry() + 0x10u) * 2 + 1, 0);
+        }
+        Dma_AppendCall(port::load<int32_t>(l + 0x2438u));
+    }
+
+    // Layer B's packets: the first (+0x130) calls the chain at 0x1AA340, uploads the layer's 19 quadwords to VU1
+    // 0x1C, sets the VIF base and offset and starts the program; the second (+0x220) uploads the vectors at
+    // +0x210 and +0x200 to 0x1D and 0x2D and starts the program again.
+    GuestPtr<uint32_t> LayerB_BuildPacket(GuestPtr<LayerB> layer, GuestPtr<uint32_t> packet)
+    {
+        const uint32_t l = layer.address;
+        port::store<uint32_t>(l + 0x130u, packet.address);
+        putWords(packet.address, {
+            0x10000000u, 0, 0, 0x11000000u,                                  // cnt 0; VIF flush
+            0x50000000u, 0x001AA340u, 0, 0,                                  // call
+            0x30000013u, l & 0x7FFFFFFFu, 0x01000101u, 0x6C13001Cu,          // ref 19 quadwords; unpack to 0x1C
+            0x10000000u, 0, 0x03000056u, 0x020001D5u,                        // VIF base 0x56, offset 0x1D5
+            0x10000000u, 0, 0x14000000u, 0x11000000u,                        // mscal; flush
+            0x60000000u, 0, 0, 0,                                            // ret
+        });
+        port::store<uint32_t>(l + 0x220u, packet.address + 0x60u);
+        putWords(packet.address + 0x60u, {
+            0x10000000u, 0, 0, 0x11000000u,                                  // cnt 0; flush
+            0x30000001u, (l + 0x210u) & 0x7FFFFFFFu, 0x01000101u, 0x6C01001Du, // ref 1 quadword; unpack to 0x1D
+            0x30000001u, (l + 0x200u) & 0x7FFFFFFFu, 0x01000101u, 0x6C01002Du, // ref 1 quadword; unpack to 0x2D
+            0x10000000u, 0, 0x14000000u, 0x11000000u,                        // mscal; flush
+            0x60000000u, 0, 0, 0,                                            // ret
+        });
+        return packet + 0x2C;
+    }
+
+    // Layer F's packet (+0x130): ALPHA_1 (0x30_00000048) through the GIF, then like layer B's first packet with
+    // the chain at 0x1A91C0.
+    GuestPtr<uint32_t> LayerF_BuildPacket(GuestPtr<LayerF> layer, GuestPtr<uint32_t> packet)
+    {
+        const uint32_t l = layer.address;
+        port::store<uint32_t>(l + 0x130u, packet.address);
+        putWords(packet.address, {
+            0x10000002u, 0, 0x11000000u, 0x50000002u,                        // cnt 2 quadwords; flush, direct 2
+            0x8001u, 0x10000000u, 0xEu, 0,                                   // GIF tag: one A+D register
+            0x48u, 0x30u, 0x42u, 0,                                          // ALPHA_1
+            0x10000000u, 0, 0, 0x11000000u,                                  // cnt 0; flush
+            0x50000000u, 0x001A91C0u, 0, 0,                                  // call
+            0x30000013u, l & 0x7FFFFFFFu, 0x01000101u, 0x6C13001Cu,          // ref 19 quadwords; unpack to 0x1C
+            0x10000000u, 0, 0x03000056u, 0x020001D5u,                        // VIF base 0x56, offset 0x1D5
+            0x10000000u, 0, 0x14000000u, 0x11000000u,                        // mscal; flush
+            0x60000000u, 0, 0, 0,                                            // ret
+        });
+        return packet + 0x24;
+    }
+
+    // The draw parameters VU1 reads for each layer: a colour, register words, a GIF tag (NLOOP, NREG and the
+    // register list), more words and the texture coordinates of its strips.
+    void LayerC_InitParams(GuestPtr<LayerC> layer)
+    {
+        const uint32_t l = layer.address;
+        putFloats(l, {255.0f, 0, 0, 128.0f, 0, 0, 0, 128.0f});
+        putWords(l + 0x20u, {0x68u, 0, 0, 0, 0x801Au, 0xE0000000u, 0x04144410u, 0x00444441u, // GIF tag: 26 loops of 14
+                             0x44u, 0, 0, 0, 0x82u, 0, 0, 0, 0, 0, 0, 4u});
+        port::store<int32_t>(l + 0x1F0u, 0x110);
+        for (uint32_t at = l + 0x70u; at < l + 0x1F0u; at += 4u)
+            port::store<float>(at, 1.0f);
+        putFloats(l + 0x200u, {1.0f, 1.0f, 1.0f, 1.0f});
+    }
+
+    void LayerF_InitParams(GuestPtr<LayerF> layer)
+    {
+        const uint32_t l = layer.address;
+        putFloats(l, {128.0f, 128.0f, 128.0f, 128.0f});
+        putWords(l + 0x10u, {0x9930A7A4u, 0x4004F405u, 0, 0, 0x68u, 0, 0, 0, 0x801Au, 0xE0000000u, 0x41241206u, 0x00412412u, // GIF tag: 26 loops of 14
+                             0x7Cu, 0, 0, 0});
+        putHalvesStq(l + 0x50u);
+        putWords(l + 0x110u, {0, 0, 0, 0x10u});
+    }
+
+    // Layer G (the water) keeps its texture coordinates at +0x220 and copies them to both strips' packets (+0x60
+    // and +0x120).
+    void LayerG_InitParams(GuestPtr<LayerG> layer)
+    {
+        const uint32_t l = layer.address;
+        putFloats(l, {128.0f, 128.0f, 128.0f, 60.0f});
+        putWords(l + 0x20u, {0x40u, 0x10u, 0, 0, 0x8020u, 0xD0000000u, 0x24124120u, 0x00041241u, // GIF tag: 32 loops of 13
+                             0x27Cu, 0, 0, 0, 0x7Cu, 0, 0, 0});
+        putWords(l + 0x1E0u, {0, 0, 0, 2u});
+        putHalvesStq(l + 0x220u);
+        for (uint32_t i = 0; i < 12; ++i)
+        {
+            *GuestPtr<Vec4>{l + 0x60u + 16u * i} = *GuestPtr<Vec4>{l + 0x220u + 16u * i};
+            *GuestPtr<Vec4>{l + 0x120u + 16u * i} = *GuestPtr<Vec4>{l + 0x220u + 16u * i};
+        }
+    }
+
+    // The city map's overlay parameters (+0x2D30).
+    void CityRender_InitParams(GuestPtr<CityMap> map)
+    {
+        const uint32_t m = map.address;
+        putFloats(m + 0x2D30u, {128.0f, 128.0f, 128.0f, 128.0f});
+        putWords(m + 0x2D40u, {0x99308000u, 0x4004B085u, 0, 0, 0x68u, 0, 0, 0, 0x801Au, 0xE0000000u, 0x41241206u, 0x00412412u, // GIF tag: 26 loops of 14
+                               0x3Cu, 0, 0, 0});
+        putHalvesStq(m + 0x2D80u);
+        putWords(m + 0x2E40u, {0, 0, 0, 1u});
+    }
+
+    // The terrain's parameters (map +0x2E50): its texture coordinates run along s only.
+    void Terrain_InitParams(int map)
+    {
+        const auto m = static_cast<uint32_t>(map);
+        putFloats(m + 0x2E50u, {128.0f, 128.0f, 128.0f, 128.0f});
+        putWords(m + 0x2E60u, {0x99308000u, 0x4004B085u, 0, 0, 0x6Cu, 0, 0, 0, 0x8024u, 0xA05DC000u, 0x24124126u, 0x41u}); // GIF tag: 36 loops of 10
+        putFloats(m + 0x2E90u, {0.25f, 0.25f, 0, 0});
+        static constexpr float kS[12] = {0, 0.5f, 0, 0.5f, 0.5f, 0, 0.5f, 1, 0.5f, 1, 1, 0.5f};
+        for (uint32_t i = 0; i < 12; ++i)
+            putFloats(m + 0x2EA0u + 16u * i, {kS[i], 0, 1.0f, 0});
+    }
+
+    PORT_FN(LayerA_BuildPacket);
+    PORT_FN(LayerA_Draw);
+    PORT_FN(LayerB_BuildPacket);
+    PORT_FN(LayerF_BuildPacket);
+    PORT_FN(LayerC_InitParams);
+    PORT_FN(LayerF_InitParams);
+    PORT_FN(LayerG_InitParams);
+    PORT_FN(CityRender_InitParams);
+    PORT_FN(Terrain_InitParams);
 }

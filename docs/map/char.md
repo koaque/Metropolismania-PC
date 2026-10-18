@@ -21,7 +21,7 @@ People and the player character.
 
 ## Functions
 
-84 functions (typed 47, verified 37). Blocks: 19 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+84 functions (typed 24, verified 60). Blocks: 19 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -80,7 +80,7 @@ People and the player character.
 | `0x0015DCF0` | `uint32_t mm_Person_PlaceHomeObject(CityScene *city, MapPerson *person)` | 800 | no | a resident's home (kept in its target field): the current one, a home of the family near work with the claim meter below 60, or a new home of the work type's home type (+0x13A) placed on flat ground nearby; else the workplace |
 | `0x0015E010` | `uint16_t mm_Person_RandomTarget(CityScene *city, MapPerson *person, int a2, int a3)` | 436 | no | (provisional) random target along walkable tiles |
 | `0x0015E1D0` | `uint16_t mm_Person_TargetWork(CityScene *city, MapPerson *person)` | 292 | no | (provisional) |
-| `0x0015E300` | `int mm_Person_TileHasCompanion(CityScene *city, MapPerson *person, int tile)` | 212 | no | (provisional) people on the tile matching the person |
+| `0x0015E300` | `int mm_Person_TileHasCompanion(CityScene *city, MapPerson *person, MapObject *building)` | 212 | no | (provisional) people on the tile matching the person |
 | `0x0015E3E0` | `uint16_t mm_Person_TargetVisit(CityScene *city, MapPerson *person)` | 276 | no | (provisional) |
 | `0x0015E500` | `uint16_t mm_Person_TargetShop(CityScene *city, MapPerson *person, int a2, int a3)` | 456 | no | (provisional) |
 | `0x0015E6D0` | `int16_t mm_Person_TargetHome(CityScene *city, MapPerson *person)` | 296 | no | (provisional) |
@@ -102,10 +102,10 @@ People and the player character.
 | `0x00162560` | `void mm_Stamina_CreateGlobal(void)` | 60 | yes | 0x1BDBB8 = new stamina record |
 | `0x0019AA80` | `void mm_Person_ExitBuilding(CityScene *city, MapPerson *person)` | 160 | no | if person a1 is inside a building: lowers the building's occupant count (+0x17) and marks the person outside |
 | `0x0019AE50` | `int mm_Person_IsOnOpenTile(CityScene *city, ActorRef *actor)` | 212 | no | (provisional) the person's tile holds no building with type flag 0x40 |
-| `0x0019AF30` | `int mm_Person_IsAtBuilding(CityScene *city, ActorRef *actor, int building)` | 232 | no | person a1 (6000 counts as yes) stands at building a2 |
-| `0x0019B020` | `int mm_Person_FindIdleOfType(CityScene *city, int a1, uint32_t charType)` | 136 | no | first person of char type a2 whose home building is free (0x165660) |
+| `0x0019AF30` | `int mm_Person_IsAtBuilding(CityScene *city, ActorRef *actor, ActorRef *target)` | 232 | no | person a1 (6000 counts as yes) stands at building a2 |
+| `0x0019B020` | `MapPerson *mm_Person_FindIdleOfType(CityScene *city, MapObject *building, uint32_t charType)` | 136 | no | first person of char type a2 whose home building is free (0x165660) |
 | `0x0019B0B0` | `int mm_Person_IsNearBuilding(CityScene *city, float *position, MapObject *obj, int range)` | 424 | no | person position within a3 tiles of building a2's footprint |
 | `0x0019B260` | `int mm_Player_DistanceToBuilding(CityScene *city, ActorRef *actor)` | 360 | no | tiles between the player and the building of actor a1 (footprint aware); a0 is the city |
-| `0x0019B3D0` | `float mm_Player_DistanceToPerson(Player *player, ActorRef *actor)` | 104 | no | distance from the player to person a1 (sqrt) |
-| `0x0019B440` | `float mm_Player_DistanceToPoint(Player *player, float *point)` | 80 | no | distance from the player to point a1 |
-| `0x0019B490` | `float mm_Person_Distance(int a0, ActorRef *actorA, ActorRef *actorB)` | 84 | no | distance between persons a1 and a2 |
+| `0x0019B3D0` | `float mm_Player_DistanceToPerson(CityScene *city, ActorRef *actor)` | 104 | no | distance from the player to person a1 (sqrt) |
+| `0x0019B440` | `float mm_Player_DistanceToPoint(CityScene *city, float *point)` | 80 | no | distance from the player to point a1 |
+| `0x0019B490` | `float mm_Person_Distance(CityScene *city, ActorRef *actorA, ActorRef *actorB)` | 84 | no | distance between persons a1 and a2 |

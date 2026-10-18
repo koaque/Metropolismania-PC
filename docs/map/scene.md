@@ -8,7 +8,7 @@ introduction (city name, stage title, approval rate) and the mission briefing te
 
 ## Functions
 
-25 functions (typed 17, verified 8). Blocks: 15 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+25 functions (typed 16, verified 9). Blocks: 15 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|

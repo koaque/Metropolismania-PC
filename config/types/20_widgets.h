@@ -32,8 +32,15 @@ struct MenuWin {
 };
 /* Talk person card (0x38 bytes), a widget. */
 struct TalkCard { Widget base; uint8_t data[0x2C]; };
-/* Talk money panel (0x1C bytes), a widget. */
-struct TalkMoney { Widget base; uint8_t data[0x10]; };
+/* Talk money panel (0x1C bytes, vtable 0x1BD7C0), a widget: the shown amount counts towards the real one
+   by 100 a frame (mm_TalkMoney_Active). */
+struct TalkMoney {
+    Widget base;
+    int32_t shown;             /* +0x0C */
+    int32_t amount;            /* +0x10 */
+    A3DObject *model;          /* +0x14 the talk building model (0x1F3B2C) */
+    TextBox *text;             /* +0x18 */
+};
 /* Talk conversation (0x508 bytes), a message window. */
 struct TalkConv {
     MsgWin base;
