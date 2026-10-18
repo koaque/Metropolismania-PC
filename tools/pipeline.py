@@ -428,12 +428,22 @@ def render_config() -> None:
     # those functions get an "_lle" suffix (original code, low-level).
     unbound_names = {s.split("@")[0] for s in unbound}
     unbound_addrs = {int(s.split("@")[1], 16) for s in unbound if "@" in s}
+    # A function the analyzer named with a leading underscore (an SDK internal) is bound by the same
+    # name match without being listed in [general].stubs: _sceVu0ecossin (0x104E88, the sin/cos step inside
+    # sceVu0RotMatrixX/Y/Z, which hands its result back in vf4 and vf5) was bound to the runtime's unrelated
+    # public sceVu0ecossin(dst, angle), so every rotation matrix was built from stale registers.
+    hidden = set()
+    for line in (CONFIG / "funcmap.csv").read_text().splitlines()[1:]:
+        name, start, _ = line.split(",", 2)
+        if name.startswith("_") and any(fnmatch.fnmatchcase(name.lstrip("_"), pattern) for pattern in forced):
+            hidden.add((name, int(start, 16)))
+    unbound_addrs |= {addr for _, addr in hidden}
     rendered_map = WORK / "funcmap.rendered.csv"
     map_lines = (CONFIG / "funcmap.csv").read_text().splitlines()
     out_lines = [map_lines[0]]
     for line in map_lines[1:]:
         name, start, rest = line.split(",", 2)
-        if name in unbound_names and int(start, 16) in unbound_addrs:
+        if (name in unbound_names and int(start, 16) in unbound_addrs) or (name, int(start, 16)) in hidden:
             name = f"{name}_lle"
         out_lines.append(f"{name},{start},{rest}")
     rendered_map.write_text("\n".join(out_lines) + "\n")
@@ -549,6 +559,9 @@ def cmd_run(args: argparse.Namespace) -> None:
     window_pos = settings().get("game_window_pos")
     if window_pos and "PS2X_WINDOW_POS" not in env:
         env["PS2X_WINDOW_POS"] = f"{int(window_pos[0])},{int(window_pos[1])}"
+    # work/local.json "mute_audio": true keeps the SPU2 output off (PS2X_SPU2=0) for runs and captures.
+    if settings().get("mute_audio") and "PS2X_SPU2" not in env:
+        env["PS2X_SPU2"] = "0"
     if args.pad:
         env["PS2X_PAD_SCRIPT"] = str(Path(args.pad).resolve())
     for item in args.env or []:
