@@ -1359,7 +1359,7 @@ namespace mm
         const GuestPtr<StageState> stage = globals::stageState();
         stage->stage = -1;
         stage->money = 3000;
-        stage->unk_1C4 = 2500;
+        stage->salary = 2500;
         stage->unk_280 = 0;
         for (StageName &name : stage->names)
             name.text[0] = '\0';

@@ -628,7 +628,7 @@ struct StageState {
     StageName names[26];       /* +0x000 the city's name, the mayor's name, ... (cleared by mm_Stage_Reset) */
     uint8_t unk_1A0[0x20];
     int32_t money;             /* +0x1C0 3000 at reset; goods are affordable up to it (mm_WordsFn_CanAfford) */
-    int32_t unk_1C4;           /* +0x1C4 2500 at reset */
+    int32_t salary;            /* +0x1C4 2500 at reset; added to the money each payday, 1250 more after a good month (mm_EvPayday_Update) */
     int32_t stage;             /* +0x1C8 stage number, -1 = none */
     int32_t quota;             /* +0x1CC population target (mm_EvQuota80_Check) */
     uint8_t unk_1D0[4];
@@ -1159,7 +1159,7 @@ struct CityScene {
     int32_t scoreA8Count;      /* +0xAC */
     ps2f waterLevel;          /* +0xB0 height of the water surface (mm_LayerG_Draw, mm_Se_PickTerrainAmbience) */
     uint32_t flags;            /* +0xB4 2 holiday month, 4 popular (approval 118+), 0x40 pad focus after a talk */
-    int32_t unk_B8;
+    int32_t paydayScore;       /* +0xB8 raised through the month; with the families moved in and out it decides the salary rise (mm_EvPayday_Update) */
     int32_t pendingApproval;   /* +0xBC */
     int32_t trafficPhase;      /* +0xC0 traffic lights: 0 lets traffic along z through, 2 along x, 1 and 3 neither (mm_Char2_UpdateSpeedA) */
     int32_t trafficTimer;      /* +0xC4 0..999 per tick: phase 0 below 400, 1 below 500, 2 below 900, then 3 */
@@ -1573,7 +1573,7 @@ static_assert(sizeof(StageName) == 0x10, "StageName size");
 static_assert(sizeof(StageState) == 0x284, "StageState size");
 static_assert(offsetof(StageState, names) == 0x000, "StageState.names");
 static_assert(offsetof(StageState, money) == 0x1C0, "StageState.money");
-static_assert(offsetof(StageState, unk_1C4) == 0x1C4, "StageState.unk_1C4");
+static_assert(offsetof(StageState, salary) == 0x1C4, "StageState.salary");
 static_assert(offsetof(StageState, stage) == 0x1C8, "StageState.stage");
 static_assert(offsetof(StageState, quota) == 0x1CC, "StageState.quota");
 static_assert(offsetof(StageState, missionTarget) == 0x1D4, "StageState.missionTarget");
@@ -1888,6 +1888,7 @@ static_assert(offsetof(CityScene, scoreA8) == 0xA8, "CityScene.scoreA8");
 static_assert(offsetof(CityScene, scoreA8Count) == 0xAC, "CityScene.scoreA8Count");
 static_assert(offsetof(CityScene, waterLevel) == 0xB0, "CityScene.waterLevel");
 static_assert(offsetof(CityScene, flags) == 0xB4, "CityScene.flags");
+static_assert(offsetof(CityScene, paydayScore) == 0xB8, "CityScene.paydayScore");
 static_assert(offsetof(CityScene, pendingApproval) == 0xBC, "CityScene.pendingApproval");
 static_assert(offsetof(CityScene, trafficPhase) == 0xC0, "CityScene.trafficPhase");
 static_assert(offsetof(CityScene, trafficTimer) == 0xC4, "CityScene.trafficTimer");

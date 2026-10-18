@@ -20,7 +20,7 @@ City events (visitors, requests, incidents, paydays).
 
 ## Functions
 
-148 functions (typed 83, verified 65). Blocks: 20 can reach a thread switch, 21 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+148 functions (typed 72, verified 76). Blocks: 20 can reach a thread switch, 21 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -58,7 +58,7 @@ City events (visitors, requests, incidents, paydays).
 | `0x0018F5F0` | `void mm_EvShoppingTogether_Update(EventData *data, CityScene *city)` | 900 | yes | type 1: Update |
 | `0x0018F980` | `void mm_EvShoppingTogether_End(EventData *data, CityScene *city)` | 192 | no | type 1: End (clears the building marks) |
 | `0x0018FA40` | `void mm_EvShoppingTogether_Start(EventData *data, CityScene *city)` | 116 | no | type 1: Start (marks the two buildings, timer 180) |
-| `0x0018FAC0` | `int mm_EvShoppingTogether_Check(EventData *data, CityScene *city, float *a2)` | 460 | no | event type 1 "Shopping together": slot Check |
+| `0x0018FAC0` | `int mm_EvShoppingTogether_Check(EventData *data, CityScene *city, MapPerson *person)` | 460 | no | event type 1 "Shopping together": slot Check |
 | `0x0018FC90` | `void mm_EvAlien_Slot14(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 56 | yes | type 16: Slot14 |
 | `0x0018FCD0` | `void mm_EvAlien_End(EventData *data, CityScene *city)` | 120 | no | type 16: End (clears the building marks) |
 | `0x0018FD50` | `int mm_EvAlien_PickTarget(CityScene *city, int a1, int a2)` | 400 | no | (provisional) picks a building for the alien (footprint checks, table 0x1B3760) |
@@ -171,4 +171,4 @@ City events (visitors, requests, incidents, paydays).
 | `0x0019A9A0` | `void mm_EvActor_Release(CityScene *city, ActorRef *actor)` | 212 | no | person a1 leaves its building and drops flags 0x80/0x100 |
 | `0x0019AB20` | `int mm_EvActor_MoveTo(CityScene *city, ActorRef *actor, ActorRef *target, int arrive)` | 816 | no | moves person a1 towards building a2; 1 on arrival |
 | `0x0019B4F0` | `int mm_EvAlien_FindBuilding(CityScene *city, int a1, uint32_t type, int32_t *rect)` | 400 | no | (provisional) a free building of type a2 whose footprint fits |
-| `0x0019B680` | `int mm_EvThief_FindBuilding(CityScene *city, uint32_t category, int32_t *rect)` | 448 | no | (provisional) a free building of category a1 (type +0x145) whose footprint fits |
+| `0x0019B680` | `MapObject *mm_EvThief_FindBuilding(CityScene *city, uint32_t category, int32_t *rect)` | 448 | no | (provisional) a free building of category a1 (type +0x145) whose footprint fits |

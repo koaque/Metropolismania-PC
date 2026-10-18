@@ -41,7 +41,7 @@ move in.
 
 ## Functions
 
-185 functions (ported 1, typed 120, verified 64). Blocks: 55 can reach a thread switch, 7 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+185 functions (ported 1, typed 119, verified 65). Blocks: 55 can reach a thread switch, 7 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|

@@ -3552,11 +3552,16 @@ int Sound_GetStatus();
 int EvShoppingTogether_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
 void EvShoppingTogether_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvShoppingTogether_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
+int EvShoppingTogether_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
 void EvAlien_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvBodyguard_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
 void EvEscort_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvEscort_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvBodyguard_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city);
+void EvPayday_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
+void EvMsg_UpdateFinal(GuestPtr<EventData> data, GuestPtr<CityScene> city);
+void EvMsg_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
+void EvNoRetreat_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvMsg_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvMsg_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvMissionCleared_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city);
@@ -3573,6 +3578,7 @@ int EvRiddle_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvPopularity_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvCaveMan_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvCaveMan_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
+int EvCaveMan_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 GuestPtr<char> EvDeliveryMan_Slot10(GuestPtr<EventData> data, GuestPtr<CityScene> city, int index);
 void EvDeliveryMan_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvDeliveryMan_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
@@ -3583,6 +3589,7 @@ void PartyPopup_Draw(int popup, int pass);
 void PartyPopup_Update(int popup, GuestPtr<CityScene> city);
 int EvFarewellParty_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
 int EvForgetfulGranny_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
+void EvCrazyCult_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvCrazyCult_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvAdoption_Slot10(GuestPtr<EventData> data, GuestPtr<CityScene> city, int index);
 void EvAdoption_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
@@ -3590,9 +3597,11 @@ void EvUselessMiddleAged_Update(GuestPtr<EventData> data, GuestPtr<CityScene> ci
 void EvUselessMiddleAged_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvUselessMiddleAged_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvUselessMiddleAged_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city);
+int EvMissingChildren_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
 void EvMissingChildren_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvMissingChildren_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvAdvertise_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
+void EvAdvertise_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvAdvertise_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvAdvertise_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
 GuestPtr<char> EvShopping_Slot10(GuestPtr<EventData> data, GuestPtr<CityScene> city, int index);
@@ -3602,12 +3611,15 @@ int EventData_GetSize7C();
 int EventData_GetSize1C();
 void EvNoodles_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvNoodles_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
+int EvThief_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
 void EvThief_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
+int EvThief_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvActor_Notify(GuestPtr<CityScene> city, GuestPtr<ActorRef> actor);
 void EvActor_StopFollowing(GuestPtr<CityScene> city, GuestPtr<ActorRef> actor);
 int EvActor_Follow(GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, GuestPtr<ActorRef> target);
 int EvActor_Detach(GuestPtr<CityScene> city, GuestPtr<ActorRef> actor);
 void EvActor_Release(GuestPtr<CityScene> city, GuestPtr<ActorRef> actor);
+void Building_GetFootprint(GuestPtr<MapObject> obj, int a1, GuestPtr<uint32_t> rect);
 void StaticInit_StatusBytes();
 
 // Not ported yet: the generated function, through the runtime's function table.
@@ -4297,7 +4309,6 @@ inline void Sound_LoadModules() { port::callGuest<void>(addr::Sound_LoadModules)
 inline void Sound_Shutdown() { port::callGuest<void>(addr::Sound_Shutdown); }
 inline void Sound_Init() { port::callGuest<void>(addr::Sound_Init); }
 inline void EvShoppingTogether_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvShoppingTogether_Update, data, city); }
-inline int EvShoppingTogether_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ps2f> a2) { return port::callGuest<int>(addr::EvShoppingTogether_Check, data, city, a2); }
 inline void EvAlien_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode) { port::callGuest<void>(addr::EvAlien_Slot14, data, city, actor, mode); }
 inline int EvAlien_PickTarget(GuestPtr<CityScene> city, int a1, int a2) { return port::callGuest<int>(addr::EvAlien_PickTarget, city, a1, a2); }
 inline void EvAlien_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvAlien_Update, data, city); }
@@ -4305,13 +4316,8 @@ inline int EvAlien_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city) { r
 inline void EvEscort_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvEscort_Update, data, city); }
 inline int EvMsg_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode) { return port::callGuest<int>(addr::EvMsg_Slot14, data, city, actor, mode); }
 inline int EvPayday_Slot10(GuestPtr<EventData> data, GuestPtr<CityScene> city, uint32_t a2) { return port::callGuest<int>(addr::EvPayday_Slot10, data, city, a2); }
-inline void EvPayday_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvPayday_Update, data, city); }
-inline void EvMsg_UpdateFinal(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvMsg_UpdateFinal, data, city); }
-inline void EvMsg_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvMsg_Update, data, city); }
-inline void EvNoRetreat_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvNoRetreat_Update, data, city); }
 inline uint32_t EvCaveMan_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode) { return port::callGuest<uint32_t>(addr::EvCaveMan_Slot14, data, city, actor, mode); }
 inline void EvCaveMan_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvCaveMan_Update, data, city); }
-inline int EvCaveMan_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city) { return port::callGuest<int>(addr::EvCaveMan_Check, data, city); }
 inline int EvDeliveryMan_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode) { return port::callGuest<int>(addr::EvDeliveryMan_Slot14, data, city, actor, mode); }
 inline void EvDeliveryMan_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvDeliveryMan_Update, data, city); }
 inline int EvDeliveryMan_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, int a2) { return port::callGuest<int>(addr::EvDeliveryMan_Check, data, city, a2); }
@@ -4321,7 +4327,6 @@ inline void EvFarewellParty_End(GuestPtr<EventData> data, GuestPtr<CityScene> ci
 inline void EvFarewellParty_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvFarewellParty_Update, data, city); }
 inline void EvFarewellParty_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvFarewellParty_Start, data, city); }
 inline int EvCrazyCult_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode) { return port::callGuest<int>(addr::EvCrazyCult_Slot14, data, city, actor, mode); }
-inline void EvCrazyCult_End(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvCrazyCult_End, data, city); }
 inline int EvCrazyCult_Phase3(int a0, GuestPtr<CityScene> city) { return port::callGuest<int>(addr::EvCrazyCult_Phase3, a0, city); }
 inline void EvCrazyCult_Phase2(int a0, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvCrazyCult_Phase2, a0, city); }
 inline void EvCrazyCult_Phase1(int a0, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvCrazyCult_Phase1, a0, city); }
@@ -4329,21 +4334,17 @@ inline void EvCrazyCult_Update(GuestPtr<EventData> data, GuestPtr<CityScene> cit
 inline int EvAdoption_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode) { return port::callGuest<int>(addr::EvAdoption_Slot14, data, city, actor, mode); }
 inline void EvAdoption_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvAdoption_Update, data, city); }
 inline uint32_t EvUselessMiddleAged_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode) { return port::callGuest<uint32_t>(addr::EvUselessMiddleAged_Slot14, data, city, actor, mode); }
-inline int EvMissingChildren_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode) { return port::callGuest<int>(addr::EvMissingChildren_Slot14, data, city, actor, mode); }
 inline void EvMissingChildren_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvMissingChildren_Update, data, city); }
 inline int EvMissingChildren_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, int a2) { return port::callGuest<int>(addr::EvMissingChildren_Check, data, city, a2); }
 inline int EvAdvertise_PickClaimText(GuestPtr<CityScene> city, int a1, int a2) { return port::callGuest<int>(addr::EvAdvertise_PickClaimText, city, a1, a2); }
 inline int EvAdvertise_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode) { return port::callGuest<int>(addr::EvAdvertise_Slot14, data, city, actor, mode); }
-inline void EvAdvertise_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvAdvertise_Update, data, city); }
 inline int EvShopping_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode) { return port::callGuest<int>(addr::EvShopping_Slot14, data, city, actor, mode); }
 inline void EvShopping_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvShopping_Update, data, city); }
 inline int EvShopping_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person) { return port::callGuest<int>(addr::EvShopping_Check, data, city, person); }
 inline void EvNoodles_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode) { port::callGuest<void>(addr::EvNoodles_Slot14, data, city, actor, mode); }
 inline void EvNoodles_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvNoodles_Update, data, city); }
 inline int EvNoodles_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city) { return port::callGuest<int>(addr::EvNoodles_Check, data, city); }
-inline int EvThief_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode) { return port::callGuest<int>(addr::EvThief_Slot14, data, city, actor, mode); }
 inline void EvThief_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvThief_Update, data, city); }
-inline int EvThief_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city) { return port::callGuest<int>(addr::EvThief_Check, data, city); }
 inline int EvRelationship_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode) { return port::callGuest<int>(addr::EvRelationship_Slot14, data, city, actor, mode); }
 inline int EvAffair_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, int a2) { return port::callGuest<int>(addr::EvAffair_Check, data, city, a2); }
 inline int EvBoyfriend_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, int a2) { return port::callGuest<int>(addr::EvBoyfriend_Check, data, city, a2); }
@@ -4363,8 +4364,7 @@ inline ps2f Player_DistanceToPerson(GuestPtr<Player> player, GuestPtr<ActorRef> 
 inline ps2f Player_DistanceToPoint(GuestPtr<Player> player, GuestPtr<ps2f> point) { return port::callGuest<ps2f>(addr::Player_DistanceToPoint, player, point); }
 inline ps2f Person_Distance(int a0, GuestPtr<ActorRef> actorA, GuestPtr<ActorRef> actorB) { return port::callGuest<ps2f>(addr::Person_Distance, a0, actorA, actorB); }
 inline int EvAlien_FindBuilding(GuestPtr<CityScene> city, int a1, uint32_t type, GuestPtr<int32_t> rect) { return port::callGuest<int>(addr::EvAlien_FindBuilding, city, a1, type, rect); }
-inline int EvThief_FindBuilding(GuestPtr<CityScene> city, uint32_t category, GuestPtr<int32_t> rect) { return port::callGuest<int>(addr::EvThief_FindBuilding, city, category, rect); }
-inline void Building_GetFootprint(GuestPtr<MapObject> obj, int a1, GuestPtr<uint32_t> rect) { port::callGuest<void>(addr::Building_GetFootprint, obj, a1, rect); }
+inline GuestPtr<MapObject> EvThief_FindBuilding(GuestPtr<CityScene> city, uint32_t category, GuestPtr<int32_t> rect) { return port::callGuest<GuestPtr<MapObject>>(addr::EvThief_FindBuilding, city, category, rect); }
 inline void Movie_SetSpuMasterVolume(int volume) { port::callGuest<void>(addr::Movie_SetSpuMasterVolume, volume); }
 inline int Movie_SendToIop2Area(int iop0, int iopSize0, int iop1, int iopSize1, int ee0, int eeSize0, int ee1, int eeSize1) { return port::callGuest<int>(addr::Movie_SendToIop2Area, iop0, iopSize0, iop1, iopSize1, ee0, eeSize0, ee1, eeSize1); }
 inline int Movie_AudioDecSendToIop(GuestPtr<int32_t> audio, int a1, int a2, int a3) { return port::callGuest<int>(addr::Movie_AudioDecSendToIop, audio, a1, a2, a3); }

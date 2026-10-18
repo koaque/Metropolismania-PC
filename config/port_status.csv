@@ -1995,7 +1995,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0018F5F0,mm_EvShoppingTogether_Update,900,game,event,typed,yes,0,7,type 1: Update
 0x0018F980,mm_EvShoppingTogether_End,192,game,event,verified,no,0,3,type 1: End (clears the building marks)
 0x0018FA40,mm_EvShoppingTogether_Start,116,game,event,verified,no,0,1,"type 1: Start (marks the two buildings, timer 180)"
-0x0018FAC0,mm_EvShoppingTogether_Check,460,game,event,typed,no,0,4,"event type 1 ""Shopping together"": slot Check"
+0x0018FAC0,mm_EvShoppingTogether_Check,460,game,event,verified,no,0,4,"event type 1 ""Shopping together"": slot Check"
 0x0018FC90,mm_EvAlien_Slot14,56,game,event,typed,yes,0,1,type 16: Slot14
 0x0018FCD0,mm_EvAlien_End,120,game,event,verified,no,0,1,type 16: End (clears the building marks)
 0x0018FD50,mm_EvAlien_PickTarget,400,game,event,typed,no,1,4,"(provisional) picks a building for the alien (footprint checks, table 0x1B3760)"
@@ -2008,10 +2008,10 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00190B50,mm_EvBodyguard_Check,8,game,event,verified,no,0,0,"type 5 ""Bodyguard"": Check"
 0x00190B60,mm_EvMsg_Slot14,612,game,event,typed,no,0,7,"Slot14 shared by types 23, 29, 30, 35, 41"
 0x00190DD0,mm_EvPayday_Slot10,72,game,event,typed,indirect,0,0,Slot10 shared by types 29 and 30
-0x00190F00,mm_EvPayday_Update,492,game,event,typed,no,0,2,Update shared by types 29 and 30
-0x001910F0,mm_EvMsg_UpdateFinal,256,game,event,typed,no,0,1,"Update for types 23 ""Begin a farewell party"", 35 ""Forcibly Retreat"", 41 ""Mission Cleared"""
-0x001911F0,mm_EvMsg_Update,292,game,event,typed,no,0,2,"Update shared by most message events (25-28, 31-34, 36-40)"
-0x00191320,mm_EvNoRetreat_Update,256,game,event,typed,no,0,2,"type 24 ""No retreat"": Update"
+0x00190F00,mm_EvPayday_Update,492,game,event,verified,no,0,2,Update shared by types 29 and 30
+0x001910F0,mm_EvMsg_UpdateFinal,256,game,event,verified,no,0,1,"Update for types 23 ""Begin a farewell party"", 35 ""Forcibly Retreat"", 41 ""Mission Cleared"""
+0x001911F0,mm_EvMsg_Update,292,game,event,verified,no,0,2,"Update shared by most message events (25-28, 31-34, 36-40)"
+0x00191320,mm_EvNoRetreat_Update,256,game,event,verified,no,0,2,"type 24 ""No retreat"": Update"
 0x00191420,mm_EvMsg_End,48,game,event,verified,no,0,1,End shared by the message events
 0x00191450,mm_EvMsg_Start,36,game,event,verified,no,0,0,Start shared by the message events (types 23-41)
 0x00191480,mm_EvMissionCleared_Check,84,game,event,verified,no,0,1,"type 41 ""Mission Cleared"": Check"
@@ -2030,7 +2030,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00191A50,mm_EvCaveMan_Update,1652,game,event,typed,yes,0,12,type 15: Update
 0x001920D0,mm_EvCaveMan_End,192,game,event,verified,no,0,2,type 15: End
 0x00192190,mm_EvCaveMan_Start,8,game,event,verified,no,0,0,type 15: Start
-0x001921A0,mm_EvCaveMan_Check,380,game,event,typed,no,0,4,"type 15 ""Cave Man"": Check"
+0x001921A0,mm_EvCaveMan_Check,380,game,event,verified,no,0,4,"type 15 ""Cave Man"": Check"
 0x00192320,mm_EvDeliveryMan_Slot14,76,game,event,typed,indirect,0,0,type 3: Slot14
 0x00192490,mm_EvDeliveryMan_Slot10,176,game,event,verified,no,0,1,type 3: Slot10
 0x00192540,mm_EvDeliveryMan_Update,328,game,event,typed,no,0,3,type 3: Update
@@ -2050,7 +2050,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00193920,mm_EvFarewellParty_Start,520,game,event,typed,no,0,5,"type 19 ""Farewell Party"": Start"
 0x00193B30,mm_EvForgetfulGranny_Check,44,game,event,verified,no,0,0,"type 2 ""Forgetful Granny"": Check"
 0x00193B60,mm_EvCrazyCult_Slot14,96,game,event,typed,indirect,0,0,type 18: Slot14
-0x00193D00,mm_EvCrazyCult_End,232,game,event,typed,no,0,1,type 18: End
+0x00193D00,mm_EvCrazyCult_End,232,game,event,verified,no,0,1,type 18: End
 0x00193DF0,mm_EvCrazyCult_Phase3,324,game,event,typed,no,1,3,"(provisional) states 0x13-0x16: wait, mark the building, find the person"
 0x00193F40,mm_EvCrazyCult_Phase2,516,game,event,typed,no,1,3,(provisional) states 0xA-0xE: timed actor notifications
 0x00194150,mm_EvCrazyCult_Phase1,352,game,event,typed,no,1,3,"(provisional) states 4-8: timed actor notifications, mark the building"
@@ -2065,7 +2065,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00195200,mm_EvUselessMiddleAged_End,140,game,event,verified,no,0,2,type 7: End
 0x00195290,mm_EvUselessMiddleAged_Start,76,game,event,verified,no,0,1,type 7: Start
 0x001952E0,mm_EvUselessMiddleAged_Check,20,game,event,verified,no,0,0,"type 7 ""Useless middle-aged"": Check"
-0x00195300,mm_EvMissingChildren_Slot14,276,game,event,typed,no,0,2,type 6: Slot14
+0x00195300,mm_EvMissingChildren_Slot14,276,game,event,verified,no,0,2,type 6: Slot14
 0x00195420,mm_EvMissingChildren_End,252,game,event,verified,no,0,3,type 6: End
 0x00195520,mm_EvMissingChildren_Update,1452,game,event,typed,yes,0,14,type 6: Update
 0x00195AD0,mm_EvMissingChildren_Start,48,game,event,verified,no,0,1,type 6: Start
@@ -2073,7 +2073,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00195C80,mm_EvAdvertise_PickClaimText,284,game,event,typed,no,1,4,(provisional) claim lines for the two buildings' claim types (CLAIM.BIN sections)
 0x00195DA0,mm_EvAdvertise_Slot14,800,game,event,typed,no,0,6,type 9: Slot14
 0x001960C0,mm_EvAdvertise_End,140,game,event,verified,no,0,2,type 9: End
-0x00196150,mm_EvAdvertise_Update,276,game,event,typed,no,0,2,type 9: Update
+0x00196150,mm_EvAdvertise_Update,276,game,event,verified,no,0,2,type 9: Update
 0x00196270,mm_EvAdvertise_Start,48,game,event,verified,no,0,1,type 9: Start
 0x001962A0,mm_EvAdvertise_Check,192,game,event,verified,no,0,1,"type 9 ""To advertise"": Check"
 0x00196360,mm_EvShopping_Slot14,120,game,event,typed,indirect,0,0,type 8: Slot14
@@ -2089,10 +2089,10 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001970F0,mm_EvNoodles_Update,5984,game,event,typed,yes,0,19,type 13: Update
 0x00198850,mm_EvNoodles_Start,120,game,event,verified,no,0,1,type 13: Start
 0x001988D0,mm_EvNoodles_Check,680,game,event,typed,no,0,3,"type 13 ""Noodles"": Check"
-0x00198B80,mm_EvThief_Slot14,252,game,event,typed,no,0,1,type 17: Slot14
+0x00198B80,mm_EvThief_Slot14,252,game,event,verified,no,0,1,type 17: Slot14
 0x00198C80,mm_EvThief_End,180,game,event,verified,no,0,1,type 17: End
 0x00198D40,mm_EvThief_Update,1964,game,event,typed,yes,0,12,type 17: Update
-0x001994F0,mm_EvThief_Check,492,game,event,typed,no,0,4,"type 17 ""Thief"": Check"
+0x001994F0,mm_EvThief_Check,492,game,event,verified,no,0,4,"type 17 ""Thief"": Check"
 0x001996E0,mm_EvRelationship_Slot14,388,game,event,typed,no,0,3,Slot14 shared by types 20-22
 0x00199870,mm_EvAffair_Check,564,game,event,typed,no,0,6,"type 22 ""An affair of"": Check"
 0x00199AB0,mm_EvBoyfriend_Check,604,game,event,typed,no,0,6,"type 21 ""Boyfriend of"": Check"
@@ -2118,7 +2118,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0019B490,mm_Person_Distance,84,game,char,typed,no,2,1,distance between persons a1 and a2
 0x0019B4F0,mm_EvAlien_FindBuilding,400,game,event,typed,no,1,3,(provisional) a free building of type a2 whose footprint fits
 0x0019B680,mm_EvThief_FindBuilding,448,game,event,typed,no,2,3,(provisional) a free building of category a1 (type +0x145) whose footprint fits
-0x0019B840,mm_Building_GetFootprint,136,game,city,typed,no,10,0,"from a placed building (type a0[0], packed tile a0[2] = x | y<<7) and margin a1: x, y and the far corner from the type's size (type table gp, +0x142) into a2[0..3]"
+0x0019B840,mm_Building_GetFootprint,136,game,city,verified,no,10,0,"from a placed building (type a0[0], packed tile a0[2] = x | y<<7) and margin a1: x, y and the far corner from the type's size (type table gp, +0x142) into a2[0..3]"
 0x0019B8D0,mm_Movie_SetSpuMasterVolume,100,game,movie,typed,yes,1,1,sceSdRemote SetParam: master volume left/right (0x980/0xA80) of both cores to a0
 0x0019B940,mm_Movie_SendToIop2Area,840,game,movie,typed,no,1,3,(sendToIOP2area) copies up to two EE ring areas into up to two IOP ring areas with sceSifSetDma and waits for each
 0x0019BC90,mm_Movie_AudioDecSendToIop,476,game,movie,typed,yes,1,2,"(audioDecSendToIOP) in preset or play state, sends as much PCM as fits behind the SPU2 AutoDMA play position (sceSdRemote 0x8100) in 1 KB units"

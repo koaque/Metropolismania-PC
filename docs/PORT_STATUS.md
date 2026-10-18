@@ -8,7 +8,7 @@ See `config/port_status.csv` for every function.
 
 | Origin | Functions | Named | Typed | Ported | Verified |
 |---|---:|---:|---:|---:|---:|
-| game | 1481 | 100.0% | 100.0% | 42.3% | 41.4% |
+| game | 1481 | 100.0% | 100.0% | 43.1% | 42.2% |
 | sdk | 768 | 100.0% | 0.0% | 0.0% | 0.0% |
 
 Blocking (game and unclassified functions that can reach a thread switch, deferred to native threading): indirect 79, no 987, yes 415
@@ -23,10 +23,10 @@ Blocking (game and unclassified functions that can reach a thread switch, deferr
 | boot | 2 | 100.0% | 100.0% | 0.0% | 0.0% |
 | camera | 18 | 100.0% | 100.0% | 66.7% | 66.7% |
 | char | 84 | 100.0% | 100.0% | 44.0% | 44.0% |
-| city | 185 | 100.0% | 100.0% | 35.1% | 34.6% |
+| city | 185 | 100.0% | 100.0% | 35.7% | 35.1% |
 | claim | 6 | 100.0% | 100.0% | 16.7% | 16.7% |
 | core | 4 | 100.0% | 100.0% | 75.0% | 75.0% |
-| event | 148 | 100.0% | 100.0% | 43.9% | 43.9% |
+| event | 148 | 100.0% | 100.0% | 51.4% | 51.4% |
 | family | 36 | 100.0% | 100.0% | 36.1% | 33.3% |
 | file | 12 | 100.0% | 100.0% | 25.0% | 25.0% |
 | font | 3 | 100.0% | 100.0% | 33.3% | 33.3% |

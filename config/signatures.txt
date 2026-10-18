@@ -1258,7 +1258,7 @@
 0x0018F5F0 void mm_EvShoppingTogether_Update(EventData *data, CityScene *city);
 0x0018F980 void mm_EvShoppingTogether_End(EventData *data, CityScene *city);
 0x0018FA40 void mm_EvShoppingTogether_Start(EventData *data, CityScene *city);
-0x0018FAC0 int mm_EvShoppingTogether_Check(EventData *data, CityScene *city, float *a2);
+0x0018FAC0 int mm_EvShoppingTogether_Check(EventData *data, CityScene *city, MapPerson *person);
 0x0018FC90 void mm_EvAlien_Slot14(EventData *data, CityScene *city, ActorRef *actor, int mode);
 0x0018FCD0 void mm_EvAlien_End(EventData *data, CityScene *city);
 0x0018FD50 int mm_EvAlien_PickTarget(CityScene *city, int a1, int a2);
@@ -1380,7 +1380,7 @@
 0x0019B440 float mm_Player_DistanceToPoint(Player *player, float *point);
 0x0019B490 float mm_Person_Distance(int a0, ActorRef *actorA, ActorRef *actorB);
 0x0019B4F0 int mm_EvAlien_FindBuilding(CityScene *city, int a1, uint32_t type, int32_t *rect);
-0x0019B680 int mm_EvThief_FindBuilding(CityScene *city, uint32_t category, int32_t *rect);
+0x0019B680 MapObject *mm_EvThief_FindBuilding(CityScene *city, uint32_t category, int32_t *rect);
 0x0019B840 void mm_Building_GetFootprint(MapObject *obj, int a1, uint32_t *rect);
 0x0019B8D0 void mm_Movie_SetSpuMasterVolume(int volume);
 0x0019B940 int mm_Movie_SendToIop2Area(int iop0, int iopSize0, int iop1, int iopSize1, int ee0, int eeSize0, int ee1, int eeSize1);
