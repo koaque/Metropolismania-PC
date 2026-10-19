@@ -4,6 +4,10 @@
 #include "game_globals.h"
 #include "sdk.h"
 
+#include <algorithm>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <initializer_list>
 
 namespace mm
@@ -964,7 +968,47 @@ namespace mm
         port::writeHardware32(kQwc, 0u);
         port::writeHardware32(kTadr, start & 0x7FFFFFFFu);
         port::writeHardware32(kStat, 2u);
+        // MMPC_FRAME_STATS=1: every 2 seconds, frames drawn, the time the kick took (the runtime runs the whole VIF1 chain, VU1 and
+        // GS submission inside this store), and how many frames came 33 ms, 50 ms or later after the one before.
+        static const bool statsOn = [] {
+            const char *value = std::getenv("MMPC_FRAME_STATS");
+            return value != nullptr && value[0] == '1';
+        }();
+        if (!statsOn)
+        {
+            port::writeHardware32(kChcr, 0x145u);
+            return;
+        }
+        struct FrameStats
+        {
+            std::chrono::steady_clock::time_point windowStart = std::chrono::steady_clock::now(), lastKick{};
+            uint32_t frames = 0, within34 = 0, within51 = 0, later = 0;
+            double kickSeconds = 0.0, worstKick = 0.0;
+        };
+        static FrameStats stats;
+        const auto begin = std::chrono::steady_clock::now();
+        if (stats.lastKick.time_since_epoch().count() != 0)
+        {
+            const double interval = std::chrono::duration<double>(begin - stats.lastKick).count();
+            (interval <= 0.0345 ? stats.within34 : interval <= 0.0512 ? stats.within51 : stats.later)++;
+        }
+        stats.lastKick = begin;
         port::writeHardware32(kChcr, 0x145u);
+        const auto end = std::chrono::steady_clock::now();
+        const double kick = std::chrono::duration<double>(end - begin).count();
+        ++stats.frames;
+        stats.kickSeconds += kick;
+        stats.worstKick = std::max(stats.worstKick, kick);
+        if (end - stats.windowStart >= std::chrono::seconds(2))
+        {
+            std::fprintf(stderr, "[frames] %u in %.1f s (%.1f fps), kick %.1f ms average / %.1f ms worst; intervals <=34 ms: %u, <=51 ms: %u, later: %u\n",
+                         stats.frames, std::chrono::duration<double>(end - stats.windowStart).count(),
+                         stats.frames / std::chrono::duration<double>(end - stats.windowStart).count(), 1000.0 * stats.kickSeconds / stats.frames,
+                         1000.0 * stats.worstKick, stats.within34, stats.within51, stats.later);
+            stats = FrameStats{};
+            stats.windowStart = end;
+            stats.lastKick = end;
+        }
     }
 
     void PacketBuf_Seek(int address) { globals::packetBufPos.set(address); }
