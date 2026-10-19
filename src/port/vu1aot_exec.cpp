@@ -393,7 +393,8 @@ void Vu1AotAccess::interpret(VU1Interpreter &vu, const VU1Interpreter::AotRun &a
 
 bool Vu1AotAccess::startsIdle(const VU1Interpreter &vu)
 {
-    return !vu.pipelinesPending() && !vu.m_state.branchPending && !vu.m_stopRequested && !vu.m_viBranchBackupValid;
+    // The programs write vf and ACC results at once, which is only the interpreter's model with immediate writes on.
+    return vu.m_immediateWrites && !vu.pipelinesPending() && !vu.m_state.branchPending && !vu.m_stopRequested && !vu.m_viBranchBackupValid;
 }
 
 void Vu1AotAccess::save(const VU1Interpreter &vu, const uint8_t *data, uint32_t dataSize, Snapshot &out)
