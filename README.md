@@ -2,8 +2,10 @@
 
 A native PC version of **Metropolismania** (PlayStation 2, Indi, 2001), being rebuilt as readable C++ source code, one function at a time.
 
+[日本語はこのページの一番下にあります](#日本語) (Japanese version at the bottom of this page)
+
 > [!IMPORTANT]
-> This repository contains **no game files**: no disc image, executable, IOP modules, movies, textures or BIOS, and none of the code generated from them. You need **your own copy** of Metropolismania for the PS2 (USA, SLUS-20377). Everything game-derived is produced locally from your disc and stays out of Git.
+> This repository contains **no game files**: no disc image, executable, IOP modules, movies, textures or BIOS, and none of the code generated from them. You need **your own copy** of Metropolismania for the PS2 (USA, SLUS-20377).
 
 > [!WARNING]
 > Early, experimental work. The game boots and reaches the city, but it is not ready to play through. See [docs/STATUS.md](docs/STATUS.md).
@@ -46,8 +48,9 @@ Progress per subsystem is tracked in [docs/PORT_STATUS.md](docs/PORT_STATUS.md).
 | Saves | Memory card check passes; loading a save from a PCSX2 memory card works |
 | Mapping (names, types, prototypes) | Done for every game function |
 | Readable source port | In progress: 1,048 of the game's 1,481 functions rewritten and verified (71%) ([details](docs/PORT_STATUS.md)) |
-| VU1 microcode and sound driver translation | Not started |
-| Widescreen, hi-res, Linux | Not started |
+| VU1 microcode | The city's programs run natively, checked against the interpreter ([details](docs/VU1_PROGRAMS.md)) |
+| Sound driver (IOP) translation | Not started |
+| Widescreen, high refresh rate, hi-res, native controls, Linux | Proposed, not started ([see below](#proposed-patches)) |
 
 ## How it works
 
@@ -93,7 +96,33 @@ python tools/pipeline.py run                # timed run, log in logs/
 
 To copy your saves over from PCSX2: `python tools/mc_extract.py path/to/Mcd001.ps2`. The port's own tests (`capture`, `difftest`) are described in [src/port/README.md](src/port/README.md).
 
-`original/`, `generated/`, `work/`, `build/` and `logs/` are git-ignored.
+## Proposed patches
+
+Once the port is complete these are the changes it is meant to make possible. None of them exists yet.
+
+- **Widescreen.** True 16:9 and wider, with the field of view and the HUD corrected. The needed addresses are already known from the PCSX2 widescreen patch ([docs/GAME_NOTES.md](docs/GAME_NOTES.md)).
+- **High refresh rates (120 Hz).** The game logic runs at 30 fps; the proposal is to present smoothly on 60, 120 and faster displays.
+- **Higher resolution.** Render the city at a multiple of the PS2's 640x448 instead of the fixed output size.
+- **Native PC controls.** Keyboard and mouse, any gamepad, and rebinding, instead of a mapped PS2 pad.
+- **And more:** a Linux build, saves in a normal folder instead of a memory card image, display options (fullscreen, borderless, vsync) and fixes for the remaining rendering glitches.
+
+## Support the project
+
+If this project is useful to you, you can support its development:
+
+**[Donate with PayPal](https://www.paypal.com/ncp/payment/LV3M4HY3PJHU4)**
+
+**Bitcoin**
+
+```
+3CUTagummxA2SMFrS2vxGKyLj4gtQ9mrbW
+```
+
+**Ethereum and any ERC-20 token**
+
+```
+0xabcdec4cf4c515e266876ae2e4323ff30bda36e9
+```
 
 ## Credits
 
@@ -110,3 +139,145 @@ To copy your saves over from PCSX2: `python tools/mc_extract.py path/to/Mcd001.p
 The code in this repository is licensed under the [GNU GPL v3](LICENSE), the same license as PS2Recomp, whose runtime it links against.
 
 This is a fan preservation project. It is not affiliated with or endorsed by Indi, Media Factory, Natsume, D3 Publisher or Sony Interactive Entertainment. "PlayStation" and "PS2" are trademarks of Sony Interactive Entertainment. Metropolismania is the property of its respective owners. Do not ask for or share game files.
+
+---
+
+## 日本語
+
+**Metropolismania PC**(街ingメーカー、PlayStation 2、Indi、2001年)を、読みやすいC++のソースコードとして一関数ずつ作り直しているプロジェクトです。目指すのは、PC上でネイティブに動くバージョンです。
+
+> [!IMPORTANT]
+> このリポジトリには**ゲームのファイルは一切含まれていません**。ディスクイメージ、実行ファイル、IOPモジュール、ムービー、テクスチャ、BIOS、およびそれらから生成されたコードも含みません。PS2版のMetropolismania(北米版、SLUS-20377)を**ご自身でお持ちである必要があります**。
+
+> [!WARNING]
+> 初期段階の実験的な作業です。ゲームは起動して街まで到達しますが、最後まで遊べる状態ではありません。詳しくは [docs/STATUS.md](docs/STATUS.md) を参照してください。
+
+### このゲームについて
+
+街ingメーカー(英語名 Metropolismania)は、Indiが開発し、日本ではメディアファクトリーが2001年に、北米とヨーロッパではNatsumeが2002年に発売した、自分の足で歩いて遊ぶ街づくりゲームです。プレイヤーは街の都市計画者として通りを歩き、住宅、店、オフィスを建て、そこに実際に住んで働いてくれるよう人々を説得します。住民が幸せでなければ街は育ちません。
+
+ゲームを解析すると、この小さな前提の下に多くのシミュレーションがあることが分かります。
+
+- **人口の数ではなく家族。** 住民は `FAMILY.BIN` の家族に属し、家、メンバー、仕事、一日のスケジュールを持ちます。家族ごとに友好度(0〜120)があり、親しい家族はタウンページに載って電話をかけられ、他の家族を紹介したり頼みを聞いてくれたりします。
+- **意見を持つ建物。** 店や会社は要望が満たされないとクレームを出し、解決するまでクレームのメーターは上がり続けます。
+- **カレンダーと気分。** ゲーム内の一日が一か月で、天気、祝日の月、-99から120までの街の支持率があります。118以上で街は人気者となり、引っ越しの問い合わせの電話が来ます。
+- **96種類のイベント。** 給料日や送別会のほか、泥棒、物忘れのおばあさん、迷子、怪しい教団、原始人、宇宙人など、それぞれ専用の処理があります。
+- **会話がゲームの中心。** 建物を訪ねたり路上で人を呼び止めたりすると会話画面が開き、会話は `WORDS*.BIN` に格納されたゲーム独自の小さなスクリプト言語で動いています。
+- **街ごとのミッション目標。** ステージごとに人口の目標と、テーマの比率(高級、ビジネス、レジャー、漁業、農業、工業)が決まっています。
+
+全体像はサブシステムごとに [docs/map](docs/map/README.md) にまとめてあります。ディスク構成とデータ形式は [docs/GAME_NOTES.md](docs/GAME_NOTES.md) にあります。
+
+### 目標
+
+このゲームはPCSX2で既に問題なく動くので、このプロジェクトの目的はゲームを遊べるようにすることではありません。ゲームを完全に理解し、修正、改造、拡張できる、ネイティブで読みやすいコードベースを作ることです。ワイドスクリーン、高解像度、エミュレータなしでの他のプラットフォーム対応などを目指します。
+
+方法はOpenRCT2がRollerCoaster Tycoon 2で使ったものと同じです。常にゲームを動かしたまま、コードを少しずつ置き換えていきます。
+
+1. **すべてを把握する。** ゲームの全関数に名前を付け、サブシステムに分類し、完全なCのプロトタイプ(`config/signatures.txt`)を付けています。構造体は `config/types/` にあります。ゲームの1,481関数すべてについて完了しています。
+2. **手で書き直す。** [src/port](src/port/README.md) にゲームのコードを、サブシステム(街、家族、イベント、会話、WORDSスクリプト、セーブ、サウンド、UI)ごとに読みやすいC++として置いています。書き直した関数は、元の関数のアドレスで元の関数に代わって動きます。
+3. **一致を証明する。** 書き直した関数はすべて、差分テストで元のものと照合されます。実行中のゲームから記録した呼び出しを両方のバージョンで再生し、メモリ、レジスタ、結果がすべて一致して初めて完了となります。
+
+サブシステムごとの進捗は [docs/PORT_STATUS.md](docs/PORT_STATUS.md) にあります。調べた限り、このゲームの逆コンパイルまたは再コンパイルのプロジェクトはこれが最初です([調査メモ](docs/RESEARCH.md))。
+
+### 現状
+
+| 項目 | 状態 |
+|---|---|
+| 起動、ロゴ、タイトル画面、メモリーカード確認 | 動作 |
+| 入力 | 動作(キーボード、パッド、スクリプト) |
+| 街 | 到達済み。HUD、カーソル、3D地形を描画。探索の自動操作で平均約29 fps(軽い場面では30 fps) |
+| ムービー、音楽、効果音 | 再生可能(新しく作ったSPU2エミュレーションによる、リバーブ付き) |
+| セーブ | メモリーカードの確認は通過。PCSX2のメモリーカードからのロードは動作 |
+| マッピング(名前、型、プロトタイプ) | ゲームの全関数で完了 |
+| 読みやすいソースへの移植 | 進行中。1,481関数のうち1,048関数を書き直して検証済み(71%)([詳細](docs/PORT_STATUS.md)) |
+| VU1マイクロコード | 街のプログラムはネイティブで動作し、インタプリタとの照合済み([詳細](docs/VU1_PROGRAMS.md)) |
+| サウンドドライバ(IOP)の変換 | 未着手 |
+| ワイドスクリーン、高リフレッシュレート、高解像度、ネイティブ操作、Linux | 構想中、未着手 |
+
+### 仕組み
+
+出発点は [PS2Recomp](https://github.com/ran-j/PS2Recomp) による静的再コンパイルです。ゲームのMIPS R5900コードをお持ちのディスクからC++に変換し、メモリ、カーネル、グラフィックス、VU1、DMA、そしてゲーム本来のIOPモジュール(サウンド、パッド、メモリーカード)を動かすIOPを提供するPS2Recompのランタイムとリンクします。この機械的に変換されたコードは、ゲームを動かし続けるための足場です。`src/port/` の読みやすい移植版がそれを関数ごとに置き換えていき、書き直された関数の元の生成版は、差分テストの比較対象としてだけ残ります。
+
+- `tools/extract_disc.py` は、BIN/CUEまたはISOから直接ファイルを読み出します。
+- 機能が削ぎ落とされた実行ファイルの関数は、Ghidra(Emotion Engine拡張付き)が見つけ、`config/` の名前、型、プロトタイプを適用します。
+- ゲーム固有の修正は `config/` と `src/overrides/` に、PS2Recomp本体への変更は `patches/` にあります。
+
+### 必要なもの(現在はWindowsのみ)
+
+- ご自身のMetropolismaniaのディスクダンプ(北米版、SLUS-20377、ディスクVER 1.02)。BIN/CUEまたはISO。
+- C++ x64ワークロード入りのVisual Studio 2022(MSVC、CMake、Ninjaが付属)。
+- CMake 3.21以降、Python 3.11以降、Git。
+- Ghidra 12.1.4とJDK 21、および [ghidra-emotionengine-reloaded](https://github.com/chaoticgd/ghidra-emotionengine-reloaded) 拡張(v2.1.38、Ghidra 12.1.4用ビルド)。
+
+### ビルド方法
+
+```sh
+git clone --recurse-submodules https://github.com/koaque/Metropolismania-PC.git
+cd Metropolismania-PC
+```
+
+Ghidraの場所を `work/local.json` に書いて知らせます。
+
+```json
+{ "ghidra_install_dir": "C:/path/to/ghidra_12.1.4_PUBLIC" }
+```
+
+続けて各ステップを実行します(`all` で一括実行もできます)。
+
+```sh
+python tools/pipeline.py bootstrap          # pinned PS2Recomp + patches/ -> work/PS2Recomp
+python tools/pipeline.py tools              # build ps2_analyzer and ps2_recomp
+python tools/pipeline.py extract path/to/your/game.cue   # -> original/ (checks the build is SLUS-20377 v1.02)
+python tools/pipeline.py symbols            # SDK names from PS2Recomp's signature scan -> config/symbols.csv
+python tools/pipeline.py analyze            # Ghidra headless -> config/funcmap.csv
+python tools/pipeline.py recompile          # -> generated/
+python tools/pipeline.py stage              # generated code + overrides + src/port -> runtime tree
+python tools/pipeline.py build              # ps2EntryRunner
+python tools/pipeline.py run                # timed run, log in logs/
+```
+
+PCSX2からセーブデータをコピーするには `python tools/mc_extract.py path/to/Mcd001.ps2` を使います。移植版のテスト(`capture`、`difftest`)は [src/port/README.md](src/port/README.md) に説明があります。
+
+### 構想中のパッチ
+
+移植が完成した後に、これらの変更ができるようになることを目指しています。いずれもまだ存在しません。
+
+- **ワイドスクリーン。** 16:9以上の本物のワイドスクリーン。視野角とHUDも補正します。必要なアドレスはPCSX2のワイドスクリーンパッチから既に分かっています([docs/GAME_NOTES.md](docs/GAME_NOTES.md))。
+- **高リフレッシュレート(120 Hz)。** ゲームのロジックは30 fpsで動きますが、60 Hz、120 Hz、それ以上のディスプレイでもなめらかに表示することを目指します。
+- **高解像度。** 固定の出力サイズではなく、PS2の640x448の整数倍で街を描画します。
+- **PCネイティブの操作。** PS2パッドに割り当てる方式ではなく、キーボードとマウス、あらゆるゲームパッド、キー割り当ての変更に対応します。
+- **その他:** Linux版、メモリーカードイメージではなく通常のフォルダへのセーブ、表示オプション(フルスクリーン、ボーダーレス、垂直同期)、残っている描画の不具合の修正。
+
+### プロジェクトを支援する
+
+このプロジェクトが役に立った場合は、開発を支援していただけます。
+
+**[PayPalで寄付する](https://www.paypal.com/ncp/payment/LV3M4HY3PJHU4)**
+
+**Bitcoin**
+
+```
+3CUTagummxA2SMFrS2vxGKyLj4gtQ9mrbW
+```
+
+**Ethereum と ERC-20 トークン全般**
+
+```
+0xabcdec4cf4c515e266876ae2e4323ff30bda36e9
+```
+
+### クレジット
+
+- [PS2Recomp](https://github.com/ran-j/PS2Recomp)(ran-jと貢献者の皆さん)。このプロジェクトの出発点となった再コンパイラとランタイム。
+- マージされるまで `patches/` に取り込んでいるPS2Recompのオープンなプルリクエスト。@VariableDeclared、@yanm1103、@Fiztba、@luisbraganca、@drakolordx7 によるVU0/VU1、VIF、GIFの修正(各パッチのヘッダを参照)。
+- [psx-spx](https://psx-spx.consoledev.net/)(SPUのボイスパイプライン、エンベロープ、補間の詳細)。SPU2エミュレーションに使用。
+- [ghidra-emotionengine-reloaded](https://github.com/chaoticgd/ghidra-emotionengine-reloaded)(chaoticgd)。
+- [PCSX2](https://github.com/PCSX2/pcsx2)。ハードウェアの挙動の基準。また、既知の視野角アドレスについてはArapapaさんのワイドスクリーンパッチ。
+- [rootlm/metropolismaniaresearch](https://github.com/rootlm/metropolismaniaresearch)。テクスチャ形式についての初期のメモ。
+- [OpenRCT2](https://github.com/OpenRCT2/OpenRCT2)。この移植が従っている、関数ごとのアプローチの手本。
+
+### ライセンスと免責事項
+
+このリポジトリのコードは [GNU GPL v3](LICENSE) でライセンスされています。リンクしているランタイムのPS2Recompと同じライセンスです。
+
+これはファンによる保存プロジェクトです。Indi、メディアファクトリー、Natsume、D3 Publisher、Sony Interactive Entertainmentとは提携しておらず、承認も受けていません。「PlayStation」と「PS2」はSony Interactive Entertainmentの商標です。Metropolismaniaはそれぞれの権利者の所有物です。ゲームファイルを求めたり共有したりしないでください。
