@@ -1,0 +1,81 @@
+VU1: friend access for the pre-timed programs (src/port/vu1aot*), pair trace for tools, busy-resume count in PS2X_GS_STATS. Plan P4, M3.1.
+
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+@@ -33,6 +33,7 @@ namespace
+         uint64_t xgkickBytes = 0;
+         uint64_t aborted = 0;
+         uint64_t resumes = 0;
++        uint64_t resumesBusy = 0; // resumes that started with a pipeline still busy (not idle)
+         double runSeconds = 0.0;
+         double submitSeconds = 0.0; // inside run(): handing XGKICK packets to the GS
+         uint64_t cycles = 0;
+@@ -61,7 +62,7 @@ namespace
+         const auto now = std::chrono::steady_clock::now();
+         if (now - s.last < std::chrono::seconds(2))
+             return;
+-        std::cerr << "[vu1:stats] runs=" << s.runs << " resumes=" << s.resumes << " xgkicks=" << s.xgkicks << " bytes=" << s.xgkickBytes
++        std::cerr << "[vu1:stats] runs=" << s.runs << " resumes=" << s.resumes << " busy=" << s.resumesBusy << " xgkicks=" << s.xgkicks << " bytes=" << s.xgkickBytes
+                   << " aborted=" << s.aborted << " vu1ms=" << static_cast<uint64_t>(s.runSeconds * 1000.0)
+                   << " submitms=" << static_cast<uint64_t>(s.submitSeconds * 1000.0)
+                   << " cycles=" << s.cycles << " Mcyc/s(host)=" << (s.runSeconds > 0.0 ? s.cycles / s.runSeconds / 1e6 : 0.0) << std::endl;
+@@ -2288,7 +2289,11 @@ void VU1Interpreter::resume(uint8_t *vuCode, uint32_t codeSize,
+                             uint32_t top, uint32_t itop, uint32_t maxCycles)
+ {
+     if (vu1StatsEnabled())
++    {
+         ++vu1Stats().resumes;
++        if (pipelinesPending())
++            ++vu1Stats().resumesBusy;
++    }
+     Vu1CaptureRun capture;
+     PacketObserver observerBeforeCapture;
+     if (m_unit == Unit::VU1 && vu1CaptureDir() != nullptr)
+@@ -2389,6 +2394,8 @@ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
+ 
+         if (m_pairCounters != nullptr)
+             ++m_pairCounters[(m_state.pc / 8u) % kPairCounterCount];
++        if (m_pairTrace != nullptr)
++            m_pairTrace->emplace_back(m_state.pc, m_cycle);
+ 
+         // A VI write in the delay slot of a taken branch is followed by the branch target, which
+         // starts a new block: a branch there reads the new value. Only a write by the instruction
+diff --git a/ps2xRuntime/include/runtime/ps2_vu1.h b/ps2xRuntime/include/runtime/ps2_vu1.h
+--- a/ps2xRuntime/include/runtime/ps2_vu1.h
++++ b/ps2xRuntime/include/runtime/ps2_vu1.h
+@@ -5,6 +5,8 @@
+ #include <cstdint>
+ #include <functional>
+ #include <string>
++#include <utility>
++#include <vector>
+ 
+ class GS;
+ class PS2Memory;
+@@ -81,6 +83,8 @@ public:
+     // Tools: with a table of kMaxDecodedPairs counters, every executed pair adds one to its counter (by pc / 8).
+     void setPairCounters(uint64_t *counters) { m_pairCounters = counters; }
+     static constexpr uint32_t kPairCounterCount = 0x4000u / 8u;
++    // Tools: every executed pair appends (pc, the cycle it issues at, after any stall) to the vector.
++    void setPairTrace(std::vector<std::pair<uint32_t, uint64_t>> *trace) { m_pairTrace = trace; }
+     uint64_t cycleCount() const { return m_cycle; }
+     void setCycleCount(uint64_t cycle) { m_cycle = cycle; }
+     // A MSCNT resume continues a program whose last run ended with every pipeline drained, so what it needs of the
+@@ -122,6 +126,8 @@ public:
+     }
+ 
+ private:
++    friend struct Vu1AotAccess; // src/port/vu1aot*.cpp: pre-timed programs built from the decoder and run on this state
++
+     enum Pipeline : uint8_t
+     {
+         PipelineNone = 0,
+@@ -348,6 +354,7 @@ private:
+     bool m_standaloneCode = false;
+     bool m_immediateWrites = false;
+     uint64_t *m_pairCounters = nullptr;
++    std::vector<std::pair<uint32_t, uint64_t>> *m_pairTrace = nullptr;
+ 
+     void run(uint8_t *vuCode, uint32_t codeSize,
+              uint8_t *vuData, uint32_t dataSize,
