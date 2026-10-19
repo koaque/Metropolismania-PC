@@ -112,6 +112,7 @@ namespace mm::globals
     inline constexpr GuestVar<int32_t> fileQueueTail{0x001BDC88u};
     inline constexpr GuestVar<int32_t> fileQueueHead{0x001BDC8Cu};
     inline constexpr GuestVar<int32_t> fileQueueCount{0x001BDC90u}; // requests queued so far
+    inline constexpr GuestVar<int32_t> fileQueueIoctl{0x001BDC94u}; // where sceIoctl puts the pending-request count
 
     // pad: set by mm_Pad_ClearBit40; mm_Pad_Update keeps Cross (0x40) out of the held buttons until it is released.
     inline constexpr GuestVar<int32_t> padSwallowCross{0x001BDCC0u};

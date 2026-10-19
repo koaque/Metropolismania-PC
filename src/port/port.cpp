@@ -151,6 +151,22 @@ namespace port
 
     void setFaultsThrow(bool on) { g_faultsThrow = on; }
 
+    void fiberEnter(GuestFiber &fiber)
+    {
+        CallState *own = reinterpret_cast<CallState *>(fiber.user);
+        CallState *dispatcher = own + 1;
+        *dispatcher = g_call;
+        g_call = *own;
+    }
+
+    void fiberLeave(GuestFiber &fiber)
+    {
+        CallState *own = reinterpret_cast<CallState *>(fiber.user);
+        CallState *dispatcher = own + 1;
+        *own = g_call;
+        g_call = *dispatcher;
+    }
+
     void enterPorted(PS2Runtime *runtime) { runtime->eeScheduler().enterNoPreempt(); }
     void leavePorted(PS2Runtime *runtime) { runtime->eeScheduler().leaveNoPreempt(); }
 
@@ -192,6 +208,7 @@ namespace port
 
     void install(PS2Runtime &runtime)
     {
+        runtime.eeScheduler().setFiberHooks({&fiberEnter, &fiberLeave});
         g_rdram = runtime.memory().getRDRAM();
         g_scratchpad = runtime.memory().getScratchpad();
         // A capture records the original code, so nothing is replaced while one runs.

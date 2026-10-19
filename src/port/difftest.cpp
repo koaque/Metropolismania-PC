@@ -288,6 +288,12 @@ namespace port
 
         void runOnce(PS2Runtime &runtime, GuestFn fn, uint32_t address, const Record &rec, const R5900Context &start, Outcome &out)
         {
+            // The runtime keeps the heap's bookkeeping and the open file descriptors outside RDRAM. Every run starts
+            // from the same ones, so a call that allocates or opens gets the same block and descriptor each time.
+            static const PS2Runtime::GuestHeapState baseHeap = runtime.saveGuestHeapState();
+            static const int32_t baseDescriptor = runtime.vfs().nextDescriptor();
+            runtime.restoreGuestHeapState(baseHeap);
+            runtime.vfs().closeFrom(baseDescriptor);
             std::memcpy(g_rdram, rec.rdram.data(), PS2_RAM_SIZE);
             std::memcpy(g_scratchpad, rec.scratchpad.data(), PS2_SCRATCHPAD_SIZE);
             out.ctx = start;

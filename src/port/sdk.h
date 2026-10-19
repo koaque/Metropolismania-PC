@@ -47,6 +47,17 @@ namespace mm::sdk
         inline constexpr uint32_t memcpy = 0x00121B90u;
         inline constexpr uint32_t memmove = 0x00121C40u;
         inline constexpr uint32_t memset = 0x00121D48u;
+        inline constexpr uint32_t atanf = 0x00119C38u;
+        inline constexpr uint32_t malloc = 0x00120FC0u;
+        inline constexpr uint32_t free = 0x00121018u;
+        inline constexpr uint32_t operator_delete = 0x00100420u;
+        inline constexpr uint32_t sprintf = 0x00123460u;
+        inline constexpr uint32_t sceOpen = 0x00111F18u;
+        inline constexpr uint32_t sceClose = 0x001121A0u;
+        inline constexpr uint32_t sceLseek = 0x00112320u;
+        inline constexpr uint32_t sceRead = 0x00112558u;
+        inline constexpr uint32_t sceIoctl = 0x00112A88u;
+        inline constexpr uint32_t sceCdDiskReady = 0x0011B360u;
         inline constexpr uint32_t strcat = 0x00123660u;
         inline constexpr uint32_t strcmp = 0x00123920u;
         inline constexpr uint32_t strcpy = 0x00123A68u;
@@ -126,6 +137,19 @@ namespace mm::sdk
     inline int abs(int value) { return port::callGuest<int>(addr::abs, value); }
     inline uint32_t strcpy(uint32_t dst, uint32_t src) { return port::callGuest<uint32_t>(addr::strcpy, dst, src); }
     inline uint32_t strcat(uint32_t dst, uint32_t src) { return port::callGuest<uint32_t>(addr::strcat, dst, src); }
+    inline ps2f atanf(ps2f x) { return port::callGuest<ps2f>(addr::atanf, x); }
+    inline uint32_t malloc(uint32_t size) { return port::callGuest<uint32_t>(addr::malloc, size); }
+    inline void free(uint32_t block) { port::callGuest<void>(addr::free, block); }
+    inline void operator_delete(uint32_t object) { port::callGuest<void>(addr::operator_delete, object); }
+    // sprintf with one integer argument (all this game's callers have at most one so far).
+    inline int sprintf(uint32_t dst, uint32_t format, int value) { return port::callGuest<int>(addr::sprintf, dst, format, value); }
+    // The kernel's file calls (the runtime's file I/O; descriptors are small non-negative ints, errors are negative).
+    inline int sceOpen(uint32_t path, int flags) { return port::callGuest<int>(addr::sceOpen, path, flags); }
+    inline int sceClose(int fd) { return port::callGuest<int>(addr::sceClose, fd); }
+    inline int sceLseek(int fd, int offset, int whence) { return port::callGuest<int>(addr::sceLseek, fd, offset, whence); }
+    inline int sceRead(int fd, uint32_t buffer, int bytes) { return port::callGuest<int>(addr::sceRead, fd, buffer, bytes); }
+    inline int sceIoctl(int fd, int command, uint32_t argument) { return port::callGuest<int>(addr::sceIoctl, fd, command, argument); }
+    inline int64_t sceCdDiskReady(int mode) { return port::callGuest<int64_t>(addr::sceCdDiskReady, mode); }
     inline int strlen(uint32_t s) { return port::callGuest<int>(addr::strlen, s); }
     inline int strcspn(uint32_t s, uint32_t reject) { return port::callGuest<int>(addr::strcspn, s, reject); }
 

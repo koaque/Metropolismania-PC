@@ -779,7 +779,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0012A750,mm_Camera_DeletingDtor,84,game,camera,typed,yes,4,2,"base destructor, then delete when the flag is > 0"
 0x0012A7B0,mm_Camera_ctor,856,game,camera,verified,no,4,8,"default light directions/colours, eye/target, fog and projection, then all matrices"
 0x0012AB10,mm_Vec3_Normalize,36,game,math,verified,no,1,0,"a0 = a1 / |a1| (VU0, xyz)"
-0x0012AB40,mm_BaseObject_dtor,68,game,core,typed,yes,15,1,common base destructor: delete when the flag is > 0
+0x0012AB40,mm_BaseObject_dtor,68,game,core,verified,yes,15,1,common base destructor: delete when the flag is > 0
 0x0012AB90,mm_BaseObject_ctor,8,game,core,verified,no,16,0,common base constructor: returns this
 0x0012ABA0,mm_GameUpdate,572,game,game,typed,yes,0,12,"Game class (vtable 0x1BCE60) slot +0xC, once per frame: sound update, then the scene state machine (+4): creates/updates/deletes the title, intro and city scenes"
 0x0012ADE0,mm_GameInit,52,game,game,verified,no,0,1,"Game slot +8: sound state init, scene state 0, no scenes"
@@ -1864,22 +1864,22 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00183F00,mm_TextBox_Init,300,game,ui,typed,yes,23,2,"grid of (a1*2) cols x a2 rows; default pos 0x6C00,0x7900 z 16000000, glyph 0xC0 x 0xB0; a3 = style table (-1 -> 0x1B24A0, -2 -> 0x1B24E0, 0 none) at +0xC; mallocs the packet"
 0x00184030,mm_DmaChain_Next,208,game,gfx,verified,no,1,0,"steps a DMA chain reader (+4 = current tag): CNT skips qwc+1, END stays, RET returns 0; caches tag id/qwc/words at +8..+0x24"
 0x00184100,mm_DmaChain_Begin,20,game,gfx,verified,no,1,0,reader starts at a1 with an END marker so the first mm_DmaChain_Next reads the first tag
-0x00184120,mm_File_Seek,388,game,file,typed,yes,10,5,sceLseek; a synchronous file (+4 == 0) first waits for the request queue to drain
-0x001842B0,mm_File_Read,408,game,file,typed,yes,13,5,"sceRead; synchronous files wait for the queue first, asynchronous ones queue the request (0x1F4ED0)"
-0x00184450,mm_File_Close,320,game,file,typed,yes,10,5,"sceClose, fd (+0) = -1; synchronous files wait for the queue first"
-0x00184590,mm_File_Open,384,game,file,typed,yes,12,8,"waits for the disc, builds ""cdrom0:\"" + path + "";1"" (0x1B9AF8), sceOpen"
-0x00184710,mm_File_LoadWhole,164,game,file,typed,yes,11,5,"opens a1, mallocs the file size, reads it all, closes; size to *a2 if given; returns the buffer"
+0x00184120,mm_File_Seek,388,game,file,ported,yes,10,5,sceLseek; a synchronous file (+4 == 0) first waits for the request queue to drain
+0x001842B0,mm_File_Read,408,game,file,verified,yes,13,5,"sceRead; synchronous files wait for the queue first, asynchronous ones queue the request (0x1F4ED0)"
+0x00184450,mm_File_Close,320,game,file,verified,yes,10,5,"sceClose, fd (+0) = -1; synchronous files wait for the queue first"
+0x00184590,mm_File_Open,384,game,file,verified,yes,12,8,"waits for the disc, builds ""cdrom0:\"" + path + "";1"" (0x1B9AF8), sceOpen"
+0x00184710,mm_File_LoadWhole,164,game,file,verified,yes,11,5,"opens a1, mallocs the file size, reads it all, closes; size to *a2 if given; returns the buffer"
 0x001847C0,mm_FileQueue_IsDone,72,game,file,verified,no,8,0,"1 when request a1 is no longer in the 64-entry queue (head 0x1BDC88, tail 0x1BDC8C)"
-0x00184810,mm_FileQueue_WaitFor,212,game,file,typed,yes,1,4,pumps the queue until request a1 is done
-0x001848F0,mm_FileQueue_WaitAll,140,game,file,typed,yes,5,4,pumps the queue until it is empty
+0x00184810,mm_FileQueue_WaitFor,212,game,file,ported,yes,1,4,pumps the queue until request a1 is done
+0x001848F0,mm_FileQueue_WaitAll,140,game,file,verified,yes,5,4,pumps the queue until it is empty
 0x00184980,mm_FileQueue_Init,76,game,file,verified,no,1,0,clears the 64 request slots (0x1C bytes each at 0x1F4ED0) and the head/tail counters
-0x001849D0,mm_FileQueue_Pump,396,game,file,typed,yes,7,5,runs the request at the queue tail (open/read/seek/close/ioctl) once the disc is ready
-0x00184B60,mm_File_dtor,112,game,file,typed,yes,17,2,closes a synchronous open file; deletes this when the flag is > 0
+0x001849D0,mm_FileQueue_Pump,396,game,file,verified,yes,7,5,runs the request at the queue tail (open/read/seek/close/ioctl) once the disc is ready
+0x00184B60,mm_File_dtor,112,game,file,verified,yes,17,2,closes a synchronous open file; deletes this when the flag is > 0
 0x00184BD0,mm_File_ctor,20,game,file,verified,no,18,0,"fd = -1, +4 = asynchronous flag"
 0x00184BF0,mm_Font_GetGlyph,28,game,font,verified,no,3,0,font data (gp global) + (char & 0xFF) * 0x90
-0x00184C10,mm_Font_Free,44,game,font,typed,yes,1,1,frees the loaded font
-0x00184C40,mm_Font_Load,132,game,font,typed,yes,1,6,"loads DATA\FONT1222.GF (sprintf ""%d"" of 11222 with the first digit skipped) with mm_File_LoadWhole"
-0x00184CD0,mm_Heap_Probe,84,game,mem,typed,yes,1,2,malloc(0x17E5D70) then free; returns that size (checks the heap can hold it)
+0x00184C10,mm_Font_Free,44,game,font,ported,yes,1,1,frees the loaded font
+0x00184C40,mm_Font_Load,132,game,font,verified,yes,1,6,"loads DATA\FONT1222.GF (sprintf ""%d"" of 11222 with the first digit skipped) with mm_File_LoadWhole"
+0x00184CD0,mm_Heap_Probe,84,game,mem,verified,yes,1,2,malloc(0x17E5D70) then free; returns that size (checks the heap can hold it)
 0x00184D30,mm_Random_TimerMix,164,game,random,verified,no,9,0,"steps a five-word cascade at 0x1B2520 and adds timer 0 (T0_COUNT) into its first word, which it returns: noise for sound variations"
 0x00184DE0,mm_Random_Next,80,game,random,verified,no,20,1,"subtractive generator (Knuth/Numerical Recipes ran3, 55 entries at 0x1F55D0, modulus 1e9)"
 0x00184E30,mm_Random_Seed,160,game,random,verified,no,1,1,seeds the 55-entry table from a0 and stirs it three times

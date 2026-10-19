@@ -144,9 +144,14 @@ def ported_names() -> set[str]:
 
 def gen_functions(structs: set[str]) -> str:
     sizes = {}
+    blocking_addresses = set()
     with (ROOT / "config/port_status.csv").open(encoding="utf-8", newline="") as fh:
         for r in csv.DictReader(fh):
             sizes[int(r["address"], 16)] = int(r["size"] or 0)
+            if r["blocking"] == "yes":
+                blocking_addresses.add(int(r["address"], 16))
+    extra_path = ROOT / "config/blocking_extra.txt"
+    blocking_extra = {line.split("#")[0].strip() for line in extra_path.read_text(encoding="utf-8").splitlines()} - {""}         if extra_path.exists() else set()
     entries = []
     for line in (ROOT / "config/signatures.txt").read_text(encoding="utf-8").splitlines():
         m = PROTO.match(line)
@@ -183,8 +188,25 @@ def gen_functions(structs: set[str]) -> str:
     missing = ported - seen
     if missing:
         sys.exit(f"port_gen: PORT_FN names without a prototype in config/signatures.txt: {', '.join(sorted(missing))}")
+    addresses_by_name = {}
+    for addr, _, name, _ in entries:
+        cname = name[3:] if keep[name] == addr else f"{name[3:]}_{addr:X}"
+        if cname in structs:
+            cname += "_fn"
+        addresses_by_name[cname] = addr
+    unknown_extra = blocking_extra - set(addresses_by_name)
+    if unknown_extra:
+        sys.exit(f"port_gen: config/blocking_extra.txt names without a prototype: {', '.join(sorted(unknown_extra))}")
+    blocking_all = blocking_addresses | {addresses_by_name[n] for n in blocking_extra}
+    names_at = {a: n for n, a in addresses_by_name.items()}
+    blocking_lines = [f"template <> inline constexpr bool at<0x{a:08X}u> = true; // {names_at[a]}"
+                      for a in sorted(blocking_all) if a in names_at]
     table = [f'    {{"{n}", addr::{n}}},' for n in sorted(seen, key=lambda n: n)]
-    out += ["}", "", "struct GameFunction", "{", "    const char *name;", "    uint32_t address;", "};",
+    out += ["}", "",
+            "// Functions that can reach a thread switch (config/port_status.csv, config/blocking_extra.txt). A ported one runs on a",
+            "// fiber (plan P6, src/port/abi.h), so its C++ frames survive the switch.",
+            "namespace blocking", "{", "template <uint32_t Address> inline constexpr bool at = false;"] + blocking_lines + ["}", "",
+            "struct GameFunction", "{", "    const char *name;", "    uint32_t address;", "};",
             "inline constexpr GameFunction kGameFunctions[] = {"] + table + ["};", ""]
     out += ["// Ported (src/port/)."] + decls + ["", "// Not ported yet: the generated function, through the runtime's function table."] + bodies
     out += ["}", ""]

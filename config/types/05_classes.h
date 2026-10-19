@@ -8,6 +8,7 @@ typedef struct A3DObject A3DObject;
 typedef struct Camera Camera;
 typedef struct CityCamera CityCamera;
 typedef struct GameFile GameFile;
+typedef struct FileRequest FileRequest;
 typedef struct TexSprite TexSprite;
 typedef struct TexFileHeader TexFileHeader;
 typedef struct LightSet LightSet;
@@ -151,6 +152,17 @@ struct CityCamera {
 struct GameFile {
     int32_t fd;                /* +0x00 -1 when closed */
     int32_t async;             /* +0x04 requests go through the file queue */
+};
+/* Disc request queue slot (0x1C bytes), mm_FileQueue_*; 64 of them at 0x1F4ED0. */
+struct FileRequest {
+    int32_t op;                /* +0x00 0 free, 1 open, 2 close, 3 seek, 4 read */
+    uint16_t state;            /* +0x04 0 not issued yet, 1 issued (poll with sceIoctl) */
+    uint16_t t0;               /* +0x06 argument of sceCdDiskReady */
+    int32_t fd;                /* +0x08 */
+    int32_t buffer;            /* +0x0C read destination */
+    int32_t bytes;             /* +0x10 bytes to read */
+    int32_t offset;            /* +0x14 seek offset */
+    int32_t whence;            /* +0x18 seek origin */
 };
 /* .TEX image header (0x20 bytes): the palette, then the tiles row by row, each tileWords words. */
 struct TexFileHeader {

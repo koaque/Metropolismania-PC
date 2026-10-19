@@ -1133,14 +1133,14 @@
 0x00184590 int mm_File_Open(GameFile *file, char *path);
 0x00184710 int mm_File_LoadWhole(GameFile *file, char *path, int32_t *size);
 0x001847C0 int mm_FileQueue_IsDone(int queue, int request);
-0x00184810 int mm_FileQueue_WaitFor(int queue, int request, int a2);
-0x001848F0 int mm_FileQueue_WaitAll(int queue);
+0x00184810 void mm_FileQueue_WaitFor(int queue, int request, int quiet);
+0x001848F0 void mm_FileQueue_WaitAll(int quiet);
 0x00184980 void mm_FileQueue_Init(void);
 0x001849D0 int mm_FileQueue_Pump(void);
 0x00184B60 GameFile *mm_File_dtor(GameFile *file, int16_t deleteFlag);
 0x00184BD0 GameFile *mm_File_ctor(GameFile *file, int async);
 0x00184BF0 int mm_Font_GetGlyph(uint32_t ch);
-0x00184C10 int mm_Font_Free(void);
+0x00184C10 void mm_Font_Free(void);
 0x00184C40 int mm_Font_Load(void);
 0x00184CD0 int mm_Heap_Probe(void);
 0x00184D30 int mm_Random_TimerMix(void);

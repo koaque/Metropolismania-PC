@@ -1,0 +1,932 @@
+EE scheduler: fibers for hand-written functions that must survive a thread switch (plan P6). A GuestFiber is a host fiber; EeScheduler::runOnFiber runs a body on one for the current thread's slot, callOnFiber enters guest code from it and parks the fiber when a thread switch unwinds that code, yieldIfDue gives the processor up at a due checkpoint, and run() resumes a parked fiber instead of entering ctx->pc. PS2X_FIBERS=0 turns it off; PS2X_FIBER_STATS=1 reports fiber counts every 5 seconds; PS2X_FIBER_FORCE_YIELD=1 parks a fiber before every guest call (a stress test of the park and resume path).
+
+diff --git a/ps2xRuntime/include/runtime/ee_fiber.h b/ps2xRuntime/include/runtime/ee_fiber.h
+new file mode 100644
+--- /dev/null
++++ b/ps2xRuntime/include/runtime/ee_fiber.h
+@@ -0,0 +1,72 @@
++#pragma once
++
++// A host fiber a guest thread can park in (plan P6 of the Metropolismania port).
++//
++// The EE scheduler runs every guest thread on one host thread and switches threads by throwing
++// EeDispatcherTransfer, which unwinds every host frame; recompiled code does not mind because all its state is in the
++// R5900 context and the guest stack. Hand-written C++ that replaces a recompiled function keeps its state in host
++// frames, so it runs on a GuestFiber: when the thread has to give up the processor, the fiber is parked with its frames
++// intact, the dispatcher carries on, and when the thread is chosen again the dispatcher switches back into the fiber.
++// The dispatcher is the executor thread converted to a fiber for the time the scheduler runs.
++
++#include <cstdint>
++#include <exception>
++#include <functional>
++#include <memory>
++
++class GuestFiber
++{
++public:
++    enum class State : uint8_t
++    {
++        Idle,      // no body running
++        Running,
++        Parked,    // switched out with its frames intact; resumed by switchIn
++        Finished,  // the body returned (or threw: takeError)
++        Abandoned  // switched out for good (its thread is gone); only deleted
++    };
++
++    GuestFiber();
++    ~GuestFiber();
++    GuestFiber(const GuestFiber &) = delete;
++    GuestFiber &operator=(const GuestFiber &) = delete;
++
++    // Dispatcher side: starts `body` on an Idle or Finished fiber, or resumes a Parked one (body ignored). Returns when the
++    // fiber parks, finishes or is abandoned.
++    void switchIn(std::function<void()> body = {});
++    // Fiber side: back to the dispatcher in `state` (Parked or Abandoned). Returns when switched in again.
++    void switchOut(State state);
++
++    [[nodiscard]] State state() const noexcept { return m_state; }
++    // The exception the body ended with, if any (cleared).
++    [[nodiscard]] std::exception_ptr takeError() noexcept;
++
++    int ownerThread = 0;               // guest thread id (EeScheduler)
++    uint32_t savedNoPreempt = 0;       // the scheduler's no-preempt depth while this fiber is switched out
++    alignas(16) unsigned char user[128] = {}; // state of the host code layered on top (the port layer's call state)
++
++    // The executor thread as a fiber, for as long as fibers are used. Idempotent.
++    static bool beginDispatcher();
++    [[nodiscard]] static bool dispatcherReady() noexcept;
++    // Deletes a fiber: now, or when the dispatcher next calls reap() if it is the one running (a thread that exits from
++    // inside its own fiber).
++    static void retire(GuestFiber *fiber);
++    static void reap();
++
++    // The start routine of every fiber (internal).
++    static void run(GuestFiber *fiber);
++
++private:
++    struct Impl;
++    std::unique_ptr<Impl> m_impl;
++    State m_state = State::Idle;
++    std::function<void()> m_body;
++    std::exception_ptr m_error;
++};
++
++struct GuestFiberDeleter
++{
++    void operator()(GuestFiber *fiber) const { GuestFiber::retire(fiber); }
++};
++
++using GuestFiberRef = std::unique_ptr<GuestFiber, GuestFiberDeleter>;
+diff --git a/ps2xRuntime/src/lib/Kernel/GuestFiber.cpp b/ps2xRuntime/src/lib/Kernel/GuestFiber.cpp
+new file mode 100644
+--- /dev/null
++++ b/ps2xRuntime/src/lib/Kernel/GuestFiber.cpp
+@@ -0,0 +1,147 @@
++#include "runtime/ee_fiber.h"
++
++#include <cassert>
++#include <stdexcept>
++#include <vector>
++
++#if defined(_WIN32)
++#define NOMINMAX
++#define WIN32_LEAN_AND_MEAN
++#include <windows.h>
++
++namespace
++{
++    // One dispatcher per thread that runs a scheduler (the unit tests run them on whichever thread they are on).
++    thread_local void *t_dispatcher = nullptr;
++    thread_local GuestFiber *t_running = nullptr;
++    thread_local std::vector<GuestFiber *> t_graveyard;
++
++    constexpr SIZE_T kFiberReserve = 1u << 20;
++    constexpr SIZE_T kFiberCommit = 64u << 10;
++
++    VOID CALLBACK fiberStart(PVOID parameter)
++    {
++        GuestFiber::run(static_cast<GuestFiber *>(parameter));
++    }
++}
++
++struct GuestFiber::Impl
++{
++    void *handle = nullptr;
++};
++
++void GuestFiber::run(GuestFiber *fiber)
++{
++    // A fiber never returns from its start routine (that would end the thread): it finishes a body, hands control back
++    // to the dispatcher and waits there for the next one.
++    for (;;)
++    {
++        try
++        {
++            if (fiber->m_body)
++                fiber->m_body();
++        }
++        catch (...)
++        {
++            fiber->m_error = std::current_exception();
++        }
++        fiber->m_body = {};
++        fiber->m_state = State::Finished;
++        SwitchToFiber(t_dispatcher);
++    }
++}
++
++GuestFiber::GuestFiber()
++    : m_impl(std::make_unique<Impl>())
++{
++    m_impl->handle = CreateFiberEx(kFiberCommit, kFiberReserve, FIBER_FLAG_FLOAT_SWITCH, &fiberStart, this);
++    if (m_impl->handle == nullptr)
++        throw std::runtime_error("CreateFiberEx failed");
++}
++
++GuestFiber::~GuestFiber()
++{
++    assert(t_running != this);
++    if (m_impl && m_impl->handle != nullptr)
++        DeleteFiber(m_impl->handle);
++}
++
++bool GuestFiber::beginDispatcher()
++{
++    if (t_dispatcher != nullptr)
++        return true;
++    if (IsThreadAFiber())
++        t_dispatcher = GetCurrentFiber();
++    else
++        t_dispatcher = ConvertThreadToFiberEx(nullptr, FIBER_FLAG_FLOAT_SWITCH);
++    return t_dispatcher != nullptr;
++}
++
++bool GuestFiber::dispatcherReady() noexcept
++{
++    return t_dispatcher != nullptr;
++}
++
++void GuestFiber::switchIn(std::function<void()> body)
++{
++    assert(t_dispatcher != nullptr && t_running == nullptr);
++    assert(m_state == State::Parked || m_state == State::Idle || m_state == State::Finished);
++    if (m_state != State::Parked)
++        m_body = std::move(body);
++    m_state = State::Running;
++    t_running = this;
++    SwitchToFiber(m_impl->handle);
++    t_running = nullptr;
++}
++
++void GuestFiber::switchOut(State state)
++{
++    assert(t_running == this && (state == State::Parked || state == State::Abandoned));
++    m_state = state;
++    SwitchToFiber(t_dispatcher);
++}
++
++void GuestFiber::retire(GuestFiber *fiber)
++{
++    if (fiber == nullptr)
++        return;
++    if (fiber == t_running)
++        t_graveyard.push_back(fiber);
++    else
++        delete fiber;
++}
++
++void GuestFiber::reap()
++{
++    if (t_graveyard.empty())
++        return;
++    std::vector<GuestFiber *> dead;
++    dead.swap(t_graveyard);
++    for (GuestFiber *fiber : dead)
++        retire(fiber);
++}
++
++#else // !_WIN32
++
++struct GuestFiber::Impl
++{
++};
++
++GuestFiber::GuestFiber() = default;
++GuestFiber::~GuestFiber() = default;
++void GuestFiber::run(GuestFiber *) {}
++bool GuestFiber::beginDispatcher() { return false; }
++bool GuestFiber::dispatcherReady() noexcept { return false; }
++void GuestFiber::switchIn(std::function<void()>) {}
++void GuestFiber::switchOut(State) {}
++void GuestFiber::retire(GuestFiber *fiber) { delete fiber; }
++void GuestFiber::reap() {}
++
++#endif
++
++std::exception_ptr GuestFiber::takeError() noexcept
++{
++    std::exception_ptr error = std::move(m_error);
++    m_error = nullptr;
++    return error;
++}
+diff --git a/ps2xRuntime/include/runtime/ee_scheduler.h b/ps2xRuntime/include/runtime/ee_scheduler.h
+--- a/ps2xRuntime/include/runtime/ee_scheduler.h
++++ b/ps2xRuntime/include/runtime/ee_scheduler.h
+@@ -1,6 +1,7 @@
+ #pragma once
+ 
+ #include "ps2_runtime.h"
++#include "runtime/ee_fiber.h"
+ 
+ #include <array>
+ #include <atomic>
+@@ -100,6 +101,8 @@ struct GuestInvocation
+     uint64_t tag = 0;
+     R5900Context context{};
+     std::function<void(const R5900Context &, R5900Context &)> onComplete;
++    // A fiber a hand-written (ported) function is parked in while this invocation is the one the thread runs (plan P6).
++    GuestFiberRef fiber;
+ };
+ 
+ struct GuestThread
+@@ -122,7 +125,10 @@ struct GuestThread
+     uint32_t tlsBase = 0;
+     EeWaitState wait{};
+     std::function<void(R5900Context &)> resumeCompletion;
+-    std::vector<GuestInvocation> invocations;
++    // A deque so the contexts keep their addresses while a ported function parked in a fiber points to one.
++    std::deque<GuestInvocation> invocations;
++    // The fiber a ported function is parked in while the thread's own context is the one it runs (plan P6).
++    GuestFiberRef fiber;
+ 
+     [[nodiscard]] R5900Context &activeContext()
+     {
+@@ -351,6 +357,79 @@ public:
+     void completeExternalWait(uint32_t type, uint64_t token, int result);
+     [[noreturn]] void waitExternal(EeWaitReason reason, uint32_t type, uint64_t token, std::function<void(R5900Context &)> completion = {});
+ 
++    // ---- Fibers (plan P6) ----
++    // A hand-written function that has to survive a thread switch runs its body with runOnFiber from the dispatcher's
++    // stack. Inside it, guest code is entered with callOnFiber: when a thread switch unwinds that guest code the fiber
++    // parks (frames intact), the dispatcher goes on, and when the thread runs again the fiber carries on.
++    // PS2X_FIBERS=0 turns the whole mechanism off (fibersAvailable() is false and nothing uses it).
++    struct FiberHooks
++    {
++        // Called around every switch into a fiber and back out (the port layer swaps its own per-call state there).
++        void (*enter)(GuestFiber &) = nullptr;
++        void (*leave)(GuestFiber &) = nullptr;
++    };
++    void setFiberHooks(FiberHooks hooks) noexcept { m_fiberHooks = hooks; }
++    // True while run() is executing on the executor thread with a guest thread selected, so runOnFiber can be used.
++    [[nodiscard]] bool fibersAvailable() const noexcept;
++    // True while the code running is on a guest fiber.
++    [[nodiscard]] bool onFiber() const noexcept { return m_currentFiber != nullptr; }
++    // From the dispatcher's stack: runs `body` on a fiber of the current thread's execution slot. Returns when the body is
++    // done; if it parked first, unwinds the host frames above (EeDispatcherTransfer) like any other thread switch.
++    void runOnFiber(std::function<void()> body);
++    // From a fiber, after catching EeDispatcherTransfer outside any catch block: gives the processor away and returns
++    // when the thread is resumed. If the thread has exited or been terminated the fiber never comes back.
++    void parkFiber();
++    // From a fiber, between two entries into guest code: when a checkpoint is due (events to deliver, a higher-priority thread
++    // ready, the time slice used up) gives the processor back as recompiled code does at a checkpoint, and returns when the
++    // thread runs again. A fiber function is not under the no-preempt rule, so spin loops that wait for an interrupt or
++    // another thread keep working.
++    void yieldIfDue()
++    {
++        if (m_currentFiber != nullptr && checkpointDue(0u))
++        {
++            ++m_fiberYields;
++            parkFiber();
++        }
++    }
++    // Enters guest code from a fiber: enter() starts it, finish() runs it to its end and says whether it got there. If a
++    // thread switch interrupts, the fiber parks and finish() carries on from the context after the thread resumes.
++    template <class Enter, class Finish>
++    bool callOnFiber(Enter &&enter, Finish &&finish)
++    {
++        bool switched = false;
++        bool done = false;
++        if (m_forceFiberYield && onFiber())
++        {
++            ++m_fiberYields;
++            parkFiber();
++        }
++        try
++        {
++            enter();
++            done = finish();
++        }
++        catch (const EeDispatcherTransfer &)
++        {
++            if (!onFiber())
++                throw;
++            switched = true;
++        }
++        while (switched)
++        {
++            parkFiber(); // outside the catch: the host exception state is per thread, not per fiber
++            switched = false;
++            try
++            {
++                done = finish();
++            }
++            catch (const EeDispatcherTransfer &)
++            {
++                switched = true;
++            }
++        }
++        return done;
++    }
++
+     [[nodiscard]] GuestThread *thread(int id);
+     [[nodiscard]] const GuestThread *thread(int id) const;
+     [[nodiscard]] EeSemaphore *semaphore(int id);
+@@ -404,6 +483,14 @@ private:
+     void updateNextDeadline();
+     [[nodiscard]] bool hasReadyAtOrAbovePriority(int priority) const;
+     void renewTimeSlice();
++    GuestFiberRef &activeFiberSlot(GuestThread &thread);
++    GuestFiberRef *findFiberSlot(GuestThread &thread, const GuestFiber *fiber);
++    GuestFiberRef acquireFiber();
++    // Switches into the fiber (starting `body`, or resuming it when parked) and back out; returns its state.
++    GuestFiber::State enterFiber(GuestFiber &fiber, std::function<void()> body);
++    // After a fiber came back to the dispatcher: gives a finished fiber back to the pool (rethrowing what its body
++    // threw) and drops an abandoned one.
++    void settleFiber(GuestFiber *fiber, int ownerId, GuestFiber::State state);
+     void copyMainContextToRuntime();
+     void publishDebugContext(const R5900Context &context);
+     void publishIdleDebugContext();
+@@ -435,6 +522,18 @@ private:
+     bool m_timeSliceExpired = false;
+     bool m_insideInterrupt = false;
+     uint32_t m_noPreemptDepth = 0;
++    // Fibers (plan P6).
++    FiberHooks m_fiberHooks{};
++    GuestFiber *m_currentFiber = nullptr;
++    std::vector<GuestFiberRef> m_fiberPool;
++    bool m_fibersEnabled = true;
++    // PS2X_FIBER_FORCE_YIELD=1 (a stress test): a fiber parks before every entry into guest code, whether a checkpoint is
++    // due or not, so the park and resume path runs on real game code. The dispatcher resumes it at once.
++    bool m_forceFiberYield = false;
++    bool m_dispatching = false; // run() is executing
++    // PS2X_FIBER_STATS=1: fibers started, parked (waits and switches), yielded at a checkpoint, resumed; reported every 5 s.
++    uint64_t m_fiberStarts = 0, m_fiberParks = 0, m_fiberYields = 0, m_fiberResumes = 0;
++    std::chrono::steady_clock::time_point m_fiberStatsLast{};
+     // RotateThreadReadyQueue calls since the last wakeup, interrupt or scheduler event (see
+     // EeScheduler::noteYield).
+     uint32_t m_yieldsSinceEvent = 0;
+diff --git a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+--- a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
++++ b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+@@ -5,7 +5,9 @@
+ 
+ #include <algorithm>
+ #include <cassert>
++#include <cstdlib>
+ #include <cstring>
++#include <iostream>
+ #include <limits>
+ #include <stdexcept>
+ 
+@@ -88,6 +90,14 @@ void EeScheduler::reset(uint8_t *rdram, const R5900Context &mainContext)
+     m_rdram = rdram;
+     m_readyQueues = {};
+     m_threads.clear();
++    m_fiberPool.clear();
++    m_currentFiber = nullptr;
++    {
++        const char *fibers = std::getenv("PS2X_FIBERS");
++        m_fibersEnabled = fibers == nullptr || fibers[0] != '0';
++        const char *force = std::getenv("PS2X_FIBER_FORCE_YIELD");
++        m_forceFiberYield = force != nullptr && force[0] == '1';
++    }
+     m_semaphores.clear();
+     m_eventFlags.clear();
+     m_alarms.clear();
+@@ -156,9 +166,28 @@ void EeScheduler::run()
+ {
+     assertExecutor();
+     m_running.store(true, std::memory_order_release);
++    if (m_fibersEnabled)
++        GuestFiber::beginDispatcher();
++    m_dispatching = true;
++
++    // What follows a stretch of guest execution: the events it left, and a requested preemption.
++    const auto afterGuestRun = [this]
++    {
++        processPendingEvents();
++        if (m_rescheduleRequested && m_currentThreadId != 0)
++        {
++            GuestThread *preempted = currentThread();
++            assert(preempted != nullptr);
++            enqueueReady(*preempted, !m_timeSliceExpired);
++            m_currentThreadId = 0;
++            m_rescheduleRequested = false;
++            m_timeSliceExpired = false;
++        }
++    };
+ 
+     while (!m_stopRequested.load(std::memory_order_acquire))
+     {
++        GuestFiber::reap();
+         processPendingEvents();
+         if (m_stopRequested.load(std::memory_order_acquire))
+         {
+@@ -228,7 +257,15 @@ void EeScheduler::run()
+ 
+         publishDebugContext(context);
+ 
+-        if (context.pc == 0u)
++        // A ported function parked in a fiber on this slot: the thread carries on inside it, not at context.pc.
++        GuestFiber *parked = nullptr;
++        {
++            GuestFiberRef &slot = activeFiberSlot(*running);
++            if (slot && slot->state() == GuestFiber::State::Parked)
++                parked = slot.get();
++        }
++
++        if (parked == nullptr && context.pc == 0u)
+         {
+             if (!running->invocations.empty())
+             {
+@@ -266,6 +303,30 @@ void EeScheduler::run()
+             continue;
+         }
+ 
++        if (parked != nullptr)
++        {
++            accountCycles(kGuestDispatchCycles);
++            const int ownerId = running->id;
++            try
++            {
++                m_insideInterrupt = !running->invocations.empty() && running->invocations.back().kind == GuestInvocationKind::Interrupt;
++                m_guestExecuting.store(true, std::memory_order_release);
++                const GuestFiber::State state = enterFiber(*parked, {});
++                m_guestExecuting.store(false, std::memory_order_release);
++                m_insideInterrupt = false;
++                settleFiber(parked, ownerId, state);
++            }
++            catch (...)
++            {
++                m_guestExecuting.store(false, std::memory_order_release);
++                m_running.store(false, std::memory_order_release);
++                publishSnapshot();
++                throw;
++            }
++            afterGuestRun();
++            continue;
++        }
++
+         if (!m_runtime.hasFunction(context.pc))
+         {
+             if (!running->invocations.empty())
+@@ -313,18 +374,10 @@ void EeScheduler::run()
+             throw;
+         }
+ 
+-        processPendingEvents();
+-        if (m_rescheduleRequested && m_currentThreadId != 0)
+-        {
+-            GuestThread *preempted = currentThread();
+-            assert(preempted != nullptr);
+-            enqueueReady(*preempted, !m_timeSliceExpired);
+-            m_currentThreadId = 0;
+-            m_rescheduleRequested = false;
+-            m_timeSliceExpired = false;
+-        }
++        afterGuestRun();
+     }
+ 
++    m_dispatching = false;
+     m_guestExecuting.store(false, std::memory_order_release);
+     m_running.store(false, std::memory_order_release);
+     copyMainContextToRuntime();
+@@ -1588,6 +1641,133 @@ void EeScheduler::publishSnapshot()
+     }
+ }
+ 
++GuestFiberRef &EeScheduler::activeFiberSlot(GuestThread &thread)
++{
++    return thread.invocations.empty() ? thread.fiber : thread.invocations.back().fiber;
++}
++
++GuestFiberRef *EeScheduler::findFiberSlot(GuestThread &thread, const GuestFiber *fiber)
++{
++    if (thread.fiber.get() == fiber)
++        return &thread.fiber;
++    for (GuestInvocation &invocation : thread.invocations)
++        if (invocation.fiber.get() == fiber)
++            return &invocation.fiber;
++    return nullptr;
++}
++
++GuestFiberRef EeScheduler::acquireFiber()
++{
++    if (!m_fiberPool.empty())
++    {
++        GuestFiberRef fiber = std::move(m_fiberPool.back());
++        m_fiberPool.pop_back();
++        return fiber;
++    }
++    return GuestFiberRef(new GuestFiber());
++}
++
++bool EeScheduler::fibersAvailable() const noexcept
++{
++    return m_fibersEnabled && m_dispatching && GuestFiber::dispatcherReady() &&
++           m_executorThread == std::this_thread::get_id() && m_currentThreadId != 0;
++}
++
++GuestFiber::State EeScheduler::enterFiber(GuestFiber &fiber, std::function<void()> body)
++{
++    const uint32_t outerDepth = m_noPreemptDepth;
++    m_noPreemptDepth = fiber.savedNoPreempt;
++    if (m_fiberHooks.enter)
++        m_fiberHooks.enter(fiber);
++    m_currentFiber = &fiber;
++    if (fiber.state() == GuestFiber::State::Parked)
++        ++m_fiberResumes;
++    else
++        ++m_fiberStarts;
++    fiber.switchIn(std::move(body));
++    m_currentFiber = nullptr;
++    if (fiber.state() == GuestFiber::State::Parked)
++        ++m_fiberParks;
++    static const bool statsOn = [] {
++        const char *value = std::getenv("PS2X_FIBER_STATS");
++        return value != nullptr && value[0] == '1';
++    }();
++    if (statsOn)
++    {
++        const auto now = std::chrono::steady_clock::now();
++        if (m_fiberStatsLast.time_since_epoch().count() == 0)
++            m_fiberStatsLast = now;
++        else if (now - m_fiberStatsLast >= std::chrono::seconds(5))
++        {
++            std::cerr << "[fibers] started=" << m_fiberStarts << " parked=" << m_fiberParks << " (checkpoint yields " << m_fiberYields
++                      << ") resumed=" << m_fiberResumes << " pooled=" << m_fiberPool.size() << std::endl;
++            m_fiberStarts = m_fiberParks = m_fiberYields = m_fiberResumes = 0;
++            m_fiberStatsLast = now;
++        }
++    }
++    if (m_fiberHooks.leave)
++        m_fiberHooks.leave(fiber);
++    fiber.savedNoPreempt = m_noPreemptDepth;
++    m_noPreemptDepth = outerDepth;
++    return fiber.state();
++}
++
++void EeScheduler::settleFiber(GuestFiber *fiber, int ownerId, GuestFiber::State state)
++{
++    if (state == GuestFiber::State::Parked)
++        return;
++    GuestThread *owner = thread(ownerId);
++    GuestFiberRef *slot = owner != nullptr ? findFiberSlot(*owner, fiber) : nullptr;
++    if (state == GuestFiber::State::Abandoned)
++    {
++        // Its thread is gone (or never comes back to it): the frames are dropped.
++        if (slot != nullptr)
++            slot->reset();
++        return;
++    }
++    // Finished: the body returned or threw.
++    std::exception_ptr error = fiber->takeError();
++    if (slot != nullptr)
++    {
++        GuestFiberRef finished = std::move(*slot);
++        finished->ownerThread = 0;
++        m_fiberPool.push_back(std::move(finished));
++    }
++    if (error)
++        std::rethrow_exception(error);
++}
++
++void EeScheduler::runOnFiber(std::function<void()> body)
++{
++    assertExecutor();
++    assert(m_currentFiber == nullptr && fibersAvailable());
++    GuestThread *self = currentThread();
++    assert(self != nullptr);
++    GuestFiberRef &slot = activeFiberSlot(*self);
++    assert(!slot);
++    slot = acquireFiber();
++    GuestFiber *fiber = slot.get();
++    fiber->ownerThread = self->id;
++    fiber->savedNoPreempt = 0u;
++    const int ownerId = self->id;
++    const GuestFiber::State state = enterFiber(*fiber, std::move(body));
++    settleFiber(fiber, ownerId, state);
++    if (state != GuestFiber::State::Finished)
++    {
++        // Parked or abandoned: the thread has left the processor; unwind what the dispatcher's stack holds above us.
++        throw EeDispatcherTransfer{};
++    }
++}
++
++void EeScheduler::parkFiber()
++{
++    GuestFiber *fiber = m_currentFiber;
++    assert(fiber != nullptr);
++    const GuestThread *owner = thread(fiber->ownerThread);
++    const bool alive = owner != nullptr && owner->status != EeThreadStatus::Dormant;
++    fiber->switchOut(alive ? GuestFiber::State::Parked : GuestFiber::State::Abandoned);
++}
++
+ void EeScheduler::assertExecutor() const
+ {
+     assert(m_executorThread == std::this_thread::get_id());
+@@ -1688,7 +1868,8 @@ void EeScheduler::makeDormant(GuestThread &item)
+     item.resumeCompletion = {};
+     item.suspendCount = 0;
+     item.wakeupCount = 0;
+-    item.invocations.clear();
++    item.invocations.clear(); // and with them the fibers parked on them (frames dropped, not unwound)
++    item.fiber.reset();
+ }
+ 
+ void EeScheduler::removeFromWaitObject(GuestThread &item)
+diff --git a/ps2xTest/src/ps2_runtime_kernel_tests.cpp b/ps2xTest/src/ps2_runtime_kernel_tests.cpp
+--- a/ps2xTest/src/ps2_runtime_kernel_tests.cpp
++++ b/ps2xTest/src/ps2_runtime_kernel_tests.cpp
+@@ -543,6 +543,198 @@ namespace
+             std::memset(&ctx, 0, sizeof(ctx));
+         }
+     };
++
++    // ---- Fibers (plan P6): hand-written ("ported") functions that survive a thread switch ----
++    constexpr uint32_t K_FIBER_MAIN = 0x310000u;
++    constexpr uint32_t K_FIBER_A = 0x310100u;
++    constexpr uint32_t K_FIBER_B = 0x310200u;
++    constexpr uint32_t K_FIBER_B_RESUME1 = 0x310204u;
++    constexpr uint32_t K_FIBER_B_RESUME2 = 0x310208u;
++    constexpr uint32_t K_FIBER_GEN_WAIT = 0x310300u;
++    constexpr uint32_t K_FIBER_GEN_WAIT_RESUME = 0x310304u;
++    constexpr uint32_t K_FIBER_GEN_EXIT = 0x310400u;
++    constexpr uint32_t K_FIBER_GEN_INVOKE = 0x310500u;
++    constexpr uint32_t K_FIBER_GEN_INVOKE_RESUME = 0x310504u;
++    constexpr uint32_t K_FIBER_HANDLER = 0x310600u;
++    constexpr uint32_t K_FIBER_KILLER = 0x310700u;
++    constexpr uint32_t K_FIBER_SENTINEL = 0x00000FF0u;
++
++    std::vector<int> *gFiberTrace = nullptr;
++    int gFiberSema = 0;
++    int gFiberWaitResult = 0;
++    int gFiberWaits = 1;
++    int gFiberThreadA = 0;
++    int gFiberAfterWait = 0; // 0 nothing, 1 call the generated exit, 2 call the generated invoke
++    bool gFiberOnFiberInside = false;
++    bool gFiberOnFiberOutside = true;
++    uint32_t gFiberCallerSp = 0;
++    uint32_t gFiberSpAfter = 0;
++
++    // A recompiled function that waits on gFiberSema and "returns" to ra.
++    void fiberGenWait(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
++    {
++        if (ctx->pc == K_FIBER_GEN_WAIT)
++        {
++            ctx->pc = K_FIBER_GEN_WAIT_RESUME;
++            setRegU32(*ctx, 4, static_cast<uint32_t>(gFiberSema));
++            WaitSema(rdram, ctx, runtime);
++        }
++        gFiberWaitResult = getRegS32(*ctx, 2);
++        ctx->pc = ::getRegU32(ctx, 31);
++    }
++
++    void fiberGenExit(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
++    {
++        ExitThread(rdram, ctx, runtime);
++    }
++
++    // A recompiled function that has the thread run a handler (as an RPC callback does) and carries on afterwards.
++    void fiberGenInvoke(uint8_t *, R5900Context *ctx, PS2Runtime *runtime)
++    {
++        if (ctx->pc == K_FIBER_GEN_INVOKE)
++        {
++            ctx->pc = K_FIBER_GEN_INVOKE_RESUME;
++            GuestInvocation invocation{};
++            invocation.kind = GuestInvocationKind::HleCall;
++            invocation.context = *ctx;
++            invocation.context.pc = K_FIBER_HANDLER;
++            SET_GPR_U32(&invocation.context, 29, 0u);
++            SET_GPR_U32(&invocation.context, 31, 0u);
++            runtime->eeScheduler().invokeCurrent(std::move(invocation));
++        }
++        ctx->pc = ::getRegU32(ctx, 31);
++    }
++
++    void fiberHandler(uint8_t *, R5900Context *ctx, PS2Runtime *)
++    {
++        gFiberTrace->push_back(40);
++        ctx->pc = 0u;
++    }
++
++    // What a ported function's wrapper and callGuest do: the body runs on a fiber, and guest code is entered with callOnFiber.
++    void fiberCallGuest(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime, uint32_t address)
++    {
++        EeScheduler &ee = runtime->eeScheduler();
++        SET_GPR_U32(ctx, 31, K_FIBER_SENTINEL);
++        ctx->pc = address;
++        ee.callOnFiber([&] { runtime->lookupFunction(address)(rdram, ctx, runtime); },
++                       [&]
++                       {
++                           while (ctx->pc != K_FIBER_SENTINEL)
++                               runtime->lookupFunction(ctx->pc)(rdram, ctx, runtime);
++                           return true;
++                       });
++    }
++
++    void fiberPortedThread(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
++    {
++        EeScheduler &ee = runtime->eeScheduler();
++        const auto body = [rdram, ctx, runtime, &ee]
++        {
++            gFiberOnFiberInside = ee.onFiber();
++            gFiberTrace->push_back(10);
++            gFiberCallerSp = ::getRegU32(ctx, 29);
++            for (int i = 0; i < gFiberWaits; ++i)
++            {
++                fiberCallGuest(rdram, ctx, runtime, K_FIBER_GEN_WAIT);
++                gFiberTrace->push_back(11 + i);
++            }
++            gFiberSpAfter = ::getRegU32(ctx, 29);
++            if (gFiberAfterWait == 1)
++                fiberCallGuest(rdram, ctx, runtime, K_FIBER_GEN_EXIT);
++            if (gFiberAfterWait == 2)
++            {
++                fiberCallGuest(rdram, ctx, runtime, K_FIBER_GEN_INVOKE);
++                gFiberTrace->push_back(20);
++            }
++            ctx->pc = 0u; // like the wrapper: pc = ra, which is 0 for a thread entry
++        };
++        gFiberOnFiberOutside = ee.onFiber();
++        if (ee.fibersAvailable() && !ee.onFiber())
++            ee.runOnFiber(body);
++        else
++            body();
++    }
++
++    // The thread that signals gFiberSema once or twice (a normal recompiled function: no fiber).
++    void fiberSignaller(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
++    {
++        const auto signal = [&](uint32_t resume)
++        {
++            ctx->pc = resume;
++            setRegU32(*ctx, 4, static_cast<uint32_t>(gFiberSema));
++            SignalSema(rdram, ctx, runtime);
++        };
++        if (ctx->pc == K_FIBER_B)
++        {
++            gFiberTrace->push_back(30);
++            signal(K_FIBER_B_RESUME1);
++            return;
++        }
++        if (ctx->pc == K_FIBER_B_RESUME1)
++        {
++            gFiberTrace->push_back(31);
++            if (gFiberWaits > 1)
++            {
++                signal(K_FIBER_B_RESUME2);
++                return;
++            }
++        }
++        else
++        {
++            gFiberTrace->push_back(32);
++        }
++        ctx->pc = 0u;
++        runtime->requestStop();
++    }
++
++    // A thread that ends another one while that one is parked in a fiber.
++    void fiberKiller(uint8_t *, R5900Context *ctx, PS2Runtime *runtime)
++    {
++        uint32_t ownedStack = 0u;
++        runtime->eeScheduler().terminateThread(gFiberThreadA, ownedStack, false);
++        gFiberTrace->push_back(50);
++        ctx->pc = 0u;
++        runtime->requestStop();
++    }
++
++    void fiberMainExit(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
++    {
++        gFiberTrace->push_back(1);
++        ExitThread(rdram, ctx, runtime);
++    }
++
++    void registerFiberFunctions(PS2Runtime &runtime)
++    {
++        runtime.registerFunction(K_FIBER_MAIN, fiberMainExit);
++        runtime.registerFunction(K_FIBER_A, fiberPortedThread);
++        runtime.registerFunction(K_FIBER_B, fiberSignaller);
++        runtime.registerFunction(K_FIBER_B_RESUME1, fiberSignaller);
++        runtime.registerFunction(K_FIBER_B_RESUME2, fiberSignaller);
++        runtime.registerFunction(K_FIBER_GEN_WAIT, fiberGenWait);
++        runtime.registerFunction(K_FIBER_GEN_WAIT_RESUME, fiberGenWait);
++        runtime.registerFunction(K_FIBER_GEN_EXIT, fiberGenExit);
++        runtime.registerFunction(K_FIBER_GEN_INVOKE, fiberGenInvoke);
++        runtime.registerFunction(K_FIBER_GEN_INVOKE_RESUME, fiberGenInvoke);
++        runtime.registerFunction(K_FIBER_HANDLER, fiberHandler);
++        runtime.registerFunction(K_FIBER_KILLER, fiberKiller);
++    }
++
++    // Thread A (priority 5) runs the fiber function; thread B (priority 20) is the signaller or killer.
++    void startFiberThreads(TestEnv &env, uint32_t bEntry, int waits, int afterWait)
++    {
++        gFiberWaits = waits;
++        gFiberAfterWait = afterWait;
++        gFiberWaitResult = 0;
++        env.ctx.pc = K_FIBER_MAIN;
++        EeScheduler &ee = env.runtime.eeScheduler();
++        ee.reset(env.rdram.data(), env.ctx);
++        gFiberSema = ee.createSemaphore(0, 4, 0, 0);
++        gFiberThreadA = ee.createThread(EeThreadCreateParams{0, K_FIBER_A, 0x20000u, 0x800u, 0, 5, 0});
++        const int b = ee.createThread(EeThreadCreateParams{0, bEntry, 0x21000u, 0x800u, 0, 20, 0});
++        ee.startThread(gFiberThreadA, 0, env.ctx, false);
++        ee.startThread(b, 0, env.ctx, false);
++    }
+ }
+ 
+ void register_ps2_runtime_kernel_tests()
+@@ -810,6 +1002,82 @@ void register_ps2_runtime_kernel_tests()
+                      "WEF_CLEAR_ALL should clear the entire event pattern");
+         });
+ 
++        tc.Run("a fiber function waits on a semaphore and carries on when its thread is woken", [](TestCase &t)
++        {
++            TestEnv env;
++            std::vector<int> trace;
++            gFiberTrace = &trace;
++            registerFiberFunctions(env.runtime);
++            startFiberThreads(env, K_FIBER_B, 1, 0);
++            env.runtime.eeScheduler().run();
++
++            const std::vector<int> expected{1, 10, 30, 11, 31};
++            t.IsTrue(trace == expected, "A parks in the wait, B signals and is preempted by A, A finishes, B carries on");
++            t.IsTrue(gFiberOnFiberInside, "the body of a fiber function runs on a fiber");
++            t.IsFalse(gFiberOnFiberOutside, "the dispatcher's stack is not a fiber");
++            t.Equals(gFiberWaitResult, gFiberSema, "the generated wait function sees the result the wake-up wrote");
++            t.Equals(gFiberCallerSp, gFiberSpAfter, "the fiber's context kept its stack pointer across the wait");
++            t.IsTrue(env.runtime.eeScheduler().thread(gFiberThreadA)->status == EeThreadStatus::Dormant, "A ended");
++            t.IsTrue(env.runtime.eeScheduler().thread(gFiberThreadA)->fiber == nullptr, "and left no fiber on its slot");
++        });
++
++        tc.Run("a fiber function can wait twice and keeps its C++ frames across both", [](TestCase &t)
++        {
++            TestEnv env;
++            std::vector<int> trace;
++            gFiberTrace = &trace;
++            registerFiberFunctions(env.runtime);
++            startFiberThreads(env, K_FIBER_B, 2, 0);
++            env.runtime.eeScheduler().run();
++
++            const std::vector<int> expected{1, 10, 30, 11, 31, 12, 32};
++            t.IsTrue(trace == expected, "two parks, two resumes, in order");
++        });
++
++        tc.Run("a fiber parked in a wait is dropped when its thread is terminated", [](TestCase &t)
++        {
++            TestEnv env;
++            std::vector<int> trace;
++            gFiberTrace = &trace;
++            registerFiberFunctions(env.runtime);
++            startFiberThreads(env, K_FIBER_KILLER, 1, 0);
++            env.runtime.eeScheduler().run();
++
++            const std::vector<int> expected{1, 10, 50};
++            t.IsTrue(trace == expected, "A parks, the killer ends it, nothing of A runs again");
++            t.IsTrue(env.runtime.eeScheduler().thread(gFiberThreadA)->status == EeThreadStatus::Dormant, "A is dormant");
++            t.IsTrue(env.runtime.eeScheduler().thread(gFiberThreadA)->fiber == nullptr, "its fiber is gone");
++            t.Equals(env.runtime.eeScheduler().semaphore(gFiberSema)->waiters.size(), size_t{0}, "and it no longer waits on the semaphore");
++        });
++
++        tc.Run("a thread that exits from inside its fiber abandons it", [](TestCase &t)
++        {
++            TestEnv env;
++            std::vector<int> trace;
++            gFiberTrace = &trace;
++            registerFiberFunctions(env.runtime);
++            startFiberThreads(env, K_FIBER_B, 1, 1);
++            env.runtime.eeScheduler().run();
++
++            const std::vector<int> expected{1, 10, 30, 11, 31};
++            t.IsTrue(trace == expected, "A exits after its wait; the rest of its body never runs, B carries on");
++            t.IsTrue(env.runtime.eeScheduler().thread(gFiberThreadA)->status == EeThreadStatus::Dormant, "A is dormant");
++            t.IsTrue(env.runtime.eeScheduler().thread(gFiberThreadA)->fiber == nullptr, "and has no fiber");
++        });
++
++        tc.Run("an invocation runs on the thread while its fiber is parked, then the fiber resumes", [](TestCase &t)
++        {
++            TestEnv env;
++            std::vector<int> trace;
++            gFiberTrace = &trace;
++            registerFiberFunctions(env.runtime);
++            startFiberThreads(env, K_FIBER_B, 1, 2);
++            env.runtime.eeScheduler().run();
++
++            const std::vector<int> expected{1, 10, 30, 11, 40, 20, 31};
++            t.IsTrue(trace == expected, "after the wait A has its handler run on its behalf, then continues in the same frames");
++        });
++
+         tc.Run("RotateThreadReadyQueue is the only same-priority rotation", [](TestCase &t)
+         {
+             TestEnv env;

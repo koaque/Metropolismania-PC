@@ -7,7 +7,7 @@ constructs the 256 member status entries (`family`).
 
 ## Functions
 
-4 functions (typed 1, verified 3). Blocks: 1 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+4 functions (verified 4). Blocks: 1 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|

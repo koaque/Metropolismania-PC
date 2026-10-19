@@ -32,6 +32,7 @@ struct A3DObject;
 struct Camera;
 struct CityCamera;
 struct GameFile;
+struct FileRequest;
 struct TexSprite;
 struct TexFileHeader;
 struct LightSet;
@@ -175,6 +176,17 @@ struct CityCamera {
 struct GameFile {
     int32_t fd;                /* +0x00 -1 when closed */
     int32_t async;             /* +0x04 requests go through the file queue */
+};
+/* Disc request queue slot (0x1C bytes), mm_FileQueue_*; 64 of them at 0x1F4ED0. */
+struct FileRequest {
+    int32_t op;                /* +0x00 0 free, 1 open, 2 close, 3 seek, 4 read */
+    uint16_t state;            /* +0x04 0 not issued yet, 1 issued (poll with sceIoctl) */
+    uint16_t t0;               /* +0x06 argument of sceCdDiskReady */
+    int32_t fd;                /* +0x08 */
+    int32_t buffer;            /* +0x0C read destination */
+    int32_t bytes;             /* +0x10 bytes to read */
+    int32_t offset;            /* +0x14 seek offset */
+    int32_t whence;            /* +0x18 seek origin */
 };
 /* .TEX image header (0x20 bytes): the palette, then the tiles row by row, each tileWords words. */
 struct TexFileHeader {
@@ -1372,6 +1384,15 @@ static_assert(offsetof(CityCamera, zoomLevel) == 0x530, "CityCamera.zoomLevel");
 static_assert(sizeof(GameFile) == 0x8, "GameFile size");
 static_assert(offsetof(GameFile, fd) == 0x00, "GameFile.fd");
 static_assert(offsetof(GameFile, async) == 0x04, "GameFile.async");
+static_assert(sizeof(FileRequest) == 0x1C, "FileRequest size");
+static_assert(offsetof(FileRequest, op) == 0x00, "FileRequest.op");
+static_assert(offsetof(FileRequest, state) == 0x04, "FileRequest.state");
+static_assert(offsetof(FileRequest, t0) == 0x06, "FileRequest.t0");
+static_assert(offsetof(FileRequest, fd) == 0x08, "FileRequest.fd");
+static_assert(offsetof(FileRequest, buffer) == 0x0C, "FileRequest.buffer");
+static_assert(offsetof(FileRequest, bytes) == 0x10, "FileRequest.bytes");
+static_assert(offsetof(FileRequest, offset) == 0x14, "FileRequest.offset");
+static_assert(offsetof(FileRequest, whence) == 0x18, "FileRequest.whence");
 static_assert(sizeof(TexFileHeader) == 0x20, "TexFileHeader size");
 static_assert(offsetof(TexFileHeader, paletteSize) == 0x04, "TexFileHeader.paletteSize");
 static_assert(offsetof(TexFileHeader, tileWords) == 0x08, "TexFileHeader.tileWords");

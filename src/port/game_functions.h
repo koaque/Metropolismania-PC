@@ -1492,6 +1492,428 @@ inline constexpr uint32_t StaticInit_WordsTable = 0x001BAEC0u;
 inline constexpr uint32_t StaticInit_Words = 0x001BCD90u;
 }
 
+// Functions that can reach a thread switch (config/port_status.csv, config/blocking_extra.txt). A ported one runs on a
+// fiber (plan P6, src/port/abi.h), so its C++ frames survive the switch.
+namespace blocking
+{
+template <uint32_t Address> inline constexpr bool at = false;
+template <> inline constexpr bool at<0x00128D80u> = true; // MsgWin_dtor
+template <> inline constexpr bool at<0x00128E20u> = true; // MsgWin_ctor
+template <> inline constexpr bool at<0x001290C0u> = true; // A3DObjectBase_DeletingDtor
+template <> inline constexpr bool at<0x00129570u> = true; // A3D_Relocate
+template <> inline constexpr bool at<0x00129950u> = true; // A3DObject_ChangeLuminosity
+template <> inline constexpr bool at<0x00129E30u> = true; // A3DObject_dtor
+template <> inline constexpr bool at<0x00129EC0u> = true; // A3DObject_LoadAsync
+template <> inline constexpr bool at<0x0012A0E0u> = true; // A3DObject_Load
+template <> inline constexpr bool at<0x0012A750u> = true; // Camera_DeletingDtor
+template <> inline constexpr bool at<0x0012AB40u> = true; // BaseObject_dtor
+template <> inline constexpr bool at<0x0012ABA0u> = true; // GameUpdate
+template <> inline constexpr bool at<0x0012AE20u> = true; // Main
+template <> inline constexpr bool at<0x0012B330u> = true; // BagMenu_FinishUse
+template <> inline constexpr bool at<0x0012B470u> = true; // BagMenu_UseSelected
+template <> inline constexpr bool at<0x0012B620u> = true; // BagMenu_RefreshList
+template <> inline constexpr bool at<0x0012B940u> = true; // BagMenu_Update
+template <> inline constexpr bool at<0x0012C490u> = true; // Bag_CreateGlobal
+template <> inline constexpr bool at<0x0012C510u> = true; // InstanceBuf_Init
+template <> inline constexpr bool at<0x0012C9D0u> = true; // InstanceModel_ctor
+template <> inline constexpr bool at<0x0012D600u> = true; // CityCamera_DeletingDtor
+template <> inline constexpr bool at<0x0012D660u> = true; // CityCamera_ctor
+template <> inline constexpr bool at<0x0012E220u> = true; // InstanceModel_LoadAsync
+template <> inline constexpr bool at<0x0012E2A0u> = true; // InstanceModel_ctor2
+template <> inline constexpr bool at<0x0012EF10u> = true; // CharType_dtor
+template <> inline constexpr bool at<0x00132400u> = true; // Char2_Update
+template <> inline constexpr bool at<0x00132820u> = true; // Char2_dtor
+template <> inline constexpr bool at<0x001328C0u> = true; // CharType_LoadAll
+template <> inline constexpr bool at<0x00132A70u> = true; // Person_CheckBuilding
+template <> inline constexpr bool at<0x00133E80u> = true; // Person_Draw2
+template <> inline constexpr bool at<0x001345E0u> = true; // Person_Draw
+template <> inline constexpr bool at<0x00134A20u> = true; // Person_Update
+template <> inline constexpr bool at<0x00135600u> = true; // Person_dtor
+template <> inline constexpr bool at<0x001359B0u> = true; // Claim_Load
+template <> inline constexpr bool at<0x00135A70u> = true; // Stage_Load
+template <> inline constexpr bool at<0x00135BC0u> = true; // Stage_FormatGoalText
+template <> inline constexpr bool at<0x00135D00u> = true; // Stage_FormatTargetText
+template <> inline constexpr bool at<0x00135E90u> = true; // StageObj_DeletingDtor
+template <> inline constexpr bool at<0x001360C0u> = true; // CityCursor_UpdateInfo
+template <> inline constexpr bool at<0x001365C0u> = true; // CityCursor_Move
+template <> inline constexpr bool at<0x00136770u> = true; // CityCursor_Update
+template <> inline constexpr bool at<0x00137030u> = true; // CityCursor_dtor
+template <> inline constexpr bool at<0x00137140u> = true; // CityCursor_ctor
+template <> inline constexpr bool at<0x001393B0u> = true; // Event_FindForFamily
+template <> inline constexpr bool at<0x001398D0u> = true; // Event_FormatText
+template <> inline constexpr bool at<0x0013A250u> = true; // EventMgr_dtor
+template <> inline constexpr bool at<0x0013A360u> = true; // EventMgr_ctor
+template <> inline constexpr bool at<0x0013A560u> = true; // Event_LoadTypes
+template <> inline constexpr bool at<0x0013CF20u> = true; // Family_PickIntroduction
+template <> inline constexpr bool at<0x0013D4A0u> = true; // Family_Prefetch
+template <> inline constexpr bool at<0x0013D6B0u> = true; // Family_Get
+template <> inline constexpr bool at<0x0013DA50u> = true; // Family_Init
+template <> inline constexpr bool at<0x0013E270u> = true; // Minimap_DeletingDtor
+template <> inline constexpr bool at<0x0013E460u> = true; // Goods_Load
+template <> inline constexpr bool at<0x0013E520u> = true; // MapSave_UnpackTiles
+template <> inline constexpr bool at<0x0013E9B0u> = true; // MapSave_AllocBuffer
+template <> inline constexpr bool at<0x0013E9E0u> = true; // MapSave_FreeBuffer
+template <> inline constexpr bool at<0x0013EA20u> = true; // MapSave_PackTiles
+template <> inline constexpr bool at<0x00141010u> = true; // CityMap_DeletingDtor
+template <> inline constexpr bool at<0x00141070u> = true; // CityMap_ctor
+template <> inline constexpr bool at<0x001424A0u> = true; // MapTiles_dtor
+template <> inline constexpr bool at<0x00142510u> = true; // MapTiles_ctor
+template <> inline constexpr bool at<0x00142F90u> = true; // Family_AssignHome
+template <> inline constexpr bool at<0x00143520u> = true; // MapPeople_dtor
+template <> inline constexpr bool at<0x001435B0u> = true; // MapPeople_ctor
+template <> inline constexpr bool at<0x001458A0u> = true; // MapObjects_dtor
+template <> inline constexpr bool at<0x00145940u> = true; // MapObjects_ctor
+template <> inline constexpr bool at<0x00148A40u> = true; // CityRender_dtor
+template <> inline constexpr bool at<0x00148BB0u> = true; // CityRender_ctor
+template <> inline constexpr bool at<0x001490D0u> = true; // Dma_KickVif1Now_1490D0
+template <> inline constexpr bool at<0x001490E0u> = true; // TexImage_dtor
+template <> inline constexpr bool at<0x00149150u> = true; // TexImage_Load
+template <> inline constexpr bool at<0x00149730u> = true; // LayerA_DeletingDtor
+template <> inline constexpr bool at<0x00149CD0u> = true; // StatusPanel_Update
+template <> inline constexpr bool at<0x0014A780u> = true; // StatusPanel_dtor
+template <> inline constexpr bool at<0x0014A840u> = true; // StatusPanel_ctor
+template <> inline constexpr bool at<0x0014AFD0u> = true; // Laptop_Draw
+template <> inline constexpr bool at<0x0014B640u> = true; // Laptop_Update
+template <> inline constexpr bool at<0x0014BCB0u> = true; // Laptop_dtor
+template <> inline constexpr bool at<0x0014C210u> = true; // Frame_DeletingDtor
+template <> inline constexpr bool at<0x0014C530u> = true; // WaitText_Delete
+template <> inline constexpr bool at<0x0014C560u> = true; // WaitText_Create
+template <> inline constexpr bool at<0x0014C820u> = true; // LightSet_DeletingDtor
+template <> inline constexpr bool at<0x0014CC60u> = true; // LayerB_DeletingDtor
+template <> inline constexpr bool at<0x0014D320u> = true; // LayerC_DeletingDtor
+template <> inline constexpr bool at<0x0014E0E0u> = true; // LayerD_DeletingDtor
+template <> inline constexpr bool at<0x0014F0A0u> = true; // LayerE_DeletingDtor
+template <> inline constexpr bool at<0x0014F430u> = true; // LayerF_DeletingDtor
+template <> inline constexpr bool at<0x001500D0u> = true; // LayerG_DeletingDtor
+template <> inline constexpr bool at<0x00150C20u> = true; // ListMenu_AddItems
+template <> inline constexpr bool at<0x001512A0u> = true; // ListMenu_dtor
+template <> inline constexpr bool at<0x00151350u> = true; // ListMenu_ctor
+template <> inline constexpr bool at<0x001515B0u> = true; // SceneB_ShowCityName
+template <> inline constexpr bool at<0x001516C0u> = true; // SceneB_ShowStageTitle
+template <> inline constexpr bool at<0x001517C0u> = true; // SceneB_ShowApprovalRate
+template <> inline constexpr bool at<0x00151A20u> = true; // SceneB_MissionBriefing
+template <> inline constexpr bool at<0x00151E50u> = true; // SceneB_BuildBriefingText
+template <> inline constexpr bool at<0x00152020u> = true; // SceneB_ShowTelop
+template <> inline constexpr bool at<0x001524E0u> = true; // SceneB_Update
+template <> inline constexpr bool at<0x00152860u> = true; // SceneB_dtor
+template <> inline constexpr bool at<0x00152910u> = true; // SceneB_ctor
+template <> inline constexpr bool at<0x00152A50u> = true; // WantsWin_FormatLine
+template <> inline constexpr bool at<0x00152BC0u> = true; // WantsWin_Update
+template <> inline constexpr bool at<0x00153490u> = true; // WantsWin_dtor
+template <> inline constexpr bool at<0x00153B80u> = true; // PauseMenu_StateSave
+template <> inline constexpr bool at<0x00153E30u> = true; // PauseMenu_StateFormat
+template <> inline constexpr bool at<0x00154130u> = true; // PauseMenu_StateWait
+template <> inline constexpr bool at<0x00154280u> = true; // PauseMenu_StateSlotSelect
+template <> inline constexpr bool at<0x001547D0u> = true; // PauseMenu_Reset
+template <> inline constexpr bool at<0x00154890u> = true; // PauseMenu_Update
+template <> inline constexpr bool at<0x00154FA0u> = true; // PauseMenu_dtor
+template <> inline constexpr bool at<0x001551E0u> = true; // Applicants_Add
+template <> inline constexpr bool at<0x00155670u> = true; // Applicants_Select
+template <> inline constexpr bool at<0x00155730u> = true; // Applicants_SetMode
+template <> inline constexpr bool at<0x00155760u> = true; // Applicants_BuildInfo
+template <> inline constexpr bool at<0x00155E00u> = true; // Applicants_DrawDetails
+template <> inline constexpr bool at<0x00156470u> = true; // Applicants_Draw
+template <> inline constexpr bool at<0x00156A90u> = true; // ApplicantsBase_dtor
+template <> inline constexpr bool at<0x00156B10u> = true; // ApplicantsBase_ctor
+template <> inline constexpr bool at<0x00156D80u> = true; // Applicants_AssignToBuilding
+template <> inline constexpr bool at<0x00156F80u> = true; // Applicants_StartPlacing
+template <> inline constexpr bool at<0x00157090u> = true; // Applicants_AddAndShow
+template <> inline constexpr bool at<0x00157110u> = true; // Applicants_Update
+template <> inline constexpr bool at<0x001577A0u> = true; // Applicants_dtor
+template <> inline constexpr bool at<0x00157800u> = true; // Applicants_ctor
+template <> inline constexpr bool at<0x001578E0u> = true; // Pad_Poll
+template <> inline constexpr bool at<0x00157CB0u> = true; // PadInit
+template <> inline constexpr bool at<0x00158D10u> = true; // Player_PlaceBagItem
+template <> inline constexpr bool at<0x00159010u> = true; // Player_PlaceForApplicant
+template <> inline constexpr bool at<0x00159D00u> = true; // Player_Update
+template <> inline constexpr bool at<0x0015A4D0u> = true; // Player_DeletingDtor
+template <> inline constexpr bool at<0x0015A580u> = true; // CityAssets_LoadMyHome
+template <> inline constexpr bool at<0x0015A6D0u> = true; // CityAssets_LoadChars
+template <> inline constexpr bool at<0x0015AA90u> = true; // CityAssets_LoadCharObjs
+template <> inline constexpr bool at<0x0015AC50u> = true; // CityAssets_LoadObjects
+template <> inline constexpr bool at<0x0015AE10u> = true; // CityAssets_LoadStep
+template <> inline constexpr bool at<0x0015B080u> = true; // McManager_FormatSaveInfo
+template <> inline constexpr bool at<0x0015B540u> = true; // McManager_FormatSlotLine
+template <> inline constexpr bool at<0x0015BBC0u> = true; // SaveFile_WriteIconSys
+template <> inline constexpr bool at<0x0015BC00u> = true; // SaveFile_PrepareDir
+template <> inline constexpr bool at<0x0015C030u> = true; // McManager_PrepareNewSlot
+template <> inline constexpr bool at<0x0015C290u> = true; // McManager_FormatSlotText
+template <> inline constexpr bool at<0x0015D5B0u> = true; // McManager_NewSaveName
+template <> inline constexpr bool at<0x0015DA30u> = true; // McManager_dtor
+template <> inline constexpr bool at<0x0015DAB0u> = true; // McManager_ctor
+template <> inline constexpr bool at<0x0015E800u> = true; // Person_ChooseDestination
+template <> inline constexpr bool at<0x0015EE10u> = true; // Schedule_QueryA
+template <> inline constexpr bool at<0x0015EFB0u> = true; // Schedule_QueryB
+template <> inline constexpr bool at<0x0015F130u> = true; // Schedule_GetActivity
+template <> inline constexpr bool at<0x0015F340u> = true; // Schedule_GetBuildingActivity
+template <> inline constexpr bool at<0x0015F590u> = true; // Schedule_Evaluate
+template <> inline constexpr bool at<0x0015F8D0u> = true; // Schedule_Load
+template <> inline constexpr bool at<0x0015F920u> = true; // MenuWin_FillItems
+template <> inline constexpr bool at<0x0015F990u> = true; // MenuWin_Open
+template <> inline constexpr bool at<0x0015FBA0u> = true; // MenuWin_Closing
+template <> inline constexpr bool at<0x0015FCA0u> = true; // MenuWin_dtor
+template <> inline constexpr bool at<0x0015FF10u> = true; // Markers_dtor
+template <> inline constexpr bool at<0x001610F0u> = true; // Sky_Load
+template <> inline constexpr bool at<0x00161250u> = true; // CityCamera_BaseCtor
+template <> inline constexpr bool at<0x00161D60u> = true; // TexSprite_dtor
+template <> inline constexpr bool at<0x00161DF0u> = true; // TexSprite_Load
+template <> inline constexpr bool at<0x001621C0u> = true; // LoadingScreen_dtor
+template <> inline constexpr bool at<0x00162280u> = true; // LoadingScreen_ctor
+template <> inline constexpr bool at<0x00162560u> = true; // Stamina_CreateGlobal
+template <> inline constexpr bool at<0x00163390u> = true; // NameEntry_dtor
+template <> inline constexpr bool at<0x00163450u> = true; // NameEntry_CreateTexts
+template <> inline constexpr bool at<0x00163600u> = true; // NameEntry_ctor
+template <> inline constexpr bool at<0x00164280u> = true; // BldgType_BaseDtor
+template <> inline constexpr bool at<0x00164310u> = true; // BldgType_BaseCtor
+template <> inline constexpr bool at<0x00164770u> = true; // BldgAmusementPark_dtor
+template <> inline constexpr bool at<0x00164AF0u> = true; // BldgAmusementPark_ctor
+template <> inline constexpr bool at<0x00164B30u> = true; // BldgBusiness_dtor
+template <> inline constexpr bool at<0x00164BA0u> = true; // BldgOffice_dtor
+template <> inline constexpr bool at<0x001651D0u> = true; // BldgOffice_ctor
+template <> inline constexpr bool at<0x00165220u> = true; // BldgRanch_dtor
+template <> inline constexpr bool at<0x001655A0u> = true; // BldgRanch_ctor
+template <> inline constexpr bool at<0x00165600u> = true; // Bldg_dtor
+template <> inline constexpr bool at<0x00166C50u> = true; // Bldg_ctor
+template <> inline constexpr bool at<0x00166C90u> = true; // BldgField_dtor
+template <> inline constexpr bool at<0x00167310u> = true; // BldgField_ctor
+template <> inline constexpr bool at<0x00167470u> = true; // BldgPort_dtor
+template <> inline constexpr bool at<0x001678A0u> = true; // BldgPort_ctor
+template <> inline constexpr bool at<0x00168810u> = true; // BldgBusiness_ctor
+template <> inline constexpr bool at<0x00168850u> = true; // BldgKeepOut_dtor
+template <> inline constexpr bool at<0x00168A10u> = true; // BldgKeepOut_ctor
+template <> inline constexpr bool at<0x00168A50u> = true; // BldgLeveled_dtor
+template <> inline constexpr bool at<0x00169430u> = true; // BldgLeveled_ctor
+template <> inline constexpr bool at<0x00169500u> = true; // BldgType_Create
+template <> inline constexpr bool at<0x001697D0u> = true; // BldgType_DeleteAll
+template <> inline constexpr bool at<0x00169860u> = true; // BldgType_LoadAll
+template <> inline constexpr bool at<0x00169960u> = true; // BldgHousing_dtor
+template <> inline constexpr bool at<0x0016A490u> = true; // BldgHousing_ctor
+template <> inline constexpr bool at<0x0016A4D0u> = true; // BldgMyHome_dtor
+template <> inline constexpr bool at<0x0016A6D0u> = true; // BldgMyHome_ctor
+template <> inline constexpr bool at<0x0016A710u> = true; // BldgPigFarm_dtor
+template <> inline constexpr bool at<0x0016A9A0u> = true; // BldgPigFarm_ctor
+template <> inline constexpr bool at<0x0016A9E0u> = true; // BldgRoad_dtor
+template <> inline constexpr bool at<0x0016B680u> = true; // BldgRoad_ctor
+template <> inline constexpr bool at<0x0016B6E0u> = true; // BldgSmallGoods_dtor
+template <> inline constexpr bool at<0x0016BB20u> = true; // BldgSmallGoods_ctor
+template <> inline constexpr bool at<0x0016BB60u> = true; // BldgWasteland_dtor
+template <> inline constexpr bool at<0x0016C360u> = true; // BldgWasteland_ctor
+template <> inline constexpr bool at<0x0016C670u> = true; // PhoneCall_Draw
+template <> inline constexpr bool at<0x0016C7E0u> = true; // PhoneCall_Update
+template <> inline constexpr bool at<0x0016CF80u> = true; // PhoneCall_DeletingDtor
+template <> inline constexpr bool at<0x0016D2B0u> = true; // Notice_dtor
+template <> inline constexpr bool at<0x0016D330u> = true; // Notice_ctor
+template <> inline constexpr bool at<0x0016E440u> = true; // Title_LoadMenu
+template <> inline constexpr bool at<0x0016E950u> = true; // SceneA_StartGame
+template <> inline constexpr bool at<0x0016F270u> = true; // Title_OpeningMovieStep
+template <> inline constexpr bool at<0x001702D0u> = true; // SceneA_LogoStep
+template <> inline constexpr bool at<0x001704A0u> = true; // SceneA_Load
+template <> inline constexpr bool at<0x00170BE0u> = true; // SceneA_Update
+template <> inline constexpr bool at<0x00170FD0u> = true; // SceneA_dtor
+template <> inline constexpr bool at<0x00171220u> = true; // SceneA_ctor
+template <> inline constexpr bool at<0x00171720u> = true; // TownPages_BuildIndex
+template <> inline constexpr bool at<0x00171C10u> = true; // TownPages_FillPage
+template <> inline constexpr bool at<0x00172130u> = true; // TownPages_Update
+template <> inline constexpr bool at<0x00173160u> = true; // TownPages_dtor
+template <> inline constexpr bool at<0x00173270u> = true; // TownPages_Init
+template <> inline constexpr bool at<0x00173560u> = true; // Widget_dtor
+template <> inline constexpr bool at<0x00173820u> = true; // TalkView_DrawPeople
+template <> inline constexpr bool at<0x001744E0u> = true; // TalkView_NobodyHome
+template <> inline constexpr bool at<0x00174610u> = true; // TalkView_DrawBuilding
+template <> inline constexpr bool at<0x00175280u> = true; // TalkView_CountPeople
+template <> inline constexpr bool at<0x00175350u> = true; // TalkView_SetTarget
+template <> inline constexpr bool at<0x001756E0u> = true; // TalkView_DrawMember
+template <> inline constexpr bool at<0x00175B70u> = true; // TalkView_dtor
+template <> inline constexpr bool at<0x00175DF0u> = true; // TalkPhoneFamily_Draw
+template <> inline constexpr bool at<0x00176000u> = true; // TalkPhoneFamily_dtor
+template <> inline constexpr bool at<0x00176060u> = true; // TalkPhoneFamily_ctor
+template <> inline constexpr bool at<0x001760C0u> = true; // TalkPhoneMember_Draw
+template <> inline constexpr bool at<0x001762D0u> = true; // TalkPhoneMember_dtor
+template <> inline constexpr bool at<0x00176390u> = true; // TalkBldgFar_Draw
+template <> inline constexpr bool at<0x00176690u> = true; // TalkBldgFar_dtor
+template <> inline constexpr bool at<0x001766F0u> = true; // TalkBldgFar_ctor
+template <> inline constexpr bool at<0x00176770u> = true; // TalkBldgNear_Draw
+template <> inline constexpr bool at<0x00176A50u> = true; // TalkBldgNear_dtor
+template <> inline constexpr bool at<0x00176AB0u> = true; // TalkBldgNear_ctor
+template <> inline constexpr bool at<0x00176B30u> = true; // TalkOccupantFar_Draw
+template <> inline constexpr bool at<0x00176E20u> = true; // TalkOccupantFar_dtor
+template <> inline constexpr bool at<0x00176F00u> = true; // TalkOccupantNear_Draw
+template <> inline constexpr bool at<0x001771D0u> = true; // TalkOccupantNear_dtor
+template <> inline constexpr bool at<0x001774D0u> = true; // TalkPersonFar_dtor
+template <> inline constexpr bool at<0x00177A10u> = true; // TalkPersonNear_dtor
+template <> inline constexpr bool at<0x00177CA0u> = true; // TalkCard_FillText
+template <> inline constexpr bool at<0x00178250u> = true; // TalkCard_Draw
+template <> inline constexpr bool at<0x00178530u> = true; // TalkCard_dtor
+template <> inline constexpr bool at<0x001785E0u> = true; // TalkCard_ctor
+template <> inline constexpr bool at<0x00178800u> = true; // Talk_ChooseInput
+template <> inline constexpr bool at<0x00178BB0u> = true; // Talk_Opening
+template <> inline constexpr bool at<0x00178C60u> = true; // Talk_Update
+template <> inline constexpr bool at<0x00178D50u> = true; // Talk_Start
+template <> inline constexpr bool at<0x001792F0u> = true; // Talk_dtor
+template <> inline constexpr bool at<0x001795B0u> = true; // TalkMoney_dtor
+template <> inline constexpr bool at<0x00179630u> = true; // TalkMoney_ctor
+template <> inline constexpr bool at<0x0017A6A0u> = true; // MyHome_dtor
+template <> inline constexpr bool at<0x0017AA10u> = true; // TalkConv_Closing
+template <> inline constexpr bool at<0x0017ABD0u> = true; // TalkConv_Active
+template <> inline constexpr bool at<0x0017AF20u> = true; // TalkConv_Opening
+template <> inline constexpr bool at<0x0017AF70u> = true; // TalkConv_Update
+template <> inline constexpr bool at<0x0017B100u> = true; // TalkConv_NextLine
+template <> inline constexpr bool at<0x0017B2D0u> = true; // TalkConv_Start
+template <> inline constexpr bool at<0x0017B450u> = true; // TalkConv_dtor
+template <> inline constexpr bool at<0x0017B560u> = true; // TalkConv_ctor
+template <> inline constexpr bool at<0x0017BC90u> = true; // WordsFn_BuyGoods
+template <> inline constexpr bool at<0x0017BF50u> = true; // WordsFn_InviteFamily
+template <> inline constexpr bool at<0x0017BFB0u> = true; // WordsFn_NewIntroduction
+template <> inline constexpr bool at<0x0017BFF0u> = true; // WordsFn_InviteIntroduced
+template <> inline constexpr bool at<0x0017C0C0u> = true; // WordsFn_FriendshipDown
+template <> inline constexpr bool at<0x0017C150u> = true; // WordsFn_FriendshipUp
+template <> inline constexpr bool at<0x0017C520u> = true; // WordsFn_TextEventTitle
+template <> inline constexpr bool at<0x0017C760u> = true; // WordsFn_TextFamilyRecord
+template <> inline constexpr bool at<0x0017C7A0u> = true; // WordsFn_TextOccupation
+template <> inline constexpr bool at<0x0017C8A0u> = true; // WordsFn_TextMemberName2
+template <> inline constexpr bool at<0x0017C920u> = true; // WordsFn_TextMemberName
+template <> inline constexpr bool at<0x0017CEA0u> = true; // WordsFn_LikesBagItem
+template <> inline constexpr bool at<0x0017D2E0u> = true; // WordsFn_AnyAcquaintanceSuppliesWant
+template <> inline constexpr bool at<0x0017D2F0u> = true; // WordsFn_AcquaintanceSuppliesWant
+template <> inline constexpr bool at<0x0017D300u> = true; // WordsFn_FamilySuppliesWant
+template <> inline constexpr bool at<0x0017D310u> = true; // WordsFn_SuppliesWantBody
+template <> inline constexpr bool at<0x0017D6A0u> = true; // WordsFn_AcquaintanceSuppliesClaim
+template <> inline constexpr bool at<0x0017DBC0u> = true; // WordsFn_PickClaimResident
+template <> inline constexpr bool at<0x0017E020u> = true; // WordsFn_PickTestableResident
+template <> inline constexpr bool at<0x0017E260u> = true; // WordsFn_PickByCandidates
+template <> inline constexpr bool at<0x0017E290u> = true; // WordsFn_PickRandomResident
+template <> inline constexpr bool at<0x0017E590u> = true; // Words_CollectNearbyHomes
+template <> inline constexpr bool at<0x0017E890u> = true; // WordsFn_PickOtherResident
+template <> inline constexpr bool at<0x0017E990u> = true; // WordsFn_ScheduleIs
+template <> inline constexpr bool at<0x0017EA00u> = true; // WordsFn_ScheduleState
+template <> inline constexpr bool at<0x0017EBD0u> = true; // WordsFn_MemberByte2B
+template <> inline constexpr bool at<0x0017EC20u> = true; // WordsFn_MemberByte2A
+template <> inline constexpr bool at<0x0017EC70u> = true; // WordsFn_MemberCharType
+template <> inline constexpr bool at<0x0017F420u> = true; // WordsFn_FindOutsideAcquaintance
+template <> inline constexpr bool at<0x0017F530u> = true; // WordsFn_GetIntroduction
+template <> inline constexpr bool at<0x0017F970u> = true; // WordsFn_MemberRole
+template <> inline constexpr bool at<0x0017FA90u> = true; // WordsFn_BuildingCategory
+template <> inline constexpr bool at<0x00180190u> = true; // Words_SelectEvent
+template <> inline constexpr bool at<0x00180290u> = true; // Words_SetFamily
+template <> inline constexpr bool at<0x00180390u> = true; // Words_SetPerson
+template <> inline constexpr bool at<0x00180490u> = true; // Words_dtor
+template <> inline constexpr bool at<0x001804F0u> = true; // Words_ctor
+template <> inline constexpr bool at<0x00180590u> = true; // CityScene_AddApplicantFamily
+template <> inline constexpr bool at<0x00180990u> = true; // CityScene_LoadGame
+template <> inline constexpr bool at<0x001812F0u> = true; // CityScene_SaveStep
+template <> inline constexpr bool at<0x001815E0u> = true; // CityScene_StartTalk
+template <> inline constexpr bool at<0x00181660u> = true; // CityScene_UpdateApproval
+template <> inline constexpr bool at<0x00181A10u> = true; // CityScene_Update
+template <> inline constexpr bool at<0x00182440u> = true; // CityScene_dtor
+template <> inline constexpr bool at<0x00182700u> = true; // CityScene_ctor
+template <> inline constexpr bool at<0x00183E90u> = true; // TextBox_dtor
+template <> inline constexpr bool at<0x00183F00u> = true; // TextBox_Init
+template <> inline constexpr bool at<0x00184120u> = true; // File_Seek
+template <> inline constexpr bool at<0x001842B0u> = true; // File_Read
+template <> inline constexpr bool at<0x00184450u> = true; // File_Close
+template <> inline constexpr bool at<0x00184590u> = true; // File_Open
+template <> inline constexpr bool at<0x00184710u> = true; // File_LoadWhole
+template <> inline constexpr bool at<0x00184810u> = true; // FileQueue_WaitFor
+template <> inline constexpr bool at<0x001848F0u> = true; // FileQueue_WaitAll
+template <> inline constexpr bool at<0x001849D0u> = true; // FileQueue_Pump
+template <> inline constexpr bool at<0x00184B60u> = true; // File_dtor
+template <> inline constexpr bool at<0x00184C10u> = true; // Font_Free
+template <> inline constexpr bool at<0x00184C40u> = true; // Font_Load
+template <> inline constexpr bool at<0x00184CD0u> = true; // Heap_Probe
+template <> inline constexpr bool at<0x00184F60u> = true; // Gs_InitDisplay
+template <> inline constexpr bool at<0x00185350u> = true; // Pad_Update
+template <> inline constexpr bool at<0x001854E0u> = true; // MainLoop
+template <> inline constexpr bool at<0x001856D0u> = true; // App_dtor
+template <> inline constexpr bool at<0x00185740u> = true; // App_ctor
+template <> inline constexpr bool at<0x00185EB0u> = true; // McSave_WriteIconSys
+template <> inline constexpr bool at<0x00186A40u> = true; // McQueue_Init
+template <> inline constexpr bool at<0x00186AA0u> = true; // McQueue_Pump
+template <> inline constexpr bool at<0x00186CA0u> = true; // McManagerSub_DeletingDtor
+template <> inline constexpr bool at<0x00186D20u> = true; // Dma_KickVif1Now
+template <> inline constexpr bool at<0x00187190u> = true; // DmaList_Rewind
+template <> inline constexpr bool at<0x00187370u> = true; // DmaList_Free
+template <> inline constexpr bool at<0x00187640u> = true; // DmaList_Init
+template <> inline constexpr bool at<0x0018E1B0u> = true; // SoundCmd_Flush
+template <> inline constexpr bool at<0x0018F280u> = true; // Sound_LoadModules
+template <> inline constexpr bool at<0x0018F450u> = true; // Sound_Shutdown
+template <> inline constexpr bool at<0x0018F4A0u> = true; // Sound_Init
+template <> inline constexpr bool at<0x0018F5F0u> = true; // EvShoppingTogether_Update
+template <> inline constexpr bool at<0x0018FC90u> = true; // EvAlien_Slot14
+template <> inline constexpr bool at<0x0018FEE0u> = true; // EvAlien_Update
+template <> inline constexpr bool at<0x001907F0u> = true; // EvEscort_Update
+template <> inline constexpr bool at<0x00191850u> = true; // EvCaveMan_Slot14
+template <> inline constexpr bool at<0x00191A50u> = true; // EvCaveMan_Update
+template <> inline constexpr bool at<0x001932A0u> = true; // PartyPopup_dtor
+template <> inline constexpr bool at<0x001933E0u> = true; // EvFarewellParty_Update
+template <> inline constexpr bool at<0x00195520u> = true; // EvMissingChildren_Update
+template <> inline constexpr bool at<0x00195B00u> = true; // EvMissingChildren_Check
+template <> inline constexpr bool at<0x00196F30u> = true; // EvNoodles_Slot14
+template <> inline constexpr bool at<0x001970F0u> = true; // EvNoodles_Update
+template <> inline constexpr bool at<0x00198D40u> = true; // EvThief_Update
+template <> inline constexpr bool at<0x0019A050u> = true; // EvActor_PointCursor
+template <> inline constexpr bool at<0x0019A140u> = true; // EvActor_PointAtBuilding
+template <> inline constexpr bool at<0x0019B8D0u> = true; // Movie_SetSpuMasterVolume
+template <> inline constexpr bool at<0x0019BC90u> = true; // Movie_AudioDecSendToIop
+template <> inline constexpr bool at<0x0019BE90u> = true; // Movie_AudioDecEndPut
+template <> inline constexpr bool at<0x0019C080u> = true; // Movie_AudioDecReset
+template <> inline constexpr bool at<0x0019C140u> = true; // Movie_AudioDecStart
+template <> inline constexpr bool at<0x0019C1D0u> = true; // Movie_AudioDecResume
+template <> inline constexpr bool at<0x0019C260u> = true; // Movie_AudioDecDelete
+template <> inline constexpr bool at<0x0019C2A0u> = true; // Movie_AudioDecCreate
+template <> inline constexpr bool at<0x0019C430u> = true; // Movie_DisplayStart
+template <> inline constexpr bool at<0x0019C4C0u> = true; // Movie_VblankHandler
+template <> inline constexpr bool at<0x0019D1B0u> = true; // Movie_SendFrame
+template <> inline constexpr bool at<0x0019D8F0u> = true; // Movie_ClearScreen
+template <> inline constexpr bool at<0x0019DBA0u> = true; // Movie_PlayPss
+template <> inline constexpr bool at<0x0019DE10u> = true; // PlayMissionMovie
+template <> inline constexpr bool at<0x0019DFA0u> = true; // PlayOpeningMovie
+template <> inline constexpr bool at<0x0019E030u> = true; // Movie_Error
+template <> inline constexpr bool at<0x0019E060u> = true; // Movie_SwitchThread
+template <> inline constexpr bool at<0x0019E070u> = true; // Movie_TermAll
+template <> inline constexpr bool at<0x0019E1D0u> = true; // Movie_Update
+template <> inline constexpr bool at<0x0019E280u> = true; // Movie_ReadAndDemux
+template <> inline constexpr bool at<0x0019E400u> = true; // Movie_ResumeAll
+template <> inline constexpr bool at<0x0019E450u> = true; // Movie_InitAll
+template <> inline constexpr bool at<0x0019E780u> = true; // Movie_PcmCallback
+template <> inline constexpr bool at<0x0019E930u> = true; // Movie_VideoCallback
+template <> inline constexpr bool at<0x0019ECC0u> = true; // Movie_StrFileRead
+template <> inline constexpr bool at<0x0019ED10u> = true; // Movie_StrFileClose
+template <> inline constexpr bool at<0x0019ED60u> = true; // Movie_StrFileOpen
+template <> inline constexpr bool at<0x0019F060u> = true; // Movie_ViBufGetTs
+template <> inline constexpr bool at<0x0019F220u> = true; // Movie_ViBufPutTs
+template <> inline constexpr bool at<0x0019F4A0u> = true; // Movie_ViBufFlush
+template <> inline constexpr bool at<0x0019F4F0u> = true; // Movie_ViBufCount
+template <> inline constexpr bool at<0x0019F5D0u> = true; // Movie_ViBufRestartDma
+template <> inline constexpr bool at<0x0019F980u> = true; // Movie_ViBufStopDma
+template <> inline constexpr bool at<0x0019FAE0u> = true; // Movie_ViBufAddDma
+template <> inline constexpr bool at<0x0019FDE0u> = true; // Movie_ViBufEndPut
+template <> inline constexpr bool at<0x0019FE40u> = true; // Movie_ViBufBeginPut
+template <> inline constexpr bool at<0x001A0160u> = true; // Movie_CbTimeStamp
+template <> inline constexpr bool at<0x001A01B0u> = true; // Movie_CbRestartDma
+template <> inline constexpr bool at<0x001A01E0u> = true; // Movie_CbStopDma
+template <> inline constexpr bool at<0x001A0210u> = true; // Movie_CbNoData
+template <> inline constexpr bool at<0x001A0240u> = true; // Movie_CbError
+template <> inline constexpr bool at<0x001A0270u> = true; // Movie_DecodeLoop
+template <> inline constexpr bool at<0x001A0530u> = true; // Movie_VideoDecMain
+template <> inline constexpr bool at<0x001A0590u> = true; // Movie_VideoDecIsDone
+template <> inline constexpr bool at<0x001A05F0u> = true; // Movie_VideoDecPutTerminator
+template <> inline constexpr bool at<0x001A0780u> = true; // Movie_VideoDecPutTs
+template <> inline constexpr bool at<0x001A0820u> = true; // Movie_VideoDecEndPut
+template <> inline constexpr bool at<0x001A0830u> = true; // Movie_VideoDecBeginPut
+template <> inline constexpr bool at<0x001A0860u> = true; // Movie_VideoDecCreate
+template <> inline constexpr bool at<0x001A13E0u> = true; // Words_GetChoiceText
+template <> inline constexpr bool at<0x001A17F0u> = true; // Words_ApplyChoice
+template <> inline constexpr bool at<0x001A2620u> = true; // Words_StepImpl
+template <> inline constexpr bool at<0x001A29B0u> = true; // Words_Step
+template <> inline constexpr bool at<0x001A29E0u> = true; // Words_LoadForWants
+template <> inline constexpr bool at<0x001A2C40u> = true; // Words_LoadForFamily
+template <> inline constexpr bool at<0x001A2DF0u> = true; // Words_LoadForPerson
+template <> inline constexpr bool at<0x001A3050u> = true; // Words_ReadBlock
+template <> inline constexpr bool at<0x001A31A0u> = true; // Words_OpenFiles
+template <> inline constexpr bool at<0x001A3250u> = true; // Words_Init
+template <> inline constexpr bool at<0x001BCD90u> = true; // StaticInit_Words
+}
+
 struct GameFunction
 {
     const char *name;
@@ -3041,6 +3463,7 @@ void Camera_UpdateLightMatrices(GuestPtr<Camera> camera);
 void Camera_UpdateMatrices(GuestPtr<Camera> camera);
 GuestPtr<Camera> Camera_ctor(GuestPtr<Camera> camera);
 void Vec3_Normalize(GuestPtr<Vec4> out, GuestPtr<Vec4> v);
+int BaseObject_dtor(int object, int16_t deleteFlag);
 int BaseObject_ctor(int object);
 void GameInit(int game);
 void Bag_LoadState(GuestPtr<Bag> bag, GuestPtr<McManager> mc);
@@ -3793,10 +4216,22 @@ void TextBox_SetPos(GuestPtr<TextBox> textbox, int x, int y, int z);
 void TextBox_SetPosAndSize(GuestPtr<TextBox> textbox, int x, int y, int charWidth, int charHeight, int pitchX, int pitchY, int z);
 int DmaChain_Next(int reader);
 int DmaChain_Begin(int reader, int chain);
+int File_Seek(GuestPtr<GameFile> file, int offset, int whence, uint16_t t0);
+int File_Read(GuestPtr<GameFile> file, int buffer, int count, int size, uint16_t t0);
+int File_Close(GuestPtr<GameFile> file);
+int File_Open(GuestPtr<GameFile> file, GuestPtr<char> path);
+int File_LoadWhole(GuestPtr<GameFile> file, GuestPtr<char> path, GuestPtr<int32_t> size);
 int FileQueue_IsDone(int queue, int request);
+void FileQueue_WaitFor(int queue, int request, int quiet);
+void FileQueue_WaitAll(int quiet);
 void FileQueue_Init();
+int FileQueue_Pump();
+GuestPtr<GameFile> File_dtor(GuestPtr<GameFile> file, int16_t deleteFlag);
 GuestPtr<GameFile> File_ctor(GuestPtr<GameFile> file, int async);
 int Font_GetGlyph(uint32_t ch);
+void Font_Free();
+int Font_Load();
+int Heap_Probe();
 int Random_TimerMix();
 int64_t Random_Next();
 void Random_Seed(int seed);
@@ -4058,7 +4493,6 @@ inline GuestPtr<A3DObject> A3DObject_dtor(GuestPtr<A3DObject> model, int16_t del
 inline int A3DObject_LoadAsync(GuestPtr<A3DObject> model, GuestPtr<GameFile> gamefile, int a2) { return port::callGuest<int>(addr::A3DObject_LoadAsync, model, gamefile, a2); }
 inline GuestPtr<int32_t> A3DObject_Load(GuestPtr<A3DObject> model, int file, int a2) { return port::callGuest<GuestPtr<int32_t>>(addr::A3DObject_Load, model, file, a2); }
 inline GuestPtr<Camera> Camera_DeletingDtor(GuestPtr<Camera> camera, int16_t deleteFlag) { return port::callGuest<GuestPtr<Camera>>(addr::Camera_DeletingDtor, camera, deleteFlag); }
-inline int BaseObject_dtor(int object, int16_t deleteFlag) { return port::callGuest<int>(addr::BaseObject_dtor, object, deleteFlag); }
 inline void GameUpdate(int game) { port::callGuest<void>(addr::GameUpdate, game); }
 inline void Main() { port::callGuest<void>(addr::Main); }
 inline void BagMenu_FinishUse(GuestPtr<Bag> bag, int used) { port::callGuest<void>(addr::BagMenu_FinishUse, bag, used); }
@@ -4360,18 +4794,6 @@ inline GuestPtr<CityScene> CityScene_dtor(GuestPtr<CityScene> city, int16_t dele
 inline GuestPtr<CityScene> CityScene_ctor(GuestPtr<CityScene> city) { return port::callGuest<GuestPtr<CityScene>>(addr::CityScene_ctor, city); }
 inline GuestPtr<TextBox> TextBox_dtor(GuestPtr<TextBox> textbox, int16_t deleteFlag) { return port::callGuest<GuestPtr<TextBox>>(addr::TextBox_dtor, textbox, deleteFlag); }
 inline GuestPtr<TextBox> TextBox_Init(GuestPtr<TextBox> textbox, int columns, int rows, int style) { return port::callGuest<GuestPtr<TextBox>>(addr::TextBox_Init, textbox, columns, rows, style); }
-inline int File_Seek(GuestPtr<GameFile> file, int offset, int whence, uint16_t t0) { return port::callGuest<int>(addr::File_Seek, file, offset, whence, t0); }
-inline int File_Read(GuestPtr<GameFile> file, int buffer, int count, int size, uint16_t t0) { return port::callGuest<int>(addr::File_Read, file, buffer, count, size, t0); }
-inline int File_Close(GuestPtr<GameFile> file) { return port::callGuest<int>(addr::File_Close, file); }
-inline int File_Open(GuestPtr<GameFile> file, GuestPtr<char> path) { return port::callGuest<int>(addr::File_Open, file, path); }
-inline int File_LoadWhole(GuestPtr<GameFile> file, GuestPtr<char> path, GuestPtr<int32_t> size) { return port::callGuest<int>(addr::File_LoadWhole, file, path, size); }
-inline int FileQueue_WaitFor(int queue, int request, int a2) { return port::callGuest<int>(addr::FileQueue_WaitFor, queue, request, a2); }
-inline int FileQueue_WaitAll(int queue) { return port::callGuest<int>(addr::FileQueue_WaitAll, queue); }
-inline int FileQueue_Pump() { return port::callGuest<int>(addr::FileQueue_Pump); }
-inline GuestPtr<GameFile> File_dtor(GuestPtr<GameFile> file, int16_t deleteFlag) { return port::callGuest<GuestPtr<GameFile>>(addr::File_dtor, file, deleteFlag); }
-inline int Font_Free() { return port::callGuest<int>(addr::Font_Free); }
-inline int Font_Load() { return port::callGuest<int>(addr::Font_Load); }
-inline int Heap_Probe() { return port::callGuest<int>(addr::Heap_Probe); }
 inline void Gs_InitDisplay(uint16_t a0, int a1) { port::callGuest<void>(addr::Gs_InitDisplay, a0, a1); }
 inline int Pad_Update() { return port::callGuest<int>(addr::Pad_Update); }
 inline void MainLoop(int app) { port::callGuest<void>(addr::MainLoop, app); }

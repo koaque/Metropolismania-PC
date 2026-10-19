@@ -1,0 +1,124 @@
+Replay support: PS2Runtime::saveGuestHeapState and restoreGuestHeapState, PS2Vfs::nextDescriptor and closeFrom. The guest heap's bookkeeping and the VFS descriptor counter live outside RDRAM, so a test that replays one call from the same RDRAM image twice (the port's differential test) otherwise sees a different malloc block and file descriptor on the second run.
+
+diff --git a/ps2xRuntime/include/ps2_runtime.h b/ps2xRuntime/include/ps2_runtime.h
+--- a/ps2xRuntime/include/ps2_runtime.h
++++ b/ps2xRuntime/include/ps2_runtime.h
+@@ -375,6 +375,25 @@ public:
+     void handleTLBWR(uint8_t *rdram, R5900Context *ctx);
+     void handleTLBP(uint8_t *rdram, R5900Context *ctx);
+     void clearLLBit(R5900Context *ctx);
++    struct GuestHeapBlock
++    {
++        uint32_t addr = 0;
++        uint32_t size = 0;
++        bool free = true;
++    };
++    // The guest heap's bookkeeping is host-side (the blocks are not in RDRAM). A test that replays a call more than once
++    // from the same RDRAM image saves it first and restores it before each run, so every run allocates the same blocks.
++    struct GuestHeapState
++    {
++        std::vector<GuestHeapBlock> blocks;
++        uint32_t base = 0;
++        uint32_t end = 0;
++        uint32_t limit = 0;
++        uint32_t suggestedBase = 0;
++        bool configured = false;
++    };
++    GuestHeapState saveGuestHeapState() const;
++    void restoreGuestHeapState(const GuestHeapState &state);
+     void configureGuestHeap(uint32_t guestBase, uint32_t guestLimit = PS2_RAM_SIZE);
+     uint32_t guestMalloc(uint32_t size, uint32_t alignment = 16u);
+     uint32_t guestCalloc(uint32_t count, uint32_t size, uint32_t alignment = 16u);
+@@ -457,13 +476,6 @@ public:
+     inline const PS2Vfs &vfs() const { return m_vfs; }
+ 
+ private:
+-    struct GuestHeapBlock
+-    {
+-        uint32_t addr = 0;
+-        uint32_t size = 0;
+-        bool free = true;
+-    };
+-
+     static uint32_t alignGuestHeapValue(uint32_t value, uint32_t alignment);
+     static bool isGuestHeapAlignmentValid(uint32_t alignment);
+     static uint32_t normalizeGuestHeapAlignment(uint32_t alignment);
+diff --git a/ps2xRuntime/src/lib/ps2_runtime.cpp b/ps2xRuntime/src/lib/ps2_runtime.cpp
+--- a/ps2xRuntime/src/lib/ps2_runtime.cpp
++++ b/ps2xRuntime/src/lib/ps2_runtime.cpp
+@@ -1802,6 +1802,30 @@ void PS2Runtime::resetGuestHeapLocked(uint32_t guestBase, uint32_t guestLimit)
+     m_guestHeapConfigured = true;
+ }
+ 
++PS2Runtime::GuestHeapState PS2Runtime::saveGuestHeapState() const
++{
++    std::lock_guard<std::mutex> lock(m_guestHeapMutex);
++    GuestHeapState state;
++    state.blocks = m_guestHeapBlocks;
++    state.base = m_guestHeapBase;
++    state.end = m_guestHeapEnd;
++    state.limit = m_guestHeapLimit;
++    state.suggestedBase = m_guestHeapSuggestedBase;
++    state.configured = m_guestHeapConfigured;
++    return state;
++}
++
++void PS2Runtime::restoreGuestHeapState(const GuestHeapState &state)
++{
++    std::lock_guard<std::mutex> lock(m_guestHeapMutex);
++    m_guestHeapBlocks = state.blocks;
++    m_guestHeapBase = state.base;
++    m_guestHeapEnd = state.end;
++    m_guestHeapLimit = state.limit;
++    m_guestHeapSuggestedBase = state.suggestedBase;
++    m_guestHeapConfigured = state.configured;
++}
++
+ void PS2Runtime::ensureGuestHeapInitializedLocked()
+ {
+     if (m_guestHeapConfigured)
+diff --git a/ps2xRuntime/include/runtime/ps2_vfs.h b/ps2xRuntime/include/runtime/ps2_vfs.h
+--- a/ps2xRuntime/include/runtime/ps2_vfs.h
++++ b/ps2xRuntime/include/runtime/ps2_vfs.h
+@@ -68,6 +68,12 @@ public:
+     [[nodiscard]] bool resolveHostPath(std::string_view path, const PS2VfsMounts &mounts, std::filesystem::path &result) const;
+     [[nodiscard]] std::vector<PS2VfsDescriptorInfo> descriptors() const;
+ 
++    // Replay support: the number open() will hand out next, and a way back to an earlier one. Descriptors are numbered
++    // upwards and never reused, so a test that runs a call twice closes everything the first run opened and rewinds the
++    // counter, and both runs see the same descriptor numbers.
++    [[nodiscard]] int32_t nextDescriptor() const;
++    void closeFrom(int32_t firstDescriptor);
++
+ private:
+     struct OpenDescriptor
+     {
+diff --git a/ps2xRuntime/src/lib/ps2_vfs.cpp b/ps2xRuntime/src/lib/ps2_vfs.cpp
+--- a/ps2xRuntime/src/lib/ps2_vfs.cpp
++++ b/ps2xRuntime/src/lib/ps2_vfs.cpp
+@@ -211,6 +211,25 @@ int32_t PS2Vfs::close(int32_t descriptor)
+     return m_descriptors.erase(descriptor) == 1u ? 0 : -1;
+ }
+ 
++int32_t PS2Vfs::nextDescriptor() const
++{
++    std::lock_guard<std::mutex> lock(m_mutex);
++    return m_nextDescriptor;
++}
++
++void PS2Vfs::closeFrom(int32_t firstDescriptor)
++{
++    std::lock_guard<std::mutex> lock(m_mutex);
++    for (auto it = m_descriptors.begin(); it != m_descriptors.end();)
++    {
++        if (it->first >= firstDescriptor)
++            it = m_descriptors.erase(it);
++        else
++            ++it;
++    }
++    m_nextDescriptor = firstDescriptor;
++}
++
+ int64_t PS2Vfs::read(int32_t descriptor, void *destination, size_t size)
+ {
+     std::lock_guard<std::mutex> lock(m_mutex);

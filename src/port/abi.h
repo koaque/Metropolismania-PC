@@ -10,8 +10,10 @@
 //
 // Guest ABI (R5900, as used by this game): integer and pointer arguments in a0-a3, t0-t3, then in
 // 8-byte stack slots from sp+0; float arguments in f12-f19; results in v0 (32-bit values sign-extended
-// to 64 bits) or f0. Ported code never blocks or yields: the runtime's preemption checkpoints are off
-// while it runs (patches/0129), until guest threads get their own host stacks (plan P6).
+// to 64 bits) or f0. The runtime's preemption checkpoints are off while ported code runs (patches/0129), so a
+// thread switch only happens where the code waits. A ported function that can reach one (mm::blocking::at in
+// game_functions.h) runs on a fiber (patches/0137, plan P6): callGuest parks the fiber when a switch unwinds the
+// guest code it called, and the thread carries on in the same C++ frames when it is resumed.
 
 #pragma once
 
@@ -40,6 +42,12 @@ namespace port
     };
     inline CallState g_call;
 
+    // g_call belongs to the code running now; a fiber has its own, swapped in and out as the scheduler switches
+    // (Scheduler hooks, port.cpp). GuestFiber::user holds the fiber's state and then the dispatcher's.
+    static_assert(2 * sizeof(CallState) <= sizeof(GuestFiber::user), "CallState does not fit in GuestFiber::user");
+    void fiberEnter(GuestFiber &fiber);
+    void fiberLeave(GuestFiber &fiber);
+
     // A 32-bit read of a hardware register (a timer, a DMA channel), made through the runtime as the original
     // makes it.
     inline uint32_t readHardware32(uint32_t address) { return g_call.runtime->Load32(g_call.rdram, g_call.ctx, address); }
@@ -55,14 +63,19 @@ namespace port
     class PortedScope
     {
     public:
-        PortedScope(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime, uint32_t function) : m_outer(g_call)
+        PortedScope(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime, uint32_t function)
+            : m_outer(g_call), m_preemptible(runtime->eeScheduler().onFiber())
         {
             g_call = {rdram, ctx, runtime, function};
-            enterPorted(runtime);
+            // On a fiber the function may be switched out, so the no-preempt rule (which keeps checkpoints from firing
+            // while ported code runs) does not apply: checkpoints fire in the guest code it calls and callGuest yields.
+            if (!m_preemptible)
+                enterPorted(runtime);
         }
         ~PortedScope()
         {
-            leavePorted(g_call.runtime);
+            if (!m_preemptible)
+                leavePorted(g_call.runtime);
             g_call = m_outer;
         }
         PortedScope(const PortedScope &) = delete;
@@ -70,6 +83,7 @@ namespace port
 
     private:
         CallState m_outer;
+        bool m_preemptible;
     };
 
     struct AutoRegister
@@ -195,11 +209,11 @@ namespace port
             return static_cast<R>(gpr64(ctx, 2));
     }
 
-    template <auto Fn>
+    template <auto Fn, bool Blocking>
     struct Wrapper;
 
-    template <typename R, typename... Args, R (*Fn)(Args...)>
-    struct Wrapper<Fn>
+    template <typename R, typename... Args, R (*Fn)(Args...), bool Blocking>
+    struct Wrapper<Fn, Blocking>
     {
         static constexpr ResultKind kResult = std::is_void_v<R> ? ResultKind::None
                                               : kFloatArg<R>    ? ResultKind::Float
@@ -245,7 +259,7 @@ namespace port
             mutateAll(ctx, state, std::index_sequence_for<Args...>{});
         }
 
-        static void entry(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        static void run(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
             const uint32_t address = ctx->pc;
             PortedScope scope(rdram, ctx, runtime, address);
@@ -262,6 +276,22 @@ namespace port
                 reachedThreadSwitch(address);
             }
             ctx->pc = static_cast<uint32_t>(gpr64(ctx, 31));
+        }
+
+        static void entry(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            if constexpr (Blocking)
+            {
+                EeScheduler &ee = runtime->eeScheduler();
+                if (ee.fibersAvailable() && !ee.onFiber())
+                {
+                    // A thread switch under this function would drop its C++ frame: it runs on a fiber of the thread.
+                    // When the fiber parks this unwinds the generated frames above (EeDispatcherTransfer), as a switch does.
+                    ee.runOnFiber([rdram, ctx, runtime] { run(rdram, ctx, runtime); });
+                    return;
+                }
+            }
+            run(rdram, ctx, runtime);
         }
     };
 
@@ -329,6 +359,9 @@ namespace port
         {
             if (!runtime->hasFunction(ctx->pc))
                 return false;
+            // The callee handed the call back with a checkpoint due (recompiled code does that); on a fiber the thread
+            // gives the processor up here instead of the checkpoint being ignored.
+            runtime->eeScheduler().yieldIfDue();
             runtime->lookupFunction(ctx->pc)(rdram, ctx, runtime);
         }
         return true;
@@ -373,9 +406,15 @@ namespace port
             ...);
         setGpr64(ctx, 31, kReturnSentinel);
         ctx->pc = address;
-        GuestFn fn = g_call.runtime->lookupFunction(address);
-        fn(g_call.rdram, ctx, g_call.runtime);
-        if (!finishGuestCall(g_call.rdram, ctx, g_call.runtime, address, kReturnSentinel))
+        uint8_t *const rdram = g_call.rdram;
+        PS2Runtime *const runtime = g_call.runtime;
+        const GuestFn fn = runtime->lookupFunction(address);
+        // On a fiber a thread switch inside the callee parks the fiber here and the callee goes on from ctx->pc when the
+        // thread is resumed; elsewhere the switch propagates as before (to the fatal error in Wrapper::run).
+        const bool completed = runtime->eeScheduler().callOnFiber(
+            [&] { fn(rdram, ctx, runtime); },
+            [&] { return finishGuestCall(rdram, ctx, runtime, address, kReturnSentinel); });
+        if (!completed)
             calleeDidNotReturn(address, ctx->pc);
         setGpr64(ctx, 31, savedRa);
         setGpr64(ctx, 29, savedSp);
@@ -389,5 +428,5 @@ namespace port
 // PORT_FN(Name): mm::Name replaces the generated function at mm::addr::Name.
 #define PORT_FN(NAME)                                                                           \
     static const port::AutoRegister PORT_JOIN(kPortRegistration_, __COUNTER__)(                    \
-        mm::addr::NAME, #NAME, &port::Wrapper<&mm::NAME>::entry, port::Wrapper<&mm::NAME>::kResult,  \
-        port::Wrapper<&mm::NAME>::kFuzzable ? &port::Wrapper<&mm::NAME>::mutate : nullptr)
+        mm::addr::NAME, #NAME, &port::Wrapper<&mm::NAME, mm::blocking::at<mm::addr::NAME>>::entry, port::Wrapper<&mm::NAME, mm::blocking::at<mm::addr::NAME>>::kResult,  \
+        port::Wrapper<&mm::NAME, mm::blocking::at<mm::addr::NAME>>::kFuzzable ? &port::Wrapper<&mm::NAME, mm::blocking::at<mm::addr::NAME>>::mutate : nullptr)
