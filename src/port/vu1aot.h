@@ -147,6 +147,7 @@ namespace vu1aot
         // Flag results pushed by this pair (in order): src of each
         std::vector<FlagEntry> pushes;
         uint8_t flagBase = 0;     // flag results still queued when this pair issues (the ring position of its first push)
+        uint8_t upperPushes = 0, lowerPushes = 0; // flag results the two halves queue
         uint8_t writtenVi = 0;    // the VI register the lower half writes (lowest, VI0 left out), 0 = none
         int8_t fdivLatency = 0;   // DIV/SQRT/RSQRT: cycles until Q commits
         int8_t efuSlot = -1;      // EFU op: the slot taken

@@ -400,6 +400,7 @@ namespace vu1aot
                     pushFlag(FlagFmac, WritesMac | WritesStatus);
                 else if (upperIsClip(info.upper))
                     pushFlag(FlagClip, WritesClip);
+                node.upperPushes = static_cast<uint8_t>(node.pushes.size());
                 if (!info.lowerNop)
                 {
                     const uint32_t primary = lowerPrimary(info);
@@ -415,6 +416,7 @@ namespace vu1aot
                             s.flags[i].writes &= static_cast<uint8_t>(~WritesClip);
                         pushFlag(FlagFcset, WritesClip);
                     }
+                    node.lowerPushes = static_cast<uint8_t>(node.pushes.size() - node.upperPushes);
                     const uint32_t special = lowerSpecial(info);
                     if (special == 0x38u || special == 0x39u || special == 0x3Au)
                     {

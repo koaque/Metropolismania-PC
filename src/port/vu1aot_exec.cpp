@@ -1,14 +1,16 @@
-// Pre-timed VU1 programs: running a graph (plan P4, M3.3). See vu1aot.h.
+// Pre-timed VU1 programs: running a graph (plan P4, M3.3 and M3.5). See vu1aot.h and vu1aot_exec.h.
 //
 // A run follows the graph from its entry node. What the interpreter works out as it goes (hazards, the queues that delay
 // flag, Q, P, store, VI and vf/ACC results) the graph already holds: how many cycles to advance before each pair, which
-// results commit before it, and where a branch leads. What is left is the arithmetic, which is the interpreter's own
-// (execUpper, the specialized FMAC executors, execLower) run on the interpreter's state, with the entries those queue
-// picked up and put in the program's slots instead. So the state, the data memory, the cycle count and the packets come
-// out as they do in the interpreter, and anything the graph does not cover (Bail) is left to the interpreter.
+// results commit before it, and where a branch leads. What is left is the arithmetic: the native ops of vu1aot_ops.cpp
+// for what this game runs, the interpreter's own execUpper/execLower (here) for the rest, run on the interpreter's state
+// with the entries they queue moved into the program's slots. So the state, the data memory, the cycle count and the
+// packets come out as they do in the interpreter, and anything the graph does not cover (Bail) is left to the
+// interpreter.
 
 #include "vu1aot.h"
 #include "vu1aot_access.h"
+#include "vu1aot_exec.h"
 
 #include "runtime/gs/ps2_gif_arbiter.h"
 #include "runtime/gs/gs_frontend.h"
@@ -22,44 +24,183 @@
 
 struct Vu1AotAccess::ExecInfo
 {
-    std::vector<VU1Interpreter::FmacFn> upperFast; // per node: the specialized executor of the upper half, if any
+    std::vector<vu1aot::XNode> nodes;
+    std::vector<vu1aot::Commit> commits;
 };
-
-void Vu1AotAccess::prepare(vu1aot::Graph &graph)
-{
-    auto info = std::make_shared<ExecInfo>();
-    info->upperFast.assign(graph.nodes.size(), nullptr);
-    for (size_t i = 0; i < graph.nodes.size(); ++i)
-        if (graph.nodes[i].kind != vu1aot::NodeKind::Bail)
-            info->upperFast[i] = VU1Interpreter::classifyFmac(graph.nodes[i].pair.upper);
-    graph.exec = info;
-}
 
 namespace
 {
     constexpr uint8_t laneBit(uint32_t component) { return static_cast<uint8_t>(1u << (3u - component)); }
 }
 
+// ---- the interpreter's own ops, for what vu1aot_ops.cpp does not write ----
+
+void Vu1AotAccess::harvestFlags(vu1aot::Ctx &c, uint32_t firstPos, uint32_t expected)
+{
+    VU1Interpreter &vu = *static_cast<VU1Interpreter *>(c.vu);
+    uint32_t pos = firstPos;
+    uint32_t seen = 0;
+    while (vu.m_flagCount != 0u)
+    {
+        const VU1Interpreter::FlagPipelineEntry &e = vu.m_flagPipeline[vu.m_flagHead];
+        vu1aot::FlagData &d = c.ring[(c.head + pos) & (vu1aot::kMaxFlags - 1)];
+        d.mac = e.mac;
+        d.status = e.status;
+        d.extra = e.extraSticky;
+        d.clip = e.clip;
+        ++pos;
+        ++seen;
+        vu.m_flagHead = (vu.m_flagHead + 1u) % VU1Interpreter::kMaxFlagEntries;
+        --vu.m_flagCount;
+    }
+    if (seen != expected)
+        c.failed = true; // the decoder queued something the model did not expect
+}
+
+void Vu1AotAccess::generalUpper(vu1aot::Ctx &c, const vu1aot::XNode &n)
+{
+    VU1Interpreter &vu = *static_cast<VU1Interpreter *>(c.vu);
+    vu.execUpper(n.upperWord);
+    harvestFlags(c, n.flagBase, n.upperPushes);
+    if (vu.m_stopRequested)
+        c.failed = true;
+}
+
+void Vu1AotAccess::generalLower(vu1aot::Ctx &c, const vu1aot::XNode &n)
+{
+    using namespace vu1aot;
+    VU1Interpreter &vu = *static_cast<VU1Interpreter *>(c.vu);
+    const VU1Interpreter::AotRun &a = *static_cast<const VU1Interpreter::AotRun *>(c.run);
+    vu.execLower(n.lowerWord, a.data, a.dataSize, *a.gs, a.memory, n.upperWord);
+    harvestFlags(c, n.lowerFlagBase, n.lowerPushes);
+    // Stores land at once; Q and P results wait in the program's slots for their commit.
+    for (uint32_t live = vu.m_storeValid; live != 0u; live &= live - 1u)
+    {
+        VU1Interpreter::PendingStore &store = vu.m_storePipeline[static_cast<size_t>(std::countr_zero(live))];
+        if (store.address + 16u <= a.dataSize)
+        {
+            uint32_t words[4];
+            std::memcpy(words, a.data + store.address, sizeof(words));
+            for (uint32_t component = 0; component < 4u; ++component)
+                if ((store.laneMask & laneBit(component)) != 0u)
+                    words[component] = store.words[component];
+            std::memcpy(a.data + store.address, words, sizeof(words));
+        }
+        store = {};
+    }
+    vu.m_storeValid = 0u;
+    if (vu.m_fdiv.valid)
+    {
+        c.qValue = vu.m_fdiv.value;
+        c.qStatusDi = vu.m_fdiv.statusDi;
+        vu.m_fdiv = {};
+    }
+    if (vu.m_efuValid != 0u)
+    {
+        for (uint32_t slot = 0; slot < kEfuSlots; ++slot)
+            if (vu.m_efu[slot].valid)
+            {
+                if (n.efuSlot != 0xFF)
+                    c.pValue[n.efuSlot] = vu.m_efu[slot].value;
+                vu.m_efu[slot] = {};
+            }
+        vu.m_efuValid = 0u;
+    }
+    if (vu.m_stopRequested)
+        c.failed = true;
+}
+
+void Vu1AotAccess::prepare(vu1aot::Graph &graph, bool allowNative)
+{
+    using namespace vu1aot;
+    auto info = std::make_shared<ExecInfo>();
+    info->nodes.resize(graph.nodes.size());
+    for (size_t i = 0; i < graph.nodes.size(); ++i)
+    {
+        const Node &n = graph.nodes[i];
+        XNode &x = info->nodes[i];
+        x.kind = static_cast<uint8_t>(n.kind);
+        if (n.kind == NodeKind::Bail)
+            continue;
+        const PairInfo &p = n.pair;
+        x.pc = n.pc;
+        x.advance = n.advance;
+        x.target = n.target;
+        x.next = n.next;
+        x.nextTaken = n.nextTaken;
+        x.upperWord = p.upper;
+        x.lowerWord = p.lower;
+        x.flagBase = n.flagBase;
+        x.upperPushes = n.upperPushes;
+        x.lowerPushes = n.lowerPushes;
+        x.lowerFlagBase = static_cast<uint8_t>(n.flagBase + n.upperPushes);
+        x.writtenVi = n.writtenVi;
+        x.readBackupReg = n.readBackupReg;
+        x.recordBackup = (n.writtenVi != 0 && p.delaysNextBranchRead) ? 1 : 0;
+        x.backupAfterTaken = n.backupAfterTaken;
+        x.backupAfterFall = n.backupAfterFall;
+        x.efuSlot = n.efuSlot >= 0 ? static_cast<uint8_t>(n.efuSlot) : 0xFF;
+        x.endExtra = n.endExtra;
+        x.commitStart = static_cast<uint32_t>(info->commits.size());
+        x.commitCount = static_cast<uint8_t>(n.commits.size());
+        info->commits.insert(info->commits.end(), n.commits.begin(), n.commits.end());
+        x.endCommitStart = static_cast<uint32_t>(info->commits.size());
+        x.endCommitCount = static_cast<uint8_t>(n.endCommits.size());
+        info->commits.insert(info->commits.end(), n.endCommits.begin(), n.endCommits.end());
+        if (n.xgkick)
+            x.flags |= XfXgkick;
+        if (n.backward)
+            x.flags |= XfBackward;
+        if (n.always)
+            x.flags |= XfAlways;
+        if (n.inDelaySlot)
+            x.flags |= XfInDelaySlot;
+        if (p.iBit)
+        {
+            x.form = FormIBit;
+            float immediate;
+            std::memcpy(&immediate, &p.lower, sizeof(immediate));
+            // VU1Interpreter::normalizeOperand
+            uint32_t bits;
+            std::memcpy(&bits, &immediate, sizeof(bits));
+            const uint32_t exponent = (bits >> 23) & 0xFFu;
+            if (exponent == 0u)
+                bits &= 0x80000000u;
+            else if (exponent == 0xFFu)
+                bits = (bits & 0x80000000u) | 0x7F7FFFFFu;
+            std::memcpy(&x.iValue, &bits, sizeof(bits));
+        }
+        else if (p.upperVfShadowReg != 0)
+        {
+            x.form = FormShadow;
+            x.shadowReg = p.upperVfShadowReg;
+        }
+        const Natives ops = chooseOps(p.upper, p.lower, p.iBit, p.lowerNop, n, allowNative);
+        x.upper = ops.upperGeneral ? &Vu1AotAccess::generalUpper : ops.upper;
+        x.lower = ops.lowerGeneral ? &Vu1AotAccess::generalLower : ops.lower;
+        if (ops.upperGeneral || ops.lowerGeneral || ops.upperWritesVf0)
+            x.flags |= XfResetZero;
+    }
+    graph.exec = info;
+}
+
 vu1aot::RunResult Vu1AotAccess::run(VU1Interpreter &vu, const vu1aot::Graph &g, const VU1Interpreter::AotRun &a,
                                     std::vector<std::vector<uint8_t>> &packets)
 {
     using namespace vu1aot;
-    struct FlagData
-    {
-        uint32_t mac, status, extra, clip;
-    };
-
     VU1State &st = vu.m_state;
     const ExecInfo &ex = *static_cast<const ExecInfo *>(g.exec.get());
-    FlagData ring[kMaxFlags];
-    uint32_t head = 0; // ring position of the oldest queued flag result
-    float qValue = 0.0f;
-    uint32_t qStatusDi = 0;
-    float pValue[kEfuSlots] = {};
+    const XNode *nodes = ex.nodes.data();
+    const Commit *commits = ex.commits.data();
+    Ctx c;
+    c.st = &st;
+    c.data = a.data;
+    c.vu = &vu;
+    c.run = &a;
+    c.workingClip = &vu.m_workingClip;
     const uint64_t startCycle = vu.m_cycle;
     uint64_t cyc = 0;
     uint32_t extraCycles = 0;
-    bool taken = false;
     RunResult result = RunResult::Bail;
 
     vu.m_activeVuData = a.data;
@@ -70,185 +211,113 @@ vu1aot::RunResult Vu1AotAccess::run(VU1Interpreter &vu, const vu1aot::Graph &g, 
     const int previousRounding = std::fegetround();
     const bool vuRounding = std::fesetround(FE_TOWARDZERO) == 0;
 
-    const auto applyCommit = [&](const Commit &c) {
-        switch (c.kind)
+    const auto applyCommit = [&](const Commit &k) {
+        switch (k.kind)
         {
         case CommitFlag:
         {
-            const FlagData &d = ring[head & (kMaxFlags - 1)];
-            ++head;
-            if ((c.writes & WritesMac) != 0)
+            const FlagData &d = c.ring[c.head & (kMaxFlags - 1)];
+            ++c.head;
+            if ((k.writes & WritesMac) != 0)
                 st.mac = d.mac;
-            if ((c.writes & WritesStatus) != 0)
+            if ((k.writes & WritesStatus) != 0)
             {
                 const uint32_t current = d.status & 0xFu;
                 st.status = (st.status & 0xFF0u) | current | ((current | d.extra) << 6);
             }
-            if ((c.writes & WritesSticky) != 0)
+            if ((k.writes & WritesSticky) != 0)
                 st.status = (st.status & 0x03Fu) | (d.status & 0xFC0u);
-            if ((c.writes & WritesClip) != 0)
+            if ((k.writes & WritesClip) != 0)
                 st.clip = d.clip;
             break;
         }
         case CommitQ:
         {
-            st.q = qValue;
-            const uint32_t di = qStatusDi & 0x30u;
+            st.q = c.qValue;
+            const uint32_t di = c.qStatusDi & 0x30u;
             st.status = (st.status & 0xFCFu) | di | (di << 6);
             break;
         }
         default:
-            st.p = pValue[c.slot];
+            st.p = c.pValue[k.slot];
             break;
         }
     };
 
+    const bool *xgkickActive = &vu.m_xgkick.active;
     int cur = g.entry;
     while (cur >= 0)
     {
-        const Node &n = g.nodes[cur];
-        if (n.kind == NodeKind::Bail)
+        const XNode &n = nodes[cur];
+        if (n.kind == static_cast<uint8_t>(NodeKind::Bail))
             break;
         cyc += n.advance;
-        vu.m_cycle = startCycle + cyc;
-        st.cycles = vu.m_cycle;
-        if (vu.m_xgkick.active)
+        if (*xgkickActive)
         {
             for (uint32_t k = 0; k < n.advance; ++k)
                 vu.progressXgkick();
             if (vu.m_stopRequested)
                 break;
         }
-        for (const Commit &c : n.commits)
-            applyCommit(c);
-        if (n.xgkick && vu.m_xgkick.active)
+        for (uint32_t k = 0; k < n.commitCount; ++k)
+            applyCommit(commits[n.commitStart + k]);
+        if ((n.flags & XfXgkick) != 0 && *xgkickActive)
             break; // a second XGKICK waits for the first one: left to the interpreter
-
-        const PairInfo &p = n.pair;
+        if (n.writtenVi != 0)
+            c.oldVi = st.vi[n.writtenVi];
+        // The interpreter functions look at these.
         st.pc = n.pc;
-        const bool inTakenDelaySlot = st.branchPending && st.branchDelay == 0u;
-        const uint8_t writtenVi = n.writtenVi;
-        const int32_t oldVi = writtenVi != 0 ? st.vi[writtenVi] : 0;
-        uint32_t flagPos = n.flagBase;
+        vu.m_cycle = startCycle + cyc;
 
-        const auto harvestFlags = [&] {
-            while (vu.m_flagCount != 0u)
-            {
-                const VU1Interpreter::FlagPipelineEntry &e = vu.m_flagPipeline[vu.m_flagHead];
-                FlagData &d = ring[(head + flagPos) & (kMaxFlags - 1)];
-                d.mac = e.mac;
-                d.status = e.status;
-                d.extra = e.extraSticky;
-                d.clip = e.clip;
-                ++flagPos;
-                vu.m_flagHead = (vu.m_flagHead + 1u) % VU1Interpreter::kMaxFlagEntries;
-                --vu.m_flagCount;
-            }
-        };
-        const auto runUpper = [&] {
-            if (const VU1Interpreter::FmacFn fast = ex.upperFast[cur])
-                (vu.*fast)(p.upper);
-            else
-                vu.execUpper(p.upper);
-            harvestFlags();
-        };
-        const auto runLower = [&] {
-            vu.execLower(p.lower, a.data, a.dataSize, *a.gs, a.memory, p.upper);
-            harvestFlags();
-            // Stores land at once; Q and P results wait in the program's slots for their commit.
-            for (uint32_t live = vu.m_storeValid; live != 0u; live &= live - 1u)
-            {
-                VU1Interpreter::PendingStore &store = vu.m_storePipeline[static_cast<size_t>(std::countr_zero(live))];
-                if (store.address + 16u <= a.dataSize)
-                {
-                    uint32_t words[4];
-                    std::memcpy(words, a.data + store.address, sizeof(words));
-                    for (uint32_t component = 0; component < 4u; ++component)
-                        if ((store.laneMask & laneBit(component)) != 0u)
-                            words[component] = store.words[component];
-                    std::memcpy(a.data + store.address, words, sizeof(words));
-                }
-                store = {};
-            }
-            vu.m_storeValid = 0u;
-            if (vu.m_fdiv.valid)
-            {
-                qValue = vu.m_fdiv.value;
-                qStatusDi = vu.m_fdiv.statusDi;
-                vu.m_fdiv = {};
-            }
-            if (vu.m_efuValid != 0u)
-            {
-                for (uint32_t slot = 0; slot < kEfuSlots; ++slot)
-                    if (vu.m_efu[slot].valid)
-                    {
-                        if (n.efuSlot >= 0)
-                            pValue[n.efuSlot] = vu.m_efu[slot].value;
-                        vu.m_efu[slot] = {};
-                    }
-                vu.m_efuValid = 0u;
-            }
-        };
-
-        if (p.iBit)
+        switch (n.form)
         {
-            runUpper();
-            float immediate = 0.0f;
-            std::memcpy(&immediate, &p.lower, sizeof(immediate));
-            st.i = vu.normalizeOperand(immediate);
-        }
-        else if (p.upperVfShadowReg != 0u)
+        case FormNormal:
+            if (n.upper != nullptr)
+                n.upper(c, n);
+            if (n.lower != nullptr)
+                n.lower(c, n);
+            break;
+        case FormIBit:
+            if (n.upper != nullptr)
+                n.upper(c, n);
+            st.i = n.iValue;
+            break;
+        default:
         {
             float oldVf[4], upperVf[4];
-            std::memcpy(oldVf, st.vf[p.upperVfShadowReg], sizeof(oldVf));
-            runUpper();
-            std::memcpy(upperVf, st.vf[p.upperVfShadowReg], sizeof(upperVf));
-            std::memcpy(st.vf[p.upperVfShadowReg], oldVf, sizeof(oldVf));
-            runLower();
-            std::memcpy(st.vf[p.upperVfShadowReg], upperVf, sizeof(upperVf));
+            std::memcpy(oldVf, st.vf[n.shadowReg], sizeof(oldVf));
+            if (n.upper != nullptr)
+                n.upper(c, n);
+            std::memcpy(upperVf, st.vf[n.shadowReg], sizeof(upperVf));
+            std::memcpy(st.vf[n.shadowReg], oldVf, sizeof(oldVf));
+            if (n.lower != nullptr)
+                n.lower(c, n);
+            std::memcpy(st.vf[n.shadowReg], upperVf, sizeof(upperVf));
+            break;
         }
-        else
-        {
-            runUpper();
-            if (!p.lowerNop)
-                runLower();
         }
-        if (vu.m_stopRequested || flagPos - n.flagBase != n.pushes.size())
-            break; // a reserved instruction, or the decoder queued something the model did not
-
-        vu.m_viBranchBackupValid = false;
-        if (writtenVi != 0 && p.delaysNextBranchRead && !inTakenDelaySlot)
-            vu.recordViWriteForBranch(writtenVi, oldVi);
-        st.vf[0][0] = 0.0f;
-        st.vf[0][1] = 0.0f;
-        st.vf[0][2] = 0.0f;
-        st.vf[0][3] = 1.0f;
-        st.vi[0] = 0;
-
-        uint32_t nextPc = n.pc + 8u;
-        if (nextPc >= a.codeSize)
-            nextPc = 0u;
-        st.pc = nextPc;
-        taken = st.branchPending;
-        if (st.branchPending)
+        if (c.failed)
+            break;
+        if (n.recordBackup != 0)
+            c.backupValue = c.oldVi;
+        if ((n.flags & XfResetZero) != 0)
         {
-            if (st.branchDelay == 0u)
-            {
-                st.pc = st.branchTarget & 0x3FFFu;
-                st.branchPending = false;
-            }
-            else
-                --st.branchDelay;
+            st.vf[0][0] = 0.0f;
+            st.vf[0][1] = 0.0f;
+            st.vf[0][2] = 0.0f;
+            st.vf[0][3] = 1.0f;
+            st.vi[0] = 0;
         }
 
-        if (n.kind == NodeKind::End)
+        const NodeKind kind = static_cast<NodeKind>(n.kind);
+        if (kind == NodeKind::End)
         {
-            for (const Commit &c : n.endCommits)
-                applyCommit(c);
-            if (vu.m_xgkick.active)
+            for (uint32_t k = 0; k < n.endCommitCount; ++k)
+                applyCommit(commits[n.endCommitStart + k]);
+            if (*xgkickActive)
                 for (uint32_t k = 0; k < n.endExtra; ++k)
                     vu.progressXgkick();
-            while (vu.m_xgkick.active && !vu.m_stopRequested)
+            while (*xgkickActive && !vu.m_stopRequested)
             {
                 vu.progressXgkick();
                 ++extraCycles;
@@ -256,6 +325,22 @@ vu1aot::RunResult Vu1AotAccess::run(VU1Interpreter &vu, const vu1aot::Graph &g, 
             const uint64_t total = cyc + n.endExtra + extraCycles;
             if (vu.m_stopRequested || total >= a.maxCycles)
                 break;
+            // What the interpreter leaves behind: the next pc, the last taken branch's fields, the VI backup of the last pair.
+            const bool inSlot = (n.flags & XfInDelaySlot) != 0;
+            const bool jumped = inSlot && c.taken;
+            uint32_t nextPc = n.pc + 8u;
+            if (nextPc >= a.codeSize)
+                nextPc = 0u;
+            st.pc = jumped ? n.target : nextPc;
+            if (jumped)
+            {
+                st.branchTarget = n.target;
+                st.branchDelay = 0u;
+            }
+            const uint8_t backup = inSlot ? (c.taken ? n.backupAfterTaken : n.backupAfterFall) : n.backupAfterFall;
+            vu.m_viBranchBackupValid = backup != 0;
+            vu.m_viBranchBackupReg = backup;
+            vu.m_viBranchBackupValue = backup != 0 ? c.oldVi : 0;
             vu.m_cycle = startCycle + total;
             st.cycles = vu.m_cycle;
             st.ebit = false;
@@ -265,15 +350,19 @@ vu1aot::RunResult Vu1AotAccess::run(VU1Interpreter &vu, const vu1aot::Graph &g, 
             result = RunResult::Done;
             break;
         }
-        if (n.kind == NodeKind::DelaySlot)
+        if (kind == NodeKind::DelaySlot)
         {
-            if (n.always && !taken)
+            const bool always = (n.flags & XfAlways) != 0;
+            if (always && !c.taken)
                 break;
-            if (taken && st.pc != n.target)
-                break;
-            if (taken && n.backward && cyc + 8192u >= a.maxCycles)
-                break; // a long loop: the interpreter's cycle budget may cut it
-            cur = (taken && !n.always) ? n.nextTaken : n.next;
+            if (c.taken)
+            {
+                if ((n.flags & XfBackward) != 0 && cyc + 8192u >= a.maxCycles)
+                    break; // a long loop: the interpreter's cycle budget may cut it
+                st.branchTarget = n.target;
+                st.branchDelay = 0u;
+            }
+            cur = (c.taken && !always) ? n.nextTaken : n.next;
         }
         else
             cur = n.next;

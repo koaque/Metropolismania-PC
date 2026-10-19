@@ -5,6 +5,7 @@
 #pragma once
 
 #include "vu1aot.h"
+#include "vu1aot_exec.h"
 
 #include "runtime/ps2_vu1.h"
 
@@ -17,7 +18,13 @@ struct Vu1AotAccess
 
     // What a program needs at run time besides its nodes.
     struct ExecInfo;
-    static void prepare(vu1aot::Graph &graph);
+    // allowNative false sends every op through the interpreter's own functions (the reference of the fuzz test).
+    static void prepare(vu1aot::Graph &graph, bool allowNative = true);
+
+    // The interpreter's own execUpper/execLower as ops, with the entries they queue moved into the program's slots.
+    static void generalUpper(vu1aot::Ctx &c, const vu1aot::XNode &n);
+    static void generalLower(vu1aot::Ctx &c, const vu1aot::XNode &n);
+    static void harvestFlags(vu1aot::Ctx &c, uint32_t firstPos, uint32_t expected);
 
     // Runs a program on the interpreter's state from `args` (the run about to start: state and scheduler set up).
     // Done: the state, the data memory and the cycle counter are what the interpreter would have left, and the XGKICK packets

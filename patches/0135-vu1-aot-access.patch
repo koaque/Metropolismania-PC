@@ -1,9 +1,15 @@
-VU1: friend access, run hook, packet sink and pair trace for the pre-timed programs (src/port/vu1aot*), busy-resume count in PS2X_GS_STATS, XGKICK start no longer clears its 64 KB buffer. Plan P4, M3.
+VU1: friend access, run hook, packet sink and pair trace for the pre-timed programs (src/port/vu1aot*), the FMAC kernels in a shared header (ps2_vu1_fmac.h), busy-resume count in PS2X_GS_STATS, XGKICK start no longer clears its 64 KB buffer. Plan P4, M3.
 
 diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
 --- a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
 +++ b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
-@@ -33,6 +33,7 @@ namespace
+@@ -1,4 +1,5 @@
+ #include "runtime/ps2_vu1.h"
++#include "runtime/ps2_vu1_fmac.h"
+ #include "runtime/gs/ps2_gif_arbiter.h"
+ #include "runtime/gs/gs_frontend.h"
+ #include "runtime/ps2_memory.h"
+@@ -33,6 +34,7 @@ namespace
          uint64_t xgkickBytes = 0;
          uint64_t aborted = 0;
          uint64_t resumes = 0;
@@ -11,7 +17,7 @@ diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps
          double runSeconds = 0.0;
          double submitSeconds = 0.0; // inside run(): handing XGKICK packets to the GS
          uint64_t cycles = 0;
-@@ -61,7 +62,7 @@ namespace
+@@ -61,7 +63,7 @@ namespace
          const auto now = std::chrono::steady_clock::now();
          if (now - s.last < std::chrono::seconds(2))
              return;
@@ -20,7 +26,160 @@ diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps
                    << " aborted=" << s.aborted << " vu1ms=" << static_cast<uint64_t>(s.runSeconds * 1000.0)
                    << " submitms=" << static_cast<uint64_t>(s.submitSeconds * 1000.0)
                    << " cycles=" << s.cycles << " Mcyc/s(host)=" << (s.runSeconds > 0.0 ? s.cycles / s.runSeconds / 1e6 : 0.0) << std::endl;
-@@ -1545,6 +1546,12 @@ void VU1Interpreter::finishXgkick()
+@@ -780,148 +782,15 @@ void VU1Interpreter::applyFmacDestAcc(float *result, uint8_t dest)
+     applyDestAcc(result, dest);
+ }
+ 
+-namespace
+-{
+-    // normalizeOperand on four lanes: a denormal becomes a signed zero, an infinity or NaN the signed largest finite value.
+-    inline __m128 normalizeLanes(__m128 value)
+-    {
+-        const __m128i bits = _mm_castps_si128(value);
+-        const __m128i exponent = _mm_and_si128(_mm_srli_epi32(bits, 23), _mm_set1_epi32(0xFF));
+-        const __m128i sign = _mm_and_si128(bits, _mm_set1_epi32(static_cast<int>(0x80000000u)));
+-        const __m128i isZero = _mm_cmpeq_epi32(exponent, _mm_setzero_si128());
+-        const __m128i isMax = _mm_cmpeq_epi32(exponent, _mm_set1_epi32(0xFF));
+-        __m128i out = _mm_blendv_epi8(bits, sign, isZero);
+-        out = _mm_blendv_epi8(out, _mm_or_si128(sign, _mm_set1_epi32(0x7F7FFFFF)), isMax);
+-        return _mm_castsi128_ps(out);
+-    }
+-
+-    // A 4-bit lane set (bit = component) as four 32-bit lane masks, and bit-reversed (the MAC word numbers lanes from x = bit 3).
+-    struct LaneTables
+-    {
+-        __m128i mask[16];
+-        uint8_t reverse[16];
+-        LaneTables()
+-        {
+-            for (int set = 0; set < 16; ++set)
+-            {
+-                mask[set] = _mm_set_epi32((set & 8) ? -1 : 0, (set & 4) ? -1 : 0, (set & 2) ? -1 : 0, (set & 1) ? -1 : 0);
+-                reverse[set] = static_cast<uint8_t>(((set & 1) << 3) | ((set & 2) << 1) | ((set & 4) >> 1) | ((set & 8) >> 3));
+-            }
+-        }
+-    };
+-    const LaneTables g_laneTables;
+-    inline const LaneTables &laneTables() { return g_laneTables; }
+-
+-    // The conditions normalizeFmacExactResult reports for the exact (double) results of four lanes, as lane sets.
+-    struct ExactClass
+-    {
+-        uint32_t zero;      // result 0 or underflow (the Z flag)
+-        uint32_t negative;  // sign of the exact result (S)
+-        uint32_t underflow; // 0 < |exact| < smallest normal float (U; also Z)
+-        uint32_t overflow;  // |exact| > largest float (O)
+-    };
+-
+-    inline ExactClass classifyExact(__m256d exact, __m256d &zeroMask, __m256d &underMask, __m256d &overMask)
+-    {
+-        const __m256d magnitude = _mm256_andnot_pd(_mm256_set1_pd(-0.0), exact);
+-        zeroMask = _mm256_cmp_pd(magnitude, _mm256_setzero_pd(), _CMP_EQ_OQ);
+-        overMask = _mm256_cmp_pd(magnitude, _mm256_set1_pd(static_cast<double>(std::numeric_limits<float>::max())), _CMP_GT_OQ);
+-        underMask = _mm256_andnot_pd(zeroMask, _mm256_cmp_pd(magnitude, _mm256_set1_pd(static_cast<double>(std::numeric_limits<float>::min())), _CMP_LT_OQ));
+-        ExactClass flags;
+-        flags.negative = static_cast<uint32_t>(_mm256_movemask_pd(exact));
+-        flags.underflow = static_cast<uint32_t>(_mm256_movemask_pd(underMask));
+-        flags.zero = static_cast<uint32_t>(_mm256_movemask_pd(zeroMask)) | flags.underflow;
+-        flags.overflow = static_cast<uint32_t>(_mm256_movemask_pd(overMask));
+-        return flags;
+-    }
+-}
+-
+ // Kind: 0 ADD, 1 SUB, 2 MUL, 3 MADD (ACC + vs * b), 4 MSUB (ACC - vs * b). BSrc: 0 to 3 broadcast lane of vt, 4 Q, 5 I,
+ // 6 vt lane by lane. ToAcc: the result goes to ACC instead of vf[fd]. The arithmetic is that of execUpper and
+-// calculateFmacExactResult, done on all four lanes at once (float results, round toward zero as run() sets it; the exact
+-// results in double, as the model's long double is) and used for the lanes in dest only.
++// calculateFmacExactResult (see ps2_vu1_fmac.h), done on all four lanes at once.
+ template <int Kind, int BSrc, bool ToAcc>
+ void VU1Interpreter::fmacArith(uint32_t instr)
+ {
+-    const uint8_t dest = DEST(instr);
+-    const LaneTables &tables = laneTables();
+-    const uint32_t lanes = tables.reverse[dest]; // components in dest, bit = component
+-    const __m128 vs = normalizeLanes(_mm_loadu_ps(m_state.vf[FS(instr)]));
+-    __m128 b;
+-    if constexpr (BSrc <= 3)
+-        b = normalizeLanes(_mm_set1_ps(m_state.vf[FT(instr)][BSrc]));
+-    else if constexpr (BSrc == 4)
+-        b = normalizeLanes(_mm_set1_ps(m_state.q));
+-    else if constexpr (BSrc == 5)
+-        b = normalizeLanes(_mm_set1_ps(m_state.i));
+-    else
+-        b = normalizeLanes(_mm_loadu_ps(m_state.vf[FT(instr)]));
+-
+-    __m128 result;
+-    __m256d exact;
+-    uint32_t extraSticky = 0u;
+-    if constexpr (Kind <= 2)
+-    {
+-        const __m256d dvs = _mm256_cvtps_pd(vs), db = _mm256_cvtps_pd(b);
+-        if constexpr (Kind == 0)
+-        {
+-            result = _mm_add_ps(vs, b);
+-            exact = _mm256_add_pd(dvs, db);
+-        }
+-        else if constexpr (Kind == 1)
+-        {
+-            result = _mm_sub_ps(vs, b);
+-            exact = _mm256_sub_pd(dvs, db);
+-        }
+-        else
+-        {
+-            result = _mm_mul_ps(vs, b);
+-            exact = _mm256_mul_pd(dvs, db);
+-        }
+-    }
+-    else
+-    {
+-        const __m128 acc = normalizeLanes(_mm_loadu_ps(m_state.acc));
+-        const __m256d dvs = _mm256_cvtps_pd(vs), db = _mm256_cvtps_pd(b), dacc = _mm256_cvtps_pd(acc);
+-        const __m128 product = _mm_mul_ps(vs, b);
+-        const __m256d exactProduct = _mm256_mul_pd(dvs, db);
+-        if constexpr (Kind == 3)
+-        {
+-            result = _mm_add_ps(acc, product);
+-            exact = _mm256_add_pd(dacc, exactProduct);
+-        }
+-        else
+-        {
+-            result = _mm_sub_ps(acc, product);
+-            exact = _mm256_sub_pd(dacc, exactProduct);
+-        }
+-        // Every product condition accumulates into the sticky flags (the product's own value does not matter here).
+-        __m256d zeroMask, underMask, overMask;
+-        const ExactClass p = classifyExact(exactProduct, zeroMask, underMask, overMask);
+-        extraSticky = ((p.zero & lanes) != 0u ? 1u : 0u) | ((p.negative & lanes) != 0u ? 2u : 0u) |
+-                      ((p.underflow & lanes) != 0u ? 4u : 0u) | ((p.overflow & lanes) != 0u ? 8u : 0u);
+-    }
+-
+-    // The conditions of the exact result decide the flags and replace the float result where it is zero or out of range.
+-    __m256d zeroMask, underMask, overMask;
+-    const ExactClass c = classifyExact(exact, zeroMask, underMask, overMask);
+-    const __m128i signBits = _mm_and_si128(tables.mask[c.negative], _mm_set1_epi32(static_cast<int>(0x80000000u)));
+-    __m128i resultBits = _mm_castps_si128(result);
+-    resultBits = _mm_blendv_epi8(resultBits, signBits, tables.mask[c.zero]);
+-    resultBits = _mm_blendv_epi8(resultBits, _mm_or_si128(signBits, _mm_set1_epi32(0x7F7FFFFF)), tables.mask[c.overflow]);
+-    result = _mm_castsi128_ps(resultBits);
+-
+-    if (dest != 0u)
+-    {
+-        const uint32_t mac = static_cast<uint32_t>(tables.reverse[c.zero & lanes]) | (static_cast<uint32_t>(tables.reverse[c.negative & lanes]) << 4) |
+-                             (static_cast<uint32_t>(tables.reverse[c.underflow & lanes]) << 8) | (static_cast<uint32_t>(tables.reverse[c.overflow & lanes]) << 12);
+-        const uint32_t status = ((c.zero & lanes) != 0u ? 1u : 0u) | ((c.negative & lanes) != 0u ? 2u : 0u) |
+-                                ((c.underflow & lanes) != 0u ? 4u : 0u) | ((c.overflow & lanes) != 0u ? 8u : 0u);
+-        pushFmacFlags(mac, status, extraSticky);
+-    }
+-    float *target = ToAcc ? m_state.acc : m_state.vf[FD(instr)];
+-    const __m128 old = _mm_loadu_ps(target);
+-    _mm_storeu_ps(target, _mm_blendv_ps(old, result, _mm_castsi128_ps(tables.mask[lanes])));
++    const vu1fmac::Flags flags = vu1fmac::arith<Kind, BSrc, ToAcc>(m_state, ToAcc ? m_state.acc : m_state.vf[FD(instr)], instr);
++    if (DEST(instr) != 0u)
++        pushFmacFlags(flags.mac, flags.status, flags.extraSticky);
+ }
+ 
+ const VU1Interpreter::FmacTable &VU1Interpreter::fmacTable()
+@@ -1545,6 +1414,12 @@ void VU1Interpreter::finishXgkick()
              std::cerr << std::dec << std::endl;
          }
      }
@@ -33,7 +192,7 @@ diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps
      if (m_packetObserver)
          m_packetObserver(m_xgkick.packet.data(), m_xgkick.totalBytes);
      if (m_discardPackets)
-@@ -1568,9 +1575,13 @@ void VU1Interpreter::startXgkick(uint32_t qwordAddress)
+@@ -1568,9 +1443,13 @@ void VU1Interpreter::startXgkick(uint32_t qwordAddress)
          return;
  
      const uint32_t sourceAddress = (qwordAddress * 16u) % m_activeVuDataSize;
@@ -49,7 +208,7 @@ diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps
      m_xgkick.cycleCredit = 1u; // XGKICK's issue cycle counts toward PATH1.
      m_xgkick.issueCycle = m_cycle;
  }
-@@ -2274,7 +2285,8 @@ void VU1Interpreter::execute(uint8_t *vuCode, uint32_t codeSize,
+@@ -2274,7 +2153,8 @@ void VU1Interpreter::execute(uint8_t *vuCode, uint32_t codeSize,
      m_state.vf[0][1] = 0.0f;
      m_state.vf[0][2] = 0.0f;
      m_state.vf[0][3] = 1.0f;
@@ -59,7 +218,7 @@ diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps
      if (capture.active)
      {
          m_packetObserver = observerBeforeCapture;
-@@ -2288,7 +2300,11 @@ void VU1Interpreter::resume(uint8_t *vuCode, uint32_t codeSize,
+@@ -2288,7 +2168,11 @@ void VU1Interpreter::resume(uint8_t *vuCode, uint32_t codeSize,
                              uint32_t top, uint32_t itop, uint32_t maxCycles)
  {
      if (vu1StatsEnabled())
@@ -71,7 +230,7 @@ diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps
      Vu1CaptureRun capture;
      PacketObserver observerBeforeCapture;
      if (m_unit == Unit::VU1 && vu1CaptureDir() != nullptr)
-@@ -2319,7 +2335,8 @@ void VU1Interpreter::resume(uint8_t *vuCode, uint32_t codeSize,
+@@ -2319,7 +2203,8 @@ void VU1Interpreter::resume(uint8_t *vuCode, uint32_t codeSize,
      m_state.itop = itop;
      m_state.stoppedByD = false;
      m_state.stoppedByT = false;
@@ -81,7 +240,7 @@ diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps
      if (capture.active)
      {
          m_packetObserver = observerBeforeCapture;
-@@ -2389,6 +2406,8 @@ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
+@@ -2389,6 +2274,8 @@ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
  
          if (m_pairCounters != nullptr)
              ++m_pairCounters[(m_state.pc / 8u) % kPairCounterCount];
@@ -147,3 +306,177 @@ diff --git a/ps2xRuntime/include/runtime/ps2_vu1.h b/ps2xRuntime/include/runtime
  
      void run(uint8_t *vuCode, uint32_t codeSize,
               uint8_t *vuData, uint32_t dataSize,
+diff --git a/ps2xRuntime/include/runtime/ps2_vu1_fmac.h b/ps2xRuntime/include/runtime/ps2_vu1_fmac.h
+new file mode 100644
+--- /dev/null
++++ b/ps2xRuntime/include/runtime/ps2_vu1_fmac.h
+@@ -0,0 +1,169 @@
++#ifndef PS2_VU1_FMAC_H
++#define PS2_VU1_FMAC_H
++
++// The exact arithmetic of the VU1 upper pipe's ADD, SUB, MUL, MADD and MSUB family, shared by the interpreter
++// (VU1Interpreter::fmacArith) and by the pre-timed programs (src/port/vu1aot*). It reads and writes only the register
++// state; the MAC, status and sticky results come back for the caller to queue or commit.
++
++#include "runtime/ps2_vu1.h"
++
++#include <immintrin.h>
++
++#include <cstdint>
++#include <limits>
++
++namespace vu1fmac
++{
++    // normalizeOperand on four lanes: a denormal becomes a signed zero, an infinity or NaN the signed largest finite value.
++    inline __m128 normalizeLanes(__m128 value)
++    {
++        const __m128i bits = _mm_castps_si128(value);
++        const __m128i exponent = _mm_and_si128(_mm_srli_epi32(bits, 23), _mm_set1_epi32(0xFF));
++        const __m128i sign = _mm_and_si128(bits, _mm_set1_epi32(static_cast<int>(0x80000000u)));
++        const __m128i isZero = _mm_cmpeq_epi32(exponent, _mm_setzero_si128());
++        const __m128i isMax = _mm_cmpeq_epi32(exponent, _mm_set1_epi32(0xFF));
++        __m128i out = _mm_blendv_epi8(bits, sign, isZero);
++        out = _mm_blendv_epi8(out, _mm_or_si128(sign, _mm_set1_epi32(0x7F7FFFFF)), isMax);
++        return _mm_castsi128_ps(out);
++    }
++
++    // A 4-bit lane set (bit = component) as four 32-bit lane masks, and bit-reversed (the MAC word numbers lanes from x = bit 3).
++    struct LaneTables
++    {
++        __m128i mask[16];
++        uint8_t reverse[16];
++        LaneTables()
++        {
++            for (int set = 0; set < 16; ++set)
++            {
++                mask[set] = _mm_set_epi32((set & 8) ? -1 : 0, (set & 4) ? -1 : 0, (set & 2) ? -1 : 0, (set & 1) ? -1 : 0);
++                reverse[set] = static_cast<uint8_t>(((set & 1) << 3) | ((set & 2) << 1) | ((set & 4) >> 1) | ((set & 8) >> 3));
++            }
++        }
++    };
++    inline const LaneTables g_laneTables;
++    inline const LaneTables &laneTables() { return g_laneTables; }
++
++    // The conditions normalizeFmacExactResult reports for the exact (double) results of four lanes, as lane sets.
++    struct ExactClass
++    {
++        uint32_t zero;      // result 0 or underflow (the Z flag)
++        uint32_t negative;  // sign of the exact result (S)
++        uint32_t underflow; // 0 < |exact| < smallest normal float (U; also Z)
++        uint32_t overflow;  // |exact| > largest float (O)
++    };
++
++    inline ExactClass classifyExact(__m256d exact, __m256d &zeroMask, __m256d &underMask, __m256d &overMask)
++    {
++        const __m256d magnitude = _mm256_andnot_pd(_mm256_set1_pd(-0.0), exact);
++        zeroMask = _mm256_cmp_pd(magnitude, _mm256_setzero_pd(), _CMP_EQ_OQ);
++        overMask = _mm256_cmp_pd(magnitude, _mm256_set1_pd(static_cast<double>(std::numeric_limits<float>::max())), _CMP_GT_OQ);
++        underMask = _mm256_andnot_pd(zeroMask, _mm256_cmp_pd(magnitude, _mm256_set1_pd(static_cast<double>(std::numeric_limits<float>::min())), _CMP_LT_OQ));
++        ExactClass flags;
++        flags.negative = static_cast<uint32_t>(_mm256_movemask_pd(exact));
++        flags.underflow = static_cast<uint32_t>(_mm256_movemask_pd(underMask));
++        flags.zero = static_cast<uint32_t>(_mm256_movemask_pd(zeroMask)) | flags.underflow;
++        flags.overflow = static_cast<uint32_t>(_mm256_movemask_pd(overMask));
++        return flags;
++    }
++
++    // The flag results of one operation (all zero when its dest is empty: it sets none).
++    struct Flags
++    {
++        uint32_t mac;
++        uint32_t status;
++        uint32_t extraSticky;
++    };
++
++// Kind: 0 ADD, 1 SUB, 2 MUL, 3 MADD (ACC + vs * b), 4 MSUB (ACC - vs * b). BSrc: 0 to 3 broadcast lane of vt, 4 Q, 5 I,
++// 6 vt lane by lane. ToAcc: the result goes to ACC instead of vf[fd]. The arithmetic is that of execUpper and
++// calculateFmacExactResult, done on all four lanes at once (float results, round toward zero as run() sets it; the exact
++// results in double, as the model's long double is) and used for the lanes in dest only.
++    // `target` is where the result goes: ACC, a vf register or anywhere the caller wants it discarded.
++    template <int Kind, int BSrc, bool ToAcc>
++    inline Flags arith(VU1State &st, float *target, uint32_t instr)
++{
++    const uint8_t dest = static_cast<uint8_t>((instr >> 21) & 0xFu);
++    const LaneTables &tables = laneTables();
++    const uint32_t lanes = tables.reverse[dest]; // components in dest, bit = component
++    const __m128 vs = normalizeLanes(_mm_loadu_ps(st.vf[(instr >> 11) & 0x1Fu]));
++    __m128 b;
++    if constexpr (BSrc <= 3)
++        b = normalizeLanes(_mm_set1_ps(st.vf[(instr >> 16) & 0x1Fu][BSrc]));
++    else if constexpr (BSrc == 4)
++        b = normalizeLanes(_mm_set1_ps(st.q));
++    else if constexpr (BSrc == 5)
++        b = normalizeLanes(_mm_set1_ps(st.i));
++    else
++        b = normalizeLanes(_mm_loadu_ps(st.vf[(instr >> 16) & 0x1Fu]));
++
++    __m128 result;
++    __m256d exact;
++    uint32_t extraSticky = 0u;
++    if constexpr (Kind <= 2)
++    {
++        const __m256d dvs = _mm256_cvtps_pd(vs), db = _mm256_cvtps_pd(b);
++        if constexpr (Kind == 0)
++        {
++            result = _mm_add_ps(vs, b);
++            exact = _mm256_add_pd(dvs, db);
++        }
++        else if constexpr (Kind == 1)
++        {
++            result = _mm_sub_ps(vs, b);
++            exact = _mm256_sub_pd(dvs, db);
++        }
++        else
++        {
++            result = _mm_mul_ps(vs, b);
++            exact = _mm256_mul_pd(dvs, db);
++        }
++    }
++    else
++    {
++        const __m128 acc = normalizeLanes(_mm_loadu_ps(st.acc));
++        const __m256d dvs = _mm256_cvtps_pd(vs), db = _mm256_cvtps_pd(b), dacc = _mm256_cvtps_pd(acc);
++        const __m128 product = _mm_mul_ps(vs, b);
++        const __m256d exactProduct = _mm256_mul_pd(dvs, db);
++        if constexpr (Kind == 3)
++        {
++            result = _mm_add_ps(acc, product);
++            exact = _mm256_add_pd(dacc, exactProduct);
++        }
++        else
++        {
++            result = _mm_sub_ps(acc, product);
++            exact = _mm256_sub_pd(dacc, exactProduct);
++        }
++        // Every product condition accumulates into the sticky flags (the product's own value does not matter here).
++        __m256d zeroMask, underMask, overMask;
++        const ExactClass p = classifyExact(exactProduct, zeroMask, underMask, overMask);
++        extraSticky = ((p.zero & lanes) != 0u ? 1u : 0u) | ((p.negative & lanes) != 0u ? 2u : 0u) |
++                      ((p.underflow & lanes) != 0u ? 4u : 0u) | ((p.overflow & lanes) != 0u ? 8u : 0u);
++    }
++
++    // The conditions of the exact result decide the flags and replace the float result where it is zero or out of range.
++    __m256d zeroMask, underMask, overMask;
++    const ExactClass c = classifyExact(exact, zeroMask, underMask, overMask);
++    const __m128i signBits = _mm_and_si128(tables.mask[c.negative], _mm_set1_epi32(static_cast<int>(0x80000000u)));
++    __m128i resultBits = _mm_castps_si128(result);
++    resultBits = _mm_blendv_epi8(resultBits, signBits, tables.mask[c.zero]);
++    resultBits = _mm_blendv_epi8(resultBits, _mm_or_si128(signBits, _mm_set1_epi32(0x7F7FFFFF)), tables.mask[c.overflow]);
++    result = _mm_castsi128_ps(resultBits);
++
++    Flags flags{};
++    if (dest != 0u)
++    {
++        flags.mac = static_cast<uint32_t>(tables.reverse[c.zero & lanes]) | (static_cast<uint32_t>(tables.reverse[c.negative & lanes]) << 4) |
++                    (static_cast<uint32_t>(tables.reverse[c.underflow & lanes]) << 8) | (static_cast<uint32_t>(tables.reverse[c.overflow & lanes]) << 12);
++        flags.status = ((c.zero & lanes) != 0u ? 1u : 0u) | ((c.negative & lanes) != 0u ? 2u : 0u) | ((c.underflow & lanes) != 0u ? 4u : 0u) |
++                       ((c.overflow & lanes) != 0u ? 8u : 0u);
++        flags.extraSticky = extraSticky;
++    }
++    const __m128 old = _mm_loadu_ps(target);
++    _mm_storeu_ps(target, _mm_blendv_ps(old, result, _mm_castsi128_ps(tables.mask[lanes])));
++    return flags;
++}
++}
++
++#endif
