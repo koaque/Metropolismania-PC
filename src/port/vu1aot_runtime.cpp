@@ -8,7 +8,7 @@
 //   PS2X_VU1_AOT=0       the hook is not installed
 //   PS2X_VU1_VERIFY=1    every program run is also run by the interpreter from the same snapshot and the outcomes are
 //                        compared (state, data memory, cycles, packets); the interpreter's outcome is the one kept
-//   PS2X_GS_STATS=1      a line of counters every 2 seconds, with the interpreter's
+//   PS2X_GS_TIMING=1     a line of counters and times every 2 seconds (the GS statistics PS2X_GS_STATS=1 slow the game down)
 
 #include "vu1aot.h"
 #include "vu1aot_access.h"
@@ -37,6 +37,7 @@ namespace vu1aot
             uint64_t runs = 0;       // runs a program completed
             uint64_t cycles = 0;
             double seconds = 0.0;
+            double emitSeconds = 0.0; // sending the XGKICK packets to the GS
             uint64_t bails = 0;      // programs that bailed (the interpreter ran instead)
             uint64_t notIdle = 0;    // runs that did not start with idle pipelines
             uint64_t noProgram = 0;  // no usable program for the entry (not built, unsupported, too many versions)
@@ -50,7 +51,7 @@ namespace vu1aot
         bool statsOn()
         {
             static const bool on = []() {
-                const char *value = std::getenv("PS2X_GS_STATS");
+                const char *value = std::getenv("PS2X_GS_TIMING");
                 return value != nullptr && value[0] == '1';
             }();
             return on;
@@ -126,7 +127,12 @@ namespace vu1aot
                 if (verifyOn())
                     verify(vu, a, *program);
                 else
+                {
+                    const auto emitBegin = statsOn() ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
                     Vu1AotAccess::emit(vu, m_packets);
+                    if (statsOn())
+                        g_counters.emitSeconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - emitBegin).count();
+                }
                 if (statsOn())
                     log();
                 return true;
@@ -228,13 +234,14 @@ namespace vu1aot
 
     std::string statsText()
     {
-        char text[320];
+        char text[400];
         std::snprintf(text, sizeof(text),
-                      "[vu1aot:stats] runs=%llu cycles=%llu aot_ms=%llu Mcyc/s(aot)=%.1f bails=%llu not_idle=%llu no_program=%llu built=%llu "
-                      "verified=%llu mismatches=%llu",
+                      "[vu1aot:stats] runs=%llu cycles=%llu aot_ms=%llu Mcyc/s(aot)=%.1f emit_ms=%llu bails=%llu not_idle=%llu no_program=%llu "
+                      "built=%llu verified=%llu mismatches=%llu",
                       static_cast<unsigned long long>(g_counters.runs), static_cast<unsigned long long>(g_counters.cycles),
                       static_cast<unsigned long long>(g_counters.seconds * 1000.0),
-                      g_counters.seconds > 0.0 ? g_counters.cycles / g_counters.seconds / 1e6 : 0.0, static_cast<unsigned long long>(g_counters.bails),
+                      g_counters.seconds > 0.0 ? g_counters.cycles / g_counters.seconds / 1e6 : 0.0,
+                      static_cast<unsigned long long>(g_counters.emitSeconds * 1000.0), static_cast<unsigned long long>(g_counters.bails),
                       static_cast<unsigned long long>(g_counters.notIdle), static_cast<unsigned long long>(g_counters.noProgram),
                       static_cast<unsigned long long>(g_counters.built), static_cast<unsigned long long>(g_counters.verified),
                       static_cast<unsigned long long>(g_counters.mismatches));

@@ -41,7 +41,7 @@ Progress per subsystem is tracked in [docs/PORT_STATUS.md](docs/PORT_STATUS.md).
 |---|---|
 | Boot, logos, title screen, memory card check | Works |
 | Input | Works (keyboard, pad, scripted) |
-| The city | Reached: HUD, cursor and 3D terrain render, about 20 fps (CPU rendering) |
+| The city | Reached: HUD, cursor and 3D terrain render, about 29 fps on average in the explore autoplay (30 in lighter views; CPU rendering, pre-timed VU1 programs, see docs/VU1_PROGRAMS.md) |
 | Movies, music, sound effects | Play, through a new SPU2 emulation (with reverb) |
 | Saves | Memory card check passes; loading a save from a PCSX2 memory card works |
 | Mapping (names, types, prototypes) | Done for every game function |

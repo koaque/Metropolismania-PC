@@ -388,95 +388,95 @@ new file mode 100644
 +        uint32_t extraSticky;
 +    };
 +
-+// Kind: 0 ADD, 1 SUB, 2 MUL, 3 MADD (ACC + vs * b), 4 MSUB (ACC - vs * b). BSrc: 0 to 3 broadcast lane of vt, 4 Q, 5 I,
-+// 6 vt lane by lane. ToAcc: the result goes to ACC instead of vf[fd]. The arithmetic is that of execUpper and
-+// calculateFmacExactResult, done on all four lanes at once (float results, round toward zero as run() sets it; the exact
-+// results in double, as the model's long double is) and used for the lanes in dest only.
++    // Kind: 0 ADD, 1 SUB, 2 MUL, 3 MADD (ACC + vs * b), 4 MSUB (ACC - vs * b). BSrc: 0 to 3 broadcast lane of vt, 4 Q, 5 I,
++    // 6 vt lane by lane. ToAcc: the result goes to ACC instead of vf[fd]. The arithmetic is that of execUpper and
++    // calculateFmacExactResult, done on all four lanes at once (float results, round toward zero as run() sets it; the exact
++    // results in double, as the model's long double is) and used for the lanes in dest only.
 +    // `target` is where the result goes: ACC, a vf register or anywhere the caller wants it discarded.
 +    template <int Kind, int BSrc, bool ToAcc>
 +    inline Flags arith(VU1State &st, float *target, uint32_t instr)
-+{
-+    const uint8_t dest = static_cast<uint8_t>((instr >> 21) & 0xFu);
-+    const LaneTables &tables = laneTables();
-+    const uint32_t lanes = tables.reverse[dest]; // components in dest, bit = component
-+    const __m128 vs = normalizeLanes(_mm_loadu_ps(st.vf[(instr >> 11) & 0x1Fu]));
-+    __m128 b;
-+    if constexpr (BSrc <= 3)
-+        b = normalizeLanes(_mm_set1_ps(st.vf[(instr >> 16) & 0x1Fu][BSrc]));
-+    else if constexpr (BSrc == 4)
-+        b = normalizeLanes(_mm_set1_ps(st.q));
-+    else if constexpr (BSrc == 5)
-+        b = normalizeLanes(_mm_set1_ps(st.i));
-+    else
-+        b = normalizeLanes(_mm_loadu_ps(st.vf[(instr >> 16) & 0x1Fu]));
++    {
++        const uint8_t dest = static_cast<uint8_t>((instr >> 21) & 0xFu);
++        const LaneTables &tables = laneTables();
++        const uint32_t lanes = tables.reverse[dest]; // components in dest, bit = component
++        const __m128 vs = normalizeLanes(_mm_loadu_ps(st.vf[(instr >> 11) & 0x1Fu]));
++        __m128 b;
++        if constexpr (BSrc <= 3)
++            b = normalizeLanes(_mm_set1_ps(st.vf[(instr >> 16) & 0x1Fu][BSrc]));
++        else if constexpr (BSrc == 4)
++            b = normalizeLanes(_mm_set1_ps(st.q));
++        else if constexpr (BSrc == 5)
++            b = normalizeLanes(_mm_set1_ps(st.i));
++        else
++            b = normalizeLanes(_mm_loadu_ps(st.vf[(instr >> 16) & 0x1Fu]));
 +
-+    __m128 result;
-+    __m256d exact;
-+    uint32_t extraSticky = 0u;
-+    if constexpr (Kind <= 2)
-+    {
-+        const __m256d dvs = _mm256_cvtps_pd(vs), db = _mm256_cvtps_pd(b);
-+        if constexpr (Kind == 0)
++        __m128 result;
++        __m256d exact;
++        uint32_t extraSticky = 0u;
++        if constexpr (Kind <= 2)
 +        {
-+            result = _mm_add_ps(vs, b);
-+            exact = _mm256_add_pd(dvs, db);
-+        }
-+        else if constexpr (Kind == 1)
-+        {
-+            result = _mm_sub_ps(vs, b);
-+            exact = _mm256_sub_pd(dvs, db);
-+        }
-+        else
-+        {
-+            result = _mm_mul_ps(vs, b);
-+            exact = _mm256_mul_pd(dvs, db);
-+        }
-+    }
-+    else
-+    {
-+        const __m128 acc = normalizeLanes(_mm_loadu_ps(st.acc));
-+        const __m256d dvs = _mm256_cvtps_pd(vs), db = _mm256_cvtps_pd(b), dacc = _mm256_cvtps_pd(acc);
-+        const __m128 product = _mm_mul_ps(vs, b);
-+        const __m256d exactProduct = _mm256_mul_pd(dvs, db);
-+        if constexpr (Kind == 3)
-+        {
-+            result = _mm_add_ps(acc, product);
-+            exact = _mm256_add_pd(dacc, exactProduct);
++            const __m256d dvs = _mm256_cvtps_pd(vs), db = _mm256_cvtps_pd(b);
++            if constexpr (Kind == 0)
++            {
++                result = _mm_add_ps(vs, b);
++                exact = _mm256_add_pd(dvs, db);
++            }
++            else if constexpr (Kind == 1)
++            {
++                result = _mm_sub_ps(vs, b);
++                exact = _mm256_sub_pd(dvs, db);
++            }
++            else
++            {
++                result = _mm_mul_ps(vs, b);
++                exact = _mm256_mul_pd(dvs, db);
++            }
 +        }
 +        else
 +        {
-+            result = _mm_sub_ps(acc, product);
-+            exact = _mm256_sub_pd(dacc, exactProduct);
++            const __m128 acc = normalizeLanes(_mm_loadu_ps(st.acc));
++            const __m256d dvs = _mm256_cvtps_pd(vs), db = _mm256_cvtps_pd(b), dacc = _mm256_cvtps_pd(acc);
++            const __m128 product = _mm_mul_ps(vs, b);
++            const __m256d exactProduct = _mm256_mul_pd(dvs, db);
++            if constexpr (Kind == 3)
++            {
++                result = _mm_add_ps(acc, product);
++                exact = _mm256_add_pd(dacc, exactProduct);
++            }
++            else
++            {
++                result = _mm_sub_ps(acc, product);
++                exact = _mm256_sub_pd(dacc, exactProduct);
++            }
++            // Every product condition accumulates into the sticky flags (the product's own value does not matter here).
++            __m256d zeroMask, underMask, overMask;
++            const ExactClass p = classifyExact(exactProduct, zeroMask, underMask, overMask);
++            extraSticky = ((p.zero & lanes) != 0u ? 1u : 0u) | ((p.negative & lanes) != 0u ? 2u : 0u) |
++                          ((p.underflow & lanes) != 0u ? 4u : 0u) | ((p.overflow & lanes) != 0u ? 8u : 0u);
 +        }
-+        // Every product condition accumulates into the sticky flags (the product's own value does not matter here).
++
++        // The conditions of the exact result decide the flags and replace the float result where it is zero or out of range.
 +        __m256d zeroMask, underMask, overMask;
-+        const ExactClass p = classifyExact(exactProduct, zeroMask, underMask, overMask);
-+        extraSticky = ((p.zero & lanes) != 0u ? 1u : 0u) | ((p.negative & lanes) != 0u ? 2u : 0u) |
-+                      ((p.underflow & lanes) != 0u ? 4u : 0u) | ((p.overflow & lanes) != 0u ? 8u : 0u);
-+    }
++        const ExactClass c = classifyExact(exact, zeroMask, underMask, overMask);
++        const __m128i signBits = _mm_and_si128(tables.mask[c.negative], _mm_set1_epi32(static_cast<int>(0x80000000u)));
++        __m128i resultBits = _mm_castps_si128(result);
++        resultBits = _mm_blendv_epi8(resultBits, signBits, tables.mask[c.zero]);
++        resultBits = _mm_blendv_epi8(resultBits, _mm_or_si128(signBits, _mm_set1_epi32(0x7F7FFFFF)), tables.mask[c.overflow]);
++        result = _mm_castsi128_ps(resultBits);
 +
-+    // The conditions of the exact result decide the flags and replace the float result where it is zero or out of range.
-+    __m256d zeroMask, underMask, overMask;
-+    const ExactClass c = classifyExact(exact, zeroMask, underMask, overMask);
-+    const __m128i signBits = _mm_and_si128(tables.mask[c.negative], _mm_set1_epi32(static_cast<int>(0x80000000u)));
-+    __m128i resultBits = _mm_castps_si128(result);
-+    resultBits = _mm_blendv_epi8(resultBits, signBits, tables.mask[c.zero]);
-+    resultBits = _mm_blendv_epi8(resultBits, _mm_or_si128(signBits, _mm_set1_epi32(0x7F7FFFFF)), tables.mask[c.overflow]);
-+    result = _mm_castsi128_ps(resultBits);
-+
-+    Flags flags{};
-+    if (dest != 0u)
-+    {
-+        flags.mac = static_cast<uint32_t>(tables.reverse[c.zero & lanes]) | (static_cast<uint32_t>(tables.reverse[c.negative & lanes]) << 4) |
-+                    (static_cast<uint32_t>(tables.reverse[c.underflow & lanes]) << 8) | (static_cast<uint32_t>(tables.reverse[c.overflow & lanes]) << 12);
-+        flags.status = ((c.zero & lanes) != 0u ? 1u : 0u) | ((c.negative & lanes) != 0u ? 2u : 0u) | ((c.underflow & lanes) != 0u ? 4u : 0u) |
-+                       ((c.overflow & lanes) != 0u ? 8u : 0u);
-+        flags.extraSticky = extraSticky;
++        Flags flags{};
++        if (dest != 0u)
++        {
++            flags.mac = static_cast<uint32_t>(tables.reverse[c.zero & lanes]) | (static_cast<uint32_t>(tables.reverse[c.negative & lanes]) << 4) |
++                        (static_cast<uint32_t>(tables.reverse[c.underflow & lanes]) << 8) | (static_cast<uint32_t>(tables.reverse[c.overflow & lanes]) << 12);
++            flags.status = ((c.zero & lanes) != 0u ? 1u : 0u) | ((c.negative & lanes) != 0u ? 2u : 0u) | ((c.underflow & lanes) != 0u ? 4u : 0u) |
++                           ((c.overflow & lanes) != 0u ? 8u : 0u);
++            flags.extraSticky = extraSticky;
++        }
++        const __m128 old = _mm_loadu_ps(target);
++        _mm_storeu_ps(target, _mm_blendv_ps(old, result, _mm_castsi128_ps(tables.mask[lanes])));
++        return flags;
 +    }
-+    const __m128 old = _mm_loadu_ps(target);
-+    _mm_storeu_ps(target, _mm_blendv_ps(old, result, _mm_castsi128_ps(tables.mask[lanes])));
-+    return flags;
-+}
 +}
 +
 +#endif

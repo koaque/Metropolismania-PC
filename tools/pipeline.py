@@ -20,7 +20,8 @@ Steps, in order:
   capture     visible run that records calls of chosen functions into work/difftest/
   difftest    replay those records through ported and generated code, headless
   vu1-capture visible run that records VU1 program runs (PS2X_VU1_CAPTURE) into work/vu1_aot/records/
-  vu1-test    replay those VU1 runs through the interpreter and compare, headless (plan P4)
+  vu1-test    replay those VU1 runs through the interpreter and compare, headless (plan P4); --aot runs them
+              through the pre-timed programs (run), checks their timing model (timing) or fuzzes their ops (fuzz)
   all         bootstrap, tools, extract, analyze, recompile, stage, build
 
 Everything under original/, generated/, work/, build/ and logs/ is git-ignored.
@@ -655,12 +656,16 @@ def cmd_vu1_test(args: argparse.Namespace) -> None:
     exe = tool("ps2EntryRunner")
     env = dict(os.environ, MMPC_VU1_TEST=str(VU1_RECORDS), PS2X_HEADLESS="1")
     env.setdefault("MMPC_VU1_TEST_REPEAT", str(args.repeat))
+    if args.aot:
+        env["MMPC_VU1_AOT"] = args.aot
+    if args.fuzz:
+        env["MMPC_VU1_FUZZ"] = str(args.fuzz)
     env.pop("PS2X_WINDOW_POS", None)
     with log_path.open("w", encoding="utf-8", errors="replace") as fh:
         code = subprocess.run([str(exe), str(ORIGINAL / ELF_NAME)], stdout=fh, stderr=subprocess.STDOUT, cwd=exe.parent,
                               env=env, timeout=1800).returncode
     lines = [l for l in log_path.read_text(encoding="utf-8", errors="replace").splitlines()
-             if l.startswith(("[vu1test]", "    "))]
+             if l.startswith(("[vu1test]", "[vu1aot", "    "))]
     print("\n".join(lines))
     log(f"vu1-test exit code {code}; log {log_path}")
     if code != 0:
@@ -737,6 +742,10 @@ def main() -> int:
     p.set_defaults(func=cmd_vu1_capture)
     p = sub.add_parser("vu1-test", help="replay work/vu1_aot/records through the VU1 interpreter and compare")
     p.add_argument("--repeat", type=int, default=20, help="runs of every record (only the first is compared), for a steadier speed figure")
+    p.add_argument("--aot", choices=["run", "timing", "fuzz"],
+                   help="run: replay through the pre-timed programs; timing: check their schedule against the interpreter's pair trace; "
+                        "fuzz: random pairs through the native ops and the interpreter's own functions")
+    p.add_argument("--fuzz", type=int, default=0, help="cases for the fuzz checks (default 200,000)")
     p.set_defaults(func=cmd_vu1_test)
     p = sub.add_parser("all")
     p.add_argument("image", nargs="?")

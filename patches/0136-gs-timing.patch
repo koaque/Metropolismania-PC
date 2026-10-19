@@ -1,0 +1,143 @@
+GS: PS2X_GS_TIMING=1 reports, every 2 seconds, the time the calling thread spends in processGIFPacket and in the threaded backend's push and sync waits. The GS statistics (PS2X_GS_STATS=1) slow the game down; this does not.
+
+diff --git a/ps2xRuntime/src/lib/gs/gs_frontend.cpp b/ps2xRuntime/src/lib/gs/gs_frontend.cpp
+--- a/ps2xRuntime/src/lib/gs/gs_frontend.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_frontend.cpp
+@@ -8,6 +8,7 @@
+ #include <cmath>
+ #include <cstdio>
+ #include <cstring>
++#include <optional>
+ #include <iostream>
+ #include <sstream>
+ #include <string>
+@@ -907,11 +908,60 @@ bool GS::copyLatchedHostPresentationFrame(std::vector<uint8_t> &outPixels,
+     return true;
+ }
+ 
++namespace
++{
++    // PS2X_GS_TIMING=1: the time the calling thread spends in processGIFPacket (the lock wait left out), reported every 2 s.
++    struct GifTiming
++    {
++        std::atomic<uint64_t> nanoseconds{0};
++        std::atomic<uint64_t> packets{0};
++        std::atomic<uint64_t> bytes{0};
++        std::chrono::steady_clock::time_point last = std::chrono::steady_clock::now();
++    };
++    GifTiming g_gifTiming;
++
++    bool gifTimingEnabled()
++    {
++        static const bool on = []()
++        {
++            const char *value = std::getenv("PS2X_GS_TIMING");
++            return value != nullptr && value[0] == '1';
++        }();
++        return on;
++    }
++
++    struct GifTimer
++    {
++        std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
++        uint32_t size;
++        explicit GifTimer(uint32_t sizeBytes) : size(sizeBytes) {}
++        ~GifTimer()
++        {
++            const auto now = std::chrono::steady_clock::now();
++            g_gifTiming.nanoseconds += static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(now - begin).count());
++            ++g_gifTiming.packets;
++            g_gifTiming.bytes += size;
++            if (now - g_gifTiming.last >= std::chrono::seconds(2))
++            {
++                std::cerr << "[gs:front] gif_ms=" << g_gifTiming.nanoseconds.load() / 1000000u << " packets=" << g_gifTiming.packets.load()
++                          << " bytes=" << g_gifTiming.bytes.load() << std::endl;
++                g_gifTiming.nanoseconds = 0;
++                g_gifTiming.packets = 0;
++                g_gifTiming.bytes = 0;
++                g_gifTiming.last = now;
++            }
++        }
++    };
++}
++
+ void GS::processGIFPacket(const uint8_t *data, uint32_t sizeBytes)
+ {
+     std::lock_guard<std::recursive_mutex> lock(m_stateMutex);
+     if (!data || sizeBytes < 16 || !m_backend)
+         return;
++    std::optional<GifTimer> timer;
++    if (gifTimingEnabled())
++        timer.emplace(sizeBytes);
+ 
+     if (tryProcessNativeImageUploadPacket(data, sizeBytes))
+         return;
+diff --git a/ps2xRuntime/src/lib/gs/gs_threaded_backend.cpp b/ps2xRuntime/src/lib/gs/gs_threaded_backend.cpp
+--- a/ps2xRuntime/src/lib/gs/gs_threaded_backend.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_threaded_backend.cpp
+@@ -456,24 +456,65 @@ struct GSThreadedBackend::Impl
+         }
+     }
+ 
++    // PS2X_GS_TIMING=1: the producer's time in push() (the whole call, and the part spent waiting for a full queue) and in drain(),
++    // reported every 2 s.
++    const bool timingEnabled = []()
++    {
++        const char *value = std::getenv("PS2X_GS_TIMING");
++        return value != nullptr && value[0] == '1';
++    }();
++    uint64_t timePushNs = 0, timePushWaitNs = 0, timeDrainNs = 0, timePushes = 0, timeDrains = 0;
++    std::chrono::steady_clock::time_point timeLast = std::chrono::steady_clock::now();
++
++    static uint64_t nanosecondsSince(std::chrono::steady_clock::time_point begin, std::chrono::steady_clock::time_point end)
++    {
++        return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count());
++    }
++
+     void push(Command command)
+     {
++        const auto pushBegin = timingEnabled ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+         std::unique_lock<std::mutex> lock(queueMutex);
+         if (queue.size() >= kMaxQueuedCommands)
++        {
++            const auto waitBegin = timingEnabled ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+             progress.wait(lock, [&] { return queue.size() < kMaxQueuedCommands / 2u; });
++            if (timingEnabled)
++                timePushWaitNs += nanosecondsSince(waitBegin, std::chrono::steady_clock::now());
++        }
+         const bool wasEmpty = queue.empty();
+         queue.push_back(std::move(command));
+         ++submitted;
+         if (wasEmpty)
+             workAvailable.notify_one();
++        if (timingEnabled)
++        {
++            const auto now = std::chrono::steady_clock::now();
++            timePushNs += nanosecondsSince(pushBegin, now);
++            ++timePushes;
++            if (now - timeLast >= std::chrono::seconds(2))
++            {
++                std::cerr << "[gs:sync] pushes=" << timePushes << " push_ms=" << timePushNs / 1000000u << " push_wait_ms=" << timePushWaitNs / 1000000u
++                          << " syncs=" << timeDrains << " sync_ms=" << timeDrainNs / 1000000u << std::endl;
++                timePushNs = timePushWaitNs = timeDrainNs = timePushes = timeDrains = 0;
++                timeLast = now;
++            }
++        }
+     }
+ 
+     // Waits until every command pushed before this call has executed.
+     void drain() const
+     {
++        const auto begin = timingEnabled ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+         std::unique_lock<std::mutex> lock(queueMutex);
+         const uint64_t target = submitted;
+         progress.wait(lock, [&] { return completed >= target; });
++        if (timingEnabled)
++        {
++            Impl *self = const_cast<Impl *>(this);
++            self->timeDrainNs += nanosecondsSince(begin, std::chrono::steady_clock::now());
++            ++self->timeDrains;
++        }
+     }
+ 
+     void execute(const Command &command, int &rounding)
