@@ -42,10 +42,12 @@ diff --git a/ps2xRuntime/include/runtime/ps2_vu1.h b/ps2xRuntime/include/runtime
      struct DecodedInstructionPair
      {
          uint32_t lower = 0;
-@@ -160,6 +173,22 @@ private:
+@@ -160,6 +173,24 @@ private:
          bool tBit = false;
          uint8_t upperVfShadowReg = 0;
          uint8_t suppressedLowerVf = 0;
++        bool lowerNop = false;      // the lower half does nothing (a NOP, or the lower word is the I-bit immediate)
++        bool hasEndBits = false;    // E, D or T bit set
 +        FmacFn upperFast = nullptr; // the upper half's specialized executor (see fmacArith), or null for execUpper
 +        // What calculatePairReadyCycle and markPairWrites need, worked out once from the usage above. Scoreboard
 +        // slots are reg * 4 + component into m_vfReady.
@@ -65,7 +67,7 @@ diff --git a/ps2xRuntime/include/runtime/ps2_vu1.h b/ps2xRuntime/include/runtime
      };
  
      struct FlagPipelineEntry
-@@ -263,7 +292,11 @@ private:
+@@ -263,7 +294,11 @@ private:
      float m_fmacQ = 0.0f;
      float m_fmacI = 0.0f;
  
@@ -77,7 +79,7 @@ diff --git a/ps2xRuntime/include/runtime/ps2_vu1.h b/ps2xRuntime/include/runtime
      ScalarPipelineEntry m_fdiv{};
      std::array<ScalarPipelineEntry, 2> m_efu{};
      std::array<PendingStore, kMaxPendingStores> m_storePipeline{};
-@@ -272,7 +305,6 @@ private:
+@@ -272,7 +307,6 @@ private:
      std::array<PendingAccWrite, kMaxPendingAccWrites> m_accWritePipeline{};
      // Bit i set while entry i of the matching pipeline is valid, so the per-cycle commit and the
      // free-slot searches only visit live entries (always in index order, like a full scan).
@@ -85,7 +87,7 @@ diff --git a/ps2xRuntime/include/runtime/ps2_vu1.h b/ps2xRuntime/include/runtime
      uint32_t m_efuValid = 0;
      uint32_t m_storeValid = 0;
      uint32_t m_vfValid = 0;
-@@ -292,6 +324,8 @@ private:
+@@ -292,6 +326,8 @@ private:
      uint64_t m_cycle = 0;
      uint64_t m_nextWriteSequence = 0;
      uint64_t m_efuResourceReady = 0;
@@ -94,7 +96,7 @@ diff --git a/ps2xRuntime/include/runtime/ps2_vu1.h b/ps2xRuntime/include/runtime
      uint32_t m_workingClip = 0;
      uint32_t m_currentUpperInstruction = 0;
      int32_t m_viBranchBackupValue = 0;
-@@ -307,6 +341,7 @@ private:
+@@ -307,6 +343,7 @@ private:
      PacketObserver m_packetObserver;
      bool m_discardPackets = false;
      bool m_standaloneCode = false;
@@ -102,7 +104,7 @@ diff --git a/ps2xRuntime/include/runtime/ps2_vu1.h b/ps2xRuntime/include/runtime
  
      void run(uint8_t *vuCode, uint32_t codeSize,
               uint8_t *vuData, uint32_t dataSize,
-@@ -319,9 +354,25 @@ private:
+@@ -319,9 +356,25 @@ private:
      static uint8_t vfReadLanes(const InstructionUsage &usage, uint8_t reg);
      DecodedInstructionPair decodeInstructionPair(const uint8_t *vuCode, uint32_t pc) const;
      const DecodedInstructionPair &getDecodedInstructionPairForPc(const uint8_t *vuCode, uint32_t codeSize, PS2Memory *memory, uint32_t pc);
@@ -128,7 +130,7 @@ diff --git a/ps2xRuntime/include/runtime/ps2_vu1.h b/ps2xRuntime/include/runtime
      void execLower(uint32_t instr, uint8_t *vuData, uint32_t dataSize, GS &gs, PS2Memory *memory, uint32_t upperInstr);
  
      void applyDest(float *dst, const float *result, uint8_t dest);
-@@ -333,6 +384,7 @@ private:
+@@ -333,6 +386,7 @@ private:
      uint8_t normalizeFmacExactResult(float &value, long double exactResult) const;
      uint32_t calculateFmacProductSticky(uint8_t dest) const;
      void updateFmacFlags(const uint8_t laneFlags[4], uint8_t dest, uint32_t extraSticky);
@@ -465,8 +467,7 @@ diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps
 +            m_flagPipeline[i] = savedEntries[i];
 +    };
 +    struct Result
-     {
--        reportReservedInstruction(false, 0xFFFFFFFEu);
++    {
 +        uint32_t vf[32][4];
 +        uint32_t acc[4];
 +        bool pushed;
@@ -563,7 +564,8 @@ diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps
 +void VU1Interpreter::pushFmacFlags(uint32_t mac, uint32_t status, uint32_t extraSticky)
 +{
 +    if (m_flagCount == kMaxFlagEntries)
-+    {
+     {
+-        reportReservedInstruction(false, 0xFFFFFFFEu);
 +        reportReservedInstruction(true, 0xFFFFFFFFu);
          return;
      }
@@ -718,7 +720,8 @@ diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps
          advanceOneCycle();
  }
  
- uint64_t VU1Interpreter::calculatePairReadyCycle(const DecodedInstructionPair &decoded) const
+-uint64_t VU1Interpreter::calculatePairReadyCycle(const DecodedInstructionPair &decoded) const
++__forceinline uint64_t VU1Interpreter::calculatePairReadyCycle(const DecodedInstructionPair &decoded) const
  {
      uint64_t ready = m_cycle;
 -    const InstructionUsage *usages[2] = {
@@ -777,7 +780,8 @@ diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps
      return ready;
  }
  
- void VU1Interpreter::markPairWrites(const DecodedInstructionPair &decoded)
+-void VU1Interpreter::markPairWrites(const DecodedInstructionPair &decoded)
++__forceinline void VU1Interpreter::markPairWrites(const DecodedInstructionPair &decoded)
  {
 -    const VfAccess lowerWrite = decoded.lowerUsage.vfWrite;
 -    if (lowerWrite.reg != 0u &&
@@ -837,12 +841,14 @@ diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps
      }
  }
  
-@@ -1788,6 +2097,44 @@ VU1Interpreter::DecodedInstructionPair VU1Interpreter::decodeInstructionPair(con
+@@ -1788,6 +2097,46 @@ VU1Interpreter::DecodedInstructionPair VU1Interpreter::decodeInstructionPair(con
          if (decoded.lowerUsage.vfWrite.reg == upperWriteReg)
              decoded.suppressedLowerVf = upperWriteReg;
      }
 +
 +    decoded.upperFast = classifyFmac(decoded.upper);
++    decoded.lowerNop = decoded.iBit || decoded.lower == 0x00000000u || decoded.lower == 0x8000033Cu;
++    decoded.hasEndBits = decoded.eBit || decoded.dBit || decoded.tBit;
 +    const InstructionUsage *usages[2] = {&decoded.upperUsage, &decoded.lowerUsage};
 +    for (const InstructionUsage *usage : usages)
 +    {
@@ -882,7 +888,7 @@ diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps
      return decoded;
  }
  
-@@ -1807,18 +2154,16 @@ void VU1Interpreter::rebuildDecodedCodeCache(const uint8_t *vuCode, uint32_t cod
+@@ -1807,18 +2156,16 @@ void VU1Interpreter::rebuildDecodedCodeCache(const uint8_t *vuCode, uint32_t cod
  
  // The reference stays valid until the next call (pairs outside the cache are decoded into
  // m_uncachedPair).
@@ -905,7 +911,7 @@ diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps
  
      const uint64_t generation = m_standaloneCode ? 0u
                                  : m_unit == Unit::VU1 ? memory->getVU1CodeGeneration()
-@@ -1831,6 +2176,15 @@ const VU1Interpreter::DecodedInstructionPair &VU1Interpreter::getDecodedInstruct
+@@ -1831,6 +2178,15 @@ const VU1Interpreter::DecodedInstructionPair &VU1Interpreter::getDecodedInstruct
      {
          rebuildDecodedCodeCache(vuCode, codeSize, memory, generation);
      }
@@ -921,7 +927,7 @@ diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps
      const uint32_t pairIndex = pc / 8u;
      if (pairIndex >= kMaxDecodedPairs)
          return m_uncachedPair = decodeInstructionPair(vuCode, pc);
-@@ -1973,13 +2327,19 @@ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
+@@ -1973,13 +2329,19 @@ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
      const bool useVuRounding = std::fesetround(FE_TOWARDZERO) == 0;
      const uint64_t budgetEnd = m_cycle + maxCycles;
      bool programEnded = false;
@@ -943,7 +949,7 @@ diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps
          if (decoded.upperUsage.reserved || decoded.lowerUsage.reserved)
          {
              reportReservedInstruction(decoded.upperUsage.reserved, decoded.upperUsage.reserved ? decoded.upper : decoded.lower);
-@@ -2012,11 +2372,17 @@ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
+@@ -2012,27 +2374,40 @@ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
              oldVi = m_state.vi[writtenVi];
          }
  
@@ -959,11 +965,20 @@ diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps
 +        const bool hasUpperWrite = !immediate && upperWrite.reg != 0u;
 +        const bool hasLowerWrite = !immediate && lowerWrite.reg != 0u && decoded.suppressedLowerVf != lowerWrite.reg;
          const bool hasDistinctLowerWrite = hasLowerWrite && (!hasUpperWrite || lowerWrite.reg != upperWrite.reg);
+-        float oldUpperVf[4]{};
+-        float newUpperVf[4]{};
+-        float oldLowerVf[4]{};
+-        float newLowerVf[4]{};
+-        float oldAcc[4]{};
+-        float newAcc[4]{};
 +        const bool savesAcc = !immediate && decoded.upperUsage.accWrite != 0u;
-         float oldUpperVf[4]{};
-         float newUpperVf[4]{};
-         float oldLowerVf[4]{};
-@@ -2027,12 +2393,19 @@ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
++        float oldUpperVf[4];
++        float newUpperVf[4];
++        float oldLowerVf[4];
++        float newLowerVf[4];
++        float oldAcc[4];
++        float newAcc[4];
+         if (hasUpperWrite)
              std::memcpy(oldUpperVf, m_state.vf[upperWrite.reg], sizeof(oldUpperVf));
          if (hasDistinctLowerWrite)
              std::memcpy(oldLowerVf, m_state.vf[lowerWrite.reg], sizeof(oldLowerVf));
@@ -985,7 +1000,7 @@ diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps
              float immediate = 0.0f;
              std::memcpy(&immediate, &decoded.lower, sizeof(immediate));
              m_state.i = normalizeOperand(immediate);
-@@ -2044,7 +2417,7 @@ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
+@@ -2044,7 +2419,7 @@ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
              std::memcpy(oldVf,
                          m_state.vf[decoded.upperVfShadowReg],
                          sizeof(oldVf));
@@ -994,16 +1009,19 @@ diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps
              std::memcpy(upperVf,
                          m_state.vf[decoded.upperVfShadowReg],
                          sizeof(upperVf));
-@@ -2058,7 +2431,7 @@ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
+@@ -2058,8 +2433,9 @@ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
          }
          else
          {
 -            execUpper(decoded.upper);
+-            execLower(decoded.lower, vuData, dataSize, gs, memory, decoded.upper);
 +            runUpper();
-             execLower(decoded.lower, vuData, dataSize, gs, memory, decoded.upper);
++            if (!decoded.lowerNop)
++                execLower(decoded.lower, vuData, dataSize, gs, memory, decoded.upper);
          }
  
-@@ -2083,7 +2456,7 @@ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
+         m_viBranchBackupValid = false;
+@@ -2083,7 +2459,7 @@ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
                                           : decoded.lowerUsage.latency;
              queueVfWrite(lowerWrite.reg, lowerWrite.lanes, newLowerVf, latency);
          }
@@ -1012,6 +1030,67 @@ diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps
          {
              std::memcpy(newAcc, m_state.acc, sizeof(newAcc));
              std::memcpy(m_state.acc, oldAcc, sizeof(oldAcc));
+@@ -2131,32 +2507,35 @@ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
+             }
+         }
+ 
+-        const bool dHalt = decoded.dBit && m_state.dBitEnabled;
+-        const bool tHalt = decoded.tBit && m_state.tBitEnabled;
+-        const bool haltBit = dHalt || tHalt;
+-        const bool haltBranch = haltBit && decoded.lowerUsage.pipeline == PipelineBranch;
+-
+-        if (m_state.haltAfterDelaySlot)
+-        {
+-            m_state.stoppedByD = m_pendingHaltD;
+-            m_state.stoppedByT = m_pendingHaltT;
+-            programEnded = true;
+-        }
+-        else if (m_state.ebit)
+-            programEnded = true;
+-        else if (haltBit && !haltBranch)
++        if (decoded.hasEndBits || m_state.haltAfterDelaySlot || m_state.ebit)
+         {
+-            m_state.stoppedByD = dHalt;
+-            m_state.stoppedByT = tHalt;
+-            programEnded = true;
+-        }
+-        else if (decoded.eBit)
+-            m_state.ebit = true;
+-        else if (haltBranch)
+-        {
+-            m_state.haltAfterDelaySlot = true;
+-            m_pendingHaltD = dHalt;
+-            m_pendingHaltT = tHalt;
++            const bool dHalt = decoded.dBit && m_state.dBitEnabled;
++            const bool tHalt = decoded.tBit && m_state.tBitEnabled;
++            const bool haltBit = dHalt || tHalt;
++            const bool haltBranch = haltBit && decoded.lowerUsage.pipeline == PipelineBranch;
++
++            if (m_state.haltAfterDelaySlot)
++            {
++                m_state.stoppedByD = m_pendingHaltD;
++                m_state.stoppedByT = m_pendingHaltT;
++                programEnded = true;
++            }
++            else if (m_state.ebit)
++                programEnded = true;
++            else if (haltBit && !haltBranch)
++            {
++                m_state.stoppedByD = dHalt;
++                m_state.stoppedByT = tHalt;
++                programEnded = true;
++            }
++            else if (decoded.eBit)
++                m_state.ebit = true;
++            else if (haltBranch)
++            {
++                m_state.haltAfterDelaySlot = true;
++                m_pendingHaltD = dHalt;
++                m_pendingHaltT = tHalt;
++            }
+         }
+ 
+         advanceOneCycle();
 diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_upper.cpp b/ps2xRuntime/src/lib/vu/ps2_vu1_upper.cpp
 --- a/ps2xRuntime/src/lib/vu/ps2_vu1_upper.cpp
 +++ b/ps2xRuntime/src/lib/vu/ps2_vu1_upper.cpp
