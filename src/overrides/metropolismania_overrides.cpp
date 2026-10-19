@@ -9,6 +9,7 @@
 // wrap them with registerFunction and fall back to $ra, as in the upstream walkthrough.
 
 #include "difftest.h"
+#include "vu1test.h"
 #include "game_overrides.h"
 #include "port.h"
 #include "ps2_runtime.h"
@@ -452,6 +453,7 @@ namespace
         port::installCapture(runtime);
         port::installCallCounts(runtime);
         port::runDifftestIfRequested(runtime); // exits when MMPC_DIFFTEST is set
+        port::runVu1TestIfRequested(); // exits when MMPC_VU1_TEST is set
         installTrace(runtime);
         installMovieSkip(runtime);
         installGsTrace(runtime);

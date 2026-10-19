@@ -19,6 +19,8 @@ Steps, in order:
   run         start the runner with a timeout and capture a log in logs/
   capture     visible run that records calls of chosen functions into work/difftest/
   difftest    replay those records through ported and generated code, headless
+  vu1-capture visible run that records VU1 program runs (PS2X_VU1_CAPTURE) into work/vu1_aot/records/
+  vu1-test    replay those VU1 runs through the interpreter and compare, headless (plan P4)
   all         bootstrap, tools, extract, analyze, recompile, stage, build
 
 Everything under original/, generated/, work/, build/ and logs/ is git-ignored.
@@ -594,6 +596,7 @@ def cmd_run(args: argparse.Namespace) -> None:
 
 
 DIFFTEST = WORK / "difftest"
+VU1_RECORDS = WORK / "vu1_aot" / "records"
 
 
 def cmd_capture(args: argparse.Namespace) -> None:
@@ -630,6 +633,36 @@ def cmd_difftest(args: argparse.Namespace) -> None:
              if l.startswith(("[difftest]", "    ", "[port]"))]
     print("\n".join(lines))
     log(f"difftest exit code {code}; log {log_path}")
+    if code != 0:
+        sys.exit(code)
+
+
+def cmd_vu1_capture(args: argparse.Namespace) -> None:
+    """A visible run to the city (autoplay) that writes whole VU1 program runs (MSCAL) to work/vu1_aot/records/
+    (PS2X_VU1_CAPTURE, patches/0132): up to --max files for each distinct (code, start PC)."""
+    args.env = [f"PS2X_VU1_CAPTURE={VU1_RECORDS}", f"PS2X_VU1_CAPTURE_MAX={args.max}", f"MMPC_AUTOPLAY={args.autoplay}",
+                "MMPC_SKIP_MOVIES=1"] + (args.env or [])
+    args.pad = None
+    cmd_run(args)
+
+
+def cmd_vu1_test(args: argparse.Namespace) -> None:
+    """Replay the VU1 runs in work/vu1_aot/records/ headless (src/port/vu1test.cpp): each through the interpreter,
+    compared with what the game run recorded (state, data memory, cycles, XGKICK packets). Exits non-zero on any
+    difference. Also prints the interpreter's speed on these runs."""
+    LOGS.mkdir(exist_ok=True)
+    log_path = LOGS / f"vu1test-{dt.datetime.now():%Y%m%d-%H%M%S}.log"
+    exe = tool("ps2EntryRunner")
+    env = dict(os.environ, MMPC_VU1_TEST=str(VU1_RECORDS), PS2X_HEADLESS="1")
+    env.setdefault("MMPC_VU1_TEST_REPEAT", str(args.repeat))
+    env.pop("PS2X_WINDOW_POS", None)
+    with log_path.open("w", encoding="utf-8", errors="replace") as fh:
+        code = subprocess.run([str(exe), str(ORIGINAL / ELF_NAME)], stdout=fh, stderr=subprocess.STDOUT, cwd=exe.parent,
+                              env=env, timeout=1800).returncode
+    lines = [l for l in log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+             if l.startswith(("[vu1test]", "    "))]
+    print("\n".join(lines))
+    log(f"vu1-test exit code {code}; log {log_path}")
     if code != 0:
         sys.exit(code)
 
@@ -693,6 +726,18 @@ def main() -> int:
                    "the original run changed")
     p.add_argument("--only", default="", help="comma-separated names: replay only these (results.json is left as it was)")
     p.set_defaults(func=cmd_difftest)
+    p = sub.add_parser("vu1-capture", help="visible run that records VU1 program runs for plan P4")
+    p.add_argument("--max", type=int, default=12, help="files per distinct (code, start PC)")
+    p.add_argument("--autoplay", default="explore", choices=["city", "load", "explore"],
+                   help="city: a new game; load: the newest save in original/mc0; explore: that save, then random play")
+    p.add_argument("--timeout", type=int, default=200)
+    p.add_argument("--shots", type=int, default=0)
+    p.add_argument("--shot-every", type=float, default=45.0)
+    p.add_argument("--env", action="append", help="extra environment variable KEY=VALUE (repeatable)")
+    p.set_defaults(func=cmd_vu1_capture)
+    p = sub.add_parser("vu1-test", help="replay work/vu1_aot/records through the VU1 interpreter and compare")
+    p.add_argument("--repeat", type=int, default=20, help="runs of every record (only the first is compared), for a steadier speed figure")
+    p.set_defaults(func=cmd_vu1_test)
     p = sub.add_parser("all")
     p.add_argument("image", nargs="?")
     p.add_argument("--reimport", action="store_true")

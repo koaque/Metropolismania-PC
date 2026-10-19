@@ -1,0 +1,360 @@
+diff --git a/ps2xRuntime/include/runtime/ps2_vu1.h b/ps2xRuntime/include/runtime/ps2_vu1.h
+--- a/ps2xRuntime/include/runtime/ps2_vu1.h
++++ b/ps2xRuntime/include/runtime/ps2_vu1.h
+@@ -3,6 +3,7 @@
+ 
+ #include <array>
+ #include <cstdint>
++#include <functional>
+ 
+ class GS;
+ class PS2Memory;
+@@ -62,6 +63,50 @@ public:
+     VU1State &state() { return m_state; }
+     const VU1State &state() const { return m_state; }
+ 
++    // Tools (PS2X_VU1_CAPTURE below, and the replay in src/port/vu1test.cpp). A packet that XGKICK sends can be
++    // observed, and discarded instead of reaching the GIF; the cycle counter (not part of the state a run starts
++    // from, but kept in state().cycles after a run) can be read and set.
++    using PacketObserver = std::function<void(const uint8_t *data, uint32_t size)>;
++    void setPacketObserver(PacketObserver observer, bool discardPackets)
++    {
++        m_packetObserver = std::move(observer);
++        m_discardPackets = discardPackets;
++    }
++    uint64_t cycleCount() const { return m_cycle; }
++    void setCycleCount(uint64_t cycle) { m_cycle = cycle; }
++    // A MSCNT resume continues a program whose last run ended with every pipeline drained, so what it needs of the
++    // scheduler is the scoreboards and a few counters. These save and restore exactly that (save is false while any
++    // pipeline is busy or an XGKICK is in flight).
++    struct IdleScheduler
++    {
++        std::array<std::array<uint64_t, 4>, 32> vfReady{};
++        std::array<uint64_t, 16> viReady{};
++        std::array<uint64_t, 4> accReady{};
++        std::array<std::array<uint64_t, 4>, 32> vfLatestWrite{};
++        std::array<uint64_t, 16> viLatestWrite{};
++        std::array<uint64_t, 4> accLatestWrite{};
++        uint64_t cycle = 0;
++        uint64_t nextWriteSequence = 0;
++        uint64_t efuResourceReady = 0;
++        uint32_t workingClip = 0;
++        int32_t viBranchBackupValue = 0;
++        uint8_t viBranchBackupReg = 0;
++        bool viBranchBackupValid = false;
++        bool stopRequested = false;
++        bool pendingHaltD = false;
++        bool pendingHaltT = false;
++    };
++    bool saveIdleScheduler(IdleScheduler &out) const;
++    void restoreIdleScheduler(const IdleScheduler &in);
++
++    // Code outside the runtime's memory (a replay): decoded pairs are cached as for the runtime's own VU1 code, valid until
++    // the caller says the code changed.
++    void useStandaloneCode(bool enabled)
++    {
++        m_standaloneCode = enabled;
++        m_decodedCodeCacheValid = false;
++    }
++
+ private:
+     enum Pipeline : uint8_t
+     {
+@@ -259,6 +304,9 @@ private:
+     bool m_stopRequested = false;
+     bool m_pendingHaltD = false;
+     bool m_pendingHaltT = false;
++    PacketObserver m_packetObserver;
++    bool m_discardPackets = false;
++    bool m_standaloneCode = false;
+ 
+     void run(uint8_t *vuCode, uint32_t codeSize,
+              uint8_t *vuData, uint32_t dataSize,
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+@@ -12,7 +12,11 @@
+ #include <cstdlib>
+ #include <cstring>
+ #include <filesystem>
++#include <fstream>
+ #include <limits>
++#include <string>
++#include <unordered_map>
++#include <vector>
+ #include <ps2_log.h>
+ #include <chrono>
+ #include <cstdlib>
+@@ -60,6 +64,103 @@ namespace
+         s = Vu1Stats{};
+         s.last = now;
+     }
++
++    // PS2X_VU1_CAPTURE=<dir>: writes whole program runs (MSCAL) there, for replay outside the game (src/port/vu1test.cpp).
++    // execute() clears the pipelines, so a run is a function of the code, the data memory, the registers and flags in
++    // VU1State, TOP/ITOP and the start PC. A resume (MSCNT) also depends on the scheduler's scoreboards, which are saved when
++    // the previous run drained its pipelines (as an E-bit end does); a resume that starts with a busy pipeline is not
++    // captured. Per (code, start PC, kind) the
++    // runs 0 to 3 and then every power of two are kept, up to PS2X_VU1_CAPTURE_MAX (default 12) files.
++    // A file is: "VU1R", version 2, kind (0 MSCAL, 1 MSCNT), startPC, top, itop, maxCycles, codeSize, dataSize, stateSize,
++    // schedulerSize (u32 each), cycles before and after (u64 each), then state before, the idle scheduler before (zeros for
++    // MSCAL), code, data before, state after, data after, packet count (u32) and each packet as a u32 size and its bytes.
++    const char *vu1CaptureDir()
++    {
++        static const char *dir = std::getenv("PS2X_VU1_CAPTURE");
++        return dir != nullptr && dir[0] != '\0' ? dir : nullptr;
++    }
++
++    uint64_t vu1Fnv1a(const uint8_t *bytes, size_t size, uint64_t hash)
++    {
++        for (size_t i = 0; i < size; ++i)
++        {
++            hash ^= bytes[i];
++            hash *= 1099511628211ull;
++        }
++        return hash;
++    }
++
++    struct Vu1CaptureRun
++    {
++        bool active = false;
++        uint32_t kind = 0; // 0 MSCAL (execute), 1 MSCNT (resume)
++        VU1Interpreter::IdleScheduler scheduler{};
++        std::string path;
++        VU1State stateBefore{};
++        std::vector<uint8_t> dataBefore;
++        std::vector<uint8_t> packets; // u32 size, bytes, per packet
++        uint32_t packetCount = 0;
++        uint64_t cyclesBefore = 0;
++    };
++
++    Vu1CaptureRun vu1CaptureBegin(uint32_t kind, const VU1State &state, uint64_t cycles, const uint8_t *code, uint32_t codeSize,
++                                  const uint8_t *data, uint32_t dataSize, uint32_t startPC)
++    {
++        static std::unordered_map<uint64_t, uint32_t> runsPerKey;
++        static std::unordered_map<uint64_t, uint32_t> keptPerKey;
++        static const uint32_t maxKept = []()
++        {
++            const char *value = std::getenv("PS2X_VU1_CAPTURE_MAX");
++            return value != nullptr ? static_cast<uint32_t>(std::atoi(value)) : 12u;
++        }();
++        Vu1CaptureRun run;
++        const uint64_t key = vu1Fnv1a(code, codeSize, 1469598103934665603ull) ^ (static_cast<uint64_t>(startPC) * 0x9E3779B97F4A7C15ull) ^
++                             (static_cast<uint64_t>(kind) << 62);
++        const uint32_t n = runsPerKey[key]++;
++        if ((n >= 4u && (n & (n - 1u)) != 0u) || keptPerKey[key] >= maxKept)
++            return run;
++        std::error_code ignored;
++        std::filesystem::create_directories(vu1CaptureDir(), ignored);
++        char name[64];
++        std::snprintf(name, sizeof(name), "%016llx_%c%04x_%03u.vu1r", static_cast<unsigned long long>(key), kind == 0 ? 'm' : 'c', startPC,
++                      keptPerKey[key]++);
++        run.active = true;
++        run.kind = kind;
++        run.path = (std::filesystem::path(vu1CaptureDir()) / name).string();
++        run.stateBefore = state;
++        run.dataBefore.assign(data, data + dataSize);
++        run.cyclesBefore = cycles;
++        return run;
++    }
++
++    void vu1CaptureEnd(const Vu1CaptureRun &run, const VU1State &stateAfter, uint64_t cyclesAfter, const uint8_t *code, uint32_t codeSize,
++                       const uint8_t *data, uint32_t dataSize, uint32_t startPC, uint32_t top, uint32_t itop, uint32_t maxCycles)
++    {
++        std::ofstream out(run.path, std::ios::binary);
++        const auto u32 = [&](uint32_t value) { out.write(reinterpret_cast<const char *>(&value), sizeof(value)); };
++        const auto u64 = [&](uint64_t value) { out.write(reinterpret_cast<const char *>(&value), sizeof(value)); };
++        out.write("VU1R", 4);
++        u32(2u);
++        u32(run.kind);
++        u32(startPC);
++        u32(top);
++        u32(itop);
++        u32(maxCycles);
++        u32(codeSize);
++        u32(dataSize);
++        u32(static_cast<uint32_t>(sizeof(VU1State)));
++        u32(static_cast<uint32_t>(sizeof(VU1Interpreter::IdleScheduler)));
++        u64(run.cyclesBefore);
++        u64(cyclesAfter);
++        out.write(reinterpret_cast<const char *>(&run.stateBefore), sizeof(VU1State));
++        out.write(reinterpret_cast<const char *>(&run.scheduler), sizeof(VU1Interpreter::IdleScheduler));
++        out.write(reinterpret_cast<const char *>(code), codeSize);
++        out.write(reinterpret_cast<const char *>(run.dataBefore.data()), static_cast<std::streamsize>(run.dataBefore.size()));
++        out.write(reinterpret_cast<const char *>(&stateAfter), sizeof(VU1State));
++        out.write(reinterpret_cast<const char *>(data), dataSize);
++        u32(run.packetCount);
++        out.write(reinterpret_cast<const char *>(run.packets.data()), static_cast<std::streamsize>(run.packets.size()));
++    }
+ }
+ 
+ namespace
+@@ -151,6 +252,51 @@ void VU1Interpreter::resetScheduler()
+     m_pendingHaltT = false;
+ }
+ 
++bool VU1Interpreter::saveIdleScheduler(IdleScheduler &out) const
++{
++    if (pipelinesPending())
++        return false;
++    out = {};
++    out.vfReady = m_vfReady;
++    out.viReady = m_viReady;
++    out.accReady = m_accReady;
++    out.vfLatestWrite = m_vfLatestWrite;
++    out.viLatestWrite = m_viLatestWrite;
++    out.accLatestWrite = m_accLatestWrite;
++    out.cycle = m_cycle;
++    out.nextWriteSequence = m_nextWriteSequence;
++    out.efuResourceReady = m_efuResourceReady;
++    out.workingClip = m_workingClip;
++    out.viBranchBackupValue = m_viBranchBackupValue;
++    out.viBranchBackupReg = m_viBranchBackupReg;
++    out.viBranchBackupValid = m_viBranchBackupValid;
++    out.stopRequested = m_stopRequested;
++    out.pendingHaltD = m_pendingHaltD;
++    out.pendingHaltT = m_pendingHaltT;
++    return true;
++}
++
++void VU1Interpreter::restoreIdleScheduler(const IdleScheduler &in)
++{
++    resetScheduler();
++    m_vfReady = in.vfReady;
++    m_viReady = in.viReady;
++    m_accReady = in.accReady;
++    m_vfLatestWrite = in.vfLatestWrite;
++    m_viLatestWrite = in.viLatestWrite;
++    m_accLatestWrite = in.accLatestWrite;
++    m_cycle = in.cycle;
++    m_nextWriteSequence = in.nextWriteSequence;
++    m_efuResourceReady = in.efuResourceReady;
++    m_workingClip = in.workingClip;
++    m_viBranchBackupValue = in.viBranchBackupValue;
++    m_viBranchBackupReg = in.viBranchBackupReg;
++    m_viBranchBackupValid = in.viBranchBackupValid;
++    m_stopRequested = in.stopRequested;
++    m_pendingHaltD = in.pendingHaltD;
++    m_pendingHaltT = in.pendingHaltT;
++}
++
+ void VU1Interpreter::reset()
+ {
+     std::memset(&m_state, 0, sizeof(m_state));
+@@ -1048,6 +1194,13 @@ void VU1Interpreter::finishXgkick()
+             std::cerr << std::dec << std::endl;
+         }
+     }
++    if (m_packetObserver)
++        m_packetObserver(m_xgkick.packet.data(), m_xgkick.totalBytes);
++    if (m_discardPackets)
++    {
++        m_xgkick.active = false;
++        return;
++    }
+     if (m_activeMemory)
+         m_activeMemory->submitGifPacket(GifPathId::Path1, m_xgkick.packet.data(), m_xgkick.totalBytes);
+     else if (m_activeGs)
+@@ -1660,13 +1813,16 @@ const VU1Interpreter::DecodedInstructionPair &VU1Interpreter::getDecodedInstruct
+     if ((pc & 7u) != 0u)
+         return m_uncachedPair = decodeInstructionPair(vuCode, pc);
+ 
+-    const bool trackedVu1Code = memory != nullptr &&
+-                                ((m_unit == Unit::VU1 && vuCode == memory->getVU1Code()) ||
+-                                 (m_unit == Unit::VU0 && vuCode == memory->getVU0Code()));
++    const bool trackedVu1Code = m_standaloneCode ||
++                                (memory != nullptr &&
++                                 ((m_unit == Unit::VU1 && vuCode == memory->getVU1Code()) ||
++                                  (m_unit == Unit::VU0 && vuCode == memory->getVU0Code())));
+     if (!trackedVu1Code)
+         return m_uncachedPair = decodeInstructionPair(vuCode, pc);
+ 
+-    const uint64_t generation = m_unit == Unit::VU1 ? memory->getVU1CodeGeneration() : memory->getVU0CodeGeneration();
++    const uint64_t generation = m_standaloneCode ? 0u
++                                : m_unit == Unit::VU1 ? memory->getVU1CodeGeneration()
++                                                      : memory->getVU0CodeGeneration();
+     if (!m_decodedCodeCacheValid ||
+         m_cachedVuCode != vuCode ||
+         m_cachedMemory != memory ||
+@@ -1704,6 +1860,26 @@ void VU1Interpreter::execute(uint8_t *vuCode, uint32_t codeSize,
+         ++vu1Stats().runs;
+         vu1StatsMaybeLog();
+     }
++    Vu1CaptureRun capture;
++    PacketObserver observerBeforeCapture;
++    if (m_unit == Unit::VU1 && vu1CaptureDir() != nullptr)
++    {
++        capture = vu1CaptureBegin(0u, m_state, m_cycle, vuCode, codeSize, vuData, dataSize, startPC);
++        if (capture.active)
++        {
++            observerBeforeCapture = m_packetObserver;
++            m_packetObserver = [&capture, &observerBeforeCapture](const uint8_t *packet, uint32_t size)
++            {
++                const size_t at = capture.packets.size();
++                capture.packets.resize(at + sizeof(size) + size);
++                std::memcpy(capture.packets.data() + at, &size, sizeof(size));
++                std::memcpy(capture.packets.data() + at + sizeof(size), packet, size);
++                ++capture.packetCount;
++                if (observerBeforeCapture)
++                    observerBeforeCapture(packet, size);
++            };
++        }
++    }
+     resetScheduler();
+     m_state.pc = startPC & microAddressMask();
+     m_state.ebit = false;
+@@ -1720,6 +1896,11 @@ void VU1Interpreter::execute(uint8_t *vuCode, uint32_t codeSize,
+     m_state.vf[0][2] = 0.0f;
+     m_state.vf[0][3] = 1.0f;
+     run(vuCode, codeSize, vuData, dataSize, gs, memory, maxCycles);
++    if (capture.active)
++    {
++        m_packetObserver = observerBeforeCapture;
++        vu1CaptureEnd(capture, m_state, m_cycle, vuCode, codeSize, vuData, dataSize, startPC, top, itop, maxCycles);
++    }
+ }
+ 
+ void VU1Interpreter::resume(uint8_t *vuCode, uint32_t codeSize,
+@@ -1727,11 +1908,42 @@ void VU1Interpreter::resume(uint8_t *vuCode, uint32_t codeSize,
+                             GS &gs, PS2Memory *memory,
+                             uint32_t top, uint32_t itop, uint32_t maxCycles)
+ {
++    Vu1CaptureRun capture;
++    PacketObserver observerBeforeCapture;
++    if (m_unit == Unit::VU1 && vu1CaptureDir() != nullptr)
++    {
++        IdleScheduler idle;
++        if (saveIdleScheduler(idle))
++        {
++            capture = vu1CaptureBegin(1u, m_state, m_cycle, vuCode, codeSize, vuData, dataSize, m_state.pc);
++            capture.scheduler = idle;
++        }
++        if (capture.active)
++        {
++            observerBeforeCapture = m_packetObserver;
++            m_packetObserver = [&capture, &observerBeforeCapture](const uint8_t *packet, uint32_t size)
++            {
++                const size_t at = capture.packets.size();
++                capture.packets.resize(at + sizeof(size) + size);
++                std::memcpy(capture.packets.data() + at, &size, sizeof(size));
++                std::memcpy(capture.packets.data() + at + sizeof(size), packet, size);
++                ++capture.packetCount;
++                if (observerBeforeCapture)
++                    observerBeforeCapture(packet, size);
++            };
++        }
++    }
++    const uint32_t resumePC = m_state.pc;
+     m_state.top = top;
+     m_state.itop = itop;
+     m_state.stoppedByD = false;
+     m_state.stoppedByT = false;
+     run(vuCode, codeSize, vuData, dataSize, gs, memory, maxCycles);
++    if (capture.active)
++    {
++        m_packetObserver = observerBeforeCapture;
++        vu1CaptureEnd(capture, m_state, m_cycle, vuCode, codeSize, vuData, dataSize, resumePC, top, itop, maxCycles);
++    }
+ }
+ 
+ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
