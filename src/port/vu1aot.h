@@ -15,6 +15,7 @@
 
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -145,6 +146,8 @@ namespace vu1aot
         std::vector<Commit> commits; // before the pair issues, in order
         // Flag results pushed by this pair (in order): src of each
         std::vector<FlagEntry> pushes;
+        uint8_t flagBase = 0;     // flag results still queued when this pair issues (the ring position of its first push)
+        uint8_t writtenVi = 0;    // the VI register the lower half writes (lowest, VI0 left out), 0 = none
         int8_t fdivLatency = 0;   // DIV/SQRT/RSQRT: cycles until Q commits
         int8_t efuSlot = -1;      // EFU op: the slot taken
         uint8_t efuLatency = 0;
@@ -161,6 +164,7 @@ namespace vu1aot
         int entry = -1;
         uint32_t entryPc = 0;
         uint32_t codeLo = 0, codeHi = 0; // byte range of the pairs reached
+        std::shared_ptr<void> exec; // what the run needs besides the nodes (see Vu1AotAccess::prepare)
         bool supported = true;   // false when the entry itself cannot be timed
         uint32_t bailNodes = 0;  // paths cut short (see Bail)
         std::string whyNot;      // the first reason a path was cut
@@ -170,6 +174,17 @@ namespace vu1aot
     // instruction, D/T bits, a register jump, a branch in a delay slot, a full queue, running off the code, too many nodes)
     // ends in a Bail node; the data decides at run time whether the run takes it.
     Graph buildGraph(const VU1Interpreter &decoder, const uint8_t *code, uint32_t codeSize, uint32_t entryPc);
+
+    enum class RunResult : uint8_t
+    {
+        Done, // the run completed; every effect is on the interpreter
+        Bail  // the run met something the model does not cover: the caller restores its snapshot and runs the interpreter
+    };
+
+    // Installs the pre-timed program hook on an interpreter (vu1aot_runtime.cpp). PS2X_VU1_AOT=0 turns it off;
+    // PS2X_VU1_VERIFY=1 runs every program both ways and compares.
+    void install(VU1Interpreter &vu);
+    std::string statsText();
 
     // The interpreter's pair trace (pc and issue cycle of every pair, from the cycle the run began) against the graph.
     // Returns an empty string when the graph reproduces it, else the first difference.

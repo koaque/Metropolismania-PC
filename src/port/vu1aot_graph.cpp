@@ -1,8 +1,7 @@
 // Pre-timed VU1 programs: the timing model and the graph builder (plan P4, M3.1). See vu1aot.h.
 
 #include "vu1aot.h"
-
-#include "runtime/ps2_vu1.h"
+#include "vu1aot_access.h"
 
 #include <algorithm>
 #include <bit>
@@ -10,52 +9,47 @@
 #include <cstring>
 #include <string>
 
-// Friend of VU1Interpreter (patches/0135): the only place that names its private decoder types.
-struct Vu1AotAccess
+vu1aot::PairInfo Vu1AotAccess::describe(const VU1Interpreter &vu, const uint8_t *code, uint32_t pc)
 {
-    static vu1aot::PairInfo describe(const VU1Interpreter &vu, const uint8_t *code, uint32_t pc)
-    {
-        const VU1Interpreter::DecodedInstructionPair p = vu.decodeInstructionPair(code, pc);
-        vu1aot::PairInfo info;
-        info.lower = p.lower;
-        info.upper = p.upper;
-        info.iBit = p.iBit;
-        info.eBit = p.eBit;
-        info.dBit = p.dBit;
-        info.tBit = p.tBit;
-        info.reserved = p.upperUsage.reserved || p.lowerUsage.reserved;
-        info.lowerNop = p.lowerNop;
-        info.waitQ = p.lowerUsage.waitQ;
-        info.waitP = p.lowerUsage.waitP;
-        info.delaysNextBranchRead = p.lowerUsage.delaysNextBranchRead;
-        info.lowerPipe = static_cast<uint8_t>(p.lowerUsage.pipeline);
-        info.lowerLatency = p.lowerUsage.latency;
-        info.lowerViWrite = p.lowerUsage.viWrite;
-        std::copy(p.vfReadSlots.begin(), p.vfReadSlots.end(), info.vfReadSlots);
-        info.vfReadSlotCount = p.vfReadSlotCount;
-        info.viReadMask = p.viReadMask;
-        info.accReadMask = p.accReadMask;
-        std::copy(p.lowerWriteSlots.begin(), p.lowerWriteSlots.end(), info.lowerWriteSlots);
-        info.lowerWriteCount = p.lowerWriteCount;
-        info.lowerWriteLatency = p.lowerWriteLatency;
-        std::copy(p.upperWriteSlots.begin(), p.upperWriteSlots.end(), info.upperWriteSlots);
-        info.upperWriteCount = p.upperWriteCount;
-        info.upperWriteLatency = p.upperWriteLatency;
-        info.viWriteMask = p.viWriteMask;
-        info.viWriteLatency = p.viWriteLatency;
-        info.accWriteMask = p.accWriteMask;
-        info.upperVfShadowReg = p.upperVfShadowReg;
-        info.suppressedLowerVf = p.suppressedLowerVf;
-        return info;
-    }
-
     static_assert(vu1aot::kFmacLatency == VU1Interpreter::kFmacLatency);
     static_assert(vu1aot::kMaxFlags == VU1Interpreter::kMaxFlagEntries);
     static_assert(vu1aot::PipeFmac == VU1Interpreter::PipelineFmac && vu1aot::PipeFdiv == VU1Interpreter::PipelineFdiv &&
                   vu1aot::PipeEfu == VU1Interpreter::PipelineEfu && vu1aot::PipeBranch == VU1Interpreter::PipelineBranch &&
                   vu1aot::PipeXgkick == VU1Interpreter::PipelineXgkick);
     static_assert(vu1aot::kEfuSlots == 2);
-};
+    const VU1Interpreter::DecodedInstructionPair p = vu.decodeInstructionPair(code, pc);
+    vu1aot::PairInfo info;
+    info.lower = p.lower;
+    info.upper = p.upper;
+    info.iBit = p.iBit;
+    info.eBit = p.eBit;
+    info.dBit = p.dBit;
+    info.tBit = p.tBit;
+    info.reserved = p.upperUsage.reserved || p.lowerUsage.reserved;
+    info.lowerNop = p.lowerNop;
+    info.waitQ = p.lowerUsage.waitQ;
+    info.waitP = p.lowerUsage.waitP;
+    info.delaysNextBranchRead = p.lowerUsage.delaysNextBranchRead;
+    info.lowerPipe = static_cast<uint8_t>(p.lowerUsage.pipeline);
+    info.lowerLatency = p.lowerUsage.latency;
+    info.lowerViWrite = p.lowerUsage.viWrite;
+    std::copy(p.vfReadSlots.begin(), p.vfReadSlots.end(), info.vfReadSlots);
+    info.vfReadSlotCount = p.vfReadSlotCount;
+    info.viReadMask = p.viReadMask;
+    info.accReadMask = p.accReadMask;
+    std::copy(p.lowerWriteSlots.begin(), p.lowerWriteSlots.end(), info.lowerWriteSlots);
+    info.lowerWriteCount = p.lowerWriteCount;
+    info.lowerWriteLatency = p.lowerWriteLatency;
+    std::copy(p.upperWriteSlots.begin(), p.upperWriteSlots.end(), info.upperWriteSlots);
+    info.upperWriteCount = p.upperWriteCount;
+    info.upperWriteLatency = p.upperWriteLatency;
+    info.viWriteMask = p.viWriteMask;
+    info.viWriteLatency = p.viWriteLatency;
+    info.accWriteMask = p.accWriteMask;
+    info.upperVfShadowReg = p.upperVfShadowReg;
+    info.suppressedLowerVf = p.suppressedLowerVf;
+    return info;
+}
 
 namespace vu1aot
 {
@@ -351,6 +345,16 @@ namespace vu1aot
                 node.commits = commits;
                 node.readBackupReg = key.s.branchBackupReg;
                 node.xgkick = info.lowerPipe == PipeXgkick;
+                node.flagBase = s.flagCount;
+                uint8_t writtenVi = 0;
+                if (const uint32_t viWrites = info.lowerViWrite & 0xFFFEu; viWrites != 0)
+                    writtenVi = static_cast<uint8_t>(std::countr_zero(viWrites));
+                node.writtenVi = writtenVi;
+                // The interpreter keeps the old value of a VI until the write lands; the program's run writes it at once. They
+                // differ only for the value a branch right after this pair reads, if an earlier write to the same VI is
+                // still in flight here. That case is left to the interpreter.
+                if (writtenVi != 0 && info.delaysNextBranchRead && s.vi[writtenVi] != 0)
+                    return bail(id, node, "VI write over one in flight at pc 0x" + hex(key.pc));
 
                 // What the pair queues (markPairWrites and the queue functions), at this issue cycle.
                 if (info.lowerWriteCount != 0)
@@ -442,9 +446,6 @@ namespace vu1aot
 
                 // The previous value of a VI written by this pair, for a branch in the next one (unless this is the delay slot of a
                 // branch that was taken, where the target starts a new block).
-                uint8_t writtenVi = 0;
-                if (const uint32_t viWrites = info.lowerViWrite & 0xFFFEu; viWrites != 0)
-                    writtenVi = static_cast<uint8_t>(std::countr_zero(viWrites));
                 const uint8_t backup = (writtenVi != 0 && info.delaysNextBranchRead) ? writtenVi : 0;
                 node.backupAfterFall = backup;
                 node.backupAfterTaken = node.inDelaySlot ? 0 : backup;

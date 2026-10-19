@@ -1,4 +1,4 @@
-VU1: friend access for the pre-timed programs (src/port/vu1aot*), pair trace for tools, busy-resume count in PS2X_GS_STATS. Plan P4, M3.1.
+VU1: friend access, run hook, packet sink and pair trace for the pre-timed programs (src/port/vu1aot*), busy-resume count in PS2X_GS_STATS, XGKICK start no longer clears its 64 KB buffer. Plan P4, M3.
 
 diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
 --- a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
@@ -20,7 +20,46 @@ diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps
                    << " aborted=" << s.aborted << " vu1ms=" << static_cast<uint64_t>(s.runSeconds * 1000.0)
                    << " submitms=" << static_cast<uint64_t>(s.submitSeconds * 1000.0)
                    << " cycles=" << s.cycles << " Mcyc/s(host)=" << (s.runSeconds > 0.0 ? s.cycles / s.runSeconds / 1e6 : 0.0) << std::endl;
-@@ -2288,7 +2289,11 @@ void VU1Interpreter::resume(uint8_t *vuCode, uint32_t codeSize,
+@@ -1545,6 +1546,12 @@ void VU1Interpreter::finishXgkick()
+             std::cerr << std::dec << std::endl;
+         }
+     }
++    if (m_packetSink != nullptr)
++    {
++        m_packetSink->emplace_back(m_xgkick.packet.data(), m_xgkick.packet.data() + m_xgkick.totalBytes);
++        m_xgkick.active = false;
++        return;
++    }
+     if (m_packetObserver)
+         m_packetObserver(m_xgkick.packet.data(), m_xgkick.totalBytes);
+     if (m_discardPackets)
+@@ -1568,9 +1575,13 @@ void VU1Interpreter::startXgkick(uint32_t qwordAddress)
+         return;
+ 
+     const uint32_t sourceAddress = (qwordAddress * 16u) % m_activeVuDataSize;
+-    m_xgkick = {};
+-    m_xgkick.active = true;
++    // Only the packet's bytes up to totalBytes are ever read, so the 64 KB buffer is not cleared for each kick.
+     m_xgkick.sourceAddress = sourceAddress;
++    m_xgkick.totalBytes = 0u;
++    m_xgkick.copiedBytes = 0u;
++    m_xgkick.currentTagEnd = 0u;
++    m_xgkick.currentTagEop = false;
++    m_xgkick.active = true;
+     m_xgkick.cycleCredit = 1u; // XGKICK's issue cycle counts toward PATH1.
+     m_xgkick.issueCycle = m_cycle;
+ }
+@@ -2274,7 +2285,8 @@ void VU1Interpreter::execute(uint8_t *vuCode, uint32_t codeSize,
+     m_state.vf[0][1] = 0.0f;
+     m_state.vf[0][2] = 0.0f;
+     m_state.vf[0][3] = 1.0f;
+-    run(vuCode, codeSize, vuData, dataSize, gs, memory, maxCycles);
++    if (!m_aotHook || !m_aotHook(*this, AotRun{false, vuCode, codeSize, vuData, dataSize, &gs, memory, startPC, maxCycles}))
++        run(vuCode, codeSize, vuData, dataSize, gs, memory, maxCycles);
+     if (capture.active)
+     {
+         m_packetObserver = observerBeforeCapture;
+@@ -2288,7 +2300,11 @@ void VU1Interpreter::resume(uint8_t *vuCode, uint32_t codeSize,
                              uint32_t top, uint32_t itop, uint32_t maxCycles)
  {
      if (vu1StatsEnabled())
@@ -32,7 +71,17 @@ diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps
      Vu1CaptureRun capture;
      PacketObserver observerBeforeCapture;
      if (m_unit == Unit::VU1 && vu1CaptureDir() != nullptr)
-@@ -2389,6 +2394,8 @@ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
+@@ -2319,7 +2335,8 @@ void VU1Interpreter::resume(uint8_t *vuCode, uint32_t codeSize,
+     m_state.itop = itop;
+     m_state.stoppedByD = false;
+     m_state.stoppedByT = false;
+-    run(vuCode, codeSize, vuData, dataSize, gs, memory, maxCycles);
++    if (!m_aotHook || !m_aotHook(*this, AotRun{true, vuCode, codeSize, vuData, dataSize, &gs, memory, resumePC, maxCycles}))
++        run(vuCode, codeSize, vuData, dataSize, gs, memory, maxCycles);
+     if (capture.active)
+     {
+         m_packetObserver = observerBeforeCapture;
+@@ -2389,6 +2406,8 @@ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
  
          if (m_pairCounters != nullptr)
              ++m_pairCounters[(m_state.pc / 8u) % kPairCounterCount];
@@ -53,16 +102,33 @@ diff --git a/ps2xRuntime/include/runtime/ps2_vu1.h b/ps2xRuntime/include/runtime
  
  class GS;
  class PS2Memory;
-@@ -81,6 +83,8 @@ public:
+@@ -81,6 +83,25 @@ public:
      // Tools: with a table of kMaxDecodedPairs counters, every executed pair adds one to its counter (by pc / 8).
      void setPairCounters(uint64_t *counters) { m_pairCounters = counters; }
      static constexpr uint32_t kPairCounterCount = 0x4000u / 8u;
 +    // Tools: every executed pair appends (pc, the cycle it issues at, after any stall) to the vector.
 +    void setPairTrace(std::vector<std::pair<uint32_t, uint64_t>> *trace) { m_pairTrace = trace; }
++    // Pre-timed programs (src/port/vu1aot*): handed every run just before the interpreter would start it, with the state and
++    // the scheduler set up as run() expects. The hook either completes the run (every effect as run() would have had it)
++    // and returns true, or leaves everything as it found it and returns false.
++    struct AotRun
++    {
++        bool resume;
++        uint8_t *code;
++        uint32_t codeSize;
++        uint8_t *data;
++        uint32_t dataSize;
++        GS *gs;
++        PS2Memory *memory;
++        uint32_t startPC;
++        uint32_t maxCycles;
++    };
++    using AotHook = std::function<bool(VU1Interpreter &, const AotRun &)>;
++    void setAotHook(AotHook hook) { m_aotHook = std::move(hook); }
      uint64_t cycleCount() const { return m_cycle; }
      void setCycleCount(uint64_t cycle) { m_cycle = cycle; }
      // A MSCNT resume continues a program whose last run ended with every pipeline drained, so what it needs of the
-@@ -122,6 +126,8 @@ public:
+@@ -122,6 +143,8 @@ public:
      }
  
  private:
@@ -71,11 +137,13 @@ diff --git a/ps2xRuntime/include/runtime/ps2_vu1.h b/ps2xRuntime/include/runtime
      enum Pipeline : uint8_t
      {
          PipelineNone = 0,
-@@ -348,6 +354,7 @@ private:
+@@ -348,6 +371,9 @@ private:
      bool m_standaloneCode = false;
      bool m_immediateWrites = false;
      uint64_t *m_pairCounters = nullptr;
 +    std::vector<std::pair<uint32_t, uint64_t>> *m_pairTrace = nullptr;
++    AotHook m_aotHook;
++    std::vector<std::vector<uint8_t>> *m_packetSink = nullptr; // set by the pre-timed programs: finished packets are collected here, not sent
  
      void run(uint8_t *vuCode, uint32_t codeSize,
               uint8_t *vuData, uint32_t dataSize,

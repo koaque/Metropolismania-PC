@@ -9,6 +9,7 @@
 // wrap them with registerFunction and fall back to $ra, as in the upstream walkthrough.
 
 #include "difftest.h"
+#include "vu1aot.h"
 #include "vu1test.h"
 #include "game_overrides.h"
 #include "port.h"
@@ -454,6 +455,7 @@ namespace
         port::installCallCounts(runtime);
         port::runDifftestIfRequested(runtime); // exits when MMPC_DIFFTEST is set
         port::runVu1TestIfRequested(); // exits when MMPC_VU1_TEST is set
+        vu1aot::install(runtime.vu1()); // pre-timed VU1 programs (PS2X_VU1_AOT=0 turns them off)
         installTrace(runtime);
         installMovieSkip(runtime);
         installGsTrace(runtime);

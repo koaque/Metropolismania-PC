@@ -117,6 +117,8 @@ namespace port
             return 0;
         if (std::strcmp(mode, "timing") == 0)
             return checkTiming(records);
+        if (std::strcmp(mode, "run") == 0)
+            return 0; // the replay itself goes through the programs (vu1test.cpp)
         std::cerr << "[vu1aot] unknown MMPC_VU1_AOT mode '" << mode << "'" << std::endl;
         return 1;
     }

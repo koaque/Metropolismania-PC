@@ -10,6 +10,7 @@
 
 #include "vu1test.h"
 
+#include "vu1aot.h"
 #include "vu1record.h"
 
 #include "runtime/gs/gs_frontend.h"
@@ -183,6 +184,8 @@ namespace port
         const bool immediateWrites = std::getenv("MMPC_VU1_IMMEDIATE") == nullptr || std::atoi(std::getenv("MMPC_VU1_IMMEDIATE")) != 0;
         double seconds = 0.0;
         uint64_t cycles = 0;
+        // MMPC_VU1_AOT=run replays through the pre-timed programs (vu1aot.h) instead of the interpreter alone.
+        const bool aotRun = std::getenv("MMPC_VU1_AOT") != nullptr && std::strcmp(std::getenv("MMPC_VU1_AOT"), "run") == 0;
         std::unordered_map<uint64_t, std::vector<uint64_t>> pairCounts; // per code image: executions of every pair (MMPC_VU1_HOTPAIRS=1)
         const bool hotPairs = std::getenv("MMPC_VU1_HOTPAIRS") != nullptr;
         // MMPC_VU1_HOTPAIRS=<directory> also writes <code hash>.code and <code hash>.pairs ("pc count" per executed pair) there.
@@ -202,6 +205,8 @@ namespace port
                     slot = std::make_unique<VU1Interpreter>(VU1Interpreter::Unit::VU1);
                     slot->useStandaloneCode(true);
                     slot->setImmediateWrites(immediateWrites);
+                    if (aotRun)
+                        vu1aot::install(*slot);
                 }
                 VU1Interpreter &vu1 = *slot;
                 if (hotPairs)
@@ -229,6 +234,8 @@ namespace port
                   << cycles << " cycles in " << seconds << " s = " << (seconds > 0.0 ? static_cast<double>(cycles) / seconds / 1e6 : 0.0)
                   << " Mcyc/s" << std::endl;
         failed += runVu1AotChecks(records);
+        if (aotRun)
+            std::cerr << vu1aot::statsText() << std::endl;
         if (hotPairs && std::string(std::getenv("MMPC_VU1_HOTPAIRS")).size() > 1)
         {
             const std::filesystem::path dumpDir = std::getenv("MMPC_VU1_HOTPAIRS");
