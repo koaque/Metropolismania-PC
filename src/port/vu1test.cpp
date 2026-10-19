@@ -22,7 +22,9 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace port
@@ -219,6 +221,16 @@ namespace port
                 files.push_back(entry.path());
         std::sort(files.begin(), files.end());
         GS gs; // never touched: the packets are discarded
+        // The specialized upper-pipe executors against the general one on random instructions and registers.
+        {
+            const auto checker = std::make_unique<VU1Interpreter>(VU1Interpreter::Unit::VU1); // too large for the stack
+            std::string firstFailure;
+            const uint32_t cases = std::getenv("MMPC_VU1_FUZZ") != nullptr ? static_cast<uint32_t>(std::atoi(std::getenv("MMPC_VU1_FUZZ"))) : 200000u;
+            const uint32_t differences = checker->checkFmacExecutors(12345u, cases, firstFailure);
+            std::cerr << "[vu1test] fmac fuzz: " << cases << " instructions, " << differences << " differ" << std::endl;
+            if (differences != 0)
+                std::cerr << "    " << firstFailure << std::endl;
+        }
         std::vector<Vu1Record> records;
         size_t failed = 0, unreadable = 0;
         for (const auto &file : files)
@@ -231,13 +243,27 @@ namespace port
         }
         // MMPC_VU1_TEST_REPEAT=N runs every record N times (only the first is compared), for a steadier speed figure.
         const int repeat = std::getenv("MMPC_VU1_TEST_REPEAT") != nullptr ? std::max(1, std::atoi(std::getenv("MMPC_VU1_TEST_REPEAT"))) : 1;
+        // MMPC_VU1_IMMEDIATE=0 replays with queued vf/ACC writes (the model the unit tests check); the default is the runtime's.
+        const bool immediateWrites = std::getenv("MMPC_VU1_IMMEDIATE") == nullptr || std::atoi(std::getenv("MMPC_VU1_IMMEDIATE")) != 0;
         double seconds = 0.0;
         uint64_t cycles = 0;
+        // One interpreter per distinct code image, kept across records and passes as the runtime keeps its own: its decoded
+        // pairs are then built once, as in the game. Everything a run depends on is set from the record.
+        std::unordered_map<uint64_t, std::unique_ptr<VU1Interpreter>> interpreters;
         for (int pass = 0; pass < repeat; ++pass)
             for (const Vu1Record &record : records)
             {
-                VU1Interpreter vu1(VU1Interpreter::Unit::VU1);
-                vu1.useStandaloneCode(true);
+                uint64_t codeKey = 1469598103934665603ull;
+                for (const uint8_t byte : record.code)
+                    codeKey = (codeKey ^ byte) * 1099511628211ull;
+                std::unique_ptr<VU1Interpreter> &slot = interpreters[codeKey];
+                if (!slot)
+                {
+                    slot = std::make_unique<VU1Interpreter>(VU1Interpreter::Unit::VU1);
+                    slot->useStandaloneCode(true);
+                    slot->setImmediateWrites(immediateWrites);
+                }
+                VU1Interpreter &vu1 = *slot;
                 const Outcome outcome = runReference(vu1, gs, record, seconds);
                 cycles += record.cyclesAfter - record.cyclesBefore;
                 if (pass != 0)
@@ -251,7 +277,8 @@ namespace port
                         std::cerr << "    " << diff << std::endl;
                 }
             }
-        std::cerr << "[vu1test] " << records.size() << " record(s), " << failed << " failed, " << unreadable << " unreadable; reference "
+        std::cerr << "[vu1test] " << records.size() << " record(s), " << failed << " failed, " << unreadable << " unreadable; "
+                  << (immediateWrites ? "immediate" : "queued") << " writes, "
                   << cycles << " cycles in " << seconds << " s = " << (seconds > 0.0 ? static_cast<double>(cycles) / seconds / 1e6 : 0.0)
                   << " Mcyc/s" << std::endl;
         std::exit(static_cast<int>(std::min<size_t>(failed + unreadable, 125)));
