@@ -1,0 +1,175 @@
+VU1: capture keeps runs of every length (first two, then one per power of two of cycles), per-pair execution counters for tools, resume count and GS submit time in PS2X_GS_STATS. Plan P4, M3 preparation.
+
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+@@ -32,7 +32,9 @@ namespace
+         uint64_t xgkicks = 0;
+         uint64_t xgkickBytes = 0;
+         uint64_t aborted = 0;
++        uint64_t resumes = 0;
+         double runSeconds = 0.0;
++        double submitSeconds = 0.0; // inside run(): handing XGKICK packets to the GS
+         uint64_t cycles = 0;
+         std::chrono::steady_clock::time_point last = std::chrono::steady_clock::now();
+     };
+@@ -59,8 +61,9 @@ namespace
+         const auto now = std::chrono::steady_clock::now();
+         if (now - s.last < std::chrono::seconds(2))
+             return;
+-        std::cerr << "[vu1:stats] runs=" << s.runs << " xgkicks=" << s.xgkicks << " bytes=" << s.xgkickBytes
++        std::cerr << "[vu1:stats] runs=" << s.runs << " resumes=" << s.resumes << " xgkicks=" << s.xgkicks << " bytes=" << s.xgkickBytes
+                   << " aborted=" << s.aborted << " vu1ms=" << static_cast<uint64_t>(s.runSeconds * 1000.0)
++                  << " submitms=" << static_cast<uint64_t>(s.submitSeconds * 1000.0)
+                   << " cycles=" << s.cycles << " Mcyc/s(host)=" << (s.runSeconds > 0.0 ? s.cycles / s.runSeconds / 1e6 : 0.0) << std::endl;
+         s = Vu1Stats{};
+         s.last = now;
+@@ -70,8 +73,7 @@ namespace
+     // execute() clears the pipelines, so a run is a function of the code, the data memory, the registers and flags in
+     // VU1State, TOP/ITOP and the start PC. A resume (MSCNT) also depends on the scheduler's scoreboards, which are saved when
+     // the previous run drained its pipelines (as an E-bit end does); a resume that starts with a busy pipeline is not
+-    // captured. Per (code, start PC, kind) the
+-    // runs 0 to 3 and then every power of two are kept, up to PS2X_VU1_CAPTURE_MAX (default 12) files.
++    // captured. Per (code, start PC, kind) the first two runs and then one run of each length are kept (see vu1CaptureEnd).
+     // A file is: "VU1R", version 2, kind (0 MSCAL, 1 MSCNT), startPC, top, itop, maxCycles, codeSize, dataSize, stateSize,
+     // schedulerSize (u32 each), cycles before and after (u64 each), then state before, the idle scheduler before (zeros for
+     // MSCAL), code, data before, state after, data after, packet count (u32) and each packet as a u32 size and its bytes.
+@@ -96,7 +98,7 @@ namespace
+         bool active = false;
+         uint32_t kind = 0; // 0 MSCAL (execute), 1 MSCNT (resume)
+         VU1Interpreter::IdleScheduler scheduler{};
+-        std::string path;
++        uint64_t key = 0;
+         VU1State stateBefore{};
+         std::vector<uint8_t> dataBefore;
+         std::vector<uint8_t> packets; // u32 size, bytes, per packet
+@@ -104,30 +106,28 @@ namespace
+         uint64_t cyclesBefore = 0;
+     };
+ 
++    struct Vu1CaptureKeyInfo
++    {
++        uint32_t runs = 0;
++        uint32_t kept = 0;
++        uint32_t lengthBuckets = 0; // bit n: a kept run took 2^n to 2^(n+1)-1 cycles
++    };
++
++    std::unordered_map<uint64_t, Vu1CaptureKeyInfo> &vu1CaptureKeys()
++    {
++        static std::unordered_map<uint64_t, Vu1CaptureKeyInfo> keys;
++        return keys;
++    }
++
++    // Every run is snapshotted (the data memory is 16 KB); vu1CaptureEnd decides after the run whether to write it.
+     Vu1CaptureRun vu1CaptureBegin(uint32_t kind, const VU1State &state, uint64_t cycles, const uint8_t *code, uint32_t codeSize,
+                                   const uint8_t *data, uint32_t dataSize, uint32_t startPC)
+     {
+-        static std::unordered_map<uint64_t, uint32_t> runsPerKey;
+-        static std::unordered_map<uint64_t, uint32_t> keptPerKey;
+-        static const uint32_t maxKept = []()
+-        {
+-            const char *value = std::getenv("PS2X_VU1_CAPTURE_MAX");
+-            return value != nullptr ? static_cast<uint32_t>(std::atoi(value)) : 12u;
+-        }();
+         Vu1CaptureRun run;
+-        const uint64_t key = vu1Fnv1a(code, codeSize, 1469598103934665603ull) ^ (static_cast<uint64_t>(startPC) * 0x9E3779B97F4A7C15ull) ^
+-                             (static_cast<uint64_t>(kind) << 62);
+-        const uint32_t n = runsPerKey[key]++;
+-        if ((n >= 4u && (n & (n - 1u)) != 0u) || keptPerKey[key] >= maxKept)
+-            return run;
+-        std::error_code ignored;
+-        std::filesystem::create_directories(vu1CaptureDir(), ignored);
+-        char name[64];
+-        std::snprintf(name, sizeof(name), "%016llx_%c%04x_%03u.vu1r", static_cast<unsigned long long>(key), kind == 0 ? 'm' : 'c', startPC,
+-                      keptPerKey[key]++);
++        run.key = vu1Fnv1a(code, codeSize, 1469598103934665603ull) ^ (static_cast<uint64_t>(startPC) * 0x9E3779B97F4A7C15ull) ^
++                  (static_cast<uint64_t>(kind) << 62);
+         run.active = true;
+         run.kind = kind;
+-        run.path = (std::filesystem::path(vu1CaptureDir()) / name).string();
+         run.stateBefore = state;
+         run.dataBefore.assign(data, data + dataSize);
+         run.cyclesBefore = cycles;
+@@ -137,7 +137,27 @@ namespace
+     void vu1CaptureEnd(const Vu1CaptureRun &run, const VU1State &stateAfter, uint64_t cyclesAfter, const uint8_t *code, uint32_t codeSize,
+                        const uint8_t *data, uint32_t dataSize, uint32_t startPC, uint32_t top, uint32_t itop, uint32_t maxCycles)
+     {
+-        std::ofstream out(run.path, std::ios::binary);
++        // Kept: the first two runs of a (code, start PC, kind), then one run for each length (power of two of cycles) not
++        // kept yet, so both the short and the long runs are there; up to PS2X_VU1_CAPTURE_MAX (default 12) per key.
++        static const uint32_t maxKept = []()
++        {
++            const char *value = std::getenv("PS2X_VU1_CAPTURE_MAX");
++            return value != nullptr ? static_cast<uint32_t>(std::atoi(value)) : 12u;
++        }();
++        Vu1CaptureKeyInfo &info = vu1CaptureKeys()[run.key];
++        const uint64_t length = cyclesAfter > run.cyclesBefore ? cyclesAfter - run.cyclesBefore : 1u;
++        const uint32_t bucket = static_cast<uint32_t>(std::bit_width(length)) - 1u;
++        const bool newLength = (info.lengthBuckets & (1u << bucket)) == 0u;
++        const uint32_t index = info.runs++;
++        if ((index >= 2u && !newLength) || info.kept >= maxKept)
++            return;
++        info.lengthBuckets |= 1u << bucket;
++        std::error_code ignored;
++        std::filesystem::create_directories(vu1CaptureDir(), ignored);
++        char name[64];
++        std::snprintf(name, sizeof(name), "%016llx_%c%04x_%03u.vu1r", static_cast<unsigned long long>(run.key), run.kind == 0 ? 'm' : 'c', startPC,
++                      info.kept++);
++        std::ofstream out(std::filesystem::path(vu1CaptureDir()) / name, std::ios::binary);
+         const auto u32 = [&](uint32_t value) { out.write(reinterpret_cast<const char *>(&value), sizeof(value)); };
+         const auto u64 = [&](uint64_t value) { out.write(reinterpret_cast<const char *>(&value), sizeof(value)); };
+         out.write("VU1R", 4);
+@@ -1532,10 +1552,13 @@ void VU1Interpreter::finishXgkick()
+         m_xgkick.active = false;
+         return;
+     }
++    const auto submitBegin = vu1StatsEnabled() ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+     if (m_activeMemory)
+         m_activeMemory->submitGifPacket(GifPathId::Path1, m_xgkick.packet.data(), m_xgkick.totalBytes);
+     else if (m_activeGs)
+         m_activeGs->processGIFPacket(m_xgkick.packet.data(), m_xgkick.totalBytes);
++    if (vu1StatsEnabled())
++        vu1Stats().submitSeconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - submitBegin).count();
+     m_xgkick.active = false;
+ }
+ 
+@@ -2264,6 +2287,8 @@ void VU1Interpreter::resume(uint8_t *vuCode, uint32_t codeSize,
+                             GS &gs, PS2Memory *memory,
+                             uint32_t top, uint32_t itop, uint32_t maxCycles)
+ {
++    if (vu1StatsEnabled())
++        ++vu1Stats().resumes;
+     Vu1CaptureRun capture;
+     PacketObserver observerBeforeCapture;
+     if (m_unit == Unit::VU1 && vu1CaptureDir() != nullptr)
+@@ -2362,6 +2387,9 @@ void VU1Interpreter::run(uint8_t *vuCode, uint32_t codeSize,
+         if (m_cycle >= budgetEnd)
+             break;
+ 
++        if (m_pairCounters != nullptr)
++            ++m_pairCounters[(m_state.pc / 8u) % kPairCounterCount];
++
+         // A VI write in the delay slot of a taken branch is followed by the branch target, which
+         // starts a new block: a branch there reads the new value. Only a write by the instruction
+         // directly before a branch in program order is hidden from it.
+diff --git a/ps2xRuntime/include/runtime/ps2_vu1.h b/ps2xRuntime/include/runtime/ps2_vu1.h
+--- a/ps2xRuntime/include/runtime/ps2_vu1.h
++++ b/ps2xRuntime/include/runtime/ps2_vu1.h
+@@ -78,6 +78,9 @@ public:
+     // only the registers seen when a run is cut short by its cycle budget differ (the unit tests look at those, so this
+     // is off unless the runtime turns it on).
+     void setImmediateWrites(bool enabled) { m_immediateWrites = enabled; }
++    // Tools: with a table of kMaxDecodedPairs counters, every executed pair adds one to its counter (by pc / 8).
++    void setPairCounters(uint64_t *counters) { m_pairCounters = counters; }
++    static constexpr uint32_t kPairCounterCount = 0x4000u / 8u;
+     uint64_t cycleCount() const { return m_cycle; }
+     void setCycleCount(uint64_t cycle) { m_cycle = cycle; }
+     // A MSCNT resume continues a program whose last run ended with every pipeline drained, so what it needs of the
+@@ -344,6 +347,7 @@ private:
+     bool m_discardPackets = false;
+     bool m_standaloneCode = false;
+     bool m_immediateWrites = false;
++    uint64_t *m_pairCounters = nullptr;
+ 
+     void run(uint8_t *vuCode, uint32_t codeSize,
+              uint8_t *vuData, uint32_t dataSize,

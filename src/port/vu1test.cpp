@@ -247,6 +247,10 @@ namespace port
         const bool immediateWrites = std::getenv("MMPC_VU1_IMMEDIATE") == nullptr || std::atoi(std::getenv("MMPC_VU1_IMMEDIATE")) != 0;
         double seconds = 0.0;
         uint64_t cycles = 0;
+        std::unordered_map<uint64_t, std::vector<uint64_t>> pairCounts; // per code image: executions of every pair (MMPC_VU1_HOTPAIRS=1)
+        const bool hotPairs = std::getenv("MMPC_VU1_HOTPAIRS") != nullptr;
+        // MMPC_VU1_HOTPAIRS=<directory> also writes <code hash>.code and <code hash>.pairs ("pc count" per executed pair) there.
+        std::unordered_map<uint64_t, std::vector<uint8_t>> codeImages;
         // One interpreter per distinct code image, kept across records and passes as the runtime keeps its own: its decoded
         // pairs are then built once, as in the game. Everything a run depends on is set from the record.
         std::unordered_map<uint64_t, std::unique_ptr<VU1Interpreter>> interpreters;
@@ -264,6 +268,13 @@ namespace port
                     slot->setImmediateWrites(immediateWrites);
                 }
                 VU1Interpreter &vu1 = *slot;
+                if (hotPairs)
+                {
+                    std::vector<uint64_t> &counts = pairCounts[codeKey];
+                    counts.resize(VU1Interpreter::kPairCounterCount, 0);
+                    codeImages.emplace(codeKey, record.code);
+                    vu1.setPairCounters(pass == 0 ? counts.data() : nullptr);
+                }
                 const Outcome outcome = runReference(vu1, gs, record, seconds);
                 cycles += record.cyclesAfter - record.cyclesBefore;
                 if (pass != 0)
@@ -281,6 +292,52 @@ namespace port
                   << (immediateWrites ? "immediate" : "queued") << " writes, "
                   << cycles << " cycles in " << seconds << " s = " << (seconds > 0.0 ? static_cast<double>(cycles) / seconds / 1e6 : 0.0)
                   << " Mcyc/s" << std::endl;
+        if (hotPairs && std::string(std::getenv("MMPC_VU1_HOTPAIRS")).size() > 1)
+        {
+            const std::filesystem::path dumpDir = std::getenv("MMPC_VU1_HOTPAIRS");
+            std::error_code ignored;
+            std::filesystem::create_directories(dumpDir, ignored);
+            for (const auto &[key, counts] : pairCounts)
+            {
+                char base[32];
+                std::snprintf(base, sizeof(base), "%016llx", static_cast<unsigned long long>(key));
+                const std::vector<uint8_t> &image = codeImages[key];
+                std::ofstream(dumpDir / (std::string(base) + ".code"), std::ios::binary)
+                    .write(reinterpret_cast<const char *>(image.data()), static_cast<std::streamsize>(image.size()));
+                std::ofstream pairs(dumpDir / (std::string(base) + ".pairs"));
+                for (size_t i = 0; i < counts.size(); ++i)
+                    if (counts[i] != 0)
+                        pairs << i * 8 << " " << counts[i] << "\n";
+            }
+        }
+        if (hotPairs)
+            for (const auto &[key, counts] : pairCounts)
+            {
+                uint64_t total = 0;
+                size_t used = 0;
+                for (const uint64_t n : counts)
+                {
+                    total += n;
+                    used += n != 0;
+                }
+                std::cerr << "[vu1test] code image " << std::hex << key << std::dec << ": " << total << " pairs executed over " << used << " distinct pairs" << std::endl;
+                std::vector<std::pair<uint64_t, size_t>> order;
+                for (size_t i = 0; i < counts.size(); ++i)
+                    if (counts[i] != 0)
+                        order.emplace_back(counts[i], i);
+                std::sort(order.rbegin(), order.rend());
+                uint64_t covered = 0;
+                size_t shown = 0;
+                for (const auto &[n, index] : order)
+                {
+                    covered += n;
+                    if (shown++ < 12)
+                        std::cerr << "    pc 0x" << std::hex << index * 8 << std::dec << " x" << n << std::endl;
+                    if (covered * 100 >= total * 90)
+                        break;
+                }
+                std::cerr << "    90% of the executions are in " << shown << " pairs" << std::endl;
+            }
         std::exit(static_cast<int>(std::min<size_t>(failed + unreadable, 125)));
     }
 }
