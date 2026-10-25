@@ -3477,7 +3477,9 @@ GuestPtr<Camera> Camera_ctor(GuestPtr<Camera> camera);
 void Vec3_Normalize(GuestPtr<Vec4> out, GuestPtr<Vec4> v);
 int BaseObject_dtor(int object, int16_t deleteFlag);
 int BaseObject_ctor(int object);
-void GameInit(int game);
+void GameUpdate(GuestPtr<Game> game);
+void GameInit(GuestPtr<Game> game);
+int Main();
 void Bag_LoadState(GuestPtr<Bag> bag, GuestPtr<McManager> mc);
 void Bag_SaveState(GuestPtr<Bag> bag, GuestPtr<McManager> mc);
 void Bag_RemoveSlot(GuestPtr<Bag> bag, GuestPtr<uint16_t> slot);
@@ -4555,8 +4557,10 @@ int Pad_GetRepeat();
 uint32_t Pad_Pressed(int owner);
 uint32_t Pad_Held(int owner);
 int Pad_Update();
+void MainLoop(GuestPtr<App> app);
 void App_OnInit();
-int App_dtor(int app, int16_t deleteFlag);
+GuestPtr<App> App_dtor(GuestPtr<App> app, int16_t deleteFlag);
+GuestPtr<App> App_ctor(GuestPtr<App> app);
 int Math_LinePlaneIntersect(GuestPtr<ps2f> point, GuestPtr<ps2f> out, ps2f dx, ps2f dy, ps2f dz, ps2f a, ps2f b, ps2f c, ps2f d);
 ps2f Math_RayPlaneDistance(GuestPtr<Vec4> from, GuestPtr<Vec4> to, GuestPtr<Vec4> planePoint, GuestPtr<Vec4> hit, GuestPtr<ps2f> distance);
 void Math_ProjectionMatrix(GuestPtr<ps2f> matrix, GuestPtr<ps2f> screen, ps2f distance, ps2f zNear, ps2f zFar);
@@ -4883,8 +4887,4 @@ void StaticInit_WordsTable();
 void StaticInit_Words();
 
 // Not ported yet: the generated function, through the runtime's function table.
-inline void GameUpdate(int game) { port::callGuest<void>(addr::GameUpdate, game); }
-inline void Main() { port::callGuest<void>(addr::Main); }
-inline void MainLoop(int app) { port::callGuest<void>(addr::MainLoop, app); }
-inline int App_ctor(int app) { return port::callGuest<int>(addr::App_ctor, app); }
 }

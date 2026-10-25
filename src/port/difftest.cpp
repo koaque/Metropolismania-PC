@@ -27,7 +27,8 @@
 // out the records that sort before the file. MMPC_DIFFTEST_ORIGINAL_ONLY=1 runs only the generated function (to see that a record
 // that hangs hangs in the original too, not in the port).
 //
-// Debugging a failing record: MMPC_DIFFTEST_RANGES=<n> lists up to n differing RDRAM ranges (default 8), MMPC_DIFFTEST_DUMP=
+// Debugging a failing record: MMPC_DIFFTEST_RANGES=<n> lists up to n differing RDRAM ranges (default 8; the ranges MMPC_DIFFTEST_CHANGES
+// lists too, default 12), MMPC_DIFFTEST_DUMP=
 // <address>:<words> prints those words of both runs, and MMPC_DIFFTEST_TRACE=<names> prints the argument registers of every call
 // to those functions in the original run and again in the ported one (the ported run's callees are the ported ones), which shows
 // what the two hand a callee (for example a float the original never doubled).
@@ -524,16 +525,19 @@ namespace port
                     }
                 return out;
             }();
-            // CityScene_Update leaves two draw-queue slots of this frame (the 16 bytes at 0x88BAA0 and 0x88BCC0 in the captured runs)
-            // different between the generated and the ported run. They look like leftovers of what ran earlier in the frame (stack
-            // garbage the generated and the ported callees leave differently); it is the same with Player_Update ported and is not a
-            // difference in the number of slots. Nothing else differs.
-            const bool playerSlots = p.name == "CityScene_Update";
+            // CityScene_Update (and GameUpdate, which calls it) leaves two quadwords of this frame's packet tables (the 16 bytes at
+            // 0x88BAA0 and 0x88BCC0 in the explore runs, 0x88BDF0 and 0x88C010 in the new game ones) different between the generated and
+            // the ported run. Each is the end of a table of unit vectors: three lanes zero and the first one a stale stack word. Under the
+            // generated code it looks like a saved register (GameUpdate's records show the app pointer and a code address), under the port the
+            // old content, since a ported function writes no register spills for the frames below it to read. The slots look like padding;
+            // nothing else differs.
+            const bool playerSlots = p.name == "CityScene_Update" || p.name == "GameUpdate";
             const auto same = [&](uint32_t k) {
                 for (const auto &range : extraIgnored)
                     if (k >= range.first && k < range.first + range.second)
                         return true;
-                if (playerSlots && ((k >= 0x0088BAA0u && k < 0x0088BAB0u) || (k >= 0x0088BCC0u && k < 0x0088BCD0u)))
+                if (playerSlots && ((k >= 0x0088BAA0u && k < 0x0088BAB0u) || (k >= 0x0088BCC0u && k < 0x0088BCD0u) ||
+                                    (k >= 0x0088BDF0u && k < 0x0088BE00u) || (k >= 0x0088C010u && k < 0x0088C020u)))
                     return true;
                 if (newSaveNames && k >= 0x001F3CF0u && k < 0x001F3CF0u + 0x200u && ((k - 0x001F3CF0u) & 0x1Fu) >= 0x10u && ((k - 0x001F3CF0u) & 0x1Fu) < 0x18u)
                     return true;
@@ -628,6 +632,8 @@ namespace port
             const uint32_t freeLow = sp > kFreeStackBytes ? sp - kFreeStackBytes : 0u;
             std::string listed;
             size_t ranges = 0, bytes = 0;
+            // The first 12 ranges are listed, or as many as MMPC_DIFFTEST_RANGES says.
+            static const size_t kListed = env("MMPC_DIFFTEST_RANGES") ? static_cast<size_t>(std::strtoul(env("MMPC_DIFFTEST_RANGES"), nullptr, 0)) : 12u;
             for (uint32_t i = 0; i < PS2_RAM_SIZE;)
             {
                 if (i >= freeLow && i < sp)
@@ -644,7 +650,7 @@ namespace port
                 while (end < PS2_RAM_SIZE && !(end >= freeLow && end < sp) && rec.rdram[end] != run.rdram[end])
                     ++end;
                 bytes += end - i;
-                if (ranges++ < 12)
+                if (ranges++ < kListed)
                 {
                     char part[32];
                     std::snprintf(part, sizeof(part), " %X+%u", i, end - i);

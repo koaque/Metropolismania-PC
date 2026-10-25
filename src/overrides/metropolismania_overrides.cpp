@@ -287,18 +287,23 @@ namespace
     }
 
     // ------------------------------------------------------------------ MMPC_SKIP_MOVIES=1
-    // Test aid while PSS movie playback is incomplete: the movie functions return "played" at once.
-    // mm_PlayMissionMovie(n) and mm_PlayOpeningMovie block until the movie ends and return 1.
-    constexpr uint32_t kPlayMissionMovie = 0x0019DE10u;
-    constexpr uint32_t kPlayOpeningMovie = 0x0019DFA0u;
+    // Test aid while PSS movie playback is incomplete: the disc search for a movie file finds nothing, so the player gives up at
+    // once and mm_PlayMissionMovie / mm_PlayOpeningMovie still return 1 ("played"), as they do when a movie ends. Ported code
+    // calls the game's own functions directly, so the hook sits on the SDK call, which it reaches through the function table.
+    constexpr uint32_t kSearchFile = 0x0011A8F8u; // sceCdSearchFile(record, path): 0 when the file is not on the disc
+    PS2Runtime::RecompiledFunction g_originalSearchFile = nullptr;
 
-    void skipMovie(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+    void skipMovieSearch(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
     {
-        (void)rdram;
-        (void)runtime;
-        std::cerr << "[mm] skipped movie (MMPC_SKIP_MOVIES=1), arg=" << getRegU32(ctx, 4) << std::endl;
-        setReturnS32(ctx, 1);
-        ctx->pc = getRegU32(ctx, 31);
+        const std::string path = guestString(rdram, getRegU32(ctx, 5));
+        if (path.size() >= 4 && path.find(".PSS") != std::string::npos)
+        {
+            std::cerr << "[mm] skipped movie (MMPC_SKIP_MOVIES=1): " << path << std::endl;
+            setReturnS32(ctx, 0);
+            ctx->pc = getRegU32(ctx, 31);
+            return;
+        }
+        g_originalSearchFile(rdram, ctx, runtime);
     }
 
     void installMovieSkip(PS2Runtime &runtime)
@@ -306,8 +311,8 @@ namespace
         const char *flag = std::getenv("MMPC_SKIP_MOVIES");
         if (!flag || std::strcmp(flag, "1") != 0)
             return;
-        runtime.registerFunction(kPlayMissionMovie, skipMovie);
-        runtime.registerFunction(kPlayOpeningMovie, skipMovie);
+        g_originalSearchFile = runtime.lookupFunction(kSearchFile);
+        runtime.registerFunction(kSearchFile, skipMovieSearch);
         std::cerr << "[mm] movies will be skipped (MMPC_SKIP_MOVIES=1)" << std::endl;
     }
 

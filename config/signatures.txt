@@ -75,9 +75,9 @@
 0x0012AB10 void mm_Vec3_Normalize(Vec4 *out, Vec4 *v);
 0x0012AB40 int mm_BaseObject_dtor(int object, int16_t deleteFlag);
 0x0012AB90 int mm_BaseObject_ctor(int object);
-0x0012ABA0 void mm_GameUpdate(int game);
-0x0012ADE0 void mm_GameInit(int game);
-0x0012AE20 void mm_Main(void);
+0x0012ABA0 void mm_GameUpdate(Game *game);
+0x0012ADE0 void mm_GameInit(Game *game);
+0x0012AE20 int mm_Main(void);
 0x0012AE90 void mm_Bag_LoadState(Bag *bag, McManager *mc);
 0x0012AEB0 void mm_Bag_SaveState(Bag *bag, McManager *mc);
 0x0012AED0 void mm_Bag_RemoveSlot(Bag *bag, uint16_t *slot);
@@ -1155,10 +1155,10 @@
 0x001852D0 uint32_t mm_Pad_Pressed(int owner);
 0x00185310 uint32_t mm_Pad_Held(int owner);
 0x00185350 int mm_Pad_Update(void);
-0x001854E0 void mm_MainLoop(int app);
+0x001854E0 void mm_MainLoop(App *app);
 0x001856C0 void mm_App_OnInit(void);
-0x001856D0 int mm_App_dtor(int app, int16_t deleteFlag);
-0x00185740 int mm_App_ctor(int app);
+0x001856D0 App *mm_App_dtor(App *app, int16_t deleteFlag);
+0x00185740 App *mm_App_ctor(App *app);
 0x001859D0 int mm_Math_LinePlaneIntersect(float *point, float *out, float dx, float dy, float dz, float a, float b, float c, float d);
 0x00185CB0 float mm_Math_RayPlaneDistance(Vec4 *from, Vec4 *to, Vec4 *planePoint, Vec4 *hit, float *distance);
 0x00185DA0 void mm_Math_ProjectionMatrix(float *matrix, float *screen, float distance, float zNear, float zFar);

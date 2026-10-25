@@ -8,7 +8,7 @@ See `config/port_status.csv` for every function.
 
 | Origin | Functions | Named | Typed | Ported | Verified |
 |---|---:|---:|---:|---:|---:|
-| game | 1481 | 100.0% | 100.0% | 99.7% | 96.6% |
+| game | 1481 | 100.0% | 100.0% | 100.0% | 96.7% |
 | sdk | 768 | 100.0% | 0.0% | 0.0% | 0.0% |
 
 Blocking (game and unclassified functions that can reach a thread switch, deferred to native threading): indirect 79, no 987, yes 415
@@ -18,7 +18,7 @@ Blocking (game and unclassified functions that can reach a thread switch, deferr
 | Subsystem | Functions | Named | Typed | Ported | Verified |
 |---|---:|---:|---:|---:|---:|
 | (unclassified) | 558 | 100.0% | 0.0% | 0.0% | 0.0% |
-| app | 4 | 100.0% | 100.0% | 50.0% | 25.0% |
+| app | 4 | 100.0% | 100.0% | 100.0% | 25.0% |
 | bag | 16 | 100.0% | 100.0% | 100.0% | 100.0% |
 | boot | 2 | 100.0% | 100.0% | 100.0% | 100.0% |
 | camera | 18 | 100.0% | 100.0% | 100.0% | 100.0% |
@@ -30,7 +30,7 @@ Blocking (game and unclassified functions that can reach a thread switch, deferr
 | family | 36 | 100.0% | 100.0% | 100.0% | 97.2% |
 | file | 12 | 100.0% | 100.0% | 100.0% | 83.3% |
 | font | 3 | 100.0% | 100.0% | 100.0% | 66.7% |
-| game | 3 | 100.0% | 100.0% | 33.3% | 33.3% |
+| game | 3 | 100.0% | 100.0% | 100.0% | 66.7% |
 | gfx | 117 | 100.0% | 100.0% | 100.0% | 99.1% |
 | goods | 3 | 100.0% | 100.0% | 100.0% | 100.0% |
 | map | 98 | 100.0% | 100.0% | 100.0% | 94.9% |

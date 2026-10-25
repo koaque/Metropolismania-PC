@@ -95,6 +95,10 @@ namespace mm::globals
 
     // core: frames since start (counted by mm_MainLoop); blinking effects use it.
     inline constexpr GuestVar<int32_t> frameCounter{0x001BDCACu};
+    // Timer 0's count as mm_MainLoop reads it after the game update and after the GS sync that follows it (the load, frameLoad, is
+    // the second count times 100 over 9765.625).
+    inline constexpr GuestVar<uint32_t> timerAfterUpdate{0x001BDCB8u};
+    inline constexpr GuestVar<uint32_t> timerAfterSync{0x001BDCBCu};
 
     // gfx: the two 64 KB DMA lists, which one is current and where it is written, and the packet buffer.
     inline constexpr uint32_t kDmaLists = 0x001BD9C0u;               // two list addresses

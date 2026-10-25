@@ -61,6 +61,15 @@ namespace port
     // delay loop that never accounts any waits for ever on what only time can bring. The generated code accounts 32 cycles at
     // every checkpoint (a loop's back branch).
     inline void accountCycles(uint32_t cycles) { g_call.runtime->eeScheduler().accountCycles(cycles); }
+    // What the original does at a loop's back branch: 32 cycles charged, and the processor handed over when a checkpoint is
+    // due (an interrupt to deliver, a thread ready, the time slice used up). Without it a native loop that waits for time or
+    // for another thread never lets either happen.
+    inline void checkpoint()
+    {
+        EeScheduler &ee = g_call.runtime->eeScheduler();
+        ee.accountCycles(32u);
+        ee.yieldIfDue();
+    }
 
     void registerPorted(uint32_t address, const char *name, GuestFn wrapper, ResultKind result, MutateFn mutate);
     void enterPorted(PS2Runtime *runtime);

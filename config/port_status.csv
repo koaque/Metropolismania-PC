@@ -781,9 +781,9 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0012AB10,mm_Vec3_Normalize,36,game,math,verified,no,1,0,"a0 = a1 / |a1| (VU0, xyz)"
 0x0012AB40,mm_BaseObject_dtor,68,game,core,verified,yes,15,1,common base destructor: delete when the flag is > 0
 0x0012AB90,mm_BaseObject_ctor,8,game,core,verified,no,16,0,common base constructor: returns this
-0x0012ABA0,mm_GameUpdate,572,game,game,typed,yes,0,12,"Game class (vtable 0x1BCE60) slot +0xC, once per frame: sound update, then the scene state machine (+4): creates/updates/deletes the title, intro and city scenes"
+0x0012ABA0,mm_GameUpdate,572,game,game,verified,yes,0,12,"Game class (vtable 0x1BCE60) slot +0xC, once per frame: sound update, then the scene state machine (+4): creates/updates/deletes the title, intro and city scenes"
 0x0012ADE0,mm_GameInit,52,game,game,verified,no,0,1,"Game slot +8: sound state init, scene state 0, no scenes"
-0x0012AE20,mm_Main,100,game,game,typed,yes,1,6,"probes the heap, runs static init, constructs the App on the stack, switches it to the Game vtable 0x1BCE60, runs mm_MainLoop, destroys it"
+0x0012AE20,mm_Main,100,game,game,ported,yes,1,6,"probes the heap, runs static init, constructs the App on the stack, switches it to the Game vtable 0x1BCE60, runs mm_MainLoop, destroys it"
 0x0012AE90,mm_Bag_LoadState,20,game,bag,verified,no,1,1,reads the bag's first 0x16C bytes (items and track ids) from the save (mm_SaveFile_Read); only caller mm_CityScene_LoadGame
 0x0012AEB0,mm_Bag_SaveState,20,game,bag,verified,no,1,1,writes the bag's first 0x16C bytes to the save (mm_SaveFile_Write); only caller mm_CityScene_SaveGame
 0x0012AED0,mm_Bag_RemoveSlot,236,game,bag,verified,no,4,0,removes item slot a1 (16 bytes each from +4) and shifts the rest down; capacity per bag type from 0x1B5B08
@@ -1892,10 +1892,10 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001852D0,mm_Pad_Pressed,60,game,pad,verified,no,26,0,"pressed buttons (0x1BDCA4), minus the focus mask when another owner holds input focus"
 0x00185310,mm_Pad_Held,60,game,pad,verified,no,13,0,"held buttons (0x1BDCA0), minus the focus mask when another owner holds input focus"
 0x00185350,mm_Pad_Update,400,game,pad,verified,yes,1,2,"reads the pad (0x1578E0/0x1578A0), stores buttons active-high in 0x1BDCA0; in analog mode (id 0x7_) the left stick past 0x40/0xC0 adds direction bits 0x100000-0x800000; then derives pressed (0x1BDCA4)"
-0x001854E0,mm_MainLoop,460,game,app,typed,yes,1,13,"calls app vtable +8 once, sets up the display (640x448), then per frame: pad, file queue, memory card queue, sound, kick the DMA list, flip it, app vtable +0xC (the game update), swap buffers on vsync"
+0x001854E0,mm_MainLoop,460,game,app,ported,yes,1,13,"calls app vtable +8 once, sets up the display (640x448), then per frame: pad, file queue, memory card queue, sound, kick the DMA list, flip it, app vtable +0xC (the game update), swap buffers on vsync"
 0x001856C0,mm_App_OnInit,8,game,app,verified,no,0,0,App base class (vtable 0x1BD8D0) slot +8; empty
 0x001856D0,mm_App_dtor,108,game,app,ported,yes,1,4,"vtable 0x1BD8D0; shuts down sound (0x18F450), frees the DMA lists and the font; deletes this when the flag is > 0"
-0x00185740,mm_App_ctor,644,game,app,typed,yes,1,21,"(was mm_InitSystemModules) vtable 0x1BD8D0; boots the IOP with IOPRP243.IMG, inits CD/SIF/file system, seeds the random generator with 12345, loads SIO2MAN/MCMAN/MCSERV/PADMAN, inits pad, file queue, font, memory card queue, DMA lists and sound"
+0x00185740,mm_App_ctor,644,game,app,ported,yes,1,21,"(was mm_InitSystemModules) vtable 0x1BD8D0; boots the IOP with IOPRP243.IMG, inits CD/SIF/file system, seeds the random generator with 12345, loads SIO2MAN/MCMAN/MCSERV/PADMAN, inits pad, file queue, font, memory card queue, DMA lists and sound"
 0x001859D0,mm_Math_LinePlaneIntersect,724,game,math,verified,no,3,0,"intersection of a line with plane a0..a3 (a,b,c,d), handles axis-parallel cases"
 0x00185CB0,mm_Math_RayPlaneDistance,228,game,math,verified,no,1,1,"(from, to, planePoint, hit, *distance): where the ray from `from` towards `to` meets the plane through planePoint facing along it; returns (f0) and stores the distance from planePoint to that point, v0 = 1"
 0x00185DA0,mm_Math_ProjectionMatrix,204,game,math,verified,no,2,1,"perspective matrix into a3: m0 = 2n/w, m5 = 2n/h, m10 = (f+n)/(f-n), m14 = -2fn/(f-n), m11 = 1, from a1 = near, a2 = far and the screen size in a4"

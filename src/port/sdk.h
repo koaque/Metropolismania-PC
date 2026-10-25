@@ -167,6 +167,15 @@ namespace mm::sdk
         inline constexpr uint32_t sceMpegCreate = 0x0010BD58u;
         inline constexpr uint32_t sceMpegAddCallback = 0x0010C170u;
         inline constexpr uint32_t sceMpegIsRefBuffEmpty = 0x0010C0B8u;
+        inline constexpr uint32_t sceSifRebootIop = 0x00115EB8u;
+        inline constexpr uint32_t sceSifSyncIop = 0x00115E80u;
+        inline constexpr uint32_t sceSifInitIopHeap = 0x00114CB8u;
+        inline constexpr uint32_t sceFsReset = 0x00111EE0u;
+        inline constexpr uint32_t sceGsResetPath = 0x001028B0u;
+        inline constexpr uint32_t sceDmaReset = 0x00103DC8u;
+        inline constexpr uint32_t sceGsResetGraph = 0x00102710u;
+        inline constexpr uint32_t crt0_InitCpp = 0x00100150u;
+        inline constexpr uint32_t destroy_global_chain = 0x00100140u;
     }
 
     // libm.
@@ -360,6 +369,20 @@ namespace mm::sdk
     inline int64_t sceCdSearchFile(uint32_t record, uint32_t path) { return port::callGuest<int64_t>(addr::sceCdSearchFile, record, path); }
     // Loads an IOP module from a path (the IRX id, negative on failure).
     inline int64_t sceSifLoadModule(uint32_t path, int argc, uint32_t args) { return port::callGuest<int64_t>(addr::sceSifLoadModule, path, argc, args); }
+    // Restarts the IOP with the image at `path` (0 until the request is accepted), then waits for it (0 until it is up again);
+    // the IOP heap's RPC server is bound for the allocation calls; the file system library's state is cleared.
+    inline int64_t sceSifRebootIop(uint32_t image) { return port::callGuest<int64_t>(addr::sceSifRebootIop, image); }
+    inline int64_t sceSifSyncIop() { return port::callGuest<int64_t>(addr::sceSifSyncIop); }
+    inline int sceSifInitIopHeap() { return port::callGuest<int>(addr::sceSifInitIopHeap); }
+    inline int sceFsReset() { return port::callGuest<int>(addr::sceFsReset); }
+    // The graphics and DMA hardware: the VIF1 and GIF paths reset, every DMA channel reset (mode 1 also enables the controller),
+    // the GS reset (mode, interlace, video mode, frame or field).
+    inline void sceGsResetPath() { port::callGuest<void>(addr::sceGsResetPath); }
+    inline int sceDmaReset(int enable) { return port::callGuest<int>(addr::sceDmaReset, enable); }
+    inline void sceGsResetGraph(int mode, int interlace, int videoMode, int frameMode) { port::callGuest<void>(addr::sceGsResetGraph, mode, interlace, videoMode, frameMode); }
+    // The C++ runtime: the static constructors run before main and the global destructor chain after it.
+    inline void crt0_InitCpp() { port::callGuest<void>(addr::crt0_InitCpp); }
+    inline void destroy_global_chain() { port::callGuest<void>(addr::destroy_global_chain); }
     // The memory card library: every call is started and returns 0 when accepted (the 64-bit result of the SDK), then
     // sceMcSync reports its end. Port and slot come first; addresses are guest addresses of the game's buffers.
     inline int64_t sceMcGetInfo(int portNumber, int slot, uint32_t type, uint32_t freeBlocks, uint32_t format)

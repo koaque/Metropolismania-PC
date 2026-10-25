@@ -1309,6 +1309,28 @@ struct TalkConv {
     uint8_t unk_2E4[0x224];
 };
 
+// ---- 30_app.h
+/* The application object: what mm_Main builds on its stack and mm_MainLoop drives. */
+
+struct App;
+struct Game;
+
+/* The application base (vtable 0x1BD8D0): slot +8 starts it, slot +0xC runs one frame. mm_App_ctor only sets the vtable. */
+struct App {
+    GuestPtr<void> vtable;              /* +0x00 */
+};
+
+/* The game, the application with vtable 0x1BCE60 (slot +8 mm_GameInit, slot +0xC mm_GameUpdate): the state machine that
+   makes and runs one scene at a time. */
+struct Game {
+    GuestPtr<void> vtable;              /* +0x00 */
+    int32_t state;             /* +0x04 0 and 1 make the title scene, 2 runs it, 3 and 7 make the briefing, 4 runs it, 5 makes the city, 6 runs it */
+    GuestPtr<CityScene> city;           /* +0x08 */
+    GuestPtr<SceneA> title;             /* +0x0C */
+    int32_t unk_10;            /* +0x10 cleared by mm_GameInit */
+    GuestPtr<SceneB> briefing;          /* +0x14 */
+};
+
 // ---- layout checks (guest offsets and sizes)
 static_assert(sizeof(Vec4) == 0x10, "Vec4 size");
 static_assert(offsetof(Vec4, x) == 0x00, "Vec4.x");
@@ -2066,4 +2088,11 @@ static_assert(offsetof(TalkConv, menu) == 0x2D4, "TalkConv.menu");
 static_assert(offsetof(TalkConv, panel) == 0x2D8, "TalkConv.panel");
 static_assert(offsetof(TalkConv, nameEntry) == 0x2DC, "TalkConv.nameEntry");
 static_assert(offsetof(TalkConv, card) == 0x2E0, "TalkConv.card");
+static_assert(offsetof(App, vtable) == 0x00, "App.vtable");
+static_assert(offsetof(Game, vtable) == 0x00, "Game.vtable");
+static_assert(offsetof(Game, state) == 0x04, "Game.state");
+static_assert(offsetof(Game, city) == 0x08, "Game.city");
+static_assert(offsetof(Game, title) == 0x0C, "Game.title");
+static_assert(offsetof(Game, unk_10) == 0x10, "Game.unk_10");
+static_assert(offsetof(Game, briefing) == 0x14, "Game.briefing");
 }

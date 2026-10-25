@@ -1222,14 +1222,13 @@ namespace mm
     }
 
     // core: the game object's sound state and scene pointers start empty.
-    void GameInit(int game)
+    void GameInit(GuestPtr<Game> game)
     {
         Sound_InitState();
-        const uint32_t g = static_cast<uint32_t>(game);
-        port::store<int32_t>(g + 0x4, 0);
-        port::store<int32_t>(g + 0xC, 0);
-        port::store<int32_t>(g + 0x10, 0);
-        port::store<int32_t>(g + 0x8, 0);
+        game->state = 0;
+        game->title = GuestPtr<SceneA>{};
+        game->unk_10 = 0;
+        game->city = GuestPtr<CityScene>{};
     }
 
     // char: the second character class type, a CharType with its own vtable.
@@ -3854,16 +3853,16 @@ namespace mm
     }
 
     // The application object: shuts down the sound driver, frees the display list and the font data.
-    int App_dtor(int app, int16_t deleteFlag)
+    GuestPtr<App> App_dtor(GuestPtr<App> app, int16_t deleteFlag)
     {
-        if (app != 0)
+        if (app)
         {
-            port::store<uint32_t>(static_cast<uint32_t>(app), 0x001BD8D0u);
+            app->vtable = GuestPtr<void>{0x001BD8D0u};
             Sound_Shutdown();
             DmaList_Free();
             Font_Free();
             if (0 < deleteFlag)
-                sdk::operator_delete(static_cast<uint32_t>(app));
+                sdk::operator_delete(app.address);
         }
         return app;
     }
