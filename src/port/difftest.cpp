@@ -471,7 +471,12 @@ namespace port
             }
             if (ignoreLow != 0)
                 ignoreHigh = ignoreLow + 4u;
+            // The pause menu's save slot list (and the new slot it prepares) names a new save for the first free slot of each card, with
+            // the clock digits NewSaveName writes: the clock's tick between the two runs changes the last digit of any of the 16 names.
+            const bool newSaveNames = p.name == "PauseMenu_Update" || p.name == "PauseMenu_StateSlotSelect" || p.name == "McManager_PrepareNewSlot";
             const auto same = [&](uint32_t k) {
+                if (newSaveNames && k >= 0x001F3CF0u && k < 0x001F3CF0u + 0x200u && ((k - 0x001F3CF0u) & 0x1Fu) >= 0x10u && ((k - 0x001F3CF0u) & 0x1Fu) < 0x18u)
+                    return true;
                 return a.rdram[k] == b.rdram[k] || (k >= ignoreLow && k < ignoreHigh) || (k >= ignoreLow2 && k < ignoreHigh2) ||
                        (k >= ignoreLow3 && k < ignoreHigh3);
             };

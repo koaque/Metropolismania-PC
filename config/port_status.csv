@@ -1186,9 +1186,9 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00153B80,mm_PauseMenu_StateSave,684,game,ui,verified,yes,1,11,"saving: memory card manager steps, results"
 0x00153E30,mm_PauseMenu_StateFormat,756,game,ui,verified,yes,1,14,(provisional) format prompt and progress
 0x00154130,mm_PauseMenu_StateWait,324,game,ui,verified,yes,1,12,(provisional) waits for a memory card operation
-0x00154280,mm_PauseMenu_StateSlotSelect,1356,game,ui,typed,yes,2,17,"slot list and ""Do you wish to overwrite?"""
+0x00154280,mm_PauseMenu_StateSlotSelect,1356,game,ui,verified,yes,2,17,"slot list and ""Do you wish to overwrite?"""
 0x001547D0,mm_PauseMenu_Reset,192,game,ui,ported,yes,3,6,back to the top menu
-0x00154890,mm_PauseMenu_Update,1804,game,ui,typed,yes,1,29,"pause menu state machine (Resume, Save, Quit ""Are you sure you want to quit?"")"
+0x00154890,mm_PauseMenu_Update,1804,game,ui,verified,yes,1,29,"pause menu state machine (Resume, Save, Quit ""Are you sure you want to quit?"")"
 0x00154FA0,mm_PauseMenu_dtor,172,game,ui,verified,yes,1,4,deletes its menus and the card manager
 0x00155050,mm_PauseMenu_ctor,76,game,ui,verified,no,1,1,"clears state, default name (0x1B73D0)"
 0x001550A0,mm_Applicants_CountActive,68,game,city,verified,no,3,0,applicants whose state (+2) is below 7
@@ -1480,7 +1480,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0016E270,mm_Title_DrawCommon,456,game,scene,verified,no,4,6,"title screen layers, logo animation and fades"
 0x0016E440,mm_Title_LoadMenu,1024,game,scene,typed,yes,1,16,load game screen: memory card slots and their info
 0x0016E840,mm_Title_PressStart,260,game,scene,verified,no,1,5,"title idle screen (""[SELECT]SoundTest"")"
-0x0016E950,mm_SceneA_StartGame,764,game,scene,typed,yes,1,27,
+0x0016E950,mm_SceneA_StartGame,764,game,scene,verified,yes,1,27,
 0x0016EC50,mm_Title_NewGameIntro,1300,game,scene,verified,no,1,8,new game intro scene with town models and loading text
 0x0016F170,mm_Title_RandomCharParts,248,game,scene,verified,no,1,2,random character parts for the intro
 0x0016F270,mm_Title_OpeningMovieStep,424,game,scene,verified,yes,1,9,"plays the opening movie, then loads TITLE.SQ/HD/BD"
@@ -1492,7 +1492,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0016FF20,mm_SceneA_MemoryCardCheck,944,game,scene,verified,no,1,8,"boot memory card check: goes on when a save or a fine card is found, else shows which slot has no card or too little space and waits for Cross (card states at 0x1BDC04/08)"
 0x001702D0,mm_SceneA_LogoStep,464,game,boot,verified,yes,1,5,"one logo (a1: 0 NATSUME, 1 MF_US, else LOGO.TEX): load, fade in, hold 140 frames, fade out, free"
 0x001704A0,mm_SceneA_Load,1852,game,scene,typed,yes,1,21,
-0x00170BE0,mm_SceneA_Update,1004,game,scene,typed,yes,1,19,
+0x00170BE0,mm_SceneA_Update,1004,game,scene,verified,yes,1,19,
 0x00170FD0,mm_SceneA_dtor,588,game,boot,verified,yes,1,9,"deletes camera, models, menus, memory card manager, loading screen and text boxes"
 0x00171220,mm_SceneA_ctor,640,game,scene,verified,yes,1,12,
 0x001714A0,mm_TownPages_SelectedEntry,440,game,ui,verified,no,1,1,(provisional) resident index under the cursor (+0x5C) on the current page (+0x2C)
@@ -1521,7 +1521,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001737C0,mm_TalkView_ToggleAnim,88,game,talk,verified,no,1,0,(provisional) flips the selected person's animation (7 -> 2/3)
 0x00173820,mm_TalkView_DrawPeople,3232,game,talk,typed,yes,3,18,"people at the building or of the family in a row with names, grades and the cursor"
 0x001744E0,mm_TalkView_NobodyHome,296,game,talk,verified,yes,2,4,"(provisional) 1 when no one of the family or building is there (schedule, outside flags)"
-0x00174610,mm_TalkView_DrawBuilding,916,game,talk,typed,yes,6,10,"the target building (a1 0: object, 1: family's home), lit when someone is home"
+0x00174610,mm_TalkView_DrawBuilding,916,game,talk,verified,yes,6,10,"the target building (a1 0: object, 1: family's home), lit when someone is home"
 0x001749B0,mm_TalkView_BuildingCamera,904,game,talk,verified,no,9,4,camera eye and target in front of the building's entrance
 0x00174D40,mm_TalkView_DrawCursor,64,game,talk,verified,no,3,2,cursor frame at +0xC0
 0x00174D80,mm_TalkView_CursorPerson,184,game,talk,verified,no,1,2,"person index of the cursor slot (+0xBC), 0x3F80 when none"
@@ -1735,7 +1735,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0017DA00,mm_WordsFn_BuildingOpen,204,game,talk,verified,indirect,0,0,#68 cond: building B (or type) open now
 0x0017DAD0,mm_WordsFn_BuildingsOverlap,204,game,talk,verified,no,0,0,#67 cond: (provisional) footprints of buildings A and B overlap
 0x0017DBA0,mm_WordsFn_FamilyModArg,32,game,talk,verified,no,0,0,#66 cond: family id mod arg
-0x0017DBC0,mm_WordsFn_PickClaimResident,1116,game,talk,typed,yes,0,14,#65 cond: (provisional) resident whose wants match the chosen want's claim
+0x0017DBC0,mm_WordsFn_PickClaimResident,1116,game,talk,verified,yes,0,14,#65 cond: (provisional) resident whose wants match the chosen want's claim
 0x0017E020,mm_WordsFn_PickTestableResident,564,game,talk,verified,yes,0,7,"#64 cond: a resident of a candidate home who agrees (mm_Family_FriendAgrees: 3), else a random resident (1)"
 0x0017E260,mm_WordsFn_PickByCandidates,48,game,talk,verified,yes,0,2,#63 cond: collects candidate buildings and picks (0x17E3A0)
 0x0017E290,mm_WordsFn_PickRandomResident,264,game,talk,ported,yes,0,5,"#62 cond: collects candidate buildings, picks a random resident as B"
@@ -2207,8 +2207,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001A19F0,mm_Words_CountChoices,664,game,talk,verified,no,3,3,number of menu choices for code a2
 0x001A1CA0,mm_Words_AppendClipped,312,game,talk,verified,no,1,2,(provisional) appends a string to the message buffer within the line limit
 0x001A1DE0,mm_Words_ExpandLine,2044,game,talk,typed,no,2,7,"expands a script line: conditions pick branches, text getters fill in names, actions run"
-0x001A2620,mm_Words_StepImpl,888,game,talk,typed,yes,1,7,"binds the loaded tables on first use, then runs codes until the next message or end code"
-0x001A29B0,mm_Words_Step,8,game,talk,typed,yes,1,1,next message of the running script (to mm_Words_StepImpl)
+0x001A2620,mm_Words_StepImpl,888,game,talk,verified,yes,1,7,"binds the loaded tables on first use, then runs codes until the next message or end code"
+0x001A29B0,mm_Words_Step,8,game,talk,verified,yes,1,1,next message of the running script (to mm_Words_StepImpl)
 0x001A29C0,mm_Words_FriendshipChanged,8,game,talk,verified,no,1,1,global context +0x13C
 0x001A29D0,mm_Words_CancelAllowed,8,game,talk,verified,no,1,1,global context +0x130
 0x001A29E0,mm_Words_LoadForWants,596,game,talk,verified,yes,1,7,"script for a wants window line (event or default), reads its block"

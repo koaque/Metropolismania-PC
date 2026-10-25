@@ -121,6 +121,8 @@ record cache are not. Records that depend on them differ in a few bytes the game
 (a family not in the cache is read from the disc, which the replay never finishes: `Words_LoadForFamily`).
 The VU0 registers are not compared for functions that call a ported callee where the generated one left
 scratch values (`Person_ChooseDestination`, the two talk person constructors).
+A new save's name carries the console clock in seconds, which ticks between the two runs: the last digits of the sixteen
+name slots are not compared for `McManager_NewSaveName`, `McManager_PrepareNewSlot` and the pause menu's slot list.
 
 Functions with no record the replay can finish stay at "ported" in `docs/PORT_STATUS.md` (40 of the game's
 1,481 now): the four map and city constructors (`CityMap_ctor`, `MapPeople_ctor`, `MapObjects_ctor`,

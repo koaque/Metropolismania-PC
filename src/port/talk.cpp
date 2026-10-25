@@ -2219,4 +2219,71 @@ namespace mm
     }
 
     PORT_FN(TalkConv_Active);
+
+    // The building shown in a talk view. `byFamily` 0: `target` is a building (nothing is drawn when its record lacks flag 0x20),
+    // 1: a family, whose home type is used. The type's draw check (slot +0x24 of the object at +0x15C: the type, the city and the
+    // record, 0 for a family) says whether to draw; with no yes and the view not forced lit (+0x258) the type's node 0x150 is
+    // shown dimmed and nobody-at-home aware. Otherwise: type flag 0x8000 draws the entrance mesh of the type's table with its
+    // own rotation and position between the two light packets; 0x4000 (by family only) shows node 0x150 and else node 0x14F, each
+    // dimmed (0x1B1B00) when nobody is home and untinted (0x1B26C0) otherwise, its matrix reset to the camera spot (0, -0.16, -3.84).
+    // The screen's Z is then cleared (mm_DmaList_QueueClearZ).
+    void TalkView_DrawBuilding(GuestPtr<TalkView> view, int byFamily, int target)
+    {
+        port::GuestFrame<0xA0> frame;
+        const uint32_t sp = frame.ptr().address;
+        const GuestPtr<CityScene> city = view->city;
+        const auto slot = [&](uint32_t type, uint32_t record) {
+            return port::callGuest<int>(port::load<uint32_t>(port::load<uint32_t>(type + 0x15Cu) + 0x24u), type, city.address, record);
+        };
+        uint32_t type;
+        int shown;
+        if (byFamily == 0)
+        {
+            const GuestPtr<MapObject> record = Map_GetRecord(city->map, target);
+            type = globals::buildingTypeAddress(record->type);
+            shown = slot(type, record.address);
+            if ((record->flags & 0x20u) == 0)
+                return;
+        }
+        else
+        {
+            type = globals::buildingTypeAddress(port::load<uint16_t>(Family_Get(target, 0).address + 0x20u));
+            shown = slot(type, 0);
+        }
+        const auto drawNode = [&](uint32_t node) {
+            const GuestPtr<A3DObject> model{port::load<uint32_t>(view.address + 0x30u)};
+            const bool nobody = TalkView_NobodyHome(view, byFamily, target) != 0;
+            A3DObject_ChangeLuminosity(model, GuestPtr<uint32_t>{nobody ? 0x001B1B00u : 0x001B26C0u}, static_cast<int>(node));
+            const GuestPtr<Vec4> matrix{port::load<uint32_t>(port::load<uint32_t>(model.address) + 8u) + node * 0xC0u + 0x70u};
+            Mat4_Copy(matrix, GuestPtr<Vec4>{globals::kIdentityMatrix});
+            port::store<uint32_t>(matrix.address + 0x30u, 0u);
+            port::store<uint32_t>(matrix.address + 0x34u, 0xBE23D70Au);
+            port::store<uint32_t>(matrix.address + 0x38u, 0xC075C28Fu);
+            A3DObject_DrawNode(model, static_cast<int>(node));
+        };
+        const uint32_t flags = port::load<uint16_t>(type + 0x136u);
+        if (shown == 0 && view->forceLit == 0)
+            drawNode(port::load<uint8_t>(type + 0x150u));
+        else if ((flags & 0x8000u) != 0)
+        {
+            sdk::sceVu0RotMatrixY(sp + 0x60u, globals::kIdentityMatrix, ps2f(std::bit_cast<float>(port::load<uint32_t>(type + 0x10Cu))));
+            port::store<uint32_t>(sp + 0x90u, port::load<uint32_t>(type + 0x100u));
+            port::store<uint32_t>(sp + 0x94u, port::load<uint32_t>(type + 0x104u));
+            port::store<uint32_t>(sp + 0x98u, port::load<uint32_t>(type + 0x108u));
+            Packet2_Draw(GuestPtr<uint32_t>{city->lights.address}, 1);
+            Instance_DrawMesh(globals::entranceModel.get(), GuestPtr<Vec4>{sp + 0x60u}, GuestPtr<Vec4>{globals::kDefaultColour},
+                              port::load<uint8_t>(type + 0x151u), 1);
+            Packet2_Draw(GuestPtr<uint32_t>{city->lights.address}, 0);
+        }
+        else if ((flags & 0x4000u) != 0)
+        {
+            if (byFamily == 1)
+                drawNode(port::load<uint8_t>(type + 0x150u));
+        }
+        else
+            drawNode(port::load<uint8_t>(type + 0x14Fu));
+        DmaList_QueueClearZ();
+    }
+
+    PORT_FN(TalkView_DrawBuilding);
 }

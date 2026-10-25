@@ -8,7 +8,7 @@ See `config/port_status.csv` for every function.
 
 | Origin | Functions | Named | Typed | Ported | Verified |
 |---|---:|---:|---:|---:|---:|
-| game | 1481 | 100.0% | 100.0% | 96.8% | 94.1% |
+| game | 1481 | 100.0% | 100.0% | 97.4% | 94.7% |
 | sdk | 768 | 100.0% | 0.0% | 0.0% | 0.0% |
 
 Blocking (game and unclassified functions that can reach a thread switch, deferred to native threading): indirect 79, no 987, yes 415
@@ -40,7 +40,7 @@ Blocking (game and unclassified functions that can reach a thread switch, deferr
 | pad | 10 | 100.0% | 100.0% | 100.0% | 100.0% |
 | random | 4 | 100.0% | 100.0% | 100.0% | 100.0% |
 | save | 48 | 100.0% | 100.0% | 100.0% | 89.6% |
-| scene | 25 | 100.0% | 100.0% | 76.0% | 72.0% |
+| scene | 25 | 100.0% | 100.0% | 84.0% | 80.0% |
 | sdk:crt0 | 3 | 100.0% | 0.0% | 0.0% | 0.0% |
 | sdk:libc | 32 | 100.0% | 0.0% | 0.0% | 0.0% |
 | sdk:libcdvd | 4 | 100.0% | 0.0% | 0.0% | 0.0% |
@@ -59,6 +59,6 @@ Blocking (game and unclassified functions that can reach a thread switch, deferr
 | sdk:mwrt | 15 | 100.0% | 0.0% | 0.0% | 0.0% |
 | sound | 57 | 100.0% | 100.0% | 100.0% | 86.0% |
 | stage | 8 | 100.0% | 100.0% | 100.0% | 100.0% |
-| talk | 322 | 100.0% | 100.0% | 97.2% | 96.0% |
+| talk | 322 | 100.0% | 100.0% | 98.4% | 97.2% |
 | text | 5 | 100.0% | 100.0% | 100.0% | 100.0% |
-| ui | 168 | 100.0% | 100.0% | 95.2% | 93.5% |
+| ui | 168 | 100.0% | 100.0% | 96.4% | 94.6% |

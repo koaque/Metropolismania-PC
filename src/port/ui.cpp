@@ -5332,4 +5332,605 @@ namespace mm
     }
 
     PORT_FN(Title_OpeningMovieStep);
+
+    // The title scene's start of a game (the step at +0xC4; every call also steps the city's asset loader, whose result is kept at
+    // +0x4C and the progress at +0x54 copied from 0x1BDB54). 0 fades voice 15 out and draws the title (layer set 0x29 when
+    // `newGame` is set, else 0x21); 1 (once the draw reports 1) puts the camera at its eye and target from 0x1B19F0 and 0x1B1A00;
+    // 2 shows the loading bar (the progress in 17ths of 10, at most 16 bars) and the intro text while the loading screen is up, and
+    // goes on when the loader is done (+0x4C = 0); 3 fades the loading screen out; 4 and 5 stop the title music and wait for the
+    // sound driver; 6 sets the game up: for a new game (+0xE0 clear) the character types, families, claims, words, goods, stamina,
+    // bag and event types are loaded, for a loaded one the stage, families, stamina and bag are reset, then the laptop entries
+    // are made; the result is 1 (and 0x1BDA7C = 0) or, with `newGame` set, 2 (and 0x1BDA7C = 1). 0 until then.
+    int SceneA_StartGame(GuestPtr<SceneA> scene, int newGame)
+    {
+        port::GuestFrame<0x50> frame;
+        const uint32_t sp = frame.ptr().address;
+        const uint32_t s = scene.address;
+        port::store<uint32_t>(s + 0x54u, port::load<uint32_t>(0x001BDB54u));
+        port::store<int32_t>(s + 0x4Cu, CityAssets_LoadStep());
+        const auto next = [&]() { port::store<int32_t>(s + 0xC4u, port::load<int32_t>(s + 0xC4u) + 1); };
+        const auto draw = [&]() { return Title_DrawCommon(scene, newGame != 0 ? 0x29 : 0x21); };
+        switch (port::load<uint32_t>(s + 0xC4u))
+        {
+        case 0:
+            SoundCmd_FadeB(0xF, 0, 0x10, 0);
+            draw();
+            next();
+            return 0;
+        case 1:
+        {
+            if (draw() != 1)
+                return 0;
+            next();
+            for (uint32_t offset = 0; offset < 0x10u; offset += 8u)
+            {
+                port::store<uint64_t>(sp + 0x30u + offset, port::load<uint64_t>(0x001B19F0u + offset));
+                port::store<uint64_t>(sp + 0x40u + offset, port::load<uint64_t>(0x001B1A00u + offset));
+            }
+            const GuestPtr<Camera> camera{port::load<uint32_t>(s)};
+            Camera_SetEyeTarget(camera, GuestPtr<Vec4>{sp + 0x30u}, GuestPtr<Vec4>{sp + 0x40u});
+            Camera_UpdateMatrices(camera);
+            return 0;
+        }
+        case 2:
+            if (LoadingScreen_Update(GuestPtr<LoadingScreen>{port::load<uint32_t>(s + 0x2Cu)}, 0) == 1)
+            {
+                int bars = (10 * port::load<int32_t>(s + 0x54u)) / 70;
+                if (bars > 16)
+                    bars = 16;
+                TexSprite_Draw(GuestPtr<TexSprite>{port::load<uint32_t>(s + 0x30u)});
+                if (bars != 0)
+                {
+                    const GuestPtr<TexSprite> bar{port::load<uint32_t>(s + 0x34u)};
+                    TexSprite_SetFrame(bar, 0, 0);
+                    TexSprite_SetClip(bar, static_cast<uint32_t>(bars), 1);
+                    TexSprite_Draw(bar);
+                }
+                Title_NewGameIntro(scene);
+            }
+            if (port::load<int32_t>(s + 0x4Cu) == 0)
+                next();
+            return 0;
+        case 3:
+            if (LoadingScreen_Update(GuestPtr<LoadingScreen>{port::load<uint32_t>(s + 0x2Cu)}, 1) == 0)
+                next();
+            return 0;
+        case 4:
+            SoundCmd_StopSequence(7, 0);
+            SoundCmd_02_Zero();
+            next();
+            return 0;
+        case 5:
+            if (Sound_IsBusy() == 0)
+                next();
+            return 0;
+        case 6:
+            sdk::sceGsSyncPath(0, 0);
+            if (port::load<int32_t>(s + 0xE0u) == 0)
+            {
+                CharType_LoadAll();
+                Family_Init();
+                Claim_Load();
+                Words_Init();
+                Goods_Load();
+                Stamina_CreateGlobal();
+                Bag_CreateGlobal();
+                Event_LoadTypes();
+            }
+            else
+            {
+                Stage_Reset();
+                Family_ResetState();
+                Stamina_Init(GuestPtr<Stamina>{port::load<uint32_t>(0x001BDBB8u)});
+                Bag_Clear(GuestPtr<Bag>{port::load<uint32_t>(0x001BDA18u)});
+            }
+            Laptop_InitEntries();
+            if (newGame == 0)
+            {
+                port::store<int32_t>(0x001BDA7Cu, 0);
+                return 1;
+            }
+            port::store<int32_t>(0x001BDA7Cu, 1);
+            return 2;
+        default:
+            return 0;
+        }
+    }
+
+    PORT_FN(SceneA_StartGame);
+
+    // One frame of the title scene (the mode at +0xC0): clears the screen and Z, draws the scene's packets and camera, steps the
+    // memory card manager and then runs the mode. 0 loads the scene's assets (SceneA_Load), then on to 1 (or 5 when +0xE0 is set);
+    // 1 is the memory card check; 2 to 4 the three logos; 5 the title intro (Cross, 0x800, skips into the title at once); 6 the
+    // title screen, whose answer is 0 new game (9), 1 load (8), 2 the opening movie (7, after the music fades out) or 10 the sound
+    // test (0xFF, which goes back to 5 when done); 8 the load menu (1 starts a loaded game: 0xA, 0 goes back: 6); 9 and 0xA start
+    // a new or loaded game (SceneA_StartGame: its 1 is mode 0xB, its 2 mode 0xC); 0xB and 0xC answer 1 or 2 once the card is idle.
+    // The asset loader is stepped in modes 1 to 6 and 8. The result is 0 until a game starts.
+    int SceneA_Update(GuestPtr<SceneA> scene)
+    {
+        const uint32_t s = scene.address;
+        DmaList_QueueClearScreen();
+        DmaList_QueueClearZ();
+        Packet2_Draw(GuestPtr<uint32_t>{port::load<uint32_t>(s + 4u)}, 0);
+        Packet_Draw(GuestPtr<uint32_t>{port::load<uint32_t>(s)});
+        const int card = McManagerUpdate(GuestPtr<McManager>{port::load<uint32_t>(s + 0xB4u)});
+        const uint32_t mode = port::load<uint32_t>(s + 0xC0u);
+        const auto setMode = [&](uint32_t value) { port::store<uint32_t>(s + 0xC0u, value); };
+        const auto next = [&]() { setMode(port::load<uint32_t>(s + 0xC0u) + 1u); };
+        const auto stepLoader = [&]() {
+            port::store<uint32_t>(s + 0x54u, port::load<uint32_t>(0x001BDB54u));
+            port::store<int32_t>(s + 0x4Cu, CityAssets_LoadStep());
+        };
+        switch (mode)
+        {
+        case 0xFF:
+            if (SoundTest_Update(static_cast<int>(s)) != 0)
+            {
+                setMode(5);
+                port::store<uint32_t>(s + 0xC4u, 0);
+            }
+            return 0;
+        case 0xC:
+        case 0xB:
+            if (card >= 2)
+                return 0;
+            return mode == 0xB ? 1 : 2;
+        case 0xA:
+        case 9:
+        {
+            const int result = SceneA_StartGame(scene, mode == 0xA ? 1 : 0);
+            if (result == 1)
+                setMode(0xB);
+            else if (result == 2)
+                setMode(0xC);
+            return 0;
+        }
+        case 8:
+        {
+            stepLoader();
+            const int result = Title_LoadMenu(scene);
+            if (result == 1)
+            {
+                setMode(0xA);
+                port::store<uint32_t>(s + 0xC4u, 0);
+            }
+            else if (result == 0)
+            {
+                setMode(6);
+                port::store<uint32_t>(s + 0xC4u, 0);
+            }
+            return 0;
+        }
+        case 7:
+            if (Title_OpeningMovieStep(scene) != 0)
+            {
+                setMode(5);
+                port::store<uint32_t>(s + 0xC4u, 0);
+                port::store<uint32_t>(s + 0x50u, 0);
+            }
+            return 0;
+        case 6:
+        {
+            stepLoader();
+            const int result = Title_PressStart(scene);
+            if (result == 0xA)
+            {
+                port::store<uint32_t>(s + 0x74u, 0x64);
+                setMode(0xFF);
+            }
+            else if (result == 2)
+            {
+                SoundCmd_02_Zero();
+                SoundCmd_FadeB(0xF, 0, 0x10, 0);
+                setMode(7);
+                port::store<uint32_t>(s + 0xC4u, 0);
+            }
+            else if (result == 1)
+            {
+                setMode(8);
+                port::store<uint32_t>(s + 0xC4u, 0);
+            }
+            else if (result == 0)
+            {
+                setMode(9);
+                port::store<uint32_t>(s + 0xC4u, 0);
+            }
+            return 0;
+        }
+        case 5:
+            stepLoader();
+            if (Title_Intro(scene) != 0)
+            {
+                port::store<uint32_t>(s + 0x40u, 0);
+                port::store<uint32_t>(s + 0xC4u, 0);
+                next();
+            }
+            if (Pad_Pressed(0) == 0x800u)
+            {
+                TexSprite_SetAlpha(GuestPtr<TexSprite>{port::load<uint32_t>(s + 0xCu)}, 0x80, 0);
+                port::store<uint32_t>(s + 0x40u, 0);
+                port::store<uint32_t>(s + 0xC4u, 0);
+                next();
+            }
+            return 0;
+        case 4:
+        case 3:
+        case 2:
+            stepLoader();
+            if (SceneA_LogoStep(scene, static_cast<char>(mode - 2u)) != 0)
+            {
+                port::store<uint32_t>(s + 0xC4u, 0);
+                next();
+            }
+            return 0;
+        case 1:
+            stepLoader();
+            if (SceneA_MemoryCardCheck(scene, card) != 0)
+            {
+                port::store<uint32_t>(s + 0xC4u, 0);
+                port::store<uint32_t>(s + 0xC8u, 0);
+                next();
+            }
+            return 0;
+        case 0:
+            if (SceneA_Load(scene, 0) == 0)
+                return 0;
+            port::store<uint32_t>(s + 0xC4u, 0);
+            port::store<uint32_t>(s + 0xC8u, 0);
+            if (port::load<int32_t>(s + 0xE0u) != 0)
+                setMode(5);
+            else
+                next();
+            return 0;
+        default:
+            return 0;
+        }
+    }
+
+    PORT_FN(SceneA_Update);
+
+    // The pause menu's save slot state (4): the two cards' states are read; while either is still being checked the "checking memory
+    // card" text shows and nothing is listed. Otherwise the slot menu (+8) lists the saves on the cards (their texts copied to
+    // +0x78, 0x92 bytes each; the count goes to +0x18, the newest save's index is the result) and, for a card that is unformatted
+    // or has room (states 0 and 3 and a new slot to make), a "new save" line each; items left from a longer list are emptied. With
+    // nothing listed, card message 0 (both cards in state 2), 6 (the second), 7 (the first) or 8 shows. The menu's choice: the
+    // cancel (-1) goes back to the main menu (state 2); a new slot makes the save slot (+0x20) and, if the card is usable, asks to
+    // confirm (state 5), else resets the manager (state 6); an existing save is looked up (+0x20, the card at +0x1C) and shown with
+    // the overwrite question (state 7, the choice kept at +0x998).
+    int PauseMenu_StateSlotSelect(GuestPtr<PauseMenu> pause)
+    {
+        port::GuestFrame<0x110> frame;
+        const uint32_t sp = frame.ptr().address;
+        const uint32_t cursorAt = sp + 0x108u, newestAt = sp + 0x10Cu, textAt = sp + 0x70u;
+        const uint32_t p = pause.address;
+        const auto mc = [p]() { return GuestPtr<McManager>{port::load<uint32_t>(p + 0xCu)}; };
+        const auto slots = [p]() { return GuestPtr<ListMenu>{port::load<uint32_t>(p + 8u)}; };
+        const auto main = [p]() { return GuestPtr<ListMenu>{port::load<uint32_t>(p + 4u)}; };
+        const auto message = [p]() { return GuestPtr<TextBox>{port::load<uint32_t>(p + 0x10u)}; };
+        port::store<int32_t>(cursorAt, 0);
+        int newest = 0, count = 0;
+        const int first = McManager_GetCardStatus(mc(), 0);
+        const int second = McManager_GetCardStatus(mc(), 1);
+        if (first == 4 || second == 4)
+        {
+            TextBox_SetPos(message(), 0x7600, 0x7E00, -0x100000);
+            TextBox_SetCharSize(message(), 0, 0xD0, 0, 0xE0);
+            TextBox_SetText(message(), GuestPtr<char>{0x001B7750u}, 0);
+            ListMenu_ClearItem(slots(), -1);
+            return 0;
+        }
+        TextBox_SetText(message(), GuestPtr<char>{0x001B73C0u}, 0);
+        for (uint32_t name = p; McManager_FormatSlotText(mc(), GuestPtr<int32_t>{cursorAt}, GuestPtr<char>{textAt}, GuestPtr<uint32_t>{newestAt}) != 0;
+             name += 0x92u, ++count)
+        {
+            if (port::load<int32_t>(newestAt) != 0)
+                newest = count;
+            ListMenu_SetItemText(slots(), GuestPtr<char>{textAt}, count);
+            sdk::strcpy(name + 0x78u, textAt);
+        }
+        port::store<int32_t>(p + 0x18u, count);
+        if ((first == 0 || first == 3) && McManager_PrepareNewSlot(mc(), 0) != 0)
+            ListMenu_SetItemText(slots(), GuestPtr<char>{0x001B78E0u}, count++);
+        if ((second == 0 || second == 3) && McManager_PrepareNewSlot(mc(), 1) != 0)
+            ListMenu_SetItemText(slots(), GuestPtr<char>{0x001B7960u}, count++);
+        if (port::load<int32_t>(p + 0x14u) != 0)
+            for (int stale = port::load<int32_t>(p + 0x14u) - 1; !(stale < count); --stale)
+                ListMenu_ClearItem(slots(), stale);
+        port::store<int32_t>(p + 0x14u, count);
+        if (port::load<int32_t>(p + 0x14u) == 0)
+        {
+            int number;
+            if (first == 2 && second == 2)
+                number = 0;
+            else if (second == 2)
+                number = 6;
+            else if (first == 2)
+                number = 7;
+            else
+                number = 8;
+            PauseMenu_ShowCardMessage(pause, number);
+            return newest;
+        }
+        if (ListMenu_HandleInput(slots(), GuestPtr<int32_t>{cursorAt}) == 0)
+            return newest;
+        const int32_t choice = port::load<int32_t>(cursorAt);
+        if (choice == -1)
+        {
+            ListMenu_ClearItem(main(), -1);
+            ListMenu_SetCursor(main(), 0x104, 0x3C, 0xFF0000);
+            ListMenu_SetItemText(main(), GuestPtr<char>{0x001B73F0u}, -1);
+            ListMenu_SetItemText(main(), GuestPtr<char>{0x001B73F8u}, -1);
+            ListMenu_SetItemText(main(), GuestPtr<char>{0x001B7400u}, -1);
+            port::store<int32_t>(p, 2);
+            return newest;
+        }
+        const int32_t listed = port::load<int32_t>(p + 0x18u);
+        if (!(choice < listed))
+        {
+            port::store<int32_t>(p + 0x1Cu, choice - listed);
+            if (first != 0 && first != 3)
+                port::store<int32_t>(p + 0x1Cu, 1);
+            port::store<int32_t>(p + 0x20u, McManager_PrepareNewSlot(mc(), port::load<int32_t>(p + 0x1Cu)));
+            if (McManager_IsCardUsable(mc(), port::load<int32_t>(p + 0x1Cu)) != 0)
+            {
+                ListMenu_ClearItem(main(), -1);
+                ListMenu_SetCursor(main(), 0x118, 0x8C, 0xFF0000);
+                ListMenu_SetItemText(main(), GuestPtr<char>{0x001B7438u}, -1);
+                ListMenu_SetItemText(main(), GuestPtr<char>{0x001B7440u}, -1);
+                port::store<int32_t>(p + 0x24u, 0);
+                TextBox_SetText(message(), GuestPtr<char>{0x001B7810u}, 0);
+                TextBox_AppendText(message(), GuestPtr<char>{port::load<int32_t>(p + 0x1Cu) != 0 ? 0x001B7580u : 0x001B7588u}, 0);
+                TextBox_AppendText(message(), GuestPtr<char>{0x001B7850u}, 0);
+                TextBox_SetPos(message(), 0x72E0, 0x7CC0, -0x100000);
+                TextBox_SetCharSize(message(), 0, 0xD0, 0, 0xE0);
+                port::store<int32_t>(p + 0x28u, 0);
+                port::store<int32_t>(p, 5);
+            }
+            else
+            {
+                McManager_ResetState(mc());
+                port::store<int32_t>(p + 0x24u, 0);
+                port::store<int32_t>(p + 0x28u, 0);
+                ListMenu_ClearItem(main(), -1);
+                TextBox_SetPos(message(), 0x7600, 0x7CC0, -0x100000);
+                TextBox_SetCharSize(message(), 0, 0xD0, 0, 0xE0);
+                port::store<int32_t>(p, 6);
+            }
+        }
+        else
+        {
+            port::store<int32_t>(p + 0x20u, McManager_FindSlotB(mc(), choice, GuestPtr<int32_t>{p + 0x1Cu}));
+            TextBox_SetPos(message(), 0x71C0, 0x7C20, -0x100000);
+            TextBox_SetText(message(), GuestPtr<char>{p + 0x78u + 0x92u * static_cast<uint32_t>(choice)}, 0);
+            TextBox_AppendText(message(), GuestPtr<char>{0x001B78B0u}, 0);
+            ListMenu_ClearItem(main(), -1);
+            ListMenu_ScrollTo(main(), 0);
+            ListMenu_SetCursor(main(), 0x118, 0x8C, 0xFF0000);
+            ListMenu_SetItemText(main(), GuestPtr<char>{0x001B7438u}, -1);
+            ListMenu_SetItemText(main(), GuestPtr<char>{0x001B7440u}, -1);
+            port::store<int32_t>(p + 0x998u, choice);
+            port::store<int32_t>(p, 7);
+        }
+        return newest;
+    }
+
+    PORT_FN(PauseMenu_StateSlotSelect);
+
+    // One frame of the pause menu (the state at +0): 0 makes its parts (the main list of three items at +4, the slot list of sixteen
+    // at +8, the memory card manager at +0xC, the message box at +0x10 and the save header at +0x30), hides the city's HUD and
+    // goes to 1; 1 slides in (+0x2C up by 10 to 120) and fills the main list (state 2); 2 takes the main list's choice (0 or the
+    // cancel closes with 9 and the sound 8, 1 goes to the card check 3, 2 shows the settings question: state 8); 3 shows the "checking
+    // memory card" text and, with the manager idle, goes to 4 (the slot menu) with the choice reset (+0x998 = -1); 4 to 7 and 10 are
+    // the slot, format, save, wait and main states; 8 closes the pause (state 0xB) on its first choice or goes back to 2; 9 slides
+    // out (+0x2C down by 10) and, with the manager idle, frees the parts, shows the HUD again and pops the city mode; 11 counts
+    // +0xC8 up by 2 to 128 and then does the same, but leaves the state at 11 (the result 1). 0 otherwise.
+    int PauseMenu_Update(GuestPtr<PauseMenu> pause, GuestPtr<CityScene> city)
+    {
+        port::GuestFrame<0x50> frame;
+        const uint32_t sp = frame.ptr().address;
+        const uint32_t p = pause.address, c = city.address;
+        const auto mc = [p]() { return GuestPtr<McManager>{port::load<uint32_t>(p + 0xCu)}; };
+        const auto main = [p]() { return GuestPtr<ListMenu>{port::load<uint32_t>(p + 4u)}; };
+        const auto slots = [p]() { return GuestPtr<ListMenu>{port::load<uint32_t>(p + 8u)}; };
+        const auto message = [p]() { return GuestPtr<TextBox>{port::load<uint32_t>(p + 0x10u)}; };
+        const auto applicantsEnabled = [c](uint8_t value) { port::store<uint8_t>(port::load<uint32_t>(c + 0x54u) + 0x2C9u, value); };
+        const auto mainItems = [&]() {
+            ListMenu_ClearItem(main(), -1);
+            ListMenu_SetCursor(main(), 0x104, 0x3C, 0xFF0000);
+            ListMenu_SetItemText(main(), GuestPtr<char>{0x001B73F0u}, -1);
+            ListMenu_SetItemText(main(), GuestPtr<char>{0x001B73F8u}, -1);
+            ListMenu_SetItemText(main(), GuestPtr<char>{0x001B7400u}, -1);
+        };
+        // Frees the four parts, shows the HUD again and pops the city's mode (state 9 also puts the pause state back to 0; state 11
+        // leaves it at 0xB).
+        const auto close = [&](bool resetState) {
+            if (main())
+            {
+                ListMenu_dtor(main(), 1);
+                port::store<uint32_t>(p + 4u, 0u);
+            }
+            if (slots())
+            {
+                ListMenu_dtor(slots(), 1);
+                port::store<uint32_t>(p + 8u, 0u);
+            }
+            if (mc())
+            {
+                McManager_dtor(mc(), 1);
+                port::store<uint32_t>(p + 0xCu, 0u);
+            }
+            if (message())
+            {
+                TextBox_dtor(message(), 1);
+                port::store<uint32_t>(p + 0x10u, 0u);
+            }
+            port::store<uint32_t>(c + 0x30u, 1u);
+            port::store<uint32_t>(c + 0x34u, 1u);
+            applicantsEnabled(1);
+            if (resetState)
+                port::store<int32_t>(p, 0);
+            CityScene_PopMode(city);
+        };
+        switch (static_cast<uint32_t>(port::load<int32_t>(p)))
+        {
+        case 0:
+        {
+            uint32_t list = sdk::operator_new(0x2A0u);
+            if (list != 0u)
+                list = ListMenu_ctor(GuestPtr<ListMenu>{list}, 3, 0x10, 0xFA, 0xF0, 0x3C, 0xFF0000).address;
+            port::store<uint32_t>(p + 4u, list);
+            for (int i = 0; i < 3; ++i)
+                ListMenu_AddItems(main(), 0xA, 1, 1, -1, 0, -1);
+            list = sdk::operator_new(0x2A0u);
+            if (list != 0u)
+                list = ListMenu_ctor(GuestPtr<ListMenu>{list}, 3, 0x2C, 0x21C, 0x1A4, 0x3C, 0xFF0000).address;
+            port::store<uint32_t>(p + 8u, list);
+            for (int i = 0; i < 0x10; ++i)
+                ListMenu_AddItems(slots(), 0x13, 3, 0, -1, 0, -1);
+            uint32_t manager = sdk::operator_new(0x28u);
+            if (manager != 0u)
+                manager = McManager_ctor(GuestPtr<McManager>{manager}).address;
+            port::store<uint32_t>(p + 0xCu, manager);
+            McManager_ClearSlots(mc());
+            port::store<uint32_t>(p + 0x10u, newTextBox(0x14, 5, -1));
+            port::store<uint32_t>(c + 0x30u, 0u);
+            port::store<uint32_t>(c + 0x34u, 0u);
+            applicantsEnabled(0);
+            McManager_BuildSaveHeader(mc(), city, GuestPtr<char>{p + 0x30u});
+            port::store<int32_t>(p, 1);
+            port::store<uint32_t>(p + 0x2Cu, 0u);
+            Sound_PlaySe(7, 0, 0x3C, 0.0f, 0.0f);
+            return 0;
+        }
+        case 1:
+        {
+            McManagerUpdate(mc());
+            const ps2f time = ps2f(port::load<float>(p + 0x2Cu)) + ps2f(10.0f);
+            port::store<float>(p + 0x2Cu, static_cast<float>(time));
+            if (time < ps2f(120.0f))
+                return 0;
+            mainItems();
+            applicantsEnabled(0);
+            port::store<int32_t>(p, 2);
+            return 0;
+        }
+        case 2:
+        {
+            McManagerUpdate(mc());
+            if (ListMenu_HandleInput(main(), GuestPtr<int32_t>{sp + 0x48u}) == 0)
+                return 0;
+            const int32_t choice = port::load<int32_t>(sp + 0x48u);
+            if (choice == 2)
+            {
+                TextBox_SetPos(message(), 0x7240, 0x7CC0, -0x100000);
+                TextBox_SetCharSize(message(), 0, 0xD0, 0, 0xE0);
+                TextBox_SetText(message(), GuestPtr<char>{0x001B7410u}, 0);
+                ListMenu_ClearItem(main(), -1);
+                ListMenu_SetCursor(main(), 0x118, 0x50, 0xFF0000);
+                ListMenu_SetItemText(main(), GuestPtr<char>{0x001B7438u}, -1);
+                ListMenu_SetItemText(main(), GuestPtr<char>{0x001B7440u}, -1);
+                ListMenu_ScrollTo(main(), 1);
+                port::store<int32_t>(p, 8);
+            }
+            else if (choice == 1)
+                port::store<int32_t>(p, 3);
+            else if (choice == 0 || choice == -1)
+            {
+                ListMenu_ClearItem(main(), -1);
+                port::store<int32_t>(p, 9);
+                port::store<float>(p + 0x2Cu, 120.0f);
+                Sound_PlaySe(8, 0, 0x3C, 0.0f, 0.0f);
+            }
+            return 0;
+        }
+        case 3:
+            ListMenu_ClearItem(main(), -1);
+            TextBox_SetText(message(), GuestPtr<char>{0x001B7750u}, 0);
+            TextBox_SetPos(message(), 0x7600, 0x7E00, -0x100000);
+            TextBox_SetCharSize(message(), 0, 0xD0, 0, 0xE0);
+            if (McManagerUpdate(mc()) == 0)
+            {
+                port::store<int32_t>(p, 4);
+                PauseMenu_Reset(pause);
+            }
+            port::store<int32_t>(p + 0x998u, -1);
+            return 0;
+        case 4:
+            McManagerUpdate(mc());
+            PauseMenu_StateSlotSelect(pause);
+            return 0;
+        case 5:
+            PauseMenu_StateFormat(pause);
+            return 0;
+        case 6:
+            if (PauseMenu_StateSave(pause, city) != 0)
+                PauseMenu_ShowCardMessage(pause, 3);
+            return 0;
+        case 7:
+            PauseMenu_StateWait(pause);
+            return 0;
+        case 8:
+        {
+            if (ListMenu_HandleInput(main(), GuestPtr<int32_t>{sp + 0x4Cu}) != 0)
+            {
+                if (port::load<int32_t>(sp + 0x4Cu) == 0)
+                {
+                    port::store<int32_t>(c + 0xD4u, 1);
+                    port::store<int32_t>(p, 0xB);
+                    Bgm_FadeOut(0x20);
+                    TextBox_SetText(message(), GuestPtr<char>{0x001B73C0u}, 0);
+                    ListMenu_ClearItem(main(), -1);
+                }
+                else
+                {
+                    ListMenu_ScrollTo(main(), 0);
+                    TextBox_SetText(message(), GuestPtr<char>{0x001B73C0u}, 0);
+                    mainItems();
+                    port::store<int32_t>(p, 2);
+                }
+            }
+            McManagerUpdate(mc());
+            return 0;
+        }
+        case 9:
+        {
+            const ps2f time = ps2f(port::load<float>(p + 0x2Cu)) - ps2f(10.0f);
+            port::store<float>(p + 0x2Cu, static_cast<float>(time));
+            const int busy = McManagerUpdate(mc());
+            if (!(time <= ps2f(0.0f)))
+                return 0;
+            if (busy == 2)
+            {
+                port::store<uint32_t>(p + 0x2Cu, 0u);
+                return 0;
+            }
+            close(true);
+            return 0;
+        }
+        case 10:
+            PauseMenu_StateMain(pause);
+            return 0;
+        case 11:
+        {
+            const int busy = McManagerUpdate(mc());
+            port::store<int32_t>(c + 0xC8u, port::load<int32_t>(c + 0xC8u) + 2);
+            bool done = false;
+            if (!(port::load<int32_t>(c + 0xC8u) < 0x81))
+            {
+                port::store<int32_t>(c + 0xC8u, 0x80);
+                done = busy < 2;
+            }
+            if (!done)
+                return 0;
+            port::store<int32_t>(c + 0xC8u, 0);
+            port::store<int32_t>(c + 0xD4u, 0);
+            close(false);
+            return 1;
+        }
+        default:
+            return 0;
+        }
+    }
+
+    PORT_FN(PauseMenu_Update);
 }

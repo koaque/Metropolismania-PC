@@ -3866,7 +3866,9 @@ void PauseMenu_ShowCardMessage(GuestPtr<PauseMenu> pause, int message);
 int PauseMenu_StateSave(GuestPtr<PauseMenu> pause, GuestPtr<CityScene> city);
 void PauseMenu_StateFormat(GuestPtr<PauseMenu> pause);
 void PauseMenu_StateWait(GuestPtr<PauseMenu> pause);
+int PauseMenu_StateSlotSelect(GuestPtr<PauseMenu> pause);
 void PauseMenu_Reset(GuestPtr<PauseMenu> pause);
+int PauseMenu_Update(GuestPtr<PauseMenu> pause, GuestPtr<CityScene> city);
 GuestPtr<PauseMenu> PauseMenu_dtor(GuestPtr<PauseMenu> pause, int16_t deleteFlag);
 GuestPtr<PauseMenu> PauseMenu_ctor(GuestPtr<PauseMenu> pause);
 int Applicants_CountActive(GuestPtr<Applicants> applicants);
@@ -4153,6 +4155,7 @@ void SoundTest_BgmText(int a0);
 void SoundTest_SeText(int a0);
 int Title_DrawCommon(GuestPtr<SceneA> scene, int layers);
 int Title_PressStart(GuestPtr<SceneA> scene);
+int SceneA_StartGame(GuestPtr<SceneA> scene, int newGame);
 void Title_NewGameIntro(GuestPtr<SceneA> scene);
 int Title_RandomCharParts(GuestPtr<SceneA> scene);
 int Title_OpeningMovieStep(GuestPtr<SceneA> scene);
@@ -4163,6 +4166,7 @@ int Title_Intro(GuestPtr<SceneA> scene);
 int Title_LogoLetters(GuestPtr<SceneA> scene);
 int SceneA_MemoryCardCheck(GuestPtr<SceneA> scene, int noPolling);
 int SceneA_LogoStep(GuestPtr<SceneA> scene, char logo);
+int SceneA_Update(GuestPtr<SceneA> scene);
 GuestPtr<SceneA> SceneA_dtor(GuestPtr<SceneA> scene, int16_t deleteFlag);
 GuestPtr<SceneA> SceneA_ctor(GuestPtr<SceneA> scene, int a1);
 int TownPages_SelectedEntry(GuestPtr<TownPages> pages);
@@ -4183,6 +4187,7 @@ void Widget_Draw(GuestPtr<Widget> widget, int pass);
 void TalkView_CollectOccupants(GuestPtr<TalkView> view);
 void TalkView_ToggleAnim(GuestPtr<TalkView> view);
 int TalkView_NobodyHome(GuestPtr<TalkView> view, int byFamily, int target);
+void TalkView_DrawBuilding(GuestPtr<TalkView> view, int byFamily, int target);
 void TalkView_BuildingCamera(GuestPtr<TalkView> view, int object, GuestPtr<Vec4> eye, GuestPtr<Vec4> target);
 void TalkView_DrawCursor(GuestPtr<TalkView> view);
 uint16_t TalkView_CursorPerson(GuestPtr<TalkView> view);
@@ -4396,6 +4401,7 @@ int WordsFn_ApplicantCountTier(GuestPtr<WordsCtx> ctx);
 int WordsFn_BuildingOpen(GuestPtr<WordsCtx> ctx);
 int WordsFn_BuildingsOverlap(GuestPtr<WordsCtx> ctx);
 int WordsFn_FamilyModArg(GuestPtr<WordsCtx> ctx);
+int WordsFn_PickClaimResident(GuestPtr<WordsCtx> ctx);
 int WordsFn_PickTestableResident(GuestPtr<WordsCtx> ctx);
 int WordsFn_PickByCandidates(GuestPtr<WordsCtx> ctx);
 int WordsFn_PickRandomResident(GuestPtr<WordsCtx> ctx);
@@ -4827,6 +4833,8 @@ GuestPtr<char> Words_GetChoiceText(int script, GuestPtr<CityScene> city, int cod
 void Words_ApplyChoice(int script, GuestPtr<CityScene> city, int code, int choice);
 int Words_CountChoices(int script, GuestPtr<CityScene> city, int code);
 void Words_AppendClipped(GuestPtr<char> buffer, GuestPtr<char> text);
+int16_t Words_StepImpl(GuestPtr<int32_t> script, GuestPtr<char> buffer);
+int16_t Words_Step(GuestPtr<int32_t> script, GuestPtr<char> buffer);
 int Words_FriendshipChanged();
 int Words_CancelAllowed();
 void Words_LoadForWants(GuestPtr<CityScene> city, int16_t id, int line, GuestPtr<char> out);
@@ -4849,18 +4857,12 @@ inline void StatusPanel_Update(GuestPtr<StatusPanel> panel, GuestPtr<CityScene> 
 inline void SceneB_MissionBriefing(GuestPtr<SceneB> scene) { port::callGuest<void>(addr::SceneB_MissionBriefing, scene); }
 inline int SceneB_Update(GuestPtr<SceneB> scene) { return port::callGuest<int>(addr::SceneB_Update, scene); }
 inline void WantsWin_Update(GuestPtr<WantsWin> wants, GuestPtr<CityScene> city) { port::callGuest<void>(addr::WantsWin_Update, wants, city); }
-inline int PauseMenu_StateSlotSelect(GuestPtr<PauseMenu> pause) { return port::callGuest<int>(addr::PauseMenu_StateSlotSelect, pause); }
-inline int PauseMenu_Update(GuestPtr<PauseMenu> pause, GuestPtr<CityScene> city) { return port::callGuest<int>(addr::PauseMenu_Update, pause, city); }
 inline int Applicants_Draw(GuestPtr<Applicants> applicants) { return port::callGuest<int>(addr::Applicants_Draw, applicants); }
 inline void Player_Update(GuestPtr<Player> player, GuestPtr<CityScene> city) { port::callGuest<void>(addr::Player_Update, player, city); }
 inline int Title_LoadMenu(GuestPtr<SceneA> scene) { return port::callGuest<int>(addr::Title_LoadMenu, scene); }
-inline int SceneA_StartGame(GuestPtr<SceneA> scene, int newGame) { return port::callGuest<int>(addr::SceneA_StartGame, scene, newGame); }
 inline int SceneA_Load(GuestPtr<SceneA> scene, int a1) { return port::callGuest<int>(addr::SceneA_Load, scene, a1); }
-inline int SceneA_Update(GuestPtr<SceneA> scene) { return port::callGuest<int>(addr::SceneA_Update, scene); }
 inline void TownPages_Update(GuestPtr<TownPages> pages, GuestPtr<CityScene> city) { port::callGuest<void>(addr::TownPages_Update, pages, city); }
 inline void TalkView_DrawPeople(GuestPtr<TalkView> view) { port::callGuest<void>(addr::TalkView_DrawPeople, view); }
-inline void TalkView_DrawBuilding(GuestPtr<TalkView> view, int byFamily, int target) { port::callGuest<void>(addr::TalkView_DrawBuilding, view, byFamily, target); }
-inline int WordsFn_PickClaimResident(GuestPtr<WordsCtx> ctx) { return port::callGuest<int>(addr::WordsFn_PickClaimResident, ctx); }
 inline int Words_CallCond(GuestPtr<Words> words) { return port::callGuest<int>(addr::Words_CallCond, words); }
 inline int Words_CallText(GuestPtr<Words> words) { return port::callGuest<int>(addr::Words_CallText, words); }
 inline int Words_CallAct(GuestPtr<Words> words) { return port::callGuest<int>(addr::Words_CallAct, words); }
@@ -4885,6 +4887,4 @@ inline int Movie_DecodeLoop(int videoDec) { return port::callGuest<int>(addr::Mo
 inline void Movie_VideoDecMain(int videoDec) { port::callGuest<void>(addr::Movie_VideoDecMain, videoDec); }
 inline int Movie_VideoDecPutTerminator(int videoDec) { return port::callGuest<int>(addr::Movie_VideoDecPutTerminator, videoDec); }
 inline uint32_t Words_ExpandLine(int a0, int a1, int a2) { return port::callGuest<uint32_t>(addr::Words_ExpandLine, a0, a1, a2); }
-inline int16_t Words_StepImpl(GuestPtr<int32_t> script, GuestPtr<char> buffer) { return port::callGuest<int16_t>(addr::Words_StepImpl, script, buffer); }
-inline int16_t Words_Step(GuestPtr<int32_t> script, GuestPtr<char> buffer) { return port::callGuest<int16_t>(addr::Words_Step, script, buffer); }
 }

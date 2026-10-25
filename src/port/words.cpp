@@ -2644,4 +2644,219 @@ namespace mm
     PORT_FN(WordsFn_AnyAcquaintanceSuppliesWant);
     PORT_FN(WordsFn_AcquaintanceSuppliesWant);
     PORT_FN(WordsFn_FamilySuppliesWant);
+
+    // Picks the resident a claim script talks about. The homes around building A are collected (candidates, +0x2C of the context),
+    // and the claims the selected want asks for are worked out as in WordsFn_SuppliesWantBody. The residents of each candidate home
+    // that are loaded are looked through: the acquaintances of each member (up to 16 families) that can apply to the city, whose
+    // home type claims one of the claims, give person B (the home's family, the member's index); 4 when that member's friendship
+    // allows it (family B, member B, building B, its type and the result at +0x28 are set), else the search goes on and ends with
+    // 3. With no result (and arg -1000) a resident by type is tried (2); with none either a random resident of a random candidate
+    // home becomes person B (1). 0 when there is no candidate or no resident.
+    int WordsFn_PickClaimResident(GuestPtr<WordsCtx> ctx)
+    {
+        port::GuestFrame<0x110> frame;
+        const uint32_t sp = frame.ptr().address;
+        const uint32_t local = sp + 0xFCu;
+        Words_CollectNearbyHomes(ctx, ctx->buildingA);
+        if (ctx->candidateCount == 0)
+            return 0;
+        port::store<uint32_t>(local, port::load<uint32_t>(0x001BDC1Cu));
+        port::store<int32_t>(sp + 0x10Cu, 0);
+        uint32_t claims = local;
+        int result = 0;
+        for (int index = 0; Wants_Find(ctx->city->wants, ctx->city, GuestPtr<uint32_t>{sp + 0x100u}, GuestPtr<uint32_t>{sp + 0x104u},
+                                       GuestPtr<uint32_t>{sp + 0x108u}, GuestPtr<int32_t>{sp + 0x10Cu}) != 0;
+             ++index)
+        {
+            if (index != ctx->wantIndex)
+                continue;
+            const uint32_t section = static_cast<uint32_t>(Claim_GetSectionB(
+                port::load<uint8_t>(globals::buildingTypeAddress(Map_GetRecord(ctx->city->map, static_cast<int>(port::load<uint32_t>(sp + 0x104u)))->type) + 0x147u)));
+            const uint32_t value = port::load<uint16_t>(section + 8u * port::load<uint32_t>(sp + 0x100u) + 2u);
+            if (static_cast<int32_t>(value) < 0x8000)
+                port::store<uint16_t>(local, static_cast<uint16_t>(value));
+            else
+                claims = static_cast<uint32_t>(Claim_GetSectionD(value));
+            break;
+        }
+        if (port::load<uint16_t>(claims) != 0)
+        {
+            for (int k = 0; k < ctx->candidateCount; ++k)
+            {
+                const GuestPtr<MapObject> home = Map_GetRecord(ctx->city->map, port::load<uint16_t>(ctx.address + 0x30u + 2u * static_cast<uint32_t>(k)));
+                const uint32_t family = static_cast<uint32_t>(Family_IsCached(home->family));
+                if (family == 0)
+                    continue;
+                const uint32_t first = family + 0x24u, end = first + 0x48u * port::load<uint16_t>(family + 0x22u);
+                for (uint32_t member = first; member < end; member += 0x48u)
+                {
+                    const uint32_t memberIndex = static_cast<uint32_t>(static_cast<int32_t>(member - first) / 0x48);
+                    const uint32_t list = member + 8u;
+                    for (uint32_t at = list; port::load<uint16_t>(at) != 0 && at < list + 0x20u; at += 2u)
+                    {
+                        if (Family_CanApply(port::load<uint16_t>(at), ctx->city) == 0)
+                            continue;
+                        const uint32_t type = static_cast<uint32_t>(Family_GetTypeIndex(static_cast<int>(port::load<uint16_t>(at)))) & 0xFFFFu;
+                        for (uint32_t want = static_cast<uint32_t>(Claim_GetSectionC(port::load<uint8_t>(globals::buildingTypeAddress(type) + 0x148u)));
+                             port::load<uint16_t>(want) != 0; want += 4u)
+                            for (uint32_t have = claims; port::load<uint16_t>(have) != 0; have += 2u)
+                            {
+                                if (port::load<uint16_t>(want) != port::load<uint16_t>(have))
+                                    continue;
+                                ctx->familyB = home->family;
+                                ctx->memberB = static_cast<uint16_t>(memberIndex);
+                                ctx->personB = Map_FindPersonEntry(ctx->city->map, static_cast<int16_t>(ctx->familyB), ctx->memberB);
+                                if (!ctx->personB)
+                                    continue;
+                                ctx->buildingB = home;
+                                ctx->buildingTypeB = home->type;
+                                ctx->result = port::load<uint16_t>(at);
+                                const int agrees = Family_FriendAgrees(ctx->familyB, ctx->memberB, ctx->city->approval);
+                                result = 3;
+                                if (agrees != 0)
+                                    return 4;
+                            }
+                    }
+                }
+            }
+        }
+        if (result == 0)
+        {
+            ctx->arg = -0x3E8;
+            if (Words_PickResidentByType(ctx) != 0)
+                result = 2;
+        }
+        if (result != 0)
+            return result;
+        if (ctx->candidateCount == 0)
+            return 0;
+        const int32_t pick = static_cast<int32_t>(Random_Next()) % ctx->candidateCount;
+        ctx->buildingB = Map_GetRecord(ctx->city->map, port::load<uint16_t>(ctx.address + 0x30u + 2u * static_cast<uint32_t>(pick)));
+        ctx->buildingTypeB = ctx->buildingB->type;
+        const GuestPtr<Family> residents = Family_Get(ctx->buildingB->family, 0);
+        const uint32_t count = port::load<uint16_t>(residents.address + 0x22u);
+        if (count == 0)
+            return 0;
+        const int32_t which = static_cast<int32_t>(Random_Next()) % static_cast<int32_t>(count);
+        ctx->personB = Map_FindPersonEntry(ctx->city->map, static_cast<int16_t>(ctx->buildingB->family), static_cast<uint16_t>(which));
+        if (!ctx->personB)
+            return 0;
+        ctx->familyB = ctx->personB->family;
+        ctx->memberB = ctx->personB->member;
+        return 1;
+    }
+
+    PORT_FN(WordsFn_PickClaimResident);
+
+    // One step of the WORDS script interpreter: reads the script's words from the current position (0x1BDE00) in the current block
+    // (0x1BDE14) until one gives a result other than -6009 ("go on") and returns it. The first call also waits for the file queue,
+    // points the tables of the two script banks (0x7181C0 and 0x718208) at their data and picks the block of the script in the
+    // second bank. Words: below -9010 the context's argument is set (word + 10000); -9010 up to -8001 an action through its pointer,
+    // whose result says how many words to skip (from -8900 on the action is word + 8927; from -8960 the argument is the word's
+    // 26ths from -8960 and the action the remainder + 1; below that the argument is word + 9000 and the action 0); 5000 and up a
+    // line of text, added to the buffer after a separator unless it adds nothing (its result is returned at once when the stop flag
+    // at 0x1BDE04 is set); 0 to 4999 jump to that word; -6010 up to -1 that result; -6011 starts the script over; below that a
+    // condition call (word + 7000).
+    int16_t Words_StepImpl(GuestPtr<int32_t> script, GuestPtr<char> buffer)
+    {
+        constexpr uint32_t kInitialised = 0x001BDDFCu, kWaited = 0x001BD9F4u, kBankFlag = 0x001BDDF8u, kBank2 = 0x001BDE10u,
+                           kCurrent = 0x001BDE14u, kPosition = 0x001BDE00u, kStopFlag = 0x001BDE04u, kWords = 0x001BDDF0u;
+        const uint32_t s = script.address;
+        const GuestPtr<Words> words{kWords};
+        if (port::load<int32_t>(kInitialised) == 0)
+        {
+            if (port::load<int32_t>(kWaited) >= 0)
+            {
+                FileQueue_WaitAll(0);
+                port::store<int32_t>(kWaited, -1);
+            }
+            const uint32_t base = port::load<uint32_t>(s + 4u);
+            const int32_t bank2 = port::load<int32_t>(kBankFlag);
+            for (uint32_t i = 0; i < 6; ++i)
+                port::store<uint32_t>(0x007181C0u + 4u * i, base + port::load<uint32_t>(base + 4u + 4u * i));
+            if (bank2 != 0)
+            {
+                const uint32_t second = port::load<uint32_t>(kBank2);
+                for (uint32_t i = 0; i < 6; ++i)
+                    port::store<uint32_t>(0x00718208u + 4u * i, second + port::load<uint32_t>(second + 8u + 4u * i));
+            }
+            const uint32_t again = port::load<uint32_t>(s + 4u);
+            port::store<uint32_t>(kCurrent, again + port::load<uint32_t>(again));
+            if (bank2 != 0)
+            {
+                const uint32_t second = port::load<uint32_t>(kBank2);
+                const int32_t entry = port::load<int16_t>(second + port::load<uint32_t>(second) + 2u * port::load<uint32_t>(s));
+                if (entry >= 0)
+                    port::store<uint32_t>(kCurrent, second + port::load<uint32_t>(second + 4u) + 2u * static_cast<uint32_t>(entry));
+            }
+            port::store<int32_t>(kInitialised, 1);
+        }
+        port::store<uint8_t>(buffer.address, 0);
+        int32_t result = -0x1779;
+        for (;;)
+        {
+            const int32_t token = port::load<int16_t>(port::load<uint32_t>(kCurrent) + 2u * port::load<uint16_t>(kPosition));
+            const auto act = [&](int index) { return port::callGuest<int>(addr::Words_CallAct, words, index); };
+            const auto skip = [&](int count) {
+                port::store<uint16_t>(kPosition, static_cast<uint16_t>(port::load<uint16_t>(kPosition) + (static_cast<uint32_t>(count) & 0xFFFFu)));
+            };
+            if (token < -0x2332)
+                Words_SetArg(words, static_cast<uint16_t>(token + 0x2710));
+            else if (token < -0x1F40)
+            {
+                if (token >= -0x22C4)
+                    skip(act(token + 0x22DF));
+                else if (token >= -0x2300)
+                {
+                    const int32_t relative = token + 0x2300;
+                    Words_SetArg(words, static_cast<uint16_t>(relative / 26));
+                    skip(act(relative % 26 + 1));
+                }
+                else
+                {
+                    Words_SetArg(words, static_cast<uint16_t>(token + 0x2328));
+                    skip(act(0));
+                }
+            }
+            else if (token >= 0x1388)
+            {
+                const int length = sdk::strlen(buffer.address);
+                bool separated = false;
+                if (length != 0)
+                {
+                    sdk::strcat(buffer.address, 0x001BAD88u);
+                    separated = true;
+                }
+                result = static_cast<int32_t>(Words_ExpandLine(static_cast<int>(s), token - 0x1388, static_cast<int>(buffer.address)));
+                if (separated && length + 1 == sdk::strlen(buffer.address))
+                    port::store<uint8_t>(buffer.address + static_cast<uint32_t>(length), 0);
+                if (port::load<uint16_t>(kStopFlag) != 0)
+                    return static_cast<int16_t>(result);
+            }
+            else if (token >= 0)
+                port::store<uint16_t>(kPosition, static_cast<uint16_t>(token - 1));
+            else if (token >= -0x177A)
+                result = token;
+            else if (token != -0x177B)
+                port::callGuest<int>(addr::Words_CallCond, words, token + 0x1B58);
+            else
+            {
+                const uint32_t base = port::load<uint32_t>(s + 4u);
+                port::store<uint32_t>(kCurrent, base + port::load<uint32_t>(base));
+                port::store<uint16_t>(kPosition, 0xFFFFu);
+            }
+            port::store<uint16_t>(kPosition, static_cast<uint16_t>(port::load<uint16_t>(kPosition) + 1u));
+            if (result != -0x1779)
+                return static_cast<int16_t>(result);
+        }
+    }
+
+    // The same through the script's pointer (the object holds it in its first word).
+    int16_t Words_Step(GuestPtr<int32_t> script, GuestPtr<char> buffer)
+    {
+        return Words_StepImpl(GuestPtr<int32_t>{port::load<uint32_t>(script.address)}, buffer);
+    }
+
+    PORT_FN(Words_StepImpl);
+    PORT_FN(Words_Step);
 }
