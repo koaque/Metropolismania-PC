@@ -8,7 +8,7 @@ See `config/port_status.csv` for every function.
 
 | Origin | Functions | Named | Typed | Ported | Verified |
 |---|---:|---:|---:|---:|---:|
-| game | 1481 | 100.0% | 100.0% | 98.5% | 95.8% |
+| game | 1481 | 100.0% | 100.0% | 98.8% | 96.1% |
 | sdk | 768 | 100.0% | 0.0% | 0.0% | 0.0% |
 
 Blocking (game and unclassified functions that can reach a thread switch, deferred to native threading): indirect 79, no 987, yes 415
@@ -22,11 +22,11 @@ Blocking (game and unclassified functions that can reach a thread switch, deferr
 | bag | 16 | 100.0% | 100.0% | 100.0% | 100.0% |
 | boot | 2 | 100.0% | 100.0% | 100.0% | 100.0% |
 | camera | 18 | 100.0% | 100.0% | 100.0% | 100.0% |
-| char | 84 | 100.0% | 100.0% | 98.8% | 98.8% |
+| char | 84 | 100.0% | 100.0% | 100.0% | 100.0% |
 | city | 185 | 100.0% | 100.0% | 100.0% | 99.5% |
 | claim | 6 | 100.0% | 100.0% | 100.0% | 100.0% |
 | core | 4 | 100.0% | 100.0% | 100.0% | 100.0% |
-| event | 148 | 100.0% | 100.0% | 99.3% | 98.0% |
+| event | 148 | 100.0% | 100.0% | 100.0% | 98.6% |
 | family | 36 | 100.0% | 100.0% | 100.0% | 97.2% |
 | file | 12 | 100.0% | 100.0% | 100.0% | 83.3% |
 | font | 3 | 100.0% | 100.0% | 100.0% | 66.7% |
@@ -59,6 +59,6 @@ Blocking (game and unclassified functions that can reach a thread switch, deferr
 | sdk:mwrt | 15 | 100.0% | 0.0% | 0.0% | 0.0% |
 | sound | 57 | 100.0% | 100.0% | 100.0% | 86.0% |
 | stage | 8 | 100.0% | 100.0% | 100.0% | 100.0% |
-| talk | 322 | 100.0% | 100.0% | 99.4% | 98.1% |
+| talk | 322 | 100.0% | 100.0% | 100.0% | 98.8% |
 | text | 5 | 100.0% | 100.0% | 100.0% | 100.0% |
 | ui | 168 | 100.0% | 100.0% | 100.0% | 98.2% |

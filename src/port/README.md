@@ -117,6 +117,10 @@ points at the writer), and `MMPC_PORT_DISABLE=0xADDR,...` keeps those functions 
 Warm records: a record named `warm<N>_...mmdt` is first advanced by N calls of the original (same arguments, memory and heap
 bookkeeping carried over) and the replay compares the call after that; it reaches the later steps of a function that works
 in steps over many frames, which a capture of the first frames cannot.
+A run ends at its first HANG, so a set of made records with hangs is cleared by moving each hung record away and starting again:
+`MMPC_DIFFTEST_FROM=<function>:<record file>` resumes that function after the record that hung (the earlier ones are not replayed
+again), and `MMPC_DIFFTEST_ORIGINAL_ONLY=1` runs only the generated function, which shows whether a hung record hangs in the
+original too (a state the replay cannot reach: a family or file that is not loaded) or only in the port (a bug).
 
 Some state lives in the runtime, outside RDRAM, and the replay does not reset it between the original's run
 and the ported one's: the guest heap and the file descriptors are saved and restored (patch 0138), but the
@@ -125,7 +129,7 @@ record cache are not. Records that depend on them differ in a few bytes the game
 `McSave_WriteIconSys`, `PauseMenu_StateSave`: ignore rules in `difftest.cpp`) or hang in the original too
 (a family not in the cache is read from the disc, which the replay never finishes: `Words_LoadForFamily`).
 The VU0 registers are not compared for functions that call a ported callee where the generated one left
-scratch values (`Person_ChooseDestination`, `CityCursor_Update`, the two talk person constructors).
+scratch values (`Person_ChooseDestination`, `CityCursor_Update`, `Person_Update`, the two talk person constructors).
 A new save's name carries the console clock in seconds, which ticks between the two runs: the last digits of the sixteen
 name slots are not compared for `McManager_NewSaveName`, `McManager_PrepareNewSlot` and the pause menu's slot list.
 

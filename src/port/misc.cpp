@@ -4950,4 +4950,258 @@ namespace mm
     }
 
     PORT_FN(Player_Update);
+
+    // char: one person's update; `timeFlags` says which of the periodic jobs are due: 1 the counters (mm_Person_TickCounters), 2 the
+    // check against the building's schedule, 4 the outing roll and 8 the friendship level. Bit 4 clears the status byte's middle bits
+    // and, for a person who works in a building of a type with flag 0x200 and has reached stage 3 of the day, re-rolls flag 0x10
+    // (a byte of the timer's mix above 200, or 230 when the city has flag 0x20). A person with flag 4 (handed over to a worker
+    // that took its place) is done. The person's tile comes from its position; then:
+    //  - Inside a building: on the building's tile the person leaves it (outside, the cool-down set from the type, no walk target),
+    //    unless it follows someone on that tile and is half a unit or more away, in which case it walks. Away from the building's
+    //    tile it takes the building's tile as its walk target once its cool-down is over and walks (the waypoint when it has no
+    //    target or the target is on its own tile), running (flag 0x80) while a followed person is further than 1.5.
+    //  - Outside: following someone, it enters the building at the followed position; else once every 64 frames, by its index, with
+    //    no cool-down, it picks a destination. For one on another tile the cool-down is 12, the occupant counts of the buildings
+    //    with people inside (type flag 0x40) move over, rain and snow make it hurry under shelter (0x40) and otherwise one in eight
+    //    runs (0x80); with flag 8 and a building tile that is its work or target (at least 9 apart, or a type with people inside) or
+    //    neither, a worker of its own building waiting on the tile (target 6000) is handed the person's building and index
+    //    and the person is dropped from the tile (flag 4).
+    // Flag 0x800 keeps the person within 63 of the middle and files it under the building or tile object it is in. Walking uses
+    // Person_Walk with flag 0x1000, else Person_UpdatePose (flag 0x100 is set after either). Flag 0x1000 is cleared at the end.
+    void Person_Update(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, uint32_t timeFlags)
+    {
+        using namespace vu0;
+        port::GuestFrame<0x140> frame;
+        const uint32_t sp = frame.ptr().address;
+        const GuestPtr<CityMap> map = city->map;
+        const GuestPtr<Vec4> playerMatrix{sp + 0x90u};
+        const ps2f centre = 64.0f;
+
+        if ((timeFlags & 1u) != 0)
+            Person_TickCounters(cls, city, person);
+        if ((timeFlags & 2u) != 0)
+            Person_CheckBuilding(cls, city, person);
+        if ((timeFlags & 4u) != 0)
+        {
+            StatusByte_ClearMid2(GuestPtr<uint8_t>::of(person->status));
+            const GuestPtr<MapObject> work = Map_GetRecord(map, person->work);
+            const GuestPtr<BuildingType> workType{globals::buildingTypeAddress(work->type)};
+            if ((workType->flags & 0x200u) != 0 && person->schedState >= 3)
+            {
+                person->flags = static_cast<uint16_t>(person->flags & 0xFFEFu);
+                const int roll = Random_TimerMix() & 0xFF;
+                if (roll > ((city->flags & 0x20u) != 0 ? 200 : 230))
+                    person->flags = static_cast<uint16_t>(person->flags | 0x10u);
+            }
+        }
+        if ((timeFlags & 8u) != 0)
+            StatusByte_IncHighLevel(GuestPtr<uint8_t>::of(person->status));
+        if ((person->flags & 4u) != 0)
+            return;
+
+        const int tileX = sdk::fptosi(centre + person->x);
+        const int tileZ = sdk::fptosi(centre - person->z);
+        const int tile = tileX + tileZ * 128;
+
+        // Where the person it follows is: the player (its matrix position kept within 62 of the middle) when it follows no one.
+        const auto followedPosition = [&](ps2f &fx, ps2f &fz) {
+            if (person->follow == kNoPerson)
+            {
+                Player_GetMatrix(city->player, playerMatrix);
+                const ps2f edge = 62.0f;
+                const auto clampToMap = [&](ps2f v) {
+                    if (v < -edge)
+                        return -edge;
+                    return v <= edge ? v : edge;
+                };
+                fx = clampToMap(playerMatrix[3].x);
+                fz = clampToMap(playerMatrix[3].z);
+            }
+            else
+            {
+                const MapPerson &followed = map->people[person->follow];
+                fx = followed.x;
+                fz = followed.z;
+            }
+        };
+        // The distance in the plane from the person to (tx, tz), through VU0 as the original does. Only x and z of the two points
+        // are written; their y and w lanes are whatever the frame held.
+        const auto distanceTo = [&](ps2f tx, ps2f tz, uint32_t pointAt, uint32_t personAt, uint32_t resultAt) {
+            const GuestPtr<Vec4> target{pointAt}, self{personAt}, result{resultAt};
+            self->x = person->x;
+            target->x = tx;
+            self->z = person->z;
+            target->z = tz;
+            vf(4) = load(self);
+            vf(5) = load(target);
+            set(vf(6), sub(vf(5), vf(4)), XYZW);
+            set(vf(7), mul(vf(6), vf(6)), XYZ);
+            set(vf(8), add(vf(7), lane(vf(7), 2)), X);
+            q() = sqrtQ(x(vf(8)));
+            set(vf(9), add(vf(0), _mm_set1_ps(q())), XYZW);
+            store(result, vf(9));
+            return result->x;
+        };
+
+        GuestPtr<MapObject> here{};
+        if (person->inside != kNoObject)
+        {
+            const GuestPtr<MapObject> building = Map_GetRecord(map, person->inside);
+            here = Map_GetTileFirstObject(map, tile);
+            bool walk = false;
+            if (building->tile == here->tile)
+            {
+                if ((person->flags & 0x20u) != 0)
+                {
+                    ps2f fx, fz;
+                    followedPosition(fx, fz);
+                    const int targetZ = sdk::fptosi(centre - fz);
+                    const int targetX = sdk::fptosi(centre + fx);
+                    if (Map_GetTileObject(map, targetX, targetZ)->tile == here->tile)
+                        walk = !(distanceTo(fx, fz, sp + 0xD0u, sp + 0xE0u, sp + 0xF0u) < ps2f(0.5f));
+                }
+                if (!walk)
+                {
+                    if (person->destination != kNoObject)
+                        person->cooldown = port::load<uint8_t>(globals::buildingTypeAddress(building->type) + 0x14Du);
+                    person->inside = kNoObject;
+                    person->destination = kNoObject;
+                    person->walkTile = 0x4000;
+                    person->previousTile = 0x4000;
+                    person->flags = static_cast<uint16_t>(person->flags & 0xFEFFu);
+                }
+            }
+            else
+            {
+                if (person->cooldown == 0)
+                    person->walkTile = building->tile;
+                if (person->walkTile == 0x4000)
+                    Path_NextWaypoint(cls, city, person, tile);
+                else if (Map_GetTileFirstObject(map, person->walkTile)->tile == here->tile)
+                    Path_NextWaypoint(cls, city, person, tile);
+                else
+                {
+                    if ((person->flags & 0x20u) != 0)
+                    {
+                        ps2f fx, fz;
+                        followedPosition(fx, fz);
+                        if (distanceTo(fx, fz, sp + 0x100u, sp + 0x110u, sp + 0x120u) <= ps2f(1.5f))
+                            person->flags = static_cast<uint16_t>(person->flags & 0xFF7Fu);
+                        else
+                            person->flags = static_cast<uint16_t>(person->flags | 0x80u);
+                    }
+                    walk = true;
+                }
+            }
+            if (walk)
+            {
+                if ((person->flags & 0x1000u) != 0)
+                    Person_Walk(cls, city, person, here, tile);
+                else
+                    Person_UpdatePose(cls, city, person, 0, tile);
+                person->flags = static_cast<uint16_t>(person->flags | 0x100u);
+            }
+        }
+
+        if (person->inside == kNoObject)
+        {
+            if ((person->flags & 0x20u) != 0)
+            {
+                ps2f fx, fz;
+                followedPosition(fx, fz);
+                const int targetX = sdk::fptosi(centre + fx);
+                const int targetZ = sdk::fptosi(centre - fz);
+                person->inside = Map_GetTileObject(map, targetX, targetZ)->id;
+            }
+            else if ((globals::frameCounter.get() & 0x3F) == (person->index & 0x3F) && person->cooldown == 0)
+            {
+                here = Map_FindPersonObjectOnTile(map, person->index, static_cast<uint32_t>(tile) & 0xFFFFu);
+                if (!here)
+                    here = Map_GetTileFirstObject(map, tile);
+                person->inside = static_cast<uint16_t>(Person_ChooseDestination(city, person, GuestPtr<uint32_t>{sp + 0x13Cu}, here->id));
+                if (person->inside != kNoObject)
+                {
+                    const GuestPtr<MapObject> destination = Map_GetRecord(map, person->inside);
+                    if (destination->tile == here->tile)
+                    {
+                        if (here->id != person->inside)
+                            Map_UnlinkPersonFromTile(map, tile, person->index);
+                    }
+                    else
+                    {
+                        person->cooldown = 12;
+                        if (here->id != person->work && here->id != person->target)
+                        {
+                            const GuestPtr<BuildingType> type{globals::buildingTypeAddress(here->type)};
+                            if ((type->flags & 0x40u) != 0 && here->occupants != 0)
+                                --here->occupants;
+                        }
+                        if (person->inside != person->work && person->inside != person->target)
+                        {
+                            const GuestPtr<BuildingType> type{globals::buildingTypeAddress(destination->type)};
+                            if ((type->flags & 0x40u) != 0)
+                                ++destination->occupants;
+                        }
+                        person->flags = static_cast<uint16_t>(person->flags & 0xFF7Fu);
+                        person->flags = static_cast<uint16_t>(person->flags & 0xFFBFu);
+                        if (city->weatherToday == 2 || city->weatherToday == 3)
+                            person->flags = static_cast<uint16_t>(person->flags | 0x40u);
+                        else if ((static_cast<int32_t>(Random_Next()) & 7) == 3)
+                            person->flags = static_cast<uint16_t>(person->flags | 0x80u);
+                        person->destination = here->id;
+                        if ((person->flags & 8u) != 0)
+                        {
+                            const GuestPtr<MapObject> workObject = Map_GetRecord(map, person->work);
+                            const GuestPtr<MapObject> targetObject = Map_GetRecord(map, person->target);
+                            const GuestPtr<BuildingType> destinationType{globals::buildingTypeAddress(destination->type)};
+                            bool steal = true;
+                            if (here->tile == workObject->tile || here->tile == targetObject->tile)
+                            {
+                                const ps2f apart = Path_TileDistance(static_cast<int>(cls.address), destination->tile, here->tile);
+                                if (apart < ps2f(9.0f) || (destinationType->flags & 0x40u) == 0)
+                                    steal = false;
+                            }
+                            if (steal)
+                            {
+                                const GuestPtr<MapPerson> worker = Map_FindWorkerOnTile(map, person->work, here->tile);
+                                if (worker && worker->target == kNoPerson)
+                                {
+                                    worker->inside = person->inside;
+                                    worker->target = person->index;
+                                    person->flags = static_cast<uint16_t>(person->flags | 4u);
+                                    Map_UnlinkPersonFromTile(map, tile, person->index);
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if ((person->flags & 0x800u) != 0)
+        {
+            const ps2f edge = 63.0f;
+            const auto clampToEdge = [&](ps2f v) {
+                if (v < -edge)
+                    return -edge;
+                return v <= edge ? v : edge;
+            };
+            person->x = clampToEdge(person->x);
+            person->z = clampToEdge(person->z);
+            const int fileX = sdk::fptosi(centre + person->x);
+            const int fileZ = sdk::fptosi(centre - person->z);
+            const GuestPtr<MapObject> onTile = Map_GetTileObject(map, fileX, fileZ);
+            if (person->inside != kNoObject)
+            {
+                const GuestPtr<MapObject> building = Map_GetRecord(map, person->inside);
+                MapObj_AddPerson(map, building->tile == onTile->tile ? building->id : onTile->id, person->index);
+            }
+            else
+                MapObj_AddPerson(map, onTile->id, person->index);
+        }
+        person->flags = static_cast<uint16_t>(person->flags & 0xEFFFu);
+    }
+
+    PORT_FN(Person_Update);
 }

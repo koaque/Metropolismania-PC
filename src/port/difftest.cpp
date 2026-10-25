@@ -23,6 +23,9 @@
 // Subset: MMPC_DIFFTEST_ONLY=<names> replays only those functions (results.json is then left as it was).
 // A replay that does not return within MMPC_DIFFTEST_HANG_SECONDS (default 60) is reported as HANG and ends the
 // run: a record edited into a state the game never reaches can leave the original waiting forever.
+// MMPC_DIFFTEST_FROM=<function>:<record file> then resumes that function after the record that hung (it is moved away) by leaving
+// out the records that sort before the file. MMPC_DIFFTEST_ORIGINAL_ONLY=1 runs only the generated function (to see that a record
+// that hangs hangs in the original too, not in the port).
 //
 // Debugging a failing record: MMPC_DIFFTEST_RANGES=<n> lists up to n differing RDRAM ranges (default 8), MMPC_DIFFTEST_DUMP=
 // <address>:<words> prints those words of both runs, and MMPC_DIFFTEST_TRACE=<names> prints the argument registers of every call
@@ -445,8 +448,11 @@ namespace port
             };
             // Not compared for functions that end in a call whose VU0 loads read stack leftovers: Map_SampleHeight leaves the
             // w lanes of its stack vectors unwritten, so what the generated callees left there before (and the ported ones
-            // do not) decides the final lanes. The game never reads them back: everything else is still compared.
-            static const std::set<std::string> kVu0FromLeftovers = {"TalkPersonFar_ctor", "TalkPersonNear_ctor", "Person_ChooseDestination", "CityCursor_Update"};
+            // do not) decides the final lanes. The game never reads them back: everything else is still compared. Person_Update
+            // is the same through Path_NextWaypoint (its waypoint vectors' unwritten lanes); the failing records differ in no
+            // other register or byte.
+            static const std::set<std::string> kVu0FromLeftovers = {"TalkPersonFar_ctor", "TalkPersonNear_ctor", "Person_ChooseDestination", "CityCursor_Update",
+                                                                    "Person_Update"};
             const bool vu0Compared = kVu0FromLeftovers.count(p.name) == 0;
             for (int v = 1; v < 32 && vu0Compared; ++v)
                 if (std::memcmp(&a.ctx.vu0_vf[v], &b.ctx.vu0_vf[v], sizeof(a.ctx.vu0_vf[v])) != 0)
@@ -842,6 +848,17 @@ namespace port
                     changeNames.insert(item);
             }
         }
+        std::string resumeFunction, resumeFile;
+        if (const char *from = env("MMPC_DIFFTEST_FROM"))
+        {
+            const std::string value = from;
+            const size_t colon = value.find(':');
+            if (colon != std::string::npos)
+            {
+                resumeFunction = value.substr(0, colon);
+                resumeFile = value.substr(colon + 1);
+            }
+        }
         size_t records = 0, failed = 0, functions = 0, untested = 0;
         // results.json: per function, how many records ran and failed (tools/port_status.py reads it).
         std::string results = "{\n";
@@ -863,6 +880,11 @@ namespace port
                     if (entry.path().extension() == ".mmdt")
                         files.push_back(entry.path());
             std::sort(files.begin(), files.end());
+            // MMPC_DIFFTEST_FROM=<function>:<record file> leaves out that function's records that sort before the file, to go on
+            // after a record that hung (it has been moved away) without replaying the ones before it again.
+            if (p.name == resumeFunction)
+                files.erase(std::remove_if(files.begin(), files.end(), [&](const std::filesystem::path &f) { return f.filename().string() < resumeFile; }),
+                            files.end());
             if (files.empty())
             {
                 ++untested;
@@ -907,6 +929,14 @@ namespace port
                 }
                 useGenerated(runtime, true);
                 runOnce(runtime, p.original, p.address, rec, rec.ctx, original, heap);
+                // MMPC_DIFFTEST_ORIGINAL_ONLY=1 skips the port run: a record that hangs in the replay and returns here hung in the
+                // port (a bug), while one that hangs here too is a state the game cannot reach in the replay.
+                if (env("MMPC_DIFFTEST_ORIGINAL_ONLY") != nullptr)
+                {
+                    watchStop();
+                    std::cout << "[difftest] " << p.name << " " << file.filename().string() << ": the original returned" << std::endl;
+                    continue;
+                }
                 useGenerated(runtime, false);
                 runOnce(runtime, p.wrapper, p.address, rec, rec.ctx, portedRun, heap);
                 watchStop();

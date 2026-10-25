@@ -2286,4 +2286,196 @@ namespace mm
     }
 
     PORT_FN(TalkView_DrawBuilding);
+
+    // The people of a talk view, in a row from the view's scroll position (+0xA4) at 0.3 apart, at height 0.4 and depth -3.65: the
+    // members of the family when the view is by family (+0x70 is 0x3F80), else the people of the building that count (a class
+    // without flag 1, outside or in this building). Those left of -0.8 are only counted past; drawing goes on while the position is
+    // at most 0.8. Someone who is away (activity or schedule 5) is the view's second model (+0x9C) swaying with a phase of its own
+    // (dimmed when nobody is home); anyone else is drawn by the character class's draw slot (vtable +0x14) turned about y by the
+    // position, in the default colour for the highlighted slot (the chosen one, else the cursor's) and a grey for the rest, with the
+    // view's person model first for a class with flag 2 (and the person then 0.15 lower). Up to four of them (and none left of -1)
+    // are counted for the name boxes (+0x78) and frames (+0x88); unless the view is choosing, each gets its name (the member's two
+    // name fields, +0x38 then +0x28, with a separator) on a row that alternates, and a friendship frame of the member's band + 9
+    // when it has one. The original's frame is reserved whole.
+    void TalkView_DrawPeople(GuestPtr<TalkView> view)
+    {
+        using namespace vu0;
+        port::GuestFrame<0x140> frame;
+        const uint32_t sp = frame.ptr().address;
+        const uint32_t matrix = sp + 0xB0u, row3 = sp + 0xE0u, pos = sp + 0xF0u, colour = sp + 0x100u;
+        constexpr uint32_t kDimAway = 0x001B1AD0u, kDimPerson = 0x001B1AE0u, kSeparator = 0x001B8FF8u;
+        const ps2f step = std::bit_cast<float>(0x3E99999Au); // 0.3
+        const ps2f leftEdge = std::bit_cast<float>(0xBF4CCCCDu), rightEdge = std::bit_cast<float>(0x3F4CCCCDu);
+        const ps2f cullEdge = -1.0f;
+
+        port::store<uint32_t>(pos, port::load<uint32_t>(view.address + 0xA4u));
+        port::store<uint32_t>(pos + 4u, 0x3ECCCCCDu);
+        port::store<uint32_t>(pos + 8u, 0xC069999Au);
+        port::store<uint32_t>(pos + 0xCu, 0x3F800000u);
+        int highlighted = view->chosenSlot;
+        if (highlighted == -1)
+            highlighted = view->cursorSlot;
+        int slot = 0, drawn = 0;
+        bool nobodyHome = false;
+
+        const auto posX = [&] { return ps2f(std::bit_cast<float>(port::load<uint32_t>(pos))); };
+        const auto advance = [&] {
+            ++slot;
+            port::store<uint32_t>(pos, std::bit_cast<uint32_t>((posX() + step).v));
+        };
+        // The screen x for a label at the position: 9000 * (x + 0.3) rounded towards zero to a multiple of 16, plus `bias`.
+        const auto screenX = [&](int bias) {
+            const int scaled = sdk::fptosi(ps2f(9000.0f) * (step + posX()));
+            return scaled / 16 * 16 + bias;
+        };
+        const auto classOf = [&](uint32_t charType) { return GuestPtr<CharClass>{port::load<uint32_t>(globals::charClassTable.get() + 4u * charType)}; };
+
+        // Someone away: the second model at the position, swaying with a phase of the view's idle time plus a number of frames from the
+        // seed (the square root of its float through VU0, whose bits modulo 90 give the frames).
+        const auto drawAway = [&](int seed, uint32_t slotAt) {
+            const uint32_t model = port::load<uint32_t>(view.address + 0x9Cu);
+            Mat4_Copy(GuestPtr<Vec4>{model + 0x10u}, GuestPtr<Vec4>{globals::kIdentityMatrix});
+            for (uint32_t i = 0; i < 12; i += 4)
+                port::store<uint32_t>(model + 0x40u + i, port::load<uint32_t>(pos + i));
+            port::store<int32_t>(slotAt, seed);
+            vf(4) = load(GuestPtr<Vec4>{slotAt});
+            set(vf(4), itof0(vf(4)), XYZW);
+            q() = sqrtQ(x(vf(4)));
+            set(vf(9), add(vf(0), _mm_set1_ps(q())), XYZW);
+            store(GuestPtr<Vec4>{slotAt}, vf(9));
+            ps2f phase = view->idleTime + fromInt(port::load<int32_t>(slotAt) % 90);
+            if (!(phase < ps2f(180.0f)))
+                phase = phase - ps2f(180.0f);
+            Instance_DrawSwayingIfRoom(GuestPtr<A3DObject>{port::load<uint32_t>(view.address + 0x9Cu)}, 0, phase);
+            Instance_DrawModel(GuestPtr<A3DObject>{port::load<uint32_t>(view.address + 0x9Cu)}, GuestPtr<Vec4>{nobodyHome ? kDimAway : globals::kDefaultColour}, 0, 0);
+        };
+        // Someone there: the class draws it (for a family member the person is 0 and the family and member are given, for a person on
+        // the map it is the record).
+        const auto drawNormal = [&](GuestPtr<CharClass> cls, uint32_t person, int family, int member) {
+            sdk::sceVu0RotMatrixY(matrix, globals::kIdentityMatrix, posX());
+            for (uint32_t i = 0; i < 16; i += 4)
+                port::store<uint32_t>(row3 + i, port::load<uint32_t>(pos + i));
+            if (slot == highlighted)
+                for (uint32_t i = 0; i < 16; i += 4)
+                    port::store<uint32_t>(colour + i, port::load<uint32_t>(globals::kDefaultColour + i));
+            else
+            {
+                port::store<uint32_t>(colour, 0x3F4CCCCDu);
+                port::store<uint32_t>(colour + 4u, 0x3F4CCCCDu);
+                port::store<uint32_t>(colour + 8u, 0x3F4CCCCDu);
+                port::store<uint32_t>(colour + 0xCu, 0u);
+            }
+            if ((cls->flags & 2u) != 0)
+            {
+                const uint32_t model = view->personModel.address;
+                Mat4_Copy(GuestPtr<Vec4>{model + 0x10u}, GuestPtr<Vec4>{globals::kIdentityMatrix});
+                for (uint32_t i = 0; i < 12; i += 4)
+                    port::store<uint32_t>(model + 0x40u + i, port::load<uint32_t>(pos + i));
+                Instance_DrawModel(GuestPtr<A3DObject>{model}, GuestPtr<Vec4>{nobodyHome ? kDimPerson : globals::kDefaultColour}, 0, 0);
+                const ps2f lowered = ps2f(std::bit_cast<float>(port::load<uint32_t>(row3 + 4u))) - ps2f(std::bit_cast<float>(0x3E19999Au));
+                port::store<uint32_t>(row3 + 4u, std::bit_cast<uint32_t>(lowered.v));
+            }
+            port::callGuest<void>(port::load<uint32_t>(port::load<uint32_t>(cls.address + 0x20u) + 0x14u), cls.address, view->city.address, person, family, member,
+                                  matrix, colour, view.address + 0xD0u + 4u * static_cast<uint32_t>(slot), view.address + 0x1D0u + 4u * static_cast<uint32_t>(slot));
+            if (view->animTime[slot] == ps2f(0.0f) && view->anim[slot] != 7)
+                view->anim[slot] = 7;
+        };
+        // The name of the member at `record` in the next name box, and its friendship frame when the band is not 0.
+        const auto drawLabel = [&](uint32_t record, int row, int depth, int family, int member) {
+            const GuestPtr<TextBox> box{view->nameBoxes[drawn].address};
+            TextBox_SetPos(box, screenX(0x7060), (row + 0x790) * 16, depth);
+            TextBox_SetText(box, GuestPtr<char>{record + 0x38u}, 0);
+            TextBox_AppendText(box, GuestPtr<char>{kSeparator}, 0);
+            TextBox_AppendText(box, GuestPtr<char>{record + 0x28u}, 0);
+            TextBox_Draw(box);
+            const int band = Family_GetFriendshipBand(family, member);
+            if (band != 0)
+            {
+                const GuestPtr<Frame> frameObject{view->frames[drawn].address};
+                const int left = screenX(0x6EE0), top = (row + 0x790) * 16;
+                Frame_SetCorners(frameObject, left, top, left + 0x180, top + 0xC0);
+                Frame_SetStyle(frameObject, band + 9);
+                Dma_AppendCall_14C200(static_cast<int>(frameObject.address));
+            }
+        };
+
+        if (view->building == 0x3F80)
+        {
+            nobodyHome = TalkView_NobodyHome(view, 1, view->family) != 0;
+            const GuestPtr<Family> family = Family_Get(view->family, 0);
+            int member = 0;
+            while (posX() < leftEdge)
+            {
+                if (!(member < family->memberCount))
+                    return;
+                ++member;
+                advance();
+            }
+            while (posX() <= rightEdge)
+            {
+                if (!(member < family->memberCount))
+                    return;
+                const uint32_t record = family.address + 0x24u + 0x48u * static_cast<uint32_t>(member);
+                const GuestPtr<CharClass> cls = classOf(port::load<uint16_t>(record));
+                if (Schedule_QueryB(view->city, static_cast<uint32_t>(view->family), member) == 5)
+                    drawAway(family->memberCount + 6 * view->family, sp + 0x110u);
+                else
+                    drawNormal(cls, 0, view->family, member);
+                if (!(posX() < cullEdge) && drawn < 4)
+                {
+                    if (view->choosing == 0)
+                        drawLabel(record, member % 2 == 0 ? 0xAA : 0xBA, -0x100000, view->family, member);
+                    ++drawn;
+                    ++member;
+                }
+                advance();
+            }
+            return;
+        }
+
+        nobodyHome = TalkView_NobodyHome(view, 0, view->building) != 0;
+        const GuestPtr<CityMap> map = view->city->map;
+        const GuestPtr<uint16_t> cursor{sp + 0x13Eu};
+        *cursor = Map_GetRecord(map, view->building)->firstPerson;
+        int seen = 0;
+        const auto counts = [&](GuestPtr<MapPerson> person, GuestPtr<CharClass> cls) {
+            return (cls->flags & 1u) == 0 && (person->inside == kNoObject || static_cast<int32_t>(person->inside) == view->building);
+        };
+        while (posX() < leftEdge)
+        {
+            const GuestPtr<MapPerson> person = People_Next(map, cursor);
+            if (!person)
+                return;
+            if (counts(person, classOf(person->charType)))
+            {
+                ++seen;
+                advance();
+            }
+        }
+        while (posX() <= rightEdge)
+        {
+            const GuestPtr<MapPerson> person = People_Next(map, cursor);
+            if (!person)
+                return;
+            const GuestPtr<CharClass> cls = classOf(person->charType);
+            if (!counts(person, cls))
+                continue;
+            ++seen;
+            if (person->activity == 5)
+                drawAway(person->index, sp + 0x120u);
+            else
+                drawNormal(cls, person.address, 0, 0);
+            if (!(posX() < cullEdge) && drawn < 4)
+            {
+                const GuestPtr<Family> family = Family_Get(person->family, 0);
+                const uint32_t record = family.address + 0x24u + 0x48u * person->member;
+                if (view->choosing == 0)
+                    drawLabel(record, seen % 2 == 0 ? 0xBA : 0xAA, 0x200000, person->family, person->member);
+                ++drawn;
+            }
+            advance();
+        }
+    }
+
+    PORT_FN(TalkView_DrawPeople);
 }

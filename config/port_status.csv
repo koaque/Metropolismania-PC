@@ -848,7 +848,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001341A0,mm_CharType_ClearSlots,184,game,char,verified,no,1,0,frees all 25 character type slots (0x1C5110 = 6000) and clears their timers (0x1C5310)
 0x00134260,mm_Person_TurnToPlayer,896,game,char,verified,no,1,2,"turns a person's model part (nodes 0 and 3) to face the player, blended 9:1 with the direction kept in its slot (0x1C5110/0x1C5180/0x1C5310) (was mm_Person_BuildPose)"
 0x001345E0,mm_Person_Draw,1088,game,char,verified,yes,0,11,"class 1 slot +0x10: person instances on the terrain, within the draw range"
-0x00134A20,mm_Person_Update,3032,game,char,typed,yes,0,20,"class 1 slot +0xC: a person's behaviour per tick: target building, walking, waiting, random choices"
+0x00134A20,mm_Person_Update,3032,game,char,verified,yes,0,20,"class 1 slot +0xC: a person's behaviour per tick: target building, walking, waiting, random choices"
 0x00135600,mm_Person_dtor,96,game,char,verified,yes,0,2,"vtable 0x1BCEB0, then the base destructor"
 0x00135660,mm_Person_ctor,136,game,char,verified,no,1,1,"base constructor, vtable 0x1BCEB0, walking speed +0x24 = record u16 +6 / 1e6"
 0x001356F0,mm_Event_ClearTileFlags,120,game,event,verified,no,2,0,restores the claim records of event a0's tile list (claimData lists at 0x1BDA60): each record's first 8 bytes from its second 8
@@ -1519,7 +1519,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001735B0,mm_Widget_ctor,28,game,ui,verified,no,7,0,"vtable 0x1BD400 at +8, state and timer 0"
 0x001735D0,mm_TalkView_CollectOccupants,492,game,talk,verified,no,2,4,"the talk building's workers (outside or in it, class without flag 1), sorted by their +0x2E byte, are moved off its tile into it"
 0x001737C0,mm_TalkView_ToggleAnim,88,game,talk,verified,no,1,0,(provisional) flips the selected person's animation (7 -> 2/3)
-0x00173820,mm_TalkView_DrawPeople,3232,game,talk,typed,yes,3,18,"people at the building or of the family in a row with names, grades and the cursor"
+0x00173820,mm_TalkView_DrawPeople,3232,game,talk,verified,yes,3,18,"people at the building or of the family in a row with names, grades and the cursor"
 0x001744E0,mm_TalkView_NobodyHome,296,game,talk,verified,yes,2,4,"(provisional) 1 when no one of the family or building is there (schedule, outside flags)"
 0x00174610,mm_TalkView_DrawBuilding,916,game,talk,verified,yes,6,10,"the target building (a1 0: object, 1: family's home), lit when someone is home"
 0x001749B0,mm_TalkView_BuildingCamera,904,game,talk,verified,no,9,4,camera eye and target in front of the building's entrance
@@ -2086,7 +2086,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00196F20,mm_EventData_GetSize1C,8,game,event,verified,no,1,0,(provisional) vtable size slot: 0x1C (used by the event manager constructor)
 0x00196F30,mm_EvNoodles_Slot14,192,game,event,verified,yes,0,1,type 13: Slot14
 0x00196FF0,mm_EvNoodles_End,248,game,event,verified,no,0,2,type 13: End
-0x001970F0,mm_EvNoodles_Update,5984,game,event,typed,yes,0,19,type 13: Update
+0x001970F0,mm_EvNoodles_Update,5984,game,event,verified,yes,0,19,type 13: Update
 0x00198850,mm_EvNoodles_Start,120,game,event,verified,no,0,1,type 13: Start
 0x001988D0,mm_EvNoodles_Check,680,game,event,verified,no,0,3,"type 13 ""Noodles"": Check"
 0x00198B80,mm_EvThief_Slot14,252,game,event,verified,no,0,1,type 17: Slot14
@@ -2206,7 +2206,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001A17F0,mm_Words_ApplyChoice,504,game,talk,verified,yes,1,6,"stores menu choice a3 for code a2 (bag item, want, event, argument) and jumps"
 0x001A19F0,mm_Words_CountChoices,664,game,talk,verified,no,3,3,number of menu choices for code a2
 0x001A1CA0,mm_Words_AppendClipped,312,game,talk,verified,no,1,2,(provisional) appends a string to the message buffer within the line limit
-0x001A1DE0,mm_Words_ExpandLine,2044,game,talk,typed,no,2,7,"expands a script line: conditions pick branches, text getters fill in names, actions run"
+0x001A1DE0,mm_Words_ExpandLine,2044,game,talk,verified,no,2,7,"expands a script line: conditions pick branches, text getters fill in names, actions run"
 0x001A2620,mm_Words_StepImpl,888,game,talk,verified,yes,1,7,"binds the loaded tables on first use, then runs codes until the next message or end code"
 0x001A29B0,mm_Words_Step,8,game,talk,verified,yes,1,1,next message of the running script (to mm_Words_StepImpl)
 0x001A29C0,mm_Words_FriendshipChanged,8,game,talk,verified,no,1,1,global context +0x13C

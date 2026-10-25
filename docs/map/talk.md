@@ -40,7 +40,7 @@ friendship changed. A is the person talked to.
 
 ## Functions
 
-322 functions (ported 4, typed 2, verified 316). Blocks: 92 can reach a thread switch, 27 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+322 functions (ported 4, verified 318). Blocks: 92 can reach a thread switch, 27 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -353,7 +353,7 @@ friendship changed. A is the person talked to.
 | `0x001A17F0` | `void mm_Words_ApplyChoice(int script, CityScene *city, int code, int choice)` | 504 | yes | stores menu choice a3 for code a2 (bag item, want, event, argument) and jumps |
 | `0x001A19F0` | `int mm_Words_CountChoices(int script, CityScene *city, int code)` | 664 | no | number of menu choices for code a2 |
 | `0x001A1CA0` | `void mm_Words_AppendClipped(char *buffer, char *text)` | 312 | no | (provisional) appends a string to the message buffer within the line limit |
-| `0x001A1DE0` | `uint32_t mm_Words_ExpandLine(int a0, int a1, int a2)` | 2044 | no | expands a script line: conditions pick branches, text getters fill in names, actions run |
+| `0x001A1DE0` | `int16_t mm_Words_ExpandLine(int32_t *script, int code, char *out)` | 2044 | no | expands a script line: conditions pick branches, text getters fill in names, actions run |
 | `0x001A2620` | `int16_t mm_Words_StepImpl(int32_t *script, char *buffer)` | 888 | yes | binds the loaded tables on first use, then runs codes until the next message or end code |
 | `0x001A29B0` | `int16_t mm_Words_Step(int32_t *script, char *buffer)` | 8 | yes | next message of the running script (to mm_Words_StepImpl) |
 | `0x001A29C0` | `int mm_Words_FriendshipChanged(void)` | 8 | no | global context +0x13C |

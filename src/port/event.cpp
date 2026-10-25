@@ -5225,4 +5225,509 @@ namespace mm
     }
 
     PORT_FN(EvThief_Update);
+
+    // Event type 13: the story is a state machine on `var` (+0xA) over three to four actors: the first (+0x14), second (+0x1C) and third
+    // (+0x24), and three more (+0x2C, +0x34, +0x3C) each with a partner 0x18 on (+0x44, +0x4C, +0x54) that go through the same steps one
+    // after the other (phases 4 to 9 and 0xC to 0x1C in threes: the group picks its actor by the phase). The timer is at +0x64, the
+    // day to wait for at +0x5C and the time of day at +0x60. State 1 finds the first actor's home and the people; 3 chooses which
+    // group goes on; 4/0xD/0x16 wait for the day and 10:00 then have the actor walk to its partner and phone; 5/0xE/0x17 wait out the
+    // timer; 6/0xF/0x18 send the actor home; 7/0x10/0x19 and 9/0x12/0x1B bring the player near; 0xA/0x13/0x1C walk the actor and the
+    // first one to the first one's building; 0xC, 0x15 and 0x1E move on once the actor is on the building; 0x1F to 0x58 are the
+    // scenes with the third actor (following, waiting at a building, the shop); 0x61 ends the event. From phase 0x20 up to 0x57 a
+    // building with people inside is emptied to 20 at 2:00 (clock / 60 == 0x78).
+    void EvNoodles_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city)
+    {
+        const uint32_t d = data.address;
+        const GuestPtr<CityMap> map = city->map;
+        const auto actor = [&](uint32_t offset) { return GuestPtr<ActorRef>{d + offset}; };
+        const auto partner = [&](GuestPtr<ActorRef> who) { return GuestPtr<ActorRef>{who.address + 0x18u}; };
+        const auto get = [&](uint32_t offset) { return port::load<int32_t>(d + offset); };
+        const auto put = [&](uint32_t offset, int32_t value) { port::store<int32_t>(d + offset, value); };
+        const auto advance = [&](int step = 1) { data->var = static_cast<uint8_t>(data->var + step); };
+        const auto record = [&](GuestPtr<ActorRef> who) { return map->people + who->person; };
+        const auto address = [](GuestPtr<ActorRef> who) { return static_cast<int>(who.address); };
+        // The actor of a group of three phases (a, middle, c): the first group member below the middle, the second at it, the third above.
+        const auto byPhase = [&](int middle) { return actor(data->var < middle ? 0x2Cu : (data->var > middle ? 0x3Cu : 0x34u)); };
+        const GuestPtr<ActorRef> first = actor(0x14), second = actor(0x1C), third = actor(0x24);
+        // The actor reached its partner's place and is stopped there: it walks to the partner, and once at the building (from 10:00)
+        // is told.
+        const auto standing = [&](GuestPtr<ActorRef> who) {
+            return Person_IsOnOpenTile(city, who) != 0 && EvActor_PointCursor(city, who) != 0;
+        };
+        // The third actor's person, at the turn of each in-game minute, takes shelter (flag 0x40) in rain and snow and leaves it otherwise.
+        const auto shelter = [&] {
+            if (city->clock / 60 != 0)
+                return;
+            const GuestPtr<MapPerson> who = record(third);
+            const bool wet = city->weatherToday == 2 || city->weatherToday == 3;
+            if (wet && (who->flags & 0x40u) == 0)
+                who->flags = static_cast<uint16_t>(who->flags | 0x40u);
+            else if (!wet && (who->flags & 0x40u) != 0)
+                who->flags = static_cast<uint16_t>(who->flags & 0xFFBFu);
+        };
+        // A person on the map keeps one building's heading count right.
+        const auto leaveBuilding = [&](uint32_t building) {
+            const GuestPtr<MapObject> old = Map_GetRecord(map, static_cast<int>(building));
+            if (old->headingHere != 0)
+                --old->headingHere;
+        };
+
+        switch (data->var)
+        {
+        case 1:
+        {
+            if (first->object == kNoObject)
+            {
+                const GuestPtr<MapObject> home = Map_FindFamilyHome(map, first->family);
+                if (!home)
+                    break;
+                first->object = home->id;
+                second->object = home->id;
+                home->flags = static_cast<uint16_t>(home->flags | 0x200u);
+                break;
+            }
+            put(0x64, get(0x64) - 1);
+            if (get(0x64) >= 1)
+                break;
+            const GuestPtr<MapPerson> entry = Map_FindPersonEntry(map, static_cast<int16_t>(first->family), first->member);
+            if (!entry)
+            {
+                put(0x64, 0x3C);
+                break;
+            }
+            first->person = entry->index;
+            const GuestPtr<MapPerson> other = Map_FindPersonEntry(map, static_cast<int16_t>(second->family), second->member);
+            second->person = other->index;
+            if (other->target != kNoObject)
+                leaveBuilding(other->target);
+            other->target = second->object;
+            ++Map_GetRecord(map, second->object)->headingHere;
+            data->var = 2;
+            break;
+        }
+        case 3:
+            if (actor(0x2C)->person == kNoPerson)
+                data->var = actor(0x34)->person == kNoPerson ? 0x16 : 0xD;
+            else
+                data->var = 4;
+            put(0x5C, city->monthCount);
+            break;
+        case 4:
+        case 0xD:
+        case 0x16:
+            if (get(0x5C) < city->monthCount && city->clock > 0x707F)
+            {
+                const GuestPtr<ActorRef> who = byPhase(0xD);
+                EvActor_MoveTo(city, who, partner(who), 0);
+                if (city->clock >= 36000 && Person_IsAtBuilding(city, who, partner(who)) != 0 && EvActor_Notify(city, who) != 0)
+                {
+                    advance();
+                    put(0x64, 0x3C);
+                }
+            }
+            break;
+        case 5:
+        case 0xE:
+        case 0x17:
+        {
+            const GuestPtr<ActorRef> who = byPhase(0xE);
+            EvActor_MoveTo(city, who, partner(who), 0);
+            put(0x64, get(0x64) - 1);
+            if (get(0x64) < 1)
+                advance(-1);
+            break;
+        }
+        case 6:
+        case 0xF:
+        case 0x18:
+            EvActor_Detach(city, byPhase(0xF));
+            advance();
+            break;
+        case 7:
+        case 0x10:
+        case 0x19:
+        {
+            const GuestPtr<ActorRef> who = byPhase(0x10);
+            if (Person_IsOnOpenTile(city, who) != 0 && Player_DistanceToPerson(city, who) <= ps2f(1.0f) && EvActor_PointCursor(city, who) != 0)
+                advance();
+            break;
+        }
+        case 9:
+        case 0x12:
+        case 0x1B:
+        {
+            const GuestPtr<ActorRef> who = byPhase(0x12);
+            if (Person_IsOnOpenTile(city, who) == 0)
+                break;
+            const ps2f away = Player_DistanceToPerson(city, who);
+            if (!(away < ps2f(3.0f)))
+            {
+                put(0x64, get(0x64) + 1);
+                if (get(0x64) >= 10 && EvActor_PointCursor(city, who) != 0)
+                    put(0x64, 0);
+            }
+            else if (away <= ps2f(1.0f) && Player_DistanceToBuilding(city, first) < 2 && EvActor_PointCursor(city, who) != 0)
+            {
+                EvActor_StopFollowing(city, who);
+                EvActor_MoveTo(city, who, first, 1);
+                advance();
+            }
+            break;
+        }
+        case 0xA:
+        case 0x13:
+        case 0x1C:
+        {
+            const GuestPtr<ActorRef> who = byPhase(0x13);
+            EvActor_MoveTo(city, who, first, 1);
+            EvActor_MoveTo(city, first, first, 0);
+            if (Person_IsAtBuilding(city, who, first) != 0 && Person_IsAtBuilding(city, first, first) != 0 &&
+                EvActor_PointAtBuilding(city, address(who), address(first)) != 0)
+            {
+                record(who)->activity = 2;
+                record(first)->activity = 2;
+                advance();
+            }
+            break;
+        }
+        case 0xC:
+        {
+            const GuestPtr<MapObject> building = Map_GetRecord(map, first->object);
+            const GuestPtr<ActorRef> who = actor(0x2C);
+            EvActor_MoveTo(city, who, partner(who), 0);
+            if (standing(who) || Person_IsNearBuilding(city, record(who), building, 6) != 0)
+            {
+                if (actor(0x34)->person != kNoPerson)
+                {
+                    put(0x5C, city->monthCount);
+                    data->var = 0xD;
+                }
+                else if (actor(0x3C)->person != kNoPerson)
+                {
+                    put(0x5C, city->monthCount);
+                    data->var = 0x16;
+                }
+                else
+                    data->var = 0x1F;
+            }
+            break;
+        }
+        case 0x15:
+        {
+            const GuestPtr<MapObject> building = Map_GetRecord(map, first->object);
+            const GuestPtr<ActorRef> who = actor(0x34);
+            EvActor_MoveTo(city, who, partner(who), 0);
+            if (standing(who) || Person_IsNearBuilding(city, record(who), building, 6) != 0)
+            {
+                if (actor(0x3C)->person != kNoPerson)
+                {
+                    put(0x5C, city->monthCount);
+                    data->var = 0x16;
+                }
+                else
+                    data->var = 0x1F;
+            }
+            break;
+        }
+        case 0x1E:
+        {
+            EvActor_MoveTo(city, second, second, 0);
+            const GuestPtr<MapObject> building = Map_GetRecord(map, first->object);
+            building->occupants = 0x14;
+            const GuestPtr<ActorRef> who = actor(0x3C);
+            EvActor_MoveTo(city, who, partner(who), 0);
+            if (standing(who) || Person_IsNearBuilding(city, record(who), building, 6) != 0)
+                advance();
+            break;
+        }
+        case 0x1F:
+            EvActor_MoveTo(city, second, second, 0);
+            EvActor_MoveTo(city, second, second, 0);
+            EvActor_MoveTo(city, first, first, 0);
+            if (Person_IsAtBuilding(city, second, second) != 0 && Person_IsAtBuilding(city, first, first) != 0 &&
+                EvActor_PointAtBuilding(city, address(second), address(second)) != 0)
+            {
+                record(second)->activity = 2;
+                record(first)->activity = 2;
+                advance();
+            }
+            break;
+        case 0x24:
+            EvActor_Wander(city, second);
+            put(0x64, 10);
+            advance();
+            break;
+        case 0x25:
+            EvActor_Wander(city, second);
+            put(0x64, get(0x64) - 1);
+            if (get(0x64) < 1 && EvActor_Notify(city, third) != 0)
+            {
+                advance();
+                put(0x64, 0x3C);
+            }
+            break;
+        case 0x26:
+        case 0x2A:
+            EvActor_Wander(city, second);
+            put(0x64, get(0x64) - 1);
+            if (get(0x64) < 1)
+                advance(-1);
+            break;
+        case 0x27:
+        {
+            EvActor_Wander(city, second);
+            const GuestPtr<MapObject> home = Map_FindFamilyHome(map, third->family);
+            if (home)
+            {
+                third->object = home->id;
+                home->flags = static_cast<uint16_t>(home->flags | 0x200u);
+                advance();
+            }
+            else if (city->clock / 60 == 0x1A4)
+                EvActor_Notify(city, third);
+            break;
+        }
+        case 0x28:
+        {
+            EvActor_Wander(city, second);
+            put(0x64, get(0x64) - 1);
+            if (get(0x64) >= 1)
+                break;
+            const GuestPtr<MapPerson> entry = Map_FindPersonEntry(map, static_cast<int16_t>(third->family), third->member);
+            if (entry)
+            {
+                third->person = entry->index;
+                advance();
+            }
+            break;
+        }
+        case 0x29:
+            EvActor_Wander(city, second);
+            EvActor_MoveTo(city, third, third, 0);
+            if (city->clock >= 36000 && city->clock < 0xB6D0 && EvActor_Notify(city, third) != 0)
+            {
+                advance();
+                put(0x64, 0x3C);
+            }
+            break;
+        case 0x2B:
+            EvActor_Wander(city, second);
+            EvActor_MoveTo(city, third, third, 0);
+            if (Player_DistanceToBuilding(city, third) < 2)
+                advance();
+            break;
+        case 0x2C:
+            EvActor_Wander(city, second);
+            if (EvActor_PointCursor(city, third) != 0)
+                advance();
+            break;
+        case 0x2E:
+            EvActor_Wander(city, second);
+            if (Person_IsOnOpenTile(city, third) != 0)
+            {
+                if (Player_DistanceToBuilding(city, second) < 2 && Player_DistanceToPerson(city, third) <= ps2f(1.0f))
+                {
+                    if (EvActor_PointCursor(city, third) != 0)
+                        advance();
+                }
+                else
+                {
+                    put(0x64, get(0x64) + 1);
+                    if (get(0x64) >= 10)
+                    {
+                        if (!(Player_DistanceToPerson(city, third) < ps2f(3.0f)))
+                            EvActor_PointCursor(city, third);
+                        put(0x64, 0);
+                    }
+                }
+            }
+            shelter();
+            break;
+        case 0x2F:
+            EvActor_Wander(city, second);
+            EvActor_MoveTo(city, third, first, 1);
+            EvActor_MoveTo(city, first, first, 0);
+            if (Person_IsAtBuilding(city, third, first) != 0 && Person_IsAtBuilding(city, first, first) != 0 &&
+                EvActor_PointAtBuilding(city, address(first), address(first)) != 0)
+            {
+                record(third)->activity = 2;
+                record(first)->activity = 2;
+                advance();
+            }
+            break;
+        case 0x30:
+        case 0x31:
+        case 0x32:
+        case 0x33:
+        case 0x34:
+        case 0x35:
+        case 0x36:
+        case 0x37:
+        case 0x38:
+            EvActor_Wander(city, second);
+            break;
+        case 0x39:
+            EvActor_Wander(city, second);
+            if (Person_Distance(city, second, third) <= ps2f(3.0f) && Person_IsOnOpenTile(city, second) != 0 && Person_IsOnOpenTile(city, third) != 0 &&
+                EvActor_PointCursor(city, third) != 0)
+            {
+                EvActor_Follow(city, third, second);
+                const GuestPtr<MapPerson> who = record(third);
+                who->flags = static_cast<uint16_t>(who->flags | 0x80u);
+                EvActor_Release(city, second);
+                advance();
+                put(0x64, 0);
+            }
+            else
+            {
+                put(0x64, get(0x64) + 1);
+                if (get(0x64) >= 10)
+                {
+                    if (!(Player_DistanceToPerson(city, third) < ps2f(3.0f)) && Person_IsOnOpenTile(city, third) != 0)
+                        EvActor_PointCursor(city, third);
+                    put(0x64, 0);
+                }
+            }
+            shelter();
+            break;
+        case 0x3A:
+            EvActor_Release(city, second);
+            if (Person_Distance(city, second, third) <= ps2f(1.0f))
+            {
+                put(0x64, get(0x64) + 1);
+                if (get(0x64) >= 4 && Player_DistanceToPerson(city, second) <= ps2f(1.0f) && EvActor_PointCursor(city, second) != 0)
+                    advance();
+            }
+            else
+                put(0x64, 0);
+            break;
+        case 0x3B:
+        case 0x3D:
+        case 0x3F:
+        case 0x41:
+            EvActor_Release(city, second);
+            if (EvActor_PointCursor(city, third) != 0)
+                advance();
+            break;
+        case 0x3C:
+        case 0x3E:
+        case 0x40:
+            EvActor_Release(city, second);
+            if (EvActor_PointCursor(city, second) != 0)
+                advance();
+            break;
+        case 0x42:
+            EvActor_Release(city, second);
+            if (EvActor_PointCursor(city, second) != 0)
+            {
+                EvActor_MoveTo(city, second, second, 0);
+                advance();
+            }
+            break;
+        case 0x43:
+            EvActor_MoveTo(city, second, first, 0);
+            EvActor_MoveTo(city, first, first, 0);
+            if (Person_IsAtBuilding(city, third, first) != 0 && Person_IsAtBuilding(city, second, first) != 0 && Person_IsAtBuilding(city, first, first) != 0 &&
+                EvActor_PointAtBuilding(city, address(first), address(first)) != 0)
+            {
+                EvActor_Follow(city, third, first);
+                const GuestPtr<MapPerson> who = record(third);
+                who->activity = 2;
+                if (who->target != kNoObject)
+                    leaveBuilding(who->target);
+                who->target = first->object;
+                who->schedState = 0xC;
+                record(second)->activity = 2;
+                record(first)->activity = 2;
+                advance();
+                put(0x5C, city->monthCount + 1);
+                put(0x60, 36000);
+            }
+            break;
+        case 0x4E:
+            EvActor_Wander(city, second);
+            if (get(0x5C) <= city->monthCount && get(0x60) <= city->clock)
+            {
+                EvActor_StopFollowing(city, third);
+                EvActor_MoveTo(city, third, third, 0);
+                EvActor_MoveTo(city, second, third, 1);
+                advance();
+            }
+            break;
+        case 0x4F:
+            if (Person_IsAtBuilding(city, third, third) != 0 && Person_IsAtBuilding(city, second, third) != 0)
+            {
+                if (EvActor_Notify(city, second) != 0)
+                {
+                    advance();
+                    put(0x64, 0x3C);
+                }
+            }
+            else
+            {
+                EvActor_MoveTo(city, third, third, 0);
+                EvActor_MoveTo(city, second, third, 1);
+            }
+            break;
+        case 0x50:
+            EvActor_MoveTo(city, third, third, 0);
+            EvActor_MoveTo(city, second, third, 1);
+            put(0x64, get(0x64) - 1);
+            if (get(0x64) < 1)
+                advance(-1);
+            break;
+        case 0x51:
+            EvActor_MoveTo(city, third, third, 0);
+            EvActor_MoveTo(city, second, third, 1);
+            if (Player_DistanceToBuilding(city, third) < 2 && Person_IsAtBuilding(city, third, third) != 0 && Person_IsAtBuilding(city, second, third) != 0 &&
+                EvActor_PointAtBuilding(city, address(second), address(third)) != 0)
+            {
+                record(third)->activity = 6;
+                record(second)->activity = 10;
+                advance();
+            }
+            break;
+        case 0x57:
+            EvActor_Follow(city, third, second);
+            EvActor_MoveTo(city, second, second, 0);
+            advance();
+            break;
+        case 0x58:
+            EvActor_MoveTo(city, second, second, 0);
+            EvActor_MoveTo(city, first, first, 0);
+            if (Person_IsAtBuilding(city, third, first) != 0 && Person_IsAtBuilding(city, second, first) != 0 && Person_IsAtBuilding(city, first, first) != 0 &&
+                EvActor_PointAtBuilding(city, address(first), address(first)) != 0)
+            {
+                const GuestPtr<MapPerson> host = record(first);
+                const uint32_t px = port::load<uint32_t>(host.address), pz = port::load<uint32_t>(host.address + 8u);
+                host->activity = 2;
+                const GuestPtr<MapPerson> guest = record(second);
+                guest->activity = 2;
+                EvActor_Follow(city, second, first);
+                port::store<uint32_t>(guest.address, px);
+                port::store<uint32_t>(guest.address + 8u, pz);
+                const GuestPtr<MapPerson> last = record(third);
+                last->activity = 2;
+                port::store<uint32_t>(last.address, px);
+                port::store<uint32_t>(last.address + 8u, pz);
+                const GuestPtr<MapObject> building = Map_GetRecord(map, first->object);
+                ++building->headingHere;
+                building->occupants = 0;
+                advance();
+                put(0x64, 0x5A0);
+            }
+            break;
+        case 0x61:
+            put(0x64, get(0x64) - 1);
+            if (get(0x64) < 1)
+                Event_Finish(city->events, city, 0);
+            break;
+        default:
+            break;
+        }
+        if (data->var >= 0x20 && data->var < 0x58 && city->clock / 60 == 0x78)
+            Map_GetRecord(map, first->object)->occupants = 0x14;
+    }
+
+    PORT_FN(EvNoodles_Update);
 }

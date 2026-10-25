@@ -3542,6 +3542,7 @@ void CharType_TickSlots();
 void CharType_ClearSlots();
 void Person_TurnToPlayer(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
 void Person_Draw(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, int a3, int t0, GuestPtr<int32_t> t1, int t2);
+void Person_Update(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, uint32_t timeFlags);
 GuestPtr<CharClass> Person_dtor(GuestPtr<CharClass> cls, int16_t deleteFlag);
 GuestPtr<PersonClass> Person_ctor(GuestPtr<PersonClass> cls, GuestPtr<uint8_t> record);
 void Event_ClearTileFlags(int listIndex);
@@ -4197,6 +4198,7 @@ void Widget_Idle(GuestPtr<Widget> widget);
 void Widget_Draw(GuestPtr<Widget> widget, int pass);
 void TalkView_CollectOccupants(GuestPtr<TalkView> view);
 void TalkView_ToggleAnim(GuestPtr<TalkView> view);
+void TalkView_DrawPeople(GuestPtr<TalkView> view);
 int TalkView_NobodyHome(GuestPtr<TalkView> view, int byFamily, int target);
 void TalkView_DrawBuilding(GuestPtr<TalkView> view, int byFamily, int target);
 void TalkView_BuildingCamera(GuestPtr<TalkView> view, int object, GuestPtr<Vec4> eye, GuestPtr<Vec4> target);
@@ -4745,6 +4747,7 @@ int EventData_GetSize7C();
 int EventData_GetSize1C();
 int EvNoodles_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
 void EvNoodles_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
+void EvNoodles_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int64_t EvNoodles_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvNoodles_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvThief_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
@@ -4850,6 +4853,7 @@ GuestPtr<char> Words_GetChoiceText(int script, GuestPtr<CityScene> city, int cod
 void Words_ApplyChoice(int script, GuestPtr<CityScene> city, int code, int choice);
 int Words_CountChoices(int script, GuestPtr<CityScene> city, int code);
 void Words_AppendClipped(GuestPtr<char> buffer, GuestPtr<char> text);
+int16_t Words_ExpandLine(GuestPtr<int32_t> script, int code, GuestPtr<char> out);
 int16_t Words_StepImpl(GuestPtr<int32_t> script, GuestPtr<char> buffer);
 int16_t Words_Step(GuestPtr<int32_t> script, GuestPtr<char> buffer);
 int Words_FriendshipChanged();
@@ -4867,11 +4871,8 @@ void StaticInit_Words();
 // Not ported yet: the generated function, through the runtime's function table.
 inline void GameUpdate(int game) { port::callGuest<void>(addr::GameUpdate, game); }
 inline void Main() { port::callGuest<void>(addr::Main); }
-inline void Person_Update(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, uint32_t timeFlags) { port::callGuest<void>(addr::Person_Update, cls, city, person, timeFlags); }
-inline void TalkView_DrawPeople(GuestPtr<TalkView> view) { port::callGuest<void>(addr::TalkView_DrawPeople, view); }
 inline void MainLoop(int app) { port::callGuest<void>(addr::MainLoop, app); }
 inline int App_ctor(int app) { return port::callGuest<int>(addr::App_ctor, app); }
-inline void EvNoodles_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvNoodles_Update, data, city); }
 inline void Movie_VblankHandler() { port::callGuest<void>(addr::Movie_VblankHandler); }
 inline void Movie_ClearScreen() { port::callGuest<void>(addr::Movie_ClearScreen); }
 inline void Movie_PlayPss(GuestPtr<char> name, int16_t a1, int16_t a2, int width, int16_t height, int fadeAudio, uint16_t skipButtons, int16_t fadeStep, int stack0, int stack8) { port::callGuest<void>(addr::Movie_PlayPss, name, a1, a2, width, height, fadeAudio, skipButtons, fadeStep, stack0, stack8); }
@@ -4886,5 +4887,4 @@ inline int Movie_ViBufAddDma(GuestPtr<int32_t> vibuf) { return port::callGuest<i
 inline int Movie_DecodeLoop(int videoDec) { return port::callGuest<int>(addr::Movie_DecodeLoop, videoDec); }
 inline void Movie_VideoDecMain(int videoDec) { port::callGuest<void>(addr::Movie_VideoDecMain, videoDec); }
 inline int Movie_VideoDecPutTerminator(int videoDec) { return port::callGuest<int>(addr::Movie_VideoDecPutTerminator, videoDec); }
-inline uint32_t Words_ExpandLine(int a0, int a1, int a2) { return port::callGuest<uint32_t>(addr::Words_ExpandLine, a0, a1, a2); }
 }

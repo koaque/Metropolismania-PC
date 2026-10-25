@@ -2559,7 +2559,7 @@ namespace mm
             }
             words->bound = 1;
         }
-        Words_ExpandLine(static_cast<int>(port::load<uint32_t>(block.address)), line + 3000, static_cast<int>(out.address));
+        Words_ExpandLine(GuestPtr<int32_t>{port::load<uint32_t>(block.address)}, line + 3000, out);
     }
 
     PORT_FN(Words_LoadForWants);
@@ -2827,7 +2827,7 @@ namespace mm
                     sdk::strcat(buffer.address, 0x001BAD88u);
                     separated = true;
                 }
-                result = static_cast<int32_t>(Words_ExpandLine(static_cast<int>(s), token - 0x1388, static_cast<int>(buffer.address)));
+                result = Words_ExpandLine(script, token - 0x1388, buffer);
                 if (separated && length + 1 == sdk::strlen(buffer.address))
                     port::store<uint8_t>(buffer.address + static_cast<uint32_t>(length), 0);
                 if (port::load<uint16_t>(kStopFlag) != 0)
@@ -2898,4 +2898,123 @@ namespace mm
     PORT_FN(Words_CallCond);
     PORT_FN(Words_CallText);
     PORT_FN(Words_CallAct);
+
+    // Expands one line of script text (`code` = bank * 1000 + line) into `out`, from the column the script has reached (0x1BDE04)
+    // until a word ends the step. `script` is not used. The words of a line, read from the bank's line codes (bank 2 through the
+    // building type's remap):
+    //   10000 and up   a string of the bank (bank = (word - 10000) / 1000), appended to the output like a spoken word
+    //   5000 to 9999   an answer (bank = (word - 5000) / 1000): its selector picks which of the answer record's strings is added;
+    //                  below -9000 a random one, otherwise the result of an action (the same ranges as below)
+    //   below -9010    the context's argument is set to word + 10000
+    //   -9010 to -8001 an action through its pointer, whose result moves the column on (from -8900 the action is word + 8927; from
+    //                  -8960 the argument is (word + 8960) / 26 and the action the remainder + 1; below that the argument is
+    //                  word + 9000 and the action 0)
+    //   -8000 to -7001 a text getter, added to the output (the same three ranges: word + 7907; arguments in sixes from -7960;
+    //                  word + 8000 and getter 0)
+    //   -7000 to -6011 a condition call (word + 7000)
+    //   -6010, -6000 to -1   the step ends with that word, the column left after it
+    //   -6009 to -6001 the step ends with that word, the column back at 0
+    //   0 to 4999      jump to that column
+    // The result is the last word read.
+    int16_t Words_ExpandLine(GuestPtr<int32_t>, int code, GuestPtr<char> out)
+    {
+        constexpr uint32_t kWords = 0x001BDDF0u, kColumn = 0x001BDE04u;
+        const GuestPtr<Words> words{kWords};
+        const int bank = code / 1000, index = code % 1000;
+        const auto word = [&](uint32_t column) {
+            const uint32_t line = bank == 2 ? remapped(0x00718224u, index, 0) : port::load<uint16_t>(bankTable(bank, 0) + 2u * static_cast<uint32_t>(index));
+            return static_cast<int32_t>(port::load<int16_t>(bankTable(bank, 4) + 2u * (column + line)));
+        };
+        const auto act = [&](int number) { return port::callGuest<int>(addr::Words_CallAct, words, number); };
+        const auto getText = [&](int number) { return port::callGuest<uint32_t>(addr::Words_CallText, words, number); };
+        uint32_t column = port::load<uint16_t>(kColumn);
+        int32_t token = word(column);
+        while (token >= -6000 || token < -6009)
+        {
+            if (token >= 10000)
+            {
+                const int stringBank = (token - 10000) / 1000, number = (token - 10000) % 1000;
+                const uint32_t text = stringBank == 2 ? bankTable(2, 0x14) + remapped(0x00718230u, number, 6) : bankString(stringBank, static_cast<uint32_t>(number));
+                Words_AppendClipped(out, GuestPtr<char>{text});
+            }
+            else if (token >= 5000)
+            {
+                const int answerBank = (token - 5000) / 1000;
+                const int selector = port::load<int16_t>(answerRecord(token));
+                int choice;
+                if (selector < -9000)
+                {
+                    const uint32_t record = answerRecord(token);
+                    const int count = port::load<uint16_t>(record + 6u) - port::load<uint16_t>(record + 2u);
+                    choice = count != 0 ? eeRemainder(lowWord(Random_Next()), count) : 0;
+                }
+                else if (selector >= -8900)
+                    choice = act(selector + 8927);
+                else if (selector >= -8960)
+                {
+                    Words_SetArg(words, static_cast<uint16_t>((selector + 8960) / 26));
+                    choice = act((selector + 8960) % 26 + 1);
+                }
+                else
+                {
+                    Words_SetArg(words, static_cast<uint16_t>(selector + 9000));
+                    choice = act(0);
+                }
+                Words_AppendClipped(out, GuestPtr<char>{bankString(answerBank, static_cast<uint32_t>(choice) + port::load<uint16_t>(answerRecord(token) + 2u))});
+            }
+            else if (token < -9010)
+                Words_SetArg(words, static_cast<uint16_t>(token + 10000));
+            else if (token < -8000)
+            {
+                int moved;
+                if (token >= -8900)
+                    moved = act(token + 8927);
+                else if (token >= -8960)
+                {
+                    Words_SetArg(words, static_cast<uint16_t>((token + 8960) / 26));
+                    moved = act((token + 8960) % 26 + 1);
+                }
+                else
+                {
+                    Words_SetArg(words, static_cast<uint16_t>(token + 9000));
+                    moved = act(0);
+                }
+                column += static_cast<uint32_t>(moved);
+            }
+            else if (token < -7000)
+            {
+                uint32_t text;
+                if (token >= -7900)
+                    text = getText(token + 7907);
+                else if (token >= -7960)
+                {
+                    Words_SetArg(words, static_cast<uint16_t>((token + 7960) / 6));
+                    text = getText((token + 7960) % 6 + 1);
+                }
+                else
+                {
+                    Words_SetArg(words, static_cast<uint16_t>(token + 8000));
+                    text = getText(0);
+                }
+                Words_AppendClipped(out, GuestPtr<char>{text});
+            }
+            else if (token < 0)
+            {
+                if (token >= -6010)
+                {
+                    port::store<uint16_t>(kColumn, static_cast<uint16_t>(column + 1u));
+                    return static_cast<int16_t>(token);
+                }
+                port::callGuest<int>(addr::Words_CallCond, words, token + 7000);
+            }
+            else
+                column = static_cast<uint32_t>(token) - 1u;
+            column += 1u;
+            token = word(column);
+        }
+        port::store<uint16_t>(kColumn, 0);
+        return static_cast<int16_t>(token);
+    }
+
+    PORT_FN(Words_ExpandLine);
 }
