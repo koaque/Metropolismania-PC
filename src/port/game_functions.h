@@ -3462,6 +3462,7 @@ void Mat4_MulVu0(GuestPtr<Vec4> out, GuestPtr<Vec4> a, GuestPtr<Vec4> b);
 void A3DObject_UpdateNodeMatrix(GuestPtr<A3DObject> model, GuestPtr<int32_t> node);
 GuestPtr<A3DObject> A3DObject_dtor(GuestPtr<A3DObject> model, int16_t deleteFlag);
 int A3DObject_LoadAsync(GuestPtr<A3DObject> model, GuestPtr<GameFile> gamefile, int a2);
+GuestPtr<int32_t> A3DObject_Load(GuestPtr<A3DObject> model, int file, int a2);
 GuestPtr<A3DObject> InstanceBase_ctor(GuestPtr<A3DObject> model);
 void Camera_SetEyeTarget(GuestPtr<Camera> camera, GuestPtr<Vec4> eye, GuestPtr<Vec4> target);
 void Packet_Draw(GuestPtr<uint32_t> a0);
@@ -3527,6 +3528,7 @@ void Char2_UpdateSpeedB(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, Guest
 void Char2_MoveA(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj, int tile);
 void Char2_MoveB(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj, int tile);
 void Char2_Draw(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, GuestPtr<Vec4> colour, int flags, GuestPtr<Vec4> place);
+void Char2_Update(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, uint32_t timeFlags);
 GuestPtr<CharClass> Char2_dtor(GuestPtr<CharClass> cls, int16_t deleteFlag);
 GuestPtr<CharClass> Char2_ctor(GuestPtr<CharClass> cls, GuestPtr<uint8_t> record);
 void CharType_LoadAll();
@@ -3535,9 +3537,11 @@ void Person_TickCounters(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, Gues
 int Person_ProbeTile(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, uint32_t tile);
 void Person_Walk(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, GuestPtr<MapObject> obj, int tile);
 void Person_UpdatePose(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, int a3, int tile);
+void Person_Draw2(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, uint32_t family, uint32_t member, GuestPtr<Vec4> matrix, int t2, GuestPtr<int32_t> mesh, GuestPtr<ps2f> phase);
 void CharType_TickSlots();
 void CharType_ClearSlots();
 void Person_TurnToPlayer(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
+void Person_Draw(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, int a3, int t0, GuestPtr<int32_t> t1, int t2);
 GuestPtr<CharClass> Person_dtor(GuestPtr<CharClass> cls, int16_t deleteFlag);
 GuestPtr<PersonClass> Person_ctor(GuestPtr<PersonClass> cls, GuestPtr<uint8_t> record);
 void Event_ClearTileFlags(int listIndex);
@@ -3902,6 +3906,7 @@ void Player_UpdateAction(GuestPtr<Player> player, GuestPtr<Vec4> move, GuestPtr<
 void Player_PickTarget(GuestPtr<Player> player, GuestPtr<CityScene> city);
 int Placement_FindSpot(GuestPtr<Player> player, GuestPtr<CityScene> city, int family, int typeIndex, int x, int z, int half, GuestPtr<int32_t> rect);
 void Player_PlaceBagItem(GuestPtr<Player> player, GuestPtr<CityScene> city);
+void Player_PlaceForApplicant(GuestPtr<Player> player, GuestPtr<CityScene> city);
 void Player_SetMode(GuestPtr<Player> player, int mode);
 int Player_GetMode(GuestPtr<Player> player);
 void Player_Draw(GuestPtr<Player> player, GuestPtr<CityScene> city);
@@ -4150,6 +4155,7 @@ int Title_DrawCommon(GuestPtr<SceneA> scene, int layers);
 int Title_PressStart(GuestPtr<SceneA> scene);
 void Title_NewGameIntro(GuestPtr<SceneA> scene);
 int Title_RandomCharParts(GuestPtr<SceneA> scene);
+int Title_OpeningMovieStep(GuestPtr<SceneA> scene);
 int Title_MenuInput(GuestPtr<SceneA> scene);
 int Title_DrawChoices(GuestPtr<SceneA> scene);
 void Title_DrawChoicesIdle(GuestPtr<SceneA> scene);
@@ -4301,6 +4307,7 @@ GuestPtr<TalkView> MyHome_dtor(GuestPtr<TalkView> view, int16_t deleteFlag);
 GuestPtr<TalkView> MyHome_ctor(GuestPtr<TalkView> view, GuestPtr<CityScene> city, int object);
 void TalkConv_Draw(GuestPtr<TalkConv> conv, int pass);
 void TalkConv_Closing(GuestPtr<TalkConv> conv);
+void TalkConv_Active(GuestPtr<TalkConv> conv);
 void TalkConv_Opening(GuestPtr<TalkConv> conv);
 int TalkConv_Update(GuestPtr<TalkConv> conv);
 void TalkConv_NextLine(GuestPtr<TalkConv> conv);
@@ -4377,6 +4384,10 @@ int WordsFn_CanAfford(GuestPtr<WordsCtx> ctx);
 int WordsFn_GoodsBagFull(GuestPtr<WordsCtx> ctx);
 int WordsFn_GoodsOwned(GuestPtr<WordsCtx> ctx);
 int WordsFn_LaptopHasBit(GuestPtr<WordsCtx> ctx);
+int WordsFn_AnyAcquaintanceSuppliesWant(GuestPtr<WordsCtx> ctx);
+int WordsFn_AcquaintanceSuppliesWant(GuestPtr<WordsCtx> ctx);
+int WordsFn_FamilySuppliesWant(GuestPtr<WordsCtx> ctx);
+int WordsFn_SuppliesWantBody(GuestPtr<WordsCtx> ctx, int a1);
 int WordsFn_AcquaintanceSuppliesClaim(GuestPtr<WordsCtx> ctx);
 int WordsFn_WantClaimMatch(GuestPtr<WordsCtx> ctx);
 int WordsFn_HasWantForPerson(GuestPtr<WordsCtx> ctx);
@@ -4617,15 +4628,18 @@ void Sound_LoadModules();
 void Sound_Shutdown();
 void Sound_Init();
 int EvShoppingTogether_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
+void EvShoppingTogether_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvShoppingTogether_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 GuestPtr<MapObject> EvShoppingTogether_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvShoppingTogether_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
 int EvAlien_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
 void EvAlien_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 GuestPtr<MapObject> EvAlien_PickTarget(GuestPtr<CityScene> city, int x, int z);
+void EvAlien_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvAlien_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvBodyguard_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
 void EvEscort_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
+void EvEscort_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvEscort_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvBodyguard_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvMsg_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
@@ -4648,6 +4662,8 @@ int EvFirstPayday_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvWoman_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvRiddle_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvPopularity_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city);
+int EvCaveMan_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
+void EvCaveMan_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvCaveMan_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int64_t EvCaveMan_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvCaveMan_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city);
@@ -4666,6 +4682,7 @@ void PartyPopup_Update(int popup, GuestPtr<CityScene> city);
 int PartyPopup_dtor(int popup, int16_t deleteFlag);
 int EvFarewellParty_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
 void EvFarewellParty_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
+void EvFarewellParty_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 GuestPtr<MapObject> EvFarewellParty_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvForgetfulGranny_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
 int EvCrazyCult_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
@@ -4686,6 +4703,7 @@ GuestPtr<MapObject> EvUselessMiddleAged_Start(GuestPtr<EventData> data, GuestPtr
 int EvUselessMiddleAged_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvMissingChildren_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
 void EvMissingChildren_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
+void EvMissingChildren_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 GuestPtr<MapObject> EvMissingChildren_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvMissingChildren_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
 int EvAdvertise_ClaimsMatch(GuestPtr<CityScene> city, GuestPtr<ActorRef> actorA, GuestPtr<ActorRef> actorB);
@@ -4708,6 +4726,7 @@ int64_t EvNoodles_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvNoodles_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvThief_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
 void EvThief_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
+void EvThief_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvThief_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvRelationship_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
 int EvAffair_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
@@ -4821,12 +4840,8 @@ void StaticInit_WordsTable();
 void StaticInit_Words();
 
 // Not ported yet: the generated function, through the runtime's function table.
-inline GuestPtr<int32_t> A3DObject_Load(GuestPtr<A3DObject> model, int file, int a2) { return port::callGuest<GuestPtr<int32_t>>(addr::A3DObject_Load, model, file, a2); }
 inline void GameUpdate(int game) { port::callGuest<void>(addr::GameUpdate, game); }
 inline void Main() { port::callGuest<void>(addr::Main); }
-inline void Char2_Update(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, uint32_t timeFlags) { port::callGuest<void>(addr::Char2_Update, cls, city, person, timeFlags); }
-inline void Person_Draw2(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, uint32_t family, uint32_t member, GuestPtr<Vec4> matrix, int t2, GuestPtr<int32_t> mesh, GuestPtr<ps2f> phase) { port::callGuest<void>(addr::Person_Draw2, cls, city, person, family, member, matrix, t2, mesh, phase); }
-inline void Person_Draw(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, int a3, int t0, GuestPtr<int32_t> t1, int t2) { port::callGuest<void>(addr::Person_Draw, cls, city, person, a3, t0, t1, t2); }
 inline void Person_Update(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, uint32_t timeFlags) { port::callGuest<void>(addr::Person_Update, cls, city, person, timeFlags); }
 inline void CityCursor_Update(GuestPtr<CityCursor> cursor, GuestPtr<CityScene> city, int a2) { port::callGuest<void>(addr::CityCursor_Update, cursor, city, a2); }
 inline GuestPtr<CityCursor> CityCursor_ctor(GuestPtr<CityCursor> cursor) { return port::callGuest<GuestPtr<CityCursor>>(addr::CityCursor_ctor, cursor); }
@@ -4837,21 +4852,14 @@ inline void WantsWin_Update(GuestPtr<WantsWin> wants, GuestPtr<CityScene> city) 
 inline int PauseMenu_StateSlotSelect(GuestPtr<PauseMenu> pause) { return port::callGuest<int>(addr::PauseMenu_StateSlotSelect, pause); }
 inline int PauseMenu_Update(GuestPtr<PauseMenu> pause, GuestPtr<CityScene> city) { return port::callGuest<int>(addr::PauseMenu_Update, pause, city); }
 inline int Applicants_Draw(GuestPtr<Applicants> applicants) { return port::callGuest<int>(addr::Applicants_Draw, applicants); }
-inline void Player_PlaceForApplicant(GuestPtr<Player> player, GuestPtr<CityScene> city) { port::callGuest<void>(addr::Player_PlaceForApplicant, player, city); }
 inline void Player_Update(GuestPtr<Player> player, GuestPtr<CityScene> city) { port::callGuest<void>(addr::Player_Update, player, city); }
 inline int Title_LoadMenu(GuestPtr<SceneA> scene) { return port::callGuest<int>(addr::Title_LoadMenu, scene); }
 inline int SceneA_StartGame(GuestPtr<SceneA> scene, int newGame) { return port::callGuest<int>(addr::SceneA_StartGame, scene, newGame); }
-inline int Title_OpeningMovieStep(GuestPtr<SceneA> scene) { return port::callGuest<int>(addr::Title_OpeningMovieStep, scene); }
 inline int SceneA_Load(GuestPtr<SceneA> scene, int a1) { return port::callGuest<int>(addr::SceneA_Load, scene, a1); }
 inline int SceneA_Update(GuestPtr<SceneA> scene) { return port::callGuest<int>(addr::SceneA_Update, scene); }
 inline void TownPages_Update(GuestPtr<TownPages> pages, GuestPtr<CityScene> city) { port::callGuest<void>(addr::TownPages_Update, pages, city); }
 inline void TalkView_DrawPeople(GuestPtr<TalkView> view) { port::callGuest<void>(addr::TalkView_DrawPeople, view); }
 inline void TalkView_DrawBuilding(GuestPtr<TalkView> view, int byFamily, int target) { port::callGuest<void>(addr::TalkView_DrawBuilding, view, byFamily, target); }
-inline void TalkConv_Active(GuestPtr<TalkConv> conv) { port::callGuest<void>(addr::TalkConv_Active, conv); }
-inline int WordsFn_AnyAcquaintanceSuppliesWant(GuestPtr<WordsCtx> ctx) { return port::callGuest<int>(addr::WordsFn_AnyAcquaintanceSuppliesWant, ctx); }
-inline int WordsFn_AcquaintanceSuppliesWant(GuestPtr<WordsCtx> ctx) { return port::callGuest<int>(addr::WordsFn_AcquaintanceSuppliesWant, ctx); }
-inline int WordsFn_FamilySuppliesWant(GuestPtr<WordsCtx> ctx) { return port::callGuest<int>(addr::WordsFn_FamilySuppliesWant, ctx); }
-inline int WordsFn_SuppliesWantBody(GuestPtr<WordsCtx> ctx, int a1) { return port::callGuest<int>(addr::WordsFn_SuppliesWantBody, ctx, a1); }
 inline int WordsFn_PickClaimResident(GuestPtr<WordsCtx> ctx) { return port::callGuest<int>(addr::WordsFn_PickClaimResident, ctx); }
 inline int Words_CallCond(GuestPtr<Words> words) { return port::callGuest<int>(addr::Words_CallCond, words); }
 inline int Words_CallText(GuestPtr<Words> words) { return port::callGuest<int>(addr::Words_CallText, words); }
@@ -4861,15 +4869,7 @@ inline uint32_t CityScene_Update(GuestPtr<CityScene> city) { return port::callGu
 inline GuestPtr<CityScene> CityScene_ctor(GuestPtr<CityScene> city) { return port::callGuest<GuestPtr<CityScene>>(addr::CityScene_ctor, city); }
 inline void MainLoop(int app) { port::callGuest<void>(addr::MainLoop, app); }
 inline int App_ctor(int app) { return port::callGuest<int>(addr::App_ctor, app); }
-inline void EvShoppingTogether_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvShoppingTogether_Update, data, city); }
-inline void EvAlien_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvAlien_Update, data, city); }
-inline void EvEscort_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvEscort_Update, data, city); }
-inline uint32_t EvCaveMan_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode) { return port::callGuest<uint32_t>(addr::EvCaveMan_Slot14, data, city, actor, mode); }
-inline void EvCaveMan_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvCaveMan_Update, data, city); }
-inline void EvFarewellParty_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvFarewellParty_Update, data, city); }
-inline void EvMissingChildren_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvMissingChildren_Update, data, city); }
 inline void EvNoodles_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvNoodles_Update, data, city); }
-inline void EvThief_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvThief_Update, data, city); }
 inline void Movie_VblankHandler() { port::callGuest<void>(addr::Movie_VblankHandler); }
 inline void Movie_ClearScreen() { port::callGuest<void>(addr::Movie_ClearScreen); }
 inline void Movie_PlayPss(GuestPtr<char> name, int16_t a1, int16_t a2, int width, int16_t height, int fadeAudio, uint16_t skipButtons, int16_t fadeStep, int stack0, int stack8) { port::callGuest<void>(addr::Movie_PlayPss, name, a1, a2, width, height, fadeAudio, skipButtons, fadeStep, stack0, stack8); }

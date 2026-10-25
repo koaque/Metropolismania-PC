@@ -108,7 +108,10 @@ passes but changes nothing (and returns nothing compared) proves nothing, and re
 return the same value may all take the same path. `--only <Names>` replays just those functions (results.json is then left
 alone), and a replay that does not return within 60 s (`MMPC_DIFFTEST_HANG_SECONDS`) is reported as
 HANG and ends the run: a made state can send the original into a wait that never ends, for instance
-when it reaches blocking code.
+when it reaches blocking code. To find why a record fails: `MMPC_DIFFTEST_RANGES=<n>` lists more of the differing
+RDRAM ranges, `MMPC_DIFFTEST_DUMP=<hex address>:<words>` prints those words of both runs, and
+`MMPC_DIFFTEST_TRACE=<function names>` prints the argument registers of every call to those functions in the original run
+and in the ported one, which shows what the two hand a callee.
 
 Some state lives in the runtime, outside RDRAM, and the replay does not reset it between the original's run
 and the ported one's: the guest heap and the file descriptors are saved and restored (patch 0138), but the

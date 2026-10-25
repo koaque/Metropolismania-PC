@@ -24,6 +24,11 @@
 // A replay that does not return within MMPC_DIFFTEST_HANG_SECONDS (default 60) is reported as HANG and ends the
 // run: a record edited into a state the game never reaches can leave the original waiting forever.
 //
+// Debugging a failing record: MMPC_DIFFTEST_RANGES=<n> lists up to n differing RDRAM ranges (default 8), MMPC_DIFFTEST_DUMP=
+// <address>:<words> prints those words of both runs, and MMPC_DIFFTEST_TRACE=<names> prints the argument registers of every call
+// to those functions in the original run and again in the ported one (the ported run's callees are the ported ones), which shows
+// what the two hand a callee (for example a float the original never doubled).
+//
 // Changes: MMPC_DIFFTEST_CHANGES=<names or "all"> prints, for each record of those functions, the RDRAM ranges
 // the original run changed (outside the free stack), and its v0 for functions with an integer result. A record
 // that passes but changes nothing, or not what it was made for (a record edited to reach a rare branch), is not
@@ -326,11 +331,43 @@ namespace port
             out.scratchpad.assign(g_scratchpad, g_scratchpad + PS2_SCRATCHPAD_SIZE);
         }
 
+        // MMPC_DIFFTEST_TRACE=<names> prints the argument registers (a0-a3, t0-t3, f12-f13, sp) of every call to those functions
+        // during a replay, in the original run and again in the port run, to compare what the two hand them.
+        struct Traced
+        {
+            const char *name;
+            GuestFn target;
+        };
+        std::unordered_map<uint32_t, Traced> g_traced;
+
+        void tracedEntry(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            const Traced &t = g_traced.at(ctx->pc);
+            std::fprintf(stderr, "TR %s a0=%llx a1=%llx a2=%llx a3=%llx t0=%llx t1=%llx t2=%llx t3=%llx f12=%08x f13=%08x sp=%llx\n", t.name,
+                         static_cast<unsigned long long>(gpr64(ctx, 4) & 0xFFFFFFFFu), static_cast<unsigned long long>(gpr64(ctx, 5) & 0xFFFFFFFFu),
+                         static_cast<unsigned long long>(gpr64(ctx, 6) & 0xFFFFFFFFu), static_cast<unsigned long long>(gpr64(ctx, 7) & 0xFFFFFFFFu),
+                         static_cast<unsigned long long>(gpr64(ctx, 8) & 0xFFFFFFFFu), static_cast<unsigned long long>(gpr64(ctx, 9) & 0xFFFFFFFFu),
+                         static_cast<unsigned long long>(gpr64(ctx, 10) & 0xFFFFFFFFu), static_cast<unsigned long long>(gpr64(ctx, 11) & 0xFFFFFFFFu),
+                         *reinterpret_cast<const uint32_t *>(&ctx->f[12]), *reinterpret_cast<const uint32_t *>(&ctx->f[13]),
+                         static_cast<unsigned long long>(gpr64(ctx, 29) & 0xFFFFFFFFu));
+            t.target(rdram, ctx, runtime);
+        }
+
         // Points every ported address at its generated function (true) or back at the port (false).
         void useGenerated(PS2Runtime &runtime, bool generated)
         {
+            static const std::vector<std::string> traced = env("MMPC_DIFFTEST_TRACE") ? splitList(env("MMPC_DIFFTEST_TRACE")) : std::vector<std::string>{};
             for (const Ported &p : ported())
-                runtime.registerFunction(p.address, generated ? p.original : p.wrapper);
+            {
+                const GuestFn target = generated ? p.original : p.wrapper;
+                if (!traced.empty() && std::find(traced.begin(), traced.end(), std::string(p.name)) != traced.end())
+                {
+                    g_traced[p.address] = {p.name, target};
+                    runtime.registerFunction(p.address, tracedEntry);
+                }
+                else
+                    runtime.registerFunction(p.address, target);
+            }
         }
 
         bool sameReg(const R5900Context &a, const R5900Context &b, int reg)
@@ -442,6 +479,8 @@ namespace port
             const uint32_t sp = static_cast<uint32_t>(gpr64(&rec.ctx, 29)) & PS2_RAM_MASK;
             const uint32_t freeLow = sp > kFreeStackBytes ? sp - kFreeStackBytes : 0u;
             size_t reported = 0, total = 0;
+            // MMPC_DIFFTEST_RANGES=<n> lists up to n differing ranges of a failing record (default 8).
+            const size_t maxRanges = env("MMPC_DIFFTEST_RANGES") != nullptr ? static_cast<size_t>(std::strtoul(env("MMPC_DIFFTEST_RANGES"), nullptr, 10)) : 8u;
             for (uint32_t i = 0; i < PS2_RAM_SIZE;)
             {
                 if (i >= freeLow && i < sp)
@@ -458,7 +497,7 @@ namespace port
                 while (end < PS2_RAM_SIZE && !(end >= freeLow && end < sp) && !same(end))
                     ++end;
                 total += end - i;
-                if (reported++ < 8)
+                if (reported++ < maxRanges)
                 {
                     std::string line = "RDRAM " + hex(i) + "+" + std::to_string(end - i) + ":";
                     for (uint32_t k = i; k < std::min(end, i + 8u); ++k)
@@ -471,7 +510,7 @@ namespace port
                 }
                 i = end;
             }
-            if (reported > 8)
+            if (reported > maxRanges)
                 diffs.push_back("RDRAM: " + std::to_string(reported) + " differing ranges, " + std::to_string(total) + " bytes");
             // MMPC_DIFFTEST_DUMP=<address>:<words> adds those words (hex and float) of both runs to a failing record.
             if (const char *dump = env("MMPC_DIFFTEST_DUMP"); dump != nullptr && !diffs.empty())

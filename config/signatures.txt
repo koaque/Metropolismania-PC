@@ -1289,7 +1289,7 @@
 0x001917C0 int mm_EvWoman_Check(EventData *data, CityScene *city);
 0x001917F0 int mm_EvRiddle_Check(EventData *data, CityScene *city);
 0x00191820 int mm_EvPopularity_Check(EventData *data, CityScene *city);
-0x00191850 uint32_t mm_EvCaveMan_Slot14(EventData *data, CityScene *city, ActorRef *actor, int mode);
+0x00191850 int mm_EvCaveMan_Slot14(EventData *data, CityScene *city, ActorRef *actor, int mode);
 0x00191A50 void mm_EvCaveMan_Update(EventData *data, CityScene *city);
 0x001920D0 void mm_EvCaveMan_End(EventData *data, CityScene *city);
 0x00192190 int64_t mm_EvCaveMan_Start(EventData *data, CityScene *city);

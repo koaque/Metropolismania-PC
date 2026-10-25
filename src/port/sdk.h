@@ -81,6 +81,7 @@ namespace mm::sdk
         inline constexpr uint32_t printf = 0x00122F50u;
         inline constexpr uint32_t strcspn = 0x00123B80u;
         inline constexpr uint32_t strlen = 0x00123C00u;
+        inline constexpr uint32_t strncmp = 0x00123D38u;
         inline constexpr uint32_t d_utod = 0x001000F0u;
         inline constexpr uint32_t pow = 0x0011A290u;
         inline constexpr uint32_t dptoli = 0x00128440u;
@@ -267,6 +268,7 @@ namespace mm::sdk
     inline int sceIoctl(int fd, int command, uint32_t argument) { return port::callGuest<int>(addr::sceIoctl, fd, command, argument); }
     inline int64_t sceCdDiskReady(int mode) { return port::callGuest<int64_t>(addr::sceCdDiskReady, mode); }
     inline int strlen(uint32_t s) { return port::callGuest<int>(addr::strlen, s); }
+    inline int strncmp(uint32_t a, uint32_t b, int count) { return port::callGuest<int>(addr::strncmp, a, b, count); }
     inline int strcspn(uint32_t s, uint32_t reject) { return port::callGuest<int>(addr::strcspn, s, reject); }
 
     // Kernel calls through the SDK's syscall stubs: semaphores (the id the game keeps), and a yield of the thread's priority level.

@@ -766,7 +766,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00129C90,mm_A3DObject_UpdateNodeMatrix,412,game,gfx,verified,no,3,2,node world matrix = parent's world matrix x local (recursive)
 0x00129E30,mm_A3DObject_dtor,136,game,gfx,verified,yes,4,3,"frees the model data (+0) and the node array (+0x50), base destructor; delete when the flag is > 0"
 0x00129EC0,mm_A3DObject_LoadAsync,544,game,gfx,verified,yes,3,8,"asynchronous .A3D load from an open file, one step per call (state gp 0x1BD...80A0): header into 0x1C5100, then data; 0 = busy, -1 = error"
-0x0012A0E0,mm_A3DObject_Load,380,game,gfx,typed,yes,3,12,"synchronous .A3D load: header (word counts), data and pointer table, then mm_A3D_Relocate"
+0x0012A0E0,mm_A3DObject_Load,380,game,gfx,verified,yes,3,12,"synchronous .A3D load: header (word counts), data and pointer table, then mm_A3D_Relocate"
 0x0012A260,mm_InstanceBase_ctor,44,game,gfx,verified,no,2,1,"(provisional) base object constructor, clears 0x1BDA10"
 0x0012A290,mm_Camera_SetEyeTarget,24,game,camera,verified,no,28,0,stores eye (this+0x130) and target (this+0x140) vectors
 0x0012A2B0,mm_Packet_Draw,8,game,gfx,verified,no,7,1,queues the packet whose address is the object's first word
@@ -834,7 +834,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00130FA0,mm_Char2_MoveA,2300,game,char,verified,no,1,8,"class-2 movement mode A: on one frame in four steers for the waypoint or, on road, back into its lane (turning up to 0.16), sets the speed (mm_Char2_UpdateSpeedA), then moves along its heading and leaves the old tile's list"
 0x001318A0,mm_Char2_MoveB,2280,game,char,verified,no,1,8,"class-2 movement mode B: mode A steering every frame, turning up to 0.04, with mm_Char2_UpdateSpeedB"
 0x00132190,mm_Char2_Draw,612,game,char,verified,no,0,4,"class 2 slot +0x10: instance of the character on the terrain (height from 0x1415E0), within the draw range (0x1BD980)"
-0x00132400,mm_Char2_Update,1048,game,char,typed,yes,0,10,class 2 slot +0xC: moves the character (mode A or B) and updates its tile
+0x00132400,mm_Char2_Update,1048,game,char,verified,yes,0,10,class 2 slot +0xC: moves the character (mode A or B) and updates its tile
 0x00132820,mm_Char2_dtor,96,game,char,verified,yes,0,2,"vtable 0x1BCE90, then the base destructor"
 0x00132880,mm_Char2_ctor,52,game,char,verified,no,1,1,"base constructor, vtable 0x1BCE90"
 0x001328C0,mm_CharType_LoadAll,416,game,char,verified,yes,1,11,"loads DATA\BIN\CHARTYPE.BIN and creates one class object per 0x18-byte record (class 0 base, 1 person, 2 class 2) in the table at gp 0x1BDA3C"
@@ -843,11 +843,11 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00132CA0,mm_Person_ProbeTile,248,game,char,verified,no,1,2,(provisional) tests the tile a person would step onto
 0x00132DA0,mm_Person_Walk,3528,game,char,verified,no,1,10,"a person's walk each frame: aims at the building on its waypoint (or the followed person), keeps to a pavement lane on road, steps aside when the tile ahead is taken, turns and steps at its class's walking speed"
 0x00133B70,mm_Person_UpdatePose,780,game,char,verified,no,1,5,(provisional) person's matrix from heading and terrain height
-0x00133E80,mm_Person_Draw2,700,game,char,typed,yes,0,9,class 1 slot +0x14: (provisional) extra drawing (shadow/marker) for a person
+0x00133E80,mm_Person_Draw2,700,game,char,verified,yes,0,9,class 1 slot +0x14: (provisional) extra drawing (shadow/marker) for a person
 0x00134140,mm_CharType_TickSlots,92,game,char,verified,no,1,0,counts down the 25 character type slot timers (0x1C5310) and frees a slot (0x1C5110 = 6000) when its timer reaches 0
 0x001341A0,mm_CharType_ClearSlots,184,game,char,verified,no,1,0,frees all 25 character type slots (0x1C5110 = 6000) and clears their timers (0x1C5310)
 0x00134260,mm_Person_TurnToPlayer,896,game,char,verified,no,1,2,"turns a person's model part (nodes 0 and 3) to face the player, blended 9:1 with the direction kept in its slot (0x1C5110/0x1C5180/0x1C5310) (was mm_Person_BuildPose)"
-0x001345E0,mm_Person_Draw,1088,game,char,typed,yes,0,11,"class 1 slot +0x10: person instances on the terrain, within the draw range"
+0x001345E0,mm_Person_Draw,1088,game,char,verified,yes,0,11,"class 1 slot +0x10: person instances on the terrain, within the draw range"
 0x00134A20,mm_Person_Update,3032,game,char,typed,yes,0,20,"class 1 slot +0xC: a person's behaviour per tick: target building, walking, waiting, random choices"
 0x00135600,mm_Person_dtor,96,game,char,verified,yes,0,2,"vtable 0x1BCEB0, then the base destructor"
 0x00135660,mm_Person_ctor,136,game,char,verified,no,1,1,"base constructor, vtable 0x1BCEB0, walking speed +0x24 = record u16 +6 / 1e6"
@@ -1229,7 +1229,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00158370,mm_Player_PickTarget,1704,game,char,verified,no,1,10,"keeps or drops the player's target (gone, or 30 frames off the heading by pi/8), then steps a ray along the heading: a flag-0x40 building it hits, or while walking the nearest resident within 0.3 of the ray; sets the city cursor"
 0x00158A20,mm_Placement_FindSpot,748,game,city,verified,no,1,1,"tries offsets around (a5, a6) until mm_Map_CanPlace returns 2; writes the footprint rectangle"
 0x00158D10,mm_Player_PlaceBagItem,756,game,city,verified,yes,1,9,"placing an item from the bag: preview, confirm (button 0x40), place object, finish use"
-0x00159010,mm_Player_PlaceForApplicant,780,game,city,typed,yes,1,10,"placement preview for the selected applicant: footprint highlight green or red, then mm_Placement_FindSpot"
+0x00159010,mm_Player_PlaceForApplicant,780,game,city,verified,yes,1,10,"placement preview for the selected applicant: footprint highlight green or red, then mm_Placement_FindSpot"
 0x00159320,mm_Player_SetMode,56,game,char,verified,no,4,1,"mode a1 (-1 = previous), remembers the previous mode, resets the mode timer"
 0x00159360,mm_Player_GetMode,8,game,char,verified,no,3,0,current mode
 0x00159370,mm_Player_Draw,100,game,char,verified,no,1,3,player model instances
@@ -1483,7 +1483,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0016E950,mm_SceneA_StartGame,764,game,scene,typed,yes,1,27,
 0x0016EC50,mm_Title_NewGameIntro,1300,game,scene,verified,no,1,8,new game intro scene with town models and loading text
 0x0016F170,mm_Title_RandomCharParts,248,game,scene,verified,no,1,2,random character parts for the intro
-0x0016F270,mm_Title_OpeningMovieStep,424,game,scene,typed,yes,1,9,"plays the opening movie, then loads TITLE.SQ/HD/BD"
+0x0016F270,mm_Title_OpeningMovieStep,424,game,scene,verified,yes,1,9,"plays the opening movie, then loads TITLE.SQ/HD/BD"
 0x0016F420,mm_Title_MenuInput,520,game,scene,verified,no,1,4,"title menu input: cursor, Cross/Start pulse, and the sound test code (Up Up Down Down Left Right Left Right L1 R1, table 0x1B1790) that shows the Select hint; 10 opens the sound test"
 0x0016F630,mm_Title_DrawChoices,488,game,scene,verified,no,2,2,"the title menu choices: the selected one pulses for 20 frames (then returns 1), the other at 0.6"
 0x0016F820,mm_Title_DrawChoicesIdle,640,game,scene,verified,no,1,4,"the title menu choices at rest: the selected one wobbles on two circles (sceVu0RotMatrixZ), the other at 0.6 (was mm_Title_LogoAnimB)"
@@ -1646,7 +1646,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0017A700,mm_MyHome_ctor,600,game,talk,verified,no,1,5,"vtable 0x1BD810, building a2, camera start from its entrance"
 0x0017A960,mm_TalkConv_Draw,164,game,talk,verified,indirect,0,2,"vtable 0x1BD860: message window, menu, name entry, card and money panel"
 0x0017AA10,mm_TalkConv_Closing,448,game,talk,verified,yes,0,5,Step(0.1); then friendship status updates for the person or family member
-0x0017ABD0,mm_TalkConv_Active,848,game,talk,typed,yes,0,16,"script code handling: choice menus, money panel, name entry, end of talk"
+0x0017ABD0,mm_TalkConv_Active,848,game,talk,verified,yes,0,16,"script code handling: choice menus, money panel, name entry, end of talk"
 0x0017AF20,mm_TalkConv_Opening,80,game,talk,verified,yes,0,1,"Step(0.1), then active and the first line"
 0x0017AF70,mm_TalkConv_Update,388,game,talk,verified,yes,0,8,"name entry results, menu choices back into the script, message window update"
 0x0017B100,mm_TalkConv_NextLine,456,game,talk,verified,yes,3,6,next script line; the end code (-6007) applies the friendship gain
@@ -1723,10 +1723,10 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0017D070,mm_WordsFn_GoodsBagFull,236,game,talk,verified,no,0,1,goods carried in the bag: whether its last slot is taken (bag size table 0x1B5B08)
 0x0017D160,mm_WordsFn_GoodsOwned,320,game,talk,verified,no,0,3,#78 cond: (provisional) the goods item arg is already owned or unlocked
 0x0017D2A0,mm_WordsFn_LaptopHasBit,64,game,talk,verified,no,0,1,#77 cond: laptop entry bit arg is active
-0x0017D2E0,mm_WordsFn_AnyAcquaintanceSuppliesWant,8,game,talk,typed,yes,0,1,#76 cond: the same over every member of family A; result word and member index (+0x1A)
-0x0017D2F0,mm_WordsFn_AcquaintanceSuppliesWant,8,game,talk,typed,yes,0,1,#75 cond: an acquaintance of member A who can apply supplies the chosen want's claim; result word
-0x0017D300,mm_WordsFn_FamilySuppliesWant,8,game,talk,typed,yes,0,1,#74 cond: family A can apply and its type supplies the chosen want's claim
-0x0017D310,mm_WordsFn_SuppliesWantBody,896,game,talk,typed,yes,3,8,shared body of #74/#75/#76 (entered past their prologues)
+0x0017D2E0,mm_WordsFn_AnyAcquaintanceSuppliesWant,8,game,talk,verified,yes,0,1,#76 cond: the same over every member of family A; result word and member index (+0x1A)
+0x0017D2F0,mm_WordsFn_AcquaintanceSuppliesWant,8,game,talk,verified,yes,0,1,#75 cond: an acquaintance of member A who can apply supplies the chosen want's claim; result word
+0x0017D300,mm_WordsFn_FamilySuppliesWant,8,game,talk,verified,yes,0,1,#74 cond: family A can apply and its type supplies the chosen want's claim
+0x0017D310,mm_WordsFn_SuppliesWantBody,896,game,talk,verified,yes,3,8,shared body of #74/#75/#76 (entered past their prologues)
 0x0017D6A0,mm_WordsFn_AcquaintanceSuppliesClaim,380,game,talk,verified,yes,0,6,#73 cond: an acquaintance of member A who can apply and whose type supplies building A's claim; stored as the person's introduction
 0x0017D820,mm_WordsFn_WantClaimMatch,240,game,talk,verified,no,0,4,"#72 cond: an open want with the same claim as building A, else a room check"
 0x0017D910,mm_WordsFn_HasWantForPerson,104,game,talk,verified,no,0,1,#71 cond: person A has an open want
@@ -1992,18 +1992,18 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0018F450,mm_Sound_Shutdown,80,game,sound,ported,yes,1,2,YYSound RPC function 0
 0x0018F4A0,mm_Sound_Init,300,game,sound,ported,yes,1,6,"(was mm_InitSound) loads the modules, binds RPC 0x12346, sends function 1 with the status block address, clears the command ring"
 0x0018F5D0,mm_EvShoppingTogether_Slot14,32,game,event,verified,no,0,0,type 1: Slot14 (returns +0x28 when a3 == 0)
-0x0018F5F0,mm_EvShoppingTogether_Update,900,game,event,typed,yes,0,7,type 1: Update
+0x0018F5F0,mm_EvShoppingTogether_Update,900,game,event,verified,yes,0,7,type 1: Update
 0x0018F980,mm_EvShoppingTogether_End,192,game,event,verified,no,0,3,type 1: End (clears the building marks)
 0x0018FA40,mm_EvShoppingTogether_Start,116,game,event,verified,no,0,1,"type 1: Start (marks the two buildings, timer 180)"
 0x0018FAC0,mm_EvShoppingTogether_Check,460,game,event,verified,no,0,4,"event type 1 ""Shopping together"": slot Check"
 0x0018FC90,mm_EvAlien_Slot14,56,game,event,verified,yes,0,1,type 16: Slot14
 0x0018FCD0,mm_EvAlien_End,120,game,event,verified,no,0,1,type 16: End (clears the building marks)
 0x0018FD50,mm_EvAlien_PickTarget,400,game,event,verified,no,1,4,"(provisional) picks a building for the alien (footprint checks, table 0x1B3760)"
-0x0018FEE0,mm_EvAlien_Update,1184,game,event,typed,yes,0,11,type 16: Update (finishes after 720 ticks)
+0x0018FEE0,mm_EvAlien_Update,1184,game,event,verified,yes,0,11,type 16: Update (finishes after 720 ticks)
 0x00190380,mm_EvAlien_Check,832,game,event,verified,no,0,4,"type 16 ""Alien"": Check"
 0x001906C0,mm_EvBodyguard_Slot14,140,game,event,verified,no,0,1,type 5: Slot14
 0x00190750,mm_EvEscort_End,148,game,event,verified,no,0,3,End shared by types 2 and 5
-0x001907F0,mm_EvEscort_Update,768,game,event,typed,yes,0,6,Update shared by types 2 and 5
+0x001907F0,mm_EvEscort_Update,768,game,event,verified,yes,0,6,Update shared by types 2 and 5
 0x00190AF0,mm_EvEscort_Start,96,game,event,verified,no,0,3,"Start shared by types 2 ""Forgetful Granny"" and 5 ""Bodyguard"""
 0x00190B50,mm_EvBodyguard_Check,8,game,event,verified,no,0,0,"type 5 ""Bodyguard"": Check"
 0x00190B60,mm_EvMsg_Slot14,612,game,event,verified,no,0,7,"Slot14 shared by types 23, 29, 30, 35, 41"
@@ -2026,8 +2026,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001917C0,mm_EvWoman_Check,44,game,event,verified,no,0,0,"type 28 ""Woman"": Check"
 0x001917F0,mm_EvRiddle_Check,44,game,event,verified,no,0,0,"type 27 ""Riddle"": Check"
 0x00191820,mm_EvPopularity_Check,40,game,event,verified,no,0,0,"type 26 ""Popularity"": Check"
-0x00191850,mm_EvCaveMan_Slot14,508,game,event,typed,yes,0,3,type 15: Slot14
-0x00191A50,mm_EvCaveMan_Update,1652,game,event,typed,yes,0,12,type 15: Update
+0x00191850,mm_EvCaveMan_Slot14,508,game,event,verified,yes,0,3,type 15: Slot14
+0x00191A50,mm_EvCaveMan_Update,1652,game,event,verified,yes,0,12,type 15: Update
 0x001920D0,mm_EvCaveMan_End,192,game,event,verified,no,0,2,type 15: End
 0x00192190,mm_EvCaveMan_Start,8,game,event,verified,no,0,0,type 15: Start
 0x001921A0,mm_EvCaveMan_Check,380,game,event,verified,no,0,4,"type 15 ""Cave Man"": Check"
@@ -2046,7 +2046,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001932A0,mm_PartyPopup_dtor,144,game,event,ported,yes,0,3,(provisional) vtable 0x1BD8E0 then base 0x1BD8B0; deletes its frame
 0x00193330,mm_EvFarewellParty_Slot14,60,game,event,verified,no,0,0,type 19: Slot14
 0x00193370,mm_EvFarewellParty_End,104,game,event,verified,indirect,0,1,type 19: End
-0x001933E0,mm_EvFarewellParty_Update,1344,game,event,typed,yes,0,19,type 19: Update
+0x001933E0,mm_EvFarewellParty_Update,1344,game,event,verified,yes,0,19,type 19: Update
 0x00193920,mm_EvFarewellParty_Start,520,game,event,verified,no,0,5,"type 19 ""Farewell Party"": Start"
 0x00193B30,mm_EvForgetfulGranny_Check,44,game,event,verified,no,0,0,"type 2 ""Forgetful Granny"": Check"
 0x00193B60,mm_EvCrazyCult_Slot14,96,game,event,verified,indirect,0,0,type 18: Slot14
@@ -2067,7 +2067,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001952E0,mm_EvUselessMiddleAged_Check,20,game,event,verified,no,0,0,"type 7 ""Useless middle-aged"": Check"
 0x00195300,mm_EvMissingChildren_Slot14,276,game,event,verified,no,0,2,type 6: Slot14
 0x00195420,mm_EvMissingChildren_End,252,game,event,verified,no,0,3,type 6: End
-0x00195520,mm_EvMissingChildren_Update,1452,game,event,typed,yes,0,14,type 6: Update
+0x00195520,mm_EvMissingChildren_Update,1452,game,event,verified,yes,0,14,type 6: Update
 0x00195AD0,mm_EvMissingChildren_Start,48,game,event,verified,no,0,1,type 6: Start
 0x00195B00,mm_EvMissingChildren_Check,380,game,event,ported,yes,0,3,"type 6 ""Finds missing children"": Check"
 0x00195C80,mm_EvAdvertise_ClaimsMatch,284,game,event,verified,no,1,4,"whether an active entry (first byte 0) of building A's claim section B names an id, or a section D group of ids (0x8000 and up), that building B's section C lists"
@@ -2091,7 +2091,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001988D0,mm_EvNoodles_Check,680,game,event,verified,no,0,3,"type 13 ""Noodles"": Check"
 0x00198B80,mm_EvThief_Slot14,252,game,event,verified,no,0,1,type 17: Slot14
 0x00198C80,mm_EvThief_End,180,game,event,verified,no,0,1,type 17: End
-0x00198D40,mm_EvThief_Update,1964,game,event,typed,yes,0,12,type 17: Update
+0x00198D40,mm_EvThief_Update,1964,game,event,verified,yes,0,12,type 17: Update
 0x001994F0,mm_EvThief_Check,492,game,event,verified,no,0,4,"type 17 ""Thief"": Check"
 0x001996E0,mm_EvRelationship_Slot14,388,game,event,verified,no,0,3,Slot14 shared by types 20-22
 0x00199870,mm_EvAffair_Check,564,game,event,verified,no,0,6,"type 22 ""An affair of"": Check"

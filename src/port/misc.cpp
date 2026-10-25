@@ -4415,4 +4415,329 @@ namespace mm
     PORT_FN(Schedule_QueryB);
     PORT_FN(Schedule_GetActivity);
     PORT_FN(Schedule_GetBuildingActivity);
+
+    namespace
+    {
+        // The model of a person drawn with a class: part 0 to 3 by the low bits of the person's flags, else (flags 0) part 0 for an
+        // odd family and part 3 for an even one.
+        uint32_t personPart(GuestPtr<CharClass> cls, GuestPtr<MapPerson> person)
+        {
+            uint32_t index = static_cast<uint32_t>(person->flags) & 3u;
+            if (index == 0)
+                index = (person->family & 1u) != 0 ? 0u : 3u;
+            return port::load<uint32_t>(cls.address + 4u * index);
+        }
+
+        // Whether a model still fits the frame's draw budget (two counters, at 0x1BDA28 against 0x708 and at 0x1BDA34 against the
+        // limit at 0x1BD980), by the cost halfword (+0x18) of the model's header.
+        bool withinDrawBudget(uint32_t model)
+        {
+            const int32_t cost = port::load<int16_t>(port::load<uint32_t>(model) + 0x18u);
+            return cost + port::load<int32_t>(0x001BDA28u) < 0x708 && cost + port::load<int32_t>(0x001BDA34u) < port::load<int32_t>(0x001BD980u);
+        }
+
+        // Whether the claim meter of the person's workplace has reached the first threshold of the table at 0x1BDA50 (+2).
+        int workplaceClaimed(GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
+        {
+            return Map_GetRecord(city->map, person->work)->claimMeter >= port::load<uint16_t>(port::load<uint32_t>(0x001BDA50u) + 2u) ? 1 : 0;
+        }
+
+        float floatAt(uint32_t address) { return std::bit_cast<float>(port::load<uint32_t>(address)); }
+    }
+
+    // Draws a person with a pose of the class's model. The model's matrix is turned by the heading in the position block (t1:
+    // x, y, z at +0 to +8 place the model, the heading is at +0x0C, and +4 is also checked to be 0.5 or less before drawing) while the
+    // person's own height eases to the ground under it (0.1 a call, or at once from over 0.2 away). The animation (t2) is 7 for
+    // the two first ones while the person is not in flag 0x100; the person's frame (+0x1C) steps on by the animation's table
+    // (0x1AF080) and restarts at its table's value (0x1AF050: -1 a fifth of the length, -2 the class's start for the person's
+    // flags, else the value). People whose friendship reaches 48 turn to the player (but not in animation 5).
+    void Person_Draw(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, int colour, int flags, GuestPtr<int32_t> position, int animation)
+    {
+        port::GuestFrame<0xC0> frame; // the callees' frames land where they did under the original's
+        const uint32_t model = personPart(cls, person);
+        if (!withinDrawBudget(model))
+            return;
+        person->flags = static_cast<uint16_t>(person->flags | 0x1000u);
+        const ps2f height = Map_SampleHeight(city->map, person->x, person->z);
+        const ps2f y = person->y;
+        if (y < height)
+        {
+            if (!(height - y <= ps2f(0.2f)))
+                person->y = height;
+            else
+            {
+                const ps2f up = y + ps2f(0.1f);
+                person->y = up;
+                if (!(up <= height))
+                    person->y = height;
+            }
+        }
+        else if (!(y <= height))
+        {
+            if (!(y - height <= ps2f(0.2f)))
+                person->y = height;
+            else
+            {
+                const ps2f down = y - ps2f(0.1f);
+                person->y = down;
+                if (down < height)
+                    person->y = height;
+            }
+        }
+        if (!(ps2f(floatAt(position.address + 4u)) <= ps2f(0.5f)))
+            return;
+        const uint32_t matrix = model + 0x10u;
+        sdk::sceVu0RotMatrixY(matrix, 0x001B2550u, ps2f(floatAt(position.address + 0xCu)));
+        port::store<uint32_t>(matrix + 0x30u, port::load<uint32_t>(position.address));
+        port::store<uint32_t>(matrix + 0x34u, port::load<uint32_t>(position.address + 4u));
+        port::store<uint32_t>(matrix + 0x38u, port::load<uint32_t>(position.address + 8u));
+        const uint32_t frameAt = person.address + 0x1Cu;
+        if ((person->flags & 0x100u) == 0)
+        {
+            if (animation < 2)
+                animation = 7;
+            else if (animation == 6)
+                port::store<uint16_t>(frameAt, 0);
+        }
+        const int length = sdk::fptosi(A3D_GetMeshField0C(GuestPtr<A3DObject>{model}, animation));
+        port::store<uint16_t>(frameAt, static_cast<uint16_t>(port::load<uint16_t>(frameAt) + port::load<uint16_t>(0x001AF080u + 4u * static_cast<uint32_t>(animation))));
+        if (!(static_cast<int32_t>(port::load<uint16_t>(frameAt)) < length))
+        {
+            const int32_t restart = port::load<int32_t>(0x001AF050u + 4u * static_cast<uint32_t>(animation));
+            if (restart == -1)
+                port::store<uint16_t>(frameAt, static_cast<uint16_t>(length / 5));
+            else if (restart == -2)
+                port::store<uint16_t>(frameAt, port::load<uint16_t>(cls.address + 0x10u + 2u * (person->flags & 3u)));
+            else
+                port::store<uint16_t>(frameAt, static_cast<uint16_t>(restart));
+        }
+        const int attach = animation == 6 ? 0 : animation == 5 ? 1 : 4;
+        const int claimed = workplaceClaimed(city, person);
+        const uint32_t activity = Schedule_GetActivity(city, person);
+        const int shifted = (activity & 0x80u) != 0 ? 1 : 0;
+        const int inside = (person->flags & 0x400u) != 0 ? 1 : 0;
+        Instance_DrawSwaying2(GuestPtr<A3DObject>{model}, animation, fromInt(port::load<uint16_t>(frameAt)));
+        A3DObject_UpdateMatrices(GuestPtr<A3DObject>{model});
+        if (animation != 5 && Family_GetFriendship(person->family, person->member) >= 0x30)
+            Person_TurnToPlayer(cls, city, person);
+        Instance_DrawModelEx(GuestPtr<A3DObject>{model}, GuestPtr<Vec4>{static_cast<uint32_t>(colour)}, flags, claimed, static_cast<int>(activity & 0x7Fu), shifted, inside, attach);
+    }
+
+    PORT_FN(Person_Draw);
+
+    // The same with a pose already chosen: the class's part and the schedule byte are those of the person, or (with none) of the
+    // family and member given: the member's part byte (+0x2B of its record) when set, else by the family's parity as above. The
+    // pose of the talk session for the family and member is fetched into a local (claim state first for a person). The matrix is
+    // copied to the model and the animation phase (*phase, not before 0) goes on by 2 a call until it passes the length of the
+    // mesh (*mesh), when it restarts and the mesh switches between 2 and 3.
+    void Person_Draw2(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, uint32_t family, uint32_t member,
+                      GuestPtr<Vec4> matrix, int colour, GuestPtr<int32_t> mesh, GuestPtr<ps2f> phase)
+    {
+        port::GuestFrame<0xB0> frame;
+        const uint32_t local = frame.ptr().address + 0xACu;
+        uint32_t model;
+        uint32_t activity;
+        if (person)
+        {
+            model = personPart(cls, person);
+            port::store<int32_t>(local, workplaceClaimed(city, person));
+            Talk_LookupPose(city->talk, person->family, person->member, GuestPtr<uint32_t>{local});
+            activity = Schedule_GetActivity(city, person);
+        }
+        else
+        {
+            const uint32_t part = port::load<uint8_t>(Family_Get(static_cast<int>(family), 0).address + 0x48u * member + 0x2Bu);
+            model = port::load<uint32_t>(cls.address + 4u * (part != 0 ? part : ((family & 1u) != 0 ? 0u : 3u)));
+            activity = Schedule_QueryA(city, family, static_cast<int>(member));
+            port::store<int32_t>(local, 0);
+            Talk_LookupPose(city->talk, family, member, GuestPtr<uint32_t>{local});
+        }
+        for (uint32_t offset = 0; offset < 0x40u; offset += 8u)
+            port::store<uint64_t>(model + 0x10u + offset, port::load<uint64_t>(matrix.address + offset));
+        const ps2f now{floatAt(phase.address)};
+        if (!(now < ps2f(0.0f)))
+        {
+            const ps2f length = A3D_GetMeshField0C(GuestPtr<A3DObject>{model}, port::load<int32_t>(mesh.address));
+            const ps2f next = ps2f(floatAt(phase.address)) + ps2f(2.0f);
+            port::store<uint32_t>(phase.address, std::bit_cast<uint32_t>(next.v));
+            if (!(next < length))
+            {
+                port::store<uint32_t>(phase.address, 0u);
+                port::store<int32_t>(mesh.address, port::load<int32_t>(mesh.address) == 2 ? 3 : 2);
+            }
+        }
+        const int shifted = (activity & 0x80u) != 0 ? 1 : 0;
+        const int inside = person && (person->flags & 0x400u) != 0 ? 1 : 0;
+        if (!withinDrawBudget(model))
+            return;
+        Instance_DrawSwaying2(GuestPtr<A3DObject>{model}, port::load<int32_t>(mesh.address), ps2f(floatAt(phase.address)));
+        A3DObject_UpdateMatrices(GuestPtr<A3DObject>{model});
+        Instance_DrawModelEx(GuestPtr<A3DObject>{model}, GuestPtr<Vec4>{static_cast<uint32_t>(colour)}, 0, port::load<int32_t>(local), static_cast<int>(activity & 0x7Fu), shifted, inside, 4);
+    }
+
+    PORT_FN(Person_Draw2);
+
+    // Placing the selected applicant's building with the player's cursor (mode 6): the footprint of the building type of the family
+    // (the size byte at +0x142 of the type) is centred on the tile under the cursor as for a bag item and tested (mm_Map_CanPlace for
+    // the family; 1 means free and is highlighted in blue). Any other answer but 2 asks mm_Placement_FindSpot for a spot nearby
+    // (red when there is none); the highlight is mode 2 (cleared) when the spot is taken. Cross places it (levels the ground, the
+    // applicant's state 3 and its tile, back to the list, sound 3) when it can be placed, else plays sound 4; Triangle goes back to the
+    // list (sound 2).
+    void Player_PlaceForApplicant(GuestPtr<Player> player, GuestPtr<CityScene> city)
+    {
+        port::GuestFrame<0xD0> frame;
+        const uint32_t sp = frame.ptr().address;
+        const uint32_t entry = static_cast<uint32_t>(Applicants_GetSelected(city->applicants));
+        const uint32_t family = port::load<uint16_t>(entry + 4u);
+        const int typeIndex = Family_GetTypeIndex(static_cast<int>(family));
+        const int32_t size = port::load<uint8_t>(globals::buildingTypeAddress(static_cast<uint32_t>(typeIndex)) + 0x142u);
+        const ps2f half = fromInt(size & 1) / ps2f(2.0f);
+        const int x = sdk::fptosi(ps2f(64.0f) + (player->position.x + half - ps2f(0.5f)));
+        const int z = sdk::fptosi(ps2f(64.0f) - (ps2f(0.5f) + (player->position.z - half)));
+        const int before = (size - 1) / 2, after = size / 2;
+        const int x0 = x - before, z0 = z - before;
+        port::store<int32_t>(sp + 0xB0u, x0);
+        port::store<int32_t>(sp + 0xB4u, z0);
+        port::store<int32_t>(sp + 0xB8u, x + after);
+        port::store<int32_t>(sp + 0xBCu, z + after);
+        int placeable = Map_CanPlace(city->map, static_cast<int>(family), typeIndex, x0, z0);
+        const GuestPtr<int32_t> rect{sp + 0xB0u};
+        const GuestPtr<uint32_t> colour{sp + 0xC0u};
+        if (placeable == 1)
+        {
+            port::store<uint32_t>(sp + 0xC0u, 0u);
+            port::store<uint32_t>(sp + 0xC4u, 0u);
+            port::store<uint32_t>(sp + 0xC8u, 0x437F0000u);
+            port::store<uint32_t>(sp + 0xCCu, 0x42800000u);
+            Map_SetPlacementHighlight(city->map, 1, rect, colour);
+        }
+        else if (placeable == 2)
+            Map_SetPlacementHighlight(city->map, 2, rect, colour);
+        else
+        {
+            placeable = Placement_FindSpot(player, city, static_cast<int>(family), typeIndex, x, z, before, rect);
+            if (placeable != 0)
+                Map_SetPlacementHighlight(city->map, 2, rect, colour);
+            else
+            {
+                port::store<uint32_t>(sp + 0xC0u, 0x437F0000u);
+                port::store<uint32_t>(sp + 0xC4u, 0u);
+                port::store<uint32_t>(sp + 0xC8u, 0u);
+                port::store<uint32_t>(sp + 0xCCu, 0x42800000u);
+                Map_SetPlacementHighlight(city->map, 1, rect, colour);
+            }
+        }
+        if ((Pad_Pressed(0) & 0x40u) != 0)
+        {
+            if (placeable == 0)
+            {
+                Sound_PlaySe(4, 0, 0x3C, 0.0f, 0.0f);
+                return;
+            }
+            Map_LevelArea(city->map, port::load<int32_t>(sp + 0xB0u), port::load<int32_t>(sp + 0xB4u), size, static_cast<int>(city.address));
+            port::store<uint16_t>(entry + 2u, 3);
+            port::store<uint16_t>(entry + 6u, static_cast<uint16_t>(port::load<int16_t>(sp + 0xB0u) + (port::load<int16_t>(sp + 0xB4u) << 7)));
+            Applicants_StartPlacing(city->applicants, city);
+            Sound_PlaySe(3, 0, 0x3C, 0.0f, 0.0f);
+            return;
+        }
+        if ((Pad_Pressed(0) & 0x10u) != 0)
+        {
+            Sound_PlaySe(2, 0, 0x3C, 0.0f, 0.0f);
+            Applicants_StartPlacing(city->applicants, city);
+        }
+    }
+
+    PORT_FN(Player_PlaceForApplicant);
+
+    // One update of a vehicle (a person record of the vehicle classes, its driver the person at +0x28, 6000 for none). With the
+    // time flag 2 a vehicle in a building whose driver's activity has changed heads for the exit (walk tile = the building's tile).
+    // Inside a building: on the building's own tile the driver gets out (the vehicle outside, both given the "nowhere" tiles, the
+    // driver put where the vehicle is, no driver left); on another tile the vehicle follows the path (mm_Path_NextWaypoint at the
+    // walk tile 0x4000 or on the tile of the first object at it) or moves by the kind of its class (flag 0x1000: B, else A), the
+    // driver carried along. Outside: a counter (+0x2E, 3 a call) runs to 0xFD20, when the vehicle is taken off its tile and put
+    // back on its workplace's. With flag 0x800 the vehicle is then linked to the object under it (or its building); flag 0x1000 is cleared.
+    void Char2_Update(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, uint32_t timeFlags)
+    {
+        const uint32_t v = vehicle.address;
+        constexpr uint16_t kNowhere = 0x3F80, kNoDriver = 0x1770, kNoTile = 0x4000;
+        if ((timeFlags & 2u) != 0 && vehicle->inside != kNowhere && vehicle->target != kNoDriver)
+        {
+            const GuestPtr<MapPerson> driver = city->map->people + vehicle->target;
+            if (Schedule_GetBuildingActivity(city, driver) != driver->activity)
+                vehicle->walkTile = Map_GetRecord(city->map, vehicle->inside)->tile;
+        }
+        const int x = sdk::fptosi(ps2f(64.0f) + vehicle->x);
+        const int z = sdk::fptosi(ps2f(64.0f) - vehicle->z);
+        const int tile = x + (z << 7);
+        const auto carryDriver = [&]() {
+            const GuestPtr<MapPerson> driver = city->map->people + port::load<uint16_t>(v + 0x28u);
+            port::store<uint32_t>(driver.address, port::load<uint32_t>(v));
+            port::store<uint32_t>(driver.address + 4u, port::load<uint32_t>(v + 4u));
+            port::store<uint32_t>(driver.address + 8u, port::load<uint32_t>(v + 8u));
+        };
+        if (vehicle->inside != kNowhere)
+        {
+            port::store<uint16_t>(v + 0x2Eu, 0);
+            const GuestPtr<MapObject> building = Map_GetRecord(city->map, vehicle->inside);
+            const GuestPtr<MapObject> here = Map_GetTileFirstObject(city->map, tile);
+            if (building->tile == here->tile)
+            {
+                vehicle->inside = kNowhere;
+                port::store<uint16_t>(v + 0x1Eu, kNowhere);
+                vehicle->walkTile = kNoTile;
+                vehicle->previousTile = kNoTile;
+                port::store<uint16_t>(v + 0x2Cu, 0);
+                const GuestPtr<MapPerson> driver = city->map->people + vehicle->target;
+                driver->flags = static_cast<uint16_t>(driver->flags & 0xFFFBu);
+                driver->inside = kNowhere;
+                port::store<uint16_t>(driver.address + 0x1Eu, kNowhere);
+                driver->walkTile = kNoTile;
+                driver->previousTile = kNoTile;
+                carryDriver();
+                vehicle->target = kNoDriver;
+            }
+            else if (vehicle->walkTile == kNoTile || Map_GetTileFirstObject(city->map, vehicle->walkTile)->tile == here->tile)
+                Path_NextWaypoint(cls, city, vehicle, tile);
+            else
+            {
+                if ((vehicle->flags & 0x1000u) != 0)
+                    Char2_MoveB(cls, city, vehicle, here, tile);
+                else
+                    Char2_MoveA(cls, city, vehicle, here, tile);
+                carryDriver();
+            }
+        }
+        else
+        {
+            const uint16_t counter = static_cast<uint16_t>(port::load<uint16_t>(v + 0x2Eu) + 3u);
+            port::store<uint16_t>(v + 0x2Eu, counter);
+            if (static_cast<int32_t>(port::load<uint16_t>(v + 0x2Eu)) >= 0xFD20)
+            {
+                Map_UnlinkPersonFromTile(city->map, tile, vehicle->index);
+                port::store<uint16_t>(v + 0x2Eu, 0);
+                const uint32_t home = Map_GetRecord(city->map, vehicle->work)->tile;
+                vehicle->x = ps2f(0.5f) + (fromInt(static_cast<int32_t>(home & 0x7Fu)) - ps2f(64.0f));
+                vehicle->z = (fromInt(0x80 - static_cast<int32_t>(home >> 7)) - ps2f(64.0f)) - ps2f(0.5f);
+                vehicle->walkTile = kNoTile;
+                vehicle->previousTile = kNoTile;
+            }
+        }
+        if ((vehicle->flags & 0x800u) != 0)
+        {
+            const int cx = sdk::fptosi(ps2f(64.0f) + vehicle->x);
+            const int cz = sdk::fptosi(ps2f(64.0f) - vehicle->z);
+            const GuestPtr<MapObject> under = Map_GetTileObject(city->map, cx, cz);
+            if (vehicle->inside != kNowhere)
+            {
+                const GuestPtr<MapObject> building = Map_GetRecord(city->map, vehicle->inside);
+                MapObj_AddPerson(city->map, building->tile == under->tile ? building->id : under->id, vehicle->index);
+            }
+            else
+                MapObj_AddPerson(city->map, under->id, vehicle->index);
+        }
+        vehicle->flags = static_cast<uint16_t>(vehicle->flags & 0xEFFFu);
+    }
+
+    PORT_FN(Char2_Update);
 }

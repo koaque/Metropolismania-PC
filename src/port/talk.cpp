@@ -2133,4 +2133,90 @@ namespace mm
     }
 
     PORT_FN(Talk_Start);
+
+    // The conversation's state for what the script asked for (the code at +0x2E4). A code from -6000 up to -2001 is a menu of choices
+    // (mm_Words_CountChoices of them, listed in the menu window +0x2D4, state 7); -2001 also opens the money panel (+0x2D8, made when
+    // missing). A code from -2000 up is a name entry (state 8): the entry window (+0x2DC, made when missing) is set up with a slot of
+    // the answer table at 0x1C5380 for codes below -1960, else with the script's default answer copied to 0x1F4E90 without its
+    // trailing blanks (the longest answer being that of the default). Below -6000 the line is shown and waits for a button: Triangle
+    // (when the script allows cancelling) or, at the end of the conversation (-0x1777 in state 3), Cross closes the panel, the card
+    // and the conversation; any other Cross goes on to the next line.
+    void TalkConv_Active(GuestPtr<TalkConv> conv)
+    {
+        const uint32_t c = conv.address;
+        const auto callSlot = [](uint32_t object, uint32_t offset) {
+            port::callGuest<int64_t>(port::load<uint32_t>(port::load<uint32_t>(object + 8u) + offset), object);
+        };
+        const auto closeAll = [&]() {
+            if (port::load<uint32_t>(c + 0x2D8u) != 0u)
+                callSlot(port::load<uint32_t>(c + 0x2D8u), 0x10u);
+            callSlot(port::load<uint32_t>(c + 0x2E0u), 0x10u);
+            callSlot(c, 0x10u);
+        };
+        const int32_t code = port::load<int32_t>(c + 0x2E4u);
+        const int32_t script = port::load<int32_t>(c + 0x2D0u);
+        const GuestPtr<CityScene> city{port::load<uint32_t>(c + 0x2CCu)};
+        if (code < -6000)
+        {
+            if (Words_CancelAllowed() != 0 && (Pad_Pressed(0) & 0x10u) != 0)
+            {
+                closeAll();
+                return;
+            }
+            if ((Pad_Pressed(0) & 0x40u) == 0)
+                return;
+            if (port::load<int32_t>(c) == 3 && port::load<int32_t>(c + 0x2E4u) == -0x1777)
+                closeAll();
+            else
+                TalkConv_NextLine(conv);
+            return;
+        }
+        if (code >= -2000)
+        {
+            if (port::load<uint32_t>(c + 0x2DCu) == 0u)
+            {
+                uint32_t entry = sdk::operator_new(0x124u);
+                if (entry != 0u)
+                    entry = NameEntry_ctor(GuestPtr<NameEntry>{entry}).address;
+                port::store<uint32_t>(c + 0x2DCu, entry);
+            }
+            const GuestPtr<NameEntry> entry{port::load<uint32_t>(c + 0x2DCu)};
+            if (port::load<int32_t>(c + 0x2E4u) < -0x7A8)
+                NameEntry_Setup(entry, 0, 0xF, 0, 0, GuestPtr<char>{0x001C5380u + (static_cast<uint32_t>(port::load<int32_t>(c + 0x2E4u) + 0x7D0) << 4)});
+            else
+            {
+                constexpr uint32_t kBuffer = 0x001F4E90u, kBlank = 0x001B90F8u;
+                const GuestPtr<char> text = Words_GetEntryDefault();
+                sdk::strcpy(kBuffer, text.address);
+                for (uint32_t last = kBuffer + static_cast<uint32_t>(sdk::strlen(kBuffer)) - 1u; last >= kBuffer; --last)
+                {
+                    if (sdk::strncmp(last, kBlank, 1) != 0)
+                        break;
+                    port::store<uint8_t>(last, 0);
+                }
+                const uint32_t mode = static_cast<uint32_t>(Words_GetEntryMode()) & 0xFFu;
+                NameEntry_Setup(entry, mode, static_cast<uint8_t>(sdk::strlen(text.address)), 0, 0, GuestPtr<char>{kBuffer});
+            }
+            port::store<int32_t>(c, 8);
+            return;
+        }
+        const int count = Words_CountChoices(script, city, code);
+        port::store<int32_t>(c, 7);
+        const GuestPtr<MenuWin> menu{port::load<uint32_t>(c + 0x2D4u)};
+        MenuWin_Open(menu, port::load<int32_t>(c + 0x2E4u), count);
+        for (int index = 0; index < count; ++index)
+            MenuWin_FillItems(menu, Words_GetChoiceText(script, city, port::load<int32_t>(c + 0x2E4u), index));
+        if (port::load<int32_t>(c + 0x2E4u) != -0x7D1)
+            return;
+        if (port::load<uint32_t>(c + 0x2D8u) == 0u)
+        {
+            uint32_t panel = sdk::operator_new(0x1Cu);
+            if (panel != 0u)
+                panel = TalkMoney_ctor(GuestPtr<TalkMoney>{panel}, port::load<int32_t>(0x001C5540u)).address;
+            port::store<uint32_t>(c + 0x2D8u, panel);
+        }
+        callSlot(port::load<uint32_t>(c + 0x2D8u), 0xCu);
+    }
+
+    PORT_FN(TalkConv_Active);
 }

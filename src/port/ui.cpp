@@ -5274,4 +5274,62 @@ namespace mm
     }
 
     PORT_FN(CityCursor_UpdateInfo);
+
+    // The title scene's steps around the opening movie (the step at +0xC4; the title is drawn with all five layers first on every
+    // call): 0 fades voice 15 out; 1 (once the draw reports 1) stops sound sequence 7; 2 and 3 wait for the sound driver (2 also
+    // sends command 2); 4 plays the opening movie; 5 (the disc ready, 2) resets the voices; 6 waits for the driver; 7 (the disc
+    // ready) loads the title sound bank into slot 7; 8 returns 1 once the driver is idle. 0 until then.
+    int Title_OpeningMovieStep(GuestPtr<SceneA> scene)
+    {
+        const uint32_t s = scene.address;
+        const int drawn = Title_DrawCommon(scene, 0x1F);
+        const auto next = [&]() { port::store<int32_t>(s + 0xC4u, port::load<int32_t>(s + 0xC4u) + 1); };
+        switch (port::load<uint32_t>(s + 0xC4u))
+        {
+        case 0:
+            SoundCmd_FadeB(0xF, 0, 0x10, 0);
+            next();
+            return 0;
+        case 1:
+            if (drawn != 1)
+                return 0;
+            SoundCmd_StopSequence(7, 0);
+            next();
+            return 0;
+        case 2:
+            if (Sound_IsBusy() != 0)
+                return 0;
+            SoundCmd_02_Zero();
+            next();
+            return 0;
+        case 3:
+        case 6:
+            if (Sound_IsBusy() != 0)
+                return 0;
+            next();
+            return 0;
+        case 4:
+            PlayOpeningMovie();
+            next();
+            return 0;
+        case 5:
+            if (sdk::sceCdDiskReady(0) != 2)
+                return 0;
+            Sound_ResetVoices(1);
+            next();
+            return 0;
+        case 7:
+            if (sdk::sceCdDiskReady(0) != 2)
+                return 0;
+            SoundCmd_LoadBank(7, 0x001B8728, 0x001B8738, 0x001B8748, 0);
+            next();
+            return 0;
+        case 8:
+            return Sound_IsBusy() != 0 ? 0 : 1;
+        default:
+            return 0;
+        }
+    }
+
+    PORT_FN(Title_OpeningMovieStep);
 }

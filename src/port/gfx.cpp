@@ -2516,4 +2516,45 @@ namespace mm
     }
 
     PORT_FN(Gs_InitDisplay);
+
+    // Loads a model (.A3D) from a disc path in one go (the blocking counterpart of A3DObject_LoadAsync): the 16-byte header (the file's
+    // size in words, the texture block's in words, then the counts) is read and the file read again from its start into a block of
+    // that size; the table of the model's meshes (+0x50, the count is a halfword at +0x1C of the data) and the texture block (+4) are
+    // made and the texture block read; the data is relocated (mm_A3D_Relocate), the texture block freed and the model's matrix at
+    // +0x10 reset. The result is the model.
+    GuestPtr<int32_t> A3DObject_Load(GuestPtr<A3DObject> model, int path, int indexed)
+    {
+        port::GuestFrame<0x60> frame;
+        const uint32_t sp = frame.ptr().address;
+        const GuestPtr<GameFile> file{sp + 0x58u};
+        const uint32_t header = sp + 0x40u;
+        const uint32_t m = model.address;
+        BaseObject_ctor(static_cast<int>(m));
+        port::store<uint32_t>(m, 0u);
+        port::store<uint32_t>(m + 4u, 0u);
+        port::store<uint32_t>(m + 0x50u, 0u);
+        File_ctor(file, 0);
+        File_Open(file, GuestPtr<char>{static_cast<uint32_t>(path)});
+        File_Read(file, static_cast<int>(header), 1, 0x10, 0);
+        File_Seek(file, 0, 0, 0);
+        port::store<uint32_t>(m, sdk::malloc(port::load<uint32_t>(header) << 2));
+        File_Read(file, static_cast<int>(port::load<uint32_t>(m)), port::load<int32_t>(header), 4, 0);
+        const int32_t meshes = port::load<int16_t>(port::load<uint32_t>(m) + 0x1Cu);
+        if (meshes != 0)
+            port::store<uint32_t>(m + 0x50u, sdk::mw_NewArray(static_cast<uint32_t>(meshes) << 2));
+        port::store<uint32_t>(m + 4u, sdk::malloc(port::load<uint32_t>(header + 4u) << 2));
+        File_Read(file, static_cast<int>(port::load<uint32_t>(m + 4u)), port::load<int32_t>(header + 4u), 4, 0);
+        File_Close(file);
+        A3D_Relocate(model, indexed);
+        if (port::load<uint32_t>(m + 4u) != 0u)
+        {
+            sdk::free(port::load<uint32_t>(m + 4u));
+            port::store<uint32_t>(m + 4u, 0u);
+        }
+        Mat4_Copy(GuestPtr<Vec4>{m + 0x10u}, GuestPtr<Vec4>{0x001B2550u});
+        File_dtor(file, -1);
+        return GuestPtr<int32_t>{m};
+    }
+
+    PORT_FN(A3DObject_Load);
 }

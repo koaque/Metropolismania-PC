@@ -20,7 +20,7 @@ City events (visitors, requests, incidents, paydays).
 
 ## Functions
 
-148 functions (ported 2, typed 9, verified 137). Blocks: 20 can reach a thread switch, 21 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+148 functions (ported 2, typed 1, verified 145). Blocks: 20 can reach a thread switch, 21 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -89,7 +89,7 @@ City events (visitors, requests, incidents, paydays).
 | `0x001917C0` | `int mm_EvWoman_Check(EventData *data, CityScene *city)` | 44 | no | type 28 "Woman": Check |
 | `0x001917F0` | `int mm_EvRiddle_Check(EventData *data, CityScene *city)` | 44 | no | type 27 "Riddle": Check |
 | `0x00191820` | `int mm_EvPopularity_Check(EventData *data, CityScene *city)` | 40 | no | type 26 "Popularity": Check |
-| `0x00191850` | `uint32_t mm_EvCaveMan_Slot14(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 508 | yes | type 15: Slot14 |
+| `0x00191850` | `int mm_EvCaveMan_Slot14(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 508 | yes | type 15: Slot14 |
 | `0x00191A50` | `void mm_EvCaveMan_Update(EventData *data, CityScene *city)` | 1652 | yes | type 15: Update |
 | `0x001920D0` | `void mm_EvCaveMan_End(EventData *data, CityScene *city)` | 192 | no | type 15: End |
 | `0x00192190` | `int64_t mm_EvCaveMan_Start(EventData *data, CityScene *city)` | 8 | no | type 15: Start |

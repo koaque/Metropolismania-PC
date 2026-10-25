@@ -4136,4 +4136,1093 @@ namespace mm
     }
 
     PORT_FN(EvActor_PointCursor);
+
+    // The cave man event's slot 0x14 (jump table 0x1BA060; modes above 8 give 0). Modes 0 to 3 add the family at +0x15E of the event
+    // data table (0x1BDA8C) plus the mode to the applicants, play sound 0x17 and make it the event's actor `mode` (member 2; for the
+    // fourth member 1): mode 0 also notes the family at +0x30 (+0x32 = 1) and sets the counter (+0x4C) to 1, 1 and 2 count it to 2
+    // and 3, 3 moves the event on (+0xA) and clears it. 4 and 8 give the counter. 5 adds the family at +0x38 (the sound too), 7 that
+    // of +0x160. 6 asks whether actors 0 and 4 stand at their buildings and neither is doing activity 5.
+    int EvCaveMan_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode)
+    {
+        (void)actor;
+        const uint32_t d = data.address;
+        const auto addFamily = [&](uint32_t family) {
+            CityScene_AddApplicantFamily(city, family, 1);
+            Sound_PlaySe(0x17, 0, 0x3C, 0.0f, 0.0f);
+        };
+        switch (static_cast<uint32_t>(mode))
+        {
+        case 0:
+        case 1:
+        case 2:
+        case 3:
+        {
+            const uint32_t family = (static_cast<uint32_t>(mode) + port::load<int16_t>(globals::eachStrData.get() + 0x15Eu)) & 0xFFFFu;
+            addFamily(family);
+            const uint32_t entry = d + 0xCu + 8u * static_cast<uint32_t>(mode);
+            port::store<uint16_t>(entry + 4u, static_cast<uint16_t>(family));
+            if (mode < 3)
+            {
+                port::store<uint16_t>(entry + 6u, 2);
+                port::store<int32_t>(d + 0x4Cu, mode + 1);
+                if (mode == 0)
+                {
+                    port::store<uint16_t>(d + 0x30u, static_cast<uint16_t>(family));
+                    port::store<uint16_t>(d + 0x32u, 1);
+                }
+            }
+            else
+            {
+                port::store<uint16_t>(entry + 6u, 1);
+                data->var = static_cast<uint8_t>(data->var + 1);
+                port::store<int32_t>(d + 0x4Cu, 0);
+            }
+            return 0;
+        }
+        case 4:
+        case 8:
+            return port::load<int32_t>(d + 0x4Cu);
+        case 5:
+            addFamily(port::load<uint16_t>(d + 0x38u));
+            return 0;
+        case 6:
+        {
+            const GuestPtr<ActorRef> first{d + 0xCu}, last{d + 0x2Cu};
+            if (Person_IsAtBuilding(city, first, last) == 0 || Person_IsAtBuilding(city, last, last) == 0)
+                return 0;
+            const GuestPtr<MapPerson> people = city->map->people;
+            if ((people + first->person)->activity == 5)
+                return 0;
+            return (people + last->person)->activity != 5 ? 1 : 0;
+        }
+        case 7:
+            addFamily(port::load<uint16_t>(globals::eachStrData.get() + 0x160u));
+            return 0;
+        default:
+            return 0;
+        }
+    }
+
+    PORT_FN(EvCaveMan_Slot14);
+
+    // The escort event (phase in +0xA; the counter at +0x14 wraps at ten). Phase 1: before 22:00 the escort is met once the player is
+    // within one tile of the actor's building and a tile of the person (then phase 4); failing that, on every tenth call, an actor
+    // on open tile more than three tiles away is pointed at. From 22:00 (an actor off open tiles only from 22:10) pointing at the actor
+    // moves it to phase 2. Phase 2: before 23:00 the same meeting gives phase 5; from 23:00 (23:10 for an actor off open tiles) a
+    // point at the actor stops its following, moves it to its own spot, marks the person (flag 0x80) and moves on to phase 3. A
+    // meeting also stops the following and moves the actor to its spot.
+    void EvEscort_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city)
+    {
+        const GuestPtr<ActorRef> actor = GuestPtr<ActorRef>::of(data->actor);
+        bool met = false;
+        data->unk_14 = data->unk_14 + 1;
+        if (data->unk_14 >= 10)
+            data->unk_14 = 0;
+        const int32_t minutes = city->clock / 60;
+        const auto closeEnough = [&] {
+            return Player_DistanceToBuilding(city, actor) < 2 && Player_DistanceToPerson(city, actor) <= ps2f(1.0f) && EvActor_PointCursor(city, actor) != 0;
+        };
+        if (data->var == 1)
+        {
+            if (minutes < 0x528)
+            {
+                if (closeEnough())
+                {
+                    met = true;
+                    data->var = 4;
+                }
+                else if (data->unk_14 == 0 && Person_IsOnOpenTile(city, actor) != 0 && !(Player_DistanceToPerson(city, actor) <= ps2f(3.0f)))
+                    EvActor_PointCursor(city, actor);
+            }
+            else if (Person_IsOnOpenTile(city, actor) != 0 || minutes >= 0x532)
+            {
+                if (EvActor_PointCursor(city, actor) != 0)
+                    data->var = 2;
+            }
+        }
+        else if (data->var == 2)
+        {
+            if (minutes < 0x564)
+            {
+                if (closeEnough())
+                {
+                    met = true;
+                    data->var = 5;
+                }
+            }
+            else if ((Person_IsOnOpenTile(city, actor) != 0 || minutes >= 0x56E) && EvActor_PointCursor(city, actor) != 0)
+            {
+                EvActor_StopFollowing(city, actor);
+                EvActor_MoveTo(city, actor, actor, 0);
+                const GuestPtr<MapPerson> person = city->map->people + actor->person;
+                person->flags = static_cast<uint16_t>(person->flags | 0x80u);
+                data->var = 3;
+            }
+        }
+        if (met)
+        {
+            EvActor_StopFollowing(city, actor);
+            EvActor_MoveTo(city, actor, actor, 0);
+        }
+    }
+
+    PORT_FN(EvEscort_Update);
+
+    // The shopping together event (phase in +0xA; actor 0 at +0xC, actor 1 at +0x14, the countdown at +0x1C, the counters at +0x20 and
+    // +0x24, the outcome at +0x28, the frame count at +0x2C). Phase 1 counts the countdown down: above 60 the player must be near
+    // actor 1's building and actor 0 (then actor 0 is pointed at, on an open tile or after ten tries; the outcome is 1 for a
+    // countdown under 121, else 0, and phase 5), else every tenth call actor 0 is pointed at; from 60 down, pointing at actor 0 on an
+    // open tile moves it to phase 2. Phase 3 does the same while the countdown runs (outcome 2, phase 5) and when it ends points at
+    // actor 0, has it stop following and walk to actor 1, marks it (flag 0x80, outcome 3) and moves on to phase 4. Phase 6 ends the
+    // event after 180 frames.
+    void EvShoppingTogether_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city)
+    {
+        const uint32_t d = data.address;
+        const GuestPtr<ActorRef> first{d + 0xCu}, second{d + 0x14u};
+        const auto get = [&](uint32_t offset) { return port::load<int32_t>(d + offset); };
+        const auto put = [&](uint32_t offset, int32_t value) { port::store<int32_t>(d + offset, value); };
+        // Too far from actor 0 (three tiles or more): every tenth call it is pointed at while on an open tile.
+        const auto farOff = [&] {
+            if (Player_DistanceToPerson(city, first) < ps2f(3.0f))
+            {
+                put(0x20, 0);
+                put(0x24, 0);
+                return;
+            }
+            put(0x24, get(0x24) + 1);
+            if (get(0x24) >= 10 && Person_IsOnOpenTile(city, first) != 0 && EvActor_PointCursor(city, first) != 0)
+                put(0x24, 0);
+            put(0x20, 0);
+        };
+        const auto nearBoth = [&] {
+            return Player_DistanceToBuilding(city, second) < 2 && Player_DistanceToPerson(city, first) <= ps2f(1.0f);
+        };
+        // Near both: pointed at once the actor is on an open tile, or after ten calls with it off one.
+        const auto meet = [&](int32_t outcome) {
+            if (Person_IsOnOpenTile(city, first) == 0)
+            {
+                put(0x20, get(0x20) + 1);
+                if (get(0x20) < 10)
+                {
+                    put(0x24, 0);
+                    return;
+                }
+            }
+            if (EvActor_PointCursor(city, first) == 0)
+            {
+                put(0x24, 0);
+                return;
+            }
+            put(0x28, outcome >= 0 ? outcome : (get(0x1C) < 0x79 ? 1 : 0));
+            data->var = 5;
+            put(0x24, 0);
+        };
+        switch (data->var)
+        {
+        case 1:
+            put(0x1C, get(0x1C) - 1);
+            if (get(0x1C) < 0x3D)
+            {
+                if (Person_IsOnOpenTile(city, first) != 0 && EvActor_PointCursor(city, first) != 0)
+                    data->var = static_cast<uint8_t>(data->var + 1);
+            }
+            else if (nearBoth())
+                meet(-1);
+            else
+                farOff();
+            break;
+        case 3:
+            put(0x1C, get(0x1C) - 1);
+            if (get(0x1C) > 0)
+            {
+                if (nearBoth())
+                    meet(2);
+                else
+                    farOff();
+            }
+            else if (Person_IsOnOpenTile(city, first) != 0 && EvActor_PointCursor(city, first) != 0)
+            {
+                EvActor_StopFollowing(city, first);
+                EvActor_MoveTo(city, first, second, 1);
+                const GuestPtr<MapPerson> person = city->map->people + first->person;
+                person->flags = static_cast<uint16_t>(person->flags | 0x80u);
+                put(0x28, 3);
+                data->var = static_cast<uint8_t>(data->var + 1);
+            }
+            break;
+        case 6:
+            put(0x2C, get(0x2C) + 1);
+            if (get(0x2C) >= 0xB4)
+                Event_Finish(city->events, city, 0);
+            break;
+        default:
+            break;
+        }
+    }
+
+    PORT_FN(EvShoppingTogether_Update);
+
+    // The alien event's phases (phase in +0xA; actors at +0xC, +0x14, +0x1C (the place), +0x2C, +0x34; the day to wait for at +0x3C,
+    // the time at +0x40 and a countdown at +0x44). 1 plays sound 0x45 and notes the next day; 2 moves on when it comes; 3 from 10:00
+    // tells actor 1 and waits 60 frames; 4, 10 and 12 count the 60 down and go back a phase. 7 needs actor 0 on an open tile within a
+    // tile of the player and a building picked for its tile (EvAlien_PickTarget): the place becomes that building (marked 0x200, the
+    // old one's mark cleared). 9 and 11 tell the place's actor on the noted day and time (noon of the next day after 9). 22 points at
+    // actor 0 within a tile of the player once it stands on the footprint of actor 3's building, 24 points at actor 5 and 26 ends the
+    // event after 720 frames.
+    void EvAlien_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city)
+    {
+        const uint32_t d = data.address;
+        const GuestPtr<ActorRef> first{d + 0xCu};
+        const auto get = [&](uint32_t offset) { return port::load<int32_t>(d + offset); };
+        const auto put = [&](uint32_t offset, int32_t value) { port::store<int32_t>(d + offset, value); };
+        const auto advance = [&] { data->var = static_cast<uint8_t>(data->var + 1); };
+        switch (data->var)
+        {
+        case 1:
+            Sound_PlaySe(0x45, 0, 0x3C, 0.0f, 0.0f);
+            advance();
+            put(0x3C, city->monthCount + 1);
+            break;
+        case 2:
+            if (get(0x3C) < city->monthCount)
+                data->var = 3;
+            break;
+        case 3:
+            if (city->clock >= 0x8CA0 && EvActor_Notify(city, GuestPtr<ActorRef>{d + 0x14u}) != 0)
+            {
+                advance();
+                put(0x44, 0x3C);
+            }
+            break;
+        case 4:
+        case 10:
+        case 12:
+            put(0x44, get(0x44) - 1);
+            if (get(0x44) <= 0)
+                data->var = static_cast<uint8_t>(data->var - 1);
+            break;
+        case 7:
+        {
+            if (Person_IsOnOpenTile(city, first) == 0 || !(Player_DistanceToPerson(city, first) <= ps2f(1.0f)))
+                break;
+            const GuestPtr<MapPerson> person = city->map->people + first->person;
+            const int z = sdk::fptosi(ps2f(64.0f) - person->z);
+            const int x = sdk::fptosi(ps2f(64.0f) + person->x);
+            const GuestPtr<MapObject> target = EvAlien_PickTarget(city, x, z);
+            if (!target || EvActor_PointCursor(city, first) == 0)
+                break;
+            advance();
+            put(0x3C, city->monthCount + 1);
+            put(0x40, 0x8CA0);
+            const GuestPtr<ActorRef> place{d + 0x1Cu};
+            if (place->object == target->id)
+                break;
+            const GuestPtr<MapObject> old = Map_GetRecord(city->map, place->object);
+            old->flags = static_cast<uint16_t>(old->flags & 0xFDFFu);
+            place->object = target->id;
+            place->family = target->family;
+            place->member = 0;
+            place->person = Map_FindPersonEntry(city->map, static_cast<int16_t>(place->family), place->member)->index;
+            target->flags = static_cast<uint16_t>(target->flags | 0x200u);
+            break;
+        }
+        case 9:
+            if (city->monthCount < get(0x3C) || city->clock < get(0x40))
+                break;
+            if (EvActor_Notify(city, GuestPtr<ActorRef>{d + 0x1Cu}) != 0)
+            {
+                advance();
+                put(0x44, 0x3C);
+                put(0x3C, city->monthCount + 1);
+                put(0x40, 0xA8C0);
+            }
+            break;
+        case 11:
+            if (city->monthCount < get(0x3C) || city->clock < get(0x40))
+                break;
+            if (EvActor_Notify(city, GuestPtr<ActorRef>{d + 0x2Cu}) != 0)
+            {
+                advance();
+                put(0x44, 0x3C);
+            }
+            break;
+        case 22:
+        {
+            if (!(Player_DistanceToPerson(city, first) <= ps2f(1.0f)))
+                break;
+            port::GuestFrame<0x60> frame;
+            const GuestPtr<uint32_t> rect{frame.ptr().address + 0x50u};
+            Building_GetFootprint(Map_GetRecord(city->map, port::load<uint16_t>(d + 0x26u)), 1, rect);
+            const GuestPtr<MapPerson> person = city->map->people + first->person;
+            const int z = sdk::fptosi(ps2f(64.0f) - person->z);
+            const int x = sdk::fptosi(ps2f(64.0f) + person->x);
+            const int32_t x0 = port::load<int32_t>(rect.address), z0 = port::load<int32_t>(rect.address + 4u);
+            const int32_t x1 = port::load<int32_t>(rect.address + 8u), z1 = port::load<int32_t>(rect.address + 0xCu);
+            if (x >= x0 && x < x1 && z >= z0 && z < z1 && EvActor_PointCursor(city, first) != 0)
+                advance();
+            break;
+        }
+        case 24:
+            if (EvActor_PointCursor(city, GuestPtr<ActorRef>{d + 0x34u}) != 0)
+            {
+                advance();
+                put(0x44, 0);
+            }
+            break;
+        case 26:
+            put(0x44, get(0x44) + 1);
+            if (get(0x44) >= 0x2D0)
+                Event_Finish(city->events, city, 0);
+            break;
+        default:
+            break;
+        }
+    }
+
+    PORT_FN(EvAlien_Update);
+
+    // The cave man event's phases (phase in +0xA; actors at +0xC, +0x14, +0x1C, +0x24, +0x2C (the leader), +0x34, +0x3C and +0x44;
+    // the counter at +0x4C, a countdown at +0x50 and a day at +0x54). 2 marks the first four buildings of type 0xB0 (flag 0x200),
+    // giving their families' actors the building, and moves on once four are found (and again for each further one); 3 finds the
+    // person entries of the actors one by one (the leader's from +0x30/+0x32) and notes the day; 4 and 10 wait for a day after the
+    // noted one between 10:00 and 17:00 with the leader at its building and tell actor 4 or 3 (60 frames); 5 and 11 send them off and
+    // count the 60 down back to the phase before; 6 to 9, 20 and 21 keep actors 0 and 4 where they are; 18 finds actor 5's building
+    // or person entry; 24 sends actor 0 to actor 6 and marks it, 25 does so with the activity 10 and points at it (on an open tile
+    // after ten tries, three tiles or more from the player; else once it is at actor 6's building: the talk's view lit and phase 27);
+    // 26 releases it and points at it within a tile; 28 points at actor 7; 30 ends the event after 720 frames.
+    void EvCaveMan_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city)
+    {
+        const uint32_t d = data.address;
+        const GuestPtr<ActorRef> first{d + 0xCu}, third{d + 0x24u}, fourth{d + 0x2Cu}, sixth{d + 0x3Cu};
+        const auto get = [&](uint32_t offset) { return port::load<int32_t>(d + offset); };
+        const auto put = [&](uint32_t offset, int32_t value) { port::store<int32_t>(d + offset, value); };
+        const auto advance = [&](int step) { data->var = static_cast<uint8_t>(data->var + step); };
+        // A day after the noted one, between 10:00 and 17:00.
+        const auto timeToTell = [&] { return get(0x54) < city->monthCount && city->clock >= 0x8CA0 && city->clock < 0xEF10; };
+        const auto person = [&](GuestPtr<ActorRef> actor) { return city->map->people + actor->person; };
+        switch (data->var)
+        {
+        case 2:
+        {
+            const uint32_t begin = Map_GetRecord(city->map, 0).address;
+            int found = 0;
+            for (uint32_t record = begin; record < begin + 0x6F200u; record += 0x1Cu)
+            {
+                if (port::load<uint16_t>(record) != 0xB0)
+                    continue;
+                const uint32_t flags = port::load<uint16_t>(record + 6u);
+                if ((flags & 0x200u) == 0)
+                {
+                    port::store<uint16_t>(record + 6u, static_cast<uint16_t>(flags | 0x200u));
+                    const uint32_t actor = d + 0xCu + 8u * port::load<uint16_t>(record + 0xCu) - 8u * port::load<uint16_t>(d + 0x10u);
+                    port::store<uint16_t>(actor + 2u, port::load<uint16_t>(record + 2u));
+                }
+                ++found;
+                if (found >= 4)
+                    advance(1);
+            }
+            break;
+        }
+        case 3:
+        {
+            const uint32_t index = static_cast<uint32_t>(get(0x4C));
+            const uint32_t actor = d + 0xCu + 8u * index;
+            const GuestPtr<MapPerson> entry = Map_FindPersonEntry(city->map, static_cast<int16_t>(port::load<uint16_t>(d + 8u * index + 0x10u)),
+                                                                  port::load<uint16_t>(d + 8u * index + 0x12u));
+            if (!entry)
+                break;
+            port::store<uint16_t>(actor, entry->index);
+            if (get(0x4C) == 0)
+            {
+                port::store<uint16_t>(d + 0x2Eu, port::load<uint16_t>(actor + 2u));
+                port::store<uint16_t>(d + 0x2Cu, Map_FindPersonEntry(city->map, static_cast<int16_t>(port::load<uint16_t>(d + 0x30u)),
+                                                                     port::load<uint16_t>(d + 0x32u))->index);
+            }
+            put(0x4C, get(0x4C) + 1);
+            if (get(0x4C) >= 4)
+            {
+                put(0x4C, 0);
+                advance(1);
+                put(0x54, city->monthCount);
+            }
+            break;
+        }
+        case 4:
+            if (timeToTell() && Person_IsAtBuilding(city, fourth, fourth) != 0 && EvActor_Notify(city, fourth) != 0)
+            {
+                put(0x50, 0x3C);
+                advance(1);
+            }
+            break;
+        case 5:
+            EvActor_MoveTo(city, fourth, fourth, 0);
+            EvActor_MoveTo(city, first, fourth, 0);
+            put(0x50, get(0x50) - 1);
+            if (get(0x50) <= 0)
+                advance(-1);
+            break;
+        case 6:
+        case 7:
+        case 8:
+        case 9:
+            EvActor_MoveTo(city, first, first, 0);
+            EvActor_MoveTo(city, fourth, fourth, 0);
+            put(0x54, city->monthCount);
+            break;
+        case 10:
+            if (timeToTell() && Person_IsAtBuilding(city, fourth, fourth) != 0 && EvActor_Notify(city, third) != 0)
+            {
+                put(0x50, 0x3C);
+                advance(1);
+            }
+            break;
+        case 11:
+            EvActor_MoveTo(city, third, third, 0);
+            put(0x50, get(0x50) - 1);
+            if (get(0x50) <= 0)
+                advance(-1);
+            break;
+        case 18:
+        {
+            const GuestPtr<ActorRef> fifth{d + 0x34u};
+            if (fifth->object == 0x3F80)
+            {
+                const GuestPtr<MapObject> home = Map_FindFamilyHome(city->map, fifth->family);
+                if (!home)
+                    break;
+                fifth->object = home->id;
+                home->flags = static_cast<uint16_t>(home->flags | 0x200u);
+                break;
+            }
+            const GuestPtr<MapPerson> entry = Map_FindPersonEntry(city->map, static_cast<int16_t>(fifth->family), fifth->member);
+            if (!entry)
+                break;
+            fifth->person = entry->index;
+            advance(1);
+            break;
+        }
+        case 20:
+        case 21:
+            EvActor_MoveTo(city, first, first, 0);
+            EvActor_MoveTo(city, fourth, fourth, 0);
+            break;
+        case 24:
+        {
+            EvActor_MoveTo(city, first, sixth, 1);
+            const GuestPtr<MapPerson> p = person(first);
+            p->flags = static_cast<uint16_t>(p->flags | 0x80u);
+            advance(1);
+            break;
+        }
+        case 25:
+        {
+            EvActor_MoveTo(city, first, sixth, 1);
+            const GuestPtr<MapPerson> p = person(first);
+            p->activity = 0xA;
+            p->flags = static_cast<uint16_t>(p->flags | 0x80u);
+            if (Person_IsOnOpenTile(city, first) != 0)
+            {
+                if (Player_DistanceToPerson(city, first) < ps2f(3.0f))
+                    break;
+                put(0x50, get(0x50) + 1);
+                if (get(0x50) < 10 || EvActor_PointCursor(city, first) == 0)
+                    break;
+                EvActor_Release(city, first);
+                advance(1);
+            }
+            else if (Person_IsAtBuilding(city, first, sixth) != 0 && EvActor_PointCursor(city, first) != 0)
+            {
+                Talk_SetViewLit(city->talk);
+                data->var = 0x1B;
+            }
+            break;
+        }
+        case 26:
+            EvActor_Release(city, first);
+            if (Player_DistanceToPerson(city, first) <= ps2f(1.0f) && EvActor_PointCursor(city, first) != 0)
+            {
+                put(0x50, 0);
+                advance(-1);
+            }
+            break;
+        case 28:
+            if (EvActor_PointCursor(city, GuestPtr<ActorRef>{d + 0x44u}) != 0)
+            {
+                advance(1);
+                put(0x50, 0);
+            }
+            break;
+        case 30:
+            put(0x50, get(0x50) + 1);
+            if (get(0x50) >= 0x2D0)
+            {
+                Event_Finish(city->events, city, 0);
+                break;
+            }
+            if (get(0x4C) != 0)
+                break;
+            if (Map_FindPersonEntry(city->map, static_cast<int16_t>(port::load<uint16_t>(d + 0x48u)), port::load<uint16_t>(d + 0x4Au)))
+                put(0x4C, get(0x4C) + 1);
+            break;
+        default:
+            break;
+        }
+    }
+
+    PORT_FN(EvCaveMan_Update);
+
+    // The missing children event's phases (jump table 0x1BA800; phase in +0xA; actor 0 at +0xC (the parent), actor 1 at +0x14 (the
+    // child), the counter at +0x24, the outcome at +0x28 and a frame count at +0x2C). 1 keeps the parent where it is and the child
+    // wandering; from 13:00 to 15:00, if a shop is found for the parent, it is told (60 frames), else the event ends. 2 and 6 count
+    // the 60 down back a phase; 3 lets the child wander until 18:00; 4 waits for the child to be at its building; 5 tells the parent; 7
+    // is the search: before 20:00 the parent stays and the child is pointed at on open tiles three tiles or more away every tenth
+    // call, and within three tiles of the player and four of its building it is stopped and followed by the parent (outcome 2); from
+    // 20:00 the parent follows the child at once (phase 12). 8 releases the child and, near it, points at the parent and has it
+    // follow the child; 10 releases and points at the child; 12 does the same near both (outcome 1); 14 puts the parent inside the
+    // child's building; 16 ends the event after 180 frames.
+    void EvMissingChildren_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city)
+    {
+        const uint32_t d = data.address;
+        const GuestPtr<ActorRef> first{d + 0xCu}, second{d + 0x14u};
+        const auto get = [&](uint32_t offset) { return port::load<int32_t>(d + offset); };
+        const auto put = [&](uint32_t offset, int32_t value) { port::store<int32_t>(d + offset, value); };
+        const auto advance = [&](int step) { data->var = static_cast<uint8_t>(data->var + step); };
+        const auto person = [&](GuestPtr<ActorRef> actor) { return city->map->people + actor->person; };
+        switch (data->var)
+        {
+        case 1:
+            EvActor_MoveTo(city, first, first, 0);
+            EvActor_Wander(city, second);
+            if (city->clock < 46800)
+                break;
+            if (city->clock < 54000 && EvActor_FindShop(city, person(first)) != 0)
+            {
+                if (EvActor_Notify(city, first) != 0)
+                {
+                    advance(1);
+                    put(0x24, 0x3C);
+                }
+                break;
+            }
+            Event_Finish(city->events, city, 0);
+            break;
+        case 2:
+            EvActor_MoveTo(city, first, first, 0);
+            EvActor_Wander(city, second);
+            put(0x24, get(0x24) - 1);
+            if (get(0x24) <= 0)
+                advance(-1);
+            break;
+        case 3:
+            EvActor_MoveTo(city, first, first, 0);
+            if (city->clock >= 64800)
+                advance(1);
+            else
+                EvActor_Wander(city, second);
+            break;
+        case 4:
+            EvActor_MoveTo(city, first, first, 0);
+            if (Person_IsAtBuilding(city, second, second) != 0)
+                advance(1);
+            break;
+        case 5:
+            EvActor_MoveTo(city, first, first, 0);
+            if (EvActor_Notify(city, first) != 0)
+            {
+                put(0x24, 0x3C);
+                advance(1);
+            }
+            break;
+        case 6:
+            EvActor_MoveTo(city, first, first, 0);
+            put(0x24, get(0x24) - 1);
+            if (get(0x24) <= 0)
+                advance(-1);
+            break;
+        case 7:
+            if (city->clock >= 72000)
+            {
+                EvActor_Follow(city, first, second);
+                data->var = 0xC;
+                break;
+            }
+            EvActor_MoveTo(city, first, first, 0);
+            if (Player_DistanceToPerson(city, second) <= ps2f(3.0f))
+            {
+                if (Player_DistanceToBuilding(city, second) < 4)
+                {
+                    EvActor_StopFollowing(city, second);
+                    EvActor_Follow(city, first, second);
+                    put(0x28, 2);
+                    advance(1);
+                }
+                put(0x24, 0);
+                break;
+            }
+            put(0x24, get(0x24) + 1);
+            if (get(0x24) < 10 || Person_IsOnOpenTile(city, second) == 0)
+                break;
+            EvActor_PointCursor(city, second);
+            put(0x24, 0);
+            break;
+        case 8:
+        {
+            EvActor_Release(city, second);
+            if (!(Person_Distance(city, first, second) <= ps2f(1.0f)))
+            {
+                put(0x24, 0);
+                break;
+            }
+            if (Person_IsOnOpenTile(city, first) == 0)
+            {
+                put(0x24, get(0x24) + 1);
+                if (get(0x24) < 5)
+                    break;
+            }
+            if (EvActor_PointCursor(city, first) == 0)
+                break;
+            EvActor_StopFollowing(city, first);
+            const GuestPtr<MapPerson> parent = person(first);
+            parent->flags = static_cast<uint16_t>(parent->flags | 0x200u);
+            parent->follow = second->person;
+            EvActor_MoveTo(city, first, first, 0);
+            EvActor_Follow(city, second, first);
+            advance(1);
+            break;
+        }
+        case 10:
+            EvActor_Release(city, second);
+            if (EvActor_PointCursor(city, second) != 0)
+                advance(1);
+            break;
+        case 12:
+            put(0x24, get(0x24) + 1);
+            if (get(0x24) < 10)
+                break;
+            if (Player_DistanceToPerson(city, second) <= ps2f(1.0f) && Player_DistanceToPerson(city, first) <= ps2f(1.0f) &&
+                EvActor_PointCursor(city, first) != 0)
+            {
+                EvActor_StopFollowing(city, first);
+                const GuestPtr<MapPerson> parent = person(first);
+                parent->flags = static_cast<uint16_t>(parent->flags | 0x200u);
+                parent->follow = second->person;
+                EvActor_Follow(city, second, first);
+                advance(1);
+                put(0x28, 1);
+            }
+            put(0x24, 0);
+            break;
+        case 14:
+            if (EvActor_PointCursor(city, second) != 0)
+            {
+                person(first)->inside = first->object;
+                advance(1);
+            }
+            break;
+        case 16:
+            put(0x2C, get(0x2C) + 1);
+            if (get(0x2C) >= 0xB4)
+                Event_Finish(city->events, city, 0);
+            break;
+        default:
+            break;
+        }
+    }
+
+    PORT_FN(EvMissingChildren_Update);
+
+    // The farewell party's phases (jump table 0x1BA6E0; phase in +0xA; actor 1 at +0x14, the countdown at +0x24, the time to wait to
+    // at +0x2C and the step of the staging at +0x30 and +0x34). 1 tells actor 1 between 6:00 and 23:00 (60 frames, phase 2); 2 counts
+    // the 60 down back to phase 1. 3 stages the party by +0x30: 0 fades out (and sets the two voice levels at 0x1BDD14/18 to 100), 1
+    // (when the fade is done) moves the clock to 10:00 (a day on when it was later), brings the people home, pushes the party mode
+    // (12), makes the party's overlay (an 8-byte object with a frame of 0xC0 bytes at +0x80 of the city) and starts the party sound,
+    // 2 fades back in with the music on, 3 (done) closes the overlay and goes to phase 4. 4 until the time: finds the people on the
+    // tile under the player when it is a type 4 building, and points at the first friend (friendship band 4 or more, class flag 1
+    // clear) within a tile of the player that is not already the one chosen (actor 2); after it phase 5. 5 points at actor 0 or 1 (by
+    // 0x1C5548) at night, tells them by day and waits 60 frames; 6 counts them down to phase 5. 7 stages the end by +0x34 and finishes
+    // the event. The pending approval is limited so the approval stays within 100 on every call.
+    void EvFarewellParty_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city)
+    {
+        port::GuestFrame<0x90> frame;
+        const uint32_t sp = frame.ptr().address;
+        const uint32_t d = data.address;
+        constexpr uint32_t kVoiceA = 0x001BDD14u, kVoiceB = 0x001BDD18u, kPartyFlag = 0x001BDD24u;
+        const auto get = [&](uint32_t offset) { return port::load<int32_t>(d + offset); };
+        const auto put = [&](uint32_t offset, int32_t value) { port::store<int32_t>(d + offset, value); };
+        const auto setVoices = [&]() {
+            port::store<uint8_t>(kVoiceA, 100);
+            port::store<uint8_t>(kVoiceB, 100);
+        };
+        switch (data->var)
+        {
+        case 1:
+            if (city->clock >= 0x5460 && city->clock < 0x14370 && EvActor_Notify(city, GuestPtr<ActorRef>{d + 0x14u}) != 0)
+            {
+                data->var = 2;
+                put(0x24, 0x3C);
+            }
+            break;
+        case 2:
+            put(0x24, get(0x24) - 1);
+            if (get(0x24) <= 0)
+                data->var = static_cast<uint8_t>(data->var - 1);
+            break;
+        case 3:
+            switch (get(0x30))
+            {
+            case 0:
+                CityScene_StartFade(city, 1);
+                put(0x30, get(0x30) + 1);
+                setVoices();
+                break;
+            case 1:
+            {
+                if (CityScene_GetFade(city) != 0)
+                    break;
+                if (0x8CA0 < city->clock)
+                    city->monthCount = city->monthCount + 1;
+                city->clock = 0x8CA0;
+                Map_ReturnPeopleToWork(city->map);
+                CityScene_PushMode(city, 0xC);
+                uint32_t overlay = sdk::operator_new(8u);
+                if (overlay != 0u)
+                {
+                    port::store<uint32_t>(overlay, 0x001BD8B0u);
+                    port::store<uint32_t>(overlay, 0x001BD8E0u);
+                    uint32_t window = sdk::operator_new(0xC0u);
+                    if (window != 0u)
+                        window = Frame_ctor(GuestPtr<Frame>{window}, 0x14, 0x21C, 0xC0, 0x18, 0xC, 0xFFFFFFFFu).address;
+                    port::store<uint32_t>(overlay + 4u, window);
+                }
+                port::store<uint32_t>(city.address + 0x80u, overlay);
+                city->flags = city->flags | 8u;
+                put(0x30, get(0x30) + 1);
+                Se_SetVoice15Enabled(0, 1);
+                Se_SetEnabled(1, 1);
+                port::store<int32_t>(kPartyFlag, 0);
+                break;
+            }
+            case 2:
+                CityScene_StartFade(city, 2);
+                put(0x30, get(0x30) + 1);
+                Bgm_SetActive(1);
+                break;
+            case 3:
+            {
+                if (CityScene_GetFade(city) != 0)
+                    break;
+                Pad_ReleaseFocus(4);
+                const uint32_t overlay = port::load<uint32_t>(city.address + 0x80u);
+                if (overlay != 0u)
+                {
+                    port::callGuest<int64_t>(port::load<uint32_t>(port::load<uint32_t>(overlay) + 8u), overlay, 1);
+                    port::store<uint32_t>(city.address + 0x80u, 0u);
+                }
+                data->var = 4;
+                port::store<int32_t>(kPartyFlag, 1);
+                break;
+            }
+            default:
+                break;
+            }
+            break;
+        case 4:
+        {
+            if (!(city->clock < get(0x2C)))
+            {
+                data->var = 5;
+                break;
+            }
+            Player_GetMatrix(city->player, GuestPtr<Vec4>{sp + 0x40u});
+            const int z = sdk::fptosi(ps2f(64.0f) - ps2f(std::bit_cast<float>(port::load<uint32_t>(sp + 0x78u))));
+            const int x = sdk::fptosi(ps2f(64.0f) + ps2f(std::bit_cast<float>(port::load<uint32_t>(sp + 0x70u))));
+            const GuestPtr<MapObject> under = Map_GetTileObject(city->map, x, z);
+            if (under->type != 4)
+                break;
+            port::store<uint16_t>(sp + 0x8Eu, port::load<uint16_t>(under.address + 8u));
+            const GuestPtr<ActorRef> chosen{d + 0x1Cu};
+            while (const GuestPtr<MapPerson> candidate = People_Next(city->map, GuestPtr<uint16_t>{sp + 0x8Eu}))
+            {
+                const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * candidate->charType)};
+                if ((cls->flags & 1u) != 0 || Family_GetFriendshipBand(candidate->family, candidate->member) < 4)
+                    continue;
+                if (!(Player_DistanceToPoint(city, GuestPtr<ps2f>{candidate.address}) <= ps2f(1.0f)) || chosen->person == candidate->index)
+                    continue;
+                chosen->person = candidate->index;
+                chosen->object = candidate->work;
+                chosen->family = candidate->family;
+                chosen->member = candidate->member;
+                if (EvActor_PointCursor(city, chosen) != 0)
+                    break;
+            }
+            break;
+        }
+        case 5:
+        {
+            const uint32_t which = port::load<int32_t>(0x001C5548u) == 4 ? 0u : 1u;
+            const GuestPtr<ActorRef> actor{d + 0xCu + 8u * which};
+            const bool night = city->clock >= 0x13560 || city->clock < 0x5460;
+            if ((night ? EvActor_PointCursor(city, actor) : EvActor_Notify(city, actor)) != 0)
+            {
+                data->var = 6;
+                put(0x24, 0x3C);
+            }
+            break;
+        }
+        case 6:
+            put(0x24, get(0x24) - 1);
+            if (get(0x24) <= 0)
+                data->var = 5;
+            break;
+        case 7:
+            if (get(0x34) == 0)
+            {
+                CityScene_StartFade(city, 1);
+                port::store<uint32_t>(city.address + 0x34u, 0u);
+                put(0x34, get(0x34) + 1);
+                setVoices();
+            }
+            else if (get(0x34) == 1)
+            {
+                if (CityScene_GetFade(city) != 0)
+                    break;
+                Pad_ReleaseFocus(4);
+                CityScene_PushMode(city, 0xC);
+                city->flags = city->flags | 0x10u;
+                city->flags = city->flags & ~8u;
+                Se_SetEnabled(1, 1);
+                Se_SetVoice15Enabled(0, 1);
+                port::store<int32_t>(kPartyFlag, 0);
+                Event_Finish(city->events, city, 0);
+            }
+            break;
+        default:
+            break;
+        }
+        if (city->approval + city->pendingApproval >= 0x65)
+            city->pendingApproval = 0x64 - city->approval;
+    }
+
+    PORT_FN(EvFarewellParty_Update);
+
+    // The thief event's phases (jump table 0x1BA8E0; phase in +0xA; actor 0 at +0xC (the player's contact), 1 at +0x14 (the thief),
+    // 2 at +0x1C, 3 at +0x24 (the place); the day to wait for at +0x2C, countdowns at +0x34 and +0x38, a counter at +0x3C and the
+    // frames at +0x40). 1 waits for the day, then picks a building for the place (a free one of category 5, else 1, fitting the whole
+    // map rectangle at 0x1BA8D0; no repeat of the first actor's building), 60 frames at a time, and marks it (0x200); from 17:00 the
+    // place is given up (unmarked, claim timer 1, flag 0x40) and the day set a day on; from 10:00 actor 3 is told and phase 2 follows.
+    // 2 and 11 count 60 frames down back a phase; 3 points at actor 0 (within a tile after 180 frames, else every tenth call when three
+    // tiles or more away); 5 and 10 tell actor 0 or 1 in daytime or after the countdown; 6 to 8 keep actor 0 in place; 9 starts 180
+    // frames; 12 to 14 and 18 to 29 move the actors around (13 brings actor 1 to actor 0 between 20:00 and 21:00, 14 starts the chase
+    // with sound 0x46 and the thief's schedule 14 and activity 5, 18 gets actor 2 to the thief, 19 points at the building, 22 and 23
+    // wait for the place, 28 starts 720 frames and 29 ends the event).
+    void EvThief_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city)
+    {
+        const uint32_t d = data.address;
+        const GuestPtr<ActorRef> first{d + 0xCu}, second{d + 0x14u}, third{d + 0x1Cu}, place{d + 0x24u};
+        const auto get = [&](uint32_t offset) { return port::load<int32_t>(d + offset); };
+        const auto put = [&](uint32_t offset, int32_t value) { port::store<int32_t>(d + offset, value); };
+        const auto advance = [&](int step) { data->var = static_cast<uint8_t>(data->var + step); };
+        const auto stay = [&](GuestPtr<ActorRef> actor) { EvActor_MoveTo(city, actor, actor, 0); };
+        constexpr uint32_t kWholeMap = 0x001BA8D0u;
+        switch (data->var)
+        {
+        case 1:
+        {
+            stay(first);
+            if (city->monthCount < get(0x2C))
+                break;
+            if (place->object != 0x3F80)
+            {
+                if (city->clock < 0xEF10)
+                {
+                    if (city->clock >= 0x8CA0 && EvActor_Notify(city, place) != 0)
+                    {
+                        advance(1);
+                        put(0x34, 0x3C);
+                    }
+                    break;
+                }
+                const GuestPtr<MapObject> given = Map_GetRecord(city->map, place->object);
+                given->flags = static_cast<uint16_t>(given->flags & 0xFDFFu);
+                given->claimTimer = 1;
+                given->flags = static_cast<uint16_t>(given->flags | 0x40u);
+                place->person = 0x1770;
+                place->object = 0x3F80;
+                put(0x3C, get(0x3C) + 1);
+                put(0x2C, city->monthCount + 1);
+                break;
+            }
+            put(0x38, get(0x38) - 1);
+            if (get(0x38) > 0)
+                break;
+            GuestPtr<MapObject> found = EvThief_FindBuilding(city, 5, GuestPtr<int32_t>{kWholeMap});
+            if (!found)
+                found = EvThief_FindBuilding(city, 1, GuestPtr<int32_t>{kWholeMap});
+            if (!found || found->id == first->object)
+            {
+                put(0x38, 0x3C);
+                break;
+            }
+            place->person = Map_FindPersonEntry(city->map, static_cast<int16_t>(found->family), 0)->index;
+            place->object = found->id;
+            place->family = found->family;
+            place->member = 0;
+            found->flags = static_cast<uint16_t>(found->flags | 0x200u);
+            break;
+        }
+        case 2:
+        case 11:
+            stay(first);
+            put(0x34, get(0x34) - 1);
+            if (get(0x34) <= 0)
+                advance(-1);
+            break;
+        case 3:
+            put(0x40, get(0x40) + 1);
+            if (get(0x40) >= 0xB4)
+            {
+                if (Player_DistanceToPerson(city, first) <= ps2f(1.0f) && EvActor_PointCursor(city, first) != 0)
+                {
+                    advance(1);
+                    put(0x2C, city->monthCount + 1);
+                    put(0x40, 0);
+                }
+                break;
+            }
+            if (get(0x40) % 10 != 0 || Player_DistanceToPerson(city, first) < ps2f(3.0f))
+                break;
+            EvActor_PointCursor(city, first);
+            break;
+        case 5:
+            stay(first);
+            if (city->monthCount >= get(0x2C) && city->clock >= 0x8CA0 && city->clock < 0xEF10 && EvActor_Notify(city, first) != 0)
+            {
+                advance(1);
+                put(0x34, 0x3C);
+            }
+            break;
+        case 6:
+            put(0x34, get(0x34) - 1);
+            if (get(0x34) <= 0)
+                advance(-1);
+            stay(first);
+            break;
+        case 7:
+        case 8:
+            stay(first);
+            break;
+        case 9:
+            put(0x38, 0xB4);
+            advance(1);
+            stay(first);
+            break;
+        case 10:
+            stay(first);
+            put(0x38, get(0x38) - 1);
+            if (get(0x38) > 0)
+                break;
+            if (EvActor_Notify(city, second) != 0)
+            {
+                advance(1);
+                put(0x34, 0x3C);
+            }
+            break;
+        case 12:
+            stay(first);
+            stay(second);
+            break;
+        case 13:
+            stay(first);
+            if (city->clock < 0x11940 || city->clock >= 0x12750)
+                break;
+            if (EvActor_MoveTo(city, second, first, 1) != 0)
+                advance(1);
+            break;
+        case 14:
+        {
+            EvActor_MoveTo(city, second, first, 1);
+            stay(first);
+            if (Person_IsAtBuilding(city, second, first) == 0)
+                break;
+            Sound_PlaySe(0x46, 0, 0x3C, 0.0f, 0.0f);
+            const GuestPtr<MapPerson> thief = city->map->people + first->person;
+            port::store<uint8_t>(thief.address + 0x26u, 0xE);
+            thief->activity = 5;
+            EvActor_MoveTo(city, second, second, 1);
+            advance(1);
+            break;
+        }
+        case 18:
+            put(0x38, get(0x38) + 1);
+            if (get(0x38) >= 10)
+            {
+                if (Player_DistanceToBuilding(city, first) < 2 && Player_DistanceToPerson(city, third) <= ps2f(1.0f) &&
+                    EvActor_PointCursor(city, third) != 0)
+                {
+                    EvActor_MoveTo(city, third, first, 1);
+                    advance(1);
+                    put(0x38, 0);
+                    break;
+                }
+                if (!(Player_DistanceToPerson(city, third) < ps2f(3.0f)))
+                    EvActor_PointCursor(city, third);
+                put(0x38, 0);
+            }
+            break;
+        case 19:
+            if (Person_IsAtBuilding(city, third, first) != 0)
+            {
+                if (EvActor_PointAtBuilding(city, static_cast<int>(third.address), static_cast<int>(first.address)) != 0)
+                {
+                    advance(1);
+                    break;
+                }
+            }
+            EvActor_MoveTo(city, third, first, 1);
+            break;
+        case 22:
+            if (EvActor_MoveTo(city, third, third, 0) != 0)
+                advance(1);
+            break;
+        case 23:
+            if (Person_IsAtBuilding(city, second, second) != 0 && Person_IsAtBuilding(city, third, second) != 0)
+            {
+                if (EvActor_Notify(city, third) != 0)
+                {
+                    advance(1);
+                    put(0x34, 0x3C);
+                }
+                break;
+            }
+            stay(second);
+            stay(third);
+            break;
+        case 24:
+            put(0x34, get(0x34) - 1);
+            if (get(0x34) <= 0)
+                advance(-1);
+            stay(second);
+            stay(third);
+            break;
+        case 25:
+        case 26:
+        case 27:
+            stay(second);
+            stay(third);
+            break;
+        case 28:
+            advance(1);
+            put(0x38, 0x2D0);
+            break;
+        case 29:
+            put(0x38, get(0x38) - 1);
+            if (get(0x38) <= 0)
+                Event_Finish(city->events, city, 0);
+            break;
+        default:
+            break;
+        }
+    }
+
+    PORT_FN(EvThief_Update);
 }

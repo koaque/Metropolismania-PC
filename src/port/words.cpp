@@ -2563,4 +2563,85 @@ namespace mm
     }
 
     PORT_FN(Words_LoadForWants);
+
+    // The common body of the three "supplies a want" scripts. The want the wants window offers at the chosen index (+0x13A of the
+    // context) gives the script's other person and building (B) and the claims the building supplies: a single value of the building
+    // type's claim section B entry, or the list of section D when the value has bit 15 set. Mode 0 (a family) asks whether the home
+    // type of family A claims one of them. Modes 1 (an acquaintance of member A) and 2 (of any member of the family) look through the
+    // acquaintances (up to 16 families each) that can apply to the city for one whose home type claims one: it becomes the result
+    // (+0x28) and, in mode 1, person A's introduction (+0x2C); mode 2 also notes the member (+0x1A). 1 on a match, else 0.
+    int WordsFn_SuppliesWantBody(GuestPtr<WordsCtx> ctx, int mode)
+    {
+        port::GuestFrame<0xB0> frame;
+        const uint32_t sp = frame.ptr().address;
+        const uint32_t local = sp + 0x9Cu;
+        port::store<uint32_t>(local, port::load<uint32_t>(0x001BDC24u));
+        port::store<int32_t>(sp + 0xA0u, 0);
+        uint32_t claims = local;
+        for (int index = 0; Wants_Find(ctx->city->wants, ctx->city, GuestPtr<uint32_t>{sp + 0xA4u}, GuestPtr<uint32_t>{sp + 0xACu},
+                                       GuestPtr<uint32_t>{sp + 0xA8u}, GuestPtr<int32_t>{sp + 0xA0u}) != 0;
+             ++index)
+        {
+            if (index != ctx->wantIndex)
+                continue;
+            const GuestPtr<CityMap> map = ctx->city->map;
+            const uint32_t object = port::load<uint32_t>(sp + 0xACu);
+            const uint32_t section = static_cast<uint32_t>(
+                Claim_GetSectionB(port::load<uint8_t>(globals::buildingTypeAddress(Map_GetRecord(map, static_cast<int>(object))->type) + 0x147u)));
+            const uint32_t value = port::load<uint16_t>(section + 8u * port::load<uint32_t>(sp + 0xA4u) + 2u);
+            if (static_cast<int32_t>(value) < 0x8000)
+                port::store<uint16_t>(local, static_cast<uint16_t>(value));
+            else
+                claims = static_cast<uint32_t>(Claim_GetSectionD(value));
+            ctx->personB = ctx->city->map->people + port::load<uint32_t>(sp + 0xA8u);
+            ctx->familyB = ctx->personB->family;
+            ctx->memberB = ctx->personB->member;
+            ctx->buildingB = Map_GetRecord(ctx->city->map, static_cast<int>(object));
+            ctx->buildingTypeB = ctx->buildingB->type;
+            break;
+        }
+        // Whether the home type of `family` claims one of the claims supplied; the types' claim section C lists end with a 0 value.
+        const auto wantsOneOf = [&](uint32_t family) {
+            const uint32_t type = static_cast<uint32_t>(Family_GetTypeIndex(static_cast<int>(family))) & 0xFFFFu;
+            for (uint32_t want = static_cast<uint32_t>(Claim_GetSectionC(port::load<uint8_t>(globals::buildingTypeAddress(type) + 0x148u)));
+                 port::load<uint16_t>(want) != 0; want += 4u)
+                for (uint32_t have = claims; port::load<uint16_t>(have) != 0; have += 2u)
+                    if (port::load<uint16_t>(want) == port::load<uint16_t>(have))
+                        return true;
+            return false;
+        };
+        if (mode == 0)
+            return Family_CanApply(ctx->familyA, ctx->city) != 0 && wantsOneOf(ctx->familyA) ? 1 : 0;
+        const GuestPtr<Family> family = Family_Get(ctx->familyA, 0);
+        const uint32_t first = family.address + 0x24u;
+        uint32_t member = mode == 2 ? first : first + 0x48u * ctx->memberA;
+        const uint32_t end = mode == 2 ? member + 0x48u * port::load<uint16_t>(family.address + 0x22u) : member + 0x48u;
+        for (; member < end; member += 0x48u)
+        {
+            const uint32_t list = member + 8u;
+            for (uint32_t at = list; port::load<uint16_t>(at) != 0 && at < list + 0x20u; at += 2u)
+            {
+                if (Family_CanApply(port::load<uint16_t>(at), ctx->city) == 0 || !wantsOneOf(port::load<uint16_t>(at)))
+                    continue;
+                if (ctx->personA && mode == 1)
+                    port::store<uint16_t>(ctx->personA.address + 0x2Cu, port::load<uint16_t>(at));
+                ctx->result = port::load<uint16_t>(at);
+                if (mode == 2)
+                    ctx->memberIndex = static_cast<uint16_t>(static_cast<int32_t>(member - first) / 0x48);
+                return 1;
+            }
+        }
+        return 0;
+    }
+
+    PORT_FN(WordsFn_SuppliesWantBody);
+
+    // The scripts that share the body: any acquaintance of the family, an acquaintance of the member, the family itself.
+    int WordsFn_AnyAcquaintanceSuppliesWant(GuestPtr<WordsCtx> ctx) { return WordsFn_SuppliesWantBody(ctx, 2); }
+    int WordsFn_AcquaintanceSuppliesWant(GuestPtr<WordsCtx> ctx) { return WordsFn_SuppliesWantBody(ctx, 1); }
+    int WordsFn_FamilySuppliesWant(GuestPtr<WordsCtx> ctx) { return WordsFn_SuppliesWantBody(ctx, 0); }
+
+    PORT_FN(WordsFn_AnyAcquaintanceSuppliesWant);
+    PORT_FN(WordsFn_AcquaintanceSuppliesWant);
+    PORT_FN(WordsFn_FamilySuppliesWant);
 }
