@@ -17,7 +17,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 
 ## Functions
 
-168 functions (ported 1, typed 62, verified 105). Blocks: 62 can reach a thread switch, 10 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+168 functions (ported 3, typed 8, verified 157). Blocks: 62 can reach a thread switch, 10 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -34,7 +34,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x00128D80` | `MsgWin *mm_MsgWin_dtor(MsgWin *msgwin, int16_t deleteFlag)` | 148 | yes | vtable 0x1BCE10; deletes the frame (0x14C210) and the text box, base destructor 0x173560 |
 | `0x00128E20` | `MsgWin *mm_MsgWin_ctor(MsgWin *msgwin)` | 184 | yes | vtable 0x1BCE10; text box 18x4 (style -2) at 0x7240,0x8240 and a 0xC0-byte window frame (0x14C270) |
 | `0x00135EF0` | `void mm_CityCursor_SelectTile(CityCursor *cursor, int tile, CityScene *city)` | 456 | no | (provisional) cursor on tile a1: looks up the building record and triggers its event (mm_Event_Trigger) |
-| `0x001360C0` | `int mm_CityCursor_UpdateInfo(CityCursor *cursor, CityScene *city)` | 1272 | yes | (provisional) building info text ("%s %s"), values and gauges for the tile under the cursor |
+| `0x001360C0` | `void mm_CityCursor_UpdateInfo(CityCursor *cursor, CityScene *city)` | 1272 | yes | (provisional) building info text ("%s %s"), values and gauges for the tile under the cursor |
 | `0x001365C0` | `void mm_CityCursor_Move(CityCursor *cursor, CityScene *city, int a2)` | 420 | yes | (provisional) moves the cursor with the pad and keeps it on the map |
 | `0x00136770` | `void mm_CityCursor_Update(CityCursor *cursor, CityScene *city, int a2)` | 1292 | yes | (provisional) cursor mode per frame: move, select, info, sounds |
 | `0x00136C80` | `void mm_CityCursor_SetTarget(CityCursor *cursor, uint16_t kind, int id, Vec4 *position)` | 44 | no | target id a2, kind a1 and position a3 (+0x1A4.., +0x1B0..) |
@@ -59,7 +59,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x0014AD10` | `void mm_Laptop_SetItemText(Laptop *laptop, CityScene *city, uint32_t item)` | 108 | indirect | text for laptop item a2 (14 items, jump table 0x1B6570); default "-Laptop Computer- Save or quit the game." |
 | `0x0014AE10` | `void mm_Laptop_RemoveEntry(Laptop *laptop, int entry)` | 184 | no | (provisional) removes entry a1 from the list at 0x1F36F0 |
 | `0x0014AED0` | `void mm_Laptop_AddEntry(Laptop *laptop, int entry)` | 256 | no | (provisional) adds entry a1 to the list at 0x1F36F0 |
-| `0x0014AFD0` | `int mm_Laptop_Draw(Laptop *laptop)` | 356 | yes | laptop model (luminosity per item), text, fade |
+| `0x0014AFD0` | `void mm_Laptop_Draw(Laptop *laptop)` | 356 | yes | laptop model (luminosity per item), text, fade |
 | `0x0014B140` | `void mm_Laptop_Animate(Laptop *laptop)` | 772 | no | the laptop entries' carousel matrices: turn about y by slot and +0x30, pi/12 tilt, radius + centre, scale +0x38; the selected entry lifted in state 2 |
 | `0x0014B450` | `int mm_Laptop_RunEntry(Laptop *laptop, CityScene *city)` | 484 | no | runs the selected entry by its type (events, monthly pass, ...) |
 | `0x0014B640` | `int mm_Laptop_Update(Laptop *laptop, CityScene *city)` | 1640 | yes | laptop menu: cursor with key repeat, select, sounds, texts |
@@ -75,7 +75,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x0014C4C0` | `void mm_WaitText_Draw(void)` | 68 | no | blinking "Please wait...." text box (0x1BDAC4) |
 | `0x0014C510` | `int mm_WaitText_Append(char *text)` | 16 | no | appends a0 to the wait text |
 | `0x0014C520` | `void mm_WaitText_Set(char *text)` | 16 | no | sets the wait text to a0 |
-| `0x0014C530` | `int mm_WaitText_Delete(void)` | 44 | yes | deletes the wait text box |
+| `0x0014C530` | `void mm_WaitText_Delete(void)` | 44 | yes | deletes the wait text box |
 | `0x0014C560` | `void mm_WaitText_Create(char *text)` | 180 | yes | creates the wait text box ("Please wait....") |
 | `0x00150990` | `void mm_ListMenu_ScrollTo(ListMenu *menu, int item)` | 80 | no | scroll so item a1 is visible (+0x264 count, +0x268 item height) |
 | `0x001509E0` | `void mm_ListMenu_SetCursor(ListMenu *menu, int dx, int dy, int depth)` | 188 | no | cursor offset a1/a2 and colour a3 |
@@ -86,7 +86,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x00151140` | `void mm_ListMenu_Draw(ListMenu *menu)` | 340 | no | frame, highlight bar and item text boxes |
 | `0x001512A0` | `ListMenu *mm_ListMenu_dtor(ListMenu *menu, int16_t deleteFlag)` | 168 | yes | deletes item text boxes and the frame |
 | `0x00151350` | `ListMenu *mm_ListMenu_ctor(ListMenu *menu, int a1, int a2, int a3, int t0, int t1, int t2)` | 604 | yes | list menu with a frame at the given position/size |
-| `0x00152A50` | `void mm_WantsWin_FormatLine(WantsWin *wants, int a1, int a2, int a3)` | 212 | yes | "%s %s wants %s." for a family's request (claims) |
+| `0x00152A50` | `void mm_WantsWin_FormatLine(WantsWin *wants, CityScene *city, int index, char *out)` | 212 | yes | "%s %s wants %s." for a family's request (claims) |
 | `0x00152B30` | `void mm_WantsWin_Draw(WantsWin *wants)` | 132 | no | window model and four text boxes |
 | `0x00152BC0` | `void mm_WantsWin_Update(WantsWin *wants, CityScene *city)` | 2248 | yes | residents' wants window: lists, cursor, values |
 | `0x00153490` | `WantsWin *mm_WantsWin_dtor(WantsWin *wants, int16_t deleteFlag)` | 172 | yes | deletes its four text boxes |
@@ -115,7 +115,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x00157110` | `int mm_Applicants_Update(Applicants *applicants, CityScene *city)` | 1660 | yes | the applicants panel per frame: cursor, prefetching family records, assigning |
 | `0x001577A0` | `Applicants *mm_Applicants_dtor(Applicants *applicants, int16_t deleteFlag)` | 96 | yes | vtable 0x1BCF70, then the base destructor |
 | `0x00157800` | `Applicants *mm_Applicants_ctor(Applicants *applicants)` | 156 | yes | base constructor, vtable 0x1BCF70 |
-| `0x0015F920` | `int mm_MenuWin_FillItems(MenuWin *menuwin, char *item)` | 104 | yes | fills its list (13 or 14 items) |
+| `0x0015F920` | `void mm_MenuWin_FillItems(MenuWin *menuwin, char *item)` | 104 | yes | fills its list (13 or 14 items) |
 | `0x0015F990` | `void mm_MenuWin_Open(MenuWin *menuwin, int menuId, int count)` | 248 | yes | creates its list menus for menu id a1 (-2001 ...) |
 | `0x0015FA90` | `void mm_MenuWin_Draw(MenuWin *menuwin, int pass)` | 268 | no | window model and list menu in pass 2 |
 | `0x0015FBA0` | `void mm_MenuWin_Closing(MenuWin *menuwin)` | 92 | yes | state 4: Step(0.1), frees the frame, then idle |

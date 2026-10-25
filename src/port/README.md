@@ -67,6 +67,10 @@ Do not edit the two generated headers; `pipeline.py stage` rewrites them.
    - A function that calls such a function (directly, or through `callGuest`) reserves its own
      original frame first with `port::GuestFrame<Size>` (the size from its `addiu $sp, $sp, -Size`),
      so the callee's slots land over the same leftover stack data (`mm_Char2_Draw`).
+   - The address of such a frame can reach hardware state: `mm_Sky_Load` builds its DMA packet on
+     the stack and `mm_Dma_KickVif1Now` writes the packet's address into the chain buffer that the
+     difftest compares, so `mm_CityCamera_BaseCtor` and `mm_CityCamera_ctor` declare their own
+     (otherwise empty) 0x20-byte frames.
 4. `pipeline.py stage`, `build`, then `pipeline.py capture --functions <Name>` (a visible run that
    records calls of the original) and `pipeline.py difftest`. Every record must be exact. For a
    function that runs every frame, add `--every N` so the records spread over boot, title and city
@@ -105,3 +109,19 @@ return the same value may all take the same path. `--only <Names>` replays just 
 alone), and a replay that does not return within 60 s (`MMPC_DIFFTEST_HANG_SECONDS`) is reported as
 HANG and ends the run: a made state can send the original into a wait that never ends, for instance
 when it reaches blocking code.
+
+Some state lives in the runtime, outside RDRAM, and the replay does not reset it between the original's run
+and the ported one's: the guest heap and the file descriptors are saved and restored (patch 0138), but the
+RPC bind counter and server descriptors of the sound driver, the memory card's file numbers and the family
+record cache are not. Records that depend on them differ in a few bytes the game only keeps (`Sound_Init`,
+`McSave_WriteIconSys`, `PauseMenu_StateSave`: ignore rules in `difftest.cpp`) or hang in the original too
+(a family not in the cache is read from the disc, which the replay never finishes: `Words_LoadForFamily`).
+The VU0 registers are not compared for functions that call a ported callee where the generated one left
+scratch values (`Person_ChooseDestination`, the two talk person constructors).
+
+Functions with no record the replay can finish stay at "ported" in `docs/PORT_STATUS.md` (40 of the game's
+1,481 now): the four map and city constructors (`CityMap_ctor`, `MapPeople_ctor`, `MapObjects_ctor`,
+`CityRender_ctor`: the original side stops at a null jump in `MapObj_Init`'s slot call, so they were only
+checked in live runs), the movie and sound shutdown paths that switch threads (`Movie_DisplayStart`,
+`Movie_ResumeAll`, `Sound_Shutdown`), the memory card queue calls, and callees that only run inside others
+(`File_Seek`, `Font_Free`).

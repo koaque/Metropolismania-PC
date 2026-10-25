@@ -8,12 +8,12 @@ Cross is `0x0040` and Start is `0x0800`; the analog sticks add bits `0x100000` .
 
 ## Functions
 
-10 functions (typed 3, verified 7). Blocks: 3 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+10 functions (verified 10). Blocks: 3 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
 | `0x001578A0` | `int mm_Pad_GetData(int port)` | 52 | no | port a0's 32-byte pad buffer (0x1F3AC0) when its state is ready (100), else 0 |
-| `0x001578E0` | `int mm_Pad_Poll(void)` | 924 | yes | scePadRead and the pad state machine: analog mode, actuator alignment, pressure mode |
+| `0x001578E0` | `void mm_Pad_Poll(void)` | 924 | yes | scePadRead and the pad state machine: analog mode, actuator alignment, pressure mode |
 | `0x00157CB0` | `void mm_PadInit(void)` | 200 | yes |  |
 | `0x001851F0` | `void mm_Pad_ClearBit40(void)` | 40 | no | sets 0x1BDCC0 = 1 and clears button bit 0x40 in the pad words 0x1BDCA0 and 0x1BDCA4 |
 | `0x00185220` | `void mm_Pad_ReleaseFocus(int owner)` | 40 | no | drops input focus if owner a0 (or -1 = anyone) holds it (0x1BDCB0/0x1BDCB4) |

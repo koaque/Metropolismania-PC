@@ -260,4 +260,62 @@ namespace mm
 
     PORT_FN(LayerA_ctor);
     PORT_FN(LayerA_AddInstance);
+
+    namespace
+    {
+        // The deleting destructor shared by the render layers: the base destructor, then the delete when the flag is positive.
+        uint32_t layerDeletingDtor(uint32_t layer, int16_t deleteFlag)
+        {
+            if (layer != 0u)
+            {
+                BaseObject_dtor(static_cast<int>(layer), 0);
+                if (0 < deleteFlag)
+                    sdk::operator_delete(layer);
+            }
+            return layer;
+        }
+    }
+
+    GuestPtr<LayerA> LayerA_DeletingDtor(GuestPtr<LayerA> layer, int16_t deleteFlag)
+    {
+        return GuestPtr<LayerA>{layerDeletingDtor(layer.address, deleteFlag)};
+    }
+
+    GuestPtr<LayerB> LayerB_DeletingDtor(GuestPtr<LayerB> layer, int16_t deleteFlag)
+    {
+        return GuestPtr<LayerB>{layerDeletingDtor(layer.address, deleteFlag)};
+    }
+
+    GuestPtr<LayerC> LayerC_DeletingDtor(GuestPtr<LayerC> layer, int16_t deleteFlag)
+    {
+        return GuestPtr<LayerC>{layerDeletingDtor(layer.address, deleteFlag)};
+    }
+
+    GuestPtr<LayerD> LayerD_DeletingDtor(GuestPtr<LayerD> layer, int16_t deleteFlag)
+    {
+        return GuestPtr<LayerD>{layerDeletingDtor(layer.address, deleteFlag)};
+    }
+
+    GuestPtr<LayerE> LayerE_DeletingDtor(GuestPtr<LayerE> layer, int16_t deleteFlag)
+    {
+        return GuestPtr<LayerE>{layerDeletingDtor(layer.address, deleteFlag)};
+    }
+
+    GuestPtr<LayerF> LayerF_DeletingDtor(GuestPtr<LayerF> layer, int16_t deleteFlag)
+    {
+        return GuestPtr<LayerF>{layerDeletingDtor(layer.address, deleteFlag)};
+    }
+
+    GuestPtr<LayerG> LayerG_DeletingDtor(GuestPtr<LayerG> layer, int16_t deleteFlag)
+    {
+        return GuestPtr<LayerG>{layerDeletingDtor(layer.address, deleteFlag)};
+    }
+
+    PORT_FN(LayerA_DeletingDtor);
+    PORT_FN(LayerB_DeletingDtor);
+    PORT_FN(LayerC_DeletingDtor);
+    PORT_FN(LayerD_DeletingDtor);
+    PORT_FN(LayerE_DeletingDtor);
+    PORT_FN(LayerF_DeletingDtor);
+    PORT_FN(LayerG_DeletingDtor);
 }

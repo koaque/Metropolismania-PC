@@ -1423,4 +1423,1144 @@ namespace mm
     PORT_FN(Words_MatchTypedAnswer);
     PORT_FN(Words_CountChoices);
     PORT_FN(Words_PickResidentByType);
+
+    // ---- Lifetime (plan P6 batch 1) ----
+
+    // The script interpreter's 0x140-byte context is allocated with the object.
+    GuestPtr<Words> Words_ctor(GuestPtr<Words> words)
+    {
+        words->ctx = GuestPtr<WordsCtx>{sdk::operator_new(0x140u)};
+        return words;
+    }
+
+    GuestPtr<Words> Words_dtor(GuestPtr<Words> words, int16_t deleteFlag)
+    {
+        if (words)
+        {
+            sdk::operator_delete(words->ctx.address);
+            if (0 < deleteFlag)
+                sdk::operator_delete(words.address);
+        }
+        return words;
+    }
+
+    PORT_FN(Words_ctor);
+    PORT_FN(Words_dtor);
+
+    // ---- Family records (plan P6 batch 2): these read the family cache through Family_Get, which can wait on the file queue ----
+
+    namespace
+    {
+        // A family record holds six members of 0x48 bytes from +0x24; fields are read by guest address, so a wild member
+        // number wraps in RDRAM like the original's indexing.
+        constexpr uint32_t kMembersAt = 0x24u, kMemberSize = 0x48u;
+        uint32_t memberAt(GuestPtr<Family> family, uint32_t member) { return family.address + kMembersAt + kMemberSize * member; }
+        constexpr uint32_t kMemberCharType = 0x00u, kMemberFlags = 0x03u, kMemberRole = 0x04u, kMemberUnk06 = 0x06u, kMemberRange = 0x07u,
+                           kMemberName = 0x28u, kMemberName2 = 0x38u;
+
+        // The member named by the argument: B when it is 1, A when it is 0, otherwise the context's result family, member 0.
+        struct MemberRef
+        {
+            uint32_t family, member;
+        };
+        MemberRef memberByThreeWayArg(GuestPtr<WordsCtx> ctx)
+        {
+            if (ctx->arg == 1)
+                return {ctx->familyB, ctx->memberB};
+            if (ctx->arg == 0)
+                return {ctx->familyA, ctx->memberA};
+            return {ctx->result, 0};
+        }
+    }
+
+    // The family record of the building's family (arg 1), of family A (arg 0), or of the result family.
+    GuestPtr<char> WordsFn_TextFamilyRecord(GuestPtr<WordsCtx> ctx)
+    {
+        uint32_t family;
+        if (ctx->arg == 1)
+            family = ctx->buildingB->family;
+        else if (ctx->arg == 0)
+            family = ctx->familyA;
+        else
+            family = ctx->result;
+        return GuestPtr<char>{Family_Get(static_cast<int>(family), 0).address};
+    }
+
+    GuestPtr<char> WordsFn_TextMemberName2(GuestPtr<WordsCtx> ctx)
+    {
+        const MemberRef who = memberByThreeWayArg(ctx);
+        return GuestPtr<char>{memberAt(Family_Get(static_cast<int>(who.family), 0), who.member) + kMemberName2};
+    }
+
+    GuestPtr<char> WordsFn_TextMemberName(GuestPtr<WordsCtx> ctx)
+    {
+        const MemberRef who = memberByThreeWayArg(ctx);
+        return GuestPtr<char>{memberAt(Family_Get(static_cast<int>(who.family), 0), who.member) + kMemberName};
+    }
+
+    // The member's post at their home's building type (STRTYPE POSTNAME).
+    GuestPtr<char> WordsFn_TextOccupation(GuestPtr<WordsCtx> ctx)
+    {
+        const MemberRef who = memberByThreeWayArg(ctx);
+        const GuestPtr<Family> family = Family_Get(static_cast<int>(who.family), 0);
+        const uint32_t homeType = port::load<uint16_t>(family.address + 0x20u);
+        const uint8_t role = port::load<uint8_t>(memberAt(family, who.member) + kMemberRole);
+        return BldgType_GetPostName(GuestPtr<BuildingType>{globals::buildingTypeAddress(homeType)}, role);
+    }
+
+    uint8_t WordsFn_MemberByte2B(GuestPtr<WordsCtx> ctx)
+    {
+        return port::load<uint8_t>(memberAt(Family_Get(ctx->familyA, 0), ctx->memberA) + kMemberRange);
+    }
+
+    uint8_t WordsFn_MemberByte2A(GuestPtr<WordsCtx> ctx)
+    {
+        return port::load<uint8_t>(memberAt(Family_Get(ctx->familyA, 0), ctx->memberA) + kMemberUnk06);
+    }
+
+    // The character type of member A, with the types above 0x1D folded: 0x26 becomes 0xD, the rest 0.
+    uint16_t WordsFn_MemberCharType(GuestPtr<WordsCtx> ctx)
+    {
+        uint16_t charType = port::load<uint16_t>(memberAt(Family_Get(ctx->familyA, 0), ctx->memberA) + kMemberCharType);
+        if (0x1D < charType)
+            charType = charType == 0x26 ? 0xD : 0;
+        return charType;
+    }
+
+    // 0..5 from the member's role and the flag bit 0: roles 2 gives 4/5, role 1 gives 3, role 0 gives 2, the others 0/1.
+    int WordsFn_MemberRole(GuestPtr<WordsCtx> ctx)
+    {
+        GuestPtr<Family> family;
+        uint32_t member;
+        if (ctx->arg == 0)
+        {
+            family = Family_Get(ctx->familyA, 0);
+            member = ctx->memberA;
+        }
+        else
+        {
+            family = Family_Get(ctx->familyB, 0);
+            member = ctx->memberB;
+        }
+        const uint8_t role = port::load<uint8_t>(memberAt(family, member) + kMemberRole);
+        const bool flag = (port::load<uint8_t>(memberAt(family, member) + kMemberFlags) & 1u) != 0;
+        if (role == 2)
+            return flag ? 5 : 4;
+        if (role == 1)
+            return 3;
+        if (role == 0)
+            return 2;
+        return flag ? 1 : 0;
+    }
+
+    // The building type's STRTYPE category: of the building (arg 0; the family's home type when there is no building)
+    // or of building type B.
+    uint8_t WordsFn_BuildingCategory(GuestPtr<WordsCtx> ctx)
+    {
+        uint32_t type;
+        if (ctx->arg == 0)
+        {
+            if (!ctx->buildingA)
+                type = port::load<uint16_t>(Family_Get(ctx->familyA, 0).address + 0x20u);
+            else
+                type = ctx->buildingA->type;
+        }
+        else
+            type = ctx->buildingTypeB;
+        return port::load<uint8_t>(globals::buildingTypeAddress(type) + 0x145u);
+    }
+
+    namespace
+    {
+        // The friendship change both actions make: the meter step is 3 (down) or 5 (up) plus bits 21-23 of the character
+        // type's class word; the result is what the friendship call leaves in v0.
+        int changeFriendship(GuestPtr<WordsCtx> ctx, int base, int sign)
+        {
+            const GuestPtr<Family> family = Family_Get(ctx->familyA, 0);
+            const uint32_t charType = port::load<uint16_t>(memberAt(family, ctx->memberA) + kMemberCharType);
+            const uint32_t cls = port::load<uint32_t>(globals::charClassTable.get() + 4u * charType);
+            const int bits = static_cast<int>((port::load<uint32_t>(cls + 0x1Cu) & 0xE00000u) >> 0x15);
+            const int points = bits + base;
+            port::setGuestV0(bits);  // the friendship call returns v0 as it found it on some paths: the shifted bits here
+            const int result = Family_AddFriendshipScaled(ctx->familyA, ctx->memberA, GuestPtr<int32_t>{ctx->city.address + 0x8Cu}, points, sign);
+            ctx->friendshipChanged = 1;
+            return result;
+        }
+    }
+
+    int WordsFn_FriendshipDown(GuestPtr<WordsCtx> ctx) { return changeFriendship(ctx, 3, -1); }
+    int WordsFn_FriendshipUp(GuestPtr<WordsCtx> ctx) { return changeFriendship(ctx, 5, 1); }
+
+    PORT_FN(WordsFn_TextFamilyRecord);
+    PORT_FN(WordsFn_TextMemberName2);
+    PORT_FN(WordsFn_TextMemberName);
+    PORT_FN(WordsFn_TextOccupation);
+    PORT_FN(WordsFn_MemberByte2B);
+    PORT_FN(WordsFn_MemberByte2A);
+    PORT_FN(WordsFn_MemberCharType);
+    PORT_FN(WordsFn_MemberRole);
+    PORT_FN(WordsFn_BuildingCategory);
+    PORT_FN(WordsFn_FriendshipDown);
+    PORT_FN(WordsFn_FriendshipUp);
+
+    // ---- Script context set-up and the resident pickers ----
+
+    namespace
+    {
+        // The fields both set-up calls clear: the second person and building, the results and the script's flags.
+        void resetContext(GuestPtr<WordsCtx> ctx, GuestPtr<CityScene> city, int arg4)
+        {
+            ctx->unk_04 = arg4;
+            ctx->city = city;
+            ctx->familyB = 0;
+            ctx->memberB = 0;
+            ctx->personB = GuestPtr<MapPerson>{0u};
+            ctx->buildingB = GuestPtr<MapObject>{0u};
+            ctx->buildingTypeB = 0;
+            ctx->bagSlot = GuestPtr<void>{0u};
+            ctx->result = 0;
+            ctx->cancelAllowed = 1;
+            ctx->flag134 = 0;
+            ctx->arg = 0;
+            ctx->eventSlot = 0;
+            ctx->wantIndex = 0;
+            ctx->friendshipChanged = 0;
+        }
+    }
+
+    // Starts a script on a family member: the family is prefetched into the cache, person and building A stay empty.
+    void Words_SetFamily(GuestPtr<Words> words, int family, uint16_t member, int arg4, GuestPtr<CityScene> city)
+    {
+        Family_Prefetch(family, 0);
+        const GuestPtr<WordsCtx> ctx = words->ctx;
+        ctx->familyA = static_cast<uint16_t>(family);
+        ctx->memberA = member;
+        ctx->personA = GuestPtr<MapPerson>{0u};
+        ctx->buildingA = GuestPtr<MapObject>{0u};
+        resetContext(ctx, city, arg4);
+    }
+
+    // The same for a person on the map: building A is the person's workplace.
+    void Words_SetPerson(GuestPtr<Words> words, GuestPtr<MapPerson> person, int arg4, GuestPtr<CityScene> city)
+    {
+        Family_Prefetch(person->family, 0);
+        const GuestPtr<WordsCtx> ctx = words->ctx;
+        ctx->familyA = person->family;
+        ctx->memberA = person->member;
+        ctx->personA = person;
+        ctx->buildingA = Map_GetRecord(city->map, person->work);
+        resetContext(ctx, city, arg4);
+    }
+
+    // Lists (in ctx->candidates, up to 128) the ids of the objects the family may call on: the occupied homes with
+    // people inside whose entrance lies within the member's range of the building, and the objects on the same tile
+    // as each, except the building itself.
+    void Words_CollectNearbyHomes(GuestPtr<WordsCtx> ctx, GuestPtr<MapObject> building)
+    {
+        ctx->candidateCount = 0;
+        sdk::memset(ctx.address + 0x30u, 0, 0x80);
+        const int32_t x0 = building->tile & 0x7F;
+        const int32_t z0 = building->tile >> 7;
+        const int32_t size = port::load<uint8_t>(globals::buildingTypeAddress(building->type) + 0x142u);
+        const GuestPtr<Family> family = Family_Get(ctx->familyA, 0);
+        const int32_t range = port::load<int32_t>(0x001B97F0u + 4u * port::load<uint8_t>(memberAt(family, ctx->memberA) + kMemberRange));
+        const int32_t xStart = x0 - range, xEnd = x0 + size + range, zEnd = z0 + size + range;
+        uint16_t homes[80];
+        int32_t found = 0;
+        for (int32_t z = z0 - range; z < zEnd && found < 0x50; ++z)
+        {
+            for (int32_t x = xStart; x < xEnd && found < 0x50; ++x)
+            {
+                const GuestPtr<MapObject> object = Map_GetTileObject(ctx->city->map, x, z);
+                if (object->id == 0 || (object->flags & 0x20) == 0 || (globals::buildingTypeFlags(object->type) & 0x40) == 0)
+                    continue;
+                if (Family_InCity(object->family) == 0)
+                    continue;
+                bool known = false;
+                for (int32_t i = 0; i < found && !known; ++i)
+                    known = object->id == homes[i];
+                if (!known)
+                    homes[found++] = object->id;
+            }
+        }
+        for (int32_t i = 0; i < found; ++i)
+        {
+            GuestPtr<MapObject> record = Map_GetRecord(ctx->city->map, homes[i]);
+            for (;;)
+            {
+                if (record.address != building.address)
+                {
+                    const int32_t at = ctx->candidateCount;
+                    port::store<uint16_t>(ctx.address + 0x30u + 2u * static_cast<uint32_t>(at), record->id);
+                    ctx->candidateCount = at + 1;
+                    if (!(at + 1 < 0x80))
+                        return;
+                }
+                if (record->nextOnTile == 0x3F80)
+                    break;
+                record = Map_GetRecord(ctx->city->map, record->nextOnTile);
+                if ((record->flags & 0x20) == 0 || Family_InCity(record->family) == 0)
+                    break;
+            }
+        }
+    }
+
+    int WordsFn_PickByCandidates(GuestPtr<WordsCtx> ctx)
+    {
+        Words_CollectNearbyHomes(ctx, ctx->buildingA);
+        return Words_PickResidentByType(ctx);
+    }
+
+    namespace
+    {
+        // Building B is a random candidate and person B a random member of its family: 1 when there is one.
+        int pickRandomCandidate(GuestPtr<WordsCtx> ctx)
+        {
+            const int32_t roll = static_cast<int32_t>(Random_Next());
+            const uint32_t index = static_cast<uint32_t>(eeRemainder(roll, ctx->candidateCount));
+            ctx->buildingB = Map_GetRecord(ctx->city->map, port::load<uint16_t>(ctx.address + 0x30u + 2u * index));
+            ctx->buildingTypeB = ctx->buildingB->type;
+            const GuestPtr<Family> family = Family_Get(ctx->buildingB->family, 0);
+            const uint32_t members = port::load<uint16_t>(family.address + 0x22u);
+            if (members != 0)
+            {
+                const int32_t memberRoll = static_cast<int32_t>(Random_Next());
+                ctx->personB = Map_FindPersonEntry(ctx->city->map, static_cast<int16_t>(ctx->buildingB->family),
+                                                   static_cast<uint16_t>(eeRemainder(memberRoll, static_cast<int32_t>(members))));
+                if (ctx->personB)
+                {
+                    ctx->familyB = ctx->personB->family;
+                    ctx->memberB = ctx->personB->member;
+                    return 1;
+                }
+            }
+            return 0;
+        }
+    }
+
+    int WordsFn_PickRandomResident(GuestPtr<WordsCtx> ctx)
+    {
+        Words_CollectNearbyHomes(ctx, ctx->buildingA);
+        if (ctx->candidateCount == 0)
+            return 0;
+        return pickRandomCandidate(ctx);
+    }
+
+    // The first resident of a candidate home who can introduce someone and whose friendship agrees (3); else a resident
+    // who can introduce someone but does not agree (2); else a random one as in PickRandomResident (1 or 0).
+    int WordsFn_PickTestableResident(GuestPtr<WordsCtx> ctx)
+    {
+        int result = 0;
+        Words_CollectNearbyHomes(ctx, ctx->buildingA);
+        for (int32_t i = 0; i < ctx->candidateCount; ++i)
+        {
+            const GuestPtr<MapObject> object = Map_GetRecord(ctx->city->map, port::load<uint16_t>(ctx.address + 0x30u + 2u * static_cast<uint32_t>(i)));
+            port::GuestLocal<uint16_t> cursor;
+            *cursor = object->firstPerson;
+            while (const GuestPtr<MapPerson> person = People_Next(ctx->city->map, cursor))
+            {
+                const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)};
+                if ((cls->flags & 1u) != 0 || person->family != object->family)
+                    continue;
+                ctx->personB = person;  // stored before the test of introduces: the original does it in a branch delay slot
+                if (person->introduces == 0)
+                    continue;
+                ctx->familyB = ctx->personB->family;
+                ctx->memberB = ctx->personB->member;
+                ctx->buildingB = object;
+                ctx->buildingTypeB = ctx->buildingB->type;
+                const int agrees = Family_FriendAgrees(ctx->familyB, ctx->memberB, ctx->city->approval);
+                result = 2;
+                if (agrees != 0)
+                    return 3;
+            }
+        }
+        if (result != 0)
+            return result;
+        if (ctx->candidateCount == 0)
+            return 0;
+        return pickRandomCandidate(ctx);
+    }
+
+    // Person B is a random other member of building B's family (not person A itself): 1 when found.
+    int WordsFn_PickOtherResident(GuestPtr<WordsCtx> ctx)
+    {
+        const GuestPtr<Family> family = Family_Get(ctx->buildingB->family, 0);
+        const uint32_t members = port::load<uint16_t>(family.address + 0x22u);
+        if (members == 0)
+            return 0;
+        if (members < 2 && ctx->buildingB->family == ctx->familyA)
+            return 0;
+        int32_t member;
+        do
+        {
+            const int32_t roll = static_cast<int32_t>(Random_Next());
+            member = remainder(roll, static_cast<int32_t>(members));
+            if (ctx->buildingB->family == ctx->familyA && static_cast<uint32_t>(member) == ctx->personA->member)
+                member = -1;
+        } while (member < 0);
+        ctx->personB = Map_FindPersonEntry(ctx->city->map, static_cast<int16_t>(ctx->buildingB->family), static_cast<uint16_t>(member));
+        if (!ctx->personB)
+            return 0;
+        ctx->familyB = ctx->personB->family;
+        ctx->memberB = ctx->personB->member;
+        return 1;
+    }
+
+    // The first of the member's acquaintances that lives in a business of category 5 and may apply (becomes the result).
+    int WordsFn_FindOutsideAcquaintance(GuestPtr<WordsCtx> ctx)
+    {
+        const MemberRef who = ctx->arg == 0 ? MemberRef{ctx->familyA, ctx->memberA} : MemberRef{ctx->familyB, ctx->memberB};
+        const uint32_t member = memberAt(Family_Get(who.family, 0), who.member);
+        const uint32_t end = member + 0x08u + 0x20u;
+        for (uint32_t at = member + 0x08u; port::load<uint16_t>(at) != 0 && at < end; at += 2u)
+        {
+            const uint32_t acquaintance = port::load<uint16_t>(at);
+            const uint32_t type = static_cast<uint32_t>(Family_GetTypeIndex(static_cast<int>(acquaintance)));
+            if (port::load<uint8_t>(globals::buildingTypeAddress(type) + 0x145u) != 5)
+                continue;
+            if (Family_CanApply(acquaintance, ctx->city) != 0)
+            {
+                ctx->result = static_cast<uint16_t>(acquaintance);
+                break;
+            }
+        }
+        return ctx->result != 0 ? 1 : 0;
+    }
+
+    // Whether the character likes the bag item: for a business of category 4 it is the item 0x96 and the rule 0; else the
+    // item's id is in the character type's list of liked items.
+    int WordsFn_LikesBagItem(GuestPtr<WordsCtx> ctx)
+    {
+        const uint32_t bagSlot = ctx->bagSlot.address;
+        if (ctx->buildingA && port::load<uint16_t>(bagSlot) == 0x96)
+        {
+            const uint32_t btype = globals::buildingTypeAddress(ctx->buildingA->type);
+            if (port::load<uint8_t>(btype + 0x145u) != 4)
+                return 0;
+            return port::load<uint8_t>(btype + 0x144u) == 0 ? 1 : 0;
+        }
+        const uint32_t group = port::load<uint16_t>(bagSlot);
+        const uint32_t index = port::load<uint16_t>(bagSlot + 2u);
+        const uint32_t first = port::load<uint16_t>(globals::goodsSectionA.get() + 4u * group);
+        const uint32_t item = port::load<uint16_t>(globals::goodsSectionB.get() + 0x88u * (index + first));
+        uint32_t charType;
+        if (ctx->personA)
+            charType = ctx->personA->charType;
+        else
+            charType = port::load<uint16_t>(memberAt(Family_Get(ctx->familyA, 0), ctx->memberA) + kMemberCharType);
+        const uint32_t likes = globals::goodsSectionD.get() + 2u * charType;
+        const uint32_t list = globals::goodsSectionE.get();
+        for (uint32_t at = list + 2u * port::load<uint16_t>(likes); at < list + 2u * port::load<uint16_t>(likes + 2u); at += 2u)
+            if (port::load<uint16_t>(at) == item)
+                return 1;
+        return 0;
+    }
+
+    PORT_FN(Words_SetFamily);
+    PORT_FN(Words_SetPerson);
+    PORT_FN(Words_CollectNearbyHomes);
+    PORT_FN(WordsFn_PickByCandidates);
+    PORT_FN(WordsFn_PickRandomResident);
+    PORT_FN(WordsFn_PickTestableResident);
+    PORT_FN(WordsFn_PickOtherResident);
+    PORT_FN(WordsFn_FindOutsideAcquaintance);
+    PORT_FN(WordsFn_LikesBagItem);
+
+    // ---- The WORDS script files (plan P6 batch 2) ----
+
+    // Opens the script files on the first call (WORDS.BIN and WORDSEVE.BIN, 0x8000-byte buffers) and counts the users; the
+    // object gets a state of 0 and a block buffer of one script block.
+    int Words_OpenFiles(int words)
+    {
+        constexpr uint32_t kBlockSize = 0x001BDDE8u, kUsers = 0x001BDDE4u, kWordsFile = 0x001BDDDCu, kEventFile = 0x001BDDE0u;
+        port::store<int32_t>(static_cast<uint32_t>(words), 0);
+        port::store<uint32_t>(static_cast<uint32_t>(words) + 4u, sdk::mw_NewArray(port::load<uint32_t>(kBlockSize)));
+        if (port::load<int32_t>(kUsers) == 0)
+        {
+            const auto open = [](uint32_t holder, uint32_t path) {
+                const uint32_t memory = sdk::operator_new(8u);
+                uint32_t file = 0u;
+                if (memory != 0u)
+                    file = File_ctor(GuestPtr<GameFile>{memory}, 0x8000).address;
+                port::store<uint32_t>(holder, file);
+                File_Open(GuestPtr<GameFile>{file}, GuestPtr<char>{path});
+            };
+            open(kWordsFile, 0x001BAD90u);
+            open(kEventFile, 0x001BADB0u);
+            FileQueue_WaitAll(0);
+        }
+        port::store<int32_t>(kUsers, port::load<int32_t>(kUsers) + 1);
+        return words;
+    }
+
+    // Finds a script block in the cache of 8 (a most-recently-used list at 0x718190, each entry reached through two
+    // pointers): block 0 means the first entry's block (0x16 when that is 0 too). A block not cached replaces the last entry:
+    // it is read from WORDS.BIN (block number - 1 blocks past the first word) into that entry. The entry found moves to the
+    // front of the list. Returns the first entry.
+    GuestPtr<uint32_t> Words_ReadBlock(int block)
+    {
+        constexpr uint32_t kList = 0x00718190u, kListEnd = 0x007181B0u;
+        constexpr uint32_t kBlockSize = 0x001BDDE8u, kWordsFile = 0x001BDDDCu, kReadResult = 0x001BD9F4u, kCleared = 0x001BDDFCu;
+        const auto idAt = [](uint32_t slot) { return port::load<int32_t>(port::load<uint32_t>(port::load<uint32_t>(slot))); };
+        if (block == 0)
+        {
+            block = idAt(kList);
+            if (block == 0)
+                block = 0x16;
+        }
+        uint32_t slot = kList;
+        while (slot < kListEnd && block != idAt(slot))
+            slot += 4u;
+        if (slot != kList)
+        {
+            if (slot == kListEnd)
+            {
+                slot -= 4u;
+                const uint32_t record = port::load<uint32_t>(port::load<uint32_t>(slot));
+                port::store<int32_t>(record, block);
+                const int32_t size = port::load<int32_t>(kBlockSize);
+                File_Seek(GuestPtr<GameFile>{port::load<uint32_t>(kWordsFile)}, size * (port::load<int32_t>(record) - 1) + 4, 0, 0);
+                port::store<int32_t>(kReadResult, File_Read(GuestPtr<GameFile>{port::load<uint32_t>(kWordsFile)}, static_cast<int>(port::load<uint32_t>(record + 4u)), 1, size, 0));
+            }
+            const uint32_t entry = port::load<uint32_t>(slot);
+            sdk::memmove(kList + 4u, kList, slot - kList);
+            port::store<uint32_t>(kList, entry);
+            port::store<uint32_t>(kCleared, 0u);
+        }
+        return GuestPtr<uint32_t>{port::load<uint32_t>(kList)};
+    }
+
+    // The static Words object (0x1BDDF0) is constructed at start-up and registered to be destroyed at exit.
+    void StaticInit_Words()
+    {
+        const GuestPtr<Words> words = Words_ctor(GuestPtr<Words>{0x001BDDF0u});
+        sdk::mw_register_global_object(words.address, 0x00180490u, 0x007181B0u);
+    }
+
+    PORT_FN(Words_OpenFiles);
+    PORT_FN(Words_ReadBlock);
+    PORT_FN(StaticInit_Words);
+
+    // ---- Script actions that forward to other calls (plan P6 batch 2) ----
+
+    // The title text of the event in the script's slot.
+    GuestPtr<char> WordsFn_TextEventTitle(GuestPtr<WordsCtx> ctx) { return Event_FormatText(ctx->city->events, ctx->eventSlot); }
+
+    // The person the script talks to gets a new family to introduce (the 16-bit pick is kept at +0x2C); the result is the pick,
+    // or what the register held when there is no such person.
+    int WordsFn_NewIntroduction(GuestPtr<WordsCtx> ctx)
+    {
+        if (!ctx->personA)
+            return port::guestV0();
+        const GuestPtr<MapPerson> person = ctx->personA;
+        const uint32_t pick = Family_PickIntroduction(person->family, person->member, ctx->city);
+        ctx->personA->introduces = static_cast<uint16_t>(pick);
+        return static_cast<int>(pick);
+    }
+
+    PORT_FN(WordsFn_TextEventTitle);
+    PORT_FN(WordsFn_NewIntroduction);
+
+    // The family introduction of the script's first side (when the arg at +0x2A is 0) or second side: a person there keeps their
+    // own (+0x2C), otherwise one is picked for the family and member. The pick (16 bits) becomes the result (+0x28); 1 when
+    // it is not 0.
+    int WordsFn_GetIntroduction(GuestPtr<WordsCtx> ctx)
+    {
+        uint32_t pick;
+        if (ctx->arg != 0)
+            pick = ctx->personB ? static_cast<uint32_t>(ctx->personB->introduces) : Family_PickIntroduction(ctx->familyB, ctx->memberB, ctx->city);
+        else
+            pick = ctx->personA ? static_cast<uint32_t>(ctx->personA->introduces) : Family_PickIntroduction(ctx->familyA, ctx->memberA, ctx->city);
+        ctx->result = static_cast<uint16_t>(pick);
+        return ctx->result != 0 ? 1 : 0;
+    }
+
+    PORT_FN(WordsFn_GetIntroduction);
+
+    // Chooses event `choice` - 1 of the city's list for the script (0 is no choice and gives 0): asks whether the first person
+    // of the script can take part in it (mm_Event_FindForFamily); the result is its code plus one.
+    int Words_SelectEvent(GuestPtr<Words> words, int choice)
+    {
+        port::GuestFrame<0x20> frame;
+        if (choice == 0)
+            return 0;
+        words->ctx->eventSlot = static_cast<int16_t>(choice - 1);
+        const uint32_t pair = frame.ptr().address + 0x1Cu;
+        port::store<uint16_t>(pair, words->ctx->familyA);
+        port::store<uint16_t>(pair + 2u, words->ctx->memberA);
+        const GuestPtr<CityScene> city = words->ctx->city;
+        return Event_FindForFamily(city->events, city, words->ctx->eventSlot, GuestPtr<int16_t>{pair}) + 1;
+    }
+
+    PORT_FN(Words_SelectEvent);
+
+    // Applies the choice made in a script's menu (`code` says which menu, `choice` the entry). The running total of the answers
+    // (a halfword at 0x1BDE04, or at 0x1BDE00 while that is 0) grows by the choice for the menus below -0x7D4 and for -0x7D1.
+    // Menu -0x7D5 picks the choice-th entry not yet used (a bit mask of used ones at 0x1BDE18; the used ones before it count into
+    // the total), marks it used and, when fewer than two of the table's entries are left, sets the script's flag 0x134; -0x7D4
+    // adds the event chosen (mm_Words_SelectEvent); -0x7D2 selects the bag item when the choice is not the last entry and counts
+    // it; -0x7D3 sets the want index and -0x7D1 the argument.
+    void Words_ApplyChoice(int script, GuestPtr<CityScene> city, int code, int choice)
+    {
+        constexpr uint32_t kWords = 0x001BDDF0u, kUsed = 0x001BDE18u;
+        const GuestPtr<Words> words{kWords};
+        const uint32_t total = port::load<uint16_t>(0x001BDE04u) != 0 ? 0x001BDE04u : 0x001BDE00u;
+        const auto add = [&](uint32_t amount) { port::store<uint16_t>(total, static_cast<uint16_t>(port::load<uint16_t>(total) + amount)); };
+        if (code < -0x7D4 || code == -0x7D1)
+            add(static_cast<uint16_t>(choice));
+        if (code == -0x7D5)
+        {
+            uint32_t bit = 0;
+            int unused = 0;
+            for (uint32_t i = 0;; ++i)
+            {
+                bit = 1u << (i & 31u);
+                if ((port::load<uint8_t>(kUsed) & bit) == 0)
+                {
+                    ++unused;
+                    if (choice < unused)
+                        break;
+                }
+                else
+                    add(1);
+            }
+            port::store<uint8_t>(kUsed, static_cast<uint8_t>(port::load<uint8_t>(kUsed) | (bit & 0xFFu)));
+            const uint32_t table = port::load<uint32_t>(0x007181E0u);
+            const int entries = static_cast<int>(port::load<uint16_t>(table + 2u)) - static_cast<int>(port::load<uint16_t>(table));
+            int left = entries;
+            for (int j = 0; j < entries; ++j)
+                if ((port::load<uint8_t>(kUsed) & (1u << (j & 31))) != 0)
+                    --left;
+            if (left < 2)
+                Words_SetFlag134(words);
+        }
+        if (code == -0x7D4)
+            add(static_cast<uint16_t>(Words_SelectEvent(words, choice)));
+        if (code == -0x7D2)
+        {
+            if (choice < Words_CountChoices(script, city, code) - 1)
+            {
+                Words_SelectBagItem(words, choice);
+                add(1);
+            }
+        }
+        else if (code == -0x7D3)
+            Words_SetWantIndex(words, static_cast<uint16_t>(choice));
+        else if (code == -0x7D1)
+            Words_SetArg(words, static_cast<uint16_t>(choice));
+    }
+
+    PORT_FN(Words_ApplyChoice);
+
+    // The script person's schedule state (kept in their record, or worked out for a family member who is not on the map) turned
+    // into the number a talk script tests, by the script's argument (+0x2A): 0 gives states 1 and 2 as 0 and 1, 3 as 2 and the
+    // rest 3; 1 gives 4 and 5 as 0 and 1, the rest 2; 2 gives 6 and 7 as 0 and 1, the rest 2; 3 gives states 6 to 12 as 0 to 6, the
+    // rest 7; 4 gives 0 for state 13 and 1 for the others; 5 gives the state less 1 (less 2 from 15), 15 when that is negative.
+    uint32_t WordsFn_ScheduleState(GuestPtr<WordsCtx> ctx)
+    {
+        const uint32_t state = (ctx->personA ? port::load<uint8_t>(ctx->personA.address + 0x26u) : Schedule_Evaluate(ctx->familyA, ctx->memberA)) & 0xFFu;
+        switch (ctx->arg)
+        {
+        case 0:
+            if (state - 1u < 2u)
+                return state - 1u;
+            return state == 3 ? 2u : 3u;
+        case 1:
+            return state == 4 ? 0u : (state == 5 ? 1u : 2u);
+        case 2:
+            return state == 6 ? 0u : (state == 7 ? 1u : 2u);
+        case 3:
+            return state >= 6 && state < 0xD ? state - 6u : 7u;
+        case 4:
+            return state != 0xD ? 1u : 0u;
+        case 5:
+        {
+            const int32_t line = static_cast<int32_t>(state < 0xF ? state - 1u : state - 2u);
+            return line < 0 ? 0xFu : static_cast<uint32_t>(line);
+        }
+        default:
+            return 0;
+        }
+    }
+
+    PORT_FN(WordsFn_ScheduleState);
+
+    // The player buys the goods the script points at (group +0x14, variant +0x16, the season from the month at +0x88 of the city):
+    // the price comes off the money at 0x1C5540 (saturating: a purchase that overflows leaves INT_MAX, any other shortfall 0) and
+    // the seller's family gains friendship by price band (2 up to 100, 3 up to 1000, 4 up to 5000, 5 up to 10000, 20 up to
+    // 50000, 30 above). What happens next depends on the goods' kind: kinds 4, 5, 10 and 11 add a laptop entry; 6 to 8 add one and
+    // make the bag at least the size in byte 5; the goods kinds 0x10 to 0x1C that go into the bag are added to it (the laptop
+    // entry 6 when the bag is new); 0x12 and 0x14 are eaten; 0x16 adds a music track; 0x19 adds an applicant family. Sound 0x12
+    // plays at the end.
+    void WordsFn_BuyGoods(GuestPtr<WordsCtx> ctx)
+    {
+        port::GuestFrame<0x40> frame;
+        const uint32_t offsetAt = frame.ptr().address + 0x3Cu;
+        port::store<int32_t>(offsetAt, ctx->arg);
+        const GuestPtr<CityScene> city = ctx->city;
+        const uint32_t c = city.address;
+        int32_t month = remainder(port::load<int32_t>(c + 0x88u), 12);
+        if (month < 0)
+            month += 3;
+        const uint32_t record = static_cast<uint32_t>(Goods_GetRecordOffset(ctx->buildingTypeB, ctx->familyB, month >> 2, GuestPtr<int32_t>{offsetAt}));
+        const int32_t price = Goods_GetPrice(static_cast<int>(record));
+        constexpr uint32_t kMoney = 0x001C5540u;
+        const int32_t money = static_cast<int32_t>(port::load<uint32_t>(kMoney) - static_cast<uint32_t>(price));
+        port::store<int32_t>(kMoney, money);
+        if (money < 0)
+            port::store<int32_t>(kMoney, static_cast<int32_t>(0u - static_cast<uint32_t>(price)) > 0 ? 0x7FFFFFFF : 0);
+        int points;
+        if (price < 0xB)
+            points = 2;
+        else if (price < 0x65)
+            points = 2;
+        else if (price < 0x3E9)
+            points = 3;
+        else if (price < 0x1389)
+            points = 4;
+        else if (price < 0x2711)
+            points = 5;
+        else
+            points = price < 0xC351 ? 0x14 : 0x1E;
+        Family_AddFriendship(ctx->familyA, ctx->memberA, GuestPtr<int32_t>{c + 0x8Cu}, points);
+        const GuestPtr<Laptop> laptop{port::load<uint32_t>(c + 0x48u)};
+        const uint32_t bag = port::load<uint32_t>(c + 0x60u);
+        const uint32_t kind = port::load<uint8_t>(record + 4u);
+        switch (kind)
+        {
+        case 4:
+        case 5:
+        case 10:
+        case 11:
+            Laptop_AddEntry(laptop, static_cast<int>(kind));
+            break;
+        case 6:
+        case 7:
+        case 8:
+            Laptop_AddEntry(laptop, static_cast<int>(kind));
+            if (port::load<uint16_t>(bag) < port::load<uint8_t>(record + 5u))
+                port::store<uint16_t>(bag, port::load<uint8_t>(record + 5u));
+            break;
+        case 0x10:
+        case 0x11:
+        case 0x13:
+        case 0x15:
+        case 0x17:
+        case 0x18:
+        case 0x1A:
+        case 0x1B:
+        case 0x1C:
+            if (port::load<uint16_t>(bag) == 0)
+                Laptop_AddEntry(laptop, 6);
+            Bag_AddItem(GuestPtr<Bag>{bag}, ctx->buildingTypeB, port::load<int32_t>(offsetAt), static_cast<int16_t>(port::load<int32_t>(0x001C5548u)),
+                        port::load<int32_t>(c + 0x88u), static_cast<int16_t>(port::load<uint16_t>(ctx->buildingB.address + 0xCu)), 0xFF, 0);
+            break;
+        case 0x12:
+        case 0x14:
+            Stamina_Eat(GuestPtr<Stamina>{port::load<uint32_t>(c + 0x64u)}, GuestPtr<uint8_t>{record});
+            break;
+        case 0x16:
+            Bag_AddMusicTrack(GuestPtr<Bag>{bag}, ctx->buildingTypeB, port::load<int32_t>(offsetAt));
+            break;
+        case 0x19:
+            Applicants_Add(GuestPtr<Applicants>{port::load<uint32_t>(c + 0x54u)}, port::load<uint8_t>(record + 5u), port::load<int32_t>(c + 0x88u), 8);
+            break;
+        default:
+            break;
+        }
+        Sound_PlaySe(0x12, 0, 0x3C, ps2f(0.0f), ps2f(0.0f));
+    }
+
+    PORT_FN(WordsFn_BuyGoods);
+
+    // Looks through the acquaintances (up to 16 families at +0x2C of the script person's member record) of the script's family
+    // for one that can apply to the city and whose home type claims something the building A supplies: the claim list of the
+    // building (a single value, or the list of section D when the value has bit 15) is compared with the type's claims (section
+    // C of the acquaintance's home type); the first match becomes the person's introduction (+0x2C) and the result (+0x28) and
+    // gives 1. 0 when there is none.
+    int WordsFn_AcquaintanceSuppliesClaim(GuestPtr<WordsCtx> ctx)
+    {
+        port::GuestFrame<0x60> frame;
+        const uint32_t local = frame.ptr().address + 0x5Cu;
+        const uint32_t building = ctx->buildingA.address;
+        const uint32_t sections = static_cast<uint32_t>(Claim_GetSectionB(port::load<uint8_t>(globals::buildingTypeAddress(port::load<uint16_t>(building)) + 0x147u)));
+        const uint32_t entry = static_cast<uint32_t>(sections) + 8u * port::load<uint8_t>(building + 0x12u);
+        port::store<uint32_t>(local, port::load<uint32_t>(0x001BDC20u));
+        port::store<uint16_t>(local, port::load<uint16_t>(entry + 2u));
+        uint32_t claims = local;
+        if (port::load<uint16_t>(entry + 2u) >= 0x8000)
+            claims = static_cast<uint32_t>(Claim_GetSectionD(port::load<uint16_t>(local)));
+        const uint32_t member = Family_Get(ctx->familyA, 0).address + 0x48u * ctx->memberA + 0x2Cu;
+        const uint32_t end = member + 0x20u;
+        for (uint32_t at = member;; at += 2u)
+        {
+            const uint32_t family = port::load<uint16_t>(at);
+            if (family == 0 || at >= end)
+                return 0;
+            if (Family_CanApply(family, ctx->city) == 0)
+                continue;
+            const uint32_t type = static_cast<uint32_t>(Family_GetTypeIndex(static_cast<int>(port::load<uint16_t>(at)))) & 0xFFFFu;
+            for (uint32_t want = static_cast<uint32_t>(Claim_GetSectionC(port::load<uint8_t>(globals::buildingTypeAddress(type) + 0x148u))); port::load<uint16_t>(want) != 0; want += 4u)
+                for (uint32_t have = claims; port::load<uint16_t>(have) != 0; have += 2u)
+                    if (port::load<uint16_t>(want) == port::load<uint16_t>(have))
+                    {
+                        port::store<uint16_t>(ctx->personA.address + 0x2Cu, port::load<uint16_t>(at));
+                        ctx->result = port::load<uint16_t>(at);
+                        return 1;
+                    }
+        }
+    }
+
+    PORT_FN(WordsFn_AcquaintanceSuppliesClaim);
+
+    // ---- Small script actions (plan P6 batch 2) ----
+
+    // 1 when the script person's schedule activity (their record's, or the schedule's own for a family member who is not on the
+    // map) is the script's argument.
+    int WordsFn_ScheduleIs(GuestPtr<WordsCtx> ctx)
+    {
+        const uint32_t activity = ctx->personA ? port::load<uint8_t>(ctx->personA.address + 0x27u) : Schedule_QueryB(ctx->city, ctx->familyA, ctx->memberA);
+        return static_cast<int64_t>(activity) == static_cast<int64_t>(ctx->arg) ? 1 : 0;
+    }
+
+    // Invites the script's family (+8) as an applicant when it can apply to the city, with sound 0x17.
+    void WordsFn_InviteFamily(GuestPtr<WordsCtx> ctx)
+    {
+        if (Family_CanApply(ctx->familyA, ctx->city) != 0)
+        {
+            CityScene_AddApplicantFamily(ctx->city, ctx->familyA, 1);
+            Sound_PlaySe(0x17, 0, 0x3C, ps2f(0.0f), ps2f(0.0f));
+        }
+    }
+
+    // The same for the family introduced to the script's person (the result at +0x28): after it, the person's member flag is
+    // cleared and the introduction forgotten.
+    void WordsFn_InviteIntroduced(GuestPtr<WordsCtx> ctx)
+    {
+        if (Family_CanApply(ctx->result, ctx->city) != 0)
+        {
+            CityScene_AddApplicantFamily(ctx->city, ctx->result, 1);
+            Family_ClearMemberFlag(ctx->familyA, ctx->memberA);
+            ctx->result = 0;
+            Sound_PlaySe(0x17, 0, 0x3C, ps2f(0.0f), ps2f(0.0f));
+        }
+    }
+
+    PORT_FN(WordsFn_ScheduleIs);
+    PORT_FN(WordsFn_InviteFamily);
+    PORT_FN(WordsFn_InviteIntroduced);
+
+    namespace
+    {
+        constexpr uint32_t kWordsObject = 0x001BDDF0u, kWordsUsedMask = 0x001BDE18u;
+
+        // The event words (WORDSEVE.BIN, a block per event kind) a script may use: kind 0 has none. A kind that is not the one held
+        // is read into the object's extra table (the block size is in 0x1BDDEC) and forgets the line tables bound so far.
+        void loadEventWords(uint32_t kind)
+        {
+            constexpr uint32_t kEventFile = 0x001BDDE0u, kEventBlockSize = 0x001BDDECu, kReadResult = 0x001BD9F4u;
+            const GuestPtr<Words> words{kWordsObject};
+            if (kind == 0)
+            {
+                words->extraLoaded = 0;
+                return;
+            }
+            if (static_cast<int32_t>(kind) != words->unk_04)
+            {
+                const int32_t size = port::load<int32_t>(kEventBlockSize);
+                File_Seek(GuestPtr<GameFile>{port::load<uint32_t>(kEventFile)}, size * (static_cast<int32_t>(kind) - 1) + 4, 0, 0);
+                port::store<int32_t>(kReadResult, File_Read(GuestPtr<GameFile>{port::load<uint32_t>(kEventFile)}, static_cast<int>(words->extraTable.address), 1,
+                                                            port::load<int32_t>(kEventBlockSize), 0));
+                words->unk_04 = static_cast<int32_t>(kind);
+                words->bound = 0;
+            }
+            words->extraLoaded = 1;
+        }
+
+        // Once the tables are bound the line table points at the block's own lines, or, with event words loaded, at the lines the
+        // event block names for this block (an entry below 0 keeps the block's own).
+        void pickLineTable(GuestPtr<uint32_t> blockPtr)
+        {
+            const GuestPtr<Words> words{kWordsObject};
+            if (words->bound == 0)
+                return;
+            const uint32_t record = port::load<uint32_t>(blockPtr.address);
+            const uint32_t data = port::load<uint32_t>(record + 4u);
+            words->lineTable = GuestPtr<void>{data + port::load<uint32_t>(data)};
+            if (words->extraLoaded == 0)
+                return;
+            const uint32_t extra = words->extraTable.address;
+            const int32_t entry = port::load<int16_t>(extra + port::load<uint32_t>(extra) + 2u * port::load<uint32_t>(record));
+            if (entry >= 0)
+                words->lineTable = GuestPtr<void>{extra + port::load<uint32_t>(extra + 4u) + 2u * static_cast<uint32_t>(entry)};
+        }
+    }
+
+    // Prepares the script of a family member: the object is set to the member (mm_Words_SetFamily), the entries 1 and 2 of the
+    // choice menus are marked unavailable (bit 2 always; bit 1 for a member under 13 or with a friendship under 24, the used
+    // mask at 0x1BDE18), the line and column restart, the member's script block is read (mm_Words_ReadBlock, by the first
+    // halfword of its record), the event words for the city's current event are loaded and the line table picked. The result is the
+    // block.
+    int Words_LoadForFamily(int family, int member, int arg5, GuestPtr<CityScene> city)
+    {
+        const GuestPtr<Words> words{kWordsObject};
+        Words_SetFamily(words, family, static_cast<uint16_t>(member), arg5, city);
+        port::store<uint8_t>(kWordsUsedMask, 4);
+        words->line = 0;
+        words->column = 0;
+        const uint32_t self = Family_Get(family, 0).address + 0x48u * static_cast<uint32_t>(member);
+        if (port::load<uint8_t>(self + 0x26u) < 13 || Family_GetFriendship(family, member) < 24)
+            port::store<uint8_t>(kWordsUsedMask, static_cast<uint8_t>(port::load<uint8_t>(kWordsUsedMask) | 2u));
+        const GuestPtr<uint32_t> block = Words_ReadBlock(port::load<uint16_t>(Family_Get(family, 0).address + 0x48u * static_cast<uint32_t>(member) + 0x24u));
+        loadEventWords(city->events->talkA->kind);
+        pickLineTable(block);
+        return static_cast<int>(block.address);
+    }
+
+    // The same for a person in the city: the script block is the one of the character type (+0x24), the event words are for the
+    // event the person starts (mm_Event_TryStart, when arg5 is 0) or the city's current one. The choice menus are marked as
+    // above, but with an item of category 0x10, 0x11 or 0x13 among the bag's slots (its size picks how many are looked at) no
+    // entry is unavailable, and with none the age and friendship rule applies to the person's family member.
+    int Words_LoadForPerson(GuestPtr<MapPerson> person, int arg5, GuestPtr<CityScene> city)
+    {
+        const GuestPtr<Words> words{kWordsObject};
+        Words_SetPerson(words, person, arg5, city);
+        words->line = 0;
+        words->column = 0;
+        const GuestPtr<uint32_t> block = Words_ReadBlock(person->charType);
+        const uint32_t kind = arg5 == 0 ? Event_TryStart(city->events, city, person) : city->events->talkA->kind;
+        loadEventWords(kind);
+        pickLineTable(block);
+        port::store<uint8_t>(kWordsUsedMask, 4);
+        const GuestPtr<Bag> bag = city->bag;
+        const uint32_t end = bag.address + 4u + 16u * port::load<uint8_t>(globals::kBagSlotsBySize + bag->size);
+        for (uint32_t slot = bag.address + 4u; port::load<uint16_t>(slot) != 0 && slot < end; slot += 16u)
+        {
+            const uint32_t first = port::load<uint16_t>(globals::goodsSectionA.get() + 4u * port::load<uint16_t>(slot));
+            const uint32_t category = port::load<uint8_t>(globals::goodsSectionB.get() + 0x88u * (port::load<uint16_t>(slot + 2u) + first) + 4u);
+            if (category == 0x10 || category == 0x11 || category == 0x13)
+            {
+                port::store<uint8_t>(kWordsUsedMask, 0);
+                break;
+            }
+        }
+        const uint32_t self = Family_Get(person->family, 0).address + 0x48u * person->member;
+        if (port::load<uint8_t>(self + 0x26u) < 13 || Family_GetFriendship(person->family, person->member) < 24)
+            port::store<uint8_t>(kWordsUsedMask, static_cast<uint8_t>(port::load<uint8_t>(kWordsUsedMask) | 2u));
+        return static_cast<int>(block.address);
+    }
+
+    PORT_FN(Words_LoadForFamily);
+    PORT_FN(Words_LoadForPerson);
+
+    // Reads the script data at start-up with a synchronous file on the stack: two table files are read whole (0x1BADD0 into a block
+    // at 0x1BDE08 with six table pointers made from its first six offsets at 0x7181D8, and 0x1BADF0 into a block at 0x1BDE0C with
+    // eleven pointers, five at 0x718220 and six at 0x7181F0), the event words file (0x1BADB0) gives its block size (0x1BDDEC) and
+    // the buffer for one block (0x1BDE10), and the words file (0x1BAD90) gives its block size (0x1BDDE8) and, with it, the eight
+    // cache entries of the block list at 0x718190 (a pointer to a record that opens the files, mm_Words_OpenFiles).
+    void Words_Init()
+    {
+        port::GuestFrame<0x50> frame;
+        const GuestPtr<GameFile> file{frame.ptr().address + 0x48u};
+        File_ctor(file, 0);
+        // A whole file into a new block: the block is kept in `holder` before it is read.
+        const auto readWhole = [&](uint32_t path, uint32_t holder) {
+            File_Open(file, GuestPtr<char>{path});
+            const int size = File_Seek(file, 0, 2, 0);
+            File_Seek(file, 0, 0, 0);
+            port::store<uint32_t>(holder, sdk::mw_NewArray(static_cast<uint32_t>(size)));
+            File_Read(file, static_cast<int>(port::load<uint32_t>(holder)), size, 1, 0);
+            File_Close(file);
+        };
+        readWhole(0x001BADD0u, 0x001BDE08u);
+        for (uint32_t i = 0; i < 6; ++i)
+        {
+            const uint32_t block = port::load<uint32_t>(0x001BDE08u);
+            port::store<uint32_t>(0x007181D8u + 4u * i, block + port::load<uint32_t>(block + 4u * i));
+        }
+        readWhole(0x001BADF0u, 0x001BDE0Cu);
+        for (uint32_t i = 0; i < 11; ++i)
+        {
+            const uint32_t block = port::load<uint32_t>(0x001BDE0Cu);
+            port::store<uint32_t>((i < 5 ? 0x00718220u + 4u * i : 0x007181F0u + 4u * (i - 5u)), block + port::load<uint32_t>(block + 4u * i));
+        }
+        File_Open(file, GuestPtr<char>{0x001BADB0u});
+        File_Read(file, 0x001BDDECu, 1, 4, 0);
+        File_Close(file);
+        port::store<uint32_t>(0x001BDE10u, sdk::mw_NewArray(port::load<uint32_t>(0x001BDDECu)));
+        File_Open(file, GuestPtr<char>{0x001BAD90u});
+        File_Read(file, 0x001BDDE8u, 1, 4, 0);
+        for (uint32_t i = 0; i < 8; ++i)
+        {
+            const uint32_t holder = sdk::operator_new(4u);
+            if (holder != 0u)
+            {
+                uint32_t record = sdk::operator_new(8u);
+                if (record != 0u)
+                    record = static_cast<uint32_t>(Words_OpenFiles(static_cast<int>(record)));
+                port::store<uint32_t>(holder, record);
+            }
+            port::store<uint32_t>(0x00718190u + 4u * i, holder);
+        }
+        File_dtor(file, -1);
+    }
+
+    PORT_FN(Words_Init);
+
+    // The text of a choice in a script menu, by the menu's code. Below -2005 the code names a table: group g = (code + 6000) /
+    // 1000 and entry h = (code + 6000) % 1000 look the text up through the offset tables the script files were bound to at start-up
+    // (0x7181C8, 24 bytes a group: the entry offsets at +0, the choice offsets at +8, the text at +0xC; group 2 goes through the
+    // building type of the script's context first). The special codes: -2005 the index-th choice not marked in the used mask
+    // (0x1BDE18); -2004 the default choice text for index 0, otherwise the text of the city's event slot index - 1; -2003 the claim
+    // line of the index-th open want of the wants window; -2002 the name of the index-th bag item of category 0x10, 0x11 or 0x13
+    // (or the default when there are fewer); any other code gives goods number index (under 4) with its price right-aligned to 28
+    // characters in a buffer at 0x718240, or a fixed text from 4 on.
+    GuestPtr<char> Words_GetChoiceText(int script, GuestPtr<CityScene> city, int code, int index)
+    {
+        (void)script;
+        constexpr uint32_t kGroups = 0x007181C8u, kDefaults = 0x007181E8u, kWordsObject = 0x001BDDF0u;
+        port::GuestFrame<0x50> frame;
+        const uint32_t sp = frame.ptr().address;
+        const auto defaultText = [&](uint32_t second) {
+            return GuestPtr<char>{port::load<uint32_t>(kDefaults + 4u) + port::load<uint16_t>(port::load<uint32_t>(kDefaults) + second)};
+        };
+        if (code < -0x7D5)
+        {
+            const int group = (code + 6000) / 1000;
+            const int entry = (code + 6000) % 1000;
+            if (group != 2)
+            {
+                const uint32_t table = kGroups + 24u * static_cast<uint32_t>(group);
+                const uint32_t first = port::load<uint16_t>(port::load<uint32_t>(table) + 2u * static_cast<uint32_t>(entry));
+                const uint32_t offset = port::load<uint16_t>(port::load<uint32_t>(table + 8u) + 2u * static_cast<uint32_t>(index + static_cast<int>(first)));
+                return GuestPtr<char>{port::load<uint32_t>(table + 0xCu) + offset};
+            }
+            const uint32_t type = port::load<uint32_t>(0x00718220u) + 8u * Words_GetBuildingTypeB(GuestPtr<Words>{kWordsObject});
+            const uint32_t table = kGroups + 48u;
+            const uint32_t kind = port::load<uint16_t>(type + 2u);
+            const uint32_t line = port::load<uint16_t>(port::load<uint32_t>(0x00718228u) + 2u * (static_cast<uint32_t>(entry) + kind));
+            const uint32_t block = port::load<uint16_t>(port::load<uint32_t>(table) + 2u * line);
+            const uint32_t offset = port::load<uint16_t>(port::load<uint32_t>(table + 8u) + 2u * (static_cast<uint32_t>(index) + block));
+            return GuestPtr<char>{port::load<uint32_t>(table + 0xCu) + offset};
+        }
+        if (code == -0x7D5)
+        {
+            const uint32_t used = port::load<uint8_t>(0x001BDE18u);
+            int bit = 0, seen = 0;
+            for (;;)
+            {
+                if ((used & (1u << bit)) != 0)
+                {
+                    ++bit;
+                    continue;
+                }
+                ++seen;
+                if (index < seen)
+                    break;
+                ++bit;
+            }
+            const uint32_t base = port::load<uint16_t>(port::load<uint32_t>(0x007181E0u));
+            return GuestPtr<char>{port::load<uint32_t>(0x007181ECu) +
+                                  port::load<uint16_t>(port::load<uint32_t>(0x007181E8u) + 2u * (static_cast<uint32_t>(bit) + base))};
+        }
+        if (code == -0x7D4)
+        {
+            if (index == 0)
+                return GuestPtr<char>{port::load<uint32_t>(0x007181ECu) + port::load<uint16_t>(port::load<uint32_t>(0x007181E8u))};
+            return Event_FormatText(city->events, index - 1);
+        }
+        if (code == -0x7D3)
+        {
+            port::store<int32_t>(sp + 0x4Cu, 0);
+            for (int counted = 0;; ++counted)
+            {
+                if (Wants_Find(city->wants, city, GuestPtr<uint32_t>{sp + 0x40u}, GuestPtr<uint32_t>{sp + 0x44u}, GuestPtr<uint32_t>{sp + 0x48u},
+                               GuestPtr<int32_t>{sp + 0x4Cu}) == 0)
+                    return GuestPtr<char>{0};
+                if (counted == index)
+                    break;
+            }
+            const GuestPtr<MapObject> object = Map_GetRecord(city->map, static_cast<int>(port::load<uint32_t>(sp + 0x44u)));
+            return GuestPtr<char>{static_cast<uint32_t>(
+                Claim_GetLine(port::load<uint8_t>(globals::buildingTypeAddress(object->type) + 0x147u), object->claimSlot))};
+        }
+        if (code == -0x7D2)
+        {
+            const GuestPtr<Bag> bag = city->bag;
+            const uint32_t end = bag.address + 4u + 16u * port::load<uint8_t>(globals::kBagSlotsBySize + bag->size);
+            int counted = 0;
+            for (uint32_t slot = bag.address + 4u; port::load<uint16_t>(slot) != 0 && slot < end; slot += 16u)
+            {
+                const uint32_t first = port::load<uint16_t>(globals::goodsSectionA.get() + 4u * port::load<uint16_t>(slot));
+                const uint32_t record = globals::goodsSectionB.get() + 0x88u * (port::load<uint16_t>(slot + 2u) + first);
+                const uint32_t category = port::load<uint8_t>(record + 4u);
+                if (category != 0x10 && category != 0x11 && category != 0x13)
+                    continue;
+                if (counted == index)
+                    return GuestPtr<char>{globals::goodsSectionC.get() + port::load<uint16_t>(record)};
+                ++counted;
+            }
+            return defaultText(2u);
+        }
+        if (index >= 4)
+            return GuestPtr<char>{0x001BAD68u};
+        const uint32_t goods = static_cast<uint32_t>(Words_GetGoods(GuestPtr<Words>{kWordsObject}, index));
+        sdk::strcpy(0x00718240u, globals::goodsSectionC.get() + port::load<uint16_t>(goods));
+        const uint32_t length = static_cast<uint32_t>(sdk::strlen(0x00718240u));
+        const int price = Goods_GetPrice(static_cast<int>(goods));
+        Text_FormatMoney(GuestPtr<char>{0x00718240u + length}, price, 0x1C - static_cast<int>(length), 0);
+        return GuestPtr<char>{0x00718240u};
+    }
+
+    PORT_FN(Words_GetChoiceText);
+
+    // The text of a line of the wants window that has its own script: when the city has an event running (its kind is not 0) and
+    // the event queue holds the id at the same place as the kind, the script block of the default speaker is read, the Words object
+    // is reset (family 0, member 0, argument 4), the output text cleared, and the event words for the kind loaded. The first time
+    // the tables are bound: any read still running is waited for, the six table pointers (0x7181C0, from the block's header
+    // offsets) and, with event words, the six extra ones (0x718208) are set, the line table is picked as for a family
+    // (mm_Words_LoadForFamily) and the tables count as bound. The line (+3000) is then expanded into `out`.
+    void Words_LoadForWants(GuestPtr<CityScene> city, int16_t id, int line, GuestPtr<char> out)
+    {
+        constexpr uint32_t kReadResult = 0x001BD9F4u;
+        const uint32_t kind = city->events->talkA->kind;
+        if (kind == 0 || static_cast<int32_t>(kind) != EventQueue_Find(city->events, id))
+            return;
+        const GuestPtr<uint32_t> block = Words_ReadBlock(0);
+        const GuestPtr<Words> words{kWordsObject};
+        Words_SetFamily(words, 0, 0, 4, city);
+        words->line = 0;
+        words->column = 0;
+        port::store<uint8_t>(out.address, 0);
+        loadEventWords(kind);
+        if (words->bound == 0)
+        {
+            const uint32_t record = port::load<uint32_t>(block.address);
+            if (port::load<int32_t>(kReadResult) >= 0)
+            {
+                FileQueue_WaitAll(0);
+                port::store<int32_t>(kReadResult, -1);
+            }
+            const uint32_t data = port::load<uint32_t>(record + 4u);
+            for (uint32_t i = 0; i < 6; ++i)
+                port::store<uint32_t>(0x007181C0u + 4u * i, data + port::load<uint32_t>(data + 4u + 4u * i));
+            const bool extraLoaded = words->extraLoaded != 0;
+            const uint32_t extra = words->extraTable.address;
+            if (extraLoaded)
+                for (uint32_t i = 0; i < 6; ++i)
+                    port::store<uint32_t>(0x00718208u + 4u * i, extra + port::load<uint32_t>(extra + 8u + 4u * i));
+            words->lineTable = GuestPtr<void>{data + port::load<uint32_t>(data)};
+            if (extraLoaded)
+            {
+                const int32_t entry = port::load<int16_t>(extra + port::load<uint32_t>(extra) + 2u * port::load<uint32_t>(record));
+                if (entry >= 0)
+                    words->lineTable = GuestPtr<void>{extra + port::load<uint32_t>(extra + 4u) + 2u * static_cast<uint32_t>(entry)};
+            }
+            words->bound = 1;
+        }
+        Words_ExpandLine(static_cast<int>(port::load<uint32_t>(block.address)), line + 3000, static_cast<int>(out.address));
+    }
+
+    PORT_FN(Words_LoadForWants);
 }

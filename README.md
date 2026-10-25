@@ -47,7 +47,7 @@ Progress per subsystem is tracked in [docs/PORT_STATUS.md](docs/PORT_STATUS.md).
 | Movies, music, sound effects | Play, through a new SPU2 emulation (with reverb) |
 | Saves | Memory card check passes; loading a save from a PCSX2 memory card works |
 | Mapping (names, types, prototypes) | Done for every game function |
-| Readable source port | In progress: 1,058 of the game's 1,481 functions rewritten and verified (71%) ([details](docs/PORT_STATUS.md)) |
+| Readable source port | In progress: 1,375 of the game's 1,481 functions rewritten and verified (93%) ([details](docs/PORT_STATUS.md)) |
 | VU1 microcode | The city's programs run natively, checked against the interpreter ([details](docs/VU1_PROGRAMS.md)) |
 | Sound driver (IOP) translation | Not started |
 | Widescreen, high refresh rate, hi-res, native controls, Linux | Proposed, not started ([see below](#proposed-patches)) |
@@ -189,7 +189,7 @@ This is a fan preservation project. It is not affiliated with or endorsed by Ind
 | ムービー、音楽、効果音 | 再生可能(新しく作ったSPU2エミュレーションによる、リバーブ付き) |
 | セーブ | メモリーカードの確認は通過。PCSX2のメモリーカードからのロードは動作 |
 | マッピング(名前、型、プロトタイプ) | ゲームの全関数で完了 |
-| 読みやすいソースへの移植 | 進行中。1,481関数のうち1,058関数を書き直して検証済み(71%)([詳細](docs/PORT_STATUS.md)) |
+| 読みやすいソースへの移植 | 進行中。1,481関数のうち1,375関数を書き直して検証済み(93%)([詳細](docs/PORT_STATUS.md)) |
 | VU1マイクロコード | 街のプログラムはネイティブで動作し、インタプリタとの照合済み([詳細](docs/VU1_PROGRAMS.md)) |
 | サウンドドライバ(IOP)の変換 | 未着手 |
 | ワイドスクリーン、高リフレッシュレート、高解像度、ネイティブ操作、Linux | 構想中、未着手 |

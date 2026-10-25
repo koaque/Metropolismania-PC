@@ -4,6 +4,7 @@
 
 #include "game_functions.h"
 #include "game_globals.h"
+#include "sdk.h"
 
 namespace mm
 {
@@ -240,4 +241,226 @@ namespace mm
     PORT_FN(SoundCmd_11);
     PORT_FN(SoundCmd_SetDiscBusy);
     PORT_FN(SoundCmd_CancelPlayB);
+
+    // Sends the queued sound commands to the IOP driver, one per call and only while the RPC client is idle. The driver's status
+    // block (0x20B7C0) names the sequence slots (+4), effect voices (+8) and stops (+0x18) it has finished with, which leave the
+    // queued masks; with the queue empty the counters restart (and the masks clear, unless the driver reports itself busy at +0xC).
+    // A command is a 0xD0-byte entry of the ring at 0x1FE6C0 (256 entries; command at +0, "sent" flag at +4, the arguments from
+    // +0x10; the next to send is 0x1BDD48 and the next free 0x1BDD44): a sent one waits for the driver's reply word (0x20B800) and is
+    // then retired; a new one is copied (or, for the commands with names, built with the path prefixes of 0x1B9D50 to 0x1B9DB0 and
+    // ".." at 0x1B9D68) into the send buffer at 0x20B6C0 and called as RPC function 0x1001 to 0x3001 (command 0x17: function 2).
+    // With 192 commands or more waiting, the ring is compacted to the commands that must not be lost (1, 2, 4, 5, 7, 9 to 0x10, 0x17 and
+    // 0x18) with a log line, and a second line says when it is still that full.
+    void SoundCmd_Flush()
+    {
+        constexpr uint32_t kRing = 0x001FE6C0u, kClient = 0x001FE690u, kStatus = 0x0020B7C0u, kSend = 0x0020B6C0u, kReply = 0x0020B800u;
+        const auto entryOf = [&](int32_t index) { return kRing + 0xD0u * static_cast<uint32_t>(index); };
+        const auto waiting = [&]() {
+            int32_t count = globals::soundCmdIndex.get() - globals::soundCmdSent.get();
+            if (count < 0)
+                count += 0x100;
+            return count;
+        };
+        sdk::FlushCache(0);
+        const uint32_t slots = globals::soundSlotsQueued.get(), voices = globals::soundVoicesQueued.get(), stops = globals::soundStopsQueued.get();
+        globals::soundSlotsQueued.set(slots & (slots ^ port::load<uint32_t>(kStatus + 4u)));
+        globals::soundStopsQueued.set(stops & (stops ^ port::load<uint32_t>(kStatus + 0x18u)));
+        globals::soundVoicesQueued.set(voices & (voices ^ port::load<uint32_t>(kStatus + 8u)));
+        if (globals::soundCmdSent.get() == globals::soundCmdIndex.get())
+        {
+            const bool driverBusy = port::load<uint32_t>(kStatus + 0xCu) != 0;
+            globals::soundCmdIndex.set(0);
+            globals::soundCmdSent.set(0);
+            if (driverBusy)
+                return;
+            globals::soundVoicesQueued.set(0);
+            globals::soundSlotsQueued.set(0);
+            globals::soundStopsQueued.set(0);
+            return;
+        }
+        if (sdk::sceSifCheckStatRpc(kClient) == 0)
+        {
+            const uint32_t entry = entryOf(globals::soundCmdSent.get());
+            if (port::load<int32_t>(entry + 4u) != 0)
+            {
+                sdk::FlushCache(0);
+                if (port::load<uint32_t>(kReply) != 0)
+                {
+                    port::store<uint32_t>(entry, 0u);
+                    port::store<uint32_t>(entry + 4u, 0u);
+                    globals::soundCmdSent.set(globals::soundCmdSent.get() + 1);
+                    if (globals::soundCmdSent.get() > 0xFF)
+                        globals::soundCmdSent.set(0);
+                }
+            }
+            else
+            {
+                const auto call = [&](int number) {
+                    sdk::FlushCache(0);
+                    sdk::FlushCache(0);
+                    sdk::sceSifCallRpc(kClient, number, 1, kSend, 0x100, kReply, 0x40, 0u, 0u);
+                };
+                const auto copyArguments = [&](uint32_t bytes, int number) {
+                    sdk::memcpy(kSend, entry + 0x10u, static_cast<int>(bytes));
+                    call(number);
+                };
+                // A byte at +2 and a halfword at +0 of the send buffer, from the entry's byte and halfword at the offsets given.
+                const auto byteAndHalf = [&](uint32_t byteAt, uint32_t halfAt, int number) {
+                    port::store<uint8_t>(kSend + 2u, port::load<uint8_t>(entry + byteAt));
+                    port::store<uint16_t>(kSend, port::load<uint16_t>(entry + halfAt));
+                    call(number);
+                };
+                // A path: prefix, then the entry's name string, then "..".
+                const auto path = [&](uint32_t at, uint32_t prefix, uint32_t nameAt) {
+                    sdk::strcpy(at, prefix);
+                    sdk::strcat(at, port::load<uint32_t>(entry + nameAt));
+                    sdk::strcat(at, 0x001B9D68u);
+                };
+                switch (port::load<uint32_t>(entry))
+                {
+                case 1:
+                    sdk::strcpy(kSend + 4u, 0x001B9DB0u);
+                    sdk::strcpy(kSend + 0x44u, 0x001B9DB0u);
+                    sdk::strcat(kSend + 4u, port::load<uint32_t>(entry + 0x10u));
+                    sdk::strcat(kSend + 0x44u, port::load<uint32_t>(entry + 0x14u));
+                    sdk::strcat(kSend + 4u, 0x001B9D68u);
+                    sdk::strcat(kSend + 0x44u, 0x001B9D68u);
+                    port::store<uint8_t>(kSend + 2u, port::load<uint8_t>(entry + 0xCu));
+                    port::store<uint16_t>(kSend, port::load<uint16_t>(entry + 0x18u));
+                    port::store<uint8_t>(kSend + 3u, port::load<uint8_t>(entry + 0x1Cu));
+                    call(0x2001);
+                    break;
+                case 2:
+                    byteAndHalf(0x10u, 0x14u, 0x2003);
+                    break;
+                case 3:
+                    copyArguments(10, 0x2010);
+                    break;
+                case 4:
+                    byteAndHalf(0x10u, 0x14u, 0x2011);
+                    break;
+                case 5:
+                    copyArguments(12, 0x2021);
+                    break;
+                case 6:
+                    copyArguments(12, 0x2020);
+                    break;
+                case 7:
+                    copyArguments(8, 0x2025);
+                    break;
+                case 8:
+                    copyArguments(6, 0x2022);
+                    break;
+                case 9:
+                    sdk::strcpy(kSend + 3u, 0x001B9D50u);
+                    sdk::strcpy(kSend + 0x43u, 0x001B9D70u);
+                    sdk::strcpy(kSend + 0x83u, 0x001B9D90u);
+                    sdk::strcat(kSend + 3u, port::load<uint32_t>(entry + 0x10u));
+                    sdk::strcat(kSend + 0x43u, port::load<uint32_t>(entry + 0x14u));
+                    sdk::strcat(kSend + 0x83u, port::load<uint32_t>(entry + 0x18u));
+                    sdk::strcat(kSend + 3u, 0x001B9D68u);
+                    sdk::strcat(kSend + 0x43u, 0x001B9D68u);
+                    sdk::strcat(kSend + 0x83u, 0x001B9D68u);
+                    port::store<uint8_t>(kSend + 2u, port::load<uint8_t>(entry + 0xCu));
+                    port::store<uint8_t>(kSend + 0xC4u, 0);
+                    port::store<uint16_t>(kSend, port::load<uint16_t>(entry + 0x1Cu));
+                    call(0x1001);
+                    break;
+                case 10:
+                    path(kSend + 3u, 0x001B9D50u, 0x10u);
+                    port::store<uint8_t>(kSend + 0x43u, port::load<uint8_t>(entry + 0x14u));
+                    port::store<uint16_t>(kSend, port::load<uint16_t>(entry + 0x18u));
+                    call(0x2002);
+                    break;
+                case 11:
+                    byteAndHalf(0x10u, 0x14u, 0x1003);
+                    break;
+                case 12:
+                    copyArguments(6, 0x1010);
+                    break;
+                case 13:
+                    byteAndHalf(0x10u, 0x14u, 0x1011);
+                    break;
+                case 14:
+                    copyArguments(8, 0x1021);
+                    break;
+                case 15:
+                    copyArguments(8, 0x1020);
+                    break;
+                case 16:
+                    copyArguments(8, 0x1025);
+                    break;
+                case 17:
+                    copyArguments(6, 0x1026);
+                    break;
+                case 18:
+                    port::store<uint16_t>(kSend, port::load<uint16_t>(entry + 0x10u));
+                    call(0x3000);
+                    break;
+                case 19:
+                    copyArguments(3, 0x2100);
+                    break;
+                case 20:
+                    copyArguments(0xC6, 0x2101);
+                    break;
+                case 21:
+                    copyArguments(6, 0x2200);
+                    break;
+                case 22:
+                    copyArguments(6, 0x2201);
+                    break;
+                case 23:
+                    port::store<uint8_t>(kSend, port::load<uint8_t>(entry + 0x10u));
+                    call(2);
+                    break;
+                case 24:
+                    port::store<uint8_t>(kSend, port::load<uint8_t>(entry + 0x10u));
+                    call(0x3001);
+                    break;
+                default:
+                    break;
+                }
+                port::store<int32_t>(entryOf(globals::soundCmdSent.get()) + 4u, 1);
+            }
+        }
+        if (waiting() >= 0xC0)
+        {
+            sdk::printf(0x001B9DD0u);
+            const int32_t start = globals::soundCmdSent.get();
+            int32_t read = start, write = start;
+            while (read != globals::soundCmdIndex.get())
+            {
+                const uint32_t from = entryOf(read);
+                const uint32_t cmd = port::load<uint32_t>(from);
+                if (cmd == 1 || cmd == 2 || cmd - 4u < 2u || cmd == 0x18 || cmd == 7 || cmd - 9u < 8u || cmd == 0x17)
+                {
+                    if (write != read)
+                    {
+                        const uint32_t to = entryOf(write);
+                        port::store<uint32_t>(to, cmd);
+                        port::store<uint32_t>(to + 4u, port::load<uint32_t>(from + 4u));
+                        port::store<uint32_t>(to + 8u, port::load<uint32_t>(from + 8u));
+                        port::store<uint32_t>(to + 0xCu, port::load<uint32_t>(from + 0xCu));
+                        for (uint32_t offset = 0x10u; offset < 0xD0u; offset += 8u)
+                            port::store<uint64_t>(to + offset, port::load<uint64_t>(from + offset));
+                    }
+                    ++write;
+                    if (write > 0xFF)
+                        write = 0;
+                }
+                ++read;
+                if (read > 0xFF)
+                    read = 0;
+            }
+            int32_t kept = write - start;
+            if (kept < 0)
+                kept += 0x100;
+            globals::soundCmdIndex.set(write);
+            sdk::printf(0x001B9DF0u, kept);
+        }
+        if (waiting() >= 0xC0)
+            sdk::printf(0x001B9E00u);
+    }
+
+    PORT_FN(SoundCmd_Flush);
 }

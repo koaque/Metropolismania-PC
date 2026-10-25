@@ -13,7 +13,7 @@ Saving and loading on the memory card.
 
 ## Functions
 
-48 functions (ported 4, typed 13, verified 31). Blocks: 13 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+48 functions (ported 5, verified 43). Blocks: 13 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -39,7 +39,7 @@ Saving and loading on the memory card.
 | `0x0015C120` | `int mm_McManager_FindSlotB(McManager *mc, int a1, int32_t *slot)` | 128 | no | (provisional) slot lookup over the slot tables |
 | `0x0015C1A0` | `int mm_McManager_IsCardUsable(McManager *mc, int card)` | 68 | no | (provisional) card a1 state 2 and no error |
 | `0x0015C1F0` | `uint8_t mm_McManager_GetCardStatus(McManager *mc, int card)` | 156 | no | card a1 status for the menus (formatted, unformatted, none, ...) |
-| `0x0015C290` | `int mm_McManager_FormatSlotText(McManager *mc, int32_t *a1, int a2, uint32_t *a3)` | 1588 | yes | "Slot %d: %s %s%s, %s. %shrs %smins" with the RTC time |
+| `0x0015C290` | `int mm_McManager_FormatSlotText(McManager *mc, int32_t *cursor, char *text, uint32_t *isNewest)` | 1588 | yes | "Slot %d: %s %s%s, %s. %shrs %smins" with the RTC time |
 | `0x0015C8D0` | `int mm_McManager_HasAnySave(void)` | 84 | no | whether any slot holds a save |
 | `0x0015C930` | `int mm_McManagerUpdate(McManager *mc)` | 3200 | no | memory card scan, a step a frame: card info, then each port's save folders (prefix, file sizes) into the 16 save slots; 0 idle, 1 busy, 2 inside a save folder |
 | `0x0015D5B0` | `void mm_McManager_NewSaveName(McManager *mc, uint32_t card)` | 848 | yes | (provisional) builds a new save directory name from the CD clock |
@@ -62,6 +62,6 @@ Saving and loading on the memory card.
 | `0x001869C0` | `int mm_McQueue_GetResult(int queue, int request)` | 48 | no | result word of request a1 (64 slots of 0x24 bytes at 0x1F5CF0, result at +0xC) |
 | `0x001869F0` | `int mm_McQueue_IsDone(int queue, int request)` | 72 | no | 1 when request a1 is no longer pending |
 | `0x00186A40` | `void mm_McQueue_Init(void)` | 96 | yes | sceMcInit and clears the 64 request slots |
-| `0x00186AA0` | `int mm_McQueue_Pump(void)` | 504 | yes | issues the request at the queue tail (sceMcGetInfo ... sceMcSeek by command 1-12), then polls sceMcSync for its result |
+| `0x00186AA0` | `void mm_McQueue_Pump(void)` | 504 | yes | issues the request at the queue tail (sceMcGetInfo ... sceMcSeek by command 1-12), then polls sceMcSync for its result |
 | `0x00186CA0` | `int mm_McManagerSub_DeletingDtor(int queue, int16_t deleteFlag)` | 68 | yes | delete when the flag is > 0 |
 | `0x00186CF0` | `int mm_McManagerSub_ctor(int queue)` | 8 | no | returns this |

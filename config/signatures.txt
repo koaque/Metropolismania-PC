@@ -51,8 +51,8 @@
 0x00129120 int mm_LightSet_Init(LightSet *lights);
 0x00129210 float mm_A3D_GetMeshField0C(A3DObject *model, int mesh);
 0x00129230 void mm_Instance_DrawSwaying(A3DObject *model, int anim, float time);
-0x00129570 void mm_A3D_Relocate(int32_t *data, int base);
-0x00129950 int mm_A3DObject_ChangeLuminosity(A3DObject *model, uint32_t *colour, int a2);
+0x00129570 void mm_A3D_Relocate(A3DObject *model, int indexed);
+0x00129950 int64_t mm_A3DObject_ChangeLuminosity(A3DObject *model, uint32_t *colour, int a2);
 0x001299B0 void mm_A3DObject_DrawNode(A3DObject *model, int node);
 0x00129A20 void mm_A3DObject_Draw(A3DObject *model);
 0x00129B10 void mm_A3DObject_UpdateMatrices(A3DObject *model);
@@ -163,7 +163,7 @@
 0x00135E90 int mm_StageObj_DeletingDtor(int stage, int16_t deleteFlag);
 0x00135EE0 int mm_StageObj_ctor(int stage);
 0x00135EF0 void mm_CityCursor_SelectTile(CityCursor *cursor, int tile, CityScene *city);
-0x001360C0 int mm_CityCursor_UpdateInfo(CityCursor *cursor, CityScene *city);
+0x001360C0 void mm_CityCursor_UpdateInfo(CityCursor *cursor, CityScene *city);
 0x001365C0 void mm_CityCursor_Move(CityCursor *cursor, CityScene *city, int a2);
 0x00136770 void mm_CityCursor_Update(CityCursor *cursor, CityScene *city, int a2);
 0x00136C80 void mm_CityCursor_SetTarget(CityCursor *cursor, uint16_t kind, int id, Vec4 *position);
@@ -239,7 +239,7 @@
 0x0013CE00 uint8_t mm_Family_GetFriendship(int family, int member);
 0x0013CE40 void mm_Family_MoveAway(uint32_t family);
 0x0013CEF0 void mm_Family_ClearMemberFlag(int family, int member);
-0x0013CF20 uint32_t mm_Family_PickIntroduction(int family, int member, int a2);
+0x0013CF20 uint32_t mm_Family_PickIntroduction(int family, int member, CityScene *city);
 0x0013D110 int mm_Family_CanApply(uint32_t family, CityScene *city);
 0x0013D280 int mm_Family_FriendAgrees(int family, int member, int approval);
 0x0013D330 int mm_Family_MeterAgrees(int family, int member, int approval);
@@ -378,7 +378,7 @@
 0x0014AD10 void mm_Laptop_SetItemText(Laptop *laptop, CityScene *city, uint32_t item);
 0x0014AE10 void mm_Laptop_RemoveEntry(Laptop *laptop, int entry);
 0x0014AED0 void mm_Laptop_AddEntry(Laptop *laptop, int entry);
-0x0014AFD0 int mm_Laptop_Draw(Laptop *laptop);
+0x0014AFD0 void mm_Laptop_Draw(Laptop *laptop);
 0x0014B140 void mm_Laptop_Animate(Laptop *laptop);
 0x0014B450 int mm_Laptop_RunEntry(Laptop *laptop, CityScene *city);
 0x0014B640 int mm_Laptop_Update(Laptop *laptop, CityScene *city);
@@ -395,7 +395,7 @@
 0x0014C4C0 void mm_WaitText_Draw(void);
 0x0014C510 int mm_WaitText_Append(char *text);
 0x0014C520 void mm_WaitText_Set(char *text);
-0x0014C530 int mm_WaitText_Delete(void);
+0x0014C530 void mm_WaitText_Delete(void);
 0x0014C560 void mm_WaitText_Create(char *text);
 0x0014C620 void mm_LightSet_UpdateByClock(LightSet *lights, int clock, int weather);
 0x0014C820 LightSet *mm_LightSet_DeletingDtor(LightSet *lights, int16_t deleteFlag);
@@ -453,7 +453,7 @@
 0x00151140 void mm_ListMenu_Draw(ListMenu *menu);
 0x001512A0 ListMenu *mm_ListMenu_dtor(ListMenu *menu, int16_t deleteFlag);
 0x00151350 ListMenu *mm_ListMenu_ctor(ListMenu *menu, int a1, int a2, int a3, int t0, int t1, int t2);
-0x001515B0 int mm_SceneB_ShowCityName(SceneB *scene);
+0x001515B0 void mm_SceneB_ShowCityName(SceneB *scene);
 0x001516C0 void mm_SceneB_ShowStageTitle(SceneB *scene);
 0x001517C0 void mm_SceneB_ShowApprovalRate(SceneB *scene);
 0x00151A20 void mm_SceneB_MissionBriefing(SceneB *scene);
@@ -461,8 +461,8 @@
 0x00152020 void mm_SceneB_ShowTelop(SceneB *scene);
 0x001524E0 int mm_SceneB_Update(SceneB *scene);
 0x00152860 SceneB *mm_SceneB_dtor(SceneB *scene, int16_t deleteFlag);
-0x00152910 SceneB *mm_SceneB_ctor(SceneB *scene, int a1);
-0x00152A50 void mm_WantsWin_FormatLine(WantsWin *wants, int a1, int a2, int a3);
+0x00152910 SceneB *mm_SceneB_ctor(SceneB *scene, int loadStage);
+0x00152A50 void mm_WantsWin_FormatLine(WantsWin *wants, CityScene *city, int index, char *out);
 0x00152B30 void mm_WantsWin_Draw(WantsWin *wants);
 0x00152BC0 void mm_WantsWin_Update(WantsWin *wants, CityScene *city);
 0x00153490 WantsWin *mm_WantsWin_dtor(WantsWin *wants, int16_t deleteFlag);
@@ -506,7 +506,7 @@
 0x001577A0 Applicants *mm_Applicants_dtor(Applicants *applicants, int16_t deleteFlag);
 0x00157800 Applicants *mm_Applicants_ctor(Applicants *applicants);
 0x001578A0 int mm_Pad_GetData(int port);
-0x001578E0 int mm_Pad_Poll(void);
+0x001578E0 void mm_Pad_Poll(void);
 0x00157CB0 void mm_PadInit(void);
 0x00157D80 void mm_Player_LoadState(Player *player, McManager *mc);
 0x00157DA0 void mm_Player_SaveState(Player *player, McManager *mc);
@@ -553,7 +553,7 @@
 0x0015C120 int mm_McManager_FindSlotB(McManager *mc, int a1, int32_t *slot);
 0x0015C1A0 int mm_McManager_IsCardUsable(McManager *mc, int card);
 0x0015C1F0 uint8_t mm_McManager_GetCardStatus(McManager *mc, int card);
-0x0015C290 int mm_McManager_FormatSlotText(McManager *mc, int32_t *a1, int a2, uint32_t *a3);
+0x0015C290 int mm_McManager_FormatSlotText(McManager *mc, int32_t *cursor, char *text, uint32_t *isNewest);
 0x0015C8D0 int mm_McManager_HasAnySave(void);
 0x0015C930 int mm_McManagerUpdate(McManager *mc);
 0x0015D5B0 void mm_McManager_NewSaveName(McManager *mc, uint32_t card);
@@ -569,7 +569,7 @@
 0x0015E3E0 uint16_t mm_Person_TargetVisit(CityScene *city, MapPerson *person);
 0x0015E500 uint16_t mm_Person_TargetShop(CityScene *city, MapPerson *person, int a2, int a3);
 0x0015E6D0 int16_t mm_Person_TargetHome(CityScene *city, MapPerson *person);
-0x0015E800 int16_t mm_Person_ChooseDestination(CityScene *city, MapPerson *person, uint32_t *a2, int a3);
+0x0015E800 int16_t mm_Person_ChooseDestination(CityScene *city, MapPerson *person, uint32_t *activity, int exclude);
 0x0015EDE0 uint32_t mm_Math_SqrtBits(int value);
 0x0015EE10 uint8_t mm_Schedule_QueryA(CityScene *city, uint32_t family, int member);
 0x0015EFB0 uint8_t mm_Schedule_QueryB(CityScene *city, uint32_t family, int member);
@@ -578,7 +578,7 @@
 0x0015F510 int mm_Schedule_PickEntry(int a0, int a1, int a2, int a3, int t0, int t1);
 0x0015F590 uint8_t mm_Schedule_Evaluate(uint32_t family, int member);
 0x0015F8D0 void mm_Schedule_Load(void);
-0x0015F920 int mm_MenuWin_FillItems(MenuWin *menuwin, char *item);
+0x0015F920 void mm_MenuWin_FillItems(MenuWin *menuwin, char *item);
 0x0015F990 void mm_MenuWin_Open(MenuWin *menuwin, int menuId, int count);
 0x0015FA90 void mm_MenuWin_Draw(MenuWin *menuwin, int pass);
 0x0015FBA0 void mm_MenuWin_Closing(MenuWin *menuwin);
@@ -894,7 +894,7 @@
 0x00178730 void mm_Talk_SetPose(TalkSession *talk, uint16_t family, uint8_t member, uint8_t pose);
 0x001787B0 void mm_Talk_EndChoosing(TalkSession *talk);
 0x001787D0 void mm_Talk_SelectPerson(TalkSession *talk, uint32_t family, uint32_t member);
-0x00178800 int mm_Talk_ChooseInput(TalkSession *talk);
+0x00178800 void mm_Talk_ChooseInput(TalkSession *talk);
 0x00178960 void mm_Talk_Closed(TalkSession *talk);
 0x00178A50 void mm_Talk_Closing(TalkSession *talk);
 0x00178AD0 void mm_Talk_Active(TalkSession *talk);
@@ -931,7 +931,7 @@
 0x0017B100 void mm_TalkConv_NextLine(TalkConv *conv);
 0x0017B2D0 void mm_TalkConv_Start(TalkConv *conv, int byFamily, int target, int buildingOrMember, int slot, int arg5);
 0x0017B450 TalkConv *mm_TalkConv_dtor(TalkConv *conv, int16_t deleteFlag);
-0x0017B560 TalkConv *mm_TalkConv_ctor(TalkConv *conv, int a1);
+0x0017B560 TalkConv *mm_TalkConv_ctor(TalkConv *conv, CityScene *city);
 0x0017B600 int mm_WordsFn_CitySetFlag40(WordsCtx *ctx);
 0x0017B620 int mm_WordsFn_TalkEndChoosing(WordsCtx *ctx);
 0x0017B630 int mm_WordsFn_TalkSelectActor(WordsCtx *ctx);
@@ -957,12 +957,12 @@
 0x0017BC90 void mm_WordsFn_BuyGoods(WordsCtx *ctx);
 0x0017BF00 int mm_WordsFn_AddWant(WordsCtx *ctx);
 0x0017BF50 void mm_WordsFn_InviteFamily(WordsCtx *ctx);
-0x0017BFB0 void mm_WordsFn_NewIntroduction(WordsCtx *ctx);
+0x0017BFB0 int mm_WordsFn_NewIntroduction(WordsCtx *ctx);
 0x0017BFF0 void mm_WordsFn_InviteIntroduced(WordsCtx *ctx);
 0x0017C060 int mm_WordsFn_SetPose(WordsCtx *ctx);
 0x0017C080 int mm_WordsFn_MarkFamilyKnown(WordsCtx *ctx);
-0x0017C0C0 void mm_WordsFn_FriendshipDown(WordsCtx *ctx);
-0x0017C150 void mm_WordsFn_FriendshipUp(WordsCtx *ctx);
+0x0017C0C0 int mm_WordsFn_FriendshipDown(WordsCtx *ctx);
+0x0017C150 int mm_WordsFn_FriendshipUp(WordsCtx *ctx);
 0x0017C1E0 int mm_WordsFn_SelectMemberB(WordsCtx *ctx);
 0x0017C230 int mm_WordsFn_SelectBuildingB(WordsCtx *ctx);
 0x0017C3E0 int mm_WordsFn_SetCancelAllowed(WordsCtx *ctx);
@@ -1101,7 +1101,7 @@
 0x00180590 void mm_CityScene_AddApplicantFamily(CityScene *city, uint32_t family, int select);
 0x00180880 int mm_CityScene_SaveGame(CityScene *city, McManager *mc);
 0x00180990 int mm_CityScene_LoadGame(CityScene *city);
-0x001812F0 int mm_CityScene_SaveStep(CityScene *city, int step);
+0x001812F0 int mm_CityScene_SaveStep(CityScene *city, McManager *mc);
 0x001815C0 int mm_CityScene_TalkEndChoosing(CityScene *city);
 0x001815D0 int mm_CityScene_TalkSelectPerson(CityScene *city, int family, int member);
 0x001815E0 int mm_CityScene_StartTalk(CityScene *city, int byFamily, int target, int member, int arg5);
@@ -1178,7 +1178,7 @@
 0x001869C0 int mm_McQueue_GetResult(int queue, int request);
 0x001869F0 int mm_McQueue_IsDone(int queue, int request);
 0x00186A40 void mm_McQueue_Init(void);
-0x00186AA0 int mm_McQueue_Pump(void);
+0x00186AA0 void mm_McQueue_Pump(void);
 0x00186CA0 int mm_McManagerSub_DeletingDtor(int queue, int16_t deleteFlag);
 0x00186CF0 int mm_McManagerSub_ctor(int queue);
 0x00186D00 void mm_PacketBuf_Seek(int address);
@@ -1332,7 +1332,7 @@
 0x00195420 void mm_EvMissingChildren_End(EventData *data, CityScene *city);
 0x00195520 void mm_EvMissingChildren_Update(EventData *data, CityScene *city);
 0x00195AD0 MapObject *mm_EvMissingChildren_Start(EventData *data, CityScene *city);
-0x00195B00 int mm_EvMissingChildren_Check(EventData *data, CityScene *city, int a2);
+0x00195B00 int mm_EvMissingChildren_Check(EventData *data, CityScene *city, MapPerson *person);
 0x00195C80 int mm_EvAdvertise_ClaimsMatch(CityScene *city, ActorRef *actorA, ActorRef *actorB);
 0x00195DA0 int mm_EvAdvertise_Slot14(EventData *data, CityScene *city, ActorRef *actor, int mode);
 0x001960C0 void mm_EvAdvertise_End(EventData *data, CityScene *city);
@@ -1446,7 +1446,7 @@
 0x001A0530 void mm_Movie_VideoDecMain(int videoDec);
 0x001A0590 int mm_Movie_VideoDecIsDone(int videoDec);
 0x001A05F0 int mm_Movie_VideoDecPutTerminator(int videoDec);
-0x001A0780 int mm_Movie_VideoDecPutTs(int videoDec, int pts, int dts, int start, int length);
+0x001A0780 int mm_Movie_VideoDecPutTs(int videoDec, int64_t pts, int64_t dts, int start, int length);
 0x001A07C0 int mm_Movie_VideoDecGetState(int videoDec);
 0x001A07D0 void mm_Movie_VideoDecSetStateStart(int videoDec);
 0x001A07E0 int mm_Movie_VideoDecDelete(int videoDec);
@@ -1474,7 +1474,7 @@
 0x001A29B0 int16_t mm_Words_Step(int32_t *script, char *buffer);
 0x001A29C0 int mm_Words_FriendshipChanged(void);
 0x001A29D0 int mm_Words_CancelAllowed(void);
-0x001A29E0 int mm_Words_LoadForWants(int a0, uint16_t a1, int a2, int a3);
+0x001A29E0 void mm_Words_LoadForWants(CityScene *city, int16_t id, int line, char *out);
 0x001A2C40 int mm_Words_LoadForFamily(int family, int member, int arg5, CityScene *city);
 0x001A2DF0 int mm_Words_LoadForPerson(MapPerson *person, int arg5, CityScene *city);
 0x001A3050 uint32_t *mm_Words_ReadBlock(int a0);

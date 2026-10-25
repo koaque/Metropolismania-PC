@@ -146,6 +146,14 @@ namespace port
     inline int64_t guestV0Wide() { return static_cast<int64_t>(gpr64(g_call.ctx, 2)); }
     // The caller's s0, which a few game functions hand back as their result on paths that never set v0.
     inline int32_t guestS0() { return static_cast<int32_t>(gpr64(g_call.ctx, 16)); }
+    // Sets s0 for a ported callee that hands the caller's s0 back (mm_MsgWin_Update); the caller restores its own afterwards.
+    inline void setGuestS0(int32_t value)
+    {
+        const int64_t low = value;
+        std::memcpy(&g_call.ctx->r[16], &low, sizeof(low));
+    }
+    // The caller's s2, handed on by a path where the function never sets it.
+    inline uint32_t guestS2() { return static_cast<uint32_t>(gpr64(g_call.ctx, 18)); }
     // The caller's s1, for a path where the function leaves it unset (the decompiler shows it as unaffected).
     inline int32_t guestS1() { return static_cast<int32_t>(gpr64(g_call.ctx, 17)); }
     // The caller's a3 (for a function with fewer arguments whose callee is handed a3 as it came in).

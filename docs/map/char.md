@@ -21,7 +21,7 @@ People and the player character.
 
 ## Functions
 
-84 functions (typed 19, verified 65). Blocks: 19 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+84 functions (typed 5, verified 79). Blocks: 19 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -84,7 +84,7 @@ People and the player character.
 | `0x0015E3E0` | `uint16_t mm_Person_TargetVisit(CityScene *city, MapPerson *person)` | 276 | no | (provisional) |
 | `0x0015E500` | `uint16_t mm_Person_TargetShop(CityScene *city, MapPerson *person, int a2, int a3)` | 456 | no | (provisional) |
 | `0x0015E6D0` | `int16_t mm_Person_TargetHome(CityScene *city, MapPerson *person)` | 296 | no | (provisional) |
-| `0x0015E800` | `int16_t mm_Person_ChooseDestination(CityScene *city, MapPerson *person, uint32_t *a2, int a3)` | 1492 | yes | (provisional) picks where a person goes next by schedule and needs, using the target helpers |
+| `0x0015E800` | `int16_t mm_Person_ChooseDestination(CityScene *city, MapPerson *person, uint32_t *activity, int exclude)` | 1492 | yes | (provisional) picks where a person goes next by schedule and needs, using the target helpers |
 | `0x0015EE10` | `uint8_t mm_Schedule_QueryA(CityScene *city, uint32_t family, int member)` | 416 | yes | (provisional) schedule lookup for drawing |
 | `0x0015EFB0` | `uint8_t mm_Schedule_QueryB(CityScene *city, uint32_t family, int member)` | 384 | yes | (provisional) schedule lookup used by the scripts |
 | `0x0015F130` | `uint8_t mm_Schedule_GetActivity(CityScene *city, MapPerson *person)` | 520 | yes | (provisional) current activity of a person |

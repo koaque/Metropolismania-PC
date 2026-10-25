@@ -12,7 +12,7 @@ swaps the double buffer of the 640x448 interlaced display.
 
 ## Functions
 
-4 functions (typed 3, verified 1). Blocks: 3 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+4 functions (ported 1, typed 2, verified 1). Blocks: 3 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|

@@ -2390,4 +2390,220 @@ namespace mm
 
     PORT_FN(CityRender_UpdatePeople);
     PORT_FN(CityRender_CollectObjects);
+
+    // ---- Tile array and save buffer lifetime (plan P6 batch 1) ----
+
+    // Deletes the tile array (its block starts 0x10 bytes before the first tile), then the base object.
+    GuestPtr<CityMap> MapTiles_dtor(GuestPtr<CityMap> map, int16_t deleteFlag)
+    {
+        if (map)
+        {
+            if (map->tiles)
+                sdk::mw_DeleteArray(map->tiles.address - 0x10u);
+            BaseObject_dtor(static_cast<int>(map.address), 0);
+            if (0 < deleteFlag)
+                sdk::operator_delete(map.address);
+        }
+        return map;
+    }
+
+    // Allocates the 0x4000 tiles (0x18 bytes each, after a 0x10-byte header) and constructs each with 0x142570.
+    GuestPtr<CityMap> MapTiles_ctor(GuestPtr<CityMap> map)
+    {
+        BaseObject_ctor(static_cast<int>(map.address));
+        const uint32_t block = sdk::mw_NewArray(0x60010u);
+        map->tiles = GuestPtr<MapTile>{sdk::construct_new_array(block, 0x00142570u, 0u, 0x18u, 0x4000u)};
+        return map;
+    }
+
+    // The save buffer: 6 bytes per tile for 0x4000 tiles.
+    void MapSave_AllocBuffer(GuestPtr<CityMap> map)
+    {
+        map->packedTiles = GuestPtr<void>{sdk::malloc(0x18000u)};
+    }
+
+    void MapSave_FreeBuffer(GuestPtr<CityMap> map)
+    {
+        if (map->packedTiles)
+        {
+            sdk::free(map->packedTiles.address);
+            map->packedTiles = GuestPtr<void>{0u};
+        }
+    }
+
+    PORT_FN(MapTiles_dtor);
+    PORT_FN(MapTiles_ctor);
+    PORT_FN(MapSave_AllocBuffer);
+    PORT_FN(MapSave_FreeBuffer);
+
+    // ---- Object arrays (plan P6 batch 2) ----
+
+    // The object array (its block starts 0x10 bytes before the first object) and the tile lists are deleted, then
+    // the tile array and the base object through MapTiles_dtor.
+    GuestPtr<CityMap> MapObjects_dtor(GuestPtr<CityMap> map, int16_t deleteFlag)
+    {
+        if (map)
+        {
+            port::store<uint32_t>(map.address + 0x64u, 0x001BCEF0u);
+            const uint32_t objects = port::load<uint32_t>(map.address + 0x8u);
+            if (objects != 0u)
+            {
+                sdk::mw_DeleteArray(objects - 0x10u);
+                port::store<uint32_t>(map.address + 0x8u, 0u);
+            }
+            const uint32_t tileLists = port::load<uint32_t>(map.address + 0xCu);
+            if (tileLists != 0u)
+            {
+                sdk::operator_delete(tileLists);
+                port::store<uint32_t>(map.address + 0xCu, 0u);
+            }
+            MapTiles_dtor(map, 0);
+            if (0 < deleteFlag)
+                sdk::operator_delete(map.address);
+        }
+        return map;
+    }
+
+    PORT_FN(MapObjects_dtor);
+
+    // ---- Packing the tile array for the save file (plan P6 batch 2) ----
+
+    // Packs the 0x4000 tiles into the save buffer (malloc 0x18000): per tile 6 bytes, the height in 1/2048 units (16 bits), then
+    // the tile's first-object halfword (+0x14) and flags halfword (+0x16).
+    void MapSave_PackTiles(GuestPtr<CityMap> map)
+    {
+        map->packedTiles = GuestPtr<void>{sdk::malloc(0x18000u)};
+        for (uint32_t i = 0; i < 0x4000u; ++i)
+        {
+            const uint32_t tile = map->tiles.address + 0x18u * i;
+            const uint32_t packed = map->packedTiles.address + 6u * i;
+            port::store<uint16_t>(packed, static_cast<uint16_t>(sdk::fptosi(ps2f(2048.0f) * ps2f(port::load<float>(tile)))));
+            port::store<uint16_t>(packed + 2u, port::load<uint16_t>(tile + 0x14u));
+            port::store<uint16_t>(packed + 4u, port::load<uint16_t>(tile + 0x16u));
+        }
+    }
+
+    // Unpacks the save buffer into the tiles, rebuilds every tile's corner heights, frees the buffer, and recounts the buildings
+    // per category from the objects (category 4 only without type flag 0x80; category 5 of size 3 and up also in +0x5C).
+    void MapSave_UnpackTiles(GuestPtr<CityMap> map)
+    {
+        for (uint32_t i = 0; i < 0x4000u; ++i)
+        {
+            const uint32_t tile = map->tiles.address + 0x18u * i;
+            const uint32_t packed = map->packedTiles.address + 6u * i;
+            port::store<float>(tile, static_cast<float>(fromInt(port::load<int16_t>(packed)) / ps2f(2048.0f)));
+            port::store<uint16_t>(tile + 0x14u, port::load<uint16_t>(packed + 2u));
+            port::store<uint16_t>(tile + 0x16u, port::load<uint16_t>(packed + 4u));
+        }
+        for (int z = 0; z < 0x80; ++z)
+            for (int x = 0; x < 0x80; ++x)
+                Map_UpdateTileGeometry(map, x, z);
+        if (map->packedTiles)
+        {
+            sdk::free(map->packedTiles.address);
+            map->packedTiles = GuestPtr<void>{0u};
+        }
+        for (uint32_t offset = 0x30u; offset <= 0x5Cu; offset += 4u)
+            port::store<uint32_t>(map.address + offset, 0u);
+        for (uint32_t i = 0; i < 0x3F80u; ++i)
+        {
+            const uint32_t type = port::load<uint16_t>(map->objects.address + 0x1Cu * i);
+            if (type == 0)
+                continue;
+            const uint32_t btype = globals::buildingTypeAddress(type);
+            const uint32_t category = port::load<uint8_t>(btype + 0x145u);
+            if (category == 4)
+            {
+                if ((port::load<uint16_t>(btype + 0x136u) & 0x80u) == 0)
+                    port::store<uint32_t>(map.address + 0x30u + 4u * 4u, port::load<uint32_t>(map.address + 0x30u + 4u * 4u) + 1u);
+                continue;
+            }
+            if (category == 5 && port::load<uint8_t>(btype + 0x142u) >= 3)
+                port::store<uint32_t>(map.address + 0x5Cu, port::load<uint32_t>(map.address + 0x5Cu) + 1u);
+            port::store<uint32_t>(map.address + 0x30u + 4u * category, port::load<uint32_t>(map.address + 0x30u + 4u * category) + 1u);
+        }
+    }
+
+    PORT_FN(MapSave_PackTiles);
+    PORT_FN(MapSave_UnpackTiles);
+
+    // The map's object part: the tile array first, then the counters cleared, the tile lists (0x8040 bytes), and the 0x3F80
+    // object records constructed in one block; object 0 is the "none" object, and the rest of the set-up creates the grass
+    // (type 2) on tiles 2 to 0x7D and the border walls (type 9) round the map on every second tile of its four edges.
+    GuestPtr<CityMap> MapObjects_ctor(GuestPtr<CityMap> map)
+    {
+        MapTiles_ctor(map);
+        port::store<uint32_t>(map.address + 0x64u, 0x001BCEF0u);
+        port::store<int32_t>(map.address + 0x10u, 1);
+        port::store<int32_t>(map.address + 0x14u, 0);
+        port::store<int32_t>(map.address + 0x18u, 0);
+        port::store<int32_t>(map.address + 0x1Cu, 0);
+        port::store<int16_t>(map.address + 0x20u, 0);
+        port::store<int16_t>(map.address + 0x22u, 0);
+        port::store<int32_t>(map.address + 0x24u, 0);
+        sdk::memset(map.address + 0x28u, 0, 6);
+        port::store<int16_t>(map.address + 0x2Eu, 0);
+        port::store<int32_t>(map.address + 0x60u, 0);
+        for (uint32_t offset = 0x30u; offset <= 0x5Cu; offset += 4u)
+            port::store<uint32_t>(map.address + offset, 0u);
+        uint32_t lists = sdk::operator_new(0x8040u);
+        if (lists != 0u)
+            lists = TileLists_Clear(GuestPtr<TileLists>{lists}).address;
+        port::store<uint32_t>(map.address + 0xCu, lists);
+        const uint32_t block = sdk::mw_NewArray(0x6F210u);
+        port::store<uint32_t>(map.address + 8u, sdk::construct_new_array(block, 0x00145BF0u, 0u, 0x1Cu, 0x3F80u));
+        MapObj_Init(map, 0, 1, 0, 0x4000);
+        for (int z = 2; z < 0x7E; ++z)
+            for (int x = 2; x < 0x7E; ++x)
+                Map_CreateObject(map, 0, 2, x, z);
+        for (int z = 0; z < 0x7E; z += 2)
+            Map_CreateObject(map, 0, 9, 0, z);
+        for (int z = 0; z < 0x7E; z += 2)
+            Map_CreateObject(map, 0, 9, 0x7E, z);
+        for (int x = 2; x < 0x7E; x += 2)
+            Map_CreateObject(map, 0, 9, x, 0);
+        for (int x = 0; x < 0x80; x += 2)
+            Map_CreateObject(map, 0, 9, x, 0x7E);
+        return map;
+    }
+
+    PORT_FN(MapObjects_ctor);
+
+    // ---- The people array (plan P6 batch 2) ----
+
+    // The object map, then the table of 6000 people (0x30 bytes each, constructed through 0x143630) at +0x68; the person lists
+    // (+0x6C, +0x70, +0x74) start empty.
+    GuestPtr<CityMap> MapPeople_ctor(GuestPtr<CityMap> map)
+    {
+        MapObjects_ctor(map);
+        port::store<uint32_t>(map.address + 0x64u, 0x001BCEE0u);
+        port::store<uint32_t>(map.address + 0x6Cu, 0u);
+        const uint32_t block = sdk::mw_NewArray(0x46510u);
+        port::store<uint32_t>(map.address + 0x68u, sdk::construct_new_array(block, 0x00143630u, 0u, 0x30u, 6000u));
+        port::store<uint32_t>(map.address + 0x70u, 0u);
+        port::store<uint32_t>(map.address + 0x74u, 0u);
+        return map;
+    }
+
+    // The people array (its block starts 0x10 bytes before the first person) is deleted, then the object map below it.
+    GuestPtr<CityMap> MapPeople_dtor(GuestPtr<CityMap> map, int16_t deleteFlag)
+    {
+        if (map)
+        {
+            port::store<uint32_t>(map.address + 0x64u, 0x001BCEE0u);
+            const uint32_t people = port::load<uint32_t>(map.address + 0x68u);
+            if (people != 0u)
+            {
+                sdk::mw_DeleteArray(people - 0x10u);
+                port::store<uint32_t>(map.address + 0x68u, 0u);
+            }
+            MapObjects_dtor(map, 0);
+            if (0 < deleteFlag)
+                sdk::operator_delete(map.address);
+        }
+        return map;
+    }
+
+    PORT_FN(MapPeople_ctor);
+    PORT_FN(MapPeople_dtor);
 }

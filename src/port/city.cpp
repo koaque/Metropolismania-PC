@@ -6,6 +6,9 @@
 #include "sdk.h"
 #include "vu0.h"
 
+#include <bit>
+#include <initializer_list>
+
 namespace mm
 {
     int CityScene_GetMode(GuestPtr<CityScene> city) { return city->modeStack[0]; }
@@ -3362,4 +3365,710 @@ namespace mm
     }
 
     PORT_FN(Bldg_DrawPeople);
+
+    // ---- Building type destructors (plan P6 batch 2) ----
+
+    namespace
+    {
+        // The destructor of a building type class: the vtable pointer at +0x15C steps down the class chain (the
+        // derived class's vtable first, the base class's last), then the base destructor and the delete.
+        GuestPtr<BuildingType> destroyBuildingType(GuestPtr<BuildingType> btype, int16_t deleteFlag,
+                                                   std::initializer_list<uint32_t> vtables)
+        {
+            if (btype)
+            {
+                for (const uint32_t vtable : vtables)
+                    port::store<uint32_t>(btype.address + 0x15Cu, vtable);
+                BldgType_BaseDtor(btype, 0);
+                if (0 < deleteFlag)
+                    sdk::operator_delete(btype.address);
+            }
+            return btype;
+        }
+
+        constexpr uint32_t kVtableBldg = 0x001BD100u;
+        constexpr uint32_t kVtableBusiness = 0x001BD1C0u;
+    }
+
+    GuestPtr<BuildingType> Bldg_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag)
+    {
+        return destroyBuildingType(btype, deleteFlag, {kVtableBldg});
+    }
+
+    GuestPtr<BuildingType> BldgField_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag)
+    {
+        return destroyBuildingType(btype, deleteFlag, {0x001BD140u});
+    }
+
+    GuestPtr<BuildingType> BldgKeepOut_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag)
+    {
+        return destroyBuildingType(btype, deleteFlag, {0x001BD200u});
+    }
+
+    GuestPtr<BuildingType> BldgLeveled_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag)
+    {
+        return destroyBuildingType(btype, deleteFlag, {0x001BD240u});
+    }
+
+    GuestPtr<BuildingType> BldgRoad_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag)
+    {
+        return destroyBuildingType(btype, deleteFlag, {0x001BD340u});
+    }
+
+    GuestPtr<BuildingType> BldgSmallGoods_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag)
+    {
+        return destroyBuildingType(btype, deleteFlag, {0x001BD380u});
+    }
+
+    GuestPtr<BuildingType> BldgWasteland_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag)
+    {
+        return destroyBuildingType(btype, deleteFlag, {0x001BD3C0u});
+    }
+
+    // The business classes derive from the business base class, which derives from the building base class.
+    GuestPtr<BuildingType> BldgBusiness_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag)
+    {
+        return destroyBuildingType(btype, deleteFlag, {kVtableBusiness, kVtableBldg});
+    }
+
+    GuestPtr<BuildingType> BldgAmusementPark_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag)
+    {
+        return destroyBuildingType(btype, deleteFlag, {0x001BD040u, kVtableBusiness, kVtableBldg});
+    }
+
+    GuestPtr<BuildingType> BldgOffice_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag)
+    {
+        return destroyBuildingType(btype, deleteFlag, {0x001BD080u, kVtableBusiness, kVtableBldg});
+    }
+
+    GuestPtr<BuildingType> BldgRanch_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag)
+    {
+        return destroyBuildingType(btype, deleteFlag, {0x001BD0C0u, kVtableBusiness, kVtableBldg});
+    }
+
+    GuestPtr<BuildingType> BldgPort_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag)
+    {
+        return destroyBuildingType(btype, deleteFlag, {0x001BD180u, kVtableBusiness, kVtableBldg});
+    }
+
+    GuestPtr<BuildingType> BldgHousing_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag)
+    {
+        return destroyBuildingType(btype, deleteFlag, {0x001BD280u, kVtableBusiness, kVtableBldg});
+    }
+
+    GuestPtr<BuildingType> BldgMyHome_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag)
+    {
+        return destroyBuildingType(btype, deleteFlag, {0x001BD2C0u, kVtableBusiness, kVtableBldg});
+    }
+
+    GuestPtr<BuildingType> BldgPigFarm_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag)
+    {
+        return destroyBuildingType(btype, deleteFlag, {0x001BD300u, kVtableBusiness, kVtableBldg});
+    }
+
+    PORT_FN(Bldg_dtor);
+    PORT_FN(BldgField_dtor);
+    PORT_FN(BldgKeepOut_dtor);
+    PORT_FN(BldgLeveled_dtor);
+    PORT_FN(BldgRoad_dtor);
+    PORT_FN(BldgSmallGoods_dtor);
+    PORT_FN(BldgWasteland_dtor);
+    PORT_FN(BldgBusiness_dtor);
+    PORT_FN(BldgAmusementPark_dtor);
+    PORT_FN(BldgOffice_dtor);
+    PORT_FN(BldgRanch_dtor);
+    PORT_FN(BldgPort_dtor);
+    PORT_FN(BldgHousing_dtor);
+    PORT_FN(BldgMyHome_dtor);
+    PORT_FN(BldgPigFarm_dtor);
+
+    // ---- The city scene's destructor (plan P6 batch 2) ----
+
+    // Deletes everything the city scene owns, in this order: pause menu, minimap, cursor, phone calls, event manager, wants
+    // window, applicants window, player, map, lights, city camera, laptop, Town's Pages, camera, status panel, the talk, the
+    // markers, the notice, the object at +0x80; then all building types and the stage object base (flag 0). Each child is deleted
+    // with flag 1 and its field cleared; the applicants window, talk, markers and +0x80 object delete themselves through their
+    // vtables (the vtable pointer sits at +0x320, +8, +0x128 and +0, and the deleting destructor is slot 2).
+    GuestPtr<CityScene> CityScene_dtor(GuestPtr<CityScene> city, int16_t deleteFlag)
+    {
+        if (!city)
+            return city;
+        const auto direct = [&](uint32_t offset, auto destroy) {
+            const uint32_t object = port::load<uint32_t>(city.address + offset);
+            if (object != 0u)
+            {
+                destroy(object);
+                port::store<uint32_t>(city.address + offset, 0u);
+            }
+        };
+        const auto virtualDelete = [&](uint32_t offset, uint32_t vtableAt) {
+            const uint32_t object = port::load<uint32_t>(city.address + offset);
+            if (object != 0u)
+            {
+                port::callGuest<void>(port::load<uint32_t>(port::load<uint32_t>(object + vtableAt) + 8u), object, 1);
+                port::store<uint32_t>(city.address + offset, 0u);
+            }
+        };
+        direct(0x08u, [](uint32_t o) { PauseMenu_dtor(GuestPtr<PauseMenu>{o}, 1); });
+        direct(0x74u, [](uint32_t o) { Minimap_DeletingDtor(GuestPtr<Minimap>{o}, 1); });
+        direct(0x70u, [](uint32_t o) { CityCursor_dtor(GuestPtr<CityCursor>{o}, 1); });
+        direct(0x6Cu, [](uint32_t o) { PhoneCall_DeletingDtor(GuestPtr<PhoneCalls>{o}, 1); });
+        direct(0x68u, [](uint32_t o) { EventMgr_dtor(GuestPtr<EventMgr>{o}, 1); });
+        direct(0x5Cu, [](uint32_t o) { WantsWin_dtor(GuestPtr<WantsWin>{o}, 1); });
+        virtualDelete(0x54u, 0x320u);
+        direct(0x58u, [](uint32_t o) { Player_DeletingDtor(GuestPtr<Player>{o}, 1); });
+        direct(0x50u, [](uint32_t o) { CityMap_DeletingDtor(GuestPtr<CityMap>{o}, 1); });
+        direct(0x40u, [](uint32_t o) { LightSet_DeletingDtor(GuestPtr<LightSet>{o}, 1); });
+        direct(0x4Cu, [](uint32_t o) { CityCamera_DeletingDtor(GuestPtr<CityCamera>{o}, 1); });
+        direct(0x48u, [](uint32_t o) { Laptop_dtor(GuestPtr<Laptop>{o}, 1); });
+        direct(0x04u, [](uint32_t o) { TownPages_dtor(GuestPtr<TownPages>{o}, 1); });
+        direct(0x44u, [](uint32_t o) { Camera_DeletingDtor(GuestPtr<Camera>{o}, 1); });
+        direct(0x00u, [](uint32_t o) { StatusPanel_dtor(GuestPtr<StatusPanel>{o}, 1); });
+        virtualDelete(0x3Cu, 8u);
+        virtualDelete(0x78u, 0x128u);
+        direct(0x7Cu, [](uint32_t o) { Notice_dtor(GuestPtr<Notice>{o}, 1); });
+        virtualDelete(0x80u, 0u);
+        BldgType_DeleteAll();
+        StageObj_DeletingDtor(static_cast<int>(city.address), 0);
+        if (0 < deleteFlag)
+            sdk::operator_delete(city.address);
+        return city;
+    }
+
+    PORT_FN(CityScene_dtor);
+
+    // ---- Saving from the pause menu (plan P6 batch 2) ----
+
+    // One call per frame of the save: state 0 opens the file (mode 0x203), 1 waits for it (an open that failed, a negative
+    // descriptor, ends it with 2), 2 packs the map's tiles and starts the write, 3 waits for the write, frees the pack buffer
+    // and ends with 1 (done) or 2 (the write failed). The other states do nothing. 0 while it is not finished.
+    int CityScene_SaveStep(GuestPtr<CityScene> city, GuestPtr<McManager> mc)
+    {
+        constexpr uint32_t kStarted = 0x001BDC60u, kState = 0x001BDC5Cu, kRequest = 0x001BDC64u;
+        if (port::load<int8_t>(kStarted) == 0)
+        {
+            port::store<int32_t>(kState, 0);
+            port::store<uint8_t>(kStarted, 1);
+        }
+        const auto advance = [&] { port::store<int32_t>(kState, port::load<int32_t>(kState) + 1); };
+        switch (port::load<int32_t>(kState))
+        {
+        case 0:
+            port::store<int32_t>(kRequest, SaveFile_Open(mc, 0x203));
+            advance();
+            return 0;
+        case 1:
+            if (SaveFile_IsDone(mc, port::load<int32_t>(kRequest)) == 0)
+                return 0;
+            if (mc->fd < 0)
+            {
+                port::store<int32_t>(kState, 0);
+                return 2;
+            }
+            advance();
+            return 0;
+        case 2:
+            MapSave_PackTiles(city->map);
+            port::store<int32_t>(kRequest, CityScene_SaveGame(city, mc));
+            advance();
+            return 0;
+        case 3:
+            if (SaveFile_IsDone(mc, port::load<int32_t>(kRequest)) == 0)
+                return 0;
+            MapSave_FreeBuffer(city->map);
+            port::store<int32_t>(kState, 0);
+            return SaveFile_GetResult(mc, port::load<int32_t>(kRequest)) < 0 ? 2 : 1;
+        default:
+            return 0;
+        }
+    }
+
+    PORT_FN(CityScene_SaveStep);
+
+    // ---- The building type base constructor (plan P6 batch 2) ----
+
+    // Fills the type object `btype` from its record in the building data file (`record`, 0x9C bytes) for type number `id`: the
+    // table, the name, the sizes, the opening hours, the claim bytes and the four sets of four rows (the eye, the target and the
+    // two light offsets of the type, each carried through the four view matrices at 0x1B2590 and kept with the record's
+    // fourth lane). The first type made loads the shared file 0x1B8040 and copies the shared models; later ones only count
+    // (0x1BDBBC). A type that has any of the four claim bytes at +0x130 also gets flag 0x800.
+    GuestPtr<BuildingType> BldgType_BaseCtor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, uint16_t id)
+    {
+        port::GuestFrame<0xC0> frame;
+        const uint32_t sp = frame.ptr().address;
+        const uint32_t b = btype.address, r = record.address;
+        constexpr uint32_t kTypeCount = 0x001BDBBCu;
+        port::store<uint32_t>(b + 0x15Cu, 0x001BD000u);
+        if (port::load<int32_t>(kTypeCount) == 0)
+        {
+            const uint32_t models[] = {0x001F3B44u, 0x001F3B48u, 0x001F3B64u, 0x001F3B60u, 0x001F3B74u, 0x001F3B78u};
+            for (uint32_t i = 0; i < 6u; ++i)
+                port::store<uint32_t>(0x001BDBC4u + 4u * i, port::load<uint32_t>(models[i]));
+            port::store<uint32_t>(0x001BDBDCu, port::load<uint32_t>(0x001F3CE4u));
+            File_ctor(GuestPtr<GameFile>{sp + 0xB0u}, 0);
+            port::store<int32_t>(0x001BDBC0u, File_LoadWhole(GuestPtr<GameFile>{sp + 0xB0u}, GuestPtr<char>{0x001B8040u}, GuestPtr<int32_t>{sp + 0xBCu}));
+            File_dtor(GuestPtr<GameFile>{sp + 0xB0u}, -1);
+        }
+        port::store<int32_t>(kTypeCount, port::load<int32_t>(kTypeCount) + 1);
+        port::store<uint16_t>(b + 0x134u, id);
+        sdk::strcpy(b + 0x110u, r);
+        const auto copy8 = [&](uint32_t to, uint32_t from) { port::store<uint8_t>(b + to, port::load<uint8_t>(r + from)); };
+        const auto copy16 = [&](uint32_t to, uint32_t from) { port::store<uint16_t>(b + to, port::load<uint16_t>(r + from)); };
+        const auto copy32 = [&](uint32_t to, uint32_t from) { port::store<uint32_t>(b + to, port::load<uint32_t>(r + from)); };
+        copy8(0x142, 0x21);
+        copy8(0x143, 0x22);
+        copy8(0x144, 0x23);
+        copy16(0x136, 0x24);
+        copy16(0x138, 0x26);
+        for (uint32_t i = 0; i < 8u; ++i)
+            copy8(0x145 + i, 0x28 + i);
+        copy16(0x13A, 0x30);
+        copy16(0x13C, 0x32);
+        copy16(0x13E, 0x34);
+        copy16(0x140, 0x36);
+        copy8(0x14D, 0x38);
+        copy8(0x14E, 0x39);
+        copy8(0x151, 0x90);
+        copy8(0x152, 0x91);
+        copy8(0x14F, 0x93);
+        copy8(0x150, 0x94);
+        copy8(0x158, 0x96);
+        copy8(0x159, 0x97);
+        copy32(0x100, 0x80);
+        copy32(0x104, 0x84);
+        copy32(0x108, 0x88);
+        copy32(0x10C, 0x8C);
+        sdk::memcpy(b + 0x154u, r + 0x3Cu, 4);
+        sdk::memcpy(b + 0x130u, r + 0x98u, 4);
+        const uint32_t vector = sp + 0xA0u;
+        for (uint32_t set = 0; set < 4u; ++set)
+        {
+            for (uint32_t lane = 0; lane < 4u; ++lane)
+                port::store<uint32_t>(vector + 4u * lane, port::load<uint32_t>(r + 0x40u + 0x10u * set + 4u * lane));
+            for (uint32_t row = 0; row < 4u; ++row)
+            {
+                const uint32_t matrix = 0x001B2590u + 0x40u * row;
+                for (uint32_t word = 0; word < 4u; ++word)
+                    port::store<uint32_t>(matrix + 0x30u + 4u * word, port::load<uint32_t>(0x001B26A0u + 4u * word));
+                const uint32_t out = b + 0x40u * set + 0x10u * row;
+                Math_MulMatVecVu0(GuestPtr<Vec4>{out}, GuestPtr<Vec4>{matrix}, GuestPtr<Vec4>{vector});
+                port::store<uint32_t>(out + 0xCu, port::load<uint32_t>(vector + 0xCu));
+            }
+        }
+        if (port::load<uint8_t>(b + 0x130u) + port::load<uint8_t>(b + 0x131u) + port::load<uint8_t>(b + 0x132u) + port::load<uint8_t>(b + 0x133u) != 0)
+            port::store<uint16_t>(b + 0x136u, static_cast<uint16_t>(port::load<uint16_t>(b + 0x136u) | 0x800u));
+        return btype;
+    }
+
+    PORT_FN(BldgType_BaseCtor);
+
+    // ---- The building type constructors (plan P6 batch 2) ----
+    //
+    // Each runs the constructor of its base (the shared one, or the business one for the types built on the business type) with the
+    // same arguments, then puts its own table at +0x15C, and takes what else it needs from the record.
+
+    namespace
+    {
+        constexpr uint32_t kBaseCtor = 0, kBldg = 1, kBusiness = 2;
+
+        GuestPtr<BuildingType> constructBuildingType(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id, int base, uint32_t table)
+        {
+            if (base == kBaseCtor)
+                BldgType_BaseCtor(btype, record, static_cast<uint16_t>(id));
+            else if (base == kBldg)
+                Bldg_ctor(btype, record, id);
+            else
+                BldgBusiness_ctor(btype, record, id);
+            port::store<uint32_t>(btype.address + 0x15Cu, table);
+            return btype;
+        }
+
+        // A record byte, widened, kept in a word of the type.
+        void keepRecordByte(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, uint32_t from, uint32_t to)
+        {
+            port::store<uint32_t>(btype.address + to, port::load<uint8_t>(record.address + from));
+        }
+    }
+
+    GuestPtr<BuildingType> Bldg_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id)
+    {
+        return constructBuildingType(btype, record, id, kBaseCtor, 0x001BD100u);
+    }
+
+    GuestPtr<BuildingType> BldgBusiness_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id)
+    {
+        return constructBuildingType(btype, record, id, kBldg, 0x001BD1C0u);
+    }
+
+    GuestPtr<BuildingType> BldgPort_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id)
+    {
+        return constructBuildingType(btype, record, id, kBusiness, 0x001BD180u);
+    }
+
+    GuestPtr<BuildingType> BldgKeepOut_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id)
+    {
+        return constructBuildingType(btype, record, id, kBaseCtor, 0x001BD200u);
+    }
+
+    GuestPtr<BuildingType> BldgHousing_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id)
+    {
+        return constructBuildingType(btype, record, id, kBusiness, 0x001BD280u);
+    }
+
+    GuestPtr<BuildingType> BldgMyHome_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id)
+    {
+        return constructBuildingType(btype, record, id, kBusiness, 0x001BD2C0u);
+    }
+
+    GuestPtr<BuildingType> BldgSmallGoods_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id)
+    {
+        return constructBuildingType(btype, record, id, kBaseCtor, 0x001BD380u);
+    }
+
+    GuestPtr<BuildingType> BldgWasteland_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id)
+    {
+        return constructBuildingType(btype, record, id, kBaseCtor, 0x001BD3C0u);
+    }
+
+    // The pig farm shares the model at 0x1F3B5C (kept at 0x1BDC00).
+    GuestPtr<BuildingType> BldgPigFarm_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id)
+    {
+        constructBuildingType(btype, record, id, kBusiness, 0x001BD300u);
+        port::store<uint32_t>(0x001BDC00u, port::load<uint32_t>(0x001F3B5Cu));
+        return btype;
+    }
+
+    // The amusement park shares the ride model at 0x1F3B4C (kept at 0x1BDBE0).
+    GuestPtr<BuildingType> BldgAmusementPark_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id)
+    {
+        constructBuildingType(btype, record, id, kBusiness, 0x001BD040u);
+        port::store<uint32_t>(0x001BDBE0u, port::load<uint32_t>(0x001F3B4Cu));
+        return btype;
+    }
+
+    // The office keeps the byte at +0x92 of its record in a word at +0x160.
+    GuestPtr<BuildingType> BldgOffice_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id)
+    {
+        constructBuildingType(btype, record, id, kBusiness, 0x001BD080u);
+        keepRecordByte(btype, record, 0x92, 0x160);
+        return btype;
+    }
+
+    // The ranch shares the animal models at 0x1F3B50, 0x1F3B54 and 0x1F3B58 (kept at 0x1BDBE8, 0x1BDBEC and 0x1BDBF0).
+    GuestPtr<BuildingType> BldgRanch_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id)
+    {
+        constructBuildingType(btype, record, id, kBusiness, 0x001BD0C0u);
+        port::store<uint32_t>(0x001BDBE8u, port::load<uint32_t>(0x001F3B50u));
+        port::store<uint32_t>(0x001BDBECu, port::load<uint32_t>(0x001F3B54u));
+        port::store<uint32_t>(0x001BDBF0u, port::load<uint32_t>(0x001F3B58u));
+        return btype;
+    }
+
+    GuestPtr<BuildingType> BldgLeveled_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id)
+    {
+        constructBuildingType(btype, record, id, kBaseCtor, 0x001BD240u);
+        keepRecordByte(btype, record, 0x90, 0x160);
+        return btype;
+    }
+
+    GuestPtr<BuildingType> BldgRoad_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id)
+    {
+        constructBuildingType(btype, record, id, kBaseCtor, 0x001BD340u);
+        keepRecordByte(btype, record, 0x90, 0x160);
+        keepRecordByte(btype, record, 0x91, 0x164);
+        keepRecordByte(btype, record, 0x92, 0x168);
+        return btype;
+    }
+
+    // The field keeps two groups of four values from the record (+0x40..+0x4C and +0x50..+0x5C, the fourth of each divided by
+    // pi) as floats at +0x160 and +0x170, eight more as bytes at +0x180 (from +0x60..+0x7C, the fourth and eighth divided by
+    // pi) and the four bytes at +0x98 at +0x188.
+    GuestPtr<BuildingType> BldgField_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id)
+    {
+        constructBuildingType(btype, record, id, kBaseCtor, 0x001BD140u);
+        const uint32_t b = btype.address, r = record.address;
+        const ps2f pi(std::bit_cast<float>(0x40490FDBu));
+        const auto value = [&](uint32_t offset) { return ps2f(std::bit_cast<float>(port::load<uint32_t>(r + offset))); };
+        const auto keep = [&](uint32_t offset, ps2f v) { port::store<uint32_t>(b + offset, std::bit_cast<uint32_t>(v.v)); };
+        keep(0x160, value(0x40));
+        keep(0x164, value(0x44));
+        keep(0x168, value(0x48));
+        keep(0x16C, value(0x4C) / pi);
+        keep(0x170, value(0x50));
+        keep(0x174, value(0x54));
+        keep(0x178, value(0x58));
+        keep(0x17C, value(0x5C) / pi);
+        port::store<uint8_t>(b + 0x180u, static_cast<uint8_t>(sdk::fptoui(value(0x60))));
+        port::store<uint8_t>(b + 0x181u, static_cast<uint8_t>(sdk::fptoui(value(0x64))));
+        port::store<uint8_t>(b + 0x182u, static_cast<uint8_t>(sdk::fptoui(value(0x68))));
+        port::store<uint8_t>(b + 0x183u, static_cast<uint8_t>(sdk::fptoui(value(0x6C) / pi)));
+        port::store<uint8_t>(b + 0x184u, static_cast<uint8_t>(sdk::fptoui(value(0x70))));
+        port::store<uint8_t>(b + 0x185u, static_cast<uint8_t>(sdk::fptoui(value(0x74))));
+        port::store<uint8_t>(b + 0x186u, static_cast<uint8_t>(sdk::fptoui(value(0x78))));
+        port::store<uint8_t>(b + 0x187u, static_cast<uint8_t>(sdk::fptoui(value(0x7C) / pi)));
+        for (uint32_t i = 0; i < 4u; ++i)
+            port::store<uint8_t>(b + 0x188u + i, port::load<uint8_t>(r + 0x98u + i));
+        return btype;
+    }
+
+    PORT_FN(Bldg_ctor);
+    PORT_FN(BldgBusiness_ctor);
+    PORT_FN(BldgPort_ctor);
+    PORT_FN(BldgKeepOut_ctor);
+    PORT_FN(BldgHousing_ctor);
+    PORT_FN(BldgMyHome_ctor);
+    PORT_FN(BldgSmallGoods_ctor);
+    PORT_FN(BldgWasteland_ctor);
+    PORT_FN(BldgPigFarm_ctor);
+    PORT_FN(BldgAmusementPark_ctor);
+    PORT_FN(BldgOffice_ctor);
+    PORT_FN(BldgRanch_ctor);
+    PORT_FN(BldgLeveled_ctor);
+    PORT_FN(BldgRoad_ctor);
+    PORT_FN(BldgField_ctor);
+
+    // Adds the family to the applicants (with the month kept at +0x88) and shows it when `select` is not 0; then every
+    // resident of a class that counts (flag 1 clear) whose introduction (+0x2C) is this family gets a new one.
+    void CityScene_AddApplicantFamily(GuestPtr<CityScene> city, uint32_t family, int select)
+    {
+        Applicants_AddAndShow(GuestPtr<Applicants>{port::load<uint32_t>(city.address + 0x54u)}, static_cast<int>(family),
+                              port::load<int32_t>(city.address + 0x88u), select);
+        const uint32_t people = port::load<uint32_t>(port::load<uint32_t>(city.address + 0x50u) + 0x68u);
+        for (uint32_t person = people; person != people + 0x46500u; person += 0x30u)
+        {
+            const uint32_t type = port::load<uint8_t>(person + 0x24u);
+            if (type == 0)
+                continue;
+            const uint32_t cls = port::load<uint32_t>(globals::charClassTable.get() + 4u * type);
+            if ((port::load<uint16_t>(cls + 0x18u) & 1u) != 0 || port::load<uint16_t>(person + 0x2Cu) != family)
+                continue;
+            port::store<uint16_t>(person + 0x2Cu, static_cast<uint16_t>(Family_PickIntroduction(port::load<uint16_t>(person + 0x2Au), port::load<uint8_t>(person + 0x2Eu), city)));
+        }
+    }
+
+    PORT_FN(CityScene_AddApplicantFamily);
+
+    // Makes the building type object for the data record `record` with number `id`, of the class in byte 0x20 of the record (0
+    // and 5 the base class, 1 wasteland, 2 leveled, 3 road, 4 field, 6 business, 7 office, 8 housing, 9 port, 10 my home, 11
+    // amusement park, 12 ranch, 13 pig farm, 14 small goods, 15 keep-out); 0 when the memory is not there, and what the register
+    // held for any other class.
+    GuestPtr<BuildingType> BldgType_Create(int id, GuestPtr<uint8_t> record)
+    {
+        const uint32_t kind = port::load<uint8_t>(record.address + 0x20u);
+        if (kind >= 0x10u)
+            return GuestPtr<BuildingType>{static_cast<uint32_t>(port::guestV0())};
+        constexpr uint32_t sizes[16] = {0x160, 0x160, 0x170, 0x170, 0x210, 0x160, 0x160, 0x170, 0x160, 0x160, 0x160, 0x160, 0x160, 0x160, 0x160, 0x160};
+        const uint32_t memory = sdk::operator_new(sizes[kind]);
+        if (memory == 0u)
+            return GuestPtr<BuildingType>{0u};
+        const GuestPtr<BuildingType> btype{memory};
+        switch (kind)
+        {
+        case 1:
+            return BldgWasteland_ctor(btype, record, id);
+        case 2:
+            return BldgLeveled_ctor(btype, record, id);
+        case 3:
+            return BldgRoad_ctor(btype, record, id);
+        case 4:
+            return BldgField_ctor(btype, record, id);
+        case 6:
+            return BldgBusiness_ctor(btype, record, id);
+        case 7:
+            return BldgOffice_ctor(btype, record, id);
+        case 8:
+            return BldgHousing_ctor(btype, record, id);
+        case 9:
+            return BldgPort_ctor(btype, record, id);
+        case 10:
+            return BldgMyHome_ctor(btype, record, id);
+        case 11:
+            return BldgAmusementPark_ctor(btype, record, id);
+        case 12:
+            return BldgRanch_ctor(btype, record, id);
+        case 13:
+            return BldgPigFarm_ctor(btype, record, id);
+        case 14:
+            return BldgSmallGoods_ctor(btype, record, id);
+        case 15:
+            return BldgKeepOut_ctor(btype, record, id);
+        default:
+            return BldgType_BaseCtor(btype, record, static_cast<uint16_t>(id));
+        }
+    }
+
+    PORT_FN(BldgType_Create);
+
+    // Loads the building data file (0x1B8150) and makes a type object for each of its 156-byte records into a new table (the
+    // pointer at 0x1BDBF8, the count at 0x1BDBFC); the file's data are freed again.
+    void BldgType_LoadAll()
+    {
+        port::GuestFrame<0x60> frame;
+        const uint32_t file = frame.ptr().address + 0x50u, size = frame.ptr().address + 0x5Cu;
+        File_ctor(GuestPtr<GameFile>{file}, 0);
+        const uint32_t data = static_cast<uint32_t>(File_LoadWhole(GuestPtr<GameFile>{file}, GuestPtr<char>{0x001B8150u}, GuestPtr<int32_t>{size}));
+        const uint32_t count = port::load<uint32_t>(size) / 0x9Cu;
+        globals::buildingTypeCount.set(static_cast<int32_t>(count));
+        globals::buildingTypeTable.set(sdk::mw_NewArray(static_cast<uint32_t>(globals::buildingTypeCount.get()) << 2));
+        for (uint32_t i = 0; i < static_cast<uint32_t>(globals::buildingTypeCount.get()); ++i)
+            port::store<uint32_t>(globals::buildingTypeTable.get() + 4u * i,
+                                  BldgType_Create(static_cast<int>(i), GuestPtr<uint8_t>{data + 0x9Cu * i}).address);
+        if (data != 0u)
+            sdk::free(data);
+        File_dtor(GuestPtr<GameFile>{file}, -1);
+    }
+
+    PORT_FN(BldgType_LoadAll);
+
+    // ---- Talks and the approval meter (plan P6 batch 2) ----
+
+    // Starts a talk (mm_Talk_Start on the session at +0x3C): when it starts, the city's mode stack moves one place down with mode 5
+    // (the talk) on top, and the applicants window is set to 2. 1 when it started, otherwise 0.
+    int CityScene_StartTalk(GuestPtr<CityScene> city, int byFamily, int target, int member, int arg5)
+    {
+        if (Talk_Start(GuestPtr<TalkSession>{port::load<uint32_t>(city.address + 0x3Cu)}, byFamily, target, member, arg5, city) == 0)
+            return 0;
+        for (int i = 3; i >= 0; --i)
+            city->modeStack[i + 1] = city->modeStack[i];
+        city->modeStack[0] = 5;
+        city->modeDepth = city->modeDepth + 1;
+        port::store<uint8_t>(port::load<uint32_t>(city.address + 0x54u) + 0x2C9u, 2);
+        return 1;
+    }
+
+    // Every sixth call the approval rating (+0x8C) takes one step towards the pending change (+0xBC), is kept within -99 and 120,
+    // and the status panel is refreshed when it moved.
+    void CityScene_UpdateApproval(GuestPtr<CityScene> city)
+    {
+        constexpr uint32_t kStarted = 0x001BDC58u, kTicks = 0x001BDC54u;
+        const uint32_t c = city.address;
+        if (port::load<int8_t>(kStarted) == 0)
+        {
+            port::store<int32_t>(kTicks, 0);
+            port::store<uint8_t>(kStarted, 1);
+        }
+        const int32_t ticks = port::load<int32_t>(kTicks) + 1;
+        port::store<int32_t>(kTicks, ticks);
+        if (ticks < 6)
+            return;
+        port::store<int32_t>(kTicks, 0);
+        bool moved = false;
+        const int32_t pending = port::load<int32_t>(c + 0xBCu);
+        if (pending > 0)
+        {
+            port::store<int32_t>(c + 0x8Cu, port::load<int32_t>(c + 0x8Cu) + 1);
+            moved = true;
+            port::store<int32_t>(c + 0xBCu, pending - 1);
+        }
+        else if (pending < 0)
+        {
+            port::store<int32_t>(c + 0x8Cu, port::load<int32_t>(c + 0x8Cu) - 1);
+            moved = true;
+            port::store<int32_t>(c + 0xBCu, port::load<int32_t>(c + 0xBCu) + 1);
+        }
+        int32_t rating = port::load<int32_t>(c + 0x8Cu);
+        if (rating < -0x63)
+            rating = -0x63;
+        else if (rating >= 0x79)
+            rating = 0x78;
+        port::store<int32_t>(c + 0x8Cu, rating);
+        if (moved)
+            StatusPanel_Update(GuestPtr<StatusPanel>{port::load<uint32_t>(c)}, city);
+    }
+
+    // When the view (+0x10, its slot +0x1C) says it is open (3), the talk goes to state 6 with no conversation (nothing at +0x30);
+    // otherwise the conversation window (+0x14) starts, for the family (the target at +0x20 and +0x24) when the person is 6000 and
+    // for the person (at +0x1C and +0x18) otherwise, and the talk goes to state 2.
+    void Talk_Opening(GuestPtr<TalkSession> talk)
+    {
+        const uint32_t t = talk.address;
+        const uint32_t view = port::load<uint32_t>(t + 0x10u);
+        if (port::callGuest<int64_t>(port::load<uint32_t>(port::load<uint32_t>(view + 8u) + 0x1Cu), view) != 3)
+            return;
+        if (port::load<int32_t>(t + 0x30u) == 0)
+        {
+            port::store<int32_t>(t, 6);
+            return;
+        }
+        const GuestPtr<TalkConv> conv{port::load<uint32_t>(t + 0x14u)};
+        if (port::load<int32_t>(t + 0x1Cu) == 6000)
+            TalkConv_Start(conv, 1, port::load<int32_t>(t + 0x20u), port::load<int32_t>(t + 0x24u), port::load<int32_t>(t + 0x34u), port::load<int32_t>(t + 0x28u));
+        else
+            TalkConv_Start(conv, 0, port::load<int32_t>(t + 0x1Cu), port::load<int32_t>(t + 0x18u), port::load<int32_t>(t + 0x34u), port::load<int32_t>(t + 0x28u));
+        port::store<int32_t>(t, 2);
+    }
+
+    PORT_FN(CityScene_StartTalk);
+    PORT_FN(CityScene_UpdateApproval);
+    PORT_FN(Talk_Opening);
+
+    // With the window in mode 4: an applicant under the cursor that is waiting to be placed (state 3) goes to state 6 (its timer
+    // at +0x10 set) and the footprint of its home type is highlighted on the map at its tile. Whatever its state, the pad's focus
+    // is then taken for the window (owner 1, the Cross button), the window goes to mode 6 and its step to 0.02, the card text is
+    // rebuilt and the notice line cleared.
+    void Applicants_StartPlacing(GuestPtr<Applicants> applicants, GuestPtr<CityScene> city)
+    {
+        const uint32_t a = applicants.address;
+        if (port::load<int32_t>(a + 0x31Cu) != 4)
+            return;
+        uint32_t entry = 0;
+        if (port::load<int32_t>(a + 0x280u) != 0)
+            entry = a + 0x14u * port::load<uint32_t>(a + 0x2CCu);
+        if (port::load<uint16_t>(entry + 2u) == 3)
+        {
+            port::store<int32_t>(entry + 0x10u, 6);
+            const uint32_t type = static_cast<uint32_t>(Family_GetTypeIndex(port::load<uint16_t>(entry + 4u)));
+            const uint32_t tile = port::load<uint16_t>(entry + 6u);
+            Map_HighlightArea(city->map, static_cast<int>(tile & 0x7Fu), static_cast<int>(tile >> 7), port::load<uint8_t>(globals::buildingTypeAddress(type) + 0x142u));
+        }
+        Pad_TakeFocus(1, 0x10);
+        port::store<int32_t>(a + 0x31Cu, 6);
+        port::store<uint32_t>(a + 0x340u, 0x3CA3D70Au);
+        Applicants_SetMode(applicants, 1);
+        Notice_Clear(GuestPtr<Notice>{port::load<uint32_t>(city.address + 0x7Cu)});
+    }
+
+    // An event actor points at a building: unless someone holds the pad focus, a talk about the building (its id at +2) starts
+    // and its person is selected from the actor's family and member (+4, +6). 1 when the talk started.
+    int EvActor_PointAtBuilding(GuestPtr<CityScene> city, int actor, int building)
+    {
+        if (globals::padFocusOwner.get() != 0)
+            return 0;
+        if (CityScene_StartTalk(city, 0, port::load<uint16_t>(static_cast<uint32_t>(building) + 2u), 0x1770, 0) == 0)
+            return 0;
+        CityScene_TalkSelectPerson(city, port::load<uint16_t>(static_cast<uint32_t>(actor) + 4u), port::load<uint16_t>(static_cast<uint32_t>(actor) + 6u));
+        return 1;
+    }
+
+    PORT_FN(Applicants_StartPlacing);
+    PORT_FN(EvActor_PointAtBuilding);
+
+    // A person inside a building (not 0x3F80) is checked against the schedule: nothing happens for a person with flag 0x20 or 4, or
+    // with flag 0x200 while the city's clock word (+0x84) is below 0xC4E0, or whose activity is the building's one. Otherwise a
+    // person with flag 0x200 walks on from the building's tile, and any other leaves the building (outside, walking to nowhere,
+    // flag 0x100 and the cool-down cleared).
+    void Person_CheckBuilding(GuestPtr<CharClass>, GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
+    {
+        if (person->inside == 0x3F80)
+            return;
+        if ((person->flags & 0x20u) != 0)
+            return;
+        if ((person->flags & 0x200u) != 0 && port::load<int32_t>(city.address + 0x84u) < 0xC4E0)
+            return;
+        if ((person->flags & 4u) != 0)
+            return;
+        if (Schedule_GetBuildingActivity(city, person) == person->activity)
+            return;
+        if ((person->flags & 0x200u) != 0)
+            person->walkTile = Map_GetRecord(city->map, person->inside)->tile;
+        else
+        {
+            person->inside = 0x3F80;
+            person->walkTile = 0x4000;
+            person->flags = static_cast<uint16_t>(person->flags & 0xFEFFu);
+            person->cooldown = 0;
+        }
+    }
+
+    PORT_FN(Person_CheckBuilding);
 }

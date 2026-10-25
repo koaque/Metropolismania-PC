@@ -3779,4 +3779,361 @@ namespace mm
     }
 
     PORT_FN(EvShopping_Check);
+
+    // ---- Event manager and event types (plan P6 batch 1) ----
+
+    namespace
+    {
+        // A new event object of the base class (vtable 0x1BD908), its data from +8 cleared to the size its class reports.
+        // Returns the object (0 when the allocation failed, nothing is done then).
+        uint32_t newEventObject(uint32_t size, bool derived)
+        {
+            const uint32_t object = sdk::operator_new(size);
+            if (object == 0u)
+                return 0u;
+            port::store<uint32_t>(object, 0x001BD908u);
+            port::store<uint8_t>(object + 8u, 0);
+            port::store<uint8_t>(object + 9u, 0);
+            const uint32_t dataSize = port::callGuest<uint32_t>(port::load<uint32_t>(port::load<uint32_t>(object) + 8u), object);
+            sdk::memset(object + 8u, 0, static_cast<int>(dataSize));
+            if (derived)
+            {
+                // The talk event the script works with: the derived class (vtable 0x1BD8F8) with 0x60 more bytes cleared.
+                port::store<uint32_t>(object, 0x001BD8F8u);
+                sdk::memset(object + 0x24u, 0, 0x60);
+            }
+            return object;
+        }
+    }
+
+    // Clears the five event slots, creates the two talk events and the extra event object, and (from stage 0 on) moves the
+    // events the stage allows from the queue's level 6 to level 5.
+    GuestPtr<EventMgr> EventMgr_ctor(GuestPtr<EventMgr> events)
+    {
+        const uint32_t manager = events.address;
+        port::store<uint16_t>(manager, 0x5A0);
+        port::store<uint8_t>(manager + 2u, 0);
+        for (uint32_t slot = manager + 4u; slot != manager + 0xA4u; slot += 0x20u)
+        {
+            port::store<uint8_t>(slot, 0);
+            port::store<uint8_t>(slot + 1u, 0);
+            for (const uint32_t half : {4u, 6u, 8u, 0xAu})
+                port::store<uint16_t>(slot + half, 0);
+            for (uint32_t at = slot + 0xCu; at != slot + 0x20u; at += 4u)
+            {
+                port::store<uint16_t>(at, 0);
+                port::store<uint16_t>(at + 2u, 0);
+            }
+        }
+        port::store<uint32_t>(manager + 0xA4u, newEventObject(0x84u, true));
+        port::store<uint32_t>(manager + 0xA8u, newEventObject(0x24u, false));
+        port::store<uint32_t>(manager + 0xACu, newEventObject(0x24u, false));
+        globals::eventTypesCopy.set(globals::eventTypes.get());
+        const int32_t stage = port::load<int32_t>(0x001C5548u);
+        if (stage >= 0)
+        {
+            if (stage == 0)
+                EventList_MoveAll(static_cast<int>(globals::eventQueueObject.get()), 7, 6);
+            // The context for the move: the event types array, then a mask with the bit of the stage (7 at most).
+            port::GuestLocal<uint64_t> context;
+            port::store<uint32_t>(context.ptr().address, globals::eventTypes.get());
+            const int32_t shift = port::load<int32_t>(0x001C5548u) < 8 ? port::load<int32_t>(0x001C5548u) : 7;
+            port::store<uint8_t>(context.ptr().address + 4u, static_cast<uint8_t>(1u << (shift & 0x1F)));
+            EventList_MoveByMask26(static_cast<int>(globals::eventQueueObject.get()), 6, 5, GuestPtr<int32_t>{context.ptr().address});
+        }
+        return events;
+    }
+
+    // Reads DATA\BIN\EVENT.BIN (0x4C-byte records) into a new array, keeps two bytes of each record, creates the event queue
+    // (0x224 bytes) and queues every record after the first at level 6 by its priority byte (+0x28).
+    void Event_LoadTypes()
+    {
+        port::GuestLocal<GameFile> file;
+        File_ctor(file, 0);
+        if (File_Open(file, GuestPtr<char>{0x001B6370u}) >= 0)
+        {
+            const uint32_t size = static_cast<uint32_t>(File_Seek(file, 0, 2, 0));
+            globals::eventQueueLength.set(static_cast<int32_t>(size / 0x4Cu));
+            const uint32_t count = static_cast<uint32_t>(globals::eventQueueLength.get());
+            globals::eventTypes.set(sdk::mw_NewArray(count * 0x4Cu));
+            File_Seek(file, 0, 0, 0);
+            File_Read(file, static_cast<int>(globals::eventTypes.get()), static_cast<int>(globals::eventQueueLength.get()), 0x4C, 0);
+            File_Close(file);
+            // Bytes +0x20 and +0x21 of each record, into the table at 0x1C5790.
+            uint32_t out = globals::kEventQueue;
+            const uint32_t end = globals::eventTypes.get() + static_cast<uint32_t>(globals::eventQueueLength.get()) * 0x4Cu;
+            for (uint32_t record = globals::eventTypes.get(); record < end; record += 0x4Cu)
+            {
+                port::store<uint8_t>(out, port::load<uint8_t>(record + 0x20u));
+                port::store<uint8_t>(out + 1u, port::load<uint8_t>(record + 0x21u));
+                out += 2u;
+            }
+            uint32_t queue = sdk::operator_new(0x224u);
+            if (queue != 0u)
+            {
+                for (uint32_t at = queue + 0x24u; at != queue + 0x224u; at += 2u)
+                {
+                    port::store<uint8_t>(at, 0);
+                    port::store<uint8_t>(at + 1u, 0);
+                }
+                sdk::memset(queue, 0, 0x24);
+            }
+            globals::eventQueueObject.set(queue);
+            port::GuestLocal<uint16_t> id;
+            port::store<uint8_t>(id.ptr().address, 0);
+            port::store<uint8_t>(id.ptr().address + 1u, 0);
+            const uint32_t stop = globals::eventTypes.get() + static_cast<uint32_t>(globals::eventQueueLength.get()) * 0x4Cu;
+            for (uint32_t record = globals::eventTypes.get() + 0x4Cu; record < stop; record += 0x4Cu)
+            {
+                port::store<uint8_t>(id.ptr().address, static_cast<uint8_t>(port::load<uint8_t>(id.ptr().address) + 1));
+                port::store<uint8_t>(id.ptr().address + 1u, port::load<uint8_t>(record + 0x28u));
+                EventQueue_InsertByPriority(static_cast<int>(globals::eventQueueObject.get()), GuestPtr<uint8_t>{id.ptr().address}, 6, 0);
+            }
+        }
+        File_dtor(file, -1);
+    }
+
+    PORT_FN(EventMgr_ctor);
+    PORT_FN(Event_LoadTypes);
+
+    // ---- Party popup (plan P6 batch 2) ----
+
+    // The vtable steps down to the derived class's destructor state and back to the base class's; the GS is waited for
+    // before the frame it may still draw is deleted.
+    int PartyPopup_dtor(int popup, int16_t deleteFlag)
+    {
+        if (popup != 0)
+        {
+            const uint32_t object = static_cast<uint32_t>(popup);
+            port::store<uint32_t>(object, 0x001BD8E0u);
+            sdk::sceGsSyncPath(0, 0);
+            const uint32_t frame = port::load<uint32_t>(object + 4u);
+            if (frame != 0u)
+            {
+                Frame_DeletingDtor(GuestPtr<Frame>{frame}, 1);
+                port::store<uint32_t>(object + 4u, 0u);
+            }
+            port::store<uint32_t>(object, 0x001BD8B0u);
+            if (0 < deleteFlag)
+                sdk::operator_delete(object);
+        }
+        return popup;
+    }
+
+    PORT_FN(PartyPopup_dtor);
+
+    // The title text of an event slot: the event type's title, or with a second family in the slot (familyB) the title followed
+    // by that member's name, cut to fit 24 characters and ended with a 0xC4 byte when it is cut. Built at 0x1C5990.
+    GuestPtr<char> Event_FormatText(GuestPtr<EventMgr> events, int slot)
+    {
+        const uint32_t entry = events.address + 0x20u * static_cast<uint32_t>(slot);
+        const uint32_t kind = port::load<uint8_t>(entry + 4u);
+        const uint32_t familyB = port::load<uint16_t>(entry + 0xCu);
+        const uint32_t title = globals::eventTypes.get() + 0x4Cu * kind;
+        if (familyB == 0)
+            return GuestPtr<char>{title};
+        constexpr uint32_t kBuffer = 0x001C5990u;
+        const GuestPtr<Family> family = Family_Get(static_cast<int>(familyB), 0);
+        sdk::strcpy(kBuffer, title);
+        const uint32_t name = family.address + 0x4Cu + 0x48u * port::load<uint16_t>(entry + 0xEu);
+        const int length = sdk::strlen(kBuffer);
+        const int nameLength = sdk::strlen(name);
+        if (static_cast<uint32_t>(length + nameLength) < 0x19u)
+            sdk::strcpy(kBuffer + static_cast<uint32_t>(length), name);
+        else
+        {
+            sdk::memcpy(kBuffer + static_cast<uint32_t>(length), name, 0x17 - length);
+            port::store<uint8_t>(0x001C59A7u, 0xC4);
+            port::store<uint8_t>(0x001C59A8u, 0);
+        }
+        return GuestPtr<char>{kBuffer};
+    }
+
+    PORT_FN(Event_FormatText);
+
+    // The missing children event may start when the city has stage flag 2, the person's family has a member of character type
+    // 1 or 2 (the child) and a shop is found for the person: the event then names the person's workplace, the family and the
+    // child (member index) for the first actor and the family's adult (member 0) for the second.
+    int EvMissingChildren_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
+    {
+        if ((city->flags & 2u) == 0)
+            return 0;
+        const GuestPtr<Family> family = Family_Get(person->family, 0);
+        const uint32_t members = family.address + 0x24u;
+        const uint32_t count = port::load<uint16_t>(family.address + 0x22u);
+        int32_t child = -1;
+        for (uint32_t i = 0; i < count; ++i)
+        {
+            const uint32_t charType = port::load<uint16_t>(members + 0x48u * i);
+            if (charType == 1 || charType == 2)
+            {
+                child = static_cast<int32_t>(i);
+                break;
+            }
+        }
+        if (child < 0)
+            return 0;
+        if (EvActor_FindShop(city, person) == 0)
+            return 0;
+        const uint32_t d = data.address;
+        port::store<uint16_t>(d + 0x16u, person->work);
+        port::store<uint16_t>(d + 0x18u, person->family);
+        port::store<uint16_t>(d + 0x1Au, static_cast<uint16_t>(child));
+        port::store<uint16_t>(d + 0x14u, Map_FindPersonEntry(city->map, static_cast<int16_t>(port::load<uint16_t>(d + 0x18u)), port::load<uint16_t>(d + 0x1Au))->index);
+        port::store<uint16_t>(d + 0x1Eu, person->work);
+        port::store<uint16_t>(d + 0x20u, person->family);
+        port::store<uint16_t>(d + 0x22u, 0);
+        port::store<uint16_t>(d + 0x1Cu, Map_FindPersonEntry(city->map, static_cast<int16_t>(port::load<uint16_t>(d + 0x20u)), port::load<uint16_t>(d + 0x22u))->index);
+        return 1;
+    }
+
+    PORT_FN(EvMissingChildren_Check);
+
+    // Whether the family member `familyMember` (family, member) can be added to the event slot `choice`: 4 when the member is
+    // already its second person, 0 when the event type lists the character types it takes (up to four halfwords at +0x38 of the
+    // type's record) and the member's is not among them, 3 when the member is its first person, 1 when the member is already on
+    // its list of five, otherwise 2 (the member goes on the list: straight away, or, for a type with a check function at +0x14
+    // of its descriptor, only when the check passes; it is run on the event data kept at +0xAC, which is then cleared again,
+    // and a failed check ends in 0).
+    int Event_FindForFamily(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, int choice, GuestPtr<int16_t> familyMember)
+    {
+        port::GuestFrame<0x90> frame;
+        const uint32_t entry = events.address + 0x20u * static_cast<uint32_t>(choice);
+        const uint32_t member = familyMember.address;
+        const uint32_t family = port::load<uint16_t>(member), index = port::load<uint16_t>(member + 2u);
+        if (port::load<uint16_t>(entry + 0xCu) == family && port::load<uint16_t>(entry + 0xEu) == index)
+            return 4;
+        const uint32_t type = globals::eventTypes.get() + 0x4Cu * port::load<uint8_t>(entry + 4u);
+        if (port::load<uint16_t>(type + 0x38u) != 0)
+        {
+            const GuestPtr<Family> record = Family_Get(static_cast<int>(family), 0);
+            const uint32_t charType = port::load<uint16_t>(record.address + 0x24u + 0x48u * index);
+            bool found = false;
+            for (uint32_t allowed = type + 0x38u; allowed < type + 0x40u; allowed += 2u)
+            {
+                const uint32_t value = port::load<uint16_t>(allowed);
+                if (value == 0)
+                    break;
+                if (value == charType)
+                {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+                return 0;
+        }
+        if (port::load<uint16_t>(entry + 8u) == family && port::load<uint16_t>(entry + 0xAu) == index)
+            return 3;
+        int result = 2;
+        for (uint32_t list = entry + 0x10u; list < entry + 0x24u; list += 4u)
+        {
+            if (port::load<uint16_t>(list) == 0)
+            {
+                const uint32_t checkType = port::load<uint8_t>(type + 0x24u);
+                const uint32_t descriptor = checkType != 0 ? port::load<uint32_t>(0x001AF0D0u + 4u * checkType) : 0u;
+                const uint32_t check = descriptor != 0 ? port::load<uint32_t>(descriptor + 0x14u) : 0u;
+                if (check == 0)
+                {
+                    port::store<uint16_t>(list, static_cast<uint16_t>(family));
+                    port::store<uint16_t>(list + 2u, static_cast<uint16_t>(index));
+                    return 2;
+                }
+                const uint32_t probe = port::load<uint32_t>(events.address + 0xACu);
+                port::store<uint16_t>(probe + 0xCu, 6000);
+                port::store<uint16_t>(probe + 0xEu, 0x3F80);
+                port::store<uint16_t>(probe + 0x10u, port::load<uint16_t>(entry + 0xCu));
+                port::store<uint16_t>(probe + 0x12u, port::load<uint16_t>(entry + 0xEu));
+                const uint32_t arguments = frame.ptr().address + 0x88u;
+                port::store<uint64_t>(arguments, port::load<uint64_t>(0x001BD988u));
+                port::store<uint16_t>(arguments + 4u, static_cast<uint16_t>(family));
+                port::store<uint16_t>(arguments + 6u, static_cast<uint16_t>(index));
+                const uint32_t function = port::load<uint32_t>(port::load<uint32_t>(0x001AF0D0u + 4u * port::load<uint8_t>(type + 0x24u)) + 0x14u);
+                if (port::callGuest<int64_t>(function, probe, city, arguments, 0) == 0)
+                    result = 0;
+                else
+                {
+                    port::store<uint16_t>(list, port::load<uint16_t>(member));
+                    port::store<uint16_t>(list + 2u, port::load<uint16_t>(member + 2u));
+                }
+                const uint32_t after = port::load<uint32_t>(events.address + 0xACu);
+                const int size = port::callGuest<int>(port::load<uint32_t>(port::load<uint32_t>(after) + 8u), after);
+                sdk::memset(after + 8u, 0, size);
+                return result;
+            }
+            if (port::load<uint16_t>(list) == family && port::load<uint16_t>(list + 2u) == index)
+                return 1;
+        }
+        return result;
+    }
+
+    PORT_FN(Event_FindForFamily);
+
+    // The alien event's slot 0x14 (called with mode 0 at its start): the family at +0x15C of the event data table (0x1BDA8C) is
+    // added to the applicants, selected. The result is 0.
+    int EvAlien_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode)
+    {
+        (void)data;
+        (void)actor;
+        if (mode == 0)
+            CityScene_AddApplicantFamily(city, port::load<uint16_t>(globals::eachStrData.get() + 0x15Cu), 1);
+        return 0;
+    }
+
+    PORT_FN(EvAlien_Slot14);
+
+    // The noodles event's slot 0x14: mode 0 (start) adds the family at +0x1FE of the event data table to the applicants and sets up
+    // the event's three actors (the families at +0x1FE members 0 and 1 and +0x16E member 0, no person or building) with 60 frames
+    // to wait; mode 1 (end) adds the third actor's family. The result is 0.
+    int EvNoodles_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode)
+    {
+        (void)actor;
+        const uint32_t d = data.address;
+        if (mode == 1)
+        {
+            CityScene_AddApplicantFamily(city, port::load<uint16_t>(d + 0x28u), 1);
+            return 0;
+        }
+        if (mode != 0)
+            return 0;
+        const uint32_t table = globals::eachStrData.get();
+        CityScene_AddApplicantFamily(city, port::load<uint16_t>(table + 0x1FEu), 1);
+        port::store<uint16_t>(d + 0x18u, port::load<uint16_t>(table + 0x1FEu));
+        port::store<uint16_t>(d + 0x1Au, 0);
+        port::store<uint16_t>(d + 0x14u, 0x1770);
+        port::store<uint16_t>(d + 0x16u, 0x3F80);
+        port::store<uint16_t>(d + 0x20u, port::load<uint16_t>(table + 0x1FEu));
+        port::store<uint16_t>(d + 0x22u, 1);
+        port::store<uint16_t>(d + 0x1Cu, 0x1770);
+        port::store<uint16_t>(d + 0x1Eu, 0x3F80);
+        port::store<uint16_t>(d + 0x28u, port::load<uint16_t>(globals::eachStrData.get() + 0x16Eu));
+        port::store<uint16_t>(d + 0x2Au, 0);
+        port::store<uint16_t>(d + 0x24u, 0x1770);
+        port::store<uint16_t>(d + 0x26u, 0x3F80);
+        port::store<int32_t>(d + 0x64u, 0x3C);
+        return 0;
+    }
+
+    PORT_FN(EvNoodles_Slot14);
+
+    // An event actor pointed at with the cursor: with the pad focus held elsewhere nothing happens (0). An actor that is a family
+    // member (person 6000) starts a family talk (argument 3). Any other actor has the building under its person found on the map
+    // by the person's tile; a talk with that building and person starts (mm_CityScene_StartTalk, argument 2), and with none nothing
+    // starts. The result is the talk's.
+    int EvActor_PointCursor(GuestPtr<CityScene> city, GuestPtr<ActorRef> actor)
+    {
+        if (globals::padFocusOwner.get() != 0)
+            return 0;
+        if (actor->person == 0x1770)
+            return CityScene_StartTalk(city, 1, actor->family, actor->member, 3);
+        const GuestPtr<MapPerson> person = city->map->people + actor->person;
+        const int z = sdk::fptosi(ps2f(64.0f) - person->z);
+        const int x = sdk::fptosi(ps2f(64.0f) + person->x);
+        const GuestPtr<MapObject> object = Map_FindPersonObjectOnTile(city->map, person->index, static_cast<uint32_t>(x + (z << 7)) & 0xFFFFu);
+        if (!object)
+            return 0;
+        return CityScene_StartTalk(city, 0, object->id, person->index, 2);
+    }
+
+    PORT_FN(EvActor_PointCursor);
 }

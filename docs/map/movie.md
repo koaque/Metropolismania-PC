@@ -10,7 +10,7 @@ stream file `0x00717C40`, video decoder `0x00717C80` (sceMpeg plus the video buf
 
 ## Functions
 
-80 functions (typed 49, verified 31). Blocks: 49 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+80 functions (ported 5, typed 14, verified 61). Blocks: 49 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -78,7 +78,7 @@ stream file `0x00717C40`, video decoder `0x00717C80` (sceMpeg plus the video buf
 | `0x001A0530` | `void mm_Movie_VideoDecMain(int videoDec)` | 96 | yes | (videoDecMain) decode thread entry: resets the buffers, runs the loop, waits for the queue to drain, state 3 (done) |
 | `0x001A0590` | `int mm_Movie_VideoDecIsDone(int videoDec)` | 84 | yes | input buffer empty and libmpeg has no more pictures |
 | `0x001A05F0` | `int mm_Movie_VideoDecPutTerminator(int videoDec)` | 400 | yes | appends a sequence end code (0x1BD9F0) to the input once there is room; 0 until then |
-| `0x001A0780` | `int mm_Movie_VideoDecPutTs(int videoDec, int pts, int dts, int start, int length)` | 60 | yes | (videoDecPutTs) time stamp for input offset a3 |
+| `0x001A0780` | `int mm_Movie_VideoDecPutTs(int videoDec, int64_t pts, int64_t dts, int start, int length)` | 60 | yes | (videoDecPutTs) time stamp for input offset a3 |
 | `0x001A07C0` | `int mm_Movie_VideoDecGetState(int videoDec)` | 8 | no | (videoDecGetState) +0xA8 |
 | `0x001A07D0` | `void mm_Movie_VideoDecSetStateStart(int videoDec)` | 12 | no | +0xA8 = 1 |
 | `0x001A07E0` | `int mm_Movie_VideoDecDelete(int videoDec)` | 52 | no | (videoDecDelete) deletes the input buffer and the sceMpeg (0x10BF60) |

@@ -8,11 +8,11 @@ introduction (city name, stage title, approval rate) and the mission briefing te
 
 ## Functions
 
-25 functions (typed 15, verified 10). Blocks: 15 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+25 functions (ported 1, typed 7, verified 17). Blocks: 15 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
-| `0x001515B0` | `int mm_SceneB_ShowCityName(SceneB *scene)` | 260 | yes | (provisional) title card with the city name (0x1C5680) |
+| `0x001515B0` | `void mm_SceneB_ShowCityName(SceneB *scene)` | 260 | yes | (provisional) title card with the city name (0x1C5680) |
 | `0x001516C0` | `void mm_SceneB_ShowStageTitle(SceneB *scene)` | 256 | yes | "STAGE n" title card |
 | `0x001517C0` | `void mm_SceneB_ShowApprovalRate(SceneB *scene)` | 596 | yes | "Your Approval Rate" screen |
 | `0x00151A20` | `void mm_SceneB_MissionBriefing(SceneB *scene)` | 1064 | yes | the boss explains the mission in the message window |
@@ -20,7 +20,7 @@ introduction (city name, stage title, approval rate) and the mission briefing te
 | `0x00152020` | `void mm_SceneB_ShowTelop(SceneB *scene)` | 1204 | yes | (provisional) TELOP%d text screens with music ("Thanks to your Mr. ...") |
 | `0x001524E0` | `int mm_SceneB_Update(SceneB *scene)` | 884 | yes | stage transition scene: title cards, approval, briefing, mission movie, ending roll (END_ROLL.TEX) |
 | `0x00152860` | `SceneB *mm_SceneB_dtor(SceneB *scene, int16_t deleteFlag)` | 172 | yes | vtables 0x1BCF10/0x1BCF18; deletes camera, stage object, lights |
-| `0x00152910` | `SceneB *mm_SceneB_ctor(SceneB *scene, int a1)` | 300 | yes | stage object, camera, light set; loads the stage |
+| `0x00152910` | `SceneB *mm_SceneB_ctor(SceneB *scene, int loadStage)` | 300 | yes | stage object, camera, light set; loads the stage |
 | `0x0016E270` | `int mm_Title_DrawCommon(SceneA *scene, int layers)` | 456 | no | title screen layers, logo animation and fades |
 | `0x0016E440` | `int mm_Title_LoadMenu(SceneA *scene)` | 1024 | yes | load game screen: memory card slots and their info |
 | `0x0016E840` | `int mm_Title_PressStart(SceneA *scene)` | 260 | no | title idle screen ("[SELECT]SoundTest") |

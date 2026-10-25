@@ -50,6 +50,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <iterator>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -281,6 +282,7 @@ namespace port
             R5900Context ctx;
             std::vector<uint8_t> rdram;
             std::vector<uint8_t> scratchpad;
+            std::vector<std::pair<uint32_t, uint32_t>> liveHeap;  // (address, size) of the guest heap blocks in use afterwards
             bool returned = false;
             bool switched = false;
             std::string fault;
@@ -314,6 +316,11 @@ namespace port
                 out.fault = e.what();
             }
             runtime.eeScheduler().leaveNoPreempt();
+            out.liveHeap.clear();
+            for (const PS2Runtime::GuestHeapBlock &block : runtime.saveGuestHeapState().blocks)
+                if (!block.free)
+                    out.liveHeap.emplace_back(block.addr, block.size);
+            std::sort(out.liveHeap.begin(), out.liveHeap.end());
             out.returned = !out.switched && out.fault.empty() && (out.ctx.pc == kReturnSentinel || out.ctx.pc == address);
             out.rdram.assign(g_rdram, g_rdram + PS2_RAM_SIZE);
             out.scratchpad.assign(g_scratchpad, g_scratchpad + PS2_SCRATCHPAD_SIZE);
@@ -346,8 +353,8 @@ namespace port
             if (!b.fault.empty())
                 diffs.push_back("ported faulted: " + b.fault);
             if (!a.returned || !b.returned)
-                diffs.push_back(std::string("did not return: original ") + (a.returned ? "returned" : a.switched ? "switched thread" : "stopped") +
-                                ", ported " + (b.returned ? "returned" : b.switched ? "switched thread" : "stopped"));
+                diffs.push_back(std::string("did not return: original ") + (a.returned ? "returned" : a.switched ? "switched thread" : "stopped at pc " + hex(a.ctx.pc)) +
+                                ", ported " + (b.returned ? "returned" : b.switched ? "switched thread" : "stopped at pc " + hex(b.ctx.pc)));
             if (p.result == ResultKind::Int && gpr64(&a.ctx, 2) != gpr64(&b.ctx, 2))
                 diffs.push_back("v0: " + hex(gpr64(&a.ctx, 2)) + " vs " + hex(gpr64(&b.ctx, 2)));
             if (p.result == ResultKind::Float && std::memcmp(&a.ctx.f[0], &b.ctx.f[0], 4) != 0)
@@ -370,7 +377,7 @@ namespace port
             // Not compared for functions that end in a call whose VU0 loads read stack leftovers: Map_SampleHeight leaves the
             // w lanes of its stack vectors unwritten, so what the generated callees left there before (and the ported ones
             // do not) decides the final lanes. The game never reads them back: everything else is still compared.
-            static const std::set<std::string> kVu0FromLeftovers = {"TalkPersonFar_ctor", "TalkPersonNear_ctor"};
+            static const std::set<std::string> kVu0FromLeftovers = {"TalkPersonFar_ctor", "TalkPersonNear_ctor", "Person_ChooseDestination"};
             const bool vu0Compared = kVu0FromLeftovers.count(p.name) == 0;
             for (int v = 1; v < 32 && vu0Compared; ++v)
                 if (std::memcmp(&a.ctx.vu0_vf[v], &b.ctx.vu0_vf[v], sizeof(a.ctx.vu0_vf[v])) != 0)
@@ -382,13 +389,55 @@ namespace port
 
             // The semaphore id Movie_ViBufCreate stores at +0x40 of its buffer counts up in the kernel, which the replay does not
             // reset between the generated run and the ported one: the ported run always gets the next id.
-            uint32_t ignoreLow = 0, ignoreHigh = 0;
+            // The same for the IOP memory addresses (allocated through the SIF) that the movie's audio and disc stream objects keep:
+            // the IOP's allocator is not reset between the two runs either.
+            uint32_t ignoreLow = 0, ignoreHigh = 0, ignoreLow2 = 0, ignoreHigh2 = 0, ignoreLow3 = 0, ignoreHigh3 = 0;
+            const uint32_t object = static_cast<uint32_t>(gpr64(&rec.ctx, 4));
             if (p.name == "Movie_ViBufCreate")
+                ignoreLow = (object + 0x40u) & PS2_RAM_MASK;
+            else if (p.name == "Movie_VideoDecCreate")
+                ignoreLow = (object + 0x88u) & PS2_RAM_MASK;
+            else if (p.name == "Movie_AudioDecCreate")
             {
-                ignoreLow = (static_cast<uint32_t>(gpr64(&rec.ctx, 4)) + 0x40u) & PS2_RAM_MASK;
-                ignoreHigh = ignoreLow + 4u;
+                ignoreLow = (object + 0x44u) & PS2_RAM_MASK;
+                ignoreLow2 = (object + 0x58u) & PS2_RAM_MASK;
+                ignoreHigh2 = ignoreLow2 + 4u;
             }
-            const auto same = [&](uint32_t k) { return a.rdram[k] == b.rdram[k] || (k >= ignoreLow && k < ignoreHigh); };
+            else if (p.name == "Movie_StrFileOpen")
+                ignoreLow = (object + 0x2Cu) & PS2_RAM_MASK;
+            // Sound_Init binds the sound driver's RPC client: the runtime numbers the binds (the client's id at +4) and keeps the server
+            // descriptor it made on the first bind (its sid at 0x1F10000) outside the replay's reset, so the ported run sees them differ.
+            else if (p.name == "Sound_Init")
+            {
+                ignoreLow = 0x001FE694u;
+                ignoreLow2 = 0x01F10000u;
+                ignoreHigh2 = ignoreLow2 + 4u;
+            }
+            // McManager_NewSaveName writes the console clock in seconds as digits: the two runs read it a moment apart, so the last
+            // digits (bytes 16 to 23 of the name slot, which holds eight digits after the id string) are not compared.
+            else if (p.name == "McManager_NewSaveName")
+            {
+                const uint32_t name = (0x001F3CF0u + (static_cast<uint32_t>(gpr64(&rec.ctx, 5)) & 0xFFu) * 0x20u) & PS2_RAM_MASK;
+                ignoreLow = name + 0x10u;
+                ignoreLow2 = name + 0x14u;
+                ignoreHigh2 = ignoreLow2 + 4u;
+            }
+            // McSave_WriteIconSys (and the save state that calls it) opens a file on the card: the runtime's descriptor counter (kept outside RDRAM and not reset between the
+            // two runs) gives the ported run the next number, which the game keeps in three words.
+            else if (p.name == "McSave_WriteIconSys" || p.name == "PauseMenu_StateSave")
+            {
+                ignoreLow = 0x001BDCDCu;
+                ignoreLow2 = 0x001F63E4u;
+                ignoreHigh2 = ignoreLow2 + 4u;
+                ignoreLow3 = 0x001F6408u;
+                ignoreHigh3 = ignoreLow3 + 4u;
+            }
+            if (ignoreLow != 0)
+                ignoreHigh = ignoreLow + 4u;
+            const auto same = [&](uint32_t k) {
+                return a.rdram[k] == b.rdram[k] || (k >= ignoreLow && k < ignoreHigh) || (k >= ignoreLow2 && k < ignoreHigh2) ||
+                       (k >= ignoreLow3 && k < ignoreHigh3);
+            };
 
             const uint32_t sp = static_cast<uint32_t>(gpr64(&rec.ctx, 29)) & PS2_RAM_MASK;
             const uint32_t freeLow = sp > kFreeStackBytes ? sp - kFreeStackBytes : 0u;
@@ -443,6 +492,20 @@ namespace port
             }
             if (a.scratchpad != b.scratchpad)
                 diffs.push_back("scratchpad differs");
+            // The heap's bookkeeping lives outside RDRAM: a destructor that frees the wrong block, or none, only shows here.
+            if (a.liveHeap != b.liveHeap)
+            {
+                std::string line = "heap: " + std::to_string(a.liveHeap.size()) + " blocks in use after the original, " +
+                                   std::to_string(b.liveHeap.size()) + " after the port";
+                std::vector<std::pair<uint32_t, uint32_t>> onlyOriginal, onlyPorted;
+                std::set_difference(a.liveHeap.begin(), a.liveHeap.end(), b.liveHeap.begin(), b.liveHeap.end(), std::back_inserter(onlyOriginal));
+                std::set_difference(b.liveHeap.begin(), b.liveHeap.end(), a.liveHeap.begin(), a.liveHeap.end(), std::back_inserter(onlyPorted));
+                for (size_t k = 0; k < onlyOriginal.size() && k < 3; ++k)
+                    line += "; only original " + hex(onlyOriginal[k].first) + "+" + hex(onlyOriginal[k].second);
+                for (size_t k = 0; k < onlyPorted.size() && k < 3; ++k)
+                    line += "; only port " + hex(onlyPorted[k].first) + "+" + hex(onlyPorted[k].second);
+                diffs.push_back(line);
+            }
             return diffs;
         }
     }

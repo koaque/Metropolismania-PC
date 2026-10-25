@@ -7,7 +7,7 @@ Scene A's logo sequence (`mm_SceneA_LogoStep`: NATSUME, MF_US and LOGO.TEX, each
 
 ## Functions
 
-2 functions (typed 2). Blocks: 2 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+2 functions (verified 2). Blocks: 2 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|

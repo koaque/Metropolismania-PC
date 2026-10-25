@@ -73,6 +73,8 @@ namespace mm::globals
     // pad: button words as the game uses them (the raw pad word byte-swapped, analog sticks folded in).
     inline constexpr GuestVar<uint32_t> padHeld{0x001BDCA0u};
     inline constexpr GuestVar<uint32_t> padPressed{0x001BDCA4u};     // held now, not last frame
+    inline constexpr GuestVar<uint32_t> padHeldBefore{0x001BDCA8u};   // the held buttons of the previous frame
+    inline constexpr GuestVar<uint32_t> padData{0x001BDCCCu};        // pad buffer of port 0 read this frame (0 = none)
     inline constexpr GuestVar<int32_t> padFocusOwner{0x001BDCB0u};   // 0 = nobody (mm_Pad_TakeFocus)
     inline constexpr GuestVar<uint32_t> padFocusMask{0x001BDCB4u};   // buttons other owners do not see
     inline constexpr uint32_t kPadPortStates = 0x001BDB08u;          // int32_t per port, 100 = ready (gp-0x7E68)
@@ -113,6 +115,22 @@ namespace mm::globals
     inline constexpr GuestVar<int32_t> fileQueueHead{0x001BDC8Cu};
     inline constexpr GuestVar<int32_t> fileQueueCount{0x001BDC90u}; // requests queued so far
     inline constexpr GuestVar<int32_t> fileQueueIoctl{0x001BDC94u}; // where sceIoctl puts the pending-request count
+
+    // Objects created at start-up and the data files loaded whole (the Create and Load functions).
+    inline constexpr GuestVar<uint32_t> bagObject{0x001BDA18u};         // the player's bag
+    inline constexpr GuestVar<uint32_t> staminaObject{0x001BDBB8u};     // 16 bytes: 0, the limit (399999), 0
+    inline constexpr GuestVar<int32_t> buildingTypeInstances{0x001BDBBCu}; // building type objects alive; the shared block goes with the last
+    inline constexpr GuestVar<uint32_t> buildingTypeShared{0x001BDBC0u};
+    inline constexpr GuestVar<uint32_t> goodsData{0x001BDA98u};         // DATA\BIN\GOODS.BIN, then these pointers into it
+    inline constexpr GuestVar<uint32_t> goodsSectionA{0x001BDA9Cu};
+    inline constexpr GuestVar<uint32_t> goodsSectionB{0x001BDAA0u};
+    inline constexpr GuestVar<uint32_t> goodsSectionC{0x001BDAA4u};
+    inline constexpr GuestVar<uint32_t> goodsSectionD{0x001BDAA8u};
+    inline constexpr GuestVar<uint32_t> goodsSectionE{0x001BDAACu};
+    inline constexpr GuestVar<int32_t> goodsTextCount{0x001BDAB0u};
+    inline constexpr GuestVar<uint32_t> claimSection54{0x001BDA54u};     // pointers into claimData from its offset words (+8 ...)
+    inline constexpr GuestVar<uint32_t> claimSection5C{0x001BDA5Cu};
+    inline constexpr GuestVar<uint32_t> claimSection74{0x001BDA74u};
 
     // pad: set by mm_Pad_ClearBit40; mm_Pad_Update keeps Cross (0x40) out of the held buttons until it is released.
     inline constexpr GuestVar<int32_t> padSwallowCross{0x001BDCC0u};
@@ -184,6 +202,36 @@ namespace mm::globals
     inline constexpr GuestVar<int32_t> familiesLeftEvent{0x001F32E8u};
     inline constexpr uint32_t kFamilyTableA = 0x001F26E0u; // 256 words, cleared by mm_Family_ResetState
     inline constexpr uint32_t kFamilyTableB = 0x001F2AE0u; // 256 words
+    // The family record cache (mm_Family_Get, mm_Family_Prefetch): 256 slots; for each slot the family number
+    // (kFamilyTableA), the frame it was last used (kFamilyTableB) and the file queue request still reading it or -1 (kFamilyTableC).
+    inline constexpr uint32_t kFamilyTableC = 0x001F2EE0u;
+    inline constexpr uint32_t kFamilyRecords = 0x001D52E0u;  // 0x1D4 bytes each; the halfword at +0x20 is 0 while it loads
+    inline constexpr GuestVar<uint32_t> familyFile{0x001BDA94u};        // the GameFile of FAMILY.BIN (asynchronous)
+    // The MYHOME model files loaded a step per call (mm_CityAssets_LoadMyHome): step, file index, loads finished, the file,
+    // the request that closes it, reads started; the blocks, their sizes and the three paths (0x20 bytes each).
+    inline constexpr GuestVar<int32_t> myHomeLoadsDone{0x001BDB40u};
+    inline constexpr GuestVar<int32_t> myHomeLoadState{0x001BDB44u};
+    inline constexpr GuestVar<int32_t> myHomeLoadIndex{0x001BDB48u};
+    inline constexpr GuestVar<uint32_t> myHomeFile{0x001BDB4Cu};
+    inline constexpr GuestVar<int32_t> myHomeRequest{0x001BDB50u};
+    inline constexpr GuestVar<int32_t> myHomeReads{0x001BDB54u};
+    inline constexpr uint32_t kMyHomeBlocks = 0x001F3CE0u;
+    inline constexpr uint32_t kMyHomeSizes = 0x001B0B80u;
+    inline constexpr uint32_t kMyHomePaths = 0x001B0B20u;
+    // The whole asset load (mm_CityAssets_LoadStep) shares those words: which load is running (myHomeLoadsDone: 0 file object, 1
+    // characters, 2 objects, 3 character objects, 4 the MYHOME files, 5 close), then for the model list loads the step, the model
+    // number, the shared file, its request and the models made so far, and the model being loaded by the character load.
+    inline constexpr GuestVar<int32_t> assetLoadsDone{0x001BDB40u};
+    inline constexpr GuestVar<int32_t> assetLoadStep{0x001BDB44u};
+    inline constexpr GuestVar<int32_t> assetLoadIndex{0x001BDB48u};
+    inline constexpr GuestVar<uint32_t> assetLoadFile{0x001BDB4Cu};
+    inline constexpr GuestVar<int32_t> assetLoadRequest{0x001BDB50u};
+    inline constexpr GuestVar<int32_t> assetLoadCount{0x001BDB54u};
+    inline constexpr GuestVar<uint32_t> assetLoadModel{0x001BDB58u};
+    inline constexpr uint32_t kObjectModels = 0x001F3B00u;      // OBJECT.A3D models, one word each
+    inline constexpr uint32_t kCharObjectModels = 0x001F3B40u;  // CHAROBJ.A3D models
+    inline constexpr GuestVar<uint32_t> eachStrData{0x001BDA8Cu};       // DATA\BIN\EACHSTR.BIN and its size in halfwords
+    inline constexpr GuestVar<int32_t> eachStrCount{0x001BDA90u};
 
     // save: per card port (two words each): card type (2 = PS2 memory card), free space, formatted, the
     // type at the last check, the type when the save slot scan ended, and the last result (-1, -2: a new

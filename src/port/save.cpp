@@ -677,4 +677,530 @@ namespace mm
     }
 
     PORT_FN(MemberStatus_Lookup);
+
+    // ---- Memory card manager lifetime (plan P6 batch 1) ----
+
+    int McManagerSub_DeletingDtor(int queue, int16_t deleteFlag)
+    {
+        if (queue != 0 && 0 < deleteFlag)
+            sdk::operator_delete(static_cast<uint32_t>(queue));
+        return queue;
+    }
+
+    // Creates the request queue (1 byte) and the save file object (async 0), sets the slot tables up and clears the scan
+    // state and the card type, free space and formatted flag of both ports.
+    GuestPtr<McManager> McManager_ctor(GuestPtr<McManager> mc)
+    {
+        const uint32_t queueMemory = sdk::operator_new(1u);
+        uint32_t queue = queueMemory;
+        if (queueMemory != 0u)
+            queue = static_cast<uint32_t>(McManagerSub_ctor(static_cast<int>(queueMemory)));
+        mc->queue = GuestPtr<void>{queue};
+        const uint32_t fileMemory = sdk::operator_new(8u);
+        uint32_t file = fileMemory;
+        if (fileMemory != 0u)
+            file = File_ctor(GuestPtr<GameFile>{fileMemory}, 0).address;
+        mc->file = GuestPtr<GameFile>{file};
+        McManager_InitSlots();
+        mc->scanState = 0;
+        // Card type, free space and formatted flag of port 0, then of port 1.
+        for (const uint32_t word : {globals::kCardType, globals::kCardFree, globals::kCardFormatted, globals::kCardType + 4u,
+                                    globals::kCardFree + 4u, globals::kCardFormatted + 4u})
+            port::store<uint32_t>(word, 0u);
+        return mc;
+    }
+
+    PORT_FN(McManagerSub_DeletingDtor);
+    PORT_FN(McManager_ctor);
+
+    // ---- Preparing the save directory on a card (plan P6 batch 2) ----
+
+    // Gets the save directory of card `port` ready, a step per call (the state is mc->state): ask for the card's type (2 is a PS2
+    // card), change into the directory `name`, and when it is missing and `allowCreate` is set make it, change into it and write
+    // the save's icon file (DATA\STATIC.ICO, 0x13968 bytes) into it. Returns 1 when done, 0 while working and 2 when the card
+    // is not a PS2 card or the directory is missing and may not be made.
+    int SaveFile_PrepareDir(GuestPtr<McManager> mc, int portNumber, int name, int allowCreate)
+    {
+        constexpr uint32_t kCardType = 0x001BDB60u, kCardFree = 0x001BDB68u, kCardFormat = 0x001BDB70u;
+        constexpr uint32_t kKnownType0 = 0x001BDB78u, kKnownType1 = 0x001BDB7Cu;
+        port::store<int32_t>(0x001BDB94u, portNumber);
+        port::store<int32_t>(0x001BDB98u, name);
+        const uint32_t m = mc.address;
+        const int queue = static_cast<int>(port::load<uint32_t>(m));
+        const uint32_t at = 4u * static_cast<uint32_t>(portNumber);
+        const GuestPtr<int32_t> result{m + 0x18u};
+        const auto advance = [&] { mc->state = mc->state + 1; };
+        const auto isDone = [&] { return McQueue_IsDone(queue, mc->request) != 0; };
+        switch (static_cast<uint32_t>(mc->state))
+        {
+        case 0:
+        case 5:
+            mc->request = McQueue_GetInfo(queue, portNumber, static_cast<int>(kCardType + at), static_cast<int>(kCardFree + at),
+                                          static_cast<int>(kCardFormat + at), GuestPtr<int32_t>{0u});
+            advance();
+            break;
+        case 1:
+        case 6:
+            if (isDone())
+                advance();
+            break;
+        case 2:
+            if (port::load<int32_t>(kCardType + at) != 2)
+            {
+                mc->state = 0;
+                return 2;
+            }
+            advance();
+            break;
+        case 3:
+            mc->request = McQueue_Chdir(queue, portNumber, name, 0, result);
+            advance();
+            break;
+        case 4:
+            if (isDone())
+            {
+                if (*result == 0)
+                    mc->state = 0;
+                else
+                {
+                    if (allowCreate == 0)
+                    {
+                        mc->state = 0;
+                        return 2;
+                    }
+                    advance();
+                }
+            }
+            break;
+        case 7:
+            if (port::load<int32_t>(kCardType) != port::load<int32_t>(kKnownType0))
+                port::store<int32_t>(kKnownType0, -1);
+            if (port::load<int32_t>(kCardType + 4u) != port::load<int32_t>(kKnownType1))
+                port::store<int32_t>(kKnownType1, -1);
+            if (port::load<int32_t>(kCardType + at) != 2)
+            {
+                mc->state = 0;
+                return 2;
+            }
+            mc->request = McQueue_Mkdir(queue, portNumber, name);
+            mc->request = McQueue_Chdir(queue, portNumber, name, 0, result);
+            advance();
+            break;
+        case 8:
+            if (isDone())
+            {
+                if (*result != 0)
+                {
+                    mc->state = 0;
+                    return 2;
+                }
+                advance();
+            }
+            break;
+        case 9:
+            port::store<uint32_t>(m + 0x1Cu, sdk::malloc(0x13968u));
+            mc->request = File_Open(mc->file, GuestPtr<char>{0x001B7E30u});
+            mc->request = File_Read(mc->file, static_cast<int>(port::load<uint32_t>(m + 0x1Cu)), 1, 0x13968, 0);
+            advance();
+            break;
+        case 10:
+            if (FileQueue_IsDone(static_cast<int>(mc->file.address), mc->request) != 0)
+                advance();
+            break;
+        case 11:
+            mc->request = McQueue_Open(queue, portNumber, 0x001B7E40, 0x202, GuestPtr<int32_t>{m + 0x24u});
+            advance();
+            [[fallthrough]];
+        case 12:
+            if (isDone())
+                advance();
+            break;
+        case 13:
+            mc->request = McQueue_Write(queue, mc->fd, static_cast<int>(port::load<uint32_t>(m + 0x1Cu)), 0x13968, GuestPtr<int32_t>{0u});
+            mc->request = McQueue_Close(queue, mc->fd, GuestPtr<int32_t>{0u});
+            advance();
+            break;
+        case 14:
+            if (isDone())
+                advance();
+            break;
+        case 15:
+            mc->request = File_Close(mc->file);
+            advance();
+            break;
+        case 16:
+            if (FileQueue_IsDone(static_cast<int>(mc->file.address), mc->request) != 0)
+            {
+                if (port::load<uint32_t>(m + 0x1Cu) != 0u)
+                {
+                    sdk::free(port::load<uint32_t>(m + 0x1Cu));
+                    port::store<uint32_t>(m + 0x1Cu, 0u);
+                }
+                mc->state = 0;
+            }
+            break;
+        default:
+            break;
+        }
+        return mc->state != 0 ? 0 : 1;
+    }
+
+    PORT_FN(SaveFile_PrepareDir);
+
+    // ---- The save slot's line in the load menu (plan P6 batch 2) ----
+
+    namespace
+    {
+        // The padded number text uses the Shift-JIS full-width digits; the leading full-width zeros (0x82 0x4F) are meant to
+        // become full-width spaces (0x81 0x40), at most `pairs` of them. The original compares the signed byte with +0x82, which
+        // it can never equal, so the loop stops at once and the zeros stay; the port keeps the comparison as it is.
+        void blankLeadingZeros(uint32_t text, int pairs)
+        {
+            for (int i = 0; i < pairs; ++i)
+            {
+                const uint32_t at = text + 2u * static_cast<uint32_t>(i);
+                if (static_cast<int32_t>(port::load<int8_t>(at)) != 0x82 || port::load<int8_t>(at + 1u) != 0x4F)
+                    break;
+                port::store<uint8_t>(at, 0x81);
+                port::store<uint8_t>(at + 1u, 0x40);
+            }
+        }
+    }
+
+    // Appends the line for save slot `slot` (0x44-byte records from 0x1F4340; none when the slot is empty) to `out`: a header,
+    // the day (+0x42, shown from 1 and wrapped at 100) in two digits, the name in the game's own letter table (halfword
+    // characters at the offset past the prefix at 0x1B7C50 mapped to ASCII-like codes by their place in the table at 0x1B7C70),
+    // a four-digit number (+0x40 mod 10000), a signed three-digit number (+0x3F) and, with `marked`, a trailing mark.
+    void McManager_FormatSlotLine(GuestPtr<McManager>, int slot, GuestPtr<char> out, int marked)
+    {
+        port::GuestFrame<0x70> frame;
+        const uint32_t number = frame.ptr().address + 0x60u;
+        const uint32_t record = 0x001F4340u + 0x44u * static_cast<uint32_t>(slot);
+        if (port::load<int8_t>(record) == 0)
+            return;
+        const auto append = [&](uint32_t format) {
+            sdk::sprintf(out.address + static_cast<uint32_t>(sdk::strlen(out.address)), format, number);
+        };
+        sdk::strcat(out.address, 0x001B7DA0u);
+        const int32_t day = static_cast<int32_t>(port::load<int8_t>(record + 0x42u)) + (static_cast<int32_t>(port::load<int8_t>(record + 0x43u)) << 8);
+        Text_FormatPadded(GuestPtr<char>{number}, remainder(day + 1, 100), 2);
+        blankLeadingZeros(number, 1);
+        append(0x001B7DA8u);
+        uint32_t dst = out.address + static_cast<uint32_t>(sdk::strlen(out.address));
+        const uint32_t nameStart = record + static_cast<uint32_t>(sdk::strlen(0x001B7C50u));
+        for (uint32_t src = nameStart; port::load<int8_t>(src) != 0; src += 2u)
+        {
+            uint32_t code = 0;
+            for (uint32_t table = 0x001B7C70u; port::load<int8_t>(table) != 0 && port::load<uint16_t>(src) != port::load<uint16_t>(table); table += 2u)
+                ++code;
+            port::store<uint8_t>(dst, static_cast<uint8_t>(code + 0x20u));
+            ++dst;
+        }
+        port::store<uint8_t>(dst, 0);
+        append(0x001B7DB0u);
+        const int32_t value = static_cast<int32_t>(port::load<uint8_t>(record + 0x40u)) + (static_cast<int32_t>(port::load<int8_t>(record + 0x41u)) << 8);
+        Text_FormatPadded(GuestPtr<char>{number}, remainder(value, 10000), 4);
+        blankLeadingZeros(number, 3);
+        append(0x001B7DC0u);
+        const int32_t third = port::load<int8_t>(record + 0x3Fu);
+        if (third < 0)
+        {
+            const int32_t magnitude = -third;
+            Text_FormatPadded(GuestPtr<char>{number}, magnitude, 3);
+            blankLeadingZeros(number, 2);
+            port::store<uint8_t>(number + (magnitude < 10 ? 1u : 0u), '-');
+        }
+        else
+        {
+            Text_FormatPadded(GuestPtr<char>{number}, third, 3);
+            blankLeadingZeros(number, 2);
+        }
+        append(0x001B7DD0u);
+        if (marked != 0)
+            sdk::strcat(out.address, 0x001B7DE0u);
+    }
+
+    PORT_FN(McManager_FormatSlotLine);
+
+    // Makes a name for a new save on card slot `card` (32-byte names from 0x1F3CF0): the game's id string (pointer at
+    // 0x1BD9A0) followed by eight digits of the console clock in seconds (the day of the month and the month taken in
+    // 31-day units), or of the timer mix when the clock cannot be read. The original then compares the name with the other
+    // slots' of the same card group and returns without doing anything about a match, so the port leaves that out.
+    void McManager_NewSaveName(GuestPtr<McManager>, uint32_t card)
+    {
+        port::GuestFrame<0x70> frame;
+        const uint32_t clock = frame.ptr().address + 0x68u;
+        uint32_t value;
+        if (sdk::sceCdReadClock(clock) == 0)
+            value = static_cast<uint32_t>(Random_TimerMix());
+        else
+        {
+            const auto decimal = [&](uint32_t offset) {
+                const uint32_t bcd = port::load<uint8_t>(clock + offset);
+                return (bcd & 0xFu) + (bcd >> 4) * 10u;
+            };
+            value = decimal(6) * 0x28DE80u + decimal(5) * 0x15180u + decimal(3) * 0xE10u + decimal(2) * 0x3Cu + decimal(1);
+        }
+        const uint32_t name = 0x001F3CF0u + (card & 0xFFu) * 0x20u;
+        const uint32_t prefix = port::load<uint32_t>(0x001BD9A0u);
+        sdk::strcpy(name, prefix);
+        const uint32_t length = static_cast<uint32_t>(sdk::strlen(prefix));
+        for (uint32_t digit = length + 7u; digit >= length; --digit)
+        {
+            port::store<uint8_t>(name + digit, static_cast<uint8_t>('0' + value % 10u));
+            value /= 10u;
+        }
+        port::store<uint8_t>(name + length + 8u, 0);
+    }
+
+    PORT_FN(McManager_NewSaveName);
+
+    // The text of the `index`th used save slot (a slot is used when its card state at 0x1F4780 is positive and its record is not
+    // empty), for the load screen's description: a header, the day, the month and year counters (+0x3D as a 16-bit count of
+    // months), the name, the four-digit number and the signed three-digit number, with their separators. Empty `out` when there
+    // is no such slot. The records are the ones McManager_FormatSlotLine reads.
+    void McManager_FormatSaveInfo(GuestPtr<McManager>, int index, GuestPtr<char> out)
+    {
+        port::GuestFrame<0x60> frame;
+        const uint32_t number = frame.ptr().address + 0x50u;
+        int found = -1;
+        int used = 0;
+        for (int slot = 0; slot < 0x10; ++slot)
+        {
+            if (0 < port::load<int32_t>(0x001F4780u + 4u * static_cast<uint32_t>(slot)) && port::load<int8_t>(0x001F4340u + 0x44u * static_cast<uint32_t>(slot)) != 0)
+            {
+                if (used == index)
+                {
+                    found = slot;
+                    break;
+                }
+                ++used;
+            }
+        }
+        if (found == -1)
+        {
+            port::store<uint8_t>(out.address, 0);
+            return;
+        }
+        const uint32_t record = 0x001F4340u + 0x44u * static_cast<uint32_t>(found);
+        const auto append = [&](uint32_t format) {
+            sdk::sprintf(out.address + static_cast<uint32_t>(sdk::strlen(out.address)), format, number);
+        };
+        sdk::strcpy(out.address, 0x001B7D40u);
+        const int32_t day = static_cast<int32_t>(port::load<int8_t>(record + 0x42u)) + (static_cast<int32_t>(port::load<int8_t>(record + 0x43u)) << 8);
+        Text_FormatPadded(GuestPtr<char>{number}, remainder(day + 1, 100), 2);
+        blankLeadingZeros(number, 1);
+        sdk::strcat(out.address, number);
+        sdk::strcat(out.address, 0x001B7D48u);
+        const int32_t months = static_cast<int32_t>(port::load<uint8_t>(record + 0x3Du)) + (static_cast<int32_t>(port::load<int8_t>(record + 0x3Eu)) << 8);
+        Text_FormatPadded(GuestPtr<char>{number}, remainder(months, 12) + 1, 2);
+        blankLeadingZeros(number, 1);
+        append(0x001B7D50u);
+        Text_FormatPadded(GuestPtr<char>{number}, remainder(divide(months, 12), 1000) + 1, 3);
+        blankLeadingZeros(number, 2);
+        append(0x001B7D60u);
+        uint32_t dst = out.address + static_cast<uint32_t>(sdk::strlen(out.address));
+        const uint32_t nameStart = record + static_cast<uint32_t>(sdk::strlen(0x001B7C50u));
+        for (uint32_t src = nameStart; port::load<int8_t>(src) != 0; src += 2u)
+        {
+            uint32_t code = 0;
+            for (uint32_t table = 0x001B7C70u; port::load<int8_t>(table) != 0 && port::load<uint16_t>(src) != port::load<uint16_t>(table); table += 2u)
+                ++code;
+            port::store<uint8_t>(dst, static_cast<uint8_t>(code + 0x20u));
+            ++dst;
+        }
+        port::store<uint8_t>(dst, 0);
+        sdk::strcat(out.address, 0x001B7D70u);
+        const int32_t value = static_cast<int32_t>(port::load<uint8_t>(record + 0x40u)) + (static_cast<int32_t>(port::load<int8_t>(record + 0x41u)) << 8);
+        Text_FormatPadded(GuestPtr<char>{number}, remainder(value, 10000), 4);
+        blankLeadingZeros(number, 3);
+        sdk::strcat(out.address, number);
+        sdk::strcat(out.address, 0x001B7D80u);
+        const int32_t third = port::load<int8_t>(record + 0x3Fu);
+        if (third < 0)
+        {
+            const int32_t magnitude = -third;
+            Text_FormatPadded(GuestPtr<char>{number}, magnitude, 3);
+            blankLeadingZeros(number, 2);
+            port::store<uint8_t>(number + (magnitude < 10 ? 1u : 0u), '-');
+        }
+        else
+        {
+            Text_FormatPadded(GuestPtr<char>{number}, third, 3);
+            blankLeadingZeros(number, 2);
+        }
+        sdk::strcat(out.address, number);
+        sdk::strcat(out.address, 0x001B7D98u);
+    }
+
+    PORT_FN(McManager_FormatSaveInfo);
+
+    // The first free slot of the card (8 per card; a slot is free when its state at 0x1F4780 is not positive) gets a new name
+    // (McManager_NewSaveName) and its record address (0x20-byte records from 0x1F3CF0) is the result; 0 when all are used.
+    int McManager_PrepareNewSlot(GuestPtr<McManager> mc, int card)
+    {
+        for (int i = 0; i < 8; ++i)
+        {
+            if (port::load<int32_t>(0x001F4780u + 4u * static_cast<uint32_t>(card * 8 + i)) <= 0)
+            {
+                McManager_NewSaveName(mc, static_cast<uint32_t>(i & 0xFF));
+                return 0x001F3CF0 + i * 0x20;
+            }
+        }
+        return 0;
+    }
+
+    PORT_FN(McManager_PrepareNewSlot);
+
+    // Starts writing the icon and the save description file (mm_McSave_WriteIconSys on the manager's queue with the three arguments
+    // given): the request is kept at +0x14 and the two state words at 0x1BDB78 and 0x1BDB7C go back to -1.
+    void SaveFile_WriteIconSys(GuestPtr<McManager> mc, int a1, int a2, int a3)
+    {
+        mc->request = McSave_WriteIconSys(static_cast<int>(mc->queue.address), a1, a2, a3);
+        port::store<int32_t>(0x001BDB78u, -1);
+        port::store<int32_t>(0x001BDB7Cu, -1);
+    }
+
+    PORT_FN(SaveFile_WriteIconSys);
+
+    // The load screen's slot list, one slot per call. The newest of the 16 slots is found first (a slot counts when its size is
+    // above 0 and it has a name; the saved time is compared by year, month, day, hour, minute, second). The slot at the cursor is
+    // then taken, or the next one that counts (the cursor wraps to 0 with nothing written when none is left): its saved time
+    // (a clock as the BIOS keeps it: second, minute, hour, day, month and year at +9..+0xE of its header, each a plain number)
+    // is turned into the console's local time (sceScfGetLocalTimefromRTC) and written as "Slot %d: %s %s%s, %s. %shrs %smins"
+    // (the card number, the month name, the day with its ordinal suffix, the year, the hours and the minutes). The day suffix is
+    // "th" except for the days ending in 1, 2 and 3, where 11 and 12 (but not 13) keep "th". *isNewest tells whether this is the
+    // newest slot, and the short line for the slot is made as well (mm_McManager_FormatSlotLine). The cursor moves on (wrapping at
+    // 16) and is the result.
+    int McManager_FormatSlotText(GuestPtr<McManager> mc, GuestPtr<int32_t> cursor, GuestPtr<char> text, GuestPtr<uint32_t> isNewest)
+    {
+        port::GuestFrame<0xD0> frame;
+        const uint32_t sp = frame.ptr().address;
+        int newest = -1;
+        for (int slot = 0; slot < 0x10; ++slot)
+        {
+            const uint32_t index = static_cast<uint32_t>(slot);
+            if (port::load<int32_t>(globals::kSaveSlotSizes + 4u * index) <= 0 || port::load<int8_t>(globals::kSaveSlotNames + 0x44u * index) == 0)
+                continue;
+            if (newest == -1)
+            {
+                newest = slot;
+                continue;
+            }
+            const uint32_t best = globals::kSaveSlotHeaders + 0x40u * static_cast<uint32_t>(newest);
+            const uint32_t current = globals::kSaveSlotHeaders + 0x40u * index;
+            if (port::load<uint16_t>(best + 0xEu) != port::load<uint16_t>(current + 0xEu))
+            {
+                if (port::load<uint16_t>(best + 0xEu) < port::load<uint16_t>(current + 0xEu))
+                    newest = slot;
+                continue;
+            }
+            for (uint32_t at = 0xD; at >= 9; --at)
+            {
+                const uint8_t was = port::load<uint8_t>(best + at), now = port::load<uint8_t>(current + at);
+                if (was != now)
+                {
+                    if (was < now)
+                        newest = slot;
+                    break;
+                }
+            }
+        }
+        int32_t slot;
+        for (;;)
+        {
+            slot = *cursor;
+            if (port::load<int32_t>(globals::kSaveSlotSizes + 4u * static_cast<uint32_t>(slot)) > 0 &&
+                port::load<int8_t>(globals::kSaveSlotNames + 0x44u * static_cast<uint32_t>(slot)) != 0)
+                break;
+            *cursor = *cursor + 1;
+            if (*cursor >= 0x10)
+            {
+                *cursor = 0;
+                return *cursor;
+            }
+        }
+        const uint32_t header = globals::kSaveSlotHeaders + 0x40u * static_cast<uint32_t>(slot);
+        port::store<uint64_t>(sp + 0xB0u, port::load<uint64_t>(0x001BDBA0u));
+        const auto toBcd = [](uint32_t value) { return static_cast<uint8_t>((value / 10u) * 16u + value % 10u); };
+        const auto fromBcd = [](uint8_t value) { return static_cast<int32_t>(value & 0xFu) + static_cast<int32_t>(value >> 4) * 10; };
+        port::store<uint8_t>(sp + 0xB1u, toBcd(port::load<uint8_t>(header + 9u)));
+        port::store<uint8_t>(sp + 0xB2u, toBcd(port::load<uint8_t>(header + 0xAu)));
+        port::store<uint8_t>(sp + 0xB3u, toBcd(port::load<uint8_t>(header + 0xBu)));
+        port::store<uint8_t>(sp + 0xB5u, toBcd(port::load<uint8_t>(header + 0xCu)));
+        port::store<uint8_t>(sp + 0xB6u, toBcd(port::load<uint8_t>(header + 0xDu)));
+        port::store<uint8_t>(sp + 0xB7u, toBcd(port::load<uint16_t>(header + 0xEu) % 100u));
+        sdk::sceScfGetLocalTimefromRTC(sp + 0xB0u);
+        const int32_t year = 2000 + fromBcd(port::load<uint8_t>(sp + 0xB7u));
+        const int32_t day = fromBcd(port::load<uint8_t>(sp + 0xB5u));
+        Text_FormatPadded(GuestPtr<char>{sp + 0xB8u}, year, 4);
+        Text_FormatPadded(GuestPtr<char>{sp + 0xC4u}, day, 2);
+        Text_FormatPadded(GuestPtr<char>{sp + 0xC8u}, fromBcd(port::load<uint8_t>(sp + 0xB3u)), 2);
+        Text_FormatPadded(GuestPtr<char>{sp + 0xCCu}, fromBcd(port::load<uint8_t>(sp + 0xB2u)), 2);
+        uint32_t suffix = 0;
+        switch (day % 10)
+        {
+        case 1:
+            suffix = day == 11 ? 0u : 1u;
+            break;
+        case 2:
+            suffix = day == 12 ? 0u : 2u;
+            break;
+        case 3:
+            suffix = 3;
+            break;
+        default:
+            break;
+        }
+        const int32_t month = fromBcd(port::load<uint8_t>(sp + 0xB6u));
+        sdk::sprintf(text.address, 0x001B7EA0u, *cursor < 8 ? 1 : 2, port::load<uint32_t>(0x001B0B8Cu + 4u * static_cast<uint32_t>(month)),
+                     sp + 0xC4u, port::load<uint32_t>(0x001B0BC0u + 4u * suffix), sp + 0xB8u, sp + 0xC8u, sp + 0xCCu);
+        *isNewest = *cursor == newest ? 1u : 0u;
+        McManager_FormatSlotLine(mc, *cursor, text, *cursor == newest ? 1 : 0);
+        *cursor = *cursor + 1;
+        if (*cursor >= 0x10)
+            *cursor = 0;
+        return *cursor;
+    }
+
+    PORT_FN(McManager_FormatSlotText);
+
+    // Writes icon.sys of a save folder on the memory card: the PS2 icon description (the "PS2D" header, the title split at the line
+    // break position, the background transparency, three light directions, three light colours and the ambient colour, the title
+    // (0x44 bytes, `title`) and the three icon file names) is built in the static buffer at 0x1F65F0 (0x3C4 bytes) and queued as three
+    // requests on the card queue: open icon.sys for writing (port `port`; the file number comes back at 0x1BDCDC), then, when that is
+    // done (the queue is pumped meanwhile, with the usual atanf pause), write the buffer and close the file with its result at
+    // `result`. The result is the queue position after the close.
+    int McSave_WriteIconSys(int queue, int port, int title, int result)
+    {
+        constexpr uint32_t kImage = 0x001F65F0u, kFileNumber = 0x001BDCDCu;
+        sdk::memset(kImage, 0, 0x3C4u);
+        sdk::strcpy(kImage, 0x001B9C60u);
+        port::store<uint16_t>(kImage + 6u, static_cast<uint16_t>(sdk::strlen(0x001B9C40u)));
+        port::store<uint32_t>(kImage + 0xCu, 0x80u);
+        // Light directions (0x1F6640), light colours (0x1F6670) and the ambient colour (0x1F66A0), four floats each.
+        static constexpr uint32_t kLights[] = {
+            0x00000000u, 0x3FC00000u, 0x3F000000u, 0x3F800000u, 0x3FC00000u, 0xBF000000u, 0x3F000000u, 0x3F800000u,
+            0xBFC00000u, 0x3F000000u, 0x3F000000u, 0x3F800000u, 0x3F333333u, 0x3F333333u, 0x3F333333u, 0x3F800000u,
+            0x3E4CCCCDu, 0x3E4CCCCDu, 0x3E4CCCCDu, 0x3F800000u, 0x3E4CCCCDu, 0x3E4CCCCDu, 0x3E4CCCCDu, 0x3F800000u,
+            0x3EE66666u, 0x3EE66666u, 0x3EE66666u, 0x3F800000u};
+        for (uint32_t i = 0; i < 28; ++i)
+            port::store<uint32_t>(kImage + 0x50u + 4u * i, kLights[i]);
+        sdk::memcpy(kImage + 0xC0u, static_cast<uint32_t>(title), 0x44u);
+        sdk::strcpy(kImage + 0x104u, 0x001B9C68u);
+        sdk::strcpy(kImage + 0x144u, 0x001B9C68u);
+        sdk::strcpy(kImage + 0x184u, 0x001B9C68u);
+        const int opened = McQueue_Open(0, port, 0x001B9C78, 0x203, GuestPtr<int32_t>{kFileNumber});
+        while (McQueue_IsDone(queue, opened) == 0)
+        {
+            McQueue_Pump();
+            sdk::atanf(ps2f(1.0f));
+        }
+        const int fd = port::load<int32_t>(kFileNumber);
+        McQueue_Write(0, fd, static_cast<int>(kImage), 0x3C4, GuestPtr<int32_t>{0});
+        McQueue_Close(0, fd, GuestPtr<int32_t>{static_cast<uint32_t>(result)});
+        return globals::mcQueueTail.get();
+    }
+
+    PORT_FN(McSave_WriteIconSys);
 }

@@ -2,6 +2,7 @@
 
 #include "game_functions.h"
 #include "game_globals.h"
+#include "sdk.h"
 
 namespace mm
 {
@@ -319,4 +320,262 @@ namespace mm
 
     PORT_FN(Family_AddFriendship);
     PORT_FN(Family_BefriendAll);
+
+    // ---- The family record cache (plan P6 batch 1) ----
+
+    namespace
+    {
+        // The cache slot holding `family`, or -1.
+        int32_t findFamilySlot(int family)
+        {
+            for (int32_t slot = 0; slot < 0x100; ++slot)
+                if (port::load<int32_t>(globals::kFamilyTableA + 4u * static_cast<uint32_t>(slot)) == family)
+                    return slot;
+            return -1;
+        }
+
+        // The slot to reuse: the one used longest ago (the first, at a tie), starting from the current frame.
+        int32_t oldestFamilySlot()
+        {
+            uint32_t oldest = static_cast<uint32_t>(globals::frameCounter.get());
+            int32_t best = 0;
+            for (int32_t slot = 0; slot < 0x100; ++slot)
+            {
+                const uint32_t usedAt = port::load<uint32_t>(globals::kFamilyTableB + 4u * static_cast<uint32_t>(slot));
+                if (!(oldest <= usedAt))
+                {
+                    oldest = usedAt;
+                    best = slot;
+                }
+            }
+            return best;
+        }
+
+        uint32_t familyRecord(int32_t slot) { return globals::kFamilyRecords + 0x1D4u * static_cast<uint32_t>(slot); }
+        uint32_t familyLoadedFlag(int32_t slot) { return familyRecord(slot) + 0x20u; }
+        uint32_t slotWord(uint32_t table, int32_t slot) { return table + 4u * static_cast<uint32_t>(slot); }
+
+        // A slot that was claimed but whose record never loaded is emptied.
+        void emptyFamilySlot(int32_t slot)
+        {
+            port::store<uint32_t>(slotWord(globals::kFamilyTableB, slot), 0u);
+            port::store<uint32_t>(slotWord(globals::kFamilyTableA, slot), 0u);
+            port::store<int32_t>(slotWord(globals::kFamilyTableC, slot), -1);
+        }
+    }
+
+    // Opens FAMILY.BIN (asynchronous reads, 0x8000 buffer) and loads DATA\BIN\EACHSTR.BIN whole; its size is kept in halfwords.
+    void Family_Init()
+    {
+        Family_ResetState();
+        const uint32_t memory = sdk::operator_new(8u);
+        uint32_t file = memory;
+        if (memory != 0u)
+            file = File_ctor(GuestPtr<GameFile>{memory}, 0x8000).address;
+        globals::familyFile.set(file);
+        File_Open(GuestPtr<GameFile>{globals::familyFile.get()}, GuestPtr<char>{0x001B6390u});
+        FileQueue_WaitAll(0);
+        port::GuestLocal<GameFile> local;
+        port::GuestLocal<int32_t> size;
+        File_ctor(local, 0);
+        globals::eachStrData.set(static_cast<uint32_t>(File_LoadWhole(local, GuestPtr<char>{0x001B63B0u}, size)));
+        int32_t length = *size;
+        if (length < 0)
+            length += 1;
+        globals::eachStrCount.set(length >> 1);
+        File_dtor(local, -1);
+    }
+
+    // The family record in the cache, waiting for it if it is still being read; otherwise reads it into the least recently
+    // used slot and waits (flags is the wait functions' quiet argument).
+    GuestPtr<Family> Family_Get(int family, int flags)
+    {
+        int32_t slot = findFamilySlot(family);
+        if (slot != -1)
+        {
+            const uint32_t request = slotWord(globals::kFamilyTableC, slot);
+            if (port::load<int32_t>(request) != -1)
+            {
+                FileQueue_WaitFor(static_cast<int>(globals::familyFile.get()), port::load<int32_t>(request), flags);
+                port::store<int32_t>(request, -1);
+            }
+            if (port::load<int16_t>(familyLoadedFlag(slot)) != 0)
+                return GuestPtr<Family>{familyRecord(slot)};
+            emptyFamilySlot(slot);
+        }
+        slot = oldestFamilySlot();
+        port::store<int16_t>(familyLoadedFlag(slot), 0);
+        const GuestPtr<GameFile> file{globals::familyFile.get()};
+        File_Seek(file, family * 0x1D4, 0, 0);
+        const uint32_t record = familyRecord(slot);
+        File_Read(file, static_cast<int>(record), 1, 0x1D4, 0);
+        port::store<int32_t>(slotWord(globals::kFamilyTableA, slot), family);
+        port::store<int32_t>(slotWord(globals::kFamilyTableB, slot), globals::frameCounter.get());
+        port::store<int32_t>(slotWord(globals::kFamilyTableC, slot), -1);
+        FileQueue_WaitAll(flags);
+        return GuestPtr<Family>{record};
+    }
+
+    // Starts reading a family record without waiting: returns the record's address once it is there, else 0 (the read is
+    // started, or skipped when flags is 1 and the file queue already holds more than 0x20 requests).
+    int Family_Prefetch(int family, int flags)
+    {
+        int32_t slot = findFamilySlot(family);
+        if (slot != -1)
+        {
+            const uint32_t request = slotWord(globals::kFamilyTableC, slot);
+            if (port::load<int32_t>(request) != -1)
+            {
+                if (FileQueue_IsDone(static_cast<int>(globals::familyFile.get()), port::load<int32_t>(request)) == 0)
+                    return 0;
+                port::store<int32_t>(request, -1);
+                return static_cast<int>(familyRecord(slot));
+            }
+            if (port::load<int16_t>(familyLoadedFlag(slot)) != 0)
+                return static_cast<int>(familyRecord(slot));
+            emptyFamilySlot(slot);
+        }
+        if (flags != 1 || globals::fileQueueCount.get() < 0x21)
+        {
+            slot = oldestFamilySlot();
+            port::store<int16_t>(familyLoadedFlag(slot), 0);
+            const GuestPtr<GameFile> file{globals::familyFile.get()};
+            File_Seek(file, family * 0x1D4, 0, static_cast<uint16_t>(flags));
+            const int requestId = File_Read(file, static_cast<int>(familyRecord(slot)), 1, 0x1D4, static_cast<uint16_t>(flags));
+            port::store<int32_t>(slotWord(globals::kFamilyTableC, slot), requestId);
+            port::store<int32_t>(slotWord(globals::kFamilyTableA, slot), family);
+            port::store<int32_t>(slotWord(globals::kFamilyTableB, slot), globals::frameCounter.get());
+        }
+        return 0;
+    }
+
+    PORT_FN(Family_Init);
+    PORT_FN(Family_Get);
+    PORT_FN(Family_Prefetch);
+
+    // The first of the member's acquaintances (of up to 16, ended by 0) that may apply to the city (Family_CanApply); 0 when
+    // there is none. Returns the family id.
+    uint32_t Family_PickIntroduction(int family, int member, GuestPtr<CityScene> city)
+    {
+        const GuestPtr<Family> record = Family_Get(family, 0);
+        const uint32_t acquaintances = record.address + 0x24u + 0x48u * static_cast<uint32_t>(member) + 8u;
+        for (uint32_t i = 0; i < 16u; ++i)
+        {
+            const uint32_t id = port::load<uint16_t>(acquaintances + 2u * i);
+            if (id == 0)
+                return 0;
+            if (Family_CanApply(id, city) != 0)
+                return id;
+        }
+        return 0;
+    }
+
+    PORT_FN(Family_PickIntroduction);
+
+    // ---- Moving a family in (plan P6 batch 2) ----
+
+    namespace
+    {
+        // The next free person record (one whose character type, +0x24, is 0) from the cursor at +0x6C of the map, which
+        // moves on past the used ones and wraps at 6000. After 6001 used records in a row the answer is record 0, in use or not.
+        uint32_t nextFreePerson(uint32_t map)
+        {
+            int steps = 0;
+            for (;;)
+            {
+                const uint32_t cursor = port::load<uint32_t>(map + 0x6Cu);
+                if (port::load<uint8_t>(port::load<uint32_t>(map + 0x68u) + cursor * 0x30u + 0x24u) == 0)
+                    return cursor;
+                ++steps;
+                port::store<uint32_t>(map + 0x6Cu, cursor + 1u);
+                if (steps >= 0x1771)
+                    return 0;
+                if (port::load<int32_t>(map + 0x6Cu) >= 0x1770)
+                    port::store<uint32_t>(map + 0x6Cu, 0u);
+            }
+        }
+    }
+
+    // Puts the members of `family` on the map at the tile of building `object`: a person record for each, at the middle of the
+    // tile (x from the low 7 bits of the tile, z from the high bits counted from the far edge), walking nowhere, with the
+    // family and member numbers, a schedule state, the member's flags (+0x2B of the member record, 8 added for members with
+    // bit 4 of +0x27), activity 0x13 and an introduction; each counts in the placement score of its character class. When some
+    // member had bit 4 of +0x27 and the building is not of category 9 or 0xB, one more record (character type 0x34) is made at
+    // the same spot. The family is then flagged (mm_Family_SetFlagA).
+    void Family_AssignHome(GuestPtr<CityMap> map, GuestPtr<CityScene> city, int family, int object)
+    {
+        const GuestPtr<Family> record = Family_Get(family, 0);
+        const GuestPtr<MapObject> house = map->objects + object;
+        const uint32_t tile = house->tile;
+        const ps2f x = ps2f(0.5f) + (fromInt(static_cast<int32_t>(tile & 0x7Fu)) - ps2f(64.0f));
+        const ps2f z = (fromInt(0x80 - static_cast<int32_t>(tile >> 7)) - ps2f(64.0f)) - ps2f(0.5f);
+        bool extra = false;
+        const auto place = [&](uint32_t index) {
+            const GuestPtr<MapPerson> person{port::load<uint32_t>(map.address + 0x68u) + 0x30u * index};
+            person->x = x;
+            port::store<uint32_t>(person.address + 4u, 0u);
+            person->z = z;
+            port::store<uint32_t>(person.address + 0xCu, 0u);
+            return person;
+        };
+        for (int i = 0; i < record->memberCount; ++i)
+        {
+            const uint32_t member = record.address + 0x48u * static_cast<uint32_t>(i);
+            const uint32_t index = nextFreePerson(map.address);
+            const GuestPtr<MapPerson> person = place(index);
+            person->charType = port::load<uint8_t>(member + 0x24u);
+            person->nextOnTile = 6000;
+            person->index = static_cast<uint16_t>(index);
+            person->work = static_cast<uint16_t>(object);
+            person->inside = 0x3F80;
+            person->destination = 0x3F80;
+            person->walkTile = 0x4000;
+            person->previousTile = 0x4000;
+            port::store<uint16_t>(person.address + 0x1Cu, 0);
+            person->cooldown = 0;
+            person->target = 0x3F80;
+            person->follow = 0;
+            person->family = static_cast<uint16_t>(family);
+            person->member = static_cast<uint8_t>(i);
+            person->schedState = Schedule_Evaluate(person->family, person->member);
+            person->flags = port::load<uint8_t>(member + 0x2Bu);
+            person->activity = 0x13;
+            person->introduces = static_cast<uint16_t>(Family_PickIntroduction(person->family, person->member, city));
+            if ((port::load<uint8_t>(member + 0x27u) & 4u) != 0)
+            {
+                extra = true;
+                person->flags = static_cast<uint16_t>(person->flags | 8);
+            }
+            person->flags = static_cast<uint16_t>(person->flags | 0x800);
+            const uint32_t classWord = port::load<uint32_t>(port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType) + 0x1Cu);
+            CityScene_RecordPlacementScore(city, static_cast<int>((classWord & 0x7000u) >> 12), static_cast<int>((classWord & 0xE00u) >> 9));
+            port::store<int32_t>(map.address + 0x74u, port::load<int32_t>(map.address + 0x74u) + 1);
+            port::store<int32_t>(map.address + 0x70u, port::load<int32_t>(map.address + 0x70u) + 1);
+        }
+        const uint32_t category = port::load<uint8_t>(globals::buildingTypeAddress(house->type) + 0x14Bu);
+        if (category == 9 || category == 0xB)
+            extra = false;
+        if (extra)
+        {
+            const uint32_t index = nextFreePerson(map.address);
+            const GuestPtr<MapPerson> person = place(index);
+            person->charType = 0x34;
+            person->nextOnTile = 6000;
+            person->index = static_cast<uint16_t>(index);
+            person->flags = 0;
+            person->work = static_cast<uint16_t>(object);
+            person->inside = 0x3F80;
+            person->walkTile = 0x4000;
+            person->previousTile = 0x4000;
+            port::store<uint16_t>(person.address + 0x1Cu, 0);
+            person->target = 6000;
+            person->family = 6000;
+            person->introduces = 0;
+            person->flags = static_cast<uint16_t>(person->flags | 0x800);
+            port::store<int32_t>(map.address + 0x70u, port::load<int32_t>(map.address + 0x70u) + 1);
+        }
+        Family_SetFlagA(static_cast<uint32_t>(family));
+    }
+
+    PORT_FN(Family_AssignHome);
 }

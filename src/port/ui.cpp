@@ -2,6 +2,7 @@
 
 #include "game_functions.h"
 #include "game_globals.h"
+#include "lifetime.h"
 #include "sdk.h"
 #include "vu0.h"
 
@@ -3077,4 +3078,2200 @@ namespace mm
     }
 
     PORT_FN(NameEntry_HandleInput);
+
+    // ---- Destructors (plan P6 batch 1) ----
+
+    GuestPtr<PhoneCalls> PhoneCall_DeletingDtor(GuestPtr<PhoneCalls> phone, int16_t deleteFlag)
+    {
+        if (phone && 0 < deleteFlag)
+            sdk::operator_delete(phone.address);
+        return phone;
+    }
+
+    // The vtable goes back to the base class's before the object is deleted.
+    GuestPtr<Widget> Widget_dtor(GuestPtr<Widget> widget, int16_t deleteFlag)
+    {
+        if (widget)
+        {
+            port::store<uint32_t>(widget.address + 8u, 0x001BD400u);
+            if (0 < deleteFlag)
+                sdk::operator_delete(widget.address);
+        }
+        return widget;
+    }
+
+    GuestPtr<Minimap> Minimap_DeletingDtor(GuestPtr<Minimap> minimap, int16_t deleteFlag)
+    {
+        if (minimap)
+        {
+            BaseObject_dtor(static_cast<int>(minimap.address), 0);
+            if (0 < deleteFlag)
+                sdk::operator_delete(minimap.address);
+        }
+        return minimap;
+    }
+
+    GuestPtr<Frame> Frame_DeletingDtor(GuestPtr<Frame> frame, int16_t deleteFlag)
+    {
+        if (frame)
+        {
+            BaseObject_dtor(static_cast<int>(frame.address), 0);
+            if (0 < deleteFlag)
+                sdk::operator_delete(frame.address);
+        }
+        return frame;
+    }
+
+    // Waits for the GS (the box's packet may still be in flight), frees the packet and deletes the box when the flag is
+    // positive.
+    GuestPtr<TextBox> TextBox_dtor(GuestPtr<TextBox> textbox, int16_t deleteFlag)
+    {
+        if (textbox)
+        {
+            sdk::sceGsSyncPath(0, 0);
+            if (textbox->packet != 0u)
+            {
+                sdk::free(textbox->packet);
+                textbox->packet = 0u;
+            }
+            if (0 < deleteFlag)
+                sdk::operator_delete(textbox.address);
+        }
+        return textbox;
+    }
+
+    PORT_FN(PhoneCall_DeletingDtor);
+    PORT_FN(Widget_dtor);
+    PORT_FN(Minimap_DeletingDtor);
+    PORT_FN(Frame_DeletingDtor);
+    PORT_FN(TextBox_dtor);
+
+    // ---- Destructors (plan P6 batch 2): each deletes the text boxes and frames it owns, in field order ----
+
+    GuestPtr<MsgWin> MsgWin_dtor(GuestPtr<MsgWin> msgwin, int16_t deleteFlag)
+    {
+        if (msgwin)
+        {
+            port::store<uint32_t>(msgwin.address + 8u, 0x001BCE10u);
+            lifetime::deleteFrame(msgwin.address + 0x14u);
+            lifetime::deleteTextBox(msgwin.address + 0x10u);
+            Widget_dtor(GuestPtr<Widget>{msgwin.address}, 0);
+            if (0 < deleteFlag)
+                sdk::operator_delete(msgwin.address);
+        }
+        return msgwin;
+    }
+
+    // 32 item texts (12 bytes apart from +0xEC) and the frame at +0xE0.
+    GuestPtr<ListMenu> ListMenu_dtor(GuestPtr<ListMenu> menu, int16_t deleteFlag)
+    {
+        if (menu)
+        {
+            for (uint32_t i = 0; i < 32u; ++i)
+                lifetime::deleteTextBox(menu.address + 0xECu + 0xCu * i);
+            lifetime::deleteFrame(menu.address + 0xE0u);
+            if (0 < deleteFlag)
+                sdk::operator_delete(menu.address);
+        }
+        return menu;
+    }
+
+    GuestPtr<WantsWin> WantsWin_dtor(GuestPtr<WantsWin> wants, int16_t deleteFlag)
+    {
+        if (wants)
+        {
+            for (uint32_t offset = 0x508u; offset <= 0x514u; offset += 4u)
+                lifetime::deleteTextBox(wants.address + offset);
+            if (0 < deleteFlag)
+                sdk::operator_delete(wants.address);
+        }
+        return wants;
+    }
+
+    // The text box at +8 and the two objects at +0 and +4, which delete themselves through their vtables.
+    GuestPtr<LoadingScreen> LoadingScreen_dtor(GuestPtr<LoadingScreen> loading, int16_t deleteFlag)
+    {
+        if (loading)
+        {
+            lifetime::deleteTextBox(loading.address + 8u);
+            lifetime::deleteVirtual(loading.address + 0u, 0);
+            lifetime::deleteVirtual(loading.address + 4u, 0);
+            if (0 < deleteFlag)
+                sdk::operator_delete(loading.address);
+        }
+        return loading;
+    }
+
+    GuestPtr<StatusPanel> StatusPanel_dtor(GuestPtr<StatusPanel> panel, int16_t deleteFlag)
+    {
+        if (panel)
+        {
+            for (uint32_t offset = 0xACu; offset >= 0xA0u; offset -= 4u)
+                lifetime::deleteTextBox(panel.address + offset);
+            BaseObject_dtor(static_cast<int>(panel.address), 0);
+            if (0 < deleteFlag)
+                sdk::operator_delete(panel.address);
+        }
+        return panel;
+    }
+
+    GuestPtr<NameEntry> NameEntry_dtor(GuestPtr<NameEntry> entry, int16_t deleteFlag)
+    {
+        if (entry)
+        {
+            port::store<uint32_t>(entry.address + 0x120u, 0x001BCFE8u);
+            for (uint32_t offset = 4u; offset <= 0x10u; offset += 4u)
+                lifetime::deleteTextBox(entry.address + offset);
+            if (0 < deleteFlag)
+                sdk::operator_delete(entry.address);
+        }
+        return entry;
+    }
+
+    // Two views of 0xD0 bytes: the fade and info frames, then five lines each with the frame behind it.
+    GuestPtr<CityCursor> CityCursor_dtor(GuestPtr<CityCursor> cursor, int16_t deleteFlag)
+    {
+        if (cursor)
+        {
+            for (uint32_t view = 0; view < 2u; ++view)
+            {
+                const uint32_t base = cursor.address + 0xD0u * view;
+                lifetime::deleteFrame(base + 0x2Cu);
+                lifetime::deleteFrame(base + 0x28u);
+                for (uint32_t line = 0; line < 5u; ++line)
+                {
+                    lifetime::deleteTextBox(base + 4u * line);
+                    lifetime::deleteFrame(base + 0x14u + 4u * line);
+                }
+            }
+            BaseObject_dtor(static_cast<int>(cursor.address), 0);
+            if (0 < deleteFlag)
+                sdk::operator_delete(cursor.address);
+        }
+        return cursor;
+    }
+
+    GuestPtr<Laptop> Laptop_dtor(GuestPtr<Laptop> laptop, int16_t deleteFlag)
+    {
+        if (laptop)
+        {
+            lifetime::deleteTextBox(laptop.address + 0x44u);
+            if (0 < deleteFlag)
+                sdk::operator_delete(laptop.address);
+        }
+        return laptop;
+    }
+
+    // The applicants window embeds a stage object at the odd offset +0x289, whose destructor is called with flag 0.
+    GuestPtr<Applicants> ApplicantsBase_dtor(GuestPtr<Applicants> applicants, int16_t deleteFlag)
+    {
+        if (applicants)
+        {
+            port::store<uint32_t>(applicants.address + 0x320u, 0x001BCF60u);
+            lifetime::deleteTextBox(applicants.address + 0x294u);
+            StageObj_DeletingDtor(static_cast<int>(applicants.address + 0x289u), 0);
+            if (0 < deleteFlag)
+                sdk::operator_delete(applicants.address);
+        }
+        return applicants;
+    }
+
+    GuestPtr<Notice> Notice_dtor(GuestPtr<Notice> notice, int16_t deleteFlag)
+    {
+        if (notice)
+        {
+            lifetime::deleteTextBox(notice.address + 8u);
+            lifetime::deleteTextBox(notice.address + 0xCu);
+            if (0 < deleteFlag)
+                sdk::operator_delete(notice.address);
+        }
+        return notice;
+    }
+
+    // The cursor frame, the contents index, then the six page texts.
+    GuestPtr<TownPages> TownPages_dtor(GuestPtr<TownPages> pages, int16_t deleteFlag)
+    {
+        if (pages)
+        {
+            lifetime::deleteFrame(pages.address + 0x4Cu);
+            const uint32_t index = port::load<uint32_t>(pages.address + 0x34u);
+            if (index != 0u)
+            {
+                sdk::operator_delete(index);
+                port::store<uint32_t>(pages.address + 0x34u, 0u);
+            }
+            for (uint32_t offset = 4u; offset <= 0x18u; offset += 4u)
+                lifetime::deleteTextBox(pages.address + offset);
+            if (0 < deleteFlag)
+                sdk::operator_delete(pages.address);
+        }
+        return pages;
+    }
+
+    // The "please wait" text box (global at 0x1BDAC4).
+    void WaitText_Delete()
+    {
+        lifetime::deleteTextBox(0x001BDAC4u);
+    }
+
+    PORT_FN(MsgWin_dtor);
+    PORT_FN(ListMenu_dtor);
+    PORT_FN(WantsWin_dtor);
+    PORT_FN(LoadingScreen_dtor);
+    PORT_FN(StatusPanel_dtor);
+    PORT_FN(NameEntry_dtor);
+    PORT_FN(CityCursor_dtor);
+    PORT_FN(Laptop_dtor);
+    PORT_FN(ApplicantsBase_dtor);
+    PORT_FN(Notice_dtor);
+    PORT_FN(TownPages_dtor);
+    PORT_FN(WaitText_Delete);
+
+    // ---- Town's Pages and text box set-up (plan P6 batch 2) ----
+
+    // The book of the Town's Pages: a cursor frame, the book model (0x1F3B20) with its matrix moved to the reading position
+    // (0x1B1A60), nothing loaded yet.
+    GuestPtr<TownPages> TownPages_Init(GuestPtr<TownPages> pages)
+    {
+        const uint32_t memory = sdk::operator_new(0xC0u);
+        uint32_t frame = 0u;
+        if (memory != 0u)
+            frame = Frame_ctor(GuestPtr<Frame>{memory}, 0x1E, 0x64, 0x64, 0x18, 0xC, 0x10000000u).address;
+        port::store<uint32_t>(pages.address + 0x4Cu, frame);
+        port::store<uint32_t>(pages.address, port::load<uint32_t>(0x001F3B20u));
+        port::store<uint32_t>(pages.address + 0x1Cu, 0u);
+        port::store<uint32_t>(pages.address + 0x24u, port::load<uint32_t>(pages.address) + 0x10u);
+        for (uint32_t i = 0; i < 3u; ++i)
+            port::store<uint32_t>(port::load<uint32_t>(pages.address + 0x24u) + 0x30u + 4u * i, port::load<uint32_t>(0x001B1A60u + 4u * i));
+        port::store<uint32_t>(pages.address + 0x28u, 0u);
+        for (uint32_t offset = 4u; offset <= 0x18u; offset += 4u)
+            port::store<uint32_t>(pages.address + offset, 0u);
+        port::store<uint32_t>(pages.address + 0x34u, 0u);
+        port::store<uint32_t>(pages.address + 0x2Cu, 0u);
+        port::store<uint32_t>(pages.address + 0x58u, 0u);
+        port::store<uint32_t>(pages.address + 0x5Cu, 0u);
+        port::store<uint32_t>(pages.address + 0x30u, 0u);
+        port::store<uint32_t>(pages.address + 0x60u, 0u);
+        return pages;
+    }
+
+    // Sets up a text box of `columns` (twice that many cells wide) by `rows`: its place on screen (0x6C00, 0x7900, depth
+    // 16000000), the cell size and pitch (0xC0 by 0xB0), the palette (style -1 and -2 are the two built-in ones at 0x1B24A0 and
+    // 0x1B24E0), and the packet buffer (11 quadwords a cell, plus 12 and 8 for a palette) it is then built into; the cells' words
+    // at +4 are set to the global at 0x1BDC98.
+    GuestPtr<TextBox> TextBox_Init(GuestPtr<TextBox> textbox, int columns, int rows, int style)
+    {
+        const uint32_t t = textbox.address;
+        port::store<int32_t>(t + 0x38u, columns << 1);
+        port::store<int32_t>(t + 0x3Cu, rows);
+        port::store<int32_t>(t + 0x18u, 0x6C00);
+        port::store<int32_t>(t + 0x1Cu, 0x7900);
+        port::store<int32_t>(t + 0x20u, 16000000);
+        port::store<int32_t>(t + 0x10u, 0xC0);
+        port::store<int32_t>(t + 0x14u, 0xB0);
+        port::store<int32_t>(t + 0x24u, port::load<int32_t>(t + 0x10u));
+        port::store<int32_t>(t + 0x28u, port::load<int32_t>(t + 0x14u));
+        port::store<int32_t>(t + 0x2Cu, 0);
+        const int32_t cells = port::load<int32_t>(t + 0x38u) * port::load<int32_t>(t + 0x3Cu);
+        if (style == -1)
+            style = 0x001B24A0;
+        else if (style == -2)
+            style = 0x001B24E0;
+        const int32_t paletteQuads = style != 0 ? 8 : 0;
+        port::store<int32_t>(t + 0xCu, style);
+        port::store<uint32_t>(t + 8u, sdk::malloc(static_cast<uint32_t>(paletteQuads + 0xC + cells * 11) << 4));
+        TextBox_Build(textbox, port::load<int32_t>(t + 0xCu));
+        port::store<int32_t>(t + 0x2Cu, 0);
+        const int32_t count = port::load<int32_t>(t + 0x38u) * port::load<int32_t>(t + 0x3Cu);
+        uint32_t cell = port::load<uint32_t>(t + 0x34u) + 0x50u;
+        for (int32_t i = 0; i < count; ++i, cell += 0x60u)
+            port::store<uint32_t>(cell + 4u, port::load<uint32_t>(0x001BDC98u));
+        return textbox;
+    }
+
+    PORT_FN(TownPages_Init);
+    PORT_FN(TextBox_Init);
+
+    // Builds the book's index: one 8-byte entry per family type (count of known families, the first of them, the page the type
+    // starts on), pages of 10 families each. The contents pages (10 types a page, at least one) come first, so every start page
+    // moves up by their number, and the total page count includes them.
+    void TownPages_BuildIndex(GuestPtr<TownPages> pages)
+    {
+        const int32_t types = globals::familyTypeCount.get();
+        port::store<uint32_t>(pages.address + 0x34u, sdk::mw_NewArray(static_cast<uint32_t>(types) << 3));
+        const auto entry = [&](int32_t type) { return port::load<uint32_t>(pages.address + 0x34u) + 8u * static_cast<uint32_t>(type); };
+        for (int32_t type = 0; type < types; ++type)
+            port::store<uint16_t>(entry(type), 0);
+        for (uint32_t family = 1; family < 10000u; ++family)
+        {
+            if (Family_IsKnown(family) == 0)
+                continue;
+            const int32_t type = Family_GetTypeIndex(static_cast<int>(family & 0xFFFFu));
+            if (port::load<uint16_t>(entry(type)) == 0)
+                port::store<uint16_t>(entry(type) + 2u, static_cast<uint16_t>(family));
+            port::store<uint16_t>(entry(type), static_cast<uint16_t>(port::load<uint16_t>(entry(type)) + 1u));
+        }
+        int32_t knownTypes = 0, pageCount = 0;
+        for (int32_t type = 0; type < types; ++type)
+        {
+            const uint32_t e = entry(type);
+            if (port::load<uint16_t>(e) == 0)
+            {
+                port::store<uint16_t>(e + 4u, 0);
+                continue;
+            }
+            port::store<uint16_t>(e + 4u, static_cast<uint16_t>(pageCount));
+            ++knownTypes;
+            pageCount += (static_cast<int32_t>(port::load<uint16_t>(e)) - 1) / 10 + 1;
+        }
+        port::store<int32_t>(pages.address + 0x3Cu, pageCount);
+        port::store<int32_t>(pages.address + 0x38u, (knownTypes + 9) / 10);
+        if (port::load<int32_t>(pages.address + 0x38u) == 0)
+            port::store<int32_t>(pages.address + 0x38u, 1);
+        for (int32_t type = 0; type < types; ++type)
+        {
+            const uint32_t e = entry(type);
+            const uint16_t start = port::load<uint16_t>(e + 4u);
+            if (start != 0xFFFFu)
+                port::store<uint16_t>(e + 4u, static_cast<uint16_t>(start + port::load<uint16_t>(pages.address + 0x38u)));
+        }
+        port::store<int32_t>(pages.address + 0x3Cu, port::load<int32_t>(pages.address + 0x3Cu) + port::load<int32_t>(pages.address + 0x38u));
+    }
+
+    PORT_FN(TownPages_BuildIndex);
+
+    // One frame of a logo screen (steps in pressStep): 0 loads the logo sprite (logo 0, 1 or any other: three files) and places
+    // it, 1 draws the title layers until they are done (then the logo shows for 140 frames), 2 draws the logo and counts the
+    // frames down, 3 draws the layers again until done, 4 deletes the sprite and reports the screen finished (1); 0 until then.
+    int SceneA_LogoStep(GuestPtr<SceneA> scene, char logo)
+    {
+        const int step = scene->pressStep;
+        if (step == 4)
+        {
+            const uint32_t sprite = scene->logoSprite.address;
+            if (sprite != 0u)
+            {
+                port::callGuest<void>(port::load<uint32_t>(port::load<uint32_t>(sprite) + 8u), sprite, 1);
+                scene->logoSprite = GuestPtr<TexSprite>{0u};
+            }
+            return 1;
+        }
+        if (step == 3)
+        {
+            if (Title_DrawCommon(scene, 0xB) == 1)
+                scene->pressStep = scene->pressStep + 1;
+        }
+        else if (step == 2)
+        {
+            TexSprite_Draw(scene->logoSprite);
+            scene->introFrame = scene->introFrame - 1;
+            if (!(scene->introFrame > 0))
+                scene->pressStep = scene->pressStep + 1;
+        }
+        else if (step == 1)
+        {
+            if (Title_DrawCommon(scene, 10) == 1)
+            {
+                scene->pressStep = scene->pressStep + 1;
+                scene->introFrame = 0x8C;
+            }
+        }
+        else if (step == 0)
+        {
+            const uint32_t path = logo == 1 ? 0x001B8CA0u : (logo == 0 ? 0x001B8C80u : 0x001B8CC0u);
+            const uint32_t memory = sdk::operator_new(0x38u);
+            uint32_t sprite = 0u;
+            if (memory != 0u)
+                sprite = static_cast<uint32_t>(TexSprite_Load(GuestPtr<TexSprite>{memory}, static_cast<int>(path), 0));
+            scene->logoSprite = GuestPtr<TexSprite>{sprite};
+            TexSprite_SetPosScale(scene->logoSprite, 0, 0, 0x3E00, 1.0f, 1.0f);
+            scene->pressStep = scene->pressStep + 1;
+        }
+        return 0;
+    }
+
+    PORT_FN(SceneA_LogoStep);
+
+    // The stage briefing scene: the stage object base and a widget at +4, the scene's own vtables (+0x100 and +0xC), the fields
+    // cleared, and with `loadStage` the next stage read (stage number + 1 kept at +0x24); then its light set (+0x14) and camera
+    // (+0x10), the camera placed with the eye and target vectors at 0x1B08D0 and 0x1B08E0.
+    GuestPtr<SceneB> SceneB_ctor(GuestPtr<SceneB> scene, int loadStage)
+    {
+        port::GuestFrame<0x50> frame;
+        const uint32_t sp = frame.ptr().address;
+        const uint32_t s = scene.address;
+        StageObj_ctor(static_cast<int>(s));
+        Widget_ctor(GuestPtr<Widget>{s + 4u});
+        port::store<uint32_t>(s + 0x100u, 0x001BCF10u);
+        port::store<uint32_t>(s + 0xCu, 0x001BCF18u);
+        port::store<uint32_t>(s + 0x24u, 0u);
+        port::store<uint8_t>(s + 0x28u, 0);
+        port::store<uint32_t>(s + 0x34u, 0u);
+        port::store<uint32_t>(s + 0x30u, 0u);
+        port::store<uint8_t>(s + 0x29u, 0);
+        port::store<uint32_t>(s + 0x20u, 0u);
+        if (loadStage != 0)
+        {
+            Stage_Load();
+            port::store<uint32_t>(s + 0x24u, port::load<uint32_t>(0x001C5548u) + 1u);
+        }
+        uint32_t lights = sdk::operator_new(0x1B0u);
+        if (lights != 0u)
+            lights = LightSet_ctor(GuestPtr<LightSet>{lights}).address;
+        port::store<uint32_t>(s + 0x14u, lights);
+        uint32_t camera = sdk::operator_new(0x310u);
+        if (camera != 0u)
+            camera = Camera_ctor(GuestPtr<Camera>{camera}).address;
+        port::store<uint32_t>(s + 0x10u, camera);
+        *GuestPtr<Vec4>{sp + 0x40u} = *GuestPtr<Vec4>{0x001B08D0u};
+        *GuestPtr<Vec4>{sp + 0x30u} = *GuestPtr<Vec4>{0x001B08E0u};
+        Camera_SetEyeTarget(GuestPtr<Camera>{port::load<uint32_t>(s + 0x10u)}, GuestPtr<Vec4>{sp + 0x40u}, GuestPtr<Vec4>{sp + 0x30u});
+        Camera_UpdateMatrices(GuestPtr<Camera>{port::load<uint32_t>(s + 0x10u)});
+        return scene;
+    }
+
+    PORT_FN(SceneB_ctor);
+
+    // Builds the stage briefing's next text into the scene's buffer (+0x5C) and returns 1 while there is more: phase 0 looks the
+    // stage number up in the list at 0x1B71F0 (a stage can have several special messages, one per call), then phase 1 gives the
+    // stage's general text, phase 2 the goal in two parts (the heading at 0x1B72A0 with the goal text, then 0x1B72D0); the last part
+    // ends it with 0 and clears the phase.
+    int SceneB_BuildBriefingText(GuestPtr<SceneB> scene)
+    {
+        port::GuestFrame<0x120> frame;
+        const uint32_t s = scene.address;
+        constexpr uint32_t kPhase = 0x50u, kIndex = 0x4Cu, kText = 0x5Cu, kStage = 0x24u;
+        const auto phase = [&] { return port::load<int32_t>(s + kPhase); };
+        const auto index = [&] { return port::load<int32_t>(s + kIndex); };
+        if (phase() == 2)
+        {
+            bool more;
+            if (index() == 1)
+            {
+                sdk::strcpy(s + kText, 0x001B72D0u);
+                more = true;
+                port::store<int32_t>(s + kIndex, index() + 1);
+            }
+            else if (index() == 0)
+            {
+                const uint32_t goal = frame.ptr().address + 0x20u;
+                sdk::strcpy(s + kText, 0x001B72A0u);
+                Stage_FormatGoalText(static_cast<int>(s), GuestPtr<char>{goal});
+                sdk::strcat(s + kText, goal);
+                more = true;
+                port::store<int32_t>(s + kIndex, index() + 1);
+            }
+            else
+                more = false;
+            if (!more)
+            {
+                port::store<int32_t>(s + kPhase, 0);
+                port::store<int32_t>(s + kIndex, 0);
+                return 0;
+            }
+            return 1;
+        }
+        if (phase() != 1)
+        {
+            if (phase() != 0)
+                return 1;
+            bool found = false;
+            for (;;)
+            {
+                const int32_t at = index();
+                const uint32_t stageId = port::load<uint16_t>(0x001B71F0u + 2u * static_cast<uint32_t>(at));
+                if (stageId == 0)
+                {
+                    port::store<int32_t>(s + kIndex, 0);
+                    break;
+                }
+                if (port::load<uint16_t>(s + kStage) == stageId)
+                {
+                    port::store<int32_t>(s + kIndex, at + 1);
+                    sdk::strcpy(s + kText, port::load<uint32_t>(0x001B0890u + 4u * static_cast<uint32_t>(at)));
+                    found = true;
+                    break;
+                }
+                port::store<int32_t>(s + kIndex, at + 1);
+            }
+            if (found)
+                return 1;
+            port::store<int32_t>(s + kPhase, phase() + 1);
+            port::store<int32_t>(s + kIndex, 0);
+        }
+        const int32_t stage = port::load<int32_t>(s + kStage);
+        sdk::sprintf(s + kText, 0x001B7270u, static_cast<uint32_t>(stage),
+                     port::load<uint32_t>(0x001B0820u + 4u * static_cast<uint32_t>(remainder(stage - 1, 0x19))));
+        port::store<int32_t>(s + kPhase, phase() + 1);
+        port::store<int32_t>(s + kIndex, 0);
+        port::store<int32_t>(s + 0x48u, 2);
+        return 1;
+    }
+
+    PORT_FN(SceneB_BuildBriefingText);
+
+    // ---- Drawing the laptop and the phone call icon (plan P6 batch 2) ----
+
+    // Draws the laptop: the fade and depth clear, its title text, and for each entry (count at 0x1BDAB8) the model node (list at
+    // 0x1F36F0) with that entry's matrix rows (laptop +0x50 and 0x40 apiece) copied into the node's mesh first; the selected
+    // entry (while the laptop is in state 2) is lit with the colour at 0x1AF690 (alpha 12), the others with the one at 0x1AF6A0.
+    void Laptop_Draw(GuestPtr<Laptop> laptop)
+    {
+        port::GuestFrame<0x90> frame;
+        const uint32_t sp = frame.ptr().address;
+        const uint32_t l = laptop.address;
+        DmaList_QueueFade(0x50, 0);
+        DmaList_QueueClearZ();
+        if (port::load<uint32_t>(l + 0x44u) != 0u)
+            TextBox_Draw(GuestPtr<TextBox>{port::load<uint32_t>(l + 0x44u)});
+        uint32_t node = 0x001F36F0u;
+        for (int32_t i = 0; i < port::load<int32_t>(0x001BDAB8u); ++i, node += 4u)
+        {
+            const uint32_t model = port::load<uint32_t>(l);
+            const int32_t nodeIndex = port::load<int32_t>(node);
+            const uint32_t mesh = port::load<uint32_t>(port::load<uint32_t>(model) + 8u) + 0xC0u * static_cast<uint32_t>(nodeIndex);
+            const uint32_t rows = l + 0x40u * static_cast<uint32_t>(i);
+            for (uint32_t row = 0; row < 4u; ++row)
+                *GuestPtr<Vec4>{mesh + 0x70u + 0x10u * row} = *GuestPtr<Vec4>{rows + 0x50u + 0x10u * row};
+            A3DObject_DrawNode(GuestPtr<A3DObject>{model}, nodeIndex);
+            if (port::load<int32_t>(l + 0x3Cu) == 2 && i == port::load<int32_t>(l + 0x3D0u))
+            {
+                *GuestPtr<Vec4>{sp + 0x70u} = *GuestPtr<Vec4>{0x001AF690u};
+                port::store<int32_t>(sp + 0x7Cu, 0xC);
+                A3DObject_ChangeLuminosity(GuestPtr<A3DObject>{port::load<uint32_t>(l)}, GuestPtr<uint32_t>{sp + 0x70u}, port::load<int32_t>(node));
+            }
+            else
+            {
+                *GuestPtr<Vec4>{sp + 0x80u} = *GuestPtr<Vec4>{0x001AF6A0u};
+                port::store<int32_t>(sp + 0x8Cu, 0);
+                A3DObject_ChangeLuminosity(GuestPtr<A3DObject>{port::load<uint32_t>(l)}, GuestPtr<uint32_t>{sp + 0x80u}, port::load<int32_t>(node));
+            }
+        }
+    }
+
+    // The ringing phone icon: while a call shows (counter +0x40 not 0), the frame counter (+0x44) steps; every other 84 frames a
+    // ring sound plays and the icon's colour alpha flips between 0 and 12 every other frame; the icon model's node 1 is placed
+    // by the call counter's distance from 10 (sliding in over ten frames) and drawn.
+    void PhoneCall_Draw(GuestPtr<PhoneCalls> phone)
+    {
+        port::GuestFrame<0x50> frame;
+        const uint32_t sp = frame.ptr().address;
+        const uint32_t p = phone.address;
+        if (port::load<int32_t>(p + 0x40u) == 0)
+            return;
+        const uint32_t colour = sp + 0x40u;
+        port::store<uint32_t>(colour, 0x3F800000u);
+        port::store<uint32_t>(colour + 4u, 0x3F800000u);
+        port::store<uint32_t>(colour + 8u, 0x3F800000u);
+        port::store<int32_t>(colour + 0xCu, 0);
+        port::store<int32_t>(p + 0x44u, port::load<int32_t>(p + 0x44u) + 1);
+        const int32_t frames = port::load<int32_t>(p + 0x44u);
+        if ((divide(frames, 0x54) & 1) == 0)
+        {
+            Sound_PlaySe(0x27, 0, 0x3C, 0.0f, 0.0f);
+            port::store<int32_t>(colour + 0xCu, ((frames >> 1) & 1) != 0 ? 0xC : 0);
+        }
+        const int distance = sdk::abs(port::load<int32_t>(p + 0x40u));
+        const ps2f slide = fromInt(10 - distance) / ps2f(10.0f);
+        const uint32_t matrix = port::load<uint32_t>(port::load<uint32_t>(port::load<uint32_t>(p)) + 8u) + 0x130u;
+        Mat4_Copy(GuestPtr<Vec4>{matrix}, GuestPtr<Vec4>{0x001B2550u});
+        port::store<uint32_t>(matrix + 0x30u, 0xBF428F5Cu);
+        port::store<float>(matrix + 0x34u, static_cast<float>(ps2f(0.62f) + slide));
+        port::store<uint32_t>(matrix + 0x38u, 0xC027AE14u);
+        A3DObject_ChangeLuminosity(GuestPtr<A3DObject>{port::load<uint32_t>(p)}, GuestPtr<uint32_t>{colour}, 1);
+        A3DObject_DrawNode(GuestPtr<A3DObject>{port::load<uint32_t>(p)}, 1);
+        if (port::load<int32_t>(p + 0x40u) < 10)
+            port::store<int32_t>(p + 0x40u, port::load<int32_t>(p + 0x40u) + 1);
+    }
+
+    PORT_FN(Laptop_Draw);
+    PORT_FN(PhoneCall_Draw);
+
+    // Builds a list menu: `visible` rows of `rowHeight`, a cursor frame, 32 empty items (3 words each from +0xE4), and the DMA
+    // packet the menu draws with (the header at +0 and the eight cursor entries at +0x40, the footer at +0xC0), then places the
+    // cursor with the last three arguments.
+    GuestPtr<ListMenu> ListMenu_ctor(GuestPtr<ListMenu> menu, int visible, int rowHeight, int a3, int cursorX, int cursorY, int cursorZ)
+    {
+        const uint32_t m = menu.address;
+        port::store<int32_t>(m + 0x264u, visible);
+        port::store<int32_t>(m + 0x268u, rowHeight);
+        port::store<int32_t>(m + 0x26Cu, a3);
+        port::store<int32_t>(m + 0x27Cu, 0);
+        port::store<int32_t>(m + 0x270u, 0);
+        port::store<int32_t>(m + 0x288u, 0);
+        port::store<int32_t>(m + 0x28Cu, 0);
+        port::store<int32_t>(m + 0x290u, 0);
+        port::store<int32_t>(m + 0x294u, 1);
+        port::store<int32_t>(m + 0x298u, 1);
+        port::store<int32_t>(m + 0x284u, 0);
+        const uint32_t memory = sdk::operator_new(0xC0u);
+        uint32_t frame = 0u;
+        if (memory != 0u)
+            frame = Frame_ctor(GuestPtr<Frame>{memory}, 0x1E, 0, 0, 0x18, 0xC, 0x10000000u).address;
+        port::store<uint32_t>(m + 0xE0u, frame);
+        for (uint32_t offset = 0xE4u; offset < 0xE4u + 32u * 0xCu; offset += 4u)
+            port::store<uint32_t>(m + offset, 0u);
+        const uint32_t header[] = {0x1000000Cu, 0u, 0x11000000u, 0x5000000Cu, 0x800Bu, 0x10000000u, 0xEu, 0u,
+                                   0x32001u, 0u, 0x47u, 0u, 6u, 0u, 0u, 0u};
+        for (uint32_t i = 0; i < 16u; ++i)
+            port::store<uint32_t>(m + 4u * i, header[i]);
+        for (uint32_t entry = 0; entry < 8u; ++entry)
+        {
+            port::store<uint32_t>(m + 0x40u + 0x10u * entry, 0u);
+            port::store<uint32_t>(m + 0x44u + 0x10u * entry, 0xFFFFFFFFu);
+            port::store<uint32_t>(m + 0x48u + 0x10u * entry, 4u);
+            port::store<uint32_t>(m + 0x4Cu + 0x10u * entry, 0u);
+        }
+        const uint32_t footer[] = {0x5000Fu, 0u, 0x47u, 0u, 0x60000000u, 0u, 0u, 0u};
+        for (uint32_t i = 0; i < 8u; ++i)
+            port::store<uint32_t>(m + 0xC0u + 4u * i, footer[i]);
+        ListMenu_SetCursor(menu, cursorX, cursorY, cursorZ);
+        return menu;
+    }
+
+    PORT_FN(ListMenu_ctor);
+
+    // ---- Window and scene destructors (plan P6 batch 2) ----
+
+    // The two list menus (+4, +8), the save manager (+0xC) and the text box (+0x10).
+    GuestPtr<PauseMenu> PauseMenu_dtor(GuestPtr<PauseMenu> pause, int16_t deleteFlag)
+    {
+        if (pause)
+        {
+            lifetime::deleteWith(pause.address + 4u, [](uint32_t o) { ListMenu_dtor(GuestPtr<ListMenu>{o}, 1); });
+            lifetime::deleteWith(pause.address + 8u, [](uint32_t o) { ListMenu_dtor(GuestPtr<ListMenu>{o}, 1); });
+            lifetime::deleteWith(pause.address + 0xCu, [](uint32_t o) { McManager_dtor(GuestPtr<McManager>{o}, 1); });
+            lifetime::deleteTextBox(pause.address + 0x10u);
+            if (0 < deleteFlag)
+                sdk::operator_delete(pause.address);
+        }
+        return pause;
+    }
+
+    GuestPtr<Applicants> Applicants_dtor(GuestPtr<Applicants> applicants, int16_t deleteFlag)
+    {
+        if (applicants)
+        {
+            port::store<uint32_t>(applicants.address + 0x320u, 0x001BCF70u);
+            ApplicantsBase_dtor(applicants, 0);
+            if (0 < deleteFlag)
+                sdk::operator_delete(applicants.address);
+        }
+        return applicants;
+    }
+
+    // The list menu (+0x10), then the widget below.
+    GuestPtr<MenuWin> MenuWin_dtor(GuestPtr<MenuWin> menuwin, int16_t deleteFlag)
+    {
+        if (menuwin)
+        {
+            port::store<uint32_t>(menuwin.address + 8u, 0x001BCF80u);
+            lifetime::deleteWith(menuwin.address + 0x10u, [](uint32_t o) { ListMenu_dtor(GuestPtr<ListMenu>{o}, 1); });
+            Widget_dtor(GuestPtr<Widget>{menuwin.address}, 0);
+            if (0 < deleteFlag)
+                sdk::operator_delete(menuwin.address);
+        }
+        return menuwin;
+    }
+
+    // Asks the window (virtual slot at +0x18 of its vtable at +8) to close with a step of 0.1; once it has, the list is
+    // deleted and the state (+0) goes to 0.
+    void MenuWin_Closing(GuestPtr<MenuWin> menuwin)
+    {
+        const uint32_t vtable = port::load<uint32_t>(menuwin.address + 8u);
+        if (port::callGuest<int64_t>(port::load<uint32_t>(vtable + 0x18u), menuwin, ps2f(0.1f)) != 0)
+        {
+            lifetime::deleteWith(menuwin.address + 0x10u, [](uint32_t o) { ListMenu_dtor(GuestPtr<ListMenu>{o}, 1); });
+            port::store<int32_t>(menuwin.address, 0);
+        }
+    }
+
+    // The lights (+0x14) and the camera (+0x10), then the widget at +4 and the stage object base.
+    GuestPtr<SceneB> SceneB_dtor(GuestPtr<SceneB> scene, int16_t deleteFlag)
+    {
+        if (scene)
+        {
+            port::store<uint32_t>(scene.address + 0x100u, 0x001BCF10u);
+            port::store<uint32_t>(scene.address + 0xCu, 0x001BCF18u);
+            lifetime::deleteWith(scene.address + 0x14u, [](uint32_t o) { LightSet_DeletingDtor(GuestPtr<LightSet>{o}, 1); });
+            lifetime::deleteWith(scene.address + 0x10u, [](uint32_t o) { Camera_DeletingDtor(GuestPtr<Camera>{o}, 1); });
+            Widget_dtor(GuestPtr<Widget>{scene.address + 4u}, 0);
+            StageObj_DeletingDtor(static_cast<int>(scene.address), 0);
+            if (0 < deleteFlag)
+                sdk::operator_delete(scene.address);
+        }
+        return scene;
+    }
+
+    // The logo scene's children: the text boxes (+0xB8, +0xBC), the three objects at +0x10.. and those at +0xC, +0x1C, +0x20,
+    // +0x30 and +0x34 that delete themselves through their vtables, the models (+0x24, +0x28, +0x4), the list menu (+0xB0),
+    // the save manager (+0xB4), the camera (+0) and the loading screen (+0x2C); then the stage object base.
+    GuestPtr<SceneA> SceneA_dtor(GuestPtr<SceneA> scene, int16_t deleteFlag)
+    {
+        if (!scene)
+            return scene;
+        const uint32_t at = scene.address;
+        lifetime::deleteTextBox(at + 0xB8u);
+        for (uint32_t i = 0; i < 3u; ++i)
+            lifetime::deleteVirtual(at + 0x10u + 4u * i, 0);
+        lifetime::deleteVirtual(at + 0xCu, 0);
+        lifetime::deleteWith(at + 0x24u, [](uint32_t o) { A3DObject_dtor(GuestPtr<A3DObject>{o}, 1); });
+        lifetime::deleteWith(at + 0x28u, [](uint32_t o) { A3DObject_dtor(GuestPtr<A3DObject>{o}, 1); });
+        lifetime::deleteWith(at + 0xB0u, [](uint32_t o) { ListMenu_dtor(GuestPtr<ListMenu>{o}, 1); });
+        lifetime::deleteWith(at + 0xB4u, [](uint32_t o) { McManager_dtor(GuestPtr<McManager>{o}, 1); });
+        lifetime::deleteWith(at + 4u, [](uint32_t o) { A3DObjectBase_DeletingDtor(GuestPtr<A3DObject>{o}, 1); });
+        lifetime::deleteWith(at, [](uint32_t o) { Camera_DeletingDtor(GuestPtr<Camera>{o}, 1); });
+        lifetime::deleteVirtual(at + 0x34u, 0);
+        lifetime::deleteVirtual(at + 0x30u, 0);
+        lifetime::deleteWith(at + 0x2Cu, [](uint32_t o) { LoadingScreen_dtor(GuestPtr<LoadingScreen>{o}, 1); });
+        lifetime::deleteVirtual(at + 0x1Cu, 0);
+        lifetime::deleteVirtual(at + 0x20u, 0);
+        lifetime::deleteTextBox(at + 0xBCu);
+        StageObj_DeletingDtor(static_cast<int>(at), 0);
+        if (0 < deleteFlag)
+            sdk::operator_delete(at);
+        return scene;
+    }
+
+    PORT_FN(PauseMenu_dtor);
+    PORT_FN(Applicants_dtor);
+    PORT_FN(MenuWin_dtor);
+    PORT_FN(MenuWin_Closing);
+    PORT_FN(SceneB_dtor);
+    PORT_FN(SceneA_dtor);
+
+    // ---- The briefing scene's captions (plan P6 batch 2) ----
+    //
+    // Each caption is a text box (+0x18) over the scene's lights (+0x14) and camera (+0x10), with the phase at +0x34 (0 makes the
+    // box) and a fade at +0x38 (0x80 black, 0 clear) that is drawn over everything while it is at most 0x80.
+
+    namespace
+    {
+        // The frame the caption draws every call: the GS defaults, the lights, the camera, the clear of Z and the text.
+        void drawCaptionScene(uint32_t scene)
+        {
+            DmaList_QueueGsDefaults();
+            Packet2_Draw(GuestPtr<uint32_t>{port::load<uint32_t>(scene + 0x14u)}, 0);
+            Packet_Draw(GuestPtr<uint32_t>{port::load<uint32_t>(scene + 0x10u)});
+            DmaList_QueueClearZ();
+            TextBox_Draw(GuestPtr<TextBox>{port::load<uint32_t>(scene + 0x18u)});
+        }
+
+        // The caption's text box (+0x18), style -1; none when the allocation fails.
+        GuestPtr<TextBox> makeCaptionBox(uint32_t scene, int columns, int rows)
+        {
+            uint32_t box = sdk::operator_new(0x40u);
+            if (box != 0u)
+                box = TextBox_Init(GuestPtr<TextBox>{box}, columns, rows, -1).address;
+            port::store<uint32_t>(scene + 0x18u, box);
+            return GuestPtr<TextBox>{box};
+        }
+
+        // The phase counts up by one and the fade is set to black.
+        void nextCaptionPhase(uint32_t scene)
+        {
+            port::store<int32_t>(scene + 0x34u, port::load<int32_t>(scene + 0x34u) + 1);
+            port::store<int32_t>(scene + 0x38u, 0x80);
+        }
+    }
+
+    // The stage number (three digits from +0x24) under the stage title text.
+    void SceneB_ShowStageTitle(GuestPtr<SceneB> scene)
+    {
+        port::GuestFrame<0x30> frame;
+        const uint32_t s = scene.address;
+        if (port::load<int32_t>(s + 0x34u) == 0)
+        {
+            const uint32_t number = frame.ptr().address + 0x2Cu;
+            Text_FormatPadded(GuestPtr<char>{number}, port::load<int32_t>(s + 0x24u), 3);
+            makeCaptionBox(s, 0xD, 1);
+            TextBox_SetCharSize(GuestPtr<TextBox>{port::load<uint32_t>(s + 0x18u)}, 0x120, 0xD0, 0x150, 0x140);
+            TextBox_SetPos(GuestPtr<TextBox>{port::load<uint32_t>(s + 0x18u)}, 0x7880, 0x7F40, -0x100000);
+            TextBox_SetText(GuestPtr<TextBox>{port::load<uint32_t>(s + 0x18u)}, GuestPtr<char>{0x001B7210u}, 0);
+            TextBox_AppendText(GuestPtr<TextBox>{port::load<uint32_t>(s + 0x18u)}, GuestPtr<char>{number}, 0);
+            nextCaptionPhase(s);
+        }
+        drawCaptionScene(s);
+    }
+
+    // The city's name (up to its first line break, from 0x1C5680) on two rows.
+    void SceneB_ShowCityName(GuestPtr<SceneB> scene)
+    {
+        port::GuestFrame<0x120> frame;
+        const uint32_t s = scene.address;
+        if (port::load<int32_t>(s + 0x34u) == 0)
+        {
+            const uint32_t name = frame.ptr().address + 0x20u;
+            makeCaptionBox(s, 0xD, 2);
+            TextBox_SetCharSize(GuestPtr<TextBox>{port::load<uint32_t>(s + 0x18u)}, 0x120, 0xD0, 0x150, 0x140);
+            TextBox_SetPos(GuestPtr<TextBox>{port::load<uint32_t>(s + 0x18u)}, 0x7880, 0x7F40, -0x100000);
+            sdk::strcpy(name, 0x001C5680u);
+            const uint32_t lineBreak = sdk::strchr(name, 0xA);
+            if (lineBreak != 0u)
+                port::store<uint8_t>(lineBreak, 0);
+            TextBox_SetText(GuestPtr<TextBox>{port::load<uint32_t>(s + 0x18u)}, GuestPtr<char>{name}, 0);
+            nextCaptionPhase(s);
+        }
+        drawCaptionScene(s);
+    }
+
+    // The approval table: four rows of a name (padded to 16 characters, from the table at 0x1B0790 + 4) and a five-digit value
+    // (from 0x1C5780). Phase 1 fades in (one step a frame), the phases up to 0x12C hold, and at 0x12C it fades out; when it is
+    // dark the box goes, the phase restarts and the count of captions shown (+0x28) grows. The fade is drawn while it is at
+    // most 0x80.
+    void SceneB_ShowApprovalRate(GuestPtr<SceneB> scene)
+    {
+        port::GuestFrame<0x80> frame;
+        const uint32_t s = scene.address;
+        const uint32_t line = frame.ptr().address + 0x60u;
+        const auto phase = [&] { return port::load<int32_t>(s + 0x34u); };
+        const auto fade = [&] { return port::load<int32_t>(s + 0x38u); };
+        const auto text = [&] { return GuestPtr<TextBox>{port::load<uint32_t>(s + 0x18u)}; };
+        const int32_t current = phase();
+        if (current == 0x12C)
+        {
+            port::store<int32_t>(s + 0x38u, fade() + 1);
+            if (fade() > 0x80)
+            {
+                lifetime::deleteTextBox(s + 0x18u);
+                port::store<int32_t>(s + 0x34u, 0);
+                port::store<uint8_t>(s + 0x28u, static_cast<uint8_t>(port::load<uint8_t>(s + 0x28u) + 1u));
+            }
+        }
+        else if (current == 1)
+        {
+            port::store<int32_t>(s + 0x38u, fade() - 1);
+            if (fade() == 0)
+                port::store<int32_t>(s + 0x34u, phase() + 1);
+        }
+        else if (current == 0)
+        {
+            makeCaptionBox(s, 0xD, 6);
+            TextBox_SetCharSize(text(), 0, 0xD0, 0, 0x140);
+            TextBox_SetPos(text(), 0x7600, 0x7C20, -0x100000);
+            TextBox_SetText(text(), GuestPtr<char>{0x001B7220u}, 0);
+            for (uint32_t i = 0; i < 4u; ++i)
+            {
+                TextBox_AppendText(text(), GuestPtr<char>{0x001B7238u}, 0);
+                sdk::strcpy(line, port::load<uint32_t>(0x001B0790u + 4u + 4u * i));
+                uint32_t end = line + static_cast<uint32_t>(sdk::strlen(line));
+                for (; end < line + 0x10u; ++end)
+                    port::store<uint8_t>(end, 0x20);
+                port::store<uint8_t>(end, 0);
+                TextBox_AppendText(text(), GuestPtr<char>{line}, 1);
+                Text_FormatPadded(GuestPtr<char>{line}, port::load<int32_t>(0x001C5780u + 4u * i), 5);
+                TextBox_AppendText(text(), GuestPtr<char>{line}, 1);
+            }
+            nextCaptionPhase(s);
+        }
+        else
+            port::store<int32_t>(s + 0x34u, current + 1);
+        if (fade() <= 0x80)
+        {
+            drawCaptionScene(s);
+            DmaList_QueueClearZ();
+            DmaList_QueueFade(fade(), 0);
+        }
+    }
+
+    PORT_FN(SceneB_ShowStageTitle);
+    PORT_FN(SceneB_ShowCityName);
+    PORT_FN(SceneB_ShowApprovalRate);
+
+    // The scrolling telop of the briefing. The kind of telop follows the stage (+0x24): 0 for stage 1, 1 for stage 5, 2 for the
+    // others (which also name the city and its mayor). Phase 0 loads the sound bank and writes the text into a box of 17 by 20,
+    // 1 starts the music once the sound driver is idle, 2 scrolls the box up (+0x3C grows by 2 a frame; on stage 6 by 1, and by 2
+    // every seventh frame) until Start or Cross is pressed (not on stage 6) or the scroll has gone far enough, then the fade
+    // (+0x38, counting up from 1) takes the picture out, the music is stopped, the box and the sprite (+0x20) are deleted and
+    // the phase restarts with one more caption counted (+0x28).
+    void SceneB_ShowTelop(GuestPtr<SceneB> scene)
+    {
+        const uint32_t s = scene.address;
+        const int32_t stage = port::load<int32_t>(s + 0x24u);
+        const uint32_t kind = stage == 1 ? 0u : (stage == 5 ? 1u : 2u);
+        const auto text = [&] { return GuestPtr<TextBox>{port::load<uint32_t>(s + 0x18u)}; };
+        const auto append = [&](uint32_t string) { TextBox_AppendText(text(), GuestPtr<char>{string}, 0); };
+        const auto nextPhase = [&] { port::store<int32_t>(s + 0x34u, port::load<int32_t>(s + 0x34u) + 1); };
+        switch (port::load<int32_t>(s + 0x34u))
+        {
+        case 0:
+        {
+            sdk::sprintf(0x001F3730u, 0x001B72F0u, kind + 1u);
+            sdk::strcpy(0x001F3750u, 0x001F3730u);
+            sdk::strcpy(0x001F3770u, 0x001F3730u);
+            sdk::strcat(0x001F3730u, 0x001B7300u);
+            sdk::strcat(0x001F3750u, 0x001B7308u);
+            sdk::strcat(0x001F3770u, 0x001B7310u);
+            SoundCmd_LoadBank(7, 0x001F3730, 0x001F3750, 0x001F3770, 0);
+            makeCaptionBox(s, 0x11, 0x14);
+            TextBox_SetCharSize(text(), 0, 0xD0, 0, 0x140);
+            if (kind != 2)
+                TextBox_SetText(text(), GuestPtr<char>{port::load<uint32_t>(0x001B0800u + 4u * kind)}, 0);
+            else
+            {
+                TextBox_SetText(text(), GuestPtr<char>{0x001B7318u}, 0);
+                constexpr uint32_t kMayor = 0x001C53A0u, kCity = 0x001C5390u;
+                if (port::load<int8_t>(kMayor) == 0 && port::load<int8_t>(kCity) == 0)
+                    append(0x001B7328u);
+                else
+                {
+                    append(0x001B7330u);
+                    append(kMayor);
+                    append(kCity);
+                    append(0x001B7338u);
+                    if (port::load<int8_t>(kCity) == 0 || port::load<int8_t>(kCity + static_cast<uint32_t>(sdk::strlen(kCity)) - 1u) != 0x73)
+                        append(0x001B7340u);
+                }
+                append(port::load<uint32_t>(0x001B0808u));
+            }
+            port::store<int32_t>(s + 0x3Cu, 0);
+            port::store<int32_t>(s + 0x38u, 0);
+            nextPhase();
+            break;
+        }
+        case 1:
+            if (Sound_IsBusy() == 0)
+            {
+                SoundCmd_0F(0, port::load<int32_t>(0x001B07A8u + 4u * kind), 0);
+                SoundCmd_PlaySequence(0, 7, 0, 0, 0);
+                nextPhase();
+            }
+            break;
+        case 2:
+        {
+            const int32_t position = port::load<int32_t>(s + 0x3Cu);
+            port::store<int32_t>(s + 0x3Cu, position + (stage == 6 && remainder(position, 7) != 0 ? 1 : 2));
+            if (port::load<int32_t>(s + 0x38u) != 0)
+                port::store<int32_t>(s + 0x38u, port::load<int32_t>(s + 0x38u) + 1);
+            else
+            {
+                uint32_t buttons = Pad_Held(0);
+                if (stage == 6)
+                    buttons = 0;
+                if (buttons == 0x800u || buttons == 0x40u || port::load<int32_t>(0x001B0810u + 4u * kind) < port::load<int32_t>(s + 0x3Cu))
+                {
+                    port::store<int32_t>(s + 0x38u, 1);
+                    SoundCmd_FadeB(0, 0, 0x20, 0);
+                }
+            }
+            if (port::load<int32_t>(s + 0x38u) > 0x80)
+            {
+                SoundCmd_StopSequence(7, 0);
+                lifetime::deleteTextBox(s + 0x18u);
+                lifetime::deleteVirtual(s + 0x20u, 0);
+                port::store<int32_t>(s + 0x34u, 0);
+                port::store<uint8_t>(s + 0x28u, static_cast<uint8_t>(port::load<uint8_t>(s + 0x28u) + 1u));
+            }
+            break;
+        }
+        default:
+            break;
+        }
+        if (port::load<int32_t>(s + 0x38u) <= 0x80)
+        {
+            DmaList_QueueGsDefaults();
+            Packet2_Draw(GuestPtr<uint32_t>{port::load<uint32_t>(s + 0x14u)}, 0);
+            Packet_Draw(GuestPtr<uint32_t>{port::load<uint32_t>(s + 0x10u)});
+            DmaList_QueueClearZ();
+            if (port::load<uint32_t>(s + 0x20u) != 0u)
+                TexSprite_Draw(GuestPtr<TexSprite>{port::load<uint32_t>(s + 0x20u)});
+            TextBox_SetPos(text(), 0x7380, 0x8700 - port::load<int32_t>(s + 0x3Cu), 0xFF0000);
+            TextBox_Draw(text());
+            DmaList_QueueClearZ();
+            DmaList_QueueFade(port::load<int32_t>(s + 0x38u), 0);
+        }
+    }
+
+    PORT_FN(SceneB_ShowTelop);
+
+    // ---- Window constructors (plan P6 batch 2) ----
+
+    namespace
+    {
+        // A text box of `columns` by `rows` with the style given, or 0 when the allocation fails.
+        uint32_t newTextBox(int columns, int rows, int style)
+        {
+            const uint32_t memory = sdk::operator_new(0x40u);
+            return memory != 0u ? TextBox_Init(GuestPtr<TextBox>{memory}, columns, rows, style).address : 0u;
+        }
+    }
+
+    // The message window: a text box of 18 by 4 (style -2) in the window, a frame for the "more" arrow at +0x14, and the shared
+    // building model (0x1F3B2C) at +0xC.
+    GuestPtr<MsgWin> MsgWin_ctor(GuestPtr<MsgWin> msgwin)
+    {
+        Widget_ctor(GuestPtr<Widget>{msgwin.address});
+        port::store<uint32_t>(msgwin.address + 8u, 0x001BCE10u);
+        port::store<uint32_t>(msgwin.address + 0x10u, newTextBox(0x12, 4, -2));
+        TextBox_SetPos(GuestPtr<TextBox>{port::load<uint32_t>(msgwin.address + 0x10u)}, 0x7240, 0x8240, -0x100000);
+        const uint32_t memory = sdk::operator_new(0xC0u);
+        uint32_t arrow = 0u;
+        if (memory != 0u)
+            arrow = Frame_ctor(GuestPtr<Frame>{memory}, 0x14, 0x21C, 0xBA, 0x18, 0xC, 0x10000000u).address;
+        port::store<uint32_t>(msgwin.address + 0x14u, arrow);
+        port::store<uint32_t>(msgwin.address + 0xCu, port::load<uint32_t>(0x001F3B2Cu));
+        return msgwin;
+    }
+
+    // The notice line: two single-row text boxes of 25 columns (+8 and +0xC), nothing shown (id -1, no second line).
+    GuestPtr<Notice> Notice_ctor(GuestPtr<Notice> notice)
+    {
+        const uint32_t n = notice.address;
+        port::store<uint32_t>(n + 8u, newTextBox(0x19, 1, -1));
+        TextBox_SetPos(GuestPtr<TextBox>{port::load<uint32_t>(n + 8u)}, 0x7740, 0x84E0, -1);
+        TextBox_SetCharSize(GuestPtr<TextBox>{port::load<uint32_t>(n + 8u)}, 0, 0xD0, 0, 0xE0);
+        port::store<int32_t>(n, -1);
+        port::store<uint32_t>(n + 0xCu, newTextBox(0x19, 1, -1));
+        TextBox_SetPos(GuestPtr<TextBox>{port::load<uint32_t>(n + 0xCu)}, 0x72E0, 0x8540, -1);
+        TextBox_SetCharSize(GuestPtr<TextBox>{port::load<uint32_t>(n + 0xCu)}, 0, 0xB0, 0, 0xC0);
+        port::store<int32_t>(n + 0x10u, 0);
+        return notice;
+    }
+
+    // The loading screen: the background sprite (file at 0x1B7F70) and the sprite of file `file`, placed at (20, 20, 1) at full
+    // scale, a text box of 24 by 4, a fade of 0x80 and the animation `style` of the sprite.
+    GuestPtr<LoadingScreen> LoadingScreen_ctor(GuestPtr<LoadingScreen> loading, int file, uint8_t style)
+    {
+        const uint32_t l = loading.address;
+        uint32_t sprite = sdk::operator_new(0x38u);
+        if (sprite != 0u)
+            sprite = static_cast<uint32_t>(TexSprite_Load(GuestPtr<TexSprite>{sprite}, 0x001B7F70, 1));
+        port::store<uint32_t>(l, sprite);
+        sprite = sdk::operator_new(0x38u);
+        if (sprite != 0u)
+            sprite = static_cast<uint32_t>(TexSprite_Load(GuestPtr<TexSprite>{sprite}, file, 1));
+        port::store<uint32_t>(l + 4u, sprite);
+        TexSprite_SetPosScale(GuestPtr<TexSprite>{port::load<uint32_t>(l)}, 0x14, 0x14, 1, ps2f(1.0f), ps2f(1.0f));
+        port::store<uint32_t>(l + 8u, newTextBox(0x18, 4, -1));
+        port::store<int32_t>(l + 0x10u, 0);
+        port::store<int32_t>(l + 0xCu, 0x80);
+        port::store<int32_t>(l + 0x14u, 0);
+        port::store<int32_t>(l + 0x18u, 0);
+        port::store<int32_t>(l + 0x1Cu, 1);
+        port::store<uint8_t>(l + 0x20u, style);
+        port::store<int32_t>(l + 0x24u, 0);
+        return loading;
+    }
+
+    // The "please wait" text box (global at 0x1BDAC4, 20 by 5 characters) with `text`, or the default text (0x1B65F0) when
+    // there is none; its frame counters (0x1BDAC8, 0x1BDACC) restart.
+    void WaitText_Create(GuestPtr<char> text)
+    {
+        port::store<uint32_t>(0x001BDAC4u, newTextBox(0x14, 5, -1));
+        TextBox_SetPos(GuestPtr<TextBox>{port::load<uint32_t>(0x001BDAC4u)}, 0x7380, 0x8080, 0x4A000);
+        TextBox_SetCharSize(GuestPtr<TextBox>{port::load<uint32_t>(0x001BDAC4u)}, 0, 0xB0, 0, 0xC0);
+        if (text)
+            TextBox_SetText(GuestPtr<TextBox>{port::load<uint32_t>(0x001BDAC4u)}, text, 0);
+        else
+            TextBox_SetText(GuestPtr<TextBox>{port::load<uint32_t>(0x001BDAC4u)}, GuestPtr<char>{0x001B65F0u}, 0);
+        port::store<int32_t>(0x001BDAC8u, 0);
+        port::store<int32_t>(0x001BDACCu, 1);
+    }
+
+    // Opens the menu window: a list menu of `count` items (at most 4 except for menu -0x7D1, which keeps its count and a wider
+    // list) and the window open (+0x1C: 1 for -0x7D1, else 0; except for menus -0x7D5 and -0x7D2 the list's field +0x294 is
+    // cleared).
+    void MenuWin_Open(GuestPtr<MenuWin> menuwin, int menuId, int count)
+    {
+        const uint32_t w = menuwin.address;
+        Widget_Open(GuestPtr<Widget>{w});
+        if (menuId == -0x7D1)
+        {
+            const uint32_t memory = sdk::operator_new(0x2A0u);
+            uint32_t list = 0u;
+            if (memory != 0u)
+                list = ListMenu_ctor(GuestPtr<ListMenu>{memory}, count, 0xC, 0x136, 0xB4, 0x8A, 0xFF0000).address;
+            port::store<uint32_t>(w + 0x10u, list);
+            port::store<int32_t>(w + 0x14u, count);
+            port::store<int32_t>(w + 0x1Cu, 1);
+            return;
+        }
+        if (count >= 5)
+            count = 4;
+        port::store<int32_t>(w + 0x14u, count);
+        const uint32_t memory = sdk::operator_new(0x2A0u);
+        uint32_t list = 0u;
+        if (memory != 0u)
+            list = ListMenu_ctor(GuestPtr<ListMenu>{memory}, port::load<int32_t>(w + 0x14u), 0xC, 0x11D, 0xC8, 0x8A, 0xFF0000).address;
+        port::store<uint32_t>(w + 0x10u, list);
+        if (menuId != -0x7D5 && menuId != -0x7D2)
+            port::store<int32_t>(port::load<uint32_t>(w + 0x10u) + 0x294u, 0);
+        port::store<int32_t>(w + 0x1Cu, 0);
+    }
+
+    PORT_FN(MsgWin_ctor);
+    PORT_FN(Notice_ctor);
+    PORT_FN(LoadingScreen_ctor);
+    PORT_FN(WaitText_Create);
+    PORT_FN(MenuWin_Open);
+
+    // The applicants window base: the list cleared, its stage object (at +0x289), a text box of 18 by 4 (+0x294) for the card, the
+    // two card models (+0x28C from 0x1F3B10 and +0x290 from 0x1F3B68) with their nodes (+0x2A0, +0x2A4 the models' +0x10, and
+    // +0x2A8, +0x2AC the second model's data pointers at +0x70 and +0x1F0), and the cursor state (-1 for none at +0x2C8, enabled
+    // at +0x2C9).
+    GuestPtr<Applicants> ApplicantsBase_ctor(GuestPtr<Applicants> applicants)
+    {
+        const uint32_t a = applicants.address;
+        Applicants_Clear(applicants);
+        StageObj_ctor(static_cast<int>(a + 0x289u));
+        port::store<uint32_t>(a + 0x320u, 0x001BCF60u);
+        port::store<uint32_t>(a + 0x29Cu, 0u);
+        port::store<uint32_t>(a + 0x294u, newTextBox(0x12, 4, -2));
+        TextBox_SetPos(GuestPtr<TextBox>{port::load<uint32_t>(a + 0x294u)}, 0x79C0, 0x8080, -0x100000);
+        port::store<uint32_t>(a + 0x28Cu, port::load<uint32_t>(0x001F3B10u));
+        port::store<uint32_t>(a + 0x290u, port::load<uint32_t>(0x001F3B68u));
+        port::store<uint32_t>(a + 0x2A0u, port::load<uint32_t>(a + 0x28Cu) + 0x10u);
+        port::store<uint32_t>(a + 0x2A4u, port::load<uint32_t>(a + 0x290u) + 0x10u);
+        port::store<uint32_t>(a + 0x2A8u, port::load<uint32_t>(port::load<uint32_t>(port::load<uint32_t>(a + 0x290u)) + 8u) + 0x70u);
+        port::store<uint32_t>(a + 0x2ACu, port::load<uint32_t>(port::load<uint32_t>(port::load<uint32_t>(a + 0x290u)) + 8u) + 0x1F0u);
+        port::store<uint32_t>(a + 0x2D0u, 0u);
+        port::store<uint32_t>(a + 0x2CCu, 0u);
+        port::store<uint32_t>(a + 0x2B0u, 0u);
+        port::store<uint32_t>(a + 0x2B4u, 0u);
+        port::store<uint32_t>(a + 0x2B8u, 0u);
+        port::store<uint32_t>(a + 0x2BCu, 0u);
+        port::store<uint8_t>(a + 0x2C8u, 0xFF);
+        port::store<uint8_t>(a + 0x2C9u, 1);
+        return applicants;
+    }
+
+    PORT_FN(ApplicantsBase_ctor);
+
+    // Gives item `item` of the list (the next free one when -1, up to 32) its text box of `columns` by `rows` characters in
+    // `style`, unless it has one. `mode` picks the character size: -1 gives (0, 0xB0, 0xB0, 0xC0), 0 gives (0, 0xB0, 0, 0xC0)
+    // and any other (0, 0xD0, 0, 0xE0). The item's height (+0xE8 in its 12-byte entry) grows to 12 a row (14 for the other modes)
+    // and the item count (+0x288) when this was the next item.
+    void ListMenu_AddItems(GuestPtr<ListMenu> menu, int columns, int rows, int mode, int style, int, int item)
+    {
+        const uint32_t m = menu.address;
+        if (item == -1)
+            item = port::load<int32_t>(m + 0x288u);
+        if (item >= 0x20)
+            return;
+        const uint32_t entry = m + 12u * static_cast<uint32_t>(item);
+        if (port::load<uint32_t>(entry + 0xECu) != 0u)
+            return;
+        const uint32_t memory = sdk::operator_new(0x40u);
+        const uint32_t box = memory != 0u ? TextBox_Init(GuestPtr<TextBox>{memory}, columns, rows, style).address : 0u;
+        port::store<uint32_t>(entry + 0xECu, box);
+        int height;
+        if (mode == -1)
+        {
+            TextBox_SetCharSize(GuestPtr<TextBox>{box}, 0, 0xB0, 0xB0, 0xC0);
+            height = rows * 12;
+        }
+        else if (mode == 0)
+        {
+            TextBox_SetCharSize(GuestPtr<TextBox>{box}, 0, 0xB0, 0, 0xC0);
+            height = rows * 12;
+        }
+        else
+        {
+            TextBox_SetCharSize(GuestPtr<TextBox>{box}, 0, 0xD0, 0, 0xE0);
+            height = rows * 14;
+        }
+        if (port::load<int32_t>(entry + 0xE8u) < height)
+            port::store<int32_t>(entry + 0xE8u, height);
+        if (item == port::load<int32_t>(m + 0x288u))
+            port::store<int32_t>(m + 0x288u, item + 1);
+    }
+
+    PORT_FN(ListMenu_AddItems);
+
+    // The four text boxes of the name entry window (the title line of 16 by 1 at +4, the letters of 3 by 4 at +8, the name of
+    // 12 by 1 at +0xC and the number of 16 by 1 at +0x10, all at depth 0x10001000), and the model it shows: the shared model
+    // (0x1F3B6C, kept at +0), its node (+0x14, the model's +0x10), the matrix at +0x130 of its data (+0x18) set to the one at
+    // 0x1B2550 with the two scale words (+0x7C, +0x80) and the node's +0x38 put into it.
+    void NameEntry_CreateTexts(GuestPtr<NameEntry> entry)
+    {
+        const uint32_t e = entry.address;
+        const auto box = [&](uint32_t field, int columns, int rows, int style, int x, int y) {
+            port::store<uint32_t>(e + field, newTextBox(columns, rows, style));
+            TextBox_SetPos(GuestPtr<TextBox>{port::load<uint32_t>(e + field)}, x, y, 0x10001000);
+        };
+        box(4, 0x10, 1, -1, 0x71E0, 0x7CB0);
+        box(8, 3, 4, -2, 0x7200, 0x7E20);
+        TextBox_SetCharSize(GuestPtr<TextBox>{port::load<uint32_t>(e + 8u)}, 0x150, 0xD0, 0x150, 0xE0);
+        box(0xC, 0xC, 1, -1, 0x7DA0, 0x8120);
+        box(0x10, 0x10, 1, -1, 0x7D30, 0x7FD0);
+        port::store<uint32_t>(e, port::load<uint32_t>(0x001F3B6Cu));
+        port::store<uint32_t>(e + 0x14u, port::load<uint32_t>(e) + 0x10u);
+        port::store<uint32_t>(e + 0x18u, port::load<uint32_t>(port::load<uint32_t>(port::load<uint32_t>(e)) + 8u) + 0x130u);
+        port::store<uint32_t>(e + 0x78u, 0u);
+        port::store<uint32_t>(e + 0x7Cu, 0x3C03126Fu);
+        port::store<uint32_t>(e + 0x80u, 0x3B449BA6u);
+        Mat4_Copy(GuestPtr<Vec4>{port::load<uint32_t>(e + 0x18u)}, GuestPtr<Vec4>{0x001B2550u});
+        port::store<uint32_t>(port::load<uint32_t>(e + 0x18u) + 0x30u, port::load<uint32_t>(e + 0x7Cu));
+        port::store<uint32_t>(port::load<uint32_t>(e + 0x18u) + 0x34u, port::load<uint32_t>(e + 0x80u));
+        port::store<uint32_t>(port::load<uint32_t>(e + 0x18u) + 0x38u, port::load<uint32_t>(port::load<uint32_t>(e + 0x14u) + 0x38u));
+    }
+
+    PORT_FN(NameEntry_CreateTexts);
+
+    // The card text of the applicant under the cursor (+0x2D0), built in the buffer at 0x1F3790: the family's names (or, for the
+    // home types 5 to 8, the mayor's and the city's, or a fixed text when there are none) padded to 30 characters; for the other
+    // types two numbers of the family; the month and the year (a month count at +0xC split by 12), the name of the home type
+    // and its mark by +0x144; and, 30 characters further on, a line of 26 bytes of the building's description (picked by the
+    // applicant's claim section) and the size of the type. The state's colour (the table at 0x1BD998 for states below 8) is put
+    // at +0x2C8 and the text goes into the card's text box (+0x294). Nothing without applicants.
+    void Applicants_BuildInfo(GuestPtr<Applicants> applicants)
+    {
+        port::GuestFrame<0x90> frame;
+        const uint32_t sp = frame.ptr().address;
+        const uint32_t seat = sp + 0x68u, month = sp + 0x78u, year = sp + 0x70u, members = sp + 0x80u, size = sp + 0x88u;
+        constexpr uint32_t kText = 0x001F3790u;
+        const uint32_t a = applicants.address;
+        if (port::load<int32_t>(a + 0x280u) == 0)
+            return;
+        const uint32_t entry = a + 0x14u * port::load<uint32_t>(a + 0x2D0u);
+        const uint32_t family = Family_Get(port::load<uint16_t>(entry + 4u), 0).address;
+        const uint32_t type = globals::buildingTypeAddress(port::load<uint16_t>(family + 0x20u));
+        Text_FormatPadded(GuestPtr<char>{seat}, port::load<uint8_t>(family + 0x26u), 2);
+        const int32_t months = port::load<int32_t>(entry + 0xCu);
+        Text_FormatPadded(GuestPtr<char>{month}, remainder(months, 12) + 1, 2);
+        Text_FormatPadded(GuestPtr<char>{year}, divide(months, 12) + 1, 3);
+        Text_FormatPadded(GuestPtr<char>{members}, port::load<uint16_t>(family + 0x22u), 3);
+        Text_FormatPadded(GuestPtr<char>{size}, port::load<uint8_t>(type + 0x142u), 1);
+        const uint32_t homeType = port::load<uint16_t>(family + 0x20u);
+        const bool official = homeType == 8 || homeType == 7 || homeType == 6 || homeType == 5;
+        if (official)
+        {
+            if (port::load<int8_t>(0x001C53A0u) == 0 && port::load<int8_t>(0x001C5390u) == 0)
+                sdk::strcpy(kText, 0x001B7A30u);
+            else
+                sdk::sprintf(kText, 0x001B7A38u, 0x001C53A0u, 0x001C5390u);
+        }
+        else
+            sdk::sprintf(kText, 0x001B7A38u, family + 0x5Cu, family + 0x4Cu);
+        port::store<uint8_t>(0x001F37A9u, 0);
+        int length = sdk::strlen(kText);
+        sdk::memset(kText + static_cast<uint32_t>(length), 0x20, 0x1E - length);
+        port::store<uint8_t>(0x001F37AEu, 0);
+        if (official)
+            sdk::strcat(kText, 0x001B7A40u);
+        else
+            sdk::sprintf(kText + static_cast<uint32_t>(sdk::strlen(kText)), 0x001B7A60u, seat, members);
+        sdk::sprintf(kText + static_cast<uint32_t>(sdk::strlen(kText)), 0x001B7A80u, month, year, type + 0x110u);
+        switch (port::load<uint8_t>(type + 0x144u))
+        {
+        case 4:
+            sdk::strcat(kText, 0x001B7AA8u);
+            break;
+        case 3:
+        case 2:
+        case 1:
+            sdk::strcat(kText, 0x001B7A98u);
+            break;
+        default:
+            break;
+        }
+        sdk::strcat(kText, 0x001B7AB0u);
+        const int base = sdk::strlen(kText);
+        const uint32_t line = kText + static_cast<uint32_t>(base);
+        const uint32_t table = port::load<uint32_t>(0x001BDA74u);
+        const uint32_t claim = port::load<uint16_t>(a + 0x2DCu + 2u * port::load<uint32_t>(a + 0x2D0u));
+        sdk::memcpy(line, table + port::load<uint16_t>(table + 2u * port::load<uint16_t>(table + 4u) + 2u * claim), 0x1A);
+        port::store<uint8_t>(0x001F37AAu + static_cast<uint32_t>(base), 0);
+        const int total = sdk::strlen(kText);
+        sdk::memset(kText + static_cast<uint32_t>(total), 0x20, base + 0x1E - total);
+        port::store<uint8_t>(0x001F37AEu + static_cast<uint32_t>(base), 0);
+        sdk::sprintf(line + 0x1Eu, 0x001B7AB8u, size);
+        const uint32_t state = port::load<uint16_t>(entry + 2u);
+        port::store<uint8_t>(a + 0x2C8u, state < 8 ? port::load<uint8_t>(0x001BD998u + state) : 0);
+        TextBox_SetText(GuestPtr<TextBox>{port::load<uint32_t>(a + 0x294u)}, GuestPtr<char>{kText}, 0);
+    }
+
+    PORT_FN(Applicants_BuildInfo);
+
+    // The status panel: the panel model (0x1F3B0C, kept at +0x90) with its light moved (0xBF47AE14, 0xBF051EB8, 0xC02CCCCD at
+    // +0x40), the panel's draw packet built at the packet buffer's position, the alert model (+0x94 from 0x1F3B00), the 0x90-byte
+    // image transfer packet of the alert at +0 (data at 0x1AF370), four text boxes of the detail view (+0xA0, +0xA8, +0xA4 of
+    // 12 columns and +0xAC of 5, the last with the text at 0x1B6550) and the detail model (+0x98 from 0x1F3B34).
+    GuestPtr<StatusPanel> StatusPanel_ctor(GuestPtr<StatusPanel> panel)
+    {
+        const uint32_t p = panel.address;
+        BaseObject_ctor(static_cast<int>(p));
+        port::store<uint32_t>(p + 0x90u, port::load<uint32_t>(0x001F3B0Cu));
+        const uint32_t model = port::load<uint32_t>(p + 0x90u);
+        port::store<uint32_t>(model + 0x40u, 0xBF47AE14u);
+        port::store<uint32_t>(model + 0x44u, 0xBF051EB8u);
+        port::store<uint32_t>(model + 0x48u, 0xC02CCCCDu);
+        PacketBuf_Seek(static_cast<int>(StatusPanel_BuildPacket(panel, GuestPtr<uint32_t>{static_cast<uint32_t>(PacketBuf_Tell())}).address));
+        port::store<uint32_t>(p + 0x94u, port::load<uint32_t>(0x001F3B00u));
+        const uint32_t words[] = {0x10000006u, 0u, 0x11000000u, 0x50000006u,
+                                  4u, 0x10000000u, 0xEu, 0u,
+                                  0u, 0u, 0x51u, 0u,
+                                  8u, 2u, 0x52u, 0u,
+                                  0u, 0x13F7Bu, 0x50u, 0u,
+                                  0u, 0u, 0x53u, 0u,
+                                  0x8004u, 0x08000000u, 0u, 0u,
+                                  0x30000004u, 0x001AF370u, 0u, 0x50000004u,
+                                  0x60000000u, 0u, 0u, 0u};
+        for (uint32_t i = 0; i < 36u; ++i)
+            port::store<uint32_t>(p + 4u * i, words[i]);
+        const auto box = [&](uint32_t field, int columns, int rows, int x, int y) {
+            port::store<uint32_t>(p + field, newTextBox(columns, rows, -2));
+            const GuestPtr<TextBox> text{port::load<uint32_t>(p + field)};
+            TextBox_SetPos(text, x, y, -0x100000);
+            TextBox_SetCharSize(text, 0, 0, 0xB0, 0);
+        };
+        box(0xA0, 0xC, 8, 0x8140, 0x7CC0);
+        box(0xA8, 0xC, 1, 0x8140, 0x8280);
+        box(0xA4, 0xC, 1, 0x8140, 0x8350);
+        box(0xAC, 5, 1, 0x8140, 0x8420);
+        TextBox_SetText(GuestPtr<TextBox>{port::load<uint32_t>(p + 0xACu)}, GuestPtr<char>{0x001B6550u}, 0);
+        port::store<uint32_t>(p + 0x98u, port::load<uint32_t>(0x001F3B34u));
+        port::store<uint32_t>(p + 0xB0u, 0u);
+        port::store<uint32_t>(p + 0xB4u, 0u);
+        port::store<uint32_t>(p + 0xBCu, 0u);
+        return panel;
+    }
+
+    PORT_FN(StatusPanel_ctor);
+
+    // ---- Small window functions (plan P6 batch 2) ----
+
+    // Sets the applicants window mode (+0x29C); mode 1 builds the card text of the applicant under the cursor.
+    void Applicants_SetMode(GuestPtr<Applicants> applicants, int mode)
+    {
+        port::store<int32_t>(applicants.address + 0x29Cu, mode);
+        if (mode == 1)
+            Applicants_BuildInfo(applicants);
+    }
+
+    // Adds a line to the menu window's list: the list gets an item of 13 columns (14 when the window is open) by 1 row, style -2.
+    void MenuWin_FillItems(GuestPtr<MenuWin> menuwin, GuestPtr<char> item)
+    {
+        const GuestPtr<ListMenu> list{port::load<uint32_t>(menuwin.address + 0x10u)};
+        ListMenu_AddItems(list, port::load<int32_t>(menuwin.address + 0x1Cu) == 0 ? 0xD : 0xE, 1, -1, -2, 0, -1);
+        ListMenu_SetItemText(GuestPtr<ListMenu>{port::load<uint32_t>(menuwin.address + 0x10u)}, item, -1);
+    }
+
+    // Once the opening call (slot +0x18 of the vtable at +8, with a step of 0.1) is done, the conversation goes to state 3 and
+    // its first line.
+    void TalkConv_Opening(GuestPtr<TalkConv> conv)
+    {
+        const uint32_t vtable = port::load<uint32_t>(conv.address + 8u);
+        if (port::callGuest<int64_t>(port::load<uint32_t>(vtable + 0x18u), conv, ps2f(0.1f)) != 0)
+        {
+            port::store<int32_t>(conv.address, 3);
+            TalkConv_NextLine(conv);
+        }
+    }
+
+    PORT_FN(Applicants_SetMode);
+    PORT_FN(MenuWin_FillItems);
+    PORT_FN(TalkConv_Opening);
+
+    // The name entry window: its texts, then the model's light (the node at +0x14 gets the word at +0x78 at +0x34 and -4.4 at +0x38)
+    // copied to the matrix node (+0x18, +0x38) and kept at +0x114..+0x11C.
+    GuestPtr<NameEntry> NameEntry_ctor(GuestPtr<NameEntry> entry)
+    {
+        const uint32_t e = entry.address;
+        port::store<uint32_t>(e + 0x120u, 0x001BCFE8u);
+        NameEntry_CreateTexts(entry);
+        const auto node = [&] { return port::load<uint32_t>(e + 0x14u); };
+        port::store<uint32_t>(node() + 0x34u, port::load<uint32_t>(e + 0x78u));
+        port::store<uint32_t>(node() + 0x38u, 0xC08CCCCDu);
+        port::store<uint32_t>(port::load<uint32_t>(e + 0x18u) + 0x38u, port::load<uint32_t>(node() + 0x38u));
+        port::store<uint32_t>(e + 0x114u, port::load<uint32_t>(node() + 0x30u));
+        port::store<uint32_t>(e + 0x118u, port::load<uint32_t>(node() + 0x34u));
+        port::store<uint32_t>(e + 0x11Cu, port::load<uint32_t>(node() + 0x38u));
+        port::store<uint32_t>(e + 0x40u, 0u);
+        return entry;
+    }
+
+    // The applicants window: the base, its table (0x1BCF70), the pointer state at +0x31C..+0x33C (the point (0, 2.3, 0, 1) at
+    // +0x330 is what the cards are placed at), mode 0 and nothing selected.
+    GuestPtr<Applicants> Applicants_ctor(GuestPtr<Applicants> applicants)
+    {
+        const uint32_t a = applicants.address;
+        ApplicantsBase_ctor(applicants);
+        port::store<uint32_t>(a + 0x320u, 0x001BCF70u);
+        port::store<uint32_t>(a + 0x324u, 0u);
+        port::store<uint32_t>(a + 0x328u, 0u);
+        port::store<uint32_t>(a + 0x31Cu, 0u);
+        port::store<uint32_t>(a + 0x330u, 0u);
+        port::store<uint32_t>(a + 0x334u, 0x40133333u);
+        port::store<uint32_t>(a + 0x338u, 0u);
+        port::store<uint32_t>(a + 0x33Cu, 0x3F800000u);
+        Applicants_PlaceAt(applicants, GuestPtr<ps2f>{a + 0x330u});
+        Applicants_SetMode(applicants, 0);
+        Applicants_ScrollTo(applicants, -1);
+        return applicants;
+    }
+
+    // Puts the cursor on applicant `index` (the one before is kept at +0x2C4): the card model's matrix is the standard one moved
+    // 3 and 2.5 units from the first model's place, the view scrolls to nothing, the card text is built, and the mode goes to 1.
+    void Applicants_Select(GuestPtr<Applicants> applicants, int index)
+    {
+        const uint32_t a = applicants.address;
+        port::store<int32_t>(a + 0x2B8u, 1);
+        port::store<int32_t>(a + 0x2C0u, 0);
+        port::store<uint32_t>(a + 0x2C4u, port::load<uint32_t>(a + 0x2D0u));
+        port::store<int32_t>(a + 0x2D0u, index);
+        port::store<int32_t>(a + 0x2CCu, index);
+        Mat4_Copy(GuestPtr<Vec4>{port::load<uint32_t>(a + 0x2A8u)}, GuestPtr<Vec4>{0x001B2550u});
+        const auto word = [&](uint32_t offset) { return ps2f(std::bit_cast<float>(port::load<uint32_t>(port::load<uint32_t>(a + 0x2A0u) + offset))); };
+        const auto put = [&](uint32_t offset, ps2f value) { port::store<uint32_t>(port::load<uint32_t>(a + 0x2A8u) + offset, std::bit_cast<uint32_t>(value.v)); };
+        put(0x30, word(0x30) - ps2f(3.0f));
+        put(0x34, word(0x34) - ps2f(2.5f));
+        port::store<uint32_t>(port::load<uint32_t>(a + 0x2A8u) + 0x38u, port::load<uint32_t>(port::load<uint32_t>(a + 0x2A0u) + 0x38u));
+        Applicants_ScrollTo(applicants, -1);
+        Applicants_BuildInfo(applicants);
+        port::store<int32_t>(a + 0x29Cu, 1);
+        Applicants_BuildInfo(applicants);
+    }
+
+    // Back to the pause menu's first page: the list cleared and its cursor put at (0x58, 0x31), the message text restored (0x1B73C0),
+    // the Cross press consumed, the slot select state run once, the list scrolled to the item that was waiting (+0x998), and the
+    // 16 slot marks (one byte every 0x92 from +0x78) cleared.
+    void PauseMenu_Reset(GuestPtr<PauseMenu> pause)
+    {
+        const uint32_t p = pause.address;
+        const auto list = [&] { return GuestPtr<ListMenu>{port::load<uint32_t>(p + 8u)}; };
+        ListMenu_ClearItem(list(), -1);
+        ListMenu_SetCursor(list(), 0x58, 0x31, 0xFF0000);
+        port::store<uint32_t>(p + 0x14u, 0u);
+        TextBox_SetText(GuestPtr<TextBox>{port::load<uint32_t>(p + 0x10u)}, GuestPtr<char>{0x001B73C0u}, 0);
+        Pad_ClearBit40();
+        PauseMenu_StateSlotSelect(pause);
+        const int32_t waiting = port::load<int32_t>(p + 0x998u);
+        port::store<int32_t>(p + 0x998u, -1);
+        if (waiting != -1)
+            ListMenu_ScrollTo(list(), waiting);
+        for (uint32_t i = 0; i < 0x10u; ++i)
+            port::store<uint8_t>(p + 0x78u + 0x92u * i, 0);
+    }
+
+    PORT_FN(NameEntry_ctor);
+    PORT_FN(Applicants_ctor);
+    PORT_FN(Applicants_Select);
+    PORT_FN(PauseMenu_Reset);
+
+    // The text of line `index` of the wants list into `out`: a line with a script (halfword +6 of its entry) is loaded from the
+    // wants script (mm_Words_LoadForWants); otherwise the want's family member and what is wanted (the claim line of the family's
+    // home type for the want's claim) are written as "%s %s ..." from the format at 0x1B73B0.
+    void WantsWin_FormatLine(GuestPtr<WantsWin> wants, GuestPtr<CityScene> city, int index, GuestPtr<char> out)
+    {
+        const uint32_t w = wants.address;
+        const uint32_t entry = w + 4u * static_cast<uint32_t>(index);
+        const uint32_t want = w + 4u * port::load<uint16_t>(entry + 4u) + 0x104u;
+        if (port::load<uint16_t>(entry + 6u) != 0)
+        {
+            Words_LoadForWants(city, static_cast<int16_t>(port::load<uint16_t>(entry + 6u)), port::load<int32_t>(want), out);
+            return;
+        }
+        const uint32_t family = Family_Get(port::load<uint16_t>(want + 4u), 0).address;
+        const int claimLine = Claim_GetLine(port::load<uint8_t>(globals::buildingTypeAddress(port::load<uint16_t>(family + 0x20u)) + 0x147u), port::load<int32_t>(want + 8u));
+        const uint32_t member = family + 0x48u * port::load<uint16_t>(want + 6u);
+        sdk::sprintf(out.address, 0x001B73B0u, member + 0x5Cu, member + 0x4Cu, claimLine);
+    }
+
+    PORT_FN(WantsWin_FormatLine);
+
+    // The title scene: its stage object (the value of `a1` at +0xE0), the stage reset, the menu list of 3 by 48 items at +0xB0 with
+    // sixteen items of 19 columns, the memory card manager (+0xB4), the lights (+4) and the camera (+0), set to the eye and target at
+    // 0x1B17C0 and 0x1B17D0; the scene's state cleared (a mode of -1 at +0xD0, 1 at +0x4C), a message box of 21 by 12 (+0xBC) and a
+    // line box of 30 by 15 (+0xB8) with their places.
+    GuestPtr<SceneA> SceneA_ctor(GuestPtr<SceneA> scene, int a1)
+    {
+        port::GuestFrame<0x50> frame;
+        const uint32_t sp = frame.ptr().address;
+        const uint32_t s = scene.address;
+        StageObj_ctor(static_cast<int>(s));
+        port::store<int32_t>(s + 0xE0u, a1);
+        Stage_Reset();
+        uint32_t list = sdk::operator_new(0x2A0u);
+        if (list != 0u)
+            list = ListMenu_ctor(GuestPtr<ListMenu>{list}, 3, 0x30, 0x1C2, 0x1A4, 0x3C, 0xFF0000).address;
+        port::store<uint32_t>(s + 0xB0u, list);
+        for (int i = 0; i < 0x10; ++i)
+            ListMenu_AddItems(GuestPtr<ListMenu>{port::load<uint32_t>(s + 0xB0u)}, 0x13, 3, 0, -1, 0, -1);
+        uint32_t mc = sdk::operator_new(0x28u);
+        if (mc != 0u)
+            mc = McManager_ctor(GuestPtr<McManager>{mc}).address;
+        port::store<uint32_t>(s + 0xB4u, mc);
+        uint32_t lights = sdk::operator_new(0x1B0u);
+        if (lights != 0u)
+            lights = static_cast<uint32_t>(LightSet_Init(GuestPtr<LightSet>{lights}));
+        port::store<uint32_t>(s + 4u, lights);
+        uint32_t camera = sdk::operator_new(0x310u);
+        if (camera != 0u)
+            camera = Camera_ctor(GuestPtr<Camera>{camera}).address;
+        port::store<uint32_t>(s, camera);
+        *GuestPtr<Vec4>{sp + 0x30u} = *GuestPtr<Vec4>{0x001B17C0u};
+        *GuestPtr<Vec4>{sp + 0x40u} = *GuestPtr<Vec4>{0x001B17D0u};
+        Camera_SetEyeTarget(GuestPtr<Camera>{port::load<uint32_t>(s)}, GuestPtr<Vec4>{sp + 0x30u}, GuestPtr<Vec4>{sp + 0x40u});
+        Camera_UpdateMatrices(GuestPtr<Camera>{port::load<uint32_t>(s)});
+        port::store<uint32_t>(s + 0xC0u, 0u);
+        port::store<uint32_t>(s + 0xC4u, 0u);
+        port::store<uint32_t>(s + 0xC8u, 0u);
+        port::store<uint32_t>(s + 0xD8u, 0u);
+        port::store<uint32_t>(s + 0x48u, 0u);
+        port::store<uint32_t>(s + 0x3Cu, 0u);
+        port::store<uint32_t>(s + 0x40u, 0u);
+        port::store<uint32_t>(s + 0x54u, 0u);
+        port::store<uint32_t>(0x001BDA7Cu, 0u);
+        port::store<int32_t>(s + 0xD0u, -1);
+        port::store<uint32_t>(s + 0x4Cu, 1u);
+        port::store<uint32_t>(s + 0xBCu, newTextBox(0x15, 0xC, -1));
+        TextBox_SetPos(GuestPtr<TextBox>{port::load<uint32_t>(s + 0xBCu)}, 0x72E0, 0x7C20, -0x100000);
+        port::store<uint32_t>(s + 0x50u, 0u);
+        port::store<uint32_t>(s + 0x58u, 0u);
+        port::store<uint8_t>(s + 0x5Du, 0);
+        port::store<uint8_t>(s + 0x5Cu, 0);
+        port::store<uint16_t>(s + 0x5Eu, 0);
+        port::store<uint8_t>(s + 0x60u, 0x3C);
+        port::store<uint16_t>(s + 0x62u, 0);
+        port::store<uint8_t>(s + 0x70u, 0);
+        port::store<uint32_t>(s + 0xB8u, newTextBox(0x1E, 0xF, -1));
+        TextBox_SetPos(GuestPtr<TextBox>{port::load<uint32_t>(s + 0xB8u)}, 0x74C0, 0x7AE0, -0x100000);
+        port::store<uint8_t>(s + 0xAEu, 0x3C);
+        port::store<uint32_t>(s + 0xECu, 0u);
+        return scene;
+    }
+
+    PORT_FN(SceneA_ctor);
+
+    // The pause menu's card check state: the card manager is stepped; when the card in the slot at +0x1C reports 2 the menu shows
+    // card message 5. Otherwise the main menu (+4) takes its input: choice 1 or the cancel (-1) gives the pad focus back, resets
+    // the menu and goes to state 4 (the slot menu); any other choice resets the manager, clears the list and shows the message box
+    // at its first place, and goes to state 6.
+    void PauseMenu_StateWait(GuestPtr<PauseMenu> pause)
+    {
+        port::GuestFrame<0x30> frame;
+        const uint32_t choiceAt = frame.ptr().address + 0x2Cu;
+        const uint32_t p = pause.address;
+        const GuestPtr<McManager> mc{port::load<uint32_t>(p + 0xCu)};
+        McManagerUpdate(mc);
+        if (McManager_GetCardStatus(GuestPtr<McManager>{port::load<uint32_t>(p + 0xCu)}, port::load<int32_t>(p + 0x1Cu)) == 2)
+        {
+            PauseMenu_ShowCardMessage(pause, 5);
+            return;
+        }
+        if (ListMenu_HandleInput(GuestPtr<ListMenu>{port::load<uint32_t>(p + 4u)}, GuestPtr<int32_t>{choiceAt}) == 0)
+            return;
+        const int32_t choice = port::load<int32_t>(choiceAt);
+        const GuestPtr<TextBox> message{port::load<uint32_t>(p + 0x10u)};
+        if (choice == 1 || choice == -1)
+        {
+            Pad_TakeFocus(1, 0x10);
+            PauseMenu_Reset(pause);
+            Pad_ReleaseFocus(1);
+            TextBox_SetText(message, GuestPtr<char>{0x001B73C0u}, 0);
+            TextBox_SetPos(message, 0x7600, 0x7E00, -0x100000);
+            port::store<int32_t>(p, 4);
+            return;
+        }
+        McManager_ResetState(GuestPtr<McManager>{port::load<uint32_t>(p + 0xCu)});
+        port::store<int32_t>(p + 0x24u, 0);
+        port::store<int32_t>(p + 0x28u, 0);
+        ListMenu_ClearItem(GuestPtr<ListMenu>{port::load<uint32_t>(p + 4u)}, -1);
+        TextBox_SetPos(message, 0x7600, 0x7CC0, -0x100000);
+        TextBox_SetCharSize(message, 0, 0xD0, 0, 0xE0);
+        TextBox_SetText(message, GuestPtr<char>{0x001B73C0u}, 0);
+        TextBox_SetPos(message, 0x7600, 0x7E00, -0x100000);
+        port::store<int32_t>(p, 6);
+    }
+
+    PORT_FN(PauseMenu_StateWait);
+
+    // The Cross button on the thing under the cursor (+0x1A8; 0xFFFF for nothing), when the city is in mode 1 and the Square-side
+    // button 0x20 is not held. A cursor with no person view (+0x1A4 zero) either picks the tile (the player is in mode 3) or
+    // starts a talk about the object (mode view 1), or asks for mode 0xA with its marks reset; with a person view, unless the
+    // player is in mode 3, a talk starts about the building at the person's tile (x and z on the 128-tile map, from the map's
+    // person record).
+    void CityCursor_Move(GuestPtr<CityCursor> cursor, GuestPtr<CityScene> city, int enabled)
+    {
+        const uint32_t c = cursor.address;
+        if (port::load<uint16_t>(c + 0x1A8u) == 0xFFFFu || enabled == 0)
+            return;
+        if (CityScene_GetMode(city) != 1)
+            return;
+        if ((Pad_Pressed(0) & 0x40u) == 0)
+            return;
+        if ((Pad_Held(0) & 0x20u) != 0)
+            return;
+        const auto player = [&] { return GuestPtr<Player>{port::load<uint32_t>(city.address + 0x58u)}; };
+        if (port::load<int32_t>(c + 0x1A4u) == 0)
+        {
+            if (port::load<int32_t>(c + 0x1C0u) != 1)
+            {
+                CityScene_PushMode(city, 0xA);
+                port::store<int32_t>(c + 0x1C4u, 1);
+                port::store<int32_t>(c + 0x1C8u, 0);
+                port::store<int32_t>(c + 0x1CCu, 0);
+            }
+            else if (Player_GetMode(player()) == 3)
+                CityCursor_SelectTile(cursor, port::load<uint16_t>(c + 0x1A8u), city);
+            else
+                CityScene_StartTalk(city, 0, port::load<uint16_t>(c + 0x1A8u), 0x1770, 0);
+            return;
+        }
+        if (Player_GetMode(player()) == 3)
+            return;
+        const GuestPtr<CityMap> map{port::load<uint32_t>(city.address + 0x50u)};
+        const uint32_t person = port::load<uint16_t>(c + 0x1A8u);
+        const uint32_t record = port::load<uint32_t>(map.address + 0x68u) + 0x30u * person;
+        const int x = sdk::fptosi(ps2f(64.0f) + ps2f(std::bit_cast<float>(port::load<uint32_t>(record))));
+        const int z = sdk::fptosi(ps2f(64.0f) - ps2f(std::bit_cast<float>(port::load<uint32_t>(record + 8u))));
+        const GuestPtr<MapObject> object = Map_FindPersonObjectOnTile(map, person, static_cast<uint16_t>(x + (z << 7)));
+        CityScene_StartTalk(city, 0, object->id, port::load<uint16_t>(c + 0x1A8u), 0);
+    }
+
+    PORT_FN(CityCursor_Move);
+
+    // The pause menu's save state, one step a frame on the counter at +0x24: 0 wait for the card manager to settle, 1 make the
+    // slot's save folder (mm_SaveFile_PrepareDir), 2 queue the delete of its icon.sys, 3 wait for that, 4 write the city
+    // (mm_CityScene_SaveStep, which answers 2 to give up), 5 write icon.sys with the save name at +0x30, 6 wait for that, 7 step
+    // back out of the folder (the ".." at 0x1B7688), 8 show the main menu again and go to state 2. Giving up (a result of 2) puts the
+    // counter back to 0 and returns 1. In the steps before 8 the message alternates between the saving text and the do-not-remove
+    // text every 16 frames (the counter at +0x28).
+    int PauseMenu_StateSave(GuestPtr<PauseMenu> pause, GuestPtr<CityScene> city)
+    {
+        const uint32_t p = pause.address;
+        const auto mc = [p]() { return GuestPtr<McManager>{port::load<uint32_t>(p + 0xCu)}; };
+        const auto nextStep = [p]() { port::store<int32_t>(p + 0x24u, port::load<int32_t>(p + 0x24u) + 1); };
+        // Steps 1 and 7: the folder is ready (1, on to the next step) or the attempt failed (2, start over and answer 1).
+        const auto folderStep = [&](int name, int create) {
+            const int result = SaveFile_PrepareDir(mc(), port::load<int32_t>(p + 0x1Cu), name, create);
+            if (result == 2)
+            {
+                port::store<int32_t>(p + 0x24u, 0);
+                return true;
+            }
+            if (result == 1)
+                nextStep();
+            return false;
+        };
+        switch (port::load<uint32_t>(p + 0x24u))
+        {
+        case 0:
+            if (McManagerUpdate(mc()) < 2)
+                nextStep();
+            break;
+        case 1:
+            if (folderStep(port::load<int32_t>(p + 0x20u), 1))
+                return 1;
+            break;
+        case 2:
+            SaveFile_DeleteIconSys(mc(), port::load<int32_t>(p + 0x1Cu));
+            nextStep();
+            break;
+        case 3:
+        case 6:
+            if (SaveFile_PollDone(mc()) != 0)
+                nextStep();
+            break;
+        case 4:
+        {
+            const int result = CityScene_SaveStep(city, mc());
+            if (result == 1)
+                nextStep();
+            else if (result == 2)
+            {
+                port::store<int32_t>(p + 0x24u, 0);
+                return 1;
+            }
+            break;
+        }
+        case 5:
+            SaveFile_WriteIconSys(mc(), port::load<int32_t>(p + 0x1Cu), static_cast<int>(p + 0x30u), 0);
+            nextStep();
+            break;
+        case 7:
+            if (folderStep(0x001B7688, 0))
+                return 1;
+            break;
+        case 8:
+        {
+            const GuestPtr<ListMenu> menu{port::load<uint32_t>(p + 4u)};
+            TextBox_SetText(GuestPtr<TextBox>{port::load<uint32_t>(p + 0x10u)}, GuestPtr<char>{0x001B73C0u}, 0);
+            ListMenu_ClearItem(menu, -1);
+            ListMenu_SetCursor(menu, 0x104, 0x3C, 0xFF0000);
+            ListMenu_SetItemText(menu, GuestPtr<char>{0x001B73F0u}, -1); // "Resume"
+            ListMenu_SetItemText(menu, GuestPtr<char>{0x001B73F8u}, -1); // "Save"
+            ListMenu_SetItemText(menu, GuestPtr<char>{0x001B7400u}, -1); // "Quit"
+            McManager_ClearSlots(mc());
+            port::store<int32_t>(p, 2);
+            break;
+        }
+        default:
+            break;
+        }
+        if (port::load<int32_t>(p + 0x24u) == 8)
+            return 0;
+        const int32_t blink = port::load<int32_t>(p + 0x28u) + 1;
+        port::store<int32_t>(p + 0x28u, blink);
+        if ((blink & 0xF) == 0)
+            TextBox_SetText(GuestPtr<TextBox>{port::load<uint32_t>(p + 0x10u)}, GuestPtr<char>{(blink & 0x10) != 0 ? 0x001B7690u : 0x001B76E0u}, 0);
+        return 0;
+    }
+
+    PORT_FN(PauseMenu_StateSave);
+
+    // The pause menu's format state, a step machine on the counter at +0x24: 0 the card check (the same as in the wait state: a
+    // card that reports 2 shows message 5, choice 1 or the cancel hands the pad focus back and returns to the slot menu at state 4,
+    // any other choice goes on), 1 look at the card's status (4 still being checked, so the "Now checking memory card" text; 3
+    // goes on after resetting the save file; 2 shows message 5; anything else message 2), 2 wait for the card manager to settle,
+    // 3 format the card (mm_SaveFile_Format: 2 failed and shows message 4; 1 done, back to the save state 6 with the manager
+    // reset; 0 still running, and the "Formatting memory card" text alternates with the do-not-remove text every 16 frames on the
+    // counter at +0x28).
+    void PauseMenu_StateFormat(GuestPtr<PauseMenu> pause)
+    {
+        port::GuestFrame<0x30> frame;
+        const uint32_t choiceAt = frame.ptr().address + 0x2Cu;
+        const uint32_t p = pause.address;
+        const auto mc = [p]() { return GuestPtr<McManager>{port::load<uint32_t>(p + 0xCu)}; };
+        const auto menu = [p]() { return GuestPtr<ListMenu>{port::load<uint32_t>(p + 4u)}; };
+        const auto message = [p]() { return GuestPtr<TextBox>{port::load<uint32_t>(p + 0x10u)}; };
+        const auto nextStep = [p]() { port::store<int32_t>(p + 0x24u, port::load<int32_t>(p + 0x24u) + 1); };
+        switch (port::load<int32_t>(p + 0x24u))
+        {
+        case 0:
+        {
+            McManagerUpdate(mc());
+            if (McManager_GetCardStatus(mc(), port::load<int32_t>(p + 0x1Cu)) == 2)
+            {
+                PauseMenu_ShowCardMessage(pause, 5);
+                return;
+            }
+            if (ListMenu_HandleInput(menu(), GuestPtr<int32_t>{choiceAt}) == 0)
+                return;
+            const int32_t choice = port::load<int32_t>(choiceAt);
+            if (choice == 1 || choice == -1)
+            {
+                Pad_TakeFocus(1, 0x10);
+                PauseMenu_Reset(pause);
+                Pad_ReleaseFocus(1);
+                port::store<int32_t>(p, 4);
+                return;
+            }
+            nextStep();
+            return;
+        }
+        case 1:
+            McManagerUpdate(mc());
+            switch (McManager_GetCardStatus(mc(), port::load<int32_t>(p + 0x1Cu)))
+            {
+            case 4:
+                ListMenu_ClearItem(menu(), -1);
+                TextBox_SetPos(message(), 0x7600, 0x7E00, -0x100000);
+                TextBox_SetCharSize(message(), 0, 0xD0, 0, 0xE0);
+                TextBox_SetText(message(), GuestPtr<char>{0x001B7750u}, 0);
+                return;
+            case 3:
+                SaveFile_ResetState(mc());
+                ListMenu_ClearItem(menu(), -1);
+                nextStep();
+                return;
+            case 2:
+                PauseMenu_ShowCardMessage(pause, 5);
+                return;
+            default:
+                PauseMenu_ShowCardMessage(pause, 2);
+                return;
+            }
+        case 2:
+            if (McManagerUpdate(mc()) < 2)
+                nextStep();
+            return;
+        case 3:
+        {
+            const int result = SaveFile_Format(mc(), port::load<int32_t>(p + 0x1Cu));
+            if (result == 2)
+            {
+                PauseMenu_ShowCardMessage(pause, 4);
+                return;
+            }
+            if (result == 1)
+            {
+                McManager_ResetState(mc());
+                port::store<int32_t>(p + 0x24u, 0);
+                port::store<int32_t>(p + 0x28u, 0);
+                ListMenu_ClearItem(menu(), -1);
+                TextBox_SetPos(message(), 0x7600, 0x7CC0, -0x100000);
+                TextBox_SetCharSize(message(), 0, 0xD0, 0, 0xE0);
+                port::store<int32_t>(p, 6);
+                return;
+            }
+            if (result != 0)
+                return;
+            const int32_t blink = port::load<int32_t>(p + 0x28u) + 1;
+            port::store<int32_t>(p + 0x28u, blink);
+            if ((blink & 0xF) != 0)
+                return;
+            TextBox_SetPos(message(), 0x7600, 0x7CC0, -0x100000);
+            TextBox_SetText(message(), GuestPtr<char>{(blink & 0x10) != 0 ? 0x001B77A0u : 0x001B76E0u}, 0);
+            return;
+        }
+        default:
+            return;
+        }
+    }
+
+    PORT_FN(PauseMenu_StateFormat);
+
+    // A page of the Town's Pages: all six texts are cleared, the entry count of the page reset and the two page numbers written
+    // (2 * page + 1 and + 2). A page before the contents pages (mm_TownPages_FillContents) is the contents. Otherwise the type whose
+    // listing holds the page is found in the index (the last type with families that starts at or before the page): its name
+    // (cut at 18 bytes, or followed by a sign) goes in the heading, the INDEX label in the corner, and up to ten of its known
+    // families are listed from the page's first one (ten a page): "name" and the phone number in the form 1234-5678, five in the
+    // left text and five in the right.
+    void TownPages_FillPage(GuestPtr<TownPages> pages)
+    {
+        port::GuestFrame<0xF0> frame;
+        const uint32_t sp = frame.ptr().address;
+        const uint32_t text = sp + 0x70u, number = sp + 0xB0u, name = sp + 0xD0u;
+        const auto clear = [&]() {
+            for (int i = 0; i < 6; ++i)
+                TextBox_SetText(pages->text[i], GuestPtr<char>{0x001B8E80u}, 0);
+        };
+        clear();
+        pages->pageEntries = 0;
+        Text_FormatPadded(GuestPtr<char>{text}, pages->page * 2 + 1, 4);
+        TextBox_SetText(pages->text[3], GuestPtr<char>{text}, 0);
+        Text_FormatPadded(GuestPtr<char>{text}, pages->page * 2 + 2, 4);
+        TextBox_SetText(pages->text[4], GuestPtr<char>{text}, 0);
+        if (pages->page < pages->contentsPages)
+        {
+            TownPages_FillContents(pages);
+            return;
+        }
+        const int32_t types = globals::familyTypeCount.get();
+        const auto entryAt = [&](int32_t type) { return pages->index.address + 8u * static_cast<uint32_t>(type); };
+        int32_t type = 0;
+        if (types > 0)
+        {
+            do
+            {
+                const uint32_t entry = entryAt(type);
+                if (port::load<uint16_t>(entry) != 0 && pages->page < static_cast<int32_t>(port::load<uint16_t>(entry + 4u)))
+                    break;
+                ++type;
+            } while (type < types);
+        }
+        uint16_t before;
+        do
+        {
+            before = port::load<uint16_t>(entryAt(type) - 8u);
+            --type;
+        } while (before == 0);
+        if (type == types)
+        {
+            clear();
+            return;
+        }
+        sdk::sprintf(text, 0x001B8F98u, globals::buildingTypeAddress(static_cast<uint32_t>(type)) + 0x110u);
+        if (sdk::strlen(text) >= 0x13)
+            port::store<uint8_t>(text + 0x12u, 0xCD);
+        else
+            sdk::strcat(text, 0x001B8FA0u);
+        port::store<uint8_t>(text + 0x13u, 0);
+        TextBox_SetText(pages->text[2], GuestPtr<char>{text}, 0);
+        TextBox_SetText(pages->text[5], GuestPtr<char>{0x001B8FA8u}, 0);
+        const uint32_t entry = entryAt(type);
+        uint32_t family = port::load<uint16_t>(entry + 2u);
+        const int32_t skip = (pages->page - static_cast<int32_t>(port::load<uint16_t>(entry + 4u))) * 10;
+        int32_t counted = 0;
+        if (skip > 0)
+        {
+            do
+            {
+                if (Family_IsKnown(family) != 0)
+                    ++counted;
+                ++family;
+            } while (counted < skip);
+        }
+        int32_t rows = 0;
+        while (counted < static_cast<int32_t>(port::load<uint16_t>(entryAt(type))))
+        {
+            if (Family_IsKnown(family) != 0)
+            {
+                const GuestPtr<Family> record = Family_Get(static_cast<int>(family), 1);
+                Text_FormatPadded(GuestPtr<char>{number}, Family_MakePhoneNumber(static_cast<int>(family)), 8);
+                for (uint32_t k = 7; k >= 4; --k)
+                    port::store<uint8_t>(number + k + 1u, port::load<uint8_t>(number + k));
+                port::store<uint8_t>(number + 4u, '-');
+                port::store<uint8_t>(number + 9u, 0);
+                sdk::strcpy(name, record.address);
+                if (sdk::strlen(record.address) >= 0x13)
+                {
+                    port::store<uint8_t>(name + 0x12u, 0xCD);
+                    port::store<uint8_t>(name + 0x13u, 0);
+                }
+                sdk::sprintf(text, 0x001B8FB0u, name, number);
+                TextBox_AppendText(pages->text[rows < 5 ? 0 : 1], GuestPtr<char>{text}, 0);
+                ++rows;
+                ++counted;
+            }
+            ++family;
+            if (rows >= 10)
+                break;
+        }
+        pages->pageEntries = rows;
+    }
+
+    PORT_FN(TownPages_FillPage);
+
+    // One frame of the laptop (city mode 2). The entries sit on a carousel (count at 0x1BDAB8, `selected` at +0x3D0, the turn at +0x30
+    // toward the angle at +0x34); the states at +0x3C: 0 sets the carousel up (the entry angles, scale 0.1) and sound 10, taking the
+    // applicants' flag away and the HUD off; 1 grows it (scale +0.1, lift -0.25) until the scale reaches 1, then makes the text box
+    // (+0x44) and shows the selected entry's text; 2 waits for Triangle (leave, sound 11, nothing run), Cross (leave and run the
+    // entry) or left and right (the next entry the other way, sound 12, state 3); 3 turns the carousel by 0.1 a frame (direction at
+    // +0x40) until it is within 0.2 of the wanted angle, snaps and shows the text; 4 shrinks it (scale -0.2, lift +0.2) until
+    // the scale is below 0.1, then deletes the text box, gives the HUD and the applicants' flag back and runs the entry (mm_Laptop_RunEntry)
+    // unless left with Triangle (+0x48). The result is the city mode wanted next: 1 leaves the mode (popped), 2 stays, any other
+    // mode is pushed.
+    int Laptop_Update(GuestPtr<Laptop> laptop, GuestPtr<CityScene> city)
+    {
+        const uint32_t l = laptop.address;
+        const uint32_t c = city.address;
+        const auto loadF = [](uint32_t at) { return ps2f(std::bit_cast<float>(port::load<uint32_t>(at))); };
+        const auto storeF = [](uint32_t at, ps2f value) { port::store<uint32_t>(at, std::bit_cast<uint32_t>(value.v)); };
+        // The angle of an entry: a full turn over the entries, folded into -pi..pi.
+        const auto angleOf = [&](int32_t index) {
+            ps2f angle = (ps2f(6.2831855f) / fromInt(port::load<int32_t>(0x001BDAB8u))) * fromInt(index);
+            if (!(angle < ps2f(3.1415927f)))
+                angle = (angle - ps2f(3.1415927f)) - ps2f(3.1415927f);
+            return angle;
+        };
+        const auto box = [&]() { return GuestPtr<TextBox>{port::load<uint32_t>(l + 0x44u)}; };
+        const auto showSelected = [&]() {
+            Laptop_SetItemText(laptop, city, port::load<uint32_t>(globals::kLaptopEntries + 4u * static_cast<uint32_t>(laptop->selected)));
+        };
+        int result = CityScene_GetMode(city);
+        switch (laptop->state)
+        {
+        case 0:
+        {
+            port::store<uint32_t>(l + 0x10u, 0u);
+            port::store<uint32_t>(l + 0x14u, 0u);
+            port::store<uint32_t>(l + 0x18u, 0u);
+            port::store<uint32_t>(l + 0x1Cu, 0x3F800000u);
+            port::store<uint32_t>(l + 0x20u, 0xC019999Au);
+            port::store<uint32_t>(l + 0x24u, 0xBF51EB85u);
+            port::store<uint32_t>(l + 0x28u, 0x40E28F5Cu);
+            port::store<uint32_t>(l + 0x2Cu, 0u);
+            port::store<uint32_t>(l + 0x38u, 0x3DCCCCCDu);
+            const ps2f angle = angleOf(laptop->selected);
+            storeF(l + 0x34u, angle);
+            storeF(l + 0x30u, angle);
+            laptop->state = 1;
+            Sound_PlaySe(0xA, 0, 0x3C, 0.0f, 0.0f);
+            port::store<uint32_t>(c + 0x30u, 0u);
+            port::store<uint32_t>(c + 0x34u, 0u);
+            port::store<uint8_t>(port::load<uint32_t>(c + 0x54u) + 0x2C9u, 0);
+            break;
+        }
+        case 1:
+            storeF(l + 0x38u, loadF(l + 0x38u) + ps2f(0.1f));
+            storeF(l + 0x18u, loadF(l + 0x18u) - ps2f(0.25f));
+            if (loadF(l + 0x38u) < ps2f(1.0f))
+                break;
+            storeF(l + 0x38u, ps2f(1.0f));
+            laptop->state = 2;
+            port::store<uint32_t>(l + 0x18u, 0xC0000000u);
+            port::store<uint32_t>(l + 0x44u, newTextBox(0xB, 5, -1));
+            TextBox_SetPos(box(), 0x6E80, 0x81C0, 100000);
+            showSelected();
+            break;
+        case 2:
+            if ((Pad_Pressed(0) & 0x10u) != 0)
+            {
+                TextBox_SetText(box(), GuestPtr<char>{0x001B6560u}, 0);
+                laptop->state = 4;
+                Sound_PlaySe(0xB, 0, 0x3C, 0.0f, 0.0f);
+                port::store<int32_t>(l + 0x48u, 1);
+            }
+            else if ((Pad_Pressed(0) & 0x40u) != 0)
+            {
+                TextBox_SetText(box(), GuestPtr<char>{0x001B6560u}, 0);
+                laptop->state = 4;
+                port::store<int32_t>(l + 0x48u, 0);
+            }
+            else if ((Pad_GetRepeat() & 0x8000) != 0)
+            {
+                TextBox_SetText(box(), GuestPtr<char>{0x001B6560u}, 0);
+                laptop->selected = laptop->selected - 1;
+                if (laptop->selected < 0)
+                    laptop->selected = port::load<int32_t>(0x001BDAB8u) - 1;
+                storeF(l + 0x34u, angleOf(laptop->selected));
+                port::store<int32_t>(l + 0x40u, 0);
+                Sound_PlaySe(0xC, 0, 0x3C, 0.0f, 0.0f);
+                laptop->state = 3;
+            }
+            else if ((Pad_GetRepeat() & 0x2000) != 0)
+            {
+                TextBox_SetText(box(), GuestPtr<char>{0x001B6560u}, 0);
+                laptop->selected = laptop->selected + 1;
+                if (!(laptop->selected < port::load<int32_t>(0x001BDAB8u)))
+                    laptop->selected = 0;
+                storeF(l + 0x34u, angleOf(laptop->selected));
+                port::store<int32_t>(l + 0x40u, 1);
+                Sound_PlaySe(0xC, 0, 0x3C, 0.0f, 0.0f);
+                laptop->state = 3;
+            }
+            break;
+        case 3:
+        {
+            const int32_t direction = port::load<int32_t>(l + 0x40u);
+            if (direction == 0)
+            {
+                const ps2f turn = loadF(l + 0x30u) - ps2f(0.1f);
+                storeF(l + 0x30u, turn);
+                if (turn < ps2f(-3.1415927f))
+                    storeF(l + 0x30u, turn + ps2f(6.2831855f));
+            }
+            else if (direction == 1)
+            {
+                const ps2f turn = loadF(l + 0x30u) + ps2f(0.1f);
+                storeF(l + 0x30u, turn);
+                if (!(turn < ps2f(3.1415927f)))
+                    storeF(l + 0x30u, (turn - ps2f(3.1415927f)) - ps2f(3.1415927f));
+            }
+            else
+                break;
+            const ps2f target = loadF(l + 0x34u), current = loadF(l + 0x30u);
+            if (current < target - ps2f(0.2f) || !(current <= ps2f(0.2f) + target))
+                break;
+            storeF(l + 0x30u, target);
+            laptop->state = 2;
+            showSelected();
+            break;
+        }
+        case 4:
+        {
+            storeF(l + 0x38u, loadF(l + 0x38u) - ps2f(0.2f));
+            storeF(l + 0x18u, loadF(l + 0x18u) + ps2f(0.2f));
+            if (!(loadF(l + 0x38u) < ps2f(0.1f)))
+                break;
+            storeF(l + 0x38u, ps2f(0.1f));
+            laptop->state = 0;
+            port::store<uint32_t>(l + 0x18u, 0u);
+            if (port::load<uint32_t>(l + 0x44u) != 0u)
+            {
+                TextBox_dtor(box(), 1);
+                port::store<uint32_t>(l + 0x44u, 0u);
+            }
+            result = 1;
+            port::store<uint32_t>(c + 0x30u, 1u);
+            port::store<uint32_t>(c + 0x34u, 1u);
+            port::store<uint8_t>(port::load<uint32_t>(c + 0x54u) + 0x2C9u, 1);
+            if (port::load<int32_t>(l + 0x48u) == 0)
+                result = Laptop_RunEntry(laptop, city);
+            break;
+        }
+        default:
+            break;
+        }
+        Laptop_Animate(laptop);
+        if (result == 1)
+            CityScene_PopMode(city);
+        else if (result != 2)
+            CityScene_PushMode(city, result);
+        return result;
+    }
+
+    PORT_FN(Laptop_Update);
+
+    // The info window of the city cursor: the view for this frame's parity (0x1BDCD0 & 1) has its five line frames reset to style 0
+    // and the lines refilled from what the cursor points at (kind +0x1A8, 0xFFFF for nothing; +0x1A4 0 for a building, otherwise a
+    // person). A building lists the families of all the objects on its tile, starting with the pointed one (the chain of the
+    // objects' +0xA, ended by 0x3F80): the family name (a family not in the cache gets the text at 0x1B5ED8) and a frame style 9 plus the
+    // best friendship band of its members. A person gives one line, "name" over "phone" from the formats at 0x1B5EE0, with the
+    // frame style of its band. The window's own frame is style 0x32 with no line, 0x35 when the player is in mode 3, else 0x34. The
+    // anchor is the pointed place (a building's centre, a person's feet) with its height from the terrain, 0.6 below it for
+    // anything pointed at, and the window is laid out next to its projection (mm_CityCursor_LayoutInfo).
+    void CityCursor_UpdateInfo(GuestPtr<CityCursor> cursor, GuestPtr<CityScene> city)
+    {
+        port::GuestFrame<0xF0> frame;
+        const uint32_t sp = frame.ptr().address;
+        const uint32_t k = cursor.address;
+        const uint32_t point = sp + 0xC0u, text = sp + 0xD0u;
+        const uint32_t matrix = city->cityCamera.address + 0x10u;
+        const auto loadF = [](uint32_t at) { return ps2f(std::bit_cast<float>(port::load<uint32_t>(at))); };
+        const auto storeF = [](uint32_t at, ps2f value) { port::store<uint32_t>(at, std::bit_cast<uint32_t>(value.v)); };
+        for (uint32_t lane = 0; lane < 4; ++lane)
+            port::store<uint32_t>(point + 4u * lane, port::load<uint32_t>(k + 0x1B0u + 4u * lane));
+        ps2f lift(0.0f);
+        const uint32_t view = k + (port::load<uint32_t>(0x001BDCD0u) & 1u) * 0xD0u;
+        const auto lineBox = [&](int32_t index) { return GuestPtr<TextBox>{port::load<uint32_t>(view + 4u * static_cast<uint32_t>(index))}; };
+        const auto lineFrame = [&](int32_t index) { return GuestPtr<Frame>{port::load<uint32_t>(view + 0x14u + 4u * static_cast<uint32_t>(index))}; };
+        const auto count = [&]() { return port::load<int32_t>(k + 0x1C0u); };
+        for (int i = 0; i < 5; ++i)
+            Frame_SetStyle(lineFrame(i), 0);
+        port::store<int32_t>(k + 0x1C0u, 0);
+        const uint32_t kind = port::load<uint16_t>(k + 0x1A8u);
+        if (kind != 0xFFFFu)
+        {
+            if (port::load<int32_t>(k + 0x1A4u) == 0)
+            {
+                const GuestPtr<MapObject> object = Map_GetRecord(city->map, static_cast<int>(kind));
+                const ps2f half = fromInt(port::load<uint8_t>(globals::buildingTypeAddress(object->type) + 0x142u)) / ps2f(2.0f);
+                storeF(point, (fromInt(object->tile & 0x7F) - ps2f(64.0f)) + half);
+                storeF(point + 8u, (fromInt(0x80 - (object->tile >> 7)) - ps2f(64.0f)) - half);
+                lift = ps2f(0.6f);
+                uint32_t next = k + 0x1A8u;
+                while (port::load<uint16_t>(next) != 0x3F80)
+                {
+                    const GuestPtr<MapObject> here = Map_GetRecord(city->map, static_cast<int>(port::load<uint16_t>(next)));
+                    const uint32_t record = static_cast<uint32_t>(Family_Prefetch(here->family, 1));
+                    if (record == 0u)
+                        TextBox_SetText(lineBox(count()), GuestPtr<char>{0x001B5ED8u}, 1);
+                    else
+                    {
+                        TextBox_SetText(lineBox(count()), GuestPtr<char>{record}, 1);
+                        const uint32_t family = here->family;
+                        int band = 0;
+                        const uint32_t members = static_cast<uint32_t>(Family_Prefetch(static_cast<int>(family), 1));
+                        if (members != 0u)
+                            for (int member = 0; member < port::load<uint16_t>(members + 0x22u); ++member)
+                            {
+                                const int found = Family_GetFriendshipBand(static_cast<int>(family), member);
+                                if (band < found)
+                                    band = found;
+                            }
+                        if (band != 0)
+                            Frame_SetStyle(lineFrame(count()), band + 9);
+                    }
+                    port::store<int32_t>(k + 0x1C0u, count() + 1);
+                    next = here.address + 0xAu;
+                }
+            }
+            else
+            {
+                lift = ps2f(0.6f);
+                const GuestPtr<MapPerson> who = city->map->people + static_cast<int>(kind);
+                const uint32_t record = static_cast<uint32_t>(Family_Prefetch(who->family, 1));
+                if (record == 0u)
+                    TextBox_SetText(lineBox(0), GuestPtr<char>{0x001B5ED8u}, 1);
+                else
+                {
+                    storeF(point, who->x);
+                    storeF(point + 8u, who->z);
+                    const uint32_t member = record + 0x48u * who->member;
+                    sdk::sprintf(text, 0x001B5EE0u, member + 0x5Cu, member + 0x4Cu);
+                    TextBox_SetText(lineBox(count()), GuestPtr<char>{text}, 1);
+                    const int band = Family_GetFriendshipBand(who->family, who->member);
+                    if (band != 0)
+                        Frame_SetStyle(lineFrame(count()), band + 9);
+                    port::store<int32_t>(k + 0x1C0u, count() + 1);
+                }
+            }
+        }
+        const GuestPtr<Frame> windowFrame{port::load<uint32_t>(view + 0x28u)};
+        if (count() == 0)
+            Frame_SetStyle(windowFrame, 0x32);
+        else if (Player_GetMode(city->player) == 3)
+            Frame_SetStyle(windowFrame, 0x35);
+        else
+            Frame_SetStyle(windowFrame, 0x34);
+        storeF(point + 4u, Map_SampleHeight(city->map, loadF(point), loadF(point + 8u)) - lift);
+        port::store<uint32_t>(point + 0xCu, 0x3F800000u);
+        CityCursor_LayoutInfo(cursor, GuestPtr<Vec4>{point}, GuestPtr<Vec4>{matrix});
+    }
+
+    PORT_FN(CityCursor_UpdateInfo);
 }

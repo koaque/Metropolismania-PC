@@ -674,4 +674,814 @@ namespace mm
     PORT_FN(Movie_VideoDecAddStrCallback);
     PORT_FN(Movie_LayoutSubtitle);
     PORT_FN(Movie_SendToIop2Area);
+
+    // ---- the movie player's kernel, sound-driver and IPU calls (plan P6 batch 2)
+
+    namespace
+    {
+        // Unsigned remainder with the EE's rule for a zero divisor (the dividend itself).
+        uint32_t remainderUnsigned(uint32_t dividend, uint32_t divisor) { return divisor == 0 ? dividend : dividend % divisor; }
+
+        // The IPU registers and the IPU-to-memory (from-IPU, channel 3) DMA channel.
+        constexpr uint32_t kIpuCmd = 0x10002000u, kIpuCtrl = 0x10002010u, kIpuBp = 0x10002020u;
+        constexpr uint32_t kIpuFromChcr = 0x1000B000u, kIpuFromMadr = 0x1000B010u, kIpuFromQwc = 0x1000B020u;
+
+        // A field of an object at `base`, by guest address.
+        uint32_t word(int object, uint32_t offset) { return port::load<uint32_t>(static_cast<uint32_t>(object) + offset); }
+        void setWord(int object, uint32_t offset, uint32_t value) { port::store<uint32_t>(static_cast<uint32_t>(object) + offset, value); }
+    }
+
+    // Yields the processor to the other threads of the same priority.
+    void Movie_SwitchThread() { sdk::RotateThreadReadyQueue(1); }
+
+    void Movie_Error(int message) { sdk::printf(0x001BAC08u, message); }
+
+    // The MPEG library's error callback: logs the code (+4 of its data), the decoder goes on.
+    int Movie_CbError(int, int cbdata)
+    {
+        sdk::printf(0x001BAD48u, word(cbdata, 4));
+        return 1;
+    }
+
+    // Frees the audio buffer and the control block that were allocated in IOP memory.
+    int Movie_AudioDecDelete(int audio)
+    {
+        sdk::sceSifFreeSysMemory(word(audio, 0x44));
+        sdk::sceSifFreeSysMemory(word(audio, 0x58));
+        return 1;
+    }
+
+    // Waits until the field shown is not `field`, then shows the movie (display on, nothing ready, subtitle changes off).
+    int Movie_DisplayStart(int field)
+    {
+        int64_t shown;
+        do
+            shown = sdk::sceGsSyncV(0);
+        while (static_cast<int64_t>(field) == shown);
+        port::store<int32_t>(0x001BDD68u, 1);
+        port::store<int32_t>(0x001BDD9Cu, 0);
+        port::store<int32_t>(0x001BDD6Cu, 0);
+        return static_cast<int>(shown);
+    }
+
+    // Sound driver volume (both cores, the two voice mixer lanes of each).
+    void Movie_SetSpuMasterVolume(int volume)
+    {
+        for (uint32_t core = 0; core < 2u; ++core)
+        {
+            sdk::sceSdRemote(1, 0x8010, core | 0x980u, volume);
+            sdk::sceSdRemote(1, 0x8010, core | 0xA80u, volume);
+        }
+    }
+
+    namespace
+    {
+        // Start and resume the same way: both cores' volume to full, then the streaming voice over the IOP buffer (+0x44), its size
+        // rounded down to 1 KB, ending at the buffer plus the position kept in +0x50; the state becomes 2 (playing).
+        void startAudioStream(int audio)
+        {
+            sdk::sceSdRemote(1, 0x8010, 0xF80, 0x7FFF);
+            sdk::sceSdRemote(1, 0x8010, 0x1080, 0x7FFF);
+            const uint32_t size = word(audio, 0x48);
+            const int32_t rounded = (static_cast<int32_t>(size) >= 0 ? static_cast<int32_t>(size) : static_cast<int32_t>(size) + 0x3FF) >> 10;
+            sdk::sceSdRemote(1, 0x80E0, 0, 0x13, word(audio, 0x44), static_cast<uint32_t>(rounded) << 10, word(audio, 0x44) + word(audio, 0x50));
+            setWord(audio, 0, 2);
+        }
+    }
+
+    void Movie_AudioDecStart(GuestPtr<uint32_t> audio) { startAudioStream(static_cast<int>(audio.address)); }
+    void Movie_AudioDecResume(GuestPtr<uint32_t> audio) { startAudioStream(static_cast<int>(audio.address)); }
+
+    // Stops the streaming voice, remembers where the driver had got to (24 bits, relative to the buffer; +0x50) and clears
+    // the stream's counters (state 0).
+    void Movie_AudioDecReset(GuestPtr<uint32_t> audio)
+    {
+        const int a = static_cast<int>(audio.address);
+        setWord(a, 0, 3);
+        sdk::sceSdRemote(1, 0x8010, 0xF80, 0);
+        sdk::sceSdRemote(1, 0x8010, 0x1080, 0);
+        const int64_t position = sdk::sceSdRemote(1, 0x80E0, 0, 2, 0, 0);
+        setWord(a, 0x50, static_cast<uint32_t>(position & 0xFFFFFF) - word(a, 0x44));
+        sdk::sceSdRemote(1, 0x80D0, 0, 0, word(a, 0x58), 0x4000, 0x800);
+        setWord(a, 0, 0);
+        setWord(a, 0x2C, 0);
+        setWord(a, 0x34, 0);
+        setWord(a, 0x38, 0);
+        setWord(a, 0x40, 0);
+        setWord(a, 0x54, 0);
+        setWord(a, 0x4C, 0);
+        setWord(a, 0x50, 0);
+    }
+
+    // Stream data arrives in a 40-byte header (state 0, filled up to +0x2C) and then audio: the header is logged once complete,
+    // and the ring (+0x30..0x40: base, write position, fill, size, total) takes the rest.
+    void Movie_AudioDecEndPut(GuestPtr<int32_t> audio, uint32_t size)
+    {
+        const int a = static_cast<int>(audio.address);
+        if (word(a, 0) == 0)
+        {
+            uint32_t taken = 0x28u - word(a, 0x2C);
+            if (!(taken < size))
+                taken = size;
+            setWord(a, 0x2C, word(a, 0x2C) + taken);
+            if (!(word(a, 0x2C) < 0x28u))
+            {
+                setWord(a, 0, 1);
+                sdk::printf(0x001BA960u);
+                const auto byteAt = [&](uint32_t offset) { return static_cast<int32_t>(port::load<int8_t>(static_cast<uint32_t>(a) + offset)); };
+                sdk::printf(0x001BA9A0u, byteAt(4), byteAt(5), byteAt(6), byteAt(7), word(a, 8), word(a, 0xC), word(a, 0x10), word(a, 0x14),
+                            word(a, 0x18), word(a, 0x1C), word(a, 0x20));
+                sdk::printf(0x001BAAE0u, byteAt(0x24), byteAt(0x25), byteAt(0x26), byteAt(0x27), word(a, 0x28));
+            }
+            size -= taken;
+        }
+        setWord(a, 0x34, static_cast<uint32_t>(remainder(static_cast<int32_t>(word(a, 0x34) + size), static_cast<int32_t>(word(a, 0x3C)))));
+        setWord(a, 0x38, word(a, 0x38) + size);
+        setWord(a, 0x40, word(a, 0x40) + size);
+    }
+
+    // Closes the stream file: the disc stream is stopped and its buffer freed, or the ordinary file closed.
+    int Movie_StrFileClose(GuestPtr<int32_t> file)
+    {
+        const int f = static_cast<int>(file.address);
+        if (word(f, 0) != 0)
+        {
+            sdk::sceCdStStop();
+            sdk::sceSifFreeSysMemory(word(f, 0x2C));
+        }
+        else
+            sdk::sceClose(static_cast<int>(word(f, 0x30)));
+        return 1;
+    }
+
+    // Reads from the stream file: from the disc stream in sectors (the result in bytes, an error sets the flag at 0x1BDDCC) or
+    // an ordinary read.
+    int Movie_StrFileRead(GuestPtr<int32_t> file, int buffer, int size)
+    {
+        const int f = static_cast<int>(file.address);
+        if (word(f, 0) == 0)
+            return sdk::sceRead(static_cast<int>(word(f, 0x30)), static_cast<uint32_t>(buffer), size);
+        port::GuestLocal<int32_t> error;
+        const int sectors = sdk::sceCdStRead(size >> 11, static_cast<uint32_t>(buffer), 1, error.ptr().address);
+        if (*error != 0)
+            port::store<int32_t>(0x001BDDCCu, 1);
+        return static_cast<int>(static_cast<uint32_t>(sectors) << 11);
+    }
+
+    // ---- the decoder's input ring, under its semaphore (+0x40)
+
+    // Rounds the fill (+0x14) up to a whole block of 0x800 bytes.
+    void Movie_ViBufFlush(int vibuf)
+    {
+        sdk::WaitSema(static_cast<int>(word(vibuf, 0x40)));
+        const int32_t sum = static_cast<int32_t>(word(vibuf, 0x14)) + 0x7FF;
+        const int32_t blocks = (sum >= 0 ? sum : sum + 0x7FF) >> 11;
+        setWord(vibuf, 0x14, static_cast<uint32_t>(blocks) << 11);
+        sdk::SignalSema(static_cast<int>(word(vibuf, 0x40)));
+    }
+
+    // Bytes in the ring: the whole blocks (+0x10) and the rest (+0x14).
+    int Movie_ViBufCount(int vibuf)
+    {
+        sdk::WaitSema(static_cast<int>(word(vibuf, 0x40)));
+        const uint32_t count = word(vibuf, 0x14) + (word(vibuf, 0x10) << 11);
+        sdk::SignalSema(static_cast<int>(word(vibuf, 0x40)));
+        return static_cast<int>(count);
+    }
+
+    // The bytes put in: the fill (+0x14) and the 64-bit total (+0x48) grow.
+    void Movie_ViBufEndPut(int vibuf, int size)
+    {
+        sdk::WaitSema(static_cast<int>(word(vibuf, 0x40)));
+        setWord(vibuf, 0x14, word(vibuf, 0x14) + static_cast<uint32_t>(size));
+        port::store<uint64_t>(static_cast<uint32_t>(vibuf) + 0x48u, port::load<uint64_t>(static_cast<uint32_t>(vibuf) + 0x48u) + static_cast<uint64_t>(static_cast<int64_t>(size)));
+        sdk::SignalSema(static_cast<int>(word(vibuf, 0x40)));
+    }
+
+    // Where the next bytes go: up to two pieces (pointer and length each) round the ring, the second used only when the free
+    // space wraps. The free space leaves two blocks unused.
+    void Movie_ViBufBeginPut(GuestPtr<int32_t> vibuf, GuestPtr<int32_t> ptr0, GuestPtr<int32_t> len0, GuestPtr<int32_t> ptr1, GuestPtr<int32_t> len1)
+    {
+        const int v = static_cast<int>(vibuf.address);
+        sdk::WaitSema(static_cast<int>(word(v, 0x40)));
+        const int32_t used = static_cast<int32_t>(word(v, 0xC)) + static_cast<int32_t>(word(v, 0x10));
+        const int32_t position = remainder(static_cast<int32_t>((static_cast<uint32_t>(used) << 11) + word(v, 0x14)), static_cast<int32_t>(word(v, 0x18)));
+        const int32_t free = static_cast<int32_t>(((word(v, 8) - 2u - word(v, 0x10)) << 11) - word(v, 0x14));
+        if (static_cast<int32_t>(word(v, 0x18)) - position < free)
+        {
+            *ptr0 = static_cast<int32_t>(word(v, 0) + static_cast<uint32_t>(position));
+            *len0 = static_cast<int32_t>(word(v, 0x18)) - position;
+            *ptr1 = static_cast<int32_t>(word(v, 0));
+            *len1 = free - (static_cast<int32_t>(word(v, 0x18)) - position);
+        }
+        else
+        {
+            *ptr0 = static_cast<int32_t>(word(v, 0) + static_cast<uint32_t>(position));
+            *len0 = free;
+            *ptr1 = 0;
+            *len1 = 0;
+        }
+        sdk::SignalSema(static_cast<int>(word(v, 0x40)));
+    }
+
+    // Puts a timestamp record (0x18 bytes) into the ring's list, unless it is full; 1 when there was room.
+    int Movie_ViBufPutTs(int vibuf, int ts)
+    {
+        int result = 0;
+        sdk::WaitSema(static_cast<int>(word(vibuf, 0x40)));
+        if (static_cast<int32_t>(word(vibuf, 0x58)) < static_cast<int32_t>(word(vibuf, 0x54)))
+        {
+            Movie_ViBufModifyPts(vibuf, ts);
+            const uint64_t first = port::load<uint64_t>(static_cast<uint32_t>(ts));
+            result = 1;
+            if (static_cast<int64_t>(first) >= 0 || static_cast<int64_t>(port::load<uint64_t>(static_cast<uint32_t>(ts) + 8u)) >= 0)
+            {
+                const auto entry = [&] { return word(vibuf, 0x50) + word(vibuf, 0x5C) * 0x18u; };
+                port::store<uint64_t>(entry(), first);
+                port::store<uint64_t>(entry() + 8u, port::load<uint64_t>(static_cast<uint32_t>(ts) + 8u));
+                port::store<uint32_t>(entry() + 0x10u, port::load<uint32_t>(static_cast<uint32_t>(ts) + 0x10u));
+                port::store<uint32_t>(entry() + 0x14u, port::load<uint32_t>(static_cast<uint32_t>(ts) + 0x14u));
+                setWord(vibuf, 0x58, word(vibuf, 0x58) + 1u);
+                setWord(vibuf, 0x5C, static_cast<uint32_t>(remainder(static_cast<int32_t>(word(vibuf, 0x5C)) + 1, static_cast<int32_t>(word(vibuf, 0x54)))));
+            }
+        }
+        sdk::SignalSema(static_cast<int>(word(vibuf, 0x40)));
+        return result;
+    }
+
+    // Takes the oldest timestamp record whose data the IPU has now reached (the position in the ring, from the DMA address
+    // and the bytes the IPU holds); ts is all ones when there is none. Always 1.
+    int Movie_ViBufGetTs(GuestPtr<int32_t> vibufPtr, GuestPtr<uint64_t> ts)
+    {
+        const int vibuf = static_cast<int>(vibufPtr.address);
+        const uint32_t madr = port::readHardware32(kIpuToMadr);
+        const uint32_t bp = port::readHardware32(kIpuBp);
+        bool found = false;
+        sdk::WaitSema(static_cast<int>(word(vibuf, 0x40)));
+        const uint32_t saved = word(vibuf, 0x38);
+        const int32_t size = static_cast<int32_t>(word(vibuf, 8) << 11);
+        *ts = ~0ull;
+        ts[1] = ~0ull;
+        const uint32_t held = ((bp >> 16) & 3u) + ((bp >> 8) & 0xFu);
+        const int32_t where = static_cast<int32_t>(static_cast<uint32_t>(size) + (madr - (held << 4) + ((saved & 0x7Fu) >> 3)));
+        const int32_t count = static_cast<int32_t>(word(vibuf, 0x58));
+        const int32_t next = static_cast<int32_t>(word(vibuf, 0x5C));
+        const int32_t position = static_cast<int32_t>(remainderUnsigned(static_cast<uint32_t>(where) - word(vibuf, 0), static_cast<uint32_t>(size)) + static_cast<uint32_t>(size));
+        for (int32_t i = 0; i < count && !found; ++i)
+        {
+            const int32_t capacity = static_cast<int32_t>(word(vibuf, 0x54));
+            const uint32_t entry = word(vibuf, 0x50) + 0x18u * static_cast<uint32_t>(remainder(capacity + (next - count) + i, capacity));
+            const int32_t start = static_cast<int32_t>(port::load<uint32_t>(entry + 0x10u));
+            const int32_t length = static_cast<int32_t>(port::load<uint32_t>(entry + 0x14u));
+            if (remainder(position - start, size) < length)
+            {
+                ts[0] = port::load<uint64_t>(entry);
+                ts[1] = port::load<uint64_t>(entry + 8u);
+                port::store<uint64_t>(entry, ~0ull);
+                port::store<uint64_t>(entry + 8u, ~0ull);
+                found = true;
+                const int32_t live = static_cast<int32_t>(word(vibuf, 0x58));
+                setWord(vibuf, 0x58, static_cast<uint32_t>(live - (live > 0 ? 1 : live)));
+            }
+        }
+        sdk::SignalSema(static_cast<int>(word(vibuf, 0x40)));
+        return 1;
+    }
+
+    // Stops both IPU DMA channels, keeping what they had reached (+0x1C.. for the input channel, +0x2C.. for the output channel
+    // and the IPU's own registers) so the transfer can be restarted.
+    int Movie_ViBufStopDma(int vibuf)
+    {
+        sdk::WaitSema(static_cast<int>(word(vibuf, 0x40)));
+        setWord(vibuf, 0x44, 0);
+        stopIpuDma();
+        setWord(vibuf, 0x1C, port::readHardware32(kIpuToMadr));
+        setWord(vibuf, 0x20, port::readHardware32(kIpuToTadr));
+        setWord(vibuf, 0x24, port::readHardware32(kIpuToQwc));
+        setWord(vibuf, 0x28, port::readHardware32(kIpuToChcr));
+        while ((port::readHardware32(kIpuCtrl) & 0xF0u) != 0)
+        {
+        }
+        sdk::DIntr();
+        port::writeHardware32(kDmacEnablew, port::readHardware32(kDmacEnabler) | 0x10000u);
+        port::writeHardware32(kIpuFromChcr, 0u);
+        port::writeHardware32(kDmacEnablew, port::readHardware32(kDmacEnabler) & 0xFFFEFFFFu);
+        sdk::EIntr();
+        setWord(vibuf, 0x2C, port::readHardware32(kIpuFromMadr));
+        setWord(vibuf, 0x30, port::readHardware32(kIpuFromQwc));
+        setWord(vibuf, 0x34, port::readHardware32(kIpuFromChcr));
+        setWord(vibuf, 0x38, port::readHardware32(kIpuBp));
+        setWord(vibuf, 0x3C, port::readHardware32(kIpuCtrl));
+        sdk::SignalSema(static_cast<int>(word(vibuf, 0x40)));
+        return 1;
+    }
+
+    // The MPEG decoder over its work area, with the five callbacks the game handles (error, and the others at 0x1A01B0..0x1A0210
+    // and 0x1A0160), and the input ring at +0x48.
+    int Movie_VideoDecCreate(int videoDec, int mpegWork, int mpegWorkSize, int data, int tags, int tagSize, int ts, int tsCount)
+    {
+        sdk::sceMpegCreate(videoDec, mpegWork, mpegWorkSize);
+        sdk::sceMpegAddCallback(videoDec, 0, 0x001A0240u, 0);
+        sdk::sceMpegAddCallback(videoDec, 1, 0x001A0210u, 0);
+        sdk::sceMpegAddCallback(videoDec, 2, 0x001A01E0u, 0);
+        sdk::sceMpegAddCallback(videoDec, 3, 0x001A01B0u, 0);
+        sdk::sceMpegAddCallback(videoDec, 5, 0x001A0160u, 0);
+        setWord(videoDec, 0xA8, 0);
+        Movie_ViBufCreate(videoDec + 0x48, data, tags, tagSize, ts, tsCount);
+        return 1;
+    }
+
+    PORT_FN(Movie_SwitchThread);
+    PORT_FN(Movie_Error);
+    PORT_FN(Movie_CbError);
+    PORT_FN(Movie_AudioDecDelete);
+    PORT_FN(Movie_DisplayStart);
+    PORT_FN(Movie_SetSpuMasterVolume);
+    PORT_FN(Movie_AudioDecStart);
+    PORT_FN(Movie_AudioDecResume);
+    PORT_FN(Movie_AudioDecReset);
+    PORT_FN(Movie_AudioDecEndPut);
+    PORT_FN(Movie_StrFileClose);
+    PORT_FN(Movie_StrFileRead);
+    PORT_FN(Movie_ViBufFlush);
+    PORT_FN(Movie_ViBufCount);
+    PORT_FN(Movie_ViBufEndPut);
+    PORT_FN(Movie_ViBufBeginPut);
+    PORT_FN(Movie_ViBufPutTs);
+    PORT_FN(Movie_ViBufGetTs);
+    PORT_FN(Movie_ViBufStopDma);
+    PORT_FN(Movie_VideoDecCreate);
+
+    // ---- the movie player's audio set-up, frame send and DMA restart (plan P6 batch 2)
+
+    // Sets up the audio stream state (all counters zero, the PCM ring at `ring` of `ringSize` bytes), takes `iopSize` bytes of
+    // IOP memory for the stream and 0x800 bytes of IOP heap for a silence block it copies there, and sets both cores' volume
+    // to a quarter. 0 when an allocation fails.
+    int Movie_AudioDecCreate(GuestPtr<uint32_t> audio, int ring, int ringSize, int iopSize)
+    {
+        port::GuestFrame<0x40> frame;
+        const uint32_t sp = frame.ptr().address;
+        const int a = static_cast<int>(audio.address);
+        setWord(a, 0, 0);
+        setWord(a, 0x2C, 0);
+        setWord(a, 0x30, static_cast<uint32_t>(ring));
+        setWord(a, 0x34, 0);
+        setWord(a, 0x38, 0);
+        setWord(a, 0x3C, static_cast<uint32_t>(ringSize));
+        setWord(a, 0x40, 0);
+        setWord(a, 0x54, 0);
+        setWord(a, 0x48, static_cast<uint32_t>(iopSize));
+        setWord(a, 0x4C, 0);
+        setWord(a, 0x50, 0);
+        setWord(a, 0x44, sdk::sceSifAllocSysMemory(0, iopSize));
+        if (word(a, 0x44) == 0)
+        {
+            sdk::printf(0x001BAB20u);
+            return 0;
+        }
+        sdk::printf(0x001BAB40u, word(a, 0x44), iopSize);
+        setWord(a, 0x58, static_cast<uint32_t>(sdk::sceSifAllocIopHeap(0x800)));
+        if (static_cast<int32_t>(word(a, 0x58)) < 0)
+        {
+            sdk::printf(0x001BAB20u);
+            return 0;
+        }
+        sdk::printf(0x001BAB40u, word(a, 0x58), 0x800);
+        sdk::memset(0x0020B900u, 0, 0x800);
+        port::store<uint32_t>(sp + 0x30u, 0x0020B900u);
+        port::store<uint32_t>(sp + 0x34u, word(a, 0x58));
+        port::store<uint32_t>(sp + 0x38u, 0x800u);
+        port::store<uint32_t>(sp + 0x3Cu, 0u);
+        sdk::FlushCache(0);
+        const uint32_t id = sdk::sceSifSetDma(sp + 0x30u, 1);
+        while (sdk::sceSifDmaStat(id) >= 0)
+        {
+        }
+        for (uint32_t core = 0; core < 2u; ++core)
+        {
+            sdk::sceSdRemote(1, 0x8010, core | 0x980u, 0x3FFF);
+            sdk::sceSdRemote(1, 0x8010, core | 0xA80u, 0x3FFF);
+        }
+        return 1;
+    }
+
+    // Sends what the IOP buffer has room for from the PCM ring. In state 1 the IOP buffer is filling for the first time
+    // (from +0x54, the bytes sent); in state 2 the sound driver's read position decides how much of it is free (to 1 KB);
+    // in state 0 and 3 nothing is sent. The EE side is the ring's valid part (+0x34 write position, +0x38 fill), cut to 1 KB
+    // units and wrapped at the ring's end into two pieces. Returns how many bytes went; the counters move on by that.
+    int Movie_AudioDecSendToIop(GuestPtr<int32_t> audioPtr, int a1, int a2, int a3)
+    {
+        const int audio = static_cast<int>(audioPtr.address);
+        const uint32_t state = word(audio, 0);
+        int iop0;
+        if (state == 3 || state == 0)
+            return 0;
+        if (state == 2)
+        {
+            const int64_t position = sdk::sceSdRemote(1, 0x8100, 0);
+            a2 = static_cast<int>(word(audio, 0x44));
+            const int32_t size = static_cast<int32_t>(word(audio, 0x48));
+            const int32_t filled = static_cast<int32_t>(word(audio, 0x4C));
+            const int32_t free = remainder(static_cast<int32_t>(static_cast<uint32_t>(position & 0xFFFFFF) - static_cast<uint32_t>(a2) +
+                                                                static_cast<uint32_t>(size) - static_cast<uint32_t>(filled) - 0x400u), size);
+            const int32_t units = (free >= 0 ? free : free + 0x3FF) >> 10;
+            const int32_t room = units * 0x400;
+            iop0 = a2 + filled;
+            a1 = size - filled;
+            if (a1 < room)
+                a3 = room - a1;
+            else
+            {
+                a1 = room;
+                a2 = 0;
+                a3 = 0;
+            }
+        }
+        else if (state == 1)
+        {
+            const int32_t sent = static_cast<int32_t>(word(audio, 0x54));
+            const int32_t size = static_cast<int32_t>(word(audio, 0x48));
+            a2 = 0;
+            a3 = 0;
+            a1 = size - sent;
+            iop0 = static_cast<int>(word(audio, 0x44)) + remainder(sent, size);
+        }
+        else
+            iop0 = audio;
+        const int32_t ringSize = static_cast<int32_t>(word(audio, 0x3C));
+        const int32_t fill = static_cast<int32_t>(word(audio, 0x38));
+        const int32_t ring = static_cast<int32_t>(word(audio, 0x30));
+        const int32_t ee0 = ring + remainder(ringSize + (static_cast<int32_t>(word(audio, 0x34)) - fill), ringSize);
+        const int32_t rounded = ((fill >= 0 ? fill : fill + 0x3FF) >> 10) * 0x400;
+        int32_t first = (ring + ringSize) - ee0;
+        if (rounded < first)
+            first = rounded;
+        const int32_t second = rounded - first;
+        int sent = 0;
+        if (!(a1 + a3 < 0x400) && !(first + second < 0x400))
+            sent = Movie_SendToIop2Area(iop0, a1, a2, a3, ee0, first, ring, second);
+        setWord(audio, 0x38, word(audio, 0x38) - static_cast<uint32_t>(sent));
+        setWord(audio, 0x54, word(audio, 0x54) + static_cast<uint32_t>(sent));
+        setWord(audio, 0x4C, static_cast<uint32_t>(remainder(static_cast<int32_t>(word(audio, 0x4C)) + sent, static_cast<int32_t>(word(audio, 0x48)))));
+        return sent;
+    }
+
+    // Draws the next slice of the movie frame: builds the packet (at 0x20C100) that sets up the GS for the picture, with the
+    // current step (+0x1BDD7C, a halfword, in 1/16 lines) as the sprite's row, advances the step by the speed (+0x1BDD80) within
+    // 0..0x7F0 and sends the packet. -1 when the speed is 0 or the picture is finished (speed 0x4000: the step is set to
+    // the end); else the step.
+    int16_t Movie_SendFrame(int picture)
+    {
+        port::GuestFrame<0x90> frame;
+        const uint32_t sp = frame.ptr().address;
+        const uint32_t pk = sp + 0x70u, tag = sp + 0x80u;
+        port::store<uint64_t>(tag, port::load<uint64_t>(0x001B3850u));
+        port::store<uint64_t>(tag + 8u, port::load<uint64_t>(0x001B3858u));
+        constexpr uint32_t kStep = 0x001BDD7Cu, kSpeed = 0x001BDD80u;
+        const int16_t speed = port::load<int16_t>(kSpeed);
+        if (speed == 0)
+            return -1;
+        if (speed == 0x4000)
+        {
+            port::store<int16_t>(kStep, 0x7F0);
+            return -1;
+        }
+        sdk::sceGifPkInit(pk, (0x0020C100u & 0x0FFFFFFFu) | 0x20000000u);
+        sdk::sceGifPkReset(pk);
+        sdk::sceGifPkEnd(pk);
+        const int32_t width = port::load<int16_t>(0x001BDDBCu);
+        const int32_t left = (0x800 - width / 2) * 16;
+        const int32_t halfHeight = port::load<int16_t>(0x001BDDC0u) / 2;
+        const int32_t top = (0x800 - halfHeight / 2) * 16;
+        const int32_t lines = (port::load<int16_t>(kStep) >> 4) & 0xFF;
+        sdk::sceGifPkOpenGifTag(pk, port::Quad{port::load<uint64_t>(tag), port::load<uint64_t>(tag + 8u)});
+        sdk::sceGifPkAddGsAD(pk, 0x42, 0x2000000044ull);
+        sdk::sceGifPkAddGsAD(pk, 0, 0x46);
+        const uint64_t colour = port::load<uint8_t>(0x001BDD84u) | (static_cast<uint64_t>(port::load<uint8_t>(0x001BDD85u)) << 8) |
+                                (static_cast<uint64_t>(port::load<uint8_t>(0x001BDD86u)) << 16);
+        sdk::sceGifPkAddGsAD(pk, 1, (static_cast<uint64_t>(lines & 0xFF) << 24) | colour | 0x100000000ull);
+        sdk::sceGifPkAddGsAD(pk, 5, static_cast<uint64_t>(static_cast<int64_t>(left)) | (static_cast<uint64_t>(static_cast<int64_t>(top)) << 16));
+        sdk::sceGifPkAddGsAD(pk, 5, static_cast<uint64_t>(static_cast<int64_t>(left + width * 16)) |
+                                        (static_cast<uint64_t>(static_cast<int64_t>(top + halfHeight * 16)) << 16));
+        sdk::sceGifPkCloseGifTag(pk);
+        sdk::sceGifPkTerminate(pk);
+        const int32_t next = static_cast<int32_t>(port::load<int16_t>(kStep)) + static_cast<int32_t>(port::load<int16_t>(kSpeed));
+        port::store<int16_t>(kStep, static_cast<int16_t>(next));
+        if (!(next < 0x7F1))
+            port::store<int16_t>(kStep, 0x7F0);
+        if (port::load<int16_t>(kStep) < 0)
+            port::store<int16_t>(kStep, 0);
+        if (port::load<int16_t>(kStep) != -1)
+            sdk::sceDmaSend(picture, 0x0020C100u);
+        return port::load<int16_t>(kStep);
+    }
+
+    // Starts the video decoder's input again from where StopDma left it: the input channel is pointed at the part of the
+    // ring the IPU has not yet taken (the data address, the tag chain from the block it is in, the quadword count), the output
+    // channel is resumed where it stood, and the IPU is told to skip the bits it already had. Updates the ring's read
+    // position (+0xC) and block count (+0x10) when the IPU has moved on. Always 1.
+    int Movie_ViBufRestartDma(GuestPtr<uint32_t> vibufPtr)
+    {
+        const int v = static_cast<int>(vibufPtr.address);
+        sdk::WaitSema(static_cast<int>(word(v, 0x40)));
+        const uint32_t bp = word(v, 0x38), chcr = word(v, 0x28), madr = word(v, 0x1C), base = word(v, 0);
+        const uint32_t held = ((bp >> 16) & 3u) + ((bp >> 8) & 0xFu);
+        uint32_t qwc = word(v, 0x24) + held;
+        uint32_t address = madr - held * 16u;
+        uint32_t tagAddress = word(v, 0x20);
+        uint32_t control = chcr | 0x100u;
+        const uint32_t skipBits = bp & 0x7Fu;
+        const uint32_t blocks = word(v, 8);
+        const auto noteProgress = [&](int32_t index) {
+            const int32_t count = static_cast<int32_t>(blocks);
+            const int32_t behind = remainder(index, count);
+            return behind < 0 || static_cast<int32_t>(word(v, 0x10)) <= behind;
+        };
+        if (address < base)
+        {
+            qwc = (base - address) >> 4;
+            tagAddress = word(v, 4) & 0x0FFFFFFFu;
+            address += blocks << 11;
+            const uint32_t mode = madr == base ? 0u : (madr == base + (blocks << 11) ? 0u : 3u);
+            control = (chcr & 0x0FFFFFFFu) | (mode << 28) | 0x100u;
+            if (noteProgress(static_cast<int32_t>(blocks - word(v, 0xC))))
+            {
+                setWord(v, 0xC, blocks - 1u);
+                setWord(v, 0x10, word(v, 0x10) + 1u);
+            }
+        }
+        else
+        {
+            const uint32_t tags = word(v, 4);
+            const uint32_t end = (tags + (blocks + 1u) * 16u) & 0x0FFFFFFFu;
+            const uint32_t madrBlock = madr == end ? 0u : (madr - base) >> 11;
+            const uint32_t addressBlock = address == end ? 0u : (address - base) >> 11;
+            if (madrBlock != addressBlock)
+            {
+                qwc = (base + madrBlock * 0x800u - address) >> 4;
+                tagAddress = (tags + madrBlock * 16u) & 0x0FFFFFFFu;
+                const uint32_t position = base + remainderUnsigned(madr - base, blocks << 11);
+                const uint32_t expected = base + static_cast<uint32_t>(remainder(static_cast<int32_t>(word(v, 0xC) + word(v, 0x10)), static_cast<int32_t>(blocks))) * 0x800u;
+                const uint32_t mode = position == expected ? 0u : 3u;
+                control = (chcr & 0x0FFFFFFFu) | (mode << 28) | 0x100u;
+                if (noteProgress(static_cast<int32_t>(addressBlock + blocks - word(v, 0xC))))
+                {
+                    setWord(v, 0xC, addressBlock);
+                    setWord(v, 0x10, word(v, 0x10) + 1u);
+                }
+            }
+        }
+        if (word(v, 0x2C) != 0 && word(v, 0x30) != 0)
+        {
+            port::writeHardware32(kIpuFromMadr, word(v, 0x2C));
+            port::writeHardware32(kIpuFromQwc, word(v, 0x30));
+            const uint32_t fromControl = word(v, 0x34) | 0x100u;
+            sdk::DIntr();
+            port::writeHardware32(kDmacEnablew, port::readHardware32(kDmacEnabler) | 0x10000u);
+            port::writeHardware32(kIpuFromChcr, fromControl);
+            port::writeHardware32(kDmacEnablew, port::readHardware32(kDmacEnabler) & 0xFFFEFFFFu);
+            sdk::EIntr();
+        }
+        if (word(v, 0x10) != 0)
+        {
+            while (static_cast<int32_t>(port::readHardware32(kIpuCtrl)) < 0)
+            {
+            }
+            port::writeHardware32(kIpuCmd, skipBits);
+            while (static_cast<int32_t>(port::readHardware32(kIpuCtrl)) < 0)
+            {
+            }
+        }
+        port::writeHardware32(kIpuToMadr, address);
+        port::writeHardware32(kIpuToTadr, tagAddress);
+        port::writeHardware32(kIpuToQwc, qwc);
+        if (word(v, 0x10) != 0)
+        {
+            sdk::DIntr();
+            port::writeHardware32(kDmacEnablew, port::readHardware32(kDmacEnabler) | 0x10000u);
+            port::writeHardware32(kIpuToChcr, control);
+            port::writeHardware32(kDmacEnablew, port::readHardware32(kDmacEnabler) & 0xFFFEFFFFu);
+            sdk::EIntr();
+        }
+        port::writeHardware32(kIpuCtrl, word(v, 0x3C));
+        setWord(v, 0x44, 1);
+        sdk::SignalSema(static_cast<int>(word(v, 0x40)));
+        return 1;
+    }
+
+    PORT_FN(Movie_AudioDecCreate);
+    PORT_FN(Movie_AudioDecSendToIop);
+    PORT_FN(Movie_SendFrame);
+    PORT_FN(Movie_ViBufRestartDma);
+
+    // Opens the stream file named `name` ("device:path"): a name without a device is a host file ("host0:" style prefix from
+    // 0x1BAC60), the disc device ("cdrom0" at 0x1BAC38) is streamed from the disc (slashes turned to backslashes, upper case,
+    // and ";1" added when there is no version), anything else is an ordinary file. file[0] says which (1 = disc stream);
+    // an ordinary file keeps its descriptor (+0x30) and size (+4); a disc stream its IOP buffer (+0x2C), the file record (+8)
+    // and size (+4). 1 when opened, 0 on an error (logged).
+    int Movie_StrFileOpen(GuestPtr<int32_t> filePtr, int name)
+    {
+        port::GuestFrame<0x1C0> frame;
+        const uint32_t sp = frame.ptr().address;
+        const int file = static_cast<int>(filePtr.address);
+        const uint32_t path = sp + 0x70u, device = sp + 0x170u, mode = sp + 0x1BCu;
+        const uint32_t colon = sdk::index(static_cast<uint32_t>(name), ':');
+        if (colon == 0)
+        {
+            sdk::strcpy(device, 0x001BAC60u);
+            setWord(file, 0, 0);
+            sdk::sprintf(path, 0x001BAC58u, device, static_cast<uint32_t>(name));
+        }
+        else
+        {
+            const int length = static_cast<int>(colon - static_cast<uint32_t>(name));
+            sdk::strncpy(device, static_cast<uint32_t>(name), length);
+            port::store<uint8_t>(device + static_cast<uint32_t>(length), 0);
+            if (sdk::strcmp(device, 0x001BAC38u) == 0)
+            {
+                const int count = sdk::strlen(colon + 1u);
+                setWord(file, 0, 1);
+                for (int i = 0; i < count; ++i)
+                {
+                    const uint32_t at = colon + 1u + static_cast<uint32_t>(i);
+                    if (port::load<int8_t>(at) == '/')
+                        port::store<uint8_t>(at, 0x5C);
+                    port::store<uint8_t>(at, static_cast<uint8_t>(sdk::toupper(port::load<int8_t>(at))));
+                }
+                const uint32_t suffix = sdk::index(static_cast<uint32_t>(name), ';') != 0 ? 0x001BAC40u : 0x001BAC48u;
+                sdk::sprintf(path, 0x001BAC50u, colon + 1u, suffix);
+            }
+            else
+            {
+                setWord(file, 0, 0);
+                sdk::sprintf(path, 0x001BAC58u, device, colon + 1u);
+            }
+        }
+        sdk::printf(0x001BAC68u, path);
+        if (word(file, 0) == 0)
+        {
+            setWord(file, 0x30, static_cast<uint32_t>(sdk::sceOpen(path, 1)));
+            if (static_cast<int32_t>(word(file, 0x30)) < 0)
+            {
+                sdk::printf(0x001BACB0u, path);
+                return 0;
+            }
+            setWord(file, 4, static_cast<uint32_t>(sdk::sceLseek(static_cast<int>(word(file, 0x30)), 0, 2)));
+            if (static_cast<int32_t>(word(file, 4)) < 0)
+            {
+                sdk::printf(0x001BACD0u, path);
+                sdk::sceClose(static_cast<int>(word(file, 0x30)));
+                return 0;
+            }
+            if (sdk::sceLseek(static_cast<int>(word(file, 0x30)), 0, 0) < 0)
+            {
+                sdk::printf(0x001BACF0u, path);
+                sdk::sceClose(static_cast<int>(word(file, 0x30)));
+                return 0;
+            }
+        }
+        else
+        {
+            constexpr uint32_t kDiscReady = 0x001BDDD8u;
+            if (port::load<int32_t>(kDiscReady) == 0)
+            {
+                sdk::sceCdInit(0);
+                sdk::sceCdMmode(1);
+                sdk::sceCdDiskReady(0);
+                port::store<int32_t>(kDiscReady, 1);
+            }
+            setWord(file, 0x2C, sdk::sceSifAllocSysMemory(0, 0x28010));
+            sdk::sceCdStInit(0x50, 5, (word(file, 0x2C) + 0xFu) & 0xFFFFFFF0u);
+            if (sdk::sceCdSearchFile(static_cast<uint32_t>(file) + 8u, path) == 0)
+            {
+                sdk::printf(0x001BAC80u, path);
+                return 0;
+            }
+            setWord(file, 4, word(file, 0xC));
+            port::store<uint8_t>(mode, 0);
+            port::store<uint8_t>(mode + 1u, 0);
+            port::store<uint8_t>(mode + 2u, 0);
+            sdk::sceCdStStart(word(file, 8), mode);
+        }
+        sdk::printf(0x001BAD10u);
+        return 1;
+    }
+
+    PORT_FN(Movie_StrFileOpen);
+
+    // ---- The decoder object's wrappers and the MPEG library's callbacks over the input ring (plan P6 batch 2) ----
+
+    namespace
+    {
+        // The ring the MPEG callbacks serve (the movie player has one decoder at a time).
+        constexpr uint32_t kMovieRing = 0x00717CC8u;
+        constexpr uint32_t kMovieAudio = 0x00717D40u;
+    }
+
+    // The decoder's ring starts at +0x48.
+    void Movie_VideoDecEndPut(int videoDec, int size) { Movie_ViBufEndPut(videoDec + 0x48, size); }
+
+    void Movie_VideoDecBeginPut(int videoDec, GuestPtr<int32_t> ptr0, GuestPtr<int32_t> len0, GuestPtr<int32_t> ptr1, GuestPtr<int32_t> len1)
+    {
+        Movie_ViBufBeginPut(GuestPtr<int32_t>{static_cast<uint32_t>(videoDec) + 0x48u}, ptr0, len0, ptr1, len1);
+    }
+
+    // Records a timestamp pair (64 bits each) for the data starting at `start` (an address, kept relative to the ring's buffer)
+    // and `length` bytes long; 1 when the list had room.
+    int Movie_VideoDecPutTs(int videoDec, int64_t pts, int64_t dts, int start, int length)
+    {
+        port::GuestFrame<0x30> frame;
+        const uint32_t record = frame.ptr().address + 0x10u;
+        port::store<uint64_t>(record, static_cast<uint64_t>(pts));
+        port::store<uint64_t>(record + 8u, static_cast<uint64_t>(dts));
+        port::store<int32_t>(record + 0x10u, start - port::load<int32_t>(static_cast<uint32_t>(videoDec) + 0x48u));
+        port::store<int32_t>(record + 0x14u, length);
+        return Movie_ViBufPutTs(static_cast<int>(kMovieRing), static_cast<int>(record));
+    }
+
+    // The library asks for the next timestamp: taken from the ring and copied into the callback data (+8, +0x10).
+    int Movie_CbTimeStamp(int, int cbdata)
+    {
+        port::GuestFrame<0x40> frame;
+        const uint32_t ts = frame.ptr().address + 0x20u;
+        Movie_ViBufGetTs(GuestPtr<int32_t>{kMovieRing}, GuestPtr<uint64_t>{ts});
+        port::store<uint64_t>(static_cast<uint32_t>(cbdata) + 8u, port::load<uint64_t>(ts));
+        port::store<uint64_t>(static_cast<uint32_t>(cbdata) + 0x10u, port::load<uint64_t>(ts + 8u));
+        return 1;
+    }
+
+    int Movie_CbRestartDma()
+    {
+        Movie_ViBufRestartDma(GuestPtr<uint32_t>{kMovieRing});
+        return 1;
+    }
+
+    int Movie_CbStopDma()
+    {
+        Movie_ViBufStopDma(static_cast<int>(kMovieRing));
+        return 1;
+    }
+
+    // Done when the ring is empty and the decoder holds no reference picture.
+    int Movie_VideoDecIsDone(int videoDec)
+    {
+        if (Movie_ViBufCount(videoDec + 0x48) != 0)
+            return 0;
+        return sdk::sceMpegIsRefBuffEmpty(videoDec) != 0 ? 1 : 0;
+    }
+
+    // After a pause: when the player is up (0x1BDDA0) and was paused (0x1BDDA8), the display goes on and, with sound on
+    // (0x1BD9E8), so does the audio stream.
+    void Movie_ResumeAll()
+    {
+        constexpr uint32_t kPlayerUp = 0x001BDDA0u, kPaused = 0x001BDDA8u, kSoundOn = 0x001BD9E8u;
+        if (port::load<int32_t>(kPlayerUp) != 0 && port::load<int32_t>(kPaused) != 0)
+        {
+            Movie_DisplayStart(1);
+            if (port::load<int32_t>(kSoundOn) != 0)
+                Movie_AudioDecResume(GuestPtr<uint32_t>{kMovieAudio});
+            port::store<int32_t>(kPaused, 0);
+        }
+    }
+
+    PORT_FN(Movie_VideoDecEndPut);
+    PORT_FN(Movie_VideoDecBeginPut);
+    PORT_FN(Movie_VideoDecPutTs);
+    PORT_FN(Movie_CbTimeStamp);
+    PORT_FN(Movie_CbRestartDma);
+    PORT_FN(Movie_CbStopDma);
+    PORT_FN(Movie_VideoDecIsDone);
+    PORT_FN(Movie_ResumeAll);
+
+    // The MPEG library has no data left to read: let the other threads run, then feed the input ring again.
+    int Movie_CbNoData()
+    {
+        Movie_SwitchThread();
+        Movie_ViBufAddDma(GuestPtr<int32_t>{0x00717CC8u});
+        return 1;
+    }
+
+    PORT_FN(Movie_CbNoData);
+
+    // One step of the movie player: nothing when no movie is playing (0x1BDDA0); while it is paused (0x1BDDA8) the state is
+    // returned as it is; otherwise the movie ends (the player's flags cleared and everything torn down) when fewer than five
+    // steps have run (0x1BDDB0), the decoder says it has finished (state 3), or the demuxer has nothing more to read. The result
+    // is the playing flag plus twice the paused flag.
+    int Movie_Update()
+    {
+        constexpr uint32_t kPlaying = 0x001BDDA0u, kPaused = 0x001BDDA8u, kSteps = 0x001BDDB0u;
+        if (port::load<int32_t>(kPlaying) == 0)
+            return 0;
+        if (port::load<int32_t>(kPaused) != 0)
+            return static_cast<int>(port::load<uint32_t>(kPlaying) + (port::load<uint32_t>(kPaused) << 1));
+        if (port::load<int32_t>(kSteps) < 5 || Movie_VideoDecGetState(0x00717C80) == 3 || Movie_ReadAndDemux() == 0)
+        {
+            port::store<int32_t>(kPlaying, 0);
+            port::store<int32_t>(kPaused, 0);
+            Movie_TermAll();
+        }
+        return static_cast<int>(port::load<uint32_t>(kPlaying) + (port::load<uint32_t>(kPaused) << 1));
+    }
+
+    PORT_FN(Movie_Update);
 }

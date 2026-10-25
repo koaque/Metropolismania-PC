@@ -3514,4 +3514,905 @@ namespace mm
     }
 
     PORT_FN(Laptop_RunEntry);
+
+    // ---- Object lifetime and start-up data (plan P6 batch 1) ----
+
+    GuestPtr<Player> Player_DeletingDtor(GuestPtr<Player> player, int16_t deleteFlag)
+    {
+        if (player && 0 < deleteFlag)
+            sdk::operator_delete(player.address);
+        return player;
+    }
+
+    // The vtable goes back to the base class's before the object is deleted.
+    GuestPtr<CharClass> CharType_dtor(GuestPtr<CharClass> cls, int16_t deleteFlag)
+    {
+        if (cls)
+        {
+            port::store<uint32_t>(cls.address + 0x20u, 0x001BCE70u);
+            if (0 < deleteFlag)
+                sdk::operator_delete(cls.address);
+        }
+        return cls;
+    }
+
+    GuestPtr<Markers> Markers_dtor(GuestPtr<Markers> markers, int16_t deleteFlag)
+    {
+        if (markers)
+        {
+            port::store<uint32_t>(markers.address + 0x128u, 0x001BCFC8u);
+            if (0 < deleteFlag)
+                sdk::operator_delete(markers.address);
+        }
+        return markers;
+    }
+
+    // The building types share one block (allocated by the first), which goes with the last.
+    GuestPtr<BuildingType> BldgType_BaseDtor(GuestPtr<BuildingType> btype, int16_t deleteFlag)
+    {
+        if (btype)
+        {
+            port::store<uint32_t>(btype.address + 0x15Cu, 0x001BD000u);
+            globals::buildingTypeInstances.set(globals::buildingTypeInstances.get() - 1);
+            if (globals::buildingTypeInstances.get() == 0 && globals::buildingTypeShared.get() != 0u)
+            {
+                sdk::free(globals::buildingTypeShared.get());
+                globals::buildingTypeShared.set(0u);
+            }
+            if (0 < deleteFlag)
+                sdk::operator_delete(btype.address);
+        }
+        return btype;
+    }
+
+    // Deletes every building type object (virtual deleting destructor, vtable at +0x15C slot 2) and the table.
+    void BldgType_DeleteAll()
+    {
+        for (int32_t i = 0; i < globals::buildingTypeCount.get(); ++i)
+        {
+            const uint32_t slot = globals::buildingTypeTable.get() + 4u * static_cast<uint32_t>(i);
+            const uint32_t object = port::load<uint32_t>(slot);
+            if (object == 0u)
+                continue;
+            port::callGuest<void>(port::load<uint32_t>(port::load<uint32_t>(object + 0x15Cu) + 8u), object, 1);
+            port::store<uint32_t>(globals::buildingTypeTable.get() + 4u * static_cast<uint32_t>(i), 0u);
+        }
+        sdk::mw_DeleteArray(globals::buildingTypeTable.get());
+    }
+
+    // Returns every event to the queue's free level, queues the ones still in the manager's slots, frees the two talk
+    // events and the buffer at +0xAC.
+    GuestPtr<EventMgr> EventMgr_dtor(GuestPtr<EventMgr> events, int16_t deleteFlag)
+    {
+        if (events)
+        {
+            const int queue = static_cast<int>(globals::eventQueueObject.get());
+            for (int level = 5; level >= 0; --level)
+                EventList_MoveAll(queue, level, 6);
+            const uint32_t slotsEnd = events.address + 4u + 0xA0u;
+            for (uint32_t slot = events.address + 4u; port::load<uint8_t>(slot) != 0 && slot < slotsEnd; slot += 0x20u)
+                EventQueue_InsertByPriority(queue, GuestPtr<uint8_t>{slot}, 6, 0);
+            for (int i = 0; i < 2; ++i)
+            {
+                const uint32_t talkAt = events.address + 0xA4u + 4u * static_cast<uint32_t>(i);
+                const uint32_t talk = port::load<uint32_t>(talkAt);
+                if (port::load<uint8_t>(talk + 8u) != 0)
+                    EventQueue_InsertByPriority(queue, GuestPtr<uint8_t>{talk + 8u}, 6, 0);
+                sdk::operator_delete(port::load<uint32_t>(talkAt));
+            }
+            sdk::operator_delete(port::load<uint32_t>(events.address + 0xACu));
+            if (0 < deleteFlag)
+                sdk::operator_delete(events.address);
+        }
+        return events;
+    }
+
+    // The player's bag object.
+    void Bag_CreateGlobal()
+    {
+        const uint32_t memory = sdk::operator_new(0x1ACu);
+        uint32_t bag = 0u;
+        if (memory != 0u)
+            bag = Bag_ctor(GuestPtr<Bag>{memory}).address;
+        globals::bagObject.set(bag);
+    }
+
+    // The stamina record: 0, the limit 399999, 0.
+    void Stamina_CreateGlobal()
+    {
+        const uint32_t record = sdk::operator_new(0x10u);
+        if (record != 0u)
+        {
+            port::store<uint32_t>(record, 0u);
+            port::store<uint32_t>(record + 8u, 0u);
+            port::store<uint32_t>(record + 4u, 399999u);
+        }
+        globals::staminaObject.set(record);
+    }
+
+    // Loads DATA\BIN\SCHEDULE.BIN whole.
+    void Schedule_Load()
+    {
+        port::GuestLocal<GameFile> file;
+        File_ctor(file, 0);
+        globals::scheduleData.set(static_cast<uint32_t>(File_LoadWhole(file, GuestPtr<char>{0x001B7F30u}, GuestPtr<int32_t>{0u})));
+        File_dtor(file, -1);
+    }
+
+    // Loads DATA\BIN\CLAIM.BIN whole; words 2 to 8 are offsets (in words) of its sections, kept as pointers.
+    void Claim_Load()
+    {
+        port::GuestLocal<GameFile> file;
+        File_ctor(file, 0);
+        globals::claimData.set(static_cast<uint32_t>(File_LoadWhole(file, GuestPtr<char>{0x001B5BB0u}, GuestPtr<int32_t>{0u})));
+        struct Section
+        {
+            uint32_t global;
+            uint32_t offsetWord;
+        };
+        const Section sections[] = {
+            {globals::claimSection54.address, 0x08u},   {globals::claimSectionC.address, 0x0Cu},  {globals::claimSection5C.address, 0x10u},
+            {globals::eventTileLists.address, 0x14u},  {globals::claimIconSets.address, 0x18u},  {globals::claimIconColours.address, 0x1Cu},
+            {globals::claimSection74.address, 0x20u},
+        };
+        for (const Section &section : sections)
+        {
+            const uint32_t data = globals::claimData.get();
+            port::store<uint32_t>(section.global, data + static_cast<uint32_t>(port::load<int32_t>(data + section.offsetWord)) * 4u);
+        }
+        File_dtor(file, -1);
+    }
+
+    // Loads DATA\BIN\GOODS.BIN whole; its first words are offsets (in words) of the sections, kept as pointers.
+    void Goods_Load()
+    {
+        port::GuestLocal<GameFile> file;
+        File_ctor(file, 0);
+        globals::goodsData.set(static_cast<uint32_t>(File_LoadWhole(file, GuestPtr<char>{0x001B63D0u}, GuestPtr<int32_t>{0u})));
+        const auto word = [](uint32_t index) { return port::load<int32_t>(globals::goodsData.get() + 4u * index); };
+        const auto section = [&](uint32_t index) { return globals::goodsData.get() + static_cast<uint32_t>(word(index)) * 4u; };
+        globals::goodsSectionA.set(globals::goodsData.get() + static_cast<uint32_t>(word(0)) * 4u);
+        globals::goodsSectionB.set(section(1));
+        globals::goodsSectionC.set(section(2));
+        globals::goodsSectionD.set(section(3));
+        globals::goodsSectionE.set(section(4));
+        globals::goodsTextCount.set(port::load<int32_t>(globals::goodsData.get() + static_cast<uint32_t>(word(5)) * 4u));
+        globals::shoppingTexts.set(globals::goodsData.get() + static_cast<uint32_t>(word(5)) * 4u + 4u);
+        File_dtor(file, -1);
+    }
+
+    int StageObj_DeletingDtor(int stage, int16_t deleteFlag)
+    {
+        if (stage != 0 && 0 < deleteFlag)
+            sdk::operator_delete(static_cast<uint32_t>(stage));
+        return stage;
+    }
+
+    // Moves on to the next stage: resets the families, counts the stage up and reads its 0xB4-byte record from
+    // DATA\BIN\STAGE.BIN (25 records, repeating). Past the 24th stage the target grows by half and the 32 bytes of
+    // per-stage totals at +0x240 of four 0x10-byte blocks are cleared.
+    void Stage_Load()
+    {
+        constexpr uint32_t kStageNumber = 0x001C5548u;
+        constexpr uint32_t kStageRecord = 0x001C554Cu;
+        Family_ResetForStage();
+        const int32_t stage = port::load<int32_t>(kStageNumber) + 1;
+        port::store<int32_t>(kStageNumber, stage);
+        port::GuestLocal<GameFile> file;
+        File_ctor(file, 0);
+        File_Open(file, GuestPtr<char>{0x001B5D50u});
+        File_Seek(file, (stage % 0x19) * 0xB4, 0, 0);
+        File_Read(file, static_cast<int>(kStageRecord), 1, 0xB4, 0);
+        File_Close(file);
+        if (0x18 < stage)
+        {
+            int32_t target = static_cast<int32_t>(port::load<uint32_t>(kStageRecord) * 3u);
+            if (target < 0)
+                target += 1;
+            port::store<int32_t>(kStageRecord, target >> 1);
+            for (uint32_t block = 0; block < 4u; ++block)
+                for (uint32_t half = 0; half < 8u; ++half)
+                    port::store<uint16_t>(0x001C5380u + 0x10u * block + 0x240u + 2u * half, 0);
+        }
+        File_dtor(file, -1);
+    }
+
+    // The stage's target text: the population goal, and when the stage has a theme (word at 0x1C5550, not 0) the theme share
+    // with the theme's name. The strings are in tables at 0x1B5C90 and 0x1B5D30.
+    void Stage_FormatTargetText(int, GuestPtr<char> out)
+    {
+        constexpr uint32_t kStageTheme = 0x001C5550u;
+        constexpr uint32_t kStageGoal = 0x001C554Cu;
+        constexpr uint32_t kStageThemeShare = 0x001C5554u;
+        sdk::sprintf(out.address, 0x001B5E70u, port::load<uint32_t>(0x001B5C90u + 4u * port::load<uint32_t>(kStageTheme)),
+                     port::load<uint32_t>(kStageGoal));
+        const int32_t theme = port::load<int32_t>(kStageTheme);
+        if (port::load<int32_t>(kStageTheme) != 0)
+        {
+            const int length = sdk::strlen(out.address);
+            sdk::sprintf(out.address + static_cast<uint32_t>(length), 0x001B5EB0u, port::load<uint32_t>(kStageThemeShare),
+                         port::load<uint32_t>(0x001B5D30u + 4u * static_cast<uint32_t>(theme)));
+        }
+    }
+
+    // The stage's goal text: the population goal, and for a themed stage the share with its closing words by theme.
+    void Stage_FormatGoalText(int, GuestPtr<char> out)
+    {
+        constexpr uint32_t kStageTheme = 0x001C5550u;
+        constexpr uint32_t kStageGoal = 0x001C554Cu;
+        constexpr uint32_t kStageThemeShare = 0x001C5554u;
+        sdk::sprintf(out.address, 0x001B5D68u, port::load<uint32_t>(kStageGoal));
+        if (port::load<int32_t>(kStageTheme) != 0)
+        {
+            const int length = sdk::strlen(out.address);
+            sdk::sprintf(out.address + static_cast<uint32_t>(length), 0x001B5D80u, port::load<uint32_t>(kStageThemeShare));
+            const int32_t theme = port::load<int32_t>(kStageTheme);
+            uint32_t ending;
+            if (theme == 5)
+                ending = 0x001B5C40u;
+            else if (theme == 4)
+                ending = 0x001B5E20u;
+            else if (theme == 3)
+                ending = 0x001B5E00u;
+            else if (theme == 2)
+                ending = 0x001B5DD0u;
+            else if (theme == 1)
+                ending = 0x001B5DB0u;
+            else
+                ending = 0x001B5E40u;
+            sdk::strcat(out.address, ending);
+        }
+        sdk::strcat(out.address, 0x001B5E60u);
+    }
+
+    PORT_FN(Stage_FormatTargetText);
+    PORT_FN(Stage_FormatGoalText);
+    PORT_FN(StageObj_DeletingDtor);
+    PORT_FN(Stage_Load);
+    PORT_FN(Player_DeletingDtor);
+    PORT_FN(CharType_dtor);
+    PORT_FN(Markers_dtor);
+    PORT_FN(BldgType_BaseDtor);
+    PORT_FN(BldgType_DeleteAll);
+    PORT_FN(EventMgr_dtor);
+    PORT_FN(Bag_CreateGlobal);
+    PORT_FN(Stamina_CreateGlobal);
+    PORT_FN(Schedule_Load);
+    PORT_FN(Claim_Load);
+    PORT_FN(Goods_Load);
+
+    // ---- Destructors (plan P6 batch 2) ----
+
+    // The character classes: their own vtable, then CharType_dtor's base state.
+    GuestPtr<CharClass> Char2_dtor(GuestPtr<CharClass> cls, int16_t deleteFlag)
+    {
+        if (cls)
+        {
+            port::store<uint32_t>(cls.address + 0x20u, 0x001BCE90u);
+            CharType_dtor(cls, 0);
+            if (0 < deleteFlag)
+                sdk::operator_delete(cls.address);
+        }
+        return cls;
+    }
+
+    GuestPtr<CharClass> Person_dtor(GuestPtr<CharClass> cls, int16_t deleteFlag)
+    {
+        if (cls)
+        {
+            port::store<uint32_t>(cls.address + 0x20u, 0x001BCEB0u);
+            CharType_dtor(cls, 0);
+            if (0 < deleteFlag)
+                sdk::operator_delete(cls.address);
+        }
+        return cls;
+    }
+
+    GuestPtr<CityCamera> CityCamera_DeletingDtor(GuestPtr<CityCamera> camera, int16_t deleteFlag)
+    {
+        if (camera)
+        {
+            Camera_DeletingDtor(GuestPtr<Camera>{camera.address}, 0);
+            if (0 < deleteFlag)
+                sdk::operator_delete(camera.address);
+        }
+        return camera;
+    }
+
+    GuestPtr<LightSet> LightSet_DeletingDtor(GuestPtr<LightSet> lights, int16_t deleteFlag)
+    {
+        if (lights)
+        {
+            A3DObjectBase_DeletingDtor(GuestPtr<A3DObject>{lights.address}, 0);
+            if (0 < deleteFlag)
+                sdk::operator_delete(lights.address);
+        }
+        return lights;
+    }
+
+    // The request queue object (+0) and the file (+0x20), each deleted with flag 1.
+    GuestPtr<McManager> McManager_dtor(GuestPtr<McManager> mc, int16_t deleteFlag)
+    {
+        if (mc)
+        {
+            const uint32_t queue = port::load<uint32_t>(mc.address);
+            if (queue != 0u)
+            {
+                McManagerSub_DeletingDtor(static_cast<int>(queue), 1);
+                port::store<uint32_t>(mc.address, 0u);
+            }
+            const uint32_t file = port::load<uint32_t>(mc.address + 0x20u);
+            if (file != 0u)
+            {
+                File_dtor(GuestPtr<GameFile>{file}, 1);
+                port::store<uint32_t>(mc.address + 0x20u, 0u);
+            }
+            if (0 < deleteFlag)
+                sdk::operator_delete(mc.address);
+        }
+        return mc;
+    }
+
+    // The application object: shuts down the sound driver, frees the display list and the font data.
+    int App_dtor(int app, int16_t deleteFlag)
+    {
+        if (app != 0)
+        {
+            port::store<uint32_t>(static_cast<uint32_t>(app), 0x001BD8D0u);
+            Sound_Shutdown();
+            DmaList_Free();
+            Font_Free();
+            if (0 < deleteFlag)
+                sdk::operator_delete(static_cast<uint32_t>(app));
+        }
+        return app;
+    }
+
+    PORT_FN(Char2_dtor);
+    PORT_FN(Person_dtor);
+    PORT_FN(CityCamera_DeletingDtor);
+    PORT_FN(LightSet_DeletingDtor);
+    PORT_FN(McManager_dtor);
+    PORT_FN(App_dtor);
+
+    // Reads DATA\BIN\CHARTYPE.BIN (24-byte records) and builds one character class object per record: kind 0 a plain type
+    // (0x24 bytes), 1 a person (0x28 bytes), 2 a vehicle (0x24 bytes); the table at 0x1BDA3C holds the objects and 0x1BDA40
+    // their number. A record of any other kind repeats the previous object (the compiler left the last one in a register).
+    void CharType_LoadAll()
+    {
+        Schedule_Load();
+        port::GuestLocal<GameFile> file;
+        port::GuestLocal<uint32_t> size;
+        File_ctor(file, 0);
+        const uint32_t data = static_cast<uint32_t>(File_LoadWhole(file, GuestPtr<char>{0x001B5B90u}, GuestPtr<int32_t>{size.ptr().address}));
+        const uint32_t count = *size / 0x18u;
+        port::store<uint32_t>(0x001BDA40u, count);
+        const uint32_t table = sdk::mw_NewArray(count << 2);
+        port::store<uint32_t>(0x001BDA3Cu, table);
+        uint32_t cls = port::guestS2();
+        for (int32_t i = 0; i < static_cast<int32_t>(port::load<uint32_t>(0x001BDA40u)); ++i)
+        {
+            const uint32_t record = data + 0x18u * static_cast<uint32_t>(i);
+            const uint8_t kind = port::load<uint8_t>(record);
+            if (kind == 2)
+            {
+                const uint32_t memory = sdk::operator_new(0x24u);
+                cls = memory != 0u ? Char2_ctor(GuestPtr<CharClass>{memory}, GuestPtr<uint8_t>{record}).address : 0u;
+            }
+            else if (kind == 1)
+            {
+                const uint32_t memory = sdk::operator_new(0x28u);
+                cls = memory != 0u ? Person_ctor(GuestPtr<PersonClass>{memory}, GuestPtr<uint8_t>{record}).address : 0u;
+            }
+            else if (kind == 0)
+            {
+                const uint32_t memory = sdk::operator_new(0x24u);
+                cls = memory != 0u ? CharType_ctor(GuestPtr<CharClass>{memory}, GuestPtr<uint8_t>{record}).address : 0u;
+            }
+            port::store<uint32_t>(port::load<uint32_t>(0x001BDA3Cu) + 4u * static_cast<uint32_t>(i), cls);
+        }
+        if (data != 0u)
+            sdk::free(data);
+        CharType_ClearSlots();
+        File_dtor(file, -1);
+    }
+
+    PORT_FN(CharType_LoadAll);
+
+    // The schedule a family member follows (0 to 0xF), from the member's age group (byte +2: under 4 a baby, under 7 a child, ...)
+    // for the youngest groups, and for the others from the member's place in the family (member 0, 1 or the rest), whether the
+    // family has a baby or school-age child (kinds 1 and 2) and whether the member has flag 1. Homes of type flag 0x400 and the
+    // grown-up age groups always get 0xF.
+    uint8_t Schedule_Evaluate(uint32_t family, int member)
+    {
+        constexpr uint32_t kTableA4 = 0x001BD9A4u, kTableA8 = 0x001BD9A8u, kTableAC = 0x001BD9ACu;
+        const GuestPtr<Family> record = Family_Get(static_cast<int>(family), 0);
+        const uint32_t self = record.address + 0x24u + 0x48u * static_cast<uint32_t>(member);
+        const uint8_t age = port::load<uint8_t>(self + 2u);
+        int children = 0;  // 1: a member under age group 2, 2: one under 6 (and none under 2)
+        const uint32_t count = port::load<uint16_t>(record.address + 0x22u);
+        for (uint32_t i = 0; i < count; ++i)
+        {
+            const uint8_t group = port::load<uint8_t>(record.address + 0x24u + 0x48u * i + 2u);
+            if (group < 2)
+                children = 1;
+            else if (group < 6 && children == 0)
+                children = 2;
+        }
+        const bool flagged = (port::load<uint8_t>(self + 3u) & 1u) != 0;
+        const int type = Family_GetTypeIndex(static_cast<int>(family & 0xFFFFu));
+        const uint32_t typeFlags = port::load<uint16_t>(globals::buildingTypeAddress(static_cast<uint32_t>(type)) + 0x136u);
+        const auto second = [&]() -> uint8_t {
+            if (children == 1)
+                return 9;
+            if (children == 2)
+                return 0xA;
+            if (!flagged)
+                return port::load<uint8_t>(kTableA8 + ((family + static_cast<uint32_t>(member)) & 1u));
+            return port::load<uint8_t>(kTableA4 + static_cast<uint32_t>(remainder(static_cast<int32_t>(family + static_cast<uint32_t>(member)), 3)));
+        };
+        if (age < 4)
+            return 1;
+        if (age < 7)
+            return 2;
+        if (age < 0xD)
+            return 3;
+        if (age < 0x10)
+            return 4;
+        if (age < 0x13)
+            return 5;
+        if (age < 0x18)
+        {
+            if ((typeFlags & 0x400u) != 0)
+                return 0xF;
+            if (member == 0)
+                return type == 0xB3 ? 6 : 0xF;
+            if (member == 1)
+                return second();
+            return port::load<uint8_t>(kTableAC + static_cast<uint32_t>(remainder(static_cast<int32_t>(family + static_cast<uint32_t>(member)), 3)));
+        }
+        if (age < 0x3C)
+        {
+            if ((typeFlags & 0x400u) != 0 || member == 0)
+                return 0xF;
+            if (member == 1)
+                return second();
+            return port::load<uint8_t>(kTableA8 + static_cast<uint32_t>(remainder(static_cast<int32_t>(family + static_cast<uint32_t>(member)), 3)));
+        }
+        if ((typeFlags & 0x400u) != 0 || member == 0)
+            return 0xF;
+        if (member == 1)
+            return children == 1 ? 9 : (children == 2 ? 0xA : 0xD);
+        return 0xD;
+    }
+
+    PORT_FN(Schedule_Evaluate);
+
+    // char: where a resident goes next. The activity comes from the person's schedule entry (mm_Schedule_PickEntry): the clock,
+    // shifted by a spread of the person (the square root bits of 6 * family + member, mod 3600), picks the hour, and the row is
+    // chosen by the holiday month (+2) and bad weather (+1). It is kept in the person (+0x27) and in *activity (its low 5 bits).
+    // How a building is found depends on it: 0 the home (mm_Person_PlaceHomeObject); 1 and 2 a building of list 10 or 8, kept as
+    // the target (its heading count goes up); 3 the target, or the workplace; 4 the work target; 5, 6, 11 and 12 the workplace;
+    // 7 and 8 a building of lists 11 to 13 or 18 and 19, picked by the count of timer 0; 9 a random target; 10 a list from the
+    // table at 0x1B0BD0 by schedule state and timer (36 with person flag 0x400; none gives the workplace); 13 the home target;
+    // 14 a shop; 15 the workplace as the target; 16 a visit; 17 lists 18 and 19 or 13; 18 list 20. When nothing was found
+    // (0x3F80) the person's target stands if it is on the tile the person is on (and a type with flag 0x80 resets the activity),
+    // otherwise the workplace. The result is the building.
+    int16_t Person_ChooseDestination(GuestPtr<CityScene> city, GuestPtr<MapPerson> person, GuestPtr<uint32_t> activity, int exclude)
+    {
+        const int x = sdk::fptosi(ps2f(64.0f) + person->x);
+        const int z = sdk::fptosi(ps2f(64.0f) - person->z);
+        uint32_t destination = kNoObject;
+        const int32_t timer = static_cast<int32_t>(port::readHardware32(0x10000000u));
+        if ((person->flags & 0x200u) != 0)
+        {
+            person->flags = static_cast<uint16_t>(person->flags & 0xFDFFu);
+            const GuestPtr<MapPerson> other = city->map->people + person->follow;
+            other->flags = static_cast<uint16_t>(other->flags & 0xFFDFu);
+        }
+        if (person->schedState == 0)
+            person->schedState = Schedule_Evaluate(person->family, person->member);
+        const GuestPtr<MapObject> workRecord = Map_GetRecord(city->map, person->work);
+        const int flag8 = CityScene_HasFlag8(city);
+        const int entry = Schedule_PickEntry(person->family, person->member, workRecord->type, person->schedState, flag8, person->flags & 0x10u);
+        int32_t shifted = city->clock - static_cast<int32_t>(Math_SqrtBits(person->member + 6 * person->family)) % 3600;
+        if (shifted < 0)
+            shifted += 86400;
+        int row = (city->flags & 2u) != 0 ? 2 : 0;
+        if (city->weatherToday != 0)
+            row += 1;
+        *activity = port::load<uint8_t>(static_cast<uint32_t>(entry + shifted / 3600 + 24 * row)) & 0x1Fu;
+        person->activity = static_cast<uint8_t>(*activity);
+        const int16_t skip = static_cast<int16_t>(exclude);
+        const auto findIn = [&](int list, int mode, int16_t skipB) {
+            return static_cast<uint16_t>(Person_FindBuildingInList(city, list, x, z, mode, static_cast<int16_t>(person->work), skipB));
+        };
+        // Activities 1 and 2: the target stands unless there is none or it is the workplace; a new one has its heading count raised.
+        const auto targetFromList = [&](int list) {
+            if (person->target == kNoObject || person->target == person->work)
+            {
+                person->target = static_cast<uint16_t>(findIn(list, 0, kNoObject));
+                if (person->target != kNoObject)
+                {
+                    const GuestPtr<MapObject> goal = Map_GetRecord(city->map, person->target);
+                    goal->headingHere = static_cast<uint8_t>(goal->headingHere + 1);
+                }
+            }
+            return static_cast<uint32_t>(person->target);
+        };
+        switch (static_cast<uint32_t>(*activity))
+        {
+        case 0:
+            destination = Person_PlaceHomeObject(city, person) & 0xFFFFu;
+            break;
+        case 1:
+            destination = targetFromList(0xA);
+            break;
+        case 2:
+            destination = targetFromList(8);
+            break;
+        case 3:
+            destination = person->target == kNoObject ? person->work : person->target;
+            break;
+        case 4:
+            destination = Person_TargetWork(city, person);
+            break;
+        case 5:
+        case 6:
+        case 11:
+        case 12:
+            destination = person->work;
+            break;
+        case 7:
+            destination = findIn(0xB + timer % 3, 1, skip);
+            break;
+        case 8:
+            destination = findIn(0x12 + (timer & 1), 1, skip);
+            break;
+        case 9:
+            destination = Person_RandomTarget(city, person, x, z);
+            break;
+        case 10:
+        {
+            const int list = (person->flags & 0x400u) != 0
+                                 ? 0x24
+                                 : port::load<uint8_t>(0x001B0BD0u + 8u * person->schedState + static_cast<uint32_t>(timer & 7));
+            destination = list == 0 ? person->work : findIn(list, 1, skip);
+            break;
+        }
+        case 13:
+            destination = static_cast<uint16_t>(Person_TargetHome(city, person));
+            break;
+        case 14:
+            destination = Person_TargetShop(city, person, x, z);
+            break;
+        case 15:
+            person->target = person->work;
+            destination = person->work;
+            break;
+        case 16:
+            destination = Person_TargetVisit(city, person);
+            break;
+        case 17:
+        {
+            int list = 0x12 + timer % 3;
+            if (list == 0x14)
+                list = 0xD;
+            destination = findIn(list, 1, skip);
+            break;
+        }
+        case 18:
+            destination = findIn(0x14, 1, skip);
+            break;
+        default:
+            break;
+        }
+        if (static_cast<uint16_t>(destination) == kNoObject)
+        {
+            if (person->target == kNoObject)
+                destination = person->work;
+            else
+            {
+                const GuestPtr<MapObject> goal = Map_GetRecord(city->map, person->target);
+                const GuestPtr<MapObject> here = Map_GetTileFirstObject(city->map, x + (z << 7));
+                if (goal->tile != here->tile)
+                    destination = person->work;
+                else
+                {
+                    destination = person->target;
+                    if ((globals::buildingTypeFlags(goal->type) & 0x80u) != 0)
+                        person->activity = 0;
+                }
+            }
+        }
+        return static_cast<int16_t>(destination);
+    }
+
+    PORT_FN(Person_ChooseDestination);
+
+    // Placing a Small Goods item from the bag with the player's cursor (mode 5): the item's footprint (the size byte at +0x142 of its
+    // building type, 0x115 + the bag item's index) is centred on the tile under the cursor (half a tile further for an odd size)
+    // and tested (mm_Map_CanPlace); the footprint is highlighted in blue when it can be placed and red when not. Cross places it
+    // (mm_Map_PlaceSmallGoods, sound 3, one of the item used up) or, when it cannot be placed, plays sound 4; Triangle cancels
+    // (sound 2, the item kept). Placing and cancelling, and an item with no setup kind (-1), take the player back to its previous
+    // mode with the step, sway and target cleared.
+    void Player_PlaceBagItem(GuestPtr<Player> player, GuestPtr<CityScene> city)
+    {
+        port::GuestFrame<0xB0> frame;
+        const uint32_t sp = frame.ptr().address;
+        const auto leave = [&]() {
+            const int32_t previous = player->previousMode;
+            player->previousMode = player->mode;
+            player->mode = previous;
+            port::store<uint32_t>(player.address + 0x80u, 0u);
+            port::store<uint32_t>(player.address + 0x8u, 0u);
+            port::store<uint32_t>(player.address + 0x34u, 0u);
+            player->target = -1;
+            Pad_ClearBit40();
+        };
+        const uint32_t kind = BagMenu_GetSetupKind(city->bag, GuestPtr<uint32_t>{sp + 0xACu});
+        if (kind == 0xFFFFFFFFu)
+        {
+            leave();
+            return;
+        }
+        const uint32_t typeIndex = port::load<uint32_t>(sp + 0xACu) + 0x115u;
+        const int32_t size = port::load<uint8_t>(globals::buildingTypeAddress(typeIndex) + 0x142u);
+        const ps2f half = fromInt(size & 1) / ps2f(2.0f);
+        const int x = sdk::fptosi(ps2f(64.0f) + (player->position.x + half - ps2f(0.5f)));
+        const int z = sdk::fptosi(ps2f(64.0f) - (ps2f(0.5f) + (player->position.z - half)));
+        const int before = (size - 1) / 2, after = size / 2;
+        const int x0 = x - before, z0 = z - before;
+        port::store<int32_t>(sp + 0x80u, x0);
+        port::store<int32_t>(sp + 0x84u, z0);
+        port::store<int32_t>(sp + 0x88u, x + after);
+        port::store<int32_t>(sp + 0x8Cu, z + after);
+        const int canPlace = Map_CanPlace(city->map, 0, static_cast<int>(typeIndex), x0, z0);
+        if (canPlace == 1)
+        {
+            port::store<uint32_t>(sp + 0x90u, 0u);
+            port::store<uint32_t>(sp + 0x94u, 0u);
+            port::store<uint32_t>(sp + 0x98u, 0x437F0000u);
+            port::store<uint32_t>(sp + 0x9Cu, 0x42800000u);
+        }
+        else
+        {
+            port::store<uint32_t>(sp + 0x90u, 0x437F0000u);
+            port::store<uint32_t>(sp + 0x94u, 0u);
+            port::store<uint32_t>(sp + 0x98u, 0u);
+            port::store<uint32_t>(sp + 0x9Cu, 0x42800000u);
+        }
+        Map_SetPlacementHighlight(city->map, 1, GuestPtr<int32_t>{sp + 0x80u}, GuestPtr<uint32_t>{sp + 0x90u});
+        if ((Pad_Pressed(0) & 0x40u) != 0)
+        {
+            if (canPlace == 1)
+            {
+                Map_PlaceSmallGoods(city->map, x0, z0, static_cast<int>(city.address), static_cast<uint8_t>(kind),
+                                    static_cast<int>(port::load<uint32_t>(sp + 0xACu)));
+                Sound_PlaySe(3, 0, 0x3C, 0.0f, 0.0f);
+                BagMenu_FinishUse(city->bag, 1);
+                leave();
+            }
+            else
+                Sound_PlaySe(4, 0, 0x3C, 0.0f, 0.0f);
+            return;
+        }
+        if ((Pad_Pressed(0) & 0x10u) != 0)
+        {
+            Sound_PlaySe(2, 0, 0x3C, 0.0f, 0.0f);
+            BagMenu_FinishUse(city->bag, 0);
+            leave();
+        }
+    }
+
+    PORT_FN(Player_PlaceBagItem);
+
+    // One frame of the phone calls (four queued, the first shown; each entry: the person, or 6000 for a call from a family member
+    // without a person on the map, the family, the member and a flag). State 0 (nothing shown) takes the first queued call: the
+    // pad focus is taken and the state becomes 1 (the entry is +8). State 1 (ringing) builds the caller's text once ("Unknown", the
+    // family without friendship, or the member's name) and shows it as a notice; Circle accepts (state 2); the call ends after 600
+    // frames, with Square, when the family is not in the city or (for a call of the family) when its flag is set and the city is not
+    // popular, or when the person has no place on the map. State 2 waits 30 frames and then starts a talk with the person or the
+    // member (a call of the family only when its flag is 0 or the city is popular with fewer than 32 applicants waiting) and ends
+    // the call. Ending a call moves the later ones up, gives the pad back and swaps the sign of +0x40 (the notice is cleared when it
+    // was shown). The result is 1 when no call is on.
+    int PhoneCall_Update(GuestPtr<PhoneCalls> phone, GuestPtr<CityScene> city)
+    {
+        const uint32_t p = phone.address;
+        const uint32_t c = city.address;
+        const auto entryOf = [&](int32_t index) { return p + 0x10u + 12u * static_cast<uint32_t>(index); };
+        const auto endCall = [&](bool clearNotice) {
+            int32_t index = port::load<int32_t>(p + 8u);
+            for (; index < 3; ++index)
+            {
+                const uint32_t to = entryOf(index), from = to + 12u;
+                port::store<uint32_t>(to, port::load<uint32_t>(from));
+                port::store<uint16_t>(to + 4u, port::load<uint16_t>(from + 4u));
+                port::store<uint16_t>(to + 6u, port::load<uint16_t>(from + 6u));
+                port::store<uint32_t>(to + 8u, port::load<uint32_t>(from + 8u));
+            }
+            port::store<uint16_t>(entryOf(index) + 4u, 0);
+            Pad_ReleaseFocus(1);
+            port::store<int32_t>(p + 0xCu, 0);
+            port::store<int32_t>(p + 4u, 0);
+            port::store<int32_t>(p + 0x40u, -port::load<int32_t>(p + 0x40u));
+            if (clearNotice)
+                Notice_Clear(city->notice);
+        };
+        // The object the person is standing on, if the map has one for the person's tile.
+        const auto objectOf = [&](uint32_t person) {
+            const GuestPtr<MapPerson> who = city->map->people + static_cast<int>(person);
+            const int x = sdk::fptosi(ps2f(64.0f) + who->x);
+            const int z = sdk::fptosi(ps2f(64.0f) - who->z);
+            return Map_FindPersonObjectOnTile(city->map, person & 0xFFFFu, static_cast<uint32_t>(x + (z << 7)) & 0xFFFFu);
+        };
+        const int32_t state = port::load<int32_t>(p + 4u);
+        if (state == 0)
+        {
+            for (int32_t i = 0; i < 4; ++i)
+            {
+                if (port::load<uint16_t>(entryOf(i) + 4u) == 0)
+                    continue;
+                port::store<int32_t>(p + 4u, 1);
+                port::store<uint8_t>(p + 0x48u, 0);
+                port::store<int32_t>(p + 8u, i);
+                port::store<int32_t>(p + 0xCu, 0);
+                Pad_TakeFocus(1, 0x1F0);
+                port::store<int32_t>(p + 0x40u, 1);
+                port::store<int32_t>(p + 0x44u, 0);
+                break;
+            }
+        }
+        else if (state == 1)
+        {
+            const uint32_t entry = entryOf(port::load<int32_t>(p + 8u));
+            if (port::load<int8_t>(p + 0x48u) == 0)
+            {
+                const uint32_t family = port::load<uint16_t>(entry + 4u);
+                const uint32_t record = static_cast<uint32_t>(Family_Prefetch(static_cast<int>(family), 0));
+                if (record != 0u)
+                {
+                    if (Family_GetTypeIndex(static_cast<int>(family)) == 0xB2)
+                        sdk::sprintf(p + 0x48u, 0x001B8198u);
+                    else if (Family_GetFriendship(static_cast<int>(family), port::load<uint16_t>(entry + 6u)) == 0)
+                        sdk::sprintf(p + 0x48u, 0x001B81B0u);
+                    else
+                        sdk::sprintf(p + 0x48u, 0x001B81C8u, record + 0x48u * port::load<uint16_t>(entry + 6u) + 0x4Cu);
+                }
+            }
+            if (port::load<int8_t>(p + 0x48u) != 0)
+                Notice_ShowCentered(city->notice, GuestPtr<char>{p + 0x48u}, 0x001B8170);
+            if ((Pad_Pressed(1) & 0x20u) != 0)
+            {
+                port::store<int32_t>(p + 0xCu, 0);
+                port::store<int32_t>(p + 4u, 2);
+                Notice_Clear(city->notice);
+            }
+            else
+            {
+                const int32_t counter = port::load<int32_t>(p + 0xCu) + 1;
+                port::store<int32_t>(p + 0xCu, counter);
+                if (counter >= 600 || (Pad_Pressed(1) & 0x80u) != 0)
+                    endCall(true);
+                else
+                {
+                    const uint32_t shown = entryOf(port::load<int32_t>(p + 8u));
+                    const uint32_t family = port::load<uint16_t>(shown + 4u);
+                    if (port::load<int32_t>(shown) == 6000)
+                    {
+                        if (Family_InCity(family) != 0 || (port::load<int32_t>(shown + 8u) != 0 && (city->flags & 4u) == 0))
+                            endCall(true);
+                    }
+                    else if (Family_InCity(family) == 0 || !objectOf(port::load<uint32_t>(shown)))
+                        endCall(true);
+                }
+            }
+        }
+        else
+        {
+            const int32_t counter = port::load<int32_t>(p + 0xCu) + 1;
+            port::store<int32_t>(p + 0xCu, counter);
+            if (counter >= 0x1E)
+            {
+                const uint32_t shown = entryOf(port::load<int32_t>(p + 8u));
+                const uint32_t family = port::load<uint16_t>(shown + 4u);
+                if (port::load<int32_t>(shown) == 6000)
+                {
+                    if (port::load<int32_t>(shown + 8u) == 0 ||
+                        ((city->flags & 4u) != 0 && port::load<int32_t>(port::load<uint32_t>(c + 0x54u) + 0x280u) < 0x20))
+                        CityScene_StartTalk(city, 1, static_cast<int>(family), port::load<uint16_t>(shown + 6u), 3);
+                }
+                else if (Family_InCity(family) != 0)
+                {
+                    const GuestPtr<MapObject> object = objectOf(port::load<uint32_t>(shown));
+                    if (object)
+                        CityScene_StartTalk(city, 0, object->id, port::load<int32_t>(shown), 3);
+                }
+                endCall(false);
+            }
+        }
+        return port::load<int32_t>(p + 4u) == 0 ? 1 : 0;
+    }
+
+    PORT_FN(PhoneCall_Update);
+
+    namespace
+    {
+        // The schedule table (0x1BDBAC points at it) has rows of 96 bytes: 24 hours for each of four variants (+2 in a holiday month, +1
+        // in bad weather). The column of the hour is the city's clock shifted back by a spread of the family member (the square root
+        // bits of 6 * family + member, mod 3600), so people do not all change at the same second.
+        uint8_t scheduleByte(GuestPtr<CityScene> city, uint32_t family, int member, uint32_t row)
+        {
+            int32_t shifted = city->clock - static_cast<int32_t>(Math_SqrtBits(member + 6 * static_cast<int>(family))) % 3600;
+            if (shifted < 0)
+                shifted += 86400;
+            int variant = (city->flags & 2u) != 0 ? 2 : 0;
+            if (city->weatherToday != 0)
+                variant += 1;
+            return port::load<uint8_t>(port::load<uint32_t>(0x001BDBACu) + 96u * row + static_cast<uint32_t>(shifted / 3600 + 24 * variant));
+        }
+
+        // The row of a family type's own schedule: the entry (the schedule state), or for 0xF the type's kind (+0x14B) after row 15.
+        uint32_t scheduleRow(uint32_t entry, uint32_t type)
+        {
+            return entry == 0xFu ? port::load<uint8_t>(globals::buildingTypeAddress(type) + 0x14Bu) + 0xFu : entry;
+        }
+
+        // The row a person's schedule uses: the schedule state is worked out first when it is 0; a city with flag 8 uses row 29, a
+        // person with flag 0x10 row 30, any other the state's row (0xF: the workplace type's).
+        uint32_t personScheduleRow(GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
+        {
+            if (person->schedState == 0)
+                person->schedState = Schedule_Evaluate(person->family, person->member);
+            const GuestPtr<MapObject> work = Map_GetRecord(city->map, person->work);
+            const bool lifted = (person->flags & 0x10u) != 0;
+            if (CityScene_HasFlag8(city) != 0)
+                return 29;
+            if (lifted)
+                return 30;
+            return scheduleRow(person->schedState, work->type);
+        }
+    }
+
+    // char: the schedule of a family member at this hour, its upper three bits: when they are set, the kind (+0x14C) of the
+    // building type of the family, else 0.
+    uint8_t Schedule_QueryA(GuestPtr<CityScene> city, uint32_t family, int member)
+    {
+        const int type = Family_GetTypeIndex(static_cast<int>(family & 0xFFFFu));
+        const uint32_t row = scheduleRow(Schedule_Evaluate(family, member), static_cast<uint32_t>(type));
+        const uint32_t byte = scheduleByte(city, family, member, row);
+        return ((byte >> 5) & 7u) == 0 ? 0 : port::load<uint8_t>(globals::buildingTypeAddress(static_cast<uint32_t>(type)) + 0x14Cu);
+    }
+
+    // The same lookup's activity: the low five bits of the schedule byte.
+    uint8_t Schedule_QueryB(GuestPtr<CityScene> city, uint32_t family, int member)
+    {
+        const int type = Family_GetTypeIndex(static_cast<int>(family & 0xFFFFu));
+        const uint32_t row = scheduleRow(Schedule_Evaluate(family, member), static_cast<uint32_t>(type));
+        return scheduleByte(city, family, member, row) & 0x1Fu;
+    }
+
+    // What the person's schedule makes of the building it heads for (the target, or the workplace with none): the kind of the
+    // building's type (+0x14C) when the schedule byte's upper part is not 0, else 0.
+    uint8_t Schedule_GetActivity(GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
+    {
+        const uint32_t row = personScheduleRow(city, person);
+        const uint32_t byte = scheduleByte(city, person->family, person->member, row);
+        if (((byte >> 5) & 7u) == 0)
+            return 0;
+        const GuestPtr<MapObject> goal = person->target == kNoObject ? Map_GetRecord(city->map, person->work) : Map_GetRecord(city->map, person->target);
+        return port::load<uint8_t>(globals::buildingTypeAddress(goal->type) + 0x14Cu);
+    }
+
+    // The same lookup's activity: the low five bits of the person's schedule byte.
+    uint8_t Schedule_GetBuildingActivity(GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
+    {
+        const uint32_t row = personScheduleRow(city, person);
+        return scheduleByte(city, person->family, person->member, row) & 0x1Fu;
+    }
+
+    PORT_FN(Schedule_QueryA);
+    PORT_FN(Schedule_QueryB);
+    PORT_FN(Schedule_GetActivity);
+    PORT_FN(Schedule_GetBuildingActivity);
 }

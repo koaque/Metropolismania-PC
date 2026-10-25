@@ -49,7 +49,7 @@ over a 13 x 13 grid of weights at `0x001B8060`. Claim slot 0x18 means none, id 0
 
 ## Functions
 
-185 functions (ported 1, typed 55, verified 129). Blocks: 55 can reach a thread switch, 7 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+185 functions (ported 1, typed 4, verified 180). Blocks: 55 can reach a thread switch, 7 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -223,7 +223,7 @@ over a 13 x 13 grid of weights at `0x001B8060`. Claim slot 0x18 means none, id 0
 | `0x00180850` | `int mm_CityScene_ScoreA0Tier(CityScene *city)` | 48 | no | placement score +0xA0 below 200, below 300, or higher |
 | `0x00180880` | `int mm_CityScene_SaveGame(CityScene *city, McManager *mc)` | 264 | no | writes the save: header, camera, stage, events, families, map, laptop, wants, applicants, player, stamina |
 | `0x00180990` | `int mm_CityScene_LoadGame(CityScene *city)` | 2388 | yes | load screen (REPORT.TEX) and loading every *_LoadState from the memory card |
-| `0x001812F0` | `int mm_CityScene_SaveStep(CityScene *city, int step)` | 308 | yes | save from the pause menu: map vertex buffers, open, write, wait |
+| `0x001812F0` | `int mm_CityScene_SaveStep(CityScene *city, McManager *mc)` | 308 | yes | save from the pause menu: map vertex buffers, open, write, wait |
 | `0x00181430` | `void mm_CityScene_PopMode(CityScene *city)` | 68 | no | pops the scene mode stack (+0x10.., depth +0x24) |
 | `0x00181480` | `void mm_CityScene_PushMode(CityScene *city, int mode)` | 56 | no | pushes mode a1 on the mode stack |
 | `0x001814C0` | `int mm_CityScene_GetMode(CityScene *city)` | 8 | no | current mode (+0x10) |

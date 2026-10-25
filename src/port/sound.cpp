@@ -5,6 +5,7 @@
 #include "sdk.h"
 #include "vu0.h"
 
+#include <initializer_list>
 #include <utility>
 
 namespace mm
@@ -1853,4 +1854,58 @@ namespace mm
     }
 
     PORT_FN(Se_PlayMessageSound);
+
+    // Flushes the data cache and tells the IOP sound driver to shut down (an RPC the call waits on).
+    void Sound_Shutdown()
+    {
+        sdk::FlushCache(0);
+        sdk::sceSifCallRpc(0x001FE690u, 0, 0, 0x0020B6C0u, 0x100, 0x0020B800u, 0x40, 0u, 0u);
+    }
+
+    PORT_FN(Sound_Shutdown);
+
+    // Loads the six IOP modules the sound driver needs, in order, repeating each load (with a log line) until it succeeds.
+    void Sound_LoadModules()
+    {
+        for (const uint32_t path : {0x001B9EC0u, 0x001B9F00u, 0x001B9F40u, 0x001B9F80u, 0x001B9FC0u, 0x001BA000u})
+            while (sdk::sceSifLoadModule(path, 0, 0) < 0)
+                sdk::printf(path + 0x20u);
+    }
+
+    PORT_FN(Sound_LoadModules);
+
+    // Brings the sound driver up: the IOP modules are loaded, the RPC layer started, and the client at 0x1FE690 bound to the
+    // driver's server (0x12346) until the server has registered (a pause of 10000 empty turns after each bind; a refused bind prints
+    // 0x1B9EA0 and hangs). The status block address 0x20B7C0 is stored at 0x20B6C0 and sent with function 1 (the answer comes back
+    // in 0x20B800), then the answer word, the command queue counters and masks, and the first word of each of the 256 voice
+    // records (0xD0 bytes from 0x1FE6C0) are cleared.
+    void Sound_Init()
+    {
+        Sound_LoadModules();
+        sdk::sceSifInitRpc(0);
+        do
+        {
+            if (sdk::sceSifBindRpc(0x001FE690u, 0x12346, 0) < 0)
+            {
+                sdk::printf(0x001B9EA0u);
+                for (volatile int spin = 0;;)
+                    spin = spin + 1;
+            }
+            for (volatile int pause = 0x2710; pause != 0;)
+                pause = pause - 1;
+        } while (port::load<uint32_t>(0x001FE6B4u) == 0u);
+        port::store<uint32_t>(0x0020B6C0u, 0x0020B7C0u);
+        sdk::FlushCache(0);
+        sdk::sceSifCallRpc(0x001FE690u, 1, 0, 0x0020B6C0u, 0x100, 0x0020B800u, 0x40, 0u, 0u);
+        globals::soundCmdIndex.set(0);
+        globals::soundCmdSent.set(0);
+        globals::soundVoicesQueued.set(0);
+        globals::soundSlotsQueued.set(0);
+        globals::soundStopsQueued.set(0);
+        port::store<uint32_t>(0x0020B800u, 0u);
+        for (uint32_t voice = 0; voice < 0x100; ++voice)
+            port::store<uint32_t>(0x001FE6C0u + 0xD0u * voice, 0u);
+    }
+
+    PORT_FN(Sound_Init);
 }

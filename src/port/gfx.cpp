@@ -2,6 +2,7 @@
 
 #include "game_functions.h"
 #include "game_globals.h"
+#include "lifetime.h"
 #include "sdk.h"
 
 #include <algorithm>
@@ -1872,4 +1873,647 @@ namespace mm
     }
 
     PORT_FN(LayerD_DrawSkyByClock);
+
+    // ---- Object lifetime and the files and lists graphics need (plan P6 batch 1) ----
+
+    GuestPtr<A3DObject> A3DObjectBase_DeletingDtor(GuestPtr<A3DObject> model, int16_t deleteFlag)
+    {
+        if (model)
+        {
+            BaseObject_dtor(static_cast<int>(model.address), 0);
+            if (0 < deleteFlag)
+                sdk::operator_delete(model.address);
+        }
+        return model;
+    }
+
+    // Frees the model data and the mesh table, then the base object (and the object itself when the flag is positive).
+    GuestPtr<A3DObject> A3DObject_dtor(GuestPtr<A3DObject> model, int16_t deleteFlag)
+    {
+        if (model)
+        {
+            if (model->model)
+            {
+                sdk::free(model->model.address);
+                model->model = GuestPtr<void>{0u};
+            }
+            if (model->meshes)
+            {
+                sdk::operator_delete(model->meshes.address);
+                model->meshes = GuestPtr<void>{0u};
+            }
+            BaseObject_dtor(static_cast<int>(model.address), 0);
+            if (0 < deleteFlag)
+                sdk::operator_delete(model.address);
+        }
+        return model;
+    }
+
+    // Sets the colour (four words) of mesh `index` when it has a material (+4 nonzero); an index past the model's mesh
+    // count is reported with printf. The result is printf's, or all of what v0 held when the call was made.
+    int64_t A3DObject_ChangeLuminosity(GuestPtr<A3DObject> model, GuestPtr<uint32_t> colour, int index)
+    {
+        const int64_t entryV0 = port::guestV0Wide();
+        const uint32_t data = model->model.address;
+        const uint32_t meshes = port::load<uint32_t>(data + 8u);
+        if (!(index < static_cast<int>(port::load<int16_t>(data + 0x18u))))
+            return port::callGuest<int64_t>(sdk::addr::printf, 0x001B5A90u);
+        const uint32_t mesh = meshes + static_cast<uint32_t>(index) * 0xC0u;
+        if (port::load<uint32_t>(mesh + 4u) != 0u)
+            *GuestPtr<Vec4>{mesh + 0x60u} = *GuestPtr<Vec4>{colour.address};
+        return entryV0;
+    }
+
+    GuestPtr<TexImage> TexImage_dtor(GuestPtr<TexImage> image, int16_t deleteFlag)
+    {
+        if (image)
+        {
+            if (image->file)
+            {
+                sdk::free(image->file.address);
+                image->file = GuestPtr<TexImageFile>{0u};
+            }
+            if (0 < deleteFlag)
+                sdk::operator_delete(image.address);
+        }
+        return image;
+    }
+
+    // Loads the texture file `name` whole into the image and converts it for upload (a2, a3: texture and palette blocks).
+    int TexImage_Load(GuestPtr<TexImage> image, GuestPtr<char> name, int a2, int a3)
+    {
+        port::GuestLocal<GameFile> file;
+        File_ctor(file, 0);
+        image->file = GuestPtr<TexImageFile>{static_cast<uint32_t>(File_LoadWhole(file, name, GuestPtr<int32_t>{0u}))};
+        TexImage_Convert(image, a2, a3);
+        File_dtor(file, -1);
+        return static_cast<int>(image.address);
+    }
+
+    GuestPtr<TexSprite> TexSprite_dtor(GuestPtr<TexSprite> sprite, int16_t deleteFlag)
+    {
+        if (sprite)
+        {
+            port::store<uint32_t>(sprite.address, 0x001BCFD8u);
+            if (sprite->packet != 0u)
+            {
+                sdk::free(sprite->packet);
+                sprite->packet = 0u;
+            }
+            if (sprite->image)
+            {
+                sdk::free(sprite->image.address);
+                sprite->image = GuestPtr<TexFileHeader>{0u};
+            }
+            if (0 < deleteFlag)
+                sdk::operator_delete(sprite.address);
+        }
+        return sprite;
+    }
+
+    // Loads the .TEX file `file` whole, allocates the sprite's packet (18 quadwords per tile plus the palette upload),
+    // shows the whole image from its origin and builds the packet; a2 nonzero: alpha blended.
+    int TexSprite_Load(GuestPtr<TexSprite> sprite, int file, int blend)
+    {
+        port::store<uint32_t>(sprite.address, 0x001BCFD8u);
+        port::GuestLocal<GameFile> local;
+        File_ctor(local, 0);
+        sprite->image = GuestPtr<TexFileHeader>{static_cast<uint32_t>(File_LoadWhole(local, GuestPtr<char>{static_cast<uint32_t>(file)}, GuestPtr<int32_t>{0u}))};
+        const GuestPtr<TexFileHeader> header = sprite->image;
+        const uint32_t tileCount = static_cast<uint32_t>(header->tilesDown) * static_cast<uint32_t>(header->tilesAcross) * 0x12u;
+        const uint32_t quadwords = header->paletteSize != 0 ? tileCount + 0x11u : tileCount + 9u;
+        sprite->packet = sdk::malloc(quadwords << 4);
+        sprite->x = 0;
+        sprite->y = 0;
+        sprite->z = -1;
+        sprite->scaleX = ps2f(1.0f);
+        sprite->scaleY = ps2f(1.0f);
+        sprite->blend = blend;
+        sprite->frameX = 0;
+        sprite->frameY = 0;
+        sprite->clipWidth = static_cast<uint32_t>(sprite->image->tilesAcross) - sprite->frameX;
+        sprite->clipHeight = static_cast<uint32_t>(sprite->image->tilesDown) - sprite->frameY;
+        TexSprite_BuildPacket(sprite);
+        File_dtor(local, -1);
+        return static_cast<int>(sprite.address);
+    }
+
+    GuestPtr<Camera> Camera_DeletingDtor(GuestPtr<Camera> camera, int16_t deleteFlag)
+    {
+        if (camera)
+        {
+            BaseObject_dtor(static_cast<int>(camera.address), 0);
+            if (0 < deleteFlag)
+                sdk::operator_delete(camera.address);
+        }
+        return camera;
+    }
+
+    // Waits for the GS and starts the current list again from its beginning.
+    void DmaList_Rewind()
+    {
+        sdk::sceGsSyncPath(0, 0);
+        globals::dmaListPtr.set(port::load<uint32_t>(globals::kDmaLists + 4u * static_cast<uint32_t>(globals::dmaListIndex.get())));
+    }
+
+    // Frees the two DMA lists and the packet buffer.
+    void DmaList_Free()
+    {
+        for (const uint32_t slot : {globals::kDmaLists, globals::kDmaLists + 4u, globals::packetBufBase.address})
+        {
+            if (port::load<uint32_t>(slot) != 0u)
+            {
+                sdk::free(port::load<uint32_t>(slot));
+                port::store<uint32_t>(slot, 0u);
+            }
+        }
+    }
+
+    // Allocates the two 64 KB DMA lists and the 32 KB packet buffer when they do not exist yet and starts both from their
+    // beginning.
+    void DmaList_Init()
+    {
+        if (port::load<uint32_t>(globals::kDmaLists) == 0u)
+        {
+            port::store<uint32_t>(globals::kDmaLists, sdk::malloc(0x10010u));
+            port::store<uint32_t>(globals::kDmaLists + 4u, sdk::malloc(0x10010u));
+        }
+        if (globals::packetBufBase.get() == 0u)
+            globals::packetBufBase.set(sdk::malloc(0x8000u));
+        globals::packetBufPos.set(static_cast<int32_t>(globals::packetBufBase.get()));
+        globals::dmaListPtr.set(port::load<uint32_t>(globals::kDmaLists));
+        DmaList_InitPackets();
+    }
+
+    PORT_FN(A3DObjectBase_DeletingDtor);
+    PORT_FN(A3DObject_dtor);
+    PORT_FN(A3DObject_ChangeLuminosity);
+    PORT_FN(TexImage_dtor);
+    PORT_FN(TexImage_Load);
+    PORT_FN(TexSprite_dtor);
+    PORT_FN(TexSprite_Load);
+    PORT_FN(Camera_DeletingDtor);
+    PORT_FN(DmaList_Rewind);
+    PORT_FN(DmaList_Free);
+    PORT_FN(DmaList_Init);
+
+    // ---- Instance buffers and the VIF1 kick (plan P6 batch 2) ----
+
+    // Two buffers of 1800 instance draw packets (0x70 bytes each), the one drawn while the other is filled. Every packet is
+    // a 5-quadword DMA tag (0x10000005), a GIF tag with the PRIM state (0x01000101, 0x6C05002B), and at +0x60 the end tag
+    // (0x60000000) and a VIF UNPACK header (0x14000000, 0x11000000).
+    void InstanceBuf_Init()
+    {
+        const uint32_t first = sdk::mw_NewArray(0x31380u);
+        port::store<uint32_t>(0x001BDA20u, first);
+        const uint32_t second = sdk::mw_NewArray(0x31380u);
+        port::store<uint32_t>(0x001BDA24u, second);
+        for (uint32_t i = 0, at = 0; i < 0x708u; ++i, at += 0x70u)
+            for (const uint32_t base : {first, second})
+            {
+                port::store<uint32_t>(base + at, 0x10000005u);
+                port::store<uint32_t>(base + at + 4u, 0u);
+                port::store<uint32_t>(base + at + 8u, 0x1000101u);
+                port::store<uint32_t>(base + at + 0xCu, 0x6C05002Bu);
+                port::store<uint32_t>(base + at + 0x60u, 0x60000000u);
+                port::store<uint32_t>(base + at + 0x64u, 0u);
+                port::store<uint32_t>(base + at + 0x68u, 0x14000000u);
+                port::store<uint32_t>(base + at + 0x6Cu, 0x11000000u);
+            }
+    }
+
+    // Sends a DMA chain to VIF1 at once: a two-tag chain at 0x1F8100 (a call to the list at `address`, then the end tag), the
+    // GS path waited for, the channel started (CHCR 0x145) and the GS path waited for again; returns that last wait.
+    int Dma_KickVif1Now(uint32_t address)
+    {
+        constexpr uint32_t kChain = 0x001F8100u;
+        constexpr uint32_t kQwc = 0x10009020u, kTadr = 0x10009030u, kChcr = 0x10009000u, kStat = 0x1000E010u;
+        port::store<uint32_t>(kChain + 0xCu, 0u);
+        port::store<uint32_t>(kChain + 8u, 0u);
+        port::store<uint32_t>(kChain + 4u, address & 0x7FFFFFFFu);
+        port::store<uint32_t>(kChain, 0x50000000u);
+        port::store<uint32_t>(kChain + 0x1Cu, 0u);
+        port::store<uint32_t>(kChain + 0x18u, 0u);
+        port::store<uint32_t>(kChain + 0x14u, 0u);
+        port::store<uint32_t>(kChain + 0x10u, 0x70000000u);
+        sdk::sceGsSyncPath(0, 0);
+        port::writeHardware32(kQwc, 0u);
+        port::writeHardware32(kTadr, kChain & 0x7FFFFFFFu);
+        port::writeHardware32(kStat, 2u);
+        sdk::FlushCache(0);
+        port::writeHardware32(kChcr, 0x145u);
+        return sdk::sceGsSyncPath(0, 0);
+    }
+
+    PORT_FN(InstanceBuf_Init);
+    PORT_FN(Dma_KickVif1Now);
+
+    // The same kick, entered from the second copy of the code.
+    int Dma_KickVif1Now_1490D0(uint32_t address) { return Dma_KickVif1Now(address); }
+
+    // The instance base, then the shared draw buffers once for the first model of the run; the model count (0x1BDA2C) grows.
+    GuestPtr<A3DObject> InstanceModel_ctor(GuestPtr<A3DObject> model)
+    {
+        InstanceBase_ctor(model);
+        constexpr uint32_t kModelCount = 0x001BDA2Cu;
+        if (port::load<int32_t>(kModelCount) == 0)
+            InstanceBuf_Init();
+        port::store<int32_t>(kModelCount, port::load<int32_t>(kModelCount) + 1);
+        return model;
+    }
+
+    PORT_FN(Dma_KickVif1Now_1490D0);
+    PORT_FN(InstanceModel_ctor);
+
+    // The constructor of the derived instance model: the base one, nothing more.
+    GuestPtr<A3DObject> InstanceModel_ctor2(GuestPtr<A3DObject> model)
+    {
+        InstanceModel_ctor(model);
+        return model;
+    }
+
+    PORT_FN(InstanceModel_ctor2);
+
+    // ---- The city renderer (plan P6 batch 2) ----
+
+    // The map with people below it, then the buffers and the draw layers the renderer owns: two buffers of 0x8700 bytes
+    // (+0x2D18, +0x2D1C) and two of 0x9C00 (+0x2D0C, +0x2D10); the render and terrain parameters; the two terrain packets
+    // built at the packet buffer's position (which moves on past each); and the layers D, E, F, G, C, B and A
+    // (+0x2F74, +0x2F78, +0x2F7C, +0x2F80, +0x2F88, +0x2F84, +0x2F8C), the ones that take buffers getting the pair at +0x2D0C.
+    GuestPtr<CityMap> CityRender_ctor(GuestPtr<CityMap> map)
+    {
+        const uint32_t m = map.address;
+        MapPeople_ctor(map);
+        port::store<uint32_t>(m + 0x64u, 0x001BCF00u);
+        port::store<uint32_t>(m + 0x2D18u, sdk::malloc(0x8700u));
+        port::store<uint32_t>(m + 0x2D1Cu, sdk::malloc(0x8700u));
+        port::store<uint32_t>(m + 0x2D0Cu, sdk::malloc(0x9C00u));
+        port::store<uint32_t>(m + 0x2D10u, sdk::malloc(0x9C00u));
+        CityRender_InitParams(map);
+        Terrain_InitParams(static_cast<int>(m));
+        PacketBuf_Seek(static_cast<int>(Terrain_BuildVu1PacketB(static_cast<int>(m), GuestPtr<uint32_t>{static_cast<uint32_t>(PacketBuf_Tell())}).address));
+        PacketBuf_Seek(static_cast<int>(Terrain_BuildVu1PacketA(static_cast<int>(m), GuestPtr<uint32_t>{static_cast<uint32_t>(PacketBuf_Tell())}).address));
+        const auto make = [&](uint32_t size, uint32_t field, auto construct) {
+            const uint32_t memory = sdk::operator_new(size);
+            port::store<uint32_t>(m + field, memory != 0u ? construct(memory) : 0u);
+        };
+        make(0x410, 0x2F74, [&](uint32_t o) { return LayerD_ctor(GuestPtr<LayerD>{o}, static_cast<int>(m + 0x2D0Cu)).address; });
+        make(0x6E0, 0x2F78, [&](uint32_t o) { return LayerE_ctor(GuestPtr<LayerE>{o}, static_cast<int>(m + 0x2D0Cu)).address; });
+        make(0x140, 0x2F7C, [&](uint32_t o) { return LayerF_ctor(GuestPtr<LayerF>{o}).address; });
+        make(0x2E0, 0x2F80, [&](uint32_t o) { return LayerG_ctor(GuestPtr<LayerG>{o}, static_cast<int>(m + 0x2D0Cu)).address; });
+        make(0x240, 0x2F88, [&](uint32_t o) { return LayerC_ctor(GuestPtr<LayerC>{o}).address; });
+        make(0x230, 0x2F84, [&](uint32_t o) { return LayerB_ctor(GuestPtr<LayerB>{o}).address; });
+        make(0x2440, 0x2F8C, [&](uint32_t o) { return LayerA_ctor(GuestPtr<LayerA>{o}).address; });
+        return map;
+    }
+
+    // The layers are deleted (A, D, E, F, G, C, B), then the four buffers, then the map below the renderer.
+    GuestPtr<CityMap> CityRender_dtor(GuestPtr<CityMap> map, int16_t deleteFlag)
+    {
+        if (map)
+        {
+            const uint32_t m = map.address;
+            port::store<uint32_t>(m + 0x64u, 0x001BCF00u);
+            lifetime::deleteWith(m + 0x2F8Cu, [](uint32_t o) { LayerA_DeletingDtor(GuestPtr<LayerA>{o}, 1); });
+            lifetime::deleteWith(m + 0x2F74u, [](uint32_t o) { LayerD_DeletingDtor(GuestPtr<LayerD>{o}, 1); });
+            lifetime::deleteWith(m + 0x2F78u, [](uint32_t o) { LayerE_DeletingDtor(GuestPtr<LayerE>{o}, 1); });
+            lifetime::deleteWith(m + 0x2F7Cu, [](uint32_t o) { LayerF_DeletingDtor(GuestPtr<LayerF>{o}, 1); });
+            lifetime::deleteWith(m + 0x2F80u, [](uint32_t o) { LayerG_DeletingDtor(GuestPtr<LayerG>{o}, 1); });
+            lifetime::deleteWith(m + 0x2F88u, [](uint32_t o) { LayerC_DeletingDtor(GuestPtr<LayerC>{o}, 1); });
+            lifetime::deleteWith(m + 0x2F84u, [](uint32_t o) { LayerB_DeletingDtor(GuestPtr<LayerB>{o}, 1); });
+            for (const uint32_t field : {0x2D0Cu, 0x2D10u, 0x2D18u, 0x2D1Cu})
+                lifetime::deleteWith(m + field, [](uint32_t o) { sdk::free(o); });
+            MapPeople_dtor(map, 0);
+            if (0 < deleteFlag)
+                sdk::operator_delete(m);
+        }
+        return map;
+    }
+
+    // The renderer constructor and deleting destructor entered through the map's class (table at 0x1BCED0).
+    GuestPtr<CityMap> CityMap_ctor(GuestPtr<CityMap> map)
+    {
+        CityRender_ctor(map);
+        port::store<uint32_t>(map.address + 0x64u, 0x001BCED0u);
+        return map;
+    }
+
+    GuestPtr<CityMap> CityMap_DeletingDtor(GuestPtr<CityMap> map, int16_t deleteFlag)
+    {
+        if (map)
+        {
+            port::store<uint32_t>(map.address + 0x64u, 0x001BCED0u);
+            CityRender_dtor(map, 0);
+            if (0 < deleteFlag)
+                sdk::operator_delete(map.address);
+        }
+        return map;
+    }
+
+    PORT_FN(CityRender_ctor);
+    PORT_FN(CityRender_dtor);
+    PORT_FN(CityMap_ctor);
+    PORT_FN(CityMap_DeletingDtor);
+
+    // ---- The city camera and the sky (plan P6 batch 2) ----
+
+    // Loads the sky model (file 0x1B7F50) and drops it again at once, then sends an image transfer to the GS (BITBLTBUF,
+    // TRXPOS, TRXREG and TRXDIR set up, then the data at 0x1B0DD0) straight to VIF1.
+    void Sky_Load()
+    {
+        port::GuestFrame<0xA0> frame;
+        const uint32_t packet = frame.ptr().address + 0x10u;
+        uint32_t model = sdk::operator_new(0x60u);
+        if (model != 0u)
+            model = A3DObject_Load(GuestPtr<A3DObject>{model}, 0x001B7F50, 1).address;
+        A3DObject_dtor(GuestPtr<A3DObject>{model}, 1);
+        const uint32_t words[] = {0x10000006u, 0u, 0x11000000u, 0x50000006u,
+                                  4u, 0x10000000u, 0xEu, 0u,
+                                  0u, 0u, 0x51u, 0u,
+                                  8u, 2u, 0x52u, 0u,
+                                  0u, 0x13F2Eu, 0x50u, 0u,
+                                  0u, 0u, 0x53u, 0u,
+                                  0x8004u, 0x08000000u, 0u, 0u,
+                                  0x30000004u, 0x001B0DD0u, 0u, 0x50000004u,
+                                  0x60000000u, 0u, 0u, 0u};
+        for (uint32_t i = 0; i < 36u; ++i)
+            port::store<uint32_t>(packet + 4u * i, words[i]);
+        Dma_KickVif1Now(packet);
+    }
+
+    // The camera, the sky load and the sky packets.
+    GuestPtr<CityCamera> CityCamera_BaseCtor(GuestPtr<CityCamera> camera)
+    {
+        port::GuestFrame<0x20> frame; // the original's frame: the sky packet's address lands in the DMA chain
+        Camera_ctor(GuestPtr<Camera>{camera.address});
+        Sky_Load();
+        Sky_BuildPackets(camera);
+        return camera;
+    }
+
+    GuestPtr<CityCamera> CityCamera_ctor(GuestPtr<CityCamera> camera)
+    {
+        port::GuestFrame<0x20> frame;
+        CityCamera_BaseCtor(camera);
+        port::store<uint32_t>(camera.address + 0x130u, 0u);
+        port::store<uint32_t>(camera.address + 0x134u, 0xC1E80000u);
+        port::store<uint32_t>(camera.address + 0x138u, 0x3FCCCCCDu);
+        port::store<uint32_t>(camera.address + 0x13Cu, 0x3F800000u);
+        port::store<uint32_t>(camera.address + 0x530u, 1u);
+        return camera;
+    }
+
+    PORT_FN(Sky_Load);
+    PORT_FN(CityCamera_BaseCtor);
+    PORT_FN(CityCamera_ctor);
+
+    // The asynchronous model load; when it succeeded (1) for a synchronous call (a2 is 0), the model keeps its mesh table's count
+    // divided by 13 at +0x60 (the count at +4 of the table at +8 of its data).
+    int InstanceModel_LoadAsync(GuestPtr<A3DObject> model, GuestPtr<GameFile> gamefile, int a2)
+    {
+        const int result = A3DObject_LoadAsync(model, gamefile, a2);
+        if (result == 1 && a2 == 0)
+            port::store<int32_t>(model.address + 0x60u, divide(port::load<int32_t>(port::load<uint32_t>(port::load<uint32_t>(model.address) + 8u) + 4u), 13));
+        return result;
+    }
+
+    PORT_FN(InstanceModel_LoadAsync);
+
+    namespace
+    {
+        // The tags of the DMA chain at `chain` that point at data (REF and CALL) hold a word count from `base` in their address word;
+        // this turns it into an address. `reader` is the chain reader's 0x30 bytes of working memory.
+        void relocateChain(uint32_t reader, uint32_t chain, uint32_t base)
+        {
+            DmaChain_Begin(static_cast<int>(reader), static_cast<int>(chain));
+            int more;
+            do
+            {
+                more = DmaChain_Next(static_cast<int>(reader));
+                const uint32_t id = port::load<uint32_t>(reader + 8u);
+                if (id == 0x30000000u || id == 0x50000000u)
+                {
+                    const uint32_t tag = port::load<uint32_t>(reader + 4u);
+                    port::store<uint32_t>(tag + 4u, base + 4u * port::load<uint32_t>(tag + 4u));
+                }
+            } while (more != 0);
+        }
+    }
+
+    // Turns the word offsets of a loaded .A3D image (the model's data at +0; its header has the offsets of five tables at +4..+0x14
+    // and the counts of records A, B, C and the chain blocks as halfwords at +0x18 to +0x1E) into addresses: the four tables, the
+    // first word of each 0xC0-byte record A (and, when `indexed`, its second word as an index into table B, with -1 for none; when not,
+    // table B's own entries), the chain blocks of B (their size at +4) and of D (their size at +0), whose DMA tags that point at data
+    // are relocated as well, and the groups of table C (the model keeps a table of their addresses at +0x50, and the entry count of a
+    // group at +8). The texture packets (the second block, at +4 of the model, `D[1]` words) are relocated against that block
+    // and sent to the GS as they come.
+    void A3D_Relocate(GuestPtr<A3DObject> model, int indexed)
+    {
+        port::GuestFrame<0xE0> frame;
+        const uint32_t sp = frame.ptr().address;
+        const uint32_t self = model.address;
+        const auto data = [&]() { return port::load<uint32_t>(self); };
+        for (uint32_t at = 8u; at <= 0x14u; at += 4u)
+            port::store<uint32_t>(data() + at, data() + 4u * port::load<uint32_t>(data() + at));
+        uint32_t record = port::load<uint32_t>(data() + 8u);
+        for (int i = 0; i < port::load<int16_t>(data() + 0x18u); ++i, record += 0xC0u)
+            if (port::load<uint32_t>(record) != 0)
+                port::store<uint32_t>(record, data() + 4u * port::load<uint32_t>(record));
+        uint32_t block;
+        if (indexed != 0)
+        {
+            record = port::load<uint32_t>(data() + 8u);
+            for (int i = 0; i < port::load<int16_t>(data() + 0x18u); ++i, record += 0xC0u)
+            {
+                const int32_t index = port::load<int32_t>(record + 4u);
+                if (index == -1)
+                    port::store<uint32_t>(record + 4u, 0u);
+                else
+                    port::store<uint32_t>(record + 4u, data() + 4u * port::load<uint32_t>(port::load<uint32_t>(data() + 0xCu) + 4u * static_cast<uint32_t>(index)));
+            }
+            block = data() + 4u * port::load<uint32_t>(port::load<uint32_t>(data() + 0xCu));
+        }
+        else
+        {
+            for (int i = 0; i < port::load<int16_t>(data() + 0x1Au); ++i)
+            {
+                const uint32_t slot = port::load<uint32_t>(data() + 0xCu) + 4u * static_cast<uint32_t>(i);
+                port::store<uint32_t>(slot, data() + 4u * port::load<uint32_t>(slot));
+            }
+            block = port::load<uint32_t>(port::load<uint32_t>(data() + 0xCu));
+        }
+        for (int i = 0; i < port::load<int16_t>(data() + 0x1Au); ++i)
+        {
+            port::store<uint32_t>(block, data() + 4u * port::load<uint32_t>(block));
+            relocateChain(sp + 0x50u, block + 0x10u, data());
+            block += 4u * port::load<uint32_t>(block + 4u);
+        }
+        if (port::load<int16_t>(data() + 0x1Cu) == 0)
+            port::store<uint32_t>(self + 8u, 0u);
+        else
+        {
+            uint32_t cursor = port::load<uint32_t>(data() + 0x10u);
+            port::store<uint32_t>(self + 8u, port::load<uint32_t>(cursor));
+            cursor += 0x10u;
+            port::store<uint32_t>(data() + 0x10u, cursor);
+            for (int group = 0; group < port::load<int16_t>(data() + 0x1Cu); ++group)
+            {
+                port::store<uint32_t>(port::load<uint32_t>(self + 0x50u) + 4u * static_cast<uint32_t>(group), cursor);
+                uint32_t total = 0;
+                for (int entry = 0; entry < port::load<int32_t>(self + 8u); ++entry)
+                {
+                    const uint32_t count = port::load<uint32_t>(cursor);
+                    port::store<uint32_t>(cursor + 4u, data() + 4u * port::load<uint32_t>(cursor + 4u));
+                    total += count;
+                    port::store<uint32_t>(cursor + 8u, data() + 4u * port::load<uint32_t>(cursor + 8u));
+                    cursor += 0x10u;
+                }
+                cursor += total << 5;
+            }
+        }
+        block = port::load<uint32_t>(data() + 0x14u);
+        for (int i = 0; i < port::load<int16_t>(data() + 0x1Eu); ++i)
+        {
+            relocateChain(sp + 0x80u, block + 0x10u, data());
+            block += 4u * port::load<uint32_t>(block);
+        }
+        uint32_t remaining = port::load<uint32_t>(data() + 4u);
+        if (remaining != 0)
+        {
+            uint32_t packet = port::load<uint32_t>(self + 4u);
+            do
+            {
+                relocateChain(sp + 0xB0u, packet + 0x10u, port::load<uint32_t>(self + 4u));
+                Dma_KickVif1Now(packet + 0x10u);
+                const uint32_t size = port::load<uint32_t>(packet);
+                remaining -= size;
+                packet += 4u * size;
+            } while (remaining != 0);
+        }
+    }
+
+    PORT_FN(A3D_Relocate);
+
+    // Loads a model (.A3D) from an open file, one step per call (the step is in 0x1BDA10, the request being waited for in 0x1BDA14,
+    // and the 16-byte header lands in 0x1C5100: the size of the file in words, then of the texture block in words, then the counts):
+    // 0 queue the header read, 1 wait for it (an empty header, a size of 0, is the end of the file: -1), 2 make the data block of the
+    // size and queue the rest of the file after a copy of the header, 3 wait, 4 make the table of the model's meshes (+0x50, the
+    // count is a halfword at +0x1C of the data) and the texture block (+4) and queue its read, 5 wait, 6 relocate the data
+    // (mm_A3D_Relocate, which also sends the textures), free the texture block, reset the model's matrix at +0x10 and finish
+    // (1). 0 means still busy.
+    int A3DObject_LoadAsync(GuestPtr<A3DObject> model, GuestPtr<GameFile> file, int indexed)
+    {
+        constexpr uint32_t kHeader = 0x001C5100u;
+        const GuestVar<int32_t> state{0x001BDA10u}, request{0x001BDA14u};
+        const uint32_t m = model.address;
+        const auto done = [&]() { return FileQueue_IsDone(static_cast<int>(file.address), request.get()) != 0; };
+        switch (static_cast<uint32_t>(state.get()))
+        {
+        case 0:
+            port::store<uint32_t>(m, 0u);
+            port::store<uint32_t>(m + 4u, 0u);
+            port::store<uint32_t>(m + 0x50u, 0u);
+            request.set(File_Read(file, static_cast<int>(kHeader), 1, 0x10, 0));
+            state.set(state.get() + 1);
+            return 0;
+        case 1:
+            if (!done())
+                return 0;
+            if (port::load<int32_t>(kHeader) == 0)
+            {
+                state.set(0);
+                return -1;
+            }
+            state.set(state.get() + 1);
+            return 0;
+        case 2:
+            port::store<uint32_t>(m, sdk::malloc(port::load<uint32_t>(kHeader) << 2));
+            sdk::memcpy(port::load<uint32_t>(m), kHeader, 0x10);
+            request.set(File_Read(file, static_cast<int>(port::load<uint32_t>(m)) + 0x10, port::load<int32_t>(kHeader) - 4, 4, 0));
+            state.set(state.get() + 1);
+            return 0;
+        case 3:
+        case 5:
+            if (!done())
+                return 0;
+            state.set(state.get() + 1);
+            return 0;
+        case 4:
+        {
+            const int32_t meshes = port::load<int16_t>(port::load<uint32_t>(m) + 0x1Cu);
+            if (meshes != 0)
+                port::store<uint32_t>(m + 0x50u, sdk::mw_NewArray(static_cast<uint32_t>(meshes) << 2));
+            port::store<uint32_t>(m + 4u, sdk::malloc(port::load<uint32_t>(kHeader + 4u) << 2));
+            request.set(File_Read(file, static_cast<int>(port::load<uint32_t>(m + 4u)), port::load<int32_t>(kHeader + 4u), 4, 0));
+            state.set(state.get() + 1);
+            return 0;
+        }
+        case 6:
+        {
+            A3D_Relocate(model, indexed);
+            const uint32_t textures = port::load<uint32_t>(m + 4u);
+            if (textures != 0u)
+            {
+                sdk::free(textures);
+                port::store<uint32_t>(m + 4u, 0u);
+            }
+            Mat4_Copy(GuestPtr<Vec4>{m + 0x10u}, GuestPtr<Vec4>{0x001B2550u});
+            state.set(0);
+            return 1;
+        }
+        default:
+            return 0;
+        }
+    }
+
+    PORT_FN(A3DObject_LoadAsync);
+
+    // Sets up the display: the display environment (0x1F5B10, a frame 8 units on: its first fields as the flag bits below), the draw
+    // environment (0x1F5B20) for the given width and a height worked out from the screen's, the double buffer (0x1F5AC0: width by
+    // half the height, cleared) and a GIF packet made in a 0x60 byte block that sets five GS registers (the one tag at 0x1B2540
+    // opens it; registers 6, 1, 5 and 5 again with 0x96002800) and is sent on DMA channel 2 before the block is freed.
+    void Gs_InitDisplay(uint16_t width, int height)
+    {
+        port::GuestFrame<0x80> frame;
+        const uint32_t sp = frame.ptr().address;
+        const uint32_t tag = sp + 0x60u, packet = sp + 0x70u;
+        port::store<uint64_t>(tag, port::load<uint64_t>(0x001B2540u));
+        port::store<uint64_t>(tag + 8u, port::load<uint64_t>(0x001B2548u));
+        const uint32_t block = sdk::memalign(0x10, 0x60);
+        const int channel = sdk::sceDmaGetChan(2);
+        constexpr uint32_t kDisplay = 0x001F5B10u, kDraw = 0x001F5B20u, kBuffer = 0x001F5AC0u;
+        port::store<uint64_t>(kDisplay, 0u);
+        port::store<uint64_t>(kDisplay + 8u, 0u);
+        port::store<uint16_t>(kDisplay, static_cast<uint16_t>((port::load<uint16_t>(kDisplay) & 0x8000u) | 0x8u));
+        port::store<uint8_t>(kDisplay + 1u, static_cast<uint8_t>((port::load<uint8_t>(kDisplay + 1u) & ~0x80u) | 0x80u));
+        port::store<uint8_t>(kDisplay + 7u, static_cast<uint8_t>((port::load<uint8_t>(kDisplay + 7u) & 0x0Fu) | 0x10u));
+        port::store<uint8_t>(kDisplay + 8u, static_cast<uint8_t>((port::load<uint8_t>(kDisplay + 8u) & 0xF0u) | 0xEu));
+        const int16_t wide = static_cast<int16_t>(width);
+        const int half = height / 2;
+        const int pages = ((half + 0x1F) / 32 + (height + 0x1F) / 32) << 6;
+        sdk::sceGsSetDefDrawEnv(kDraw, 0, wide, static_cast<int16_t>(pages), 0, 0);
+        port::store<uint64_t>(kDisplay + 0x30u, 0u);
+        sdk::FlushCache(0);
+        sdk::sceGsSyncPath(0, 0);
+        sdk::sceGsPutDispEnv(kDisplay);
+        sdk::sceGifPkInit(packet, block);
+        sdk::sceGifPkReset(packet);
+        sdk::sceGifPkEnd(packet);
+        sdk::sceGifPkOpenGifTag(packet, port::Quad{port::load<uint64_t>(tag), port::load<uint64_t>(tag + 8u)});
+        sdk::sceGifPkAddGsAD(packet, 0, 6);
+        sdk::sceGifPkAddGsAD(packet, 1, 0);
+        sdk::sceGifPkAddGsAD(packet, 5, 0);
+        sdk::sceGifPkAddGsAD(packet, 5, 0x96002800u);
+        sdk::sceGifPkCloseGifTag(packet);
+        sdk::sceGifPkTerminate(packet);
+        sdk::FlushCache(0);
+        sdk::sceGsSyncPath(0, 0);
+        sdk::sceDmaSend(channel, port::load<uint32_t>(packet + 4u));
+        sdk::sceGsSyncPath(0, 0);
+        sdk::free(block);
+        sdk::sceGsSetDefDBuff(kBuffer, 0, wide, static_cast<int16_t>(half), 0, 0, 1);
+        sdk::FlushCache(0);
+    }
+
+    PORT_FN(Gs_InitDisplay);
 }

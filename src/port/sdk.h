@@ -61,6 +61,24 @@ namespace mm::sdk
         inline constexpr uint32_t strcat = 0x00123660u;
         inline constexpr uint32_t strcmp = 0x00123920u;
         inline constexpr uint32_t strcpy = 0x00123A68u;
+        inline constexpr uint32_t strchr = 0x00123790u;
+        inline constexpr uint32_t operator_new = 0x001005B0u;
+        inline constexpr uint32_t mw_NewArray = 0x001004C0u;
+        inline constexpr uint32_t mw_DeleteArray = 0x00100400u;
+        inline constexpr uint32_t construct_new_array = 0x001002B0u;
+        inline constexpr uint32_t sceGsSyncPath = 0x00103418u;
+        inline constexpr uint32_t sceMcInit = 0x0011CF90u;
+        inline constexpr uint32_t memalign = 0x00120D90u;
+        inline constexpr uint32_t sceDmaGetChan = 0x00103DA0u;
+        inline constexpr uint32_t sceGsSetDefDrawEnv = 0x00102D10u;
+        inline constexpr uint32_t sceGsPutDispEnv = 0x00103000u;
+        inline constexpr uint32_t sceGsSetDefDBuff = 0x001030E8u;
+        inline constexpr uint32_t sceSifInitRpc = 0x001106C0u;
+        inline constexpr uint32_t sceScfGetLocalTimefromRTC = 0x001A3C10u;
+        inline constexpr uint32_t sceSifBindRpc = 0x00110D30u;
+        inline constexpr uint32_t sceSifCheckStatRpc = 0x001110F0u;
+        inline constexpr uint32_t sceSifCallRpc = 0x00110F00u;
+        inline constexpr uint32_t printf = 0x00122F50u;
         inline constexpr uint32_t strcspn = 0x00123B80u;
         inline constexpr uint32_t strlen = 0x00123C00u;
         inline constexpr uint32_t d_utod = 0x001000F0u;
@@ -75,6 +93,54 @@ namespace mm::sdk
         inline constexpr uint32_t sceVu0CameraMatrix = 0x00105170u;
         inline constexpr uint32_t sceVu0NormalLightMatrix = 0x00105220u;
         inline constexpr uint32_t sceVu0LightColorMatrix = 0x001052E0u;
+        inline constexpr uint32_t scePadInit = 0x0011BD10u;
+        inline constexpr uint32_t scePadPortOpen = 0x0011BF70u;
+        inline constexpr uint32_t scePadRead = 0x0011C2C0u;
+        inline constexpr uint32_t scePadGetState = 0x0011C340u;
+        inline constexpr uint32_t scePadGetReqState = 0x0011C458u;
+        inline constexpr uint32_t scePadInfoMode = 0x0011C720u;
+        inline constexpr uint32_t scePadSetMainMode = 0x0011C858u;
+        inline constexpr uint32_t scePadSetActAlign = 0x0011C9D0u;
+        inline constexpr uint32_t scePadInfoPressMode = 0x0011CC10u;
+        inline constexpr uint32_t scePadEnterPressMode = 0x0011CC70u;
+        inline constexpr uint32_t WaitSema = 0x0010DDA0u;
+        inline constexpr uint32_t SignalSema = 0x0010DD80u;
+        inline constexpr uint32_t RotateThreadReadyQueue = 0x0010DC10u;
+        inline constexpr uint32_t sceSdRemote = 0x00116DD0u;
+        inline constexpr uint32_t sceSifAllocSysMemory = 0x00114DB0u;
+        inline constexpr uint32_t sceSifFreeSysMemory = 0x00114EA8u;
+        inline constexpr uint32_t sceSifAllocIopHeap = 0x00114D40u;
+        inline constexpr uint32_t sceGsSyncV = 0x00103380u;
+        inline constexpr uint32_t sceCdStStop = 0x0011B7E0u;
+        inline constexpr uint32_t sceCdStRead = 0x0011B818u;
+        inline constexpr uint32_t sceDmaSend = 0x001040F0u;
+        inline constexpr uint32_t mw_register_global_object = 0x001009E0u;
+        inline constexpr uint32_t sceCdReadClock = 0x0011B620u;
+        inline constexpr uint32_t sceSifLoadModule = 0x001159B8u;
+        inline constexpr uint32_t sceMcOpen = 0x0011D330u;
+        inline constexpr uint32_t sceMcMkdir = 0x0011D468u;
+        inline constexpr uint32_t sceMcClose = 0x0011D4A0u;
+        inline constexpr uint32_t sceMcSeek = 0x0011D558u;
+        inline constexpr uint32_t sceMcRead = 0x0011D6C0u;
+        inline constexpr uint32_t sceMcWrite = 0x0011D7E0u;
+        inline constexpr uint32_t sceMcSync = 0x0011D9D0u;
+        inline constexpr uint32_t sceMcGetInfo = 0x0011DB08u;
+        inline constexpr uint32_t sceMcGetDir = 0x0011DD00u;
+        inline constexpr uint32_t sceMcChdir = 0x0011DEE0u;
+        inline constexpr uint32_t sceMcFormat = 0x0011E030u;
+        inline constexpr uint32_t sceMcDelete = 0x0011E0F8u;
+        inline constexpr uint32_t sceMcUnformat = 0x0011E618u;
+        inline constexpr uint32_t index = 0x00120AD8u;
+        inline constexpr uint32_t strncpy = 0x00123EF0u;
+        inline constexpr uint32_t toupper = 0x001240B0u;
+        inline constexpr uint32_t sceCdInit = 0x0011B080u;
+        inline constexpr uint32_t sceCdMmode = 0x0011B558u;
+        inline constexpr uint32_t sceCdStInit = 0x0011B718u;
+        inline constexpr uint32_t sceCdStStart = 0x0011B748u;
+        inline constexpr uint32_t sceCdSearchFile = 0x0011A8F8u;
+        inline constexpr uint32_t sceMpegCreate = 0x0010BD58u;
+        inline constexpr uint32_t sceMpegAddCallback = 0x0010C170u;
+        inline constexpr uint32_t sceMpegIsRefBuffEmpty = 0x0010C0B8u;
     }
 
     // libm.
@@ -141,8 +207,58 @@ namespace mm::sdk
     inline uint32_t malloc(uint32_t size) { return port::callGuest<uint32_t>(addr::malloc, size); }
     inline void free(uint32_t block) { port::callGuest<void>(addr::free, block); }
     inline void operator_delete(uint32_t object) { port::callGuest<void>(addr::operator_delete, object); }
-    // sprintf with one integer argument (all this game's callers have at most one so far).
-    inline int sprintf(uint32_t dst, uint32_t format, int value) { return port::callGuest<int>(addr::sprintf, dst, format, value); }
+    // operator new (0 when the allocation fails is not expected), and the compiler runtime's array new and delete.
+    inline uint32_t operator_new(uint32_t size) { return port::callGuest<uint32_t>(addr::operator_new, size); }
+    inline uint32_t mw_NewArray(uint32_t size) { return port::callGuest<uint32_t>(addr::mw_NewArray, size); }
+    inline void mw_DeleteArray(uint32_t block) { port::callGuest<void>(addr::mw_DeleteArray, block); }
+    // Constructs `count` elements of `elementSize` bytes in the block with the constructor at `ctor` (and registers `dtor`).
+    inline uint32_t construct_new_array(uint32_t block, uint32_t ctor, uint32_t dtor, uint32_t elementSize, uint32_t count)
+    {
+        return port::callGuest<uint32_t>(addr::construct_new_array, block, ctor, dtor, elementSize, count);
+    }
+    // Waits for the GS paths (mode 0, timeout 0: until the transfers are done).
+    inline int sceGsSyncPath(int mode, int timeout) { return port::callGuest<int>(addr::sceGsSyncPath, mode, timeout); }
+    // The memory card library's start-up call (the result is not used).
+    inline int sceMcInit() { return port::callGuest<int>(addr::sceMcInit); }
+    // The console's clock in local time: `clock` is the 8 bytes of status, second, minute, hour, padding, day, month and year (each a BCD
+    // byte, the year without its century), which the call converts from the BIOS clock's time zone.
+    inline int sceScfGetLocalTimefromRTC(uint32_t clock) { return port::callGuest<int>(addr::sceScfGetLocalTimefromRTC, clock); }
+    // Starts the RPC layer (mode 0), and binds the client at `client` to the IOP server `number` (negative when the server is not there yet).
+    inline void sceSifInitRpc(int mode) { port::callGuest<void>(addr::sceSifInitRpc, mode); }
+    inline int sceSifBindRpc(uint32_t client, int number, int mode) { return port::callGuest<int>(addr::sceSifBindRpc, client, number, mode); }
+    // libc's aligned allocation, and the channel, display and draw environment calls of libdma and libgraph.
+    inline uint32_t memalign(int alignment, int size) { return port::callGuest<uint32_t>(addr::memalign, alignment, size); }
+    inline int sceDmaGetChan(int channel) { return port::callGuest<int>(addr::sceDmaGetChan, channel); }
+    inline void sceGsSetDefDrawEnv(uint32_t env, int psm, int width, int height, int ztest, int zpsm)
+    {
+        port::callGuest<void>(addr::sceGsSetDefDrawEnv, env, psm, width, height, ztest, zpsm);
+    }
+    inline void sceGsPutDispEnv(uint32_t env) { port::callGuest<void>(addr::sceGsPutDispEnv, env); }
+    inline void sceGsSetDefDBuff(uint32_t buffer, int psm, int width, int height, int ztest, int zpsm, int clear)
+    {
+        port::callGuest<void>(addr::sceGsSetDefDBuff, buffer, psm, width, height, ztest, zpsm, clear);
+    }
+    // Non-zero while the client's last asynchronous call is still running.
+    inline int sceSifCheckStatRpc(uint32_t client) { return port::callGuest<int>(addr::sceSifCheckStatRpc, client); }
+    // An RPC to the IOP: client, function number, mode (0 = wait for the reply), send buffer and size, receive buffer and
+    // size, end function and its argument.
+    inline int sceSifCallRpc(uint32_t client, int number, int mode, uint32_t send, int sendSize, uint32_t receive, int receiveSize,
+                             uint32_t endFunction, uint32_t endArgument)
+    {
+        return port::callGuest<int>(addr::sceSifCallRpc, client, number, mode, send, sendSize, receive, receiveSize, endFunction, endArgument);
+    }
+    // printf with a format string and integer or pointer arguments (the game's debug messages; the guest addresses of strings).
+    template <typename... Args>
+    inline int printf(uint32_t format, Args... args)
+    {
+        return port::callGuest<int>(addr::printf, format, args...);
+    }
+    // sprintf with integer or pointer arguments after the format (the guest addresses of the buffers).
+    template <typename... Args>
+    inline int sprintf(uint32_t dst, uint32_t format, Args... args)
+    {
+        return port::callGuest<int>(addr::sprintf, dst, format, args...);
+    }
     // The kernel's file calls (the runtime's file I/O; descriptors are small non-negative ints, errors are negative).
     inline int sceOpen(uint32_t path, int flags) { return port::callGuest<int>(addr::sceOpen, path, flags); }
     inline int sceClose(int fd) { return port::callGuest<int>(addr::sceClose, fd); }
@@ -152,6 +268,97 @@ namespace mm::sdk
     inline int64_t sceCdDiskReady(int mode) { return port::callGuest<int64_t>(addr::sceCdDiskReady, mode); }
     inline int strlen(uint32_t s) { return port::callGuest<int>(addr::strlen, s); }
     inline int strcspn(uint32_t s, uint32_t reject) { return port::callGuest<int>(addr::strcspn, s, reject); }
+
+    // Kernel calls through the SDK's syscall stubs: semaphores (the id the game keeps), and a yield of the thread's priority level.
+    inline int WaitSema(int sema) { return port::callGuest<int>(addr::WaitSema, sema); }
+    inline int SignalSema(int sema) { return port::callGuest<int>(addr::SignalSema, sema); }
+    inline int RotateThreadReadyQueue(int priority) { return port::callGuest<int>(addr::RotateThreadReadyQueue, priority); }
+    // The sound driver's remote call on the IOP: a command and up to five more words; the 64-bit result is the driver's.
+    template <typename... Args>
+    inline int64_t sceSdRemote(int mode, int command, Args... args)
+    {
+        return port::callGuest<int64_t>(addr::sceSdRemote, mode, command, args...);
+    }
+    // IOP memory through the SIF: allocation returns the IOP address (0 or negative on failure).
+    inline uint32_t sceSifAllocSysMemory(int mode, int size) { return port::callGuest<uint32_t>(addr::sceSifAllocSysMemory, mode, size); }
+    inline int sceSifFreeSysMemory(uint32_t block) { return port::callGuest<int>(addr::sceSifFreeSysMemory, block); }
+    inline int sceSifAllocIopHeap(int size) { return port::callGuest<int>(addr::sceSifAllocIopHeap, size); }
+    // Waits for the next vertical sync of the given kind and returns the field now shown.
+    inline int64_t sceGsSyncV(int mode) { return port::callGuest<int64_t>(addr::sceGsSyncV, mode); }
+    // libc: the first occurrence of a character in a string (the address, 0 when absent), bounded copy, and upper case.
+    inline uint32_t index(uint32_t string, int character) { return port::callGuest<uint32_t>(addr::index, string, character); }
+    inline uint32_t strchr(uint32_t string, int character) { return port::callGuest<uint32_t>(addr::strchr, string, character); }
+    inline uint32_t strncpy(uint32_t dst, uint32_t src, int count) { return port::callGuest<uint32_t>(addr::strncpy, dst, src, count); }
+    inline int toupper(int character) { return port::callGuest<int>(addr::toupper, character); }
+    // The disc library: initialise, set the media mode, wait for the disc; start the stream (buffer size and count, then the
+    // buffer), search a file (the record is filled at `record`; 0 when absent) and start streaming from its sector.
+    inline int sceCdInit(int mode) { return port::callGuest<int>(addr::sceCdInit, mode); }
+    inline int sceCdMmode(int mode) { return port::callGuest<int>(addr::sceCdMmode, mode); }
+    inline int sceCdStInit(int bufferMax, int bankMax, uint32_t buffer) { return port::callGuest<int>(addr::sceCdStInit, bufferMax, bankMax, buffer); }
+    inline int sceCdStStart(uint32_t sector, uint32_t mode) { return port::callGuest<int>(addr::sceCdStStart, sector, mode); }
+    inline int64_t sceCdSearchFile(uint32_t record, uint32_t path) { return port::callGuest<int64_t>(addr::sceCdSearchFile, record, path); }
+    // Loads an IOP module from a path (the IRX id, negative on failure).
+    inline int64_t sceSifLoadModule(uint32_t path, int argc, uint32_t args) { return port::callGuest<int64_t>(addr::sceSifLoadModule, path, argc, args); }
+    // The memory card library: every call is started and returns 0 when accepted (the 64-bit result of the SDK), then
+    // sceMcSync reports its end. Port and slot come first; addresses are guest addresses of the game's buffers.
+    inline int64_t sceMcGetInfo(int portNumber, int slot, uint32_t type, uint32_t freeBlocks, uint32_t format)
+    {
+        return port::callGuest<int64_t>(addr::sceMcGetInfo, portNumber, slot, type, freeBlocks, format);
+    }
+    inline int64_t sceMcGetDir(int portNumber, int slot, uint32_t name, int mode, int maxEntries, uint32_t table)
+    {
+        return port::callGuest<int64_t>(addr::sceMcGetDir, portNumber, slot, name, mode, maxEntries, table);
+    }
+    inline int64_t sceMcFormat(int portNumber, int slot) { return port::callGuest<int64_t>(addr::sceMcFormat, portNumber, slot); }
+    inline int64_t sceMcUnformat(int portNumber, int slot) { return port::callGuest<int64_t>(addr::sceMcUnformat, portNumber, slot); }
+    inline int64_t sceMcMkdir(int portNumber, int slot, uint32_t name) { return port::callGuest<int64_t>(addr::sceMcMkdir, portNumber, slot, name); }
+    inline int64_t sceMcDelete(int portNumber, int slot, uint32_t name) { return port::callGuest<int64_t>(addr::sceMcDelete, portNumber, slot, name); }
+    inline int64_t sceMcChdir(int portNumber, int slot, uint32_t newDir, uint32_t oldDir)
+    {
+        return port::callGuest<int64_t>(addr::sceMcChdir, portNumber, slot, newDir, oldDir);
+    }
+    inline int64_t sceMcOpen(int portNumber, int slot, uint32_t name, int mode) { return port::callGuest<int64_t>(addr::sceMcOpen, portNumber, slot, name, mode); }
+    inline int64_t sceMcClose(int fd) { return port::callGuest<int64_t>(addr::sceMcClose, fd); }
+    inline int64_t sceMcRead(int fd, uint32_t buffer, int size) { return port::callGuest<int64_t>(addr::sceMcRead, fd, buffer, size); }
+    inline int64_t sceMcWrite(int fd, uint32_t buffer, int size) { return port::callGuest<int64_t>(addr::sceMcWrite, fd, buffer, size); }
+    inline int64_t sceMcSeek(int fd, int offset, int mode) { return port::callGuest<int64_t>(addr::sceMcSeek, fd, offset, mode); }
+    inline int64_t sceMcSync(int mode, uint32_t command, uint32_t result) { return port::callGuest<int64_t>(addr::sceMcSync, mode, command, result); }
+    // Registers a static object with the runtime so its destructor (`dtor`, run on `record`'s turn) runs at exit.
+    inline void mw_register_global_object(uint32_t object, uint32_t dtor, uint32_t record)
+    {
+        port::callGuest<void>(addr::mw_register_global_object, object, dtor, record);
+    }
+    // Reads the console clock into 8 bytes at `buffer` (status, then BCD seconds, minutes, hours, a pad byte, day, month, year); 0 when it fails.
+    inline int64_t sceCdReadClock(uint32_t buffer) { return port::callGuest<int64_t>(addr::sceCdReadClock, buffer); }
+    // The disc stream: stop it, and read sectors into a buffer (the error word is written to `errorAddress`).
+    inline int sceCdStStop() { return port::callGuest<int>(addr::sceCdStStop); }
+    inline int sceCdStRead(int sectors, uint32_t buffer, int mode, uint32_t errorAddress)
+    {
+        return port::callGuest<int>(addr::sceCdStRead, sectors, buffer, mode, errorAddress);
+    }
+    // The MPEG library: create a decoder over a work area, and register a callback of a kind.
+    inline int sceMpegCreate(int mpeg, int work, int workSize) { return port::callGuest<int>(addr::sceMpegCreate, mpeg, work, workSize); }
+    inline int sceMpegAddCallback(int mpeg, int kind, uint32_t function, int argument)
+    {
+        return port::callGuest<int>(addr::sceMpegAddCallback, mpeg, kind, function, argument);
+    }
+    inline int sceMpegIsRefBuffEmpty(int mpeg) { return port::callGuest<int>(addr::sceMpegIsRefBuffEmpty, mpeg); }
+
+    // libdma: starts a packet (at the guest address) on a DMA channel's descriptor (`channel`).
+    inline int sceDmaSend(int channel, uint32_t packet) { return port::callGuest<int>(addr::sceDmaSend, channel, packet); }
+
+    // libpad: the SDK's state calls return a 64-bit value that the game compares as a whole (the port and slot are 0 and 0 in
+    // practice). Pad data is read into the buffer at `buffer`.
+    inline void scePadInit(int mode) { port::callGuest<void>(addr::scePadInit, mode); }
+    inline int64_t scePadPortOpen(int portNumber, int slot, uint32_t buffer) { return port::callGuest<int64_t>(addr::scePadPortOpen, portNumber, slot, buffer); }
+    inline int64_t scePadRead(int portNumber, int slot, uint32_t buffer) { return port::callGuest<int64_t>(addr::scePadRead, portNumber, slot, buffer); }
+    inline int64_t scePadGetState(int portNumber, int slot) { return port::callGuest<int64_t>(addr::scePadGetState, portNumber, slot); }
+    inline int64_t scePadGetReqState(int portNumber, int slot) { return port::callGuest<int64_t>(addr::scePadGetReqState, portNumber, slot); }
+    inline int64_t scePadInfoMode(int portNumber, int slot, int term, int offset) { return port::callGuest<int64_t>(addr::scePadInfoMode, portNumber, slot, term, offset); }
+    inline int64_t scePadSetMainMode(int portNumber, int slot, int mode, int lock) { return port::callGuest<int64_t>(addr::scePadSetMainMode, portNumber, slot, mode, lock); }
+    inline int64_t scePadSetActAlign(int portNumber, int slot, uint32_t data) { return port::callGuest<int64_t>(addr::scePadSetActAlign, portNumber, slot, data); }
+    inline int64_t scePadInfoPressMode(int portNumber, int slot) { return port::callGuest<int64_t>(addr::scePadInfoPressMode, portNumber, slot); }
+    inline int64_t scePadEnterPressMode(int portNumber, int slot) { return port::callGuest<int64_t>(addr::scePadEnterPressMode, portNumber, slot); }
 
     // libvu0 (matrices are 4 Vec4 rows).
     inline void sceVu0MulMatrix(uint32_t out, uint32_t a, uint32_t b) { port::callGuest<void>(addr::sceVu0MulMatrix, out, a, b); }

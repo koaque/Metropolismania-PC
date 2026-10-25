@@ -20,7 +20,7 @@ City events (visitors, requests, incidents, paydays).
 
 ## Functions
 
-148 functions (typed 20, verified 128). Blocks: 20 can reach a thread switch, 21 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+148 functions (ported 2, typed 9, verified 137). Blocks: 20 can reach a thread switch, 21 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -132,7 +132,7 @@ City events (visitors, requests, incidents, paydays).
 | `0x00195420` | `void mm_EvMissingChildren_End(EventData *data, CityScene *city)` | 252 | no | type 6: End |
 | `0x00195520` | `void mm_EvMissingChildren_Update(EventData *data, CityScene *city)` | 1452 | yes | type 6: Update |
 | `0x00195AD0` | `MapObject *mm_EvMissingChildren_Start(EventData *data, CityScene *city)` | 48 | no | type 6: Start |
-| `0x00195B00` | `int mm_EvMissingChildren_Check(EventData *data, CityScene *city, int a2)` | 380 | yes | type 6 "Finds missing children": Check |
+| `0x00195B00` | `int mm_EvMissingChildren_Check(EventData *data, CityScene *city, MapPerson *person)` | 380 | yes | type 6 "Finds missing children": Check |
 | `0x00195C80` | `int mm_EvAdvertise_ClaimsMatch(CityScene *city, ActorRef *actorA, ActorRef *actorB)` | 284 | no | whether an active entry (first byte 0) of building A's claim section B names an id, or a section D group of ids (0x8000 and up), that building B's section C lists |
 | `0x00195DA0` | `int mm_EvAdvertise_Slot14(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 800 | no | type 9: Slot14 |
 | `0x001960C0` | `void mm_EvAdvertise_End(EventData *data, CityScene *city)` | 140 | no | type 9: End |

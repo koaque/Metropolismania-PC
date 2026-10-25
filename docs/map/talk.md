@@ -40,7 +40,7 @@ friendship changed. A is the person talked to.
 
 ## Functions
 
-322 functions (typed 96, verified 226). Blocks: 92 can reach a thread switch, 27 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+322 functions (ported 4, typed 14, verified 304). Blocks: 92 can reach a thread switch, 27 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -142,7 +142,7 @@ friendship changed. A is the person talked to.
 | `0x00178730` | `void mm_Talk_SetPose(TalkSession *talk, uint16_t family, uint8_t member, uint8_t pose)` | 124 | no | stores pose a3 for family a1 member a2 in the 32-entry table at +0x40 (u16 family, u8 member, u8 pose): updates a matching entry, else fills the first free one; pair of mm_Talk_LookupPose |
 | `0x001787B0` | `void mm_Talk_EndChoosing(TalkSession *talk)` | 24 | no | view (+0x10) choice (+0xB8) = -1, +0x3C = 1 |
 | `0x001787D0` | `void mm_Talk_SelectPerson(TalkSession *talk, uint32_t family, uint32_t member)` | 44 | no | forces the view's choice (+0xB8) to the slot of family a1 member a2 |
-| `0x00178800` | `int mm_Talk_ChooseInput(TalkSession *talk)` | 348 | yes | choosing a person: confirm (0x40) starts the conversation, cancel (0x10) closes |
+| `0x00178800` | `void mm_Talk_ChooseInput(TalkSession *talk)` | 348 | yes | choosing a person: confirm (0x40) starts the conversation, cancel (0x10) closes |
 | `0x00178960` | `void mm_Talk_Closed(TalkSession *talk)` | 240 | indirect | state 5: when the view is idle, pops the scene mode, deletes view and conversation, restores HUD |
 | `0x00178A50` | `void mm_Talk_Closing(TalkSession *talk)` | 120 | indirect | state 4: when the conversation is idle, closes the view or goes back to choosing |
 | `0x00178AD0` | `void mm_Talk_Active(TalkSession *talk)` | 104 | indirect | state 3: person animation while talking, closes when the conversation does |
@@ -179,7 +179,7 @@ friendship changed. A is the person talked to.
 | `0x0017B100` | `void mm_TalkConv_NextLine(TalkConv *conv)` | 456 | yes | next script line; the end code (-6007) applies the friendship gain |
 | `0x0017B2D0` | `void mm_TalkConv_Start(TalkConv *conv, int byFamily, int target, int buildingOrMember, int slot, int arg5)` | 380 | yes | loads the script for a person (a1 0) or family member (a1 1), shows the card, sets the message |
 | `0x0017B450` | `TalkConv *mm_TalkConv_dtor(TalkConv *conv, int16_t deleteFlag)` | 260 | yes | vtable 0x1BD860, deletes menu, name entry, card, money panel |
-| `0x0017B560` | `TalkConv *mm_TalkConv_ctor(TalkConv *conv, int a1)` | 152 | yes | message window plus a menu window and the person card |
+| `0x0017B560` | `TalkConv *mm_TalkConv_ctor(TalkConv *conv, CityScene *city)` | 152 | yes | message window plus a menu window and the person card |
 | `0x0017B600` | `int mm_WordsFn_CitySetFlag40(WordsCtx *ctx)` | 20 | no | #146 act: city flag 0x40 (pad focus returns after the talk) |
 | `0x0017B620` | `int mm_WordsFn_TalkEndChoosing(WordsCtx *ctx)` | 8 | no | #145 act: talk view choice cleared, session single target |
 | `0x0017B630` | `int mm_WordsFn_TalkSelectActor(WordsCtx *ctx)` | 40 | no | #144 act: talk view choice = actor arg of event +0xA4 |
@@ -205,12 +205,12 @@ friendship changed. A is the person talked to.
 | `0x0017BC90` | `void mm_WordsFn_BuyGoods(WordsCtx *ctx)` | 620 | yes | #124 act: pays for goods item arg, friendship by price, then laptop/bag/stamina/music/applicant by kind |
 | `0x0017BF00` | `int mm_WordsFn_AddWant(WordsCtx *ctx)` | 68 | no | #123 act: records person A's want (building A's claim), sound 0x15 |
 | `0x0017BF50` | `void mm_WordsFn_InviteFamily(WordsCtx *ctx)` | 92 | yes | #122 act: family A becomes an applicant when it can apply, sound 0x17 |
-| `0x0017BFB0` | `void mm_WordsFn_NewIntroduction(WordsCtx *ctx)` | 64 | yes | #121 act: person A picks a new family to introduce (+0x2C) |
+| `0x0017BFB0` | `int mm_WordsFn_NewIntroduction(WordsCtx *ctx)` | 64 | yes | #121 act: person A picks a new family to introduce (+0x2C) |
 | `0x0017BFF0` | `void mm_WordsFn_InviteIntroduced(WordsCtx *ctx)` | 108 | yes | #120 act: the family in the result word becomes an applicant, member A's flag cleared, sound 0x17 |
 | `0x0017C060` | `int mm_WordsFn_SetPose(WordsCtx *ctx)` | 24 | no | #119 act: talk session pose entry for member A = arg |
 | `0x0017C080` | `int mm_WordsFn_MarkFamilyKnown(WordsCtx *ctx)` | 52 | no | #118 act: (provisional) family bit via 0x13C950, sound 0x14 |
-| `0x0017C0C0` | `void mm_WordsFn_FriendshipDown(WordsCtx *ctx)` | 132 | yes | #117 act: friendship loss for member A (character type bonus + 3) |
-| `0x0017C150` | `void mm_WordsFn_FriendshipUp(WordsCtx *ctx)` | 132 | yes | #116 act: friendship gain for member A (character type bonus + 5) |
+| `0x0017C0C0` | `int mm_WordsFn_FriendshipDown(WordsCtx *ctx)` | 132 | yes | #117 act: friendship loss for member A (character type bonus + 3) |
+| `0x0017C150` | `int mm_WordsFn_FriendshipUp(WordsCtx *ctx)` | 132 | yes | #116 act: friendship gain for member A (character type bonus + 5) |
 | `0x0017C1E0` | `int mm_WordsFn_SelectMemberB(WordsCtx *ctx)` | 72 | no | #115 act: subject B = member +0x1A of family A |
 | `0x0017C230` | `int mm_WordsFn_SelectBuildingB(WordsCtx *ctx)` | 432 | no | #114 act: building B = A's (0), home (1), under the person (2), current (3), destination (4), result (5) |
 | `0x0017C3E0` | `int mm_WordsFn_SetCancelAllowed(WordsCtx *ctx)` | 12 | no | #113 act: context +0x130 = arg (cancel button allowed) |
@@ -358,7 +358,7 @@ friendship changed. A is the person talked to.
 | `0x001A29B0` | `int16_t mm_Words_Step(int32_t *script, char *buffer)` | 8 | yes | next message of the running script (to mm_Words_StepImpl) |
 | `0x001A29C0` | `int mm_Words_FriendshipChanged(void)` | 8 | no | global context +0x13C |
 | `0x001A29D0` | `int mm_Words_CancelAllowed(void)` | 8 | no | global context +0x130 |
-| `0x001A29E0` | `int mm_Words_LoadForWants(int a0, uint16_t a1, int a2, int a3)` | 596 | yes | script for a wants window line (event or default), reads its block |
+| `0x001A29E0` | `void mm_Words_LoadForWants(CityScene *city, int16_t id, int line, char *out)` | 596 | yes | script for a wants window line (event or default), reads its block |
 | `0x001A2C40` | `int mm_Words_LoadForFamily(int family, int member, int arg5, CityScene *city)` | 424 | yes | script for family a1 member a2 (talk by phone), reads its block |
 | `0x001A2DF0` | `int mm_Words_LoadForPerson(MapPerson *person, int arg5, CityScene *city)` | 604 | yes | script for person a1 (may start an event), reads its block |
 | `0x001A3050` | `uint32_t *mm_Words_ReadBlock(int a0)` | 336 | yes | reads a script block from the open WORDS file into the buffer |

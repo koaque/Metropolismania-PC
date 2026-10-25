@@ -18,7 +18,7 @@ Rendering below the scene level.
 
 ## Functions
 
-117 functions (typed 30, verified 87). Blocks: 30 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+117 functions (ported 1, typed 1, verified 115). Blocks: 30 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -28,8 +28,8 @@ Rendering below the scene level.
 | `0x00129120` | `int mm_LightSet_Init(LightSet *lights)` | 228 | no | (provisional, was mm_Unk129120_Init) base init; +0x190 = 0x110, +0x194 = 0xE0; 12 colour/direction slots and ambient set to 1.0 |
 | `0x00129210` | `float mm_A3D_GetMeshField0C(A3DObject *model, int mesh)` | 24 | no | word +0xC of mesh a1 in the model's mesh table (+0x50) |
 | `0x00129230` | `void mm_Instance_DrawSwaying(A3DObject *model, int anim, float time)` | 816 | no | (provisional, was mm_A3D_SineDeform) adds instances for mesh a2 of model a1 with sine-wave motion at time a0 (callers check the instance budget first) |
-| `0x00129570` | `void mm_A3D_Relocate(int32_t *data, int base)` | 988 | yes | turns the loaded model's offsets into pointers, patches the addresses in its DMA chains (mm_DmaChain_*) and uploads its textures (mm_Dma_KickVif1Now) |
-| `0x00129950` | `int mm_A3DObject_ChangeLuminosity(A3DObject *model, uint32_t *colour, int a2)` | 96 | yes | CA3DObject::ChangeLuminusity (name from its error string): sets node a2's colour (node +0x60) to the vec4 at a1; prints an error for a bad node index |
+| `0x00129570` | `void mm_A3D_Relocate(A3DObject *model, int indexed)` | 988 | yes | turns the loaded model's offsets into pointers, patches the addresses in its DMA chains (mm_DmaChain_*) and uploads its textures (mm_Dma_KickVif1Now) |
+| `0x00129950` | `int64_t mm_A3DObject_ChangeLuminosity(A3DObject *model, uint32_t *colour, int a2)` | 96 | yes | CA3DObject::ChangeLuminusity (name from its error string): sets node a2's colour (node +0x60) to the vec4 at a1; prints an error for a bad node index |
 | `0x001299B0` | `void mm_A3DObject_DrawNode(A3DObject *model, int node)` | 104 | no | queues node a1's packet (node +0x50) and its mesh packet (mesh +0x10); nodes are 0xC0 bytes at model +8 |
 | `0x00129A20` | `void mm_A3DObject_Draw(A3DObject *model)` | 228 | no | updates every node's world matrix (mm_A3DObject_UpdateNodeMatrix) and queues all nodes |
 | `0x00129B10` | `void mm_A3DObject_UpdateMatrices(A3DObject *model)` | 248 | no | world matrix of each node: root nodes = object matrix (this+0x10) x local, children via mm_A3DObject_UpdateNodeMatrix |
