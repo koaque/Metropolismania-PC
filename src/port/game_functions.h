@@ -3564,11 +3564,13 @@ int StageObj_ctor(int stage);
 void CityCursor_SelectTile(GuestPtr<CityCursor> cursor, int tile, GuestPtr<CityScene> city);
 void CityCursor_UpdateInfo(GuestPtr<CityCursor> cursor, GuestPtr<CityScene> city);
 void CityCursor_Move(GuestPtr<CityCursor> cursor, GuestPtr<CityScene> city, int a2);
+void CityCursor_Update(GuestPtr<CityCursor> cursor, GuestPtr<CityScene> city, int a2);
 void CityCursor_SetTarget(GuestPtr<CityCursor> cursor, uint16_t kind, int id, GuestPtr<Vec4> position);
 void Math_ProjectPoint(int unused_a0, GuestPtr<Vec4> out, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix);
 void CityCursor_LayoutInfo(GuestPtr<CityCursor> cursor, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix);
 void CityCursor_Draw(GuestPtr<CityCursor> cursor);
 GuestPtr<CityCursor> CityCursor_dtor(GuestPtr<CityCursor> cursor, int16_t deleteFlag);
+GuestPtr<CityCursor> CityCursor_ctor(GuestPtr<CityCursor> cursor);
 void TileLists_LoadState(GuestPtr<TileLists> lists, GuestPtr<McManager> mc);
 void TileLists_SaveState(GuestPtr<TileLists> lists, GuestPtr<McManager> mc);
 int TileLists_Remove(GuestPtr<TileLists> lists, uint32_t item, int list);
@@ -3765,6 +3767,7 @@ void LayerA_SetSource(GuestPtr<LayerA> layer, int source);
 GuestPtr<LayerA> LayerA_DeletingDtor(GuestPtr<LayerA> layer, int16_t deleteFlag);
 GuestPtr<LayerA> LayerA_ctor(GuestPtr<LayerA> layer);
 GuestPtr<uint32_t> StatusPanel_BuildPacket(GuestPtr<StatusPanel> panel, GuestPtr<uint32_t> packet);
+void StatusPanel_Update(GuestPtr<StatusPanel> panel, GuestPtr<CityScene> city);
 void StatusPanel_Draw(GuestPtr<StatusPanel> panel);
 GuestPtr<StatusPanel> StatusPanel_dtor(GuestPtr<StatusPanel> panel, int16_t deleteFlag);
 GuestPtr<StatusPanel> StatusPanel_ctor(GuestPtr<StatusPanel> panel);
@@ -3852,12 +3855,15 @@ GuestPtr<ListMenu> ListMenu_ctor(GuestPtr<ListMenu> menu, int a1, int a2, int a3
 void SceneB_ShowCityName(GuestPtr<SceneB> scene);
 void SceneB_ShowStageTitle(GuestPtr<SceneB> scene);
 void SceneB_ShowApprovalRate(GuestPtr<SceneB> scene);
+void SceneB_MissionBriefing(GuestPtr<SceneB> scene);
 int SceneB_BuildBriefingText(GuestPtr<SceneB> scene);
 void SceneB_ShowTelop(GuestPtr<SceneB> scene);
+int SceneB_Update(GuestPtr<SceneB> scene);
 GuestPtr<SceneB> SceneB_dtor(GuestPtr<SceneB> scene, int16_t deleteFlag);
 GuestPtr<SceneB> SceneB_ctor(GuestPtr<SceneB> scene, int loadStage);
 void WantsWin_FormatLine(GuestPtr<WantsWin> wants, GuestPtr<CityScene> city, int index, GuestPtr<char> out);
 void WantsWin_Draw(GuestPtr<WantsWin> wants);
+void WantsWin_Update(GuestPtr<WantsWin> wants, GuestPtr<CityScene> city);
 GuestPtr<WantsWin> WantsWin_dtor(GuestPtr<WantsWin> wants, int16_t deleteFlag);
 GuestPtr<WantsWin> WantsWin_ctor(GuestPtr<WantsWin> wants);
 void PauseMenu_Draw(GuestPtr<PauseMenu> pause);
@@ -3885,6 +3891,7 @@ void Applicants_BuildInfo(GuestPtr<Applicants> applicants);
 void Applicants_ScrollTo(GuestPtr<Applicants> applicants, int index);
 void Applicants_PlaceAt(GuestPtr<Applicants> applicants, GuestPtr<ps2f> point);
 void Applicants_DrawDetails(GuestPtr<Applicants> applicants);
+void Applicants_Draw(GuestPtr<Applicants> applicants);
 GuestPtr<Applicants> ApplicantsBase_dtor(GuestPtr<Applicants> applicants, int16_t deleteFlag);
 GuestPtr<Applicants> ApplicantsBase_ctor(GuestPtr<Applicants> applicants);
 int Applicants_AnyWaiting(GuestPtr<Applicants> applicants);
@@ -3914,6 +3921,7 @@ int Player_GetMode(GuestPtr<Player> player);
 void Player_Draw(GuestPtr<Player> player, GuestPtr<CityScene> city);
 void Player_Move(GuestPtr<Player> player, GuestPtr<Vec4> move);
 void Player_Turn(GuestPtr<Player> player, GuestPtr<ps2f> move);
+void Player_Update(GuestPtr<Player> player, GuestPtr<CityScene> city);
 GuestPtr<Player> Player_DeletingDtor(GuestPtr<Player> player, int16_t deleteFlag);
 GuestPtr<Player> Player_ctor(GuestPtr<Player> player);
 void CityAssets_LoadMyHome();
@@ -4154,6 +4162,7 @@ int SoundTest_Update(int a0);
 void SoundTest_BgmText(int a0);
 void SoundTest_SeText(int a0);
 int Title_DrawCommon(GuestPtr<SceneA> scene, int layers);
+int Title_LoadMenu(GuestPtr<SceneA> scene);
 int Title_PressStart(GuestPtr<SceneA> scene);
 int SceneA_StartGame(GuestPtr<SceneA> scene, int newGame);
 void Title_NewGameIntro(GuestPtr<SceneA> scene);
@@ -4166,6 +4175,7 @@ int Title_Intro(GuestPtr<SceneA> scene);
 int Title_LogoLetters(GuestPtr<SceneA> scene);
 int SceneA_MemoryCardCheck(GuestPtr<SceneA> scene, int noPolling);
 int SceneA_LogoStep(GuestPtr<SceneA> scene, char logo);
+int SceneA_Load(GuestPtr<SceneA> scene, int a1);
 int SceneA_Update(GuestPtr<SceneA> scene);
 GuestPtr<SceneA> SceneA_dtor(GuestPtr<SceneA> scene, int16_t deleteFlag);
 GuestPtr<SceneA> SceneA_ctor(GuestPtr<SceneA> scene, int a1);
@@ -4175,6 +4185,7 @@ void TownPages_BuildIndex(GuestPtr<TownPages> pages);
 void TownPages_FillContents(GuestPtr<TownPages> pages);
 void TownPages_FillPage(GuestPtr<TownPages> pages);
 void TownPages_Draw(GuestPtr<TownPages> pages);
+void TownPages_Update(GuestPtr<TownPages> pages, GuestPtr<CityScene> city);
 GuestPtr<TownPages> TownPages_dtor(GuestPtr<TownPages> pages, int16_t deleteFlag);
 GuestPtr<TownPages> TownPages_Init(GuestPtr<TownPages> pages);
 void Widget_Closed(GuestPtr<Widget> widget);
@@ -4469,6 +4480,9 @@ int WordsFn_StatusMid2(GuestPtr<WordsCtx> ctx);
 int WordsFn_StatusLow2(GuestPtr<WordsCtx> ctx);
 int WordsFn_FriendLevelHigh(GuestPtr<WordsCtx> ctx);
 int WordsFn_NameSlotSet(GuestPtr<WordsCtx> ctx);
+void Words_CallCond(GuestPtr<Words> words, int index);
+int Words_CallText(GuestPtr<Words> words, int index);
+int Words_CallAct(GuestPtr<Words> words, int index);
 void Words_SetFlag134(GuestPtr<Words> words);
 void Words_SelectBagItem(GuestPtr<Words> words, int index);
 void Words_SetWantIndex(GuestPtr<Words> words, uint16_t index);
@@ -4484,11 +4498,14 @@ GuestPtr<Words> Words_dtor(GuestPtr<Words> words, int16_t deleteFlag);
 GuestPtr<Words> Words_ctor(GuestPtr<Words> words);
 void CityScene_AddApplicantFamily(GuestPtr<CityScene> city, uint32_t family, int select);
 int CityScene_SaveGame(GuestPtr<CityScene> city, GuestPtr<McManager> mc);
+int CityScene_LoadGame(GuestPtr<CityScene> city);
 int CityScene_SaveStep(GuestPtr<CityScene> city, GuestPtr<McManager> mc);
 int CityScene_TalkEndChoosing(GuestPtr<CityScene> city);
 int CityScene_TalkSelectPerson(GuestPtr<CityScene> city, int family, int member);
 int CityScene_StartTalk(GuestPtr<CityScene> city, int byFamily, int target, int member, int arg5);
+uint32_t CityScene_Update(GuestPtr<CityScene> city);
 GuestPtr<CityScene> CityScene_dtor(GuestPtr<CityScene> city, int16_t deleteFlag);
+GuestPtr<CityScene> CityScene_ctor(GuestPtr<CityScene> city);
 int Collide_RayTriangleA(GuestPtr<Vec4> origin, GuestPtr<Vec4> a, GuestPtr<Vec4> b, GuestPtr<Vec4> c, GuestPtr<Vec4> hit, GuestPtr<ps2f> distance, ps2f range);
 int Collide_PointInTriangle(GuestPtr<Vec4> p, GuestPtr<Vec4> a, GuestPtr<Vec4> b, GuestPtr<Vec4> c);
 int Collide_RayTriangleB(GuestPtr<Vec4> start, GuestPtr<Vec4> end, GuestPtr<Vec4> a, GuestPtr<Vec4> b, GuestPtr<Vec4> c, GuestPtr<Vec4> hit);
@@ -4851,24 +4868,7 @@ void StaticInit_Words();
 inline void GameUpdate(int game) { port::callGuest<void>(addr::GameUpdate, game); }
 inline void Main() { port::callGuest<void>(addr::Main); }
 inline void Person_Update(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, uint32_t timeFlags) { port::callGuest<void>(addr::Person_Update, cls, city, person, timeFlags); }
-inline void CityCursor_Update(GuestPtr<CityCursor> cursor, GuestPtr<CityScene> city, int a2) { port::callGuest<void>(addr::CityCursor_Update, cursor, city, a2); }
-inline GuestPtr<CityCursor> CityCursor_ctor(GuestPtr<CityCursor> cursor) { return port::callGuest<GuestPtr<CityCursor>>(addr::CityCursor_ctor, cursor); }
-inline void StatusPanel_Update(GuestPtr<StatusPanel> panel, GuestPtr<CityScene> city) { port::callGuest<void>(addr::StatusPanel_Update, panel, city); }
-inline void SceneB_MissionBriefing(GuestPtr<SceneB> scene) { port::callGuest<void>(addr::SceneB_MissionBriefing, scene); }
-inline int SceneB_Update(GuestPtr<SceneB> scene) { return port::callGuest<int>(addr::SceneB_Update, scene); }
-inline void WantsWin_Update(GuestPtr<WantsWin> wants, GuestPtr<CityScene> city) { port::callGuest<void>(addr::WantsWin_Update, wants, city); }
-inline int Applicants_Draw(GuestPtr<Applicants> applicants) { return port::callGuest<int>(addr::Applicants_Draw, applicants); }
-inline void Player_Update(GuestPtr<Player> player, GuestPtr<CityScene> city) { port::callGuest<void>(addr::Player_Update, player, city); }
-inline int Title_LoadMenu(GuestPtr<SceneA> scene) { return port::callGuest<int>(addr::Title_LoadMenu, scene); }
-inline int SceneA_Load(GuestPtr<SceneA> scene, int a1) { return port::callGuest<int>(addr::SceneA_Load, scene, a1); }
-inline void TownPages_Update(GuestPtr<TownPages> pages, GuestPtr<CityScene> city) { port::callGuest<void>(addr::TownPages_Update, pages, city); }
 inline void TalkView_DrawPeople(GuestPtr<TalkView> view) { port::callGuest<void>(addr::TalkView_DrawPeople, view); }
-inline int Words_CallCond(GuestPtr<Words> words) { return port::callGuest<int>(addr::Words_CallCond, words); }
-inline int Words_CallText(GuestPtr<Words> words) { return port::callGuest<int>(addr::Words_CallText, words); }
-inline int Words_CallAct(GuestPtr<Words> words) { return port::callGuest<int>(addr::Words_CallAct, words); }
-inline int CityScene_LoadGame(GuestPtr<CityScene> city) { return port::callGuest<int>(addr::CityScene_LoadGame, city); }
-inline uint32_t CityScene_Update(GuestPtr<CityScene> city) { return port::callGuest<uint32_t>(addr::CityScene_Update, city); }
-inline GuestPtr<CityScene> CityScene_ctor(GuestPtr<CityScene> city) { return port::callGuest<GuestPtr<CityScene>>(addr::CityScene_ctor, city); }
 inline void MainLoop(int app) { port::callGuest<void>(addr::MainLoop, app); }
 inline int App_ctor(int app) { return port::callGuest<int>(addr::App_ctor, app); }
 inline void EvNoodles_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city) { port::callGuest<void>(addr::EvNoodles_Update, data, city); }

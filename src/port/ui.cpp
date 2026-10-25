@@ -5933,4 +5933,1491 @@ namespace mm
     }
 
     PORT_FN(PauseMenu_Update);
+
+    // The title's load game screen (mode 8) for one frame: the title sprite and the menu model are drawn, then by the step at +0xC4:
+    // 0 empties the slot list (+0xB0), puts its cursor at (0x62, 0x2C) and goes on to 1. While either memory card is still being
+    // checked (status 4) the "checking" text shows, the list is emptied and the answer is -1. Otherwise the saves on the cards are
+    // listed (one line each, from McManager_FormatSlotText; the newest save's line is scrolled to once, in step 1, which goes on to 2),
+    // lines left from a longer list are emptied and the count is kept at +0xDC. With saves the "choose" text shows and the list takes
+    // input: Triangle answers 0 (back), Cross copies the chosen save's 0x40-byte header to 0x1C5640 and its description (McManager_
+    // FormatSaveInfo) to 0x1C5680 and answers 1. With no save the "no data" text shows for 300 frames (+0xD8, which the cursor
+    // restarts) and the answer is 0. -1 otherwise.
+    int Title_LoadMenu(GuestPtr<SceneA> scene)
+    {
+        port::GuestFrame<0x100> frame;
+        const uint32_t sp = frame.ptr().address;
+        const uint32_t cursorAt = sp + 0xF8u, newestAt = sp + 0xFCu, textAt = sp + 0x60u;
+        const uint32_t s = scene.address;
+        const auto menu = [s]() { return GuestPtr<ListMenu>{port::load<uint32_t>(s + 0xB0u)}; };
+        const auto mc = [s]() { return GuestPtr<McManager>{port::load<uint32_t>(s + 0xB4u)}; };
+        const auto message = [s]() { return GuestPtr<TextBox>{port::load<uint32_t>(s + 0xBCu)}; };
+        TexSprite_Draw(GuestPtr<TexSprite>{port::load<uint32_t>(s + 0xCu)});
+        A3DObject_Draw(GuestPtr<A3DObject>{port::load<uint32_t>(s + 0x24u)});
+        const int32_t step = port::load<int32_t>(s + 0xC4u);
+        if (step == 0)
+        {
+            port::store<int32_t>(s + 0xDCu, 0);
+            ListMenu_ClearItem(menu(), -1);
+            ListMenu_SetCursor(menu(), 0x62, 0x2C, 0xFF0000);
+            port::store<int32_t>(s + 0xC4u, port::load<int32_t>(s + 0xC4u) + 1);
+        }
+        else if (step != 1 && step != 2)
+            return -1;
+        port::store<int32_t>(cursorAt, 0);
+        int count = 0, newest = 0;
+        const int first = McManager_GetCardStatus(mc(), 0);
+        const int second = McManager_GetCardStatus(mc(), 1);
+        if (first == 4 || second == 4)
+        {
+            TextBox_SetPos(message(), 0x7600, 0x7F40, -0x100000);
+            TextBox_SetCharSize(message(), 0, 0xD0, 0, 0xE0);
+            TextBox_SetText(message(), GuestPtr<char>{0x001B8930u}, 0);
+            TextBox_Draw(message());
+            ListMenu_ClearItem(menu(), -1);
+            return -1;
+        }
+        while (McManager_FormatSlotText(mc(), GuestPtr<int32_t>{cursorAt}, GuestPtr<char>{textAt}, GuestPtr<uint32_t>{newestAt}) != 0)
+        {
+            if (port::load<int32_t>(newestAt) != 0)
+                newest = count;
+            ListMenu_SetItemText(menu(), GuestPtr<char>{textAt}, count);
+            ++count;
+        }
+        if (port::load<int32_t>(s + 0xC4u) == 1)
+        {
+            ListMenu_ScrollTo(menu(), newest);
+            port::store<int32_t>(s + 0xC4u, port::load<int32_t>(s + 0xC4u) + 1);
+        }
+        const int32_t listed = port::load<int32_t>(s + 0xDCu);
+        if (listed != 0)
+            for (int stale = listed - 1; !(stale < count); --stale)
+                ListMenu_ClearItem(menu(), stale);
+        port::store<int32_t>(s + 0xDCu, count);
+        if (count == 0)
+        {
+            if (port::load<int32_t>(s + 0xD8u) == 0)
+                ListMenu_ClearItem(menu(), -1);
+            TextBox_SetPos(message(), 0x7560, 0x7F40, -0x100000);
+            TextBox_SetCharSize(message(), 0, 0xD0, 0, 0xE0);
+            TextBox_SetText(message(), GuestPtr<char>{0x001B8980u}, 0);
+            TextBox_Draw(message());
+            const int32_t frames = port::load<int32_t>(s + 0xD8u) + 1;
+            port::store<int32_t>(s + 0xD8u, frames);
+            return frames < 0x12D ? -1 : 0;
+        }
+        TextBox_SetText(message(), GuestPtr<char>{0x001B8330u}, 0);
+        ListMenu_Draw(menu());
+        port::store<int32_t>(s + 0xD8u, 0);
+        if (ListMenu_HandleInput(menu(), GuestPtr<int32_t>{cursorAt}) == 0)
+            return -1;
+        const int32_t choice = port::load<int32_t>(cursorAt);
+        if (choice == -1)
+            return 0;
+        const uint32_t header = static_cast<uint32_t>(McManager_FindSlotA(mc(), choice, GuestPtr<int32_t>{0x001BDA78u}));
+        if (header == 0u)
+            return -1;
+        for (uint32_t at = 0; at < 0x40u; at += 4u)
+            port::store<uint32_t>(0x001C5640u + at, port::load<uint32_t>(header + at));
+        McManager_FormatSaveInfo(mc(), choice, GuestPtr<char>{0x001C5680u});
+        return 1;
+    }
+
+    PORT_FN(Title_LoadMenu);
+
+    // The stage briefing scene for one frame (nothing once +0x29 is set). The step at +0x34: 0 makes the message window (+0x58) and keeps
+    // the shared building model (0x1F3B2C) at +0x54 and the model at 0x1F3C68 at +0xFC, with the fade (+0x38) at 128; 1 fades in (4 a
+    // frame); 2 sets the window's first message (sound 0x3C); 3 and 8 wait for the window's slots 0x28 and 0x24 to say they are done;
+    // 4 builds the next briefing text (SceneB_BuildBriefingText): with text it goes into the window (MsgWin_NextLine) and on to 5,
+    // without the scene goes to 7; 5 waits out the typing (window state 6); 6 waits for Cross alone (sound 1, back to 4); 7 calls slot
+    // 0x10 once; 9 fades out (4 a frame) and, at 128, deletes the window and starts over with the stage count (+0x28) one up, drawing
+    // nothing more this frame. Every other frame draws: the window (slot 0x14), the light set and camera, the building model with its
+    // matrix moved to (0, -0.16, -3.84) and node 0x12, and the model at +0xFC put in place (translation row 0, 0.4, -3.65, 1) and
+    // played (+0x40 grows by 2 a frame and wraps at the animation's length, where the next animation, if any (+0x48), takes over),
+    // then the window's slot 0x20 and the fade.
+    void SceneB_MissionBriefing(GuestPtr<SceneB> scene)
+    {
+        port::GuestFrame<0x90> frame;
+        const uint32_t sp = frame.ptr().address;
+        const uint32_t s = scene.address;
+        if (port::load<uint8_t>(s + 0x29u) != 0)
+            return;
+        const auto window = [s]() { return port::load<uint32_t>(s + 0x58u); };
+        const auto slot = [](uint32_t object, uint32_t offset) { return port::load<uint32_t>(port::load<uint32_t>(object + 8u) + offset); };
+        const auto nextStep = [s]() { port::store<int32_t>(s + 0x34u, port::load<int32_t>(s + 0x34u) + 1); };
+        const uint32_t step = port::load<uint32_t>(s + 0x34u);
+        bool draw = true;
+        if (step < 10u)
+        {
+            switch (step)
+            {
+            case 0:
+            {
+                port::store<uint32_t>(s + 0x54u, port::load<uint32_t>(0x001F3B2Cu));
+                uint32_t win = sdk::operator_new(0x2CCu);
+                if (win != 0u)
+                    win = MsgWin_ctor(GuestPtr<MsgWin>{win}).address;
+                port::store<uint32_t>(s + 0x58u, win);
+                port::store<uint32_t>(s + 0xFCu, port::load<uint32_t>(0x001F3C68u));
+                port::store<uint32_t>(s + 0x40u, 0u);
+                port::store<int32_t>(s + 0x44u, 7);
+                port::store<int32_t>(s + 0x48u, -1);
+                port::store<int32_t>(s + 0x38u, 0x80);
+                port::store<int32_t>(s + 0x4Cu, 0);
+                port::store<int32_t>(s + 0x50u, 0);
+                nextStep();
+                break;
+            }
+            case 1:
+                port::store<int32_t>(s + 0x38u, port::load<int32_t>(s + 0x38u) - 4);
+                if (!(port::load<int32_t>(s + 0x38u) > 0))
+                    nextStep();
+                break;
+            case 2:
+                MsgWin_SetMessage(GuestPtr<MsgWin>{window()}, 1, 0x3C);
+                nextStep();
+                break;
+            case 3:
+                if (port::callGuest<int64_t>(slot(window(), 0x28u), window()) != 0)
+                    nextStep();
+                break;
+            case 4:
+                if (SceneB_BuildBriefingText(scene) != 0)
+                {
+                    MsgWin_NextLine(GuestPtr<MsgWin>{window()}, GuestPtr<char>{s + 0x5Cu});
+                    nextStep();
+                }
+                else
+                    port::store<int32_t>(s + 0x34u, 7);
+                break;
+            case 5:
+                if (port::load<int32_t>(window()) != 6)
+                    port::store<int32_t>(s + 0x34u, static_cast<int32_t>(step) + 1);
+                break;
+            case 6:
+                if (Pad_Pressed(0) == 0x40u)
+                {
+                    Sound_PlaySe(1, 0, 0x3C, 0.0f, 0.0f);
+                    port::store<int32_t>(s + 0x34u, port::load<int32_t>(s + 0x34u) - 2);
+                }
+                break;
+            case 7:
+                port::callGuest<int64_t>(slot(window(), 0x10u), window());
+                nextStep();
+                break;
+            case 8:
+                if (port::callGuest<int64_t>(slot(window(), 0x24u), window()) != 0)
+                    nextStep();
+                break;
+            case 9:
+            {
+                port::store<int32_t>(s + 0x38u, port::load<int32_t>(s + 0x38u) + 4);
+                if (port::load<int32_t>(s + 0x38u) < 0x80)
+                    break;
+                const uint32_t win = window();
+                if (win != 0u)
+                    port::callGuest<void>(slot(win, 8u), win, 1);
+                port::store<uint32_t>(s + 0x58u, 0u);
+                port::store<int32_t>(s + 0x34u, 0);
+                port::store<uint8_t>(s + 0x28u, static_cast<uint8_t>(port::load<uint8_t>(s + 0x28u) + 1));
+                draw = false;
+                break;
+            }
+            }
+        }
+        if (!draw)
+            return;
+        port::callGuest<int64_t>(slot(window(), 0x14u), window());
+        DmaList_QueueGsDefaults();
+        Packet2_Draw(GuestPtr<uint32_t>{port::load<uint32_t>(s + 0x14u)}, 0);
+        Packet_Draw(GuestPtr<uint32_t>{port::load<uint32_t>(s + 0x10u)});
+        DmaList_QueueClearZ();
+        const GuestPtr<A3DObject> building{port::load<uint32_t>(s + 0x54u)};
+        const uint32_t matrix = port::load<uint32_t>(port::load<uint32_t>(building.address) + 8u) + 0xDF0u;
+        Mat4_Copy(GuestPtr<Vec4>{matrix}, GuestPtr<Vec4>{0x001B2550u});
+        port::store<uint32_t>(matrix + 0x30u, 0u);
+        port::store<uint32_t>(matrix + 0x34u, 0xBE23D70Au);
+        port::store<uint32_t>(matrix + 0x38u, 0xC075C28Fu);
+        A3DObject_ChangeLuminosity(building, GuestPtr<uint32_t>{0x001B26C0u}, 0);
+        A3DObject_DrawNode(building, 0x12);
+        for (uint32_t at = 0; at < 0x10u; at += 4u)
+            port::store<uint32_t>(sp + 0x40u + at, port::load<uint32_t>(0x001B26C0u + at));
+        const GuestPtr<A3DObject> actor{port::load<uint32_t>(s + 0xFCu)};
+        const ps2f length = A3D_GetMeshField0C(actor, port::load<int32_t>(s + 0x44u));
+        Mat4_Copy(GuestPtr<Vec4>{sp + 0x50u}, GuestPtr<Vec4>{0x001B2550u});
+        port::store<uint32_t>(sp + 0x80u, 0u);
+        port::store<uint32_t>(sp + 0x84u, 0x3ECCCCCDu);
+        port::store<uint32_t>(sp + 0x88u, 0xC069999Au);
+        port::store<uint32_t>(sp + 0x8Cu, 0x3F800000u);
+        for (uint32_t row = 0; row < 4u; ++row)
+            for (uint32_t at = 0; at < 0x10u; at += 4u)
+                port::store<uint32_t>(actor.address + 0x10u + 0x10u * row + at, port::load<uint32_t>(sp + (row == 3u ? 0x80u : 0x50u + 0x10u * row) + at));
+        Instance_DrawSwayingIfRoom(actor, port::load<int32_t>(s + 0x44u), ps2f(port::load<float>(s + 0x40u)));
+        A3DObject_UpdateMatrices(actor);
+        Instance_DrawModelEx(actor, GuestPtr<Vec4>{sp + 0x40u}, 0, 0, 0, 0, 0, 4);
+        const ps2f time = ps2f(port::load<float>(s + 0x40u)) + ps2f(2.0f);
+        port::store<float>(s + 0x40u, static_cast<float>(time));
+        if (!(time <= length))
+        {
+            port::store<uint32_t>(s + 0x40u, 0u);
+            const int32_t following = port::load<int32_t>(s + 0x48u);
+            if (!(following < 0))
+            {
+                port::store<int32_t>(s + 0x44u, following);
+                port::store<int32_t>(s + 0x48u, -1);
+            }
+        }
+        port::callGuest<int64_t>(slot(window(), 0x20u), window(), 2);
+        DmaList_QueueClearZ();
+        DmaList_QueueFade(port::load<int32_t>(s + 0x38u), 0);
+    }
+
+    PORT_FN(SceneB_MissionBriefing);
+
+    // The stage briefing scene for one frame. What happens is looked up by the stage (7 at most) and the phase (+0x28, a byte) in the
+    // table at 0x1B07C0 (eight bytes a stage): 0 answers 1 (the scene is over) unless +0x29 is set; 1 starts the sound change (+0x29 = 2,
+    // +0x2C = 0) and the next phase; 2 plays the stage's mission movie and goes on when it has played; 3 the telop, 4 the briefing,
+    // 10 the approval rate; 5 starts the sound change the other way (+0x29 = 1); 6 and 7 go to the next phase; 8 stops the sounds and goes
+    // on; 9 plays the movie and, when it has played, puts up the full-screen picture (+0x20, a sprite of 0x1B7350); 11 and 12 show the
+    // stage title or the city name (or, with +0x29 clear, go on and delete the caption box at +0x18); other codes do nothing. Then the
+    // sound change runs: with +0x29 at 2 the sequences are stopped (+0x2C 0 to 1), then the scene waits for the sounds to stop (back to
+    // 0); with +0x29 at 1 it waits for the disc, resets the voices and loads the playland banks (+0x2C 0 to 1), then waits for the sounds
+    // (back to 0). The result is 0 while the scene goes on.
+    int SceneB_Update(GuestPtr<SceneB> scene)
+    {
+        const uint32_t s = scene.address;
+        DmaList_QueueClearScreen();
+        const int32_t stage = port::load<int32_t>(s + 0x24u);
+        const uint32_t row = static_cast<uint32_t>(stage < 8 ? stage : 7);
+        const uint32_t action = port::load<uint8_t>(0x001B07C0u + (row << 3) + port::load<uint8_t>(s + 0x28u));
+        const auto nextPhase = [s]() { port::store<uint8_t>(s + 0x28u, static_cast<uint8_t>(port::load<uint8_t>(s + 0x28u) + 1)); };
+        // The caption box at +0x18 is deleted once the scene moves on.
+        const auto goOn = [&]() {
+            port::store<int32_t>(s + 0x34u, 0);
+            nextPhase();
+            const uint32_t text = port::load<uint32_t>(s + 0x18u);
+            if (text != 0u)
+            {
+                TextBox_dtor(GuestPtr<TextBox>{text}, 1);
+                port::store<uint32_t>(s + 0x18u, 0u);
+            }
+        };
+        switch (action)
+        {
+        case 0:
+            if (port::load<uint8_t>(s + 0x29u) == 0)
+                return 1;
+            break;
+        case 1:
+        case 5:
+            port::store<uint8_t>(s + 0x29u, action == 1 ? 2 : 1);
+            port::store<int32_t>(s + 0x2Cu, 0);
+            nextPhase();
+            break;
+        case 2:
+            if (port::load<uint8_t>(s + 0x29u) == 0 && PlayMissionMovie(static_cast<char>(stage & 0xFF)) != 0)
+            {
+                DmaList_Flip();
+                port::store<int32_t>(s + 0x34u, 0);
+                nextPhase();
+            }
+            break;
+        case 3:
+            SceneB_ShowTelop(scene);
+            break;
+        case 4:
+            SceneB_MissionBriefing(scene);
+            break;
+        case 6:
+        case 7:
+            nextPhase();
+            break;
+        case 8:
+            Sound_StopAllPlaying();
+            port::store<int32_t>(s + 0x34u, 0);
+            nextPhase();
+            break;
+        case 9:
+        {
+            bool played = false;
+            if (port::load<uint8_t>(s + 0x29u) == 0 && PlayMissionMovie(static_cast<char>(stage & 0xFF)) != 0)
+            {
+                DmaList_Flip();
+                port::store<int32_t>(s + 0x34u, 0);
+                nextPhase();
+                played = true;
+            }
+            if (played && port::load<uint32_t>(s + 0x20u) == 0u)
+            {
+                uint32_t sprite = sdk::operator_new(0x38u);
+                if (sprite != 0u)
+                    sprite = static_cast<uint32_t>(TexSprite_Load(GuestPtr<TexSprite>{sprite}, 0x001B7350, 0));
+                port::store<uint32_t>(s + 0x20u, sprite);
+                TexSprite_SetPosScale(GuestPtr<TexSprite>{port::load<uint32_t>(s + 0x20u)}, 0, 0, 0x1000, ps2f(1.0f), ps2f(1.0f));
+                TexSprite_Draw(GuestPtr<TexSprite>{port::load<uint32_t>(s + 0x20u)});
+            }
+            break;
+        }
+        case 10:
+            SceneB_ShowApprovalRate(scene);
+            break;
+        case 11:
+            if (port::load<uint8_t>(s + 0x29u) == 0)
+                goOn();
+            else
+                SceneB_ShowStageTitle(scene);
+            break;
+        case 12:
+            if (port::load<uint8_t>(s + 0x29u) == 0)
+                goOn();
+            else
+                SceneB_ShowCityName(scene);
+            break;
+        default:
+            break;
+        }
+        if (port::load<uint8_t>(s + 0x29u) == 2)
+        {
+            const int32_t phase = port::load<int32_t>(s + 0x2Cu);
+            if (phase == 1)
+            {
+                if (Sound_IsBusy() == 0)
+                {
+                    port::store<int32_t>(s + 0x2Cu, 0);
+                    port::store<uint8_t>(s + 0x29u, 0);
+                }
+            }
+            else if (phase == 0)
+            {
+                Sound_StopAllSequences();
+                SoundCmd_02_Zero();
+                port::store<int32_t>(s + 0x2Cu, port::load<int32_t>(s + 0x2Cu) + 1);
+            }
+        }
+        if (port::load<uint8_t>(s + 0x29u) != 1)
+            return 0;
+        const int32_t phase = port::load<int32_t>(s + 0x2Cu);
+        if (phase == 1)
+        {
+            if (Sound_IsBusy() == 0)
+            {
+                port::store<uint8_t>(s + 0x29u, 0);
+                port::store<int32_t>(s + 0x2Cu, 0);
+            }
+        }
+        else if (phase == 0 && sdk::sceCdDiskReady(0) == 2)
+        {
+            Sound_ResetVoices(0);
+            Sound_LoadPlaylandBanks();
+            port::store<int32_t>(s + 0x2Cu, port::load<int32_t>(s + 0x2Cu) + 1);
+        }
+        return 0;
+    }
+
+    PORT_FN(SceneB_Update);
+
+    // The status panel for one frame. The clock hand matrices of the panel model (+0x90, at 0xD0 and 0x190 in its node table) turn
+    // with the hour (pi per 6, kept between -6 and 5) and the seconds into the hour (pi per 1800, kept between -1800 and 1799), the
+    // first one lowered by 0.01. The digit glyph quads in the panel packet (+0x9C) are set from the glyph tables at 0x1AF610 (two floats
+    // a digit, 10 blank): the month (the month count +0x88 mod 12, plus 1), the year (the count over 12, plus 1, with the frame words
+    // beside it moved 0xC0 outward or inward by the digits), the four digit population (+0x74 of the map), and the signed three digit
+    // balance (+0x8C: the colour word by its size, 50 and 100 the limits, and a minus sign when negative). The alert (+0xB4) is the city
+    // flag 4; the detail view (+0xB0) is on in the city mode 2. With the detail view on, the timer (+0xBC, 960 long) shows the stage
+    // target text for 480 frames and then the goal's remainder and the mission progress text, and the two money lines go into the other
+    // text boxes. The marks shown (+0xB8) are the count of the object at +0x64 times 20 over two million.
+    void StatusPanel_Update(GuestPtr<StatusPanel> panel, GuestPtr<CityScene> city)
+    {
+        port::GuestFrame<0x190> frame;
+        const uint32_t sp = frame.ptr().address;
+        const uint32_t p = panel.address, c = city.address;
+        constexpr uint32_t kGlyphs = 0x001AF610u;
+        const auto word = [](uint32_t at) { return port::load<uint32_t>(at); };
+        port::store<int32_t>(p + 0xB0u, CityScene_GetMode(city) == 2 ? 1 : 0);
+        port::store<int32_t>(p + 0xB4u, (port::load<uint32_t>(c + 0xB4u) & 4u) != 0u ? 1 : 0);
+        const int32_t seconds = port::load<int32_t>(c + 0x84u);
+        int32_t hour = (seconds / 3600) % 12;
+        int32_t minuteSeconds = seconds % 3600;
+        if (!(hour + 6 < 12))
+            hour -= 12;
+        if (!(minuteSeconds + 0x708 < 0xE10))
+            minuteSeconds -= 0xE10;
+        const uint32_t hands = port::load<uint32_t>(port::load<uint32_t>(port::load<uint32_t>(p + 0x90u)) + 8u);
+        const ps2f pi = ps2f(std::bit_cast<float>(0x40490FDBu));
+        sdk::sceVu0RotMatrixZ(hands + 0xD0u, 0x001B2550u, (pi * ps2f(static_cast<float>(hour))) / ps2f(6.0f));
+        sdk::sceVu0RotMatrixZ(hands + 0x190u, 0x001B2550u, (pi * ps2f(static_cast<float>(minuteSeconds))) / ps2f(std::bit_cast<float>(0x44E10000u)));
+        port::store<uint32_t>(hands + 0xD0u + 0x38u, 0xBC23D70Au);
+        const uint32_t quads = port::load<uint32_t>(p + 0x9Cu);
+        // The two glyph floats of `digit` go to the quad words at `at` and at + 0x20.
+        const auto glyph = [&](uint32_t at, int digit) {
+            port::store<uint32_t>(quads + at, word(kGlyphs + 4u * static_cast<uint32_t>(digit)));
+            port::store<uint32_t>(quads + at + 0x20u, word(kGlyphs + 4u + 4u * static_cast<uint32_t>(digit)));
+        };
+        const auto blank = [&](uint32_t at) {
+            port::store<uint32_t>(quads + at, word(0x001AF638u));
+            port::store<uint32_t>(quads + at + 0x20u, word(0x001AF63Cu));
+        };
+        // Two table words as one place word: the first plus `offset`, the second in the high half.
+        const auto place = [&](uint32_t at, uint32_t low, uint32_t high, uint32_t offset) {
+            port::store<uint32_t>(quads + at, (word(low) + offset) | (word(high) << 16));
+        };
+        const auto digitAt = [&](uint32_t index) { return static_cast<int>(port::load<int8_t>(sp + 0x60u + index)); };
+        const int32_t month = port::load<int32_t>(c + 0x88u) % 12 + 1;
+        Text_SplitDigits(GuestPtr<uint8_t>{sp + 0x60u}, month, 2);
+        if (!(month < 10))
+        {
+            glyph(0xD0u, digitAt(0));
+            glyph(0x110u, digitAt(1));
+        }
+        else
+        {
+            glyph(0xD0u, digitAt(1));
+            blank(0x110u);
+        }
+        const int32_t year = port::load<int32_t>(c + 0x88u) / 12 + 1;
+        Text_SplitDigits(GuestPtr<uint8_t>{sp + 0x60u}, year, 2);
+        if (!(year < 10))
+        {
+            glyph(0x1D0u, digitAt(0));
+            glyph(0x210u, digitAt(1));
+            place(0x260u, 0x001AF4C0u, 0x001AF4C4u, 0xC0u);
+            place(0x280u, 0x001AF4C8u, 0x001AF4CCu, 0xC0u);
+        }
+        else
+        {
+            glyph(0x1D0u, digitAt(1));
+            blank(0x210u);
+            place(0x260u, 0x001AF4C0u, 0x001AF4C4u, 0u - 0xC0u);
+            place(0x280u, 0x001AF4C8u, 0x001AF4CCu, 0u - 0xC0u);
+        }
+        if ((port::load<uint32_t>(c + 0xB4u) & 2u) == 0u)
+        {
+            port::store<uint32_t>(quads + 0x250u, 0x3F100000u);
+            port::store<uint32_t>(quads + 0x270u, 0x3F280000u);
+        }
+        else
+        {
+            port::store<uint32_t>(quads + 0x250u, 0x3F280000u);
+            port::store<uint32_t>(quads + 0x270u, 0x3F400000u);
+        }
+        const uint32_t map = port::load<uint32_t>(c + 0x50u);
+        Text_SplitDigits(GuestPtr<uint8_t>{sp + 0x60u}, port::load<int32_t>(map + 0x74u), 4);
+        glyph(0x2D0u, digitAt(0));
+        glyph(0x310u, digitAt(1));
+        glyph(0x350u, digitAt(2));
+        glyph(0x390u, digitAt(3));
+        if (digitAt(0) == 10)
+        {
+            place(0x2A0u, 0x001AF500u, 0x001AF504u, 0u);
+            place(0x2C0u, 0x001AF508u, 0x001AF50Cu, 0u);
+        }
+        else
+        {
+            place(0x2A0u, 0x001AF4E0u, 0x001AF4E4u, 0u);
+            place(0x2C0u, 0x001AF4E8u, 0x001AF4ECu, 0u);
+        }
+        const int32_t balance = port::load<int32_t>(c + 0x8Cu);
+        Text_SplitDigits(GuestPtr<uint8_t>{sp + 0x60u}, std::abs(balance), 3);
+        if (balance < 0)
+        {
+            port::store<uint32_t>(quads + 0x410u, 0x80B48C00u);
+            port::store<uint32_t>(quads + 0x420u, 0x3F700000u);
+            port::store<uint32_t>(quads + 0x440u, 0x3F800000u);
+            port::store<uint8_t>(sp + 0x60u, 0);
+        }
+        else
+        {
+            port::store<uint32_t>(quads + 0x410u, balance < 0x32 ? 0x80808058u : (balance < 0x64 ? 0x80808080u : 0x808080C0u));
+            glyph(0x420u, digitAt(0));
+        }
+        glyph(0x460u, digitAt(1));
+        glyph(0x4A0u, digitAt(2));
+        if (port::load<int32_t>(p + 0xB0u) != 0)
+        {
+            port::store<int32_t>(p + 0xBCu, port::load<int32_t>(p + 0xBCu) + 1);
+            if (!(port::load<uint32_t>(p + 0xBCu) < 0x3C0u))
+                port::store<int32_t>(p + 0xBCu, 0);
+            const uint32_t text = sp + 0x70u;
+            if (port::load<uint32_t>(p + 0xBCu) < 0x1E0u)
+                Stage_FormatTargetText(static_cast<int>(c), GuestPtr<char>{text});
+            else
+            {
+                sdk::strcpy(text, 0x001B6490u);
+                constexpr uint32_t kGoal = 0x001C554Cu;
+                const int32_t goal = port::load<int32_t>(kGoal);
+                const int32_t count = port::load<int32_t>(port::load<uint32_t>(c + 0x50u) + 0x74u);
+                if (count < goal)
+                    sdk::sprintf(sp + 0x70u + static_cast<uint32_t>(sdk::strlen(text)), 0x001B64E0u, goal - count);
+                else
+                    sdk::strcat(text, 0x001B64B0u);
+                const int32_t level = port::load<int32_t>(kGoal + 4u);
+                if (level != 0)
+                {
+                    const uint32_t end = static_cast<uint32_t>(sdk::strlen(text));
+                    const int progress = CityScene_MissionProgress(city);
+                    sdk::sprintf(sp + 0x70u + end, 0x001B6510u, progress, port::load<uint32_t>(0x001B6470u + 4u * static_cast<uint32_t>(level)));
+                }
+            }
+            TextBox_SetText(GuestPtr<TextBox>{port::load<uint32_t>(p + 0xA0u)}, GuestPtr<char>{text}, 0);
+            Text_FormatMoney(GuestPtr<char>{sp + 0x170u}, port::load<int32_t>(0x001C5544u) * 2, 0x12, 0);
+            sdk::sprintf(text, 0x001B6538u, sp + 0x170u);
+            TextBox_SetText(GuestPtr<TextBox>{port::load<uint32_t>(p + 0xA8u)}, GuestPtr<char>{text}, 0);
+            Text_FormatMoney(GuestPtr<char>{sp + 0x170u}, port::load<int32_t>(0x001C5540u), 0x13, 0);
+            sdk::sprintf(text, 0x001B6548u, sp + 0x170u);
+            TextBox_SetText(GuestPtr<TextBox>{port::load<uint32_t>(p + 0xA4u)}, GuestPtr<char>{text}, 0);
+        }
+        const int32_t marks = port::load<int32_t>(port::load<uint32_t>(c + 0x64u) + 4u);
+        const int32_t scaled = static_cast<int32_t>(static_cast<uint32_t>(marks) * 20u);
+        port::store<int32_t>(p + 0xB8u, scaled / 2000000);
+    }
+
+    PORT_FN(StatusPanel_Update);
+
+    // The residents' wants window for one frame. Outside the city mode 8 the wants are pruned (Wants_Prune) and that is all. In mode 8 the
+    // state at +0x51C: 0 starts (the window time +0x528 and the active flag +0x518 cleared, the city's two update flags at +0x30 and +0x34
+    // cleared, the applicants panel switched off, sound 7) and goes to 1; 1 slides the window model's matrix (+0x524, translation from
+    // the point at 0x1B08F0 to the one at 0x1B0900 over 10 frames, then the model played at 8 a frame), and after 25 frames makes the
+    // four text boxes (two lines of the wants page, two page numbers) and fills them (state 2); 2 waits for Triangle or Cross (the
+    // boxes are deleted, sound 8, the time set to 25: state 4) or for left (page back, if not the first: state 3 with the direction 1 and
+    // the time at 120) or right (page forward, if there is one: state 3 with the direction 0); 3 turns the page (the time moves by 6 a
+    // frame; when its whole part is 60 the page moves and the four boxes are refilled, sound 9) and ends back in state 2; 4 plays the
+    // model back and slides the matrix back, and at the end gives the city its update flags back, switches the applicants panel on and
+    // pops the city mode (state 0). The active flag is set while the window waits for input.
+    void WantsWin_Update(GuestPtr<WantsWin> wants, GuestPtr<CityScene> city)
+    {
+        port::GuestFrame<0x340> frame;
+        const uint32_t sp = frame.ptr().address;
+        const uint32_t w = wants.address, c = city.address;
+        const auto loadF = [](uint32_t at) { return ps2f(std::bit_cast<float>(port::load<uint32_t>(at))); };
+        const auto storeF = [](uint32_t at, ps2f value) { port::store<uint32_t>(at, std::bit_cast<uint32_t>(value.v)); };
+        const auto box = [w](uint32_t at) { return GuestPtr<TextBox>{port::load<uint32_t>(w + at)}; };
+        const auto model = [w]() { return GuestPtr<A3DObject>{port::load<uint32_t>(w + 0x504u)}; };
+        if (CityScene_GetMode(city) != 8)
+        {
+            Wants_Prune(wants, city);
+            return;
+        }
+        // The window model's matrix moved along the path between the two points at 0x1B08F0 and 0x1B0900 (the time over ten).
+        const auto slide = [&](ps2f time) {
+            const ps2f t = time / ps2f(10.0f);
+            const ps2f rest = ps2f(1.0f) - t;
+            const auto lerp = [&](uint32_t to, uint32_t from) { return rest * loadF(from) + t * loadF(to); };
+            storeF(port::load<uint32_t>(w + 0x524u) + 0x30u, lerp(0x001B08F0u, 0x001B0900u));
+            storeF(port::load<uint32_t>(w + 0x524u) + 0x34u, lerp(0x001B08F4u, 0x001B0904u));
+            storeF(port::load<uint32_t>(w + 0x524u) + 0x38u, lerp(0x001B08F8u, 0x001B0908u));
+        };
+        // The page's lines and numbers: the two wants lines in the boxes at +0x508 and +0x50C (after emptying them) and the two page numbers.
+        const auto fillPage = [&](uint32_t buffer) {
+            TextBox_SetText(box(0x508u), GuestPtr<char>{0x001B73A8u}, 0);
+            TextBox_SetText(box(0x50Cu), GuestPtr<char>{0x001B73A8u}, 0);
+            const int32_t first = port::load<int32_t>(w + 0x52Cu) << 1;
+            Text_FormatPadded(GuestPtr<char>{buffer}, first + 1, 4);
+            TextBox_SetText(box(0x510u), GuestPtr<char>{buffer}, 0);
+            Text_FormatPadded(GuestPtr<char>{buffer}, (port::load<int32_t>(w + 0x52Cu) << 1) + 2, 4);
+            TextBox_SetText(box(0x514u), GuestPtr<char>{buffer}, 0);
+            if (first < port::load<uint16_t>(w))
+            {
+                WantsWin_FormatLine(wants, city, first, GuestPtr<char>{buffer});
+                TextBox_SetText(box(0x508u), GuestPtr<char>{buffer}, 0);
+            }
+            if (first + 1 < port::load<uint16_t>(w))
+            {
+                WantsWin_FormatLine(wants, city, first + 1, GuestPtr<char>{buffer});
+                TextBox_SetText(box(0x50Cu), GuestPtr<char>{buffer}, 0);
+            }
+        };
+        const auto applicantsEnabled = [c](uint8_t value) { port::store<uint8_t>(port::load<uint32_t>(c + 0x54u) + 0x2C9u, value); };
+        switch (port::load<int32_t>(w + 0x51Cu))
+        {
+        case 0:
+            port::store<int32_t>(w + 0x528u, 0);
+            port::store<int32_t>(w + 0x51Cu, 1);
+            port::store<int32_t>(w + 0x518u, 0);
+            port::store<int32_t>(c + 0x30u, 0);
+            port::store<int32_t>(c + 0x34u, 0);
+            applicantsEnabled(0);
+            Sound_PlaySe(7, 0, 0x3C, 0.0f, 0.0f);
+            return;
+        case 1:
+        {
+            const ps2f time = loadF(w + 0x528u) + ps2f(1.0f);
+            storeF(w + 0x528u, time);
+            if (time <= ps2f(10.0f))
+            {
+                slide(time);
+                port::store<int32_t>(w + 0x518u, 0);
+                return;
+            }
+            Instance_DrawSwaying(model(), 0, ps2f(8.0f) * (time - ps2f(10.0f)));
+            if (!(loadF(w + 0x528u) < ps2f(25.0f)))
+            {
+                port::store<int32_t>(w + 0x51Cu, 2);
+                port::store<uint32_t>(w + 0x508u, newTextBox(8, 0xA, -2));
+                TextBox_SetPos(box(0x508u), 0x7240, 0x7DE0, -0x100000);
+                TextBox_SetCharSize(box(0x508u), 0, 0, 0xB0, 0);
+                port::store<uint32_t>(w + 0x50Cu, newTextBox(8, 0xA, -2));
+                TextBox_SetPos(box(0x50Cu), 0x8260, 0x7DE0, -0x100000);
+                TextBox_SetCharSize(box(0x50Cu), 0, 0, 0xB0, 0);
+                port::store<uint32_t>(w + 0x510u, newTextBox(4, 1, -2));
+                TextBox_SetPos(box(0x510u), 0x7600, 0x8440, -0x100000);
+                TextBox_SetCharSize(box(0x510u), 0, 0x90, 0, 0xA0);
+                port::store<uint32_t>(w + 0x514u, newTextBox(4, 1, -2));
+                TextBox_SetPos(box(0x514u), 0x8540, 0x8440, -0x100000);
+                TextBox_SetCharSize(box(0x514u), 0, 0x90, 0, 0xA0);
+                fillPage(sp + 0x40u);
+            }
+            port::store<int32_t>(w + 0x518u, 0);
+            return;
+        }
+        case 2:
+        {
+            if ((Pad_Pressed(0) & 0x10u) != 0u || (Pad_Pressed(0) & 0x40u) != 0u)
+            {
+                port::store<int32_t>(w + 0x51Cu, 4);
+                port::store<uint32_t>(w + 0x528u, 0x41C80000u);
+                if (box(0x50Cu))
+                {
+                    TextBox_dtor(box(0x50Cu), 1);
+                    port::store<uint32_t>(w + 0x50Cu, 0u);
+                }
+                if (box(0x508u))
+                {
+                    TextBox_dtor(box(0x508u), 1);
+                    port::store<uint32_t>(w + 0x508u, 0u);
+                }
+                Sound_PlaySe(8, 0, 0x3C, 0.0f, 0.0f);
+            }
+            else if ((Pad_Held(0) & 0x8000u) != 0u)
+            {
+                if (port::load<int32_t>(w + 0x52Cu) > 0)
+                {
+                    port::store<int32_t>(w + 0x51Cu, 3);
+                    port::store<int32_t>(w + 0x520u, 1);
+                    port::store<uint32_t>(w + 0x528u, 0x42F00000u);
+                }
+            }
+            else if ((Pad_Held(0) & 0x2000u) != 0u)
+            {
+                if (port::load<int32_t>(w + 0x52Cu) < port::load<int32_t>(w + 0x538u) - 1)
+                {
+                    port::store<int32_t>(w + 0x51Cu, 3);
+                    port::store<int32_t>(w + 0x520u, 0);
+                    port::store<int32_t>(w + 0x528u, 0);
+                }
+            }
+            port::store<int32_t>(w + 0x518u, 1);
+            return;
+        }
+        case 3:
+        {
+            const bool back = port::load<int32_t>(w + 0x520u) != 0;
+            const ps2f time = back ? loadF(w + 0x528u) - ps2f(6.0f) : loadF(w + 0x528u) + ps2f(6.0f);
+            storeF(w + 0x528u, time);
+            if (sdk::fptosi(time) == 60)
+            {
+                port::store<int32_t>(w + 0x52Cu, port::load<int32_t>(w + 0x52Cu) + (back ? -1 : 1));
+                fillPage(back ? sp + 0x240u : sp + 0x140u);
+                Sound_PlaySe(9, 0, 0x3C, 0.0f, 0.0f);
+            }
+            Instance_DrawSwaying(model(), 0, ps2f(120.0f) + loadF(w + 0x528u));
+            if (back)
+            {
+                if (loadF(w + 0x528u) <= ps2f(0.0f))
+                {
+                    port::store<uint32_t>(w + 0x528u, 0u);
+                    port::store<int32_t>(w + 0x51Cu, 2);
+                }
+            }
+            else if (!(loadF(w + 0x528u) <= ps2f(120.0f)))
+            {
+                port::store<uint32_t>(w + 0x528u, 0u);
+                port::store<int32_t>(w + 0x51Cu, 2);
+            }
+            port::store<int32_t>(w + 0x518u, 0);
+            return;
+        }
+        case 4:
+        {
+            const ps2f time = loadF(w + 0x528u) - ps2f(1.0f);
+            storeF(w + 0x528u, time);
+            if (!(time < ps2f(10.0f)))
+            {
+                Instance_DrawSwaying(model(), 0, ps2f(4.0f) * (time - ps2f(10.0f)));
+                port::store<int32_t>(w + 0x518u, 0);
+                return;
+            }
+            slide(time);
+            if (loadF(w + 0x528u) <= ps2f(0.0f))
+            {
+                port::store<int32_t>(w + 0x51Cu, 0);
+                port::store<int32_t>(c + 0x30u, 1);
+                port::store<int32_t>(c + 0x34u, 1);
+                applicantsEnabled(1);
+                CityScene_PopMode(city);
+            }
+            port::store<int32_t>(w + 0x518u, 0);
+            return;
+        }
+        default:
+            return;
+        }
+    }
+
+    PORT_FN(WantsWin_Update);
+
+    // The city cursor's info window for one frame (nothing while +0x1A0 is clear). The info text is refreshed (CityCursor_UpdateInfo), then
+    // by the mode at +0x1C4: 0 moves the cursor (CityCursor_Move, with the enabled flag); 1 is the info list: Cross (with Circle not held)
+    // takes the entry the frame step (+0x1C8) is on (twelve to a line, six to an entry: the entries are the chain of ids from +0x1A8,
+    // each record's next at +0xA, ending at 0x3F80), picking the tile in the placing mode (3) and starting a talk otherwise; Triangle
+    // closes it (mode 0, the city mode popped); up (when there is a line above) and down (when the step is above 0) start the step
+    // scrolling (modes 2 and 3, sound 0). 2 and 3 move the step by one a frame (up, down) for twelve frames (+0x1CC), then back to 1.
+    // 4 clears the picked building: the window frame of this frame's view shrinks around its centre over the timer (the box grows from
+    // 25 by 100 units at most 15 steps, kept in the 16 bit range), and when the timer (30 at the pick) runs out the picked building
+    // is plotted on the minimap, its family removed from the applicants, the approval lowered by 20, the tile area turned to rubble
+    // and the mode popped (twice if the city is then in mode 10); the cursor goes back to mode 0.
+    void CityCursor_Update(GuestPtr<CityCursor> cursor, GuestPtr<CityScene> city, int enabled)
+    {
+        port::GuestFrame<0x80> frame;
+        const uint32_t sp = frame.ptr().address;
+        const uint32_t k = cursor.address, c = city.address;
+        constexpr uint32_t kBuildingTypes = 0x001BDBF8u; // pointer to the table of building type records
+        if (port::load<int32_t>(k + 0x1A0u) == 0)
+            return;
+        const uint32_t parity = port::load<uint32_t>(0x001BDCD0u) & 1u;
+        CityCursor_UpdateInfo(cursor, city);
+        const auto map = [c]() { return GuestPtr<CityMap>{port::load<uint32_t>(c + 0x50u)}; };
+        switch (port::load<int32_t>(k + 0x1C4u))
+        {
+        case 0:
+            CityCursor_Move(cursor, city, enabled);
+            return;
+        case 1:
+        {
+            if ((Pad_Pressed(0) & 0x40u) != 0u && (Pad_Held(0) & 0x20u) == 0u)
+            {
+                Sound_PlaySe(1, 0, 0x3C, 0.0f, 0.0f);
+                const int32_t wanted = port::load<int32_t>(k + 0x1C8u) / 6;
+                int32_t index = 0;
+                uint32_t at = k + 0x1A8u;
+                for (;;)
+                {
+                    const uint32_t id = port::load<uint16_t>(at);
+                    if (id == 0x3F80u)
+                        return;
+                    if (index == wanted)
+                    {
+                        if (Player_GetMode(GuestPtr<Player>{port::load<uint32_t>(c + 0x58u)}) == 3)
+                            CityCursor_SelectTile(cursor, static_cast<int>(id), city);
+                        else
+                            CityScene_StartTalk(city, 0, static_cast<int>(id), 0x1770, 0);
+                        return;
+                    }
+                    at = Map_GetRecord(map(), static_cast<int>(id)).address + 0xAu;
+                    ++index;
+                }
+            }
+            if ((Pad_Pressed(0) & 0x10u) != 0u)
+            {
+                Sound_PlaySe(2, 0, 0x3C, 0.0f, 0.0f);
+                port::store<int32_t>(k + 0x1C4u, 0);
+                CityScene_PopMode(city);
+                return;
+            }
+            if ((Pad_Held(0) & 0x1000u) != 0u)
+            {
+                if (port::load<int32_t>(k + 0x1C8u) < (port::load<int32_t>(k + 0x1C0u) - 1) * 12)
+                {
+                    Sound_PlaySe(0, 0, 0x3C, 0.0f, 0.0f);
+                    port::store<int32_t>(k + 0x1C4u, 2);
+                }
+                return;
+            }
+            if ((Pad_Held(0) & 0x4000u) != 0u && port::load<int32_t>(k + 0x1C8u) > 0)
+            {
+                Sound_PlaySe(0, 0, 0x3C, 0.0f, 0.0f);
+                port::store<int32_t>(k + 0x1C4u, 3);
+            }
+            return;
+        }
+        case 2:
+        case 3:
+        {
+            port::store<int32_t>(k + 0x1C8u, port::load<int32_t>(k + 0x1C8u) + (port::load<int32_t>(k + 0x1C4u) == 2 ? 1 : -1));
+            const int32_t timer = port::load<int32_t>(k + 0x1CCu) + 1;
+            port::store<int32_t>(k + 0x1CCu, timer);
+            if (timer == 12)
+            {
+                port::store<int32_t>(k + 0x1C4u, 1);
+                port::store<int32_t>(k + 0x1CCu, 0);
+            }
+            return;
+        }
+        case 4:
+        {
+            const uint32_t view = k + 0xD0u * parity;
+            Frame_GetRect(GuestPtr<Frame>{port::load<uint32_t>(view + 0x28u)}, GuestPtr<uint32_t>{sp + 0x70u}, GuestPtr<uint32_t>{sp + 0x74u},
+                          GuestPtr<uint32_t>{sp + 0x78u}, GuestPtr<uint32_t>{sp + 0x7Cu});
+            int32_t steps = 0x1E - port::load<int32_t>(k + 0x1CCu);
+            if (!(steps < 0x10))
+                steps = 0xF;
+            const int32_t halfHeight = steps * 25, halfWidth = halfHeight * 4;
+            const int32_t x = port::load<int32_t>(sp + 0x70u), y = port::load<int32_t>(sp + 0x74u);
+            port::store<int32_t>(sp + 0x70u, x - halfWidth);
+            port::store<int32_t>(sp + 0x74u, y - halfHeight);
+            port::store<int32_t>(sp + 0x78u, x + halfWidth);
+            port::store<int32_t>(sp + 0x7Cu, y + halfHeight);
+            // Both ends of a side must be inside 0..0xFFFF, else both go to 0.
+            const auto clamp = [&](uint32_t low, uint32_t high) {
+                const int32_t a = port::load<int32_t>(sp + low), b = port::load<int32_t>(sp + high);
+                if (a < 0 || b < 0 || !(a < 0x10000) || !(b < 0x10000))
+                {
+                    port::store<int32_t>(sp + high, 0);
+                    port::store<int32_t>(sp + low, 0);
+                }
+            };
+            clamp(0x70u, 0x78u);
+            clamp(0x74u, 0x7Cu);
+            port::store<uint32_t>(view + 0x90u, port::load<uint32_t>(sp + 0x70u) | (port::load<uint32_t>(sp + 0x74u) << 16));
+            port::store<uint32_t>(view + 0xB0u, port::load<uint32_t>(sp + 0x78u) | (port::load<uint32_t>(sp + 0x7Cu) << 16));
+            const int32_t left = port::load<int32_t>(k + 0x1CCu) - 1;
+            port::store<int32_t>(k + 0x1CCu, left);
+            if (left != 0)
+                return;
+            const int32_t picked = port::load<int32_t>(k + 0x1D8u);
+            const uint32_t record = Map_GetRecord(map(), picked).address;
+            const uint32_t type = port::load<uint32_t>(port::load<uint32_t>(kBuildingTypes) + 4u * port::load<uint16_t>(record));
+            if ((port::load<uint16_t>(type + 0x136u) & 0x80u) == 0u)
+                Sound_PlaySe(0x44, 0, 0x3C, 0.0f, 0.0f);
+            Minimap_Plot(GuestPtr<Minimap>{port::load<uint32_t>(c + 0x74u)}, port::load<uint16_t>(record + 4u), port::load<uint8_t>(type + 0x142u), 4, 0);
+            const uint32_t tile = port::load<uint16_t>(record + 4u);
+            const int size = port::load<uint8_t>(type + 0x142u);
+            CityScene_AddApproval(city, -0x14);
+            Applicants_RemoveFamily(GuestPtr<Applicants>{port::load<uint32_t>(c + 0x54u)}, port::load<uint16_t>(record + 0xCu));
+            const uint32_t owner = map().address;
+            port::callGuest<void>(port::load<uint32_t>(port::load<uint32_t>(owner + 0x64u) + 0xCu), owner, picked);
+            Map_PlaceRubbleArea(map(), static_cast<int>(tile & 0x7Fu), static_cast<int>(tile >> 7), size, static_cast<int>(c));
+            CityScene_PopMode(city);
+            if (CityScene_GetMode(city) == 0xA)
+                CityScene_PopMode(city);
+            port::store<int32_t>(k + 0x1C4u, 0);
+            return;
+        }
+        default:
+            return;
+        }
+    }
+
+    PORT_FN(CityCursor_Update);
+
+    // The city cursor: the base object, a model loaded (0x1B5EF0) and deleted again at once, the lines and the fade counters cleared,
+    // and for each of the two views (0xD0 bytes, one per frame parity) five text boxes (15 by 1, style -1, at +0x00) with five frames
+    // (+0x14, a 24 by 12 box) and the two frames of the fade (+0x28 and +0x2C), then the view's GS packet at +0x30: the TEX0 style
+    // register at +0x60 (the sizes are log2 of 128 and 64 in its texture width and height fields) and the sprite, colour and
+    // coordinate words after it.
+    GuestPtr<CityCursor> CityCursor_ctor(GuestPtr<CityCursor> cursor)
+    {
+        port::GuestFrame<0x60> frame;
+        const uint32_t k = cursor.address;
+        BaseObject_ctor(static_cast<int>(k));
+        uint32_t model = sdk::operator_new(0x60u);
+        if (model != 0u)
+            model = A3DObject_Load(GuestPtr<A3DObject>{model}, 0x001B5EF0, 1).address;
+        A3DObject_dtor(GuestPtr<A3DObject>{model}, 1);
+        port::store<int32_t>(k + 0x1C0u, 0);
+        port::store<int32_t>(k + 0x1C4u, 0);
+        const auto newFrame = [](int style, int x, int y) {
+            uint32_t object = sdk::operator_new(0xC0u);
+            if (object != 0u)
+                object = Frame_ctor(GuestPtr<Frame>{object}, style, x, y, 0x18, 0xC, 0xFFF00000u).address;
+            return object;
+        };
+        for (uint32_t view = 0; view < 2; ++view)
+        {
+            const uint32_t v = k + 0xD0u * view;
+            for (uint32_t i = 0; i < 5; ++i)
+            {
+                uint32_t text = sdk::operator_new(0x40u);
+                if (text != 0u)
+                    text = TextBox_Init(GuestPtr<TextBox>{text}, 0xF, 1, -1).address;
+                port::store<uint32_t>(v + 4u * i, text);
+                uint32_t box = sdk::operator_new(0xC0u);
+                if (box != 0u)
+                    box = Frame_ctor(GuestPtr<Frame>{box}, 0, 0, 0, 0x18, 0xC, 0xFFF00000u).address;
+                port::store<uint32_t>(v + 0x14u + 4u * i, box);
+            }
+            uint32_t fadeA = sdk::operator_new(0xC0u);
+            if (fadeA != 0u)
+                fadeA = Frame_ctor(GuestPtr<Frame>{fadeA}, 0x32, 0x64, 0x64, 0x18, 0xC, 0xFFF00000u).address;
+            port::store<uint32_t>(v + 0x28u, fadeA);
+            uint32_t fadeB = sdk::operator_new(0xC0u);
+            if (fadeB != 0u)
+                fadeB = Frame_ctor(GuestPtr<Frame>{fadeB}, 0x1E, 0x64, 0x64, 0x18, 0xC, 0xFFF00000u).address;
+            port::store<uint32_t>(v + 0x2Cu, fadeB);
+            port::store<uint32_t>(v + 0x30u, 0x10000008u);
+            port::store<uint32_t>(v + 0x34u, 0u);
+            port::store<uint32_t>(v + 0x38u, 0x11000000u);
+            port::store<uint32_t>(v + 0x3Cu, 0x50000008u);
+            port::store<uint32_t>(v + 0x4Cu, 0u);
+            port::store<uint32_t>(v + 0x48u, 0xEu);
+            port::store<uint32_t>(v + 0x44u, 0x10000000u);
+            port::store<uint32_t>(v + 0x40u, 0x8007u);
+            port::store<uint32_t>(v + 0x5Cu, 0u);
+            port::store<uint32_t>(v + 0x58u, 1u);
+            port::store<uint32_t>(v + 0x54u, 0x3F800000u);
+            port::store<uint32_t>(v + 0x50u, 0x80808080u);
+            port::store<uint32_t>(v + 0x6Cu, 0u);
+            port::store<uint32_t>(v + 0x68u, 6u);
+            port::store<uint32_t>(v + 0x64u, 0u);
+            port::store<uint32_t>(v + 0x60u, 0u);
+            // The TEX0-like register at +0x60 piece by piece.
+            port::store<uint16_t>(v + 0x60u, static_cast<uint16_t>((port::load<uint16_t>(v + 0x60u) & 0xC000u) | 0x3E8Au));
+            port::store<uint64_t>(v + 0x60u, (port::load<uint64_t>(v + 0x60u) & 0xFFFFFFFFFFF03FFFull) | 0x8000ull);
+            port::store<uint16_t>(v + 0x62u, static_cast<uint16_t>((port::load<uint16_t>(v + 0x62u) & 0xFC0Fu) | 0x130u));
+            const int widthLog = Math_Log2(0x80);
+            const uint8_t widthByte = port::load<uint8_t>(v + 0x63u);
+            const int heightLog = Math_Log2(0x40);
+            port::store<uint8_t>(v + 0x63u, static_cast<uint8_t>((widthByte & 0xC3u) | ((static_cast<uint32_t>(widthLog) & 0xFu) << 2)));
+            port::store<uint64_t>(v + 0x60u, (port::load<uint64_t>(v + 0x60u) & 0xFFFFFFFC3FFFFFFFull) | (static_cast<uint64_t>(static_cast<uint32_t>(heightLog) & 0xFu) << 30));
+            port::store<uint8_t>(v + 0x64u, static_cast<uint8_t>((port::load<uint8_t>(v + 0x64u) & 0xFBu) | 4u));
+            port::store<uint8_t>(v + 0x64u, static_cast<uint8_t>(port::load<uint8_t>(v + 0x64u) & 0xE7u));
+            port::store<uint64_t>(v + 0x60u, (port::load<uint64_t>(v + 0x60u) & 0xFFF8001FFFFFFFFFull) | (0x3EAAull << 37));
+            port::store<uint8_t>(v + 0x66u, static_cast<uint8_t>(port::load<uint8_t>(v + 0x66u) & 0x87u));
+            port::store<uint8_t>(v + 0x66u, static_cast<uint8_t>(port::load<uint8_t>(v + 0x66u) & 0x7Fu));
+            port::store<uint8_t>(v + 0x67u, static_cast<uint8_t>(port::load<uint8_t>(v + 0x67u) & 0xE0u));
+            port::store<uint8_t>(v + 0x67u, static_cast<uint8_t>((port::load<uint8_t>(v + 0x67u) & 0x1Fu) | 0x20u));
+            port::store<uint32_t>(v + 0x7Cu, 0u);
+            port::store<uint32_t>(v + 0x78u, 0u);
+            port::store<uint32_t>(v + 0x74u, 0u);
+            port::store<uint32_t>(v + 0x70u, 0x16u);
+            port::store<uint32_t>(v + 0x8Cu, 0u);
+            port::store<uint32_t>(v + 0x88u, 2u);
+            port::store<uint32_t>(v + 0x84u, 0u);
+            port::store<uint32_t>(v + 0x80u, 0u);
+            port::store<uint32_t>(v + 0x9Cu, 0u);
+            port::store<uint32_t>(v + 0x98u, 4u);
+            port::store<uint32_t>(v + 0x94u, 0x0FFF0000u);
+            port::store<uint32_t>(v + 0x90u, 0x79006C00u);
+            port::store<uint32_t>(v + 0xACu, 0u);
+            port::store<uint32_t>(v + 0xA8u, 2u);
+            port::store<uint32_t>(v + 0xA4u, 0x3F800000u);
+            port::store<uint32_t>(v + 0xA0u, 0x3F800000u);
+            port::store<uint32_t>(v + 0xBCu, 0u);
+            port::store<uint32_t>(v + 0xB8u, 4u);
+            port::store<uint32_t>(v + 0xB4u, 0x0FFF0000u);
+            port::store<uint32_t>(v + 0xB0u, 0x80009400u);
+            port::store<uint32_t>(v + 0xC0u, 0x60000000u);
+            port::store<uint32_t>(v + 0xC4u, 0u);
+            port::store<uint32_t>(v + 0xC8u, 0u);
+            port::store<uint32_t>(v + 0xCCu, 0u);
+        }
+        return cursor;
+    }
+
+    PORT_FN(CityCursor_ctor);
+
+    // The title scene's asset loader, one step a call (the step at +0xC8; the loading text box at +0xBC is drawn every call). 0 shows the
+    // loading text; 1 loads a model (0x1B8D00) and deletes it at once; 2 to 5 load the four texture images (0x1B8D20 to 0x1B8D50, each
+    // through a 0x1010-byte loader on the stack); 6 and 7 load the two models (+0x24, which is also scaled, and +0x28); 8 to 0xB load
+    // the sprites at +0xC, +0x10, +0x14 and +0x18; 0xC and 0xD load the sprites at +0x1C and +0x20 (green made alpha); 0xE makes the
+    // loading screen (+0x2C); 0xF and 0x10 load the sprites at +0x30 and +0x34 (the last goes to step 100). 100 skips to 104 unless +0xE0
+    // is set, which stops the sequences; 101 to 106 wait for the sounds to be idle and the disc ready, reset the voices (bank set 1),
+    // zero a sound command and load the bank 7; 107 answers 1 once the sounds are idle (without drawing). 0 otherwise.
+    int SceneA_Load(GuestPtr<SceneA> scene, int)
+    {
+        port::GuestFrame<0x4060> frame;
+        const uint32_t sp = frame.ptr().address;
+        const uint32_t s = scene.address;
+        const auto nextStep = [s]() { port::store<int32_t>(s + 0xC8u, port::load<int32_t>(s + 0xC8u) + 1); };
+        // A sprite from the file `name` kept at the scene's field `at`.
+        const auto loadSprite = [s](uint32_t at, uint32_t name) {
+            uint32_t sprite = sdk::operator_new(0x38u);
+            if (sprite != 0u)
+                sprite = static_cast<uint32_t>(TexSprite_Load(GuestPtr<TexSprite>{sprite}, static_cast<int>(name), 1));
+            port::store<uint32_t>(s + at, sprite);
+            return sprite;
+        };
+        const auto loadModel = [](uint32_t name) {
+            uint32_t model = sdk::operator_new(0x60u);
+            if (model != 0u)
+                model = A3DObject_Load(GuestPtr<A3DObject>{model}, static_cast<int>(name), 1).address;
+            return model;
+        };
+        // A texture image read, uploaded and freed again through the loader at `buffer`.
+        const auto loadImage = [&](uint32_t buffer, uint32_t name, int a2, int a3) {
+            TexImage_Load(GuestPtr<TexImage>{buffer}, GuestPtr<char>{name}, a2, a3);
+            Dma_KickVif1Now_1490D0(buffer);
+            nextStep();
+            TexImage_dtor(GuestPtr<TexImage>{buffer}, -1);
+        };
+        const auto place = [](uint32_t sprite, int x, int y, int z) {
+            TexSprite_SetPosScale(GuestPtr<TexSprite>{sprite}, x, y, z, ps2f(1.0f), ps2f(1.0f));
+        };
+        const auto message = [s]() { return GuestPtr<TextBox>{port::load<uint32_t>(s + 0xBCu)}; };
+        const int32_t step = port::load<int32_t>(s + 0xC8u);
+        switch (step)
+        {
+        case 0:
+            TextBox_SetText(message(), GuestPtr<char>{0x001B8CE0u}, 0);
+            nextStep();
+            break;
+        case 1:
+            A3DObject_dtor(GuestPtr<A3DObject>{loadModel(0x001B8D00u)}, 1);
+            nextStep();
+            break;
+        case 2:
+            loadImage(sp + 0x20u, 0x001B8D20u, 0x2588, 0x2584);
+            break;
+        case 3:
+            loadImage(sp + 0x1030u, 0x001B8D30u, 0x278C, 0x2788);
+            break;
+        case 4:
+            loadImage(sp + 0x2040u, 0x001B8D40u, 0x27A4, 0x27A0);
+            break;
+        case 5:
+            loadImage(sp + 0x3050u, 0x001B8D50u, 0x27B8, 0x27B4);
+            break;
+        case 6:
+        {
+            const uint32_t model = loadModel(0x001B8D60u);
+            port::store<uint32_t>(s + 0x24u, model);
+            A3DObject_UpdateMatrices(GuestPtr<A3DObject>{port::load<uint32_t>(s + 0x24u)});
+            const uint32_t m = port::load<uint32_t>(s + 0x24u);
+            port::store<uint32_t>(m + 0x40u, 0x40133333u);
+            port::store<uint32_t>(m + 0x44u, 0x3E99999Au);
+            port::store<uint32_t>(m + 0x48u, 0x40533333u);
+            nextStep();
+            break;
+        }
+        case 7:
+            port::store<uint32_t>(s + 0x28u, loadModel(0x001B8D80u));
+            A3DObject_UpdateMatrices(GuestPtr<A3DObject>{port::load<uint32_t>(s + 0x28u)});
+            nextStep();
+            break;
+        case 8:
+            place(loadSprite(0xCu, 0x001B8DA0u), 0, 0, 0x3E00);
+            nextStep();
+            break;
+        case 9:
+            place(loadSprite(0x10u, 0x001B8DC0u), 0, 0, 0x3F00);
+            nextStep();
+            break;
+        case 10:
+            place(loadSprite(0x14u, 0x001B8DC0u), 0, 0, 0x3F00);
+            nextStep();
+            break;
+        case 11:
+            place(loadSprite(0x18u, 0x001B8DC0u), 0, 0, 0x3F00);
+            nextStep();
+            break;
+        case 12:
+            TexSprite_GreenToAlpha(GuestPtr<TexSprite>{loadSprite(0x1Cu, 0x001B8DE0u)});
+            nextStep();
+            break;
+        case 13:
+            TexSprite_GreenToAlpha(GuestPtr<TexSprite>{loadSprite(0x20u, 0x001B8E00u)});
+            nextStep();
+            break;
+        case 14:
+        {
+            uint32_t loading = sdk::operator_new(0x28u);
+            if (loading != 0u)
+                loading = LoadingScreen_ctor(GuestPtr<LoadingScreen>{loading}, 0x001B8E20, 1).address;
+            port::store<uint32_t>(s + 0x2Cu, loading);
+            const GuestPtr<LoadingScreen> screen{port::load<uint32_t>(s + 0x2Cu)};
+            LoadingScreen_SetSpritePos(screen, 0x154, 0x168, 0x3F00);
+            LoadingScreen_SetTextPos(screen, 0x108, 0x32);
+            port::store<int32_t>(port::load<uint32_t>(s + 0x2Cu) + 0x24u, 1);
+            nextStep();
+            break;
+        }
+        case 15:
+            place(loadSprite(0x30u, 0x001B8E40u), 0x40, 0x154, 1);
+            nextStep();
+            break;
+        case 16:
+            place(loadSprite(0x34u, 0x001B8E60u), 0x40, 0x154, 1);
+            port::store<int32_t>(s + 0xC8u, 100);
+            break;
+        case 100:
+            if (port::load<int32_t>(s + 0xE0u) == 0)
+                port::store<int32_t>(s + 0xC8u, 0x68);
+            else
+            {
+                Sound_StopAllSequences();
+                nextStep();
+            }
+            break;
+        case 101:
+        case 103:
+        case 105:
+            if (Sound_IsBusy() == 0)
+                nextStep();
+            break;
+        case 102:
+            SoundCmd_02_Zero();
+            nextStep();
+            break;
+        case 104:
+            if (sdk::sceCdDiskReady(0) == 2)
+            {
+                Sound_ResetVoices(1);
+                nextStep();
+            }
+            break;
+        case 106:
+            if (sdk::sceCdDiskReady(0) == 2)
+            {
+                SoundCmd_LoadBank(7, 0x001B8728, 0x001B8738, 0x001B8748, 0);
+                nextStep();
+            }
+            break;
+        case 107:
+            if (Sound_IsBusy() == 0)
+                return 1;
+            break;
+        default:
+            break;
+        }
+        TextBox_Draw(message());
+        return 0;
+    }
+
+    PORT_FN(SceneA_Load);
+
+    // The Town's Pages book for one frame. The state at +0x1C: 0 starts (the open time +0x28 at 0, the city's update flags off, the applicants
+    // panel off, sound 7); 1 slides the book model's matrix (+0x24) in over 10 frames, plays it, and after 25 frames makes the six text boxes
+    // (the three lines and the page numbers), builds the index, fills the page and puts the cursor on its row; 2 waits for input: Triangle
+    // closes the book (state 4, time 25, the boxes and the index freed, sound 8), Start goes back from a family page to the contents (state 6
+    // with the page and row it came from), Cross picks the entry under the cursor (a contents entry opens its first page, a family page entry
+    // closes the book with the family kept in +0x48; the last row, 10, closes it from the contents or goes back from a family page), and the
+    // d-pad moves the cursor (state 5) or turns the page (state 3, direction in +0x20); 3 turns the page (the time moves by 6; when its whole
+    // part is 60 the page changes and is filled) and then puts the cursor on its row; 4 slides the book out and, at the end, gives the city
+    // its update flags and the applicants panel back, then starts the talk with the family kept (a family type's home, or the family itself
+    // for the debug flag 2) or, with none, pops the city mode; 5 moves the cursor sprite (+0x50 and +0x54) half the way to the row's place
+    // (the table at 0x1B1A70) a frame; 6 flips to the page in +0x44 (the model played out and back, the page changed at 23).
+    void TownPages_Update(GuestPtr<TownPages> pages, GuestPtr<CityScene> city)
+    {
+        const uint32_t p = pages.address, c = city.address;
+        constexpr uint32_t kEmpty = 0x001B8E80u;     // the empty string
+        constexpr uint32_t kRowPlaces = 0x001B1A70u; // eight bytes a row: the cursor's x and y
+        const auto loadF = [](uint32_t at) { return ps2f(std::bit_cast<float>(port::load<uint32_t>(at))); };
+        const auto storeF = [](uint32_t at, ps2f value) { port::store<uint32_t>(at, std::bit_cast<uint32_t>(value.v)); };
+        const auto box = [p](uint32_t at) { return GuestPtr<TextBox>{port::load<uint32_t>(p + at)}; };
+        const auto book = [p]() { return GuestPtr<A3DObject>{port::load<uint32_t>(p)}; };
+        const auto state = [p](int32_t value) { port::store<int32_t>(p + 0x1Cu, value); };
+        const auto place = [&](int32_t row, uint32_t axis) { return port::load<int32_t>(kRowPlaces + 8u * static_cast<uint32_t>(row) + axis); };
+        const auto clearBoxes = [&]() {
+            for (const uint32_t at : {0x4u, 0x8u, 0xCu, 0x10u, 0x14u, 0x18u})
+                TextBox_SetText(box(at), GuestPtr<char>{kEmpty}, 0);
+        };
+        // The book closes: the state 4 with the time 25, the boxes freed in their order, the index freed, sound 8.
+        const auto closeBook = [&]() {
+            state(4);
+            port::store<uint32_t>(p + 0x28u, 0x41C80000u);
+            for (const uint32_t at : {0x8u, 0x4u, 0x14u, 0x10u, 0xCu, 0x18u})
+                if (box(at))
+                {
+                    TextBox_dtor(box(at), 1);
+                    port::store<uint32_t>(p + at, 0u);
+                }
+            if (port::load<uint32_t>(p + 0x34u) != 0u)
+            {
+                sdk::operator_delete(port::load<uint32_t>(p + 0x34u));
+                port::store<uint32_t>(p + 0x34u, 0u);
+            }
+            Sound_PlaySe(8, 0, 0x3C, 0.0f, 0.0f);
+        };
+        // The book model's matrix moved along the path between the points at 0x1B1A50 and 0x1B1A60 (the time over ten).
+        const auto slide = [&](ps2f time) {
+            const ps2f t = time / ps2f(10.0f);
+            const ps2f rest = ps2f(1.0f) - t;
+            const auto lerp = [&](uint32_t to, uint32_t from) { return rest * loadF(from) + t * loadF(to); };
+            storeF(port::load<uint32_t>(p + 0x24u) + 0x30u, lerp(0x001B1A50u, 0x001B1A60u));
+            storeF(port::load<uint32_t>(p + 0x24u) + 0x34u, lerp(0x001B1A54u, 0x001B1A64u));
+            storeF(port::load<uint32_t>(p + 0x24u) + 0x38u, lerp(0x001B1A58u, 0x001B1A68u));
+        };
+        // Goes back to the page and row the book came from (state 6, the flip).
+        const auto goBack = [&]() {
+            port::store<int32_t>(p + 0x44u, port::load<int32_t>(p + 0x30u));
+            port::store<int32_t>(p + 0x58u, port::load<int32_t>(p + 0x60u));
+            state(6);
+            port::store<int32_t>(p + 0x28u, 0);
+            clearBoxes();
+        };
+        const auto applicantsEnabled = [c](uint8_t value) { port::store<uint8_t>(port::load<uint32_t>(c + 0x54u) + 0x2C9u, value); };
+        const uint32_t current = port::load<uint32_t>(p + 0x1Cu);
+        if (current >= 7u)
+            return;
+        switch (current)
+        {
+        case 0:
+            port::store<int32_t>(p + 0x28u, 0);
+            state(1);
+            port::store<int32_t>(c + 0x30u, 0);
+            port::store<int32_t>(c + 0x34u, 0);
+            applicantsEnabled(0);
+            Sound_PlaySe(7, 0, 0x3C, 0.0f, 0.0f);
+            return;
+        case 1:
+        {
+            const ps2f time = loadF(p + 0x28u) + ps2f(1.0f);
+            storeF(p + 0x28u, time);
+            if (time <= ps2f(10.0f))
+            {
+                slide(time);
+                return;
+            }
+            Instance_DrawSwaying(book(), 0, ps2f(8.0f) * (time - ps2f(10.0f)));
+            if (loadF(p + 0x28u) < ps2f(25.0f))
+                return;
+            state(2);
+            struct Layout { uint32_t at; int columns, rows, x, y, a, b, c, d; };
+            const Layout layout[] = {
+                {0x4u, 0xA, 0xA, 0x71E0, 0x7DE0, 0, 0, 0xB0, 0}, {0x8u, 0xA, 0xA, 0x82B0, 0x7D60, 0, 0, 0xB0, 0}, {0xCu, 0xA, 1, 0x71E0, 0x7CC0, 0, 0, 0xB0, 0},
+                {0x10u, 4, 1, 0x7620, 0x8520, 0, 0x90, 0, 0xA0}, {0x14u, 4, 1, 0x8710, 0x8520, 0, 0x90, 0, 0xA0}, {0x18u, 4, 1, 0x8B40, 0x8480, 0, 0x90, 0, 0xA0}};
+            for (const Layout &l : layout)
+            {
+                port::store<uint32_t>(p + l.at, newTextBox(l.columns, l.rows, -2));
+                TextBox_SetPos(box(l.at), l.x, l.y, -0x100000);
+                TextBox_SetCharSize(box(l.at), l.a, l.b, l.c, l.d);
+            }
+            TownPages_BuildIndex(pages);
+            TownPages_FillPage(pages);
+            const int row = TownPages_ClampCursor(pages, port::load<int32_t>(p + 0x5Cu), 0);
+            port::store<int32_t>(p + 0x58u, row);
+            port::store<int32_t>(p + 0x5Cu, row);
+            port::store<int32_t>(p + 0x50u, place(port::load<int32_t>(p + 0x5Cu), 0));
+            port::store<int32_t>(p + 0x54u, place(port::load<int32_t>(p + 0x5Cu), 4));
+            return;
+        }
+        case 2:
+        {
+            const uint32_t pad = Pad_Pressed(0);
+            if ((pad & 0x10u) != 0u)
+            {
+                port::store<int32_t>(p + 0x48u, 0);
+                closeBook();
+                return;
+            }
+            const bool contents = port::load<int32_t>(p + 0x2Cu) < port::load<int32_t>(p + 0x38u);
+            if ((pad & 0x80u) != 0u)
+            {
+                if (contents)
+                    return;
+                Sound_PlaySe(2, 0, 0x3C, 0.0f, 0.0f);
+                goBack();
+                return;
+            }
+            if ((pad & 0x40u) != 0u)
+            {
+                const int32_t row = port::load<int32_t>(p + 0x5Cu);
+                if (contents)
+                {
+                    if (row == 10)
+                    {
+                        port::store<int32_t>(p + 0x48u, 0);
+                        closeBook();
+                        return;
+                    }
+                    const int entry = TownPages_SelectedEntry(pages);
+                    port::store<int32_t>(p + 0x30u, port::load<int32_t>(p + 0x2Cu));
+                    port::store<int32_t>(p + 0x60u, port::load<int32_t>(p + 0x5Cu));
+                    port::store<int32_t>(p + 0x44u, port::load<uint16_t>(port::load<uint32_t>(p + 0x34u) + 8u * static_cast<uint32_t>(entry) + 4u));
+                    state(6);
+                    port::store<int32_t>(p + 0x28u, 0);
+                    clearBoxes();
+                    Sound_PlaySe(1, 0, 0x3C, 0.0f, 0.0f);
+                    return;
+                }
+                Sound_PlaySe(1, 0, 0x3C, 0.0f, 0.0f);
+                if (row == 10)
+                {
+                    goBack();
+                    return;
+                }
+                port::store<int32_t>(p + 0x48u, TownPages_SelectedEntry(pages));
+                closeBook();
+                return;
+            }
+            const auto cursorSound = [](bool moved) {
+                if (moved)
+                    Sound_PlaySe(0, 0, 0x3C, 0.0f, 0.0f);
+            };
+            if ((Pad_Held(0) & 0x8000u) != 0u)
+            {
+                const int32_t row = port::load<int32_t>(p + 0x5Cu);
+                if (place(row, 0) != 0)
+                {
+                    const int target = TownPages_ClampCursor(pages, row == 10 ? 4 : row - 5, 3);
+                    port::store<int32_t>(p + 0x58u, target);
+                    cursorSound(target != port::load<int32_t>(p + 0x5Cu));
+                    state(5);
+                    return;
+                }
+                if (port::load<int32_t>(p + 0x2Cu) <= 0)
+                    return;
+                state(3);
+                port::store<int32_t>(p + 0x20u, 1);
+                port::store<uint32_t>(p + 0x28u, 0x42F00000u);
+                Sound_PlaySe(9, 0, 0x3C, 0.0f, 0.0f);
+                return;
+            }
+            if ((Pad_Held(0) & 0x2000u) != 0u)
+            {
+                const int32_t row = port::load<int32_t>(p + 0x5Cu);
+                if (place(row, 0) != 0)
+                {
+                    if (!(port::load<int32_t>(p + 0x2Cu) < port::load<int32_t>(p + 0x3Cu) - 1))
+                        return;
+                    state(3);
+                    port::store<int32_t>(p + 0x20u, 0);
+                    port::store<int32_t>(p + 0x28u, 0);
+                    Sound_PlaySe(9, 0, 0x3C, 0.0f, 0.0f);
+                    return;
+                }
+                Sound_PlaySe(0, 0, 0x3C, 0.0f, 0.0f);
+                port::store<int32_t>(p + 0x58u, TownPages_ClampCursor(pages, row + 5, 1));
+                state(5);
+                return;
+            }
+            if ((Pad_Held(0) & 0x1000u) != 0u)
+            {
+                const int32_t before = port::load<int32_t>(p + 0x58u);
+                port::store<int32_t>(p + 0x58u, TownPages_ClampCursor(pages, port::load<int32_t>(p + 0x5Cu) - 1, 0));
+                cursorSound(before != port::load<int32_t>(p + 0x58u));
+                state(5);
+                return;
+            }
+            if ((Pad_Held(0) & 0x4000u) != 0u)
+            {
+                const int32_t before = port::load<int32_t>(p + 0x58u);
+                port::store<int32_t>(p + 0x58u, TownPages_ClampCursor(pages, port::load<int32_t>(p + 0x5Cu) + 1, 2));
+                cursorSound(before != port::load<int32_t>(p + 0x58u));
+                state(5);
+            }
+            return;
+        }
+        case 3:
+        {
+            const bool back = port::load<int32_t>(p + 0x20u) != 0;
+            const ps2f time = back ? loadF(p + 0x28u) - ps2f(6.0f) : loadF(p + 0x28u) + ps2f(6.0f);
+            storeF(p + 0x28u, time);
+            if (sdk::fptosi(time) == 60)
+            {
+                port::store<int32_t>(p + 0x2Cu, port::load<int32_t>(p + 0x2Cu) + (back ? -1 : 1));
+                TownPages_FillPage(pages);
+            }
+            Instance_DrawSwaying(book(), 0, ps2f(120.0f) + loadF(p + 0x28u));
+            const auto settle = [&](int direction) {
+                const int row = TownPages_ClampCursor(pages, port::load<int32_t>(p + 0x5Cu), direction);
+                port::store<int32_t>(p + 0x58u, row);
+                state(row == port::load<int32_t>(p + 0x5Cu) ? 2 : 5);
+            };
+            if (back)
+            {
+                if (loadF(p + 0x28u) <= ps2f(0.0f))
+                {
+                    port::store<uint32_t>(p + 0x28u, 0u);
+                    settle(3);
+                }
+            }
+            else if (!(loadF(p + 0x28u) <= ps2f(120.0f)))
+            {
+                port::store<uint32_t>(p + 0x28u, 0u);
+                settle(1);
+            }
+            return;
+        }
+        case 4:
+        {
+            const ps2f time = loadF(p + 0x28u) - ps2f(1.0f);
+            storeF(p + 0x28u, time);
+            if (!(time < ps2f(10.0f)))
+            {
+                Instance_DrawSwaying(book(), 0, ps2f(4.0f) * (time - ps2f(10.0f)));
+                return;
+            }
+            slide(time);
+            if (!(loadF(p + 0x28u) <= ps2f(0.0f)))
+                return;
+            port::store<int32_t>(c + 0x30u, 1);
+            port::store<int32_t>(c + 0x34u, 1);
+            applicantsEnabled(1);
+            state(0);
+            const uint32_t family = port::load<uint32_t>(p + 0x48u);
+            if (family == 0u)
+            {
+                CityScene_PopMode(city);
+                return;
+            }
+            const GuestPtr<MapObject> home = Map_FindFamilyHome(GuestPtr<CityMap>{port::load<uint32_t>(c + 0x50u)}, static_cast<uint16_t>(family));
+            if (home.address != 0u)
+                CityScene_StartTalk(city, 0, port::load<uint16_t>(home.address + 2u), 0x1770, 1);
+            else if ((port::load<uint16_t>(0x001C5600u) & 2u) != 0u)
+                CityScene_StartTalk(city, 1, static_cast<int>(family), 6, 3);
+            else
+                CityScene_StartTalk(city, 1, static_cast<int>(family), 6, 1);
+            return;
+        }
+        case 5:
+        {
+            const int32_t row = port::load<int32_t>(p + 0x58u);
+            const int32_t targetX = place(row, 0);
+            const int32_t x = port::load<int32_t>(p + 0x50u);
+            int32_t xDiff = targetX - x;
+            if (x == targetX)
+            {
+                if (port::load<int32_t>(p + 0x54u) == place(row, 4))
+                {
+                    port::store<int32_t>(p + 0x5Cu, row);
+                    state(2);
+                    return;
+                }
+                xDiff = 0;
+            }
+            const int32_t stepX = xDiff / 2;
+            const int32_t yDiff = place(row, 4) - port::load<int32_t>(p + 0x54u);
+            const int32_t stepY = yDiff / 2;
+            if (stepX == 0)
+                port::store<int32_t>(p + 0x50u, targetX);
+            else
+                port::store<int32_t>(p + 0x50u, port::load<int32_t>(p + 0x50u) + stepX);
+            if (stepY == 0)
+                port::store<int32_t>(p + 0x54u, place(port::load<int32_t>(p + 0x58u), 4));
+            else
+                port::store<int32_t>(p + 0x54u, port::load<int32_t>(p + 0x54u) + stepY);
+            return;
+        }
+        case 6:
+        {
+            const ps2f time = loadF(p + 0x28u);
+            if (time <= ps2f(10.0f))
+            {
+                Instance_DrawSwaying(book(), 0, ps2f(120.0f) - ps2f(10.0f) * time);
+                storeF(p + 0x28u, loadF(p + 0x28u) + ps2f(1.0f));
+            }
+            else if (time == ps2f(11.0f))
+                storeF(p + 0x28u, time + ps2f(1.0f));
+            else if (time <= ps2f(22.0f))
+            {
+                Instance_DrawSwaying(book(), 0, ps2f(10.0f) * (time - ps2f(10.0f)));
+                storeF(p + 0x28u, loadF(p + 0x28u) + ps2f(1.0f));
+            }
+            else if (time == ps2f(23.0f))
+            {
+                port::store<int32_t>(p + 0x28u, 0);
+                port::store<int32_t>(p + 0x2Cu, port::load<int32_t>(p + 0x44u));
+                if (port::load<int32_t>(p + 0x2Cu) < port::load<int32_t>(p + 0x38u))
+                    port::store<int32_t>(p + 0x58u, port::load<int32_t>(p + 0x60u));
+                else
+                    port::store<int32_t>(p + 0x58u, 0);
+                TownPages_FillPage(pages);
+                state(5);
+            }
+            return;
+        }
+        default:
+            return;
+        }
+    }
+
+    PORT_FN(TownPages_Update);
 }

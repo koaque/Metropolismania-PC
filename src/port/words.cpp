@@ -2859,4 +2859,43 @@ namespace mm
 
     PORT_FN(Words_StepImpl);
     PORT_FN(Words_Step);
+
+    namespace
+    {
+        // __ptmf_scall: the pointer to member function at `entry` (the delta added to `this`, then a vtable offset or -1, then the
+        // function or, for a virtual one, where the vtable pointer sits in the object) called on `object` with the index. The callee
+        // finds the table's address in v0 (the callbacks that never set v0 hand it back).
+        int callMember(uint32_t table, uint32_t index, uint32_t object)
+        {
+            const uint32_t entry = table + 12u * index;
+            const uint32_t self = object + port::load<uint32_t>(entry);
+            const int32_t slot = port::load<int32_t>(entry + 4u);
+            uint32_t target = port::load<uint32_t>(entry + 8u);
+            if (slot >= 0)
+                target = port::load<uint32_t>(port::load<uint32_t>(self + target) + static_cast<uint32_t>(slot));
+            port::setGuestV0(static_cast<int32_t>(table));
+            return port::callGuest<int>(target, self, static_cast<int>(index));
+        }
+    }
+
+    // A script's condition, text getter or action number `index`: the member function in the table (12 bytes an entry, at 0x1B9630,
+    // 0x1B9570 and 0x1B9100) called on the script's context (the first word of the object).
+    void Words_CallCond(GuestPtr<Words> words, int index)
+    {
+        callMember(0x001B9630u, static_cast<uint32_t>(index), port::load<uint32_t>(words.address));
+    }
+
+    int Words_CallText(GuestPtr<Words> words, int index)
+    {
+        return callMember(0x001B9570u, static_cast<uint32_t>(index), port::load<uint32_t>(words.address));
+    }
+
+    int Words_CallAct(GuestPtr<Words> words, int index)
+    {
+        return callMember(0x001B9100u, static_cast<uint32_t>(index), port::load<uint32_t>(words.address));
+    }
+
+    PORT_FN(Words_CallCond);
+    PORT_FN(Words_CallText);
+    PORT_FN(Words_CallAct);
 }

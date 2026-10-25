@@ -492,7 +492,7 @@
 0x00155B50 void mm_Applicants_ScrollTo(Applicants *applicants, int index);
 0x00155C60 void mm_Applicants_PlaceAt(Applicants *applicants, float *point);
 0x00155E00 void mm_Applicants_DrawDetails(Applicants *applicants);
-0x00156470 int mm_Applicants_Draw(Applicants *applicants);
+0x00156470 void mm_Applicants_Draw(Applicants *applicants);
 0x00156A90 Applicants *mm_ApplicantsBase_dtor(Applicants *applicants, int16_t deleteFlag);
 0x00156B10 Applicants *mm_ApplicantsBase_ctor(Applicants *applicants);
 0x00156C50 int mm_Applicants_AnyWaiting(Applicants *applicants);
@@ -1082,9 +1082,9 @@
 0x0017FF20 int mm_WordsFn_StatusLow2(WordsCtx *ctx);
 0x0017FF80 int mm_WordsFn_FriendLevelHigh(WordsCtx *ctx);
 0x00180020 int mm_WordsFn_NameSlotSet(WordsCtx *ctx);
-0x00180050 int mm_Words_CallCond(Words *words);
-0x00180070 int mm_Words_CallText(Words *words);
-0x00180090 int mm_Words_CallAct(Words *words);
+0x00180050 void mm_Words_CallCond(Words *words, int index);
+0x00180070 int mm_Words_CallText(Words *words, int index);
+0x00180090 int mm_Words_CallAct(Words *words, int index);
 0x001800B0 void mm_Words_SetFlag134(Words *words);
 0x001800C0 void mm_Words_SelectBagItem(Words *words, int index);
 0x00180180 void mm_Words_SetWantIndex(Words *words, uint16_t index);

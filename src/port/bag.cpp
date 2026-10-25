@@ -1021,4 +1021,127 @@ namespace mm
     }
 
     PORT_FN(Applicants_DrawDetails);
+
+    // The applicants panel for one frame (nothing while +0x2C9 is 0). With mode 1 and entries: the details step (Applicants_
+    // DrawDetails), the card model (+0x28C) played at the phase +0x2B0 and, once +0x2BC was set, lit again with the shown entry's
+    // colour (the flag is cleared) on all of its nodes; then the model is drawn, a changed entry count (+0x284) scrolls to the top, and
+    // the entries' icons are placed on the nodes of the icon model (+0x290): the node is the second of the table at 0x1B7A18 for
+    // an entry of kind 4 to 7, else the first; the matrix at that node is the identity moved by the entry's place (the spacing is
+    // 2.2 over the count, kept between 0.05 and 0.1; the shown entry sits 0.07 lower, the others 0.001 a place of distance from
+    // the cursor, less 0.03) and the node is drawn with the entry's brightened claim colour. Past the entries the marker (+0x2AC,
+    // when +0x2C8 is not 0xFF) is placed beside the card (a depth from the table at 0x1B7A20) and drawn on node 2. With no entries
+    // a white mesh 4 of the icon model is drawn instead. Whenever the mode is not 0 and +0x2B8 is set, the layout runs and the
+    // shown entry's icon is drawn on node 0; the card text (+0x294) shows when +0x29C is set and there are entries.
+    void Applicants_Draw(GuestPtr<Applicants> applicants)
+    {
+        port::GuestFrame<0xB0> frame;
+        const uint32_t sp = frame.ptr().address;
+        const uint32_t a = applicants.address;
+        const auto loadF = [](uint32_t at) { return ps2f(std::bit_cast<float>(port::load<uint32_t>(at))); };
+        const auto storeF = [](uint32_t at, ps2f value) { port::store<uint32_t>(at, std::bit_cast<uint32_t>(value.v)); };
+        const auto constant = [](uint32_t bits) { return ps2f(std::bit_cast<float>(bits)); };
+        const auto cardModel = [a]() { return GuestPtr<A3DObject>{port::load<uint32_t>(a + 0x28Cu)}; };
+        const auto iconModel = [a]() { return GuestPtr<A3DObject>{port::load<uint32_t>(a + 0x290u)}; };
+        // The claim colour of the entry (the icon of its section C, level 1) with each of red, green and blue brought halfway to 1 from
+        // where it is, and 12 in the fourth place.
+        const auto entryColour = [&](int32_t entry, uint32_t out) {
+            const uint32_t icon = port::load<uint16_t>(static_cast<uint32_t>(Claim_GetSectionC(port::load<uint16_t>(a + 0x2DCu + 2u * static_cast<uint32_t>(entry)))));
+            ClaimIcon_GetColor(icon, 1, GuestPtr<Vec4>{out});
+            for (uint32_t lane = 0; lane < 3; ++lane)
+            {
+                const ps2f value = loadF(out + 4u * lane);
+                if (value < ps2f(1.0f))
+                    storeF(out + 4u * lane, ps2f(1.0f) - ps2f(0.5f) * (ps2f(1.0f) - value));
+                else
+                    storeF(out + 4u * lane, ps2f(1.0f) + ps2f(0.5f) * (value - ps2f(1.0f)));
+            }
+            port::store<int32_t>(out + 0xCu, 12);
+        };
+        const uint8_t mode = port::load<uint8_t>(a + 0x2C9u);
+        if (mode == 0)
+            return;
+        if (mode == 1)
+        {
+            DmaList_QueueClearZ();
+            const int32_t count = port::load<int32_t>(a + 0x280u);
+            if (count > 0)
+            {
+                Applicants_DrawDetails(applicants);
+                Instance_DrawSwaying(cardModel(), 0, loadF(a + 0x2B0u));
+                const int32_t relight = port::load<int32_t>(a + 0x2BCu);
+                port::store<int32_t>(a + 0x2BCu, 0);
+                if (relight != 0)
+                {
+                    entryColour(port::load<int32_t>(a + 0x2D0u), sp + 0xA0u);
+                    A3DObject_ChangeLuminosity(cardModel(), GuestPtr<uint32_t>{sp + 0xA0u}, 0);
+                    for (uint32_t node = 0; node < 8; ++node)
+                        A3DObject_ChangeLuminosity(cardModel(), GuestPtr<uint32_t>{sp + 0xA0u}, port::load<uint8_t>(0x001B7A10u + node));
+                }
+                A3DObject_Draw(cardModel());
+                const int32_t shown = port::load<int32_t>(a + 0x280u);
+                const int32_t before = port::load<int32_t>(a + 0x284u);
+                port::store<int32_t>(a + 0x284u, shown);
+                if (shown != before)
+                    Applicants_ScrollTo(applicants, -1);
+                ps2f spacing = constant(0x400CCCCDu) / ps2f(static_cast<float>(port::load<int32_t>(a + 0x280u)));
+                if (spacing < constant(0x3D4CCCCDu))
+                    spacing = constant(0x3D4CCCCDu);
+                else if (!(spacing <= constant(0x3DCCCCCDu)))
+                    spacing = constant(0x3DCCCCCDu);
+                for (int32_t i = 0; i < port::load<int32_t>(a + 0x280u); ++i)
+                {
+                    if (port::load<int32_t>(a + 0x2B8u) != 0 && i == port::load<int32_t>(a + 0x2D0u))
+                        continue;
+                    const uint32_t kind = port::load<uint16_t>(a + 0x14u * static_cast<uint32_t>(i) + 2u);
+                    const uint32_t slot = kind >= 4u ? (kind < 8u ? 1u : 0u) : 0u;
+                    const uint32_t nodeAt = 0x001B7A18u + slot;
+                    const uint32_t node = port::load<uint8_t>(nodeAt);
+                    const uint32_t matrix = port::load<uint32_t>(port::load<uint32_t>(iconModel().address) + 8u) + 0xC0u * node + 0x70u;
+                    Mat4_Copy(GuestPtr<Vec4>{matrix}, GuestPtr<Vec4>{0x001B2550u});
+                    const ps2f place = ps2f(static_cast<float>(i)) * spacing;
+                    storeF(matrix + 0x30u, (loadF(port::load<uint32_t>(a + 0x2A4u) + 0x30u) + place) - constant(0x3F866666u));
+                    storeF(matrix + 0x34u, constant(0xBF3AE148u) + loadF(port::load<uint32_t>(a + 0x2A4u) + 0x34u));
+                    const int32_t cursor = port::load<int32_t>(a + 0x2B8u) != 0 ? port::load<int32_t>(a + 0x2C4u) : port::load<int32_t>(a + 0x2CCu);
+                    if (cursor == i)
+                        storeF(matrix + 0x38u, loadF(port::load<uint32_t>(a + 0x2A4u) + 0x38u) - constant(0x3D8F5C29u));
+                    else
+                    {
+                        const int32_t distance = std::abs(cursor - i);
+                        storeF(matrix + 0x38u, (loadF(port::load<uint32_t>(a + 0x2A4u) + 0x38u) + constant(0x3A83126Fu) * ps2f(static_cast<float>(distance))) - constant(0x3CF5C28Fu));
+                    }
+                    entryColour(i, sp + 0x90u);
+                    Instance_DrawNode(iconModel(), GuestPtr<Vec4>{sp + 0x90u}, static_cast<int>(node), 0);
+                }
+                const uint8_t marker = port::load<uint8_t>(a + 0x2C8u);
+                if (marker != 0xFF)
+                {
+                    const uint32_t markerMatrix = port::load<uint32_t>(a + 0x2ACu);
+                    Mat4_Copy(GuestPtr<Vec4>{markerMatrix}, GuestPtr<Vec4>{0x001B2550u});
+                    storeF(port::load<uint32_t>(a + 0x2ACu) + 0x30u, loadF(port::load<uint32_t>(a + 0x2A0u) + 0x30u) + loadF(0x001B7A20u + 4u * marker));
+                    port::store<uint32_t>(port::load<uint32_t>(a + 0x2ACu) + 0x34u, port::load<uint32_t>(port::load<uint32_t>(a + 0x2A0u) + 0x34u));
+                    port::store<uint32_t>(port::load<uint32_t>(a + 0x2ACu) + 0x38u, port::load<uint32_t>(port::load<uint32_t>(a + 0x2A0u) + 0x38u));
+                    Instance_DrawNode(iconModel(), GuestPtr<Vec4>{sp + 0x90u}, 2, 0);
+                }
+            }
+            else
+            {
+                port::store<uint32_t>(sp + 0x90u, 0x437F0000u);
+                port::store<uint32_t>(sp + 0x94u, 0x437F0000u);
+                port::store<uint32_t>(sp + 0x98u, 0x437F0000u);
+                port::store<int32_t>(sp + 0x9Cu, 12);
+                Instance_DrawMesh(iconModel(), GuestPtr<Vec4>{port::load<uint32_t>(a + 0x2A0u)}, GuestPtr<Vec4>{sp + 0x90u}, 4, 0);
+            }
+        }
+        if (port::load<int32_t>(a + 0x2B8u) != 0)
+        {
+            Applicants_Layout(applicants);
+            DmaList_QueueClearZ();
+            entryColour(port::load<int32_t>(a + 0x2D0u), sp + 0x90u);
+            Instance_DrawNode(iconModel(), GuestPtr<Vec4>{sp + 0x90u}, 0, 0);
+        }
+        if (port::load<int32_t>(a + 0x29Cu) != 0 && port::load<int32_t>(a + 0x280u) != 0)
+            TextBox_Draw(GuestPtr<TextBox>{port::load<uint32_t>(a + 0x294u)});
+    }
+
+    PORT_FN(Applicants_Draw);
 }

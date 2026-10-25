@@ -4740,4 +4740,214 @@ namespace mm
     }
 
     PORT_FN(Char2_Update);
+
+    // The player for one frame. The move speed (+0x54) follows the stamina object's counter (the count over 100000 over 140, plus 0.04;
+    // 0.02 with none). The tile the player stands on (+0x10 and +0x18, 64 added, as x and as the row) is found, then the move vector
+    // (sp+0x80, zero to start) is made by the mode (+0x0): 0 and 3 turn and show the placing highlight, 1 walks (Cross held lays a
+    // road on the tile) and shows it, 2 turns and places a family, 4 only turns, 5 turns and places a bag item (3 and 0 also pick the
+    // target). Moving, or rising, uses stamina. The vector is turned by the heading (the model's matrix, +0x88) and added to the
+    // position; Triangle or the two shoulder buttons jump (the speed -0.25 when not already rising fast, two jumps at most); gravity
+    // then speeds the fall (the time +0x50 over 60, 9.8 and 0.01) and moves the height (+0x14). The new spot (0.15 lower) is checked
+    // against the nearest object (radius 0.05 over the speed, at least 0.2): in the walk mode a hit flips the grid step (+0x8) and mirrors
+    // the step frames (2 over the speed minus them), in the other modes the player is pushed out along the unit direction to the hit; a
+    // second hit puts x and z back. The height of the ground (at most 0.4 over +0xB0 of the city, or the colliding object's top) then lands
+    // a fall (speed 0), settles a standing player (eased by a fifth when far above, snapped when close) or ends a jump; the model's matrix
+    // follows, the building occupant of the tile is drawn, the action, footstep and zoom flag (+0x3C) are updated, the cursor is shown
+    // in the modes 0 and 3, the minimap view is set and the pad focus 3 is let go of unless Cross is held.
+    void Player_Update(GuestPtr<Player> player, GuestPtr<CityScene> city)
+    {
+        port::GuestFrame<0xE0> frame;
+        const uint32_t sp = frame.ptr().address;
+        const uint32_t p = player.address, c = city.address;
+        const auto loadF = [](uint32_t at) { return ps2f(std::bit_cast<float>(port::load<uint32_t>(at))); };
+        const auto storeF = [](uint32_t at, ps2f value) { port::store<uint32_t>(at, std::bit_cast<uint32_t>(value.v)); };
+        const auto constant = [](uint32_t bits) { return ps2f(std::bit_cast<float>(bits)); };
+        const auto copyVec = [](uint32_t to, uint32_t from) {
+            for (uint32_t k = 0; k < 16u; k += 4u)
+                port::store<uint32_t>(to + k, port::load<uint32_t>(from + k));
+        };
+        const auto map = [c]() { return GuestPtr<CityMap>{port::load<uint32_t>(c + 0x50u)}; };
+        const uint32_t move = sp + 0x80u, hit = sp + 0xA0u, spot = sp + 0xB0u, before = sp + 0xC0u, distance = sp + 0xDCu;
+        copyVec(move, 0x001B26B0u);
+        const uint32_t stamina = port::load<uint32_t>(c + 0x64u);
+        const int32_t count = port::load<int32_t>(stamina + 4u);
+        if (count == 0)
+            port::store<uint32_t>(p + 0x54u, 0x3CA3D70Au);
+        else
+        {
+            const ps2f base = ps2f(static_cast<float>(count / 100000));
+            storeF(p + 0x54u, base);
+            storeF(p + 0x54u, constant(0x3D23D70Au) + base / constant(0x430C0000u));
+        }
+        const int tileX = sdk::fptosi(constant(0x42800000u) + loadF(p + 0x10u));
+        const int tileZ = sdk::fptosi(constant(0x42800000u) - loadF(p + 0x18u));
+        const auto showHighlight = [&]() {
+            Map_SetPlacementHighlight(map(), 0, GuestPtr<int32_t>{sp + 0x70u}, GuestPtr<uint32_t>{sp + 0x90u});
+        };
+        switch (port::load<uint32_t>(p))
+        {
+        case 0:
+            Player_Turn(player, GuestPtr<ps2f>{move});
+            showHighlight();
+            Player_PickTarget(player, city);
+            break;
+        case 1:
+            Player_Move(player, GuestPtr<Vec4>{move});
+            if ((Pad_Held(0) & 0x40u) != 0u)
+                Map_PlaceRoad(map(), static_cast<uint32_t>(tileX), static_cast<uint32_t>(tileZ), static_cast<int>(c));
+            showHighlight();
+            break;
+        case 2:
+            Player_Turn(player, GuestPtr<ps2f>{move});
+            Player_PlaceForApplicant(player, city);
+            break;
+        case 3:
+            Player_Turn(player, GuestPtr<ps2f>{move});
+            showHighlight();
+            Player_PickTarget(player, city);
+            break;
+        case 4:
+            Player_Turn(player, GuestPtr<ps2f>{move});
+            break;
+        case 5:
+            Player_Turn(player, GuestPtr<ps2f>{move});
+            Player_PlaceBagItem(player, city);
+            break;
+        default:
+            break;
+        }
+        if (!(ps2f(0.0f) == loadF(move)) || !(ps2f(0.0f) == loadF(move + 8u)) || loadF(p + 0x4Cu) < ps2f(0.0f))
+            Stamina_Tick(GuestPtr<Stamina>{port::load<uint32_t>(c + 0x64u)}, city);
+        copyVec(before, p + 0x10u);
+        const uint32_t matrix = port::load<uint32_t>(p + 0x88u) + 0x10u;
+        sdk::sceVu0RotMatrixY(matrix, 0x001B2550u, loadF(p + 0xCu));
+        sdk::sceVu0ApplyMatrix(move, matrix, move);
+        {
+            using namespace vu0;
+            vf(4) = load(GuestPtr<Vec4>{p + 0x10u});
+            vf(5) = load(GuestPtr<Vec4>{move});
+            set(vf(4), add(vf(4), vf(5)), XYZW);
+            store(GuestPtr<Vec4>{p + 0x10u}, vf(4));
+        }
+        if ((Pad_Pressed(0) & 0x10u) != 0u || (Pad_Pressed(0) & 0x200u) != 0u || (Pad_Pressed(0) & 0x400u) != 0u)
+        {
+            const ps2f speed = loadF(p + 0x4Cu);
+            if (!(speed < constant(0xBE99999Au)) && speed <= constant(0x3D8F5C29u) && port::load<int32_t>(p + 0x84u) < 2)
+            {
+                port::store<uint32_t>(p + 0x4Cu, 0xBE800000u);
+                port::store<uint32_t>(p + 0x50u, 0u);
+                const int32_t jumps = port::load<int32_t>(p + 0x84u);
+                port::store<int32_t>(p + 0x84u, jumps + 1);
+                Se_PlayVariant(6);
+            }
+        }
+        if (!(ps2f(0.0f) == loadF(p + 0x4Cu)))
+        {
+            storeF(p + 0x50u, loadF(p + 0x50u) + constant(0x3C888889u));
+            const ps2f pull = constant(0x3C23D70Au) * (constant(0x411CCCCDu) * loadF(p + 0x50u));
+            const ps2f speed = loadF(p + 0x4Cu) + pull;
+            storeF(p + 0x4Cu, speed);
+            storeF(p + 0x14u, loadF(p + 0x14u) + speed);
+        }
+        copyVec(spot, p + 0x10u);
+        storeF(spot + 4u, loadF(spot + 4u) - constant(0x3E19999Au));
+        ps2f radius = constant(0x3D4CCCCDu) + loadF(p + 0x54u);
+        if (radius < constant(0x3E4CCCCDu))
+            radius = constant(0x3E4CCCCDu);
+        if (Player_NearestObject(map(), GuestPtr<ps2f>{spot}, GuestPtr<uint32_t>{hit}, GuestPtr<ps2f>{distance}, radius) != 0)
+        {
+            if (port::load<int32_t>(p) == 1)
+            {
+                const int32_t step = port::load<int32_t>(p + 8u);
+                if (step == 1 || step == 2)
+                {
+                    port::store<int32_t>(p + 8u, step == 1 ? 2 : 1);
+                    storeF(p + 0x80u, ps2f(2.0f) / loadF(p + 0x54u) - loadF(p + 0x80u));
+                }
+            }
+            else
+            {
+                using namespace vu0;
+                vf(4) = load(GuestPtr<Vec4>{hit});
+                vf(5) = load(GuestPtr<Vec4>{spot});
+                set(vf(4), sub(vf(4), vf(5)), XYZW);
+                store(GuestPtr<Vec4>{p + 0x60u}, vf(4));
+                port::store<uint32_t>(p + 0x64u, 0u);
+                vf(1) = load(GuestPtr<Vec4>{p + 0x60u});
+                set(vf(2), mul(vf(1), vf(1)), XYZW);
+                set(vf(2), add(vf(2), lane(vf(2), 1)), X);
+                set(vf(2), add(vf(2), lane(vf(2), 2)), X);
+                q() = rsqrt(x(vf(2)));
+                set(vf(2), mul(vf(1), _mm_set1_ps(q())), XYZ);
+                store(GuestPtr<Vec4>{p + 0x60u}, vf(2));
+                const ps2f push = (constant(0x3A83126Fu) + radius) - loadF(distance);
+                storeF(spot, loadF(spot) - loadF(p + 0x60u) * push);
+                storeF(spot + 8u, loadF(spot + 8u) - loadF(p + 0x68u) * push);
+            }
+        }
+        if (Player_NearestObject(map(), GuestPtr<ps2f>{spot}, GuestPtr<uint32_t>{hit}, GuestPtr<ps2f>{distance}, radius) != 0)
+        {
+            port::store<uint32_t>(spot, port::load<uint32_t>(before));
+            port::store<uint32_t>(spot + 8u, port::load<uint32_t>(before + 8u));
+        }
+        port::store<uint32_t>(p + 0x10u, port::load<uint32_t>(spot));
+        port::store<uint32_t>(p + 0x18u, port::load<uint32_t>(spot + 8u));
+        ps2f ground = Map_SampleHeight(map(), loadF(p + 0x10u), loadF(p + 0x18u));
+        const ps2f ceiling = constant(0x3ECCCCCDu) + loadF(c + 0xB0u);
+        if (!(ground <= ceiling))
+            ground = ceiling;
+        if (Player_CollideObjects(map(), GuestPtr<ps2f>{p + 0x10u}, static_cast<int>(hit), constant(0x3F666666u)) != 0)
+            ground = loadF(hit + 4u);
+        const ps2f speed = loadF(p + 0x4Cu);
+        if (!(speed <= ps2f(0.0f)))
+        {
+            // Falling: lands when the player is below the ground.
+            if (ground < loadF(p + 0x14u))
+            {
+                storeF(p + 0x50u, ps2f(0.0f));
+                storeF(p + 0x4Cu, ps2f(0.0f));
+                storeF(p + 0x14u, ground);
+                port::store<int32_t>(p + 0x84u, 0);
+            }
+        }
+        else if (ps2f(0.0f) == speed)
+        {
+            const ps2f height = loadF(p + 0x14u);
+            const ps2f above = height - ground;
+            if (!(above <= constant(0x3DCCCCCDu)))
+                storeF(p + 0x4Cu, (-above) / ps2f(5.0f));
+            else if (ground < height)
+            {
+                storeF(p + 0x50u, ps2f(0.0f));
+                storeF(p + 0x14u, ground);
+            }
+            else
+            {
+                const ps2f below = ground - height;
+                if (!(below <= constant(0x3DCCCCCDu)))
+                    port::store<uint32_t>(p + 0x4Cu, 0x3A03126Fu);
+                else if (!(ground <= height))
+                {
+                    storeF(p + 0x50u, ps2f(0.0f));
+                    storeF(p + 0x14u, ground);
+                }
+            }
+        }
+        storeF(matrix + 0x30u, loadF(p + 0x10u));
+        storeF(matrix + 0x34u, loadF(p + 0x14u));
+        storeF(matrix + 0x38u, loadF(p + 0x18u));
+        const uint32_t tile = static_cast<uint32_t>(Map_GetTileObject(map(), tileX, tileZ).address);
+        BldgType_DrawOccupant(GuestPtr<BuildingType>{port::load<uint32_t>(port::load<uint32_t>(0x001BDBF8u) + 4u * port::load<uint16_t>(tile))}, GuestPtr<Vec4>{p + 0x20u},
+                              GuestPtr<MapPerson>{p + 0x10u}, city);
+        Player_UpdateAction(player, GuestPtr<Vec4>{move}, city);
+        Player_PlayFootstep(player, city);
+        port::store<int32_t>(p + 0x3Cu, CityCamera_GetZoomLevel(GuestPtr<CityCamera>{port::load<uint32_t>(c + 0x4Cu)}, city) != 0 ? 1 : 0);
+        const int32_t mode = port::load<int32_t>(p);
+        port::store<int32_t>(port::load<uint32_t>(c + 0x70u) + 0x1A0u, (mode == 0 || mode == 3) ? 1 : 0);
+        Minimap_SetView(GuestPtr<Minimap>{port::load<uint32_t>(c + 0x74u)}, GuestPtr<ps2f>{p + 0x10u}, loadF(p + 0xCu));
+        if ((Pad_Held(3) & 0x40u) == 0u)
+            Pad_ReleaseFocus(3);
+    }
+
+    PORT_FN(Player_Update);
 }

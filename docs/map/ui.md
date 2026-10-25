@@ -17,7 +17,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 
 ## Functions
 
-168 functions (ported 3, typed 6, verified 159). Blocks: 62 can reach a thread switch, 10 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+168 functions (ported 3, verified 165). Blocks: 62 can reach a thread switch, 10 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -109,7 +109,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x00155B50` | `void mm_Applicants_ScrollTo(Applicants *applicants, int index)` | 260 | no | (provisional) scrolls to entry a1 |
 | `0x00155C60` | `void mm_Applicants_PlaceAt(Applicants *applicants, float *point)` | 408 | no | (provisional) positions the panel at a screen point |
 | `0x00155E00` | `void mm_Applicants_DrawDetails(Applicants *applicants)` | 1620 | yes | (provisional) detail models and claim icons |
-| `0x00156470` | `int mm_Applicants_Draw(Applicants *applicants)` | 1540 | yes | the applicants panel |
+| `0x00156470` | `void mm_Applicants_Draw(Applicants *applicants)` | 1540 | yes | the applicants panel |
 | `0x00156A90` | `Applicants *mm_ApplicantsBase_dtor(Applicants *applicants, int16_t deleteFlag)` | 124 | yes | vtable 0x1BCF60, deletes its text box |
 | `0x00156B10` | `Applicants *mm_ApplicantsBase_ctor(Applicants *applicants)` | 320 | yes | vtable 0x1BCF60, text box, empty list |
 | `0x00157110` | `int mm_Applicants_Update(Applicants *applicants, CityScene *city)` | 1660 | yes | the applicants panel per frame: cursor, prefetching family records, assigning |

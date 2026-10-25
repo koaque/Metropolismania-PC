@@ -85,6 +85,7 @@ namespace mm::sdk
         inline constexpr uint32_t d_utod = 0x001000F0u;
         inline constexpr uint32_t pow = 0x0011A290u;
         inline constexpr uint32_t dptoli = 0x00128440u;
+        inline constexpr uint32_t sceVu0ApplyMatrix = 0x00104B38u;
         inline constexpr uint32_t sceVu0MulMatrix = 0x00104B68u;
         inline constexpr uint32_t sceVu0UnitMatrix = 0x00104E60u;
         inline constexpr uint32_t sceVu0InversMatrix = 0x00104C80u;
@@ -363,6 +364,7 @@ namespace mm::sdk
     inline int64_t scePadEnterPressMode(int portNumber, int slot) { return port::callGuest<int64_t>(addr::scePadEnterPressMode, portNumber, slot); }
 
     // libvu0 (matrices are 4 Vec4 rows).
+    inline void sceVu0ApplyMatrix(uint32_t out, uint32_t matrix, uint32_t in) { port::callGuest<void>(addr::sceVu0ApplyMatrix, out, matrix, in); }
     inline void sceVu0MulMatrix(uint32_t out, uint32_t a, uint32_t b) { port::callGuest<void>(addr::sceVu0MulMatrix, out, a, b); }
     inline void sceVu0UnitMatrix(uint32_t out) { port::callGuest<void>(addr::sceVu0UnitMatrix, out); }
     inline void sceVu0InversMatrix(uint32_t out, uint32_t in) { port::callGuest<void>(addr::sceVu0InversMatrix, out, in); }

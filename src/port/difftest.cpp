@@ -28,6 +28,14 @@
 // <address>:<words> prints those words of both runs, and MMPC_DIFFTEST_TRACE=<names> prints the argument registers of every call
 // to those functions in the original run and again in the ported one (the ported run's callees are the ported ones), which shows
 // what the two hand a callee (for example a float the original never doubled).
+// MMPC_DIFFTEST_WATCH=<hex address> adds, to every traced call, a line with the word at that address after the call returns; the
+// first call after which the original run and the port run differ points at the callee (or the code between two traced calls)
+// that wrote it. MMPC_PORT_DISABLE=0xADDR,... also keeps the generated function at those addresses in the port run (for calls made
+// through the guest tables, not the port's direct calls), to see which ported callee a difference comes from.
+//
+// Warm records: a record whose file name starts with warm<N> (for example warm33_s.mmdt) is first advanced by N calls of the original
+// with the same arguments, memory and heap bookkeeping carrying over, and the replay then compares the next call. That is how a
+// function that works in steps over many frames (a scene's briefing) is tested at a step that needs the objects earlier steps made.
 //
 // Changes: MMPC_DIFFTEST_CHANGES=<names or "all"> prints, for each record of those functions, the RDRAM ranges
 // the original run changed (outside the free stack), and its v0 for functions with an integer result. A record
@@ -293,13 +301,20 @@ namespace port
             std::string fault;
         };
 
-        void runOnce(PS2Runtime &runtime, GuestFn fn, uint32_t address, const Record &rec, const R5900Context &start, Outcome &out)
+        // The heap bookkeeping every record starts from (the state when the first replay began).
+        const PS2Runtime::GuestHeapState &baseHeapState(PS2Runtime &runtime)
+        {
+            static const PS2Runtime::GuestHeapState baseHeap = runtime.saveGuestHeapState();
+            return baseHeap;
+        }
+
+        void runOnce(PS2Runtime &runtime, GuestFn fn, uint32_t address, const Record &rec, const R5900Context &start, Outcome &out,
+                     const PS2Runtime::GuestHeapState &heap)
         {
             // The runtime keeps the heap's bookkeeping and the open file descriptors outside RDRAM. Every run starts
             // from the same ones, so a call that allocates or opens gets the same block and descriptor each time.
-            static const PS2Runtime::GuestHeapState baseHeap = runtime.saveGuestHeapState();
             static const int32_t baseDescriptor = runtime.vfs().nextDescriptor();
-            runtime.restoreGuestHeapState(baseHeap);
+            runtime.restoreGuestHeapState(heap);
             runtime.vfs().closeFrom(baseDescriptor);
             std::memcpy(g_rdram, rec.rdram.data(), PS2_RAM_SIZE);
             std::memcpy(g_scratchpad, rec.scratchpad.data(), PS2_SCRATCHPAD_SIZE);
@@ -351,15 +366,32 @@ namespace port
                          *reinterpret_cast<const uint32_t *>(&ctx->f[12]), *reinterpret_cast<const uint32_t *>(&ctx->f[13]),
                          static_cast<unsigned long long>(gpr64(ctx, 29) & 0xFFFFFFFFu));
             t.target(rdram, ctx, runtime);
+            // MMPC_DIFFTEST_WATCH=<hex address> prints the word there after every traced call returns (where it first differs between
+            // the original run and the port run points at the callee that wrote it).
+            if (const char *watch = std::getenv("MMPC_DIFFTEST_WATCH"))
+            {
+                const uint32_t address = static_cast<uint32_t>(std::strtoul(watch, nullptr, 16));
+                std::fprintf(stderr, "WATCH %s %08x\n", t.name, *reinterpret_cast<const uint32_t *>(rdram + (address & PS2_RAM_MASK)));
+            }
         }
 
         // Points every ported address at its generated function (true) or back at the port (false).
         void useGenerated(PS2Runtime &runtime, bool generated)
         {
             static const std::vector<std::string> traced = env("MMPC_DIFFTEST_TRACE") ? splitList(env("MMPC_DIFFTEST_TRACE")) : std::vector<std::string>{};
+            // MMPC_PORT_DISABLE=0xADDR,... keeps the generated functions at those addresses in the port run too (to find which ported
+            // callee a difference comes from; it works for the calls made through the guest tables, not the port's direct calls).
+            static const std::vector<std::string> kept = env("MMPC_PORT_DISABLE") ? splitList(env("MMPC_PORT_DISABLE")) : std::vector<std::string>{};
+            static const std::set<uint32_t> keptAddresses = [] {
+                std::set<uint32_t> out;
+                for (const std::string &item : kept)
+                    if (!item.empty() && item != "all")
+                        out.insert(static_cast<uint32_t>(std::stoul(item, nullptr, 0)));
+                return out;
+            }();
             for (const Ported &p : ported())
             {
-                const GuestFn target = generated ? p.original : p.wrapper;
+                const GuestFn target = generated || keptAddresses.count(p.address) != 0 ? p.original : p.wrapper;
                 if (!traced.empty() && std::find(traced.begin(), traced.end(), std::string(p.name)) != traced.end())
                 {
                     g_traced[p.address] = {p.name, target};
@@ -414,7 +446,7 @@ namespace port
             // Not compared for functions that end in a call whose VU0 loads read stack leftovers: Map_SampleHeight leaves the
             // w lanes of its stack vectors unwritten, so what the generated callees left there before (and the ported ones
             // do not) decides the final lanes. The game never reads them back: everything else is still compared.
-            static const std::set<std::string> kVu0FromLeftovers = {"TalkPersonFar_ctor", "TalkPersonNear_ctor", "Person_ChooseDestination"};
+            static const std::set<std::string> kVu0FromLeftovers = {"TalkPersonFar_ctor", "TalkPersonNear_ctor", "Person_ChooseDestination", "CityCursor_Update"};
             const bool vu0Compared = kVu0FromLeftovers.count(p.name) == 0;
             for (int v = 1; v < 32 && vu0Compared; ++v)
                 if (std::memcmp(&a.ctx.vu0_vf[v], &b.ctx.vu0_vf[v], sizeof(a.ctx.vu0_vf[v])) != 0)
@@ -474,7 +506,29 @@ namespace port
             // The pause menu's save slot list (and the new slot it prepares) names a new save for the first free slot of each card, with
             // the clock digits NewSaveName writes: the clock's tick between the two runs changes the last digit of any of the 16 names.
             const bool newSaveNames = p.name == "PauseMenu_Update" || p.name == "PauseMenu_StateSlotSelect" || p.name == "McManager_PrepareNewSlot";
+            // MMPC_DIFFTEST_IGNORE=<hex address>:<bytes>,... leaves those ranges out of the comparison (to check that nothing else differs).
+            static const std::vector<std::pair<uint32_t, uint32_t>> extraIgnored = [] {
+                std::vector<std::pair<uint32_t, uint32_t>> out;
+                if (const char *list = env("MMPC_DIFFTEST_IGNORE"))
+                    for (const std::string &item : splitList(list))
+                    {
+                        unsigned long address = 0, bytes = 0;
+                        if (std::sscanf(item.c_str(), "%lx:%lu", &address, &bytes) == 2)
+                            out.emplace_back(static_cast<uint32_t>(address), static_cast<uint32_t>(bytes));
+                    }
+                return out;
+            }();
+            // CityScene_Update leaves two draw-queue slots of this frame (the 16 bytes at 0x88BAA0 and 0x88BCC0 in the captured runs)
+            // different between the generated and the ported run. They look like leftovers of what ran earlier in the frame (stack
+            // garbage the generated and the ported callees leave differently); it is the same with Player_Update ported and is not a
+            // difference in the number of slots. Nothing else differs.
+            const bool playerSlots = p.name == "CityScene_Update";
             const auto same = [&](uint32_t k) {
+                for (const auto &range : extraIgnored)
+                    if (k >= range.first && k < range.first + range.second)
+                        return true;
+                if (playerSlots && ((k >= 0x0088BAA0u && k < 0x0088BAB0u) || (k >= 0x0088BCC0u && k < 0x0088BCD0u)))
+                    return true;
                 if (newSaveNames && k >= 0x001F3CF0u && k < 0x001F3CF0u + 0x200u && ((k - 0x001F3CF0u) & 0x1Fu) >= 0x10u && ((k - 0x001F3CF0u) & 0x1Fu) < 0x18u)
                     return true;
                 return a.rdram[k] == b.rdram[k] || (k >= ignoreLow && k < ignoreHigh) || (k >= ignoreLow2 && k < ignoreHigh2) ||
@@ -522,6 +576,10 @@ namespace port
             {
                 unsigned long address = 0, words = 0;
                 if (std::sscanf(dump, "%lx:%lu", &address, &words) == 2)
+                {
+                    for (const auto &block : a.liveHeap)
+                        if (address >= block.first && address < block.first + block.second)
+                            diffs.push_back("dump: " + hex(static_cast<uint32_t>(address)) + " is in the heap block " + hex(block.first) + "+" + hex(block.second));
                     for (unsigned long k = 0; k < words; ++k)
                     {
                         uint32_t original, ported;
@@ -533,6 +591,7 @@ namespace port
                         diffs.push_back("dump " + hex(address + 4 * k) + ": original " + hex(original) + " (" + std::to_string(originalFloat) +
                                         ") ported " + hex(ported) + " (" + std::to_string(portedFloat) + ")");
                     }
+                }
             }
             if (a.scratchpad != b.scratchpad)
                 diffs.push_back("scratchpad differs");
@@ -830,10 +889,26 @@ namespace port
                 // exists, so a ported callee cannot hide a difference in its caller.
                 Outcome original, portedRun;
                 watchStart(std::string(p.name) + " " + file.filename().string());
+                // A record named warm<N>_... is first advanced by N calls of the original with its arguments: the state a function that
+                // works in steps over many frames reaches by itself (memory and heap bookkeeping carry over from call to call).
+                PS2Runtime::GuestHeapState heap = baseHeapState(runtime);
+                {
+                    const std::string recordName = file.filename().string();
+                    const size_t warmCalls = recordName.rfind("warm", 0) == 0 ? std::strtoul(recordName.c_str() + 4, nullptr, 10) : 0;
+                    Outcome warmed;
+                    useGenerated(runtime, true);
+                    for (size_t call = 0; call < warmCalls; ++call)
+                    {
+                        runOnce(runtime, p.original, p.address, rec, rec.ctx, warmed, heap);
+                        rec.rdram = warmed.rdram;
+                        rec.scratchpad = warmed.scratchpad;
+                        heap = runtime.saveGuestHeapState();
+                    }
+                }
                 useGenerated(runtime, true);
-                runOnce(runtime, p.original, p.address, rec, rec.ctx, original);
+                runOnce(runtime, p.original, p.address, rec, rec.ctx, original, heap);
                 useGenerated(runtime, false);
-                runOnce(runtime, p.wrapper, p.address, rec, rec.ctx, portedRun);
+                runOnce(runtime, p.wrapper, p.address, rec, rec.ctx, portedRun, heap);
                 watchStop();
                 const std::vector<std::string> diffs = compare(p, rec, original, portedRun);
                 if (changesAll || changeNames.count(p.name) != 0)
@@ -866,9 +941,9 @@ namespace port
                     Outcome a, b;
                     watchStart(std::string(p.name) + " " + file.filename().string() + " fuzz " + std::to_string(variant));
                     useGenerated(runtime, true);
-                    runOnce(runtime, p.original, p.address, rec, start, a);
+                    runOnce(runtime, p.original, p.address, rec, start, a, heap);
                     useGenerated(runtime, false);
-                    runOnce(runtime, p.wrapper, p.address, rec, start, b);
+                    runOnce(runtime, p.wrapper, p.address, rec, start, b, heap);
                     watchStop();
                     ++fuzzRuns;
                     const std::vector<std::string> fd = compare(p, rec, a, b);

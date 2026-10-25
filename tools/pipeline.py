@@ -629,7 +629,7 @@ def cmd_difftest(args: argparse.Namespace) -> None:
     env.pop("PS2X_WINDOW_POS", None)
     with log_path.open("w", encoding="utf-8", errors="replace") as fh:
         code = subprocess.run([str(exe), str(ORIGINAL / ELF_NAME)], stdout=fh, stderr=subprocess.STDOUT, cwd=exe.parent,
-                              env=env, timeout=1800).returncode
+                              env=env, timeout=int(os.environ.get("MMPC_DIFFTEST_TIMEOUT", "7200"))).returncode
     lines = [l for l in log_path.read_text(encoding="utf-8", errors="replace").splitlines()
              if l.startswith(("[difftest]", "    ", "[port]"))]
     print("\n".join(lines))

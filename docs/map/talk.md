@@ -40,7 +40,7 @@ friendship changed. A is the person talked to.
 
 ## Functions
 
-322 functions (ported 4, typed 5, verified 313). Blocks: 92 can reach a thread switch, 27 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+322 functions (ported 4, typed 2, verified 316). Blocks: 92 can reach a thread switch, 27 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -330,9 +330,9 @@ friendship changed. A is the person talked to.
 | `0x0017FF20` | `int mm_WordsFn_StatusLow2(WordsCtx *ctx)` | 96 | no | #2 cond: low two bits of the status byte |
 | `0x0017FF80` | `int mm_WordsFn_FriendLevelHigh(WordsCtx *ctx)` | 148 | no | #1 cond: friendship level above 13 for A/B (2 when not acquainted) |
 | `0x00180020` | `int mm_WordsFn_NameSlotSet(WordsCtx *ctx)` | 48 | no | #0 cond: name slot (0x1C5380 + arg*16) is not empty |
-| `0x00180050` | `int mm_Words_CallCond(Words *words)` | 32 | no | calls a condition through its member function pointer (__ptmf_scall) |
-| `0x00180070` | `int mm_Words_CallText(Words *words)` | 32 | no | calls a text getter through its member function pointer |
-| `0x00180090` | `int mm_Words_CallAct(Words *words)` | 32 | no | calls an action through its member function pointer |
+| `0x00180050` | `void mm_Words_CallCond(Words *words, int index)` | 32 | no | calls a condition through its member function pointer (__ptmf_scall) |
+| `0x00180070` | `int mm_Words_CallText(Words *words, int index)` | 32 | no | calls a text getter through its member function pointer |
+| `0x00180090` | `int mm_Words_CallAct(Words *words, int index)` | 32 | no | calls an action through its member function pointer |
 | `0x001800B0` | `void mm_Words_SetFlag134(Words *words)` | 16 | no | context +0x134 = 1 |
 | `0x001800C0` | `void mm_Words_SelectBagItem(Words *words, int index)` | 192 | no | context +0x24 = the a1-th bag item of kinds 0x10/0x11/0x13 |
 | `0x00180180` | `void mm_Words_SetWantIndex(Words *words, uint16_t index)` | 12 | no | context +0x13A = a1 (the chosen want) |

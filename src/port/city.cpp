@@ -4071,4 +4071,679 @@ namespace mm
     }
 
     PORT_FN(Person_CheckBuilding);
+
+    // The city scene: the stage object base, the starting state (6:00, the third month, approval 50, the update flags at +0x2C to +0x38 and
+    // the city flag bit 1 set, the fade at 128), the building types loaded, and each part made in turn and kept in its field: the talk
+    // (+0x3C), status panel (+0x0), camera (+0x44, placed with the eye and target vectors at 0x1B2480 and 0x1B2490), pause menu (+0x8),
+    // minimap (+0x74), city cursor (+0x70), phone calls (+0x6C), event manager (+0x68), wants window (+0x5C), town's pages (+0x4), laptop
+    // (+0x48), city camera (+0x4C), lights (+0x40), player (+0x58), applicants (+0x54), markers (+0x78), notice (+0x7C) and the map (+0x50),
+    // which the terrain is then generated on (the parameters at 0x1C5558). The 32 introduced families (0x1C55C0) are put in the applicants,
+    // and the people of each (the type byte at +0x24 not zero and its type not marked) get their introduction picked. The pad's focus is
+    // released.
+    GuestPtr<CityScene> CityScene_ctor(GuestPtr<CityScene> city)
+    {
+        port::GuestFrame<0x90> frame;
+        const uint32_t sp = frame.ptr().address;
+        const uint32_t c = city.address;
+        StageObj_ctor(static_cast<int>(c));
+        port::store<uint32_t>(c + 0x84u, 0x5460u);
+        port::store<uint32_t>(c + 0x88u, 3u);
+        port::store<uint32_t>(c + 0x8Cu, 0x32u);
+        port::store<uint32_t>(c + 0x90u, 0u);
+        port::store<uint32_t>(c + 0x94u, 0u);
+        port::store<uint32_t>(c + 0x98u, 0u);
+        port::store<uint32_t>(c + 0xB4u, 0u);
+        port::store<uint32_t>(c + 0xB4u, port::load<uint32_t>(c + 0xB4u) | 1u);
+        port::store<uint32_t>(c + 0xBCu, 0u);
+        port::store<uint32_t>(c + 0xC0u, 0u);
+        port::store<uint32_t>(c + 0xC4u, 0u);
+        port::store<uint32_t>(c + 0x9Cu, 0u);
+        port::store<uint32_t>(c + 0xB0u, 0x3F000000u);
+        port::store<uint32_t>(c + 0xA0u, 0xFAu);
+        port::store<uint32_t>(c + 0xA4u, 0u);
+        port::store<uint32_t>(c + 0xA8u, 0xFAu);
+        port::store<uint32_t>(c + 0xACu, 0u);
+        port::store<uint32_t>(c + 0xB8u, 0u);
+        port::store<uint32_t>(c + 0x2Cu, 1u);
+        port::store<uint32_t>(c + 0x30u, 1u);
+        port::store<uint32_t>(c + 0x34u, 1u);
+        port::store<uint32_t>(c + 0x38u, 1u);
+        port::store<uint32_t>(c + 0x28u, 0u);
+        port::store<uint32_t>(c + 0xC8u, 0x80u);
+        port::store<uint32_t>(c + 0xCCu, 0u);
+        port::store<uint32_t>(c + 0xD4u, 0u);
+        BldgType_LoadAll();
+        // A part of `size` bytes made by `constructor` (0 when the allocation fails).
+        const auto build = [](uint32_t size, auto constructor) -> uint32_t {
+            uint32_t object = sdk::operator_new(size);
+            if (object != 0u)
+                object = constructor(object);
+            return object;
+        };
+        port::store<uint32_t>(c + 0x3Cu, build(0xC0u, [](uint32_t o) { return Talk_ctor(GuestPtr<TalkSession>{o}).address; }));
+        port::store<uint32_t>(c + 0x0u, build(0xC0u, [](uint32_t o) { return StatusPanel_ctor(GuestPtr<StatusPanel>{o}).address; }));
+        port::store<uint32_t>(c + 0x44u, build(0x310u, [](uint32_t o) { return Camera_ctor(GuestPtr<Camera>{o}).address; }));
+        *GuestPtr<Vec4>{sp + 0x70u} = *GuestPtr<Vec4>{0x001B2480u};
+        *GuestPtr<Vec4>{sp + 0x80u} = *GuestPtr<Vec4>{0x001B2490u};
+        Camera_SetEyeTarget(GuestPtr<Camera>{port::load<uint32_t>(c + 0x44u)}, GuestPtr<Vec4>{sp + 0x70u}, GuestPtr<Vec4>{sp + 0x80u});
+        Camera_UpdateMatrices(GuestPtr<Camera>{port::load<uint32_t>(c + 0x44u)});
+        port::store<uint32_t>(c + 0x8u, build(0x99Cu, [](uint32_t o) { return PauseMenu_ctor(GuestPtr<PauseMenu>{o}).address; }));
+        port::store<uint32_t>(c + 0x74u, build(0x21DCu, [](uint32_t o) { return Minimap_ctor(GuestPtr<Minimap>{o}).address; }));
+        port::store<uint32_t>(c + 0x70u, build(0x1E0u, [](uint32_t o) { return CityCursor_ctor(GuestPtr<CityCursor>{o}).address; }));
+        port::store<uint32_t>(c + 0x6Cu, build(0x7Cu, [](uint32_t o) { return PhoneCall_ctor(GuestPtr<PhoneCalls>{o}).address; }));
+        port::store<uint32_t>(c + 0x68u, build(0xB0u, [](uint32_t o) { return EventMgr_ctor(GuestPtr<EventMgr>{o}).address; }));
+        port::store<uint32_t>(c + 0x5Cu, build(0x544u, [](uint32_t o) { return WantsWin_ctor(GuestPtr<WantsWin>{o}).address; }));
+        port::store<uint32_t>(c + 0x60u, port::load<uint32_t>(0x001BDA18u));
+        port::store<uint32_t>(c + 0x64u, port::load<uint32_t>(0x001BDBB8u));
+        port::store<uint32_t>(c + 0x4u, build(0x64u, [](uint32_t o) { return TownPages_Init(GuestPtr<TownPages>{o}).address; }));
+        port::store<uint32_t>(c + 0x48u, build(0x3E0u, [](uint32_t o) { return Laptop_ctor(GuestPtr<Laptop>{o}).address; }));
+        port::store<uint32_t>(c + 0x4Cu, build(0x540u, [](uint32_t o) { return CityCamera_ctor(GuestPtr<CityCamera>{o}).address; }));
+        port::store<uint32_t>(c + 0x40u, build(0x1B0u, [](uint32_t o) { return LightSet_ctor(GuestPtr<LightSet>{o}).address; }));
+        port::store<uint32_t>(c + 0x58u, build(0x90u, [](uint32_t o) { return Player_ctor(GuestPtr<Player>{o}).address; }));
+        port::store<uint32_t>(c + 0x54u, build(0x350u, [](uint32_t o) { return Applicants_ctor(GuestPtr<Applicants>{o}).address; }));
+        port::store<uint32_t>(c + 0x78u, build(0x130u, [](uint32_t o) { return Markers_ctor(GuestPtr<Markers>{o}).address; }));
+        port::store<uint32_t>(c + 0x7Cu, build(0x14u, [](uint32_t o) { return Notice_ctor(GuestPtr<Notice>{o}).address; }));
+        port::store<uint32_t>(c + 0x50u, build(0x2F90u, [](uint32_t o) { return CityMap_ctor(GuestPtr<CityMap>{o}).address; }));
+        port::store<uint32_t>(c + 0x80u, 0u);
+        TerrainGen_Generate(GuestPtr<CityMap>{port::load<uint32_t>(c + 0x50u)}, GuestPtr<uint8_t>{0x001C5558u});
+        port::store<uint32_t>(c + 0x10u, 0u);
+        port::store<uint32_t>(c + 0x24u, 1u);
+        constexpr uint32_t kIntroduced = 0x001C55C0u;
+        for (uint32_t i = 0; i < 0x20u; ++i)
+        {
+            const uint32_t family = port::load<uint16_t>(kIntroduced + 2u * i);
+            if (family == 0u)
+                continue;
+            Applicants_AddAndShow(GuestPtr<Applicants>{port::load<uint32_t>(c + 0x54u)}, static_cast<int>(family), port::load<int32_t>(c + 0x88u), 0);
+            const uint32_t people = port::load<uint32_t>(port::load<uint32_t>(c + 0x50u) + 0x68u);
+            for (uint32_t person = people; person != people + 0x46500u; person += 0x30u)
+            {
+                const uint32_t type = port::load<uint8_t>(person + 0x24u);
+                if (type == 0u)
+                    continue;
+                const uint32_t record = port::load<uint32_t>(port::load<uint32_t>(0x001BDA3Cu) + 4u * type);
+                if ((port::load<uint16_t>(record + 0x18u) & 1u) != 0u)
+                    continue;
+                if (port::load<uint16_t>(person + 0x2Cu) != family)
+                    continue;
+                port::store<uint16_t>(person + 0x2Cu, static_cast<uint16_t>(Family_PickIntroduction(port::load<uint16_t>(person + 0x2Au), port::load<uint8_t>(person + 0x2Eu), city)));
+            }
+        }
+        Pad_ReleaseFocus(-1);
+        return city;
+    }
+
+    PORT_FN(CityScene_ctor);
+
+    // One frame of the city scene: the building types are called with the clock, then the mode's update runs (the mode is at +0x10).
+    // 0 loads a game (its result is the answer). 1 is the walk mode: Start (Circle not held) pushes the laptop mode (2), Select the
+    // pause menu (6); otherwise the clock, phone, status panel, player, camera, map, applicants, wants window, events, cursor and
+    // markers are stepped, and with Circle held the pad picks a player mode (up, left), the applicants (down: mode 3) or the town's
+    // pages (right: mode 7, when laptop entry 4 is active); the debug flag word at 0x1C5600 (bit 1) adds button cheats. 2 steps the
+    // laptop and status panel; 3 the applicants (1 pops the mode, any answer but 3 pushes it); 4 the player, camera and applicants
+    // (3 pops); 5 the camera's time of day, the talk and the panel; 6 the pause menu (the answer 2 when it is done); 7 the town's
+    // pages; 8 the wants window; 9 the bag; 10 the cursor in its list mode; 11 the player, camera and bag; 13 the first morning (mode 1
+    // from 0x57A8 seconds). Then the common part: approval, the extra object (+0x80), notices, and the whole draw: sky, terrain,
+    // buildings, people, player, water and sky passes, minimap (debug flag bit 0), phone, markers, the mode's window, applicants,
+    // cursor, status panel and fades. The answer is 1 when the city flag 0x10 is set (the city sound state reset and the member meters
+    // cleared), else 0.
+    uint32_t CityScene_Update(GuestPtr<CityScene> city)
+    {
+        port::GuestFrame<0x50> frame;
+        const uint32_t c = city.address;
+        const auto part = [c](uint32_t at) { return port::load<uint32_t>(c + at); };
+        const auto virtualCall = [](uint32_t object, uint32_t vtableAt, uint32_t slot, auto... args) {
+            return port::callGuest<int64_t>(port::load<uint32_t>(port::load<uint32_t>(object + vtableAt) + slot), object, args...);
+        };
+        const auto updateMap = [&]() { virtualCall(part(0x50u), 0x64u, 8u, c); };
+        BldgType_CallAll(port::load<int32_t>(c + 0x84u));
+        const uint32_t mode = part(0x10u);
+        switch (mode)
+        {
+        case 0:
+            DmaList_QueueClearScreen();
+            return static_cast<uint32_t>(CityScene_LoadGame(city));
+        case 1:
+        {
+            if ((Pad_Pressed(0) & 0x80u) != 0u && (Pad_Held(0) & 0x20u) == 0u)
+                CityScene_PushMode(city, 2);
+            else if ((Pad_Pressed(0) & 0x100u) != 0u && (Pad_Held(0) & 0x20u) == 0u)
+                CityScene_PushMode(city, 6);
+            else
+            {
+                CityScene_TickClock(city);
+                const int pad = PhoneCall_Update(GuestPtr<PhoneCalls>{part(0x6Cu)}, city);
+                StatusPanel_Update(GuestPtr<StatusPanel>{part(0x0u)}, city);
+                Player_Update(GuestPtr<Player>{part(0x58u)}, city);
+                CityCamera_Update(GuestPtr<CityCamera>{part(0x4Cu)}, city);
+                updateMap();
+                Applicants_Update(GuestPtr<Applicants>{part(0x54u)}, city);
+                WantsWin_Update(GuestPtr<WantsWin>{part(0x5Cu)}, city);
+                Event_Update(GuestPtr<EventMgr>{part(0x68u)}, city);
+                CityCursor_Update(GuestPtr<CityCursor>{part(0x70u)}, city, pad);
+                Laptop_CheckOpen(GuestPtr<Laptop>{part(0x78u)}, city, pad);
+                if (part(0x10u) == 1u && pad != 0 && (Pad_Held(0) & 0x20u) != 0u)
+                {
+                    if ((Pad_Pressed(0) & 0x1000u) != 0u)
+                        Player_SetMode(GuestPtr<Player>{part(0x58u)}, 0);
+                    else if ((Pad_Pressed(0) & 0x4000u) != 0u)
+                        CityScene_PushMode(city, 3);
+                    else if ((Pad_Pressed(0) & 0x8000u) != 0u)
+                        Player_SetMode(GuestPtr<Player>{part(0x58u)}, 1);
+                    else if ((Pad_Pressed(0) & 0x2000u) != 0u && (Laptop_CountActive() & 0x10u) != 0u)
+                        CityScene_PushMode(city, 7);
+                }
+            }
+            if ((port::load<uint16_t>(0x001C5600u) & 2u) != 0u)
+            {
+                if ((Pad_Held(0) & 0x900u) == 0x900u)
+                {
+                    if ((Pad_Held(0) & 1u) != 0u)
+                        port::store<int32_t>(0x001C5548u, port::load<int32_t>(0x001C5548u) - 1);
+                    port::store<uint32_t>(c + 0xB4u, part(0xB4u) | 0x10u);
+                }
+                if ((Pad_Held(0) & 0x800u) != 0u)
+                {
+                    if ((Pad_Pressed(0) & 0x1000u) != 0u)
+                        port::store<int32_t>(c + 0xBCu, port::load<int32_t>(c + 0xBCu) + 10);
+                    if ((Pad_Pressed(0) & 0x4000u) != 0u)
+                        port::store<int32_t>(c + 0xBCu, port::load<int32_t>(c + 0xBCu) - 10);
+                }
+            }
+            break;
+        }
+        case 2:
+            Laptop_Update(GuestPtr<Laptop>{part(0x48u)}, city);
+            StatusPanel_Update(GuestPtr<StatusPanel>{part(0x0u)}, city);
+            break;
+        case 3:
+        {
+            const int answer = Applicants_Update(GuestPtr<Applicants>{part(0x54u)}, city);
+            if (answer == 1)
+                CityScene_PopMode(city);
+            else if (answer != 3)
+                CityScene_PushMode(city, answer);
+            break;
+        }
+        case 4:
+            Player_Update(GuestPtr<Player>{part(0x58u)}, city);
+            CityCamera_Update(GuestPtr<CityCamera>{part(0x4Cu)}, city);
+            if (Applicants_Update(GuestPtr<Applicants>{part(0x54u)}, city) == 3)
+                CityScene_PopMode(city);
+            break;
+        case 5:
+            CityCamera_UpdateTimeOfDay(GuestPtr<CityCamera>{part(0x4Cu)}, city);
+            virtualCall(part(0x3Cu), 8u, 0x14u);
+            StatusPanel_Update(GuestPtr<StatusPanel>{part(0x0u)}, city);
+            break;
+        case 6:
+            if (PauseMenu_Update(GuestPtr<PauseMenu>{part(0x8u)}, city) != 0)
+            {
+                Sound_SetCity(GuestPtr<CityScene>{0u});
+                return 2;
+            }
+            break;
+        case 7:
+            TownPages_Update(GuestPtr<TownPages>{part(0x4u)}, city);
+            break;
+        case 8:
+            WantsWin_Update(GuestPtr<WantsWin>{part(0x5Cu)}, city);
+            break;
+        case 9:
+            BagMenu_Update(GuestPtr<Bag>{part(0x60u)}, city);
+            break;
+        case 10:
+            CityCursor_Update(GuestPtr<CityCursor>{part(0x70u)}, city, 1);
+            break;
+        case 11:
+            Player_Update(GuestPtr<Player>{part(0x58u)}, city);
+            CityCamera_Update(GuestPtr<CityCamera>{part(0x4Cu)}, city);
+            BagMenu_Update(GuestPtr<Bag>{part(0x60u)}, city);
+            break;
+        case 13:
+            CityScene_TickClock(city);
+            if (!(port::load<int32_t>(c + 0x84u) < 0x57A8))
+            {
+                port::store<uint32_t>(c + 0x10u, 1u);
+                Pad_ReleaseFocus(2);
+            }
+            StatusPanel_Update(GuestPtr<StatusPanel>{part(0x0u)}, city);
+            Player_Update(GuestPtr<Player>{part(0x58u)}, city);
+            CityCamera_Update(GuestPtr<CityCamera>{part(0x4Cu)}, city);
+            updateMap();
+            Applicants_Update(GuestPtr<Applicants>{part(0x54u)}, city);
+            WantsWin_Update(GuestPtr<WantsWin>{part(0x5Cu)}, city);
+            PhoneCall_Update(GuestPtr<PhoneCalls>{part(0x6Cu)}, city);
+            break;
+        default:
+            break;
+        }
+        CityScene_UpdateApproval(city);
+        if (part(0x80u) != 0u)
+            virtualCall(part(0x80u), 0u, 0xCu, c);
+        Notice_Tick(GuestPtr<Notice>{part(0x7Cu)});
+        DmaList_QueueClearZ();
+        Sky_Draw(GuestPtr<CityCamera>{part(0x4Cu)});
+        Packet_Draw(GuestPtr<uint32_t>{part(0x4Cu)});
+        const uint32_t camera = part(0x4Cu);
+        const int zoom = CityCamera_GetZoomLevel(GuestPtr<CityCamera>{camera}, city);
+        LightSet_UpdateByClock(GuestPtr<LightSet>{part(0x40u)}, port::load<int32_t>(c + 0x84u), port::load<int32_t>(c + 0x90u));
+        Terrain_Draw(GuestPtr<CityMap>{part(0x50u)}, GuestPtr<Vec4>{camera + 0x1E0u}, GuestPtr<Vec4>{camera + 0x130u}, zoom, port::load<int32_t>(c + 0x90u),
+                     port::load<int32_t>(c + 0x84u), ps2f(port::load<float>(c + 0xB0u)));
+        CityRender_DrawOverlays(GuestPtr<CityMap>{part(0x50u)}, city);
+        DmaList_QueueGsDefaults();
+        if (part(0x2Cu) != 0u)
+        {
+            Packet2_Draw(GuestPtr<uint32_t>{part(0x40u)}, 1);
+            CityRender_CollectObjects(GuestPtr<CityMap>{part(0x50u)}, city);
+        }
+        if (part(0x10u) == 5u)
+            virtualCall(part(0x3Cu), 8u, 0x20u, 0);
+        Packet2_Draw(GuestPtr<uint32_t>{part(0x40u)}, 0);
+        Perf_AdaptDrawRange();
+        if (part(0x30u) != 0u)
+        {
+            CityRender_UpdatePeople(GuestPtr<CityMap>{part(0x50u)}, city);
+            Player_Draw(GuestPtr<Player>{part(0x58u)}, city);
+        }
+        if (part(0x10u) == 5u)
+            virtualCall(part(0x3Cu), 8u, 0x20u, 1);
+        CityRender_DrawWater(GuestPtr<CityMap>{part(0x50u)}, city);
+        const uint32_t weather = part(0x90u);
+        if (weather == 2u)
+            CityRender_DrawSky(GuestPtr<CityMap>{part(0x50u)}, city, 0, GuestPtr<Vec4>{part(0x4Cu) + 0x1E0u});
+        else if (weather == 3u)
+            CityRender_DrawSky(GuestPtr<CityMap>{part(0x50u)}, city, 1, GuestPtr<Vec4>{part(0x4Cu) + 0x1E0u});
+        CityRender_DrawBuildings(GuestPtr<CityMap>{part(0x50u)}, 0);
+        CityRender_DrawBuildings(GuestPtr<CityMap>{part(0x50u)}, 1);
+        CityRender_DrawInstanceLayer(GuestPtr<CityMap>{part(0x50u)});
+        DmaList_QueueGsDefaults();
+        Packet2_Draw(GuestPtr<uint32_t>{part(0x40u)}, 0);
+        Packet_Draw(GuestPtr<uint32_t>{part(0x44u)});
+        DmaList_QueueClearZ();
+        if (part(0x38u) != 0u && (port::load<uint16_t>(0x001C5600u) & 1u) != 0u)
+            Minimap_Draw(GuestPtr<Minimap>{part(0x74u)});
+        PhoneCall_Draw(GuestPtr<PhoneCalls>{part(0x6Cu)});
+        Markers_Draw(GuestPtr<Markers>{part(0x78u)});
+        switch (part(0x10u))
+        {
+        case 2:
+            Laptop_Draw(GuestPtr<Laptop>{part(0x48u)});
+            break;
+        case 5:
+            virtualCall(part(0x3Cu), 8u, 0x20u, 2);
+            break;
+        case 7:
+            TownPages_Draw(GuestPtr<TownPages>{part(0x4u)});
+            break;
+        case 8:
+            WantsWin_Draw(GuestPtr<WantsWin>{part(0x5Cu)});
+            break;
+        case 9:
+        case 11:
+            BagMenu_Draw(GuestPtr<Bag>{part(0x60u)});
+            break;
+        case 6:
+            PauseMenu_Draw(GuestPtr<PauseMenu>{part(0x8u)});
+            break;
+        default:
+            break;
+        }
+        Applicants_Draw(GuestPtr<Applicants>{part(0x54u)});
+        if (part(0x34u) != 0u)
+            CityCursor_Draw(GuestPtr<CityCursor>{part(0x70u)});
+        StatusPanel_Draw(GuestPtr<StatusPanel>{part(0x0u)});
+        if (part(0x80u) != 0u)
+            virtualCall(part(0x80u), 0u, 0x10u, 2);
+        Notice_Draw(GuestPtr<Notice>{part(0x7Cu)});
+        if (part(0x28u) != 0u)
+        {
+            DmaList_QueueGsDefaults();
+            DmaList_QueueOtherOverlay();
+        }
+        if (part(0xC8u) != 0u)
+            DmaList_QueueFade(static_cast<int>(part(0xC8u)), port::load<int32_t>(c + 0xD4u));
+        const int32_t fade = port::load<int32_t>(c + 0xCCu);
+        if (fade != 0)
+        {
+            if (fade > 0)
+            {
+                port::store<int32_t>(c + 0xCCu, fade - port::load<int32_t>(c + 0xD0u));
+                if (port::load<int32_t>(c + 0xCCu) < 0)
+                    port::store<int32_t>(c + 0xCCu, 0);
+                port::store<int32_t>(c + 0xC8u, port::load<int32_t>(c + 0xCCu));
+            }
+            else
+            {
+                port::store<int32_t>(c + 0xCCu, fade + port::load<int32_t>(c + 0xD0u));
+                if (port::load<int32_t>(c + 0xCCu) > 0)
+                    port::store<int32_t>(c + 0xCCu, 0);
+                port::store<int32_t>(c + 0xC8u, port::load<int32_t>(c + 0xCCu) + 0x80);
+            }
+        }
+        if ((part(0xB4u) & 0x10u) == 0u)
+            return 0;
+        Sound_SetCity(GuestPtr<CityScene>{0u});
+        MemberMeters_Reset(GuestPtr<int32_t>{0x001C5780u});
+        return 1;
+    }
+
+    PORT_FN(CityScene_Update);
+
+    // Loading a saved game, one step a call (the step in the word at 0x1BDC68; its state words: the card index 0x1BDA78, a "start a new
+    // load" flag 0x1BDA7C, the wait texts 0x1BDC7C and 0x1BDC78, the sprite 0x1BDC80, the fade 0x1BDC84, a timer 0x1BDC70 and the
+    // file handle 0x1BDC74). 0 without the flag takes the pad, fades and turns the city sound to its state (mode 13); with it, clears
+    // the flag and makes the wait text, the sprite and a memory card manager (+0xC) and goes on to 1. 1 steps the manager and fades in,
+    // then by the card's state: 4 waits, 3 and a missing save go to 0x15, 2 shows the "no memory card" lines (0x14, a timer of 200
+    // frames); a save found whose time matches the chosen one resets the manager (step 2). 2 prepares the save folder (1 goes on, 2 to
+    // 0xA), 3 opens the file, 4 waits for it (an open that failed goes to 0xA), 5 reads every part of the city (the stage state, the
+    // 0x34 bytes at +0x84, the camera, player, applicants, wants, families, map, bag, stamina, laptop and events) and closes the file,
+    // 6 unpacks the map's tiles when the file is closed, 7 and 8 check the folder and the result (a bad result goes to 0xA), 9 fades out
+    // (16 a frame) and then finishes the load: the city mode 1 and a fade in, the manager, sprite and text freed. 0xA gives up
+    // (0x15), 0x14 counts out the message, 0x15 shows the failure text and 0x16 answers (Cross retries from step 1, Triangle goes
+    // on to 0x17), 0x17 fades out and frees everything, 0x18 and 0x19 wait for the sound to be quiet (the answer 2). The result is 0
+    // while loading goes on, 2 when it ended without a load.
+    int CityScene_LoadGame(GuestPtr<CityScene> city)
+    {
+        const uint32_t c = city.address;
+        constexpr uint32_t kState = 0x001BDC68u, kStarted = 0x001BDC6Cu, kCard = 0x001BDA78u, kFlag = 0x001BDA7Cu, kTextA = 0x001BDC7Cu,
+                           kTextB = 0x001BDC78u, kSprite = 0x001BDC80u, kFade = 0x001BDC84u, kTimer = 0x001BDC70u, kHandle = 0x001BDC74u;
+        if (port::load<int8_t>(kStarted) == 0)
+        {
+            port::store<int32_t>(kState, 0);
+            port::store<uint8_t>(kStarted, 1);
+        }
+        const auto mc = [c]() { return GuestPtr<McManager>{port::load<uint32_t>(c + 0xCu)}; };
+        const auto nextState = [&]() { port::store<int32_t>(kState, port::load<int32_t>(kState) + 1); };
+        const auto setState = [&](int32_t value) { port::store<int32_t>(kState, value); };
+        // A text box of `columns` by `rows` (style `style`), or 0 when the allocation fails.
+        const auto newBox = [](int columns, int rows, int style) -> uint32_t {
+            const uint32_t memory = sdk::operator_new(0x40u);
+            return memory != 0u ? TextBox_Init(GuestPtr<TextBox>{memory}, columns, rows, style).address : 0u;
+        };
+        // The wait texts, the sprite and the manager, freed (the manager first only when asked).
+        const auto freeBox = [&](uint32_t at) {
+            const uint32_t box = port::load<uint32_t>(at);
+            if (box != 0u)
+            {
+                TextBox_dtor(GuestPtr<TextBox>{box}, 1);
+                port::store<uint32_t>(at, 0u);
+            }
+        };
+        const auto freeManager = [&]() {
+            if (mc().address != 0u)
+            {
+                const GuestPtr<McManager> manager = mc();
+                port::store<uint32_t>(c + 0xCu, 0u);
+                McManager_dtor(manager, 1);
+            }
+        };
+        const auto freeSprite = [&]() {
+            const uint32_t sprite = port::load<uint32_t>(kSprite);
+            if (sprite != 0u)
+                port::callGuest<void>(port::load<uint32_t>(port::load<uint32_t>(sprite) + 8u), sprite, 1);
+            port::store<uint32_t>(kSprite, 0u);
+        };
+        bool draw = false;
+        switch (port::load<int32_t>(kState))
+        {
+        case 0:
+            if (port::load<int32_t>(kFlag) == 0)
+            {
+                port::store<int32_t>(c + 0x10u, 0xD);
+                Pad_TakeFocus(2, -1);
+                CityScene_StartFade(city, 2);
+                Sound_SetCity(city);
+            }
+            else
+            {
+                port::store<int32_t>(kFlag, 0);
+                port::store<uint32_t>(kTextA, newBox(0x14, 3, -2));
+                TextBox_SetText(GuestPtr<TextBox>{port::load<uint32_t>(kTextA)}, GuestPtr<char>{0x001C5680u}, 0);
+                TextBox_SetPos(GuestPtr<TextBox>{port::load<uint32_t>(kTextA)}, 0x71A0, 0x7C20, 0xFF0000);
+                TextBox_SetCharSize(GuestPtr<TextBox>{port::load<uint32_t>(kTextA)}, 0, 0xB0, 0, 0xE0);
+                port::store<int32_t>(kTextB, 0);
+                WaitText_Create(GuestPtr<char>{0x001B98E0u});
+                uint32_t sprite = sdk::operator_new(0x38u);
+                if (sprite != 0u)
+                    sprite = static_cast<uint32_t>(TexSprite_Load(GuestPtr<TexSprite>{sprite}, 0x001B9940, 1));
+                port::store<uint32_t>(kSprite, sprite);
+                TexSprite_SetPosScale(GuestPtr<TexSprite>{port::load<uint32_t>(kSprite)}, 0, 0, 1, ps2f(2.0f), ps2f(2.0f));
+                uint32_t manager = sdk::operator_new(0x28u);
+                if (manager != 0u)
+                    manager = McManager_ctor(GuestPtr<McManager>{manager}).address;
+                port::store<uint32_t>(c + 0xCu, manager);
+                McManager_ClearSlots(mc());
+                port::store<int32_t>(kFade, 0x80);
+                nextState();
+                draw = true;
+            }
+            break;
+        case 1:
+        {
+            McManagerUpdate(mc());
+            if (port::load<int32_t>(kFade) > 0)
+            {
+                port::store<int32_t>(kFade, port::load<int32_t>(kFade) - 0x10);
+                if (port::load<int32_t>(kFade) < 0)
+                    port::store<int32_t>(kFade, 0);
+            }
+            const int status = McManager_GetCardStatus(mc(), port::load<int32_t>(kCard));
+            draw = true;
+            if (status == 4)
+                break;
+            if (status == 3)
+            {
+                setState(0x15);
+                break;
+            }
+            if (status == 2)
+            {
+                WaitText_Set(GuestPtr<char>{0x001B9960u});
+                WaitText_Append(GuestPtr<char>{port::load<int32_t>(kCard) != 0 ? 0x001B99B8u : 0x001B99C0u});
+                port::store<int32_t>(kTimer, 0);
+                setState(0x14);
+                break;
+            }
+            const uint32_t header = static_cast<uint32_t>(McManager_FindSave(mc(), GuestPtr<char>{0x001C5660u}, port::load<int32_t>(kCard)));
+            if (header == 0u)
+            {
+                setState(0x15);
+                break;
+            }
+            if (port::load<uint16_t>(header + 0xEu) != port::load<uint16_t>(0x001C564Eu) || port::load<uint8_t>(header + 0xDu) != port::load<uint8_t>(0x001C564Du) ||
+                port::load<uint8_t>(header + 0xCu) != port::load<uint8_t>(0x001C564Cu) || port::load<uint8_t>(header + 0xBu) != port::load<uint8_t>(0x001C564Bu) ||
+                port::load<uint8_t>(header + 0xAu) != port::load<uint8_t>(0x001C564Au))
+            {
+                setState(0x15);
+                break;
+            }
+            WaitText_Set(GuestPtr<char>{0x001B98E0u});
+            McManager_ResetState(mc());
+            nextState();
+            break;
+        }
+        case 2:
+        {
+            const int result = SaveFile_PrepareDir(mc(), port::load<int32_t>(kCard), 0x001C5660, 0);
+            if (result == 1)
+                nextState();
+            else if (result == 2)
+                setState(0xA);
+            draw = true;
+            break;
+        }
+        case 3:
+            port::store<int32_t>(kHandle, SaveFile_Open(mc(), 1));
+            nextState();
+            draw = true;
+            break;
+        case 4:
+            if (SaveFile_IsDone(mc(), port::load<int32_t>(kHandle)) != 0)
+            {
+                if (port::load<int32_t>(mc().address + 0x24u) < 0)
+                    setState(0xA);
+                else
+                    nextState();
+            }
+            draw = true;
+            break;
+        case 5:
+        {
+            const GuestPtr<McManager> manager = mc();
+            MapSave_AllocBuffer(GuestPtr<CityMap>{port::load<uint32_t>(c + 0x50u)});
+            Stage_LoadState(static_cast<int>(c), manager);
+            SaveFile_Read(manager, static_cast<int>(c + 0x84u), 0x34);
+            CityCamera_LoadState(GuestPtr<CityCamera>{port::load<uint32_t>(c + 0x4Cu)}, manager);
+            Player_LoadState(GuestPtr<Player>{port::load<uint32_t>(c + 0x58u)}, manager);
+            Applicants_LoadState(GuestPtr<Applicants>{port::load<uint32_t>(c + 0x54u)}, manager);
+            Wants_LoadState(GuestPtr<WantsWin>{port::load<uint32_t>(c + 0x5Cu)}, manager);
+            Family_LoadState(manager);
+            Map_LoadState(GuestPtr<CityMap>{port::load<uint32_t>(c + 0x50u)}, manager);
+            Bag_LoadState(GuestPtr<Bag>{port::load<uint32_t>(c + 0x60u)}, manager);
+            Stamina_LoadState(GuestPtr<Stamina>{port::load<uint32_t>(c + 0x64u)}, manager);
+            Laptop_LoadState(GuestPtr<Laptop>{port::load<uint32_t>(c + 0x48u)}, manager);
+            Event_LoadState(GuestPtr<EventMgr>{port::load<uint32_t>(c + 0x68u)}, manager);
+            port::store<int32_t>(kHandle, SaveFile_Close(manager));
+            nextState();
+            draw = true;
+            break;
+        }
+        case 6:
+            if (SaveFile_IsDone(mc(), port::load<int32_t>(kHandle)) != 0)
+            {
+                MapSave_UnpackTiles(GuestPtr<CityMap>{port::load<uint32_t>(c + 0x50u)});
+                nextState();
+            }
+            draw = true;
+            break;
+        case 7:
+        {
+            const int result = SaveFile_PrepareDir(mc(), port::load<int32_t>(kCard), 0x001B99C8, 0);
+            if (result == 1)
+                nextState();
+            else if (result == 2)
+                setState(0x15);
+            draw = true;
+            break;
+        }
+        case 8:
+            if (SaveFile_IsDone(mc(), port::load<int32_t>(kHandle)) != 0)
+            {
+                if (SaveFile_GetResult(mc(), port::load<int32_t>(kHandle)) != 0)
+                    setState(0xA);
+                else
+                {
+                    port::store<int32_t>(kFade, 0);
+                    nextState();
+                }
+            }
+            draw = true;
+            break;
+        case 9:
+            port::store<int32_t>(kFade, port::load<int32_t>(kFade) + 0x10);
+            if (port::load<int32_t>(kFade) <= 0x80)
+            {
+                draw = true;
+                break;
+            }
+            setState(0);
+            Sound_SetCity(city);
+            Event_InitForCity(GuestPtr<EventMgr>{port::load<uint32_t>(c + 0x68u)});
+            port::store<int32_t>(c + 0x10u, 1);
+            CityScene_StartFade(city, 2);
+            freeManager();
+            freeSprite();
+            freeBox(kTextA);
+            WaitText_Delete();
+            break;
+        case 0xA:
+        {
+            const int result = SaveFile_PrepareDir(mc(), port::load<int32_t>(kCard), 0x001B99C8, 0);
+            if (result != 0)
+                setState(0x15);
+            draw = true;
+            break;
+        }
+        case 0x14:
+            port::store<int32_t>(kTimer, port::load<int32_t>(kTimer) + 1);
+            if (!(port::load<int32_t>(kTimer) < 0xC9))
+                setState(0x15);
+            draw = true;
+            break;
+        case 0x15:
+            McManager_ClearSlots(mc());
+            port::store<uint32_t>(kTextB, newBox(0x12, 2, -1));
+            TextBox_SetText(GuestPtr<TextBox>{port::load<uint32_t>(kTextB)}, GuestPtr<char>{0x001B99D0u}, 0);
+            TextBox_SetPos(GuestPtr<TextBox>{port::load<uint32_t>(kTextB)}, 0x7420, 0x81C0, 0xFF0000);
+            WaitText_Set(GuestPtr<char>{0x001B9A10u});
+            nextState();
+            draw = true;
+            break;
+        case 0x16:
+        {
+            const uint32_t pad = Pad_Pressed(0);
+            if (pad == 0x40u)
+            {
+                freeBox(kTextB);
+                Sound_PlaySe(1, 0, 0x3C, 0.0f, 0.0f);
+                WaitText_Set(GuestPtr<char>{0x001B9A30u});
+                setState(1);
+                draw = true;
+            }
+            else if (pad == 0x10u)
+            {
+                Sound_PlaySe(2, 0, 0x3C, 0.0f, 0.0f);
+                nextState();
+            }
+            else
+                draw = true;
+            break;
+        }
+        case 0x17:
+            port::store<int32_t>(kFade, port::load<int32_t>(kFade) + 0x10);
+            if (port::load<int32_t>(kFade) <= 0x80)
+            {
+                draw = true;
+                break;
+            }
+            freeBox(kTextB);
+            freeManager();
+            freeSprite();
+            freeBox(kTextA);
+            WaitText_Delete();
+            nextState();
+            break;
+        case 0x18:
+            if (Sound_IsBusy() == 0)
+                nextState();
+            break;
+        case 0x19:
+            if (Sound_IsDriverBusy() == 0)
+            {
+                setState(0);
+                return 2;
+            }
+            break;
+        default:
+            break;
+        }
+        if (draw)
+        {
+            DmaList_QueueClearZ();
+            TexSprite_Draw(GuestPtr<TexSprite>{port::load<uint32_t>(kSprite)});
+            TextBox_Draw(GuestPtr<TextBox>{port::load<uint32_t>(kTextA)});
+            if (port::load<uint32_t>(kTextB) != 0u)
+                TextBox_Draw(GuestPtr<TextBox>{port::load<uint32_t>(kTextB)});
+            WaitText_Draw();
+            if (port::load<int32_t>(kFade) > 0)
+            {
+                DmaList_QueueClearZ();
+                DmaList_QueueFade(port::load<int32_t>(kFade), 0);
+            }
+        }
+        return 0;
+    }
+
+    PORT_FN(CityScene_LoadGame);
 }

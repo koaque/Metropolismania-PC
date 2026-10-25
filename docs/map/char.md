@@ -21,7 +21,7 @@ People and the player character.
 
 ## Functions
 
-84 functions (typed 2, verified 82). Blocks: 19 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+84 functions (typed 1, verified 83). Blocks: 19 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
