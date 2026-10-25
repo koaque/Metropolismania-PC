@@ -46,4 +46,7 @@ namespace port
     };
     void setFaultsThrow(bool on);
     const char *nameOf(uint32_t address);
+    // MMPC_PORT_TRACE=<names or 0xADDR,...|all>: a line on stderr when such a ported function is entered and left (a debug aid for a
+    // boot that stalls: the last line says where).
+    bool traceRequested(uint32_t address);
 }

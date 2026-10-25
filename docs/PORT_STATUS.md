@@ -8,7 +8,7 @@ See `config/port_status.csv` for every function.
 
 | Origin | Functions | Named | Typed | Ported | Verified |
 |---|---:|---:|---:|---:|---:|
-| game | 1481 | 100.0% | 100.0% | 98.8% | 96.1% |
+| game | 1481 | 100.0% | 100.0% | 99.7% | 96.6% |
 | sdk | 768 | 100.0% | 0.0% | 0.0% | 0.0% |
 
 Blocking (game and unclassified functions that can reach a thread switch, deferred to native threading): indirect 79, no 987, yes 415
@@ -36,7 +36,7 @@ Blocking (game and unclassified functions that can reach a thread switch, deferr
 | map | 98 | 100.0% | 100.0% | 100.0% | 94.9% |
 | math | 14 | 100.0% | 100.0% | 100.0% | 100.0% |
 | mem | 1 | 100.0% | 100.0% | 100.0% | 100.0% |
-| movie | 80 | 100.0% | 100.0% | 82.5% | 76.2% |
+| movie | 80 | 100.0% | 100.0% | 100.0% | 86.2% |
 | pad | 10 | 100.0% | 100.0% | 100.0% | 100.0% |
 | random | 4 | 100.0% | 100.0% | 100.0% | 100.0% |
 | save | 48 | 100.0% | 100.0% | 100.0% | 89.6% |

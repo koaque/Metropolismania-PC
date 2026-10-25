@@ -22,6 +22,7 @@
 #include "runtime/ee_scheduler.h"
 
 #include <array>
+#include <cstdio>
 #include <cstdint>
 #include <tuple>
 #include <type_traits>
@@ -51,8 +52,15 @@ namespace port
     // A 32-bit read of a hardware register (a timer, a DMA channel), made through the runtime as the original
     // makes it.
     inline uint32_t readHardware32(uint32_t address) { return g_call.runtime->Load32(g_call.rdram, g_call.ctx, address); }
+    // The 64-bit read (the GS privileged registers, such as CSR, are read this way).
+    inline uint64_t readHardware64(uint32_t address) { return g_call.runtime->Load64(g_call.rdram, g_call.ctx, address); }
     // The matching 32-bit write (a DMA channel's registers start the transfer).
     inline void writeHardware32(uint32_t address, uint32_t value) { g_call.runtime->Store32(g_call.rdram, g_call.ctx, address, value); }
+    // The time a loop of the original takes, in EE cycles, charged to the scheduler for a loop the port runs natively. The scheduler
+    // drives the timers and the IOP (a module starting, an RPC server registering) from the cycles it is told of, so a polling or
+    // delay loop that never accounts any waits for ever on what only time can bring. The generated code accounts 32 cycles at
+    // every checkpoint (a loop's back branch).
+    inline void accountCycles(uint32_t cycles) { g_call.runtime->eeScheduler().accountCycles(cycles); }
 
     void registerPorted(uint32_t address, const char *name, GuestFn wrapper, ResultKind result, MutateFn mutate);
     void enterPorted(PS2Runtime *runtime);
@@ -271,12 +279,17 @@ namespace port
         {
             const uint32_t address = ctx->pc;
             PortedScope scope(rdram, ctx, runtime, address);
+            const bool traced = traceRequested(address);
+            if (traced)
+                std::fprintf(stderr, "[port:trace] enter %s\n", nameOf(address));
             try
             {
                 if constexpr (std::is_void_v<R>)
                     invoke(ctx, std::index_sequence_for<Args...>{});
                 else
                     setResult<R>(ctx, invoke(ctx, std::index_sequence_for<Args...>{}));
+                if (traced)
+                    std::fprintf(stderr, "[port:trace] leave %s\n", nameOf(address));
             }
             catch (const EeDispatcherTransfer &)
             {

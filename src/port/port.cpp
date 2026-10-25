@@ -167,6 +167,22 @@ namespace port
         g_call = *dispatcher;
     }
 
+    bool traceRequested(uint32_t address)
+    {
+        static const char *value = std::getenv("MMPC_PORT_TRACE");
+        if (value == nullptr)
+            return false;
+        static const std::string list = std::string(",") + value + ",";
+        if (list == ",all,")
+            return true;
+        char hexText[16];
+        std::snprintf(hexText, sizeof(hexText), ",0x%X,", address);
+        if (list.find(hexText) != std::string::npos)
+            return true;
+        const char *name = nameOf(address);
+        return name != nullptr && list.find(std::string(",") + name + ",") != std::string::npos;
+    }
+
     void enterPorted(PS2Runtime *runtime) { runtime->eeScheduler().enterNoPreempt(); }
     void leavePorted(PS2Runtime *runtime) { runtime->eeScheduler().leaveNoPreempt(); }
 

@@ -2133,25 +2133,25 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0019C420,mm_Movie_DisplayStop,12,game,movie,verified,no,1,0,"clears the display-running flags (0x1BDD68, 0x1BDD9C)"
 0x0019C430,mm_Movie_DisplayStart,76,game,movie,ported,yes,2,1,"waits for the field a0 to pass, then sets the display-running flag"
 0x0019C480,mm_Movie_DmaEndHandler,56,game,movie,verified,no,0,1,(handler_endimage) DMA interrupt handler: releases the shown picture (mm_Movie_VoBufDecCount)
-0x0019C4C0,mm_Movie_VblankHandler,1328,game,movie,typed,yes,0,8,"(vblankHandler) VSync interrupt handler: picks the buffer by the GS CSR field bit, swaps, sends the next decoded picture and subtitles"
+0x0019C4C0,mm_Movie_VblankHandler,1328,game,movie,verified,yes,0,8,"(vblankHandler) VSync interrupt handler: picks the buffer by the GS CSR field bit, swaps, sends the next decoded picture and subtitles"
 0x0019C9F0,mm_Movie_LayoutSubtitle,376,game,movie,verified,no,1,1,lays out a subtitle string into glyph indices at 0x215F00 using the font
 0x0019CB70,mm_Movie_BuildSubtitlePacket,1592,game,movie,verified,no,1,2,"builds the subtitle GS packet at 0x20C1A0 from the laid-out glyphs (font glyphs, positions)"
 0x0019D1B0,mm_Movie_SendFrame,596,game,movie,verified,yes,1,8,"sends the current picture and the subtitle packet to the GS (path 2 DMA, A+D setup)"
 0x0019D410,mm_Movie_BuildImagePacket,1240,game,movie,verified,no,1,10,"turns a decoded RGB32 picture into a textured-sprite GS packet (strips, A+D registers)"
-0x0019D8F0,mm_Movie_ClearScreen,684,game,movie,typed,yes,1,16,"clears both display buffers to black, swapping on vsync, reading the pad meanwhile"
-0x0019DBA0,mm_Movie_PlayPss,624,game,movie,typed,yes,2,14,"(playPss) opens the PSS (cdrom0:), initialises, then pumps the demux and audio until the movie ends or a button skips it (""QuickView:%s"")"
-0x0019DE10,mm_PlayMissionMovie,400,game,movie,typed,yes,1,10,"plays DATA\MPEG\MISSION<n>.PSS with its .BIN subtitles (n = a0), or ENDING.PSS for 6, once the sound driver is idle"
-0x0019DFA0,mm_PlayOpeningMovie,116,game,movie,typed,yes,1,3,plays DATA\MPEG\OPENING.PSS at 640x448 once the sound driver is idle
+0x0019D8F0,mm_Movie_ClearScreen,684,game,movie,ported,yes,1,16,"clears both display buffers to black, swapping on vsync, reading the pad meanwhile"
+0x0019DBA0,mm_Movie_PlayPss,624,game,movie,ported,yes,2,14,"(playPss) opens the PSS (cdrom0:), initialises, then pumps the demux and audio until the movie ends or a button skips it (""QuickView:%s"")"
+0x0019DE10,mm_PlayMissionMovie,400,game,movie,verified,yes,1,10,"plays DATA\MPEG\MISSION<n>.PSS with its .BIN subtitles (n = a0), or ENDING.PSS for 6, once the sound driver is idle"
+0x0019DFA0,mm_PlayOpeningMovie,116,game,movie,ported,yes,1,3,plays DATA\MPEG\OPENING.PSS at 640x448 once the sound driver is idle
 0x0019E020,mm_Movie_SetSubtitleState,8,game,movie,verified,no,1,0,0x1BDD80 = a0
 0x0019E030,mm_Movie_Error,16,game,movie,ported,yes,2,1,"(ErrMessage) prints ""[ Error ] %s"""
 0x0019E060,mm_Movie_SwitchThread,8,game,movie,verified,yes,2,1,(switchThread) RotateThreadReadyQueue syscall (0x2B)
-0x0019E070,mm_Movie_TermAll,348,game,movie,typed,yes,1,18,"(termAll) waits for the decoder to drain, stops audio, removes the handlers, deletes the threads and closes the stream"
+0x0019E070,mm_Movie_TermAll,348,game,movie,verified,yes,1,18,"(termAll) waits for the decoder to drain, stops audio, removes the handlers, deletes the threads and closes the stream"
 0x0019E1D0,mm_Movie_Update,172,game,movie,verified,yes,1,3,"one step of playback: pumps the demux until the decoder reports the end, then terminates"
-0x0019E280,mm_Movie_ReadAndDemux,380,game,movie,typed,yes,2,12,"reads disc data into the read buffer (sceCdStRead), demuxes it (sceMpegDemuxPssRing), sends audio to the IOP and starts display and audio once both are preloaded"
+0x0019E280,mm_Movie_ReadAndDemux,380,game,movie,verified,yes,2,12,"reads disc data into the read buffer (sceCdStRead), demuxes it (sceMpegDemuxPssRing), sends audio to the IOP and starts display and audio once both are preloaded"
 0x0019E400,mm_Movie_ResumeAll,80,game,movie,ported,yes,1,2,restarts display and audio after a pause
-0x0019E450,mm_Movie_InitAll,816,game,movie,typed,yes,1,18,"(initAll) display buffers, sceMpegInit, video decoder, audio decoder (when 0x1BD9E8 is set), stream callbacks, read and decode threads, VSync and DMA handlers"
-0x0019E780,mm_Movie_PcmCallback,432,game,movie,typed,yes,0,3,"(pcmCallback) stream callback for audio: skips the 4-byte sub-stream header, copies the packet into the audio decoder (ring-aware); returns 0 when there is no room"
-0x0019E930,mm_Movie_VideoCallback,504,game,movie,typed,yes,0,5,"(videoCallback) stream callback for video: copies the packet into the IPU input buffer, records its time stamp (""pts buffer overflow""); 0 when there is no room"
+0x0019E450,mm_Movie_InitAll,816,game,movie,ported,yes,1,18,"(initAll) display buffers, sceMpegInit, video decoder, audio decoder (when 0x1BD9E8 is set), stream callbacks, read and decode threads, VSync and DMA handlers"
+0x0019E780,mm_Movie_PcmCallback,432,game,movie,verified,yes,0,3,"(pcmCallback) stream callback for audio: skips the 4-byte sub-stream header, copies the packet into the audio decoder (ring-aware); returns 0 when there is no room"
+0x0019E930,mm_Movie_VideoCallback,504,game,movie,verified,yes,0,5,"(videoCallback) stream callback for video: copies the packet into the IPU input buffer, records its time stamp (""pts buffer overflow""); 0 when there is no room"
 0x0019EB30,mm_Movie_ReadBufEndGet,60,game,movie,verified,no,1,0,(readBufEndGet) releases a1 bytes
 0x0019EB70,mm_Movie_ReadBufBeginGet,96,game,movie,verified,no,1,0,(readBufBeginGet) start of the readable data and its size
 0x0019EBD0,mm_Movie_ReadBufEndPut,112,game,movie,verified,no,1,0,(readBufEndPut) commits a1 written bytes
@@ -2169,7 +2169,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0019F540,mm_Movie_ViBufDelete,144,game,movie,verified,no,1,3,"(viBufDelete) stops IPU DMA, deletes the semaphore"
 0x0019F5D0,mm_Movie_ViBufRestartDma,944,game,movie,verified,yes,1,4,(viBufRestartDMA) restarts the toIPU DMA where it stopped
 0x0019F980,mm_Movie_ViBufStopDma,352,game,movie,verified,yes,1,4,(viBufStopDMA) stops the toIPU DMA and remembers its position
-0x0019FAE0,mm_Movie_ViBufAddDma,756,game,movie,typed,yes,1,5,"(viBufAddDMA) queues more ring data on the toIPU DMA chain (""DMA ADD not active"")"
+0x0019FAE0,mm_Movie_ViBufAddDma,756,game,movie,verified,yes,1,5,"(viBufAddDMA) queues more ring data on the toIPU DMA chain (""DMA ADD not active"")"
 0x0019FDE0,mm_Movie_ViBufEndPut,92,game,movie,verified,yes,2,2,(viBufEndPut) commits a1 bytes
 0x0019FE40,mm_Movie_ViBufBeginPut,244,game,movie,verified,yes,2,2,(viBufBeginPut) free space as up to two areas
 0x0019FF40,mm_Movie_ViBufReset,404,game,movie,verified,no,2,2,"(viBufReset) empties the ring and the time stamp table, builds the DMA tags"
@@ -2179,10 +2179,10 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001A01E0,mm_Movie_CbStopDma,36,game,movie,verified,yes,0,1,(mpegStopDMA) libmpeg callback
 0x001A0210,mm_Movie_CbNoData,44,game,movie,verified,yes,0,2,"(mpegNodata) libmpeg callback: switch threads, then queue more input"
 0x001A0240,mm_Movie_CbError,40,game,movie,ported,yes,0,1,(mpegError) libmpeg callback: prints the message
-0x001A0270,mm_Movie_DecodeLoop,692,game,movie,typed,yes,1,10,"(decBs0) decode thread loop: sceMpegGetPicture into the picture queue, builds image and subtitle packets, ends on sceMpegIsEnd (""decode thread: aborted"")"
-0x001A0530,mm_Movie_VideoDecMain,96,game,movie,typed,yes,0,3,"(videoDecMain) decode thread entry: resets the buffers, runs the loop, waits for the queue to drain, state 3 (done)"
+0x001A0270,mm_Movie_DecodeLoop,692,game,movie,ported,yes,1,10,"(decBs0) decode thread loop: sceMpegGetPicture into the picture queue, builds image and subtitle packets, ends on sceMpegIsEnd (""decode thread: aborted"")"
+0x001A0530,mm_Movie_VideoDecMain,96,game,movie,ported,yes,0,3,"(videoDecMain) decode thread entry: resets the buffers, runs the loop, waits for the queue to drain, state 3 (done)"
 0x001A0590,mm_Movie_VideoDecIsDone,84,game,movie,verified,yes,1,2,input buffer empty and libmpeg has no more pictures
-0x001A05F0,mm_Movie_VideoDecPutTerminator,400,game,movie,typed,yes,1,4,appends a sequence end code (0x1BD9F0) to the input once there is room; 0 until then
+0x001A05F0,mm_Movie_VideoDecPutTerminator,400,game,movie,verified,yes,1,4,appends a sequence end code (0x1BD9F0) to the input once there is room; 0 until then
 0x001A0780,mm_Movie_VideoDecPutTs,60,game,movie,verified,yes,1,1,(videoDecPutTs) time stamp for input offset a3
 0x001A07C0,mm_Movie_VideoDecGetState,8,game,movie,verified,no,2,0,(videoDecGetState) +0xA8
 0x001A07D0,mm_Movie_VideoDecSetStateStart,12,game,movie,verified,no,1,0,+0xA8 = 1

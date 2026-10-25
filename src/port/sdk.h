@@ -108,6 +108,30 @@ namespace mm::sdk
         inline constexpr uint32_t WaitSema = 0x0010DDA0u;
         inline constexpr uint32_t SignalSema = 0x0010DD80u;
         inline constexpr uint32_t RotateThreadReadyQueue = 0x0010DC10u;
+        inline constexpr uint32_t GetThreadId = 0x0010DC50u;
+        inline constexpr uint32_t ChangeThreadPriority = 0x0010DBF0u;
+        inline constexpr uint32_t CreateThread = 0x0010DB60u;
+        inline constexpr uint32_t StartThread = 0x0010DB80u;
+        inline constexpr uint32_t TerminateThread = 0x0010DBB0u;
+        inline constexpr uint32_t DeleteThread = 0x0010DB70u;
+        inline constexpr uint32_t AddIntcHandler = 0x0010DA40u;
+        inline constexpr uint32_t RemoveIntcHandler = 0x0010DA60u;
+        inline constexpr uint32_t AddDmacHandler = 0x0010DA70u;
+        inline constexpr uint32_t RemoveDmacHandler = 0x0010DA90u;
+        inline constexpr uint32_t EnableIntc = 0x0010E8A8u;
+        inline constexpr uint32_t DisableIntc = 0x0010E840u;
+        inline constexpr uint32_t EnableDmac = 0x0010E978u;
+        inline constexpr uint32_t DisableDmac = 0x0010E910u;
+        inline constexpr uint32_t sceMpegInit = 0x0010BCB8u;
+        inline constexpr uint32_t sceMpegDemuxPssRing = 0x0010B138u;
+        inline constexpr uint32_t sceMpegGetPicture = 0x0010BF90u;
+        inline constexpr uint32_t sceMpegIsEnd = 0x0010C0A8u;
+        inline constexpr uint32_t sceMpegReset = 0x0010C0C8u;
+        inline constexpr uint32_t sceSdRemoteInit = 0x00116C90u;
+        inline constexpr uint32_t sceGsSetDefDBuffDc = 0x00103A20u;
+        inline constexpr uint32_t sceGsSetHalfOffset = 0x00103730u;
+        inline constexpr uint32_t sceGsSetHalfOffset2 = 0x00103998u;
+        inline constexpr uint32_t sceGsSwapDBuffDc = 0x00103D08u;
         inline constexpr uint32_t sceSdRemote = 0x00116DD0u;
         inline constexpr uint32_t sceSifAllocSysMemory = 0x00114DB0u;
         inline constexpr uint32_t sceSifFreeSysMemory = 0x00114EA8u;
@@ -194,7 +218,10 @@ namespace mm::sdk
     inline uint32_t sceSifSetDma(uint32_t descriptors, int count) { return port::callGuest<uint32_t>(addr::sceSifSetDma, descriptors, count); }
     inline int64_t sceSifDmaStat(uint32_t id) { return port::callGuest<int64_t>(addr::sceSifDmaStat, id); }
     // The MPEG library.
-    inline int sceMpegAddStrCallback(int a0, int a1, int a2, int a3) { return port::callGuest<int>(addr::sceMpegAddStrCallback, a0, a1, a2, a3); }
+    inline int sceMpegAddStrCallback(int mpeg, int stream, int id, int function, int argument)
+    {
+        return port::callGuest<int>(addr::sceMpegAddStrCallback, mpeg, stream, id, function, argument);
+    }
     inline int sceMpegDelete(int mpeg) { return port::callGuest<int>(addr::sceMpegDelete, mpeg); }
 
     // libc: the guest addresses of the buffers.
@@ -276,6 +303,37 @@ namespace mm::sdk
     inline int WaitSema(int sema) { return port::callGuest<int>(addr::WaitSema, sema); }
     inline int SignalSema(int sema) { return port::callGuest<int>(addr::SignalSema, sema); }
     inline int RotateThreadReadyQueue(int priority) { return port::callGuest<int>(addr::RotateThreadReadyQueue, priority); }
+    // Threads and interrupt handlers (the movie player makes and removes its own): the ids are the kernel's.
+    inline int GetThreadId() { return port::callGuest<int>(addr::GetThreadId); }
+    inline int ChangeThreadPriority(int thread, int priority) { return port::callGuest<int>(addr::ChangeThreadPriority, thread, priority); }
+    inline int CreateThread(uint32_t param) { return port::callGuest<int>(addr::CreateThread, param); }
+    inline int StartThread(int thread, int argument) { return port::callGuest<int>(addr::StartThread, thread, argument); }
+    inline int TerminateThread(int thread) { return port::callGuest<int>(addr::TerminateThread, thread); }
+    inline int DeleteThread(int thread) { return port::callGuest<int>(addr::DeleteThread, thread); }
+    inline int AddIntcHandler(int cause, uint32_t handler, int next) { return port::callGuest<int>(addr::AddIntcHandler, cause, handler, next); }
+    inline int RemoveIntcHandler(int cause, int id) { return port::callGuest<int>(addr::RemoveIntcHandler, cause, id); }
+    inline int AddDmacHandler(int channel, uint32_t handler, int next) { return port::callGuest<int>(addr::AddDmacHandler, channel, handler, next); }
+    inline int RemoveDmacHandler(int channel, int id) { return port::callGuest<int>(addr::RemoveDmacHandler, channel, id); }
+    inline int EnableIntc(int cause) { return port::callGuest<int>(addr::EnableIntc, cause); }
+    inline int DisableIntc(int cause) { return port::callGuest<int>(addr::DisableIntc, cause); }
+    inline int EnableDmac(int channel) { return port::callGuest<int>(addr::EnableDmac, channel); }
+    inline int DisableDmac(int channel) { return port::callGuest<int>(addr::DisableDmac, channel); }
+    // The MPEG library: set-up, demux of a PSS buffer into the stream callbacks (the ring is the one the data lies in), decoding of one
+    // picture, the end test and the reset.
+    inline int sceMpegInit() { return port::callGuest<int>(addr::sceMpegInit); }
+    inline int sceMpegDemuxPssRing(int mpeg, int data, int size, int ring, int ringSize) { return port::callGuest<int>(addr::sceMpegDemuxPssRing, mpeg, data, size, ring, ringSize); }
+    inline int sceMpegGetPicture(int mpeg, int destination, int macroblocks) { return port::callGuest<int>(addr::sceMpegGetPicture, mpeg, destination, macroblocks); }
+    inline int64_t sceMpegIsEnd(int mpeg) { return port::callGuest<int64_t>(addr::sceMpegIsEnd, mpeg); }
+    inline int sceMpegReset(int mpeg) { return port::callGuest<int>(addr::sceMpegReset, mpeg); }
+    inline int sceSdRemoteInit() { return port::callGuest<int>(addr::sceSdRemoteInit); }
+    // The double-buffered display of the movie player's graphics environments.
+    inline void sceGsSetDefDBuffDc(uint32_t buffer, int psm, int width, int height, int ztest, int zpsm, int clear)
+    {
+        port::callGuest<void>(addr::sceGsSetDefDBuffDc, buffer, psm, width, height, ztest, zpsm, clear);
+    }
+    inline void sceGsSetHalfOffset(uint32_t environment, int centreX, int centreY, int field) { port::callGuest<void>(addr::sceGsSetHalfOffset, environment, centreX, centreY, field); }
+    inline void sceGsSetHalfOffset2(uint32_t environment, int centreX, int centreY, int field) { port::callGuest<void>(addr::sceGsSetHalfOffset2, environment, centreX, centreY, field); }
+    inline void sceGsSwapDBuffDc(uint32_t buffer, int field) { port::callGuest<void>(addr::sceGsSwapDBuffDc, buffer, field); }
     // The sound driver's remote call on the IOP: a command and up to five more words; the 64-bit result is the driver's.
     template <typename... Args>
     inline int64_t sceSdRemote(int mode, int command, Args... args)

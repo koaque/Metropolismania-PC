@@ -4794,15 +4794,25 @@ int Movie_AudioDecCreate(GuestPtr<uint32_t> audio, int ring, int ringSize, int i
 void Movie_DisplayStop();
 int Movie_DisplayStart(int field);
 int Movie_DmaEndHandler();
+int Movie_VblankHandler();
 void Movie_LayoutSubtitle(GuestPtr<char> text);
 void Movie_BuildSubtitlePacket();
 int16_t Movie_SendFrame(int picture);
 void Movie_BuildImagePacket(uint32_t packet, uint32_t image, int half, int width, int height);
+void Movie_ClearScreen();
+void Movie_PlayPss(GuestPtr<char> name, int16_t a1, int16_t a2, int width, int16_t height, int fadeAudio, uint16_t skipButtons, int16_t fadeStep, int stack0, int stack8);
+int PlayMissionMovie(char mission);
+int PlayOpeningMovie();
 void Movie_SetSubtitleState(uint16_t state);
 void Movie_Error(int message);
 void Movie_SwitchThread();
+void Movie_TermAll();
 int Movie_Update();
+int Movie_ReadAndDemux();
 void Movie_ResumeAll();
+void Movie_InitAll(int16_t a0, int16_t a1, int width, int16_t height);
+int Movie_PcmCallback(int mpeg, int cbdata, int anyData);
+int Movie_VideoCallback(int mpeg, int cbdata, int anyData);
 int Movie_ReadBufEndGet(int readBuf, int size);
 int Movie_ReadBufBeginGet(int readBuf, GuestPtr<int32_t> ptr);
 int Movie_ReadBufEndPut(int readBuf, int size);
@@ -4820,6 +4830,7 @@ int Movie_ViBufCount(int vibuf);
 int Movie_ViBufDelete(int vibuf);
 int Movie_ViBufRestartDma(GuestPtr<uint32_t> vibuf);
 int Movie_ViBufStopDma(int vibuf);
+int Movie_ViBufAddDma(GuestPtr<int32_t> vibuf);
 void Movie_ViBufEndPut(int vibuf, int size);
 void Movie_ViBufBeginPut(GuestPtr<int32_t> vibuf, GuestPtr<int32_t> ptr0, GuestPtr<int32_t> len0, GuestPtr<int32_t> ptr1, GuestPtr<int32_t> len1);
 int Movie_ViBufReset(GuestPtr<int32_t> vibuf);
@@ -4829,14 +4840,17 @@ int Movie_CbRestartDma();
 int Movie_CbStopDma();
 int Movie_CbNoData();
 int Movie_CbError(int mpeg, int cbdata);
+int Movie_DecodeLoop(int videoDec);
+void Movie_VideoDecMain(int videoDec);
 int Movie_VideoDecIsDone(int videoDec);
+int Movie_VideoDecPutTerminator(int videoDec);
 int Movie_VideoDecPutTs(int videoDec, int64_t pts, int64_t dts, int start, int length);
 int Movie_VideoDecGetState(int videoDec);
 void Movie_VideoDecSetStateStart(int videoDec);
 int Movie_VideoDecDelete(int videoDec);
 void Movie_VideoDecEndPut(int videoDec, int size);
 void Movie_VideoDecBeginPut(int videoDec, GuestPtr<int32_t> ptr0, GuestPtr<int32_t> len0, GuestPtr<int32_t> ptr1, GuestPtr<int32_t> len1);
-int Movie_VideoDecAddStrCallback(int a0, int a1, int a2, int a3);
+int Movie_VideoDecAddStrCallback(int a0, int a1, int a2, int a3, int a4);
 int Movie_VideoDecCreate(int videoDec, int mpegWork, int mpegWorkSize, int data, int tags, int tagSize, int ts, int tsCount);
 void Movie_VoBufDecCount(int vobuf);
 int Movie_VoBufGetTag(int vobuf);
@@ -4873,18 +4887,4 @@ inline void GameUpdate(int game) { port::callGuest<void>(addr::GameUpdate, game)
 inline void Main() { port::callGuest<void>(addr::Main); }
 inline void MainLoop(int app) { port::callGuest<void>(addr::MainLoop, app); }
 inline int App_ctor(int app) { return port::callGuest<int>(addr::App_ctor, app); }
-inline void Movie_VblankHandler() { port::callGuest<void>(addr::Movie_VblankHandler); }
-inline void Movie_ClearScreen() { port::callGuest<void>(addr::Movie_ClearScreen); }
-inline void Movie_PlayPss(GuestPtr<char> name, int16_t a1, int16_t a2, int width, int16_t height, int fadeAudio, uint16_t skipButtons, int16_t fadeStep, int stack0, int stack8) { port::callGuest<void>(addr::Movie_PlayPss, name, a1, a2, width, height, fadeAudio, skipButtons, fadeStep, stack0, stack8); }
-inline int PlayMissionMovie(char mission) { return port::callGuest<int>(addr::PlayMissionMovie, mission); }
-inline int PlayOpeningMovie() { return port::callGuest<int>(addr::PlayOpeningMovie); }
-inline void Movie_TermAll() { port::callGuest<void>(addr::Movie_TermAll); }
-inline int Movie_ReadAndDemux() { return port::callGuest<int>(addr::Movie_ReadAndDemux); }
-inline void Movie_InitAll(int16_t a0, int16_t a1, int width, int16_t height) { port::callGuest<void>(addr::Movie_InitAll, a0, a1, width, height); }
-inline int Movie_PcmCallback(int mpeg, int cbdata, int anyData) { return port::callGuest<int>(addr::Movie_PcmCallback, mpeg, cbdata, anyData); }
-inline int Movie_VideoCallback(int mpeg, int cbdata, int anyData) { return port::callGuest<int>(addr::Movie_VideoCallback, mpeg, cbdata, anyData); }
-inline int Movie_ViBufAddDma(GuestPtr<int32_t> vibuf) { return port::callGuest<int>(addr::Movie_ViBufAddDma, vibuf); }
-inline int Movie_DecodeLoop(int videoDec) { return port::callGuest<int>(addr::Movie_DecodeLoop, videoDec); }
-inline void Movie_VideoDecMain(int videoDec) { port::callGuest<void>(addr::Movie_VideoDecMain, videoDec); }
-inline int Movie_VideoDecPutTerminator(int videoDec) { return port::callGuest<int>(addr::Movie_VideoDecPutTerminator, videoDec); }
 }

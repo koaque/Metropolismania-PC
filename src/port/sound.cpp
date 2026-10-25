@@ -1891,8 +1891,7 @@ namespace mm
                 for (volatile int spin = 0;;)
                     spin = spin + 1;
             }
-            for (volatile int pause = 0x2710; pause != 0;)
-                pause = pause - 1;
+            port::accountCycles(0x2711u * 32u); // the original's 10000 empty turns: the IOP runs meanwhile and registers the server
         } while (port::load<uint32_t>(0x001FE6B4u) == 0u);
         port::store<uint32_t>(0x0020B6C0u, 0x0020B7C0u);
         sdk::FlushCache(0);

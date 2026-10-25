@@ -381,10 +381,10 @@ namespace mm
         return 1;
     }
 
-    // Hands its own arguments on to the library (the original has none of its own).
-    int Movie_VideoDecAddStrCallback(int a0, int a1, int a2, int a3)
+    // Hands its own arguments on to the library (the original has none of its own; the fifth, the callback's data, is in t0).
+    int Movie_VideoDecAddStrCallback(int a0, int a1, int a2, int a3, int a4)
     {
-        sdk::sceMpegAddStrCallback(a0, a1, a2, a3);
+        sdk::sceMpegAddStrCallback(a0, a1, a2, a3, a4);
         return 1;
     }
 
@@ -1484,4 +1484,710 @@ namespace mm
     }
 
     PORT_FN(Movie_Update);
+
+    // ---- the decode thread, the stream callbacks and the shutdown (plan P6 batch 22)
+
+    namespace
+    {
+        constexpr uint32_t kVideoDec = 0x00717C80u, kVideoRing = 0x00717CC8u, kAudioDec = 0x00717D40u, kReadRing = 0x00634C00u, kVideoOut = 0x00717DA0u;
+        constexpr uint32_t kSoundOn = 0x001BD9E8u, kReadError = 0x001BDDCCu;
+
+        // A packet of the read ring (`first` bytes at `src`, then `wrapped` bytes from the start of the ring) copied into the two areas
+        // (`len0` bytes at `area0`, then `len1` at `area1`) a decoder's input ring offers; 0 when they do not hold it all.
+        int copyPacket(uint32_t ring, uint32_t src, int first, int wrapped, uint32_t area0, int len0, uint32_t area1, int len1)
+        {
+            const int total = first + wrapped;
+            if (len0 + len1 < total)
+                return 0;
+            if (!(first < len0))
+            {
+                sdk::memcpy(area0, src, len0);
+                sdk::memcpy(area1, src + static_cast<uint32_t>(len0), first - len0);
+                sdk::memcpy(area1 + static_cast<uint32_t>(first - len0), ring, wrapped);
+                return total;
+            }
+            const int room = len0 - first;
+            sdk::memcpy(area0, src, first);
+            if (wrapped < room)
+                sdk::memcpy(area0 + static_cast<uint32_t>(first), ring, wrapped);
+            else
+            {
+                sdk::memcpy(area0 + static_cast<uint32_t>(first), ring, room);
+                sdk::memcpy(area1, ring + static_cast<uint32_t>(room), wrapped - room);
+            }
+            return total;
+        }
+
+        // The uncached view of a RAM address (the decoder's DMA sees what the CPU wrote).
+        uint32_t uncached(uint32_t address) { return (address & 0x0FFFFFFFu) | 0x20000000u; }
+    }
+
+    // The decode thread's entry: both rings emptied, the pictures decoded until the stream ends, then (the vblank handler showing
+    // the last ones meanwhile) the output queue is waited on and the decoder is marked done (state 3).
+    void Movie_VideoDecMain(int videoDec)
+    {
+        Movie_ViBufReset(GuestPtr<int32_t>{static_cast<uint32_t>(videoDec) + 0x48u});
+        Movie_VoBufReset(static_cast<int>(kVideoOut));
+        Movie_DecodeLoop(videoDec);
+        while (port::load<int32_t>(kVideoOut + 0xCu) != 0)
+            sdk::atanf(ps2f(1.0f)); // the original spins here; this gives the other threads the processor as a checkpoint would
+        port::store<int32_t>(static_cast<uint32_t>(videoDec) + 0xA8u, 3);
+    }
+
+    // Puts the sequence end code (the word at 0x1BD9F0) into the decoder's input ring once there is room for its four bytes, across
+    // the two areas the ring offers; 0 until then. The first time the decoder (state 0) goes to state 2.
+    int Movie_VideoDecPutTerminator(int videoDec)
+    {
+        port::GuestFrame<0x70> frame;
+        const uint32_t sp = frame.ptr().address;
+        const uint32_t term = sp + 0x64u;
+        port::store<uint32_t>(term, port::load<uint32_t>(0x001BD9F0u));
+        Movie_ViBufBeginPut(GuestPtr<int32_t>{static_cast<uint32_t>(videoDec) + 0x48u}, GuestPtr<int32_t>{sp + 0x5Cu}, GuestPtr<int32_t>{sp + 0x68u},
+                            GuestPtr<int32_t>{sp + 0x60u}, GuestPtr<int32_t>{sp + 0x6Cu});
+        const int32_t first = port::load<int32_t>(sp + 0x68u), second = port::load<int32_t>(sp + 0x6Cu);
+        if (first + second < 4)
+            return 0;
+        const uint32_t area0 = uncached(port::load<uint32_t>(sp + 0x5Cu)), area1 = uncached(port::load<uint32_t>(sp + 0x60u));
+        if (first < 5)
+        {
+            sdk::memcpy(area0, term, first);
+            sdk::memcpy(area1, term + static_cast<uint32_t>(first), 4 - first);
+            sdk::memcpy(area1 + 4u - static_cast<uint32_t>(first), 0u, 0);
+        }
+        else
+        {
+            sdk::memcpy(area0, term, 4);
+            sdk::memcpy(area0 + 4u, 0u, 0);
+        }
+        Movie_ViBufEndPut(static_cast<int>(kVideoRing), 4);
+        Movie_ViBufFlush(videoDec + 0x48);
+        if (port::load<int32_t>(static_cast<uint32_t>(videoDec) + 0xA8u) == 0)
+            port::store<int32_t>(static_cast<uint32_t>(videoDec) + 0xA8u, 2);
+        return 1;
+    }
+
+    // The stream callback for audio: the packet (the data at +8 of the callback record, +0xC bytes, the first four of them the
+    // sub-stream header) in the read ring `anyData` goes to the audio decoder's PCM ring, whichever way either wraps. 1 when it fitted.
+    int Movie_PcmCallback(int, int cbdata, int anyData)
+    {
+        port::GuestFrame<0xB0> frame;
+        const uint32_t sp = frame.ptr().address;
+        const uint32_t ring = static_cast<uint32_t>(anyData), record = static_cast<uint32_t>(cbdata);
+        const int32_t ringSize = port::load<int32_t>(ring + 0x50008u);
+        const uint32_t ringEnd = ring + static_cast<uint32_t>(ringSize);
+        uint32_t src = port::load<uint32_t>(record + 8u) + 4u;
+        if (!(src < ringEnd))
+            src -= static_cast<uint32_t>(ringSize);
+        const int32_t payload = port::load<int32_t>(record + 0xCu) - 4;
+        int32_t first = static_cast<int32_t>(ringEnd - src);
+        if (payload < first)
+            first = payload;
+        const int32_t wrapped = payload - first;
+        Movie_AudioDecBeginPut(GuestPtr<int32_t>{kAudioDec}, GuestPtr<int32_t>{sp + 0xA0u}, GuestPtr<int32_t>{sp + 0xA8u}, GuestPtr<int32_t>{sp + 0xA4u},
+                               GuestPtr<int32_t>{sp + 0xACu});
+        const int total = copyPacket(ring, src, first, wrapped, port::load<uint32_t>(sp + 0xA0u), port::load<int32_t>(sp + 0xA8u), port::load<uint32_t>(sp + 0xA4u),
+                                     port::load<int32_t>(sp + 0xACu));
+        Movie_AudioDecEndPut(GuestPtr<int32_t>{kAudioDec}, static_cast<uint32_t>(total));
+        return total > 0 ? 1 : 0;
+    }
+
+    // The stream callback for video: the same for the packet in the read ring `anyData` and the decoder's input ring (through the
+    // uncached view), then the packet's time stamps are recorded for where it starts ("pts buffer overflow" when the table is full).
+    int Movie_VideoCallback(int, int cbdata, int anyData)
+    {
+        port::GuestFrame<0xC0> frame;
+        const uint32_t sp = frame.ptr().address;
+        const uint32_t ring = static_cast<uint32_t>(anyData), record = static_cast<uint32_t>(cbdata);
+        const int32_t ringSize = port::load<int32_t>(ring + 0x50008u);
+        const uint32_t src = port::load<uint32_t>(record + 8u);
+        const uint32_t length = port::load<uint32_t>(record + 0xCu);
+        uint32_t first = ring + static_cast<uint32_t>(ringSize) - src;
+        if (length < first)
+            first = length;
+        const int32_t wrapped = static_cast<int32_t>(length - first);
+        Movie_VideoDecBeginPut(static_cast<int>(kVideoDec), GuestPtr<int32_t>{sp + 0xB0u}, GuestPtr<int32_t>{sp + 0xB8u}, GuestPtr<int32_t>{sp + 0xB4u},
+                               GuestPtr<int32_t>{sp + 0xBCu});
+        const int total = copyPacket(ring, src, static_cast<int32_t>(first), wrapped, uncached(port::load<uint32_t>(sp + 0xB0u)), port::load<int32_t>(sp + 0xB8u),
+                                     uncached(port::load<uint32_t>(sp + 0xB4u)), port::load<int32_t>(sp + 0xBCu));
+        if (total > 0 && Movie_VideoDecPutTs(static_cast<int>(kVideoDec), port::load<int64_t>(record + 0x10u), port::load<int64_t>(record + 0x18u),
+                                             static_cast<int>(port::load<uint32_t>(sp + 0xB0u)), total) == 0)
+            Movie_Error(0x001BAC20);
+        Movie_VideoDecEndPut(static_cast<int>(kVideoDec), total);
+        return total > 0 ? 1 : 0;
+    }
+
+    PORT_FN(Movie_VideoDecMain);
+    PORT_FN(Movie_VideoDecPutTerminator);
+    PORT_FN(Movie_PcmCallback);
+    PORT_FN(Movie_VideoCallback);
+
+    // Ends the movie: the decoder is given the sequence end code and, unless the read failed, waited on until it has finished
+    // (the other threads run meanwhile); then the display and the audio stop, the read and output rings go, the two threads are
+    // ended and deleted, the vblank and DMA handlers removed, and the decoder, audio decoder, stream file and subtitle box freed.
+    void Movie_TermAll()
+    {
+        while (Movie_VideoDecPutTerminator(static_cast<int>(kVideoDec)) == 0)
+            sdk::RotateThreadReadyQueue(1);
+        if (port::load<int32_t>(kReadError) == 0)
+            while (Movie_VideoDecIsDone(static_cast<int>(kVideoDec)) == 0 && Movie_VideoDecGetState(static_cast<int>(kVideoDec)) != 3)
+                sdk::RotateThreadReadyQueue(1);
+        Movie_DisplayStop();
+        if (port::load<int32_t>(kSoundOn) != 0)
+            Movie_AudioDecReset(GuestPtr<uint32_t>{kAudioDec});
+        Movie_ReadBufDelete();
+        Movie_VoBufDelete();
+        sdk::TerminateThread(port::load<int32_t>(0x001BDD94u));
+        sdk::DeleteThread(port::load<int32_t>(0x001BDD94u));
+        sdk::TerminateThread(port::load<int32_t>(0x001BDD98u));
+        sdk::DeleteThread(port::load<int32_t>(0x001BDD98u));
+        sdk::DisableDmac(2);
+        sdk::RemoveDmacHandler(2, port::load<int32_t>(0x00717D30u));
+        sdk::DisableIntc(2);
+        sdk::RemoveIntcHandler(2, port::load<int32_t>(0x00717D34u));
+        Movie_VideoDecDelete(static_cast<int>(kVideoDec));
+        if (port::load<int32_t>(kSoundOn) != 0)
+            Movie_AudioDecDelete(static_cast<int>(kAudioDec));
+        Movie_StrFileClose(GuestPtr<int32_t>{0x00717C40u});
+        if (port::load<uint32_t>(0x001BDDD0u) != 0)
+        {
+            const uint32_t box = port::load<uint32_t>(0x001BDDD0u);
+            port::store<uint32_t>(0x001BDDD0u, 0);
+            TextBox_dtor(GuestPtr<TextBox>{box}, 1);
+        }
+    }
+
+    // One step of reading and demuxing: unless the file read failed (0), while the file has bytes left (0x1BDDAC) and the read ring has
+    // room for 64 KB, the next 64 KB are read into it; the other threads then run; whatever the ring holds is demuxed into the stream
+    // callbacks; the audio goes to the IOP; and once the picture queue is full (and the audio is preset) the display and audio start.
+    // 1 to go on.
+    int Movie_ReadAndDemux()
+    {
+        constexpr uint32_t kBytesLeft = 0x001BDDACu, kDemuxLeft = 0x001BDDB0u, kStarted = 0x001BDDA4u;
+        port::GuestFrame<0x30> frame;
+        const uint32_t sp = frame.ptr().address;
+        if (port::load<int32_t>(kReadError) != 0)
+            return 0;
+        const int room = Movie_ReadBufBeginPut(static_cast<int>(kReadRing), GuestPtr<int32_t>{sp + 0x28u});
+        if (port::load<int32_t>(kBytesLeft) > 0 && !(room < 0x10000))
+        {
+            const int got = Movie_StrFileRead(GuestPtr<int32_t>{0x00717C40u}, port::load<int32_t>(sp + 0x28u), 0x10000);
+            if (port::load<int32_t>(kReadError) != 0)
+                return 0;
+            Movie_ReadBufEndPut(static_cast<int>(kReadRing), got);
+            port::store<int32_t>(kBytesLeft, port::load<int32_t>(kBytesLeft) - got);
+        }
+        sdk::RotateThreadReadyQueue(1);
+        const int ready = Movie_ReadBufBeginGet(static_cast<int>(kReadRing), GuestPtr<int32_t>{sp + 0x2Cu});
+        if (ready > 0)
+        {
+            const int used = sdk::sceMpegDemuxPssRing(static_cast<int>(kVideoDec), port::load<int32_t>(sp + 0x2Cu), ready, static_cast<int>(kReadRing),
+                                                     port::load<int32_t>(kReadRing + 0x50008u));
+            Movie_ReadBufEndGet(static_cast<int>(kReadRing), used);
+            port::store<int32_t>(kDemuxLeft, port::load<int32_t>(kDemuxLeft) - used);
+        }
+        if (port::load<int32_t>(kSoundOn) != 0)
+            Movie_AudioDecSendToIop(GuestPtr<int32_t>{kAudioDec}, 0, 0, 0);
+        if (port::load<int32_t>(kStarted) != 0)
+            return 1;
+        if (Movie_VoBufIsFull(static_cast<int>(kVideoOut)) == 0)
+            return 1;
+        if (port::load<int32_t>(kSoundOn) != 0 && Movie_AudioDecIsPreset(static_cast<int>(kAudioDec)) == 0)
+            return 1;
+        Movie_DisplayStart(1);
+        if (port::load<int32_t>(kSoundOn) != 0)
+            Movie_AudioDecStart(GuestPtr<uint32_t>{kAudioDec});
+        port::store<int32_t>(kStarted, 1);
+        return 1;
+    }
+
+    PORT_FN(Movie_TermAll);
+    PORT_FN(Movie_ReadAndDemux);
+
+    // The decode thread's loop, until the library reports the end of the stream (1) or the decoder is stopped (state 1: -1, with a
+    // message): a free picture slot of the output queue (the other threads run until there is one), the fade speed (0x1BDDC8, or
+    // 0x4000 when that is 0) started at the frame set in 0x1BDDC4, a picture decoded into the slot (unless the read failed), on the first frame the image packets of every
+    // slot built, every 30th frame the next subtitle laid out when its time has come, and the slot counted in. The decoder is reset
+    // at the end.
+    int Movie_DecodeLoop(int videoDec)
+    {
+        constexpr uint32_t kQueueData = 0x00717DA0u, kQueueTags = 0x00717DA4u, kQueueSlots = 0x00717DB0u;
+        constexpr uint32_t kFadeFrame = 0x001BDDC4u, kFadeStepParam = 0x001BDDC8u, kSubtitleNext = 0x001BD9ECu, kSubtitles = 0x001BDDD4u;
+        constexpr uint32_t kWidth = 0x001BDDB4u, kHeight = 0x001BDDB8u;
+        const uint32_t dec = static_cast<uint32_t>(videoDec);
+        int result = 1;
+        int64_t ended = sdk::sceMpegIsEnd(videoDec);
+        while (ended == 0)
+        {
+            if (port::load<int32_t>(dec + 0xA8u) == 1)
+            {
+                result = -1;
+                sdk::printf(0x001BAD50u);
+                break;
+            }
+            int slot = Movie_VoBufGetData(GuestPtr<int32_t>{kQueueData});
+            while (slot == 0)
+            {
+                Movie_SwitchThread();
+                slot = Movie_VoBufGetData(GuestPtr<int32_t>{kQueueData});
+            }
+            const int32_t shown = port::load<int32_t>(kFadeFrame);
+            if (shown != 0 && shown == port::load<int32_t>(dec + 8u))
+            {
+                const int16_t state = port::load<int16_t>(kFadeStepParam);
+                Movie_SetSubtitleState(state == 0 ? 0x4000 : static_cast<uint16_t>(state));
+            }
+            if (port::load<int32_t>(kReadError) == 0)
+            {
+                const int32_t columns = port::load<int16_t>(kWidth) / 16, rows = port::load<int16_t>(kHeight);
+                sdk::sceMpegGetPicture(videoDec, slot, columns * rows / 16);
+            }
+            if (port::load<int32_t>(dec + 8u) == 0)
+            {
+                const uint32_t width = port::load<uint32_t>(dec), height = port::load<uint32_t>(dec + 4u);
+                uint32_t image = 0, tag = 0;
+                for (int i = 0; i < port::load<int32_t>(kQueueSlots); ++i)
+                {
+                    Movie_BuildImagePacket(port::load<uint32_t>(kQueueTags) + tag + 0x40u, port::load<uint32_t>(kQueueData) + image, 0, static_cast<int>(width), static_cast<int>(height));
+                    Movie_BuildImagePacket(port::load<uint32_t>(kQueueTags) + tag + 0x1C940u, port::load<uint32_t>(kQueueData) + image, 1, static_cast<int>(width), static_cast<int>(height));
+                    image += 0x12C000u;
+                    tag += 0x39240u;
+                }
+            }
+            const int32_t next = port::load<int32_t>(kSubtitleNext);
+            const int32_t frame = port::load<int32_t>(dec + 8u);
+            if (next >= 0 && frame % 30 == 0 && port::load<uint32_t>(kSubtitles) != 0)
+            {
+                const uint32_t entry = port::load<uint32_t>(kSubtitles) + 8u * static_cast<uint32_t>(next);
+                if (frame / 30 == port::load<int32_t>(entry))
+                {
+                    Movie_LayoutSubtitle(GuestPtr<char>{port::load<uint32_t>(kSubtitles) + port::load<uint32_t>(entry + 4u)});
+                    port::store<int32_t>(kSubtitleNext, port::load<int32_t>(kSubtitleNext) + 1);
+                }
+            }
+            Movie_VoBufIncCount(static_cast<int>(kQueueData));
+            Movie_SwitchThread();
+            ended = sdk::sceMpegIsEnd(videoDec);
+        }
+        sdk::sceMpegReset(videoDec);
+        return result;
+    }
+
+    PORT_FN(Movie_DecodeLoop);
+
+    // Queues the ring data written since the last call on the IPU's input DMA chain (an error message and 0 when the DMA has been
+    // stopped, +0x44 is 0). The channel is stopped to read how far it got: the slots it has consumed leave the queue (+0x10 counts
+    // them, +0xC is the first), the bytes waiting (+0x14) go in whole 2 KB slots, each given a tag (the last tag of the old chain is
+    // changed from an end tag to a call tag first), and the channel is started again with the chain mode refreshed when tags were added.
+    int Movie_ViBufAddDma(GuestPtr<int32_t> vibufPtr)
+    {
+        const int vibuf = static_cast<int>(vibufPtr.address);
+        sdk::WaitSema(static_cast<int>(word(vibuf, 0x40)));
+        if (word(vibuf, 0x44) == 0)
+        {
+            Movie_Error(0x001BAD30);
+            sdk::SignalSema(static_cast<int>(word(vibuf, 0x40)));
+            return 0;
+        }
+        stopIpuDma();
+        uint32_t chcr = port::readHardware32(kIpuToChcr);
+        const int32_t count = static_cast<int32_t>(word(vibuf, 8));
+        const uint32_t madr = port::readHardware32(kIpuToMadr);
+        uint32_t reached = 0;
+        if (madr != ((word(vibuf, 4) + static_cast<uint32_t>(count + 1) * 0x10u) & 0x0FFFFFFFu))
+            reached = (madr - word(vibuf, 0)) >> 11;
+        const int32_t head = static_cast<int32_t>(word(vibuf, 0xC));
+        const int32_t consumed = remainder(static_cast<int32_t>(reached + static_cast<uint32_t>(count) - static_cast<uint32_t>(head)), count);
+        setWord(vibuf, 0xC, static_cast<uint32_t>(remainder(head + consumed, count)));
+        setWord(vibuf, 0x10, word(vibuf, 0x10) - static_cast<uint32_t>(consumed));
+        const int32_t pending = static_cast<int32_t>(word(vibuf, 0x14));
+        int32_t tag = remainder(static_cast<int32_t>(word(vibuf, 0xC) + word(vibuf, 0x10)), static_cast<int32_t>(word(vibuf, 8)));
+        const int32_t slots = (pending < 0 ? pending + 0x7FF : pending) >> 11;
+        int32_t left = pending & 0x7FF;
+        if (pending < 0 && left != 0)
+            left -= 0x800;
+        setWord(vibuf, 0x14, static_cast<uint32_t>(left));
+        bool added = false;
+        if (slots > 0)
+        {
+            const int32_t last = remainder(static_cast<int32_t>(word(vibuf, 8) + (word(vibuf, 0xC) + word(vibuf, 0x10) - 1u)), static_cast<int32_t>(word(vibuf, 8)));
+            const uint64_t address = word(vibuf, 0) + (static_cast<uint32_t>(last) << 11);
+            port::store<uint64_t>(word(vibuf, 4) + (static_cast<uint32_t>(last) << 4), (address << 32) | 0x30000080ull);
+            added = true;
+        }
+        for (int32_t k = 0; k < slots; ++k)
+        {
+            const uint64_t address = word(vibuf, 0) + (static_cast<uint32_t>(tag) << 11);
+            const uint64_t kind = k == slots - 1 ? 0 : 3;
+            port::store<uint64_t>(word(vibuf, 4) + (static_cast<uint32_t>(tag) << 4), (address << 32) | (kind << 28) | 0x80ull);
+            tag = remainder(tag + 1, static_cast<int32_t>(word(vibuf, 8)));
+        }
+        setWord(vibuf, 0x10, word(vibuf, 0x10) + static_cast<uint32_t>(slots));
+        if (word(vibuf, 0x10) != 0)
+        {
+            if (added)
+                chcr = (chcr & 0x0FFFFFFFu) | 0x30000000u;
+            sdk::DIntr();
+            port::writeHardware32(kDmacEnablew, port::readHardware32(kDmacEnabler) | 0x10000u);
+            port::writeHardware32(kIpuToChcr, chcr | 0x100u);
+            port::writeHardware32(kDmacEnablew, port::readHardware32(kDmacEnabler) & 0xFFFEFFFFu);
+            sdk::EIntr();
+        }
+        sdk::SignalSema(static_cast<int>(word(vibuf, 0x40)));
+        return 1;
+    }
+
+    PORT_FN(Movie_ViBufAddDma);
+
+    // ---- the player's set-up, the vblank handler and the entry points (plan P6 batch 22)
+
+    namespace
+    {
+        // The GS display and draw environments of the movie (sceGsDBuffDc at 0x717DC0) and the half-offset environments of the two fields.
+        constexpr uint32_t kDisplayBuffers = 0x00717DC0u;
+        // The picture queue's record states: 2 decoded, 1 first field shown, 0 shown.
+        uint32_t halfOffsetFor(bool odd, uint32_t whenOdd, uint32_t whenEven) { return ((odd ? whenOdd : whenEven) & 0x0FFFFFFFu) | 0x20000000u; }
+    }
+
+    // Clears both display buffers to black: a black sprite over the picture area is drawn into each of the two buffers in turn (the
+    // pad is read between, as the original does), then the display is swapped.
+    void Movie_ClearScreen()
+    {
+        port::GuestFrame<0x80> frame;
+        const uint32_t sp = frame.ptr().address;
+        const uint32_t pk = sp + 0x60u, tag = sp + 0x70u;
+        port::store<uint64_t>(tag, port::load<uint64_t>(0x001B38A0u));
+        port::store<uint64_t>(tag + 8u, port::load<uint64_t>(0x001B38A8u));
+        const int channel = sdk::sceDmaGetChan(2);
+        sdk::sceGifPkInit(pk, (0x007180F0u & 0x0FFFFFFFu) | 0x20000000u);
+        sdk::sceGifPkReset(pk);
+        sdk::sceGifPkEnd(pk);
+        const int32_t width = port::load<int16_t>(0x001BDDBCu);
+        const int32_t left = (0x800 - width / 2) * 16;
+        const int32_t halfHeight = port::load<int16_t>(0x001BDDC0u) / 2;
+        const int32_t top = (0x800 - halfHeight / 2) * 16;
+        sdk::sceGifPkOpenGifTag(pk, port::Quad{port::load<uint64_t>(tag), port::load<uint64_t>(tag + 8u)});
+        sdk::sceGifPkAddGsAD(pk, 0, 6);
+        sdk::sceGifPkAddGsAD(pk, 1, 0x100000000ull);
+        sdk::sceGifPkAddGsAD(pk, 5, static_cast<uint64_t>(static_cast<int64_t>(left)) | (static_cast<uint64_t>(static_cast<int64_t>(top)) << 16));
+        sdk::sceGifPkAddGsAD(pk, 5, static_cast<uint64_t>(static_cast<int64_t>(left + width * 16)) |
+                                        (static_cast<uint64_t>(static_cast<int64_t>(top + halfHeight * 16)) << 16));
+        sdk::sceGifPkCloseGifTag(pk);
+        sdk::sceGifPkTerminate(pk);
+        for (int field = 0; field < 2; ++field)
+        {
+            Pad_Poll();
+            Pad_GetData(0);
+            sdk::sceGsSyncV(0);
+            sdk::sceGsSetHalfOffset(field == 0 ? 0x20717F90u : 0x20717E20u, 0x800, 0x800, field);
+            sdk::sceGsSetHalfOffset2(field == 0 ? 0x20718010u : 0x20717EA0u, 0x800, 0x800, field);
+            sdk::sceGsSwapDBuffDc(kDisplayBuffers, 0);
+            sdk::sceGsSyncPath(0, 0);
+            sdk::sceDmaSend(channel, 0x007180F0u);
+        }
+    }
+
+    // The vertical blank interrupt of the player. The GS field (CSR bit 13) is noted (0x1BDD64). While the display runs (0x1BDD68) and
+    // the GIF path is idle (sceGsSyncPath(1)): with no picture decoded the miss is counted (0x1BDD9C); on the first field's turn a
+    // picture decoded (record state 2) has its field-0 packet sent, to the display environment of the field, and goes to state 1;
+    // on the second field's turn a picture in state 1 has its field-1 packet sent and goes to state 0, which tells the DMA end
+    // handler (0x1BDD74) to release it. After each packet the fade overlay (Movie_SendFrame) and, while it is -1 with subtitles on
+    // (0x1BD9EC not -1) and laid out (the byte at 0x215F00), the subtitle packet are sent. While the display is off, the
+    // state-2 handoff (0x1BDD78) of the last frame is drawn once with the packet of the field's half. Interrupts are re-enabled at the end.
+    int Movie_VblankHandler()
+    {
+        constexpr uint32_t kField = 0x001BDD64u, kDisplayOn = 0x001BDD68u, kTicks = 0x001BDD6Cu, kPathBusy = 0x001BDD70u, kSending = 0x001BDD74u,
+                           kHandoff = 0x001BDD78u, kMisses = 0x001BDD9Cu, kSubtitleNext = 0x001BD9ECu, kSubtitleReady = 0x00215F00u;
+        constexpr uint32_t kQueue = 0x00717DA0u;
+        const auto subtitles = [&](int channel) {
+            const int16_t step = static_cast<int16_t>(Movie_SendFrame(channel));
+            if (step == -1 && port::load<int32_t>(kSubtitleNext) != -1 && channel != 0 && static_cast<int8_t>(port::load<uint8_t>(kSubtitleReady)) != 0)
+                sdk::sceDmaSend(channel, 0x0020C1A0u);
+        };
+        const auto interruptsOn = [] { port::g_call.ctx->cop0_status |= 0x10000; };
+        int channel = sdk::sceDmaGetChan(2);
+        port::store<int32_t>(kField, static_cast<int32_t>((port::readHardware64(0x12001000u) >> 13) & 1u));
+        const uint32_t field = static_cast<uint32_t>(port::load<int32_t>(kField));
+        if (port::load<int32_t>(kDisplayOn) != 0)
+        {
+            port::store<int32_t>(kTicks, port::load<int32_t>(kTicks) + 1);
+            port::store<int32_t>(kPathBusy, sdk::sceGsSyncPath(1, 0));
+            if (port::load<int32_t>(kPathBusy) == 0)
+            {
+                const uint32_t picture = static_cast<uint32_t>(Movie_VoBufGetTag(static_cast<int>(kQueue)));
+                if (picture == 0)
+                {
+                    port::store<int32_t>(kMisses, port::load<int32_t>(kMisses) + 1);
+                    interruptsOn();
+                    return 0;
+                }
+                if (field == 0)
+                {
+                    if (port::load<int32_t>(picture) == 2)
+                    {
+                        sdk::sceGsSetHalfOffset(halfOffsetFor(false, 0x00717F90u, 0x00717E20u), 0x800, 0x800, static_cast<int>(field ^ 1u));
+                        sdk::sceGsSetHalfOffset2(halfOffsetFor(false, 0x00718010u, 0x00717EA0u), 0x800, 0x800, static_cast<int>(field ^ 1u));
+                        sdk::sceGsSwapDBuffDc(kDisplayBuffers, 0);
+                        sdk::sceGsSyncPath(0, 0);
+                        sdk::sceDmaSend(channel, picture + 0x40u);
+                        port::store<int32_t>(picture, 1);
+                        subtitles(channel);
+                    }
+                }
+                else if (field == 1)
+                {
+                    if (port::load<int32_t>(picture) == 1)
+                    {
+                        sdk::sceGsSetHalfOffset(halfOffsetFor(true, 0x00717F90u, 0x00717E20u), 0x800, 0x800, static_cast<int>(field ^ 1u));
+                        sdk::sceGsSetHalfOffset2(halfOffsetFor(true, 0x00718010u, 0x00717EA0u), 0x800, 0x800, static_cast<int>(field ^ 1u));
+                        sdk::sceGsSwapDBuffDc(kDisplayBuffers, 1);
+                        sdk::sceGsSyncPath(0, 0);
+                        sdk::sceDmaSend(channel, picture + 0x1C940u);
+                        port::store<int32_t>(picture, 0);
+                        subtitles(channel);
+                        port::store<int32_t>(kSending, 1);
+                    }
+                }
+            }
+        }
+        else if (port::load<int32_t>(kHandoff) == 2)
+        {
+            channel = sdk::sceDmaGetChan(2);
+            port::store<int32_t>(kPathBusy, sdk::sceGsSyncPath(1, 0));
+            if (port::load<int32_t>(kPathBusy) == 0)
+            {
+                const uint32_t picture = static_cast<uint32_t>(Movie_VoBufGetTag(static_cast<int>(kQueue)));
+                if (picture == 0)
+                {
+                    port::store<int32_t>(kMisses, port::load<int32_t>(kMisses) + 1);
+                    interruptsOn();
+                    return 0;
+                }
+                const bool odd = (field & 1u) != 0;
+                sdk::sceGsSetHalfOffset(halfOffsetFor(odd, 0x00717F90u, 0x00717E20u), 0x800, 0x800, static_cast<int16_t>(field ^ 1u));
+                sdk::sceGsSetHalfOffset2(halfOffsetFor(odd, 0x00718010u, 0x00717EA0u), 0x800, 0x800, static_cast<int16_t>(field ^ 1u));
+                sdk::sceGsSwapDBuffDc(kDisplayBuffers, static_cast<int>(field));
+                sdk::sceGsSyncPath(0, 0);
+                sdk::sceDmaSend(channel, picture + (odd ? 0x1C900u : 0u) + 0x40u);
+                subtitles(channel);
+            }
+        }
+        interruptsOn();
+        port::store<int32_t>(kHandoff, 1);
+        return 0;
+    }
+
+    // ---- playing a PSS file
+
+    // Plays the movie `name` (a path under cdrom0: built from three pieces and printed) until it ends. After the first six passes one
+    // of `skipButtons` pressed starts the fade out at `fadeStep` (the speed at 0x1BDD80, which the decode loop also sets at frame
+    // `stack0`), the SPU master volume going down by 0x100 a pass with `fadeAudio`; when the fade has run (0x7F0) the decoder is
+    // told to finish. a1, a2, width and height are the picture's size parameters for the player, and a non-zero `stack8` clears the
+    // screen afterwards. Nothing happens when a movie is already playing.
+    void Movie_PlayPss(GuestPtr<char> name, int16_t a1, int16_t a2, int width, int16_t height, int fadeAudio, uint16_t skipButtons, int16_t fadeStep, int stack0,
+                       int stack8)
+    {
+        constexpr uint32_t kPlaying = 0x001BDDA0u, kPaused = 0x001BDDA8u, kStarted = 0x001BDDA4u, kBytesLeft = 0x001BDDACu, kDemuxLeft = 0x001BDDB0u;
+        constexpr uint32_t kFadeSpeed = 0x001BDD80u, kFadeStep = 0x001BDD7Cu, kFadeColour = 0x001BDD84u, kFadeStepParam = 0x001BDDC8u, kFadeFrame = 0x001BDDC4u;
+        port::GuestFrame<0x1B0> frame;
+        const uint32_t sp = frame.ptr().address;
+        const uint32_t path = sp + 0xB0u;
+        port::store<int16_t>(sp + 0xAEu, height);
+        port::store<int16_t>(sp + 0xACu, fadeStep);
+        uint32_t passes = 0;
+        bool finished = false;
+        int16_t volume = 0x3FFF;
+        sdk::strcpy(path, 0x001BAB70u);
+        sdk::strcat(path, name.address);
+        sdk::strcat(path, 0x001BAB80u);
+        port::store<uint8_t>(kFadeColour, 0);
+        port::store<uint8_t>(kFadeColour + 1u, 0);
+        port::store<int16_t>(kFadeStep, 0);
+        port::store<int16_t>(kFadeStepParam, port::load<int16_t>(sp + 0xACu));
+        port::store<int32_t>(kFadeFrame, stack0);
+        port::store<uint8_t>(kFadeColour + 2u, 0);
+        sdk::printf(0x001BAB88u, path);
+        int result = 0;
+        if (port::load<int32_t>(kPlaying) == 0)
+        {
+            port::store<int32_t>(0x001BD9E8u, fadeAudio);
+            port::store<int16_t>(kFadeSpeed, 0);
+            if (Movie_StrFileOpen(GuestPtr<int32_t>{0x00717C40u}, static_cast<int>(path)) == 0)
+            {
+                Movie_StrFileClose(GuestPtr<int32_t>{0x00717C40u});
+                result = -1;
+            }
+            else
+            {
+                Movie_InitAll(a1, a2, width, port::load<int16_t>(sp + 0xAEu));
+                result = 1;
+                port::store<int32_t>(kStarted, 0);
+                port::store<int32_t>(kPaused, 0);
+                port::store<int32_t>(kPlaying, 1);
+                port::store<int32_t>(kBytesLeft, port::load<int32_t>(0x00717C44u));
+                port::store<int32_t>(kDemuxLeft, port::load<int32_t>(0x00717C44u));
+            }
+        }
+        if (result != 1)
+            return;
+        for (;;)
+        {
+            Pad_Poll();
+            const uint32_t pad = static_cast<uint32_t>(Pad_GetData(0));
+            uint32_t buttons = 0;
+            if (pad != 0)
+                buttons = ((static_cast<uint32_t>(port::load<uint8_t>(pad + 2u)) << 8) | port::load<uint8_t>(pad + 3u)) ^ 0xFFFFu;
+            ++passes;
+            if (Movie_Update() == 0)
+                break;
+            if (passes < 6 || finished)
+                continue;
+            if (port::load<int16_t>(kFadeSpeed) == 0)
+            {
+                if ((buttons & skipButtons) != 0)
+                    port::store<int16_t>(kFadeSpeed, port::load<int16_t>(kFadeStepParam));
+            }
+            else if (fadeAudio != 0)
+            {
+                volume = static_cast<int16_t>(volume - 0x100);
+                if (volume < 0)
+                    volume = 0;
+                Movie_SetSpuMasterVolume(volume);
+            }
+            if (port::load<int16_t>(kFadeStep) == 0x7F0)
+            {
+                if (port::load<int32_t>(kPlaying) != 0)
+                {
+                    Movie_ResumeAll();
+                    Movie_VideoDecSetStateStart(0x00717C80);
+                    Movie_ReadAndDemux();
+                }
+                finished = true;
+            }
+        }
+        if (fadeAudio != 0)
+            Movie_SetSpuMasterVolume(0x3FFF);
+        if (stack8 != 0)
+            Movie_ClearScreen();
+    }
+
+    // Sets the player up for a movie of the given picture size: the thread priority (1), the size words (0x1BDDB4 to 0x1BDDC0), the display
+    // and draw buffers for the half height, the DMA controller, the read ring, the MPEG library and decoder (and the audio decoder
+    // with sound), the stream callbacks for video (stream 0) and audio (stream 2), the picture queue (two pictures), the read thread
+    // (0x19E040, stack 0x634400) and decode thread (Movie_VideoDecMain, stack 0x710C40) with their ids at 0x1BDD98 and 0x1BDD94,
+    // and the vblank (INTC 2) and DMA end (DMAC 2) handlers with their ids at 0x717D34 and 0x717D30.
+    void Movie_InitAll(int16_t a0, int16_t a1, int width, int16_t height)
+    {
+        port::GuestFrame<0xA0> frame;
+        const uint32_t sp = frame.ptr().address;
+        sdk::ChangeThreadPriority(sdk::GetThreadId(), 1);
+        port::store<int16_t>(0x001BDDB4u, a0);
+        port::store<int16_t>(0x001BDDB8u, a1);
+        port::store<int16_t>(0x001BDDBCu, static_cast<int16_t>(width));
+        port::store<int16_t>(0x001BDDC0u, height);
+        port::store<int32_t>(0x001BDDCCu, 0);
+        sdk::sceGsSetDefDBuffDc(kDisplayBuffers, 0, width, static_cast<int16_t>(height / 2), 0, 0, 1);
+        port::store<uint64_t>(0x00717F40u, 0x3F80000000000000ull);
+        port::store<uint64_t>(0x007180B0u, 0x3F80000000000000ull);
+        sdk::FlushCache(0);
+        port::writeHardware32(0x1000E000u, port::readHardware32(0x1000E000u) | 3u);
+        port::writeHardware32(0x1000E010u, 4u);
+        Movie_ReadBufCreate(static_cast<int>(kReadRing));
+        sdk::sceMpegInit();
+        const int32_t pixels = port::load<int16_t>(0x001BDDBCu) * port::load<int16_t>(0x001BDDC0u) * 9;
+        Movie_VideoDecCreate(static_cast<int>(kVideoDec), 0x004E1480, pixels / 2 + 0x1768, 0x00690C40, 0x004E0440, 0x100, 0x00714C40, 0x200);
+        if (port::load<int32_t>(kSoundOn) != 0)
+        {
+            sdk::sceSdRemoteInit();
+            sdk::sceSdRemote(1, 0x8000, 0);
+            Movie_AudioDecCreate(GuestPtr<uint32_t>{kAudioDec}, 0x00684C40, 0xC000, 0x6000);
+        }
+        Movie_VideoDecAddStrCallback(static_cast<int>(kVideoDec), 0, 0, 0x0019E930, static_cast<int>(kReadRing));
+        if (port::load<int32_t>(kSoundOn) != 0)
+            Movie_VideoDecAddStrCallback(static_cast<int>(kVideoDec), 2, 0, 0x0019E780, static_cast<int>(kReadRing));
+        Movie_VoBufCreate(GuestPtr<uint32_t>{kVideoOut}, static_cast<int>((0x00215FC0u & 0x0FFFFFFFu) | 0x20000000u), 0x0046DFC0, 2);
+        const uint32_t param = sp + 0x70u;
+        const uint32_t gpValue = static_cast<uint32_t>(port::gpr64(port::g_call.ctx, 28));
+        port::store<uint32_t>(sp + 0x74u, 0x0019E040u);
+        port::store<uint32_t>(sp + 0x78u, 0x00634400u);
+        port::store<uint32_t>(sp + 0x7Cu, 0x800);
+        port::store<uint32_t>(sp + 0x84u, 1);
+        port::store<uint32_t>(sp + 0x80u, gpValue);
+        port::store<uint32_t>(sp + 0x90u, 0);
+        port::store<int32_t>(0x001BDD98u, sdk::CreateThread(param));
+        sdk::StartThread(port::load<int32_t>(0x001BDD98u), 0);
+        port::store<uint32_t>(sp + 0x74u, 0x001A0530u);
+        port::store<uint32_t>(sp + 0x78u, 0x00710C40u);
+        port::store<uint32_t>(sp + 0x7Cu, 0x4000);
+        port::store<uint32_t>(sp + 0x84u, 1);
+        port::store<uint32_t>(sp + 0x80u, gpValue);
+        port::store<uint32_t>(sp + 0x90u, 0);
+        port::store<int32_t>(0x001BDD94u, sdk::CreateThread(param));
+        sdk::StartThread(port::load<int32_t>(0x001BDD94u), static_cast<int>(kVideoDec));
+        port::store<int32_t>(0x00717D34u, sdk::AddIntcHandler(2, 0x0019C4C0u, 0));
+        sdk::EnableIntc(2);
+        port::store<int32_t>(0x00717D30u, sdk::AddDmacHandler(2, 0x0019C480u, 0));
+        sdk::EnableDmac(2);
+    }
+
+    // The mission movies: nothing (0) while the sound driver is busy or reports itself busy. Missions 1 to 5 play
+    // DATA\MPEG\MISSION<n>.PSS (the name is built in the frame) at 640 x 448, skippable with Start/Cross (0x840), the sound faded
+    // out at the end; mission 1 first loads its subtitles (MISSION1.BIN, the table at 0x1BDDD4 and the subtitle packet built), and the
+    // subtitle index (0x1BD9EC) starts at -1 and is 0 only for mission 1. Mission 6 plays ENDING.PSS with no skipping, its subtitles from
+    // frame 0x6B4. Returns 1 once the movie has played.
+    int PlayMissionMovie(char mission)
+    {
+        port::GuestFrame<0x240> frame;
+        const uint32_t sp = frame.ptr().address;
+        if (Sound_IsBusy() != 0)
+            return 0;
+        if (Sound_IsDriverBusy() != 0)
+            return 0;
+        port::store<int32_t>(0x001BD9ECu, -1);
+        const uint32_t number = static_cast<uint8_t>(mission);
+        if (number == 6)
+        {
+            if (Sound_IsBusy() != 0)
+                return 0;
+            if (Sound_IsDriverBusy() != 0)
+                return 0;
+            Movie_PlayPss(GuestPtr<char>{0x001BABD0u}, 0x280, 0x1C0, 0x280, 0x1C0, 1, 0, 0, 0x6B4, 0);
+            return 1;
+        }
+        const uint32_t digits = sp + 0x23Cu, subtitlePath = sp + 0x30u, moviePath = sp + 0x130u;
+        sdk::sprintf(digits, 0x001BAB98u, number);
+        sdk::strcpy(subtitlePath, 0x001BABA0u);
+        sdk::strcat(subtitlePath, digits);
+        sdk::strcpy(moviePath, subtitlePath);
+        sdk::strcat(subtitlePath, 0x001BABB8u);
+        sdk::strcat(moviePath, 0x001BABC0u);
+        if (number == 1)
+        {
+            const GuestPtr<GameFile> file{sp + 0x230u};
+            File_ctor(file, 0);
+            port::store<uint32_t>(0x001BDDD4u, static_cast<uint32_t>(File_LoadWhole(file, GuestPtr<char>{subtitlePath}, GuestPtr<int32_t>{0})));
+            port::store<int32_t>(0x001BD9ECu, 0);
+            Movie_BuildSubtitlePacket();
+            File_dtor(file, -1);
+        }
+        Movie_PlayPss(GuestPtr<char>{moviePath}, 0x280, 0x1C0, 0x280, 0x1C0, 1, 0x840, 0x20, 0, 1);
+        return 1;
+    }
+
+    // The opening movie, DATA\MPEG\OPENING.PSS at 640 x 448 (skippable with Start/Cross), once the sound driver is idle (0 otherwise).
+    int PlayOpeningMovie()
+    {
+        if (Sound_IsBusy() != 0)
+            return 0;
+        if (Sound_IsDriverBusy() != 0)
+            return 0;
+        Movie_PlayPss(GuestPtr<char>{0x001BABF0u}, 0x280, 0x1C0, 0x280, 0x1C0, 1, 0x840, 0x20, 0, 1);
+        return 1;
+    }
+
+    PORT_FN(Movie_ClearScreen);
+    PORT_FN(Movie_VblankHandler);
+    PORT_FN(Movie_PlayPss);
+    PORT_FN(Movie_InitAll);
+    PORT_FN(PlayMissionMovie);
+    PORT_FN(PlayOpeningMovie);
 }

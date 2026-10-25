@@ -87,7 +87,15 @@ Do not edit the two generated headers; `pipeline.py stage` rewrites them.
 5. Mark it in `config/port_status.csv` (`ported`, then `verified` once difftested).
 
 `MMPC_PORT_DISABLE=0xADDR,...` (or `all`) runs the generated code again for chosen functions, to
-bisect a problem.
+bisect a problem. `MMPC_PORT_TRACE=<names|0xADDR|all>` prints a line when a ported function is
+entered and left (for a stall in a live run: the last "enter" without a "leave" is where it stands).
+
+A ported function that waits natively (a polling loop on a hardware register, a pause loop) must call
+`port::accountCycles(n)` for the time the original would spend: the runtime drives timers, vblank and the
+IOP from the cycles the EE code is charged, so a native loop that charges nothing starves them. The first
+live run with every function ported stalled at boot for this reason (`Sound_Init`'s bind pause loop: the
+RPC server on the IOP never registered). The difftest cannot see it, since the replay does not wait on
+the IOP.
 
 ## What the difftest compares
 
@@ -128,14 +136,21 @@ RPC bind counter and server descriptors of the sound driver, the memory card's f
 record cache are not. Records that depend on them differ in a few bytes the game only keeps (`Sound_Init`,
 `McSave_WriteIconSys`, `PauseMenu_StateSave`: ignore rules in `difftest.cpp`) or hang in the original too
 (a family not in the cache is read from the disc, which the replay never finishes: `Words_LoadForFamily`).
+The movie decoder's hardware (IPU, DMA channels, the MPEG library's ring state) is the same kind of state:
+`Movie_ReadAndDemux` record 002 passes alone and fails after record 001 ran first, so it is parked in
+`work/difftest_hung`.
 The VU0 registers are not compared for functions that call a ported callee where the generated one left
 scratch values (`Person_ChooseDestination`, `CityCursor_Update`, `Person_Update`, the two talk person constructors).
 A new save's name carries the console clock in seconds, which ticks between the two runs: the last digits of the sixteen
 name slots are not compared for `McManager_NewSaveName`, `McManager_PrepareNewSlot` and the pause menu's slot list.
 
-Functions with no record the replay can finish stay at "ported" in `docs/PORT_STATUS.md` (40 of the game's
+Functions with no record the replay can finish stay at "ported" in `docs/PORT_STATUS.md` (46 of the game's
 1,481 now): the four map and city constructors (`CityMap_ctor`, `MapPeople_ctor`, `MapObjects_ctor`,
 `CityRender_ctor`: the original side stops at a null jump in `MapObj_Init`'s slot call, so they were only
 checked in live runs), the movie and sound shutdown paths that switch threads (`Movie_DisplayStart`,
-`Movie_ResumeAll`, `Sound_Shutdown`), the memory card queue calls, and callees that only run inside others
-(`File_Seek`, `Font_Free`).
+`Movie_ResumeAll`, `Sound_Shutdown`), the movie decoder's thread and setup code (`Movie_VideoDecMain`,
+`Movie_DecodeLoop`, `Movie_PlayPss`, `Movie_InitAll`, `Movie_ClearScreen`: the original exits or hangs in the
+replay, or the replay switches thread; `Movie_PlayOpeningMovie` never runs in a capture), the memory card
+queue calls, and callees that only run inside others (`File_Seek`, `Font_Free`); `config/port_status.csv` has
+the full list. The four roots
+(`Main`, `MainLoop`, `GameUpdate`, `App_ctor`) are the only game functions not yet ported.

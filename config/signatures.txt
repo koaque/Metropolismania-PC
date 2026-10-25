@@ -1396,7 +1396,7 @@
 0x0019C420 void mm_Movie_DisplayStop(void);
 0x0019C430 int mm_Movie_DisplayStart(int field);
 0x0019C480 int mm_Movie_DmaEndHandler(void);
-0x0019C4C0 void mm_Movie_VblankHandler(void);
+0x0019C4C0 int mm_Movie_VblankHandler(void);
 0x0019C9F0 void mm_Movie_LayoutSubtitle(char *text);
 0x0019CB70 void mm_Movie_BuildSubtitlePacket(void);
 0x0019D1B0 int16_t mm_Movie_SendFrame(int picture);
@@ -1452,7 +1452,7 @@
 0x001A07E0 int mm_Movie_VideoDecDelete(int videoDec);
 0x001A0820 void mm_Movie_VideoDecEndPut(int videoDec, int size);
 0x001A0830 void mm_Movie_VideoDecBeginPut(int videoDec, int32_t *ptr0, int32_t *len0, int32_t *ptr1, int32_t *len1);
-0x001A0840 int mm_Movie_VideoDecAddStrCallback(int a0, int a1, int a2, int a3);
+0x001A0840 int mm_Movie_VideoDecAddStrCallback(int a0, int a1, int a2, int a3, int a4);
 0x001A0860 int mm_Movie_VideoDecCreate(int videoDec, int mpegWork, int mpegWorkSize, int data, int tags, int tagSize, int ts, int tsCount);
 0x001A0960 void mm_Movie_VoBufDecCount(int vobuf);
 0x001A0980 int mm_Movie_VoBufGetTag(int vobuf);
