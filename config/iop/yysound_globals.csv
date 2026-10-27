@@ -1,0 +1,50 @@
+offset,name,size,section,type
+0x0F090,m_SpuStep,1,.data,BYTE
+0x0F092,mVoicePitch,2,.data,WORD
+0x0F094,mLoadPause,1,.data,BYTE
+0x0F098,TBL_CHOON,120,.data,BYTE [120]
+0x0F110,vstat,152,.bss,sceHSyn_VoiceStat
+0x0F1A8,midiCtx,20,.bss,sceCslCtx
+0x0F1C0,seinCtx,20,.bss,sceCslCtx
+0x0F1D8,synthCtx,20,.bss,sceCslCtx
+0x0F1F0,midiGrp,16,.bss,sceCslBuffGrp [2]
+0x0F200,seinGrp,16,.bss,sceCslBuffGrp [2]
+0x0F210,synthGrp,8,.bss,sceCslBuffGrp
+0x0F218,minBfCtx,256,.bss,sceCslBuffCtx [32]
+0x0F318,moutBfCtx,128,.bss,sceCslBuffCtx [16]
+0x0F398,midiEnv,8832,.bss,sceMidiEnv [16]
+0x11618,seinBfCtx,128,.bss,sceCslBuffCtx [16]
+0x11698,synthBfCtx,512,.bss,sceCslBuffCtx [64]
+0x11898,synthEnv,43776,.bss,sceHSynEnv [32]
+0x1C398,streamBf,33024,.bss,char [32][1032]
+0x24498,mMidiFile,128,.bss,ST_MIDI_FILE [8]
+0x24518,mWaveFile,768,.bss,ST_WAVE_FILE [8]
+0x24818,mMidiTrack,224,.bss,ST_MIDI_TRACK [16]
+0x248F8,mWaveTrack,480,.bss,ST_WAVE_TRACK [16]
+0x24AD8,mSpuTransPacketAddr,4,.bss,int32_t
+0x24AE0,gRpcArg,256,.bss,int32_t [64]
+0x24BE0,ee_ret,64,.bss,int32_t [16]
+0x24C20,ee_put,64,.bss,int32_t [16]
+0x24C60,mEEaddress,4,.bss,UINT
+0x24C68,m_timer,12,.bss,TimerCtx
+0x24C78,m_load,12,.bss,TimerCtx
+0x24C84,mTCount,2,.bss,WORD
+0x24C86,mBusy,1,.bss,BYTE
+0x24C88,timerThreadID,4,.bss,int32_t
+0x24C8C,eeThreadID,4,.bss,int32_t
+0x24C90,LoadThreadID,4,.bss,int32_t
+0x24C98,mVnum,16,.bss,char [16]
+0x24CA8,mCnum,4,.bss,int32_t
+0x24CB0,mCommandList,37026,.bss,ST_COMMAND_LIST [17]
+0x2DD58,mFileList,6178,.bss,ST_FILE_LIST
+0x2F580,mVoiceList,1968,.bss,ST_VOICE_LIST [8]
+0x2FD30,mTrackFileNo,32,.bss,BYTE [32]
+0x2FD50,m_SpuFD,4,.bss,int32_t
+0x2FD54,m_SpuMem,4,.bss,int32_t
+0x2FD58,m_SpuCpyMem,4,.bss,int32_t
+0x2FD5C,m_SendSw,1,.bss,BYTE
+0x2FD5E,m_checkID,2,.bss,WORD
+0x2FD60,mSpuList,160,.bss,ST_SPU_MEM_LIST [20]
+0x2FE00,m_GetDefTempo,4,.bss,int32_t
+0x2FE04,mVoiceFile,3,.bss,BYTE [3]
+0x2FE07,mSoundEnable,1,.bss,BYTE
