@@ -18,10 +18,26 @@ They differ for a true 64 bit value, and the soft float library keeps 64 bit fra
   numbers, so an odd value loses its lowest bit.
 - `pow` inherits both (it is made of `dpadd`, `dpsub`, `dpmul`, `dpdiv`).
 
-Measured with the numeric fuzz: `pow(10, 3)` gives `0x41D804AA5D87437D` (about 1.48e9) in the recompiled code. `pow(10, 0)`, `pow(10, 1)`
-and `pow(10, 2)` are right because `pow` returns 1, x and x*x for those exponents before it reaches the general path. The game's only
-call of `pow` is `Goods_GetPrice` (a goods record's price byte times 10 to the power of its exponent byte); I could not tell from the
-captured records whether any record has an exponent of 3 or more.
+Measured with the numeric probe (`MMPC_DIFFTEST_NUMERIC_ARGS`, the recompiled function and the port agree): `pow(10, 3)` gives
+`0x41D804AA5D87437D` (1,611,835,766.1), `pow(10, 4)` gives 291,689.1 and `pow(10, 5)` gives 49,278,878.6, instead of 1,000, 10,000 and
+100,000. `pow(10, 0)`, `pow(10, 1)` and `pow(10, 2)` are right because `pow` returns 1, x and x*x for those exponents before it reaches
+the general path. `_d_utod` is right for the exponents 0 to 5. The game's only call of `pow` is `Goods_GetPrice` (a goods record's
+price byte times 10 to the power of its exponent byte). DATA/BIN/GOODS.BIN has 272 records of 0x88 bytes, 11 of them with an
+exponent of 3 or more, and `Goods_GetPrice` returns for them (record index, intended price, price in this build):
+
+| Record | Price byte, exponent | Intended | This build |
+|---|---|---|---|
+| 4 | 30, 3 | 30,000 | 1,110,432,724 |
+| 5 | 30, 4 | 300,000 | 8,750,670 |
+| 6 | 80, 4 | 800,000 | 23,335,120 |
+| 7 | 10, 5 | 1,000,000 | 492,788,780 |
+| 59 | 10, 4 | 100,000 | 2,916,890 |
+| 108, 112 | 50, 3 | 50,000 | -1,012,590,324 |
+| 163, 172 | 10, 3 | 10,000 | -1,061,511,524 |
+| 168, 173 | 15, 3 | 15,000 | -1,592,267,286 |
+
+The callers use the price to test whether the player can afford it and to add it to totals (`words.cpp`, `event.cpp`). Not yet seen
+in a running game, and not yet compared with a PCSX2 run.
 
 `src/port/platform/softfloat.cpp` marks the two places (`addParts`, `sdk_d_utod`).
 
