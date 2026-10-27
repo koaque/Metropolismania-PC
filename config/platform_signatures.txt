@@ -71,6 +71,8 @@
 0x001049C0 void sdk_sceGifPkEnd(GifPacket *packet, uint32_t third, uint32_t fourth, uint32_t first);
 0x00104A38 uint32_t *sdk_sceGifPkReserve(GifPacket *packet, int words);
 0x00104A50 uint32_t *sdk_sceGifPkOpenGifTag(GifPacket *packet, Quad tag);
+0x00104A68 void sdk_sceGifPkCloseGifTag(GifPacket *packet);
+0x00104B10 void sdk_sceGifPkAddGsAD(GifPacket *packet, uint32_t reg, uint64_t data);
 0x00103730 void sdk_sceGsSetHalfOffset(GsDrawEnv *environment, int centreX, int centreY, int field);
 0x00103998 void sdk_sceGsSetHalfOffset2(GsDrawEnv *environment, int centreX, int centreY, int field);
 0x00127828 int sdk_fptosi(float value);

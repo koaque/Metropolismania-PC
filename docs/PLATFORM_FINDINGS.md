@@ -3,8 +3,8 @@
 What plan P7 (the SDK platform layer in `src/port/platform/`) found out about the runtime and the recompiler while proving each
 function against the recompiled one. Each item is behavior of the recompiled build that differs from what a PS2 does. The native
 platform functions first reproduced all of it, so that they match the recompiled code exactly (the difftest is the proof). Item 1 is
-fixed since then (plan P7.10); items 2 (in the map code) and 3 are still reproduced, and fixing them changes what the game computes,
-so each is a separate decision (see "What is left").
+fixed since then (plan P7.10) and so is item 4, the movie's black picture; items 2 (in the map code) and 3 are still reproduced, and
+fixing them changes what the game computes, so each is a separate decision (see "What is left").
 
 ## 1. Sign branches test only the low 32 bits (fixed in the natives)
 
@@ -72,6 +72,26 @@ The SDK function `fabs` takes a soft double in `a0` and returns it in `v0`. The 
 `__kernel_sinf`, `__kernel_cosf` and `__ieee754_rem_pio2f` are handlers of the runtime library, not recompiled code: they call the
 host's `sinf` and `cosf` and reduce the angle with a rounded multiple of pi/2. A PS2 runs the library's own routines on its float
 unit, so results differ in the last bits. `libm.cpp` keeps calling the three handlers. Not changed.
+
+## 4. The runtime's `sceGifPkAddGsAD` and `sceGifPkCloseGifTag` double the DMA tag's count (fixed)
+
+libpkt builds a DMA packet in memory: a tag for each stretch of data, whose quadword count the game's own `sceGifPkTerminate`
+(also called when the next tag is started) adds when the stretch ends. The runtime had handlers for two of the library's functions,
+`sceGifPkAddGsAD` and `sceGifPkCloseGifTag` (bound because their names match), written for a library that keeps that count up to
+date as data is added: after every A+D register set they write the current count into the open tag. With the game's own
+`Terminate` adding it again the count came out doubled (6 for 3 quadwords, 7 for 4). A tag in the middle of a chain with a count
+that is too large makes the DMA read the next tag from the wrong place, so the chain ended at the first one.
+
+The movie player is the case that shows it: each of the 1,120 macroblocks (16 x 16 pixels, 1 KB) of a picture goes to the GS in
+its own tag (an A+D block with the position, the image tag, then a reference to the pixels), so only the first block was ever
+uploaded and the picture stayed black; the strip of garbled glyphs under the subtitles was left over from the same broken uploads.
+The other packets built this way end in an END tag, where a count that is too large only reads a few zero quadwords, so nothing
+else looked wrong. Found by dumping the picture's DMA packet (tags at 6 and 7 quadwords for 3 and 4 of data) and the runtime's
+handler (`refreshPacketBuilderPendingCount`, `ps2xRuntime/src/lib/Kernel/Stubs/GS.cpp`).
+
+`sceGifPk*` is in `force_recompile` now (`config/metropolismania.template.toml`, like `sceVu0*`), so the game's own two functions
+run, and `sdk_sceGifPkAddGsAD` and `sdk_sceGifPkCloseGifTag` (`src/port/platform/libpkt.cpp`) are the native versions, proven
+against them on 922 made records. The whole movie (a 6.5 minute `MISSION1.PSS`) now shows its picture and subtitles.
 
 ## What is left
 

@@ -84,8 +84,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001049C0,sdk_sceGifPkEnd,116,sdk,sdk:libpkt,verified,no,4,1,opens an END DMA tag
 0x00104A38,sdk_sceGifPkReserve,20,sdk,sdk:libpkt,verified,no,1,0,skips a0 words
 0x00104A50,sdk_sceGifPkOpenGifTag,24,sdk,sdk:libpkt,verified,no,4,0,writes a GIF tag and remembers it for sceGifPkCloseGifTag
-0x00104A68,sceGifPkCloseGifTag,164,sdk,,named,no,4,0,
-0x00104B10,sceGifPkAddGsAD,36,sdk,,named,no,4,0,
+0x00104A68,sceGifPkCloseGifTag,164,sdk,,verified,no,4,0,
+0x00104B10,sceGifPkAddGsAD,36,sdk,,verified,no,4,0,
 0x00104B38,sceVu0ApplyMatrix,44,sdk,,verified,no,1,0,
 0x00104B68,sceVu0MulMatrix,68,sdk,,verified,no,5,0,
 0x00104BB0,sdk_sceVu0OuterProduct,28,sdk,sdk:libvu0,verified,no,1,0,cross product

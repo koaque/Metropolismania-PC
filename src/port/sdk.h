@@ -45,8 +45,6 @@ namespace mm::sdk
         inline constexpr uint32_t sceGifPkEnd = 0x001049C0u;
         inline constexpr uint32_t sceGifPkReserve = 0x00104A38u;
         inline constexpr uint32_t sceGifPkOpenGifTag = 0x00104A50u;
-        inline constexpr uint32_t sceGifPkCloseGifTag = 0x00104A68u;
-        inline constexpr uint32_t sceGifPkAddGsAD = 0x00104B10u;
         inline constexpr uint32_t DIntr = 0x00116860u;
         inline constexpr uint32_t EIntr = 0x001168A8u;
         inline constexpr uint32_t CreateSema = 0x0010DD60u;
@@ -245,8 +243,8 @@ namespace mm::sdk
     inline void sceGifPkEnd(uint32_t pk) { route<&sdk_sceGifPkEnd, mm::addr::sdk_sceGifPkEnd>(GuestPtr<GifPacket>{pk}, 0, 0, 0); }
     inline uint32_t sceGifPkReserve(uint32_t pk, int qwc) { return route<&sdk_sceGifPkReserve, mm::addr::sdk_sceGifPkReserve>(GuestPtr<GifPacket>{pk}, qwc).address; }
     inline void sceGifPkOpenGifTag(uint32_t pk, port::Quad tag) { route<&sdk_sceGifPkOpenGifTag, mm::addr::sdk_sceGifPkOpenGifTag>(GuestPtr<GifPacket>{pk}, tag); }
-    inline void sceGifPkCloseGifTag(uint32_t pk) { port::callGuest<void>(addr::sceGifPkCloseGifTag, pk); }
-    inline void sceGifPkAddGsAD(uint32_t pk, int reg, uint64_t data) { port::callGuest<void>(addr::sceGifPkAddGsAD, pk, reg, data); }
+    inline void sceGifPkCloseGifTag(uint32_t pk) { route<&sdk_sceGifPkCloseGifTag, mm::addr::sdk_sceGifPkCloseGifTag>(GuestPtr<GifPacket>{pk}); }
+    inline void sceGifPkAddGsAD(uint32_t pk, int reg, uint64_t data) { route<&sdk_sceGifPkAddGsAD, mm::addr::sdk_sceGifPkAddGsAD>(GuestPtr<GifPacket>{pk}, static_cast<uint32_t>(reg), data); }
 
     // Kernel: interrupts off and on, and semaphores (the parameter block's address; the id).
     inline int DIntr() { return route<&sdk_DIntr, mm::addr::sdk_DIntr>(); }

@@ -102,6 +102,44 @@ namespace mm
         return at;
     }
 
+    // Closes the open GIF tag: its loop count (the low bits) grows by the number of register sets written after it (the 64 bit words
+    // after the tag, halved unless the format is a register list, divided by the register count unless it is an image), the cursor
+    // is padded to a quadword, and no GIF tag is open any more.
+    void sdk_sceGifPkCloseGifTag(GuestPtr<GifPacket> packet)
+    {
+        const GuestPtr<uint32_t> tag = packet->gifTag;
+        GuestPtr<uint32_t> cursor = packet->cursor;
+        const uint64_t value = port::load<uint64_t>(tag.address);
+        uint32_t count = static_cast<uint32_t>((static_cast<int32_t>(cursor.address - tag.address) >> 3) - 2);
+        const uint32_t format = static_cast<uint32_t>(value >> 58) & 3u;
+        if (format != 1)
+            count >>= 1;
+        if (format != 2)
+        {
+            uint32_t registers = static_cast<uint32_t>(value >> 60);
+            if (registers == 0)
+                registers = 16;
+            count = (count + registers - 1) / registers;
+        }
+        packet->gifTag = GuestPtr<uint32_t>{};
+        port::store<uint64_t>(tag.address, value + count);
+        while ((cursor.address & 0xCu) != 0)
+        {
+            *cursor = 0;
+            ++cursor;
+        }
+        packet->cursor = cursor;
+    }
+
+    // Adds one A+D register set to the open GIF tag's data: the 64 bit value, then the register number as a 64 bit word.
+    void sdk_sceGifPkAddGsAD(GuestPtr<GifPacket> packet, uint32_t reg, uint64_t data)
+    {
+        const GuestPtr<uint32_t> cursor = packet->cursor;
+        port::store<uint64_t>(cursor.address, data);
+        port::store<uint64_t>(cursor.address + 8u, reg);
+        packet->cursor = cursor + 4;
+    }
+
     // Sets the drawing offset of an environment so that (centreX, centreY) is the middle of its scissor area (the area's width and
     // height are its x1 and y1 plus one); with a non-zero `field` the y offset is half a pixel lower (the odd field). Both versions
     // do the same.
@@ -131,6 +169,8 @@ namespace mm
     PORT_FN(sdk_sceGifPkEnd);
     PORT_FN(sdk_sceGifPkReserve);
     PORT_FN(sdk_sceGifPkOpenGifTag);
+    PORT_FN(sdk_sceGifPkCloseGifTag);
+    PORT_FN(sdk_sceGifPkAddGsAD);
     PORT_FN(sdk_sceGsSetHalfOffset);
     PORT_FN(sdk_sceGsSetHalfOffset2);
 }

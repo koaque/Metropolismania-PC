@@ -1554,6 +1554,8 @@ inline constexpr uint32_t sdk_sceGifPkRef = 0x00104928u;
 inline constexpr uint32_t sdk_sceGifPkEnd = 0x001049C0u;
 inline constexpr uint32_t sdk_sceGifPkReserve = 0x00104A38u;
 inline constexpr uint32_t sdk_sceGifPkOpenGifTag = 0x00104A50u;
+inline constexpr uint32_t sdk_sceGifPkCloseGifTag = 0x00104A68u;
+inline constexpr uint32_t sdk_sceGifPkAddGsAD = 0x00104B10u;
 inline constexpr uint32_t sdk_sceGsSetHalfOffset = 0x00103730u;
 inline constexpr uint32_t sdk_sceGsSetHalfOffset2 = 0x00103998u;
 inline constexpr uint32_t sdk_fptosi = 0x00127828u;
@@ -3625,6 +3627,8 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"sdk_pow", addr::sdk_pow},
     {"sdk_read_r", addr::sdk_read_r},
     {"sdk_scalbn", addr::sdk_scalbn},
+    {"sdk_sceGifPkAddGsAD", addr::sdk_sceGifPkAddGsAD},
+    {"sdk_sceGifPkCloseGifTag", addr::sdk_sceGifPkCloseGifTag},
     {"sdk_sceGifPkCnt", addr::sdk_sceGifPkCnt},
     {"sdk_sceGifPkEnd", addr::sdk_sceGifPkEnd},
     {"sdk_sceGifPkInit", addr::sdk_sceGifPkInit},
@@ -5228,6 +5232,8 @@ void sdk_sceGifPkRef(GuestPtr<GifPacket> packet, uint32_t address, uint32_t quad
 void sdk_sceGifPkEnd(GuestPtr<GifPacket> packet, uint32_t third, uint32_t fourth, uint32_t first);
 GuestPtr<uint32_t> sdk_sceGifPkReserve(GuestPtr<GifPacket> packet, int words);
 GuestPtr<uint32_t> sdk_sceGifPkOpenGifTag(GuestPtr<GifPacket> packet, Quad tag);
+void sdk_sceGifPkCloseGifTag(GuestPtr<GifPacket> packet);
+void sdk_sceGifPkAddGsAD(GuestPtr<GifPacket> packet, uint32_t reg, uint64_t data);
 void sdk_sceGsSetHalfOffset(GuestPtr<GsDrawEnv> environment, int centreX, int centreY, int field);
 void sdk_sceGsSetHalfOffset2(GuestPtr<GsDrawEnv> environment, int centreX, int centreY, int field);
 int sdk_fptosi(ps2f value);

@@ -334,7 +334,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 ### signature-scan
 
-558 functions (named 491, ported 22, verified 45). Blocks: 223 can reach a thread switch, 18 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+558 functions (named 489, ported 22, verified 47). Blocks: 223 can reach a thread switch, 18 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|

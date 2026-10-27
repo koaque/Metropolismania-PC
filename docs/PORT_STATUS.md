@@ -9,7 +9,7 @@ See `config/port_status.csv` for every function.
 | Origin | Functions | Named | Typed | Ported | Verified |
 |---|---:|---:|---:|---:|---:|
 | game | 1481 | 100.0% | 100.0% | 100.0% | 96.7% |
-| sdk | 768 | 100.0% | 15.8% | 15.8% | 11.6% |
+| sdk | 768 | 100.0% | 16.0% | 16.0% | 11.8% |
 
 Blocking (game and unclassified functions that can reach a thread switch, deferred to native threading): indirect 79, no 987, yes 415
 
@@ -17,7 +17,7 @@ Blocking (game and unclassified functions that can reach a thread switch, deferr
 
 | Subsystem | Functions | Named | Typed | Ported | Verified |
 |---|---:|---:|---:|---:|---:|
-| (unclassified) | 558 | 100.0% | 12.0% | 12.0% | 8.1% |
+| (unclassified) | 558 | 100.0% | 12.4% | 12.4% | 8.4% |
 | app | 4 | 100.0% | 100.0% | 100.0% | 25.0% |
 | bag | 16 | 100.0% | 100.0% | 100.0% | 100.0% |
 | boot | 2 | 100.0% | 100.0% | 100.0% | 100.0% |
