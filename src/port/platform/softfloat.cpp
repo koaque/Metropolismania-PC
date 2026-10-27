@@ -211,10 +211,12 @@ namespace mm
             if (a.sign != b.sign)
             {
                 const uint64_t difference64 = a.sign != 0 ? bFraction - aFraction : aFraction - bFraction;
-                // The recompiled code decides the sign of the difference by a branch that the recompiler translates as a test of the
-                // low 32 bits only, so a negative difference whose low word looks positive is not turned round: the result is then a
-                // huge fraction. Kept as the game runs today (docs/PLATFORM_FINDINGS.md); the correct test is on all 64 bits.
-                if (static_cast<int32_t>(static_cast<uint32_t>(difference64)) < 0)
+                // The sign of the difference is a test of all 64 bits. The recompiler translates the branch as a test of the low 32 bits
+                // only, so the recompiled code turns round a positive difference whose low word looks negative and does not turn round a
+                // negative one whose low word looks positive (the result is then a huge fraction): kept while g_recompiledQuirks is set.
+                const bool negative = g_recompiledQuirks ? static_cast<int32_t>(static_cast<uint32_t>(difference64)) < 0
+                                                         : static_cast<int64_t>(difference64) < 0;
+                if (negative)
                 {
                     sum.sign = 1;
                     sum.fraction = 0 - difference64;
@@ -469,12 +471,13 @@ namespace mm
         }
     }
 
-    // Unsigned int to double. A value of 2^31 and more takes the library's path for a negative number (the recompiled code tests the
-    // sign of the low 32 bits of the zero extended register, see dpadd): half of it, with the lowest bit kept if it was set, is
-    // converted and doubled, so an odd value comes out as the even number below it, or above it when its second bit is clear.
+    // Unsigned int to double (exact). While g_recompiledQuirks is set, a value of 2^31 and more takes the library's path for a negative
+    // number (the recompiled code tests the sign of the low 32 bits of the zero extended register, see dpadd): half of it, with the
+    // lowest bit kept if it was set, is converted and doubled, so an odd value comes out as the even number below it, or above it when
+    // its second bit is clear.
     uint64_t sdk_d_utod(uint32_t value)
     {
-        if ((value & 0x80000000u) != 0)
+        if (g_recompiledQuirks && (value & 0x80000000u) != 0)
             return exactDouble(2ull * ((value >> 1) | (value & 1u)));
         return exactDouble(value);
     }

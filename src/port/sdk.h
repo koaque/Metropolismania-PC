@@ -11,6 +11,15 @@
 #include <type_traits>
 #include "game_functions.h" // the platform layer's functions (sdk_<name>, config/platform_signatures.txt)
 
+namespace mm
+{
+    // The recompiled soft-float code and pow do things a PS2 does not (docs/PLATFORM_FINDINGS.md): its sign branches test only the low
+    // 32 bits of a register, and pow takes |x| from a runtime handler that hands back a stale register. The native soft-float
+    // functions are correct, and reproduce those two quirks only while this is set, so that the difftest (which sets it, as do the
+    // capture runs) can still compare them with the recompiled functions exactly. A running game leaves it off.
+    inline bool g_recompiledQuirks = false;
+}
+
 namespace mm::sdk
 {
     // Calls the native platform function `Native` (at `Address` in the game), or, when MMPC_SDK_ORIGINAL names it, the recompiled

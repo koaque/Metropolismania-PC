@@ -57,8 +57,10 @@
 #include "game_functions.h"
 #include "port.h"
 #include "raylib.h"
+#include "sdk.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <bit>
 #include <chrono>
@@ -1122,6 +1124,185 @@ namespace port
             }
             return totalBad;
         }
+
+        // MMPC_DIFFTEST_NUMERIC_REFERENCE=<cases>: the soft-float functions as a running game has them (g_recompiledQuirks off) against the
+        // host's IEEE doubles, since the recompiled code cannot be the reference where it is wrong (docs/PLATFORM_FINDINGS.md). The library
+        // does not round (it cuts the result off), has no denormals and its own NaNs, so only normal operands and results count: a sum or
+        // difference must be the exact sum cut off toward zero (the host rounds to nearest, and TwoSum gives the rounding error exactly),
+        // allowing the neighbour for the sticky shift; the conversions must be exact; pow must be close to the host's and the powers of
+        // ten the game uses must come out as integers. Returns the number of cases that failed.
+        size_t runNumericReference(uint64_t cases)
+        {
+            mm::g_recompiledQuirks = false;
+            auto asDouble = [](uint64_t bits) { return std::bit_cast<double>(bits); };
+            auto asBits = [](double value) { return std::bit_cast<uint64_t>(value); };
+            auto isNormal = [](uint64_t bits) {
+                const uint32_t exponent = static_cast<uint32_t>(bits >> 52) & 0x7FFu;
+                return exponent != 0 && exponent != 0x7FF;
+            };
+            auto report = [](const char *name, uint64_t a, uint64_t b, uint64_t got, uint64_t expected) {
+                std::cout << "[reference] FAIL " << name << " " << std::hex << a << " " << b << ": port " << got << ", expected " << expected << std::dec
+                          << std::endl;
+            };
+            size_t totalBad = 0;
+
+            // The game's own library code run by an interpreter (LOCAL-AI/tools/oracle_cases.py), with the recompiler's quirks and with
+            // the full 64 bit branches: every case must come out bit for bit in both of the native functions' modes.
+            if (const char *file = env("MMPC_DIFFTEST_ORACLE_FILE"))
+            {
+                std::ifstream in(file);
+                std::map<std::string, std::array<size_t, 4>> counts; // cases and failures with the quirks, cases and failures without
+                std::string name;
+                uint64_t a, b, withQuirks, without;
+                size_t shown = 0;
+                while (in >> name >> std::hex >> a >> b >> withQuirks >> without >> std::dec)
+                {
+                    auto run = [&](bool quirks) -> uint64_t {
+                        mm::g_recompiledQuirks = quirks;
+                        if (name == "dpadd") return mm::sdk_dpadd(a, b);
+                        if (name == "dpsub") return mm::sdk_dpsub(a, b);
+                        if (name == "dpmul") return mm::sdk_dpmul(a, b);
+                        if (name == "dpdiv") return mm::sdk_dpdiv(a, b);
+                        if (name == "dpcmp") return static_cast<uint32_t>(mm::sdk_dpcmp(a, b));
+                        if (name == "litodp") return mm::sdk_litodp(static_cast<int32_t>(a));
+                        if (name == "d_utod") return mm::sdk_d_utod(static_cast<uint32_t>(a));
+                        if (name == "dptoli") return static_cast<uint32_t>(mm::sdk_dptoli(a));
+                        return mm::sdk_pow(a, b);
+                    };
+                    const bool low = name == "dpcmp" || name == "dptoli";
+                    const uint64_t expectedQuirks = low ? static_cast<uint32_t>(withQuirks) : withQuirks;
+                    const uint64_t expectedCorrect = low ? static_cast<uint32_t>(without) : without;
+                    auto &c = counts[name];
+                    ++c[0];
+                    ++c[2];
+                    if (const uint64_t got = run(true); got != expectedQuirks)
+                    {
+                        ++c[1];
+                        if (shown++ < 8)
+                            std::cout << "[oracle] FAIL " << name << " with the quirks " << std::hex << a << " " << b << ": port " << got << ", oracle " << expectedQuirks << std::dec << std::endl;
+                    }
+                    if (const uint64_t got = run(false); got != expectedCorrect)
+                    {
+                        ++c[3];
+                        if (shown++ < 8)
+                            std::cout << "[oracle] FAIL " << name << " without " << std::hex << a << " " << b << ": port " << got << ", oracle " << expectedCorrect << std::dec << std::endl;
+                    }
+                }
+                mm::g_recompiledQuirks = false;
+                for (const auto &[function, c] : counts)
+                {
+                    std::cout << "[oracle] " << function << ": " << c[0] << " cases, with the quirks " << c[1] << " differ, without " << c[3] << " differ" << std::endl;
+                    totalBad += c[1] + c[3];
+                }
+            }
+
+            // Sums and differences
+            for (int subtract = 0; subtract < 2; ++subtract)
+            {
+                const char *name = subtract ? "sdk_dpsub" : "sdk_dpadd";
+                size_t counted = 0, skipped = 0, exact = 0, neighbour = 0, bad = 0;
+                for (uint64_t i = 0; i < cases; ++i)
+                {
+                    uint64_t v[4] = {};
+                    numericArguments("DD", i + 1, v);
+                    if (!isNormal(v[0]) || !isNormal(v[1]))
+                    {
+                        ++skipped;
+                        continue;
+                    }
+                    const double x = asDouble(v[0]), y = subtract ? -asDouble(v[1]) : asDouble(v[1]);
+                    const double s = x + y;
+                    if (s == 0 || !std::isfinite(s) || !isNormal(asBits(s)))
+                    {
+                        ++skipped;
+                        continue;
+                    }
+                    const double bb = s - x;
+                    const double rounding = (x - (s - bb)) + (y - bb); // exact sum minus s
+                    const double cut = rounding != 0 && ((rounding < 0) != (s < 0)) ? std::nextafter(s, 0.0) : s;
+                    if (!isNormal(asBits(cut)))
+                    {
+                        ++skipped;
+                        continue;
+                    }
+                    const uint64_t got = subtract ? mm::sdk_dpsub(v[0], v[1]) : mm::sdk_dpadd(v[0], v[1]);
+                    ++counted;
+                    const uint64_t expected = asBits(cut);
+                    const uint64_t distance = got > expected ? got - expected : expected - got;
+                    if (got == expected)
+                        ++exact;
+                    else if (distance == 1 && (got >> 63) == (expected >> 63))
+                        ++neighbour;
+                    else
+                    {
+                        if (bad++ < 5)
+                            report(name, v[0], v[1], got, expected);
+                    }
+                }
+                std::cout << "[reference] " << name << ": " << counted << " counted (" << skipped << " skipped), " << exact << " equal to the cut off sum, "
+                          << neighbour << " its neighbour, " << bad << " failed" << std::endl;
+                totalBad += bad;
+            }
+
+            // Conversions
+            {
+                size_t bad = 0;
+                for (uint64_t i = 0; i < cases; ++i)
+                {
+                    uint64_t v[4] = {};
+                    numericArguments("U", i + 1, v);
+                    const uint32_t value = static_cast<uint32_t>(v[0]);
+                    const uint64_t expected = asBits(static_cast<double>(value));
+                    if (const uint64_t got = mm::sdk_d_utod(value); got != expected && bad++ < 5)
+                        report("sdk_d_utod", value, 0, got, expected);
+                    numericArguments("I", i + 1, v);
+                    const int32_t signedValue = static_cast<int32_t>(v[0]);
+                    const uint64_t signedExpected = asBits(static_cast<double>(signedValue));
+                    if (const uint64_t got = mm::sdk_litodp(signedValue); got != signedExpected && bad++ < 5)
+                        report("sdk_litodp", static_cast<uint32_t>(signedValue), 0, got, signedExpected);
+                }
+                std::cout << "[reference] sdk_d_utod and sdk_litodp: " << cases << " cases each, " << bad << " failed" << std::endl;
+                totalBad += bad;
+            }
+
+            // pow: relative distance to the host's, and the goods price's powers of ten
+            {
+                size_t counted = 0, bad = 0;
+                double worst = 0;
+                for (uint64_t i = 0; i < cases; ++i)
+                {
+                    uint64_t v[4] = {};
+                    numericArguments("XY", i + 1, v);
+                    const double x = asDouble(v[0]), y = asDouble(v[1]);
+                    if (!isNormal(v[0]) || !isNormal(v[1]) || x < 0)
+                        continue;
+                    const double expected = std::pow(x, y);
+                    if (!std::isfinite(expected) || !isNormal(asBits(expected)) || expected == 0 || std::fabs(expected) > 1e300 || std::fabs(expected) < 1e-300)
+                        continue;
+                    const double got = asDouble(mm::sdk_pow(v[0], v[1]));
+                    const double relative = std::fabs((got - expected) / expected);
+                    ++counted;
+                    worst = std::max(worst, relative);
+                    if (!(relative < 1e-12) && bad++ < 5)
+                        report("sdk_pow", v[0], v[1], asBits(got), asBits(expected));
+                }
+                std::cout << "[reference] sdk_pow: " << counted << " counted, worst relative distance " << worst << ", " << bad << " beyond 1e-12" << std::endl;
+                totalBad += bad;
+                for (int n = 0; n <= 9; ++n)
+                {
+                    const uint64_t got = mm::sdk_pow(asBits(10.0), asBits(static_cast<double>(n)));
+                    const int asInteger = mm::sdk_dptoli(got);
+                    int expected = 1;
+                    for (int k = 0; k < n; ++k)
+                        expected *= 10;
+                    std::cout << "[reference] pow(10, " << n << ") = " << std::hex << got << std::dec << " as an integer " << asInteger << (asInteger == expected ? "" : " WRONG, expected ")
+                              << (asInteger == expected ? "" : std::to_string(expected)) << std::endl;
+                    if (asInteger != expected)
+                        ++totalBad;
+                }
+            }
+            return totalBad;
+        }
     }
 
     void installGeneratedAudit(PS2Runtime &runtime)
@@ -1166,6 +1347,7 @@ namespace port
         const char *list = env("MMPC_CAPTURE");
         if (!list)
             return;
+        mm::g_recompiledQuirks = true; // a capture run plays as the recorded ones did (sdk.h)
         g_captureDir = env("MMPC_CAPTURE_DIR") ? env("MMPC_CAPTURE_DIR") : "difftest";
         if (const char *max = env("MMPC_CAPTURE_MAX"))
             g_captureMax = static_cast<uint32_t>(std::strtoul(max, nullptr, 0));
@@ -1210,6 +1392,16 @@ namespace port
             return;
         const std::filesystem::path dir(dirText);
         setFaultsThrow(true);
+        // The replay and the fuzz compare the native functions with the recompiled ones, so the natives keep the recompiled quirks
+        // (sdk.h); the reference check turns them off.
+        mm::g_recompiledQuirks = true;
+        if (const char *casesText = env("MMPC_DIFFTEST_NUMERIC_REFERENCE"))
+        {
+            const size_t bad = runNumericReference(std::strtoull(casesText, nullptr, 0));
+            std::cout << "[reference] " << bad << " case(s) failed" << std::endl;
+            std::cout.flush();
+            std::exit(static_cast<int>(std::min<size_t>(bad, 125)));
+        }
         // MMPC_DIFFTEST_NUMERIC=<cases> [MMPC_DIFFTEST_NUMERIC_FUNCTIONS=<names or all>]: the numeric fuzz (see above), then exit.
         if (const char *casesText = env("MMPC_DIFFTEST_NUMERIC"))
         {

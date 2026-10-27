@@ -102,6 +102,12 @@ Do not edit the two generated headers; `pipeline.py stage` rewrites them.
    (with `PS2X_HEADLESS=1`) calls each with that many random bit patterns, as the recompiled function and as the port, and compares the
    result register, `sp`, `ra` and the callee-saved registers. The table of functions and their argument kinds is `kNumericSpecs` in
    `difftest.cpp`.
+   The native soft float functions are correct (a PS2's 64 bit sign branches), where the recompiled code is wrong
+   ([findings](../../docs/PLATFORM_FINDINGS.md)). They reproduce the recompiled behavior only while `mm::g_recompiledQuirks` (`sdk.h`)
+   is set, which the difftest, the numeric fuzz and the capture runs do, so every comparison with the recompiled code stays exact; a
+   running game has it off. The corrected mode is checked by `MMPC_DIFFTEST_NUMERIC_REFERENCE=<cases>` (host IEEE doubles) and
+   `MMPC_DIFFTEST_ORACLE_FILE=<file>` (cases that `tools/soft_float_oracle.py` makes by running the game's library code in the
+   interpreter `tools/ee_interp.py`, in both modes; each case must agree bit for bit).
 5. Mark it in `config/port_status.csv` (`ported`, then `verified` once difftested).
 
 `MMPC_SDK_ORIGINAL=<names|0xADDR|all>` runs the named platform functions (`src/port/platform/`) as the recompiled originals they replace, in a live run (the

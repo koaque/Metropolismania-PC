@@ -245,13 +245,17 @@ namespace mm
                     return squareRoot(x);
             }
 
-            // |x| comes from a call of the runtime's fabs handler, which reads a float and leaves v0 as it was (so does the original): the
-            // register then holds what the delay slots on the way here put in it. Kept as it is (docs/PLATFORM_FINDINGS.md), since the
-            // result of pow depends on it.
-            uint64_t leftoverV0 = 0x3FE00000u;
-            if (ly != 0)
-                leftoverV0 = (hx < 0 && iy >= 0x3FF00000 && iy < 0x43400000 && (iy >> 20) - 0x3FF <= 20) ? 0x14u : 0x7FF00000u;
-            const Dbl ax{leftoverV0};
+            // |x|. The recompiled code gets it from a call of the runtime's fabs handler, which reads a float and leaves v0 as it was: the
+            // register then holds what the delay slots on the way here put in it (docs/PLATFORM_FINDINGS.md). That is reproduced while
+            // g_recompiledQuirks is set; otherwise it is the absolute value.
+            Dbl ax{x.bits & 0x7FFFFFFFFFFFFFFFull};
+            if (g_recompiledQuirks)
+            {
+                uint64_t leftoverV0 = 0x3FE00000u;
+                if (ly != 0)
+                    leftoverV0 = (hx < 0 && iy >= 0x3FF00000 && iy < 0x43400000 && (iy >> 20) - 0x3FF <= 20) ? 0x14u : 0x7FF00000u;
+                ax = Dbl{leftoverV0};
+            }
             const int32_t xIsNegative = static_cast<int32_t>(static_cast<uint32_t>(hx) >> 31);
             if (lx == 0 && (ix == 0x7FF00000 || ix == 0 || ix == 0x3FF00000))
             {
