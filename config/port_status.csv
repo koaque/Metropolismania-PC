@@ -25,7 +25,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00100990,__destroy_global_chain,68,sdk,,verified,indirect,1,0,
 0x001009E0,sdk_mw_register_global_object,36,sdk,sdk:mwrt,verified,no,1,0,links a global object and its destructor into the exit list (0x1BDFC8)
 0x00100A10,__initialize_cpp_rts,84,sdk,,verified,indirect,1,0,
-0x00100A70,__ptmf_scall,52,sdk,,named,indirect,3,0,
+0x00100A70,__ptmf_scall,52,sdk,,verified,indirect,3,0,"inlined into mm_Words_CallCond, mm_Words_CallText, mm_Words_CallAct"
 0x00100AB0,__DecodeUnsignedNumber__FPcPUi,156,sdk,,named,no,7,0,
 0x00100B50,__DecodeSignedNumber__FPcPi,156,sdk,,named,no,5,0,
 0x00100BF0,__end__catch,52,sdk,,named,indirect,0,0,
@@ -315,8 +315,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0010E328,write,124,sdk,,named,no,1,2,
 0x0010E3A8,read,116,sdk,,named,no,1,2,
 0x0010E420,sdk_libc_StubEio1,40,sdk,sdk:libc,named,no,0,1,"errno = EIO, returns -1"
-0x0010E448,sdk_libc_close,8,sdk,sdk:libc,named,no,1,0,"stub, returns -1"
-0x0010E458,sdk_libc_lseek,8,sdk,sdk:libc,named,no,1,0,"stub, returns -1"
+0x0010E448,sdk_libc_close,8,sdk,sdk:libc,verified,no,1,0,"stub, returns -1"
+0x0010E458,sdk_libc_lseek,8,sdk,sdk:libc,verified,no,1,0,"stub, returns -1"
 0x0010E460,sbrk,172,sdk,,named,no,1,2,
 0x0010E510,sdk_libc_isatty,8,sdk,sdk:libc,named,no,1,0,returns 1
 0x0010E518,sdk_libc_fstat,20,sdk,sdk:libc,named,no,1,0,"character device, block size 0x2000"
@@ -501,7 +501,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00116B80,InitTLB,8,sdk,sdk:libkernl,named,no,4,1,
 0x00116B88,ExecPS2,92,sdk,,named,no,0,1,
 0x00116BE8,LoadExecPS2,72,sdk,,named,no,0,2,
-0x00116C30,sdk_kernel_Exit,40,sdk,sdk:libkernl,named,no,4,2,"InitTLB, then _Exit"
+0x00116C30,sdk_kernel_Exit,40,sdk,sdk:libkernl,ported,no,4,2,"InitTLB, then _Exit"
 0x00116C58,ExecOSD,56,sdk,,named,no,0,2,
 0x00116C90,sceSdRemoteInit,164,sdk,,ported,yes,1,4,
 0x00116D38,sceSdTransToIOP,132,sdk,,named,no,0,2,
@@ -623,7 +623,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0011E7F8,sdk_libc_abort,24,sdk,sdk:libc,named,yes,1,2,"raise(SIGABRT), then _exit(1)"
 0x0011E810,sdk_libc_abs,20,sdk,sdk:libc,verified,no,10,0,abs
 0x0011E828,_calloc_r,176,sdk,,named,yes,1,2,
-0x0011E8E0,sdk_libc__close_r,88,sdk,sdk:libc,named,no,1,1,close with errno in the reent
+0x0011E8E0,sdk_libc__close_r,88,sdk,sdk:libc,verified,no,1,1,close with errno in the reent
 0x0011E938,quorem,552,sdk,,named,no,1,1,
 0x0011EB68,_dtoa_r,4632,sdk,,named,yes,1,20,
 0x0011FDD0,sdk_libc___errno,12,sdk,sdk:libc,named,no,4,0,errno location (the reent)
@@ -631,19 +631,19 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0011FEF8,std,92,sdk,,verified,no,1,0,
 0x0011FF58,__sfmoreglue,120,sdk,,named,yes,1,2,
 0x0011FFD0,__sfp,248,sdk,,named,yes,0,2,
-0x001200C8,sdk_libc__cleanup_r,28,sdk,sdk:libc,named,no,0,1,_fwalk with the flush function
+0x001200C8,sdk_libc__cleanup_r,28,sdk,sdk:libc,verified,no,0,1,_fwalk with the flush function
 0x00120108,__sinit,140,sdk,,verified,no,4,1,
 0x00120198,_free_r,744,sdk,,named,yes,4,3,
 0x00120490,_malloc_trim_r,364,sdk,,named,yes,1,3,
 0x00120600,sdk_libc__fstat_r,92,sdk,sdk:libc,named,no,1,1,fstat with errno in the reent
 0x00120660,__sfvwrite,972,sdk,,named,yes,1,4,
-0x00120A40,_fwalk,148,sdk,,named,indirect,2,0,
+0x00120A40,_fwalk,148,sdk,,verified,indirect,2,0,
 0x00120AD8,sdk_libc_index,20,sdk,sdk:libc,verified,no,1,1,index (strchr)
 0x00120AF0,_setlocale_r,136,sdk,,named,no,1,1,
 0x00120B80,sdk_libc__localeconv_r,12,sdk,sdk:libc,named,no,1,0,the locale data
 0x00120B90,sdk_libc_setlocale,36,sdk,sdk:libc,named,no,0,1,setlocale
 0x00120BB8,sdk_libc_localeconv,28,sdk,sdk:libc,named,no,1,1,localeconv
-0x00120BD8,sdk_libc__lseek_r,96,sdk,sdk:libc,named,no,2,1,lseek with errno in the reent
+0x00120BD8,sdk_libc__lseek_r,96,sdk,sdk:libc,verified,no,2,1,lseek with errno in the reent
 0x00120C38,__smakebuf,332,sdk,,named,yes,1,3,
 0x00120D90,sdk_libc_memalign,100,sdk,sdk:libc,verified,yes,1,3,memalign under the malloc lock
 0x00120DF8,_memalign_r,448,sdk,,named,yes,1,5,
@@ -678,7 +678,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00122E80,_mprec_log10,112,sdk,,named,no,0,1,
 0x00122EF0,_printf_r,92,sdk,,named,yes,0,1,
 0x00122F50,printf,112,sdk,,named,yes,31,1,
-0x00122FC0,sdk_libc__read_r,96,sdk,sdk:libc,named,no,1,1,read with errno in the reent
+0x00122FC0,sdk_libc__read_r,96,sdk,sdk:libc,verified,no,1,1,read with errno in the reent
 0x00123020,sdk_libc__sbrk_r,88,sdk,sdk:libc,named,no,2,1,sbrk with errno in the reent
 0x00123078,_init_signal_r,112,sdk,,named,yes,3,1,
 0x001230E8,_signal_r,128,sdk,,named,yes,1,1,
@@ -690,10 +690,10 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001233C0,sdk_libc__getpid_r,28,sdk,sdk:libc,named,no,1,0,returns 1
 0x001233D8,_sprintf_r,136,sdk,,named,yes,0,1,
 0x00123460,sdk_libc_sprintf,144,sdk,sdk:libc,verified,yes,21,1,sprintf
-0x001234F0,__sread,96,sdk,,named,no,0,1,
-0x00123558,__swrite,128,sdk,,named,no,0,2,
-0x001235D8,__sseek,96,sdk,,named,no,0,1,
-0x00123640,sdk_libc___sclose,28,sdk,sdk:libc,named,no,0,1,stdio close hook
+0x001234F0,__sread,96,sdk,,verified,no,0,1,
+0x00123558,__swrite,128,sdk,,verified,no,0,2,
+0x001235D8,__sseek,96,sdk,,verified,no,0,1,
+0x00123640,sdk_libc___sclose,28,sdk,sdk:libc,verified,no,0,1,stdio close hook
 0x00123660,strcat,300,sdk,,named,no,21,1,
 0x00123790,strchr,400,sdk,,named,no,2,0,
 0x00123920,strcmp,324,sdk,,named,no,6,0,
@@ -709,7 +709,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00124248,_vfprintf_r,5652,sdk,,named,yes,2,14,
 0x001258B8,cvt,444,sdk,,named,yes,1,3,
 0x00125A78,exponent,212,sdk,,named,no,1,0,
-0x00125B58,sdk_libc__write_r,96,sdk,sdk:libc,named,no,1,1,write with errno in the reent
+0x00125B58,sdk_libc__write_r,96,sdk,sdk:libc,verified,no,1,1,write with errno in the reent
 0x00125BB8,__swsetup,264,sdk,,named,yes,2,3,
 0x00125CC8,__muldi3,116,sdk,,named,no,2,0,
 0x00125D40,__divdi3,1664,sdk,,named,no,1,0,

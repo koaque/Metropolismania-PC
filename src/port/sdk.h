@@ -414,6 +414,8 @@ namespace mm::sdk
     // The C++ runtime: the static constructors run before main and the global destructor chain after it.
     inline void crt0_InitCpp() { route<&sdk_crt0_InitCpp, mm::addr::sdk_crt0_InitCpp>(); }
     inline void destroy_global_chain() { route<&sdk_destroy_global_chain_stub, mm::addr::sdk_destroy_global_chain_stub>(); }
+    // The program's end: the SDK's exit (resets the TLB, then the Exit system call), which the runtime treats as ExitThread.
+    inline void kernel_Exit(int status) { route<&sdk_kernel_Exit, mm::addr::sdk_kernel_Exit>(status); }
     // The memory card library: every call is started and returns 0 when accepted (the 64-bit result of the SDK), then
     // sceMcSync reports its end. Port and slot come first; addresses are guest addresses of the game's buffers.
     inline int64_t sceMcGetInfo(int portNumber, int slot, uint32_t type, uint32_t freeBlocks, uint32_t format)

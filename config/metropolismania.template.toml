@@ -22,7 +22,10 @@ patch_cache = true
 
 # handler@0xADDR bindings to runtime handlers (see ps2xRuntime/include/ps2_call_list.h).
 # Triage helpers: ret0@0xADDR, ret1@0xADDR, reta0@0xADDR. Keep these few and documented.
-stubs = []
+# ExitThread@0x001000C0 is crt0's thread end (a thread whose entry function returns lands there) and ExitThread@0x0010D980 is the SDK's
+# _Exit (the Exit system call, which the runtime handles as ExitThread). A thread exit has to unwind from guest code, so the readable
+# port cannot write them as C++ (plan P7); the runtime's handler does it, like ExitDeleteThread.
+stubs = ["ExitThread@0x001000C0", "ExitThread@0x0010D980"]
 
 # Extra function starts the analysis misses (for example functions only reached through tables).
 entry_points = []

@@ -1,0 +1,4 @@
+# Recompiled functions that ported code no longer calls because their code is part of each caller (plan P7). One per line:
+#   <address> <name>: <callers, comma separated, as in config/port_status.csv>
+# tools/port_status.py counts them as ported (verified when every caller is) and tools/generated_audit.py does not look for them.
+0x00100A70 __ptmf_scall: mm_Words_CallCond, mm_Words_CallText, mm_Words_CallAct

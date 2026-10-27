@@ -9,7 +9,7 @@ See `config/port_status.csv` for every function.
 | Origin | Functions | Named | Typed | Ported | Verified |
 |---|---:|---:|---:|---:|---:|
 | game | 1481 | 100.0% | 100.0% | 100.0% | 96.7% |
-| sdk | 768 | 100.0% | 13.9% | 13.9% | 9.9% |
+| sdk | 768 | 100.0% | 15.8% | 15.8% | 11.6% |
 
 Blocking (game and unclassified functions that can reach a thread switch, deferred to native threading): indirect 79, no 987, yes 415
 
@@ -17,7 +17,7 @@ Blocking (game and unclassified functions that can reach a thread switch, deferr
 
 | Subsystem | Functions | Named | Typed | Ported | Verified |
 |---|---:|---:|---:|---:|---:|
-| (unclassified) | 558 | 100.0% | 11.1% | 11.1% | 7.2% |
+| (unclassified) | 558 | 100.0% | 12.0% | 12.0% | 8.1% |
 | app | 4 | 100.0% | 100.0% | 100.0% | 25.0% |
 | bag | 16 | 100.0% | 100.0% | 100.0% | 100.0% |
 | boot | 2 | 100.0% | 100.0% | 100.0% | 100.0% |
@@ -42,12 +42,12 @@ Blocking (game and unclassified functions that can reach a thread switch, deferr
 | save | 48 | 100.0% | 100.0% | 100.0% | 89.6% |
 | scene | 25 | 100.0% | 100.0% | 100.0% | 96.0% |
 | sdk:crt0 | 3 | 100.0% | 33.3% | 33.3% | 0.0% |
-| sdk:libc | 32 | 100.0% | 15.6% | 15.6% | 15.6% |
+| sdk:libc | 32 | 100.0% | 40.6% | 40.6% | 40.6% |
 | sdk:libcdvd | 4 | 100.0% | 0.0% | 0.0% | 0.0% |
 | sdk:libfileio | 7 | 100.0% | 0.0% | 0.0% | 0.0% |
 | sdk:libgcc | 1 | 100.0% | 100.0% | 100.0% | 0.0% |
 | sdk:libgraph | 3 | 100.0% | 66.7% | 66.7% | 66.7% |
-| sdk:libkernl | 92 | 100.0% | 5.4% | 5.4% | 5.4% |
+| sdk:libkernl | 92 | 100.0% | 6.5% | 6.5% | 5.4% |
 | sdk:libm | 9 | 100.0% | 77.8% | 77.8% | 0.0% |
 | sdk:libmpeg | 16 | 100.0% | 18.8% | 18.8% | 18.8% |
 | sdk:libpkt | 8 | 100.0% | 100.0% | 100.0% | 100.0% |

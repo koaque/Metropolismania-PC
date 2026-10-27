@@ -134,6 +134,27 @@ def pct(n: int, d: int) -> str:
     return f"{100.0 * n / d:.1f}%" if d else "-"
 
 
+def apply_inlined(path: Path, rows: list[dict[str, str]]) -> None:
+    """config/inlined.txt: a function whose code ported callers carry themselves counts as ported, verified when all of them are."""
+    if not path.exists():
+        return
+    by_address = {r["address"]: r for r in rows}
+    by_name = {r["name"]: r for r in rows}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.split("#")[0].strip()
+        if not line:
+            continue
+        head, _, tail = line.partition(":")
+        address = int(head.split()[0], 16)
+        row = by_address.get(f"0x{address:08X}")
+        callers = [by_name.get(c.strip()) for c in tail.split(",") if c.strip()]
+        if row is None or not callers or any(c is None for c in callers):
+            raise SystemExit(f"port_status: config/inlined.txt names an unknown function: {line}")
+        row["status"] = "verified" if all(c["status"] == "verified" for c in callers) else "ported"
+        if not row["notes"]:
+            row["notes"] = "inlined into " + ", ".join(c["name"] for c in callers)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", required=True)
@@ -189,6 +210,7 @@ def main() -> None:
         if addr not in funcs and (prev.get("subsystem") or prev.get("notes")):
             rows.append({c: prev.get(c, "") for c in COLUMNS})
     rows.sort(key=lambda r: int(r["address"], 16))
+    apply_inlined(root / "config/inlined.txt", rows)
 
     out_csv = root / "config/port_status.csv"
     with out_csv.open("w", encoding="utf-8", newline="") as fh:

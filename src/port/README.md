@@ -83,7 +83,13 @@ Do not edit the two generated headers; `pipeline.py stage` rewrites them.
    `MMPC_CALL_COUNTS=<file>` on any run writes how often each game function was called.
    `MMPC_GENERATED_ENTRIES=<file>` writes, by address, how often each function that is not ported was entered through the function
    table; `python tools/generated_audit.py --counts <file>` (repeat `--counts` to merge runs) lists the recompiled functions that ran,
-   which is what the platform layer still has to replace, and without `--counts` it lists the ones ported code can reach by the call graph.
+   which is what the platform layer still has to replace, and without `--counts` it lists the ones ported code can reach: by the call graph
+   (with the tail jumps read from `generated/`), and by the code addresses `src/port/` writes itself (a number or `addr::<name>`). Runtime
+   handlers do not count (they are the runtime's own code), and neither does a function listed in `config/inlined.txt` (its code is part
+   of each caller: `__ptmf_scall` in `words.cpp`). The result is empty when nothing recompiled can be reached.
+   The thread-ending system call wrappers (`ExitThread` at 0x1000C0, `_Exit` at 0x10D980) are bound to the runtime's `ExitThread` handler in
+   `config/metropolismania.template.toml`: a thread exit has to unwind from guest code, which a C++ port cannot do from a direct syscall
+   (`reachedThreadSwitch`), and the runtime's handler is entered through its guest wrapper, like `ExitDeleteThread`.
    `MMPC_CAPTURE` also takes a plain `0xADDRESS` for a function no table names (recorded as `fn_<address>`), and
    `MMPC_CAPTURE_KEEP_PORTS=1` keeps the ports installed during a capture, to record the state in a run that has them.
    For a function with branches on its float or integer arguments, also run `pipeline.py difftest

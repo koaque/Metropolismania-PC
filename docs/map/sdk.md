@@ -22,7 +22,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 ### libc
 
-32 functions (named 27, verified 5). Blocks: 6 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+32 functions (named 19, verified 13). Blocks: 6 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -104,7 +104,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 ### libkernl
 
-92 functions (named 87, verified 5). Blocks: 9 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+92 functions (named 86, ported 1, verified 5). Blocks: 9 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -334,7 +334,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 ### signature-scan
 
-558 functions (named 496, ported 22, verified 40). Blocks: 223 can reach a thread switch, 18 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+558 functions (named 491, ported 22, verified 45). Blocks: 223 can reach a thread switch, 18 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -347,7 +347,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 | `0x00100670` | `__throw_catch_compare` | 608 | no |  |
 | `0x00100990` | `__destroy_global_chain` | 68 | indirect |  |
 | `0x00100A10` | `__initialize_cpp_rts` | 84 | indirect |  |
-| `0x00100A70` | `__ptmf_scall` | 52 | indirect |  |
+| `0x00100A70` | `__ptmf_scall` | 52 | indirect | inlined into mm_Words_CallCond, mm_Words_CallText, mm_Words_CallAct |
 | `0x00100AB0` | `__DecodeUnsignedNumber__FPcPUi` | 156 | no |  |
 | `0x00100B50` | `__DecodeSignedNumber__FPcPi` | 156 | no |  |
 | `0x00100BF0` | `__end__catch` | 52 | indirect |  |

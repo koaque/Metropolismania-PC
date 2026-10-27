@@ -11,3 +11,6 @@ sdk_crt0_InitCpp
 sdk_InitSys
 sdk_InitExecPS2
 sdk_InitTLBFunctions
+sdk_kernel_Exit
+sdk_fwalk
+sdk_cleanup_r

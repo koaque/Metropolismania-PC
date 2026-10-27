@@ -8,7 +8,8 @@ usage: generated_audit.py [--counts FILE [--counts FILE ...]]
                   recompiled code and the generated wrappers of the runtime's own handlers (the stubs of the recompiler
                   config). This is the truth about what runs; the static list below only finds candidates.
   (no option)     static: the recompiled SDK functions that ported code can reach, found from the call graph
-                  (work/map/graph.json: calls and function pointers) plus the tail jumps read from generated/*.cpp, not
+                  (work/map/graph.json: calls and function pointers), the code addresses src/port/ names itself (a number or
+                  addr::<name>) and the tail jumps read from generated/*.cpp, not
                   entering the handlers' stubs and not looking inside a function that is already ported. What it prints is
                   the worklist of the platform layer, with each function's status.
 
@@ -77,6 +78,30 @@ def tail_jumps(starts: list[int], info: dict[int, tuple[str, int, int]]) -> dict
     return out
 
 
+def source_references(starts: list[int], info: dict[int, tuple[str, int, int]]) -> set[int]:
+    """Functions that src/port/ names without a call the graph knows: a code address written as a number (a guest call or a
+    function pointer handed to the kernel) or as mm::addr::<name>. Only exact function starts count."""
+    port = ROOT / "src/port"
+    by_name: dict[str, int] = {}
+    header = port / "game_functions.h"
+    if header.exists():
+        for m in re.finditer(r"inline constexpr uint32_t (\w+) = 0x([0-9A-Fa-f]+)u;", header.read_text(encoding="utf-8")):
+            by_name[m.group(1)] = int(m.group(2), 16)
+    out: set[int] = set()
+    for path in port.rglob("*"):
+        if path.suffix not in (".cpp", ".h") or path == header or path.name == "game_types.h":
+            continue
+        text = re.sub(r"//[^\n]*", "", path.read_text(encoding="utf-8", errors="replace"))  # a comment names addresses too
+        for m in re.finditer(r"\b0x([0-9A-Fa-f]{5,8})u?\b", text):
+            a = int(m.group(1), 16)
+            if a in info:
+                out.add(a)
+        for m in re.finditer(r"\baddr::(\w+)", text):
+            if m.group(1) in by_name:
+                out.add(by_name[m.group(1)])
+    return out
+
+
 def describe(address: int, info, status) -> str:
     name, _, size = info.get(address, ("?", 0, 0))
     row = status.get(address, {})
@@ -127,6 +152,7 @@ def static_mode() -> int:
     sdk = {a for a, r in status.items() if r.get("origin") == "sdk"}
     roots = {c for a, r in status.items() if r.get("origin") == "game" for c in edges(a) if c in sdk}
     roots.add(0x00100008)  # _start
+    roots |= {a for a in source_references(starts, info) if a in sdk}
     reached: set[int] = set()
     todo = [a for a in roots if a not in stubs]
     while todo:

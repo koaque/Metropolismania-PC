@@ -119,3 +119,16 @@
 0x00120108 void sdk___sinit(void *reentrancy);
 0x00123460 int sdk_sprintf(char *destination, char *format, uint64_t a2, uint64_t a3, uint64_t t0, uint64_t t1, uint64_t t2, uint64_t t3, uint64_t stack0, uint64_t stack1);
 0x001BAE80 void mm_StaticInit_EventQueue(void);
+0x001234F0 int sdk_sread(void *stream, char *buffer, int count);
+0x00123558 int sdk_swrite(void *stream, char *buffer, int count);
+0x001235D8 int sdk_sseek(void *stream, int offset, int whence);
+0x00123640 int sdk_sclose(void *stream);
+0x00122FC0 int sdk_read_r(void *reentrancy, int descriptor, char *buffer, int count);
+0x00125B58 int sdk_write_r(void *reentrancy, int descriptor, char *buffer, int count);
+0x00120BD8 int sdk_lseek_r(void *reentrancy, int descriptor, int offset, int whence);
+0x0011E8E0 int sdk_close_r(void *reentrancy, int descriptor);
+0x0010E448 int sdk_close(int descriptor);
+0x0010E458 int sdk_lseek(int descriptor, int offset, int whence);
+0x00120A40 int sdk_fwalk(void *reentrancy, uint32_t function);
+0x001200C8 int sdk_cleanup_r(void *reentrancy);
+0x00116C30 void sdk_kernel_Exit(int status);

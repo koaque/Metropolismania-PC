@@ -14,7 +14,6 @@ namespace mm
     namespace
     {
         // System call numbers (the number the SDK's wrapper puts in v1).
-        constexpr uint32_t kSysExit = 4;
         constexpr uint32_t kSysSetupThread = 0x3C;
         constexpr uint32_t kSysSetupHeap = 0x3D;
         constexpr uint32_t kSysKCopy = 0x5A;
@@ -26,11 +25,13 @@ namespace mm
         constexpr uint32_t kBssEnd = 0x00718280u;       // also where the heap starts
         constexpr uint32_t kGlobalPointer = 0x001C5970u;
         constexpr uint32_t kThreadArguments = 0x001BDE80u; // argc, then argv
-        constexpr uint32_t kThreadRootFunction = 0x001000C0u; // ExitThread: where a thread that returns ends up
+        constexpr uint32_t kThreadRootFunction = 0x001000C0u; // ExitThread (the runtime's handler is bound there): where a thread that returns ends up
         constexpr uint32_t kStackSize = 0x100000u;
 
         constexpr uint32_t kInitAlarm = 0x0010EAC8u; // runtime handlers, reached through their guest wrappers
         constexpr uint32_t kInitThread = 0x0010EC78u;
+        constexpr uint32_t kInitTlb = 0x00116B80u;
+        constexpr uint32_t kExit = 0x0010D980u; // the Exit system call (4) as a runtime handler: the same as ExitThread
         constexpr uint32_t kSetOsdConfigParam = 0x0010DE00u;
         constexpr uint32_t kGetOsdConfigParam = 0x0010DE10u;
 
@@ -170,7 +171,15 @@ namespace mm
         sdk::FlushCache(0);
         ctx->cop0_status |= 0x10000; // ei
         const int status = Main();
-        port::callGuest<void>(0x00116C30u, status); // the SDK's exit: leaves the program
+        sdk::kernel_Exit(status); // leaves the program
+    }
+
+    // The SDK's exit: the TLB is reset, then the Exit system call ends the thread (both are handlers of the runtime, entered through
+    // their guest wrappers, because the thread switch has to unwind from guest code).
+    void sdk_kernel_Exit(int status)
+    {
+        port::callGuest<void>(kInitTlb);
+        port::callGuest<void>(kExit, status);
     }
 
     PORT_FN(sdk_kCopyA);
@@ -183,4 +192,5 @@ namespace mm
     PORT_FN(sdk_InitTLBFunctions);
     PORT_FN(sdk_InitSys);
     PORT_FN(sdk_start);
+    PORT_FN(sdk_kernel_Exit);
 }

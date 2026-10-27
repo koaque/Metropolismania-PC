@@ -1602,6 +1602,19 @@ inline constexpr uint32_t sdk_std = 0x0011FEF8u;
 inline constexpr uint32_t sdk___sinit = 0x00120108u;
 inline constexpr uint32_t sdk_sprintf = 0x00123460u;
 inline constexpr uint32_t StaticInit_EventQueue = 0x001BAE80u;
+inline constexpr uint32_t sdk_sread = 0x001234F0u;
+inline constexpr uint32_t sdk_swrite = 0x00123558u;
+inline constexpr uint32_t sdk_sseek = 0x001235D8u;
+inline constexpr uint32_t sdk_sclose = 0x00123640u;
+inline constexpr uint32_t sdk_read_r = 0x00122FC0u;
+inline constexpr uint32_t sdk_write_r = 0x00125B58u;
+inline constexpr uint32_t sdk_lseek_r = 0x00120BD8u;
+inline constexpr uint32_t sdk_close_r = 0x0011E8E0u;
+inline constexpr uint32_t sdk_close = 0x0010E448u;
+inline constexpr uint32_t sdk_lseek = 0x0010E458u;
+inline constexpr uint32_t sdk_fwalk = 0x00120A40u;
+inline constexpr uint32_t sdk_cleanup_r = 0x001200C8u;
+inline constexpr uint32_t sdk_kernel_Exit = 0x00116C30u;
 }
 
 // Functions that can reach a thread switch (config/port_status.csv, config/blocking_extra.txt). A ported one runs on a
@@ -1625,8 +1638,11 @@ template <> inline constexpr bool at<0x00114EA8u> = true; // sdk_sceSifFreeSysMe
 template <> inline constexpr bool at<0x00116118u> = true; // sdk_InitTLBFunctions
 template <> inline constexpr bool at<0x001169C0u> = true; // sdk_InitSys
 template <> inline constexpr bool at<0x00116AD0u> = true; // sdk_InitExecPS2
+template <> inline constexpr bool at<0x00116C30u> = true; // sdk_kernel_Exit
 template <> inline constexpr bool at<0x00116C90u> = true; // sdk_sceSdRemoteInit
 template <> inline constexpr bool at<0x00116DD0u> = true; // sdk_sceSdRemote
+template <> inline constexpr bool at<0x001200C8u> = true; // sdk_cleanup_r
+template <> inline constexpr bool at<0x00120A40u> = true; // sdk_fwalk
 template <> inline constexpr bool at<0x00120D90u> = true; // sdk_memalign
 template <> inline constexpr bool at<0x00123460u> = true; // sdk_sprintf
 template <> inline constexpr bool at<0x00128D80u> = true; // MsgWin_dtor
@@ -3565,6 +3581,9 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"sdk_addhour", addr::sdk_addhour},
     {"sdk_atan2f", addr::sdk_atan2f},
     {"sdk_atanf", addr::sdk_atanf},
+    {"sdk_cleanup_r", addr::sdk_cleanup_r},
+    {"sdk_close", addr::sdk_close},
+    {"sdk_close_r", addr::sdk_close_r},
     {"sdk_construct_array", addr::sdk_construct_array},
     {"sdk_construct_new_array", addr::sdk_construct_new_array},
     {"sdk_copysign", addr::sdk_copysign},
@@ -3587,12 +3606,16 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"sdk_fptosi", addr::sdk_fptosi},
     {"sdk_fptoui", addr::sdk_fptoui},
     {"sdk_frombcd", addr::sdk_frombcd},
+    {"sdk_fwalk", addr::sdk_fwalk},
     {"sdk_index", addr::sdk_index},
     {"sdk_initialize_cpp_rts", addr::sdk_initialize_cpp_rts},
     {"sdk_kCopyA", addr::sdk_kCopyA},
     {"sdk_kCopyB", addr::sdk_kCopyB},
     {"sdk_kFindAddress", addr::sdk_kFindAddress},
+    {"sdk_kernel_Exit", addr::sdk_kernel_Exit},
     {"sdk_litodp", addr::sdk_litodp},
+    {"sdk_lseek", addr::sdk_lseek},
+    {"sdk_lseek_r", addr::sdk_lseek_r},
     {"sdk_memalign", addr::sdk_memalign},
     {"sdk_mw_DeleteArray", addr::sdk_mw_DeleteArray},
     {"sdk_mw_NewArray", addr::sdk_mw_NewArray},
@@ -3600,6 +3623,7 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"sdk_operator_delete", addr::sdk_operator_delete},
     {"sdk_operator_new", addr::sdk_operator_new},
     {"sdk_pow", addr::sdk_pow},
+    {"sdk_read_r", addr::sdk_read_r},
     {"sdk_scalbn", addr::sdk_scalbn},
     {"sdk_sceGifPkCnt", addr::sdk_sceGifPkCnt},
     {"sdk_sceGifPkEnd", addr::sdk_sceGifPkEnd},
@@ -3639,18 +3663,23 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"sdk_sceVu0UnitMatrix", addr::sdk_sceVu0UnitMatrix},
     {"sdk_scf_BcdToTime", addr::sdk_scf_BcdToTime},
     {"sdk_scf_TimeToBcd", addr::sdk_scf_TimeToBcd},
+    {"sdk_sclose", addr::sdk_sclose},
     {"sdk_sinf", addr::sdk_sinf},
     {"sdk_sprintf", addr::sdk_sprintf},
     {"sdk_sqrt", addr::sdk_sqrt},
     {"sdk_sqrtf", addr::sdk_sqrtf},
+    {"sdk_sread", addr::sdk_sread},
+    {"sdk_sseek", addr::sdk_sseek},
     {"sdk_start", addr::sdk_start},
     {"sdk_std", addr::sdk_std},
     {"sdk_strcspn", addr::sdk_strcspn},
     {"sdk_subdate", addr::sdk_subdate},
     {"sdk_subhour", addr::sdk_subhour},
     {"sdk_supplement_crt0", addr::sdk_supplement_crt0},
+    {"sdk_swrite", addr::sdk_swrite},
     {"sdk_tobcd", addr::sdk_tobcd},
     {"sdk_toupper", addr::sdk_toupper},
+    {"sdk_write_r", addr::sdk_write_r},
 };
 
 // Ported (src/port/).
@@ -5247,6 +5276,19 @@ void sdk_std(GuestPtr<void> stream, int flags, int descriptor, GuestPtr<void> ow
 void sdk___sinit(GuestPtr<void> reentrancy);
 int sdk_sprintf(GuestPtr<char> destination, GuestPtr<char> format, uint64_t a2, uint64_t a3, uint64_t t0, uint64_t t1, uint64_t t2, uint64_t t3, uint64_t stack0, uint64_t stack1);
 void StaticInit_EventQueue();
+int sdk_sread(GuestPtr<void> stream, GuestPtr<char> buffer, int count);
+int sdk_swrite(GuestPtr<void> stream, GuestPtr<char> buffer, int count);
+int sdk_sseek(GuestPtr<void> stream, int offset, int whence);
+int sdk_sclose(GuestPtr<void> stream);
+int sdk_read_r(GuestPtr<void> reentrancy, int descriptor, GuestPtr<char> buffer, int count);
+int sdk_write_r(GuestPtr<void> reentrancy, int descriptor, GuestPtr<char> buffer, int count);
+int sdk_lseek_r(GuestPtr<void> reentrancy, int descriptor, int offset, int whence);
+int sdk_close_r(GuestPtr<void> reentrancy, int descriptor);
+int sdk_close(int descriptor);
+int sdk_lseek(int descriptor, int offset, int whence);
+int sdk_fwalk(GuestPtr<void> reentrancy, uint32_t function);
+int sdk_cleanup_r(GuestPtr<void> reentrancy);
+void sdk_kernel_Exit(int status);
 
 // Not ported yet: the generated function, through the runtime's function table.
 }
