@@ -1309,6 +1309,32 @@ struct TalkConv {
     uint8_t unk_2E4[0x224];
 };
 
+// ---- 25_sdk.h
+/* Structures of the SDK libraries that the platform layer (src/port/platform/) works on. */
+
+struct GifPacket;
+struct GsDrawEnv;
+
+/* The state of a GIF packet being built (libpkt, 0x10 bytes): words are written at the cursor, a DMA tag and a GIF tag can be open. */
+struct GifPacket {
+    GuestPtr<uint32_t> cursor;          /* +0x00 where the next word goes */
+    GuestPtr<uint32_t> base;            /* +0x04 the start of the buffer, which a reset goes back to */
+    GuestPtr<uint32_t> dmaTag;          /* +0x08 the open DMA tag (0 = none): its quadword count is added when the packet moves on */
+    GuestPtr<uint32_t> gifTag;          /* +0x0C the open GIF tag */
+};
+
+/* The part of a GS drawing environment (libgraph, one context) that the half pixel offset touches: the registers are 64 bit words
+   followed by the address of the register they go to. The environment goes on after the scissor. */
+struct GsDrawEnv {
+    uint64_t frame;            /* +0x00 */
+    uint64_t frameAddress;     /* +0x08 */
+    uint64_t zbuf;             /* +0x10 */
+    uint64_t zbufAddress;      /* +0x18 */
+    uint64_t xyoffset;         /* +0x20 the drawing offset, 12.4 fixed point: x in bits 0 to 15, y in bits 32 to 47 */
+    uint64_t xyoffsetAddress;  /* +0x28 */
+    uint64_t scissor;          /* +0x30 the drawing area: x1 in bits 16 to 26, y1 in bits 48 to 58 */
+};
+
 // ---- 30_app.h
 /* The application object: what mm_Main builds on its stack and mm_MainLoop drives. */
 
@@ -2088,6 +2114,17 @@ static_assert(offsetof(TalkConv, menu) == 0x2D4, "TalkConv.menu");
 static_assert(offsetof(TalkConv, panel) == 0x2D8, "TalkConv.panel");
 static_assert(offsetof(TalkConv, nameEntry) == 0x2DC, "TalkConv.nameEntry");
 static_assert(offsetof(TalkConv, card) == 0x2E0, "TalkConv.card");
+static_assert(offsetof(GifPacket, cursor) == 0x00, "GifPacket.cursor");
+static_assert(offsetof(GifPacket, base) == 0x04, "GifPacket.base");
+static_assert(offsetof(GifPacket, dmaTag) == 0x08, "GifPacket.dmaTag");
+static_assert(offsetof(GifPacket, gifTag) == 0x0C, "GifPacket.gifTag");
+static_assert(offsetof(GsDrawEnv, frame) == 0x00, "GsDrawEnv.frame");
+static_assert(offsetof(GsDrawEnv, frameAddress) == 0x08, "GsDrawEnv.frameAddress");
+static_assert(offsetof(GsDrawEnv, zbuf) == 0x10, "GsDrawEnv.zbuf");
+static_assert(offsetof(GsDrawEnv, zbufAddress) == 0x18, "GsDrawEnv.zbufAddress");
+static_assert(offsetof(GsDrawEnv, xyoffset) == 0x20, "GsDrawEnv.xyoffset");
+static_assert(offsetof(GsDrawEnv, xyoffsetAddress) == 0x28, "GsDrawEnv.xyoffsetAddress");
+static_assert(offsetof(GsDrawEnv, scissor) == 0x30, "GsDrawEnv.scissor");
 static_assert(offsetof(App, vtable) == 0x00, "App.vtable");
 static_assert(offsetof(Game, vtable) == 0x00, "Game.vtable");
 static_assert(offsetof(Game, state) == 0x04, "Game.state");

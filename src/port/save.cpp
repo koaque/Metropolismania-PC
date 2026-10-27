@@ -1169,7 +1169,7 @@ namespace mm
     // break position, the background transparency, three light directions, three light colours and the ambient colour, the title
     // (0x44 bytes, `title`) and the three icon file names) is built in the static buffer at 0x1F65F0 (0x3C4 bytes) and queued as three
     // requests on the card queue: open icon.sys for writing (port `port`; the file number comes back at 0x1BDCDC), then, when that is
-    // done (the queue is pumped meanwhile, with the usual atanf pause), write the buffer and close the file with its result at
+    // done (the queue is pumped meanwhile, with the original's atanf pause as a checkpoint), write the buffer and close the file with its result at
     // `result`. The result is the queue position after the close.
     int McSave_WriteIconSys(int queue, int port, int title, int result)
     {
@@ -1194,7 +1194,7 @@ namespace mm
         while (McQueue_IsDone(queue, opened) == 0)
         {
             McQueue_Pump();
-            sdk::atanf(ps2f(1.0f));
+            port::checkpoint();
         }
         const int fd = port::load<int32_t>(kFileNumber);
         McQueue_Write(0, fd, static_cast<int>(kImage), 0x3C4, GuestPtr<int32_t>{0});

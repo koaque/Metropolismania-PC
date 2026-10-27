@@ -12,7 +12,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 ### crt0
 
-3 functions (named 3). Blocks: 1 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+3 functions (named 2, ported 1). Blocks: 1 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -22,7 +22,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 ### libc
 
-32 functions (named 32). Blocks: 6 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+32 functions (named 27, verified 5). Blocks: 6 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -86,7 +86,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 ### libgcc
 
-1 functions (named 1). Blocks: 0 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+1 functions (ported 1). Blocks: 0 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -94,7 +94,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 ### libgraph
 
-3 functions (named 3). Blocks: 0 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+3 functions (named 1, verified 2). Blocks: 0 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -104,7 +104,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 ### libkernl
 
-92 functions (named 92). Blocks: 9 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+92 functions (named 87, verified 5). Blocks: 9 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -203,7 +203,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 ### libm
 
-9 functions (named 9). Blocks: 0 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+9 functions (named 2, ported 7). Blocks: 0 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -219,7 +219,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 ### libmpeg
 
-16 functions (named 16). Blocks: 5 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+16 functions (named 13, verified 3). Blocks: 5 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -242,7 +242,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 ### libpkt
 
-8 functions (named 8). Blocks: 0 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+8 functions (verified 8). Blocks: 0 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -257,7 +257,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 ### libscf
 
-2 functions (named 2). Blocks: 0 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+2 functions (verified 2). Blocks: 0 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -266,7 +266,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 ### libsif
 
-13 functions (named 13). Blocks: 7 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+13 functions (named 11, verified 2). Blocks: 7 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -294,7 +294,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 ### libvu0
 
-3 functions (named 3). Blocks: 0 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+3 functions (verified 3). Blocks: 0 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -304,7 +304,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 ### mwcpp
 
-1 functions (named 1). Blocks: 1 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+1 functions (verified 1). Blocks: 1 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -312,7 +312,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 ### mwrt
 
-15 functions (named 15). Blocks: 8 can reach a thread switch, 1 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+15 functions (named 10, verified 5). Blocks: 8 can reach a thread switch, 1 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -334,7 +334,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 ### signature-scan
 
-558 functions (named 558). Blocks: 223 can reach a thread switch, 18 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+558 functions (named 496, ported 22, verified 40). Blocks: 223 can reach a thread switch, 18 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|

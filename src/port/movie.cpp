@@ -1530,7 +1530,7 @@ namespace mm
         Movie_VoBufReset(static_cast<int>(kVideoOut));
         Movie_DecodeLoop(videoDec);
         while (port::load<int32_t>(kVideoOut + 0xCu) != 0)
-            sdk::atanf(ps2f(1.0f)); // the original spins here; this gives the other threads the processor as a checkpoint would
+            port::checkpoint(); // the original spins here (calling atanf); the checkpoint gives the other threads the processor
         port::store<int32_t>(static_cast<uint32_t>(videoDec) + 0xA8u, 3);
     }
 
@@ -2107,7 +2107,7 @@ namespace mm
         Movie_VoBufCreate(GuestPtr<uint32_t>{kVideoOut}, static_cast<int>((0x00215FC0u & 0x0FFFFFFFu) | 0x20000000u), 0x0046DFC0, 2);
         const uint32_t param = sp + 0x70u;
         const uint32_t gpValue = static_cast<uint32_t>(port::gpr64(port::g_call.ctx, 28));
-        port::store<uint32_t>(sp + 0x74u, 0x0019E040u);
+        port::store<uint32_t>(sp + 0x74u, addr::Movie_IdleThread);
         port::store<uint32_t>(sp + 0x78u, 0x00634400u);
         port::store<uint32_t>(sp + 0x7Cu, 0x800);
         port::store<uint32_t>(sp + 0x84u, 1);
@@ -2184,7 +2184,19 @@ namespace mm
         return 1;
     }
 
+    // The movie's idle thread (the second thread Movie_InitAll starts, stack 0x634400): it gives the processor away for ever. The
+    // recompiled loop counted 32 cycles at its back branch.
+    void Movie_IdleThread()
+    {
+        for (;;)
+        {
+            sdk::RotateThreadReadyQueue(1);
+            port::checkpoint();
+        }
+    }
+
     PORT_FN(Movie_ClearScreen);
+    PORT_FN(Movie_IdleThread);
     PORT_FN(Movie_VblankHandler);
     PORT_FN(Movie_PlayPss);
     PORT_FN(Movie_InitAll);

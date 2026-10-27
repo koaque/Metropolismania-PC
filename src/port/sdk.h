@@ -1,13 +1,29 @@
-// Sony SDK routines that game code calls (libc, libvu0). Ported code reaches them through the recompiled SDK
-// code, so they behave exactly as in the original (overlapping copies, VU0 registers) until plan step P7
-// ports the SDK. Addresses are for SLUS_203.77 (AGENTS.md rule 4); names come from the SDK signature scan.
+// Sony SDK routines that game code calls (libc, libm, libvu0, the kernel and the I/O libraries). The ones written natively in
+// src/port/platform/ (plan P7) are called directly by these wrappers; the others are handlers of the runtime library, which ported
+// code reaches through port::callGuest at the original function's address. Addresses are for SLUS_203.77 (AGENTS.md rule 4);
+// names come from the SDK signature scan.
 
 #pragma once
 
 #include "abi.h"
 
+#include <functional>
+#include <type_traits>
+#include "game_functions.h" // the platform layer's functions (sdk_<name>, config/platform_signatures.txt)
+
 namespace mm::sdk
 {
+    // Calls the native platform function `Native` (at `Address` in the game), or, when MMPC_SDK_ORIGINAL names it, the recompiled
+    // function it replaces: a way to compare the two in a live run when a native function is suspected.
+    template <auto Native, uint32_t Address, typename... Args>
+    inline auto route(Args... args)
+    {
+        using R = std::invoke_result_t<decltype(Native), Args...>;
+        if (port::sdkOriginalRequested(Address))
+            return port::callOriginal<R>(Address, args...);
+        return Native(args...);
+    }
+
     namespace addr
     {
         inline constexpr uint32_t abs = 0x0011E810u;
@@ -179,48 +195,53 @@ namespace mm::sdk
     }
 
     // libm.
-    inline ps2f acosf(ps2f x) { return port::callGuest<ps2f>(addr::acosf, x); }
-    inline ps2f atan2f(ps2f y, ps2f x) { return port::callGuest<ps2f>(addr::atan2f, y, x); }
-    inline ps2f fmodf(ps2f x, ps2f y) { return port::callGuest<ps2f>(addr::fmodf, x, y); }
-    inline ps2f cosf(ps2f x) { return port::callGuest<ps2f>(addr::cosf, x); }
-    inline ps2f sinf(ps2f x) { return port::callGuest<ps2f>(addr::sinf, x); }
-    inline ps2f sqrtf(ps2f x) { return port::callGuest<ps2f>(addr::sqrtf, x); }
+    inline ps2f acosf(ps2f x) { return route<&sdk_acosf, mm::addr::sdk_acosf>(x); }
+    inline ps2f atan2f(ps2f y, ps2f x) { return route<&sdk_atan2f, mm::addr::sdk_atan2f>(y, x); }
+    inline ps2f fmodf(ps2f x, ps2f y) { return route<&sdk_fmodf, mm::addr::sdk_fmodf>(x, y); }
+    inline ps2f cosf(ps2f x) { return route<&sdk_cosf, mm::addr::sdk_cosf>(x); }
+    inline ps2f sinf(ps2f x) { return route<&sdk_sinf, mm::addr::sdk_sinf>(x); }
+    inline ps2f sqrtf(ps2f x) { return route<&sdk_sqrtf, mm::addr::sdk_sqrtf>(x); }
 
     // Float to int conversion helper of the compiler runtime.
-    inline int fptosi(ps2f value) { return port::callGuest<int>(addr::fptosi, value); }
+    inline int fptosi(ps2f value) { return route<&sdk_fptosi, mm::addr::sdk_fptosi>(value); }
     // Doubles are soft-float, each in one 64-bit register: unsigned to double, pow, double to int.
-    inline uint64_t d_utod(uint32_t value) { return port::callGuest<uint64_t>(addr::d_utod, value); }
-    inline uint64_t pow(uint64_t x, uint64_t y) { return port::callGuest<uint64_t>(addr::pow, x, y); }
-    inline int dptoli(uint64_t value) { return port::callGuest<int>(addr::dptoli, value); }
-    inline uint32_t fptoui(ps2f value) { return port::callGuest<uint32_t>(addr::fptoui, value); }
+    inline uint64_t d_utod(uint32_t value) { return route<&sdk_d_utod, mm::addr::sdk_d_utod>(value); }
+    inline uint64_t pow(uint64_t x, uint64_t y) { return route<&sdk_pow, mm::addr::sdk_pow>(x, y); }
+    inline int dptoli(uint64_t value) { return route<&sdk_dptoli, mm::addr::sdk_dptoli>(value); }
+    inline uint32_t fptoui(ps2f value) { return static_cast<uint32_t>(route<&sdk_fptoui, mm::addr::sdk_fptoui>(value)); }
     // The compiler runtime's soft doubles: float to double, absolute value, and "less than" (1 or 0).
-    inline uint64_t fptodp(ps2f value) { return port::callGuest<uint64_t>(addr::fptodp, value); }
-    inline uint64_t fabs(uint64_t value) { return port::callGuest<uint64_t>(addr::fabs, value); }
-    inline int64_t fpLtdf2(uint64_t a, uint64_t b) { return port::callGuest<int64_t>(addr::fpLtdf2, a, b); }
-    // Double addition and multiplication, and double to float (the result in f0).
-    inline uint64_t dpadd(uint64_t a, uint64_t b) { return port::callGuest<uint64_t>(addr::dpadd, a, b); }
-    inline uint64_t dpmul(uint64_t a, uint64_t b) { return port::callGuest<uint64_t>(addr::dpmul, a, b); }
-    inline ps2f dptofp(uint64_t value) { return port::callGuest<ps2f>(addr::dptofp, value); }
+    inline uint64_t fptodp(ps2f value) { return route<&sdk_fptodp, mm::addr::sdk_fptodp>(value); }
+    // The runtime's stand-in for the double fabs (0x119990) reads f12 as a float and leaves v0 alone, so on a soft double it returns the
+    // value the conversion before it left in v0: the argument itself, not its absolute value. Kept as it is, so that the game does what
+    // it does today (docs/PLATFORM_FINDINGS.md); a correct fabs would clear the sign bit.
+    inline uint64_t fabs(uint64_t value) { return value; }
+    inline int64_t fpLtdf2(uint64_t a, uint64_t b) { return route<&sdk_fp_ltdf2, mm::addr::sdk_fp_ltdf2>(a, b); }
+    // Double addition, multiplication, division and comparison, and double to float (the result in f0).
+    inline uint64_t dpadd(uint64_t a, uint64_t b) { return route<&sdk_dpadd, mm::addr::sdk_dpadd>(a, b); }
+    inline uint64_t dpmul(uint64_t a, uint64_t b) { return route<&sdk_dpmul, mm::addr::sdk_dpmul>(a, b); }
+    inline uint64_t dpdiv(uint64_t a, uint64_t b) { return route<&sdk_dpdiv, mm::addr::sdk_dpdiv>(a, b); }
+    inline int dpcmp(uint64_t a, uint64_t b) { return route<&sdk_dpcmp, mm::addr::sdk_dpcmp>(a, b); }
+    inline ps2f dptofp(uint64_t value) { return route<&sdk_dptofp, mm::addr::sdk_dptofp>(value); }
 
     // Writes back and invalidates the caches (0: the data cache), which a DMA out of main memory needs first.
     inline void FlushCache(int mode) { port::callGuest<void>(addr::FlushCache, mode); }
 
     // The GIF packet builder of libgraph (`pk` is the packet structure's address): the game calls Cnt and End with three zero
     // arguments after the packet, Ref with a count of quadwords and three zeros, and gives OpenGifTag the whole 16-byte tag.
-    inline void sceGifPkInit(uint32_t pk, uint32_t address) { port::callGuest<void>(addr::sceGifPkInit, pk, address); }
-    inline void sceGifPkReset(uint32_t pk) { port::callGuest<void>(addr::sceGifPkReset, pk); }
-    inline void sceGifPkTerminate(uint32_t pk) { port::callGuest<void>(addr::sceGifPkTerminate, pk); }
-    inline void sceGifPkCnt(uint32_t pk) { port::callGuest<void>(addr::sceGifPkCnt, pk, 0, 0, 0); }
-    inline void sceGifPkRef(uint32_t pk, uint32_t address, int qwc) { port::callGuest<void>(addr::sceGifPkRef, pk, address, qwc, 0, 0, 0); }
-    inline void sceGifPkEnd(uint32_t pk) { port::callGuest<void>(addr::sceGifPkEnd, pk, 0, 0, 0); }
-    inline uint32_t sceGifPkReserve(uint32_t pk, int qwc) { return port::callGuest<uint32_t>(addr::sceGifPkReserve, pk, qwc); }
-    inline void sceGifPkOpenGifTag(uint32_t pk, port::Quad tag) { port::callGuest<void>(addr::sceGifPkOpenGifTag, pk, tag); }
+    inline void sceGifPkInit(uint32_t pk, uint32_t address) { route<&sdk_sceGifPkInit, mm::addr::sdk_sceGifPkInit>(GuestPtr<GifPacket>{pk}, GuestPtr<uint32_t>{address}); }
+    inline void sceGifPkReset(uint32_t pk) { route<&sdk_sceGifPkReset, mm::addr::sdk_sceGifPkReset>(GuestPtr<GifPacket>{pk}); }
+    inline void sceGifPkTerminate(uint32_t pk) { route<&sdk_sceGifPkTerminate, mm::addr::sdk_sceGifPkTerminate>(GuestPtr<GifPacket>{pk}); }
+    inline void sceGifPkCnt(uint32_t pk) { route<&sdk_sceGifPkCnt, mm::addr::sdk_sceGifPkCnt>(GuestPtr<GifPacket>{pk}, 0, 0, 0); }
+    inline void sceGifPkRef(uint32_t pk, uint32_t address, int qwc) { route<&sdk_sceGifPkRef, mm::addr::sdk_sceGifPkRef>(GuestPtr<GifPacket>{pk}, address, static_cast<uint32_t>(qwc), 0, 0, 0); }
+    inline void sceGifPkEnd(uint32_t pk) { route<&sdk_sceGifPkEnd, mm::addr::sdk_sceGifPkEnd>(GuestPtr<GifPacket>{pk}, 0, 0, 0); }
+    inline uint32_t sceGifPkReserve(uint32_t pk, int qwc) { return route<&sdk_sceGifPkReserve, mm::addr::sdk_sceGifPkReserve>(GuestPtr<GifPacket>{pk}, qwc).address; }
+    inline void sceGifPkOpenGifTag(uint32_t pk, port::Quad tag) { route<&sdk_sceGifPkOpenGifTag, mm::addr::sdk_sceGifPkOpenGifTag>(GuestPtr<GifPacket>{pk}, tag); }
     inline void sceGifPkCloseGifTag(uint32_t pk) { port::callGuest<void>(addr::sceGifPkCloseGifTag, pk); }
     inline void sceGifPkAddGsAD(uint32_t pk, int reg, uint64_t data) { port::callGuest<void>(addr::sceGifPkAddGsAD, pk, reg, data); }
 
     // Kernel: interrupts off and on, and semaphores (the parameter block's address; the id).
-    inline int DIntr() { return port::callGuest<int>(addr::DIntr); }
-    inline int EIntr() { return port::callGuest<int>(addr::EIntr); }
+    inline int DIntr() { return route<&sdk_DIntr, mm::addr::sdk_DIntr>(); }
+    inline int EIntr() { return route<&sdk_EIntr, mm::addr::sdk_EIntr>(); }
     inline int CreateSema(uint32_t param) { return port::callGuest<int>(addr::CreateSema, param); }
     inline int DeleteSema(int sema) { return port::callGuest<int>(addr::DeleteSema, sema); }
     // The SIF DMA to the IOP: the transfer descriptors' address and count give an id, whose status is negative once done.
@@ -231,28 +252,28 @@ namespace mm::sdk
     {
         return port::callGuest<int>(addr::sceMpegAddStrCallback, mpeg, stream, id, function, argument);
     }
-    inline int sceMpegDelete(int mpeg) { return port::callGuest<int>(addr::sceMpegDelete, mpeg); }
+    inline int sceMpegDelete(int mpeg) { return route<&sdk_sceMpegDelete, mm::addr::sdk_sceMpegDelete>(mpeg); }
 
     // libc: the guest addresses of the buffers.
     inline uint32_t memcpy(uint32_t dst, uint32_t src, int size) { return port::callGuest<uint32_t>(addr::memcpy, dst, src, size); }
     inline uint32_t memmove(uint32_t dst, uint32_t src, int size) { return port::callGuest<uint32_t>(addr::memmove, dst, src, size); }
     inline uint32_t memset(uint32_t dst, int value, int size) { return port::callGuest<uint32_t>(addr::memset, dst, value, size); }
     inline int strcmp(uint32_t a, uint32_t b) { return port::callGuest<int>(addr::strcmp, a, b); }
-    inline int abs(int value) { return port::callGuest<int>(addr::abs, value); }
+    inline int abs(int value) { return route<&sdk_abs, mm::addr::sdk_abs>(value); }
     inline uint32_t strcpy(uint32_t dst, uint32_t src) { return port::callGuest<uint32_t>(addr::strcpy, dst, src); }
     inline uint32_t strcat(uint32_t dst, uint32_t src) { return port::callGuest<uint32_t>(addr::strcat, dst, src); }
-    inline ps2f atanf(ps2f x) { return port::callGuest<ps2f>(addr::atanf, x); }
+    inline ps2f atanf(ps2f x) { return route<&sdk_atanf, mm::addr::sdk_atanf>(x); }
     inline uint32_t malloc(uint32_t size) { return port::callGuest<uint32_t>(addr::malloc, size); }
     inline void free(uint32_t block) { port::callGuest<void>(addr::free, block); }
-    inline void operator_delete(uint32_t object) { port::callGuest<void>(addr::operator_delete, object); }
+    inline void operator_delete(uint32_t object) { route<&sdk_operator_delete, mm::addr::sdk_operator_delete>(GuestPtr<void>{object}); }
     // operator new (0 when the allocation fails is not expected), and the compiler runtime's array new and delete.
-    inline uint32_t operator_new(uint32_t size) { return port::callGuest<uint32_t>(addr::operator_new, size); }
-    inline uint32_t mw_NewArray(uint32_t size) { return port::callGuest<uint32_t>(addr::mw_NewArray, size); }
-    inline void mw_DeleteArray(uint32_t block) { port::callGuest<void>(addr::mw_DeleteArray, block); }
+    inline uint32_t operator_new(uint32_t size) { return route<&sdk_operator_new, mm::addr::sdk_operator_new>(size).address; }
+    inline uint32_t mw_NewArray(uint32_t size) { return route<&sdk_mw_NewArray, mm::addr::sdk_mw_NewArray>(size).address; }
+    inline void mw_DeleteArray(uint32_t block) { route<&sdk_mw_DeleteArray, mm::addr::sdk_mw_DeleteArray>(GuestPtr<void>{block}); }
     // Constructs `count` elements of `elementSize` bytes in the block with the constructor at `ctor` (and registers `dtor`).
     inline uint32_t construct_new_array(uint32_t block, uint32_t ctor, uint32_t dtor, uint32_t elementSize, uint32_t count)
     {
-        return port::callGuest<uint32_t>(addr::construct_new_array, block, ctor, dtor, elementSize, count);
+        return route<&sdk_construct_new_array, mm::addr::sdk_construct_new_array>(GuestPtr<void>{block}, GuestPtr<void>{ctor}, GuestPtr<void>{dtor}, elementSize, count).address;
     }
     // Waits for the GS paths (mode 0, timeout 0: until the transfers are done).
     inline int sceGsSyncPath(int mode, int timeout) { return port::callGuest<int>(addr::sceGsSyncPath, mode, timeout); }
@@ -260,12 +281,16 @@ namespace mm::sdk
     inline int sceMcInit() { return port::callGuest<int>(addr::sceMcInit); }
     // The console's clock in local time: `clock` is the 8 bytes of status, second, minute, hour, padding, day, month and year (each a BCD
     // byte, the year without its century), which the call converts from the BIOS clock's time zone.
-    inline int sceScfGetLocalTimefromRTC(uint32_t clock) { return port::callGuest<int>(addr::sceScfGetLocalTimefromRTC, clock); }
+    inline int sceScfGetLocalTimefromRTC(uint32_t clock)
+    {
+        route<&sdk_sceScfGetLocalTimefromRTC, mm::addr::sdk_sceScfGetLocalTimefromRTC>(GuestPtr<uint8_t>{clock});
+        return 0;
+    }
     // Starts the RPC layer (mode 0), and binds the client at `client` to the IOP server `number` (negative when the server is not there yet).
     inline void sceSifInitRpc(int mode) { port::callGuest<void>(addr::sceSifInitRpc, mode); }
     inline int sceSifBindRpc(uint32_t client, int number, int mode) { return port::callGuest<int>(addr::sceSifBindRpc, client, number, mode); }
     // libc's aligned allocation, and the channel, display and draw environment calls of libdma and libgraph.
-    inline uint32_t memalign(int alignment, int size) { return port::callGuest<uint32_t>(addr::memalign, alignment, size); }
+    inline uint32_t memalign(int alignment, int size) { return route<&sdk_memalign, mm::addr::sdk_memalign>(alignment, size).address; }
     inline int sceDmaGetChan(int channel) { return port::callGuest<int>(addr::sceDmaGetChan, channel); }
     inline void sceGsSetDefDrawEnv(uint32_t env, int psm, int width, int height, int ztest, int zpsm)
     {
@@ -295,7 +320,11 @@ namespace mm::sdk
     template <typename... Args>
     inline int sprintf(uint32_t dst, uint32_t format, Args... args)
     {
-        return port::callGuest<int>(addr::sprintf, dst, format, args...);
+        static_assert(sizeof...(Args) <= 8, "sprintf: the native takes eight variadic arguments at most");
+        uint64_t slots[8] = {};
+        size_t next = 0;
+        ((slots[next++] = port::toGuestInt(args)), ...);
+        return route<&sdk_sprintf, mm::addr::sdk_sprintf>(GuestPtr<char>{dst}, GuestPtr<char>{format}, slots[0], slots[1], slots[2], slots[3], slots[4], slots[5], slots[6], slots[7]);
     }
     // The kernel's file calls (the runtime's file I/O; descriptors are small non-negative ints, errors are negative).
     inline int sceOpen(uint32_t path, int flags) { return port::callGuest<int>(addr::sceOpen, path, flags); }
@@ -306,7 +335,7 @@ namespace mm::sdk
     inline int64_t sceCdDiskReady(int mode) { return port::callGuest<int64_t>(addr::sceCdDiskReady, mode); }
     inline int strlen(uint32_t s) { return port::callGuest<int>(addr::strlen, s); }
     inline int strncmp(uint32_t a, uint32_t b, int count) { return port::callGuest<int>(addr::strncmp, a, b, count); }
-    inline int strcspn(uint32_t s, uint32_t reject) { return port::callGuest<int>(addr::strcspn, s, reject); }
+    inline int strcspn(uint32_t s, uint32_t reject) { return static_cast<int>(route<&sdk_strcspn, mm::addr::sdk_strcspn>(GuestPtr<char>{s}, GuestPtr<char>{reject})); }
 
     // Kernel calls through the SDK's syscall stubs: semaphores (the id the game keeps), and a yield of the thread's priority level.
     inline int WaitSema(int sema) { return port::callGuest<int>(addr::WaitSema, sema); }
@@ -323,43 +352,45 @@ namespace mm::sdk
     inline int RemoveIntcHandler(int cause, int id) { return port::callGuest<int>(addr::RemoveIntcHandler, cause, id); }
     inline int AddDmacHandler(int channel, uint32_t handler, int next) { return port::callGuest<int>(addr::AddDmacHandler, channel, handler, next); }
     inline int RemoveDmacHandler(int channel, int id) { return port::callGuest<int>(addr::RemoveDmacHandler, channel, id); }
-    inline int EnableIntc(int cause) { return port::callGuest<int>(addr::EnableIntc, cause); }
-    inline int DisableIntc(int cause) { return port::callGuest<int>(addr::DisableIntc, cause); }
-    inline int EnableDmac(int channel) { return port::callGuest<int>(addr::EnableDmac, channel); }
-    inline int DisableDmac(int channel) { return port::callGuest<int>(addr::DisableDmac, channel); }
+    inline int EnableIntc(int cause) { return route<&sdk_EnableIntc, mm::addr::sdk_EnableIntc>(cause); }
+    inline int DisableIntc(int cause) { return route<&sdk_DisableIntc, mm::addr::sdk_DisableIntc>(cause); }
+    inline int EnableDmac(int channel) { return route<&sdk_EnableDmac, mm::addr::sdk_EnableDmac>(channel); }
+    inline int DisableDmac(int channel) { return route<&sdk_DisableDmac, mm::addr::sdk_DisableDmac>(channel); }
     // The MPEG library: set-up, demux of a PSS buffer into the stream callbacks (the ring is the one the data lies in), decoding of one
     // picture, the end test and the reset.
     inline int sceMpegInit() { return port::callGuest<int>(addr::sceMpegInit); }
     inline int sceMpegDemuxPssRing(int mpeg, int data, int size, int ring, int ringSize) { return port::callGuest<int>(addr::sceMpegDemuxPssRing, mpeg, data, size, ring, ringSize); }
     inline int sceMpegGetPicture(int mpeg, int destination, int macroblocks) { return port::callGuest<int>(addr::sceMpegGetPicture, mpeg, destination, macroblocks); }
-    inline int64_t sceMpegIsEnd(int mpeg) { return port::callGuest<int64_t>(addr::sceMpegIsEnd, mpeg); }
+    inline int64_t sceMpegIsEnd(int mpeg) { return route<&sdk_sceMpegIsEnd, mm::addr::sdk_sceMpegIsEnd>(mpeg); }
     inline int sceMpegReset(int mpeg) { return port::callGuest<int>(addr::sceMpegReset, mpeg); }
-    inline int sceSdRemoteInit() { return port::callGuest<int>(addr::sceSdRemoteInit); }
+    inline int sceSdRemoteInit() { return route<&sdk_sceSdRemoteInit, mm::addr::sdk_sceSdRemoteInit>(); }
     // The double-buffered display of the movie player's graphics environments.
     inline void sceGsSetDefDBuffDc(uint32_t buffer, int psm, int width, int height, int ztest, int zpsm, int clear)
     {
         port::callGuest<void>(addr::sceGsSetDefDBuffDc, buffer, psm, width, height, ztest, zpsm, clear);
     }
-    inline void sceGsSetHalfOffset(uint32_t environment, int centreX, int centreY, int field) { port::callGuest<void>(addr::sceGsSetHalfOffset, environment, centreX, centreY, field); }
-    inline void sceGsSetHalfOffset2(uint32_t environment, int centreX, int centreY, int field) { port::callGuest<void>(addr::sceGsSetHalfOffset2, environment, centreX, centreY, field); }
+    inline void sceGsSetHalfOffset(uint32_t environment, int centreX, int centreY, int field) { route<&sdk_sceGsSetHalfOffset, mm::addr::sdk_sceGsSetHalfOffset>(GuestPtr<GsDrawEnv>{environment}, centreX, centreY, field); }
+    inline void sceGsSetHalfOffset2(uint32_t environment, int centreX, int centreY, int field) { route<&sdk_sceGsSetHalfOffset2, mm::addr::sdk_sceGsSetHalfOffset2>(GuestPtr<GsDrawEnv>{environment}, centreX, centreY, field); }
     inline void sceGsSwapDBuffDc(uint32_t buffer, int field) { port::callGuest<void>(addr::sceGsSwapDBuffDc, buffer, field); }
     // The sound driver's remote call on the IOP: a command and up to five more words; the 64-bit result is the driver's.
     template <typename... Args>
     inline int64_t sceSdRemote(int mode, int command, Args... args)
     {
-        return port::callGuest<int64_t>(addr::sceSdRemote, mode, command, args...);
+        static_assert(sizeof...(Args) <= 6, "the library copies six argument words");
+        const uint32_t words[6] = {static_cast<uint32_t>(args)...};
+        return route<&sdk_sceSdRemote, mm::addr::sdk_sceSdRemote>(mode, command, words[0], words[1], words[2], words[3], words[4], words[5]);
     }
     // IOP memory through the SIF: allocation returns the IOP address (0 or negative on failure).
     inline uint32_t sceSifAllocSysMemory(int mode, int size) { return port::callGuest<uint32_t>(addr::sceSifAllocSysMemory, mode, size); }
-    inline int sceSifFreeSysMemory(uint32_t block) { return port::callGuest<int>(addr::sceSifFreeSysMemory, block); }
+    inline int sceSifFreeSysMemory(uint32_t block) { return route<&sdk_sceSifFreeSysMemory, mm::addr::sdk_sceSifFreeSysMemory>(block); }
     inline int sceSifAllocIopHeap(int size) { return port::callGuest<int>(addr::sceSifAllocIopHeap, size); }
     // Waits for the next vertical sync of the given kind and returns the field now shown.
     inline int64_t sceGsSyncV(int mode) { return port::callGuest<int64_t>(addr::sceGsSyncV, mode); }
     // libc: the first occurrence of a character in a string (the address, 0 when absent), bounded copy, and upper case.
-    inline uint32_t index(uint32_t string, int character) { return port::callGuest<uint32_t>(addr::index, string, character); }
+    inline uint32_t index(uint32_t string, int character) { return route<&sdk_index, mm::addr::sdk_index>(GuestPtr<char>{string}, character).address; }
     inline uint32_t strchr(uint32_t string, int character) { return port::callGuest<uint32_t>(addr::strchr, string, character); }
     inline uint32_t strncpy(uint32_t dst, uint32_t src, int count) { return port::callGuest<uint32_t>(addr::strncpy, dst, src, count); }
-    inline int toupper(int character) { return port::callGuest<int>(addr::toupper, character); }
+    inline int toupper(int character) { return route<&sdk_toupper, mm::addr::sdk_toupper>(character); }
     // The disc library: initialise, set the media mode, wait for the disc; start the stream (buffer size and count, then the
     // buffer), search a file (the record is filled at `record`; 0 when absent) and start streaming from its sector.
     inline int sceCdInit(int mode) { return port::callGuest<int>(addr::sceCdInit, mode); }
@@ -381,8 +412,8 @@ namespace mm::sdk
     inline int sceDmaReset(int enable) { return port::callGuest<int>(addr::sceDmaReset, enable); }
     inline void sceGsResetGraph(int mode, int interlace, int videoMode, int frameMode) { port::callGuest<void>(addr::sceGsResetGraph, mode, interlace, videoMode, frameMode); }
     // The C++ runtime: the static constructors run before main and the global destructor chain after it.
-    inline void crt0_InitCpp() { port::callGuest<void>(addr::crt0_InitCpp); }
-    inline void destroy_global_chain() { port::callGuest<void>(addr::destroy_global_chain); }
+    inline void crt0_InitCpp() { route<&sdk_crt0_InitCpp, mm::addr::sdk_crt0_InitCpp>(); }
+    inline void destroy_global_chain() { route<&sdk_destroy_global_chain_stub, mm::addr::sdk_destroy_global_chain_stub>(); }
     // The memory card library: every call is started and returns 0 when accepted (the 64-bit result of the SDK), then
     // sceMcSync reports its end. Port and slot come first; addresses are guest addresses of the game's buffers.
     inline int64_t sceMcGetInfo(int portNumber, int slot, uint32_t type, uint32_t freeBlocks, uint32_t format)
@@ -410,7 +441,7 @@ namespace mm::sdk
     // Registers a static object with the runtime so its destructor (`dtor`, run on `record`'s turn) runs at exit.
     inline void mw_register_global_object(uint32_t object, uint32_t dtor, uint32_t record)
     {
-        port::callGuest<void>(addr::mw_register_global_object, object, dtor, record);
+        route<&sdk_mw_register_global_object, mm::addr::sdk_mw_register_global_object>(GuestPtr<void>{object}, GuestPtr<void>{dtor}, GuestPtr<void>{record});
     }
     // Reads the console clock into 8 bytes at `buffer` (status, then BCD seconds, minutes, hours, a pad byte, day, month, year); 0 when it fails.
     inline int64_t sceCdReadClock(uint32_t buffer) { return port::callGuest<int64_t>(addr::sceCdReadClock, buffer); }
@@ -426,7 +457,7 @@ namespace mm::sdk
     {
         return port::callGuest<int>(addr::sceMpegAddCallback, mpeg, kind, function, argument);
     }
-    inline int sceMpegIsRefBuffEmpty(int mpeg) { return port::callGuest<int>(addr::sceMpegIsRefBuffEmpty, mpeg); }
+    inline int sceMpegIsRefBuffEmpty(int mpeg) { return route<&sdk_sceMpegIsRefBuffEmpty, mm::addr::sdk_sceMpegIsRefBuffEmpty>(mpeg); }
 
     // libdma: starts a packet (at the guest address) on a DMA channel's descriptor (`channel`).
     inline int sceDmaSend(int channel, uint32_t packet) { return port::callGuest<int>(addr::sceDmaSend, channel, packet); }
@@ -445,23 +476,24 @@ namespace mm::sdk
     inline int64_t scePadEnterPressMode(int portNumber, int slot) { return port::callGuest<int64_t>(addr::scePadEnterPressMode, portNumber, slot); }
 
     // libvu0 (matrices are 4 Vec4 rows).
-    inline void sceVu0ApplyMatrix(uint32_t out, uint32_t matrix, uint32_t in) { port::callGuest<void>(addr::sceVu0ApplyMatrix, out, matrix, in); }
-    inline void sceVu0MulMatrix(uint32_t out, uint32_t a, uint32_t b) { port::callGuest<void>(addr::sceVu0MulMatrix, out, a, b); }
-    inline void sceVu0UnitMatrix(uint32_t out) { port::callGuest<void>(addr::sceVu0UnitMatrix, out); }
-    inline void sceVu0InversMatrix(uint32_t out, uint32_t in) { port::callGuest<void>(addr::sceVu0InversMatrix, out, in); }
-    inline void sceVu0RotMatrixZ(uint32_t out, uint32_t in, ps2f angle) { port::callGuest<void>(addr::sceVu0RotMatrixZ, out, in, angle); }
-    inline void sceVu0RotMatrixY(uint32_t out, uint32_t in, ps2f angle) { port::callGuest<void>(addr::sceVu0RotMatrixY, out, in, angle); }
-    inline void sceVu0RotMatrixX(uint32_t out, uint32_t in, ps2f angle) { port::callGuest<void>(addr::sceVu0RotMatrixX, out, in, angle); }
+    inline GuestPtr<Vec4> vec(uint32_t address) { return GuestPtr<Vec4>{address}; }
+    inline void sceVu0ApplyMatrix(uint32_t out, uint32_t matrix, uint32_t in) { route<&sdk_sceVu0ApplyMatrix, mm::addr::sdk_sceVu0ApplyMatrix>(vec(out), vec(matrix), vec(in)); }
+    inline void sceVu0MulMatrix(uint32_t out, uint32_t a, uint32_t b) { route<&sdk_sceVu0MulMatrix, mm::addr::sdk_sceVu0MulMatrix>(vec(out), vec(a), vec(b)); }
+    inline void sceVu0UnitMatrix(uint32_t out) { route<&sdk_sceVu0UnitMatrix, mm::addr::sdk_sceVu0UnitMatrix>(vec(out)); }
+    inline void sceVu0InversMatrix(uint32_t out, uint32_t in) { route<&sdk_sceVu0InversMatrix, mm::addr::sdk_sceVu0InversMatrix>(vec(out), vec(in)); }
+    inline void sceVu0RotMatrixZ(uint32_t out, uint32_t in, ps2f angle) { route<&sdk_sceVu0RotMatrixZ, mm::addr::sdk_sceVu0RotMatrixZ>(vec(out), vec(in), angle); }
+    inline void sceVu0RotMatrixY(uint32_t out, uint32_t in, ps2f angle) { route<&sdk_sceVu0RotMatrixY, mm::addr::sdk_sceVu0RotMatrixY>(vec(out), vec(in), angle); }
+    inline void sceVu0RotMatrixX(uint32_t out, uint32_t in, ps2f angle) { route<&sdk_sceVu0RotMatrixX, mm::addr::sdk_sceVu0RotMatrixX>(vec(out), vec(in), angle); }
     inline void sceVu0CameraMatrix(uint32_t out, uint32_t eye, uint32_t direction, uint32_t up)
     {
-        port::callGuest<void>(addr::sceVu0CameraMatrix, out, eye, direction, up);
+        route<&sdk_sceVu0CameraMatrix, mm::addr::sdk_sceVu0CameraMatrix>(vec(out), vec(eye), vec(direction), vec(up));
     }
     inline void sceVu0NormalLightMatrix(uint32_t out, uint32_t light0, uint32_t light1, uint32_t light2)
     {
-        port::callGuest<void>(addr::sceVu0NormalLightMatrix, out, light0, light1, light2);
+        route<&sdk_sceVu0NormalLightMatrix, mm::addr::sdk_sceVu0NormalLightMatrix>(vec(out), vec(light0), vec(light1), vec(light2));
     }
     inline void sceVu0LightColorMatrix(uint32_t out, uint32_t colour0, uint32_t colour1, uint32_t colour2, uint32_t ambient)
     {
-        port::callGuest<void>(addr::sceVu0LightColorMatrix, out, colour0, colour1, colour2, ambient);
+        route<&sdk_sceVu0LightColorMatrix, mm::addr::sdk_sceVu0LightColorMatrix>(vec(out), vec(colour0), vec(colour1), vec(colour2), vec(ambient));
     }
 }

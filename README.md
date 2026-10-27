@@ -48,6 +48,7 @@ Progress per subsystem is tracked in [docs/PORT_STATUS.md](docs/PORT_STATUS.md).
 | Saves | Memory card check passes; loading a save from a PCSX2 memory card works |
 | Mapping (names, types, prototypes) | Done for every game function |
 | Readable source port | In progress: all 1,481 of the game's functions rewritten, 1,432 of them verified against the original (97%) ([details](docs/PORT_STATUS.md)) |
+| Platform layer (SDK and C runtime) | In progress: 107 of the 768 SDK functions rewritten as plain C++ in `src/port/platform/`; 76 verified by replay, 25 numeric ones (soft float, libm) by random-input comparison, 6 not yet shown. The explore and new-game runs enter no recompiled function ([details](docs/PLATFORM_FINDINGS.md)) |
 | VU1 microcode | The city's programs run natively, checked against the interpreter ([details](docs/VU1_PROGRAMS.md)) |
 | Sound driver (IOP) translation | Not started |
 | Widescreen, high refresh rate, hi-res, native controls, Linux | Proposed, not started ([see below](#proposed-patches)) |
@@ -190,6 +191,7 @@ This is a fan preservation project. It is not affiliated with or endorsed by Ind
 | セーブ | メモリーカードの確認は通過。PCSX2のメモリーカードからのロードは動作 |
 | マッピング(名前、型、プロトタイプ) | ゲームの全関数で完了 |
 | 読みやすいソースへの移植 | 進行中。1,481関数すべてを書き直し済み、うち1,432関数を元のコードとの照合で検証済み(97%)([詳細](docs/PORT_STATUS.md)) |
+| プラットフォーム層(SDKとCランタイム) | 進行中。768個のSDK関数のうち107個を `src/port/platform/` に素のC++で書き直し済み。76個はリプレイで、25個の数値関数(ソフトフロート、libm)はランダム入力との比較で検証済み、6個は未検証。探索と新規ゲームの実行では再コンパイル済み関数は実行されません([詳細](docs/PLATFORM_FINDINGS.md)) |
 | VU1マイクロコード | 街のプログラムはネイティブで動作し、インタプリタとの照合済み([詳細](docs/VU1_PROGRAMS.md)) |
 | サウンドドライバ(IOP)の変換 | 未着手 |
 | ワイドスクリーン、高リフレッシュレート、高解像度、ネイティブ操作、Linux | 構想中、未着手 |

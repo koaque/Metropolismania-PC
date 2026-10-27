@@ -12,6 +12,8 @@ namespace port
     void installCapture(PS2Runtime &runtime);
     // With MMPC_CALL_COUNTS set: counts the calls of every game function (see difftest.cpp).
     void installCallCounts(PS2Runtime &runtime);
+    // With MMPC_GENERATED_ENTRIES set: counts the entries of every function that is not ported (see difftest.cpp).
+    void installGeneratedAudit(PS2Runtime &runtime);
     // With MMPC_DIFFTEST set: replays the records, prints the results and exits the process.
     void runDifftestIfRequested(PS2Runtime &runtime);
 }

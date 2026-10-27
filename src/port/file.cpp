@@ -30,7 +30,7 @@ namespace mm
         }
 
         // What the synchronous calls start with: pump the queue until it is empty, telling the sound driver the disc is busy
-        // while it does. The original calls atanf(1.0) between pumps, as a pause.
+        // while it does. The original calls atanf(1.0) between pumps, as a pause (a checkpoint here: the processor goes to the other threads).
         void drainQueue()
         {
             bool busy = false;
@@ -43,7 +43,7 @@ namespace mm
                     busy = true;
                 }
                 FileQueue_Pump();
-                sdk::atanf(ps2f(1.0f));
+                port::checkpoint();
             }
             if (busy)
                 SoundCmd_SetDiscBusy(0);
@@ -190,7 +190,7 @@ namespace mm
                 busy = true;
             }
             FileQueue_Pump();
-            sdk::atanf(ps2f(1.0f));
+            port::checkpoint();
         }
         if (busy)
             SoundCmd_SetDiscBusy(0);
@@ -209,7 +209,7 @@ namespace mm
                 busy = true;
             }
             FileQueue_Pump();
-            sdk::atanf(ps2f(1.0f));
+            port::checkpoint();
         }
         if (busy)
             SoundCmd_SetDiscBusy(0);

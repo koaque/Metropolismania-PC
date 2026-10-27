@@ -167,6 +167,30 @@ namespace port
         g_call = *dispatcher;
     }
 
+    GuestFn originalFunction(uint32_t address)
+    {
+        for (const Ported &p : registry())
+            if (p.address == address)
+                return p.original;
+        return nullptr;
+    }
+
+    bool sdkOriginalRequested(uint32_t address)
+    {
+        static const char *value = std::getenv("MMPC_SDK_ORIGINAL");
+        if (value == nullptr)
+            return false;
+        static const std::string list = std::string(",") + value + ",";
+        if (list == ",all,")
+            return true;
+        char hexText[16];
+        std::snprintf(hexText, sizeof(hexText), ",0x%X,", address);
+        if (list.find(hexText) != std::string::npos)
+            return true;
+        const char *name = nameOf(address);
+        return name != nullptr && list.find(std::string(",") + name + ",") != std::string::npos;
+    }
+
     bool traceRequested(uint32_t address)
     {
         static const char *value = std::getenv("MMPC_PORT_TRACE");
@@ -227,8 +251,9 @@ namespace port
         runtime.eeScheduler().setFiberHooks({&fiberEnter, &fiberLeave});
         g_rdram = runtime.memory().getRDRAM();
         g_scratchpad = runtime.memory().getScratchpad();
-        // A capture records the original code, so nothing is replaced while one runs.
-        const bool capture = captureRequested();
+        // A capture records the original code, so nothing is replaced while one runs (MMPC_CAPTURE_KEEP_PORTS=1 keeps the ports: a
+        // record of the state at a function's entry in a run that has them, to compare with one from the original code).
+        const bool capture = captureRequested() && std::getenv("MMPC_CAPTURE_KEEP_PORTS") == nullptr;
         size_t installed = 0, skipped = 0;
         for (Ported &p : registry())
         {

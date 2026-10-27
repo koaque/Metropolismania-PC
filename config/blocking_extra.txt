@@ -1,0 +1,13 @@
+# Functions the static analysis does not flag as able to reach a thread switch, but that run on a fiber when ported (plan P6):
+# thread entries that nothing in the call graph calls, and functions that call through a pointer (array constructors, the static
+# constructor run), whose callees can wait. Names as in src/port/game_functions.h (the game name without mm_, or sdk_<name>).
+Movie_IdleThread
+sdk_construct_array
+sdk_construct_new_array
+sdk_initialize_cpp_rts
+sdk_destroy_global_chain
+sdk_destroy_global_chain_stub
+sdk_crt0_InitCpp
+sdk_InitSys
+sdk_InitExecPS2
+sdk_InitTLBFunctions

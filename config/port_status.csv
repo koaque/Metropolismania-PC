@@ -1,30 +1,30 @@
 address,name,size,origin,subsystem,status,blocking,callers,callees,notes
-0x00100008,_start,172,sdk,sdk:crt0,named,yes,0,4,
+0x00100008,_start,172,sdk,sdk:crt0,ported,yes,0,4,
 0x001000B8,sdk_libc__exit,8,sdk,sdk:crt0,named,no,1,1,_exit(a0): Exit through 0x116C30
 0x001000C0,sdk_crt0_ExitThread,16,sdk,sdk:crt0,named,no,0,0,"syscall 0x23 (ExitThread), the main thread's return address from _start"
-0x001000D0,sdk_fp_ltdf2,32,sdk,sdk:libgcc,named,no,2,1,double a0 < a1 through dpcmp
-0x001000F0,_d_utod,76,sdk,,named,no,1,2,
-0x00100140,__destroy_global_chain,8,sdk,sdk:mwrt,named,indirect,1,1,
-0x00100150,sdk_crt0_InitCpp,36,sdk,sdk:mwrt,named,no,1,1,__initialize_cpp_rts with the ctor and exception tables
-0x00100180,__construct_array,292,sdk,,named,indirect,1,1,
-0x001002B0,__construct_new_array,332,sdk,,named,indirect,3,0,
-0x00100400,sdk_mw_DeleteArray,28,sdk,sdk:mwrt,named,yes,4,1,operator delete[]
-0x00100420,sdk_operator_delete,44,sdk,sdk:mwcpp,named,yes,91,1,Metrowerks C++ runtime operator delete (calls free); destructors call it when their delete flag is > 0
+0x001000D0,sdk_fp_ltdf2,32,sdk,sdk:libgcc,ported,no,2,1,double a0 < a1 through dpcmp
+0x001000F0,_d_utod,76,sdk,,ported,no,1,2,
+0x00100140,__destroy_global_chain,8,sdk,sdk:mwrt,verified,indirect,1,1,
+0x00100150,sdk_crt0_InitCpp,36,sdk,sdk:mwrt,verified,no,1,1,__initialize_cpp_rts with the ctor and exception tables
+0x00100180,__construct_array,292,sdk,,verified,indirect,1,1,
+0x001002B0,__construct_new_array,332,sdk,,verified,indirect,3,0,
+0x00100400,sdk_mw_DeleteArray,28,sdk,sdk:mwrt,verified,yes,4,1,operator delete[]
+0x00100420,sdk_operator_delete,44,sdk,sdk:mwcpp,verified,yes,91,1,Metrowerks C++ runtime operator delete (calls free); destructors call it when their delete flag is > 0
 0x00100460,__dt__Q23std9exceptionFv,76,sdk,,named,yes,0,1,
 0x001004B0,sdk_mw_exception_what,12,sdk,sdk:mwrt,named,no,0,0,"std::exception::what (""exception"")"
-0x001004C0,sdk_mw_NewArray,28,sdk,sdk:mwrt,named,yes,12,1,operator new[]
+0x001004C0,sdk_mw_NewArray,28,sdk,sdk:mwrt,verified,yes,12,1,operator new[]
 0x001004E0,default_new_handler__3stdFv,76,sdk,,named,yes,1,1,
 0x00100540,sdk_mw_bad_alloc_dtor,96,sdk,sdk:mwrt,named,yes,0,1,std::bad_alloc destructor (vtable 0x1BCDF0)
 0x001005A0,sdk_mw_bad_alloc_what,12,sdk,sdk:mwrt,named,no,0,0,"std::bad_alloc::what (""bad_alloc"")"
-0x001005B0,__nw__FUi,176,sdk,,named,yes,56,3,
+0x001005B0,__nw__FUi,176,sdk,,verified,yes,56,3,
 0x00100670,__throw_catch_compare,608,sdk,,named,no,1,0,
 0x001008E0,sdk_mw_unexpected,36,sdk,sdk:mwrt,named,yes,1,1,calls the unexpected handler (0x1AB218)
 0x00100910,sdk_mw_terminate,36,sdk,sdk:mwrt,named,yes,6,1,calls the terminate handler (0x1AB210)
 0x00100940,sdk_mw_terminate2,36,sdk,sdk:mwrt,named,yes,1,1,calls the terminate handler (from unexpected)
 0x00100970,sdk_mw_default_terminate,28,sdk,sdk:mwrt,named,yes,2,1,default terminate: abort
-0x00100990,__destroy_global_chain,68,sdk,,named,indirect,1,0,
-0x001009E0,sdk_mw_register_global_object,36,sdk,sdk:mwrt,named,no,1,0,links a global object and its destructor into the exit list (0x1BDFC8)
-0x00100A10,__initialize_cpp_rts,84,sdk,,named,indirect,1,0,
+0x00100990,__destroy_global_chain,68,sdk,,verified,indirect,1,0,
+0x001009E0,sdk_mw_register_global_object,36,sdk,sdk:mwrt,verified,no,1,0,links a global object and its destructor into the exit list (0x1BDFC8)
+0x00100A10,__initialize_cpp_rts,84,sdk,,verified,indirect,1,0,
 0x00100A70,__ptmf_scall,52,sdk,,named,indirect,3,0,
 0x00100AB0,__DecodeUnsignedNumber__FPcPUi,156,sdk,,named,no,7,0,
 0x00100B50,__DecodeSignedNumber__FPcPi,156,sdk,,named,no,5,0,
@@ -56,9 +56,9 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001030E8,sceGsSetDefDBuff,664,sdk,,named,yes,1,5,
 0x00103380,sceGsSyncV,148,sdk,,named,yes,3,3,
 0x00103418,sceGsSyncPath,788,sdk,,named,yes,10,1,
-0x00103730,sdk_sceGsSetHalfOffset,136,sdk,sdk:libgraph,named,no,3,0,(provisional) half-pixel XYOFFSET for the field in a draw environment
+0x00103730,sdk_sceGsSetHalfOffset,136,sdk,sdk:libgraph,verified,no,3,0,(provisional) half-pixel XYOFFSET for the field in a draw environment
 0x001037B8,sceGsSetDefDrawEnv2,480,sdk,,named,no,1,1,
-0x00103998,sdk_sceGsSetHalfOffset2,136,sdk,sdk:libgraph,named,no,3,0,(provisional) same for the second draw environment
+0x00103998,sdk_sceGsSetHalfOffset2,136,sdk,sdk:libgraph,verified,no,3,0,(provisional) same for the second draw environment
 0x00103A20,sceGsSetDefDBuffDc,740,sdk,,named,yes,2,6,
 0x00103D08,sceGsSwapDBuffDc,92,sdk,,named,yes,3,2,
 0x00103D68,memclr,52,sdk,,named,no,1,0,
@@ -76,40 +76,40 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00104640,sceDmaSync,196,sdk,,named,yes,0,1,
 0x00104708,sceDmaWatch,208,sdk,,named,yes,0,1,
 0x001047D8,sceDmaPause,72,sdk,,named,no,0,0,
-0x00104838,sdk_sceGifPkInit,16,sdk,sdk:libpkt,named,no,4,0,"packet = base, no open DMA tag"
-0x00104848,sdk_sceGifPkReset,16,sdk,sdk:libpkt,named,no,4,0,back to the base
-0x00104858,sdk_sceGifPkTerminate,88,sdk,sdk:libpkt,named,no,7,0,(provisional) pads to 16 bytes and closes the open DMA tag (qwc)
-0x001048B0,sdk_sceGifPkCnt,116,sdk,sdk:libpkt,named,no,1,1,opens a CNT DMA tag
-0x00104928,sdk_sceGifPkRef,152,sdk,sdk:libpkt,named,no,1,1,adds a REF DMA tag
-0x001049C0,sdk_sceGifPkEnd,116,sdk,sdk:libpkt,named,no,4,1,opens an END DMA tag
-0x00104A38,sdk_sceGifPkReserve,20,sdk,sdk:libpkt,named,no,1,0,skips a0 words
-0x00104A50,sdk_sceGifPkOpenGifTag,24,sdk,sdk:libpkt,named,no,4,0,writes a GIF tag and remembers it for sceGifPkCloseGifTag
+0x00104838,sdk_sceGifPkInit,16,sdk,sdk:libpkt,verified,no,4,0,"packet = base, no open DMA tag"
+0x00104848,sdk_sceGifPkReset,16,sdk,sdk:libpkt,verified,no,4,0,back to the base
+0x00104858,sdk_sceGifPkTerminate,88,sdk,sdk:libpkt,verified,no,7,0,(provisional) pads to 16 bytes and closes the open DMA tag (qwc)
+0x001048B0,sdk_sceGifPkCnt,116,sdk,sdk:libpkt,verified,no,1,1,opens a CNT DMA tag
+0x00104928,sdk_sceGifPkRef,152,sdk,sdk:libpkt,verified,no,1,1,adds a REF DMA tag
+0x001049C0,sdk_sceGifPkEnd,116,sdk,sdk:libpkt,verified,no,4,1,opens an END DMA tag
+0x00104A38,sdk_sceGifPkReserve,20,sdk,sdk:libpkt,verified,no,1,0,skips a0 words
+0x00104A50,sdk_sceGifPkOpenGifTag,24,sdk,sdk:libpkt,verified,no,4,0,writes a GIF tag and remembers it for sceGifPkCloseGifTag
 0x00104A68,sceGifPkCloseGifTag,164,sdk,,named,no,4,0,
 0x00104B10,sceGifPkAddGsAD,36,sdk,,named,no,4,0,
-0x00104B38,sceVu0ApplyMatrix,44,sdk,,named,no,1,0,
-0x00104B68,sceVu0MulMatrix,68,sdk,,named,no,5,0,
-0x00104BB0,sdk_sceVu0OuterProduct,28,sdk,sdk:libvu0,named,no,1,0,cross product
+0x00104B38,sceVu0ApplyMatrix,44,sdk,,verified,no,1,0,
+0x00104B68,sceVu0MulMatrix,68,sdk,,verified,no,5,0,
+0x00104BB0,sdk_sceVu0OuterProduct,28,sdk,sdk:libvu0,verified,no,1,0,cross product
 0x00104BD0,sceVu0InnerProduct,36,sdk,,named,no,0,0,
-0x00104BF8,sceVu0Normalize,60,sdk,,named,no,2,0,
-0x00104C38,sceVu0TransposeMatrix,68,sdk,,named,no,1,0,
-0x00104C80,sceVu0InversMatrix,108,sdk,,named,no,2,0,
+0x00104BF8,sceVu0Normalize,60,sdk,,verified,no,2,0,
+0x00104C38,sceVu0TransposeMatrix,68,sdk,,verified,no,1,0,
+0x00104C80,sceVu0InversMatrix,108,sdk,,verified,no,2,0,
 0x00104CF0,sceVu0DivVector,32,sdk,,named,no,0,0,
 0x00104D10,sceVu0DivVectorXYZ,32,sdk,,named,no,0,0,
 0x00104D30,sceVu0InterVector,40,sdk,,named,no,0,0,
-0x00104DA0,sdk_sceVu0ScaleVector,24,sdk,sdk:libvu0,named,no,1,0,vector times scalar
-0x00104DB8,sceVu0TransMatrix,44,sdk,,named,no,1,0,
-0x00104DE8,sdk_sceVu0CopyVector,12,sdk,sdk:libvu0,named,no,1,0,copies a vector
+0x00104DA0,sdk_sceVu0ScaleVector,24,sdk,sdk:libvu0,verified,no,1,0,vector times scalar
+0x00104DB8,sceVu0TransMatrix,44,sdk,,verified,no,1,0,
+0x00104DE8,sdk_sceVu0CopyVector,12,sdk,sdk:libvu0,verified,no,1,0,copies a vector
 0x00104DF8,sceVu0CopyMatrix,36,sdk,,named,no,0,0,
-0x00104E60,sceVu0UnitMatrix,40,sdk,,named,no,4,0,
+0x00104E60,sceVu0UnitMatrix,40,sdk,,verified,no,4,0,
 0x00104E88,_sceVu0ecossin,116,sdk,,named,no,3,0,
-0x00104F00,sceVu0RotMatrixZ,164,sdk,,named,no,6,1,
-0x00104FA8,sceVu0RotMatrixX,168,sdk,,named,no,3,1,
-0x00105050,sceVu0RotMatrixY,168,sdk,,named,no,19,1,
+0x00104F00,sceVu0RotMatrixZ,164,sdk,,verified,no,6,1,
+0x00104FA8,sceVu0RotMatrixX,168,sdk,,verified,no,3,1,
+0x00105050,sceVu0RotMatrixY,168,sdk,,verified,no,19,1,
 0x001050F8,sceVu0RotMatrix,80,sdk,,named,no,0,3,
 0x00105148,sceVu0ClampVector,36,sdk,,named,no,0,0,
-0x00105170,sceVu0CameraMatrix,176,sdk,,named,no,2,5,
-0x00105220,sceVu0NormalLightMatrix,192,sdk,,named,no,2,3,
-0x001052E0,sceVu0LightColorMatrix,104,sdk,,named,no,2,1,
+0x00105170,sceVu0CameraMatrix,176,sdk,,verified,no,2,5,
+0x00105220,sceVu0NormalLightMatrix,192,sdk,,verified,no,2,3,
+0x001052E0,sceVu0LightColorMatrix,104,sdk,,verified,no,2,1,
 0x00105348,sceVu0ViewScreenMatrix,260,sdk,,named,no,0,2,
 0x00105450,sceVu0DropShadowMatrix,400,sdk,,named,no,0,0,
 0x001055E0,sceVu0RotTransPersN,88,sdk,,named,no,0,0,
@@ -206,14 +206,14 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0010B708,_PES_packet,1456,sdk,,named,yes,1,4,
 0x0010BCB8,sceMpegInit,156,sdk,,named,no,1,3,
 0x0010BD58,sceMpegCreate,520,sdk,,named,yes,1,8,
-0x0010BF60,sdk_sceMpegDelete,8,sdk,sdk:libmpeg,named,no,1,0,(provisional) returns 1
+0x0010BF60,sdk_sceMpegDelete,8,sdk,sdk:libmpeg,verified,no,1,0,(provisional) returns 1
 0x0010BF68,sceMpegAddBs,36,sdk,,named,no,0,1,
 0x0010BF90,sceMpegGetPicture,72,sdk,,named,yes,1,1,
 0x0010BFD8,sceMpegGetPictureRAW8,68,sdk,,named,yes,0,1,
 0x0010C020,sceMpegGetPictureRAW8xy,80,sdk,,named,yes,0,1,
 0x0010C088,sceMpegGetDecodeMode,32,sdk,,named,no,0,0,
-0x0010C0A8,sdk_sceMpegIsEnd,12,sdk,sdk:libmpeg,named,no,1,0,(provisional) the decoder's end flag
-0x0010C0B8,sdk_sceMpegIsRefBuffEmpty,16,sdk,sdk:libmpeg,named,no,1,0,(provisional) no reference pictures left
+0x0010C0A8,sdk_sceMpegIsEnd,12,sdk,sdk:libmpeg,verified,no,1,0,(provisional) the decoder's end flag
+0x0010C0B8,sdk_sceMpegIsRefBuffEmpty,16,sdk,sdk:libmpeg,verified,no,1,0,(provisional) no reference pictures left
 0x0010C0C8,sceMpegReset,80,sdk,,named,no,2,2,
 0x0010C118,sceMpegClearRefBuff,84,sdk,,named,no,1,0,
 0x0010C170,sceMpegAddCallback,36,sdk,,named,no,1,0,
@@ -327,10 +327,10 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0010E658,sdk_kernel_SyncDCache,124,sdk,sdk:libkernl,named,no,2,3,SyncDCache with interrupts off
 0x0010E6F0,_sceIDC,164,sdk,,named,no,1,0,
 0x0010E798,sdk_kernel_InvalidDCache,124,sdk,sdk:libkernl,named,no,0,3,InvalidDCache with interrupts off
-0x0010E840,sdk_kernel_DisableIntc,104,sdk,sdk:libkernl,named,no,2,3,DisableIntc with interrupts off
-0x0010E8A8,sdk_kernel_EnableIntc,104,sdk,sdk:libkernl,named,no,1,3,EnableIntc with interrupts off
-0x0010E910,sdk_kernel_DisableDmac,104,sdk,sdk:libkernl,named,no,4,3,DisableDmac with interrupts off
-0x0010E978,sdk_kernel_EnableDmac,104,sdk,sdk:libkernl,named,no,4,3,EnableDmac with interrupts off
+0x0010E840,sdk_kernel_DisableIntc,104,sdk,sdk:libkernl,verified,no,2,3,DisableIntc with interrupts off
+0x0010E8A8,sdk_kernel_EnableIntc,104,sdk,sdk:libkernl,verified,no,1,3,EnableIntc with interrupts off
+0x0010E910,sdk_kernel_DisableDmac,104,sdk,sdk:libkernl,verified,no,4,3,DisableDmac with interrupts off
+0x0010E978,sdk_kernel_EnableDmac,104,sdk,sdk:libkernl,verified,no,4,3,EnableDmac with interrupts off
 0x0010E9E0,sdk_kernel_iEnableIntc,32,sdk,sdk:libkernl,named,no,0,1,iEnableIntc and sync
 0x0010EA00,sdk_kernel_iDisableIntc,32,sdk,sdk:libkernl,named,no,0,1,iDisableIntc and sync
 0x0010EA20,sdk_kernel_iEnableDmac,32,sdk,sdk:libkernl,named,no,0,1,iEnableDmac and sync
@@ -445,8 +445,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00114CB8,sceSifInitIopHeap,136,sdk,,named,yes,1,1,
 0x00114D40,sceSifAllocIopHeap,112,sdk,,named,yes,1,1,
 0x00114DB0,sceSifAllocSysMemory,128,sdk,,named,yes,2,1,
-0x00114E30,sdk_sceSifFreeIopHeap,120,sdk,sdk:libsif,named,yes,1,1,IOP heap RPC (server 0x80000003) function 2
-0x00114EA8,sdk_sceSifFreeSysMemory,28,sdk,sdk:libsif,named,yes,2,1,frees IOP memory (to sceSifFreeIopHeap)
+0x00114E30,sdk_sceSifFreeIopHeap,120,sdk,sdk:libsif,verified,yes,1,1,IOP heap RPC (server 0x80000003) function 2
+0x00114EA8,sdk_sceSifFreeSysMemory,28,sdk,sdk:libsif,verified,yes,2,1,frees IOP memory (to sceSifFreeIopHeap)
 0x00114EC8,sceSifLoadIopHeap,240,sdk,,named,yes,0,1,
 0x00114FB8,_lf_bind,256,sdk,,named,yes,9,2,
 0x001150B8,sdk_loadfile_CheckVersion,140,sdk,sdk:libsif,named,no,7,1,"(provisional) compares the LOADFILE module version (""2430"")"
@@ -473,10 +473,10 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00115FC8,SetTLBHandler,96,sdk,,named,no,0,1,
 0x00116028,SetDebugHandler,132,sdk,,named,no,0,1,
 0x001160B0,sdk_kernel_KCopy2,16,sdk,sdk:libkernl,named,no,1,0,"(provisional) syscall 0x5A, from InitTLBFunctions"
-0x001160C0,kCopy,56,sdk,,named,no,0,0,
+0x001160C0,kCopy,56,sdk,,verified,no,0,0,
 0x001160F8,RFU091,16,sdk,sdk:libkernl,named,no,1,0,
 0x00116108,RFU116_SetSyscall,16,sdk,sdk:libkernl,named,no,1,0,
-0x00116118,InitTLBFunctions,180,sdk,,named,no,1,4,
+0x00116118,InitTLBFunctions,180,sdk,,ported,no,1,4,
 0x001161F0,RFU086_WaitEvnetFlag,16,sdk,sdk:libkernl,named,no,2,0,
 0x00116200,SetTLBEntry,48,sdk,,named,no,0,1,
 0x00116290,InitTLB,64,sdk,,named,no,1,3,
@@ -484,30 +484,30 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00116500,_kTLBException,256,sdk,,named,no,0,0,
 0x00116640,_kExitTLBHandler,244,sdk,,named,no,0,0,
 0x00116740,_kDebugException,252,sdk,,named,no,0,0,
-0x00116860,DIntr,72,sdk,,named,no,46,0,
-0x001168A8,sdk_kernel_EIntr,24,sdk,sdk:libkernl,named,no,47,0,"EI, then returns Status.EIE (bit 16)"
-0x001168C0,supplement_crt0,72,sdk,,named,no,1,1,
-0x00116908,kFindAddress,52,sdk,,named,no,0,0,
+0x00116860,DIntr,72,sdk,,verified,no,46,0,
+0x001168A8,sdk_kernel_EIntr,24,sdk,sdk:libkernl,verified,no,47,0,"EI, then returns Status.EIE (bit 16)"
+0x001168C0,supplement_crt0,72,sdk,,verified,no,1,1,
+0x00116908,kFindAddress,52,sdk,,verified,no,0,0,
 0x00116940,sdk_kernel_GetSyscall,16,sdk,sdk:libkernl,named,no,1,0,"(provisional) syscall 0x83, from GetSystemCallTableEntry"
-0x00116950,GetSystemCallTableEntry,60,sdk,,named,no,1,2,
+0x00116950,GetSystemCallTableEntry,60,sdk,,ported,no,1,2,
 0x00116990,RFU116_SetSyscall,16,sdk,sdk:libkernl,named,no,1,0,
-0x001169C0,_InitSys,60,sdk,,named,yes,1,6,
+0x001169C0,_InitSys,60,sdk,,ported,yes,1,6,
 0x00116A00,RFU116_SetSyscall,16,sdk,sdk:libkernl,named,no,1,0,
 0x00116A10,sdk_kernel_KCopy3,16,sdk,sdk:libkernl,named,no,1,0,"(provisional) syscall 0x5A, from InitExecPS2"
-0x00116A20,kCopy,56,sdk,,named,no,0,0,
+0x00116A20,kCopy,56,sdk,,ported,no,0,0,
 0x00116A58,RFU091,16,sdk,sdk:libkernl,named,no,1,0,
-0x00116A68,PatchIsNeeded,104,sdk,,named,no,1,2,
-0x00116AD0,InitExecPS2,172,sdk,,named,no,1,5,
+0x00116A68,PatchIsNeeded,104,sdk,,verified,no,1,2,
+0x00116AD0,InitExecPS2,172,sdk,,verified,no,1,5,
 0x00116B80,InitTLB,8,sdk,sdk:libkernl,named,no,4,1,
 0x00116B88,ExecPS2,92,sdk,,named,no,0,1,
 0x00116BE8,LoadExecPS2,72,sdk,,named,no,0,2,
 0x00116C30,sdk_kernel_Exit,40,sdk,sdk:libkernl,named,no,4,2,"InitTLB, then _Exit"
 0x00116C58,ExecOSD,56,sdk,,named,no,0,2,
-0x00116C90,sceSdRemoteInit,164,sdk,,named,yes,1,4,
+0x00116C90,sceSdRemoteInit,164,sdk,,ported,yes,1,4,
 0x00116D38,sceSdTransToIOP,132,sdk,,named,no,0,2,
-0x00116DD0,sceSdRemote,496,sdk,,named,yes,7,1,
+0x00116DD0,sceSdRemote,496,sdk,,verified,yes,7,1,
 0x00116FC0,__ieee754_pow,3856,sdk,,named,no,1,9,
-0x00117F10,__ieee754_sqrt,796,sdk,,named,no,1,5,
+0x00117F10,__ieee754_sqrt,796,sdk,,ported,no,1,5,
 0x00118230,__ieee754_acosf,1052,sdk,,named,no,1,1,
 0x00118658,__ieee754_atan2f,468,sdk,,named,no,1,2,
 0x00118838,__ieee754_fmodf,448,sdk,,named,no,1,0,
@@ -516,23 +516,23 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00118E88,__kernel_cosf,336,sdk,,named,no,2,0,
 0x00118FD8,__kernel_rem_pio2f,2116,sdk,,named,no,1,2,
 0x00119840,__kernel_sinf,260,sdk,,named,no,2,0,
-0x00119948,sdk_libm_copysign,68,sdk,sdk:libm,named,no,1,0,copysign (double)
+0x00119948,sdk_libm_copysign,68,sdk,sdk:libm,ported,no,1,0,copysign (double)
 0x00119990,fabs,52,sdk,,named,no,3,0,
 0x001199C8,sdk_libc_isinf,72,sdk,sdk:libc,named,no,1,0,"isinf (double), for printf"
 0x00119A10,sdk_libc_isnan,60,sdk,sdk:libc,named,no,1,0,"isnan (double), for printf"
-0x00119A50,sdk_libm_scalbn,464,sdk,sdk:libm,named,no,1,3,scalbn (double)
-0x00119C38,atanf,640,sdk,,named,no,8,1,
+0x00119A50,sdk_libm_scalbn,464,sdk,sdk:libm,ported,no,1,3,scalbn (double)
+0x00119C38,atanf,640,sdk,,ported,no,8,1,
 0x00119EC8,sdk_libm_copysignf,60,sdk,sdk:libm,named,no,1,0,copysignf
-0x00119F08,cosf,212,sdk,,named,no,1,3,
-0x00119FE0,fabsf,40,sdk,,named,no,3,0,
+0x00119F08,cosf,212,sdk,,ported,no,1,3,
+0x00119FE0,fabsf,40,sdk,,ported,no,3,0,
 0x0011A008,floorf,216,sdk,,named,no,1,0,
 0x0011A0E0,sdk_libm_scalbnf,200,sdk,sdk:libm,named,no,1,1,scalbnf
-0x0011A1A8,sinf,220,sdk,,named,no,4,3,
-0x0011A290,sdk_libm_pow,20,sdk,sdk:libm,named,no,1,1,pow (to __ieee754_pow)
-0x0011A2A8,sdk_libm_acosf,20,sdk,sdk:libm,named,no,2,1,acosf
-0x0011A2C0,sdk_libm_atan2f,20,sdk,sdk:libm,named,no,8,1,atan2f
-0x0011A2D8,sdk_libm_fmodf,20,sdk,sdk:libm,named,no,10,1,fmodf
-0x0011A2F0,sdk_libm_sqrtf,20,sdk,sdk:libm,named,no,3,1,sqrtf
+0x0011A1A8,sinf,220,sdk,,ported,no,4,3,
+0x0011A290,sdk_libm_pow,20,sdk,sdk:libm,ported,no,1,1,pow (to __ieee754_pow)
+0x0011A2A8,sdk_libm_acosf,20,sdk,sdk:libm,ported,no,2,1,acosf
+0x0011A2C0,sdk_libm_atan2f,20,sdk,sdk:libm,ported,no,8,1,atan2f
+0x0011A2D8,sdk_libm_fmodf,20,sdk,sdk:libm,ported,no,10,1,fmodf
+0x0011A2F0,sdk_libm_sqrtf,20,sdk,sdk:libm,ported,no,3,1,sqrtf
 0x0011A330,sceCdDelayThread,104,sdk,,named,yes,3,4,
 0x0011A398,sceCdCallback,84,sdk,,named,yes,0,3,
 0x0011A3F0,sdk_cdvd_Callback,160,sdk,sdk:libcdvd,named,no,0,1,"(provisional) command end callback, signals the command semaphore"
@@ -621,31 +621,31 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0011E618,sceMcUnformat,200,sdk,,named,yes,1,3,
 0x0011E6E0,sceMcGetEntSpace,280,sdk,,named,yes,0,4,
 0x0011E7F8,sdk_libc_abort,24,sdk,sdk:libc,named,yes,1,2,"raise(SIGABRT), then _exit(1)"
-0x0011E810,sdk_libc_abs,20,sdk,sdk:libc,named,no,10,0,abs
+0x0011E810,sdk_libc_abs,20,sdk,sdk:libc,verified,no,10,0,abs
 0x0011E828,_calloc_r,176,sdk,,named,yes,1,2,
 0x0011E8E0,sdk_libc__close_r,88,sdk,sdk:libc,named,no,1,1,close with errno in the reent
 0x0011E938,quorem,552,sdk,,named,no,1,1,
 0x0011EB68,_dtoa_r,4632,sdk,,named,yes,1,20,
 0x0011FDD0,sdk_libc___errno,12,sdk,sdk:libc,named,no,4,0,errno location (the reent)
 0x0011FDE0,fflush,268,sdk,,named,indirect,2,2,
-0x0011FEF8,std,92,sdk,,named,no,1,0,
+0x0011FEF8,std,92,sdk,,verified,no,1,0,
 0x0011FF58,__sfmoreglue,120,sdk,,named,yes,1,2,
 0x0011FFD0,__sfp,248,sdk,,named,yes,0,2,
 0x001200C8,sdk_libc__cleanup_r,28,sdk,sdk:libc,named,no,0,1,_fwalk with the flush function
-0x00120108,__sinit,140,sdk,,named,no,4,1,
+0x00120108,__sinit,140,sdk,,verified,no,4,1,
 0x00120198,_free_r,744,sdk,,named,yes,4,3,
 0x00120490,_malloc_trim_r,364,sdk,,named,yes,1,3,
 0x00120600,sdk_libc__fstat_r,92,sdk,sdk:libc,named,no,1,1,fstat with errno in the reent
 0x00120660,__sfvwrite,972,sdk,,named,yes,1,4,
 0x00120A40,_fwalk,148,sdk,,named,indirect,2,0,
-0x00120AD8,sdk_libc_index,20,sdk,sdk:libc,named,no,1,1,index (strchr)
+0x00120AD8,sdk_libc_index,20,sdk,sdk:libc,verified,no,1,1,index (strchr)
 0x00120AF0,_setlocale_r,136,sdk,,named,no,1,1,
 0x00120B80,sdk_libc__localeconv_r,12,sdk,sdk:libc,named,no,1,0,the locale data
 0x00120B90,sdk_libc_setlocale,36,sdk,sdk:libc,named,no,0,1,setlocale
 0x00120BB8,sdk_libc_localeconv,28,sdk,sdk:libc,named,no,1,1,localeconv
 0x00120BD8,sdk_libc__lseek_r,96,sdk,sdk:libc,named,no,2,1,lseek with errno in the reent
 0x00120C38,__smakebuf,332,sdk,,named,yes,1,3,
-0x00120D90,sdk_libc_memalign,100,sdk,sdk:libc,named,yes,1,3,memalign under the malloc lock
+0x00120D90,sdk_libc_memalign,100,sdk,sdk:libc,verified,yes,1,3,memalign under the malloc lock
 0x00120DF8,_memalign_r,448,sdk,,named,yes,1,5,
 0x00120FC0,malloc,84,sdk,,named,yes,13,3,
 0x00121018,free,72,sdk,,named,yes,18,3,
@@ -689,7 +689,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00123360,sdk_libc__kill_r,92,sdk,sdk:libc,named,no,1,1,kill with errno in the reent
 0x001233C0,sdk_libc__getpid_r,28,sdk,sdk:libc,named,no,1,0,returns 1
 0x001233D8,_sprintf_r,136,sdk,,named,yes,0,1,
-0x00123460,sdk_libc_sprintf,144,sdk,sdk:libc,named,yes,21,1,sprintf
+0x00123460,sdk_libc_sprintf,144,sdk,sdk:libc,verified,yes,21,1,sprintf
 0x001234F0,__sread,96,sdk,,named,no,0,1,
 0x00123558,__swrite,128,sdk,,named,no,0,2,
 0x001235D8,__sseek,96,sdk,,named,no,0,1,
@@ -698,11 +698,11 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00123790,strchr,400,sdk,,named,no,2,0,
 0x00123920,strcmp,324,sdk,,named,no,6,0,
 0x00123A68,strcpy,276,sdk,,named,no,33,0,
-0x00123B80,strcspn,124,sdk,,named,no,3,0,
+0x00123B80,strcspn,124,sdk,,verified,no,3,0,
 0x00123C00,strlen,312,sdk,,named,no,33,0,
 0x00123D38,strncmp,436,sdk,,named,no,1,0,
 0x00123EF0,strncpy,444,sdk,,named,no,11,0,
-0x001240B0,sdk_libc_toupper,32,sdk,sdk:libc,named,no,1,0,toupper
+0x001240B0,sdk_libc_toupper,32,sdk,sdk:libc,verified,no,1,0,toupper
 0x001240D0,__sprint,68,sdk,,named,yes,1,1,
 0x00124118,__sbprintf,180,sdk,,named,yes,1,2,
 0x001241D0,sdk_libc_vfprintf,116,sdk,sdk:libc,named,yes,4,2,vfprintf (initialises stdio first)
@@ -720,23 +720,23 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001275F8,__fixunsdfdi,280,sdk,,named,no,1,6,
 0x00127710,__pack_f,176,sdk,,named,no,1,0,
 0x001277C8,__unpack_f,88,sdk,,named,no,3,0,
-0x00127828,fptosi,120,sdk,,named,no,59,1,
+0x00127828,fptosi,120,sdk,,ported,no,59,1,
 0x001278A8,__make_fp,44,sdk,,named,no,1,1,
-0x001278D8,fptodp,60,sdk,,named,no,4,2,
-0x00127918,fptoui,124,sdk,,named,no,4,1,
+0x001278D8,fptodp,60,sdk,,ported,no,4,2,
+0x00127918,fptoui,124,sdk,,ported,no,4,1,
 0x00127998,__pack_d,212,sdk,,named,no,6,0,
 0x00127A70,__unpack_d,176,sdk,,named,no,8,0,
 0x00127B30,_fpadd_parts,592,sdk,,named,no,2,0,
-0x00127D90,dpadd,88,sdk,,named,no,8,3,
-0x00127DE8,dpsub,100,sdk,,named,no,6,3,
-0x00127E50,dpmul,632,sdk,,named,no,9,3,
-0x001280D8,dpdiv,316,sdk,,named,no,5,2,
+0x00127D90,dpadd,88,sdk,,ported,no,8,3,
+0x00127DE8,dpsub,100,sdk,,ported,no,6,3,
+0x00127E50,dpmul,632,sdk,,ported,no,9,3,
+0x001280D8,dpdiv,316,sdk,,ported,no,5,2,
 0x00128218,__fpcmp_parts_d,280,sdk,,named,no,1,0,
-0x00128338,dpcmp,76,sdk,,named,no,8,2,
-0x00128388,litodp,180,sdk,,named,no,3,1,
-0x00128440,dptoli,156,sdk,,named,no,2,1,
+0x00128338,dpcmp,76,sdk,,ported,no,8,2,
+0x00128388,litodp,180,sdk,,ported,no,3,1,
+0x00128440,dptoli,156,sdk,,ported,no,2,1,
 0x001284E0,__make_dp,44,sdk,,named,no,1,1,
-0x00128510,dptofp,84,sdk,,named,no,1,2,
+0x00128510,dptofp,84,sdk,,ported,no,1,2,
 0x00128568,dptoul,156,sdk,,named,no,1,1,
 0x00128610,mm_Widget_GetState,8,game,ui,verified,no,0,0,slot +0x1C: state
 0x00128620,mm_Widget_IsIdle,16,game,ui,verified,no,0,0,slot +0x24: state == 0
@@ -2217,25 +2217,25 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001A3050,mm_Words_ReadBlock,336,game,talk,verified,yes,3,3,reads a script block from the open WORDS file into the buffer
 0x001A31A0,mm_Words_OpenFiles,172,game,talk,verified,yes,1,5,opens DATA\BIN\WORDS.BIN and WORDSEVE.BIN for streaming
 0x001A3250,mm_Words_Init,744,game,talk,verified,yes,1,9,"loads the WORDS, WORDSEVE, WORDSCOM and WORDSTEN tables at game start"
-0x001A3538,GetRomName,156,sdk,,named,yes,1,4,
-0x001A35D8,IsT10K,64,sdk,,named,yes,7,1,
+0x001A3538,GetRomName,156,sdk,,verified,yes,1,4,
+0x001A35D8,IsT10K,64,sdk,,verified,yes,7,1,
 0x001A3618,sceScfGetLanguage,96,sdk,,named,yes,0,2,
 0x001A3698,sceScfGetAspect,64,sdk,,named,yes,0,2,
 0x001A36D8,sceScfGetSpdif,60,sdk,,named,yes,0,2,
-0x001A3718,sceScfGetTimeZone,76,sdk,,named,yes,1,2,
+0x001A3718,sceScfGetTimeZone,76,sdk,,verified,yes,1,2,
 0x001A3768,sceScfGetDateNotation,100,sdk,,named,yes,0,3,
-0x001A37D0,sceScfGetSummerTime,104,sdk,,named,yes,1,3,
+0x001A37D0,sceScfGetSummerTime,104,sdk,,verified,yes,1,3,
 0x001A3838,sceScfGetTimeNotation,104,sdk,,named,yes,0,3,
-0x001A38A0,tobcd,44,sdk,,named,no,1,0,
-0x001A38D0,frombcd,32,sdk,,named,no,1,0,
-0x001A38F0,sdk_scf_BcdToTime,104,sdk,sdk:libscf,named,no,1,1,"converts the six BCD time fields (frombcd), used by AdjustTime"
-0x001A3958,sdk_scf_TimeToBcd,104,sdk,sdk:libscf,named,no,1,1,"converts back to BCD (tobcd), used by AdjustTime"
-0x001A39C0,adddate,180,sdk,,named,no,1,0,
-0x001A3A78,subdate,164,sdk,,named,no,1,0,
-0x001A3B20,addhour,48,sdk,,named,no,1,1,
-0x001A3B50,subhour,36,sdk,,named,no,1,1,
-0x001A3B78,AdjustTime,136,sdk,,named,no,1,4,
-0x001A3C10,sceScfGetLocalTimefromRTC,72,sdk,,named,yes,1,3,
+0x001A38A0,tobcd,44,sdk,,verified,no,1,0,
+0x001A38D0,frombcd,32,sdk,,verified,no,1,0,
+0x001A38F0,sdk_scf_BcdToTime,104,sdk,sdk:libscf,verified,no,1,1,"converts the six BCD time fields (frombcd), used by AdjustTime"
+0x001A3958,sdk_scf_TimeToBcd,104,sdk,sdk:libscf,verified,no,1,1,"converts back to BCD (tobcd), used by AdjustTime"
+0x001A39C0,adddate,180,sdk,,verified,no,1,0,
+0x001A3A78,subdate,164,sdk,,verified,no,1,0,
+0x001A3B20,addhour,48,sdk,,verified,no,1,1,
+0x001A3B50,subhour,36,sdk,,verified,no,1,1,
+0x001A3B78,AdjustTime,136,sdk,,verified,no,1,4,
+0x001A3C10,sceScfGetLocalTimefromRTC,72,sdk,,verified,yes,1,3,
 0x001AB630,sdk_kpatch_AlarmInsert,260,sdk,sdk:libkernl,named,no,0,0,"kernel patch: inserts into the sorted alarm list (0x80076740, count 0x80076700)"
 0x001AB738,sdk_kpatch_SetAlarm,316,sdk,sdk:libkernl,named,no,0,0,"kernel patch: SetAlarm, up to 64 alarms on timer 0x10001800"
 0x001AB878,sdk_kpatch_ReleaseAlarm,416,sdk,sdk:libkernl,named,no,0,0,kernel patch: ReleaseAlarm

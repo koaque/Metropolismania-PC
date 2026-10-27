@@ -465,6 +465,7 @@ namespace
         installMovieSkip(runtime);
         installGsTrace(runtime);
         installCallTrace(runtime);
+        port::installGeneratedAudit(runtime); // last: it counts what the wrappers above hand on
     }
 }
 

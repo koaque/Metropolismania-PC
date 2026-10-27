@@ -149,6 +149,28 @@ namespace port
         ctx->r[reg] = _mm_set_epi64x(0, static_cast<int64_t>(value));
     }
 
+    inline uint64_t callGuestHandler(uint32_t handler, uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t t0); // below callGuest
+
+    // A system call as the SDK's wrappers make it: the number in v1, the arguments in a0 to a3 and t0, the result in v0. Only for
+    // calls that return at once: one that can wait would switch threads under the C++ frame (call its guest wrapper instead).
+    // A syscall the kernel library has overridden (SetSyscall) runs its handler, a guest function, with the arguments and gives
+    // the handler's v0, as the runtime does for the recompiled wrapper.
+    inline uint64_t syscall(uint32_t number, uint64_t a0 = 0, uint64_t a1 = 0, uint64_t a2 = 0, uint64_t a3 = 0, uint64_t t0 = 0)
+    {
+        R5900Context *ctx = g_call.ctx;
+        uint32_t handler = 0;
+        if (g_call.runtime->findEeSyscallOverride(number, handler) && handler != 0u && g_call.runtime->hasFunction(handler))
+            return callGuestHandler(handler, a0, a1, a2, a3, t0);
+        setGpr64(ctx, 3, number);
+        setGpr64(ctx, 4, a0);
+        setGpr64(ctx, 5, a1);
+        setGpr64(ctx, 6, a2);
+        setGpr64(ctx, 7, a3);
+        setGpr64(ctx, 8, t0);
+        g_call.runtime->handleSyscall(g_call.rdram, ctx, 0);
+        return gpr64(ctx, 2);
+    }
+
     // Sets the guest v0 as a 32-bit instruction would (sign-extended into the low 64 bits, upper half kept).
     // Some game functions leave v0 as they found it on some paths and their callers pass it on: ported code
     // that calls one sets v0 first to what the original had in it at that point.
@@ -194,6 +216,12 @@ namespace port
         }
         else if constexpr (mm::kIsGuestPtr<T>)
             return T{static_cast<uint32_t>(intArg(ctx, slot))};
+        else if constexpr (std::is_same_v<T, Quad>)
+        {
+            // A 128-bit value is the whole register (slots 0 to 7 are a0 to a3 and t0 to t3 as registers 4 to 11).
+            const __m128i reg = ctx->r[4 + slot];
+            return Quad{static_cast<uint64_t>(_mm_cvtsi128_si64(reg)), static_cast<uint64_t>(_mm_cvtsi128_si64(_mm_unpackhi_epi64(reg, reg)))};
+        }
         else
         {
             static_assert(std::is_integral_v<T>, "unsupported parameter type (pointers are mm::GuestPtr)");
@@ -261,7 +289,7 @@ namespace port
         {
             if constexpr (kFloatArg<T>)
                 fuzzFloat(ctx->f[12 + slot], state);
-            else if constexpr (!mm::kIsGuestPtr<T>)
+            else if constexpr (std::is_integral_v<T>) // pointers and 128-bit values stay as they are
             {
                 if (slot >= 8)
                     return;
@@ -397,6 +425,9 @@ namespace port
         return true;
     }
 
+    // The function the next callGuest runs instead of the one registered at its address (callOriginal sets it).
+    inline GuestFn g_forcedFunction = nullptr;
+
     template <typename R, typename... Args>
     R callGuest(uint32_t address, Args... args)
     {
@@ -438,7 +469,8 @@ namespace port
         ctx->pc = address;
         uint8_t *const rdram = g_call.rdram;
         PS2Runtime *const runtime = g_call.runtime;
-        const GuestFn fn = runtime->lookupFunction(address);
+        const GuestFn fn = g_forcedFunction != nullptr ? g_forcedFunction : runtime->lookupFunction(address);
+        g_forcedFunction = nullptr;
         // On a fiber a thread switch inside the callee parks the fiber here and the callee goes on from ctx->pc when the
         // thread is resumed; elsewhere the switch propagates as before (to the fatal error in Wrapper::run).
         const bool completed = runtime->eeScheduler().callOnFiber(
@@ -450,6 +482,27 @@ namespace port
         setGpr64(ctx, 29, savedSp);
         return getResult<R>(ctx);
     }
+
+    // The recompiled function that a port replaces (nullptr when the address is not ported), and whether MMPC_SDK_ORIGINAL (a comma
+    // separated list of names, 0xADDR or all) asks for it to run in place of the platform function at `address` (port.cpp).
+    GuestFn originalFunction(uint32_t address);
+    bool sdkOriginalRequested(uint32_t address);
+
+    // callGuest of the recompiled original of a ported function: a live run can compare a platform function with the code it replaced.
+    template <typename R, typename... Args>
+    R callOriginal(uint32_t address, Args... args)
+    {
+        const GuestFn original = originalFunction(address);
+        if (original == nullptr)
+            fatal("callOriginal of a function that is not ported", address);
+        g_forcedFunction = original;
+        return callGuest<R>(address, args...);
+    }
+
+    inline uint64_t callGuestHandler(uint32_t handler, uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t t0)
+    {
+        return static_cast<uint64_t>(callGuest<int64_t>(handler, a0, a1, a2, a3, t0));
+    }
 }
 
 #define PORT_JOIN2(a, b) a##b
@@ -460,3 +513,8 @@ namespace port
     static const port::AutoRegister PORT_JOIN(kPortRegistration_, __COUNTER__)(                    \
         mm::addr::NAME, #NAME, &port::Wrapper<&mm::NAME, mm::blocking::at<mm::addr::NAME>>::entry, port::Wrapper<&mm::NAME, mm::blocking::at<mm::addr::NAME>>::kResult,  \
         port::Wrapper<&mm::NAME, mm::blocking::at<mm::addr::NAME>>::kFuzzable ? &port::Wrapper<&mm::NAME, mm::blocking::at<mm::addr::NAME>>::mutate : nullptr)
+
+namespace mm
+{
+    using Quad = port::Quad; // the 128-bit argument type, for prototypes in config/*signatures.txt
+}

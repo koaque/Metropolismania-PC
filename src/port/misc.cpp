@@ -1221,6 +1221,13 @@ namespace mm
             StatusByte_ctorE0(static_cast<int>(globals::kMemberStatus + 4u * i));
     }
 
+    // Static constructor: the event queue's 256 two-byte elements (__construct_array in the original).
+    void StaticInit_EventQueue()
+    {
+        for (uint32_t i = 0; i < 0x100; ++i)
+            Pair_ctor(static_cast<int>(globals::kEventQueue + 2u * i));
+    }
+
     // core: the game object's sound state and scene pointers start empty.
     void GameInit(GuestPtr<Game> game)
     {
@@ -2705,6 +2712,7 @@ namespace mm
     PORT_FN(EventData_GetSize7C);
     PORT_FN(StageObj_ctor);
     PORT_FN(StaticInit_StatusBytes);
+    PORT_FN(StaticInit_EventQueue);
     PORT_FN(GameInit);
     PORT_FN(Char2_ctor);
     PORT_FN(Char2_Draw);

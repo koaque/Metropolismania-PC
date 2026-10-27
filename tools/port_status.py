@@ -45,7 +45,8 @@ BLOCKING_CALLS = {
 }
 PLACEHOLDER = re.compile(r"^(FUN|fn|entry|thunk_FUN)_[0-9A-Fa-f]{6,8}$")
 PORT_FN = re.compile(r"^\s*PORT_FN\((\w+)\)", re.M)
-PROTO_NAME = re.compile(r"^(0x[0-9A-Fa-f]{8}) .*?\bmm_(\w+)\(")
+PROTO_NAME = re.compile(r"^(0x[0-9A-Fa-f]{8}) .*?\b(mm_|sdk_)(\w+)\(")
+SIGNATURE_FILES = ("config/signatures.txt", "config/platform_signatures.txt")  # the game's, then the platform layer's
 STATUS_ORDER = ["unnamed", "named", "typed", "ported", "verified"]
 COLUMNS = ["address", "name", "size", "origin", "subsystem", "status", "blocking", "callers", "callees", "notes"]
 
@@ -73,15 +74,18 @@ def load_signatures(path: Path) -> set[int]:
     return out
 
 
-def load_ported(port_dir: Path, signatures_path: Path, sizes: dict[int, int]) -> set[int]:
+def load_ported(port_dir: Path, signature_paths: list[Path], sizes: dict[int, int]) -> set[int]:
     """Addresses of the functions src/port/ registers with PORT_FN(Name). Name is the game name without
-    "mm_" (tools/port_gen.py adds _<ADDR> to the smaller of two functions that share a name)."""
+    "mm_", or an SDK function's sdk_ name (tools/port_gen.py adds _<ADDR> to the smaller of two functions
+    that share a name)."""
     by_name: dict[str, list[int]] = defaultdict(list)
-    if signatures_path.exists():
+    for signatures_path in signature_paths:
+        if not signatures_path.exists():
+            continue
         for line in signatures_path.read_text(encoding="utf-8").splitlines():
             m = PROTO_NAME.match(line)
             if m:
-                by_name[m.group(2)].append(int(m.group(1), 16))
+                by_name[m.group(3) if m.group(2) == "mm_" else m.group(2) + m.group(3)].append(int(m.group(1), 16))
     out: set[int] = set()
     if not port_dir.exists():
         return out
@@ -143,8 +147,10 @@ def main() -> None:
     funcs = {int(f["entry"], 16): f for f in graph["functions"]}
 
     symbols = load_symbols(root / "config/symbols.csv")
-    signatures = load_signatures(root / "config/signatures.txt")
-    ported = load_ported(root / "src/port", root / "config/signatures.txt", {a: f["size"] for a, f in funcs.items()})
+    signatures = set()
+    for signature_file in SIGNATURE_FILES:
+        signatures |= load_signatures(root / signature_file)
+    ported = load_ported(root / "src/port", [root / s for s in SIGNATURE_FILES], {a: f["size"] for a, f in funcs.items()})
     results_path = root / "work/difftest/results.json"
     results = json.loads(results_path.read_text(encoding="utf-8")) if results_path.exists() else {}
     previous = load_previous(root / "config/port_status.csv")

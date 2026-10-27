@@ -10,6 +10,8 @@ usage: port_gen.py [--check]
                              and mm::<Name> (the game name without "mm_"). A function that src/port/ ports
                              (a PORT_FN(<Name>) line) is only declared; every other one gets an inline
                              body that calls the generated function through the runtime's function table.
+                             config/platform_signatures.txt (the platform layer: the SDK functions ported code
+                             reaches) is read the same way, its names keep the sdk_ prefix.
 
 Pointer parameters and results are mm::GuestPtr<T> (32-bit guest addresses), float parameters and
 float pointees are mm::ps2f. tools/pipeline.py stage runs this before copying src/port/.
@@ -108,7 +110,12 @@ def gen_types() -> tuple[str, set[str]]:
     return "\n".join(out), structs
 
 
-PROTO = re.compile(r"^(0x[0-9A-Fa-f]{8}) (.*?)\b(mm_\w+)\((.*)\);\s*$")
+PROTO = re.compile(r"^(0x[0-9A-Fa-f]{8}) (.*?)\b((?:mm|sdk)_\w+)\((.*)\);\s*$")
+
+
+def short_name(name: str) -> str:
+    """The game name loses its mm_ prefix; an SDK function keeps sdk_ (the platform layer, config/platform_signatures.txt)."""
+    return name[3:] if name.startswith("mm_") else name
 
 
 def cpp_type(ctype: str, structs: set[str]) -> str:
@@ -153,10 +160,14 @@ def gen_functions(structs: set[str]) -> str:
     extra_path = ROOT / "config/blocking_extra.txt"
     blocking_extra = {line.split("#")[0].strip() for line in extra_path.read_text(encoding="utf-8").splitlines()} - {""}         if extra_path.exists() else set()
     entries = []
-    for line in (ROOT / "config/signatures.txt").read_text(encoding="utf-8").splitlines():
-        m = PROTO.match(line)
-        if m:
-            entries.append((int(m.group(1), 16), m.group(2).strip(), m.group(3), m.group(4).strip()))
+    for source in ("config/signatures.txt", "config/platform_signatures.txt"):
+        path = ROOT / source
+        if not path.exists():
+            continue
+        for line in path.read_text(encoding="utf-8").splitlines():
+            m = PROTO.match(line)
+            if m:
+                entries.append((int(m.group(1), 16), m.group(2).strip(), m.group(3), m.group(4).strip()))
     # Ghidra shows a thunk under its target's name; the larger function keeps the plain name.
     by_name: dict[str, list[int]] = {}
     for addr, _, name, _ in entries:
@@ -164,12 +175,12 @@ def gen_functions(structs: set[str]) -> str:
     keep = {name: max(addrs, key=lambda a: sizes.get(a, 0)) for name, addrs in by_name.items()}
     ported = ported_names()
 
-    out = [HEADER.format(src="config/signatures.txt"), "#pragma once", "", '#include "abi.h"', '#include "game_types.h"', "",
+    out = [HEADER.format(src="config/signatures.txt and config/platform_signatures.txt"), "#pragma once", "", '#include "abi.h"', '#include "game_types.h"', "",
            "namespace mm", "{", "namespace addr", "{"]
     decls, bodies = [], []
     seen = set()
     for addr, ret, name, args in entries:
-        cname = name[3:] if keep[name] == addr else f"{name[3:]}_{addr:X}"
+        cname = short_name(name) if keep[name] == addr else f"{short_name(name)}_{addr:X}"
         if cname in structs:
             cname += "_fn"
         if cname in seen:
@@ -190,7 +201,7 @@ def gen_functions(structs: set[str]) -> str:
         sys.exit(f"port_gen: PORT_FN names without a prototype in config/signatures.txt: {', '.join(sorted(missing))}")
     addresses_by_name = {}
     for addr, _, name, _ in entries:
-        cname = name[3:] if keep[name] == addr else f"{name[3:]}_{addr:X}"
+        cname = short_name(name) if keep[name] == addr else f"{short_name(name)}_{addr:X}"
         if cname in structs:
             cname += "_fn"
         addresses_by_name[cname] = addr

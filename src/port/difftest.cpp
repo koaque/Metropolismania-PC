@@ -20,6 +20,10 @@
 // values, within each parameter's type); pointers keep their recorded values. That reaches branches the
 // recorded calls never take. Only for functions whose integer arguments are not loop bounds.
 //
+// Numeric fuzz: MMPC_DIFFTEST_NUMERIC=<cases> (with MMPC_DIFFTEST set to any directory, and MMPC_DIFFTEST_NUMERIC_FUNCTIONS=<names or all>)
+// calls the pure numeric platform functions (soft float, libm) with random bit patterns, as the generated function and as the port, and
+// compares the result register, sp, ra and the callee-saved registers. It needs no records and runs millions of cases in seconds.
+//
 // Subset: MMPC_DIFFTEST_ONLY=<names> replays only those functions (results.json is then left as it was).
 // A replay that does not return within MMPC_DIFFTEST_HANG_SECONDS (default 60) is reported as HANG and ends the
 // run: a record edited into a state the game never reaches can leave the original waiting forever.
@@ -58,6 +62,7 @@
 #include <atomic>
 #include <bit>
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <cstdio>
 #include <cstdlib>
@@ -77,6 +82,10 @@
 #include <thread>
 #include <unordered_map>
 #include <vector>
+
+// The generated function table's range (generated/register_functions.cpp).
+extern const uint32_t g_ps2RecompiledFunctionTableBase;
+extern const uint32_t g_ps2RecompiledFunctionTableEnd;
 
 namespace port
 {
@@ -109,12 +118,17 @@ namespace port
             return out;
         }
 
+        // Functions captured by address that no table names (an SDK function the platform layer does not cover, a runtime handler's
+        // wrapper): named fn_<address>.
+        std::map<uint32_t, std::string> g_addressNames;
+
         const char *gameName(uint32_t address)
         {
             for (const mm::GameFunction &f : mm::kGameFunctions)
                 if (f.address == address)
                     return f.name;
-            return nullptr;
+            const auto it = g_addressNames.find(address);
+            return it != g_addressNames.end() ? it->second.c_str() : nullptr;
         }
 
         bool gameAddress(const std::string &item, uint32_t &address)
@@ -122,7 +136,13 @@ namespace port
             if (item.rfind("0x", 0) == 0 || item.rfind("0X", 0) == 0)
             {
                 address = static_cast<uint32_t>(std::stoul(item, nullptr, 16));
-                return gameName(address) != nullptr;
+                if (gameName(address) == nullptr)
+                {
+                    char name[24];
+                    std::snprintf(name, sizeof(name), "fn_%08X", address);
+                    g_addressNames[address] = name;
+                }
+                return true;
             }
             for (const mm::GameFunction &f : mm::kGameFunctions)
                 if (item == f.name)
@@ -489,6 +509,14 @@ namespace port
                 ignoreLow2 = 0x01F10000u;
                 ignoreHigh2 = ignoreLow2 + 4u;
             }
+            // supplement_crt0 (and _InitSys, which calls it) makes two semaphores and keeps their ids at 0x1AC494 and 0x1AC498: the kernel
+            // numbers them up and the replay does not reset it, so the ported run gets the next two ids.
+            else if (p.name == "sdk_supplement_crt0" || p.name == "sdk_InitSys")
+            {
+                ignoreLow = 0x001AC494u;
+                ignoreLow2 = 0x001AC498u;
+                ignoreHigh2 = ignoreLow2 + 4u;
+            }
             // McManager_NewSaveName writes the console clock in seconds as digits: the two runs read it a moment apart, so the last
             // digits (bytes 16 to 23 of the name slot, which holds eight digits after the id string) are not compared.
             else if (p.name == "McManager_NewSaveName")
@@ -532,7 +560,14 @@ namespace port
             // old content, since a ported function writes no register spills for the frames below it to read. The slots look like padding;
             // nothing else differs.
             const bool playerSlots = p.name == "CityScene_Update" || p.name == "GameUpdate";
+            // sceSdRemote copies all six argument registers into its argument buffer, the unused ones too: a caller that passes fewer
+            // leaves whatever its registers held (the recompiled callee's own leftovers, which a native callee does not leave), so
+            // arguments 3 to 5 (the words at +0x10 to +0x1B) differ in every function that calls it. Nothing reads them; the sound
+            // driver ignores the arguments a command does not use. sdk_sceSdRemote's own records pass all six.
+            const bool sdRemoteLeftovers = p.name != "sdk_sceSdRemote";
             const auto same = [&](uint32_t k) {
+                if (sdRemoteLeftovers && k >= 0x001C3510u && k < 0x001C351Cu)
+                    return true;
                 for (const auto &range : extraIgnored)
                     if (k >= range.first && k < range.first + range.second)
                         return true;
@@ -734,6 +769,396 @@ namespace port
         std::cerr << "[difftest] counting calls of " << g_counted.size() << " game functions into " << path.string() << std::endl;
     }
 
+    // ---------------------------------------------------------------- generated entries (plan P7)
+    // MMPC_GENERATED_ENTRIES=<file>: every entry of the runtime's function table that is not a ported function (recompiled code, and
+    // the generated wrappers of the runtime's own handlers) is wrapped and counted by address; the file is rewritten every 5 s as
+    // "0xADDR calls" lines. tools/generated_audit.py joins it with the function map and the stub list: which recompiled functions
+    // still run. Only calls through the function table are seen (a ported function calling a ported one is a direct call).
+    namespace
+    {
+        uint32_t g_auditBase = 0;
+        std::vector<GuestFn> g_auditOriginal;
+        std::vector<std::atomic<uint64_t>> g_auditCalls;
+
+        void auditEntry(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            const size_t slot = (ctx->pc - g_auditBase) >> 2;
+            if (slot >= g_auditCalls.size())
+                fatal("generated-entry wrapper reached for an unknown address", ctx->pc);
+            g_auditCalls[slot].fetch_add(1, std::memory_order_relaxed);
+            g_auditOriginal[slot](rdram, ctx, runtime);
+        }
+
+        void writeAudit(const std::filesystem::path &path)
+        {
+            const std::filesystem::path temp = path.string() + ".tmp";
+            {
+                std::ofstream out(temp);
+                for (size_t slot = 0; slot < g_auditCalls.size(); ++slot)
+                    if (const uint64_t n = g_auditCalls[slot].load(std::memory_order_relaxed))
+                    {
+                        char line[64];
+                        std::snprintf(line, sizeof(line), "0x%08X %llu\n", g_auditBase + static_cast<uint32_t>(slot) * 4u, static_cast<unsigned long long>(n));
+                        out << line;
+                    }
+            }
+            std::error_code ec;
+            std::filesystem::rename(temp, path, ec);
+        }
+
+        // ---------------------------------------------------------------- numeric fuzz
+
+        // The pure numeric platform functions (soft float, libm) take their arguments in registers and touch only the stack below
+        // their entry sp. MMPC_DIFFTEST_NUMERIC=<cases> calls each of them with that many random bit patterns, once as the recompiled
+        // function and once as the port, and compares the result register, sp, ra and the callee-saved registers. Arguments: D is a
+        // double (64 bit register), F a float (f12, f13), U a 32 bit unsigned (the upper half of its register is random), I a 32 bit int sign extended,
+        // N a small signed count, X and Y the base and the exponent of pow.
+        struct NumericSpec
+        {
+            const char *name;
+            const char *args;
+        };
+        const NumericSpec kNumericSpecs[] = {
+            {"sdk_fptosi", "F"}, {"sdk_fptoui", "F"}, {"sdk_fptodp", "F"}, {"sdk_dptofp", "D"}, {"sdk_dptoli", "D"}, {"sdk_d_utod", "U"},
+            {"sdk_dpadd", "DD"}, {"sdk_dpmul", "DD"},  {"sdk_dpdiv", "DD"},  {"sdk_dpcmp", "DD"},  {"sdk_fp_ltdf2", "DD"},
+            {"sdk_fabsf", "F"},  {"sdk_sqrtf", "F"},   {"sdk_atanf", "F"},   {"sdk_acosf", "F"},   {"sdk_atan2f", "FF"},
+            {"sdk_fmodf", "FF"}, {"sdk_sinf", "F"},    {"sdk_cosf", "F"},
+            {"sdk_dpsub", "DD"}, {"sdk_litodp", "I"},  {"sdk_copysign", "DD"}, {"sdk_scalbn", "DN"}, {"sdk_sqrt", "D"}, {"sdk_pow", "XY"},
+        };
+
+        struct Rng
+        {
+            uint64_t state;
+            uint64_t next()
+            {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                return state;
+            }
+            uint32_t below(uint32_t n) { return static_cast<uint32_t>(next() % n); }
+        };
+
+        uint64_t randomBits(Rng &rng, int bits)
+        {
+            const uint64_t mask = bits >= 64 ? ~0ull : (1ull << bits) - 1;
+            switch (rng.below(8))
+            {
+            case 0: return 0;
+            case 1: return mask;
+            case 2: return 1;
+            case 3: return (1ull << rng.below(static_cast<uint32_t>(bits))) & mask;
+            case 4: return mask ^ (1ull << rng.below(static_cast<uint32_t>(bits)));
+            default: return rng.next() & mask;
+            }
+        }
+
+        // A double or a float as bits: the exponent mostly where arithmetic stays in range, now and then at the edges.
+        uint64_t randomFloatBits(Rng &rng, bool isDouble)
+        {
+            const int mantissaBits = isDouble ? 52 : 23;
+            const int exponentBits = isDouble ? 11 : 8;
+            const uint32_t exponentMax = (1u << exponentBits) - 1;
+            const uint32_t bias = exponentMax >> 1;
+            uint32_t exponent;
+            switch (rng.below(10))
+            {
+            case 0: exponent = 0; break;
+            case 1: exponent = exponentMax; break;
+            case 2: exponent = exponentMax - 1; break;
+            case 3: exponent = 1; break;
+            case 4:
+            case 5:
+            case 6: exponent = bias + rng.below(9) - 4; break;
+            case 7: exponent = bias + rng.below(80) - 20; break;
+            case 8: exponent = bias + rng.below(130) - 65; break;
+            default: exponent = rng.below(exponentMax + 1); break;
+            }
+            return (static_cast<uint64_t>(rng.next() & 1) << (exponentBits + mantissaBits)) | (static_cast<uint64_t>(exponent) << mantissaBits) |
+                   randomBits(rng, mantissaBits);
+        }
+
+        // An operand close to another one (equal, opposite, one bit or one unit apart, the same exponent), so that sums cancel and
+        // comparisons meet equal operands.
+        uint64_t correlatedBits(Rng &rng, uint64_t first, bool isDouble)
+        {
+            const int mantissaBits = isDouble ? 52 : 23;
+            const uint64_t signBit = 1ull << ((isDouble ? 11 : 8) + mantissaBits);
+            const uint64_t mantissaMask = (1ull << mantissaBits) - 1;
+            switch (rng.below(7))
+            {
+            case 0: return first ^ signBit;
+            case 1: return first;
+            case 2: return first ^ (1ull << rng.below(static_cast<uint32_t>(mantissaBits)));
+            case 3: return first + 1;
+            case 4: return first - 1;
+            case 5: return (first & ~mantissaMask) | randomBits(rng, mantissaBits);
+            default: return randomFloatBits(rng, isDouble);
+            }
+        }
+
+        uint64_t randomUnsigned(Rng &rng)
+        {
+            switch (rng.below(6))
+            {
+            case 0: return rng.below(16);
+            case 1: return (1ull << rng.below(32)) + rng.below(3) - 1;
+            case 2: return 0x7FFFFFFFull + rng.below(3) - 1;
+            default: return randomBits(rng, 32);
+            }
+        }
+
+        // A small signed int for an exponent count, with the edges of its range now and then.
+        uint64_t randomCount(Rng &rng)
+        {
+            int64_t n;
+            switch (rng.below(10))
+            {
+            case 0:
+            case 1: n = 50000 + static_cast<int64_t>(rng.below(5)) - 2; break;
+            case 2: n = -50000 + static_cast<int64_t>(rng.below(5)) - 2; break;
+            case 3: n = static_cast<int32_t>(randomUnsigned(rng)); break;
+            default: n = static_cast<int64_t>(rng.below(4400)) - 2200; break;
+            }
+            return static_cast<uint64_t>(n);
+        }
+
+        // A base for pow: usually a positive number of moderate size, sometimes the special ones, negative or random.
+        uint64_t randomBase(Rng &rng)
+        {
+            switch (rng.below(10))
+            {
+            case 0: return std::bit_cast<uint64_t>(10.0);
+            case 1: return std::bit_cast<uint64_t>(static_cast<double>(rng.below(5)) * 0.5 + 0.5);
+            case 2: return randomBits(rng, 64);
+            case 3: return randomFloatBits(rng, true);
+            case 4: return std::bit_cast<uint64_t>(-static_cast<double>(rng.below(2000) + 1) / static_cast<double>(1u << rng.below(8)));
+            default: return std::bit_cast<uint64_t>(static_cast<double>(rng.below(1000000) + 1) / static_cast<double>(1u << rng.below(12)));
+            }
+        }
+
+        // An exponent for pow: mostly small integers and halves, sometimes huge or random.
+        uint64_t randomExponent(Rng &rng)
+        {
+            switch (rng.below(10))
+            {
+            case 0:
+            case 1:
+            case 2:
+            case 3: return std::bit_cast<uint64_t>(static_cast<double>(static_cast<int32_t>(rng.below(61)) - 30));
+            case 4: return std::bit_cast<uint64_t>(static_cast<double>(static_cast<int32_t>(rng.below(61)) - 30) + 0.5);
+            case 5: return std::bit_cast<uint64_t>(std::ldexp(static_cast<double>(rng.below(1000) + 1), static_cast<int>(rng.below(40))) * (rng.below(2) ? 1.0 : -1.0));
+            case 6: return std::bit_cast<uint64_t>(static_cast<double>(static_cast<int32_t>(rng.below(2001)) - 1000) / 7.0);
+            default: return randomFloatBits(rng, true);
+            }
+        }
+
+        struct NumericResult
+        {
+            uint64_t v0;
+            uint32_t f0;
+            uint64_t sp, ra;
+            uint64_t saved[12];
+            uint32_t fsaved[12];
+            bool returned;
+            bool faulted;
+        };
+
+        // MMPC_DIFFTEST_NUMERIC_ARGS=<hex>,<hex> replaces the random arguments by these (one case per function, both results printed).
+        std::vector<uint64_t> g_numericFixedArguments;
+
+        void numericArguments(const char *spec, uint64_t seed, uint64_t *values)
+        {
+            if (!g_numericFixedArguments.empty())
+            {
+                for (size_t i = 0; i < g_numericFixedArguments.size() && i < 4; ++i)
+                    values[i] = g_numericFixedArguments[i];
+                return;
+            }
+            Rng rng{seed * 0x9E3779B97F4A7C15ull + 0x1234567ull};
+            for (int i = 0; i < 4; ++i)
+                rng.next();
+            int index = 0;
+            for (const char *c = spec; *c; ++c, ++index)
+            {
+                const bool isDouble = *c == 'D';
+                if (*c == 'D' || *c == 'F')
+                    values[index] = index > 0 && rng.below(10) < 4 ? correlatedBits(rng, values[index - 1], isDouble) : randomFloatBits(rng, isDouble);
+                else if (*c == 'U')
+                    values[index] = randomUnsigned(rng) | (rng.below(2) ? 0 : rng.next() << 32);
+                else if (*c == 'N')
+                    values[index] = randomCount(rng);
+                else if (*c == 'I')
+                    values[index] = static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(randomUnsigned(rng))));
+                else if (*c == 'X')
+                    values[index] = randomBase(rng);
+                else if (*c == 'Y')
+                    values[index] = randomExponent(rng);
+                else
+                    values[index] = rng.next();
+            }
+        }
+
+        void numericRun(PS2Runtime &runtime, GuestFn fn, uint32_t address, const char *spec, const uint64_t *values, NumericResult &out)
+        {
+            R5900Context ctx{};
+            // every case starts from the same stack: the recompiled functions read parts of their frames they never wrote
+            std::memset(g_rdram + 0x01D7F000u, 0, 0x1000);
+            setGpr64(&ctx, 29, 0x01D80000u);
+            setGpr64(&ctx, 31, kReturnSentinel);
+            for (int i = 16; i < 24; ++i)
+                setGpr64(&ctx, i, 0x5A5A5A5A00000000ull | static_cast<uint64_t>(i));
+            setGpr64(&ctx, 28, 0x5A5A5A5A5A5A5A5Aull);
+            setGpr64(&ctx, 30, 0x5A5A5A5A0000001Eull);
+            for (int f = 20; f < 32; ++f)
+            {
+                const uint32_t bits = 0x3F800000u + static_cast<uint32_t>(f);
+                std::memcpy(&ctx.f[f], &bits, sizeof(bits));
+            }
+            int index = 0;
+            for (const char *c = spec; *c; ++c, ++index)
+            {
+                if (*c == 'F')
+                {
+                    const uint32_t bits = static_cast<uint32_t>(values[index]);
+                    std::memcpy(&ctx.f[12 + index], &bits, sizeof(bits));
+                }
+                else
+                    setGpr64(&ctx, 4 + index, values[index]); // a 32 bit argument may carry anything in the upper half, a callee ignores it
+            }
+            ctx.pc = address;
+            out = {};
+            runtime.eeScheduler().enterNoPreempt();
+            try
+            {
+                fn(g_rdram, &ctx, &runtime);
+                out.returned = finishGuestCall(g_rdram, &ctx, &runtime, address, kReturnSentinel) && (ctx.pc == kReturnSentinel || ctx.pc == address);
+            }
+            catch (const EeDispatcherTransfer &)
+            {
+            }
+            catch (const Fault &)
+            {
+                out.faulted = true;
+            }
+            runtime.eeScheduler().leaveNoPreempt();
+            out.v0 = gpr64(&ctx, 2);
+            std::memcpy(&out.f0, &ctx.f[0], sizeof(out.f0));
+            out.sp = gpr64(&ctx, 29);
+            out.ra = gpr64(&ctx, 31);
+            static const int kSavedRegisters[] = {16, 17, 18, 19, 20, 21, 22, 23, 28, 29, 30, 31};
+            for (int i = 0; i < 12; ++i)
+            {
+                out.saved[i] = gpr64(&ctx, kSavedRegisters[i]);
+                std::memcpy(&out.fsaved[i], &ctx.f[20 + i], sizeof(uint32_t));
+            }
+        }
+
+        // Runs every numeric function that is ported (or those named); returns the number of cases that differed.
+        size_t runNumericFuzz(PS2Runtime &runtime, uint64_t cases, const std::set<std::string> &names, bool all)
+        {
+            constexpr uint64_t kChunk = 4096;
+            size_t totalBad = 0;
+            if (const char *fixed = env("MMPC_DIFFTEST_NUMERIC_ARGS"))
+                for (const std::string &item : splitList(fixed))
+                    g_numericFixedArguments.push_back(std::strtoull(item.c_str(), nullptr, 16));
+            for (const NumericSpec &spec : kNumericSpecs)
+            {
+                if (!all && names.count(spec.name) == 0)
+                    continue;
+                const Ported *ported_ = nullptr;
+                for (const Ported &p : ported())
+                    if (std::strcmp(p.name, spec.name) == 0)
+                        ported_ = &p;
+                if (ported_ == nullptr)
+                {
+                    std::cout << "[numeric] " << spec.name << ": not ported, skipped" << std::endl;
+                    continue;
+                }
+                const bool intResult = ported_->result == ResultKind::Int;
+                const bool floatResult = ported_->result == ResultKind::Float;
+                size_t bad = 0, reported = 0;
+                std::vector<NumericResult> generated(kChunk), native(kChunk);
+                for (uint64_t base = 0; base < cases; base += kChunk)
+                {
+                    const uint64_t n = std::min<uint64_t>(kChunk, cases - base);
+                    useGenerated(runtime, true);
+                    for (uint64_t i = 0; i < n; ++i)
+                    {
+                        uint64_t values[4] = {};
+                        numericArguments(spec.args, base + i + 1, values);
+                        numericRun(runtime, ported_->original, ported_->address, spec.args, values, generated[i]);
+                    }
+                    useGenerated(runtime, false);
+                    for (uint64_t i = 0; i < n; ++i)
+                    {
+                        uint64_t values[4] = {};
+                        numericArguments(spec.args, base + i + 1, values);
+                        numericRun(runtime, ported_->wrapper, ported_->address, spec.args, values, native[i]);
+                        const NumericResult &a = generated[i], &b = native[i];
+                        if (!g_numericFixedArguments.empty())
+                            std::cout << "[numeric] " << spec.name << " probe: original v0 " << std::hex << a.v0 << " f0 " << a.f0 << ", port v0 " << b.v0 << " f0 "
+                                      << b.f0 << std::dec << std::endl;
+                        bool same = a.returned == b.returned && a.faulted == b.faulted && a.sp == b.sp && a.ra == b.ra;
+                        same = same && (!intResult || a.v0 == b.v0) && (!floatResult || a.f0 == b.f0);
+                        for (int k = 0; k < 12; ++k)
+                            same = same && a.saved[k] == b.saved[k] && a.fsaved[k] == b.fsaved[k];
+                        if (same)
+                            continue;
+                        ++bad;
+                        if (reported++ < 5)
+                        {
+                            std::cout << "[numeric] FAIL " << spec.name << " case " << (base + i + 1) << " args";
+                            for (int k = 0; spec.args[k]; ++k)
+                                std::cout << " " << std::hex << values[k] << std::dec;
+                            std::cout << ": original v0 " << std::hex << a.v0 << " f0 " << a.f0 << " vs port v0 " << b.v0 << " f0 " << b.f0 << std::dec
+                                      << (a.returned ? "" : " (original did not return)") << (b.returned ? "" : " (port did not return)")
+                                      << (b.faulted ? " (port faulted)" : "") << std::endl;
+                        }
+                    }
+                }
+                std::cout << "[numeric] " << spec.name << ": " << cases << " cases, " << bad << " differ" << std::endl;
+                totalBad += bad;
+            }
+            return totalBad;
+        }
+    }
+
+    void installGeneratedAudit(PS2Runtime &runtime)
+    {
+        const char *file = env("MMPC_GENERATED_ENTRIES");
+        if (!file)
+            return;
+        g_auditBase = g_ps2RecompiledFunctionTableBase;
+        const size_t slots = ((g_ps2RecompiledFunctionTableEnd - g_auditBase) >> 2) + 1;
+        std::set<uint32_t> ports;
+        for (const Ported &p : ported())
+            ports.insert(p.address);
+        g_auditOriginal.assign(slots, nullptr);
+        g_auditCalls = std::vector<std::atomic<uint64_t>>(slots);
+        size_t wrapped = 0;
+        for (size_t slot = 0; slot < slots; ++slot)
+        {
+            const uint32_t address = g_auditBase + static_cast<uint32_t>(slot) * 4u;
+            if (!runtime.hasFunction(address) || ports.count(address) != 0)
+                continue;
+            g_auditOriginal[slot] = runtime.lookupFunction(address);
+            runtime.registerFunction(address, auditEntry);
+            ++wrapped;
+        }
+        const std::filesystem::path path = std::filesystem::absolute(file);
+        std::thread([path]()
+                    {
+                        for (;;)
+                        {
+                            std::this_thread::sleep_for(std::chrono::seconds(5));
+                            writeAudit(path);
+                        }
+                    })
+            .detach();
+        std::cerr << "[difftest] counting entries of " << wrapped << " generated functions' addresses into " << path.string() << std::endl;
+    }
+
     bool captureRequested() { return env("MMPC_CAPTURE") != nullptr; }
 
     void installCapture(PS2Runtime &runtime)
@@ -785,6 +1210,24 @@ namespace port
             return;
         const std::filesystem::path dir(dirText);
         setFaultsThrow(true);
+        // MMPC_DIFFTEST_NUMERIC=<cases> [MMPC_DIFFTEST_NUMERIC_FUNCTIONS=<names or all>]: the numeric fuzz (see above), then exit.
+        if (const char *casesText = env("MMPC_DIFFTEST_NUMERIC"))
+        {
+            std::set<std::string> numericNames;
+            bool numericAll = env("MMPC_DIFFTEST_NUMERIC_FUNCTIONS") == nullptr;
+            if (const char *list = env("MMPC_DIFFTEST_NUMERIC_FUNCTIONS"))
+                for (const std::string &item : splitList(list))
+                {
+                    if (item == "all")
+                        numericAll = true;
+                    else
+                        numericNames.insert(item);
+                }
+            const size_t bad = runNumericFuzz(runtime, std::strtoull(casesText, nullptr, 0), numericNames, numericAll);
+            std::cout << "[numeric] " << bad << " case(s) differ" << std::endl;
+            std::cout.flush();
+            std::exit(static_cast<int>(std::min<size_t>(bad, 125)));
+        }
         // MMPC_DIFFTEST_FUZZ=N replays every record N more times with mutated arguments, for the functions
         // named in MMPC_DIFFTEST_FUZZ_FUNCTIONS (comma separated, or "all").
         const int fuzzCount = env("MMPC_DIFFTEST_FUZZ") ? std::atoi(env("MMPC_DIFFTEST_FUZZ")) : 0;

@@ -2407,12 +2407,37 @@ namespace mm
         return map;
     }
 
-    // Allocates the 0x4000 tiles (0x18 bytes each, after a 0x10-byte header) and constructs each with 0x142570.
+    // The element constructors the array allocations below call through a pointer (code labels without a Ghidra function:
+    // config/platform_signatures.txt). A tile starts flat, with no object and not walkable.
+    GuestPtr<MapTile> MapTile_ctor(GuestPtr<MapTile> tile)
+    {
+        tile->firstObject = kNoObject;
+        tile->flags = 0;
+        tile->height = 0.0f;
+        return tile;
+    }
+
+    // An object starts as type 0.
+    GuestPtr<MapObject> MapObject_ctor(GuestPtr<MapObject> object)
+    {
+        object->type = 0;
+        return object;
+    }
+
+    // A person starts with no character type and the friendship status byte at 0xE0.
+    GuestPtr<MapPerson> MapPerson_ctor(GuestPtr<MapPerson> person)
+    {
+        person->status = 0xE0;
+        person->charType = 0;
+        return person;
+    }
+
+    // Allocates the 0x4000 tiles (0x18 bytes each, after a 0x10-byte header) and constructs each with MapTile_ctor.
     GuestPtr<CityMap> MapTiles_ctor(GuestPtr<CityMap> map)
     {
         BaseObject_ctor(static_cast<int>(map.address));
         const uint32_t block = sdk::mw_NewArray(0x60010u);
-        map->tiles = GuestPtr<MapTile>{sdk::construct_new_array(block, 0x00142570u, 0u, 0x18u, 0x4000u)};
+        map->tiles = GuestPtr<MapTile>{sdk::construct_new_array(block, addr::MapTile_ctor, 0u, 0x18u, 0x4000u)};
         return map;
     }
 
@@ -2431,6 +2456,9 @@ namespace mm
         }
     }
 
+    PORT_FN(MapTile_ctor);
+    PORT_FN(MapObject_ctor);
+    PORT_FN(MapPerson_ctor);
     PORT_FN(MapTiles_dtor);
     PORT_FN(MapTiles_ctor);
     PORT_FN(MapSave_AllocBuffer);
@@ -2551,7 +2579,7 @@ namespace mm
             lists = TileLists_Clear(GuestPtr<TileLists>{lists}).address;
         port::store<uint32_t>(map.address + 0xCu, lists);
         const uint32_t block = sdk::mw_NewArray(0x6F210u);
-        port::store<uint32_t>(map.address + 8u, sdk::construct_new_array(block, 0x00145BF0u, 0u, 0x1Cu, 0x3F80u));
+        port::store<uint32_t>(map.address + 8u, sdk::construct_new_array(block, addr::MapObject_ctor, 0u, 0x1Cu, 0x3F80u));
         MapObj_Init(map, 0, 1, 0, 0x4000);
         for (int z = 2; z < 0x7E; ++z)
             for (int x = 2; x < 0x7E; ++x)
@@ -2579,7 +2607,7 @@ namespace mm
         port::store<uint32_t>(map.address + 0x64u, 0x001BCEE0u);
         port::store<uint32_t>(map.address + 0x6Cu, 0u);
         const uint32_t block = sdk::mw_NewArray(0x46510u);
-        port::store<uint32_t>(map.address + 0x68u, sdk::construct_new_array(block, 0x00143630u, 0u, 0x30u, 6000u));
+        port::store<uint32_t>(map.address + 0x68u, sdk::construct_new_array(block, addr::MapPerson_ctor, 0u, 0x30u, 6000u));
         port::store<uint32_t>(map.address + 0x70u, 0u);
         port::store<uint32_t>(map.address + 0x74u, 0u);
         return map;

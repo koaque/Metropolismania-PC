@@ -504,6 +504,9 @@ def cmd_stage(_: argparse.Namespace) -> None:
             shutil.copy2(src, staging / f"zz_port_{src.name}")
         elif src.suffix == ".h":
             shutil.copy2(src, staging / src.name)
+    # The platform layer (SDK and runtime library functions, plan P7) is in its own folder.
+    for src in (ROOT / "src/port/platform").glob("*.cpp"):
+        shutil.copy2(src, staging / f"zz_port_platform_{src.name}")
     if not (staging / "register_functions.cpp").exists():
         sys.exit("generated/register_functions.cpp missing; run: pipeline.py recompile")
     changed = sync_tree(staging, runner)
