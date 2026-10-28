@@ -50,7 +50,7 @@ Progress per subsystem is tracked in [docs/PORT_STATUS.md](docs/PORT_STATUS.md).
 | Readable source port | In progress: all 1,481 of the game's functions rewritten, 1,432 of them verified against the original (97%) ([details](docs/PORT_STATUS.md)) |
 | Platform layer (SDK and C runtime) | In progress: 123 of the 768 SDK functions rewritten as plain C++ in `src/port/platform/`; 91 verified by replay, 25 numeric ones (soft float, libm) by random-input comparison, 7 not yet shown. No recompiled SDK function is reachable from the ported code, and the explore and new-game runs enter none ([details](docs/PLATFORM_FINDINGS.md)) |
 | VU1 microcode | The city's programs run natively, checked against the interpreter ([details](docs/VU1_PROGRAMS.md)) |
-| Sound driver (IOP) | In progress: the game's own driver (YYSOUND, 114 functions) is rewritten as readable C++ in `src/port/iop/` and checked call by call against the original (the original's code runs beside each rewritten function, in whole runs through the movie and the city, and on injected commands for the paths the game rarely takes: 0 differences, bar a few uninitialized stack bytes that the details list). The nine Sony modules (memory card, pad, SPU2 library, MIDI and sound-effect synthesizers) are not translated yet ([details](docs/IOP.md)) |
+| Sound driver (IOP) | The game's own driver (YYSOUND, 114 functions) is rewritten as readable C++ in `src/port/iop/` and checked call by call against the original (0 differences, bar a few uninitialized stack bytes that the details list). All ten IOP modules, YYSOUND and the nine Sony modules (memory card, pad, SPU2 library, MIDI and sound-effect synthesizers), run as C++ translated ahead of time from your disc's modules, which matches the interpreter exactly (the same state at every checked point, the same audio, random programs of every instruction form; no instruction of the ten modules is interpreted in the scripted runs). The Sony modules are not rewritten as readable source ([details](docs/IOP.md)) |
 | Widescreen, high refresh rate, hi-res, native controls, Linux | Proposed, not started ([see below](#proposed-patches)) |
 
 ## How it works
@@ -193,7 +193,7 @@ This is a fan preservation project. It is not affiliated with or endorsed by Ind
 | 読みやすいソースへの移植 | 進行中。1,481関数すべてを書き直し済み、うち1,432関数を元のコードとの照合で検証済み(97%)([詳細](docs/PORT_STATUS.md)) |
 | プラットフォーム層(SDKとCランタイム) | 進行中。768個のSDK関数のうち123個を `src/port/platform/` に素のC++で書き直し済み。91個はリプレイで、25個の数値関数(ソフトフロート、libm)はランダム入力との比較で検証済み、7個は未検証。移植済みコードから到達できる再コンパイル済みSDK関数はなく、探索と新規ゲームの実行でも再コンパイル済み関数は実行されません([詳細](docs/PLATFORM_FINDINGS.md)) |
 | VU1マイクロコード | 街のプログラムはネイティブで動作し、インタプリタとの照合済み([詳細](docs/VU1_PROGRAMS.md)) |
-| サウンドドライバ(IOP) | 進行中。ゲーム自身のドライバ(YYSOUND、114関数)を `src/port/iop/` に読みやすいC++として書き直し済みで、元のコードと呼び出しごとに照合しています(書き直した各関数の横で元のコードを実行。ムービーと街を通した実行全体と、ゲームがあまり通らない経路のための注入コマンドで、差異は0件。初期化されていないスタックの数バイトを除く。詳細に記載)。Sony製の9モジュール(メモリーカード、パッド、SPU2ライブラリ、MIDIと効果音のシンセサイザ)は未変換です([詳細](docs/IOP.md))|
+| サウンドドライバ(IOP) | ゲーム自身のドライバ(YYSOUND、114関数)を `src/port/iop/` に読みやすいC++として書き直し済みで、元のコードと呼び出しごとに照合しています(差異は0件。初期化されていないスタックの数バイトを除く。詳細に記載)。YYSOUNDとSony製の9モジュール(メモリーカード、パッド、SPU2ライブラリ、MIDIと効果音のシンセサイザ)を含む10個のIOPモジュールすべてを、ディスクのモジュールから事前に変換したC++で実行しており、インタプリタと完全に一致します(照合した各時点で同じ状態、同じ音声、あらゆる命令形式のランダムなプログラム。スクリプトによる実行では10モジュールの命令をインタプリタで実行することはありません)。Sony製モジュールは読みやすいソースには書き直していません([詳細](docs/IOP.md))|
 | ワイドスクリーン、高リフレッシュレート、高解像度、ネイティブ操作、Linux | 構想中、未着手 |
 
 ### 仕組み

@@ -152,3 +152,45 @@ every verified call.
   keeps locals on the stack, or passes stack arguments, needs a `Frame` of the original's size, or the callee's locals sit at other
   addresses (the import arguments then differ).
 
+## The translated modules (P5.3)
+
+All ten modules (SIO2MAN, MCMAN, MCSERV, PADMAN, LIBSD, SDRDRV, MODMIDI, MODHSYN, MODSEIN, YYSOUND: 60,861 reachable instructions) are
+translated ahead of time into C++ that runs them natively, behaving exactly like the interpreter in `core/iop_cpu.cpp`.
+
+- **Making it**: `python tools/pipeline.py iop-aot` (`tools/iop_aot.py`) reads the IRX files in `original/SYS`, relocates each at the
+  address the game loads it at, finds its code by reachability (the entry, the exports, every code address a relocation makes into a
+  value, and the branch targets), and writes `work/iop_aot/<MODULE>.cpp` (21 MB in all). It is machine-translated game code, so it is
+  never committed (AGENTS.md rule 8); `pipeline.py stage` copies it into the runtime tree and `pipeline.py build` compiles it. The
+  generated code includes only `ps2x/iop/iop_aot.h`; the emulator side is in `patches/0139-iop-native-hook.patch`.
+- **How it matches the interpreter**: a block is the code from a leader to the next branch or jump with its delay slot, written as a C++
+  function of straight-line code in which every instruction is a label, so a run can end and resume at any instruction. After each
+  instruction the code counts it and, when the budget is used up, writes the exact processor state: the pc, a branch waiting for its
+  delay slot, a load waiting to land. The budget is the smaller of the slice (256 instructions) and the cycles to the next due event
+  (a DMA interrupt or a guest callback), so slices, event service and thread switches fall at the instruction the interpreter stops at.
+  An instruction that needs the emulator's per-step work after it (a hardware access, a write to the status or cause register)
+  ends the run. A native replacement of the YYSOUND port is still taken at its address (a mask of the words that have one).
+  The emulator arms a module's translation only when the loaded image has the hash and address it was translated for (a different disc
+  leaves the interpreter on, with a log line); `PS2X_IOP_AOT=0` turns the translation off.
+- **Checking it**:
+  - `PS2X_IOP_VERIFY=1` also checks translated runs (the first runs of a module and every `PS2X_IOP_VERIFY_EVERY`-th, or all of them in
+    a `PS2X_IOP_VERIFY_ALL` window): the same run is done again by the interpreter from the same state and the processor, all of RAM and
+    the ownership flags are compared; the interpreter's state continues. A run that touched hardware cannot be repeated (the devices
+    have changed): it is counted as not verifiable.
+  - `PS2X_IOP_TRACE_HASH=<ms>` logs, every n milliseconds of IOP time, the cycle and instruction counts and a hash of RAM, the ownership
+    flags and every thread's processor state. Two runs of a scenario that is deterministic (the title screen left alone; once the movie
+    is playing two interpreter runs differ too) give the same lines if, and only if, the execution is the same: with the translation
+    on and off, 235 of 235 lines are identical, with all ten modules translated, and the SPU2 mix captured with `PS2X_SPU2_WAV` is
+    byte-identical over 11 MB (58 seconds of stereo). This is what checks the hardware code (LIBSD, SDRDRV, SIO2MAN, MCMAN, PADMAN)
+    that the run verifier cannot repeat. It found the one place where the translation differed: a DMA a hardware store starts is timed
+    from the cycle before the store is counted.
+  - `tools/iop_aot_fuzz.py` (harness in `tools/iop_aot_fuzz/`): random programs with every instruction form (traps, delay slots, loads and
+    stores with misaligned and hardware addresses) translated and run from random registers in runs of random length, the interpreter
+    stepped the same number of instructions after each run, the whole state compared: 150 programs of 400 trials agree. A random
+    program that stores into its own code is out of scope (the translation is of the code as it was) and ends the trial.
+  - `PS2X_IOP_AOT_STATS=1` counts, per module, the instructions that ran translated and those the interpreter ran inside the module
+    (the gate: 0). Over the title, new game, movie and city entry, and the explore and probe runs, no instruction of the ten modules
+    is interpreted. `python tools/generated_audit.py --iop-log <runner log>` prints the table from such a log and fails when a
+    module interpreted anything or a verified run differed.
+- **What it does not do**: code that writes into its own text (none of the modules does) would run as it was translated; an
+  instruction at an address the static pass did not reach is not translated, and the gate shows it.
+

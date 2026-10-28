@@ -14,7 +14,8 @@ Steps, in order:
   pointers    add functions reached only through pointers (vtables, ctor/callback tables), re-analyze
   script      run one Ghidra script from tools/ghidra against the project (read-only by default)
   recompile   render config/metropolismania.template.toml and run ps2_recomp into generated/
-  stage       copy generated code, src/overrides and src/port (after tools/port_gen.py) into the runtime tree
+  stage       copy generated code, src/overrides and src/port (after tools/port_gen.py) and work/iop_aot into the runtime tree
+  iop-aot     translate the IOP modules in original/SYS into work/iop_aot (tools/iop_aot.py, plan P5.3); then stage and build
   build       build ps2EntryRunner
   run         start the runner with a timeout and capture a log in logs/
   capture     visible run that records calls of chosen functions into work/difftest/
@@ -515,6 +516,9 @@ def cmd_stage(_: argparse.Namespace) -> None:
             shutil.copy2(src, staging / src.name)
     for header in (ROOT / "config/iop").glob("*.h"):
         shutil.copy2(header, staging / header.name)
+    # The translated IOP modules (plan P5.3): tools/iop_aot.py writes them; machine-translated game code that is never committed.
+    for src in (WORK / "iop_aot").glob("*.cpp"):
+        shutil.copy2(src, staging / f"zz_port_iop_aot_{src.name}")
     if not (staging / "register_functions.cpp").exists():
         sys.exit("generated/register_functions.cpp missing; run: pipeline.py recompile")
     changed = sync_tree(staging, runner)
@@ -525,6 +529,10 @@ def cmd_stage(_: argparse.Namespace) -> None:
             shutil.copy2(header, dest)
             changed += 1
     log(f"runtime tree staged ({changed} file(s) changed)")
+
+
+def cmd_iop_aot(_: argparse.Namespace) -> None:
+    run([sys.executable, "-I", str(ROOT / "tools/iop_aot.py")])
 
 
 def cmd_build(_: argparse.Namespace) -> None:
@@ -723,6 +731,8 @@ def main() -> int:
     p.add_argument("--pad", help="scripted pad input file (PS2X_PAD_SCRIPT)")
     p.add_argument("--env", action="append", help="extra environment variable KEY=VALUE (repeatable), e.g. MMPC_TRACE=1")
     p.set_defaults(func=cmd_run)
+    p = sub.add_parser("iop-aot", help="translate the IOP modules into work/iop_aot (plan P5.3)")
+    p.set_defaults(func=cmd_iop_aot)
     p = sub.add_parser("capture", help="visible run that records function calls for difftest")
     p.add_argument("--functions", default="ported", help='comma-separated names or 0xADDRs, or "ported" (default)')
     p.add_argument("--max", type=int, default=8, help="records per function")

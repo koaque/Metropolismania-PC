@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Which generated (recompiled) EE functions still run? The exit check of plan P7.
 
-usage: generated_audit.py [--counts FILE [--counts FILE ...]]
+usage: generated_audit.py [--counts FILE [--counts FILE ...]] | --iop-log LOG [--iop-log LOG ...]
 
   --counts FILE   the file a run wrote with MMPC_GENERATED_ENTRIES=FILE (the entry counts of every function that is not
                   ported, by address; give several to merge runs). Prints the functions that were entered, split into
                   recompiled code and the generated wrappers of the runtime's own handlers (the stubs of the recompiler
                   config). This is the truth about what runs; the static list below only finds candidates.
+  --iop-log LOG   the IOP side: a runner log written with PS2X_IOP_AOT_STATS=1. Prints each translated module's counts (the last
+                  line of the log per module) and fails if any instruction was interpreted inside a module or a verified run differed.
   (no option)     static: the recompiled SDK functions that ported code can reach, found from the call graph
                   (work/map/graph.json: calls and function pointers), the code addresses src/port/ names itself (a number or
                   addr::<name>) and the tail jumps read from generated/*.cpp, not
@@ -172,10 +174,36 @@ def static_mode() -> int:
     return 0
 
 
+def iop_mode(logs: list[Path]) -> int:
+    """The IOP side of the exit check (plan P5.3): the last `[iop:aot]` line of each module in the given runner logs."""
+    pattern = re.compile(r"\[iop:aot\] ([\w.;]+): (\d+) instruction\(s\) translated in (\d+) run\(s\), (\d+) interpreted inside the module"
+                         r"(?:; (\d+) run\(s\) verified, (\d+) mismatch\(es\), (\d+) not verifiable)?")
+    last: dict[str, tuple[int, ...]] = {}
+    for log in logs:
+        for line in log.read_text(encoding="utf-8", errors="replace").splitlines():
+            m = pattern.search(line)
+            if m:
+                last[m.group(1)] = tuple(int(g) if g else 0 for g in m.groups()[1:])
+    if not last:
+        print("no [iop:aot] lines: run with PS2X_IOP_AOT_STATS=1")
+        return 2
+    print(f"{'module':14} {'translated':>12} {'runs':>10} {'interpreted':>12} {'verified':>9} {'mismatches':>10} {'not verifiable':>14}")
+    bad = False
+    for name, (translated, runs, interpreted, verified, mismatches, unverifiable) in sorted(last.items()):
+        print(f"{name:14} {translated:12} {runs:10} {interpreted:12} {verified:9} {mismatches:10} {unverifiable:14}")
+        bad |= interpreted > 0 or mismatches > 0
+    print("\nGATE FAILED: guest code was interpreted inside a translated module, or a verified run differed" if bad
+          else "\ngate holds: no instruction of the translated modules was interpreted, no verified run differed")
+    return 1 if bad else 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--counts", action="append", help="a file written by MMPC_GENERATED_ENTRIES (repeat it to merge several runs)")
+    ap.add_argument("--iop-log", action="append", help="a runner log written with PS2X_IOP_AOT_STATS=1 (the IOP gate)")
     args = ap.parse_args()
+    if args.iop_log:
+        return iop_mode([Path(c) for c in args.iop_log])
     return counts_mode([Path(c) for c in args.counts]) if args.counts else static_mode()
 
 

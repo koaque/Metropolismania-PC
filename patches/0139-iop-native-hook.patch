@@ -1,4 +1,4 @@
-Native replacements of IOP module functions (plan P5, the readable port of YYSOUND). ps2x/iop/iop_native.h: NativeContext, the interface a replacement sees (registers, IOP RAM as host memory, callGuest for imports and unported functions, jump for a tail call such as a thread body's SleepThread, charge for IOP time). IopSubsystem::registerNativeModule and registerNative: functions are registered by offset in a module's image and take effect only when the module loads with the image whose hash was registered. IopEmulator: a table checked in step() next to the import stubs; PS2X_IOP_NATIVE=0|names turns replacements off or selects them; PS2X_IOP_VERIFY=1 runs the original first (its imports happen once and are logged with the RAM they change), rolls RAM back, runs the replacement with the module's imports answered from the log, and compares RAM (the dead stack and argument home area excepted), the registers the ABI keeps, the import sequence and the return, then continues from the original's state; PS2X_IOP_DUMP_MODULES=<dir> writes the loaded image of a module with replacements. IopMemory::ramData and PS2Runtime::iopSubsystem give the port access. Blocking: a function registered with mayBlock runs on a host fiber (one per IOP thread); when guest code it called puts the thread to sleep, callFunction parks the fiber with the function's C++ frames intact, the scheduler runs other threads and, when the thread is ready again, switches back into the fiber, which carries on from where the guest code slept. The call stacks of callFunction are taken from a pool (callSlots) instead of by depth, so a parked call keeps its stack. A function that ends by jumping to an import stub (a thread body going to SleepThread or sceSifRpcLoop) gives its parkStub, which is where the verifier compares it. currentNativeContext() gives the context of the running native, kept right across nested natives and fiber switches. IopKernel::currentThread gives the running thread. Test aids of the verifier: PS2X_IOP_COVERAGE (the words of the module the original executed in verified calls), PS2X_IOP_COVERAGE_ALL (every word that runs), PS2X_IOP_PROBE (commands injected into the sound function) with PS2X_IOP_VERIFY_ALL, PS2X_IOP_TRACE_NATIVE (calls logged) and PS2X_IOP_DUMP_IMPORTS (the original's imports at a mismatch). Import effects replayed in whole words; the instructions run inside the imports are counted so that a replacement's cost excludes them; IopSubsystem::registerVerifyIgnore leaves given RAM out of the comparison after a call of a named replacement.
+Native replacements of IOP module functions (plan P5, the readable port of YYSOUND). ps2x/iop/iop_native.h: NativeContext, the interface a replacement sees (registers, IOP RAM as host memory, callGuest for imports and unported functions, jump for a tail call such as a thread body's SleepThread, charge for IOP time). IopSubsystem::registerNativeModule and registerNative: functions are registered by offset in a module's image and take effect only when the module loads with the image whose hash was registered. IopEmulator: a table checked in step() next to the import stubs; PS2X_IOP_NATIVE=0|names turns replacements off or selects them; PS2X_IOP_VERIFY=1 runs the original first (its imports happen once and are logged with the RAM they change), rolls RAM back, runs the replacement with the module's imports answered from the log, and compares RAM (the dead stack and argument home area excepted), the registers the ABI keeps, the import sequence and the return, then continues from the original's state; PS2X_IOP_DUMP_MODULES=<dir> writes the loaded image of a module with replacements. IopMemory::ramData and PS2Runtime::iopSubsystem give the port access. Blocking: a function registered with mayBlock runs on a host fiber (one per IOP thread); when guest code it called puts the thread to sleep, callFunction parks the fiber with the function's C++ frames intact, the scheduler runs other threads and, when the thread is ready again, switches back into the fiber, which carries on from where the guest code slept. The call stacks of callFunction are taken from a pool (callSlots) instead of by depth, so a parked call keeps its stack. A function that ends by jumping to an import stub (a thread body going to SleepThread or sceSifRpcLoop) gives its parkStub, which is where the verifier compares it. currentNativeContext() gives the context of the running native, kept right across nested natives and fiber switches. IopKernel::currentThread gives the running thread. Test aids of the verifier: PS2X_IOP_COVERAGE (the words of the module the original executed in verified calls), PS2X_IOP_COVERAGE_ALL (every word that runs), PS2X_IOP_PROBE (commands injected into the sound function) with PS2X_IOP_VERIFY_ALL, PS2X_IOP_TRACE_NATIVE (calls logged) and PS2X_IOP_DUMP_IMPORTS (the original's imports at a mismatch). Import effects replayed in whole words; the instructions run inside the imports are counted so that a replacement's cost excludes them; IopSubsystem::registerVerifyIgnore leaves given RAM out of the comparison after a call of a named replacement. Translated modules (plan P5.3): ps2x/iop/iop_aot.h is the interface generated code includes (AotCpu, AotContext, the interpreter's operations, aotRegistrar); IopEmulator arms a translation when the loaded image has the hash and address it was made for, runCpu runs translated code (tryAot) for as long as it stays exact (the instruction budget, the next due DMA interrupt or guest callback, no interrupt waiting; a DMA a hardware store starts is timed as the interpreter times it), PS2X_IOP_AOT=0 turns it off, PS2X_IOP_AOT_STATS counts translated and interpreted instructions per module, PS2X_IOP_VERIFY also repeats translated runs in the interpreter and compares, PS2X_IOP_TRACE_HASH logs a hash of RAM and all threads at fixed IOP times. IopMemory::ownedData, IopKernel::threads.
 
 diff --git a/ps2xIOP/include/ps2x/iop/iop_native.h b/ps2xIOP/include/ps2x/iop/iop_native.h
 new file mode 100644
@@ -48,6 +48,379 @@ new file mode 100644
 +    // The context of the native function that is running now (null when none). The emulator keeps it right when a function calls guest code
 +    // that runs another native, and when a function that went to sleep (see IopSubsystem::registerNative, mayBlock) is resumed.
 +    NativeContext *currentNativeContext() noexcept;
++}
+diff --git a/ps2xIOP/include/ps2x/iop/iop_aot.h b/ps2xIOP/include/ps2x/iop/iop_aot.h
+new file mode 100644
+--- /dev/null
++++ b/ps2xIOP/include/ps2x/iop/iop_aot.h
+@@ -0,0 +1,368 @@
++#pragma once
++
++#include <cstdint>
++#include <cstring>
++
++namespace ps2x::iop
++{
++    // Ahead-of-time translated IOP modules (plan P5.3). tools/iop_aot.py turns an IRX into C++ that runs the module's code natively and keeps
++    // the interpreter's exact behavior: one cycle per instruction, the branch and load delay slots, the traps, and the points where a run
++    // stops (the instruction budget, the next due event, an instruction that needs the emulator's per-step work). The generated code includes
++    // only this header.
++
++    // The IOP's processor state as generated code sees it: the layout of the emulator's IopCpuState (checked where the emulator hooks the
++    // translation in).
++    struct AotCpu
++    {
++        uint32_t gpr[32];
++        uint32_t hi;
++        uint32_t lo;
++        uint32_t pc;
++        uint32_t cop0[32];
++        uint32_t pendingLoadReg;
++        uint32_t pendingLoadValue;
++        bool pendingLoad;
++        bool branchPending;
++        uint32_t branchTarget;
++        bool stopped;
++        bool yielded;
++        bool exception;
++    };
++
++    inline constexpr uint32_t kAotRamSize = 2u * 1024u * 1024u;
++
++    struct AotContext
++    {
++        uint8_t *ram = nullptr;           // the 2 MB of IOP RAM
++        uint8_t *owned = nullptr;         // the per-byte ownership flags a RAM store sets (IopMemory::markOwned)
++        const uint8_t *native = nullptr;  // one byte per word of the module image: non-zero where a native replacement is installed
++        bool stop = false;                // set by an access that needs the emulator's per-step work after it (hardware, a change of the status register)
++        uint32_t hardware = 0;            // counts the accesses to hardware (the verifier cannot repeat a run that made one)
++
++        // the paths for every address that is not plain RAM (hardware, scratchpad), and the traps
++        uint32_t (*read8)(AotContext &, uint32_t address) = nullptr;
++        uint32_t (*read16)(AotContext &, uint32_t address) = nullptr;
++        uint32_t (*read32)(AotContext &, uint32_t address) = nullptr;
++        void (*write8)(AotContext &, uint32_t address, uint32_t value) = nullptr;
++        void (*write16)(AotContext &, uint32_t address, uint32_t value) = nullptr;
++        void (*write32)(AotContext &, uint32_t address, uint32_t value) = nullptr;
++        // raises the trap `code` at `faultPc` (IopCpuCore::raiseException)
++        void (*raise)(AotContext &, AotCpu &, uint32_t code, uint32_t faultPc, uint32_t delaySlot, uint32_t badAddress, uint32_t hasBadAddress) = nullptr;
++        void *impl = nullptr;
++    };
++
++    // ---- what the generated code calls: the interpreter's operations, written once
++
++    // Loads and stores: RAM directly (a store also sets the ownership flags, as IopMemory does), everything else through the context. An access
++    // that needs the emulator's per-step work after it sets context.stop, and `lim` is then zeroed so that the run ends after this instruction.
++    inline uint32_t aotLoad8(AotContext &x, uint32_t address, uint32_t &lim)
++    {
++        const uint32_t p = address & 0x1FFFFFFFu;
++        if (p < kAotRamSize)
++            return x.ram[p];
++        const uint32_t v = x.read8(x, address);
++        if (x.stop)
++            lim = 0u;
++        return v;
++    }
++
++    inline uint32_t aotLoad16(AotContext &x, uint32_t address, uint32_t &lim)
++    {
++        const uint32_t p = address & 0x1FFFFFFFu;
++        if (p + 1u < kAotRamSize)
++        {
++            uint16_t v;
++            std::memcpy(&v, x.ram + p, sizeof(v));
++            return v;
++        }
++        const uint32_t v = x.read16(x, address);
++        if (x.stop)
++            lim = 0u;
++        return v;
++    }
++
++    inline uint32_t aotLoad32(AotContext &x, uint32_t address, uint32_t &lim)
++    {
++        const uint32_t p = address & 0x1FFFFFFFu;
++        if (p + 3u < kAotRamSize)
++        {
++            uint32_t v;
++            std::memcpy(&v, x.ram + p, sizeof(v));
++            return v;
++        }
++        const uint32_t v = x.read32(x, address);
++        if (x.stop)
++            lim = 0u;
++        return v;
++    }
++
++    inline void aotStore8(AotContext &x, uint32_t address, uint32_t value, uint32_t &lim)
++    {
++        const uint32_t p = address & 0x1FFFFFFFu;
++        if (p < kAotRamSize)
++        {
++            x.ram[p] = static_cast<uint8_t>(value);
++            x.owned[p] = 1u;
++            return;
++        }
++        x.write8(x, address, value);
++        if (x.stop)
++            lim = 0u;
++    }
++
++    inline void aotStore16(AotContext &x, uint32_t address, uint32_t value, uint32_t &lim)
++    {
++        const uint32_t p = address & 0x1FFFFFFFu;
++        if (p + 1u < kAotRamSize)
++        {
++            const uint16_t v = static_cast<uint16_t>(value);
++            std::memcpy(x.ram + p, &v, sizeof(v));
++            x.owned[p] = 1u;
++            x.owned[p + 1u] = 1u;
++            return;
++        }
++        x.write16(x, address, value);
++        if (x.stop)
++            lim = 0u;
++    }
++
++    inline void aotStore32(AotContext &x, uint32_t address, uint32_t value, uint32_t &lim)
++    {
++        const uint32_t p = address & 0x1FFFFFFFu;
++        if (p + 3u < kAotRamSize)
++        {
++            std::memcpy(x.ram + p, &value, sizeof(value));
++            x.owned[p] = 1u;
++            x.owned[p + 1u] = 1u;
++            x.owned[p + 2u] = 1u;
++            x.owned[p + 3u] = 1u;
++            return;
++        }
++        x.write32(x, address, value);
++        if (x.stop)
++            lim = 0u;
++    }
++
++    // lwl, lwr, swl, swr: the unaligned halves (the memory word is the aligned one)
++    inline uint32_t aotLwl(uint32_t old, uint32_t memory, uint32_t address)
++    {
++        static constexpr uint32_t masks[4] = {0x00FFFFFFu, 0x0000FFFFu, 0x000000FFu, 0x00000000u};
++        static constexpr uint32_t shifts[4] = {24u, 16u, 8u, 0u};
++        return (old & masks[address & 3u]) | (memory << shifts[address & 3u]);
++    }
++
++    inline uint32_t aotLwr(uint32_t old, uint32_t memory, uint32_t address)
++    {
++        static constexpr uint32_t masks[4] = {0x00000000u, 0xFF000000u, 0xFFFF0000u, 0xFFFFFF00u};
++        static constexpr uint32_t shifts[4] = {0u, 8u, 16u, 24u};
++        return (old & masks[address & 3u]) | (memory >> shifts[address & 3u]);
++    }
++
++    inline uint32_t aotSwl(uint32_t old, uint32_t value, uint32_t address)
++    {
++        switch (address & 3u)
++        {
++        case 0u: return (old & 0xFFFFFF00u) | (value >> 24u);
++        case 1u: return (old & 0xFFFF0000u) | (value >> 16u);
++        case 2u: return (old & 0xFF000000u) | (value >> 8u);
++        default: return value;
++        }
++    }
++
++    inline uint32_t aotSwr(uint32_t old, uint32_t value, uint32_t address)
++    {
++        switch (address & 3u)
++        {
++        case 0u: return value;
++        case 1u: return (old & 0x000000FFu) | (value << 8u);
++        case 2u: return (old & 0x0000FFFFu) | (value << 16u);
++        default: return (old & 0x00FFFFFFu) | (value << 24u);
++        }
++    }
++
++    inline void aotMult(AotCpu &cpu, uint32_t a, uint32_t b)
++    {
++        const int64_t result = static_cast<int64_t>(static_cast<int32_t>(a)) * static_cast<int64_t>(static_cast<int32_t>(b));
++        cpu.lo = static_cast<uint32_t>(result);
++        cpu.hi = static_cast<uint32_t>(static_cast<uint64_t>(result) >> 32u);
++    }
++
++    inline void aotMultu(AotCpu &cpu, uint32_t a, uint32_t b)
++    {
++        const uint64_t result = static_cast<uint64_t>(a) * b;
++        cpu.lo = static_cast<uint32_t>(result);
++        cpu.hi = static_cast<uint32_t>(result >> 32u);
++    }
++
++    inline void aotDiv(AotCpu &cpu, uint32_t a, uint32_t b)
++    {
++        const int32_t lhs = static_cast<int32_t>(a);
++        const int32_t rhs = static_cast<int32_t>(b);
++        if (rhs == 0)
++        {
++            cpu.lo = lhs >= 0 ? 0xFFFFFFFFu : 1u;
++            cpu.hi = static_cast<uint32_t>(lhs);
++        }
++        else if (lhs == INT32_MIN && rhs == -1)
++        {
++            cpu.lo = static_cast<uint32_t>(lhs);
++            cpu.hi = 0u;
++        }
++        else
++        {
++            cpu.lo = static_cast<uint32_t>(lhs / rhs);
++            cpu.hi = static_cast<uint32_t>(lhs % rhs);
++        }
++    }
++
++    inline void aotDivu(AotCpu &cpu, uint32_t a, uint32_t b)
++    {
++        if (b == 0u)
++        {
++            cpu.lo = 0xFFFFFFFFu;
++            cpu.hi = a;
++        }
++        else
++        {
++            cpu.lo = a / b;
++            cpu.hi = a % b;
++        }
++    }
++
++    // add, addi and sub trap on signed overflow
++    inline bool aotAddOverflow(int32_t a, int32_t b, int32_t &result)
++    {
++        const int64_t wide = static_cast<int64_t>(a) + b;
++        if (wide > INT32_MAX || wide < INT32_MIN)
++            return true;
++        result = static_cast<int32_t>(wide);
++        return false;
++    }
++
++    inline bool aotSubOverflow(int32_t a, int32_t b, int32_t &result)
++    {
++        const int64_t wide = static_cast<int64_t>(a) - b;
++        if (wide > INT32_MAX || wide < INT32_MIN)
++            return true;
++        result = static_cast<int32_t>(wide);
++        return false;
++    }
++
++    // ---- the stops of a block (cold paths shared by all instructions)
++
++    // The load that is waiting to land after the instruction just executed (or none): what the next run starts with.
++    inline void aotFlushLoad(AotCpu &cpu, uint32_t loadReg, uint32_t lv)
++    {
++        if (loadReg != 0u)
++        {
++            cpu.pendingLoad = true;
++            cpu.pendingLoadReg = loadReg;
++            cpu.pendingLoadValue = lv;
++        }
++        else
++        {
++            cpu.pendingLoad = false;
++        }
++    }
++
++    // Called when the count has reached `lim` after an instruction: `dest` is the register the instruction wrote, `kind` is 0 for an ordinary one,
++    // 1 for a branch or jump (its delay slot comes next) and 2 for a delay slot, `next` the address after it, `loadReg` the register of the delayed
++    // load it started. Handles the state a run was resumed with (a load that was waiting, a branch taken before the first instruction), and
++    // returns true with the exact processor state written when the run has to end here (the budget is used up or the context says stop).
++    inline bool aotAfter(AotContext &x, AotCpu &cpu, uint32_t n, uint32_t limit, uint32_t &lim, bool &first, bool &hp, bool &bp, uint32_t pr, uint32_t pv,
++                         uint32_t bt, bool cc, uint32_t lv, uint32_t dest, uint32_t kind, uint32_t next, uint32_t loadReg)
++    {
++        if (first)
++        {
++            first = false;
++            lim = limit;
++            if (hp)
++            {
++                hp = false;
++                if (pr != dest)
++                    cpu.gpr[pr] = pv;
++            }
++            if (bp)
++            {
++                // this instruction was the delay slot of a branch taken before the run began
++                bp = false;
++                cpu.pc = bt;
++                cpu.branchPending = false;
++                cpu.exception = false;
++                aotFlushLoad(cpu, loadReg, lv);
++                return true;
++            }
++        }
++        if (n < limit && !x.stop)
++        {
++            lim = limit;
++            return false;
++        }
++        if (kind == 1u)
++        {
++            cpu.pc = next;
++            cpu.branchPending = cc;
++            cpu.branchTarget = cc ? bt : 0u;
++        }
++        else if (kind == 2u)
++        {
++            cpu.pc = cc ? bt : next;
++            cpu.branchPending = false;
++            cpu.branchTarget = cc ? bt : 0u;
++        }
++        else
++        {
++            cpu.pc = next;
++            cpu.branchPending = false;
++            cpu.branchTarget = 0u;
++        }
++        aotFlushLoad(cpu, loadReg, lv);
++        cpu.exception = false;
++        return true;
++    }
++
++    // The end of a block: the fall-through address, or the target of the branch whose delay slot was the last instruction.
++    inline uint32_t aotEnd(AotCpu &cpu, uint32_t n, bool cc, uint32_t bt, uint32_t next, uint32_t loadReg, uint32_t lv)
++    {
++        cpu.pc = cc ? bt : next;
++        cpu.branchPending = false;
++        cpu.branchTarget = cc ? bt : 0u;
++        aotFlushLoad(cpu, loadReg, lv);
++        cpu.exception = false;
++        return n;
++    }
++
++// A trap in generated code: the processor state is set by the context, and the instruction counts.
++#define AOT_TRAP(CODE, PC, DS)                                            \
++    {                                                                     \
++        x.raise(x, cpu, CODE, PC, (DS) ? 1u : 0u, 0u, 0u);                \
++        return n + 1u;                                                    \
++    }
++#define AOT_TRAP_ADDR(CODE, PC, DS, ADDRESS)                              \
++    {                                                                     \
++        x.raise(x, cpu, CODE, PC, (DS) ? 1u : 0u, (ADDRESS), 1u);         \
++        return n + 1u;                                                    \
++    }
++
++    // Runs translated code from cpu.pc until it has executed `limit` instructions, reaches code that is not translated (an import stub, a
++    // native replacement, an address outside the module) or `context.stop` is set. Returns the number of instructions executed; cpu is
++    // exactly the state the interpreter would be in after that many instructions.
++    using AotRun = uint32_t (*)(AotContext &, AotCpu &, uint32_t limit);
++
++    struct AotModule
++    {
++        const char *name;    // as the module is named when loaded (without the disc's ";1")
++        uint32_t base;       // the address the code was translated for
++        uint32_t imageSize;  // bytes of the loaded image the hash covers
++        uint64_t imageHash;  // FNV-1a over the relocated image before the module starts (as for native replacements)
++        uint32_t words;      // length of the module image in words (the size of the native mask)
++        AotRun run;
++    };
++
++    void registerAotModule(const AotModule &module);
++
++    struct AotRegistrar
++    {
++        explicit AotRegistrar(const AotModule &module) { registerAotModule(module); }
++    };
 +}
 diff --git a/ps2xIOP/include/ps2x/iop/iop_subsystem.h b/ps2xIOP/include/ps2x/iop/iop_subsystem.h
 --- a/ps2xIOP/include/ps2x/iop/iop_subsystem.h
@@ -135,7 +508,11 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.h b/ps2xIOP/src/emulator/iop_emul
 diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_emulator.cpp
 --- a/ps2xIOP/src/emulator/iop_emulator.cpp
 +++ b/ps2xIOP/src/emulator/iop_emulator.cpp
-@@ -19,11 +19,48 @@
+@@ -16,14 +16,63 @@
+ #include "imports/iop_timrman.h"
+ #include "imports/iop_vblank.h"
+ #include "iop_emulator_const.h"
++#include "ps2x/iop/iop_aot.h"
  
  #include <algorithm>
  #include <cctype>
@@ -174,6 +551,17 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +    namespace
 +    {
 +        NativeContext *g_currentNativeContext = nullptr;
++
++        std::vector<AotModule> &aotModuleList()
++        {
++            static std::vector<AotModule> list;
++            return list;
++        }
++    }
++
++    void registerAotModule(const AotModule &module)
++    {
++        aotModuleList().push_back(module);
 +    }
 +
 +    NativeContext *currentNativeContext() noexcept
@@ -184,7 +572,7 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
  
  namespace ps2x::iop::detail
  {
-@@ -36,7 +73,12 @@ namespace ps2x::iop::detail
+@@ -36,7 +85,12 @@ namespace ps2x::iop::detail
          constexpr uint32_t kCallStackLimit = 0x001FFF00u;
          constexpr uint32_t kCallStackSize = 0x2000u;
          constexpr uint32_t kCallStackCapacity = (kCallStackLimit - kCallStackBase) / kCallStackSize;
@@ -197,7 +585,25 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
  
          uint32_t physicalAddress(uint32_t address)
          {
-@@ -93,6 +135,11 @@ namespace ps2x::iop::detail
+@@ -63,6 +117,17 @@ namespace ps2x::iop::detail
+ 
+     }
+ 
++    // Generated code (ps2x/iop/iop_aot.h) sees the processor state as an AotCpu: the layouts have to agree.
++    static_assert(sizeof(AotCpu) == sizeof(IopCpuState), "AotCpu mirrors IopCpuState");
++    static_assert(offsetof(AotCpu, gpr) == offsetof(IopCpuState, gpr) && offsetof(AotCpu, hi) == offsetof(IopCpuState, hi) &&
++                      offsetof(AotCpu, lo) == offsetof(IopCpuState, lo) && offsetof(AotCpu, pc) == offsetof(IopCpuState, pc) &&
++                      offsetof(AotCpu, cop0) == offsetof(IopCpuState, cop0) && offsetof(AotCpu, pendingLoadReg) == offsetof(IopCpuState, pendingLoadReg) &&
++                      offsetof(AotCpu, pendingLoadValue) == offsetof(IopCpuState, pendingLoadValue) && offsetof(AotCpu, pendingLoad) == offsetof(IopCpuState, pendingLoad) &&
++                      offsetof(AotCpu, branchPending) == offsetof(IopCpuState, branchPending) && offsetof(AotCpu, branchTarget) == offsetof(IopCpuState, branchTarget) &&
++                      offsetof(AotCpu, stopped) == offsetof(IopCpuState, stopped) && offsetof(AotCpu, yielded) == offsetof(IopCpuState, yielded) &&
++                      offsetof(AotCpu, exception) == offsetof(IopCpuState, exception),
++                  "AotCpu mirrors IopCpuState");
++
+     class IopEmulator::Impl final : public IopGuestExecutor
+     {
+     public:
+@@ -93,6 +158,29 @@ namespace ps2x::iop::detail
              uint32_t argument = 0u;
          };
  
@@ -206,10 +612,28 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +            destroyNativeFibers();
 +        }
 +
++        struct AotArmed
++        {
++            AotModule module{};
++            std::vector<uint8_t> nativeMask; // one byte per word of the image: a native replacement stands there
++            AotContext context{};
++            uint64_t translated = 0;
++            uint64_t runs = 0;
++            uint64_t verified = 0;
++            uint64_t mismatches = 0;
++            uint64_t unverifiable = 0;
++        };
++        struct ModuleRange
++        {
++            std::string name;
++            uint32_t base = 0;
++            uint32_t size = 0;
++            uint64_t interpreted = 0;
++        };
          explicit Impl(IopHost &hostRef)
              : host(hostRef),
                sysmem(host, memory),
-@@ -111,6 +158,7 @@ namespace ps2x::iop::detail
+@@ -111,6 +199,7 @@ namespace ps2x::iop::detail
                loadcore(memory, imports)
          {
              reset();
@@ -217,7 +641,7 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
          }
  
          void reset()
-@@ -135,10 +183,12 @@ namespace ps2x::iop::detail
+@@ -135,10 +224,12 @@ namespace ps2x::iop::detail
              lastError.clear();
              servicingDmaInterrupts = false;
              servicingGuestCallbacks = false;
@@ -231,7 +655,7 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
          }
  
          uint8_t read8(uint32_t address) const
-@@ -360,7 +410,8 @@ namespace ps2x::iop::detail
+@@ -360,7 +451,8 @@ namespace ps2x::iop::detail
              return ImportDisposition::Missing;
          }
  
@@ -241,7 +665,7 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
          {
              if (cpu.stopped)
                  return false;
-@@ -377,18 +428,62 @@ namespace ps2x::iop::detail
+@@ -377,21 +469,67 @@ namespace ps2x::iop::detail
                  cpu.stopped = true;
                  return false;
              }
@@ -305,7 +729,435 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
                  return !cpu.stopped;
              }
  
-@@ -425,14 +520,24 @@ namespace ps2x::iop::detail
++            if (aotStats && !plain)
++                countInterpreted(cpu.pc);
+             const bool running = cpuCore.executeInstruction(cpu);
+             schedulePendingDma();
+             ++totalInstructions;
+@@ -399,6 +537,407 @@ namespace ps2x::iop::detail
+             return running;
+         }
+ 
++        // ---- translated modules
++
++        static uint32_t aotRead8(AotContext &context, uint32_t address)
++        {
++            auto *self = static_cast<Impl *>(context.impl);
++            if (self->memory.isHardwareAddress(address))
++            {
++                context.stop = true;
++                ++context.hardware;
++            }
++            return self->memory.read8(address);
++        }
++
++        static uint32_t aotRead16(AotContext &context, uint32_t address)
++        {
++            auto *self = static_cast<Impl *>(context.impl);
++            if (self->memory.isHardwareAddress(address))
++            {
++                context.stop = true;
++                ++context.hardware;
++            }
++            return self->memory.read16(address);
++        }
++
++        static uint32_t aotRead32(AotContext &context, uint32_t address)
++        {
++            auto *self = static_cast<Impl *>(context.impl);
++            if (self->memory.isHardwareAddress(address))
++            {
++                context.stop = true;
++                ++context.hardware;
++            }
++            return self->memory.read32(address);
++        }
++
++        static void aotWrite8(AotContext &context, uint32_t address, uint32_t value)
++        {
++            auto *self = static_cast<Impl *>(context.impl);
++            if (self->memory.isHardwareAddress(address))
++            {
++                context.stop = true;
++                ++context.hardware;
++            }
++            self->memory.write8(address, static_cast<uint8_t>(value));
++        }
++
++        static void aotWrite16(AotContext &context, uint32_t address, uint32_t value)
++        {
++            auto *self = static_cast<Impl *>(context.impl);
++            if (self->memory.isHardwareAddress(address))
++            {
++                context.stop = true;
++                ++context.hardware;
++            }
++            self->memory.write16(address, static_cast<uint16_t>(value));
++        }
++
++        static void aotWrite32(AotContext &context, uint32_t address, uint32_t value)
++        {
++            auto *self = static_cast<Impl *>(context.impl);
++            if (self->memory.isHardwareAddress(address))
++            {
++                context.stop = true;
++                ++context.hardware;
++            }
++            self->memory.write32(address, value);
++        }
++
++        static void aotRaise(AotContext &context, AotCpu &cpu, uint32_t code, uint32_t faultPc, uint32_t delaySlot, uint32_t badAddress, uint32_t hasBadAddress)
++        {
++            auto *self = static_cast<Impl *>(context.impl);
++            self->cpuCore.raiseException(reinterpret_cast<CpuState &>(cpu), code, faultPc, delaySlot != 0u,
++                                         hasBadAddress != 0u ? std::optional<uint32_t>(badAddress) : std::nullopt);
++        }
++
++        // Called for every module that has been loaded: remembers its range (for the statistics) and, when a translation of exactly this image
++        // was registered, arms it.
++        void armAot(const Module &module)
++        {
++            moduleRanges.push_back({module.name, module.base, module.size, 0u});
++            std::string moduleName = module.name;
++            if (const size_t version = moduleName.find(';'); version != std::string::npos)
++                moduleName.resize(version);
++            for (const AotModule &candidate : aotModuleList())
++            {
++                if (!iequals(candidate.name, moduleName))
++                    continue;
++                uint64_t hash = 14695981039346656037ull;
++                const uint8_t *ram = memory.ramData();
++                for (uint32_t i = 0; i < candidate.imageSize && module.base + i < kRamSize; ++i)
++                {
++                    hash ^= ram[module.base + i];
++                    hash *= 1099511628211ull;
++                }
++                if (module.base != candidate.base || hash != candidate.imageHash)
++                {
++                    std::ostringstream out;
++                    out << "[IOP] translated code for " << moduleName << " not used: the module is at 0x" << std::hex << module.base << " with image hash 0x" << hash
++                        << ", the translation is for 0x" << candidate.base << " and 0x" << candidate.imageHash;
++                    log(LogLevel::Warning, out.str());
++                    return;
++                }
++                AotArmed &armed = aotArmed.emplace_back();
++                armed.module = candidate;
++                armed.nativeMask.assign(candidate.words, 0u);
++                for (const auto &[address, entry] : nativeAt)
++                {
++                    if (address >= candidate.base && (address - candidate.base) / 4u < candidate.words)
++                        armed.nativeMask[(address - candidate.base) / 4u] = 1u;
++                }
++                armed.context.ram = memory.ramData();
++                armed.context.owned = memory.ownedData();
++                armed.context.native = armed.nativeMask.data();
++                armed.context.read8 = &aotRead8;
++                armed.context.read16 = &aotRead16;
++                armed.context.read32 = &aotRead32;
++                armed.context.write8 = &aotWrite8;
++                armed.context.write16 = &aotWrite16;
++                armed.context.write32 = &aotWrite32;
++                armed.context.raise = &aotRaise;
++                armed.context.impl = this;
++                std::ostringstream out;
++                out << "[IOP] translated code armed for " << moduleName << " at 0x" << std::hex << module.base << (aotOn ? "" : " (PS2X_IOP_AOT=0: not used)");
++                log(LogLevel::Info, out.str());
++                return;
++            }
++        }
++
++        // The interrupt the interpreter would take before the next instruction (checkInterrupt without raising it).
++        bool interruptPending(const CpuState &cpu) const
++        {
++            const uint32_t status = cpu.cop0[12];
++            if ((status & 1u) == 0u || (status & 0x2u) != 0u)
++                return false;
++            return memory.interruptControl() != 0u && (memory.interruptStatus() & memory.interruptMask()) != 0u;
++        }
++
++        // The cycle at which the next DMA interrupt or guest callback falls due (all ones when none).
++        uint64_t nextEventCycle() const
++        {
++            uint64_t due = ~0ull;
++            for (const auto &[irq, cycle] : pendingDmaInterrupts)
++                due = std::min(due, cycle);
++            if (!pendingGuestCallbacks.empty())
++                due = std::min(due, pendingGuestCallbacks.begin()->first);
++            return due;
++        }
++
++        // PS2X_IOP_VERIFY on: a translated run is also done by the interpreter, from the same state, and the two are compared (the processor, all
++        // of RAM, the ownership flags). The interpreter's state is the one that continues, so a verified run is the same run as an unverified one.
++        // A run that touched hardware cannot be repeated (the devices have changed); it continues as it ran.
++        uint32_t runAotVerified(AotArmed &armed, CpuState &cpu, uint32_t limit)
++        {
++            uint8_t *ram = memory.ramData();
++            uint8_t *owned = memory.ownedData();
++            const CpuState before = cpu;
++            const std::vector<uint8_t> ramBefore(ram, ram + kRamSize);
++            const std::vector<uint8_t> ownedBefore(owned, owned + kRamSize);
++            const uint32_t hardwareBefore = armed.context.hardware;
++            const uint32_t executed = armed.module.run(armed.context, reinterpret_cast<AotCpu &>(cpu), limit);
++            if (executed == 0u)
++                return 0u;
++            if (armed.context.hardware != hardwareBefore)
++            {
++                ++armed.unverifiable;
++                return executed;
++            }
++            const CpuState after = cpu;
++            const std::vector<uint8_t> ramAfter(ram, ram + kRamSize);
++            const std::vector<uint8_t> ownedAfter(owned, owned + kRamSize);
++            std::memcpy(ram, ramBefore.data(), kRamSize);
++            std::memcpy(owned, ownedBefore.data(), kRamSize);
++            cpu = before;
++            const uint64_t savedInstructions = totalInstructions;
++            const uint64_t savedCycles = totalCycles;
++            for (uint32_t i = 0; i < executed; ++i)
++            {
++                if (!step(cpu, true))
++                    break;
++            }
++            totalInstructions = savedInstructions;
++            totalCycles = savedCycles;
++            ++armed.verified;
++            std::vector<std::string> problems;
++            const auto hex = [](uint32_t value)
++            {
++                std::ostringstream out;
++                out << "0x" << std::hex << value;
++                return out.str();
++            };
++            for (unsigned i = 1; i < 32u; ++i)
++            {
++                if (cpu.gpr[i] != after.gpr[i])
++                    problems.push_back("r" + std::to_string(i) + " is " + hex(after.gpr[i]) + ", the interpreter has " + hex(cpu.gpr[i]));
++            }
++            if (cpu.hi != after.hi)
++                problems.push_back("hi is " + hex(after.hi) + ", the interpreter has " + hex(cpu.hi));
++            if (cpu.lo != after.lo)
++                problems.push_back("lo is " + hex(after.lo) + ", the interpreter has " + hex(cpu.lo));
++            if (cpu.pc != after.pc)
++                problems.push_back("pc is " + hex(after.pc) + ", the interpreter has " + hex(cpu.pc));
++            for (unsigned i = 0; i < 32u; ++i)
++            {
++                if (cpu.cop0[i] != after.cop0[i])
++                    problems.push_back("cop0[" + std::to_string(i) + "] is " + hex(after.cop0[i]) + ", the interpreter has " + hex(cpu.cop0[i]));
++            }
++            if (cpu.pendingLoad != after.pendingLoad ||
++                (cpu.pendingLoad && (cpu.pendingLoadReg != after.pendingLoadReg || cpu.pendingLoadValue != after.pendingLoadValue)))
++                problems.push_back("the load that is waiting differs");
++            if (cpu.branchPending != after.branchPending || (cpu.branchPending && cpu.branchTarget != after.branchTarget))
++                problems.push_back("the branch that is waiting differs (" + std::to_string(after.branchPending) + " " + hex(after.branchTarget) + " against " +
++                                   std::to_string(cpu.branchPending) + " " + hex(cpu.branchTarget) + ")");
++            if (cpu.exception != after.exception)
++                problems.push_back("the exception flag differs");
++            const auto ramProblems = ramDifferences(ram, ramAfter.data());
++            if (!ramProblems.empty())
++            {
++                std::string text = "RAM differs in " + std::to_string(ramProblems.size()) + " range(s):";
++                size_t shown = 0;
++                for (const auto &[address, bytes] : ramProblems)
++                {
++                    if (shown++ == 3u)
++                        break;
++                    text += " " + hex(address) + "+" + std::to_string(bytes.size());
++                }
++                problems.push_back(text);
++            }
++            if (std::memcmp(owned, ownedAfter.data(), kRamSize) != 0)
++                problems.push_back("the ownership flags differ");
++            if (!problems.empty())
++            {
++                ++armed.mismatches;
++                if (armed.mismatches <= 8u)
++                {
++                    std::ostringstream out;
++                    out << "[iop:verify] MISMATCH translated " << armed.module.name << " (run " << armed.runs + 1u << ", " << executed << " instruction(s) from " << hex(before.pc) << ")";
++                    for (const auto &problem : problems)
++                        out << "; " << problem;
++                    log(LogLevel::Error, out.str());
++                }
++            }
++            return executed;
++        }
++
++        bool shouldVerifyAot(const AotArmed &armed) const
++        {
++            if (!verifyOn)
++                return false;
++            if (totalCycles >= verifyAllFrom && totalCycles <= verifyAllUntil && (verifyAllNames == ",1," || verifyAllNames.find(",aot,") != std::string::npos))
++                return true;
++            return armed.runs < verifyFirst || (verifyEvery != 0u && armed.runs % verifyEvery == 0u);
++        }
++
++        // PS2X_IOP_TRACE_HASH=<milliseconds of IOP time>: a hash of RAM, the ownership flags and every thread's processor state at fixed times, so
++        // that two runs (translation on and off) can be compared line by line: an exact translation gives the same lines.
++        void traceHash()
++        {
++            if (traceHashInterval == 0u || totalCycles < nextTraceHash)
++                return;
++            nextTraceHash = totalCycles - totalCycles % traceHashInterval + traceHashInterval;
++            uint64_t hash = 14695981039346656037ull;
++            const auto mix = [&hash](uint64_t value)
++            {
++                hash ^= value;
++                hash *= 1099511628211ull;
++            };
++            const uint8_t *ram = memory.ramData();
++            const uint8_t *owned = memory.ownedData();
++            for (uint32_t i = 0; i < kRamSize; i += 8u)
++            {
++                uint64_t word;
++                std::memcpy(&word, ram + i, sizeof(word));
++                mix(word);
++            }
++            for (uint32_t i = 0; i < kRamSize; i += 8u)
++            {
++                uint64_t word;
++                std::memcpy(&word, owned + i, sizeof(word));
++                mix(word);
++            }
++            uint64_t threads = 14695981039346656037ull;
++            for (const auto &[id, thread] : kernel.threads())
++            {
++                const auto &c = thread.cpu;
++                const auto threadMix = [&threads](uint64_t value)
++                {
++                    threads ^= value;
++                    threads *= 1099511628211ull;
++                };
++                threadMix(static_cast<uint64_t>(id));
++                threadMix(static_cast<uint64_t>(thread.state));
++                threadMix(thread.priority);
++                threadMix(thread.wakeCycle);
++                for (const uint32_t value : c.gpr)
++                    threadMix(value);
++                for (const uint32_t value : c.cop0)
++                    threadMix(value);
++                threadMix(c.hi);
++                threadMix(c.lo);
++                threadMix(c.pc);
++                threadMix(static_cast<uint64_t>(c.pendingLoad ? 1u : 0u) | (static_cast<uint64_t>(c.branchPending ? 1u : 0u) << 1u));
++                threadMix(c.pendingLoad ? (static_cast<uint64_t>(c.pendingLoadReg) << 32u | c.pendingLoadValue) : 0u);
++                threadMix(c.branchPending ? c.branchTarget : 0u);
++            }
++            std::ostringstream out;
++            out << "[iop:hash] " << std::dec << totalCycles << " " << totalInstructions << " ram=" << std::hex << hash << " threads=" << threads
++                << " istat=" << memory.interruptStatus() << " imask=" << memory.interruptMask();
++            log(LogLevel::Info, out.str());
++        }
++
++        // Runs translated code from cpu.pc, when it is inside an armed module, for as long as it stays exact: not past the instruction budget, not
++        // past the next due event, and not with an interrupt waiting. True when it ran at least one instruction.
++        bool tryAot(CpuState &cpu, uint32_t remaining)
++        {
++            if (!aotOn || cpu.stopped || cpu.yielded)
++                return false;
++            const uint32_t phys = physicalAddress(cpu.pc);
++            AotArmed *armed = nullptr;
++            for (auto &entry : aotArmed)
++            {
++                if (phys >= entry.module.base && phys < entry.module.base + entry.module.words * 4u)
++                {
++                    armed = &entry;
++                    break;
++                }
++            }
++            if (armed == nullptr || interruptPending(cpu))
++                return false;
++            uint64_t limit = remaining;
++            const uint64_t due = nextEventCycle();
++            if (due != ~0ull)
++                limit = std::min<uint64_t>(limit, due > totalCycles ? due - totalCycles : 1u);
++            if (limit == 0u)
++                return false;
++            armed->context.stop = false;
++            const uint32_t executed = shouldVerifyAot(*armed) ? runAotVerified(*armed, cpu, static_cast<uint32_t>(limit))
++                                                              : armed->module.run(armed->context, reinterpret_cast<AotCpu &>(cpu), static_cast<uint32_t>(limit));
++            if (executed == 0u)
++                return false;
++            // A DMA a hardware store started is timed from the cycle the interpreter has when the store has run, before it counts the store itself
++            // (step() does schedulePendingDma before its increments); the run ends right after such a store, so it is the run's last instruction.
++            totalInstructions += executed - 1u;
++            totalCycles += executed - 1u;
++            schedulePendingDma();
++            ++totalInstructions;
++            ++totalCycles;
++            armed->translated += executed;
++            ++armed->runs;
++            return true;
++        }
++
++        void countInterpreted(uint32_t pc)
++        {
++            const uint32_t phys = physicalAddress(pc);
++            for (auto &range : moduleRanges)
++            {
++                if (phys >= range.base && phys < range.base + range.size)
++                {
++                    ++range.interpreted;
++                    return;
++                }
++            }
++        }
++
++        void logAotStats()
++        {
++            if (!aotStats)
++                return;
++            for (const auto &range : moduleRanges)
++            {
++                uint64_t translated = 0u;
++                uint64_t runs = 0u;
++                for (const auto &armed : aotArmed)
++                {
++                    if (armed.module.base == range.base)
++                    {
++                        translated = armed.translated;
++                        runs = armed.runs;
++                    }
++                }
++                uint64_t verified = 0u;
++                uint64_t mismatches = 0u;
++                uint64_t unverifiable = 0u;
++                for (const auto &armed : aotArmed)
++                {
++                    if (armed.module.base == range.base)
++                    {
++                        verified = armed.verified;
++                        mismatches = armed.mismatches;
++                        unverifiable = armed.unverifiable;
++                    }
++                }
++                std::ostringstream out;
++                out << "[iop:aot] " << range.name << ": " << translated << " instruction(s) translated in " << runs << " run(s), " << range.interpreted
++                    << " interpreted inside the module";
++                if (verifyOn)
++                    out << "; " << verified << " run(s) verified, " << mismatches << " mismatch(es), " << unverifiable << " not verifiable";
++                log(LogLevel::Info, out.str());
++            }
++        }
++
+         uint32_t runCpu(CpuState &cpu, uint32_t instructionBudget)
+         {
+             CpuState *previous = activeCpu;
+@@ -406,6 +945,14 @@ namespace ps2x::iop::detail
+             const uint64_t start = totalInstructions;
+             while (!cpu.stopped && !cpu.yielded && totalInstructions - start < instructionBudget)
+             {
++                if (!aotArmed.empty() && tryAot(cpu, static_cast<uint32_t>(instructionBudget - (totalInstructions - start))))
++                {
++                    if (!servicingDmaInterrupts && !pendingDmaInterrupts.empty())
++                        servicePendingDmaInterrupts();
++                    if (!servicingGuestCallbacks && !pendingGuestCallbacks.empty())
++                        servicePendingGuestCallbacks();
++                    continue;
++                }
+                 if (!step(cpu))
+                     break;
+                 if (!servicingDmaInterrupts && !pendingDmaInterrupts.empty())
+@@ -425,14 +972,24 @@ namespace ps2x::iop::detail
                                uint32_t gp,
                                uint32_t budget = kMaxCallInstructions)
          {
@@ -335,7 +1187,7 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
              CpuState cpu{};
              cpu.pc = address;
              cpu.gpr[4] = a0;
-@@ -456,8 +561,29 @@ namespace ps2x::iop::detail
+@@ -456,8 +1013,29 @@ namespace ps2x::iop::detail
              {
                  cpu.gpr[29] = kCallStackBase - 32u;
              }
@@ -365,7 +1217,7 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
              return cpu.gpr[2];
          }
  
-@@ -555,6 +681,89 @@ namespace ps2x::iop::detail
+@@ -555,6 +1133,89 @@ namespace ps2x::iop::detail
              servicingGuestCallbacks = false;
          }
  
@@ -455,7 +1307,7 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
          void runCycles(uint64_t cycles) noexcept
          {
              try
-@@ -566,6 +775,7 @@ namespace ps2x::iop::detail
+@@ -566,6 +1227,7 @@ namespace ps2x::iop::detail
                      servicePendingDmaInterrupts();
                      servicePendingGuestCallbacks();
                      timrman.serviceDue(totalCycles, *this);
@@ -463,10 +1315,16 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
                      IopThread *next = kernel.beginNextReady(totalCycles);
                      if (!next)
                      {
-@@ -578,8 +788,22 @@ namespace ps2x::iop::detail
+@@ -578,8 +1240,28 @@ namespace ps2x::iop::detail
                          totalCycles = std::max(totalCycles + 1u, std::min(target, nextWake));
                          continue;
                      }
++                    traceHash();
++                    if (aotStats && totalCycles - lastAotStatsCycle > 36864000ull * 5u)
++                    {
++                        lastAotStatsCycle = totalCycles;
++                        logAotStats();
++                    }
 +                    if ((!allCoverage.empty() || !oracleCoverage.empty()) && totalCycles - lastCoverageCycle > 36864000ull * 2u)
 +                    {
 +                        lastCoverageCycle = totalCycles;
@@ -487,16 +1345,17 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
                      kernel.endTimeslice(*next, kThreadReturnSentinel);
                      if (totalCycles == before)
                          ++totalCycles;
-@@ -649,6 +873,8 @@ namespace ps2x::iop::detail
+@@ -649,6 +1331,9 @@ namespace ps2x::iop::detail
              module.entry = loaded.entry;
              module.gp = loaded.gp;
  
 +            armNatives(module);
++            armAot(module);
 +
              uint32_t args = 0u;
              if (arguments && argumentSize)
              {
-@@ -706,6 +932,14 @@ namespace ps2x::iop::detail
+@@ -706,6 +1391,14 @@ namespace ps2x::iop::detail
              kernel.terminateThreadsInRange(it->second.base, it->second.size);
              rpc.removeServersInRange(it->second.base, it->second.size);
              imports.eraseRange(it->second.base, it->second.size);
@@ -511,7 +1370,7 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
              modules.erase(it);
              kernel.cleanupDeadThreads();
              if (result)
-@@ -713,6 +947,811 @@ namespace ps2x::iop::detail
+@@ -713,6 +1406,818 @@ namespace ps2x::iop::detail
              return true;
          }
  
@@ -698,6 +1557,11 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +                    verifyAllUntil = ~0ull;
 +                }
 +            }
++            if (const char *value = std::getenv("PS2X_IOP_AOT"))
++                aotOn = std::string_view(value) != "0";
++            aotStats = std::getenv("PS2X_IOP_AOT_STATS") != nullptr;
++            if (const char *value = std::getenv("PS2X_IOP_TRACE_HASH"))
++                traceHashInterval = static_cast<uint64_t>(std::strtoull(value, nullptr, 10)) * 36864ull;
 +            if (const char *value = std::getenv("PS2X_IOP_TRACE_NATIVE"))
 +                traceNative = std::string(",") + value + ",";
 +            if (const char *value = std::getenv("PS2X_IOP_COVERAGE_ALL"))
@@ -788,6 +1652,8 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +        void disarmNatives()
 +        {
 +            nativeAt.clear();
++            aotArmed.clear();
++            moduleRanges.clear();
 +            for (auto &entry : natives)
 +                entry.armed = false;
 +            for (auto &spec : nativeModules)
@@ -1323,7 +2189,7 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
          IopHost &host;
          IopMemory memory;
          IopSysmem sysmem;
-@@ -741,10 +1780,64 @@ namespace ps2x::iop::detail
+@@ -741,10 +2246,74 @@ namespace ps2x::iop::detail
          std::string lastError;
          bool servicingDmaInterrupts = false;
          bool servicingGuestCallbacks = false;
@@ -1355,6 +2221,16 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +        std::vector<std::string> replayProblems;
 +        uint64_t lastNativeStatsCycle = 0u;
 +        uint64_t oracleImportInstructions = 0u;
++
++        // Translated modules (plan P5.3, ps2x/iop/iop_aot.h). PS2X_IOP_AOT=0 turns them off, PS2X_IOP_AOT_STATS counts what runs translated and
++        // what the interpreter still runs inside the modules.
++        std::deque<AotArmed> aotArmed;
++        std::vector<ModuleRange> moduleRanges;
++        bool aotOn = true;
++        bool aotStats = false;
++        uint64_t traceHashInterval = 0u;
++        uint64_t nextTraceHash = 0u;
++        uint64_t lastAotStatsCycle = 0u;
 +        const std::vector<uint8_t> *debugRamBefore = nullptr; // the RAM before the original ran, and after it (set during the replacement's run)
 +        const std::vector<uint8_t> *debugRamAfter = nullptr;
 +        // PS2X_IOP_PROBE=<file>: commands injected into the sound function as if the EE had sent them (a test aid for the paths the game does not
@@ -1389,7 +2265,7 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
      };
  
      IopEmulator::IopEmulator(IopHost &host)
-@@ -798,6 +1891,22 @@ namespace ps2x::iop::detail
+@@ -798,6 +2367,22 @@ namespace ps2x::iop::detail
          return m_impl->rpc.hasServer(sid);
      }
  
@@ -1415,23 +2291,26 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 diff --git a/ps2xIOP/src/emulator/core/iop_memory.h b/ps2xIOP/src/emulator/core/iop_memory.h
 --- a/ps2xIOP/src/emulator/core/iop_memory.h
 +++ b/ps2xIOP/src/emulator/core/iop_memory.h
-@@ -71,6 +71,8 @@ namespace ps2x::iop::detail
+@@ -71,6 +71,10 @@ namespace ps2x::iop::detail
  
          [[nodiscard]] std::optional<DmaStart> takeDmaStart() noexcept;
          [[nodiscard]] std::span<const uint8_t> ram() const noexcept { return m_ram; }
 +        // The RAM as host memory, for the native replacements of module functions (writes through it bypass the hardware and ownership bookkeeping of write8 and friends)
 +        [[nodiscard]] uint8_t *ramData() noexcept { return m_ram.data(); }
++        // The per-byte ownership flags a RAM store sets (for the translated modules, which store to RAM directly)
++        [[nodiscard]] uint8_t *ownedData() noexcept { return m_owned.data(); }
  
          [[nodiscard]] static uint32_t physicalAddress(uint32_t address) noexcept;
  
 diff --git a/ps2xIOP/src/emulator/core/iop_kernel.h b/ps2xIOP/src/emulator/core/iop_kernel.h
 --- a/ps2xIOP/src/emulator/core/iop_kernel.h
 +++ b/ps2xIOP/src/emulator/core/iop_kernel.h
-@@ -49,6 +49,7 @@ namespace ps2x::iop::detail
+@@ -49,6 +49,8 @@ namespace ps2x::iop::detail
          explicit IopKernel(IopMemory &memory) noexcept;
  
          [[nodiscard]] bool hasCurrentThread() const noexcept { return m_currentThread != nullptr; }
 +        [[nodiscard]] IopThread *currentThread() const noexcept { return m_currentThread; }
++        [[nodiscard]] const std::map<int, IopThread> &threads() const noexcept { return m_threads; }
          // True when WaitEventFlag(id, bits, mode) would return at once (or the flag does not exist).
          [[nodiscard]] bool eventFlagReady(int id, uint32_t bits, uint32_t mode) const;
  
