@@ -26,6 +26,12 @@ namespace iop::yysound
         inline void printf(uint32_t format, uint32_t a1) { detail::call(stub::printf, 2, format, a1); }
         inline void printf(uint32_t format, uint32_t a1, uint32_t a2) { detail::call(stub::printf, 3, format, a1, a2); }
         inline void printf(uint32_t format, uint32_t a1, uint32_t a2, uint32_t a3) { detail::call(stub::printf, 4, format, a1, a2, a3); }
+        // a fifth argument goes on the stack
+        inline void printf(uint32_t format, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4)
+        {
+            g_context->stackArguments(&a4, 1);
+            detail::call(stub::printf, 4, format, a1, a2, a3);
+        }
 
         // ioman: the file functions of the IOP (flags 1 is read only; lseek's origin 0 is the start, 2 the end)
         inline int32_t open(uint32_t name, int32_t flags) { return detail::toInt(detail::call(stub::open, 2, name, static_cast<uint32_t>(flags))); }
@@ -46,6 +52,8 @@ namespace iop::yysound
         }
         inline int32_t FreeSysMemory(uint32_t address) { return detail::toInt(detail::call(stub::FreeSysMemory, 1, address)); }
 
+        inline int32_t QueryTotalFreeMemSize() { return detail::toInt(detail::call(stub::QueryTotalFreeMemSize, 0)); }
+
         // sysclib
         inline void strcpy(uint32_t destination, uint32_t source) { detail::call(stub::strcpy, 2, destination, source); }
 
@@ -54,6 +62,12 @@ namespace iop::yysound
         inline int32_t CpuResumeIntr(int32_t oldState) { return detail::toInt(detail::call(stub::CpuResumeIntr, 1, static_cast<uint32_t>(oldState))); }
 
         // thbase
+        inline int32_t CreateThread(IopPtr<ThreadParam> param) { return detail::toInt(detail::call(stub::CreateThread, 1, param.address)); }
+        inline int32_t StartThread(int32_t thread, uint32_t argument)
+        {
+            return detail::toInt(detail::call(stub::StartThread, 2, static_cast<uint32_t>(thread), argument));
+        }
+        inline int32_t DeleteThread(int32_t thread) { return detail::toInt(detail::call(stub::DeleteThread, 1, static_cast<uint32_t>(thread))); }
         inline int32_t iWakeupThread(int32_t thread) { return detail::toInt(detail::call(stub::iWakeupThread, 1, static_cast<uint32_t>(thread))); }
         inline int32_t USec2SysClock(uint32_t microseconds, IopPtr<SysClock> clock)
         {
@@ -79,6 +93,7 @@ namespace iop::yysound
         inline int32_t StopHardTimer(int32_t timer) { return detail::toInt(detail::call(stub::StopHardTimer, 1, static_cast<uint32_t>(timer))); }
 
         // libsd
+        inline int32_t sceSdInit(uint32_t flag) { return detail::toInt(detail::call(stub::sceSdInit, 1, flag)); }
         inline int32_t sceSdSetCoreAttr(uint32_t attribute, uint32_t value) { return detail::toInt(detail::call(stub::sceSdSetCoreAttr, 2, attribute, value)); }
         inline uint32_t sceSdNote2Pitch(uint32_t centerNote, uint32_t centerFine, uint32_t note, uint32_t fine)
         {
@@ -115,6 +130,28 @@ namespace iop::yysound
             g_context->stackArguments(&fifth, 1);
             return detail::toInt(detail::call(stub::sceHSyn_SERetrieveVoiceNumberByID, 4, context.address, static_cast<uint32_t>(channel),
                                               static_cast<uint32_t>(id), buffer));
+        }
+        inline int32_t sceHSyn_SetVolume(IopPtr<sceCslCtx> context, int32_t port, uint32_t volume)
+        {
+            return detail::toInt(detail::call(stub::sceHSyn_SetVolume, 3, context.address, static_cast<uint32_t>(port), volume));
+        }
+        inline int32_t sceMidi_MidiGetAbsoluteTempo(IopPtr<sceCslCtx> context, int32_t port)
+        {
+            return detail::toInt(detail::call(stub::sceMidi_MidiGetAbsoluteTempo, 2, context.address, static_cast<uint32_t>(port)));
+        }
+        inline int32_t sceMidi_Load(IopPtr<sceCslCtx> context, int32_t port)
+        {
+            return detail::toInt(detail::call(stub::sceMidi_Load, 2, context.address, static_cast<uint32_t>(port)));
+        }
+        inline int32_t sceMidi_MidiSetAbsoluteTempo(IopPtr<sceCslCtx> context, int32_t port, uint32_t tempo)
+        {
+            return detail::toInt(detail::call(stub::sceMidi_MidiSetAbsoluteTempo, 3, context.address, static_cast<uint32_t>(port), tempo));
+        }
+        // five arguments: the fifth goes on the stack
+        inline int32_t sceHSyn_Load(IopPtr<sceCslCtx> context, int32_t port, uint32_t body, uint32_t head, uint32_t flag)
+        {
+            g_context->stackArguments(&flag, 1);
+            return detail::toInt(detail::call(stub::sceHSyn_Load, 4, context.address, static_cast<uint32_t>(port), body, head));
         }
         inline int32_t sceHSyn_SESetMaxVoices(int32_t voices) { return detail::toInt(detail::call(stub::sceHSyn_SESetMaxVoices, 1, static_cast<uint32_t>(voices))); }
         inline int32_t sceHSyn_ResetAllControler(IopPtr<sceCslCtx> context, int32_t channel)
