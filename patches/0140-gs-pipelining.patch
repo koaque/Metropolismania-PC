@@ -1,0 +1,600 @@
+GS pipelining (plan P8). PS2X_GS_TIMING=1 now also reports the threaded backend's worker every 2 s ("[gs:worker]": idle time, time in batches and how it splits into run scanning, inline draws, banded runs with their setup, band 0 and wait, serial draws and the other commands, the draw counts, and each band's busy time), and "[gs:sync]" the commands still queued when the producer started to wait for a drain. Banding by area: every queued draw carries a conservative row range and the number of pixels the rasterizer walks (computed on the producer's thread); a run is banded when it has at least 24 draws or covers at least PS2X_GS_BAND_PIXELS pixels (default 4096), so a few big draws no longer run on one thread; the rows are split between the bands by estimated cost, not in equal parts; a band skips the draws that lie outside its rows (and a band with no rows does nothing but keep band 0's CLUT replay); the run-splitting checks are skipped for a draw whose relevant state equals the previous draw's. PS2X_GS_BAND_COST=0 restores the old rules (draw count only, equal rows). PS2X_GS_BANDS_VERIFY=1 still redraws every banded run serially and compares.
+
+diff --git a/ps2xRuntime/src/lib/gs/gs_threaded_backend.cpp b/ps2xRuntime/src/lib/gs/gs_threaded_backend.cpp
+--- a/ps2xRuntime/src/lib/gs/gs_threaded_backend.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_threaded_backend.cpp
+@@ -5,6 +5,7 @@
+ #include <atomic>
+ #include <cfenv>
+ #include <chrono>
++#include <cmath>
+ #include <condition_variable>
+ #include <cstdlib>
+ #include <cstring>
+@@ -54,6 +55,128 @@ namespace
+         std::promise<void> done;
+     };
+ 
++    // Where a draw can touch the frame, worked out when it is queued (on the producer's thread) so that the worker can decide
++    // how to split a run without looking at the draws again. The rows are conservative: a draw never writes outside
++    // [yMin, yMax] (yMin > yMax: it writes nothing). `pixels` is the area the rasterizer walks (the clipped bounding box), the
++    // cost of the draw before any per-pixel weighting.
++    struct DrawExtent
++    {
++        int32_t yMin = 0;
++        int32_t yMax = -1;
++        uint32_t pixels = 0;
++    };
++
++    constexpr float kExtentLimit = 65536.0f;
++
++    // False for a coordinate the rasterizer's own integer conversions could not be followed on (NaN or enormous).
++    bool usableCoordinate(float v)
++    {
++        return v > -kExtentLimit && v < kExtentLimit;
++    }
++
++    DrawExtent estimateExtent(const GSPrimitiveBatch &batch)
++    {
++        const GSContext &ctx = batch.state.context;
++        DrawExtent out;
++        const int32_t scissorX0 = ctx.scissor.x0, scissorX1 = ctx.scissor.x1;
++        const int32_t scissorY0 = ctx.scissor.y0, scissorY1 = ctx.scissor.y1;
++        if (batch.vertexCount == 0u || scissorX0 > scissorX1 || scissorY0 > scissorY1)
++            return out;
++        // Anything not understood covers the whole scissor.
++        const auto whole = [&]()
++        {
++            out.yMin = scissorY0;
++            out.yMax = scissorY1;
++            out.pixels = static_cast<uint32_t>((scissorX1 - scissorX0 + 1) * (scissorY1 - scissorY0 + 1));
++            return out;
++        };
++
++        const float ofx = static_cast<float>(ctx.xyoffset.ofx >> 4);
++        const float ofy = static_cast<float>(ctx.xyoffset.ofy >> 4);
++        size_t count = 0;
++        switch (batch.state.prim.type)
++        {
++        case GS_PRIM_SPRITE:
++        case GS_PRIM_LINE:
++        case GS_PRIM_LINESTRIP:
++            count = 2u;
++            break;
++        case GS_PRIM_TRIANGLE:
++        case GS_PRIM_TRISTRIP:
++        case GS_PRIM_TRIFAN:
++            count = 3u;
++            break;
++        case GS_PRIM_POINT:
++            count = 1u;
++            break;
++        default:
++            return whole();
++        }
++        if (batch.vertexCount < count)
++            return whole();
++
++        float minX = 0.0f, maxX = 0.0f, minY = 0.0f, maxY = 0.0f;
++        for (size_t i = 0; i < count; ++i)
++        {
++            const float x = batch.vertices[i].x - ofx;
++            const float y = batch.vertices[i].y - ofy;
++            if (!usableCoordinate(x) || !usableCoordinate(y))
++                return whole();
++            if (i == 0u)
++            {
++                minX = maxX = x;
++                minY = maxY = y;
++            }
++            else
++            {
++                minX = std::min(minX, x);
++                maxX = std::max(maxX, x);
++                minY = std::min(minY, y);
++                maxY = std::max(maxY, y);
++            }
++        }
++        // One pixel of margin on every side covers the rounding the draw routines use (floor/ceil for triangles, ceil - 1 for
++        // sprites, truncation for lines and points).
++        const int32_t x0 = std::max(static_cast<int32_t>(std::floor(minX)) - 1, scissorX0);
++        const int32_t x1 = std::min(static_cast<int32_t>(std::ceil(maxX)) + 1, scissorX1);
++        const int32_t y0 = std::max(static_cast<int32_t>(std::floor(minY)) - 1, scissorY0);
++        const int32_t y1 = std::min(static_cast<int32_t>(std::ceil(maxY)) + 1, scissorY1);
++        if (x0 > x1 || y0 > y1)
++            return out;
++        out.yMin = y0;
++        out.yMax = y1;
++        out.pixels = static_cast<uint32_t>((x1 - x0 + 1) * (y1 - y0 + 1));
++        return out;
++    }
++
++    // The fields of a draw that decide whether a run must end before it (see executeBatch). All 32-bit, so equal keys are equal bytes.
++    struct DrawKey
++    {
++        uint32_t fbp = 0, fbw = 0, fpsm = 0, scissorY1 = 0, zte = 0, zbp = 0, zpsm = 0, tme = 0, tbp0 = 0, tbw = 0, tpsm = 0, textureHeight = 0;
++    };
++
++    DrawKey makeDrawKey(const GSDrawState &state)
++    {
++        const GSContext &ctx = state.context;
++        DrawKey key;
++        key.fbp = ctx.frame.fbp;
++        key.fbw = ctx.frame.fbw;
++        key.fpsm = ctx.frame.psm;
++        key.scissorY1 = ctx.scissor.y1;
++        key.zte = static_cast<uint32_t>((ctx.test >> 16) & 1u);
++        key.zbp = ctx.zbuf.zbp;
++        key.zpsm = ctx.zbuf.psm;
++        key.tme = state.prim.tme ? 1u : 0u;
++        if (state.prim.tme)
++        {
++            key.tbp0 = ctx.tex0.tbp0;
++            key.tbw = ctx.tex0.tbw;
++            key.tpsm = ctx.tex0.psm;
++            key.textureHeight = state.textureHeight;
++        }
++        return key;
++    }
++
+     struct Command
+     {
+         Op op;
+@@ -63,6 +186,7 @@ namespace
+         std::variant<std::monostate, GSPrimitiveBatch, ClutArgs, GSTransferCommand, std::vector<uint8_t>, PixelArgs,
+                      std::shared_ptr<PresentArgs>>
+             data;
++        DrawExtent extent; // Submit only
+     };
+ 
+     // Bound on queued commands; the producer waits when the worker falls this far behind.
+@@ -188,6 +312,37 @@ struct GSThreadedBackend::Impl
+     }();
+     uint64_t verifyRuns = 0, verifyMismatchRuns = 0;
+ 
++    // PS2X_GS_TIMING=1: where the worker's time goes, reported every 2 s as "[gs:worker]". All of it is written by the worker thread
++    // (the band threads add their own busy time to workerBandBusyNs, which the worker reads between runs).
++    struct WorkerTiming
++    {
++        uint64_t idleNs = 0, batchNs = 0, scanNs = 0;
++        uint64_t inlineNs = 0, inlineDraws = 0, inlineRuns = 0, inlinePixels = 0;
++        uint64_t bandSetupNs = 0, band0Ns = 0, bandWaitNs = 0, bandedDraws = 0, bandedRuns = 0;
++        uint64_t serialNs = 0, serialDraws = 0;
++        uint64_t opNs[8] = {}, opCount[8] = {};
++        uint64_t batches = 0, commands = 0;
++        uint64_t bandBusyNs[16] = {};
++    };
++    WorkerTiming workerTiming;
++    std::chrono::steady_clock::time_point workerTimingLast = std::chrono::steady_clock::now();
++
++    // Banding by area (PS2X_GS_BAND_COST=0 turns it off: runs are then banded by their draw count alone and split into equal
++    // rows, as before). A run with fewer than kMinBandedDraws draws is still banded when the draws cover at least
++    // PS2X_GS_BAND_PIXELS pixels (default 4096), and the rows are split so that each band gets about the same estimated cost.
++    const bool costBanding = []()
++    {
++        const char *value = std::getenv("PS2X_GS_BAND_COST");
++        return value == nullptr || value[0] != '0';
++    }();
++    const uint64_t minBandedPixels = []() -> uint64_t
++    {
++        const char *value = std::getenv("PS2X_GS_BAND_PIXELS");
++        return value != nullptr ? static_cast<uint64_t>(std::max(std::atoll(value), 1ll)) : 4096u;
++    }();
++    // Per-row cost of the run being scanned, as a difference array (scissor rows are 11 bits).
++    std::vector<int64_t> rowDiff = std::vector<int64_t>(2052u, 0);
++
+     explicit Impl(std::unique_ptr<GSRasterBackend> backend)
+         : inner(std::move(backend))
+     {
+@@ -233,6 +388,10 @@ struct GSThreadedBackend::Impl
+     void drawBand(size_t index, int &rounding)
+     {
+         GSCpuBackend::BandContext &band = bands[index];
++        // A band with no rows draws nothing; only band 0 still replays the CLUT loads, since its CLUT state is what the run leaves behind.
++        const bool noRows = band.y0 > band.y1;
++        if (noRows && index != 0u)
++            return;
+         for (size_t i = runBegin; i < runEnd; ++i)
+         {
+             const Command &command = (*runCommands)[i];
+@@ -244,6 +403,9 @@ struct GSThreadedBackend::Impl
+             switch (command.op)
+             {
+             case Op::Submit:
++                // (the extent is conservative: a draw outside this band's rows would draw nothing in it)
++                if (noRows || command.extent.yMax < band.y0 || command.extent.yMin > band.y1)
++                    break;
+                 cpu->BandSubmit(band, std::get<GSPrimitiveBatch>(command.data));
+                 break;
+             case Op::LoadClut:
+@@ -274,7 +436,14 @@ struct GSThreadedBackend::Impl
+                     break;
+                 seen = bandGeneration;
+             }
+-            drawBand(index, rounding);
++            if (timingEnabled)
++            {
++                const auto begin = std::chrono::steady_clock::now();
++                drawBand(index, rounding);
++                workerTiming.bandBusyNs[index & 15u] += nanosecondsSince(begin, std::chrono::steady_clock::now());
++            }
++            else
++                drawBand(index, rounding);
+             if (bandsRemaining.fetch_sub(1u, std::memory_order_acq_rel) == 1u)
+             {
+                 std::lock_guard<std::mutex> lock(bandMutex);
+@@ -283,16 +452,83 @@ struct GSThreadedBackend::Impl
+         }
+     }
+ 
+-    // Executes a run of draws, CLUT loads and texture flushes, on all bands when it is long enough.
+-    void executeRun(const std::deque<Command> &commands, size_t begin, size_t end, size_t draws, uint16_t maxY, int &rounding)
++    // Zeroes the per-row cost accumulators a scan filled (rows 0 to maxRow, and the one past it).
++    void clearRowDiff(int32_t maxRow)
++    {
++        if (maxRow >= 0)
++            std::fill(rowDiff.begin(), rowDiff.begin() + static_cast<ptrdiff_t>(maxRow) + 2, int64_t{0});
++    }
++
++    // Splits the rows into one range per band so that each gets about the same share of the run's estimated cost; the first
++    // band starts at row 0 and the last one has no end. A band may get no rows (y0 > y1) when a few rows carry all the cost.
++    void splitRowsByCost(int32_t maxRow)
+     {
+-        if (bands.size() < 2u || draws < kMinBandedDraws)
++        const size_t count = bands.size();
++        std::vector<int32_t> bound(count + 1u, 0);
++        uint64_t totalCost = 0;
++        int64_t perRow = 0;
++        for (int32_t row = 0; row <= maxRow; ++row)
+         {
++            perRow += rowDiff[static_cast<size_t>(row)];
++            totalCost += static_cast<uint64_t>(perRow);
++        }
++        size_t next = 1;
++        uint64_t acc = 0;
++        perRow = 0;
++        for (int32_t row = 0; row <= maxRow && next < count; ++row)
++        {
++            perRow += rowDiff[static_cast<size_t>(row)];
++            acc += static_cast<uint64_t>(perRow);
++            while (next < count && acc * count >= totalCost * next)
++            {
++                bound[next] = row + 1;
++                ++next;
++            }
++        }
++        for (; next < count; ++next)
++            bound[next] = maxRow + 1;
++        for (size_t index = 0; index < count; ++index)
++        {
++            GSCpuBackend::BandContext &band = bands[index];
++            const int32_t lo = bound[index];
++            const int32_t hi = index + 1u == count ? 0xFFFF : bound[index + 1u] - 1;
++            if (lo > hi)
++            {
++                band.y0 = 1;
++                band.y1 = 0; // no rows
++            }
++            else
++            {
++                band.y0 = static_cast<uint16_t>(lo);
++                band.y1 = static_cast<uint16_t>(hi);
++            }
++        }
++    }
++
++    // Executes a run of draws, CLUT loads and texture flushes, on all bands when it is long enough: by the number of draws, or,
++    // when a few big draws make up the run, by the area they cover (PS2X_GS_BAND_PIXELS).
++    void executeRun(const std::deque<Command> &commands, size_t begin, size_t end, size_t draws, uint16_t maxY, uint64_t pixels,
++                    int32_t extentMaxY, int &rounding)
++    {
++        const bool banded = bands.size() >= 2u && (draws >= kMinBandedDraws || (costBanding && pixels >= minBandedPixels));
++        if (!banded)
++        {
++            clearRowDiff(extentMaxY);
++            if (timingEnabled)
++                workerTiming.inlinePixels += pixels;
++            const auto inlineBegin = timingEnabled ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+             for (size_t i = begin; i < end; ++i)
+                 execute(commands[i], rounding);
+             statInlineDraws += draws;
++            if (timingEnabled)
++            {
++                workerTiming.inlineNs += nanosecondsSince(inlineBegin, std::chrono::steady_clock::now());
++                workerTiming.inlineDraws += draws;
++                ++workerTiming.inlineRuns;
++            }
+             return;
+         }
++        const auto setupBegin = timingEnabled ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+ 
+         std::vector<uint8_t> before;
+         GSCpuBackend::BandContext savedClut;
+@@ -303,14 +539,21 @@ struct GSThreadedBackend::Impl
+         }
+ 
+         const size_t count = bands.size();
+-        const uint32_t rows = static_cast<uint32_t>(maxY) + 1u;
+-        for (size_t index = 0; index < count; ++index)
++        if (costBanding && pixels != 0u)
++            splitRowsByCost(extentMaxY);
++        else
+         {
+-            GSCpuBackend::BandContext &band = bands[index];
+-            band.y0 = static_cast<uint16_t>(rows * index / count);
+-            band.y1 = index + 1u == count ? static_cast<uint16_t>(0xFFFFu) : static_cast<uint16_t>(rows * (index + 1u) / count - 1u);
+-            cpu->BeginBand(band);
++            const uint32_t rows = static_cast<uint32_t>(maxY) + 1u;
++            for (size_t index = 0; index < count; ++index)
++            {
++                GSCpuBackend::BandContext &band = bands[index];
++                band.y0 = static_cast<uint16_t>(rows * index / count);
++                band.y1 = index + 1u == count ? static_cast<uint16_t>(0xFFFFu) : static_cast<uint16_t>(rows * (index + 1u) / count - 1u);
++            }
+         }
++        clearRowDiff(extentMaxY);
++        for (size_t index = 0; index < count; ++index)
++            cpu->BeginBand(bands[index]);
+         runCommands = &commands;
+         runBegin = begin;
+         runEnd = end;
+@@ -320,7 +563,12 @@ struct GSThreadedBackend::Impl
+             ++bandGeneration;
+         }
+         bandStart.notify_all();
++        std::chrono::steady_clock::time_point band0Begin, band0End;
++        if (timingEnabled)
++            band0Begin = std::chrono::steady_clock::now();
+         drawBand(0u, rounding);
++        if (timingEnabled)
++            band0End = std::chrono::steady_clock::now();
+         {
+             std::unique_lock<std::mutex> lock(bandMutex);
+             bandDone.wait(lock, [&] { return bandsRemaining.load(std::memory_order_acquire) == 0u; });
+@@ -328,6 +576,15 @@ struct GSThreadedBackend::Impl
+         cpu->EndBand(bands[0]);
+         ++statBandedRuns;
+         statBandedDraws += draws;
++        if (timingEnabled)
++        {
++            workerTiming.bandSetupNs += nanosecondsSince(setupBegin, band0Begin);
++            workerTiming.band0Ns += nanosecondsSince(band0Begin, band0End);
++            workerTiming.bandWaitNs += nanosecondsSince(band0End, std::chrono::steady_clock::now());
++            workerTiming.bandBusyNs[0] += nanosecondsSince(band0Begin, band0End);
++            workerTiming.bandedDraws += draws;
++            ++workerTiming.bandedRuns;
++        }
+ 
+         if (verifyBands && !before.empty())
+         {
+@@ -371,17 +628,34 @@ struct GSThreadedBackend::Impl
+         {
+             if (!cpu || bands.size() < 2u || !isRunOp(commands[i].op))
+             {
+-                execute(commands[i], rounding);
++                if (timingEnabled)
++                {
++                    const auto opBegin = std::chrono::steady_clock::now();
++                    execute(commands[i], rounding);
++                    const size_t slot = static_cast<size_t>(commands[i].op) & 7u;
++                    workerTiming.opNs[slot] += nanosecondsSince(opBegin, std::chrono::steady_clock::now());
++                    ++workerTiming.opCount[slot];
++                }
++                else
++                    execute(commands[i], rounding);
+                 ++i;
+                 continue;
+             }
+ 
+             // Grow the run until a command needs the VRAM state the run itself is producing.
++            const auto scanBegin = timingEnabled ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+             std::vector<ByteRange> written;
+             size_t end = i;
+             size_t draws = 0;
+             uint16_t maxY = 0;
++            uint64_t runPixels = 0;
++            int32_t extentMaxY = -1;
+             bool serialNext = false;
++            // The run-splitting checks below depend only on these fields of a draw. A draw whose fields equal those of the
++            // draw just before it (in this run) gets the same answer: that one passed, and the ranges it added to `written`
++            // are the ones this draw would add.
++            DrawKey lastKey;
++            bool haveKey = false;
+             while (end < commands.size() && isRunOp(commands[end].op) && end - i < kMaxRunCommands)
+             {
+                 const Command &command = commands[end];
+@@ -397,47 +671,74 @@ struct GSThreadedBackend::Impl
+                 else if (command.op == Op::Submit)
+                 {
+                     const GSPrimitiveBatch &batch = std::get<GSPrimitiveBatch>(command.data);
+-                    ByteRange own[2];
+-                    size_t ownCount = 0;
+-                    drawWriteRanges(batch.state, own, ownCount);
+-                    if (batch.state.prim.tme)
++                    const DrawKey key = makeDrawKey(batch.state);
++                    if (!haveKey || std::memcmp(&key, &lastKey, sizeof(DrawKey)) != 0)
+                     {
+-                        const ByteRange texture = textureRange(batch.state);
+-                        if (std::any_of(written.begin(), written.end(), [&](const ByteRange &r) { return r.overlaps(texture); }))
++                        ByteRange own[2];
++                        size_t ownCount = 0;
++                        drawWriteRanges(batch.state, own, ownCount);
++                        if (batch.state.prim.tme)
+                         {
+-                            ++statBreakTexture;
+-                            break;
++                            const ByteRange texture = textureRange(batch.state);
++                            if (std::any_of(written.begin(), written.end(), [&](const ByteRange &r) { return r.overlaps(texture); }))
++                            {
++                                ++statBreakTexture;
++                                break;
++                            }
++                            if (own[0].overlaps(texture) || (ownCount > 1u && own[1].overlaps(texture)))
++                            {
++                                serialNext = true; // reads what it draws: keep it on one thread
++                                break;
++                            }
+                         }
+-                        if (own[0].overlaps(texture) || (ownCount > 1u && own[1].overlaps(texture)))
++                        for (size_t k = 0; k < ownCount; ++k)
+                         {
+-                            serialNext = true; // reads what it draws: keep it on one thread
+-                            break;
++                            if (written.empty() || written.back().begin != own[k].begin || written.back().end != own[k].end)
++                                written.push_back(own[k]);
+                         }
+-                    }
+-                    for (size_t k = 0; k < ownCount; ++k)
+-                    {
+-                        if (written.empty() || written.back().begin != own[k].begin || written.back().end != own[k].end)
+-                            written.push_back(own[k]);
++                        lastKey = key;
++                        haveKey = true;
+                     }
+                     maxY = std::max(maxY, batch.state.context.scissor.y1);
+                     ++draws;
++                    const DrawExtent &extent = command.extent;
++                    if (extent.yMin <= extent.yMax)
++                    {
++                        runPixels += extent.pixels;
++                        // The cost of the draw is spread evenly over the rows it covers (a difference array, summed per run).
++                        const int64_t perRow = static_cast<int64_t>(extent.pixels) / (extent.yMax - extent.yMin + 1);
++                        rowDiff[static_cast<size_t>(extent.yMin)] += perRow;
++                        rowDiff[static_cast<size_t>(extent.yMax) + 1u] -= perRow;
++                        extentMaxY = std::max(extentMaxY, extent.yMax);
++                    }
+                 }
+                 ++end;
+             }
++            if (timingEnabled)
++                workerTiming.scanNs += nanosecondsSince(scanBegin, std::chrono::steady_clock::now());
+ 
+             if (end < commands.size() && !isRunOp(commands[end].op))
+                 ++statBreakOp[static_cast<size_t>(commands[end].op) & 7u];
+             if (end > i)
+-                executeRun(commands, i, end, draws, maxY, rounding);
++                executeRun(commands, i, end, draws, maxY, runPixels, extentMaxY, rounding);
+             i = end;
+             if (serialNext)
+             {
++                const auto serialBegin = timingEnabled ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+                 execute(commands[i], rounding);
+                 ++statSerialDraws;
++                if (timingEnabled)
++                {
++                    workerTiming.serialNs += nanosecondsSince(serialBegin, std::chrono::steady_clock::now());
++                    ++workerTiming.serialDraws;
++                }
+                 ++i;
+             }
+         }
+ 
++        if (timingEnabled)
++            reportWorkerTiming();
++
+         if (statsEnabled)
+         {
+             const auto now = std::chrono::steady_clock::now();
+@@ -463,7 +764,7 @@ struct GSThreadedBackend::Impl
+         const char *value = std::getenv("PS2X_GS_TIMING");
+         return value != nullptr && value[0] == '1';
+     }();
+-    uint64_t timePushNs = 0, timePushWaitNs = 0, timeDrainNs = 0, timePushes = 0, timeDrains = 0;
++    uint64_t timePushNs = 0, timePushWaitNs = 0, timeDrainNs = 0, timePushes = 0, timeDrains = 0, timeBacklog = 0;
+     std::chrono::steady_clock::time_point timeLast = std::chrono::steady_clock::now();
+ 
+     static uint64_t nanosecondsSince(std::chrono::steady_clock::time_point begin, std::chrono::steady_clock::time_point end)
+@@ -471,6 +772,31 @@ struct GSThreadedBackend::Impl
+         return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count());
+     }
+ 
++    // "[gs:worker]" (PS2X_GS_TIMING=1), every 2 s, all in ms: the worker's idle time, the time inside executeBatch (batch) and how it
++    // splits: scan (growing the runs), inline (runs too short to band), banded (setup, band 0, waiting for the other bands),
++    // serial (draws that read their own output), the other commands (xfer = BeginTransfer, upload = UploadImage, wvram = WriteVram,
++    // present); then the draw counts, the commands per batch and each band's busy time. ("[gs:sync]" has the commands still queued
++    // when the producer started to wait for a drain.)
++    void reportWorkerTiming()
++    {
++        const auto now = std::chrono::steady_clock::now();
++        if (now - workerTimingLast < std::chrono::seconds(2))
++            return;
++        WorkerTiming &t = workerTiming;
++        const auto ms = [](uint64_t ns) { return ns / 1000000u; };
++        std::cerr << "[gs:worker] idle=" << ms(t.idleNs) << " batch=" << ms(t.batchNs) << " scan=" << ms(t.scanNs) << " inline=" << ms(t.inlineNs)
++                  << " banded(setup=" << ms(t.bandSetupNs) << " band0=" << ms(t.band0Ns) << " wait=" << ms(t.bandWaitNs) << ") serial=" << ms(t.serialNs)
++                  << " xfer=" << ms(t.opNs[static_cast<size_t>(Op::BeginTransfer)]) << " upload=" << ms(t.opNs[static_cast<size_t>(Op::UploadImage)])
++                  << " wvram=" << ms(t.opNs[static_cast<size_t>(Op::WriteVram)]) << " present=" << ms(t.opNs[static_cast<size_t>(Op::Present)])
++                  << " | draws inline=" << t.inlineDraws << " (" << t.inlinePixels / 1000u << "k px) in " << t.inlineRuns << " runs, banded=" << t.bandedDraws << " in " << t.bandedRuns
++                  << " runs, serial=" << t.serialDraws << " | batches=" << t.batches << " commands=" << t.commands << " | band busy";
++        for (size_t index = 0; index < bands.size() && index < 16u; ++index)
++            std::cerr << ' ' << ms(t.bandBusyNs[index]);
++        std::cerr << std::endl;
++        t = WorkerTiming{};
++        workerTimingLast = now;
++    }
++
+     void push(Command command)
+     {
+         const auto pushBegin = timingEnabled ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+@@ -495,8 +821,9 @@ struct GSThreadedBackend::Impl
+             if (now - timeLast >= std::chrono::seconds(2))
+             {
+                 std::cerr << "[gs:sync] pushes=" << timePushes << " push_ms=" << timePushNs / 1000000u << " push_wait_ms=" << timePushWaitNs / 1000000u
+-                          << " syncs=" << timeDrains << " sync_ms=" << timeDrainNs / 1000000u << std::endl;
+-                timePushNs = timePushWaitNs = timeDrainNs = timePushes = timeDrains = 0;
++                          << " syncs=" << timeDrains << " sync_ms=" << timeDrainNs / 1000000u << " backlog=" << (timeDrains != 0u ? timeBacklog / timeDrains : 0u)
++                          << std::endl;
++                timePushNs = timePushWaitNs = timeDrainNs = timePushes = timeDrains = timeBacklog = 0;
+                 timeLast = now;
+             }
+         }
+@@ -508,12 +835,14 @@ struct GSThreadedBackend::Impl
+         const auto begin = timingEnabled ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+         std::unique_lock<std::mutex> lock(queueMutex);
+         const uint64_t target = submitted;
++        const uint64_t backlog = target - completed;
+         progress.wait(lock, [&] { return completed >= target; });
+         if (timingEnabled)
+         {
+             Impl *self = const_cast<Impl *>(this);
+             self->timeDrainNs += nanosecondsSince(begin, std::chrono::steady_clock::now());
+             ++self->timeDrains;
++            self->timeBacklog += backlog;
+         }
+     }
+ 
+@@ -590,7 +919,10 @@ struct GSThreadedBackend::Impl
+         {
+             {
+                 std::unique_lock<std::mutex> lock(queueMutex);
++                const auto idleBegin = timingEnabled ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+                 workAvailable.wait(lock, [&] { return stopping || !queue.empty(); });
++                if (timingEnabled)
++                    workerTiming.idleNs += nanosecondsSince(idleBegin, std::chrono::steady_clock::now());
+                 if (queue.empty() && stopping)
+                     break;
+                 batch.swap(queue);
+@@ -598,7 +930,14 @@ struct GSThreadedBackend::Impl
+             progress.notify_all(); // a producer waiting on the queue bound can continue
+             {
+                 std::lock_guard<std::mutex> exec(execMutex);
++                const auto batchBegin = timingEnabled ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+                 executeBatch(batch, rounding);
++                if (timingEnabled)
++                {
++                    workerTiming.batchNs += nanosecondsSince(batchBegin, std::chrono::steady_clock::now());
++                    ++workerTiming.batches;
++                    workerTiming.commands += batch.size();
++                }
+             }
+             const size_t done = batch.size();
+             batch.clear();
+@@ -639,7 +978,7 @@ void GSThreadedBackend::Reset()
+ 
+ void GSThreadedBackend::Submit(const GSPrimitiveBatch &batch)
+ {
+-    m_impl->push(Command{Op::Submit, std::fegetround(), batch});
++    m_impl->push(Command{Op::Submit, std::fegetround(), batch, estimateExtent(batch)});
+ }
+ 
+ void GSThreadedBackend::LoadClut(const GSTex0Reg &tex0, const GSTexClutReg &texclut)
