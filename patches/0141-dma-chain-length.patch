@@ -1,0 +1,41 @@
+DMA chains: the chain walker in PS2Memory stopped after 4096 tags. A city frame of Metropolismania is a longer VIF1 chain, so the rest of every city frame was dropped: the water, most buildings, the HUD and the minimap were missing, and which buildings showed changed with the camera. The hardware has no such limit; the walker now stops only at 2,097,152 tags or 64 MB of collected data (a chain that never ends) and logs it ("[dma:chain] ... stopped at the guard").
+
+diff --git a/ps2xRuntime/src/lib/ps2_memory.cpp b/ps2xRuntime/src/lib/ps2_memory.cpp
+--- a/ps2xRuntime/src/lib/ps2_memory.cpp
++++ b/ps2xRuntime/src/lib/ps2_memory.cpp
+@@ -1365,7 +1365,10 @@ bool PS2Memory::writeIORegister(uint32_t address, uint32_t value)
+                     uint32_t asr1 = m_ioRegisters[channelBase + 0x50];
+                     uint32_t asp = (chcr >> 4) & 0x3u;
+                     const bool tieEnabled = (chcr & (1u << 7)) != 0u;
+-                    const int kMaxChainTags = 4096;
++                    // The hardware has no limit; these only stop a chain that loops forever. A city frame of Metropolismania
++                    // is more than 4096 tags (the old limit), and everything after the limit was dropped.
++                    const int kMaxChainTags = 1 << 21;
++                    const size_t kMaxChainBytes = size_t{64} * 1024u * 1024u;
+                     std::vector<uint8_t> chainBuf;
+ 
+                     auto appendData = [&](uint32_t srcAddr, uint32_t qwCount)
+@@ -1426,7 +1429,7 @@ bool PS2Memory::writeIORegister(uint32_t address, uint32_t value)
+                     int tagsProcessed = 0;
+                     uint32_t lastTagUpper = (chcr >> 16) & 0xFFFFu;
+ 
+-                    while (tagsProcessed < kMaxChainTags)
++                    while (tagsProcessed < kMaxChainTags && chainBuf.size() < kMaxChainBytes)
+                     {
+                         const uint32_t currentTagAddr = tagAddr;
+                         const bool tagInSPR = isScratchpad(tagAddr);
+@@ -1542,6 +1545,14 @@ bool PS2Memory::writeIORegister(uint32_t address, uint32_t value)
+                             break;
+                     }
+ 
++                    if (tagsProcessed >= kMaxChainTags || chainBuf.size() >= kMaxChainBytes)
++                    {
++                        static uint32_t s_limitHits = 0;
++                        if (++s_limitHits <= 20u || (s_limitHits % 1000u) == 0u)
++                            std::cerr << "[dma:chain] channel 0x" << std::hex << channelBase << std::dec << " stopped at the guard ("
++                                      << tagsProcessed << " tags, " << chainBuf.size() / 16u << " qwords, next tag 0x" << std::hex << tagAddr
++                                      << std::dec << "): a chain that never ends; hit " << s_limitHits << " time(s)" << std::endl;
++                    }
+                     m_ioRegisters[channelBase + 0x30] = tagAddr;
+                     m_ioRegisters[channelBase + 0x40] = asr0;
+                     m_ioRegisters[channelBase + 0x50] = asr1;
