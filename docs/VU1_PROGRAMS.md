@@ -2,7 +2,7 @@
 
 The city's frame time was dominated by the VU1 interpreter: about 190 host cycles for every VU cycle, most of them the cycle-accurate scheduling model (hazards, the queues that delay flag, Q, P, store, VI and vf/ACC results, XGKICK progress) rather than the arithmetic. This page describes what replaced it on the hot path, how it is checked, and what it gained. The interpreter is still there as the reference and as the fallback.
 
-Code: `src/port/vu1aot*.cpp|h` (the programs), `src/port/vu1test.cpp` and `vu1aot_test.cpp` (the checks), `patches/0132` to `0135` (the runtime side). Capture files are game-derived and stay in `work/vu1_aot/`.
+Code: `src/port/vu1aot*.cpp|h` (the programs), `src/port/vu1test.cpp` and `vu1aot_test.cpp` (the checks), `patches/0132` to `0135` and `0146` (the runtime side). Capture files and compiled programs are game-derived and stay in `work/vu1_aot/`.
 
 ## The idea
 
@@ -41,3 +41,20 @@ Explore autoplay in the city (`MMPC_FRAME_STATS=1`, windows whose frames take re
 | pre-timed programs | 28.6 fps on average, 30 in lighter views | 18.3 ms |
 
 The VU1 work alone runs at about 62 million VU cycles per second against 20 for the interpreter. In the lighter views the game now holds its 30 fps (vsync paced). In the heaviest views (about 55 million VU cycles and 60 MB of GIF data per 2 seconds) the frame is about 38 ms: roughly 17 ms of VU1, 3 ms of GS front-end and 10 ms at the end of the frame waiting for the software rasterizer to finish what the GS worker has queued. So the next limit is the CPU rasterizer, then the VU1 programs again.
+
+(These figures were measured on city frames that the DMA chain limit fixed on 2026-10-28 had cut short; see `docs/STATUS.md` item 17. Whole frames carry about 1.7 million VU cycles each.)
+
+## Compiled programs
+
+Following the graph costs two indirect calls per pair plus the node bookkeeping, and with whole city frames that was 31 ms of a 47 ms frame. So each graph is now also written out as C++ (`src/port/vu1aot_emit.cpp`, `vu1aot_compiled.h`): one labelled block per node that does what the executor does at that node, in the same order, with the ops (`src/port/vu1aot_ops.h`, the same functions the executor calls) called directly on a constant node. The compiler then folds the register numbers, lane masks and slots, and drops the flag work no commit reads. Only what depends on the data stays a test: a branch taken, an XGKICK in flight, the interpreter stopping.
+
+The C++ comes from the game's microcode, so it is game-derived and never committed: `pipeline.py vu1-emit` writes the programs the records use to `work/vu1_aot/gen/`, a game run with `--env MMPC_VU1_EMIT=<that folder>` adds the ones other scenes use, and `pipeline.py stage` builds them in. A compiled program is used only for a graph the runtime has built itself with the same entry, the same code bytes and the same emitted text (its hash is stored in the file), so a change to the graph builder, the op choice or the emitter leaves an old file unused (`stale` in the counters) rather than wrong; a program with no compiled version runs in the executor. `PS2X_VU1_COMPILED=0` runs everything in the executor.
+
+Checked like the executor: the 105 records replay exactly through the compiled programs, and `PS2X_VU1_VERIFY=1` over 140 s of explore autoplay compared 753,605 compiled runs with the interpreter, no mismatch. 29 programs cover the city (18 from the records, 11 more from a live run).
+
+| explore autoplay, frame skip off | VU1 rate | VU1 time per 2 s | city frame rate (lowest window) |
+|---|---|---|---|
+| graph executor | 66 M VU cycles/s | 1.3 s | 21.1 fps (17.5) |
+| compiled programs | 136 M VU cycles/s | 0.7 s | 28.2 fps (22.3) |
+
+The frame rate is now held by the GS: its worker thread is idle about 1% of the time, and the game thread waits 0.6 to 0.9 s of every 2 s for it.

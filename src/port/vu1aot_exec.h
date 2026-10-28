@@ -91,6 +91,8 @@ namespace vu1aot
     {
         OpFn upper = nullptr;  // null: nothing to do, or `general`
         OpFn lower = nullptr;
+        const char *upperName = nullptr; // the same ops by name, in namespace vu1aot (vu1aot_ops.h), for a compiled program
+        const char *lowerName = nullptr;
         bool upperGeneral = false; // go through execUpper
         bool lowerGeneral = false; // go through execLower
         bool upperWritesVf0 = false; // a native upper op whose result goes to vf0 (put back after the pair)

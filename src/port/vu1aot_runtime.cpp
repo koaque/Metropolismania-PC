@@ -6,12 +6,16 @@
 // bails: the snapshot goes back and the interpreter runs as if nothing had happened.
 //
 //   PS2X_VU1_AOT=0       the hook is not installed
+//   PS2X_VU1_COMPILED=0  every program runs in the graph executor, also those built in as compiled programs
+//                        (vu1aot_compiled.h)
 //   PS2X_VU1_VERIFY=1    every program run is also run by the interpreter from the same snapshot and the outcomes are
 //                        compared (state, data memory, cycles, packets); the interpreter's outcome is the one kept
 //   PS2X_GS_TIMING=1     a line of counters and times every 2 seconds (the GS statistics PS2X_GS_STATS=1 slow the game down)
+//   MMPC_VU1_EMIT=<dir>  every program built is also written to <dir> as a compiled program (pipeline.py vu1-emit)
 
 #include "vu1aot.h"
 #include "vu1aot_access.h"
+#include "vu1aot_compiled.h"
 
 #include "runtime/gs/gs_frontend.h"
 #include "runtime/ps2_memory.h"
@@ -44,6 +48,8 @@ namespace vu1aot
             uint64_t built = 0;
             uint64_t verified = 0;
             uint64_t mismatches = 0;
+            uint64_t compiledRuns = 0; // runs a compiled program completed (part of `runs`)
+            uint64_t stale = 0;        // programs built that had a compiled program for other emitted text (not used)
         };
         Counters g_counters;
         std::chrono::steady_clock::time_point g_lastLog = std::chrono::steady_clock::now();
@@ -66,6 +72,24 @@ namespace vu1aot
             return on;
         }
 
+        bool compiledOn()
+        {
+            static const bool on = []() {
+                const char *value = std::getenv("PS2X_VU1_COMPILED");
+                return value == nullptr || value[0] != '0';
+            }();
+            return on;
+        }
+
+        const char *emitDir()
+        {
+            static const char *const dir = []() -> const char * {
+                const char *value = std::getenv("MMPC_VU1_EMIT");
+                return value != nullptr && value[0] != '\0' ? value : nullptr;
+            }();
+            return dir;
+        }
+
         uint64_t hashRange(const uint8_t *code, uint32_t lo, uint32_t hi)
         {
             uint64_t hash = 1469598103934665603ull;
@@ -79,7 +103,26 @@ namespace vu1aot
             Graph graph;
             uint64_t hash = 0;
             uint64_t runs = 0, bails = 0;
+            CompiledRun compiled = nullptr; // the same graph built in as C++ (vu1aot_compiled.h), if it is
         };
+
+        // The compiled program for a graph just built: same entry, same code bytes, and the text the emitter writes for this
+        // graph now.
+        CompiledRun findCompiled(const Graph &graph, uint64_t hash)
+        {
+            for (const CompiledProgram &program : compiledPrograms())
+                if (program.entryPc == graph.entryPc && program.codeLo == graph.codeLo && program.codeHi == graph.codeHi &&
+                    program.codeHash == hash)
+                {
+                    if (textHash(Vu1AotAccess::emitFunction(graph, compiledName(graph.entryPc, hash))) == program.sourceHash)
+                        return program.run;
+                    ++g_counters.stale;
+                    std::cerr << "[vu1aot] compiled program " << compiledName(graph.entryPc, hash)
+                              << " was written for another graph or emitter; run pipeline.py vu1-emit" << std::endl;
+                    return nullptr;
+                }
+            return nullptr;
+        }
 
         struct Entry
         {
@@ -110,7 +153,8 @@ namespace vu1aot
                 const auto begin = statsOn() ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
                 Vu1AotAccess::save(vu, a.data, a.dataSize, m_snapshot);
                 m_packets.clear();
-                const RunResult result = Vu1AotAccess::run(vu, program->graph, a, m_packets);
+                const RunResult result = program->compiled != nullptr ? program->compiled(vu, a, m_packets)
+                                                                      : Vu1AotAccess::run(vu, program->graph, a, m_packets);
                 if (result == RunResult::Bail)
                 {
                     Vu1AotAccess::restore(vu, a.data, m_snapshot);
@@ -120,6 +164,8 @@ namespace vu1aot
                 }
                 ++program->runs;
                 ++g_counters.runs;
+                if (program->compiled != nullptr)
+                    ++g_counters.compiledRuns;
                 g_counters.cycles += Vu1AotAccess::cycle(vu) - m_snapshot.cycle;
                 if (statsOn())
                     g_counters.seconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - begin).count();
@@ -165,6 +211,13 @@ namespace vu1aot
                     if (program->graph.supported)
                         Vu1AotAccess::prepare(program->graph);
                     program->hash = hashRange(a.code, program->graph.codeLo, program->graph.codeHi);
+                    if (program->graph.supported)
+                    {
+                        if (emitDir() != nullptr)
+                            emitProgramFile(program->graph, program->hash, emitDir());
+                        if (compiledOn())
+                            program->compiled = findCompiled(program->graph, program->hash);
+                    }
                     ++g_counters.built;
                     entry.versions.push_back(std::move(program));
                     entry.active = entry.versions.back().get();
@@ -234,17 +287,18 @@ namespace vu1aot
 
     std::string statsText()
     {
-        char text[400];
+        char text[480];
         std::snprintf(text, sizeof(text),
                       "[vu1aot:stats] runs=%llu cycles=%llu aot_ms=%llu Mcyc/s(aot)=%.1f emit_ms=%llu bails=%llu not_idle=%llu no_program=%llu "
-                      "built=%llu verified=%llu mismatches=%llu",
+                      "built=%llu verified=%llu mismatches=%llu compiled_runs=%llu stale=%llu",
                       static_cast<unsigned long long>(g_counters.runs), static_cast<unsigned long long>(g_counters.cycles),
                       static_cast<unsigned long long>(g_counters.seconds * 1000.0),
                       g_counters.seconds > 0.0 ? g_counters.cycles / g_counters.seconds / 1e6 : 0.0,
                       static_cast<unsigned long long>(g_counters.emitSeconds * 1000.0), static_cast<unsigned long long>(g_counters.bails),
                       static_cast<unsigned long long>(g_counters.notIdle), static_cast<unsigned long long>(g_counters.noProgram),
                       static_cast<unsigned long long>(g_counters.built), static_cast<unsigned long long>(g_counters.verified),
-                      static_cast<unsigned long long>(g_counters.mismatches));
+                      static_cast<unsigned long long>(g_counters.mismatches), static_cast<unsigned long long>(g_counters.compiledRuns),
+                      static_cast<unsigned long long>(g_counters.stale));
         return text;
     }
 }

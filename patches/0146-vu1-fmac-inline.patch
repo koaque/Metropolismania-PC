@@ -1,0 +1,60 @@
+VU1 FMAC kernels forced inline: normalizeLanes, classifyExact and arith in ps2_vu1_fmac.h are now __forceinline (always_inline elsewhere), and the dest lane reversal is a constexpr function (reverseLanes) as well as the table. A caller that passes a constant instruction word, as the compiled VU1 programs of a game port do, gets the register numbers and lane masks folded and the flag work it never reads dropped. Results are unchanged: the interpreter's FMAC fuzz check (200,000 instructions, specialized against general) and the replay of 105 recorded game runs stay exact.
+
+diff --git a/ps2xRuntime/include/runtime/ps2_vu1_fmac.h b/ps2xRuntime/include/runtime/ps2_vu1_fmac.h
+--- a/ps2xRuntime/include/runtime/ps2_vu1_fmac.h
++++ b/ps2xRuntime/include/runtime/ps2_vu1_fmac.h
+@@ -12,10 +12,18 @@
+ #include <cstdint>
+ #include <limits>
+ 
++// The compiled VU1 programs (src/port/vu1aot) call these with constant instruction words: inlined, the register numbers and
++// lane masks fold away, and the flag work nobody reads is dropped.
++#if defined(_MSC_VER)
++#define PS2X_VU1_FMAC_INLINE __forceinline
++#else
++#define PS2X_VU1_FMAC_INLINE inline __attribute__((always_inline))
++#endif
++
+ namespace vu1fmac
+ {
+     // normalizeOperand on four lanes: a denormal becomes a signed zero, an infinity or NaN the signed largest finite value.
+-    inline __m128 normalizeLanes(__m128 value)
++    PS2X_VU1_FMAC_INLINE __m128 normalizeLanes(__m128 value)
+     {
+         const __m128i bits = _mm_castps_si128(value);
+         const __m128i exponent = _mm_and_si128(_mm_srli_epi32(bits, 23), _mm_set1_epi32(0xFF));
+@@ -43,6 +51,11 @@ namespace vu1fmac
+     };
+     inline const LaneTables g_laneTables;
+     inline const LaneTables &laneTables() { return g_laneTables; }
++    // LaneTables::reverse as a function, so a constant dest folds.
++    constexpr uint32_t reverseLanes(uint32_t set)
++    {
++        return ((set & 1u) << 3) | ((set & 2u) << 1) | ((set & 4u) >> 1) | ((set & 8u) >> 3);
++    }
+ 
+     // The conditions normalizeFmacExactResult reports for the exact (double) results of four lanes, as lane sets.
+     struct ExactClass
+@@ -53,7 +66,7 @@ namespace vu1fmac
+         uint32_t overflow;  // |exact| > largest float (O)
+     };
+ 
+-    inline ExactClass classifyExact(__m256d exact, __m256d &zeroMask, __m256d &underMask, __m256d &overMask)
++    PS2X_VU1_FMAC_INLINE ExactClass classifyExact(__m256d exact, __m256d &zeroMask, __m256d &underMask, __m256d &overMask)
+     {
+         const __m256d magnitude = _mm256_andnot_pd(_mm256_set1_pd(-0.0), exact);
+         zeroMask = _mm256_cmp_pd(magnitude, _mm256_setzero_pd(), _CMP_EQ_OQ);
+@@ -81,11 +94,11 @@ namespace vu1fmac
+     // results in double, as the model's long double is) and used for the lanes in dest only.
+     // `target` is where the result goes: ACC, a vf register or anywhere the caller wants it discarded.
+     template <int Kind, int BSrc, bool ToAcc>
+-    inline Flags arith(VU1State &st, float *target, uint32_t instr)
++    PS2X_VU1_FMAC_INLINE Flags arith(VU1State &st, float *target, uint32_t instr)
+     {
+         const uint8_t dest = static_cast<uint8_t>((instr >> 21) & 0xFu);
+         const LaneTables &tables = laneTables();
+-        const uint32_t lanes = tables.reverse[dest]; // components in dest, bit = component
++        const uint32_t lanes = reverseLanes(dest); // components in dest, bit = component
+         const __m128 vs = normalizeLanes(_mm_loadu_ps(st.vf[(instr >> 11) & 0x1Fu]));
+         __m128 b;
+         if constexpr (BSrc <= 3)

@@ -11,6 +11,7 @@
 #include "vu1aot.h"
 #include "vu1aot_access.h"
 #include "vu1aot_exec.h"
+#include "vu1aot_ops.h"
 
 #include "runtime/gs/ps2_gif_arbiter.h"
 #include "runtime/gs/gs_frontend.h"
@@ -21,12 +22,6 @@
 #include <cfenv>
 #include <cstdio>
 #include <cstring>
-
-struct Vu1AotAccess::ExecInfo
-{
-    std::vector<vu1aot::XNode> nodes;
-    std::vector<vu1aot::Commit> commits;
-};
 
 namespace
 {
@@ -184,90 +179,123 @@ void Vu1AotAccess::prepare(vu1aot::Graph &graph, bool allowNative)
     graph.exec = info;
 }
 
-vu1aot::RunResult Vu1AotAccess::run(VU1Interpreter &vu, const vu1aot::Graph &g, const VU1Interpreter::AotRun &a,
-                                    std::vector<std::vector<uint8_t>> &packets)
+Vu1AotAccess::Frame::Frame(VU1Interpreter &vuIn, const VU1Interpreter::AotRun &args, std::vector<std::vector<uint8_t>> &packets)
+    : vu(vuIn), a(args), st(vuIn.m_state), xgkickActive(&vuIn.m_xgkick.active), startCycle(vuIn.m_cycle)
 {
-    using namespace vu1aot;
-    VU1State &st = vu.m_state;
-    const ExecInfo &ex = *static_cast<const ExecInfo *>(g.exec.get());
-    const XNode *nodes = ex.nodes.data();
-    const Commit *commits = ex.commits.data();
-    Ctx c;
     c.st = &st;
     c.data = a.data;
     c.vu = &vu;
     c.run = &a;
     c.workingClip = &vu.m_workingClip;
-    const uint64_t startCycle = vu.m_cycle;
-    uint64_t cyc = 0;
-    uint32_t extraCycles = 0;
-    RunResult result = RunResult::Bail;
-
     vu.m_activeVuData = a.data;
     vu.m_activeVuDataSize = a.dataSize;
     vu.m_activeGs = a.gs;
     vu.m_activeMemory = a.memory;
     vu.m_packetSink = &packets;
-    const int previousRounding = std::fegetround();
-    const bool vuRounding = std::fesetround(FE_TOWARDZERO) == 0;
+    previousRounding = std::fegetround();
+    vuRounding = std::fesetround(FE_TOWARDZERO) == 0;
+}
+
+vu1aot::RunResult Vu1AotAccess::Frame::end(uint32_t pc, uint32_t target, uint32_t endExtra, bool inSlot, uint8_t backupAfterTaken,
+                                           uint8_t backupAfterFall)
+{
+    using vu1aot::RunResult;
+    uint32_t extraCycles = 0;
+    if (*xgkickActive)
+        for (uint32_t k = 0; k < endExtra; ++k)
+            vu.progressXgkick();
+    while (*xgkickActive && !vu.m_stopRequested)
+    {
+        vu.progressXgkick();
+        ++extraCycles;
+    }
+    const uint64_t total = cyc + endExtra + extraCycles;
+    if (vu.m_stopRequested || total >= a.maxCycles)
+        return RunResult::Bail;
+    // What the interpreter leaves behind: the next pc, the last taken branch's fields, the VI backup of the last pair.
+    const bool jumped = inSlot && c.taken;
+    uint32_t nextPc = pc + 8u;
+    if (nextPc >= a.codeSize)
+        nextPc = 0u;
+    st.pc = jumped ? target : nextPc;
+    if (jumped)
+    {
+        st.branchTarget = target;
+        st.branchDelay = 0u;
+    }
+    const uint8_t backup = inSlot ? (c.taken ? backupAfterTaken : backupAfterFall) : backupAfterFall;
+    vu.m_viBranchBackupValid = backup != 0;
+    vu.m_viBranchBackupReg = backup;
+    vu.m_viBranchBackupValue = backup != 0 ? c.oldVi : 0;
+    vu.m_cycle = startCycle + total;
+    st.cycles = vu.m_cycle;
+    st.ebit = false;
+    st.haltAfterDelaySlot = false;
+    vu.m_pendingHaltD = false;
+    vu.m_pendingHaltT = false;
+    return RunResult::Done;
+}
+
+vu1aot::RunResult Vu1AotAccess::Frame::finish(vu1aot::RunResult result)
+{
+    // Whatever the interpreter's queues still hold is not part of the run.
+    vu.m_flagCount = 0u;
+    vu.m_flagHead = 0u;
+    vu.m_fdiv = {};
+    vu.m_efu = {};
+    vu.m_efuValid = 0u;
+    vu.m_storeValid = 0u;
+    vu.m_nextCommitCycle = UINT64_MAX;
+    if (result != vu1aot::RunResult::Done)
+        vu.m_xgkick.active = false;
+    vu.m_packetSink = nullptr;
+    if (vuRounding && previousRounding != -1)
+        std::fesetround(previousRounding);
+    return result;
+}
+
+vu1aot::RunResult Vu1AotAccess::run(VU1Interpreter &vu, const vu1aot::Graph &g, const VU1Interpreter::AotRun &a,
+                                    std::vector<std::vector<uint8_t>> &packets)
+{
+    using namespace vu1aot;
+    const ExecInfo &ex = *static_cast<const ExecInfo *>(g.exec.get());
+    const XNode *nodes = ex.nodes.data();
+    const Commit *commits = ex.commits.data();
+    Frame f(vu, a, packets);
+    Ctx &c = f.c;
+    VU1State &st = f.st;
 
     const auto applyCommit = [&](const Commit &k) {
         switch (k.kind)
         {
         case CommitFlag:
-        {
-            const FlagData &d = c.ring[c.head & (kMaxFlags - 1)];
-            ++c.head;
-            if ((k.writes & WritesMac) != 0)
-                st.mac = d.mac;
-            if ((k.writes & WritesStatus) != 0)
-            {
-                const uint32_t current = d.status & 0xFu;
-                st.status = (st.status & 0xFF0u) | current | ((current | d.extra) << 6);
-            }
-            if ((k.writes & WritesSticky) != 0)
-                st.status = (st.status & 0x03Fu) | (d.status & 0xFC0u);
-            if ((k.writes & WritesClip) != 0)
-                st.clip = d.clip;
+            ops::commitFlag(c, st, k.writes);
             break;
-        }
         case CommitQ:
-        {
-            st.q = c.qValue;
-            const uint32_t di = c.qStatusDi & 0x30u;
-            st.status = (st.status & 0xFCFu) | di | (di << 6);
+            ops::commitQ(c, st);
             break;
-        }
         default:
-            st.p = c.pValue[k.slot];
+            ops::commitP(c, st, k.slot);
             break;
         }
     };
 
-    const bool *xgkickActive = &vu.m_xgkick.active;
     int cur = g.entry;
     while (cur >= 0)
     {
         const XNode &n = nodes[cur];
         if (n.kind == static_cast<uint8_t>(NodeKind::Bail))
             break;
-        cyc += n.advance;
-        if (*xgkickActive)
-        {
-            for (uint32_t k = 0; k < n.advance; ++k)
-                vu.progressXgkick();
-            if (vu.m_stopRequested)
-                break;
-        }
+        f.cyc += n.advance;
+        if (*f.xgkickActive && !f.progress(n.advance))
+            break;
         for (uint32_t k = 0; k < n.commitCount; ++k)
             applyCommit(commits[n.commitStart + k]);
-        if ((n.flags & XfXgkick) != 0 && *xgkickActive)
+        if ((n.flags & XfXgkick) != 0 && *f.xgkickActive)
             break; // a second XGKICK waits for the first one: left to the interpreter
         if (n.writtenVi != 0)
             c.oldVi = st.vi[n.writtenVi];
-        // The interpreter functions look at these.
-        st.pc = n.pc;
-        vu.m_cycle = startCycle + cyc;
+        f.syncForInterpreter(n.pc);
 
         switch (n.form)
         {
@@ -301,54 +329,14 @@ vu1aot::RunResult Vu1AotAccess::run(VU1Interpreter &vu, const vu1aot::Graph &g, 
         if (n.recordBackup != 0)
             c.backupValue = c.oldVi;
         if ((n.flags & XfResetZero) != 0)
-        {
-            st.vf[0][0] = 0.0f;
-            st.vf[0][1] = 0.0f;
-            st.vf[0][2] = 0.0f;
-            st.vf[0][3] = 1.0f;
-            st.vi[0] = 0;
-        }
+            ops::resetZero(st);
 
         const NodeKind kind = static_cast<NodeKind>(n.kind);
         if (kind == NodeKind::End)
         {
             for (uint32_t k = 0; k < n.endCommitCount; ++k)
                 applyCommit(commits[n.endCommitStart + k]);
-            if (*xgkickActive)
-                for (uint32_t k = 0; k < n.endExtra; ++k)
-                    vu.progressXgkick();
-            while (*xgkickActive && !vu.m_stopRequested)
-            {
-                vu.progressXgkick();
-                ++extraCycles;
-            }
-            const uint64_t total = cyc + n.endExtra + extraCycles;
-            if (vu.m_stopRequested || total >= a.maxCycles)
-                break;
-            // What the interpreter leaves behind: the next pc, the last taken branch's fields, the VI backup of the last pair.
-            const bool inSlot = (n.flags & XfInDelaySlot) != 0;
-            const bool jumped = inSlot && c.taken;
-            uint32_t nextPc = n.pc + 8u;
-            if (nextPc >= a.codeSize)
-                nextPc = 0u;
-            st.pc = jumped ? n.target : nextPc;
-            if (jumped)
-            {
-                st.branchTarget = n.target;
-                st.branchDelay = 0u;
-            }
-            const uint8_t backup = inSlot ? (c.taken ? n.backupAfterTaken : n.backupAfterFall) : n.backupAfterFall;
-            vu.m_viBranchBackupValid = backup != 0;
-            vu.m_viBranchBackupReg = backup;
-            vu.m_viBranchBackupValue = backup != 0 ? c.oldVi : 0;
-            vu.m_cycle = startCycle + total;
-            st.cycles = vu.m_cycle;
-            st.ebit = false;
-            st.haltAfterDelaySlot = false;
-            vu.m_pendingHaltD = false;
-            vu.m_pendingHaltT = false;
-            result = RunResult::Done;
-            break;
+            return f.finish(f.end(n.pc, n.target, n.endExtra, (n.flags & XfInDelaySlot) != 0, n.backupAfterTaken, n.backupAfterFall));
         }
         if (kind == NodeKind::DelaySlot)
         {
@@ -357,7 +345,7 @@ vu1aot::RunResult Vu1AotAccess::run(VU1Interpreter &vu, const vu1aot::Graph &g, 
                 break;
             if (c.taken)
             {
-                if ((n.flags & XfBackward) != 0 && cyc + 8192u >= a.maxCycles)
+                if ((n.flags & XfBackward) != 0 && f.cyc + 8192u >= a.maxCycles)
                     break; // a long loop: the interpreter's cycle budget may cut it
                 st.branchTarget = n.target;
                 st.branchDelay = 0u;
@@ -367,21 +355,7 @@ vu1aot::RunResult Vu1AotAccess::run(VU1Interpreter &vu, const vu1aot::Graph &g, 
         else
             cur = n.next;
     }
-
-    // Whatever the interpreter's queues still hold is not part of the run.
-    vu.m_flagCount = 0u;
-    vu.m_flagHead = 0u;
-    vu.m_fdiv = {};
-    vu.m_efu = {};
-    vu.m_efuValid = 0u;
-    vu.m_storeValid = 0u;
-    vu.m_nextCommitCycle = UINT64_MAX;
-    if (result != RunResult::Done)
-        vu.m_xgkick.active = false;
-    vu.m_packetSink = nullptr;
-    if (vuRounding && previousRounding != -1)
-        std::fesetround(previousRounding);
-    return result;
+    return f.finish(RunResult::Bail);
 }
 
 void Vu1AotAccess::interpret(VU1Interpreter &vu, const VU1Interpreter::AotRun &a, std::vector<std::vector<uint8_t>> &packets)

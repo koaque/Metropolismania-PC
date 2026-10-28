@@ -14,7 +14,8 @@ Steps, in order:
   pointers    add functions reached only through pointers (vtables, ctor/callback tables), re-analyze
   script      run one Ghidra script from tools/ghidra against the project (read-only by default)
   recompile   render config/metropolismania.template.toml and run ps2_recomp into generated/
-  stage       copy generated code, src/overrides and src/port (after tools/port_gen.py) and work/iop_aot into the runtime tree
+  stage       copy generated code, src/overrides and src/port (after tools/port_gen.py), work/iop_aot and work/vu1_aot/gen into
+              the runtime tree
   iop-aot     translate the IOP modules in original/SYS into work/iop_aot (tools/iop_aot.py, plan P5.3); then stage and build
   build       build ps2EntryRunner
   run         start the runner with a timeout and capture a log in logs/
@@ -23,7 +24,8 @@ Steps, in order:
   vu1-capture visible run that records VU1 program runs (PS2X_VU1_CAPTURE) into work/vu1_aot/records/
   vu1-test    replay those VU1 runs through the interpreter and compare, headless (plan P4); --aot runs them
               through the pre-timed programs (run), checks their timing model (timing) or fuzzes their ops (fuzz)
-  all         bootstrap, tools, extract, analyze, recompile, stage, build
+  vu1-emit    write the VU1 programs those runs use as C++ into work/vu1_aot/gen (compiled programs); then stage and build
+  all        bootstrap, tools, extract, analyze, recompile, stage, build
 
 Everything under original/, generated/, work/, build/ and logs/ is git-ignored.
 """
@@ -519,6 +521,9 @@ def cmd_stage(_: argparse.Namespace) -> None:
     # The translated IOP modules (plan P5.3): tools/iop_aot.py writes them; machine-translated game code that is never committed.
     for src in (WORK / "iop_aot").glob("*.cpp"):
         shutil.copy2(src, staging / f"zz_port_iop_aot_{src.name}")
+    # The compiled VU1 programs (src/port/vu1aot_compiled.h): pipeline.py vu1-emit writes them from the game's microcode.
+    for src in VU1_GEN.glob("*.cpp"):
+        shutil.copy2(src, staging / f"zz_port_vu1aot_gen_{src.name}")
     if not (staging / "register_functions.cpp").exists():
         sys.exit("generated/register_functions.cpp missing; run: pipeline.py recompile")
     changed = sync_tree(staging, runner)
@@ -617,6 +622,7 @@ def cmd_run(args: argparse.Namespace) -> None:
 
 DIFFTEST = WORK / "difftest"
 VU1_RECORDS = WORK / "vu1_aot" / "records"
+VU1_GEN = WORK / "vu1_aot" / "gen"
 
 
 def cmd_capture(args: argparse.Namespace) -> None:
@@ -687,6 +693,29 @@ def cmd_vu1_test(args: argparse.Namespace) -> None:
              if l.startswith(("[vu1test]", "[vu1aot", "    "))]
     print("\n".join(lines))
     log(f"vu1-test exit code {code}; log {log_path}")
+    if code != 0:
+        sys.exit(code)
+
+
+def cmd_vu1_emit(args: argparse.Namespace) -> None:
+    """Write every VU1 program the records in work/vu1_aot/records/ run as C++ into work/vu1_aot/gen/ (MMPC_VU1_EMIT,
+    src/port/vu1aot_emit.cpp): replays them once through the pre-timed programs, which writes each graph built. A game
+    run with --env MMPC_VU1_EMIT=<that folder> adds the programs of other scenes. Then stage and build."""
+    VU1_GEN.mkdir(parents=True, exist_ok=True)
+    if args.clean:
+        for old in VU1_GEN.glob("*.cpp"):
+            old.unlink()
+    LOGS.mkdir(exist_ok=True)
+    log_path = LOGS / f"vu1emit-{dt.datetime.now():%Y%m%d-%H%M%S}.log"
+    exe = tool("ps2EntryRunner")
+    env = dict(os.environ, MMPC_VU1_TEST=str(VU1_RECORDS), PS2X_HEADLESS="1", MMPC_VU1_TEST_REPEAT="1", MMPC_VU1_AOT="run",
+               MMPC_VU1_EMIT=str(VU1_GEN), MMPC_VU1_FUZZ="1")
+    env.pop("PS2X_WINDOW_POS", None)
+    with log_path.open("w", encoding="utf-8", errors="replace") as fh:
+        code = subprocess.run([str(exe), str(ORIGINAL / ELF_NAME)], stdout=fh, stderr=subprocess.STDOUT, cwd=exe.parent,
+                              env=env, timeout=1800).returncode
+    files = sorted(VU1_GEN.glob("*.cpp"))
+    log(f"vu1-emit exit code {code}; {len(files)} compiled program(s) in {VU1_GEN}; log {log_path}")
     if code != 0:
         sys.exit(code)
 
@@ -768,6 +797,9 @@ def main() -> int:
                         "fuzz: random pairs through the native ops and the interpreter's own functions")
     p.add_argument("--fuzz", type=int, default=0, help="cases for the fuzz checks (default 200,000)")
     p.set_defaults(func=cmd_vu1_test)
+    p = sub.add_parser("vu1-emit", help="write the VU1 programs the records run as C++ into work/vu1_aot/gen (then stage and build)")
+    p.add_argument("--clean", action="store_true", help="delete the programs written before")
+    p.set_defaults(func=cmd_vu1_emit)
     p = sub.add_parser("all")
     p.add_argument("image", nargs="?")
     p.add_argument("--reimport", action="store_true")

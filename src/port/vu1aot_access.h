@@ -9,6 +9,7 @@
 
 #include "runtime/ps2_vu1.h"
 
+#include <string>
 #include <vector>
 
 struct Vu1AotAccess
@@ -16,8 +17,12 @@ struct Vu1AotAccess
     // The decoder's view of the pair at `pc`.
     static vu1aot::PairInfo describe(const VU1Interpreter &vu, const uint8_t *code, uint32_t pc);
 
-    // What a program needs at run time besides its nodes.
-    struct ExecInfo;
+    // What a program needs at run time besides its nodes: the nodes in executable form, and their commits.
+    struct ExecInfo
+    {
+        std::vector<vu1aot::XNode> nodes;
+        std::vector<vu1aot::Commit> commits;
+    };
     // allowNative false sends every op through the interpreter's own functions (the reference of the fuzz test).
     static void prepare(vu1aot::Graph &graph, bool allowNative = true);
 
@@ -31,6 +36,44 @@ struct Vu1AotAccess
     // are in `packets` (not sent). Bail: the run met something the model does not cover; the caller restores its snapshot.
     static vu1aot::RunResult run(VU1Interpreter &vu, const vu1aot::Graph &graph, const VU1Interpreter::AotRun &args,
                                  std::vector<std::vector<uint8_t>> &packets);
+
+    // One program run, for the graph executor (run) and the compiled programs (vu1aot_emit.cpp): the set-up before the first
+    // pair, what happens between pairs that is not the node's own work, the end, and what is put back after.
+    struct Frame
+    {
+        VU1Interpreter &vu;
+        const VU1Interpreter::AotRun &a;
+        VU1State &st;
+        vu1aot::Ctx c;
+        const bool *xgkickActive; // an XGKICK is copying its packet
+        uint64_t startCycle;
+        uint64_t cyc = 0; // cycles since the run began, up to the issue of the current pair
+        int previousRounding;
+        bool vuRounding;
+
+        Frame(VU1Interpreter &vu, const VU1Interpreter::AotRun &a, std::vector<std::vector<uint8_t>> &packets);
+        // The XGKICK copy goes on for `cycles` cycles. False when it stopped the interpreter (the run bails).
+        bool progress(uint32_t cycles)
+        {
+            for (uint32_t k = 0; k < cycles; ++k)
+                vu.progressXgkick();
+            return !vu.m_stopRequested;
+        }
+        // What the interpreter's own functions look at before a pair runs through them.
+        void syncForInterpreter(uint32_t pc)
+        {
+            st.pc = pc;
+            vu.m_cycle = startCycle + cyc;
+        }
+        // An End node, after its end commits: drains the XGKICK and leaves what the interpreter leaves.
+        vu1aot::RunResult end(uint32_t pc, uint32_t target, uint32_t endExtra, bool inSlot, uint8_t backupAfterTaken, uint8_t backupAfterFall);
+        // Puts back what the interpreter's queues hold; returns `result`.
+        vu1aot::RunResult finish(vu1aot::RunResult result);
+    };
+
+    // The C++ of a compiled program for a prepared, supported graph (vu1aot_emit.cpp): the constant nodes and the function
+    // `name`, which does what run() does for this graph.
+    static std::string emitFunction(const vu1aot::Graph &graph, const std::string &name);
 
     // The interpreter's own run, with the packets collected instead of sent (verification).
     static void interpret(VU1Interpreter &vu, const VU1Interpreter::AotRun &args, std::vector<std::vector<uint8_t>> &packets);
