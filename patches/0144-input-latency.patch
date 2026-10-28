@@ -1,0 +1,524 @@
+Input lag: the window shows each frame right after the game's vertical blank instead of on raylib's own 60 Hz timer, and host input is read when the game reads its pad. The window loop waits for the scheduler's next vertical blank (EeScheduler::waitForVSyncAfter), polls host events there and presents; a finished frame no longer waits up to a display period for the timer, and 59.94 against 60 no longer beats. On Windows the pad read asks XInput (the first connected slot; empty slots are tried once a second, as Microsoft advises) and the keyboard (GetAsyncKeyState, only while the game's window has focus) at that moment; read this way the keyboard works alongside a pad. Other controllers keep raylib's state, now at most the time since the last vertical blank old. Measured with PS2X_LATENCY_STATS=1 (Metropolismania, menus and a city at about 20 fps): presents went from 25 ms after the vertical blank on average (worst 50 to 65) to 7.2 ms; polled input at the pad read went from 8 to 12 ms old on average (worst about 16) to 0.4 ms in menus and 1.3 ms in the city. PS2X_PRESENT=free and PS2X_HOST_INPUT=polled restore the old behaviour; PS2X_VSYNC=1 asks the host for vsync; PS2X_VSYNC_HZ=host or a rate from 58 to 62 Hz runs the game's vertical blank at the monitor's rate (for fixed 60 Hz displays).
+
+diff --git a/ps2xRuntime/include/runtime/ps2_host_input.h b/ps2xRuntime/include/runtime/ps2_host_input.h
+new file mode 100644
+--- /dev/null
++++ b/ps2xRuntime/include/runtime/ps2_host_input.h
+@@ -0,0 +1,28 @@
++#pragma once
++
++#include <cstdint>
++
++// Host input read at the moment the game asks for its pad, instead of the state from the window's last event poll (which can
++// be a whole display period old). On Windows, XInput pads and the keyboard are read directly (the keyboard only while the
++// game's window has focus, and alongside any pad); other platforms and other controllers keep raylib's state, which the
++// window loop polls at every vertical blank (ps2_pad.cpp, ps2_runtime.cpp).
++
++// PS2 pad buttons, set bits = held (the pad's own order: Select 0x0001 ... Square 0x8000), and the sticks (0x80 = centre).
++struct PS2HostPadState
++{
++    uint16_t held = 0;
++    uint8_t rx = 0x80, ry = 0x80, lx = 0x80, ly = 0x80;
++};
++
++// The first connected XInput pad, read now. False when there is none (or not on Windows).
++bool ps2xHostReadXInputPad(PS2HostPadState &out);
++
++// The keyboard's pad keys (the same keys ps2_pad.cpp maps), read now, while `window` (the game's native window) has focus.
++// False when the keyboard cannot be read this way (not on Windows); `held` is 0 when the window is not in front.
++bool ps2xHostReadKeyboard(void *window, uint16_t &held);
++
++// PS2X_LATENCY_STATS=1: the window loop notes when it polled host events; pad reads record how old their input was.
++void ps2xNoteHostEventPoll();
++void ps2xNotePadRead(bool freshInput);
++// Takes (and resets) the pad read figures: average and worst input age in ms, reads with fresh input and with polled input.
++void ps2xTakePadReadStats(double &averageAgeMs, double &worstAgeMs, uint32_t &freshReads, uint32_t &polledReads);
+diff --git a/ps2xRuntime/src/lib/ps2_host_input.cpp b/ps2xRuntime/src/lib/ps2_host_input.cpp
+new file mode 100644
+--- /dev/null
++++ b/ps2xRuntime/src/lib/ps2_host_input.cpp
+@@ -0,0 +1,156 @@
++// Host input read when the game reads its pad (see runtime/ps2_host_input.h). Kept apart from ps2_pad.cpp: windows.h and
++// raylib.h cannot share a translation unit.
++
++#include "runtime/ps2_host_input.h"
++
++#include <algorithm>
++#include <atomic>
++#include <chrono>
++#include <mutex>
++
++#if defined(_WIN32)
++#define NOMINMAX
++#define WIN32_LEAN_AND_MEAN
++#include <windows.h>
++#include <Xinput.h>
++#pragma comment(lib, "Xinput.lib")
++#endif
++
++namespace
++{
++    constexpr uint16_t kSelect = 0x0001u, kL3 = 0x0002u, kR3 = 0x0004u, kStart = 0x0008u, kUp = 0x0010u, kRight = 0x0020u,
++                       kDown = 0x0040u, kLeft = 0x0080u, kL2 = 0x0100u, kR2 = 0x0200u, kL1 = 0x0400u, kR1 = 0x0800u,
++                       kTriangle = 0x1000u, kCircle = 0x2000u, kCross = 0x4000u, kSquare = 0x8000u;
++
++    std::mutex g_statsMutex;
++    std::chrono::steady_clock::time_point g_lastPoll{};
++    double g_ageSumMs = 0.0, g_ageWorstMs = 0.0;
++    uint32_t g_freshReads = 0, g_polledReads = 0;
++
++#if defined(_WIN32)
++    uint8_t stick(SHORT value, bool invert)
++    {
++        int scaled = 128 + (static_cast<int>(value) * 127) / 32767;
++        if (invert)
++            scaled = 256 - scaled;
++        return static_cast<uint8_t>(std::clamp(scaled, 0, 255));
++    }
++#endif
++}
++
++bool ps2xHostReadXInputPad(PS2HostPadState &out)
++{
++#if defined(_WIN32)
++    // The first connected XInput slot. Microsoft advises against asking about empty slots every frame (each call looks for
++    // a device), so while none is connected the slots are tried once a second.
++    static std::mutex slotMutex;
++    static int slot = -1;
++    static std::chrono::steady_clock::time_point nextScan{};
++    XINPUT_STATE state{};
++    {
++        std::lock_guard<std::mutex> lock(slotMutex);
++        if (slot >= 0 && XInputGetState(static_cast<DWORD>(slot), &state) != ERROR_SUCCESS)
++            slot = -1;
++        if (slot < 0)
++        {
++            const auto now = std::chrono::steady_clock::now();
++            if (now < nextScan)
++                return false;
++            nextScan = now + std::chrono::seconds(1);
++            for (DWORD i = 0; i < XUSER_MAX_COUNT && slot < 0; ++i)
++                if (XInputGetState(i, &state) == ERROR_SUCCESS)
++                    slot = static_cast<int>(i);
++            if (slot < 0)
++                return false;
++        }
++    }
++    const WORD b = state.Gamepad.wButtons;
++    uint16_t held = 0;
++    const struct
++    {
++        WORD xinput;
++        uint16_t pad;
++    } kMap[] = {{XINPUT_GAMEPAD_DPAD_UP, kUp},           {XINPUT_GAMEPAD_DPAD_DOWN, kDown},      {XINPUT_GAMEPAD_DPAD_LEFT, kLeft},
++                {XINPUT_GAMEPAD_DPAD_RIGHT, kRight},     {XINPUT_GAMEPAD_A, kCross},             {XINPUT_GAMEPAD_B, kCircle},
++                {XINPUT_GAMEPAD_X, kSquare},             {XINPUT_GAMEPAD_Y, kTriangle},          {XINPUT_GAMEPAD_LEFT_SHOULDER, kL1},
++                {XINPUT_GAMEPAD_RIGHT_SHOULDER, kR1},    {XINPUT_GAMEPAD_START, kStart},         {XINPUT_GAMEPAD_BACK, kSelect},
++                {XINPUT_GAMEPAD_LEFT_THUMB, kL3},        {XINPUT_GAMEPAD_RIGHT_THUMB, kR3}};
++    for (const auto &m : kMap)
++        if ((b & m.xinput) != 0)
++            held |= m.pad;
++    if (state.Gamepad.bLeftTrigger > XINPUT_GAMEPAD_TRIGGER_THRESHOLD)
++        held |= kL2;
++    if (state.Gamepad.bRightTrigger > XINPUT_GAMEPAD_TRIGGER_THRESHOLD)
++        held |= kR2;
++    out.held = held;
++    // XInput's Y axes point up; the pad's point down.
++    out.lx = stick(state.Gamepad.sThumbLX, false);
++    out.ly = stick(state.Gamepad.sThumbLY, true);
++    out.rx = stick(state.Gamepad.sThumbRX, false);
++    out.ry = stick(state.Gamepad.sThumbRY, true);
++    return true;
++#else
++    (void)out;
++    return false;
++#endif
++}
++
++bool ps2xHostReadKeyboard(void *window, uint16_t &held)
++{
++#if defined(_WIN32)
++    held = 0;
++    if (window == nullptr || GetForegroundWindow() != static_cast<HWND>(window))
++        return true;
++    // The same keys as ps2_pad.cpp's raylib mapping.
++    const struct
++    {
++        int key;
++        uint16_t pad;
++    } kMap[] = {{VK_UP, kUp},       {'W', kUp},          {VK_DOWN, kDown},      {'S', kDown},          {VK_LEFT, kLeft},
++                {'A', kLeft},       {VK_RIGHT, kRight},  {'D', kRight},         {'X', kCross},         {VK_SPACE, kCross},
++                {'C', kCircle},     {VK_ESCAPE, kCircle}, {'Z', kSquare},       {VK_NUMPAD0, kSquare}, {'V', kTriangle},
++                {VK_NUMPAD1, kTriangle}, {'Q', kL1},     {'E', kR1},            {VK_LSHIFT, kL2},      {VK_RSHIFT, kR2},
++                {VK_RETURN, kStart}, {VK_TAB, kSelect}};
++    for (const auto &m : kMap)
++        if ((GetAsyncKeyState(m.key) & 0x8000) != 0)
++            held |= m.pad;
++    return true;
++#else
++    (void)window;
++    held = 0;
++    return false;
++#endif
++}
++
++void ps2xNoteHostEventPoll()
++{
++    std::lock_guard<std::mutex> lock(g_statsMutex);
++    g_lastPoll = std::chrono::steady_clock::now();
++}
++
++void ps2xNotePadRead(bool freshInput)
++{
++    std::lock_guard<std::mutex> lock(g_statsMutex);
++    if (freshInput)
++    {
++        ++g_freshReads;
++        return;
++    }
++    ++g_polledReads;
++    if (g_lastPoll.time_since_epoch().count() == 0)
++        return;
++    const double age = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - g_lastPoll).count();
++    g_ageSumMs += age;
++    g_ageWorstMs = std::max(g_ageWorstMs, age);
++}
++
++void ps2xTakePadReadStats(double &averageAgeMs, double &worstAgeMs, uint32_t &freshReads, uint32_t &polledReads)
++{
++    std::lock_guard<std::mutex> lock(g_statsMutex);
++    averageAgeMs = g_polledReads != 0 ? g_ageSumMs / g_polledReads : 0.0;
++    worstAgeMs = g_ageWorstMs;
++    freshReads = g_freshReads;
++    polledReads = g_polledReads;
++    g_ageSumMs = g_ageWorstMs = 0.0;
++    g_freshReads = g_polledReads = 0;
++}
+diff --git a/ps2xRuntime/CMakeLists.txt b/ps2xRuntime/CMakeLists.txt
+--- a/ps2xRuntime/CMakeLists.txt
++++ b/ps2xRuntime/CMakeLists.txt
+@@ -388,6 +388,7 @@ add_library(ps2_runtime STATIC
+     src/lib/ps2_iop_host.cpp
+     src/lib/ps2_memory.cpp
+     src/lib/ps2_pad.cpp
++    src/lib/ps2_host_input.cpp
+     src/lib/ps2_rom_device.cpp
+     src/lib/ps2_vfs.cpp
+     src/lib/ps2_runtime.cpp
+diff --git a/ps2xRuntime/include/runtime/ee_scheduler.h b/ps2xRuntime/include/runtime/ee_scheduler.h
+--- a/ps2xRuntime/include/runtime/ee_scheduler.h
++++ b/ps2xRuntime/include/runtime/ee_scheduler.h
+@@ -350,6 +350,12 @@ public:
+     void dispatchIrq(bool dmac, uint32_t cause);
+     void setVSyncFlag(uint32_t flagAddress, uint32_t tickAddress);
+     [[nodiscard]] uint64_t currentVSyncTick() const noexcept;
++    // For the host window: waits (up to `timeout`) until a vertical blank after `tick` has started, and when the last one started.
++    bool waitForVSyncAfter(uint64_t tick, std::chrono::milliseconds timeout);
++    [[nodiscard]] std::chrono::steady_clock::time_point lastVSyncHostTime() const noexcept;
++    // The vertical blank rate (NTSC 60000/1001 Hz by default); PS2X_VSYNC_HZ=host matches it to the monitor (ps2_runtime.cpp).
++    static void setVSyncRate(double hz);
++    [[nodiscard]] static double vsyncRate();
+     uint32_t setGsVSyncCallback(uint32_t callback, uint32_t gp, uint32_t sp);
+ 
+     [[noreturn]] void waitVSync(uint64_t afterTick, int fixedResult = -1, std::function<void(R5900Context &)> completion = {});
+@@ -555,6 +561,10 @@ private:
+     uint64_t m_eventSequence = 0;
+     uint64_t m_invocationSequence = 0;
+     uint64_t m_vsyncTick = 0;
++    mutable std::mutex m_vsyncNotifyMutex;
++    std::condition_variable m_vsyncNotifyCv;
++    std::atomic<uint64_t> m_vsyncTickShared{0};
++    std::atomic<int64_t> m_lastVSyncHostNs{0};
+     uint32_t m_vsyncFlagAddress = 0;
+     uint32_t m_vsyncTickAddress = 0;
+     uint32_t m_gsVSyncCallback = 0;
+diff --git a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+--- a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
++++ b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+@@ -33,8 +33,9 @@ namespace
+     constexpr uint32_t WEF_OR = 0x01u;
+     constexpr uint32_t WEF_CLEAR = 0x10u;
+     constexpr uint32_t WEF_CLEAR_ALL = 0x20u;
+-    // NTSC field rate, 60000/1001 Hz (59.94), not 60.
+-    constexpr auto kVBlankPeriod = std::chrono::nanoseconds(16683333);
++    // The field period: NTSC, 60000/1001 Hz (59.94), unless EeScheduler::setVSyncRate chose another (PS2X_VSYNC_HZ).
++    std::atomic<int64_t> g_vblankPeriodNs{16683333};
++    std::chrono::nanoseconds vblankPeriod() { return std::chrono::nanoseconds(g_vblankPeriodNs.load(std::memory_order_relaxed)); }
+     constexpr auto kVBlankDuration = std::chrono::microseconds(500);
+     constexpr uint64_t kAlarmTickMicroseconds = 64u;
+     constexpr uint32_t kDebugPublishDispatchInterval = 4096u;
+@@ -53,7 +54,10 @@ namespace
+         return std::chrono::seconds(wholeSeconds) + std::chrono::nanoseconds(remainingNanoseconds);
+     }
+ 
+-    constexpr uint64_t kVBlankPeriodCycles = (EeScheduler::kEeClockHz * 1001ull + 59999ull) / 60000ull;
++    uint64_t vblankPeriodCycles()
++    {
++        return (EeScheduler::kEeClockHz * static_cast<uint64_t>(g_vblankPeriodNs.load(std::memory_order_relaxed)) + 500000000ull) / 1000000000ull;
++    }
+     constexpr uint64_t kVBlankDurationCycles = microsecondsToEeCycles(500u);
+     constexpr uint64_t kAlarmTickCycles = microsecondsToEeCycles(kAlarmTickMicroseconds);
+ 
+@@ -136,6 +140,7 @@ void EeScheduler::reset(uint8_t *rdram, const R5900Context &mainContext)
+     m_eventSequence = 0;
+     m_invocationSequence = 0;
+     m_vsyncTick = 0;
++    m_vsyncTickShared.store(0u, std::memory_order_release);
+     m_vsyncFlagAddress = 0;
+     m_vsyncTickAddress = 0;
+     m_gsVSyncCallback = 0;
+@@ -157,8 +162,8 @@ void EeScheduler::reset(uint8_t *rdram, const R5900Context &mainContext)
+     main.status = EeThreadStatus::Ready;
+     m_threads.emplace(main.id, std::move(main));
+     m_readyQueues[0].push_back(kMainThreadId);
+-    scheduleEvent(m_eeCycle + kVBlankPeriodCycles,
+-                  std::chrono::steady_clock::now() + kVBlankPeriod,
++    scheduleEvent(m_eeCycle + vblankPeriodCycles(),
++                  std::chrono::steady_clock::now() + vblankPeriod(),
+                   EeEvent{EeEventType::VBlankStart, 0, 0});
+     publishSnapshot();
+ }
+@@ -859,7 +864,7 @@ void EeScheduler::noteYield()
+     const uint64_t next = m_nextDeadlineCycle.load(std::memory_order_acquire);
+     if (next > m_eeCycle)
+     {
+-        const uint64_t skip = std::min<uint64_t>(next - m_eeCycle, kVBlankPeriodCycles);
++        const uint64_t skip = std::min<uint64_t>(next - m_eeCycle, vblankPeriodCycles());
+         accountCycles(static_cast<uint32_t>(skip));
+         m_checkpointPending.store(true, std::memory_order_release);
+     }
+@@ -1399,6 +1404,28 @@ void EeScheduler::setVSyncFlag(uint32_t flagAddress, uint32_t tickAddress)
+     }
+ }
+ 
++bool EeScheduler::waitForVSyncAfter(uint64_t tick, std::chrono::milliseconds timeout)
++{
++    std::unique_lock<std::mutex> lock(m_vsyncNotifyMutex);
++    return m_vsyncNotifyCv.wait_for(lock, timeout, [&]() { return m_vsyncTickShared.load(std::memory_order_acquire) > tick; });
++}
++
++std::chrono::steady_clock::time_point EeScheduler::lastVSyncHostTime() const noexcept
++{
++    return std::chrono::steady_clock::time_point(std::chrono::nanoseconds(m_lastVSyncHostNs.load(std::memory_order_acquire)));
++}
++
++void EeScheduler::setVSyncRate(double hz)
++{
++    if (hz > 1.0)
++        g_vblankPeriodNs.store(static_cast<int64_t>(1.0e9 / hz + 0.5), std::memory_order_relaxed);
++}
++
++double EeScheduler::vsyncRate()
++{
++    return 1.0e9 / static_cast<double>(g_vblankPeriodNs.load(std::memory_order_relaxed));
++}
++
+ uint64_t EeScheduler::currentVSyncTick() const noexcept
+ {
+     return m_vsyncTick;
+@@ -2077,11 +2104,12 @@ void EeScheduler::processDueDeadlines()
+                 // A field that came more than a period late (the game was slower than real time, as while loading) does not
+                 // leave a backlog: the next one is a period from now. Chaining from the missed deadline made the following
+                 // fields come early until the lost time was made up, so the game ran about 3% fast for minutes after a load.
+-                auto nextHost = scheduled.hostDeadline + kVBlankPeriod;
++                const auto period = vblankPeriod();
++                auto nextHost = scheduled.hostDeadline + period;
+                 const auto hostNow = std::chrono::steady_clock::now();
+                 if (nextHost < hostNow)
+-                    nextHost = hostNow + kVBlankPeriod;
+-                scheduleEvent(scheduled.deadlineCycle + kVBlankPeriodCycles, nextHost, EeEvent{EeEventType::VBlankStart, 0, 0});
++                    nextHost = hostNow + period;
++                scheduleEvent(scheduled.deadlineCycle + vblankPeriodCycles(), nextHost, EeEvent{EeEventType::VBlankStart, 0, 0});
+             }
+             processEvent(scheduled.event);
+         }
+@@ -2102,6 +2130,13 @@ void EeScheduler::processEvent(const EeEvent &event)
+         m_runtime.drainCompletedDmacHandlers(m_rdram);
+         ++m_vsyncTick;
+         m_runtime.memory().gs().vsyncTick.store(m_vsyncTick, std::memory_order_release);
++        m_lastVSyncHostNs.store(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count(),
++                                std::memory_order_release);
++        {
++            std::lock_guard<std::mutex> notifyLock(m_vsyncNotifyMutex);
++            m_vsyncTickShared.store(m_vsyncTick, std::memory_order_release);
++        }
++        m_vsyncNotifyCv.notify_all();
+         if ((m_vsyncTick & 1u) != 0u)
+         {
+             m_runtime.memory().gs().csr.fetch_or(0x2000ull, std::memory_order_acq_rel);
+diff --git a/ps2xRuntime/src/lib/ps2_pad.cpp b/ps2xRuntime/src/lib/ps2_pad.cpp
+--- a/ps2xRuntime/src/lib/ps2_pad.cpp
++++ b/ps2xRuntime/src/lib/ps2_pad.cpp
+@@ -1,5 +1,6 @@
+ #include "runtime/ps2_pad.h"
+ #include "ps2_host_backend.h"
++#include "runtime/ps2_host_input.h"
+ #include <atomic>
+ #include <chrono>
+ #include <cstdlib>
+@@ -152,11 +153,37 @@ bool PSPadBackend::readState(int /*port*/, int /*slot*/, uint8_t *data, size_t s
+ 
+     uint16_t btns = 0xFFFFu;
+     constexpr int kGamepad = 0;
+-    const bool useGamepad = IsGamepadAvailable(kGamepad);
+     auto clearBit = [&btns](uint16_t mask)
+     { btns &= ~mask; };
+ 
+-    if (useGamepad)
++    // Read the host now (XInput pad, keyboard) rather than use the window's last event poll, which can be a display period old;
++    // PS2X_HOST_INPUT=polled keeps the polled state only (runtime/ps2_host_input.h).
++    static const bool freshInput = []()
++    {
++        const char *value = std::getenv("PS2X_HOST_INPUT");
++        return value == nullptr || std::strcmp(value, "polled") != 0;
++    }();
++    PS2HostPadState fresh{};
++    uint16_t keys = 0;
++    const bool xinput = freshInput && ps2xHostReadXInputPad(fresh);
++    const bool useGamepad = !xinput && IsGamepadAvailable(kGamepad);
++    // Read fresh, the keyboard works alongside a pad; the polled path keeps the old rule (keyboard only without a pad).
++    const bool freshKeyboard = freshInput && ps2xHostReadKeyboard(GetWindowHandle(), keys);
++    ps2xNotePadRead(!useGamepad && (xinput || freshKeyboard));
++
++    if (freshKeyboard)
++    {
++        btns &= static_cast<uint16_t>(~keys);
++    }
++    if (xinput)
++    {
++        btns &= static_cast<uint16_t>(~fresh.held);
++        data[4] = fresh.rx;
++        data[5] = fresh.ry;
++        data[6] = fresh.lx;
++        data[7] = fresh.ly;
++    }
++    else if (useGamepad)
+     {
+         if (IsGamepadButtonDown(kGamepad, GAMEPAD_BUTTON_LEFT_FACE_UP))
+             clearBit(PAD_UP);
+@@ -200,7 +227,7 @@ bool PSPadBackend::readState(int /*port*/, int /*slot*/, uint8_t *data, size_t s
+         data[4] = static_cast<uint8_t>(128 + rx * 127);
+         data[5] = static_cast<uint8_t>(128 + ry * 127);
+     }
+-    else
++    else if (!freshKeyboard)
+     {
+         if (IsKeyDown(KEY_UP) || IsKeyDown(KEY_W))
+             clearBit(PAD_UP);
+diff --git a/ps2xRuntime/src/lib/ps2_runtime.cpp b/ps2xRuntime/src/lib/ps2_runtime.cpp
+--- a/ps2xRuntime/src/lib/ps2_runtime.cpp
++++ b/ps2xRuntime/src/lib/ps2_runtime.cpp
+@@ -6,6 +6,7 @@
+ #include "ps2_runtime_macros.h"
+ #include "runtime/gs/gs_frontend.h"
+ #include "runtime/ee_scheduler.h"
++#include "runtime/ps2_host_input.h"
+ #include "ThreadNaming.h"
+ #include "Kernel/Stubs/Audio.h"
+ #include "Kernel/Stubs/GS.h"
+@@ -849,7 +850,11 @@ bool PS2Runtime::initialize(const char *title)
+         // runtime without playing the game (a game's differential tests, for example).
+         const char *headlessFlag = std::getenv("PS2X_HEADLESS");
+         const bool headless = headlessFlag != nullptr && std::strcmp(headlessFlag, "1") == 0;
+-        SetConfigFlags(FLAG_WINDOW_RESIZABLE | ((placeWindow || headless) ? FLAG_WINDOW_HIDDEN : 0u));
++        // PS2X_VSYNC=1 waits for the monitor's refresh when showing a frame (no tearing in exclusive fullscreen; windowed, the
++        // desktop compositor already prevents it). Off by default: it adds up to a refresh of delay.
++        const char *hostVsync = std::getenv("PS2X_VSYNC");
++        const bool waitForMonitor = hostVsync != nullptr && std::strcmp(hostVsync, "1") == 0;
++        SetConfigFlags(FLAG_WINDOW_RESIZABLE | ((placeWindow || headless) ? FLAG_WINDOW_HIDDEN : 0u) | (waitForMonitor ? FLAG_VSYNC_HINT : 0u));
+         InitWindow(HOST_WINDOW_WIDTH, HOST_WINDOW_HEIGHT, title);
+         if (placeWindow && !headless)
+         {
+@@ -864,7 +869,25 @@ bool PS2Runtime::initialize(const char *title)
+             startSpu2Stream(m_iopSubsystem.get());
+         }
+ #endif
+-        SetTargetFPS(60);
++        // PS2X_PRESENT=free keeps the old window loop on its own 60 Hz timer; by default it shows each frame right after the
++        // game's vertical blank (see run()), so it does not sleep here.
++        {
++            const char *present = std::getenv("PS2X_PRESENT");
++            SetTargetFPS((present != nullptr && std::strcmp(present, "free") == 0) ? 60 : 0);
++        }
++        // PS2X_VSYNC_HZ=host runs the game's vertical blank at the monitor's rate when it is close to the PS2's (58 to 62 Hz:
++        // 60.00 instead of 59.94 on most monitors, so no frame is dropped or shown twice every few seconds); a number sets it.
++        if (const char *rate = std::getenv("PS2X_VSYNC_HZ"))
++        {
++            double hz = std::strcmp(rate, "host") == 0 ? static_cast<double>(GetMonitorRefreshRate(GetCurrentMonitor())) : std::atof(rate);
++            if (hz >= 58.0 && hz <= 62.0)
++            {
++                EeScheduler::setVSyncRate(hz);
++                std::cerr << "[run] vertical blank at " << hz << " Hz (PS2X_VSYNC_HZ)" << std::endl;
++            }
++            else
++                std::cerr << "[run] PS2X_VSYNC_HZ=" << rate << " ignored: " << hz << " Hz is not within 58 to 62 Hz" << std::endl;
++        }
+         if (m_debugUiInitCallback)
+         {
+             m_debugUiInitCallback(*this, m_debugUiUserData);
+@@ -2542,8 +2565,34 @@ void PS2Runtime::run()
+         gameThreadFinished.store(true, std::memory_order_release); });
+ 
+     uint64_t tick = 0;
++    static const bool presentOnVSync = []()
++    {
++        const char *present = std::getenv("PS2X_PRESENT");
++        return present == nullptr || std::strcmp(present, "free") != 0;
++    }();
++    static const bool latencyStats = []()
++    {
++        const char *value = std::getenv("PS2X_LATENCY_STATS");
++        return value != nullptr && value[0] == '1';
++    }();
++    uint64_t shownVSyncTick = 0;
++    double presentDelaySumMs = 0.0, presentDelayWorstMs = 0.0;
++    uint32_t presents = 0;
++    auto statsWindow = std::chrono::steady_clock::now();
+     while (!isStopRequested() && !gameThreadFinished.load(std::memory_order_acquire))
+     {
++        // Show each frame right after the game's vertical blank instead of on a timer of our own: no beat between 59.94 and 60,
++        // and no wait of up to a display period before a finished frame is shown. The timeout keeps the window responsive
++        // while the game makes no vertical blank (loading).
++        if (presentOnVSync && m_eeScheduler)
++        {
++            m_eeScheduler->waitForVSyncAfter(shownVSyncTick, std::chrono::milliseconds(50));
++            shownVSyncTick = m_eeScheduler->currentVSyncTick();
++            // Host events (keys, pads that are not XInput) are polled at every vertical blank, which is when the game reads its
++            // pad, so their state is fresh even while frames take longer than a field to draw.
++            PollInputEvents();
++            ps2xNoteHostEventPoll();
++        }
+         PS2_IF_AGRESSIVE_LOGS({
+             tick++;
+             if ((tick % 120) == 0)
+@@ -2621,6 +2670,30 @@ void PS2Runtime::run()
+             m_debugUiDrawCallback(*this, m_debugUiUserData);
+         }
+         EndDrawing();
++        ps2xNoteHostEventPoll();
++
++        // PS2X_LATENCY_STATS=1: every 2 s, how long after the game's vertical blank its frame was on its way to the screen
++        // (the swap done), and how old the host input was when the game read its pad.
++        if (latencyStats && m_eeScheduler && m_eeScheduler->lastVSyncHostTime().time_since_epoch().count() != 0)
++        {
++            const auto now = std::chrono::steady_clock::now();
++            const double delay = std::chrono::duration<double, std::milli>(now - m_eeScheduler->lastVSyncHostTime()).count();
++            presentDelaySumMs += delay;
++            presentDelayWorstMs = std::max(presentDelayWorstMs, delay);
++            ++presents;
++            if (now - statsWindow >= std::chrono::seconds(2))
++            {
++                double ageAverage = 0.0, ageWorst = 0.0;
++                uint32_t fresh = 0, polled = 0;
++                ps2xTakePadReadStats(ageAverage, ageWorst, fresh, polled);
++                std::fprintf(stderr, "[latency] %u presents: %.1f ms after the vertical blank on average, %.1f worst | pad reads: %u with fresh input, "
++                                     "%u with polled input (%.1f ms old on average, %.1f worst)\n",
++                             presents, presentDelaySumMs / presents, presentDelayWorstMs, fresh, polled, ageAverage, ageWorst);
++                presentDelaySumMs = presentDelayWorstMs = 0.0;
++                presents = 0;
++                statsWindow = now;
++            }
++        }
+ 
+         if (WindowShouldClose())
+         {
