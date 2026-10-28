@@ -218,7 +218,26 @@ namespace
         std::string shot;
     };
 
-    uint16_t cityScript(const uint8_t *rdram)
+    // MMPC_SHOT_VRAM=<dir>: at each shot the GS is drained and its 4 MB of VRAM written to <dir>/<NAME>.vram (both fields of the
+    // frame, in the GS's own layout; LOCAL-AI/tools/vram_frame.py decodes them, as it decodes PCSX2's savestates).
+    void logShot(PS2Runtime *runtime, const std::string &name, uint32_t counter)
+    {
+        std::cerr << "[mm:shot] " << name << " frame=" << counter << std::endl;
+        const char *dir = std::getenv("MMPC_SHOT_VRAM");
+        if (dir == nullptr || runtime == nullptr)
+            return;
+        runtime->gs().refreshDisplaySnapshot();
+        uint32_t size = 0;
+        const uint8_t *data = runtime->gs().lockDisplaySnapshot(size);
+        if (data != nullptr)
+        {
+            std::ofstream file(std::string(dir) + "/" + name + ".vram", std::ios::binary);
+            file.write(reinterpret_cast<const char *>(data), size);
+        }
+        runtime->gs().unlockDisplaySnapshot();
+    }
+
+    uint16_t cityScript(const uint8_t *rdram, PS2Runtime *runtime)
     {
         static const std::vector<ScriptStep> steps = []()
         {
@@ -268,7 +287,7 @@ namespace
             {
                 for (; reported < i; ++reported)
                     if (!steps[reported].shot.empty())
-                        std::cerr << "[mm:shot] " << steps[reported].shot << " frame=" << counter << std::endl;
+                        logShot(runtime, steps[reported].shot, counter);
                 const uint16_t game = steps[i].buttons;
                 return static_cast<uint16_t>(((game & 0xFFu) << 8) | (game >> 8)); // raw pad bits are the game's byte-swapped
             }
@@ -276,7 +295,7 @@ namespace
         }
         for (; reported < steps.size(); ++reported)
             if (!steps[reported].shot.empty())
-                std::cerr << "[mm:shot] " << steps[reported].shot << " frame=" << counter << std::endl;
+                logShot(runtime, steps[reported].shot, counter);
         if (reported == steps.size())
         {
             std::cerr << "[mm:script] done" << std::endl;
@@ -285,7 +304,7 @@ namespace
         return 0;
     }
 
-    void autoplayFrame(const uint8_t *rdram, uint32_t state, uint32_t sceneA, uint32_t city)
+    void autoplayFrame(const uint8_t *rdram, uint32_t state, uint32_t sceneA, uint32_t city, PS2Runtime *runtime)
     {
         constexpr uint16_t kStart = kPadStart, kDown = kPadDown, kUp = kPadUp, kCross = kPadCross;
         static uint32_t frame = 0;
@@ -297,7 +316,7 @@ namespace
         if (mode == Autoplay::Explore && state == 6u && city != 0u)
             buttons = exploreCity(rdram, city);
         else if (mode == Autoplay::Script && state == 6u && city != 0u)
-            buttons = cityScript(rdram);
+            buttons = cityScript(rdram, runtime);
         else if (loading && state <= 2u && sceneA != 0u && guestRead32(rdram, sceneA + 0xC0u) == 6u &&
             guestRead32(rdram, sceneA + 0x3Cu) == 0u)
             buttons = pulse ? kDown : 0; // title menu (scene A sub-state 6): cursor +0x3C from New Game to Load
@@ -322,7 +341,7 @@ namespace
         const uint32_t self = getRegU32(ctx, 4);
         const uint32_t state = guestRead32(rdram, self + 4u);
         if (autoplayMode() != Autoplay::Off)
-            autoplayFrame(rdram, state, guestRead32(rdram, self + 0xCu), guestRead32(rdram, self + 8u));
+            autoplayFrame(rdram, state, guestRead32(rdram, self + 0xCu), guestRead32(rdram, self + 8u), runtime);
         static const bool traceOn = []()
         {
             const char *flag = std::getenv("MMPC_TRACE");

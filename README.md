@@ -103,7 +103,7 @@ To copy your saves over from PCSX2: `python tools/mc_extract.py path/to/Mcd001.p
 Once the port is complete these are the changes it is meant to make possible. None of them exists yet.
 
 - **Widescreen.** True 16:9 and wider, with the field of view and the HUD corrected. The needed addresses are already known from the PCSX2 widescreen patch ([docs/GAME_NOTES.md](docs/GAME_NOTES.md)).
-- **High refresh rates (120 Hz).** The game logic runs at 30 fps; the proposal is to present smoothly on 60, 120 and faster displays.
+- **High refresh rates (120 Hz).** The game logic steps once per frame at the PS2's field rate (59.94 Hz), so it must stay at that rate to keep its speed; the proposal is to draw in-between frames for 120 Hz and faster displays without changing the logic.
 - **Higher resolution.** Render the city at a multiple of the PS2's 640x448 instead of the fixed output size.
 - **Native PC controls.** Keyboard and mouse, any gamepad, and rebinding, instead of a mapped PS2 pad.
 - **And more:** a Linux build, saves in a normal folder instead of a memory card image, display options (fullscreen, borderless, vsync) and fixes for the remaining rendering glitches.
@@ -247,7 +247,7 @@ PCSX2からセーブデータをコピーするには `python tools/mc_extract.p
 移植が完成した後に、これらの変更ができるようになることを目指しています。いずれもまだ存在しません。
 
 - **ワイドスクリーン。** 16:9以上の本物のワイドスクリーン。視野角とHUDも補正します。必要なアドレスはPCSX2のワイドスクリーンパッチから既に分かっています([docs/GAME_NOTES.md](docs/GAME_NOTES.md))。
-- **高リフレッシュレート(120 Hz)。** ゲームのロジックは30 fpsで動きますが、60 Hz、120 Hz、それ以上のディスプレイでもなめらかに表示することを目指します。
+- **高リフレッシュレート(120 Hz)。** ゲームのロジックはPS2のフィールドレート(59.94 Hz)で1フレームごとに進むため、速度を保つにはこのレートのままにする必要があります。ロジックを変えずに中間フレームを描き、120 Hz以上のディスプレイでなめらかに表示することを目指します。
 - **高解像度。** 固定の出力サイズではなく、PS2の640x448の整数倍で街を描画します。
 - **PCネイティブの操作。** PS2パッドに割り当てる方式ではなく、キーボードとマウス、あらゆるゲームパッド、キー割り当ての変更に対応します。
 - **その他:** Linux版、メモリーカードイメージではなく通常のフォルダへのセーブ、表示オプション(フルスクリーン、ボーダーレス、垂直同期)、残っている描画の不具合の修正。

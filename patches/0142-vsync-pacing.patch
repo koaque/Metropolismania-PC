@@ -1,0 +1,42 @@
+Vsync pacing: the vertical blank comes at the NTSC field rate, 60000/1001 Hz (59.94), not 60 Hz, and a field that arrives more than a period late no longer leaves a backlog. The next host deadline was chained from the missed one, so after any stretch slower than real time (a load) the following fields came early until the lost time was made up: the game ran at 61.5 to 62 frames a second for minutes. Now the next field is a period from now when the deadline has already passed.
+
+diff --git a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+--- a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
++++ b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+@@ -33,7 +33,8 @@ namespace
+     constexpr uint32_t WEF_OR = 0x01u;
+     constexpr uint32_t WEF_CLEAR = 0x10u;
+     constexpr uint32_t WEF_CLEAR_ALL = 0x20u;
+-    constexpr auto kVBlankPeriod = std::chrono::microseconds(16667);
++    // NTSC field rate, 60000/1001 Hz (59.94), not 60.
++    constexpr auto kVBlankPeriod = std::chrono::nanoseconds(16683333);
+     constexpr auto kVBlankDuration = std::chrono::microseconds(500);
+     constexpr uint64_t kAlarmTickMicroseconds = 64u;
+     constexpr uint32_t kDebugPublishDispatchInterval = 4096u;
+@@ -52,7 +53,7 @@ namespace
+         return std::chrono::seconds(wholeSeconds) + std::chrono::nanoseconds(remainingNanoseconds);
+     }
+ 
+-    constexpr uint64_t kVBlankPeriodCycles = microsecondsToEeCycles(16667u);
++    constexpr uint64_t kVBlankPeriodCycles = (EeScheduler::kEeClockHz * 1001ull + 59999ull) / 60000ull;
+     constexpr uint64_t kVBlankDurationCycles = microsecondsToEeCycles(500u);
+     constexpr uint64_t kAlarmTickCycles = microsecondsToEeCycles(kAlarmTickMicroseconds);
+ 
+@@ -2073,9 +2074,14 @@ void EeScheduler::processDueDeadlines()
+                 scheduleEvent(scheduled.deadlineCycle + kVBlankDurationCycles,
+                               scheduled.hostDeadline + kVBlankDuration,
+                               EeEvent{EeEventType::VBlankEnd, 0, m_vsyncTick + 1u});
+-                scheduleEvent(scheduled.deadlineCycle + kVBlankPeriodCycles,
+-                              scheduled.hostDeadline + kVBlankPeriod,
+-                              EeEvent{EeEventType::VBlankStart, 0, 0});
++                // A field that came more than a period late (the game was slower than real time, as while loading) does not
++                // leave a backlog: the next one is a period from now. Chaining from the missed deadline made the following
++                // fields come early until the lost time was made up, so the game ran about 3% fast for minutes after a load.
++                auto nextHost = scheduled.hostDeadline + kVBlankPeriod;
++                const auto hostNow = std::chrono::steady_clock::now();
++                if (nextHost < hostNow)
++                    nextHost = hostNow + kVBlankPeriod;
++                scheduleEvent(scheduled.deadlineCycle + kVBlankPeriodCycles, nextHost, EeEvent{EeEventType::VBlankStart, 0, 0});
+             }
+             processEvent(scheduled.event);
+         }

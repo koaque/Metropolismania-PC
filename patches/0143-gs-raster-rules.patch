@@ -1,0 +1,286 @@
+GS CPU rasterizer: triangles follow the GS rules. Vertex positions are 12.4 fixed point (XYOFFSET with its fraction, which the game uses to draw the odd field half a line lower), a pixel is sampled at its integer coordinate and not at +0.5, and a pixel exactly on an edge belongs to the triangle only for a top or a left edge, so two triangles that share an edge draw it once (the old inclusive epsilon drew shared edges twice, visible where geometry is blended). Colours, depth and texture coordinates are interpolated at the same integer point; a vertex with no weight adds nothing (0 times an infinite S was NaN). Measured against PCSX2 (software renderer, the same eleven city views, native frame buffers from savestates): the mean pixel difference fell from 6 to 12 to 4 to 9; attributes at the pixel middle instead doubled it. Four unit tests assumed sampling at +0.5 or read the swizzled frame buffer as a linear array; they now check the same things at the integer sample point. PS2X_GS_PROBE=x,y[,skip[,count[,seconds]]] logs every write to one frame buffer pixel with the draw state and the pixel before and after.
+
+diff --git a/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp b/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp
+--- a/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp
+@@ -8,12 +8,14 @@
+ #include "runtime/gs/ps2_gs_memory.h"
+ #include "ps2_log.h"
+ #include <atomic>
++#include <chrono>
+ #include <algorithm>
+ #include <cmath>
+ #include <cstdio>
+ #include <cstring>
+ #include <fstream>
+ #include <iostream>
++#include <mutex>
+ #include <stdexcept>
+ 
+ using namespace GSInternal;
+@@ -967,12 +969,73 @@ void GSCpuBackend::DrawPrimitive(const GSPrimitiveBatch &batch)
+     }
+ }
+ 
++namespace
++{
++    // PS2X_GS_PROBE=x,y[,skip[,count[,seconds]]] (debug aid): every write to the frame buffer pixel (x, y), in drawing
++    // coordinates, is logged with the draw's state, the colour that arrives (after the texture function) and the pixel before
++    // and after; writes in the first `seconds` and then the first `skip` writes are passed over, then `count` (default 64) are
++    // logged as "[gs:probe]".
++    struct PixelProbe
++    {
++        bool on = false;
++        int x = 0, y = 0;
++        uint32_t skip = 0, count = 64, seconds = 0;
++        std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
++    };
++
++    const PixelProbe &pixelProbe()
++    {
++        static const PixelProbe probe = []()
++        {
++            PixelProbe p;
++            const char *value = std::getenv("PS2X_GS_PROBE");
++            if (value != nullptr && std::sscanf(value, "%d,%d,%u,%u,%u", &p.x, &p.y, &p.skip, &p.count, &p.seconds) >= 2)
++                p.on = true;
++            return p;
++        }();
++        return probe;
++    }
++
++    std::atomic<uint32_t> g_probeHits{0};
++    std::mutex g_probeMutex;
++    thread_local bool t_inProbe = false;
++}
++
+ void GSCpuBackend::WritePixel(const GSDrawState &state, int x, int y, int z, uint8_t r, uint8_t g, uint8_t b, uint8_t a, uint8_t fog)
+ {
+     const auto &ctx = state.context;
+     if (x < ctx.scissor.x0 || x > ctx.scissor.x1 || y < ctx.scissor.y0 || y > ctx.scissor.y1)
+         return;
+ 
++    if (!t_inProbe && pixelProbe().on && x == pixelProbe().x && y == pixelProbe().y &&
++        std::chrono::steady_clock::now() - pixelProbe().start >= std::chrono::seconds(pixelProbe().seconds))
++    {
++        const uint32_t hit = g_probeHits.fetch_add(1u, std::memory_order_relaxed);
++        if (hit >= pixelProbe().skip && hit < pixelProbe().skip + pixelProbe().count)
++        {
++            const u32 pbp = GSInternal::framePageBaseToBlock(ctx.frame.fbp);
++            const u32 pbw = std::max<u32>(ctx.frame.fbw, 1u);
++            const u32 before = ReadVramUnlocked(ctx.frame.psm, pbp, pbw, x, y);
++            t_inProbe = true;
++            WritePixel(state, x, y, z, r, g, b, a, fog);
++            t_inProbe = false;
++            const u32 after = ReadVramUnlocked(ctx.frame.psm, pbp, pbw, x, y);
++            const auto &t = ctx.tex0;
++            std::lock_guard<std::mutex> lock(g_probeMutex);
++            std::fprintf(stderr,
++                         "[gs:probe] #%u fbp=0x%x psm=0x%x prim=%u tme=%d abe=%d fge=%d iip=%d fst=%d | tex psm=0x%x tbp=0x%x tfx=%u tcc=%u "
++                         "cpsm=0x%x csm=%u csa=%u linear=%d | alpha=0x%llx pabe=%d fba=0x%llx test=0x%llx texa(ta0=0x%x ta1=0x%x aem=%d) "
++                         "colclamp=0x%llx dthe=0x%llx fbmsk=0x%x | in rgba=%02x%02x%02x%02x fog=%u z=0x%x | before=0x%08x after=0x%08x\n",
++                         hit, ctx.frame.fbp, ctx.frame.psm, static_cast<unsigned>(state.prim.type), state.prim.tme, state.prim.abe,
++                         state.prim.fge, state.prim.iip, state.prim.fst, t.psm, t.tbp0, t.tfx, t.tcc, t.cpsm, t.csm, t.csa, state.linearFilter,
++                         static_cast<unsigned long long>(ctx.alpha), state.pabe, static_cast<unsigned long long>(ctx.fba),
++                         static_cast<unsigned long long>(ctx.test), state.texa.ta0, state.texa.ta1, state.texa.aem,
++                         static_cast<unsigned long long>(state.colclamp), static_cast<unsigned long long>(state.dthe), ctx.frame.fbmsk, r, g,
++                         b, a, fog, static_cast<u32>(z), before, after);
++            return;
++        }
++    }
++
+     if (state.prim.fge)
+     {
+         const uint32_t inverseFog = 255u - fog;
+@@ -1412,44 +1475,66 @@ void GSCpuBackend::DrawTriangle(const GSPrimitiveBatch &batch)
+     int ofx = ctx.xyoffset.ofx >> 4;
+     int ofy = ctx.xyoffset.ofy >> 4;
+ 
+-    float fx0 = v0.x - static_cast<float>(ofx);
+-    float fy0 = v0.y - static_cast<float>(ofy);
+-    float fx1 = v1.x - static_cast<float>(ofx);
+-    float fy1 = v1.y - static_cast<float>(ofy);
+-    float fx2 = v2.x - static_cast<float>(ofx);
+-    float fy2 = v2.y - static_cast<float>(ofy);
+-
+-    int minX = static_cast<int>(std::floor(std::min({fx0, fx1, fx2})));
+-    int maxX = static_cast<int>(std::ceil(std::max({fx0, fx1, fx2})));
+-    int minY = static_cast<int>(std::floor(std::min({fy0, fy1, fy2})));
+-    int maxY = static_cast<int>(std::ceil(std::max({fy0, fy1, fy2})));
+-
+-    minX = clampInt(minX, ctx.scissor.x0, ctx.scissor.x1);
+-    maxX = clampInt(maxX, ctx.scissor.x0, ctx.scissor.x1);
+-    minY = clampInt(minY, ctx.scissor.y0, ctx.scissor.y1);
+-    maxY = clampInt(maxY, ctx.scissor.y0, ctx.scissor.y1);
+-
+-    float denom = (fy1 - fy2) * (fx0 - fx2) + (fx2 - fx1) * (fy0 - fy2);
+-    if (std::fabs(denom) < 0.001f)
++    // The GS's rules (as paraLLEl-GS documents them): vertex positions are 12.4 fixed point, a pixel is sampled at its integer
++    // coordinate (not at +0.5), and a pixel exactly on an edge belongs to the triangle only for a top or a left edge, so two
++    // triangles that share an edge draw it once. Edge functions are exact in integers; the weights for colour, depth and
++    // texture coordinates are taken at the same sample point.
++    // XYOFFSET is 12.4 too; its fraction matters (the game draws the odd field half a line lower through it).
++    (void)ofx;
++    (void)ofy;
++    const auto fixed4 = [](float v, uint32_t offset) { return static_cast<int64_t>(std::llround(static_cast<double>(v) * 16.0)) - static_cast<int64_t>(offset); };
++    const int64_t X0 = fixed4(v0.x, ctx.xyoffset.ofx), Y0 = fixed4(v0.y, ctx.xyoffset.ofy);
++    const int64_t X1 = fixed4(v1.x, ctx.xyoffset.ofx), Y1 = fixed4(v1.y, ctx.xyoffset.ofy);
++    const int64_t X2 = fixed4(v2.x, ctx.xyoffset.ofx), Y2 = fixed4(v2.y, ctx.xyoffset.ofy);
++    const int64_t area = (X1 - X0) * (Y2 - Y0) - (Y1 - Y0) * (X2 - X0);
++    if (area == 0)
+         return;
++    const int64_t sign = area > 0 ? 1 : -1;
++    const double invArea = 1.0 / static_cast<double>(area * sign);
+ 
+-    const float winding = (denom < 0.0f) ? -1.0f : 1.0f;
+-    const float invAbsDenom = 1.0f / std::fabs(denom);
+-    constexpr float kEdgeEpsilon = 1.0e-4f;
++    // Whether the edge a->b, with the triangle's third vertex c, is a top or a left edge (its outward normal points up, or left).
++    const auto topLeft = [](int64_t ax, int64_t ay, int64_t bx, int64_t by, int64_t cx, int64_t cy)
++    {
++        int64_t nx = by - ay, ny = -(bx - ax);
++        if (nx * (cx - ax) + ny * (cy - ay) > 0)
++        {
++            nx = -nx;
++            ny = -ny;
++        }
++        return nx < 0 || (nx == 0 && ny < 0);
++    };
++    const bool tl0 = topLeft(X1, Y1, X2, Y2, X0, Y0); // edge opposite v0
++    const bool tl1 = topLeft(X2, Y2, X0, Y0, X1, Y1);
++    const bool tl2 = topLeft(X0, Y0, X1, Y1, X2, Y2);
++
++    // Sample points are whole pixels: from the first one at or after the smallest coordinate to the last one at or before the largest.
++    const auto floorDiv16 = [](int64_t v) { return static_cast<int>(v >= 0 ? v / 16 : -((-v + 15) / 16)); };
++    int minX = -floorDiv16(-std::min({X0, X1, X2}));
++    int maxX = floorDiv16(std::max({X0, X1, X2}));
++    int minY = -floorDiv16(-std::min({Y0, Y1, Y2}));
++    int maxY = floorDiv16(std::max({Y0, Y1, Y2}));
++    minX = std::max<int>(minX, ctx.scissor.x0);
++    maxX = std::min<int>(maxX, ctx.scissor.x1);
++    minY = std::max<int>(minY, ctx.scissor.y0);
++    maxY = std::min<int>(maxY, ctx.scissor.y1);
++    if (minX > maxX || minY > maxY)
++        return;
+ 
+     for (int y = minY; y <= maxY; ++y)
+     {
+-        float py = static_cast<float>(y) + 0.5f;
++        const int64_t py = static_cast<int64_t>(y) * 16;
+         for (int x = minX; x <= maxX; ++x)
+         {
+-            float px = static_cast<float>(x) + 0.5f;
+-
+-            float w0 = (((fy1 - fy2) * (px - fx2) + (fx2 - fx1) * (py - fy2)) * winding) * invAbsDenom;
+-            float w1 = (((fy2 - fy0) * (px - fx2) + (fx0 - fx2) * (py - fy2)) * winding) * invAbsDenom;
+-            float w2 = 1.0f - w0 - w1;
+-
+-            if (w0 < -kEdgeEpsilon || w1 < -kEdgeEpsilon || w2 < -kEdgeEpsilon)
++            const int64_t px = static_cast<int64_t>(x) * 16;
++            const int64_t e0 = ((X2 - X1) * (py - Y1) - (Y2 - Y1) * (px - X1)) * sign;
++            const int64_t e1 = ((X0 - X2) * (py - Y2) - (Y0 - Y2) * (px - X2)) * sign;
++            const int64_t e2 = ((X1 - X0) * (py - Y0) - (Y1 - Y0) * (px - X0)) * sign;
++            if (e0 < 0 || e1 < 0 || e2 < 0 || (e0 == 0 && !tl0) || (e1 == 0 && !tl1) || (e2 == 0 && !tl2))
+                 continue;
++            // (Measured against PCSX2 on eleven city views: weights at the pixel's middle instead doubled the difference.)
++            const float w0 = static_cast<float>(static_cast<double>(e0) * invArea);
++            const float w1 = static_cast<float>(static_cast<double>(e1) * invArea);
++            const float w2 = static_cast<float>(static_cast<double>(e2) * invArea);
+ 
+             double z = v0.z * w0 + v1.z * w1 + v2.z * w2;
+ 
+@@ -1486,9 +1571,13 @@ void GSCpuBackend::DrawTriangle(const GSPrimitiveBatch &batch)
+                     // The GS DDA interpolates the homogeneous S, T and Q
+                     // values. Texel coordinates are calculated from S/Q and
+                     // T/Q only after interpolation.
+-                    is = v0.s * w0 + v1.s * w1 + v2.s * w2;
+-                    it = v0.t * w0 + v1.t * w1 + v2.t * w2;
+-                    iq = v0.q * w0 + v1.q * w1 + v2.q * w2;
++                    // A vertex with no weight adds nothing (0 times an infinite S would be NaN).
++                    const auto blend3 = [&](float a, float b, float c) {
++                        return (w0 != 0.0f ? a * w0 : 0.0f) + (w1 != 0.0f ? b * w1 : 0.0f) + (w2 != 0.0f ? c * w2 : 0.0f);
++                    };
++                    is = blend3(v0.s, v1.s, v2.s);
++                    it = blend3(v0.t, v1.t, v2.t);
++                    iq = blend3(v0.q, v1.q, v2.q);
+                     iu = 0;
+                     iv = 0;
+                 }
+diff --git a/ps2xTest/src/ps2_gs_tests.cpp b/ps2xTest/src/ps2_gs_tests.cpp
+--- a/ps2xTest/src/ps2_gs_tests.cpp
++++ b/ps2xTest/src/ps2_gs_tests.cpp
+@@ -3505,7 +3505,8 @@ void register_ps2_gs_tests()
+                 gs.writeRegister(GS_REG_RGBAQ, kRgbaq);
+                 gs.writeRegister(GS_REG_ST, packSt(0.0f, 0.0f));
+                 gs.writeRegister(GS_REG_XYZ2, 0ull);
+-                gs.writeRegister(GS_REG_ST, packSt(1.0f, 0.0f));
++                // The GS samples a pixel at its integer coordinate: S = 1.5 here puts pixel (1,1) at u = 0.75 texels.
++                gs.writeRegister(GS_REG_ST, packSt(1.5f, 0.0f));
+                 gs.writeRegister(GS_REG_XYZ2, (64ull << 0) | (0ull << 16));
+                 gs.writeRegister(GS_REG_ST, packSt(0.0f, 0.0f));
+                 gs.writeRegister(GS_REG_XYZ2, (0ull << 0) | (64ull << 16));
+@@ -3673,8 +3674,9 @@ void register_ps2_gs_tests()
+                 gs.writeRegister(GS_REG_PRIM, kPrim);
+                 gs.writeRegister(GS_REG_RGBAQ, kRgbaq);
+ 
+-                // Constant S at every vertex: the DDA weights at pixel (0,0)
+-                // are exactly 0.5/0.25/0.25, so S/Q arrives unchanged.
++                // Constant S at every vertex: pixel (0,0) is sampled at the
++                // first vertex itself, so S/Q arrives unchanged (a vertex with
++                // no weight adds nothing, even when S is infinite).
+                 gs.writeRegister(GS_REG_ST, st);
+                 gs.writeRegister(GS_REG_XYZ2, 0ull);
+                 gs.writeRegister(GS_REG_ST, st);
+@@ -3772,8 +3774,8 @@ void register_ps2_gs_tests()
+                        (static_cast<uint64_t>(packFloat(q)) << 32);
+             };
+ 
+-            writeReferencePSMCT32Pixel(vram, kTexTbp, 1u, 1u, 0u, kAffineTexel);
+-            writeReferencePSMCT32Pixel(vram, kTexTbp, 1u, 2u, 0u, kHomogeneousTexel);
++            writeReferencePSMCT32Pixel(vram, kTexTbp, 1u, 0u, 0u, kAffineTexel);
++            writeReferencePSMCT32Pixel(vram, kTexTbp, 1u, 1u, 0u, kHomogeneousTexel);
+ 
+             gs.writeRegister(GS_REG_FRAME_1, kFrame);
+             gs.writeRegister(GS_REG_ZBUF_1, kZbuf);
+@@ -3788,7 +3790,7 @@ void register_ps2_gs_tests()
+             gs.writeRegister(GS_REG_RGBAQ, packRgbaq(1.0f));
+             gs.writeRegister(GS_REG_XYZ2, 0ull);
+             gs.writeRegister(GS_REG_ST, packSt(2.0f, 0.0f));
+-            gs.writeRegister(GS_REG_RGBAQ, packRgbaq(2.0f));
++            gs.writeRegister(GS_REG_RGBAQ, packRgbaq(3.0f));
+             gs.writeRegister(GS_REG_XYZ2, 64ull);
+             gs.writeRegister(GS_REG_ST, packSt(0.0f, 0.0f));
+             gs.writeRegister(GS_REG_RGBAQ, packRgbaq(1.0f));
+@@ -3797,7 +3799,8 @@ void register_ps2_gs_tests()
+             const uint32_t pixel =
+                 readReferencePSMCT32Pixel(vram, 0u, 1u, 1u, 1u);
+             t.Equals(pixel, kHomogeneousTexel,
+-                     "the DDA should interpolate S=0.75 and Q=1.375, selecting texel 2 after S/Q");
++                     "the DDA should interpolate S=0.5 and Q=1.5 at the integer sample (1,1), selecting texel 1 after S/Q "
++                     "(interpolating S/Q per vertex would select texel 0)");
+         });
+ 
+         tc.Run("GS alpha-test AFAIL independently masks framebuffer and depth", [](TestCase &t)
+@@ -4003,9 +4006,8 @@ void register_ps2_gs_tests()
+                 int last = -1;
+                 for (uint32_t x = 6u; x <= 26u; ++x)
+                 {
+-                    const size_t offset = (static_cast<size_t>(y) * 64u + static_cast<size_t>(x)) * 4u;
+-                    uint32_t pixel = 0u;
+-                    std::memcpy(&pixel, vram.data() + offset, sizeof(pixel));
++                    // the frame buffer is PSMCT32, so pixels are read through its swizzled layout, not as a linear array
++                    const uint32_t pixel = readReferencePSMCT32Pixel(vram, 0u, 1u, x, y);
+                     if ((pixel & 0x00FFFFFFu) != 0u)
+                     {
+                         if (first < 0)
+@@ -4024,9 +4026,7 @@ void register_ps2_gs_tests()
+                 sawFilledRow = true;
+                 for (int x = first; x <= last; ++x)
+                 {
+-                    const size_t offset = (static_cast<size_t>(y) * 64u + static_cast<size_t>(x)) * 4u;
+-                    uint32_t pixel = 0u;
+-                    std::memcpy(&pixel, vram.data() + offset, sizeof(pixel));
++                    const uint32_t pixel = readReferencePSMCT32Pixel(vram, 0u, 1u, static_cast<uint32_t>(x), y);
+                     if ((pixel & 0x00FFFFFFu) == 0u)
+                     {
+                         t.Fail("triangle fan quad should not leave interior holes within a covered row");
