@@ -21,12 +21,15 @@
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <map>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <utility>
+#include <vector>
 
 #if defined(_WIN32)
 // Keep the runtime's PS2X_PROFILE sampling profiler (patches/0108) in the link.
@@ -78,7 +81,8 @@ namespace
     // original/mc0, see tools/mc_extract.py). MMPC_AUTOPLAY=explore loads the same way and then plays
     // the city at random (see exploreCity), so differential-test captures reach talks, menus and the
     // build screens. Presses only happen from GameUpdate, which the movie blocks, so the movie plays to
-    // its end (MMPC_SKIP_MOVIES=1 skips it).
+    // its end (MMPC_SKIP_MOVIES=1 skips it). MMPC_AUTOPLAY=script loads the same way and then plays a button script in the city
+    // (see cityScript), the same one LOCAL-AI/tools/pcsx2_drive.py plays in PCSX2, so both can be captured at the same frames.
     enum class Autoplay
     {
         Off,
@@ -86,6 +90,7 @@ namespace
         City,
         Load,
         Explore,
+        Script,
     };
 
     Autoplay autoplayMode()
@@ -99,6 +104,8 @@ namespace
                 return Autoplay::City;
             if (std::strcmp(value, "explore") == 0)
                 return Autoplay::Explore;
+            if (std::strcmp(value, "script") == 0)
+                return Autoplay::Script;
             return std::strcmp(value, "load") == 0 ? Autoplay::Load : Autoplay::Title;
         }();
         return mode;
@@ -199,17 +206,98 @@ namespace
         return held = kPadTriangle;
     }
 
+    // MMPC_AUTOPLAY=script in the city: MMPC_AUTOPLAY_SCRIPT is a file of lines "FRAMES BUTTONS_HEX [shot NAME]" (# starts a
+    // comment), the buttons in the game's own bit order (Cross 0x40, Start 0x800, Up 0x1000, Right 0x2000, Down 0x4000, Left 0x8000,
+    // Triangle 0x10, Circle 0x20, Square 0x80, L2 0x01, R2 0x02, L1 0x04, R1 0x08, Select 0x100). It starts MMPC_AUTOPLAY_SETTLE game
+    // frames (default 1200, past the stage title) after the first city frame and is timed by the game's frame counter (0x001BDCAC), so a slow frame does not
+    // shift it; a line with "shot NAME" logs "[mm:shot] NAME" when it ends (a wrapper captures the window then).
+    struct ScriptStep
+    {
+        uint32_t frames;
+        uint16_t buttons;
+        std::string shot;
+    };
+
+    uint16_t cityScript(const uint8_t *rdram)
+    {
+        static const std::vector<ScriptStep> steps = []()
+        {
+            std::vector<ScriptStep> out;
+            const char *path = std::getenv("MMPC_AUTOPLAY_SCRIPT");
+            std::ifstream file(path ? path : "");
+            std::string line;
+            while (std::getline(file, line))
+            {
+                line = line.substr(0, line.find('#'));
+                std::istringstream words(line);
+                ScriptStep step{};
+                std::string hex, word, name;
+                if (!(words >> step.frames >> hex))
+                    continue;
+                step.buttons = static_cast<uint16_t>(std::stoul(hex, nullptr, 16));
+                if (words >> word >> name && word == "shot")
+                    step.shot = name;
+                out.push_back(step);
+            }
+            std::cerr << "[mm:script] " << out.size() << " step(s) from " << (path ? path : "(MMPC_AUTOPLAY_SCRIPT not set)") << std::endl;
+            return out;
+        }();
+        static const uint32_t settle = []()
+        {
+            const char *value = std::getenv("MMPC_AUTOPLAY_SETTLE");
+            return value ? static_cast<uint32_t>(std::strtoul(value, nullptr, 10)) : 1200u;
+        }();
+        static bool started = false;
+        static uint32_t cityStart = 0;
+        static size_t reported = 0;
+        const uint32_t counter = guestRead32(rdram, 0x001BDCACu);
+        if (!started)
+        {
+            started = true;
+            cityStart = counter;
+            std::cerr << "[mm:script] city at frame counter " << counter << std::endl;
+        }
+        const uint32_t elapsed = counter - cityStart;
+        if (elapsed < settle)
+            return 0;
+        uint32_t at = elapsed - settle;
+        for (size_t i = 0; i < steps.size(); ++i)
+        {
+            // a step's shot is logged once the counter has passed its end
+            if (at < steps[i].frames)
+            {
+                for (; reported < i; ++reported)
+                    if (!steps[reported].shot.empty())
+                        std::cerr << "[mm:shot] " << steps[reported].shot << " frame=" << counter << std::endl;
+                const uint16_t game = steps[i].buttons;
+                return static_cast<uint16_t>(((game & 0xFFu) << 8) | (game >> 8)); // raw pad bits are the game's byte-swapped
+            }
+            at -= steps[i].frames;
+        }
+        for (; reported < steps.size(); ++reported)
+            if (!steps[reported].shot.empty())
+                std::cerr << "[mm:shot] " << steps[reported].shot << " frame=" << counter << std::endl;
+        if (reported == steps.size())
+        {
+            std::cerr << "[mm:script] done" << std::endl;
+            ++reported;
+        }
+        return 0;
+    }
+
     void autoplayFrame(const uint8_t *rdram, uint32_t state, uint32_t sceneA, uint32_t city)
     {
         constexpr uint16_t kStart = kPadStart, kDown = kPadDown, kUp = kPadUp, kCross = kPadCross;
         static uint32_t frame = 0;
         ++frame;
         const Autoplay mode = autoplayMode();
-        const bool loading = mode == Autoplay::Load || mode == Autoplay::Explore;
+        const bool loading = mode == Autoplay::Load || mode == Autoplay::Explore || mode == Autoplay::Script;
         const bool pulse = (frame % 24u) < 4u;
         uint16_t buttons = 0;
         if (mode == Autoplay::Explore && state == 6u && city != 0u)
             buttons = exploreCity(rdram, city);
+        else if (mode == Autoplay::Script && state == 6u && city != 0u)
+            buttons = cityScript(rdram);
         else if (loading && state <= 2u && sceneA != 0u && guestRead32(rdram, sceneA + 0xC0u) == 6u &&
             guestRead32(rdram, sceneA + 0x3Cu) == 0u)
             buttons = pulse ? kDown : 0; // title menu (scene A sub-state 6): cursor +0x3C from New Game to Load
