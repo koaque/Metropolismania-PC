@@ -223,7 +223,7 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
                  return !cpu.stopped;
              }
  
-@@ -456,6 +502,9 @@ namespace ps2x::iop::detail
+@@ -456,8 +502,20 @@ namespace ps2x::iop::detail
              {
                  cpu.gpr[29] = kCallStackBase - 32u;
              }
@@ -232,8 +232,19 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +            pendingStackArguments.clear();
              cpu.gpr[31] = kCallReturnSentinel;
              runCpu(cpu, budget);
++            if (nativeDepth != 0u && cpu.yielded && !cpu.stopped && cpu.pc != kCallReturnSentinel)
++            {
++                // the thread went to sleep inside guest code that a native function called: its C++ frames cannot be kept (plan P5: fibers)
++                std::ostringstream out;
++                out << "[IOP] guest code called by a native function blocked the thread (entry 0x" << std::hex << address << ", now at 0x" << cpu.pc
++                    << "); native functions that can block are not supported yet";
++                log(LogLevel::Error, out.str());
++                std::abort();
++            }
              return cpu.gpr[2];
-@@ -649,6 +698,8 @@ namespace ps2x::iop::detail
+         }
+ 
+@@ -649,6 +707,8 @@ namespace ps2x::iop::detail
              module.entry = loaded.entry;
              module.gp = loaded.gp;
  
@@ -242,7 +253,7 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
              uint32_t args = 0u;
              if (arguments && argumentSize)
              {
-@@ -706,6 +757,14 @@ namespace ps2x::iop::detail
+@@ -706,6 +766,14 @@ namespace ps2x::iop::detail
              kernel.terminateThreadsInRange(it->second.base, it->second.size);
              rpc.removeServersInRange(it->second.base, it->second.size);
              imports.eraseRange(it->second.base, it->second.size);
@@ -257,7 +268,7 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
              modules.erase(it);
              kernel.cleanupDeadThreads();
              if (result)
-@@ -713,6 +772,494 @@ namespace ps2x::iop::detail
+@@ -713,6 +781,496 @@ namespace ps2x::iop::detail
              return true;
          }
  
@@ -717,6 +728,8 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +            const uint32_t deadBegin = deadEnd > kDeadStack ? deadEnd - kDeadStack : 0u;
 +            if (deadEnd <= kRamSize)
 +                std::memcpy(ram + deadBegin, ramOriginal.data() + deadBegin, deadEnd - deadBegin);
++            // the stacks the emulator gives its synchronous calls (callFunction) hold only what the last call left
++            std::memcpy(ram + kCallStackBase, ramOriginal.data() + kCallStackBase, kCallStackLimit + 0x100u - kCallStackBase);
 +            const auto differences = ramDifferences(ramOriginal.data(), ram);
 +            if (!differences.empty())
 +            {
@@ -752,7 +765,7 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
          IopHost &host;
          IopMemory memory;
          IopSysmem sysmem;
-@@ -745,6 +1292,27 @@ namespace ps2x::iop::detail
+@@ -745,6 +1303,27 @@ namespace ps2x::iop::detail
          GuestCallback secrMcCommandHandler;
          GuestCallback secrMcDevIdHandler;
          GuestCallback checkKelfPathCallback;
@@ -780,7 +793,7 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
      };
  
      IopEmulator::IopEmulator(IopHost &host)
-@@ -798,6 +1366,17 @@ namespace ps2x::iop::detail
+@@ -798,6 +1377,17 @@ namespace ps2x::iop::detail
          return m_impl->rpc.hasServer(sid);
      }
  

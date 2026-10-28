@@ -95,6 +95,12 @@ namespace iop
             *get() = value;
             return *this;
         }
+        // Assigning one variable to another copies the value (the implicit copy would copy the address).
+        Var &operator=(const Var &other)
+        {
+            *get() = *other.get();
+            return *this;
+        }
         IopPtr<T> ptr() const { return IopPtr<T>{address}; }
     };
 
