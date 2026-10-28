@@ -90,7 +90,8 @@ python tools/pipeline.py extract path/to/your/game.cue   # -> original/ (checks 
 python tools/pipeline.py symbols            # SDK names from PS2Recomp's signature scan -> config/symbols.csv
 python tools/pipeline.py analyze            # Ghidra headless -> config/funcmap.csv
 python tools/pipeline.py recompile          # -> generated/
-python tools/pipeline.py stage              # generated code + overrides + src/port -> runtime tree
+python tools/pipeline.py iop-aot            # the IOP sound and memory card modules -> C++ in work/iop_aot/
+python tools/pipeline.py stage              # generated code + overrides + src/port + work/iop_aot -> runtime tree
 python tools/pipeline.py build              # ps2EntryRunner
 python tools/pipeline.py run                # timed run, log in logs/
 ```
@@ -233,7 +234,8 @@ python tools/pipeline.py extract path/to/your/game.cue   # -> original/ (checks 
 python tools/pipeline.py symbols            # SDK names from PS2Recomp's signature scan -> config/symbols.csv
 python tools/pipeline.py analyze            # Ghidra headless -> config/funcmap.csv
 python tools/pipeline.py recompile          # -> generated/
-python tools/pipeline.py stage              # generated code + overrides + src/port -> runtime tree
+python tools/pipeline.py iop-aot            # the IOP sound and memory card modules -> C++ in work/iop_aot/
+python tools/pipeline.py stage              # generated code + overrides + src/port + work/iop_aot -> runtime tree
 python tools/pipeline.py build              # ps2EntryRunner
 python tools/pipeline.py run                # timed run, log in logs/
 ```

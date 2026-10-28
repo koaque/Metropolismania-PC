@@ -693,7 +693,7 @@ def cmd_vu1_test(args: argparse.Namespace) -> None:
 
 def cmd_all(args: argparse.Namespace) -> None:
     for step in (cmd_bootstrap, cmd_tools, cmd_extract, cmd_symbols, cmd_analyze, cmd_pointers,
-                 cmd_recompile, cmd_stage, cmd_build):
+                 cmd_recompile, cmd_iop_aot, cmd_stage, cmd_build):
         step(args)
 
 
