@@ -12,6 +12,7 @@
 #include "vu1aot.h"
 #include "vu1test.h"
 #include "game_overrides.h"
+#include "iop_port.h"
 #include "port.h"
 #include "ps2_runtime.h"
 #include "ps2_stubs.h"
@@ -456,6 +457,7 @@ namespace
     {
         // The readable port (src/port/) first: the debug wrappers below wrap whatever is registered.
         port::install(runtime);
+        iop::install(runtime); // the readable port of the IOP modules (PS2X_IOP_NATIVE=0 turns it off)
         port::installCapture(runtime);
         port::installCallCounts(runtime);
         port::runDifftestIfRequested(runtime); // exits when MMPC_DIFFTEST is set

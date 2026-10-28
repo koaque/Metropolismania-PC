@@ -181,3 +181,12 @@ queue calls, and callees that only run inside others (`File_Seek`, `Font_Free`);
 the full list. `GameUpdate` is verified (58 records: the states that make and run the title and the briefing, running the city, the answers of the
 title, briefing and city; the two records that make the city scene hang the original too, so that step is not covered). `Main`, `MainLoop` and `App_ctor` can not be replayed (the loop never returns,
 the constructor restarts the IOP): they were checked by live runs with every function ported, new game and explore, and they stay "ported".
+
+## The IOP port (`src/port/iop/`)
+
+`src/port/iop/` holds the IOP side: the sound driver `YYSOUND.IRX` as readable C++ (`yysound.cpp`) on a small runtime (`iop_port.h`,
+`iop_ptr.h`) that registers each function as a native replacement of the module's own code in the IOP emulator. The structure layouts,
+function offsets, variable addresses and the module's image hash are generated from the module's debug info by
+`python tools/irx_inspect.py export original/SYS/YYSOUND.IRX --base 0x5E300` into `config/iop/`. `PS2X_IOP_NATIVE=0|names` and
+`PS2X_IOP_VERIFY=1` select and check the replacements in a live run; how they work and what the verifier compares is in
+[`docs/IOP.md`](../../docs/IOP.md).

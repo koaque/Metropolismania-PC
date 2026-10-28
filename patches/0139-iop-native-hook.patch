@@ -1,0 +1,796 @@
+Native replacements of IOP module functions (plan P5, the readable port of YYSOUND). ps2x/iop/iop_native.h: NativeContext, the interface a replacement sees (registers, IOP RAM as host memory, callGuest for imports and unported functions, jump for a tail call such as a thread body's SleepThread, charge for IOP time). IopSubsystem::registerNativeModule and registerNative: functions are registered by offset in a module's image and take effect only when the module loads with the image whose hash was registered. IopEmulator: a table checked in step() next to the import stubs; PS2X_IOP_NATIVE=0|names turns replacements off or selects them; PS2X_IOP_VERIFY=1 runs the original first (its imports happen once and are logged with the RAM they change), rolls RAM back, runs the replacement with the module's imports answered from the log, and compares RAM (the dead stack and argument home area excepted), the registers the ABI keeps, the import sequence and the return, then continues from the original's state; PS2X_IOP_DUMP_MODULES=<dir> writes the loaded image of a module with replacements. IopMemory::ramData and PS2Runtime::iopSubsystem give the port access.
+
+diff --git a/ps2xIOP/include/ps2x/iop/iop_native.h b/ps2xIOP/include/ps2x/iop/iop_native.h
+new file mode 100644
+--- /dev/null
++++ b/ps2xIOP/include/ps2x/iop/iop_native.h
+@@ -0,0 +1,37 @@
++#pragma once
++
++#include <cstdint>
++
++namespace ps2x::iop
++{
++    // What a native (host C++) replacement of an IOP function sees and may do. The emulator calls the replacement when the IOP reaches
++    // the function's address, with the caller's registers as they are on entry (a0 to a3 are registers 4 to 7); the function ends by
++    // returning to the caller (v0, register 2, is the result) unless it calls jump().
++    class NativeContext
++    {
++    public:
++        virtual ~NativeContext() = default;
++
++        // The 2 MB of IOP RAM as host memory; an IOP address is masked to its physical part (address & 0x1FFFFF).
++        virtual uint8_t *ram() = 0;
++        virtual uint32_t reg(unsigned index) const = 0;
++        virtual void setReg(unsigned index, uint32_t value) = 0;
++
++        // Runs guest code to its return and gives v0: an import stub, or a function of the module that is not replaced. The code runs on
++        // its own stack, as the emulator's other synchronous calls do.
++        virtual uint32_t callGuest(uint32_t address, uint32_t a0 = 0, uint32_t a1 = 0, uint32_t a2 = 0, uint32_t a3 = 0) = 0;
++
++        // How many of a0 to a3 the next callGuest really passes (an import takes fewer than four: the rest are leftovers in the original, which a
++        // replacement cannot reproduce, so the verifier does not compare them).
++        virtual void argumentCount(unsigned count) = 0;
++
++        // Ends the function by continuing in guest code at `address` with the registers as they are now (a tail call): how a thread body
++        // sleeps (ra = where it resumes, address = the SleepThread import stub).
++        virtual void jump(uint32_t address) = 0;
++
++        // Instructions the original would have run; the IOP's time moves on by this much, so timers and DMA completions keep their schedule.
++        virtual void charge(uint32_t instructions) = 0;
++    };
++
++    using NativeFunction = void (*)(NativeContext &);
++}
+diff --git a/ps2xIOP/include/ps2x/iop/iop_subsystem.h b/ps2xIOP/include/ps2x/iop/iop_subsystem.h
+--- a/ps2xIOP/include/ps2x/iop/iop_subsystem.h
++++ b/ps2xIOP/include/ps2x/iop/iop_subsystem.h
+@@ -1,6 +1,7 @@
+ #pragma once
+ 
+ #include "ps2x/iop/iop_host.h"
++#include "ps2x/iop/iop_native.h"
+ #include "ps2x/iop/iop_types.h"
+ 
+ #include <memory>
+@@ -45,6 +46,15 @@ namespace ps2x::iop
+ 
+         [[nodiscard]] DebugSnapshot debugSnapshot() const;
+ 
++        // Native replacements of the functions of one IRX module (the readable port of YYSOUND, plan P5). A function is registered by its offset
++        // in the module's image; it takes effect when the module is loaded with the image whose FNV-1a 64 bit hash (over the relocated image,
++        // `imageSize` bytes, before the module starts) is `imageHash`, so a different build of the module can never run against these
++        // offsets. `typicalCost` is the instruction count the original takes, charged as IOP time; `hasResult` says the function returns a value in v0 (the verifier compares v0 only then). Environment: PS2X_IOP_NATIVE=0 turns
++        // all replacements off, a comma separated list turns on only those names; PS2X_IOP_VERIFY=1 runs the original beside each
++        // replacement and compares (PS2X_IOP_VERIFY_FIRST and PS2X_IOP_VERIFY_EVERY say which calls).
++        void registerNativeModule(const char *module, uint64_t imageHash, uint32_t imageSize);
++        void registerNative(const char *module, uint32_t offset, NativeFunction function, const char *name, uint32_t typicalCost, bool hasResult);
++
+     private:
+         class Impl;
+         std::unique_ptr<Impl> m_impl;
+diff --git a/ps2xIOP/src/iop_subsystem.cpp b/ps2xIOP/src/iop_subsystem.cpp
+--- a/ps2xIOP/src/iop_subsystem.cpp
++++ b/ps2xIOP/src/iop_subsystem.cpp
+@@ -174,6 +174,16 @@ namespace ps2x::iop
+         return m_impl->emulator.pullAudio(stereo, frames);
+     }
+ 
++    void IopSubsystem::registerNativeModule(const char *module, uint64_t imageHash, uint32_t imageSize)
++    {
++        m_impl->emulator.registerNativeModule(module, imageHash, imageSize);
++    }
++
++    void IopSubsystem::registerNative(const char *module, uint32_t offset, NativeFunction function, const char *name, uint32_t typicalCost, bool hasResult)
++    {
++        m_impl->emulator.registerNative(module, offset, function, name, typicalCost, hasResult);
++    }
++
+     RpcAbi IopSubsystem::selectRpcAbi(const RpcAbiRequest &request) const
+     {
+         for (const auto &service : m_impl->coreServices)
+diff --git a/ps2xIOP/src/emulator/iop_emulator.h b/ps2xIOP/src/emulator/iop_emulator.h
+--- a/ps2xIOP/src/emulator/iop_emulator.h
++++ b/ps2xIOP/src/emulator/iop_emulator.h
+@@ -1,6 +1,7 @@
+ #pragma once
+ 
+ #include "ps2x/iop/iop_host.h"
++#include "ps2x/iop/iop_native.h"
+ #include "ps2x/iop/iop_types.h"
+ 
+ #include <cstdint>
+@@ -31,6 +32,10 @@ namespace ps2x::iop::detail
+         [[nodiscard]] bool hasRpcServer(uint32_t sid) const noexcept;
+         void onSifTransfer(const SifTransfer &transfer);
+ 
++        // Native replacements of module functions (ps2x/iop/iop_subsystem.h)
++        void registerNativeModule(const char *module, uint64_t imageHash, uint32_t imageSize);
++        void registerNative(const char *module, uint32_t offset, NativeFunction function, const char *name, uint32_t typicalCost, bool hasResult);
++
+         [[nodiscard]] uint32_t allocateMemory(uint32_t size, uint32_t alignment = 16u);
+         [[nodiscard]] bool freeMemory(uint32_t address);
+         [[nodiscard]] bool readMemory(uint32_t address, void *destination, size_t size) const;
+diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_emulator.cpp
+--- a/ps2xIOP/src/emulator/iop_emulator.cpp
++++ b/ps2xIOP/src/emulator/iop_emulator.cpp
+@@ -19,11 +19,18 @@
+ 
+ #include <algorithm>
+ #include <cctype>
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <deque>
+ #include <map>
+ #include <optional>
+ #include <span>
+ #include <sstream>
++#include <string>
++#include <unordered_map>
+ #include <utility>
++#include <vector>
+ 
+ namespace ps2x::iop::detail
+ {
+@@ -111,6 +118,7 @@ namespace ps2x::iop::detail
+               loadcore(memory, imports)
+         {
+             reset();
++            configureNatives();
+         }
+ 
+         void reset()
+@@ -139,6 +147,7 @@ namespace ps2x::iop::detail
+             secrMcCommandHandler = {};
+             secrMcDevIdHandler = {};
+             checkKelfPathCallback = {};
++            disarmNatives();
+         }
+ 
+         uint8_t read8(uint32_t address) const
+@@ -360,7 +369,8 @@ namespace ps2x::iop::detail
+             return ImportDisposition::Missing;
+         }
+ 
+-        bool step(CpuState &cpu)
++        // `plain` runs the instruction as the original does: no replacement, no interrupt (the verifier's run of the original).
++        bool step(CpuState &cpu, bool plain = false)
+         {
+             if (cpu.stopped)
+                 return false;
+@@ -377,18 +387,54 @@ namespace ps2x::iop::detail
+                 cpu.stopped = true;
+                 return false;
+             }
+-            if (checkInterrupt(cpu))
++            if (!plain && checkInterrupt(cpu))
+                 return true;
+ 
++            if (!plain && !nativeAt.empty())
++            {
++                const auto native = nativeAt.find(cpu.pc);
++                if (native != nativeAt.end())
++                {
++                    runNative(*native->second, cpu);
++                    ++totalInstructions;
++                    ++totalCycles;
++                    return !cpu.stopped;
++                }
++            }
++
+             if (const auto import = imports.decode(cpu.pc))
+             {
++                if (replayActive && inVerifiedModule(cpu.pc))
++                {
++                    replayImport(cpu);
++                    ++totalInstructions;
++                    ++totalCycles;
++                    return true;
++                }
++                OpenImport open;
++                const bool logging = oracleActive && inVerifiedModule(cpu.pc);
++                if (logging)
++                {
++                    open.record.stub = cpu.pc;
++                    for (unsigned i = 0; i < 4u; ++i)
++                        open.record.args[i] = cpu.gpr[4 + i];
++                    open.returnAddress = cpu.gpr[31];
++                    open.stackPointer = cpu.gpr[29];
++                    open.before.assign(memory.ramData(), memory.ramData() + kRamSize);
++                }
+                 const ImportDisposition disposition = dispatchImport(*import, cpu);
+                 ++totalInstructions;
+                 ++totalCycles;
+                 if (disposition == ImportDisposition::JumpToGuest)
++                {
++                    if (logging)
++                        openImports.push_back(std::move(open));
+                     return true;
++                }
+                 cpu.pc = cpu.gpr[31];
+                 cpu.branchPending = false;
++                if (logging)
++                    finishImport(open, cpu);
+                 return !cpu.stopped;
+             }
+ 
+@@ -649,6 +695,8 @@ namespace ps2x::iop::detail
+             module.entry = loaded.entry;
+             module.gp = loaded.gp;
+ 
++            armNatives(module);
++
+             uint32_t args = 0u;
+             if (arguments && argumentSize)
+             {
+@@ -706,6 +754,14 @@ namespace ps2x::iop::detail
+             kernel.terminateThreadsInRange(it->second.base, it->second.size);
+             rpc.removeServersInRange(it->second.base, it->second.size);
+             imports.eraseRange(it->second.base, it->second.size);
++            for (auto &entry : natives)
++            {
++                if (entry.armed && entry.address >= it->second.base && entry.address < it->second.base + it->second.size)
++                {
++                    nativeAt.erase(entry.address);
++                    entry.armed = false;
++                }
++            }
+             modules.erase(it);
+             kernel.cleanupDeadThreads();
+             if (result)
+@@ -713,6 +769,486 @@ namespace ps2x::iop::detail
+             return true;
+         }
+ 
++        // ---- native replacements of module functions (ps2x/iop/iop_native.h, plan P5)
++
++        struct NativeModuleSpec
++        {
++            std::string name;
++            uint64_t hash = 0;
++            uint32_t size = 0;
++            uint32_t base = 0; // set when the module is loaded with a matching image
++            bool armed = false;
++        };
++
++        struct NativeEntry
++        {
++            std::string module;
++            std::string name;
++            uint32_t offset = 0;
++            NativeFunction function = nullptr;
++            uint32_t typicalCost = 0;
++            bool hasResult = true;
++            uint32_t address = 0; // absolute, once armed
++            bool armed = false;
++            uint64_t calls = 0;
++            uint64_t verified = 0;
++            uint64_t unverifiable = 0;
++            uint64_t mismatches = 0;
++            uint64_t originalInstructions = 0; // summed over the verified calls
++        };
++
++        // One import the module's code called while the original ran: arguments, results and the RAM it changed.
++        struct ImportRecord
++        {
++            uint32_t stub = 0;
++            uint32_t args[4] = {};
++            uint32_t v0 = 0;
++            uint32_t v1 = 0;
++            std::vector<std::pair<uint32_t, std::vector<uint8_t>>> effects;
++        };
++
++        struct OpenImport
++        {
++            ImportRecord record;
++            uint32_t returnAddress = 0;
++            uint32_t stackPointer = 0;
++            std::vector<uint8_t> before;
++        };
++
++        class NativeContextImpl final : public NativeContext
++        {
++        public:
++            NativeContextImpl(Impl &owner, CpuState &state) : impl(owner), cpu(state) {}
++
++            uint8_t *ram() override { return impl.memory.ramData(); }
++            uint32_t reg(unsigned index) const override { return cpu.gpr[index & 31u]; }
++            void setReg(unsigned index, uint32_t value) override
++            {
++                if ((index & 31u) != 0u)
++                    cpu.gpr[index & 31u] = value;
++            }
++            uint32_t callGuest(uint32_t address, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3) override
++            {
++                impl.replayArgumentCount = arguments;
++                arguments = 4u;
++                const uint32_t result = impl.callFunction(address, a0, a1, a2, a3, cpu.gpr[28]);
++                impl.replayArgumentCount = 4u;
++                return result;
++            }
++            void argumentCount(unsigned count) override { arguments = count < 4u ? count : 4u; }
++            void jump(uint32_t address) override
++            {
++                cpu.pc = address;
++                cpu.branchPending = false;
++                jumped = true;
++            }
++            void charge(uint32_t instructions) override
++            {
++                impl.totalInstructions += instructions;
++                impl.totalCycles += instructions;
++            }
++
++            Impl &impl;
++            CpuState &cpu;
++            bool jumped = false;
++            unsigned arguments = 4u;
++        };
++
++        void registerNativeModule(const char *module, uint64_t hash, uint32_t size)
++        {
++            for (auto &spec : nativeModules)
++            {
++                if (iequals(spec.name, module))
++                {
++                    spec.hash = hash;
++                    spec.size = size;
++                    return;
++                }
++            }
++            NativeModuleSpec spec;
++            spec.name = module;
++            spec.hash = hash;
++            spec.size = size;
++            nativeModules.push_back(std::move(spec));
++        }
++
++        void registerNative(const char *module, uint32_t offset, NativeFunction function, const char *name, uint32_t typicalCost, bool hasResult)
++        {
++            NativeEntry entry;
++            entry.module = module;
++            entry.name = name;
++            entry.offset = offset;
++            entry.function = function;
++            entry.typicalCost = typicalCost;
++            entry.hasResult = hasResult;
++            natives.push_back(std::move(entry));
++        }
++
++        // PS2X_IOP_NATIVE: unset or 1 all replacements, 0 none, otherwise a comma separated list of names.
++        // PS2X_IOP_VERIFY=1: the first PS2X_IOP_VERIFY_FIRST calls of each replacement (default 64) and then every PS2X_IOP_VERIFY_EVERY-th (256)
++        // are also run as the original and compared.
++        void configureNatives()
++        {
++            if (const char *value = std::getenv("PS2X_IOP_NATIVE"))
++                nativeSelection = value;
++            if (const char *value = std::getenv("PS2X_IOP_VERIFY"))
++                verifyOn = std::string_view(value) != "0" && *value != '\0';
++            if (const char *value = std::getenv("PS2X_IOP_VERIFY_FIRST"))
++                verifyFirst = std::strtoull(value, nullptr, 10);
++            if (const char *value = std::getenv("PS2X_IOP_VERIFY_EVERY"))
++                verifyEvery = std::strtoull(value, nullptr, 10);
++        }
++
++        bool nativeSelected(const std::string &name) const
++        {
++            if (nativeSelection.empty() || nativeSelection == "1")
++                return true;
++            if (nativeSelection == "0")
++                return false;
++            size_t start = 0;
++            while (start <= nativeSelection.size())
++            {
++                size_t end = nativeSelection.find(',', start);
++                if (end == std::string::npos)
++                    end = nativeSelection.size();
++                if (nativeSelection.compare(start, end - start, name) == 0)
++                    return true;
++                start = end + 1u;
++            }
++            return false;
++        }
++
++        // Called when a module has just been loaded and relocated, before it starts: the replacements of its functions take effect only for the
++        // image they were written against.
++        void armNatives(const Module &module)
++        {
++            // the name a module is loaded by on the disc ends in ";1"
++            std::string moduleName = module.name;
++            if (const size_t version = moduleName.find(';'); version != std::string::npos)
++                moduleName.resize(version);
++            for (auto &spec : nativeModules)
++            {
++                if (!iequals(spec.name, moduleName))
++                    continue;
++                spec.armed = false;
++                uint64_t hash = 14695981039346656037ull;
++                const uint8_t *ram = memory.ramData();
++                if (const char *directory = std::getenv("PS2X_IOP_DUMP_MODULES"))
++                {
++                    // a debug aid: the module as loaded (compare with tools/irx_inspect.py flat)
++                    const std::string file = std::string(directory) + "/" + moduleName + ".ram";
++                    if (std::FILE *out = std::fopen(file.c_str(), "wb"))
++                    {
++                        std::fwrite(ram + module.base, 1, spec.size, out);
++                        std::fclose(out);
++                    }
++                }
++                for (uint32_t i = 0; i < spec.size && module.base + i < kRamSize; ++i)
++                {
++                    hash ^= ram[module.base + i];
++                    hash *= 1099511628211ull;
++                }
++                if (hash != spec.hash)
++                {
++                    std::ostringstream out;
++                    out << "[IOP] native replacements for " << moduleName << " not used: image hash 0x" << std::hex << hash << " differs from the expected 0x"
++                        << spec.hash;
++                    log(LogLevel::Warning, out.str());
++                    return;
++                }
++                spec.base = module.base;
++                spec.armed = true;
++                uint32_t count = 0;
++                for (auto &entry : natives)
++                {
++                    if (!iequals(entry.module, moduleName) || !nativeSelected(entry.name))
++                        continue;
++                    entry.address = module.base + entry.offset;
++                    entry.armed = true;
++                    nativeAt[entry.address] = &entry;
++                    ++count;
++                }
++                std::ostringstream out;
++                out << "[IOP] " << count << " native replacement(s) armed for " << module.name << " at 0x" << std::hex << module.base
++                    << (verifyOn ? " (PS2X_IOP_VERIFY on)" : "");
++                log(LogLevel::Info, out.str());
++            }
++        }
++
++        void disarmNatives()
++        {
++            nativeAt.clear();
++            for (auto &entry : natives)
++                entry.armed = false;
++            for (auto &spec : nativeModules)
++                spec.armed = false;
++            oracleActive = false;
++            replayActive = false;
++            nativeDepth = 0u;
++        }
++
++        bool inVerifiedModule(uint32_t pc) const
++        {
++            const uint32_t physical = physicalAddress(pc);
++            return physical >= verifyBase && physical < verifyEnd;
++        }
++
++        // The RAM that differs between two images, as (address, bytes of `now`), nearby changes merged.
++        std::vector<std::pair<uint32_t, std::vector<uint8_t>>> ramDifferences(const uint8_t *was, const uint8_t *now) const
++        {
++            std::vector<std::pair<uint32_t, std::vector<uint8_t>>> ranges;
++            constexpr uint32_t kChunk = 4096u;
++            uint32_t i = 0u;
++            while (i < kRamSize)
++            {
++                if (i % kChunk == 0u && std::memcmp(was + i, now + i, kChunk) == 0)
++                {
++                    i += kChunk;
++                    continue;
++                }
++                if (was[i] == now[i])
++                {
++                    ++i;
++                    continue;
++                }
++                uint32_t end = i + 1u;
++                uint32_t gap = 0u;
++                while (end < kRamSize && gap < 16u)
++                {
++                    if (was[end] != now[end])
++                        gap = 0u;
++                    else
++                        ++gap;
++                    ++end;
++                }
++                end -= gap;
++                ranges.emplace_back(i, std::vector<uint8_t>(now + i, now + end));
++                i = end;
++            }
++            return ranges;
++        }
++
++        void finishImport(OpenImport &open, const CpuState &cpu)
++        {
++            open.record.v0 = cpu.gpr[2];
++            open.record.v1 = cpu.gpr[3];
++            open.record.effects = ramDifferences(open.before.data(), memory.ramData());
++            importLog.push_back(std::move(open.record));
++        }
++
++        // During the native run of a verification: an import of the module is answered from the log of the original's run.
++        void replayImport(CpuState &cpu)
++        {
++            ImportRecord *record = replayPosition < importLog.size() ? &importLog[replayPosition] : nullptr;
++            ++replayPosition;
++            bool sameArguments = record != nullptr && record->stub == cpu.pc;
++            for (unsigned i = 0; sameArguments && i < replayArgumentCount; ++i)
++                sameArguments = record->args[i] == cpu.gpr[4 + i];
++            if (!sameArguments)
++            {
++                std::ostringstream out;
++                out << "import 0x" << std::hex << cpu.pc << "(" << cpu.gpr[4] << "," << cpu.gpr[5] << "," << cpu.gpr[6] << "," << cpu.gpr[7]
++                    << ") is not the original's next import";
++                if (record != nullptr)
++                    out << " (0x" << record->stub << "(" << record->args[0] << "," << record->args[1] << "," << record->args[2] << "," << record->args[3] << "))";
++                replayProblems.push_back(out.str());
++                cpu.gpr[2] = 0u;
++            }
++            else
++            {
++                for (const auto &[address, bytes] : record->effects)
++                    std::memcpy(memory.ramData() + address, bytes.data(), bytes.size());
++                cpu.gpr[2] = record->v0;
++                cpu.gpr[3] = record->v1;
++            }
++            cpu.pc = cpu.gpr[31];
++            cpu.branchPending = false;
++        }
++
++        void logNativeStats(bool force)
++        {
++            if (!force && totalCycles - lastNativeStatsCycle < 36864000ull * 5u)
++                return;
++            lastNativeStatsCycle = totalCycles;
++            for (const auto &entry : natives)
++            {
++                if (!entry.armed || entry.calls == 0)
++                    continue;
++                std::ostringstream out;
++                out << "[iop:native] " << entry.name << ": " << entry.calls << " call(s)";
++                if (verifyOn)
++                {
++                    out << ", " << entry.verified << " verified, " << entry.mismatches << " mismatch(es), " << entry.unverifiable << " not verifiable";
++                    if (entry.verified != 0)
++                        out << ", the original takes " << (entry.originalInstructions / entry.verified) << " instruction(s) on average";
++                }
++                log(LogLevel::Info, out.str());
++            }
++        }
++
++        bool shouldVerify(const NativeEntry &entry) const
++        {
++            return entry.calls <= verifyFirst || (verifyEvery != 0u && entry.calls % verifyEvery == 0u);
++        }
++
++        // Called when the IOP reaches the address of an armed replacement.
++        void runNative(NativeEntry &entry, CpuState &cpu)
++        {
++            if (cpu.pendingLoad)
++            {
++                cpu.gpr[cpu.pendingLoadReg] = cpu.pendingLoadValue;
++                cpu.gpr[0] = 0u;
++                cpu.pendingLoad = false;
++            }
++            ++entry.calls;
++            if (verifyOn && nativeDepth == 0u && shouldVerify(entry))
++            {
++                verifyNative(entry, cpu);
++                logNativeStats(false);
++                return;
++            }
++            NativeContextImpl context(*this, cpu);
++            ++nativeDepth;
++            entry.function(context);
++            --nativeDepth;
++            if (!context.jumped)
++            {
++                cpu.pc = cpu.gpr[31];
++                cpu.branchPending = false;
++            }
++            totalInstructions += entry.typicalCost;
++            totalCycles += entry.typicalCost;
++        }
++
++        // The original runs first, for real (its imports happen, once), with RAM before and after kept; RAM goes back, the replacement runs with the
++        // module's imports answered from the original's, and the two are compared (registers the ABI keeps, all of RAM, the imports). Whatever the
++        // outcome the original's state is the one that continues, so a verified run is the same run as one without replacements.
++        void verifyNative(NativeEntry &entry, CpuState &cpu)
++        {
++            const uint32_t returnAddress = cpu.gpr[31];
++            const uint32_t stackPointer = cpu.gpr[29];
++            const CpuState before = cpu;
++            const uint64_t instructionsBefore = totalInstructions;
++            uint8_t *ram = memory.ramData();
++            std::vector<uint8_t> ramBefore(ram, ram + kRamSize);
++            for (const auto &spec : nativeModules)
++            {
++                if (spec.armed && iequals(spec.name, entry.module))
++                {
++                    verifyBase = spec.base;
++                    verifyEnd = spec.base + spec.size;
++                }
++            }
++            importLog.clear();
++            openImports.clear();
++            oracleActive = true;
++            bool finished = false;
++            for (uint64_t steps = 0; steps < 4000000ull; ++steps)
++            {
++                if (!step(cpu, true) || cpu.yielded || cpu.stopped)
++                    break;
++                while (!openImports.empty() && cpu.pc == openImports.back().returnAddress && cpu.gpr[29] == openImports.back().stackPointer)
++                {
++                    OpenImport open = std::move(openImports.back());
++                    openImports.pop_back();
++                    finishImport(open, cpu);
++                }
++                if (cpu.pc == returnAddress && cpu.gpr[29] == stackPointer && openImports.empty())
++                {
++                    finished = true;
++                    break;
++                }
++            }
++            oracleActive = false;
++            openImports.clear();
++            if (!finished)
++            {
++                // the original blocked or ran away: what has run is the real execution, and the thread goes on from here
++                ++entry.unverifiable;
++                return;
++            }
++            const CpuState originalCpu = cpu;
++            const uint64_t cyclesAfter = totalCycles;
++            const uint64_t instructionsAfter = totalInstructions;
++            std::vector<uint8_t> ramOriginal(ram, ram + kRamSize);
++            entry.originalInstructions += instructionsAfter - instructionsBefore;
++
++            std::memcpy(ram, ramBefore.data(), kRamSize);
++            cpu = before;
++            replayPosition = 0u;
++            replayProblems.clear();
++            replayActive = true;
++            NativeContextImpl context(*this, cpu);
++            ++nativeDepth;
++            entry.function(context);
++            --nativeDepth;
++            replayActive = false;
++            if (!context.jumped)
++            {
++                cpu.pc = cpu.gpr[31];
++                cpu.branchPending = false;
++            }
++
++            std::vector<std::string> problems = std::move(replayProblems);
++            replayProblems.clear();
++            if (replayPosition != importLog.size())
++                problems.push_back("the replacement made " + std::to_string(replayPosition) + " import call(s), the original " + std::to_string(importLog.size()));
++            const auto hex = [](uint32_t value)
++            {
++                std::ostringstream out;
++                out << "0x" << std::hex << value;
++                return out.str();
++            };
++            static constexpr unsigned kCompared[] = {2, 16, 17, 18, 19, 20, 21, 22, 23, 28, 29, 30, 31};
++            for (const unsigned index : kCompared)
++            {
++                if (index == 2u && !entry.hasResult)
++                    continue;
++                if (cpu.gpr[index] != originalCpu.gpr[index])
++                    problems.push_back("register " + std::to_string(index) + " is " + hex(cpu.gpr[index]) + ", the original left " + hex(originalCpu.gpr[index]));
++            }
++            if (cpu.pc != originalCpu.pc)
++                problems.push_back("returns to " + hex(cpu.pc) + ", the original to " + hex(originalCpu.pc));
++            // the stack below the entry stack pointer is dead after the return: the original's pushes and its callees' frames are not state
++            // (the original's bytes stay there, so a verified run is still the same run as one without replacements)
++            constexpr uint32_t kDeadStack = 0x800u;
++            // (and the 16 bytes above it, the argument home area the caller reserves and the original's code spills a0 to a3 into)
++            const uint32_t deadEnd = physicalAddress(stackPointer) + 16u;
++            const uint32_t deadBegin = deadEnd > kDeadStack ? deadEnd - kDeadStack : 0u;
++            if (deadEnd <= kRamSize)
++                std::memcpy(ram + deadBegin, ramOriginal.data() + deadBegin, deadEnd - deadBegin);
++            const auto differences = ramDifferences(ramOriginal.data(), ram);
++            if (!differences.empty())
++            {
++                size_t shown = 0;
++                std::string text = "RAM differs in " + std::to_string(differences.size()) + " range(s):";
++                for (const auto &[address, bytes] : differences)
++                {
++                    if (shown++ == 4u)
++                        break;
++                    text += " " + hex(address) + "+" + std::to_string(bytes.size()) + " (replacement " + hex(ram[address]) + ", original " + hex(ramOriginal[address]) + ")";
++                }
++                problems.push_back(text);
++            }
++            ++entry.verified;
++            if (!problems.empty())
++            {
++                ++entry.mismatches;
++                if (entry.mismatches <= 8u)
++                {
++                    std::ostringstream out;
++                    out << "[iop:verify] MISMATCH " << entry.name << " (call " << entry.calls << ")";
++                    for (const auto &problem : problems)
++                        out << "; " << problem;
++                    log(LogLevel::Error, out.str());
++                }
++            }
++            std::memcpy(ram, ramOriginal.data(), kRamSize);
++            cpu = originalCpu;
++            totalCycles = cyclesAfter;
++            totalInstructions = instructionsAfter;
++        }
++
+         IopHost &host;
+         IopMemory memory;
+         IopSysmem sysmem;
+@@ -745,6 +1281,26 @@ namespace ps2x::iop::detail
+         GuestCallback secrMcCommandHandler;
+         GuestCallback secrMcDevIdHandler;
+         GuestCallback checkKelfPathCallback;
++
++        // native replacements of module functions
++        std::vector<NativeModuleSpec> nativeModules;
++        std::deque<NativeEntry> natives;
++        std::unordered_map<uint32_t, NativeEntry *> nativeAt;
++        std::string nativeSelection;
++        bool verifyOn = false;
++        uint64_t verifyFirst = 64u;
++        uint64_t verifyEvery = 256u;
++        uint32_t nativeDepth = 0u;
++        bool oracleActive = false;
++        bool replayActive = false;
++        uint32_t verifyBase = 0u;
++        uint32_t verifyEnd = 0u;
++        std::vector<ImportRecord> importLog;
++        std::vector<OpenImport> openImports;
++        size_t replayPosition = 0u;
++        std::vector<std::string> replayProblems;
++        uint64_t lastNativeStatsCycle = 0u;
++        uint32_t replayArgumentCount = 4u;
+     };
+ 
+     IopEmulator::IopEmulator(IopHost &host)
+@@ -798,6 +1354,16 @@ namespace ps2x::iop::detail
+         return m_impl->rpc.hasServer(sid);
+     }
+ 
++    void IopEmulator::registerNativeModule(const char *module, uint64_t imageHash, uint32_t imageSize)
++    {
++        m_impl->registerNativeModule(module, imageHash, imageSize);
++    }
++
++    void IopEmulator::registerNative(const char *module, uint32_t offset, NativeFunction function, const char *name, uint32_t typicalCost, bool hasResult)
++    {
++        m_impl->registerNative(module, offset, function, name, typicalCost, hasResult);
++    }
++
+     void IopEmulator::onSifTransfer(const SifTransfer &transfer)
+     {
+         m_impl->rpc.onSifTransfer(transfer);
+diff --git a/ps2xIOP/src/emulator/core/iop_memory.h b/ps2xIOP/src/emulator/core/iop_memory.h
+--- a/ps2xIOP/src/emulator/core/iop_memory.h
++++ b/ps2xIOP/src/emulator/core/iop_memory.h
+@@ -71,6 +71,8 @@ namespace ps2x::iop::detail
+ 
+         [[nodiscard]] std::optional<DmaStart> takeDmaStart() noexcept;
+         [[nodiscard]] std::span<const uint8_t> ram() const noexcept { return m_ram; }
++        // The RAM as host memory, for the native replacements of module functions (writes through it bypass the hardware and ownership bookkeeping of write8 and friends)
++        [[nodiscard]] uint8_t *ramData() noexcept { return m_ram.data(); }
+ 
+         [[nodiscard]] static uint32_t physicalAddress(uint32_t address) noexcept;
+ 
+diff --git a/ps2xRuntime/include/ps2_runtime.h b/ps2xRuntime/include/ps2_runtime.h
+--- a/ps2xRuntime/include/ps2_runtime.h
++++ b/ps2xRuntime/include/ps2_runtime.h
+@@ -294,6 +294,8 @@ public:
+     [[nodiscard]] ps2x::iop::ModuleLoadResult loadIopModuleBuffer(uint32_t guestAddress, const void *arguments = nullptr, uint32_t argumentSize = 0);
+     [[nodiscard]] bool stopIopModule(int32_t moduleId, int32_t *result = nullptr);
+     [[nodiscard]] ps2x::iop::DebugSnapshot iopDebugSnapshot() const;
++    // The IOP subsystem, for the readable port of the IOP modules (it registers native replacements of module functions).
++    ps2x::iop::IopSubsystem *iopSubsystem() { return m_iopSubsystem.get(); }
+     uint32_t allocateIopMemory(uint32_t size, uint32_t alignment = 16u);
+     bool freeIopMemory(uint32_t address);
+     bool readIopMemory(uint32_t address, void *destination, size_t size) const;

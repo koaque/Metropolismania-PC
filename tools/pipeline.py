@@ -507,6 +507,14 @@ def cmd_stage(_: argparse.Namespace) -> None:
     # The platform layer (SDK and runtime library functions, plan P7) is in its own folder.
     for src in (ROOT / "src/port/platform").glob("*.cpp"):
         shutil.copy2(src, staging / f"zz_port_platform_{src.name}")
+    # The IOP port (plan P5): its sources, and the headers generated from the modules' debug info (tools/irx_inspect.py export).
+    for src in (ROOT / "src/port/iop").glob("*"):
+        if src.suffix == ".cpp":
+            shutil.copy2(src, staging / f"zz_port_iop_{src.name}")
+        elif src.suffix == ".h":
+            shutil.copy2(src, staging / src.name)
+    for header in (ROOT / "config/iop").glob("*.h"):
+        shutil.copy2(header, staging / header.name)
     if not (staging / "register_functions.cpp").exists():
         sys.exit("generated/register_functions.cpp missing; run: pipeline.py recompile")
     changed = sync_tree(staging, runner)

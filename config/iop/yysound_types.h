@@ -7,6 +7,8 @@
 
 #include "iop_ptr.h"
 
+namespace iop::yysound
+{
 struct ST_CMD_COMMON;
 struct ST_COMMAND_LIST;
 struct ST_COMMAND_ONE;
@@ -815,3 +817,4 @@ static_assert(offsetof(sceSifDmaData, addr) == 0x4, "sceSifDmaData::addr");
 static_assert(offsetof(sceSifDmaData, size) == 0x8, "sceSifDmaData::size");
 static_assert(offsetof(sceSifDmaData, mode) == 0xC, "sceSifDmaData::mode");
 
+}

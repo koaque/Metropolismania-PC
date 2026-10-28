@@ -63,3 +63,39 @@ graph and a leaf-first order.
   thbase 7, timrman 6.
 - The only blocking calls in its own code are the two `SleepThread()` at the heads of the thread loops, which is what lets the port
   run each thread body as a step that is entered when the thread wakes (the same machine-level behavior, no stack to keep).
+
+## The readable port of YYSOUND
+
+`src/port/iop/yysound.cpp` is the driver as C++ with its own names, parameters and structures. Each function is registered with
+`IOP_FN(yysound, Name)` and replaces the original at its address (`patches/0139-iop-native-hook.patch`):
+
+- The emulator keeps a table of replacements by address, checked in `step()` next to the import stubs. A module's replacements take
+  effect only when it loads with the image whose hash is in `config/iop/yysound_functions.h` (the hash of the relocated image, which
+  `tools/irx_inspect.py` computes and the emulator checks before the module starts), so a different build of the module can never run
+  against these offsets. The loaded image was compared byte for byte with the one `irx_inspect.py flat` builds: identical.
+- A replacement is plain C++ over the module's RAM: the structures of `yysound_types.h` and the variables of `yysound_globals.h` are
+  laid over the IOP's 2 MB (`IopPtr<T>`, `iop::Var<T>`, `iop::ArrayVar<T, N>`). An import is its stub in the module's import table, run as
+  guest code (`callImport`); a function that is not ported yet is called the same way (`call`). A local whose address goes to guest code
+  sits in a `Frame` of the original's size, so the same stale stack bytes are under it.
+- `PS2X_IOP_NATIVE=0` turns all replacements off, a comma separated list of names turns on only those.
+
+### Verifying a replacement
+
+`PS2X_IOP_VERIFY=1` (the first `PS2X_IOP_VERIFY_FIRST` calls of each replacement, default 64, then every `PS2X_IOP_VERIFY_EVERY`-th, 256):
+
+1. the original runs first, as the interpreter runs it, for real, with RAM before and after kept; the imports the module's code calls
+   happen once and are logged (arguments, results, and the RAM each one changed);
+2. RAM goes back, the replacement runs, and the module's imports are answered from the log (a different import, other arguments or a
+   different order is a difference);
+3. the two are compared: all of RAM, the registers the ABI keeps (v0 only for a function that returns something, s0 to s7, gp, sp, fp,
+   ra), where the function returns, and the import sequence. The stack below the entry stack pointer and the 16 bytes of argument home
+   area above it are dead after the return and left out;
+4. the original's state is what continues, so a verified run is the same run as one without replacements.
+
+Differences are reported as `[iop:verify] MISMATCH <function> (call N); ...` and a summary per function (calls, verified, mismatches,
+the original's average instruction count) every five seconds of IOP time. A function that blocks (the original yields) is counted as not
+verifiable and runs as the original that time.
+
+First gate (2026-10-27): `timer_handler` (interrupt context, one import), `ClearMidiTrack`, `ClearWaveTrack`, `AddFilePutPos`,
+`AddRequestPutPos` and `CmdMidiOpen` (three `strcpy` imports) through the title, a new game and the movie start: 0 mismatches in
+every verified call.
