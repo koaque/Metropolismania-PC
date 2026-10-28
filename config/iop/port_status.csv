@@ -1,0 +1,115 @@
+name,offset,words,executed,share,state
+timer_handler,0x00000,26,26,100%,ported; all of the original's code seen by the verifier
+start_timer,0x00068,26,19,73%,ported; part of the original's code seen
+stop_timer,0x000D0,33,22,67%,ported; part of the original's code seen
+clear_timer,0x00154,34,24,71%,ported; part of the original's code seen
+set_timer,0x001DC,83,59,71%,ported; part of the original's code seen
+start_load_timer,0x00328,26,19,73%,ported; part of the original's code seen
+stop_load_timer,0x00390,33,22,67%,ported; part of the original's code seen
+clear_load_timer,0x00414,34,24,71%,ported; part of the original's code seen
+set_load_timer,0x0049C,83,59,71%,ported; part of the original's code seen
+metaMsgCB,0x005E8,16,16,100%,ported; all of the original's code seen by the verifier
+repeatCB,0x00628,16,0,0%,ported; never reached under the verifier
+set_module_context,0x00668,325,325,100%,ported; all of the original's code seen by the verifier
+set_midi,0x00B7C,176,169,96%,ported; part of the original's code seen
+set_hsyn,0x00E3C,145,138,95%,ported; part of the original's code seen
+set_sein,0x01080,26,19,73%,ported; part of the original's code seen
+SendDataForEE,0x010E8,47,45,96%,ported; part of the original's code seen
+OpenFileIOP,0x011A4,125,68,54%,ported; part of the original's code seen
+CloseFileIOP,0x01398,20,20,100%,ported; all of the original's code seen by the verifier
+OpenFileSPU,0x013E8,240,152,63%,ported; part of the original's code seen
+CloseFileSPU,0x017A8,24,21,88%,ported; part of the original's code seen
+OpenJointFile,0x01808,144,98,68%,ported; part of the original's code seen
+CloseJointFile,0x01A48,61,52,85%,ported; part of the original's code seen
+set_spu2,0x01B3C,110,102,93%,ported; part of the original's code seen
+GetWavePlayID,0x01CF4,37,34,92%,ported; part of the original's code seen
+ClearMidiTrack,0x01D88,21,21,100%,ported; all of the original's code seen by the verifier
+ClearWaveTrack,0x01DDC,24,24,100%,ported; all of the original's code seen by the verifier
+Wave_isInPlay,0x01E3C,67,64,96%,ported; part of the original's code seen
+Midi_isInPlay,0x01F48,36,31,86%,ported; part of the original's code seen
+MidiPlayNow,0x01FD8,96,66,69%,ported; part of the original's code seen
+WavePlayNow,0x02158,79,69,87%,ported; part of the original's code seen
+MidiStopNow,0x02294,33,33,100%,ported; all of the original's code seen by the verifier
+WaveStopNow,0x02318,56,56,100%,ported; all of the original's code seen by the verifier
+MidiFader,0x023F8,124,96,77%,ported; part of the original's code seen
+WaveVolumeFader,0x025E8,299,225,75%,ported; part of the original's code seen
+WavePitchFader,0x02A94,183,145,79%,ported; part of the original's code seen
+MidiLoop,0x02D70,64,0,0%,ported; never reached under the verifier
+WaveLoop,0x02E70,72,70,97%,ported; part of the original's code seen
+MidiIdle,0x02F90,123,117,95%,ported; part of the original's code seen
+WaveIdle,0x0317C,104,102,98%,ported; part of the original's code seen
+VoiceIdle,0x0331C,369,351,95%,ported; part of the original's code seen
+UseHD,0x038E0,56,56,100%,ported; all of the original's code seen by the verifier
+atick,0x039C0,98,87,89%,ported; part of the original's code seen
+Load_atick,0x03B48,36,25,69%,ported; part of the original's code seen
+EndAllThread,0x03BD8,62,39,63%,ported; part of the original's code seen
+CmdInit,0x03CD0,18,18,100%,ported; all of the original's code seen by the verifier
+CmdTerm,0x03D18,70,70,100%,ported; all of the original's code seen by the verifier
+ReportFileRequestList,0x03E30,37,0,0%,ported; never reached under the verifier
+AddFilePutPos,0x03EC4,43,34,79%,ported; part of the original's code seen
+AddRequestPutPos,0x03F70,60,60,100%,ported; all of the original's code seen by the verifier
+AddFileGetPos,0x04060,22,20,91%,ported; part of the original's code seen
+AddRequestGetPos,0x040B8,121,84,69%,ported; part of the original's code seen
+CmdMidiOpen,0x0429C,176,154,88%,ported; part of the original's code seen
+CmdSqOpen,0x0455C,183,151,83%,ported; part of the original's code seen
+CmdWaveOpen,0x04838,177,155,88%,ported; part of the original's code seen
+CmdMidiClose,0x04AFC,175,169,97%,ported; part of the original's code seen
+CmdWaveClose,0x04DB8,181,175,97%,ported; part of the original's code seen
+CmdCopyJointSPU,0x0508C,104,101,97%,ported; part of the original's code seen
+CmdClearJointSPU,0x0522C,104,94,90%,ported; part of the original's code seen
+CmdMidiPlay,0x053CC,273,220,81%,ported; part of the original's code seen
+CmdWavePlay,0x05810,374,370,99%,ported; part of the original's code seen
+CmdMidiStop,0x05DE8,112,109,97%,ported; part of the original's code seen
+CmdWaveStop,0x05FA8,112,112,100%,ported; all of the original's code seen by the verifier
+CmdMidiSetVolume,0x06168,159,156,98%,ported; part of the original's code seen
+CmdWaveSetVolume,0x063E4,191,182,95%,ported; part of the original's code seen
+CmdMidiSetTempo,0x066E0,135,126,93%,ported; part of the original's code seen
+CmdWaveSetPitch,0x068FC,153,150,98%,ported; part of the original's code seen
+CmdMidiFade,0x06B60,134,128,96%,ported; part of the original's code seen
+CmdWaveFade,0x06D78,156,150,96%,ported; part of the original's code seen
+CmdWavePitchFade,0x06FE8,167,138,83%,ported; part of the original's code seen
+CmdMidiSetTrackVolume,0x07284,154,142,92%,ported; part of the original's code seen
+CmdWaveSetTrackVolume,0x074EC,144,119,83%,ported; part of the original's code seen
+CmdVoiceFile,0x0772C,46,46,100%,ported; all of the original's code seen by the verifier
+CmdVoicePlay,0x077E4,912,704,77%,ported; part of the original's code seen
+RunMidiOpen,0x08624,214,176,82%,ported; part of the original's code seen
+RunSqOpen,0x0897C,112,100,89%,ported; part of the original's code seen
+RunWaveOpen,0x08B3C,206,175,85%,ported; part of the original's code seen
+RunMidiClose,0x08E74,110,105,95%,ported; part of the original's code seen
+RunWaveClose,0x0902C,109,96,88%,ported; part of the original's code seen
+RunMidiPlay,0x091E0,193,159,82%,ported; part of the original's code seen
+RunWavePlay,0x094E4,465,375,81%,ported; part of the original's code seen
+RunMidiStop,0x09C28,121,104,86%,ported; part of the original's code seen
+RunWaveStop,0x09E0C,124,114,92%,ported; part of the original's code seen
+RunMidiFStop,0x09FFC,55,55,100%,ported; all of the original's code seen by the verifier
+RunWaveFStop,0x0A0D8,55,55,100%,ported; all of the original's code seen by the verifier
+RunMidiSetVolume,0x0A1B4,133,95,71%,ported; part of the original's code seen
+RunWaveSetVolume,0x0A3C8,205,184,90%,ported; part of the original's code seen
+RunMidiFade,0x0A6FC,67,57,85%,ported; part of the original's code seen
+RunWaveFade,0x0A808,79,69,87%,ported; part of the original's code seen
+RunWavePitchFade,0x0A944,58,51,88%,ported; part of the original's code seen
+RunMidiSetTempo,0x0AA2C,155,108,70%,ported; part of the original's code seen
+RunWaveSetPitch,0x0AC98,174,140,80%,ported; part of the original's code seen
+RunMidiSetTVolume,0x0AF50,46,43,93%,ported; part of the original's code seen
+RunWaveSetTVolume,0x0B008,67,57,85%,ported; part of the original's code seen
+RunVoicePlay,0x0B114,124,120,97%,ported; part of the original's code seen
+RunCopyJointSPU,0x0B304,345,215,62%,ported; part of the original's code seen
+RunClearJointSPU,0x0B868,119,87,73%,ported; part of the original's code seen
+RunCommand,0x0BA44,381,367,96%,ported; part of the original's code seen
+CmdMidiGetVolume,0x0C038,36,29,81%,ported; part of the original's code seen
+CmdWaveGetVolume,0x0C0C8,43,43,100%,ported; all of the original's code seen by the verifier
+CmdSetCheckID,0x0C174,26,26,100%,ported; all of the original's code seen by the verifier
+AddRequest,0x0C1DC,285,253,89%,ported; part of the original's code seen
+soundFunc,0x0C650,168,151,90%,ported; part of the original's code seen
+sce_ee_loop,0x0C8F0,39,30,77%,ported; part of the original's code seen
+make_Timer_thread,0x0C98C,27,27,100%,ported; all of the original's code seen by the verifier
+make_EE_thread,0x0C9F8,27,27,100%,ported; all of the original's code seen by the verifier
+make_Load_thread,0x0CA64,27,27,100%,ported; all of the original's code seen by the verifier
+StartTimerThread,0x0CAD0,50,36,72%,ported; part of the original's code seen
+StartEEThread,0x0CB98,34,27,79%,ported; part of the original's code seen
+StartLoadThread,0x0CC20,50,36,72%,ported; part of the original's code seen
+NewSPUMemory,0x0CCE8,185,169,91%,ported; part of the original's code seen
+DeleteSPUMemory,0x0CFCC,202,142,70%,ported; part of the original's code seen
+BuffInit,0x0D2F4,323,323,100%,ported; all of the original's code seen by the verifier
+Init,0x0D800,46,46,100%,ported; all of the original's code seen by the verifier
+start,0x0D8B8,27,27,100%,ported; all of the original's code seen by the verifier

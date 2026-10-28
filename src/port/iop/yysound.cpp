@@ -765,6 +765,7 @@ namespace iop::yysound
     // One step of the wave track's left and right volume fades; sets the volume of each voice the track plays on, or stops it when both reach 0.
     void WaveVolumeFader(BYTE track, IopPtr<ST_WAVE_TRACK> pWT)
     {
+        Frame stack(frame::WaveVolumeFader); // WaveStopNow's frame sits below this one, as in the original
         if (pWT->lstep == 0 && pWT->rstep == 0)
             return;
         if (pWT->lstep != 0)
@@ -2959,6 +2960,383 @@ namespace iop::yysound
         StartLoadThread();
         return 0;
     }
+
+    // ---- the requests that load files: run by the load thread, where the reads and the transfers to the SPU can put the thread to sleep
+
+    // Opens a MIDI file in steps, one per call (the request keeps its step in `process`): the sequence file, the instrument header, then the
+    // sound data into SPU memory, which OpenFileSPU does a block at a time. -4: not done yet, call again.
+    int32_t RunMidiOpen(int32_t fno, IopPtr<ST_COMMAND_ONE> pCO)
+    {
+        Frame stack(frame::RunMidiOpen);
+        int32_t ret = -4;
+        ee_put[4] = pCO->id;
+        if (pCO->fileNo != mFileList->GetPos)
+            return -4;
+        const IopPtr<ST_MIDI_FILE> pMF = mMidiFile.at(fno);
+        const BYTE fileNo = pCO->fileNo;
+        const uint32_t entry = mFileList.address + static_cast<uint32_t>(offsetof(ST_FILE_LIST, list)) + fileNo * static_cast<uint32_t>(sizeof(ST_FILE_ONE));
+        const BYTE process = pCO->process;
+        if (process == 1)
+        {
+            if (mLoadPause != 1)
+            {
+                mMidiFile[fno].hd_addr = static_cast<int32_t>(OpenFileIOP(IopPtr<char>{entry + static_cast<uint32_t>(offsetof(ST_FILE_ONE, HDname))}));
+                if (mMidiFile[fno].hd_addr == 0)
+                {
+                    CloseFileIOP(static_cast<UINT>(mMidiFile[fno].sq_addr));
+                    ret = -2;
+                }
+                else
+                {
+                    pCO->process = static_cast<BYTE>(pCO->process + 1);
+                }
+            }
+        }
+        else if (process < 2)
+        {
+            if (process == 0 && mLoadPause != 1)
+            {
+                mMidiFile[fno].sq_addr = static_cast<int32_t>(OpenFileIOP(IopPtr<char>{entry + static_cast<uint32_t>(offsetof(ST_FILE_ONE, SQname))}));
+                if (mMidiFile[fno].sq_addr == 0)
+                    ret = -2;
+                else
+                    pCO->process = static_cast<BYTE>(pCO->process + 1);
+            }
+        }
+        else if (process == 2)
+        {
+            const int32_t spuadr = OpenFileSPU(IopPtr<char>{entry + static_cast<uint32_t>(offsetof(ST_FILE_ONE, BDname))});
+            if (spuadr == -1)
+            {
+                CloseFileIOP(static_cast<UINT>(mMidiFile[fno].hd_addr));
+                CloseFileIOP(static_cast<UINT>(mMidiFile[fno].sq_addr));
+                ret = -2;
+            }
+            else if (spuadr != 0)
+            {
+                mMidiFile[fno].bd_addr = spuadr;
+                pMF->open = pMF->open | 1;
+                ret = 0;
+            }
+        }
+        if (ret != -4)
+        {
+            AddFileGetPos();
+            pCO->process = 0;
+        }
+        if (ret == -2)
+            pMF->open = 0;
+        return ret;
+    }
+
+    // Opens a wave file in steps (the header, then the sound data into SPU memory or, for a joint file, the index): as RunMidiOpen.
+    int32_t RunWaveOpen(int32_t fno, IopPtr<ST_COMMAND_ONE> pCO)
+    {
+        Frame stack(frame::RunWaveOpen);
+        int32_t ret = -4;
+        ee_put[4] = pCO->id;
+        if (pCO->fileNo != mFileList->GetPos)
+            return -4;
+        const IopPtr<ST_WAVE_FILE> pWF = mWaveFile.at(fno);
+        const BYTE fileNo = pCO->fileNo;
+        const uint32_t entry = mFileList.address + static_cast<uint32_t>(offsetof(ST_FILE_LIST, list)) + fileNo * static_cast<uint32_t>(sizeof(ST_FILE_ONE));
+        const BYTE process = pCO->process;
+        if (process == 1)
+        {
+            const int32_t spuadr = OpenFileSPU(IopPtr<char>{entry + static_cast<uint32_t>(offsetof(ST_FILE_ONE, BDname))});
+            if (spuadr == -1)
+            {
+                CloseFileIOP(static_cast<UINT>(mWaveFile[fno].hd_addr));
+                ret = -2;
+            }
+            else if (spuadr != 0)
+            {
+                mWaveFile[fno].bd_addr = spuadr;
+                mWaveFile[fno].index = IopPtr<UINT>{0};
+                pWF->open = pWF->open | 1;
+                ret = 0;
+            }
+        }
+        else if (process < 2)
+        {
+            if (process == 0)
+            {
+                mWaveFile[fno].hd_addr = static_cast<int32_t>(OpenFileIOP(IopPtr<char>{entry + static_cast<uint32_t>(offsetof(ST_FILE_ONE, HDname))}));
+                if (mWaveFile[fno].hd_addr == 0)
+                    ret = -2;
+                else if (mFileList->list[fileNo].type == 1)
+                    pCO->process = 2;
+                else
+                    pCO->process = 1;
+            }
+        }
+        else if (process == 2)
+        {
+            if (OpenJointFile(IopPtr<char>{entry + static_cast<uint32_t>(offsetof(ST_FILE_ONE, BDname))}, pWF) == -1)
+            {
+                CloseFileIOP(static_cast<UINT>(mWaveFile[fno].hd_addr));
+                ret = -2;
+            }
+            else
+            {
+                pWF->open = pWF->open | 1;
+                ret = 0;
+            }
+        }
+        if (ret != -4)
+        {
+            AddFileGetPos();
+            pCO->process = 0;
+        }
+        if (ret == -2)
+            pWF->open = 0;
+        return ret;
+    }
+
+    // Copies the sound data of the joint `pCO->jno` of a joint file into SPU memory (a block of 32 KB at a time through the transfer packet).
+    int32_t RunCopyJointSPU(int32_t fno, IopPtr<ST_COMMAND_ONE> pCO)
+    {
+        Frame stack(frame::RunCopyJointSPU);
+        const IopPtr<ST_WAVE_FILE> pWF = mWaveFile.at(fno);
+        if ((pWF->open & 1) == 0)
+        {
+            import::printf(str::T_T_yySound_ERROR_RunCopyJointSPU_NotOpen);
+            AddFileGetPos();
+            return -2;
+        }
+        const IopPtr<UINT> index = mWaveFile[fno].index;
+        if (!index)
+        {
+            import::printf(str::T_T_yySound_ERROR_RunCopyJointSPU_ModeError);
+            AddFileGetPos();
+            return -2;
+        }
+        if ((index[0] >> 2) - 2 < static_cast<uint32_t>(static_cast<int32_t>(pCO->jno)))
+        {
+            import::printf(str::T_T_yySound_ERROR_RunCopyJointSPU_JointNumberOver_d, static_cast<uint32_t>(static_cast<int32_t>(pCO->jno)));
+            AddFileGetPos();
+            return -2;
+        }
+        const UINT sadr = index[pCO->jno];
+        for (int32_t i = 0; i < 10; i++)
+        {
+            if (pWF->spu[i].spu_addr != 0 && pWF->spu[i].jno == pCO->jno)
+            {
+                AddFileGetPos();
+                return 0;
+            }
+        }
+        int32_t lno = -1;
+        for (int32_t i = 0; i < 10; i++)
+        {
+            if (pWF->spu[i].spu_addr == 0)
+            {
+                lno = i;
+                break;
+            }
+        }
+        if (lno == -1)
+        {
+            import::printf(str::T_T_yySound_ERROR_RunCopyJointSPU_KeepListFull);
+            AddFileGetPos();
+            return -2;
+        }
+        UINT size = (index[pCO->jno + 1] - sadr + 0x3F) & 0xFFFFFFC0u;
+        const UINT mem = NewSPUMemory(size);
+        if (mem == 0)
+        {
+            AddFileGetPos();
+            return -2;
+        }
+        import::lseek(mWaveFile[fno].bd_addr, static_cast<int32_t>(sadr), 0);
+        UINT cmem = mem;
+        UINT rsize;
+        while (size != 0 && (rsize = static_cast<UINT>(import::read(mWaveFile[fno].bd_addr, static_cast<uint32_t>(mSpuTransPacketAddr), 0x8000)), 0 < static_cast<int32_t>(rsize)))
+        {
+            if (size < rsize)
+            {
+                int32_t blocks = static_cast<int32_t>(size) + 0x3F;
+                if (blocks < 0)
+                    blocks = static_cast<int32_t>(size) + 0x7E;
+                rsize = static_cast<UINT>((blocks >> 6) << 6);
+            }
+            if (import::sceHSyn_VoiceTrans(0, static_cast<uint32_t>(mSpuTransPacketAddr), cmem, rsize) != 0)
+            {
+                import::printf(str::T_T_yySound_ERROR_CopyJointSPU_sceHSyn_VoisTrans);
+                DeleteSPUMemory(mem);
+                AddFileGetPos();
+                return -2;
+            }
+            cmem = cmem + rsize;
+            if (size < rsize)
+                size = 0;
+            else
+                size = size - rsize;
+        }
+        pWF->spu[lno].spu_addr = mem;
+        pWF->spu[lno].jno = pCO->jno;
+        AddFileGetPos();
+        return 0;
+    }
+
+    // Runs the oldest request of each command list (the 16 files', then the last): the ones for the play and track functions in `mode` 0 (timer
+    // thread), the ones for the files in `mode` 1 (load thread). A request that is not done (-4) stays where it is; one that is done is taken off the
+    // list. 1 when one was.
+    BYTE RunCommand(BYTE mode)
+    {
+        Frame stack(frame::RunCommand);
+        BYTE reqCount = 0;
+        for (int32_t i = 0; i <= 0x10; i++)
+        {
+            const IopPtr<ST_COMMAND_LIST> pCL = mCommandList.at(i);
+            const IopPtr<ST_COMMAND_ONE> pCO{pCL.address + static_cast<uint32_t>(offsetof(ST_COMMAND_LIST, list)) + pCL->GetPos * static_cast<uint32_t>(sizeof(ST_COMMAND_ONE))};
+            if (pCL->GetPos == mCommandList[i].PutPos)
+                continue;
+            int32_t ret = -4;
+            if (mode == 0)
+            {
+                switch (pCO->command)
+                {
+                case 0x2010: ret = RunWavePlay(i, pCO); break;
+                case 0x1020: ret = RunMidiSetVolume(pCO); break;
+                case 0x1011: ret = RunMidiStop(pCO, 1); break;
+                case 0x1010: ret = RunMidiPlay(i - 8, pCO); break;
+                case 0x1012: ret = RunMidiFStop(i - 8, pCO); break;
+                case 0x1025: ret = RunMidiSetTVolume(pCO); break;
+                case 0x1021: ret = RunMidiFade(pCO); break;
+                case 0x1026: ret = RunMidiSetTempo(pCO); break;
+                case 0x2021: ret = RunWaveFade(pCO); break;
+                case 0x2012: ret = RunWaveFStop(i, pCO); break;
+                case 0x2011: ret = RunWaveStop(pCO, 1); break;
+                case 0x2020: ret = RunWaveSetVolume(pCO); break;
+                case 0x2024: ret = RunWavePitchFade(pCO); break;
+                case 0x2022: ret = RunWaveSetPitch(pCO); break;
+                case 0x2025: ret = RunWaveSetTVolume(pCO); break;
+                case 0x2101: ret = RunVoicePlay(pCO); break;
+                default: break;
+                }
+            }
+            else
+            {
+                switch (pCO->command)
+                {
+                case 0x2002: ret = RunSqOpen(i - 8, pCO); break;
+                case 0x1003: ret = RunMidiClose(i - 8, pCO); break;
+                case 0x1001: ret = RunMidiOpen(i - 8, pCO); break;
+                case 0x2001: ret = RunWaveOpen(i, pCO); break;
+                case 0x2200: ret = RunCopyJointSPU(i, pCO); break;
+                case 0x2003: ret = RunWaveClose(i, pCO); break;
+                case 0x2201: ret = RunClearJointSPU(i, pCO); break;
+                default: break;
+                }
+            }
+            if (ret != -4)
+            {
+                AddRequestGetPos(pCL, pCO, ret, static_cast<BYTE>(i));
+                reqCount = 1;
+            }
+        }
+        return reqCount;
+    }
+
+    // ---- the thread bodies
+
+    namespace offset
+    {
+        // The code after the `jal SleepThread` (and its delay slot) of the two timer threads: where they go on when they are woken.
+        inline constexpr uint32_t atick_resume = 0x39F0;
+        inline constexpr uint32_t Load_atick_resume = 0x3B74;
+    }
+
+    // Ends a thread body: the thread sleeps (a jump to the SleepThread stub, as the original's jal) and goes on at `resumeOffset` when it is woken.
+    inline void sleepUntilWoken(uint32_t resumeOffset)
+    {
+        setReg(31, kBase + resumeOffset);
+        jump(kBase + stub::SleepThread);
+    }
+
+    // The timer thread's entry: it sleeps until the hard timer's handler wakes it (every tick).
+    void atick()
+    {
+        Frame stack(frame::atick);
+        stack.keep();
+        store<uint32_t>(stack.address(frame::atick - 4), reg(31));
+        store<uint32_t>(stack.address(frame::atick - 8), reg(30));
+        setReg(30, reg(29));
+        mTCount = 0;
+        sleepUntilWoken(offset::atick_resume);
+    }
+
+    // One tick of the sound: the idle loops of the voices, MIDI and wave tracks, the requests of the timer thread, the data for the EE, then the
+    // modules' own ticks. Then it sleeps again.
+    void atick_resume()
+    {
+        const Frame stack(Frame::Resumed{}, frame::atick);
+        if (mSoundEnable != 0 && mBusy == 0)
+        {
+            mBusy = 2;
+            // (each result is taken before m_SendSw is read: the functions set it too)
+            BYTE changed = VoiceIdle();
+            m_SendSw = m_SendSw | changed;
+            changed = MidiIdle();
+            m_SendSw = m_SendSw | changed;
+            changed = WaveIdle();
+            m_SendSw = m_SendSw | changed;
+            changed = RunCommand(0);
+            m_SendSw = m_SendSw | changed;
+            SendDataForEE();
+            mBusy = mBusy & 5;
+        }
+        import::sceSEIn_ATick(seinCtx.ptr());
+        const IopPtr<int32_t> oldstat{stack.local(local::atick::oldstat)};
+        import::CpuSuspendIntr(oldstat);
+        import::sceMidi_ATick(midiCtx.ptr());
+        import::sceHSyn_ATick(synthCtx.ptr());
+        import::CpuResumeIntr(*oldstat);
+        sleepUntilWoken(offset::atick_resume);
+    }
+
+    // The load thread's entry: it sleeps until the hard timer's handler wakes it.
+    void Load_atick()
+    {
+        Frame stack(frame::Load_atick);
+        stack.keep();
+        store<uint32_t>(stack.address(frame::Load_atick - 4), reg(31));
+        store<uint32_t>(stack.address(frame::Load_atick - 8), reg(30));
+        setReg(30, reg(29));
+        sleepUntilWoken(offset::Load_atick_resume);
+    }
+
+    // One wake of the load thread: when the timer thread is not at work, runs the file requests. Then it sleeps again.
+    void Load_atick_resume()
+    {
+        const Frame stack(Frame::Resumed{}, frame::Load_atick);
+        if (mBusy == 0)
+        {
+            const BYTE changed = RunCommand(1);
+            m_SendSw = m_SendSw | changed;
+        }
+        sleepUntilWoken(offset::Load_atick_resume);
+    }
+
+    // The EE thread: registers the sound function as the RPC server and serves for ever (the thread then sleeps in sceSifRpcLoop).
+    void sce_ee_loop()
+    {
+        Frame stack(frame::sce_ee_loop);
+        stack.keep();
+        store<uint32_t>(stack.address(frame::sce_ee_loop - 4), reg(31));
+        store<uint32_t>(stack.address(frame::sce_ee_loop - 8), reg(30));
+        setReg(30, reg(29));
+        const IopPtr<_sif_queue_data> qd{stack.local(local::sce_ee_loop::qd)};
+        const IopPtr<_sif_serve_data> sd{stack.local(local::sce_ee_loop::sd)};
+        import::sceSifInitRpc(0);
+        const int32_t thread = import::GetThreadId();
+        import::sceSifSetRpcQueue(qd, thread);
+        import::sceSifRegisterRpc(sd, 0x12346, code(offset::soundFunc), gRpcArg.address, 0, 0, qd);
+        setReg(4, qd.address);
+        setReg(31, kBase + 0xC968); // the original's return address after the call; the loop does not return
+        jump(kBase + stub::sceSifRpcLoop);
+    }
 }
 
 IOP_FN(yysound, timer_handler)
@@ -3067,3 +3445,13 @@ IOP_FN(yysound, StartEEThread)
 IOP_FN(yysound, StartLoadThread)
 IOP_FN(yysound, Init)
 IOP_FN(yysound, start)
+IOP_FN_BLOCKING(yysound, OpenFileSPU)
+IOP_FN_BLOCKING(yysound, RunMidiOpen)
+IOP_FN_BLOCKING(yysound, RunWaveOpen)
+IOP_FN_BLOCKING(yysound, RunCopyJointSPU)
+IOP_FN_BLOCKING(yysound, RunCommand)
+IOP_FN_THREAD(yysound, atick, stub::SleepThread, false)
+IOP_FN_THREAD(yysound, atick_resume, stub::SleepThread, true)
+IOP_FN_THREAD(yysound, Load_atick, stub::SleepThread, false)
+IOP_FN_THREAD(yysound, Load_atick_resume, stub::SleepThread, true)
+IOP_FN_THREAD(yysound, sce_ee_loop, stub::sceSifRpcLoop, false)

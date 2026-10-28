@@ -1,10 +1,10 @@
-Native replacements of IOP module functions (plan P5, the readable port of YYSOUND). ps2x/iop/iop_native.h: NativeContext, the interface a replacement sees (registers, IOP RAM as host memory, callGuest for imports and unported functions, jump for a tail call such as a thread body's SleepThread, charge for IOP time). IopSubsystem::registerNativeModule and registerNative: functions are registered by offset in a module's image and take effect only when the module loads with the image whose hash was registered. IopEmulator: a table checked in step() next to the import stubs; PS2X_IOP_NATIVE=0|names turns replacements off or selects them; PS2X_IOP_VERIFY=1 runs the original first (its imports happen once and are logged with the RAM they change), rolls RAM back, runs the replacement with the module's imports answered from the log, and compares RAM (the dead stack and argument home area excepted), the registers the ABI keeps, the import sequence and the return, then continues from the original's state; PS2X_IOP_DUMP_MODULES=<dir> writes the loaded image of a module with replacements. IopMemory::ramData and PS2Runtime::iopSubsystem give the port access.
+Native replacements of IOP module functions (plan P5, the readable port of YYSOUND). ps2x/iop/iop_native.h: NativeContext, the interface a replacement sees (registers, IOP RAM as host memory, callGuest for imports and unported functions, jump for a tail call such as a thread body's SleepThread, charge for IOP time). IopSubsystem::registerNativeModule and registerNative: functions are registered by offset in a module's image and take effect only when the module loads with the image whose hash was registered. IopEmulator: a table checked in step() next to the import stubs; PS2X_IOP_NATIVE=0|names turns replacements off or selects them; PS2X_IOP_VERIFY=1 runs the original first (its imports happen once and are logged with the RAM they change), rolls RAM back, runs the replacement with the module's imports answered from the log, and compares RAM (the dead stack and argument home area excepted), the registers the ABI keeps, the import sequence and the return, then continues from the original's state; PS2X_IOP_DUMP_MODULES=<dir> writes the loaded image of a module with replacements. IopMemory::ramData and PS2Runtime::iopSubsystem give the port access. Blocking: a function registered with mayBlock runs on a host fiber (one per IOP thread); when guest code it called puts the thread to sleep, callFunction parks the fiber with the function's C++ frames intact, the scheduler runs other threads and, when the thread is ready again, switches back into the fiber, which carries on from where the guest code slept. The call stacks of callFunction are taken from a pool (callSlots) instead of by depth, so a parked call keeps its stack. A function that ends by jumping to an import stub (a thread body going to SleepThread or sceSifRpcLoop) gives its parkStub, which is where the verifier compares it. currentNativeContext() gives the context of the running native, kept right across nested natives and fiber switches. IopKernel::currentThread gives the running thread. Test aids of the verifier: PS2X_IOP_COVERAGE (the words of the module the original executed in verified calls), PS2X_IOP_COVERAGE_ALL (every word that runs), PS2X_IOP_PROBE (commands injected into the sound function) with PS2X_IOP_VERIFY_ALL, PS2X_IOP_TRACE_NATIVE (calls logged) and PS2X_IOP_DUMP_IMPORTS (the original's imports at a mismatch). Import effects replayed in whole words; the instructions run inside the imports are counted so that a replacement's cost excludes them; IopSubsystem::registerVerifyIgnore leaves given RAM out of the comparison after a call of a named replacement.
 
 diff --git a/ps2xIOP/include/ps2x/iop/iop_native.h b/ps2xIOP/include/ps2x/iop/iop_native.h
 new file mode 100644
 --- /dev/null
 +++ b/ps2xIOP/include/ps2x/iop/iop_native.h
-@@ -0,0 +1,40 @@
+@@ -0,0 +1,44 @@
 +#pragma once
 +
 +#include <cstdint>
@@ -44,6 +44,10 @@ new file mode 100644
 +    };
 +
 +    using NativeFunction = void (*)(NativeContext &);
++
++    // The context of the native function that is running now (null when none). The emulator keeps it right when a function calls guest code
++    // that runs another native, and when a function that went to sleep (see IopSubsystem::registerNative, mayBlock) is resumed.
++    NativeContext *currentNativeContext() noexcept;
 +}
 diff --git a/ps2xIOP/include/ps2x/iop/iop_subsystem.h b/ps2xIOP/include/ps2x/iop/iop_subsystem.h
 --- a/ps2xIOP/include/ps2x/iop/iop_subsystem.h
@@ -56,7 +60,7 @@ diff --git a/ps2xIOP/include/ps2x/iop/iop_subsystem.h b/ps2xIOP/include/ps2x/iop
  #include "ps2x/iop/iop_types.h"
  
  #include <memory>
-@@ -45,6 +46,18 @@ namespace ps2x::iop
+@@ -45,6 +46,21 @@ namespace ps2x::iop
  
          [[nodiscard]] DebugSnapshot debugSnapshot() const;
  
@@ -70,7 +74,10 @@ diff --git a/ps2xIOP/include/ps2x/iop/iop_subsystem.h b/ps2xIOP/include/ps2x/iop
 +        // replacement and compares (PS2X_IOP_VERIFY_FIRST and PS2X_IOP_VERIFY_EVERY say which calls).
 +        void registerNativeModule(const char *module, uint64_t imageHash, uint32_t imageSize);
 +        void registerNative(const char *module, uint32_t offset, NativeFunction function, const char *name, uint32_t typicalCost, bool hasResult,
-+                            uint32_t parkStub = 0);
++                            uint32_t parkStub = 0, bool mayBlock = false);
++        // RAM the verifier does not compare after a call of the named replacement (module image offset, size): bytes the original takes from
++        // uninitialized stack, which a replacement cannot reproduce (see docs/IOP.md).
++        void registerVerifyIgnore(const char *module, const char *name, uint32_t offset, uint32_t size);
 +
      private:
          class Impl;
@@ -78,7 +85,7 @@ diff --git a/ps2xIOP/include/ps2x/iop/iop_subsystem.h b/ps2xIOP/include/ps2x/iop
 diff --git a/ps2xIOP/src/iop_subsystem.cpp b/ps2xIOP/src/iop_subsystem.cpp
 --- a/ps2xIOP/src/iop_subsystem.cpp
 +++ b/ps2xIOP/src/iop_subsystem.cpp
-@@ -174,6 +174,17 @@ namespace ps2x::iop
+@@ -174,6 +174,22 @@ namespace ps2x::iop
          return m_impl->emulator.pullAudio(stereo, frames);
      }
  
@@ -88,9 +95,14 @@ diff --git a/ps2xIOP/src/iop_subsystem.cpp b/ps2xIOP/src/iop_subsystem.cpp
 +    }
 +
 +    void IopSubsystem::registerNative(const char *module, uint32_t offset, NativeFunction function, const char *name, uint32_t typicalCost, bool hasResult,
-+                                      uint32_t parkStub)
++                                      uint32_t parkStub, bool mayBlock)
 +    {
-+        m_impl->emulator.registerNative(module, offset, function, name, typicalCost, hasResult, parkStub);
++        m_impl->emulator.registerNative(module, offset, function, name, typicalCost, hasResult, parkStub, mayBlock);
++    }
++
++    void IopSubsystem::registerVerifyIgnore(const char *module, const char *name, uint32_t offset, uint32_t size)
++    {
++        m_impl->emulator.registerVerifyIgnore(module, name, offset, size);
 +    }
 +
      RpcAbi IopSubsystem::selectRpcAbi(const RpcAbiRequest &request) const
@@ -107,14 +119,15 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.h b/ps2xIOP/src/emulator/iop_emul
  #include "ps2x/iop/iop_types.h"
  
  #include <cstdint>
-@@ -31,6 +32,11 @@ namespace ps2x::iop::detail
+@@ -31,6 +32,12 @@ namespace ps2x::iop::detail
          [[nodiscard]] bool hasRpcServer(uint32_t sid) const noexcept;
          void onSifTransfer(const SifTransfer &transfer);
  
 +        // Native replacements of module functions (ps2x/iop/iop_subsystem.h)
 +        void registerNativeModule(const char *module, uint64_t imageHash, uint32_t imageSize);
 +        void registerNative(const char *module, uint32_t offset, NativeFunction function, const char *name, uint32_t typicalCost, bool hasResult,
-+                            uint32_t parkStub);
++                            uint32_t parkStub, bool mayBlock);
++        void registerVerifyIgnore(const char *module, const char *name, uint32_t offset, uint32_t size);
 +
          [[nodiscard]] uint32_t allocateMemory(uint32_t size, uint32_t alignment = 16u);
          [[nodiscard]] bool freeMemory(uint32_t address);
@@ -122,7 +135,7 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.h b/ps2xIOP/src/emulator/iop_emul
 diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_emulator.cpp
 --- a/ps2xIOP/src/emulator/iop_emulator.cpp
 +++ b/ps2xIOP/src/emulator/iop_emulator.cpp
-@@ -19,11 +19,18 @@
+@@ -19,11 +19,48 @@
  
  #include <algorithm>
  #include <cctype>
@@ -130,7 +143,11 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +#include <cstdlib>
 +#include <cstring>
 +#include <deque>
++#include <exception>
++#include <fstream>
++#include <iomanip>
  #include <map>
++#include <memory>
  #include <optional>
  #include <span>
  #include <sstream>
@@ -138,10 +155,61 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +#include <unordered_map>
  #include <utility>
 +#include <vector>
++
++#if defined(_WIN32)
++#ifndef NOMINMAX
++#define NOMINMAX
++#endif
++#ifndef WIN32_LEAN_AND_MEAN
++#define WIN32_LEAN_AND_MEAN
++#endif
++#ifndef NOGDI
++#define NOGDI
++#endif
++#include <windows.h>
++#endif
++
++namespace ps2x::iop
++{
++    namespace
++    {
++        NativeContext *g_currentNativeContext = nullptr;
++    }
++
++    NativeContext *currentNativeContext() noexcept
++    {
++        return g_currentNativeContext;
++    }
++}
  
  namespace ps2x::iop::detail
  {
-@@ -111,6 +118,7 @@ namespace ps2x::iop::detail
+@@ -36,7 +73,12 @@ namespace ps2x::iop::detail
+         constexpr uint32_t kCallStackLimit = 0x001FFF00u;
+         constexpr uint32_t kCallStackSize = 0x2000u;
+         constexpr uint32_t kCallStackCapacity = (kCallStackLimit - kCallStackBase) / kCallStackSize;
++        static_assert(kCallStackCapacity <= 32u, "callSlots is a bit mask of the call stacks");
+         constexpr uint64_t kCdvdCompletionCycles = 128u;
++#if defined(_WIN32)
++        constexpr SIZE_T kNativeFiberCommit = 64u << 10;
++        constexpr SIZE_T kNativeFiberReserve = 1u << 20;
++#endif
+ 
+         uint32_t physicalAddress(uint32_t address)
+         {
+@@ -93,6 +135,11 @@ namespace ps2x::iop::detail
+             uint32_t argument = 0u;
+         };
+ 
++        ~Impl() override
++        {
++            destroyNativeFibers();
++        }
++
+         explicit Impl(IopHost &hostRef)
+             : host(hostRef),
+               sysmem(host, memory),
+@@ -111,6 +158,7 @@ namespace ps2x::iop::detail
                loadcore(memory, imports)
          {
              reset();
@@ -149,7 +217,13 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
          }
  
          void reset()
-@@ -139,6 +147,7 @@ namespace ps2x::iop::detail
+@@ -135,10 +183,12 @@ namespace ps2x::iop::detail
+             lastError.clear();
+             servicingDmaInterrupts = false;
+             servicingGuestCallbacks = false;
+-            callDepth = 0u;
++            destroyNativeFibers();
++            callSlots = 0u;
              secrMcCommandHandler = {};
              secrMcDevIdHandler = {};
              checkKelfPathCallback = {};
@@ -157,7 +231,7 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
          }
  
          uint8_t read8(uint32_t address) const
-@@ -360,7 +369,8 @@ namespace ps2x::iop::detail
+@@ -360,7 +410,8 @@ namespace ps2x::iop::detail
              return ImportDisposition::Missing;
          }
  
@@ -167,11 +241,17 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
          {
              if (cpu.stopped)
                  return false;
-@@ -377,18 +387,54 @@ namespace ps2x::iop::detail
+@@ -377,18 +428,62 @@ namespace ps2x::iop::detail
                  cpu.stopped = true;
                  return false;
              }
 -            if (checkInterrupt(cpu))
++            if (!allCoverage.empty())
++            {
++                const uint32_t physical = physicalAddress(cpu.pc);
++                if (physical >= allCoverageBase && ((physical - allCoverageBase) >> 2) < allCoverage.size())
++                    allCoverage[(physical - allCoverageBase) >> 2] = 1u;
++            }
 +            if (!plain && checkInterrupt(cpu))
                  return true;
  
@@ -201,10 +281,12 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +                if (logging)
 +                {
 +                    open.record.stub = cpu.pc;
++                    open.record.sp = cpu.gpr[29];
 +                    for (unsigned i = 0; i < 4u; ++i)
 +                        open.record.args[i] = cpu.gpr[4 + i];
 +                    open.returnAddress = cpu.gpr[31];
 +                    open.stackPointer = cpu.gpr[29];
++                    open.instructionsAtOpen = totalInstructions;
 +                    open.before.assign(memory.ramData(), memory.ramData() + kRamSize);
 +                }
                  const ImportDisposition disposition = dispatchImport(*import, cpu);
@@ -223,7 +305,37 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
                  return !cpu.stopped;
              }
  
-@@ -456,8 +502,20 @@ namespace ps2x::iop::detail
+@@ -425,14 +520,24 @@ namespace ps2x::iop::detail
+                               uint32_t gp,
+                               uint32_t budget = kMaxCallInstructions)
+         {
+-            struct CallDepthGuard
++            // The call stacks are taken from a pool, not by depth: a call parked on a fiber keeps its stack while others come and go.
++            struct CallSlotGuard
+             {
+-                uint32_t &depth;
+-                ~CallDepthGuard() { --depth; }
++                uint32_t &slots;
++                uint32_t slot;
++                ~CallSlotGuard()
++                {
++                    if (slot < kCallStackCapacity)
++                        slots &= ~(1u << slot);
++                }
+             };
+ 
+-            const uint32_t depth = callDepth++;
+-            const CallDepthGuard depthGuard{callDepth};
++            uint32_t depth = 0u;
++            while (depth < kCallStackCapacity && (callSlots & (1u << depth)) != 0u)
++                ++depth;
++            if (depth < kCallStackCapacity)
++                callSlots |= 1u << depth;
++            const CallSlotGuard depthGuard{callSlots, depth};
+             CpuState cpu{};
+             cpu.pc = address;
+             cpu.gpr[4] = a0;
+@@ -456,8 +561,29 @@ namespace ps2x::iop::detail
              {
                  cpu.gpr[29] = kCallStackBase - 32u;
              }
@@ -232,19 +344,150 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +            pendingStackArguments.clear();
              cpu.gpr[31] = kCallReturnSentinel;
              runCpu(cpu, budget);
-+            if (nativeDepth != 0u && cpu.yielded && !cpu.stopped && cpu.pc != kCallReturnSentinel)
++            while (nativeDepth != 0u && cpu.yielded && !cpu.stopped && cpu.pc != kCallReturnSentinel)
 +            {
-+                // the thread went to sleep inside guest code that a native function called: its C++ frames cannot be kept (plan P5: fibers)
-+                std::ostringstream out;
-+                out << "[IOP] guest code called by a native function blocked the thread (entry 0x" << std::hex << address << ", now at 0x" << cpu.pc
-+                    << "); native functions that can block are not supported yet";
-+                log(LogLevel::Error, out.str());
-+                std::abort();
++                // the thread went to sleep inside guest code that a native function called
++                if (runningFiber == nullptr || servicingDmaInterrupts || servicingGuestCallbacks)
++                {
++                    // not on a fiber: the function's C++ frames cannot be kept
++                    std::ostringstream out;
++                    out << "[IOP] guest code called by a native function blocked the thread (entry 0x" << std::hex << address << ", now at 0x" << cpu.pc
++                        << "); a native function that can block has to be registered as one (mayBlock)";
++                    log(LogLevel::Error, out.str());
++                    std::abort();
++                }
++                // park the fiber (the frames of the native function and of this call stay as they are) until the thread is ready again, then go on
++                // with the guest code from where it went to sleep
++                parkRunningFiber();
++                cpu.yielded = false;
++                runCpu(cpu, budget);
 +            }
              return cpu.gpr[2];
          }
  
-@@ -649,6 +707,8 @@ namespace ps2x::iop::detail
+@@ -555,6 +681,89 @@ namespace ps2x::iop::detail
+             servicingGuestCallbacks = false;
+         }
+ 
++        void loadProbes()
++        {
++            probesLoaded = true;
++            std::ifstream file(probePath);
++            std::string line;
++            while (std::getline(file, line))
++            {
++                if (line.empty() || line[0] == '#')
++                    continue;
++                std::istringstream in(line);
++                double milliseconds = 0.0;
++                std::string command;
++                std::string data;
++                if (!(in >> milliseconds >> command))
++                    continue;
++                in >> data;
++                ProbeCommand probe;
++                probe.atCycle = static_cast<uint64_t>(milliseconds * 36864.0);
++                probe.command = static_cast<uint32_t>(std::strtoul(command.c_str(), nullptr, 16));
++                for (size_t i = 0; i + 1 < data.size(); i += 2)
++                    probe.data.push_back(static_cast<uint8_t>(std::strtoul(data.substr(i, 2).c_str(), nullptr, 16)));
++                probes.push_back(std::move(probe));
++            }
++            std::ostringstream out;
++            out << "[iop:probe] " << probes.size() << " command(s) loaded from " << probePath;
++            log(LogLevel::Info, out.str());
++        }
++
++        // Injects the probe commands that are due, from the scheduler (outside any thread, as the RPC bridge calls the sound function).
++        void serviceProbes()
++        {
++            if (probePath.empty())
++                return;
++            if (probesLoaded && nextProbe >= probes.size())
++            {
++                // everything injected and the verification window over: the coverage the probes gave
++                if (!probesFinished && probesStarted && totalCycles > verifyAllUntil)
++                {
++                    probesFinished = true;
++                    writeCoverage();
++                    log(LogLevel::Info, "[iop:probe] all commands injected and verified; coverage written");
++                }
++                return;
++            }
++            if (!probesLoaded)
++                loadProbes();
++            NativeEntry *entry = nullptr;
++            for (auto &candidate : natives)
++            {
++                if (candidate.armed && candidate.name == "soundFunc")
++                    entry = &candidate;
++            }
++            if (entry == nullptr || entry->calls == 0u)
++                return;
++            if (!probesStarted)
++            {
++                probesStarted = true;
++                probeStart = totalCycles;
++                probeScratch = memory.allocate(0x400u, 16u);
++                if (!probes.empty())
++                {
++                    verifyAllFrom = probeStart;
++                    verifyAllUntil = probeStart + probes.back().atCycle + 36864000ull * 3u;
++                }
++            }
++            uint32_t gp = 0u;
++            for (const auto &[id, module] : modules)
++            {
++                if (iequals(module.name.substr(0, 7), "YYSOUND"))
++                    gp = module.gp;
++            }
++            while (nextProbe < probes.size() && totalCycles >= probeStart + probes[nextProbe].atCycle)
++            {
++                const ProbeCommand &probe = probes[nextProbe++];
++                std::memset(memory.ramData() + probeScratch, 0, 0x400u);
++                std::memcpy(memory.ramData() + probeScratch, probe.data.data(), std::min<size_t>(probe.data.size(), 0x400u));
++                const uint32_t result = callFunction(entry->address, probe.command, probeScratch, static_cast<uint32_t>(probe.data.size()), 0u, gp);
++                std::ostringstream out;
++                out << "[iop:probe] command 0x" << std::hex << probe.command << " (" << std::dec << probe.data.size() << " byte(s)) -> 0x" << std::hex << result;
++                log(LogLevel::Info, out.str());
++            }
++        }
++
+         void runCycles(uint64_t cycles) noexcept
+         {
+             try
+@@ -566,6 +775,7 @@ namespace ps2x::iop::detail
+                     servicePendingDmaInterrupts();
+                     servicePendingGuestCallbacks();
+                     timrman.serviceDue(totalCycles, *this);
++                    serviceProbes();
+                     IopThread *next = kernel.beginNextReady(totalCycles);
+                     if (!next)
+                     {
+@@ -578,8 +788,22 @@ namespace ps2x::iop::detail
+                         totalCycles = std::max(totalCycles + 1u, std::min(target, nextWake));
+                         continue;
+                     }
++                    if ((!allCoverage.empty() || !oracleCoverage.empty()) && totalCycles - lastCoverageCycle > 36864000ull * 2u)
++                    {
++                        lastCoverageCycle = totalCycles;
++                        writeCoverage();
++                    }
+                     const uint64_t before = totalCycles;
+-                    runCpu(next->cpu, static_cast<uint32_t>(std::min<uint64_t>(kDefaultSlice, target - totalCycles)));
++                    const auto parkedFiber = nativeFibers.find(next->id);
++                    if (parkedFiber != nativeFibers.end() && parkedFiber->second->parked)
++                    {
++                        // the thread went to sleep inside a native function: go on with it from where it slept
++                        switchIntoFiber(*parkedFiber->second);
++                        if (parkedFiber->second->parked)
++                            next->cpu.yielded = true;
++                    }
++                    if (!next->cpu.yielded && !next->cpu.stopped)
++                        runCpu(next->cpu, static_cast<uint32_t>(std::min<uint64_t>(kDefaultSlice, target - totalCycles)));
+                     kernel.endTimeslice(*next, kThreadReturnSentinel);
+                     if (totalCycles == before)
+                         ++totalCycles;
+@@ -649,6 +873,8 @@ namespace ps2x::iop::detail
              module.entry = loaded.entry;
              module.gp = loaded.gp;
  
@@ -253,7 +496,7 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
              uint32_t args = 0u;
              if (arguments && argumentSize)
              {
-@@ -706,6 +766,14 @@ namespace ps2x::iop::detail
+@@ -706,6 +932,14 @@ namespace ps2x::iop::detail
              kernel.terminateThreadsInRange(it->second.base, it->second.size);
              rpc.removeServersInRange(it->second.base, it->second.size);
              imports.eraseRange(it->second.base, it->second.size);
@@ -268,7 +511,7 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
              modules.erase(it);
              kernel.cleanupDeadThreads();
              if (result)
-@@ -713,6 +781,496 @@ namespace ps2x::iop::detail
+@@ -713,6 +947,811 @@ namespace ps2x::iop::detail
              return true;
          }
  
@@ -292,6 +535,8 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +            uint32_t typicalCost = 0;
 +            bool hasResult = true;
 +            uint32_t parkStub = 0; // module offset of the import stub the function ends by jumping to (0: it returns)
++            bool mayBlock = false; // the guest code it calls can put the thread to sleep: the function runs on a fiber
++            std::vector<std::pair<uint32_t, uint32_t>> verifyIgnore; // module image (offset, size) the verifier does not compare after a call
 +            uint32_t address = 0; // absolute, once armed
 +            bool armed = false;
 +            uint64_t calls = 0;
@@ -299,12 +544,30 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +            uint64_t unverifiable = 0;
 +            uint64_t mismatches = 0;
 +            uint64_t originalInstructions = 0; // summed over the verified calls
++            uint64_t importInstructions = 0; // of those, the ones run inside the module's imports (a replacement runs them too)
++        };
++
++        // The fiber a native function that may block runs on (plan P5). The function's C++ frames are on the fiber's stack: when guest code it
++        // called puts the thread to sleep, the fiber is parked with the frames intact, the scheduler runs other threads, and when the thread is
++        // ready again the scheduler switches back into the fiber, which carries on where the guest code left off. One fiber per IOP thread.
++        struct NativeFiber
++        {
++            Impl *owner = nullptr;
++            void *handle = nullptr;
++            void *returnTo = nullptr; // the host fiber that switched in
++            NativeEntry *entry = nullptr;
++            CpuState *cpu = nullptr;
++            bool parked = false;
++            uint32_t savedNativeDepth = 0u;
++            NativeContext *savedContext = nullptr;
++            std::exception_ptr error;
 +        };
 +
 +        // One import the module's code called while the original ran: arguments, results and the RAM it changed.
 +        struct ImportRecord
 +        {
 +            uint32_t stub = 0;
++            uint32_t sp = 0; // the stack pointer at the call (reported with a difference)
 +            uint32_t args[4] = {};
 +            uint32_t v0 = 0;
 +            uint32_t v1 = 0;
@@ -316,6 +579,7 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +            ImportRecord record;
 +            uint32_t returnAddress = 0;
 +            uint32_t stackPointer = 0;
++            uint64_t instructionsAtOpen = 0;
 +            std::vector<uint8_t> before;
 +        };
 +
@@ -381,7 +645,7 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +        }
 +
 +        void registerNative(const char *module, uint32_t offset, NativeFunction function, const char *name, uint32_t typicalCost, bool hasResult,
-+                            uint32_t parkStub)
++                            uint32_t parkStub, bool mayBlock)
 +        {
 +            NativeEntry entry;
 +            entry.module = module;
@@ -391,7 +655,20 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +            entry.typicalCost = typicalCost;
 +            entry.hasResult = hasResult;
 +            entry.parkStub = parkStub;
++            entry.mayBlock = mayBlock;
 +            natives.push_back(std::move(entry));
++        }
++
++        void registerVerifyIgnore(const char *module, const char *name, uint32_t offset, uint32_t size)
++        {
++            for (auto &entry : natives)
++            {
++                if (iequals(entry.module, module) && entry.name == name)
++                {
++                    entry.verifyIgnore.emplace_back(offset, size);
++                    return;
++                }
++            }
 +        }
 +
 +        // PS2X_IOP_NATIVE: unset or 1 all replacements, 0 none, otherwise a comma separated list of names.
@@ -407,6 +684,24 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +                verifyFirst = std::strtoull(value, nullptr, 10);
 +            if (const char *value = std::getenv("PS2X_IOP_VERIFY_EVERY"))
 +                verifyEvery = std::strtoull(value, nullptr, 10);
++            if (const char *value = std::getenv("PS2X_IOP_COVERAGE"))
++                coveragePath = value;
++            if (const char *value = std::getenv("PS2X_IOP_PROBE"))
++                probePath = value;
++            if (const char *value = std::getenv("PS2X_IOP_VERIFY_ALL"))
++            {
++                // without a probe script the whole run is verified call by call
++                verifyAllNames = std::string(",") + value + ",";
++                if (probePath.empty())
++                {
++                    verifyAllFrom = 0u;
++                    verifyAllUntil = ~0ull;
++                }
++            }
++            if (const char *value = std::getenv("PS2X_IOP_TRACE_NATIVE"))
++                traceNative = std::string(",") + value + ",";
++            if (const char *value = std::getenv("PS2X_IOP_COVERAGE_ALL"))
++                coverageAllPath = value;
 +        }
 +
 +        bool nativeSelected(const std::string &name) const
@@ -468,6 +763,11 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +                }
 +                spec.base = module.base;
 +                spec.armed = true;
++                if (!coverageAllPath.empty())
++                {
++                    allCoverageBase = module.base;
++                    allCoverage.assign(spec.size / 4u, 0u);
++                }
 +                uint32_t count = 0;
 +                for (auto &entry : natives)
 +                {
@@ -543,6 +843,30 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +            open.record.v0 = cpu.gpr[2];
 +            open.record.v1 = cpu.gpr[3];
 +            open.record.effects = ramDifferences(open.before.data(), memory.ramData());
++            // An import writes words, but a difference only holds the bytes that changed: when the replacement's RAM differs in a byte next to a
++            // changed one (stale stack bytes the original's own frames overwrote, which a replacement does not push), applying only the changed bytes
++            // would leave a different word than the import wrote. So each range grows to whole words, taken as the import left them.
++            {
++                std::vector<std::pair<uint32_t, std::vector<uint8_t>>> widened;
++                for (const auto &[address, bytes] : open.record.effects)
++                {
++                    const uint32_t begin = address & ~3u;
++                    const uint32_t end = std::min<uint32_t>((address + static_cast<uint32_t>(bytes.size()) + 3u) & ~3u, kRamSize);
++                    if (!widened.empty() && widened.back().first + widened.back().second.size() >= begin)
++                    {
++                        auto &last = widened.back();
++                        const uint32_t lastEnd = last.first + static_cast<uint32_t>(last.second.size());
++                        if (end > lastEnd)
++                            last.second.insert(last.second.end(), memory.ramData() + lastEnd, memory.ramData() + end);
++                    }
++                    else
++                    {
++                        widened.emplace_back(begin, std::vector<uint8_t>(memory.ramData() + begin, memory.ramData() + end));
++                    }
++                }
++                open.record.effects = std::move(widened);
++            }
++            oracleImportInstructions += totalInstructions - open.instructionsAtOpen;
 +            importLog.push_back(std::move(open.record));
 +        }
 +
@@ -557,10 +881,32 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +            if (!sameArguments)
 +            {
 +                std::ostringstream out;
-+                out << "import 0x" << std::hex << cpu.pc << "(" << cpu.gpr[4] << "," << cpu.gpr[5] << "," << cpu.gpr[6] << "," << cpu.gpr[7]
-+                    << ") is not the original's next import";
++                out << "import #" << std::dec << (replayPosition - 1u) << " 0x" << std::hex << cpu.pc << "(" << cpu.gpr[4] << "," << cpu.gpr[5] << "," << cpu.gpr[6]
++                    << "," << cpu.gpr[7] << ") sp=" << cpu.gpr[29] << " is not the original's next import";
++                if (debugRamBefore != nullptr && std::getenv("PS2X_IOP_DUMP_IMPORTS") != nullptr)
++                {
++                    // the first argument of each import so far, when it points into the thread's stack: the bytes there before the original ran, after it,
++                    // and now (what the replacement has made of them)
++                    for (size_t k = 0; k + 1u < replayPosition && k < importLog.size(); ++k)
++                    {
++                        const uint32_t where = physicalAddress(importLog[k].args[0]);
++                        if (where < 0x100000u || where + 8u > kRamSize)
++                            continue;
++                        out << " [#" << std::dec << k << std::hex << " at 0x" << where << ": before";
++                        for (unsigned i = 0; i < 8u; ++i)
++                            out << " " << static_cast<unsigned>((*debugRamBefore)[where + i]);
++                        out << " | after";
++                        for (unsigned i = 0; i < 8u; ++i)
++                            out << " " << static_cast<unsigned>((*debugRamAfter)[where + i]);
++                        out << " | now";
++                        for (unsigned i = 0; i < 8u; ++i)
++                            out << " " << static_cast<unsigned>(memory.ramData()[where + i]);
++                        out << "]";
++                    }
++                }
 +                if (record != nullptr)
-+                    out << " (0x" << record->stub << "(" << record->args[0] << "," << record->args[1] << "," << record->args[2] << "," << record->args[3] << "))";
++                    out << " (0x" << record->stub << "(" << record->args[0] << "," << record->args[1] << "," << record->args[2] << "," << record->args[3] << ") sp="
++                        << record->sp << ")";
 +                replayProblems.push_back(out.str());
 +                cpu.gpr[2] = 0u;
 +            }
@@ -573,6 +919,26 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +            }
 +            cpu.pc = cpu.gpr[31];
 +            cpu.branchPending = false;
++        }
++
++        // The words of the module the original ran under the verifier: base and size (32 bit, little endian), then one byte per word.
++        void writeCoverage() const
++        {
++            writeCoverageFile(coveragePath, verifyBase, oracleCoverage);
++            writeCoverageFile(coverageAllPath, allCoverageBase, allCoverage);
++        }
++
++        static void writeCoverageFile(const std::string &path, uint32_t base, const std::vector<uint8_t> &words)
++        {
++            if (path.empty() || words.empty())
++                return;
++            if (std::FILE *file = std::fopen(path.c_str(), "wb"))
++            {
++                const uint32_t header[2] = {base, static_cast<uint32_t>(words.size() * 4u)};
++                std::fwrite(header, sizeof(header), 1, file);
++                std::fwrite(words.data(), 1, words.size(), file);
++                std::fclose(file);
++            }
 +        }
 +
 +        void logNativeStats(bool force)
@@ -590,14 +956,25 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +                {
 +                    out << ", " << entry.verified << " verified, " << entry.mismatches << " mismatch(es), " << entry.unverifiable << " not verifiable";
 +                    if (entry.verified != 0)
-+                        out << ", the original takes " << (entry.originalInstructions / entry.verified) << " instruction(s) on average";
++                        out << ", the original takes " << (entry.originalInstructions / entry.verified) << " instruction(s) on average ("
++                            << (entry.importInstructions / entry.verified) << " in imports)";
 +                }
++                log(LogLevel::Info, out.str());
++            }
++            writeCoverage();
++            if (nativeFiberParks != 0u)
++            {
++                std::ostringstream out;
++                out << "[iop:native] fibers: " << nativeFiberParks << " park(s) of a thread blocked inside a native function";
 +                log(LogLevel::Info, out.str());
 +            }
 +        }
 +
 +        bool shouldVerify(const NativeEntry &entry) const
 +        {
++            if (totalCycles >= verifyAllFrom && totalCycles <= verifyAllUntil &&
++                (verifyAllNames == ",1," || verifyAllNames.find("," + entry.name + ",") != std::string::npos))
++                return true;
 +            return entry.calls <= verifyFirst || (verifyEvery != 0u && entry.calls % verifyEvery == 0u);
 +        }
 +
@@ -611,13 +988,43 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +                cpu.pendingLoad = false;
 +            }
 +            ++entry.calls;
++            if (!traceNative.empty() && traceNative.find("," + entry.name + ",") != std::string::npos)
++            {
++                std::ostringstream out;
++                out << "[iop:trace] " << entry.name << " #" << entry.calls << std::hex << " a0=" << cpu.gpr[4] << " a1=" << cpu.gpr[5] << " a2=" << cpu.gpr[6]
++                    << " a3=" << cpu.gpr[7] << " data:";
++                const uint32_t pointer = physicalAddress(cpu.gpr[5]);
++                for (uint32_t i = 0; i < 96u && pointer + i < kRamSize; ++i)
++                    out << (i % 16u == 0u ? " | " : " ") << std::setw(2) << std::setfill('0') << static_cast<unsigned>(memory.ramData()[pointer + i]);
++                log(LogLevel::Info, out.str());
++            }
 +            if (verifyOn && nativeDepth == 0u && shouldVerify(entry))
 +            {
 +                verifyNative(entry, cpu);
 +                logNativeStats(false);
 +                return;
 +            }
++            if (entry.mayBlock && runningFiber == nullptr && nativeDepth == 0u && kernel.currentThread() != nullptr &&
++                &cpu == &kernel.currentThread()->cpu && runNativeOnFiber(entry, cpu))
++                return;
++            runNativeBody(entry, cpu);
++        }
++
++        // Makes `inner` the context currentNativeContext() gives, for the life of the scope.
++        struct ContextScope
++        {
++            NativeContext *outer = g_currentNativeContext;
++            explicit ContextScope(NativeContext *inner) { g_currentNativeContext = inner; }
++            ~ContextScope() { g_currentNativeContext = outer; }
++            ContextScope(const ContextScope &) = delete;
++            ContextScope &operator=(const ContextScope &) = delete;
++        };
++
++        // The function itself: runs it and returns to the caller (or leaves the pc where the function jumped to), charging the IOP time.
++        void runNativeBody(NativeEntry &entry, CpuState &cpu)
++        {
 +            NativeContextImpl context(*this, cpu);
++            const ContextScope scope(&context);
 +            ++nativeDepth;
 +            entry.function(context);
 +            --nativeDepth;
@@ -628,6 +1035,122 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +            }
 +            totalInstructions += entry.typicalCost;
 +            totalCycles += entry.typicalCost;
++        }
++
++#if defined(_WIN32)
++        static VOID CALLBACK nativeFiberMain(PVOID parameter)
++        {
++            auto *fiber = static_cast<NativeFiber *>(parameter);
++            // a fiber never returns from its start routine: it runs a job, switches back to whoever started it and waits there for the next
++            for (;;)
++            {
++                try
++                {
++                    fiber->owner->runNativeBody(*fiber->entry, *fiber->cpu);
++                }
++                catch (...)
++                {
++                    fiber->error = std::current_exception();
++                }
++                fiber->entry = nullptr;
++                SwitchToFiber(fiber->returnTo);
++            }
++        }
++#endif
++
++        // Runs the native function on the current thread's fiber. False when no fiber could be made (the function then runs on the caller's stack).
++        // Returns when the function has ended or when the thread has gone to sleep inside it: the fiber is then parked, and the thread's own cpu is
++        // marked as yielded so that the slice ends (the kernel already knows the thread is waiting).
++        bool runNativeOnFiber(NativeEntry &entry, CpuState &cpu)
++        {
++#if defined(_WIN32)
++            IopThread *thread = kernel.currentThread();
++            std::unique_ptr<NativeFiber> &slot = nativeFibers[thread->id];
++            if (!slot)
++            {
++                auto fiber = std::make_unique<NativeFiber>();
++                fiber->owner = this;
++                fiber->handle = CreateFiberEx(kNativeFiberCommit, kNativeFiberReserve, FIBER_FLAG_FLOAT_SWITCH, &nativeFiberMain, fiber.get());
++                if (fiber->handle == nullptr)
++                {
++                    nativeFibers.erase(thread->id);
++                    return false;
++                }
++                slot = std::move(fiber);
++            }
++            slot->entry = &entry;
++            slot->cpu = &cpu;
++            switchIntoFiber(*slot);
++            if (slot->parked)
++                cpu.yielded = true;
++            logNativeStats(false);
++            return true;
++#else
++            (void)entry;
++            (void)cpu;
++            return false;
++#endif
++        }
++
++        // Dispatcher side: starts the fiber's job, or goes on with a parked one. Returns when the job has ended or the fiber has parked again.
++        void switchIntoFiber(NativeFiber &fiber)
++        {
++#if defined(_WIN32)
++            if (!IsThreadAFiber())
++                ConvertThreadToFiberEx(nullptr, FIBER_FLAG_FLOAT_SWITCH);
++            fiber.returnTo = GetCurrentFiber();
++            CpuState *const outerActive = activeCpu;
++            NativeFiber *const outerRunning = runningFiber;
++            const uint32_t outerDepth = nativeDepth;
++            NativeContext *const outerContext = g_currentNativeContext;
++            if (fiber.parked)
++            {
++                nativeDepth = fiber.savedNativeDepth;
++                activeCpu = fiber.cpu;
++                g_currentNativeContext = fiber.savedContext;
++            }
++            fiber.parked = false;
++            runningFiber = &fiber;
++            SwitchToFiber(fiber.handle);
++            runningFiber = outerRunning;
++            nativeDepth = outerDepth;
++            activeCpu = outerActive;
++            g_currentNativeContext = outerContext;
++            if (fiber.error)
++            {
++                const std::exception_ptr error = std::move(fiber.error);
++                fiber.error = nullptr;
++                std::rethrow_exception(error);
++            }
++#else
++            (void)fiber;
++#endif
++        }
++
++        // Fiber side: back to the dispatcher with the frames intact; returns when the dispatcher switches in again.
++        void parkRunningFiber()
++        {
++#if defined(_WIN32)
++            NativeFiber &fiber = *runningFiber;
++            fiber.parked = true;
++            fiber.savedNativeDepth = nativeDepth;
++            fiber.savedContext = g_currentNativeContext;
++            ++nativeFiberParks;
++            SwitchToFiber(fiber.returnTo);
++#endif
++        }
++
++        void destroyNativeFibers()
++        {
++#if defined(_WIN32)
++            for (auto &[id, fiber] : nativeFibers)
++            {
++                if (fiber && fiber->handle != nullptr && fiber.get() != runningFiber)
++                    DeleteFiber(fiber->handle);
++            }
++#endif
++            nativeFibers.clear();
++            runningFiber = nullptr;
 +        }
 +
 +        // The original runs first, for real (its imports happen, once), with RAM before and after kept; RAM goes back, the replacement runs with the
@@ -651,10 +1174,15 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +            }
 +            importLog.clear();
 +            openImports.clear();
++            oracleImportInstructions = 0u;
 +            oracleActive = true;
 +            bool finished = false;
++            if (!coveragePath.empty() && oracleCoverage.size() != (verifyEnd - verifyBase) / 4u)
++                oracleCoverage.assign((verifyEnd - verifyBase) / 4u, 0u);
 +            for (uint64_t steps = 0; steps < 4000000ull; ++steps)
 +            {
++                if (!oracleCoverage.empty() && inVerifiedModule(cpu.pc))
++                    oracleCoverage[(physicalAddress(cpu.pc) - verifyBase) >> 2] = 1u;
 +                if (!step(cpu, true) || cpu.yielded || cpu.stopped)
 +                    break;
 +                while (!openImports.empty() && cpu.pc == openImports.back().returnAddress && cpu.gpr[29] == openImports.back().stackPointer)
@@ -683,17 +1211,25 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +            const uint64_t instructionsAfter = totalInstructions;
 +            std::vector<uint8_t> ramOriginal(ram, ram + kRamSize);
 +            entry.originalInstructions += instructionsAfter - instructionsBefore;
++            entry.importInstructions += oracleImportInstructions;
 +
 +            std::memcpy(ram, ramBefore.data(), kRamSize);
 +            cpu = before;
 +            replayPosition = 0u;
 +            replayProblems.clear();
 +            replayActive = true;
++            debugRamBefore = &ramBefore;
++            debugRamAfter = &ramOriginal;
 +            NativeContextImpl context(*this, cpu);
-+            ++nativeDepth;
-+            entry.function(context);
-+            --nativeDepth;
++            {
++                const ContextScope scope(&context);
++                ++nativeDepth;
++                entry.function(context);
++                --nativeDepth;
++            }
 +            replayActive = false;
++            debugRamBefore = nullptr;
++            debugRamAfter = nullptr;
 +            if (!context.jumped)
 +            {
 +                cpu.pc = cpu.gpr[31];
@@ -728,6 +1264,13 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +            const uint32_t deadBegin = deadEnd > kDeadStack ? deadEnd - kDeadStack : 0u;
 +            if (deadEnd <= kRamSize)
 +                std::memcpy(ram + deadBegin, ramOriginal.data() + deadBegin, deadEnd - deadBegin);
++            // bytes the original takes from uninitialized memory (registered by the port): the original's are kept
++            for (const auto &[offset, size] : entry.verifyIgnore)
++            {
++                const uint32_t begin = verifyBase + offset;
++                if (begin + size <= kRamSize)
++                    std::memcpy(ram + begin, ramOriginal.data() + begin, size);
++            }
 +            // the stacks the emulator gives its synchronous calls (callFunction) hold only what the last call left
 +            std::memcpy(ram + kCallStackBase, ramOriginal.data() + kCallStackBase, kCallStackLimit + 0x100u - kCallStackBase);
 +            const auto differences = ramDifferences(ramOriginal.data(), ram);
@@ -754,6 +1297,21 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +                    for (const auto &problem : problems)
 +                        out << "; " << problem;
 +                    log(LogLevel::Error, out.str());
++                    if (std::getenv("PS2X_IOP_DUMP_IMPORTS") != nullptr)
++                    {
++                        // the original's imports of this call: position, stub offset in the module, a0 to a3, stack pointer
++                        std::ostringstream dump;
++                        dump << "[iop:verify] the original's imports in " << entry.name << ":";
++                        for (size_t i = 0; i < importLog.size(); ++i)
++                        {
++                            const ImportRecord &record = importLog[i];
++                            dump << " | #" << std::dec << i << " +0x" << std::hex << (record.stub - verifyBase) << " (" << record.args[0] << "," << record.args[1] << ","
++                                 << record.args[2] << "," << record.args[3] << ") sp=" << record.sp << " v0=" << record.v0 << " writes:";
++                            for (const auto &[address, bytes] : record.effects)
++                                dump << " " << address << "+" << std::dec << bytes.size() << std::hex;
++                        }
++                        log(LogLevel::Error, dump.str());
++                    }
 +                }
 +            }
 +            std::memcpy(ram, ramOriginal.data(), kRamSize);
@@ -765,7 +1323,12 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
          IopHost &host;
          IopMemory memory;
          IopSysmem sysmem;
-@@ -745,6 +1303,27 @@ namespace ps2x::iop::detail
+@@ -741,10 +1780,64 @@ namespace ps2x::iop::detail
+         std::string lastError;
+         bool servicingDmaInterrupts = false;
+         bool servicingGuestCallbacks = false;
+-        uint32_t callDepth = 0u;
++        uint32_t callSlots = 0u; // bit n: the call stack n of callFunction is in use
          GuestCallback secrMcCommandHandler;
          GuestCallback secrMcDevIdHandler;
          GuestCallback checkKelfPathCallback;
@@ -779,6 +1342,9 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +        uint64_t verifyFirst = 64u;
 +        uint64_t verifyEvery = 256u;
 +        uint32_t nativeDepth = 0u;
++        std::map<int, std::unique_ptr<NativeFiber>> nativeFibers; // by IOP thread id
++        NativeFiber *runningFiber = nullptr; // the fiber whose function is running now (null on the scheduler's stack)
++        uint64_t nativeFiberParks = 0u;
 +        bool oracleActive = false;
 +        bool replayActive = false;
 +        uint32_t verifyBase = 0u;
@@ -788,12 +1354,42 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +        size_t replayPosition = 0u;
 +        std::vector<std::string> replayProblems;
 +        uint64_t lastNativeStatsCycle = 0u;
++        uint64_t oracleImportInstructions = 0u;
++        const std::vector<uint8_t> *debugRamBefore = nullptr; // the RAM before the original ran, and after it (set during the replacement's run)
++        const std::vector<uint8_t> *debugRamAfter = nullptr;
++        // PS2X_IOP_PROBE=<file>: commands injected into the sound function as if the EE had sent them (a test aid for the paths the game does not
++        // reach), one per line: milliseconds of IOP time after the first real call, command in hex, the data as a hex string. With the
++        // verifier on, every call of PS2X_IOP_VERIFY_ALL=<names or 1> is verified from the first injection until three seconds after the last.
++        struct ProbeCommand
++        {
++            uint64_t atCycle = 0;
++            uint32_t command = 0;
++            std::vector<uint8_t> data;
++        };
++        std::string probePath;
++        std::vector<ProbeCommand> probes;
++        size_t nextProbe = 0u;
++        bool probesLoaded = false;
++        bool probesStarted = false;
++        bool probesFinished = false;
++        uint64_t probeStart = 0u;
++        uint32_t probeScratch = 0u;
++        std::string verifyAllNames;
++        uint64_t verifyAllFrom = ~0ull;
++        uint64_t verifyAllUntil = 0u;
++        std::string traceNative; // PS2X_IOP_TRACE_NATIVE: native functions whose calls are logged (arguments and the 96 bytes a1 points to)
++        std::string coveragePath; // PS2X_IOP_COVERAGE: where the words of the module that the verifier saw the original execute are written
++        std::vector<uint8_t> oracleCoverage; // one byte per word of the verified module's image
++        std::string coverageAllPath; // PS2X_IOP_COVERAGE_ALL: the words of the module that run at all, original or replacement (for a run with PS2X_IOP_NATIVE=0)
++        std::vector<uint8_t> allCoverage;
++        uint32_t allCoverageBase = 0u;
++        uint64_t lastCoverageCycle = 0u;
 +        uint32_t replayArgumentCount = 4u;
 +        std::vector<uint32_t> pendingStackArguments;
      };
  
      IopEmulator::IopEmulator(IopHost &host)
-@@ -798,6 +1377,17 @@ namespace ps2x::iop::detail
+@@ -798,6 +1891,22 @@ namespace ps2x::iop::detail
          return m_impl->rpc.hasServer(sid);
      }
  
@@ -802,10 +1398,15 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +        m_impl->registerNativeModule(module, imageHash, imageSize);
 +    }
 +
-+    void IopEmulator::registerNative(const char *module, uint32_t offset, NativeFunction function, const char *name, uint32_t typicalCost, bool hasResult,
-+                                     uint32_t parkStub)
++    void IopEmulator::registerVerifyIgnore(const char *module, const char *name, uint32_t offset, uint32_t size)
 +    {
-+        m_impl->registerNative(module, offset, function, name, typicalCost, hasResult, parkStub);
++        m_impl->registerVerifyIgnore(module, name, offset, size);
++    }
++
++    void IopEmulator::registerNative(const char *module, uint32_t offset, NativeFunction function, const char *name, uint32_t typicalCost, bool hasResult,
++                                     uint32_t parkStub, bool mayBlock)
++    {
++        m_impl->registerNative(module, offset, function, name, typicalCost, hasResult, parkStub, mayBlock);
 +    }
 +
      void IopEmulator::onSifTransfer(const SifTransfer &transfer)
@@ -822,6 +1423,17 @@ diff --git a/ps2xIOP/src/emulator/core/iop_memory.h b/ps2xIOP/src/emulator/core/
 +        [[nodiscard]] uint8_t *ramData() noexcept { return m_ram.data(); }
  
          [[nodiscard]] static uint32_t physicalAddress(uint32_t address) noexcept;
+ 
+diff --git a/ps2xIOP/src/emulator/core/iop_kernel.h b/ps2xIOP/src/emulator/core/iop_kernel.h
+--- a/ps2xIOP/src/emulator/core/iop_kernel.h
++++ b/ps2xIOP/src/emulator/core/iop_kernel.h
+@@ -49,6 +49,7 @@ namespace ps2x::iop::detail
+         explicit IopKernel(IopMemory &memory) noexcept;
+ 
+         [[nodiscard]] bool hasCurrentThread() const noexcept { return m_currentThread != nullptr; }
++        [[nodiscard]] IopThread *currentThread() const noexcept { return m_currentThread; }
+         // True when WaitEventFlag(id, bits, mode) would return at once (or the flag does not exist).
+         [[nodiscard]] bool eventFlagReady(int id, uint32_t bits, uint32_t mode) const;
  
 diff --git a/ps2xRuntime/include/ps2_runtime.h b/ps2xRuntime/include/ps2_runtime.h
 --- a/ps2xRuntime/include/ps2_runtime.h

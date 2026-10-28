@@ -19,8 +19,13 @@
 
 namespace iop
 {
-    // The context of the native function that is running.
-    inline ps2x::iop::NativeContext *g_context = nullptr;
+    // The context of the native function that is running: the emulator keeps it right when a function calls guest code that runs another
+    // native, and when a function that went to sleep is resumed.
+    struct ContextRef
+    {
+        ps2x::iop::NativeContext *operator->() const { return ps2x::iop::currentNativeContext(); }
+    };
+    inline constexpr ContextRef g_context{};
 
     [[noreturn]] void fatal(const char *what, uint32_t value);
 
@@ -69,6 +74,13 @@ namespace iop
         // A function that ends by jumping into guest code (a thread that goes to sleep) leaves its frame as it is.
         void keep() { restore = false; }
 
+        // The frame of a function that went to sleep and is now running again (its code continues where it left off): the stack pointer is
+        // already down by the frame, and stays so.
+        struct Resumed
+        {
+        };
+        Frame(Resumed, uint32_t size) : saved(g_context->reg(29) + ((size + 7u) & ~7u)), restore(false) {}
+
     private:
         uint32_t saved;
         bool restore = true;
@@ -82,14 +94,19 @@ namespace iop
         const char *name;
         uint32_t cost;
         bool hasResult;
+        bool mayBlock;
+        uint32_t parkStub;
     };
     std::vector<Registration> &registry();
 
     struct Registrar
     {
-        Registrar(const char *module, uint32_t offset, ps2x::iop::NativeFunction function, const char *name, bool hasResult, uint32_t cost = 0)
+        // `parkStub`: the module offset of the import stub a thread body ends by jumping to (SleepThread, sceSifRpcLoop), 0 for a function that
+        // returns; `mayBlock`: the function, or the guest code it calls, can put the thread to sleep (it runs on a fiber).
+        Registrar(const char *module, uint32_t offset, ps2x::iop::NativeFunction function, const char *name, bool hasResult, bool mayBlock = false,
+                  uint32_t parkStub = 0, uint32_t cost = 0)
         {
-            registry().push_back({module, offset, function, name, cost, hasResult});
+            registry().push_back({module, offset, function, name, cost, hasResult, mayBlock, parkStub});
         }
     };
 
@@ -135,7 +152,6 @@ namespace iop
 
             static void entry(ps2x::iop::NativeContext &context)
             {
-                g_context = &context;
                 g_ram = context.ram();
                 unsigned index = 4;
                 std::tuple<Args...> arguments{argument<Args>(context, index)...};
@@ -147,6 +163,22 @@ namespace iop
         };
     }
 }
+
+// The same for a function that may put its thread to sleep, directly or in the guest code it calls (it then runs on a fiber, see
+// IopSubsystem::registerNative).
+#define IOP_FN_BLOCKING(module, name) \
+    namespace                         \
+    {                                 \
+        const ::iop::Registrar iop_registrar_##name{::iop::module::kModule, ::iop::module::offset::name, &::iop::detail::Trampoline<&::iop::module::name>::entry, #name, ::iop::detail::Trampoline<&::iop::module::name>::kHasResult, true}; \
+    }
+
+// A thread body: ends by jumping to the import stub `stub` (a SleepThread that returns to the next body, a sceSifRpcLoop that does not return),
+// which is where the verifier compares it with the original. `blocking` as for IOP_FN_BLOCKING.
+#define IOP_FN_THREAD(module, name, stub, blocking) \
+    namespace                                       \
+    {                                               \
+        const ::iop::Registrar iop_registrar_##name{::iop::module::kModule, ::iop::module::offset::name, &::iop::detail::Trampoline<&::iop::module::name>::entry, #name, ::iop::detail::Trampoline<&::iop::module::name>::kHasResult, blocking, ::iop::module::stub}; \
+    }
 
 // Registers `name` (a function of namespace iop::<module>) as the replacement of the module function of the same name.
 #define IOP_FN(module, name) \

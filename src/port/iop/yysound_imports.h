@@ -67,6 +67,7 @@ namespace iop::yysound
         {
             return detail::toInt(detail::call(stub::StartThread, 2, static_cast<uint32_t>(thread), argument));
         }
+        inline int32_t GetThreadId() { return detail::toInt(detail::call(stub::GetThreadId, 0)); }
         inline int32_t DeleteThread(int32_t thread) { return detail::toInt(detail::call(stub::DeleteThread, 1, static_cast<uint32_t>(thread))); }
         inline int32_t iWakeupThread(int32_t thread) { return detail::toInt(detail::call(stub::iWakeupThread, 1, static_cast<uint32_t>(thread))); }
         inline int32_t USec2SysClock(uint32_t microseconds, IopPtr<SysClock> clock)
@@ -180,6 +181,24 @@ namespace iop::yysound
             const uint32_t fifth = static_cast<uint32_t>(size);
             g_context->stackArguments(&fifth, 1);
             return detail::toInt(detail::call(stub::sceSEIn_PutMsg, 4, context.address, static_cast<uint32_t>(channel), static_cast<uint32_t>(id), message));
+        }
+        inline int32_t sceSEIn_ATick(IopPtr<sceCslCtx> context) { return detail::toInt(detail::call(stub::sceSEIn_ATick, 1, context.address)); }
+        inline int32_t sceMidi_ATick(IopPtr<sceCslCtx> context) { return detail::toInt(detail::call(stub::sceMidi_ATick, 1, context.address)); }
+        inline int32_t sceHSyn_ATick(IopPtr<sceCslCtx> context) { return detail::toInt(detail::call(stub::sceHSyn_ATick, 1, context.address)); }
+
+        // sifcmd
+        inline int32_t sceSifInitRpc(uint32_t mode) { return detail::toInt(detail::call(stub::sceSifInitRpc, 1, mode)); }
+        inline int32_t sceSifSetRpcQueue(IopPtr<_sif_queue_data> queue, int32_t thread)
+        {
+            return detail::toInt(detail::call(stub::sceSifSetRpcQueue, 2, queue.address, static_cast<uint32_t>(thread)));
+        }
+        // seven arguments: the fifth to the seventh go on the stack
+        inline int32_t sceSifRegisterRpc(IopPtr<_sif_serve_data> serve, uint32_t id, uint32_t function, uint32_t buffer, uint32_t connectFunction,
+                                         uint32_t connectBuffer, IopPtr<_sif_queue_data> queue)
+        {
+            const uint32_t rest[3] = {connectFunction, connectBuffer, queue.address};
+            g_context->stackArguments(rest, 3);
+            return detail::toInt(detail::call(stub::sceSifRegisterRpc, 4, serve.address, id, function, buffer));
         }
         inline int32_t sceSEIn_Init(IopPtr<sceCslCtx> context) { return detail::toInt(detail::call(stub::sceSEIn_Init, 1, context.address)); }
     }

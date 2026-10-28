@@ -63,6 +63,9 @@ graph and a leaf-first order.
   thbase 7, timrman 6.
 - The only blocking calls in its own code are the two `SleepThread()` at the heads of the thread loops, which is what lets the port
   run each thread body as a step that is entered when the thread wakes (the same machine-level behavior, no stack to keep).
+  Guest code it calls can block too: `sceHSyn_VoiceTrans` (the transfer of sound data to SPU memory) sleeps the load thread until the
+  DMA is done, inside `OpenFileSPU` and `RunCopyJointSPU`, under `RunMidiOpen`, `RunWaveOpen` and `RunCommand`. Those run on a fiber
+  (below).
 
 ## The readable port of YYSOUND
 
@@ -99,3 +102,53 @@ verifiable and runs as the original that time.
 First gate (2026-10-27): `timer_handler` (interrupt context, one import), `ClearMidiTrack`, `ClearWaveTrack`, `AddFilePutPos`,
 `AddRequestPutPos` and `CmdMidiOpen` (three `strcpy` imports) through the title, a new game and the movie start: 0 mismatches in
 every verified call.
+
+### Threads and blocking
+
+- A thread body is a pair of functions: the entry (`atick`, `Load_atick`, `sce_ee_loop`) does what the original's prologue and first
+  statements do and ends by jumping to an import stub with the return address the original's `jal` would have set (`SleepThread`, or
+  `sceSifRpcLoop` which never returns); the second (`atick_resume`, `Load_atick_resume`) is registered at the address after that `jal`
+  and is entered when the thread is woken, runs one pass of the loop body and sleeps again the same way. Both are registered with
+  `IOP_FN_THREAD(module, name, stub, blocking)`, and the verifier compares them at the stub.
+- A function registered as blocking (`IOP_FN_BLOCKING`, or the `blocking` flag of a thread body) runs on a host fiber, one per IOP
+  thread, when the IOP thread's own cpu reaches it. If guest code it called puts the thread to sleep, the emulator parks the fiber
+  with the function's C++ frames as they are, runs other threads, and switches back into the fiber when the thread is ready, which
+  carries on where the guest code slept. The call stacks of the emulator's synchronous calls come from a pool, so a parked call keeps
+  its own. A blocking function called from the interpreter's slice of another native (not from the thread's cpu) runs where it is;
+  one that then blocks is an error (the emulator logs it and aborts).
+- Verifying a blocking function: when the original blocks, the call is counted as not verifiable and runs as the original that time.
+
+### How far the verifier reaches, and what it cannot compare
+
+- **Coverage** (`PS2X_IOP_COVERAGE=<file>` with `PS2X_IOP_VERIFY=1`, `tools/iop_coverage.py`): the words of YYSOUND the original executed in
+  verified calls, merged over several runs, per function. `PS2X_IOP_COVERAGE_ALL=<file>` records every word that runs at all (use it
+  with `PS2X_IOP_NATIVE=0` to see what the game reaches). `config/iop/port_status.csv` is the result: all 114 functions are ported;
+  across the movie, explore and probe runs the verifier saw 85% of the words of the original execute (11,873 of 13,897), with 0 mismatches.
+  Never reached: `repeatCB` (a MIDI loop callback), `MidiLoop` (a MIDI song that ends) and `ReportFileRequestList` (a debug print); 24
+  functions are executed in full and the rest in part (error paths and rare branches are the unreached words).
+- **Whole run, every call** (`PS2X_IOP_VERIFY=1 PS2X_IOP_VERIFY_ALL=1`): through the title, a new game, the movie and the entry to the city,
+  34,198 calls of `timer_handler`, 22,798 of `atick_resume`, 11,364 of `Load_atick_resume` (35 more block in the original on an SPU transfer
+  and run as the original) and 103 of `soundFunc` were each compared with the original: 0 differences. That run is the original's run, call
+  for call (the original's state is what continues), which an audio comparison cannot show: two captures of the SPU2 mix (`PS2X_SPU2_WAV`),
+  one with `PS2X_IOP_NATIVE=0` and one with the port, have the same loudness over time but not the same samples, because a replacement
+  charges the average instruction count of the original, not the exact one.
+- **Probes** (`PS2X_IOP_PROBE=<file>`, `tools/iop_probe.py`): commands injected into `soundFunc` as if the EE had sent them, for the paths
+  the game does not take in the scripted runs (spoken text, wave stop, pitch, tempo, joint files, the track queries, every error, the
+  shutdown). With `PS2X_IOP_VERIFY_ALL=atick_resume,Load_atick_resume,soundFunc` every call is verified from the first injection to three
+  seconds after the last. `PS2X_IOP_TRACE_NATIVE=soundFunc` logs the real traffic (arguments and the first 96 bytes of the data).
+- **Cost table** (`tools/iop_costs.py` makes `config/iop/yysound_costs.h` from verify logs): the instructions the original takes in each
+  function entered from guest code, imports not counted (a replacement runs the imports itself), averaged over the verified calls. The port
+  charges that much IOP time, so timers and DMA completions keep the schedule the original gave them (it is an average: the original's
+  count depends on the data).
+- **What cannot be compared.** The original's functions push registers and keep locals on the stack, so the bytes a call leaves in dead
+  stack are not the ones a replacement leaves. Where the original reads a local it never set, it copies those bytes, and the two
+  differ. Found by the probes: `WaveLoop` and `VoiceIdle` build a play request from a local whose `jno` is never set (only a joint file looks at
+  it), and `CmdWavePlay` builds its volume and pitch requests from locals whose `id` is never set (it lands in `ee_put[4]` and in the request,
+  where the EE's check id is compared with it). The port reads the same stale stack but cannot have the same bytes under it, so these
+  fields are left out of the comparison of `atick_resume` (`IopSubsystem::registerVerifyIgnore`), and only there: `soundFunc`, whose callers
+  leave the same stack, is compared in full.
+- Two verifier lessons: a call's imports are replayed from the original's run, with the RAM each changed taken in whole words (an import
+  writes words, and a stale neighbor byte in the replacement would otherwise change the word); and every function that calls one that
+  keeps locals on the stack, or passes stack arguments, needs a `Frame` of the original's size, or the callee's locals sit at other
+  addresses (the import arguments then differ).
+
