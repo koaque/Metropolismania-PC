@@ -1,115 +1,115 @@
 offset,name,size,frame,line_first,line_last,signature
-0x00000,timer_handler,104,24,534,545,UINT timer_handler(IopPtr<void> common)
+0x00000,timer_handler,104,32,534,545,UINT timer_handler(IopPtr<void> common)
 0x00068,start_timer,104,24,546,557,int32_t start_timer(void)
-0x000D0,stop_timer,132,24,558,573,int32_t stop_timer(void)
+0x000D0,stop_timer,132,32,558,573,int32_t stop_timer(void)
 0x00154,clear_timer,136,24,574,589,int32_t clear_timer(void)
-0x001DC,set_timer,332,16,590,627,int32_t set_timer(void)
-0x00328,start_load_timer,104,16,628,639,int32_t start_load_timer(void)
+0x001DC,set_timer,332,40,590,627,int32_t set_timer(void)
+0x00328,start_load_timer,104,24,628,639,int32_t start_load_timer(void)
 0x00390,stop_load_timer,132,32,640,655,int32_t stop_load_timer(void)
-0x00414,clear_load_timer,136,48,656,671,int32_t clear_load_timer(void)
-0x0049C,set_load_timer,332,32,672,712,int32_t set_load_timer(void)
-0x005E8,metaMsgCB,64,24,715,722,"int32_t metaMsgCB(uint8_t metaNo, IopPtr<uint8_t> bf, uint32_t len, uint32_t private_data)"
-0x00628,repeatCB,64,32,723,737,"int32_t repeatCB(IopPtr<sceMidiLoopInfo> pInf, uint32_t private_data)"
+0x00414,clear_load_timer,136,24,656,671,int32_t clear_load_timer(void)
+0x0049C,set_load_timer,332,40,672,712,int32_t set_load_timer(void)
+0x005E8,metaMsgCB,64,16,715,722,"int32_t metaMsgCB(uint8_t metaNo, IopPtr<uint8_t> bf, uint32_t len, uint32_t private_data)"
+0x00628,repeatCB,64,16,723,737,"int32_t repeatCB(IopPtr<sceMidiLoopInfo> pInf, uint32_t private_data)"
 0x00668,set_module_context,1300,16,738,826,void set_module_context(void)
-0x00B7C,set_midi,704,8,827,856,int32_t set_midi(void)
-0x00E3C,set_hsyn,580,16,857,897,int32_t set_hsyn(IopPtr<sceHSyn_VoiceStat> pVstat)
-0x01080,set_sein,104,48,899,916,int32_t set_sein(void)
-0x010E8,SendDataForEE,188,40,917,946,void SendDataForEE(void)
+0x00B7C,set_midi,704,32,827,856,int32_t set_midi(void)
+0x00E3C,set_hsyn,580,32,857,897,int32_t set_hsyn(IopPtr<sceHSyn_VoiceStat> pVstat)
+0x01080,set_sein,104,24,899,916,int32_t set_sein(void)
+0x010E8,SendDataForEE,188,48,917,946,void SendDataForEE(void)
 0x011A4,OpenFileIOP,500,40,947,1010,UINT OpenFileIOP(IopPtr<char> fname)
 0x01398,CloseFileIOP,80,32,1011,1035,void CloseFileIOP(UINT mem)
-0x013E8,OpenFileSPU,960,40,1036,1139,int32_t OpenFileSPU(IopPtr<char> fname)
-0x017A8,CloseFileSPU,96,104,1140,1155,int32_t CloseFileSPU(UINT mem)
-0x01808,OpenJointFile,576,32,1156,1216,"int32_t OpenJointFile(IopPtr<char> fname, IopPtr<ST_WAVE_FILE> pWF)"
-0x01A48,CloseJointFile,244,24,1217,1241,void CloseJointFile(IopPtr<ST_WAVE_FILE> pWF)
-0x01B3C,set_spu2,440,48,1242,1295,void set_spu2(void)
+0x013E8,OpenFileSPU,960,32,1036,1139,int32_t OpenFileSPU(IopPtr<char> fname)
+0x017A8,CloseFileSPU,96,24,1140,1155,int32_t CloseFileSPU(UINT mem)
+0x01808,OpenJointFile,576,48,1156,1216,"int32_t OpenJointFile(IopPtr<char> fname, IopPtr<ST_WAVE_FILE> pWF)"
+0x01A48,CloseJointFile,244,32,1217,1241,void CloseJointFile(IopPtr<ST_WAVE_FILE> pWF)
+0x01B3C,set_spu2,440,56,1242,1295,void set_spu2(void)
 0x01CF4,GetWavePlayID,148,16,1296,1308,int32_t GetWavePlayID(BYTE track)
 0x01D88,ClearMidiTrack,84,8,1309,1319,void ClearMidiTrack(IopPtr<ST_MIDI_TRACK> pMT)
-0x01DDC,ClearWaveTrack,96,48,1320,1337,void ClearWaveTrack(IopPtr<ST_WAVE_TRACK> pWT)
+0x01DDC,ClearWaveTrack,96,8,1320,1337,void ClearWaveTrack(IopPtr<ST_WAVE_TRACK> pWT)
 0x01E3C,Wave_isInPlay,268,48,1338,1364,"int32_t Wave_isInPlay(BYTE track, IopPtr<ST_WAVE_TRACK> pWT)"
-0x01F48,Midi_isInPlay,144,32,1366,1376,"int32_t Midi_isInPlay(BYTE track, IopPtr<ST_MIDI_TRACK> pMT)"
-0x01FD8,MidiPlayNow,384,32,1377,1416,"int32_t MidiPlayNow(BYTE track, IopPtr<ST_MIDI_TRACK> pMT)"
-0x02158,WavePlayNow,316,64,1417,1448,"int32_t WavePlayNow(BYTE track, IopPtr<ST_WAVE_TRACK> pWT)"
-0x02294,MidiStopNow,132,40,1449,1464,"int32_t MidiStopNow(BYTE track, IopPtr<ST_MIDI_TRACK> pMT)"
+0x01F48,Midi_isInPlay,144,16,1366,1376,"int32_t Midi_isInPlay(BYTE track, IopPtr<ST_MIDI_TRACK> pMT)"
+0x01FD8,MidiPlayNow,384,40,1377,1416,"int32_t MidiPlayNow(BYTE track, IopPtr<ST_MIDI_TRACK> pMT)"
+0x02158,WavePlayNow,316,48,1417,1448,"int32_t WavePlayNow(BYTE track, IopPtr<ST_WAVE_TRACK> pWT)"
+0x02294,MidiStopNow,132,32,1449,1464,"int32_t MidiStopNow(BYTE track, IopPtr<ST_MIDI_TRACK> pMT)"
 0x02318,WaveStopNow,224,40,1465,1480,"int32_t WaveStopNow(BYTE track, IopPtr<ST_WAVE_TRACK> pWT)"
-0x023F8,MidiFader,496,40,1481,1522,"void MidiFader(int32_t track, IopPtr<ST_MIDI_TRACK> pMT)"
+0x023F8,MidiFader,496,32,1481,1522,"void MidiFader(int32_t track, IopPtr<ST_MIDI_TRACK> pMT)"
 0x025E8,WaveVolumeFader,1196,40,1523,1597,"void WaveVolumeFader(BYTE track, IopPtr<ST_WAVE_TRACK> pWT)"
 0x02A94,WavePitchFader,732,40,1598,1646,"void WavePitchFader(BYTE track, IopPtr<ST_WAVE_TRACK> pWT)"
-0x02D70,MidiLoop,256,8,1647,1677,"void MidiLoop(int32_t track, IopPtr<ST_MIDI_TRACK> pMT)"
+0x02D70,MidiLoop,256,32,1647,1677,"void MidiLoop(int32_t track, IopPtr<ST_MIDI_TRACK> pMT)"
 0x02E70,WaveLoop,288,40,1678,1709,"void WaveLoop(int32_t track, IopPtr<ST_WAVE_TRACK> pWT)"
 0x02F90,MidiIdle,492,40,1710,1742,BYTE MidiIdle(void)
-0x0317C,WaveIdle,416,32,1743,1772,BYTE WaveIdle(void)
-0x0331C,VoiceIdle,1476,96,1773,1905,BYTE VoiceIdle(void)
-0x038E0,UseHD,224,48,1906,1922,BYTE UseHD(UINT hd_addr)
-0x039C0,atick,392,40,1923,1966,int32_t atick(void)
-0x03B48,Load_atick,144,40,1967,1984,int32_t Load_atick(void)
-0x03BD8,EndAllThread,248,32,1986,2032,int32_t EndAllThread(void)
-0x03CD0,CmdInit,72,40,2033,2044,int32_t CmdInit(IopPtr<UINT> data)
-0x03D18,CmdTerm,280,32,2045,2078,int32_t CmdTerm(void)
+0x0317C,WaveIdle,416,40,1743,1772,BYTE WaveIdle(void)
+0x0331C,VoiceIdle,1476,104,1773,1905,BYTE VoiceIdle(void)
+0x038E0,UseHD,224,16,1906,1922,BYTE UseHD(UINT hd_addr)
+0x039C0,atick,392,32,1923,1966,int32_t atick(void)
+0x03B48,Load_atick,144,24,1967,1984,int32_t Load_atick(void)
+0x03BD8,EndAllThread,248,24,1986,2032,int32_t EndAllThread(void)
+0x03CD0,CmdInit,72,8,2033,2044,int32_t CmdInit(IopPtr<UINT> data)
+0x03D18,CmdTerm,280,48,2045,2078,int32_t CmdTerm(void)
 0x03E30,ReportFileRequestList,148,32,2079,2089,void ReportFileRequestList(void)
-0x03EC4,AddFilePutPos,172,32,2090,2109,int32_t AddFilePutPos(void)
+0x03EC4,AddFilePutPos,172,16,2090,2109,int32_t AddFilePutPos(void)
 0x03F70,AddRequestPutPos,240,16,2111,2134,"int32_t AddRequestPutPos(IopPtr<ST_COMMAND_LIST> pCL, BYTE fno)"
-0x04060,AddFileGetPos,88,16,2135,2146,void AddFileGetPos(void)
-0x040B8,AddRequestGetPos,484,32,2147,2185,"void AddRequestGetPos(IopPtr<ST_COMMAND_LIST> pCL, IopPtr<ST_COMMAND_ONE> pCO, int32_t ret, BYTE fno)"
+0x04060,AddFileGetPos,88,8,2135,2146,void AddFileGetPos(void)
+0x040B8,AddRequestGetPos,484,40,2147,2185,"void AddRequestGetPos(IopPtr<ST_COMMAND_LIST> pCL, IopPtr<ST_COMMAND_ONE> pCO, int32_t ret, BYTE fno)"
 0x0429C,CmdMidiOpen,704,48,2186,2229,int32_t CmdMidiOpen(IopPtr<ST_MIDI_OPEN> data)
 0x0455C,CmdSqOpen,732,48,2230,2284,int32_t CmdSqOpen(IopPtr<ST_SQ_OPEN> data)
-0x04838,CmdWaveOpen,708,24,2285,2328,int32_t CmdWaveOpen(IopPtr<ST_WAVE_OPEN> data)
-0x04AFC,CmdMidiClose,700,40,2329,2374,int32_t CmdMidiClose(IopPtr<ST_MIDI_CLOSE> data)
-0x04DB8,CmdWaveClose,724,16,2375,2420,int32_t CmdWaveClose(IopPtr<ST_WAVE_CLOSE> data)
-0x0508C,CmdCopyJointSPU,416,24,2421,2451,int32_t CmdCopyJointSPU(IopPtr<ST_JOINT_SPU> data)
-0x0522C,CmdClearJointSPU,416,0,2452,2483,int32_t CmdClearJointSPU(IopPtr<ST_JOINT_SPU> data)
-0x053CC,CmdMidiPlay,1092,0,2484,2560,int32_t CmdMidiPlay(IopPtr<ST_MIDI_PLAY> data)
-0x05810,CmdWavePlay,1496,0,2561,2648,int32_t CmdWavePlay(IopPtr<ST_WAVE_PLAY> data)
-0x05DE8,CmdMidiStop,448,0,2649,2683,int32_t CmdMidiStop(IopPtr<ST_MIDI_STOP> data)
-0x05FA8,CmdWaveStop,448,0,2684,2718,int32_t CmdWaveStop(IopPtr<ST_WAVE_STOP> data)
-0x06168,CmdMidiSetVolume,636,0,2719,2762,"int32_t CmdMidiSetVolume(IopPtr<ST_MIDI_VOL> data, SBYTE fno)"
-0x063E4,CmdWaveSetVolume,764,0,2763,2814,"int32_t CmdWaveSetVolume(IopPtr<ST_WAVE_VOL> data, SBYTE fno)"
-0x066E0,CmdMidiSetTempo,540,0,2815,2854,"int32_t CmdMidiSetTempo(IopPtr<ST_MIDI_TEMPO> data, SBYTE fno)"
-0x068FC,CmdWaveSetPitch,612,0,2855,2899,"int32_t CmdWaveSetPitch(IopPtr<ST_WAVE_PITCH> data, SBYTE fno)"
-0x06B60,CmdMidiFade,536,0,2900,2938,int32_t CmdMidiFade(IopPtr<ST_MIDI_FADE> data)
-0x06D78,CmdWaveFade,624,0,2939,2979,int32_t CmdWaveFade(IopPtr<ST_WAVE_FADE> data)
-0x06FE8,CmdWavePitchFade,668,0,2980,3021,"int32_t CmdWavePitchFade(IopPtr<ST_WAVE_PITCH_FADE> data, SBYTE fno)"
-0x07284,CmdMidiSetTrackVolume,616,0,3022,3062,int32_t CmdMidiSetTrackVolume(IopPtr<ST_TRACK_VOL> data)
-0x074EC,CmdWaveSetTrackVolume,576,0,3063,3101,int32_t CmdWaveSetTrackVolume(IopPtr<ST_TRACK_VOL> data)
-0x0772C,CmdVoiceFile,184,0,3102,3116,int32_t CmdVoiceFile(IopPtr<BYTE> data)
-0x077E4,CmdVoicePlay,3648,0,3117,3375,int32_t CmdVoicePlay(IopPtr<ST_VOICE_PLAY> data)
-0x08624,RunMidiOpen,856,0,3376,3462,"int32_t RunMidiOpen(int32_t fno, IopPtr<ST_COMMAND_ONE> pCO)"
-0x0897C,RunSqOpen,448,0,3463,3502,"int32_t RunSqOpen(int32_t fno, IopPtr<ST_COMMAND_ONE> pCO)"
-0x08B3C,RunWaveOpen,824,0,3503,3596,"int32_t RunWaveOpen(int32_t fno, IopPtr<ST_COMMAND_ONE> pCO)"
-0x08E74,RunMidiClose,440,0,3597,3634,"int32_t RunMidiClose(int32_t fno, IopPtr<ST_COMMAND_ONE> pCO)"
-0x0902C,RunWaveClose,436,0,3635,3673,"int32_t RunWaveClose(int32_t fno, IopPtr<ST_COMMAND_ONE> pCO)"
-0x091E0,RunMidiPlay,772,0,3674,3770,"int32_t RunMidiPlay(int32_t fno, IopPtr<ST_COMMAND_ONE> pCO)"
-0x094E4,RunWavePlay,1860,0,3771,3938,"int32_t RunWavePlay(int32_t fno, IopPtr<ST_COMMAND_ONE> pCO)"
-0x09C28,RunMidiStop,484,0,3939,3987,"int32_t RunMidiStop(IopPtr<ST_COMMAND_ONE> pCO, BYTE mode)"
-0x09E0C,RunWaveStop,496,0,3988,4037,"int32_t RunWaveStop(IopPtr<ST_COMMAND_ONE> pCO, BYTE mode)"
-0x09FFC,RunMidiFStop,220,0,4038,4057,"int32_t RunMidiFStop(int32_t fno, IopPtr<ST_COMMAND_ONE> pCO)"
-0x0A0D8,RunWaveFStop,220,0,4058,4077,"int32_t RunWaveFStop(int32_t fno, IopPtr<ST_COMMAND_ONE> pCO)"
-0x0A1B4,RunMidiSetVolume,532,0,4078,4118,int32_t RunMidiSetVolume(IopPtr<ST_COMMAND_ONE> pCO)
-0x0A3C8,RunWaveSetVolume,820,0,4119,4175,int32_t RunWaveSetVolume(IopPtr<ST_COMMAND_ONE> pCO)
-0x0A6FC,RunMidiFade,268,0,4176,4202,int32_t RunMidiFade(IopPtr<ST_COMMAND_ONE> pCO)
-0x0A808,RunWaveFade,316,0,4203,4230,int32_t RunWaveFade(IopPtr<ST_COMMAND_ONE> pCO)
-0x0A944,RunWavePitchFade,232,0,4231,4259,int32_t RunWavePitchFade(IopPtr<ST_COMMAND_ONE> pCO)
-0x0AA2C,RunMidiSetTempo,620,0,4260,4309,int32_t RunMidiSetTempo(IopPtr<ST_COMMAND_ONE> pCO)
-0x0AC98,RunWaveSetPitch,696,0,4310,4360,int32_t RunWaveSetPitch(IopPtr<ST_COMMAND_ONE> pCO)
-0x0AF50,RunMidiSetTVolume,184,0,4361,4380,int32_t RunMidiSetTVolume(IopPtr<ST_COMMAND_ONE> pCO)
-0x0B008,RunWaveSetTVolume,268,0,4381,4404,int32_t RunWaveSetTVolume(IopPtr<ST_COMMAND_ONE> pCO)
-0x0B114,RunVoicePlay,496,0,4405,4438,int32_t RunVoicePlay(IopPtr<ST_COMMAND_ONE> pCO)
-0x0B304,RunCopyJointSPU,1380,0,4439,4559,"int32_t RunCopyJointSPU(int32_t fno, IopPtr<ST_COMMAND_ONE> pCO)"
-0x0B868,RunClearJointSPU,476,0,4560,4598,"int32_t RunClearJointSPU(int32_t fno, IopPtr<ST_COMMAND_ONE> pCO)"
-0x0BA44,RunCommand,1524,0,4599,4715,BYTE RunCommand(BYTE mode)
-0x0C038,CmdMidiGetVolume,144,0,4716,4725,int32_t CmdMidiGetVolume(BYTE track)
-0x0C0C8,CmdWaveGetVolume,172,0,4726,4735,int32_t CmdWaveGetVolume(BYTE track)
-0x0C174,CmdSetCheckID,104,0,4738,4748,int32_t CmdSetCheckID(WORD id)
-0x0C1DC,AddRequest,1140,0,4750,4861,"int32_t AddRequest(UINT command, IopPtr<void> data)"
-0x0C650,soundFunc,672,0,4862,4921,"IopPtr<void> soundFunc(UINT command, IopPtr<void> data, int32_t size)"
-0x0C8F0,sce_ee_loop,156,0,4922,4940,int32_t sce_ee_loop(void)
-0x0C98C,make_Timer_thread,108,0,4941,4955,int32_t make_Timer_thread(void)
-0x0C9F8,make_EE_thread,108,0,4956,4970,int32_t make_EE_thread(void)
-0x0CA64,make_Load_thread,108,0,4971,4985,int32_t make_Load_thread(void)
-0x0CAD0,StartTimerThread,200,0,4987,5009,int32_t StartTimerThread(void)
-0x0CB98,StartEEThread,136,0,5010,5025,int32_t StartEEThread(void)
-0x0CC20,StartLoadThread,200,0,5026,5051,int32_t StartLoadThread(void)
-0x0CCE8,NewSPUMemory,740,0,5053,5115,UINT NewSPUMemory(UINT getsize)
-0x0CFCC,DeleteSPUMemory,808,0,5116,5169,BYTE DeleteSPUMemory(UINT addr)
-0x0D2F4,BuffInit,1292,0,5170,5227,void BuffInit(void)
-0x0D800,Init,184,0,5228,5257,int32_t Init(void)
-0x0D8B8,start,108,0,5258,5266,"int32_t start(int32_t argc, IopPtr<IopPtr<char>> argv)"
+0x04838,CmdWaveOpen,708,48,2285,2328,int32_t CmdWaveOpen(IopPtr<ST_WAVE_OPEN> data)
+0x04AFC,CmdMidiClose,700,32,2329,2374,int32_t CmdMidiClose(IopPtr<ST_MIDI_CLOSE> data)
+0x04DB8,CmdWaveClose,724,32,2375,2420,int32_t CmdWaveClose(IopPtr<ST_WAVE_CLOSE> data)
+0x0508C,CmdCopyJointSPU,416,32,2421,2451,int32_t CmdCopyJointSPU(IopPtr<ST_JOINT_SPU> data)
+0x0522C,CmdClearJointSPU,416,32,2452,2483,int32_t CmdClearJointSPU(IopPtr<ST_JOINT_SPU> data)
+0x053CC,CmdMidiPlay,1092,56,2484,2560,int32_t CmdMidiPlay(IopPtr<ST_MIDI_PLAY> data)
+0x05810,CmdWavePlay,1496,64,2561,2648,int32_t CmdWavePlay(IopPtr<ST_WAVE_PLAY> data)
+0x05DE8,CmdMidiStop,448,40,2649,2683,int32_t CmdMidiStop(IopPtr<ST_MIDI_STOP> data)
+0x05FA8,CmdWaveStop,448,40,2684,2718,int32_t CmdWaveStop(IopPtr<ST_WAVE_STOP> data)
+0x06168,CmdMidiSetVolume,636,40,2719,2762,"int32_t CmdMidiSetVolume(IopPtr<ST_MIDI_VOL> data, SBYTE fno)"
+0x063E4,CmdWaveSetVolume,764,40,2763,2814,"int32_t CmdWaveSetVolume(IopPtr<ST_WAVE_VOL> data, SBYTE fno)"
+0x066E0,CmdMidiSetTempo,540,40,2815,2854,"int32_t CmdMidiSetTempo(IopPtr<ST_MIDI_TEMPO> data, SBYTE fno)"
+0x068FC,CmdWaveSetPitch,612,40,2855,2899,"int32_t CmdWaveSetPitch(IopPtr<ST_WAVE_PITCH> data, SBYTE fno)"
+0x06B60,CmdMidiFade,536,40,2900,2938,int32_t CmdMidiFade(IopPtr<ST_MIDI_FADE> data)
+0x06D78,CmdWaveFade,624,40,2939,2979,int32_t CmdWaveFade(IopPtr<ST_WAVE_FADE> data)
+0x06FE8,CmdWavePitchFade,668,40,2980,3021,"int32_t CmdWavePitchFade(IopPtr<ST_WAVE_PITCH_FADE> data, SBYTE fno)"
+0x07284,CmdMidiSetTrackVolume,616,40,3022,3062,int32_t CmdMidiSetTrackVolume(IopPtr<ST_TRACK_VOL> data)
+0x074EC,CmdWaveSetTrackVolume,576,40,3063,3101,int32_t CmdWaveSetTrackVolume(IopPtr<ST_TRACK_VOL> data)
+0x0772C,CmdVoiceFile,184,8,3102,3116,int32_t CmdVoiceFile(IopPtr<BYTE> data)
+0x077E4,CmdVoicePlay,3648,72,3117,3375,int32_t CmdVoicePlay(IopPtr<ST_VOICE_PLAY> data)
+0x08624,RunMidiOpen,856,40,3376,3462,"int32_t RunMidiOpen(int32_t fno, IopPtr<ST_COMMAND_ONE> pCO)"
+0x0897C,RunSqOpen,448,40,3463,3502,"int32_t RunSqOpen(int32_t fno, IopPtr<ST_COMMAND_ONE> pCO)"
+0x08B3C,RunWaveOpen,824,40,3503,3596,"int32_t RunWaveOpen(int32_t fno, IopPtr<ST_COMMAND_ONE> pCO)"
+0x08E74,RunMidiClose,440,32,3597,3634,"int32_t RunMidiClose(int32_t fno, IopPtr<ST_COMMAND_ONE> pCO)"
+0x0902C,RunWaveClose,436,32,3635,3673,"int32_t RunWaveClose(int32_t fno, IopPtr<ST_COMMAND_ONE> pCO)"
+0x091E0,RunMidiPlay,772,48,3674,3770,"int32_t RunMidiPlay(int32_t fno, IopPtr<ST_COMMAND_ONE> pCO)"
+0x094E4,RunWavePlay,1860,96,3771,3938,"int32_t RunWavePlay(int32_t fno, IopPtr<ST_COMMAND_ONE> pCO)"
+0x09C28,RunMidiStop,484,40,3939,3987,"int32_t RunMidiStop(IopPtr<ST_COMMAND_ONE> pCO, BYTE mode)"
+0x09E0C,RunWaveStop,496,48,3988,4037,"int32_t RunWaveStop(IopPtr<ST_COMMAND_ONE> pCO, BYTE mode)"
+0x09FFC,RunMidiFStop,220,40,4038,4057,"int32_t RunMidiFStop(int32_t fno, IopPtr<ST_COMMAND_ONE> pCO)"
+0x0A0D8,RunWaveFStop,220,40,4058,4077,"int32_t RunWaveFStop(int32_t fno, IopPtr<ST_COMMAND_ONE> pCO)"
+0x0A1B4,RunMidiSetVolume,532,32,4078,4118,int32_t RunMidiSetVolume(IopPtr<ST_COMMAND_ONE> pCO)
+0x0A3C8,RunWaveSetVolume,820,40,4119,4175,int32_t RunWaveSetVolume(IopPtr<ST_COMMAND_ONE> pCO)
+0x0A6FC,RunMidiFade,268,32,4176,4202,int32_t RunMidiFade(IopPtr<ST_COMMAND_ONE> pCO)
+0x0A808,RunWaveFade,316,32,4203,4230,int32_t RunWaveFade(IopPtr<ST_COMMAND_ONE> pCO)
+0x0A944,RunWavePitchFade,232,32,4231,4259,int32_t RunWavePitchFade(IopPtr<ST_COMMAND_ONE> pCO)
+0x0AA2C,RunMidiSetTempo,620,40,4260,4309,int32_t RunMidiSetTempo(IopPtr<ST_COMMAND_ONE> pCO)
+0x0AC98,RunWaveSetPitch,696,40,4310,4360,int32_t RunWaveSetPitch(IopPtr<ST_COMMAND_ONE> pCO)
+0x0AF50,RunMidiSetTVolume,184,32,4361,4380,int32_t RunMidiSetTVolume(IopPtr<ST_COMMAND_ONE> pCO)
+0x0B008,RunWaveSetTVolume,268,32,4381,4404,int32_t RunWaveSetTVolume(IopPtr<ST_COMMAND_ONE> pCO)
+0x0B114,RunVoicePlay,496,32,4405,4438,int32_t RunVoicePlay(IopPtr<ST_COMMAND_ONE> pCO)
+0x0B304,RunCopyJointSPU,1380,56,4439,4559,"int32_t RunCopyJointSPU(int32_t fno, IopPtr<ST_COMMAND_ONE> pCO)"
+0x0B868,RunClearJointSPU,476,32,4560,4598,"int32_t RunClearJointSPU(int32_t fno, IopPtr<ST_COMMAND_ONE> pCO)"
+0x0BA44,RunCommand,1524,48,4599,4715,BYTE RunCommand(BYTE mode)
+0x0C038,CmdMidiGetVolume,144,16,4716,4725,int32_t CmdMidiGetVolume(BYTE track)
+0x0C0C8,CmdWaveGetVolume,172,16,4726,4735,int32_t CmdWaveGetVolume(BYTE track)
+0x0C174,CmdSetCheckID,104,16,4738,4748,int32_t CmdSetCheckID(WORD id)
+0x0C1DC,AddRequest,1140,32,4750,4861,"int32_t AddRequest(UINT command, IopPtr<void> data)"
+0x0C650,soundFunc,672,32,4862,4921,"IopPtr<void> soundFunc(UINT command, IopPtr<void> data, int32_t size)"
+0x0C8F0,sce_ee_loop,156,136,4922,4940,int32_t sce_ee_loop(void)
+0x0C98C,make_Timer_thread,108,48,4941,4955,int32_t make_Timer_thread(void)
+0x0C9F8,make_EE_thread,108,48,4956,4970,int32_t make_EE_thread(void)
+0x0CA64,make_Load_thread,108,48,4971,4985,int32_t make_Load_thread(void)
+0x0CAD0,StartTimerThread,200,24,4987,5009,int32_t StartTimerThread(void)
+0x0CB98,StartEEThread,136,24,5010,5025,int32_t StartEEThread(void)
+0x0CC20,StartLoadThread,200,24,5026,5051,int32_t StartLoadThread(void)
+0x0CCE8,NewSPUMemory,740,40,5053,5115,UINT NewSPUMemory(UINT getsize)
+0x0CFCC,DeleteSPUMemory,808,16,5116,5169,BYTE DeleteSPUMemory(UINT addr)
+0x0D2F4,BuffInit,1292,16,5170,5227,void BuffInit(void)
+0x0D800,Init,184,32,5228,5257,int32_t Init(void)
+0x0D8B8,start,108,24,5258,5266,"int32_t start(int32_t argc, IopPtr<IopPtr<char>> argv)"

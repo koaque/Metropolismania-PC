@@ -55,13 +55,23 @@ namespace iop
         {
             g_context->setReg(29, saved - ((size + 7u) & ~7u));
         }
-        ~Frame() { g_context->setReg(29, saved); }
+        ~Frame()
+        {
+            if (restore)
+                g_context->setReg(29, saved);
+        }
         Frame(const Frame &) = delete;
         Frame &operator=(const Frame &) = delete;
+        // An address relative to the stack pointer inside the frame.
         uint32_t address(uint32_t offset = 0) const { return g_context->reg(29) + offset; }
+        // A local variable by the offset the module's debug info gives it: relative to the stack pointer at entry (config/iop/<module>_functions.h, namespace local).
+        uint32_t local(int32_t offset) const { return saved + static_cast<uint32_t>(offset); }
+        // A function that ends by jumping into guest code (a thread that goes to sleep) leaves its frame as it is.
+        void keep() { restore = false; }
 
     private:
         uint32_t saved;
+        bool restore = true;
     };
 
     struct Registration

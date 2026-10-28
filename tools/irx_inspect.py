@@ -659,6 +659,15 @@ def parse_debug_info(irx):
         if fn.get("return_text") is not None:
             fn["return"] = types.parse_type_ref(fn["return_text"])
     types.finish()
+    # the real frame size is the `addiu sp, sp, -N` of the prologue (the procedure descriptor's frame size is wrong for functions that use $fp)
+    image0, _unresolved = relocated_image(irx, 0)
+    for fn in functions:
+        fn["frame"] = 0
+        for offset in range(fn["address"], min(fn["address"] + 32, fn["address"] + max(fn["size"], 4)), 4):
+            word = struct.unpack_from("<I", image0, offset)[0]
+            if word >> 16 == 0x27BD and word & 0x8000:  # addiu sp, sp, -N
+                fn["frame"] = 0x10000 - (word & 0xFFFF)
+                break
     # an initialized table declared without a length (TBL_CHOON[]) gets the room up to the next variable or the end of its section
     ordered = sorted(types.globals, key=lambda g: (g["section"], g["address"]))
     for i, g in enumerate(ordered):
@@ -851,6 +860,31 @@ def fnv1a64(data):
     return value
 
 
+def module_strings(irx, base):
+    """The NUL terminated strings of .rodata: (absolute address, identifier, text). The identifier is made from the first words of the text."""
+    rodata = irx.section(".rodata")
+    data = irx.section_bytes(".rodata")
+    out, seen = [], set()
+    i = 0
+    while i < len(data):
+        if data[i] == 0:
+            i += 1
+            continue
+        end = data.index(b"\0", i) if b"\0" in data[i:] else len(data)
+        raw = data[i:end]
+        text = raw.decode("latin-1")
+        words = re.findall(r"[A-Za-z0-9]+", text)[:9]
+        name = "_".join(words) if words else "string"
+        if name[0].isdigit():
+            name = "s_" + name
+        if name in seen:
+            name = f"{name}_{rodata['addr'] + i:X}"
+        seen.add(name)
+        out.append((base + rodata["addr"] + i, name, text))
+        i = end + 1
+    return out
+
+
 def functions_header(irx, base, functions):
     """C++ constants for the readable port of a module: the name the emulator knows it by, where it loads it, the hash of its relocated
     image (the emulator checks it before it lets the port's functions replace the module's), every function's offset in the image and
@@ -873,6 +907,24 @@ def functions_header(irx, base, functions):
     lines += ["    }", "", "    // size of each function's stack frame (the original moves sp down by this much)", "    namespace frame", "    {"]
     for fn in sorted(functions, key=lambda f: f["address"]):
         lines.append(f"        inline constexpr uint32_t {fn['name']} = {fn['frame']};")
+    lines += ["    }", "", "    // stack locals: offset from the stack pointer at entry (the original's debug info names them; the frame is below it)", "    namespace local", "    {"]
+    for fn in sorted(functions, key=lambda f: f["address"]):
+        stack = [v for v in fn["locals"] + fn["params"] if v["class"] not in ("r", "R", "p", "P") and v["value"] != 0]
+        if not stack:
+            continue
+        lines.append(f"        namespace {fn['name']}")
+        lines.append("        {")
+        used = {}
+        for v in stack:
+            # the same name in two blocks of a function (a loop's counter): the later ones get a number
+            used[v["name"]] = used.get(v["name"], 0) + 1
+            name = v["name"] if used[v["name"]] == 1 else f"{v['name']}_{used[v['name']]}"
+            lines.append(f"            inline constexpr int32_t {name} = {v['value']};")
+        lines.append("        }")
+    lines += ["    }", "", "    // strings of .rodata, by their absolute IOP address", "    namespace str", "    {"]
+    for address, name, text in module_strings(irx, base):
+        shown = text.replace("\\", "\\\\").replace("\n", "\\n").replace("\r", "\\r").replace('"', '\\"')
+        lines.append(f"        inline constexpr uint32_t {name} = 0x{address:X};  // \"{shown}\"")
     lines += ["    }", "", "    // offsets of the module's import stubs (jr ra; the emulator answers the import when the IOP reaches the stub)", "    namespace stub", "    {"]
     for lib in irx.libraries():
         if lib["kind"] != "import":

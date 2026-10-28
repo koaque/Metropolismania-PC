@@ -132,120 +132,768 @@ namespace iop::yysound
     // size of each function's stack frame (the original moves sp down by this much)
     namespace frame
     {
-        inline constexpr uint32_t timer_handler = 24;
+        inline constexpr uint32_t timer_handler = 32;
         inline constexpr uint32_t start_timer = 24;
-        inline constexpr uint32_t stop_timer = 24;
+        inline constexpr uint32_t stop_timer = 32;
         inline constexpr uint32_t clear_timer = 24;
-        inline constexpr uint32_t set_timer = 16;
-        inline constexpr uint32_t start_load_timer = 16;
+        inline constexpr uint32_t set_timer = 40;
+        inline constexpr uint32_t start_load_timer = 24;
         inline constexpr uint32_t stop_load_timer = 32;
-        inline constexpr uint32_t clear_load_timer = 48;
-        inline constexpr uint32_t set_load_timer = 32;
-        inline constexpr uint32_t metaMsgCB = 24;
-        inline constexpr uint32_t repeatCB = 32;
+        inline constexpr uint32_t clear_load_timer = 24;
+        inline constexpr uint32_t set_load_timer = 40;
+        inline constexpr uint32_t metaMsgCB = 16;
+        inline constexpr uint32_t repeatCB = 16;
         inline constexpr uint32_t set_module_context = 16;
-        inline constexpr uint32_t set_midi = 8;
-        inline constexpr uint32_t set_hsyn = 16;
-        inline constexpr uint32_t set_sein = 48;
-        inline constexpr uint32_t SendDataForEE = 40;
+        inline constexpr uint32_t set_midi = 32;
+        inline constexpr uint32_t set_hsyn = 32;
+        inline constexpr uint32_t set_sein = 24;
+        inline constexpr uint32_t SendDataForEE = 48;
         inline constexpr uint32_t OpenFileIOP = 40;
         inline constexpr uint32_t CloseFileIOP = 32;
-        inline constexpr uint32_t OpenFileSPU = 40;
-        inline constexpr uint32_t CloseFileSPU = 104;
-        inline constexpr uint32_t OpenJointFile = 32;
-        inline constexpr uint32_t CloseJointFile = 24;
-        inline constexpr uint32_t set_spu2 = 48;
+        inline constexpr uint32_t OpenFileSPU = 32;
+        inline constexpr uint32_t CloseFileSPU = 24;
+        inline constexpr uint32_t OpenJointFile = 48;
+        inline constexpr uint32_t CloseJointFile = 32;
+        inline constexpr uint32_t set_spu2 = 56;
         inline constexpr uint32_t GetWavePlayID = 16;
         inline constexpr uint32_t ClearMidiTrack = 8;
-        inline constexpr uint32_t ClearWaveTrack = 48;
+        inline constexpr uint32_t ClearWaveTrack = 8;
         inline constexpr uint32_t Wave_isInPlay = 48;
-        inline constexpr uint32_t Midi_isInPlay = 32;
-        inline constexpr uint32_t MidiPlayNow = 32;
-        inline constexpr uint32_t WavePlayNow = 64;
-        inline constexpr uint32_t MidiStopNow = 40;
+        inline constexpr uint32_t Midi_isInPlay = 16;
+        inline constexpr uint32_t MidiPlayNow = 40;
+        inline constexpr uint32_t WavePlayNow = 48;
+        inline constexpr uint32_t MidiStopNow = 32;
         inline constexpr uint32_t WaveStopNow = 40;
-        inline constexpr uint32_t MidiFader = 40;
+        inline constexpr uint32_t MidiFader = 32;
         inline constexpr uint32_t WaveVolumeFader = 40;
         inline constexpr uint32_t WavePitchFader = 40;
-        inline constexpr uint32_t MidiLoop = 8;
+        inline constexpr uint32_t MidiLoop = 32;
         inline constexpr uint32_t WaveLoop = 40;
         inline constexpr uint32_t MidiIdle = 40;
-        inline constexpr uint32_t WaveIdle = 32;
-        inline constexpr uint32_t VoiceIdle = 96;
-        inline constexpr uint32_t UseHD = 48;
-        inline constexpr uint32_t atick = 40;
-        inline constexpr uint32_t Load_atick = 40;
-        inline constexpr uint32_t EndAllThread = 32;
-        inline constexpr uint32_t CmdInit = 40;
-        inline constexpr uint32_t CmdTerm = 32;
+        inline constexpr uint32_t WaveIdle = 40;
+        inline constexpr uint32_t VoiceIdle = 104;
+        inline constexpr uint32_t UseHD = 16;
+        inline constexpr uint32_t atick = 32;
+        inline constexpr uint32_t Load_atick = 24;
+        inline constexpr uint32_t EndAllThread = 24;
+        inline constexpr uint32_t CmdInit = 8;
+        inline constexpr uint32_t CmdTerm = 48;
         inline constexpr uint32_t ReportFileRequestList = 32;
-        inline constexpr uint32_t AddFilePutPos = 32;
+        inline constexpr uint32_t AddFilePutPos = 16;
         inline constexpr uint32_t AddRequestPutPos = 16;
-        inline constexpr uint32_t AddFileGetPos = 16;
-        inline constexpr uint32_t AddRequestGetPos = 32;
+        inline constexpr uint32_t AddFileGetPos = 8;
+        inline constexpr uint32_t AddRequestGetPos = 40;
         inline constexpr uint32_t CmdMidiOpen = 48;
         inline constexpr uint32_t CmdSqOpen = 48;
-        inline constexpr uint32_t CmdWaveOpen = 24;
-        inline constexpr uint32_t CmdMidiClose = 40;
-        inline constexpr uint32_t CmdWaveClose = 16;
-        inline constexpr uint32_t CmdCopyJointSPU = 24;
-        inline constexpr uint32_t CmdClearJointSPU = 0;
-        inline constexpr uint32_t CmdMidiPlay = 0;
-        inline constexpr uint32_t CmdWavePlay = 0;
-        inline constexpr uint32_t CmdMidiStop = 0;
-        inline constexpr uint32_t CmdWaveStop = 0;
-        inline constexpr uint32_t CmdMidiSetVolume = 0;
-        inline constexpr uint32_t CmdWaveSetVolume = 0;
-        inline constexpr uint32_t CmdMidiSetTempo = 0;
-        inline constexpr uint32_t CmdWaveSetPitch = 0;
-        inline constexpr uint32_t CmdMidiFade = 0;
-        inline constexpr uint32_t CmdWaveFade = 0;
-        inline constexpr uint32_t CmdWavePitchFade = 0;
-        inline constexpr uint32_t CmdMidiSetTrackVolume = 0;
-        inline constexpr uint32_t CmdWaveSetTrackVolume = 0;
-        inline constexpr uint32_t CmdVoiceFile = 0;
-        inline constexpr uint32_t CmdVoicePlay = 0;
-        inline constexpr uint32_t RunMidiOpen = 0;
-        inline constexpr uint32_t RunSqOpen = 0;
-        inline constexpr uint32_t RunWaveOpen = 0;
-        inline constexpr uint32_t RunMidiClose = 0;
-        inline constexpr uint32_t RunWaveClose = 0;
-        inline constexpr uint32_t RunMidiPlay = 0;
-        inline constexpr uint32_t RunWavePlay = 0;
-        inline constexpr uint32_t RunMidiStop = 0;
-        inline constexpr uint32_t RunWaveStop = 0;
-        inline constexpr uint32_t RunMidiFStop = 0;
-        inline constexpr uint32_t RunWaveFStop = 0;
-        inline constexpr uint32_t RunMidiSetVolume = 0;
-        inline constexpr uint32_t RunWaveSetVolume = 0;
-        inline constexpr uint32_t RunMidiFade = 0;
-        inline constexpr uint32_t RunWaveFade = 0;
-        inline constexpr uint32_t RunWavePitchFade = 0;
-        inline constexpr uint32_t RunMidiSetTempo = 0;
-        inline constexpr uint32_t RunWaveSetPitch = 0;
-        inline constexpr uint32_t RunMidiSetTVolume = 0;
-        inline constexpr uint32_t RunWaveSetTVolume = 0;
-        inline constexpr uint32_t RunVoicePlay = 0;
-        inline constexpr uint32_t RunCopyJointSPU = 0;
-        inline constexpr uint32_t RunClearJointSPU = 0;
-        inline constexpr uint32_t RunCommand = 0;
-        inline constexpr uint32_t CmdMidiGetVolume = 0;
-        inline constexpr uint32_t CmdWaveGetVolume = 0;
-        inline constexpr uint32_t CmdSetCheckID = 0;
-        inline constexpr uint32_t AddRequest = 0;
-        inline constexpr uint32_t soundFunc = 0;
-        inline constexpr uint32_t sce_ee_loop = 0;
-        inline constexpr uint32_t make_Timer_thread = 0;
-        inline constexpr uint32_t make_EE_thread = 0;
-        inline constexpr uint32_t make_Load_thread = 0;
-        inline constexpr uint32_t StartTimerThread = 0;
-        inline constexpr uint32_t StartEEThread = 0;
-        inline constexpr uint32_t StartLoadThread = 0;
-        inline constexpr uint32_t NewSPUMemory = 0;
-        inline constexpr uint32_t DeleteSPUMemory = 0;
-        inline constexpr uint32_t BuffInit = 0;
-        inline constexpr uint32_t Init = 0;
-        inline constexpr uint32_t start = 0;
+        inline constexpr uint32_t CmdWaveOpen = 48;
+        inline constexpr uint32_t CmdMidiClose = 32;
+        inline constexpr uint32_t CmdWaveClose = 32;
+        inline constexpr uint32_t CmdCopyJointSPU = 32;
+        inline constexpr uint32_t CmdClearJointSPU = 32;
+        inline constexpr uint32_t CmdMidiPlay = 56;
+        inline constexpr uint32_t CmdWavePlay = 64;
+        inline constexpr uint32_t CmdMidiStop = 40;
+        inline constexpr uint32_t CmdWaveStop = 40;
+        inline constexpr uint32_t CmdMidiSetVolume = 40;
+        inline constexpr uint32_t CmdWaveSetVolume = 40;
+        inline constexpr uint32_t CmdMidiSetTempo = 40;
+        inline constexpr uint32_t CmdWaveSetPitch = 40;
+        inline constexpr uint32_t CmdMidiFade = 40;
+        inline constexpr uint32_t CmdWaveFade = 40;
+        inline constexpr uint32_t CmdWavePitchFade = 40;
+        inline constexpr uint32_t CmdMidiSetTrackVolume = 40;
+        inline constexpr uint32_t CmdWaveSetTrackVolume = 40;
+        inline constexpr uint32_t CmdVoiceFile = 8;
+        inline constexpr uint32_t CmdVoicePlay = 72;
+        inline constexpr uint32_t RunMidiOpen = 40;
+        inline constexpr uint32_t RunSqOpen = 40;
+        inline constexpr uint32_t RunWaveOpen = 40;
+        inline constexpr uint32_t RunMidiClose = 32;
+        inline constexpr uint32_t RunWaveClose = 32;
+        inline constexpr uint32_t RunMidiPlay = 48;
+        inline constexpr uint32_t RunWavePlay = 96;
+        inline constexpr uint32_t RunMidiStop = 40;
+        inline constexpr uint32_t RunWaveStop = 48;
+        inline constexpr uint32_t RunMidiFStop = 40;
+        inline constexpr uint32_t RunWaveFStop = 40;
+        inline constexpr uint32_t RunMidiSetVolume = 32;
+        inline constexpr uint32_t RunWaveSetVolume = 40;
+        inline constexpr uint32_t RunMidiFade = 32;
+        inline constexpr uint32_t RunWaveFade = 32;
+        inline constexpr uint32_t RunWavePitchFade = 32;
+        inline constexpr uint32_t RunMidiSetTempo = 40;
+        inline constexpr uint32_t RunWaveSetPitch = 40;
+        inline constexpr uint32_t RunMidiSetTVolume = 32;
+        inline constexpr uint32_t RunWaveSetTVolume = 32;
+        inline constexpr uint32_t RunVoicePlay = 32;
+        inline constexpr uint32_t RunCopyJointSPU = 56;
+        inline constexpr uint32_t RunClearJointSPU = 32;
+        inline constexpr uint32_t RunCommand = 48;
+        inline constexpr uint32_t CmdMidiGetVolume = 16;
+        inline constexpr uint32_t CmdWaveGetVolume = 16;
+        inline constexpr uint32_t CmdSetCheckID = 16;
+        inline constexpr uint32_t AddRequest = 32;
+        inline constexpr uint32_t soundFunc = 32;
+        inline constexpr uint32_t sce_ee_loop = 136;
+        inline constexpr uint32_t make_Timer_thread = 48;
+        inline constexpr uint32_t make_EE_thread = 48;
+        inline constexpr uint32_t make_Load_thread = 48;
+        inline constexpr uint32_t StartTimerThread = 24;
+        inline constexpr uint32_t StartEEThread = 24;
+        inline constexpr uint32_t StartLoadThread = 24;
+        inline constexpr uint32_t NewSPUMemory = 40;
+        inline constexpr uint32_t DeleteSPUMemory = 16;
+        inline constexpr uint32_t BuffInit = 16;
+        inline constexpr uint32_t Init = 32;
+        inline constexpr uint32_t start = 24;
+    }
+
+    // stack locals: offset from the stack pointer at entry (the original's debug info names them; the frame is below it)
+    namespace local
+    {
+        namespace timer_handler
+        {
+            inline constexpr int32_t tc = -16;
+        }
+        namespace stop_timer
+        {
+            inline constexpr int32_t ret = -16;
+        }
+        namespace set_timer
+        {
+            inline constexpr int32_t clock = -24;
+            inline constexpr int32_t timer_id = -16;
+        }
+        namespace stop_load_timer
+        {
+            inline constexpr int32_t ret = -16;
+        }
+        namespace set_load_timer
+        {
+            inline constexpr int32_t clock = -24;
+            inline constexpr int32_t timer_id = -16;
+        }
+        namespace repeatCB
+        {
+            inline constexpr int32_t pHdr = -16;
+        }
+        namespace set_module_context
+        {
+            inline constexpr int32_t i = -16;
+            inline constexpr int32_t num = -12;
+            inline constexpr int32_t num_2 = -12;
+        }
+        namespace set_midi
+        {
+            inline constexpr int32_t i = -16;
+            inline constexpr int32_t j = -12;
+        }
+        namespace set_hsyn
+        {
+            inline constexpr int32_t i = -16;
+        }
+        namespace SendDataForEE
+        {
+            inline constexpr int32_t oldstat = -32;
+            inline constexpr int32_t sdd = -24;
+        }
+        namespace OpenFileIOP
+        {
+            inline constexpr int32_t flen = -24;
+            inline constexpr int32_t fd = -20;
+            inline constexpr int32_t mem = -16;
+            inline constexpr int32_t oldstat = -12;
+        }
+        namespace CloseFileIOP
+        {
+            inline constexpr int32_t oldstat = -16;
+        }
+        namespace OpenFileSPU
+        {
+            inline constexpr int32_t flen = -16;
+            inline constexpr int32_t msize = -12;
+            inline constexpr int32_t size = -12;
+            inline constexpr int32_t trsize = -16;
+        }
+        namespace OpenJointFile
+        {
+            inline constexpr int32_t i = -32;
+            inline constexpr int32_t mem = -28;
+            inline constexpr int32_t file = -24;
+            inline constexpr int32_t idxsize = -20;
+            inline constexpr int32_t rsize = -16;
+            inline constexpr int32_t oldstat = -12;
+        }
+        namespace CloseJointFile
+        {
+            inline constexpr int32_t i = -16;
+            inline constexpr int32_t oldstat = -12;
+        }
+        namespace set_spu2
+        {
+            inline constexpr int32_t i = -40;
+            inline constexpr int32_t r_attr = -32;
+        }
+        namespace GetWavePlayID
+        {
+            inline constexpr int32_t id = -12;
+        }
+        namespace Wave_isInPlay
+        {
+            inline constexpr int32_t id = -20;
+            inline constexpr int32_t port = -16;
+            inline constexpr int32_t oldstat = -12;
+        }
+        namespace MidiPlayNow
+        {
+            inline constexpr int32_t oldstat = -20;
+            inline constexpr int32_t ret = -16;
+        }
+        namespace WavePlayNow
+        {
+            inline constexpr int32_t oldstat = -20;
+            inline constexpr int32_t ret = -16;
+        }
+        namespace MidiStopNow
+        {
+            inline constexpr int32_t oldstat = -12;
+        }
+        namespace WaveStopNow
+        {
+            inline constexpr int32_t oldstat = -12;
+        }
+        namespace MidiFader
+        {
+            inline constexpr int32_t oldstat = -16;
+        }
+        namespace WaveVolumeFader
+        {
+            inline constexpr int32_t k = -20;
+            inline constexpr int32_t core = -16;
+        }
+        namespace WavePitchFader
+        {
+            inline constexpr int32_t k = -20;
+            inline constexpr int32_t core = -16;
+            inline constexpr int32_t pitch = -12;
+        }
+        namespace MidiLoop
+        {
+            inline constexpr int32_t mp = -16;
+        }
+        namespace WaveLoop
+        {
+            inline constexpr int32_t wp = -24;
+        }
+        namespace MidiIdle
+        {
+            inline constexpr int32_t i = -24;
+            inline constexpr int32_t oldMidiStatus = -20;
+            inline constexpr int32_t pMT = -16;
+        }
+        namespace WaveIdle
+        {
+            inline constexpr int32_t i = -24;
+            inline constexpr int32_t oldWaveStatus = -20;
+            inline constexpr int32_t pWT = -16;
+        }
+        namespace VoiceIdle
+        {
+            inline constexpr int32_t i = -88;
+            inline constexpr int32_t track = -84;
+            inline constexpr int32_t pWT = -80;
+            inline constexpr int32_t change = -76;
+            inline constexpr int32_t pVL = -72;
+            inline constexpr int32_t voice = -68;
+            inline constexpr int32_t code = -66;
+            inline constexpr int32_t tone = -65;
+            inline constexpr int32_t fno = -64;
+            inline constexpr int32_t note = -63;
+            inline constexpr int32_t wp = -56;
+            inline constexpr int32_t wv = -40;
+            inline constexpr int32_t wf = -24;
+            inline constexpr int32_t counter = -16;
+            inline constexpr int32_t vol = -14;
+            inline constexpr int32_t type = -12;
+        }
+        namespace UseHD
+        {
+            inline constexpr int32_t i = -16;
+            inline constexpr int32_t count = -12;
+        }
+        namespace atick
+        {
+            inline constexpr int32_t oldstat = -16;
+        }
+        namespace CmdTerm
+        {
+            inline constexpr int32_t i = -32;
+            inline constexpr int32_t oldstat = -28;
+            inline constexpr int32_t mc = -24;
+            inline constexpr int32_t wc = -16;
+        }
+        namespace ReportFileRequestList
+        {
+            inline constexpr int32_t put = -16;
+            inline constexpr int32_t get = -14;
+        }
+        namespace AddFilePutPos
+        {
+            inline constexpr int32_t oldPos = -16;
+        }
+        namespace AddRequestPutPos
+        {
+            inline constexpr int32_t oldPos = -15;
+        }
+        namespace AddRequestGetPos
+        {
+            inline constexpr int32_t cmd = -14;
+        }
+        namespace CmdMidiOpen
+        {
+            inline constexpr int32_t ret = -32;
+            inline constexpr int32_t pCL = -28;
+            inline constexpr int32_t pCO = -24;
+            inline constexpr int32_t pFO = -20;
+            inline constexpr int32_t mc = -16;
+        }
+        namespace CmdSqOpen
+        {
+            inline constexpr int32_t ret = -32;
+            inline constexpr int32_t pCL = -28;
+            inline constexpr int32_t pCO = -24;
+            inline constexpr int32_t pFO = -20;
+            inline constexpr int32_t mc = -16;
+        }
+        namespace CmdWaveOpen
+        {
+            inline constexpr int32_t ret = -32;
+            inline constexpr int32_t pCL = -28;
+            inline constexpr int32_t pCO = -24;
+            inline constexpr int32_t pFO = -20;
+            inline constexpr int32_t wc = -16;
+        }
+        namespace CmdMidiClose
+        {
+            inline constexpr int32_t pCL = -16;
+            inline constexpr int32_t pCO = -12;
+        }
+        namespace CmdWaveClose
+        {
+            inline constexpr int32_t pCL = -16;
+            inline constexpr int32_t pCO = -12;
+        }
+        namespace CmdCopyJointSPU
+        {
+            inline constexpr int32_t pCL = -16;
+            inline constexpr int32_t pCO = -12;
+        }
+        namespace CmdClearJointSPU
+        {
+            inline constexpr int32_t pCL = -16;
+            inline constexpr int32_t pCO = -12;
+        }
+        namespace CmdMidiPlay
+        {
+            inline constexpr int32_t ret = -40;
+            inline constexpr int32_t pCL = -36;
+            inline constexpr int32_t pCO = -32;
+            inline constexpr int32_t cmvol = -24;
+            inline constexpr int32_t cmtempo = -16;
+        }
+        namespace CmdWavePlay
+        {
+            inline constexpr int32_t ret = -48;
+            inline constexpr int32_t pCL = -44;
+            inline constexpr int32_t pCO = -40;
+            inline constexpr int32_t cwvol = -32;
+            inline constexpr int32_t cwpitch = -16;
+        }
+        namespace CmdMidiStop
+        {
+            inline constexpr int32_t pCL = -24;
+            inline constexpr int32_t pCO = -20;
+            inline constexpr int32_t pMT = -16;
+        }
+        namespace CmdWaveStop
+        {
+            inline constexpr int32_t pCL = -24;
+            inline constexpr int32_t pCO = -20;
+            inline constexpr int32_t pWT = -16;
+        }
+        namespace CmdMidiSetVolume
+        {
+            inline constexpr int32_t pMT = -20;
+            inline constexpr int32_t pCL = -16;
+            inline constexpr int32_t pCO = -12;
+        }
+        namespace CmdWaveSetVolume
+        {
+            inline constexpr int32_t pWT = -20;
+            inline constexpr int32_t pCL = -16;
+            inline constexpr int32_t pCO = -12;
+        }
+        namespace CmdMidiSetTempo
+        {
+            inline constexpr int32_t pMT = -20;
+            inline constexpr int32_t pCL = -16;
+            inline constexpr int32_t pCO = -12;
+        }
+        namespace CmdWaveSetPitch
+        {
+            inline constexpr int32_t pWT = -20;
+            inline constexpr int32_t pCL = -16;
+            inline constexpr int32_t pCO = -12;
+        }
+        namespace CmdMidiFade
+        {
+            inline constexpr int32_t pCL = -24;
+            inline constexpr int32_t pCO = -20;
+            inline constexpr int32_t pMT = -16;
+        }
+        namespace CmdWaveFade
+        {
+            inline constexpr int32_t pCL = -24;
+            inline constexpr int32_t pCO = -20;
+            inline constexpr int32_t pWT = -16;
+        }
+        namespace CmdWavePitchFade
+        {
+            inline constexpr int32_t pCL = -20;
+            inline constexpr int32_t pCO = -16;
+            inline constexpr int32_t pWT = -12;
+        }
+        namespace CmdMidiSetTrackVolume
+        {
+            inline constexpr int32_t pCL = -24;
+            inline constexpr int32_t pCO = -20;
+            inline constexpr int32_t pMT = -16;
+        }
+        namespace CmdWaveSetTrackVolume
+        {
+            inline constexpr int32_t pCL = -24;
+            inline constexpr int32_t pCO = -20;
+            inline constexpr int32_t pWT = -16;
+        }
+        namespace CmdVoicePlay
+        {
+            inline constexpr int32_t i = -56;
+            inline constexpr int32_t svpos = -52;
+            inline constexpr int32_t stpos = -48;
+            inline constexpr int32_t slpos = -44;
+            inline constexpr int32_t dvpos = -40;
+            inline constexpr int32_t dtpos = -36;
+            inline constexpr int32_t dlpos = -32;
+            inline constexpr int32_t pCL = -28;
+            inline constexpr int32_t pCO = -24;
+            inline constexpr int32_t pLastCode = -20;
+            inline constexpr int32_t vno = -16;
+            inline constexpr int32_t nflag = -12;
+            inline constexpr int32_t LastCode = -10;
+        }
+        namespace RunMidiOpen
+        {
+            inline constexpr int32_t pMF = -24;
+            inline constexpr int32_t pFO = -20;
+            inline constexpr int32_t ret = -16;
+            inline constexpr int32_t spuadr = -12;
+        }
+        namespace RunSqOpen
+        {
+            inline constexpr int32_t pMF = -24;
+            inline constexpr int32_t pFO = -20;
+            inline constexpr int32_t ret = -16;
+        }
+        namespace RunWaveOpen
+        {
+            inline constexpr int32_t pWF = -24;
+            inline constexpr int32_t pFO = -20;
+            inline constexpr int32_t ret = -16;
+            inline constexpr int32_t spuadr = -12;
+        }
+        namespace RunMidiClose
+        {
+            inline constexpr int32_t pMF = -16;
+            inline constexpr int32_t i = -12;
+        }
+        namespace RunWaveClose
+        {
+            inline constexpr int32_t pWF = -16;
+            inline constexpr int32_t i = -12;
+        }
+        namespace RunMidiPlay
+        {
+            inline constexpr int32_t pMT = -24;
+            inline constexpr int32_t num = -20;
+            inline constexpr int32_t pMF = -16;
+        }
+        namespace RunWavePlay
+        {
+            inline constexpr int32_t hd_addr = -72;
+            inline constexpr int32_t bd_addr = -68;
+            inline constexpr int32_t port = -64;
+            inline constexpr int32_t pU08 = -60;
+            inline constexpr int32_t pU32 = -56;
+            inline constexpr int32_t pU16 = -52;
+            inline constexpr int32_t defpitch = -48;
+            inline constexpr int32_t pHeader = -44;
+            inline constexpr int32_t pProgram = -40;
+            inline constexpr int32_t pSampSet = -36;
+            inline constexpr int32_t pSample = -32;
+            inline constexpr int32_t pVag = -28;
+            inline constexpr int32_t pWT = -24;
+            inline constexpr int32_t pWF = -20;
+            inline constexpr int32_t i = -16;
+            inline constexpr int32_t phd = -12;
+        }
+        namespace RunMidiStop
+        {
+            inline constexpr int32_t pMT = -20;
+            inline constexpr int32_t oldstat = -16;
+            inline constexpr int32_t ret = -12;
+        }
+        namespace RunWaveStop
+        {
+            inline constexpr int32_t id = -20;
+            inline constexpr int32_t pWT = -16;
+            inline constexpr int32_t oldstat = -12;
+        }
+        namespace RunMidiFStop
+        {
+            inline constexpr int32_t i = -24;
+            inline constexpr int32_t ms = -16;
+        }
+        namespace RunWaveFStop
+        {
+            inline constexpr int32_t i = -24;
+            inline constexpr int32_t ws = -16;
+        }
+        namespace RunMidiSetVolume
+        {
+            inline constexpr int32_t pMT = -16;
+            inline constexpr int32_t oldstat = -12;
+        }
+        namespace RunWaveSetVolume
+        {
+            inline constexpr int32_t pWT = -24;
+            inline constexpr int32_t k = -20;
+            inline constexpr int32_t core = -16;
+        }
+        namespace RunMidiFade
+        {
+            inline constexpr int32_t pMT = -16;
+        }
+        namespace RunWaveFade
+        {
+            inline constexpr int32_t pWT = -16;
+        }
+        namespace RunWavePitchFade
+        {
+            inline constexpr int32_t pWT = -16;
+        }
+        namespace RunMidiSetTempo
+        {
+            inline constexpr int32_t pMT = -24;
+            inline constexpr int32_t oldstat = -20;
+            inline constexpr int32_t tempo = -16;
+        }
+        namespace RunWaveSetPitch
+        {
+            inline constexpr int32_t k = -24;
+            inline constexpr int32_t core = -20;
+            inline constexpr int32_t pitch = -16;
+            inline constexpr int32_t pWT = -12;
+        }
+        namespace RunMidiSetTVolume
+        {
+            inline constexpr int32_t oldstat = -16;
+            inline constexpr int32_t ret = -12;
+        }
+        namespace RunWaveSetTVolume
+        {
+            inline constexpr int32_t oldstat = -16;
+            inline constexpr int32_t ret = -12;
+        }
+        namespace RunVoicePlay
+        {
+            inline constexpr int32_t i = -16;
+            inline constexpr int32_t pWT = -12;
+        }
+        namespace RunCopyJointSPU
+        {
+            inline constexpr int32_t sadr = -40;
+            inline constexpr int32_t size = -36;
+            inline constexpr int32_t i = -32;
+            inline constexpr int32_t lno = -28;
+            inline constexpr int32_t mem = -24;
+            inline constexpr int32_t cmem = -20;
+            inline constexpr int32_t pWF = -16;
+            inline constexpr int32_t rsize = -12;
+        }
+        namespace RunClearJointSPU
+        {
+            inline constexpr int32_t i = -16;
+            inline constexpr int32_t pWF = -12;
+        }
+        namespace RunCommand
+        {
+            inline constexpr int32_t ReqCount = -31;
+            inline constexpr int32_t i = -28;
+            inline constexpr int32_t ret = -24;
+            inline constexpr int32_t pCL = -20;
+            inline constexpr int32_t pCO = -16;
+        }
+        namespace CmdMidiGetVolume
+        {
+            inline constexpr int32_t pMT = -12;
+        }
+        namespace CmdWaveGetVolume
+        {
+            inline constexpr int32_t pWT = -12;
+        }
+        namespace AddRequest
+        {
+            inline constexpr int32_t ret = -16;
+            inline constexpr int32_t pCC = -12;
+        }
+        namespace soundFunc
+        {
+            inline constexpr int32_t ret = -16;
+        }
+        namespace sce_ee_loop
+        {
+            inline constexpr int32_t qd = -104;
+            inline constexpr int32_t sd = -80;
+        }
+        namespace make_Timer_thread
+        {
+            inline constexpr int32_t param = -32;
+        }
+        namespace make_EE_thread
+        {
+            inline constexpr int32_t param = -32;
+        }
+        namespace make_Load_thread
+        {
+            inline constexpr int32_t param = -32;
+        }
+        namespace NewSPUMemory
+        {
+            inline constexpr int32_t addr = -24;
+            inline constexpr int32_t size = -20;
+            inline constexpr int32_t pos = -16;
+            inline constexpr int32_t i = -14;
+        }
+        namespace DeleteSPUMemory
+        {
+            inline constexpr int32_t i = -16;
+            inline constexpr int32_t pos = -14;
+        }
+        namespace BuffInit
+        {
+            inline constexpr int32_t i = -16;
+        }
+        namespace Init
+        {
+            inline constexpr int32_t oldstat = -16;
+            inline constexpr int32_t freesize = -12;
+        }
+    }
+
+    // strings of .rodata, by their absolute IOP address
+    namespace str
+    {
+        inline constexpr uint32_t T_T_yySound_ERROR_Can_NOT_start_hard_timer = 0x6BF60;  // "(T_T)yySound *** ERROR *** Can NOT start hard timer ...\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_Can_NOT_stop_hard_timer = 0x6BF9C;  // "(T_T)yySound *** ERROR *** Can NOT stop hard timer ...\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_Can_NOT_free_hard_timer = 0x6BFD4;  // "(T_T)yySound *** ERROR *** Can NOT free hard timer ...\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_Can_NOT_allocate_hard_timer = 0x6C00C;  // "(T_T)yySound *** ERROR *** Can NOT allocate hard timer ...\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_Can_NOT_set_timeup_timer = 0x6C048;  // "(T_T)yySound *** ERROR *** Can NOT set timeup timer handler ...\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_Can_NOT_setup_hard_timer = 0x6C08C;  // "(T_T)yySound *** ERROR *** Can NOT setup hard timer ...\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_Can_NOT_start_hard_load = 0x6C0C8;  // "(T_T)yySound *** ERROR *** Can NOT start hard load timer ...\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_Can_NOT_stop_hard_load = 0x6C108;  // "(T_T)yySound *** ERROR *** Can NOT stop hard load timer ...\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_Can_NOT_free_hard_load = 0x6C148;  // "(T_T)yySound *** ERROR *** Can NOT free hard load timer ...\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_Can_NOT_allocate_hard_load = 0x6C188;  // "(T_T)yySound *** ERROR *** Can NOT allocate hard load timer ...\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_Can_NOT_set_timeup_load = 0x6C1CC;  // "(T_T)yySound *** ERROR *** Can NOT set timeup load timer handler ...\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_Can_NOT_setup_hard_load = 0x6C214;  // "(T_T)yySound *** ERROR *** Can NOT setup hard load timer ...\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_sceMidi_Init = 0x6C254;  // "(T_T)yySound *** ERROR *** sceMidi_Init\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_sceHSyn_Init = 0x6C280;  // "(T_T)yySound *** ERROR *** sceHSyn_Init\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_sceSEIn_Init = 0x6C2AC;  // "(T_T)yySound *** ERROR *** sceSEIn_Init\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_open_failed = 0x6C2D8;  // "(T_T)yySound *** ERROR *** open failed.\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_lseek_failed = 0x6C304;  // "(T_T)yySound *** ERROR *** lseek failed.\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_Can_t_alloc_heap_memory = 0x6C330;  // "(T_T)yySound *** ERROR *** Can't alloc heap memory\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_file_read_failed = 0x6C364;  // "(T_T)yySound *** ERROR *** file read failed.\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_sceHSyn_VoisTrans = 0x6C394;  // "(T_T)yySound *** ERROR *** sceHSyn_VoisTrans\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_read_BD = 0x6C3C4;  // "(T_T)yySound *** ERROR *** read BD\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_OpenJointFile_ReadError_s = 0x6C3E8;  // "(T_T)yySound *** ERROR *** OpenJointFile: ReadError(%s)\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_OpenJointFile_FileTypeError_s = 0x6C424;  // "(T_T)yySound *** ERROR *** OpenJointFile: FileTypeError(%s)\n"
+        inline constexpr uint32_t yySoundIOP_Error_EffectClear = 0x6C464;  // "yySoundIOP:Error EffectClear!\n"
+        inline constexpr uint32_t yySoundIOP_Error_EffectOFF = 0x6C484;  // "yySoundIOP:Error EffectOFF\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_sceMidi_SelectMidi = 0x6C4A0;  // "(T_T)yySound *** ERROR *** sceMidi_SelectMidi\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_sceMidi_MidiSetLocation = 0x6C4D0;  // "(T_T)yySound *** ERROR *** sceMidi_MidiSetLocation\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_sceMidi_MidiPlaySwitch = 0x6C504;  // "(T_T)yySound *** ERROR *** sceMidi_MidiPlaySwitch\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_sceSEIn_NoteOn = 0x6C538;  // "(T_T)yySound *** ERROR *** sceSEIn_NoteOn\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_clear_timer_something_wrong = 0x6C564;  // "(T_T)yySound *** ERROR *** clear_timer: something wrong ...\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_clear_load_timer_something_wrong = 0x6C5A4;  // "(T_T)yySound *** ERROR *** clear_load_timer: something wrong ...\n"
+        inline constexpr uint32_t FileRequestCount_d = 0x6C5E8;  // "FileRequestCount = %d\n"
+        inline constexpr uint32_t IOPERR_FNO_d_PUT_GET_03d_CMD_04X = 0x6C600;  // "IOPERR FNO=%d,PUT=GET=%03d,CMD=%04X\n"
+        inline constexpr uint32_t IOPERR_FNO_d_PUT_03d_GET_03d_CMD_04X = 0x6C628;  // "IOPERR FNO=%d,PUT=%03d,GET=%03d,CMD=%04X\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_file_number_over = 0x6C654;  // "(T_T)yySound *** ERROR *** file number over\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_CmdMidiClose_file_number_over_d = 0x6C684;  // "(T_T)yySound *** ERROR *** CmdMidiClose:file number over(%d)\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_CmdMidiClose_file_is_not_open = 0x6C6C4;  // "(T_T)yySound *** ERROR *** CmdMidiClose:file is not open(%d)\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_CmdWaveClose_file_number_over_d = 0x6C704;  // "(T_T)yySound *** ERROR *** CmdWaveClose:file number over(%d)\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_CmdWaveClose_file_is_not_open = 0x6C744;  // "(T_T)yySound *** ERROR *** CmdWaveClose:file is not open(%d)\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_CmdCopyJointSPU_NotOpen = 0x6C784;  // "(T_T)yySound *** ERROR *** CmdCopyJointSPU: NotOpen\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_CmdClearJointSPU_NotOpen = 0x6C7BC;  // "(T_T)yySound *** ERROR *** CmdClearJointSPU: NotOpen\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_CmdMidiPlay_file_number_over_d = 0x6C7F4;  // "(T_T)yySound *** ERROR *** CmdMidiPlay:file number over(%d)\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_CmdMidiPlay_track_number_over_d = 0x6C834;  // "(T_T)yySound *** ERROR *** CmdMidiPlay:track number over(%d)\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_CmdMidiPlay_file_is_not_open = 0x6C874;  // "(T_T)yySound *** ERROR *** CmdMidiPlay:file is not open(%d)\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_CmdWavePlay_file_number_over_d = 0x6C8B4;  // "(T_T)yySound *** ERROR *** CmdWavePlay:file number over(%d)\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_CmdWavePlay_track_number_over_d = 0x6C8F4;  // "(T_T)yySound *** ERROR *** CmdWavePlay:track number over(%d)\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_CmdWavePlay_file_is_not_open = 0x6C934;  // "(T_T)yySound *** ERROR *** CmdWavePlay:file is not open(%d)\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_CMD_MidiStop_track_number_over = 0x6C974;  // "(T_T)yySound *** ERROR *** CMD MidiStop: track number over(%d)\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_CMD_WaveStop_track_number_over = 0x6C9B4;  // "(T_T)yySound *** ERROR *** CMD WaveStop: track number over(%d)\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_CmdMidiSetVolume_track_number_over_d = 0x6C9F4;  // "(T_T)yySound *** ERROR *** CmdMidiSetVolume:track number over(%d)\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_CmdMidiSetVolume_volume_level_over_d = 0x6CA38;  // "(T_T)yySound *** ERROR *** CmdMidiSetVolume: volume level over(%d)\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_track_number_over = 0x6CA7C;  // "(T_T)yySound *** ERROR *** track number over\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_CmdWaveSetVolume_volume_level_over_L = 0x6CAAC;  // "(T_T)yySound *** ERROR *** CmdWaveSetVolume:volume level over(L=%d)\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_CmdWaveSetVolume_volume_level_over_R = 0x6CAF4;  // "(T_T)yySound *** ERROR *** CmdWaveSetVolume:volume level over(R=%d)\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_CmdMidiSetTempo_track_number_over_d = 0x6CB3C;  // "(T_T)yySound *** ERROR *** CmdMidiSetTempo: track number over(%d)\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_CmdWaveSetPitch_track_number_over_d = 0x6CB80;  // "(T_T)yySound *** ERROR *** CmdWaveSetPitch: track number over(%d)\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_CmdWaveSetPitch_pitch_over_d = 0x6CBC4;  // "(T_T)yySound *** ERROR *** CmdWaveSetPitch: pitch over(%d)\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_CmdMidiFade_track_number_over_d = 0x6CC00;  // "(T_T)yySound *** ERROR *** CmdMidiFade: track number over(%d)\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_CmdWaveFade_track_number_over_d = 0x6CC40;  // "(T_T)yySound *** ERROR *** CmdWaveFade: track number over(%d)\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_CmdWavePitchFade_track_number_over_d = 0x6CC80;  // "(T_T)yySound *** ERROR *** CmdWavePitchFade: track number over(%d)\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_MidiSetTrackVolume_track_number_over_d = 0x6CCC4;  // "(T_T)yySound *** ERROR *** MidiSetTrackVolume::track number over(%d)\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_MidiSetTrackVolume_volume_level_over_d = 0x6CD0C;  // "(T_T)yySound *** ERROR *** MidiSetTrackVolume::volume level over(%d)\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_WaveSetTrackVolume_volume_level_over_d = 0x6CD54;  // "(T_T)yySound *** ERROR *** WaveSetTrackVolume::volume level over(%d)\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_VOICE_LIST_BUFFER_FULL = 0x6CD9C;  // "(T_T)yySound *** ERROR *** VOICE LIST BUFFER FULL!\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_RunMidiPlay_d_MidiFile_Not_Open = 0x6CDD0;  // "(T_T)yySound *** ERROR *** RunMidiPlay(%d): MidiFile Not Open\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_sceMidi_Load = 0x6CE10;  // "(T_T)yySound *** ERROR *** sceMidi_Load\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_sceHSyn_Load = 0x6CE3C;  // "(T_T)yySound *** ERROR *** sceHSyn_Load\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_RunWavePlay_d_WaveFile_Not_Open = 0x6CE68;  // "(T_T)yySound *** ERROR *** RunWavePlay(%d): WaveFile Not Open\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_RunWavePlay_d_JointNo_NotCopy = 0x6CEA8;  // "(T_T)yySound *** ERROR *** RunWavePlay(%d): JointNo NotCopy\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_program_number_over_max_d = 0x6CEE8;  // "(T_T)yySound *** ERROR *** program number over (max = %d)\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_program_number_d_is_NoData = 0x6CF24;  // "(T_T)yySound *** ERROR *** program number %d is NoData\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_sceMidi_MidiPlayStop = 0x6CF5C;  // "(T_T)yySound *** ERROR *** sceMidi_MidiPlayStop\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_volume_level_over = 0x6CF90;  // "(T_T)yySound *** ERROR *** volume level over\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_RunCopyJointSPU_NotOpen = 0x6CFC0;  // "(T_T)yySound *** ERROR *** RunCopyJointSPU: NotOpen\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_RunCopyJointSPU_ModeError = 0x6CFF8;  // "(T_T)yySound *** ERROR *** RunCopyJointSPU: ModeError\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_RunCopyJointSPU_JointNumberOver_d = 0x6D030;  // "(T_T)yySound *** ERROR *** RunCopyJointSPU: JointNumberOver(%d)\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_RunCopyJointSPU_KeepListFull = 0x6D074;  // "(T_T)yySound *** ERROR *** RunCopyJointSPU: KeepListFull\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_CopyJointSPU_sceHSyn_VoisTrans = 0x6D0B0;  // "(T_T)yySound *** ERROR *** CopyJointSPU: sceHSyn_VoisTrans\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_RunClearJointSPU_NotOpen = 0x6D0EC;  // "(T_T)yySound *** ERROR *** RunClearJointSPU: NotOpen\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_RunClearJointSPU_ModeError = 0x6D124;  // "(T_T)yySound *** ERROR *** RunClearJointSPU: ModeError\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_COMMAND_LIST_BUFFER_OVER = 0x6D15C;  // "(T_T)yySound *** ERROR *** COMMAND LIST BUFFER OVER!\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_COMMAND_EROR_0x_04X = 0x6D194;  // "(T_T)yySound *** ERROR *** COMMAND EROR!(0x%04X)\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_soundfunc_BUSY = 0x6D1C8;  // "(T_T)yySound *** ERROR *** soundfunc BUSY\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_Timer_thread_Create = 0x6D1F4;  // "(T_T)yySound *** ERROR *** Timer thread Create\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_set_timer_something_wrong = 0x6D224;  // "(T_T)yySound *** ERROR *** set_timer: something wrong ...\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_EE_thread_Create = 0x6D260;  // "(T_T)yySound *** ERROR *** EE thread Create\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_Load_thread_Create = 0x6D290;  // "(T_T)yySound *** ERROR *** Load thread Create\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_set_Load_timer_something_wrong = 0x6D2C0;  // "(T_T)yySound *** ERROR *** set_Load_timer: something wrong ...\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_SPU_Memory_Index_Full = 0x6D300;  // "(T_T)yySound *** ERROR *** SPU Memory Index Full!\n"
+        inline constexpr uint32_t T_T_yySound_ERROR_SPU_Memory_Full = 0x6D334;  // "(T_T)yySound *** ERROR *** SPU Memory Full!\n"
+        inline constexpr uint32_t Indi_Software_yysound_irx_2002_05_24 = 0x6D364;  // "Indi Software [yysound.irx 2002.05.24]\n"
     }
 
     // offsets of the module's import stubs (jr ra; the emulator answers the import when the IOP reaches the stub)

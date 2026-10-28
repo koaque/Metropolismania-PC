@@ -4,7 +4,7 @@ diff --git a/ps2xIOP/include/ps2x/iop/iop_native.h b/ps2xIOP/include/ps2x/iop/io
 new file mode 100644
 --- /dev/null
 +++ b/ps2xIOP/include/ps2x/iop/iop_native.h
-@@ -0,0 +1,37 @@
+@@ -0,0 +1,40 @@
 +#pragma once
 +
 +#include <cstdint>
@@ -32,6 +32,9 @@ new file mode 100644
 +        // replacement cannot reproduce, so the verifier does not compare them).
 +        virtual void argumentCount(unsigned count) = 0;
 +
++        // The arguments after the fourth of the next callGuest (the caller's stack, at sp + 16, + 20, + 24 as in the o32 convention).
++        virtual void stackArguments(const uint32_t *values, unsigned count) = 0;
++
 +        // Ends the function by continuing in guest code at `address` with the registers as they are now (a tail call): how a thread body
 +        // sleeps (ra = where it resumes, address = the SleepThread import stub).
 +        virtual void jump(uint32_t address) = 0;
@@ -53,18 +56,21 @@ diff --git a/ps2xIOP/include/ps2x/iop/iop_subsystem.h b/ps2xIOP/include/ps2x/iop
  #include "ps2x/iop/iop_types.h"
  
  #include <memory>
-@@ -45,6 +46,15 @@ namespace ps2x::iop
+@@ -45,6 +46,18 @@ namespace ps2x::iop
  
          [[nodiscard]] DebugSnapshot debugSnapshot() const;
  
 +        // Native replacements of the functions of one IRX module (the readable port of YYSOUND, plan P5). A function is registered by its offset
 +        // in the module's image; it takes effect when the module is loaded with the image whose FNV-1a 64 bit hash (over the relocated image,
 +        // `imageSize` bytes, before the module starts) is `imageHash`, so a different build of the module can never run against these
-+        // offsets. `typicalCost` is the instruction count the original takes, charged as IOP time; `hasResult` says the function returns a value in v0 (the verifier compares v0 only then). Environment: PS2X_IOP_NATIVE=0 turns
++        // offsets. `typicalCost` is the instruction count the original takes, charged as IOP time; `hasResult` says the function returns a value in v0 (the verifier compares v0 only then). `parkStub` is the offset of an import stub the function
++        // ends by jumping to (a thread body that goes to sleep, a thread entry that ends in the RPC loop): the verifier lets the original run up to
++        // that stub instead of up to its return, and compares the state there. Environment: PS2X_IOP_NATIVE=0 turns
 +        // all replacements off, a comma separated list turns on only those names; PS2X_IOP_VERIFY=1 runs the original beside each
 +        // replacement and compares (PS2X_IOP_VERIFY_FIRST and PS2X_IOP_VERIFY_EVERY say which calls).
 +        void registerNativeModule(const char *module, uint64_t imageHash, uint32_t imageSize);
-+        void registerNative(const char *module, uint32_t offset, NativeFunction function, const char *name, uint32_t typicalCost, bool hasResult);
++        void registerNative(const char *module, uint32_t offset, NativeFunction function, const char *name, uint32_t typicalCost, bool hasResult,
++                            uint32_t parkStub = 0);
 +
      private:
          class Impl;
@@ -72,7 +78,7 @@ diff --git a/ps2xIOP/include/ps2x/iop/iop_subsystem.h b/ps2xIOP/include/ps2x/iop
 diff --git a/ps2xIOP/src/iop_subsystem.cpp b/ps2xIOP/src/iop_subsystem.cpp
 --- a/ps2xIOP/src/iop_subsystem.cpp
 +++ b/ps2xIOP/src/iop_subsystem.cpp
-@@ -174,6 +174,16 @@ namespace ps2x::iop
+@@ -174,6 +174,17 @@ namespace ps2x::iop
          return m_impl->emulator.pullAudio(stereo, frames);
      }
  
@@ -81,9 +87,10 @@ diff --git a/ps2xIOP/src/iop_subsystem.cpp b/ps2xIOP/src/iop_subsystem.cpp
 +        m_impl->emulator.registerNativeModule(module, imageHash, imageSize);
 +    }
 +
-+    void IopSubsystem::registerNative(const char *module, uint32_t offset, NativeFunction function, const char *name, uint32_t typicalCost, bool hasResult)
++    void IopSubsystem::registerNative(const char *module, uint32_t offset, NativeFunction function, const char *name, uint32_t typicalCost, bool hasResult,
++                                      uint32_t parkStub)
 +    {
-+        m_impl->emulator.registerNative(module, offset, function, name, typicalCost, hasResult);
++        m_impl->emulator.registerNative(module, offset, function, name, typicalCost, hasResult, parkStub);
 +    }
 +
      RpcAbi IopSubsystem::selectRpcAbi(const RpcAbiRequest &request) const
@@ -100,13 +107,14 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.h b/ps2xIOP/src/emulator/iop_emul
  #include "ps2x/iop/iop_types.h"
  
  #include <cstdint>
-@@ -31,6 +32,10 @@ namespace ps2x::iop::detail
+@@ -31,6 +32,11 @@ namespace ps2x::iop::detail
          [[nodiscard]] bool hasRpcServer(uint32_t sid) const noexcept;
          void onSifTransfer(const SifTransfer &transfer);
  
 +        // Native replacements of module functions (ps2x/iop/iop_subsystem.h)
 +        void registerNativeModule(const char *module, uint64_t imageHash, uint32_t imageSize);
-+        void registerNative(const char *module, uint32_t offset, NativeFunction function, const char *name, uint32_t typicalCost, bool hasResult);
++        void registerNative(const char *module, uint32_t offset, NativeFunction function, const char *name, uint32_t typicalCost, bool hasResult,
++                            uint32_t parkStub);
 +
          [[nodiscard]] uint32_t allocateMemory(uint32_t size, uint32_t alignment = 16u);
          [[nodiscard]] bool freeMemory(uint32_t address);
@@ -215,7 +223,17 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
                  return !cpu.stopped;
              }
  
-@@ -649,6 +695,8 @@ namespace ps2x::iop::detail
+@@ -456,6 +502,9 @@ namespace ps2x::iop::detail
+             {
+                 cpu.gpr[29] = kCallStackBase - 32u;
+             }
++            for (size_t i = 0; i < pendingStackArguments.size(); ++i)
++                memory.write32(cpu.gpr[29] + 16u + 4u * static_cast<uint32_t>(i), pendingStackArguments[i]);
++            pendingStackArguments.clear();
+             cpu.gpr[31] = kCallReturnSentinel;
+             runCpu(cpu, budget);
+             return cpu.gpr[2];
+@@ -649,6 +698,8 @@ namespace ps2x::iop::detail
              module.entry = loaded.entry;
              module.gp = loaded.gp;
  
@@ -224,7 +242,7 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
              uint32_t args = 0u;
              if (arguments && argumentSize)
              {
-@@ -706,6 +754,14 @@ namespace ps2x::iop::detail
+@@ -706,6 +757,14 @@ namespace ps2x::iop::detail
              kernel.terminateThreadsInRange(it->second.base, it->second.size);
              rpc.removeServersInRange(it->second.base, it->second.size);
              imports.eraseRange(it->second.base, it->second.size);
@@ -239,7 +257,7 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
              modules.erase(it);
              kernel.cleanupDeadThreads();
              if (result)
-@@ -713,6 +769,486 @@ namespace ps2x::iop::detail
+@@ -713,6 +772,494 @@ namespace ps2x::iop::detail
              return true;
          }
  
@@ -262,6 +280,7 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +            NativeFunction function = nullptr;
 +            uint32_t typicalCost = 0;
 +            bool hasResult = true;
++            uint32_t parkStub = 0; // module offset of the import stub the function ends by jumping to (0: it returns)
 +            uint32_t address = 0; // absolute, once armed
 +            bool armed = false;
 +            uint64_t calls = 0;
@@ -310,6 +329,10 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +                return result;
 +            }
 +            void argumentCount(unsigned count) override { arguments = count < 4u ? count : 4u; }
++            void stackArguments(const uint32_t *values, unsigned count) override
++            {
++                impl.pendingStackArguments.assign(values, values + count);
++            }
 +            void jump(uint32_t address) override
 +            {
 +                cpu.pc = address;
@@ -346,7 +369,8 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +            nativeModules.push_back(std::move(spec));
 +        }
 +
-+        void registerNative(const char *module, uint32_t offset, NativeFunction function, const char *name, uint32_t typicalCost, bool hasResult)
++        void registerNative(const char *module, uint32_t offset, NativeFunction function, const char *name, uint32_t typicalCost, bool hasResult,
++                            uint32_t parkStub)
 +        {
 +            NativeEntry entry;
 +            entry.module = module;
@@ -355,6 +379,7 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +            entry.function = function;
 +            entry.typicalCost = typicalCost;
 +            entry.hasResult = hasResult;
++            entry.parkStub = parkStub;
 +            natives.push_back(std::move(entry));
 +        }
 +
@@ -627,7 +652,8 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +                    openImports.pop_back();
 +                    finishImport(open, cpu);
 +                }
-+                if (cpu.pc == returnAddress && cpu.gpr[29] == stackPointer && openImports.empty())
++                const bool atPark = entry.parkStub != 0u && cpu.pc == verifyBase + entry.parkStub;
++                if (atPark ? openImports.empty() : (cpu.pc == returnAddress && cpu.gpr[29] == stackPointer && openImports.empty()))
 +                {
 +                    finished = true;
 +                    break;
@@ -726,7 +752,7 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
          IopHost &host;
          IopMemory memory;
          IopSysmem sysmem;
-@@ -745,6 +1281,26 @@ namespace ps2x::iop::detail
+@@ -745,6 +1292,27 @@ namespace ps2x::iop::detail
          GuestCallback secrMcCommandHandler;
          GuestCallback secrMcDevIdHandler;
          GuestCallback checkKelfPathCallback;
@@ -750,10 +776,11 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +        std::vector<std::string> replayProblems;
 +        uint64_t lastNativeStatsCycle = 0u;
 +        uint32_t replayArgumentCount = 4u;
++        std::vector<uint32_t> pendingStackArguments;
      };
  
      IopEmulator::IopEmulator(IopHost &host)
-@@ -798,6 +1354,16 @@ namespace ps2x::iop::detail
+@@ -798,6 +1366,17 @@ namespace ps2x::iop::detail
          return m_impl->rpc.hasServer(sid);
      }
  
@@ -762,9 +789,10 @@ diff --git a/ps2xIOP/src/emulator/iop_emulator.cpp b/ps2xIOP/src/emulator/iop_em
 +        m_impl->registerNativeModule(module, imageHash, imageSize);
 +    }
 +
-+    void IopEmulator::registerNative(const char *module, uint32_t offset, NativeFunction function, const char *name, uint32_t typicalCost, bool hasResult)
++    void IopEmulator::registerNative(const char *module, uint32_t offset, NativeFunction function, const char *name, uint32_t typicalCost, bool hasResult,
++                                     uint32_t parkStub)
 +    {
-+        m_impl->registerNative(module, offset, function, name, typicalCost, hasResult);
++        m_impl->registerNative(module, offset, function, name, typicalCost, hasResult, parkStub);
 +    }
 +
      void IopEmulator::onSifTransfer(const SifTransfer &transfer)

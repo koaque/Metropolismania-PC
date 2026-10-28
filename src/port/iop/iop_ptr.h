@@ -36,6 +36,11 @@ namespace iop
     }
 }
 
+template <typename T>
+struct IopPtr;
+template <>
+struct IopPtr<void>;
+
 // A 32 bit pointer as the module stores it. Same size and layout as the IOP's pointer, so structures that contain it keep the module's layout.
 // Test for null with `if (p)`.
 template <typename T>
@@ -52,6 +57,7 @@ struct IopPtr
     explicit operator bool() const { return address != 0; }
     bool operator==(const IopPtr &other) const { return address == other.address; }
     bool operator!=(const IopPtr &other) const { return address != other.address; }
+    operator IopPtr<void>() const;
 };
 
 template <>
@@ -64,6 +70,12 @@ struct IopPtr<void>
     bool operator==(const IopPtr &other) const { return address == other.address; }
     bool operator!=(const IopPtr &other) const { return address != other.address; }
 };
+
+template <typename T>
+IopPtr<T>::operator IopPtr<void>() const
+{
+    return IopPtr<void>{address};
+}
 
 static_assert(sizeof(IopPtr<int>) == 4 && std::is_standard_layout_v<IopPtr<int>> && std::is_trivially_copyable_v<IopPtr<int>>);
 
