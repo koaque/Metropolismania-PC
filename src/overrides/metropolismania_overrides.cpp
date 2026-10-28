@@ -17,6 +17,7 @@
 #include "ps2_runtime.h"
 #include "ps2_stubs.h"
 #include "ps2_syscalls.h"
+#include "runtime/ps2_frame_skip.h"
 
 #include <chrono>
 #include <cstdlib>
@@ -285,6 +286,9 @@ namespace
             // a step's shot is logged once the counter has passed its end
             if (at < steps[i].frames)
             {
+                // the frames that draw both fields of a shot are not skipped (PS2X_FRAMESKIP)
+                if (!steps[i].shot.empty() && steps[i].frames - at <= 4u)
+                    ps2xFrameSkipSuspend(4u);
                 for (; reported < i; ++reported)
                     if (!steps[reported].shot.empty())
                         logShot(runtime, steps[reported].shot, counter);
@@ -570,6 +574,9 @@ namespace
         port::runDifftestIfRequested(runtime); // exits when MMPC_DIFFTEST is set
         port::runVu1TestIfRequested(); // exits when MMPC_VU1_TEST is set
         vu1aot::install(runtime.vu1()); // pre-timed VU1 programs (PS2X_VU1_AOT=0 turns them off)
+        // The game steps its world once per frame, so frames it cannot draw in time are skipped to keep it at full speed
+        // (PS2X_FRAMESKIP=0 turns that off; drawn frames are the same either way).
+        ps2xFrameSkipSetDefault(true);
         installTrace(runtime);
         installMovieSkip(runtime);
         installGsTrace(runtime);

@@ -1,0 +1,550 @@
+Frame skip: a game whose logic steps once per frame keeps its speed when the host cannot draw every frame within a field. With PS2X_FRAMESKIP on (or a game's default, ps2xFrameSkipSetDefault), the vertical blanks keep their place in real time instead of starting a new period after a late one, with at most four fields due at once (older ones, from a load or a stall, are dropped). A frame is the span between two waits for the vertical blank; one that starts while the next vertical blank is already due runs without drawing, at most three in a row: VU1 programs are not run (the VU1 is left at the end address the program reached the last time it ran from that address with that code image, so an MSCNT still continues from the right place; a program that has ended in two places, or never run, still runs), and primitives are not drawn, while VIF unpacks, MPG, image transfers, CLUT loads and GS register writes all still happen. The window keeps the last drawn frame while the display points at a buffer a skipped frame did not draw. Two vertical blanks that no thread waited for within one skipped frame end the skip (a movie player that draws from its interrupt handler). PS2X_FRAMESKIP=alternate skips every other frame, for tests; PS2X_FRAMESKIP_STATS=1 prints vertical blanks and frames per second, drawn and skipped frame times, backlog dropped, presents held and VU1 runs skipped. Checked in Metropolismania: native frame buffers at eleven scripted city views are bit-identical with frame skip off, every other frame skipped from boot, and automatic skipping (and two runs without skipping match each other); a 40-capture window burst while skipping never goes back to an earlier picture. The heavy city views went from about 20 to 50-58 game frames per second.
+
+diff --git a/ps2xRuntime/include/runtime/ps2_frame_skip.h b/ps2xRuntime/include/runtime/ps2_frame_skip.h
+new file mode 100644
+--- /dev/null
++++ b/ps2xRuntime/include/runtime/ps2_frame_skip.h
+@@ -0,0 +1,44 @@
++#pragma once
++
++#include <cstdint>
++
++// Frame skip: a game whose logic steps once per frame keeps its speed on a host that cannot draw every frame in a field. The
++// vertical blanks keep their place in real time (a late frame leaves a backlog of at most kMaxBacklogFields fields instead of
++// pushing the next one back), and a frame that starts behind runs without drawing: no VU1 programs and no primitives, while
++// everything else (VIF unpacks, MPG, image transfers, CLUT loads, GS register writes) still happens. The window keeps showing
++// the last drawn frame while the display points at a buffer a skipped frame left undrawn.
++//
++// A frame is the span between two waits for the vertical blank (the moment a thread waiting for one wakes).
++//
++// PS2X_FRAMESKIP=0 turns it off, 1 turns it on, alternate skips every other frame (for testing that nothing drawn later depends
++// on a skipped frame); without it the game's default applies (ps2xFrameSkipSetDefault, off unless a game turns it on).
++// PS2X_FRAMESKIP_STATS=1 prints a [frameskip] line every 2 s (vertical blanks and frames per second, also with frame skip off).
++
++enum class FrameSkipMode
++{
++    Off,
++    Auto,
++    Alternate,
++};
++
++inline constexpr uint32_t kMaxBacklogFields = 4u;
++inline constexpr uint32_t kMaxSkippedInARow = 3u;
++
++void ps2xFrameSkipSetDefault(bool on);
++FrameSkipMode ps2xFrameSkipMode();
++
++// The next `frames` frames are drawn whatever the timing (for example around a screenshot).
++void ps2xFrameSkipSuspend(uint32_t frames);
++
++// At a frame boundary: whether the frame that starts now is skipped. `behind` = the next vertical blank is already due.
++bool ps2xFrameSkipBoundary(bool behind);
++// A vertical blank that no thread waited for. True when it ends a skip: two of them within one skipped frame mean the game is not
++// pacing its frames by waiting for the vertical blank (the movie player draws from its interrupt handler), so drawing resumes.
++bool ps2xFrameSkipUnwaitedVBlank();
++// Whether the current frame is skipped.
++bool ps2xFrameSkipping();
++
++// Statistics for the [frameskip] line.
++void ps2xFrameSkipNoteDroppedTime(uint32_t microseconds);
++void ps2xFrameSkipNoteHeldPresent();
++void ps2xFrameSkipNoteVu1Run(bool skipped);
+diff --git a/ps2xRuntime/src/lib/ps2_frame_skip.cpp b/ps2xRuntime/src/lib/ps2_frame_skip.cpp
+new file mode 100644
+--- /dev/null
++++ b/ps2xRuntime/src/lib/ps2_frame_skip.cpp
+@@ -0,0 +1,154 @@
++// Frame skip state and statistics (see runtime/ps2_frame_skip.h).
++
++#include "runtime/ps2_frame_skip.h"
++
++#include <atomic>
++#include <chrono>
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++
++namespace
++{
++    std::atomic<bool> g_defaultOn{false};
++    std::atomic<bool> g_skipping{false};
++    std::atomic<uint32_t> g_suspended{0};
++    uint32_t g_skippedInARow = 0;
++    uint32_t g_unwaitedVBlanks = 0; // since the last frame boundary
++
++    // [frameskip] figures, reset every 2 s.
++    std::atomic<uint32_t> g_frames{0}, g_skippedFrames{0}, g_droppedMicroseconds{0}, g_heldPresents{0}, g_vu1Skipped{0}, g_vu1Run{0},
++        g_endedSkips{0}, g_vblanks{0};
++    double g_drawnSeconds = 0.0, g_skippedSeconds = 0.0;
++    std::chrono::steady_clock::time_point g_frameStart{};
++
++    const char *setting()
++    {
++        static const char *value = std::getenv("PS2X_FRAMESKIP");
++        return value;
++    }
++
++    bool statsEnabled()
++    {
++        static const bool enabled = []()
++        {
++            const char *value = std::getenv("PS2X_FRAMESKIP_STATS");
++            return value != nullptr && value[0] == '1';
++        }();
++        return enabled;
++    }
++
++    void maybeReport()
++    {
++        static auto windowStart = std::chrono::steady_clock::now();
++        const auto now = std::chrono::steady_clock::now();
++        const double seconds = std::chrono::duration<double>(now - windowStart).count();
++        if (seconds < 2.0)
++            return;
++        windowStart = now;
++        const uint32_t frames = g_frames.exchange(0), skipped = g_skippedFrames.exchange(0);
++        const uint32_t drawn = frames - skipped;
++        // A frame's time runs from its boundary to the next one, its wait for the vertical blank included.
++        std::fprintf(stderr,
++                     "[frameskip] %.2f vertical blanks/s, %.2f frames/s (%u drawn, %.1f ms each; %u skipped, %.1f ms each) | %u "
++                     "ms dropped from the backlog | %u presents held | VU1 runs in skipped frames: %u skipped, %u run | %u skips "
++                     "ended by unwaited vertical blanks\n",
++                     g_vblanks.exchange(0) / seconds, frames / seconds, drawn, drawn != 0u ? g_drawnSeconds * 1000.0 / drawn : 0.0, skipped,
++                     skipped != 0u ? g_skippedSeconds * 1000.0 / skipped : 0.0, g_droppedMicroseconds.exchange(0) / 1000u,
++                     g_heldPresents.exchange(0), g_vu1Skipped.exchange(0), g_vu1Run.exchange(0), g_endedSkips.exchange(0));
++        g_drawnSeconds = g_skippedSeconds = 0.0;
++    }
++}
++
++void ps2xFrameSkipSetDefault(bool on)
++{
++    g_defaultOn.store(on, std::memory_order_relaxed);
++}
++
++FrameSkipMode ps2xFrameSkipMode()
++{
++    const char *value = setting();
++    if (value != nullptr && value[0] != '\0')
++    {
++        if (std::strcmp(value, "alternate") == 0)
++            return FrameSkipMode::Alternate;
++        return std::strcmp(value, "0") == 0 || std::strcmp(value, "off") == 0 ? FrameSkipMode::Off : FrameSkipMode::Auto;
++    }
++    return g_defaultOn.load(std::memory_order_relaxed) ? FrameSkipMode::Auto : FrameSkipMode::Off;
++}
++
++void ps2xFrameSkipSuspend(uint32_t frames)
++{
++    uint32_t current = g_suspended.load(std::memory_order_relaxed);
++    while (current < frames && !g_suspended.compare_exchange_weak(current, frames, std::memory_order_relaxed))
++    {
++    }
++}
++
++bool ps2xFrameSkipBoundary(bool behind)
++{
++    const FrameSkipMode mode = ps2xFrameSkipMode();
++    bool skip = false;
++    if (mode == FrameSkipMode::Alternate)
++        skip = !g_skipping.load(std::memory_order_relaxed);
++    else if (mode == FrameSkipMode::Auto)
++        skip = behind && g_skippedInARow < kMaxSkippedInARow;
++    uint32_t suspended = g_suspended.load(std::memory_order_relaxed);
++    while (suspended != 0u && !g_suspended.compare_exchange_weak(suspended, suspended - 1u, std::memory_order_relaxed))
++    {
++    }
++    if (suspended != 0u)
++        skip = false;
++    g_skippedInARow = skip ? g_skippedInARow + 1u : 0u;
++    g_unwaitedVBlanks = 0;
++    const bool previous = g_skipping.exchange(skip, std::memory_order_acq_rel);
++    if (statsEnabled())
++    {
++        const auto now = std::chrono::steady_clock::now();
++        if (g_frameStart.time_since_epoch().count() != 0)
++            (previous ? g_skippedSeconds : g_drawnSeconds) += std::chrono::duration<double>(now - g_frameStart).count();
++        g_frameStart = now;
++        g_frames.fetch_add(1, std::memory_order_relaxed);
++        g_vblanks.fetch_add(1, std::memory_order_relaxed);
++        if (skip)
++            g_skippedFrames.fetch_add(1, std::memory_order_relaxed);
++        maybeReport();
++    }
++    return skip;
++}
++
++bool ps2xFrameSkipUnwaitedVBlank()
++{
++    ++g_unwaitedVBlanks;
++    if (statsEnabled())
++    {
++        g_vblanks.fetch_add(1, std::memory_order_relaxed);
++        maybeReport();
++    }
++    if (!g_skipping.load(std::memory_order_acquire) || g_unwaitedVBlanks < 2u)
++        return false;
++    g_skipping.store(false, std::memory_order_release);
++    g_skippedInARow = 0;
++    g_endedSkips.fetch_add(1, std::memory_order_relaxed);
++    return true;
++}
++
++bool ps2xFrameSkipping()
++{
++    return g_skipping.load(std::memory_order_acquire);
++}
++
++void ps2xFrameSkipNoteDroppedTime(uint32_t microseconds)
++{
++    g_droppedMicroseconds.fetch_add(microseconds, std::memory_order_relaxed);
++}
++
++void ps2xFrameSkipNoteHeldPresent()
++{
++    g_heldPresents.fetch_add(1, std::memory_order_relaxed);
++}
++
++void ps2xFrameSkipNoteVu1Run(bool skipped)
++{
++    (skipped ? g_vu1Skipped : g_vu1Run).fetch_add(1, std::memory_order_relaxed);
++}
+diff --git a/ps2xRuntime/CMakeLists.txt b/ps2xRuntime/CMakeLists.txt
+--- a/ps2xRuntime/CMakeLists.txt
++++ b/ps2xRuntime/CMakeLists.txt
+@@ -389,6 +389,7 @@ add_library(ps2_runtime STATIC
+     src/lib/ps2_memory.cpp
+     src/lib/ps2_pad.cpp
+     src/lib/ps2_host_input.cpp
++    src/lib/ps2_frame_skip.cpp
+     src/lib/ps2_rom_device.cpp
+     src/lib/ps2_vfs.cpp
+     src/lib/ps2_runtime.cpp
+diff --git a/ps2xRuntime/include/ps2_runtime.h b/ps2xRuntime/include/ps2_runtime.h
+--- a/ps2xRuntime/include/ps2_runtime.h
++++ b/ps2xRuntime/include/ps2_runtime.h
+@@ -468,6 +468,11 @@ public:
+     inline VU1Interpreter &vu1() { return m_vu1; }
+     inline const VU1Interpreter &vu1() const { return m_vu1; }
+ 
++    // Frame skip (runtime/ps2_frame_skip.h): the frame that starts now runs without VU1 programs and primitives, and a vertical
++    // blank no thread waited for (which can end a skip).
++    void setFrameSkipping(bool skip);
++    void noteUnwaitedVBlank();
++
+     inline PS2AudioBackend &audioBackend() { return m_audioBackend; }
+     inline const PS2AudioBackend &audioBackend() const { return m_audioBackend; }
+     inline PSPadBackend &padBackend() { return m_padBackend; }
+@@ -513,6 +518,14 @@ private:
+     PS2Vfs m_vfs;
+     VU1Interpreter m_vu0{VU1Interpreter::Unit::VU0};
+     VU1Interpreter m_vu1{VU1Interpreter::Unit::VU1};
++    // Frame skip: where each VU1 program (by code image and start address) ended the last time it ran, so that a skipped run
++    // leaves the VU1 where the program would have (an MSCNT continues from there); ~0u once a program has ended in two places.
++    std::unordered_map<uint64_t, uint32_t> m_vu1RunEnds;
++    uint64_t m_vu1RunEndsGeneration = ~0ull;
++    uint64_t m_vu1CodeHash = 0;
++    uint64_t vu1RunKey(uint32_t startPC);
++    bool skipVu1Run(uint32_t startPC, uint32_t top, uint32_t itop);
++    void noteVu1RunEnd(uint32_t startPC, bool ended);
+     R5900Context m_cpuContext;
+     std::unique_ptr<EeScheduler> m_eeScheduler;
+     mutable std::mutex m_eeKernelStateMutex;
+diff --git a/ps2xRuntime/src/lib/ps2_runtime.cpp b/ps2xRuntime/src/lib/ps2_runtime.cpp
+--- a/ps2xRuntime/src/lib/ps2_runtime.cpp
++++ b/ps2xRuntime/src/lib/ps2_runtime.cpp
+@@ -7,6 +7,7 @@
+ #include "runtime/gs/gs_frontend.h"
+ #include "runtime/ee_scheduler.h"
+ #include "runtime/ps2_host_input.h"
++#include "runtime/ps2_frame_skip.h"
+ #include "ThreadNaming.h"
+ #include "Kernel/Stubs/Audio.h"
+ #include "Kernel/Stubs/GS.h"
+@@ -754,6 +755,72 @@ bool PS2Runtime::isIopMemoryRange(uint32_t address, size_t size) const
+     return m_iopSubsystem && m_iopSubsystem->isMemoryRange(address, size);
+ }
+ 
++void PS2Runtime::setFrameSkipping(bool skip)
++{
++    m_gs.setSkipDrawing(skip, false);
++}
++
++void PS2Runtime::noteUnwaitedVBlank()
++{
++    if (ps2xFrameSkipUnwaitedVBlank())
++        m_gs.setSkipDrawing(false, true); // the frame that was being skipped stays hidden
++    else if (!ps2xFrameSkipping())
++        m_gs.setSkipDrawing(false, false);
++}
++
++uint64_t PS2Runtime::vu1RunKey(uint32_t startPC)
++{
++    const uint64_t generation = m_memory.getVU1CodeGeneration();
++    if (generation != m_vu1RunEndsGeneration)
++    {
++        // FNV-1a over the code image, once per upload: identical uploads give the same image and keep what was learned.
++        m_vu1RunEndsGeneration = generation;
++        uint64_t hash = 0xCBF29CE484222325ull;
++        const uint8_t *code = m_memory.getVU1Code();
++        for (uint32_t offset = 0; code != nullptr && offset < PS2_VU1_CODE_SIZE; offset += 8u)
++        {
++            uint64_t word = 0;
++            std::memcpy(&word, code + offset, sizeof(word));
++            hash = (hash ^ word) * 0x100000001B3ull;
++        }
++        m_vu1CodeHash = hash;
++        if (m_vu1RunEnds.size() > 4096u)
++            m_vu1RunEnds.clear();
++    }
++    return m_vu1CodeHash + static_cast<uint64_t>(startPC) * 0x9E3779B97F4A7C15ull;
++}
++
++bool PS2Runtime::skipVu1Run(uint32_t startPC, uint32_t top, uint32_t itop)
++{
++    const auto known = m_vu1RunEnds.find(vu1RunKey(startPC));
++    if (known == m_vu1RunEnds.end() || known->second == ~0u)
++    {
++        ps2xFrameSkipNoteVu1Run(false);
++        return false;
++    }
++    VU1State &state = m_vu1.state();
++    state.pc = known->second;
++    state.top = top;
++    state.itop = itop;
++    state.ebit = false;
++    state.haltAfterDelaySlot = false;
++    state.stoppedByD = false;
++    state.stoppedByT = false;
++    state.branchPending = false;
++    ps2xFrameSkipNoteVu1Run(true);
++    return true;
++}
++
++void PS2Runtime::noteVu1RunEnd(uint32_t startPC, bool ended)
++{
++    if (ps2xFrameSkipMode() == FrameSkipMode::Off)
++        return;
++    const uint32_t end = ended && !m_vu1.state().stoppedByD && !m_vu1.state().stoppedByT ? m_vu1.state().pc : ~0u;
++    const auto [entry, inserted] = m_vu1RunEnds.try_emplace(vu1RunKey(startPC), end);
++    if (!inserted && entry->second != end)
++        entry->second = ~0u;
++}
++
+ bool PS2Runtime::syncCoreSubsystems()
+ {
+     uint8_t *const rdram = m_memory.getRDRAM();
+@@ -779,13 +846,20 @@ bool PS2Runtime::syncCoreSubsystems()
+                                      {
+                                          cpuContext = &m_cpuContext;
+                                      }
++                                     if (ps2xFrameSkipping() && skipVu1Run(startPC, top, itop))
++                                     {
++                                         cpuContext->vu0_vpu_stat &= ~0x0600u;
++                                         return;
++                                     }
+                                      m_vu1.state().dBitEnabled =
+                                          (cpuContext->vu0_fbrst & (1u << 10)) != 0u;
+                                      m_vu1.state().tBitEnabled =
+                                          (cpuContext->vu0_fbrst & (1u << 11)) != 0u;
++                                     const uint64_t cyclesBefore = m_vu1.state().cycles;
+                                      m_vu1.execute(m_memory.getVU1Code(), PS2_VU1_CODE_SIZE,
+                                                    m_memory.getVU1Data(), PS2_VU1_DATA_SIZE,
+                                                    m_gs, &m_memory, startPC, top, itop, 65536);
++                                     noteVu1RunEnd(startPC, m_vu1.state().cycles - cyclesBefore < 65536u);
+                                      cpuContext->vu0_vpu_stat =
+                                          (cpuContext->vu0_vpu_stat & ~0x0600u) |
+                                          (m_vu1.state().stoppedByD ? 0x0200u : 0u) |
+@@ -797,13 +871,21 @@ bool PS2Runtime::syncCoreSubsystems()
+                                      {
+                                          cpuContext = &m_cpuContext;
+                                      }
++                                     const uint32_t resumePC = m_vu1.state().pc;
++                                     if (ps2xFrameSkipping() && skipVu1Run(resumePC, top, itop))
++                                     {
++                                         cpuContext->vu0_vpu_stat &= ~0x0600u;
++                                         return;
++                                     }
+                                      m_vu1.state().dBitEnabled =
+                                          (cpuContext->vu0_fbrst & (1u << 10)) != 0u;
+                                      m_vu1.state().tBitEnabled =
+                                          (cpuContext->vu0_fbrst & (1u << 11)) != 0u;
++                                     const uint64_t cyclesBefore = m_vu1.state().cycles;
+                                      m_vu1.resume(m_memory.getVU1Code(), PS2_VU1_CODE_SIZE,
+                                                   m_memory.getVU1Data(), PS2_VU1_DATA_SIZE,
+                                                   m_gs, &m_memory, top, itop, 65536);
++                                     noteVu1RunEnd(resumePC, m_vu1.state().cycles - cyclesBefore < 65536u);
+                                      cpuContext->vu0_vpu_stat =
+                                          (cpuContext->vu0_vpu_stat & ~0x0600u) |
+                                          (m_vu1.state().stoppedByD ? 0x0200u : 0u) |
+diff --git a/ps2xRuntime/include/runtime/ee_scheduler.h b/ps2xRuntime/include/runtime/ee_scheduler.h
+--- a/ps2xRuntime/include/runtime/ee_scheduler.h
++++ b/ps2xRuntime/include/runtime/ee_scheduler.h
+@@ -565,6 +565,7 @@ private:
+     std::condition_variable m_vsyncNotifyCv;
+     std::atomic<uint64_t> m_vsyncTickShared{0};
+     std::atomic<int64_t> m_lastVSyncHostNs{0};
++    std::atomic<int64_t> m_nextVBlankHostNs{0}; // host deadline of the next vertical blank (frame skip: is the game behind?)
+     uint32_t m_vsyncFlagAddress = 0;
+     uint32_t m_vsyncTickAddress = 0;
+     uint32_t m_gsVSyncCallback = 0;
+diff --git a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+--- a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
++++ b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+@@ -1,4 +1,5 @@
+ #include "runtime/ee_scheduler.h"
++#include "runtime/ps2_frame_skip.h"
+ 
+ #include "ps2_log.h"
+ #include "ps2_runtime_macros.h"
+@@ -1474,6 +1475,17 @@ void EeScheduler::completeVSync(uint64_t tick)
+                                : static_cast<int>((tick - 1u) & 1u);
+         makeReady(*waiter, result, false);
+     }
++    // A thread that waited for this vertical blank starts a new frame: frame skip decides whether it is drawn.
++    if (!completed.empty())
++    {
++        const auto nextVBlank = std::chrono::steady_clock::time_point(
++            std::chrono::nanoseconds(m_nextVBlankHostNs.load(std::memory_order_acquire)));
++        m_runtime.setFrameSkipping(ps2xFrameSkipBoundary(nextVBlank <= std::chrono::steady_clock::now()));
++    }
++    else
++    {
++        m_runtime.noteUnwaitedVBlank();
++    }
+     publishSnapshot();
+ }
+ 
+@@ -2107,8 +2119,24 @@ void EeScheduler::processDueDeadlines()
+                 const auto period = vblankPeriod();
+                 auto nextHost = scheduled.hostDeadline + period;
+                 const auto hostNow = std::chrono::steady_clock::now();
+-                if (nextHost < hostNow)
+-                    nextHost = hostNow + period;
++                if (ps2xFrameSkipMode() == FrameSkipMode::Off)
++                {
++                    if (nextHost < hostNow)
++                        nextHost = hostNow + period;
++                }
++                else
++                {
++                    // With frame skip the fields keep their place in real time so that skipped frames can catch up, but
++                    // at most kMaxBacklogFields of them can be due at once: older ones (a load, a stall) are dropped.
++                    const auto oldest = hostNow - period * (kMaxBacklogFields - 1u);
++                    if (nextHost < oldest)
++                    {
++                        ps2xFrameSkipNoteDroppedTime(static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::microseconds>(oldest - nextHost).count()));
++                        nextHost = oldest;
++                    }
++                }
++                m_nextVBlankHostNs.store(std::chrono::duration_cast<std::chrono::nanoseconds>(nextHost.time_since_epoch()).count(),
++                                         std::memory_order_release);
+                 scheduleEvent(scheduled.deadlineCycle + vblankPeriodCycles(), nextHost, EeEvent{EeEventType::VBlankStart, 0, 0});
+             }
+             processEvent(scheduled.event);
+diff --git a/ps2xRuntime/include/runtime/gs/gs_frontend.h b/ps2xRuntime/include/runtime/gs/gs_frontend.h
+--- a/ps2xRuntime/include/runtime/gs/gs_frontend.h
++++ b/ps2xRuntime/include/runtime/gs/gs_frontend.h
+@@ -2,6 +2,7 @@
+ #define PS2_GS_FRONTEND_H
+ 
+ #include <array>
++#include <atomic>
+ #include <cstddef>
+ #include <cstdint>
+ #include <memory>
+@@ -145,6 +146,15 @@ public:
+ 
+     void refreshDisplaySnapshot();
+ 
++    // Frame skip (runtime/ps2_frame_skip.h): primitives are not drawn while `skip` is set, and the window keeps its last frame while
++    // the display shows a buffer that a skipped primitive would have drawn into. `keepSkippedBuffers`: drawing resumes in the middle
++    // of a skipped frame, so the buffers it skipped stay hidden even when drawn into again (until the next call).
++    void setSkipDrawing(bool skip, bool keepSkippedBuffers)
++    {
++        m_keepSkippedBuffers.store(keepSkippedBuffers, std::memory_order_relaxed);
++        m_skipDrawing.store(skip, std::memory_order_relaxed);
++    }
++
+     void WriteVram(uint32_t psm, uint32_t base, uint32_t bw, uint32_t x, uint32_t y, uint32_t value);
+     uint32_t ReadVram(uint32_t psm, uint32_t base, uint32_t bw, uint32_t x, uint32_t y) const;
+ 
+@@ -173,6 +183,7 @@ private:
+     GSPrimitiveBatch buildDrawBatch(int vertexCount) const;
+     void updatePreferredDisplaySourceForDraw(const GSPrimitiveBatch &batch);
+     GSPresentationRequest buildPresentationRequestUnlocked() const;
++    bool presentationSourceSkippedUnlocked(const GSPresentationRequest &request) const;
+ 
+ 
+     GSContext &activeContext();
+@@ -231,6 +242,9 @@ private:
+     bool m_hasHostPresentationFrame = false;
+     uint64_t m_nativeImageUploadCount = 0;
+     uint64_t m_nativePackedGIFPacketCount = 0;
++    std::atomic<bool> m_skipDrawing{false};
++    std::atomic<bool> m_keepSkippedBuffers{false};
++    std::array<bool, 512> m_fbpSkipped{}; // by FRAME.FBP: the last primitive aimed at that buffer was skipped
+ 
+     static constexpr size_t kDebugHistoryCapacity = 512;
+     std::array<GSDebugHistoryEntry, kDebugHistoryCapacity> m_debugHistory{};
+diff --git a/ps2xRuntime/src/lib/gs/gs_frontend.cpp b/ps2xRuntime/src/lib/gs/gs_frontend.cpp
+--- a/ps2xRuntime/src/lib/gs/gs_frontend.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_frontend.cpp
+@@ -1,6 +1,7 @@
+ #include "runtime/gs/gs_threaded_backend.h"
+ #include "runtime/gs/gs_frontend.h"
+ #include "runtime/gs/gs_cpu_backend.h"
++#include "runtime/ps2_frame_skip.h"
+ #include "ps2_log.h"
+ #include "runtime/ps2_memory.h"
+ #include <atomic>
+@@ -792,6 +793,15 @@ GSPresentationRequest GS::buildPresentationRequestUnlocked() const
+     return request;
+ }
+ 
++bool GS::presentationSourceSkippedUnlocked(const GSPresentationRequest &request) const
++{
++    if ((request.pmode & 1u) != 0u && m_fbpSkipped[request.dispfb1 & 0x1FFu])
++        return true;
++    if ((request.pmode & 2u) != 0u && m_fbpSkipped[request.dispfb2 & 0x1FFu])
++        return true;
++    return request.hasPreferredSource && m_fbpSkipped[request.preferredSource.fbp & 0x1FFu];
++}
++
+ void GS::latchHostPresentationFrame()
+ {
+     GSPresentationRequest request{};
+@@ -813,6 +823,16 @@ void GS::latchHostPresentationFrame()
+         // threaded backend catches up.
+         backendLock.lock();
+         request = buildPresentationRequestUnlocked();
++        // Frame skip: the display shows a buffer that a skipped frame did not draw; the last frame stays.
++        if (presentationSourceSkippedUnlocked(request))
++        {
++            std::lock_guard<std::mutex> presentationLock(m_presentationMutex);
++            if (m_hasHostPresentationFrame)
++            {
++                ps2xFrameSkipNoteHeldPresent();
++                return;
++            }
++        }
+         pending = m_backend->QueuePresent(request);
+     }
+ 
+@@ -1891,9 +1911,16 @@ void GS::vertexKick(bool drawing)
+     if (m_vtxCount < needed)
+         return;
+ 
+-    if (drawing && m_backend)
++    if (drawing && m_backend && m_skipDrawing.load(std::memory_order_relaxed))
++    {
++        // Frame skip: not drawn, and the buffer it was aimed at is not shown until something is drawn into it again.
++        m_fbpSkipped[m_ctx[m_prim.ctxt ? 1 : 0].frame.fbp & 0x1FFu] = true;
++    }
++    else if (drawing && m_backend)
+     {
+         GSPrimitiveBatch batch = buildDrawBatch(needed);
++        if (!m_keepSkippedBuffers.load(std::memory_order_relaxed))
++            m_fbpSkipped[batch.state.context.frame.fbp & 0x1FFu] = false;
+         s_drawHalfLine[batch.state.context.frame.fbp & 0x1FFu].store(
+             (batch.state.context.xyoffset.ofy & 0xFu) >= 8u ? 1 : 0, std::memory_order_relaxed);
+         if (gsStatsEnabled())

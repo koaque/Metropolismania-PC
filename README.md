@@ -43,7 +43,7 @@ Progress per subsystem is tracked in [docs/PORT_STATUS.md](docs/PORT_STATUS.md).
 |---|---|
 | Boot, logos, title screen, memory card check | Works |
 | Input | Works (keyboard, pad, scripted) |
-| The city | Reached: HUD, cursor and 3D terrain render, about 23 fps on average in the heavy views of the explore autoplay (lowest about 19), 60 (the display rate) on the title and in menus (CPU rendering, pre-timed VU1 programs, see docs/VU1_PROGRAMS.md) |
+| The city | Reached: HUD, cursor and 3D terrain render, about 23 fps on average in the heavy views of the explore autoplay (lowest about 19), 60 (the display rate) on the title and in menus (CPU rendering, pre-timed VU1 programs, see docs/VU1_PROGRAMS.md). Frame skip keeps the game close to its speed there: 50 to 58 game frames a second, with the frames that cannot be drawn in time left undrawn (`PS2X_FRAMESKIP=0` turns it off) |
 | Movies, music, sound effects | Play, through a new SPU2 emulation (with reverb) |
 | Saves | Memory card check passes; loading a save from a PCSX2 memory card works |
 | Mapping (names, types, prototypes) | Done for every game function |
@@ -187,7 +187,7 @@ This is a fan preservation project. It is not affiliated with or endorsed by Ind
 |---|---|
 | 起動、ロゴ、タイトル画面、メモリーカード確認 | 動作 |
 | 入力 | 動作(キーボード、パッド、スクリプト) |
-| 街 | 到達済み。HUD、カーソル、3D地形を描画。探索の自動操作の重い場面で平均約23 fps(最低約19 fps)、タイトルとメニューでは表示レートの60 fps |
+| 街 | 到達済み。HUD、カーソル、3D地形を描画。探索の自動操作の重い場面で平均約23 fps(最低約19 fps)、タイトルとメニューでは表示レートの60 fps。フレームスキップにより、重い場面でもゲームは毎秒50〜58フレーム進み、本来の速度に近づきます(間に合わないフレームは描画を省きます。`PS2X_FRAMESKIP=0`で無効) |
 | ムービー、音楽、効果音 | 再生可能(新しく作ったSPU2エミュレーションによる、リバーブ付き) |
 | セーブ | メモリーカードの確認は通過。PCSX2のメモリーカードからのロードは動作 |
 | マッピング(名前、型、プロトタイプ) | ゲームの全関数で完了 |
