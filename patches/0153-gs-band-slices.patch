@@ -1,0 +1,156 @@
+GS bands: the rows of a banded run are split into slices that the threads take in turn. The rows are split into PS2X_GS_BAND_SLICES slices per band thread (default 3) of about the same estimated cost, and the worker and the band threads each take the next slice until none is left, drawing it with their band context begun anew; rows that turn out slower than their estimate then hold one thread for a slice instead of the whole run. Every slice with rows replays all of the run's CLUT loads, so the worker's context after its last slice holds the CLUT state the run leaves behind (without a slice it replays them alone). Checked in Metropolismania: PS2X_GS_BANDS_VERIFY=1 over 18,400 banded runs, no difference from drawing them serially; all 4 MB of VRAM byte-identical at the eleven views of a scripted city camera run with frame skip off; PS2Recomp's tests give the same results. Explore autoplay with frame skip off: the six threads' busy time per 2 s went from 1,237 to 1,470 ms (one band each) to 1,385 to 1,403 ms, 42.9 to 43.5 fps (lowest window 33.2 to 34.5); 6 slices per thread balance better still but cost more than they save.
+
+diff --git a/ps2xRuntime/src/lib/gs/gs_threaded_backend.cpp b/ps2xRuntime/src/lib/gs/gs_threaded_backend.cpp
+--- a/ps2xRuntime/src/lib/gs/gs_threaded_backend.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_threaded_backend.cpp
+@@ -342,6 +342,17 @@ struct GSThreadedBackend::Impl
+     }();
+     // Per-row cost of the run being scanned, as a difference array (scissor rows are 11 bits).
+     std::vector<int64_t> rowDiff = std::vector<int64_t>(2052u, 0);
++    // A banded run's rows are split into PS2X_GS_BAND_SLICES slices per band thread (default 3) of about the same estimated cost,
++    // and every thread takes the next slice until none is left: rows that turn out slower than their estimate keep one thread
++    // busy for a slice, not the whole run. Each slice is drawn with the thread's band context begun anew (1: one slice
++    // per thread).
++    const size_t slicesPerBand = []() -> size_t
++    {
++        const char *value = std::getenv("PS2X_GS_BAND_SLICES");
++        return value != nullptr ? static_cast<size_t>(std::clamp(std::atoi(value), 1, 16)) : 3u;
++    }();
++    std::vector<std::pair<int32_t, int32_t>> slices; // first and last row (first > last: no rows)
++    std::atomic<size_t> nextSlice{0};
+ 
+     explicit Impl(std::unique_ptr<GSRasterBackend> backend)
+         : inner(std::move(backend))
+@@ -423,6 +434,28 @@ struct GSThreadedBackend::Impl
+         }
+     }
+ 
++    // Draws slices of the run with band context `index` until none is left. False when it drew none.
++    bool drawSlices(size_t index, int &rounding)
++    {
++        GSCpuBackend::BandContext &band = bands[index];
++        bool drew = false;
++        for (;;)
++        {
++            const size_t slice = nextSlice.fetch_add(1u, std::memory_order_relaxed);
++            if (slice >= slices.size())
++                break;
++            const auto [y0, y1] = slices[slice];
++            if (y0 > y1)
++                continue;
++            band.y0 = static_cast<uint16_t>(y0);
++            band.y1 = static_cast<uint16_t>(y1);
++            cpu->BeginBand(band);
++            drawBand(index, rounding);
++            drew = true;
++        }
++        return drew;
++    }
++
+     void bandLoop(size_t index)
+     {
+         int rounding = std::fegetround();
+@@ -439,11 +472,11 @@ struct GSThreadedBackend::Impl
+             if (timingEnabled)
+             {
+                 const auto begin = std::chrono::steady_clock::now();
+-                drawBand(index, rounding);
++                drawSlices(index, rounding);
+                 workerTiming.bandBusyNs[index & 15u] += nanosecondsSince(begin, std::chrono::steady_clock::now());
+             }
+             else
+-                drawBand(index, rounding);
++                drawSlices(index, rounding);
+             if (bandsRemaining.fetch_sub(1u, std::memory_order_acq_rel) == 1u)
+             {
+                 std::lock_guard<std::mutex> lock(bandMutex);
+@@ -459,11 +492,10 @@ struct GSThreadedBackend::Impl
+             std::fill(rowDiff.begin(), rowDiff.begin() + static_cast<ptrdiff_t>(maxRow) + 2, int64_t{0});
+     }
+ 
+-    // Splits the rows into one range per band so that each gets about the same share of the run's estimated cost; the first
+-    // band starts at row 0 and the last one has no end. A band may get no rows (y0 > y1) when a few rows carry all the cost.
+-    void splitRowsByCost(int32_t maxRow)
++    // Splits the rows into `count` slices so that each gets about the same share of the run's estimated cost; the first starts
++    // at row 0 and the last one has no end. A slice may get no rows (first > last) when a few rows carry all the cost.
++    void splitRowsByCost(int32_t maxRow, size_t count)
+     {
+-        const size_t count = bands.size();
+         std::vector<int32_t> bound(count + 1u, 0);
+         uint64_t totalCost = 0;
+         int64_t perRow = 0;
+@@ -487,21 +519,12 @@ struct GSThreadedBackend::Impl
+         }
+         for (; next < count; ++next)
+             bound[next] = maxRow + 1;
++        slices.resize(count);
+         for (size_t index = 0; index < count; ++index)
+         {
+-            GSCpuBackend::BandContext &band = bands[index];
+             const int32_t lo = bound[index];
+             const int32_t hi = index + 1u == count ? 0xFFFF : bound[index + 1u] - 1;
+-            if (lo > hi)
+-            {
+-                band.y0 = 1;
+-                band.y1 = 0; // no rows
+-            }
+-            else
+-            {
+-                band.y0 = static_cast<uint16_t>(lo);
+-                band.y1 = static_cast<uint16_t>(hi);
+-            }
++            slices[index] = {lo, hi};
+         }
+     }
+ 
+@@ -539,24 +562,25 @@ struct GSThreadedBackend::Impl
+         }
+ 
+         const size_t count = bands.size();
++        const size_t sliceCount = count * slicesPerBand;
+         if (costBanding && pixels != 0u)
+-            splitRowsByCost(extentMaxY);
++            splitRowsByCost(extentMaxY, sliceCount);
+         else
+         {
+             const uint32_t rows = static_cast<uint32_t>(maxY) + 1u;
+-            for (size_t index = 0; index < count; ++index)
++            slices.resize(sliceCount);
++            for (size_t index = 0; index < sliceCount; ++index)
+             {
+-                GSCpuBackend::BandContext &band = bands[index];
+-                band.y0 = static_cast<uint16_t>(rows * index / count);
+-                band.y1 = index + 1u == count ? static_cast<uint16_t>(0xFFFFu) : static_cast<uint16_t>(rows * (index + 1u) / count - 1u);
++                const int32_t lo = static_cast<int32_t>(rows * index / sliceCount);
++                const int32_t hi = index + 1u == sliceCount ? 0xFFFF : static_cast<int32_t>(rows * (index + 1u) / sliceCount) - 1;
++                slices[index] = {lo, hi};
+             }
+         }
+         clearRowDiff(extentMaxY);
+-        for (size_t index = 0; index < count; ++index)
+-            cpu->BeginBand(bands[index]);
+         runCommands = &commands;
+         runBegin = begin;
+         runEnd = end;
++        nextSlice.store(0u, std::memory_order_relaxed);
+         bandsRemaining.store(count - 1u, std::memory_order_release);
+         {
+             std::lock_guard<std::mutex> lock(bandMutex);
+@@ -566,7 +590,16 @@ struct GSThreadedBackend::Impl
+         std::chrono::steady_clock::time_point band0Begin, band0End;
+         if (timingEnabled)
+             band0Begin = std::chrono::steady_clock::now();
+-        drawBand(0u, rounding);
++        // Every slice with rows replays all the run's CLUT loads, so band 0's context after its last slice holds the CLUT state
++        // the run leaves behind; without a slice it replays them alone.
++        if (!drawSlices(0u, rounding))
++        {
++            GSCpuBackend::BandContext &band = bands[0];
++            band.y0 = 1;
++            band.y1 = 0; // no rows
++            cpu->BeginBand(band);
++            drawBand(0u, rounding);
++        }
+         if (timingEnabled)
+             band0End = std::chrono::steady_clock::now();
+         {

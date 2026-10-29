@@ -1,18 +1,19 @@
-Sampling profiler: PS2X_PROFILE=2 also says who called the system code a sample lands in. For a sample outside the executable (the heap, memcpy, locks, waits) the stack is unwound with the x64 unwind data while the thread is still suspended, up to the first four return addresses inside the executable, and every 15 seconds the hottest call chains per thread are printed after the usual report ([profile:callers], "leaf <- caller <- its caller ..."). PS2X_PROFILE=1 is unchanged. In Metropolismania's city this showed the game thread's heap time as operator new in the GS command queue's push, its memmove as DMA chain buffers growing, and its waits as the GS queue drain before a frame buffer clear; the run is as fast as with PS2X_PROFILE=1.
+Sampling profiler: PS2X_PROFILE=2 says who called the system code a sample lands in, and PS2X_PROFILE=3 which source lines are hot. For a sample outside the executable (the heap, memcpy, locks, waits) mode 2 unwinds the stack with the x64 unwind data while the thread is still suspended, up to the first four return addresses inside the executable, and every 15 seconds prints the hottest call chains per thread after the usual report ([profile:callers], "leaf <- caller <- its caller ..."). Mode 3 prints the hottest file:line per thread from the PDB's line table ([profile:lines]; MSVC counts code it inlined at the line of the call). PS2X_PROFILE=1 is unchanged. In Metropolismania's city mode 2 showed the game thread's heap time as operator new in the GS command queue's push, its memmove as DMA chain buffers growing, and its waits as the GS queue drain before a frame buffer clear; mode 3 showed texture sampling and pixel writes as the band threads' hottest lines. Runs are as fast as with PS2X_PROFILE=1.
 
 diff --git a/ps2xRuntime/src/lib/Kernel/SamplingProfiler.cpp b/ps2xRuntime/src/lib/Kernel/SamplingProfiler.cpp
 --- a/ps2xRuntime/src/lib/Kernel/SamplingProfiler.cpp
 +++ b/ps2xRuntime/src/lib/Kernel/SamplingProfiler.cpp
-@@ -2,6 +2,8 @@
+@@ -2,6 +2,9 @@
  // instruction pointer of every other thread in the process about once per millisecond and, every
  // 15 seconds, prints the hottest functions per thread (names resolved from the PDB with DbgHelp).
  // Debug aid for finding host-side hotspots (VU1 interpreter, GS rasterizer, generated code).
 +// PS2X_PROFILE=2 also unwinds the stack of a sample that lands outside the executable (the heap, memcpy, locks) to the first
-+// four return addresses inside it, and prints those call chains per thread ([profile:callers]).
++// four return addresses inside it, and prints those call chains per thread ([profile:callers]). PS2X_PROFILE=3 prints the
++// hottest source lines per thread after the usual report ([profile:lines]).
  
  #if defined(_WIN32)
  
-@@ -11,6 +13,7 @@
+@@ -11,6 +14,7 @@
  #include <tlhelp32.h>
  
  #include <algorithm>
@@ -20,7 +21,7 @@ diff --git a/ps2xRuntime/src/lib/Kernel/SamplingProfiler.cpp b/ps2xRuntime/src/l
  #include <atomic>
  #include <chrono>
  #include <cstdlib>
-@@ -33,12 +36,16 @@ namespace
+@@ -33,12 +37,17 @@ namespace
  {
      class SamplingProfiler
      {
@@ -32,14 +33,19 @@ diff --git a/ps2xRuntime/src/lib/Kernel/SamplingProfiler.cpp b/ps2xRuntime/src/l
          {
              const char *flag = std::getenv("PS2X_PROFILE");
 -            if (!flag || flag[0] != '1')
-+            if (!flag || (flag[0] != '1' && flag[0] != '2'))
++            if (!flag || (flag[0] != '1' && flag[0] != '2' && flag[0] != '3'))
                  return;
 +            m_callers = flag[0] == '2';
++            m_lines = flag[0] == '3';
              m_thread = std::thread([this]
                                     { loop(); });
              m_thread.detach();
-@@ -53,7 +60,16 @@ namespace
-             SymSetOptions(SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS);
+@@ -50,10 +59,19 @@ namespace
+             const DWORD self = GetCurrentThreadId();
+             const DWORD pid = GetCurrentProcessId();
+             HANDLE process = GetCurrentProcess();
+-            SymSetOptions(SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS);
++            SymSetOptions(SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS | (m_lines ? SYMOPT_LOAD_LINES : 0));
              SymInitialize(process, nullptr, TRUE);
  
 +            // The executable's address range, from its PE header.
@@ -55,7 +61,7 @@ diff --git a/ps2xRuntime/src/lib/Kernel/SamplingProfiler.cpp b/ps2xRuntime/src/l
              auto lastReport = std::chrono::steady_clock::now();
              std::vector<DWORD> threads;
              auto lastEnum = std::chrono::steady_clock::time_point{};
-@@ -87,24 +103,38 @@ namespace
+@@ -87,24 +105,40 @@ namespace
                      // Record the sample only after the thread runs again: allocating while it is
                      // suspended deadlocks if it holds the heap lock.
                      DWORD64 rip = 0;
@@ -88,6 +94,8 @@ diff --git a/ps2xRuntime/src/lib/Kernel/SamplingProfiler.cpp b/ps2xRuntime/src/l
                  if (now - lastReport > std::chrono::seconds(15))
                  {
                      report(process, samples);
++                    if (m_lines)
++                        reportLines(process, samples);
 +                    if (m_callers)
 +                        reportCallers(process, samples, callers);
                      samples.clear();
@@ -95,7 +103,7 @@ diff --git a/ps2xRuntime/src/lib/Kernel/SamplingProfiler.cpp b/ps2xRuntime/src/l
                      lastReport = now;
                  }
                  std::this_thread::sleep_for(std::chrono::milliseconds(1));
-@@ -149,7 +179,68 @@ namespace
+@@ -149,7 +183,107 @@ namespace
              }
          }
  
@@ -159,8 +167,47 @@ diff --git a/ps2xRuntime/src/lib/Kernel/SamplingProfiler.cpp b/ps2xRuntime/src/l
 +            }
 +        }
 +
++        // PS2X_PROFILE=3: the hottest source lines per thread (file and line from the PDB; code inlined from elsewhere counts at
++        // the line it came from).
++        static void reportLines(HANDLE process, const std::unordered_map<DWORD, std::unordered_map<DWORD64, uint32_t>> &samples)
++        {
++            for (const auto &[tid, byAddress] : samples)
++            {
++                std::map<std::string, uint32_t> byLine;
++                uint32_t total = 0;
++                for (const auto &[address, count] : byAddress)
++                {
++                    total += count;
++                    IMAGEHLP_LINE64 line{};
++                    line.SizeOfStruct = sizeof(line);
++                    DWORD displacement = 0;
++                    std::string key;
++                    if (SymGetLineFromAddr64(process, address, &displacement, &line) && line.FileName != nullptr)
++                    {
++                        const char *file = line.FileName;
++                        for (const char *p = line.FileName; *p != '\0'; ++p)
++                            if (*p == '\\' || *p == '/')
++                                file = p + 1;
++                        key = std::string(file) + ":" + std::to_string(line.LineNumber);
++                    }
++                    else
++                        key = symbolFor(process, address);
++                    byLine[key] += count;
++                }
++                if (total < 200)
++                    continue;
++                std::vector<std::pair<std::string, uint32_t>> sorted(byLine.begin(), byLine.end());
++                std::sort(sorted.begin(), sorted.end(), [](const auto &a, const auto &b)
++                          { return a.second > b.second; });
++                std::cerr << "[profile:lines] thread " << tid << " samples=" << total << std::endl;
++                for (size_t i = 0; i < sorted.size() && i < 40; ++i)
++                    std::cerr << "[profile:lines]   " << (100.0 * sorted[i].second / total) << "% " << sorted[i].first << std::endl;
++            }
++        }
++
          std::thread m_thread;
 +        bool m_callers = false;
++        bool m_lines = false;
      };
  
      SamplingProfiler g_samplingProfiler;
