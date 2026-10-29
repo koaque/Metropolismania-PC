@@ -1,0 +1,1280 @@
+GS CPU rasterizer: the same pixels with less work per pixel. A pixel's address uses the first block's page table (every block's table is that one plus the block's offset, so 4 to 32 KB stay in the cache instead of 32 times that), and the address, read and write functions are forced inline with the bit widths folded. The VRAM reads and writes of the backend go through inline switches on the format instead of function tables, and texture reads inline GSMem::ReadTexture. WritePixel's state (scissor, fog, frame and depth buffers, tests, blend selectors) and SampleTexture's (wrap modes, formats, CLUT, page cache) are worked out once per triangle or sprite. Triangles step their integer edge functions from pixel to pixel and scan each row only over the run the edges allow (widened by a pixel each way, every pixel still tested). Bilinear filtering does its four channels in one SSE pass with the same float operations and the same rounding (half away from zero, without lroundf). A CLUT load identical to the last one in its context (the main path or a band), from source bytes that are still the same in the texture page cache, is skipped, since it would write what the table holds; the cache is moved exactly as the full load would move it. Checked in Metropolismania: all 4 MB of VRAM is byte-identical at the eleven views of a scripted city camera run with frame skip off (two runs before the change also match each other), PS2X_GS_BANDS_VERIFY=1 over 15,200 banded runs found no difference, and PS2Recomp's tests give the same results. Explore autoplay, frame skip off: 28.2 to 33.4 fps, the band threads from about 60% to 40% busy, CLUT loading from 11% of their time to under 1%.
+
+diff --git a/ps2xRuntime/include/runtime/gs/ps2_gs_memory.h b/ps2xRuntime/include/runtime/gs/ps2_gs_memory.h
+--- a/ps2xRuntime/include/runtime/gs/ps2_gs_memory.h
++++ b/ps2xRuntime/include/runtime/gs/ps2_gs_memory.h
+@@ -9,6 +9,13 @@
+ #include "types.h"
+ #include "runtime/gs/gs_texture_page_cache.h"
+ 
++// The per-pixel address, read and write functions run for every pixel the rasterizer touches; inlined, the extents fold to shifts.
++#if defined(_MSC_VER)
++#define GSMEM_INLINE __forceinline
++#else
++#define GSMEM_INLINE inline __attribute__((always_inline))
++#endif
++
+ namespace GSMem
+ {
+ 	constexpr usz MEMORY_SIZE = 4_mb;
+@@ -395,7 +402,7 @@ namespace GSMem
+ 	}
+ 
+ 	template<PixelStorageMode psm>
+-	constexpr usz PixelStorageTraits<psm>::PageId(u32 base, u32 bw, u32 x, u32 y)
++	GSMEM_INLINE constexpr usz PixelStorageTraits<psm>::PageId(u32 base, u32 bw, u32 x, u32 y)
+ 	{
+ 		constexpr auto page_extent = PageExtent();
+ 
+@@ -426,11 +433,10 @@ namespace GSMem
+ 	}
+ 
+ 	template<PixelStorageMode psm>
+-	constexpr u32 PixelStorageTraits<psm>::Address(const PageLookupTableT& table, u32 block, u32 bw, u32 x, u32 y)
++	GSMEM_INLINE constexpr u32 PixelStorageTraits<psm>::Address(const PageLookupTableT& table, u32 block, u32 bw, u32 x, u32 y)
+ 	{
+ 		constexpr auto block_count = BlocksPerPage();
+ 		constexpr auto page_extent = PageExtent();
+-		constexpr auto pixels_per_page = PixelsPerPage();
+ 
+ 		const u32 page = PageId(block, bw, x, y);
+ 
+@@ -438,7 +444,9 @@ namespace GSMem
+ 		y = y % page_extent.y;
+ 		x = x % page_extent.x;
+ 
+-		return (page * PixelsPerPage()) + table[block][y][x];
++		// InitPageLookupTable makes table[block][y][x] equal to block * PixelsPerBlock() + table[0][y][x], so the first table
++		// serves every block (4 to 32 KB that stay in the cache instead of 32 times that).
++		return (page * PixelsPerPage()) + block * PixelsPerBlock() + table[0][y][x];
+ 	}
+ 
+ 	template<PixelStorageMode psm>
+@@ -459,10 +467,12 @@ namespace GSMem
+ 	}
+ 
+ 	template<PixelStorageMode psm>
+-	constexpr void PixelStorageTraits<psm>::Write(const PageLookupTableT& table, u8* data, u32 block, u32 bw, u32 x, u32 y, PackedT value)
++	GSMEM_INLINE constexpr void PixelStorageTraits<psm>::Write(const PageLookupTableT& table, u8* data, u32 block, u32 bw, u32 x, u32 y, PackedT value)
+ 	{
+ 		const u32 pixel_addr = Address(table, block, bw, x, y);
+-		const u32 bits = pixel_addr * UnpackedBitWidth(psm) + BitOffset();
++		constexpr usz unpacked_bits = UnpackedBitWidth(psm);
++		constexpr usz bit_offset = BitOffset();
++		const u32 bits = pixel_addr * unpacked_bits + bit_offset;
+ 		const u32 byte_addr = (bits / 8) & (MEMORY_SIZE - sizeof(PackedT));
+ 		const u32 shift = bits % 8;
+ 
+@@ -502,10 +512,12 @@ namespace GSMem
+ 	}
+ 
+ 	template<PixelStorageMode psm>
+-	constexpr auto PixelStorageTraits<psm>::Read(const PageLookupTableT& table, const u8* data, u32 block, u32 bw, u32 x, u32 y, TexturePageCache* cache) -> PackedT
++	GSMEM_INLINE constexpr auto PixelStorageTraits<psm>::Read(const PageLookupTableT& table, const u8* data, u32 block, u32 bw, u32 x, u32 y, TexturePageCache* cache) -> PackedT
+ 	{
+ 		const u32 pixel_addr = Address(table, block, bw, x, y);
+-		const u32 bits = pixel_addr * UnpackedBitWidth(psm) + BitOffset();
++		constexpr usz unpacked_bits = UnpackedBitWidth(psm);
++		constexpr usz bit_offset = BitOffset();
++		const u32 bits = pixel_addr * unpacked_bits + bit_offset;
+ 		const u32 byte_addr = (bits / 8) & (MEMORY_SIZE - sizeof(PackedT));
+ 		const u32 shift = bits % 8;
+ 
+@@ -540,6 +552,17 @@ namespace GSMem
+ 
+ 	void InitLookupTables();
+ 
++	// The page tables InitLookupTables fills (C32 also serves C24, P8H, P4HL and P4HH; Z32 also serves Z24), for inline reads
++	// and writes in the rasterizer.
++	extern PixelStorageTraits<C32>::PageLookupTableT PageTableC32;
++	extern PixelStorageTraits<Z32>::PageLookupTableT PageTableZ32;
++	extern PixelStorageTraits<C16>::PageLookupTableT PageTableC16;
++	extern PixelStorageTraits<C16S>::PageLookupTableT PageTableC16S;
++	extern PixelStorageTraits<Z16>::PageLookupTableT PageTableZ16;
++	extern PixelStorageTraits<Z16S>::PageLookupTableT PageTableZ16S;
++	extern PixelStorageTraits<P8>::PageLookupTableT PageTableP8;
++	extern PixelStorageTraits<P4>::PageLookupTableT PageTableP4;
++
+     // Shares swizzle, VRAM wrapping, and lane extraction with the direct reads.
+     u32 ReadTexture(TexturePageCache& cache, const u8* data, u32 psm, u32 bp, u32 bw, u32 x, u32 y);
+ 
+diff --git a/ps2xRuntime/src/lib/gs/ps2_gs_memory.cpp b/ps2xRuntime/src/lib/gs/ps2_gs_memory.cpp
+--- a/ps2xRuntime/src/lib/gs/ps2_gs_memory.cpp
++++ b/ps2xRuntime/src/lib/gs/ps2_gs_memory.cpp
+@@ -192,14 +192,14 @@ namespace GSMem
+     }};
+ 
+     // this is going to be massive (an entire page of addess lookups)
+-    static C32PageLookupTable  PageTableC32{ };
+-    static Z32PageLookupTableT PageTableZ32{ };
+-    static C16PageLookupTable  PageTableC16{ };
+-    static C16SPageLookupTable PageTableC16S{ };
+-    static Z16PageLookupTable  PageTableZ16{ };
+-    static Z16SPageLookupTable PageTableZ16S{ };
+-    static P8PageLookupTable   PageTableP8{ };
+-    static P4PageLookupTable   PageTableP4{ };
++    C32PageLookupTable  PageTableC32{ };
++    Z32PageLookupTableT PageTableZ32{ };
++    C16PageLookupTable  PageTableC16{ };
++    C16SPageLookupTable PageTableC16S{ };
++    Z16PageLookupTable  PageTableZ16{ };
++    Z16SPageLookupTable PageTableZ16S{ };
++    P8PageLookupTable   PageTableP8{ };
++    P4PageLookupTable   PageTableP4{ };
+ 
+     void InitLookupTables()
+     {
+diff --git a/ps2xRuntime/include/runtime/gs/gs_cpu_backend.h b/ps2xRuntime/include/runtime/gs/gs_cpu_backend.h
+--- a/ps2xRuntime/include/runtime/gs/gs_cpu_backend.h
++++ b/ps2xRuntime/include/runtime/gs/gs_cpu_backend.h
+@@ -33,6 +33,21 @@ public:
+     void SnapshotVram(std::vector<uint8_t> &out) const override;
+     GSTransferSnapshot GetTransferSnapshot() const override;
+ 
++    // The last CLUT load in a context: its parameters and the source bytes it read (from the texture page cache, within one
++    // page). A load with the same parameters whose source bytes are still the same would write the same table, so it is
++    // skipped; games load the same CLUT before most draws, and every band replays every load.
++    struct ClutMemo
++    {
++        bool valid = false;
++        bool fourBit = false;
++        uint8_t cpsm = 0, csm = 0, csa = 0;
++        uint8_t cbw = 0, cou = 0;
++        uint16_t cov = 0;
++        uint32_t cbp = 0;
++        uint32_t firstByte = 0, length = 0;
++        std::array<uint8_t, GSMem::TexturePageCache::kPageSize> bytes{};
++    };
++
+     // Banded drawing, used by GSThreadedBackend to rasterize on several threads. Each band replays
+     // the same run of draws, CLUT loads and texture flushes, clipped to its own rows, with its own
+     // copy of the CLUT state and its own texture page cache. While bands run, nothing else may use
+@@ -44,6 +59,7 @@ public:
+         std::array<uint16_t, 512> clut{};
+         std::array<uint32_t, 2> clutCbp{};
+         GSMem::TexturePageCache textureCache;
++        ClutMemo clutMemo;
+     };
+     void BeginBand(BandContext &band) const;
+     void EndBand(const BandContext &band);
+@@ -59,6 +75,7 @@ private:
+     std::array<uint16_t, 512> &clutTable();
+     std::array<uint32_t, 2> &clutCbpTable();
+     GSMem::TexturePageCache &textureCache();
++    ClutMemo &clutMemo();
+     void LoadClutChecked(const GSTex0Reg &tex0, const GSTexClutReg &texclut);
+     void ResetUnlocked();
+     void LoadClutUnlocked(const GSTex0Reg &tex0, const GSTexClutReg &texclut);
+@@ -99,6 +116,7 @@ private:
+     std::array<uint16_t, 512> m_clut{};
+     std::array<uint32_t, 2> m_clutCbp{};
+     GSMem::TexturePageCache m_texturePageCache;
++    ClutMemo m_clutMemo;
+ 
+     GSTransferCommand m_transfer{};
+     GSTransferSnapshot m_transferState{};
+diff --git a/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp b/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp
+--- a/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp
++++ b/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp
+@@ -14,6 +14,7 @@
+ #include <cstdio>
+ #include <cstring>
+ #include <fstream>
++#include <immintrin.h>
+ #include <iostream>
+ #include <mutex>
+ #include <stdexcept>
+@@ -317,11 +318,107 @@ namespace
+         return psm == GS_PSM_T8 || psm == GS_PSM_T8H;
+     }
+ 
++    // std::lround for a float in int range (half away from zero), without the library call: x minus its truncation is
++    // exact, so comparing it with one half decides exactly as lroundf does.
++    inline int roundHalfAway(float x)
++    {
++        const float whole = _mm_cvtss_f32(_mm_round_ss(_mm_setzero_ps(), _mm_set_ss(x), _MM_FROUND_TO_ZERO | _MM_FROUND_NO_EXC));
++        const float part = x - whole;
++        if (part >= 0.5f)
++            return static_cast<int>(whole) + 1;
++        if (part <= -0.5f)
++            return static_cast<int>(whole) - 1;
++        return static_cast<int>(whole);
++    }
++
+     uint8_t lerpChannel(uint8_t c00, uint8_t c10, uint8_t c01, uint8_t c11, float fx, float fy)
+     {
+         const float top = static_cast<float>(c00) + (static_cast<float>(c10) - static_cast<float>(c00)) * fx;
+         const float bottom = static_cast<float>(c01) + (static_cast<float>(c11) - static_cast<float>(c01)) * fx;
+-        return clampU8(static_cast<int>(std::lround(top + (bottom - top) * fy)));
++        return clampU8(roundHalfAway(top + (bottom - top) * fy));
++    }
++
++    // The VRAM accesses of the constructor's read and write tables (GSMem::ReadCT32 and the rest) and of GSMem::ReadTexture,
++    // inlined: the pixel loops make one for every pixel, always with the same format, so the switch costs a predicted branch
++    // where the table cost a call that the address arithmetic could not be folded into.
++    GSMEM_INLINE uint32_t readVramInline(const uint8_t *vram, uint32_t psm, uint32_t bp, uint32_t bw, uint32_t x, uint32_t y,
++                                         GSMem::TexturePageCache *cache = nullptr)
++    {
++        using namespace GSMem;
++        switch (static_cast<PixelStorageMode>(psm & 0x3Fu))
++        {
++        case C32: return PixelStorageTraits<C32>::Read(PageTableC32, vram, bp, bw, x, y, cache);
++        case C24: return PixelStorageTraits<C24>::Read(PageTableC32, vram, bp, bw, x, y, cache);
++        case C16: return PixelStorageTraits<C16>::Read(PageTableC16, vram, bp, bw, x, y, cache);
++        case C16S: return PixelStorageTraits<C16S>::Read(PageTableC16S, vram, bp, bw, x, y, cache);
++        case P8: return PixelStorageTraits<P8>::Read(PageTableP8, vram, bp, bw, x, y, cache);
++        case P4: return PixelStorageTraits<P4>::Read(PageTableP4, vram, bp, bw, x, y, cache);
++        case P8H: return PixelStorageTraits<P8H>::Read(PageTableC32, vram, bp, bw, x, y, cache);
++        case P4HL: return PixelStorageTraits<P4HL>::Read(PageTableC32, vram, bp, bw, x, y, cache);
++        case P4HH: return PixelStorageTraits<P4HH>::Read(PageTableC32, vram, bp, bw, x, y, cache);
++        case Z32: return PixelStorageTraits<Z32>::Read(PageTableZ32, vram, bp, bw, x, y, cache);
++        case Z24: return PixelStorageTraits<Z24>::Read(PageTableZ32, vram, bp, bw, x, y, cache);
++        case Z16: return PixelStorageTraits<Z16>::Read(PageTableZ16, vram, bp, bw, x, y, cache);
++        case Z16S: return PixelStorageTraits<Z16S>::Read(PageTableZ16S, vram, bp, bw, x, y, cache);
++        default: return 0u;
++        }
++    }
++
++    // PixelStorageTraits<P>::Read through a texture page cache, also giving the byte address it read.
++    template <GSMem::PixelStorageMode P>
++    GSMEM_INLINE uint32_t readCachedAt(GSMem::TexturePageCache &cache, const uint8_t *vram, const typename GSMem::PixelStorageTraits<P>::PageLookupTableT &table,
++                                       uint32_t bp, uint32_t bw, uint32_t x, uint32_t y, uint32_t &byteAddress)
++    {
++        using Traits = GSMem::PixelStorageTraits<P>;
++        using Packed = typename Traits::PackedT;
++        constexpr uint32_t unpackedBits = GSMem::UnpackedBitWidth(P);
++        const uint32_t bits = Traits::Address(table, bp, bw, x, y) * unpackedBits + static_cast<uint32_t>(Traits::BitOffset());
++        byteAddress = (bits / 8u) & static_cast<uint32_t>(GSMem::MEMORY_SIZE - sizeof(Packed));
++        Packed value;
++        std::memcpy(&value, cache.Resolve(vram, byteAddress), sizeof(Packed));
++        if constexpr (P == GSMem::C24)
++            return value & 0x00FFFFFFu;
++        else
++            return value;
++    }
++
++    // ReadTextureVramUnlocked for the CLUT formats, with the byte address read (LoadClutUnlocked).
++    GSMEM_INLINE uint32_t readClutSource(GSMem::TexturePageCache &cache, const uint8_t *vram, uint32_t cpsm, uint32_t bp, uint32_t bw, uint32_t x,
++                                         uint32_t y, uint32_t &byteAddress)
++    {
++        using namespace GSMem;
++        switch (static_cast<PixelStorageMode>(cpsm & 0x3Fu))
++        {
++        case C32: return readCachedAt<C32>(cache, vram, PageTableC32, bp, bw, x, y, byteAddress);
++        case C24: return readCachedAt<C24>(cache, vram, PageTableC32, bp, bw, x, y, byteAddress);
++        case C16: return readCachedAt<C16>(cache, vram, PageTableC16, bp, bw, x, y, byteAddress);
++        case C16S: return readCachedAt<C16S>(cache, vram, PageTableC16S, bp, bw, x, y, byteAddress);
++        default:
++            byteAddress = 0u;
++            return 0u;
++        }
++    }
++
++    GSMEM_INLINE void writeVramInline(uint8_t *vram, uint32_t psm, uint32_t bp, uint32_t bw, uint32_t x, uint32_t y, uint32_t value)
++    {
++        using namespace GSMem;
++        switch (static_cast<PixelStorageMode>(psm & 0x3Fu))
++        {
++        case C32: PixelStorageTraits<C32>::Write(PageTableC32, vram, bp, bw, x, y, value); break;
++        case C24: PixelStorageTraits<C24>::Write(PageTableC32, vram, bp, bw, x, y, value); break;
++        case C16: PixelStorageTraits<C16>::Write(PageTableC16, vram, bp, bw, x, y, value); break;
++        case C16S: PixelStorageTraits<C16S>::Write(PageTableC16S, vram, bp, bw, x, y, value); break;
++        case P8: PixelStorageTraits<P8>::Write(PageTableP8, vram, bp, bw, x, y, value); break;
++        case P4: PixelStorageTraits<P4>::Write(PageTableP4, vram, bp, bw, x, y, value); break;
++        case P8H: PixelStorageTraits<P8H>::Write(PageTableC32, vram, bp, bw, x, y, value); break;
++        case P4HL: PixelStorageTraits<P4HL>::Write(PageTableC32, vram, bp, bw, x, y, value); break;
++        case P4HH: PixelStorageTraits<P4HH>::Write(PageTableC32, vram, bp, bw, x, y, value); break;
++        case Z32: PixelStorageTraits<Z32>::Write(PageTableZ32, vram, bp, bw, x, y, value); break;
++        case Z24: PixelStorageTraits<Z24>::Write(PageTableZ32, vram, bp, bw, x, y, value); break;
++        case Z16: PixelStorageTraits<Z16>::Write(PageTableZ16, vram, bp, bw, x, y, value); break;
++        case Z16S: PixelStorageTraits<Z16S>::Write(PageTableZ16S, vram, bp, bw, x, y, value); break;
++        default: break;
++        }
+     }
+ }
+ 
+@@ -594,17 +691,24 @@ GSMem::TexturePageCache &GSCpuBackend::textureCache()
+     return t_band ? t_band->textureCache : m_texturePageCache;
+ }
+ 
++GSCpuBackend::ClutMemo &GSCpuBackend::clutMemo()
++{
++    return t_band ? t_band->clutMemo : m_clutMemo;
++}
++
+ void GSCpuBackend::BeginBand(BandContext &band) const
+ {
+     band.clut = m_clut;
+     band.clutCbp = m_clutCbp;
+     band.textureCache.Invalidate();
++    band.clutMemo.valid = false;
+ }
+ 
+ void GSCpuBackend::EndBand(const BandContext &band)
+ {
+     m_clut = band.clut;
+     m_clutCbp = band.clutCbp;
++    m_clutMemo.valid = false; // the table is the band's now
+     // The bands drew into VRAM behind the normal path's page cache.
+     m_texturePageCache.Invalidate();
+ }
+@@ -648,6 +752,7 @@ void GSCpuBackend::ResetUnlocked()
+ {
+     m_clut.fill(0u);
+     m_clutCbp.fill(0u);
++    m_clutMemo.valid = false;
+     m_texturePageCache.Invalidate();
+     m_transfer = {};
+     m_transfer.direction = 3u;
+@@ -725,6 +830,17 @@ void GSCpuBackend::LoadClutUnlocked(const GSTex0Reg &tex0, const GSTexClutReg &t
+     const bool loadCsm1Suffix = tex0.csm == 0u && thirtyTwoBit && !fourBit;
+     const uint32_t firstEntry = loadCsm1Suffix ? destinationBase : 0u;
+     std::array<uint16_t, 512> &clut = clutTable();
++    // The reads go through the texture page cache, as ReadTextureVramUnlocked's do (its page changes are part of the result).
++    GSMem::TexturePageCache &cache = textureCache();
++
++    // The same load as the last one in this context, from the same bytes, writes what the table already holds. The source is
++    // within one page, so reading it moves the page cache exactly as the loop's reads would.
++    ClutMemo &memo = clutMemo();
++    if (memo.valid && memo.fourBit == fourBit && memo.cpsm == tex0.cpsm && memo.csm == tex0.csm && memo.csa == tex0.csa &&
++        memo.cbp == tex0.cbp && memo.cbw == texclut.cbw && memo.cou == texclut.cou && memo.cov == texclut.cov &&
++        std::memcmp(cache.Resolve(m_vram, memo.firstByte), memo.bytes.data(), memo.length) == 0)
++        return;
++    uint32_t lowByte = UINT32_MAX, highByte = 0; // the source bytes read: [lowByte, highByte)
+ 
+     for (uint32_t entry = firstEntry; entry < entryCount; ++entry)
+     {
+@@ -745,7 +861,10 @@ void GSCpuBackend::LoadClutUnlocked(const GSTex0Reg &tex0, const GSTexClutReg &t
+             sourceY = static_cast<uint32_t>(texclut.cov);
+         }
+ 
+-        const uint32_t raw = ReadTextureVramUnlocked(tex0.cpsm, tex0.cbp, sourceWidth, sourceX, sourceY); 
++        uint32_t sourceByte = 0u;
++        const uint32_t raw = readClutSource(cache, m_vram, tex0.cpsm, tex0.cbp, sourceWidth, sourceX, sourceY, sourceByte);
++        lowByte = std::min(lowByte, sourceByte);
++        highByte = std::max(highByte, sourceByte + (sixteenBit ? 2u : 4u));
+         const uint32_t destination = (loadCsm1Suffix ? entry : destinationBase + entry) & (sixteenBit ? 0x1FFu : 0x0FFu);
+         if (sixteenBit)
+         {
+@@ -757,6 +876,24 @@ void GSCpuBackend::LoadClutUnlocked(const GSTex0Reg &tex0, const GSTexClutReg &t
+             clut[destination + 256u] = static_cast<uint16_t>(raw >> 16u);
+         }
+     }
++
++    constexpr uint32_t pageMask = ~(GSMem::TexturePageCache::kPageSize - 1u);
++    memo.valid = lowByte < highByte && (lowByte & pageMask) == ((highByte - 1u) & pageMask);
++    if (memo.valid)
++    {
++        memo.fourBit = fourBit;
++        memo.cpsm = tex0.cpsm;
++        memo.csm = tex0.csm;
++        memo.csa = tex0.csa;
++        memo.cbp = tex0.cbp;
++        memo.cbw = texclut.cbw;
++        memo.cou = texclut.cou;
++        memo.cov = texclut.cov;
++        memo.firstByte = lowByte;
++        memo.length = highByte - lowByte;
++        // The cache already holds this page (the last entry read is in it), so this moves nothing.
++        std::memcpy(memo.bytes.data(), cache.Resolve(m_vram, lowByte), memo.length);
++    }
+ }
+ 
+ void GSCpuBackend::Flush()
+@@ -785,7 +922,7 @@ uint32_t GSCpuBackend::ReadVramUnlocked(uint32_t psm, uint32_t base, uint32_t bw
+ {
+     if (!m_vram)
+         return 0u;
+-    return m_readVramFuncs[psm & 0x3Fu](m_vram, base, bw, x, y);
++    return readVramInline(m_vram, psm, base, bw, x, y);
+ }
+ 
+ uint32_t GSCpuBackend::ReadTextureVramUnlocked(uint32_t psm, uint32_t base, uint32_t bw, uint32_t x, uint32_t y)
+@@ -793,7 +930,7 @@ uint32_t GSCpuBackend::ReadTextureVramUnlocked(uint32_t psm, uint32_t base, uint
+     if (!m_vram)
+         return 0u;
+ 
+-    return GSMem::ReadTexture(textureCache(), m_vram, psm, base, bw, x, y);
++    return readVramInline(m_vram, psm, base, bw, x, y, &textureCache());
+ }
+ 
+ void GSCpuBackend::WriteVram(uint32_t psm, uint32_t base, uint32_t bw, uint32_t x, uint32_t y, uint32_t value)
+@@ -806,7 +943,7 @@ void GSCpuBackend::WriteVramUnlocked(uint32_t psm, uint32_t base, uint32_t bw, u
+ {
+     if (!m_vram)
+         return;
+-    m_writeVramFuncs[psm & 0x3Fu](m_vram, base, bw, x, y, value);
++    writeVramInline(m_vram, psm, base, bw, x, y, value);
+ }
+ 
+ void GSCpuBackend::SnapshotVram(std::vector<uint8_t> &out) const
+@@ -1001,350 +1138,474 @@ namespace
+     thread_local bool t_inProbe = false;
+ }
+ 
+-void GSCpuBackend::WritePixel(const GSDrawState &state, int x, int y, int z, uint8_t r, uint8_t g, uint8_t b, uint8_t a, uint8_t fog)
++namespace
+ {
+-    const auto &ctx = state.context;
+-    if (x < ctx.scissor.x0 || x > ctx.scissor.x1 || y < ctx.scissor.y0 || y > ctx.scissor.y1)
+-        return;
++    // What WritePixel works out from the draw state, worked out once per primitive instead of once per pixel.
++    struct PixelPipe
++    {
++        uint8_t *vram = nullptr;
++        int scissorX0 = 0, scissorX1 = 0, scissorY0 = 0, scissorY1 = 0;
++        bool fge = false;
++        uint8_t fogR = 0, fogG = 0, fogB = 0;
++        uint32_t fbp = 0, fbw = 1, fpsm = 0, zbp = 0, zpsm = 0;
++        uint64_t test = 0;
++        bool ztestEnabled = false;
++        uint32_t ztestMethod = 1;
++        bool abe = false, pabe = false;
++        uint8_t asel = 0, bsel = 0, csel = 0, dsel = 0, fix = 0;
++        bool fbaOn = false;         // FBA set and a frame format other than RGB24
++        uint32_t fbmsk = 0;
++        bool frame16 = false;       // a 16-bit frame format
++        bool frame24 = false;       // RGB24
++        bool depthWritable = false; // ZTE on and ZMSK off
++        bool dateNeedsRead = false; // DATE on with a frame format that has destination alpha
++    };
+ 
+-    if (!t_inProbe && pixelProbe().on && x == pixelProbe().x && y == pixelProbe().y &&
+-        std::chrono::steady_clock::now() - pixelProbe().start >= std::chrono::seconds(pixelProbe().seconds))
++    PixelPipe makePixelPipe(uint8_t *vram, const GSDrawState &state)
+     {
+-        const uint32_t hit = g_probeHits.fetch_add(1u, std::memory_order_relaxed);
+-        if (hit >= pixelProbe().skip && hit < pixelProbe().skip + pixelProbe().count)
+-        {
+-            const u32 pbp = GSInternal::framePageBaseToBlock(ctx.frame.fbp);
+-            const u32 pbw = std::max<u32>(ctx.frame.fbw, 1u);
+-            const u32 before = ReadVramUnlocked(ctx.frame.psm, pbp, pbw, x, y);
+-            t_inProbe = true;
+-            WritePixel(state, x, y, z, r, g, b, a, fog);
+-            t_inProbe = false;
+-            const u32 after = ReadVramUnlocked(ctx.frame.psm, pbp, pbw, x, y);
+-            const auto &t = ctx.tex0;
+-            std::lock_guard<std::mutex> lock(g_probeMutex);
+-            std::fprintf(stderr,
+-                         "[gs:probe] #%u fbp=0x%x psm=0x%x prim=%u tme=%d abe=%d fge=%d iip=%d fst=%d | tex psm=0x%x tbp=0x%x tfx=%u tcc=%u "
+-                         "cpsm=0x%x csm=%u csa=%u linear=%d | alpha=0x%llx pabe=%d fba=0x%llx test=0x%llx texa(ta0=0x%x ta1=0x%x aem=%d) "
+-                         "colclamp=0x%llx dthe=0x%llx fbmsk=0x%x | in rgba=%02x%02x%02x%02x fog=%u z=0x%x | before=0x%08x after=0x%08x\n",
+-                         hit, ctx.frame.fbp, ctx.frame.psm, static_cast<unsigned>(state.prim.type), state.prim.tme, state.prim.abe,
+-                         state.prim.fge, state.prim.iip, state.prim.fst, t.psm, t.tbp0, t.tfx, t.tcc, t.cpsm, t.csm, t.csa, state.linearFilter,
+-                         static_cast<unsigned long long>(ctx.alpha), state.pabe, static_cast<unsigned long long>(ctx.fba),
+-                         static_cast<unsigned long long>(ctx.test), state.texa.ta0, state.texa.ta1, state.texa.aem,
+-                         static_cast<unsigned long long>(state.colclamp), static_cast<unsigned long long>(state.dthe), ctx.frame.fbmsk, r, g,
+-                         b, a, fog, static_cast<u32>(z), before, after);
+-            return;
+-        }
++        const auto &ctx = state.context;
++        PixelPipe p;
++        p.vram = vram;
++        p.scissorX0 = ctx.scissor.x0;
++        p.scissorX1 = ctx.scissor.x1;
++        p.scissorY0 = ctx.scissor.y0;
++        p.scissorY1 = ctx.scissor.y1;
++        p.fge = state.prim.fge;
++        p.fogR = state.fogR;
++        p.fogG = state.fogG;
++        p.fogB = state.fogB;
++        p.fbp = GSInternal::framePageBaseToBlock(ctx.frame.fbp);
++        p.fbw = std::max<u32>(ctx.frame.fbw, 1u);
++        p.fpsm = ctx.frame.psm;
++        p.zbp = GSInternal::framePageBaseToBlock(ctx.zbuf.zbp);
++        p.zpsm = ctx.zbuf.psm;
++        p.test = ctx.test;
++        // Disabling TEST.ZTE bypasses depth testing and also prevents depth writes.
++        // The stored ZTST value does not apply while the test is disabled.
++        p.ztestEnabled = ((ctx.test >> 16) & 1u) != 0u;
++        p.ztestMethod = p.ztestEnabled ? static_cast<uint32_t>((ctx.test >> 17) & 3u) : 1u;
++        p.abe = state.prim.abe;
++        p.pabe = state.pabe;
++        const uint64_t alphaReg = ctx.alpha;
++        p.asel = alphaReg & 3;
++        p.bsel = (alphaReg >> 2) & 3;
++        p.csel = (alphaReg >> 4) & 3;
++        p.dsel = (alphaReg >> 6) & 3;
++        p.fix = static_cast<uint8_t>((alphaReg >> 32) & 0xFF);
++        p.fbaOn = (ctx.fba & 0x1ull) != 0ull && ctx.frame.psm != GS_PSM_CT24;
++        p.fbmsk = ctx.frame.fbmsk;
++        p.frame16 = bitsPerPixel(static_cast<uint8_t>(p.fpsm)) == 16;
++        p.frame24 = p.fpsm == GS_PSM_CT24;
++        p.depthWritable = p.ztestEnabled && !ctx.zbuf.zmask;
++        p.dateNeedsRead = ((ctx.test >> 14) & 0x1u) != 0u && (p.fpsm == GS_PSM_CT32 || p.fpsm == GS_PSM_CT16 || p.fpsm == GS_PSM_CT16S);
++        return p;
+     }
+ 
+-    if (state.prim.fge)
++    // The pixel write of GSCpuBackend::WritePixel, from a PixelPipe.
++    GSMEM_INLINE void writePixelCore(const PixelPipe &p, int x, int y, int z, uint8_t r, uint8_t g, uint8_t b, uint8_t a, uint8_t fog)
+     {
+-        const uint32_t inverseFog = 255u - fog;
+-        auto applyFog = [&](uint8_t input, uint8_t fogColor) -> uint8_t
++        if (x < p.scissorX0 || x > p.scissorX1 || y < p.scissorY0 || y > p.scissorY1)
++            return;
++
++        if (p.fge)
+         {
+-            return static_cast<uint8_t>(((static_cast<uint32_t>(fog) * input) >> 8) + ((inverseFog * fogColor) >> 8));
+-        };
++            const uint32_t inverseFog = 255u - fog;
++            auto applyFog = [&](uint8_t input, uint8_t fogColor) -> uint8_t
++            {
++                return static_cast<uint8_t>(((static_cast<uint32_t>(fog) * input) >> 8) + ((inverseFog * fogColor) >> 8));
++            };
+ 
+-        r = applyFog(r, state.fogR);
+-        g = applyFog(g, state.fogG);
+-        b = applyFog(b, state.fogB);
+-    }
++            r = applyFog(r, p.fogR);
++            g = applyFog(g, p.fogG);
++            b = applyFog(b, p.fogB);
++        }
+ 
+-    const u32 fbp = GSInternal::framePageBaseToBlock(ctx.frame.fbp);
+-    const u32 fbw = std::max<u32>(ctx.frame.fbw, 1u);
+-    const u32 fpsm = ctx.frame.psm;
+-    const u32 zbp = GSInternal::framePageBaseToBlock(ctx.zbuf.zbp);
+-    const u32 zpsm = ctx.zbuf.psm;
++        const PixelWriteMask writeMask = classifyAlphaTest(p.test, a, static_cast<uint8_t>(p.fpsm));
++        if (!writeMask.writesAnything())
++        {
++            return;
++        }
+ 
+-    const PixelWriteMask writeMask = classifyAlphaTest(ctx.test, a, static_cast<uint8_t>(fpsm));
+-    if (!writeMask.writesAnything())
+-    {
+-        return;
+-    }
++        const bool preserveDestinationAlpha = writeMask.writeRgb && !writeMask.writeAlpha && p.fpsm == GS_PSM_CT32;
+ 
+-    // Disabling TEST.ZTE bypasses depth testing and also prevents depth writes.
+-    // The stored ZTST value does not apply while the test is disabled.
+-    const bool ztestEnabled = ((ctx.test >> 16) & 1u) != 0u;
+-    const uint32_t ztestMethod = ztestEnabled ? static_cast<uint32_t>((ctx.test >> 17) & 3u) : 1u;
+-    const bool alphaBlendEnabled = state.prim.abe;
+-    const bool preserveDestinationAlpha = writeMask.writeRgb && !writeMask.writeAlpha && fpsm == GS_PSM_CT32;
+-    const bool destinationAlphaTestNeedsRead = ((ctx.test >> 14) & 0x1u) != 0u && (fpsm == GS_PSM_CT32 || fpsm == GS_PSM_CT16 || fpsm == GS_PSM_CT16S);
++        // small optimization, avoid reading the framebuffer for simple draws
++        const bool frmw = p.dateNeedsRead || (writeMask.writesFramebuffer() && ((p.fbmsk != 0) || p.abe || preserveDestinationAlpha));
+ 
+-    // small optimization, avoid reading the framebuffer for simple draws
+-    // TODO: only one address lookup for rmw
+-    const bool frmw = destinationAlphaTestNeedsRead || (writeMask.writesFramebuffer() && ((ctx.frame.fbmsk != 0) || alphaBlendEnabled || preserveDestinationAlpha));
++        u32 rawFramebufferPixel = 0;
++        u32 fbrgba = 0;
++        if (frmw)
++        {
++            rawFramebufferPixel = readVramInline(p.vram, p.fpsm, p.fbp, p.fbw, x, y);
++            fbrgba = rawFramebufferPixel;
+ 
+-    u32 rawFramebufferPixel = 0;
+-    u32 fbrgba = 0;
+-    if (frmw)
+-    {
+-        rawFramebufferPixel = ReadVramUnlocked(fpsm, fbp, fbw, x, y);
+-        fbrgba = rawFramebufferPixel;
++            if (p.frame16)
++            {
++                fbrgba = Rgba5551ToRgba8888(fbrgba);
++            }
++            else if (p.frame24)
++            {
++                // The GS supplies 0x80 as destination alpha for RGB24 blending.
++                fbrgba |= 0x80000000u;
++            }
++        }
+ 
+-        if (bitsPerPixel(fpsm) == 16)
++        if (!passesDestinationAlphaTest(p.test, static_cast<uint8_t>(p.fpsm), rawFramebufferPixel))
+         {
+-            fbrgba = Rgba5551ToRgba8888(fbrgba);
++            return;
+         }
+-        else if (fpsm == GS_PSM_CT24)
++
++        bool zpass = false;
++        uint32_t storedZ = 0u;
++        switch (p.ztestMethod)
+         {
+-            // The GS supplies 0x80 as destination alpha for RGB24 blending.
+-            fbrgba |= 0x80000000u;
++        case 0:
++            zpass = false;
++            break;
++        case 1:
++            zpass = true;
++            break;
++        case 2:
++            storedZ = readVramInline(p.vram, p.zpsm, p.zbp, p.fbw, x, y);
++            zpass = static_cast<uint32_t>(z) >= storedZ;
++            break;
++        case 3:
++            storedZ = readVramInline(p.vram, p.zpsm, p.zbp, p.fbw, x, y);
++            zpass = static_cast<uint32_t>(z) > storedZ;
++            break;
+         }
+-    }
+ 
+-    if (!passesDestinationAlphaTest(ctx.test, static_cast<uint8_t>(fpsm), rawFramebufferPixel))
+-    {
+-        return;
+-    }
++        if (!zpass)
++        {
++            return;
++        }
+ 
+-    bool zpass = false;
+-    uint32_t storedZ = 0u;
+-    switch (ztestMethod)
+-    {
+-    case 0:
+-        zpass = false;
+-        break;
+-    case 1:
+-        zpass = true;
+-        break;
+-    case 2:
+-        storedZ = ReadVramUnlocked(zpsm, zbp, fbw, x, y);
+-        zpass = static_cast<uint32_t>(z) >= storedZ;
+-        break;
+-    case 3:
+-        storedZ = ReadVramUnlocked(zpsm, zbp, fbw, x, y);
+-        zpass = static_cast<uint32_t>(z) > storedZ;
+-        break;
+-    }
++        if (writeMask.writesFramebuffer())
++        {
++            const u8 srcR = r;
++            const u8 srcG = g;
++            const u8 srcB = b;
+ 
+-    if (!zpass)
+-    {
+-        return;
+-    }
++            if (p.abe)
++            {
++                uint8_t dr = fbrgba & 0xFF;
++                uint8_t dg = (fbrgba >> 8) & 0xFF;
++                uint8_t db = (fbrgba >> 16) & 0xFF;
++                uint8_t da = (fbrgba >> 24) & 0xFF;
+ 
+-    if (writeMask.writesFramebuffer())
+-    {
+-        const u8 srcR = r;
+-        const u8 srcG = g;
+-        const u8 srcB = b;
++                // PABE disables alpha blending when the source alpha MSB is clear.
++                if (!(p.pabe && (a & 0x80u) == 0u))
++                {
++                    auto pickRGB = [&](uint8_t sel, int cs, int cd) -> int
++                    {
++                        if (sel == 0)
++                            return cs;
++                        if (sel == 1)
++                            return cd;
++                        return 0;
++                    };
++                    int cAlpha = (p.csel == 0) ? a : (p.csel == 1) ? da
++                                                                   : p.fix;
+ 
+-        if (state.prim.abe)
+-        {
+-            uint8_t dr = fbrgba & 0xFF;
+-            uint8_t dg = (fbrgba >> 8) & 0xFF;
+-            uint8_t db = (fbrgba >> 16) & 0xFF;
+-            uint8_t da = (fbrgba >> 24) & 0xFF;
++                    r = clampU8(((pickRGB(p.asel, r, dr) - pickRGB(p.bsel, r, dr)) * cAlpha >> 7) + pickRGB(p.dsel, r, dr));
++                    g = clampU8(((pickRGB(p.asel, g, dg) - pickRGB(p.bsel, g, dg)) * cAlpha >> 7) + pickRGB(p.dsel, g, dg));
++                    b = clampU8(((pickRGB(p.asel, b, db) - pickRGB(p.bsel, b, db)) * cAlpha >> 7) + pickRGB(p.dsel, b, db));
++                }
++                else
++                {
++                    r = srcR;
++                    g = srcG;
++                    b = srcB;
++                }
++            }
+ 
+-            // PABE disables alpha blending when the source alpha MSB is clear.
+-            if (!(state.pabe && (a & 0x80u) == 0u))
++            if (writeMask.writeAlpha && p.fbaOn)
+             {
+-                uint64_t alphaReg = ctx.alpha;
+-                uint8_t asel = alphaReg & 3;
+-                uint8_t bsel = (alphaReg >> 2) & 3;
+-                uint8_t csel = (alphaReg >> 4) & 3;
+-                uint8_t dsel = (alphaReg >> 6) & 3;
+-                uint8_t fix = static_cast<uint8_t>((alphaReg >> 32) & 0xFF);
+-
+-                auto pickRGB = [&](uint8_t sel, int cs, int cd) -> int
+-                {
+-                    if (sel == 0)
+-                        return cs;
+-                    if (sel == 1)
+-                        return cd;
+-                    return 0;
+-                };
+-                int cAlpha = (csel == 0) ? a : (csel == 1) ? da
+-                                                           : fix;
+-
+-                r = clampU8(((pickRGB(asel, r, dr) - pickRGB(bsel, r, dr)) * cAlpha >> 7) + pickRGB(dsel, r, dr));
+-                g = clampU8(((pickRGB(asel, g, dg) - pickRGB(bsel, g, dg)) * cAlpha >> 7) + pickRGB(dsel, g, dg));
+-                b = clampU8(((pickRGB(asel, b, db) - pickRGB(bsel, b, db)) * cAlpha >> 7) + pickRGB(dsel, b, db));
++                a = static_cast<uint8_t>(a | 0x80u);
+             }
+-            else
++
++            u32 pixel = pack32(r, g, b, a);
++
++            if (p.fbmsk != 0)
+             {
+-                r = srcR;
+-                g = srcG;
+-                b = srcB;
++                pixel = (pixel & ~p.fbmsk) | (fbrgba & p.fbmsk);
+             }
++
++            if (preserveDestinationAlpha)
++            {
++                pixel = (pixel & 0x00FFFFFFu) | (fbrgba & 0xFF000000u);
++            }
++
++            // format conversion
++            if (p.frame16)
++            {
++                pixel = Rgba8888ToRgba5551(pixel);
++            }
++
++            writeVramInline(p.vram, p.fpsm, p.fbp, p.fbw, x, y, pixel);
+         }
+ 
+-        if (writeMask.writeAlpha && (ctx.fba & 0x1ull) != 0ull && ctx.frame.psm != GS_PSM_CT24)
++        if (p.depthWritable && writeMask.writeDepth)
+         {
+-            a = static_cast<uint8_t>(a | 0x80u);
++            writeVramInline(p.vram, p.zpsm, p.zbp, p.fbw, x, y, z);
+         }
++    }
+ 
+-        u32 pixel = pack32(r, g, b, a);
++    // GSCpuBackend::LookupCLUT on a CLUT table.
++    GSMEM_INLINE uint32_t lookupClutInline(const GSTexaReg &texa, const std::array<uint16_t, 512> &clut, uint8_t index, uint8_t cpsm,
++                                           uint8_t csm, uint8_t csa, uint8_t sourcePsm)
++    {
++        const bool sixteenBit = cpsm == GS_PSM_CT16 || cpsm == GS_PSM_CT16S;
++        const uint32_t csaMask = sixteenBit ? 0x1Fu : 0x0Fu;
++        const uint32_t clutBase = (static_cast<uint32_t>(csa) & csaMask) << 4u;
++        const uint32_t sourceIndex = isFourBitIndexedPsm(sourcePsm)
++                                         ? (static_cast<uint32_t>(index) & 0x0Fu)
++                                         : static_cast<uint32_t>(index);
+ 
+-        if (ctx.frame.fbmsk != 0)
++        uint32_t clutIndex = (clutBase + sourceIndex) & (sixteenBit ? 0x1FFu : 0x0FFu);
++        if (!sixteenBit && csm == 0u && isEightBitIndexedPsm(sourcePsm))
+         {
+-            pixel = (pixel & ~ctx.frame.fbmsk) | (fbrgba & ctx.frame.fbmsk);
++            const uint32_t block = std::min((sourceIndex & 0xF0u) + clutBase, 240u);
++            clutIndex = block + (sourceIndex & 0x0Fu);
+         }
+ 
+-        if (preserveDestinationAlpha)
++        switch (cpsm)
++        {
++        case GS_PSM_CT32:
+         {
+-            pixel = (pixel & 0x00FFFFFFu) | (fbrgba & 0xFF000000u);
++            const uint32_t raw = static_cast<uint32_t>(clut[clutIndex]) | (static_cast<uint32_t>(clut[clutIndex + 256u]) << 16u);
++            return applyTexa(texa, cpsm, raw);
+         }
+-
+-        // format conversion
+-        if (bitsPerPixel(fpsm) == 16)
++        case GS_PSM_CT24:
+         {
+-            pixel = Rgba8888ToRgba5551(pixel);
++            const uint32_t raw = static_cast<uint32_t>(clut[clutIndex]) | (static_cast<uint32_t>(clut[clutIndex + 256u]) << 16u);
++            return applyTexa(texa, cpsm, raw & 0x00FFFFFFu);
++        }
++        case GS_PSM_CT16:
++        case GS_PSM_CT16S:
++            return applyTexa(texa, cpsm, Rgba5551ToRgba8888(clut[clutIndex]));
++        default:
++            break;
+         }
+ 
+-        WriteVramUnlocked(fpsm, fbp, fbw, x, y, pixel);
+-    }
+-
+-    if (ztestEnabled && writeMask.writeDepth && !ctx.zbuf.zmask)
+-    {
+-        WriteVramUnlocked(zpsm, zbp, fbw, x, y, z);
+-    }
+-}
+-
+-uint32_t GSCpuBackend::LookupCLUT(const GSDrawState &state,
+-                                  uint8_t index,
+-                                  uint8_t cpsm,
+-                                  uint8_t csm,
+-                                  uint8_t csa,
+-                                  uint8_t sourcePsm)
+-{
+-    const bool sixteenBit = cpsm == GS_PSM_CT16 || cpsm == GS_PSM_CT16S;
+-    const uint32_t csaMask = sixteenBit ? 0x1Fu : 0x0Fu;
+-    const uint32_t clutBase = (static_cast<uint32_t>(csa) & csaMask) << 4u;
+-    const uint32_t sourceIndex = isFourBitIndexedPsm(sourcePsm)
+-                                     ? (static_cast<uint32_t>(index) & 0x0Fu)
+-                                     : static_cast<uint32_t>(index);
+-
+-    uint32_t clutIndex = (clutBase + sourceIndex) & (sixteenBit ? 0x1FFu : 0x0FFu);
+-    const std::array<uint16_t, 512> &clut = clutTable();
+-    if (!sixteenBit && csm == 0u && isEightBitIndexedPsm(sourcePsm))
+-    {
+-        const uint32_t block = std::min((sourceIndex & 0xF0u) + clutBase, 240u);
+-        clutIndex = block + (sourceIndex & 0x0Fu);
+-    }
+-
+-    switch (cpsm)
+-    {
+-    case GS_PSM_CT32:
+-    {
+-        const uint32_t raw = static_cast<uint32_t>(clut[clutIndex]) | (static_cast<uint32_t>(clut[clutIndex + 256u]) << 16u);
+-        return applyTexa(state.texa, cpsm, raw);
+-    }
+-    case GS_PSM_CT24:
+-    {
+-        const uint32_t raw = static_cast<uint32_t>(clut[clutIndex]) | (static_cast<uint32_t>(clut[clutIndex + 256u]) << 16u);
+-        return applyTexa(state.texa, cpsm, raw & 0x00FFFFFFu);
+-    }
+-    case GS_PSM_CT16:
+-    case GS_PSM_CT16S:
+-        return applyTexa(state.texa, cpsm, Rgba5551ToRgba8888(clut[clutIndex]));
+-    default:
+-        break;
++        return 0xFFFF00FFu;
+     }
+ 
+-    return 0xFFFF00FFu;
+-}
++    // What GSCpuBackend::SampleTexture reads of the draw state, the CLUT and the texture page cache it uses, once per
++    // primitive.
++    struct Sampler
++    {
++        const uint8_t *vram = nullptr;
++        GSMem::TexturePageCache *cache = nullptr;
++        const std::array<uint16_t, 512> *clut = nullptr;
++        GSTexaReg texa{};
++        int texW = 1, texH = 1;
++        uint8_t wrapU = 0, wrapV = 0;
++        uint16_t minU = 0, maxU = 0, minV = 0, maxV = 0;
++        bool fst = false, linear = false;
++        uint8_t psm = 0, tbw = 0, cpsm = 0, csm = 0, csa = 0;
++        uint32_t tbp0 = 0;
++    };
+ 
+-uint32_t GSCpuBackend::SampleTexture(const GSDrawState &state, float s, float t, float q, uint16_t u, uint16_t v)
+-{
+-    const auto &ctx = state.context;
+-    const auto &tex = ctx.tex0;
+-
+-    const int texW = state.textureWidth;
+-    const int texH = state.textureHeight;
+-    const uint64_t clamp = ctx.clamp;
+-    const uint8_t wrapU = static_cast<uint8_t>(clamp & 0x3u);
+-    const uint8_t wrapV = static_cast<uint8_t>((clamp >> 2) & 0x3u);
+-    const uint16_t minU = static_cast<uint16_t>((clamp >> 4) & 0x3FFu);
+-    const uint16_t maxU = static_cast<uint16_t>((clamp >> 14) & 0x3FFu);
+-    const uint16_t minV = static_cast<uint16_t>((clamp >> 24) & 0x3FFu);
+-    const uint16_t maxV = static_cast<uint16_t>((clamp >> 34) & 0x3FFu);
+-
+-    float texUf, texVf;
+-    if (state.prim.fst)
+-    {
+-        texUf = static_cast<float>(u) / 16.0f;
+-        texVf = static_cast<float>(v) / 16.0f;
+-    }
+-    else
++    Sampler makeSampler(const uint8_t *vram, GSMem::TexturePageCache &cache, const std::array<uint16_t, 512> &clut, const GSDrawState &state)
+     {
+-        const float invQ = 1.0f / fabsQ(q);
+-        texUf = saturateTexCoord(s * invQ * static_cast<float>(texW));
+-        texVf = saturateTexCoord(t * invQ * static_cast<float>(texH));
++        const auto &ctx = state.context;
++        const auto &tex = ctx.tex0;
++        Sampler s;
++        s.vram = vram;
++        s.cache = &cache;
++        s.clut = &clut;
++        s.texa = state.texa;
++        s.texW = state.textureWidth;
++        s.texH = state.textureHeight;
++        const uint64_t clamp = ctx.clamp;
++        s.wrapU = static_cast<uint8_t>(clamp & 0x3u);
++        s.wrapV = static_cast<uint8_t>((clamp >> 2) & 0x3u);
++        s.minU = static_cast<uint16_t>((clamp >> 4) & 0x3FFu);
++        s.maxU = static_cast<uint16_t>((clamp >> 14) & 0x3FFu);
++        s.minV = static_cast<uint16_t>((clamp >> 24) & 0x3FFu);
++        s.maxV = static_cast<uint16_t>((clamp >> 34) & 0x3FFu);
++        s.fst = state.prim.fst;
++        s.linear = state.linearFilter;
++        s.psm = tex.psm;
++        s.tbp0 = tex.tbp0;
++        s.tbw = tex.tbw;
++        s.cpsm = tex.cpsm;
++        s.csm = tex.csm;
++        s.csa = tex.csa;
++        return s;
+     }
+ 
+-    auto samplePoint = [&](int sampleU, int sampleV) -> uint32_t
++    GSMEM_INLINE uint32_t samplePoint(const Sampler &s, int sampleU, int sampleV)
+     {
+-        sampleU = wrapTextureCoordinate(sampleU, texW, wrapU, minU, maxU);
+-        sampleV = wrapTextureCoordinate(sampleV, texH, wrapV, minV, maxV);
++        sampleU = wrapTextureCoordinate(sampleU, s.texW, s.wrapU, s.minU, s.maxU);
++        sampleV = wrapTextureCoordinate(sampleV, s.texH, s.wrapV, s.minV, s.maxV);
+ 
+-        u32 out = ReadTextureVramUnlocked(tex.psm, tex.tbp0, tex.tbw, sampleU, sampleV);
++        u32 out = readVramInline(s.vram, s.psm, s.tbp0, s.tbw, sampleU, sampleV, s.cache);
+ 
+-        switch (tex.psm)
++        switch (s.psm)
+         {
+         case GS_PSM_CT32:
+         case GS_PSM_Z32:
+         case GS_PSM_CT24:
+         case GS_PSM_Z24:
+-            return applyTexa(state.texa, tex.psm, out);
++            return applyTexa(s.texa, s.psm, out);
+         case GS_PSM_CT16:
+         case GS_PSM_CT16S:
+         case GS_PSM_Z16:
+         case GS_PSM_Z16S:
+-            return applyTexa(state.texa, tex.psm, Rgba5551ToRgba8888(out));
++            return applyTexa(s.texa, s.psm, Rgba5551ToRgba8888(out));
+         case GS_PSM_T8:
+         case GS_PSM_T8H:
+         case GS_PSM_T4:
+         case GS_PSM_T4HL:
+         case GS_PSM_T4HH:
+-            return LookupCLUT(state, static_cast<u8>(out), tex.cpsm, tex.csm, tex.csa, tex.psm);
++            return lookupClutInline(s.texa, *s.clut, static_cast<u8>(out), s.cpsm, s.csm, s.csa, s.psm);
+         }
+ 
+         return 0xFFFF00FFu;
+-    };
++    }
+ 
+-    if (!state.linearFilter)
++    // lerpChannel on the four channels of four texels at once: the same float operations lane by lane, then roundHalfAway and
++    // clampU8 lane by lane. Returns the RGBA texel.
++    GSMEM_INLINE uint32_t lerpTexels(uint32_t c00, uint32_t c10, uint32_t c01, uint32_t c11, float fx, float fy)
++    {
++        const auto lanes = [](uint32_t c) { return _mm_cvtepi32_ps(_mm_cvtepu8_epi32(_mm_cvtsi32_si128(static_cast<int>(c)))); };
++        const __m128 f00 = lanes(c00), f10 = lanes(c10), f01 = lanes(c01), f11 = lanes(c11);
++        const __m128 vfx = _mm_set1_ps(fx), vfy = _mm_set1_ps(fy);
++        const __m128 top = _mm_add_ps(f00, _mm_mul_ps(_mm_sub_ps(f10, f00), vfx));
++        const __m128 bottom = _mm_add_ps(f01, _mm_mul_ps(_mm_sub_ps(f11, f01), vfx));
++        const __m128 value = _mm_add_ps(top, _mm_mul_ps(_mm_sub_ps(bottom, top), vfy));
++        const __m128 whole = _mm_round_ps(value, _MM_FROUND_TO_ZERO | _MM_FROUND_NO_EXC);
++        const __m128 part = _mm_sub_ps(value, whole);
++        const __m128 one = _mm_set1_ps(1.0f);
++        const __m128 up = _mm_and_ps(_mm_cmpge_ps(part, _mm_set1_ps(0.5f)), one);
++        const __m128 down = _mm_and_ps(_mm_cmple_ps(part, _mm_set1_ps(-0.5f)), one);
++        const __m128i rounded = _mm_cvttps_epi32(_mm_sub_ps(_mm_add_ps(whole, up), down));
++        const __m128i words = _mm_packs_epi32(rounded, rounded);
++        return static_cast<uint32_t>(_mm_cvtsi128_si32(_mm_packus_epi16(words, words)));
++    }
++
++    // GSCpuBackend::SampleTexture from a Sampler.
++    GSMEM_INLINE uint32_t sampleTexture(const Sampler &smp, float s, float t, float q, uint16_t u, uint16_t v)
+     {
+-        return samplePoint(static_cast<int>(texUf), static_cast<int>(texVf));
++        float texUf, texVf;
++        if (smp.fst)
++        {
++            texUf = static_cast<float>(u) / 16.0f;
++            texVf = static_cast<float>(v) / 16.0f;
++        }
++        else
++        {
++            const float invQ = 1.0f / fabsQ(q);
++            texUf = saturateTexCoord(s * invQ * static_cast<float>(smp.texW));
++            texVf = saturateTexCoord(t * invQ * static_cast<float>(smp.texH));
++        }
++
++        if (!smp.linear)
++        {
++            return samplePoint(smp, static_cast<int>(texUf), static_cast<int>(texVf));
++        }
++
++        const float sampleU = texUf - 0.5f;
++        const float sampleV = texVf - 0.5f;
++        const int u0 = static_cast<int>(std::floor(sampleU));
++        const int v0 = static_cast<int>(std::floor(sampleV));
++        const int u1 = u0 + 1;
++        const int v1 = v0 + 1;
++        const float fx = sampleU - static_cast<float>(u0);
++        const float fy = sampleV - static_cast<float>(v0);
++
++        const uint32_t c00 = samplePoint(smp, u0, v0);
++        const uint32_t c10 = samplePoint(smp, u1, v0);
++        const uint32_t c01 = samplePoint(smp, u0, v1);
++        const uint32_t c11 = samplePoint(smp, u1, v1);
++
++        return lerpTexels(c00, c10, c01, c11, fx, fy);
+     }
+ 
+-    const float sampleU = texUf - 0.5f;
+-    const float sampleV = texVf - 0.5f;
+-    const int u0 = static_cast<int>(std::floor(sampleU));
+-    const int v0 = static_cast<int>(std::floor(sampleV));
+-    const int u1 = u0 + 1;
+-    const int v1 = v0 + 1;
+-    const float fx = sampleU - static_cast<float>(u0);
+-    const float fy = sampleV - static_cast<float>(v0);
+-
+-    const uint32_t c00 = samplePoint(u0, v0);
+-    const uint32_t c10 = samplePoint(u1, v0);
+-    const uint32_t c01 = samplePoint(u0, v1);
+-    const uint32_t c11 = samplePoint(u1, v1);
+-
+-    const uint8_t r = lerpChannel(static_cast<uint8_t>(c00 & 0xFFu),
+-                                  static_cast<uint8_t>(c10 & 0xFFu),
+-                                  static_cast<uint8_t>(c01 & 0xFFu),
+-                                  static_cast<uint8_t>(c11 & 0xFFu),
+-                                  fx, fy);
+-    const uint8_t g = lerpChannel(static_cast<uint8_t>((c00 >> 8) & 0xFFu),
+-                                  static_cast<uint8_t>((c10 >> 8) & 0xFFu),
+-                                  static_cast<uint8_t>((c01 >> 8) & 0xFFu),
+-                                  static_cast<uint8_t>((c11 >> 8) & 0xFFu),
+-                                  fx, fy);
+-    const uint8_t b = lerpChannel(static_cast<uint8_t>((c00 >> 16) & 0xFFu),
+-                                  static_cast<uint8_t>((c10 >> 16) & 0xFFu),
+-                                  static_cast<uint8_t>((c01 >> 16) & 0xFFu),
+-                                  static_cast<uint8_t>((c11 >> 16) & 0xFFu),
+-                                  fx, fy);
+-    const uint8_t a = lerpChannel(static_cast<uint8_t>((c00 >> 24) & 0xFFu),
+-                                  static_cast<uint8_t>((c10 >> 24) & 0xFFu),
+-                                  static_cast<uint8_t>((c01 >> 24) & 0xFFu),
+-                                  static_cast<uint8_t>((c11 >> 24) & 0xFFu),
+-                                  fx, fy);
+-
+-    return static_cast<uint32_t>(r) |
+-           (static_cast<uint32_t>(g) << 8) |
+-           (static_cast<uint32_t>(b) << 16) |
+-           (static_cast<uint32_t>(a) << 24);
++    // Narrows [lo, hi] to the x at which row + step * (x - minX), a linear function of x, is at least `need`. False when no x is.
++    bool narrowSpan(int64_t row, int64_t step, int64_t need, int minX, int &lo, int &hi)
++    {
++        if (step == 0)
++            return row >= need;
++        if (step > 0)
++        {
++            const int64_t gap = need - row;
++            if (gap > 0)
++            {
++                const int64_t first = static_cast<int64_t>(minX) + (gap + step - 1) / step;
++                if (first > hi)
++                    return false;
++                if (first > lo)
++                    lo = static_cast<int>(first);
++            }
++        }
++        else
++        {
++            const int64_t room = row - need;
++            if (room < 0)
++                return false;
++            const int64_t last = static_cast<int64_t>(minX) + room / -step;
++            if (last < lo)
++                return false;
++            if (last < hi)
++                hi = static_cast<int>(last);
++        }
++        return lo <= hi;
++    }
++}
++
++void GSCpuBackend::WritePixel(const GSDrawState &state, int x, int y, int z, uint8_t r, uint8_t g, uint8_t b, uint8_t a, uint8_t fog)
++{
++    const auto &ctx = state.context;
++    if (x < ctx.scissor.x0 || x > ctx.scissor.x1 || y < ctx.scissor.y0 || y > ctx.scissor.y1)
++        return;
++
++    if (!t_inProbe && pixelProbe().on && x == pixelProbe().x && y == pixelProbe().y &&
++        std::chrono::steady_clock::now() - pixelProbe().start >= std::chrono::seconds(pixelProbe().seconds))
++    {
++        const uint32_t hit = g_probeHits.fetch_add(1u, std::memory_order_relaxed);
++        if (hit >= pixelProbe().skip && hit < pixelProbe().skip + pixelProbe().count)
++        {
++            const u32 pbp = GSInternal::framePageBaseToBlock(ctx.frame.fbp);
++            const u32 pbw = std::max<u32>(ctx.frame.fbw, 1u);
++            const u32 before = ReadVramUnlocked(ctx.frame.psm, pbp, pbw, x, y);
++            t_inProbe = true;
++            WritePixel(state, x, y, z, r, g, b, a, fog);
++            t_inProbe = false;
++            const u32 after = ReadVramUnlocked(ctx.frame.psm, pbp, pbw, x, y);
++            const auto &t = ctx.tex0;
++            std::lock_guard<std::mutex> lock(g_probeMutex);
++            std::fprintf(stderr,
++                         "[gs:probe] #%u fbp=0x%x psm=0x%x prim=%u tme=%d abe=%d fge=%d iip=%d fst=%d | tex psm=0x%x tbp=0x%x tfx=%u tcc=%u "
++                         "cpsm=0x%x csm=%u csa=%u linear=%d | alpha=0x%llx pabe=%d fba=0x%llx test=0x%llx texa(ta0=0x%x ta1=0x%x aem=%d) "
++                         "colclamp=0x%llx dthe=0x%llx fbmsk=0x%x | in rgba=%02x%02x%02x%02x fog=%u z=0x%x | before=0x%08x after=0x%08x\n",
++                         hit, ctx.frame.fbp, ctx.frame.psm, static_cast<unsigned>(state.prim.type), state.prim.tme, state.prim.abe,
++                         state.prim.fge, state.prim.iip, state.prim.fst, t.psm, t.tbp0, t.tfx, t.tcc, t.cpsm, t.csm, t.csa, state.linearFilter,
++                         static_cast<unsigned long long>(ctx.alpha), state.pabe, static_cast<unsigned long long>(ctx.fba),
++                         static_cast<unsigned long long>(ctx.test), state.texa.ta0, state.texa.ta1, state.texa.aem,
++                         static_cast<unsigned long long>(state.colclamp), static_cast<unsigned long long>(state.dthe), ctx.frame.fbmsk, r, g,
++                         b, a, fog, static_cast<u32>(z), before, after);
++            return;
++        }
++    }
++
++    writePixelCore(makePixelPipe(m_vram, state), x, y, z, r, g, b, a, fog);
++}
++
++uint32_t GSCpuBackend::LookupCLUT(const GSDrawState &state,
++                                  uint8_t index,
++                                  uint8_t cpsm,
++                                  uint8_t csm,
++                                  uint8_t csa,
++                                  uint8_t sourcePsm)
++{
++    return lookupClutInline(state.texa, clutTable(), index, cpsm, csm, csa, sourcePsm);
++}
++
++uint32_t GSCpuBackend::SampleTexture(const GSDrawState &state, float s, float t, float q, uint16_t u, uint16_t v)
++{
++    return sampleTexture(makeSampler(m_vram, textureCache(), clutTable(), state), s, t, q, u, v);
+ }
+ 
+ void GSCpuBackend::DrawSprite(const GSPrimitiveBatch &batch)
+@@ -1390,9 +1651,16 @@ void GSCpuBackend::DrawSprite(const GSPrimitiveBatch &batch)
+     const int drawX1 = clampInt(unclippedX1, ctx.scissor.x0, ctx.scissor.x1);
+     const int drawY1 = clampInt(unclippedY1, ctx.scissor.y0, ctx.scissor.y1);
+ 
+-    const uint64_t alphaReg = ctx.alpha;
+-    const uint8_t alphaMode = static_cast<uint8_t>(alphaReg & 0xFFu);
+-    const uint8_t alphaFix = static_cast<uint8_t>((alphaReg >> 32) & 0xFFu);
++    // The pixel writes, with the draw state worked out once (WritePixel itself while PS2X_GS_PROBE watches a pixel).
++    const PixelPipe pipe = makePixelPipe(m_vram, state);
++    const bool probe = pixelProbe().on;
++    const auto put = [&](int x, int y, int z, uint8_t pr, uint8_t pg, uint8_t pb, uint8_t pa, uint8_t pfog)
++    {
++        if (probe)
++            WritePixel(state, x, y, z, pr, pg, pb, pa, pfog);
++        else
++            writePixelCore(pipe, x, y, z, pr, pg, pb, pa, pfog);
++    };
+ 
+     uint8_t r = v1.r, g = v1.g, b = v1.b, a = v1.a;
+ 
+@@ -1431,6 +1699,7 @@ void GSCpuBackend::DrawSprite(const GSPrimitiveBatch &batch)
+         // STQ, avoiding a second quantization to the vertex UV's four bits.
+         GSDrawState textureState = state;
+         textureState.prim.fst = false;
++        const Sampler sampler = makeSampler(m_vram, textureCache(), clutTable(), textureState);
+ 
+         for (int y = drawY0; y <= drawY1; ++y)
+         {
+@@ -1441,7 +1710,7 @@ void GSCpuBackend::DrawSprite(const GSPrimitiveBatch &batch)
+             {
+                 float tx = (static_cast<float>(x) - x0) / spriteW;
+                 float texUf = u0f + (u1f - u0f) * tx;
+-                const uint32_t texel = SampleTexture(textureState,
++                const uint32_t texel = sampleTexture(sampler,
+                     texUf / static_cast<float>(texW), texVf / static_cast<float>(texH), 1.0f, 0u, 0u);
+ 
+                 uint8_t tr = static_cast<uint8_t>(texel & 0xFF);
+@@ -1450,7 +1719,7 @@ void GSCpuBackend::DrawSprite(const GSPrimitiveBatch &batch)
+                 uint8_t ta = static_cast<uint8_t>((texel >> 24) & 0xFF);
+ 
+                 const TextureCombineResult color = combineTexture(tex, r, g, b, a, tr, tg, tb, ta);
+-                WritePixel(state, x, y, z1, color.r, color.g, color.b, color.a, v1.fog);
++                put(x, y, z1, color.r, color.g, color.b, color.a, v1.fog);
+             }
+         }
+     }
+@@ -1459,7 +1728,7 @@ void GSCpuBackend::DrawSprite(const GSPrimitiveBatch &batch)
+         for (int y = drawY0; y <= drawY1; ++y)
+         {
+             for (int x = drawX0; x <= drawX1; ++x)
+-                WritePixel(state, x, y, z1, r, g, b, a, v1.fog);
++                put(x, y, z1, r, g, b, a, v1.fog);
+         }
+     }
+ }
+@@ -1520,15 +1789,41 @@ void GSCpuBackend::DrawTriangle(const GSPrimitiveBatch &batch)
+     if (minX > maxX || minY > maxY)
+         return;
+ 
++    // The pixel writes and the texture sampler, with the draw state worked out once (WritePixel itself while PS2X_GS_PROBE
++    // watches a pixel).
++    const PixelPipe pipe = makePixelPipe(m_vram, state);
++    const bool probe = pixelProbe().on;
++    Sampler sampler;
++    if (state.prim.tme)
++        sampler = makeSampler(m_vram, textureCache(), clutTable(), state);
++
++    // Each edge function changes by a constant from one pixel to the next (exactly: they are integers), and a pixel is inside
++    // when each is at least 0 on a top or left edge, 1 on the others.
++    const int64_t step0 = -(Y2 - Y1) * 16 * sign;
++    const int64_t step1 = -(Y0 - Y2) * 16 * sign;
++    const int64_t step2 = -(Y1 - Y0) * 16 * sign;
++    const int64_t need0 = tl0 ? 0 : 1, need1 = tl1 ? 0 : 1, need2 = tl2 ? 0 : 1;
++
+     for (int y = minY; y <= maxY; ++y)
+     {
+         const int64_t py = static_cast<int64_t>(y) * 16;
+-        for (int x = minX; x <= maxX; ++x)
++        const int64_t pxMin = static_cast<int64_t>(minX) * 16;
++        const int64_t row0 = ((X2 - X1) * (py - Y1) - (Y2 - Y1) * (pxMin - X1)) * sign;
++        const int64_t row1 = ((X0 - X2) * (py - Y2) - (Y0 - Y2) * (pxMin - X2)) * sign;
++        const int64_t row2 = ((X1 - X0) * (py - Y0) - (Y1 - Y0) * (pxMin - X0)) * sign;
++        // The row's pixels inside the triangle are one run; it is found from the edge functions and widened by one pixel each way,
++        // and every pixel in it is still tested as before.
++        int lo = minX, hi = maxX;
++        if (!narrowSpan(row0, step0, need0, minX, lo, hi) || !narrowSpan(row1, step1, need1, minX, lo, hi) ||
++            !narrowSpan(row2, step2, need2, minX, lo, hi))
++            continue;
++        lo = std::max(minX, lo - 1);
++        hi = std::min(maxX, hi + 1);
++        int64_t e0 = row0 + step0 * (lo - minX);
++        int64_t e1 = row1 + step1 * (lo - minX);
++        int64_t e2 = row2 + step2 * (lo - minX);
++        for (int x = lo; x <= hi; ++x, e0 += step0, e1 += step1, e2 += step2)
+         {
+-            const int64_t px = static_cast<int64_t>(x) * 16;
+-            const int64_t e0 = ((X2 - X1) * (py - Y1) - (Y2 - Y1) * (px - X1)) * sign;
+-            const int64_t e1 = ((X0 - X2) * (py - Y2) - (Y0 - Y2) * (px - X2)) * sign;
+-            const int64_t e2 = ((X1 - X0) * (py - Y0) - (Y1 - Y0) * (px - X0)) * sign;
+             if (e0 < 0 || e1 < 0 || e2 < 0 || (e0 == 0 && !tl0) || (e1 == 0 && !tl1) || (e2 == 0 && !tl2))
+                 continue;
+             // (Measured against PCSX2 on eleven city views: weights at the pixel's middle instead doubled the difference.)
+@@ -1582,7 +1877,7 @@ void GSCpuBackend::DrawTriangle(const GSPrimitiveBatch &batch)
+                     iv = 0;
+                 }
+ 
+-                uint32_t texel = SampleTexture(state, is, it, iq, iu, iv);
++                uint32_t texel = sampleTexture(sampler, is, it, iq, iu, iv);
+ 
+                 uint8_t tr = static_cast<uint8_t>(texel & 0xFF);
+                 uint8_t tg = static_cast<uint8_t>((texel >> 8) & 0xFF);
+@@ -1603,7 +1898,10 @@ void GSCpuBackend::DrawTriangle(const GSPrimitiveBatch &batch)
+             }
+ 
+             const uint8_t fog = clampU8(static_cast<int>(v0.fog * w0 + v1.fog * w1 + v2.fog * w2));
+-            WritePixel(state, x, y, static_cast<u32>(z + 0.5), r, g, b, a, fog);
++            if (probe)
++                WritePixel(state, x, y, static_cast<u32>(z + 0.5), r, g, b, a, fog);
++            else
++                writePixelCore(pipe, x, y, static_cast<u32>(z + 0.5), r, g, b, a, fog);
+         }
+     }
+ }
