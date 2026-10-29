@@ -49,6 +49,8 @@ namespace vu1aot::ops
     }
     VU1AOT_INLINE void storeQuad(Ctx &c, uint32_t address, __m128 value, uint32_t dest)
     {
+        if (c.log != nullptr)
+            c.log->save(c.data, address);
         float *target = reinterpret_cast<float *>(c.data + address);
         _mm_storeu_ps(target, _mm_blendv_ps(_mm_loadu_ps(target), value, laneMask(dest)));
     }
@@ -122,6 +124,76 @@ namespace vu1aot::ops
 
     // ---- upper half: the arithmetic family ----
 
+    // The common case of vu1fmac::arith, where its exact (double) result classifies as an ordinary number: then the flags are
+    // the result's signs and the result is the float result, which this computes without the double arithmetic. True when it
+    // did the operation; false (nothing written) when arith must. Why the tests are enough (the run rounds toward zero):
+    //  - ADD, SUB, MUL: the float result r is the exact value rounded toward zero on the float grid, the double result d on a
+    //    finer one, so |r| <= |d| <= |exact|; FLT_MIN <= |r| < FLT_MAX then puts d at least FLT_MIN and below FLT_MAX, with r's sign.
+    //  - MADD, MSUB: r = acc +- p rounded, with p the float product (FLT_MIN <= |p| < FLT_MAX, so the exact product classifies as
+    //    ordinary too, with p's sign), off the exact product by less than ulp(p). |r| >= 2 ulp(p) and >= 2^-125 (exponent tests)
+    //    keep the exact sum at least FLT_MIN from zero with r's sign, and |r| < 2^127 keeps it below FLT_MAX.
+    template <int Kind, int BSrc, bool ToAcc>
+    VU1AOT_INLINE bool fmacOrdinary(Ctx &c, const XNode &n, float *target)
+    {
+        VU1State &st = *c.st;
+        const uint32_t word = n.upperWord;
+        const uint32_t dest = (word >> 21) & 0xFu;
+        const uint32_t lanes = vu1fmac::reverseLanes(dest);
+        const __m128 vs = vu1fmac::normalizeLanes(_mm_loadu_ps(st.vf[(word >> 11) & 0x1Fu]));
+        __m128 b;
+        if constexpr (BSrc <= 3)
+            b = vu1fmac::normalizeLanes(_mm_set1_ps(st.vf[(word >> 16) & 0x1Fu][BSrc]));
+        else if constexpr (BSrc == 4)
+            b = vu1fmac::normalizeLanes(_mm_set1_ps(st.q));
+        else if constexpr (BSrc == 5)
+            b = vu1fmac::normalizeLanes(_mm_set1_ps(st.i));
+        else
+            b = vu1fmac::normalizeLanes(_mm_loadu_ps(st.vf[(word >> 16) & 0x1Fu]));
+
+        const __m128 signMask = _mm_set1_ps(-0.0f);
+        const __m128 floatMin = _mm_set1_ps(std::numeric_limits<float>::min());
+        const __m128 floatMax = _mm_set1_ps(std::numeric_limits<float>::max());
+        __m128 result, product;
+        uint32_t ok;
+        if constexpr (Kind <= 2)
+        {
+            result = Kind == 0 ? _mm_add_ps(vs, b) : Kind == 1 ? _mm_sub_ps(vs, b) : _mm_mul_ps(vs, b);
+            const __m128 magnitude = _mm_andnot_ps(signMask, result);
+            ok = static_cast<uint32_t>(_mm_movemask_ps(_mm_and_ps(_mm_cmpge_ps(magnitude, floatMin), _mm_cmplt_ps(magnitude, floatMax))));
+        }
+        else
+        {
+            const __m128 acc = vu1fmac::normalizeLanes(_mm_loadu_ps(st.acc));
+            product = _mm_mul_ps(vs, b);
+            result = Kind == 3 ? _mm_add_ps(acc, product) : _mm_sub_ps(acc, product);
+            const __m128 productMagnitude = _mm_andnot_ps(signMask, product);
+            const __m128 productOk = _mm_and_ps(_mm_cmpge_ps(productMagnitude, floatMin), _mm_cmplt_ps(productMagnitude, floatMax));
+            const __m128i byte = _mm_set1_epi32(0xFF);
+            const __m128i productExp = _mm_and_si128(_mm_srli_epi32(_mm_castps_si128(product), 23), byte);
+            const __m128i resultExp = _mm_and_si128(_mm_srli_epi32(_mm_castps_si128(result), 23), byte);
+            const __m128i resultOk = _mm_and_si128(_mm_and_si128(_mm_cmpgt_epi32(_mm_set1_epi32(254), resultExp),
+                                                                 _mm_cmpgt_epi32(resultExp, _mm_sub_epi32(productExp, _mm_set1_epi32(23)))),
+                                                   _mm_cmpgt_epi32(resultExp, _mm_set1_epi32(1)));
+            ok = static_cast<uint32_t>(_mm_movemask_ps(_mm_and_ps(productOk, _mm_castsi128_ps(resultOk))));
+        }
+        if ((ok & lanes) != lanes)
+            return false;
+
+        if (dest != 0u)
+        {
+            const uint32_t negative = static_cast<uint32_t>(_mm_movemask_ps(result)) & lanes;
+            FlagData &d = c.ring[(c.head + n.flagBase) & (kMaxFlags - 1)];
+            d.mac = vu1fmac::reverseLanes(negative) << 4;
+            d.status = negative != 0u ? 2u : 0u;
+            if constexpr (Kind <= 2)
+                d.extra = 0u;
+            else
+                d.extra = (static_cast<uint32_t>(_mm_movemask_ps(product)) & lanes) != 0u ? 2u : 0u;
+        }
+        _mm_storeu_ps(target, _mm_blendv_ps(_mm_loadu_ps(target), result, _mm_castsi128_ps(vu1fmac::laneTables().mask[lanes])));
+        return true;
+    }
+
     template <int Kind, int BSrc, bool ToAcc>
     VU1AOT_INLINE void upperFmac(Ctx &c, const XNode &n)
     {
@@ -131,6 +203,8 @@ namespace vu1aot::ops
         // A result for vf0 lands there like any other (the lower half of the pair sees it, as it does in the interpreter);
         // the node puts vf0 back after the pair.
         float *target = ToAcc ? st.acc : st.vf[fd];
+        if (fmacOrdinary<Kind, BSrc, ToAcc>(c, n, target))
+            return;
         const vu1fmac::Flags flags = vu1fmac::arith<Kind, BSrc, ToAcc>(st, target, word);
         if (((word >> 21) & 0xFu) != 0u)
         {

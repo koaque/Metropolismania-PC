@@ -131,11 +131,23 @@ namespace port
                                                    0x80800000u, 0x3F800000u, 0xBF800000u, 0x7F7FFFFFu, 0xFF7FFFFFu, 0x7F800000u, 0xFF800000u,
                                                    0x7FC00000u, 0x7F000000u, 0xFF000000u, 0x00FFFFFFu, 0x3F000000u, 0x40000000u, 0x7E800000u,
                                                    0x01000000u, 0x00000000u, 0x3F800000u};
+                // Exponents and mantissas at the edges the FMAC fast path tests (vu1aot_ops.h fmacOrdinary): near the
+                // smallest and largest floats, 2^-59, 2^127, and mantissas with few or all bits set.
+                static const uint32_t edgeExponents[] = {1, 2, 3, 4, 23, 24, 25, 26, 40, 59, 60, 61, 64, 100, 102, 103, 104, 105,
+                                                         124, 125, 126, 127, 128, 129, 150, 151, 200, 230, 251, 252, 253, 254};
+                static const uint32_t edgeMantissas[] = {0x000000u, 0x000001u, 0x000002u, 0x400000u, 0x7FFFFFu, 0x7FFFFEu, 0x3FFFFFu, 0x600000u};
                 const uint32_t pick = next();
                 if ((pick & 7u) < 3u)
                     return special[(pick >> 3) % (sizeof(special) / sizeof(special[0]))];
                 if ((pick & 7u) < 5u)
                     return next();
+                if ((pick & 7u) == 7u)
+                {
+                    const uint32_t exponent = edgeExponents[next() % (sizeof(edgeExponents) / sizeof(edgeExponents[0]))];
+                    const uint32_t mantissa = (next() & 1u) != 0u ? edgeMantissas[next() % (sizeof(edgeMantissas) / sizeof(edgeMantissas[0]))]
+                                                                  : (next() & 0x7F0000u);
+                    return ((next() & 1u) << 31) | (exponent << 23) | mantissa;
+                }
                 return ((next() & 1u) << 31) | ((1u + next() % 253u) << 23) | (next() & 0x7FFFFFu);
             };
             const auto vu = std::make_unique<VU1Interpreter>(VU1Interpreter::Unit::VU1);
@@ -208,6 +220,30 @@ namespace port
                     std::memcpy(&state.q, &q, 4);
                     std::memcpy(&state.p, &p, 4);
                     std::memcpy(&state.i, &i, 4);
+                }
+                // A quarter of the cases: ACC within a few ulps of minus (or plus) the product of the upper op's operands, with every
+                // lane of vt, Q and I the same, so MADD and MSUB cancel to tiny or zero sums.
+                if ((next() % 4u) == 0u)
+                {
+                    const uint32_t fs = (upper >> 11) & 0x1Fu, ft = (upper >> 16) & 0x1Fu;
+                    if (ft != 0u)
+                    {
+                        const float broadcast = state.vf[ft][next() % 4u];
+                        for (float &lane : state.vf[ft])
+                            lane = broadcast;
+                        state.q = broadcast;
+                        state.i = broadcast;
+                    }
+                    const bool negate = (next() & 1u) != 0u;
+                    for (int lane = 0; lane < 4; ++lane)
+                    {
+                        const double product = static_cast<double>(state.vf[fs][lane]) * static_cast<double>(state.vf[ft][lane]);
+                        float near = static_cast<float>(negate ? -product : product);
+                        uint32_t bits;
+                        std::memcpy(&bits, &near, sizeof(bits));
+                        bits += static_cast<uint32_t>(static_cast<int32_t>(next() % 5u) - 2);
+                        std::memcpy(&state.acc[lane], &bits, sizeof(bits));
+                    }
                 }
                 state.r = 0x3F800000u | (next() & 0x7FFFFFu);
                 state.mac = next() & 0xFFFFu;

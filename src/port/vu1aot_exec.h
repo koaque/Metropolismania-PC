@@ -12,6 +12,7 @@
 
 #include "runtime/ps2_vu1.h"
 
+#include <cstring>
 #include <vector>
 
 namespace vu1aot
@@ -19,6 +20,49 @@ namespace vu1aot
     struct FlagData
     {
         uint32_t mac, status, extra, clip;
+    };
+
+    // The quadwords of data memory a run overwrites, saved before each write, so that a run that bails can be undone without
+    // copying the whole 16 KB before every run (vu1aot_runtime.cpp). Past kCapacity writes the whole memory is copied once
+    // instead, and undo puts that copy back before undoing the logged writes.
+    struct StoreLog
+    {
+        static constexpr uint32_t kCapacity = 2048;
+        static constexpr uint32_t kDataSize = 0x4000;
+        uint32_t limit = kCapacity; // lower only to test the whole-memory copy (MMPC_VU1_STORELOG_LIMIT)
+        uint32_t count = 0;
+        bool overflowed = false;
+        uint16_t address[kCapacity];
+        alignas(16) uint8_t old[kCapacity][16];
+        alignas(16) uint8_t whole[kDataSize];
+
+        void reset()
+        {
+            count = 0;
+            overflowed = false;
+        }
+        // Before 16 bytes at `at` (inside the data memory) are written.
+        void save(const uint8_t *data, uint32_t at)
+        {
+            if (count < limit)
+            {
+                address[count] = static_cast<uint16_t>(at);
+                std::memcpy(old[count], data + at, 16);
+                ++count;
+            }
+            else if (!overflowed)
+            {
+                overflowed = true;
+                std::memcpy(whole, data, kDataSize);
+            }
+        }
+        void undo(uint8_t *data) const
+        {
+            if (overflowed)
+                std::memcpy(data, whole, kDataSize);
+            for (uint32_t i = count; i-- > 0;)
+                std::memcpy(data + address[i], old[i], 16);
+        }
     };
 
     struct Ctx
@@ -37,6 +81,7 @@ namespace vu1aot
         bool failed = false;    // an op met something it cannot do; the run bails
         void *vu = nullptr;     // the interpreter, for the ops that go through it
         const void *run = nullptr;
+        StoreLog *log = nullptr; // where the data memory writes are saved, if anywhere
     };
 
     struct XNode;

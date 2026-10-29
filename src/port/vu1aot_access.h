@@ -53,10 +53,15 @@ struct Vu1AotAccess
 
         Frame(VU1Interpreter &vu, const VU1Interpreter::AotRun &a, std::vector<std::vector<uint8_t>> &packets);
         // The XGKICK copy goes on for `cycles` cycles. False when it stopped the interpreter (the run bails).
+        // progressXgkick adds a cycle of credit and copies a qword for every two; `cycles` calls copy what one call does after the
+        // other cycles' credit is added (the credit left once the packet is done does not matter: startXgkick sets it again).
         bool progress(uint32_t cycles)
         {
-            for (uint32_t k = 0; k < cycles; ++k)
+            if (cycles != 0u && vu.m_xgkick.active)
+            {
+                vu.m_xgkick.cycleCredit += cycles - 1u;
                 vu.progressXgkick();
+            }
             return !vu.m_stopRequested;
         }
         // What the interpreter's own functions look at before a pair runs through them.
@@ -70,6 +75,8 @@ struct Vu1AotAccess
         // Puts back what the interpreter's queues hold; returns `result`.
         vu1aot::RunResult finish(vu1aot::RunResult result);
     };
+    // The store log of the run about to start on this thread (vu1aot_runtime.cpp sets it around a run; null: no log).
+    static inline thread_local vu1aot::StoreLog *s_storeLog = nullptr;
 
     // The C++ of a compiled program for a prepared, supported graph (vu1aot_emit.cpp): the constant nodes and the function
     // `name`, which does what run() does for this graph.
@@ -96,6 +103,9 @@ struct Vu1AotAccess
     };
     static void save(const VU1Interpreter &vu, const uint8_t *data, uint32_t dataSize, Snapshot &out);
     static void restore(VU1Interpreter &vu, uint8_t *data, const Snapshot &in);
+    // save and restore without the data memory, for runs that log their stores instead.
+    static void saveState(const VU1Interpreter &vu, Snapshot &out);
+    static void restoreState(VU1Interpreter &vu, const Snapshot &in);
 
     // Sends collected packets the way the interpreter does when an XGKICK finishes.
     static void emit(VU1Interpreter &vu, const std::vector<std::vector<uint8_t>> &packets);

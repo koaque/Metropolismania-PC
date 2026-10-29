@@ -20,6 +20,7 @@
 #include "runtime/gs/gs_frontend.h"
 #include "runtime/ps2_memory.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -50,6 +51,7 @@ namespace vu1aot
             uint64_t mismatches = 0;
             uint64_t compiledRuns = 0; // runs a compiled program completed (part of `runs`)
             uint64_t stale = 0;        // programs built that had a compiled program for other emitted text (not used)
+            uint64_t undoMismatches = 0; // PS2X_VU1_VERIFY=1: bailed runs whose store log did not undo the memory exactly
         };
         Counters g_counters;
         std::chrono::steady_clock::time_point g_lastLog = std::chrono::steady_clock::now();
@@ -151,13 +153,28 @@ namespace vu1aot
                 }
 
                 const auto begin = statsOn() ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
-                Vu1AotAccess::save(vu, a.data, a.dataSize, m_snapshot);
+                // The state is copied; the data memory's writes are logged as they happen (verification, which replays the run
+                // from the snapshot, copies the whole memory).
+                if (verifyOn())
+                    Vu1AotAccess::save(vu, a.data, a.dataSize, m_snapshot);
+                else
+                    Vu1AotAccess::saveState(vu, m_snapshot);
+                m_log->reset();
+                Vu1AotAccess::s_storeLog = m_log.get();
                 m_packets.clear();
                 const RunResult result = program->compiled != nullptr ? program->compiled(vu, a, m_packets)
                                                                       : Vu1AotAccess::run(vu, program->graph, a, m_packets);
+                Vu1AotAccess::s_storeLog = nullptr;
                 if (result == RunResult::Bail)
                 {
-                    Vu1AotAccess::restore(vu, a.data, m_snapshot);
+                    Vu1AotAccess::restoreState(vu, m_snapshot);
+                    m_log->undo(a.data);
+                    // Verification also has the whole memory from before the run: the undone memory must be that.
+                    if (verifyOn() && std::memcmp(a.data, m_snapshot.data.data(), a.dataSize) != 0)
+                    {
+                        ++g_counters.undoMismatches;
+                        std::memcpy(a.data, m_snapshot.data.data(), a.dataSize);
+                    }
                     ++program->bails;
                     ++g_counters.bails;
                     return false;
@@ -187,6 +204,12 @@ namespace vu1aot
         private:
             std::unordered_map<uint32_t, Entry> m_entries;
             Vu1AotAccess::Snapshot m_snapshot;
+            std::unique_ptr<StoreLog> m_log = []() {
+                auto log = std::make_unique<StoreLog>();
+                if (const char *value = std::getenv("MMPC_VU1_STORELOG_LIMIT"))
+                    log->limit = std::min<uint32_t>(StoreLog::kCapacity, static_cast<uint32_t>(std::strtoul(value, nullptr, 10)));
+                return log;
+            }();
             std::vector<std::vector<uint8_t>> m_packets;
 
             Program *find(VU1Interpreter &vu, const VU1Interpreter::AotRun &a)
@@ -290,7 +313,7 @@ namespace vu1aot
         char text[480];
         std::snprintf(text, sizeof(text),
                       "[vu1aot:stats] runs=%llu cycles=%llu aot_ms=%llu Mcyc/s(aot)=%.1f emit_ms=%llu bails=%llu not_idle=%llu no_program=%llu "
-                      "built=%llu verified=%llu mismatches=%llu compiled_runs=%llu stale=%llu",
+                      "built=%llu verified=%llu mismatches=%llu compiled_runs=%llu stale=%llu undo_mismatches=%llu",
                       static_cast<unsigned long long>(g_counters.runs), static_cast<unsigned long long>(g_counters.cycles),
                       static_cast<unsigned long long>(g_counters.seconds * 1000.0),
                       g_counters.seconds > 0.0 ? g_counters.cycles / g_counters.seconds / 1e6 : 0.0,
@@ -298,7 +321,7 @@ namespace vu1aot
                       static_cast<unsigned long long>(g_counters.notIdle), static_cast<unsigned long long>(g_counters.noProgram),
                       static_cast<unsigned long long>(g_counters.built), static_cast<unsigned long long>(g_counters.verified),
                       static_cast<unsigned long long>(g_counters.mismatches), static_cast<unsigned long long>(g_counters.compiledRuns),
-                      static_cast<unsigned long long>(g_counters.stale));
+                      static_cast<unsigned long long>(g_counters.stale), static_cast<unsigned long long>(g_counters.undoMismatches));
         return text;
     }
 }

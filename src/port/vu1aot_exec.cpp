@@ -74,6 +74,8 @@ void Vu1AotAccess::generalLower(vu1aot::Ctx &c, const vu1aot::XNode &n)
         VU1Interpreter::PendingStore &store = vu.m_storePipeline[static_cast<size_t>(std::countr_zero(live))];
         if (store.address + 16u <= a.dataSize)
         {
+            if (c.log != nullptr)
+                c.log->save(a.data, store.address);
             uint32_t words[4];
             std::memcpy(words, a.data + store.address, sizeof(words));
             for (uint32_t component = 0; component < 4u; ++component)
@@ -187,6 +189,7 @@ Vu1AotAccess::Frame::Frame(VU1Interpreter &vuIn, const VU1Interpreter::AotRun &a
     c.vu = &vu;
     c.run = &a;
     c.workingClip = &vu.m_workingClip;
+    c.log = s_storeLog;
     vu.m_activeVuData = a.data;
     vu.m_activeVuDataSize = a.dataSize;
     vu.m_activeGs = a.gs;
@@ -369,6 +372,35 @@ bool Vu1AotAccess::startsIdle(const VU1Interpreter &vu)
 {
     // The programs write vf and ACC results at once, which is only the interpreter's model with immediate writes on.
     return vu.m_immediateWrites && !vu.pipelinesPending() && !vu.m_state.branchPending && !vu.m_stopRequested && !vu.m_viBranchBackupValid;
+}
+
+void Vu1AotAccess::saveState(const VU1Interpreter &vu, Snapshot &out)
+{
+    out.state = vu.m_state;
+    out.cycle = vu.m_cycle;
+    out.efuResourceReady = vu.m_efuResourceReady;
+    out.workingClip = vu.m_workingClip;
+    out.viBranchBackupValue = vu.m_viBranchBackupValue;
+    out.viBranchBackupReg = vu.m_viBranchBackupReg;
+    out.viBranchBackupValid = vu.m_viBranchBackupValid;
+    out.pendingHaltD = vu.m_pendingHaltD;
+    out.pendingHaltT = vu.m_pendingHaltT;
+    out.stopRequested = vu.m_stopRequested;
+}
+
+void Vu1AotAccess::restoreState(VU1Interpreter &vu, const Snapshot &in)
+{
+    vu.m_state = in.state;
+    vu.m_cycle = in.cycle;
+    vu.m_efuResourceReady = in.efuResourceReady;
+    vu.m_workingClip = in.workingClip;
+    vu.m_viBranchBackupValue = in.viBranchBackupValue;
+    vu.m_viBranchBackupReg = in.viBranchBackupReg;
+    vu.m_viBranchBackupValid = in.viBranchBackupValid;
+    vu.m_pendingHaltD = in.pendingHaltD;
+    vu.m_pendingHaltT = in.pendingHaltT;
+    vu.m_stopRequested = in.stopRequested;
+    vu.m_xgkick.active = false;
 }
 
 void Vu1AotAccess::save(const VU1Interpreter &vu, const uint8_t *data, uint32_t dataSize, Snapshot &out)
