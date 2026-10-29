@@ -1,0 +1,28 @@
+VU1 XGKICK: the qwords due inside a GIF tag's data are copied in one go. Before a tag's last qword the PATH1 copy reads no tag, ends nothing and cannot stop, so when two or more qwords are due there, progressXgkick copies them with one memcpy (up to the tag's last qword and the end of the data memory) instead of one qword per loop with two modulo operations each; tags and their last qwords go through the loop as before. Callers that hand it many cycles at once (Metropolismania's compiled VU1 programs) gain most. Checked in Metropolismania: the 105 recorded VU1 runs replay with the same packets and end cycles, PS2X_VU1_VERIFY=1 over 1.06 million city runs finds no mismatch with the cycle-by-cycle interpreter, all 4 MB of VRAM byte-identical at the eleven views of a scripted city camera run with frame skip off, and PS2Recomp's tests give the same results.
+
+diff --git a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+--- a/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
++++ b/ps2xRuntime/src/lib/vu/ps2_vu1_core.cpp
+@@ -1316,6 +1316,22 @@ void VU1Interpreter::progressXgkick()
+     ++m_xgkick.cycleCredit;
+     while (m_xgkick.active && m_xgkick.cycleCredit >= 2u)
+     {
++        // Inside a tag's data, before its last qword, a qword is only copied (no tag is read, nothing ends): two or more qwords
++        // due there go in one copy, up to the end of the data memory.
++        if (m_xgkick.currentTagEnd != 0u && m_xgkick.cycleCredit >= 4u &&
++            m_xgkick.currentTagEnd - m_xgkick.copiedBytes > 32u)
++        {
++            const uint32_t base = (m_xgkick.sourceAddress + m_xgkick.copiedBytes) % m_activeVuDataSize;
++            const uint32_t beforeLast = (m_xgkick.currentTagEnd - m_xgkick.copiedBytes) / 16u - 1u;
++            const uint32_t run = std::min({m_xgkick.cycleCredit / 2u, beforeLast, (m_activeVuDataSize - base) / 16u});
++            if (run >= 2u)
++            {
++                std::memcpy(m_xgkick.packet.data() + m_xgkick.copiedBytes, m_activeVuData + base, run * 16u);
++                m_xgkick.copiedBytes += run * 16u;
++                m_xgkick.cycleCredit -= run * 2u;
++                continue;
++            }
++        }
+         m_xgkick.cycleCredit -= 2u;
+         if (m_xgkick.copiedBytes > XgkickPipeline::kBufferSize - 16u)
+         {

@@ -134,14 +134,19 @@ namespace vu1aot::ops
 
     // ---- upper half: the arithmetic family ----
 
-    // The common case of vu1fmac::arith, where its exact (double) result classifies as an ordinary number: then the flags are
-    // the result's signs and the result is the float result, which this computes without the double arithmetic. True when it
-    // did the operation; false (nothing written) when arith must. Why the tests are enough (the run rounds toward zero):
+    // The common cases of vu1fmac::arith, where its exact (double) result classifies as an ordinary number or is exactly zero:
+    // then the flags are the result's signs and zeros and the result is the float result, which this computes without the double
+    // arithmetic. True when it did the operation; false (nothing written) when arith must. Why the tests are enough (the run rounds
+    // toward zero, and operands are normalized, so none is a denormal, an infinity or a NaN):
     //  - ADD, SUB, MUL: the float result r is the exact value rounded toward zero on the float grid, the double result d on a
     //    finer one, so |r| <= |d| <= |exact|; FLT_MIN <= |r| < FLT_MAX then puts d at least FLT_MIN and below FLT_MAX, with r's sign.
+    //    The exact value is zero exactly when vs = -b (ADD), vs = b (SUB) or a factor is zero (MUL); float and double then both
+    //    give that zero with the sign IEEE gives it, which is r's.
     //  - MADD, MSUB: r = acc +- p rounded, with p the float product (FLT_MIN <= |p| < FLT_MAX, so the exact product classifies as
     //    ordinary too, with p's sign), off the exact product by less than ulp(p). |r| >= 2 ulp(p) and >= 2^-125 (exponent tests)
     //    keep the exact sum at least FLT_MIN from zero with r's sign, and |r| < 2^127 keeps it below FLT_MAX.
+    //    With a zero factor the product is exactly zero in float and double alike, so r and the exact sum are acc +- 0, which is
+    //    acc: ordinary when r is, zero when r is.
     template <int Kind, int BSrc, bool ToAcc>
     VU1AOT_INLINE bool fmacOrdinary(Ctx &c, const XNode &n, float *target)
     {
@@ -161,15 +166,25 @@ namespace vu1aot::ops
             b = vu1fmac::normalizeLanes(_mm_loadu_ps(st.vf[(word >> 16) & 0x1Fu]));
 
         const __m128 signMask = _mm_set1_ps(-0.0f);
+        const __m128 zero = _mm_setzero_ps();
         const __m128 floatMin = _mm_set1_ps(std::numeric_limits<float>::min());
         const __m128 floatMax = _mm_set1_ps(std::numeric_limits<float>::max());
         __m128 result, product;
-        uint32_t ok;
+        uint32_t ok, zeroResult, zeroProduct = 0u;
         if constexpr (Kind <= 2)
         {
             result = Kind == 0 ? _mm_add_ps(vs, b) : Kind == 1 ? _mm_sub_ps(vs, b) : _mm_mul_ps(vs, b);
             const __m128 magnitude = _mm_andnot_ps(signMask, result);
-            ok = static_cast<uint32_t>(_mm_movemask_ps(_mm_and_ps(_mm_cmpge_ps(magnitude, floatMin), _mm_cmplt_ps(magnitude, floatMax))));
+            const __m128 ordinary = _mm_and_ps(_mm_cmpge_ps(magnitude, floatMin), _mm_cmplt_ps(magnitude, floatMax));
+            __m128 exactZero;
+            if constexpr (Kind == 0)
+                exactZero = _mm_cmpeq_ps(vs, _mm_xor_ps(b, signMask));
+            else if constexpr (Kind == 1)
+                exactZero = _mm_cmpeq_ps(vs, b);
+            else
+                exactZero = _mm_or_ps(_mm_cmpeq_ps(vs, zero), _mm_cmpeq_ps(b, zero));
+            zeroResult = static_cast<uint32_t>(_mm_movemask_ps(exactZero));
+            ok = static_cast<uint32_t>(_mm_movemask_ps(ordinary)) | zeroResult;
         }
         else
         {
@@ -184,7 +199,15 @@ namespace vu1aot::ops
             const __m128i resultOk = _mm_and_si128(_mm_and_si128(_mm_cmpgt_epi32(_mm_set1_epi32(254), resultExp),
                                                                  _mm_cmpgt_epi32(resultExp, _mm_sub_epi32(productExp, _mm_set1_epi32(23)))),
                                                    _mm_cmpgt_epi32(resultExp, _mm_set1_epi32(1)));
-            ok = static_cast<uint32_t>(_mm_movemask_ps(_mm_and_ps(productOk, _mm_castsi128_ps(resultOk))));
+            // A zero factor: the sum is acc itself, which only has to be ordinary or zero.
+            const __m128 productZero = _mm_or_ps(_mm_cmpeq_ps(vs, zero), _mm_cmpeq_ps(b, zero));
+            const __m128 resultMagnitude = _mm_andnot_ps(signMask, result);
+            const __m128 resultOrdinary = _mm_and_ps(_mm_cmpge_ps(resultMagnitude, floatMin), _mm_cmplt_ps(resultMagnitude, floatMax));
+            const __m128 resultZero = _mm_and_ps(productZero, _mm_cmpeq_ps(result, zero));
+            zeroProduct = static_cast<uint32_t>(_mm_movemask_ps(productZero));
+            zeroResult = static_cast<uint32_t>(_mm_movemask_ps(resultZero));
+            ok = static_cast<uint32_t>(_mm_movemask_ps(_mm_or_ps(_mm_and_ps(productOk, _mm_castsi128_ps(resultOk)),
+                                                                 _mm_and_ps(productZero, _mm_or_ps(resultOrdinary, resultZero)))));
         }
         if ((ok & lanes) != lanes)
             return false;
@@ -192,13 +215,14 @@ namespace vu1aot::ops
         if (dest != 0u)
         {
             const uint32_t negative = static_cast<uint32_t>(_mm_movemask_ps(result)) & lanes;
+            const uint32_t zeros = zeroResult & lanes;
             FlagData &d = c.ring[(c.head + n.flagBase) & (kMaxFlags - 1)];
-            d.mac = reverseLanes(negative) << 4;
-            d.status = negative != 0u ? 2u : 0u;
+            d.mac = reverseLanes(zeros) | (reverseLanes(negative) << 4);
+            d.status = (zeros != 0u ? 1u : 0u) | (negative != 0u ? 2u : 0u);
             if constexpr (Kind <= 2)
                 d.extra = 0u;
             else
-                d.extra = (static_cast<uint32_t>(_mm_movemask_ps(product)) & lanes) != 0u ? 2u : 0u;
+                d.extra = ((zeroProduct & lanes) != 0u ? 1u : 0u) | ((static_cast<uint32_t>(_mm_movemask_ps(product)) & lanes) != 0u ? 2u : 0u);
         }
         _mm_storeu_ps(target, _mm_blendv_ps(_mm_loadu_ps(target), result, _mm_castsi128_ps(vu1fmac::laneTables().mask[lanes])));
         return true;

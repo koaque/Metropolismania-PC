@@ -1,0 +1,92 @@
+DMA: chain buffers are reused. A source chain on the GIF, VIF0 or VIF1 channel is gathered into a byte vector that starts empty, grows tag by tag and is freed once the transfer is processed; a city frame of Metropolismania is megabytes, so every frame reallocated and copied the buffer several times over and returned it to the system. The buffers now go back to a small pool (up to eight) after processing and the next chain takes one, keeping its capacity. The bytes and the order of transfers are unchanged. Checked in Metropolismania: all 4 MB of VRAM byte-identical at the eleven views of a scripted city camera run with frame skip off; PS2Recomp's tests give the same results; the memchr and memmove time under std::vector growth (about 3% of the game thread) is gone.
+
+diff --git a/ps2xRuntime/include/runtime/ps2_memory.h b/ps2xRuntime/include/runtime/ps2_memory.h
+--- a/ps2xRuntime/include/runtime/ps2_memory.h
++++ b/ps2xRuntime/include/runtime/ps2_memory.h
+@@ -427,6 +427,11 @@ public:
+     std::vector<PendingTransfer> m_pendingGifTransfers;
+     std::vector<PendingTransfer> m_pendingVif0Transfers;
+     std::vector<PendingTransfer> m_pendingVif1Transfers;
++    // Chain buffers kept from one chain to the next: a city frame's chain is megabytes, and a new vector grew to that size and
++    // was freed again for every frame.
++    std::vector<std::vector<uint8_t>> m_chainBufferPool;
++    std::vector<uint8_t> takeChainBuffer();
++    void recycleChainBuffers(std::vector<PendingTransfer> &transfers);
+     std::mutex m_completedDmacMutex;
+     std::vector<uint32_t> m_completedDmacCauses;
+     std::vector<uint32_t> m_completedIntcCauses;
+diff --git a/ps2xRuntime/src/lib/ps2_memory.cpp b/ps2xRuntime/src/lib/ps2_memory.cpp
+--- a/ps2xRuntime/src/lib/ps2_memory.cpp
++++ b/ps2xRuntime/src/lib/ps2_memory.cpp
+@@ -1369,7 +1369,7 @@ bool PS2Memory::writeIORegister(uint32_t address, uint32_t value)
+                     // is more than 4096 tags (the old limit), and everything after the limit was dropped.
+                     const int kMaxChainTags = 1 << 21;
+                     const size_t kMaxChainBytes = size_t{64} * 1024u * 1024u;
+-                    std::vector<uint8_t> chainBuf;
++                    std::vector<uint8_t> chainBuf = takeChainBuffer();
+ 
+                     auto appendData = [&](uint32_t srcAddr, uint32_t qwCount)
+                     {
+@@ -1580,6 +1580,10 @@ bool PS2Memory::writeIORegister(uint32_t address, uint32_t value)
+                             m_pendingVif0Transfers.push_back(std::move(pt));
+                         }
+                     }
++                    else if (chainBuf.capacity() != 0u)
++                    {
++                        m_chainBufferPool.push_back(std::move(chainBuf));
++                    }
+                     // else if (channelBase == 0x10009000u)
+                     // {
+ 
+@@ -1692,6 +1696,27 @@ void PS2Memory::completeDmacChannel(uint32_t channelBase, uint32_t cause)
+     queueCompletedDmacCause(cause);
+ }
+ 
++std::vector<uint8_t> PS2Memory::takeChainBuffer()
++{
++    if (m_chainBufferPool.empty())
++        return {};
++    std::vector<uint8_t> buffer = std::move(m_chainBufferPool.back());
++    m_chainBufferPool.pop_back();
++    buffer.clear();
++    return buffer;
++}
++
++void PS2Memory::recycleChainBuffers(std::vector<PendingTransfer> &transfers)
++{
++    // A few buffers cover the chains of a frame (GIF, VIF1); past that they are freed as before.
++    constexpr size_t kMaxPooled = 8u;
++    for (PendingTransfer &transfer : transfers)
++    {
++        if (transfer.chainData.capacity() != 0u && m_chainBufferPool.size() < kMaxPooled)
++            m_chainBufferPool.push_back(std::move(transfer.chainData));
++    }
++}
++
+ void PS2Memory::processPendingTransfers()
+ {
+     const bool hadGif = !m_pendingGifTransfers.empty();
+@@ -1773,6 +1798,7 @@ void PS2Memory::processPendingTransfers()
+             }
+         }
+     }
++    recycleChainBuffers(m_pendingGifTransfers);
+     m_pendingGifTransfers.clear();
+ 
+     const bool hadVif0 = !m_pendingVif0Transfers.empty();
+@@ -1831,6 +1857,7 @@ void PS2Memory::processPendingTransfers()
+             }
+         }
+     }
++    recycleChainBuffers(m_pendingVif0Transfers);
+     m_pendingVif0Transfers.clear();
+ 
+     const bool hadVif1 = !m_pendingVif1Transfers.empty();
+@@ -1889,6 +1916,7 @@ void PS2Memory::processPendingTransfers()
+             }
+         }
+     }
++    recycleChainBuffers(m_pendingVif1Transfers);
+     m_pendingVif1Transfers.clear();
+ 
+     if (m_gifArbiter)

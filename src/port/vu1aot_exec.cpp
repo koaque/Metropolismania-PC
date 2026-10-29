@@ -224,6 +224,21 @@ vu1aot::RunResult Vu1AotAccess::Frame::end(uint32_t pc, uint32_t target, uint32_
             vu.progressXgkick();
     while (*xgkickActive && !vu.m_stopRequested)
     {
+        // Inside a tag's data the cycles up to its last qword go in one call, as in Frame::progress: the credit is below 2 here,
+        // so 2 * qwords - credit cycles copy exactly the qwords before the last one, and nothing ends or stops before that.
+        const VU1Interpreter::XgkickPipeline &x = vu.m_xgkick;
+        if (x.currentTagEnd != 0u)
+        {
+            const uint32_t beforeLast = (x.currentTagEnd - x.copiedBytes) / 16u - 1u;
+            if (beforeLast != 0u)
+            {
+                const uint32_t cycles = 2u * beforeLast - x.cycleCredit;
+                vu.m_xgkick.cycleCredit += cycles - 1u;
+                vu.progressXgkick();
+                extraCycles += cycles;
+                continue;
+            }
+        }
         vu.progressXgkick();
         ++extraCycles;
     }

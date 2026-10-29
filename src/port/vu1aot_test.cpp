@@ -245,6 +245,24 @@ namespace port
                         std::memcpy(&state.acc[lane], &bits, sizeof(bits));
                     }
                 }
+                // An eighth of the cases: lanes of vs that are zero or plus or minus vt's value (every lane of vt, Q and I the same),
+                // so ADD and SUB cancel exactly and products are zero (the zero cases of fmacOrdinary).
+                if ((next() % 8u) == 0u)
+                {
+                    const uint32_t fs = (upper >> 11) & 0x1Fu, ft = (upper >> 16) & 0x1Fu;
+                    const float broadcast = state.vf[ft][next() % 4u];
+                    if (ft != 0u)
+                        for (float &lane : state.vf[ft])
+                            lane = broadcast;
+                    state.q = broadcast;
+                    state.i = broadcast;
+                    if (fs != 0u)
+                        for (float &lane : state.vf[fs])
+                        {
+                            const uint32_t how = next() % 4u;
+                            lane = how == 0u ? 0.0f : how == 1u ? -broadcast : how == 2u ? broadcast : lane;
+                        }
+                }
                 state.r = 0x3F800000u | (next() & 0x7FFFFFu);
                 state.mac = next() & 0xFFFFu;
                 state.clip = next() & 0xFFFFFFu;
