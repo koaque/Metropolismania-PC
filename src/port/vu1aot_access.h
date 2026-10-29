@@ -55,11 +55,22 @@ struct Vu1AotAccess
         // The XGKICK copy goes on for `cycles` cycles. False when it stopped the interpreter (the run bails).
         // progressXgkick adds a cycle of credit and copies a qword for every two; `cycles` calls copy what one call does after the
         // other cycles' credit is added (the credit left once the packet is done does not matter: startXgkick sets it again).
+        // Inside a GIF tag's data the copy can wait: until the tag's last qword nothing but the packet bytes changes (no tag is
+        // read, the XGKICK stays active, nothing stops), and those bytes are the same later as long as the data memory is, so
+        // the cycles are kept in c.xgkickPending until the tag would end, a store (flushXgkick), an interpreter op or the end.
         bool progress(uint32_t cycles)
         {
             if (cycles != 0u && vu.m_xgkick.active)
             {
-                vu.m_xgkick.cycleCredit += cycles - 1u;
+                const uint32_t pending = c.xgkickPending + cycles;
+                const VU1Interpreter::XgkickPipeline &x = vu.m_xgkick;
+                if (x.currentTagEnd != 0u && (x.cycleCredit + pending) / 2u < (x.currentTagEnd - x.copiedBytes) / 16u)
+                {
+                    c.xgkickPending = pending;
+                    return !vu.m_stopRequested;
+                }
+                c.xgkickPending = 0u;
+                vu.m_xgkick.cycleCredit += pending - 1u;
                 vu.progressXgkick();
             }
             return !vu.m_stopRequested;
@@ -75,6 +86,8 @@ struct Vu1AotAccess
         // Puts back what the interpreter's queues hold; returns `result`.
         vu1aot::RunResult finish(vu1aot::RunResult result);
     };
+    // Copies the XGKICK cycles a Frame kept back (Frame::progress), before something that can see them.
+    static void flushXgkick(vu1aot::Ctx &c);
     // The store log of the run about to start on this thread (vu1aot_runtime.cpp sets it around a run; null: no log).
     static inline thread_local vu1aot::StoreLog *s_storeLog = nullptr;
 

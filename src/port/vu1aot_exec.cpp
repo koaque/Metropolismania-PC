@@ -52,9 +52,19 @@ void Vu1AotAccess::harvestFlags(vu1aot::Ctx &c, uint32_t firstPos, uint32_t expe
         c.failed = true; // the decoder queued something the model did not expect
 }
 
+void Vu1AotAccess::flushXgkick(vu1aot::Ctx &c)
+{
+    VU1Interpreter &vu = *static_cast<VU1Interpreter *>(c.vu);
+    vu.m_xgkick.cycleCredit += c.xgkickPending - 1u;
+    c.xgkickPending = 0u;
+    vu.progressXgkick();
+}
+
 void Vu1AotAccess::generalUpper(vu1aot::Ctx &c, const vu1aot::XNode &n)
 {
     VU1Interpreter &vu = *static_cast<VU1Interpreter *>(c.vu);
+    if (c.xgkickPending != 0u)
+        flushXgkick(c);
     vu.execUpper(n.upperWord);
     harvestFlags(c, n.flagBase, n.upperPushes);
     if (vu.m_stopRequested)
@@ -66,6 +76,8 @@ void Vu1AotAccess::generalLower(vu1aot::Ctx &c, const vu1aot::XNode &n)
     using namespace vu1aot;
     VU1Interpreter &vu = *static_cast<VU1Interpreter *>(c.vu);
     const VU1Interpreter::AotRun &a = *static_cast<const VU1Interpreter::AotRun *>(c.run);
+    if (c.xgkickPending != 0u)
+        flushXgkick(c);
     vu.execLower(n.lowerWord, a.data, a.dataSize, *a.gs, a.memory, n.upperWord);
     harvestFlags(c, n.lowerFlagBase, n.lowerPushes);
     // Stores land at once; Q and P results wait in the program's slots for their commit.
@@ -190,6 +202,7 @@ Vu1AotAccess::Frame::Frame(VU1Interpreter &vuIn, const VU1Interpreter::AotRun &a
     c.run = &a;
     c.workingClip = &vu.m_workingClip;
     c.log = s_storeLog;
+    c.flushXgkick = &Vu1AotAccess::flushXgkick;
     vu.m_activeVuData = a.data;
     vu.m_activeVuDataSize = a.dataSize;
     vu.m_activeGs = a.gs;
@@ -204,6 +217,8 @@ vu1aot::RunResult Vu1AotAccess::Frame::end(uint32_t pc, uint32_t target, uint32_
 {
     using vu1aot::RunResult;
     uint32_t extraCycles = 0;
+    if (c.xgkickPending != 0u)
+        flushXgkick(c);
     if (*xgkickActive)
         for (uint32_t k = 0; k < endExtra; ++k)
             vu.progressXgkick();

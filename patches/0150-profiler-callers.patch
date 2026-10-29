@@ -1,0 +1,141 @@
+Sampling profiler: PS2X_PROFILE=2 also says who called the system code a sample lands in. For a sample outside the executable (the heap, memcpy, locks, waits) the stack is unwound with the x64 unwind data while the thread is still suspended, up to the first return address inside the executable, and every 15 seconds the hottest (leaf, caller) pairs per thread are printed after the usual report ([profile:callers]). PS2X_PROFILE=1 is unchanged. In Metropolismania's city the game thread's heap time shows up as operator new, its memmove/memchr as byte vectors growing, and its waits as the GS queue drain; the run is as fast as with PS2X_PROFILE=1 (37.0 against 37.2 fps).
+
+diff --git a/ps2xRuntime/src/lib/Kernel/SamplingProfiler.cpp b/ps2xRuntime/src/lib/Kernel/SamplingProfiler.cpp
+--- a/ps2xRuntime/src/lib/Kernel/SamplingProfiler.cpp
++++ b/ps2xRuntime/src/lib/Kernel/SamplingProfiler.cpp
+@@ -2,6 +2,8 @@
+ // instruction pointer of every other thread in the process about once per millisecond and, every
+ // 15 seconds, prints the hottest functions per thread (names resolved from the PDB with DbgHelp).
+ // Debug aid for finding host-side hotspots (VU1 interpreter, GS rasterizer, generated code).
++// PS2X_PROFILE=2 also unwinds the stack of a sample that lands outside the executable (the heap, memcpy, locks) to the first
++// return address inside it, and prints those callers per thread ([profile:callers]).
+ 
+ #if defined(_WIN32)
+ 
+@@ -37,8 +39,9 @@ namespace
+         SamplingProfiler()
+         {
+             const char *flag = std::getenv("PS2X_PROFILE");
+-            if (!flag || flag[0] != '1')
++            if (!flag || (flag[0] != '1' && flag[0] != '2'))
+                 return;
++            m_callers = flag[0] == '2';
+             m_thread = std::thread([this]
+                                    { loop(); });
+             m_thread.detach();
+@@ -53,7 +56,16 @@ namespace
+             SymSetOptions(SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS);
+             SymInitialize(process, nullptr, TRUE);
+ 
++            // The executable's address range, from its PE header.
++            const auto exeBase = reinterpret_cast<DWORD64>(GetModuleHandleW(nullptr));
++            const auto *dos = reinterpret_cast<const IMAGE_DOS_HEADER *>(exeBase);
++            const auto *nt = reinterpret_cast<const IMAGE_NT_HEADERS *>(exeBase + dos->e_lfanew);
++            const DWORD64 exeEnd = exeBase + nt->OptionalHeader.SizeOfImage;
++            auto inExe = [&](DWORD64 address) { return address >= exeBase && address < exeEnd; };
++
+             std::unordered_map<DWORD, std::unordered_map<DWORD64, uint32_t>> samples;
++            // PS2X_PROFILE=2: (leaf, caller in the executable) of the samples outside it.
++            std::unordered_map<DWORD, std::map<std::pair<DWORD64, DWORD64>, uint32_t>> callers;
+             auto lastReport = std::chrono::steady_clock::now();
+             std::vector<DWORD> threads;
+             auto lastEnum = std::chrono::steady_clock::time_point{};
+@@ -86,25 +98,35 @@ namespace
+                         continue;
+                     // Record the sample only after the thread runs again: allocating while it is
+                     // suspended deadlocks if it holds the heap lock.
+-                    DWORD64 rip = 0;
++                    DWORD64 rip = 0, caller = 0;
+                     bool sampled = false;
+                     if (SuspendThread(thread) != static_cast<DWORD>(-1))
+                     {
+                         CONTEXT context{};
+-                        context.ContextFlags = CONTEXT_CONTROL;
++                        context.ContextFlags = m_callers ? CONTEXT_CONTROL | CONTEXT_INTEGER : CONTEXT_CONTROL;
+                         sampled = GetThreadContext(thread, &context) != FALSE;
+                         rip = context.Rip;
++                        // The stack only holds still while the thread does: unwind before it runs again.
++                        if (sampled && m_callers && !inExe(rip))
++                            caller = unwindToExe(context, inExe);
+                         ResumeThread(thread);
+                     }
+                     CloseHandle(thread);
+                     if (sampled)
++                    {
+                         ++samples[tid][rip];
++                        if (caller != 0)
++                            ++callers[tid][{rip, caller}];
++                    }
+                 }
+ 
+                 if (now - lastReport > std::chrono::seconds(15))
+                 {
+                     report(process, samples);
++                    if (m_callers)
++                        reportCallers(process, samples, callers);
+                     samples.clear();
++                    callers.clear();
+                     lastReport = now;
+                 }
+                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
+@@ -149,7 +171,60 @@ namespace
+             }
+         }
+ 
++        // The first return address inside the executable above a suspended thread's frame (x64 unwind data; a function
++        // without any is a leaf with its return address at RSP). 0 when none within a few frames.
++        template <typename InExe>
++        static DWORD64 unwindToExe(CONTEXT context, const InExe &inExe)
++        {
++            for (int depth = 0; depth < 12; ++depth)
++            {
++                DWORD64 imageBase = 0;
++                PRUNTIME_FUNCTION function = RtlLookupFunctionEntry(context.Rip, &imageBase, nullptr);
++                if (function == nullptr)
++                {
++                    context.Rip = *reinterpret_cast<const DWORD64 *>(context.Rsp);
++                    context.Rsp += 8;
++                }
++                else
++                {
++                    void *handlerData = nullptr;
++                    DWORD64 establisherFrame = 0;
++                    RtlVirtualUnwind(UNW_FLAG_NHANDLER, imageBase, context.Rip, function, &context, &handlerData, &establisherFrame,
++                                     nullptr);
++                }
++                if (context.Rip == 0)
++                    return 0;
++                if (inExe(context.Rip))
++                    return context.Rip;
++            }
++            return 0;
++        }
++
++        static void reportCallers(HANDLE process, const std::unordered_map<DWORD, std::unordered_map<DWORD64, uint32_t>> &samples,
++                                  const std::unordered_map<DWORD, std::map<std::pair<DWORD64, DWORD64>, uint32_t>> &callers)
++        {
++            for (const auto &[tid, byPair] : callers)
++            {
++                uint32_t total = 0;
++                if (auto it = samples.find(tid); it != samples.end())
++                    for (const auto &[address, count] : it->second)
++                        total += count;
++                if (total < 200)
++                    continue;
++                std::map<std::string, uint32_t> byName;
++                for (const auto &[pair, count] : byPair)
++                    byName[symbolFor(process, pair.first) + " <- " + symbolFor(process, pair.second)] += count;
++                std::vector<std::pair<std::string, uint32_t>> sorted(byName.begin(), byName.end());
++                std::sort(sorted.begin(), sorted.end(), [](const auto &a, const auto &b)
++                          { return a.second > b.second; });
++                std::cerr << "[profile:callers] thread " << tid << " samples=" << total << std::endl;
++                for (size_t i = 0; i < sorted.size() && i < 30; ++i)
++                    std::cerr << "[profile:callers]   " << (100.0 * sorted[i].second / total) << "% " << sorted[i].first << std::endl;
++            }
++        }
++
+         std::thread m_thread;
++        bool m_callers = false;
+     };
+ 
+     SamplingProfiler g_samplingProfiler;

@@ -21,8 +21,10 @@
 
 #if defined(_MSC_VER)
 #define VU1AOT_INLINE __forceinline
+#define VU1AOT_NOINLINE __declspec(noinline)
 #else
 #define VU1AOT_INLINE inline __attribute__((always_inline))
+#define VU1AOT_NOINLINE __attribute__((noinline))
 #endif
 
 namespace vu1aot::ops
@@ -37,11 +39,17 @@ namespace vu1aot::ops
     // The address of a quadword: (base + offset) * 16 inside the 16 KB data memory.
     VU1AOT_INLINE uint32_t quadAddress(int32_t base, int offset) { return (static_cast<uint32_t>(static_cast<int32_t>(base + offset)) * 16u) & 0x3FF0u; }
     VU1AOT_INLINE uint32_t quadAddressU16(int32_t base) { return (static_cast<uint32_t>(static_cast<uint16_t>(base)) * 16u) & 0x3FF0u; }
+    // vu1fmac::reverseLanes, forced inline: in a large compiled program the compiler stops inlining that one and calls it, even
+    // for a constant dest.
+    VU1AOT_INLINE constexpr uint32_t reverseLanes(uint32_t set)
+    {
+        return ((set & 1u) << 3) | ((set & 2u) << 1) | ((set & 4u) >> 1) | ((set & 8u) >> 3);
+    }
 
     // A write of the lanes in `dest` (bit 3 = x ... bit 0 = w).
     VU1AOT_INLINE __m128 laneMask(uint32_t dest)
     {
-        return _mm_castsi128_ps(vu1fmac::laneTables().mask[vu1fmac::reverseLanes(dest)]);
+        return _mm_castsi128_ps(vu1fmac::laneTables().mask[reverseLanes(dest)]);
     }
     VU1AOT_INLINE void storeLanes(float *target, __m128 value, uint32_t dest)
     {
@@ -49,6 +57,8 @@ namespace vu1aot::ops
     }
     VU1AOT_INLINE void storeQuad(Ctx &c, uint32_t address, __m128 value, uint32_t dest)
     {
+        if (c.xgkickPending != 0u)
+            c.flushXgkick(c);
         if (c.log != nullptr)
             c.log->save(c.data, address);
         float *target = reinterpret_cast<float *>(c.data + address);
@@ -138,7 +148,7 @@ namespace vu1aot::ops
         VU1State &st = *c.st;
         const uint32_t word = n.upperWord;
         const uint32_t dest = (word >> 21) & 0xFu;
-        const uint32_t lanes = vu1fmac::reverseLanes(dest);
+        const uint32_t lanes = reverseLanes(dest);
         const __m128 vs = vu1fmac::normalizeLanes(_mm_loadu_ps(st.vf[(word >> 11) & 0x1Fu]));
         __m128 b;
         if constexpr (BSrc <= 3)
@@ -183,7 +193,7 @@ namespace vu1aot::ops
         {
             const uint32_t negative = static_cast<uint32_t>(_mm_movemask_ps(result)) & lanes;
             FlagData &d = c.ring[(c.head + n.flagBase) & (kMaxFlags - 1)];
-            d.mac = vu1fmac::reverseLanes(negative) << 4;
+            d.mac = reverseLanes(negative) << 4;
             d.status = negative != 0u ? 2u : 0u;
             if constexpr (Kind <= 2)
                 d.extra = 0u;
@@ -192,6 +202,15 @@ namespace vu1aot::ops
         }
         _mm_storeu_ps(target, _mm_blendv_ps(_mm_loadu_ps(target), result, _mm_castsi128_ps(vu1fmac::laneTables().mask[lanes])));
         return true;
+    }
+
+    // vu1fmac::arith out of line, for the operations fmacOrdinary leaves to it: one copy per instantiation instead of one per instruction.
+    // Inlined after the fast path at all 249 FMAC instructions of the largest program, it took MSVC 5.9 GB and 390 s to compile
+    // that one file (2.2 GB and 210 s like this).
+    template <int Kind, int BSrc, bool ToAcc>
+    VU1AOT_NOINLINE vu1fmac::Flags arithOutOfLine(VU1State &st, float *target, uint32_t word)
+    {
+        return vu1fmac::arith<Kind, BSrc, ToAcc>(st, target, word);
     }
 
     template <int Kind, int BSrc, bool ToAcc>
@@ -205,7 +224,7 @@ namespace vu1aot::ops
         float *target = ToAcc ? st.acc : st.vf[fd];
         if (fmacOrdinary<Kind, BSrc, ToAcc>(c, n, target))
             return;
-        const vu1fmac::Flags flags = vu1fmac::arith<Kind, BSrc, ToAcc>(st, target, word);
+        const vu1fmac::Flags flags = arithOutOfLine<Kind, BSrc, ToAcc>(st, target, word);
         if (((word >> 21) & 0xFu) != 0u)
         {
             FlagData &d = c.ring[(c.head + n.flagBase) & (kMaxFlags - 1)];
@@ -316,7 +335,7 @@ namespace vu1aot::ops
         const uint32_t w = n.upperWord;
         const uint8_t dest = static_cast<uint8_t>(destOf(w));
         const vu1fmac::LaneTables &tables = vu1fmac::laneTables();
-        const uint32_t lanes = vu1fmac::reverseLanes(dest);
+        const uint32_t lanes = reverseLanes(dest);
         const __m128 vs = vu1fmac::normalizeLanes(_mm_loadu_ps(st.vf[fsOf(w)]));
         const __m128 vt = vu1fmac::normalizeLanes(_mm_loadu_ps(st.vf[ftOf(w)]));
         const __m128 left = _mm_shuffle_ps(vs, vs, _MM_SHUFFLE(3, 0, 2, 1));

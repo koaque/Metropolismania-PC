@@ -82,6 +82,9 @@ namespace vu1aot
         void *vu = nullptr;     // the interpreter, for the ops that go through it
         const void *run = nullptr;
         StoreLog *log = nullptr; // where the data memory writes are saved, if anywhere
+        // XGKICK cycles not yet copied (Vu1AotAccess::Frame::progress); a write to the data memory calls flushXgkick first.
+        uint32_t xgkickPending = 0;
+        void (*flushXgkick)(Ctx &) = nullptr;
     };
 
     struct XNode;

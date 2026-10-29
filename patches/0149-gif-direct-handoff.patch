@@ -1,0 +1,59 @@
+GIF: a packet sent to be drained at once goes to the GS without a copy when nothing is queued before it. GifArbiter::submitAndDrain processes it straight from the caller's buffer and then drains anything submitted meanwhile, which is the order a lone queued packet gets; with packets already queued it submits and drains as before. PS2Memory::submitGifPacket uses it when it drains immediately. Checked in Metropolismania: all 4 MB of VRAM byte-identical at the eleven views of a scripted city camera run with frame skip off; PS2Recomp's tests give the same results.
+
+diff --git a/ps2xRuntime/include/runtime/gs/ps2_gif_arbiter.h b/ps2xRuntime/include/runtime/gs/ps2_gif_arbiter.h
+--- a/ps2xRuntime/include/runtime/gs/ps2_gif_arbiter.h
++++ b/ps2xRuntime/include/runtime/gs/ps2_gif_arbiter.h
+@@ -31,6 +31,8 @@ public:
+     void setProcessPacketFn(ProcessPacketFn fn) { m_processFn = std::move(fn); }
+ 
+     void submit(GifPathId pathId, const uint8_t *data, uint32_t sizeBytes, bool path2DirectHl = false);
++    // submit, then drain: the packet is handed over from `data` without a copy when nothing is queued before it.
++    void submitAndDrain(GifPathId pathId, const uint8_t *data, uint32_t sizeBytes, bool path2DirectHl = false);
+ 
+     void drain();
+     bool empty() const { return m_queue.empty(); }
+diff --git a/ps2xRuntime/src/lib/gs/ps2_gif_arbiter.cpp b/ps2xRuntime/src/lib/gs/ps2_gif_arbiter.cpp
+--- a/ps2xRuntime/src/lib/gs/ps2_gif_arbiter.cpp
++++ b/ps2xRuntime/src/lib/gs/ps2_gif_arbiter.cpp
+@@ -32,6 +32,21 @@ void GifArbiter::submit(GifPathId pathId, const uint8_t *data, uint32_t sizeByte
+     m_queue.push_back(std::move(pkt));
+ }
+ 
++void GifArbiter::submitAndDrain(GifPathId pathId, const uint8_t *data, uint32_t sizeBytes, bool path2DirectHl)
++{
++    if (!m_queue.empty())
++    {
++        submit(pathId, data, sizeBytes, path2DirectHl);
++        drain();
++        return;
++    }
++    if (!data || sizeBytes < 16 || !m_processFn)
++        return;
++    // As if queued alone and drained: anything submitted while it is processed comes after it.
++    m_processFn(data, sizeBytes);
++    drain();
++}
++
+ void GifArbiter::drain()
+ {
+     if (!m_processFn)
+diff --git a/ps2xRuntime/src/lib/ps2_memory.cpp b/ps2xRuntime/src/lib/ps2_memory.cpp
+--- a/ps2xRuntime/src/lib/ps2_memory.cpp
++++ b/ps2xRuntime/src/lib/ps2_memory.cpp
+@@ -2022,13 +2022,12 @@ void PS2Memory::submitGifPacket(GifPathId pathId, const uint8_t *data, uint32_t
+         flushMaskedPath3Packets(false);
+     }
+ 
+-    if (m_gifArbiter)
++    if (m_gifArbiter && drainImmediately)
++        m_gifArbiter->submitAndDrain(pathId, data, sizeBytes, path2DirectHl);
++    else if (m_gifArbiter)
+         m_gifArbiter->submit(pathId, data, sizeBytes, path2DirectHl);
+     else if (m_gifPacketCallback)
+         m_gifPacketCallback(data, sizeBytes);
+-
+-    if (m_gifArbiter && drainImmediately)
+-        m_gifArbiter->drain();
+ }
+ 
+ void PS2Memory::processGIFPacket(uint32_t srcPhysAddr, uint32_t qwCount)
