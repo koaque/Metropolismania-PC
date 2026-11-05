@@ -38,7 +38,7 @@ namespace mm
             {
                 if (!busy)
                 {
-                    SoundCmd_SetDiscBusy(1);
+                    SoundCmd_SetLoadPause(1);
                     SoundCmd_Flush();
                     busy = true;
                 }
@@ -46,7 +46,7 @@ namespace mm
                 port::checkpoint();
             }
             if (busy)
-                SoundCmd_SetDiscBusy(0);
+                SoundCmd_SetLoadPause(0);
         }
     }
 
@@ -185,7 +185,7 @@ namespace mm
                 break;
             if (!busy && quiet == 0)
             {
-                SoundCmd_SetDiscBusy(1);
+                SoundCmd_SetLoadPause(1);
                 SoundCmd_Flush();
                 busy = true;
             }
@@ -193,7 +193,7 @@ namespace mm
             port::checkpoint();
         }
         if (busy)
-            SoundCmd_SetDiscBusy(0);
+            SoundCmd_SetLoadPause(0);
     }
 
     // Pumps the queue until it is empty (a0 nonzero: without telling the sound driver). No caller uses a result.
@@ -204,7 +204,7 @@ namespace mm
         {
             if (!busy && quiet == 0)
             {
-                SoundCmd_SetDiscBusy(1);
+                SoundCmd_SetLoadPause(1);
                 SoundCmd_Flush();
                 busy = true;
             }
@@ -212,7 +212,7 @@ namespace mm
             port::checkpoint();
         }
         if (busy)
-            SoundCmd_SetDiscBusy(0);
+            SoundCmd_SetLoadPause(0);
     }
 
     // Runs the request at the head of the queue one step: when the disc is ready, issues it (read, seek or close; an open

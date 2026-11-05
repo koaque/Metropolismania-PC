@@ -1,7 +1,7 @@
-// City events: the handler slots of the event types (table 0x1AF0D0: Check, Start, Update, End, Slot10, Slot14),
+// City events: the handler slots of the event types (table 0x1AF0D0: Check, Start, Update, End, Text, Answer),
 // the event manager's talk slots and the waiting queue. Every handler gets the active event (EventData) and the
 // city; Check slots say whether the event may start, Start and End mark and clear the buildings taking part
-// (flag 0x200) and the wants held for them, Slot10 gives the talk a text and Slot14 a value.
+// (flag 0x200) and the wants held for them, Text gives the talk a text and Answer a value.
 
 #include "game_functions.h"
 #include "game_globals.h"
@@ -844,11 +844,11 @@ namespace mm
         PhoneCall_Remove(city->phoneCalls, city, data->actor.family, data->actor.member);
     }
 
-    // ---- Slot10: texts for the talk
+    // ---- Text slots: texts for the talk
 
     // The claim variant text of the chosen applicant's claim (byte table from +0x4C, picked by +0x20); 0 for other
     // indexes.
-    int EvAdoption_Slot10(GuestPtr<EventData> data, GuestPtr<CityScene>, int index)
+    int EvAdoption_Text(GuestPtr<EventData> data, GuestPtr<CityScene>, int index)
     {
         const GuestPtr<EvAdoptionData> adoption = data.as<EvAdoptionData>();
         if (index != 0)
@@ -858,7 +858,7 @@ namespace mm
     }
 
     // Texts 0 to 3: the goods of the shop (+0x34); 4: the texts table itself; above: the bill (+0x4C) as money.
-    GuestPtr<char> EvShopping_Slot10(GuestPtr<EventData> data, GuestPtr<CityScene>, int index)
+    GuestPtr<char> EvShopping_Text(GuestPtr<EventData> data, GuestPtr<CityScene>, int index)
     {
         const GuestPtr<EvShoppingData> shopping = data.as<EvShoppingData>();
         if (index < 4)
@@ -873,7 +873,7 @@ namespace mm
     }
 
     // Text 0: the catalogue item (+0x1C entry, +0x20 item); 1: its price as money; 0 for others.
-    GuestPtr<char> EvDeliveryMan_Slot10(GuestPtr<EventData> data, GuestPtr<CityScene>, int index)
+    GuestPtr<char> EvDeliveryMan_Text(GuestPtr<EventData> data, GuestPtr<CityScene>, int index)
     {
         const GuestPtr<EvDeliveryData> delivery = data.as<EvDeliveryData>();
         const uint32_t item = globals::kDeliveryCatalogue + 0x184u * static_cast<uint32_t>(delivery->entry) +
@@ -886,15 +886,15 @@ namespace mm
         return GuestPtr<char>{globals::kEventMoneyTextA};
     }
 
-    // ---- Slot14: values for the talk (all 0 unless the argument is 0)
+    // ---- Answer slots: values for the talk (all 0 unless the argument is 0)
 
-    int EvShoppingTogether_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene>, GuestPtr<ActorRef>, int mode)
+    int EvShoppingTogether_Answer(GuestPtr<EventData> data, GuestPtr<CityScene>, GuestPtr<ActorRef>, int mode)
     {
         return mode == 0 ? port::load<int32_t>(data.address + 0x28u) : 0;
     }
 
     // Whether the party (+0x28) has a quarter of the population.
-    int EvFarewellParty_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef>, int mode)
+    int EvFarewellParty_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef>, int mode)
     {
         const GuestPtr<EvPartyData> party = data.as<EvPartyData>();
         if (mode != 0)
@@ -904,7 +904,7 @@ namespace mm
 
     // How the escorted person keeps up: 4 within 2 tiles of the player, 3 within 6, else 1 closer than last time,
     // 2 farther, 0 the same; the distance is kept (+0x18).
-    int EvBodyguard_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef>, int mode)
+    int EvBodyguard_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef>, int mode)
     {
         if (mode != 0)
             return 0;
@@ -927,7 +927,7 @@ namespace mm
     // Argument 0: the thief struck at the actor's building (its claim meter maxed, the fourth actor cleared, the
     // count +0x3C raised) and the next month (+0x2C) noted; 0. Argument 1: by the count, 0 none, 1 up to 3, 2 at 4,
     // 3 at 5, 4 from 6.
-    int EvThief_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode)
+    int EvThief_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode)
     {
         if (mode == 1)
         {
@@ -957,7 +957,7 @@ namespace mm
     }
 
     // Argument 0: the outcome. Argument 1: whether the actor's building and the event's (widened by 5) overlap.
-    int EvMissingChildren_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode)
+    int EvMissingChildren_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode)
     {
         if (mode == 0)
             return data.as<EvMissingChildrenData>()->outcome;
@@ -1035,12 +1035,12 @@ namespace mm
     PORT_FN(EvAlien_End);
     PORT_FN(EvThief_End);
     PORT_FN(EvMsg_End);
-    PORT_FN(EvAdoption_Slot10);
-    PORT_FN(EvShopping_Slot10);
-    PORT_FN(EvDeliveryMan_Slot10);
-    PORT_FN(EvShoppingTogether_Slot14);
-    PORT_FN(EvFarewellParty_Slot14);
-    PORT_FN(EvBodyguard_Slot14);
+    PORT_FN(EvAdoption_Text);
+    PORT_FN(EvShopping_Text);
+    PORT_FN(EvDeliveryMan_Text);
+    PORT_FN(EvShoppingTogether_Answer);
+    PORT_FN(EvFarewellParty_Answer);
+    PORT_FN(EvBodyguard_Answer);
     PORT_FN(Building_GetFootprint);
     PORT_FN(EvCaveMan_Check);
     PORT_FN(EvShoppingTogether_Check);
@@ -1051,8 +1051,8 @@ namespace mm
     PORT_FN(EvMsg_Update);
     PORT_FN(EvAdvertise_Update);
     PORT_FN(EvCrazyCult_End);
-    PORT_FN(EvThief_Slot14);
-    PORT_FN(EvMissingChildren_Slot14);
+    PORT_FN(EvThief_Answer);
+    PORT_FN(EvMissingChildren_Answer);
     PORT_FN(PartyPopup_Draw);
     PORT_FN(PartyPopup_Update);
 
@@ -1134,7 +1134,7 @@ namespace mm
 
     // Argument 0: whether the actor's home (widened by 10) and the event's home overlap, or else whether the actor's
     // person and the event's head for the same building.
-    int EvRelationship_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode)
+    int EvRelationship_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode)
     {
         if (mode != 0)
             return 0;
@@ -1335,7 +1335,7 @@ namespace mm
     PORT_FN(EvAlien_FindBuilding);
     PORT_FN(EvThief_FindBuilding);
     PORT_FN(EvAlien_PickTarget);
-    PORT_FN(EvRelationship_Slot14);
+    PORT_FN(EvRelationship_Answer);
     PORT_FN(EvActor_FindShop);
     PORT_FN(EvCrazyCult_Phase1);
     PORT_FN(EvCrazyCult_Phase3);
@@ -2226,7 +2226,7 @@ namespace mm
     // counts are reset. 1 adds laptop entry 9 with sound 0x15, 2 entry 0xC. 3: whether any resident (character types
     // 1 to 0x1D) in schedule state 6 and up with friendship band 3 and up works at a building with its claim meter at
     // level 0. 4 queues event 3 and ends this one.
-    int EvMsg_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef>, int mode)
+    int EvMsg_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef>, int mode)
     {
         switch (mode)
         {
@@ -2293,7 +2293,7 @@ namespace mm
     // the list full (the phase becomes 4). 2: adds the actor (once), moves it into the event building and counts it
     // (phase 4 at fifteen). 3: 2 from ten told, 1 from five. 4: the actor's family gains three friendship points
     // per family told.
-    int EvAdvertise_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode)
+    int EvAdvertise_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode)
     {
         const GuestPtr<EvAdvertiseData> ad = data.as<EvAdvertiseData>();
         const GuestPtr<MemberId> first = GuestPtr<MemberId>::of(ad->visitors[0]), end = first + 15;
@@ -2360,8 +2360,8 @@ namespace mm
         }
     }
 
-    PORT_FN(EvMsg_Slot14);
-    PORT_FN(EvAdvertise_Slot14);
+    PORT_FN(EvMsg_Answer);
+    PORT_FN(EvAdvertise_Answer);
 
     // ---- adoption (batch 39)
 
@@ -2570,21 +2570,21 @@ namespace mm
         }
     }
 
-    // The talk's event runs its Slot14 handler (0 when it has none); a is the actor asked about, mode the question.
-    int64_t Event_CallSlot14(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int arg, int mode)
+    // The talk's event runs its handler's Answer slot (0 when it has none); a is the actor asked about, mode the question.
+    int64_t Event_CallAnswer(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int arg, int mode)
     {
         const GuestPtr<EventData> data = talkEvent(events, mode);
-        const uint32_t slot = handlerSlot(data, &EventHandler::slot14);
+        const uint32_t slot = handlerSlot(data, &EventHandler::answer);
         if (slot == 0)
             return 0;
         return port::callGuest<int64_t>(slot, data, city, actor, arg);
     }
 
-    // The same for the Slot10 handler of the event in slot `index`.
-    int64_t Event_CallSlot10(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, int index, int arg)
+    // The same for the Text slot of the event in slot `index`.
+    int64_t Event_CallText(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, int index, int arg)
     {
         const GuestPtr<EventData> data = talkEvent(events, index);
-        const uint32_t slot = handlerSlot(data, &EventHandler::slot10);
+        const uint32_t slot = handlerSlot(data, &EventHandler::text);
         if (slot == 0)
             return 0;
         return port::callGuest<int64_t>(slot, data, city, arg);
@@ -2615,7 +2615,7 @@ namespace mm
 
     // Type 7 (the useless middle-aged man) answers the talk: modes 0-3 store the mode in +0x1C, 4 reads it back, 5 takes
     // 100 from the money, 6 gives 50, 7 gives 200.
-    uint32_t EvUselessMiddleAged_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene>, GuestPtr<ActorRef>, int mode)
+    uint32_t EvUselessMiddleAged_Answer(GuestPtr<EventData> data, GuestPtr<CityScene>, GuestPtr<ActorRef>, int mode)
     {
         if (static_cast<uint32_t>(mode) >= 8)
             return 0;
@@ -2638,10 +2638,10 @@ namespace mm
         }
     }
 
-    // Slot10 shared by types 29 and 30 (payday): formats a number into the event text buffer and returns it: the
+    // The Text slot shared by types 29 and 30 (payday): formats a number into the event text buffer and returns it: the
     // families that moved in / left, the payday score, the score with the families counted (two for each moved in, four
     // for each left). Other values give an empty text.
-    GuestPtr<char> EvPayday_Slot10(GuestPtr<EventData>, GuestPtr<CityScene> city, uint32_t value)
+    GuestPtr<char> EvPayday_Text(GuestPtr<EventData>, GuestPtr<CityScene> city, uint32_t value)
     {
         constexpr uint32_t kEventText = 0x0020B890u;
         const GuestPtr<char> out{kEventText};
@@ -2680,7 +2680,7 @@ namespace mm
     // Type 3 (the delivery man) answers the talk: 0 the catalogue entry (+0x1C), 1 and 2 whether the player is within 1 of
     // actor 1 / actor 0, 3 and 4 add / take the price of the delivered goods (the catalogue entry's item for the month in
     // +0x20, a halfword at 0x1BA0B2 + 0x184 * entry + 0x20 * month) to / from the money, 5 reads +0x34.
-    int EvDeliveryMan_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef>, int mode)
+    int EvDeliveryMan_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef>, int mode)
     {
         const GuestPtr<EvDeliveryData> delivery = data.as<EvDeliveryData>();
         const auto price = [&] {
@@ -2712,7 +2712,7 @@ namespace mm
     // applicants, 2 asks whether at least three more applicants fit, 5 counts the asked actor's family among the three
     // actors (list at 0x1B37C0, as for the event's phases): the first time each one is asked bit k of +0x50 is set (the
     // answer 0); asking again answers 1, and with all three bits set (7) the event moves to its next var (0x12) and sets +0x40.
-    int EvCrazyCult_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode)
+    int EvCrazyCult_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode)
     {
         const GuestPtr<EvCultData> cult = data.as<EvCultData>();
         // The family of an actor applies to move in.
@@ -2772,7 +2772,7 @@ namespace mm
     //   5: 0 when one of the list's entries from the second on has no flag byte, checked once more than there is room
     //      for applicants, else 1
     //   6: the families of all list entries are added to the applicants
-    int EvAdoption_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode)
+    int EvAdoption_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode)
     {
         const GuestPtr<EvAdoptionData> adoption = data.as<EvAdoptionData>();
         // The first family at or after the entry's table family that the city lets apply.
@@ -2847,7 +2847,7 @@ namespace mm
     // goods (halfwords at +0x20). Modes: 0 the count at +0x38 less one; 1 how many of the goods the bag lacks; 2 to 5 whether
     // the bag lacks good 0 to 3; 6 adds +0x4C to the money, 7 takes it, 8 takes +0x4C and +0x50; 9 moves the goods found in
     // the bag out of it into the money counter at +0x50 (their prices).
-    int EvShopping_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef>, int mode)
+    int EvShopping_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef>, int mode)
     {
         const GuestPtr<EvShoppingData> shopping = data.as<EvShoppingData>();
         const uint32_t goods = globals::shoppingTexts.get() + 0x28u * static_cast<uint32_t>(shopping->shop) + 0x20u;
@@ -2910,15 +2910,15 @@ namespace mm
         Map_GetRecord(city->map, record->actors[1].object)->flags &= 0xFDFFu;
     }
 
-    PORT_FN(Event_CallSlot14);
-    PORT_FN(Event_CallSlot10);
+    PORT_FN(Event_CallAnswer);
+    PORT_FN(Event_CallText);
     PORT_FN(Event_CallHandlerSlot);
-    PORT_FN(EvUselessMiddleAged_Slot14);
-    PORT_FN(EvPayday_Slot10);
-    PORT_FN(EvDeliveryMan_Slot14);
-    PORT_FN(EvCrazyCult_Slot14);
-    PORT_FN(EvAdoption_Slot14);
-    PORT_FN(EvShopping_Slot14);
+    PORT_FN(EvUselessMiddleAged_Answer);
+    PORT_FN(EvPayday_Text);
+    PORT_FN(EvDeliveryMan_Answer);
+    PORT_FN(EvCrazyCult_Answer);
+    PORT_FN(EvAdoption_Answer);
+    PORT_FN(EvShopping_Answer);
     PORT_FN(EvFarewellParty_End);
 
     // ---- starting, ending and saving events (batch 40)
@@ -4046,7 +4046,7 @@ namespace mm
             {
                 const uint32_t checkType = type->handler;
                 const uint32_t descriptor = checkType != 0 ? eventHandler(checkType).address : 0u;
-                const uint32_t check = descriptor != 0 ? GuestPtr<EventHandler>{descriptor}->slot14 : 0u;
+                const uint32_t check = descriptor != 0 ? GuestPtr<EventHandler>{descriptor}->answer : 0u;
                 if (check == 0)
                 {
                     list->family = static_cast<uint16_t>(family);
@@ -4062,7 +4062,7 @@ namespace mm
                 port::store<uint64_t>(arguments, port::load<uint64_t>(0x001BD988u));
                 port::store<uint16_t>(arguments + 4u, static_cast<uint16_t>(family));
                 port::store<uint16_t>(arguments + 6u, static_cast<uint16_t>(index));
-                const uint32_t function = eventHandler(type->handler)->slot14;
+                const uint32_t function = eventHandler(type->handler)->answer;
                 if (port::callGuest<int64_t>(function, probe, city, arguments, 0) == 0)
                     result = 0;
                 else
@@ -4083,9 +4083,9 @@ namespace mm
 
     PORT_FN(Event_FindForFamily);
 
-    // The alien event's slot 0x14 (called with mode 0 at its start): the family at +0x15C of the event data table (0x1BDA8C) is
+    // The alien event's Answer slot (called with mode 0 at its start): the family at +0x15C of the event data table (0x1BDA8C) is
     // added to the applicants, selected. The result is 0.
-    int EvAlien_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode)
+    int EvAlien_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode)
     {
         (void)data;
         (void)actor;
@@ -4094,12 +4094,12 @@ namespace mm
         return 0;
     }
 
-    PORT_FN(EvAlien_Slot14);
+    PORT_FN(EvAlien_Answer);
 
-    // The noodles event's slot 0x14: mode 0 (start) adds the family at +0x1FE of the event data table to the applicants and sets up
+    // The noodles event's Answer slot: mode 0 (start) adds the family at +0x1FE of the event data table to the applicants and sets up
     // the event's three actors (the families at +0x1FE members 0 and 1 and +0x16E member 0, no person or building) with 60 frames
     // to wait; mode 1 (end) adds the third actor's family. The result is 0.
-    int EvNoodles_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode)
+    int EvNoodles_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode)
     {
         (void)actor;
         const GuestPtr<EvNoodlesData> noodles = data.as<EvNoodlesData>();
@@ -4128,7 +4128,7 @@ namespace mm
         return 0;
     }
 
-    PORT_FN(EvNoodles_Slot14);
+    PORT_FN(EvNoodles_Answer);
 
     // An event actor pointed at with the cursor: with the pad focus held elsewhere nothing happens (0). An actor that is a family
     // member (person 6000) starts a family talk (argument 3). Any other actor has the building under its person found on the map
@@ -4151,12 +4151,12 @@ namespace mm
 
     PORT_FN(EvActor_PointCursor);
 
-    // The cave man event's slot 0x14 (jump table 0x1BA060; modes above 8 give 0). Modes 0 to 3 add the family at +0x15E of the event
+    // The cave man event's Answer slot (jump table 0x1BA060; modes above 8 give 0). Modes 0 to 3 add the family at +0x15E of the event
     // data table (0x1BDA8C) plus the mode to the applicants, play sound 0x17 and make it the event's actor `mode` (member 2; for the
     // fourth member 1): mode 0 also makes the family actor 4's (member 1) and sets the counter to 1, 1 and 2 count it to 2
     // and 3, 3 moves the event on (var) and clears it. 4 and 8 give the counter. 5 adds actor 5's family (the sound too), 7 that
     // of +0x160. 6 asks whether actors 0 and 4 stand at their buildings and neither is doing activity 5.
-    int EvCaveMan_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode)
+    int EvCaveMan_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode)
     {
         (void)actor;
         const GuestPtr<EvCaveManData> ev = data.as<EvCaveManData>();
@@ -4217,7 +4217,7 @@ namespace mm
         }
     }
 
-    PORT_FN(EvCaveMan_Slot14);
+    PORT_FN(EvCaveMan_Answer);
 
     // The escort event (phase in +0xA; the counter at +0x14 wraps at ten). Phase 1: before 22:00 the escort is met once the player is
     // within one tile of the actor's building and a tile of the person (then phase 4); failing that, on every tenth call, an actor

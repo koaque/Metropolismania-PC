@@ -217,9 +217,9 @@ friendship changed. A is the person talked to.
 | `0x0017C3F0` | `int mm_WordsFn_SetStoryFlagB(WordsCtx *ctx)` | 80 | no | #112 act: sets bit arg of 0x1C5530 |
 | `0x0017C440` | `int mm_WordsFn_ClearStoryFlagB(WordsCtx *ctx)` | 84 | no | #111 act: clears bit arg of 0x1C5530 |
 | `0x0017C4A0` | `int mm_WordsFn_SetVar1C5602(WordsCtx *ctx)` | 16 | no | #110 act: script variable 0x1C5602 = arg |
-| `0x0017C4B0` | `int mm_WordsFn_EventA4Slot10(WordsCtx *ctx)` | 20 | indirect | #109 act: event slot +0xA4 handler Slot10 with arg |
+| `0x0017C4B0` | `int mm_WordsFn_EventA4Text(WordsCtx *ctx)` | 20 | indirect | #109 act: event slot +0xA4 handler Text with arg |
 | `0x0017C4D0` | `char *mm_WordsFn_TextEventA4Name(WordsCtx *ctx)` | 48 | no | #108 text: name of the event in slot +0xA4 |
-| `0x0017C500` | `int mm_WordsFn_EventA8Slot10(WordsCtx *ctx)` | 20 | indirect | #107 act: event slot +0xA8 handler Slot10 with arg |
+| `0x0017C500` | `int mm_WordsFn_EventA8Text(WordsCtx *ctx)` | 20 | indirect | #107 act: event slot +0xA8 handler Text with arg |
 | `0x0017C520` | `char *mm_WordsFn_TextEventTitle(WordsCtx *ctx)` | 16 | yes | #106 text: event title, with the member name when it has one |
 | `0x0017C530` | `char *mm_WordsFn_TextOpenHours(WordsCtx *ctx)` | 72 | no | #105 text: opening hours of the family's building type |
 | `0x0017C580` | `char *mm_WordsFn_TextBagItemName(WordsCtx *ctx)` | 68 | no | #104 text: name of the selected bag item |
@@ -233,12 +233,12 @@ friendship changed. A is the person talked to.
 | `0x0017C8A0` | `char *mm_WordsFn_TextMemberName2(WordsCtx *ctx)` | 120 | yes | #96 text: (provisional) member second name (+0x5C) |
 | `0x0017C920` | `char *mm_WordsFn_TextMemberName(WordsCtx *ctx)` | 120 | yes | #95 text: member name (+0x4C) of A, B or the result family |
 | `0x0017C9A0` | `char *mm_WordsFn_TextNameSlot(WordsCtx *ctx)` | 24 | no | #94 text: name slot arg |
-| `0x0017C9C0` | `int mm_WordsFn_EventA4Slot14(WordsCtx *ctx)` | 120 | no | #93 act: handler slot +0x14 of the talk's first event (talkA) with person A and arg |
+| `0x0017C9C0` | `int mm_WordsFn_EventA4Answer(WordsCtx *ctx)` | 120 | no | #93 act: the Answer slot (+0x14) of the talk's first event (talks[0]) with person A and arg |
 | `0x0017CA40` | `int mm_WordsFn_EventSetActor(WordsCtx *ctx)` | 324 | no | #92 cond: sets actor arg of event +0xA4 to the subjects, marks the building |
 | `0x0017CB90` | `int mm_WordsFn_EventActorIs(WordsCtx *ctx)` | 76 | no | #91 cond: actor arg of event +0xA4 is subject A |
 | `0x0017CBE0` | `int mm_WordsFn_EventA4Var(WordsCtx *ctx)` | 20 | no | #90 cond: event slot +0xA4 variable (+10) |
 | `0x0017CC00` | `int mm_WordsFn_EventA4IsTalk(WordsCtx *ctx)` | 80 | no | #89 cond: (provisional) event slot +0xA4 kind is 1 or 2 |
-| `0x0017CC50` | `int mm_WordsFn_EventA8Slot14(WordsCtx *ctx)` | 120 | no | #88 act: handler slot +0x14 of the talk's second event (talkB) with person A and arg |
+| `0x0017CC50` | `int mm_WordsFn_EventA8Answer(WordsCtx *ctx)` | 120 | no | #88 act: the Answer slot (+0x14) of the talk's second event (talks[1]) with person A and arg |
 | `0x0017CCD0` | `int mm_WordsFn_EventA8Var(WordsCtx *ctx)` | 20 | no | #87 cond: event slot +0xA8 variable (+10) |
 | `0x0017CCF0` | `int mm_WordsFn_EventA8Kind(WordsCtx *ctx)` | 96 | no | #86 cond: (provisional) kind of event slot +0xA8 plus 1 |
 | `0x0017CD50` | `int mm_WordsFn_EventCountdown(WordsCtx *ctx)` | 36 | no | #85 cond: (provisional) 3 minus the event's counter |

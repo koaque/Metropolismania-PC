@@ -266,7 +266,7 @@ namespace mm
     // Whether the line from `origin` along the triangle's normal meets triangle (a, b, c) closer than `range`: the
     // triangle's plane, the line-plane intersection into `hit`, the distance to it (VU0) into *distance, then the
     // point-in-triangle test.
-    int Collide_RayTriangleA(GuestPtr<Vec4> origin, GuestPtr<Vec4> a, GuestPtr<Vec4> b, GuestPtr<Vec4> c, GuestPtr<Vec4> hit,
+    int Collide_NormalRayTriangle(GuestPtr<Vec4> origin, GuestPtr<Vec4> a, GuestPtr<Vec4> b, GuestPtr<Vec4> c, GuestPtr<Vec4> hit,
                              GuestPtr<ps2f> distance, ps2f range)
     {
         using namespace vu0;
@@ -295,7 +295,7 @@ namespace mm
     // Whether the segment from `start` to `end` crosses triangle (a, b, c): the line along the segment's unit
     // direction meets the triangle's plane at `hit`, which must lie between the ends (the vectors to them point
     // apart) and inside the triangle.
-    int Collide_RayTriangleB(GuestPtr<Vec4> start, GuestPtr<Vec4> end, GuestPtr<Vec4> a, GuestPtr<Vec4> b, GuestPtr<Vec4> c,
+    int Collide_SegmentTriangle(GuestPtr<Vec4> start, GuestPtr<Vec4> end, GuestPtr<Vec4> a, GuestPtr<Vec4> b, GuestPtr<Vec4> c,
                              GuestPtr<Vec4> hit)
     {
         using namespace vu0;
@@ -384,6 +384,6 @@ namespace mm
     PORT_FN(Math_TriangleNormal);
     PORT_FN(Math_RayPlaneDistance);
     PORT_FN(Collide_PointInTriangle);
-    PORT_FN(Collide_RayTriangleA);
-    PORT_FN(Collide_RayTriangleB);
+    PORT_FN(Collide_NormalRayTriangle);
+    PORT_FN(Collide_SegmentTriangle);
 }

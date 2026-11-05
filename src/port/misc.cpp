@@ -102,7 +102,7 @@ namespace mm
     // or the player's +0x08 code): 0x400000, 0x4000 or code 2 gives 5; 0x800000 or code 5 gives 7; 0x200000
     // or code 6 gives 6; 0x100000, 0x1000 or code 1 gives 4; plus 8 while walking (mode 1) with pad 0x40 held,
     // else plus 4 when at least 0.4 above the level. A changed animation restarts at frame 0 (+0x34); frames
-    // advance by 1 and wrap to 0, or to a fifth of the length (mm_A3D_GetMeshField0C) for animations 4 and up.
+    // advance by 1 and wrap to 0, or to a fifth of the length (mm_A3D_GetAnimLength) for animations 4 and up.
     // Walking with pad 0x40 held while moving plays sound 5.
     void Player_UpdateAction(GuestPtr<Player> player, GuestPtr<Vec4> move, GuestPtr<CityScene> city)
     {
@@ -132,7 +132,7 @@ namespace mm
             player->swayArg = anim;
             player->swayPhase = 0.0f;
         }
-        const ps2f length = A3D_GetMeshField0C(player->model, player->swayArg);
+        const ps2f length = A3D_GetAnimLength(player->model, player->swayArg);
         player->swayPhase = player->swayPhase + ps2f(1.0f);
         if (!(player->swayPhase < length))
             player->swayPhase = player->swayArg < 4 ? ps2f(0.0f) : length / ps2f(5.0f);
@@ -1236,7 +1236,7 @@ namespace mm
     {
         Sound_InitState();
         game->state = 0;
-        game->title = GuestPtr<SceneA>{};
+        game->title = GuestPtr<TitleScene>{};
         game->unk_10 = 0;
         game->city = GuestPtr<CityScene>{};
     }
@@ -4497,7 +4497,7 @@ namespace mm
             else if (animation == 6)
                 port::store<uint16_t>(frameAt, 0);
         }
-        const int length = sdk::fptosi(A3D_GetMeshField0C(GuestPtr<A3DObject>{model}, animation));
+        const int length = sdk::fptosi(A3D_GetAnimLength(GuestPtr<A3DObject>{model}, animation));
         port::store<uint16_t>(frameAt, static_cast<uint16_t>(port::load<uint16_t>(frameAt) + port::load<uint16_t>(0x001AF080u + 4u * static_cast<uint32_t>(animation))));
         if (!(static_cast<int32_t>(port::load<uint16_t>(frameAt)) < length))
         {
@@ -4555,7 +4555,7 @@ namespace mm
         const ps2f now{floatAt(phase.address)};
         if (!(now < ps2f(0.0f)))
         {
-            const ps2f length = A3D_GetMeshField0C(GuestPtr<A3DObject>{model}, port::load<int32_t>(mesh.address));
+            const ps2f length = A3D_GetAnimLength(GuestPtr<A3DObject>{model}, port::load<int32_t>(mesh.address));
             const ps2f next = ps2f(floatAt(phase.address)) + ps2f(2.0f);
             port::store<uint32_t>(phase.address, std::bit_cast<uint32_t>(next.v));
             if (!(next < length))
@@ -4886,7 +4886,7 @@ namespace mm
         const ps2f ceiling = constant(0x3ECCCCCDu) + city->waterLevel;
         if (!(ground <= ceiling))
             ground = ceiling;
-        if (Player_CollideObjects(map(), GuestPtr<ps2f>::of(player->position.x), static_cast<int>(hit.address), constant(0x3F666666u)) != 0)
+        if (Player_FloorBelow(map(), GuestPtr<ps2f>::of(player->position.x), static_cast<int>(hit.address), constant(0x3F666666u)) != 0)
             ground = hit->y;
         const ps2f speed = player->jumpSpeed;
         if (!(speed <= ps2f(0.0f)))

@@ -128,20 +128,20 @@ namespace mm
         case 1:
         {
             const uint32_t memory = sdk::operator_new(0x104u);
-            game->title = memory != 0u ? SceneA_ctor(GuestPtr<SceneA>{memory}, game->state == 1 ? 1 : 0) : GuestPtr<SceneA>{};
+            game->title = memory != 0u ? TitleScene_ctor(GuestPtr<TitleScene>{memory}, game->state == 1 ? 1 : 0) : GuestPtr<TitleScene>{};
             game->state = 2;
             break;
         }
         case 2:
         {
-            const int result = SceneA_Update(game->title);
+            const int result = TitleScene_Update(game->title);
             if (result == 0)
                 break;
             DmaList_Rewind();
             if (game->title)
             {
-                SceneA_dtor(game->title, 1);
-                game->title = GuestPtr<SceneA>{};
+                TitleScene_dtor(game->title, 1);
+                game->title = GuestPtr<TitleScene>{};
             }
             game->state = result == 1 ? 3 : 7;
             break;
@@ -150,20 +150,20 @@ namespace mm
         case 7:
         {
             const uint32_t memory = sdk::operator_new(0x104u);
-            game->briefing = memory != 0u ? SceneB_ctor(GuestPtr<SceneB>{memory}, game->state == 3 ? 1 : 0) : GuestPtr<SceneB>{};
+            game->briefing = memory != 0u ? StageScene_ctor(GuestPtr<StageScene>{memory}, game->state == 3 ? 1 : 0) : GuestPtr<StageScene>{};
             game->state = 4;
             break;
         }
         case 4:
         {
-            if (SceneB_Update(game->briefing) == 0)
+            if (StageScene_Update(game->briefing) == 0)
                 break;
             DmaList_Rewind();
             const uint32_t briefing = game->briefing.address;
             if (briefing != 0u)
             {
                 port::callGuest<void>(port::load<uint32_t>(port::load<uint32_t>(briefing + 0x100u) + 0x4Cu), briefing, 1);
-                game->briefing = GuestPtr<SceneB>{};
+                game->briefing = GuestPtr<StageScene>{};
             }
             game->state = 5;
             break;

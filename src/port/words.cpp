@@ -141,14 +141,14 @@ namespace mm
         return port::callGuest<int>(addr::Event_CallHandlerSlot, eventsOf(ctx), ctx->city, 0, ctx->personA);
     }
 
-    int WordsFn_EventA4Slot10(GuestPtr<WordsCtx> ctx)
+    int WordsFn_EventA4Text(GuestPtr<WordsCtx> ctx)
     {
-        return port::callGuest<int>(addr::Event_CallSlot10, eventsOf(ctx), ctx->city, 0, static_cast<int>(ctx->arg));
+        return port::callGuest<int>(addr::Event_CallText, eventsOf(ctx), ctx->city, 0, static_cast<int>(ctx->arg));
     }
 
-    int WordsFn_EventA8Slot10(GuestPtr<WordsCtx> ctx)
+    int WordsFn_EventA8Text(GuestPtr<WordsCtx> ctx)
     {
-        return port::callGuest<int>(addr::Event_CallSlot10, eventsOf(ctx), ctx->city, 1, static_cast<int>(ctx->arg));
+        return port::callGuest<int>(addr::Event_CallText, eventsOf(ctx), ctx->city, 1, static_cast<int>(ctx->arg));
     }
 
     // Talk_SetPose leaves v0 alone, so the result is the city pointer the original holds in v0 when it hands on.
@@ -549,12 +549,12 @@ namespace mm
             return actor;
         }
 
-        int eventCallSlot14(GuestPtr<WordsCtx> ctx, int index)
+        int eventCallAnswer(GuestPtr<WordsCtx> ctx, int index)
         {
             port::GuestFrame<0x20> frame;
             const GuestPtr<ActorRef> actor = actorA(ctx, frame.ptr().address + 0x18u);
             port::setGuestV0(ctx->memberA);
-            return port::callGuest<int>(addr::Event_CallSlot14, eventsOf(ctx), ctx->city, actor, static_cast<int>(ctx->arg), index);
+            return port::callGuest<int>(addr::Event_CallAnswer, eventsOf(ctx), ctx->city, actor, static_cast<int>(ctx->arg), index);
         }
     }
 
@@ -588,9 +588,9 @@ namespace mm
     }
 
     // Handler slot +0x14 of the talk's first (A4) or second (A8) event, with person A and the argument.
-    // mm_Event_CallSlot14 returns nothing the port knows of; its v0 is the callbacks' result.
-    int WordsFn_EventA4Slot14(GuestPtr<WordsCtx> ctx) { return eventCallSlot14(ctx, 0); }
-    int WordsFn_EventA8Slot14(GuestPtr<WordsCtx> ctx) { return eventCallSlot14(ctx, 1); }
+    // mm_Event_CallAnswer returns nothing the port knows of; its v0 is the callbacks' result.
+    int WordsFn_EventA4Answer(GuestPtr<WordsCtx> ctx) { return eventCallAnswer(ctx, 0); }
+    int WordsFn_EventA8Answer(GuestPtr<WordsCtx> ctx) { return eventCallAnswer(ctx, 1); }
 
     // Person A becomes actor `arg` of the talk's first event and building A takes part (flag 0x200). Not for a
     // building with flag 0x40, and not over an actor at object 0 when object 0 has flag 0x200.
@@ -1046,8 +1046,8 @@ namespace mm
     PORT_FN(WordsFn_ActorDetach);
     PORT_FN(WordsFn_ActorMoveTo);
     PORT_FN(WordsFn_ActorFollow);
-    PORT_FN(WordsFn_EventA4Slot14);
-    PORT_FN(WordsFn_EventA8Slot14);
+    PORT_FN(WordsFn_EventA4Answer);
+    PORT_FN(WordsFn_EventA8Answer);
     PORT_FN(WordsFn_EventSetActor);
     PORT_FN(WordsFn_SelectEventActor);
     PORT_FN(WordsFn_EventStage);
@@ -1156,8 +1156,8 @@ namespace mm
     PORT_FN(WordsFn_EndEventA8Result);
     PORT_FN(WordsFn_EndEventA8);
     PORT_FN(WordsFn_StartEventA4);
-    PORT_FN(WordsFn_EventA4Slot10);
-    PORT_FN(WordsFn_EventA8Slot10);
+    PORT_FN(WordsFn_EventA4Text);
+    PORT_FN(WordsFn_EventA8Text);
     PORT_FN(WordsFn_SetPose);
     PORT_FN(WordsFn_TalkSelectActor);
 

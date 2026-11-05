@@ -44,7 +44,7 @@ struct PauseSlotText;
 struct LoadingScreen;
 struct McManager;
 struct NameEntry;
-struct SceneA;
+struct TitleScene;
 struct Bag;
 struct BagShortcut;
 struct BagSlot;
@@ -94,9 +94,9 @@ struct TexImage;
 struct TexImageFile;
 struct LayerA;
 struct LayerB;
-struct LayerC;
-struct LayerD;
-struct LayerE;
+struct PlacementLayer;
+struct RainLayer;
+struct SnowLayer;
 struct LayerF;
 struct LayerG;
 struct LayerAInstance;
@@ -304,7 +304,7 @@ struct A3DTrack {
     int32_t keyCount;          /* +0x00 */
     GuestPtr<A3DNode> node;             /* +0x04 the node it moves */
     GuestPtr<A3DKey> keys;              /* +0x08 */
-    ps2f length;              /* +0x0C read from track 0 as the animation's length (mm_A3D_GetMeshField0C) */
+    ps2f length;              /* +0x0C read from track 0 as the animation's length (mm_A3D_GetAnimLength) */
 };
 /* A key of a node track (0x20 bytes). */
 struct A3DKey {
@@ -448,9 +448,10 @@ struct NameEntry {
     ps2f boardPlace[3];       /* +0x114 the board's x, y and z at construction */
     GuestPtr<void> vtable;              /* +0x120 0x1BCFE8 */
 };
-/* Scene A: logos, memory card check, title (0x104 bytes). */
-struct SceneA {
-    uint8_t unk_00[8];
+/* The title scene: logos, memory card check, title (0x104 bytes, mm_TitleScene_*). */
+struct TitleScene {
+    GuestPtr<Camera> camera;            /* +0x00 */
+    GuestPtr<LightSet> lights;          /* +0x04 */
     GuestPtr<TexSprite> logoSprite;     /* +0x08 drawn in layer set 0x0A/0x0B (mm_Title_DrawCommon) */
     GuestPtr<TexSprite> titleSprite;    /* +0x0C layer sets 0x1E..0x29 */
     GuestPtr<TexSprite> logoLetters[3]; /* +0x10 the title logo's three bouncing letters (mm_Title_LogoLetters) */
@@ -458,15 +459,16 @@ struct SceneA {
     GuestPtr<A3DObject> menuModel;      /* +0x24 layer set 0x28/0x29 */
     GuestPtr<A3DObject> logoModel;      /* +0x28 layer set 0x14/0x15 */
     GuestPtr<LoadingScreen> loading;    /* +0x2C text and spinner shown while loading (mm_Title_NewGameIntro sets its text) */
-    uint8_t unk_30[8];
+    GuestPtr<TexSprite> loadingFrame;   /* +0x30 the loading bar's frame (mm_TitleScene_StartGame) */
+    GuestPtr<TexSprite> loadingBar;     /* +0x34 one segment of it, drawn up to 16 times */
     ps2f logoTime;            /* +0x38 frame of the logo model's intro animation (mm_Title_Intro) */
     int32_t choice;            /* +0x3C selected choice */
     int32_t choicePulsing;     /* +0x40 cleared when the selected choice's pulse ends */
     int32_t choiceCount;       /* +0x44 (provisional) 1: only the first choice is shown */
     int32_t pulseFrame;        /* +0x48 0..19 while the choice pulses (mm_Title_DrawChoices), then the frames of its idle wobble (mm_Title_DrawChoicesIdle) */
-    uint8_t unk_4C[4];
+    int32_t loadStep;          /* +0x4C the city asset loader's state (mm_CityAssets_LoadStep), 0 once it is done */
     int32_t logoSound;         /* +0x50 next timed effect of the logo intro (mm_Title_Intro) */
-    uint8_t unk_54[4];
+    int32_t loadProgress;      /* +0x54 the loader's progress (0x1BDB54), the bar shows it in 70ths */
     int32_t showHint;          /* +0x58 the "[SELECT]SoundTest" line is drawn (mm_Title_PressStart) */
     uint8_t song;              /* +0x5C the sound test's song, 0..0x13 (mm_SoundTest_BgmPage) */
     uint8_t effect;            /* +0x5D its effect, 0..0x47 (mm_SoundTest_SePage) */
@@ -487,14 +489,17 @@ struct SceneA {
     GuestPtr<ListMenu> loadMenu;        /* +0xB0 layer set 0x28/0x29 */
     GuestPtr<McManager> mc;             /* +0xB4 */
     GuestPtr<TextBox> hintText;         /* +0xB8 */
-    uint8_t unk_BC[8];
+    GuestPtr<TextBox> messageBox;       /* +0xBC 21 by 12 (mm_Title_LoadMenu, mm_TitleScene_Load) */
+    int32_t mode;              /* +0xC0 the scene's step (mm_TitleScene_Update) */
     int32_t pressStep;         /* +0xC4 step of the current sequence: mm_Title_Intro 0..5; the title 0 before its first frame, 1 after */
-    int32_t waitFrames;        /* +0xC8 frames the memory card warning stays after Cross (mm_SceneA_MemoryCardCheck) */
+    int32_t waitFrames;        /* +0xC8 frames the memory card warning stays after Cross (mm_TitleScene_MemoryCardCheck) */
     int32_t fade;              /* +0xCC screen fade alpha (mm_Title_DrawCommon) */
     int32_t layers;            /* +0xD0 layer set drawn */
     int32_t idleTimer;         /* +0xD4 idle frames (restarted at 1800; provisional) */
     int32_t introFrame;        /* +0xD8 logo intro counter: title sprite alpha, then frames of the letters, then frames left (mm_Title_Intro) */
-    uint8_t unk_DC[8];
+    uint8_t unk_DC[4];
+    int32_t afterGame;         /* +0xE0 made again after a city ended (game state 1): the logos and card check are skipped
+                                  and the game data is only reset (mm_TitleScene_StartGame) */
     ps2f previewTime;         /* +0xE4 frame of the new-game preview model's animation (mm_Title_NewGameIntro) */
     ps2f previewEnd;          /* +0xE8 the animation's last frame */
     GuestPtr<A3DObject> previewModel;   /* +0xEC the character preview, 0 once it has turned away */
@@ -560,7 +565,7 @@ struct PauseMenu {
     int32_t itemsListed;       /* +0x14 items in the slot menu, new-save items included (mm_PauseMenu_StateSlotSelect) */
     int32_t savesListed;       /* +0x18 saves found on the cards */
     int32_t cardPort;          /* +0x1C the memory card port in use, 0 or 1 (message 5 names it, mm_PauseMenu_ShowCardMessage) */
-    int32_t saveSlot;          /* +0x20 the save slot on the card (mm_McManager_PrepareNewSlot, mm_McManager_FindSlotB) */
+    int32_t saveSlot;          /* +0x20 the save slot on the card (mm_McManager_PrepareNewSlot, mm_McManager_GetSaveFolder) */
     int32_t waitFrames;        /* +0x24 frames in the card message state (mm_PauseMenu_StateMain) */
     int32_t blink;             /* +0x28 frames, for the blinking while saving */
     ps2f openTime;            /* +0x2C rises by 10 per frame; the window is fully in at 120 */
@@ -670,8 +675,8 @@ struct EventHandler {
     uint32_t start;            /* +0x04 */
     uint32_t update;           /* +0x08 every frame (copied to EventData.update) */
     uint32_t end;              /* +0x0C */
-    uint32_t slot10;           /* +0x10 */
-    uint32_t slot14;           /* +0x14 the talk script's questions (mm_Event_CallSlot14) */
+    uint32_t text;             /* +0x10 a text for the talk script (mm_Event_CallText) */
+    uint32_t answer;           /* +0x14 the talk script's questions and actions (mm_Event_CallAnswer) */
 };
 /* An active event (0x1C bytes; some types keep more state, up to 0x7C, mm_EventData_GetSize7C): the first argument of
    every mm_Ev*_ handler slot, and the three the talk works with (EventMgr talks). */
@@ -686,7 +691,7 @@ struct EventData {
     ActorRef actor;            /* +0x0C the main actor; types with more list them on from here, 8 bytes each, over the
                                   words below (talk scripts pick them by index, mm_WordsFn_SelectEventActor) */
     int32_t unk_14;            /* +0x14 per type: a month (mm_EvUselessMiddleAged_Start) */
-    int32_t unk_18;            /* +0x18 per type: a timer, a distance (mm_EvBodyguard_Slot14) */
+    int32_t unk_18;            /* +0x18 per type: a timer, a distance (mm_EvBodyguard_Answer) */
 };
 /* The Crazy Cult event's record (type 18, mm_EvCrazyCult_*): residents join the cult one by one while its members are
    found and told in turn. */
@@ -699,7 +704,7 @@ struct EvCultData {
     int32_t spreadFrames;      /* +0x48 every 30 frames another resident joins (person flag 0x400) */
     int32_t allJoined;         /* +0x4C every resident has joined */
     int32_t metBits;           /* +0x50 the members the player has talked to (bit k for the actor in the list at 0x1B37C0);
-                                  at 7 the leader is told next (mm_EvCrazyCult_Slot14) */
+                                  at 7 the leader is told next (mm_EvCrazyCult_Answer) */
 };
 /* One of the children of the adoption event (4 bytes, the table at 0x1B37D0). */
 struct AdoptionChild {
@@ -726,7 +731,7 @@ struct EvShoppingData {
     int32_t goodsCount;        /* +0x38 goods on its list */
     int32_t prices[4];         /* +0x3C */
     int32_t bill;              /* +0x4C their total, rounded up to the next thousand */
-    int32_t refund;            /* +0x50 the prices of the goods taken back out of the bag (mm_EvShopping_Slot14 mode 9) */
+    int32_t refund;            /* +0x50 the prices of the goods taken back out of the bag (mm_EvShopping_Answer mode 9) */
     int32_t tellFrames;        /* +0x54 frames after the shopper is told */
     int32_t endFrames;         /* +0x58 the event ends after 240 */
 };
@@ -758,7 +763,7 @@ struct EvThiefData {
     ActorRef actors[4];        /* +0x0C */
     int32_t nextMonth;         /* +0x2C the month count of the next strike */
     uint8_t unk_30[0xC];
-    int32_t strikes;           /* +0x3C buildings robbed (mm_EvThief_Slot14) */
+    int32_t strikes;           /* +0x3C buildings robbed (mm_EvThief_Answer) */
 };
 /* A family member by family and member number (4 bytes; in lists 0 ends them). */
 struct MemberId {
@@ -787,7 +792,7 @@ struct EvNoodlesData {
 /* The cave man event's record (type 15, mm_EvCaveMan_*). */
 struct EvCaveManData {
     uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
-    ActorRef actors[8];        /* +0x0C 0 to 3 the families that join (mm_EvCaveMan_Slot14), 4 the leader, 5, 6 the cave
+    ActorRef actors[8];        /* +0x0C 0 to 3 the families that join (mm_EvCaveMan_Answer), 4 the leader, 5, 6 the cave
                                   and its owner, 7 */
     int32_t counter;           /* +0x4C actors found (phase 3); the talk's count of families joined */
     int32_t frames;            /* +0x50 counted down or up */
@@ -807,7 +812,7 @@ struct EvMiddleAgedData {
     ActorRef actor;            /* +0x0C */
     int32_t month;             /* +0x14 the month it started; he is told on a later one */
     int32_t frames;            /* +0x18 frames after he is told */
-    int32_t answer;            /* +0x1C the talk's choice, modes 0 to 3 (mm_EvUselessMiddleAged_Slot14) */
+    int32_t answer;            /* +0x1C the talk's choice, modes 0 to 3 (mm_EvUselessMiddleAged_Answer) */
 };
 /* One of the event manager's five event slots (0x20 bytes, filled from the front): an event a talk script started
    (mm_Event_StartFromScript) with the residents it involves. Each day its counter goes down; at 0 the type joins the
@@ -959,8 +964,8 @@ struct Markers {
     uint8_t unk_008[8];
     Vec4 matrices[16];         /* +0x010 four 4x4 matrices, one per marker */
     int32_t nodes[4];          /* +0x110 node of markerModel per marker, -1 = none (1, 2, 3, -1 at construction; the fourth
-                                  becomes 4 when laptop entry 4 is active, mm_Laptop_CheckOpen) */
-    int32_t visible;           /* +0x120 set while Circle alone is held in the city view (mm_Laptop_CheckOpen) */
+                                  becomes 4 when laptop entry 4 is active, mm_Markers_CheckCircle) */
+    int32_t visible;           /* +0x120 set while Circle alone is held in the city view (mm_Markers_CheckCircle) */
     int32_t circleHeld;        /* +0x124 Circle was held with other buttons last frame, so it does not show the markers */
     GuestPtr<void> vtable;              /* +0x128 */
     uint8_t unk_12C[4];
@@ -986,7 +991,7 @@ struct TownPages {
     GuestPtr<A3DObject> book;           /* +0x00 book model (from 0x1F3B20) */
     GuestPtr<TextBox> text[6];          /* +0x04 page texts; +0x18 is the list the cursor moves on */
     int32_t mode;              /* +0x1C 6: no cursor */
-    int32_t unk_20;
+    int32_t turnBack;          /* +0x20 the page being turned goes back, else forward */
     GuestPtr<Vec4> bookMatrix;          /* +0x24 the book model's matrix */
     ps2f openTime;            /* +0x28 frames since opening (open at 25) */
     int32_t page;              /* +0x2C */
@@ -995,12 +1000,12 @@ struct TownPages {
     int32_t contentsPages;     /* +0x38 */
     int32_t pageCount;         /* +0x3C */
     int32_t pageEntries;       /* +0x40 entries on the current page (up to 10) */
-    int32_t unk_44;
-    int32_t unk_48;
+    int32_t targetPage;        /* +0x44 the page a flip goes to (state 6) */
+    int32_t chosenFamily;      /* +0x48 the family to call once the book has closed, 0 none (mm_TownPages_SelectedEntry) */
     GuestPtr<Frame> cursorFrame;        /* +0x4C */
     int32_t cursorX;           /* +0x50 */
     int32_t cursorY;           /* +0x54 */
-    int32_t unk_58;
+    int32_t targetRow;         /* +0x58 the row the cursor slides to (state 5) */
     int32_t row;               /* +0x5C cursor row on the page */
     int32_t savedRow;          /* +0x60 */
 };
@@ -1093,7 +1098,7 @@ struct LayerA {
     int32_t count;             /* +0x2430 instances this frame */
     uint32_t startPacket;      /* +0x2434 uploads +0x2410 to VU1 0x2A and the program 0x1A8330 (mm_LayerA_BuildPacket) */
     uint32_t endPacket;        /* +0x2438 ALPHA_1 back to 0x20_00000044 */
-    int32_t buffer;            /* +0x243C the buffer being filled (mm_LayerA_SetSource) */
+    int32_t buffer;            /* +0x243C the buffer being filled (mm_LayerA_BeginFrame) */
 };
 struct LayerB {
     TerrainPassParams params;  /* +0x000 to VU1 0x1C by the first packet: mask 0x20 */
@@ -1105,7 +1110,7 @@ struct LayerB {
     uint32_t packetB;          /* +0x220 the second pass */
     uint8_t unk_224[0xC];
 };
-struct LayerC {
+struct PlacementLayer {
     Vec4 colourA;              /* +0x000 VU1 0x1C (255, 0, 0, 128) */
     Vec4 colourB;              /* +0x010 VU1 0x1D (0, 0, 0, 128) */
     uint32_t outputOffset[4];  /* +0x020 VU1 0x1E (0x68) */
@@ -1119,7 +1124,7 @@ struct LayerC {
     uint32_t highlightPacket;  /* +0x210 ALPHA_1 0x30_00000048, the program 0x1A7B30 and +0x000..+0x06F to VU1 0x1C */
     uint32_t markerPacket;     /* +0x214 ALPHA_1 0x30_00000048, +0x070..+0x20F to VU1 0x12 and the program 0x1A8330 */
     uint32_t endPacket;        /* +0x218 ALPHA_1 back to 0x20_00000044 */
-    int32_t rectActive;        /* +0x21C 1: the highlight (mm_LayerC_InTileRect), 2: the marker */
+    int32_t rectActive;        /* +0x21C 1: the highlight (mm_PlacementLayer_InTileRect), 2: the marker */
     int32_t rectX0;            /* +0x220 */
     int32_t rectZ0;            /* +0x224 */
     int32_t rectX1;            /* +0x228 */
@@ -1127,7 +1132,7 @@ struct LayerC {
     GuestPtr<A3DObject> marker;         /* +0x230 the marker model (0x1F3B1C) */
     uint8_t unk_234[0xC];
 };
-struct LayerD {
+struct RainLayer {
     uint32_t gifTag[4];        /* +0x000 VU1 0x12: 96 loops of RGBAQ, XYZF2 twice, PRIM 0x69 (blended lines) */
     Vec4 colourA;              /* +0x010 VU1 0x13 (765, 765, 765, the clock's brightness: 0..40) */
     Vec4 colourB;              /* +0x020 VU1 0x14 (765, 765, 765, 0) */
@@ -1142,12 +1147,12 @@ struct LayerD {
     uint32_t endPacket;        /* +0x408 ALPHA_1 back to 0x20_00000044 */
     uint8_t unk_40C[4];
 };
-struct LayerE {
+struct SnowLayer {
     uint32_t gifTag[4];        /* +0x000 VU1 0x12: 8 loops per step of ST, XYZF2 twice, PRIM 0x76 (blended sprites) */
     Vec4 unk_010[3];           /* +0x010 VU1 0x13..0x15: (0, 0, 1, 0), (1, 1, 1, 0), (10, 5, 0, 0) */
     Vec4 points[13];           /* +0x040 VU1 0x16..0x22 */
     Vec4 turns[32];            /* +0x110 VU1 0x23..0x42: eight rotation matrices about y */
-    Vec4 projection[4];        /* +0x310 VU1 0x43..0x46: the projection times the view (mm_LayerE_Draw) */
+    Vec4 projection[4];        /* +0x310 VU1 0x43..0x46: the projection times the view (mm_SnowLayer_Draw) */
     Vec4 flakes[32];           /* +0x350 VU1 0x47..0x66: x and z within 0.5, y from -40 to 0 in steps of 0.03 a frame, then again */
     int32_t steps;             /* +0x550 VU1 0x67: the clock's night length / 1500 + 1 */
     int32_t unk_554;           /* +0x554 8 */
@@ -1244,8 +1249,9 @@ struct BuildingTypeVtable {
     uint32_t groundTexture;    /* +0x1C non-zero: the tile gets a ground texture (mm_Terrain_DrawPatch) */
     uint32_t acceptsOn;        /* +0x20 whether the type can be placed on an object (mm_Map_CheckPlacement) */
     uint32_t isOpen;           /* +0x24 opening hours (mm_Bldg_IsOpen) */
-    uint32_t collideB;         /* +0x28 the nearest hit and its distance (mm_Player_NearestObject) */
-    uint32_t collideA;         /* +0x2C whether a circle touches the object (mm_Player_CollideObjects) */
+    uint32_t nearestHit;       /* +0x28 the nearest hit and its distance (mm_Player_NearestObject) */
+    uint32_t floorBelow;       /* +0x2C whether a segment from a point down crosses the object, the crossing out (the
+                                  surface the player stands on, mm_Player_FloorBelow) */
     uint32_t rayHit;           /* +0x30 whether a ray hits the object (mm_MapObj_RayHit) */
     uint32_t animate;          /* +0x34 every frame with the time of day (mm_BldgType_CallAll): the ride animations */
 };
@@ -1307,12 +1313,12 @@ struct MapObject {
     /* +0x18..+0x1B: roads keep two halfwords, buildings four bytes. */
     union {
         struct {
-            uint16_t roadShape;        /* +0x18 bit d = open towards direction d, 5 and 10 straight (added to the model index by
-                                          mm_BldgRoad_Slot1C) */
+            uint16_t roadShape;        /* +0x18 bit d = open towards direction d, 5 and 10 straight (added to the ground texture by
+                                          mm_BldgRoad_GroundTexture) */
             uint16_t roadMesh;         /* +0x1A mesh drawn (0 = none; street lamps and traffic lights by range) */
         };
         struct {
-            uint8_t variant;           /* +0x18 bits 3-7 pick the model variant (mm_Bldg_CollideA); an entrance whose claim was
+            uint8_t variant;           /* +0x18 bits 3-7 pick the model variant (mm_Bldg_FloorBelow); an entrance whose claim was
                                           met counts up to 0x2D from 1 (mm_CityRender_CollectObjects) */
             uint8_t unitShape;         /* +0x19 housing: the unit shape (mm_BldgHousing_UnitAt, table 0x1B14F0) */
             uint8_t style;             /* +0x1A housing: the style, 26 meshes each (mm_BldgHousing_Draw) */
@@ -1409,12 +1415,12 @@ struct CityMap {
     uint32_t groundPacket;     /* +0x2F68 the program 0x1A5EB0 and groundParams */
     uint32_t sidePackets[2];   /* +0x2F6C per side buffer: the program 0x1A76F0, the parameters and the triangles. The game stores the
                                   first's address in both (mm_Terrain_BuildVu1PacketA), so odd frames draw the even frame's buffer */
-    GuestPtr<LayerD> rain;              /* +0x2F74 */
-    GuestPtr<LayerE> snow;              /* +0x2F78 */
+    GuestPtr<RainLayer> rain;              /* +0x2F74 */
+    GuestPtr<SnowLayer> snow;              /* +0x2F78 */
     GuestPtr<LayerF> layerF;            /* +0x2F7C */
     GuestPtr<LayerG> water;             /* +0x2F80 */
     GuestPtr<LayerB> layerB;            /* +0x2F84 */
-    GuestPtr<LayerC> placement;         /* +0x2F88 */
+    GuestPtr<PlacementLayer> placement;         /* +0x2F88 */
     GuestPtr<LayerA> instances;         /* +0x2F8C */
 };
 
@@ -1426,7 +1432,7 @@ struct BuildingRecord {
                                   4 field, 6 business, 7 office, 8 housing, 9 port, 10 my home, 11 amusement park, 12 ranch,
                                   13 pig farm, 14 small goods, 15 keep-out */
     uint8_t size;              /* +0x21 */
-    uint8_t unk_22;            /* +0x22 */
+    uint8_t groundTexture;     /* +0x22 (BuildingType.groundTexture) */
     uint8_t rule;              /* +0x23 */
     uint16_t flags;            /* +0x24 */
     uint16_t maxStack;         /* +0x26 */
@@ -1478,7 +1484,7 @@ struct BuildingType {
     uint16_t closeMinute;      /* +0x13E */
     uint16_t capacity;         /* +0x140 */
     uint8_t size;              /* +0x142 footprint in tiles */
-    uint8_t unk_143;
+    uint8_t groundTexture;     /* +0x143 the ground texture of its tiles, 0 = none (mm_BldgType_GroundTexture) */
     uint8_t rule;              /* +0x144 */
     uint8_t category;          /* +0x145 STRTYPE.BIN category */
     uint8_t postGroup;         /* +0x146 group in POSTNAME.BIN (mm_BldgType_GetPostName) */
@@ -1739,8 +1745,8 @@ struct ClaimThresholds {
     uint16_t low;              /* +0x00 above it the claim shows (band 1) */
     uint16_t high;             /* +0x02 above it band 2 */
     uint8_t step;              /* +0x04 meter rise per evaluation */
-    uint8_t switchFactor;      /* +0x05 a building takes the neighbours' claim when its meter times this is below their weighted meters (mm_BldgClaims_EvalD) */
-    uint8_t spreadStep;        /* +0x06 meter rise per weight of a claiming neighbour (mm_BldgClaims_EvalA) */
+    uint8_t switchFactor;      /* +0x05 a building takes the neighbours' claim when its meter times this is below their weighted meters (mm_BldgClaims_WeighNeighbours) */
+    uint8_t spreadStep;        /* +0x06 meter rise per weight of a claiming neighbour (mm_BldgClaims_Spread) */
     uint8_t holdTime;          /* +0x07 claim timer once the meter maxes out */
 };
 
@@ -1858,15 +1864,15 @@ struct CityScene {
 /* Widget-derived classes (see Widget in 10_game.h), at their allocation sizes; fields replace the
    data arrays as functions are ported. */
 
-struct SceneB;
+struct StageScene;
 struct MsgWin;
 struct TalkCard;
 struct TalkMoney;
 struct TalkConv;
 
-/* Scene B: the stage transition (0x104 bytes, mm_SceneB_*): title cards, approval rate, the boss's briefing, the mission
+/* The stage scene: the stage transition (0x104 bytes, mm_StageScene_*): title cards, approval rate, the boss's briefing, the mission
    movie and the credits text, one step of the action table 0x1B07C0 at a time. A stage object with a widget at +4. */
-struct SceneB {
+struct StageScene {
     uint32_t unk_00;
     Widget widget;             /* +0x04 vtable 0x1BCF18 */
     GuestPtr<Camera> camera;            /* +0x10 */
@@ -1882,11 +1888,11 @@ struct SceneB {
     int32_t unk_30;
     int32_t phase;             /* +0x34 the sub-step within the step */
     int32_t fade;              /* +0x38 the screen's fade, 0 to 0x80 */
-    int32_t scroll;            /* +0x3C the credits text's scroll (mm_SceneB_ShowTelop) */
+    int32_t scroll;            /* +0x3C the credits text's scroll (mm_StageScene_ShowTelop) */
     ps2f animTime;            /* +0x40 the boss's animation frame */
     int32_t animation;         /* +0x44 the boss's animation */
     int32_t unk_48;            /* +0x48 -1 at the briefing's start, 2 after its text */
-    int32_t briefingIndex;     /* +0x4C the message within the phase (mm_SceneB_BuildBriefingText) */
+    int32_t briefingIndex;     /* +0x4C the message within the phase (mm_StageScene_BuildBriefingText) */
     int32_t briefingPhase;     /* +0x50 0 the stage's special messages, 1 its general text, 2 the goal */
     GuestPtr<A3DObject> office;         /* +0x54 the office model (0x1F3B2C) the briefing is drawn in */
     GuestPtr<MsgWin> window;            /* +0x58 the briefing's message window */
@@ -2011,9 +2017,9 @@ struct Game {
     GuestPtr<void> vtable;              /* +0x00 */
     int32_t state;             /* +0x04 0 and 1 make the title scene, 2 runs it, 3 and 7 make the briefing, 4 runs it, 5 makes the city, 6 runs it */
     GuestPtr<CityScene> city;           /* +0x08 */
-    GuestPtr<SceneA> title;             /* +0x0C */
+    GuestPtr<TitleScene> title;             /* +0x0C */
     int32_t unk_10;            /* +0x10 cleared by mm_GameInit */
-    GuestPtr<SceneB> briefing;          /* +0x14 */
+    GuestPtr<StageScene> briefing;          /* +0x14 */
 };
 
 // ---- layout checks (guest offsets and sizes)
@@ -2260,49 +2266,58 @@ static_assert(offsetof(NameEntry, hintScroll) == 0x104, "NameEntry.hintScroll");
 static_assert(offsetof(NameEntry, hintStep) == 0x108, "NameEntry.hintStep");
 static_assert(offsetof(NameEntry, boardPlace) == 0x114, "NameEntry.boardPlace");
 static_assert(offsetof(NameEntry, vtable) == 0x120, "NameEntry.vtable");
-static_assert(sizeof(SceneA) == 0x104, "SceneA size");
-static_assert(offsetof(SceneA, logoSprite) == 0x08, "SceneA.logoSprite");
-static_assert(offsetof(SceneA, titleSprite) == 0x0C, "SceneA.titleSprite");
-static_assert(offsetof(SceneA, logoLetters) == 0x10, "SceneA.logoLetters");
-static_assert(offsetof(SceneA, choices) == 0x1C, "SceneA.choices");
-static_assert(offsetof(SceneA, menuModel) == 0x24, "SceneA.menuModel");
-static_assert(offsetof(SceneA, logoModel) == 0x28, "SceneA.logoModel");
-static_assert(offsetof(SceneA, loading) == 0x2C, "SceneA.loading");
-static_assert(offsetof(SceneA, logoTime) == 0x38, "SceneA.logoTime");
-static_assert(offsetof(SceneA, choice) == 0x3C, "SceneA.choice");
-static_assert(offsetof(SceneA, choicePulsing) == 0x40, "SceneA.choicePulsing");
-static_assert(offsetof(SceneA, choiceCount) == 0x44, "SceneA.choiceCount");
-static_assert(offsetof(SceneA, pulseFrame) == 0x48, "SceneA.pulseFrame");
-static_assert(offsetof(SceneA, logoSound) == 0x50, "SceneA.logoSound");
-static_assert(offsetof(SceneA, showHint) == 0x58, "SceneA.showHint");
-static_assert(offsetof(SceneA, song) == 0x5C, "SceneA.song");
-static_assert(offsetof(SceneA, effect) == 0x5D, "SceneA.effect");
-static_assert(offsetof(SceneA, pitch) == 0x5E, "SceneA.pitch");
-static_assert(offsetof(SceneA, note) == 0x60, "SceneA.note");
-static_assert(offsetof(SceneA, tempo) == 0x62, "SceneA.tempo");
-static_assert(offsetof(SceneA, volume) == 0x64, "SceneA.volume");
-static_assert(offsetof(SceneA, pan) == 0x68, "SceneA.pan");
-static_assert(offsetof(SceneA, distance) == 0x69, "SceneA.distance");
-static_assert(offsetof(SceneA, playingSong) == 0x6C, "SceneA.playingSong");
-static_assert(offsetof(SceneA, codeStep) == 0x70, "SceneA.codeStep");
-static_assert(offsetof(SceneA, testPage) == 0x74, "SceneA.testPage");
-static_assert(offsetof(SceneA, bankLoading) == 0x78, "SceneA.bankLoading");
-static_assert(offsetof(SceneA, loadMenu) == 0xB0, "SceneA.loadMenu");
-static_assert(offsetof(SceneA, mc) == 0xB4, "SceneA.mc");
-static_assert(offsetof(SceneA, hintText) == 0xB8, "SceneA.hintText");
-static_assert(offsetof(SceneA, pressStep) == 0xC4, "SceneA.pressStep");
-static_assert(offsetof(SceneA, waitFrames) == 0xC8, "SceneA.waitFrames");
-static_assert(offsetof(SceneA, fade) == 0xCC, "SceneA.fade");
-static_assert(offsetof(SceneA, layers) == 0xD0, "SceneA.layers");
-static_assert(offsetof(SceneA, idleTimer) == 0xD4, "SceneA.idleTimer");
-static_assert(offsetof(SceneA, introFrame) == 0xD8, "SceneA.introFrame");
-static_assert(offsetof(SceneA, previewTime) == 0xE4, "SceneA.previewTime");
-static_assert(offsetof(SceneA, previewEnd) == 0xE8, "SceneA.previewEnd");
-static_assert(offsetof(SceneA, previewModel) == 0xEC, "SceneA.previewModel");
-static_assert(offsetof(SceneA, previewState) == 0xF4, "SceneA.previewState");
-static_assert(offsetof(SceneA, previewTurn) == 0xF8, "SceneA.previewTurn");
-static_assert(offsetof(SceneA, previewTurnStep) == 0xFC, "SceneA.previewTurnStep");
-static_assert(offsetof(SceneA, previewText) == 0x100, "SceneA.previewText");
+static_assert(sizeof(TitleScene) == 0x104, "TitleScene size");
+static_assert(offsetof(TitleScene, camera) == 0x00, "TitleScene.camera");
+static_assert(offsetof(TitleScene, lights) == 0x04, "TitleScene.lights");
+static_assert(offsetof(TitleScene, logoSprite) == 0x08, "TitleScene.logoSprite");
+static_assert(offsetof(TitleScene, titleSprite) == 0x0C, "TitleScene.titleSprite");
+static_assert(offsetof(TitleScene, logoLetters) == 0x10, "TitleScene.logoLetters");
+static_assert(offsetof(TitleScene, choices) == 0x1C, "TitleScene.choices");
+static_assert(offsetof(TitleScene, menuModel) == 0x24, "TitleScene.menuModel");
+static_assert(offsetof(TitleScene, logoModel) == 0x28, "TitleScene.logoModel");
+static_assert(offsetof(TitleScene, loading) == 0x2C, "TitleScene.loading");
+static_assert(offsetof(TitleScene, loadingFrame) == 0x30, "TitleScene.loadingFrame");
+static_assert(offsetof(TitleScene, loadingBar) == 0x34, "TitleScene.loadingBar");
+static_assert(offsetof(TitleScene, logoTime) == 0x38, "TitleScene.logoTime");
+static_assert(offsetof(TitleScene, choice) == 0x3C, "TitleScene.choice");
+static_assert(offsetof(TitleScene, choicePulsing) == 0x40, "TitleScene.choicePulsing");
+static_assert(offsetof(TitleScene, choiceCount) == 0x44, "TitleScene.choiceCount");
+static_assert(offsetof(TitleScene, pulseFrame) == 0x48, "TitleScene.pulseFrame");
+static_assert(offsetof(TitleScene, loadStep) == 0x4C, "TitleScene.loadStep");
+static_assert(offsetof(TitleScene, logoSound) == 0x50, "TitleScene.logoSound");
+static_assert(offsetof(TitleScene, loadProgress) == 0x54, "TitleScene.loadProgress");
+static_assert(offsetof(TitleScene, showHint) == 0x58, "TitleScene.showHint");
+static_assert(offsetof(TitleScene, song) == 0x5C, "TitleScene.song");
+static_assert(offsetof(TitleScene, effect) == 0x5D, "TitleScene.effect");
+static_assert(offsetof(TitleScene, pitch) == 0x5E, "TitleScene.pitch");
+static_assert(offsetof(TitleScene, note) == 0x60, "TitleScene.note");
+static_assert(offsetof(TitleScene, tempo) == 0x62, "TitleScene.tempo");
+static_assert(offsetof(TitleScene, volume) == 0x64, "TitleScene.volume");
+static_assert(offsetof(TitleScene, pan) == 0x68, "TitleScene.pan");
+static_assert(offsetof(TitleScene, distance) == 0x69, "TitleScene.distance");
+static_assert(offsetof(TitleScene, playingSong) == 0x6C, "TitleScene.playingSong");
+static_assert(offsetof(TitleScene, codeStep) == 0x70, "TitleScene.codeStep");
+static_assert(offsetof(TitleScene, testPage) == 0x74, "TitleScene.testPage");
+static_assert(offsetof(TitleScene, bankLoading) == 0x78, "TitleScene.bankLoading");
+static_assert(offsetof(TitleScene, loadMenu) == 0xB0, "TitleScene.loadMenu");
+static_assert(offsetof(TitleScene, mc) == 0xB4, "TitleScene.mc");
+static_assert(offsetof(TitleScene, hintText) == 0xB8, "TitleScene.hintText");
+static_assert(offsetof(TitleScene, messageBox) == 0xBC, "TitleScene.messageBox");
+static_assert(offsetof(TitleScene, mode) == 0xC0, "TitleScene.mode");
+static_assert(offsetof(TitleScene, pressStep) == 0xC4, "TitleScene.pressStep");
+static_assert(offsetof(TitleScene, waitFrames) == 0xC8, "TitleScene.waitFrames");
+static_assert(offsetof(TitleScene, fade) == 0xCC, "TitleScene.fade");
+static_assert(offsetof(TitleScene, layers) == 0xD0, "TitleScene.layers");
+static_assert(offsetof(TitleScene, idleTimer) == 0xD4, "TitleScene.idleTimer");
+static_assert(offsetof(TitleScene, introFrame) == 0xD8, "TitleScene.introFrame");
+static_assert(offsetof(TitleScene, afterGame) == 0xE0, "TitleScene.afterGame");
+static_assert(offsetof(TitleScene, previewTime) == 0xE4, "TitleScene.previewTime");
+static_assert(offsetof(TitleScene, previewEnd) == 0xE8, "TitleScene.previewEnd");
+static_assert(offsetof(TitleScene, previewModel) == 0xEC, "TitleScene.previewModel");
+static_assert(offsetof(TitleScene, previewState) == 0xF4, "TitleScene.previewState");
+static_assert(offsetof(TitleScene, previewTurn) == 0xF8, "TitleScene.previewTurn");
+static_assert(offsetof(TitleScene, previewTurnStep) == 0xFC, "TitleScene.previewTurnStep");
+static_assert(offsetof(TitleScene, previewText) == 0x100, "TitleScene.previewText");
 static_assert(sizeof(BagSlot) == 0x10, "BagSlot size");
 static_assert(offsetof(BagSlot, item) == 0x00, "BagSlot.item");
 static_assert(offsetof(BagShortcut, slot) == 0x00, "BagShortcut.slot");
@@ -2416,8 +2431,8 @@ static_assert(offsetof(EventHandler, check) == 0x00, "EventHandler.check");
 static_assert(offsetof(EventHandler, start) == 0x04, "EventHandler.start");
 static_assert(offsetof(EventHandler, update) == 0x08, "EventHandler.update");
 static_assert(offsetof(EventHandler, end) == 0x0C, "EventHandler.end");
-static_assert(offsetof(EventHandler, slot10) == 0x10, "EventHandler.slot10");
-static_assert(offsetof(EventHandler, slot14) == 0x14, "EventHandler.slot14");
+static_assert(offsetof(EventHandler, text) == 0x10, "EventHandler.text");
+static_assert(offsetof(EventHandler, answer) == 0x14, "EventHandler.answer");
 static_assert(offsetof(EventData, vtable) == 0x00, "EventData.vtable");
 static_assert(offsetof(EventData, update) == 0x04, "EventData.update");
 static_assert(offsetof(EventData, kind) == 0x08, "EventData.kind");
@@ -2626,6 +2641,7 @@ static_assert(offsetof(TownPagesIndex, startPage) == 0x04, "TownPagesIndex.start
 static_assert(offsetof(TownPages, book) == 0x00, "TownPages.book");
 static_assert(offsetof(TownPages, text) == 0x04, "TownPages.text");
 static_assert(offsetof(TownPages, mode) == 0x1C, "TownPages.mode");
+static_assert(offsetof(TownPages, turnBack) == 0x20, "TownPages.turnBack");
 static_assert(offsetof(TownPages, bookMatrix) == 0x24, "TownPages.bookMatrix");
 static_assert(offsetof(TownPages, openTime) == 0x28, "TownPages.openTime");
 static_assert(offsetof(TownPages, page) == 0x2C, "TownPages.page");
@@ -2634,9 +2650,12 @@ static_assert(offsetof(TownPages, index) == 0x34, "TownPages.index");
 static_assert(offsetof(TownPages, contentsPages) == 0x38, "TownPages.contentsPages");
 static_assert(offsetof(TownPages, pageCount) == 0x3C, "TownPages.pageCount");
 static_assert(offsetof(TownPages, pageEntries) == 0x40, "TownPages.pageEntries");
+static_assert(offsetof(TownPages, targetPage) == 0x44, "TownPages.targetPage");
+static_assert(offsetof(TownPages, chosenFamily) == 0x48, "TownPages.chosenFamily");
 static_assert(offsetof(TownPages, cursorFrame) == 0x4C, "TownPages.cursorFrame");
 static_assert(offsetof(TownPages, cursorX) == 0x50, "TownPages.cursorX");
 static_assert(offsetof(TownPages, cursorY) == 0x54, "TownPages.cursorY");
+static_assert(offsetof(TownPages, targetRow) == 0x58, "TownPages.targetRow");
 static_assert(offsetof(TownPages, row) == 0x5C, "TownPages.row");
 static_assert(offsetof(TownPages, savedRow) == 0x60, "TownPages.savedRow");
 static_assert(sizeof(StageName) == 0x10, "StageName size");
@@ -2692,50 +2711,50 @@ static_assert(offsetof(LayerB, packetA) == 0x130, "LayerB.packetA");
 static_assert(offsetof(LayerB, maskB) == 0x200, "LayerB.maskB");
 static_assert(offsetof(LayerB, tex0B) == 0x210, "LayerB.tex0B");
 static_assert(offsetof(LayerB, packetB) == 0x220, "LayerB.packetB");
-static_assert(offsetof(LayerC, colourA) == 0x000, "LayerC.colourA");
-static_assert(offsetof(LayerC, colourB) == 0x010, "LayerC.colourB");
-static_assert(offsetof(LayerC, outputOffset) == 0x020, "LayerC.outputOffset");
-static_assert(offsetof(LayerC, gifTag) == 0x030, "LayerC.gifTag");
-static_assert(offsetof(LayerC, primA) == 0x040, "LayerC.primA");
-static_assert(offsetof(LayerC, primB) == 0x050, "LayerC.primB");
-static_assert(offsetof(LayerC, mask) == 0x060, "LayerC.mask");
-static_assert(offsetof(LayerC, colours) == 0x070, "LayerC.colours");
-static_assert(offsetof(LayerC, outputOffsets) == 0x1F0, "LayerC.outputOffsets");
-static_assert(offsetof(LayerC, instanceColour) == 0x200, "LayerC.instanceColour");
-static_assert(offsetof(LayerC, highlightPacket) == 0x210, "LayerC.highlightPacket");
-static_assert(offsetof(LayerC, markerPacket) == 0x214, "LayerC.markerPacket");
-static_assert(offsetof(LayerC, endPacket) == 0x218, "LayerC.endPacket");
-static_assert(offsetof(LayerC, rectActive) == 0x21C, "LayerC.rectActive");
-static_assert(offsetof(LayerC, rectX0) == 0x220, "LayerC.rectX0");
-static_assert(offsetof(LayerC, rectZ0) == 0x224, "LayerC.rectZ0");
-static_assert(offsetof(LayerC, rectX1) == 0x228, "LayerC.rectX1");
-static_assert(offsetof(LayerC, rectZ1) == 0x22C, "LayerC.rectZ1");
-static_assert(offsetof(LayerC, marker) == 0x230, "LayerC.marker");
-static_assert(offsetof(LayerD, gifTag) == 0x000, "LayerD.gifTag");
-static_assert(offsetof(LayerD, colourA) == 0x010, "LayerD.colourA");
-static_assert(offsetof(LayerD, colourB) == 0x020, "LayerD.colourB");
-static_assert(offsetof(LayerD, unk_030) == 0x030, "LayerD.unk_030");
-static_assert(offsetof(LayerD, drops) == 0x040, "LayerD.drops");
-static_assert(offsetof(LayerD, streaks) == 0x140, "LayerD.streaks");
-static_assert(offsetof(LayerD, startPackets) == 0x2C0, "LayerD.startPackets");
-static_assert(offsetof(LayerD, ground) == 0x2D0, "LayerD.ground");
-static_assert(offsetof(LayerD, groundExtra) == 0x3F0, "LayerD.groundExtra");
-static_assert(offsetof(LayerD, groundPackets) == 0x400, "LayerD.groundPackets");
-static_assert(offsetof(LayerD, endPacket) == 0x408, "LayerD.endPacket");
-static_assert(offsetof(LayerE, gifTag) == 0x000, "LayerE.gifTag");
-static_assert(offsetof(LayerE, unk_010) == 0x010, "LayerE.unk_010");
-static_assert(offsetof(LayerE, points) == 0x040, "LayerE.points");
-static_assert(offsetof(LayerE, turns) == 0x110, "LayerE.turns");
-static_assert(offsetof(LayerE, projection) == 0x310, "LayerE.projection");
-static_assert(offsetof(LayerE, flakes) == 0x350, "LayerE.flakes");
-static_assert(offsetof(LayerE, steps) == 0x550, "LayerE.steps");
-static_assert(offsetof(LayerE, unk_554) == 0x554, "LayerE.unk_554");
-static_assert(offsetof(LayerE, startPackets) == 0x560, "LayerE.startPackets");
-static_assert(offsetof(LayerE, ground) == 0x570, "LayerE.ground");
-static_assert(offsetof(LayerE, groundExtra) == 0x690, "LayerE.groundExtra");
-static_assert(offsetof(LayerE, groundPackets) == 0x6A0, "LayerE.groundPackets");
-static_assert(offsetof(LayerE, endPacket) == 0x6A8, "LayerE.endPacket");
-static_assert(offsetof(LayerE, angles) == 0x6C0, "LayerE.angles");
+static_assert(offsetof(PlacementLayer, colourA) == 0x000, "PlacementLayer.colourA");
+static_assert(offsetof(PlacementLayer, colourB) == 0x010, "PlacementLayer.colourB");
+static_assert(offsetof(PlacementLayer, outputOffset) == 0x020, "PlacementLayer.outputOffset");
+static_assert(offsetof(PlacementLayer, gifTag) == 0x030, "PlacementLayer.gifTag");
+static_assert(offsetof(PlacementLayer, primA) == 0x040, "PlacementLayer.primA");
+static_assert(offsetof(PlacementLayer, primB) == 0x050, "PlacementLayer.primB");
+static_assert(offsetof(PlacementLayer, mask) == 0x060, "PlacementLayer.mask");
+static_assert(offsetof(PlacementLayer, colours) == 0x070, "PlacementLayer.colours");
+static_assert(offsetof(PlacementLayer, outputOffsets) == 0x1F0, "PlacementLayer.outputOffsets");
+static_assert(offsetof(PlacementLayer, instanceColour) == 0x200, "PlacementLayer.instanceColour");
+static_assert(offsetof(PlacementLayer, highlightPacket) == 0x210, "PlacementLayer.highlightPacket");
+static_assert(offsetof(PlacementLayer, markerPacket) == 0x214, "PlacementLayer.markerPacket");
+static_assert(offsetof(PlacementLayer, endPacket) == 0x218, "PlacementLayer.endPacket");
+static_assert(offsetof(PlacementLayer, rectActive) == 0x21C, "PlacementLayer.rectActive");
+static_assert(offsetof(PlacementLayer, rectX0) == 0x220, "PlacementLayer.rectX0");
+static_assert(offsetof(PlacementLayer, rectZ0) == 0x224, "PlacementLayer.rectZ0");
+static_assert(offsetof(PlacementLayer, rectX1) == 0x228, "PlacementLayer.rectX1");
+static_assert(offsetof(PlacementLayer, rectZ1) == 0x22C, "PlacementLayer.rectZ1");
+static_assert(offsetof(PlacementLayer, marker) == 0x230, "PlacementLayer.marker");
+static_assert(offsetof(RainLayer, gifTag) == 0x000, "RainLayer.gifTag");
+static_assert(offsetof(RainLayer, colourA) == 0x010, "RainLayer.colourA");
+static_assert(offsetof(RainLayer, colourB) == 0x020, "RainLayer.colourB");
+static_assert(offsetof(RainLayer, unk_030) == 0x030, "RainLayer.unk_030");
+static_assert(offsetof(RainLayer, drops) == 0x040, "RainLayer.drops");
+static_assert(offsetof(RainLayer, streaks) == 0x140, "RainLayer.streaks");
+static_assert(offsetof(RainLayer, startPackets) == 0x2C0, "RainLayer.startPackets");
+static_assert(offsetof(RainLayer, ground) == 0x2D0, "RainLayer.ground");
+static_assert(offsetof(RainLayer, groundExtra) == 0x3F0, "RainLayer.groundExtra");
+static_assert(offsetof(RainLayer, groundPackets) == 0x400, "RainLayer.groundPackets");
+static_assert(offsetof(RainLayer, endPacket) == 0x408, "RainLayer.endPacket");
+static_assert(offsetof(SnowLayer, gifTag) == 0x000, "SnowLayer.gifTag");
+static_assert(offsetof(SnowLayer, unk_010) == 0x010, "SnowLayer.unk_010");
+static_assert(offsetof(SnowLayer, points) == 0x040, "SnowLayer.points");
+static_assert(offsetof(SnowLayer, turns) == 0x110, "SnowLayer.turns");
+static_assert(offsetof(SnowLayer, projection) == 0x310, "SnowLayer.projection");
+static_assert(offsetof(SnowLayer, flakes) == 0x350, "SnowLayer.flakes");
+static_assert(offsetof(SnowLayer, steps) == 0x550, "SnowLayer.steps");
+static_assert(offsetof(SnowLayer, unk_554) == 0x554, "SnowLayer.unk_554");
+static_assert(offsetof(SnowLayer, startPackets) == 0x560, "SnowLayer.startPackets");
+static_assert(offsetof(SnowLayer, ground) == 0x570, "SnowLayer.ground");
+static_assert(offsetof(SnowLayer, groundExtra) == 0x690, "SnowLayer.groundExtra");
+static_assert(offsetof(SnowLayer, groundPackets) == 0x6A0, "SnowLayer.groundPackets");
+static_assert(offsetof(SnowLayer, endPacket) == 0x6A8, "SnowLayer.endPacket");
+static_assert(offsetof(SnowLayer, angles) == 0x6C0, "SnowLayer.angles");
 static_assert(offsetof(LayerF, params) == 0x000, "LayerF.params");
 static_assert(offsetof(LayerF, extra) == 0x120, "LayerF.extra");
 static_assert(offsetof(LayerF, packet) == 0x130, "LayerF.packet");
@@ -2761,8 +2780,8 @@ static_assert(offsetof(BuildingTypeVtable, drawPeople) == 0x18, "BuildingTypeVta
 static_assert(offsetof(BuildingTypeVtable, groundTexture) == 0x1C, "BuildingTypeVtable.groundTexture");
 static_assert(offsetof(BuildingTypeVtable, acceptsOn) == 0x20, "BuildingTypeVtable.acceptsOn");
 static_assert(offsetof(BuildingTypeVtable, isOpen) == 0x24, "BuildingTypeVtable.isOpen");
-static_assert(offsetof(BuildingTypeVtable, collideB) == 0x28, "BuildingTypeVtable.collideB");
-static_assert(offsetof(BuildingTypeVtable, collideA) == 0x2C, "BuildingTypeVtable.collideA");
+static_assert(offsetof(BuildingTypeVtable, nearestHit) == 0x28, "BuildingTypeVtable.nearestHit");
+static_assert(offsetof(BuildingTypeVtable, floorBelow) == 0x2C, "BuildingTypeVtable.floorBelow");
 static_assert(offsetof(BuildingTypeVtable, rayHit) == 0x30, "BuildingTypeVtable.rayHit");
 static_assert(offsetof(BuildingTypeVtable, animate) == 0x34, "BuildingTypeVtable.animate");
 static_assert(offsetof(TerrainNode, next) == 0x00, "TerrainNode.next");
@@ -2879,7 +2898,7 @@ static_assert(offsetof(CityMap, instances) == 0x2F8C, "CityMap.instances");
 static_assert(offsetof(BuildingRecord, name) == 0x00, "BuildingRecord.name");
 static_assert(offsetof(BuildingRecord, typeClass) == 0x20, "BuildingRecord.typeClass");
 static_assert(offsetof(BuildingRecord, size) == 0x21, "BuildingRecord.size");
-static_assert(offsetof(BuildingRecord, unk_22) == 0x22, "BuildingRecord.unk_22");
+static_assert(offsetof(BuildingRecord, groundTexture) == 0x22, "BuildingRecord.groundTexture");
 static_assert(offsetof(BuildingRecord, rule) == 0x23, "BuildingRecord.rule");
 static_assert(offsetof(BuildingRecord, flags) == 0x24, "BuildingRecord.flags");
 static_assert(offsetof(BuildingRecord, maxStack) == 0x26, "BuildingRecord.maxStack");
@@ -2921,6 +2940,7 @@ static_assert(offsetof(BuildingType, openMinute) == 0x13C, "BuildingType.openMin
 static_assert(offsetof(BuildingType, closeMinute) == 0x13E, "BuildingType.closeMinute");
 static_assert(offsetof(BuildingType, capacity) == 0x140, "BuildingType.capacity");
 static_assert(offsetof(BuildingType, size) == 0x142, "BuildingType.size");
+static_assert(offsetof(BuildingType, groundTexture) == 0x143, "BuildingType.groundTexture");
 static_assert(offsetof(BuildingType, rule) == 0x144, "BuildingType.rule");
 static_assert(offsetof(BuildingType, category) == 0x145, "BuildingType.category");
 static_assert(offsetof(BuildingType, postGroup) == 0x146, "BuildingType.postGroup");
@@ -3162,28 +3182,28 @@ static_assert(offsetof(CityScene, trafficTimer) == 0xC4, "CityScene.trafficTimer
 static_assert(offsetof(CityScene, fadeLevel) == 0xC8, "CityScene.fadeLevel");
 static_assert(offsetof(CityScene, fade) == 0xCC, "CityScene.fade");
 static_assert(offsetof(CityScene, fadeSpeed) == 0xD0, "CityScene.fadeSpeed");
-static_assert(offsetof(SceneB, widget) == 0x04, "SceneB.widget");
-static_assert(offsetof(SceneB, camera) == 0x10, "SceneB.camera");
-static_assert(offsetof(SceneB, lights) == 0x14, "SceneB.lights");
-static_assert(offsetof(SceneB, caption) == 0x18, "SceneB.caption");
-static_assert(offsetof(SceneB, picture) == 0x20, "SceneB.picture");
-static_assert(offsetof(SceneB, stage) == 0x24, "SceneB.stage");
-static_assert(offsetof(SceneB, step) == 0x28, "SceneB.step");
-static_assert(offsetof(SceneB, fadeMode) == 0x29, "SceneB.fadeMode");
-static_assert(offsetof(SceneB, fadeFrame) == 0x2C, "SceneB.fadeFrame");
-static_assert(offsetof(SceneB, phase) == 0x34, "SceneB.phase");
-static_assert(offsetof(SceneB, fade) == 0x38, "SceneB.fade");
-static_assert(offsetof(SceneB, scroll) == 0x3C, "SceneB.scroll");
-static_assert(offsetof(SceneB, animTime) == 0x40, "SceneB.animTime");
-static_assert(offsetof(SceneB, animation) == 0x44, "SceneB.animation");
-static_assert(offsetof(SceneB, unk_48) == 0x48, "SceneB.unk_48");
-static_assert(offsetof(SceneB, briefingIndex) == 0x4C, "SceneB.briefingIndex");
-static_assert(offsetof(SceneB, briefingPhase) == 0x50, "SceneB.briefingPhase");
-static_assert(offsetof(SceneB, office) == 0x54, "SceneB.office");
-static_assert(offsetof(SceneB, window) == 0x58, "SceneB.window");
-static_assert(offsetof(SceneB, text) == 0x5C, "SceneB.text");
-static_assert(offsetof(SceneB, boss) == 0xFC, "SceneB.boss");
-static_assert(offsetof(SceneB, vtable) == 0x100, "SceneB.vtable");
+static_assert(offsetof(StageScene, widget) == 0x04, "StageScene.widget");
+static_assert(offsetof(StageScene, camera) == 0x10, "StageScene.camera");
+static_assert(offsetof(StageScene, lights) == 0x14, "StageScene.lights");
+static_assert(offsetof(StageScene, caption) == 0x18, "StageScene.caption");
+static_assert(offsetof(StageScene, picture) == 0x20, "StageScene.picture");
+static_assert(offsetof(StageScene, stage) == 0x24, "StageScene.stage");
+static_assert(offsetof(StageScene, step) == 0x28, "StageScene.step");
+static_assert(offsetof(StageScene, fadeMode) == 0x29, "StageScene.fadeMode");
+static_assert(offsetof(StageScene, fadeFrame) == 0x2C, "StageScene.fadeFrame");
+static_assert(offsetof(StageScene, phase) == 0x34, "StageScene.phase");
+static_assert(offsetof(StageScene, fade) == 0x38, "StageScene.fade");
+static_assert(offsetof(StageScene, scroll) == 0x3C, "StageScene.scroll");
+static_assert(offsetof(StageScene, animTime) == 0x40, "StageScene.animTime");
+static_assert(offsetof(StageScene, animation) == 0x44, "StageScene.animation");
+static_assert(offsetof(StageScene, unk_48) == 0x48, "StageScene.unk_48");
+static_assert(offsetof(StageScene, briefingIndex) == 0x4C, "StageScene.briefingIndex");
+static_assert(offsetof(StageScene, briefingPhase) == 0x50, "StageScene.briefingPhase");
+static_assert(offsetof(StageScene, office) == 0x54, "StageScene.office");
+static_assert(offsetof(StageScene, window) == 0x58, "StageScene.window");
+static_assert(offsetof(StageScene, text) == 0x5C, "StageScene.text");
+static_assert(offsetof(StageScene, boss) == 0xFC, "StageScene.boss");
+static_assert(offsetof(StageScene, vtable) == 0x100, "StageScene.vtable");
 static_assert(sizeof(MsgWin) == 0x2CC, "MsgWin size");
 static_assert(offsetof(MsgWin, model) == 0x0C, "MsgWin.model");
 static_assert(offsetof(MsgWin, text) == 0x10, "MsgWin.text");

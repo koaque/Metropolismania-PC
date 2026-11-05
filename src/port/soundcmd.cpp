@@ -61,7 +61,7 @@ namespace mm
         }
     }
 
-    int SoundCmd_01(uint32_t a0, uint32_t a1, int a2, int a3, uint32_t t0)
+    int SoundCmd_WaveOpen(uint32_t a0, uint32_t a1, int a2, int a3, uint32_t t0)
     {
         const int32_t index = globals::soundCmdIndex.get();
         const uint32_t entry = entryAt(index);
@@ -76,11 +76,11 @@ namespace mm
         return advance(index);
     }
 
-    int SoundCmd_02(uint32_t a0, uint32_t a1) { return pairCommand(2, a0, a1); }
-    int SoundCmd_02_Zero() { return SoundCmd_02(0, 0); }
+    int SoundCmd_WaveClose(uint32_t a0, uint32_t a1) { return pairCommand(2, a0, a1); }
+    int SoundCmd_WaveClose0() { return SoundCmd_WaveClose(0, 0); }
 
     // Plays sound `sound` of bank `bank` on an effect voice and marks the voice busy.
-    int SoundCmd_PlayB(uint32_t voice, uint8_t bank, uint16_t sound, uint8_t a3, uint8_t t0, uint8_t t1, int t2, uint16_t t3)
+    int SoundCmd_WavePlay(uint32_t voice, uint8_t bank, uint16_t sound, uint8_t a3, uint8_t t0, uint8_t t1, int t2, uint16_t t3)
     {
         const int32_t index = globals::soundCmdIndex.get();
         const uint32_t entry = entryAt(index);
@@ -99,9 +99,9 @@ namespace mm
         return advance(index);
     }
 
-    int SoundCmd_StopA(uint32_t voice, uint32_t a1) { return pairCommand(4, voice, a1); }
+    int SoundCmd_WaveStop(uint32_t voice, uint32_t a1) { return pairCommand(4, voice, a1); }
 
-    int SoundCmd_PlayA(uint8_t voice, uint16_t a1, uint16_t a2, uint16_t a3, uint16_t t0, uint16_t t1)
+    int SoundCmd_WaveFade(uint8_t voice, uint16_t a1, uint16_t a2, uint16_t a3, uint16_t t0, uint16_t t1)
     {
         const int32_t index = globals::soundCmdIndex.get();
         const uint32_t entry = entryAt(index);
@@ -115,7 +115,7 @@ namespace mm
         return advance(index);
     }
 
-    int SoundCmd_SetVolumeLRA(uint8_t voice, int left, int right, uint16_t a3)
+    int SoundCmd_WaveSetVolume(uint8_t voice, int left, int right, uint16_t a3)
     {
         const int32_t index = globals::soundCmdIndex.get();
         const uint32_t entry = entryAt(index);
@@ -127,11 +127,11 @@ namespace mm
         return advance(index);
     }
 
-    int SoundCmd_SetVolumeA(uint8_t voice, int volume, uint16_t a2) { return voiceCommand<int32_t>(7, voice, volume, a2); }
-    int SoundCmd_SetPitchA(uint8_t voice, uint16_t pitch, uint16_t a2) { return voiceCommand<uint16_t>(8, voice, pitch, a2); }
+    int SoundCmd_WaveSetTrackVolume(uint8_t voice, int volume, uint16_t a2) { return voiceCommand<int32_t>(7, voice, volume, a2); }
+    int SoundCmd_WaveSetPitch(uint8_t voice, uint16_t pitch, uint16_t a2) { return voiceCommand<uint16_t>(8, voice, pitch, a2); }
 
     // Loads a sound bank: SQ, HD and BD file names into slot `slot`.
-    int SoundCmd_LoadBank(uint32_t slot, int sqName, int hdName, int bdName, uint32_t flags)
+    int SoundCmd_MidiOpen(uint32_t slot, int sqName, int hdName, int bdName, uint32_t flags)
     {
         const int32_t index = globals::soundCmdIndex.get();
         const uint32_t entry = entryAt(index);
@@ -146,10 +146,10 @@ namespace mm
         return advance(index);
     }
 
-    int SoundCmd_StopSequence(uint32_t slot, uint32_t a1) { return pairCommand(0xB, slot, a1); }
+    int SoundCmd_MidiClose(uint32_t slot, uint32_t a1) { return pairCommand(0xB, slot, a1); }
 
     // Plays a sequence in slot `slot` and marks the slot busy.
-    int SoundCmd_PlaySequence(uint32_t slot, uint8_t a1, uint8_t a2, int a3, uint16_t t0)
+    int SoundCmd_MidiPlay(uint32_t slot, uint8_t a1, uint8_t a2, int a3, uint16_t t0)
     {
         const int32_t index = globals::soundCmdIndex.get();
         const uint32_t entry = entryAt(index);
@@ -165,9 +165,9 @@ namespace mm
         return advance(index);
     }
 
-    int SoundCmd_StopB(uint32_t voice, uint32_t a1) { return pairCommand(0xD, voice, a1); }
+    int SoundCmd_MidiStop(uint32_t voice, uint32_t a1) { return pairCommand(0xD, voice, a1); }
 
-    int SoundCmd_FadeB(uint8_t voice, uint16_t target, uint16_t time, uint16_t a3)
+    int SoundCmd_MidiFade(uint8_t voice, uint16_t target, uint16_t time, uint16_t a3)
     {
         const int32_t index = globals::soundCmdIndex.get();
         const uint32_t entry = entryAt(index);
@@ -179,12 +179,12 @@ namespace mm
         return advance(index);
     }
 
-    int SoundCmd_0F(uint8_t voice, int a1, uint16_t a2) { return voiceCommand<int32_t>(0xF, voice, a1, a2); }
-    int SoundCmd_SetVolumeB(uint8_t voice, int volume, uint16_t a2) { return voiceCommand<int32_t>(0x10, voice, volume, a2); }
-    int SoundCmd_11(uint8_t voice, uint16_t a1, uint16_t a2) { return voiceCommand<uint16_t>(0x11, voice, a1, a2); }
+    int SoundCmd_MidiSetVolume(uint8_t voice, int a1, uint16_t a2) { return voiceCommand<int32_t>(0xF, voice, a1, a2); }
+    int SoundCmd_MidiSetTrackVolume(uint8_t voice, int volume, uint16_t a2) { return voiceCommand<int32_t>(0x10, voice, volume, a2); }
+    int SoundCmd_MidiSetTempo(uint8_t voice, uint16_t a1, uint16_t a2) { return voiceCommand<uint16_t>(0x11, voice, a1, a2); }
 
     // Tells the driver the disc is busy (1) or free (0); only the command and that byte are written.
-    int SoundCmd_SetDiscBusy(uint32_t busy)
+    int SoundCmd_SetLoadPause(uint32_t busy)
     {
         const int32_t index = globals::soundCmdIndex.get();
         const uint32_t entry = entryAt(index);
@@ -193,10 +193,10 @@ namespace mm
         return advance(index);
     }
 
-    // Removes the PlayB commands (3) not yet sent from the ring, moving the later entries up over them, and sets
+    // Removes the WavePlay commands (3) not yet sent from the ring, moving the later entries up over them, and sets
     // the write index after the last one kept. It matches the voice against byte 3 of the command word, which is
-    // 0 for every command, rather than the voice byte at +0x12: called with 0, it drops every queued PlayB.
-    void SoundCmd_CancelPlayB(char voice)
+    // 0 for every command, rather than the voice byte at +0x12: called with 0, it drops every queued WavePlay.
+    void SoundCmd_CancelWavePlay(char voice)
     {
         const int32_t end = globals::soundCmdIndex.get();
         int32_t kept = globals::soundCmdSent.get();
@@ -222,25 +222,25 @@ namespace mm
         globals::soundCmdIndex.set(kept);
     }
 
-    PORT_FN(SoundCmd_01);
-    PORT_FN(SoundCmd_02);
-    PORT_FN(SoundCmd_02_Zero);
-    PORT_FN(SoundCmd_PlayB);
-    PORT_FN(SoundCmd_StopA);
-    PORT_FN(SoundCmd_PlayA);
-    PORT_FN(SoundCmd_SetVolumeLRA);
-    PORT_FN(SoundCmd_SetVolumeA);
-    PORT_FN(SoundCmd_SetPitchA);
-    PORT_FN(SoundCmd_LoadBank);
-    PORT_FN(SoundCmd_StopSequence);
-    PORT_FN(SoundCmd_PlaySequence);
-    PORT_FN(SoundCmd_StopB);
-    PORT_FN(SoundCmd_FadeB);
-    PORT_FN(SoundCmd_0F);
-    PORT_FN(SoundCmd_SetVolumeB);
-    PORT_FN(SoundCmd_11);
-    PORT_FN(SoundCmd_SetDiscBusy);
-    PORT_FN(SoundCmd_CancelPlayB);
+    PORT_FN(SoundCmd_WaveOpen);
+    PORT_FN(SoundCmd_WaveClose);
+    PORT_FN(SoundCmd_WaveClose0);
+    PORT_FN(SoundCmd_WavePlay);
+    PORT_FN(SoundCmd_WaveStop);
+    PORT_FN(SoundCmd_WaveFade);
+    PORT_FN(SoundCmd_WaveSetVolume);
+    PORT_FN(SoundCmd_WaveSetTrackVolume);
+    PORT_FN(SoundCmd_WaveSetPitch);
+    PORT_FN(SoundCmd_MidiOpen);
+    PORT_FN(SoundCmd_MidiClose);
+    PORT_FN(SoundCmd_MidiPlay);
+    PORT_FN(SoundCmd_MidiStop);
+    PORT_FN(SoundCmd_MidiFade);
+    PORT_FN(SoundCmd_MidiSetVolume);
+    PORT_FN(SoundCmd_MidiSetTrackVolume);
+    PORT_FN(SoundCmd_MidiSetTempo);
+    PORT_FN(SoundCmd_SetLoadPause);
+    PORT_FN(SoundCmd_CancelWavePlay);
 
     // Sends the queued sound commands to the IOP driver, one per call and only while the RPC client is idle. The driver's status
     // block (0x20B7C0) names the sequence slots (+4), effect voices (+8) and stops (+0x18) it has finished with, which leave the

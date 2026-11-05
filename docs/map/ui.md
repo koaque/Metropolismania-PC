@@ -123,7 +123,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x0015FC50` | `void mm_MenuWin_Opening(MenuWin *menuwin)` | 68 | indirect | state 1: Step(0.1), then active |
 | `0x0015FCA0` | `MenuWin *mm_MenuWin_dtor(MenuWin *menuwin, int16_t deleteFlag)` | 124 | yes | vtable 0x1BCF80, deletes the list menu, base destructor |
 | `0x0015FD20` | `MenuWin *mm_MenuWin_ctor(MenuWin *menuwin)` | 76 | no | base constructor, vtable 0x1BCF80 |
-| `0x0015FE30` | `int mm_Laptop_CheckOpen(Markers *markers, CityScene *city, int a2)` | 212 | no | the building markers' Circle check (a Markers method): while Circle alone (0x20) is held in city mode 1 (and a2) hides the cursor and shows the markers; hides them again on release |
+| `0x0015FE30` | `int mm_Markers_CheckCircle(Markers *markers, CityScene *city, int a2)` | 212 | no | the building markers' Circle check (a Markers method): while Circle alone (0x20) is held in city mode 1 (and a2) hides the cursor and shows the markers; hides them again on release |
 | `0x00161F00` | `int mm_LoadingScreen_Update(LoadingScreen *loading, int fadeIn)` | 604 | no | loading screen frame: sprite circling or pulsing, background and sprite drawn, fade in or out by 4 (2 while fading, then 0 or 1), text once clear |
 | `0x00162160` | `int mm_LoadingScreen_SetText(LoadingScreen *loading, char *text)` | 12 | no | text box text |
 | `0x00162170` | `void mm_LoadingScreen_SetTextPos(LoadingScreen *loading, int x, int y)` | 28 | no | text box position (screen coordinates) |
@@ -153,11 +153,11 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x0016D1F0` | `void mm_Notice_Show(Notice *notice, int id)` | 180 | no | notice a1 from the table at 0x1B81E0 ("A bit hungry." ...), 300 frames |
 | `0x0016D2B0` | `Notice *mm_Notice_dtor(Notice *notice, int16_t deleteFlag)` | 124 | yes | deletes its two text boxes |
 | `0x0016D330` | `Notice *mm_Notice_ctor(Notice *notice)` | 208 | yes | creates its two text boxes |
-| `0x0016D400` | `int mm_SoundTest_BgmPage(SceneA *scene, uint32_t a1, uint32_t a2, uint32_t a3)` | 936 | no | sound test BGM page: loads banks, plays/stops sequences |
-| `0x0016D7B0` | `int mm_SoundTest_SePage(SceneA *scene, uint32_t a1, uint32_t a2, uint32_t a3)` | 760 | no | sound test SE page: plays effects with distance/pan |
-| `0x0016DAB0` | `int mm_SoundTest_Update(SceneA *scene)` | 1176 | no | "*** Sound Test ***" screen |
-| `0x0016DF50` | `void mm_SoundTest_BgmText(SceneA *scene)` | 284 | no | BGM page text ("BGM No:") |
-| `0x0016E070` | `void mm_SoundTest_SeText(SceneA *scene)` | 508 | no | SE page text ("SE No:", "R1/R2 Distance(+/-)") |
+| `0x0016D400` | `int mm_SoundTest_BgmPage(TitleScene *scene, uint32_t a1, uint32_t a2, uint32_t a3)` | 936 | no | sound test BGM page: loads banks, plays/stops sequences |
+| `0x0016D7B0` | `int mm_SoundTest_SePage(TitleScene *scene, uint32_t a1, uint32_t a2, uint32_t a3)` | 760 | no | sound test SE page: plays effects with distance/pan |
+| `0x0016DAB0` | `int mm_SoundTest_Update(TitleScene *scene)` | 1176 | no | "*** Sound Test ***" screen |
+| `0x0016DF50` | `void mm_SoundTest_BgmText(TitleScene *scene)` | 284 | no | BGM page text ("BGM No:") |
+| `0x0016E070` | `void mm_SoundTest_SeText(TitleScene *scene)` | 508 | no | SE page text ("SE No:", "R1/R2 Distance(+/-)") |
 | `0x001714A0` | `int mm_TownPages_SelectedEntry(TownPages *pages)` | 440 | no | (provisional) resident index under the cursor (+0x5C) on the current page (+0x2C) |
 | `0x00171660` | `int mm_TownPages_ClampCursor(TownPages *pages, int cursor, int direction)` | 180 | no | cursor 0..10 limited by the entries on the page (+0x40); 10 = the CLOSE item |
 | `0x00171720` | `void mm_TownPages_BuildIndex(TownPages *pages)` | 632 | yes | (provisional) allocates the occupation table (count 0x1BDA90) and fills it from known families |

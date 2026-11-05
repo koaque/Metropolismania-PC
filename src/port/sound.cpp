@@ -74,11 +74,11 @@ namespace mm
             {
                 globals::bgmPlaying.set(0);
                 globals::bgmFadeCounter.set(0);
-                SoundCmd_StopB(15, 0);
+                SoundCmd_MidiStop(15, 0);
             }
             else if (bgmFade % 10 == 0)
             {
-                SoundCmd_SetVolumeB(15, bgmFade * 3 * 64 / 100, 0);
+                SoundCmd_MidiSetTrackVolume(15, bgmFade * 3 * 64 / 100, 0);
             }
         }
         else if (globals::bgmPlaying.get() != 0)
@@ -94,7 +94,7 @@ namespace mm
             if (globals::clockStopped.get() != quiet)
             {
                 globals::clockStopped.set(quiet);
-                SoundCmd_SetVolumeB(15, quiet ? 0x80 : 0xC0, 0);
+                SoundCmd_MidiSetTrackVolume(15, quiet ? 0x80 : 0xC0, 0);
             }
         }
 
@@ -106,7 +106,7 @@ namespace mm
             if (seFade <= 0)
             {
                 Se_SetEnabled(0, 1);
-                SoundCmd_CancelPlayB(0);
+                SoundCmd_CancelWavePlay(0);
             }
         }
 
@@ -185,7 +185,7 @@ namespace mm
         for (uint32_t slot = 0; slot < 4; ++slot)
         {
             const int names = static_cast<int>(0x001B2E20u + 0x30u * slot);
-            SoundCmd_LoadBank(slot & 0xFFu, names, names + 0x10, names + 0x20, 0);
+            SoundCmd_MidiOpen(slot & 0xFFu, names, names + 0x10, names + 0x20, 0);
         }
     }
 
@@ -194,12 +194,12 @@ namespace mm
     void Sound_ResetVoices(int bankSet)
     {
         const int names = 0x1B2970 + bankSet * 0x20;
-        SoundCmd_01(0, 0, names, names + 0x10, 0);
+        SoundCmd_WaveOpen(0, 0, names, names + 0x10, 0);
         for (uint32_t voice = 0; voice < 16; ++voice)
-            SoundCmd_SetVolumeA(static_cast<uint8_t>(voice), 0xFFF, 0);
+            SoundCmd_WaveSetTrackVolume(static_cast<uint8_t>(voice), 0xFFF, 0);
         for (uint32_t voice = 0; voice < 15; ++voice)
-            SoundCmd_SetVolumeB(static_cast<uint8_t>(voice), 0x100, 0);
-        SoundCmd_SetVolumeB(15, 0xC0, 0);
+            SoundCmd_MidiSetTrackVolume(static_cast<uint8_t>(voice), 0x100, 0);
+        SoundCmd_MidiSetTrackVolume(15, 0xC0, 0);
         for (uint32_t voice = 0; voice < 31; ++voice)
             port::store<uint8_t>(globals::kSeVoices + 0x30u * voice, 0xFF);
         globals::seRequestCount.set(0);
@@ -216,10 +216,10 @@ namespace mm
             const auto clamp = [](int volume) { return volume < 1 ? 1 : (volume > 0x3FFF ? 0x3FFF : volume); };
             const int left = clamp(port::load<int32_t>(v + 0x14u) + offset);
             const int right = clamp(port::load<int32_t>(v + 0x18u) + offset);
-            SoundCmd_SetVolumeLRA(static_cast<uint8_t>(voice), left, right, 0);
+            SoundCmd_WaveSetVolume(static_cast<uint8_t>(voice), left, right, 0);
         }
         if ((port::load<uint8_t>(v + 0x1Cu) & 2u) != 0)
-            SoundCmd_SetPitchA(static_cast<uint8_t>(voice), port::load<uint16_t>(v + 0xAu), 0);
+            SoundCmd_WaveSetPitch(static_cast<uint8_t>(voice), port::load<uint16_t>(v + 0xAu), 0);
     }
 
     // Music table entries 3..12 at 0x1F8120: (track id, enabled), id 0xFF = free. Sets or adds track slot + 6
@@ -249,7 +249,7 @@ namespace mm
         if (globals::bgmState.get() == 0)
         {
             port::store<uint8_t>(0x001BDCF0u, static_cast<uint8_t>(found - 1));
-            SoundCmd_FadeB(15, 0, 200, 0);
+            SoundCmd_MidiFade(15, 0, 200, 0);
         }
         else if ((port::load<uint8_t>(0x001BDCF0u) & 0x80u) == 0)
             port::store<uint8_t>(0x001BDCF0u, static_cast<uint8_t>(found + 0x7F));
@@ -302,7 +302,7 @@ namespace mm
             mood = 2;
         if (globals::bgmState.get() < 3 && globals::bgmState.get() != mood)
         {
-            SoundCmd_FadeB(15, 0, 200, 0);
+            SoundCmd_MidiFade(15, 0, 200, 0);
             globals::bgmState.set(mood);
         }
         const bool sequenceOver = (status[1] & 0x8000u) != 0;
@@ -318,15 +318,15 @@ namespace mm
         const auto tempo = [](uint32_t bank) { return port::load<int32_t>(globals::kBgmTempos + 4u * bank); };
         if (CityScene_GetMode(globals::soundCity.get()) == 7 && globals::bgmState.get() == 0 && globals::bgmPlayedState.get() == 0)
         {
-            SoundCmd_0F(15, tempo(trackBank(globals::bgmTrack.get())), 0);
-            SoundCmd_PlaySequence(15, 7, 1, 0, 1);
+            SoundCmd_MidiSetVolume(15, tempo(trackBank(globals::bgmTrack.get())), 0);
+            SoundCmd_MidiPlay(15, 7, 1, 0, 1);
             globals::bgmStarted.set(1);
             return;
         }
         if (globals::bgmBankLoaded.get() != 0)
         {
             globals::bgmBankLoaded.set(0);
-            SoundCmd_StopSequence(7, 0);
+            SoundCmd_MidiClose(7, 0);
         }
         uint32_t bank = 0xFF;
         uint8_t loop = 1;
@@ -354,9 +354,9 @@ namespace mm
         if (bank == 0xFF)
             return;
         const uint32_t names = globals::kBgmBanks + 0x30u * bank;
-        SoundCmd_LoadBank(7, static_cast<int>(names), static_cast<int>(names + 0x10u), static_cast<int>(names + 0x20u), 0);
-        SoundCmd_0F(15, tempo(bank), 0);
-        SoundCmd_PlaySequence(15, 7, loop, 0, 1);
+        SoundCmd_MidiOpen(7, static_cast<int>(names), static_cast<int>(names + 0x10u), static_cast<int>(names + 0x20u), 0);
+        SoundCmd_MidiSetVolume(15, tempo(bank), 0);
+        SoundCmd_MidiPlay(15, 7, loop, 0, 1);
         globals::bgmStarted.set(1);
         globals::bgmBankLoaded.set(1);
         globals::bgmPlayedState.set(globals::bgmState.get());
@@ -620,8 +620,8 @@ namespace mm
     // nobody asked for. A sound's owned voices count towards its limit; a request of a sound at its limit or
     // cooling down is skipped, else it starts the cooldown and tries each voice in the sound's list (below 200
     // in group A, else B), and counts once if any took. Unrequested voices run down their hold frames and are
-    // then stopped, except owned ones: group A through mm_SoundCmd_PlayA(voice, 0, 0, 0x800, 0x800, 0), group
-    // B through mm_SoundCmd_StopB; free group A voices run down their rest. On ambience phase 3 every held
+    // then stopped, except owned ones: group A through mm_SoundCmd_WaveFade(voice, 0, 0, 0x800, 0x800, 0), group
+    // B through mm_SoundCmd_MidiStop; free group A voices run down their rest. On ambience phase 3 every held
     // voice takes its gathered volumes (group A also the pitch, whose change flag replaces the volume's). The
     // request list is emptied.
     void Se_AssignVoices()
@@ -680,7 +680,7 @@ namespace mm
             }
             if ((voice.voiceParam & 0x100u) != 0)
                 continue;
-            SoundCmd_PlayA(static_cast<uint8_t>(v), 0, 0, 0x800, 0x800, 0);
+            SoundCmd_WaveFade(static_cast<uint8_t>(v), 0, 0, 0x800, 0x800, 0);
             voice.sound = 0xFF;
         }
         for (int v = 0; v < kGroupB; ++v)
@@ -695,7 +695,7 @@ namespace mm
             }
             if ((voice.voiceParam & 0x100u) != 0)
                 continue;
-            SoundCmd_StopB(static_cast<uint32_t>(v), 0);
+            SoundCmd_MidiStop(static_cast<uint32_t>(v), 0);
             voice.sound = 0xFF;
         }
 
@@ -789,7 +789,7 @@ namespace mm
         {
             const int32_t sum = static_cast<int32_t>(static_cast<uint32_t>(voice.volumeLeft) + static_cast<uint32_t>(voice.volumeRight));
             const int32_t volume = sum / 2 + voice.volumeOffset;
-            SoundCmd_0F(static_cast<uint8_t>(index), volume < 1 ? 1 : (volume >= 0x4000 ? 0x3FFF : volume), 0);
+            SoundCmd_MidiSetVolume(static_cast<uint8_t>(index), volume < 1 ? 1 : (volume >= 0x4000 ? 0x3FFF : volume), 0);
         }
 
         // Opcodes: 0 end (a kept sound is stopped), 1 start the note, 2 wait while sounding, 3 stop, 4 wait frames,
@@ -804,14 +804,14 @@ namespace mm
             case 0:
                 if ((voice.voiceParam & 0x100u) != 0)
                 {
-                    SoundCmd_PlayA(id, 0, 0, 0x800, 0x800, 0);
+                    SoundCmd_WaveFade(id, 0, 0, 0x800, 0x800, 0);
                     voice.sound = 0xFF;
                 }
                 return;
             case 1:
                 voice.flags = 3;
                 Se_ApplyVoiceParams(index);
-                SoundCmd_PlayB(index, 0, 0, voice.voice, voice.param0B, scriptNote(step.arg), (voice.voiceParam & 0x100u) != 0 ? 1 : 0, 0);
+                SoundCmd_WavePlay(index, 0, 0, voice.voice, voice.param0B, scriptNote(step.arg), (voice.voiceParam & 0x100u) != 0 ? 1 : 0, 0);
                 ++voice.scriptStep;
                 return;
             case 2:
@@ -821,7 +821,7 @@ namespace mm
                     ++voice.scriptStep;
                 return;
             case 3:
-                SoundCmd_PlayA(id, 0, 0, 0x800, 0x800, 0);
+                SoundCmd_WaveFade(id, 0, 0, 0x800, 0x800, 0);
                 voice.sound = 0xFF;
                 return;
             case 4:
@@ -840,7 +840,7 @@ namespace mm
                 {
                     voice.scriptTimer += 0x100;
                     const uint32_t bend = static_cast<uint32_t>(voice.scriptTimer >> 8) * static_cast<uint32_t>(step.arg >> 8);
-                    SoundCmd_SetPitchA(id, static_cast<uint16_t>(step.op == 6 ? 0u - bend : bend), 0);
+                    SoundCmd_WaveSetPitch(id, static_cast<uint16_t>(step.op == 6 ? 0u - bend : bend), 0);
                     --voice.scriptTimer;
                     if ((voice.scriptTimer & 0xFFu) == 0)
                     {
@@ -850,7 +850,7 @@ namespace mm
                 }
                 break;
             case 8:
-                SoundCmd_PlayA(id, 0, 0, 0x800, 0x800, 0);
+                SoundCmd_WaveFade(id, 0, 0, 0x800, 0x800, 0);
                 ++voice.scriptStep;
                 return;
             case 9:
@@ -881,14 +881,14 @@ namespace mm
             case 0:
                 if ((voice.voiceParam & 0x100u) != 0)
                 {
-                    SoundCmd_StopB(index, 0);
+                    SoundCmd_MidiStop(index, 0);
                     voice.sound = 0xFF;
                 }
                 return;
             case 1:
                 voice.flags = 1;
                 sendVolumeB(index, voice);
-                SoundCmd_PlaySequence(index, static_cast<uint8_t>(voice.voice + 0x38u), scriptNote(step.arg),
+                SoundCmd_MidiPlay(index, static_cast<uint8_t>(voice.voice + 0x38u), scriptNote(step.arg),
                                       (voice.voiceParam & 0x100u) != 0 ? 1 : 0, 0);
                 ++voice.scriptStep;
                 return;
@@ -899,7 +899,7 @@ namespace mm
                     sendVolume();
                 return;
             case 3:
-                SoundCmd_StopB(index, 0);
+                SoundCmd_MidiStop(index, 0);
                 voice.sound = 0xFF;
                 return;
             case 4:
@@ -911,7 +911,7 @@ namespace mm
                 sendVolume();
                 return;
             case 8:
-                SoundCmd_StopB(index, 0);
+                SoundCmd_MidiStop(index, 0);
                 ++voice.scriptStep;
                 return;
             case 9:
@@ -978,16 +978,16 @@ namespace mm
         if (enabled == 0)
         {
             for (uint32_t voice = 0; voice < 16; ++voice)
-                SoundCmd_StopA(voice, 0);
+                SoundCmd_WaveStop(voice, 0);
             for (uint32_t voice = 0; voice < 15; ++voice)
-                SoundCmd_StopB(voice, 0);
+                SoundCmd_MidiStop(voice, 0);
         }
         if (resetVolumes == 0)
             return;
         for (uint32_t voice = 0; voice < 16; ++voice)
-            SoundCmd_SetVolumeA(static_cast<uint8_t>(voice), 0xFFF, 0);
+            SoundCmd_WaveSetTrackVolume(static_cast<uint8_t>(voice), 0xFFF, 0);
         for (uint32_t voice = 0; voice < 15; ++voice)
-            SoundCmd_SetVolumeB(static_cast<uint8_t>(voice), 0x100, 0);
+            SoundCmd_MidiSetTrackVolume(static_cast<uint8_t>(voice), 0x100, 0);
     }
 
     // Entering a city: city sounds start after 5 frames, music voice 15 at 0xC0, the ambience map and listener
@@ -1003,7 +1003,7 @@ namespace mm
             globals::ambienceEnabled.set(0);
             Se_SetEnabled(0, 0);
             Se_SetEnabled(1, 1);
-            SoundCmd_CancelPlayB(0);
+            SoundCmd_CancelWavePlay(0);
             const GuestPtr<SeVoice> voices = voiceSlots();
             for (int v = 0; v < kGroupA + kGroupB; ++v)
                 if (voices[v].sound != 0xFF && voices[v].hold != 0)
@@ -1011,7 +1011,7 @@ namespace mm
             if (globals::bgmBankLoaded.get() != 0)
             {
                 globals::bgmBankLoaded.set(0);
-                SoundCmd_StopSequence(7, 0);
+                SoundCmd_MidiClose(7, 0);
             }
         }
         else
@@ -1022,7 +1022,7 @@ namespace mm
             globals::bgmBankLoaded.set(0);
             globals::ambiencePhase.set(0);
             globals::bgmFadeCounter.set(0);
-            SoundCmd_SetVolumeB(15, 0xC0, 0);
+            SoundCmd_MidiSetTrackVolume(15, 0xC0, 0);
             Se_BuildAmbienceMap();
             Se_UpdateListener();
             globals::bgmTrack.set(0xFF);
@@ -1686,7 +1686,7 @@ namespace mm
     // Stops the music (sequence voice 15) fading over `time`; the mood becomes "fading out".
     void Bgm_FadeOut(int time)
     {
-        SoundCmd_FadeB(15, 0, static_cast<uint16_t>(time), 0);
+        SoundCmd_MidiFade(15, 0, static_cast<uint16_t>(time), 0);
         globals::bgmState.set(4);
     }
 
@@ -1696,19 +1696,19 @@ namespace mm
     {
         if (active == 0)
         {
-            const int result = SoundCmd_FadeB(15, 0, 8, 0);
+            const int result = SoundCmd_MidiFade(15, 0, 8, 0);
             globals::bgmState.set(4);
             return result;
         }
         if (globals::bgmBankLoaded.get() != 0)
         {
             globals::bgmBankLoaded.set(0);
-            SoundCmd_StopB(15, 0);
-            SoundCmd_StopSequence(7, 0);
+            SoundCmd_MidiStop(15, 0);
+            SoundCmd_MidiClose(7, 0);
         }
         globals::bgmPlaying.set(1);
         globals::bgmFadeCounter.set(0);
-        const int result = SoundCmd_SetVolumeB(15, 0xC0, 0);
+        const int result = SoundCmd_MidiSetTrackVolume(15, 0xC0, 0);
         globals::bgmState.set(3);
         return result;
     }
@@ -1721,9 +1721,9 @@ namespace mm
         globals::bgmPlaying.set(enabled);
         globals::bgmFadeCounter.set(0);
         if (enabled == 0)
-            result = SoundCmd_StopB(15, 0);
+            result = SoundCmd_MidiStop(15, 0);
         if (volume != 0)
-            result = SoundCmd_SetVolumeB(15, 0xC0, 0);
+            result = SoundCmd_MidiSetTrackVolume(15, 0xC0, 0);
         return result;
     }
 
@@ -1739,7 +1739,7 @@ namespace mm
             const uint32_t slot = globals::kSeVoices + 0x30u * voice;
             if (port::load<uint8_t>(slot) != id)
                 continue;
-            SoundCmd_PlayA(static_cast<uint8_t>(voice), 0, 0, 0x800, 0x800, 0);
+            SoundCmd_WaveFade(static_cast<uint8_t>(voice), 0, 0, 0x800, 0x800, 0);
             port::store<uint8_t>(slot, 0xFF);
         }
         for (uint32_t voice = 0; voice < 15; ++voice)
@@ -1747,7 +1747,7 @@ namespace mm
             const uint32_t slot = globals::kSeVoices + 0x300u + 0x30u * voice;
             if (port::load<uint8_t>(slot) != id)
                 continue;
-            SoundCmd_StopB(voice & 0xFFu, 0);
+            SoundCmd_MidiStop(voice & 0xFFu, 0);
             port::store<uint8_t>(slot, 0xFF);
         }
         const int count = globals::seRequestCount.get();
@@ -1776,10 +1776,10 @@ namespace mm
         const uint32_t status = static_cast<uint32_t>(Sound_GetStatus());
         for (uint32_t voice = 0; voice < 16; ++voice)
             if ((port::load<uint32_t>(status + 4u) & (1u << voice)) != 0)
-                SoundCmd_StopB(voice & 0xFFu, 0);
+                SoundCmd_MidiStop(voice & 0xFFu, 0);
         for (uint32_t voice = 0; voice < 16; ++voice)
             if ((port::load<uint32_t>(status + 8u) & (1u << voice)) != 0)
-                SoundCmd_StopA(voice & 0xFFu, 0);
+                SoundCmd_WaveStop(voice & 0xFFu, 0);
     }
 
     // Stops sequence slots 7 down to 0; the result is the last command's.
@@ -1787,7 +1787,7 @@ namespace mm
     {
         int result = 0;
         for (int slot = 7; slot >= 0; --slot)
-            result = SoundCmd_StopSequence(static_cast<uint32_t>(slot) & 0xFFu, 0);
+            result = SoundCmd_MidiClose(static_cast<uint32_t>(slot) & 0xFFu, 0);
         return result;
     }
 

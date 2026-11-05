@@ -56,8 +56,9 @@ struct BuildingTypeVtable {
     uint32_t groundTexture;    /* +0x1C non-zero: the tile gets a ground texture (mm_Terrain_DrawPatch) */
     uint32_t acceptsOn;        /* +0x20 whether the type can be placed on an object (mm_Map_CheckPlacement) */
     uint32_t isOpen;           /* +0x24 opening hours (mm_Bldg_IsOpen) */
-    uint32_t collideB;         /* +0x28 the nearest hit and its distance (mm_Player_NearestObject) */
-    uint32_t collideA;         /* +0x2C whether a circle touches the object (mm_Player_CollideObjects) */
+    uint32_t nearestHit;       /* +0x28 the nearest hit and its distance (mm_Player_NearestObject) */
+    uint32_t floorBelow;       /* +0x2C whether a segment from a point down crosses the object, the crossing out (the
+                                  surface the player stands on, mm_Player_FloorBelow) */
     uint32_t rayHit;           /* +0x30 whether a ray hits the object (mm_MapObj_RayHit) */
     uint32_t animate;          /* +0x34 every frame with the time of day (mm_BldgType_CallAll): the ride animations */
 };
@@ -119,12 +120,12 @@ struct MapObject {
     /* +0x18..+0x1B: roads keep two halfwords, buildings four bytes. */
     union {
         struct {
-            uint16_t roadShape;        /* +0x18 bit d = open towards direction d, 5 and 10 straight (added to the model index by
-                                          mm_BldgRoad_Slot1C) */
+            uint16_t roadShape;        /* +0x18 bit d = open towards direction d, 5 and 10 straight (added to the ground texture by
+                                          mm_BldgRoad_GroundTexture) */
             uint16_t roadMesh;         /* +0x1A mesh drawn (0 = none; street lamps and traffic lights by range) */
         };
         struct {
-            uint8_t variant;           /* +0x18 bits 3-7 pick the model variant (mm_Bldg_CollideA); an entrance whose claim was
+            uint8_t variant;           /* +0x18 bits 3-7 pick the model variant (mm_Bldg_FloorBelow); an entrance whose claim was
                                           met counts up to 0x2D from 1 (mm_CityRender_CollectObjects) */
             uint8_t unitShape;         /* +0x19 housing: the unit shape (mm_BldgHousing_UnitAt, table 0x1B14F0) */
             uint8_t style;             /* +0x1A housing: the style, 26 meshes each (mm_BldgHousing_Draw) */
@@ -221,12 +222,12 @@ struct CityMap {
     uint32_t groundPacket;     /* +0x2F68 the program 0x1A5EB0 and groundParams */
     uint32_t sidePackets[2];   /* +0x2F6C per side buffer: the program 0x1A76F0, the parameters and the triangles. The game stores the
                                   first's address in both (mm_Terrain_BuildVu1PacketA), so odd frames draw the even frame's buffer */
-    LayerD *rain;              /* +0x2F74 */
-    LayerE *snow;              /* +0x2F78 */
+    RainLayer *rain;              /* +0x2F74 */
+    SnowLayer *snow;              /* +0x2F78 */
     LayerF *layerF;            /* +0x2F7C */
     LayerG *water;             /* +0x2F80 */
     LayerB *layerB;            /* +0x2F84 */
-    LayerC *placement;         /* +0x2F88 */
+    PlacementLayer *placement;         /* +0x2F88 */
     LayerA *instances;         /* +0x2F8C */
 };
 
@@ -238,7 +239,7 @@ struct BuildingRecord {
                                   4 field, 6 business, 7 office, 8 housing, 9 port, 10 my home, 11 amusement park, 12 ranch,
                                   13 pig farm, 14 small goods, 15 keep-out */
     uint8_t size;              /* +0x21 */
-    uint8_t unk_22;            /* +0x22 */
+    uint8_t groundTexture;     /* +0x22 (BuildingType.groundTexture) */
     uint8_t rule;              /* +0x23 */
     uint16_t flags;            /* +0x24 */
     uint16_t maxStack;         /* +0x26 */
@@ -290,7 +291,7 @@ struct BuildingType {
     uint16_t closeMinute;      /* +0x13E */
     uint16_t capacity;         /* +0x140 */
     uint8_t size;              /* +0x142 footprint in tiles */
-    uint8_t unk_143;
+    uint8_t groundTexture;     /* +0x143 the ground texture of its tiles, 0 = none (mm_BldgType_GroundTexture) */
     uint8_t rule;              /* +0x144 */
     uint8_t category;          /* +0x145 STRTYPE.BIN category */
     uint8_t postGroup;         /* +0x146 group in POSTNAME.BIN (mm_BldgType_GetPostName) */
@@ -551,8 +552,8 @@ struct ClaimThresholds {
     uint16_t low;              /* +0x00 above it the claim shows (band 1) */
     uint16_t high;             /* +0x02 above it band 2 */
     uint8_t step;              /* +0x04 meter rise per evaluation */
-    uint8_t switchFactor;      /* +0x05 a building takes the neighbours' claim when its meter times this is below their weighted meters (mm_BldgClaims_EvalD) */
-    uint8_t spreadStep;        /* +0x06 meter rise per weight of a claiming neighbour (mm_BldgClaims_EvalA) */
+    uint8_t switchFactor;      /* +0x05 a building takes the neighbours' claim when its meter times this is below their weighted meters (mm_BldgClaims_WeighNeighbours) */
+    uint8_t spreadStep;        /* +0x06 meter rise per weight of a claiming neighbour (mm_BldgClaims_Spread) */
     uint8_t holdTime;          /* +0x07 claim timer once the meter maxes out */
 };
 

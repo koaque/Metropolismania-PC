@@ -27,12 +27,12 @@ From the city scene's draw step, in the order the GS sees it:
 | `mm_Sky_Draw` | the three sky packets in the city camera (+0x310, +0x470, +0x3D0) | none (GIF) |
 | `mm_Packet_Draw(camera)` | the camera block to VU1 0x00-0x11 | none |
 | `mm_Terrain_Draw` | fills the terrain quad and cliff-side buffers for this frame (CPU) | none yet |
-| `mm_CityRender_DrawOverlays` | terrain passes: base ground, cliff sides, layer B, layer F | 0x1A5EB0, 0x1A76F0, 0x1AA340, 0x1A91C0 |
+| `mm_CityRender_DrawTerrain` | terrain passes: base ground, cliff sides, layer B, layer F | 0x1A5EB0, 0x1A76F0, 0x1AA340, 0x1A91C0 |
 | light set packet 1, `mm_CityRender_CollectObjects` | buildings and objects on visible tiles, as model instances | 0x1A4780 |
 | light set packet 0, `mm_CityRender_UpdatePeople`, `mm_Player_Draw` | people and the player, as model instances | 0x1A3C80 |
 | `mm_CityRender_DrawWater` | the water (layer G) | 0x1A6440 |
-| `mm_CityRender_DrawSky` (weather 2 or 3 only) | rain (layer D) or snow (layer E) | 0x1A8A00 + 0x1A8E20, or 0x1A9A90 + 0x1A9F10 |
-| `mm_CityRender_DrawBuildings` x2 | the placement highlight and marker (layer C), only while placing | 0x1A7B30, 0x1A8330 |
+| `mm_CityRender_DrawWeather` (weather 2 or 3 only) | rain (layer D) or snow (layer E) | 0x1A8A00 + 0x1A8E20, or 0x1A9A90 + 0x1A9F10 |
+| `mm_CityRender_DrawPlacement` x2 | the placement highlight and marker (layer C), only while placing | 0x1A7B30, 0x1A8330 |
 | `mm_CityRender_DrawInstanceLayer` | layer A's instances | 0x1A8330 |
 | HUD, minimap, windows | sprites and text | none (GIF) |
 
@@ -91,7 +91,7 @@ The ground of the whole visible city is one buffer of quads, filled on the CPU e
 |---|---|---|
 | 0x01 | the object's type gives a ground texture | base ground (0x1A5EB0, mask 1); rain and snow ground passes (mask 1) |
 | 0x02 | a corner rises above the level passed in | the water, most likely: layer G's parameters carry mask 2 (VU1 0x3A.w); its program's test is not read yet |
-| 0x04 | the tile is in the placement rectangle (`mm_LayerC_InTileRect`) | placement highlight: layer C's parameters carry mask 4 (VU1 0x22.w); its program's test is not read yet |
+| 0x04 | the tile is in the placement rectangle (`mm_PlacementLayer_InTileRect`) | placement highlight: layer C's parameters carry mask 4 (VU1 0x22.w); its program's test is not read yet |
 | 0x08 | always | |
 | 0x10 | the tile and its first object both have flag 0x10 | layer F (0x1A91C0, mask 0x10) |
 | 0x20, 0x40 | a corner is above 0 on a type without flag 1: 0x20 when the tile has flag 0x20, else 0x40 | layer B (0x1AA340): its first pass mask 0x20, its second pass mask 0x40 with a texture of its own |
@@ -168,18 +168,18 @@ Read from the loader (`mm_A3DObject_Load`, `mm_A3DObject_LoadAsync`, `mm_A3D_Rel
 * The water program's quad selection and wave formula, and 0x1A4780's second part, have not been read in detail.
 * Whether the water and the placement highlight programs test the masks their parameters carry (2 and 4), and what tile flags 0x10 and 0x20 mean.
 
-## Names to fix (plan R1 step 3)
+## Names (plan R1 step 3)
+
+Renamed after this map: layer C is `PlacementLayer`, D `RainLayer` and E `SnowLayer` (`mm_*Layer_*`);
+`mm_CityRender_DrawTerrain` (was DrawOverlays), `mm_CityRender_DrawWeather` (DrawSky), `mm_CityRender_DrawPlacement`
+(DrawBuildings), `mm_RainLayer_Draw` (LayerD_DrawSkyByClock), `mm_PlacementLayer_Draw` (LayerC_DrawBuildings),
+`mm_PlacementLayer_Set` (Terrain_SetVec), `mm_A3D_GetAnimLength` (A3D_GetMeshField0C), `mm_LayerA_BeginFrame`
+(LayerA_SetSource).
+
+Still to name:
 
 | Now | What it is |
 |---|---|
-| `mm_CityRender_DrawOverlays` | draws the terrain: base ground, cliff sides, layers B and F |
-| `mm_CityRender_DrawSky` | draws the weather: rain (layer D) or snow (layer E) |
-| `mm_LayerD_*`, `mm_LayerD_DrawSkyByClock` | the rain layer |
-| `mm_LayerE_*` | the snow layer |
-| `mm_LayerC_DrawBuildings` | draws the placement highlight and marker |
-| `mm_CityRender_DrawBuildings` | the same, for passes 0 and 1 |
 | `mm_LightSet_BuildPackets`' packets A and B | the two model programs' set-up packets (with and without the second part), chosen by `mm_Packet2_Draw` |
-| `mm_A3D_GetMeshField0C` | the length of a model's animation (its first track's last word) |
 | `mm_LightSet_SetField20` | sets word 8 of an object's first packet; called on the camera, where that word is the fog colour (GS FOGCOL) |
-| `mm_Terrain_SetVec` | sets the placement highlight: its colour, its rectangle and its mode (1 the highlight, 2 the marker) |
-| `mm_LayerA_SetSource` | starts the frame's buffer of layer A (picks it and empties it) |
+| layers A, B and F | what A's instances show is not known; B and F are terrain passes over tiles with flags 0x20/0x40 and 0x10 |

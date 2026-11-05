@@ -21,7 +21,7 @@ namespace mm
     // Whether the segment from `point` down by `lift` crosses a triangle of the mesh (the matrix puts the mesh in
     // the world): of the crossings the one with the lowest y wins and is stored in *hit. The mesh number counts two
     // words of the blob's table per mesh.
-    int Collide_SegmentA(int, int mesh, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit, ps2f lift)
+    int Collide_MeshFloorBelow(int, int mesh, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit, ps2f lift)
     {
         port::GuestFrame<0xF0> frame;
         const uint32_t sp = frame.ptr().address;
@@ -37,7 +37,7 @@ namespace mm
             transformVertex(matrix, triangle, sp + 0xA0u);
             transformVertex(matrix, triangle + 0x10u, sp + 0xB0u);
             transformVertex(matrix, triangle + 0x20u, sp + 0xC0u);
-            if (Collide_RayTriangleB(point, GuestPtr<Vec4>{sp + 0xD0u}, GuestPtr<Vec4>{sp + 0xA0u}, GuestPtr<Vec4>{sp + 0xB0u},
+            if (Collide_SegmentTriangle(point, GuestPtr<Vec4>{sp + 0xD0u}, GuestPtr<Vec4>{sp + 0xA0u}, GuestPtr<Vec4>{sp + 0xB0u},
                                      GuestPtr<Vec4>{sp + 0xC0u}, GuestPtr<Vec4>{sp + 0xE0u}) != 0)
             {
                 const ps2f y(port::load<float>(sp + 0xE4u));
@@ -55,7 +55,7 @@ namespace mm
 
     // The same for a ray from `point` along the triangles' normals within `range`: the nearest crossing's distance
     // is left in *distance (100 when none).
-    int Collide_SegmentB(int, int mesh, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance,
+    int Collide_MeshNearestHit(int, int mesh, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance,
                          ps2f range)
     {
         port::GuestFrame<0x100> frame;
@@ -70,7 +70,7 @@ namespace mm
             transformVertex(matrix, triangle, sp + 0xB0u);
             transformVertex(matrix, triangle + 0x10u, sp + 0xC0u);
             transformVertex(matrix, triangle + 0x20u, sp + 0xD0u);
-            if (Collide_RayTriangleA(point, GuestPtr<Vec4>{sp + 0xB0u}, GuestPtr<Vec4>{sp + 0xC0u}, GuestPtr<Vec4>{sp + 0xD0u},
+            if (Collide_NormalRayTriangle(point, GuestPtr<Vec4>{sp + 0xB0u}, GuestPtr<Vec4>{sp + 0xC0u}, GuestPtr<Vec4>{sp + 0xD0u},
                                      GuestPtr<Vec4>{sp + 0xE0u}, GuestPtr<ps2f>{sp + 0xFCu}, range) != 0)
             {
                 const ps2f found(port::load<float>(sp + 0xFCu));
@@ -86,6 +86,6 @@ namespace mm
         return ps2f(port::load<float>(distance.address)) == ps2f(100.0f) ? 0 : 1;
     }
 
-    PORT_FN(Collide_SegmentA);
-    PORT_FN(Collide_SegmentB);
+    PORT_FN(Collide_MeshFloorBelow);
+    PORT_FN(Collide_MeshNearestHit);
 }

@@ -1,15 +1,15 @@
 /* Widget-derived classes (see Widget in 10_game.h), at their allocation sizes; fields replace the
    data arrays as functions are ported. */
 
-typedef struct SceneB SceneB;
+typedef struct StageScene StageScene;
 typedef struct MsgWin MsgWin;
 typedef struct TalkCard TalkCard;
 typedef struct TalkMoney TalkMoney;
 typedef struct TalkConv TalkConv;
 
-/* Scene B: the stage transition (0x104 bytes, mm_SceneB_*): title cards, approval rate, the boss's briefing, the mission
+/* The stage scene: the stage transition (0x104 bytes, mm_StageScene_*): title cards, approval rate, the boss's briefing, the mission
    movie and the credits text, one step of the action table 0x1B07C0 at a time. A stage object with a widget at +4. */
-struct SceneB {
+struct StageScene {
     uint32_t unk_00;
     Widget widget;             /* +0x04 vtable 0x1BCF18 */
     Camera *camera;            /* +0x10 */
@@ -25,11 +25,11 @@ struct SceneB {
     int32_t unk_30;
     int32_t phase;             /* +0x34 the sub-step within the step */
     int32_t fade;              /* +0x38 the screen's fade, 0 to 0x80 */
-    int32_t scroll;            /* +0x3C the credits text's scroll (mm_SceneB_ShowTelop) */
+    int32_t scroll;            /* +0x3C the credits text's scroll (mm_StageScene_ShowTelop) */
     float animTime;            /* +0x40 the boss's animation frame */
     int32_t animation;         /* +0x44 the boss's animation */
     int32_t unk_48;            /* +0x48 -1 at the briefing's start, 2 after its text */
-    int32_t briefingIndex;     /* +0x4C the message within the phase (mm_SceneB_BuildBriefingText) */
+    int32_t briefingIndex;     /* +0x4C the message within the phase (mm_StageScene_BuildBriefingText) */
     int32_t briefingPhase;     /* +0x50 0 the stage's special messages, 1 its general text, 2 the goal */
     A3DObject *office;         /* +0x54 the office model (0x1F3B2C) the briefing is drawn in */
     MsgWin *window;            /* +0x58 the briefing's message window */

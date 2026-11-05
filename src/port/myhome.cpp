@@ -51,7 +51,7 @@ namespace mm
             vu0::applyMatrix(matrix, GuestPtr<Vec4>{triangle}, GuestPtr<Vec4>{sp + 0xA0u});
             vu0::applyMatrix(matrix, GuestPtr<Vec4>{triangle + 0x10u}, GuestPtr<Vec4>{sp + 0xB0u});
             vu0::applyMatrix(matrix, GuestPtr<Vec4>{triangle + 0x20u}, GuestPtr<Vec4>{sp + 0xC0u});
-            if (Collide_RayTriangleB(GuestPtr<Vec4>{sp + 0xD0u}, GuestPtr<Vec4>{view.address + 0x270u}, GuestPtr<Vec4>{sp + 0xA0u},
+            if (Collide_SegmentTriangle(GuestPtr<Vec4>{sp + 0xD0u}, GuestPtr<Vec4>{view.address + 0x270u}, GuestPtr<Vec4>{sp + 0xA0u},
                                      GuestPtr<Vec4>{sp + 0xB0u}, GuestPtr<Vec4>{sp + 0xC0u}, GuestPtr<Vec4>{sp + 0xE0u}) != 0)
             {
                 const ps2f y(port::load<float>(sp + 0xE4u));
@@ -84,7 +84,7 @@ namespace mm
             vu0::applyMatrix(matrix, GuestPtr<Vec4>{triangle}, GuestPtr<Vec4>{sp + 0xA0u});
             vu0::applyMatrix(matrix, GuestPtr<Vec4>{triangle + 0x10u}, GuestPtr<Vec4>{sp + 0xB0u});
             vu0::applyMatrix(matrix, GuestPtr<Vec4>{triangle + 0x20u}, GuestPtr<Vec4>{sp + 0xC0u});
-            if (Collide_RayTriangleA(GuestPtr<Vec4>{view.address + 0x270u}, GuestPtr<Vec4>{sp + 0xA0u}, GuestPtr<Vec4>{sp + 0xB0u},
+            if (Collide_NormalRayTriangle(GuestPtr<Vec4>{view.address + 0x270u}, GuestPtr<Vec4>{sp + 0xA0u}, GuestPtr<Vec4>{sp + 0xB0u},
                                      GuestPtr<Vec4>{sp + 0xC0u}, GuestPtr<Vec4>{sp + 0xD0u}, GuestPtr<ps2f>{sp + 0xECu}, F(0x3E4CCCCDu)) != 0)
             {
                 const ps2f found(port::load<float>(sp + 0xECu));

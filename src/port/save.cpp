@@ -44,7 +44,7 @@ namespace mm
     }
 
     // The header of the index-th save found over both cards (8 slots per card), and that save's card.
-    int McManager_FindSlotA(GuestPtr<McManager>, int index, GuestPtr<int32_t> card)
+    int McManager_GetSaveHeader(GuestPtr<McManager>, int index, GuestPtr<int32_t> card)
     {
         int found = 0;
         for (int slot = 0; slot < 16; ++slot)
@@ -479,7 +479,7 @@ namespace mm
     PORT_FN(SaveFile_Open);
     PORT_FN(McManagerSub_ctor);
     PORT_FN(McManager_HasAnySave);
-    PORT_FN(McManager_FindSlotA);
+    PORT_FN(McManager_GetSaveHeader);
     PORT_FN(McManager_FindSave);
     PORT_FN(McManager_BuildSaveHeader);
     PORT_FN(McManager_GetCardStatus);
@@ -600,7 +600,7 @@ namespace mm
 
     // The save slot number `index` among those with entries and a title (16 slots, 8 per card): its folder name,
     // and its card.
-    int McManager_FindSlotB(GuestPtr<McManager>, int index, GuestPtr<int32_t> card)
+    int McManager_GetSaveFolder(GuestPtr<McManager>, int index, GuestPtr<int32_t> card)
     {
         int found = 0;
         for (int i = 0; i < 16; ++i)
@@ -634,7 +634,7 @@ namespace mm
     PORT_FN(MemberStatus_Advance);
     PORT_FN(MemberStatus_OnLevel12);
     PORT_FN(MemberMeters_Reset);
-    PORT_FN(McManager_FindSlotB);
+    PORT_FN(McManager_GetSaveFolder);
     PORT_FN(McManager_IsCardUsable);
 
     // ---- member status table (batch 39)

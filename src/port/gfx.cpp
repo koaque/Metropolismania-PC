@@ -22,7 +22,7 @@ namespace mm
     using packet::tagAddress;
 
     // The length of animation `animation` of the model: its first track's length word.
-    ps2f A3D_GetMeshField0C(GuestPtr<A3DObject> model, int animation)
+    ps2f A3D_GetAnimLength(GuestPtr<A3DObject> model, int animation)
     {
         const GuestPtr<A3DTrack> tracks{model->animations[animation]};
         return tracks->length;
@@ -123,30 +123,30 @@ namespace mm
         return layer;
     }
 
-    GuestPtr<LayerC> LayerC_ctor(GuestPtr<LayerC> layer)
+    GuestPtr<PlacementLayer> PlacementLayer_ctor(GuestPtr<PlacementLayer> layer)
     {
         BaseObject_ctor(static_cast<int>(layer.address));
-        LayerC_InitParams(layer);
-        PacketBuf_Seek(static_cast<int>(LayerC_BuildPacket(layer, GuestPtr<uint32_t>{static_cast<uint32_t>(PacketBuf_Tell())}).address));
+        PlacementLayer_InitParams(layer);
+        PacketBuf_Seek(static_cast<int>(PlacementLayer_BuildPacket(layer, GuestPtr<uint32_t>{static_cast<uint32_t>(PacketBuf_Tell())}).address));
         layer->marker = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B1Cu)};
         return layer;
     }
 
-    GuestPtr<LayerD> LayerD_ctor(GuestPtr<LayerD> layer, int buffers)
+    GuestPtr<RainLayer> RainLayer_ctor(GuestPtr<RainLayer> layer, int buffers)
     {
         BaseObject_ctor(static_cast<int>(layer.address));
-        LayerD_InitParams(layer);
+        RainLayer_InitParams(layer);
         const GuestPtr<uint32_t> packet{static_cast<uint32_t>(PacketBuf_Tell())};
-        PacketBuf_Seek(static_cast<int>(LayerD_BuildPacket(layer, packet, GuestPtr<int32_t>{static_cast<uint32_t>(buffers)}).address));
+        PacketBuf_Seek(static_cast<int>(RainLayer_BuildPacket(layer, packet, GuestPtr<int32_t>{static_cast<uint32_t>(buffers)}).address));
         return layer;
     }
 
-    GuestPtr<LayerE> LayerE_ctor(GuestPtr<LayerE> layer, int buffers)
+    GuestPtr<SnowLayer> SnowLayer_ctor(GuestPtr<SnowLayer> layer, int buffers)
     {
         BaseObject_ctor(static_cast<int>(layer.address));
-        LayerE_InitParams(layer);
+        SnowLayer_InitParams(layer);
         const GuestPtr<uint32_t> packet{static_cast<uint32_t>(PacketBuf_Tell())};
-        PacketBuf_Seek(static_cast<int>(LayerE_BuildPacket(layer, packet, GuestPtr<int32_t>{static_cast<uint32_t>(buffers)}).address));
+        PacketBuf_Seek(static_cast<int>(SnowLayer_BuildPacket(layer, packet, GuestPtr<int32_t>{static_cast<uint32_t>(buffers)}).address));
         return layer;
     }
 
@@ -519,20 +519,20 @@ namespace mm
         LayerG_Draw(map->water, static_cast<int>(port::load<uint32_t>(0x001BDCD0u) & 1u), city->waterLevel);
     }
 
-    void CityRender_DrawBuildings(GuestPtr<CityMap> map, int pass)
+    void CityRender_DrawPlacement(GuestPtr<CityMap> map, int pass)
     {
         const uint32_t parity = port::load<uint32_t>(0x001BDCD0u) & 1u;
-        LayerC_DrawBuildings(map->placement, static_cast<int>(map->chunkPackets[parity]), map, pass);
+        PlacementLayer_Draw(map->placement, static_cast<int>(map->chunkPackets[parity]), map, pass);
     }
 
     void Map_SetPlacementHighlight(GuestPtr<CityMap> map, int mode, GuestPtr<int32_t> rect, GuestPtr<uint32_t> colour)
     {
-        Terrain_SetVec(map->placement, mode, rect, colour);
+        PlacementLayer_Set(map->placement, mode, rect, colour);
     }
 
     // The terrain: the base ground pass over this frame's chunk packet, the cliff sides, then layers B and F over the
     // same chunk packet.
-    void CityRender_DrawOverlays(GuestPtr<CityMap> map, GuestPtr<CityScene>)
+    void CityRender_DrawTerrain(GuestPtr<CityMap> map, GuestPtr<CityScene>)
     {
         const uint32_t parity = port::load<uint32_t>(0x001BDCD0u) & 1u;
         const int packet = static_cast<int>(map->chunkPackets[parity]);
@@ -919,7 +919,7 @@ namespace mm
     }
 
     // Building layer: whether a tile lies in the layer's active rectangle.
-    int LayerC_InTileRect(GuestPtr<LayerC> layer, int x, int z)
+    int PlacementLayer_InTileRect(GuestPtr<PlacementLayer> layer, int x, int z)
     {
         if (layer->rectActive != 1)
             return 0;
@@ -999,7 +999,7 @@ namespace mm
     int PacketBuf_Tell() { return globals::packetBufPos.get(); }
 
     // The buffer layer A fills this frame, empty.
-    void LayerA_SetSource(GuestPtr<LayerA> layer, int buffer)
+    void LayerA_BeginFrame(GuestPtr<LayerA> layer, int buffer)
     {
         layer->buffer = buffer;
         layer->count = 0;
@@ -1048,13 +1048,13 @@ namespace mm
     PORT_FN(DmaList_KickFrame);
     PORT_FN(Camera_BuildPacket);
     PORT_FN(LayerB_ctor);
-    PORT_FN(LayerC_ctor);
-    PORT_FN(LayerD_ctor);
-    PORT_FN(LayerE_ctor);
+    PORT_FN(PlacementLayer_ctor);
+    PORT_FN(RainLayer_ctor);
+    PORT_FN(SnowLayer_ctor);
     PORT_FN(LayerF_ctor);
     PORT_FN(LayerG_ctor);
     PORT_FN(LayerG_AnimateWaves);
-    PORT_FN(CityRender_DrawOverlays);
+    PORT_FN(CityRender_DrawTerrain);
     PORT_FN(A3DObject_DrawNode);
     PORT_FN(A3DObject_Draw);
     PORT_FN(A3DObject_UpdateNodeMatrix);
@@ -1072,7 +1072,7 @@ namespace mm
     PORT_FN(Sky_Draw);
     PORT_FN(CityRender_DrawInstanceLayer);
     PORT_FN(CityRender_DrawWater);
-    PORT_FN(CityRender_DrawBuildings);
+    PORT_FN(CityRender_DrawPlacement);
     PORT_FN(Map_SetPlacementHighlight);
     PORT_FN(InstanceBase_ctor);
     PORT_FN(Instance_DrawSwaying);
@@ -1095,13 +1095,13 @@ namespace mm
     PORT_FN(DmaList_QueueGsDefaults);
     PORT_FN(DmaList_QueueClearScreen);
     PORT_FN(DmaList_QueueClearZ);
-    PORT_FN(LayerC_InTileRect);
-    PORT_FN(A3D_GetMeshField0C);
+    PORT_FN(PlacementLayer_InTileRect);
+    PORT_FN(A3D_GetAnimLength);
     PORT_FN(DmaChain_Begin);
     PORT_FN(DmaList_Flip);
     PORT_FN(PacketBuf_Seek);
     PORT_FN(PacketBuf_Tell);
-    PORT_FN(LayerA_SetSource);
+    PORT_FN(LayerA_BeginFrame);
     PORT_FN(LightSet_SetField20);
     PORT_FN(LightSet_UpdateByClock);
 
@@ -1114,17 +1114,17 @@ namespace mm
 
     // The weather: pass 0 the rain, other passes the snow, each with this frame's chunk packet (by the parity of
     // 0x1BDCD0). The city calls it only in rain (2) or snow (3).
-    void CityRender_DrawSky(GuestPtr<CityMap> map, GuestPtr<CityScene> city, int pass, GuestPtr<Vec4> a3)
+    void CityRender_DrawWeather(GuestPtr<CityMap> map, GuestPtr<CityScene> city, int pass, GuestPtr<Vec4> a3)
     {
         const uint32_t parity = port::load<uint32_t>(0x001BDCD0u) & 1u;
         const int packet = static_cast<int>(map->chunkPackets[parity]);
         if (pass != 0)
-            LayerE_Draw(map->snow, static_cast<int>(parity), packet, city->clock, a3);
+            SnowLayer_Draw(map->snow, static_cast<int>(parity), packet, city->clock, a3);
         else
-            LayerD_DrawSkyByClock(map->rain, static_cast<int>(parity), packet, city->clock);
+            RainLayer_Draw(map->rain, static_cast<int>(parity), packet, city->clock);
     }
 
-    PORT_FN(CityRender_DrawSky);
+    PORT_FN(CityRender_DrawWeather);
 
     // ---- batch 38
 
@@ -1227,7 +1227,7 @@ namespace mm
     // The draw parameters of the placement highlight (VU1 0x1C..0x22: two colours, the output offset, a GIF tag of 26
     // loops of 14 registers, the fill and outline PRIMs and the mask 4) and of the marker (a colour table of ones, the
     // output offset 0x110 and the instance colour).
-    void LayerC_InitParams(GuestPtr<LayerC> layer)
+    void PlacementLayer_InitParams(GuestPtr<PlacementLayer> layer)
     {
         putFloats(layer->colourA, 255.0f, 0, 0, 128.0f);
         putFloats(layer->colourB, 0, 0, 0, 128.0f);
@@ -1289,7 +1289,7 @@ namespace mm
     PORT_FN(LayerA_Draw);
     PORT_FN(LayerB_BuildPacket);
     PORT_FN(LayerF_BuildPacket);
-    PORT_FN(LayerC_InitParams);
+    PORT_FN(PlacementLayer_InitParams);
     PORT_FN(LayerF_InitParams);
     PORT_FN(LayerG_InitParams);
     PORT_FN(CityRender_InitParams);
@@ -1307,7 +1307,7 @@ namespace mm
 
     // The rain's parameters: the GIF tag of the streaks (96 loops of RGBAQ, XYZF2 twice, blended lines), two colours,
     // 16 drop offsets and twelve streaks as pairs of end points; then the wet ground pass (mask 1).
-    void LayerD_InitParams(GuestPtr<LayerD> layer)
+    void RainLayer_InitParams(GuestPtr<RainLayer> layer)
     {
         putWords(layer->gifTag, {0x8060u, 0x4034c000u, 0x4141u, 0x0u});
         putFloats(layer->colourA, 765.0f, 765.0f, 765.0f, 40.0f);
@@ -1339,13 +1339,13 @@ namespace mm
     }
 
     PORT_FN(LayerB_InitParams);
-    PORT_FN(LayerD_InitParams);
+    PORT_FN(RainLayer_InitParams);
 
-    // Layer C's three packets, one after the other: the highlight (ALPHA_1 set to 0x30_00000048, the chain at 0x1A7B30
+    // The placement layer's three packets, one after the other: the highlight (ALPHA_1 set to 0x30_00000048, the chain at 0x1A7B30
     // and the highlight's seven quadwords to VU1 0x1C with the program started); the end (ALPHA_1 back to
     // 0x20_00000044); the marker (the colour table and what follows, 26 quadwords, to VU1 0x12, ALPHA_1 0x30_00000048
     // and the chain at 0x1A8330). Returns the end of the packets.
-    GuestPtr<uint32_t> LayerC_BuildPacket(GuestPtr<LayerC> layer, GuestPtr<uint32_t> packet)
+    GuestPtr<uint32_t> PlacementLayer_BuildPacket(GuestPtr<PlacementLayer> layer, GuestPtr<uint32_t> packet)
     {
         const uint32_t p = packet.address;
         layer->highlightPacket = p;
@@ -1373,14 +1373,14 @@ namespace mm
         return GuestPtr<uint32_t>{p + 0x130u};
     }
 
-    PORT_FN(LayerC_BuildPacket);
+    PORT_FN(PlacementLayer_BuildPacket);
 
-    // Layer D (the rain): for each of the two terrain buffers, a packet that uploads the layer's streak parameters and
+    // The rain layer: for each of the two terrain buffers, a packet that uploads the layer's streak parameters and
     // the first program (0x1A8A00); then the buffer's quads go to VU1 in 78 chunks of 0x200 bytes (9 groups of 8, each
     // chunk a REF tag, the UNPACK and a MSCNT, then 6 singles); then the ground pass: ALPHA_1, the second program
     // (0x1A8E20) with the ground parameters, and the packet ends. The layer keeps the start of each buffer's packet, its
     // ground pass and the shared end packet. Returns the end of the packets.
-    GuestPtr<uint32_t> LayerD_BuildPacket(GuestPtr<LayerD> layer, GuestPtr<uint32_t> packet, GuestPtr<int32_t> buffers)
+    GuestPtr<uint32_t> RainLayer_BuildPacket(GuestPtr<RainLayer> layer, GuestPtr<uint32_t> packet, GuestPtr<int32_t> buffers)
     {
         const uint32_t layerTag = tagAddress(*layer);
         const uint32_t paramsTag = tagAddress(layer->ground);
@@ -1434,14 +1434,14 @@ namespace mm
         return GuestPtr<uint32_t>{at + 0x40u};
     }
 
-    PORT_FN(LayerD_BuildPacket);
+    PORT_FN(RainLayer_BuildPacket);
 
-    // Layer E (the snow): like layer D, for each of the two terrain buffers a packet that sets the GS state of the flakes
+    // The snow layer: like the rain layer, for each of the two terrain buffers a packet that sets the GS state of the flakes
     // (RGBAQ, ALPHA_1 and TEX0_1, the TEX0 of the flake built field by field: base 0x3F70, width 1, format 0x14, 2^5 by
     // 2^5, colour with alpha, its palette at 0x3F72), uploads the layer's flake parameters and the program 0x1A9A90, then
     // the buffer's quads in chunks and the ground pass (the program 0x1A9F10 with the ground parameters). The layer keeps
     // each buffer's start and ground pass and the shared end packet. Returns the end of the packets.
-    GuestPtr<uint32_t> LayerE_BuildPacket(GuestPtr<LayerE> layer, GuestPtr<uint32_t> packet, GuestPtr<int32_t> buffers)
+    GuestPtr<uint32_t> SnowLayer_BuildPacket(GuestPtr<SnowLayer> layer, GuestPtr<uint32_t> packet, GuestPtr<int32_t> buffers)
     {
         const uint32_t layerTag = tagAddress(*layer);
         const uint32_t paramsTag = tagAddress(layer->ground);
@@ -1520,7 +1520,7 @@ namespace mm
         return GuestPtr<uint32_t>{at + 0x40u};
     }
 
-    PORT_FN(LayerE_BuildPacket);
+    PORT_FN(SnowLayer_BuildPacket);
 
     // Layer G (the water): two sections, one per terrain buffer. Each starts with the GS state for both contexts (ALPHA_1
     // and ALPHA_2, TEX0_1 and TEX0_2), the program 0x1A6440 and the layer's parameters, then the buffer's quads in 39
@@ -1669,13 +1669,13 @@ namespace mm
     PORT_FN(Terrain_BuildVu1PacketA);
     PORT_FN(Terrain_BuildVu1PacketB);
 
-    // ---- drawing layer C (batch 39)
+    // ---- drawing the placement layer (batch 39)
 
-    // Layer C draws the highlighted rectangle: in mode 1 (pass 0) its three packets around the map's own for this
+    // The placement layer draws the highlighted rectangle: in mode 1 (pass 0) its three packets around the map's own for this
     // frame; in mode 2 (pass 1) the placement marker, node 0 of the marker model (node 1 for a size 3 building) put
     // at the middle of the footprint at (rectX0, rectZ0), 0.8 below the tile for the ground and below each object
     // stacked on it.
-    void LayerC_DrawBuildings(GuestPtr<LayerC> layer, int packet, GuestPtr<CityMap> map, int pass)
+    void PlacementLayer_Draw(GuestPtr<PlacementLayer> layer, int packet, GuestPtr<CityMap> map, int pass)
     {
         if (layer->rectActive == 1 && pass == 0)
         {
@@ -1704,7 +1704,7 @@ namespace mm
         }
     }
 
-    PORT_FN(LayerC_DrawBuildings);
+    PORT_FN(PlacementLayer_Draw);
 
     // ---- the rain by the clock (batch 39)
 
@@ -1713,7 +1713,7 @@ namespace mm
     // 765 and its w to clock / 450, the ground pass's ALPHA_1 FIX to clock / 600; the sixteen drops fall 0.4 a frame
     // within 40; the ground pass's TEX0 steps through six texture pages, one every two frames (the splashes); then the
     // pass's ground packet, the frame's chunk packet, the end packet and the pass's streak packet are queued.
-    void LayerD_DrawSkyByClock(GuestPtr<LayerD> layer, int pass, int packet, int clock)
+    void RainLayer_Draw(GuestPtr<RainLayer> layer, int pass, int packet, int clock)
     {
         if (clock < 0x10B30)
         {
@@ -1754,7 +1754,7 @@ namespace mm
         Dma_AppendCall(static_cast<int>(layer->startPackets[pass]));
     }
 
-    PORT_FN(LayerD_DrawSkyByClock);
+    PORT_FN(RainLayer_Draw);
 
     // ---- Object lifetime and the files and lists graphics need (plan P6 batch 1) ----
 
@@ -2008,7 +2008,8 @@ namespace mm
 
     // The map with people below it, then the buffers and the draw layers the renderer owns: the two cliff-side buffers
     // (0x8700 bytes each) and the two terrain buffers (0x9C00); the ground and side parameters; the two terrain packets
-    // built at the packet buffer's position (which moves on past each); and the layers D, E, F, G, C, B and A, the ones
+    // built at the packet buffer's position (which moves on past each); and the layers (rain, snow, F, water, placement, B
+    // and A), the ones
     // that draw over the terrain quads getting the terrain buffers.
     GuestPtr<CityMap> CityRender_ctor(GuestPtr<CityMap> map)
     {
@@ -2027,11 +2028,11 @@ namespace mm
             const uint32_t memory = sdk::operator_new(size);
             port::store<uint32_t>(addressOf(field), memory != 0u ? construct(memory) : 0u);
         };
-        make(0x410, map->rain, [&](uint32_t o) { return LayerD_ctor(GuestPtr<LayerD>{o}, buffers).address; });
-        make(0x6E0, map->snow, [&](uint32_t o) { return LayerE_ctor(GuestPtr<LayerE>{o}, buffers).address; });
+        make(0x410, map->rain, [&](uint32_t o) { return RainLayer_ctor(GuestPtr<RainLayer>{o}, buffers).address; });
+        make(0x6E0, map->snow, [&](uint32_t o) { return SnowLayer_ctor(GuestPtr<SnowLayer>{o}, buffers).address; });
         make(0x140, map->layerF, [&](uint32_t o) { return LayerF_ctor(GuestPtr<LayerF>{o}).address; });
         make(0x2E0, map->water, [&](uint32_t o) { return LayerG_ctor(GuestPtr<LayerG>{o}, buffers).address; });
-        make(0x240, map->placement, [&](uint32_t o) { return LayerC_ctor(GuestPtr<LayerC>{o}).address; });
+        make(0x240, map->placement, [&](uint32_t o) { return PlacementLayer_ctor(GuestPtr<PlacementLayer>{o}).address; });
         make(0x230, map->layerB, [&](uint32_t o) { return LayerB_ctor(GuestPtr<LayerB>{o}).address; });
         make(0x2440, map->instances, [&](uint32_t o) { return LayerA_ctor(GuestPtr<LayerA>{o}).address; });
         return map;
@@ -2044,11 +2045,11 @@ namespace mm
         {
             map->vtable = GuestPtr<CityMapVtable>{0x001BCF00u};
             lifetime::deleteWith(addressOf(map->instances), [](uint32_t o) { LayerA_DeletingDtor(GuestPtr<LayerA>{o}, 1); });
-            lifetime::deleteWith(addressOf(map->rain), [](uint32_t o) { LayerD_DeletingDtor(GuestPtr<LayerD>{o}, 1); });
-            lifetime::deleteWith(addressOf(map->snow), [](uint32_t o) { LayerE_DeletingDtor(GuestPtr<LayerE>{o}, 1); });
+            lifetime::deleteWith(addressOf(map->rain), [](uint32_t o) { RainLayer_DeletingDtor(GuestPtr<RainLayer>{o}, 1); });
+            lifetime::deleteWith(addressOf(map->snow), [](uint32_t o) { SnowLayer_DeletingDtor(GuestPtr<SnowLayer>{o}, 1); });
             lifetime::deleteWith(addressOf(map->layerF), [](uint32_t o) { LayerF_DeletingDtor(GuestPtr<LayerF>{o}, 1); });
             lifetime::deleteWith(addressOf(map->water), [](uint32_t o) { LayerG_DeletingDtor(GuestPtr<LayerG>{o}, 1); });
-            lifetime::deleteWith(addressOf(map->placement), [](uint32_t o) { LayerC_DeletingDtor(GuestPtr<LayerC>{o}, 1); });
+            lifetime::deleteWith(addressOf(map->placement), [](uint32_t o) { PlacementLayer_DeletingDtor(GuestPtr<PlacementLayer>{o}, 1); });
             lifetime::deleteWith(addressOf(map->layerB), [](uint32_t o) { LayerB_DeletingDtor(GuestPtr<LayerB>{o}, 1); });
             for (const uint32_t field : {addressOf(map->terrainBuffers[0]), addressOf(map->terrainBuffers[1]), addressOf(map->sideBuffers[0]),
                                          addressOf(map->sideBuffers[1])})

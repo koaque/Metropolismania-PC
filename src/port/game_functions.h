@@ -56,7 +56,7 @@ inline constexpr uint32_t LightSet_BuildPackets = 0x00128EE0u;
 inline constexpr uint32_t Packet2_Draw = 0x00129090u;
 inline constexpr uint32_t A3DObjectBase_DeletingDtor = 0x001290C0u;
 inline constexpr uint32_t LightSet_Init = 0x00129120u;
-inline constexpr uint32_t A3D_GetMeshField0C = 0x00129210u;
+inline constexpr uint32_t A3D_GetAnimLength = 0x00129210u;
 inline constexpr uint32_t Instance_DrawSwaying = 0x00129230u;
 inline constexpr uint32_t A3D_Relocate = 0x00129570u;
 inline constexpr uint32_t A3DObject_ChangeLuminosity = 0x00129950u;
@@ -189,8 +189,8 @@ inline constexpr uint32_t TileLists_Clear = 0x00137830u;
 inline constexpr uint32_t Event_InitForCity = 0x001378D0u;
 inline constexpr uint32_t Event_LoadState = 0x00137EA0u;
 inline constexpr uint32_t Event_SaveState = 0x00137F50u;
-inline constexpr uint32_t Event_CallSlot14 = 0x00138000u;
-inline constexpr uint32_t Event_CallSlot10 = 0x00138080u;
+inline constexpr uint32_t Event_CallAnswer = 0x00138000u;
+inline constexpr uint32_t Event_CallText = 0x00138080u;
 inline constexpr uint32_t Event_Update = 0x00138100u;
 inline constexpr uint32_t Event_CheckCondition = 0x00138AF0u;
 inline constexpr uint32_t Event_TryStart = 0x001391B0u;
@@ -323,7 +323,7 @@ inline constexpr uint32_t MapObj_GetHeight = 0x00143690u;
 inline constexpr uint32_t MapObj_PushHistory = 0x00143750u;
 inline constexpr uint32_t MapObj_SumHistory = 0x00143790u;
 inline constexpr uint32_t MapObj_RayHit = 0x001437D0u;
-inline constexpr uint32_t Player_CollideObjects = 0x001439D0u;
+inline constexpr uint32_t Player_FloorBelow = 0x001439D0u;
 inline constexpr uint32_t Player_NearestObject = 0x00143DF0u;
 inline constexpr uint32_t MapObj_GetMatrix = 0x00144270u;
 inline constexpr uint32_t Map_CountObjectsBefore = 0x001443E0u;
@@ -342,7 +342,7 @@ inline constexpr uint32_t Placement_CheckTypeRule = 0x001451B0u;
 inline constexpr uint32_t MapObj_Delete = 0x001452B0u;
 inline constexpr uint32_t MapObj_Init = 0x001453E0u;
 inline constexpr uint32_t MapObj_FindFreeSlot = 0x001455C0u;
-inline constexpr uint32_t MapObjects_Slot0C = 0x00145630u;
+inline constexpr uint32_t MapObjects_ClearObject = 0x00145630u;
 inline constexpr uint32_t MapObjects_Tick = 0x00145640u;
 inline constexpr uint32_t MapObjects_dtor = 0x001458A0u;
 inline constexpr uint32_t MapObjects_ctor = 0x00145940u;
@@ -356,12 +356,12 @@ inline constexpr uint32_t Terrain_BuildVu1PacketB = 0x00147AE0u;
 inline constexpr uint32_t Terrain_InitParams = 0x00147FA0u;
 inline constexpr uint32_t CityRender_InitParams = 0x001480F0u;
 inline constexpr uint32_t CityRender_UpdatePeople = 0x00148260u;
-inline constexpr uint32_t CityRender_DrawSky = 0x001484A0u;
+inline constexpr uint32_t CityRender_DrawWeather = 0x001484A0u;
 inline constexpr uint32_t CityRender_CollectObjects = 0x00148500u;
 inline constexpr uint32_t CityRender_DrawWater = 0x00148950u;
 inline constexpr uint32_t CityRender_DrawInstanceLayer = 0x00148970u;
-inline constexpr uint32_t CityRender_DrawBuildings = 0x00148980u;
-inline constexpr uint32_t CityRender_DrawOverlays = 0x001489B0u;
+inline constexpr uint32_t CityRender_DrawPlacement = 0x00148980u;
+inline constexpr uint32_t CityRender_DrawTerrain = 0x001489B0u;
 inline constexpr uint32_t CityRender_dtor = 0x00148A40u;
 inline constexpr uint32_t CityRender_ctor = 0x00148BB0u;
 inline constexpr uint32_t TexImage_Convert = 0x00148D70u;
@@ -371,7 +371,7 @@ inline constexpr uint32_t TexImage_Load = 0x00149150u;
 inline constexpr uint32_t LayerA_BuildPacket = 0x001491E0u;
 inline constexpr uint32_t LayerA_Draw = 0x00149300u;
 inline constexpr uint32_t LayerA_AddInstance = 0x00149400u;
-inline constexpr uint32_t LayerA_SetSource = 0x00149720u;
+inline constexpr uint32_t LayerA_BeginFrame = 0x00149720u;
 inline constexpr uint32_t LayerA_DeletingDtor = 0x00149730u;
 inline constexpr uint32_t LayerA_ctor = 0x00149790u;
 inline constexpr uint32_t StatusPanel_BuildPacket = 0x00149990u;
@@ -413,23 +413,23 @@ inline constexpr uint32_t LayerB_InitParams = 0x0014CA60u;
 inline constexpr uint32_t LayerB_Draw = 0x0014CC10u;
 inline constexpr uint32_t LayerB_DeletingDtor = 0x0014CC60u;
 inline constexpr uint32_t LayerB_ctor = 0x0014CCC0u;
-inline constexpr uint32_t LayerC_InTileRect = 0x0014CD10u;
-inline constexpr uint32_t Terrain_SetVec = 0x0014CD80u;
-inline constexpr uint32_t LayerC_BuildPacket = 0x0014CDA0u;
-inline constexpr uint32_t LayerC_InitParams = 0x0014CFF0u;
-inline constexpr uint32_t LayerC_DrawBuildings = 0x0014D0F0u;
-inline constexpr uint32_t LayerC_DeletingDtor = 0x0014D320u;
-inline constexpr uint32_t LayerC_ctor = 0x0014D380u;
-inline constexpr uint32_t LayerD_BuildPacket = 0x0014D3E0u;
-inline constexpr uint32_t LayerD_InitParams = 0x0014D8A0u;
-inline constexpr uint32_t LayerD_DrawSkyByClock = 0x0014DF20u;
-inline constexpr uint32_t LayerD_DeletingDtor = 0x0014E0E0u;
-inline constexpr uint32_t LayerD_ctor = 0x0014E140u;
-inline constexpr uint32_t LayerE_BuildPacket = 0x0014E1A0u;
-inline constexpr uint32_t LayerE_InitParams = 0x0014E8B0u;
-inline constexpr uint32_t LayerE_Draw = 0x0014EDB0u;
-inline constexpr uint32_t LayerE_DeletingDtor = 0x0014F0A0u;
-inline constexpr uint32_t LayerE_ctor = 0x0014F100u;
+inline constexpr uint32_t PlacementLayer_InTileRect = 0x0014CD10u;
+inline constexpr uint32_t PlacementLayer_Set = 0x0014CD80u;
+inline constexpr uint32_t PlacementLayer_BuildPacket = 0x0014CDA0u;
+inline constexpr uint32_t PlacementLayer_InitParams = 0x0014CFF0u;
+inline constexpr uint32_t PlacementLayer_Draw = 0x0014D0F0u;
+inline constexpr uint32_t PlacementLayer_DeletingDtor = 0x0014D320u;
+inline constexpr uint32_t PlacementLayer_ctor = 0x0014D380u;
+inline constexpr uint32_t RainLayer_BuildPacket = 0x0014D3E0u;
+inline constexpr uint32_t RainLayer_InitParams = 0x0014D8A0u;
+inline constexpr uint32_t RainLayer_Draw = 0x0014DF20u;
+inline constexpr uint32_t RainLayer_DeletingDtor = 0x0014E0E0u;
+inline constexpr uint32_t RainLayer_ctor = 0x0014E140u;
+inline constexpr uint32_t SnowLayer_BuildPacket = 0x0014E1A0u;
+inline constexpr uint32_t SnowLayer_InitParams = 0x0014E8B0u;
+inline constexpr uint32_t SnowLayer_Draw = 0x0014EDB0u;
+inline constexpr uint32_t SnowLayer_DeletingDtor = 0x0014F0A0u;
+inline constexpr uint32_t SnowLayer_ctor = 0x0014F100u;
 inline constexpr uint32_t LayerF_BuildPacket = 0x0014F160u;
 inline constexpr uint32_t LayerF_InitParams = 0x0014F290u;
 inline constexpr uint32_t LayerF_Draw = 0x0014F400u;
@@ -460,15 +460,15 @@ inline constexpr uint32_t ListMenu_HandleInput = 0x00150DA0u;
 inline constexpr uint32_t ListMenu_Draw = 0x00151140u;
 inline constexpr uint32_t ListMenu_dtor = 0x001512A0u;
 inline constexpr uint32_t ListMenu_ctor = 0x00151350u;
-inline constexpr uint32_t SceneB_ShowCityName = 0x001515B0u;
-inline constexpr uint32_t SceneB_ShowStageTitle = 0x001516C0u;
-inline constexpr uint32_t SceneB_ShowApprovalRate = 0x001517C0u;
-inline constexpr uint32_t SceneB_MissionBriefing = 0x00151A20u;
-inline constexpr uint32_t SceneB_BuildBriefingText = 0x00151E50u;
-inline constexpr uint32_t SceneB_ShowTelop = 0x00152020u;
-inline constexpr uint32_t SceneB_Update = 0x001524E0u;
-inline constexpr uint32_t SceneB_dtor = 0x00152860u;
-inline constexpr uint32_t SceneB_ctor = 0x00152910u;
+inline constexpr uint32_t StageScene_ShowCityName = 0x001515B0u;
+inline constexpr uint32_t StageScene_ShowStageTitle = 0x001516C0u;
+inline constexpr uint32_t StageScene_ShowApprovalRate = 0x001517C0u;
+inline constexpr uint32_t StageScene_MissionBriefing = 0x00151A20u;
+inline constexpr uint32_t StageScene_BuildBriefingText = 0x00151E50u;
+inline constexpr uint32_t StageScene_ShowTelop = 0x00152020u;
+inline constexpr uint32_t StageScene_Update = 0x001524E0u;
+inline constexpr uint32_t StageScene_dtor = 0x00152860u;
+inline constexpr uint32_t StageScene_ctor = 0x00152910u;
 inline constexpr uint32_t WantsWin_FormatLine = 0x00152A50u;
 inline constexpr uint32_t WantsWin_Draw = 0x00152B30u;
 inline constexpr uint32_t WantsWin_Update = 0x00152BC0u;
@@ -556,8 +556,8 @@ inline constexpr uint32_t SaveFile_WriteIconSys = 0x0015BBC0u;
 inline constexpr uint32_t SaveFile_PrepareDir = 0x0015BC00u;
 inline constexpr uint32_t McManager_ResetState = 0x0015C020u;
 inline constexpr uint32_t McManager_PrepareNewSlot = 0x0015C030u;
-inline constexpr uint32_t McManager_FindSlotA = 0x0015C0A0u;
-inline constexpr uint32_t McManager_FindSlotB = 0x0015C120u;
+inline constexpr uint32_t McManager_GetSaveHeader = 0x0015C0A0u;
+inline constexpr uint32_t McManager_GetSaveFolder = 0x0015C120u;
 inline constexpr uint32_t McManager_IsCardUsable = 0x0015C1A0u;
 inline constexpr uint32_t McManager_GetCardStatus = 0x0015C1F0u;
 inline constexpr uint32_t McManager_FormatSlotText = 0x0015C290u;
@@ -594,7 +594,7 @@ inline constexpr uint32_t MenuWin_Opening = 0x0015FC50u;
 inline constexpr uint32_t MenuWin_dtor = 0x0015FCA0u;
 inline constexpr uint32_t MenuWin_ctor = 0x0015FD20u;
 inline constexpr uint32_t Markers_Draw = 0x0015FD70u;
-inline constexpr uint32_t Laptop_CheckOpen = 0x0015FE30u;
+inline constexpr uint32_t Markers_CheckCircle = 0x0015FE30u;
 inline constexpr uint32_t Markers_dtor = 0x0015FF10u;
 inline constexpr uint32_t Markers_ctor = 0x0015FF60u;
 inline constexpr uint32_t CityCamera_UpdateTimeOfDay = 0x00160040u;
@@ -631,9 +631,9 @@ inline constexpr uint32_t NameEntry_Setup = 0x00163000u;
 inline constexpr uint32_t NameEntry_dtor = 0x00163390u;
 inline constexpr uint32_t NameEntry_CreateTexts = 0x00163450u;
 inline constexpr uint32_t NameEntry_ctor = 0x00163600u;
-inline constexpr uint32_t Collide_SegmentA = 0x00163690u;
-inline constexpr uint32_t Collide_SegmentB = 0x00163850u;
-inline constexpr uint32_t BldgType_Slot34 = 0x00163A10u;
+inline constexpr uint32_t Collide_MeshFloorBelow = 0x00163690u;
+inline constexpr uint32_t Collide_MeshNearestHit = 0x00163850u;
+inline constexpr uint32_t BldgType_Animate = 0x00163A10u;
 inline constexpr uint32_t BldgType_IsOpenAt = 0x00163A20u;
 inline constexpr uint32_t Clock_AddWrap = 0x00163AE0u;
 inline constexpr uint32_t BldgType_IsMyHome = 0x00163B20u;
@@ -641,11 +641,11 @@ inline constexpr uint32_t BldgType_DrawOccupants = 0x00163B40u;
 inline constexpr uint32_t BldgType_OccupantMatrix = 0x00163C40u;
 inline constexpr uint32_t BldgType_DrawOccupant = 0x00163D70u;
 inline constexpr uint32_t BldgType_FindEntrance = 0x00163F00u;
-inline constexpr uint32_t BldgType_Slot30 = 0x00164060u;
-inline constexpr uint32_t BldgType_CollideA = 0x00164070u;
-inline constexpr uint32_t BldgType_CollideB = 0x00164080u;
-inline constexpr uint32_t BldgType_Slot1C = 0x00164090u;
-inline constexpr uint32_t BldgType_Slot20 = 0x001640A0u;
+inline constexpr uint32_t BldgType_RayHit = 0x00164060u;
+inline constexpr uint32_t BldgType_FloorBelow = 0x00164070u;
+inline constexpr uint32_t BldgType_NearestHit = 0x00164080u;
+inline constexpr uint32_t BldgType_GroundTexture = 0x00164090u;
+inline constexpr uint32_t BldgType_AcceptsOn = 0x001640A0u;
 inline constexpr uint32_t BldgType_DrawOccupants2 = 0x001640B0u;
 inline constexpr uint32_t BldgType_Draw = 0x00164220u;
 inline constexpr uint32_t BldgType_Tick = 0x00164230u;
@@ -660,8 +660,8 @@ inline constexpr uint32_t BldgAmusementPark_Draw = 0x001648E0u;
 inline constexpr uint32_t BldgAmusementPark_ctor = 0x00164AF0u;
 inline constexpr uint32_t BldgBusiness_dtor = 0x00164B30u;
 inline constexpr uint32_t BldgOffice_dtor = 0x00164BA0u;
-inline constexpr uint32_t BldgOffice_CollideA = 0x00164C20u;
-inline constexpr uint32_t BldgOffice_CollideB = 0x00164D00u;
+inline constexpr uint32_t BldgOffice_FloorBelow = 0x00164C20u;
+inline constexpr uint32_t BldgOffice_NearestHit = 0x00164D00u;
 inline constexpr uint32_t BldgOffice_Draw = 0x00164DE0u;
 inline constexpr uint32_t BldgOffice_Tick = 0x00165140u;
 inline constexpr uint32_t BldgOffice_ctor = 0x001651D0u;
@@ -671,31 +671,31 @@ inline constexpr uint32_t BldgRanch_Draw = 0x00165390u;
 inline constexpr uint32_t BldgRanch_ctor = 0x001655A0u;
 inline constexpr uint32_t Bldg_dtor = 0x00165600u;
 inline constexpr uint32_t ClaimMeter_Level = 0x00165660u;
-inline constexpr uint32_t BldgClaims_EvalA = 0x001656A0u;
-inline constexpr uint32_t BldgClaims_EvalB = 0x00165A50u;
+inline constexpr uint32_t BldgClaims_Spread = 0x001656A0u;
+inline constexpr uint32_t BldgClaims_Pick = 0x00165A50u;
 inline constexpr uint32_t BldgClaims_CountNearby = 0x00165C50u;
-inline constexpr uint32_t BldgClaims_EvalC = 0x00165E80u;
-inline constexpr uint32_t BldgClaims_EvalD = 0x00166150u;
+inline constexpr uint32_t BldgClaims_CheckMet = 0x00165E80u;
+inline constexpr uint32_t BldgClaims_WeighNeighbours = 0x00166150u;
 inline constexpr uint32_t BldgClaims_Evaluate = 0x00166840u;
 inline constexpr uint32_t BldgClaims_DrawIcon = 0x00166AC0u;
 inline constexpr uint32_t Bldg_InitRecordBase = 0x00166C40u;
 inline constexpr uint32_t Bldg_ctor = 0x00166C50u;
 inline constexpr uint32_t BldgField_dtor = 0x00166C90u;
-inline constexpr uint32_t BldgField_Slot1C = 0x00166CF0u;
+inline constexpr uint32_t BldgField_GroundTexture = 0x00166CF0u;
 inline constexpr uint32_t BldgField_DrawPeople = 0x00166D50u;
 inline constexpr uint32_t BldgField_Draw = 0x00166F30u;
 inline constexpr uint32_t BldgField_Tick = 0x00167170u;
 inline constexpr uint32_t BldgField_ctor = 0x00167310u;
 inline constexpr uint32_t BldgPort_dtor = 0x00167470u;
-inline constexpr uint32_t BldgPort_CollideA = 0x001674F0u;
-inline constexpr uint32_t BldgPort_CollideB = 0x00167550u;
+inline constexpr uint32_t BldgPort_FloorBelow = 0x001674F0u;
+inline constexpr uint32_t BldgPort_NearestHit = 0x00167550u;
 inline constexpr uint32_t BldgPort_Draw = 0x001675B0u;
 inline constexpr uint32_t BldgPort_Tick = 0x001677B0u;
 inline constexpr uint32_t BldgPort_ctor = 0x001678A0u;
 inline constexpr uint32_t Bldg_IsOpen = 0x001678E0u;
-inline constexpr uint32_t Bldg_Slot30 = 0x00167930u;
-inline constexpr uint32_t Bldg_CollideA = 0x00167940u;
-inline constexpr uint32_t Bldg_CollideB = 0x00167980u;
+inline constexpr uint32_t Bldg_RayHit = 0x00167930u;
+inline constexpr uint32_t Bldg_FloorBelow = 0x00167940u;
+inline constexpr uint32_t Bldg_NearestHit = 0x00167980u;
 inline constexpr uint32_t BldgType_FindEntrance2 = 0x001679C0u;
 inline constexpr uint32_t Bldg_DrawPeople = 0x00167B40u;
 inline constexpr uint32_t BldgBusiness_Draw = 0x00168100u;
@@ -715,8 +715,8 @@ inline constexpr uint32_t BldgType_Create = 0x00169500u;
 inline constexpr uint32_t BldgType_DeleteAll = 0x001697D0u;
 inline constexpr uint32_t BldgType_LoadAll = 0x00169860u;
 inline constexpr uint32_t BldgHousing_dtor = 0x00169960u;
-inline constexpr uint32_t BldgHousing_CollideA = 0x001699E0u;
-inline constexpr uint32_t BldgHousing_CollideB = 0x00169AB0u;
+inline constexpr uint32_t BldgHousing_FloorBelow = 0x001699E0u;
+inline constexpr uint32_t BldgHousing_NearestHit = 0x00169AB0u;
 inline constexpr uint32_t BldgHousing_Draw = 0x00169B80u;
 inline constexpr uint32_t BldgHousing_UnitAt = 0x00169F20u;
 inline constexpr uint32_t BldgHousing_CountUnits = 0x0016A0A0u;
@@ -735,11 +735,11 @@ inline constexpr uint32_t BldgRoad_DrawPeople = 0x0016AB70u;
 inline constexpr uint32_t BldgRoad_Draw = 0x0016AF10u;
 inline constexpr uint32_t BldgRoad_Tick = 0x0016B1C0u;
 inline constexpr uint32_t BldgRoad_InitRecord = 0x0016B650u;
-inline constexpr uint32_t BldgRoad_Slot1C = 0x0016B670u;
+inline constexpr uint32_t BldgRoad_GroundTexture = 0x0016B670u;
 inline constexpr uint32_t BldgRoad_ctor = 0x0016B680u;
 inline constexpr uint32_t BldgSmallGoods_dtor = 0x0016B6E0u;
-inline constexpr uint32_t BldgSmallGoods_CollideA = 0x0016B740u;
-inline constexpr uint32_t BldgSmallGoods_CollideB = 0x0016B780u;
+inline constexpr uint32_t BldgSmallGoods_FloorBelow = 0x0016B740u;
+inline constexpr uint32_t BldgSmallGoods_NearestHit = 0x0016B780u;
 inline constexpr uint32_t BldgSmallGoods_Draw = 0x0016B7C0u;
 inline constexpr uint32_t BldgSmallGoods_Tick = 0x0016B900u;
 inline constexpr uint32_t BldgSmallGoods_ctor = 0x0016BB20u;
@@ -772,7 +772,7 @@ inline constexpr uint32_t SoundTest_SeText = 0x0016E070u;
 inline constexpr uint32_t Title_DrawCommon = 0x0016E270u;
 inline constexpr uint32_t Title_LoadMenu = 0x0016E440u;
 inline constexpr uint32_t Title_PressStart = 0x0016E840u;
-inline constexpr uint32_t SceneA_StartGame = 0x0016E950u;
+inline constexpr uint32_t TitleScene_StartGame = 0x0016E950u;
 inline constexpr uint32_t Title_NewGameIntro = 0x0016EC50u;
 inline constexpr uint32_t Title_RandomCharParts = 0x0016F170u;
 inline constexpr uint32_t Title_OpeningMovieStep = 0x0016F270u;
@@ -781,12 +781,12 @@ inline constexpr uint32_t Title_DrawChoices = 0x0016F630u;
 inline constexpr uint32_t Title_DrawChoicesIdle = 0x0016F820u;
 inline constexpr uint32_t Title_Intro = 0x0016FAA0u;
 inline constexpr uint32_t Title_LogoLetters = 0x0016FD60u;
-inline constexpr uint32_t SceneA_MemoryCardCheck = 0x0016FF20u;
-inline constexpr uint32_t SceneA_LogoStep = 0x001702D0u;
-inline constexpr uint32_t SceneA_Load = 0x001704A0u;
-inline constexpr uint32_t SceneA_Update = 0x00170BE0u;
-inline constexpr uint32_t SceneA_dtor = 0x00170FD0u;
-inline constexpr uint32_t SceneA_ctor = 0x00171220u;
+inline constexpr uint32_t TitleScene_MemoryCardCheck = 0x0016FF20u;
+inline constexpr uint32_t TitleScene_LogoStep = 0x001702D0u;
+inline constexpr uint32_t TitleScene_Load = 0x001704A0u;
+inline constexpr uint32_t TitleScene_Update = 0x00170BE0u;
+inline constexpr uint32_t TitleScene_dtor = 0x00170FD0u;
+inline constexpr uint32_t TitleScene_ctor = 0x00171220u;
 inline constexpr uint32_t TownPages_SelectedEntry = 0x001714A0u;
 inline constexpr uint32_t TownPages_ClampCursor = 0x00171660u;
 inline constexpr uint32_t TownPages_BuildIndex = 0x00171720u;
@@ -976,9 +976,9 @@ inline constexpr uint32_t WordsFn_SetCancelAllowed = 0x0017C3E0u;
 inline constexpr uint32_t WordsFn_SetStoryFlagB = 0x0017C3F0u;
 inline constexpr uint32_t WordsFn_ClearStoryFlagB = 0x0017C440u;
 inline constexpr uint32_t WordsFn_SetVar1C5602 = 0x0017C4A0u;
-inline constexpr uint32_t WordsFn_EventA4Slot10 = 0x0017C4B0u;
+inline constexpr uint32_t WordsFn_EventA4Text = 0x0017C4B0u;
 inline constexpr uint32_t WordsFn_TextEventA4Name = 0x0017C4D0u;
-inline constexpr uint32_t WordsFn_EventA8Slot10 = 0x0017C500u;
+inline constexpr uint32_t WordsFn_EventA8Text = 0x0017C500u;
 inline constexpr uint32_t WordsFn_TextEventTitle = 0x0017C520u;
 inline constexpr uint32_t WordsFn_TextOpenHours = 0x0017C530u;
 inline constexpr uint32_t WordsFn_TextBagItemName = 0x0017C580u;
@@ -992,12 +992,12 @@ inline constexpr uint32_t WordsFn_TextBuildingName = 0x0017C830u;
 inline constexpr uint32_t WordsFn_TextMemberName2 = 0x0017C8A0u;
 inline constexpr uint32_t WordsFn_TextMemberName = 0x0017C920u;
 inline constexpr uint32_t WordsFn_TextNameSlot = 0x0017C9A0u;
-inline constexpr uint32_t WordsFn_EventA4Slot14 = 0x0017C9C0u;
+inline constexpr uint32_t WordsFn_EventA4Answer = 0x0017C9C0u;
 inline constexpr uint32_t WordsFn_EventSetActor = 0x0017CA40u;
 inline constexpr uint32_t WordsFn_EventActorIs = 0x0017CB90u;
 inline constexpr uint32_t WordsFn_EventA4Var = 0x0017CBE0u;
 inline constexpr uint32_t WordsFn_EventA4IsTalk = 0x0017CC00u;
-inline constexpr uint32_t WordsFn_EventA8Slot14 = 0x0017CC50u;
+inline constexpr uint32_t WordsFn_EventA8Answer = 0x0017CC50u;
 inline constexpr uint32_t WordsFn_EventA8Var = 0x0017CCD0u;
 inline constexpr uint32_t WordsFn_EventA8Kind = 0x0017CCF0u;
 inline constexpr uint32_t WordsFn_EventCountdown = 0x0017CD50u;
@@ -1115,9 +1115,9 @@ inline constexpr uint32_t CityScene_StartTalk = 0x001815E0u;
 inline constexpr uint32_t CityScene_Update = 0x00181A10u;
 inline constexpr uint32_t CityScene_dtor = 0x00182440u;
 inline constexpr uint32_t CityScene_ctor = 0x00182700u;
-inline constexpr uint32_t Collide_RayTriangleA = 0x00182BF0u;
+inline constexpr uint32_t Collide_NormalRayTriangle = 0x00182BF0u;
 inline constexpr uint32_t Collide_PointInTriangle = 0x00182D20u;
-inline constexpr uint32_t Collide_RayTriangleB = 0x00182E90u;
+inline constexpr uint32_t Collide_SegmentTriangle = 0x00182E90u;
 inline constexpr uint32_t Text_FormatTimeRange = 0x00183020u;
 inline constexpr uint32_t Text_FormatMoney = 0x001831E0u;
 inline constexpr uint32_t Text_FormatThousands = 0x00183270u;
@@ -1232,52 +1232,52 @@ inline constexpr uint32_t Bgm_FadeOut = 0x0018CC70u;
 inline constexpr uint32_t Bgm_SetActive = 0x0018CCA0u;
 inline constexpr uint32_t Bgm_SetTrackSlot = 0x0018CD30u;
 inline constexpr uint32_t Bgm_Update = 0x0018CEA0u;
-inline constexpr uint32_t SoundCmd_02_Zero = 0x0018D150u;
+inline constexpr uint32_t SoundCmd_WaveClose0 = 0x0018D150u;
 inline constexpr uint32_t Sound_ResetVoices = 0x0018D160u;
 inline constexpr uint32_t Se_BuildAmbienceMap = 0x0018D280u;
 inline constexpr uint32_t Sound_InitState = 0x0018D3E0u;
-inline constexpr uint32_t SoundCmd_CancelPlayB = 0x0018D4B0u;
+inline constexpr uint32_t SoundCmd_CancelWavePlay = 0x0018D4B0u;
 inline constexpr uint32_t Sound_IsBusy = 0x0018D5B0u;
 inline constexpr uint32_t Sound_IsDriverBusy = 0x0018D660u;
-inline constexpr uint32_t SoundCmd_SetDiscBusy = 0x0018D6E0u;
-inline constexpr uint32_t SoundCmd_11 = 0x0018D750u;
-inline constexpr uint32_t SoundCmd_SetVolumeB = 0x0018D7E0u;
-inline constexpr uint32_t SoundCmd_0F = 0x0018D870u;
-inline constexpr uint32_t SoundCmd_FadeB = 0x0018D900u;
-inline constexpr uint32_t SoundCmd_StopB = 0x0018D990u;
-inline constexpr uint32_t SoundCmd_PlaySequence = 0x0018DA40u;
-inline constexpr uint32_t SoundCmd_StopSequence = 0x0018DAF0u;
-inline constexpr uint32_t SoundCmd_LoadBank = 0x0018DBA0u;
-inline constexpr uint32_t SoundCmd_SetPitchA = 0x0018DC70u;
-inline constexpr uint32_t SoundCmd_SetVolumeA = 0x0018DD00u;
-inline constexpr uint32_t SoundCmd_SetVolumeLRA = 0x0018DD90u;
-inline constexpr uint32_t SoundCmd_PlayA = 0x0018DE20u;
-inline constexpr uint32_t SoundCmd_StopA = 0x0018DEC0u;
-inline constexpr uint32_t SoundCmd_PlayB = 0x0018DF70u;
-inline constexpr uint32_t SoundCmd_02 = 0x0018E030u;
-inline constexpr uint32_t SoundCmd_01 = 0x0018E0E0u;
+inline constexpr uint32_t SoundCmd_SetLoadPause = 0x0018D6E0u;
+inline constexpr uint32_t SoundCmd_MidiSetTempo = 0x0018D750u;
+inline constexpr uint32_t SoundCmd_MidiSetTrackVolume = 0x0018D7E0u;
+inline constexpr uint32_t SoundCmd_MidiSetVolume = 0x0018D870u;
+inline constexpr uint32_t SoundCmd_MidiFade = 0x0018D900u;
+inline constexpr uint32_t SoundCmd_MidiStop = 0x0018D990u;
+inline constexpr uint32_t SoundCmd_MidiPlay = 0x0018DA40u;
+inline constexpr uint32_t SoundCmd_MidiClose = 0x0018DAF0u;
+inline constexpr uint32_t SoundCmd_MidiOpen = 0x0018DBA0u;
+inline constexpr uint32_t SoundCmd_WaveSetPitch = 0x0018DC70u;
+inline constexpr uint32_t SoundCmd_WaveSetTrackVolume = 0x0018DD00u;
+inline constexpr uint32_t SoundCmd_WaveSetVolume = 0x0018DD90u;
+inline constexpr uint32_t SoundCmd_WaveFade = 0x0018DE20u;
+inline constexpr uint32_t SoundCmd_WaveStop = 0x0018DEC0u;
+inline constexpr uint32_t SoundCmd_WavePlay = 0x0018DF70u;
+inline constexpr uint32_t SoundCmd_WaveClose = 0x0018E030u;
+inline constexpr uint32_t SoundCmd_WaveOpen = 0x0018E0E0u;
 inline constexpr uint32_t SoundCmd_Flush = 0x0018E1B0u;
 inline constexpr uint32_t Sound_GetStatus = 0x0018F200u;
 inline constexpr uint32_t Sound_LoadModules = 0x0018F280u;
 inline constexpr uint32_t Sound_Shutdown = 0x0018F450u;
 inline constexpr uint32_t Sound_Init = 0x0018F4A0u;
-inline constexpr uint32_t EvShoppingTogether_Slot14 = 0x0018F5D0u;
+inline constexpr uint32_t EvShoppingTogether_Answer = 0x0018F5D0u;
 inline constexpr uint32_t EvShoppingTogether_Update = 0x0018F5F0u;
 inline constexpr uint32_t EvShoppingTogether_End = 0x0018F980u;
 inline constexpr uint32_t EvShoppingTogether_Start = 0x0018FA40u;
 inline constexpr uint32_t EvShoppingTogether_Check = 0x0018FAC0u;
-inline constexpr uint32_t EvAlien_Slot14 = 0x0018FC90u;
+inline constexpr uint32_t EvAlien_Answer = 0x0018FC90u;
 inline constexpr uint32_t EvAlien_End = 0x0018FCD0u;
 inline constexpr uint32_t EvAlien_PickTarget = 0x0018FD50u;
 inline constexpr uint32_t EvAlien_Update = 0x0018FEE0u;
 inline constexpr uint32_t EvAlien_Check = 0x00190380u;
-inline constexpr uint32_t EvBodyguard_Slot14 = 0x001906C0u;
+inline constexpr uint32_t EvBodyguard_Answer = 0x001906C0u;
 inline constexpr uint32_t EvEscort_End = 0x00190750u;
 inline constexpr uint32_t EvEscort_Update = 0x001907F0u;
 inline constexpr uint32_t EvEscort_Start = 0x00190AF0u;
 inline constexpr uint32_t EvBodyguard_Check = 0x00190B50u;
-inline constexpr uint32_t EvMsg_Slot14 = 0x00190B60u;
-inline constexpr uint32_t EvPayday_Slot10 = 0x00190DD0u;
+inline constexpr uint32_t EvMsg_Answer = 0x00190B60u;
+inline constexpr uint32_t EvPayday_Text = 0x00190DD0u;
 inline constexpr uint32_t EvPayday_Update = 0x00190F00u;
 inline constexpr uint32_t EvMsg_UpdateFinal = 0x001910F0u;
 inline constexpr uint32_t EvMsg_Update = 0x001911F0u;
@@ -1296,13 +1296,13 @@ inline constexpr uint32_t EvFirstPayday_Check = 0x001917B0u;
 inline constexpr uint32_t EvWoman_Check = 0x001917C0u;
 inline constexpr uint32_t EvRiddle_Check = 0x001917F0u;
 inline constexpr uint32_t EvPopularity_Check = 0x00191820u;
-inline constexpr uint32_t EvCaveMan_Slot14 = 0x00191850u;
+inline constexpr uint32_t EvCaveMan_Answer = 0x00191850u;
 inline constexpr uint32_t EvCaveMan_Update = 0x00191A50u;
 inline constexpr uint32_t EvCaveMan_End = 0x001920D0u;
 inline constexpr uint32_t EvCaveMan_Start = 0x00192190u;
 inline constexpr uint32_t EvCaveMan_Check = 0x001921A0u;
-inline constexpr uint32_t EvDeliveryMan_Slot14 = 0x00192320u;
-inline constexpr uint32_t EvDeliveryMan_Slot10 = 0x00192490u;
+inline constexpr uint32_t EvDeliveryMan_Answer = 0x00192320u;
+inline constexpr uint32_t EvDeliveryMan_Text = 0x00192490u;
 inline constexpr uint32_t EvDeliveryMan_Update = 0x00192540u;
 inline constexpr uint32_t EvDeliveryMan_End = 0x00192690u;
 inline constexpr uint32_t EvDeliveryMan_Start = 0x00192750u;
@@ -1314,56 +1314,56 @@ inline constexpr uint32_t EventQueue_InsertByPriority = 0x001930C0u;
 inline constexpr uint32_t PartyPopup_Draw = 0x00193220u;
 inline constexpr uint32_t PartyPopup_Update = 0x00193250u;
 inline constexpr uint32_t PartyPopup_dtor = 0x001932A0u;
-inline constexpr uint32_t EvFarewellParty_Slot14 = 0x00193330u;
+inline constexpr uint32_t EvFarewellParty_Answer = 0x00193330u;
 inline constexpr uint32_t EvFarewellParty_End = 0x00193370u;
 inline constexpr uint32_t EvFarewellParty_Update = 0x001933E0u;
 inline constexpr uint32_t EvFarewellParty_Start = 0x00193920u;
 inline constexpr uint32_t EvForgetfulGranny_Check = 0x00193B30u;
-inline constexpr uint32_t EvCrazyCult_Slot14 = 0x00193B60u;
+inline constexpr uint32_t EvCrazyCult_Answer = 0x00193B60u;
 inline constexpr uint32_t EvCrazyCult_End = 0x00193D00u;
 inline constexpr uint32_t EvCrazyCult_Phase3 = 0x00193DF0u;
 inline constexpr uint32_t EvCrazyCult_Phase2 = 0x00193F40u;
 inline constexpr uint32_t EvCrazyCult_Phase1 = 0x00194150u;
 inline constexpr uint32_t EvCrazyCult_Update = 0x001942B0u;
 inline constexpr uint32_t EvCrazyCult_Start = 0x00194690u;
-inline constexpr uint32_t EvAdoption_Slot14 = 0x00194720u;
-inline constexpr uint32_t EvAdoption_Slot10 = 0x001949F0u;
+inline constexpr uint32_t EvAdoption_Answer = 0x00194720u;
+inline constexpr uint32_t EvAdoption_Text = 0x001949F0u;
 inline constexpr uint32_t EvAdoption_Update = 0x00194A30u;
 inline constexpr uint32_t EvAdoption_Start = 0x00194FE0u;
-inline constexpr uint32_t EvUselessMiddleAged_Slot14 = 0x001950A0u;
+inline constexpr uint32_t EvUselessMiddleAged_Answer = 0x001950A0u;
 inline constexpr uint32_t EvUselessMiddleAged_Update = 0x00195160u;
 inline constexpr uint32_t EvUselessMiddleAged_End = 0x00195200u;
 inline constexpr uint32_t EvUselessMiddleAged_Start = 0x00195290u;
 inline constexpr uint32_t EvUselessMiddleAged_Check = 0x001952E0u;
-inline constexpr uint32_t EvMissingChildren_Slot14 = 0x00195300u;
+inline constexpr uint32_t EvMissingChildren_Answer = 0x00195300u;
 inline constexpr uint32_t EvMissingChildren_End = 0x00195420u;
 inline constexpr uint32_t EvMissingChildren_Update = 0x00195520u;
 inline constexpr uint32_t EvMissingChildren_Start = 0x00195AD0u;
 inline constexpr uint32_t EvMissingChildren_Check = 0x00195B00u;
 inline constexpr uint32_t EvAdvertise_ClaimsMatch = 0x00195C80u;
-inline constexpr uint32_t EvAdvertise_Slot14 = 0x00195DA0u;
+inline constexpr uint32_t EvAdvertise_Answer = 0x00195DA0u;
 inline constexpr uint32_t EvAdvertise_End = 0x001960C0u;
 inline constexpr uint32_t EvAdvertise_Update = 0x00196150u;
 inline constexpr uint32_t EvAdvertise_Start = 0x00196270u;
 inline constexpr uint32_t EvAdvertise_Check = 0x001962A0u;
-inline constexpr uint32_t EvShopping_Slot14 = 0x00196360u;
-inline constexpr uint32_t EvShopping_Slot10 = 0x001965E0u;
+inline constexpr uint32_t EvShopping_Answer = 0x00196360u;
+inline constexpr uint32_t EvShopping_Text = 0x001965E0u;
 inline constexpr uint32_t EvShopping_End = 0x00196660u;
 inline constexpr uint32_t EvShopping_Update = 0x00196720u;
 inline constexpr uint32_t EvShopping_Start = 0x00196970u;
 inline constexpr uint32_t EvShopping_Check = 0x001969F0u;
 inline constexpr uint32_t EventData_GetSize7C = 0x00196F10u;
 inline constexpr uint32_t EventData_GetSize1C = 0x00196F20u;
-inline constexpr uint32_t EvNoodles_Slot14 = 0x00196F30u;
+inline constexpr uint32_t EvNoodles_Answer = 0x00196F30u;
 inline constexpr uint32_t EvNoodles_End = 0x00196FF0u;
 inline constexpr uint32_t EvNoodles_Update = 0x001970F0u;
 inline constexpr uint32_t EvNoodles_Start = 0x00198850u;
 inline constexpr uint32_t EvNoodles_Check = 0x001988D0u;
-inline constexpr uint32_t EvThief_Slot14 = 0x00198B80u;
+inline constexpr uint32_t EvThief_Answer = 0x00198B80u;
 inline constexpr uint32_t EvThief_End = 0x00198C80u;
 inline constexpr uint32_t EvThief_Update = 0x00198D40u;
 inline constexpr uint32_t EvThief_Check = 0x001994F0u;
-inline constexpr uint32_t EvRelationship_Slot14 = 0x001996E0u;
+inline constexpr uint32_t EvRelationship_Answer = 0x001996E0u;
 inline constexpr uint32_t EvAffair_Check = 0x00199870u;
 inline constexpr uint32_t EvBoyfriend_Check = 0x00199AB0u;
 inline constexpr uint32_t EvGirlfriend_Check = 0x00199D10u;
@@ -1730,23 +1730,23 @@ template <> inline constexpr bool at<0x0014C530u> = true; // WaitText_Delete
 template <> inline constexpr bool at<0x0014C560u> = true; // WaitText_Create
 template <> inline constexpr bool at<0x0014C820u> = true; // LightSet_DeletingDtor
 template <> inline constexpr bool at<0x0014CC60u> = true; // LayerB_DeletingDtor
-template <> inline constexpr bool at<0x0014D320u> = true; // LayerC_DeletingDtor
-template <> inline constexpr bool at<0x0014E0E0u> = true; // LayerD_DeletingDtor
-template <> inline constexpr bool at<0x0014F0A0u> = true; // LayerE_DeletingDtor
+template <> inline constexpr bool at<0x0014D320u> = true; // PlacementLayer_DeletingDtor
+template <> inline constexpr bool at<0x0014E0E0u> = true; // RainLayer_DeletingDtor
+template <> inline constexpr bool at<0x0014F0A0u> = true; // SnowLayer_DeletingDtor
 template <> inline constexpr bool at<0x0014F430u> = true; // LayerF_DeletingDtor
 template <> inline constexpr bool at<0x001500D0u> = true; // LayerG_DeletingDtor
 template <> inline constexpr bool at<0x00150C20u> = true; // ListMenu_AddItems
 template <> inline constexpr bool at<0x001512A0u> = true; // ListMenu_dtor
 template <> inline constexpr bool at<0x00151350u> = true; // ListMenu_ctor
-template <> inline constexpr bool at<0x001515B0u> = true; // SceneB_ShowCityName
-template <> inline constexpr bool at<0x001516C0u> = true; // SceneB_ShowStageTitle
-template <> inline constexpr bool at<0x001517C0u> = true; // SceneB_ShowApprovalRate
-template <> inline constexpr bool at<0x00151A20u> = true; // SceneB_MissionBriefing
-template <> inline constexpr bool at<0x00151E50u> = true; // SceneB_BuildBriefingText
-template <> inline constexpr bool at<0x00152020u> = true; // SceneB_ShowTelop
-template <> inline constexpr bool at<0x001524E0u> = true; // SceneB_Update
-template <> inline constexpr bool at<0x00152860u> = true; // SceneB_dtor
-template <> inline constexpr bool at<0x00152910u> = true; // SceneB_ctor
+template <> inline constexpr bool at<0x001515B0u> = true; // StageScene_ShowCityName
+template <> inline constexpr bool at<0x001516C0u> = true; // StageScene_ShowStageTitle
+template <> inline constexpr bool at<0x001517C0u> = true; // StageScene_ShowApprovalRate
+template <> inline constexpr bool at<0x00151A20u> = true; // StageScene_MissionBriefing
+template <> inline constexpr bool at<0x00151E50u> = true; // StageScene_BuildBriefingText
+template <> inline constexpr bool at<0x00152020u> = true; // StageScene_ShowTelop
+template <> inline constexpr bool at<0x001524E0u> = true; // StageScene_Update
+template <> inline constexpr bool at<0x00152860u> = true; // StageScene_dtor
+template <> inline constexpr bool at<0x00152910u> = true; // StageScene_ctor
 template <> inline constexpr bool at<0x00152A50u> = true; // WantsWin_FormatLine
 template <> inline constexpr bool at<0x00152BC0u> = true; // WantsWin_Update
 template <> inline constexpr bool at<0x00153490u> = true; // WantsWin_dtor
@@ -1854,13 +1854,13 @@ template <> inline constexpr bool at<0x0016CF80u> = true; // PhoneCall_DeletingD
 template <> inline constexpr bool at<0x0016D2B0u> = true; // Notice_dtor
 template <> inline constexpr bool at<0x0016D330u> = true; // Notice_ctor
 template <> inline constexpr bool at<0x0016E440u> = true; // Title_LoadMenu
-template <> inline constexpr bool at<0x0016E950u> = true; // SceneA_StartGame
+template <> inline constexpr bool at<0x0016E950u> = true; // TitleScene_StartGame
 template <> inline constexpr bool at<0x0016F270u> = true; // Title_OpeningMovieStep
-template <> inline constexpr bool at<0x001702D0u> = true; // SceneA_LogoStep
-template <> inline constexpr bool at<0x001704A0u> = true; // SceneA_Load
-template <> inline constexpr bool at<0x00170BE0u> = true; // SceneA_Update
-template <> inline constexpr bool at<0x00170FD0u> = true; // SceneA_dtor
-template <> inline constexpr bool at<0x00171220u> = true; // SceneA_ctor
+template <> inline constexpr bool at<0x001702D0u> = true; // TitleScene_LogoStep
+template <> inline constexpr bool at<0x001704A0u> = true; // TitleScene_Load
+template <> inline constexpr bool at<0x00170BE0u> = true; // TitleScene_Update
+template <> inline constexpr bool at<0x00170FD0u> = true; // TitleScene_dtor
+template <> inline constexpr bool at<0x00171220u> = true; // TitleScene_ctor
 template <> inline constexpr bool at<0x00171720u> = true; // TownPages_BuildIndex
 template <> inline constexpr bool at<0x00171C10u> = true; // TownPages_FillPage
 template <> inline constexpr bool at<0x00172130u> = true; // TownPages_Update
@@ -1988,16 +1988,16 @@ template <> inline constexpr bool at<0x0018F280u> = true; // Sound_LoadModules
 template <> inline constexpr bool at<0x0018F450u> = true; // Sound_Shutdown
 template <> inline constexpr bool at<0x0018F4A0u> = true; // Sound_Init
 template <> inline constexpr bool at<0x0018F5F0u> = true; // EvShoppingTogether_Update
-template <> inline constexpr bool at<0x0018FC90u> = true; // EvAlien_Slot14
+template <> inline constexpr bool at<0x0018FC90u> = true; // EvAlien_Answer
 template <> inline constexpr bool at<0x0018FEE0u> = true; // EvAlien_Update
 template <> inline constexpr bool at<0x001907F0u> = true; // EvEscort_Update
-template <> inline constexpr bool at<0x00191850u> = true; // EvCaveMan_Slot14
+template <> inline constexpr bool at<0x00191850u> = true; // EvCaveMan_Answer
 template <> inline constexpr bool at<0x00191A50u> = true; // EvCaveMan_Update
 template <> inline constexpr bool at<0x001932A0u> = true; // PartyPopup_dtor
 template <> inline constexpr bool at<0x001933E0u> = true; // EvFarewellParty_Update
 template <> inline constexpr bool at<0x00195520u> = true; // EvMissingChildren_Update
 template <> inline constexpr bool at<0x00195B00u> = true; // EvMissingChildren_Check
-template <> inline constexpr bool at<0x00196F30u> = true; // EvNoodles_Slot14
+template <> inline constexpr bool at<0x00196F30u> = true; // EvNoodles_Answer
 template <> inline constexpr bool at<0x001970F0u> = true; // EvNoodles_Update
 template <> inline constexpr bool at<0x00198D40u> = true; // EvThief_Update
 template <> inline constexpr bool at<0x0019A050u> = true; // EvActor_PointCursor
@@ -2085,7 +2085,7 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"A3DObject_UpdateMatrices", addr::A3DObject_UpdateMatrices},
     {"A3DObject_UpdateNodeMatrix", addr::A3DObject_UpdateNodeMatrix},
     {"A3DObject_dtor", addr::A3DObject_dtor},
-    {"A3D_GetMeshField0C", addr::A3D_GetMeshField0C},
+    {"A3D_GetAnimLength", addr::A3D_GetAnimLength},
     {"A3D_Relocate", addr::A3D_Relocate},
     {"App_OnInit", addr::App_OnInit},
     {"App_ctor", addr::App_ctor},
@@ -2146,24 +2146,24 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"BldgBusiness_Draw", addr::BldgBusiness_Draw},
     {"BldgBusiness_ctor", addr::BldgBusiness_ctor},
     {"BldgBusiness_dtor", addr::BldgBusiness_dtor},
+    {"BldgClaims_CheckMet", addr::BldgClaims_CheckMet},
     {"BldgClaims_CountNearby", addr::BldgClaims_CountNearby},
     {"BldgClaims_DrawIcon", addr::BldgClaims_DrawIcon},
-    {"BldgClaims_EvalA", addr::BldgClaims_EvalA},
-    {"BldgClaims_EvalB", addr::BldgClaims_EvalB},
-    {"BldgClaims_EvalC", addr::BldgClaims_EvalC},
-    {"BldgClaims_EvalD", addr::BldgClaims_EvalD},
     {"BldgClaims_Evaluate", addr::BldgClaims_Evaluate},
+    {"BldgClaims_Pick", addr::BldgClaims_Pick},
+    {"BldgClaims_Spread", addr::BldgClaims_Spread},
+    {"BldgClaims_WeighNeighbours", addr::BldgClaims_WeighNeighbours},
     {"BldgField_Draw", addr::BldgField_Draw},
     {"BldgField_DrawPeople", addr::BldgField_DrawPeople},
-    {"BldgField_Slot1C", addr::BldgField_Slot1C},
+    {"BldgField_GroundTexture", addr::BldgField_GroundTexture},
     {"BldgField_Tick", addr::BldgField_Tick},
     {"BldgField_ctor", addr::BldgField_ctor},
     {"BldgField_dtor", addr::BldgField_dtor},
-    {"BldgHousing_CollideA", addr::BldgHousing_CollideA},
-    {"BldgHousing_CollideB", addr::BldgHousing_CollideB},
     {"BldgHousing_CountUnits", addr::BldgHousing_CountUnits},
     {"BldgHousing_Draw", addr::BldgHousing_Draw},
+    {"BldgHousing_FloorBelow", addr::BldgHousing_FloorBelow},
     {"BldgHousing_InitRecord", addr::BldgHousing_InitRecord},
+    {"BldgHousing_NearestHit", addr::BldgHousing_NearestHit},
     {"BldgHousing_Tick", addr::BldgHousing_Tick},
     {"BldgHousing_UnitAt", addr::BldgHousing_UnitAt},
     {"BldgHousing_ctor", addr::BldgHousing_ctor},
@@ -2179,18 +2179,18 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"BldgMyHome_Tick", addr::BldgMyHome_Tick},
     {"BldgMyHome_ctor", addr::BldgMyHome_ctor},
     {"BldgMyHome_dtor", addr::BldgMyHome_dtor},
-    {"BldgOffice_CollideA", addr::BldgOffice_CollideA},
-    {"BldgOffice_CollideB", addr::BldgOffice_CollideB},
     {"BldgOffice_Draw", addr::BldgOffice_Draw},
+    {"BldgOffice_FloorBelow", addr::BldgOffice_FloorBelow},
+    {"BldgOffice_NearestHit", addr::BldgOffice_NearestHit},
     {"BldgOffice_Tick", addr::BldgOffice_Tick},
     {"BldgOffice_ctor", addr::BldgOffice_ctor},
     {"BldgOffice_dtor", addr::BldgOffice_dtor},
     {"BldgPigFarm_Draw", addr::BldgPigFarm_Draw},
     {"BldgPigFarm_ctor", addr::BldgPigFarm_ctor},
     {"BldgPigFarm_dtor", addr::BldgPigFarm_dtor},
-    {"BldgPort_CollideA", addr::BldgPort_CollideA},
-    {"BldgPort_CollideB", addr::BldgPort_CollideB},
     {"BldgPort_Draw", addr::BldgPort_Draw},
+    {"BldgPort_FloorBelow", addr::BldgPort_FloorBelow},
+    {"BldgPort_NearestHit", addr::BldgPort_NearestHit},
     {"BldgPort_Tick", addr::BldgPort_Tick},
     {"BldgPort_ctor", addr::BldgPort_ctor},
     {"BldgPort_dtor", addr::BldgPort_dtor},
@@ -2201,22 +2201,22 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"BldgRoad_Draw", addr::BldgRoad_Draw},
     {"BldgRoad_DrawPeople", addr::BldgRoad_DrawPeople},
     {"BldgRoad_FindNeighbours", addr::BldgRoad_FindNeighbours},
+    {"BldgRoad_GroundTexture", addr::BldgRoad_GroundTexture},
     {"BldgRoad_InitRecord", addr::BldgRoad_InitRecord},
-    {"BldgRoad_Slot1C", addr::BldgRoad_Slot1C},
     {"BldgRoad_Tick", addr::BldgRoad_Tick},
     {"BldgRoad_ctor", addr::BldgRoad_ctor},
     {"BldgRoad_dtor", addr::BldgRoad_dtor},
-    {"BldgSmallGoods_CollideA", addr::BldgSmallGoods_CollideA},
-    {"BldgSmallGoods_CollideB", addr::BldgSmallGoods_CollideB},
     {"BldgSmallGoods_Draw", addr::BldgSmallGoods_Draw},
+    {"BldgSmallGoods_FloorBelow", addr::BldgSmallGoods_FloorBelow},
+    {"BldgSmallGoods_NearestHit", addr::BldgSmallGoods_NearestHit},
     {"BldgSmallGoods_Tick", addr::BldgSmallGoods_Tick},
     {"BldgSmallGoods_ctor", addr::BldgSmallGoods_ctor},
     {"BldgSmallGoods_dtor", addr::BldgSmallGoods_dtor},
+    {"BldgType_AcceptsOn", addr::BldgType_AcceptsOn},
+    {"BldgType_Animate", addr::BldgType_Animate},
     {"BldgType_BaseCtor", addr::BldgType_BaseCtor},
     {"BldgType_BaseDtor", addr::BldgType_BaseDtor},
     {"BldgType_CallAll", addr::BldgType_CallAll},
-    {"BldgType_CollideA", addr::BldgType_CollideA},
-    {"BldgType_CollideB", addr::BldgType_CollideB},
     {"BldgType_Create", addr::BldgType_Create},
     {"BldgType_DeleteAll", addr::BldgType_DeleteAll},
     {"BldgType_Draw", addr::BldgType_Draw},
@@ -2225,16 +2225,16 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"BldgType_DrawOccupants2", addr::BldgType_DrawOccupants2},
     {"BldgType_FindEntrance", addr::BldgType_FindEntrance},
     {"BldgType_FindEntrance2", addr::BldgType_FindEntrance2},
+    {"BldgType_FloorBelow", addr::BldgType_FloorBelow},
     {"BldgType_GetPostName", addr::BldgType_GetPostName},
+    {"BldgType_GroundTexture", addr::BldgType_GroundTexture},
     {"BldgType_InitRecord", addr::BldgType_InitRecord},
     {"BldgType_IsMyHome", addr::BldgType_IsMyHome},
     {"BldgType_IsOpenAt", addr::BldgType_IsOpenAt},
     {"BldgType_LoadAll", addr::BldgType_LoadAll},
+    {"BldgType_NearestHit", addr::BldgType_NearestHit},
     {"BldgType_OccupantMatrix", addr::BldgType_OccupantMatrix},
-    {"BldgType_Slot1C", addr::BldgType_Slot1C},
-    {"BldgType_Slot20", addr::BldgType_Slot20},
-    {"BldgType_Slot30", addr::BldgType_Slot30},
-    {"BldgType_Slot34", addr::BldgType_Slot34},
+    {"BldgType_RayHit", addr::BldgType_RayHit},
     {"BldgType_Tick", addr::BldgType_Tick},
     {"BldgWasteland_Draw", addr::BldgWasteland_Draw},
     {"BldgWasteland_FindSpot", addr::BldgWasteland_FindSpot},
@@ -2242,13 +2242,13 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"BldgWasteland_Tick", addr::BldgWasteland_Tick},
     {"BldgWasteland_ctor", addr::BldgWasteland_ctor},
     {"BldgWasteland_dtor", addr::BldgWasteland_dtor},
-    {"Bldg_CollideA", addr::Bldg_CollideA},
-    {"Bldg_CollideB", addr::Bldg_CollideB},
     {"Bldg_DrawPeople", addr::Bldg_DrawPeople},
+    {"Bldg_FloorBelow", addr::Bldg_FloorBelow},
     {"Bldg_InitRecord", addr::Bldg_InitRecord},
     {"Bldg_InitRecordBase", addr::Bldg_InitRecordBase},
     {"Bldg_IsOpen", addr::Bldg_IsOpen},
-    {"Bldg_Slot30", addr::Bldg_Slot30},
+    {"Bldg_NearestHit", addr::Bldg_NearestHit},
+    {"Bldg_RayHit", addr::Bldg_RayHit},
     {"Bldg_Tick", addr::Bldg_Tick},
     {"Bldg_ctor", addr::Bldg_ctor},
     {"Bldg_dtor", addr::Bldg_dtor},
@@ -2306,11 +2306,11 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"CityMap_DeletingDtor", addr::CityMap_DeletingDtor},
     {"CityMap_ctor", addr::CityMap_ctor},
     {"CityRender_CollectObjects", addr::CityRender_CollectObjects},
-    {"CityRender_DrawBuildings", addr::CityRender_DrawBuildings},
     {"CityRender_DrawInstanceLayer", addr::CityRender_DrawInstanceLayer},
-    {"CityRender_DrawOverlays", addr::CityRender_DrawOverlays},
-    {"CityRender_DrawSky", addr::CityRender_DrawSky},
+    {"CityRender_DrawPlacement", addr::CityRender_DrawPlacement},
+    {"CityRender_DrawTerrain", addr::CityRender_DrawTerrain},
     {"CityRender_DrawWater", addr::CityRender_DrawWater},
+    {"CityRender_DrawWeather", addr::CityRender_DrawWeather},
     {"CityRender_InitParams", addr::CityRender_InitParams},
     {"CityRender_UpdatePeople", addr::CityRender_UpdatePeople},
     {"CityRender_ctor", addr::CityRender_ctor},
@@ -2349,11 +2349,11 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Claim_Load", addr::Claim_Load},
     {"Claim_PickVariant", addr::Claim_PickVariant},
     {"Clock_AddWrap", addr::Clock_AddWrap},
+    {"Collide_MeshFloorBelow", addr::Collide_MeshFloorBelow},
+    {"Collide_MeshNearestHit", addr::Collide_MeshNearestHit},
+    {"Collide_NormalRayTriangle", addr::Collide_NormalRayTriangle},
     {"Collide_PointInTriangle", addr::Collide_PointInTriangle},
-    {"Collide_RayTriangleA", addr::Collide_RayTriangleA},
-    {"Collide_RayTriangleB", addr::Collide_RayTriangleB},
-    {"Collide_SegmentA", addr::Collide_SegmentA},
-    {"Collide_SegmentB", addr::Collide_SegmentB},
+    {"Collide_SegmentTriangle", addr::Collide_SegmentTriangle},
     {"DmaChain_Begin", addr::DmaChain_Begin},
     {"DmaChain_Next", addr::DmaChain_Next},
     {"DmaList_BeginScene", addr::DmaList_BeginScene},
@@ -2382,50 +2382,50 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"EvActor_Release", addr::EvActor_Release},
     {"EvActor_StopFollowing", addr::EvActor_StopFollowing},
     {"EvActor_Wander", addr::EvActor_Wander},
-    {"EvAdoption_Slot10", addr::EvAdoption_Slot10},
-    {"EvAdoption_Slot14", addr::EvAdoption_Slot14},
+    {"EvAdoption_Answer", addr::EvAdoption_Answer},
     {"EvAdoption_Start", addr::EvAdoption_Start},
+    {"EvAdoption_Text", addr::EvAdoption_Text},
     {"EvAdoption_Update", addr::EvAdoption_Update},
+    {"EvAdvertise_Answer", addr::EvAdvertise_Answer},
     {"EvAdvertise_Check", addr::EvAdvertise_Check},
     {"EvAdvertise_ClaimsMatch", addr::EvAdvertise_ClaimsMatch},
     {"EvAdvertise_End", addr::EvAdvertise_End},
-    {"EvAdvertise_Slot14", addr::EvAdvertise_Slot14},
     {"EvAdvertise_Start", addr::EvAdvertise_Start},
     {"EvAdvertise_Update", addr::EvAdvertise_Update},
     {"EvAffair_Check", addr::EvAffair_Check},
+    {"EvAlien_Answer", addr::EvAlien_Answer},
     {"EvAlien_Check", addr::EvAlien_Check},
     {"EvAlien_End", addr::EvAlien_End},
     {"EvAlien_FindBuilding", addr::EvAlien_FindBuilding},
     {"EvAlien_PickTarget", addr::EvAlien_PickTarget},
-    {"EvAlien_Slot14", addr::EvAlien_Slot14},
     {"EvAlien_Update", addr::EvAlien_Update},
+    {"EvBodyguard_Answer", addr::EvBodyguard_Answer},
     {"EvBodyguard_Check", addr::EvBodyguard_Check},
-    {"EvBodyguard_Slot14", addr::EvBodyguard_Slot14},
     {"EvBoyfriend_Check", addr::EvBoyfriend_Check},
     {"EvBugDamage_Check", addr::EvBugDamage_Check},
+    {"EvCaveMan_Answer", addr::EvCaveMan_Answer},
     {"EvCaveMan_Check", addr::EvCaveMan_Check},
     {"EvCaveMan_End", addr::EvCaveMan_End},
-    {"EvCaveMan_Slot14", addr::EvCaveMan_Slot14},
     {"EvCaveMan_Start", addr::EvCaveMan_Start},
     {"EvCaveMan_Update", addr::EvCaveMan_Update},
+    {"EvCrazyCult_Answer", addr::EvCrazyCult_Answer},
     {"EvCrazyCult_End", addr::EvCrazyCult_End},
     {"EvCrazyCult_Phase1", addr::EvCrazyCult_Phase1},
     {"EvCrazyCult_Phase2", addr::EvCrazyCult_Phase2},
     {"EvCrazyCult_Phase3", addr::EvCrazyCult_Phase3},
-    {"EvCrazyCult_Slot14", addr::EvCrazyCult_Slot14},
     {"EvCrazyCult_Start", addr::EvCrazyCult_Start},
     {"EvCrazyCult_Update", addr::EvCrazyCult_Update},
+    {"EvDeliveryMan_Answer", addr::EvDeliveryMan_Answer},
     {"EvDeliveryMan_Check", addr::EvDeliveryMan_Check},
     {"EvDeliveryMan_End", addr::EvDeliveryMan_End},
-    {"EvDeliveryMan_Slot10", addr::EvDeliveryMan_Slot10},
-    {"EvDeliveryMan_Slot14", addr::EvDeliveryMan_Slot14},
     {"EvDeliveryMan_Start", addr::EvDeliveryMan_Start},
+    {"EvDeliveryMan_Text", addr::EvDeliveryMan_Text},
     {"EvDeliveryMan_Update", addr::EvDeliveryMan_Update},
     {"EvEscort_End", addr::EvEscort_End},
     {"EvEscort_Start", addr::EvEscort_Start},
     {"EvEscort_Update", addr::EvEscort_Update},
+    {"EvFarewellParty_Answer", addr::EvFarewellParty_Answer},
     {"EvFarewellParty_End", addr::EvFarewellParty_End},
-    {"EvFarewellParty_Slot14", addr::EvFarewellParty_Slot14},
     {"EvFarewellParty_Start", addr::EvFarewellParty_Start},
     {"EvFarewellParty_Update", addr::EvFarewellParty_Update},
     {"EvFirstPayday_Check", addr::EvFirstPayday_Check},
@@ -2433,52 +2433,52 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"EvForgetfulGranny_Check", addr::EvForgetfulGranny_Check},
     {"EvGirlfriend_Check", addr::EvGirlfriend_Check},
     {"EvHunger_Check", addr::EvHunger_Check},
+    {"EvMissingChildren_Answer", addr::EvMissingChildren_Answer},
     {"EvMissingChildren_Check", addr::EvMissingChildren_Check},
     {"EvMissingChildren_End", addr::EvMissingChildren_End},
-    {"EvMissingChildren_Slot14", addr::EvMissingChildren_Slot14},
     {"EvMissingChildren_Start", addr::EvMissingChildren_Start},
     {"EvMissingChildren_Update", addr::EvMissingChildren_Update},
     {"EvMissionCleared_Check", addr::EvMissionCleared_Check},
+    {"EvMsg_Answer", addr::EvMsg_Answer},
     {"EvMsg_End", addr::EvMsg_End},
-    {"EvMsg_Slot14", addr::EvMsg_Slot14},
     {"EvMsg_Start", addr::EvMsg_Start},
     {"EvMsg_Update", addr::EvMsg_Update},
     {"EvMsg_UpdateFinal", addr::EvMsg_UpdateFinal},
     {"EvNoOffer_Check", addr::EvNoOffer_Check},
     {"EvNoRetreat_Update", addr::EvNoRetreat_Update},
+    {"EvNoodles_Answer", addr::EvNoodles_Answer},
     {"EvNoodles_Check", addr::EvNoodles_Check},
     {"EvNoodles_End", addr::EvNoodles_End},
-    {"EvNoodles_Slot14", addr::EvNoodles_Slot14},
     {"EvNoodles_Start", addr::EvNoodles_Start},
     {"EvNoodles_Update", addr::EvNoodles_Update},
     {"EvPayday_Check", addr::EvPayday_Check},
-    {"EvPayday_Slot10", addr::EvPayday_Slot10},
+    {"EvPayday_Text", addr::EvPayday_Text},
     {"EvPayday_Update", addr::EvPayday_Update},
     {"EvPopularity_Check", addr::EvPopularity_Check},
     {"EvQuota80_Check", addr::EvQuota80_Check},
-    {"EvRelationship_Slot14", addr::EvRelationship_Slot14},
+    {"EvRelationship_Answer", addr::EvRelationship_Answer},
     {"EvRetreat_Check", addr::EvRetreat_Check},
     {"EvRiddle_Check", addr::EvRiddle_Check},
+    {"EvShoppingTogether_Answer", addr::EvShoppingTogether_Answer},
     {"EvShoppingTogether_Check", addr::EvShoppingTogether_Check},
     {"EvShoppingTogether_End", addr::EvShoppingTogether_End},
-    {"EvShoppingTogether_Slot14", addr::EvShoppingTogether_Slot14},
     {"EvShoppingTogether_Start", addr::EvShoppingTogether_Start},
     {"EvShoppingTogether_Update", addr::EvShoppingTogether_Update},
+    {"EvShopping_Answer", addr::EvShopping_Answer},
     {"EvShopping_Check", addr::EvShopping_Check},
     {"EvShopping_End", addr::EvShopping_End},
-    {"EvShopping_Slot10", addr::EvShopping_Slot10},
-    {"EvShopping_Slot14", addr::EvShopping_Slot14},
     {"EvShopping_Start", addr::EvShopping_Start},
+    {"EvShopping_Text", addr::EvShopping_Text},
     {"EvShopping_Update", addr::EvShopping_Update},
+    {"EvThief_Answer", addr::EvThief_Answer},
     {"EvThief_Check", addr::EvThief_Check},
     {"EvThief_End", addr::EvThief_End},
     {"EvThief_FindBuilding", addr::EvThief_FindBuilding},
-    {"EvThief_Slot14", addr::EvThief_Slot14},
     {"EvThief_Update", addr::EvThief_Update},
     {"EvThreeUnsatisfied_Check", addr::EvThreeUnsatisfied_Check},
+    {"EvUselessMiddleAged_Answer", addr::EvUselessMiddleAged_Answer},
     {"EvUselessMiddleAged_Check", addr::EvUselessMiddleAged_Check},
     {"EvUselessMiddleAged_End", addr::EvUselessMiddleAged_End},
-    {"EvUselessMiddleAged_Slot14", addr::EvUselessMiddleAged_Slot14},
     {"EvUselessMiddleAged_Start", addr::EvUselessMiddleAged_Start},
     {"EvUselessMiddleAged_Update", addr::EvUselessMiddleAged_Update},
     {"EvWoman_Check", addr::EvWoman_Check},
@@ -2498,9 +2498,9 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"EventQueue_InsertByPriority", addr::EventQueue_InsertByPriority},
     {"EventQueue_RemoveAt", addr::EventQueue_RemoveAt},
     {"Event_Abort", addr::Event_Abort},
+    {"Event_CallAnswer", addr::Event_CallAnswer},
     {"Event_CallHandlerSlot", addr::Event_CallHandlerSlot},
-    {"Event_CallSlot10", addr::Event_CallSlot10},
-    {"Event_CallSlot14", addr::Event_CallSlot14},
+    {"Event_CallText", addr::Event_CallText},
     {"Event_CheckCondition", addr::Event_CheckCondition},
     {"Event_ClearTileFlags", addr::Event_ClearTileFlags},
     {"Event_CountActive", addr::Event_CountActive},
@@ -2588,7 +2588,6 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Instance_DrawSwayingIfRoom", addr::Instance_DrawSwayingIfRoom},
     {"Laptop_AddEntry", addr::Laptop_AddEntry},
     {"Laptop_Animate", addr::Laptop_Animate},
-    {"Laptop_CheckOpen", addr::Laptop_CheckOpen},
     {"Laptop_CountActive", addr::Laptop_CountActive},
     {"Laptop_Draw", addr::Laptop_Draw},
     {"Laptop_InitEntries", addr::Laptop_InitEntries},
@@ -2601,32 +2600,16 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Laptop_ctor", addr::Laptop_ctor},
     {"Laptop_dtor", addr::Laptop_dtor},
     {"LayerA_AddInstance", addr::LayerA_AddInstance},
+    {"LayerA_BeginFrame", addr::LayerA_BeginFrame},
     {"LayerA_BuildPacket", addr::LayerA_BuildPacket},
     {"LayerA_DeletingDtor", addr::LayerA_DeletingDtor},
     {"LayerA_Draw", addr::LayerA_Draw},
-    {"LayerA_SetSource", addr::LayerA_SetSource},
     {"LayerA_ctor", addr::LayerA_ctor},
     {"LayerB_BuildPacket", addr::LayerB_BuildPacket},
     {"LayerB_DeletingDtor", addr::LayerB_DeletingDtor},
     {"LayerB_Draw", addr::LayerB_Draw},
     {"LayerB_InitParams", addr::LayerB_InitParams},
     {"LayerB_ctor", addr::LayerB_ctor},
-    {"LayerC_BuildPacket", addr::LayerC_BuildPacket},
-    {"LayerC_DeletingDtor", addr::LayerC_DeletingDtor},
-    {"LayerC_DrawBuildings", addr::LayerC_DrawBuildings},
-    {"LayerC_InTileRect", addr::LayerC_InTileRect},
-    {"LayerC_InitParams", addr::LayerC_InitParams},
-    {"LayerC_ctor", addr::LayerC_ctor},
-    {"LayerD_BuildPacket", addr::LayerD_BuildPacket},
-    {"LayerD_DeletingDtor", addr::LayerD_DeletingDtor},
-    {"LayerD_DrawSkyByClock", addr::LayerD_DrawSkyByClock},
-    {"LayerD_InitParams", addr::LayerD_InitParams},
-    {"LayerD_ctor", addr::LayerD_ctor},
-    {"LayerE_BuildPacket", addr::LayerE_BuildPacket},
-    {"LayerE_DeletingDtor", addr::LayerE_DeletingDtor},
-    {"LayerE_Draw", addr::LayerE_Draw},
-    {"LayerE_InitParams", addr::LayerE_InitParams},
-    {"LayerE_ctor", addr::LayerE_ctor},
     {"LayerF_BuildPacket", addr::LayerF_BuildPacket},
     {"LayerF_DeletingDtor", addr::LayerF_DeletingDtor},
     {"LayerF_Draw", addr::LayerF_Draw},
@@ -2671,7 +2654,7 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"MapObj_RayHit", addr::MapObj_RayHit},
     {"MapObj_SumHistory", addr::MapObj_SumHistory},
     {"MapObject_ctor", addr::MapObject_ctor},
-    {"MapObjects_Slot0C", addr::MapObjects_Slot0C},
+    {"MapObjects_ClearObject", addr::MapObjects_ClearObject},
     {"MapObjects_Tick", addr::MapObjects_Tick},
     {"MapObjects_ctor", addr::MapObjects_ctor},
     {"MapObjects_dtor", addr::MapObjects_dtor},
@@ -2732,6 +2715,7 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Map_UnlinkPersonFromTile", addr::Map_UnlinkPersonFromTile},
     {"Map_UpdateAreaGeometry", addr::Map_UpdateAreaGeometry},
     {"Map_UpdateTileGeometry", addr::Map_UpdateTileGeometry},
+    {"Markers_CheckCircle", addr::Markers_CheckCircle},
     {"Markers_Draw", addr::Markers_Draw},
     {"Markers_ctor", addr::Markers_ctor},
     {"Markers_dtor", addr::Markers_dtor},
@@ -2751,12 +2735,12 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"McManager_BuildSaveHeader", addr::McManager_BuildSaveHeader},
     {"McManager_ClearSlots", addr::McManager_ClearSlots},
     {"McManager_FindSave", addr::McManager_FindSave},
-    {"McManager_FindSlotA", addr::McManager_FindSlotA},
-    {"McManager_FindSlotB", addr::McManager_FindSlotB},
     {"McManager_FormatSaveInfo", addr::McManager_FormatSaveInfo},
     {"McManager_FormatSlotLine", addr::McManager_FormatSlotLine},
     {"McManager_FormatSlotText", addr::McManager_FormatSlotText},
     {"McManager_GetCardStatus", addr::McManager_GetCardStatus},
+    {"McManager_GetSaveFolder", addr::McManager_GetSaveFolder},
+    {"McManager_GetSaveHeader", addr::McManager_GetSaveHeader},
     {"McManager_HasAnySave", addr::McManager_HasAnySave},
     {"McManager_InitSlots", addr::McManager_InitSlots},
     {"McManager_IsCardUsable", addr::McManager_IsCardUsable},
@@ -2988,18 +2972,25 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"PhoneCall_Remove", addr::PhoneCall_Remove},
     {"PhoneCall_Update", addr::PhoneCall_Update},
     {"PhoneCall_ctor", addr::PhoneCall_ctor},
+    {"PlacementLayer_BuildPacket", addr::PlacementLayer_BuildPacket},
+    {"PlacementLayer_DeletingDtor", addr::PlacementLayer_DeletingDtor},
+    {"PlacementLayer_Draw", addr::PlacementLayer_Draw},
+    {"PlacementLayer_InTileRect", addr::PlacementLayer_InTileRect},
+    {"PlacementLayer_InitParams", addr::PlacementLayer_InitParams},
+    {"PlacementLayer_Set", addr::PlacementLayer_Set},
+    {"PlacementLayer_ctor", addr::PlacementLayer_ctor},
     {"Placement_CheckNeighbours", addr::Placement_CheckNeighbours},
     {"Placement_CheckSlope", addr::Placement_CheckSlope},
     {"Placement_CheckTypeRule", addr::Placement_CheckTypeRule},
     {"Placement_FindSpot", addr::Placement_FindSpot},
     {"PlayMissionMovie", addr::PlayMissionMovie},
     {"PlayOpeningMovie", addr::PlayOpeningMovie},
-    {"Player_CollideObjects", addr::Player_CollideObjects},
     {"Player_DeletingDtor", addr::Player_DeletingDtor},
     {"Player_DistanceToBuilding", addr::Player_DistanceToBuilding},
     {"Player_DistanceToPerson", addr::Player_DistanceToPerson},
     {"Player_DistanceToPoint", addr::Player_DistanceToPoint},
     {"Player_Draw", addr::Player_Draw},
+    {"Player_FloorBelow", addr::Player_FloorBelow},
     {"Player_GetMatrix", addr::Player_GetMatrix},
     {"Player_GetMode", addr::Player_GetMode},
     {"Player_LoadState", addr::Player_LoadState},
@@ -3015,6 +3006,11 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Player_Update", addr::Player_Update},
     {"Player_UpdateAction", addr::Player_UpdateAction},
     {"Player_ctor", addr::Player_ctor},
+    {"RainLayer_BuildPacket", addr::RainLayer_BuildPacket},
+    {"RainLayer_DeletingDtor", addr::RainLayer_DeletingDtor},
+    {"RainLayer_Draw", addr::RainLayer_Draw},
+    {"RainLayer_InitParams", addr::RainLayer_InitParams},
+    {"RainLayer_ctor", addr::RainLayer_ctor},
     {"Random_Next", addr::Random_Next},
     {"Random_Seed", addr::Random_Seed},
     {"Random_Stir", addr::Random_Stir},
@@ -3031,22 +3027,6 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"SaveFile_ResetState", addr::SaveFile_ResetState},
     {"SaveFile_Write", addr::SaveFile_Write},
     {"SaveFile_WriteIconSys", addr::SaveFile_WriteIconSys},
-    {"SceneA_Load", addr::SceneA_Load},
-    {"SceneA_LogoStep", addr::SceneA_LogoStep},
-    {"SceneA_MemoryCardCheck", addr::SceneA_MemoryCardCheck},
-    {"SceneA_StartGame", addr::SceneA_StartGame},
-    {"SceneA_Update", addr::SceneA_Update},
-    {"SceneA_ctor", addr::SceneA_ctor},
-    {"SceneA_dtor", addr::SceneA_dtor},
-    {"SceneB_BuildBriefingText", addr::SceneB_BuildBriefingText},
-    {"SceneB_MissionBriefing", addr::SceneB_MissionBriefing},
-    {"SceneB_ShowApprovalRate", addr::SceneB_ShowApprovalRate},
-    {"SceneB_ShowCityName", addr::SceneB_ShowCityName},
-    {"SceneB_ShowStageTitle", addr::SceneB_ShowStageTitle},
-    {"SceneB_ShowTelop", addr::SceneB_ShowTelop},
-    {"SceneB_Update", addr::SceneB_Update},
-    {"SceneB_ctor", addr::SceneB_ctor},
-    {"SceneB_dtor", addr::SceneB_dtor},
     {"Schedule_Evaluate", addr::Schedule_Evaluate},
     {"Schedule_GetActivity", addr::Schedule_GetActivity},
     {"Schedule_GetBuildingActivity", addr::Schedule_GetBuildingActivity},
@@ -3076,26 +3056,31 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Sky_BuildPackets", addr::Sky_BuildPackets},
     {"Sky_Draw", addr::Sky_Draw},
     {"Sky_Load", addr::Sky_Load},
-    {"SoundCmd_01", addr::SoundCmd_01},
-    {"SoundCmd_02", addr::SoundCmd_02},
-    {"SoundCmd_02_Zero", addr::SoundCmd_02_Zero},
-    {"SoundCmd_0F", addr::SoundCmd_0F},
-    {"SoundCmd_11", addr::SoundCmd_11},
-    {"SoundCmd_CancelPlayB", addr::SoundCmd_CancelPlayB},
-    {"SoundCmd_FadeB", addr::SoundCmd_FadeB},
+    {"SnowLayer_BuildPacket", addr::SnowLayer_BuildPacket},
+    {"SnowLayer_DeletingDtor", addr::SnowLayer_DeletingDtor},
+    {"SnowLayer_Draw", addr::SnowLayer_Draw},
+    {"SnowLayer_InitParams", addr::SnowLayer_InitParams},
+    {"SnowLayer_ctor", addr::SnowLayer_ctor},
+    {"SoundCmd_CancelWavePlay", addr::SoundCmd_CancelWavePlay},
     {"SoundCmd_Flush", addr::SoundCmd_Flush},
-    {"SoundCmd_LoadBank", addr::SoundCmd_LoadBank},
-    {"SoundCmd_PlayA", addr::SoundCmd_PlayA},
-    {"SoundCmd_PlayB", addr::SoundCmd_PlayB},
-    {"SoundCmd_PlaySequence", addr::SoundCmd_PlaySequence},
-    {"SoundCmd_SetDiscBusy", addr::SoundCmd_SetDiscBusy},
-    {"SoundCmd_SetPitchA", addr::SoundCmd_SetPitchA},
-    {"SoundCmd_SetVolumeA", addr::SoundCmd_SetVolumeA},
-    {"SoundCmd_SetVolumeB", addr::SoundCmd_SetVolumeB},
-    {"SoundCmd_SetVolumeLRA", addr::SoundCmd_SetVolumeLRA},
-    {"SoundCmd_StopA", addr::SoundCmd_StopA},
-    {"SoundCmd_StopB", addr::SoundCmd_StopB},
-    {"SoundCmd_StopSequence", addr::SoundCmd_StopSequence},
+    {"SoundCmd_MidiClose", addr::SoundCmd_MidiClose},
+    {"SoundCmd_MidiFade", addr::SoundCmd_MidiFade},
+    {"SoundCmd_MidiOpen", addr::SoundCmd_MidiOpen},
+    {"SoundCmd_MidiPlay", addr::SoundCmd_MidiPlay},
+    {"SoundCmd_MidiSetTempo", addr::SoundCmd_MidiSetTempo},
+    {"SoundCmd_MidiSetTrackVolume", addr::SoundCmd_MidiSetTrackVolume},
+    {"SoundCmd_MidiSetVolume", addr::SoundCmd_MidiSetVolume},
+    {"SoundCmd_MidiStop", addr::SoundCmd_MidiStop},
+    {"SoundCmd_SetLoadPause", addr::SoundCmd_SetLoadPause},
+    {"SoundCmd_WaveClose", addr::SoundCmd_WaveClose},
+    {"SoundCmd_WaveClose0", addr::SoundCmd_WaveClose0},
+    {"SoundCmd_WaveFade", addr::SoundCmd_WaveFade},
+    {"SoundCmd_WaveOpen", addr::SoundCmd_WaveOpen},
+    {"SoundCmd_WavePlay", addr::SoundCmd_WavePlay},
+    {"SoundCmd_WaveSetPitch", addr::SoundCmd_WaveSetPitch},
+    {"SoundCmd_WaveSetTrackVolume", addr::SoundCmd_WaveSetTrackVolume},
+    {"SoundCmd_WaveSetVolume", addr::SoundCmd_WaveSetVolume},
+    {"SoundCmd_WaveStop", addr::SoundCmd_WaveStop},
     {"SoundTest_BgmPage", addr::SoundTest_BgmPage},
     {"SoundTest_BgmText", addr::SoundTest_BgmText},
     {"SoundTest_SePage", addr::SoundTest_SePage},
@@ -3117,6 +3102,15 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Sound_Update", addr::Sound_Update},
     {"StageObj_DeletingDtor", addr::StageObj_DeletingDtor},
     {"StageObj_ctor", addr::StageObj_ctor},
+    {"StageScene_BuildBriefingText", addr::StageScene_BuildBriefingText},
+    {"StageScene_MissionBriefing", addr::StageScene_MissionBriefing},
+    {"StageScene_ShowApprovalRate", addr::StageScene_ShowApprovalRate},
+    {"StageScene_ShowCityName", addr::StageScene_ShowCityName},
+    {"StageScene_ShowStageTitle", addr::StageScene_ShowStageTitle},
+    {"StageScene_ShowTelop", addr::StageScene_ShowTelop},
+    {"StageScene_Update", addr::StageScene_Update},
+    {"StageScene_ctor", addr::StageScene_ctor},
+    {"StageScene_dtor", addr::StageScene_dtor},
     {"Stage_FormatGoalText", addr::Stage_FormatGoalText},
     {"Stage_FormatTargetText", addr::Stage_FormatTargetText},
     {"Stage_Load", addr::Stage_Load},
@@ -3287,7 +3281,6 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Terrain_Draw", addr::Terrain_Draw},
     {"Terrain_DrawPatch", addr::Terrain_DrawPatch},
     {"Terrain_InitParams", addr::Terrain_InitParams},
-    {"Terrain_SetVec", addr::Terrain_SetVec},
     {"TexImage_Convert", addr::TexImage_Convert},
     {"TexImage_Load", addr::TexImage_Load},
     {"TexImage_dtor", addr::TexImage_dtor},
@@ -3321,6 +3314,13 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"TileLists_Remove", addr::TileLists_Remove},
     {"TileLists_RemoveAll", addr::TileLists_RemoveAll},
     {"TileLists_SaveState", addr::TileLists_SaveState},
+    {"TitleScene_Load", addr::TitleScene_Load},
+    {"TitleScene_LogoStep", addr::TitleScene_LogoStep},
+    {"TitleScene_MemoryCardCheck", addr::TitleScene_MemoryCardCheck},
+    {"TitleScene_StartGame", addr::TitleScene_StartGame},
+    {"TitleScene_Update", addr::TitleScene_Update},
+    {"TitleScene_ctor", addr::TitleScene_ctor},
+    {"TitleScene_dtor", addr::TitleScene_dtor},
     {"Title_DrawChoices", addr::Title_DrawChoices},
     {"Title_DrawChoicesIdle", addr::Title_DrawChoicesIdle},
     {"Title_DrawCommon", addr::Title_DrawCommon},
@@ -3409,13 +3409,13 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"WordsFn_EndEventA4Result", addr::WordsFn_EndEventA4Result},
     {"WordsFn_EndEventA8", addr::WordsFn_EndEventA8},
     {"WordsFn_EndEventA8Result", addr::WordsFn_EndEventA8Result},
+    {"WordsFn_EventA4Answer", addr::WordsFn_EventA4Answer},
     {"WordsFn_EventA4IsTalk", addr::WordsFn_EventA4IsTalk},
-    {"WordsFn_EventA4Slot10", addr::WordsFn_EventA4Slot10},
-    {"WordsFn_EventA4Slot14", addr::WordsFn_EventA4Slot14},
+    {"WordsFn_EventA4Text", addr::WordsFn_EventA4Text},
     {"WordsFn_EventA4Var", addr::WordsFn_EventA4Var},
+    {"WordsFn_EventA8Answer", addr::WordsFn_EventA8Answer},
     {"WordsFn_EventA8Kind", addr::WordsFn_EventA8Kind},
-    {"WordsFn_EventA8Slot10", addr::WordsFn_EventA8Slot10},
-    {"WordsFn_EventA8Slot14", addr::WordsFn_EventA8Slot14},
+    {"WordsFn_EventA8Text", addr::WordsFn_EventA8Text},
     {"WordsFn_EventA8Var", addr::WordsFn_EventA8Var},
     {"WordsFn_EventActorIs", addr::WordsFn_EventActorIs},
     {"WordsFn_EventAddWant", addr::WordsFn_EventAddWant},
@@ -3734,7 +3734,7 @@ void LightSet_BuildPackets(GuestPtr<LightSet> lights);
 void Packet2_Draw(GuestPtr<uint32_t> packets, int second);
 GuestPtr<A3DObject> A3DObjectBase_DeletingDtor(GuestPtr<A3DObject> model, int16_t deleteFlag);
 int LightSet_Init(GuestPtr<LightSet> lights);
-ps2f A3D_GetMeshField0C(GuestPtr<A3DObject> model, int animation);
+ps2f A3D_GetAnimLength(GuestPtr<A3DObject> model, int animation);
 void Instance_DrawSwaying(GuestPtr<A3DObject> model, int anim, ps2f time);
 void A3D_Relocate(GuestPtr<A3DObject> model, int indexed);
 int64_t A3DObject_ChangeLuminosity(GuestPtr<A3DObject> model, GuestPtr<uint32_t> colour, int a2);
@@ -3867,8 +3867,8 @@ GuestPtr<TileLists> TileLists_Clear(GuestPtr<TileLists> lists);
 void Event_InitForCity(GuestPtr<EventMgr> events);
 void Event_LoadState(GuestPtr<EventMgr> events, GuestPtr<McManager> mc);
 void Event_SaveState(GuestPtr<EventMgr> events, GuestPtr<McManager> mc);
-int64_t Event_CallSlot14(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int arg, int index);
-int64_t Event_CallSlot10(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, int index, int arg);
+int64_t Event_CallAnswer(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int arg, int index);
+int64_t Event_CallText(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, int index, int arg);
 void Event_Update(GuestPtr<EventMgr> events, GuestPtr<CityScene> city);
 int64_t Event_CheckCondition(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, GuestPtr<uint8_t> type, GuestPtr<MapPerson> person);
 uint8_t Event_TryStart(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
@@ -4001,7 +4001,7 @@ ps2f MapObj_GetHeight(GuestPtr<CityMap> map, uint32_t object);
 void MapObj_PushHistory(GuestPtr<CityMap> map);
 int MapObj_SumHistory(GuestPtr<CityMap> map);
 int MapObj_RayHit(GuestPtr<CityMap> map, uint32_t tile, int a2, int a3, int arg);
-int Player_CollideObjects(GuestPtr<CityMap> map, GuestPtr<ps2f> position, int a2, ps2f radius);
+int Player_FloorBelow(GuestPtr<CityMap> map, GuestPtr<ps2f> position, int hit, ps2f lift);
 int Player_NearestObject(GuestPtr<CityMap> map, GuestPtr<ps2f> position, GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, ps2f radius);
 void MapObj_GetMatrix(GuestPtr<CityMap> map, int object, GuestPtr<Vec4> matrix);
 int Map_CountObjectsBefore(GuestPtr<CityMap> map, int x, int z, uint16_t object);
@@ -4020,7 +4020,7 @@ int Placement_CheckTypeRule(GuestPtr<CityMap> map, int type, int tile);
 void MapObj_Delete(GuestPtr<CityMap> map, int object);
 void MapObj_Init(GuestPtr<CityMap> map, int object, int type, uint16_t owner, uint16_t tile);
 int MapObj_FindFreeSlot(GuestPtr<CityMap> map);
-void MapObjects_Slot0C(GuestPtr<CityMap> map);
+void MapObjects_ClearObject(GuestPtr<CityMap> map);
 void MapObjects_Tick(GuestPtr<CityMap> map, GuestPtr<CityScene> city);
 GuestPtr<CityMap> MapObjects_dtor(GuestPtr<CityMap> map, int16_t deleteFlag);
 GuestPtr<CityMap> MapObjects_ctor(GuestPtr<CityMap> map);
@@ -4034,12 +4034,12 @@ GuestPtr<uint32_t> Terrain_BuildVu1PacketB(GuestPtr<CityMap> map, GuestPtr<uint3
 void Terrain_InitParams(GuestPtr<CityMap> map);
 void CityRender_InitParams(GuestPtr<CityMap> map);
 void CityRender_UpdatePeople(GuestPtr<CityMap> map, GuestPtr<CityScene> city);
-void CityRender_DrawSky(GuestPtr<CityMap> map, GuestPtr<CityScene> city, int pass, GuestPtr<Vec4> a3);
+void CityRender_DrawWeather(GuestPtr<CityMap> map, GuestPtr<CityScene> city, int pass, GuestPtr<Vec4> a3);
 void CityRender_CollectObjects(GuestPtr<CityMap> map, GuestPtr<CityScene> city);
 void CityRender_DrawWater(GuestPtr<CityMap> map, GuestPtr<CityScene> city);
 void CityRender_DrawInstanceLayer(GuestPtr<CityMap> map);
-void CityRender_DrawBuildings(GuestPtr<CityMap> map, int pass);
-void CityRender_DrawOverlays(GuestPtr<CityMap> map, GuestPtr<CityScene> city);
+void CityRender_DrawPlacement(GuestPtr<CityMap> map, int pass);
+void CityRender_DrawTerrain(GuestPtr<CityMap> map, GuestPtr<CityScene> city);
 GuestPtr<CityMap> CityRender_dtor(GuestPtr<CityMap> map, int16_t deleteFlag);
 GuestPtr<CityMap> CityRender_ctor(GuestPtr<CityMap> map);
 void TexImage_Convert(GuestPtr<TexImage> image, uint32_t textureBlock, uint32_t clutBlock);
@@ -4049,7 +4049,7 @@ int TexImage_Load(GuestPtr<TexImage> image, GuestPtr<char> name, int a2, int a3)
 GuestPtr<uint32_t> LayerA_BuildPacket(GuestPtr<LayerA> layer, GuestPtr<uint32_t> packet);
 void LayerA_Draw(GuestPtr<LayerA> layer);
 void LayerA_AddInstance(GuestPtr<LayerA> layer, int a1, int a2, ps2f x, ps2f y, ps2f z);
-void LayerA_SetSource(GuestPtr<LayerA> layer, int source);
+void LayerA_BeginFrame(GuestPtr<LayerA> layer, int source);
 GuestPtr<LayerA> LayerA_DeletingDtor(GuestPtr<LayerA> layer, int16_t deleteFlag);
 GuestPtr<LayerA> LayerA_ctor(GuestPtr<LayerA> layer);
 GuestPtr<uint32_t> StatusPanel_BuildPacket(GuestPtr<StatusPanel> panel, GuestPtr<uint32_t> packet);
@@ -4091,23 +4091,23 @@ void LayerB_InitParams(GuestPtr<LayerB> layer);
 void LayerB_Draw(GuestPtr<LayerB> layer, int packet);
 GuestPtr<LayerB> LayerB_DeletingDtor(GuestPtr<LayerB> layer, int16_t deleteFlag);
 GuestPtr<LayerB> LayerB_ctor(GuestPtr<LayerB> layer);
-int LayerC_InTileRect(GuestPtr<LayerC> layer, int x, int z);
-void Terrain_SetVec(GuestPtr<LayerC> layer, int mode, GuestPtr<int32_t> rect, GuestPtr<uint32_t> colour);
-GuestPtr<uint32_t> LayerC_BuildPacket(GuestPtr<LayerC> layer, GuestPtr<uint32_t> packet);
-void LayerC_InitParams(GuestPtr<LayerC> layer);
-void LayerC_DrawBuildings(GuestPtr<LayerC> layer, int packet, GuestPtr<CityMap> map, int pass);
-GuestPtr<LayerC> LayerC_DeletingDtor(GuestPtr<LayerC> layer, int16_t deleteFlag);
-GuestPtr<LayerC> LayerC_ctor(GuestPtr<LayerC> layer);
-GuestPtr<uint32_t> LayerD_BuildPacket(GuestPtr<LayerD> layer, GuestPtr<uint32_t> packet, GuestPtr<int32_t> buffers);
-void LayerD_InitParams(GuestPtr<LayerD> layer);
-void LayerD_DrawSkyByClock(GuestPtr<LayerD> layer, int pass, int packet, int clock);
-GuestPtr<LayerD> LayerD_DeletingDtor(GuestPtr<LayerD> layer, int16_t deleteFlag);
-GuestPtr<LayerD> LayerD_ctor(GuestPtr<LayerD> layer, int buffers);
-GuestPtr<uint32_t> LayerE_BuildPacket(GuestPtr<LayerE> layer, GuestPtr<uint32_t> packet, GuestPtr<int32_t> buffers);
-void LayerE_InitParams(GuestPtr<LayerE> layer);
-void LayerE_Draw(GuestPtr<LayerE> layer, int pass, int packet, int a3, GuestPtr<Vec4> t0);
-GuestPtr<LayerE> LayerE_DeletingDtor(GuestPtr<LayerE> layer, int16_t deleteFlag);
-GuestPtr<LayerE> LayerE_ctor(GuestPtr<LayerE> layer, int buffers);
+int PlacementLayer_InTileRect(GuestPtr<PlacementLayer> layer, int x, int z);
+void PlacementLayer_Set(GuestPtr<PlacementLayer> layer, int mode, GuestPtr<int32_t> rect, GuestPtr<uint32_t> colour);
+GuestPtr<uint32_t> PlacementLayer_BuildPacket(GuestPtr<PlacementLayer> layer, GuestPtr<uint32_t> packet);
+void PlacementLayer_InitParams(GuestPtr<PlacementLayer> layer);
+void PlacementLayer_Draw(GuestPtr<PlacementLayer> layer, int packet, GuestPtr<CityMap> map, int pass);
+GuestPtr<PlacementLayer> PlacementLayer_DeletingDtor(GuestPtr<PlacementLayer> layer, int16_t deleteFlag);
+GuestPtr<PlacementLayer> PlacementLayer_ctor(GuestPtr<PlacementLayer> layer);
+GuestPtr<uint32_t> RainLayer_BuildPacket(GuestPtr<RainLayer> layer, GuestPtr<uint32_t> packet, GuestPtr<int32_t> buffers);
+void RainLayer_InitParams(GuestPtr<RainLayer> layer);
+void RainLayer_Draw(GuestPtr<RainLayer> layer, int pass, int packet, int clock);
+GuestPtr<RainLayer> RainLayer_DeletingDtor(GuestPtr<RainLayer> layer, int16_t deleteFlag);
+GuestPtr<RainLayer> RainLayer_ctor(GuestPtr<RainLayer> layer, int buffers);
+GuestPtr<uint32_t> SnowLayer_BuildPacket(GuestPtr<SnowLayer> layer, GuestPtr<uint32_t> packet, GuestPtr<int32_t> buffers);
+void SnowLayer_InitParams(GuestPtr<SnowLayer> layer);
+void SnowLayer_Draw(GuestPtr<SnowLayer> layer, int pass, int packet, int a3, GuestPtr<Vec4> t0);
+GuestPtr<SnowLayer> SnowLayer_DeletingDtor(GuestPtr<SnowLayer> layer, int16_t deleteFlag);
+GuestPtr<SnowLayer> SnowLayer_ctor(GuestPtr<SnowLayer> layer, int buffers);
 GuestPtr<uint32_t> LayerF_BuildPacket(GuestPtr<LayerF> layer, GuestPtr<uint32_t> packet);
 void LayerF_InitParams(GuestPtr<LayerF> layer);
 void LayerF_Draw(GuestPtr<LayerF> layer, int packet);
@@ -4138,15 +4138,15 @@ int ListMenu_HandleInput(GuestPtr<ListMenu> menu, GuestPtr<int32_t> choice);
 void ListMenu_Draw(GuestPtr<ListMenu> menu);
 GuestPtr<ListMenu> ListMenu_dtor(GuestPtr<ListMenu> menu, int16_t deleteFlag);
 GuestPtr<ListMenu> ListMenu_ctor(GuestPtr<ListMenu> menu, int a1, int a2, int a3, int t0, int t1, int t2);
-void SceneB_ShowCityName(GuestPtr<SceneB> scene);
-void SceneB_ShowStageTitle(GuestPtr<SceneB> scene);
-void SceneB_ShowApprovalRate(GuestPtr<SceneB> scene);
-void SceneB_MissionBriefing(GuestPtr<SceneB> scene);
-int SceneB_BuildBriefingText(GuestPtr<SceneB> scene);
-void SceneB_ShowTelop(GuestPtr<SceneB> scene);
-int SceneB_Update(GuestPtr<SceneB> scene);
-GuestPtr<SceneB> SceneB_dtor(GuestPtr<SceneB> scene, int16_t deleteFlag);
-GuestPtr<SceneB> SceneB_ctor(GuestPtr<SceneB> scene, int loadStage);
+void StageScene_ShowCityName(GuestPtr<StageScene> scene);
+void StageScene_ShowStageTitle(GuestPtr<StageScene> scene);
+void StageScene_ShowApprovalRate(GuestPtr<StageScene> scene);
+void StageScene_MissionBriefing(GuestPtr<StageScene> scene);
+int StageScene_BuildBriefingText(GuestPtr<StageScene> scene);
+void StageScene_ShowTelop(GuestPtr<StageScene> scene);
+int StageScene_Update(GuestPtr<StageScene> scene);
+GuestPtr<StageScene> StageScene_dtor(GuestPtr<StageScene> scene, int16_t deleteFlag);
+GuestPtr<StageScene> StageScene_ctor(GuestPtr<StageScene> scene, int loadStage);
 void WantsWin_FormatLine(GuestPtr<WantsWin> wants, GuestPtr<CityScene> city, int index, GuestPtr<char> out);
 void WantsWin_Draw(GuestPtr<WantsWin> wants);
 void WantsWin_Update(GuestPtr<WantsWin> wants, GuestPtr<CityScene> city);
@@ -4234,8 +4234,8 @@ void SaveFile_WriteIconSys(GuestPtr<McManager> mc, int a1, int a2, int a3);
 int SaveFile_PrepareDir(GuestPtr<McManager> mc, int a1, int a2, int a3);
 void McManager_ResetState(GuestPtr<McManager> mc);
 int McManager_PrepareNewSlot(GuestPtr<McManager> mc, int card);
-int McManager_FindSlotA(GuestPtr<McManager> mc, int index, GuestPtr<int32_t> card);
-int McManager_FindSlotB(GuestPtr<McManager> mc, int a1, GuestPtr<int32_t> slot);
+int McManager_GetSaveHeader(GuestPtr<McManager> mc, int index, GuestPtr<int32_t> card);
+int McManager_GetSaveFolder(GuestPtr<McManager> mc, int a1, GuestPtr<int32_t> slot);
 int McManager_IsCardUsable(GuestPtr<McManager> mc, int card);
 uint8_t McManager_GetCardStatus(GuestPtr<McManager> mc, int card);
 int McManager_FormatSlotText(GuestPtr<McManager> mc, GuestPtr<int32_t> cursor, GuestPtr<char> text, GuestPtr<uint32_t> isNewest);
@@ -4272,7 +4272,7 @@ void MenuWin_Opening(GuestPtr<MenuWin> menuwin);
 GuestPtr<MenuWin> MenuWin_dtor(GuestPtr<MenuWin> menuwin, int16_t deleteFlag);
 GuestPtr<MenuWin> MenuWin_ctor(GuestPtr<MenuWin> menuwin);
 void Markers_Draw(GuestPtr<Markers> markers);
-int Laptop_CheckOpen(GuestPtr<Markers> markers, GuestPtr<CityScene> city, int a2);
+int Markers_CheckCircle(GuestPtr<Markers> markers, GuestPtr<CityScene> city, int a2);
 GuestPtr<Markers> Markers_dtor(GuestPtr<Markers> markers, int16_t deleteFlag);
 GuestPtr<Markers> Markers_ctor(GuestPtr<Markers> markers);
 void CityCamera_UpdateTimeOfDay(GuestPtr<CityCamera> camera, GuestPtr<CityScene> city);
@@ -4309,9 +4309,9 @@ void NameEntry_Setup(GuestPtr<NameEntry> entry, uint32_t mode, uint8_t maxLength
 GuestPtr<NameEntry> NameEntry_dtor(GuestPtr<NameEntry> entry, int16_t deleteFlag);
 void NameEntry_CreateTexts(GuestPtr<NameEntry> entry);
 GuestPtr<NameEntry> NameEntry_ctor(GuestPtr<NameEntry> entry);
-int Collide_SegmentA(int a0, int mesh, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit, ps2f lift);
-int Collide_SegmentB(int a0, int mesh, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, ps2f f12);
-void BldgType_Slot34(GuestPtr<BuildingType> btype);
+int Collide_MeshFloorBelow(int a0, int mesh, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit, ps2f lift);
+int Collide_MeshNearestHit(int a0, int mesh, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, ps2f f12);
+void BldgType_Animate(GuestPtr<BuildingType> btype);
 int BldgType_IsOpenAt(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj);
 int Clock_AddWrap(int a0, int time, int offset);
 int BldgType_IsMyHome(GuestPtr<BuildingType> btype);
@@ -4319,11 +4319,11 @@ void BldgType_DrawOccupants(GuestPtr<BuildingType> btype, GuestPtr<CityScene> ci
 void BldgType_OccupantMatrix(GuestPtr<BuildingType> btype, GuestPtr<Vec4> colour, GuestPtr<Vec4> position, uint32_t tile);
 void BldgType_DrawOccupant(GuestPtr<BuildingType> btype, GuestPtr<Vec4> colour, GuestPtr<MapPerson> person, GuestPtr<CityScene> city);
 uint16_t BldgType_FindEntrance(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, int x, int z, GuestPtr<int32_t> side);
-int BldgType_Slot30(GuestPtr<BuildingType> btype);
-int BldgType_CollideA(GuestPtr<BuildingType> btype);
-int BldgType_CollideB(GuestPtr<BuildingType> btype);
-uint8_t BldgType_Slot1C(GuestPtr<BuildingType> btype);
-int BldgType_Slot20(GuestPtr<BuildingType> btype);
+int BldgType_RayHit(GuestPtr<BuildingType> btype);
+int BldgType_FloorBelow(GuestPtr<BuildingType> btype);
+int BldgType_NearestHit(GuestPtr<BuildingType> btype);
+uint8_t BldgType_GroundTexture(GuestPtr<BuildingType> btype);
+int BldgType_AcceptsOn(GuestPtr<BuildingType> btype);
 void BldgType_DrawOccupants2(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int t0, int flags, GuestPtr<MapPerson> people);
 void BldgType_Draw(GuestPtr<BuildingType> btype);
 int BldgType_Tick(GuestPtr<BuildingType> btype);
@@ -4338,8 +4338,8 @@ void BldgAmusementPark_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<Ci
 GuestPtr<BuildingType> BldgAmusementPark_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id);
 GuestPtr<BuildingType> BldgBusiness_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag);
 GuestPtr<BuildingType> BldgOffice_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag);
-int BldgOffice_CollideA(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit, GuestPtr<uint32_t> part, ps2f lift);
-int BldgOffice_CollideB(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, GuestPtr<uint32_t> part, ps2f f12);
+int BldgOffice_FloorBelow(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit, GuestPtr<uint32_t> part, ps2f lift);
+int BldgOffice_NearestHit(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, GuestPtr<uint32_t> part, ps2f f12);
 void BldgOffice_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, GuestPtr<uint32_t> part, int flags, ps2f x, ps2f y, ps2f z);
 int BldgOffice_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int timeFlags);
 GuestPtr<BuildingType> BldgOffice_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id);
@@ -4349,31 +4349,31 @@ void BldgRanch_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene>
 GuestPtr<BuildingType> BldgRanch_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id);
 GuestPtr<BuildingType> Bldg_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag);
 int ClaimMeter_Level(uint16_t meter);
-void BldgClaims_EvalA(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj);
-void BldgClaims_EvalB(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj);
+void BldgClaims_Spread(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj);
+void BldgClaims_Pick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj);
 uint32_t BldgClaims_CountNearby(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<char> claimEntry, GuestPtr<int32_t> rect);
-void BldgClaims_EvalC(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj);
-void BldgClaims_EvalD(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj);
+void BldgClaims_CheckMet(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj);
+void BldgClaims_WeighNeighbours(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj);
 int BldgClaims_Evaluate(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int rise);
 void BldgClaims_DrawIcon(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> colour);
 void Bldg_InitRecordBase(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj);
 GuestPtr<BuildingType> Bldg_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id);
 GuestPtr<BuildingType> BldgField_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag);
-uint8_t BldgField_Slot1C(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj);
+uint8_t BldgField_GroundTexture(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj);
 void BldgField_DrawPeople(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int t0, int flags, GuestPtr<MapPerson> people, ps2f x, ps2f y, ps2f z);
 void BldgField_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int t0, int t1, ps2f x, ps2f y, ps2f z);
 int BldgField_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj);
 GuestPtr<BuildingType> BldgField_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id);
 GuestPtr<BuildingType> BldgPort_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag);
-int BldgPort_CollideA(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit, ps2f lift);
-int BldgPort_CollideB(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, ps2f f12);
+int BldgPort_FloorBelow(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit, ps2f lift);
+int BldgPort_NearestHit(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, ps2f f12);
 void BldgPort_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int t0, int t1, ps2f x, ps2f y, ps2f z);
 int BldgPort_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int timeFlags);
 GuestPtr<BuildingType> BldgPort_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id);
 int Bldg_IsOpen(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj);
-int Bldg_Slot30(GuestPtr<BuildingType> btype);
-int Bldg_CollideA(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit, ps2f lift);
-int Bldg_CollideB(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, ps2f f12);
+int Bldg_RayHit(GuestPtr<BuildingType> btype);
+int Bldg_FloorBelow(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit, ps2f lift);
+int Bldg_NearestHit(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, ps2f f12);
 int BldgType_FindEntrance2(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, int x, int z, int side);
 void Bldg_DrawPeople(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int t0, int flags, GuestPtr<MapPerson> people, ps2f x, ps2f y, ps2f z);
 void BldgBusiness_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int t0, int t1, ps2f x, ps2f y, ps2f z);
@@ -4393,8 +4393,8 @@ GuestPtr<BuildingType> BldgType_Create(int id, GuestPtr<BuildingRecord> record);
 void BldgType_DeleteAll();
 void BldgType_LoadAll();
 GuestPtr<BuildingType> BldgHousing_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag);
-int BldgHousing_CollideA(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit, GuestPtr<uint32_t> part, ps2f lift);
-int BldgHousing_CollideB(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, GuestPtr<uint32_t> part, ps2f f12);
+int BldgHousing_FloorBelow(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit, GuestPtr<uint32_t> part, ps2f lift);
+int BldgHousing_NearestHit(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, GuestPtr<uint32_t> part, ps2f f12);
 void BldgHousing_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, GuestPtr<uint32_t> part, int flags, ps2f x, ps2f y, ps2f z);
 uint8_t BldgHousing_UnitAt(GuestPtr<BuildingType> btype, int kind, int x, int z, int count, uint16_t rule, GuestPtr<CityScene> city, GuestPtr<uint32_t> isUnit, ps2f height);
 void BldgHousing_CountUnits(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj);
@@ -4413,11 +4413,11 @@ void BldgRoad_DrawPeople(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityS
 void BldgRoad_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int t0, int t1, ps2f x, ps2f y, ps2f z);
 int BldgRoad_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj);
 void BldgRoad_InitRecord(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj);
-int BldgRoad_Slot1C(GuestPtr<BuildingType> btype, int a1);
+int BldgRoad_GroundTexture(GuestPtr<BuildingType> btype, int a1);
 GuestPtr<BuildingType> BldgRoad_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id);
 GuestPtr<BuildingType> BldgSmallGoods_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag);
-int BldgSmallGoods_CollideA(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit, ps2f lift);
-int BldgSmallGoods_CollideB(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, ps2f f12);
+int BldgSmallGoods_FloorBelow(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit, ps2f lift);
+int BldgSmallGoods_NearestHit(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, ps2f f12);
 void BldgSmallGoods_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int t0, int t1, ps2f x, ps2f y, ps2f z);
 int BldgSmallGoods_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj);
 GuestPtr<BuildingType> BldgSmallGoods_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id);
@@ -4442,29 +4442,29 @@ void Notice_ShowText(GuestPtr<Notice> notice, GuestPtr<char> text);
 void Notice_Show(GuestPtr<Notice> notice, int id);
 GuestPtr<Notice> Notice_dtor(GuestPtr<Notice> notice, int16_t deleteFlag);
 GuestPtr<Notice> Notice_ctor(GuestPtr<Notice> notice);
-int SoundTest_BgmPage(GuestPtr<SceneA> scene, uint32_t a1, uint32_t a2, uint32_t a3);
-int SoundTest_SePage(GuestPtr<SceneA> scene, uint32_t a1, uint32_t a2, uint32_t a3);
-int SoundTest_Update(GuestPtr<SceneA> scene);
-void SoundTest_BgmText(GuestPtr<SceneA> scene);
-void SoundTest_SeText(GuestPtr<SceneA> scene);
-int Title_DrawCommon(GuestPtr<SceneA> scene, int layers);
-int Title_LoadMenu(GuestPtr<SceneA> scene);
-int Title_PressStart(GuestPtr<SceneA> scene);
-int SceneA_StartGame(GuestPtr<SceneA> scene, int newGame);
-void Title_NewGameIntro(GuestPtr<SceneA> scene);
-int Title_RandomCharParts(GuestPtr<SceneA> scene);
-int Title_OpeningMovieStep(GuestPtr<SceneA> scene);
-int Title_MenuInput(GuestPtr<SceneA> scene);
-int Title_DrawChoices(GuestPtr<SceneA> scene);
-void Title_DrawChoicesIdle(GuestPtr<SceneA> scene);
-int Title_Intro(GuestPtr<SceneA> scene);
-int Title_LogoLetters(GuestPtr<SceneA> scene);
-int SceneA_MemoryCardCheck(GuestPtr<SceneA> scene, int noPolling);
-int SceneA_LogoStep(GuestPtr<SceneA> scene, char logo);
-int SceneA_Load(GuestPtr<SceneA> scene, int a1);
-int SceneA_Update(GuestPtr<SceneA> scene);
-GuestPtr<SceneA> SceneA_dtor(GuestPtr<SceneA> scene, int16_t deleteFlag);
-GuestPtr<SceneA> SceneA_ctor(GuestPtr<SceneA> scene, int a1);
+int SoundTest_BgmPage(GuestPtr<TitleScene> scene, uint32_t a1, uint32_t a2, uint32_t a3);
+int SoundTest_SePage(GuestPtr<TitleScene> scene, uint32_t a1, uint32_t a2, uint32_t a3);
+int SoundTest_Update(GuestPtr<TitleScene> scene);
+void SoundTest_BgmText(GuestPtr<TitleScene> scene);
+void SoundTest_SeText(GuestPtr<TitleScene> scene);
+int Title_DrawCommon(GuestPtr<TitleScene> scene, int layers);
+int Title_LoadMenu(GuestPtr<TitleScene> scene);
+int Title_PressStart(GuestPtr<TitleScene> scene);
+int TitleScene_StartGame(GuestPtr<TitleScene> scene, int newGame);
+void Title_NewGameIntro(GuestPtr<TitleScene> scene);
+int Title_RandomCharParts(GuestPtr<TitleScene> scene);
+int Title_OpeningMovieStep(GuestPtr<TitleScene> scene);
+int Title_MenuInput(GuestPtr<TitleScene> scene);
+int Title_DrawChoices(GuestPtr<TitleScene> scene);
+void Title_DrawChoicesIdle(GuestPtr<TitleScene> scene);
+int Title_Intro(GuestPtr<TitleScene> scene);
+int Title_LogoLetters(GuestPtr<TitleScene> scene);
+int TitleScene_MemoryCardCheck(GuestPtr<TitleScene> scene, int noPolling);
+int TitleScene_LogoStep(GuestPtr<TitleScene> scene, char logo);
+int TitleScene_Load(GuestPtr<TitleScene> scene, int a1);
+int TitleScene_Update(GuestPtr<TitleScene> scene);
+GuestPtr<TitleScene> TitleScene_dtor(GuestPtr<TitleScene> scene, int16_t deleteFlag);
+GuestPtr<TitleScene> TitleScene_ctor(GuestPtr<TitleScene> scene, int a1);
 int TownPages_SelectedEntry(GuestPtr<TownPages> pages);
 int TownPages_ClampCursor(GuestPtr<TownPages> pages, int cursor, int direction);
 void TownPages_BuildIndex(GuestPtr<TownPages> pages);
@@ -4654,9 +4654,9 @@ int WordsFn_SetCancelAllowed(GuestPtr<WordsCtx> ctx);
 int WordsFn_SetStoryFlagB(GuestPtr<WordsCtx> ctx);
 int WordsFn_ClearStoryFlagB(GuestPtr<WordsCtx> ctx);
 int WordsFn_SetVar1C5602(GuestPtr<WordsCtx> ctx);
-int WordsFn_EventA4Slot10(GuestPtr<WordsCtx> ctx);
+int WordsFn_EventA4Text(GuestPtr<WordsCtx> ctx);
 GuestPtr<char> WordsFn_TextEventA4Name(GuestPtr<WordsCtx> ctx);
-int WordsFn_EventA8Slot10(GuestPtr<WordsCtx> ctx);
+int WordsFn_EventA8Text(GuestPtr<WordsCtx> ctx);
 GuestPtr<char> WordsFn_TextEventTitle(GuestPtr<WordsCtx> ctx);
 GuestPtr<char> WordsFn_TextOpenHours(GuestPtr<WordsCtx> ctx);
 GuestPtr<char> WordsFn_TextBagItemName(GuestPtr<WordsCtx> ctx);
@@ -4670,12 +4670,12 @@ GuestPtr<char> WordsFn_TextBuildingName(GuestPtr<WordsCtx> ctx);
 GuestPtr<char> WordsFn_TextMemberName2(GuestPtr<WordsCtx> ctx);
 GuestPtr<char> WordsFn_TextMemberName(GuestPtr<WordsCtx> ctx);
 GuestPtr<char> WordsFn_TextNameSlot(GuestPtr<WordsCtx> ctx);
-int WordsFn_EventA4Slot14(GuestPtr<WordsCtx> ctx);
+int WordsFn_EventA4Answer(GuestPtr<WordsCtx> ctx);
 int WordsFn_EventSetActor(GuestPtr<WordsCtx> ctx);
 int WordsFn_EventActorIs(GuestPtr<WordsCtx> ctx);
 int WordsFn_EventA4Var(GuestPtr<WordsCtx> ctx);
 int WordsFn_EventA4IsTalk(GuestPtr<WordsCtx> ctx);
-int WordsFn_EventA8Slot14(GuestPtr<WordsCtx> ctx);
+int WordsFn_EventA8Answer(GuestPtr<WordsCtx> ctx);
 int WordsFn_EventA8Var(GuestPtr<WordsCtx> ctx);
 int WordsFn_EventA8Kind(GuestPtr<WordsCtx> ctx);
 int WordsFn_EventCountdown(GuestPtr<WordsCtx> ctx);
@@ -4793,9 +4793,9 @@ int CityScene_StartTalk(GuestPtr<CityScene> city, int byFamily, int target, int 
 uint32_t CityScene_Update(GuestPtr<CityScene> city);
 GuestPtr<CityScene> CityScene_dtor(GuestPtr<CityScene> city, int16_t deleteFlag);
 GuestPtr<CityScene> CityScene_ctor(GuestPtr<CityScene> city);
-int Collide_RayTriangleA(GuestPtr<Vec4> origin, GuestPtr<Vec4> a, GuestPtr<Vec4> b, GuestPtr<Vec4> c, GuestPtr<Vec4> hit, GuestPtr<ps2f> distance, ps2f range);
+int Collide_NormalRayTriangle(GuestPtr<Vec4> origin, GuestPtr<Vec4> a, GuestPtr<Vec4> b, GuestPtr<Vec4> c, GuestPtr<Vec4> hit, GuestPtr<ps2f> distance, ps2f range);
 int Collide_PointInTriangle(GuestPtr<Vec4> p, GuestPtr<Vec4> a, GuestPtr<Vec4> b, GuestPtr<Vec4> c);
-int Collide_RayTriangleB(GuestPtr<Vec4> start, GuestPtr<Vec4> end, GuestPtr<Vec4> a, GuestPtr<Vec4> b, GuestPtr<Vec4> c, GuestPtr<Vec4> hit);
+int Collide_SegmentTriangle(GuestPtr<Vec4> start, GuestPtr<Vec4> end, GuestPtr<Vec4> a, GuestPtr<Vec4> b, GuestPtr<Vec4> c, GuestPtr<Vec4> hit);
 void Text_FormatTimeRange(GuestPtr<char> out, int fromMinute, int toMinute);
 void Text_FormatMoney(GuestPtr<char> out, int value, int width, int leftAlign);
 int Text_FormatThousands(GuestPtr<char> out, int value);
@@ -4910,52 +4910,52 @@ void Bgm_FadeOut(int time);
 int Bgm_SetActive(int active);
 void Bgm_SetTrackSlot(char slot, int play, int enable);
 void Bgm_Update();
-int SoundCmd_02_Zero();
+int SoundCmd_WaveClose0();
 void Sound_ResetVoices(int bankSet);
 void Se_BuildAmbienceMap();
 void Sound_InitState();
-void SoundCmd_CancelPlayB(char voice);
+void SoundCmd_CancelWavePlay(char voice);
 int Sound_IsBusy();
 int Sound_IsDriverBusy();
-int SoundCmd_SetDiscBusy(uint32_t busy);
-int SoundCmd_11(uint8_t voice, uint16_t a1, uint16_t a2);
-int SoundCmd_SetVolumeB(uint8_t voice, int volume, uint16_t a2);
-int SoundCmd_0F(uint8_t voice, int a1, uint16_t a2);
-int SoundCmd_FadeB(uint8_t voice, uint16_t target, uint16_t time, uint16_t a3);
-int SoundCmd_StopB(uint32_t voice, uint32_t a1);
-int SoundCmd_PlaySequence(uint32_t slot, uint8_t a1, uint8_t a2, int a3, uint16_t t0);
-int SoundCmd_StopSequence(uint32_t slot, uint32_t a1);
-int SoundCmd_LoadBank(uint32_t slot, int sqName, int hdName, int bdName, uint32_t flags);
-int SoundCmd_SetPitchA(uint8_t voice, uint16_t pitch, uint16_t a2);
-int SoundCmd_SetVolumeA(uint8_t voice, int volume, uint16_t a2);
-int SoundCmd_SetVolumeLRA(uint8_t voice, int left, int right, uint16_t a3);
-int SoundCmd_PlayA(uint8_t voice, uint16_t a1, uint16_t a2, uint16_t a3, uint16_t t0, uint16_t t1);
-int SoundCmd_StopA(uint32_t voice, uint32_t a1);
-int SoundCmd_PlayB(uint32_t voice, uint8_t bank, uint16_t sound, uint8_t a3, uint8_t t0, uint8_t t1, int t2, uint16_t t3);
-int SoundCmd_02(uint32_t a0, uint32_t a1);
-int SoundCmd_01(uint32_t a0, uint32_t a1, int a2, int a3, uint32_t t0);
+int SoundCmd_SetLoadPause(uint32_t busy);
+int SoundCmd_MidiSetTempo(uint8_t voice, uint16_t a1, uint16_t a2);
+int SoundCmd_MidiSetTrackVolume(uint8_t voice, int volume, uint16_t a2);
+int SoundCmd_MidiSetVolume(uint8_t voice, int a1, uint16_t a2);
+int SoundCmd_MidiFade(uint8_t voice, uint16_t target, uint16_t time, uint16_t a3);
+int SoundCmd_MidiStop(uint32_t voice, uint32_t a1);
+int SoundCmd_MidiPlay(uint32_t slot, uint8_t a1, uint8_t a2, int a3, uint16_t t0);
+int SoundCmd_MidiClose(uint32_t slot, uint32_t a1);
+int SoundCmd_MidiOpen(uint32_t slot, int sqName, int hdName, int bdName, uint32_t flags);
+int SoundCmd_WaveSetPitch(uint8_t voice, uint16_t pitch, uint16_t a2);
+int SoundCmd_WaveSetTrackVolume(uint8_t voice, int volume, uint16_t a2);
+int SoundCmd_WaveSetVolume(uint8_t voice, int left, int right, uint16_t a3);
+int SoundCmd_WaveFade(uint8_t voice, uint16_t a1, uint16_t a2, uint16_t a3, uint16_t t0, uint16_t t1);
+int SoundCmd_WaveStop(uint32_t voice, uint32_t a1);
+int SoundCmd_WavePlay(uint32_t voice, uint8_t bank, uint16_t sound, uint8_t a3, uint8_t t0, uint8_t t1, int t2, uint16_t t3);
+int SoundCmd_WaveClose(uint32_t a0, uint32_t a1);
+int SoundCmd_WaveOpen(uint32_t a0, uint32_t a1, int a2, int a3, uint32_t t0);
 void SoundCmd_Flush();
 int Sound_GetStatus();
 void Sound_LoadModules();
 void Sound_Shutdown();
 void Sound_Init();
-int EvShoppingTogether_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
+int EvShoppingTogether_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
 void EvShoppingTogether_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvShoppingTogether_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 GuestPtr<MapObject> EvShoppingTogether_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvShoppingTogether_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
-int EvAlien_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
+int EvAlien_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
 void EvAlien_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 GuestPtr<MapObject> EvAlien_PickTarget(GuestPtr<CityScene> city, int x, int z);
 void EvAlien_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvAlien_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city);
-int EvBodyguard_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
+int EvBodyguard_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
 void EvEscort_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvEscort_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvEscort_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvBodyguard_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city);
-int EvMsg_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
-GuestPtr<char> EvPayday_Slot10(GuestPtr<EventData> data, GuestPtr<CityScene> city, uint32_t value);
+int EvMsg_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
+GuestPtr<char> EvPayday_Text(GuestPtr<EventData> data, GuestPtr<CityScene> city, uint32_t value);
 void EvPayday_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvMsg_UpdateFinal(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvMsg_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
@@ -4974,13 +4974,13 @@ int EvFirstPayday_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvWoman_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvRiddle_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvPopularity_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city);
-int EvCaveMan_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
+int EvCaveMan_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
 void EvCaveMan_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvCaveMan_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int64_t EvCaveMan_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvCaveMan_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city);
-int EvDeliveryMan_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
-GuestPtr<char> EvDeliveryMan_Slot10(GuestPtr<EventData> data, GuestPtr<CityScene> city, int index);
+int EvDeliveryMan_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
+GuestPtr<char> EvDeliveryMan_Text(GuestPtr<EventData> data, GuestPtr<CityScene> city, int index);
 void EvDeliveryMan_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvDeliveryMan_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 GuestPtr<MapObject> EvDeliveryMan_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
@@ -4992,56 +4992,56 @@ void EventQueue_InsertByPriority(int queue, GuestPtr<uint8_t> id, int level, int
 void PartyPopup_Draw(int popup, int pass);
 void PartyPopup_Update(int popup, GuestPtr<CityScene> city);
 int PartyPopup_dtor(int popup, int16_t deleteFlag);
-int EvFarewellParty_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
+int EvFarewellParty_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
 void EvFarewellParty_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvFarewellParty_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 GuestPtr<MapObject> EvFarewellParty_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvForgetfulGranny_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
-int EvCrazyCult_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
+int EvCrazyCult_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
 void EvCrazyCult_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvCrazyCult_Phase3(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvCrazyCult_Phase2(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvCrazyCult_Phase1(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvCrazyCult_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int64_t EvCrazyCult_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
-int EvAdoption_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
-int EvAdoption_Slot10(GuestPtr<EventData> data, GuestPtr<CityScene> city, int index);
+int EvAdoption_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
+int EvAdoption_Text(GuestPtr<EventData> data, GuestPtr<CityScene> city, int index);
 void EvAdoption_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 uint32_t EvAdoption_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
-uint32_t EvUselessMiddleAged_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
+uint32_t EvUselessMiddleAged_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
 void EvUselessMiddleAged_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvUselessMiddleAged_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 GuestPtr<MapObject> EvUselessMiddleAged_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvUselessMiddleAged_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city);
-int EvMissingChildren_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
+int EvMissingChildren_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
 void EvMissingChildren_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvMissingChildren_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 GuestPtr<MapObject> EvMissingChildren_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvMissingChildren_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
 int EvAdvertise_ClaimsMatch(GuestPtr<CityScene> city, GuestPtr<ActorRef> actorA, GuestPtr<ActorRef> actorB);
-int EvAdvertise_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
+int EvAdvertise_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
 void EvAdvertise_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvAdvertise_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 GuestPtr<MapObject> EvAdvertise_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvAdvertise_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
-int EvShopping_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
-GuestPtr<char> EvShopping_Slot10(GuestPtr<EventData> data, GuestPtr<CityScene> city, int index);
+int EvShopping_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
+GuestPtr<char> EvShopping_Text(GuestPtr<EventData> data, GuestPtr<CityScene> city, int index);
 void EvShopping_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvShopping_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int64_t EvShopping_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvShopping_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
 int EventData_GetSize7C();
 int EventData_GetSize1C();
-int EvNoodles_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
+int EvNoodles_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
 void EvNoodles_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvNoodles_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int64_t EvNoodles_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvNoodles_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city);
-int EvThief_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
+int EvThief_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
 void EvThief_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvThief_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvThief_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city);
-int EvRelationship_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
+int EvRelationship_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
 int EvAffair_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
 int EvBoyfriend_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
 int EvGirlfriend_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person);

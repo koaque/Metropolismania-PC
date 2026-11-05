@@ -82,7 +82,7 @@ namespace mm
     // The building markers' Circle check (a markers method, named as a laptop one): while Circle alone (0x20) is held in the
     // city view (and `allowed`), the cursor is hidden and the markers shown, once per press, with the fourth marker on node 4
     // when laptop entry 4 is active; any other input hides them again. Returns whether they are shown.
-    int Laptop_CheckOpen(GuestPtr<Markers> markers, GuestPtr<CityScene> city, int allowed)
+    int Markers_CheckCircle(GuestPtr<Markers> markers, GuestPtr<CityScene> city, int allowed)
     {
         const uint32_t held = Pad_Held(0);
         if (held == 0x20u && CityScene_GetMode(city) == 1 && allowed != 0)
@@ -276,7 +276,7 @@ namespace mm
         {
             TextBox_AppendText(pages->text[0], GuestPtr<char>{globals::kTownPagesEmptyLeft}, 0);
             TextBox_AppendText(pages->text[1], GuestPtr<char>{globals::kTownPagesEmptyRight}, 0);
-            pages->unk_58 = 10;
+            pages->targetRow = 10;
             pages->row = 10;
             pages->cursorX = port::load<int32_t>(globals::kTownPagesCursor + 8u * static_cast<uint32_t>(pages->row));
             pages->cursorY = port::load<int32_t>(globals::kTownPagesCursor + 4u + 8u * static_cast<uint32_t>(pages->row));
@@ -1472,12 +1472,12 @@ namespace mm
     }
 
     // A building's claim, once per evaluation. While the claim is met (flag 8) or its meter maxed out (0x40) the
-    // claim timer runs down; when it runs out a met claim just ends, a maxed one is settled (EvalA: returns 1 and
+    // claim timer runs down; when it runs out a met claim just ends, a maxed one is settled (BldgClaims_Spread: returns 1 and
     // lowers the city's pending approval). Otherwise section C is re-checked while the map asks for it, and with
     // `rise` set the meter climbs: by the step, or by a tenth of the timer once that is ten steps or more. Past the
-    // low threshold EvalD runs; at 255 the meter maxes out (flag 0x40, the timer set to the hold time). Moving up a
+    // low threshold BldgClaims_WeighNeighbours runs; at 255 the meter maxes out (flag 0x40, the timer set to the hold time). Moving up a
     // band lowers the pending approval (from band 0 only while approval is positive). Slot 0x18 means no claim:
-    // EvalB then.
+    // BldgClaims_Pick then.
     int BldgClaims_Evaluate(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int rise)
     {
         if ((obj->flags & 0x48u) != 0)
@@ -1490,19 +1490,19 @@ namespace mm
                 obj->claimSlot = 0x18;
                 return 0;
             }
-            BldgClaims_EvalA(btype, city, obj);
+            BldgClaims_Spread(btype, city, obj);
             obj->flags &= 0xFFBFu;
             obj->claimSlot = 0x18;
             --city->pendingApproval;
             return 1;
         }
         if (city->map->claimRecheck > 0 && obj->claimSlot != 0x18)
-            BldgClaims_EvalC(btype, city, obj);
+            BldgClaims_CheckMet(btype, city, obj);
         if (rise == 0)
             return 0;
         if (obj->claimSlot == 0x18)
         {
-            BldgClaims_EvalB(btype, city, obj);
+            BldgClaims_Pick(btype, city, obj);
             return 0;
         }
         if ((obj->flags & 0x208u) != 0)
@@ -1512,7 +1512,7 @@ namespace mm
         const uint16_t increase = obj->claimTimer < step * 10 ? step : static_cast<uint16_t>(obj->claimTimer / 10);
         obj->claimMeter = static_cast<uint16_t>(obj->claimMeter + increase);
         if (globals::claimThresholds()->low < obj->claimMeter)
-            BldgClaims_EvalD(btype, city, obj);
+            BldgClaims_WeighNeighbours(btype, city, obj);
         if (obj->claimMeter >= 0xFF)
         {
             obj->flags |= 0x40u;
@@ -1608,7 +1608,7 @@ namespace mm
                 frame.set(static_cast<float>(ps2f(frame.get()) + ps2f(1.0f)));
             if (!model.get())
                 return;
-            const ps2f length = A3D_GetMeshField0C(model.get(), 0);
+            const ps2f length = A3D_GetAnimLength(model.get(), 0);
             if (!(ps2f(frame.get()) < length))
                 frame.set(0.0f);
             Instance_DrawSwayingIfRoom(model.get(), 0, frame.get());
@@ -1630,11 +1630,11 @@ namespace mm
     void BldgType_InitRecord(GuestPtr<BuildingType>) {}
     int BldgType_Tick(GuestPtr<BuildingType>) { return 0; }
     void BldgType_Draw(GuestPtr<BuildingType>) {}
-    uint8_t BldgType_Slot1C(GuestPtr<BuildingType> btype) { return btype->unk_143; }
-    int BldgType_Slot20(GuestPtr<BuildingType>) { return 1; }
-    int BldgType_CollideA(GuestPtr<BuildingType>) { return 0; }
-    int BldgType_CollideB(GuestPtr<BuildingType>) { return 0; }
-    void BldgType_Slot34(GuestPtr<BuildingType>) {}
+    uint8_t BldgType_GroundTexture(GuestPtr<BuildingType> btype) { return btype->groundTexture; }
+    int BldgType_AcceptsOn(GuestPtr<BuildingType>) { return 1; }
+    int BldgType_FloorBelow(GuestPtr<BuildingType>) { return 0; }
+    int BldgType_NearestHit(GuestPtr<BuildingType>) { return 0; }
+    void BldgType_Animate(GuestPtr<BuildingType>) {}
 
     // Whether a building type is open now: between its opening and closing minute, the clock shifted by the
     // object's id (so neighbours do not all open at once); never on a holiday (city flag 2) for types with
@@ -1662,9 +1662,9 @@ namespace mm
     int BldgType_IsMyHome(GuestPtr<BuildingType> btype) { return btype->kind > 4 && btype->kind < 9; }
 
     // The road class adds the map object's (a1) variant to the base value.
-    int BldgRoad_Slot1C(GuestPtr<BuildingType> btype, int a1)
+    int BldgRoad_GroundTexture(GuestPtr<BuildingType> btype, int a1)
     {
-        return btype->unk_143 + GuestPtr<MapObject>{static_cast<uint32_t>(a1)}->roadShape;
+        return btype->groundTexture + GuestPtr<MapObject>{static_cast<uint32_t>(a1)}->roadShape;
     }
 
     // Collision against a building's mesh: the entrance mesh for entrance objects, else the first mesh plus
@@ -1679,16 +1679,16 @@ namespace mm
         }
     }
 
-    int Bldg_CollideA(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
+    int Bldg_FloorBelow(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
                       GuestPtr<uint32_t> hit, ps2f lift)
     {
-        return Collide_SegmentA(static_cast<int>(btype.address), collisionMesh(btype, obj), point, matrix, hit, lift);
+        return Collide_MeshFloorBelow(static_cast<int>(btype.address), collisionMesh(btype, obj), point, matrix, hit, lift);
     }
 
-    int Bldg_CollideB(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
+    int Bldg_NearestHit(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
                       GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, ps2f f12)
     {
-        return Collide_SegmentB(static_cast<int>(btype.address), collisionMesh(btype, obj), point, matrix, hit, distance, f12);
+        return Collide_MeshNearestHit(static_cast<int>(btype.address), collisionMesh(btype, obj), point, matrix, hit, distance, f12);
     }
 
     // Open hours apply to the building as a whole (no object) and to its entrance; other parts are never open.
@@ -1721,7 +1721,7 @@ namespace mm
     PORT_FN(Applicants_ScrollTo);
     PORT_FN(Applicants_RemoveAt);
     PORT_FN(Applicants_PlaceAt);
-    PORT_FN(Laptop_CheckOpen);
+    PORT_FN(Markers_CheckCircle);
     PORT_FN(Laptop_Animate);
     PORT_FN(WantsWin_ctor);
     PORT_FN(BldgWasteland_InitRecord);
@@ -1764,15 +1764,15 @@ namespace mm
     PORT_FN(BldgType_InitRecord);
     PORT_FN(BldgType_Tick);
     PORT_FN(BldgType_Draw);
-    PORT_FN(BldgType_Slot1C);
-    PORT_FN(BldgType_Slot20);
-    PORT_FN(BldgType_CollideA);
-    PORT_FN(BldgType_CollideB);
-    PORT_FN(BldgType_Slot34);
+    PORT_FN(BldgType_GroundTexture);
+    PORT_FN(BldgType_AcceptsOn);
+    PORT_FN(BldgType_FloorBelow);
+    PORT_FN(BldgType_NearestHit);
+    PORT_FN(BldgType_Animate);
     PORT_FN(BldgType_IsMyHome);
-    PORT_FN(BldgRoad_Slot1C);
-    PORT_FN(Bldg_CollideA);
-    PORT_FN(Bldg_CollideB);
+    PORT_FN(BldgRoad_GroundTexture);
+    PORT_FN(Bldg_FloorBelow);
+    PORT_FN(Bldg_NearestHit);
     PORT_FN(Bldg_IsOpen);
 
     // ---- building records and collision slots (batch 38)
@@ -1785,7 +1785,7 @@ namespace mm
         obj->entranceTile = 0x4000;
     }
 
-    int Bldg_Slot30(GuestPtr<BuildingType>) { return 1; }
+    int Bldg_RayHit(GuestPtr<BuildingType>) { return 1; }
 
     // Housing blocks take one of three styles by their tile ((tile / 2) % 3).
     void BldgHousing_InitRecord(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj)
@@ -1800,12 +1800,12 @@ namespace mm
             port::store<uint16_t>(obj.address + offset, 0x4000);
     }
 
-    // A field's model by its claim: the type's own (+0x143) while a claim is set, else by the claim meter: below 2,
+    // A field's ground texture by its claim: the type's own while a claim is set, else by the claim meter: below 2,
     // 30 and 60, then the full one.
-    uint8_t BldgField_Slot1C(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj)
+    uint8_t BldgField_GroundTexture(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj)
     {
         if (obj->claimSlot != 0)
-            return btype->unk_143;
+            return btype->groundTexture;
         const int16_t meter = static_cast<int16_t>(obj->claimMeter);
         if (meter < 2)
             return 0x11;
@@ -1863,80 +1863,80 @@ namespace mm
         }
     }
 
-    int BldgHousing_CollideA(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
+    int BldgHousing_FloorBelow(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
                              GuestPtr<uint32_t> hit, GuestPtr<uint32_t> part, ps2f lift)
     {
-        return Collide_SegmentA(static_cast<int>(btype.address), housingMesh(btype, obj, *part), point, matrix, hit, lift);
+        return Collide_MeshFloorBelow(static_cast<int>(btype.address), housingMesh(btype, obj, *part), point, matrix, hit, lift);
     }
 
-    int BldgHousing_CollideB(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
+    int BldgHousing_NearestHit(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
                              GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, GuestPtr<uint32_t> part, ps2f f12)
     {
-        return Collide_SegmentB(static_cast<int>(btype.address), housingMesh(btype, obj, *part), point, matrix, hit, distance, f12);
+        return Collide_MeshNearestHit(static_cast<int>(btype.address), housingMesh(btype, obj, *part), point, matrix, hit, distance, f12);
     }
 
-    int BldgOffice_CollideA(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
+    int BldgOffice_FloorBelow(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
                             GuestPtr<uint32_t> hit, GuestPtr<uint32_t> part, ps2f lift)
     {
-        return Collide_SegmentA(static_cast<int>(btype.address), officeMesh(btype, obj, *part, 0x001B1428u), point, matrix, hit, lift);
+        return Collide_MeshFloorBelow(static_cast<int>(btype.address), officeMesh(btype, obj, *part, 0x001B1428u), point, matrix, hit, lift);
     }
 
-    int BldgOffice_CollideB(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
+    int BldgOffice_NearestHit(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
                             GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, GuestPtr<uint32_t> part, ps2f f12)
     {
-        return Collide_SegmentB(static_cast<int>(btype.address), officeMesh(btype, obj, *part, 0x001B1408u), point, matrix, hit, distance, f12);
+        return Collide_MeshNearestHit(static_cast<int>(btype.address), officeMesh(btype, obj, *part, 0x001B1408u), point, matrix, hit, distance, f12);
     }
 
     // Ports collide 2.5 lower: the matrix's translation y is lowered first (and stays lowered).
-    int BldgPort_CollideA(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
+    int BldgPort_FloorBelow(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
                           GuestPtr<uint32_t> hit, ps2f lift)
     {
         const int mesh = (obj->flags & 0x20u) != 0 ? btype->entranceMesh * 2 : static_cast<int>(variantMesh(btype, obj) * 2u);
         matrix[3].y = ps2f(matrix[3].y) - ps2f(2.5f);
-        return Collide_SegmentA(static_cast<int>(btype.address), mesh, point, matrix, hit, lift);
+        return Collide_MeshFloorBelow(static_cast<int>(btype.address), mesh, point, matrix, hit, lift);
     }
 
-    int BldgPort_CollideB(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
+    int BldgPort_NearestHit(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
                           GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, ps2f f12)
     {
         const int mesh = (obj->flags & 0x20u) != 0 ? btype->entranceMesh * 2 : static_cast<int>(variantMesh(btype, obj) * 2u);
         matrix[3].y = ps2f(matrix[3].y) - ps2f(2.5f);
-        return Collide_SegmentB(static_cast<int>(btype.address), mesh, point, matrix, hit, distance, f12);
+        return Collide_MeshNearestHit(static_cast<int>(btype.address), mesh, point, matrix, hit, distance, f12);
     }
 
     // Small goods collide only from props mesh 0x27 on, one collision mesh each.
-    int BldgSmallGoods_CollideA(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
+    int BldgSmallGoods_FloorBelow(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
                                 GuestPtr<uint32_t> hit, ps2f lift)
     {
         const uint8_t count = obj->goodsMesh;
         if (count < 0x27)
             return 0;
-        return Collide_SegmentA(static_cast<int>(btype.address), (btype->entranceMesh + count - 0x27) * 2, point, matrix, hit, lift);
+        return Collide_MeshFloorBelow(static_cast<int>(btype.address), (btype->entranceMesh + count - 0x27) * 2, point, matrix, hit, lift);
     }
 
-    int BldgSmallGoods_CollideB(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
+    int BldgSmallGoods_NearestHit(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
                                 GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, ps2f f12)
     {
         const uint8_t count = obj->goodsMesh;
         if (count < 0x27)
             return 0;
-        return Collide_SegmentB(static_cast<int>(btype.address), (btype->entranceMesh + count - 0x27) * 2, point, matrix, hit, distance, f12);
+        return Collide_MeshNearestHit(static_cast<int>(btype.address), (btype->entranceMesh + count - 0x27) * 2, point, matrix, hit, distance, f12);
     }
 
     PORT_FN(Bldg_InitRecordBase);
     PORT_FN(Bldg_InitRecord);
-    PORT_FN(Bldg_Slot30);
+    PORT_FN(Bldg_RayHit);
     PORT_FN(BldgHousing_InitRecord);
     PORT_FN(BldgRoad_InitRecord);
-    PORT_FN(BldgField_Slot1C);
-    PORT_FN(BldgHousing_CollideA);
-    PORT_FN(BldgHousing_CollideB);
-    PORT_FN(BldgOffice_CollideA);
-    PORT_FN(BldgOffice_CollideB);
-    PORT_FN(BldgPort_CollideA);
-    PORT_FN(BldgPort_CollideB);
-    PORT_FN(BldgSmallGoods_CollideA);
-    PORT_FN(BldgSmallGoods_CollideB);
+    PORT_FN(BldgField_GroundTexture);
+    PORT_FN(BldgHousing_FloorBelow);
+    PORT_FN(BldgHousing_NearestHit);
+    PORT_FN(BldgOffice_FloorBelow);
+    PORT_FN(BldgOffice_NearestHit);
+    PORT_FN(BldgPort_FloorBelow);
+    PORT_FN(BldgPort_NearestHit);
+    PORT_FN(BldgSmallGoods_FloorBelow);
+    PORT_FN(BldgSmallGoods_NearestHit);
 
     // ---- city scene values (batch 38)
 
@@ -2086,10 +2086,10 @@ namespace mm
         return GuestPtr<char>{names + port::load<uint16_t>(group + 2u * static_cast<uint32_t>(post))};
     }
 
-    int BldgType_Slot30(GuestPtr<BuildingType>) { return 0; }
+    int BldgType_RayHit(GuestPtr<BuildingType>) { return 0; }
 
     PORT_FN(BldgType_GetPostName);
-    PORT_FN(BldgType_Slot30);
+    PORT_FN(BldgType_RayHit);
 
     // ---- the wants list (batch 38): up to 64 index entries over a data area of 256 words. A want takes four
     // words; an event hold takes one, with the building type in the index entry's held field.
@@ -2424,7 +2424,7 @@ namespace mm
     // (mm_BldgClaims_CountNearby over the footprint widened by the entry's reach), or for id 0x32 its start value
     // while the building has no entrance (0x4000). One is drawn by weight: it becomes the claim slot, its weight
     // the claim timer, and a claim of need not at its start value marks the building (flag 2).
-    void BldgClaims_EvalB(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
+    void BldgClaims_Pick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
     {
         port::GuestFrame<0x40> frame;
         const uint32_t sp = frame.ptr().address;
@@ -2467,7 +2467,7 @@ namespace mm
     // whose own claim is the same (flag byte and id), above the low threshold, not in slot 0x18 and not maxed,
     // has its meter raised by weight x spread step; at 0xFF it is maxed (flag 0x40, hold time). A claim rising a
     // band costs a point of pending approval. Stops at the map's far rows.
-    void BldgClaims_EvalA(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
+    void BldgClaims_Spread(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
     {
         port::GuestFrame<0x180> frame;
         const GuestPtr<uint16_t> seen{frame.ptr().address + 0x20u};
@@ -2538,8 +2538,8 @@ namespace mm
     }
 
     PORT_FN(BldgClaims_CountNearby);
-    PORT_FN(BldgClaims_EvalB);
-    PORT_FN(BldgClaims_EvalA);
+    PORT_FN(BldgClaims_Pick);
+    PORT_FN(BldgClaims_Spread);
 
     // ---- claims, continued (batch 39)
 
@@ -2579,7 +2579,7 @@ namespace mm
     // missing any more, or (a claim of need not yet marked) is marked as met with flag 2; otherwise the timer takes
     // the value. Below the threshold the claim is dropped (slot 0x18). Above the timer value the timer follows,
     // and a marked claim back at its start value loses flag 2.
-    void BldgClaims_EvalC(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
+    void BldgClaims_CheckMet(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
     {
         port::GuestFrame<0x20> frame;
         const uint32_t claim = static_cast<uint32_t>(Claim_GetSectionB(btype->claimB)) + 8u * obj->claimSlot;
@@ -2616,12 +2616,12 @@ namespace mm
     // Weighs the building's claims against its neighbours': the table at 0x1F4B90 (0x300 bytes; per claim id, ids
     // from 0x8000 as 0x40 on, a need and a wish slot of four bytes: present, summed weights, weighted meters)
     // marks the claims the building has a value for, then the neighbours over the weighted 13 x 13 grid (as in
-    // mm_BldgClaims_EvalA, stopping once a slot's weights pass 200) add their meters to the slots of their claims.
+    // mm_BldgClaims_Spread, stopping once a slot's weights pass 200) add their meters to the slots of their claims.
     // The heaviest slot wins: when it is the building's own claim the meter moves towards the neighbours' average
     // by half a step (the threshold step, or a tenth of a larger claim timer); otherwise, with the meter at most
     // the high threshold and its share (meter x switch factor) below the slot's weighted meters, the building
     // takes that claim.
-    void BldgClaims_EvalD(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
+    void BldgClaims_WeighNeighbours(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
     {
         port::GuestFrame<0x1C0> frame;
         const uint32_t sp = frame.ptr().address;
@@ -2753,8 +2753,8 @@ namespace mm
         }
     }
 
-    PORT_FN(BldgClaims_EvalC);
-    PORT_FN(BldgClaims_EvalD);
+    PORT_FN(BldgClaims_CheckMet);
+    PORT_FN(BldgClaims_WeighNeighbours);
 
     // ---- small goods and leveled ground (batch 39)
 
@@ -3610,7 +3610,7 @@ namespace mm
         btype->kind = id;
         sdk::strcpy(port::guest(btype->name), port::guest(record->name));
         btype->size = record->size;
-        btype->unk_143 = record->unk_22;
+        btype->groundTexture = record->groundTexture;
         btype->rule = record->rule;
         btype->flags = record->flags;
         btype->maxStack = record->maxStack;
@@ -4206,7 +4206,7 @@ namespace mm
                 WantsWin_Update(city->wants, city);
                 Event_Update(city->events, city);
                 CityCursor_Update(city->cursor, city, pad);
-                Laptop_CheckOpen(city->markers, city, pad);
+                Markers_CheckCircle(city->markers, city, pad);
                 if (city->modeStack[0] == 1 && pad != 0 && (Pad_Held(0) & 0x20u) != 0u)
                 {
                     if ((Pad_Pressed(0) & 0x1000u) != 0u)
@@ -4315,7 +4315,7 @@ namespace mm
         LightSet_UpdateByClock(city->lights, city->clock, city->weatherToday);
         Terrain_Draw(city->map, GuestPtr<Vec4>::of(camera->base.view[0]), GuestPtr<Vec4>::of(camera->base.eye), zoom, city->weatherToday, city->clock,
                      city->waterLevel);
-        CityRender_DrawOverlays(city->map, city);
+        CityRender_DrawTerrain(city->map, city);
         DmaList_QueueGsDefaults();
         if (city->hudVisible[0] != 0)
         {
@@ -4336,11 +4336,11 @@ namespace mm
         CityRender_DrawWater(city->map, city);
         const int32_t weather = city->weatherToday;
         if (weather == 2)
-            CityRender_DrawSky(city->map, city, 0, GuestPtr<Vec4>::of(city->cityCamera->base.view[0]));
+            CityRender_DrawWeather(city->map, city, 0, GuestPtr<Vec4>::of(city->cityCamera->base.view[0]));
         else if (weather == 3)
-            CityRender_DrawSky(city->map, city, 1, GuestPtr<Vec4>::of(city->cityCamera->base.view[0]));
-        CityRender_DrawBuildings(city->map, 0);
-        CityRender_DrawBuildings(city->map, 1);
+            CityRender_DrawWeather(city->map, city, 1, GuestPtr<Vec4>::of(city->cityCamera->base.view[0]));
+        CityRender_DrawPlacement(city->map, 0);
+        CityRender_DrawPlacement(city->map, 1);
         CityRender_DrawInstanceLayer(city->map);
         DmaList_QueueGsDefaults();
         Packet2_Draw(GuestPtr<uint32_t>::of(city->lights->packetA), 0);

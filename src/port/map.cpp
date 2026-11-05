@@ -1082,7 +1082,7 @@ namespace mm
                     flags |= (map->tiles[tile].flags & 0x20u) != 0 ? 0x20u : 0x40u;
                     break;
                 }
-        if (LayerC_InTileRect(map->placement, x, z) != 0)
+        if (PlacementLayer_InTileRect(map->placement, x, z) != 0)
             flags |= 4u;
         if ((map->tiles[tile].flags & 0x10u) != 0 && (map->objects[map->tiles[tile].firstObject].flags & 0x10u) != 0)
             flags |= 0x10u;
@@ -1916,7 +1916,7 @@ namespace mm
         return sum;
     }
 
-    void MapObjects_Slot0C(GuestPtr<CityMap>) {}
+    void MapObjects_ClearObject(GuestPtr<CityMap>) {}
 
     PORT_FN(Map_CanPlace);
     PORT_FN(Map_FindPersonEntry);
@@ -1930,7 +1930,7 @@ namespace mm
     PORT_FN(MapObj_GetMatrix);
     PORT_FN(MapObj_PushHistory);
     PORT_FN(MapObj_SumHistory);
-    PORT_FN(MapObjects_Slot0C);
+    PORT_FN(MapObjects_ClearObject);
 
     // ---- tile lists, terrain (batch 38)
 
@@ -1969,7 +1969,7 @@ namespace mm
     }
 
     // The placement highlight: its colour, its rectangle (x0, z0, x1, z1) and its mode (1 the highlight, 2 the marker).
-    void Terrain_SetVec(GuestPtr<LayerC> layer, int mode, GuestPtr<int32_t> rect, GuestPtr<uint32_t> colour)
+    void PlacementLayer_Set(GuestPtr<PlacementLayer> layer, int mode, GuestPtr<int32_t> rect, GuestPtr<uint32_t> colour)
     {
         layer->colourA = *GuestPtr<Vec4>{colour.address};
         layer->rectX0 = rect[0];
@@ -1982,7 +1982,7 @@ namespace mm
     PORT_FN(TileLists_Get);
     PORT_FN(TileLists_Remove);
     PORT_FN(TileLists_SaveState);
-    PORT_FN(Terrain_SetVec);
+    PORT_FN(PlacementLayer_Set);
 
     // ---- placement search (batch 39)
 
@@ -2110,16 +2110,17 @@ namespace mm
         }
     }
 
-    // Whether the player's circle (position, radius) touches one of the objects round it: each object's type is asked
-    // (vtable +0x2C) with the position, the placement matrix, a2 and the flag word.
-    int Player_CollideObjects(GuestPtr<CityMap> map, GuestPtr<ps2f> position, int a2, ps2f radius)
+    // Whether an object round the player has a surface below the position within `lift`: each object's type is asked
+    // (vtable +0x2C) with the position, the placement matrix, `hit` (where the crossing goes; the player lands on its
+    // y) and the flag word.
+    int Player_FloorBelow(GuestPtr<CityMap> map, GuestPtr<ps2f> position, int hit, ps2f lift)
     {
         port::GuestFrame<0x190> frame; // the list of ids at +0x120, the matrix at +0x140, the flag word at +0x18C
         const uint32_t base = frame.ptr().address;
-        const bool hit = eachObjectNear(map, position, base + 0x120u, base + 0x140u, base + 0x18Cu, [&](GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj) {
-            return port::callGuest<int64_t>(btype->vtable->collideA, btype, obj, position, GuestPtr<Vec4>{base + 0x140u}, a2, base + 0x18Cu, radius) != 0;
+        const bool found = eachObjectNear(map, position, base + 0x120u, base + 0x140u, base + 0x18Cu, [&](GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj) {
+            return port::callGuest<int64_t>(btype->vtable->floorBelow, btype, obj, position, GuestPtr<Vec4>{base + 0x140u}, hit, base + 0x18Cu, lift) != 0;
         });
-        return hit ? 1 : 0;
+        return found ? 1 : 0;
     }
 
     // The nearest hit among the objects round the player: *distance starts at 100 and takes the smallest distance an
@@ -2131,7 +2132,7 @@ namespace mm
         const uint32_t base = frame.ptr().address;
         *distance = 100.0f;
         eachObjectNear(map, position, base + 0x140u, base + 0x160u, base + 0x1ACu, [&](GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj) {
-            const int64_t answer = port::callGuest<int64_t>(btype->vtable->collideB, btype, obj, position, GuestPtr<Vec4>{base + 0x160u}, base + 0x130u, base + 0x1A8u, base + 0x1ACu, radius);
+            const int64_t answer = port::callGuest<int64_t>(btype->vtable->nearestHit, btype, obj, position, GuestPtr<Vec4>{base + 0x160u}, base + 0x130u, base + 0x1A8u, base + 0x1ACu, radius);
             if (answer != 0 && ps2f(port::load<float>(base + 0x1A8u)) < ps2f(*distance))
             {
                 *distance = port::load<float>(base + 0x1A8u);
@@ -2142,7 +2143,7 @@ namespace mm
         return ps2f(*distance) == ps2f(100.0f) ? 0 : 1;
     }
 
-    PORT_FN(Player_CollideObjects);
+    PORT_FN(Player_FloorBelow);
     PORT_FN(Player_NearestObject);
 
     // ---- the map's ticks (batch 40)
@@ -2320,7 +2321,7 @@ namespace mm
         const uint32_t flagsAt = frame.ptr().address + 0xDCu;
         const GuestPtr<CityCamera> camera = city->cityCamera;
         const ps2f fogNear = camera->base.fogNear;
-        LayerA_SetSource(map->instances, static_cast<int>(port::load<uint32_t>(0x001BDCD0u) & 1u));
+        LayerA_BeginFrame(map->instances, static_cast<int>(port::load<uint32_t>(0x001BDCD0u) & 1u));
         GuestPtr<BuildingType> lastType;
         ps2f bestHeight = 0.0f;
         GuestPtr<TerrainEntry> node = GuestPtr<TerrainEntry>{addressOf(map->buckets[149])}; // the far end, walked back

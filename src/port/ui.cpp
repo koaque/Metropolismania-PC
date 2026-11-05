@@ -1024,7 +1024,7 @@ namespace mm
     // menu choices, 0x28/0x29 title, model and load menu) and runs the screen fade. A new layer set restarts
     // the fade at -0x80 (even sets) or 0 (odd), then it moves by the set's step each frame (1, 2 or 4). Returns
     // 1 when the fade is through (parked at -1 or 0x7F), 2 in its first step from 0x40 on, else 0.
-    int Title_DrawCommon(GuestPtr<SceneA> scene, int layers)
+    int Title_DrawCommon(GuestPtr<TitleScene> scene, int layers)
     {
         if (scene->layers != layers)
         {
@@ -1086,7 +1086,7 @@ namespace mm
     // title: the title screen waiting for input. The first frame sets up the "[SELECT]SoundTest" hint and the idle
     // timer; then the menu runs, with two choices once a save exists (the cursor moving to the second if only one
     // was shown before). Returns the menu input's result, its idle restart (-2) as -1 with the timer restarted.
-    int Title_PressStart(GuestPtr<SceneA> scene)
+    int Title_PressStart(GuestPtr<TitleScene> scene)
     {
         if (port::load<int8_t>(globals::kPressStartStatic + 4u) == 0)
         {
@@ -1129,7 +1129,7 @@ namespace mm
     // them done. 2 plays the rest of the animation; 3 fades the title sprite in (alpha 0 to 127, one a frame),
     // then plays sound 0x4F; 4 shows it while the logo letters bounce in; 5 holds it 50 frames and returns 1
     // (every other frame 0). In steps 1 and 2 each timed effect plays as the animation reaches its frame.
-    int Title_Intro(GuestPtr<SceneA> scene)
+    int Title_Intro(GuestPtr<TitleScene> scene)
     {
         const auto playDueSound = [&] {
             const int next = scene->logoSound;
@@ -1141,8 +1141,8 @@ namespace mm
         switch (scene->pressStep)
         {
         case 0:
-            SoundCmd_0F(0xF, 0x1800, 0);
-            SoundCmd_PlaySequence(0xF, 7, 0, 0, 0);
+            SoundCmd_MidiSetVolume(0xF, 0x1800, 0);
+            SoundCmd_MidiPlay(0xF, 7, 0, 0, 0);
             scene->logoTime = 0.0f;
             scene->logoSound = 0;
             scene->pressStep = scene->pressStep + 1;
@@ -1160,7 +1160,7 @@ namespace mm
             A3DObject_Draw(scene->logoModel);
             playDueSound();
             scene->logoTime = scene->logoTime + ps2f(1.0f);
-            const ps2f length = A3D_GetMeshField0C(scene->logoModel, 0);
+            const ps2f length = A3D_GetAnimLength(scene->logoModel, 0);
             if (scene->logoTime < length)
                 return 0;
             scene->pressStep = scene->pressStep + 1;
@@ -1201,7 +1201,7 @@ namespace mm
     // title: the logo's three letters bounce in turn (a size step every 5 frames from the 8-step table) and hop
     // to the next of five places every 40 frames. The third letter waits for frame 11 and stops at 185. Returns
     // 1 once 200 frames have passed.
-    int Title_LogoLetters(GuestPtr<SceneA> scene)
+    int Title_LogoLetters(GuestPtr<TitleScene> scene)
     {
         ++scene->introFrame;
         if (scene->introFrame >= 200)
@@ -1242,7 +1242,7 @@ namespace mm
     // adding up for x. The other is drawn at 0.6, and with a single choice only the first is shown, as in
     // mm_Title_DrawChoices; +0x48 counts the frames. The original's frame is reserved whole and its two
     // vectors and two matrices kept at their offsets in it, as sceVu0RotMatrixZ runs as guest code.
-    void Title_DrawChoicesIdle(GuestPtr<SceneA> scene)
+    void Title_DrawChoicesIdle(GuestPtr<TitleScene> scene)
     {
         port::GuestFrame<0xF0> frame;
         const uint32_t sp = frame.ptr().address;
@@ -1287,7 +1287,7 @@ namespace mm
     // space (both, 1 or 2), and "press Cross". 2: moves on when a save or a fine card turns up, goes back to 1
     // when a slot's status changes (and is not being read), and moves on with Cross (sound 1) too. 3: after 40
     // more frames empties the box. 4: done. With `noPolling` set, step 0 waits and step 2 only takes Cross.
-    int SceneA_MemoryCardCheck(GuestPtr<SceneA> scene, int noPolling)
+    int TitleScene_MemoryCardCheck(GuestPtr<TitleScene> scene, int noPolling)
     {
         const auto fine = [](int status) { return status == 0 || status == 3; };
         const auto text = [](uint32_t address) { return GuestPtr<char>{address}; };
@@ -1372,7 +1372,7 @@ namespace mm
     // once the pulse is over. Otherwise Up and Down move the cursor (sound 0) when there is more than one choice,
     // the choices are drawn at rest, and Cross or Start start the pulse (sound 1). Returns -2 after Up, Down,
     // Cross or Start, 10 for Select while the sound test line shows, else -1.
-    int Title_MenuInput(GuestPtr<SceneA> scene)
+    int Title_MenuInput(GuestPtr<TitleScene> scene)
     {
         const uint32_t pressed = Pad_Pressed(0);
         const auto codeButton = [](int step) { return port::load<uint32_t>(globals::kSoundTestCode + 4u * static_cast<uint32_t>(step)); };
@@ -1434,7 +1434,7 @@ namespace mm
     // title: the menu choices. The selected one pulses (scale up to 1.09 over 10 frames and back, moving left
     // and up with it) and the other is drawn at 0.6; with a single choice only the first is shown. Returns 1
     // once the 20-frame pulse is over (then it rests at scale 1).
-    int Title_DrawChoices(GuestPtr<SceneA> scene)
+    int Title_DrawChoices(GuestPtr<TitleScene> scene)
     {
         const int frame = scene->pulseFrame;
         int dx;
@@ -1677,7 +1677,7 @@ namespace mm
     PORT_FN(Title_Intro);
     PORT_FN(Title_DrawChoicesIdle);
     PORT_FN(Title_MenuInput);
-    PORT_FN(SceneA_MemoryCardCheck);
+    PORT_FN(TitleScene_MemoryCardCheck);
     PORT_FN(CityCursor_LayoutInfo);
     PORT_FN(Title_DrawChoices);
     PORT_FN(Title_DrawCommon);
@@ -1999,7 +1999,7 @@ namespace mm
     // up to the last one loaded) at random, from mesh 0 (+0xF4), at height -1.4 (+0xF8), its timer (+0xE4)
     // cleared, the mesh value at +0xE8 and the part's two values from 0x1B1870 (a float) and 0x1B1930. 0 when no
     // part is loaded.
-    int Title_RandomCharParts(GuestPtr<SceneA> scene)
+    int Title_RandomCharParts(GuestPtr<TitleScene> scene)
     {
         if (scene->previewModel.address != 0)
             return 1;
@@ -2014,7 +2014,7 @@ namespace mm
         scene->previewState = 0;
         scene->previewTurn = -1.4f;
         scene->previewTime = 0.0f;
-        const ps2f meshValue = A3D_GetMeshField0C(scene->previewModel, scene->previewState);
+        const ps2f meshValue = A3D_GetAnimLength(scene->previewModel, scene->previewState);
         scene->previewEnd = static_cast<float>(meshValue);
         scene->previewTurnStep = port::load<float>(0x001B1870u + 4u * pick);
         scene->previewText = GuestPtr<char>{port::load<uint32_t>(0x001B1930u + 4u * pick)};
@@ -2023,7 +2023,7 @@ namespace mm
 
     // The BGM page of the sound test (`test`, its text box at +0xB8): the controls, then the volume (+0x64, 5
     // wide), the tempo (+0x62, signed, 3 wide) and the song number (+0x5C, 2 wide).
-    void SoundTest_BgmText(GuestPtr<SceneA> scene)
+    void SoundTest_BgmText(GuestPtr<TitleScene> scene)
     {
         const auto box = [scene] { return scene->hintText; };
         port::GuestFrame<0x30> frame;
@@ -2048,7 +2048,7 @@ namespace mm
     // (stepping twice as fast) passes 0.2, and at 1.4 the model is dropped. Phases 0 and 1 keep the animation looping
     // from a fifth of its length. The turn is a Y rotation of -90 degrees times a ramp, multiplied into an identity matrix on
     // VU0 (vf1 to vf12); the original returns the last call's v0, which its caller overwrites.
-    void Title_NewGameIntro(GuestPtr<SceneA> scene)
+    void Title_NewGameIntro(GuestPtr<TitleScene> scene)
     {
         using namespace vu0;
         if (Title_RandomCharParts(scene) == 0)
@@ -2106,7 +2106,7 @@ namespace mm
                 return;
             scene->previewState = 1;
             scene->previewTime = ps2f(scene->previewEnd) / F(0x40A00000u);
-            scene->previewEnd = A3D_GetMeshField0C(model, scene->previewState);
+            scene->previewEnd = A3D_GetAnimLength(model, scene->previewState);
             LoadingScreen_SetText(scene->loading, GuestPtr<char>{globals::kEmptyText});
             return;
         }
@@ -2124,7 +2124,7 @@ namespace mm
             return;
         scene->previewState = 8;
         scene->previewTime = F(0u);
-        scene->previewEnd = A3D_GetMeshField0C(model, scene->previewState);
+        scene->previewEnd = A3D_GetAnimLength(model, scene->previewState);
         LoadingScreen_SetText(scene->loading, GuestPtr<char>{scene->previewText.address});
     }
 
@@ -2186,7 +2186,7 @@ namespace mm
     // The effect page's text: the controls, then the pan (+0x68, signed: "L" or "R" and 2 digits, or "Center"), the
     // distance (+0x69, 2 wide), the note (+0x60, 3 wide), the pitch (+0x5E, signed, 5 wide) and the effect number
     // (+0x5D, 3 wide).
-    void SoundTest_SeText(GuestPtr<SceneA> scene)
+    void SoundTest_SeText(GuestPtr<TitleScene> scene)
     {
         const auto box = [scene] { return scene->hintText; };
         const auto append = [&](uint32_t text) { TextBox_AppendText(box(), GuestPtr<char>{text}, 0); };
@@ -2229,7 +2229,7 @@ namespace mm
     // -10..10 and the distance within 0..16 (both reset with their two keys held). Pressing 0x40 plays the effect
     // (with the key held instead for effects whose flag 0x10 is clear at 0x1B2EE0), 0x10 stops it. Returns 1 when
     // the page changed.
-    int SoundTest_SePage(GuestPtr<SceneA> scene, uint32_t repeated, uint32_t pressed, uint32_t held)
+    int SoundTest_SePage(GuestPtr<TitleScene> scene, uint32_t repeated, uint32_t pressed, uint32_t held)
     {
         int changed = 0;
         if (repeated == 0x1000)
@@ -2430,7 +2430,7 @@ namespace mm
     namespace
     {
         // The sound test screen's text for its current page (0 effects, 1 music); beyond that, the waiting text.
-        void soundTestText(GuestPtr<SceneA> scene)
+        void soundTestText(GuestPtr<TitleScene> scene)
         {
             const auto box = [scene] { return scene->hintText; };
             const uint32_t page = static_cast<uint32_t>(scene->testPage);
@@ -2452,17 +2452,17 @@ namespace mm
     // song plays on 0x40 (the same song again just plays; another first fades out and loads its bank once it is
     // out) and stops on 0x10. While a bank loads (+0x78) the page waits for the driver. Returns 1 when the page
     // changed (the text is then rebuilt and drawn here, so 0 is returned when it drew).
-    int SoundTest_BgmPage(GuestPtr<SceneA> scene, uint32_t repeated, uint32_t pressed, uint32_t held)
+    int SoundTest_BgmPage(GuestPtr<TitleScene> scene, uint32_t repeated, uint32_t pressed, uint32_t held)
     {
         int changed = 0;
         const auto setTempo = [&](int tempo) {
             scene->tempo = static_cast<int16_t>(tempo);
-            SoundCmd_11(0xF, static_cast<uint16_t>(tempo), 0);
+            SoundCmd_MidiSetTempo(0xF, static_cast<uint16_t>(tempo), 0);
             changed = 1;
         };
         const auto setVolume = [&](int volume) {
             scene->volume = volume;
-            SoundCmd_0F(0xF, volume, 0);
+            SoundCmd_MidiSetVolume(0xF, volume, 0);
             changed = 1;
         };
         if (repeated == 0x1000)
@@ -2499,19 +2499,19 @@ namespace mm
             {
                 if (static_cast<uint32_t>(scene->playingSong) == scene->song)
                 {
-                    SoundCmd_0F(0xF, scene->volume, 0);
-                    SoundCmd_11(0xF, static_cast<uint16_t>(scene->tempo), 0);
-                    SoundCmd_PlaySequence(0xF, 7, 0, 0, 0);
+                    SoundCmd_MidiSetVolume(0xF, scene->volume, 0);
+                    SoundCmd_MidiSetTempo(0xF, static_cast<uint16_t>(scene->tempo), 0);
+                    SoundCmd_MidiPlay(0xF, 7, 0, 0, 0);
                 }
                 else
                 {
-                    SoundCmd_FadeB(0xF, 0, 100, 0);
+                    SoundCmd_MidiFade(0xF, 0, 100, 0);
                     scene->playingSong = static_cast<int32_t>(scene->song);
                     scene->bankLoading = 1;
                 }
             }
             if (pressed == 0x10 && Sound_IsBusy() == 0)
-                SoundCmd_StopB(0xF, 0);
+                SoundCmd_MidiStop(0xF, 0);
         };
         if (scene->bankLoading == 0)
         {
@@ -2521,12 +2521,12 @@ namespace mm
         if ((port::load<uint32_t>(static_cast<uint32_t>(Sound_GetStatus()) + 4u) & 0x8000u) == 0)
         {
             scene->bankLoading = 0;
-            SoundCmd_StopSequence(7, 0);
+            SoundCmd_MidiClose(7, 0);
             const int offset = 0x30 * static_cast<uint8_t>(scene->playingSong);
-            SoundCmd_LoadBank(7, 0x001B2A10 + offset, 0x001B2A20 + offset, 0x001B2A30 + offset, 0);
-            SoundCmd_0F(0xF, scene->volume, 0);
-            SoundCmd_11(0xF, static_cast<uint16_t>(scene->tempo), 0);
-            SoundCmd_PlaySequence(0xF, 7, 0, 0, 0);
+            SoundCmd_MidiOpen(7, 0x001B2A10 + offset, 0x001B2A20 + offset, 0x001B2A30 + offset, 0);
+            SoundCmd_MidiSetVolume(0xF, scene->volume, 0);
+            SoundCmd_MidiSetTempo(0xF, static_cast<uint16_t>(scene->tempo), 0);
+            SoundCmd_MidiPlay(0xF, 7, 0, 0, 0);
             play();
             return changed;
         }
@@ -2541,7 +2541,7 @@ namespace mm
     // out and sets the play-land banks up again at 0x65, 0x66 for the screen back); 0x100 swaps between the
     // effects and music pages unless a bank is loading; 100 resets the controls. Returns 1 when leaving is done (page
     // 300).
-    int SoundTest_Update(GuestPtr<SceneA> scene)
+    int SoundTest_Update(GuestPtr<TitleScene> scene)
     {
         if (port::load<int8_t>(0x001BDC18u) == 0)
         {
@@ -2568,12 +2568,12 @@ namespace mm
         case 200:
             TextBox_SetText(box(), GuestPtr<char>{0x001B86F0u}, 0);
             TextBox_AppendText(box(), GuestPtr<char>{0x001B8710u}, 0);
-            SoundCmd_StopB(0xF, 0);
-            SoundCmd_StopSequence(7, 0);
+            SoundCmd_MidiStop(0xF, 0);
+            SoundCmd_MidiClose(7, 0);
             Sound_StopAllSequences();
-            SoundCmd_02_Zero();
+            SoundCmd_WaveClose0();
             Sound_ResetVoices(1);
-            SoundCmd_LoadBank(7, 0x001B8728, 0x001B8738, 0x001B8748, 0);
+            SoundCmd_MidiOpen(7, 0x001B8728, 0x001B8738, 0x001B8748, 0);
             setPage(page() + 1);
             break;
         case 0x66:
@@ -2586,8 +2586,8 @@ namespace mm
         case 0x65:
             if ((port::load<uint32_t>(static_cast<uint32_t>(Sound_GetStatus()) + 4u) & 0x8000u) == 0)
             {
-                SoundCmd_StopSequence(7, 0);
-                SoundCmd_02_Zero();
+                SoundCmd_MidiClose(7, 0);
+                SoundCmd_WaveClose0();
                 Sound_ResetVoices(0);
                 Sound_LoadPlaylandBanks();
                 setPage(page() + 1);
@@ -2596,7 +2596,7 @@ namespace mm
         case 100:
             scene->bankLoading = 0;
             soundTestText(scene);
-            SoundCmd_FadeB(0xF, 0, 0x10, 0);
+            SoundCmd_MidiFade(0xF, 0, 0x10, 0);
             scene->effect = 0;
             scene->song = 0;
             scene->pitch = 0;
@@ -3328,7 +3328,7 @@ namespace mm
             port::store<uint32_t>(pages.address + offset, 0u);
         pages->index = GuestPtr<TownPagesIndex>{0u};
         pages->page = 0;
-        pages->unk_58 = 0;
+        pages->targetRow = 0;
         pages->row = 0;
         pages->savedPage = 0;
         pages->savedRow = 0;
@@ -3422,7 +3422,7 @@ namespace mm
     // One frame of a logo screen (steps in pressStep): 0 loads the logo sprite (logo 0, 1 or any other: three files) and places
     // it, 1 draws the title layers until they are done (then the logo shows for 140 frames), 2 draws the logo and counts the
     // frames down, 3 draws the layers again until done, 4 deletes the sprite and reports the screen finished (1); 0 until then.
-    int SceneA_LogoStep(GuestPtr<SceneA> scene, char logo)
+    int TitleScene_LogoStep(GuestPtr<TitleScene> scene, char logo)
     {
         const int step = scene->pressStep;
         if (step == 4)
@@ -3469,12 +3469,12 @@ namespace mm
         return 0;
     }
 
-    PORT_FN(SceneA_LogoStep);
+    PORT_FN(TitleScene_LogoStep);
 
     // The stage briefing scene: the stage object base and a widget at +4, the scene's own vtables (+0x100 and +0xC), the fields
     // cleared, and with `loadStage` the next stage read (stage number + 1 kept at +0x24); then its light set (+0x14) and camera
     // (+0x10), the camera placed with the eye and target vectors at 0x1B08D0 and 0x1B08E0.
-    GuestPtr<SceneB> SceneB_ctor(GuestPtr<SceneB> scene, int loadStage)
+    GuestPtr<StageScene> StageScene_ctor(GuestPtr<StageScene> scene, int loadStage)
     {
         port::GuestFrame<0x50> frame;
         const uint32_t sp = frame.ptr().address;
@@ -3509,13 +3509,13 @@ namespace mm
         return scene;
     }
 
-    PORT_FN(SceneB_ctor);
+    PORT_FN(StageScene_ctor);
 
     // Builds the stage briefing's next text into the scene's buffer (+0x5C) and returns 1 while there is more: phase 0 looks the
     // stage number up in the list at 0x1B71F0 (a stage can have several special messages, one per call), then phase 1 gives the
     // stage's general text, phase 2 the goal in two parts (the heading at 0x1B72A0 with the goal text, then 0x1B72D0); the last part
     // ends it with 0 and clears the phase.
-    int SceneB_BuildBriefingText(GuestPtr<SceneB> scene)
+    int StageScene_BuildBriefingText(GuestPtr<StageScene> scene)
     {
         port::GuestFrame<0x120> frame;
         const uint32_t s = scene.address;
@@ -3584,7 +3584,7 @@ namespace mm
         return 1;
     }
 
-    PORT_FN(SceneB_BuildBriefingText);
+    PORT_FN(StageScene_BuildBriefingText);
 
     // ---- Drawing the laptop and the phone call icon (plan P6 batch 2) ----
 
@@ -3762,7 +3762,7 @@ namespace mm
     }
 
     // The lights (+0x14) and the camera (+0x10), then the widget at +4 and the stage object base.
-    GuestPtr<SceneB> SceneB_dtor(GuestPtr<SceneB> scene, int16_t deleteFlag)
+    GuestPtr<StageScene> StageScene_dtor(GuestPtr<StageScene> scene, int16_t deleteFlag)
     {
         if (scene)
         {
@@ -3781,7 +3781,7 @@ namespace mm
     // The logo scene's children: the text boxes (+0xB8, +0xBC), the three objects at +0x10.. and those at +0xC, +0x1C, +0x20,
     // +0x30 and +0x34 that delete themselves through their vtables, the models (+0x24, +0x28, +0x4), the list menu (+0xB0),
     // the save manager (+0xB4), the camera (+0) and the loading screen (+0x2C); then the stage object base.
-    GuestPtr<SceneA> SceneA_dtor(GuestPtr<SceneA> scene, int16_t deleteFlag)
+    GuestPtr<TitleScene> TitleScene_dtor(GuestPtr<TitleScene> scene, int16_t deleteFlag)
     {
         if (!scene)
             return scene;
@@ -3812,8 +3812,8 @@ namespace mm
     PORT_FN(Applicants_dtor);
     PORT_FN(MenuWin_dtor);
     PORT_FN(MenuWin_Closing);
-    PORT_FN(SceneB_dtor);
-    PORT_FN(SceneA_dtor);
+    PORT_FN(StageScene_dtor);
+    PORT_FN(TitleScene_dtor);
 
     // ---- The briefing scene's captions (plan P6 batch 2) ----
     //
@@ -3851,7 +3851,7 @@ namespace mm
     }
 
     // The stage number (three digits from +0x24) under the stage title text.
-    void SceneB_ShowStageTitle(GuestPtr<SceneB> scene)
+    void StageScene_ShowStageTitle(GuestPtr<StageScene> scene)
     {
         port::GuestFrame<0x30> frame;
         const uint32_t s = scene.address;
@@ -3870,7 +3870,7 @@ namespace mm
     }
 
     // The city's name (up to its first line break, from 0x1C5680) on two rows.
-    void SceneB_ShowCityName(GuestPtr<SceneB> scene)
+    void StageScene_ShowCityName(GuestPtr<StageScene> scene)
     {
         port::GuestFrame<0x120> frame;
         const uint32_t s = scene.address;
@@ -3894,7 +3894,7 @@ namespace mm
     // (from 0x1C5780). Phase 1 fades in (one step a frame), the phases up to 0x12C hold, and at 0x12C it fades out; when it is
     // dark the box goes, the phase restarts and the count of captions shown (+0x28) grows. The fade is drawn while it is at
     // most 0x80.
-    void SceneB_ShowApprovalRate(GuestPtr<SceneB> scene)
+    void StageScene_ShowApprovalRate(GuestPtr<StageScene> scene)
     {
         port::GuestFrame<0x80> frame;
         const uint32_t s = scene.address;
@@ -3949,9 +3949,9 @@ namespace mm
         }
     }
 
-    PORT_FN(SceneB_ShowStageTitle);
-    PORT_FN(SceneB_ShowCityName);
-    PORT_FN(SceneB_ShowApprovalRate);
+    PORT_FN(StageScene_ShowStageTitle);
+    PORT_FN(StageScene_ShowCityName);
+    PORT_FN(StageScene_ShowApprovalRate);
 
     // The scrolling telop of the briefing. The kind of telop follows the stage (+0x24): 0 for stage 1, 1 for stage 5, 2 for the
     // others (which also name the city and its mayor). Phase 0 loads the sound bank and writes the text into a box of 17 by 20,
@@ -3959,7 +3959,7 @@ namespace mm
     // every seventh frame) until Start or Cross is pressed (not on stage 6) or the scroll has gone far enough, then the fade
     // (+0x38, counting up from 1) takes the picture out, the music is stopped, the box and the sprite (+0x20) are deleted and
     // the phase restarts with one more caption counted (+0x28).
-    void SceneB_ShowTelop(GuestPtr<SceneB> scene)
+    void StageScene_ShowTelop(GuestPtr<StageScene> scene)
     {
         const uint32_t s = scene.address;
         const int32_t stage = scene->stage;
@@ -3977,7 +3977,7 @@ namespace mm
             sdk::strcat(0x001F3730u, 0x001B7300u);
             sdk::strcat(0x001F3750u, 0x001B7308u);
             sdk::strcat(0x001F3770u, 0x001B7310u);
-            SoundCmd_LoadBank(7, 0x001F3730, 0x001F3750, 0x001F3770, 0);
+            SoundCmd_MidiOpen(7, 0x001F3730, 0x001F3750, 0x001F3770, 0);
             makeCaptionBox(s, 0x11, 0x14);
             TextBox_SetCharSize(text(), 0, 0xD0, 0, 0x140);
             if (kind != 2)
@@ -4007,8 +4007,8 @@ namespace mm
         case 1:
             if (Sound_IsBusy() == 0)
             {
-                SoundCmd_0F(0, port::load<int32_t>(0x001B07A8u + 4u * kind), 0);
-                SoundCmd_PlaySequence(0, 7, 0, 0, 0);
+                SoundCmd_MidiSetVolume(0, port::load<int32_t>(0x001B07A8u + 4u * kind), 0);
+                SoundCmd_MidiPlay(0, 7, 0, 0, 0);
                 nextPhase();
             }
             break;
@@ -4026,12 +4026,12 @@ namespace mm
                 if (buttons == 0x800u || buttons == 0x40u || port::load<int32_t>(0x001B0810u + 4u * kind) < scene->scroll)
                 {
                     scene->fade = 1;
-                    SoundCmd_FadeB(0, 0, 0x20, 0);
+                    SoundCmd_MidiFade(0, 0, 0x20, 0);
                 }
             }
             if (scene->fade > 0x80)
             {
-                SoundCmd_StopSequence(7, 0);
+                SoundCmd_MidiClose(7, 0);
                 lifetime::deleteTextBox(port::guest(&scene->caption));
                 lifetime::deleteVirtual(port::guest(&scene->picture), 0);
                 scene->phase = 0;
@@ -4057,7 +4057,7 @@ namespace mm
         }
     }
 
-    PORT_FN(SceneB_ShowTelop);
+    PORT_FN(StageScene_ShowTelop);
 
     // ---- Window constructors (plan P6 batch 2) ----
 
@@ -4540,13 +4540,13 @@ namespace mm
     // sixteen items of 19 columns, the memory card manager (+0xB4), the lights (+4) and the camera (+0), set to the eye and target at
     // 0x1B17C0 and 0x1B17D0; the scene's state cleared (a mode of -1 at +0xD0, 1 at +0x4C), a message box of 21 by 12 (+0xBC) and a
     // line box of 30 by 15 (+0xB8) with their places.
-    GuestPtr<SceneA> SceneA_ctor(GuestPtr<SceneA> scene, int a1)
+    GuestPtr<TitleScene> TitleScene_ctor(GuestPtr<TitleScene> scene, int a1)
     {
         port::GuestFrame<0x50> frame;
         const uint32_t sp = frame.ptr().address;
         const uint32_t s = scene.address;
         StageObj_ctor(static_cast<int>(s));
-        port::store<int32_t>(s + 0xE0u, a1);
+        scene->afterGame = a1;
         Stage_Reset();
         uint32_t list = sdk::operator_new(0x2A0u);
         if (list != 0u)
@@ -4561,28 +4561,28 @@ namespace mm
         uint32_t lights = sdk::operator_new(0x1B0u);
         if (lights != 0u)
             lights = static_cast<uint32_t>(LightSet_Init(GuestPtr<LightSet>{lights}));
-        port::store<uint32_t>(s + 4u, lights);
+        scene->lights = GuestPtr<LightSet>{lights};
         uint32_t camera = sdk::operator_new(0x310u);
         if (camera != 0u)
             camera = Camera_ctor(GuestPtr<Camera>{camera}).address;
-        port::store<uint32_t>(s, camera);
+        scene->camera = GuestPtr<Camera>{camera};
         *GuestPtr<Vec4>{sp + 0x30u} = *GuestPtr<Vec4>{0x001B17C0u};
         *GuestPtr<Vec4>{sp + 0x40u} = *GuestPtr<Vec4>{0x001B17D0u};
-        Camera_SetEyeTarget(GuestPtr<Camera>{port::load<uint32_t>(s)}, GuestPtr<Vec4>{sp + 0x30u}, GuestPtr<Vec4>{sp + 0x40u});
-        Camera_UpdateMatrices(GuestPtr<Camera>{port::load<uint32_t>(s)});
-        port::store<uint32_t>(s + 0xC0u, 0u);
+        Camera_SetEyeTarget(scene->camera, GuestPtr<Vec4>{sp + 0x30u}, GuestPtr<Vec4>{sp + 0x40u});
+        Camera_UpdateMatrices(scene->camera);
+        scene->mode = 0;
         scene->pressStep = 0;
         scene->waitFrames = 0;
         scene->introFrame = 0;
         scene->pulseFrame = 0;
         scene->choice = 0;
         scene->choicePulsing = 0;
-        port::store<uint32_t>(s + 0x54u, 0u);
+        scene->loadProgress = 0;
         port::store<uint32_t>(0x001BDA7Cu, 0u);
         scene->layers = -1;
-        port::store<uint32_t>(s + 0x4Cu, 1u);
-        port::store<uint32_t>(s + 0xBCu, newTextBox(0x15, 0xC, -1));
-        TextBox_SetPos(GuestPtr<TextBox>{port::load<uint32_t>(s + 0xBCu)}, 0x72E0, 0x7C20, -0x100000);
+        scene->loadStep = 1;
+        scene->messageBox = GuestPtr<TextBox>{newTextBox(0x15, 0xC, -1)};
+        TextBox_SetPos(scene->messageBox, 0x72E0, 0x7C20, -0x100000);
         scene->logoSound = 0;
         scene->showHint = 0;
         scene->effect = 0;
@@ -4598,7 +4598,7 @@ namespace mm
         return scene;
     }
 
-    PORT_FN(SceneA_ctor);
+    PORT_FN(TitleScene_ctor);
 
     // The pause menu's card check state: the card manager is stepped; when the card in the slot at +0x1C reports 2 the menu shows
     // card message 5. Otherwise the main menu (+4) takes its input: choice 1 or the cancel (-1) gives the pad focus back, resets
@@ -5240,26 +5240,26 @@ namespace mm
     // call): 0 fades voice 15 out; 1 (once the draw reports 1) stops sound sequence 7; 2 and 3 wait for the sound driver (2 also
     // sends command 2); 4 plays the opening movie; 5 (the disc ready, 2) resets the voices; 6 waits for the driver; 7 (the disc
     // ready) loads the title sound bank into slot 7; 8 returns 1 once the driver is idle. 0 until then.
-    int Title_OpeningMovieStep(GuestPtr<SceneA> scene)
+    int Title_OpeningMovieStep(GuestPtr<TitleScene> scene)
     {
         const int drawn = Title_DrawCommon(scene, 0x1F);
         const auto next = [&]() { scene->pressStep = scene->pressStep + 1; };
         switch (static_cast<uint32_t>(scene->pressStep))
         {
         case 0:
-            SoundCmd_FadeB(0xF, 0, 0x10, 0);
+            SoundCmd_MidiFade(0xF, 0, 0x10, 0);
             next();
             return 0;
         case 1:
             if (drawn != 1)
                 return 0;
-            SoundCmd_StopSequence(7, 0);
+            SoundCmd_MidiClose(7, 0);
             next();
             return 0;
         case 2:
             if (Sound_IsBusy() != 0)
                 return 0;
-            SoundCmd_02_Zero();
+            SoundCmd_WaveClose0();
             next();
             return 0;
         case 3:
@@ -5281,7 +5281,7 @@ namespace mm
         case 7:
             if (sdk::sceCdDiskReady(0) != 2)
                 return 0;
-            SoundCmd_LoadBank(7, 0x001B8728, 0x001B8738, 0x001B8748, 0);
+            SoundCmd_MidiOpen(7, 0x001B8728, 0x001B8738, 0x001B8748, 0);
             next();
             return 0;
         case 8:
@@ -5301,19 +5301,19 @@ namespace mm
     // sound driver; 6 sets the game up: for a new game (+0xE0 clear) the character types, families, claims, words, goods, stamina,
     // bag and event types are loaded, for a loaded one the stage, families, stamina and bag are reset, then the laptop entries
     // are made; the result is 1 (and 0x1BDA7C = 0) or, with `newGame` set, 2 (and 0x1BDA7C = 1). 0 until then.
-    int SceneA_StartGame(GuestPtr<SceneA> scene, int newGame)
+    int TitleScene_StartGame(GuestPtr<TitleScene> scene, int newGame)
     {
         port::GuestFrame<0x50> frame;
         const uint32_t sp = frame.ptr().address;
         const uint32_t s = scene.address;
-        port::store<uint32_t>(s + 0x54u, port::load<uint32_t>(0x001BDB54u));
-        port::store<int32_t>(s + 0x4Cu, CityAssets_LoadStep());
+        scene->loadProgress = static_cast<int32_t>(port::load<uint32_t>(0x001BDB54u));
+        scene->loadStep = CityAssets_LoadStep();
         const auto next = [&]() { scene->pressStep = scene->pressStep + 1; };
         const auto draw = [&]() { return Title_DrawCommon(scene, newGame != 0 ? 0x29 : 0x21); };
         switch (static_cast<uint32_t>(scene->pressStep))
         {
         case 0:
-            SoundCmd_FadeB(0xF, 0, 0x10, 0);
+            SoundCmd_MidiFade(0xF, 0, 0x10, 0);
             draw();
             next();
             return 0;
@@ -5327,7 +5327,7 @@ namespace mm
                 port::store<uint64_t>(sp + 0x30u + offset, port::load<uint64_t>(0x001B19F0u + offset));
                 port::store<uint64_t>(sp + 0x40u + offset, port::load<uint64_t>(0x001B1A00u + offset));
             }
-            const GuestPtr<Camera> camera{port::load<uint32_t>(s)};
+            const GuestPtr<Camera> camera{scene->camera.address};
             Camera_SetEyeTarget(camera, GuestPtr<Vec4>{sp + 0x30u}, GuestPtr<Vec4>{sp + 0x40u});
             Camera_UpdateMatrices(camera);
             return 0;
@@ -5335,20 +5335,20 @@ namespace mm
         case 2:
             if (LoadingScreen_Update(scene->loading, 0) == 1)
             {
-                int bars = (10 * port::load<int32_t>(s + 0x54u)) / 70;
+                int bars = (10 * scene->loadProgress) / 70;
                 if (bars > 16)
                     bars = 16;
-                TexSprite_Draw(GuestPtr<TexSprite>{port::load<uint32_t>(s + 0x30u)});
+                TexSprite_Draw(scene->loadingFrame);
                 if (bars != 0)
                 {
-                    const GuestPtr<TexSprite> bar{port::load<uint32_t>(s + 0x34u)};
+                    const GuestPtr<TexSprite> bar{scene->loadingBar.address};
                     TexSprite_SetFrame(bar, 0, 0);
                     TexSprite_SetClip(bar, static_cast<uint32_t>(bars), 1);
                     TexSprite_Draw(bar);
                 }
                 Title_NewGameIntro(scene);
             }
-            if (port::load<int32_t>(s + 0x4Cu) == 0)
+            if (scene->loadStep == 0)
                 next();
             return 0;
         case 3:
@@ -5356,8 +5356,8 @@ namespace mm
                 next();
             return 0;
         case 4:
-            SoundCmd_StopSequence(7, 0);
-            SoundCmd_02_Zero();
+            SoundCmd_MidiClose(7, 0);
+            SoundCmd_WaveClose0();
             next();
             return 0;
         case 5:
@@ -5366,7 +5366,7 @@ namespace mm
             return 0;
         case 6:
             sdk::sceGsSyncPath(0, 0);
-            if (port::load<int32_t>(s + 0xE0u) == 0)
+            if (scene->afterGame == 0)
             {
                 CharType_LoadAll();
                 Family_Init();
@@ -5397,29 +5397,29 @@ namespace mm
         }
     }
 
-    PORT_FN(SceneA_StartGame);
+    PORT_FN(TitleScene_StartGame);
 
     // One frame of the title scene (the mode at +0xC0): clears the screen and Z, draws the scene's packets and camera, steps the
-    // memory card manager and then runs the mode. 0 loads the scene's assets (SceneA_Load), then on to 1 (or 5 when +0xE0 is set);
+    // memory card manager and then runs the mode. 0 loads the scene's assets (TitleScene_Load), then on to 1 (or 5 when +0xE0 is set);
     // 1 is the memory card check; 2 to 4 the three logos; 5 the title intro (Cross, 0x800, skips into the title at once); 6 the
     // title screen, whose answer is 0 new game (9), 1 load (8), 2 the opening movie (7, after the music fades out) or 10 the sound
     // test (0xFF, which goes back to 5 when done); 8 the load menu (1 starts a loaded game: 0xA, 0 goes back: 6); 9 and 0xA start
-    // a new or loaded game (SceneA_StartGame: its 1 is mode 0xB, its 2 mode 0xC); 0xB and 0xC answer 1 or 2 once the card is idle.
+    // a new or loaded game (TitleScene_StartGame: its 1 is mode 0xB, its 2 mode 0xC); 0xB and 0xC answer 1 or 2 once the card is idle.
     // The asset loader is stepped in modes 1 to 6 and 8. The result is 0 until a game starts.
-    int SceneA_Update(GuestPtr<SceneA> scene)
+    int TitleScene_Update(GuestPtr<TitleScene> scene)
     {
         const uint32_t s = scene.address;
         DmaList_QueueClearScreen();
         DmaList_QueueClearZ();
-        Packet2_Draw(GuestPtr<uint32_t>{port::load<uint32_t>(s + 4u)}, 0);
-        Packet_Draw(GuestPtr<uint32_t>{port::load<uint32_t>(s)});
+        Packet2_Draw(GuestPtr<uint32_t>{scene->lights.address}, 0);
+        Packet_Draw(GuestPtr<uint32_t>{scene->camera.address});
         const int card = McManagerUpdate(scene->mc);
-        const uint32_t mode = port::load<uint32_t>(s + 0xC0u);
-        const auto setMode = [&](uint32_t value) { port::store<uint32_t>(s + 0xC0u, value); };
-        const auto next = [&]() { setMode(port::load<uint32_t>(s + 0xC0u) + 1u); };
+        const uint32_t mode = static_cast<uint32_t>(scene->mode);
+        const auto setMode = [&](uint32_t value) { scene->mode = static_cast<int32_t>(value); };
+        const auto next = [&]() { setMode(static_cast<uint32_t>(scene->mode) + 1u); };
         const auto stepLoader = [&]() {
-            port::store<uint32_t>(s + 0x54u, port::load<uint32_t>(0x001BDB54u));
-            port::store<int32_t>(s + 0x4Cu, CityAssets_LoadStep());
+            scene->loadProgress = static_cast<int32_t>(port::load<uint32_t>(0x001BDB54u));
+            scene->loadStep = CityAssets_LoadStep();
         };
         switch (mode)
         {
@@ -5438,7 +5438,7 @@ namespace mm
         case 0xA:
         case 9:
         {
-            const int result = SceneA_StartGame(scene, mode == 0xA ? 1 : 0);
+            const int result = TitleScene_StartGame(scene, mode == 0xA ? 1 : 0);
             if (result == 1)
                 setMode(0xB);
             else if (result == 2)
@@ -5480,8 +5480,8 @@ namespace mm
             }
             else if (result == 2)
             {
-                SoundCmd_02_Zero();
-                SoundCmd_FadeB(0xF, 0, 0x10, 0);
+                SoundCmd_WaveClose0();
+                SoundCmd_MidiFade(0xF, 0, 0x10, 0);
                 setMode(7);
                 scene->pressStep = static_cast<int32_t>(0);
             }
@@ -5517,7 +5517,7 @@ namespace mm
         case 3:
         case 2:
             stepLoader();
-            if (SceneA_LogoStep(scene, static_cast<char>(mode - 2u)) != 0)
+            if (TitleScene_LogoStep(scene, static_cast<char>(mode - 2u)) != 0)
             {
                 scene->pressStep = static_cast<int32_t>(0);
                 next();
@@ -5525,7 +5525,7 @@ namespace mm
             return 0;
         case 1:
             stepLoader();
-            if (SceneA_MemoryCardCheck(scene, card) != 0)
+            if (TitleScene_MemoryCardCheck(scene, card) != 0)
             {
                 scene->pressStep = static_cast<int32_t>(0);
                 scene->waitFrames = static_cast<int32_t>(0);
@@ -5533,11 +5533,11 @@ namespace mm
             }
             return 0;
         case 0:
-            if (SceneA_Load(scene, 0) == 0)
+            if (TitleScene_Load(scene, 0) == 0)
                 return 0;
             scene->pressStep = static_cast<int32_t>(0);
             scene->waitFrames = static_cast<int32_t>(0);
-            if (port::load<int32_t>(s + 0xE0u) != 0)
+            if (scene->afterGame != 0)
                 setMode(5);
             else
                 next();
@@ -5547,7 +5547,7 @@ namespace mm
         }
     }
 
-    PORT_FN(SceneA_Update);
+    PORT_FN(TitleScene_Update);
 
     // The pause menu's save slot state (4): the two cards' states are read; while either is still being checked the "checking memory
     // card" text shows and nothing is listed. Otherwise the slot menu (+8) lists the saves on the cards (their texts copied to
@@ -5659,7 +5659,7 @@ namespace mm
         }
         else
         {
-            pause->saveSlot = McManager_FindSlotB(mc(), choice, GuestPtr<int32_t>{p + 0x1Cu});
+            pause->saveSlot = McManager_GetSaveFolder(mc(), choice, GuestPtr<int32_t>{p + 0x1Cu});
             TextBox_SetPos(message(), 0x71C0, 0x7C20, -0x100000);
             TextBox_SetText(message(), GuestPtr<char>{(GuestPtr<PauseSlotText>::of(pause->slotTexts[0]) + choice).address}, 0);
             TextBox_AppendText(message(), GuestPtr<char>{0x001B78B0u}, 0);
@@ -5902,7 +5902,7 @@ namespace mm
     // input: Triangle answers 0 (back), Cross copies the chosen save's 0x40-byte header to 0x1C5640 and its description (McManager_
     // FormatSaveInfo) to 0x1C5680 and answers 1. With no save the "no data" text shows for 300 frames (+0xD8, which the cursor
     // restarts) and the answer is 0. -1 otherwise.
-    int Title_LoadMenu(GuestPtr<SceneA> scene)
+    int Title_LoadMenu(GuestPtr<TitleScene> scene)
     {
         port::GuestFrame<0x100> frame;
         const uint32_t sp = frame.ptr().address;
@@ -5910,7 +5910,7 @@ namespace mm
         const uint32_t s = scene.address;
         const auto menu = [scene]() { return scene->loadMenu; };
         const auto mc = [scene]() { return scene->mc; };
-        const auto message = [s]() { return GuestPtr<TextBox>{port::load<uint32_t>(s + 0xBCu)}; };
+        const auto message = [scene]() { return scene->messageBox; };
         TexSprite_Draw(scene->titleSprite);
         A3DObject_Draw(scene->menuModel);
         const int32_t step = scene->pressStep;
@@ -5973,7 +5973,7 @@ namespace mm
         const int32_t choice = port::load<int32_t>(cursorAt);
         if (choice == -1)
             return 0;
-        const uint32_t header = static_cast<uint32_t>(McManager_FindSlotA(mc(), choice, GuestPtr<int32_t>{0x001BDA78u}));
+        const uint32_t header = static_cast<uint32_t>(McManager_GetSaveHeader(mc(), choice, GuestPtr<int32_t>{0x001BDA78u}));
         if (header == 0u)
             return -1;
         for (uint32_t at = 0; at < 0x40u; at += 4u)
@@ -5987,14 +5987,14 @@ namespace mm
     // The stage briefing scene for one frame (nothing once +0x29 is set). The step at +0x34: 0 makes the message window (+0x58) and keeps
     // the shared building model (0x1F3B2C) at +0x54 and the model at 0x1F3C68 at +0xFC, with the fade (+0x38) at 128; 1 fades in (4 a
     // frame); 2 sets the window's first message (sound 0x3C); 3 and 8 wait for the window's slots 0x28 and 0x24 to say they are done;
-    // 4 builds the next briefing text (SceneB_BuildBriefingText): with text it goes into the window (MsgWin_NextLine) and on to 5,
+    // 4 builds the next briefing text (StageScene_BuildBriefingText): with text it goes into the window (MsgWin_NextLine) and on to 5,
     // without the scene goes to 7; 5 waits out the typing (window state 6); 6 waits for Cross alone (sound 1, back to 4); 7 calls slot
     // 0x10 once; 9 fades out (4 a frame) and, at 128, deletes the window and starts over with the stage count (+0x28) one up, drawing
     // nothing more this frame. Every other frame draws: the window (slot 0x14), the light set and camera, the building model with its
     // matrix moved to (0, -0.16, -3.84) and node 0x12, and the model at +0xFC put in place (translation row 0, 0.4, -3.65, 1) and
     // played (+0x40 grows by 2 a frame and wraps at the animation's length, where the next animation, if any (+0x48), takes over),
     // then the window's slot 0x20 and the fade.
-    void SceneB_MissionBriefing(GuestPtr<SceneB> scene)
+    void StageScene_MissionBriefing(GuestPtr<StageScene> scene)
     {
         port::GuestFrame<0x90> frame;
         const uint32_t sp = frame.ptr().address;
@@ -6040,7 +6040,7 @@ namespace mm
                     nextStep();
                 break;
             case 4:
-                if (SceneB_BuildBriefingText(scene) != 0)
+                if (StageScene_BuildBriefingText(scene) != 0)
                 {
                     MsgWin_NextLine(GuestPtr<MsgWin>{window()}, GuestPtr<char>{port::guest(scene->text)});
                     nextStep();
@@ -6101,7 +6101,7 @@ namespace mm
         for (uint32_t at = 0; at < 0x10u; at += 4u)
             port::store<uint32_t>(sp + 0x40u + at, port::load<uint32_t>(0x001B26C0u + at));
         const GuestPtr<A3DObject> actor{scene->boss.address};
-        const ps2f length = A3D_GetMeshField0C(actor, scene->animation);
+        const ps2f length = A3D_GetAnimLength(actor, scene->animation);
         Mat4_Copy(GuestPtr<Vec4>{sp + 0x50u}, GuestPtr<Vec4>{0x001B2550u});
         port::store<uint32_t>(sp + 0x80u, 0u);
         port::store<uint32_t>(sp + 0x84u, 0x3ECCCCCDu);
@@ -6130,7 +6130,7 @@ namespace mm
         DmaList_QueueFade(scene->fade, 0);
     }
 
-    PORT_FN(SceneB_MissionBriefing);
+    PORT_FN(StageScene_MissionBriefing);
 
     // The stage briefing scene for one frame. What happens is looked up by the stage (7 at most) and the phase (+0x28, a byte) in the
     // table at 0x1B07C0 (eight bytes a stage): 0 answers 1 (the scene is over) unless +0x29 is set; 1 starts the sound change (+0x29 = 2,
@@ -6141,7 +6141,7 @@ namespace mm
     // sound change runs: with +0x29 at 2 the sequences are stopped (+0x2C 0 to 1), then the scene waits for the sounds to stop (back to
     // 0); with +0x29 at 1 it waits for the disc, resets the voices and loads the playland banks (+0x2C 0 to 1), then waits for the sounds
     // (back to 0). The result is 0 while the scene goes on.
-    int SceneB_Update(GuestPtr<SceneB> scene)
+    int StageScene_Update(GuestPtr<StageScene> scene)
     {
         DmaList_QueueClearScreen();
         const int32_t stage = scene->stage;
@@ -6180,10 +6180,10 @@ namespace mm
             }
             break;
         case 3:
-            SceneB_ShowTelop(scene);
+            StageScene_ShowTelop(scene);
             break;
         case 4:
-            SceneB_MissionBriefing(scene);
+            StageScene_MissionBriefing(scene);
             break;
         case 6:
         case 7:
@@ -6216,19 +6216,19 @@ namespace mm
             break;
         }
         case 10:
-            SceneB_ShowApprovalRate(scene);
+            StageScene_ShowApprovalRate(scene);
             break;
         case 11:
             if (scene->fadeMode == 0)
                 goOn();
             else
-                SceneB_ShowStageTitle(scene);
+                StageScene_ShowStageTitle(scene);
             break;
         case 12:
             if (scene->fadeMode == 0)
                 goOn();
             else
-                SceneB_ShowCityName(scene);
+                StageScene_ShowCityName(scene);
             break;
         default:
             break;
@@ -6247,7 +6247,7 @@ namespace mm
             else if (phase == 0)
             {
                 Sound_StopAllSequences();
-                SoundCmd_02_Zero();
+                SoundCmd_WaveClose0();
                 scene->fadeFrame = scene->fadeFrame + 1;
             }
         }
@@ -6271,7 +6271,7 @@ namespace mm
         return 0;
     }
 
-    PORT_FN(SceneB_Update);
+    PORT_FN(StageScene_Update);
 
     // The status panel for one frame. The clock hand matrices of the panel model (+0x90, at 0xD0 and 0x190 in its node table) turn
     // with the hour (pi per 6, kept between -6 and 5) and the seconds into the hour (pi per 1800, kept between -1800 and 1799), the
@@ -6877,7 +6877,7 @@ namespace mm
     // loading screen (+0x2C); 0xF and 0x10 load the sprites at +0x30 and +0x34 (the last goes to step 100). 100 skips to 104 unless +0xE0
     // is set, which stops the sequences; 101 to 106 wait for the sounds to be idle and the disc ready, reset the voices (bank set 1),
     // zero a sound command and load the bank 7; 107 answers 1 once the sounds are idle (without drawing). 0 otherwise.
-    int SceneA_Load(GuestPtr<SceneA> scene, int)
+    int TitleScene_Load(GuestPtr<TitleScene> scene, int)
     {
         port::GuestFrame<0x4060> frame;
         const uint32_t sp = frame.ptr().address;
@@ -6907,7 +6907,7 @@ namespace mm
         const auto place = [](uint32_t sprite, int x, int y, int z) {
             TexSprite_SetPosScale(GuestPtr<TexSprite>{sprite}, x, y, z, ps2f(1.0f), ps2f(1.0f));
         };
-        const auto message = [s]() { return GuestPtr<TextBox>{port::load<uint32_t>(s + 0xBCu)}; };
+        const auto message = [scene]() { return scene->messageBox; };
         const int32_t step = scene->waitFrames;
         switch (step)
         {
@@ -6994,7 +6994,7 @@ namespace mm
             scene->waitFrames = 100;
             break;
         case 100:
-            if (port::load<int32_t>(s + 0xE0u) == 0)
+            if (scene->afterGame == 0)
                 scene->waitFrames = 0x68;
             else
             {
@@ -7009,7 +7009,7 @@ namespace mm
                 nextStep();
             break;
         case 102:
-            SoundCmd_02_Zero();
+            SoundCmd_WaveClose0();
             nextStep();
             break;
         case 104:
@@ -7022,7 +7022,7 @@ namespace mm
         case 106:
             if (sdk::sceCdDiskReady(0) == 2)
             {
-                SoundCmd_LoadBank(7, 0x001B8728, 0x001B8738, 0x001B8748, 0);
+                SoundCmd_MidiOpen(7, 0x001B8728, 0x001B8738, 0x001B8748, 0);
                 nextStep();
             }
             break;
@@ -7037,7 +7037,7 @@ namespace mm
         return 0;
     }
 
-    PORT_FN(SceneA_Load);
+    PORT_FN(TitleScene_Load);
 
     // The Town's Pages book for one frame. The state at +0x1C: 0 starts (the open time +0x28 at 0, the city's update flags off, the applicants
     // panel off, sound 7); 1 slides the book model's matrix (+0x24) in over 10 frames, plays it, and after 25 frames makes the six text boxes
@@ -7093,8 +7093,8 @@ namespace mm
         };
         // Goes back to the page and row the book came from (state 6, the flip).
         const auto goBack = [&]() {
-            port::store<int32_t>(p + 0x44u, pages->savedPage);
-            port::store<int32_t>(p + 0x58u, pages->savedRow);
+            pages->targetPage = pages->savedPage;
+            pages->targetRow = pages->savedRow;
             state(6);
             pages->openTime = 0.0f;
             clearBoxes();
@@ -7139,7 +7139,7 @@ namespace mm
             TownPages_BuildIndex(pages);
             TownPages_FillPage(pages);
             const int row = TownPages_ClampCursor(pages, pages->row, 0);
-            port::store<int32_t>(p + 0x58u, row);
+            pages->targetRow = row;
             pages->row = row;
             pages->cursorX = place(pages->row, 0);
             pages->cursorY = place(pages->row, 4);
@@ -7150,7 +7150,7 @@ namespace mm
             const uint32_t pad = Pad_Pressed(0);
             if ((pad & 0x10u) != 0u)
             {
-                port::store<int32_t>(p + 0x48u, 0);
+                pages->chosenFamily = 0;
                 closeBook();
                 return;
             }
@@ -7170,14 +7170,14 @@ namespace mm
                 {
                     if (row == 10)
                     {
-                        port::store<int32_t>(p + 0x48u, 0);
+                        pages->chosenFamily = 0;
                         closeBook();
                         return;
                     }
                     const int entry = TownPages_SelectedEntry(pages);
                     pages->savedPage = pages->page;
                     pages->savedRow = pages->row;
-                    port::store<int32_t>(p + 0x44u, port::load<uint16_t>(pages->index.address + 8u * static_cast<uint32_t>(entry) + 4u));
+                    pages->targetPage = pages->index[entry].startPage;
                     state(6);
                     pages->openTime = 0.0f;
                     clearBoxes();
@@ -7190,7 +7190,7 @@ namespace mm
                     goBack();
                     return;
                 }
-                port::store<int32_t>(p + 0x48u, TownPages_SelectedEntry(pages));
+                pages->chosenFamily = TownPages_SelectedEntry(pages);
                 closeBook();
                 return;
             }
@@ -7204,7 +7204,7 @@ namespace mm
                 if (place(row, 0) != 0)
                 {
                     const int target = TownPages_ClampCursor(pages, row == 10 ? 4 : row - 5, 3);
-                    port::store<int32_t>(p + 0x58u, target);
+                    pages->targetRow = target;
                     cursorSound(target != pages->row);
                     state(5);
                     return;
@@ -7212,7 +7212,7 @@ namespace mm
                 if (pages->page <= 0)
                     return;
                 state(3);
-                port::store<int32_t>(p + 0x20u, 1);
+                pages->turnBack = 1;
                 pages->openTime = std::bit_cast<float>(0x42F00000u);
                 Sound_PlaySe(9, 0, 0x3C, 0.0f, 0.0f);
                 return;
@@ -7225,36 +7225,36 @@ namespace mm
                     if (!(pages->page < pages->pageCount - 1))
                         return;
                     state(3);
-                    port::store<int32_t>(p + 0x20u, 0);
+                    pages->turnBack = 0;
                     pages->openTime = 0.0f;
                     Sound_PlaySe(9, 0, 0x3C, 0.0f, 0.0f);
                     return;
                 }
                 Sound_PlaySe(0, 0, 0x3C, 0.0f, 0.0f);
-                port::store<int32_t>(p + 0x58u, TownPages_ClampCursor(pages, row + 5, 1));
+                pages->targetRow = TownPages_ClampCursor(pages, row + 5, 1);
                 state(5);
                 return;
             }
             if ((Pad_Held(0) & 0x1000u) != 0u)
             {
-                const int32_t before = port::load<int32_t>(p + 0x58u);
-                port::store<int32_t>(p + 0x58u, TownPages_ClampCursor(pages, pages->row - 1, 0));
-                cursorSound(before != port::load<int32_t>(p + 0x58u));
+                const int32_t before = pages->targetRow;
+                pages->targetRow = TownPages_ClampCursor(pages, pages->row - 1, 0);
+                cursorSound(before != pages->targetRow);
                 state(5);
                 return;
             }
             if ((Pad_Held(0) & 0x4000u) != 0u)
             {
-                const int32_t before = port::load<int32_t>(p + 0x58u);
-                port::store<int32_t>(p + 0x58u, TownPages_ClampCursor(pages, pages->row + 1, 2));
-                cursorSound(before != port::load<int32_t>(p + 0x58u));
+                const int32_t before = pages->targetRow;
+                pages->targetRow = TownPages_ClampCursor(pages, pages->row + 1, 2);
+                cursorSound(before != pages->targetRow);
                 state(5);
             }
             return;
         }
         case 3:
         {
-            const bool back = port::load<int32_t>(p + 0x20u) != 0;
+            const bool back = pages->turnBack != 0;
             const ps2f time = back ? pages->openTime - ps2f(6.0f) : pages->openTime + ps2f(6.0f);
             pages->openTime = time;
             if (sdk::fptosi(time) == 60)
@@ -7265,7 +7265,7 @@ namespace mm
             Instance_DrawSwaying(book(), 0, ps2f(120.0f) + pages->openTime);
             const auto settle = [&](int direction) {
                 const int row = TownPages_ClampCursor(pages, pages->row, direction);
-                port::store<int32_t>(p + 0x58u, row);
+                pages->targetRow = row;
                 state(row == pages->row ? 2 : 5);
             };
             if (back)
@@ -7299,7 +7299,7 @@ namespace mm
             city->hudVisible[2] = 1;
             applicantsEnabled(1);
             state(0);
-            const uint32_t family = port::load<uint32_t>(p + 0x48u);
+            const uint32_t family = static_cast<uint32_t>(pages->chosenFamily);
             if (family == 0u)
             {
                 CityScene_PopMode(city);
@@ -7316,7 +7316,7 @@ namespace mm
         }
         case 5:
         {
-            const int32_t row = port::load<int32_t>(p + 0x58u);
+            const int32_t row = pages->targetRow;
             const int32_t targetX = place(row, 0);
             const int32_t x = pages->cursorX;
             int32_t xDiff = targetX - x;
@@ -7338,7 +7338,7 @@ namespace mm
             else
                 pages->cursorX = pages->cursorX + stepX;
             if (stepY == 0)
-                pages->cursorY = place(port::load<int32_t>(p + 0x58u), 4);
+                pages->cursorY = place(pages->targetRow, 4);
             else
                 pages->cursorY = pages->cursorY + stepY;
             return;
@@ -7361,11 +7361,11 @@ namespace mm
             else if (time == ps2f(23.0f))
             {
                 pages->openTime = 0.0f;
-                pages->page = port::load<int32_t>(p + 0x44u);
+                pages->page = pages->targetPage;
                 if (pages->page < pages->contentsPages)
-                    port::store<int32_t>(p + 0x58u, pages->savedRow);
+                    pages->targetRow = pages->savedRow;
                 else
-                    port::store<int32_t>(p + 0x58u, 0);
+                    pages->targetRow = 0;
                 TownPages_FillPage(pages);
                 state(5);
             }

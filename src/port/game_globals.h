@@ -418,7 +418,7 @@ namespace mm::globals
     // title: the "[SELECT]SoundTest" hint, and a function static of mm_Title_PressStart (word, then its byte flag).
     inline constexpr uint32_t kSoundTestHint = 0x001B89E0u;
     inline constexpr uint32_t kPressStartStatic = 0x001BDC0Cu;
-    // boot: the memory card check (mm_SceneA_MemoryCardCheck): each slot's status as last shown (mm_McManager_GetCardStatus:
+    // boot: the memory card check (mm_TitleScene_MemoryCardCheck): each slot's status as last shown (mm_McManager_GetCardStatus:
     // 0 and 3 fine, 1 not enough space, 2 no card, 4 still being read) and the warning's pieces: heading, no card
     // in either slot, "the card in slot", then "s" (both), " 1" or " 2", "has not enough space", the closing line
     // (press Cross), and an empty text.

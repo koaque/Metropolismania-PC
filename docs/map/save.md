@@ -35,8 +35,8 @@ Saving and loading on the memory card.
 | `0x0015BC00` | `int mm_SaveFile_PrepareDir(McManager *mc, int a1, int a2, int a3)` | 1052 | yes | step machine: card info, mkdir/chdir, copies DATA\STATIC.ICO to STATIC.ICO |
 | `0x0015C020` | `void mm_McManager_ResetState(McManager *mc)` | 8 | no | state +4 = 0 |
 | `0x0015C030` | `int mm_McManager_PrepareNewSlot(McManager *mc, int card)` | 108 | yes | (provisional) fills the first empty slot of card a1 with a new save name |
-| `0x0015C0A0` | `int mm_McManager_FindSlotA(McManager *mc, int index, int32_t *card)` | 128 | no | (provisional) slot lookup over the slot tables |
-| `0x0015C120` | `int mm_McManager_FindSlotB(McManager *mc, int a1, int32_t *slot)` | 128 | no | (provisional) slot lookup over the slot tables |
+| `0x0015C0A0` | `int mm_McManager_GetSaveHeader(McManager *mc, int index, int32_t *card)` | 128 | no | the header of the index-th save found over both cards (a slot with a size and a name, 8 slots per card), and that save's card; 0 when there are fewer |
+| `0x0015C120` | `int mm_McManager_GetSaveFolder(McManager *mc, int a1, int32_t *slot)` | 128 | no | the folder name of the index-th save found over both cards (a slot with a size and a name, 8 slots per card), and that save's card; 0 when there are fewer |
 | `0x0015C1A0` | `int mm_McManager_IsCardUsable(McManager *mc, int card)` | 68 | no | (provisional) card a1 state 2 and no error |
 | `0x0015C1F0` | `uint8_t mm_McManager_GetCardStatus(McManager *mc, int card)` | 156 | no | card a1 status for the menus (formatted, unformatted, none, ...) |
 | `0x0015C290` | `int mm_McManager_FormatSlotText(McManager *mc, int32_t *cursor, char *text, uint32_t *isNewest)` | 1588 | yes | "Slot %d: %s %s%s, %s. %shrs %smins" with the RTC time |

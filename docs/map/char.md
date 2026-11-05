@@ -60,7 +60,7 @@ People and the player character.
 | `0x0013C010` | `void mm_StatusByte_IncHighLevel(uint8_t *status)` | 64 | no | (provisional) level 12..13 -> +1 |
 | `0x0013C050` | `void mm_StatusByte_ClearMid2(uint8_t *status)` | 48 | no | clears bits 2-3 when set |
 | `0x0013C080` | `void mm_StatusByte_IncLevel(uint8_t *status)` | 108 | no | (provisional) level +1 below 12; above 1 clears bits 0-1 |
-| `0x001439D0` | `int mm_Player_CollideObjects(CityMap *map, float *position, int a2, float radius)` | 1048 | indirect | (provisional) objects on the 3 x 3 tiles around the player, collision push |
+| `0x001439D0` | `int mm_Player_FloorBelow(CityMap *map, float *position, int hit, float lift)` | 1048 | indirect | the object surface under the player: each object on the 3 x 3 tiles round it is asked (vtable +0x2C) whether a segment from the position down by 0.9 crosses its mesh; *hit gets the crossing, whose y the player lands on |
 | `0x00143DF0` | `int mm_Player_NearestObject(CityMap *map, float *position, uint32_t *hit, float *distance, float radius)` | 1144 | indirect | (provisional) objects on the 3 x 3 tiles around the player, nearest hit distance (100 = none) |
 | `0x00157D80` | `void mm_Player_LoadState(Player *player, McManager *mc)` | 20 | no | reads 0x38 bytes from the save file |
 | `0x00157DA0` | `void mm_Player_SaveState(Player *player, McManager *mc)` | 20 | no | writes 0x38 bytes |

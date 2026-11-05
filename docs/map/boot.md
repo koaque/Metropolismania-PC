@@ -1,6 +1,6 @@
 # boot
 
-Scene A's logo sequence (`mm_SceneA_LogoStep`: NATSUME, MF_US and LOGO.TEX, each loaded, faded in, held for
+The title scene's logo sequence (`mm_TitleScene_LogoStep`: NATSUME, MF_US and LOGO.TEX, each loaded, faded in, held for
 140 frames and faded out) and its destructor. The rest of scene A is in `scene`.
 
 <!-- Generated below by tools/map_docs.py from config/port_status.csv. Edit function notes there, not here. -->
@@ -11,5 +11,5 @@ Scene A's logo sequence (`mm_SceneA_LogoStep`: NATSUME, MF_US and LOGO.TEX, each
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
-| `0x001702D0` | `int mm_SceneA_LogoStep(SceneA *scene, char logo)` | 464 | yes | one logo (a1: 0 NATSUME, 1 MF_US, else LOGO.TEX): load, fade in, hold 140 frames, fade out, free |
-| `0x00170FD0` | `SceneA *mm_SceneA_dtor(SceneA *scene, int16_t deleteFlag)` | 588 | yes | deletes camera, models, menus, memory card manager, loading screen and text boxes |
+| `0x001702D0` | `int mm_TitleScene_LogoStep(TitleScene *scene, char logo)` | 464 | yes | one logo (a1: 0 NATSUME, 1 MF_US, else LOGO.TEX): load, fade in, hold 140 frames, fade out, free |
+| `0x00170FD0` | `TitleScene *mm_TitleScene_dtor(TitleScene *scene, int16_t deleteFlag)` | 588 | yes | deletes camera, models, menus, memory card manager, loading screen and text boxes |

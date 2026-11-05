@@ -1,4 +1,4 @@
-// Render layers A (instances at entrances) and E (the snow); the rest are in gfx.cpp.
+// Render layer A (instances at entrances) and the snow layer; the rest are in gfx.cpp.
 
 #include "game_functions.h"
 #include "game_globals.h"
@@ -93,7 +93,7 @@ namespace mm
 
     // The snow's parameters: three vectors, thirteen points, eight turns about y (an angle each, random, with its rotation
     // matrix) and 32 random flake offsets (x and z within half, y up to 40 down); then the snowy ground pass (mask x 8).
-    void LayerE_InitParams(GuestPtr<LayerE> layer)
+    void SnowLayer_InitParams(GuestPtr<SnowLayer> layer)
     {
         port::GuestFrame<0x50> frame; // spills only: the callees' frames start where they did
         const auto randomScale = [] { return fromInt(sdk::abs(static_cast<int32_t>(Random_Next()))) / F(0x461C4000u); };
@@ -129,7 +129,7 @@ namespace mm
         putWords(addressOf(layer->groundExtra), {0x0u, 0xBC23D70Au, 0x0u, 0x3F800000u}); // (0, -0.01, 0, 1)
     }
 
-    PORT_FN(LayerE_InitParams);
+    PORT_FN(SnowLayer_InitParams);
 
     // The snow drawn for the clock (seconds): the night length t (the clock held at 5 hours before 18:00, else the distance
     // from midnight) sets the step count (t / 1500 + 1, the flakes' GIF tag loops 8 per step), the flakes' alpha (t / 144, in
@@ -137,7 +137,7 @@ namespace mm
     // 0.03 (wrapping above pi) with their matrices rebuilt, the 32 flakes move 0.03 in y (back to -40 once they reach 0); the
     // projection (800 by 800, 768 away, 1 to 50) is multiplied by the view matrix; then the pass's ground packet, the frame's
     // chunk packet, the pass's flake packet and the end packet are queued.
-    void LayerE_Draw(GuestPtr<LayerE> layer, int pass, int packet, int clock, GuestPtr<Vec4> view)
+    void SnowLayer_Draw(GuestPtr<SnowLayer> layer, int pass, int packet, int clock, GuestPtr<Vec4> view)
     {
         using namespace vu0;
         port::GuestFrame<0xA0> frame; // the screen parameters at +0x90
@@ -195,7 +195,7 @@ namespace mm
         Dma_AppendCall(static_cast<int>(layer->endPacket));
     }
 
-    PORT_FN(LayerE_Draw);
+    PORT_FN(SnowLayer_Draw);
 
     PORT_FN(LayerA_ctor);
     PORT_FN(LayerA_AddInstance);
@@ -225,19 +225,19 @@ namespace mm
         return GuestPtr<LayerB>{layerDeletingDtor(layer.address, deleteFlag)};
     }
 
-    GuestPtr<LayerC> LayerC_DeletingDtor(GuestPtr<LayerC> layer, int16_t deleteFlag)
+    GuestPtr<PlacementLayer> PlacementLayer_DeletingDtor(GuestPtr<PlacementLayer> layer, int16_t deleteFlag)
     {
-        return GuestPtr<LayerC>{layerDeletingDtor(layer.address, deleteFlag)};
+        return GuestPtr<PlacementLayer>{layerDeletingDtor(layer.address, deleteFlag)};
     }
 
-    GuestPtr<LayerD> LayerD_DeletingDtor(GuestPtr<LayerD> layer, int16_t deleteFlag)
+    GuestPtr<RainLayer> RainLayer_DeletingDtor(GuestPtr<RainLayer> layer, int16_t deleteFlag)
     {
-        return GuestPtr<LayerD>{layerDeletingDtor(layer.address, deleteFlag)};
+        return GuestPtr<RainLayer>{layerDeletingDtor(layer.address, deleteFlag)};
     }
 
-    GuestPtr<LayerE> LayerE_DeletingDtor(GuestPtr<LayerE> layer, int16_t deleteFlag)
+    GuestPtr<SnowLayer> SnowLayer_DeletingDtor(GuestPtr<SnowLayer> layer, int16_t deleteFlag)
     {
-        return GuestPtr<LayerE>{layerDeletingDtor(layer.address, deleteFlag)};
+        return GuestPtr<SnowLayer>{layerDeletingDtor(layer.address, deleteFlag)};
     }
 
     GuestPtr<LayerF> LayerF_DeletingDtor(GuestPtr<LayerF> layer, int16_t deleteFlag)
@@ -252,9 +252,9 @@ namespace mm
 
     PORT_FN(LayerA_DeletingDtor);
     PORT_FN(LayerB_DeletingDtor);
-    PORT_FN(LayerC_DeletingDtor);
-    PORT_FN(LayerD_DeletingDtor);
-    PORT_FN(LayerE_DeletingDtor);
+    PORT_FN(PlacementLayer_DeletingDtor);
+    PORT_FN(RainLayer_DeletingDtor);
+    PORT_FN(SnowLayer_DeletingDtor);
     PORT_FN(LayerF_DeletingDtor);
     PORT_FN(LayerG_DeletingDtor);
 }

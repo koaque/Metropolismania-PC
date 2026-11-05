@@ -109,7 +109,7 @@ placement checks (`mm_Placement_*`) and the per-object history (`mm_MapObj_*`) a
 | `0x001452B0` | `void mm_MapObj_Delete(CityMap *map, int object)` | 300 | no | removes object a1 from its claim lists, clears its type and lowers the object and per-category counters (+0x24, +0x30 + category * 4, +0x40, +0x5C) |
 | `0x001453E0` | `void mm_MapObj_Init(CityMap *map, int object, int type, uint16_t owner, uint16_t tile)` | 472 | indirect | fills object record a1 (type, owner, position) and updates the tile lists |
 | `0x001455C0` | `int mm_MapObj_FindFreeSlot(CityMap *map)` | 108 | no | advances the free object index (+0x10) to an empty record |
-| `0x00145630` | `void mm_MapObjects_Slot0C(CityMap *map)` | 8 | no | vtable slot +0xC at the object level: empty |
+| `0x00145630` | `void mm_MapObjects_ClearObject(CityMap *map)` | 8 | no | the clearObject slot (+0xC) at the object level: empty |
 | `0x00145640` | `void mm_MapObjects_Tick(CityMap *map, CityScene *city)` | 608 | indirect | (provisional) vtable slot +8 at the object level: per-object updates, minimap marks, sounds |
 | `0x001458A0` | `CityMap *mm_MapObjects_dtor(CityMap *map, int16_t deleteFlag)` | 156 | yes | vtable 0x1BCEF0, frees objects and lists, tile-level destructor |
 | `0x00145940` | `CityMap *mm_MapObjects_ctor(CityMap *map)` | 680 | yes | tile-level constructor, vtable 0x1BCEF0, object records and tile lists |

@@ -20,7 +20,7 @@ typedef struct PauseSlotText PauseSlotText;
 typedef struct LoadingScreen LoadingScreen;
 typedef struct McManager McManager;
 typedef struct NameEntry NameEntry;
-typedef struct SceneA SceneA;
+typedef struct TitleScene TitleScene;
 typedef struct Bag Bag;
 typedef struct BagShortcut BagShortcut;
 typedef struct BagSlot BagSlot;
@@ -70,9 +70,9 @@ typedef struct TexImage TexImage;
 typedef struct TexImageFile TexImageFile;
 typedef struct LayerA LayerA;
 typedef struct LayerB LayerB;
-typedef struct LayerC LayerC;
-typedef struct LayerD LayerD;
-typedef struct LayerE LayerE;
+typedef struct PlacementLayer PlacementLayer;
+typedef struct RainLayer RainLayer;
+typedef struct SnowLayer SnowLayer;
 typedef struct LayerF LayerF;
 typedef struct LayerG LayerG;
 typedef struct LayerAInstance LayerAInstance;
@@ -280,7 +280,7 @@ struct A3DTrack {
     int32_t keyCount;          /* +0x00 */
     A3DNode *node;             /* +0x04 the node it moves */
     A3DKey *keys;              /* +0x08 */
-    float length;              /* +0x0C read from track 0 as the animation's length (mm_A3D_GetMeshField0C) */
+    float length;              /* +0x0C read from track 0 as the animation's length (mm_A3D_GetAnimLength) */
 };
 /* A key of a node track (0x20 bytes). */
 struct A3DKey {
@@ -424,9 +424,10 @@ struct NameEntry {
     float boardPlace[3];       /* +0x114 the board's x, y and z at construction */
     void *vtable;              /* +0x120 0x1BCFE8 */
 };
-/* Scene A: logos, memory card check, title (0x104 bytes). */
-struct SceneA {
-    uint8_t unk_00[8];
+/* The title scene: logos, memory card check, title (0x104 bytes, mm_TitleScene_*). */
+struct TitleScene {
+    Camera *camera;            /* +0x00 */
+    LightSet *lights;          /* +0x04 */
     TexSprite *logoSprite;     /* +0x08 drawn in layer set 0x0A/0x0B (mm_Title_DrawCommon) */
     TexSprite *titleSprite;    /* +0x0C layer sets 0x1E..0x29 */
     TexSprite *logoLetters[3]; /* +0x10 the title logo's three bouncing letters (mm_Title_LogoLetters) */
@@ -434,15 +435,16 @@ struct SceneA {
     A3DObject *menuModel;      /* +0x24 layer set 0x28/0x29 */
     A3DObject *logoModel;      /* +0x28 layer set 0x14/0x15 */
     LoadingScreen *loading;    /* +0x2C text and spinner shown while loading (mm_Title_NewGameIntro sets its text) */
-    uint8_t unk_30[8];
+    TexSprite *loadingFrame;   /* +0x30 the loading bar's frame (mm_TitleScene_StartGame) */
+    TexSprite *loadingBar;     /* +0x34 one segment of it, drawn up to 16 times */
     float logoTime;            /* +0x38 frame of the logo model's intro animation (mm_Title_Intro) */
     int32_t choice;            /* +0x3C selected choice */
     int32_t choicePulsing;     /* +0x40 cleared when the selected choice's pulse ends */
     int32_t choiceCount;       /* +0x44 (provisional) 1: only the first choice is shown */
     int32_t pulseFrame;        /* +0x48 0..19 while the choice pulses (mm_Title_DrawChoices), then the frames of its idle wobble (mm_Title_DrawChoicesIdle) */
-    uint8_t unk_4C[4];
+    int32_t loadStep;          /* +0x4C the city asset loader's state (mm_CityAssets_LoadStep), 0 once it is done */
     int32_t logoSound;         /* +0x50 next timed effect of the logo intro (mm_Title_Intro) */
-    uint8_t unk_54[4];
+    int32_t loadProgress;      /* +0x54 the loader's progress (0x1BDB54), the bar shows it in 70ths */
     int32_t showHint;          /* +0x58 the "[SELECT]SoundTest" line is drawn (mm_Title_PressStart) */
     uint8_t song;              /* +0x5C the sound test's song, 0..0x13 (mm_SoundTest_BgmPage) */
     uint8_t effect;            /* +0x5D its effect, 0..0x47 (mm_SoundTest_SePage) */
@@ -463,14 +465,17 @@ struct SceneA {
     ListMenu *loadMenu;        /* +0xB0 layer set 0x28/0x29 */
     McManager *mc;             /* +0xB4 */
     TextBox *hintText;         /* +0xB8 */
-    uint8_t unk_BC[8];
+    TextBox *messageBox;       /* +0xBC 21 by 12 (mm_Title_LoadMenu, mm_TitleScene_Load) */
+    int32_t mode;              /* +0xC0 the scene's step (mm_TitleScene_Update) */
     int32_t pressStep;         /* +0xC4 step of the current sequence: mm_Title_Intro 0..5; the title 0 before its first frame, 1 after */
-    int32_t waitFrames;        /* +0xC8 frames the memory card warning stays after Cross (mm_SceneA_MemoryCardCheck) */
+    int32_t waitFrames;        /* +0xC8 frames the memory card warning stays after Cross (mm_TitleScene_MemoryCardCheck) */
     int32_t fade;              /* +0xCC screen fade alpha (mm_Title_DrawCommon) */
     int32_t layers;            /* +0xD0 layer set drawn */
     int32_t idleTimer;         /* +0xD4 idle frames (restarted at 1800; provisional) */
     int32_t introFrame;        /* +0xD8 logo intro counter: title sprite alpha, then frames of the letters, then frames left (mm_Title_Intro) */
-    uint8_t unk_DC[8];
+    uint8_t unk_DC[4];
+    int32_t afterGame;         /* +0xE0 made again after a city ended (game state 1): the logos and card check are skipped
+                                  and the game data is only reset (mm_TitleScene_StartGame) */
     float previewTime;         /* +0xE4 frame of the new-game preview model's animation (mm_Title_NewGameIntro) */
     float previewEnd;          /* +0xE8 the animation's last frame */
     A3DObject *previewModel;   /* +0xEC the character preview, 0 once it has turned away */
@@ -536,7 +541,7 @@ struct PauseMenu {
     int32_t itemsListed;       /* +0x14 items in the slot menu, new-save items included (mm_PauseMenu_StateSlotSelect) */
     int32_t savesListed;       /* +0x18 saves found on the cards */
     int32_t cardPort;          /* +0x1C the memory card port in use, 0 or 1 (message 5 names it, mm_PauseMenu_ShowCardMessage) */
-    int32_t saveSlot;          /* +0x20 the save slot on the card (mm_McManager_PrepareNewSlot, mm_McManager_FindSlotB) */
+    int32_t saveSlot;          /* +0x20 the save slot on the card (mm_McManager_PrepareNewSlot, mm_McManager_GetSaveFolder) */
     int32_t waitFrames;        /* +0x24 frames in the card message state (mm_PauseMenu_StateMain) */
     int32_t blink;             /* +0x28 frames, for the blinking while saving */
     float openTime;            /* +0x2C rises by 10 per frame; the window is fully in at 120 */
@@ -646,8 +651,8 @@ struct EventHandler {
     uint32_t start;            /* +0x04 */
     uint32_t update;           /* +0x08 every frame (copied to EventData.update) */
     uint32_t end;              /* +0x0C */
-    uint32_t slot10;           /* +0x10 */
-    uint32_t slot14;           /* +0x14 the talk script's questions (mm_Event_CallSlot14) */
+    uint32_t text;             /* +0x10 a text for the talk script (mm_Event_CallText) */
+    uint32_t answer;           /* +0x14 the talk script's questions and actions (mm_Event_CallAnswer) */
 };
 /* An active event (0x1C bytes; some types keep more state, up to 0x7C, mm_EventData_GetSize7C): the first argument of
    every mm_Ev*_ handler slot, and the three the talk works with (EventMgr talks). */
@@ -662,7 +667,7 @@ struct EventData {
     ActorRef actor;            /* +0x0C the main actor; types with more list them on from here, 8 bytes each, over the
                                   words below (talk scripts pick them by index, mm_WordsFn_SelectEventActor) */
     int32_t unk_14;            /* +0x14 per type: a month (mm_EvUselessMiddleAged_Start) */
-    int32_t unk_18;            /* +0x18 per type: a timer, a distance (mm_EvBodyguard_Slot14) */
+    int32_t unk_18;            /* +0x18 per type: a timer, a distance (mm_EvBodyguard_Answer) */
 };
 /* The Crazy Cult event's record (type 18, mm_EvCrazyCult_*): residents join the cult one by one while its members are
    found and told in turn. */
@@ -675,7 +680,7 @@ struct EvCultData {
     int32_t spreadFrames;      /* +0x48 every 30 frames another resident joins (person flag 0x400) */
     int32_t allJoined;         /* +0x4C every resident has joined */
     int32_t metBits;           /* +0x50 the members the player has talked to (bit k for the actor in the list at 0x1B37C0);
-                                  at 7 the leader is told next (mm_EvCrazyCult_Slot14) */
+                                  at 7 the leader is told next (mm_EvCrazyCult_Answer) */
 };
 /* One of the children of the adoption event (4 bytes, the table at 0x1B37D0). */
 struct AdoptionChild {
@@ -702,7 +707,7 @@ struct EvShoppingData {
     int32_t goodsCount;        /* +0x38 goods on its list */
     int32_t prices[4];         /* +0x3C */
     int32_t bill;              /* +0x4C their total, rounded up to the next thousand */
-    int32_t refund;            /* +0x50 the prices of the goods taken back out of the bag (mm_EvShopping_Slot14 mode 9) */
+    int32_t refund;            /* +0x50 the prices of the goods taken back out of the bag (mm_EvShopping_Answer mode 9) */
     int32_t tellFrames;        /* +0x54 frames after the shopper is told */
     int32_t endFrames;         /* +0x58 the event ends after 240 */
 };
@@ -734,7 +739,7 @@ struct EvThiefData {
     ActorRef actors[4];        /* +0x0C */
     int32_t nextMonth;         /* +0x2C the month count of the next strike */
     uint8_t unk_30[0xC];
-    int32_t strikes;           /* +0x3C buildings robbed (mm_EvThief_Slot14) */
+    int32_t strikes;           /* +0x3C buildings robbed (mm_EvThief_Answer) */
 };
 /* A family member by family and member number (4 bytes; in lists 0 ends them). */
 struct MemberId {
@@ -763,7 +768,7 @@ struct EvNoodlesData {
 /* The cave man event's record (type 15, mm_EvCaveMan_*). */
 struct EvCaveManData {
     uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
-    ActorRef actors[8];        /* +0x0C 0 to 3 the families that join (mm_EvCaveMan_Slot14), 4 the leader, 5, 6 the cave
+    ActorRef actors[8];        /* +0x0C 0 to 3 the families that join (mm_EvCaveMan_Answer), 4 the leader, 5, 6 the cave
                                   and its owner, 7 */
     int32_t counter;           /* +0x4C actors found (phase 3); the talk's count of families joined */
     int32_t frames;            /* +0x50 counted down or up */
@@ -783,7 +788,7 @@ struct EvMiddleAgedData {
     ActorRef actor;            /* +0x0C */
     int32_t month;             /* +0x14 the month it started; he is told on a later one */
     int32_t frames;            /* +0x18 frames after he is told */
-    int32_t answer;            /* +0x1C the talk's choice, modes 0 to 3 (mm_EvUselessMiddleAged_Slot14) */
+    int32_t answer;            /* +0x1C the talk's choice, modes 0 to 3 (mm_EvUselessMiddleAged_Answer) */
 };
 /* One of the event manager's five event slots (0x20 bytes, filled from the front): an event a talk script started
    (mm_Event_StartFromScript) with the residents it involves. Each day its counter goes down; at 0 the type joins the
@@ -935,8 +940,8 @@ struct Markers {
     uint8_t unk_008[8];
     Vec4 matrices[16];         /* +0x010 four 4x4 matrices, one per marker */
     int32_t nodes[4];          /* +0x110 node of markerModel per marker, -1 = none (1, 2, 3, -1 at construction; the fourth
-                                  becomes 4 when laptop entry 4 is active, mm_Laptop_CheckOpen) */
-    int32_t visible;           /* +0x120 set while Circle alone is held in the city view (mm_Laptop_CheckOpen) */
+                                  becomes 4 when laptop entry 4 is active, mm_Markers_CheckCircle) */
+    int32_t visible;           /* +0x120 set while Circle alone is held in the city view (mm_Markers_CheckCircle) */
     int32_t circleHeld;        /* +0x124 Circle was held with other buttons last frame, so it does not show the markers */
     void *vtable;              /* +0x128 */
     uint8_t unk_12C[4];
@@ -962,7 +967,7 @@ struct TownPages {
     A3DObject *book;           /* +0x00 book model (from 0x1F3B20) */
     TextBox *text[6];          /* +0x04 page texts; +0x18 is the list the cursor moves on */
     int32_t mode;              /* +0x1C 6: no cursor */
-    int32_t unk_20;
+    int32_t turnBack;          /* +0x20 the page being turned goes back, else forward */
     Vec4 *bookMatrix;          /* +0x24 the book model's matrix */
     float openTime;            /* +0x28 frames since opening (open at 25) */
     int32_t page;              /* +0x2C */
@@ -971,12 +976,12 @@ struct TownPages {
     int32_t contentsPages;     /* +0x38 */
     int32_t pageCount;         /* +0x3C */
     int32_t pageEntries;       /* +0x40 entries on the current page (up to 10) */
-    int32_t unk_44;
-    int32_t unk_48;
+    int32_t targetPage;        /* +0x44 the page a flip goes to (state 6) */
+    int32_t chosenFamily;      /* +0x48 the family to call once the book has closed, 0 none (mm_TownPages_SelectedEntry) */
     Frame *cursorFrame;        /* +0x4C */
     int32_t cursorX;           /* +0x50 */
     int32_t cursorY;           /* +0x54 */
-    int32_t unk_58;
+    int32_t targetRow;         /* +0x58 the row the cursor slides to (state 5) */
     int32_t row;               /* +0x5C cursor row on the page */
     int32_t savedRow;          /* +0x60 */
 };
@@ -1069,7 +1074,7 @@ struct LayerA {
     int32_t count;             /* +0x2430 instances this frame */
     uint32_t startPacket;      /* +0x2434 uploads +0x2410 to VU1 0x2A and the program 0x1A8330 (mm_LayerA_BuildPacket) */
     uint32_t endPacket;        /* +0x2438 ALPHA_1 back to 0x20_00000044 */
-    int32_t buffer;            /* +0x243C the buffer being filled (mm_LayerA_SetSource) */
+    int32_t buffer;            /* +0x243C the buffer being filled (mm_LayerA_BeginFrame) */
 };
 struct LayerB {
     TerrainPassParams params;  /* +0x000 to VU1 0x1C by the first packet: mask 0x20 */
@@ -1081,7 +1086,7 @@ struct LayerB {
     uint32_t packetB;          /* +0x220 the second pass */
     uint8_t unk_224[0xC];
 };
-struct LayerC {
+struct PlacementLayer {
     Vec4 colourA;              /* +0x000 VU1 0x1C (255, 0, 0, 128) */
     Vec4 colourB;              /* +0x010 VU1 0x1D (0, 0, 0, 128) */
     uint32_t outputOffset[4];  /* +0x020 VU1 0x1E (0x68) */
@@ -1095,7 +1100,7 @@ struct LayerC {
     uint32_t highlightPacket;  /* +0x210 ALPHA_1 0x30_00000048, the program 0x1A7B30 and +0x000..+0x06F to VU1 0x1C */
     uint32_t markerPacket;     /* +0x214 ALPHA_1 0x30_00000048, +0x070..+0x20F to VU1 0x12 and the program 0x1A8330 */
     uint32_t endPacket;        /* +0x218 ALPHA_1 back to 0x20_00000044 */
-    int32_t rectActive;        /* +0x21C 1: the highlight (mm_LayerC_InTileRect), 2: the marker */
+    int32_t rectActive;        /* +0x21C 1: the highlight (mm_PlacementLayer_InTileRect), 2: the marker */
     int32_t rectX0;            /* +0x220 */
     int32_t rectZ0;            /* +0x224 */
     int32_t rectX1;            /* +0x228 */
@@ -1103,7 +1108,7 @@ struct LayerC {
     A3DObject *marker;         /* +0x230 the marker model (0x1F3B1C) */
     uint8_t unk_234[0xC];
 };
-struct LayerD {
+struct RainLayer {
     uint32_t gifTag[4];        /* +0x000 VU1 0x12: 96 loops of RGBAQ, XYZF2 twice, PRIM 0x69 (blended lines) */
     Vec4 colourA;              /* +0x010 VU1 0x13 (765, 765, 765, the clock's brightness: 0..40) */
     Vec4 colourB;              /* +0x020 VU1 0x14 (765, 765, 765, 0) */
@@ -1118,12 +1123,12 @@ struct LayerD {
     uint32_t endPacket;        /* +0x408 ALPHA_1 back to 0x20_00000044 */
     uint8_t unk_40C[4];
 };
-struct LayerE {
+struct SnowLayer {
     uint32_t gifTag[4];        /* +0x000 VU1 0x12: 8 loops per step of ST, XYZF2 twice, PRIM 0x76 (blended sprites) */
     Vec4 unk_010[3];           /* +0x010 VU1 0x13..0x15: (0, 0, 1, 0), (1, 1, 1, 0), (10, 5, 0, 0) */
     Vec4 points[13];           /* +0x040 VU1 0x16..0x22 */
     Vec4 turns[32];            /* +0x110 VU1 0x23..0x42: eight rotation matrices about y */
-    Vec4 projection[4];        /* +0x310 VU1 0x43..0x46: the projection times the view (mm_LayerE_Draw) */
+    Vec4 projection[4];        /* +0x310 VU1 0x43..0x46: the projection times the view (mm_SnowLayer_Draw) */
     Vec4 flakes[32];           /* +0x350 VU1 0x47..0x66: x and z within 0.5, y from -40 to 0 in steps of 0.03 a frame, then again */
     int32_t steps;             /* +0x550 VU1 0x67: the clock's night length / 1500 + 1 */
     int32_t unk_554;           /* +0x554 8 */

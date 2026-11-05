@@ -27,7 +27,7 @@ Rendering below the scene level.
 | `0x00129090` | `void mm_Packet2_Draw(uint32_t *packets, int second)` | 48 | no | queues packet a0[0], or a0[1] when a1 != 0 |
 | `0x001290C0` | `A3DObject *mm_A3DObjectBase_DeletingDtor(A3DObject *model, int16_t deleteFlag)` | 84 | yes | base destructor 0x12AB40, then delete when the flag is > 0 |
 | `0x00129120` | `int mm_LightSet_Init(LightSet *lights)` | 228 | no | (provisional, was mm_Unk129120_Init) base init; +0x190 = 0x110, +0x194 = 0xE0; 12 colour/direction slots and ambient set to 1.0 |
-| `0x00129210` | `float mm_A3D_GetMeshField0C(A3DObject *model, int animation)` | 24 | no | word +0xC of mesh a1 in the model's mesh table (+0x50) |
+| `0x00129210` | `float mm_A3D_GetAnimLength(A3DObject *model, int animation)` | 24 | no | the length of a model's animation (its first track's last word) |
 | `0x00129230` | `void mm_Instance_DrawSwaying(A3DObject *model, int anim, float time)` | 816 | no | (provisional, was mm_A3D_SineDeform) adds instances for mesh a2 of model a1 with sine-wave motion at time a0 (callers check the instance budget first) |
 | `0x00129570` | `void mm_A3D_Relocate(A3DObject *model, int indexed)` | 988 | yes | turns the loaded model's offsets into pointers, patches the addresses in its DMA chains (mm_DmaChain_*) and uploads its textures (mm_Dma_KickVif1Now) |
 | `0x00129950` | `int64_t mm_A3DObject_ChangeLuminosity(A3DObject *model, uint32_t *colour, int a2)` | 96 | yes | CA3DObject::ChangeLuminusity (name from its error string): sets node a2's colour (node +0x60) to the vec4 at a1; prints an error for a bad node index |
@@ -57,12 +57,12 @@ Rendering below the scene level.
 | `0x0012E2D0` | `void mm_Perf_AdaptDrawRange(void)` | 152 | no | (provisional) 0x1BD980 tracks 0x1BD9B8: shrinks when it is above 95, else grows by 1; clamped to 0xFF..0x3A7 |
 | `0x001480F0` | `void mm_CityRender_InitParams(CityMap *map)` | 356 | no | GS register defaults of the render level (+0x2D60..) |
 | `0x00148260` | `void mm_CityRender_UpdatePeople(CityMap *map, CityScene *city)` | 568 | indirect | (provisional) per-frame pass over the people for drawing (char type lookup tables) |
-| `0x001484A0` | `void mm_CityRender_DrawSky(CityMap *map, CityScene *city, int pass, Vec4 *a3)` | 96 | no | (provisional) sky layer (+0x2F74) by the city clock (city +0x84), two variants by a2 |
+| `0x001484A0` | `void mm_CityRender_DrawWeather(CityMap *map, CityScene *city, int pass, Vec4 *a3)` | 96 | no | the weather: pass 0 the rain, other passes the snow, each with this frame's chunk packet; the city calls it only in rain (2) or snow (3) |
 | `0x00148500` | `void mm_CityRender_CollectObjects(CityMap *map, CityScene *city)` | 1088 | indirect | (provisional) collects instances for the objects on visible tiles |
 | `0x00148950` | `void mm_CityRender_DrawWater(CityMap *map, CityScene *city)` | 20 | no | (provisional) water layer (+0x2F80) with city +0xB0 |
 | `0x00148970` | `void mm_CityRender_DrawInstanceLayer(CityMap *map)` | 8 | no | layer +0x2F8C draw |
-| `0x00148980` | `void mm_CityRender_DrawBuildings(CityMap *map, int pass)` | 36 | no | (provisional) layer +0x2F88: buildings on the visible tiles |
-| `0x001489B0` | `void mm_CityRender_DrawOverlays(CityMap *map, CityScene *city)` | 136 | no | (provisional) queues the two-packet layers |
+| `0x00148980` | `void mm_CityRender_DrawPlacement(CityMap *map, int pass)` | 36 | no | the placement layer's pass (0 the highlighted rectangle, 1 the marker) with this frame's chunk packet; it draws only while a building is being placed |
+| `0x001489B0` | `void mm_CityRender_DrawTerrain(CityMap *map, CityScene *city)` | 136 | no | the terrain: the base ground pass over this frame's chunk packet, the cliff sides, then layers B and F over the same chunk packet |
 | `0x00148A40` | `CityMap *mm_CityRender_dtor(CityMap *map, int16_t deleteFlag)` | 364 | yes | vtable 0x1BCF00; deletes the seven layers and buffers, people-level destructor |
 | `0x00148BB0` | `CityMap *mm_CityRender_ctor(CityMap *map)` | 436 | yes | people-level constructor, vtable 0x1BCF00; builds the terrain packets and the seven layers in the packet buffer |
 | `0x00148D70` | `void mm_TexImage_Convert(TexImage *image, uint32_t textureBlock, uint32_t clutBlock)` | 856 | no | (image, textureBlock, clutBlock): DMA packet over the start of the image that uploads its palette and texels (PSMT4/PSMT8/32-bit, square) to the given GS blocks |
@@ -72,7 +72,7 @@ Rendering below the scene level.
 | `0x001491E0` | `uint32_t *mm_LayerA_BuildPacket(LayerA *layer, uint32_t *packet)` | 280 | no | (provisional) packet for layer A (microcode 0x1A8330) |
 | `0x00149300` | `void mm_LayerA_Draw(LayerA *layer)` | 256 | no | (provisional) queues layer A and its mesh instances |
 | `0x00149400` | `void mm_LayerA_AddInstance(LayerA *layer, int a1, int a2, float x, float y, float z)` | 800 | no | (provisional) adds a rotated instance to layer A |
-| `0x00149720` | `void mm_LayerA_SetSource(LayerA *layer, int source)` | 12 | no | +0x243C = a1, count +0x2430 = 0 |
+| `0x00149720` | `void mm_LayerA_BeginFrame(LayerA *layer, int source)` | 12 | no | picks the buffer layer A fills this frame (by the frame parity) and empties it |
 | `0x00149730` | `LayerA *mm_LayerA_DeletingDtor(LayerA *layer, int16_t deleteFlag)` | 84 | yes | base destructor, then delete |
 | `0x00149790` | `LayerA *mm_LayerA_ctor(LayerA *layer)` | 512 | no | base constructor, builds its packet in the packet buffer |
 | `0x0014C200` | `void mm_Dma_AppendCall(int address)` | 8 | no |  |
@@ -84,23 +84,23 @@ Rendering below the scene level.
 | `0x0014CC10` | `void mm_LayerB_Draw(LayerB *layer, int packet)` | 76 | no | (provisional) queues its two packets around a1 |
 | `0x0014CC60` | `LayerB *mm_LayerB_DeletingDtor(LayerB *layer, int16_t deleteFlag)` | 84 | yes | base destructor, then delete |
 | `0x0014CCC0` | `LayerB *mm_LayerB_ctor(LayerB *layer)` | 72 | no | base constructor, parameters, packet |
-| `0x0014CD10` | `int mm_LayerC_InTileRect(LayerC *layer, int x, int z)` | 108 | no | 1 when the layer's tile rectangle is active (+0x21C == 1) and tile (a1, a2) lies inside x +0x220..+0x228, z +0x224..+0x22C; mm_Terrain_DrawPatch then sets flag 4 on the patch (was mm_Terrain_Nop14CD10, not empty) |
-| `0x0014CD80` | `void mm_Terrain_SetVec(LayerC *layer, int mode, int32_t *rect, uint32_t *colour)` | 28 | no | (provisional) copies vec4 a3 into a0 with a1 |
-| `0x0014CDA0` | `uint32_t *mm_LayerC_BuildPacket(LayerC *layer, uint32_t *packet)` | 584 | no | (provisional) packet for layer C (microcode 0x1A7B30/0x1A8330) |
-| `0x0014CFF0` | `void mm_LayerC_InitParams(LayerC *layer)` | 252 | no | (provisional) |
-| `0x0014D0F0` | `void mm_LayerC_DrawBuildings(LayerC *layer, int packet, CityMap *map, int pass)` | 548 | no | (provisional) building models on visible tiles (map objects, node packets) |
-| `0x0014D320` | `LayerC *mm_LayerC_DeletingDtor(LayerC *layer, int16_t deleteFlag)` | 84 | yes | base destructor, then delete |
-| `0x0014D380` | `LayerC *mm_LayerC_ctor(LayerC *layer)` | 88 | no | base constructor, parameters, packet |
-| `0x0014D3E0` | `uint32_t *mm_LayerD_BuildPacket(LayerD *layer, uint32_t *packet, int32_t *buffers)` | 1216 | no | (provisional) packet for layer D (microcode 0x1A8A00/0x1A8E20) |
-| `0x0014D8A0` | `void mm_LayerD_InitParams(LayerD *layer)` | 1652 | no | (provisional) |
-| `0x0014DF20` | `void mm_LayerD_DrawSkyByClock(LayerD *layer, int pass, int packet, int clock)` | 436 | no | (provisional) sky by the clock: day 5:00-19:00 variants |
-| `0x0014E0E0` | `LayerD *mm_LayerD_DeletingDtor(LayerD *layer, int16_t deleteFlag)` | 84 | yes | base destructor, then delete |
-| `0x0014E140` | `LayerD *mm_LayerD_ctor(LayerD *layer, int buffers)` | 88 | no | base constructor, parameters, packet |
-| `0x0014E1A0` | `uint32_t *mm_LayerE_BuildPacket(LayerE *layer, uint32_t *packet, int32_t *buffers)` | 1796 | no | (provisional) packet for layer E (microcode 0x1A9A90/0x1A9F10) |
-| `0x0014E8B0` | `void mm_LayerE_InitParams(LayerE *layer)` | 1280 | no | (provisional) random placement with rotations (clouds or stars) |
-| `0x0014EDB0` | `void mm_LayerE_Draw(LayerE *layer, int pass, int packet, int a3, Vec4 *t0)` | 752 | no | (provisional) projected layer draw |
-| `0x0014F0A0` | `LayerE *mm_LayerE_DeletingDtor(LayerE *layer, int16_t deleteFlag)` | 84 | yes | base destructor, then delete |
-| `0x0014F100` | `LayerE *mm_LayerE_ctor(LayerE *layer, int buffers)` | 88 | no | base constructor, parameters, packet |
+| `0x0014CD10` | `int mm_PlacementLayer_InTileRect(PlacementLayer *layer, int x, int z)` | 108 | no | 1 when the layer's tile rectangle is active (+0x21C == 1) and tile (a1, a2) lies inside x +0x220..+0x228, z +0x224..+0x22C; mm_Terrain_DrawPatch then sets flag 4 on the patch (was mm_Terrain_Nop14CD10, not empty) |
+| `0x0014CD80` | `void mm_PlacementLayer_Set(PlacementLayer *layer, int mode, int32_t *rect, uint32_t *colour)` | 28 | no | the placement highlight: its colour, its rectangle (x0, z0, x1, z1) and its mode (1 the highlight, 2 the marker) |
+| `0x0014CDA0` | `uint32_t *mm_PlacementLayer_BuildPacket(PlacementLayer *layer, uint32_t *packet)` | 584 | no | packets of the placement highlight (microcode 0x1A7B30) and the marker (0x1A8330) |
+| `0x0014CFF0` | `void mm_PlacementLayer_InitParams(PlacementLayer *layer)` | 252 | no | draw parameters of the placement highlight (two colours, the output offset, a GIF tag of 26 loops, the fill and outline PRIMs, mask 4) and of the marker |
+| `0x0014D0F0` | `void mm_PlacementLayer_Draw(PlacementLayer *layer, int packet, CityMap *map, int pass)` | 548 | no | pass 0 (mode 1) the highlighted rectangle's three packets around the map's own; pass 1 (mode 2) the placement marker, node 0 of the marker model (node 1 for a size 3 building) at the middle of the footprint, below the tile and each object stacked on it |
+| `0x0014D320` | `PlacementLayer *mm_PlacementLayer_DeletingDtor(PlacementLayer *layer, int16_t deleteFlag)` | 84 | yes | base destructor, then delete |
+| `0x0014D380` | `PlacementLayer *mm_PlacementLayer_ctor(PlacementLayer *layer)` | 88 | no | base constructor, parameters, packet |
+| `0x0014D3E0` | `uint32_t *mm_RainLayer_BuildPacket(RainLayer *layer, uint32_t *packet, int32_t *buffers)` | 1216 | no | packets of the rain: the streaks (microcode 0x1A8A00) and the wet ground pass (0x1A8E20) |
+| `0x0014D8A0` | `void mm_RainLayer_InitParams(RainLayer *layer)` | 1652 | no | the rain's parameters: the streaks' GIF tag (96 blended lines), two colours, 16 drop offsets and twelve streaks; then the wet ground pass (mask 1) |
+| `0x0014DF20` | `void mm_RainLayer_Draw(RainLayer *layer, int pass, int packet, int clock)` | 436 | no | the rain by the time of day: streak colour and ground pass alpha from the clock, the sixteen drops fall 0.4 a frame within 40, the ground texture steps through six pages (the splashes); then its packets are queued |
+| `0x0014E0E0` | `RainLayer *mm_RainLayer_DeletingDtor(RainLayer *layer, int16_t deleteFlag)` | 84 | yes | base destructor, then delete |
+| `0x0014E140` | `RainLayer *mm_RainLayer_ctor(RainLayer *layer, int buffers)` | 88 | no | base constructor, parameters, packet |
+| `0x0014E1A0` | `uint32_t *mm_SnowLayer_BuildPacket(SnowLayer *layer, uint32_t *packet, int32_t *buffers)` | 1796 | no | packets of the snow: the flakes (microcode 0x1A9A90) and the snowy ground pass (0x1A9F10) |
+| `0x0014E8B0` | `void mm_SnowLayer_InitParams(SnowLayer *layer)` | 1280 | no | the snow's parameters: eight random turns about y with their matrices and 32 random flake offsets; then the snowy ground pass |
+| `0x0014EDB0` | `void mm_SnowLayer_Draw(SnowLayer *layer, int pass, int packet, int a3, Vec4 *t0)` | 752 | no | the snow by the time of day: the flake count and alpha and the ground pass alpha from the clock, the turns advance 0.03, the flakes fall 0.03 a frame within 40; then its packets are queued |
+| `0x0014F0A0` | `SnowLayer *mm_SnowLayer_DeletingDtor(SnowLayer *layer, int16_t deleteFlag)` | 84 | yes | base destructor, then delete |
+| `0x0014F100` | `SnowLayer *mm_SnowLayer_ctor(SnowLayer *layer, int buffers)` | 88 | no | base constructor, parameters, packet |
 | `0x0014F160` | `uint32_t *mm_LayerF_BuildPacket(LayerF *layer, uint32_t *packet)` | 296 | no | (provisional) packet for layer F (microcode 0x1A91C0) |
 | `0x0014F290` | `void mm_LayerF_InitParams(LayerF *layer)` | 356 | no | (provisional) |
 | `0x0014F400` | `void mm_LayerF_Draw(LayerF *layer, int packet)` | 48 | no | (provisional) queues its packet around a1 |
