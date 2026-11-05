@@ -15,6 +15,11 @@ City events (visitors, requests, incidents, paydays).
   at `+0xC` as an `ActorRef` of person, building, family and member, then two words per type). Types with more state
   keep up to 0x7C bytes and list further actors from `+0xC` on, 8 bytes each. The talk's `+0xA4` and `+0xA8` are such
   records. The manager's five talk slots start at `+4` (0x20 bytes, kind first).
+- Per-type record layouts in `config/types/05_classes.h`: `EvCultData` (Crazy Cult: six actors, the wait month and time,
+  the spread counter, the members met), `EvAdoptionData` (the applying families and six `AdoptionChild` entries),
+  `EvShoppingData` (the shopper, four sellers and their prices, the bill), `EvDeliveryData` (the catalogue entry and
+  month, the delivery man's timers) and `EvPartyData` (the farewell party: three actors, the guests, the party time). The
+  handlers see them through `data.as<...>()`.
 
 <!-- Generated below by tools/map_docs.py from config/port_status.csv. Edit function notes there, not here. -->
 

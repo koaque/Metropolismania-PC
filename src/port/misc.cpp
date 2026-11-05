@@ -217,7 +217,7 @@ namespace mm
                 {
                     const ps2f half = fromInt(GuestPtr<BuildingType>{globals::buildingTypeAddress(obj->type)}->size) / ps2f(2.0f);
                     aim->x = static_cast<float>((fromInt(obj->tile & 0x7F) - ps2f(64.0f)) + half);
-                    port::store<uint32_t>(aim.address + 4u, 0);
+                    aim->y = 0.0f;
                     aim->z = static_cast<float>((fromInt(128 - (obj->tile >> 7)) - ps2f(64.0f)) - half);
                     aim->w = 1.0f;
                 }
@@ -235,7 +235,7 @@ namespace mm
                 else
                 {
                     aim->x = person->x;
-                    port::store<uint32_t>(aim.address + 4u, 0);
+                    aim->y = 0.0f;
                     aim->z = person->z;
                     aim->w = 1.0f;
                     checkAim = true;
@@ -321,7 +321,7 @@ namespace mm
                 if ((cls->flags & 1u) == 0)
                 {
                     aim->x = person->x;
-                    port::store<uint32_t>(aim.address + 4u, 0);
+                    aim->y = 0.0f;
                     aim->z = person->z;
                     aim->w = 1.0f;
                     Math_RayPlaneDistance(from, to, aim, hit, distance);
@@ -1386,7 +1386,7 @@ namespace mm
         cls->unk_10 = record[11];
         cls->unk_12 = record[12];
         cls->unk_14 = record[13];
-        cls->unk_16 = record[2];
+        cls->voice = record[2];
         cls->flags = port::load<uint16_t>(record.address + 4u);
         cls->unk_1C = port::load<uint32_t>(record.address + 0x14u);
         return cls;
@@ -3146,7 +3146,7 @@ namespace mm
     void Stamina_Init(GuestPtr<Stamina> stamina)
     {
         stamina->unk_00 = 0;
-        port::store<int32_t>(stamina.address + 4u, 0x61A7F); // 399999
+        stamina->value = 0x61A7F; // 399999
         port::store<int32_t>(stamina.address + 8u, 0);
     }
 

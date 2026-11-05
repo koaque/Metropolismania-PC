@@ -374,7 +374,7 @@ namespace mm
     {
         const uint32_t b = bag.address;
         bag->state = 7;
-        port::store<int32_t>(b + 0x19Cu, 0);
+        bag->slide = 0.0f;
         const auto count = [&] { return b + (static_cast<uint32_t>(bag->setupSlot) << 4) + 0xAu; };
         if (used != 0)
             port::store<uint8_t>(count(), static_cast<uint8_t>(port::load<uint8_t>(count()) - 1u));
@@ -435,9 +435,9 @@ namespace mm
             {
                 const uint32_t family = port::load<uint16_t>(entry + 4u);
                 const uint32_t tile = port::load<uint16_t>(entry + 6u);
-                const uint32_t homeType = port::load<uint16_t>(Family_Get(static_cast<int>(family), 0).address + 0x20u);
+                const uint32_t homeType = Family_Get(static_cast<int>(family), 0)->homeType;
                 Map_UnhighlightArea(city->map, static_cast<int>(tile & 0x7Fu), static_cast<int>(tile >> 7),
-                                    port::load<uint8_t>(globals::buildingTypeAddress(homeType) + 0x142u));
+                                    globals::buildingType(homeType)->size);
                 const int placed = Map_PlaceObject(city->map, static_cast<int>(family), static_cast<int>(homeType),
                                                    static_cast<int>(tile & 0x7Fu), static_cast<int>(tile >> 7), static_cast<int>(city.address));
                 if (placed == 0x3F80)
@@ -487,7 +487,7 @@ namespace mm
         case 0x1A:
         case 0x17:
             bag->state = 6;
-            port::store<uint32_t>(b + 0x19Cu, 0x42F00000u);
+            bag->slide = std::bit_cast<float>(0x42F00000u);
             Sound_PlaySe(0x10, 0, 0x3C, ps2f(0.0f), ps2f(0.0f));
             bag->setupSlot = static_cast<int32_t>(static_cast<uint32_t>(bag->cursor));
             break;
@@ -529,7 +529,6 @@ namespace mm
     int Applicants_Update(GuestPtr<Applicants> applicants, GuestPtr<CityScene> city)
     {
         const uint32_t a = applicants.address;
-        const uint32_t c = city.address;
         const auto loadF = [](uint32_t at) { return ps2f(std::bit_cast<float>(port::load<uint32_t>(at))); };
         const auto storeF = [](uint32_t at, ps2f value) { port::store<uint32_t>(at, std::bit_cast<uint32_t>(value.v)); };
         const auto place = [&]() { Applicants_PlaceAt(applicants, GuestPtr<ps2f>{a + 0x330u}); };
@@ -546,30 +545,30 @@ namespace mm
             }
             applicants->cursor = clamped;
             const int32_t at = applicants->cursor;
-            Family_Prefetch(port::load<uint16_t>(a + 20u * static_cast<uint32_t>(at) + 4u), 0);
+            Family_Prefetch(applicants->entries[at].family, 0);
         };
         // The entry under the cursor, or 0 with none.
         const auto selected = [&]() { return applicants->count == 0 ? 0u : a + 20u * static_cast<uint32_t>(applicants->cursor); };
         int result = CityScene_GetMode(city);
-        switch (port::load<uint32_t>(a + 0x31Cu))
+        switch (static_cast<uint32_t>(applicants->mode))
         {
         case 0:
         {
-            const int32_t timer = port::load<int32_t>(a + 0x328u) + 1;
-            port::store<int32_t>(a + 0x328u, timer);
+            const int32_t timer = applicants->assignTimer + 1;
+            applicants->assignTimer = timer;
             if (timer >= 11)
             {
-                port::store<int32_t>(a + 0x328u, 0);
-                Applicants_AssignToBuilding(applicants, city, port::load<int32_t>(a + 0x324u));
-                const int32_t next = port::load<int32_t>(a + 0x324u) + 1;
-                port::store<int32_t>(a + 0x324u, next);
+                applicants->assignTimer = 0;
+                Applicants_AssignToBuilding(applicants, city, applicants->assignIndex);
+                const int32_t next = applicants->assignIndex + 1;
+                applicants->assignIndex = next;
                 if (!(next < 0x20))
-                    port::store<int32_t>(a + 0x324u, 0);
+                    applicants->assignIndex = 0;
             }
             if (result == 3)
             {
-                port::store<int32_t>(a + 0x31Cu, 1);
-                port::store<uint32_t>(a + 0x340u, 0x3CA3D70Au);
+                applicants->mode = 1;
+                applicants->step = std::bit_cast<float>(0x3CA3D70Au);
                 Applicants_SetMode(applicants, 1);
                 Sound_PlaySe(7, 0, 0x3C, 0.0f, 0.0f);
             }
@@ -578,12 +577,12 @@ namespace mm
         case 1:
         {
             const ps2f arrival(std::bit_cast<float>(0x3E570A3Du));
-            storeF(a + 0x334u, loadF(a + 0x334u) - loadF(a + 0x340u));
-            storeF(a + 0x340u, loadF(a + 0x340u) + loadF(a + 0x340u));
-            if (loadF(a + 0x334u) <= arrival)
+            applicants->cardPoint.y = applicants->cardPoint.y - applicants->step;
+            applicants->step = applicants->step + applicants->step;
+            if (applicants->cardPoint.y <= arrival)
             {
-                port::store<int32_t>(a + 0x31Cu, 2);
-                storeF(a + 0x334u, arrival);
+                applicants->mode = 2;
+                applicants->cardPoint.y = arrival;
                 city->hudVisible[2] = 0;
                 city->hudVisible[3] = 0;
             }
@@ -593,19 +592,19 @@ namespace mm
         case 2:
             if ((Pad_Pressed(0) & 0x10u) != 0)
             {
-                port::store<int32_t>(a + 0x31Cu, 3);
-                port::store<uint32_t>(a + 0x340u, 0x3CA3D70Au);
+                applicants->mode = 3;
+                applicants->step = std::bit_cast<float>(0x3CA3D70Au);
                 city->hudVisible[2] = 1;
                 city->hudVisible[3] = 1;
                 Sound_PlaySe(8, 0, 0x3C, 0.0f, 0.0f);
             }
             else if ((Pad_Pressed(0) & 0x40u) != 0)
             {
-                const uint32_t kind = port::load<uint16_t>(a + 20u * static_cast<uint32_t>(applicants->cursor) + 2u);
+                const uint32_t kind = static_cast<uint16_t>(applicants->entries[applicants->cursor].state);
                 if ((kind != 0 && kind < 4) || kind == 8)
                 {
-                    port::store<int32_t>(a + 0x31Cu, 5);
-                    port::store<uint32_t>(a + 0x340u, 0x3CA3D70Au);
+                    applicants->mode = 5;
+                    applicants->step = std::bit_cast<float>(0x3CA3D70Au);
                 }
             }
             else if ((Pad_GetRepeat() & 0x8000) != 0)
@@ -616,12 +615,12 @@ namespace mm
         case 3:
         {
             const ps2f out(std::bit_cast<float>(0x40133333u));
-            storeF(a + 0x334u, loadF(a + 0x334u) + loadF(a + 0x340u));
-            storeF(a + 0x340u, loadF(a + 0x340u) + loadF(a + 0x340u));
-            if (!(loadF(a + 0x334u) < out))
+            applicants->cardPoint.y = applicants->cardPoint.y + applicants->step;
+            applicants->step = applicants->step + applicants->step;
+            if (!(applicants->cardPoint.y < out))
             {
-                port::store<int32_t>(a + 0x31Cu, 0);
-                storeF(a + 0x334u, out);
+                applicants->mode = 0;
+                applicants->cardPoint.y = out;
                 Applicants_SetMode(applicants, 0);
                 result = 1;
             }
@@ -650,11 +649,11 @@ namespace mm
         }
         case 5:
         {
-            storeF(a + 0x330u, loadF(a + 0x330u) - ps2f(0.8f) * loadF(a + 0x340u));
-            storeF(a + 0x334u, loadF(a + 0x334u) + ps2f(0.5f) * loadF(a + 0x340u));
-            storeF(a + 0x338u, loadF(a + 0x338u) + ps2f(2.0f) * loadF(a + 0x340u));
-            storeF(a + 0x340u, loadF(a + 0x340u) + loadF(a + 0x340u));
-            if (!(loadF(a + 0x334u) < ps2f(std::bit_cast<float>(0x3FE66666u))))
+            applicants->cardPoint.x = applicants->cardPoint.x - ps2f(0.8f) * applicants->step;
+            applicants->cardPoint.y = applicants->cardPoint.y + ps2f(0.5f) * applicants->step;
+            applicants->cardPoint.z = applicants->cardPoint.z + ps2f(2.0f) * applicants->step;
+            applicants->step = applicants->step + applicants->step;
+            if (!(applicants->cardPoint.y < ps2f(std::bit_cast<float>(0x3FE66666u))))
             {
                 const uint32_t entry = selected();
                 if (port::load<uint16_t>(entry + 2u) == 3)
@@ -662,14 +661,14 @@ namespace mm
                     const int type = Family_GetTypeIndex(port::load<uint16_t>(entry + 4u));
                     const uint32_t position = port::load<uint16_t>(entry + 6u);
                     Map_UnhighlightArea(city->map, static_cast<int>(position & 0x7Fu), static_cast<int>(position >> 7),
-                                        port::load<uint8_t>(globals::buildingTypeAddress(static_cast<uint32_t>(type)) + 0x142u));
+                                        globals::buildingType(static_cast<uint32_t>(type))->size);
                 }
                 Player_SetMode(city->player, 2);
                 result = 4;
-                port::store<int32_t>(a + 0x31Cu, 4);
-                port::store<uint32_t>(a + 0x330u, 0xC0400000u);
-                port::store<uint32_t>(a + 0x334u, 0x3FE66666u);
-                port::store<uint32_t>(a + 0x338u, 0x40E00000u);
+                applicants->mode = 4;
+                applicants->cardPoint.x = std::bit_cast<float>(0xC0400000u);
+                applicants->cardPoint.y = std::bit_cast<float>(0x3FE66666u);
+                applicants->cardPoint.z = std::bit_cast<float>(0x40E00000u);
             }
             place();
             return result;
@@ -677,18 +676,18 @@ namespace mm
         case 6:
         {
             const ps2f arrival(std::bit_cast<float>(0x3E570A3Du));
-            storeF(a + 0x330u, loadF(a + 0x330u) + ps2f(0.8f) * loadF(a + 0x340u));
-            storeF(a + 0x334u, loadF(a + 0x334u) - ps2f(0.5f) * loadF(a + 0x340u));
-            storeF(a + 0x338u, loadF(a + 0x338u) - ps2f(2.0f) * loadF(a + 0x340u));
-            storeF(a + 0x340u, loadF(a + 0x340u) + loadF(a + 0x340u));
-            if (loadF(a + 0x334u) <= arrival)
+            applicants->cardPoint.x = applicants->cardPoint.x + ps2f(0.8f) * applicants->step;
+            applicants->cardPoint.y = applicants->cardPoint.y - ps2f(0.5f) * applicants->step;
+            applicants->cardPoint.z = applicants->cardPoint.z - ps2f(2.0f) * applicants->step;
+            applicants->step = applicants->step + applicants->step;
+            if (applicants->cardPoint.y <= arrival)
             {
                 Player_SetMode(city->player, -1);
                 result = 3;
-                port::store<int32_t>(a + 0x31Cu, 2);
-                port::store<uint32_t>(a + 0x330u, 0u);
-                storeF(a + 0x334u, arrival);
-                port::store<uint32_t>(a + 0x338u, 0u);
+                applicants->mode = 2;
+                applicants->cardPoint.x = 0.0f;
+                applicants->cardPoint.y = arrival;
+                applicants->cardPoint.z = 0.0f;
                 Applicants_ScrollTo(applicants, -1);
                 Pad_ReleaseFocus(1);
             }
@@ -749,7 +748,6 @@ namespace mm
         port::GuestFrame<0x80> frame;
         const uint32_t sp = frame.ptr().address;
         const uint32_t b = bag.address;
-        const uint32_t c = city.address;
         const auto loadF = [](uint32_t at) { return ps2f(std::bit_cast<float>(port::load<uint32_t>(at))); };
         const auto storeF = [](uint32_t at, ps2f value) { port::store<uint32_t>(at, std::bit_cast<uint32_t>(value.v)); };
         const auto setState = [&](int32_t state) { bag->state = state; };
@@ -763,7 +761,7 @@ namespace mm
         switch (static_cast<uint32_t>(bag->state))
         {
         case 0:
-            port::store<uint32_t>(b + 0x19Cu, 0u);
+            bag->slide = 0.0f;
             setState(1);
             city->hudVisible[1] = 0;
             city->hudVisible[2] = 0;
@@ -772,10 +770,10 @@ namespace mm
             break;
         case 1:
         {
-            storeF(b + 0x19Cu, loadF(b + 0x19Cu) + ps2f(10.0f));
-            slideBag(b, loadF(b + 0x19Cu), 0x001AEF10u);
-            Instance_DrawSwaying(model(), 0, loadF(b + 0x19Cu));
-            if (loadF(b + 0x19Cu) < ps2f(120.0f))
+            bag->slide = bag->slide + ps2f(10.0f);
+            slideBag(b, bag->slide, 0x001AEF10u);
+            Instance_DrawSwaying(model(), 0, bag->slide);
+            if (bag->slide < ps2f(120.0f))
                 break;
             setState(2);
             uint32_t list = sdk::operator_new(0x2A0u);
@@ -828,7 +826,7 @@ namespace mm
             else if ((Pad_Pressed(0) & 0x10u) != 0)
             {
                 setState(3);
-                port::store<uint32_t>(b + 0x19Cu, 0x42F00000u);
+                bag->slide = std::bit_cast<float>(0x42F00000u);
                 lifetime::deleteWith(b + 0x174u, [](uint32_t list) { ListMenu_dtor(GuestPtr<ListMenu>{list}, 1); });
                 lifetime::deleteVirtual(b + 0x178u, 8);
                 lifetime::deleteTextBox(b + 0x170u);
@@ -842,10 +840,10 @@ namespace mm
             }
             break;
         case 3:
-            storeF(b + 0x19Cu, loadF(b + 0x19Cu) - ps2f(10.0f));
-            Instance_DrawSwaying(model(), 0, loadF(b + 0x19Cu));
-            slideBag(b, loadF(b + 0x19Cu), 0x001AEF10u);
-            if (loadF(b + 0x19Cu) <= ps2f(0.0f))
+            bag->slide = bag->slide - ps2f(10.0f);
+            Instance_DrawSwaying(model(), 0, bag->slide);
+            slideBag(b, bag->slide, 0x001AEF10u);
+            if (bag->slide <= ps2f(0.0f))
             {
                 setState(0);
                 CityScene_PopMode(city);
@@ -856,7 +854,7 @@ namespace mm
         {
             const uint32_t question = bag->question.address;
             port::callGuest<void>(widgetMethod(question, &WidgetVtable::update), question);
-            if (port::callGuest<int>(port::load<uint32_t>(port::load<uint32_t>(bag->question.address + 8u) + 0x24u), bag->question.address) == 0)
+            if (port::callGuest<int>(port::load<uint32_t>(bag->question->base.vtable.address + 0x24u), bag->question.address) == 0)
                 break;
             const int32_t answer = port::load<int32_t>(bag->question.address + 0x18u);
             setState(2);
@@ -892,10 +890,10 @@ namespace mm
             break;
         }
         case 6:
-            storeF(b + 0x19Cu, loadF(b + 0x19Cu) - ps2f(10.0f));
-            slideBag(b, loadF(b + 0x19Cu), 0x001AEF20u);
-            Instance_DrawSwaying(model(), 0, loadF(b + 0x19Cu));
-            if (loadF(b + 0x19Cu) <= ps2f(0.0f))
+            bag->slide = bag->slide - ps2f(10.0f);
+            slideBag(b, bag->slide, 0x001AEF20u);
+            Instance_DrawSwaying(model(), 0, bag->slide);
+            if (bag->slide <= ps2f(0.0f))
             {
                 city->hudVisible[1] = 1;
                 CityScene_PushMode(city, 0xB);
@@ -904,10 +902,10 @@ namespace mm
             }
             break;
         case 7:
-            storeF(b + 0x19Cu, loadF(b + 0x19Cu) + ps2f(10.0f));
-            slideBag(b, loadF(b + 0x19Cu), 0x001AEF20u);
-            Instance_DrawSwaying(model(), 0, loadF(b + 0x19Cu));
-            if (loadF(b + 0x19Cu) < ps2f(120.0f))
+            bag->slide = bag->slide + ps2f(10.0f);
+            slideBag(b, bag->slide, 0x001AEF20u);
+            Instance_DrawSwaying(model(), 0, bag->slide);
+            if (bag->slide < ps2f(120.0f))
                 break;
             Notice_Clear(city->notice);
             city->hudVisible[1] = 0;
@@ -932,7 +930,6 @@ namespace mm
     {
         port::GuestFrame<0x90> frame;
         const uint32_t sp = frame.ptr().address;
-        const uint32_t a = applicants.address;
         const auto loadF = [](uint32_t at) { return ps2f(std::bit_cast<float>(port::load<uint32_t>(at))); };
         const auto storeF = [](uint32_t at, ps2f value) { port::store<uint32_t>(at, std::bit_cast<uint32_t>(value.v)); };
         // The index in the field at `at` is kept among the entries (0 to count - 1).
@@ -948,7 +945,7 @@ namespace mm
             port::store<int32_t>(at, clamped);
         };
         const auto entryColour = [&](int32_t entry, uint32_t out) {
-            const uint32_t icon = port::load<uint16_t>(static_cast<uint32_t>(Claim_GetSectionC(port::load<uint16_t>(a + 0x2DCu + 2u * static_cast<uint32_t>(entry)))));
+            const uint32_t icon = port::load<uint16_t>(static_cast<uint32_t>(Claim_GetSectionC(applicants->claims[entry])));
             ClaimIcon_GetColor(icon, 1, GuestPtr<Vec4>{out});
             for (uint32_t lane = 0; lane < 3; ++lane)
             {
@@ -960,34 +957,34 @@ namespace mm
             }
             port::store<int32_t>(out + 0xCu, 12);
         };
-        const auto model = [&]() { return GuestPtr<A3DObject>{port::load<uint32_t>(a + 0x28Cu)}; };
+        const auto model = [&]() { return applicants->frameModel; };
         const auto lightAll = [&](uint32_t colour) {
             for (uint32_t node = 0; node < 8; ++node)
                 A3DObject_ChangeLuminosity(model(), GuestPtr<uint32_t>{colour}, port::load<uint8_t>(0x001B7A10u + node));
         };
         const auto lightFirst = [&](uint32_t colour) { A3DObject_ChangeLuminosity(model(), GuestPtr<uint32_t>{colour}, 0); };
-        if (loadF(a + 0x2B4u) == ps2f(0.0f))
+        if (applicants->rollDir == ps2f(0.0f))
         {
             if (applicants->count == 0)
                 return;
             const int32_t top = applicants->top, cursor = applicants->cursor;
             if (top < cursor)
             {
-                port::store<uint32_t>(a + 0x2B4u, 0x3F800000u);
-                clampIndex(a + 0x2CCu);
-                clampIndex(a + 0x2D0u);
+                applicants->rollDir = std::bit_cast<float>(0x3F800000u);
+                clampIndex(port::guest(&applicants->cursor));
+                clampIndex(port::guest(&applicants->top));
                 entryColour(applicants->top, sp + 0x70u);
                 lightAll(sp + 0x70u);
                 entryColour(applicants->cursor, sp + 0x70u);
                 lightFirst(sp + 0x70u);
-                port::store<uint8_t>(a + 0x2C8u, 0xFF);
+                applicants->stateColour = 0xFF;
             }
             else if (cursor < top)
             {
-                port::store<uint32_t>(a + 0x2B4u, 0xBF800000u);
-                port::store<uint32_t>(a + 0x2B0u, 0x42200000u);
-                clampIndex(a + 0x2CCu);
-                clampIndex(a + 0x2D0u);
+                applicants->rollDir = std::bit_cast<float>(0xBF800000u);
+                applicants->rollPhase = std::bit_cast<float>(0x42200000u);
+                clampIndex(port::guest(&applicants->cursor));
+                clampIndex(port::guest(&applicants->top));
                 entryColour(applicants->top, sp + 0x80u);
                 lightFirst(sp + 0x80u);
                 entryColour(applicants->cursor, sp + 0x80u);
@@ -995,27 +992,27 @@ namespace mm
             }
             return;
         }
-        if (loadF(a + 0x2B0u) == ps2f(20.0f))
+        if (applicants->rollPhase == ps2f(20.0f))
         {
             const int32_t top = applicants->top, cursor = applicants->cursor;
             if (std::abs(top - cursor) < 2)
-                applicants->top = applicants->top + sdk::fptosi(loadF(a + 0x2B4u));
+                applicants->top = applicants->top + sdk::fptosi(applicants->rollDir);
             else if (cursor < top)
                 applicants->top = cursor + 1;
             else
                 applicants->top = cursor - 1;
             if (applicants->top < 0)
                 applicants->top = 0;
-            port::store<int32_t>(a + 0x29Cu, 1);
+            applicants->cardShown = 1;
             Applicants_BuildInfo(applicants);
             Sound_PlaySe(9, 0, 0x3C, 0.0f, 0.0f);
         }
-        const ps2f phase = loadF(a + 0x2B0u) + ps2f(2.0f) * loadF(a + 0x2B4u);
-        storeF(a + 0x2B0u, phase);
+        const ps2f phase = applicants->rollPhase + ps2f(2.0f) * applicants->rollDir;
+        applicants->rollPhase = phase;
         if (phase < ps2f(40.0f) && !(phase < ps2f(0.0f)))
             return;
-        port::store<uint32_t>(a + 0x2B0u, 0u);
-        port::store<uint32_t>(a + 0x2B4u, 0u);
+        applicants->rollPhase = 0.0f;
+        applicants->rollDir = 0.0f;
         entryColour(applicants->top, sp + 0x60u);
         lightAll(sp + 0x60u);
         lightFirst(sp + 0x60u);
@@ -1037,16 +1034,15 @@ namespace mm
     {
         port::GuestFrame<0xB0> frame;
         const uint32_t sp = frame.ptr().address;
-        const uint32_t a = applicants.address;
         const auto loadF = [](uint32_t at) { return ps2f(std::bit_cast<float>(port::load<uint32_t>(at))); };
         const auto storeF = [](uint32_t at, ps2f value) { port::store<uint32_t>(at, std::bit_cast<uint32_t>(value.v)); };
         const auto constant = [](uint32_t bits) { return ps2f(std::bit_cast<float>(bits)); };
-        const auto cardModel = [a]() { return GuestPtr<A3DObject>{port::load<uint32_t>(a + 0x28Cu)}; };
-        const auto iconModel = [a]() { return GuestPtr<A3DObject>{port::load<uint32_t>(a + 0x290u)}; };
+        const auto cardModel = [applicants]() { return applicants->frameModel; };
+        const auto iconModel = [applicants]() { return applicants->cardModel; };
         // The claim colour of the entry (the icon of its section C, level 1) with each of red, green and blue brought halfway to 1 from
         // where it is, and 12 in the fourth place.
         const auto entryColour = [&](int32_t entry, uint32_t out) {
-            const uint32_t icon = port::load<uint16_t>(static_cast<uint32_t>(Claim_GetSectionC(port::load<uint16_t>(a + 0x2DCu + 2u * static_cast<uint32_t>(entry)))));
+            const uint32_t icon = port::load<uint16_t>(static_cast<uint32_t>(Claim_GetSectionC(applicants->claims[entry])));
             ClaimIcon_GetColor(icon, 1, GuestPtr<Vec4>{out});
             for (uint32_t lane = 0; lane < 3; ++lane)
             {
@@ -1068,9 +1064,9 @@ namespace mm
             if (count > 0)
             {
                 Applicants_DrawDetails(applicants);
-                Instance_DrawSwaying(cardModel(), 0, loadF(a + 0x2B0u));
-                const int32_t relight = port::load<int32_t>(a + 0x2BCu);
-                port::store<int32_t>(a + 0x2BCu, 0);
+                Instance_DrawSwaying(cardModel(), 0, applicants->rollPhase);
+                const int32_t relight = applicants->relight;
+                applicants->relight = 0;
                 if (relight != 0)
                 {
                     entryColour(applicants->top, sp + 0xA0u);
@@ -1080,8 +1076,8 @@ namespace mm
                 }
                 A3DObject_Draw(cardModel());
                 const int32_t shown = applicants->count;
-                const int32_t before = port::load<int32_t>(a + 0x284u);
-                port::store<int32_t>(a + 0x284u, shown);
+                const int32_t before = applicants->shownCount;
+                applicants->shownCount = shown;
                 if (shown != before)
                     Applicants_ScrollTo(applicants, -1);
                 ps2f spacing = constant(0x400CCCCDu) / ps2f(static_cast<float>(applicants->count));
@@ -1091,36 +1087,36 @@ namespace mm
                     spacing = constant(0x3DCCCCCDu);
                 for (int32_t i = 0; i < applicants->count; ++i)
                 {
-                    if (port::load<int32_t>(a + 0x2B8u) != 0 && i == applicants->top)
+                    if (applicants->sliding != 0 && i == applicants->top)
                         continue;
-                    const uint32_t kind = port::load<uint16_t>(a + 0x14u * static_cast<uint32_t>(i) + 2u);
+                    const uint32_t kind = static_cast<uint16_t>(applicants->entries[i].state);
                     const uint32_t slot = kind >= 4u ? (kind < 8u ? 1u : 0u) : 0u;
                     const uint32_t nodeAt = 0x001B7A18u + slot;
                     const uint32_t node = port::load<uint8_t>(nodeAt);
                     const uint32_t matrix = port::load<uint32_t>(port::load<uint32_t>(iconModel().address) + 8u) + 0xC0u * node + 0x70u;
                     Mat4_Copy(GuestPtr<Vec4>{matrix}, GuestPtr<Vec4>{0x001B2550u});
                     const ps2f place = ps2f(static_cast<float>(i)) * spacing;
-                    storeF(matrix + 0x30u, (loadF(applicants->cardModelB.address + 0x30u) + place) - constant(0x3F866666u));
-                    storeF(matrix + 0x34u, constant(0xBF3AE148u) + loadF(applicants->cardModelB.address + 0x34u));
-                    const int32_t cursor = port::load<int32_t>(a + 0x2B8u) != 0 ? port::load<int32_t>(a + 0x2C4u) : applicants->cursor;
+                    storeF(matrix + 0x30u, (loadF(applicants->cardMatrix.address + 0x30u) + place) - constant(0x3F866666u));
+                    storeF(matrix + 0x34u, constant(0xBF3AE148u) + loadF(applicants->cardMatrix.address + 0x34u));
+                    const int32_t cursor = applicants->sliding != 0 ? applicants->savedTop : applicants->cursor;
                     if (cursor == i)
-                        storeF(matrix + 0x38u, loadF(applicants->cardModelB.address + 0x38u) - constant(0x3D8F5C29u));
+                        storeF(matrix + 0x38u, loadF(applicants->cardMatrix.address + 0x38u) - constant(0x3D8F5C29u));
                     else
                     {
                         const int32_t distance = std::abs(cursor - i);
-                        storeF(matrix + 0x38u, (loadF(applicants->cardModelB.address + 0x38u) + constant(0x3A83126Fu) * ps2f(static_cast<float>(distance))) - constant(0x3CF5C28Fu));
+                        storeF(matrix + 0x38u, (loadF(applicants->cardMatrix.address + 0x38u) + constant(0x3A83126Fu) * ps2f(static_cast<float>(distance))) - constant(0x3CF5C28Fu));
                     }
                     entryColour(i, sp + 0x90u);
                     Instance_DrawNode(iconModel(), GuestPtr<Vec4>{sp + 0x90u}, static_cast<int>(node), 0);
                 }
-                const uint8_t marker = port::load<uint8_t>(a + 0x2C8u);
+                const uint8_t marker = applicants->stateColour;
                 if (marker != 0xFF)
                 {
-                    const uint32_t markerMatrix = port::load<uint32_t>(a + 0x2ACu);
+                    const uint32_t markerMatrix = applicants->cardNodeB.address;
                     Mat4_Copy(GuestPtr<Vec4>{markerMatrix}, GuestPtr<Vec4>{0x001B2550u});
-                    storeF(port::load<uint32_t>(a + 0x2ACu) + 0x30u, loadF(applicants->cardModelA.address + 0x30u) + loadF(0x001B7A20u + 4u * marker));
-                    port::store<uint32_t>(port::load<uint32_t>(a + 0x2ACu) + 0x34u, port::load<uint32_t>(applicants->cardModelA.address + 0x34u));
-                    port::store<uint32_t>(port::load<uint32_t>(a + 0x2ACu) + 0x38u, port::load<uint32_t>(applicants->cardModelA.address + 0x38u));
+                    storeF(applicants->cardNodeB.address + 0x30u, loadF(applicants->frameMatrix.address + 0x30u) + loadF(0x001B7A20u + 4u * marker));
+                    port::store<uint32_t>(applicants->cardNodeB.address + 0x34u, port::load<uint32_t>(applicants->frameMatrix.address + 0x34u));
+                    port::store<uint32_t>(applicants->cardNodeB.address + 0x38u, port::load<uint32_t>(applicants->frameMatrix.address + 0x38u));
                     Instance_DrawNode(iconModel(), GuestPtr<Vec4>{sp + 0x90u}, 2, 0);
                 }
             }
@@ -1130,17 +1126,17 @@ namespace mm
                 port::store<uint32_t>(sp + 0x94u, 0x437F0000u);
                 port::store<uint32_t>(sp + 0x98u, 0x437F0000u);
                 port::store<int32_t>(sp + 0x9Cu, 12);
-                Instance_DrawMesh(iconModel(), GuestPtr<Vec4>{applicants->cardModelA.address}, GuestPtr<Vec4>{sp + 0x90u}, 4, 0);
+                Instance_DrawMesh(iconModel(), GuestPtr<Vec4>{applicants->frameMatrix.address}, GuestPtr<Vec4>{sp + 0x90u}, 4, 0);
             }
         }
-        if (port::load<int32_t>(a + 0x2B8u) != 0)
+        if (applicants->sliding != 0)
         {
             Applicants_Layout(applicants);
             DmaList_QueueClearZ();
             entryColour(applicants->top, sp + 0x90u);
             Instance_DrawNode(iconModel(), GuestPtr<Vec4>{sp + 0x90u}, 0, 0);
         }
-        if (port::load<int32_t>(a + 0x29Cu) != 0 && applicants->count != 0)
+        if (applicants->cardShown != 0 && applicants->count != 0)
             TextBox_Draw(applicants->cardText);
     }
 

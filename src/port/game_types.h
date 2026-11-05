@@ -40,6 +40,7 @@ struct InstanceSlot;
 struct ListMenu;
 struct ListMenuItem;
 struct MenuWin;
+struct PauseSlotText;
 struct LoadingScreen;
 struct McManager;
 struct NameEntry;
@@ -69,6 +70,12 @@ struct Notice;
 struct TownPages;
 struct TownPagesIndex;
 struct EventData;
+struct EvCultData;
+struct AdoptionChild;
+struct EvAdoptionData;
+struct EvShoppingData;
+struct EvDeliveryData;
+struct EvPartyData;
 struct CharClass;
 struct CharClassVtable;
 struct PersonClass;
@@ -397,8 +404,41 @@ struct McManager {
     GuestPtr<GameFile> file;            /* +0x20 */
     int32_t fd;                /* +0x24 open save file descriptor */
 };
-/* Name entry window (0x124 bytes). */
-struct NameEntry { uint8_t data[0x124]; };
+/* Name entry window (0x124 bytes): a keyboard of 6 columns on a board model (mm_NameEntry_*). */
+struct NameEntry {
+    GuestPtr<A3DObject> model;          /* +0x000 the board (0x1F3B6C) */
+    GuestPtr<TextBox> hintText;         /* +0x004 16 by 1: the hint, scrolled when longer than 10 */
+    GuestPtr<TextBox> keysText;         /* +0x008 3 by 4: the keys shown */
+    GuestPtr<TextBox> nameText;         /* +0x00C 12 by 1: the name typed */
+    GuestPtr<TextBox> lineText;         /* +0x010 16 by 1 */
+    GuestPtr<Vec4> boardMatrix;         /* +0x014 the model's matrix */
+    GuestPtr<Vec4> markerMatrix;        /* +0x018 the cursor marker's, in the model's node data (+0x130) */
+    char name[0x24];           /* +0x01C up to 24 characters */
+    int32_t state;             /* +0x040 0 closed, 1 open, 2 done, 3 sliding in, 4 sliding out */
+    int32_t keySet;            /* +0x044 the keyboard (the text table at 0x1B13E0) */
+    int32_t column;            /* +0x048 the cursor's column (of 6) */
+    int32_t row;               /* +0x04C its row (of 4 shown) */
+    int32_t firstRow;          /* +0x050 the first row shown */
+    int32_t rows;              /* +0x054 */
+    int32_t keyCount;          /* +0x058 */
+    int32_t length;            /* +0x05C the name's length, where the next key goes */
+    int32_t moreAbove;         /* +0x060 the up arrow is shown */
+    int32_t moreBelow;         /* +0x064 the down arrow is shown */
+    uint8_t maxLength;         /* +0x068 at most 24 */
+    uint8_t unk_069[3];
+    int32_t blink;             /* +0x06C restarts the cursor's blink */
+    int32_t slideFrames;       /* +0x070 0 to 25 while sliding */
+    int32_t noSlide;           /* +0x074 opens and closes at once */
+    ps2f restHeight;          /* +0x078 the board's y when open */
+    ps2f markerX;             /* +0x07C the marker's x at column 0 (0.016 a column) */
+    ps2f markerY;             /* +0x080 its y at row 0 (0.0227 a row) */
+    char hint[0x80];           /* +0x084 */
+    int32_t hintScroll;        /* +0x104 the hint's first character shown, -1 when it fits */
+    uint8_t hintStep;          /* +0x108 the hint moves every tenth frame */
+    uint8_t unk_109[0xB];
+    ps2f boardPlace[3];       /* +0x114 the board's x, y and z at construction */
+    GuestPtr<void> vtable;              /* +0x120 0x1BCFE8 */
+};
 /* Scene A: logos, memory card check, title (0x104 bytes). */
 struct SceneA {
     uint8_t unk_00[8];
@@ -419,9 +459,22 @@ struct SceneA {
     int32_t logoSound;         /* +0x50 next timed effect of the logo intro (mm_Title_Intro) */
     uint8_t unk_54[4];
     int32_t showHint;          /* +0x58 the "[SELECT]SoundTest" line is drawn (mm_Title_PressStart) */
-    uint8_t unk_5C[0x14];
+    uint8_t song;              /* +0x5C the sound test's song, 0..0x13 (mm_SoundTest_BgmPage) */
+    uint8_t effect;            /* +0x5D its effect, 0..0x47 (mm_SoundTest_SePage) */
+    int16_t pitch;             /* +0x5E within +-0x4000 */
+    uint8_t note;              /* +0x60 0..0x7F */
+    uint8_t unk_61;
+    int16_t tempo;             /* +0x62 within +-0xFF */
+    int32_t volume;            /* +0x64 0..0x3FFF */
+    int8_t pan;                /* +0x68 -10..10 */
+    uint8_t distance;          /* +0x69 0..16 */
+    uint8_t unk_6A[2];
+    int32_t playingSong;       /* +0x6C the song whose bank is loaded, -1 none */
     uint8_t codeStep;          /* +0x70 buttons of the sound test code entered so far (mm_Title_MenuInput) */
-    uint8_t unk_71[0x3F];
+    uint8_t unk_71[3];
+    int32_t testPage;          /* +0x74 the sound test's page: 0 effects, 1 music, 100 and up its opening and closing */
+    int32_t bankLoading;       /* +0x78 a song's bank is loading */
+    uint8_t unk_7C[0x34];
     GuestPtr<ListMenu> loadMenu;        /* +0xB0 layer set 0x28/0x29 */
     GuestPtr<McManager> mc;             /* +0xB4 */
     GuestPtr<TextBox> hintText;         /* +0xB8 */
@@ -482,7 +535,11 @@ struct StatusPanel {
     int32_t detail;            /* +0xB0 the detail view is shown */
     int32_t alert;             /* +0xB4 */
     int32_t markCount;         /* +0xB8 detail model nodes 1.. drawn */
-    int32_t unk_BC;
+    int32_t infoFrames;        /* +0xBC frames of the info line's cycle: the goal for 0x1E0, then the money; 0x3C0 in all */
+};
+/* One save's line in the pause menu's slot list (0x92 bytes). */
+struct PauseSlotText {
+    char text[0x92];
 };
 /* Pause and save menu (0x99C bytes). */
 struct PauseMenu {
@@ -491,15 +548,17 @@ struct PauseMenu {
     GuestPtr<ListMenu> slotMenu;        /* +0x08 */
     GuestPtr<McManager> mc;             /* +0x0C */
     GuestPtr<TextBox> message;          /* +0x10 */
-    uint8_t unk_14[8];
+    int32_t itemsListed;       /* +0x14 items in the slot menu, new-save items included (mm_PauseMenu_StateSlotSelect) */
+    int32_t savesListed;       /* +0x18 saves found on the cards */
     int32_t cardPort;          /* +0x1C the memory card port in use, 0 or 1 (message 5 names it, mm_PauseMenu_ShowCardMessage) */
-    uint8_t unk_20[4];
+    int32_t saveSlot;          /* +0x20 the save slot on the card (mm_McManager_PrepareNewSlot, mm_McManager_FindSlotB) */
     int32_t waitFrames;        /* +0x24 frames in the card message state (mm_PauseMenu_StateMain) */
-    uint8_t unk_28[4];
+    int32_t blink;             /* +0x28 frames, for the blinking while saving */
     ps2f openTime;            /* +0x2C rises by 10 per frame; the window is fully in at 120 */
-    uint8_t unk_30[0x44];      /* +0x30 starts with the save name, default from 0x1B73D0 (Shift-JIS) */
+    char saveHeader[0x44];     /* +0x30 starts with the save name, default from 0x1B73D0 (Shift-JIS; mm_McManager_BuildSaveHeader) */
     int32_t cardMessage;       /* +0x74 the message shown (mm_PauseMenu_ShowCardMessage) */
-    uint8_t unk_78[0x924];
+    PauseSlotText slotTexts[16]; /* +0x78 the listed saves' texts (the first byte cleared by mm_PauseMenu_Reset) */
+    int32_t pendingChoice;     /* +0x998 the save to overwrite, -1 none */
 };
 /* Minimap (0x21DC bytes). */
 struct Minimap {
@@ -568,6 +627,70 @@ struct EventData {
     int32_t unk_14;            /* +0x14 per type: a month (mm_EvUselessMiddleAged_Start) */
     int32_t unk_18;            /* +0x18 per type: a timer, a distance (mm_EvBodyguard_Slot14) */
 };
+/* The Crazy Cult event's record (type 18, mm_EvCrazyCult_*): residents join the cult one by one while its members are
+   found and told in turn. */
+struct EvCultData {
+    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    ActorRef actors[6];        /* +0x0C its leaders (family entries 0xAB, 0xAC) and four members (0xAD on) */
+    int32_t waitMonth;         /* +0x3C the month count to wait for */
+    int32_t waitTime;          /* +0x40 and the time of day, in seconds */
+    int32_t tellFrames;        /* +0x44 frames after an actor is told */
+    int32_t spreadFrames;      /* +0x48 every 30 frames another resident joins (person flag 0x400) */
+    int32_t allJoined;         /* +0x4C every resident has joined */
+    int32_t metBits;           /* +0x50 the members the player has talked to (bit k for the actor in the list at 0x1B37C0);
+                                  at 7 the leader is told next (mm_EvCrazyCult_Slot14) */
+};
+/* One of the children of the adoption event (4 bytes, the table at 0x1B37D0). */
+struct AdoptionChild {
+    uint8_t claim;             /* +0x0 the claim it is placed by; 0 ends the list */
+    uint8_t seen;              /* +0x1 buildings seen with the claim this check (low 7 bits), bit 7 one of them pressing */
+    uint16_t familyType;       /* +0x2 entry + 1 of the family type table its family comes from */
+};
+/* The adoption event's record (mm_EvAdoption_*). */
+struct EvAdoptionData {
+    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    ActorRef actor;            /* +0x0C the adoption's contact (family entry 0xB1, member 0) */
+    int32_t frames;            /* +0x14 a timer, or every tenth frame a check */
+    int32_t toldCount;         /* +0x18 times the contact was told, six at most */
+    int32_t month;             /* +0x1C the month count noted (phases 17 and 20) */
+    int32_t pick;              /* +0x20 the child whose claim the city met */
+    int32_t applicants[10];    /* +0x24 the families applying when it started, 0 ends */
+    AdoptionChild children[6]; /* +0x4C from 0x1B37D0; placed ones are removed */
+};
+/* The shopping event's record (mm_EvShopping_*): a resident is sent round the shops for up to four goods. */
+struct EvShoppingData {
+    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    ActorRef actors[5];        /* +0x0C the shopper, then the seller of each of the goods */
+    int32_t shop;              /* +0x34 the shop's record (0x28 bytes each in the table at 0x1BDAB4; goods at +0x20) */
+    int32_t goodsCount;        /* +0x38 goods on its list */
+    int32_t prices[4];         /* +0x3C */
+    int32_t bill;              /* +0x4C their total, rounded up to the next thousand */
+    int32_t refund;            /* +0x50 the prices of the goods taken back out of the bag (mm_EvShopping_Slot14 mode 9) */
+    int32_t tellFrames;        /* +0x54 frames after the shopper is told */
+    int32_t endFrames;         /* +0x58 the event ends after 240 */
+};
+/* The delivery man event's record (type 3, mm_EvDeliveryMan_*): in rain or snow a delivery comes from a nearby shop. */
+struct EvDeliveryData {
+    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    ActorRef actors[2];        /* +0x0C the customer, then the delivery man (his building and person) */
+    int32_t entry;             /* +0x1C the catalogue entry (0x1BA090, 0x184 bytes each, the building type first) */
+    int32_t month;             /* +0x20 the month of the year, which picks the item (0x20 bytes each) */
+    int32_t tellFrames;        /* +0x24 frames after the customer is told */
+    int32_t walkFrames;        /* +0x28 the delivery man walks for 120 */
+    int32_t waitFrames;        /* +0x2C then waits 60 */
+    int32_t endFrames;         /* +0x30 the event ends after 240 */
+    int32_t state;             /* +0x34 2 at the start, 0 once he has walked, 1 once he has waited (talk value 5) */
+};
+/* The farewell party event's record (mm_EvFarewellParty_*): a family leaves, and the residents who are friends come. */
+struct EvPartyData {
+    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    ActorRef actors[3];        /* +0x0C the leaving family, its best friend at work, the friend the player points at */
+    int32_t tellFrames;        /* +0x24 frames after an actor is told */
+    int32_t guests;            /* +0x28 residents who are friends enough to come (a quarter of the population fills it) */
+    int32_t partyTime;         /* +0x2C the party's time of day in seconds: 13:00 plus an hour per 50 guests, 19:00 at most */
+    int32_t stageStep;         /* +0x30 the step of the party's staging (fade, clock, overlay, music) */
+    int32_t endStep;           /* +0x34 the step of the end's staging */
+};
 /* One of the event manager's five talk slots (0x20 bytes). */
 struct EventSlot {
     uint8_t kind;              /* +0x00 row of the event table, 0 = free (mm_Event_CountActive, mm_WordsFn_EventStage) */
@@ -607,15 +730,15 @@ struct WantsWin {
     WantsIndex index[64];      /* +0x004 */
     uint32_t data[256];        /* +0x104 the wants (Want, four words each) */
     GuestPtr<A3DObject> model;          /* +0x504 window model (from 0x1F3B04) */
-    int32_t unk_508[4];        /* +0x508 */
-    int32_t unk_518;           /* +0x518 */
-    int32_t unk_51C;           /* +0x51C */
-    uint8_t unk_520[4];
+    GuestPtr<TextBox> texts[4];         /* +0x508 made once the window is open (mm_WantsWin_Update) */
+    int32_t textsShown;        /* +0x518 the texts are drawn (mm_WantsWin_Draw) */
+    int32_t state;             /* +0x51C 0 closed, 1 opening, 2 open, 3 turning a page, 4 closing */
+    int32_t turnBack;          /* +0x520 the page turns back */
     GuestPtr<Vec4> matrix;              /* +0x524 the model's matrix */
-    int32_t unk_528;           /* +0x528 */
-    int32_t unk_52C;           /* +0x52C */
+    ps2f animTime;            /* +0x528 the model's animation: 0 to 25 opening, 0 to 120 a page turn */
+    int32_t page;              /* +0x52C the pair of pages shown */
     uint8_t unk_530[8];
-    int32_t unk_538;           /* +0x538 10 at construction */
+    int32_t pageCount;         /* +0x538 10 at construction */
     uint8_t unk_53C[8];
 };
 /* Laptop menu (0x3E0 bytes). */
@@ -625,12 +748,13 @@ struct Laptop {
     Vec4 radius;               /* +0x10 an entry's offset from the centre before its turn (mm_Laptop_Animate) */
     Vec4 centre;               /* +0x20 the carousel's centre */
     ps2f turn;                /* +0x30 the carousel's turn, radians */
-    uint8_t unk_34[4];
+    ps2f turnTarget;          /* +0x34 the turn of the selected entry */
     ps2f scale;               /* +0x38 the entries' scale */
     int32_t state;             /* +0x3C 2: the selected entry is lifted */
-    uint8_t unk_40[4];
+    int32_t turnDir;           /* +0x40 0 turns one way, 1 the other (mm_Laptop_Update) */
     GuestPtr<TextBox> text;             /* +0x44 the selected entry's text (mm_Laptop_SetItemText) */
-    uint8_t unk_48[0x388];
+    int32_t cancelled;         /* +0x48 closed with Triangle; with Cross the entry runs */
+    uint8_t unk_4C[0x384];
     int32_t selected;          /* +0x3D0 the selected entry */
     uint8_t unk_3D4[0xC];
 };
@@ -668,31 +792,45 @@ struct ApplicantEntry {
     uint16_t tile;             /* +0x06 where the player put its home (mm_Player_PlaceForApplicant) */
     uint8_t unk_08[2];
     uint16_t type;             /* +0x0A building type the family wants (index into the table at gp 0x1BDBF8) */
-    uint8_t unk_0C[4];
+    int32_t month;             /* +0x0C the month count when it applied (mm_Applicants_BuildInfo) */
     int32_t timer;             /* +0x10 set to 6 when its placing starts */
 };
 /* Applicants list (0x350 bytes). */
 struct Applicants {
     ApplicantEntry entries[32]; /* +0x000 */
     int32_t count;             /* +0x280 */
-    int32_t unk_284;           /* +0x284 */
-    uint8_t unk_288[0xC];
+    int32_t shownCount;        /* +0x284 entries drawn the last time (mm_Applicants_Draw) */
+    uint8_t unk_288[4];        /* +0x288 (the stage object base at +0x289 is handed to mm_StageObj_ctor) */
+    GuestPtr<A3DObject> frameModel;     /* +0x28C 0x1F3B10 */
+    GuestPtr<A3DObject> cardModel;      /* +0x290 0x1F3B68 */
     GuestPtr<TextBox> cardText;         /* +0x294 */
-    uint8_t unk_298[8];
-    GuestPtr<void> cardModelA;          /* +0x2A0 positioned by mm_Applicants_PlaceAt (+0x30) */
-    GuestPtr<void> cardModelB;          /* +0x2A4 */
-    uint8_t unk_2A8[0xC];
-    ps2f unk_2B4;             /* +0x2B4 */
-    uint8_t unk_2B8[4];
-    int32_t unk_2BC;           /* +0x2BC */
-    uint8_t unk_2C0[9];
+    uint8_t unk_298[4];
+    int32_t cardShown;         /* +0x29C mm_Applicants_SetMode's mode; 1 once a card is selected */
+    GuestPtr<Vec4> frameMatrix;         /* +0x2A0 the frame model's matrix, placed by mm_Applicants_PlaceAt */
+    GuestPtr<Vec4> cardMatrix;          /* +0x2A4 the card model's */
+    GuestPtr<Vec4> cardNodeA;           /* +0x2A8 a node matrix in the card model's data (+0x70): the card that slides in */
+    GuestPtr<Vec4> cardNodeB;           /* +0x2AC another (+0x1F0) */
+    ps2f rollPhase;           /* +0x2B0 the list's roll, 0 to 40 by 2 a frame (mm_Applicants_Draw) */
+    ps2f rollDir;             /* +0x2B4 +1 or -1 while the list rolls, 0 when still */
+    int32_t sliding;           /* +0x2B8 the card is sliding in (mm_Applicants_Layout) */
+    int32_t relight;           /* +0x2BC the card's light is set again on the next draw */
+    int32_t slideFrame;        /* +0x2C0 */
+    int32_t savedTop;          /* +0x2C4 the top entry before the selection */
+    uint8_t stateColour;       /* +0x2C8 the selected entry's state colour (table 0x1BD998), 0xFF at construction */
     uint8_t enabled;           /* +0x2C9 cleared while a menu or a talk is open */
     uint8_t unk_2CA[2];
     int32_t cursor;            /* +0x2CC (provisional) */
     int32_t top;               /* +0x2D0 (provisional) */
     uint8_t unk_2D4[8];
     uint16_t claims[32];       /* +0x2DC claim section C of each entry's building type */
-    uint8_t unk_31C[0x34];
+    int32_t mode;              /* +0x31C 4 an applicant is picked, 6 its home is being placed (mm_Applicants_StartPlacing) */
+    GuestPtr<void> vtable;              /* +0x320 0x1BCF70 (0x1BCF60 for the base) */
+    int32_t assignIndex;       /* +0x324 the next entry to try to house (mm_Applicants_Update) */
+    int32_t assignTimer;       /* +0x328 frames until the next try */
+    int32_t unk_32C;
+    Vec4 cardPoint;            /* +0x330 where the cards are placed, (0, 2.3, 0, 1) at construction */
+    ps2f step;                /* +0x340 */
+    uint8_t unk_344[0xC];
 };
 /* Markers model (0x130 bytes). */
 struct Markers {
@@ -768,7 +906,7 @@ struct CharClass {
     uint16_t unk_10;           /* +0x10 record byte 11 */
     uint16_t unk_12;           /* +0x12 record byte 12 */
     uint16_t unk_14;           /* +0x14 record byte 13 */
-    uint8_t unk_16;            /* +0x16 record byte 2 */
+    uint8_t voice;             /* +0x16 record byte 2: the message sound of its talks (mm_TalkConv_Start) */
     uint8_t unk_17;
     uint16_t flags;            /* +0x18 record halfword 4; 1: other people keep clear of this one
                                   (mm_Char_CheckNeighbourTile, mm_Map_FindWorkerOnTile) */
@@ -1553,7 +1691,7 @@ struct CityScene {
     GuestPtr<McManager> loadCard;       /* +0x0C the memory card manager while a saved game loads (mm_CityScene_LoadGame) */
     int32_t modeStack[5];      /* +0x10 */
     int32_t modeDepth;         /* +0x24 */
-    int32_t unk_28;
+    int32_t talkOverlay;       /* +0x28 a near talk view has the camera; the city draws its overlay (mm_DmaList_QueueOtherOverlay) */
     int32_t hudVisible[4];     /* +0x2C */
     GuestPtr<TalkSession> talk;         /* +0x3C */
     GuestPtr<LightSet> lights;          /* +0x40 */
@@ -1606,18 +1744,53 @@ struct TalkCard;
 struct TalkMoney;
 struct TalkConv;
 
-/* Scene B: stage introduction and briefing (0x104 bytes), a widget. */
-struct SceneB { Widget base; uint8_t data[0xF8]; };
+/* Scene B: the stage transition (0x104 bytes, mm_SceneB_*): title cards, approval rate, the boss's briefing, the mission
+   movie and the credits text, one step of the action table 0x1B07C0 at a time. A stage object with a widget at +4. */
+struct SceneB {
+    uint32_t unk_00;
+    Widget widget;             /* +0x04 vtable 0x1BCF18 */
+    GuestPtr<Camera> camera;            /* +0x10 */
+    GuestPtr<LightSet> lights;          /* +0x14 */
+    GuestPtr<TextBox> caption;          /* +0x18 the title card's or the credits' text */
+    uint32_t unk_1C;
+    GuestPtr<TexSprite> picture;        /* +0x20 the ending roll's picture (END_ROLL.TEX) */
+    int32_t stage;             /* +0x24 the stage number, one more after loading the next stage */
+    uint8_t step;              /* +0x28 the step in the action table */
+    uint8_t fadeMode;          /* +0x29 0 none, 1 fading out, 2 fading in */
+    uint8_t unk_2A[2];
+    int32_t fadeFrame;         /* +0x2C frames of the fade */
+    int32_t unk_30;
+    int32_t phase;             /* +0x34 the sub-step within the step */
+    int32_t fade;              /* +0x38 the screen's fade, 0 to 0x80 */
+    int32_t scroll;            /* +0x3C the credits text's scroll (mm_SceneB_ShowTelop) */
+    ps2f animTime;            /* +0x40 the boss's animation frame */
+    int32_t animation;         /* +0x44 the boss's animation */
+    int32_t unk_48;            /* +0x48 -1 at the briefing's start, 2 after its text */
+    int32_t briefingIndex;     /* +0x4C the message within the phase (mm_SceneB_BuildBriefingText) */
+    int32_t briefingPhase;     /* +0x50 0 the stage's special messages, 1 its general text, 2 the goal */
+    GuestPtr<A3DObject> office;         /* +0x54 the office model (0x1F3B2C) the briefing is drawn in */
+    GuestPtr<MsgWin> window;            /* +0x58 the briefing's message window */
+    char text[0xA0];           /* +0x5C the briefing's text being shown */
+    GuestPtr<A3DObject> boss;           /* +0xFC the boss (0x1F3C68) */
+    GuestPtr<void> vtable;              /* +0x100 0x1BCF10 */
+};
 /* Message window (0x2CC bytes), a widget. */
 struct MsgWin {
     Widget base;
     GuestPtr<A3DObject> model;          /* +0x0C window model */
     GuestPtr<TextBox> text;             /* +0x10 */
     uint32_t arrowPacket;      /* +0x14 blinking "more" arrow */
-    uint8_t unk_018[0x2A8];
+    char source[0x200];        /* +0x018 the message being typed */
+    char lines[0x94];          /* +0x218 four lines of 36 columns, as shown */
+    GuestPtr<char> readAt;              /* +0x2AC the next character of the message (mm_MsgWin_TypeNext) */
+    GuestPtr<char> wordEnd;             /* +0x2B0 the end of the word being typed */
+    GuestPtr<char> writeAt;             /* +0x2B4 where the next character goes in the lines */
+    int32_t exactFit;          /* +0x2B8 the last word exactly filled its line */
+    int32_t bracketed;         /* +0x2BC inside brackets (the glyph pairs at 0x1B5A70), typed without the sound */
     int32_t typeDelay;         /* +0x2C0 frames before the next character; Cross clears it (mm_MsgWin_Update) */
     int32_t node;              /* +0x2C4 model node drawn as the window */
-    uint8_t unk_2C8[4];
+    uint8_t sound;             /* +0x2C8 the message sound (mm_MsgWin_SetMessage) */
+    uint8_t unk_2C9[3];
 };
 /* Menu window (0x20 bytes), a widget. */
 struct MenuWin {
@@ -1636,7 +1809,7 @@ struct TalkCard {
     int32_t family;            /* +0x10 */
     int32_t member;            /* +0x14 */
     int32_t slot;              /* +0x18 place on the screen: x from the table at 0x1B1B28 */
-    GuestPtr<void> model;               /* +0x1C the talk building model (0x1F3B2C) */
+    GuestPtr<A3DObject> model;          /* +0x1C the talk building model (0x1F3B2C) */
     GuestPtr<TextBox> lowerText;        /* +0x20 at y 0x7D60 */
     GuestPtr<TextBox> upperText;        /* +0x24 at y 0x7C00 */
     GuestPtr<CityScene> city;           /* +0x28 */
@@ -1937,6 +2110,36 @@ static_assert(offsetof(McManager, request) == 0x14, "McManager.request");
 static_assert(offsetof(McManager, file) == 0x20, "McManager.file");
 static_assert(offsetof(McManager, fd) == 0x24, "McManager.fd");
 static_assert(sizeof(NameEntry) == 0x124, "NameEntry size");
+static_assert(offsetof(NameEntry, model) == 0x000, "NameEntry.model");
+static_assert(offsetof(NameEntry, hintText) == 0x004, "NameEntry.hintText");
+static_assert(offsetof(NameEntry, keysText) == 0x008, "NameEntry.keysText");
+static_assert(offsetof(NameEntry, nameText) == 0x00C, "NameEntry.nameText");
+static_assert(offsetof(NameEntry, lineText) == 0x010, "NameEntry.lineText");
+static_assert(offsetof(NameEntry, boardMatrix) == 0x014, "NameEntry.boardMatrix");
+static_assert(offsetof(NameEntry, markerMatrix) == 0x018, "NameEntry.markerMatrix");
+static_assert(offsetof(NameEntry, name) == 0x01C, "NameEntry.name");
+static_assert(offsetof(NameEntry, state) == 0x040, "NameEntry.state");
+static_assert(offsetof(NameEntry, keySet) == 0x044, "NameEntry.keySet");
+static_assert(offsetof(NameEntry, column) == 0x048, "NameEntry.column");
+static_assert(offsetof(NameEntry, row) == 0x04C, "NameEntry.row");
+static_assert(offsetof(NameEntry, firstRow) == 0x050, "NameEntry.firstRow");
+static_assert(offsetof(NameEntry, rows) == 0x054, "NameEntry.rows");
+static_assert(offsetof(NameEntry, keyCount) == 0x058, "NameEntry.keyCount");
+static_assert(offsetof(NameEntry, length) == 0x05C, "NameEntry.length");
+static_assert(offsetof(NameEntry, moreAbove) == 0x060, "NameEntry.moreAbove");
+static_assert(offsetof(NameEntry, moreBelow) == 0x064, "NameEntry.moreBelow");
+static_assert(offsetof(NameEntry, maxLength) == 0x068, "NameEntry.maxLength");
+static_assert(offsetof(NameEntry, blink) == 0x06C, "NameEntry.blink");
+static_assert(offsetof(NameEntry, slideFrames) == 0x070, "NameEntry.slideFrames");
+static_assert(offsetof(NameEntry, noSlide) == 0x074, "NameEntry.noSlide");
+static_assert(offsetof(NameEntry, restHeight) == 0x078, "NameEntry.restHeight");
+static_assert(offsetof(NameEntry, markerX) == 0x07C, "NameEntry.markerX");
+static_assert(offsetof(NameEntry, markerY) == 0x080, "NameEntry.markerY");
+static_assert(offsetof(NameEntry, hint) == 0x084, "NameEntry.hint");
+static_assert(offsetof(NameEntry, hintScroll) == 0x104, "NameEntry.hintScroll");
+static_assert(offsetof(NameEntry, hintStep) == 0x108, "NameEntry.hintStep");
+static_assert(offsetof(NameEntry, boardPlace) == 0x114, "NameEntry.boardPlace");
+static_assert(offsetof(NameEntry, vtable) == 0x120, "NameEntry.vtable");
 static_assert(sizeof(SceneA) == 0x104, "SceneA size");
 static_assert(offsetof(SceneA, logoSprite) == 0x08, "SceneA.logoSprite");
 static_assert(offsetof(SceneA, titleSprite) == 0x0C, "SceneA.titleSprite");
@@ -1952,7 +2155,18 @@ static_assert(offsetof(SceneA, choiceCount) == 0x44, "SceneA.choiceCount");
 static_assert(offsetof(SceneA, pulseFrame) == 0x48, "SceneA.pulseFrame");
 static_assert(offsetof(SceneA, logoSound) == 0x50, "SceneA.logoSound");
 static_assert(offsetof(SceneA, showHint) == 0x58, "SceneA.showHint");
+static_assert(offsetof(SceneA, song) == 0x5C, "SceneA.song");
+static_assert(offsetof(SceneA, effect) == 0x5D, "SceneA.effect");
+static_assert(offsetof(SceneA, pitch) == 0x5E, "SceneA.pitch");
+static_assert(offsetof(SceneA, note) == 0x60, "SceneA.note");
+static_assert(offsetof(SceneA, tempo) == 0x62, "SceneA.tempo");
+static_assert(offsetof(SceneA, volume) == 0x64, "SceneA.volume");
+static_assert(offsetof(SceneA, pan) == 0x68, "SceneA.pan");
+static_assert(offsetof(SceneA, distance) == 0x69, "SceneA.distance");
+static_assert(offsetof(SceneA, playingSong) == 0x6C, "SceneA.playingSong");
 static_assert(offsetof(SceneA, codeStep) == 0x70, "SceneA.codeStep");
+static_assert(offsetof(SceneA, testPage) == 0x74, "SceneA.testPage");
+static_assert(offsetof(SceneA, bankLoading) == 0x78, "SceneA.bankLoading");
 static_assert(offsetof(SceneA, loadMenu) == 0xB0, "SceneA.loadMenu");
 static_assert(offsetof(SceneA, mc) == 0xB4, "SceneA.mc");
 static_assert(offsetof(SceneA, hintText) == 0xB8, "SceneA.hintText");
@@ -1996,17 +2210,25 @@ static_assert(offsetof(StatusPanel, text) == 0xA0, "StatusPanel.text");
 static_assert(offsetof(StatusPanel, detail) == 0xB0, "StatusPanel.detail");
 static_assert(offsetof(StatusPanel, alert) == 0xB4, "StatusPanel.alert");
 static_assert(offsetof(StatusPanel, markCount) == 0xB8, "StatusPanel.markCount");
+static_assert(offsetof(StatusPanel, infoFrames) == 0xBC, "StatusPanel.infoFrames");
+static_assert(sizeof(PauseSlotText) == 0x92, "PauseSlotText size");
 static_assert(sizeof(PauseMenu) == 0x99C, "PauseMenu size");
 static_assert(offsetof(PauseMenu, state) == 0x00, "PauseMenu.state");
 static_assert(offsetof(PauseMenu, mainMenu) == 0x04, "PauseMenu.mainMenu");
 static_assert(offsetof(PauseMenu, slotMenu) == 0x08, "PauseMenu.slotMenu");
 static_assert(offsetof(PauseMenu, mc) == 0x0C, "PauseMenu.mc");
 static_assert(offsetof(PauseMenu, message) == 0x10, "PauseMenu.message");
+static_assert(offsetof(PauseMenu, itemsListed) == 0x14, "PauseMenu.itemsListed");
+static_assert(offsetof(PauseMenu, savesListed) == 0x18, "PauseMenu.savesListed");
 static_assert(offsetof(PauseMenu, cardPort) == 0x1C, "PauseMenu.cardPort");
+static_assert(offsetof(PauseMenu, saveSlot) == 0x20, "PauseMenu.saveSlot");
 static_assert(offsetof(PauseMenu, waitFrames) == 0x24, "PauseMenu.waitFrames");
+static_assert(offsetof(PauseMenu, blink) == 0x28, "PauseMenu.blink");
 static_assert(offsetof(PauseMenu, openTime) == 0x2C, "PauseMenu.openTime");
-static_assert(offsetof(PauseMenu, unk_30) == 0x30, "PauseMenu.unk_30");
+static_assert(offsetof(PauseMenu, saveHeader) == 0x30, "PauseMenu.saveHeader");
 static_assert(offsetof(PauseMenu, cardMessage) == 0x74, "PauseMenu.cardMessage");
+static_assert(offsetof(PauseMenu, slotTexts) == 0x78, "PauseMenu.slotTexts");
+static_assert(offsetof(PauseMenu, pendingChoice) == 0x998, "PauseMenu.pendingChoice");
 static_assert(sizeof(Minimap) == 0x21DC, "Minimap size");
 static_assert(offsetof(Minimap, cells) == 0x0000, "Minimap.cells");
 static_assert(offsetof(Minimap, packet) == 0x2000, "Minimap.packet");
@@ -2048,6 +2270,50 @@ static_assert(offsetof(EventData, var) == 0x0A, "EventData.var");
 static_assert(offsetof(EventData, actor) == 0x0C, "EventData.actor");
 static_assert(offsetof(EventData, unk_14) == 0x14, "EventData.unk_14");
 static_assert(offsetof(EventData, unk_18) == 0x18, "EventData.unk_18");
+static_assert(offsetof(EvCultData, unk_00) == 0x00, "EvCultData.unk_00");
+static_assert(offsetof(EvCultData, actors) == 0x0C, "EvCultData.actors");
+static_assert(offsetof(EvCultData, waitMonth) == 0x3C, "EvCultData.waitMonth");
+static_assert(offsetof(EvCultData, waitTime) == 0x40, "EvCultData.waitTime");
+static_assert(offsetof(EvCultData, tellFrames) == 0x44, "EvCultData.tellFrames");
+static_assert(offsetof(EvCultData, spreadFrames) == 0x48, "EvCultData.spreadFrames");
+static_assert(offsetof(EvCultData, allJoined) == 0x4C, "EvCultData.allJoined");
+static_assert(offsetof(EvCultData, metBits) == 0x50, "EvCultData.metBits");
+static_assert(offsetof(AdoptionChild, claim) == 0x0, "AdoptionChild.claim");
+static_assert(offsetof(AdoptionChild, seen) == 0x1, "AdoptionChild.seen");
+static_assert(offsetof(AdoptionChild, familyType) == 0x2, "AdoptionChild.familyType");
+static_assert(offsetof(EvAdoptionData, unk_00) == 0x00, "EvAdoptionData.unk_00");
+static_assert(offsetof(EvAdoptionData, actor) == 0x0C, "EvAdoptionData.actor");
+static_assert(offsetof(EvAdoptionData, frames) == 0x14, "EvAdoptionData.frames");
+static_assert(offsetof(EvAdoptionData, toldCount) == 0x18, "EvAdoptionData.toldCount");
+static_assert(offsetof(EvAdoptionData, month) == 0x1C, "EvAdoptionData.month");
+static_assert(offsetof(EvAdoptionData, pick) == 0x20, "EvAdoptionData.pick");
+static_assert(offsetof(EvAdoptionData, applicants) == 0x24, "EvAdoptionData.applicants");
+static_assert(offsetof(EvAdoptionData, children) == 0x4C, "EvAdoptionData.children");
+static_assert(offsetof(EvShoppingData, unk_00) == 0x00, "EvShoppingData.unk_00");
+static_assert(offsetof(EvShoppingData, actors) == 0x0C, "EvShoppingData.actors");
+static_assert(offsetof(EvShoppingData, shop) == 0x34, "EvShoppingData.shop");
+static_assert(offsetof(EvShoppingData, goodsCount) == 0x38, "EvShoppingData.goodsCount");
+static_assert(offsetof(EvShoppingData, prices) == 0x3C, "EvShoppingData.prices");
+static_assert(offsetof(EvShoppingData, bill) == 0x4C, "EvShoppingData.bill");
+static_assert(offsetof(EvShoppingData, refund) == 0x50, "EvShoppingData.refund");
+static_assert(offsetof(EvShoppingData, tellFrames) == 0x54, "EvShoppingData.tellFrames");
+static_assert(offsetof(EvShoppingData, endFrames) == 0x58, "EvShoppingData.endFrames");
+static_assert(offsetof(EvDeliveryData, unk_00) == 0x00, "EvDeliveryData.unk_00");
+static_assert(offsetof(EvDeliveryData, actors) == 0x0C, "EvDeliveryData.actors");
+static_assert(offsetof(EvDeliveryData, entry) == 0x1C, "EvDeliveryData.entry");
+static_assert(offsetof(EvDeliveryData, month) == 0x20, "EvDeliveryData.month");
+static_assert(offsetof(EvDeliveryData, tellFrames) == 0x24, "EvDeliveryData.tellFrames");
+static_assert(offsetof(EvDeliveryData, walkFrames) == 0x28, "EvDeliveryData.walkFrames");
+static_assert(offsetof(EvDeliveryData, waitFrames) == 0x2C, "EvDeliveryData.waitFrames");
+static_assert(offsetof(EvDeliveryData, endFrames) == 0x30, "EvDeliveryData.endFrames");
+static_assert(offsetof(EvDeliveryData, state) == 0x34, "EvDeliveryData.state");
+static_assert(offsetof(EvPartyData, unk_00) == 0x00, "EvPartyData.unk_00");
+static_assert(offsetof(EvPartyData, actors) == 0x0C, "EvPartyData.actors");
+static_assert(offsetof(EvPartyData, tellFrames) == 0x24, "EvPartyData.tellFrames");
+static_assert(offsetof(EvPartyData, guests) == 0x28, "EvPartyData.guests");
+static_assert(offsetof(EvPartyData, partyTime) == 0x2C, "EvPartyData.partyTime");
+static_assert(offsetof(EvPartyData, stageStep) == 0x30, "EvPartyData.stageStep");
+static_assert(offsetof(EvPartyData, endStep) == 0x34, "EvPartyData.endStep");
 static_assert(sizeof(EventSlot) == 0x20, "EventSlot size");
 static_assert(offsetof(EventSlot, kind) == 0x00, "EventSlot.kind");
 static_assert(offsetof(EventSlot, stage) == 0x01, "EventSlot.stage");
@@ -2073,21 +2339,25 @@ static_assert(offsetof(WantsWin, wordsUsed) == 0x02, "WantsWin.wordsUsed");
 static_assert(offsetof(WantsWin, index) == 0x004, "WantsWin.index");
 static_assert(offsetof(WantsWin, data) == 0x104, "WantsWin.data");
 static_assert(offsetof(WantsWin, model) == 0x504, "WantsWin.model");
-static_assert(offsetof(WantsWin, unk_508) == 0x508, "WantsWin.unk_508");
-static_assert(offsetof(WantsWin, unk_518) == 0x518, "WantsWin.unk_518");
-static_assert(offsetof(WantsWin, unk_51C) == 0x51C, "WantsWin.unk_51C");
+static_assert(offsetof(WantsWin, texts) == 0x508, "WantsWin.texts");
+static_assert(offsetof(WantsWin, textsShown) == 0x518, "WantsWin.textsShown");
+static_assert(offsetof(WantsWin, state) == 0x51C, "WantsWin.state");
+static_assert(offsetof(WantsWin, turnBack) == 0x520, "WantsWin.turnBack");
 static_assert(offsetof(WantsWin, matrix) == 0x524, "WantsWin.matrix");
-static_assert(offsetof(WantsWin, unk_528) == 0x528, "WantsWin.unk_528");
-static_assert(offsetof(WantsWin, unk_52C) == 0x52C, "WantsWin.unk_52C");
-static_assert(offsetof(WantsWin, unk_538) == 0x538, "WantsWin.unk_538");
+static_assert(offsetof(WantsWin, animTime) == 0x528, "WantsWin.animTime");
+static_assert(offsetof(WantsWin, page) == 0x52C, "WantsWin.page");
+static_assert(offsetof(WantsWin, pageCount) == 0x538, "WantsWin.pageCount");
 static_assert(sizeof(Laptop) == 0x3E0, "Laptop size");
 static_assert(offsetof(Laptop, model) == 0x00, "Laptop.model");
 static_assert(offsetof(Laptop, radius) == 0x10, "Laptop.radius");
 static_assert(offsetof(Laptop, centre) == 0x20, "Laptop.centre");
 static_assert(offsetof(Laptop, turn) == 0x30, "Laptop.turn");
+static_assert(offsetof(Laptop, turnTarget) == 0x34, "Laptop.turnTarget");
 static_assert(offsetof(Laptop, scale) == 0x38, "Laptop.scale");
 static_assert(offsetof(Laptop, state) == 0x3C, "Laptop.state");
+static_assert(offsetof(Laptop, turnDir) == 0x40, "Laptop.turnDir");
 static_assert(offsetof(Laptop, text) == 0x44, "Laptop.text");
+static_assert(offsetof(Laptop, cancelled) == 0x48, "Laptop.cancelled");
 static_assert(offsetof(Laptop, selected) == 0x3D0, "Laptop.selected");
 static_assert(sizeof(Player) == 0x90, "Player size");
 static_assert(offsetof(Player, mode) == 0x00, "Player.mode");
@@ -2115,20 +2385,38 @@ static_assert(offsetof(ApplicantEntry, state) == 0x02, "ApplicantEntry.state");
 static_assert(offsetof(ApplicantEntry, family) == 0x04, "ApplicantEntry.family");
 static_assert(offsetof(ApplicantEntry, tile) == 0x06, "ApplicantEntry.tile");
 static_assert(offsetof(ApplicantEntry, type) == 0x0A, "ApplicantEntry.type");
+static_assert(offsetof(ApplicantEntry, month) == 0x0C, "ApplicantEntry.month");
 static_assert(offsetof(ApplicantEntry, timer) == 0x10, "ApplicantEntry.timer");
 static_assert(sizeof(Applicants) == 0x350, "Applicants size");
 static_assert(offsetof(Applicants, entries) == 0x000, "Applicants.entries");
 static_assert(offsetof(Applicants, count) == 0x280, "Applicants.count");
-static_assert(offsetof(Applicants, unk_284) == 0x284, "Applicants.unk_284");
+static_assert(offsetof(Applicants, shownCount) == 0x284, "Applicants.shownCount");
+static_assert(offsetof(Applicants, unk_288) == 0x288, "Applicants.unk_288");
+static_assert(offsetof(Applicants, frameModel) == 0x28C, "Applicants.frameModel");
+static_assert(offsetof(Applicants, cardModel) == 0x290, "Applicants.cardModel");
 static_assert(offsetof(Applicants, cardText) == 0x294, "Applicants.cardText");
-static_assert(offsetof(Applicants, cardModelA) == 0x2A0, "Applicants.cardModelA");
-static_assert(offsetof(Applicants, cardModelB) == 0x2A4, "Applicants.cardModelB");
-static_assert(offsetof(Applicants, unk_2B4) == 0x2B4, "Applicants.unk_2B4");
-static_assert(offsetof(Applicants, unk_2BC) == 0x2BC, "Applicants.unk_2BC");
+static_assert(offsetof(Applicants, cardShown) == 0x29C, "Applicants.cardShown");
+static_assert(offsetof(Applicants, frameMatrix) == 0x2A0, "Applicants.frameMatrix");
+static_assert(offsetof(Applicants, cardMatrix) == 0x2A4, "Applicants.cardMatrix");
+static_assert(offsetof(Applicants, cardNodeA) == 0x2A8, "Applicants.cardNodeA");
+static_assert(offsetof(Applicants, cardNodeB) == 0x2AC, "Applicants.cardNodeB");
+static_assert(offsetof(Applicants, rollPhase) == 0x2B0, "Applicants.rollPhase");
+static_assert(offsetof(Applicants, rollDir) == 0x2B4, "Applicants.rollDir");
+static_assert(offsetof(Applicants, sliding) == 0x2B8, "Applicants.sliding");
+static_assert(offsetof(Applicants, relight) == 0x2BC, "Applicants.relight");
+static_assert(offsetof(Applicants, slideFrame) == 0x2C0, "Applicants.slideFrame");
+static_assert(offsetof(Applicants, savedTop) == 0x2C4, "Applicants.savedTop");
+static_assert(offsetof(Applicants, stateColour) == 0x2C8, "Applicants.stateColour");
 static_assert(offsetof(Applicants, enabled) == 0x2C9, "Applicants.enabled");
 static_assert(offsetof(Applicants, cursor) == 0x2CC, "Applicants.cursor");
 static_assert(offsetof(Applicants, top) == 0x2D0, "Applicants.top");
 static_assert(offsetof(Applicants, claims) == 0x2DC, "Applicants.claims");
+static_assert(offsetof(Applicants, mode) == 0x31C, "Applicants.mode");
+static_assert(offsetof(Applicants, vtable) == 0x320, "Applicants.vtable");
+static_assert(offsetof(Applicants, assignIndex) == 0x324, "Applicants.assignIndex");
+static_assert(offsetof(Applicants, assignTimer) == 0x328, "Applicants.assignTimer");
+static_assert(offsetof(Applicants, cardPoint) == 0x330, "Applicants.cardPoint");
+static_assert(offsetof(Applicants, step) == 0x340, "Applicants.step");
 static_assert(sizeof(Markers) == 0x130, "Markers size");
 static_assert(offsetof(Markers, model) == 0x000, "Markers.model");
 static_assert(offsetof(Markers, markerModel) == 0x004, "Markers.markerModel");
@@ -2175,7 +2463,7 @@ static_assert(offsetof(CharClass, parts) == 0x00, "CharClass.parts");
 static_assert(offsetof(CharClass, unk_10) == 0x10, "CharClass.unk_10");
 static_assert(offsetof(CharClass, unk_12) == 0x12, "CharClass.unk_12");
 static_assert(offsetof(CharClass, unk_14) == 0x14, "CharClass.unk_14");
-static_assert(offsetof(CharClass, unk_16) == 0x16, "CharClass.unk_16");
+static_assert(offsetof(CharClass, voice) == 0x16, "CharClass.voice");
 static_assert(offsetof(CharClass, flags) == 0x18, "CharClass.flags");
 static_assert(offsetof(CharClass, unk_1C) == 0x1C, "CharClass.unk_1C");
 static_assert(offsetof(CharClass, vtable) == 0x20, "CharClass.vtable");
@@ -2646,6 +2934,7 @@ static_assert(offsetof(CityScene, pauseMenu) == 0x08, "CityScene.pauseMenu");
 static_assert(offsetof(CityScene, loadCard) == 0x0C, "CityScene.loadCard");
 static_assert(offsetof(CityScene, modeStack) == 0x10, "CityScene.modeStack");
 static_assert(offsetof(CityScene, modeDepth) == 0x24, "CityScene.modeDepth");
+static_assert(offsetof(CityScene, talkOverlay) == 0x28, "CityScene.talkOverlay");
 static_assert(offsetof(CityScene, hudVisible) == 0x2C, "CityScene.hudVisible");
 static_assert(offsetof(CityScene, talk) == 0x3C, "CityScene.talk");
 static_assert(offsetof(CityScene, lights) == 0x40, "CityScene.lights");
@@ -2684,13 +2973,42 @@ static_assert(offsetof(CityScene, trafficTimer) == 0xC4, "CityScene.trafficTimer
 static_assert(offsetof(CityScene, fadeLevel) == 0xC8, "CityScene.fadeLevel");
 static_assert(offsetof(CityScene, fade) == 0xCC, "CityScene.fade");
 static_assert(offsetof(CityScene, fadeSpeed) == 0xD0, "CityScene.fadeSpeed");
-static_assert(sizeof(SceneB) == 0x104, "SceneB size");
+static_assert(offsetof(SceneB, widget) == 0x04, "SceneB.widget");
+static_assert(offsetof(SceneB, camera) == 0x10, "SceneB.camera");
+static_assert(offsetof(SceneB, lights) == 0x14, "SceneB.lights");
+static_assert(offsetof(SceneB, caption) == 0x18, "SceneB.caption");
+static_assert(offsetof(SceneB, picture) == 0x20, "SceneB.picture");
+static_assert(offsetof(SceneB, stage) == 0x24, "SceneB.stage");
+static_assert(offsetof(SceneB, step) == 0x28, "SceneB.step");
+static_assert(offsetof(SceneB, fadeMode) == 0x29, "SceneB.fadeMode");
+static_assert(offsetof(SceneB, fadeFrame) == 0x2C, "SceneB.fadeFrame");
+static_assert(offsetof(SceneB, phase) == 0x34, "SceneB.phase");
+static_assert(offsetof(SceneB, fade) == 0x38, "SceneB.fade");
+static_assert(offsetof(SceneB, scroll) == 0x3C, "SceneB.scroll");
+static_assert(offsetof(SceneB, animTime) == 0x40, "SceneB.animTime");
+static_assert(offsetof(SceneB, animation) == 0x44, "SceneB.animation");
+static_assert(offsetof(SceneB, unk_48) == 0x48, "SceneB.unk_48");
+static_assert(offsetof(SceneB, briefingIndex) == 0x4C, "SceneB.briefingIndex");
+static_assert(offsetof(SceneB, briefingPhase) == 0x50, "SceneB.briefingPhase");
+static_assert(offsetof(SceneB, office) == 0x54, "SceneB.office");
+static_assert(offsetof(SceneB, window) == 0x58, "SceneB.window");
+static_assert(offsetof(SceneB, text) == 0x5C, "SceneB.text");
+static_assert(offsetof(SceneB, boss) == 0xFC, "SceneB.boss");
+static_assert(offsetof(SceneB, vtable) == 0x100, "SceneB.vtable");
 static_assert(sizeof(MsgWin) == 0x2CC, "MsgWin size");
 static_assert(offsetof(MsgWin, model) == 0x0C, "MsgWin.model");
 static_assert(offsetof(MsgWin, text) == 0x10, "MsgWin.text");
 static_assert(offsetof(MsgWin, arrowPacket) == 0x14, "MsgWin.arrowPacket");
+static_assert(offsetof(MsgWin, source) == 0x018, "MsgWin.source");
+static_assert(offsetof(MsgWin, lines) == 0x218, "MsgWin.lines");
+static_assert(offsetof(MsgWin, readAt) == 0x2AC, "MsgWin.readAt");
+static_assert(offsetof(MsgWin, wordEnd) == 0x2B0, "MsgWin.wordEnd");
+static_assert(offsetof(MsgWin, writeAt) == 0x2B4, "MsgWin.writeAt");
+static_assert(offsetof(MsgWin, exactFit) == 0x2B8, "MsgWin.exactFit");
+static_assert(offsetof(MsgWin, bracketed) == 0x2BC, "MsgWin.bracketed");
 static_assert(offsetof(MsgWin, typeDelay) == 0x2C0, "MsgWin.typeDelay");
 static_assert(offsetof(MsgWin, node) == 0x2C4, "MsgWin.node");
+static_assert(offsetof(MsgWin, sound) == 0x2C8, "MsgWin.sound");
 static_assert(sizeof(MenuWin) == 0x20, "MenuWin size");
 static_assert(offsetof(MenuWin, model) == 0x0C, "MenuWin.model");
 static_assert(offsetof(MenuWin, list) == 0x10, "MenuWin.list");

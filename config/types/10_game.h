@@ -623,7 +623,7 @@ struct CityScene {
     McManager *loadCard;       /* +0x0C the memory card manager while a saved game loads (mm_CityScene_LoadGame) */
     int32_t modeStack[5];      /* +0x10 */
     int32_t modeDepth;         /* +0x24 */
-    int32_t unk_28;
+    int32_t talkOverlay;       /* +0x28 a near talk view has the camera; the city draws its overlay (mm_DmaList_QueueOtherOverlay) */
     int32_t hudVisible[4];     /* +0x2C */
     TalkSession *talk;         /* +0x3C */
     LightSet *lights;          /* +0x40 */

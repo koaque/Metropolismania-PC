@@ -539,20 +539,20 @@ namespace mm
     void TalkBldgNear_Active(GuestPtr<TalkView> view)
     {
         cameraOnObject(view, view->targetObject);
-        view->city->unk_28 = 0;
+        view->city->talkOverlay = 0;
         TalkView_HandleInput(view);
     }
 
     void TalkOccupantNear_Active(GuestPtr<TalkView> view)
     {
         cameraOnObject(view, view->targetObject);
-        view->city->unk_28 = 0;
+        view->city->talkOverlay = 0;
     }
 
     void TalkPersonNear_Active(GuestPtr<TalkView> view)
     {
         cameraAt(view, ownEye(view), ownTarget(view));
-        view->city->unk_28 = 0;
+        view->city->talkOverlay = 0;
     }
 
     void TalkPersonNear_Draw(GuestPtr<TalkView> view, int pass)
@@ -980,7 +980,7 @@ namespace mm
             blend(eyeAt, view.address + 0x10u, view.address + 0x270u);
             blend(targetAt, view.address + 0x20u, view.address + 0x280u);
             cameraAt(view, GuestPtr<Vec4>{eyeAt}, GuestPtr<Vec4>{targetAt});
-            view->city->unk_28 = 1;
+            view->city->talkOverlay = 1;
         }
 
         int64_t stepNearView(GuestPtr<TalkView> view) { return widgetStep(GuestPtr<Widget>::of(view->base), 0.1f); }
@@ -992,7 +992,7 @@ namespace mm
             blendNearCamera(view, false, frame.ptr().address + 0x20u, frame.ptr().address + 0x30u);
             if (stepNearView(view) != 0)
             {
-                view->city->unk_28 = 0;
+                view->city->talkOverlay = 0;
                 view->base.state = 0;
             }
         }
@@ -1037,7 +1037,7 @@ namespace mm
         view->city->hudVisible[0] = 1;
         if (stepNearView(view) != 0)
         {
-            view->city->unk_28 = 0;
+            view->city->talkOverlay = 0;
             view->base.state = 0;
         }
     }
@@ -1212,7 +1212,7 @@ namespace mm
     {
         if (money)
         {
-            port::store<uint32_t>(money.address + 8u, 0x001BD7C0u);
+            money->base.vtable = GuestPtr<WidgetVtable>{0x001BD7C0u};
             lifetime::deleteTextBox(money.address + 0x18u);
             Widget_dtor(GuestPtr<Widget>{money.address}, 0);
             if (0 < deleteFlag)
@@ -1225,7 +1225,7 @@ namespace mm
     {
         if (card)
         {
-            port::store<uint32_t>(card.address + 8u, 0x001BD720u);
+            card->base.vtable = GuestPtr<WidgetVtable>{0x001BD720u};
             lifetime::deleteTextBox(card.address + 0x20u);
             lifetime::deleteTextBox(card.address + 0x24u);
             lifetime::deleteFrame(card.address + 0x30u);
@@ -1241,7 +1241,7 @@ namespace mm
     {
         if (talk)
         {
-            port::store<uint32_t>(talk.address + 8u, 0x001BD770u);
+            talk->base.vtable = GuestPtr<WidgetVtable>{0x001BD770u};
             lifetime::deleteVirtual(talk.address + 0x14u, 8);
             lifetime::deleteVirtual(talk.address + 0x10u, 8);
             Widget_dtor(GuestPtr<Widget>{talk.address}, 0);
@@ -1256,7 +1256,7 @@ namespace mm
     {
         if (view)
         {
-            port::store<uint32_t>(view.address + 8u, 0x001BD450u);
+            view->base.vtable = GuestPtr<WidgetVtable>{0x001BD450u};
             for (uint32_t i = 0; i < 4u; ++i)
             {
                 lifetime::deleteTextBox(view.address + 0x78u + 4u * i);
@@ -1283,7 +1283,7 @@ namespace mm
     {
         if (view->building == 0x3F80)
         {
-            view->peopleCount = port::load<uint16_t>(Family_Get(view->family, 0).address + 0x22u);
+            view->peopleCount = Family_Get(view->family, 0)->memberCount;
             return;
         }
         const GuestPtr<MapObject> object = Map_GetRecord(view->city->map, view->building);
@@ -1336,7 +1336,7 @@ namespace mm
     {
         if (conv)
         {
-            port::store<uint32_t>(conv.address + 8u, 0x001BD860u);
+            conv->base.base.vtable = GuestPtr<WidgetVtable>{0x001BD860u};
             lifetime::deleteVirtual(conv.address + 0x2E0u, 8);
             lifetime::deleteVirtual(conv.address + 0x2D4u, 8);
             lifetime::deleteVirtual(conv.address + 0x2D8u, 8);
@@ -1365,7 +1365,7 @@ namespace mm
     GuestPtr<TalkMoney> TalkMoney_ctor(GuestPtr<TalkMoney> money, int amount)
     {
         Widget_ctor(GuestPtr<Widget>{money.address});
-        port::store<uint32_t>(money.address + 8u, 0x001BD7C0u);
+        money->base.vtable = GuestPtr<WidgetVtable>{0x001BD7C0u};
         money->amount = amount;
         money->shown = amount;
         money->model = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B2Cu)};
@@ -1388,9 +1388,9 @@ namespace mm
             return memory != 0u ? TextBox_Init(GuestPtr<TextBox>{memory}, columns, rows, -1).address : 0u;
         };
         Widget_ctor(GuestPtr<Widget>{c});
-        port::store<uint32_t>(c + 8u, 0x001BD720u);
+        card->base.vtable = GuestPtr<WidgetVtable>{0x001BD720u};
         card->city = city;
-        card->model = GuestPtr<void>{port::load<uint32_t>(0x001F3B2Cu)};
+        card->model = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B2Cu)};
         card->lowerText = GuestPtr<TextBox>{newBox(9, 6)};
         card->upperText = GuestPtr<TextBox>{newBox(0xE, 2)};
         const uint32_t memory = sdk::operator_new(0xC0u);
@@ -1422,8 +1422,8 @@ namespace mm
         const uint32_t cursor = sdk::operator_new(0xC0u);
         view->cursorFrame = GuestPtr<void>{cursor != 0u ? Frame_ctor(GuestPtr<Frame>{cursor}, 0x33, 0x64, 0x64, 0x18, 0xC, 0x10000000u).address : 0u};
         view->unk_9C = static_cast<int32_t>(port::load<uint32_t>(0x001F3B40u));
-        port::store<uint32_t>(v + 0xA4u, 0xBE99999Au);
-        port::store<uint32_t>(v + 0xA8u, 0u);
+        view->zoom = std::bit_cast<float>(0xBE99999Au);
+        view->idleTime = 0.0f;
         view->scrollMode = 0;
         view->scrollDir = 0;
         view->scrollStep = 0;
@@ -1482,7 +1482,7 @@ namespace mm
     {
         const uint32_t c = conv.address;
         MsgWin_ctor(GuestPtr<MsgWin>{c});
-        port::store<uint32_t>(c + 8u, 0x001BD860u);
+        conv->base.base.vtable = GuestPtr<WidgetVtable>{0x001BD860u};
         conv->city = city;
         uint32_t memory = sdk::operator_new(0x20u);
         if (memory != 0u)
@@ -1665,8 +1665,7 @@ namespace mm
     {
         if (pass != 2 || card->base.state != 3)
             return;
-        const uint32_t c = card.address;
-        const uint32_t node = port::load<uint32_t>(port::load<uint32_t>(card->model.address) + 8u) + 0x670u;
+        const uint32_t node = worldMatrix(modelNode(card->model, 8)).address;
         Mat4_Copy(GuestPtr<Vec4>{node}, GuestPtr<Vec4>{0x001B2550u});
         port::store<uint32_t>(node + 0x30u, port::load<uint32_t>(0x001B1B38u + 4u * static_cast<uint32_t>(card->slot)));
         port::store<uint32_t>(node + 0x34u, 0xBD79DB23u);
@@ -1783,7 +1782,7 @@ namespace mm
             conv->script = Words_LoadForPerson(person, arg5, city);
             conv->person = target;
             const GuestPtr<MapObject> where = Map_GetRecord(conv->city->map, buildingOrMember);
-            conv->peopleInside = (port::load<uint16_t>(globals::buildingTypeAddress(where->type) + 0x136u) & 0x40u) != 0 ? 1 : 0;
+            conv->peopleInside = (globals::buildingType(where->type)->flags & 0x40u) != 0 ? 1 : 0;
             TalkCard_Show(conv->card, conv->person, 0, 0, slot);
             charType = person->charType;
         }
@@ -1791,13 +1790,12 @@ namespace mm
         {
             conv->script = Words_LoadForFamily(target, buildingOrMember, arg5, conv->city);
             TalkCard_Show(conv->card, 6000, target, buildingOrMember, slot);
-            const uint32_t family = Family_Get(target, 0).address;
-            charType = port::load<uint16_t>(family + 0x48u * static_cast<uint32_t>(buildingOrMember) + 0x24u);
+            charType = (GuestPtr<FamilyMember>::of(Family_Get(target, 0)->members[0]) + buildingOrMember)->charType;
             conv->family = target;
             conv->member = buildingOrMember;
             conv->peopleInside = 1;
         }
-        MsgWin_SetMessage(GuestPtr<MsgWin>{c}, slot, port::load<uint8_t>(port::load<uint32_t>(globals::charClassTable.get() + 4u * charType) + 0x16u));
+        MsgWin_SetMessage(GuestPtr<MsgWin>{c}, slot, GuestPtr<CharClass>{port::load<uint32_t>(globals::charClassTable.get() + 4u * charType)}->voice);
     }
 
     PORT_FN(TalkConv_Start);
@@ -2047,7 +2045,7 @@ namespace mm
             const GuestPtr<CityScene> inside{talk->city.address};
             const uint32_t camera = inside->cityCamera.address + 0x130u;
             const GuestPtr<MapObject> object = Map_GetRecord(inside->map, talk->building);
-            const ps2f size = fromInt(port::load<uint8_t>(globals::buildingTypeAddress(object->type) + 0x142u));
+            const ps2f size = fromInt(globals::buildingType(object->type)->size);
             const uint32_t tile = object->tile;
             const ps2f centreX = ((fromInt(static_cast<int32_t>(tile & 0x7Fu)) - ps2f(64.0f)) + size / ps2f(2.0f));
             const ps2f centreZ = ((fromInt(0x80 - static_cast<int32_t>(tile >> 7)) - ps2f(64.0f)) - size / ps2f(2.0f));
@@ -2243,41 +2241,44 @@ namespace mm
         }
         else
         {
-            type = globals::buildingTypeAddress(port::load<uint16_t>(Family_Get(target, 0).address + 0x20u));
+            type = globals::buildingTypeAddress(Family_Get(target, 0)->homeType);
             shown = slot(type, 0);
         }
         const auto drawNode = [&](uint32_t node) {
             const GuestPtr<A3DObject> model{view->buildingModel.address};
             const bool nobody = TalkView_NobodyHome(view, byFamily, target) != 0;
             A3DObject_ChangeLuminosity(model, GuestPtr<uint32_t>{nobody ? 0x001B1B00u : 0x001B26C0u}, static_cast<int>(node));
-            const GuestPtr<Vec4> matrix{port::load<uint32_t>(model->model.address + 8u) + node * 0xC0u + 0x70u};
+            const GuestPtr<Vec4> matrix = worldMatrix(modelNode(model, static_cast<int>(node)));
             Mat4_Copy(matrix, GuestPtr<Vec4>{globals::kIdentityMatrix});
-            port::store<uint32_t>(matrix.address + 0x30u, 0u);
-            port::store<uint32_t>(matrix.address + 0x34u, 0xBE23D70Au);
-            port::store<uint32_t>(matrix.address + 0x38u, 0xC075C28Fu);
+            matrix[3].x = 0.0f;
+            matrix[3].y = std::bit_cast<float>(0xBE23D70Au); // -0.16
+            matrix[3].z = std::bit_cast<float>(0xC075C28Fu); // -3.84
             A3DObject_DrawNode(model, static_cast<int>(node));
         };
-        const uint32_t flags = port::load<uint16_t>(type + 0x136u);
+        const GuestPtr<BuildingType> btype{type};
+        const uint32_t flags = btype->flags;
         if (shown == 0 && view->forceLit == 0)
-            drawNode(port::load<uint8_t>(type + 0x150u));
+            drawNode(btype->modelNode);
         else if ((flags & 0x8000u) != 0)
         {
-            sdk::sceVu0RotMatrixY(sp + 0x60u, globals::kIdentityMatrix, ps2f(std::bit_cast<float>(port::load<uint32_t>(type + 0x10Cu))));
-            port::store<uint32_t>(sp + 0x90u, port::load<uint32_t>(type + 0x100u));
-            port::store<uint32_t>(sp + 0x94u, port::load<uint32_t>(type + 0x104u));
-            port::store<uint32_t>(sp + 0x98u, port::load<uint32_t>(type + 0x108u));
+            // The entrance mesh at the type's talk eye offset, turned by its w.
+            sdk::sceVu0RotMatrixY(sp + 0x60u, globals::kIdentityMatrix, btype->talkEye.w);
+            const GuestPtr<Vec4> place{sp + 0x90u};
+            place->x = btype->talkEye.x;
+            place->y = btype->talkEye.y;
+            place->z = btype->talkEye.z;
             Packet2_Draw(GuestPtr<uint32_t>{city->lights.address}, 1);
             Instance_DrawMesh(globals::entranceModel.get(), GuestPtr<Vec4>{sp + 0x60u}, GuestPtr<Vec4>{globals::kDefaultColour},
-                              port::load<uint8_t>(type + 0x151u), 1);
+                              btype->entranceDrawMesh, 1);
             Packet2_Draw(GuestPtr<uint32_t>{city->lights.address}, 0);
         }
         else if ((flags & 0x4000u) != 0)
         {
             if (byFamily == 1)
-                drawNode(port::load<uint8_t>(type + 0x150u));
+                drawNode(btype->modelNode);
         }
         else
-            drawNode(port::load<uint8_t>(type + 0x14Fu));
+            drawNode(btype->unk_14F);
         DmaList_QueueClearZ();
     }
 

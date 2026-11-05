@@ -16,6 +16,7 @@ typedef struct InstanceSlot InstanceSlot;
 typedef struct ListMenu ListMenu;
 typedef struct ListMenuItem ListMenuItem;
 typedef struct MenuWin MenuWin;
+typedef struct PauseSlotText PauseSlotText;
 typedef struct LoadingScreen LoadingScreen;
 typedef struct McManager McManager;
 typedef struct NameEntry NameEntry;
@@ -45,6 +46,12 @@ typedef struct Notice Notice;
 typedef struct TownPages TownPages;
 typedef struct TownPagesIndex TownPagesIndex;
 typedef struct EventData EventData;
+typedef struct EvCultData EvCultData;
+typedef struct AdoptionChild AdoptionChild;
+typedef struct EvAdoptionData EvAdoptionData;
+typedef struct EvShoppingData EvShoppingData;
+typedef struct EvDeliveryData EvDeliveryData;
+typedef struct EvPartyData EvPartyData;
 typedef struct CharClass CharClass;
 typedef struct CharClassVtable CharClassVtable;
 typedef struct PersonClass PersonClass;
@@ -373,8 +380,41 @@ struct McManager {
     GameFile *file;            /* +0x20 */
     int32_t fd;                /* +0x24 open save file descriptor */
 };
-/* Name entry window (0x124 bytes). */
-struct NameEntry { uint8_t data[0x124]; };
+/* Name entry window (0x124 bytes): a keyboard of 6 columns on a board model (mm_NameEntry_*). */
+struct NameEntry {
+    A3DObject *model;          /* +0x000 the board (0x1F3B6C) */
+    TextBox *hintText;         /* +0x004 16 by 1: the hint, scrolled when longer than 10 */
+    TextBox *keysText;         /* +0x008 3 by 4: the keys shown */
+    TextBox *nameText;         /* +0x00C 12 by 1: the name typed */
+    TextBox *lineText;         /* +0x010 16 by 1 */
+    Vec4 *boardMatrix;         /* +0x014 the model's matrix */
+    Vec4 *markerMatrix;        /* +0x018 the cursor marker's, in the model's node data (+0x130) */
+    char name[0x24];           /* +0x01C up to 24 characters */
+    int32_t state;             /* +0x040 0 closed, 1 open, 2 done, 3 sliding in, 4 sliding out */
+    int32_t keySet;            /* +0x044 the keyboard (the text table at 0x1B13E0) */
+    int32_t column;            /* +0x048 the cursor's column (of 6) */
+    int32_t row;               /* +0x04C its row (of 4 shown) */
+    int32_t firstRow;          /* +0x050 the first row shown */
+    int32_t rows;              /* +0x054 */
+    int32_t keyCount;          /* +0x058 */
+    int32_t length;            /* +0x05C the name's length, where the next key goes */
+    int32_t moreAbove;         /* +0x060 the up arrow is shown */
+    int32_t moreBelow;         /* +0x064 the down arrow is shown */
+    uint8_t maxLength;         /* +0x068 at most 24 */
+    uint8_t unk_069[3];
+    int32_t blink;             /* +0x06C restarts the cursor's blink */
+    int32_t slideFrames;       /* +0x070 0 to 25 while sliding */
+    int32_t noSlide;           /* +0x074 opens and closes at once */
+    float restHeight;          /* +0x078 the board's y when open */
+    float markerX;             /* +0x07C the marker's x at column 0 (0.016 a column) */
+    float markerY;             /* +0x080 its y at row 0 (0.0227 a row) */
+    char hint[0x80];           /* +0x084 */
+    int32_t hintScroll;        /* +0x104 the hint's first character shown, -1 when it fits */
+    uint8_t hintStep;          /* +0x108 the hint moves every tenth frame */
+    uint8_t unk_109[0xB];
+    float boardPlace[3];       /* +0x114 the board's x, y and z at construction */
+    void *vtable;              /* +0x120 0x1BCFE8 */
+};
 /* Scene A: logos, memory card check, title (0x104 bytes). */
 struct SceneA {
     uint8_t unk_00[8];
@@ -395,9 +435,22 @@ struct SceneA {
     int32_t logoSound;         /* +0x50 next timed effect of the logo intro (mm_Title_Intro) */
     uint8_t unk_54[4];
     int32_t showHint;          /* +0x58 the "[SELECT]SoundTest" line is drawn (mm_Title_PressStart) */
-    uint8_t unk_5C[0x14];
+    uint8_t song;              /* +0x5C the sound test's song, 0..0x13 (mm_SoundTest_BgmPage) */
+    uint8_t effect;            /* +0x5D its effect, 0..0x47 (mm_SoundTest_SePage) */
+    int16_t pitch;             /* +0x5E within +-0x4000 */
+    uint8_t note;              /* +0x60 0..0x7F */
+    uint8_t unk_61;
+    int16_t tempo;             /* +0x62 within +-0xFF */
+    int32_t volume;            /* +0x64 0..0x3FFF */
+    int8_t pan;                /* +0x68 -10..10 */
+    uint8_t distance;          /* +0x69 0..16 */
+    uint8_t unk_6A[2];
+    int32_t playingSong;       /* +0x6C the song whose bank is loaded, -1 none */
     uint8_t codeStep;          /* +0x70 buttons of the sound test code entered so far (mm_Title_MenuInput) */
-    uint8_t unk_71[0x3F];
+    uint8_t unk_71[3];
+    int32_t testPage;          /* +0x74 the sound test's page: 0 effects, 1 music, 100 and up its opening and closing */
+    int32_t bankLoading;       /* +0x78 a song's bank is loading */
+    uint8_t unk_7C[0x34];
     ListMenu *loadMenu;        /* +0xB0 layer set 0x28/0x29 */
     McManager *mc;             /* +0xB4 */
     TextBox *hintText;         /* +0xB8 */
@@ -458,7 +511,11 @@ struct StatusPanel {
     int32_t detail;            /* +0xB0 the detail view is shown */
     int32_t alert;             /* +0xB4 */
     int32_t markCount;         /* +0xB8 detail model nodes 1.. drawn */
-    int32_t unk_BC;
+    int32_t infoFrames;        /* +0xBC frames of the info line's cycle: the goal for 0x1E0, then the money; 0x3C0 in all */
+};
+/* One save's line in the pause menu's slot list (0x92 bytes). */
+struct PauseSlotText {
+    char text[0x92];
 };
 /* Pause and save menu (0x99C bytes). */
 struct PauseMenu {
@@ -467,15 +524,17 @@ struct PauseMenu {
     ListMenu *slotMenu;        /* +0x08 */
     McManager *mc;             /* +0x0C */
     TextBox *message;          /* +0x10 */
-    uint8_t unk_14[8];
+    int32_t itemsListed;       /* +0x14 items in the slot menu, new-save items included (mm_PauseMenu_StateSlotSelect) */
+    int32_t savesListed;       /* +0x18 saves found on the cards */
     int32_t cardPort;          /* +0x1C the memory card port in use, 0 or 1 (message 5 names it, mm_PauseMenu_ShowCardMessage) */
-    uint8_t unk_20[4];
+    int32_t saveSlot;          /* +0x20 the save slot on the card (mm_McManager_PrepareNewSlot, mm_McManager_FindSlotB) */
     int32_t waitFrames;        /* +0x24 frames in the card message state (mm_PauseMenu_StateMain) */
-    uint8_t unk_28[4];
+    int32_t blink;             /* +0x28 frames, for the blinking while saving */
     float openTime;            /* +0x2C rises by 10 per frame; the window is fully in at 120 */
-    uint8_t unk_30[0x44];      /* +0x30 starts with the save name, default from 0x1B73D0 (Shift-JIS) */
+    char saveHeader[0x44];     /* +0x30 starts with the save name, default from 0x1B73D0 (Shift-JIS; mm_McManager_BuildSaveHeader) */
     int32_t cardMessage;       /* +0x74 the message shown (mm_PauseMenu_ShowCardMessage) */
-    uint8_t unk_78[0x924];
+    PauseSlotText slotTexts[16]; /* +0x78 the listed saves' texts (the first byte cleared by mm_PauseMenu_Reset) */
+    int32_t pendingChoice;     /* +0x998 the save to overwrite, -1 none */
 };
 /* Minimap (0x21DC bytes). */
 struct Minimap {
@@ -544,6 +603,70 @@ struct EventData {
     int32_t unk_14;            /* +0x14 per type: a month (mm_EvUselessMiddleAged_Start) */
     int32_t unk_18;            /* +0x18 per type: a timer, a distance (mm_EvBodyguard_Slot14) */
 };
+/* The Crazy Cult event's record (type 18, mm_EvCrazyCult_*): residents join the cult one by one while its members are
+   found and told in turn. */
+struct EvCultData {
+    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    ActorRef actors[6];        /* +0x0C its leaders (family entries 0xAB, 0xAC) and four members (0xAD on) */
+    int32_t waitMonth;         /* +0x3C the month count to wait for */
+    int32_t waitTime;          /* +0x40 and the time of day, in seconds */
+    int32_t tellFrames;        /* +0x44 frames after an actor is told */
+    int32_t spreadFrames;      /* +0x48 every 30 frames another resident joins (person flag 0x400) */
+    int32_t allJoined;         /* +0x4C every resident has joined */
+    int32_t metBits;           /* +0x50 the members the player has talked to (bit k for the actor in the list at 0x1B37C0);
+                                  at 7 the leader is told next (mm_EvCrazyCult_Slot14) */
+};
+/* One of the children of the adoption event (4 bytes, the table at 0x1B37D0). */
+struct AdoptionChild {
+    uint8_t claim;             /* +0x0 the claim it is placed by; 0 ends the list */
+    uint8_t seen;              /* +0x1 buildings seen with the claim this check (low 7 bits), bit 7 one of them pressing */
+    uint16_t familyType;       /* +0x2 entry + 1 of the family type table its family comes from */
+};
+/* The adoption event's record (mm_EvAdoption_*). */
+struct EvAdoptionData {
+    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    ActorRef actor;            /* +0x0C the adoption's contact (family entry 0xB1, member 0) */
+    int32_t frames;            /* +0x14 a timer, or every tenth frame a check */
+    int32_t toldCount;         /* +0x18 times the contact was told, six at most */
+    int32_t month;             /* +0x1C the month count noted (phases 17 and 20) */
+    int32_t pick;              /* +0x20 the child whose claim the city met */
+    int32_t applicants[10];    /* +0x24 the families applying when it started, 0 ends */
+    AdoptionChild children[6]; /* +0x4C from 0x1B37D0; placed ones are removed */
+};
+/* The shopping event's record (mm_EvShopping_*): a resident is sent round the shops for up to four goods. */
+struct EvShoppingData {
+    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    ActorRef actors[5];        /* +0x0C the shopper, then the seller of each of the goods */
+    int32_t shop;              /* +0x34 the shop's record (0x28 bytes each in the table at 0x1BDAB4; goods at +0x20) */
+    int32_t goodsCount;        /* +0x38 goods on its list */
+    int32_t prices[4];         /* +0x3C */
+    int32_t bill;              /* +0x4C their total, rounded up to the next thousand */
+    int32_t refund;            /* +0x50 the prices of the goods taken back out of the bag (mm_EvShopping_Slot14 mode 9) */
+    int32_t tellFrames;        /* +0x54 frames after the shopper is told */
+    int32_t endFrames;         /* +0x58 the event ends after 240 */
+};
+/* The delivery man event's record (type 3, mm_EvDeliveryMan_*): in rain or snow a delivery comes from a nearby shop. */
+struct EvDeliveryData {
+    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    ActorRef actors[2];        /* +0x0C the customer, then the delivery man (his building and person) */
+    int32_t entry;             /* +0x1C the catalogue entry (0x1BA090, 0x184 bytes each, the building type first) */
+    int32_t month;             /* +0x20 the month of the year, which picks the item (0x20 bytes each) */
+    int32_t tellFrames;        /* +0x24 frames after the customer is told */
+    int32_t walkFrames;        /* +0x28 the delivery man walks for 120 */
+    int32_t waitFrames;        /* +0x2C then waits 60 */
+    int32_t endFrames;         /* +0x30 the event ends after 240 */
+    int32_t state;             /* +0x34 2 at the start, 0 once he has walked, 1 once he has waited (talk value 5) */
+};
+/* The farewell party event's record (mm_EvFarewellParty_*): a family leaves, and the residents who are friends come. */
+struct EvPartyData {
+    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    ActorRef actors[3];        /* +0x0C the leaving family, its best friend at work, the friend the player points at */
+    int32_t tellFrames;        /* +0x24 frames after an actor is told */
+    int32_t guests;            /* +0x28 residents who are friends enough to come (a quarter of the population fills it) */
+    int32_t partyTime;         /* +0x2C the party's time of day in seconds: 13:00 plus an hour per 50 guests, 19:00 at most */
+    int32_t stageStep;         /* +0x30 the step of the party's staging (fade, clock, overlay, music) */
+    int32_t endStep;           /* +0x34 the step of the end's staging */
+};
 /* One of the event manager's five talk slots (0x20 bytes). */
 struct EventSlot {
     uint8_t kind;              /* +0x00 row of the event table, 0 = free (mm_Event_CountActive, mm_WordsFn_EventStage) */
@@ -583,15 +706,15 @@ struct WantsWin {
     WantsIndex index[64];      /* +0x004 */
     uint32_t data[256];        /* +0x104 the wants (Want, four words each) */
     A3DObject *model;          /* +0x504 window model (from 0x1F3B04) */
-    int32_t unk_508[4];        /* +0x508 */
-    int32_t unk_518;           /* +0x518 */
-    int32_t unk_51C;           /* +0x51C */
-    uint8_t unk_520[4];
+    TextBox *texts[4];         /* +0x508 made once the window is open (mm_WantsWin_Update) */
+    int32_t textsShown;        /* +0x518 the texts are drawn (mm_WantsWin_Draw) */
+    int32_t state;             /* +0x51C 0 closed, 1 opening, 2 open, 3 turning a page, 4 closing */
+    int32_t turnBack;          /* +0x520 the page turns back */
     Vec4 *matrix;              /* +0x524 the model's matrix */
-    int32_t unk_528;           /* +0x528 */
-    int32_t unk_52C;           /* +0x52C */
+    float animTime;            /* +0x528 the model's animation: 0 to 25 opening, 0 to 120 a page turn */
+    int32_t page;              /* +0x52C the pair of pages shown */
     uint8_t unk_530[8];
-    int32_t unk_538;           /* +0x538 10 at construction */
+    int32_t pageCount;         /* +0x538 10 at construction */
     uint8_t unk_53C[8];
 };
 /* Laptop menu (0x3E0 bytes). */
@@ -601,12 +724,13 @@ struct Laptop {
     Vec4 radius;               /* +0x10 an entry's offset from the centre before its turn (mm_Laptop_Animate) */
     Vec4 centre;               /* +0x20 the carousel's centre */
     float turn;                /* +0x30 the carousel's turn, radians */
-    uint8_t unk_34[4];
+    float turnTarget;          /* +0x34 the turn of the selected entry */
     float scale;               /* +0x38 the entries' scale */
     int32_t state;             /* +0x3C 2: the selected entry is lifted */
-    uint8_t unk_40[4];
+    int32_t turnDir;           /* +0x40 0 turns one way, 1 the other (mm_Laptop_Update) */
     TextBox *text;             /* +0x44 the selected entry's text (mm_Laptop_SetItemText) */
-    uint8_t unk_48[0x388];
+    int32_t cancelled;         /* +0x48 closed with Triangle; with Cross the entry runs */
+    uint8_t unk_4C[0x384];
     int32_t selected;          /* +0x3D0 the selected entry */
     uint8_t unk_3D4[0xC];
 };
@@ -644,31 +768,45 @@ struct ApplicantEntry {
     uint16_t tile;             /* +0x06 where the player put its home (mm_Player_PlaceForApplicant) */
     uint8_t unk_08[2];
     uint16_t type;             /* +0x0A building type the family wants (index into the table at gp 0x1BDBF8) */
-    uint8_t unk_0C[4];
+    int32_t month;             /* +0x0C the month count when it applied (mm_Applicants_BuildInfo) */
     int32_t timer;             /* +0x10 set to 6 when its placing starts */
 };
 /* Applicants list (0x350 bytes). */
 struct Applicants {
     ApplicantEntry entries[32]; /* +0x000 */
     int32_t count;             /* +0x280 */
-    int32_t unk_284;           /* +0x284 */
-    uint8_t unk_288[0xC];
+    int32_t shownCount;        /* +0x284 entries drawn the last time (mm_Applicants_Draw) */
+    uint8_t unk_288[4];        /* +0x288 (the stage object base at +0x289 is handed to mm_StageObj_ctor) */
+    A3DObject *frameModel;     /* +0x28C 0x1F3B10 */
+    A3DObject *cardModel;      /* +0x290 0x1F3B68 */
     TextBox *cardText;         /* +0x294 */
-    uint8_t unk_298[8];
-    void *cardModelA;          /* +0x2A0 positioned by mm_Applicants_PlaceAt (+0x30) */
-    void *cardModelB;          /* +0x2A4 */
-    uint8_t unk_2A8[0xC];
-    float unk_2B4;             /* +0x2B4 */
-    uint8_t unk_2B8[4];
-    int32_t unk_2BC;           /* +0x2BC */
-    uint8_t unk_2C0[9];
+    uint8_t unk_298[4];
+    int32_t cardShown;         /* +0x29C mm_Applicants_SetMode's mode; 1 once a card is selected */
+    Vec4 *frameMatrix;         /* +0x2A0 the frame model's matrix, placed by mm_Applicants_PlaceAt */
+    Vec4 *cardMatrix;          /* +0x2A4 the card model's */
+    Vec4 *cardNodeA;           /* +0x2A8 a node matrix in the card model's data (+0x70): the card that slides in */
+    Vec4 *cardNodeB;           /* +0x2AC another (+0x1F0) */
+    float rollPhase;           /* +0x2B0 the list's roll, 0 to 40 by 2 a frame (mm_Applicants_Draw) */
+    float rollDir;             /* +0x2B4 +1 or -1 while the list rolls, 0 when still */
+    int32_t sliding;           /* +0x2B8 the card is sliding in (mm_Applicants_Layout) */
+    int32_t relight;           /* +0x2BC the card's light is set again on the next draw */
+    int32_t slideFrame;        /* +0x2C0 */
+    int32_t savedTop;          /* +0x2C4 the top entry before the selection */
+    uint8_t stateColour;       /* +0x2C8 the selected entry's state colour (table 0x1BD998), 0xFF at construction */
     uint8_t enabled;           /* +0x2C9 cleared while a menu or a talk is open */
     uint8_t unk_2CA[2];
     int32_t cursor;            /* +0x2CC (provisional) */
     int32_t top;               /* +0x2D0 (provisional) */
     uint8_t unk_2D4[8];
     uint16_t claims[32];       /* +0x2DC claim section C of each entry's building type */
-    uint8_t unk_31C[0x34];
+    int32_t mode;              /* +0x31C 4 an applicant is picked, 6 its home is being placed (mm_Applicants_StartPlacing) */
+    void *vtable;              /* +0x320 0x1BCF70 (0x1BCF60 for the base) */
+    int32_t assignIndex;       /* +0x324 the next entry to try to house (mm_Applicants_Update) */
+    int32_t assignTimer;       /* +0x328 frames until the next try */
+    int32_t unk_32C;
+    Vec4 cardPoint;            /* +0x330 where the cards are placed, (0, 2.3, 0, 1) at construction */
+    float step;                /* +0x340 */
+    uint8_t unk_344[0xC];
 };
 /* Markers model (0x130 bytes). */
 struct Markers {
@@ -744,7 +882,7 @@ struct CharClass {
     uint16_t unk_10;           /* +0x10 record byte 11 */
     uint16_t unk_12;           /* +0x12 record byte 12 */
     uint16_t unk_14;           /* +0x14 record byte 13 */
-    uint8_t unk_16;            /* +0x16 record byte 2 */
+    uint8_t voice;             /* +0x16 record byte 2: the message sound of its talks (mm_TalkConv_Start) */
     uint8_t unk_17;
     uint16_t flags;            /* +0x18 record halfword 4; 1: other people keep clear of this one
                                   (mm_Char_CheckNeighbourTile, mm_Map_FindWorkerOnTile) */

@@ -404,8 +404,8 @@ namespace mm
         };
         applicants->cursor = clamp(applicants->cursor);
         applicants->top = clamp(applicants->top);
-        if (applicants->unk_2B4 == ps2f(0.0f))
-            applicants->unk_2BC = 1;
+        if (applicants->rollDir == ps2f(0.0f))
+            applicants->relight = 1;
         const GuestPtr<ApplicantEntry> entries = GuestPtr<ApplicantEntry>::of(applicants->entries[0]);
         const GuestPtr<uint16_t> claims = GuestPtr<uint16_t>::of(applicants->claims[0]);
         for (int i = 0; i < applicants->count; ++i)
@@ -418,8 +418,8 @@ namespace mm
     {
         for (uint32_t axis = 0; axis < 3; ++axis)
         {
-            port::store<float>(applicants->cardModelA.address + 0x30u + 4u * axis, static_cast<float>(point[axis]));
-            port::store<float>(applicants->cardModelB.address + 0x30u + 4u * axis, static_cast<float>(point[axis]));
+            port::store<float>(applicants->frameMatrix.address + 0x30u + 4u * axis, static_cast<float>(point[axis]));
+            port::store<float>(applicants->cardMatrix.address + 0x30u + 4u * axis, static_cast<float>(point[axis]));
         }
         const ps2f depth = point[2];
         const auto scaled = [](float factor, ps2f value) { return sdk::fptosi(ps2f(factor) * value); };
@@ -449,7 +449,7 @@ namespace mm
     int Applicants_Clear(GuestPtr<Applicants> applicants)
     {
         applicants->count = 0;
-        applicants->unk_284 = 0;
+        applicants->shownCount = 0;
         for (int i = 0; i < 32; ++i)
         {
             applicants->entries[i].state = 0;
@@ -565,18 +565,18 @@ namespace mm
     {
         Wants_ctor(wants);
         wants->model = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B04u)};
-        wants->unk_51C = 0;
+        wants->state = 0;
         wants->matrix = GuestPtr<Vec4>::of(wants->model->matrix[0]);
         const GuestPtr<Vec4> place{0x001B0900u};
         wants->matrix[3].x = place->x;
         wants->matrix[3].y = place->y;
         wants->matrix[3].z = place->z;
-        wants->unk_528 = 0;
-        for (int32_t &value : wants->unk_508)
-            value = 0;
-        wants->unk_52C = 0;
-        wants->unk_538 = 10;
-        wants->unk_518 = 0;
+        wants->animTime = 0.0f;
+        for (GuestPtr<TextBox> &text : wants->texts)
+            text = GuestPtr<TextBox>{0u};
+        wants->page = 0;
+        wants->pageCount = 10;
+        wants->textsShown = 0;
         return wants;
     }
 
@@ -2192,11 +2192,11 @@ namespace mm
     void WantsWin_Draw(GuestPtr<WantsWin> wants)
     {
         A3DObject_Draw(wants->model);
-        if (wants->unk_518 == 0)
+        if (wants->textsShown == 0)
             return;
         for (int i = 0; i < 4; ++i)
-            if (const uint32_t text = static_cast<uint32_t>(wants->unk_508[i]))
-                TextBox_Draw(GuestPtr<TextBox>{text});
+            if (const GuestPtr<TextBox> text = wants->texts[i])
+                TextBox_Draw(text);
     }
 
     PORT_FN(Wants_HasRoom);
@@ -2919,7 +2919,7 @@ namespace mm
             const int width2 = 0xB0 - sdk::fptosi(ps2f(16.0f) * scale);
             const int width3 = 0xB0 - sdk::fptosi(ps2f(14.7f) * scale);
             const int width4 = 0xC0 - sdk::fptosi(ps2f(16.3f) * scale);
-            TextBox_SetPosAndSize(GuestPtr<TextBox>{port::load<uint32_t>(applicants.address + 0x294u)}, (x + 0x77E + xOffset) * 0x10,
+            TextBox_SetPosAndSize(applicants->cardText, (x + 0x77E + xOffset) * 0x10,
                                   ((y + 0x7D6) - yOffset) * 0x10, width1, width2, width3, width4, -0x100000);
         }
     }
@@ -2929,10 +2929,9 @@ namespace mm
     // cursor and the top entry take the saved entry (+0x2C4) and the list scrolls back to its first entry.
     void Applicants_Layout(GuestPtr<Applicants> applicants)
     {
-        const uint32_t a = applicants.address;
-        port::store<int32_t>(a + 0x2C0u, port::load<int32_t>(a + 0x2C0u) + 1);
-        const int32_t frame = port::load<int32_t>(a + 0x2C0u);
-        const uint32_t model = port::load<uint32_t>(a + 0x2A8u);
+        applicants->slideFrame = applicants->slideFrame + 1;
+        const int32_t frame = applicants->slideFrame;
+        const uint32_t model = applicants->cardNodeA.address;
         if (frame < 0x14)
         {
             port::store<float>(model + 0x30u, static_cast<float>(ps2f(port::load<float>(model + 0x30u)) + ps2f(0.15f)));
@@ -2953,13 +2952,13 @@ namespace mm
             }
             else
             {
-                port::store<int32_t>(a + 0x2B8u, 0);
-                const int32_t saved = port::load<int32_t>(a + 0x2C4u);
+                applicants->sliding = 0;
+                const int32_t saved = applicants->savedTop;
                 applicants->top = saved;
                 applicants->cursor = saved;
-                port::store<int32_t>(a + 0x2C0u, 0);
+                applicants->slideFrame = 0;
                 Applicants_ScrollTo(applicants, -1);
-                port::store<int32_t>(a + 0x29Cu, 0);
+                applicants->cardShown = 0;
             }
         }
     }
@@ -3996,8 +3995,7 @@ namespace mm
     // rebuilt and the notice line cleared.
     void Applicants_StartPlacing(GuestPtr<Applicants> applicants, GuestPtr<CityScene> city)
     {
-        const uint32_t a = applicants.address;
-        if (port::load<int32_t>(a + 0x31Cu) != 4)
+        if (applicants->mode != 4)
             return;
         GuestPtr<ApplicantEntry> entry{0u}; // with no applicants the game reads the start of memory
         if (applicants->count != 0)
@@ -4010,8 +4008,8 @@ namespace mm
             Map_HighlightArea(city->map, static_cast<int>(tile & 0x7Fu), static_cast<int>(tile >> 7), globals::buildingType(type)->size);
         }
         Pad_TakeFocus(1, 0x10);
-        port::store<int32_t>(a + 0x31Cu, 6);
-        port::store<uint32_t>(a + 0x340u, 0x3CA3D70Au);
+        applicants->mode = 6;
+        applicants->step = std::bit_cast<float>(0x3CA3D70Au); // 0.02
         Applicants_SetMode(applicants, 1);
         Notice_Clear(city->notice);
     }
@@ -4095,7 +4093,7 @@ namespace mm
         city->hudVisible[1] = 1;
         city->hudVisible[2] = 1;
         city->hudVisible[3] = 1;
-        city->unk_28 = 0;
+        city->talkOverlay = 0;
         city->fadeLevel = 0x80;
         city->fade = 0;
         city->unk_D4 = 0;
@@ -4383,7 +4381,7 @@ namespace mm
         if (city->overlay)
             virtualCall(city->overlay.address, 0u, 0x10u, 2);
         Notice_Draw(city->notice);
-        if (city->unk_28 != 0)
+        if (city->talkOverlay != 0)
         {
             DmaList_QueueGsDefaults();
             DmaList_QueueOtherOverlay();

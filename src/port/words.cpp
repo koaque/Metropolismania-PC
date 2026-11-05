@@ -399,7 +399,7 @@ namespace mm
 
     GuestPtr<char> WordsFn_TextPopulation(GuestPtr<WordsCtx> ctx)
     {
-        Text_FormatThousands(GuestPtr<char>{kTextBuffer}, port::load<uint8_t>(ctx->city->map.address + 0x29u));
+        Text_FormatThousands(GuestPtr<char>{kTextBuffer}, ctx->city->map->flag8History[1]);
         return GuestPtr<char>{kTextBuffer};
     }
 
@@ -1561,13 +1561,13 @@ namespace mm
         if (ctx->arg == 0)
         {
             if (!ctx->buildingA)
-                type = port::load<uint16_t>(Family_Get(ctx->familyA, 0).address + 0x20u);
+                type = Family_Get(ctx->familyA, 0)->homeType;
             else
                 type = ctx->buildingA->type;
         }
         else
             type = ctx->buildingTypeB;
-        return port::load<uint8_t>(globals::buildingTypeAddress(type) + 0x145u);
+        return globals::buildingType(type)->category;
     }
 
     namespace
@@ -1658,10 +1658,10 @@ namespace mm
     void Words_CollectNearbyHomes(GuestPtr<WordsCtx> ctx, GuestPtr<MapObject> building)
     {
         ctx->candidateCount = 0;
-        sdk::memset(ctx.address + 0x30u, 0, 0x80);
+        sdk::memset(port::guest(ctx->candidates), 0, 0x80);
         const int32_t x0 = building->tile & 0x7F;
         const int32_t z0 = building->tile >> 7;
-        const int32_t size = port::load<uint8_t>(globals::buildingTypeAddress(building->type) + 0x142u);
+        const int32_t size = globals::buildingType(building->type)->size;
         const GuestPtr<Family> family = Family_Get(ctx->familyA, 0);
         const int32_t range = port::load<int32_t>(0x001B97F0u + 4u * port::load<uint8_t>(memberAt(family, ctx->memberA) + kMemberRange));
         const int32_t xStart = x0 - range, xEnd = x0 + size + range, zEnd = z0 + size + range;
@@ -1691,7 +1691,7 @@ namespace mm
                 if (record.address != building.address)
                 {
                     const int32_t at = ctx->candidateCount;
-                    port::store<uint16_t>(ctx.address + 0x30u + 2u * static_cast<uint32_t>(at), record->id);
+                    ctx->candidates[at] = record->id;
                     ctx->candidateCount = at + 1;
                     if (!(at + 1 < 0x80))
                         return;
@@ -1718,7 +1718,7 @@ namespace mm
         {
             const int32_t roll = static_cast<int32_t>(Random_Next());
             const uint32_t index = static_cast<uint32_t>(eeRemainder(roll, ctx->candidateCount));
-            ctx->buildingB = Map_GetRecord(ctx->city->map, port::load<uint16_t>(ctx.address + 0x30u + 2u * index));
+            ctx->buildingB = Map_GetRecord(ctx->city->map, ctx->candidates[index]);
             ctx->buildingTypeB = ctx->buildingB->type;
             const GuestPtr<Family> family = Family_Get(ctx->buildingB->family, 0);
             const uint32_t members = port::load<uint16_t>(family.address + 0x22u);
@@ -1754,7 +1754,7 @@ namespace mm
         Words_CollectNearbyHomes(ctx, ctx->buildingA);
         for (int32_t i = 0; i < ctx->candidateCount; ++i)
         {
-            const GuestPtr<MapObject> object = Map_GetRecord(ctx->city->map, port::load<uint16_t>(ctx.address + 0x30u + 2u * static_cast<uint32_t>(i)));
+            const GuestPtr<MapObject> object = Map_GetRecord(ctx->city->map, ctx->candidates[i]);
             port::GuestLocal<uint16_t> cursor;
             *cursor = object->firstPerson;
             while (const GuestPtr<MapPerson> person = People_Next(ctx->city->map, cursor))
@@ -1817,7 +1817,7 @@ namespace mm
         {
             const uint32_t acquaintance = port::load<uint16_t>(at);
             const uint32_t type = static_cast<uint32_t>(Family_GetTypeIndex(static_cast<int>(acquaintance)));
-            if (port::load<uint8_t>(globals::buildingTypeAddress(type) + 0x145u) != 5)
+            if (globals::buildingType(type)->category != 5)
                 continue;
             if (Family_CanApply(acquaintance, ctx->city) != 0)
             {
@@ -2184,7 +2184,7 @@ namespace mm
         port::GuestFrame<0x60> frame;
         const uint32_t local = frame.ptr().address + 0x5Cu;
         const uint32_t building = ctx->buildingA.address;
-        const uint32_t sections = static_cast<uint32_t>(Claim_GetSectionB(port::load<uint8_t>(globals::buildingTypeAddress(port::load<uint16_t>(building)) + 0x147u)));
+        const uint32_t sections = static_cast<uint32_t>(Claim_GetSectionB(globals::buildingType(port::load<uint16_t>(building))->claimB));
         const uint32_t entry = static_cast<uint32_t>(sections) + 8u * port::load<uint8_t>(building + 0x12u);
         port::store<uint32_t>(local, port::load<uint32_t>(0x001BDC20u));
         port::store<uint16_t>(local, port::load<uint16_t>(entry + 2u));
@@ -2201,11 +2201,11 @@ namespace mm
             if (Family_CanApply(family, ctx->city) == 0)
                 continue;
             const uint32_t type = static_cast<uint32_t>(Family_GetTypeIndex(static_cast<int>(port::load<uint16_t>(at)))) & 0xFFFFu;
-            for (uint32_t want = static_cast<uint32_t>(Claim_GetSectionC(port::load<uint8_t>(globals::buildingTypeAddress(type) + 0x148u))); port::load<uint16_t>(want) != 0; want += 4u)
+            for (uint32_t want = static_cast<uint32_t>(Claim_GetSectionC(globals::buildingType(type)->claimC)); port::load<uint16_t>(want) != 0; want += 4u)
                 for (uint32_t have = claims; port::load<uint16_t>(have) != 0; have += 2u)
                     if (port::load<uint16_t>(want) == port::load<uint16_t>(have))
                     {
-                        port::store<uint16_t>(ctx->personA.address + 0x2Cu, port::load<uint16_t>(at));
+                        ctx->personA->introduces = port::load<uint16_t>(at);
                         ctx->result = port::load<uint16_t>(at);
                         return 1;
                     }
@@ -2483,7 +2483,7 @@ namespace mm
             }
             const GuestPtr<MapObject> object = Map_GetRecord(city->map, static_cast<int>(port::load<uint32_t>(sp + 0x44u)));
             return GuestPtr<char>{static_cast<uint32_t>(
-                Claim_GetLine(port::load<uint8_t>(globals::buildingTypeAddress(object->type) + 0x147u), object->claimSlot))};
+                Claim_GetLine(globals::buildingType(object->type)->claimB, object->claimSlot))};
         }
         if (code == -0x7D2)
         {
@@ -2587,7 +2587,7 @@ namespace mm
             const GuestPtr<CityMap> map = ctx->city->map;
             const uint32_t object = port::load<uint32_t>(sp + 0xACu);
             const uint32_t section = static_cast<uint32_t>(
-                Claim_GetSectionB(port::load<uint8_t>(globals::buildingTypeAddress(Map_GetRecord(map, static_cast<int>(object))->type) + 0x147u)));
+                Claim_GetSectionB(globals::buildingType(Map_GetRecord(map, static_cast<int>(object))->type)->claimB));
             const uint32_t value = port::load<uint16_t>(section + 8u * port::load<uint32_t>(sp + 0xA4u) + 2u);
             if (static_cast<int32_t>(value) < 0x8000)
                 port::store<uint16_t>(local, static_cast<uint16_t>(value));
@@ -2603,7 +2603,7 @@ namespace mm
         // Whether the home type of `family` claims one of the claims supplied; the types' claim section C lists end with a 0 value.
         const auto wantsOneOf = [&](uint32_t family) {
             const uint32_t type = static_cast<uint32_t>(Family_GetTypeIndex(static_cast<int>(family))) & 0xFFFFu;
-            for (uint32_t want = static_cast<uint32_t>(Claim_GetSectionC(port::load<uint8_t>(globals::buildingTypeAddress(type) + 0x148u)));
+            for (uint32_t want = static_cast<uint32_t>(Claim_GetSectionC(globals::buildingType(type)->claimC));
                  port::load<uint16_t>(want) != 0; want += 4u)
                 for (uint32_t have = claims; port::load<uint16_t>(have) != 0; have += 2u)
                     if (port::load<uint16_t>(want) == port::load<uint16_t>(have))
@@ -2624,7 +2624,7 @@ namespace mm
                 if (Family_CanApply(port::load<uint16_t>(at), ctx->city) == 0 || !wantsOneOf(port::load<uint16_t>(at)))
                     continue;
                 if (ctx->personA && mode == 1)
-                    port::store<uint16_t>(ctx->personA.address + 0x2Cu, port::load<uint16_t>(at));
+                    ctx->personA->introduces = port::load<uint16_t>(at);
                 ctx->result = port::load<uint16_t>(at);
                 if (mode == 2)
                     ctx->memberIndex = static_cast<uint16_t>(static_cast<int32_t>(member - first) / 0x48);
@@ -2683,7 +2683,7 @@ namespace mm
         {
             for (int k = 0; k < ctx->candidateCount; ++k)
             {
-                const GuestPtr<MapObject> home = Map_GetRecord(ctx->city->map, port::load<uint16_t>(ctx.address + 0x30u + 2u * static_cast<uint32_t>(k)));
+                const GuestPtr<MapObject> home = Map_GetRecord(ctx->city->map, ctx->candidates[k]);
                 const uint32_t family = static_cast<uint32_t>(Family_IsCached(home->family));
                 if (family == 0)
                     continue;
@@ -2697,7 +2697,7 @@ namespace mm
                         if (Family_CanApply(port::load<uint16_t>(at), ctx->city) == 0)
                             continue;
                         const uint32_t type = static_cast<uint32_t>(Family_GetTypeIndex(static_cast<int>(port::load<uint16_t>(at)))) & 0xFFFFu;
-                        for (uint32_t want = static_cast<uint32_t>(Claim_GetSectionC(port::load<uint8_t>(globals::buildingTypeAddress(type) + 0x148u)));
+                        for (uint32_t want = static_cast<uint32_t>(Claim_GetSectionC(globals::buildingType(type)->claimC));
                              port::load<uint16_t>(want) != 0; want += 4u)
                             for (uint32_t have = claims; port::load<uint16_t>(have) != 0; have += 2u)
                             {
@@ -2731,7 +2731,7 @@ namespace mm
         if (ctx->candidateCount == 0)
             return 0;
         const int32_t pick = static_cast<int32_t>(Random_Next()) % ctx->candidateCount;
-        ctx->buildingB = Map_GetRecord(ctx->city->map, port::load<uint16_t>(ctx.address + 0x30u + 2u * static_cast<uint32_t>(pick)));
+        ctx->buildingB = Map_GetRecord(ctx->city->map, ctx->candidates[pick]);
         ctx->buildingTypeB = ctx->buildingB->type;
         const GuestPtr<Family> residents = Family_Get(ctx->buildingB->family, 0);
         const uint32_t count = residents->memberCount;

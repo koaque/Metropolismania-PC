@@ -218,7 +218,7 @@ namespace mm
         view->target.y = view->target.y + view->pitch;
         Camera_SetEyeTarget(GuestPtr<Camera>{city->cityCamera.address}, GuestPtr<Vec4>{view.address + 0x270u}, GuestPtr<Vec4>{view.address + 0x280u});
         Camera_UpdateMatrices(GuestPtr<Camera>{city->cityCamera.address});
-        city->unk_28 = 0;
+        city->talkOverlay = 0;
     }
 
     // The view of a home's inside: the walls' blob, the object, the home's size; the viewer starts at the entrance
@@ -242,7 +242,7 @@ namespace mm
         view->target.x = (fromInt(record->tile & 0x7F) - F(0x42800000u)) + half;
         view->target.y = MapObj_GetHeight(view->base.city->map, static_cast<uint32_t>(object)) - F(0x3F000000u);
         view->target.z = (fromInt(0x80 - (record->tile >> 7)) - F(0x42800000u)) - half;
-        port::store<uint32_t>(view.address + 0x28Cu, 0x3F800000u);
+        view->target.w = std::bit_cast<float>(0x3F800000u);
         *GuestPtr<Vec4>{view.address + 0x270u} = *GuestPtr<Vec4>{view.address + 0x280u};
         const int kind = Map_GetTileKind(view->base.city->map, record->tile);
         port::store<uint32_t>(view.address + 0x290u, port::load<uint32_t>(0x001B2690u + 4u * static_cast<uint32_t>(kind)));

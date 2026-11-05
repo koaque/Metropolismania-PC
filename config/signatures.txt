@@ -757,11 +757,11 @@
 0x0016D1F0 void mm_Notice_Show(Notice *notice, int id);
 0x0016D2B0 Notice *mm_Notice_dtor(Notice *notice, int16_t deleteFlag);
 0x0016D330 Notice *mm_Notice_ctor(Notice *notice);
-0x0016D400 int mm_SoundTest_BgmPage(int a0, uint32_t a1, uint32_t a2, uint32_t a3);
-0x0016D7B0 int mm_SoundTest_SePage(int a0, uint32_t a1, uint32_t a2, uint32_t a3);
-0x0016DAB0 int mm_SoundTest_Update(int a0);
-0x0016DF50 void mm_SoundTest_BgmText(int a0);
-0x0016E070 void mm_SoundTest_SeText(int a0);
+0x0016D400 int mm_SoundTest_BgmPage(SceneA *scene, uint32_t a1, uint32_t a2, uint32_t a3);
+0x0016D7B0 int mm_SoundTest_SePage(SceneA *scene, uint32_t a1, uint32_t a2, uint32_t a3);
+0x0016DAB0 int mm_SoundTest_Update(SceneA *scene);
+0x0016DF50 void mm_SoundTest_BgmText(SceneA *scene);
+0x0016E070 void mm_SoundTest_SeText(SceneA *scene);
 0x0016E270 int mm_Title_DrawCommon(SceneA *scene, int layers);
 0x0016E440 int mm_Title_LoadMenu(SceneA *scene);
 0x0016E840 int mm_Title_PressStart(SceneA *scene);
