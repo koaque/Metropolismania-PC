@@ -2,6 +2,7 @@
 
 #include "game_functions.h"
 #include "game_globals.h"
+#include "render.h"
 #include "sdk.h"
 #include "vu0.h"
 
@@ -10,6 +11,8 @@
 
 namespace mm
 {
+    using packet::addressOf;
+
     namespace
     {
         constexpr int kMapSize = 128;
@@ -855,7 +858,7 @@ namespace mm
                     continue;
                 ++objects;
                 const MapObject &obj = map->objects[id];
-                const int objSize = port::load<uint8_t>(globals::buildingTypeAddress(obj.type) + 0x142u);
+                const int objSize = globals::buildingType(obj.type)->size;
                 const int ox = obj.tile & 0x7F, oz = obj.tile >> 7;
                 for (int cz = oz; cz < oz + objSize; ++cz)
                     for (int cx = ox; cx < ox + objSize; ++cx)
@@ -883,11 +886,11 @@ namespace mm
     }
 
     // Placement rule (type +0x144) for stacking: the tile's top object must be an entrance (0x20), not
-    // highlighted (1), of a type with the same rule, and the stack below the type's limit (+0x138) - 1.
+    // highlighted (1), of a type with the same rule, and the stack below the type's limit - 1.
     int Placement_CheckTypeRule(GuestPtr<CityMap> map, int type, int tile)
     {
-        const uint32_t btype = globals::buildingTypeAddress(static_cast<uint32_t>(type));
-        const int8_t rule = port::load<int8_t>(btype + 0x144u);
+        const GuestPtr<BuildingType> btype = globals::buildingType(static_cast<uint32_t>(type));
+        const int8_t rule = static_cast<int8_t>(btype->rule);
         if (rule == 0 || (map->tiles[tile].flags & 1u) == 0)
             return 0;
         uint16_t top = map->tiles[tile].firstObject;
@@ -897,15 +900,16 @@ namespace mm
         for (; map->objects[top].nextOnTile != 0x3F80; top = map->objects[top].nextOnTile)
             ++below;
         const MapObject &obj = map->objects[top];
-        return (obj.flags & 0x20u) != 0 && below < static_cast<int>(port::load<uint16_t>(btype + 0x138u)) - 1 && (obj.flags & 1u) == 0 &&
-               port::load<int8_t>(globals::buildingTypeAddress(obj.type) + 0x144u) == rule;
+        return (obj.flags & 0x20u) != 0 && below < static_cast<int>(btype->maxStack) - 1 && (obj.flags & 1u) == 0 &&
+               static_cast<int8_t>(globals::buildingType(obj.type)->rule) == rule;
     }
 
     // ---- terrain drawing
 
     // Appends a quad (four vertices) to the terrain buffer while there is room (0x9BD vertices). The w
-    // words carry draw data: the first a texture entry from t1 (with the base at 0x1BD990), the second an
-    // entry of the table at 0x1AF360, the third t3; the fourth vertex is copied whole.
+    // words carry draw data (docs/RENDER_PIPELINE.md): the first TEX0's low word from t1 (with the base at 0x1BD990),
+    // the second the VU1 address of a texture-coordinate set (0x21 plus an entry of the table at 0x1AF360), the third
+    // the quad's flags (t3); the fourth vertex is copied whole.
     void Terrain_AddQuad(GuestPtr<CityMap> map, GuestPtr<Vec4> a, GuestPtr<Vec4> b, GuestPtr<Vec4> c, GuestPtr<Vec4> d, int t1, int t2, int t3)
     {
         if (map->terrainQuads >= 0x9BD)
@@ -915,7 +919,7 @@ namespace mm
             const GuestPtr<Vec4> dst{map->terrainWrite.address};
             *dst = *src;
             if (w)
-                port::store<uint32_t>(dst.address + 0xCu, *w);
+                port::store<uint32_t>(addressOf(dst->w), *w);
             map->terrainWrite.address += 16u;
         };
         const uint32_t w0 = port::load<uint32_t>(0x001BD990u) | static_cast<uint32_t>((t1 - 1) * 0x40 / 4 + 0x2588);
@@ -953,7 +957,7 @@ namespace mm
                 {
                     const GuestPtr<Vec4> dst{map->sideWrite.address};
                     *dst = *v[i];
-                    port::store<uint32_t>(dst.address + 0xCu, w[i]);
+                    port::store<uint32_t>(addressOf(dst->w), w[i]);
                     map->sideWrite.address += 16u;
                 }
                 map->sideVertices += 3;
@@ -1078,7 +1082,7 @@ namespace mm
                     flags |= (map->tiles[tile].flags & 0x20u) != 0 ? 0x20u : 0x40u;
                     break;
                 }
-        if (LayerC_InTileRect(map->buildings, x, z) != 0)
+        if (LayerC_InTileRect(map->placement, x, z) != 0)
             flags |= 4u;
         if ((map->tiles[tile].flags & 0x10u) != 0 && (map->objects[map->tiles[tile].firstObject].flags & 0x10u) != 0)
             flags |= 0x10u;
@@ -1102,7 +1106,7 @@ namespace mm
         const GuestPtr<BuildingType> btype{globals::buildingTypeAddress(obj->type)};
         const ps2f half = fromInt(btype->size) / ps2f(2.0f);
         matrix[3].x = static_cast<float>((fromInt(obj->tile & 0x7F) - ps2f(64.0f)) + half);
-        port::store<uint32_t>(matrix.address + 0x34u, 0);
+        port::store<uint32_t>(addressOf(matrix[3].y), 0);
         matrix[3].z = static_cast<float>((fromInt(128 - (obj->tile >> 7)) - ps2f(64.0f)) - half);
         const uint32_t test = port::load<uint32_t>(btype->vtable.address + 0x30u);
         return port::callGuest<int64_t>(test, btype, obj, a2, a3, matrix, arg) != 0 ? 1 : 0;
@@ -1754,15 +1758,16 @@ namespace mm
                 }
             }
         }
-        // What the frame did not fill keeps its draw flag cleared.
+        // What the frame did not fill is not drawn: each quad's flags (vertex 2's w) and each side triangle's draw word
+        // (vertex 2's w) are cleared.
         for (int quads = map->terrainQuads; quads < 0x9C0; quads += 4)
         {
-            port::store<uint32_t>(map->terrainWrite.address + 0x2Cu, 0u);
+            port::store<uint32_t>(addressOf(GuestPtr<Vec4>{map->terrainWrite.address}[2].w), 0u);
             map->terrainWrite = GuestPtr<void>{map->terrainWrite.address + 0x40u};
         }
         for (int sides = map->sideVertices; sides < 0x870; sides += 3)
         {
-            port::store<uint32_t>(map->sideWrite.address + 0x2Cu, 0u);
+            port::store<uint32_t>(addressOf(GuestPtr<Vec4>{map->sideWrite.address}[2].w), 0u);
             map->sideWrite = GuestPtr<void>{map->sideWrite.address + 0x30u};
         }
     }
@@ -1875,11 +1880,11 @@ namespace mm
     void Map_SaveState(GuestPtr<CityMap> map, GuestPtr<McManager> mc)
     {
         SaveFile_Write(mc, static_cast<int>(map->packedTiles.address), 0x18000);
-        SaveFile_Write(mc, static_cast<int>(map.address + 0x10u), 0x20);
+        SaveFile_Write(mc, static_cast<int>(addressOf(map->nextId)), 0x20); // nextId .. flag8History, refreshDelay
         SaveFile_Write(mc, static_cast<int>(map->objects.address), 0x6F200);
         TileLists_SaveState(map->tileLists, mc);
         SaveFile_Write(mc, static_cast<int>(map->people.address), 0x46500);
-        SaveFile_Write(mc, static_cast<int>(map.address + 0x6Cu), 0xC);
+        SaveFile_Write(mc, static_cast<int>(addressOf(map->unk_6C)), 0xC); // unk_6C, peopleInUse, population
     }
 
     // The object matrix: the building matrix of the tile kind, moved to the footprint centre on the terrain.
@@ -1887,8 +1892,8 @@ namespace mm
     {
         const GuestPtr<MapObject> obj = map->objects + object;
         const int kind = Map_GetTileKind(map, obj->tile);
-        for (uint32_t i = 0; i < 0x40u; i += 4u)
-            port::store<uint32_t>(matrix.address + i, port::load<uint32_t>(globals::kBuildingMatrices + 0x40u * static_cast<uint32_t>(kind) + i));
+        for (int row = 0; row < 4; ++row)
+            matrix[row] = GuestPtr<Vec4>{globals::kBuildingMatrices + 0x40u * static_cast<uint32_t>(kind)}[row];
         const int x = obj->tile & 0x7F, z = obj->tile >> 7;
         const ps2f half = fromInt(GuestPtr<BuildingType>{globals::buildingTypeAddress(obj->type)}->size) / ps2f(2.0f);
         matrix[3].x = fromInt(x) - ps2f(64.0f) + half;
@@ -1959,16 +1964,19 @@ namespace mm
     void TileLists_SaveState(GuestPtr<TileLists> lists, GuestPtr<McManager> mc)
     {
         SaveFile_Write(mc, static_cast<int>(lists.address), 0x7F00);
-        SaveFile_Write(mc, static_cast<int>(lists.address + 0x7F00u), 0xA0);
-        SaveFile_Write(mc, static_cast<int>(lists.address + 0x7FA0u), 0xA0);
+        SaveFile_Write(mc, static_cast<int>(addressOf(lists->start)), 0xA0);
+        SaveFile_Write(mc, static_cast<int>(addressOf(lists->count)), 0xA0);
     }
 
-    // A terrain layer's vectors (`a` at +0, `b` at +0x220) and its word +0x21C.
-    void Terrain_SetVec(GuestPtr<uint32_t> layer, int value, GuestPtr<uint32_t> b, GuestPtr<uint32_t> a)
+    // The placement highlight: its colour, its rectangle (x0, z0, x1, z1) and its mode (1 the highlight, 2 the marker).
+    void Terrain_SetVec(GuestPtr<LayerC> layer, int mode, GuestPtr<int32_t> rect, GuestPtr<uint32_t> colour)
     {
-        *GuestPtr<Vec4>{layer.address} = *GuestPtr<Vec4>{a.address};
-        *GuestPtr<Vec4>{layer.address + 0x220u} = *GuestPtr<Vec4>{b.address};
-        port::store<int32_t>(layer.address + 0x21Cu, value);
+        layer->colourA = *GuestPtr<Vec4>{colour.address};
+        layer->rectX0 = rect[0];
+        layer->rectZ0 = rect[1];
+        layer->rectX1 = rect[2];
+        layer->rectZ1 = rect[3];
+        layer->rectActive = mode;
     }
 
     PORT_FN(TileLists_Get);
@@ -2076,7 +2084,7 @@ namespace mm
                             if ((flags & 7u) == 1)
                                 port::store<uint32_t>(flagsAt, flags & 8u);
                             else
-                                port::store<uint32_t>(flagsAt, (flags & 8u) | (depth == port::load<uint16_t>(firstType + 0x138u) ? 3u : 4u));
+                                port::store<uint32_t>(flagsAt, (flags & 8u) | (depth == GuestPtr<BuildingType>{firstType}->maxStack ? 3u : 4u));
                         }
                         const int kind = Map_GetTileKind(map, obj->tile);
                         for (uint32_t row = 0; row < 0x40; row += 0x10)
@@ -2084,9 +2092,10 @@ namespace mm
                         const GuestPtr<BuildingType> btype{globals::buildingTypeAddress(obj->type)};
                         const ps2f half = fromInt(btype->size) / ps2f(2.0f);
                         const uint32_t tile = obj->tile;
-                        port::store<float>(matrix + 0x30u, static_cast<float>((fromInt(static_cast<int32_t>(tile & 0x7F)) - ps2f(64.0f)) + half));
-                        port::store<float>(matrix + 0x34u, static_cast<float>(lift + Map_GetHeightAt(map, tileX + dx, z)));
-                        port::store<float>(matrix + 0x38u, static_cast<float>((fromInt(0x80 - static_cast<int32_t>(tile >> 7)) - ps2f(64.0f)) - half));
+                        Vec4 &position = GuestPtr<Vec4>{matrix}[3];
+                        position.x = (fromInt(static_cast<int32_t>(tile & 0x7F)) - ps2f(64.0f)) + half;
+                        position.y = lift + Map_GetHeightAt(map, tileX + dx, z);
+                        position.z = (fromInt(0x80 - static_cast<int32_t>(tile >> 7)) - ps2f(64.0f)) - half;
                         if (visit(btype, obj))
                             return true;
                         if (obj->nextOnTile == kNoObject)
@@ -2241,14 +2250,15 @@ namespace mm
 
     namespace
     {
-        // The camera's list of what is in view starts at the map's +0x78: nodes with the next node at +0 (and a second
-        // list from +0x774 with the next at +4), the object index at +8 and the camera distance at +0xC; the objects
-        // drawn this frame are listed from +0x788 (count at +0x2D00, 16 bytes apart) and lose their "drawn" flag 4 at the end.
+        // The camera's list of what is in view starts at the first distance bucket: nodes with the next node at +0, the
+        // object index at +8 (0 for a bucket) and the camera distance at +0xC (TerrainEntry); a second walk starts at the
+        // last bucket and follows the links at +4 (mm_CityRender_CollectObjects). The objects drawn this frame
+        // (map->sorted) lose their "drawn" flag 4 at the end.
         void clearDrawnFlags(GuestPtr<CityMap> map)
         {
-            for (int i = 0; i < port::load<int32_t>(map.address + 0x2D00u); ++i)
+            for (int i = 0; i < map->sortedCount; ++i)
             {
-                const GuestPtr<MapObject> obj = map->objects + port::load<uint32_t>(map.address + 0x788u + 0x10u * static_cast<uint32_t>(i));
+                const GuestPtr<MapObject> obj = map->objects + map->sorted[i].object;
                 obj->flags = static_cast<uint16_t>(obj->flags & 0xFFFBu);
             }
         }
@@ -2267,10 +2277,10 @@ namespace mm
         port::GuestFrame<0x70> frame; // the flag word at +0x6C
         const uint32_t flagsAt = frame.ptr().address + 0x6Cu;
         const ps2f fogNear = city->cityCamera->base.fogNear;
-        uint32_t node = map.address + 0x78u;
+        GuestPtr<TerrainEntry> node = GuestPtr<TerrainEntry>{addressOf(map->buckets[0])};
         do
         {
-            const uint32_t index = port::load<uint32_t>(node + 8u);
+            const uint32_t index = node->object;
             if (index != 0)
             {
                 const GuestPtr<MapObject> obj = map->objects + index;
@@ -2284,16 +2294,16 @@ namespace mm
                     const ps2f x = footprintX(tile, half);
                     const ps2f y = map->tiles[tile].height;
                     const ps2f z = footprintZ(tile, half);
-                    const int mode = ps2f(1.0f) + ps2f(port::load<float>(node + 0xCu)) <= fogNear ? 0 : 2;
+                    const int mode = ps2f(1.0f) + node->distance <= fogNear ? 0 : 2;
                     port::store<uint32_t>(flagsAt, 0);
-                    const GuestPtr<MapObject> current = map->objects + port::load<uint32_t>(node + 8u);
+                    const GuestPtr<MapObject> current = map->objects + node->object;
                     const GuestPtr<BuildingType> type{globals::buildingTypeAddress(current->type)};
                     port::callGuest<void>(port::load<uint32_t>(type->vtable.address + 0x18u),
                                           x, y, z, type, kind, city, current, flagsAt, mode, map->people);
                 }
             }
-            node = port::load<uint32_t>(node);
-        } while (node != 0);
+            node = GuestPtr<TerrainEntry>{node->next};
+        } while (node);
         clearDrawnFlags(map);
         CharType_TickSlots();
     }
@@ -2313,10 +2323,10 @@ namespace mm
         LayerA_SetSource(map->instances, static_cast<int>(port::load<uint32_t>(0x001BDCD0u) & 1u));
         GuestPtr<BuildingType> lastType;
         ps2f bestHeight = 0.0f;
-        uint32_t node = map.address + 0x774u;
+        GuestPtr<TerrainEntry> node = GuestPtr<TerrainEntry>{addressOf(map->buckets[149])}; // the far end, walked back
         do
         {
-            const uint32_t index = port::load<uint32_t>(node + 8u);
+            const uint32_t index = node->object;
             if (index != 0)
             {
                 const GuestPtr<MapObject> obj = map->objects + index;
@@ -2333,11 +2343,11 @@ namespace mm
                         ps2f y = map->tiles[tile].height;
                         const ps2f x = footprintX(tile, half);
                         const ps2f z = footprintZ(tile, half);
-                        uint32_t reached = port::load<uint32_t>(node + 8u);
+                        uint32_t reached = node->object;
                         port::store<uint32_t>(flagsAt, 1);
-                        const ps2f distance = port::load<float>(node + 0xCu);
+                        const ps2f distance = node->distance;
                         int mode;
-                        if (ps2f(port::load<float>(camera.address + 0x134u)) < ps2f(-10.0f) || fogNear < distance + half)
+                        if (camera->base.eye.y < ps2f(-10.0f) || fogNear < distance + half)
                             mode = 2;
                         else
                             mode = distance < size + half ? 1 : 0;
@@ -2353,7 +2363,7 @@ namespace mm
                                 if ((flags & 7u) == 1)
                                     port::store<uint32_t>(flagsAt, flags & 8u);
                                 else
-                                    port::store<uint32_t>(flagsAt, (flags & 8u) | (depth == port::load<uint16_t>(lastType.address + 0x138u) ? 3u : 4u));
+                                    port::store<uint32_t>(flagsAt, (flags & 8u) | (depth == lastType->maxStack ? 3u : 4u));
                             }
                             lastType = GuestPtr<BuildingType>{globals::buildingTypeAddress(level->type)};
                             port::callGuest<void>(port::load<uint32_t>(lastType->vtable.address + 0x14u), x, y, z, lastType, kind, city, level, flagsAt, mode);
@@ -2369,9 +2379,9 @@ namespace mm
                                         bestHeight = y;
                                     }
                                     const uint32_t next = (count + 1u) & 0xFFu;
-                                    port::store<uint8_t>(after.address + 0x18u, static_cast<uint8_t>(next));
+                                    port::store<uint8_t>(addressOf(after->variant), static_cast<uint8_t>(next)); // the low byte
                                     if (next >= 0x2E)
-                                        port::store<uint8_t>(after.address + 0x18u, 0);
+                                        port::store<uint8_t>(addressOf(after->variant), 0);
                                 }
                             }
                             port::store<uint32_t>(flagsAt, (port::load<uint32_t>(flagsAt) & 8u) | 2u);
@@ -2383,8 +2393,8 @@ namespace mm
                     }
                 }
             }
-            node = port::load<uint32_t>(node + 4u);
-        } while (node != 0);
+            node = GuestPtr<TerrainEntry>{node->prev};
+        } while (node);
         clearDrawnFlags(map);
     }
 
@@ -2472,18 +2482,18 @@ namespace mm
     {
         if (map)
         {
-            port::store<uint32_t>(map.address + 0x64u, 0x001BCEF0u);
-            const uint32_t objects = port::load<uint32_t>(map.address + 0x8u);
+            map->vtable = GuestPtr<void>{0x001BCEF0u};
+            const uint32_t objects = map->objects.address;
             if (objects != 0u)
             {
                 sdk::mw_DeleteArray(objects - 0x10u);
-                port::store<uint32_t>(map.address + 0x8u, 0u);
+                map->objects = GuestPtr<MapObject>{0u};
             }
-            const uint32_t tileLists = port::load<uint32_t>(map.address + 0xCu);
+            const uint32_t tileLists = map->tileLists.address;
             if (tileLists != 0u)
             {
                 sdk::operator_delete(tileLists);
-                port::store<uint32_t>(map.address + 0xCu, 0u);
+                map->tileLists = GuestPtr<TileLists>{0u};
             }
             MapTiles_dtor(map, 0);
             if (0 < deleteFlag)
@@ -2496,32 +2506,32 @@ namespace mm
 
     // ---- Packing the tile array for the save file (plan P6 batch 2) ----
 
-    // Packs the 0x4000 tiles into the save buffer (malloc 0x18000): per tile 6 bytes, the height in 1/2048 units (16 bits), then
-    // the tile's first-object halfword (+0x14) and flags halfword (+0x16).
+    // Packs the 0x4000 tiles into the save buffer (malloc 0x18000): per tile three halfwords, the height in 1/2048 units, the
+    // tile's first object and its flags.
     void MapSave_PackTiles(GuestPtr<CityMap> map)
     {
         map->packedTiles = GuestPtr<void>{sdk::malloc(0x18000u)};
-        for (uint32_t i = 0; i < 0x4000u; ++i)
+        for (int i = 0; i < 0x4000; ++i)
         {
-            const uint32_t tile = map->tiles.address + 0x18u * i;
-            const uint32_t packed = map->packedTiles.address + 6u * i;
-            port::store<uint16_t>(packed, static_cast<uint16_t>(sdk::fptosi(ps2f(2048.0f) * ps2f(port::load<float>(tile)))));
-            port::store<uint16_t>(packed + 2u, port::load<uint16_t>(tile + 0x14u));
-            port::store<uint16_t>(packed + 4u, port::load<uint16_t>(tile + 0x16u));
+            const GuestPtr<MapTile> tile = map->tiles + i;
+            const GuestPtr<uint16_t> packed = GuestPtr<uint16_t>{map->packedTiles.address} + 3 * i;
+            packed[0] = static_cast<uint16_t>(sdk::fptosi(ps2f(2048.0f) * tile->height));
+            packed[1] = tile->firstObject;
+            packed[2] = tile->flags;
         }
     }
 
     // Unpacks the save buffer into the tiles, rebuilds every tile's corner heights, frees the buffer, and recounts the buildings
-    // per category from the objects (category 4 only without type flag 0x80; category 5 of size 3 and up also in +0x5C).
+    // per category from the objects (category 4 only without type flag 0x80; category 5 of size 3 and up also counted apart).
     void MapSave_UnpackTiles(GuestPtr<CityMap> map)
     {
-        for (uint32_t i = 0; i < 0x4000u; ++i)
+        for (int i = 0; i < 0x4000; ++i)
         {
-            const uint32_t tile = map->tiles.address + 0x18u * i;
-            const uint32_t packed = map->packedTiles.address + 6u * i;
-            port::store<float>(tile, static_cast<float>(fromInt(port::load<int16_t>(packed)) / ps2f(2048.0f)));
-            port::store<uint16_t>(tile + 0x14u, port::load<uint16_t>(packed + 2u));
-            port::store<uint16_t>(tile + 0x16u, port::load<uint16_t>(packed + 4u));
+            const GuestPtr<MapTile> tile = map->tiles + i;
+            const GuestPtr<uint16_t> packed = GuestPtr<uint16_t>{map->packedTiles.address} + 3 * i;
+            tile->height = fromInt(static_cast<int16_t>(packed[0])) / ps2f(2048.0f);
+            tile->firstObject = packed[1];
+            tile->flags = packed[2];
         }
         for (int z = 0; z < 0x80; ++z)
             for (int x = 0; x < 0x80; ++x)
@@ -2531,24 +2541,26 @@ namespace mm
             sdk::free(map->packedTiles.address);
             map->packedTiles = GuestPtr<void>{0u};
         }
-        for (uint32_t offset = 0x30u; offset <= 0x5Cu; offset += 4u)
-            port::store<uint32_t>(map.address + offset, 0u);
-        for (uint32_t i = 0; i < 0x3F80u; ++i)
+        for (int32_t &count : map->categoryCount)
+            count = 0;
+        map->bigCategory5Count = 0;
+        for (int i = 0; i < 0x3F80; ++i)
         {
-            const uint32_t type = port::load<uint16_t>(map->objects.address + 0x1Cu * i);
+            const uint32_t type = map->objects[i].type;
             if (type == 0)
                 continue;
-            const uint32_t btype = globals::buildingTypeAddress(type);
-            const uint32_t category = port::load<uint8_t>(btype + 0x145u);
+            const GuestPtr<BuildingType> btype = globals::buildingType(type);
+            const uint32_t category = btype->category;
             if (category == 4)
             {
-                if ((port::load<uint16_t>(btype + 0x136u) & 0x80u) == 0)
-                    port::store<uint32_t>(map.address + 0x30u + 4u * 4u, port::load<uint32_t>(map.address + 0x30u + 4u * 4u) + 1u);
+                if ((btype->flags & 0x80u) == 0)
+                    map->categoryCount[4] = map->categoryCount[4] + 1;
                 continue;
             }
-            if (category == 5 && port::load<uint8_t>(btype + 0x142u) >= 3)
-                port::store<uint32_t>(map.address + 0x5Cu, port::load<uint32_t>(map.address + 0x5Cu) + 1u);
-            port::store<uint32_t>(map.address + 0x30u + 4u * category, port::load<uint32_t>(map.address + 0x30u + 4u * category) + 1u);
+            if (category == 5 && btype->size >= 3)
+                map->bigCategory5Count = map->bigCategory5Count + 1;
+            const GuestPtr<int32_t> counts = GuestPtr<int32_t>::of(map->categoryCount[0]); // a category past 10 counts past the array, as in the original
+            counts[static_cast<int32_t>(category)] = counts[static_cast<int32_t>(category)] + 1;
         }
     }
 
@@ -2561,25 +2573,26 @@ namespace mm
     GuestPtr<CityMap> MapObjects_ctor(GuestPtr<CityMap> map)
     {
         MapTiles_ctor(map);
-        port::store<uint32_t>(map.address + 0x64u, 0x001BCEF0u);
-        port::store<int32_t>(map.address + 0x10u, 1);
-        port::store<int32_t>(map.address + 0x14u, 0);
-        port::store<int32_t>(map.address + 0x18u, 0);
-        port::store<int32_t>(map.address + 0x1Cu, 0);
-        port::store<int16_t>(map.address + 0x20u, 0);
-        port::store<int16_t>(map.address + 0x22u, 0);
-        port::store<int32_t>(map.address + 0x24u, 0);
-        sdk::memset(map.address + 0x28u, 0, 6);
-        port::store<int16_t>(map.address + 0x2Eu, 0);
-        port::store<int32_t>(map.address + 0x60u, 0);
-        for (uint32_t offset = 0x30u; offset <= 0x5Cu; offset += 4u)
-            port::store<uint32_t>(map.address + offset, 0u);
+        map->vtable = GuestPtr<void>{0x001BCEF0u};
+        map->nextId = 1;
+        map->unk_14 = 0;
+        map->flag8Objects = 0;
+        map->unk_1C = 0;
+        map->objectsChanged = 0;
+        map->claimRecheck = 0;
+        map->objectCount = 0;
+        sdk::memset(addressOf(map->flag8History), 0, 6);
+        map->refreshDelay = 0;
+        map->unk_60 = 0;
+        for (int32_t &count : map->categoryCount)
+            count = 0;
+        map->bigCategory5Count = 0;
         uint32_t lists = sdk::operator_new(0x8040u);
         if (lists != 0u)
             lists = TileLists_Clear(GuestPtr<TileLists>{lists}).address;
-        port::store<uint32_t>(map.address + 0xCu, lists);
+        map->tileLists = GuestPtr<TileLists>{lists};
         const uint32_t block = sdk::mw_NewArray(0x6F210u);
-        port::store<uint32_t>(map.address + 8u, sdk::construct_new_array(block, addr::MapObject_ctor, 0u, 0x1Cu, 0x3F80u));
+        map->objects = GuestPtr<MapObject>{sdk::construct_new_array(block, addr::MapObject_ctor, 0u, 0x1Cu, 0x3F80u)};
         MapObj_Init(map, 0, 1, 0, 0x4000);
         for (int z = 2; z < 0x7E; ++z)
             for (int x = 2; x < 0x7E; ++x)
@@ -2599,17 +2612,16 @@ namespace mm
 
     // ---- The people array (plan P6 batch 2) ----
 
-    // The object map, then the table of 6000 people (0x30 bytes each, constructed through 0x143630) at +0x68; the person lists
-    // (+0x6C, +0x70, +0x74) start empty.
+    // The object map, then the table of 6000 people (0x30 bytes each, constructed through 0x143630); the counts start at 0.
     GuestPtr<CityMap> MapPeople_ctor(GuestPtr<CityMap> map)
     {
         MapObjects_ctor(map);
-        port::store<uint32_t>(map.address + 0x64u, 0x001BCEE0u);
-        port::store<uint32_t>(map.address + 0x6Cu, 0u);
+        map->vtable = GuestPtr<void>{0x001BCEE0u};
+        port::store<uint32_t>(addressOf(map->unk_6C), 0u);
         const uint32_t block = sdk::mw_NewArray(0x46510u);
-        port::store<uint32_t>(map.address + 0x68u, sdk::construct_new_array(block, addr::MapPerson_ctor, 0u, 0x30u, 6000u));
-        port::store<uint32_t>(map.address + 0x70u, 0u);
-        port::store<uint32_t>(map.address + 0x74u, 0u);
+        map->people = GuestPtr<MapPerson>{sdk::construct_new_array(block, addr::MapPerson_ctor, 0u, 0x30u, 6000u)};
+        map->peopleInUse = 0;
+        map->population = 0;
         return map;
     }
 
@@ -2618,12 +2630,12 @@ namespace mm
     {
         if (map)
         {
-            port::store<uint32_t>(map.address + 0x64u, 0x001BCEE0u);
-            const uint32_t people = port::load<uint32_t>(map.address + 0x68u);
+            map->vtable = GuestPtr<void>{0x001BCEE0u};
+            const uint32_t people = map->people.address;
             if (people != 0u)
             {
                 sdk::mw_DeleteArray(people - 0x10u);
-                port::store<uint32_t>(map.address + 0x68u, 0u);
+                map->people = GuestPtr<MapPerson>{0u};
             }
             MapObjects_dtor(map, 0);
             if (0 < deleteFlag)

@@ -564,7 +564,7 @@ namespace mm
         Wants_ctor(wants);
         wants->model = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B04u)};
         wants->unk_51C = 0;
-        wants->matrix = GuestPtr<Vec4>{wants->model.address + 0x10u};
+        wants->matrix = GuestPtr<Vec4>::of(wants->model->matrix[0]);
         const GuestPtr<Vec4> place{0x001B0900u};
         wants->matrix[3].x = place->x;
         wants->matrix[3].y = place->y;

@@ -3,9 +3,11 @@
 #include "game_functions.h"
 #include "game_globals.h"
 #include "lifetime.h"
+#include "render.h"
 #include "sdk.h"
 
 #include <algorithm>
+#include <bit>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -13,19 +15,25 @@
 
 namespace mm
 {
-    // Word +0xC of mesh `mesh` in the model's mesh table, as a float.
-    ps2f A3D_GetMeshField0C(GuestPtr<A3DObject> model, int mesh)
+    using packet::addressOf;
+    using packet::putFloats;
+    using packet::putHalvesStq;
+    using packet::putWords;
+    using packet::tagAddress;
+
+    // The length of animation `animation` of the model: its first track's length word.
+    ps2f A3D_GetMeshField0C(GuestPtr<A3DObject> model, int animation)
     {
-        const uint32_t entry = model->meshes.address + 4u * static_cast<uint32_t>(mesh);
-        return port::load<float>(port::load<uint32_t>(entry) + 0xCu);
+        const GuestPtr<A3DTrack> tracks{model->animations[animation]};
+        return tracks->length;
     }
 
-    // A DMA chain reader starts at `chain`, with the current tag pointing at the scratchpad (0x70000000).
-    int DmaChain_Begin(int reader, int chain)
+    // A DMA chain reader starts at `chain`. The ID is set to END so that the first DmaChain_Next stays on the first tag.
+    int DmaChain_Begin(GuestPtr<DmaChainReader> reader, int chain)
     {
-        port::store<int32_t>(static_cast<uint32_t>(reader) + 4u, chain);
-        port::store<uint32_t>(static_cast<uint32_t>(reader) + 8u, 0x70000000u);
-        return reader;
+        reader->tag = static_cast<uint32_t>(chain);
+        reader->id = packet::kEnd;
+        return static_cast<int>(reader.address);
     }
 
     namespace
@@ -41,14 +49,7 @@ namespace mm
                 used += 3;
             if ((used >> 2) >= 0x4000)
                 return;
-            port::store<uint32_t>(ptr + 0x0, 0x50000000u); // CALL, no data of its own
-            port::store<uint32_t>(ptr + 0x4, target);
-            port::store<uint32_t>(ptr + 0x8, 0u);
-            port::store<uint32_t>(ptr + 0xC, 0u);
-            port::store<uint32_t>(ptr + 0x10, 0x70000000u); // END
-            port::store<uint32_t>(ptr + 0x14, 0u);
-            port::store<uint32_t>(ptr + 0x18, 0u);
-            port::store<uint32_t>(ptr + 0x1C, 0u);
+            packet::putCallThenEnd(ptr, target);
             globals::dmaListPtr.set(ptr + 16u);
         }
     }
@@ -75,28 +76,27 @@ namespace mm
 
     // Steps a DMA chain reader to the next tag: past a CNT tag's data, onto the next tag otherwise; stays
     // on END; returns 0 at a RET tag (0x6...). The reader keeps the tag's id, size, words and data address.
-    int DmaChain_Next(int reader)
+    int DmaChain_Next(GuestPtr<DmaChainReader> r)
     {
-        const uint32_t r = static_cast<uint32_t>(reader);
-        const uint32_t id = port::load<uint32_t>(r + 8);
-        if (id != 0x70000000u)
+        const uint32_t id = r->id;
+        if (id != packet::kEnd)
         {
-            if (id == 0x10000000u)
-                port::store<uint32_t>(r + 4, port::load<uint32_t>(r + 4) + (port::load<uint32_t>(r + 0xC) + 1u) * 16u);
-            else if (id == 0x60000000u)
+            if (id == packet::kCnt)
+                r->tag = r->tag + (r->qwc + 1u) * 16u; // past its data
+            else if (id == packet::kRet)
                 return 0;
             else
-                port::store<uint32_t>(r + 4, port::load<uint32_t>(r + 4) + 16u);
+                r->tag = r->tag + 16u;
         }
-        const uint32_t tag = port::load<uint32_t>(r + 4);
-        port::store<uint32_t>(r + 0x8, port::load<uint32_t>(tag) & 0x70000000u);
-        port::store<uint32_t>(r + 0xC, port::load<uint16_t>(tag));
-        port::store<uint32_t>(r + 0x10, port::load<uint32_t>(tag + 4));
-        port::store<uint32_t>(r + 0x18, port::load<uint32_t>(tag + 8));
-        port::store<uint32_t>(r + 0x20, port::load<uint32_t>(tag + 0xC));
-        port::store<uint32_t>(r + 0x14, port::load<uint32_t>(tag + 8) & 0x7F000000u);
-        port::store<uint32_t>(r + 0x1C, port::load<uint32_t>(tag + 0xC) & 0x7F000000u);
-        port::store<uint32_t>(r + 0x24, tag + 16u);
+        const GuestPtr<uint32_t> tag{r->tag};
+        r->id = tag[0] & 0x70000000u;
+        r->qwc = port::load<uint16_t>(tag.address);
+        r->address = tag[1];
+        r->vifCode0 = tag[2];
+        r->vifCode1 = tag[3];
+        r->vifCommand0 = tag[2] & 0x7F000000u;
+        r->vifCommand1 = tag[3] & 0x7F000000u;
+        r->data = tag.address + 16u;
         return 1;
     }
 
@@ -128,7 +128,7 @@ namespace mm
         BaseObject_ctor(static_cast<int>(layer.address));
         LayerC_InitParams(layer);
         PacketBuf_Seek(static_cast<int>(LayerC_BuildPacket(layer, GuestPtr<uint32_t>{static_cast<uint32_t>(PacketBuf_Tell())}).address));
-        layer->unk_230 = GuestPtr<void>{port::load<uint32_t>(0x001F3B1Cu)};
+        layer->marker = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B1Cu)};
         return layer;
     }
 
@@ -235,8 +235,8 @@ namespace mm
     }
 
     // The camera's VU1 packet, built in the packet buffer: a DMA cnt with a GIF A+D write of 0 to GS register
-    // 0x3D, a ref to the camera's 0x12 quadwords from +0x10 (both screen matrices, the light matrices, the fog
-    // vectors) unpacked to VU1 address 0, and a ret.
+    // 0x3D (FOGCOL, the fog colour: mm_LightSet_SetField20 sets it), a ref to the camera's 0x12 quadwords from its
+    // first screen matrix (both screen matrices, the light matrices, the fog vectors) unpacked to VU1 address 0, and a ret.
     void Camera_BuildPacket(GuestPtr<Camera> camera)
     {
         camera->packet = static_cast<uint32_t>(PacketBuf_Tell());
@@ -245,7 +245,7 @@ namespace mm
             0x10000002u, 0, 0x11000000u, 0x50000002u,                       // cnt 2; VIF flush, direct 2
             0x00008001u, 0x10000000u, 0x0000000Eu, 0,                       // GIF tag: 1 loop, eop, A+D
             0, 0, 0x0000003Du, 0,                                            // register 0x3D = 0
-            0x30000012u, (camera.address + 0x10u) & 0x7FFFFFFFu, 0x01000101u, 0x6C120000u, // ref 0x12; stcycl, unpack v4-32
+            0x30000012u, tagAddress(camera->worldScreenA), 0x01000101u, 0x6C120000u,   // ref 0x12; stcycl, unpack v4-32
             0x60000000u, 0, 0, 0,                                            // ret
         };
         for (uint32_t i = 0; i < 20; ++i)
@@ -506,9 +506,9 @@ namespace mm
     // The three sky packets built into the city camera.
     void Sky_Draw(GuestPtr<CityCamera> camera)
     {
-        Dma_AppendCall(static_cast<int>(camera.address + 0x310u));
-        Dma_AppendCall(static_cast<int>(camera.address + 0x470u));
-        Dma_AppendCall(static_cast<int>(camera.address + 0x3D0u));
+        Dma_AppendCall(static_cast<int>(addressOf(camera->skyBands)));
+        Dma_AppendCall(static_cast<int>(addressOf(camera->skyGlow)));
+        Dma_AppendCall(static_cast<int>(addressOf(camera->skyPicture)));
     }
 
     // City render passes; the frame parity (0x1BDCD0) picks one of two packet sets.
@@ -522,115 +522,113 @@ namespace mm
     void CityRender_DrawBuildings(GuestPtr<CityMap> map, int pass)
     {
         const uint32_t parity = port::load<uint32_t>(0x001BDCD0u) & 1u;
-        LayerC_DrawBuildings(map->buildings, static_cast<int>(map->packets[parity].address), map, pass);
+        LayerC_DrawBuildings(map->placement, static_cast<int>(map->chunkPackets[parity]), map, pass);
     }
 
     void Map_SetPlacementHighlight(GuestPtr<CityMap> map, int mode, GuestPtr<int32_t> rect, GuestPtr<uint32_t> colour)
     {
-        Terrain_SetVec(GuestPtr<uint32_t>{map->buildings.address}, mode, GuestPtr<uint32_t>{rect.address}, colour);
+        Terrain_SetVec(map->placement, mode, rect, colour);
     }
 
-    // Static overlay packets, then the two-packet layers B and F with this frame's packet.
+    // The terrain: the base ground pass over this frame's chunk packet, the cliff sides, then layers B and F over the
+    // same chunk packet.
     void CityRender_DrawOverlays(GuestPtr<CityMap> map, GuestPtr<CityScene>)
     {
         const uint32_t parity = port::load<uint32_t>(0x001BDCD0u) & 1u;
-        const int packet = static_cast<int>(map->packets[parity].address);
-        Dma_AppendCall(static_cast<int>(map->packets[2].address));
+        const int packet = static_cast<int>(map->chunkPackets[parity]);
+        Dma_AppendCall(static_cast<int>(map->groundPacket));
         Dma_AppendCall(packet);
-        Dma_AppendCall(static_cast<int>(map->packets[parity + 3].address));
+        Dma_AppendCall(static_cast<int>(map->sidePackets[parity]));
         LayerB_Draw(map->layerB, packet);
         LayerF_Draw(map->layerF, packet);
     }
 
     // ---- model instances
 
-    // A model's node matrices: each node's local matrix (+0x10) times its parent's world matrix (+0x70), or
-    // the model's matrix for a root node, into the node's world matrix. A parent whose last word (+0xAC) is
-    // still 0 is brought up to date first (A3DObject_UpdateNodeMatrix); every node's last word is cleared
-    // before.
-    // A node's world matrix (+0x70): its local matrix (+0x10) times its parent's world matrix, or the model's for a
-    // root. A parent whose world matrix is not done yet (+0xAC still 0) is done first, its own parent recursively.
-    // (The original multiplies inline with the same VU0 registers as Mat4_MulVu0.)
-    void A3DObject_UpdateNodeMatrix(GuestPtr<A3DObject> model, GuestPtr<int32_t> node)
+    namespace
     {
-        const auto world = [](uint32_t of) { return GuestPtr<Vec4>{of + 0x70u}; };
-        const auto local = [](uint32_t of) { return GuestPtr<Vec4>{of + 0x10u}; };
-        const auto done = [](uint32_t of) { return !(ps2f(port::load<float>(of + 0xACu)) == ps2f(0.0f)); };
-        const uint32_t self = node.address;
-        const uint32_t parent = port::load<uint32_t>(self);
-        if (parent == 0)
+        // A node's matrices; the world matrix's last word doubles as the "up to date" mark, cleared before an update.
+        GuestPtr<Vec4> localMatrix(GuestPtr<A3DNode> node) { return GuestPtr<Vec4>::of(node->local[0]); }
+        bool worldMatrixDone(GuestPtr<A3DNode> node) { return !(node->slot.matrix[3].w == ps2f(0.0f)); }
+        void clearWorldMatrixDone(GuestPtr<A3DNode> node) { port::store<int32_t>(addressOf(node->slot.matrix[3].w), 0); }
+        // A node's DMA call target: its draw packet, or its mesh's chain.
+        int packetOf(GuestPtr<A3DNode> node) { return static_cast<int>(addressOf(node->slot)); }
+        int chainOf(GuestPtr<A3DMesh> mesh) { return static_cast<int>(addressOf(mesh->chain)); }
+    }
+
+    // A node's world matrix: its local matrix times its parent's world matrix, or the model's for a root. A parent whose
+    // world matrix is not done yet is done first, its own parent recursively. (The original multiplies inline with the
+    // same VU0 registers as Mat4_MulVu0.)
+    void A3DObject_UpdateNodeMatrix(GuestPtr<A3DObject> model, GuestPtr<A3DNode> node)
+    {
+        const GuestPtr<A3DNode> parent = node->parent;
+        if (!parent)
         {
-            Mat4_MulVu0(world(self), local(self), GuestPtr<Vec4>::of(model->matrix[0]));
+            Mat4_MulVu0(worldMatrix(node), localMatrix(node), GuestPtr<Vec4>::of(model->matrix[0]));
             return;
         }
-        if (!done(parent))
+        if (!worldMatrixDone(parent))
         {
-            const uint32_t grandparent = port::load<uint32_t>(parent);
-            if (grandparent == 0)
-                Mat4_MulVu0(world(parent), local(parent), GuestPtr<Vec4>::of(model->matrix[0]));
+            const GuestPtr<A3DNode> grandparent = parent->parent;
+            if (!grandparent)
+                Mat4_MulVu0(worldMatrix(parent), localMatrix(parent), GuestPtr<Vec4>::of(model->matrix[0]));
             else
             {
-                if (!done(grandparent))
-                    A3DObject_UpdateNodeMatrix(model, GuestPtr<int32_t>{grandparent});
-                Mat4_MulVu0(world(parent), local(parent), world(grandparent));
+                if (!worldMatrixDone(grandparent))
+                    A3DObject_UpdateNodeMatrix(model, grandparent);
+                Mat4_MulVu0(worldMatrix(parent), localMatrix(parent), worldMatrix(grandparent));
             }
         }
-        Mat4_MulVu0(world(self), local(self), world(parent));
+        Mat4_MulVu0(worldMatrix(node), localMatrix(node), worldMatrix(parent));
     }
 
+    // Every node's world matrix: all marked not done, then each brought up to date after its parent.
     void A3DObject_UpdateMatrices(GuestPtr<A3DObject> model)
     {
-        const auto count = [&] { return port::load<int16_t>(model->model.address + 0x18u); };
-        const auto nodes = [&] { return port::load<uint32_t>(model->model.address + 8u); };
-        for (int i = 0; i < count(); ++i)
-            port::store<int32_t>(nodes() + static_cast<uint32_t>(i) * 0xC0u + 0xACu, 0);
-        for (int i = 0; i < count(); ++i)
+        for (int i = 0; i < model->model->nodeCount; ++i)
+            clearWorldMatrixDone(model->model->nodes + i);
+        for (int i = 0; i < model->model->nodeCount; ++i)
         {
-            const uint32_t node = nodes() + static_cast<uint32_t>(i) * 0xC0u;
-            const uint32_t parent = port::load<uint32_t>(node);
-            if (parent == 0)
+            const GuestPtr<A3DNode> node = model->model->nodes + i;
+            const GuestPtr<A3DNode> parent = node->parent;
+            if (!parent)
             {
-                Mat4_MulVu0(GuestPtr<Vec4>{node + 0x70u}, GuestPtr<Vec4>{node + 0x10u}, GuestPtr<Vec4>::of(model->matrix[0]));
+                Mat4_MulVu0(worldMatrix(node), localMatrix(node), GuestPtr<Vec4>::of(model->matrix[0]));
                 continue;
             }
-            if (ps2f(port::load<float>(parent + 0xACu)) == ps2f(0.0f))
-                A3DObject_UpdateNodeMatrix(model, GuestPtr<int32_t>{parent});
-            Mat4_MulVu0(GuestPtr<Vec4>{node + 0x70u}, GuestPtr<Vec4>{node + 0x10u}, GuestPtr<Vec4>{parent + 0x70u});
+            if (parent->slot.matrix[3].w == ps2f(0.0f))
+                A3DObject_UpdateNodeMatrix(model, parent);
+            Mat4_MulVu0(worldMatrix(node), localMatrix(node), worldMatrix(parent));
         }
     }
 
-    // A whole model: every node's matrix is cleared in its last word (+0xAC) and updated, then every node
-    // with a mesh is queued with its mesh. The node count is read again on every step, as in the original.
+    // A whole model: every node's world matrix is updated, then every node with a mesh is queued: its draw packet, then
+    // its mesh. The node count is read again on every step, as in the original.
     void A3DObject_Draw(GuestPtr<A3DObject> model)
     {
-        const auto count = [&] { return port::load<int16_t>(model->model.address + 0x18u); };
-        const auto nodes = [&] { return port::load<uint32_t>(model->model.address + 8u); };
-        for (int i = 0; i < count(); ++i)
-            port::store<int32_t>(nodes() + static_cast<uint32_t>(i) * 0xC0u + 0xACu, 0);
-        for (int i = 0; i < count(); ++i)
-            A3DObject_UpdateNodeMatrix(model, GuestPtr<int32_t>{nodes() + static_cast<uint32_t>(i) * 0xC0u});
-        const uint32_t first = nodes();
-        for (int i = 0; i < count(); ++i)
+        for (int i = 0; i < model->model->nodeCount; ++i)
+            clearWorldMatrixDone(model->model->nodes + i);
+        for (int i = 0; i < model->model->nodeCount; ++i)
+            A3DObject_UpdateNodeMatrix(model, model->model->nodes + i);
+        const GuestPtr<A3DNode> nodes = model->model->nodes;
+        for (int i = 0; i < model->model->nodeCount; ++i)
         {
-            const uint32_t node = first + static_cast<uint32_t>(i) * 0xC0u;
-            const uint32_t mesh = port::load<uint32_t>(node + 4u);
-            if (mesh != 0)
+            const GuestPtr<A3DNode> node = nodes + i;
+            if (node->mesh)
             {
-                Dma_AppendCall(static_cast<int>(node + 0x50u));
-                Dma_AppendCall(static_cast<int>(mesh + 0x10u));
+                Dma_AppendCall(packetOf(node));
+                Dma_AppendCall(chainOf(node->mesh));
             }
         }
     }
 
-    // One node of a model: the node's own packet (nodes are 0xC0 bytes, packet at +0x50), then its mesh's
-    // packet (+0x10) if it has a mesh.
-    void A3DObject_DrawNode(GuestPtr<A3DObject> model, int node)
+    // One node of a model: its draw packet, then its mesh if it has one.
+    void A3DObject_DrawNode(GuestPtr<A3DObject> model, int index)
     {
-        const uint32_t offset = static_cast<uint32_t>(node) * 0xC0u;
-        Dma_AppendCall(static_cast<int>(port::load<uint32_t>(model->model.address + 8u) + offset + 0x50u));
-        const uint32_t mesh = port::load<uint32_t>(port::load<uint32_t>(model->model.address + 8u) + offset + 4u);
-        if (mesh != 0)
-            Dma_AppendCall(static_cast<int>(mesh + 0x10u));
+        Dma_AppendCall(packetOf(model->model->nodes + index));
+        const GuestPtr<A3DMesh> mesh = model->model->nodes[index].mesh;
+        if (mesh)
+            Dma_AppendCall(chainOf(mesh));
     }
 
     GuestPtr<A3DObject> InstanceBase_ctor(GuestPtr<A3DObject> model)
@@ -640,23 +638,23 @@ namespace mm
         return model;
     }
 
-    // Keyframe animation `anim` of a model at `time`. Each node track (0x10 bytes: key count, node, keys) holds keys
-    // of 0x20 bytes (position xyz, time, rotation quaternion xyzw); the pair around the time sets the node's
-    // matrix (rotation rows at +0x10, position at +0x40). The quaternions are taken the short way round (the later
-    // key is negated in place when the dot product is below 0) and slerped, or blended linearly when nearly
-    // equal (1 - dot <= 0.001); the position is blended linearly. Instance_DrawSwaying2 is the same code, only
+    // Keyframe animation `anim` of a model at `time`: in each node track, the pair of keys around the time sets the
+    // node's local matrix (rotation rows, then the position in the last row). The quaternions are taken the short way
+    // round (the later key is negated in place when the dot product is below 0) and slerped, or blended linearly when
+    // nearly equal (1 - dot <= 0.001); the position is blended linearly. Instance_DrawSwaying2 is the same code, only
     // skipping tracks without keys a step earlier.
     void Instance_DrawSwaying(GuestPtr<A3DObject> model, int anim, ps2f time)
     {
-        uint32_t track = port::load<uint32_t>(model->meshes.address + 4u * static_cast<uint32_t>(anim));
-        for (int i = 0; i < port::load<int32_t>(model.address + 8u); ++i, track += 0x10u)
+        GuestPtr<A3DTrack> track{model->animations[anim]};
+        for (int i = 0; i < model->trackCount; ++i, ++track)
         {
-            const int keys = port::load<int32_t>(track);
-            const GuestPtr<ps2f> node{port::load<uint32_t>(track + 4u)};
-            uint32_t key = port::load<uint32_t>(track + 8u);
-            for (int k = 0; k < keys - 1; ++k, key += 0x20u)
+            const int keys = track->keyCount;
+            const GuestPtr<ps2f> node{track->node.address}; // words 4..19: the node's local matrix
+            GuestPtr<A3DKey> key = track->keys;
+            for (int k = 0; k < keys - 1; ++k, ++key)
             {
-                const GuestPtr<ps2f> a{key}, b{key + 0x20u};
+                // a[0..2] the position, a[3] the time, a[4..7] the rotation
+                const GuestPtr<ps2f> a{key.address}, b{(key + 1).address};
                 if (!(time <= b[3]))
                     continue;
                 const ps2f t = (time - a[3]) / (b[3] - a[3]);
@@ -711,7 +709,7 @@ namespace mm
     // Draws a swaying model only while its nodes still fit in this frame's instance slots.
     void Instance_DrawSwayingIfRoom(GuestPtr<A3DObject> model, int a1, ps2f phase)
     {
-        const int16_t nodes = port::load<int16_t>(model->model.address + 0x18u);
+        const int16_t nodes = model->model->nodeCount;
         if (nodes < 0x708 - globals::instanceCount.get())
             Instance_DrawSwaying(model, a1, phase);
     }
@@ -720,8 +718,6 @@ namespace mm
     {
         constexpr int kMaxInstances = 0x708;
 
-        uint32_t modelNodes(GuestPtr<A3DObject> model) { return port::load<uint32_t>(model->model.address + 8u); }
-
         // Fills the next instance slot with a matrix, flags and colour and queues it.
         void queueSlot(GuestPtr<Vec4> matrix, GuestPtr<Vec4> colour, int flags)
         {
@@ -729,36 +725,34 @@ namespace mm
             const GuestPtr<InstanceSlot> slot = GuestPtr<InstanceSlot>{buffer} + globals::instanceCount.get();
             for (int row = 0; row < 4; ++row)
                 slot->matrix[row] = matrix[row];
-            port::store<int32_t>(slot.address + 0x5Cu, flags);
+            port::store<int32_t>(addressOf(slot->matrix[3].w), flags);
             slot->colour = *colour;
             Dma_AppendCall(static_cast<int>(slot.address));
         }
 
-        // An instance slot, then the mesh's packet (the node's +4, when set).
-        void queueInstance(GuestPtr<A3DObject> model, GuestPtr<Vec4> matrix, GuestPtr<Vec4> colour, int mesh, int flags)
+        // An instance slot, then the mesh of node `node`, when it has one (models whose nodes hold mesh addresses).
+        void queueInstance(GuestPtr<A3DObject> model, GuestPtr<Vec4> matrix, GuestPtr<Vec4> colour, int node, int flags)
         {
             queueSlot(matrix, colour, flags);
-            const uint32_t meshData = port::load<uint32_t>(modelNodes(model) + static_cast<uint32_t>(mesh) * 0xC0u + 4u);
-            if (meshData != 0)
-                Dma_AppendCall(static_cast<int>(meshData + 0x10u));
+            const GuestPtr<A3DMesh> mesh = model->model->nodes[node].mesh;
+            if (mesh)
+                Dma_AppendCall(chainOf(mesh));
             globals::instanceCount.set(globals::instanceCount.get() + 1);
         }
 
-        // For models whose nodes hold mesh indexes at +4 (-1 = none): an instance slot, then the packet of mesh
-        // `index` from the model data's mesh table (+0xC).
+        // For models whose nodes hold mesh indexes (-1 = none): an instance slot, then mesh `index` from the mesh table.
         void queueTableMesh(GuestPtr<A3DObject> model, GuestPtr<Vec4> matrix, GuestPtr<Vec4> colour, int index, int flags)
         {
             queueSlot(matrix, colour, flags);
-            const uint32_t table = port::load<uint32_t>(model->model.address + 0xCu);
-            Dma_AppendCall(static_cast<int>(port::load<uint32_t>(table + 4u * static_cast<uint32_t>(index)) + 0x10u));
+            Dma_AppendCall(chainOf(GuestPtr<A3DMesh>{model->model->meshes[index]}));
             globals::instanceCount.set(globals::instanceCount.get() + 1);
         }
 
-        // A node's own matrix (nodes are 0xC0 bytes, matrix at +0x70).
-        GuestPtr<Vec4> nodeMatrix(GuestPtr<A3DObject> model, int node)
-        {
-            return GuestPtr<Vec4>{modelNodes(model) + static_cast<uint32_t>(node) * 0xC0u + 0x70u};
-        }
+        // A node's world matrix by index.
+        GuestPtr<Vec4> nodeMatrix(GuestPtr<A3DObject> model, int node) { return worldMatrix(modelNode(model, node)); }
+
+        // The mesh index a node of a table model holds in its mesh word.
+        int32_t meshIndex(GuestPtr<A3DNode> node) { return static_cast<int32_t>(node->mesh.address); }
     }
 
     void Instance_DrawMesh(GuestPtr<A3DObject> model, GuestPtr<Vec4> matrix, GuestPtr<Vec4> colour, int mesh, int flags)
@@ -791,17 +785,16 @@ namespace mm
     // updated, then every node with a mesh queued with its world matrix, until the slots run out.
     void Instance_DrawModel(GuestPtr<A3DObject> model, GuestPtr<Vec4> colour, int reserve, int flags)
     {
-        const auto count = [&] { return port::load<int16_t>(model->model.address + 0x18u); };
-        if (count() + reserve >= kMaxInstances - globals::instanceCount.get())
+        if (model->model->nodeCount + reserve >= kMaxInstances - globals::instanceCount.get())
             return;
         A3DObject_UpdateMatrices(model);
-        const uint32_t nodes = modelNodes(model);
-        for (int i = 0; i < count(); ++i)
+        const GuestPtr<A3DNode> nodes = model->model->nodes;
+        for (int i = 0; i < model->model->nodeCount; ++i)
         {
-            const uint32_t node = nodes + static_cast<uint32_t>(i) * 0xC0u;
-            if (port::load<uint32_t>(node + 4u) == 0)
+            const GuestPtr<A3DNode> node = nodes + i;
+            if (!node->mesh)
                 continue;
-            queueInstance(model, GuestPtr<Vec4>{node + 0x70u}, colour, i, flags);
+            queueInstance(model, worldMatrix(node), colour, i, flags);
             if (globals::instanceCount.get() >= kMaxInstances)
                 return;
         }
@@ -813,11 +806,10 @@ namespace mm
     // Used for the player (mm_Player_Draw: variant = its mode, style = the bag's item).
     void Instance_DrawModelLit(GuestPtr<A3DObject> model, GuestPtr<Vec4> colour, int variant, int style)
     {
-        const uint32_t nodes = modelNodes(model);
-        const auto node = [&](int i) { return nodes + static_cast<uint32_t>(i) * 0xC0u; };
-        const auto matrix = [&](int i) { return GuestPtr<Vec4>{node(i) + 0x70u}; };
-        const auto meshOf = [&](int i) { return port::load<int32_t>(node(i) + 4u); };
-        const auto count = [&] { return port::load<int16_t>(model->model.address + 0x18u); };
+        const GuestPtr<A3DNode> nodes = model->model->nodes;
+        const auto matrix = [&](int i) { return worldMatrix(nodes + i); };
+        const auto meshOf = [&](int i) { return meshIndex(nodes + i); };
+        const auto count = [&] { return model->model->nodeCount; };
         queueTableMesh(model, matrix(0), colour, meshOf(0) + variant, 0);
         queueTableMesh(model, matrix(1), colour, meshOf(1), 0);
         if (style == 0)
@@ -836,16 +828,15 @@ namespace mm
     // The same kind of model with the offsets passed in, all with `flags`: node 0 with its mesh + `offset0`;
     // node 1 with its mesh + `offset1` unless that is 4 or more; when `attach` is set, mesh 0 of the part model
     // at 0x1F3B80 (also kept at 0x1BDA38) at node 2; node 3 with its mesh + `offset3`; then each later node that
-    // has a mesh, with mesh (its place from node 4) + group x the group size at +0x60 (past the A3DObject base).
+    // has a mesh, with mesh (its place from node 4) + group x the model's group size (an InstanceModel's).
     // No room check; the second count rises by the node count.
     void Instance_DrawModelEx(GuestPtr<A3DObject> model, GuestPtr<Vec4> colour, int flags, int offset0, int group, int offset3,
                               int attach, int offset1)
     {
-        const uint32_t nodes = modelNodes(model);
-        const auto node = [&](int i) { return nodes + static_cast<uint32_t>(i) * 0xC0u; };
-        const auto matrix = [&](int i) { return GuestPtr<Vec4>{node(i) + 0x70u}; };
-        const auto meshOf = [&](int i) { return port::load<int32_t>(node(i) + 4u); };
-        const auto count = [&] { return port::load<int16_t>(model->model.address + 0x18u); };
+        const GuestPtr<A3DNode> nodes = model->model->nodes;
+        const auto matrix = [&](int i) { return worldMatrix(nodes + i); };
+        const auto meshOf = [&](int i) { return meshIndex(nodes + i); };
+        const auto count = [&] { return model->model->nodeCount; };
         queueTableMesh(model, matrix(0), colour, meshOf(0) + offset0, flags);
         if (offset1 < 4)
             queueTableMesh(model, matrix(1), colour, meshOf(1) + offset1, flags);
@@ -860,7 +851,7 @@ namespace mm
         {
             if (meshOf(4 + i) == -1)
                 continue;
-            queueTableMesh(model, matrix(4 + i), colour, i + group * port::load<int32_t>(model.address + 0x60u), flags);
+            queueTableMesh(model, matrix(4 + i), colour, i + group * GuestPtr<InstanceModel>{model.address}->groupSize, flags);
         }
         globals::instanceLimitedCount.set(globals::instanceLimitedCount.get() + count());
     }
@@ -874,11 +865,11 @@ namespace mm
         globals::instanceLimitedCount.set(globals::instanceLimitedCount.get() + 1);
     }
 
-    // The light set's two VU1 packets, one per render program: each uploads the set's 26 quadwords from +0x10 to
-    // VU1 address 0x12, calls the program's DMA chain and sets the VIF double-buffer base and offset.
+    // The light set's two VU1 packets, one per model program: each uploads the colour table and what follows (26
+    // quadwords) to VU1 address 0x12, calls the program's upload chain and sets the VIF double-buffer base and offset.
     void LightSet_BuildPackets(GuestPtr<LightSet> lights)
     {
-        const uint32_t data = (lights.address + 0x10u) & 0x7FFFFFFFu;
+        const uint32_t data = tagAddress(lights->groupA);
         const auto build = [&](uint32_t chain, uint32_t base, uint32_t offset) {
             const GuestPtr<uint32_t> p{static_cast<uint32_t>(PacketBuf_Tell())};
             const uint32_t words[20] = {
@@ -897,27 +888,26 @@ namespace mm
         lights->packetB = build(0x001A4780u, 0xEA, 0x18B);
     }
 
-    // Light set base setup: 0x110 and 0xE0 at +0x190/+0x194, every colour of both groups (twelve vectors each from
-    // +0x10 and +0xD0) and the vector at +0x1A0 set to 1, then its image-upload packet. Returns the set.
+    // Light set base setup: the two programs' output offsets (0x110 and 0xE0), every colour of both groups and the
+    // instance colour set to 1, then its packets. Returns the set.
     int LightSet_Init(GuestPtr<LightSet> lights)
     {
         BaseObject_ctor(static_cast<int>(lights.address));
-        port::store<int32_t>(lights.address + 0x190u, 0x110);
-        port::store<int32_t>(lights.address + 0x194u, 0xE0);
-        const GuestPtr<Vec4> groupA{lights.address + 0x10u}, groupB{lights.address + 0xD0u};
+        lights->outputOffsets[0] = 0x110;
+        lights->outputOffsets[1] = 0xE0;
         for (int i = 0; i < 12; ++i)
-            for (const GuestPtr<Vec4> colour : {groupA + i, groupB + i})
+            for (Vec4 *colour : {&lights->groupA[i], &lights->groupB[i]})
             {
                 colour->w = 1.0f;
                 colour->z = 1.0f;
                 colour->y = 1.0f;
                 colour->x = 1.0f;
             }
-        const GuestPtr<Vec4> last{lights.address + 0x1A0u};
-        last->w = 1.0f;
-        last->z = 1.0f;
-        last->y = 1.0f;
-        last->x = 1.0f;
+        Vec4 &last = lights->instanceColour;
+        last.w = 1.0f;
+        last.z = 1.0f;
+        last.y = 1.0f;
+        last.x = 1.0f;
         LightSet_BuildPackets(lights);
         return static_cast<int>(lights.address);
     }
@@ -944,7 +934,7 @@ namespace mm
         globals::dmaListPtr.set(port::load<uint32_t>(globals::kDmaLists + 4u * index));
     }
 
-    // Ends the DMA list being built (a REF tag to the static end packet, then an END tag, unless it is already 0x4000
+    // Ends the DMA list being built (a CALL of the GS defaults packet at 0x1B2760, then an END tag, unless it is already 0x4000
     // words long) and starts it on the VIF1 channel: QWC cleared, the tag address set to the list start, the DMA status
     // bit 1 acknowledged and the channel started in chain mode (0x145) after the cache is flushed.
     void DmaList_KickFrame()
@@ -954,14 +944,7 @@ namespace mm
         uint32_t cursor = globals::dmaListPtr.get();
         if (static_cast<int32_t>(cursor - start) / 4 < 0x4000)
         {
-            port::store<uint32_t>(cursor + 0xCu, 0u);
-            port::store<uint32_t>(cursor + 8u, 0u);
-            port::store<uint32_t>(cursor + 4u, 0x001B2760u & 0x7FFFFFFFu);
-            port::store<uint32_t>(cursor, 0x50000000u);
-            port::store<uint32_t>(cursor + 0x1Cu, 0u);
-            port::store<uint32_t>(cursor + 0x18u, 0u);
-            port::store<uint32_t>(cursor + 0x14u, 0u);
-            port::store<uint32_t>(cursor + 0x10u, 0x70000000u);
+            packet::putCallThenEnd(cursor, 0x001B2760u & 0x7FFFFFFFu);
             cursor += 0x10u;
             globals::dmaListPtr.set(cursor);
         }
@@ -1015,9 +998,10 @@ namespace mm
     void PacketBuf_Seek(int address) { globals::packetBufPos.set(address); }
     int PacketBuf_Tell() { return globals::packetBufPos.get(); }
 
-    void LayerA_SetSource(GuestPtr<LayerA> layer, int source)
+    // The buffer layer A fills this frame, empty.
+    void LayerA_SetSource(GuestPtr<LayerA> layer, int buffer)
     {
-        layer->source = source;
+        layer->buffer = buffer;
         layer->count = 0;
     }
 
@@ -1037,16 +1021,17 @@ namespace mm
             const ps2f then = GuestPtr<ps2f>{table + set + 12u * static_cast<uint32_t>(next) + 4u * component}[0];
             return (rest * now + t * then) / ps2f(7200.0f);
         };
-        lights->colourA.x = blend(globals::kLightColoursA, 0);
-        lights->colourA.y = blend(globals::kLightColoursA, 1);
-        lights->colourA.z = blend(globals::kLightColoursA, 2);
-        lights->colourA.w = 1.0f;
-        lights->colourB.x = blend(globals::kLightColoursB, 0);
-        lights->colourB.y = blend(globals::kLightColoursB, 1);
-        lights->colourB.z = blend(globals::kLightColoursB, 2);
-        lights->colourB.w = 1.0f;
-        lights->colourB2 = lights->colourB;
-        for (Vec4 *params : {&lights->paramsA, &lights->paramsB})
+        Vec4 &colourA = lights->groupA[1], &colourB = lights->groupB[1];
+        colourA.x = blend(globals::kLightColoursA, 0);
+        colourA.y = blend(globals::kLightColoursA, 1);
+        colourA.z = blend(globals::kLightColoursA, 2);
+        colourA.w = 1.0f;
+        colourB.x = blend(globals::kLightColoursB, 0);
+        colourB.y = blend(globals::kLightColoursB, 1);
+        colourB.z = blend(globals::kLightColoursB, 2);
+        colourB.w = 1.0f;
+        lights->groupB[2] = colourB;
+        for (Vec4 *params : {&lights->groupA[3], &lights->groupB[3]})
         {
             params->x = 4.0f;
             params->y = 1.0f;
@@ -1055,6 +1040,8 @@ namespace mm
         }
     }
 
+    // Word 8 of the object's first packet. Called on the camera (whose first word is its packet, mm_Camera_BuildPacket),
+    // where word 8 is the data of the GS register 0x3D (FOGCOL): the fog colour.
     void LightSet_SetField20(GuestPtr<LightSet> lights, int value) { port::store<int32_t>(lights->packetA + 0x20u, value); }
 
     PORT_FN(DmaList_BeginScene);
@@ -1125,80 +1112,45 @@ namespace mm
 
     // ---- batch 38
 
-    // The sky by the clock: pass 0 the sky layer, other passes layer E, each with this frame's packet (by the
-    // parity of 0x1BDCD0).
+    // The weather: pass 0 the rain, other passes the snow, each with this frame's chunk packet (by the parity of
+    // 0x1BDCD0). The city calls it only in rain (2) or snow (3).
     void CityRender_DrawSky(GuestPtr<CityMap> map, GuestPtr<CityScene> city, int pass, GuestPtr<Vec4> a3)
     {
         const uint32_t parity = port::load<uint32_t>(0x001BDCD0u) & 1u;
-        const int packet = static_cast<int>(map->packets[parity].address);
+        const int packet = static_cast<int>(map->chunkPackets[parity]);
         if (pass != 0)
-            LayerE_Draw(map->layerE, static_cast<int>(parity), packet, city->clock, a3);
+            LayerE_Draw(map->snow, static_cast<int>(parity), packet, city->clock, a3);
         else
-            LayerD_DrawSkyByClock(map->sky, static_cast<int>(parity), packet, city->clock);
+            LayerD_DrawSkyByClock(map->rain, static_cast<int>(parity), packet, city->clock);
     }
 
     PORT_FN(CityRender_DrawSky);
 
     // ---- batch 38
 
-    // The water: the waves move with the weather, then this frame's packet (+0x210, one per pass) is queued.
+    // The water: the waves move with the weather, then this frame's packet (one per terrain buffer) is queued.
     void LayerG_Draw(GuestPtr<LayerG> layer, int pass, ps2f weather)
     {
         LayerG_AnimateWaves(layer, weather);
-        Dma_AppendCall(static_cast<int>(port::load<uint32_t>(layer.address + 0x210u + 4u * static_cast<uint32_t>(pass))));
+        Dma_AppendCall(static_cast<int>(layer->packets[pass]));
     }
 
     PORT_FN(LayerG_Draw);
 
     // ---- layer packets and draw parameter templates (batch 38)
 
-    namespace
-    {
-        void putWords(uint32_t at, std::initializer_list<uint32_t> words)
-        {
-            for (const uint32_t word : words)
-            {
-                port::store<uint32_t>(at, word);
-                at += 4u;
-            }
-        }
-
-        void putFloats(uint32_t at, std::initializer_list<float> values)
-        {
-            for (const float value : values)
-            {
-                port::store<float>(at, value);
-                at += 4u;
-            }
-        }
-
-        // Texture coordinates (s, t, q 1, 0) for a quad drawn as two strips: the left half (s 0 to 0.5) top to
-        // bottom, then the right half.
-        void putHalvesStq(uint32_t at)
-        {
-            static constexpr float kST[12][2] = {{0, 0},    {0.5f, 0}, {0, 0.5f},    {0.5f, 0.5f}, {0, 1},    {0.5f, 1},
-                                                 {0.5f, 0}, {1, 0},    {0.5f, 0.5f}, {1, 0.5f},    {0.5f, 1}, {1, 1}};
-            for (const auto &st : kST)
-            {
-                putFloats(at, {st[0], st[1], 1.0f, 0.0f});
-                at += 16u;
-            }
-        }
-    }
-
-    // Layer A's packets: the start (+0x2434) uploads the layer's two quadwords at +0x2410 to VU1 address 0x2A,
-    // flushes, calls the chain at 0x1A8330 and sets the VIF base and offset; the end (+0x2438) sets ALPHA_1
-    // (0x20_00000044) through the GIF.
+    // Layer A's packets: the start uploads the layer's output offset and colour to VU1 address 0x2A, flushes, calls
+    // the chain at 0x1A8330 and sets the VIF base and offset; the end sets ALPHA_1 (0x20_00000044) through the GIF.
     GuestPtr<uint32_t> LayerA_BuildPacket(GuestPtr<LayerA> layer, GuestPtr<uint32_t> packet)
     {
-        port::store<uint32_t>(layer.address + 0x2434u, packet.address);
+        layer->startPacket = packet.address;
         putWords(packet.address, {
-            0x30000002u, (layer.address + 0x2410u) & 0x7FFFFFFFu, 0x01000101u, 0x6C02002Au, // ref 2 quadwords; stcycl, unpack v4-32 to 0x2A
-            0x10000000u, 0, 0, 0x11000000u,                                                 // cnt 0; VIF flush
-            0x50000000u, 0x001A8330u, 0, 0,                                                 // call
-            0x60000000u, 0, 0x03000042u, 0x020001DFu,                                       // ret; VIF base 0x42, offset 0x1DF
+            0x30000002u, tagAddress(layer->outputOffset), 0x01000101u, 0x6C02002Au, // ref 2 quadwords; stcycl, unpack v4-32 to 0x2A
+            0x10000000u, 0, 0, 0x11000000u,                                         // cnt 0; VIF flush
+            0x50000000u, 0x001A8330u, 0, 0,                                         // call
+            0x60000000u, 0, 0x03000042u, 0x020001DFu,                               // ret; VIF base 0x42, offset 0x1DF
         });
-        port::store<uint32_t>(layer.address + 0x2438u, packet.address + 0x40u);
+        layer->endPacket = packet.address + 0x40u;
         putWords(packet.address + 0x40u, {
             0x10000002u, 0, 0x11000000u, 0x50000002u, // cnt 2 quadwords; flush, direct 2
             0x8001u, 0x10000000u, 0xEu, 0,            // GIF tag: one A+D register
@@ -1208,65 +1160,63 @@ namespace mm
         return packet + 0x20;
     }
 
-    // Layer A: the start packet, then for each of its entries (+0x2430; 0x90 bytes each, in banks of 32 picked by
-    // +0x243C) the entry's packet (+0x60) and its two meshes (2n and 2n + 1 for n at +0x10) under its matrix
-    // (+0x20), then the end packet.
+    // Layer A: the start packet, then for each of this frame's instances its packet (ALPHA_1 with its fade) and its
+    // two meshes (2n and 2n + 1) under its matrix, then the end packet.
     void LayerA_Draw(GuestPtr<LayerA> layer)
     {
-        const uint32_t l = layer.address;
-        if (port::load<int32_t>(l + 0x2430u) == 0)
+        if (layer->count == 0)
             return;
-        Dma_AppendCall(port::load<int32_t>(l + 0x2434u));
-        for (int i = 0; i < port::load<int32_t>(l + 0x2430u); ++i)
+        Dma_AppendCall(static_cast<int>(layer->startPacket));
+        for (int i = 0; i < layer->count; ++i)
         {
-            const auto entry = [&] { return l + 0x1200u * port::load<uint32_t>(l + 0x243Cu) + 0x90u * static_cast<uint32_t>(i); };
-            Dma_AppendCall(static_cast<int>(entry() + 0x60u));
-            const auto model = [&] { return GuestPtr<A3DObject>{port::load<uint32_t>(l)}; };
-            Instance_DrawMesh(model(), GuestPtr<Vec4>{entry() + 0x20u}, GuestPtr<Vec4>{globals::kDefaultColour}, port::load<int32_t>(entry() + 0x10u) * 2, 0);
-            Instance_DrawMesh(model(), GuestPtr<Vec4>{entry() + 0x20u}, GuestPtr<Vec4>{globals::kDefaultColour}, port::load<int32_t>(entry() + 0x10u) * 2 + 1, 0);
+            // The buffer and the model are read again for every use, as in the original.
+            const auto instance = [&] { return layerAInstance(layer, i); };
+            Dma_AppendCall(static_cast<int>(addressOf(instance()->packet)));
+            const GuestPtr<Vec4> matrix = GuestPtr<Vec4>::of(instance()->matrix[0]);
+            Instance_DrawMesh(layer->model, matrix, GuestPtr<Vec4>{globals::kDefaultColour}, instance()->meshPair * 2, 0);
+            Instance_DrawMesh(layer->model, GuestPtr<Vec4>::of(instance()->matrix[0]), GuestPtr<Vec4>{globals::kDefaultColour},
+                              instance()->meshPair * 2 + 1, 0);
         }
-        Dma_AppendCall(port::load<int32_t>(l + 0x2438u));
+        Dma_AppendCall(static_cast<int>(layer->endPacket));
     }
 
-    // Layer B's packets: the first (+0x130) calls the chain at 0x1AA340, uploads the layer's 19 quadwords to VU1
-    // 0x1C, sets the VIF base and offset and starts the program; the second (+0x220) uploads the vectors at
-    // +0x210 and +0x200 to 0x1D and 0x2D and starts the program again.
+    // Layer B's packets: the first calls the chain at 0x1AA340, uploads the layer's parameters (19 quadwords) to VU1
+    // 0x1C, sets the VIF base and offset and starts the program; the second uploads the second pass's texture and mask
+    // to 0x1D and 0x2D and starts the program again.
     GuestPtr<uint32_t> LayerB_BuildPacket(GuestPtr<LayerB> layer, GuestPtr<uint32_t> packet)
     {
-        const uint32_t l = layer.address;
-        port::store<uint32_t>(l + 0x130u, packet.address);
+        layer->packetA = packet.address;
         putWords(packet.address, {
             0x10000000u, 0, 0, 0x11000000u,                                  // cnt 0; VIF flush
             0x50000000u, 0x001AA340u, 0, 0,                                  // call
-            0x30000013u, l & 0x7FFFFFFFu, 0x01000101u, 0x6C13001Cu,          // ref 19 quadwords; unpack to 0x1C
+            0x30000013u, tagAddress(layer->params), 0x01000101u, 0x6C13001Cu, // ref 19 quadwords; unpack to 0x1C
             0x10000000u, 0, 0x03000056u, 0x020001D5u,                        // VIF base 0x56, offset 0x1D5
             0x10000000u, 0, 0x14000000u, 0x11000000u,                        // mscal; flush
             0x60000000u, 0, 0, 0,                                            // ret
         });
-        port::store<uint32_t>(l + 0x220u, packet.address + 0x60u);
+        layer->packetB = packet.address + 0x60u;
         putWords(packet.address + 0x60u, {
             0x10000000u, 0, 0, 0x11000000u,                                  // cnt 0; flush
-            0x30000001u, (l + 0x210u) & 0x7FFFFFFFu, 0x01000101u, 0x6C01001Du, // ref 1 quadword; unpack to 0x1D
-            0x30000001u, (l + 0x200u) & 0x7FFFFFFFu, 0x01000101u, 0x6C01002Du, // ref 1 quadword; unpack to 0x2D
+            0x30000001u, tagAddress(layer->tex0B), 0x01000101u, 0x6C01001Du, // ref 1 quadword; unpack to 0x1D
+            0x30000001u, tagAddress(layer->maskB), 0x01000101u, 0x6C01002Du, // ref 1 quadword; unpack to 0x2D
             0x10000000u, 0, 0x14000000u, 0x11000000u,                        // mscal; flush
             0x60000000u, 0, 0, 0,                                            // ret
         });
         return packet + 0x2C;
     }
 
-    // Layer F's packet (+0x130): ALPHA_1 (0x30_00000048) through the GIF, then like layer B's first packet with
-    // the chain at 0x1A91C0.
+    // Layer F's packet: ALPHA_1 (0x30_00000048) through the GIF, then like layer B's first packet with the chain at
+    // 0x1A91C0.
     GuestPtr<uint32_t> LayerF_BuildPacket(GuestPtr<LayerF> layer, GuestPtr<uint32_t> packet)
     {
-        const uint32_t l = layer.address;
-        port::store<uint32_t>(l + 0x130u, packet.address);
+        layer->packet = packet.address;
         putWords(packet.address, {
             0x10000002u, 0, 0x11000000u, 0x50000002u,                        // cnt 2 quadwords; flush, direct 2
             0x8001u, 0x10000000u, 0xEu, 0,                                   // GIF tag: one A+D register
             0x48u, 0x30u, 0x42u, 0,                                          // ALPHA_1
             0x10000000u, 0, 0, 0x11000000u,                                  // cnt 0; flush
             0x50000000u, 0x001A91C0u, 0, 0,                                  // call
-            0x30000013u, l & 0x7FFFFFFFu, 0x01000101u, 0x6C13001Cu,          // ref 19 quadwords; unpack to 0x1C
+            0x30000013u, tagAddress(layer->params), 0x01000101u, 0x6C13001Cu, // ref 19 quadwords; unpack to 0x1C
             0x10000000u, 0, 0x03000056u, 0x020001D5u,                        // VIF base 0x56, offset 0x1D5
             0x10000000u, 0, 0x14000000u, 0x11000000u,                        // mscal; flush
             0x60000000u, 0, 0, 0,                                            // ret
@@ -1274,68 +1224,65 @@ namespace mm
         return packet + 0x24;
     }
 
-    // The draw parameters VU1 reads for each layer: a colour, register words, a GIF tag (NLOOP, NREG and the
-    // register list), more words and the texture coordinates of its strips.
+    // The draw parameters of the placement highlight (VU1 0x1C..0x22: two colours, the output offset, a GIF tag of 26
+    // loops of 14 registers, the fill and outline PRIMs and the mask 4) and of the marker (a colour table of ones, the
+    // output offset 0x110 and the instance colour).
     void LayerC_InitParams(GuestPtr<LayerC> layer)
     {
-        const uint32_t l = layer.address;
-        putFloats(l, {255.0f, 0, 0, 128.0f, 0, 0, 0, 128.0f});
-        putWords(l + 0x20u, {0x68u, 0, 0, 0, 0x801Au, 0xE0000000u, 0x04144410u, 0x00444441u, // GIF tag: 26 loops of 14
-                             0x44u, 0, 0, 0, 0x82u, 0, 0, 0, 0, 0, 0, 4u});
-        port::store<int32_t>(l + 0x1F0u, 0x110);
-        for (uint32_t at = l + 0x70u; at < l + 0x1F0u; at += 4u)
-            port::store<float>(at, 1.0f);
-        putFloats(l + 0x200u, {1.0f, 1.0f, 1.0f, 1.0f});
+        putFloats(layer->colourA, 255.0f, 0, 0, 128.0f);
+        putFloats(layer->colourB, 0, 0, 0, 128.0f);
+        putWords(layer->outputOffset, {0x68u, 0, 0, 0});
+        putWords(layer->gifTag, {0x801Au, 0xE0000000u, 0x04144410u, 0x00444441u});
+        putWords(layer->primA, {0x44u, 0, 0, 0});
+        putWords(layer->primB, {0x82u, 0, 0, 0});
+        putWords(layer->mask, {0, 0, 0, 4u});
+        layer->outputOffsets[0] = 0x110;
+        for (Vec4 &colour : layer->colours)
+            putFloats(colour, 1.0f, 1.0f, 1.0f, 1.0f);
+        putFloats(layer->instanceColour, 1.0f, 1.0f, 1.0f, 1.0f);
     }
 
     void LayerF_InitParams(GuestPtr<LayerF> layer)
     {
-        const uint32_t l = layer.address;
-        putFloats(l, {128.0f, 128.0f, 128.0f, 128.0f});
-        putWords(l + 0x10u, {0x9930A7A4u, 0x4004F405u, 0, 0, 0x68u, 0, 0, 0, 0x801Au, 0xE0000000u, 0x41241206u, 0x00412412u, // GIF tag: 26 loops of 14
-                             0x7Cu, 0, 0, 0});
-        putHalvesStq(l + 0x50u);
-        putWords(l + 0x110u, {0, 0, 0, 0x10u});
+        packet::putPassParams(layer->params, {128.0f, 128.0f, 128.0f, 128.0f}, 0x9930A7A4u, 0x4004F405u, 0x7Cu);
+        putWords(layer->params.mask, {0, 0, 0, 0x10u});
     }
 
-    // Layer G (the water) keeps its texture coordinates at +0x220 and copies them to both strips' packets (+0x60
-    // and +0x120).
+    // Layer G (the water) keeps its texture coordinates at rest (waveBase) and copies them to both wave sets.
     void LayerG_InitParams(GuestPtr<LayerG> layer)
     {
-        const uint32_t l = layer.address;
-        putFloats(l, {128.0f, 128.0f, 128.0f, 60.0f});
-        putWords(l + 0x20u, {0x40u, 0x10u, 0, 0, 0x8020u, 0xD0000000u, 0x24124120u, 0x00041241u, // GIF tag: 32 loops of 13
-                             0x27Cu, 0, 0, 0, 0x7Cu, 0, 0, 0});
-        putWords(l + 0x1E0u, {0, 0, 0, 2u});
-        putHalvesStq(l + 0x220u);
-        for (uint32_t i = 0; i < 12; ++i)
+        putFloats(layer->colour, 128.0f, 128.0f, 128.0f, 60.0f);
+        putWords(layer->outputOffsets, {0x40u, 0x10u, 0, 0});
+        putWords(layer->gifTag, {0x8020u, 0xD0000000u, 0x24124120u, 0x00041241u}); // 32 loops of 13
+        putWords(layer->primB, {0x27Cu, 0, 0, 0});
+        putWords(layer->primA, {0x7Cu, 0, 0, 0});
+        putWords(layer->mask, {0, 0, 0, 2u});
+        putHalvesStq(layer->waveBase);
+        for (int i = 0; i < 12; ++i)
         {
-            *GuestPtr<Vec4>{l + 0x60u + 16u * i} = *GuestPtr<Vec4>{l + 0x220u + 16u * i};
-            *GuestPtr<Vec4>{l + 0x120u + 16u * i} = *GuestPtr<Vec4>{l + 0x220u + 16u * i};
+            layer->wavesA[i] = layer->waveBase[i];
+            layer->wavesB[i] = layer->waveBase[i];
         }
     }
 
-    // The city map's overlay parameters (+0x2D30).
+    // The base ground pass's parameters: mask 1.
     void CityRender_InitParams(GuestPtr<CityMap> map)
     {
-        const uint32_t m = map.address;
-        putFloats(m + 0x2D30u, {128.0f, 128.0f, 128.0f, 128.0f});
-        putWords(m + 0x2D40u, {0x99308000u, 0x4004B085u, 0, 0, 0x68u, 0, 0, 0, 0x801Au, 0xE0000000u, 0x41241206u, 0x00412412u, // GIF tag: 26 loops of 14
-                               0x3Cu, 0, 0, 0});
-        putHalvesStq(m + 0x2D80u);
-        putWords(m + 0x2E40u, {0, 0, 0, 1u});
+        packet::putPassParams(map->groundParams, {128.0f, 128.0f, 128.0f, 128.0f}, 0x99308000u, 0x4004B085u, 0x3Cu);
+        putWords(map->groundParams.mask, {0, 0, 0, 1u});
     }
 
-    // The terrain's parameters (map +0x2E50): its texture coordinates run along s only.
-    void Terrain_InitParams(int map)
+    // The cliff sides' parameters: triangles, their texture coordinates along s only.
+    void Terrain_InitParams(GuestPtr<CityMap> map)
     {
-        const auto m = static_cast<uint32_t>(map);
-        putFloats(m + 0x2E50u, {128.0f, 128.0f, 128.0f, 128.0f});
-        putWords(m + 0x2E60u, {0x99308000u, 0x4004B085u, 0, 0, 0x6Cu, 0, 0, 0, 0x8024u, 0xA05DC000u, 0x24124126u, 0x41u}); // GIF tag: 36 loops of 10
-        putFloats(m + 0x2E90u, {0.25f, 0.25f, 0, 0});
+        putFloats(map->sideColour, 128.0f, 128.0f, 128.0f, 128.0f);
+        putWords(map->sideTex0, {0x99308000u, 0x4004B085u, 0, 0});
+        putWords(map->sideOutputOffset, {0x6Cu, 0, 0, 0});
+        putWords(map->sideGifTag, {0x8024u, 0xA05DC000u, 0x24124126u, 0x41u}); // 36 loops of 10
+        putFloats(map->sideScale, 0.25f, 0.25f, 0, 0);
         static constexpr float kS[12] = {0, 0.5f, 0, 0.5f, 0.5f, 0, 0.5f, 1, 0.5f, 1, 1, 0.5f};
-        for (uint32_t i = 0; i < 12; ++i)
-            putFloats(m + 0x2EA0u + 16u * i, {kS[i], 0, 1.0f, 0});
+        for (int i = 0; i < 12; ++i)
+            putFloats(map->sideStq[i], kS[i], 0, 1.0f, 0);
     }
 
     PORT_FN(LayerA_BuildPacket);
@@ -1348,128 +1295,75 @@ namespace mm
     PORT_FN(CityRender_InitParams);
     PORT_FN(Terrain_InitParams);
 
-    // Layer B's draw parameters: a colour, register words, a GIF tag and the texture coordinates of its strips.
+    // Layer B's two passes: the first over the quads with flag 0x20, the second (its own texture) over those with 0x40.
     void LayerB_InitParams(GuestPtr<LayerB> layer)
     {
-        const uint32_t l = layer.address;
-        putFloats(l + 0x0u, {128.0f, 128.0f, 128.0f, 128.0f});
-        putWords(l + 0x10u, {0x9930a698u, 0x4004b085u, 0x0u, 0x0u});
-        putWords(l + 0x20u, {0x68u, 0x0u, 0x0u, 0x0u});
-        putWords(l + 0x30u, {0x801au, 0xe0000000u, 0x41241206u, 0x412412u});
-        putWords(l + 0x40u, {0x3cu, 0x0u, 0x0u, 0x0u});
-        putWords(l + 0x50u, {0x0u, 0x0u, 0x3f800000u, 0x0u});
-        putFloats(l + 0x60u, {0.5f, 0.0f, 1.0f, 0.0f});
-        putFloats(l + 0x70u, {0.0f, 0.5f, 1.0f, 0.0f});
-        putFloats(l + 0x80u, {0.5f, 0.5f, 1.0f, 0.0f});
-        putFloats(l + 0x90u, {0.0f, 1.0f, 1.0f, 0.0f});
-        putFloats(l + 0xa0u, {0.5f, 1.0f, 1.0f, 0.0f});
-        putFloats(l + 0xb0u, {0.5f, 0.0f, 1.0f, 0.0f});
-        putFloats(l + 0xc0u, {1.0f, 0.0f, 1.0f, 0.0f});
-        putFloats(l + 0xd0u, {0.5f, 0.5f, 1.0f, 0.0f});
-        putFloats(l + 0xe0u, {1.0f, 0.5f, 1.0f, 0.0f});
-        putFloats(l + 0xf0u, {0.5f, 1.0f, 1.0f, 0.0f});
-        putFloats(l + 0x100u, {1.0f, 1.0f, 1.0f, 0.0f});
-        putWords(l + 0x110u, {0x0u, 0x0u, 0x0u, 0x20u});
-        putFloats(l + 0x120u, {0.6f, 0.08f, 0.0f, 0.0f});
-        putWords(l + 0x200u, {0x0u, 0x0u, 0x0u, 0x40u});
-        putWords(l + 0x210u, {0x9930a708u, 0x4004b085u, 0x0u, 0x0u});
+        packet::putPassParams(layer->params, {128.0f, 128.0f, 128.0f, 128.0f}, 0x9930a698u, 0x4004b085u, 0x3cu);
+        putWords(layer->params.mask, {0x0u, 0x0u, 0x0u, 0x20u});
+        putFloats(layer->extra, 0.6f, 0.08f, 0.0f, 0.0f);
+        putWords(layer->maskB, {0x0u, 0x0u, 0x0u, 0x40u});
+        putWords(layer->tex0B, {0x9930a708u, 0x4004b085u, 0x0u, 0x0u});
     }
 
-    // Layer D's draw parameters, built like layer B's.
+    // The rain's parameters: the GIF tag of the streaks (96 loops of RGBAQ, XYZF2 twice, blended lines), two colours,
+    // 16 drop offsets and twelve streaks as pairs of end points; then the wet ground pass (mask 1).
     void LayerD_InitParams(GuestPtr<LayerD> layer)
     {
-        const uint32_t l = layer.address;
-        putWords(l + 0x0u, {0x8060u, 0x4034c000u, 0x4141u, 0x0u});
-        putFloats(l + 0x10u, {765.0f, 765.0f, 765.0f, 40.0f});
-        putFloats(l + 0x20u, {765.0f, 765.0f, 765.0f, 0.0f});
-        port::store<int32_t>(l + 0x30u, 8);
-        putFloats(l + 0x40u, {40.0f, 0.1f, 0.0f, 0.0f});
-        putFloats(l + 0x50u, {40.0f, 35.4f, 0.0f, 0.0f});
-        putFloats(l + 0x60u, {40.0f, 9.6f, 0.0f, 0.0f});
-        putFloats(l + 0x70u, {40.0f, 15.8f, 0.0f, 0.0f});
-        putFloats(l + 0x80u, {40.0f, 1.3f, 0.0f, 0.0f});
-        putFloats(l + 0x90u, {40.0f, 24.6f, 0.0f, 0.0f});
-        putFloats(l + 0xa0u, {40.0f, 13.3f, 0.0f, 0.0f});
-        putFloats(l + 0xb0u, {40.0f, 8.7f, 0.0f, 0.0f});
-        putFloats(l + 0xc0u, {40.0f, 36.8f, 0.0f, 0.0f});
-        putFloats(l + 0xd0u, {40.0f, 18.1f, 0.0f, 0.0f});
-        putFloats(l + 0xe0u, {40.0f, 28.0f, 0.0f, 0.0f});
-        putFloats(l + 0xf0u, {40.0f, 11.6f, 0.0f, 0.0f});
-        putFloats(l + 0x100u, {40.0f, 28.8f, 0.0f, 0.0f});
-        putFloats(l + 0x110u, {40.0f, 31.5f, 0.0f, 0.0f});
-        putFloats(l + 0x120u, {40.0f, 4.2f, 0.0f, 0.0f});
-        putFloats(l + 0x130u, {40.0f, 7.9f, 0.0f, 0.0f});
-        putFloats(l + 0x140u, {-0.277647f, -36.85f, 0.186816f, 1.0f});
-        putFloats(l + 0x150u, {-0.077647f, -38.449997f, 0.186816f, 1.0f});
-        putFloats(l + 0x160u, {0.278509f, -33.95f, 1.083412f, 1.0f});
-        putFloats(l + 0x170u, {0.478509f, -35.55f, 1.083412f, 1.0f});
-        putFloats(l + 0x180u, {-0.702686f, -30.399998f, 0.219903f, 1.0f});
-        putWords(l + 0x190u, {0xbf00b008u, 0xc1ffffffu, 0x3e612e41u, 0x3f800000u});
-        putFloats(l + 0x1a0u, {0.823469f, -27.699999f, -0.033502f, 1.0f});
-        putFloats(l + 0x1b0u, {1.023469f, -29.3f, -0.033502f, 1.0f});
-        putFloats(l + 0x1c0u, {-0.437529f, -24.25f, 0.511663f, 1.0f});
-        putFloats(l + 0x1d0u, {-0.237529f, -25.849998f, 0.511663f, 1.0f});
-        putFloats(l + 0x1e0u, {0.617897f, -20.5f, -0.409993f, 1.0f});
-        putFloats(l + 0x1f0u, {0.817897f, -22.099998f, -0.409993f, 1.0f});
-        putFloats(l + 0x200u, {0.373105f, -16.600002f, 0.141843f, 1.0f});
-        putFloats(l + 0x210u, {0.573105f, -18.2f, 0.141843f, 1.0f});
-        putFloats(l + 0x220u, {0.179452f, -11.45f, -0.877998f, 1.0f});
-        putFloats(l + 0x230u, {0.379452f, -13.049998f, -0.877998f, 1.0f});
-        putFloats(l + 0x240u, {0.8f, -7.15f, 1.0f, 1.0f});
-        putFloats(l + 0x250u, {1.0f, -8.75f, 1.0f, 1.0f});
-        putFloats(l + 0x260u, {-0.85f, -14.650001f, 0.7f, 1.0f});
-        putFloats(l + 0x270u, {-0.65f, -16.25f, 0.7f, 1.0f});
-        putFloats(l + 0x280u, {-0.55f, -4.3f, -0.6f, 1.0f});
-        putFloats(l + 0x290u, {-0.35f, -5.9f, -0.6f, 1.0f});
-        putFloats(l + 0x2a0u, {-0.2f, -0.6f, -0.25f, 1.0f});
-        putFloats(l + 0x2b0u, {0.0f, -2.2f, -0.25f, 1.0f});
-        putFloats(l + 0x2d0u, {128.0f, 128.0f, 128.0f, 128.0f});
-        putWords(l + 0x2e0u, {0x9930a7b8u, 0x4004f685u, 0x0u, 0x0u});
-        putWords(l + 0x2f0u, {0x68u, 0x0u, 0x0u, 0x0u});
-        putWords(l + 0x300u, {0x801au, 0xe0000000u, 0x41241206u, 0x412412u});
-        putWords(l + 0x310u, {0x7cu, 0x0u, 0x0u, 0x0u});
-        putWords(l + 0x320u, {0x0u, 0x0u, 0x3f800000u, 0x0u});
-        putFloats(l + 0x330u, {0.5f, 0.0f, 1.0f, 0.0f});
-        putFloats(l + 0x340u, {0.0f, 0.5f, 1.0f, 0.0f});
-        putFloats(l + 0x350u, {0.5f, 0.5f, 1.0f, 0.0f});
-        putFloats(l + 0x360u, {0.0f, 1.0f, 1.0f, 0.0f});
-        putFloats(l + 0x370u, {0.5f, 1.0f, 1.0f, 0.0f});
-        putFloats(l + 0x380u, {0.5f, 0.0f, 1.0f, 0.0f});
-        putFloats(l + 0x390u, {1.0f, 0.0f, 1.0f, 0.0f});
-        putFloats(l + 0x3a0u, {0.5f, 0.5f, 1.0f, 0.0f});
-        putFloats(l + 0x3b0u, {1.0f, 0.5f, 1.0f, 0.0f});
-        putFloats(l + 0x3c0u, {0.5f, 1.0f, 1.0f, 0.0f});
-        putFloats(l + 0x3d0u, {1.0f, 1.0f, 1.0f, 0.0f});
-        putWords(l + 0x3e0u, {0x0u, 0x0u, 0x0u, 0x1u});
-        putFloats(l + 0x3f0u, {0.0f, -0.01f, 0.0f, 1.0f});
+        putWords(layer->gifTag, {0x8060u, 0x4034c000u, 0x4141u, 0x0u});
+        putFloats(layer->colourA, 765.0f, 765.0f, 765.0f, 40.0f);
+        putFloats(layer->colourB, 765.0f, 765.0f, 765.0f, 0.0f);
+        layer->unk_030[0] = 8;
+        static constexpr float kDropY[16] = {0.1f, 35.4f, 9.6f, 15.8f, 1.3f, 24.6f, 13.3f, 8.7f,
+                                             36.8f, 18.1f, 28.0f, 11.6f, 28.8f, 31.5f, 4.2f, 7.9f};
+        for (int i = 0; i < 16; ++i)
+            putFloats(layer->drops[i], 40.0f, kDropY[i], 0.0f, 0.0f);
+        static constexpr float kStreaks[24][3] = {
+            {-0.277647f, -36.85f, 0.186816f},     {-0.077647f, -38.449997f, 0.186816f},
+            {0.278509f, -33.95f, 1.083412f},      {0.478509f, -35.55f, 1.083412f},
+            {-0.702686f, -30.399998f, 0.219903f}, {std::bit_cast<float>(0xbf00b008u), std::bit_cast<float>(0xc1ffffffu), std::bit_cast<float>(0x3e612e41u)},
+            {0.823469f, -27.699999f, -0.033502f}, {1.023469f, -29.3f, -0.033502f},
+            {-0.437529f, -24.25f, 0.511663f},     {-0.237529f, -25.849998f, 0.511663f},
+            {0.617897f, -20.5f, -0.409993f},      {0.817897f, -22.099998f, -0.409993f},
+            {0.373105f, -16.600002f, 0.141843f},  {0.573105f, -18.2f, 0.141843f},
+            {0.179452f, -11.45f, -0.877998f},     {0.379452f, -13.049998f, -0.877998f},
+            {0.8f, -7.15f, 1.0f},                 {1.0f, -8.75f, 1.0f},
+            {-0.85f, -14.650001f, 0.7f},          {-0.65f, -16.25f, 0.7f},
+            {-0.55f, -4.3f, -0.6f},               {-0.35f, -5.9f, -0.6f},
+            {-0.2f, -0.6f, -0.25f},               {0.0f, -2.2f, -0.25f},
+        };
+        for (int i = 0; i < 24; ++i)
+            putFloats(layer->streaks[i], kStreaks[i][0], kStreaks[i][1], kStreaks[i][2], 1.0f);
+        packet::putPassParams(layer->ground, {128.0f, 128.0f, 128.0f, 128.0f}, 0x9930a7b8u, 0x4004f685u, 0x7cu);
+        putWords(layer->ground.mask, {0x0u, 0x0u, 0x0u, 0x1u});
+        putFloats(layer->groundExtra, 0.0f, -0.01f, 0.0f, 1.0f);
     }
 
     PORT_FN(LayerB_InitParams);
     PORT_FN(LayerD_InitParams);
 
-    // Layer C's three packets, one after the other (their addresses at +0x210, +0x218 and +0x214): ALPHA_1 set to
-    // 0x30_00000048, the chain at 0x1A7B30 and the layer's first seven quadwords to VU1 0x1C with the program started;
-    // ALPHA_1 set to 0x20_00000044; ALPHA_1 back to 0x30_00000048, the layer's 26 quadwords from +0x70 to VU1 0x12 and the
-    // chain at 0x1A8330. Returns the end of the packets.
+    // Layer C's three packets, one after the other: the highlight (ALPHA_1 set to 0x30_00000048, the chain at 0x1A7B30
+    // and the highlight's seven quadwords to VU1 0x1C with the program started); the end (ALPHA_1 back to
+    // 0x20_00000044); the marker (the colour table and what follows, 26 quadwords, to VU1 0x12, ALPHA_1 0x30_00000048
+    // and the chain at 0x1A8330). Returns the end of the packets.
     GuestPtr<uint32_t> LayerC_BuildPacket(GuestPtr<LayerC> layer, GuestPtr<uint32_t> packet)
     {
-        const uint32_t l = layer.address, p = packet.address;
-        port::store<uint32_t>(l + 0x210u, p);
-        port::store<uint32_t>(l + 0x214u, p + 0xc0u);
-        port::store<uint32_t>(l + 0x218u, p + 0x80u);
+        const uint32_t p = packet.address;
+        layer->highlightPacket = p;
+        layer->markerPacket = p + 0xc0u;
+        layer->endPacket = p + 0x80u;
         putWords(p + 0x0u, {0x10000000u, 0x0u, 0x0u, 0x11000000u});
         putWords(p + 0x10u, {0x10000002u, 0x0u, 0x11000000u, 0x50000002u});
         putWords(p + 0x20u, {0x8001u, 0x10000000u, 0xeu, 0x0u});
         putWords(p + 0x30u, {0x48u, 0x30u, 0x42u, 0x0u});
         putWords(p + 0x40u, {0x50000000u, 0x1a7b30u, 0x0u, 0x0u});
-        putWords(p + 0x50u, {0x30000007u, (l) & 0x7FFFFFFFu, 0x1000101u, 0x6c07001cu});
+        putWords(p + 0x50u, {0x30000007u, tagAddress(layer->colourA), 0x1000101u, 0x6c07001cu});
         putWords(p + 0x60u, {0x10000000u, 0x0u, 0x3000056u, 0x20001d5u});
         putWords(p + 0x70u, {0x60000000u, 0x0u, 0x14000000u, 0x11000000u});
         putWords(p + 0x80u, {0x10000002u, 0x0u, 0x11000000u, 0x50000002u});
         putWords(p + 0x90u, {0x8001u, 0x10000000u, 0xeu, 0x0u});
         putWords(p + 0xa0u, {0x44u, 0x20u, 0x42u, 0x0u});
         putWords(p + 0xb0u, {0x60000000u, 0x0u, 0x0u, 0x0u});
-        putWords(p + 0xc0u, {0x3000001au, (l + 0x70u) & 0x7FFFFFFFu, 0x1000101u, 0x6c1a0012u});
+        putWords(p + 0xc0u, {0x3000001au, tagAddress(layer->colours), 0x1000101u, 0x6c1a0012u});
         putWords(p + 0xd0u, {0x10000000u, 0x0u, 0x0u, 0x11000000u});
         putWords(p + 0xe0u, {0x10000002u, 0x0u, 0x11000000u, 0x50000002u});
         putWords(p + 0xf0u, {0x8001u, 0x10000000u, 0xeu, 0x0u});
@@ -1481,31 +1375,29 @@ namespace mm
 
     PORT_FN(LayerC_BuildPacket);
 
-    // Layer D (the sky): for each of its two buffers, the packet starts with its layer-parameters upload and the first
-    // microcode (0x1A8A00); then the buffer's vertex data goes to VU1 in 78 chunks of 0x200 bytes (9 groups of 8, each
-    // chunk a REF tag, the UNPACK and a MSCAL, then 6 singles), the second microcode (0x1A8E20) follows with the
-    // parameters (+0x2D0) and the packet ends. The layer keeps the start of each buffer's packet at +0x2C0 and the
-    // second tail at +0x400, the end of the last at +0x408. Returns the end of the packets.
+    // Layer D (the rain): for each of the two terrain buffers, a packet that uploads the layer's streak parameters and
+    // the first program (0x1A8A00); then the buffer's quads go to VU1 in 78 chunks of 0x200 bytes (9 groups of 8, each
+    // chunk a REF tag, the UNPACK and a MSCNT, then 6 singles); then the ground pass: ALPHA_1, the second program
+    // (0x1A8E20) with the ground parameters, and the packet ends. The layer keeps the start of each buffer's packet, its
+    // ground pass and the shared end packet. Returns the end of the packets.
     GuestPtr<uint32_t> LayerD_BuildPacket(GuestPtr<LayerD> layer, GuestPtr<uint32_t> packet, GuestPtr<int32_t> buffers)
     {
-        const uint32_t layerAddress = layer.address;
-        const uint32_t layerTag = layerAddress & 0x7FFFFFFFu;
-        const uint32_t paramsTag = (layerAddress + 0x2D0u) & 0x7FFFFFFFu;
+        const uint32_t layerTag = tagAddress(*layer);
+        const uint32_t paramsTag = tagAddress(layer->ground);
         const auto chunk = [](uint32_t at, uint32_t source) {
             putWords(at + 0x0u, {0x30000020u, source & 0x7FFFFFFFu, 0x0u, 0x6C208000u});
             putWords(at + 0x10u, {0x10000000u, 0x0u, 0x0u, 0x17000000u});
         };
         uint32_t at = packet.address;
-        for (uint32_t buffer = 0; buffer < 2; ++buffer)
+        for (int buffer = 0; buffer < 2; ++buffer)
         {
-            const uint32_t slot = layerAddress + 4u * buffer;
-            port::store<uint32_t>(slot + 0x2C0u, at);
+            layer->startPackets[buffer] = at;
             putWords(at + 0x0u, {0x10000000u, 0x0u, 0x0u, 0x11000000u});
             putWords(at + 0x10u, {0x50000000u, 0x1A8A00u, 0x0u, 0x0u});
             putWords(at + 0x20u, {0x3000002Cu, layerTag, 0x1000101u, 0x6C2C0012u});
             putWords(at + 0x30u, {0x10000000u, 0x0u, 0x30000BEu, 0x20001A1u});
             putWords(at + 0x40u, {0x10000000u, 0x0u, 0x14000000u, 0x11000000u});
-            uint32_t source = port::load<uint32_t>(buffers.address + 4u * buffer);
+            uint32_t source = static_cast<uint32_t>(buffers[buffer]);
             at += 0x50u;
             uint32_t chunks = 0;
             for (; chunks < 0x46; chunks += 8)
@@ -1522,7 +1414,7 @@ namespace mm
                 source += 0x200u;
             }
             putWords(at + 0x0u, {0x60000000u, 0x0u, 0x0u, 0x0u});
-            port::store<uint32_t>(slot + 0x400u, at + 0x10u);
+            layer->groundPackets[buffer] = at + 0x10u;
             putWords(at + 0x10u, {0x10000002u, 0x0u, 0x11000000u, 0x50000002u});
             putWords(at + 0x20u, {0x8001u, 0x10000000u, 0xEu, 0x0u});
             putWords(at + 0x30u, {0x64u, 0xFFu, 0x42u, 0x0u});
@@ -1534,7 +1426,7 @@ namespace mm
             putWords(at + 0x90u, {0x60000000u, 0x0u, 0x0u, 0x0u});
             at += 0xA0u;
         }
-        port::store<uint32_t>(layerAddress + 0x408u, at);
+        layer->endPacket = at;
         putWords(at + 0x0u, {0x10000002u, 0x0u, 0x11000000u, 0x50000002u});
         putWords(at + 0x10u, {0x8001u, 0x10000000u, 0xEu, 0x0u});
         putWords(at + 0x20u, {0x44u, 0x20u, 0x42u, 0x0u});
@@ -1544,25 +1436,23 @@ namespace mm
 
     PORT_FN(LayerD_BuildPacket);
 
-    // Layer E (clouds and stars): like layer D, for each of the two buffers a packet that uploads the layer's parameters
-    // (the GS TEX0 of its texture is built field by field: base 0x3F70, width 1, format 0x14, 2^5 by 2^5, colour with
-    // alpha, its palette at 0x3F72) and the microcode at 0x1A9A90, then the buffer's vertex data in chunks and the
-    // microcode at 0x1A9F10 with the parameters (+0x570). The starts are kept at +0x560, the second tails at +0x6A0 and
-    // the end at +0x6A8. Returns the end of the packets.
+    // Layer E (the snow): like layer D, for each of the two terrain buffers a packet that sets the GS state of the flakes
+    // (RGBAQ, ALPHA_1 and TEX0_1, the TEX0 of the flake built field by field: base 0x3F70, width 1, format 0x14, 2^5 by
+    // 2^5, colour with alpha, its palette at 0x3F72), uploads the layer's flake parameters and the program 0x1A9A90, then
+    // the buffer's quads in chunks and the ground pass (the program 0x1A9F10 with the ground parameters). The layer keeps
+    // each buffer's start and ground pass and the shared end packet. Returns the end of the packets.
     GuestPtr<uint32_t> LayerE_BuildPacket(GuestPtr<LayerE> layer, GuestPtr<uint32_t> packet, GuestPtr<int32_t> buffers)
     {
-        const uint32_t layerAddress = layer.address;
-        const uint32_t layerTag = layerAddress & 0x7FFFFFFFu;
-        const uint32_t paramsTag = (layerAddress + 0x570u) & 0x7FFFFFFFu;
+        const uint32_t layerTag = tagAddress(*layer);
+        const uint32_t paramsTag = tagAddress(layer->ground);
         const auto chunk = [](uint32_t at, uint32_t source) {
             putWords(at + 0x0u, {0x30000020u, source & 0x7FFFFFFFu, 0x0u, 0x6C208000u});
             putWords(at + 0x10u, {0x10000000u, 0x0u, 0x0u, 0x17000000u});
         };
         uint32_t at = packet.address;
-        for (uint32_t buffer = 0; buffer < 2; ++buffer)
+        for (int buffer = 0; buffer < 2; ++buffer)
         {
-            const uint32_t slot = layerAddress + 4u * buffer;
-            port::store<uint32_t>(slot + 0x560u, at);
+            layer->startPackets[buffer] = at;
             putWords(at + 0x0u, {0x10000004u, 0x0u, 0x11000000u, 0x50000004u});
             putWords(at + 0x10u, {0x8003u, 0x10000000u, 0xEu, 0x0u});
             putWords(at + 0x20u, {0x80808080u, 0x3F800000u, 0x1u, 0x0u});
@@ -1593,7 +1483,7 @@ namespace mm
             putWords(at + 0x60u, {0x30000056u, layerTag, 0x1000101u, 0x6C560012u});
             putWords(at + 0x70u, {0x10000000u, 0x0u, 0x300007Cu, 0x20001C2u});
             putWords(at + 0x80u, {0x10000000u, 0x0u, 0x14000000u, 0x11000000u});
-            uint32_t source = port::load<uint32_t>(buffers.address + 4u * buffer);
+            uint32_t source = static_cast<uint32_t>(buffers[buffer]);
             at += 0x90u;
             uint32_t chunks = 0;
             for (; chunks < 0x46; chunks += 8)
@@ -1609,7 +1499,7 @@ namespace mm
                 at += 0x20u;
                 source += 0x200u;
             }
-            port::store<uint32_t>(slot + 0x6A0u, at + 0x10u);
+            layer->groundPackets[buffer] = at + 0x10u;
             putWords(at + 0x0u, {0x60000000u, 0x0u, 0x0u, 0x0u});
             putWords(at + 0x10u, {0x10000002u, 0x0u, 0x11000000u, 0x50000002u});
             putWords(at + 0x20u, {0x8001u, 0x10000000u, 0xEu, 0x0u});
@@ -1622,7 +1512,7 @@ namespace mm
             putWords(at + 0x90u, {0x60000000u, 0x0u, 0x0u, 0x0u});
             at += 0xA0u;
         }
-        port::store<uint32_t>(layerAddress + 0x6A8u, at);
+        layer->endPacket = at;
         putWords(at + 0x0u, {0x10000002u, 0x0u, 0x11000000u, 0x50000002u});
         putWords(at + 0x10u, {0x8001u, 0x10000000u, 0xEu, 0x0u});
         putWords(at + 0x20u, {0x44u, 0x20u, 0x42u, 0x0u});
@@ -1632,14 +1522,12 @@ namespace mm
 
     PORT_FN(LayerE_BuildPacket);
 
-    // Layer G (the water): two sections, one per vertex buffer. Each starts with the layer's parameters upload and the
-    // microcode at 0x1A6440 (the packet words of the layer's GS state: two copies of the same register pair, ALPHA and
-    // the rest), then the buffer's vertex data in 39 chunks of 0x400 bytes (4 groups of 8, then 7 singles) and an end
-    // marker. The layer keeps the start of the first section at +0x210 and of the second at +0x214. Returns the end.
+    // Layer G (the water): two sections, one per terrain buffer. Each starts with the GS state for both contexts (ALPHA_1
+    // and ALPHA_2, TEX0_1 and TEX0_2), the program 0x1A6440 and the layer's parameters, then the buffer's quads in 39
+    // chunks of 0x400 bytes (4 groups of 8, then 7 singles) and a RET. Returns the end.
     GuestPtr<uint32_t> LayerG_BuildPacket(GuestPtr<LayerG> layer, GuestPtr<uint32_t> packet, GuestPtr<int32_t> buffers)
     {
-        const uint32_t layerAddress = layer.address;
-        const uint32_t layerTag = layerAddress & 0x7FFFFFFFu;
+        const uint32_t layerTag = tagAddress(*layer);
         const auto header = [&](uint32_t at) {
             putWords(at + 0x0u, {0x10000005u, 0x0u, 0x11000000u, 0x50000005u});
             putWords(at + 0x10u, {0x8004u, 0x10000000u, 0xEu, 0x0u});
@@ -1657,12 +1545,12 @@ namespace mm
             putWords(at + 0x10u, {0x10000000u, 0x0u, 0x0u, 0x17000000u});
         };
         uint32_t at = packet.address;
-        port::store<uint32_t>(layerAddress + 0x210u, at);
+        layer->packets[0] = at;
         header(at);
         at += 0xA0u;
-        for (uint32_t section = 0; section < 2; ++section)
+        for (int section = 0; section < 2; ++section)
         {
-            uint32_t source = port::load<uint32_t>(buffers.address + 4u * section);
+            uint32_t source = static_cast<uint32_t>(buffers[section]);
             uint32_t chunks = 0;
             for (; chunks < 0x1F; chunks += 8)
             {
@@ -1680,7 +1568,7 @@ namespace mm
             putWords(at + 0x0u, {0x60000000u, 0x0u, 0x0u, 0x0u});
             if (section == 1)
                 return GuestPtr<uint32_t>{at + 0x10u};
-            port::store<uint32_t>(layerAddress + 0x214u, at + 0x10u);
+            layer->packets[1] = at + 0x10u;
             header(at + 0x10u);
             at += 0xB0u;
         }
@@ -1691,14 +1579,12 @@ namespace mm
 
     // ---- the terrain's VU1 packets (batch 41): the same shape as the layers' packets, two sections of vertex chunks
 
-    // Terrain packet A (microcode 0x1A76F0, parameters at +0x2E50): a header upload, then the first vertex buffer
-    // (+0x2D18) in 20 chunks of 0x6C0 bytes (2 groups of 8, 4 singles) and an end marker, the header again and the second
-    // buffer (+0x2D1C) the same. The terrain keeps the start at +0x2F6C and, for the second section, the start again at
-    // +0x2F70. Returns the end.
-    GuestPtr<uint32_t> Terrain_BuildVu1PacketA(int terrainAddress, GuestPtr<uint32_t> packet)
+    // Terrain packet A, the cliff sides (program 0x1A76F0): a header that uploads the side parameters, then the first side
+    // buffer in 20 chunks of 0x6C0 bytes (2 groups of 8, 4 singles) and a RET, the header again and the second buffer the
+    // same. The map keeps the start in both side packet slots (the second section's start is never kept). Returns the end.
+    GuestPtr<uint32_t> Terrain_BuildVu1PacketA(GuestPtr<CityMap> map, GuestPtr<uint32_t> packet)
     {
-        const uint32_t terrain = static_cast<uint32_t>(terrainAddress);
-        const uint32_t tag = (terrain + 0x2E50u) & 0x7FFFFFFFu;
+        const uint32_t tag = tagAddress(map->sideColour);
         const auto header = [&](uint32_t at) {
             putWords(at + 0x0u, {0x10000000u, 0x0u, 0x0u, 0x11000000u});
             putWords(at + 0x10u, {0x50000000u, 0x1A76F0u, 0x0u, 0x0u});
@@ -1712,12 +1598,12 @@ namespace mm
             putWords(at + 0x10u, {0x10000000u, 0x0u, 0x0u, 0x17000000u});
         };
         uint32_t at = packet.address;
-        port::store<uint32_t>(terrain + 0x2F6Cu, at);
+        map->sidePackets[0] = at;
         header(at);
         at += 0x60u;
-        for (uint32_t section = 0; section < 2; ++section)
+        for (int section = 0; section < 2; ++section)
         {
-            uint32_t source = port::load<uint32_t>(terrain + 0x2D18u + 4u * section);
+            uint32_t source = map->sideBuffers[section].address;
             uint32_t chunks = 0;
             for (; chunks < 0xC; chunks += 8)
             {
@@ -1735,37 +1621,35 @@ namespace mm
             putWords(at + 0x0u, {0x60000000u, 0x0u, 0x0u, 0x0u});
             if (section == 1)
                 return GuestPtr<uint32_t>{at + 0x10u};
-            port::store<uint32_t>(terrain + 0x2F70u, packet.address);
+            map->sidePackets[1] = packet.address; // the game's: the first section's start again
             header(at + 0x10u);
             at += 0x70u;
         }
         return GuestPtr<uint32_t>{at};
     }
 
-    // Terrain packet B (microcode 0x1A5EB0, parameters at +0x2D30): a header with an end marker, the first buffer (+0x2D0C)
-    // in 24 chunks of 0x680 bytes (3 groups of 8) and an end marker, then the second buffer (+0x2D10) the same. The
-    // terrain keeps the start at +0x2F68, where the chunks begin at +0x2F60 and where the second section begins at
-    // +0x2F64. Returns the end.
-    GuestPtr<uint32_t> Terrain_BuildVu1PacketB(int terrainAddress, GuestPtr<uint32_t> packet)
+    // Terrain packet B: the base ground pass (program 0x1A5EB0 and the ground parameters, ending in a RET), then for each
+    // terrain buffer the chunk packet that every pass CALLs: its quads in 24 chunks of 0x680 bytes (3 groups of 8, each
+    // chunk a REF, the UNPACK and an MSCNT) and a RET. Returns the end.
+    GuestPtr<uint32_t> Terrain_BuildVu1PacketB(GuestPtr<CityMap> map, GuestPtr<uint32_t> packet)
     {
-        const uint32_t terrain = static_cast<uint32_t>(terrainAddress);
         const auto chunk = [](uint32_t at, uint32_t source) {
             putWords(at + 0x0u, {0x30000068u, source & 0x7FFFFFFFu, 0x0u, 0x6C688000u});
             putWords(at + 0x10u, {0x10000000u, 0x0u, 0x0u, 0x17000000u});
         };
         uint32_t at = packet.address;
-        port::store<uint32_t>(terrain + 0x2F68u, at);
+        map->groundPacket = at;
         putWords(at + 0x0u, {0x10000000u, 0x0u, 0x0u, 0x11000000u});
         putWords(at + 0x10u, {0x50000000u, 0x1A5EB0u, 0x0u, 0x0u});
-        putWords(at + 0x20u, {0x30000012u, (terrain + 0x2D30u) & 0x7FFFFFFFu, 0x1000101u, 0x6C12001Cu});
+        putWords(at + 0x20u, {0x30000012u, tagAddress(map->groundParams), 0x1000101u, 0x6C12001Cu});
         putWords(at + 0x30u, {0x10000000u, 0x0u, 0x3000056u, 0x20001D5u});
         putWords(at + 0x40u, {0x10000000u, 0x0u, 0x14000000u, 0x11000000u});
         putWords(at + 0x50u, {0x60000000u, 0x0u, 0x0u, 0x0u});
         at += 0x60u;
-        port::store<uint32_t>(terrain + 0x2F60u, at);
-        for (uint32_t section = 0; section < 2; ++section)
+        map->chunkPackets[0] = at;
+        for (int section = 0; section < 2; ++section)
         {
-            uint32_t source = port::load<uint32_t>(terrain + 0x2D0Cu + 4u * section);
+            uint32_t source = map->terrainBuffers[section].address;
             for (uint32_t chunks = 0; chunks < 0x18; chunks += 8)
             {
                 for (uint32_t k = 0; k < 8; ++k)
@@ -1777,7 +1661,7 @@ namespace mm
             if (section == 1)
                 return GuestPtr<uint32_t>{at + 0x10u};
             at += 0x10u;
-            port::store<uint32_t>(terrain + 0x2F64u, at);
+            map->chunkPackets[1] = at;
         }
         return GuestPtr<uint32_t>{at};
     }
@@ -1793,12 +1677,11 @@ namespace mm
     // stacked on it.
     void LayerC_DrawBuildings(GuestPtr<LayerC> layer, int packet, GuestPtr<CityMap> map, int pass)
     {
-        const uint32_t l = layer.address;
         if (layer->rectActive == 1 && pass == 0)
         {
-            Dma_AppendCall(port::load<int32_t>(l + 0x210u));
+            Dma_AppendCall(static_cast<int>(layer->highlightPacket));
             Dma_AppendCall(packet);
-            Dma_AppendCall(port::load<int32_t>(l + 0x218u));
+            Dma_AppendCall(static_cast<int>(layer->endPacket));
         }
         else if (layer->rectActive == 2 && pass == 1)
         {
@@ -1808,31 +1691,30 @@ namespace mm
             const int node = type->size == 3 ? 1 : 0;
             for (; obj->nextOnTile != kNoObject; obj = Map_GetRecord(map, obj->nextOnTile))
                 height = height - ps2f(0.8f);
-            const GuestPtr<A3DObject> model{port::load<uint32_t>(l + 0x230u)};
-            const uint32_t nodeRecord = port::load<uint32_t>(model->model.address + 8u) + 0xC0u * static_cast<uint32_t>(node);
-            Mat4_Copy(GuestPtr<Vec4>{nodeRecord + 0x70u}, GuestPtr<Vec4>{globals::kIdentityMatrix});
-            port::store<float>(nodeRecord + 0xA0u, static_cast<float>(fromInt(layer->rectX0) - ps2f(64.0f) + fromInt(type->size) / ps2f(2.0f)));
-            port::store<float>(nodeRecord + 0xA4u, static_cast<float>(height));
-            port::store<float>(nodeRecord + 0xA8u, static_cast<float>(fromInt(0x80 - layer->rectZ0) - ps2f(64.0f) - fromInt(type->size) / ps2f(2.0f)));
-            Dma_AppendCall(port::load<int32_t>(l + 0x214u));
+            const GuestPtr<A3DObject> model = layer->marker;
+            const GuestPtr<A3DNode> markerNode = model->model->nodes + node;
+            Mat4_Copy(worldMatrix(markerNode), GuestPtr<Vec4>{globals::kIdentityMatrix});
+            Vec4 &position = markerNode->slot.matrix[3];
+            position.x = fromInt(layer->rectX0) - ps2f(64.0f) + fromInt(type->size) / ps2f(2.0f);
+            position.y = height;
+            position.z = fromInt(0x80 - layer->rectZ0) - ps2f(64.0f) - fromInt(type->size) / ps2f(2.0f);
+            Dma_AppendCall(static_cast<int>(layer->markerPacket));
             A3DObject_DrawNode(model, node);
-            Dma_AppendCall(port::load<int32_t>(l + 0x218u));
+            Dma_AppendCall(static_cast<int>(layer->endPacket));
         }
     }
 
     PORT_FN(LayerC_DrawBuildings);
 
-    // ---- the sky by the clock (batch 39)
+    // ---- the rain by the clock (batch 39)
 
-    // The sky layer for the time of day (clock in seconds): the seconds up to 5:00 (18000), the distance from midnight
-    // after 18:00 (0x15180 less the clock; before that the clock held at 18000) set its three colour scale words
-    // (0x443F4000) and the day fraction (clock / 450, +0x1C), and the packet's word +0x24 (clock / 600); the sixteen
-    // cloud offsets (+0x44, 0x10 apart) drift 0.4 a frame within 40; the horizon's VIF code (+0x2E0..) is rebuilt with
-    // a position that cycles every twelve frames; then the pass's packet, the map's, the shared one (+0x408) and the
-    // pass's second packet (+0x2C0) are queued.
+    // The rain for the time of day (clock in seconds; the seconds up to 5:00, 18000, and after 18:00 the distance from
+    // midnight, 0x15180 less the clock; between them the clock held at 18000): the streak colour's three lanes set to
+    // 765 and its w to clock / 450, the ground pass's ALPHA_1 FIX to clock / 600; the sixteen drops fall 0.4 a frame
+    // within 40; the ground pass's TEX0 steps through six texture pages, one every two frames (the splashes); then the
+    // pass's ground packet, the frame's chunk packet, the end packet and the pass's streak packet are queued.
     void LayerD_DrawSkyByClock(GuestPtr<LayerD> layer, int pass, int packet, int clock)
     {
-        const uint32_t l = layer.address;
         if (clock < 0x10B30)
         {
             if (clock > 18000)
@@ -1840,18 +1722,17 @@ namespace mm
         }
         else
             clock = std::abs(clock - 0x15180);
-        const uint32_t slot = 4u * static_cast<uint32_t>(pass);
-        port::store<float>(l + 0x1Cu, static_cast<float>(fromInt(clock) / ps2f(450.0f)));
-        port::store<uint32_t>(l + 0x18u, 0x443F4000u);
-        port::store<uint32_t>(l + 0x14u, 0x443F4000u);
-        port::store<uint32_t>(l + 0x10u, 0x443F4000u);
-        port::store<int32_t>(port::load<uint32_t>(l + 0x400u + slot) + 0x24u, clock / 600);
-        for (uint32_t cloud = l + 0x44u; cloud < l + 0x44u + 0x100u; cloud += 0x10u)
+        layer->colourA.w = fromInt(clock) / ps2f(450.0f);
+        port::store<uint32_t>(addressOf(layer->colourA.z), 0x443F4000u); // 765.0
+        port::store<uint32_t>(addressOf(layer->colourA.y), 0x443F4000u);
+        port::store<uint32_t>(addressOf(layer->colourA.x), 0x443F4000u);
+        port::store<int32_t>(layer->groundPackets[pass] + 0x24u, clock / 600); // ALPHA_1's FIX in the packet
+        for (Vec4 &drop : layer->drops)
         {
-            ps2f offset = ps2f(port::load<float>(cloud)) + ps2f(0.4f);
-            port::store<float>(cloud, static_cast<float>(offset));
-            if (ps2f(40.0f) <= offset)
-                port::store<float>(cloud, static_cast<float>(offset - ps2f(40.0f)));
+            ps2f y = drop.y + ps2f(0.4f);
+            drop.y = y;
+            if (ps2f(40.0f) <= y)
+                drop.y = y - ps2f(40.0f);
         }
         if (port::load<int8_t>(0x001BDAD4u) == 0)
         {
@@ -1862,14 +1743,15 @@ namespace mm
         int32_t cycle = ((port::load<int32_t>(0x001BDAD0u) >> 1) % 6) * 0x40;
         if (cycle < 0)
             cycle += 3;
-        port::store<int32_t>(l + 0x2ECu, 0);
-        port::store<int32_t>(l + 0x2E8u, 0);
-        port::store<uint32_t>(l + 0x2E4u, 0x4004F685u);
-        port::store<uint32_t>(l + 0x2E0u, static_cast<uint32_t>((cycle >> 2) + 0x27B8) | 0x99308000u);
-        Dma_AppendCall(port::load<int32_t>(l + 0x400u + slot));
+        uint32_t (&tex0)[4] = layer->ground.tex0;
+        tex0[3] = 0;
+        tex0[2] = 0;
+        tex0[1] = 0x4004F685u;
+        tex0[0] = static_cast<uint32_t>((cycle >> 2) + 0x27B8) | 0x99308000u; // TBP0 0x27B8 + 0x10 per step
+        Dma_AppendCall(static_cast<int>(layer->groundPackets[pass]));
         Dma_AppendCall(packet);
-        Dma_AppendCall(port::load<int32_t>(l + 0x408u));
-        Dma_AppendCall(port::load<int32_t>(l + 0x2C0u + slot));
+        Dma_AppendCall(static_cast<int>(layer->endPacket));
+        Dma_AppendCall(static_cast<int>(layer->startPackets[pass]));
     }
 
     PORT_FN(LayerD_DrawSkyByClock);
@@ -1895,12 +1777,12 @@ namespace mm
             if (model->model)
             {
                 sdk::free(model->model.address);
-                model->model = GuestPtr<void>{0u};
+                model->model = GuestPtr<A3DModel>{0u};
             }
-            if (model->meshes)
+            if (model->animations)
             {
-                sdk::operator_delete(model->meshes.address);
-                model->meshes = GuestPtr<void>{0u};
+                sdk::operator_delete(model->animations.address);
+                model->animations = GuestPtr<uint32_t>{0u};
             }
             BaseObject_dtor(static_cast<int>(model.address), 0);
             if (0 < deleteFlag)
@@ -1909,18 +1791,18 @@ namespace mm
         return model;
     }
 
-    // Sets the colour (four words) of mesh `index` when it has a material (+4 nonzero); an index past the model's mesh
+    // Sets the colour (four words) of node `index`'s draw packet when the node has a mesh; an index past the model's node
     // count is reported with printf. The result is printf's, or all of what v0 held when the call was made.
     int64_t A3DObject_ChangeLuminosity(GuestPtr<A3DObject> model, GuestPtr<uint32_t> colour, int index)
     {
         const int64_t entryV0 = port::guestV0Wide();
-        const uint32_t data = model->model.address;
-        const uint32_t meshes = port::load<uint32_t>(data + 8u);
-        if (!(index < static_cast<int>(port::load<int16_t>(data + 0x18u))))
+        const GuestPtr<A3DModel> data = model->model;
+        const GuestPtr<A3DNode> nodes = data->nodes;
+        if (!(index < static_cast<int>(data->nodeCount)))
             return port::callGuest<int64_t>(sdk::addr::printf, 0x001B5A90u);
-        const uint32_t mesh = meshes + static_cast<uint32_t>(index) * 0xC0u;
-        if (port::load<uint32_t>(mesh + 4u) != 0u)
-            *GuestPtr<Vec4>{mesh + 0x60u} = *GuestPtr<Vec4>{colour.address};
+        const GuestPtr<A3DNode> node = nodes + index;
+        if (node->mesh)
+            node->slot.colour = *GuestPtr<Vec4>{colour.address};
         return entryV0;
     }
 
@@ -2068,17 +1950,12 @@ namespace mm
         port::store<uint32_t>(0x001BDA20u, first);
         const uint32_t second = sdk::mw_NewArray(0x31380u);
         port::store<uint32_t>(0x001BDA24u, second);
-        for (uint32_t i = 0, at = 0; i < 0x708u; ++i, at += 0x70u)
+        for (int i = 0; i < 0x708; ++i)
             for (const uint32_t base : {first, second})
             {
-                port::store<uint32_t>(base + at, 0x10000005u);
-                port::store<uint32_t>(base + at + 4u, 0u);
-                port::store<uint32_t>(base + at + 8u, 0x1000101u);
-                port::store<uint32_t>(base + at + 0xCu, 0x6C05002Bu);
-                port::store<uint32_t>(base + at + 0x60u, 0x60000000u);
-                port::store<uint32_t>(base + at + 0x64u, 0u);
-                port::store<uint32_t>(base + at + 0x68u, 0x14000000u);
-                port::store<uint32_t>(base + at + 0x6Cu, 0x11000000u);
+                const GuestPtr<InstanceSlot> slot = GuestPtr<InstanceSlot>{base} + i;
+                putWords(slot->header, {0x10000005u, 0u, 0x1000101u, 0x6C05002Bu}); // CNT 5; STCYCL, UNPACK to 0x2B
+                putWords(slot->trailer, {0x60000000u, 0u, 0x14000000u, 0x11000000u}); // RET; MSCAL 0, FLUSH
             }
     }
 
@@ -2088,14 +1965,7 @@ namespace mm
     {
         constexpr uint32_t kChain = 0x001F8100u;
         constexpr uint32_t kQwc = 0x10009020u, kTadr = 0x10009030u, kChcr = 0x10009000u, kStat = 0x1000E010u;
-        port::store<uint32_t>(kChain + 0xCu, 0u);
-        port::store<uint32_t>(kChain + 8u, 0u);
-        port::store<uint32_t>(kChain + 4u, address & 0x7FFFFFFFu);
-        port::store<uint32_t>(kChain, 0x50000000u);
-        port::store<uint32_t>(kChain + 0x1Cu, 0u);
-        port::store<uint32_t>(kChain + 0x18u, 0u);
-        port::store<uint32_t>(kChain + 0x14u, 0u);
-        port::store<uint32_t>(kChain + 0x10u, 0x70000000u);
+        packet::putCallThenEnd(kChain, address & 0x7FFFFFFFu);
         sdk::sceGsSyncPath(0, 0);
         port::writeHardware32(kQwc, 0u);
         port::writeHardware32(kTadr, kChain & 0x7FFFFFFFu);
@@ -2136,34 +2006,34 @@ namespace mm
 
     // ---- The city renderer (plan P6 batch 2) ----
 
-    // The map with people below it, then the buffers and the draw layers the renderer owns: two buffers of 0x8700 bytes
-    // (+0x2D18, +0x2D1C) and two of 0x9C00 (+0x2D0C, +0x2D10); the render and terrain parameters; the two terrain packets
-    // built at the packet buffer's position (which moves on past each); and the layers D, E, F, G, C, B and A
-    // (+0x2F74, +0x2F78, +0x2F7C, +0x2F80, +0x2F88, +0x2F84, +0x2F8C), the ones that take buffers getting the pair at +0x2D0C.
+    // The map with people below it, then the buffers and the draw layers the renderer owns: the two cliff-side buffers
+    // (0x8700 bytes each) and the two terrain buffers (0x9C00); the ground and side parameters; the two terrain packets
+    // built at the packet buffer's position (which moves on past each); and the layers D, E, F, G, C, B and A, the ones
+    // that draw over the terrain quads getting the terrain buffers.
     GuestPtr<CityMap> CityRender_ctor(GuestPtr<CityMap> map)
     {
-        const uint32_t m = map.address;
         MapPeople_ctor(map);
-        port::store<uint32_t>(m + 0x64u, 0x001BCF00u);
-        port::store<uint32_t>(m + 0x2D18u, sdk::malloc(0x8700u));
-        port::store<uint32_t>(m + 0x2D1Cu, sdk::malloc(0x8700u));
-        port::store<uint32_t>(m + 0x2D0Cu, sdk::malloc(0x9C00u));
-        port::store<uint32_t>(m + 0x2D10u, sdk::malloc(0x9C00u));
+        map->vtable = GuestPtr<void>{0x001BCF00u};
+        map->sideBuffers[0] = GuestPtr<void>{sdk::malloc(0x8700u)};
+        map->sideBuffers[1] = GuestPtr<void>{sdk::malloc(0x8700u)};
+        map->terrainBuffers[0] = GuestPtr<void>{sdk::malloc(0x9C00u)};
+        map->terrainBuffers[1] = GuestPtr<void>{sdk::malloc(0x9C00u)};
         CityRender_InitParams(map);
-        Terrain_InitParams(static_cast<int>(m));
-        PacketBuf_Seek(static_cast<int>(Terrain_BuildVu1PacketB(static_cast<int>(m), GuestPtr<uint32_t>{static_cast<uint32_t>(PacketBuf_Tell())}).address));
-        PacketBuf_Seek(static_cast<int>(Terrain_BuildVu1PacketA(static_cast<int>(m), GuestPtr<uint32_t>{static_cast<uint32_t>(PacketBuf_Tell())}).address));
-        const auto make = [&](uint32_t size, uint32_t field, auto construct) {
+        Terrain_InitParams(map);
+        PacketBuf_Seek(static_cast<int>(Terrain_BuildVu1PacketB(map, GuestPtr<uint32_t>{static_cast<uint32_t>(PacketBuf_Tell())}).address));
+        PacketBuf_Seek(static_cast<int>(Terrain_BuildVu1PacketA(map, GuestPtr<uint32_t>{static_cast<uint32_t>(PacketBuf_Tell())}).address));
+        const int buffers = static_cast<int>(addressOf(map->terrainBuffers));
+        const auto make = [&](uint32_t size, auto &field, auto construct) {
             const uint32_t memory = sdk::operator_new(size);
-            port::store<uint32_t>(m + field, memory != 0u ? construct(memory) : 0u);
+            port::store<uint32_t>(addressOf(field), memory != 0u ? construct(memory) : 0u);
         };
-        make(0x410, 0x2F74, [&](uint32_t o) { return LayerD_ctor(GuestPtr<LayerD>{o}, static_cast<int>(m + 0x2D0Cu)).address; });
-        make(0x6E0, 0x2F78, [&](uint32_t o) { return LayerE_ctor(GuestPtr<LayerE>{o}, static_cast<int>(m + 0x2D0Cu)).address; });
-        make(0x140, 0x2F7C, [&](uint32_t o) { return LayerF_ctor(GuestPtr<LayerF>{o}).address; });
-        make(0x2E0, 0x2F80, [&](uint32_t o) { return LayerG_ctor(GuestPtr<LayerG>{o}, static_cast<int>(m + 0x2D0Cu)).address; });
-        make(0x240, 0x2F88, [&](uint32_t o) { return LayerC_ctor(GuestPtr<LayerC>{o}).address; });
-        make(0x230, 0x2F84, [&](uint32_t o) { return LayerB_ctor(GuestPtr<LayerB>{o}).address; });
-        make(0x2440, 0x2F8C, [&](uint32_t o) { return LayerA_ctor(GuestPtr<LayerA>{o}).address; });
+        make(0x410, map->rain, [&](uint32_t o) { return LayerD_ctor(GuestPtr<LayerD>{o}, buffers).address; });
+        make(0x6E0, map->snow, [&](uint32_t o) { return LayerE_ctor(GuestPtr<LayerE>{o}, buffers).address; });
+        make(0x140, map->layerF, [&](uint32_t o) { return LayerF_ctor(GuestPtr<LayerF>{o}).address; });
+        make(0x2E0, map->water, [&](uint32_t o) { return LayerG_ctor(GuestPtr<LayerG>{o}, buffers).address; });
+        make(0x240, map->placement, [&](uint32_t o) { return LayerC_ctor(GuestPtr<LayerC>{o}).address; });
+        make(0x230, map->layerB, [&](uint32_t o) { return LayerB_ctor(GuestPtr<LayerB>{o}).address; });
+        make(0x2440, map->instances, [&](uint32_t o) { return LayerA_ctor(GuestPtr<LayerA>{o}).address; });
         return map;
     }
 
@@ -2172,20 +2042,20 @@ namespace mm
     {
         if (map)
         {
-            const uint32_t m = map.address;
-            port::store<uint32_t>(m + 0x64u, 0x001BCF00u);
-            lifetime::deleteWith(m + 0x2F8Cu, [](uint32_t o) { LayerA_DeletingDtor(GuestPtr<LayerA>{o}, 1); });
-            lifetime::deleteWith(m + 0x2F74u, [](uint32_t o) { LayerD_DeletingDtor(GuestPtr<LayerD>{o}, 1); });
-            lifetime::deleteWith(m + 0x2F78u, [](uint32_t o) { LayerE_DeletingDtor(GuestPtr<LayerE>{o}, 1); });
-            lifetime::deleteWith(m + 0x2F7Cu, [](uint32_t o) { LayerF_DeletingDtor(GuestPtr<LayerF>{o}, 1); });
-            lifetime::deleteWith(m + 0x2F80u, [](uint32_t o) { LayerG_DeletingDtor(GuestPtr<LayerG>{o}, 1); });
-            lifetime::deleteWith(m + 0x2F88u, [](uint32_t o) { LayerC_DeletingDtor(GuestPtr<LayerC>{o}, 1); });
-            lifetime::deleteWith(m + 0x2F84u, [](uint32_t o) { LayerB_DeletingDtor(GuestPtr<LayerB>{o}, 1); });
-            for (const uint32_t field : {0x2D0Cu, 0x2D10u, 0x2D18u, 0x2D1Cu})
-                lifetime::deleteWith(m + field, [](uint32_t o) { sdk::free(o); });
+            map->vtable = GuestPtr<void>{0x001BCF00u};
+            lifetime::deleteWith(addressOf(map->instances), [](uint32_t o) { LayerA_DeletingDtor(GuestPtr<LayerA>{o}, 1); });
+            lifetime::deleteWith(addressOf(map->rain), [](uint32_t o) { LayerD_DeletingDtor(GuestPtr<LayerD>{o}, 1); });
+            lifetime::deleteWith(addressOf(map->snow), [](uint32_t o) { LayerE_DeletingDtor(GuestPtr<LayerE>{o}, 1); });
+            lifetime::deleteWith(addressOf(map->layerF), [](uint32_t o) { LayerF_DeletingDtor(GuestPtr<LayerF>{o}, 1); });
+            lifetime::deleteWith(addressOf(map->water), [](uint32_t o) { LayerG_DeletingDtor(GuestPtr<LayerG>{o}, 1); });
+            lifetime::deleteWith(addressOf(map->placement), [](uint32_t o) { LayerC_DeletingDtor(GuestPtr<LayerC>{o}, 1); });
+            lifetime::deleteWith(addressOf(map->layerB), [](uint32_t o) { LayerB_DeletingDtor(GuestPtr<LayerB>{o}, 1); });
+            for (const uint32_t field : {addressOf(map->terrainBuffers[0]), addressOf(map->terrainBuffers[1]), addressOf(map->sideBuffers[0]),
+                                         addressOf(map->sideBuffers[1])})
+                lifetime::deleteWith(field, [](uint32_t o) { sdk::free(o); });
             MapPeople_dtor(map, 0);
             if (0 < deleteFlag)
-                sdk::operator_delete(m);
+                sdk::operator_delete(map.address);
         }
         return map;
     }
@@ -2194,7 +2064,7 @@ namespace mm
     GuestPtr<CityMap> CityMap_ctor(GuestPtr<CityMap> map)
     {
         CityRender_ctor(map);
-        port::store<uint32_t>(map.address + 0x64u, 0x001BCED0u);
+        map->vtable = GuestPtr<void>{0x001BCED0u};
         return map;
     }
 
@@ -2202,7 +2072,7 @@ namespace mm
     {
         if (map)
         {
-            port::store<uint32_t>(map.address + 0x64u, 0x001BCED0u);
+            map->vtable = GuestPtr<void>{0x001BCED0u};
             CityRender_dtor(map, 0);
             if (0 < deleteFlag)
                 sdk::operator_delete(map.address);
@@ -2255,11 +2125,8 @@ namespace mm
     {
         port::GuestFrame<0x20> frame;
         CityCamera_BaseCtor(camera);
-        port::store<uint32_t>(camera.address + 0x130u, 0u);
-        port::store<uint32_t>(camera.address + 0x134u, 0xC1E80000u);
-        port::store<uint32_t>(camera.address + 0x138u, 0x3FCCCCCDu);
-        port::store<uint32_t>(camera.address + 0x13Cu, 0x3F800000u);
-        port::store<uint32_t>(camera.address + 0x530u, 1u);
+        putWords(addressOf(camera->base.eye), {0u, 0xC1E80000u, 0x3FCCCCCDu, 0x3F800000u}); // (0, -29, 1.6, 1)
+        camera->zoomLevel = 1;
         return camera;
     }
 
@@ -2267,13 +2134,13 @@ namespace mm
     PORT_FN(CityCamera_BaseCtor);
     PORT_FN(CityCamera_ctor);
 
-    // The asynchronous model load; when it succeeded (1) for a synchronous call (a2 is 0), the model keeps its mesh table's count
-    // divided by 13 at +0x60 (the count at +4 of the table at +8 of its data).
+    // The asynchronous model load; when it finished (1) for a model whose nodes keep mesh indexes (a2 is 0), the model's
+    // group size is node 0's mesh index divided by 13.
     int InstanceModel_LoadAsync(GuestPtr<A3DObject> model, GuestPtr<GameFile> gamefile, int a2)
     {
         const int result = A3DObject_LoadAsync(model, gamefile, a2);
         if (result == 1 && a2 == 0)
-            port::store<int32_t>(model.address + 0x60u, divide(port::load<int32_t>(port::load<uint32_t>(port::load<uint32_t>(model.address) + 8u) + 4u), 13));
+            GuestPtr<InstanceModel>{model.address}->groupSize = divide(meshIndex(model->model->nodes), 13);
         return result;
     }
 
@@ -2281,113 +2148,118 @@ namespace mm
 
     namespace
     {
-        // The tags of the DMA chain at `chain` that point at data (REF and CALL) hold a word count from `base` in their address word;
-        // this turns it into an address. `reader` is the chain reader's 0x30 bytes of working memory.
-        void relocateChain(uint32_t reader, uint32_t chain, uint32_t base)
+        // The tags of the DMA chain at `chain` that point at data (REF and CALL) hold a word offset from `base` in their address
+        // word; this turns it into an address. `reader` is the chain reader's working memory.
+        void relocateChain(GuestPtr<DmaChainReader> reader, uint32_t chain, uint32_t base)
         {
-            DmaChain_Begin(static_cast<int>(reader), static_cast<int>(chain));
+            DmaChain_Begin(reader, static_cast<int>(chain));
             int more;
             do
             {
-                more = DmaChain_Next(static_cast<int>(reader));
-                const uint32_t id = port::load<uint32_t>(reader + 8u);
-                if (id == 0x30000000u || id == 0x50000000u)
+                more = DmaChain_Next(reader);
+                const uint32_t id = reader->id;
+                if (id == packet::kRef || id == packet::kCall)
                 {
-                    const uint32_t tag = port::load<uint32_t>(reader + 4u);
-                    port::store<uint32_t>(tag + 4u, base + 4u * port::load<uint32_t>(tag + 4u));
+                    const GuestPtr<uint32_t> tag{reader->tag};
+                    tag[1] = base + 4u * tag[1];
                 }
             } while (more != 0);
         }
     }
 
-    // Turns the word offsets of a loaded .A3D image (the model's data at +0; its header has the offsets of five tables at +4..+0x14
-    // and the counts of records A, B, C and the chain blocks as halfwords at +0x18 to +0x1E) into addresses: the four tables, the
-    // first word of each 0xC0-byte record A (and, when `indexed`, its second word as an index into table B, with -1 for none; when not,
-    // table B's own entries), the chain blocks of B (their size at +4) and of D (their size at +0), whose DMA tags that point at data
-    // are relocated as well, and the groups of table C (the model keeps a table of their addresses at +0x50, and the entry count of a
-    // group at +8). The texture packets (the second block, at +4 of the model, `D[1]` words) are relocated against that block
-    // and sent to the GS as they come.
+    // Turns the word offsets of a loaded .A3D image into addresses: the four tables of the header, each node's parent, the meshes
+    // (when `indexed`, each node's mesh index becomes the mesh's address, null for -1, and the table keeps its offsets; when not,
+    // the table's entries become addresses and the nodes keep their indexes), each mesh block's data word and the DMA tags of its
+    // chain that point at data, the animations (the model keeps their addresses and the track count; each track's node and keys)
+    // and the extra chain blocks. The texture packets (the model's texture block, `textureWords` words) are relocated against
+    // that block and sent to the GS as they come.
     void A3D_Relocate(GuestPtr<A3DObject> model, int indexed)
     {
         port::GuestFrame<0xE0> frame;
         const uint32_t sp = frame.ptr().address;
-        const uint32_t self = model.address;
-        const auto data = [&]() { return port::load<uint32_t>(self); };
-        for (uint32_t at = 8u; at <= 0x14u; at += 4u)
-            port::store<uint32_t>(data() + at, data() + 4u * port::load<uint32_t>(data() + at));
-        uint32_t record = port::load<uint32_t>(data() + 8u);
-        for (int i = 0; i < port::load<int16_t>(data() + 0x18u); ++i, record += 0xC0u)
-            if (port::load<uint32_t>(record) != 0)
-                port::store<uint32_t>(record, data() + 4u * port::load<uint32_t>(record));
-        uint32_t block;
+        // The model's data and a word offset in it, both read again for every use, as in the original.
+        const auto data = [&]() { return model->model; };
+        const auto address = [&](uint32_t words) { return data().address + 4u * words; };
+        data()->nodes = GuestPtr<A3DNode>{address(data()->nodes.address)};
+        data()->meshes = GuestPtr<uint32_t>{address(data()->meshes.address)};
+        data()->animations = GuestPtr<void>{address(data()->animations.address)};
+        data()->chains = GuestPtr<void>{address(data()->chains.address)};
+        GuestPtr<A3DNode> node = data()->nodes;
+        for (int i = 0; i < data()->nodeCount; ++i, ++node)
+            if (node->parent)
+                node->parent = GuestPtr<A3DNode>{address(node->parent.address)};
+        uint32_t block; // the first mesh block
         if (indexed != 0)
         {
-            record = port::load<uint32_t>(data() + 8u);
-            for (int i = 0; i < port::load<int16_t>(data() + 0x18u); ++i, record += 0xC0u)
+            node = data()->nodes;
+            for (int i = 0; i < data()->nodeCount; ++i, ++node)
             {
-                const int32_t index = port::load<int32_t>(record + 4u);
+                const int32_t index = meshIndex(node);
                 if (index == -1)
-                    port::store<uint32_t>(record + 4u, 0u);
+                    node->mesh = GuestPtr<A3DMesh>{0u};
                 else
-                    port::store<uint32_t>(record + 4u, data() + 4u * port::load<uint32_t>(port::load<uint32_t>(data() + 0xCu) + 4u * static_cast<uint32_t>(index)));
+                    node->mesh = GuestPtr<A3DMesh>{address(data()->meshes[index])};
             }
-            block = data() + 4u * port::load<uint32_t>(port::load<uint32_t>(data() + 0xCu));
+            block = address(data()->meshes[0]);
         }
         else
         {
-            for (int i = 0; i < port::load<int16_t>(data() + 0x1Au); ++i)
-            {
-                const uint32_t slot = port::load<uint32_t>(data() + 0xCu) + 4u * static_cast<uint32_t>(i);
-                port::store<uint32_t>(slot, data() + 4u * port::load<uint32_t>(slot));
-            }
-            block = port::load<uint32_t>(port::load<uint32_t>(data() + 0xCu));
+            for (int i = 0; i < data()->meshCount; ++i)
+                data()->meshes[i] = address(data()->meshes[i]);
+            block = data()->meshes[0];
         }
-        for (int i = 0; i < port::load<int16_t>(data() + 0x1Au); ++i)
+        // The mesh blocks lie one after the other.
+        for (int i = 0; i < data()->meshCount; ++i)
         {
-            port::store<uint32_t>(block, data() + 4u * port::load<uint32_t>(block));
-            relocateChain(sp + 0x50u, block + 0x10u, data());
-            block += 4u * port::load<uint32_t>(block + 4u);
+            const GuestPtr<A3DMesh> mesh{block};
+            mesh->data = address(mesh->data);
+            relocateChain(GuestPtr<DmaChainReader>{sp + 0x50u}, addressOf(mesh->chain), data().address);
+            block += 4u * mesh->sizeWords;
         }
-        if (port::load<int16_t>(data() + 0x1Cu) == 0)
-            port::store<uint32_t>(self + 8u, 0u);
+        if (data()->animationCount == 0)
+            model->trackCount = 0;
         else
         {
-            uint32_t cursor = port::load<uint32_t>(data() + 0x10u);
-            port::store<uint32_t>(self + 8u, port::load<uint32_t>(cursor));
+            // A 0x10-byte header with the track count, then each animation's tracks, then their keys (0x20 bytes each).
+            uint32_t cursor = data()->animations.address;
+            model->trackCount = port::load<int32_t>(cursor);
             cursor += 0x10u;
-            port::store<uint32_t>(data() + 0x10u, cursor);
-            for (int group = 0; group < port::load<int16_t>(data() + 0x1Cu); ++group)
+            data()->animations = GuestPtr<void>{cursor};
+            for (int animation = 0; animation < data()->animationCount; ++animation)
             {
-                port::store<uint32_t>(port::load<uint32_t>(self + 0x50u) + 4u * static_cast<uint32_t>(group), cursor);
-                uint32_t total = 0;
-                for (int entry = 0; entry < port::load<int32_t>(self + 8u); ++entry)
+                model->animations[animation] = cursor;
+                uint32_t keys = 0;
+                for (int t = 0; t < model->trackCount; ++t)
                 {
-                    const uint32_t count = port::load<uint32_t>(cursor);
-                    port::store<uint32_t>(cursor + 4u, data() + 4u * port::load<uint32_t>(cursor + 4u));
-                    total += count;
-                    port::store<uint32_t>(cursor + 8u, data() + 4u * port::load<uint32_t>(cursor + 8u));
+                    const GuestPtr<A3DTrack> track{cursor};
+                    const uint32_t count = static_cast<uint32_t>(track->keyCount);
+                    track->node = GuestPtr<A3DNode>{address(track->node.address)};
+                    keys += count;
+                    track->keys = GuestPtr<A3DKey>{address(track->keys.address)};
                     cursor += 0x10u;
                 }
-                cursor += total << 5;
+                cursor += keys << 5;
             }
         }
-        block = port::load<uint32_t>(data() + 0x14u);
-        for (int i = 0; i < port::load<int16_t>(data() + 0x1Eu); ++i)
+        block = data()->chains.address;
+        for (int i = 0; i < data()->chainCount; ++i)
         {
-            relocateChain(sp + 0x80u, block + 0x10u, data());
-            block += 4u * port::load<uint32_t>(block);
+            const GuestPtr<A3DChainBlock> chain{block};
+            relocateChain(GuestPtr<DmaChainReader>{sp + 0x80u}, addressOf(chain->chain), data().address);
+            block += 4u * chain->sizeWords;
         }
-        uint32_t remaining = port::load<uint32_t>(data() + 4u);
+        uint32_t remaining = data()->textureWords;
         if (remaining != 0)
         {
-            uint32_t packet = port::load<uint32_t>(self + 4u);
+            uint32_t at = model->textures.address;
             do
             {
-                relocateChain(sp + 0xB0u, packet + 0x10u, port::load<uint32_t>(self + 4u));
-                Dma_KickVif1Now(packet + 0x10u);
-                const uint32_t size = port::load<uint32_t>(packet);
+                const GuestPtr<A3DChainBlock> textures{at};
+                relocateChain(GuestPtr<DmaChainReader>{sp + 0xB0u}, addressOf(textures->chain), model->textures.address);
+                Dma_KickVif1Now(addressOf(textures->chain));
+                const uint32_t size = textures->sizeWords;
                 remaining -= size;
-                packet += 4u * size;
+                at += 4u * size;
             } while (remaining != 0);
         }
     }
@@ -2395,31 +2267,29 @@ namespace mm
     PORT_FN(A3D_Relocate);
 
     // Loads a model (.A3D) from an open file, one step per call (the step is in 0x1BDA10, the request being waited for in 0x1BDA14,
-    // and the 16-byte header lands in 0x1C5100: the size of the file in words, then of the texture block in words, then the counts):
-    // 0 queue the header read, 1 wait for it (an empty header, a size of 0, is the end of the file: -1), 2 make the data block of the
-    // size and queue the rest of the file after a copy of the header, 3 wait, 4 make the table of the model's meshes (+0x50, the
-    // count is a halfword at +0x1C of the data) and the texture block (+4) and queue its read, 5 wait, 6 relocate the data
-    // (mm_A3D_Relocate, which also sends the textures), free the texture block, reset the model's matrix at +0x10 and finish
-    // (1). 0 means still busy.
+    // and the file's 16-byte header lands in 0x1C5100): 0 queue the header read, 1 wait for it (an empty header, a size of 0, is the
+    // end of the file: -1), 2 make the data block of the size and queue the rest of the file after a copy of the header, 3 wait, 4
+    // make the table of the model's animations and the texture block and queue its read, 5 wait, 6 relocate the data
+    // (mm_A3D_Relocate, which also sends the textures), free the texture block, reset the model's matrix and finish (1). 0 means
+    // still busy.
     int A3DObject_LoadAsync(GuestPtr<A3DObject> model, GuestPtr<GameFile> file, int indexed)
     {
-        constexpr uint32_t kHeader = 0x001C5100u;
+        const GuestPtr<A3DModel> header{0x001C5100u};
         const GuestVar<int32_t> state{0x001BDA10u}, request{0x001BDA14u};
-        const uint32_t m = model.address;
         const auto done = [&]() { return FileQueue_IsDone(static_cast<int>(file.address), request.get()) != 0; };
         switch (static_cast<uint32_t>(state.get()))
         {
         case 0:
-            port::store<uint32_t>(m, 0u);
-            port::store<uint32_t>(m + 4u, 0u);
-            port::store<uint32_t>(m + 0x50u, 0u);
-            request.set(File_Read(file, static_cast<int>(kHeader), 1, 0x10, 0));
+            model->model = GuestPtr<A3DModel>{0u};
+            model->textures = GuestPtr<void>{0u};
+            model->animations = GuestPtr<uint32_t>{0u};
+            request.set(File_Read(file, static_cast<int>(header.address), 1, 0x10, 0));
             state.set(state.get() + 1);
             return 0;
         case 1:
             if (!done())
                 return 0;
-            if (port::load<int32_t>(kHeader) == 0)
+            if (header->sizeWords == 0)
             {
                 state.set(0);
                 return -1;
@@ -2427,9 +2297,9 @@ namespace mm
             state.set(state.get() + 1);
             return 0;
         case 2:
-            port::store<uint32_t>(m, sdk::malloc(port::load<uint32_t>(kHeader) << 2));
-            sdk::memcpy(port::load<uint32_t>(m), kHeader, 0x10);
-            request.set(File_Read(file, static_cast<int>(port::load<uint32_t>(m)) + 0x10, port::load<int32_t>(kHeader) - 4, 4, 0));
+            model->model = GuestPtr<A3DModel>{sdk::malloc(header->sizeWords << 2)};
+            sdk::memcpy(model->model.address, header.address, 0x10);
+            request.set(File_Read(file, static_cast<int>(model->model.address) + 0x10, static_cast<int32_t>(header->sizeWords) - 4, 4, 0));
             state.set(state.get() + 1);
             return 0;
         case 3:
@@ -2440,24 +2310,24 @@ namespace mm
             return 0;
         case 4:
         {
-            const int32_t meshes = port::load<int16_t>(port::load<uint32_t>(m) + 0x1Cu);
-            if (meshes != 0)
-                port::store<uint32_t>(m + 0x50u, sdk::mw_NewArray(static_cast<uint32_t>(meshes) << 2));
-            port::store<uint32_t>(m + 4u, sdk::malloc(port::load<uint32_t>(kHeader + 4u) << 2));
-            request.set(File_Read(file, static_cast<int>(port::load<uint32_t>(m + 4u)), port::load<int32_t>(kHeader + 4u), 4, 0));
+            const int32_t animations = model->model->animationCount;
+            if (animations != 0)
+                model->animations = GuestPtr<uint32_t>{sdk::mw_NewArray(static_cast<uint32_t>(animations) << 2)};
+            model->textures = GuestPtr<void>{sdk::malloc(header->textureWords << 2)};
+            request.set(File_Read(file, static_cast<int>(model->textures.address), static_cast<int32_t>(header->textureWords), 4, 0));
             state.set(state.get() + 1);
             return 0;
         }
         case 6:
         {
             A3D_Relocate(model, indexed);
-            const uint32_t textures = port::load<uint32_t>(m + 4u);
+            const uint32_t textures = model->textures.address;
             if (textures != 0u)
             {
                 sdk::free(textures);
-                port::store<uint32_t>(m + 4u, 0u);
+                model->textures = GuestPtr<void>{0u};
             }
-            Mat4_Copy(GuestPtr<Vec4>{m + 0x10u}, GuestPtr<Vec4>{0x001B2550u});
+            Mat4_Copy(GuestPtr<Vec4>::of(model->matrix[0]), GuestPtr<Vec4>{0x001B2550u});
             state.set(0);
             return 1;
         }
@@ -2517,43 +2387,41 @@ namespace mm
 
     PORT_FN(Gs_InitDisplay);
 
-    // Loads a model (.A3D) from a disc path in one go (the blocking counterpart of A3DObject_LoadAsync): the 16-byte header (the file's
-    // size in words, the texture block's in words, then the counts) is read and the file read again from its start into a block of
-    // that size; the table of the model's meshes (+0x50, the count is a halfword at +0x1C of the data) and the texture block (+4) are
-    // made and the texture block read; the data is relocated (mm_A3D_Relocate), the texture block freed and the model's matrix at
-    // +0x10 reset. The result is the model.
+    // Loads a model (.A3D) from a disc path in one go (the blocking counterpart of A3DObject_LoadAsync): the file's 16-byte header
+    // is read and the file read again from its start into a block of its size; the table of the model's animations and the
+    // texture block are made and the texture block read; the data is relocated (mm_A3D_Relocate), the texture block freed and the
+    // model's matrix reset. The result is the model.
     GuestPtr<int32_t> A3DObject_Load(GuestPtr<A3DObject> model, int path, int indexed)
     {
         port::GuestFrame<0x60> frame;
         const uint32_t sp = frame.ptr().address;
         const GuestPtr<GameFile> file{sp + 0x58u};
-        const uint32_t header = sp + 0x40u;
-        const uint32_t m = model.address;
-        BaseObject_ctor(static_cast<int>(m));
-        port::store<uint32_t>(m, 0u);
-        port::store<uint32_t>(m + 4u, 0u);
-        port::store<uint32_t>(m + 0x50u, 0u);
+        const GuestPtr<A3DModel> header{sp + 0x40u};
+        BaseObject_ctor(static_cast<int>(model.address));
+        model->model = GuestPtr<A3DModel>{0u};
+        model->textures = GuestPtr<void>{0u};
+        model->animations = GuestPtr<uint32_t>{0u};
         File_ctor(file, 0);
         File_Open(file, GuestPtr<char>{static_cast<uint32_t>(path)});
-        File_Read(file, static_cast<int>(header), 1, 0x10, 0);
+        File_Read(file, static_cast<int>(header.address), 1, 0x10, 0);
         File_Seek(file, 0, 0, 0);
-        port::store<uint32_t>(m, sdk::malloc(port::load<uint32_t>(header) << 2));
-        File_Read(file, static_cast<int>(port::load<uint32_t>(m)), port::load<int32_t>(header), 4, 0);
-        const int32_t meshes = port::load<int16_t>(port::load<uint32_t>(m) + 0x1Cu);
-        if (meshes != 0)
-            port::store<uint32_t>(m + 0x50u, sdk::mw_NewArray(static_cast<uint32_t>(meshes) << 2));
-        port::store<uint32_t>(m + 4u, sdk::malloc(port::load<uint32_t>(header + 4u) << 2));
-        File_Read(file, static_cast<int>(port::load<uint32_t>(m + 4u)), port::load<int32_t>(header + 4u), 4, 0);
+        model->model = GuestPtr<A3DModel>{sdk::malloc(header->sizeWords << 2)};
+        File_Read(file, static_cast<int>(model->model.address), static_cast<int32_t>(header->sizeWords), 4, 0);
+        const int32_t animations = model->model->animationCount;
+        if (animations != 0)
+            model->animations = GuestPtr<uint32_t>{sdk::mw_NewArray(static_cast<uint32_t>(animations) << 2)};
+        model->textures = GuestPtr<void>{sdk::malloc(header->textureWords << 2)};
+        File_Read(file, static_cast<int>(model->textures.address), static_cast<int32_t>(header->textureWords), 4, 0);
         File_Close(file);
         A3D_Relocate(model, indexed);
-        if (port::load<uint32_t>(m + 4u) != 0u)
+        if (model->textures)
         {
-            sdk::free(port::load<uint32_t>(m + 4u));
-            port::store<uint32_t>(m + 4u, 0u);
+            sdk::free(model->textures.address);
+            model->textures = GuestPtr<void>{0u};
         }
-        Mat4_Copy(GuestPtr<Vec4>{m + 0x10u}, GuestPtr<Vec4>{0x001B2550u});
+        Mat4_Copy(GuestPtr<Vec4>::of(model->matrix[0]), GuestPtr<Vec4>{0x001B2550u});
         File_dtor(file, -1);
-        return GuestPtr<int32_t>{m};
+        return GuestPtr<int32_t>{model.address};
     }
 
     PORT_FN(A3DObject_Load);

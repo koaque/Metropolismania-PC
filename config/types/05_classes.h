@@ -57,6 +57,16 @@ typedef struct LayerD LayerD;
 typedef struct LayerE LayerE;
 typedef struct LayerF LayerF;
 typedef struct LayerG LayerG;
+typedef struct LayerAInstance LayerAInstance;
+typedef struct InstanceModel InstanceModel;
+typedef struct TerrainPassParams TerrainPassParams;
+typedef struct A3DModel A3DModel;
+typedef struct A3DNode A3DNode;
+typedef struct A3DMesh A3DMesh;
+typedef struct A3DChainBlock A3DChainBlock;
+typedef struct A3DTrack A3DTrack;
+typedef struct A3DKey A3DKey;
+typedef struct DmaChainReader DmaChainReader;
 
 /* Text box (0x40 bytes), mm_TextBox_Init builds one. */
 struct TextBox {
@@ -98,11 +108,18 @@ struct Frame {
 };
 /* Model instance from a .A3D file (0x60 bytes). */
 struct A3DObject {
-    void *model;               /* +0x00 the loaded .A3D data (node array at +8) */
-    uint8_t unk_04[0xC];
+    A3DModel *model;           /* +0x00 the loaded .A3D data */
+    void *textures;            /* +0x04 the texture block while loading: its packets go to the GS, then it is freed (mm_A3D_Relocate) */
+    int32_t trackCount;        /* +0x08 node tracks per animation (mm_A3D_Relocate, mm_Instance_DrawSwaying) */
+    uint8_t unk_0C[4];
     Vec4 matrix[4];            /* +0x10 object matrix (mm_Player_GetMatrix) */
-    void *meshes;              /* +0x50 table of mesh pointers (mm_A3D_GetMeshField0C) */
+    uint32_t *animations;      /* +0x50 one A3DTrack array address per animation (mm_A3D_Relocate) */
     uint8_t unk_54[0xC];
+};
+/* A model drawn as instances in mesh groups (mm_InstanceModel_ctor; people and the player): a model, then the group size. */
+struct InstanceModel {
+    A3DObject base;
+    int32_t groupSize;         /* +0x60 meshes per group: node 0's mesh index / 13 (mm_InstanceModel_LoadAsync) */
 };
 /* Camera (0x310 bytes). */
 struct Camera {
@@ -144,7 +161,9 @@ struct Camera {
 /* City camera with the sky (0x540 bytes): a camera plus the zoom level and sky packets. */
 struct CityCamera {
     Camera base;
-    uint8_t unk_310[0x220];
+    uint32_t skyBands[48];     /* +0x310 the sky's DMA packets (mm_Sky_BuildPackets, drawn by mm_Sky_Draw): the colour bands */
+    uint32_t skyPicture[40];   /* +0x3D0 the sky texture */
+    uint32_t skyGlow[48];      /* +0x470 the glow */
     int32_t zoomLevel;         /* +0x530 0..3, L1/R1 and L2/R2 */
     uint8_t unk_534[0xC];
 };
@@ -193,12 +212,88 @@ struct TexSprite {
     uint32_t frameX;           /* +0x30 first tile (mm_TexSprite_SetFrame) */
     uint32_t frameY;           /* +0x34 */
 };
-/* Model instance slot (0x70 bytes): one per mesh drawn this frame, at most 0x708, in two buffers by frame. */
+/* Model instance slot (0x70 bytes): one per mesh drawn this frame, at most 0x708, in two buffers by frame. A DMA packet that
+   unpacks the colour and the matrix to VU1 0x2B..0x2F and starts the program (docs/RENDER_PIPELINE.md). */
 struct InstanceSlot {
-    uint8_t header[0x10];      /* +0x00 prebuilt packet header */
-    Vec4 colour;               /* +0x10 */
-    Vec4 matrix[4];            /* +0x20 the last word (+0x5C) carries the caller's flags */
-    uint8_t trailer[0x10];
+    uint32_t header[4];        /* +0x00 CNT 5 tag; STCYCL, UNPACK V4-32 of 5 quadwords to 0x2B (mm_InstanceBuf_Init) */
+    Vec4 colour;               /* +0x10 VU1 0x2B; w picks the colour table entry */
+    Vec4 matrix[4];            /* +0x20 VU1 0x2C..0x2F; the last word (+0x5C) carries the caller's flags */
+    uint32_t trailer[4];       /* +0x60 RET tag; MSCAL 0, FLUSH */
+};
+/* A .A3D model as loaded (mm_A3DObject_Load, mm_A3DObject_LoadAsync): the file's 16-byte header, the table offsets that
+   mm_A3D_Relocate turns into addresses, the counts, then the tables. */
+struct A3DModel {
+    uint32_t sizeWords;        /* +0x00 the file's size in words */
+    uint32_t textureWords;     /* +0x04 the texture block's size in words */
+    A3DNode *nodes;            /* +0x08 0xC0 bytes each */
+    uint32_t *meshes;          /* +0x0C one A3DMesh address each; word offsets still when the nodes were given addresses (indexed) */
+    void *animations;          /* +0x10 a 0x10-byte header (the track count first), then each animation's tracks and keys */
+    void *chains;              /* +0x14 more DMA chain blocks, their size in words first */
+    int16_t nodeCount;         /* +0x18 */
+    int16_t meshCount;         /* +0x1A */
+    int16_t animationCount;    /* +0x1C */
+    int16_t chainCount;        /* +0x1E */
+};
+/* A mesh of a .A3D model: a header, then the DMA chain that draws its vertex batches (CALLed after an instance slot). */
+struct A3DMesh {
+    uint32_t data;             /* +0x00 a word offset that mm_A3D_Relocate turns into an address */
+    uint32_t sizeWords;        /* +0x04 the block's size in words */
+    uint32_t unk_08;           /* +0x08 a character part group whose first mesh has this below 4 is replaced (mm_CityAssets_BuildCharParts) */
+    uint8_t unk_0C[4];
+    uint32_t chain[4];         /* +0x10 start of the DMA chain */
+};
+/* A block of DMA data in a .A3D file (the model's extra chains, the texture packets): its size, then the chain. */
+struct A3DChainBlock {
+    uint32_t sizeWords;        /* +0x00 the block's size in words */
+    uint8_t unk_04[0xC];
+    uint32_t chain[4];         /* +0x10 start of the DMA chain */
+};
+/* A node of a .A3D model (0xC0 bytes): its parent, its mesh, its matrix relative to the parent and its draw packet. */
+struct A3DNode {
+    A3DNode *parent;           /* +0x00 null for a root */
+    A3DMesh *mesh;             /* +0x04 null for none; with indexed 0 at load, an index into the mesh table (-1 none) */
+    uint8_t unk_08[8];
+    Vec4 local[4];             /* +0x10 set by the animations (mm_Instance_DrawSwaying) */
+    InstanceSlot slot;         /* +0x50 its draw packet: colour (+0x60) and world matrix (+0x70), whose last word (+0xAC) is
+                                  non-zero once it is up to date (mm_A3DObject_UpdateNodeMatrix) */
+};
+/* One node's track in an animation (0x10 bytes): its keys follow all the animation's tracks. */
+struct A3DTrack {
+    int32_t keyCount;          /* +0x00 */
+    A3DNode *node;             /* +0x04 the node it moves */
+    A3DKey *keys;              /* +0x08 */
+    float length;              /* +0x0C read from track 0 as the animation's length (mm_A3D_GetMeshField0C) */
+};
+/* A key of a node track (0x20 bytes). */
+struct A3DKey {
+    Vec4 position;             /* +0x00 x, y, z; w is the key's time */
+    Vec4 rotation;             /* +0x10 quaternion x, y, z, w */
+};
+/* The working state of a DMA chain walk (0x30 bytes, mm_DmaChain_Begin, mm_DmaChain_Next). */
+struct DmaChainReader {
+    uint8_t unk_00[4];
+    uint32_t tag;              /* +0x04 address of the current tag (0x70000000 before the first) */
+    uint32_t id;               /* +0x08 the tag's ID bits (word 0 & 0x70000000): 0x10000000 CNT, 0x30000000 REF, 0x50000000
+                                  CALL, 0x60000000 RET, 0x70000000 END */
+    uint32_t qwc;              /* +0x0C its quadword count (the low half of word 0) */
+    uint32_t address;          /* +0x10 word 1 */
+    uint32_t vifCommand0;      /* +0x14 word 2 & 0x7F000000: the first VIF code's command */
+    uint32_t vifCode0;         /* +0x18 word 2 */
+    uint32_t vifCommand1;      /* +0x1C word 3 & 0x7F000000 */
+    uint32_t vifCode1;         /* +0x20 word 3 */
+    uint32_t data;             /* +0x24 the address after the tag */
+    uint8_t unk_28[8];
+};
+/* A terrain pass's draw parameters (0x120 bytes), uploaded to VU1 0x1C..0x2D before the pass's program runs over the terrain
+   quads (docs/RENDER_PIPELINE.md, "The passes' parameters"). */
+struct TerrainPassParams {
+    Vec4 colour;               /* +0x00 VU1 0x1C colour scale */
+    uint32_t tex0[4];          /* +0x10 VU1 0x1D TEX0_1 (low word, high word) */
+    uint32_t outputOffset[4];  /* +0x20 VU1 0x1E (0x68) */
+    uint32_t gifTag[4];        /* +0x30 VU1 0x1F: 26 loops of TEX0_1, PRIM, then ST, RGBAQ, XYZF2 four times */
+    uint32_t prim[4];          /* +0x40 VU1 0x20 */
+    Vec4 stq[12];              /* +0x50 VU1 0x21..0x2C texture coordinates: three sets of four */
+    uint32_t mask[4];          /* +0x110 VU1 0x2D: w is the quad flags the pass draws */
 };
 /* One parity's half of the city cursor (0xD0 bytes): info lines, packets and the fade frame. */
 struct CityCursorView {
@@ -208,20 +303,16 @@ struct CityCursorView {
     Frame *fadeFrame;          /* +0x2C */
     uint8_t extraPacket[0xA0]; /* +0x30 drawn in mode 4 */
 };
-/* Light set (0x1B0 bytes): two light groups of 0xC0 bytes at +0x10 and +0xD0, coloured by the clock
-   (mm_LightSet_UpdateByClock). */
+/* Light set (0x1B0 bytes): the colour table of the model programs, two groups of twelve, coloured by the clock
+   (mm_LightSet_UpdateByClock). Its two packets upload +0x10..+0x1AF to VU1 0x12..0x2B (docs/RENDER_PIPELINE.md). */
 struct LightSet {
-    uint32_t packetA;          /* +0x00 VU1 packets (mm_LightSet_BuildPackets); mm_LightSet_SetField20 sets word 8 of A */
-    uint32_t packetB;          /* +0x04 */
-    uint8_t unk_08[0x18];
-    Vec4 colourA;              /* +0x20 from the table 0x1B0550 */
-    uint8_t unk_30[0x10];
-    Vec4 paramsA;              /* +0x40 (4, 1, 1, 2) */
-    uint8_t unk_50[0x90];
-    Vec4 colourB;              /* +0xE0 from the table 0x1B0670 */
-    Vec4 colourB2;             /* +0xF0 copy of colourB */
-    Vec4 paramsB;              /* +0x100 (4, 1, 1, 2) */
-    uint8_t unk_110[0xA0];
+    uint32_t packetA;          /* +0x00 for program 0x1A3C80 (mm_LightSet_BuildPackets) */
+    uint32_t packetB;          /* +0x04 for program 0x1A4780 */
+    uint8_t unk_08[8];
+    Vec4 groupA[12];           /* +0x10 VU1 0x12..0x1D: entry 1 the colour from the table 0x1B0550, entry 3 (4, 1, 1, 2) */
+    Vec4 groupB[12];           /* +0xD0 VU1 0x1E..0x29: entries 1 and 2 the colour from the table 0x1B0670, entry 3 (4, 1, 1, 2) */
+    int32_t outputOffsets[4];  /* +0x190 VU1 0x2A: 0x110 and 0xE0, where the two programs write their GIF packets */
+    Vec4 instanceColour;       /* +0x1A0 VU1 0x2B (1, 1, 1, 1); each instance slot unpacks its own colour there */
 };
 /* List menu item (0xC bytes). */
 struct ListMenuItem {
@@ -678,47 +769,120 @@ struct TexImageFile {
     int32_t uploadSpan;        /* +0x18 uploads continue while 0x40 per upload so far stays below it */
     uint32_t unk_1C;
 };
-/* City render layers, built by mm_CityRender_ctor, each with its own VU1 packet (names provisional).
-   A: rotated mesh instances (0x2440); B: two-packet layer (0x230); C: buildings on visible tiles (0x240);
-   D: sky by the clock (0x410); E: projected, randomly placed sprites (0x6E0); F: single packet (0x140);
-   G: animated water waves (0x2E0). */
+/* City render layers, built by mm_CityRender_ctor, each with its own VU1 packets (docs/RENDER_PIPELINE.md). The terrain
+   layers (B, C, D, E, F, G) draw the frame's terrain quads again with their own program and parameters, each the quads
+   whose flags match its mask. A: instances at entrances (0x2440); B: two passes over raised ground (0x230); C: the
+   placement highlight and marker (0x240); D: rain (0x410); E: snow (0x6E0); F: a blended pass (0x140); G: the water (0x2E0). */
+
+/* An instance of layer A (0x90 bytes, mm_LayerA_AddInstance). Its draw packet's RET tag (+0x80) is the next instance's
+   first quadword (layer A's first word, the model, sits in the unused quadword before the first instance). */
+struct LayerAInstance {
+    int32_t meshPair;          /* +0x00 draws meshes 2n and 2n + 1 of the layer's model */
+    uint8_t unk_04[0xC];
+    Vec4 matrix[4];            /* +0x10 a turn about y times a squash in y, then the position */
+    uint32_t packet[8];        /* +0x50 CNT 2 tag with FLUSH and DIRECT 2, then a GIF tag of one A+D register */
+    uint32_t alpha;            /* +0x70 ALPHA_1 (0x68: blend with a fixed alpha) */
+    int32_t fade;              /* +0x74 ALPHA_1's FIX: 0x40 less 1.5 per step, not below 0 */
+    uint32_t alphaRegister[2]; /* +0x78 register 0x42 */
+    uint32_t ret[4];           /* +0x80 the packet's RET tag */
+};
 struct LayerA {
-    uint8_t unk_0000[0x2430];
+    A3DObject *model;          /* +0x0000 the model (0x1F3B70) */
+    uint8_t unk_0004[0xC];
+    LayerAInstance instances[64]; /* +0x0010 two buffers of 32, the one filled picked by buffer */
+    int32_t outputOffset[4];   /* +0x2410 VU1 0x2A (0x110) */
+    Vec4 colour;               /* +0x2420 VU1 0x2B (1, 1, 1, 1) */
     int32_t count;             /* +0x2430 instances this frame */
-    uint8_t unk_2434[8];
-    int32_t source;            /* +0x243C */
+    uint32_t startPacket;      /* +0x2434 uploads +0x2410 to VU1 0x2A and the program 0x1A8330 (mm_LayerA_BuildPacket) */
+    uint32_t endPacket;        /* +0x2438 ALPHA_1 back to 0x20_00000044 */
+    int32_t buffer;            /* +0x243C the buffer being filled (mm_LayerA_SetSource) */
 };
 struct LayerB {
-    uint8_t unk_000[0x130];
-    uint32_t packetA;          /* +0x130 */
-    uint8_t unk_134[0xEC];
-    uint32_t packetB;          /* +0x220 */
+    TerrainPassParams params;  /* +0x000 to VU1 0x1C by the first packet: mask 0x20 */
+    Vec4 extra;                /* +0x120 VU1 0x2E (0.6, 0.08, 0, 0) */
+    uint32_t packetA;          /* +0x130 the program 0x1AA340 with these parameters */
+    uint8_t unk_134[0xCC];
+    uint32_t maskB[4];         /* +0x200 to VU1 0x2D by the second packet: mask 0x40 */
+    uint32_t tex0B[4];         /* +0x210 to VU1 0x1D by the second packet: its texture */
+    uint32_t packetB;          /* +0x220 the second pass */
     uint8_t unk_224[0xC];
 };
 struct LayerC {
-    uint8_t unk_000[0x21C];
-    int32_t rectActive;        /* +0x21C 1: only tiles inside the rectangle (mm_LayerC_InTileRect) */
+    Vec4 colourA;              /* +0x000 VU1 0x1C (255, 0, 0, 128) */
+    Vec4 colourB;              /* +0x010 VU1 0x1D (0, 0, 0, 128) */
+    uint32_t outputOffset[4];  /* +0x020 VU1 0x1E (0x68) */
+    uint32_t gifTag[4];        /* +0x030 VU1 0x1F: 26 loops of 14 registers */
+    uint32_t primA[4];         /* +0x040 VU1 0x20 PRIM 0x44: blended triangle strip */
+    uint32_t primB[4];         /* +0x050 VU1 0x21 PRIM 0x82: antialiased line strip */
+    uint32_t mask[4];          /* +0x060 VU1 0x22: w 4, the quads in the placement rectangle */
+    Vec4 colours[24];          /* +0x070 to VU1 0x12 for the marker: a light set's colour table, all 1 */
+    int32_t outputOffsets[4];  /* +0x1F0 VU1 0x2A (0x110) */
+    Vec4 instanceColour;       /* +0x200 VU1 0x2B (1, 1, 1, 1) */
+    uint32_t highlightPacket;  /* +0x210 ALPHA_1 0x30_00000048, the program 0x1A7B30 and +0x000..+0x06F to VU1 0x1C */
+    uint32_t markerPacket;     /* +0x214 ALPHA_1 0x30_00000048, +0x070..+0x20F to VU1 0x12 and the program 0x1A8330 */
+    uint32_t endPacket;        /* +0x218 ALPHA_1 back to 0x20_00000044 */
+    int32_t rectActive;        /* +0x21C 1: the highlight (mm_LayerC_InTileRect), 2: the marker */
     int32_t rectX0;            /* +0x220 */
     int32_t rectZ0;            /* +0x224 */
     int32_t rectX1;            /* +0x228 */
     int32_t rectZ1;            /* +0x22C */
-    void *unk_230;             /* +0x230 from 0x1F3B1C at construction */
+    A3DObject *marker;         /* +0x230 the marker model (0x1F3B1C) */
     uint8_t unk_234[0xC];
 };
-struct LayerD { uint8_t data[0x410]; };
-struct LayerE { uint8_t data[0x6E0]; };
+struct LayerD {
+    uint32_t gifTag[4];        /* +0x000 VU1 0x12: 96 loops of RGBAQ, XYZF2 twice, PRIM 0x69 (blended lines) */
+    Vec4 colourA;              /* +0x010 VU1 0x13 (765, 765, 765, the clock's brightness: 0..40) */
+    Vec4 colourB;              /* +0x020 VU1 0x14 (765, 765, 765, 0) */
+    int32_t unk_030[4];        /* +0x030 VU1 0x15 (8) */
+    Vec4 drops[16];            /* +0x040 VU1 0x16..0x25 (40, y): y falls 0.4 a frame and wraps at 40 */
+    Vec4 streaks[24];          /* +0x140 VU1 0x26..0x3D: the two ends of twelve streaks */
+    uint32_t startPackets[2];  /* +0x2C0 per terrain buffer: +0x000..+0x2BF to VU1 0x12, the program 0x1A8A00, then the chunks */
+    uint8_t unk_2C8[8];
+    TerrainPassParams ground;  /* +0x2D0 the wet ground pass (program 0x1A8E20): mask 1, its TEX0 cycles every twelve frames */
+    Vec4 groundExtra;          /* +0x3F0 VU1 0x2E (0, -0.01, 0, 1) */
+    uint32_t groundPackets[2]; /* +0x400 per terrain buffer: ALPHA_1 (FIX at +0x24 from the clock), the program, the parameters */
+    uint32_t endPacket;        /* +0x408 ALPHA_1 back to 0x20_00000044 */
+    uint8_t unk_40C[4];
+};
+struct LayerE {
+    uint32_t gifTag[4];        /* +0x000 VU1 0x12: 8 loops per step of ST, XYZF2 twice, PRIM 0x76 (blended sprites) */
+    Vec4 unk_010[3];           /* +0x010 VU1 0x13..0x15: (0, 0, 1, 0), (1, 1, 1, 0), (10, 5, 0, 0) */
+    Vec4 points[13];           /* +0x040 VU1 0x16..0x22 */
+    Vec4 turns[32];            /* +0x110 VU1 0x23..0x42: eight rotation matrices about y */
+    Vec4 projection[4];        /* +0x310 VU1 0x43..0x46: the projection times the view (mm_LayerE_Draw) */
+    Vec4 flakes[32];           /* +0x350 VU1 0x47..0x66: x and z within 0.5, y from -40 to 0 in steps of 0.03 a frame, then again */
+    int32_t steps;             /* +0x550 VU1 0x67: the clock's night length / 1500 + 1 */
+    int32_t unk_554;           /* +0x554 8 */
+    uint8_t unk_558[8];
+    uint32_t startPackets[2];  /* +0x560 per terrain buffer: RGBAQ (its alpha, the top byte of +0x20, from the clock), ALPHA_1 and
+                                  TEX0_1 (the flake), +0x000..+0x55F to VU1 0x12, the program 0x1A9A90, then the chunks */
+    uint8_t unk_568[8];
+    TerrainPassParams ground;  /* +0x570 the snowy ground pass (program 0x1A9F10): mask x 8 */
+    Vec4 groundExtra;          /* +0x690 VU1 0x2E (0, -0.01, 0, 1) */
+    uint32_t groundPackets[2]; /* +0x6A0 per terrain buffer: ALPHA_1 (FIX at +0x24 from the clock), the program, the parameters */
+    uint32_t endPacket;        /* +0x6A8 ALPHA_1 back to 0x20_00000044 */
+    uint8_t unk_6AC[0x14];
+    float angles[8];           /* +0x6C0 of the turns: +0.03 a frame, kept within -pi..pi */
+};
 struct LayerF {
-    uint8_t unk_000[0x130];
-    uint32_t packet;           /* +0x130 */
+    TerrainPassParams params;  /* +0x000 to VU1 0x1C: mask 0x10, PRIM 0x7C (blended) */
+    Vec4 extra;                /* +0x120 VU1 0x2E (not set) */
+    uint32_t packet;           /* +0x130 ALPHA_1 0x30_00000048, the program 0x1A91C0 and the parameters */
     uint8_t unk_134[0xC];
 };
 struct LayerG {
-    uint8_t unk_000[0x60];
-    Vec4 wavesA[12];           /* +0x060 wave points: x sways, y scrolls (mm_LayerG_AnimateWaves) */
-    Vec4 wavesB[12];           /* +0x120 second set, swaying the other way, scrolling back */
-    uint8_t unk_1E0[0x10];
-    Vec4 waveParamsA;          /* +0x1F0 (1, phase - pi/2, 1/pi, pi) */
-    Vec4 waveParamsB;          /* +0x200 (0.06 * direction, weather, phase, 0) */
-    uint8_t unk_210[0x10];
+    Vec4 colour;               /* +0x000 VU1 0x1C (128, 128, 128, 60) */
+    uint8_t unk_010[0x10];
+    uint32_t outputOffsets[4]; /* +0x020 VU1 0x1E (0x40, 0x10) */
+    uint32_t gifTag[4];        /* +0x030 VU1 0x1F: 32 loops of 13 registers */
+    uint32_t primB[4];         /* +0x040 VU1 0x20 PRIM 0x27C: blended strip in GS context 2 */
+    uint32_t primA[4];         /* +0x050 VU1 0x21 PRIM 0x7C: the same in context 1 */
+    Vec4 wavesA[12];           /* +0x060 VU1 0x22..0x2D wave points: x sways, y scrolls (mm_LayerG_AnimateWaves) */
+    Vec4 wavesB[12];           /* +0x120 VU1 0x2E..0x39 second set, swaying the other way, scrolling back */
+    uint32_t mask[4];          /* +0x1E0 VU1 0x3A: w 2 */
+    Vec4 waveParamsA;          /* +0x1F0 VU1 0x3B (1, phase - pi/2, 1/pi, pi) */
+    Vec4 waveParamsB;          /* +0x200 VU1 0x3C (0.06 * direction, weather, phase, 0) */
+    uint32_t packets[2];       /* +0x210 per terrain buffer: GS state, the program 0x1A6440, +0x000..+0x20F to VU1 0x1C, the chunks */
+    uint8_t unk_218[8];
     Vec4 waveBase[12];         /* +0x220 the points at rest */
 };

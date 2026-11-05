@@ -143,14 +143,26 @@ struct CityMap {
     void *terrainWrite;        /* +0x2D14 write position (mm_Terrain_AddQuad) */
     void *sideBuffers[2];      /* +0x2D18 cliff-side vertex buffers, 0x8700 bytes each */
     void *sideWrite;           /* +0x2D20 write position in the cliff-side buffer (mm_Terrain_BuildStrip) */
-    uint8_t unk_2D24[0x23C];
-    void *packets[5];          /* +0x2F60 static DMA packets queued by mm_CityRender_DrawOverlays */
-    LayerD *sky;               /* +0x2F74 */
-    LayerE *layerE;            /* +0x2F78 */
+    uint8_t unk_2D24[0xC];
+    TerrainPassParams groundParams; /* +0x2D30 the base ground pass (program 0x1A5EB0): mask 1, the high word of TEX0 (the quads
+                                  bring the low word) */
+    Vec4 sideColour;           /* +0x2E50 the cliff sides' parameters (program 0x1A76F0), VU1 0x1C..0x2C: colour scale */
+    uint32_t sideTex0[4];      /* +0x2E60 VU1 0x1D */
+    uint32_t sideOutputOffset[4]; /* +0x2E70 VU1 0x1E (0x6C) */
+    uint32_t sideGifTag[4];    /* +0x2E80 VU1 0x1F: 36 loops of TEX0_1, then ST, RGBAQ, XYZF2 three times; PRIM 0xBB (triangles) */
+    Vec4 sideScale;            /* +0x2E90 VU1 0x20 (0.25, 0.25, 0, 0) */
+    Vec4 sideStq[12];          /* +0x2EA0 VU1 0x21..0x2C, along s only */
+    uint32_t chunkPackets[2];  /* +0x2F60 per terrain buffer: its quads to VU1 in chunks of 26 (0x680 bytes), each followed by MSCNT;
+                                  CALLed once per pass after the pass's own packet */
+    uint32_t groundPacket;     /* +0x2F68 the program 0x1A5EB0 and groundParams */
+    uint32_t sidePackets[2];   /* +0x2F6C per side buffer: the program 0x1A76F0, the parameters and the triangles. The game stores the
+                                  first's address in both (mm_Terrain_BuildVu1PacketA), so odd frames draw the even frame's buffer */
+    LayerD *rain;              /* +0x2F74 */
+    LayerE *snow;              /* +0x2F78 */
     LayerF *layerF;            /* +0x2F7C */
     LayerG *water;             /* +0x2F80 */
     LayerB *layerB;            /* +0x2F84 */
-    LayerC *buildings;         /* +0x2F88 */
+    LayerC *placement;         /* +0x2F88 */
     LayerA *instances;         /* +0x2F8C */
 };
 
@@ -162,7 +174,9 @@ struct BuildingType {
     uint8_t unk_130[4];
     uint16_t kind;             /* +0x134 */
     uint16_t flags;            /* +0x136 0x10 talk camera 2.5 lower, 0x20, 0x40 people inside, 0x100, 0x4000 own talk eye (talkEye) */
-    uint8_t unk_138[4];
+    uint16_t maxStack;         /* +0x138 objects of the type one tile holds (mm_Placement_CheckTypeRule); the top one of a full stack
+                                  is drawn with flag 3 (mm_CityRender_CollectObjects) */
+    uint8_t unk_13A[2];
     uint16_t openMinute;       /* +0x13C minutes of the day */
     uint16_t closeMinute;      /* +0x13E */
     uint16_t capacity;         /* +0x140 */

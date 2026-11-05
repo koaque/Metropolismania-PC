@@ -3,6 +3,7 @@
 
 #include "game_functions.h"
 #include "game_globals.h"
+#include "render.h"
 #include "sdk.h"
 #include "vu0.h"
 
@@ -1158,11 +1159,11 @@ namespace mm
         set(vf(4), add(vf(4), lane(vf(4), 1)), X);
         set(vf(4), add(vf(4), lane(vf(4), 2)), X);
         store(dot, vf(4));
-        const auto nodes = [&] { return port::load<uint32_t>(model->model.address + 8u); };
+        const auto root = [&] { return modelNode(model, 0); }; // read again for each use, as in the original
         if (dot->x < ps2f(0.0f))
         {
-            direction->x = port::load<float>(nodes() + 0x78u);
-            direction->z = -ps2f(port::load<float>(nodes() + 0x70u));
+            direction->x = root()->slot.matrix[0].z;
+            direction->z = -root()->slot.matrix[0].x;
             Vec3_Normalize(direction, direction);
         }
         const auto slotPerson = [](int i) { return GuestPtr<int32_t>{globals::kCharTypeSlots + 4u * static_cast<uint32_t>(i)}; };
@@ -1188,10 +1189,10 @@ namespace mm
         turn[0].z = direction->x;
         turn[2].x = -direction->x;
         turn[2].z = dz;
-        for (uint32_t row = 0; row < 3; ++row)
-            GuestPtr<Vec4>{nodes() + 0x70u + 0x10u * row}[0] = turn[row];
-        for (uint32_t row = 0; row < 3; ++row)
-            GuestPtr<Vec4>{nodes() + 0x2B0u + 0x10u * row}[0] = turn[row];
+        for (int row = 0; row < 3; ++row) // the turn into nodes 0 and 3's world matrices
+            worldMatrix(modelNode(model, 0))[row] = turn[row];
+        for (int row = 0; row < 3; ++row)
+            worldMatrix(modelNode(model, 3))[row] = turn[row];
         const int index = person->index;
         if (slot != -1)
         {
@@ -1289,7 +1290,7 @@ namespace mm
         const int workType = Map_GetRecord(city->map, person->work)->type;
         const int node = workType == 0xAF ? 7 : workType == 0xB1 ? 8 : person->index % 7;
         const GuestPtr<A3DObject> model{cls->parts[0].address};
-        const GuestPtr<Vec4> matrix{port::load<uint32_t>(model->model.address + 8u) + static_cast<uint32_t>(node) * 0xC0u + 0x70u};
+        const GuestPtr<Vec4> matrix = worldMatrix(modelNode(model, node));
         sdk::sceVu0RotMatrixY(matrix.address, globals::kIdentityMatrix, place->w);
         matrix[3].x = place->x;
         matrix[3].y = place->y;
@@ -1659,7 +1660,7 @@ namespace mm
             shortcut.slot = -1;
         bag->model = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B24u)};
         bag->unk_194 = 0;
-        bag->matrix = GuestPtr<Vec4>{bag->model.address + 0x10u};
+        bag->matrix = GuestPtr<Vec4>::of(bag->model->matrix[0]);
         bag->matrix[2].z = 7.0f;
         bag->matrix[1].y = 7.0f;
         bag->matrix[0].x = 7.0f;
@@ -1716,7 +1717,7 @@ namespace mm
             if (node == -1)
                 continue;
             const GuestPtr<A3DObject> model = markers->markerModel;
-            const GuestPtr<Vec4> nodeMatrix{port::load<uint32_t>(model->model.address + 8u) + static_cast<uint32_t>(node) * 0xC0u + 0x70u};
+            const GuestPtr<Vec4> nodeMatrix = worldMatrix(modelNode(model, node));
             for (int row = 0; row < 4; ++row)
                 nodeMatrix[row] = markers->matrices[4 * i + row];
             A3DObject_DrawNode(model, node);

@@ -150,8 +150,10 @@ namespace mm::globals
 
     // Guest address of the building type object for a type id.
     inline uint32_t buildingTypeAddress(uint32_t type) { return port::load<uint32_t>(buildingTypeTable.get() + 4u * type); }
-    // Its flags (+0x136), read through guest addresses like the original, whatever the table holds.
-    inline uint16_t buildingTypeFlags(uint32_t type) { return port::load<uint16_t>(buildingTypeAddress(type) + 0x136u); }
+    // The building type object for a type id.
+    inline GuestPtr<BuildingType> buildingType(uint32_t type) { return GuestPtr<BuildingType>{buildingTypeAddress(type)}; }
+    // Its flags, read through guest addresses like the original, whatever the table holds.
+    inline uint16_t buildingTypeFlags(uint32_t type) { return buildingType(type)->flags; }
 
     // claim icons: colour set per icon id (bytes) and the colour table (Vec4, two levels per set).
     inline constexpr GuestVar<uint32_t> claimIconSets{0x001BDA64u};

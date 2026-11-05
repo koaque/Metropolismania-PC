@@ -90,15 +90,15 @@ The ground of the whole visible city is one buffer of quads, filled on the CPU e
 | Flag | Set when (`mm_Terrain_DrawPatch`) | Drawn by |
 |---|---|---|
 | 0x01 | the object's type gives a ground texture | base ground (0x1A5EB0, mask 1); rain and snow ground passes (mask 1) |
-| 0x02 | a corner rises above the level passed in | not matched to a pass yet (the water is the candidate) |
-| 0x04 | the tile is in the placement rectangle (`mm_LayerC_InTileRect`) | placement highlight (layer C), not yet confirmed |
+| 0x02 | a corner rises above the level passed in | the water, most likely: layer G's parameters carry mask 2 (VU1 0x3A.w); its program's test is not read yet |
+| 0x04 | the tile is in the placement rectangle (`mm_LayerC_InTileRect`) | placement highlight: layer C's parameters carry mask 4 (VU1 0x22.w); its program's test is not read yet |
 | 0x08 | always | |
 | 0x10 | the tile and its first object both have flag 0x10 | layer F (0x1A91C0, mask 0x10) |
-| 0x20, 0x40 | a corner is above 0 on a type without flag 1: 0x20 when the tile has flag 0x20, else 0x40 | layer B (0x1AA340, mask 0x20) |
+| 0x20, 0x40 | a corner is above 0 on a type without flag 1: 0x20 when the tile has flag 0x20, else 0x40 | layer B (0x1AA340): its first pass mask 0x20, its second pass mask 0x40 with a texture of its own |
 
 What tile and object flags 0x10 and 0x20 mean for the player is not known yet.
 
-**The passes' parameters.** Each pass uploads its own 17 to 19 quadwords to 0x1C and runs MSCAL 0, then the frame's chunk packet (`CityMap.packets[parity]`) sends the quads to VU1 104 quadwords (26 quads) at a time, each followed by MSCNT. The same chunk packet is called once per pass. Parameter block, as captured:
+**The passes' parameters.** Each pass uploads its own 17 to 19 quadwords to 0x1C and runs MSCAL 0, then the frame's chunk packet (`CityMap.chunkPackets[parity]`) sends the quads to VU1 104 quadwords (26 quads) at a time, each followed by MSCNT. The same chunk packet is called once per pass. Parameter block, as captured (`TerrainPassParams` in `config/types/05_classes.h`; the layers keep it at the start or at `ground`):
 
 | VU1 qword | Contents |
 |---|---|
@@ -108,7 +108,7 @@ What tile and object flags 0x10 and 0x20 mean for the player is not known yet.
 | 0x1F | GIF tag: 26 loops of [TEX0_1, PRIM, then ST, RGBAQ, XYZF2 four times] |
 | 0x20 | PRIM: 0x3C (strip, Gouraud, textured, fog), 0x7C for layer F (blended) |
 | 0x21-0x2C | three sets of four texture coordinates (the quarters of a 2 x 2 texture) |
-| 0x2D.w | the pass's flag mask |
+| 0x2D.w | the pass's flag mask (the snow's ground pass sets x to 8 and leaves w) |
 | 0x2E | per pass: layer B 0.6 and 0.08, the rain ground pass (0, -0.01, 0, 1); not read yet in the programs |
 
 **Programs.**
@@ -116,18 +116,20 @@ What tile and object flags 0x10 and 0x20 mean for the player is not known yet.
 | Program | Pass | Checked | What it does per quad |
 |---|---|---|---|
 | 0x1A5EB0 | base ground (terrain packet B) | recorded | transform and divide; two face normals (one per triangle), each normalized, lit with the light matrices and scaled by 0x1C, so each half of the quad has one flat colour; fog; the whole quad is skipped (ADC) when any corner fails the clip test or the mask does not match |
-| 0x1AA340 | layer B | recorded | the same lighting and fog with the layer's own texture; mask 0x20; none of the captured chunks had a matching quad |
+| 0x1AA340 | layer B | recorded | the same lighting and fog with the layer's own texture; mask 0x20, then a second pass (`LayerB.packetB`) that uploads another TEX0 to 0x1D and mask 0x40 to 0x2D and runs again; none of the captured chunks had a matching quad |
 | 0x1A91C0 | layer F | recorded | unlit, alpha blended (the packet sets ALPHA_1 to 0x30_00000048 first); mask 0x10; no matching quad in the captures |
 | 0x1A76F0 | cliff sides (terrain packet A) | recorded | the same for triangles: 3 quadwords each (TEX0 low word, texture-coordinate set, 1), 36 per chunk of 108 quadwords, one TEX0 per triangle |
+
+The cliff sides are double-buffered like the quads (`CityMap.sideBuffers`, filled by frame parity), but `mm_Terrain_BuildVu1PacketA` stores the start of the first buffer's packet in both of the map's side packet slots (checked against the decompile), so odd frames draw the triangles of the frame before. A port that wants both buffers drawn would store the second section's start there.
 
 ## Weather and water
 
 | Program | Layer, when | Checked | Data and work |
 |---|---|---|---|
 | 0x1A6440 | water (layer G), every frame | ran | the layer's 33 quadwords to 0x1C (wave tables from `mm_LayerG_AnimateWaves`), then the terrain buffer in chunks of 64 quadwords; computes the wave motion on VU1 (ESIN); the header sets ALPHA and TEX0 for both GS contexts; how it picks its quads is not read yet |
-| 0x1A8A00 | rain (layer D), weather 2 | read only | its 44 quadwords to 0x12 (16 offsets that move 0.4 a frame and wrap at 40, colour scales, the time of day), then the terrain buffer in chunks of 32 quadwords: most likely the falling rain, placed over the visible ground |
+| 0x1A8A00 | rain (layer D), weather 2 | read only | its 44 quadwords to 0x12 (a GIF tag of 96 blended lines, PRIM 0x69; two colours, the first's w the brightness by the clock; 16 drop offsets that move 0.4 a frame and wrap at 40; twelve streaks as pairs of end points), then the terrain buffer in chunks of 32 quadwords: most likely the falling rain, placed over the visible ground |
 | 0x1A8E20 | rain ground pass, weather 2 | read only | a terrain pass with mask 1 and an offset of -0.01 in y (up: y points down in this game, so most likely a lift against Z-fighting), whose TEX0 steps through six texture pages every two frames (likely ripples); its fixed alpha (ALPHA_1 FIX) follows the clock |
-| 0x1A9A90 | snow (layer E), weather 3 | ran | its 86 quadwords to 0x12 (8 rotation matrices that turn 0.03 a frame, 32 offsets that sink 0.03 a frame from 0 to -40, a projection matrix, a step count from the clock), then the terrain buffer in chunks of 32 quadwords; draws flakes with a 32 x 32 sprite texture (PSMT4 at GS block 0x3F70) |
+| 0x1A9A90 | snow (layer E), weather 3 | ran | its 86 quadwords to 0x12 (a GIF tag of blended sprites, PRIM 0x76, 8 per step; 8 rotation matrices that turn 0.03 a frame; 32 flake offsets whose y goes from -40 to 0 by 0.03 a frame, falling, since y points down; a projection matrix; the step count from the clock), then the terrain buffer in chunks of 32 quadwords; draws flakes with a 32 x 32 sprite texture (PSMT4 at GS block 0x3F70) whose alpha (in the start packet's RGBAQ) follows the clock |
 | 0x1A9F10 | snow ground pass, weather 3 | ran | a terrain pass like the rain's, its alpha following the clock |
 
 The snowflakes that land in other places than in PCSX2 (docs/STATUS.md, line 37) are this snow layer's.
@@ -136,10 +138,23 @@ The snowflakes that land in other places than in PCSX2 (docs/STATUS.md, line 37)
 
 | Program | Layer | Checked | Notes |
 |---|---|---|---|
-| 0x1A7B30 | placement highlight (layer C, pass 0, while a building is being placed) | read only | a terrain pass, unlit, with its own seven quadwords at 0x1C; reads no mask, so how it picks the highlighted quads (flag 4) is not read yet |
+| 0x1A7B30 | placement highlight (layer C, pass 0, while a building is being placed) | read only | a terrain pass, unlit, with its own seven quadwords at 0x1C: two colours (255, 0, 0, 128) and (0, 0, 0, 128), the output offset, a GIF tag of 26 loops of 14 registers, PRIM 0x44 (blended triangle strip) and 0x82 (antialiased line strip), and mask 4 at 0x22.w; most likely a red fill and an outline of each highlighted tile; how the program tests the mask is not read yet |
 | 0x1A8330 | placement marker (layer C, pass 1) and layer A | read only | a model program (see above); the marker is node 0 or 1 of the marker model at the footprint's centre |
 
-Layer A holds instances added by `mm_CityRender_CollectObjects` for entrances whose variant byte counts up (flag 8 and 0x20 objects); what they show in the game is not known yet.
+Layer A holds instances added by `mm_CityRender_CollectObjects` for entrances whose variant byte counts up (flag 8 and 0x20 objects, the byte counts to 0x2D and starts over): meshes 2n and 2n + 1 of the layer's model for a building of size n + 1, turned and squashed in y by the count, fading as it grows. What they show in the game is not known yet.
+
+## .A3D models
+
+Read from the loader (`mm_A3DObject_Load`, `mm_A3DObject_LoadAsync`, `mm_A3D_Relocate`) and the code that draws models; the layouts are `A3DModel`, `A3DNode`, `A3DMesh`, `A3DTrack`, `A3DKey` and `A3DChainBlock` in `config/types/05_classes.h`. A file holds models one after the other, each with a 16-byte header (its size and its texture block's size, in words); an empty header ends the file.
+
+| Part | Contents |
+|---|---|
+| header (`A3DModel`, 0x20 bytes) | the sizes, the word offsets of four tables (the loader turns them into addresses) and their counts |
+| nodes (0xC0 bytes each) | the parent (null for a root), the mesh, the matrix relative to the parent, and the node's draw packet at +0x50, laid out as an instance slot (CNT 5, UNPACK of the colour and the world matrix to VU1 0x2B, RET with MSCAL 0; checked in `OBJECT.A3D`). The world matrix's last word marks it up to date while the matrices are updated |
+| meshes | each a block with its size and the DMA chain that draws its vertex batches; a model loaded "indexed" gets mesh addresses in its nodes, the others keep mesh indexes there and look them up in the table (the people and the player, drawn in groups of `InstanceModel.groupSize` meshes) |
+| animations | a track count, then per animation one track per node (key count, node, keys) and the keys (position and time, rotation quaternion); `mm_Instance_DrawSwaying` slerps between the two keys around the time into the node's local matrix; track 0's last word is read as the animation's length |
+| chain blocks | more DMA chains, relocated the same way |
+| texture block | DMA packets that upload the model's textures; sent to the GS at load and freed |
 
 ## What a native renderer needs
 
@@ -151,7 +166,7 @@ Layer A holds instances added by `mm_CityRender_CollectObjects` for entrances wh
 
 * No run of 0x1A7B30, 0x1A8330's batch loop, or the rain programs (0x1A8A00, 0x1A8E20) has been captured; the Rhinecliff save has snow, not rain. A capture with rain, and one while placing a building, would show them.
 * The water program's quad selection and wave formula, and 0x1A4780's second part, have not been read in detail.
-* Which pass draws flag 0x02 quads, and what tile flags 0x10 and 0x20 mean.
+* Whether the water and the placement highlight programs test the masks their parameters carry (2 and 4), and what tile flags 0x10 and 0x20 mean.
 
 ## Names to fix (plan R1 step 3)
 
@@ -164,3 +179,7 @@ Layer A holds instances added by `mm_CityRender_CollectObjects` for entrances wh
 | `mm_LayerC_DrawBuildings` | draws the placement highlight and marker |
 | `mm_CityRender_DrawBuildings` | the same, for passes 0 and 1 |
 | `mm_LightSet_BuildPackets`' packets A and B | the two model programs' set-up packets (with and without the second part), chosen by `mm_Packet2_Draw` |
+| `mm_A3D_GetMeshField0C` | the length of a model's animation (its first track's last word) |
+| `mm_LightSet_SetField20` | sets word 8 of an object's first packet; called on the camera, where that word is the fog colour (GS FOGCOL) |
+| `mm_Terrain_SetVec` | sets the placement highlight: its colour, its rectangle and its mode (1 the highlight, 2 the marker) |
+| `mm_LayerA_SetSource` | starts the frame's buffer of layer A (picks it and empties it) |

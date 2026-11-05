@@ -2,6 +2,7 @@
 
 #include "game_functions.h"
 #include "game_globals.h"
+#include "render.h"
 #include "lifetime.h"
 #include "sdk.h"
 #include "vu0.h"
@@ -10,6 +11,8 @@
 
 namespace mm
 {
+    using packet::addressOf;
+
     // The pose stored for a family member in the session's 32-entry table; 0 when there is none.
     int Talk_LookupPose(GuestPtr<TalkSession> talk, uint32_t family, uint32_t member, GuestPtr<uint32_t> pose)
     {
@@ -752,7 +755,7 @@ namespace mm
         port::GuestFrame<0x40> frame;
         const GuestPtr<char> text{frame.ptr().address + 0x30u};
         DmaList_QueueClearZ();
-        const GuestPtr<Vec4> matrix{port::load<uint32_t>(money->model->model.address + 8u) + 0x5B0u};
+        const GuestPtr<Vec4> matrix = worldMatrix(modelNode(money->model, 7));
         Mat4_Copy(matrix, GuestPtr<Vec4>{globals::kIdentityMatrix});
         matrix[3].z = -4.4f;
         A3DObject_DrawNode(money->model, 7);
@@ -1189,15 +1192,15 @@ namespace mm
         }
         if (along < ps2f(0.01f))
             along = 0.0001f;
-        const uint32_t node = port::load<uint32_t>(port::load<uint32_t>(card->model.address) + 8u) + 0x730u;
-        Mat4_Copy(GuestPtr<Vec4>{node}, GuestPtr<Vec4>{globals::kIdentityMatrix});
+        const GuestPtr<Vec4> matrix = worldMatrix(modelNode(GuestPtr<A3DObject>{card->model.address}, 9)); // the gauge
+        Mat4_Copy(matrix, GuestPtr<Vec4>{globals::kIdentityMatrix});
         const ps2f length = along / span;
-        port::store<float>(node + 0x30u, port::load<float>(0x001B1B38u + 4u * static_cast<uint32_t>(card->slot)));
-        port::store<uint32_t>(node + 0x34u, 0xBD79DB23u);
-        port::store<uint32_t>(node + 0x38u, 0xC08CCCCDu);
-        port::store<float>(node, static_cast<float>(length));
-        port::store<float>(node, static_cast<float>(ps2f(port::load<float>(node)) * ps2f(1.5f)));
-        port::store<float>(node + 0x14u, static_cast<float>(ps2f(port::load<float>(node + 0x14u)) * ps2f(1.3f)));
+        matrix[3].x = port::load<float>(0x001B1B38u + 4u * static_cast<uint32_t>(card->slot));
+        port::store<uint32_t>(addressOf(matrix[3].y), 0xBD79DB23u);
+        port::store<uint32_t>(addressOf(matrix[3].z), 0xC08CCCCDu);
+        matrix[0].x = length; // the gauge's length as its x scale
+        matrix[0].x = matrix[0].x * ps2f(1.5f);
+        matrix[1].y = matrix[1].y * ps2f(1.3f);
         A3DObject_DrawNode(GuestPtr<A3DObject>{card->model.address}, 9);
     }
 
