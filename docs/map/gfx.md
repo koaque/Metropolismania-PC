@@ -10,8 +10,9 @@ Rendering below the scene level.
   `0x001BDA30`, used count `0x001BDA28`).
 - Textures: `.TEX` sprites (`mm_TexSprite_*`) and images (`mm_TexImage_*`).
 - The city render level of the map object (vtable `0x001BCF00`, `mm_CityRender_*`) owns seven layer objects
-  (`mm_LayerA` .. `mm_LayerG`) at `+0x2F60`. Each layer has a GS register setup, a packet builder that references a
-  VU1 microprogram (`0x001A3E98` .. `0x001AB1B8`), a destructor and a draw. Which layer draws what is provisional.
+  (`mm_LayerA` .. `mm_LayerG`) at `+0x2F74`. Each layer has a GS register setup, a packet builder that references a
+  VU1 microprogram (13 upload packets, `0x001A3C80` .. `0x001AB1C0`), a destructor and a draw. What each layer and
+  program draws (terrain passes, rain, snow, water, placement highlight) is mapped in `docs/RENDER_PIPELINE.md`.
 - Lights (`mm_LightSet_*`), display setup (`mm_Gs_InitDisplay`).
 
 <!-- Generated below by tools/map_docs.py from config/port_status.csv. Edit function notes there, not here. -->

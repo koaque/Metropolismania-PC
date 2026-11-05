@@ -1,0 +1,166 @@
+# The city render pipeline
+
+How a city frame gets from the game's code to the GS: which functions queue what, which VU1 program draws it, what the program is given and what it sends to the GS. This is the map a native renderer would replace the VU1 and GS emulation with (plan R1).
+
+Sources: the readable port (`src/port/gfx.cpp`, `map.cpp`, `layers.cpp`, `city.cpp`), the game's microcode read with `tools/vu1_inspect.py`, and captured VU1 runs (`work/vu1_aot/records/`, 105 runs from the Rhinecliff save). Each program below says how it was checked:
+
+* **recorded**: captured runs show its inputs and the GIF packets it sent.
+* **ran**: the game ran it in a live city run (it has a compiled program in `work/vu1_aot/gen/`), but no run of it was captured.
+* **read only**: known from its code and the packets that call it; not seen running yet.
+
+`tools/vu1_inspect.py` reads the user's own ELF and captures: `packets` disassembles the 13 microcode packets into `work/vu1_dis/`, `records` summarizes every captured run (entry, loaded microcode, GIF output), `record FILE --trace` disassembles the instructions one run reaches. Its output is game-derived and stays in `work/`.
+
+## Frame flow
+
+1. The city scene's update (`mm_CityScene_*`, `src/port/city.cpp` around line 4325) queues everything for the frame on the current DMA list: each draw call appends a DMA CALL tag (`mm_Dma_AppendCall`) to a packet built once, at load time, in the packet buffer. Two 64 KB lists alternate by frame (`mm_DmaList_Flip`); objects that change every frame keep two copies of their packets and pick one by the frame parity at 0x1BDCD0.
+2. `mm_DmaList_KickFrame` starts the list on the VIF1 DMA channel in chain mode. From there on the game's CPU code is done with the frame.
+3. VIF1 walks the chain: GIF packets that set GS registers go straight through (DIRECT), data is unpacked into VU1 data memory (UNPACK), microcode is uploaded (MPG) and VU1 programs are started (MSCAL from address 0, MSCNT from where the last run stopped).
+4. Each VU1 program run turns a batch of vertices into a GIF packet in VU1 memory and sends it to the GS (XGKICK). VU1 memory is double-buffered by the VIF (BASE and OFFSET per program), so VIF1 unpacks the next batch while VU1 works on the current one.
+
+### City frame order
+
+From the city scene's draw step, in the order the GS sees it:
+
+| Call | What it queues | Program |
+|---|---|---|
+| `mm_DmaList_QueueClearZ` | full-screen sprite writing Z = 0 | none (GIF) |
+| `mm_Sky_Draw` | the three sky packets in the city camera (+0x310, +0x470, +0x3D0) | none (GIF) |
+| `mm_Packet_Draw(camera)` | the camera block to VU1 0x00-0x11 | none |
+| `mm_Terrain_Draw` | fills the terrain quad and cliff-side buffers for this frame (CPU) | none yet |
+| `mm_CityRender_DrawOverlays` | terrain passes: base ground, cliff sides, layer B, layer F | 0x1A5EB0, 0x1A76F0, 0x1AA340, 0x1A91C0 |
+| light set packet 1, `mm_CityRender_CollectObjects` | buildings and objects on visible tiles, as model instances | 0x1A4780 |
+| light set packet 0, `mm_CityRender_UpdatePeople`, `mm_Player_Draw` | people and the player, as model instances | 0x1A3C80 |
+| `mm_CityRender_DrawWater` | the water (layer G) | 0x1A6440 |
+| `mm_CityRender_DrawSky` (weather 2 or 3 only) | rain (layer D) or snow (layer E) | 0x1A8A00 + 0x1A8E20, or 0x1A9A90 + 0x1A9F10 |
+| `mm_CityRender_DrawBuildings` x2 | the placement highlight and marker (layer C), only while placing | 0x1A7B30, 0x1A8330 |
+| `mm_CityRender_DrawInstanceLayer` | layer A's instances | 0x1A8330 |
+| HUD, minimap, windows | sprites and text | none (GIF) |
+
+Several of the names in that table are older guesses that this map corrects (see "Names to fix" at the end).
+
+## The microcode
+
+The game's VU1 microcode is 13 upload packets in one block of the ELF, 0x1A3C80 to 0x1AB1C0. Each is a DMA RET tag whose body is VIF MPG commands that load code into VU1 micro memory at 0 (and above 0x800 or 0x1000 for the big ones). A packet that draws with a program CALLs the program's upload packet first, so microcode is uploaded again every time a different program is needed, many times a frame.
+
+Every program has the same shape: a setup part at address 0, started by MSCAL 0, that loads constants into registers and stops (E bit); then a batch loop, started by MSCNT for every batch of data, that ends each batch with XGKICK and stops. The instruction after each stop is a branch back to the loop, so MSCNT always lands on the loop. (That is why the compiled programs have the same body under several entry points: 0x188, 0x718, 0xAD8 and 0xD68 of 0x1A4780 are one loop reached from four stops.)
+
+## VU1 data memory
+
+Shared by all programs, uploaded by the camera's packet (`mm_Camera_BuildPacket`, the camera's 0x12 quadwords from +0x10):
+
+| VU1 qwords | Contents | How the programs use it |
+|---|---|---|
+| 0x00-0x03 | screen matrix (`Camera.worldScreenA`, world to screen) | position transform, then divide by w |
+| 0x04-0x07 | clip matrix (`worldScreenB`, a second screen matrix) | CLIP test; a primitive with a vertex outside is not drawn (ADC bit) |
+| 0x08-0x0B | light direction matrix (`normalLight`, from `sceVu0NormalLightMatrix`) | normal to light space, clamped at 0 |
+| 0x0C-0x0F | light colour matrix (`lightColour`, from `sceVu0LightColorMatrix`: three light colours and the ambient) | lit colour = this matrix times the clamped light terms |
+| 0x10, 0x11 | fog (`fogA`, `fogB`): a in 0x10.w, b in 0x11.w | fog = a + b / w, clamped to 0..255, into XYZF2's F |
+
+Above 0x11 the layout depends on the program family.
+
+## Model programs (0x1A3C80, 0x1A4780; 0x1A8330)
+
+Used for everything built from `.A3D` models: buildings, objects, people, the player, the placement marker.
+
+**Data.** The light set's packet (`mm_LightSet_BuildPackets`, one per program) uploads the light set's 26 quadwords (+0x10) to 0x12-0x2B: a 24-entry colour table at 0x12-0x29, and 0x2A with the output offsets (0x110 for 0x1A3C80, 0xE0 for 0x1A4780). It then calls the program's upload packet and sets the double buffers: 0x42 and 0x221 for 0x1A3C80, 0xEA and 0x275 for 0x1A4780 (the TOP values in the records). Each instance is a 0x70-byte slot (`InstanceSlot`, `mm_Instance_*`, up to 1800 a frame in two buffers) that unpacks its colour and 4x4 matrix to 0x2B-0x2F and runs MSCAL 0. The matrix's last word (0x2F.w) carries the caller's flags, and the colour's w is a colour-table index. Then the mesh's own DMA chain (inside the `.A3D` file, relocated by `mm_A3D_Relocate`) unpacks the vertex batches and runs MSCNT for each.
+
+**Setup (MSCAL 0).** Multiplies the instance matrix into the three camera matrices (screen, clip, light direction), so the batch loop works in model space. It also copies the instance colour into 12 entries of the colour table.
+
+**Batch (MSCNT).** A batch at TOP is: qword 0 the GIF tag of the strip (copied to the output, so the mesh decides PRIM, texture and blending), qword 1 the vertex count (x) and a colour-table index (z); then 4 qwords per vertex: position, normal, colour (integers) and texture coordinates, the fixed-point ones with 12 fraction bits. The normal's w is a sign used for back-face culling. For each vertex it transforms and divides, culls back faces of the strip from the cross product of its last two edges, clip-tests against the clip matrix, lights the vertex (the light matrices times the clamped normal terms, times the vertex colour, times the batch's colour from the table, clamped at 255), computes fog, and writes ST (perspective-correct, times 1/w), RGBAQ and XYZF2, setting ADC on vertices that must not draw. Output: one `tristrip` GIF packet of [ST, RGBAQ, XYZF2] per batch.
+
+| Program | Checked | Notes |
+|---|---|---|
+| 0x1A3C80 (light set packet 0) | recorded (entries 0, 0x188, 0xAD0) | two copies of the loop, chosen by the instance flags: non-zero computes fog per vertex (0x308), zero does not (0x728) |
+| 0x1A4780 (light set packet 1) | recorded (entries 0, 0x188, 0x718) | the same loop and a third path for flags value 1 (0xAE8); a second part (0x1000-0x1710) with subroutines that save registers to VU1 0xAC onward and use 0xBD-0xC0, not read yet (likely clipping that splits primitives) |
+| 0x1A8330 (layers A and C) | read only | the same setup code as the other two; its batch loop is smaller and has not run in any capture |
+
+## Terrain: one quad buffer, many passes
+
+The ground of the whole visible city is one buffer of quads, filled on the CPU every frame and then drawn by up to seven programs. Each pass gets all the quads and draws only those whose flags match its mask.
+
+**Filling it.** `mm_Terrain_DrawPatch` builds each visible tile as a quad and `mm_Terrain_AddQuad` appends it to `CityMap.terrainBuffers` (two buffers of 0x9C00 bytes, at most 624 quads). It also builds the raised sides between tiles of different heights into `CityMap.sideBuffers` as triangles (`mm_Terrain_BuildStrip`, at most 718). A quad is four vertices whose w words carry its draw data:
+
+| Word | Contents |
+|---|---|
+| vertex 0 .w | TEX0 low word: the ground texture of the tile's object (texture base at 0x1BD990) |
+| vertex 1 .w | VU1 address of its texture-coordinate set: 0x21 plus an entry of the table at 0x1AF360 picked by the tile's x and z parity, so a texture spans 2 x 2 tiles |
+| vertex 2 .w | flags, below |
+| vertex 3 .w | 1.0 |
+
+| Flag | Set when (`mm_Terrain_DrawPatch`) | Drawn by |
+|---|---|---|
+| 0x01 | the object's type gives a ground texture | base ground (0x1A5EB0, mask 1); rain and snow ground passes (mask 1) |
+| 0x02 | a corner rises above the level passed in | not matched to a pass yet (the water is the candidate) |
+| 0x04 | the tile is in the placement rectangle (`mm_LayerC_InTileRect`) | placement highlight (layer C), not yet confirmed |
+| 0x08 | always | |
+| 0x10 | the tile and its first object both have flag 0x10 | layer F (0x1A91C0, mask 0x10) |
+| 0x20, 0x40 | a corner is above 0 on a type without flag 1: 0x20 when the tile has flag 0x20, else 0x40 | layer B (0x1AA340, mask 0x20) |
+
+What tile and object flags 0x10 and 0x20 mean for the player is not known yet.
+
+**The passes' parameters.** Each pass uploads its own 17 to 19 quadwords to 0x1C and runs MSCAL 0, then the frame's chunk packet (`CityMap.packets[parity]`) sends the quads to VU1 104 quadwords (26 quads) at a time, each followed by MSCNT. The same chunk packet is called once per pass. Parameter block, as captured:
+
+| VU1 qword | Contents |
+|---|---|
+| 0x1C | colour scale (128 in each lane) |
+| 0x1D | TEX0: the base pass takes the low word from the quad and the high word from here; layers B and F use their own texture word whole |
+| 0x1E | output offset (0x68) |
+| 0x1F | GIF tag: 26 loops of [TEX0_1, PRIM, then ST, RGBAQ, XYZF2 four times] |
+| 0x20 | PRIM: 0x3C (strip, Gouraud, textured, fog), 0x7C for layer F (blended) |
+| 0x21-0x2C | three sets of four texture coordinates (the quarters of a 2 x 2 texture) |
+| 0x2D.w | the pass's flag mask |
+| 0x2E | per pass: layer B 0.6 and 0.08, the rain ground pass (0, -0.01, 0, 1); not read yet in the programs |
+
+**Programs.**
+
+| Program | Pass | Checked | What it does per quad |
+|---|---|---|---|
+| 0x1A5EB0 | base ground (terrain packet B) | recorded | transform and divide; two face normals (one per triangle), each normalized, lit with the light matrices and scaled by 0x1C, so each half of the quad has one flat colour; fog; the whole quad is skipped (ADC) when any corner fails the clip test or the mask does not match |
+| 0x1AA340 | layer B | recorded | the same lighting and fog with the layer's own texture; mask 0x20; none of the captured chunks had a matching quad |
+| 0x1A91C0 | layer F | recorded | unlit, alpha blended (the packet sets ALPHA_1 to 0x30_00000048 first); mask 0x10; no matching quad in the captures |
+| 0x1A76F0 | cliff sides (terrain packet A) | recorded | the same for triangles: 3 quadwords each (TEX0 low word, texture-coordinate set, 1), 36 per chunk of 108 quadwords, one TEX0 per triangle |
+
+## Weather and water
+
+| Program | Layer, when | Checked | Data and work |
+|---|---|---|---|
+| 0x1A6440 | water (layer G), every frame | ran | the layer's 33 quadwords to 0x1C (wave tables from `mm_LayerG_AnimateWaves`), then the terrain buffer in chunks of 64 quadwords; computes the wave motion on VU1 (ESIN); the header sets ALPHA and TEX0 for both GS contexts; how it picks its quads is not read yet |
+| 0x1A8A00 | rain (layer D), weather 2 | read only | its 44 quadwords to 0x12 (16 offsets that move 0.4 a frame and wrap at 40, colour scales, the time of day), then the terrain buffer in chunks of 32 quadwords: most likely the falling rain, placed over the visible ground |
+| 0x1A8E20 | rain ground pass, weather 2 | read only | a terrain pass with mask 1 and an offset of -0.01 in y (up: y points down in this game, so most likely a lift against Z-fighting), whose TEX0 steps through six texture pages every two frames (likely ripples); its fixed alpha (ALPHA_1 FIX) follows the clock |
+| 0x1A9A90 | snow (layer E), weather 3 | ran | its 86 quadwords to 0x12 (8 rotation matrices that turn 0.03 a frame, 32 offsets that sink 0.03 a frame from 0 to -40, a projection matrix, a step count from the clock), then the terrain buffer in chunks of 32 quadwords; draws flakes with a 32 x 32 sprite texture (PSMT4 at GS block 0x3F70) |
+| 0x1A9F10 | snow ground pass, weather 3 | ran | a terrain pass like the rain's, its alpha following the clock |
+
+The snowflakes that land in other places than in PCSX2 (docs/STATUS.md, line 37) are this snow layer's.
+
+## Layers A and C
+
+| Program | Layer | Checked | Notes |
+|---|---|---|---|
+| 0x1A7B30 | placement highlight (layer C, pass 0, while a building is being placed) | read only | a terrain pass, unlit, with its own seven quadwords at 0x1C; reads no mask, so how it picks the highlighted quads (flag 4) is not read yet |
+| 0x1A8330 | placement marker (layer C, pass 1) and layer A | read only | a model program (see above); the marker is node 0 or 1 of the marker model at the footprint's centre |
+
+Layer A holds instances added by `mm_CityRender_CollectObjects` for entrances whose variant byte counts up (flag 8 and 0x20 objects); what they show in the game is not known yet.
+
+## What a native renderer needs
+
+* Per frame, the 3D content comes as four kinds of data that the CPU code already builds: the terrain quad buffer with its flags, the cliff-side triangles, model instances (a matrix, a colour and a flags word per mesh, up to 1800) whose meshes are fixed vertex batches inside the `.A3D` files, and the parameters of the water and weather layers.
+* What VU1 does with them is ordinary vertex work: a model-view-projection transform, a per-vertex or per-face directional light with ambient, a linear fog in 1/w, a clip test that drops whole primitives, and back-face culling. All of it maps to a GPU vertex shader with the matrices and tables above as uniforms. The GS state (textures, blending, alpha test) comes from the GIF tags and A+D packets the same calls queue.
+* The terrain's passes are one mesh drawn with up to seven materials, chosen by the flag bits.
+
+## Not checked yet
+
+* No run of 0x1A7B30, 0x1A8330's batch loop, or the rain programs (0x1A8A00, 0x1A8E20) has been captured; the Rhinecliff save has snow, not rain. A capture with rain, and one while placing a building, would show them.
+* The water program's quad selection and wave formula, and 0x1A4780's second part, have not been read in detail.
+* Which pass draws flag 0x02 quads, and what tile flags 0x10 and 0x20 mean.
+
+## Names to fix (plan R1 step 3)
+
+| Now | What it is |
+|---|---|
+| `mm_CityRender_DrawOverlays` | draws the terrain: base ground, cliff sides, layers B and F |
+| `mm_CityRender_DrawSky` | draws the weather: rain (layer D) or snow (layer E) |
+| `mm_LayerD_*`, `mm_LayerD_DrawSkyByClock` | the rain layer |
+| `mm_LayerE_*` | the snow layer |
+| `mm_LayerC_DrawBuildings` | draws the placement highlight and marker |
+| `mm_CityRender_DrawBuildings` | the same, for passes 0 and 1 |
+| `mm_LightSet_BuildPackets`' packets A and B | the two model programs' set-up packets (with and without the second part), chosen by `mm_Packet2_Draw` |
