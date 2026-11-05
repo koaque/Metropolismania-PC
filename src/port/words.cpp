@@ -338,8 +338,8 @@ namespace mm
         return (typeAt(Family_GetTypeIndex(family))->flags & 0x100u) != 0 ? 1 : 0;
     }
 
-    // Whether family A's home type is 0x104 or 0x105 (always 0 with an argument).
-    int WordsFn_HomeIsType104(GuestPtr<WordsCtx> ctx)
+    // Whether family A's home is a police station (type 0x104 or 0x105; always 0 with an argument).
+    int WordsFn_HomeIsPoliceStation(GuestPtr<WordsCtx> ctx)
     {
         const int type = Family_GetTypeIndex(ctx->familyA);
         if (ctx->arg != 0)
@@ -400,7 +400,9 @@ namespace mm
 
     GuestPtr<char> WordsFn_TextTalkEventName(GuestPtr<WordsCtx> ctx) { return globals::eventType(eventsOf(ctx)->talks[0]->kind).as<char>(); } // the name, at +0
 
-    GuestPtr<char> WordsFn_TextPopulation(GuestPtr<WordsCtx> ctx)
+    // Last month's count of new buildings for families (type flag 8: offices, businesses, ports, housing; CityMap.flag8History
+    // slot 1), with thousands separators.
+    GuestPtr<char> WordsFn_TextNewBuildings(GuestPtr<WordsCtx> ctx)
     {
         Text_FormatThousands(GuestPtr<char>{kTextBuffer}, ctx->city->map->flag8History[1]);
         return GuestPtr<char>{kTextBuffer};
@@ -743,7 +745,7 @@ namespace mm
     }
 
     // Whether the goods are owned already: laptop goods by the active laptop entries (bit `category`, and
-    // categories 6 and 7 by entries 7 and 8), category 0x16 when a bag shortcut holds its value (the track), category
+    // categories 6 and 7 by entries 7 and 8), category 0x16 when its track is among the music tracks bought, category
     // 0x19 when mm_Family_CanApply refuses its value (the family).
     int WordsFn_GoodsOwned(GuestPtr<WordsCtx> ctx)
     {
@@ -831,19 +833,19 @@ namespace mm
         return memberStatus(ctx, addr::MemberStatus_LongApart, addr::TalkStatus_LongApart);
     }
 
-    // The target of person A (or B): 0 none, 1 a building other than their workplace, else whether the type of
-    // building A (or B) has flag 0x20.
+    // The target of person A (or B): 0 none, 1 a building other than their home, else whether the type of
+    // building A (or B) has flag 0x20 (an entrance).
     int WordsFn_WorksAtHome(GuestPtr<WordsCtx> ctx)
     {
         const GuestPtr<MapPerson> person = personByArg(ctx);
         if (person->target == kNoObject)
             return 0;
-        if (person->target != person->work)
+        if (person->target != person->home)
             return 1;
         return (typeOfObject(buildingByArg(ctx))->flags & 0x20u) != 0 ? 1 : 0;
     }
 
-    // Where person A (or B) heads: 0 without a person, 3 nowhere, 0 to work, 1 to their target, else 2 or 3 by the
+    // Where person A (or B) heads: 0 without a person, 3 nowhere, 0 home, 1 to their target, else 2 or 3 by the
     // destination type's flag 0x40.
     int WordsFn_PersonHeading(GuestPtr<WordsCtx> ctx)
     {
@@ -853,14 +855,14 @@ namespace mm
         const uint16_t destination = person->destination;
         if (destination == kNoObject)
             return 3;
-        if (destination == person->work)
+        if (destination == person->home)
             return 0;
         if (destination == person->target)
             return 1;
         return (typeOfObject(Map_GetRecord(ctx->city->map, destination))->flags & 0x40u) != 0 ? 2 : 3;
     }
 
-    // Where person A (or B) is: 1 without a person, 3 outside, 0 in their target, 1 at work, else 2 or 3 by the
+    // Where person A (or B) is: 1 without a person, 3 outside, 0 in their target, 1 at home, else 2 or 3 by the
     // type flag 0x40 of the building they are in.
     int WordsFn_PersonWhere(GuestPtr<WordsCtx> ctx)
     {
@@ -872,7 +874,7 @@ namespace mm
             return 3;
         if (inside == person->target)
             return 0;
-        if (inside == person->work)
+        if (inside == person->home)
             return 1;
         return (typeOfObject(Map_GetRecord(ctx->city->map, inside))->flags & 0x40u) != 0 ? 2 : 3;
     }
@@ -911,7 +913,7 @@ namespace mm
     }
 
     // How crowded the building (B with an argument, else A) is with visitors: residents (classes without flag 1)
-    // whose target and workplace are elsewhere. 0 none, 1 up to half the type's capacity, 2 more.
+    // whose target and home are elsewhere. 0 none, 1 up to half the type's capacity, 2 more.
     int WordsFn_BuildingCrowd(GuestPtr<WordsCtx> ctx)
     {
         const GuestPtr<MapObject> building = buildingByArg(ctx);
@@ -922,7 +924,7 @@ namespace mm
         while (const GuestPtr<MapPerson> person = People_Next(ctx->city->map, cursor))
         {
             const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)};
-            if ((cls->flags & 1u) != 0 || person->target == building->id || person->work == building->id)
+            if ((cls->flags & 1u) != 0 || person->target == building->id || person->home == building->id)
                 continue;
             ++visitors;
         }
@@ -1005,7 +1007,7 @@ namespace mm
     }
 
     // Where person A (or B) stands: 1 without a person, 0 off any building of theirs or inside another one, at
-    // their workplace 1 (or 2 when it is their target, its type has flag 0x20 and building B is open), 2 at their
+    // their home 1 (or 2 when it is their target, its type has flag 0x20 and building B is open), 2 at their
     // target, 3 at a building whose type has flag 0x40, else 0. Without an argument building B and type B become
     // the building stood at.
     int WordsFn_PersonAtBuilding(GuestPtr<WordsCtx> ctx)
@@ -1024,9 +1026,9 @@ namespace mm
         if (person->inside != kNoObject && person->inside != building->id)
             return 0;
         const GuestPtr<BuildingType> type = typeOfObject(building);
-        if (building->id == person->work)
+        if (building->id == person->home)
         {
-            if (person->work != person->target || (type->flags & 0x20u) == 0)
+            if (person->home != person->target || (type->flags & 0x20u) == 0)
                 return 1;
             int open;
             if (const GuestPtr<MapObject> b = ctx->buildingB)
@@ -1093,14 +1095,14 @@ namespace mm
     PORT_FN(WordsFn_TimeOfDay);
     PORT_FN(WordsFn_FamilyCountTier);
     PORT_FN(WordsFn_HomeTypeFlag100);
-    PORT_FN(WordsFn_HomeIsType104);
+    PORT_FN(WordsFn_HomeIsPoliceStation);
     PORT_FN(WordsFn_BuildingClaim);
     PORT_FN(WordsFn_TalksToday);
     PORT_FN(WordsFn_RecentTalks);
     PORT_FN(WordsFn_HasWantForPerson);
     PORT_FN(WordsFn_FindWant);
     PORT_FN(WordsFn_TextTalkEventName);
-    PORT_FN(WordsFn_TextPopulation);
+    PORT_FN(WordsFn_TextNewBuildings);
     PORT_FN(WordsFn_TextOpenHours);
     PORT_FN(WordsFn_TextClaimLine);
     PORT_FN(WordsFn_TextBuildingName);
@@ -1632,7 +1634,7 @@ namespace mm
         resetContext(ctx, city, arg4);
     }
 
-    // The same for a person on the map: building A is the person's workplace.
+    // The same for a person on the map: building A is the person's home.
     void Words_SetPerson(GuestPtr<Words> words, GuestPtr<MapPerson> person, int arg4, GuestPtr<CityScene> city)
     {
         Family_Prefetch(person->family, 0);
@@ -1640,7 +1642,7 @@ namespace mm
         ctx->familyA = person->family;
         ctx->memberA = person->member;
         ctx->personA = person;
-        ctx->buildingA = Map_GetRecord(city->map, person->work);
+        ctx->buildingA = Map_GetRecord(city->map, person->home);
         resetContext(ctx, city, arg4);
     }
 

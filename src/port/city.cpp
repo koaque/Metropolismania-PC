@@ -460,21 +460,21 @@ namespace mm
 
     // ---- people's schedules and stamina
 
-    // The schedule entry for a person: fixed entries for the t0 and t1 cases, the building type's own
-    // schedule for activity 15, else entry a3.
-    int Schedule_PickEntry(int, int, int a2, int a3, int t0, int t1)
+    // A person's schedule row (SCHEDULE.BIN, 0x60 bytes each): 29 during a farewell party, 30 when ill (person flag 0x10),
+    // for schedule state 15 the home type's own (15 + its schedule), else the state's row.
+    int Schedule_PickEntry(int, int, int homeType, int state, int party, int ill)
     {
         const uint32_t base = globals::scheduleData.get();
-        if (t0 != 0)
-            return static_cast<int>(base + 0xAE0u);
-        if (t1 != 0)
-            return static_cast<int>(base + 0xB40u);
-        if (a3 == 15)
+        if (party != 0)
+            return static_cast<int>(base + 29u * 0x60u);
+        if (ill != 0)
+            return static_cast<int>(base + 30u * 0x60u);
+        if (state == 15)
         {
-            const uint32_t own = globals::buildingType(static_cast<uint32_t>(a2))->schedule;
+            const uint32_t own = globals::buildingType(static_cast<uint32_t>(homeType))->schedule;
             return static_cast<int>(base + (own + 15u) * 0x60u);
         }
-        return static_cast<int>(base + static_cast<uint32_t>(a3) * 0x60u);
+        return static_cast<int>(base + static_cast<uint32_t>(state) * 0x60u);
     }
 
     // 0 below 100000, 1 up to 1800000, 2 above.
@@ -2140,7 +2140,7 @@ namespace mm
         }
     }
 
-    // The want of a person for the claim of their workplace. It counts as phoned about already when the claim
+    // The want of a person for the claim of their home. It counts as phoned about already when the claim
     // meter is above the high threshold.
     int Wants_AddForPerson(GuestPtr<WantsWin> wants, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, int claimSlot)
     {
@@ -2148,7 +2148,7 @@ namespace mm
             return 0;
         const GuestPtr<Want> want{wants.address + 0x104u + 4u * wants->wordsUsed};
         want->person = person->index;
-        want->object = person->work;
+        want->object = person->home;
         want->family = person->family;
         want->member = person->member;
         want->claimSlot = static_cast<uint32_t>(claimSlot);
@@ -3275,8 +3275,8 @@ namespace mm
     // ---- the people of a building with an entrance (batch 40)
 
     // Buildings of type flag 0x800 with their entrance part: the people standing in it (or outside, on it) are sorted into
-    // four groups, by class flag 1 (vehicles and the like) and by whether this is their workplace: 0 residents working here,
-    // 1 other residents, 2 flagged workers, 3 other flagged. Each group has room for `groupSpots[group]` people (up to four)
+    // four groups, by class flag 1 (vehicles) and by whether this is their home: 0 residents living here,
+    // 1 other residents, 2 vehicles of this building, 3 other vehicles. Each group has room for `groupSpots[group]` people (up to four)
     // that are placed at the type's people spots (x, y, z, a heading added to the table's at 0x1B2690),
     // drawn in pose 4. Group 0 is kept in order of the people's member numbers, the others by person index, but a person
     // inserted always lands in slot 0 (the original writes slot 0 after shifting the ones below it up). Groups with no
@@ -3305,7 +3305,7 @@ namespace mm
             if (person->inside != obj->id && person->inside != kNoObject)
                 continue;
             const bool flagged = (classOf(person)->flags & 1u) != 0;
-            const uint32_t group = (flagged ? 2u : 0u) + (person->work == obj->id ? 0u : 1u);
+            const uint32_t group = (flagged ? 2u : 0u) + (person->home == obj->id ? 0u : 1u);
             const int32_t n = counts[static_cast<int32_t>(group)];
             list(group)[n] = person->index;
             counts[static_cast<int32_t>(group)] = n + 1;
@@ -3628,7 +3628,7 @@ namespace mm
         btype->maxVisitors = record->maxVisitors;
         btype->schedule = record->schedule;
         btype->activity = record->activity;
-        btype->homeType = record->homeType;
+        btype->fieldType = record->fieldType;
         btype->openMinute = record->openMinute;
         btype->closeMinute = record->closeMinute;
         btype->capacity = record->capacity;

@@ -500,8 +500,8 @@ namespace mm
     // tile (x from the low 7 bits of the tile, z from the high bits counted from the far edge), walking nowhere, with the
     // family and member numbers, a schedule state, the member's flags (+0x2B of the member record, 8 added for members with
     // bit 4 of +0x27), activity 0x13 and an introduction; each counts in the placement score of its character class. When some
-    // member had bit 4 of +0x27 and the building is not of category 9 or 0xB, one more record (character type 0x34) is made at
-    // the same spot. The family is then flagged (mm_Family_MoveIn).
+    // member drives (flag 4 of +0x27) and the building's schedule is not 9 or 0xB, the family's car (character type 0x34, a
+    // vehicle) is made at the same spot. The family is then flagged (mm_Family_MoveIn).
     void Family_AssignHome(GuestPtr<CityMap> map, GuestPtr<CityScene> city, int family, int object)
     {
         const GuestPtr<Family> record = Family_Get(family, 0);
@@ -526,7 +526,7 @@ namespace mm
             person->charType = static_cast<uint8_t>(member->charType);
             person->nextHere = 6000;
             person->index = static_cast<uint16_t>(index);
-            person->work = static_cast<uint16_t>(object);
+            person->home = static_cast<uint16_t>(object);
             person->inside = 0x3F80;
             person->destination = 0x3F80;
             person->walkTile = 0x4000;
@@ -563,7 +563,7 @@ namespace mm
             person->nextHere = 6000;
             person->index = static_cast<uint16_t>(index);
             person->flags = 0;
-            person->work = static_cast<uint16_t>(object);
+            person->home = static_cast<uint16_t>(object);
             person->inside = 0x3F80;
             person->walkTile = 0x4000;
             person->previousTile = 0x4000;

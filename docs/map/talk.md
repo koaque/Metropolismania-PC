@@ -45,9 +45,9 @@ friendship changed. A is the person talked to.
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
 | `0x001735D0` | `void mm_TalkView_CollectOccupants(TalkView *view)` | 492 | no | the talk building's workers (outside or in it, class without flag 1), sorted by their +0x2E byte, are moved off its tile into it |
-| `0x001737C0` | `void mm_TalkView_ToggleAnim(TalkView *view)` | 88 | no | (provisional) flips the selected person's animation (7 -> 2/3) |
+| `0x001737C0` | `void mm_TalkView_ToggleAnim(TalkView *view)` | 88 | no | the chosen person (slot 0 when none), when idle, plays animation 2 or 3 by turns from its start |
 | `0x00173820` | `void mm_TalkView_DrawPeople(TalkView *view)` | 3232 | yes | people at the building or of the family in a row with names, grades and the cursor |
-| `0x001744E0` | `int mm_TalkView_NobodyHome(TalkView *view, int byFamily, int target)` | 296 | yes | (provisional) 1 when no one of the family or building is there (schedule, outside flags) |
+| `0x001744E0` | `int mm_TalkView_AllAsleep(TalkView *view, int byFamily, int target)` | 296 | yes | whether everyone is asleep (schedule activity 5, the night hours): for a family (`byFamily` 1) every member; for a building the people on its tile that count (not vehicles; outside or in this view's building). 1 when all are |
 | `0x00174610` | `void mm_TalkView_DrawBuilding(TalkView *view, int byFamily, int target)` | 916 | yes | the target building (a1 0: object, 1: family's home), lit when someone is home |
 | `0x001749B0` | `void mm_TalkView_BuildingCamera(TalkView *view, int object, Vec4 *eye, Vec4 *target)` | 904 | no | camera eye and target in front of the building's entrance |
 | `0x00174D40` | `void mm_TalkView_DrawCursor(TalkView *view)` | 64 | no | cursor frame at +0xC0 |
@@ -58,12 +58,12 @@ friendship changed. A is the person talked to.
 | `0x00175280` | `void mm_TalkView_CountPeople(TalkView *view)` | 200 | yes | people present (+0xC8), or family members when by family |
 | `0x00175350` | `void mm_TalkView_SetTarget(TalkView *view, int building, int family)` | 288 | yes | building a1 / family a2, name text boxes and frames |
 | `0x00175470` | `void mm_TalkView_PersonCamera(TalkView *view, int object, Vec4 *target, Vec4 *eye)` | 620 | no | the camera for a talk at a building: target at the footprint middle below the object's height, eye 0.4 back along the view's flattened direction |
-| `0x001756E0` | `void mm_TalkView_DrawMember(TalkView *view, int family, int member)` | 448 | yes | (provisional) family member model in front of the camera |
-| `0x001758A0` | `void mm_TalkView_DrawPerson(TalkView *view, int person)` | 436 | indirect | (provisional) person model in front of the camera |
-| `0x00175A60` | `void mm_TalkView_DrawPersonTurned(TalkView *view, int person, float angle)` | 268 | indirect | (provisional) person model rotated by a0 |
+| `0x001756E0` | `void mm_TalkView_DrawMember(TalkView *view, int family, int member)` | 448 | yes | draws a family member in the phone view: the draw packet of the view is appended, the local matrix is the standard one with its translation at (0, 0.4, -3.6); for a character class with flag 2 the view's person model gets the same place and is drawn with the default colour, and the local matrix drops by 0.15 |
+| `0x001758A0` | `void mm_TalkView_DrawPerson(TalkView *view, int person)` | 436 | indirect | the person at record `person` is drawn in front of the camera at (0, 0.4, -3.65): the character class's draw slot (vtable +0x14) with an identity matrix moved there, the default colour and the view's animation slots. A class with flag 2 also gets the view's person model placed there first (and the person is then 0.15 lower) |
+| `0x00175A60` | `void mm_TalkView_DrawPersonTurned(TalkView *view, int person, float angle)` | 268 | indirect | the same for a person turned by `angle` about y, at its own position |
 | `0x00175B70` | `TalkView *mm_TalkView_dtor(TalkView *view, int16_t deleteFlag)` | 212 | yes | vtable 0x1BD450, text boxes and frames |
 | `0x00175C50` | `TalkView *mm_TalkView_ctor(TalkView *view, CityScene *city)` | 408 | no | vtable 0x1BD450, camera copy, models 0x1F3B2C/0x1F3B7C, packets |
-| `0x00175DF0` | `void mm_TalkPhoneFamily_Draw(TalkView *view, int pass)` | 92 | yes | (provisional) vtable 0x1BD4A0, the whole family (member 6) from the Town's Pages |
+| `0x00175DF0` | `void mm_TalkPhoneFamily_Draw(TalkView *view, int pass)` | 92 | yes | the phone view of a family, in its draw pass: the building, its people and the cursor |
 | `0x00175E50` | `void mm_TalkPhoneFamily_Closed(TalkView *view)` | 64 | no | waits for the fade, then idle |
 | `0x00175E90` | `void mm_TalkPhoneFamily_Closing(TalkView *view)` | 68 | no | waits for the fade, fades again |
 | `0x00175EE0` | `void mm_TalkPhoneFamily_Close(TalkView *view)` | 52 | no | starts the fade and closes |
@@ -73,7 +73,7 @@ friendship changed. A is the person talked to.
 | `0x00175FC0` | `void mm_TalkPhoneFamily_Open(TalkView *view)` | 52 | no | starts the fade and opens |
 | `0x00176000` | `TalkView *mm_TalkPhoneFamily_dtor(TalkView *view, int16_t deleteFlag)` | 96 | yes | vtable 0x1BD4A0 |
 | `0x00176060` | `TalkView *mm_TalkPhoneFamily_ctor(TalkView *view, CityScene *city, int family)` | 88 | yes | vtable 0x1BD4A0, family a2 |
-| `0x001760C0` | `void mm_TalkPhoneMember_Draw(TalkView *view, int pass)` | 92 | yes | (provisional) vtable 0x1BD4F0, one family member from the Town's Pages |
+| `0x001760C0` | `void mm_TalkPhoneMember_Draw(TalkView *view, int pass)` | 92 | yes | the phone view of one family member, in its draw pass: the building and the member (mm_TalkView_DrawMember) |
 | `0x00176120` | `void mm_TalkPhoneMember_Closed(TalkView *view)` | 64 | no | waits for the fade, then idle |
 | `0x00176160` | `void mm_TalkPhoneMember_Closing(TalkView *view)` | 68 | no | waits for the fade, fades again |
 | `0x001761B0` | `void mm_TalkPhoneMember_Close(TalkView *view)` | 52 | no | starts the fade and closes |
@@ -132,13 +132,13 @@ friendship changed. A is the person talked to.
 | `0x00177A10` | `TalkView *mm_TalkPersonNear_dtor(TalkView *view, int16_t deleteFlag)` | 96 | yes | vtable 0x1BD6D0 |
 | `0x00177A70` | `TalkView *mm_TalkPersonNear_ctor(TalkView *view, CityScene *city, int person)` | 548 | no | vtable 0x1BD6D0, person a2: camera facing them from the terrain heights |
 | `0x00177CA0` | `void mm_TalkCard_FillText(TalkCard *card)` | 648 | yes | name, age and how recently met ("Met today", "Been awhile", "Lives in next town") |
-| `0x00177F30` | `void mm_TalkCard_DrawGauges(TalkCard *card)` | 788 | no | (provisional) grade and friendship gauges of the person |
+| `0x00177F30` | `void mm_TalkCard_DrawGauges(TalkCard *card)` | 788 | no | the card's friendship meter follows the real friendship of the person (or the family member by phone when the person is 6000) towards it: up by 0.02 a frame below 1, else 0.1 (and down by 0.1), snapping on arrival. The face frame takes the friendship band (style 0, or the band + 9) |
 | `0x00178250` | `void mm_TalkCard_Draw(TalkCard *card, int pass)` | 256 | yes | vtable 0x1BD720: card model, texts and gauges while active |
 | `0x00178350` | `void mm_TalkCard_Show(TalkCard *card, int person, int family, int member, int slot)` | 480 | no | opens for person a1 (or family a2 member a3) at slot a4, friendship (+0x2C) and mood (+0x34) |
 | `0x00178530` | `TalkCard *mm_TalkCard_dtor(TalkCard *card, int16_t deleteFlag)` | 172 | yes | vtable 0x1BD720 |
 | `0x001785E0` | `TalkCard *mm_TalkCard_ctor(TalkCard *card, CityScene *city)` | 220 | yes | vtable 0x1BD720, two text boxes and a frame |
-| `0x001786C0` | `void mm_Talk_SetViewLit(TalkSession *talk)` | 24 | no | (provisional) view +0x258 = 1 (building drawn as lit), used by the caveman event |
-| `0x001786E0` | `int mm_Talk_LookupPose(TalkSession *talk, uint32_t family, uint32_t member, uint32_t *pose)` | 80 | no | (provisional) value for family a1 member a2 in the 32-entry table at +0x40 |
+| `0x001786C0` | `void mm_Talk_SetViewLit(TalkSession *talk)` | 24 | no | forces the talk's view lit (TalkView.forceLit) when it has one |
+| `0x001786E0` | `int mm_Talk_LookupPose(TalkSession *talk, uint32_t family, uint32_t member, uint32_t *pose)` | 80 | no | the pose stored for a family member in the session's 32-entry table; 0 when there is none |
 | `0x00178730` | `void mm_Talk_SetPose(TalkSession *talk, uint16_t family, uint8_t member, uint8_t pose)` | 124 | no | stores pose a3 for family a1 member a2 in the 32-entry table at +0x40 (u16 family, u8 member, u8 pose): updates a matching entry, else fills the first free one; pair of mm_Talk_LookupPose |
 | `0x001787B0` | `void mm_Talk_EndChoosing(TalkSession *talk)` | 24 | no | view (+0x10) choice (+0xB8) = -1, +0x3C = 1 |
 | `0x001787D0` | `void mm_Talk_SelectPerson(TalkSession *talk, uint32_t family, uint32_t member)` | 44 | no | forces the view's choice (+0xB8) to the slot of family a1 member a2 |
@@ -161,12 +161,12 @@ friendship changed. A is the person talked to.
 | `0x00179630` | `TalkMoney *mm_TalkMoney_ctor(TalkMoney *money, int amount)` | 188 | yes | vtable 0x1BD7C0, amount a1 (player money 0x1C5540) |
 | `0x001796F0` | `void mm_MyHome_EntranceRect(TalkView *view, int facing, int x, int z, int size, int32_t *rect)` | 360 | no | tile rectangle in front of a building by facing (0-3), clamped to the map |
 | `0x00179860` | `void mm_MyHome_MarkEntrance(TalkView *view, int set)` | 300 | no | sets (a1 1) or clears tile flag 0x80 in front of the home |
-| `0x00179990` | `int mm_MyHome_FloorHit(TalkView *view, Vec4 *matrix, uint32_t *hit)` | 492 | no | (provisional) ray against the interior floor triangles (collision 0x1F3CE0) |
-| `0x00179B80` | `int mm_MyHome_WallHit(TalkView *view, Vec4 *matrix, uint32_t *hit, float *distance)` | 488 | no | (provisional) ray against the interior wall triangles |
-| `0x00179D70` | `void mm_MyHome_Collide(TalkView *view)` | 412 | no | (provisional) pushes the viewer out of the interior walls |
+| `0x00179990` | `int mm_MyHome_FloorHit(TalkView *view, Vec4 *matrix, uint32_t *hit)` | 492 | no | the home's floor under the viewer: the segment from 0.51 above the position down to it against the interior's floor triangles; of the crossings the lowest y wins and is stored in *hit. 1 when there was one |
+| `0x00179B80` | `int mm_MyHome_WallHit(TalkView *view, Vec4 *matrix, uint32_t *hit, float *distance)` | 488 | no | the walls: the same triangles of the wall range against the ray from the viewer along each wall's normal within 0.2; the nearest distance is left in *distance (100 when none) and its hit point in *hit |
+| `0x00179D70` | `void mm_MyHome_Collide(TalkView *view)` | 412 | no | keeps the viewer out of the walls (two passes: each wall found pushes the viewer back along its direction by what is missing from 0.2) and on the floor (0.5 over a floor hit, else sinking by 0.05, never above -0.5) |
 | `0x00179F10` | `void mm_MyHome_Draw(TalkView *view, int pass)` | 232 | no | vtable 0x1BD810: the home interior model while active |
 | `0x0017A000` | `void mm_MyHome_Closing(TalkView *view)` | 284 | indirect | camera moves back out |
-| `0x0017A120` | `void mm_MyHome_Active(TalkView *view)` | 944 | no | (provisional) walking around inside with the pad, collision and camera |
+| `0x0017A120` | `void mm_MyHome_Active(TalkView *view)` | 944 | no | walking with the pad: Triangle forwards and Cross backwards (0.04 a frame along z), Circle and Square turn by 0.02 (wrapping at plus and minus pi), the two bumpers tilt the view (limits -0.05 and 0.1), the other pad bits step sideways by 0.04 |
 | `0x0017A4D0` | `void mm_MyHome_Opening(TalkView *view)` | 312 | indirect | camera moves into the home |
 | `0x0017A610` | `void mm_MyHome_Close(TalkView *view)` | 136 | no | refills stamina (mm_Stamina_Init) when below the maximum, clears the entrance, closes |
 | `0x0017A6A0` | `TalkView *mm_MyHome_dtor(TalkView *view, int16_t deleteFlag)` | 96 | yes | vtable 0x1BD810 |
@@ -199,7 +199,7 @@ friendship changed. A is the person talked to.
 | `0x0017BA10` | `int mm_WordsFn_SetSystemEventVar(WordsCtx *ctx)` | 24 | no | #130 act: the system event's variable (+10) = arg |
 | `0x0017BA30` | `int mm_WordsFn_SelectEventPersonB(WordsCtx *ctx)` | 100 | no | #129 act: subject B = the event's second person |
 | `0x0017BAA0` | `int mm_WordsFn_SelectEventPersonA(WordsCtx *ctx)` | 100 | no | #128 act: subject B = the event's first person |
-| `0x0017BB10` | `int mm_WordsFn_EventQueueShift(WordsCtx *ctx)` | 12 | no | #127 act: (provisional) requeues the first event and shifts the list |
+| `0x0017BB10` | `int mm_WordsFn_EventQueueShift(WordsCtx *ctx)` | 12 | no | #127 act: requeues the event manager's first event (mm_EventMgr_RequeueFirst) |
 | `0x0017BB20` | `int mm_WordsFn_PlaySe(WordsCtx *ctx)` | 24 | no | #126 act: sound effect arg |
 | `0x0017BB40` | `int mm_WordsFn_GiveBagItem(WordsCtx *ctx)` | 332 | no | #125 act: gives the selected bag item, friendship by its price |
 | `0x0017BC90` | `void mm_WordsFn_BuyGoods(WordsCtx *ctx)` | 620 | yes | #124 act: pays for goods item arg, friendship by price, then laptop/bag/stamina/music/applicant by kind |
@@ -208,7 +208,7 @@ friendship changed. A is the person talked to.
 | `0x0017BFB0` | `int mm_WordsFn_NewIntroduction(WordsCtx *ctx)` | 64 | yes | #121 act: person A picks a new family to introduce (+0x2C) |
 | `0x0017BFF0` | `void mm_WordsFn_InviteIntroduced(WordsCtx *ctx)` | 108 | yes | #120 act: the family in the result word becomes an applicant, member A's flag cleared, sound 0x17 |
 | `0x0017C060` | `int mm_WordsFn_SetPose(WordsCtx *ctx)` | 24 | no | #119 act: talk session pose entry for member A = arg |
-| `0x0017C080` | `int mm_WordsFn_MarkFamilyKnown(WordsCtx *ctx)` | 52 | no | #118 act: (provisional) family bit via 0x13C950, sound 0x14 |
+| `0x0017C080` | `int mm_WordsFn_MarkFamilyKnown(WordsCtx *ctx)` | 52 | no | #118 act: marks family A known (mm_Family_SetKnown) and plays sound effect 0x14 |
 | `0x0017C0C0` | `int mm_WordsFn_FriendshipDown(WordsCtx *ctx)` | 132 | yes | #117 act: friendship loss for member A (character type bonus + 3) |
 | `0x0017C150` | `int mm_WordsFn_FriendshipUp(WordsCtx *ctx)` | 132 | yes | #116 act: friendship gain for member A (character type bonus + 5) |
 | `0x0017C1E0` | `int mm_WordsFn_SelectMemberB(WordsCtx *ctx)` | 72 | no | #115 act: subject B = member +0x1A of family A |
@@ -225,12 +225,12 @@ friendship changed. A is the person talked to.
 | `0x0017C580` | `char *mm_WordsFn_TextBagItemName(WordsCtx *ctx)` | 68 | no | #104 text: name of the selected bag item |
 | `0x0017C5D0` | `char *mm_WordsFn_TextGoodsName(WordsCtx *ctx)` | 104 | no | #103 text: name of the goods item arg |
 | `0x0017C640` | `char *mm_WordsFn_TextWantClaim(WordsCtx *ctx)` | 160 | no | #102 text: claim line of the chosen want |
-| `0x0017C6E0` | `char *mm_WordsFn_TextPopulation(WordsCtx *ctx)` | 52 | no | #101 text: (provisional) map value +0x29 with thousands separators |
+| `0x0017C6E0` | `char *mm_WordsFn_TextNewBuildings(WordsCtx *ctx)` | 52 | no | #101 text: last month's count of new buildings for families (type flag 8; CityMap.flag8History[1]), with thousands separators |
 | `0x0017C720` | `char *mm_WordsFn_TextClaimLine(WordsCtx *ctx)` | 60 | no | #100 text: claim line of building A/B |
-| `0x0017C760` | `char *mm_WordsFn_TextFamilyRecord(WordsCtx *ctx)` | 60 | yes | #99 text: (provisional) cached family record (FAMILY.BIN 0x1D4 bytes) |
-| `0x0017C7A0` | `char *mm_WordsFn_TextOccupation(WordsCtx *ctx)` | 144 | yes | #98 text: (provisional) occupation from the home type and member role |
+| `0x0017C760` | `char *mm_WordsFn_TextFamilyRecord(WordsCtx *ctx)` | 60 | yes | #99 text: the family record of the building's family (arg 1), of family A (arg 0), or of the result family |
+| `0x0017C7A0` | `char *mm_WordsFn_TextOccupation(WordsCtx *ctx)` | 144 | yes | #98 text: the member's post at their home's building type (STRTYPE POSTNAME) |
 | `0x0017C830` | `char *mm_WordsFn_TextBuildingName(WordsCtx *ctx)` | 104 | no | #97 text: building type name (+0x110) |
-| `0x0017C8A0` | `char *mm_WordsFn_TextMemberName2(WordsCtx *ctx)` | 120 | yes | #96 text: (provisional) member second name (+0x5C) |
+| `0x0017C8A0` | `char *mm_WordsFn_TextMemberName2(WordsCtx *ctx)` | 120 | yes | #96 text: the second name (+0x38 of the member record) of the member the argument picks |
 | `0x0017C920` | `char *mm_WordsFn_TextMemberName(WordsCtx *ctx)` | 120 | yes | #95 text: member name (+0x4C) of A, B or the result family |
 | `0x0017C9A0` | `char *mm_WordsFn_TextNameSlot(WordsCtx *ctx)` | 24 | no | #94 text: name slot arg |
 | `0x0017C9C0` | `int mm_WordsFn_TalkEventAnswer(WordsCtx *ctx)` | 120 | no | #93 act: the Answer slot (+0x14) of the talk event (talks[0]) with person A and arg |
@@ -241,14 +241,14 @@ friendship changed. A is the person talked to.
 | `0x0017CC50` | `int mm_WordsFn_SystemEventAnswer(WordsCtx *ctx)` | 120 | no | #88 act: the Answer slot (+0x14) of the system event (talks[1]) with person A and arg |
 | `0x0017CCD0` | `int mm_WordsFn_SystemEventVar(WordsCtx *ctx)` | 20 | no | #87 cond: the system event's variable (+10) |
 | `0x0017CCF0` | `int mm_WordsFn_SystemEventNumber(WordsCtx *ctx)` | 96 | no | #86 cond: the system event's number in its group plus 1, 0 without one |
-| `0x0017CD50` | `int mm_WordsFn_EventCountdown(WordsCtx *ctx)` | 36 | no | #85 cond: (provisional) 3 minus the event's counter |
-| `0x0017CD80` | `int mm_WordsFn_EventStage(WordsCtx *ctx)` | 168 | no | #84 cond: (provisional) stage of the context's event |
+| `0x0017CD50` | `int mm_WordsFn_EventCountdown(WordsCtx *ctx)` | 36 | no | #85 cond: steps left of the event in the talk's event slot (3 - its stage) |
+| `0x0017CD80` | `int mm_WordsFn_EventStage(WordsCtx *ctx)` | 168 | no | #84 cond: the stage of the event in the talk's slot (its type's number in its group); for group 5 plus the queue position of event 5 less that of event 4 (the queue's length for one that is not queued) |
 | `0x0017CE30` | `int mm_WordsFn_StartEvent(WordsCtx *ctx)` | 60 | no | #83 act: starts an event from the script for person A |
 | `0x0017CE70` | `int mm_WordsFn_EventsActive(WordsCtx *ctx)` | 36 | no | #82 cond: any event active |
-| `0x0017CEA0` | `int mm_WordsFn_LikesBagItem(WordsCtx *ctx)` | 332 | yes | #81 cond: (provisional) the person likes the selected bag item |
+| `0x0017CEA0` | `int mm_WordsFn_LikesBagItem(WordsCtx *ctx)` | 332 | yes | #81 cond: whether the character likes the bag item: for a business of category 4 it is the item 0x96 and the rule 0; else the item's id is in the character type's list of liked items |
 | `0x0017CFF0` | `int mm_WordsFn_CanAfford(WordsCtx *ctx)` | 124 | no | #80 cond: player money covers the goods item arg |
 | `0x0017D070` | `int mm_WordsFn_GoodsBagFull(WordsCtx *ctx)` | 236 | no | goods carried in the bag: whether its last slot is taken (bag size table 0x1B5B08) |
-| `0x0017D160` | `int mm_WordsFn_GoodsOwned(WordsCtx *ctx)` | 320 | no | #78 cond: (provisional) the goods item arg is already owned or unlocked |
+| `0x0017D160` | `int mm_WordsFn_GoodsOwned(WordsCtx *ctx)` | 320 | no | #78 cond: whether the goods are owned already: laptop goods by the active laptop entries (bit `category`, and categories 6 and 7 by entries 7 and 8), category 0x16 when its track is among the music tracks bought, category 0x19 when mm_Family_CanApply refuses its value (the family) |
 | `0x0017D2A0` | `int mm_WordsFn_LaptopHasBit(WordsCtx *ctx)` | 64 | no | #77 cond: laptop entry bit arg is active |
 | `0x0017D2E0` | `int mm_WordsFn_AnyAcquaintanceSuppliesWant(WordsCtx *ctx)` | 8 | yes | #76 cond: the same over every member of family A; result word and member index (+0x1A) |
 | `0x0017D2F0` | `int mm_WordsFn_AcquaintanceSuppliesWant(WordsCtx *ctx)` | 8 | yes | #75 cond: an acquaintance of member A who can apply supplies the chosen want's claim; result word |
@@ -260,9 +260,9 @@ friendship changed. A is the person talked to.
 | `0x0017D980` | `int mm_WordsFn_FindWant(WordsCtx *ctx)` | 52 | no | #70 act: first want lookup (result unused) |
 | `0x0017D9C0` | `int mm_WordsFn_ApplicantCountTier(WordsCtx *ctx)` | 56 | no | #69 cond: applicants: none, up to 8, up to 31, full |
 | `0x0017DA00` | `int mm_WordsFn_BuildingOpen(WordsCtx *ctx)` | 204 | indirect | #68 cond: building B (or type) open now |
-| `0x0017DAD0` | `int mm_WordsFn_BuildingsOverlap(WordsCtx *ctx)` | 204 | no | #67 cond: (provisional) footprints of buildings A and B overlap |
+| `0x0017DAD0` | `int mm_WordsFn_BuildingsOverlap(WordsCtx *ctx)` | 204 | no | #67 cond: whether building A's footprint overlaps a type B footprint at building B's tile |
 | `0x0017DBA0` | `int mm_WordsFn_FamilyModArg(WordsCtx *ctx)` | 32 | no | #66 cond: family id mod arg |
-| `0x0017DBC0` | `int mm_WordsFn_PickClaimResident(WordsCtx *ctx)` | 1116 | yes | #65 cond: (provisional) resident whose wants match the chosen want's claim |
+| `0x0017DBC0` | `int mm_WordsFn_PickClaimResident(WordsCtx *ctx)` | 1116 | yes | #65 cond: picks the resident a claim script talks about. The homes around building A are collected (candidates, +0x2C of the context), and the claims the selected want asks for are worked out as in WordsFn_SuppliesWantBody |
 | `0x0017E020` | `int mm_WordsFn_PickTestableResident(WordsCtx *ctx)` | 564 | yes | #64 cond: a resident of a candidate home who agrees (mm_Family_FriendAgrees: 3), else a random resident (1) |
 | `0x0017E260` | `int mm_WordsFn_PickByCandidates(WordsCtx *ctx)` | 48 | yes | #63 cond: collects candidate buildings and picks (0x17E3A0) |
 | `0x0017E290` | `int mm_WordsFn_PickRandomResident(WordsCtx *ctx)` | 264 | yes | #62 cond: collects candidate buildings, picks a random resident as B |
@@ -272,12 +272,12 @@ friendship changed. A is the person talked to.
 | `0x0017E990` | `int mm_WordsFn_ScheduleIs(WordsCtx *ctx)` | 76 | yes | #60 cond: schedule activity equals arg |
 | `0x0017E9E0` | `int mm_WordsFn_PersonFlagBit(WordsCtx *ctx)` | 32 | no | #59 cond: person +0x22 bit arg |
 | `0x0017EA00` | `uint32_t mm_WordsFn_ScheduleState(WordsCtx *ctx)` | 344 | yes | #58 cond: the person's schedule state, folded by arg (0..5) |
-| `0x0017EB60` | `int mm_WordsFn_HomeIsType104(WordsCtx *ctx)` | 92 | no | #57 cond: (provisional) the family's home type is 0x104 or 0x105 |
+| `0x0017EB60` | `int mm_WordsFn_HomeIsPoliceStation(WordsCtx *ctx)` | 92 | no | #57 cond: whether family A's home is a police station (type 0x104 or 0x105); always 0 with an argument |
 | `0x0017EBC0` | `int mm_WordsFn_Arg4(WordsCtx *ctx)` | 8 | no | #56 cond: context +4 |
 | `0x0017EBD0` | `uint8_t mm_WordsFn_MemberLook(WordsCtx *ctx)` | 68 | yes | #55 cond: member A's look (FamilyMember +7, family record +0x2B) |
 | `0x0017EC20` | `uint8_t mm_WordsFn_MemberByte2A(WordsCtx *ctx)` | 68 | yes | #54 cond: member A's byte +6 (family record +0x2A); 0 in every FAMILY.BIN record |
 | `0x0017EC70` | `uint16_t mm_WordsFn_MemberCharType(WordsCtx *ctx)` | 104 | yes | #53 cond: member character type, folded (0x26 -> 13, others above 0x1D -> 0) |
-| `0x0017ECE0` | `int mm_WordsFn_IsSpecialFamily(WordsCtx *ctx)` | 120 | no | #52 cond: (provisional) family equals one of three ids in a gp table (arg selects) |
+| `0x0017ECE0` | `int mm_WordsFn_IsSpecialFamily(WordsCtx *ctx)` | 120 | no | #52 cond: whether family A is entry 0xFF (argument 0), 0xB7 (1) or 0x104 (2) of the family type table |
 | `0x0017ED60` | `int mm_WordsFn_IsApplicant(WordsCtx *ctx)` | 16 | no | #51 cond: the family is on the applicant list |
 | `0x0017ED70` | `int mm_WordsFn_FamilyHasLeft(WordsCtx *ctx)` | 8 | no | #50 cond: family A moved away (bitset C) |
 | `0x0017ED80` | `int mm_WordsFn_FamilyInCity(WordsCtx *ctx)` | 8 | no | #49 cond: family A lives in the city (bitset A) |
@@ -319,13 +319,13 @@ friendship changed. A is the person talked to.
 | `0x0017F7F0` | `int mm_WordsFn_FamilyKnown(WordsCtx *ctx)` | 36 | no | #13 cond: family A/B is known (bitset B) |
 | `0x0017F820` | `int mm_WordsFn_PersonFlag10(WordsCtx *ctx)` | 48 | no | #12 cond: person +0x22 flag 0x10 |
 | `0x0017F850` | `int mm_WordsFn_IsBirthdayMonth(WordsCtx *ctx)` | 124 | no | #11 cond: (family + member) mod 12 equals the month |
-| `0x0017F8D0` | `int mm_WordsFn_WorksAtHome(WordsCtx *ctx)` | 152 | no | #10 cond: (provisional) home equals workplace and the type has flag 0x20 |
-| `0x0017F970` | `int mm_WordsFn_MemberRole(WordsCtx *ctx)` | 184 | yes | #9 cond: (provisional) member +0x28 role and +0x27 bit 0, six cases |
+| `0x0017F8D0` | `int mm_WordsFn_WorksAtHome(WordsCtx *ctx)` | 152 | no | #10 cond: the target of person A (or B): 0 none, 1 a building other than home, else whether the type of building A (or B) has flag 0x20 (an entrance) |
+| `0x0017F970` | `int mm_WordsFn_MemberRole(WordsCtx *ctx)` | 184 | yes | #9 cond: 0..5 from the member's role and the flag bit 0: roles 2 gives 4/5, role 1 gives 3, role 0 gives 2, the others 0/1 |
 | `0x0017FA30` | `int mm_WordsFn_HomeTypeFlag100(WordsCtx *ctx)` | 88 | no | #8 cond: the family's home type has flag 0x100 |
 | `0x0017FA90` | `uint8_t mm_WordsFn_BuildingCategory(WordsCtx *ctx)` | 100 | yes | #7 cond: category (+0x145) of the subject's building type |
 | `0x0017FB00` | `int mm_WordsFn_PersonHeading(WordsCtx *ctx)` | 180 | no | #6 cond: person's destination: 0 work, 1 home, 2 other building, 3 none |
 | `0x0017FBC0` | `int mm_WordsFn_PersonWhere(WordsCtx *ctx)` | 180 | no | #5 cond: person's current building: 0 home, 1 work, 2 other building, 3 outside |
-| `0x0017FC80` | `int mm_WordsFn_PersonAtBuilding(WordsCtx *ctx)` | 564 | indirect | #4 cond: (provisional) where the person stands relative to the building and its hours |
+| `0x0017FC80` | `int mm_WordsFn_PersonAtBuilding(WordsCtx *ctx)` | 564 | indirect | #4 cond: where person A (or B) stands: 1 without a person, 0 off any building of theirs or inside another one, at their home 1 (or 2 when it is their target, its type has flag 0x20 and building B is open), 2 at their target, 3 at a building whose type has flag 0x40, else 0. Without an argument building B and type B become the building stood at |
 | `0x0017FEC0` | `int mm_WordsFn_TalksToday(WordsCtx *ctx)` | 96 | no | #3 cond: talks with the person today (mm_MemberStatus_TalksToday or mm_TalkStatus_TalksToday) |
 | `0x0017FF20` | `int mm_WordsFn_RecentTalks(WordsCtx *ctx)` | 96 | no | #2 cond: talks with the person in the last twenty minutes |
 | `0x0017FF80` | `int mm_WordsFn_FriendLevelHigh(WordsCtx *ctx)` | 148 | no | #1 cond: friendship level above 13 for A/B (2 when not acquainted) |
@@ -336,7 +336,7 @@ friendship changed. A is the person talked to.
 | `0x001800B0` | `void mm_Words_SetFewChoicesLeft(Words *words)` | 16 | no | the script's menu has fewer than two unused entries left (context +0x134 = 1) |
 | `0x001800C0` | `void mm_Words_SelectBagItem(Words *words, int index)` | 192 | no | context +0x24 = the a1-th bag item of kinds 0x10/0x11/0x13 |
 | `0x00180180` | `void mm_Words_SetWantIndex(Words *words, uint16_t index)` | 12 | no | context +0x13A = a1 (the chosen want) |
-| `0x00180190` | `int mm_Words_SelectEvent(Words *words, int choice)` | 92 | yes | (provisional) context +0x138 = a1 - 1, event lookup for the family |
+| `0x00180190` | `int mm_Words_SelectEvent(Words *words, int choice)` | 92 | yes | chooses event `choice` - 1 of the city's list for the script (0 is no choice and gives 0): asks whether the first person of the script can take part in it (mm_Event_FindForFamily); the result is its code plus one |
 | `0x001801F0` | `int mm_Words_GetGoods(Words *words, int index)` | 88 | no | goods record a1 for building type B this season |
 | `0x00180250` | `uint16_t mm_Words_GetBuildingTypeB(Words *words)` | 12 | no | context +0x14 |
 | `0x00180260` | `void mm_Words_SetArg(Words *words, uint16_t arg)` | 12 | no | context +0x2A = a1 |
@@ -348,11 +348,11 @@ friendship changed. A is the person talked to.
 | `0x001804F0` | `Words *mm_Words_ctor(Words *words)` | 48 | yes | allocates the 0x140-byte context |
 | `0x001A0C40` | `void mm_Words_MatchTypedAnswer(int script, char *typed)` | 840 | no | which answer of the current question matches the typed text (strcmp) |
 | `0x001A0F90` | `char *mm_Words_GetEntryDefault(void)` | 580 | no | default text for a name entry question |
-| `0x001A11E0` | `int16_t mm_Words_GetEntryMode(void)` | 504 | no | (provisional) first field of the name entry question (passed to mm_NameEntry_Setup) |
+| `0x001A11E0` | `int16_t mm_Words_GetEntryMode(void)` | 504 | no | the answer mode of the current entry |
 | `0x001A13E0` | `char *mm_Words_GetChoiceText(int script, CityScene *city, int code, int index)` | 1036 | yes | text of menu choice a3 for code a2: goods with prices ("Don't buy"), claims, wants, events |
 | `0x001A17F0` | `void mm_Words_ApplyChoice(int script, CityScene *city, int code, int choice)` | 504 | yes | stores menu choice a3 for code a2 (bag item, want, event, argument) and jumps |
 | `0x001A19F0` | `int mm_Words_CountChoices(int script, CityScene *city, int code)` | 664 | no | number of menu choices for code a2 |
-| `0x001A1CA0` | `void mm_Words_AppendClipped(char *buffer, char *text)` | 312 | no | (provisional) appends a string to the message buffer within the line limit |
+| `0x001A1CA0` | `void mm_Words_AppendClipped(char *buffer, char *text)` | 312 | no | appends a piece of text to a line being built, joined the way English wants it: a space between words, none after a line break, '(' or '<', or before a line break or punctuation ('.', '?', ',', ')', '>', an apostrophe). Two full stops make one, and a word ending in s takes "'s" as a bare "'" |
 | `0x001A1DE0` | `int16_t mm_Words_ExpandLine(int32_t *script, int code, char *out)` | 2044 | no | expands a script line: conditions pick branches, text getters fill in names, actions run |
 | `0x001A2620` | `int16_t mm_Words_StepImpl(int32_t *script, char *buffer)` | 888 | yes | binds the loaded tables on first use, then runs codes until the next message or end code |
 | `0x001A29B0` | `int16_t mm_Words_Step(int32_t *script, char *buffer)` | 8 | yes | next message of the running script (to mm_Words_StepImpl) |

@@ -12,12 +12,12 @@ the stage introduction (city name, stage title, approval rate) and the mission b
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
-| `0x001515B0` | `void mm_StageScene_ShowCityName(StageScene *scene)` | 260 | yes | (provisional) title card with the city name (0x1C5680) |
+| `0x001515B0` | `void mm_StageScene_ShowCityName(StageScene *scene)` | 260 | yes | the city's name (up to its first line break, from 0x1C5680) on two rows |
 | `0x001516C0` | `void mm_StageScene_ShowStageTitle(StageScene *scene)` | 256 | yes | "STAGE n" title card |
 | `0x001517C0` | `void mm_StageScene_ShowApprovalRate(StageScene *scene)` | 596 | yes | "Your Approval Rate" screen |
 | `0x00151A20` | `void mm_StageScene_MissionBriefing(StageScene *scene)` | 1064 | yes | the boss explains the mission in the message window |
 | `0x00151E50` | `int mm_StageScene_BuildBriefingText(StageScene *scene)` | 452 | yes | "Let me explain Mission %d to you." + the goal text + "That's all. Good luck to you!" |
-| `0x00152020` | `void mm_StageScene_ShowTelop(StageScene *scene)` | 1204 | yes | (provisional) TELOP%d text screens with music ("Thanks to your Mr. ...") |
+| `0x00152020` | `void mm_StageScene_ShowTelop(StageScene *scene)` | 1204 | yes | the scrolling telop of the briefing. The kind of telop follows the stage (+0x24): 0 for stage 1, 1 for stage 5, 2 for the others (which also name the city and its mayor). Phase 0 loads the sound bank and writes the text into a box of 17 by 20, 1 starts the music once the sound driver is idle, 2 scrolls the box up (+0x3C grows by 2 a frame |
 | `0x001524E0` | `int mm_StageScene_Update(StageScene *scene)` | 884 | yes | stage transition scene: title cards, approval, briefing, mission movie, ending roll (END_ROLL.TEX) |
 | `0x00152860` | `StageScene *mm_StageScene_dtor(StageScene *scene, int16_t deleteFlag)` | 172 | yes | vtables 0x1BCF10/0x1BCF18; deletes camera, stage object, lights |
 | `0x00152910` | `StageScene *mm_StageScene_ctor(StageScene *scene, int loadStage)` | 300 | yes | stage object, camera, light set; loads the stage |

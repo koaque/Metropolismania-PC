@@ -77,7 +77,7 @@ over a 13 x 13 grid of weights at `0x001B8060`. Claim slot 0x18 means none, id 0
 | `0x00155170` | `int mm_Applicants_FindFrom(Applicants *applicants, uint32_t *iterator, uint32_t state)` | 100 | no | next applicant from iterator *a1 whose state (+2) is a2 (32 entries) |
 | `0x001551E0` | `int mm_Applicants_Add(Applicants *applicants, int family, int month, uint16_t state)` | 184 | yes | adds family a1 (max 32 entries of 0x14 bytes) |
 | `0x001552A0` | `int mm_Applicants_Clear(Applicants *applicants)` | 132 | no | empties the list |
-| `0x00156C50` | `int mm_Applicants_AnyWaiting(Applicants *applicants)` | 52 | no | (provisional) 1 if an applicant entry has state 2 |
+| `0x00156C50` | `int mm_Applicants_AnyWaiting(Applicants *applicants)` | 52 | no | whether any applicant entry is waiting (state 2) |
 | `0x00156C90` | `void mm_Applicants_RemoveFamily(Applicants *applicants, uint32_t family)` | 80 | no | removes the entry for family a1 |
 | `0x00156CE0` | `void mm_Applicants_RemoveAt(Applicants *applicants, int index)` | 148 | no | removes entry a1 and shifts the rest |
 | `0x00156D80` | `void mm_Applicants_AssignToBuilding(Applicants *applicants, CityScene *city, int index)` | 512 | yes | places the family's object and assigns its home building, then removes the entry |
@@ -93,25 +93,25 @@ over a 13 x 13 grid of weights at `0x001B8060`. Claim slot 0x18 means none, id 0
 | `0x0015AA90` | `void mm_CityAssets_LoadCharObjs(void)` | 448 | yes | async load step for DATA\A3D\CHAROBJ.A3D |
 | `0x0015AC50` | `void mm_CityAssets_LoadObjects(void)` | 448 | yes | async load step for DATA\A3D\OBJECT.A3D |
 | `0x0015AE10` | `int mm_CityAssets_LoadStep(void)` | 356 | yes | state machine over the asset loads; returns when done |
-| `0x0015FD70` | `void mm_Markers_Draw(Markers *markers)` | 184 | no | (provisional) model 0x1F3B28 with up to four nodes placed by the city update |
-| `0x0015FF10` | `Markers *mm_Markers_dtor(Markers *markers, int16_t deleteFlag)` | 76 | yes | (provisional) vtable 0x1BCFC8 at +0x128 |
-| `0x0015FF60` | `Markers *mm_Markers_ctor(Markers *markers)` | 216 | no | (provisional) vtable 0x1BCFC8 at +0x128, models 0x1F3B28/0x1F3B08, nodes 1-3 |
+| `0x0015FD70` | `void mm_Markers_Draw(Markers *markers)` | 184 | no | the base model, then each marker's node with its matrix |
+| `0x0015FF10` | `Markers *mm_Markers_dtor(Markers *markers, int16_t deleteFlag)` | 76 | yes | the markers' destructor: the vtable set back to 0x1BCFC8, the object freed when asked |
+| `0x0015FF60` | `Markers *mm_Markers_ctor(Markers *markers)` | 216 | no | four marker matrices, identity moved to the offsets at 0x1B0DB0 and 0.1 down |
 | `0x00163690` | `int mm_Collide_MeshFloorBelow(int a0, int mesh, Vec4 *point, Vec4 *matrix, uint32_t *hit, float lift)` | 436 | no | whether the segment from the point down by `lift` crosses a triangle of the mesh (the matrix places it); the highest crossing (lowest y) goes to *hit |
 | `0x00163850` | `int mm_Collide_MeshNearestHit(int a0, int mesh, Vec4 *point, Vec4 *matrix, uint32_t *hit, float *distance, float f12)` | 444 | no | the nearest crossing of a ray from the point along each triangle's normal within the range: its distance in *distance (100 when none), the point in *hit |
 | `0x00163A10` | `void mm_BldgType_Animate(BuildingType *btype)` | 8 | no | base animation slot (+0x34): nothing |
 | `0x00163A20` | `int mm_BldgType_IsOpenAt(BuildingType *btype, CityScene *city, MapObject *obj)` | 184 | no | open between +0x13C and +0x13E (minutes of the day, a2 shifts the time); closed in holiday months (city flag 2) for types with flag 0x2000 |
 | `0x00163AE0` | `int mm_Clock_AddWrap(int a0, int time, int offset)` | 52 | no | a1 + a2 mod 3600, wrapped at 86400 (seconds per day) |
 | `0x00163B20` | `int mm_BldgType_IsMyHome(BuildingType *btype)` | 32 | no | type id/kind (+0x134) in 5..8, the My Home types |
-| `0x00163B40` | `void mm_BldgType_DrawOccupants(BuildingType *btype, CityScene *city, MapObject *obj, MapPerson *person, int flags)` | 256 | indirect | (provisional) draws people at a building |
-| `0x00163C40` | `void mm_BldgType_OccupantMatrix(BuildingType *btype, Vec4 *colour, Vec4 *position, uint32_t tile)` | 292 | no | (provisional) matrix for an occupant |
-| `0x00163D70` | `void mm_BldgType_DrawOccupant(BuildingType *btype, Vec4 *colour, MapPerson *person, CityScene *city)` | 400 | no | (provisional) one occupant on its tile |
-| `0x00163F00` | `uint16_t mm_BldgType_FindEntrance(BuildingType *btype, CityScene *city, int x, int z, int32_t *side)` | 344 | no | (provisional) entrance tile next to a building (walkable flag 0x10, tables 0x1B13F0/0x1B1400) |
+| `0x00163B40` | `void mm_BldgType_DrawOccupants(BuildingType *btype, CityScene *city, MapObject *obj, MapPerson *person, int flags)` | 256 | indirect | one person in a building's crowd: the colour of BldgType_DrawOccupant at the person's own position and heading, in pose 6 (flag 0x40), 1 (flag 0x80) or 0 |
+| `0x00163C40` | `void mm_BldgType_OccupantMatrix(BuildingType *btype, Vec4 *colour, Vec4 *position, uint32_t tile)` | 292 | no | the shade of a person drawn at a building: 2.5 - min(max(d, 0), 1.5) in every lane, d being the horizontal distance from the footprint's centre to `position`; the last word then becomes the integer 12 |
+| `0x00163D70` | `void mm_BldgType_DrawOccupant(BuildingType *btype, Vec4 *colour, MapPerson *person, CityScene *city)` | 400 | no | a building occupant's colour: set by the occupant slot of the first lit object (flag 0x10) on the person's tile or on the four tiles beside the block (north, east, south, west); otherwise untinted with w 0 |
+| `0x00163F00` | `uint16_t mm_BldgType_FindEntrance(BuildingType *btype, CityScene *city, int x, int z, int32_t *side)` | 344 | no | the walkable tile next to a building's footprint (size tiles from (x, z)), trying the four sides at distance 0, then 1 and 2 blocks out. Returns its object's tile and the side, or 0x4000 and side 0 |
 | `0x00164060` | `int mm_BldgType_RayHit(BuildingType *btype)` | 8 | no | base ray hit slot (+0x30): no hit (0) |
 | `0x00164070` | `int mm_BldgType_FloorBelow(BuildingType *btype)` | 8 | no | base slot +0x2C |
 | `0x00164080` | `int mm_BldgType_NearestHit(BuildingType *btype)` | 8 | no | base slot +0x28 |
 | `0x00164090` | `uint8_t mm_BldgType_GroundTexture(BuildingType *btype)` | 8 | no | base ground texture slot (+0x1C): the type's own ground texture (+0x143) |
 | `0x001640A0` | `int mm_BldgType_AcceptsOn(BuildingType *btype)` | 8 | no | base slot +0x20: any type can be placed on an object (1) |
-| `0x001640B0` | `void mm_BldgType_DrawOccupants2(BuildingType *btype, int layer, CityScene *city, MapObject *obj, int t0, int flags, MapPerson *people)` | 356 | indirect | (provisional) |
+| `0x001640B0` | `void mm_BldgType_DrawOccupants2(BuildingType *btype, int layer, CityScene *city, MapObject *obj, int t0, int flags, MapPerson *people)` | 356 | indirect | the people inside a building: each one's colour (BldgType_DrawOccupant), then its character class's draw slot (+0x10) at its position and heading, in pose 6 (flag 0x40), 1 (running, 0x80) or 0 |
 | `0x00164220` | `void mm_BldgType_Draw(BuildingType *btype)` | 8 | no | base slot +0x14 |
 | `0x00164230` | `int mm_BldgType_Tick(BuildingType *btype)` | 8 | no | base slot +0x10 |
 | `0x00164240` | `void mm_BldgType_InitRecord(BuildingType *btype)` | 8 | no | base slot +0xC |
@@ -170,9 +170,9 @@ over a 13 x 13 grid of weights at `0x001B8060`. Claim slot 0x18 means none, id 0
 | `0x001688B0` | `void mm_BldgKeepOut_Draw(BuildingType *btype, int layer, CityScene *city, MapObject *obj, int t0, int t1, float x, float y, float z)` | 344 | no | fence instances |
 | `0x00168A10` | `BuildingType *mm_BldgKeepOut_ctor(BuildingType *btype, BuildingRecord *record, int id)` | 52 | yes | base constructor, vtable 0x1BD200 |
 | `0x00168A50` | `BuildingType *mm_BldgLeveled_dtor(BuildingType *btype, int16_t deleteFlag)` | 96 | yes | category 2 (leveled land), vtable 0x1BD240 |
-| `0x00168AB0` | `int mm_BldgLeveled_CheckArea(BuildingType *btype, CityScene *city, int x, int z, int size, int t1)` | 1152 | no | (provisional) tests the 4 surrounding tile objects |
+| `0x00168AB0` | `int mm_BldgLeveled_CheckArea(BuildingType *btype, CityScene *city, int x, int z, int size, int t1)` | 1152 | no | whether leveled ground can go on an area of `size` at (x, z): the ring around it is counted per side, how many of the `size` tiles along each side carry an object of a type with flag 2, with flag 0x40, and that are not roads (type 3). Sides that are full count |
 | `0x00168F30` | `void mm_BldgLeveled_Draw(BuildingType *btype, int layer, CityScene *city, MapObject *obj, int t0, int t1, float x, float y, float z)` | 132 | no | instances when the record flag 1 is set |
-| `0x00168FC0` | `int mm_BldgLeveled_Tick(BuildingType *btype, CityScene *city, MapObject *obj)` | 1128 | no | (provisional) builds on leveled land for waiting applicants: levels the terrain, places the building |
+| `0x00168FC0` | `int mm_BldgLeveled_Tick(BuildingType *btype, CityScene *city, MapObject *obj)` | 1128 | no | leveled ground: the claim word at +0x10 (meter, slot and timer as one signed word) takes the smallest of the neighbours' (x + 1, z), (x + 1, z + 1) and (x, z + 1) that are leveled ground at the same height (else 0), plus one while the object has no flag 1 |
 | `0x00169430` | `BuildingType *mm_BldgLeveled_ctor(BuildingType *btype, BuildingRecord *record, int id)` | 72 | yes | base constructor, vtable 0x1BD240, +0x160 from record byte 0x90 |
 | `0x00169480` | `void mm_BldgType_CallAll(int time)` | 120 | indirect | calls a virtual method on every building type |
 | `0x00169500` | `BuildingType *mm_BldgType_Create(int id, BuildingRecord *record)` | 716 | yes | building type object for a STRTYPE.BIN record by its category (+0x20) |
@@ -182,20 +182,20 @@ over a 13 x 13 grid of weights at `0x001B8060`. Claim slot 0x18 means none, id 0
 | `0x001699E0` | `int mm_BldgHousing_FloorBelow(BuildingType *btype, MapObject *obj, Vec4 *point, Vec4 *matrix, uint32_t *hit, uint32_t *part, float lift)` | 196 | no | slot +0x2C |
 | `0x00169AB0` | `int mm_BldgHousing_NearestHit(BuildingType *btype, MapObject *obj, Vec4 *point, Vec4 *matrix, uint32_t *hit, float *distance, uint32_t *part, float f12)` | 196 | no | slot +0x28 |
 | `0x00169B80` | `void mm_BldgHousing_Draw(BuildingType *btype, int layer, CityScene *city, MapObject *obj, uint32_t *part, int flags, float x, float y, float z)` | 928 | no | slot +0x14 |
-| `0x00169F20` | `uint8_t mm_BldgHousing_UnitAt(BuildingType *btype, int kind, int x, int z, int count, uint16_t rule, CityScene *city, uint32_t *isUnit, float height)` | 372 | no | (provisional) unit index of a tile within a housing block |
+| `0x00169F20` | `uint8_t mm_BldgHousing_UnitAt(BuildingType *btype, int kind, int x, int z, int count, uint16_t rule, CityScene *city, uint32_t *isUnit, float height)` | 372 | no | whether the tile (x, z) holds a unit of the same housing block: same rule, flag-1 tile, terrain kind and height, and an entrance object (then *isUnit = 1). Returns its unit shape when more than `count` objects come before it on the tile, else 6 |
 | `0x0016A0A0` | `void mm_BldgHousing_CountUnits(BuildingType *btype, CityScene *city, MapObject *obj)` | 756 | no | a housing object's unit shape (variant high byte) from the units two tiles away along its terrain axis (tables 0x1B1480, 0x1B14C0); a changed shape passes style (mesh low byte) on and recurses into the neighbours |
 | `0x0016A3A0` | `int mm_BldgHousing_Tick(BuildingType *btype, CityScene *city, MapObject *obj, int timeFlags)` | 160 | no | Building tick plus unit counting |
 | `0x0016A440` | `void mm_BldgHousing_InitRecord(BuildingType *btype, MapObject *obj)` | 80 | no | Building init; variant +0x1A = (x/2) mod 3 |
 | `0x0016A490` | `BuildingType *mm_BldgHousing_ctor(BuildingType *btype, BuildingRecord *record, int id)` | 52 | yes | Building constructor, vtable 0x1BD280 |
 | `0x0016A4D0` | `BuildingType *mm_BldgMyHome_dtor(BuildingType *btype, int16_t deleteFlag)` | 128 | yes | category 10 (My Home), vtable 0x1BD2C0 |
-| `0x0016A550` | `int mm_BldgMyHome_Tick(BuildingType *btype, CityScene *city, MapObject *obj)` | 376 | no | (provisional) Building tick for the player's home |
+| `0x0016A550` | `int mm_BldgMyHome_Tick(BuildingType *btype, CityScene *city, MapObject *obj)` | 376 | no | my Home: the common tick, and when it has nothing to report, the objects of type 2 along the side the home faces (the row or column next to it, one tile past each corner) get their byte +0x14 cleared |
 | `0x0016A6D0` | `BuildingType *mm_BldgMyHome_ctor(BuildingType *btype, BuildingRecord *record, int id)` | 52 | yes | Building constructor, vtable 0x1BD2C0 |
 | `0x0016A710` | `BuildingType *mm_BldgPigFarm_dtor(BuildingType *btype, int16_t deleteFlag)` | 128 | yes | category 13 (Pig Farm), vtable 0x1BD300 |
 | `0x0016A790` | `void mm_BldgPigFarm_Draw(BuildingType *btype, int layer, CityScene *city, MapObject *obj, int t0, int t1, float x, float y, float z)` | 524 | no | instances and claim icon |
 | `0x0016A9A0` | `BuildingType *mm_BldgPigFarm_ctor(BuildingType *btype, BuildingRecord *record, int id)` | 64 | yes | Building constructor, vtable 0x1BD300 |
 | `0x0016A9E0` | `BuildingType *mm_BldgRoad_dtor(BuildingType *btype, int16_t deleteFlag)` | 96 | yes | category 3 (road), vtable 0x1BD340 |
-| `0x0016AA40` | `void mm_BldgRoad_FindNeighbours(BuildingType *btype, CityScene *city, MapObject *obj, int x, int z)` | 296 | no | (provisional) walkable neighbours of a road tile (tables 0x1B13F0/0x1B1400) |
-| `0x0016AB70` | `void mm_BldgRoad_DrawPeople(BuildingType *btype, int layer, CityScene *city, MapObject *obj, int t0, int flags, MapPerson *people, float x, float y, float z)` | 908 | indirect | (provisional) people walking on the road |
+| `0x0016AA40` | `void mm_BldgRoad_FindNeighbours(BuildingType *btype, CityScene *city, MapObject *obj, int x, int z)` | 296 | no | a road piece's links (one tile per direction, 0x4000 = none): for each direction its shape opens to (bit d), the first road block along it that is not straight road |
+| `0x0016AB70` | `void mm_BldgRoad_DrawPeople(BuildingType *btype, int layer, CityScene *city, MapObject *obj, int t0, int flags, MapPerson *people, float x, float y, float z)` | 908 | indirect | a road: with the city flag 8 off its people are drawn as in a building (BldgType_DrawOccupants2); with it on, the residents that are neither class flag 1 nor person flag 0x100 are gathered by person index (up to four are drawn) and placed on the road by its shape (the corner table at 0x1B1670, 4 slots a shape) in pose 8, each at its ground height facing the table's way |
 | `0x0016AF10` | `void mm_BldgRoad_Draw(BuildingType *btype, int layer, CityScene *city, MapObject *obj, int t0, int t1, float x, float y, float z)` | 688 | no | road piece instances by neighbour connections |
 | `0x0016B1C0` | `int mm_BldgRoad_Tick(BuildingType *btype, CityScene *city, MapObject *obj)` | 1164 | no | road shape from neighbouring road blocks, flattens its tiles to 0, picks the lamp, traffic-light or slope mesh, marks the minimap |
 | `0x0016B650` | `void mm_BldgRoad_InitRecord(BuildingType *btype, MapObject *obj)` | 24 | no | slot +0xC |
@@ -209,7 +209,7 @@ over a 13 x 13 grid of weights at `0x001B8060`. Claim slot 0x18 means none, id 0
 | `0x0016BB20` | `BuildingType *mm_BldgSmallGoods_ctor(BuildingType *btype, BuildingRecord *record, int id)` | 52 | yes | base constructor, vtable 0x1BD380 |
 | `0x0016BB60` | `BuildingType *mm_BldgWasteland_dtor(BuildingType *btype, int16_t deleteFlag)` | 96 | yes | category 1 (wasteland), vtable 0x1BD3C0 |
 | `0x0016BBC0` | `void mm_BldgWasteland_Draw(BuildingType *btype, int layer, CityScene *city, MapObject *obj, int t0, int t1, float x, float y, float z)` | 296 | no | weed/rock instances |
-| `0x0016BCF0` | `int mm_BldgWasteland_FindSpot(BuildingType *btype, CityScene *city, int a2, uint32_t x, uint32_t z, uint32_t *spot)` | 332 | no | (provisional) walkable spot near a tile |
+| `0x0016BCF0` | `int mm_BldgWasteland_FindSpot(BuildingType *btype, CityScene *city, int a2, uint32_t x, uint32_t z, uint32_t *spot)` | 332 | no | a straight road within three blocks of (x, z), searching outwards. Each direction is given up at the first walkable block that is not straight road, and the search of a ring stops at the first direction given up. Returns 1 with the direction in `spot` |
 | `0x0016BE40` | `int mm_BldgWasteland_Tick(BuildingType *btype, CityScene *city, MapObject *obj)` | 1120 | no | drops the mark (+0x14) of wasteland on a sloping tile (VU0 normals), plots its minimap colour by how much of it lies above the water level, and under water may place a type 3 object by a straight road |
 | `0x0016C2A0` | `void mm_BldgWasteland_InitRecord(BuildingType *btype, MapObject *obj)` | 180 | no | random appearance bytes |
 | `0x0016C360` | `BuildingType *mm_BldgWasteland_ctor(BuildingType *btype, BuildingRecord *record, int id)` | 52 | yes | base constructor, vtable 0x1BD3C0 |

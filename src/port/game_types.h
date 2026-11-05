@@ -734,11 +734,11 @@ struct EventType {
     uint8_t unk_37;
     uint16_t charTypes[4];     /* +0x38 the person's character type must be one of these (level 2: the first); 0 ends */
     uint8_t gender;            /* +0x40 1 + (person flags & 3), 0 = any */
-    uint8_t claimMeter;        /* +0x41 1: the person's workplace has its claim meter at level 0 */
+    uint8_t claimMeter;        /* +0x41 1: the person's home has its claim meter at level 0 */
     uint8_t friendship;        /* +0x42 1: the person's friendship band is at least 1 */
-    uint8_t place;             /* +0x43 where the person stands: 1 in its workplace, 2 in its target, 3 between two
-                                  buildings, 4 outside its workplace at least 8 from its middle (mm_Event_CheckCondition) */
-    uint16_t workTypes[4];     /* +0x44 the person's workplace has one of these building types; 0 ends */
+    uint8_t place;             /* +0x43 where the person stands: 1 in its home, 2 in its target, 3 between two
+                                  buildings, 4 outside its home at least 8 from its middle (mm_Event_CheckCondition) */
+    uint16_t homeTypes[4];     /* +0x44 the person's home has one of these building types; 0 ends */
 };
 /* An event handler (0x18 bytes, one per handler id; the table at 0x1AF0D0 points at them): its slots, 0 = none. */
 struct EventHandler {
@@ -839,7 +839,8 @@ struct EvDeliveryData {
 /* The farewell party event's record (mm_EvFarewellParty_*): a family leaves, and the residents who are friends come. */
 struct EvPartyData {
     uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
-    ActorRef actors[3];        /* +0x0C the leaving family, its best friend at work, the friend the player points at */
+    ActorRef actors[3];        /* +0x0C the leaving family, the closest friend among the grown-up guests (their home
+                                  marked), the friend the player points at */
     int32_t tellFrames;        /* +0x24 frames after an actor is told */
     int32_t guests;            /* +0x28 residents who are friends enough to come (a quarter of the population fills it) */
     int32_t partyTime;         /* +0x2C the party's time of day in seconds: 13:00 plus an hour per 50 guests, 19:00 at most */
@@ -1182,7 +1183,7 @@ struct CharClass {
     uint8_t voice;             /* +0x16 record byte 2: the message sound of its talks (mm_TalkConv_Start) */
     uint8_t unk_17;
     uint16_t flags;            /* +0x18 record halfword 4; 1: other people keep clear of this one
-                                  (mm_Char_CheckNeighbourTile, mm_Map_FindWorkerOnTile) */
+                                  (mm_Char_CheckNeighbourTile, mm_Map_FindVehicleOnTile) */
     uint8_t unk_1A[2];
     uint32_t traits;           /* +0x1C record word 0x14: bits 9-11 and 12-14 are scored when a resident moves in
                                   (mm_CityScene_RecordPlacementScore), bits 21-23 add to its friendship steps
@@ -1507,19 +1508,25 @@ struct MapPerson {
     ps2f heading;             /* +0x0C atan2 of the facing (mm_Person_UpdatePose) */
     uint16_t nextHere;         /* +0x10 the next person in the list of the object they are at (MapObject.firstPerson), 6000 = none */
     uint16_t index;            /* +0x12 own index */
-    uint16_t work;             /* +0x14 workplace object */
+    uint16_t home;             /* +0x14 the family's own building, where it lives (and runs its shop or business), a
+                                  vehicle's too (mm_Family_AssignHome) */
     uint16_t inside;           /* +0x16 object the person is in, 0x3F80 = outside */
     uint16_t walkTile;         /* +0x18 tile the person walks to (mm_Person_UpdatePose); the waypoint (mm_Path_NextWaypoint) */
     uint16_t previousTile;     /* +0x1A the waypoint before it; mm_Path_PickRoadLink never leads back there */
     uint16_t animFrame;        /* +0x1C the animation frame (mm_Person_Draw) */
     uint16_t destination;      /* +0x1E */
     uint16_t follow;           /* +0x20 follow target */
-    uint16_t flags;            /* +0x22 */
+    uint16_t flags;            /* +0x22 4 gone off in its car, 8 has a car (member flag 4), 0x10 ill today (schedule row
+                                  30), 0x20 follows `follow`, 0x200 waits for `follow`, 0x1000 drawn since the last update */
     uint8_t charType;          /* +0x24 index into the character type table (gp 0x1BDA3C) */
     uint8_t cooldown;          /* +0x25 counts down one per tick to 0 (mm_Person_TickCounters) */
-    uint8_t schedState;        /* +0x26 */
-    uint8_t activity;          /* +0x27 */
-    uint16_t target;           /* +0x28 building the person heads for, 0x3F80 = none (mm_Person_TargetWork) */
+    uint8_t schedState;        /* +0x26 the schedule (mm_Schedule_Evaluate): 1 under 4, 2 daycare, 3 primary school, 4 junior
+                                  high, 5 high school, 6 university, 0xF the home type's own; adults by their place in the
+                                  family */
+    uint8_t activity;          /* +0x27 the schedule's activity this hour (mm_Person_ChooseDestination): 0 the field, 1 a
+                                  port, 2 an office or factory, 4 school, 5 asleep (the night hours), 5, 6, 11 and 12 at
+                                  home, 13 and 14 to and from daycare, 16 a visit, 18 a hospital */
+    uint16_t target;           /* +0x28 building the person heads for, 0x3F80 = none (mm_Person_ChooseDestination) */
     uint16_t family;           /* +0x2A */
     union {
         uint16_t introduces;   /* +0x2C family this resident can introduce */
@@ -1620,7 +1627,7 @@ struct BuildingRecord {
     uint8_t maxVisitors;       /* +0x2D */
     uint8_t schedule;          /* +0x2E */
     uint8_t activity;          /* +0x2F */
-    uint16_t homeType;         /* +0x30 */
+    uint16_t fieldType;        /* +0x30 BuildingType.fieldType */
     uint16_t openMinute;       /* +0x32 */
     uint16_t closeMinute;      /* +0x34 */
     uint16_t capacity;         /* +0x36 */
@@ -1652,10 +1659,12 @@ struct BuildingType {
     uint8_t groupSpots[4];     /* +0x130 spots for each group of people, taken in turn: its workers, others, and the same two of
                                   class flag 1 (record +0x98; any of them sets flag 0x800, mm_Bldg_DrawPeople) */
     uint16_t kind;             /* +0x134 */
-    uint16_t flags;            /* +0x136 0x10 talk camera 2.5 lower, 0x20, 0x40 people inside, 0x100, 0x4000 own talk eye (talkEye) */
+    uint16_t flags;            /* +0x136 8 families move in (offices, businesses, ports, housing), 0x10 talk camera 2.5 lower,
+                                  0x20 an entrance, 0x40 people inside, 0x80 a field, 0x100,
+                                  0x200 its people may fall ill (mm_Person_Update), 0x4000 own talk eye (talkEye) */
     uint16_t maxStack;         /* +0x138 objects of the type one tile holds (mm_Placement_CheckTypeRule); the top one of a full stack
                                   is drawn with flag 3 (mm_CityRender_CollectObjects) */
-    uint16_t homeType;         /* +0x13A the type of the homes its workers set up around it (mm_Person_PlaceHomeObject) */
+    uint16_t fieldType;        /* +0x13A farms: the type of the fields the family plants around it (mm_Person_TargetField) */
     uint16_t openMinute;       /* +0x13C minutes of the day */
     uint16_t closeMinute;      /* +0x13E */
     uint16_t capacity;         /* +0x140 */
@@ -1722,8 +1731,9 @@ struct FieldType {
 /* Family member (0x48 bytes) inside a family record. */
 struct FamilyMember {
     uint16_t charType;         /* +0x00 */
-    uint8_t age;               /* +0x02 age group: below 2 small children, below 6 children (mm_Schedule_Evaluate) */
-    uint8_t flags;             /* +0x03 */
+    uint8_t age;               /* +0x02 in years (0 to 85 in FAMILY.BIN); it picks the schedule (mm_Schedule_Evaluate) */
+    uint8_t flags;             /* +0x03 1 (a schedule choice, mm_Schedule_Evaluate), 4 drives: the family gets a car
+                                  (mm_Family_AssignHome) */
     uint8_t role;              /* +0x04 */
     uint8_t unk_05;
     uint8_t unk_06;
@@ -2092,8 +2102,9 @@ struct CityScene {
     int32_t conductCount;      /* +0xAC */
     ps2f waterLevel;          /* +0xB0 height of the water surface (mm_LayerG_Draw, mm_Se_PickTerrainAmbience) */
     uint32_t flags;            /* +0xB4 1 buildings tinted by claim (set at construction), 2 holiday month, 4 popular
-                                  (approval 118+), 8 a farewell party is on, 0x10 the city scene ends, 0x20 rolled each
-                                  month from October to March (1 in 4), 0x40 pad focus after a talk */
+                                  (approval 118+), 8 a farewell party is on, 0x10 the city scene ends, 0x20 a cold going
+                                  round: rolled each month from October to March (1 in 4), more people fall ill
+                                  (mm_Person_Update), 0x40 pad focus after a talk */
     int32_t paydayScore;       /* +0xB8 raised through the month; with the families moved in and out it decides the salary rise (mm_EvPayday_Update) */
     int32_t pendingApproval;   /* +0xBC */
     int32_t trafficPhase;      /* +0xC0 traffic lights: 0 lets traffic along z through, 2 along x, 1 and 3 neither (mm_Char2_UpdateSpeedUndrawn) */
@@ -2702,7 +2713,7 @@ static_assert(offsetof(EventType, gender) == 0x40, "EventType.gender");
 static_assert(offsetof(EventType, claimMeter) == 0x41, "EventType.claimMeter");
 static_assert(offsetof(EventType, friendship) == 0x42, "EventType.friendship");
 static_assert(offsetof(EventType, place) == 0x43, "EventType.place");
-static_assert(offsetof(EventType, workTypes) == 0x44, "EventType.workTypes");
+static_assert(offsetof(EventType, homeTypes) == 0x44, "EventType.homeTypes");
 static_assert(sizeof(EventHandler) == 0x18, "EventHandler size");
 static_assert(offsetof(EventHandler, check) == 0x00, "EventHandler.check");
 static_assert(offsetof(EventHandler, start) == 0x04, "EventHandler.start");
@@ -3151,7 +3162,7 @@ static_assert(offsetof(MapPerson, z) == 0x08, "MapPerson.z");
 static_assert(offsetof(MapPerson, heading) == 0x0C, "MapPerson.heading");
 static_assert(offsetof(MapPerson, nextHere) == 0x10, "MapPerson.nextHere");
 static_assert(offsetof(MapPerson, index) == 0x12, "MapPerson.index");
-static_assert(offsetof(MapPerson, work) == 0x14, "MapPerson.work");
+static_assert(offsetof(MapPerson, home) == 0x14, "MapPerson.home");
 static_assert(offsetof(MapPerson, inside) == 0x16, "MapPerson.inside");
 static_assert(offsetof(MapPerson, walkTile) == 0x18, "MapPerson.walkTile");
 static_assert(offsetof(MapPerson, previousTile) == 0x1A, "MapPerson.previousTile");
@@ -3236,7 +3247,7 @@ static_assert(offsetof(BuildingRecord, unk_2C) == 0x2C, "BuildingRecord.unk_2C")
 static_assert(offsetof(BuildingRecord, maxVisitors) == 0x2D, "BuildingRecord.maxVisitors");
 static_assert(offsetof(BuildingRecord, schedule) == 0x2E, "BuildingRecord.schedule");
 static_assert(offsetof(BuildingRecord, activity) == 0x2F, "BuildingRecord.activity");
-static_assert(offsetof(BuildingRecord, homeType) == 0x30, "BuildingRecord.homeType");
+static_assert(offsetof(BuildingRecord, fieldType) == 0x30, "BuildingRecord.fieldType");
 static_assert(offsetof(BuildingRecord, openMinute) == 0x32, "BuildingRecord.openMinute");
 static_assert(offsetof(BuildingRecord, closeMinute) == 0x34, "BuildingRecord.closeMinute");
 static_assert(offsetof(BuildingRecord, capacity) == 0x36, "BuildingRecord.capacity");
@@ -3261,7 +3272,7 @@ static_assert(offsetof(BuildingType, groupSpots) == 0x130, "BuildingType.groupSp
 static_assert(offsetof(BuildingType, kind) == 0x134, "BuildingType.kind");
 static_assert(offsetof(BuildingType, flags) == 0x136, "BuildingType.flags");
 static_assert(offsetof(BuildingType, maxStack) == 0x138, "BuildingType.maxStack");
-static_assert(offsetof(BuildingType, homeType) == 0x13A, "BuildingType.homeType");
+static_assert(offsetof(BuildingType, fieldType) == 0x13A, "BuildingType.fieldType");
 static_assert(offsetof(BuildingType, openMinute) == 0x13C, "BuildingType.openMinute");
 static_assert(offsetof(BuildingType, closeMinute) == 0x13E, "BuildingType.closeMinute");
 static_assert(offsetof(BuildingType, capacity) == 0x140, "BuildingType.capacity");

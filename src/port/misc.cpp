@@ -1253,7 +1253,7 @@ namespace mm
     // drawn (flag 0x1000) and eases its height towards the ground: 0.1 per frame within 0.2 of it, straight
     // onto it beyond. Only a person at height 0.5 or below is drawn: lit (colour w word 12) before 4:00 and
     // from 17:00 unless +0x28 holds 6000 (compared as a person id here), as node 7 or 8 of the first model
-    // part when its workplace is of type 0xAF or 0xB1, else node (own index % 7), turned by place.w about y
+    // part when its home is of type 0xAF or 0xB1 (the spaceman's and the caveman's), else node (own index % 7), turned by place.w about y
     // and moved to place.xyz.
     void Char2_Draw(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, GuestPtr<Vec4> colour,
                     int flags, GuestPtr<Vec4> place)
@@ -1288,8 +1288,8 @@ namespace mm
         const int clock = city->clock;
         const bool night = clock >= 61200 || clock < 14400;
         port::store<int32_t>(colour.address + 0xCu, night && person->target != kNoPerson ? 12 : 0);
-        const int workType = Map_GetRecord(city->map, person->work)->type;
-        const int node = workType == 0xAF ? 7 : workType == 0xB1 ? 8 : person->index % 7;
+        const int homeType = Map_GetRecord(city->map, person->home)->type;
+        const int node = homeType == 0xAF ? 7 : homeType == 0xB1 ? 8 : person->index % 7;
         const GuestPtr<A3DObject> model{cls->parts[0].address};
         const GuestPtr<Vec4> matrix = worldMatrix(modelNode(model, node));
         sdk::sceVu0RotMatrixY(matrix.address, globals::kIdentityMatrix, place->w);
@@ -1484,14 +1484,14 @@ namespace mm
         return 0;
     }
 
-    // char: a person without a target of its own (none, or the workplace) picks a building near work from
-    // the list for its schedule state (2..6: lists 0x17..0x1B, else 0x1B); the chosen building counts one
-    // more visitor (+0x16). Returns the target.
-    uint16_t Person_TargetWork(GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
+    // char: a person without a target of its own (none, or home) picks the school nearest home from the tile list for
+    // its schedule state: 2 daycare (0x17), 3 primary school (0x18), 4 junior high (0x19), 5 high school (0x1A), else
+    // university (0x1B). The chosen school counts one more visitor (+0x16). Returns the target.
+    uint16_t Person_TargetSchool(GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
     {
-        if (person->target != 0x3F80 && person->target != person->work)
+        if (person->target != 0x3F80 && person->target != person->home)
             return person->target;
-        const GuestPtr<MapObject> work = Map_GetRecord(city->map, person->work);
+        const GuestPtr<MapObject> home = Map_GetRecord(city->map, person->home);
         int list = 0x1B;
         switch (person->schedState)
         {
@@ -1502,7 +1502,7 @@ namespace mm
         default: break;
         }
         person->target = static_cast<uint16_t>(
-            Person_FindBuildingInList(city, list, work->tile & 0x7F, work->tile >> 7, 0, static_cast<int16_t>(person->work), 0x3F80));
+            Person_FindBuildingInList(city, list, home->tile & 0x7F, home->tile >> 7, 0, static_cast<int16_t>(person->home), 0x3F80));
         if (person->target != 0x3F80)
         {
             const GuestPtr<MapObject> target = Map_GetRecord(city->map, person->target);
@@ -1511,26 +1511,26 @@ namespace mm
         return person->target;
     }
 
-    // char: a resident's home, kept in its target field. The current one stands while it is a home type (flag 0x80)
-    // of the person's family with its claim meter below 120. Otherwise, around the workplace (24 offsets, 0x1B0C50
-    // and 0x1B0CB0): a home of the family with the meter below 60 is taken, or, where the four tiles of the block
-    // (0x1B0D10 and 0x1B0D20) are ground, wasteland or type 10 lying flat (corners within 0.05), a new home of the
-    // workplace type's home type is placed. Failing all, the workplace. Returns the home.
-    uint32_t Person_PlaceHomeObject(GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
+    // char: a farmer's field, kept in its target field. The current one stands while it is a field (type flag 0x80) of
+    // the person's family with its claim meter below 120. Otherwise, around home (the farm; 24 offsets, 0x1B0C50 and
+    // 0x1B0CB0): a field of the family with the meter below 60 is taken, or, where the four tiles of the block (0x1B0D10
+    // and 0x1B0D20) are ground, wasteland or type 10 lying flat (corners within 0.05), a new field of the farm type's
+    // field type is placed. Failing all, home. Returns the field.
+    uint32_t Person_TargetField(GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
     {
         const auto homeOfFamily = [&](GuestPtr<MapObject> obj, int meterBelow) {
             return (GuestPtr<BuildingType>{globals::buildingTypeAddress(obj->type)}->flags & 0x80u) != 0 &&
                    obj->family == person->family && obj->claimMeter < meterBelow;
         };
-        if (person->target != kNoObject && person->target != person->work &&
+        if (person->target != kNoObject && person->target != person->home &&
             homeOfFamily(Map_GetRecord(city->map, person->target), 120))
             return person->target;
 
         port::GuestFrame<0xD0> frame;
         const GuestPtr<ps2f> corners{frame.ptr().address + 0xC0u};
-        const GuestPtr<MapObject> work = Map_GetRecord(city->map, person->work);
-        const GuestPtr<BuildingType> workType{globals::buildingTypeAddress(work->type)};
-        const int x = work->tile & 0x7F, z = work->tile >> 7;
+        const GuestPtr<MapObject> home = Map_GetRecord(city->map, person->home);
+        const GuestPtr<BuildingType> homeType{globals::buildingTypeAddress(home->type)};
+        const int x = home->tile & 0x7F, z = home->tile >> 7;
         for (int i = 0; i < 24; ++i)
         {
             const int bx = x + port::load<int32_t>(0x001B0C50u + 4u * i);
@@ -1562,7 +1562,7 @@ namespace mm
             }
             if (!open)
                 continue;
-            const int placed = Map_PlaceObject(city->map, person->family, workType->homeType, bx, bz,
+            const int placed = Map_PlaceObject(city->map, person->family, homeType->fieldType, bx, bz,
                                                static_cast<int>(city.address));
             if (placed != kNoObject)
             {
@@ -1570,8 +1570,8 @@ namespace mm
                 return static_cast<uint32_t>(placed) & 0xFFFFu;
             }
         }
-        person->target = person->work;
-        return person->work;
+        person->target = person->home;
+        return person->home;
     }
 
     // char: the person type adds its walking speed (the record's, in millionths).
@@ -2743,8 +2743,8 @@ namespace mm
     PORT_FN(Markers_Draw);
     PORT_FN(Stamina_Tick);
     PORT_FN(CityCamera_GetZoomLevel);
-    PORT_FN(Person_TargetWork);
-    PORT_FN(Person_PlaceHomeObject);
+    PORT_FN(Person_TargetSchool);
+    PORT_FN(Person_TargetField);
     PORT_FN(Person_FindBuildingInList);
     PORT_FN(Player_Turn);
     PORT_FN(EvThreeUnsatisfied_Check);
@@ -2906,45 +2906,45 @@ namespace mm
     }
 
     // Where the person goes visiting: a target kept while the building there has room, else (friendship 48 and
-    // up, the workplace claim meter at level 0, its entrance building with room) the entrance building, else the
-    // workplace. The workplace itself is never kept as a target.
+    // up, the home's claim meter at level 0, its entrance building with room) the entrance building, else home.
+    // Home itself is never kept as a target.
     uint16_t Person_TargetVisit(GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
     {
-        if (person->target == person->work)
+        if (person->target == person->home)
             person->target = kNoObject;
-        const GuestPtr<MapObject> work = Map_GetRecord(city->map, person->work);
+        const GuestPtr<MapObject> home = Map_GetRecord(city->map, person->home);
         if (person->target != kNoObject)
         {
             if (Person_BuildingHasRoom(city, person, Map_GetRecord(city->map, person->target)) == 0)
-                person->target = person->work;
+                person->target = person->home;
             return person->target;
         }
-        if (Family_GetFriendship(person->family, person->member) < 48 || ClaimMeter_Level(work->claimMeter) != 0 ||
-            work->entranceTile == kNoObject)
+        if (Family_GetFriendship(person->family, person->member) < 48 || ClaimMeter_Level(home->claimMeter) != 0 ||
+            home->entranceTile == kNoObject)
         {
-            person->target = person->work;
+            person->target = person->home;
             return person->target;
         }
-        const GuestPtr<MapObject> entrance = Map_GetTileFirstObject(city->map, work->entranceTile);
-        person->target = Person_BuildingHasRoom(city, person, entrance) != 0 ? entrance->id : person->work;
+        const GuestPtr<MapObject> entrance = Map_GetTileFirstObject(city->map, home->entranceTile);
+        person->target = Person_BuildingHasRoom(city, person, entrance) != 0 ? entrance->id : person->home;
         return person->target;
     }
 
-    // Pairs the person with a free family member at their workplace (a resident of the family in schedule state
-    // 2): that member heads for their target (or their work target) and follows the person, who waits for them
+    // Takes a child to daycare: a daycare-age child of the family at home (a resident in schedule state 2) heads for
+    // their target (or their school, mm_Person_TargetSchool) and follows the person (flag 0x20), who waits for them
     // (flag 0x200). Returns the target, 0x3F80 when nobody fits.
-    int16_t Person_TargetHome(GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
+    int16_t Person_TakeToDaycare(GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
     {
         port::GuestLocal<uint16_t> cursor;
-        *cursor = Map_GetRecord(city->map, person->work)->firstPerson;
+        *cursor = Map_GetRecord(city->map, person->home)->firstPerson;
         while (*cursor != kNoPerson)
         {
             const GuestPtr<MapPerson> member = People_Next(city->map, cursor);
             if (!isResidentClass(member) || member->family != person->family || member->schedState != 2)
                 continue;
             uint16_t target = member->target;
-            if (target == kNoObject || target == member->work)
-                target = Person_TargetWork(city, member);
+            if (target == kNoObject || target == member->home)
+                target = Person_TargetSchool(city, member);
             if (target == kNoObject)
                 continue;
             member->flags |= 0x20u;
@@ -2956,7 +2956,7 @@ namespace mm
         return static_cast<int16_t>(kNoObject);
     }
 
-    // A person of the character type working at the building whose workplace claim meter is at level 0, or 0.
+    // A person of the character type living at the building, when its claim meter is at level 0, or 0.
     GuestPtr<MapPerson> Person_FindIdleOfType(GuestPtr<CityScene> city, GuestPtr<MapObject> building, uint32_t charType)
     {
         port::GuestLocal<uint16_t> cursor;
@@ -2965,7 +2965,7 @@ namespace mm
         {
             if (person->charType != charType)
                 continue;
-            if (ClaimMeter_Level(Map_GetRecord(city->map, person->work)->claimMeter) == 0)
+            if (ClaimMeter_Level(Map_GetRecord(city->map, person->home)->claimMeter) == 0)
                 return person;
         }
         return GuestPtr<MapPerson>{0};
@@ -3003,7 +3003,7 @@ namespace mm
 
     PORT_FN(Person_BuildingHasRoom);
     PORT_FN(Person_TargetVisit);
-    PORT_FN(Person_TargetHome);
+    PORT_FN(Person_TakeToDaycare);
     PORT_FN(Person_FindIdleOfType);
     PORT_FN(Person_IsAtBuilding);
     PORT_FN(Person_IsOnOpenTile);
@@ -3285,13 +3285,13 @@ namespace mm
     // ---- batch 38
 
     // The person leaves the building they are in: a building that keeps its people inside (type flag 0x40) has
-    // one occupant fewer, unless it is their workplace or their target. The walk restarts (tiles 0x4000).
+    // one occupant fewer, unless it is their home or their target. The walk restarts (tiles 0x4000).
     void Person_ExitBuilding(GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
     {
         if (person->inside == kNoObject)
             return;
         const GuestPtr<MapObject> obj = Map_GetRecord(city->map, person->inside);
-        if (obj->id != person->work && obj->id != person->target &&
+        if (obj->id != person->home && obj->id != person->target &&
             (GuestPtr<BuildingType>{globals::buildingTypeAddress(obj->type)}->flags & 0x40u) != 0 && obj->occupants > 0)
             obj->occupants = static_cast<uint8_t>(obj->occupants - 1);
         person->walkTile = 0x4000;
@@ -3350,8 +3350,8 @@ namespace mm
 
     namespace
     {
-        // A family member of the person among the people listed at the building, free to go along (a resident in
-        // schedule state 2).
+        // A daycare-age child of the person's family (a resident in schedule state 2) among the people listed at the
+        // building.
         GuestPtr<MapPerson> companionAt(GuestPtr<CityScene> city, GuestPtr<MapObject> building, GuestPtr<MapPerson> person,
                                         GuestPtr<uint16_t> cursor)
         {
@@ -3367,14 +3367,14 @@ namespace mm
         }
     }
 
-    // Shopping together: at the building on tile (x, z), unless it is the person's workplace, a family member free
-    // to go along follows the person, who waits (flag 0x200), and the workplace is the target. Otherwise the first
-    // shop of tile list 0x17 with such a member there; 0x3F80 for none.
-    uint16_t Person_TargetShop(GuestPtr<CityScene> city, GuestPtr<MapPerson> person, int x, int z)
+    // Picks a child up from daycare: at the building on tile (x, z), unless it is home, a daycare-age child of the
+    // family (schedule state 2) follows the person, who waits (flag 0x200), and home is the target. Otherwise the first
+    // daycare (tile list 0x17) with such a child there; 0x3F80 for none.
+    uint16_t Person_PickUpFromDaycare(GuestPtr<CityScene> city, GuestPtr<MapPerson> person, int x, int z)
     {
         port::GuestLocal<uint16_t> cursor;
         const GuestPtr<MapObject> here = Map_GetTileObject(city->map, x, z);
-        if (person->work != here->id)
+        if (person->home != here->id)
         {
             if (const GuestPtr<MapPerson> member = companionAt(city, here, person, cursor))
             {
@@ -3382,7 +3382,7 @@ namespace mm
                 member->follow = person->index;
                 person->flags |= 0x200u;
                 person->follow = member->index;
-                return person->work;
+                return person->home;
             }
         }
         port::GuestLocal<uint32_t> count;
@@ -3396,10 +3396,10 @@ namespace mm
         return kNoObject;
     }
 
-    // Everyone goes back to work: each person leaves the building lists of the tile they stand on and stands at the
-    // middle of their workplace tile (height 0), outside, with walk tiles and flags reset; residents lose their
-    // target, vehicles get 6000.
-    void Map_ReturnPeopleToWork(GuestPtr<CityMap> map)
+    // Everyone goes home: each person leaves the building lists of the tile they stand on and stands at the middle of
+    // their home's tile (height 0), outside, with walk tiles and flags reset; residents lose their target, vehicles get
+    // 6000 (no driver).
+    void Map_ReturnPeopleHome(GuestPtr<CityMap> map)
     {
         for (int i = 0; i < 6000; ++i)
         {
@@ -3412,10 +3412,10 @@ namespace mm
             GuestPtr<MapObject> obj = Map_GetTileFirstObject(map, static_cast<uint32_t>(x + (z << 7)));
             while (People_UnlinkFromList(map, GuestPtr<uint16_t>::of(obj->firstPerson), index) == 0 && obj->nextOnTile != kNoObject)
                 obj = map->objects + obj->nextOnTile;
-            const GuestPtr<MapObject> work = Map_GetRecord(map, person->work);
-            person->x = ps2f(0.5f) + (fromInt(work->tile % 128) - ps2f(64.0f));
+            const GuestPtr<MapObject> home = Map_GetRecord(map, person->home);
+            person->x = ps2f(0.5f) + (fromInt(home->tile % 128) - ps2f(64.0f));
             person->y = 0.0f;
-            person->z = (fromInt(128 - work->tile / 128) - ps2f(64.0f)) - ps2f(0.5f);
+            person->z = (fromInt(128 - home->tile / 128) - ps2f(64.0f)) - ps2f(0.5f);
             person->inside = kNoObject;
             person->destination = kNoObject;
             person->walkTile = 0x4000;
@@ -3448,8 +3448,8 @@ namespace mm
 
     PORT_FN(Person_IsNearBuilding);
     PORT_FN(Person_PickShopNearby);
-    PORT_FN(Person_TargetShop);
-    PORT_FN(Map_ReturnPeopleToWork);
+    PORT_FN(Person_PickUpFromDaycare);
+    PORT_FN(Map_ReturnPeopleHome);
     PORT_FN(Text_FormatTimeRange);
 
     // ---- the laptop's menu (batch 39)
@@ -3911,10 +3911,11 @@ namespace mm
 
     PORT_FN(CharType_LoadAll);
 
-    // The schedule a family member follows (0 to 0xF), from the member's age group (byte +2: under 4 a baby, under 7 a child, ...)
-    // for the youngest groups, and for the others from the member's place in the family (member 0, 1 or the rest), whether the
-    // family has a baby or school-age child (kinds 1 and 2) and whether the member has flag 1. Homes of type flag 0x400 and the
-    // grown-up age groups always get 0xF.
+    // The schedule a family member follows (0 to 0xF). By age (byte +2, in years): 1 under 4, 2 daycare (4 to 6), 3 primary
+    // school (7 to 12), 4 junior high (13 to 15), 5 high school (16 to 18). Older members by their place in the family (member 0,
+    // 1 or the rest), whether the family has a child under 2 (kind 1) or under 6 (kind 2) and whether the member has flag 1. The
+    // head of the family, and everyone in homes of type flag 0x400, gets 0xF (the home type's own row; 6, university, for a head
+    // under 24 in Student Accom, type 0xB3).
     uint8_t Schedule_Evaluate(uint32_t family, int member)
     {
         constexpr uint32_t kTableA4 = 0x001BD9A4u, kTableA8 = 0x001BD9A8u, kTableAC = 0x001BD9ACu;
@@ -3983,13 +3984,13 @@ namespace mm
     // char: where a resident goes next. The activity comes from the person's schedule entry (mm_Schedule_PickEntry): the clock,
     // shifted by a spread of the person (the square root bits of 6 * family + member, mod 3600), picks the hour, and the row is
     // chosen by the holiday month (+2) and bad weather (+1). It is kept in the person (+0x27) and in *activity (its low 5 bits).
-    // How a building is found depends on it: 0 the home (mm_Person_PlaceHomeObject); 1 and 2 a building of list 10 or 8, kept as
-    // the target (its heading count goes up); 3 the target, or the workplace; 4 the work target; 5, 6, 11 and 12 the workplace;
+    // How a building is found depends on it: 0 a farmer's field (mm_Person_TargetField); 1 and 2 a port (list 10) or an office or
+    // factory (list 8), kept as the target (its heading count goes up); 3 the target, or home; 4 a school; 5, 6, 11 and 12 home;
     // 7 and 8 a building of lists 11 to 13 or 18 and 19, picked by the count of timer 0; 9 a random target; 10 a list from the
-    // table at 0x1B0BD0 by schedule state and timer (36 with person flag 0x400; none gives the workplace); 13 the home target;
-    // 14 a shop; 15 the workplace as the target; 16 a visit; 17 lists 18 and 19 or 13; 18 list 20. When nothing was found
+    // table at 0x1B0BD0 by schedule state and timer (36 with person flag 0x400; none gives home); 13 taking a child to daycare;
+    // 14 picking one up; 15 home as the target; 16 a visit; 17 lists 18 and 19 or 13; 18 a hospital (list 20). When nothing was found
     // (0x3F80) the person's target stands if it is on the tile the person is on (and a type with flag 0x80 resets the activity),
-    // otherwise the workplace. The result is the building.
+    // otherwise home. The result is the building.
     int16_t Person_ChooseDestination(GuestPtr<CityScene> city, GuestPtr<MapPerson> person, GuestPtr<uint32_t> activity, int exclude)
     {
         const int x = sdk::fptosi(ps2f(64.0f) + person->x);
@@ -4004,9 +4005,9 @@ namespace mm
         }
         if (person->schedState == 0)
             person->schedState = Schedule_Evaluate(person->family, person->member);
-        const GuestPtr<MapObject> workRecord = Map_GetRecord(city->map, person->work);
+        const GuestPtr<MapObject> homeRecord = Map_GetRecord(city->map, person->home);
         const int flag8 = CityScene_InFarewellParty(city);
-        const int entry = Schedule_PickEntry(person->family, person->member, workRecord->type, person->schedState, flag8, person->flags & 0x10u);
+        const int entry = Schedule_PickEntry(person->family, person->member, homeRecord->type, person->schedState, flag8, person->flags & 0x10u);
         int32_t shifted = city->clock - static_cast<int32_t>(Math_SqrtBits(person->member + 6 * person->family)) % 3600;
         if (shifted < 0)
             shifted += 86400;
@@ -4017,11 +4018,11 @@ namespace mm
         person->activity = static_cast<uint8_t>(*activity);
         const int16_t skip = static_cast<int16_t>(exclude);
         const auto findIn = [&](int list, int mode, int16_t skipB) {
-            return static_cast<uint16_t>(Person_FindBuildingInList(city, list, x, z, mode, static_cast<int16_t>(person->work), skipB));
+            return static_cast<uint16_t>(Person_FindBuildingInList(city, list, x, z, mode, static_cast<int16_t>(person->home), skipB));
         };
-        // Activities 1 and 2: the target stands unless there is none or it is the workplace; a new one has its heading count raised.
+        // Activities 1 and 2: the target stands unless there is none or it is home; a new one has its heading count raised.
         const auto targetFromList = [&](int list) {
-            if (person->target == kNoObject || person->target == person->work)
+            if (person->target == kNoObject || person->target == person->home)
             {
                 person->target = static_cast<uint16_t>(findIn(list, 0, kNoObject));
                 if (person->target != kNoObject)
@@ -4035,7 +4036,7 @@ namespace mm
         switch (static_cast<uint32_t>(*activity))
         {
         case 0:
-            destination = Person_PlaceHomeObject(city, person) & 0xFFFFu;
+            destination = Person_TargetField(city, person) & 0xFFFFu;
             break;
         case 1:
             destination = targetFromList(0xA);
@@ -4044,16 +4045,16 @@ namespace mm
             destination = targetFromList(8);
             break;
         case 3:
-            destination = person->target == kNoObject ? person->work : person->target;
+            destination = person->target == kNoObject ? person->home : person->target;
             break;
         case 4:
-            destination = Person_TargetWork(city, person);
+            destination = Person_TargetSchool(city, person);
             break;
         case 5:
         case 6:
         case 11:
         case 12:
-            destination = person->work;
+            destination = person->home;
             break;
         case 7:
             destination = findIn(0xB + timer % 3, 1, skip);
@@ -4069,18 +4070,18 @@ namespace mm
             const int list = (person->flags & 0x400u) != 0
                                  ? 0x24
                                  : port::load<uint8_t>(0x001B0BD0u + 8u * person->schedState + static_cast<uint32_t>(timer & 7));
-            destination = list == 0 ? person->work : findIn(list, 1, skip);
+            destination = list == 0 ? person->home : findIn(list, 1, skip);
             break;
         }
         case 13:
-            destination = static_cast<uint16_t>(Person_TargetHome(city, person));
+            destination = static_cast<uint16_t>(Person_TakeToDaycare(city, person));
             break;
         case 14:
-            destination = Person_TargetShop(city, person, x, z);
+            destination = Person_PickUpFromDaycare(city, person, x, z);
             break;
         case 15:
-            person->target = person->work;
-            destination = person->work;
+            person->target = person->home;
+            destination = person->home;
             break;
         case 16:
             destination = Person_TargetVisit(city, person);
@@ -4102,13 +4103,13 @@ namespace mm
         if (static_cast<uint16_t>(destination) == kNoObject)
         {
             if (person->target == kNoObject)
-                destination = person->work;
+                destination = person->home;
             else
             {
                 const GuestPtr<MapObject> goal = Map_GetRecord(city->map, person->target);
                 const GuestPtr<MapObject> here = Map_GetTileFirstObject(city->map, x + (z << 7));
                 if (goal->tile != here->tile)
-                    destination = person->work;
+                    destination = person->home;
                 else
                 {
                     destination = person->target;
@@ -4343,18 +4344,18 @@ namespace mm
         }
 
         // The row a person's schedule uses: the schedule state is worked out first when it is 0; a city with flag 8 uses row 29, a
-        // person with flag 0x10 row 30, any other the state's row (0xF: the workplace type's).
+        // person with flag 0x10 (ill) row 30, any other the state's row (0xF: the home type's).
         uint32_t personScheduleRow(GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
         {
             if (person->schedState == 0)
                 person->schedState = Schedule_Evaluate(person->family, person->member);
-            const GuestPtr<MapObject> work = Map_GetRecord(city->map, person->work);
+            const GuestPtr<MapObject> home = Map_GetRecord(city->map, person->home);
             const bool lifted = (person->flags & 0x10u) != 0;
             if (CityScene_InFarewellParty(city) != 0)
                 return 29;
             if (lifted)
                 return 30;
-            return scheduleRow(person->schedState, work->type);
+            return scheduleRow(person->schedState, home->type);
         }
     }
 
@@ -4376,7 +4377,7 @@ namespace mm
         return scheduleByte(city, family, member, row) & 0x1Fu;
     }
 
-    // What the person's schedule makes of the building it heads for (the target, or the workplace with none): the kind of the
+    // What the person's schedule makes of the building it heads for (the target, or home with none): the kind of the
     // building's type (+0x14C) when the schedule byte's upper part is not 0, else 0.
     uint8_t Schedule_GetActivity(GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
     {
@@ -4384,7 +4385,7 @@ namespace mm
         const uint32_t byte = scheduleByte(city, person->family, person->member, row);
         if (((byte >> 5) & 7u) == 0)
             return 0;
-        const GuestPtr<MapObject> goal = person->target == kNoObject ? Map_GetRecord(city->map, person->work) : Map_GetRecord(city->map, person->target);
+        const GuestPtr<MapObject> goal = person->target == kNoObject ? Map_GetRecord(city->map, person->home) : Map_GetRecord(city->map, person->target);
         return globals::buildingType(goal->type)->activity;
     }
 
@@ -4420,10 +4421,10 @@ namespace mm
             return cost + port::load<int32_t>(0x001BDA28u) < 0x708 && cost + port::load<int32_t>(0x001BDA34u) < port::load<int32_t>(0x001BD980u);
         }
 
-        // Whether the claim meter of the person's workplace has reached the first threshold of the table at 0x1BDA50 (+2).
-        int workplaceClaimed(GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
+        // Whether the claim meter of the person's home has reached the first threshold of the table at 0x1BDA50 (+2).
+        int homeClaimed(GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
         {
-            return Map_GetRecord(city->map, person->work)->claimMeter >= port::load<uint16_t>(port::load<uint32_t>(0x001BDA50u) + 2u) ? 1 : 0;
+            return Map_GetRecord(city->map, person->home)->claimMeter >= port::load<uint16_t>(port::load<uint32_t>(0x001BDA50u) + 2u) ? 1 : 0;
         }
 
         float floatAt(uint32_t address) { return std::bit_cast<float>(port::load<uint32_t>(address)); }
@@ -4497,7 +4498,7 @@ namespace mm
                 port::store<uint16_t>(frameAt, static_cast<uint16_t>(restart));
         }
         const int attach = animation == 6 ? 0 : animation == 5 ? 1 : 4;
-        const int claimed = workplaceClaimed(city, person);
+        const int claimed = homeClaimed(city, person);
         const uint32_t activity = Schedule_GetActivity(city, person);
         const int shifted = (activity & 0x80u) != 0 ? 1 : 0;
         const int inside = (person->flags & 0x400u) != 0 ? 1 : 0;
@@ -4525,7 +4526,7 @@ namespace mm
         if (person)
         {
             model = personPart(cls, person);
-            port::store<int32_t>(local, workplaceClaimed(city, person));
+            port::store<int32_t>(local, homeClaimed(city, person));
             Talk_LookupPose(city->talk, person->family, person->member, GuestPtr<uint32_t>{local});
             activity = Schedule_GetActivity(city, person);
         }
@@ -4642,7 +4643,7 @@ namespace mm
     // driver put where the vehicle is, no driver left); on another tile the vehicle follows the path (mm_Path_NextWaypoint at the
     // walk tile 0x4000 or on the tile of the first object at it) or moves by the kind of its class (flag 0x1000: B, else A), the
     // driver carried along. Outside: a counter (+0x2E, 3 a call) runs to 0xFD20, when the vehicle is taken off its tile and put
-    // back on its workplace's. With flag 0x800 the vehicle is then linked to the object under it (or its building); flag 0x1000 is cleared.
+    // back on its home's. With flag 0x800 the vehicle is then linked to the object under it (or its building); flag 0x1000 is cleared.
     void Char2_Update(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, uint32_t timeFlags)
     {
         constexpr uint16_t kNowhere = 0x3F80, kNoDriver = 0x1770, kNoTile = 0x4000;
@@ -4700,7 +4701,7 @@ namespace mm
             {
                 Map_UnlinkPersonFromTile(city->map, tile, vehicle->index);
                 vehicle->awayTime = 0;
-                const uint32_t home = Map_GetRecord(city->map, vehicle->work)->tile;
+                const uint32_t home = Map_GetRecord(city->map, vehicle->home)->tile;
                 vehicle->x = ps2f(0.5f) + (fromInt(static_cast<int32_t>(home & 0x7Fu)) - ps2f(64.0f));
                 vehicle->z = (fromInt(0x80 - static_cast<int32_t>(home >> 7)) - ps2f(64.0f)) - ps2f(0.5f);
                 vehicle->walkTile = kNoTile;
@@ -4930,10 +4931,10 @@ namespace mm
     PORT_FN(Player_Update);
 
     // char: one person's update; `timeFlags` says which of the periodic jobs are due: 1 the counters (mm_Person_TickCounters), 2 the
-    // check against the building's schedule, 4 the outing roll and 8 the friendship level. Bit 4 clears the status byte's middle bits
-    // and, for a person who works in a building of a type with flag 0x200 and has reached stage 3 of the day, re-rolls flag 0x10
-    // (a byte of the timer's mix above 200, or 230 when the city has flag 0x20). A person with flag 4 (handed over to a worker
-    // that took its place) is done. The person's tile comes from its position; then:
+    // check against the building's schedule, 4 a new day and 8 the friendship level. A new day clears the talks of the day from the
+    // talk status and, for a person from school age up (schedule state 3 and above) whose home type has flag 0x200, re-rolls flag
+    // 0x10, ill today (a byte of the timer's mix above 230, or above 200 in a month with a cold going round, city flag 0x20). A
+    // person with flag 4 (gone off in its car) is done. The person's tile comes from its position; then:
     //  - Inside a building: on the building's tile the person leaves it (outside, the cool-down set from the type, no walk target),
     //    unless it follows someone on that tile and is half a unit or more away, in which case it walks. Away from the building's
     //    tile it takes the building's tile as its walk target once its cool-down is over and walks (the waypoint when it has no
@@ -4941,8 +4942,8 @@ namespace mm
     //  - Outside: following someone, it enters the building at the followed position; else once every 64 frames, by its index, with
     //    no cool-down, it picks a destination. For one on another tile the cool-down is 12, the occupant counts of the buildings
     //    with people inside (type flag 0x40) move over, rain and snow make it hurry under shelter (0x40) and otherwise one in eight
-    //    runs (0x80); with flag 8 and a building tile that is its work or target (at least 9 apart, or a type with people inside) or
-    //    neither, a worker of its own building waiting on the tile (target 6000) is handed the person's building and index
+    //    runs (0x80); with a car (flag 8) and a building tile that is its home or target (at least 9 apart, or a type with people
+    //    inside) or neither, the family's car on the tile without a driver (target 6000) takes the person's building and index
     //    and the person is dropped from the tile (flag 4).
     // Flag 0x800 keeps the person within 63 of the middle and files it under the building or tile object it is in. Walking uses
     // Person_Walk with flag 0x1000, else Person_UpdatePose (flag 0x100 is set after either). Flag 0x1000 is cleared at the end.
@@ -4962,9 +4963,11 @@ namespace mm
         if ((timeFlags & 4u) != 0)
         {
             TalkStatus_NewDay(GuestPtr<uint8_t>::of(person->status));
-            const GuestPtr<MapObject> work = Map_GetRecord(map, person->work);
-            const GuestPtr<BuildingType> workType{globals::buildingTypeAddress(work->type)};
-            if ((workType->flags & 0x200u) != 0 && person->schedState >= 3)
+            // A new day: people from school age up in homes whose type has flag 0x200 may fall ill (flag 0x10, schedule row
+            // 30: a hospital in good weather, home in bad), more often in a month with a cold going round (city flag 0x20).
+            const GuestPtr<MapObject> home = Map_GetRecord(map, person->home);
+            const GuestPtr<BuildingType> homeType{globals::buildingTypeAddress(home->type)};
+            if ((homeType->flags & 0x200u) != 0 && person->schedState >= 3)
             {
                 person->flags = static_cast<uint16_t>(person->flags & 0xFFEFu);
                 const int roll = Random_TimerMix() & 0xFF;
@@ -5108,13 +5111,13 @@ namespace mm
                     else
                     {
                         person->cooldown = 12;
-                        if (here->id != person->work && here->id != person->target)
+                        if (here->id != person->home && here->id != person->target)
                         {
                             const GuestPtr<BuildingType> type{globals::buildingTypeAddress(here->type)};
                             if ((type->flags & 0x40u) != 0 && here->occupants != 0)
                                 --here->occupants;
                         }
-                        if (person->inside != person->work && person->inside != person->target)
+                        if (person->inside != person->home && person->inside != person->target)
                         {
                             const GuestPtr<BuildingType> type{globals::buildingTypeAddress(destination->type)};
                             if ((type->flags & 0x40u) != 0)
@@ -5129,23 +5132,26 @@ namespace mm
                         person->destination = here->id;
                         if ((person->flags & 8u) != 0)
                         {
-                            const GuestPtr<MapObject> workObject = Map_GetRecord(map, person->work);
+                            // A person with a car (flag 8) drives unless the trip from home or the target is short (under
+                            // 9 tiles) or ends at a building that does not keep people inside: the family's car on this
+                            // tile, without a driver, takes the person (flag 4) off the tile.
+                            const GuestPtr<MapObject> homeObject = Map_GetRecord(map, person->home);
                             const GuestPtr<MapObject> targetObject = Map_GetRecord(map, person->target);
                             const GuestPtr<BuildingType> destinationType{globals::buildingTypeAddress(destination->type)};
-                            bool steal = true;
-                            if (here->tile == workObject->tile || here->tile == targetObject->tile)
+                            bool drive = true;
+                            if (here->tile == homeObject->tile || here->tile == targetObject->tile)
                             {
                                 const ps2f apart = Path_TileDistance(static_cast<int>(cls.address), destination->tile, here->tile);
                                 if (apart < ps2f(9.0f) || (destinationType->flags & 0x40u) == 0)
-                                    steal = false;
+                                    drive = false;
                             }
-                            if (steal)
+                            if (drive)
                             {
-                                const GuestPtr<MapPerson> worker = Map_FindWorkerOnTile(map, person->work, here->tile);
-                                if (worker && worker->target == kNoPerson)
+                                const GuestPtr<MapPerson> car = Map_FindVehicleOnTile(map, person->home, here->tile);
+                                if (car && car->target == kNoPerson)
                                 {
-                                    worker->inside = person->inside;
-                                    worker->target = person->index;
+                                    car->inside = person->inside;
+                                    car->target = person->index;
                                     person->flags = static_cast<uint16_t>(person->flags | 4u);
                                     Map_UnlinkPersonFromTile(map, tile, person->index);
                                     return;

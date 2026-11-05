@@ -156,7 +156,7 @@ namespace mm
     {
         GuestPtr<BuildingType> typeOf(GuestPtr<MapObject> building) { return GuestPtr<BuildingType>{globals::buildingTypeAddress(building->type)}; }
 
-        // The person leaves the building they are in: one that is neither their workplace nor their target and
+        // The person leaves the building they are in: one that is neither their home nor their target and
         // counts its people (type flag 0x40) loses one, and their walk tiles reset (0x4000). When they were inside,
         // v0 becomes the building record (the actor functions leave it there).
         void leaveBuilding(GuestPtr<CityScene> city, GuestPtr<MapPerson> person, int32_t &v0)
@@ -165,7 +165,7 @@ namespace mm
                 return;
             const GuestPtr<MapObject> building = Map_GetRecord(city->map, person->inside);
             v0 = static_cast<int32_t>(building.address);
-            if (building->id != person->work && building->id != person->target && (typeOf(building)->flags & 0x40u) != 0 &&
+            if (building->id != person->home && building->id != person->target && (typeOf(building)->flags & 0x40u) != 0 &&
                 building->occupants > 0)
                 --building->occupants;
             person->walkTile = 0x4000;
@@ -311,11 +311,11 @@ namespace mm
         return city->map->population >= 21 ? 1 : 0;
     }
 
-    // The person heads somewhere that is neither their workplace nor their target.
+    // The person heads somewhere that is neither their home nor their target.
     int EvForgetfulGranny_Check(GuestPtr<EventData>, GuestPtr<CityScene>, GuestPtr<MapPerson> person)
     {
         const uint16_t destination = person->destination;
-        if (destination == person->work)
+        if (destination == person->home)
             return 0;
         return destination != person->target ? 1 : 0;
     }
@@ -399,7 +399,7 @@ namespace mm
         return 0;
     }
 
-    // A resident (character types 7 to 29) inside a shop (category 6 to 10) that is neither their workplace nor their
+    // A resident (character types 7 to 29) inside a shop (category 6 to 10) that is neither their home nor their
     // target and has no maxed meter, standing outside the shop's footprint widened by 5: the shop becomes actor 1
     // (its family's first member).
     int EvShoppingTogether_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
@@ -409,7 +409,7 @@ namespace mm
             return 0;
         const GuestPtr<MapObject> shop = Map_GetRecord(city->map, person->inside);
         const uint8_t category = typeOf(shop)->category;
-        if (category < 6 || category >= 11 || shop->id == person->work || shop->id == person->target || (shop->flags & 0x40u) != 0)
+        if (category < 6 || category >= 11 || shop->id == person->home || shop->id == person->target || (shop->flags & 0x40u) != 0)
             return 0;
         const GuestPtr<int32_t> rect{frame.ptr().address + 0x50u};
         Building_GetFootprint(shop, 5, GuestPtr<uint32_t>{rect.address});
@@ -457,17 +457,17 @@ namespace mm
         return 1;
     }
 
-    // The person's workplace is a shop of category 7 or 9 (not type 0x100), and unless the workplace has flag 0x100,
+    // The person's home is their own shop, of category 7 or 9 (not type 0x100), and unless it has flag 0x100,
     // (family + member) % 12 is this month.
     int EvAdvertise_Check(GuestPtr<EventData>, GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
     {
-        const GuestPtr<MapObject> work = Map_GetRecord(city->map, person->work);
-        if ((work->flags & 0x100u) == 0 && city->monthCount % 12 != (person->family + person->member) % 12)
+        const GuestPtr<MapObject> home = Map_GetRecord(city->map, person->home);
+        if ((home->flags & 0x100u) == 0 && city->monthCount % 12 != (person->family + person->member) % 12)
             return 0;
-        const uint8_t category = GuestPtr<BuildingType>{globals::buildingTypeAddress(work->type)}->category;
+        const uint8_t category = GuestPtr<BuildingType>{globals::buildingTypeAddress(home->type)}->category;
         if (category != 9 && category != 7)
             return 0;
-        return work->type != 0x100 ? 1 : 0;
+        return home->type != 0x100 ? 1 : 0;
     }
 
     // ---- Start slots
@@ -1158,7 +1158,7 @@ namespace mm
         return second->target == first->target ? 1 : 0;
     }
 
-    // Whether there is a shop (type flag 0x40) with a walkable entrance, other than the person's workplace, that the
+    // Whether there is a shop (type flag 0x40) with a walkable entrance, other than the person's home, that the
     // person is not within 5 tiles of (the shop at the entrance tile, its footprint widened by 5).
     int EvActor_FindShop(GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
     {
@@ -1171,7 +1171,7 @@ namespace mm
             for (uint32_t item = items; item < end; item += 2u)
             {
                 const GuestPtr<MapObject> shop = Map_GetRecord(city->map, port::load<uint16_t>(item));
-                if ((typeOf(shop)->flags & 0x40u) == 0 || Map_TileIndexWalkable(city->map, shop->entranceTile) == 0 || shop->id == person->work)
+                if ((typeOf(shop)->flags & 0x40u) == 0 || Map_TileIndexWalkable(city->map, shop->entranceTile) == 0 || shop->id == person->home)
                     continue;
                 const GuestPtr<MapObject> at = Map_GetTileFirstObject(city->map, shop->entranceTile);
                 const int size = typeOf(at)->size;
@@ -1419,7 +1419,7 @@ namespace mm
         const GuestPtr<MapPerson> person = city->map->people + actor->person;
         GuestPtr<MapPerson> mover = person;
         if ((person->flags & 4u) != 0)
-            mover = Map_FindPersonOfFlaggedType(city->map, static_cast<int16_t>(actor->person));
+            mover = Map_FindVehicleOfDriver(city->map, static_cast<int16_t>(actor->person));
         if (!mover)
             return 0;
         const uint16_t to = target->object;
@@ -1452,9 +1452,9 @@ namespace mm
         return 1;
     }
 
-    // In the first minute of the day the person takes the weather flag. Outside or at work, the person goes into
+    // In the first minute of the day the person takes the weather flag. Outside or at home, the person goes into
     // a shop away from them: tile lists from a random one on (64 tries), the first shop (type flag 0x40) with a
-    // walkable entrance, not their workplace, that they are not within 5 tiles of; none found leaves them outside.
+    // walkable entrance, not their home, that they are not within 5 tiles of; none found leaves them outside.
     void EvActor_Wander(GuestPtr<CityScene> city, GuestPtr<ActorRef> actor)
     {
         port::GuestFrame<0xD0> frame;
@@ -1462,7 +1462,7 @@ namespace mm
         const GuestPtr<MapPerson> person = city->map->people + actor->person;
         if (city->clock / 60 == 0)
             weatherFlag(city, person);
-        if (person->inside != kNoObject && person->inside != person->work)
+        if (person->inside != kNoObject && person->inside != person->home)
             return;
         int list = Random_TimerMix() & 0x3F;
         for (int tries = 0; tries < 0x40; ++tries)
@@ -1473,7 +1473,7 @@ namespace mm
             for (uint32_t i = 0, item = items; i < *count; ++i, item += 2u)
             {
                 const GuestPtr<MapObject> shop = Map_GetRecord(city->map, port::load<uint16_t>(item));
-                if ((typeOf(shop)->flags & 0x40u) == 0 || Map_TileIndexWalkable(city->map, shop->entranceTile) == 0 || shop->id == person->work)
+                if ((typeOf(shop)->flags & 0x40u) == 0 || Map_TileIndexWalkable(city->map, shop->entranceTile) == 0 || shop->id == person->home)
                     continue;
                 const GuestPtr<MapObject> at = Map_GetTileFirstObject(city->map, shop->entranceTile);
                 const int size = typeOf(at)->size;
@@ -1497,8 +1497,8 @@ namespace mm
 
     namespace
     {
-        // A resident for a romance event near the person's workplace (its footprint widened by 5): in the tile lists
-        // of the zero-ended table, a building other than the workplace whose family lives in the city, without a
+        // A resident for a romance event near the person's home (its footprint widened by 5): in the tile lists
+        // of the zero-ended table, a building other than that home whose family lives in the city, without a
         // maxed meter and with its claim meter at level 0, overlapping that area, with a resident of that family
         // who passes the test (list id, person). That resident becomes the event's actor family and member.
         template <typename Suits>
@@ -1509,7 +1509,7 @@ namespace mm
             const GuestPtr<int32_t> area{sp}, rect{sp + 0x10u};
             const GuestPtr<uint32_t> count{sp + 0x20u};
             const GuestPtr<uint16_t> cursor{sp + 0x24u};
-            Building_GetFootprint(Map_GetRecord(city->map, person->work), 5, GuestPtr<uint32_t>{area.address});
+            Building_GetFootprint(Map_GetRecord(city->map, person->home), 5, GuestPtr<uint32_t>{area.address});
             for (uint32_t list = lists; port::load<int32_t>(list) != 0; list += 4u)
             {
                 const int32_t id = port::load<int32_t>(list);
@@ -1517,7 +1517,7 @@ namespace mm
                 const uint32_t end = items + 2u * *count;
                 for (uint32_t item = items; item < end; item += 2u)
                 {
-                    if (port::load<uint16_t>(item) == person->work)
+                    if (port::load<uint16_t>(item) == person->home)
                         continue;
                     const GuestPtr<MapObject> building = Map_GetRecord(city->map, port::load<uint16_t>(item));
                     if (Family_InCity(building->family) == 0 || (building->flags & 0x40u) != 0 || ClaimMeter_Level(building->claimMeter) != 0)
@@ -1620,7 +1620,7 @@ namespace mm
             const GuestPtr<MapPerson> worker{workers[k]};
             const GuestPtr<ActorRef> actor = GuestPtr<ActorRef>::of(noodles->actors[4]) + static_cast<int32_t>(k);
             actor->person = worker->index;
-            actor->object = worker->work;
+            actor->object = worker->home;
             actor->family = worker->family;
             actor->member = worker->member;
         }
@@ -1772,7 +1772,7 @@ namespace mm
         void setActorFromPerson(GuestPtr<ActorRef> actor, GuestPtr<MapPerson> person)
         {
             actor->person = person->index;
-            actor->object = person->work;
+            actor->object = person->home;
             actor->family = person->family;
             actor->member = person->member;
         }
@@ -1782,7 +1782,7 @@ namespace mm
 
     // The alien needs four buildings anywhere on the map: of type 0xE7 (tile list 0xB), one of the types at 0x1B3750
     // (lists 0x12, then 0x13), 0x10A (list 0x18) and 0x104 (list 0x16); and a resident of character type 3 to 6
-    // whose workplace is none of them, has its claim meter at level 0 and is not taken (flags 0x240). That
+    // whose home is none of them, has its claim meter at level 0 and is not taken (flags 0x240). That
     // resident becomes actor 0 and the families' first members (and buildings) actors 1 to 4, the buildings
     // marked (0x200); actor 5 is the family at +0x15C of the record at 0x1BDA8C, with no person or building.
     int EvAlien_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city)
@@ -1817,16 +1817,16 @@ namespace mm
             const GuestPtr<MapPerson> person{p};
             if (person->charType < 3 || person->charType >= 7)
                 continue;
-            const GuestPtr<MapObject> work = Map_GetRecord(city->map, person->work);
-            if (ClaimMeter_Level(work->claimMeter) != 0 || (work->flags & 0x240u) != 0)
+            const GuestPtr<MapObject> home = Map_GetRecord(city->map, person->home);
+            if (ClaimMeter_Level(home->claimMeter) != 0 || (home->flags & 0x240u) != 0)
                 continue;
-            if (work.address == found[0] || work.address == found[1] || work.address == found[2] || work.address == found[3])
+            if (home.address == found[0] || home.address == found[1] || home.address == found[2] || home.address == found[3])
                 continue;
             chosen[0] = person->index;
-            chosen[1] = person->work;
+            chosen[1] = person->home;
             chosen[2] = person->family;
             chosen[3] = person->member;
-            work->flags |= 0x200u;
+            home->flags |= 0x200u;
             break;
         }
         if (chosen[0] == kNoPerson)
@@ -2107,9 +2107,9 @@ namespace mm
     // ---- farewell party, shopping (batch 39)
 
     // The farewell party: the phone calls are cleared; actor 0 is the family at +0x162 of the record at 0x1BDA8C.
-    // Residents (character types 1 to 0x1D) with friendship band 3 and up, working at a building other than types
+    // Residents (character types 1 to 0x1D) with friendship band 3 and up, living in a building other than types
     // 0xB9 and 0x105 with its claim meter at level 0, are the guests (+0x28 counts them); of those in schedule state
-    // 6 and up the best friend is actor 1 (the first on a tie) and their workplace is marked. The party starts at
+    // 6 and up the best friend is actor 1 (the first on a tie) and their home is marked. The party starts at
     // 13:00 plus an hour per 50 guests (+0x2C, seconds, 19:00 at the latest); +0x1C becomes 0xFFFF.
     GuestPtr<MapObject> EvFarewellParty_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
@@ -2128,8 +2128,8 @@ namespace mm
                 continue;
             if (Family_GetFriendshipBand(person->family, person->member) < 3)
                 continue;
-            const GuestPtr<MapObject> work = Map_GetRecord(city->map, person->work);
-            if (work->type == 0xB9 || work->type == 0x105 || ClaimMeter_Level(work->claimMeter) != 0)
+            const GuestPtr<MapObject> home = Map_GetRecord(city->map, person->home);
+            if (home->type == 0xB9 || home->type == 0x105 || ClaimMeter_Level(home->claimMeter) != 0)
                 continue;
             party->guests = party->guests + 1;
             if (person->schedState < 6)
@@ -2270,7 +2270,7 @@ namespace mm
                     continue;
                 if (Family_GetFriendshipBand(person->family, person->member) < 3)
                     continue;
-                if (ClaimMeter_Level(Map_GetRecord(city->map, person->work)->claimMeter) == 0)
+                if (ClaimMeter_Level(Map_GetRecord(city->map, person->home)->claimMeter) == 0)
                     return 1;
             }
             return 0;
@@ -2922,7 +2922,7 @@ namespace mm
     namespace
     {
         // A queued event's entry (type, wait counter) becomes the running event `talk`: its type, the type's days,
-        // var 0, the Update slot of its handler and, for a person, the first actor (person index, workplace, family,
+        // var 0, the Update slot of its handler and, for a person, the first actor (person index, home, family,
         // member).
         void fillEvent(GuestPtr<EventData> talk, uint32_t entry, GuestPtr<MapPerson> person)
         {
@@ -2936,7 +2936,7 @@ namespace mm
             if (person)
             {
                 talk->actor.person = person->index;
-                talk->actor.object = person->work;
+                talk->actor.object = person->home;
                 talk->actor.family = person->family;
                 talk->actor.member = person->member;
             }
@@ -3203,8 +3203,8 @@ namespace mm
     // The checks, in order, all on the type's record (EventType):
     //   the start window against the minute counter (not for the levels 1 and 5), the population, the laptop modules,
     //   and for a person: the character types (one for level 2, else four), the gender, the friendship band, the claim
-    //   meter of the workplace, the workplace types, and where the person stands (place: 1 in its workplace, 2 in its
-    //   target, 3 away from the building it is between, 4 outside its workplace at least 8 from its middle), then the
+    //   meter of the home, the home types, and where the person stands (place: 1 in its home, 2 in its
+    //   target, 3 away from the building it is between, 4 outside its home at least 8 from its middle), then the
     //   score tiers and the approval tier, and finally the handler's own Check slot (the handler of level 2 and of
     //   types of group 6 pass the actor of the talk event 2 or 1, else the first).
     int64_t Event_CheckCondition(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, GuestPtr<uint8_t> type, GuestPtr<MapPerson> person)
@@ -3251,18 +3251,18 @@ namespace mm
                 if (row->friendship == 1 && band < 1)
                     return 0;
             }
-            const GuestPtr<MapObject> work = Map_GetRecord(city->map, person->work);
+            const GuestPtr<MapObject> home = Map_GetRecord(city->map, person->home);
             if (row->claimMeter != 0)
             {
-                const int meter = ClaimMeter_Level(work->claimMeter);
+                const int meter = ClaimMeter_Level(home->claimMeter);
                 if (row->claimMeter == 1 && meter != 0)
                     return 0;
             }
-            if (row->workTypes[0] != 0)
+            if (row->homeTypes[0] != 0)
             {
                 bool found = false;
-                for (uint32_t i = 0; i < 4 && row->workTypes[i] != 0; ++i)
-                    if (row->workTypes[i] == work->type)
+                for (uint32_t i = 0; i < 4 && row->homeTypes[i] != 0; ++i)
+                    if (row->homeTypes[i] == home->type)
                     {
                         found = true;
                         break;
@@ -3283,9 +3283,9 @@ namespace mm
                 switch (row->place)
                 {
                 case 1:
-                    if (here->id != person->work)
+                    if (here->id != person->home)
                         return 0;
-                    if (person->work == person->target && hasEntrance && entranceAnswer() != 0)
+                    if (person->home == person->target && hasEntrance && entranceAnswer() != 0)
                         return 0;
                     break;
                 case 2:
@@ -3300,12 +3300,12 @@ namespace mm
                     break;
                 case 4:
                 {
-                    if (person->inside != person->work || here->id == person->inside)
+                    if (person->inside != person->home || here->id == person->inside)
                         return 0;
                     using namespace vu0;
-                    const ps2f size = fromInt(GuestPtr<BuildingType>{globals::buildingTypeAddress(work->type)}->size);
+                    const ps2f size = fromInt(GuestPtr<BuildingType>{globals::buildingTypeAddress(home->type)}->size);
                     const uint32_t base = frame.ptr().address;
-                    const uint32_t tile = work->tile;
+                    const uint32_t tile = home->tile;
                     const GuestPtr<float> a{base + 0x80u}, b{base + 0x70u};
                     port::store<float>(a.address, static_cast<float>(person->x));
                     port::store<float>(b.address, static_cast<float>((fromInt(static_cast<int32_t>(tile & 0x7F)) - ps2f(64.0f)) + size / ps2f(2.0f)));
@@ -3715,12 +3715,12 @@ namespace mm
         const GuestPtr<EvShoppingData> shopping = data.as<EvShoppingData>();
         port::GuestFrame<0x130> frame; // the wanted goods at +0x120, the tile list count at +0x128, a goods offset at +0x12C, the footprint at +0x110
         const uint32_t base = frame.ptr().address;
-        const GuestPtr<MapObject> work = Map_GetRecord(city->map, person->work);
-        const GuestPtr<BuildingType> shop{globals::buildingTypeAddress(work->type)};
-        if (shop->category != 5)
+        const GuestPtr<MapObject> home = Map_GetRecord(city->map, person->home);
+        const GuestPtr<BuildingType> homeType{globals::buildingTypeAddress(home->type)};
+        if (homeType->category != 5) // homes
             return 0;
         data->actor.person = person->index;
-        data->actor.object = person->work;
+        data->actor.object = person->home;
         data->actor.family = person->family;
         data->actor.member = person->member;
         constexpr uint32_t kSerial = 0x001BDD5Cu, kShopCount = 0x001BDAB0u;
@@ -3735,10 +3735,10 @@ namespace mm
         for (uint32_t at = base + 0x120u; port::load<uint16_t>(at) != 0 && at < base + 0x128u; at += 2u)
             ++remaining;
         shopping->goodsCount = remaining;
-        // The area the shop is searched round: its tile, its size and 30 tiles more on every side.
-        const int32_t tile = work->tile;
+        // The area shops are searched in: the home's tile, its size and 30 tiles more on every side.
+        const int32_t tile = home->tile;
         const int32_t areaX0 = (tile & 0x7F) - 30, areaZ0 = (tile >> 7) - 30;
-        const int32_t areaX1 = (tile & 0x7F) + shop->size + 30, areaZ1 = (tile >> 7) + shop->size + 30;
+        const int32_t areaX1 = (tile & 0x7F) + homeType->size + 30, areaZ1 = (tile >> 7) + homeType->size + 30;
         const uint32_t footprint = base + 0x110u;
         for (int list = 0; list < 0x50; ++list)
         {
@@ -3969,7 +3969,7 @@ namespace mm
     PORT_FN(Event_FormatText);
 
     // The missing children event may start when the city has stage flag 2, the person's family has a member of character type
-    // 1 or 2 (the child) and a shop is found for the person: the event then names the person's workplace, the family and the
+    // 1 or 2 (the child) and a shop is found for the person: the event then names the person's home, the family and the
     // child (member index) for actor 1 and the family's adult (member 0) for actor 2.
     int EvMissingChildren_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
     {
@@ -3992,11 +3992,11 @@ namespace mm
         if (EvActor_FindShop(city, person) == 0)
             return 0;
         const GuestPtr<ActorRef> lost = actorAt(data, 1), adult = actorAt(data, 2);
-        lost->object = person->work;
+        lost->object = person->home;
         lost->family = person->family;
         lost->member = static_cast<uint16_t>(child);
         lost->person = Map_FindPersonEntry(city->map, static_cast<int16_t>(lost->family), lost->member)->index;
-        adult->object = person->work;
+        adult->object = person->home;
         adult->family = person->family;
         adult->member = 0;
         adult->person = Map_FindPersonEntry(city->map, static_cast<int16_t>(adult->family), adult->member)->index;
@@ -4158,7 +4158,7 @@ namespace mm
     // data table (0x1BDA8C) plus the mode to the applicants, play sound 0x17 and make it the event's actor `mode` (member 2; for the
     // fourth member 1): mode 0 also makes the family actor 4's (member 1) and sets the counter to 1, 1 and 2 count it to 2
     // and 3, 3 moves the event on (var) and clears it. 4 and 8 give the counter. 5 adds actor 5's family (the sound too), 7 that
-    // of +0x160. 6 asks whether actors 0 and 4 stand at their buildings and neither is doing activity 5.
+    // of +0x160. 6 asks whether actors 0 and 4 stand at their buildings and neither is asleep (activity 5).
     int EvCaveMan_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode)
     {
         (void)actor;
@@ -4886,7 +4886,7 @@ namespace mm
                 if (0x8CA0 < city->clock)
                     city->monthCount = city->monthCount + 1;
                 city->clock = 0x8CA0;
-                Map_ReturnPeopleToWork(city->map);
+                Map_ReturnPeopleHome(city->map);
                 CityScene_PushMode(city, 0xC);
                 uint32_t overlay = sdk::operator_new(8u);
                 if (overlay != 0u)
@@ -4953,7 +4953,7 @@ namespace mm
                 if (!(Player_DistanceToPoint(city, GuestPtr<ps2f>{candidate.address}) <= ps2f(1.0f)) || chosen->person == candidate->index)
                     continue;
                 chosen->person = candidate->index;
-                chosen->object = candidate->work;
+                chosen->object = candidate->home;
                 chosen->family = candidate->family;
                 chosen->member = candidate->member;
                 if (EvActor_PointCursor(city, chosen) != 0)

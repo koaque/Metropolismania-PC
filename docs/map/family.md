@@ -28,7 +28,7 @@ Families: the residents who move into the city.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
-| `0x0013BAC0` | `void mm_MemberMeters_Reset(int32_t *meters)` | 160 | no | (provisional) clears four counters and the member meter table at 0x1C59B0 |
+| `0x0013BAC0` | `void mm_MemberMeters_Reset(int32_t *meters)` | 160 | no | counts the member bytes (all 60000, friend flag included) by band: 2 to 24, 25 to 48, 49 to 100, 101 and up |
 | `0x0013BB70` | `uint8_t *mm_MemberStatus_Lookup(int family, int member)` | 448 | no | entry for family a0 member a1 in the table at 0x1F32F0 (adds one when missing) |
 | `0x0013BD30` | `uint8_t mm_MemberStatus_RecentTalks(int family, int member)` | 36 | no | mm_TalkStatus_RecentTalks of the member's status entry (mm_MemberStatus_Lookup) |
 | `0x0013BD60` | `uint32_t mm_MemberStatus_TalksToday(int family, int member)` | 40 | no | mm_TalkStatus_TalksToday of the member's status entry |
@@ -38,7 +38,7 @@ Families: the residents who move into the city.
 | `0x0013C0F0` | `void mm_MemberStatus_Tick(int clock, int month)` | 336 | no | every 600 s the level rises (up to 12); daily and yearly resets of the low bits |
 | `0x0013C240` | `void mm_Family_BefriendAll(void)` | 732 | no | every member becomes a friend with meter 64 and every family known (bitset B); from a laptop entry |
 | `0x0013C520` | `void mm_Family_ResetForStage(void)` | 204 | no | clears bitsets A and C and the counters for a new stage |
-| `0x0013C5F0` | `int mm_Family_MakePhoneNumber(int family)` | 352 | no | (provisional) phone number for the Town's Pages from the family id (a0 * 0x61 + 0x1B08) |
+| `0x0013C5F0` | `int mm_Family_MakePhoneNumber(int family)` | 352 | no | the family's number in the Town's Pages: 19 followed by the low six digits of 97 * family + 6920, with digits 1 to 5 in reverse order (digit k of the source lands at kPlace[k]) |
 | `0x0013C770` | `void mm_Family_LoadState(McManager *mc)` | 148 | no | reads the member bytes (60000), the three bitsets (0x4E4 each), 0x1F32F0 (0x400) and the counters (0xC) from the save file |
 | `0x0013C810` | `void mm_Family_SaveState(McManager *mc)` | 148 | no | writes them |
 | `0x0013C8B0` | `int mm_Family_GetTypeIndex(int family)` | 72 | no | building type index of a family id: first entry above a0 in the sorted id table (gp) |
@@ -63,4 +63,4 @@ Families: the residents who move into the city.
 | `0x0013D890` | `void mm_Family_ResetState(void)` | 436 | no | clears member bytes, bitsets, counters and the cache tables |
 | `0x0013DA50` | `void mm_Family_Init(void)` | 152 | yes | resets the family state, opens DATA\BIN\FAMILY.BIN and loads DATA\BIN\EACHSTR.BIN |
 | `0x0013DAF0` | `int mm_TalkStatus_ctor(int status)` | 80 | no | a talk status byte (+3 of a member status entry) that has never been talked to: time level 14, counts clear |
-| `0x00142F90` | `void mm_Family_AssignHome(CityMap *map, CityScene *city, int family, int object)` | 1004 | yes | (provisional) family records and flags when a family is assigned a building |
+| `0x00142F90` | `void mm_Family_AssignHome(CityMap *map, CityScene *city, int family, int object)` | 1004 | yes | moves a family in: a person record for each member at the middle of the building's tile (their home, MapPerson.home), with a schedule state, the member's look as its flags (8 added for drivers) and an introduction, each scored for its character class; drivers bring the family's car (character type 0x34) unless the building's schedule is 9 or 0xB. The population rises and the family is flagged (mm_Family_MoveIn) |

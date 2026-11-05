@@ -418,7 +418,7 @@ namespace mm
                 continue;
             if (person->inside != kNoObject && person->inside != view->building)
                 continue;
-            if (person->work != obj->id)
+            if (person->home != obj->id)
                 continue;
             int at = 0;
             while (at < count && !(view->city->map->people[list[at]].member < person->member))
@@ -1539,7 +1539,7 @@ namespace mm
         else
         {
             const GuestPtr<MapPerson> person{card->city->map->people.address + 0x30u * static_cast<uint32_t>(card->person)};
-            Map_GetRecord(card->city->map, person->work);
+            Map_GetRecord(card->city->map, person->home);
             const GuestPtr<Family> family = Family_Get(person->family, 0);
             charType = person->charType;
             member = GuestPtr<FamilyMember>::of(family->members[0]) + person->member;
@@ -1707,10 +1707,10 @@ namespace mm
     PORT_FN(Talk_Update);
     PORT_FN(TalkCard_Draw);
 
-    // Whether nobody is at home: for a family (`byFamily` 1, `target` the family) every member is away (schedule activity 5); for a
-    // building the people on its tile that count (not in a vehicle class, outside or in this view's building) all have activity 5.
-    // 1 when nobody is home.
-    int TalkView_NobodyHome(GuestPtr<TalkView> view, int byFamily, int target)
+    // Whether everyone is asleep (schedule activity 5, the night hours): for a family (`byFamily` 1, `target` the family) every
+    // member; for a building the people on its tile that count (not in a vehicle class, outside or in this view's building).
+    // 1 when all are.
+    int TalkView_AllAsleep(GuestPtr<TalkView> view, int byFamily, int target)
     {
         port::GuestFrame<0x60> frame;
         if (byFamily == 1)
@@ -1737,7 +1737,7 @@ namespace mm
         return 1;
     }
 
-    PORT_FN(TalkView_NobodyHome);
+    PORT_FN(TalkView_AllAsleep);
 
     // The input of the choosing state: the Triangle button (0x10; unless a choice is already forced in the view, +0xB8) or a talk
     // that must end at once (+0x3C) closes the talk and its view and ends it (state 5). The Cross button (0x40) or a forced choice
@@ -1871,7 +1871,7 @@ namespace mm
 
     // Reads the next piece of the script into the message window's buffer (+0x2E8) and acts on what the script returned (+0x2E4): at
     // the end of a conversation (-0x1777) the speaker's friendship goes up once (by the speaker's class bits 21 to 23 plus 4,
-    // and not when the speaker is away at home, activity 5) and the end flag (+0x500) is set; a menu with no choice (-0x7D5) sets
+    // and not when the speaker is asleep, activity 5) and the end flag (+0x500) is set; a menu with no choice (-0x7D5) sets
     // the end flag too and -0x7D1 sets the typed answer flag (+0x504). The text is then shown (mm_MsgWin_NextLine).
     void TalkConv_NextLine(GuestPtr<TalkConv> conv)
     {
@@ -1892,8 +1892,8 @@ namespace mm
                 if (conv->byFamily == 0)
                 {
                     const GuestPtr<MapPerson> person = city->map->people + conv->person;
-                    const bool away = arg5 != 2 && arg5 != 3 && conv->peopleInside != 0 && person->activity == 5;
-                    if (!away)
+                    const bool asleep = arg5 != 2 && arg5 != 3 && conv->peopleInside != 0 && person->activity == 5;
+                    if (!asleep)
                         TalkStatus_AddFriendshipAfterBreak(person->family, person->member, GuestPtr<uint8_t>::of(person->status), points(person->charType),
                                              GuestPtr<uint32_t>{port::guest(&city->approval)});
                 }
@@ -1954,7 +1954,7 @@ namespace mm
     PORT_FN(TalkView_DrawMember);
 
     // The conversation window closing: once its close call (slot +0x18 of the vtable, step 0.1) is done the speaker window (+0x2D8)
-    // is deleted and the state goes back to 0. The speaker's friendship status then moves on, unless nobody was at home (activity 5
+    // is deleted and the state goes back to 0. The speaker's friendship status then moves on, unless the speaker was asleep (activity 5
     // for a person; the schedule says 5 for a member of a family): when the conversation ended well (the end flag +0x500 or a
     // change the script made) the status byte advances (mm_TalkStatus_RecordTalk or mm_MemberStatus_RecordTalk), otherwise a status level
     // of 14 or more drops back to 13.
@@ -2260,8 +2260,8 @@ namespace mm
         }
         const auto drawNode = [&](uint32_t node) {
             const GuestPtr<A3DObject> model{view->buildingModel.address};
-            const bool nobody = TalkView_NobodyHome(view, byFamily, target) != 0;
-            A3DObject_ChangeLuminosity(model, GuestPtr<uint32_t>{nobody ? 0x001B1B00u : 0x001B26C0u}, static_cast<int>(node));
+            const bool allAsleep = TalkView_AllAsleep(view, byFamily, target) != 0;
+            A3DObject_ChangeLuminosity(model, GuestPtr<uint32_t>{allAsleep ? 0x001B1B00u : 0x001B26C0u}, static_cast<int>(node));
             const GuestPtr<Vec4> matrix = worldMatrix(modelNode(model, static_cast<int>(node)));
             Mat4_Copy(matrix, GuestPtr<Vec4>{globals::kIdentityMatrix});
             matrix[3].x = 0.0f;
@@ -2328,7 +2328,7 @@ namespace mm
         if (highlighted == -1)
             highlighted = view->cursorSlot;
         int slot = 0, drawn = 0;
-        bool nobodyHome = false;
+        bool allAsleep = false;
 
         const auto posX = [&] { return ps2f(pos->x); };
         const auto advance = [&] {
@@ -2358,7 +2358,7 @@ namespace mm
             if (!(phase < ps2f(180.0f)))
                 phase = phase - ps2f(180.0f);
             A3D_AnimateIfRoom(view->awayModel, 0, phase);
-            Instance_DrawModel(view->awayModel, GuestPtr<Vec4>{nobodyHome ? kDimAway : globals::kDefaultColour}, 0, 0);
+            Instance_DrawModel(view->awayModel, GuestPtr<Vec4>{allAsleep ? kDimAway : globals::kDefaultColour}, 0, 0);
         };
         // Someone there: the class draws it (for a family member the person is 0 and the family and member are given, for a person on
         // the map it is the record).
@@ -2379,7 +2379,7 @@ namespace mm
                 const GuestPtr<A3DObject> model = view->personModel;
                 Mat4_Copy(GuestPtr<Vec4>::of(model->matrix[0]), GuestPtr<Vec4>{globals::kIdentityMatrix});
                 copyPlace(model->matrix[3], *pos);
-                Instance_DrawModel(model, GuestPtr<Vec4>{nobodyHome ? kDimPerson : globals::kDefaultColour}, 0, 0);
+                Instance_DrawModel(model, GuestPtr<Vec4>{allAsleep ? kDimPerson : globals::kDefaultColour}, 0, 0);
                 const ps2f lowered = ps2f(row3.y) - ps2f(std::bit_cast<float>(0x3E19999Au));
                 row3.y = lowered.v;
             }
@@ -2410,7 +2410,7 @@ namespace mm
 
         if (view->building == 0x3F80)
         {
-            nobodyHome = TalkView_NobodyHome(view, 1, view->family) != 0;
+            allAsleep = TalkView_AllAsleep(view, 1, view->family) != 0;
             const GuestPtr<Family> family = Family_Get(view->family, 0);
             int member = 0;
             while (posX() < leftEdge)
@@ -2442,7 +2442,7 @@ namespace mm
             return;
         }
 
-        nobodyHome = TalkView_NobodyHome(view, 0, view->building) != 0;
+        allAsleep = TalkView_AllAsleep(view, 0, view->building) != 0;
         const GuestPtr<CityMap> map = view->city->map;
         const GuestPtr<uint16_t> cursor{sp + 0x13Eu};
         *cursor = Map_GetRecord(map, view->building)->firstPerson;

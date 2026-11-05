@@ -439,10 +439,10 @@ namespace mm
             }
     }
 
-    // A building goes. Its workers (work = object) are taken off the tile they stand on and freed (charType 0);
+    // A building goes. Its people (home = object) are taken off the tile they stand on and freed (charType 0);
     // for residents (classes without flag 1) the building they were heading for loses one from its +0x16 count,
     // the one they were in (a type with flag 0x40) one from +0x17, and the population drops. Everyone else in it
-    // is put outside, and targets and destinations naming it are cleared. If a worker went, the building's
+    // is put outside, and targets and destinations naming it are cleared. If one of its own went, the building's
     // family moves away.
     void MapPeople_RemoveForObject(GuestPtr<CityMap> map, uint32_t object)
     {
@@ -453,7 +453,7 @@ namespace mm
             if (person.charType == 0)
                 continue;
             const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person.charType)};
-            if (person.work != object)
+            if (person.home != object)
             {
                 if (person.inside == object)
                 {
@@ -543,15 +543,15 @@ namespace mm
         return GuestPtr<MapObject>{0};
     }
 
-    // A person on the tile working at `work` whose character class has flag 1 (at class +0x18).
-    GuestPtr<MapPerson> Map_FindWorkerOnTile(GuestPtr<CityMap> map, uint16_t work, uint32_t tile)
+    // A vehicle (character class flag 1, at class +0x18) of building `home` among the people listed at the tile's objects.
+    GuestPtr<MapPerson> Map_FindVehicleOnTile(GuestPtr<CityMap> map, uint16_t home, uint32_t tile)
     {
         for (uint16_t o = map->tiles[tile & 0xFFFFu].firstObject; o != 0x3F80; o = map->objects[o].nextOnTile)
             for (uint16_t p = map->objects[o].firstPerson; p != kNoPerson; p = map->people[p].nextHere)
             {
                 const MapPerson &person = map->people[p];
                 const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person.charType)};
-                if (work == person.work && (cls->flags & 1u) != 0)
+                if (home == person.home && (cls->flags & 1u) != 0)
                     return map->people + p;
             }
         return GuestPtr<MapPerson>{0};
@@ -1177,7 +1177,7 @@ namespace mm
     PORT_FN(TileLists_Clear);
     PORT_FN(TileLists_InsertAll);
     PORT_FN(Map_FindPersonObjectOnTile);
-    PORT_FN(Map_FindWorkerOnTile);
+    PORT_FN(Map_FindVehicleOnTile);
     PORT_FN(Placement_CheckTypeRule);
     PORT_FN(Placement_CheckNeighbours);
     PORT_FN(TileLists_RemoveAll);
@@ -1819,8 +1819,8 @@ namespace mm
         return GuestPtr<MapPerson>{0};
     }
 
-    // The first non-resident (a class with flag 1, a vehicle) heading for `home`.
-    GuestPtr<MapPerson> Map_FindPersonOfFlaggedType(GuestPtr<CityMap> map, int16_t home)
+    // The vehicle (character class flag 1) that person `driver` drives (a vehicle's target is its driver), or 0.
+    GuestPtr<MapPerson> Map_FindVehicleOfDriver(GuestPtr<CityMap> map, int16_t driver)
     {
         const uint32_t end = map->people.address + 6000u * 0x30u;
         for (uint32_t p = map->people.address; p < end; p += 0x30u)
@@ -1829,7 +1829,7 @@ namespace mm
             if (person->charType == 0)
                 continue;
             const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)};
-            if ((cls->flags & 1u) != 0 && person->target == static_cast<uint16_t>(home))
+            if ((cls->flags & 1u) != 0 && person->target == static_cast<uint16_t>(driver))
                 return person;
         }
         return GuestPtr<MapPerson>{0};
@@ -1920,7 +1920,7 @@ namespace mm
 
     PORT_FN(Map_CanPlace);
     PORT_FN(Map_FindPersonEntry);
-    PORT_FN(Map_FindPersonOfFlaggedType);
+    PORT_FN(Map_FindVehicleOfDriver);
     PORT_FN(Map_HighlightArea);
     PORT_FN(Map_UnhighlightArea);
     PORT_FN(Map_LevelArea);

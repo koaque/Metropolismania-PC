@@ -306,10 +306,10 @@ inline constexpr uint32_t Map_UpdateAreaGeometry = 0x00141ED0u;
 inline constexpr uint32_t TerrainGen_ApplyBump = 0x00141F60u;
 inline constexpr uint32_t MapTiles_dtor = 0x001424A0u;
 inline constexpr uint32_t MapTiles_ctor = 0x00142510u;
-inline constexpr uint32_t Map_ReturnPeopleToWork = 0x00142590u;
+inline constexpr uint32_t Map_ReturnPeopleHome = 0x00142590u;
 inline constexpr uint32_t Map_FindPersonObjectOnTile = 0x00142830u;
-inline constexpr uint32_t Map_FindPersonOfFlaggedType = 0x00142910u;
-inline constexpr uint32_t Map_FindWorkerOnTile = 0x001429A0u;
+inline constexpr uint32_t Map_FindVehicleOfDriver = 0x00142910u;
+inline constexpr uint32_t Map_FindVehicleOnTile = 0x001429A0u;
 inline constexpr uint32_t People_RemoveChain = 0x00142A70u;
 inline constexpr uint32_t People_UnlinkFromList = 0x00142B00u;
 inline constexpr uint32_t MapObj_AddPerson = 0x00142B60u;
@@ -569,13 +569,13 @@ inline constexpr uint32_t McManager_InitSlots = 0x0015D9A0u;
 inline constexpr uint32_t McManager_dtor = 0x0015DA30u;
 inline constexpr uint32_t McManager_ctor = 0x0015DAB0u;
 inline constexpr uint32_t Person_FindBuildingInList = 0x0015DB30u;
-inline constexpr uint32_t Person_PlaceHomeObject = 0x0015DCF0u;
+inline constexpr uint32_t Person_TargetField = 0x0015DCF0u;
 inline constexpr uint32_t Person_PickShopNearby = 0x0015E010u;
-inline constexpr uint32_t Person_TargetWork = 0x0015E1D0u;
+inline constexpr uint32_t Person_TargetSchool = 0x0015E1D0u;
 inline constexpr uint32_t Person_BuildingHasRoom = 0x0015E300u;
 inline constexpr uint32_t Person_TargetVisit = 0x0015E3E0u;
-inline constexpr uint32_t Person_TargetShop = 0x0015E500u;
-inline constexpr uint32_t Person_TargetHome = 0x0015E6D0u;
+inline constexpr uint32_t Person_PickUpFromDaycare = 0x0015E500u;
+inline constexpr uint32_t Person_TakeToDaycare = 0x0015E6D0u;
 inline constexpr uint32_t Person_ChooseDestination = 0x0015E800u;
 inline constexpr uint32_t Math_SqrtBits = 0x0015EDE0u;
 inline constexpr uint32_t Schedule_BusinessActivity = 0x0015EE10u;
@@ -806,7 +806,7 @@ inline constexpr uint32_t Widget_Draw = 0x00173530u;
 inline constexpr uint32_t TalkView_CollectOccupants = 0x001735D0u;
 inline constexpr uint32_t TalkView_ToggleAnim = 0x001737C0u;
 inline constexpr uint32_t TalkView_DrawPeople = 0x00173820u;
-inline constexpr uint32_t TalkView_NobodyHome = 0x001744E0u;
+inline constexpr uint32_t TalkView_AllAsleep = 0x001744E0u;
 inline constexpr uint32_t TalkView_DrawBuilding = 0x00174610u;
 inline constexpr uint32_t TalkView_BuildingCamera = 0x001749B0u;
 inline constexpr uint32_t TalkView_DrawCursor = 0x00174D40u;
@@ -984,7 +984,7 @@ inline constexpr uint32_t WordsFn_TextOpenHours = 0x0017C530u;
 inline constexpr uint32_t WordsFn_TextBagItemName = 0x0017C580u;
 inline constexpr uint32_t WordsFn_TextGoodsName = 0x0017C5D0u;
 inline constexpr uint32_t WordsFn_TextWantClaim = 0x0017C640u;
-inline constexpr uint32_t WordsFn_TextPopulation = 0x0017C6E0u;
+inline constexpr uint32_t WordsFn_TextNewBuildings = 0x0017C6E0u;
 inline constexpr uint32_t WordsFn_TextClaimLine = 0x0017C720u;
 inline constexpr uint32_t WordsFn_TextFamilyRecord = 0x0017C760u;
 inline constexpr uint32_t WordsFn_TextOccupation = 0x0017C7A0u;
@@ -1031,7 +1031,7 @@ inline constexpr uint32_t WordsFn_PickOtherResident = 0x0017E890u;
 inline constexpr uint32_t WordsFn_ScheduleIs = 0x0017E990u;
 inline constexpr uint32_t WordsFn_PersonFlagBit = 0x0017E9E0u;
 inline constexpr uint32_t WordsFn_ScheduleState = 0x0017EA00u;
-inline constexpr uint32_t WordsFn_HomeIsType104 = 0x0017EB60u;
+inline constexpr uint32_t WordsFn_HomeIsPoliceStation = 0x0017EB60u;
 inline constexpr uint32_t WordsFn_Arg4 = 0x0017EBC0u;
 inline constexpr uint32_t WordsFn_MemberLook = 0x0017EBD0u;
 inline constexpr uint32_t WordsFn_MemberByte2A = 0x0017EC20u;
@@ -1868,7 +1868,7 @@ template <> inline constexpr bool at<0x00173160u> = true; // TownPages_dtor
 template <> inline constexpr bool at<0x00173270u> = true; // TownPages_Init
 template <> inline constexpr bool at<0x00173560u> = true; // Widget_dtor
 template <> inline constexpr bool at<0x00173820u> = true; // TalkView_DrawPeople
-template <> inline constexpr bool at<0x001744E0u> = true; // TalkView_NobodyHome
+template <> inline constexpr bool at<0x001744E0u> = true; // TalkView_AllAsleep
 template <> inline constexpr bool at<0x00174610u> = true; // TalkView_DrawBuilding
 template <> inline constexpr bool at<0x00175280u> = true; // TalkView_CountPeople
 template <> inline constexpr bool at<0x00175350u> = true; // TalkView_SetTarget
@@ -2679,8 +2679,8 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Map_FindFamilyHome", addr::Map_FindFamilyHome},
     {"Map_FindPersonEntry", addr::Map_FindPersonEntry},
     {"Map_FindPersonObjectOnTile", addr::Map_FindPersonObjectOnTile},
-    {"Map_FindPersonOfFlaggedType", addr::Map_FindPersonOfFlaggedType},
-    {"Map_FindWorkerOnTile", addr::Map_FindWorkerOnTile},
+    {"Map_FindVehicleOfDriver", addr::Map_FindVehicleOfDriver},
+    {"Map_FindVehicleOnTile", addr::Map_FindVehicleOnTile},
     {"Map_GetHeightAt", addr::Map_GetHeightAt},
     {"Map_GetRecord", addr::Map_GetRecord},
     {"Map_GetTileFirstObject", addr::Map_GetTileFirstObject},
@@ -2699,7 +2699,7 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Map_PlaceRubbleArea", addr::Map_PlaceRubbleArea},
     {"Map_PlaceSmallGoods", addr::Map_PlaceSmallGoods},
     {"Map_RemoveObjectFromTile", addr::Map_RemoveObjectFromTile},
-    {"Map_ReturnPeopleToWork", addr::Map_ReturnPeopleToWork},
+    {"Map_ReturnPeopleHome", addr::Map_ReturnPeopleHome},
     {"Map_SampleHeight", addr::Map_SampleHeight},
     {"Map_SaveState", addr::Map_SaveState},
     {"Map_SetAreaHeight", addr::Map_SetAreaHeight},
@@ -2952,12 +2952,12 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Person_IsNearBuilding", addr::Person_IsNearBuilding},
     {"Person_IsOnOpenTile", addr::Person_IsOnOpenTile},
     {"Person_PickShopNearby", addr::Person_PickShopNearby},
-    {"Person_PlaceHomeObject", addr::Person_PlaceHomeObject},
+    {"Person_PickUpFromDaycare", addr::Person_PickUpFromDaycare},
     {"Person_ProbeTile", addr::Person_ProbeTile},
-    {"Person_TargetHome", addr::Person_TargetHome},
-    {"Person_TargetShop", addr::Person_TargetShop},
+    {"Person_TakeToDaycare", addr::Person_TakeToDaycare},
+    {"Person_TargetField", addr::Person_TargetField},
+    {"Person_TargetSchool", addr::Person_TargetSchool},
     {"Person_TargetVisit", addr::Person_TargetVisit},
-    {"Person_TargetWork", addr::Person_TargetWork},
     {"Person_TickCounters", addr::Person_TickCounters},
     {"Person_TurnToPlayer", addr::Person_TurnToPlayer},
     {"Person_Update", addr::Person_Update},
@@ -3232,6 +3232,7 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"TalkStatus_TalksToday", addr::TalkStatus_TalksToday},
     {"TalkStatus_Tick", addr::TalkStatus_Tick},
     {"TalkStatus_ctor", addr::TalkStatus_ctor},
+    {"TalkView_AllAsleep", addr::TalkView_AllAsleep},
     {"TalkView_BuildingCamera", addr::TalkView_BuildingCamera},
     {"TalkView_CollectOccupants", addr::TalkView_CollectOccupants},
     {"TalkView_CountPeople", addr::TalkView_CountPeople},
@@ -3245,7 +3246,6 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"TalkView_FindPersonSlot", addr::TalkView_FindPersonSlot},
     {"TalkView_GetChoice", addr::TalkView_GetChoice},
     {"TalkView_HandleInput", addr::TalkView_HandleInput},
-    {"TalkView_NobodyHome", addr::TalkView_NobodyHome},
     {"TalkView_PersonCamera", addr::TalkView_PersonCamera},
     {"TalkView_SetTarget", addr::TalkView_SetTarget},
     {"TalkView_ToggleAnim", addr::TalkView_ToggleAnim},
@@ -3438,7 +3438,7 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"WordsFn_GoodsOwned", addr::WordsFn_GoodsOwned},
     {"WordsFn_HasWantForPerson", addr::WordsFn_HasWantForPerson},
     {"WordsFn_HolidayMonth", addr::WordsFn_HolidayMonth},
-    {"WordsFn_HomeIsType104", addr::WordsFn_HomeIsType104},
+    {"WordsFn_HomeIsPoliceStation", addr::WordsFn_HomeIsPoliceStation},
     {"WordsFn_HomeTypeFlag100", addr::WordsFn_HomeTypeFlag100},
     {"WordsFn_InviteFamily", addr::WordsFn_InviteFamily},
     {"WordsFn_InviteIntroduced", addr::WordsFn_InviteIntroduced},
@@ -3515,9 +3515,9 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"WordsFn_TextMemberName", addr::WordsFn_TextMemberName},
     {"WordsFn_TextMemberName2", addr::WordsFn_TextMemberName2},
     {"WordsFn_TextNameSlot", addr::WordsFn_TextNameSlot},
+    {"WordsFn_TextNewBuildings", addr::WordsFn_TextNewBuildings},
     {"WordsFn_TextOccupation", addr::WordsFn_TextOccupation},
     {"WordsFn_TextOpenHours", addr::WordsFn_TextOpenHours},
-    {"WordsFn_TextPopulation", addr::WordsFn_TextPopulation},
     {"WordsFn_TextTalkEventName", addr::WordsFn_TextTalkEventName},
     {"WordsFn_TextWantClaim", addr::WordsFn_TextWantClaim},
     {"WordsFn_TimeOfDay", addr::WordsFn_TimeOfDay},
@@ -3984,10 +3984,10 @@ void Map_UpdateAreaGeometry(GuestPtr<CityMap> map, GuestPtr<int32_t> rect);
 void TerrainGen_ApplyBump(GuestPtr<CityMap> map, int x, int z, int mode, uint32_t flags, ps2f height, ps2f radius);
 GuestPtr<CityMap> MapTiles_dtor(GuestPtr<CityMap> map, int16_t deleteFlag);
 GuestPtr<CityMap> MapTiles_ctor(GuestPtr<CityMap> map);
-void Map_ReturnPeopleToWork(GuestPtr<CityMap> map);
+void Map_ReturnPeopleHome(GuestPtr<CityMap> map);
 GuestPtr<MapObject> Map_FindPersonObjectOnTile(GuestPtr<CityMap> map, uint32_t person, uint32_t tile);
-GuestPtr<MapPerson> Map_FindPersonOfFlaggedType(GuestPtr<CityMap> map, int16_t home);
-GuestPtr<MapPerson> Map_FindWorkerOnTile(GuestPtr<CityMap> map, uint16_t work, uint32_t tile);
+GuestPtr<MapPerson> Map_FindVehicleOfDriver(GuestPtr<CityMap> map, int16_t driver);
+GuestPtr<MapPerson> Map_FindVehicleOnTile(GuestPtr<CityMap> map, uint16_t home, uint32_t tile);
 void People_RemoveChain(GuestPtr<CityMap> map, GuestPtr<uint16_t> head);
 int People_UnlinkFromList(GuestPtr<CityMap> map, GuestPtr<uint16_t> head, uint32_t person);
 void MapObj_AddPerson(GuestPtr<CityMap> map, int object, int person);
@@ -4247,20 +4247,20 @@ void McManager_InitSlots();
 GuestPtr<McManager> McManager_dtor(GuestPtr<McManager> mc, int16_t deleteFlag);
 GuestPtr<McManager> McManager_ctor(GuestPtr<McManager> mc);
 int16_t Person_FindBuildingInList(GuestPtr<CityScene> city, int list, int x, int z, int mode, int16_t skipA, int16_t skipB);
-uint32_t Person_PlaceHomeObject(GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
+uint32_t Person_TargetField(GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
 uint16_t Person_PickShopNearby(GuestPtr<CityScene> city, GuestPtr<MapPerson> person, int a2, int a3);
-uint16_t Person_TargetWork(GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
+uint16_t Person_TargetSchool(GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
 int Person_BuildingHasRoom(GuestPtr<CityScene> city, GuestPtr<MapPerson> person, GuestPtr<MapObject> building);
 uint16_t Person_TargetVisit(GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
-uint16_t Person_TargetShop(GuestPtr<CityScene> city, GuestPtr<MapPerson> person, int a2, int a3);
-int16_t Person_TargetHome(GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
+uint16_t Person_PickUpFromDaycare(GuestPtr<CityScene> city, GuestPtr<MapPerson> person, int a2, int a3);
+int16_t Person_TakeToDaycare(GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
 int16_t Person_ChooseDestination(GuestPtr<CityScene> city, GuestPtr<MapPerson> person, GuestPtr<uint32_t> activity, int exclude);
 uint32_t Math_SqrtBits(int value);
 uint8_t Schedule_BusinessActivity(GuestPtr<CityScene> city, uint32_t family, int member);
 uint8_t Schedule_MemberActivity(GuestPtr<CityScene> city, uint32_t family, int member);
 uint8_t Schedule_GetActivity(GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
 uint8_t Schedule_GetBuildingActivity(GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
-int Schedule_PickEntry(int a0, int a1, int a2, int a3, int t0, int t1);
+int Schedule_PickEntry(int family, int member, int homeType, int state, int party, int ill);
 uint8_t Schedule_Evaluate(uint32_t family, int member);
 void Schedule_Load();
 void MenuWin_FillItems(GuestPtr<MenuWin> menuwin, GuestPtr<char> item);
@@ -4484,7 +4484,7 @@ void Widget_Draw(GuestPtr<Widget> widget, int pass);
 void TalkView_CollectOccupants(GuestPtr<TalkView> view);
 void TalkView_ToggleAnim(GuestPtr<TalkView> view);
 void TalkView_DrawPeople(GuestPtr<TalkView> view);
-int TalkView_NobodyHome(GuestPtr<TalkView> view, int byFamily, int target);
+int TalkView_AllAsleep(GuestPtr<TalkView> view, int byFamily, int target);
 void TalkView_DrawBuilding(GuestPtr<TalkView> view, int byFamily, int target);
 void TalkView_BuildingCamera(GuestPtr<TalkView> view, int object, GuestPtr<Vec4> eye, GuestPtr<Vec4> target);
 void TalkView_DrawCursor(GuestPtr<TalkView> view);
@@ -4662,7 +4662,7 @@ GuestPtr<char> WordsFn_TextOpenHours(GuestPtr<WordsCtx> ctx);
 GuestPtr<char> WordsFn_TextBagItemName(GuestPtr<WordsCtx> ctx);
 GuestPtr<char> WordsFn_TextGoodsName(GuestPtr<WordsCtx> ctx);
 GuestPtr<char> WordsFn_TextWantClaim(GuestPtr<WordsCtx> ctx);
-GuestPtr<char> WordsFn_TextPopulation(GuestPtr<WordsCtx> ctx);
+GuestPtr<char> WordsFn_TextNewBuildings(GuestPtr<WordsCtx> ctx);
 GuestPtr<char> WordsFn_TextClaimLine(GuestPtr<WordsCtx> ctx);
 GuestPtr<char> WordsFn_TextFamilyRecord(GuestPtr<WordsCtx> ctx);
 GuestPtr<char> WordsFn_TextOccupation(GuestPtr<WordsCtx> ctx);
@@ -4709,7 +4709,7 @@ int WordsFn_PickOtherResident(GuestPtr<WordsCtx> ctx);
 int WordsFn_ScheduleIs(GuestPtr<WordsCtx> ctx);
 int WordsFn_PersonFlagBit(GuestPtr<WordsCtx> ctx);
 uint32_t WordsFn_ScheduleState(GuestPtr<WordsCtx> ctx);
-int WordsFn_HomeIsType104(GuestPtr<WordsCtx> ctx);
+int WordsFn_HomeIsPoliceStation(GuestPtr<WordsCtx> ctx);
 int WordsFn_Arg4(GuestPtr<WordsCtx> ctx);
 uint8_t WordsFn_MemberLook(GuestPtr<WordsCtx> ctx);
 uint8_t WordsFn_MemberByte2A(GuestPtr<WordsCtx> ctx);

@@ -40,30 +40,30 @@ City events (visitors, requests, incidents, paydays).
 
 ## Functions
 
-148 functions (ported 3, verified 145). Blocks: 20 can reach a thread switch, 21 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+148 functions (ported 2, verified 146). Blocks: 20 can reach a thread switch, 21 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
 | `0x001356F0` | `void mm_Event_ClearTileFlags(int listIndex)` | 120 | no | restores the claim records of event a0's tile list (claimData lists at 0x1BDA60): each record's first 8 bytes from its second 8 |
 | `0x00135770` | `void mm_Event_SetTileFlags(int listIndex)` | 120 | no | copies each entry of event a0's tile list (record, 8 bytes; 12 bytes per entry) over its claim record's first 8 bytes |
-| `0x001378D0` | `void mm_Event_InitForCity(EventMgr *events)` | 1448 | indirect | (provisional) prepares the event queue and the active list when a city starts |
+| `0x001378D0` | `void mm_Event_InitForCity(EventMgr *events)` | 1448 | indirect | after a game is loaded the event lists are matched with the event table of this build: the ids saved with the game (the list at 0x1C5790, one halfword per type record) against the table's. A type that was not in the saved list is put in the waiting queue (by its rank and level) and every stored type number from it on goes up by one |
 | `0x00137EA0` | `void mm_Event_LoadState(EventMgr *events, McManager *mc)` | 164 | indirect | reads the queue (0x200), the active list (0x224), a1 (0xA4) and each active event's data from the save file |
 | `0x00137F50` | `void mm_Event_SaveState(EventMgr *events, McManager *mc)` | 164 | indirect | writes them |
 | `0x00138000` | `int64_t mm_Event_CallAnswer(EventMgr *events, CityScene *city, ActorRef *actor, int arg, int index)` | 128 | indirect | calls the Answer slot (+0x14) of the handler of the talk event a4 (0 talks[0], 1 talks[1]) with (event, city, actor, arg) |
 | `0x00138080` | `int64_t mm_Event_CallText(EventMgr *events, CityScene *city, int index, int arg)` | 128 | indirect | calls handler slot +0x10 of the type of active event a2 |
 | `0x00138100` | `void mm_Event_Update(EventMgr *events, CityScene *city)` | 2544 | indirect | per frame: starts queued events whose conditions hold, runs and finishes active ones |
-| `0x00138AF0` | `int64_t mm_Event_CheckCondition(EventMgr *events, CityScene *city, uint8_t *type, MapPerson *person)` | 1712 | indirect | (provisional) checks an event type's start conditions against the city |
-| `0x001391B0` | `uint8_t mm_Event_TryStart(EventMgr *events, CityScene *city, MapPerson *person)` | 504 | indirect | (provisional) starts event a2 if its conditions hold |
-| `0x001393B0` | `int mm_Event_FindForFamily(EventMgr *events, CityScene *city, int choice, int16_t *familyMember)` | 708 | yes | (provisional) the a2-th event the family can take part in (from the talk menu) |
+| `0x00138AF0` | `int64_t mm_Event_CheckCondition(EventMgr *events, CityScene *city, uint8_t *type, MapPerson *person)` | 1712 | indirect | whether the event type at `type` (a queue entry) may start now, for the person (null for a script-less start) |
+| `0x001391B0` | `uint8_t mm_Event_TryStart(EventMgr *events, CityScene *city, MapPerson *person)` | 504 | indirect | with no event running in the first talk slot, the first event waiting at level 3 whose condition holds for the person starts there; one that starts at level 3 also sets its tile flags and runs its Start slot. The result is the running event's type |
+| `0x001393B0` | `int mm_Event_FindForFamily(EventMgr *events, CityScene *city, int choice, int16_t *familyMember)` | 708 | yes | whether the family member `familyMember` (family, member) can be added to the event slot `choice`: 4 when the member is already its second person, 0 when the event type lists the character types it takes (up to four halfwords at +0x38 of the type's record) and the member's is not among them, 3 when the member is its first person, 1 when the member is already on its list of five, otherwise 2 (the member goes on the list: straight away, or, for a type with a check function at +0x14 of its descriptor, only when the check passes |
 | `0x00139680` | `void mm_EventMgr_RequeueFirst(EventMgr *events)` | 128 | no | puts the first talk slot's event back in the queue (priority level 2), moves the other slots up and clears the last |
-| `0x00139700` | `int mm_Event_StartFromScript(EventMgr *events, CityScene *city, MapPerson *person)` | 460 | indirect | (provisional) called by the script code (0x17CE30) |
-| `0x001398D0` | `char *mm_Event_FormatText(EventMgr *events, int slot)` | 296 | yes | (provisional) text for event slot a1 (strings, 0x1C5990) |
+| `0x00139700` | `int mm_Event_StartFromScript(EventMgr *events, CityScene *city, MapPerson *person)` | 460 | indirect | a talk script starts an event for the person: with fewer than five events running and none of them waiting on the person's character type (a halfword at +0x38 of the type), the first event waiting at level 2 whose condition holds takes the first running slot (the others move up), with the person as actor A and the event data at +0xAC as B |
+| `0x001398D0` | `char *mm_Event_FormatText(EventMgr *events, int slot)` | 296 | yes | the title text of an event slot: the event type's title, or with a second family in the slot (familyB) the title followed by that member's name, cut to fit 24 characters and ended with a 0xC4 byte when it is cut. Built at 0x1C5990 |
 | `0x00139A00` | `int mm_Event_CountActive(EventMgr *events)` | 56 | no | talk slots in use (EventMgr +4, 0x20 bytes each, up to 5; counting stops at the first free one) |
 | `0x00139A40` | `void mm_Event_ReleaseTiles(CityScene *city)` | 264 | no | buildings in the 80 tile lists whose claim (section B entry +2) is 0 drop it: meter 0, claim slot 0x18, flags 8 and 0x40 cleared |
 | `0x00139B50` | `void mm_Event_Finish(EventMgr *events, CityScene *city, int index)` | 356 | indirect | ends active event a2: releases its tiles, calls its handler, removes it (called by the event handlers) |
-| `0x00139CC0` | `void mm_Event_Abort(EventMgr *events, CityScene *city, int index)` | 272 | indirect | (provisional) ends active event a2 without its normal finish |
-| `0x00139DD0` | `int mm_Event_Trigger(EventMgr *events, int16_t id, CityScene *city, MapPerson *person)` | 820 | indirect | (provisional) triggers event a1 now or queues it |
-| `0x0013A110` | `int64_t mm_Event_CallHandlerSlot(EventMgr *events, CityScene *city, int index, int arg)` | 204 | indirect | (provisional) calls a handler slot for active event a2 |
+| `0x00139CC0` | `void mm_Event_Abort(EventMgr *events, CityScene *city, int index)` | 272 | indirect | the talk event in slot `index` is cut short: its handler ends it, and it goes back to the waiting queue (level 3 for a type with level 4) as it was |
+| `0x00139DD0` | `int mm_Event_Trigger(EventMgr *events, int16_t id, CityScene *city, MapPerson *person)` | 820 | indirect | an event id (the position in the event list of the loaded EVENT.BIN) is triggered from outside (a script, a talk): the waiting entries of that id in bucket 5 are tried; the first whose condition holds takes the talk slot (1 for id 6, else 0) when that is free or its event has a higher priority value (it is aborted for slot 1, else finished first), runs its Start slot and the call returns 1 |
+| `0x0013A110` | `int64_t mm_Event_CallHandlerSlot(EventMgr *events, CityScene *city, int index, int arg)` | 204 | indirect | the talk starts the event's own handler (the Start slot at +4): its tile flags are set, the event's var becomes 1 and the handler runs. Without a handler the result register stays as it was (after the tile flags call) |
 | `0x0013A1E0` | `int mm_EventMgr_FindType(EventMgr *events, int16_t id)` | 104 | no | the event type (row of the table) with id `id`, from the id table (0x1C5790); the type count when there is none |
 | `0x0013A250` | `EventMgr *mm_EventMgr_dtor(EventMgr *events, int16_t deleteFlag)` | 264 | yes | frees the event lists |
 | `0x0013A360` | `EventMgr *mm_EventMgr_ctor(EventMgr *events)` | 500 | yes | creates the event lists and handler objects |
@@ -81,7 +81,7 @@ City events (visitors, requests, incidents, paydays).
 | `0x0018FAC0` | `int mm_EvShoppingTogether_Check(EventData *data, CityScene *city, MapPerson *person)` | 460 | no | event type 1 "Shopping together": slot Check |
 | `0x0018FC90` | `int mm_EvAlien_Answer(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 56 | yes | type 16: Answer |
 | `0x0018FCD0` | `void mm_EvAlien_End(EventData *data, CityScene *city)` | 120 | no | type 16: End (clears the building marks) |
-| `0x0018FD50` | `MapObject *mm_EvAlien_PickTarget(CityScene *city, int x, int z)` | 400 | no | (provisional) picks a building for the alien (footprint checks, table 0x1B3760) |
+| `0x0018FD50` | `MapObject *mm_EvAlien_PickTarget(CityScene *city, int x, int z)` | 400 | no | the building the alien lands on at (x, z): of the (tile list, type) pairs at 0x1B3760 (ended by list 0), the first building whose family lives in the city, without a maxed meter, whose footprint widened by 1 holds the point |
 | `0x0018FEE0` | `void mm_EvAlien_Update(EventData *data, CityScene *city)` | 1184 | yes | type 16: Update (finishes after 720 ticks) |
 | `0x00190380` | `int mm_EvAlien_Check(EventData *data, CityScene *city)` | 832 | no | type 16 "Alien": Check |
 | `0x001906C0` | `int mm_EvBodyguard_Answer(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 140 | no | type 5: Answer |
@@ -124,9 +124,9 @@ City events (visitors, requests, incidents, paydays).
 | `0x00192D60` | `void mm_EventList_MoveAll(EventQueue *queue, int from, int to)` | 696 | no | bucket `from` -> `to`: every entry (event manager constructor and destructor) |
 | `0x00193020` | `void mm_EventQueue_RemoveAt(EventQueue *queue, int bucket, EventQueueEntry *entry)` | 148 | no | removes the id at a2 from queue level a1 and shifts the level starts |
 | `0x001930C0` | `void mm_EventQueue_InsertByPriority(EventQueue *queue, EventQueueEntry *entry, int bucket, int start)` | 340 | no | inserts id *a1 into level a2 keeping the type priority order (type record +0x22) |
-| `0x00193220` | `void mm_PartyPopup_Draw(int popup, int pass)` | 36 | no | (provisional) vtable 0x1BD8E0 draw: queues its packet in pass 2 |
-| `0x00193250` | `void mm_PartyPopup_Update(int popup, CityScene *city)` | 72 | no | (provisional) refreshes its window; button 0x40 closes (0x181430) |
-| `0x001932A0` | `int mm_PartyPopup_dtor(int popup, int16_t deleteFlag)` | 144 | yes | (provisional) vtable 0x1BD8E0 then base 0x1BD8B0; deletes its frame |
+| `0x00193220` | `void mm_PartyPopup_Draw(int popup, int pass)` | 36 | no | in draw pass 2 the popup frame packet (+4) is called |
+| `0x00193250` | `void mm_PartyPopup_Update(int popup, CityScene *city)` | 72 | no | shows notice 1 and closes on Circle (0x40) |
+| `0x001932A0` | `int mm_PartyPopup_dtor(int popup, int16_t deleteFlag)` | 144 | yes | the vtable steps down to the derived class's destructor state and back to the base class's; the GS is waited for before the frame it may still draw is deleted |
 | `0x00193330` | `int mm_EvFarewellParty_Answer(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 60 | no | type 19: Answer |
 | `0x00193370` | `void mm_EvFarewellParty_End(EventData *data, CityScene *city)` | 104 | indirect | type 19: End |
 | `0x001933E0` | `void mm_EvFarewellParty_Update(EventData *data, CityScene *city)` | 1344 | yes | type 19: Update |
@@ -134,9 +134,9 @@ City events (visitors, requests, incidents, paydays).
 | `0x00193B30` | `int mm_EvForgetfulGranny_Check(EventData *data, CityScene *city, MapPerson *person)` | 44 | no | type 2 "Forgetful Granny": Check |
 | `0x00193B60` | `int mm_EvCrazyCult_Answer(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 96 | indirect | type 18: Answer |
 | `0x00193D00` | `void mm_EvCrazyCult_End(EventData *data, CityScene *city)` | 232 | no | type 18: End |
-| `0x00193DF0` | `void mm_EvCrazyCult_Phase3(EventData *data, CityScene *city)` | 324 | no | (provisional) states 0x13-0x16: wait, mark the building, find the person |
-| `0x00193F40` | `void mm_EvCrazyCult_Phase2(EventData *data, CityScene *city)` | 516 | no | (provisional) states 0xA-0xE: timed actor notifications |
-| `0x00194150` | `void mm_EvCrazyCult_Phase1(EventData *data, CityScene *city)` | 352 | no | (provisional) states 4-8: timed actor notifications, mark the building |
+| `0x00193DF0` | `void mm_EvCrazyCult_Phase3(EventData *data, CityScene *city)` | 324 | no | phases 0x12 to 0x15: actor 0 waits and is told (0x12, 0x13), then its family home is found (0x14) and its person (0x15) |
+| `0x00193F40` | `void mm_EvCrazyCult_Phase2(EventData *data, CityScene *city)` | 516 | no | phases 10 to 16: 10 waits until everyone has been reached (+0x4C), 11 and 13 tell actor 3 when its time comes and 12 and 14 count those frames back, 15 finds the homes of actors 4, 5 and 1 (marked 0x200; back to 15 while one is missing) and 16 their persons (back to 16) |
+| `0x00194150` | `void mm_EvCrazyCult_Phase1(EventData *data, CityScene *city)` | 352 | no | phases 4 to 9: actor 2 waits and is told (4 to 7), then actor 3's family home is found (8) and its person (9, which sets the next wait to the next month at 7:00) |
 | `0x001942B0` | `void mm_EvCrazyCult_Update(EventData *data, CityScene *city)` | 992 | no | type 18: Update |
 | `0x00194690` | `int64_t mm_EvCrazyCult_Start(EventData *data, CityScene *city)` | 136 | no | type 18 "Crazy Cult": Start |
 | `0x00194720` | `int mm_EvAdoption_Answer(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 116 | indirect | type 12: Answer |
@@ -181,14 +181,14 @@ City events (visitors, requests, incidents, paydays).
 | `0x00199AB0` | `int mm_EvBoyfriend_Check(EventData *data, CityScene *city, MapPerson *person)` | 604 | no | type 21 "Boyfriend of": Check |
 | `0x00199D10` | `int mm_EvGirlfriend_Check(EventData *data, CityScene *city, MapPerson *person)` | 604 | no | type 20 "Girlfriend of": Check |
 | `0x00199F70` | `int mm_EvActor_Notify(CityScene *city, ActorRef *actor)` | 212 | no | phones the player for the actor (mm_PhoneCall_Post) unless their person stands on no building of theirs (then 0); actors without a person always call |
-| `0x0019A050` | `int mm_EvActor_PointCursor(CityScene *city, ActorRef *actor)` | 236 | yes | (provisional) when nobody holds input focus, points the city cursor at the actor's building or position (0x1815E0) |
-| `0x0019A140` | `int mm_EvActor_PointAtBuilding(CityScene *city, int actorPerson, int building)` | 108 | yes | (provisional) points the cursor at building a2 and moves to the actor |
-| `0x0019A1B0` | `void mm_EvActor_Wander(CityScene *city, ActorRef *actor)` | 752 | no | (provisional) picks a random target building for the actor; sets night flag 0x40 by the time-of-day phase |
-| `0x0019A4A0` | `int mm_EvActor_FindShop(CityScene *city, MapPerson *person)` | 524 | no | (provisional) searches all buildings with type flag 0x40 for a target for the actor |
+| `0x0019A050` | `int mm_EvActor_PointCursor(CityScene *city, ActorRef *actor)` | 236 | yes | an event actor pointed at with the cursor: with the pad focus held elsewhere nothing happens (0). An actor that is a family member (person 6000) starts a family talk (argument 3). Any other actor has the building under its person found on the map by the person's tile; a talk with that building and person starts (mm_CityScene_StartTalk, argument 2), and with none nothing starts |
+| `0x0019A140` | `int mm_EvActor_PointAtBuilding(CityScene *city, int actorPerson, int building)` | 108 | yes | an event actor points at a building: unless someone holds the pad focus, a talk about the building (its id at +2) starts and its person is selected from the actor's family and member (+4, +6). 1 when the talk started |
+| `0x0019A1B0` | `void mm_EvActor_Wander(CityScene *city, ActorRef *actor)` | 752 | no | in the first minute of the day the person takes the weather flag. Outside or at home, the person goes into a shop away from them: tile lists from a random one on (64 tries), the first shop (type flag 0x40) with a walkable entrance, not their home, that they are not within 5 tiles of; none found leaves them outside |
+| `0x0019A4A0` | `int mm_EvActor_FindShop(CityScene *city, MapPerson *person)` | 524 | no | whether there is a shop (type flag 0x40) with a walkable entrance, other than the person's home, that the person is not within 5 tiles of (the shop at the entrance tile, its footprint widened by 5) |
 | `0x0019A6B0` | `void mm_EvActor_StopFollowing(CityScene *city, ActorRef *actor)` | 84 | no | the actor's person stops following (flags 0x20 and 0x80 cleared, follow target none); a0 is the city |
 | `0x0019A710` | `int mm_EvActor_Follow(CityScene *city, ActorRef *actor, ActorRef *target)` | 332 | no | person a1 leaves its building and follows person a2 (flag 0x20, target +0x20) |
 | `0x0019A860` | `int mm_EvActor_Detach(CityScene *city, ActorRef *actor)` | 308 | no | person a1 leaves its building, follow flag set with no target |
 | `0x0019A9A0` | `void mm_EvActor_Release(CityScene *city, ActorRef *actor)` | 212 | no | person a1 leaves its building and drops flags 0x80/0x100 |
 | `0x0019AB20` | `int mm_EvActor_MoveTo(CityScene *city, ActorRef *actor, ActorRef *target, int arrive)` | 816 | no | moves person a1 towards building a2; 1 on arrival |
-| `0x0019B4F0` | `MapObject *mm_EvAlien_FindBuilding(CityScene *city, int list, uint32_t type, int32_t *rect)` | 400 | no | (provisional) a free building of type a2 whose footprint fits |
-| `0x0019B680` | `MapObject *mm_EvThief_FindBuilding(CityScene *city, uint32_t category, int32_t *rect)` | 448 | no | (provisional) a free building of category a1 (type +0x145) whose footprint fits |
+| `0x0019B4F0` | `MapObject *mm_EvAlien_FindBuilding(CityScene *city, int list, uint32_t type, int32_t *rect)` | 400 | no | the first available building of `type` in tile list `list` that overlaps the rectangle |
+| `0x0019B680` | `MapObject *mm_EvThief_FindBuilding(CityScene *city, uint32_t category, int32_t *rect)` | 448 | no | the first available building of `category` in any of the 80 tile lists that overlaps the rectangle |

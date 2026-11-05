@@ -710,11 +710,11 @@ struct EventType {
     uint8_t unk_37;
     uint16_t charTypes[4];     /* +0x38 the person's character type must be one of these (level 2: the first); 0 ends */
     uint8_t gender;            /* +0x40 1 + (person flags & 3), 0 = any */
-    uint8_t claimMeter;        /* +0x41 1: the person's workplace has its claim meter at level 0 */
+    uint8_t claimMeter;        /* +0x41 1: the person's home has its claim meter at level 0 */
     uint8_t friendship;        /* +0x42 1: the person's friendship band is at least 1 */
-    uint8_t place;             /* +0x43 where the person stands: 1 in its workplace, 2 in its target, 3 between two
-                                  buildings, 4 outside its workplace at least 8 from its middle (mm_Event_CheckCondition) */
-    uint16_t workTypes[4];     /* +0x44 the person's workplace has one of these building types; 0 ends */
+    uint8_t place;             /* +0x43 where the person stands: 1 in its home, 2 in its target, 3 between two
+                                  buildings, 4 outside its home at least 8 from its middle (mm_Event_CheckCondition) */
+    uint16_t homeTypes[4];     /* +0x44 the person's home has one of these building types; 0 ends */
 };
 /* An event handler (0x18 bytes, one per handler id; the table at 0x1AF0D0 points at them): its slots, 0 = none. */
 struct EventHandler {
@@ -815,7 +815,8 @@ struct EvDeliveryData {
 /* The farewell party event's record (mm_EvFarewellParty_*): a family leaves, and the residents who are friends come. */
 struct EvPartyData {
     uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
-    ActorRef actors[3];        /* +0x0C the leaving family, its best friend at work, the friend the player points at */
+    ActorRef actors[3];        /* +0x0C the leaving family, the closest friend among the grown-up guests (their home
+                                  marked), the friend the player points at */
     int32_t tellFrames;        /* +0x24 frames after an actor is told */
     int32_t guests;            /* +0x28 residents who are friends enough to come (a quarter of the population fills it) */
     int32_t partyTime;         /* +0x2C the party's time of day in seconds: 13:00 plus an hour per 50 guests, 19:00 at most */
@@ -1158,7 +1159,7 @@ struct CharClass {
     uint8_t voice;             /* +0x16 record byte 2: the message sound of its talks (mm_TalkConv_Start) */
     uint8_t unk_17;
     uint16_t flags;            /* +0x18 record halfword 4; 1: other people keep clear of this one
-                                  (mm_Char_CheckNeighbourTile, mm_Map_FindWorkerOnTile) */
+                                  (mm_Char_CheckNeighbourTile, mm_Map_FindVehicleOnTile) */
     uint8_t unk_1A[2];
     uint32_t traits;           /* +0x1C record word 0x14: bits 9-11 and 12-14 are scored when a resident moves in
                                   (mm_CityScene_RecordPlacementScore), bits 21-23 add to its friendship steps

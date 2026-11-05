@@ -37,17 +37,17 @@ Saving and loading on the memory card.
 | `0x0015BBC0` | `void mm_SaveFile_WriteIconSys(McManager *mc, int a1, int a2, int a3)` | 56 | yes | writes icon.sys (mm_McSave_WriteIconSys) |
 | `0x0015BC00` | `int mm_SaveFile_PrepareDir(McManager *mc, int a1, int a2, int a3)` | 1052 | yes | step machine: card info, mkdir/chdir, copies DATA\STATIC.ICO to STATIC.ICO |
 | `0x0015C020` | `void mm_McManager_ResetState(McManager *mc)` | 8 | no | state +4 = 0 |
-| `0x0015C030` | `int mm_McManager_PrepareNewSlot(McManager *mc, int card)` | 108 | yes | (provisional) fills the first empty slot of card a1 with a new save name |
+| `0x0015C030` | `int mm_McManager_PrepareNewSlot(McManager *mc, int card)` | 108 | yes | the first free slot of the card (8 per card; a slot is free when the scan found no entry for it) gets a new folder name (McManager_NewSaveName) and that name is the result; 0 when all are used. Both take the slot's number within the card, so a slot on card 1 names the folder of the same number on card 0, as the original does |
 | `0x0015C0A0` | `CardDirEntry *mm_McManager_GetSaveEntry(McManager *mc, int index, int32_t *card)` | 128 | no | the directory entry of the index-th save found over both cards (a slot with an entry and a title, 8 slots per card), and that save's card; 0 when there are fewer |
 | `0x0015C120` | `int mm_McManager_GetSaveFolder(McManager *mc, int a1, int32_t *slot)` | 128 | no | the folder name of the index-th save found over both cards (a slot with a size and a name, 8 slots per card), and that save's card; 0 when there are fewer |
-| `0x0015C1A0` | `int mm_McManager_IsCardUsable(McManager *mc, int card)` | 68 | no | (provisional) card a1 state 2 and no error |
+| `0x0015C1A0` | `int mm_McManager_IsCardUsable(McManager *mc, int card)` | 68 | no | a card is usable when it is a PS2 memory card (type 2) and its word at kCardFormatted is 0 |
 | `0x0015C1F0` | `uint8_t mm_McManager_GetCardStatus(McManager *mc, int card)` | 156 | no | card a1 status for the menus (formatted, unformatted, none, ...) |
 | `0x0015C290` | `int mm_McManager_FormatSlotText(McManager *mc, int32_t *cursor, char *text, uint32_t *isNewest)` | 1588 | yes | "Slot %d: %s %s%s, %s. %shrs %smins" with the RTC time |
 | `0x0015C8D0` | `int mm_McManager_HasAnySave(void)` | 84 | no | whether any slot holds a save |
 | `0x0015C930` | `int mm_McManagerUpdate(McManager *mc)` | 3200 | no | memory card scan, a step a frame: card info, then each port's save folders (prefix, file sizes) into the 16 save slots; 0 idle, 1 busy, 2 inside a save folder |
-| `0x0015D5B0` | `void mm_McManager_NewSaveName(McManager *mc, uint32_t card)` | 848 | yes | (provisional) builds a new save directory name from the CD clock |
+| `0x0015D5B0` | `void mm_McManager_NewSaveName(McManager *mc, uint32_t card)` | 848 | yes | makes the folder name for a new save in slot `card` (the slots' folder names): the game's id string (pointer at 0x1BD9A0) followed by eight digits of the console clock in seconds (the day of the month and the month taken in 31-day units), or of the timer mix when the clock cannot be read |
 | `0x0015D900` | `void mm_McManager_ClearSlots(McManager *mc)` | 160 | no | resets the slot tables |
-| `0x0015D9A0` | `void mm_McManager_InitSlots(void)` | 136 | no | (provisional) initial slot tables |
+| `0x0015D9A0` | `void mm_McManager_InitSlots(void)` | 136 | no | forgets both cards and every save slot |
 | `0x0015DA30` | `McManager *mm_McManager_dtor(McManager *mc, int16_t deleteFlag)` | 124 | yes | deletes its sub-object and file |
 | `0x0015DAB0` | `McManager *mm_McManager_ctor(McManager *mc)` | 128 | yes | sub-object, file, slot tables |
 | `0x00185EB0` | `int mm_McSave_WriteIconSys(int a0, int a1, int a2, int a3)` | 1120 | yes | builds the icon.sys header ('PS2D', title, STATIC.ICO icons) in 0x1F65F0 and writes it through the memory card queue |

@@ -26,7 +26,7 @@ Rendering below the scene level.
 | `0x00128EE0` | `void mm_LightSet_BuildPackets(LightSet *lights)` | 432 | no | two VU1 packets: the set's 26 quadwords from +0x10 to VU1 0x12, a call of the program chain (0x1A3C80 / 0x1A4780), VIF base and offset |
 | `0x00129090` | `void mm_Packet2_Draw(uint32_t *packets, int second)` | 48 | no | queues packet a0[0], or a0[1] when a1 != 0 |
 | `0x001290C0` | `A3DObject *mm_A3DObjectBase_DeletingDtor(A3DObject *model, int16_t deleteFlag)` | 84 | yes | base destructor 0x12AB40, then delete when the flag is > 0 |
-| `0x00129120` | `int mm_LightSet_Init(LightSet *lights)` | 228 | no | (provisional, was mm_Unk129120_Init) base init; +0x190 = 0x110, +0x194 = 0xE0; 12 colour/direction slots and ambient set to 1.0 |
+| `0x00129120` | `int mm_LightSet_Init(LightSet *lights)` | 228 | no | light set base setup: the two programs' output offsets (0x110 and 0xE0), every colour of both groups and the instance colour set to 1, then its packets. Returns the set |
 | `0x00129210` | `float mm_A3D_GetAnimLength(A3DObject *model, int animation)` | 24 | no | the length of a model's animation (its first track's last word) |
 | `0x00129230` | `void mm_A3D_Animate(A3DObject *model, int anim, float time)` | 816 | no | keyframe animation a1 of model a0 at time a2: each node track's pair of keys around the time sets the node's local matrix (quaternion slerp, linear position); draws nothing |
 | `0x00129570` | `void mm_A3D_Relocate(A3DObject *model, int indexed)` | 988 | yes | turns the loaded model's offsets into pointers, patches the addresses in its DMA chains (mm_DmaChain_*) and uploads its textures (mm_Dma_KickVif1Now) |
@@ -38,7 +38,7 @@ Rendering below the scene level.
 | `0x00129E30` | `A3DObject *mm_A3DObject_dtor(A3DObject *model, int16_t deleteFlag)` | 136 | yes | frees the model data (+0) and the node array (+0x50), base destructor; delete when the flag is > 0 |
 | `0x00129EC0` | `int mm_A3DObject_LoadAsync(A3DObject *model, GameFile *gamefile, int a2)` | 544 | yes | asynchronous .A3D load from an open file, one step per call (state gp 0x1BD...80A0): header into 0x1C5100, then data; 0 = busy, -1 = error |
 | `0x0012A0E0` | `int32_t *mm_A3DObject_Load(A3DObject *model, int file, int a2)` | 380 | yes | synchronous .A3D load: header (word counts), data and pointer table, then mm_A3D_Relocate |
-| `0x0012A260` | `A3DObject *mm_InstanceBase_ctor(A3DObject *model)` | 44 | no | (provisional) base object constructor, clears 0x1BDA10 |
+| `0x0012A260` | `A3DObject *mm_InstanceBase_ctor(A3DObject *model)` | 44 | no | the instance base: the base object constructor, and the word at 0x1BDA10 cleared; returns the model |
 | `0x0012A2B0` | `void mm_Packet_Draw(uint32_t *a0)` | 8 | no | queues the packet whose address is the object's first word |
 | `0x0012A2C0` | `void mm_Camera_BuildPacket(Camera *camera)` | 216 | no | the camera's VU1 packet: a GS register write, then +0x10..+0x12F (matrices, fog) unpacked to VU1 address 0 |
 | `0x0012A650` | `void mm_Camera_SetFogColour(Camera *camera, int colour)` | 12 | no | the fog colour (GS FOGCOL) in the camera's packet (word 8), from the sky's low colour each frame |
@@ -49,17 +49,17 @@ Rendering below the scene level.
 | `0x0012C880` | `void mm_Instance_DrawModel(A3DObject *model, Vec4 *colour, int reserve, int flags)` | 324 | no | updates the model's node matrices and adds an instance per node with a mesh, if the budget allows |
 | `0x0012C9D0` | `A3DObject *mm_InstanceModel_ctor(A3DObject *model)` | 68 | yes | model constructor; the first one allocates the instance buffers |
 | `0x0012D6B0` | `void mm_A3D_AnimateCharacter(A3DObject *model, int anim, float time)` | 824 | no | the same code as mm_A3D_Animate (tracks without keys skipped a step earlier), used by the character draws (mm_Person_Draw, mm_Person_Draw2) |
-| `0x0012D9F0` | `void mm_Instance_DrawModelLit(A3DObject *model, Vec4 *colour, int variant, int style)` | 852 | no | (provisional) instances of a model whose nodes hold mesh-table indexes: nodes 0-2 with their own meshes (node 0 offset, node 2 only for style 0), later nodes from the style's group of 13 |
+| `0x0012D9F0` | `void mm_Instance_DrawModelLit(A3DObject *model, Vec4 *colour, int variant, int style)` | 852 | no | a model whose nodes hold mesh indexes, with no room check (the callers make it): nodes 0 and 1, and node 2 for style 0, each with its own mesh, node 0's offset by `variant`; then each later node that has a mesh, with the meshes of the style's group of 13 in turn. Flags 0. The second count rises by the node count. Used for the player (mm_Player_Draw: variant = its mode, style = the bag's item) |
 | `0x0012DD50` | `void mm_Instance_DrawNodeLimited(A3DObject *model, Vec4 *colour, int node, int flags)` | 280 | no | like mm_Instance_DrawNode, also capped by a second counter (gp) |
-| `0x0012DE70` | `void mm_Instance_DrawModelEx(A3DObject *model, Vec4 *colour, int flags, int offset0, int group, int offset3, int attach, int offset1)` | 940 | no | (provisional) as mm_Instance_DrawModelLit with per-call mesh offsets and flags, an optional attached part (0x1F3B80) at node 2, later nodes by group x the size at +0x60 |
+| `0x0012DE70` | `void mm_Instance_DrawModelEx(A3DObject *model, Vec4 *colour, int flags, int offset0, int group, int offset3, int attach, int offset1)` | 940 | no | the same kind of model with the offsets passed in, all with `flags`: node 0 with its mesh + `offset0`; node 1 with its mesh + `offset1` unless that is 4 or more; when `attach` is set, mesh 0 of the part model at 0x1F3B80 (also kept at 0x1BDA38) at node 2; node 3 with its mesh + `offset3` |
 | `0x0012E220` | `int mm_InstanceModel_LoadAsync(A3DObject *model, GameFile *gamefile, int a2)` | 120 | yes | mm_A3DObject_LoadAsync; when done (and a2 == 0) stores the frame count (+0x60 = data +4 / 13) |
 | `0x0012E2A0` | `A3DObject *mm_InstanceModel_ctor2(A3DObject *model)` | 40 | yes | mm_InstanceModel_ctor wrapper |
-| `0x0012E2D0` | `void mm_Perf_AdaptDrawRange(void)` | 152 | no | (provisional) 0x1BD980 tracks 0x1BD9B8: shrinks when it is above 95, else grows by 1; clamped to 0xFF..0x3A7 |
+| `0x0012E2D0` | `void mm_Perf_AdaptDrawRange(void)` | 152 | no | once a frame: the second instance limit follows the frame load, dropping by 12 per percent above 95, else rising by 1, within 255..935 (the second count restarts) |
 | `0x001480F0` | `void mm_CityRender_InitParams(CityMap *map)` | 356 | no | GS register defaults of the render level (+0x2D60..) |
-| `0x00148260` | `void mm_CityRender_UpdatePeople(CityMap *map, CityScene *city)` | 568 | indirect | (provisional) per-frame pass over the people for drawing (char type lookup tables) |
+| `0x00148260` | `void mm_CityRender_UpdatePeople(CityMap *map, CityScene *city)` | 568 | indirect | every object in view that is not drawn yet this frame (flag 4 marks it) has its type's draw-people slot (vtable +0x18) called with the footprint's middle and the ground height, the tile kind, the city, the object, a flag word (0) and the detail level (2 when the camera distance + 1 is past the fog start, else 0) |
 | `0x001484A0` | `void mm_CityRender_DrawWeather(CityMap *map, CityScene *city, int pass, Vec4 *a3)` | 96 | no | the weather: pass 0 the rain, other passes the snow, each with this frame's chunk packet; the city calls it only in rain (2) or snow (3) |
-| `0x00148500` | `void mm_CityRender_CollectObjects(CityMap *map, CityScene *city)` | 1088 | indirect | (provisional) collects instances for the objects on visible tiles |
-| `0x00148950` | `void mm_CityRender_DrawWater(CityMap *map, CityScene *city)` | 20 | no | (provisional) water layer (+0x2F80) with city +0xB0 |
+| `0x00148500` | `void mm_CityRender_CollectObjects(CityMap *map, CityScene *city)` | 1088 | indirect | the same walk for drawing the buildings: objects not marked yet and without flag 0x80 go through every object of their stack (bottom up, 0.8 lower for each above the first) with the type's draw slot (vtable +0x14), the flag word as in the collision walks (1 for the first, then 2, with 3 or 4 added to the top one), and the detail level 2 when the camera is below -10 or the object is past the fog start, 1 when the camera is within the footprint's reach, else 0 |
+| `0x00148950` | `void mm_CityRender_DrawWater(CityMap *map, CityScene *city)` | 20 | no | the water layer (mm_LayerG_Draw) for this frame's parity at the city's water level |
 | `0x00148970` | `void mm_CityRender_DrawInstanceLayer(CityMap *map)` | 8 | no | layer +0x2F8C draw |
 | `0x00148980` | `void mm_CityRender_DrawPlacement(CityMap *map, int pass)` | 36 | no | the placement layer's pass (0 the highlighted rectangle, 1 the marker) with this frame's chunk packet; it draws only while a building is being placed |
 | `0x001489B0` | `void mm_CityRender_DrawTerrain(CityMap *map, CityScene *city)` | 136 | no | the terrain: the base ground pass over this frame's chunk packet, the cliff sides, then layers B and F over the same chunk packet |
@@ -69,9 +69,9 @@ Rendering below the scene level.
 | `0x001490D0` | `int mm_Dma_KickVif1Now(uint32_t address)` | 8 | yes |  |
 | `0x001490E0` | `TexImage *mm_TexImage_dtor(TexImage *image, int16_t deleteFlag)` | 100 | yes | frees the image data (+0x1000); delete when the flag is > 0 |
 | `0x00149150` | `int mm_TexImage_Load(TexImage *image, char *name, int a2, int a3)` | 132 | yes | loads file a1 whole into +0x1000 and converts it (a2 x a3) |
-| `0x001491E0` | `uint32_t *mm_LayerA_BuildPacket(LayerA *layer, uint32_t *packet)` | 280 | no | (provisional) packet for layer A (microcode 0x1A8330) |
-| `0x00149300` | `void mm_LayerA_Draw(LayerA *layer)` | 256 | no | (provisional) queues layer A and its mesh instances |
-| `0x00149400` | `void mm_LayerA_AddInstance(LayerA *layer, int a1, int a2, float x, float y, float z)` | 800 | no | (provisional) adds a rotated instance to layer A |
+| `0x001491E0` | `uint32_t *mm_LayerA_BuildPacket(LayerA *layer, uint32_t *packet)` | 280 | no | layer A's packets: the start uploads the layer's output offset and colour to VU1 address 0x2A, flushes, calls the chain at 0x1A8330 and sets the VIF base and offset; the end sets ALPHA_1 (0x20_00000044) through the GIF |
+| `0x00149300` | `void mm_LayerA_Draw(LayerA *layer)` | 256 | no | layer A: the start packet, then for each of this frame's instances its packet (ALPHA_1 with its fade) and its two meshes (2n and 2n + 1) under its matrix, then the end packet |
+| `0x00149400` | `void mm_LayerA_AddInstance(LayerA *layer, int a1, int a2, float x, float y, float z)` | 800 | no | one more instance in this frame's buffer (at most 32): meshes 2(a1 - 1) and the next; its matrix a turn about y of (a2 - 1) / 100 times a scale that squashes y by 0.08 per step up to 6 steps, then x, y and z (the height lowered past step 25); its fade 0x40 less 1.5 per step |
 | `0x00149720` | `void mm_LayerA_BeginFrame(LayerA *layer, int source)` | 12 | no | picks the buffer layer A fills this frame (by the frame parity) and empties it |
 | `0x00149730` | `LayerA *mm_LayerA_DeletingDtor(LayerA *layer, int16_t deleteFlag)` | 84 | yes | base destructor, then delete |
 | `0x00149790` | `LayerA *mm_LayerA_ctor(LayerA *layer)` | 512 | no | base constructor, builds its packet in the packet buffer |
@@ -79,9 +79,9 @@ Rendering below the scene level.
 | `0x0014C620` | `void mm_LightSet_UpdateByClock(LightSet *lights, int clock, int weather)` | 508 | no | interpolates the light colours over the day (2-hour segments, tables 0x1B0550/0x1B0670) |
 | `0x0014C820` | `LightSet *mm_LightSet_DeletingDtor(LightSet *lights, int16_t deleteFlag)` | 84 | yes | base destructor, then delete |
 | `0x0014C880` | `LightSet *mm_LightSet_ctor(LightSet *lights)` | 40 | no | mm_LightSet_Init |
-| `0x0014C8E0` | `uint32_t *mm_LayerB_BuildPacket(LayerB *layer, uint32_t *packet)` | 372 | no | (provisional) packet for layer B (microcode 0x1AA340) |
-| `0x0014CA60` | `void mm_LayerB_InitParams(LayerB *layer)` | 428 | no | (provisional) GS register defaults of layer B |
-| `0x0014CC10` | `void mm_LayerB_Draw(LayerB *layer, int packet)` | 76 | no | (provisional) queues its two packets around a1 |
+| `0x0014C8E0` | `uint32_t *mm_LayerB_BuildPacket(LayerB *layer, uint32_t *packet)` | 372 | no | layer B's packets: the first calls the chain at 0x1AA340, uploads the layer's parameters (19 quadwords) to VU1 0x1C, sets the VIF base and offset and starts the program; the second uploads the second pass's texture and mask to 0x1D and 0x2D and starts the program again |
+| `0x0014CA60` | `void mm_LayerB_InitParams(LayerB *layer)` | 428 | no | layer B's two passes: the first over the quads with flag 0x20, the second (its own texture) over those with 0x40 |
+| `0x0014CC10` | `void mm_LayerB_Draw(LayerB *layer, int packet)` | 76 | no | layer B: its two passes (packets A and B), each followed by a call of the terrain chunk packet |
 | `0x0014CC60` | `LayerB *mm_LayerB_DeletingDtor(LayerB *layer, int16_t deleteFlag)` | 84 | yes | base destructor, then delete |
 | `0x0014CCC0` | `LayerB *mm_LayerB_ctor(LayerB *layer)` | 72 | no | base constructor, parameters, packet |
 | `0x0014CD10` | `int mm_PlacementLayer_InTileRect(PlacementLayer *layer, int x, int z)` | 108 | no | 1 when the layer's tile rectangle is active (+0x21C == 1) and tile (a1, a2) lies inside x +0x220..+0x228, z +0x224..+0x22C; mm_Terrain_DrawPatch then sets flag 4 on the patch (was mm_Terrain_Nop14CD10, not empty) |
@@ -101,21 +101,21 @@ Rendering below the scene level.
 | `0x0014EDB0` | `void mm_SnowLayer_Draw(SnowLayer *layer, int pass, int packet, int a3, Vec4 *t0)` | 752 | no | the snow by the time of day: the flake count and alpha and the ground pass alpha from the clock, the turns advance 0.03, the flakes fall 0.03 a frame within 40; then its packets are queued |
 | `0x0014F0A0` | `SnowLayer *mm_SnowLayer_DeletingDtor(SnowLayer *layer, int16_t deleteFlag)` | 84 | yes | base destructor, then delete |
 | `0x0014F100` | `SnowLayer *mm_SnowLayer_ctor(SnowLayer *layer, int buffers)` | 88 | no | base constructor, parameters, packet |
-| `0x0014F160` | `uint32_t *mm_LayerF_BuildPacket(LayerF *layer, uint32_t *packet)` | 296 | no | (provisional) packet for layer F (microcode 0x1A91C0) |
-| `0x0014F290` | `void mm_LayerF_InitParams(LayerF *layer)` | 356 | no | (provisional) |
-| `0x0014F400` | `void mm_LayerF_Draw(LayerF *layer, int packet)` | 48 | no | (provisional) queues its packet around a1 |
+| `0x0014F160` | `uint32_t *mm_LayerF_BuildPacket(LayerF *layer, uint32_t *packet)` | 296 | no | layer F's packet: ALPHA_1 (0x30_00000048) through the GIF, then like layer B's first packet with the chain at 0x1A91C0 |
+| `0x0014F290` | `void mm_LayerF_InitParams(LayerF *layer)` | 356 | no | layer F's pass parameters: colour 128 in every lane, its GS words, and a mask whose last word is 0x10 |
+| `0x0014F400` | `void mm_LayerF_Draw(LayerF *layer, int packet)` | 48 | no | layer F: its packet, then a call of the terrain chunk packet |
 | `0x0014F430` | `LayerF *mm_LayerF_DeletingDtor(LayerF *layer, int16_t deleteFlag)` | 84 | yes | base destructor, then delete |
 | `0x0014F490` | `LayerF *mm_LayerF_ctor(LayerF *layer)` | 72 | no | base constructor, parameters, packet |
-| `0x0014F4E0` | `void mm_LayerG_AnimateWaves(LayerG *layer, float weather)` | 776 | no | (provisional) sine-wave animation state (0x1BDAD8..) |
-| `0x0014F7F0` | `uint32_t *mm_LayerG_BuildPacket(LayerG *layer, uint32_t *packet, int32_t *buffers)` | 1796 | no | (provisional) packet for layer G (microcode 0x1A6440) |
-| `0x0014FF00` | `void mm_LayerG_InitParams(LayerG *layer)` | 392 | no | (provisional) |
-| `0x00150090` | `void mm_LayerG_Draw(LayerG *layer, int pass, float weather)` | 64 | no | (provisional) animates the waves and queues packet a1 |
+| `0x0014F4E0` | `void mm_LayerG_AnimateWaves(LayerG *layer, float weather)` | 776 | no | the water waves (layer G). A phase runs from -pi/2 to pi/2 in steps of 0.05, then starts over with the sway direction flipped; sin(phase) and sin(phase + pi/2) (wrapped, flipping its own direction) give two sway offsets of up to 0.05. The first point set sways by one and scrolls forward 0.002 a frame, the second (1.2 times the sway, 0.7 to the side) by the other and scrolls back 0.001 |
+| `0x0014F7F0` | `uint32_t *mm_LayerG_BuildPacket(LayerG *layer, uint32_t *packet, int32_t *buffers)` | 1796 | no | layer G (the water): two sections, one per terrain buffer. Each starts with the GS state for both contexts (ALPHA_1 and ALPHA_2, TEX0_1 and TEX0_2), the program 0x1A6440 and the layer's parameters, then the buffer's quads in 39 chunks of 0x400 bytes (4 groups of 8, then 7 singles) and a RET. Returns the end |
+| `0x0014FF00` | `void mm_LayerG_InitParams(LayerG *layer)` | 392 | no | layer G (the water) keeps its texture coordinates at rest (waveBase) and copies them to both wave sets |
+| `0x00150090` | `void mm_LayerG_Draw(LayerG *layer, int pass, float weather)` | 64 | no | the water: the waves move with the weather, then this frame's packet (one per terrain buffer) is queued |
 | `0x001500D0` | `LayerG *mm_LayerG_DeletingDtor(LayerG *layer, int16_t deleteFlag)` | 84 | yes | base destructor, then delete |
 | `0x00150130` | `LayerG *mm_LayerG_ctor(LayerG *layer, int buffers)` | 88 | no | base constructor, parameters, packet |
 | `0x00161290` | `int mm_TexSprite_SetFrame(TexSprite *sprite, int frameX, int frameY)` | 152 | no | first tile (+0x30/+0x34, within the image), trims the shown tiles to fit, then rebuilds |
 | `0x00161330` | `int mm_TexSprite_SetClip(TexSprite *sprite, uint32_t width, uint32_t height)` | 124 | no | tiles shown (+0x28/+0x2C, up to the image's tiles past the frame), then rebuilds; mm_TexSprite_BuildPacket uses them as end tiles |
-| `0x001613B0` | `void mm_TexSprite_GreenToAlpha(TexSprite *sprite)` | 148 | no | (provisional) palette pass: grey-green entries become translucent (logo texture) |
-| `0x00161450` | `void mm_TexSprite_SetAlpha(TexSprite *sprite, uint8_t alpha, int keepClear)` | 108 | no | (provisional) palette alpha a1 |
+| `0x001613B0` | `void mm_TexSprite_GreenToAlpha(TexSprite *sprite)` | 148 | no | turns the green-tinted grey colours (red = blue != green) translucent: alpha 0x80 - green / 2, then green set to red. Transparent colours are left alone |
+| `0x00161450` | `void mm_TexSprite_SetAlpha(TexSprite *sprite, uint8_t alpha, int keepClear)` | 108 | no | sets every colour's alpha; with `keepClear`, fully transparent colours stay so |
 | `0x001614C0` | `int mm_TexSprite_SetPosScale(TexSprite *sprite, int x, int y, int z, float scaleX, float scaleY)` | 24 | no | position a3..a5 and scale a0/a1, then rebuilds |
 | `0x001614E0` | `void mm_TexSprite_Draw(TexSprite *sprite)` | 8 | no | queues the sprite packet (+8) |
 | `0x001614F0` | `int mm_TexSprite_BuildPacket(TexSprite *sprite)` | 2152 | no | builds the sprite's DMA packet: palette upload to block 0x1E00, then per tile a texel upload, texture flush and a textured sprite (TEX0, ST, XYZ2); returns the scaled tile height |
@@ -123,7 +123,7 @@ Rendering below the scene level.
 | `0x00161DF0` | `int mm_TexSprite_Load(TexSprite *sprite, int file, int a2)` | 260 | yes | loads a .TEX file whole and builds its packet |
 | `0x00184030` | `int mm_DmaChain_Next(DmaChainReader *reader)` | 208 | no | steps a DMA chain reader (+4 = current tag): CNT skips qwc+1, END stays, RET returns 0; caches tag id/qwc/words at +8..+0x24 |
 | `0x00184100` | `int mm_DmaChain_Begin(DmaChainReader *reader, int chain)` | 20 | no | reader starts at a1 with an END marker so the first mm_DmaChain_Next reads the first tag |
-| `0x00184F60` | `void mm_Gs_InitDisplay(uint16_t a0, int a1)` | 652 | yes | (provisional) display and draw environments, double buffer, clears both buffers (from mm_MainLoop) |
+| `0x00184F60` | `void mm_Gs_InitDisplay(uint16_t a0, int a1)` | 652 | yes | sets up the display: the display environment (0x1F5B10, a frame 8 units on: its first fields as the flag bits below), the draw environment (0x1F5B20) for the given width and a height worked out from the screen's, the double buffer (0x1F5AC0: width by half the height, cleared) and a GIF packet made in a 0x60 byte block that sets five GS registers (the one tag at 0x1B2540 opens it |
 | `0x00186D00` | `void mm_PacketBuf_Seek(int address)` | 8 | no | sets the packet buffer write pointer (0x1BDCE8) |
 | `0x00186D10` | `int mm_PacketBuf_Tell(void)` | 8 | no | returns the packet buffer write pointer (0x1BDCE8) |
 | `0x00186D20` | `int mm_Dma_KickVif1Now(uint32_t address)` | 192 | yes | sends a two-tag chain (CALL a0, END) on VIF1 right away and waits for GS path idle before and after |
