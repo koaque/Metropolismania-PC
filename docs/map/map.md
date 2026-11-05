@@ -54,10 +54,10 @@ placement checks (`mm_Placement_*`) and the per-object history (`mm_MapObj_*`) a
 | `0x00141010` | `CityMap *mm_CityMap_DeletingDtor(CityMap *map, int16_t deleteFlag)` | 96 | yes | vtable 0x1BCED0, then the render-level destructor |
 | `0x00141070` | `CityMap *mm_CityMap_ctor(CityMap *map)` | 52 | yes | render-level constructor, vtable 0x1BCED0 |
 | `0x001410B0` | `uint16_t mm_Map_TileFlag20(CityMap *map, int x, int z)` | 92 | no | tile (a1, a2) flag 0x20 (0 off the map) |
-| `0x00141110` | `uint16_t mm_Map_TileFlag01(CityMap *map, int x, int z)` | 92 | no | tile flag 0x01 |
+| `0x00141110` | `uint16_t mm_Map_TileIsCorner(CityMap *map, int x, int z)` | 92 | no | tile flag 1: the corner tile an object was placed from (mm_Map_PlaceObject), 0 off the map |
 | `0x00141170` | `uint16_t mm_Map_TileFlag08(CityMap *map, int x, int z)` | 92 | no | tile flag 0x08 |
-| `0x001411D0` | `uint16_t mm_Map_TileFlag10(CityMap *map, int x, int z)` | 92 | no | tile flag 0x10 (checked by movement) |
-| `0x00141230` | `uint16_t mm_Map_TileIndexFlag10(CityMap *map, uint32_t tile)` | 56 | no | flag 0x10 of tile index a1 |
+| `0x001411D0` | `uint16_t mm_Map_TileWalkable(CityMap *map, int x, int z)` | 92 | no | tile flag 0x10 (set under building types with flag 2), 0 off the map; checked by movement |
+| `0x00141230` | `uint16_t mm_Map_TileIndexWalkable(CityMap *map, uint32_t tile)` | 56 | no | tile flag 0x10 of tile index a1, 0 off the map |
 | `0x00141270` | `void mm_Map_SetTileKind(CityMap *map, int tile, uint32_t kind)` | 100 | no | tile kind a2 (0..3) into tile flags 4 and 2 |
 | `0x001412E0` | `int mm_Map_GetTileKind(CityMap *map, int tile)` | 80 | no | tile kind 0..3 from tile flags (flag 4 = 2, flag 2 = 1) |
 | `0x00141330` | `void mm_Map_SetTileHeight(CityMap *map, uint32_t tile, float height)` | 76 | no | tile a2's height word = a0, then updates its geometry |

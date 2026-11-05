@@ -56,7 +56,7 @@ namespace mm
 
     // Consumes a Cross press (0x40): it disappears from this frame's buttons and stays out of the held ones
     // until it is released, so the next screen does not see it again.
-    void Pad_ClearBit40()
+    void Pad_SwallowCross()
     {
         globals::padSwallowCross.set(1);
         globals::padHeld.set(globals::padHeld.get() & ~0x40u);
@@ -72,7 +72,7 @@ namespace mm
         return static_cast<int>(globals::kPadBuffers + 0x20u * index);
     }
 
-    PORT_FN(Pad_ClearBit40);
+    PORT_FN(Pad_SwallowCross);
     PORT_FN(Pad_Pressed);
     PORT_FN(Pad_Held);
     PORT_FN(Pad_ReleaseFocus);
@@ -252,7 +252,7 @@ namespace mm
     // active low and are turned round; on an analog pad (mode 7 in the high nibble of +1) each stick axis (+4..+7) beyond a
     // quarter of its travel either way adds a button bit (right stick: left 0x800000, right 0x200000, up 0x100000, down
     // 0x400000; left stick: left 0x8000, right 0x2000, up 0x1000, down 0x4000). The newly pressed buttons are those not held
-    // the frame before; Cross (0x40) is kept out of both while it is being swallowed (mm_Pad_ClearBit40) and the swallow ends
+    // the frame before; Cross (0x40) is kept out of both while it is being swallowed (mm_Pad_SwallowCross) and the swallow ends
     // when Cross is let go. The result is the buffer's address (0 when the pad is not ready).
     int Pad_Update()
     {

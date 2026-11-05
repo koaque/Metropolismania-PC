@@ -55,11 +55,11 @@ over a 13 x 13 grid of weights at `0x001B8060`. Claim slot 0x18 means none, id 0
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
 | `0x001357F0` | `void mm_ClaimIcon_GetColor(uint32_t icon, int level, Vec4 *colour)` | 100 | no | colour of a claim icon: id a0 (bit 15 selects the second half), level a1 (0 = white 0x1B26C0) |
-| `0x0013BDD0` | `uint8_t mm_StatusByte_Low2(uint8_t *status)` | 12 | no | bits 0-1 of *a0 |
-| `0x0013BDE0` | `uint32_t mm_StatusByte_Mid2(uint8_t *status)` | 16 | no | bits 2-3 of *a0 |
-| `0x0013BDF0` | `int mm_StatusByte_LevelAbove13(uint8_t *status)` | 36 | no | level (bits 4-7) > 13 |
-| `0x0013BED0` | `void mm_StatusByte_Advance(uint8_t *status)` | 144 | no | the same advance on a status byte pointer |
-| `0x0013BFD0` | `void mm_StatusByte_OnLevel12(int family, int member, uint8_t *status, int amount, uint32_t *approval)` | 52 | no | friendship gain when the byte's level is above 11 |
+| `0x0013BDD0` | `uint8_t mm_TalkStatus_RecentTalks(uint8_t *status)` | 12 | no | talks in the last twenty minutes (bits 0-1, up to 2) |
+| `0x0013BDE0` | `uint32_t mm_TalkStatus_TalksToday(uint8_t *status)` | 16 | no | talks today, counted only twenty minutes or more after the one before (bits 2-3, up to 2) |
+| `0x0013BDF0` | `int mm_TalkStatus_LongApart(uint8_t *status)` | 36 | no | time level 14: no talk since before the last new year, or never |
+| `0x0013BED0` | `void mm_TalkStatus_RecordTalk(uint8_t *status)` | 144 | no | a talk: today's count rises (only twenty minutes or more after the last), the recent count rises, the time level starts over |
+| `0x0013BFD0` | `void mm_TalkStatus_AddFriendshipAfterBreak(int family, int member, uint8_t *status, int amount, uint32_t *approval)` | 52 | no | from time level 12 (two hours or more since the last talk) the talk adds friendship points (mm_Family_AddFriendship) |
 | `0x00150190` | `void mm_Wants_RemoveEventHold(WantsWin *wants, uint16_t eventId, int value)` | 272 | no | removes the entry an event holds for building type a1 with value a2 (events ending) |
 | `0x001502A0` | `int mm_Wants_AddEventHold(WantsWin *wants, uint16_t eventId, int value)` | 172 | no | one-word entry held by an event for building type a1 (needs a free entry and word) |
 | `0x00150350` | `int mm_Wants_CheckEntry(WantsWin *wants, CityScene *city, uint16_t *entry)` | 208 | no | a want's state: 2 no longer holds (family gone, claim changed, meter not above the low threshold), 1 met (flags 0x48), 3 meter above the high threshold and not phoned yet, else 0 |
@@ -119,7 +119,7 @@ over a 13 x 13 grid of weights at `0x001B8060`. Claim slot 0x18 means none, id 0
 | `0x00164280` | `BuildingType *mm_BldgType_BaseDtor(BuildingType *btype, int16_t deleteFlag)` | 136 | yes | vtable 0x1BD000; releases the shared name data when the last type goes |
 | `0x00164310` | `BuildingType *mm_BldgType_BaseCtor(BuildingType *btype, BuildingRecord *record, uint16_t id)` | 1068 | yes | base constructor: shared DATA\BIN\POSTNAME.BIN, model and parameters |
 | `0x00164770` | `BuildingType *mm_BldgAmusementPark_dtor(BuildingType *btype, int16_t deleteFlag)` | 128 | yes | category 11 (Amusement Park), vtable 0x1BD040 |
-| `0x001647F0` | `void mm_BldgAmusementPark_DrawAnim(BuildingType *btype, int time)` | 232 | no | swaying ride animation between the opening hours |
+| `0x001647F0` | `void mm_BldgAmusementPark_DrawAnim(BuildingType *btype, int time)` | 232 | no | the ride model's animation (mm_A3D_AnimateIfRoom) runs between the opening hours and finishes its cycle after them |
 | `0x001648E0` | `void mm_BldgAmusementPark_Draw(BuildingType *btype, int layer, CityScene *city, MapObject *obj, int t0, int t1, float x, float y, float z)` | 524 | no | instances for the park |
 | `0x00164AF0` | `BuildingType *mm_BldgAmusementPark_ctor(BuildingType *btype, BuildingRecord *record, int id)` | 64 | yes | Building constructor, vtable 0x1BD040 |
 | `0x00164B30` | `BuildingType *mm_BldgBusiness_dtor(BuildingType *btype, int16_t deleteFlag)` | 112 | yes | category 6 (factories, shops), vtable 0x1BD1C0 |
@@ -215,20 +215,20 @@ over a 13 x 13 grid of weights at `0x001B8060`. Claim slot 0x18 means none, id 0
 | `0x0016C360` | `BuildingType *mm_BldgWasteland_ctor(BuildingType *btype, BuildingRecord *record, int id)` | 52 | yes | base constructor, vtable 0x1BD3C0 |
 | `0x00180520` | `int mm_CityScene_GetFade(CityScene *city)` | 8 | no | fade counter (+0xCC), 0 when no fade runs |
 | `0x00180530` | `void mm_CityScene_StartFade(CityScene *city, int speed)` | 52 | no | starts a fade (out or in by +0xC8) at speed a1 when none runs |
-| `0x00180570` | `int mm_CityScene_HasFlag8(CityScene *city)` | 20 | no | (provisional) city flag 8 |
+| `0x00180570` | `int mm_CityScene_InFarewellParty(CityScene *city)` | 20 | no | city flag 8: a farewell party is on (set when mm_EvFarewellParty_Update gathers the people, cleared at its end); people gather on the roads, schedules give the party row and the approval rise stops |
 | `0x00180590` | `void mm_CityScene_AddApplicantFamily(CityScene *city, uint32_t family, int select)` | 212 | yes | adds family a1 to the applicants and gives the residents who introduced it a new introduction |
 | `0x00180670` | `int mm_CityScene_MissionProgress(CityScene *city)` | 212 | no | percent: the map counter for the goal type 0x1C5550 over the families in the city (0x1F32E0), capped at 100 |
 | `0x00180750` | `int mm_CityScene_PopulationRank(CityScene *city)` | 132 | no | rank 1..8 from map +0x74 (100/300/500/1000/1500/2000/2500) |
 | `0x001807E0` | `int mm_CityScene_ApprovalTier(CityScene *city)` | 60 | no | approval below 0, up to 50, up to 100, higher |
-| `0x00180820` | `int mm_CityScene_ScoreA8Tier(CityScene *city)` | 48 | no | placement score +0xA8 below 200, below 300, or higher |
-| `0x00180850` | `int mm_CityScene_ScoreA0Tier(CityScene *city)` | 48 | no | placement score +0xA0 below 200, below 300, or higher |
+| `0x00180820` | `int mm_CityScene_ConductTier(CityScene *city)` | 48 | no | the residents' conduct average (CityScene +0xA8): below 200 0, below 300 1, else 2 |
+| `0x00180850` | `int mm_CityScene_ProsperityTier(CityScene *city)` | 48 | no | the residents' prosperity average (CityScene +0xA0): below 200 0, below 300 1, else 2 |
 | `0x00180880` | `int mm_CityScene_SaveGame(CityScene *city, McManager *mc)` | 264 | no | writes the save: header, camera, stage, events, families, map, laptop, wants, applicants, player, stamina |
 | `0x00180990` | `int mm_CityScene_LoadGame(CityScene *city)` | 2388 | yes | load screen (REPORT.TEX) and loading every *_LoadState from the memory card |
 | `0x001812F0` | `int mm_CityScene_SaveStep(CityScene *city, McManager *mc)` | 308 | yes | save from the pause menu: map vertex buffers, open, write, wait |
 | `0x00181430` | `void mm_CityScene_PopMode(CityScene *city)` | 68 | no | pops the scene mode stack (+0x10.., depth +0x24) |
 | `0x00181480` | `void mm_CityScene_PushMode(CityScene *city, int mode)` | 56 | no | pushes mode a1 on the mode stack |
 | `0x001814C0` | `int mm_CityScene_GetMode(CityScene *city)` | 8 | no | current mode (+0x10) |
-| `0x001814D0` | `void mm_CityScene_RecordPlacementScore(CityScene *city, int scoreA8, int scoreA0)` | 220 | no | decaying averages +0xA0 (a2) and +0xA8 (a1) of placement scores |
+| `0x001814D0` | `void mm_CityScene_RecordPlacementScore(CityScene *city, int conduct, int prosperity)` | 220 | no | a resident moves in: decaying averages of its class's prosperity (+0xA0, a2) and conduct (+0xA8, a1) |
 | `0x001815B0` | `void mm_CityScene_AddApproval(CityScene *city, int delta)` | 16 | no | pending approval change +0xBC += a1 |
 | `0x001815C0` | `int mm_CityScene_TalkEndChoosing(CityScene *city)` | 8 | no | tail call mm_Talk_EndChoosing(city->talk); pair of mm_CityScene_TalkSelectPerson |
 | `0x001815D0` | `int mm_CityScene_TalkSelectPerson(CityScene *city, int family, int member)` | 8 | no | talk view choice = slot of family a1 member a2 |

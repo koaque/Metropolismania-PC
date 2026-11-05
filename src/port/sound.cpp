@@ -1036,11 +1036,11 @@ namespace mm
             const GuestPtr<Bag> bag = city->bag;
             for (int i = 0; i < 10; ++i)
             {
-                const BagShortcut &entry = bag->shortcuts[i];
-                if (static_cast<uint16_t>(entry.slot) != 0xFFFFu)
-                    Bgm_SetTrackSlot(static_cast<char>(entry.slot & 0xFF), 0, static_cast<uint16_t>(entry.unk_02));
+                const BagMusicTrack &music = bag->musicTracks[i];
+                if (static_cast<uint16_t>(music.track) != 0xFFFFu)
+                    Bgm_SetTrackSlot(static_cast<char>(music.track & 0xFF), 0, static_cast<uint16_t>(music.enabled));
             }
-            if (CityScene_HasFlag8(city) != 0)
+            if (CityScene_InFarewellParty(city) != 0)
                 globals::bgmState.set(3);
         }
         globals::soundLastClock.set(-1);
@@ -1714,7 +1714,7 @@ namespace mm
 
     // Voice 15 (the music) on or off; a volume of 0xC0 when `volume` is set. The result is v0 as the last command
     // left it (unchanged when none ran).
-    int Se_SetVoice15Enabled(int enabled, int volume)
+    int Bgm_SetPlaying(int enabled, int volume)
     {
         int32_t result = port::guestV0();
         globals::bgmPlaying.set(enabled);
@@ -1793,7 +1793,7 @@ namespace mm
 
     PORT_FN(Bgm_FadeOut);
     PORT_FN(Bgm_SetActive);
-    PORT_FN(Se_SetVoice15Enabled);
+    PORT_FN(Bgm_SetPlaying);
     PORT_FN(Se_StopOwner);
     PORT_FN(Sound_IsDriverBusy);
     PORT_FN(Sound_StopAllPlaying);

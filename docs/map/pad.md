@@ -15,7 +15,7 @@ Cross is `0x0040` and Start is `0x0800`; the analog sticks add bits `0x100000` .
 | `0x001578A0` | `int mm_Pad_GetData(int port)` | 52 | no | port a0's 32-byte pad buffer (0x1F3AC0) when its state is ready (100), else 0 |
 | `0x001578E0` | `void mm_Pad_Poll(void)` | 924 | yes | scePadRead and the pad state machine: analog mode, actuator alignment, pressure mode |
 | `0x00157CB0` | `void mm_PadInit(void)` | 200 | yes |  |
-| `0x001851F0` | `void mm_Pad_ClearBit40(void)` | 40 | no | sets 0x1BDCC0 = 1 and clears button bit 0x40 in the pad words 0x1BDCA0 and 0x1BDCA4 |
+| `0x001851F0` | `void mm_Pad_SwallowCross(void)` | 40 | no | consumes a Cross press (0x40): out of this frame's buttons and the held ones until released (0x1BDCC0 = 1) |
 | `0x00185220` | `void mm_Pad_ReleaseFocus(int owner)` | 40 | no | drops input focus if owner a0 (or -1 = anyone) holds it (0x1BDCB0/0x1BDCB4) |
 | `0x00185250` | `void mm_Pad_TakeFocus(int owner, int mask)` | 28 | no | takes input focus for owner a0 with button mask a1 when nobody holds it |
 | `0x00185270` | `int mm_Pad_GetRepeat(void)` | 92 | no | held buttons with auto-repeat: first repeat after 30 frames, then every 5 |

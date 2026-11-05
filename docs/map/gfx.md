@@ -28,7 +28,7 @@ Rendering below the scene level.
 | `0x001290C0` | `A3DObject *mm_A3DObjectBase_DeletingDtor(A3DObject *model, int16_t deleteFlag)` | 84 | yes | base destructor 0x12AB40, then delete when the flag is > 0 |
 | `0x00129120` | `int mm_LightSet_Init(LightSet *lights)` | 228 | no | (provisional, was mm_Unk129120_Init) base init; +0x190 = 0x110, +0x194 = 0xE0; 12 colour/direction slots and ambient set to 1.0 |
 | `0x00129210` | `float mm_A3D_GetAnimLength(A3DObject *model, int animation)` | 24 | no | the length of a model's animation (its first track's last word) |
-| `0x00129230` | `void mm_Instance_DrawSwaying(A3DObject *model, int anim, float time)` | 816 | no | (provisional, was mm_A3D_SineDeform) adds instances for mesh a2 of model a1 with sine-wave motion at time a0 (callers check the instance budget first) |
+| `0x00129230` | `void mm_A3D_Animate(A3DObject *model, int anim, float time)` | 816 | no | keyframe animation a1 of model a0 at time a2: each node track's pair of keys around the time sets the node's local matrix (quaternion slerp, linear position); draws nothing |
 | `0x00129570` | `void mm_A3D_Relocate(A3DObject *model, int indexed)` | 988 | yes | turns the loaded model's offsets into pointers, patches the addresses in its DMA chains (mm_DmaChain_*) and uploads its textures (mm_Dma_KickVif1Now) |
 | `0x00129950` | `int64_t mm_A3DObject_ChangeLuminosity(A3DObject *model, uint32_t *colour, int a2)` | 96 | yes | CA3DObject::ChangeLuminusity (name from its error string): sets node a2's colour (node +0x60) to the vec4 at a1; prints an error for a bad node index |
 | `0x001299B0` | `void mm_A3DObject_DrawNode(A3DObject *model, int node)` | 104 | no | queues node a1's packet (node +0x50) and its mesh packet (mesh +0x10); nodes are 0xC0 bytes at model +8 |
@@ -42,13 +42,13 @@ Rendering below the scene level.
 | `0x0012A2B0` | `void mm_Packet_Draw(uint32_t *a0)` | 8 | no | queues the packet whose address is the object's first word |
 | `0x0012A2C0` | `void mm_Camera_BuildPacket(Camera *camera)` | 216 | no | the camera's VU1 packet: a GS register write, then +0x10..+0x12F (matrices, fog) unpacked to VU1 address 0 |
 | `0x0012A650` | `void mm_Camera_SetFogColour(Camera *camera, int colour)` | 12 | no | the fog colour (GS FOGCOL) in the camera's packet (word 8), from the sky's low colour each frame |
-| `0x0012C4D0` | `void mm_Instance_DrawSwayingIfRoom(A3DObject *model, int a1, float phase)` | 60 | no | mm_Instance_DrawSwaying when the model's nodes still fit in the 1800-instance budget |
+| `0x0012C4D0` | `void mm_A3D_AnimateIfRoom(A3DObject *model, int a1, float phase)` | 60 | no | mm_A3D_Animate only while the model's nodes still fit in this frame's instance slots (0x708) |
 | `0x0012C510` | `void mm_InstanceBuf_Init(void)` | 400 | yes | allocates the two instance buffers and pre-fills each slot's DMA/VIF header (CNT 5, STCYCL, UNPACK) |
 | `0x0012C6A0` | `void mm_Instance_DrawMesh(A3DObject *model, Vec4 *matrix, Vec4 *colour, int mesh, int flags)` | 236 | no | writes matrix a1/a2 and colour into the next instance slot and queues it with the mesh packet |
 | `0x0012C790` | `void mm_Instance_DrawNode(A3DObject *model, Vec4 *colour, int node, int flags)` | 240 | no | instance of node a2 of model a0 with colour a1 |
 | `0x0012C880` | `void mm_Instance_DrawModel(A3DObject *model, Vec4 *colour, int reserve, int flags)` | 324 | no | updates the model's node matrices and adds an instance per node with a mesh, if the budget allows |
 | `0x0012C9D0` | `A3DObject *mm_InstanceModel_ctor(A3DObject *model)` | 68 | yes | model constructor; the first one allocates the instance buffers |
-| `0x0012D6B0` | `void mm_Instance_DrawSwaying2(A3DObject *model, int anim, float time)` | 824 | no | (provisional) second sine-wave instance variant, used by 0x133E80/0x1345E0 |
+| `0x0012D6B0` | `void mm_A3D_AnimateCharacter(A3DObject *model, int anim, float time)` | 824 | no | the same code as mm_A3D_Animate (tracks without keys skipped a step earlier), used by the character draws (mm_Person_Draw, mm_Person_Draw2) |
 | `0x0012D9F0` | `void mm_Instance_DrawModelLit(A3DObject *model, Vec4 *colour, int variant, int style)` | 852 | no | (provisional) instances of a model whose nodes hold mesh-table indexes: nodes 0-2 with their own meshes (node 0 offset, node 2 only for style 0), later nodes from the style's group of 13 |
 | `0x0012DD50` | `void mm_Instance_DrawNodeLimited(A3DObject *model, Vec4 *colour, int node, int flags)` | 280 | no | like mm_Instance_DrawNode, also capped by a second counter (gp) |
 | `0x0012DE70` | `void mm_Instance_DrawModelEx(A3DObject *model, Vec4 *colour, int flags, int offset0, int group, int offset3, int attach, int offset1)` | 940 | no | (provisional) as mm_Instance_DrawModelLit with per-call mesh offsets and flags, an optional attached part (0x1F3B80) at node 2, later nodes by group x the size at +0x60 |

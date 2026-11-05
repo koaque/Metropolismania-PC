@@ -144,7 +144,7 @@ namespace mm::globals
     inline constexpr GuestVar<uint32_t> claimGroupOffsets{0x001BDA5Cu};
     inline constexpr GuestVar<uint32_t> claimTexts{0x001BDA74u};
 
-    // pad: set by mm_Pad_ClearBit40; mm_Pad_Update keeps Cross (0x40) out of the held buttons until it is released.
+    // pad: set by mm_Pad_SwallowCross; mm_Pad_Update keeps Cross (0x40) out of the held buttons until it is released.
     inline constexpr GuestVar<int32_t> padSwallowCross{0x001BDCC0u};
 
     // pad: auto-repeat (mm_Pad_GetRepeat).
@@ -203,8 +203,6 @@ namespace mm::globals
     // "Forest Hills", "Rhinecliff" ... there), then the mayor's name at +0x10.
     inline constexpr uint32_t kStageState = 0x001C5380u;
     inline GuestPtr<StageState> stageState() { return GuestPtr<StageState>{kStageState}; }
-    inline constexpr GuestVar<int16_t> talkScriptVar{0x001C5602u};  // stage state +0x282: set and tested by talk scripts
-    inline constexpr GuestVar<uint16_t> stageFlags{0x001C5600u};    // stage state +0x280: bit 2 lets families apply (mm_WordsFn_CanApply)
 
     // bag: the slots of each bag size (bytes 0, 4, 10, 20 for sizes 0 to 3).
     inline constexpr uint32_t kBagSlotsBySize = 0x001B5B08u;

@@ -32,7 +32,7 @@ namespace mm
                             GuestPtr<int32_t>::of(mc->fd));
     }
 
-    int McManagerSub_ctor(int queue) { return queue; }
+    int McQueue_ctor(int queue) { return queue; }
 
     // Whether any of the 16 save slots holds a save (a positive size and a name).
     int McManager_HasAnySave()
@@ -476,7 +476,7 @@ namespace mm
     PORT_FN(SaveFile_Close);
     PORT_FN(SaveFile_Read);
     PORT_FN(SaveFile_Open);
-    PORT_FN(McManagerSub_ctor);
+    PORT_FN(McQueue_ctor);
     PORT_FN(McManager_HasAnySave);
     PORT_FN(McManager_GetSaveEntry);
     PORT_FN(McManager_FindSave);
@@ -546,13 +546,13 @@ namespace mm
         uint8_t statusHigh(uint8_t status) { return static_cast<uint8_t>((status >> 4) & 0xFu); }
     }
 
-    uint8_t MemberStatus_GetLow2(int family, int member) { return *MemberStatus_Lookup(family, member) & 3u; }
-    uint32_t MemberStatus_GetMid2(int family, int member) { return (*MemberStatus_Lookup(family, member) >> 2) & 3u; }
-    int MemberStatus_IsLevelAbove13(int family, int member) { return statusHigh(*MemberStatus_Lookup(family, member)) >= 14 ? 1 : 0; }
+    uint8_t MemberStatus_RecentTalks(int family, int member) { return *MemberStatus_Lookup(family, member) & 3u; }
+    uint32_t MemberStatus_TalksToday(int family, int member) { return (*MemberStatus_Lookup(family, member) >> 2) & 3u; }
+    int MemberStatus_LongApart(int family, int member) { return statusHigh(*MemberStatus_Lookup(family, member)) >= 14 ? 1 : 0; }
 
     // Advances the low fields (each up to 2; the middle pair only once the level is 2 or more), then the level
     // (high nibble) starts over.
-    void MemberStatus_Advance(int family, int member)
+    void MemberStatus_RecordTalk(int family, int member)
     {
         const GuestPtr<uint8_t> status = MemberStatus_Lookup(family, member);
         if (statusHigh(*status) >= 2)
@@ -569,7 +569,7 @@ namespace mm
 
     // From level 12 the member gains friendship points (mm_Family_AddFriendship); below it the result is the status
     // byte address (what the original leaves in v0).
-    int MemberStatus_OnLevel12(int family, int member, int points, int approval)
+    int MemberStatus_AddFriendshipAfterBreak(int family, int member, int points, int approval)
     {
         const GuestPtr<uint8_t> status = MemberStatus_Lookup(family, member);
         if (statusHigh(*status) < 12)
@@ -625,11 +625,11 @@ namespace mm
         return port::load<int32_t>(globals::kCardFormatted + 4u * static_cast<uint32_t>(card)) != 0 ? 0 : 1;
     }
 
-    PORT_FN(MemberStatus_GetLow2);
-    PORT_FN(MemberStatus_GetMid2);
-    PORT_FN(MemberStatus_IsLevelAbove13);
-    PORT_FN(MemberStatus_Advance);
-    PORT_FN(MemberStatus_OnLevel12);
+    PORT_FN(MemberStatus_RecentTalks);
+    PORT_FN(MemberStatus_TalksToday);
+    PORT_FN(MemberStatus_LongApart);
+    PORT_FN(MemberStatus_RecordTalk);
+    PORT_FN(MemberStatus_AddFriendshipAfterBreak);
     PORT_FN(MemberMeters_Reset);
     PORT_FN(McManager_GetSaveFolder);
     PORT_FN(McManager_IsCardUsable);
@@ -677,7 +677,7 @@ namespace mm
 
     // ---- Memory card manager lifetime (plan P6 batch 1) ----
 
-    int McManagerSub_DeletingDtor(int queue, int16_t deleteFlag)
+    int McQueue_DeletingDtor(int queue, int16_t deleteFlag)
     {
         if (queue != 0 && 0 < deleteFlag)
             sdk::operator_delete(static_cast<uint32_t>(queue));
@@ -691,7 +691,7 @@ namespace mm
         const uint32_t queueMemory = sdk::operator_new(1u);
         uint32_t queue = queueMemory;
         if (queueMemory != 0u)
-            queue = static_cast<uint32_t>(McManagerSub_ctor(static_cast<int>(queueMemory)));
+            queue = static_cast<uint32_t>(McQueue_ctor(static_cast<int>(queueMemory)));
         mc->queue = GuestPtr<void>{queue};
         const uint32_t fileMemory = sdk::operator_new(8u);
         uint32_t file = fileMemory;
@@ -707,7 +707,7 @@ namespace mm
         return mc;
     }
 
-    PORT_FN(McManagerSub_DeletingDtor);
+    PORT_FN(McQueue_DeletingDtor);
     PORT_FN(McManager_ctor);
 
     // ---- Preparing the save directory on a card (plan P6 batch 2) ----

@@ -66,7 +66,7 @@ namespace mm
     }
 
     // A family moves in: its bit in bitset A and both moved-in counters.
-    void Family_SetFlagA(uint32_t family)
+    void Family_MoveIn(uint32_t family)
     {
         const int32_t id = static_cast<int32_t>(family);
         const uint32_t word = globals::kFamiliesInCity + static_cast<uint32_t>(4 * (id / 32));
@@ -118,7 +118,7 @@ namespace mm
     PORT_FN(Family_HasLeft);
     PORT_FN(Family_IsKnown);
     PORT_FN(Family_InCity);
-    PORT_FN(Family_SetFlagA);
+    PORT_FN(Family_MoveIn);
     PORT_FN(Family_MoveAway);
     PORT_FN(Family_MakePhoneNumber);
     PORT_FN(Family_ResetState);
@@ -501,7 +501,7 @@ namespace mm
     // family and member numbers, a schedule state, the member's flags (+0x2B of the member record, 8 added for members with
     // bit 4 of +0x27), activity 0x13 and an introduction; each counts in the placement score of its character class. When some
     // member had bit 4 of +0x27 and the building is not of category 9 or 0xB, one more record (character type 0x34) is made at
-    // the same spot. The family is then flagged (mm_Family_SetFlagA).
+    // the same spot. The family is then flagged (mm_Family_MoveIn).
     void Family_AssignHome(GuestPtr<CityMap> map, GuestPtr<CityScene> city, int family, int object)
     {
         const GuestPtr<Family> record = Family_Get(family, 0);
@@ -574,7 +574,7 @@ namespace mm
             person->flags = static_cast<uint16_t>(person->flags | 0x800);
             map->peopleInUse = map->peopleInUse + 1;
         }
-        Family_SetFlagA(static_cast<uint32_t>(family));
+        Family_MoveIn(static_cast<uint32_t>(family));
     }
 
     PORT_FN(Family_AssignHome);

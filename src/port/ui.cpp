@@ -1149,7 +1149,7 @@ namespace mm
             scene->pressStep = scene->pressStep + 1;
             [[fallthrough]];
         case 1:
-            Instance_DrawSwaying(scene->logoModel, 0, scene->logoTime);
+            A3D_Animate(scene->logoModel, 0, scene->logoTime);
             playDueSound();
             scene->logoTime = scene->logoTime + ps2f(1.0f);
             if (Title_DrawCommon(scene, 0x14) == 1)
@@ -1157,7 +1157,7 @@ namespace mm
             return 0;
         case 2:
         {
-            Instance_DrawSwaying(scene->logoModel, 0, scene->logoTime);
+            A3D_Animate(scene->logoModel, 0, scene->logoTime);
             A3DObject_Draw(scene->logoModel);
             playDueSound();
             scene->logoTime = scene->logoTime + ps2f(1.0f);
@@ -1170,7 +1170,7 @@ namespace mm
         }
         case 3:
         {
-            Instance_DrawSwaying(scene->logoModel, 0, scene->logoTime);
+            A3D_Animate(scene->logoModel, 0, scene->logoTime);
             A3DObject_Draw(scene->logoModel);
             const int alpha = scene->introFrame;
             scene->introFrame = alpha + 1;
@@ -1580,7 +1580,7 @@ namespace mm
         {
             if (menu->canSelect == 0)
                 return 0;
-            Pad_ClearBit40();
+            Pad_SwallowCross();
             Sound_PlaySe(1, 0, 0x3C, 0.0f, 0.0f);
             return 1;
         }
@@ -2097,7 +2097,7 @@ namespace mm
         const GuestPtr<A3DObject> model = scene->previewModel;
         for (int i = 0; i < 4; ++i)
             model->matrix[i] = *rowOf(matrix, i);
-        Instance_DrawSwayingIfRoom(model, scene->previewState, scene->previewTime);
+        A3D_AnimateIfRoom(model, scene->previewState, scene->previewTime);
         A3DObject_UpdateMatrices(model);
         Instance_DrawModelEx(model, colour, 0, 0, 0, 0, 0, 4);
         scene->previewTime = ps2f(scene->previewTime) + F(0x40000000u);
@@ -4494,7 +4494,7 @@ namespace mm
         ListMenu_SetCursor(list(), 0x58, 0x31, 0xFF0000);
         pause->itemsListed = 0;
         TextBox_SetText(pause->message, GuestPtr<char>{0x001B73C0u}, 0);
-        Pad_ClearBit40();
+        Pad_SwallowCross();
         PauseMenu_StateSlotSelect(pause);
         const int32_t waiting = pause->pendingChoice;
         pause->pendingChoice = -1;
@@ -6099,7 +6099,7 @@ namespace mm
         for (uint32_t row = 0; row < 4u; ++row)
             for (uint32_t at = 0; at < 0x10u; at += 4u)
                 port::store<uint32_t>(actor.address + 0x10u + 0x10u * row + at, port::load<uint32_t>(sp + (row == 3u ? 0x80u : 0x50u + 0x10u * row) + at));
-        Instance_DrawSwayingIfRoom(actor, scene->animation, ps2f(static_cast<float>(scene->animTime)));
+        A3D_AnimateIfRoom(actor, scene->animation, ps2f(static_cast<float>(scene->animTime)));
         A3DObject_UpdateMatrices(actor);
         Instance_DrawModelEx(actor, GuestPtr<Vec4>{sp + 0x40u}, 0, 0, 0, 0, 0, 4);
         const ps2f time = ps2f(static_cast<float>(scene->animTime)) + ps2f(2.0f);
@@ -6492,7 +6492,7 @@ namespace mm
                 wants->textsShown = 0;
                 return;
             }
-            Instance_DrawSwaying(model(), 0, ps2f(8.0f) * (time - ps2f(10.0f)));
+            A3D_Animate(model(), 0, ps2f(8.0f) * (time - ps2f(10.0f)));
             if (!(wants->animTime < ps2f(25.0f)))
             {
                 wants->state = 2;
@@ -6563,7 +6563,7 @@ namespace mm
                 fillPage(back ? sp + 0x240u : sp + 0x140u);
                 Sound_PlaySe(9, 0, 0x3C, 0.0f, 0.0f);
             }
-            Instance_DrawSwaying(model(), 0, ps2f(120.0f) + wants->animTime);
+            A3D_Animate(model(), 0, ps2f(120.0f) + wants->animTime);
             if (back)
             {
                 if (wants->animTime <= ps2f(0.0f))
@@ -6586,7 +6586,7 @@ namespace mm
             wants->animTime = time;
             if (!(time < ps2f(10.0f)))
             {
-                Instance_DrawSwaying(model(), 0, ps2f(4.0f) * (time - ps2f(10.0f)));
+                A3D_Animate(model(), 0, ps2f(4.0f) * (time - ps2f(10.0f)));
                 wants->textsShown = 0;
                 return;
             }
@@ -7110,7 +7110,7 @@ namespace mm
                 slide(time);
                 return;
             }
-            Instance_DrawSwaying(book(), 0, ps2f(8.0f) * (time - ps2f(10.0f)));
+            A3D_Animate(book(), 0, ps2f(8.0f) * (time - ps2f(10.0f)));
             if (pages->openTime < ps2f(25.0f))
                 return;
             state(2);
@@ -7250,7 +7250,7 @@ namespace mm
                 pages->page = pages->page + (back ? -1 : 1);
                 TownPages_FillPage(pages);
             }
-            Instance_DrawSwaying(book(), 0, ps2f(120.0f) + pages->openTime);
+            A3D_Animate(book(), 0, ps2f(120.0f) + pages->openTime);
             const auto settle = [&](int direction) {
                 const int row = TownPages_ClampCursor(pages, pages->row, direction);
                 pages->targetRow = row;
@@ -7277,7 +7277,7 @@ namespace mm
             pages->openTime = time;
             if (!(time < ps2f(10.0f)))
             {
-                Instance_DrawSwaying(book(), 0, ps2f(4.0f) * (time - ps2f(10.0f)));
+                A3D_Animate(book(), 0, ps2f(4.0f) * (time - ps2f(10.0f)));
                 return;
             }
             slide(time);
@@ -7296,7 +7296,7 @@ namespace mm
             const GuestPtr<MapObject> home = Map_FindFamilyHome(city->map, static_cast<uint16_t>(family));
             if (home.address != 0u)
                 CityScene_StartTalk(city, 0, home->id, 0x1770, 1);
-            else if ((port::load<uint16_t>(0x001C5600u) & 2u) != 0u)
+            else if ((globals::stageState()->flags & 2u) != 0u)
                 CityScene_StartTalk(city, 1, static_cast<int>(family), 6, 3);
             else
                 CityScene_StartTalk(city, 1, static_cast<int>(family), 6, 1);
@@ -7336,14 +7336,14 @@ namespace mm
             const ps2f time = pages->openTime;
             if (time <= ps2f(10.0f))
             {
-                Instance_DrawSwaying(book(), 0, ps2f(120.0f) - ps2f(10.0f) * time);
+                A3D_Animate(book(), 0, ps2f(120.0f) - ps2f(10.0f) * time);
                 pages->openTime = pages->openTime + ps2f(1.0f);
             }
             else if (time == ps2f(11.0f))
                 pages->openTime = time + ps2f(1.0f);
             else if (time <= ps2f(22.0f))
             {
-                Instance_DrawSwaying(book(), 0, ps2f(10.0f) * (time - ps2f(10.0f)));
+                A3D_Animate(book(), 0, ps2f(10.0f) * (time - ps2f(10.0f)));
                 pages->openTime = pages->openTime + ps2f(1.0f);
             }
             else if (time == ps2f(23.0f))

@@ -641,9 +641,9 @@ namespace mm
     // Keyframe animation `anim` of a model at `time`: in each node track, the pair of keys around the time sets the
     // node's local matrix (rotation rows, then the position in the last row). The quaternions are taken the short way
     // round (the later key is negated in place when the dot product is below 0) and slerped, or blended linearly when
-    // nearly equal (1 - dot <= 0.001); the position is blended linearly. Instance_DrawSwaying2 is the same code, only
+    // nearly equal (1 - dot <= 0.001); the position is blended linearly. A3D_AnimateCharacter is the same code, only
     // skipping tracks without keys a step earlier.
-    void Instance_DrawSwaying(GuestPtr<A3DObject> model, int anim, ps2f time)
+    void A3D_Animate(GuestPtr<A3DObject> model, int anim, ps2f time)
     {
         GuestPtr<A3DTrack> track{model->animations[anim]};
         for (int i = 0; i < model->trackCount; ++i, ++track)
@@ -704,14 +704,14 @@ namespace mm
         }
     }
 
-    void Instance_DrawSwaying2(GuestPtr<A3DObject> model, int anim, ps2f time) { Instance_DrawSwaying(model, anim, time); }
+    void A3D_AnimateCharacter(GuestPtr<A3DObject> model, int anim, ps2f time) { A3D_Animate(model, anim, time); }
 
-    // Draws a swaying model only while its nodes still fit in this frame's instance slots.
-    void Instance_DrawSwayingIfRoom(GuestPtr<A3DObject> model, int a1, ps2f phase)
+    // Animates a model only while its nodes still fit in this frame's instance slots.
+    void A3D_AnimateIfRoom(GuestPtr<A3DObject> model, int a1, ps2f phase)
     {
         const int16_t nodes = model->model->nodeCount;
         if (nodes < 0x708 - globals::instanceCount.get())
-            Instance_DrawSwaying(model, a1, phase);
+            A3D_Animate(model, a1, phase);
     }
 
     namespace
@@ -1074,9 +1074,9 @@ namespace mm
     PORT_FN(CityRender_DrawPlacement);
     PORT_FN(Map_SetPlacementHighlight);
     PORT_FN(InstanceBase_ctor);
-    PORT_FN(Instance_DrawSwaying);
-    PORT_FN(Instance_DrawSwaying2);
-    PORT_FN(Instance_DrawSwayingIfRoom);
+    PORT_FN(A3D_Animate);
+    PORT_FN(A3D_AnimateCharacter);
+    PORT_FN(A3D_AnimateIfRoom);
     PORT_FN(Instance_DrawMesh);
     PORT_FN(Instance_DrawNode);
     PORT_FN(Instance_DrawNodeLimited);

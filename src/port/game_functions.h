@@ -15,12 +15,12 @@ inline constexpr uint32_t CityScene_PushMode = 0x00181480u;
 inline constexpr uint32_t CityScene_PopMode = 0x00181430u;
 inline constexpr uint32_t CityScene_GetMode = 0x001814C0u;
 inline constexpr uint32_t CityScene_AddApproval = 0x001815B0u;
-inline constexpr uint32_t CityScene_HasFlag8 = 0x00180570u;
+inline constexpr uint32_t CityScene_InFarewellParty = 0x00180570u;
 inline constexpr uint32_t CityScene_MissionProgress = 0x00180670u;
 inline constexpr uint32_t CityScene_PopulationRank = 0x00180750u;
 inline constexpr uint32_t CityScene_ApprovalTier = 0x001807E0u;
-inline constexpr uint32_t CityScene_ScoreA8Tier = 0x00180820u;
-inline constexpr uint32_t CityScene_ScoreA0Tier = 0x00180850u;
+inline constexpr uint32_t CityScene_ConductTier = 0x00180820u;
+inline constexpr uint32_t CityScene_ProsperityTier = 0x00180850u;
 inline constexpr uint32_t CityScene_RecordPlacementScore = 0x001814D0u;
 inline constexpr uint32_t CityScene_UpdateApproval = 0x00181660u;
 inline constexpr uint32_t CityScene_TickClock = 0x00181730u;
@@ -57,7 +57,7 @@ inline constexpr uint32_t Packet2_Draw = 0x00129090u;
 inline constexpr uint32_t A3DObjectBase_DeletingDtor = 0x001290C0u;
 inline constexpr uint32_t LightSet_Init = 0x00129120u;
 inline constexpr uint32_t A3D_GetAnimLength = 0x00129210u;
-inline constexpr uint32_t Instance_DrawSwaying = 0x00129230u;
+inline constexpr uint32_t A3D_Animate = 0x00129230u;
 inline constexpr uint32_t A3D_Relocate = 0x00129570u;
 inline constexpr uint32_t A3DObject_ChangeLuminosity = 0x00129950u;
 inline constexpr uint32_t A3DObject_DrawNode = 0x001299B0u;
@@ -101,7 +101,7 @@ inline constexpr uint32_t BagMenu_Update = 0x0012B940u;
 inline constexpr uint32_t Bag_Clear = 0x0012C320u;
 inline constexpr uint32_t Bag_ctor = 0x0012C390u;
 inline constexpr uint32_t Bag_CreateGlobal = 0x0012C490u;
-inline constexpr uint32_t Instance_DrawSwayingIfRoom = 0x0012C4D0u;
+inline constexpr uint32_t A3D_AnimateIfRoom = 0x0012C4D0u;
 inline constexpr uint32_t InstanceBuf_Init = 0x0012C510u;
 inline constexpr uint32_t Instance_DrawMesh = 0x0012C6A0u;
 inline constexpr uint32_t Instance_DrawNode = 0x0012C790u;
@@ -113,7 +113,7 @@ inline constexpr uint32_t CityCamera_GetZoomLevel = 0x0012CAC0u;
 inline constexpr uint32_t CityCamera_Update = 0x0012CB80u;
 inline constexpr uint32_t CityCamera_DeletingDtor = 0x0012D600u;
 inline constexpr uint32_t CityCamera_ctor = 0x0012D660u;
-inline constexpr uint32_t Instance_DrawSwaying2 = 0x0012D6B0u;
+inline constexpr uint32_t A3D_AnimateCharacter = 0x0012D6B0u;
 inline constexpr uint32_t Instance_DrawModelLit = 0x0012D9F0u;
 inline constexpr uint32_t Instance_DrawNodeLimited = 0x0012DD50u;
 inline constexpr uint32_t Instance_DrawModelEx = 0x0012DE70u;
@@ -216,19 +216,19 @@ inline constexpr uint32_t EventList_MoveOutOfRank = 0x0013B460u;
 inline constexpr uint32_t EventList_MoveByMask = 0x0013B790u;
 inline constexpr uint32_t Pair_ctor = 0x0013BAB0u;
 inline constexpr uint32_t MemberMeters_Reset = 0x0013BAC0u;
-inline constexpr uint32_t MemberStatus_GetLow2 = 0x0013BD30u;
-inline constexpr uint32_t MemberStatus_GetMid2 = 0x0013BD60u;
-inline constexpr uint32_t MemberStatus_IsLevelAbove13 = 0x0013BD90u;
-inline constexpr uint32_t StatusByte_Low2 = 0x0013BDD0u;
-inline constexpr uint32_t StatusByte_Mid2 = 0x0013BDE0u;
-inline constexpr uint32_t StatusByte_LevelAbove13 = 0x0013BDF0u;
-inline constexpr uint32_t MemberStatus_Advance = 0x0013BE20u;
-inline constexpr uint32_t StatusByte_Advance = 0x0013BED0u;
-inline constexpr uint32_t MemberStatus_OnLevel12 = 0x0013BF60u;
-inline constexpr uint32_t StatusByte_OnLevel12 = 0x0013BFD0u;
-inline constexpr uint32_t StatusByte_IncHighLevel = 0x0013C010u;
-inline constexpr uint32_t StatusByte_ClearMid2 = 0x0013C050u;
-inline constexpr uint32_t StatusByte_IncLevel = 0x0013C080u;
+inline constexpr uint32_t MemberStatus_RecentTalks = 0x0013BD30u;
+inline constexpr uint32_t MemberStatus_TalksToday = 0x0013BD60u;
+inline constexpr uint32_t MemberStatus_LongApart = 0x0013BD90u;
+inline constexpr uint32_t TalkStatus_RecentTalks = 0x0013BDD0u;
+inline constexpr uint32_t TalkStatus_TalksToday = 0x0013BDE0u;
+inline constexpr uint32_t TalkStatus_LongApart = 0x0013BDF0u;
+inline constexpr uint32_t MemberStatus_RecordTalk = 0x0013BE20u;
+inline constexpr uint32_t TalkStatus_RecordTalk = 0x0013BED0u;
+inline constexpr uint32_t MemberStatus_AddFriendshipAfterBreak = 0x0013BF60u;
+inline constexpr uint32_t TalkStatus_AddFriendshipAfterBreak = 0x0013BFD0u;
+inline constexpr uint32_t TalkStatus_NewYear = 0x0013C010u;
+inline constexpr uint32_t TalkStatus_NewDay = 0x0013C050u;
+inline constexpr uint32_t TalkStatus_Tick = 0x0013C080u;
 inline constexpr uint32_t MemberStatus_Tick = 0x0013C0F0u;
 inline constexpr uint32_t Family_BefriendAll = 0x0013C240u;
 inline constexpr uint32_t Family_ResetForStage = 0x0013C520u;
@@ -238,7 +238,7 @@ inline constexpr uint32_t Family_SaveState = 0x0013C810u;
 inline constexpr uint32_t Family_HasLeft = 0x0013C900u;
 inline constexpr uint32_t Family_SetKnown = 0x0013C950u;
 inline constexpr uint32_t Family_IsKnown = 0x0013C9A0u;
-inline constexpr uint32_t Family_SetFlagA = 0x0013C9F0u;
+inline constexpr uint32_t Family_MoveIn = 0x0013C9F0u;
 inline constexpr uint32_t Family_InCity = 0x0013CA70u;
 inline constexpr uint32_t Family_GetFriendshipBand = 0x0013CAC0u;
 inline constexpr uint32_t Family_AddFriendship = 0x0013CB40u;
@@ -254,7 +254,7 @@ inline constexpr uint32_t Family_IsCached = 0x0013D3D0u;
 inline constexpr uint32_t Family_Prefetch = 0x0013D4A0u;
 inline constexpr uint32_t Family_ResetState = 0x0013D890u;
 inline constexpr uint32_t Family_Init = 0x0013DA50u;
-inline constexpr uint32_t StatusByte_ctorE0 = 0x0013DAF0u;
+inline constexpr uint32_t TalkStatus_ctor = 0x0013DAF0u;
 inline constexpr uint32_t Minimap_BuildPacket = 0x0013DB40u;
 inline constexpr uint32_t Minimap_SetView = 0x0013DF90u;
 inline constexpr uint32_t Minimap_Plot = 0x0013E020u;
@@ -287,10 +287,10 @@ inline constexpr uint32_t TerrainGen_Generate = 0x00140B60u;
 inline constexpr uint32_t CityMap_DeletingDtor = 0x00141010u;
 inline constexpr uint32_t CityMap_ctor = 0x00141070u;
 inline constexpr uint32_t Map_TileFlag20 = 0x001410B0u;
-inline constexpr uint32_t Map_TileFlag01 = 0x00141110u;
+inline constexpr uint32_t Map_TileIsCorner = 0x00141110u;
 inline constexpr uint32_t Map_TileFlag08 = 0x00141170u;
-inline constexpr uint32_t Map_TileFlag10 = 0x001411D0u;
-inline constexpr uint32_t Map_TileIndexFlag10 = 0x00141230u;
+inline constexpr uint32_t Map_TileWalkable = 0x001411D0u;
+inline constexpr uint32_t Map_TileIndexWalkable = 0x00141230u;
 inline constexpr uint32_t Map_SetTileKind = 0x00141270u;
 inline constexpr uint32_t Map_GetTileKind = 0x001412E0u;
 inline constexpr uint32_t Map_SetTileHeight = 0x00141330u;
@@ -570,9 +570,9 @@ inline constexpr uint32_t McManager_dtor = 0x0015DA30u;
 inline constexpr uint32_t McManager_ctor = 0x0015DAB0u;
 inline constexpr uint32_t Person_FindBuildingInList = 0x0015DB30u;
 inline constexpr uint32_t Person_PlaceHomeObject = 0x0015DCF0u;
-inline constexpr uint32_t Person_RandomTarget = 0x0015E010u;
+inline constexpr uint32_t Person_PickShopNearby = 0x0015E010u;
 inline constexpr uint32_t Person_TargetWork = 0x0015E1D0u;
-inline constexpr uint32_t Person_TileHasCompanion = 0x0015E300u;
+inline constexpr uint32_t Person_BuildingHasRoom = 0x0015E300u;
 inline constexpr uint32_t Person_TargetVisit = 0x0015E3E0u;
 inline constexpr uint32_t Person_TargetShop = 0x0015E500u;
 inline constexpr uint32_t Person_TargetHome = 0x0015E6D0u;
@@ -939,7 +939,7 @@ inline constexpr uint32_t TalkConv_NextLine = 0x0017B100u;
 inline constexpr uint32_t TalkConv_Start = 0x0017B2D0u;
 inline constexpr uint32_t TalkConv_dtor = 0x0017B450u;
 inline constexpr uint32_t TalkConv_ctor = 0x0017B560u;
-inline constexpr uint32_t WordsFn_CitySetFlag40 = 0x0017B600u;
+inline constexpr uint32_t WordsFn_FocusPadAfterTalk = 0x0017B600u;
 inline constexpr uint32_t WordsFn_TalkEndChoosing = 0x0017B620u;
 inline constexpr uint32_t WordsFn_TalkSelectActor = 0x0017B630u;
 inline constexpr uint32_t WordsFn_EventRemoveWant = 0x0017B660u;
@@ -949,13 +949,13 @@ inline constexpr uint32_t WordsFn_ClearPersonFlag20 = 0x0017B7B0u;
 inline constexpr uint32_t WordsFn_ActorFollow = 0x0017B7D0u;
 inline constexpr uint32_t WordsFn_ActorDetach = 0x0017B870u;
 inline constexpr uint32_t WordsFn_SelectEventActor = 0x0017B8E0u;
-inline constexpr uint32_t WordsFn_EndEventA4Result = 0x0017B990u;
-inline constexpr uint32_t WordsFn_StartEventA4 = 0x0017B9A0u;
-inline constexpr uint32_t WordsFn_EndEventA4 = 0x0017B9C0u;
-inline constexpr uint32_t WordsFn_SetEventA4Var = 0x0017B9D0u;
-inline constexpr uint32_t WordsFn_EndEventA8Result = 0x0017B9F0u;
-inline constexpr uint32_t WordsFn_EndEventA8 = 0x0017BA00u;
-inline constexpr uint32_t WordsFn_SetEventA8Var = 0x0017BA10u;
+inline constexpr uint32_t WordsFn_FinishTalkEvent = 0x0017B990u;
+inline constexpr uint32_t WordsFn_StartTalkEvent = 0x0017B9A0u;
+inline constexpr uint32_t WordsFn_AbortTalkEvent = 0x0017B9C0u;
+inline constexpr uint32_t WordsFn_SetTalkEventVar = 0x0017B9D0u;
+inline constexpr uint32_t WordsFn_FinishSystemEvent = 0x0017B9F0u;
+inline constexpr uint32_t WordsFn_AbortSystemEvent = 0x0017BA00u;
+inline constexpr uint32_t WordsFn_SetSystemEventVar = 0x0017BA10u;
 inline constexpr uint32_t WordsFn_SelectEventPersonB = 0x0017BA30u;
 inline constexpr uint32_t WordsFn_SelectEventPersonA = 0x0017BAA0u;
 inline constexpr uint32_t WordsFn_EventQueueShift = 0x0017BB10u;
@@ -975,10 +975,10 @@ inline constexpr uint32_t WordsFn_SelectBuildingB = 0x0017C230u;
 inline constexpr uint32_t WordsFn_SetCancelAllowed = 0x0017C3E0u;
 inline constexpr uint32_t WordsFn_SetStoryFlagB = 0x0017C3F0u;
 inline constexpr uint32_t WordsFn_ClearStoryFlagB = 0x0017C440u;
-inline constexpr uint32_t WordsFn_SetVar1C5602 = 0x0017C4A0u;
-inline constexpr uint32_t WordsFn_EventA4Text = 0x0017C4B0u;
-inline constexpr uint32_t WordsFn_TextEventA4Name = 0x0017C4D0u;
-inline constexpr uint32_t WordsFn_EventA8Text = 0x0017C500u;
+inline constexpr uint32_t WordsFn_SetScriptVar = 0x0017C4A0u;
+inline constexpr uint32_t WordsFn_TalkEventText = 0x0017C4B0u;
+inline constexpr uint32_t WordsFn_TextTalkEventName = 0x0017C4D0u;
+inline constexpr uint32_t WordsFn_SystemEventText = 0x0017C500u;
 inline constexpr uint32_t WordsFn_TextEventTitle = 0x0017C520u;
 inline constexpr uint32_t WordsFn_TextOpenHours = 0x0017C530u;
 inline constexpr uint32_t WordsFn_TextBagItemName = 0x0017C580u;
@@ -992,14 +992,14 @@ inline constexpr uint32_t WordsFn_TextBuildingName = 0x0017C830u;
 inline constexpr uint32_t WordsFn_TextMemberName2 = 0x0017C8A0u;
 inline constexpr uint32_t WordsFn_TextMemberName = 0x0017C920u;
 inline constexpr uint32_t WordsFn_TextNameSlot = 0x0017C9A0u;
-inline constexpr uint32_t WordsFn_EventA4Answer = 0x0017C9C0u;
+inline constexpr uint32_t WordsFn_TalkEventAnswer = 0x0017C9C0u;
 inline constexpr uint32_t WordsFn_EventSetActor = 0x0017CA40u;
 inline constexpr uint32_t WordsFn_EventActorIs = 0x0017CB90u;
-inline constexpr uint32_t WordsFn_EventA4Var = 0x0017CBE0u;
-inline constexpr uint32_t WordsFn_EventA4IsTalk = 0x0017CC00u;
-inline constexpr uint32_t WordsFn_EventA8Answer = 0x0017CC50u;
-inline constexpr uint32_t WordsFn_EventA8Var = 0x0017CCD0u;
-inline constexpr uint32_t WordsFn_EventA8Kind = 0x0017CCF0u;
+inline constexpr uint32_t WordsFn_TalkEventVar = 0x0017CBE0u;
+inline constexpr uint32_t WordsFn_TalkEventIsRequestOrVisit = 0x0017CC00u;
+inline constexpr uint32_t WordsFn_SystemEventAnswer = 0x0017CC50u;
+inline constexpr uint32_t WordsFn_SystemEventVar = 0x0017CCD0u;
+inline constexpr uint32_t WordsFn_SystemEventNumber = 0x0017CCF0u;
 inline constexpr uint32_t WordsFn_EventCountdown = 0x0017CD50u;
 inline constexpr uint32_t WordsFn_EventStage = 0x0017CD80u;
 inline constexpr uint32_t WordsFn_StartEvent = 0x0017CE30u;
@@ -1033,7 +1033,7 @@ inline constexpr uint32_t WordsFn_PersonFlagBit = 0x0017E9E0u;
 inline constexpr uint32_t WordsFn_ScheduleState = 0x0017EA00u;
 inline constexpr uint32_t WordsFn_HomeIsType104 = 0x0017EB60u;
 inline constexpr uint32_t WordsFn_Arg4 = 0x0017EBC0u;
-inline constexpr uint32_t WordsFn_MemberByte2B = 0x0017EBD0u;
+inline constexpr uint32_t WordsFn_MemberLook = 0x0017EBD0u;
 inline constexpr uint32_t WordsFn_MemberByte2A = 0x0017EC20u;
 inline constexpr uint32_t WordsFn_MemberCharType = 0x0017EC70u;
 inline constexpr uint32_t WordsFn_IsSpecialFamily = 0x0017ECE0u;
@@ -1041,8 +1041,8 @@ inline constexpr uint32_t WordsFn_IsApplicant = 0x0017ED60u;
 inline constexpr uint32_t WordsFn_FamilyHasLeft = 0x0017ED70u;
 inline constexpr uint32_t WordsFn_FamilyInCity = 0x0017ED80u;
 inline constexpr uint32_t WordsFn_CanApply = 0x0017ED90u;
-inline constexpr uint32_t WordsFn_ScoreA8Tier = 0x0017EE10u;
-inline constexpr uint32_t WordsFn_ScoreA0Tier = 0x0017EE20u;
+inline constexpr uint32_t WordsFn_ConductTier = 0x0017EE10u;
+inline constexpr uint32_t WordsFn_ProsperityTier = 0x0017EE20u;
 inline constexpr uint32_t WordsFn_ApprovalTier = 0x0017EE30u;
 inline constexpr uint32_t WordsFn_MapHistoryTier = 0x0017EE70u;
 inline constexpr uint32_t WordsFn_FamilyCountTier = 0x0017EEC0u;
@@ -1051,14 +1051,14 @@ inline constexpr uint32_t WordsFn_TimeOfDay = 0x0017EF40u;
 inline constexpr uint32_t WordsFn_BeforeSix = 0x0017EF90u;
 inline constexpr uint32_t WordsFn_WeatherTomorrow = 0x0017EFA0u;
 inline constexpr uint32_t WordsFn_WeatherToday = 0x0017EFB0u;
-inline constexpr uint32_t WordsFn_CityFlag2 = 0x0017EFC0u;
+inline constexpr uint32_t WordsFn_HolidayMonth = 0x0017EFC0u;
 inline constexpr uint32_t WordsFn_Month = 0x0017EFE0u;
 inline constexpr uint32_t WordsFn_StaminaZero = 0x0017F010u;
 inline constexpr uint32_t WordsFn_StaminaTier = 0x0017F020u;
 inline constexpr uint32_t WordsFn_StoryFlagB = 0x0017F030u;
 inline constexpr uint32_t WordsFn_StoryFlagA = 0x0017F080u;
-inline constexpr uint32_t WordsFn_GetVar1C5602 = 0x0017F0D0u;
-inline constexpr uint32_t WordsFn_Flag134 = 0x0017F0E0u;
+inline constexpr uint32_t WordsFn_ScriptVar = 0x0017F0D0u;
+inline constexpr uint32_t WordsFn_FewChoicesLeft = 0x0017F0E0u;
 inline constexpr uint32_t WordsFn_RandomN = 0x0017F0F0u;
 inline constexpr uint32_t WordsFn_Random3 = 0x0017F130u;
 inline constexpr uint32_t WordsFn_Random50 = 0x0017F190u;
@@ -1085,14 +1085,14 @@ inline constexpr uint32_t WordsFn_BuildingCategory = 0x0017FA90u;
 inline constexpr uint32_t WordsFn_PersonHeading = 0x0017FB00u;
 inline constexpr uint32_t WordsFn_PersonWhere = 0x0017FBC0u;
 inline constexpr uint32_t WordsFn_PersonAtBuilding = 0x0017FC80u;
-inline constexpr uint32_t WordsFn_StatusMid2 = 0x0017FEC0u;
-inline constexpr uint32_t WordsFn_StatusLow2 = 0x0017FF20u;
+inline constexpr uint32_t WordsFn_TalksToday = 0x0017FEC0u;
+inline constexpr uint32_t WordsFn_RecentTalks = 0x0017FF20u;
 inline constexpr uint32_t WordsFn_FriendLevelHigh = 0x0017FF80u;
 inline constexpr uint32_t WordsFn_NameSlotSet = 0x00180020u;
 inline constexpr uint32_t Words_CallCond = 0x00180050u;
 inline constexpr uint32_t Words_CallText = 0x00180070u;
 inline constexpr uint32_t Words_CallAct = 0x00180090u;
-inline constexpr uint32_t Words_SetFlag134 = 0x001800B0u;
+inline constexpr uint32_t Words_SetFewChoicesLeft = 0x001800B0u;
 inline constexpr uint32_t Words_SelectBagItem = 0x001800C0u;
 inline constexpr uint32_t Words_SetWantIndex = 0x00180180u;
 inline constexpr uint32_t Words_SelectEvent = 0x00180190u;
@@ -1155,7 +1155,7 @@ inline constexpr uint32_t Random_Next = 0x00184DE0u;
 inline constexpr uint32_t Random_Seed = 0x00184E30u;
 inline constexpr uint32_t Random_Stir = 0x00184ED0u;
 inline constexpr uint32_t Gs_InitDisplay = 0x00184F60u;
-inline constexpr uint32_t Pad_ClearBit40 = 0x001851F0u;
+inline constexpr uint32_t Pad_SwallowCross = 0x001851F0u;
 inline constexpr uint32_t Pad_ReleaseFocus = 0x00185220u;
 inline constexpr uint32_t Pad_TakeFocus = 0x00185250u;
 inline constexpr uint32_t Pad_GetRepeat = 0x00185270u;
@@ -1186,8 +1186,8 @@ inline constexpr uint32_t McQueue_GetResult = 0x001869C0u;
 inline constexpr uint32_t McQueue_IsDone = 0x001869F0u;
 inline constexpr uint32_t McQueue_Init = 0x00186A40u;
 inline constexpr uint32_t McQueue_Pump = 0x00186AA0u;
-inline constexpr uint32_t McManagerSub_DeletingDtor = 0x00186CA0u;
-inline constexpr uint32_t McManagerSub_ctor = 0x00186CF0u;
+inline constexpr uint32_t McQueue_DeletingDtor = 0x00186CA0u;
+inline constexpr uint32_t McQueue_ctor = 0x00186CF0u;
 inline constexpr uint32_t PacketBuf_Seek = 0x00186D00u;
 inline constexpr uint32_t PacketBuf_Tell = 0x00186D10u;
 inline constexpr uint32_t Dma_KickVif1Now = 0x00186D20u;
@@ -1206,7 +1206,7 @@ inline constexpr uint32_t DmaList_InitPackets = 0x001873D0u;
 inline constexpr uint32_t DmaList_Init = 0x00187640u;
 inline constexpr uint32_t Sound_StopAllPlaying = 0x001876B0u;
 inline constexpr uint32_t Se_SetEnabled = 0x00187750u;
-inline constexpr uint32_t Se_SetVoice15Enabled = 0x00187820u;
+inline constexpr uint32_t Bgm_SetPlaying = 0x00187820u;
 inline constexpr uint32_t Se_UpdateCityAmbience = 0x00187870u;
 inline constexpr uint32_t Se_UpdateListener = 0x001884E0u;
 inline constexpr uint32_t Se_BuildingSoundState = 0x00188930u;
@@ -1936,7 +1936,7 @@ template <> inline constexpr bool at<0x0017E590u> = true; // Words_CollectNearby
 template <> inline constexpr bool at<0x0017E890u> = true; // WordsFn_PickOtherResident
 template <> inline constexpr bool at<0x0017E990u> = true; // WordsFn_ScheduleIs
 template <> inline constexpr bool at<0x0017EA00u> = true; // WordsFn_ScheduleState
-template <> inline constexpr bool at<0x0017EBD0u> = true; // WordsFn_MemberByte2B
+template <> inline constexpr bool at<0x0017EBD0u> = true; // WordsFn_MemberLook
 template <> inline constexpr bool at<0x0017EC20u> = true; // WordsFn_MemberByte2A
 template <> inline constexpr bool at<0x0017EC70u> = true; // WordsFn_MemberCharType
 template <> inline constexpr bool at<0x0017F420u> = true; // WordsFn_FindOutsideAcquaintance
@@ -1978,7 +1978,7 @@ template <> inline constexpr bool at<0x00185740u> = true; // App_ctor
 template <> inline constexpr bool at<0x00185EB0u> = true; // McSave_WriteIconSys
 template <> inline constexpr bool at<0x00186A40u> = true; // McQueue_Init
 template <> inline constexpr bool at<0x00186AA0u> = true; // McQueue_Pump
-template <> inline constexpr bool at<0x00186CA0u> = true; // McManagerSub_DeletingDtor
+template <> inline constexpr bool at<0x00186CA0u> = true; // McQueue_DeletingDtor
 template <> inline constexpr bool at<0x00186D20u> = true; // Dma_KickVif1Now
 template <> inline constexpr bool at<0x00187190u> = true; // DmaList_Rewind
 template <> inline constexpr bool at<0x00187370u> = true; // DmaList_Free
@@ -2085,6 +2085,9 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"A3DObject_UpdateMatrices", addr::A3DObject_UpdateMatrices},
     {"A3DObject_UpdateNodeMatrix", addr::A3DObject_UpdateNodeMatrix},
     {"A3DObject_dtor", addr::A3DObject_dtor},
+    {"A3D_Animate", addr::A3D_Animate},
+    {"A3D_AnimateCharacter", addr::A3D_AnimateCharacter},
+    {"A3D_AnimateIfRoom", addr::A3D_AnimateIfRoom},
     {"A3D_GetAnimLength", addr::A3D_GetAnimLength},
     {"A3D_Relocate", addr::A3D_Relocate},
     {"App_OnInit", addr::App_OnInit},
@@ -2137,6 +2140,7 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"BaseObject_dtor", addr::BaseObject_dtor},
     {"Bgm_FadeOut", addr::Bgm_FadeOut},
     {"Bgm_SetActive", addr::Bgm_SetActive},
+    {"Bgm_SetPlaying", addr::Bgm_SetPlaying},
     {"Bgm_SetTrackSlot", addr::Bgm_SetTrackSlot},
     {"Bgm_Update", addr::Bgm_Update},
     {"BldgAmusementPark_Draw", addr::BldgAmusementPark_Draw},
@@ -2319,19 +2323,19 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"CityScene_AddApplicantFamily", addr::CityScene_AddApplicantFamily},
     {"CityScene_AddApproval", addr::CityScene_AddApproval},
     {"CityScene_ApprovalTier", addr::CityScene_ApprovalTier},
+    {"CityScene_ConductTier", addr::CityScene_ConductTier},
     {"CityScene_GetFade", addr::CityScene_GetFade},
     {"CityScene_GetMode", addr::CityScene_GetMode},
-    {"CityScene_HasFlag8", addr::CityScene_HasFlag8},
+    {"CityScene_InFarewellParty", addr::CityScene_InFarewellParty},
     {"CityScene_LoadGame", addr::CityScene_LoadGame},
     {"CityScene_MissionProgress", addr::CityScene_MissionProgress},
     {"CityScene_PopMode", addr::CityScene_PopMode},
     {"CityScene_PopulationRank", addr::CityScene_PopulationRank},
+    {"CityScene_ProsperityTier", addr::CityScene_ProsperityTier},
     {"CityScene_PushMode", addr::CityScene_PushMode},
     {"CityScene_RecordPlacementScore", addr::CityScene_RecordPlacementScore},
     {"CityScene_SaveGame", addr::CityScene_SaveGame},
     {"CityScene_SaveStep", addr::CityScene_SaveStep},
-    {"CityScene_ScoreA0Tier", addr::CityScene_ScoreA0Tier},
-    {"CityScene_ScoreA8Tier", addr::CityScene_ScoreA8Tier},
     {"CityScene_StartFade", addr::CityScene_StartFade},
     {"CityScene_StartTalk", addr::CityScene_StartTalk},
     {"CityScene_TalkEndChoosing", addr::CityScene_TalkEndChoosing},
@@ -2537,12 +2541,12 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Family_MakePhoneNumber", addr::Family_MakePhoneNumber},
     {"Family_MeterAgrees", addr::Family_MeterAgrees},
     {"Family_MoveAway", addr::Family_MoveAway},
+    {"Family_MoveIn", addr::Family_MoveIn},
     {"Family_PickIntroduction", addr::Family_PickIntroduction},
     {"Family_Prefetch", addr::Family_Prefetch},
     {"Family_ResetForStage", addr::Family_ResetForStage},
     {"Family_ResetState", addr::Family_ResetState},
     {"Family_SaveState", addr::Family_SaveState},
-    {"Family_SetFlagA", addr::Family_SetFlagA},
     {"Family_SetKnown", addr::Family_SetKnown},
     {"FileQueue_Init", addr::FileQueue_Init},
     {"FileQueue_IsDone", addr::FileQueue_IsDone},
@@ -2583,9 +2587,6 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Instance_DrawModelLit", addr::Instance_DrawModelLit},
     {"Instance_DrawNode", addr::Instance_DrawNode},
     {"Instance_DrawNodeLimited", addr::Instance_DrawNodeLimited},
-    {"Instance_DrawSwaying", addr::Instance_DrawSwaying},
-    {"Instance_DrawSwaying2", addr::Instance_DrawSwaying2},
-    {"Instance_DrawSwayingIfRoom", addr::Instance_DrawSwayingIfRoom},
     {"Laptop_AddEntry", addr::Laptop_AddEntry},
     {"Laptop_Animate", addr::Laptop_Animate},
     {"Laptop_CountActive", addr::Laptop_CountActive},
@@ -2705,11 +2706,11 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Map_SetPlacementHighlight", addr::Map_SetPlacementHighlight},
     {"Map_SetTileHeight", addr::Map_SetTileHeight},
     {"Map_SetTileKind", addr::Map_SetTileKind},
-    {"Map_TileFlag01", addr::Map_TileFlag01},
     {"Map_TileFlag08", addr::Map_TileFlag08},
-    {"Map_TileFlag10", addr::Map_TileFlag10},
     {"Map_TileFlag20", addr::Map_TileFlag20},
-    {"Map_TileIndexFlag10", addr::Map_TileIndexFlag10},
+    {"Map_TileIndexWalkable", addr::Map_TileIndexWalkable},
+    {"Map_TileIsCorner", addr::Map_TileIsCorner},
+    {"Map_TileWalkable", addr::Map_TileWalkable},
     {"Map_UnhighlightArea", addr::Map_UnhighlightArea},
     {"Map_UnlinkPersonFromTile", addr::Map_UnlinkPersonFromTile},
     {"Map_UpdateAreaGeometry", addr::Map_UpdateAreaGeometry},
@@ -2728,8 +2729,6 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Math_RayPlaneDistance", addr::Math_RayPlaneDistance},
     {"Math_SqrtBits", addr::Math_SqrtBits},
     {"Math_TriangleNormal", addr::Math_TriangleNormal},
-    {"McManagerSub_DeletingDtor", addr::McManagerSub_DeletingDtor},
-    {"McManagerSub_ctor", addr::McManagerSub_ctor},
     {"McManagerUpdate", addr::McManagerUpdate},
     {"McManager_BuildSaveTitle", addr::McManager_BuildSaveTitle},
     {"McManager_ClearSlots", addr::McManager_ClearSlots},
@@ -2751,6 +2750,7 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"McQueue_Chdir", addr::McQueue_Chdir},
     {"McQueue_Close", addr::McQueue_Close},
     {"McQueue_Delete", addr::McQueue_Delete},
+    {"McQueue_DeletingDtor", addr::McQueue_DeletingDtor},
     {"McQueue_Format", addr::McQueue_Format},
     {"McQueue_GetDir", addr::McQueue_GetDir},
     {"McQueue_GetInfo", addr::McQueue_GetInfo},
@@ -2763,14 +2763,15 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"McQueue_Read", addr::McQueue_Read},
     {"McQueue_Seek", addr::McQueue_Seek},
     {"McQueue_Write", addr::McQueue_Write},
+    {"McQueue_ctor", addr::McQueue_ctor},
     {"McSave_WriteIconSys", addr::McSave_WriteIconSys},
     {"MemberMeters_Reset", addr::MemberMeters_Reset},
-    {"MemberStatus_Advance", addr::MemberStatus_Advance},
-    {"MemberStatus_GetLow2", addr::MemberStatus_GetLow2},
-    {"MemberStatus_GetMid2", addr::MemberStatus_GetMid2},
-    {"MemberStatus_IsLevelAbove13", addr::MemberStatus_IsLevelAbove13},
+    {"MemberStatus_AddFriendshipAfterBreak", addr::MemberStatus_AddFriendshipAfterBreak},
+    {"MemberStatus_LongApart", addr::MemberStatus_LongApart},
     {"MemberStatus_Lookup", addr::MemberStatus_Lookup},
-    {"MemberStatus_OnLevel12", addr::MemberStatus_OnLevel12},
+    {"MemberStatus_RecentTalks", addr::MemberStatus_RecentTalks},
+    {"MemberStatus_RecordTalk", addr::MemberStatus_RecordTalk},
+    {"MemberStatus_TalksToday", addr::MemberStatus_TalksToday},
     {"MemberStatus_Tick", addr::MemberStatus_Tick},
     {"MenuWin_Closing", addr::MenuWin_Closing},
     {"MenuWin_Draw", addr::MenuWin_Draw},
@@ -2907,13 +2908,13 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"PacketBuf_Tell", addr::PacketBuf_Tell},
     {"Packet_Draw", addr::Packet_Draw},
     {"PadInit", addr::PadInit},
-    {"Pad_ClearBit40", addr::Pad_ClearBit40},
     {"Pad_GetData", addr::Pad_GetData},
     {"Pad_GetRepeat", addr::Pad_GetRepeat},
     {"Pad_Held", addr::Pad_Held},
     {"Pad_Poll", addr::Pad_Poll},
     {"Pad_Pressed", addr::Pad_Pressed},
     {"Pad_ReleaseFocus", addr::Pad_ReleaseFocus},
+    {"Pad_SwallowCross", addr::Pad_SwallowCross},
     {"Pad_TakeFocus", addr::Pad_TakeFocus},
     {"Pad_Update", addr::Pad_Update},
     {"Pair_ctor", addr::Pair_ctor},
@@ -2938,6 +2939,7 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"People_RemoveChain", addr::People_RemoveChain},
     {"People_UnlinkFromList", addr::People_UnlinkFromList},
     {"Perf_AdaptDrawRange", addr::Perf_AdaptDrawRange},
+    {"Person_BuildingHasRoom", addr::Person_BuildingHasRoom},
     {"Person_CheckBuilding", addr::Person_CheckBuilding},
     {"Person_ChooseDestination", addr::Person_ChooseDestination},
     {"Person_Distance", addr::Person_Distance},
@@ -2949,15 +2951,14 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Person_IsAtBuilding", addr::Person_IsAtBuilding},
     {"Person_IsNearBuilding", addr::Person_IsNearBuilding},
     {"Person_IsOnOpenTile", addr::Person_IsOnOpenTile},
+    {"Person_PickShopNearby", addr::Person_PickShopNearby},
     {"Person_PlaceHomeObject", addr::Person_PlaceHomeObject},
     {"Person_ProbeTile", addr::Person_ProbeTile},
-    {"Person_RandomTarget", addr::Person_RandomTarget},
     {"Person_TargetHome", addr::Person_TargetHome},
     {"Person_TargetShop", addr::Person_TargetShop},
     {"Person_TargetVisit", addr::Person_TargetVisit},
     {"Person_TargetWork", addr::Person_TargetWork},
     {"Person_TickCounters", addr::Person_TickCounters},
-    {"Person_TileHasCompanion", addr::Person_TileHasCompanion},
     {"Person_TurnToPlayer", addr::Person_TurnToPlayer},
     {"Person_Update", addr::Person_Update},
     {"Person_UpdatePose", addr::Person_UpdatePose},
@@ -3046,7 +3047,6 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Se_RequestForObject", addr::Se_RequestForObject},
     {"Se_RequestTileSounds", addr::Se_RequestTileSounds},
     {"Se_SetEnabled", addr::Se_SetEnabled},
-    {"Se_SetVoice15Enabled", addr::Se_SetVoice15Enabled},
     {"Se_StopOwner", addr::Se_StopOwner},
     {"Se_UpdateCityAmbience", addr::Se_UpdateCityAmbience},
     {"Se_UpdateListener", addr::Se_UpdateListener},
@@ -3128,15 +3128,6 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"StaticInit_StatusBytes", addr::StaticInit_StatusBytes},
     {"StaticInit_Words", addr::StaticInit_Words},
     {"StaticInit_WordsTable", addr::StaticInit_WordsTable},
-    {"StatusByte_Advance", addr::StatusByte_Advance},
-    {"StatusByte_ClearMid2", addr::StatusByte_ClearMid2},
-    {"StatusByte_IncHighLevel", addr::StatusByte_IncHighLevel},
-    {"StatusByte_IncLevel", addr::StatusByte_IncLevel},
-    {"StatusByte_LevelAbove13", addr::StatusByte_LevelAbove13},
-    {"StatusByte_Low2", addr::StatusByte_Low2},
-    {"StatusByte_Mid2", addr::StatusByte_Mid2},
-    {"StatusByte_OnLevel12", addr::StatusByte_OnLevel12},
-    {"StatusByte_ctorE0", addr::StatusByte_ctorE0},
     {"StatusPanel_BuildPacket", addr::StatusPanel_BuildPacket},
     {"StatusPanel_Draw", addr::StatusPanel_Draw},
     {"StatusPanel_Update", addr::StatusPanel_Update},
@@ -3232,6 +3223,15 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"TalkPhoneMember_Opening", addr::TalkPhoneMember_Opening},
     {"TalkPhoneMember_ctor", addr::TalkPhoneMember_ctor},
     {"TalkPhoneMember_dtor", addr::TalkPhoneMember_dtor},
+    {"TalkStatus_AddFriendshipAfterBreak", addr::TalkStatus_AddFriendshipAfterBreak},
+    {"TalkStatus_LongApart", addr::TalkStatus_LongApart},
+    {"TalkStatus_NewDay", addr::TalkStatus_NewDay},
+    {"TalkStatus_NewYear", addr::TalkStatus_NewYear},
+    {"TalkStatus_RecentTalks", addr::TalkStatus_RecentTalks},
+    {"TalkStatus_RecordTalk", addr::TalkStatus_RecordTalk},
+    {"TalkStatus_TalksToday", addr::TalkStatus_TalksToday},
+    {"TalkStatus_Tick", addr::TalkStatus_Tick},
+    {"TalkStatus_ctor", addr::TalkStatus_ctor},
     {"TalkView_BuildingCamera", addr::TalkView_BuildingCamera},
     {"TalkView_CollectOccupants", addr::TalkView_CollectOccupants},
     {"TalkView_CountPeople", addr::TalkView_CountPeople},
@@ -3378,6 +3378,8 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Widget_Update", addr::Widget_Update},
     {"Widget_ctor", addr::Widget_ctor},
     {"Widget_dtor", addr::Widget_dtor},
+    {"WordsFn_AbortSystemEvent", addr::WordsFn_AbortSystemEvent},
+    {"WordsFn_AbortTalkEvent", addr::WordsFn_AbortTalkEvent},
     {"WordsFn_AcquaintanceSuppliesClaim", addr::WordsFn_AcquaintanceSuppliesClaim},
     {"WordsFn_AcquaintanceSuppliesWant", addr::WordsFn_AcquaintanceSuppliesWant},
     {"WordsFn_ActorDetach", addr::WordsFn_ActorDetach},
@@ -3400,23 +3402,10 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"WordsFn_BuyGoods", addr::WordsFn_BuyGoods},
     {"WordsFn_CanAfford", addr::WordsFn_CanAfford},
     {"WordsFn_CanApply", addr::WordsFn_CanApply},
-    {"WordsFn_CityFlag2", addr::WordsFn_CityFlag2},
-    {"WordsFn_CitySetFlag40", addr::WordsFn_CitySetFlag40},
     {"WordsFn_ClaimIs50", addr::WordsFn_ClaimIs50},
     {"WordsFn_ClearPersonFlag20", addr::WordsFn_ClearPersonFlag20},
     {"WordsFn_ClearStoryFlagB", addr::WordsFn_ClearStoryFlagB},
-    {"WordsFn_EndEventA4", addr::WordsFn_EndEventA4},
-    {"WordsFn_EndEventA4Result", addr::WordsFn_EndEventA4Result},
-    {"WordsFn_EndEventA8", addr::WordsFn_EndEventA8},
-    {"WordsFn_EndEventA8Result", addr::WordsFn_EndEventA8Result},
-    {"WordsFn_EventA4Answer", addr::WordsFn_EventA4Answer},
-    {"WordsFn_EventA4IsTalk", addr::WordsFn_EventA4IsTalk},
-    {"WordsFn_EventA4Text", addr::WordsFn_EventA4Text},
-    {"WordsFn_EventA4Var", addr::WordsFn_EventA4Var},
-    {"WordsFn_EventA8Answer", addr::WordsFn_EventA8Answer},
-    {"WordsFn_EventA8Kind", addr::WordsFn_EventA8Kind},
-    {"WordsFn_EventA8Text", addr::WordsFn_EventA8Text},
-    {"WordsFn_EventA8Var", addr::WordsFn_EventA8Var},
+    {"WordsFn_ConductTier", addr::WordsFn_ConductTier},
     {"WordsFn_EventActorIs", addr::WordsFn_EventActorIs},
     {"WordsFn_EventAddWant", addr::WordsFn_EventAddWant},
     {"WordsFn_EventCountdown", addr::WordsFn_EventCountdown},
@@ -3432,20 +3421,23 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"WordsFn_FamilyKnown", addr::WordsFn_FamilyKnown},
     {"WordsFn_FamilyModArg", addr::WordsFn_FamilyModArg},
     {"WordsFn_FamilySuppliesWant", addr::WordsFn_FamilySuppliesWant},
+    {"WordsFn_FewChoicesLeft", addr::WordsFn_FewChoicesLeft},
     {"WordsFn_FindOutsideAcquaintance", addr::WordsFn_FindOutsideAcquaintance},
     {"WordsFn_FindWant", addr::WordsFn_FindWant},
-    {"WordsFn_Flag134", addr::WordsFn_Flag134},
+    {"WordsFn_FinishSystemEvent", addr::WordsFn_FinishSystemEvent},
+    {"WordsFn_FinishTalkEvent", addr::WordsFn_FinishTalkEvent},
+    {"WordsFn_FocusPadAfterTalk", addr::WordsFn_FocusPadAfterTalk},
     {"WordsFn_FriendLevelHigh", addr::WordsFn_FriendLevelHigh},
     {"WordsFn_FriendshipBand", addr::WordsFn_FriendshipBand},
     {"WordsFn_FriendshipDown", addr::WordsFn_FriendshipDown},
     {"WordsFn_FriendshipTier", addr::WordsFn_FriendshipTier},
     {"WordsFn_FriendshipUp", addr::WordsFn_FriendshipUp},
     {"WordsFn_GetIntroduction", addr::WordsFn_GetIntroduction},
-    {"WordsFn_GetVar1C5602", addr::WordsFn_GetVar1C5602},
     {"WordsFn_GiveBagItem", addr::WordsFn_GiveBagItem},
     {"WordsFn_GoodsBagFull", addr::WordsFn_GoodsBagFull},
     {"WordsFn_GoodsOwned", addr::WordsFn_GoodsOwned},
     {"WordsFn_HasWantForPerson", addr::WordsFn_HasWantForPerson},
+    {"WordsFn_HolidayMonth", addr::WordsFn_HolidayMonth},
     {"WordsFn_HomeIsType104", addr::WordsFn_HomeIsType104},
     {"WordsFn_HomeTypeFlag100", addr::WordsFn_HomeTypeFlag100},
     {"WordsFn_InviteFamily", addr::WordsFn_InviteFamily},
@@ -3458,8 +3450,8 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"WordsFn_MapHistoryTier", addr::WordsFn_MapHistoryTier},
     {"WordsFn_MarkFamilyKnown", addr::WordsFn_MarkFamilyKnown},
     {"WordsFn_MemberByte2A", addr::WordsFn_MemberByte2A},
-    {"WordsFn_MemberByte2B", addr::WordsFn_MemberByte2B},
     {"WordsFn_MemberCharType", addr::WordsFn_MemberCharType},
+    {"WordsFn_MemberLook", addr::WordsFn_MemberLook},
     {"WordsFn_MemberRole", addr::WordsFn_MemberRole},
     {"WordsFn_MeterAgrees", addr::WordsFn_MeterAgrees},
     {"WordsFn_Month", addr::WordsFn_Month},
@@ -3477,39 +3469,46 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"WordsFn_PickTestableResident", addr::WordsFn_PickTestableResident},
     {"WordsFn_PlaySe", addr::WordsFn_PlaySe},
     {"WordsFn_PopulationRank", addr::WordsFn_PopulationRank},
+    {"WordsFn_ProsperityTier", addr::WordsFn_ProsperityTier},
     {"WordsFn_Random3", addr::WordsFn_Random3},
     {"WordsFn_Random50", addr::WordsFn_Random50},
     {"WordsFn_RandomN", addr::WordsFn_RandomN},
+    {"WordsFn_RecentTalks", addr::WordsFn_RecentTalks},
     {"WordsFn_ScheduleIs", addr::WordsFn_ScheduleIs},
     {"WordsFn_ScheduleState", addr::WordsFn_ScheduleState},
-    {"WordsFn_ScoreA0Tier", addr::WordsFn_ScoreA0Tier},
-    {"WordsFn_ScoreA8Tier", addr::WordsFn_ScoreA8Tier},
+    {"WordsFn_ScriptVar", addr::WordsFn_ScriptVar},
     {"WordsFn_SelectBuildingB", addr::WordsFn_SelectBuildingB},
     {"WordsFn_SelectEventActor", addr::WordsFn_SelectEventActor},
     {"WordsFn_SelectEventPersonA", addr::WordsFn_SelectEventPersonA},
     {"WordsFn_SelectEventPersonB", addr::WordsFn_SelectEventPersonB},
     {"WordsFn_SelectMemberB", addr::WordsFn_SelectMemberB},
     {"WordsFn_SetCancelAllowed", addr::WordsFn_SetCancelAllowed},
-    {"WordsFn_SetEventA4Var", addr::WordsFn_SetEventA4Var},
-    {"WordsFn_SetEventA8Var", addr::WordsFn_SetEventA8Var},
     {"WordsFn_SetPose", addr::WordsFn_SetPose},
+    {"WordsFn_SetScriptVar", addr::WordsFn_SetScriptVar},
     {"WordsFn_SetStoryFlagB", addr::WordsFn_SetStoryFlagB},
-    {"WordsFn_SetVar1C5602", addr::WordsFn_SetVar1C5602},
+    {"WordsFn_SetSystemEventVar", addr::WordsFn_SetSystemEventVar},
+    {"WordsFn_SetTalkEventVar", addr::WordsFn_SetTalkEventVar},
     {"WordsFn_StaminaTier", addr::WordsFn_StaminaTier},
     {"WordsFn_StaminaZero", addr::WordsFn_StaminaZero},
     {"WordsFn_StartEvent", addr::WordsFn_StartEvent},
-    {"WordsFn_StartEventA4", addr::WordsFn_StartEventA4},
-    {"WordsFn_StatusLow2", addr::WordsFn_StatusLow2},
-    {"WordsFn_StatusMid2", addr::WordsFn_StatusMid2},
+    {"WordsFn_StartTalkEvent", addr::WordsFn_StartTalkEvent},
     {"WordsFn_StoryFlagA", addr::WordsFn_StoryFlagA},
     {"WordsFn_StoryFlagB", addr::WordsFn_StoryFlagB},
     {"WordsFn_SuppliesWantBody", addr::WordsFn_SuppliesWantBody},
+    {"WordsFn_SystemEventAnswer", addr::WordsFn_SystemEventAnswer},
+    {"WordsFn_SystemEventNumber", addr::WordsFn_SystemEventNumber},
+    {"WordsFn_SystemEventText", addr::WordsFn_SystemEventText},
+    {"WordsFn_SystemEventVar", addr::WordsFn_SystemEventVar},
     {"WordsFn_TalkEndChoosing", addr::WordsFn_TalkEndChoosing},
+    {"WordsFn_TalkEventAnswer", addr::WordsFn_TalkEventAnswer},
+    {"WordsFn_TalkEventIsRequestOrVisit", addr::WordsFn_TalkEventIsRequestOrVisit},
+    {"WordsFn_TalkEventText", addr::WordsFn_TalkEventText},
+    {"WordsFn_TalkEventVar", addr::WordsFn_TalkEventVar},
     {"WordsFn_TalkSelectActor", addr::WordsFn_TalkSelectActor},
+    {"WordsFn_TalksToday", addr::WordsFn_TalksToday},
     {"WordsFn_TextBagItemName", addr::WordsFn_TextBagItemName},
     {"WordsFn_TextBuildingName", addr::WordsFn_TextBuildingName},
     {"WordsFn_TextClaimLine", addr::WordsFn_TextClaimLine},
-    {"WordsFn_TextEventA4Name", addr::WordsFn_TextEventA4Name},
     {"WordsFn_TextEventTitle", addr::WordsFn_TextEventTitle},
     {"WordsFn_TextFamilyRecord", addr::WordsFn_TextFamilyRecord},
     {"WordsFn_TextGoodsName", addr::WordsFn_TextGoodsName},
@@ -3519,6 +3518,7 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"WordsFn_TextOccupation", addr::WordsFn_TextOccupation},
     {"WordsFn_TextOpenHours", addr::WordsFn_TextOpenHours},
     {"WordsFn_TextPopulation", addr::WordsFn_TextPopulation},
+    {"WordsFn_TextTalkEventName", addr::WordsFn_TextTalkEventName},
     {"WordsFn_TextWantClaim", addr::WordsFn_TextWantClaim},
     {"WordsFn_TimeOfDay", addr::WordsFn_TimeOfDay},
     {"WordsFn_TryFriendAgrees", addr::WordsFn_TryFriendAgrees},
@@ -3555,7 +3555,7 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Words_SelectEvent", addr::Words_SelectEvent},
     {"Words_SetArg", addr::Words_SetArg},
     {"Words_SetFamily", addr::Words_SetFamily},
-    {"Words_SetFlag134", addr::Words_SetFlag134},
+    {"Words_SetFewChoicesLeft", addr::Words_SetFewChoicesLeft},
     {"Words_SetPerson", addr::Words_SetPerson},
     {"Words_SetWantIndex", addr::Words_SetWantIndex},
     {"Words_Step", addr::Words_Step},
@@ -3693,13 +3693,13 @@ void CityScene_PushMode(GuestPtr<CityScene> city, int mode);
 void CityScene_PopMode(GuestPtr<CityScene> city);
 int CityScene_GetMode(GuestPtr<CityScene> city);
 void CityScene_AddApproval(GuestPtr<CityScene> city, int delta);
-int CityScene_HasFlag8(GuestPtr<CityScene> city);
+int CityScene_InFarewellParty(GuestPtr<CityScene> city);
 int CityScene_MissionProgress(GuestPtr<CityScene> city);
 int CityScene_PopulationRank(GuestPtr<CityScene> city);
 int CityScene_ApprovalTier(GuestPtr<CityScene> city);
-int CityScene_ScoreA8Tier(GuestPtr<CityScene> city);
-int CityScene_ScoreA0Tier(GuestPtr<CityScene> city);
-void CityScene_RecordPlacementScore(GuestPtr<CityScene> city, int scoreA8, int scoreA0);
+int CityScene_ConductTier(GuestPtr<CityScene> city);
+int CityScene_ProsperityTier(GuestPtr<CityScene> city);
+void CityScene_RecordPlacementScore(GuestPtr<CityScene> city, int conduct, int prosperity);
 void CityScene_UpdateApproval(GuestPtr<CityScene> city);
 void CityScene_TickClock(GuestPtr<CityScene> city);
 GuestPtr<Widget> Widget_ctor(GuestPtr<Widget> widget);
@@ -3735,7 +3735,7 @@ void Packet2_Draw(GuestPtr<uint32_t> packets, int second);
 GuestPtr<A3DObject> A3DObjectBase_DeletingDtor(GuestPtr<A3DObject> model, int16_t deleteFlag);
 int LightSet_Init(GuestPtr<LightSet> lights);
 ps2f A3D_GetAnimLength(GuestPtr<A3DObject> model, int animation);
-void Instance_DrawSwaying(GuestPtr<A3DObject> model, int anim, ps2f time);
+void A3D_Animate(GuestPtr<A3DObject> model, int anim, ps2f time);
 void A3D_Relocate(GuestPtr<A3DObject> model, int indexed);
 int64_t A3DObject_ChangeLuminosity(GuestPtr<A3DObject> model, GuestPtr<uint32_t> colour, int a2);
 void A3DObject_DrawNode(GuestPtr<A3DObject> model, int node);
@@ -3779,7 +3779,7 @@ void BagMenu_Update(GuestPtr<Bag> bag, GuestPtr<CityScene> city);
 void Bag_Clear(GuestPtr<Bag> bag);
 GuestPtr<Bag> Bag_ctor(GuestPtr<Bag> bag);
 void Bag_CreateGlobal();
-void Instance_DrawSwayingIfRoom(GuestPtr<A3DObject> model, int a1, ps2f phase);
+void A3D_AnimateIfRoom(GuestPtr<A3DObject> model, int a1, ps2f phase);
 void InstanceBuf_Init();
 void Instance_DrawMesh(GuestPtr<A3DObject> model, GuestPtr<Vec4> matrix, GuestPtr<Vec4> colour, int mesh, int flags);
 void Instance_DrawNode(GuestPtr<A3DObject> model, GuestPtr<Vec4> colour, int node, int flags);
@@ -3791,7 +3791,7 @@ int CityCamera_GetZoomLevel(GuestPtr<CityCamera> camera, GuestPtr<CityScene> cit
 void CityCamera_Update(GuestPtr<CityCamera> camera, GuestPtr<CityScene> city);
 GuestPtr<CityCamera> CityCamera_DeletingDtor(GuestPtr<CityCamera> camera, int16_t deleteFlag);
 GuestPtr<CityCamera> CityCamera_ctor(GuestPtr<CityCamera> camera);
-void Instance_DrawSwaying2(GuestPtr<A3DObject> model, int anim, ps2f time);
+void A3D_AnimateCharacter(GuestPtr<A3DObject> model, int anim, ps2f time);
 void Instance_DrawModelLit(GuestPtr<A3DObject> model, GuestPtr<Vec4> colour, int variant, int style);
 void Instance_DrawNodeLimited(GuestPtr<A3DObject> model, GuestPtr<Vec4> colour, int node, int flags);
 void Instance_DrawModelEx(GuestPtr<A3DObject> model, GuestPtr<Vec4> colour, int flags, int offset0, int group, int offset3, int attach, int offset1);
@@ -3894,19 +3894,19 @@ void EventList_MoveOutOfRank(GuestPtr<EventQueue> queue, int from, int to, Guest
 void EventList_MoveByMask(GuestPtr<EventQueue> queue, int from, int to, GuestPtr<EventTest> test);
 int Pair_ctor(int pair);
 void MemberMeters_Reset(GuestPtr<int32_t> meters);
-uint8_t MemberStatus_GetLow2(int family, int member);
-uint32_t MemberStatus_GetMid2(int family, int member);
-int MemberStatus_IsLevelAbove13(int family, int member);
-uint8_t StatusByte_Low2(GuestPtr<uint8_t> status);
-uint32_t StatusByte_Mid2(GuestPtr<uint8_t> status);
-int StatusByte_LevelAbove13(GuestPtr<uint8_t> status);
-void MemberStatus_Advance(int family, int member);
-void StatusByte_Advance(GuestPtr<uint8_t> status);
-int MemberStatus_OnLevel12(int family, int member, int a2, int a3);
-void StatusByte_OnLevel12(int family, int member, GuestPtr<uint8_t> status, int amount, GuestPtr<uint32_t> approval);
-void StatusByte_IncHighLevel(GuestPtr<uint8_t> status);
-void StatusByte_ClearMid2(GuestPtr<uint8_t> status);
-void StatusByte_IncLevel(GuestPtr<uint8_t> status);
+uint8_t MemberStatus_RecentTalks(int family, int member);
+uint32_t MemberStatus_TalksToday(int family, int member);
+int MemberStatus_LongApart(int family, int member);
+uint8_t TalkStatus_RecentTalks(GuestPtr<uint8_t> status);
+uint32_t TalkStatus_TalksToday(GuestPtr<uint8_t> status);
+int TalkStatus_LongApart(GuestPtr<uint8_t> status);
+void MemberStatus_RecordTalk(int family, int member);
+void TalkStatus_RecordTalk(GuestPtr<uint8_t> status);
+int MemberStatus_AddFriendshipAfterBreak(int family, int member, int a2, int a3);
+void TalkStatus_AddFriendshipAfterBreak(int family, int member, GuestPtr<uint8_t> status, int amount, GuestPtr<uint32_t> approval);
+void TalkStatus_NewYear(GuestPtr<uint8_t> status);
+void TalkStatus_NewDay(GuestPtr<uint8_t> status);
+void TalkStatus_Tick(GuestPtr<uint8_t> status);
 void MemberStatus_Tick(int clock, int month);
 void Family_BefriendAll();
 void Family_ResetForStage();
@@ -3916,7 +3916,7 @@ void Family_SaveState(GuestPtr<McManager> mc);
 int Family_HasLeft(uint32_t family);
 void Family_SetKnown(uint32_t family);
 int Family_IsKnown(uint32_t family);
-void Family_SetFlagA(uint32_t family);
+void Family_MoveIn(uint32_t family);
 int Family_InCity(uint32_t family);
 int Family_GetFriendshipBand(int family, int member);
 int64_t Family_AddFriendship(int family, int member, GuestPtr<int32_t> approval, int points);
@@ -3932,7 +3932,7 @@ int Family_IsCached(int family);
 int Family_Prefetch(int family, int flags);
 void Family_ResetState();
 void Family_Init();
-int StatusByte_ctorE0(int status);
+int TalkStatus_ctor(int status);
 void Minimap_BuildPacket(GuestPtr<Minimap> minimap);
 void Minimap_SetView(GuestPtr<Minimap> minimap, GuestPtr<ps2f> camera, ps2f angle);
 void Minimap_Plot(GuestPtr<Minimap> minimap, uint32_t tile, int size, int colour, int keepHigher);
@@ -3965,10 +3965,10 @@ void TerrainGen_Generate(GuestPtr<CityMap> map, GuestPtr<uint8_t> params);
 GuestPtr<CityMap> CityMap_DeletingDtor(GuestPtr<CityMap> map, int16_t deleteFlag);
 GuestPtr<CityMap> CityMap_ctor(GuestPtr<CityMap> map);
 uint16_t Map_TileFlag20(GuestPtr<CityMap> map, int x, int z);
-uint16_t Map_TileFlag01(GuestPtr<CityMap> map, int x, int z);
+uint16_t Map_TileIsCorner(GuestPtr<CityMap> map, int x, int z);
 uint16_t Map_TileFlag08(GuestPtr<CityMap> map, int x, int z);
-uint16_t Map_TileFlag10(GuestPtr<CityMap> map, int x, int z);
-uint16_t Map_TileIndexFlag10(GuestPtr<CityMap> map, uint32_t tile);
+uint16_t Map_TileWalkable(GuestPtr<CityMap> map, int x, int z);
+uint16_t Map_TileIndexWalkable(GuestPtr<CityMap> map, uint32_t tile);
 void Map_SetTileKind(GuestPtr<CityMap> map, int tile, uint32_t kind);
 int Map_GetTileKind(GuestPtr<CityMap> map, int tile);
 void Map_SetTileHeight(GuestPtr<CityMap> map, uint32_t tile, ps2f height);
@@ -4248,9 +4248,9 @@ GuestPtr<McManager> McManager_dtor(GuestPtr<McManager> mc, int16_t deleteFlag);
 GuestPtr<McManager> McManager_ctor(GuestPtr<McManager> mc);
 int16_t Person_FindBuildingInList(GuestPtr<CityScene> city, int list, int x, int z, int mode, int16_t skipA, int16_t skipB);
 uint32_t Person_PlaceHomeObject(GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
-uint16_t Person_RandomTarget(GuestPtr<CityScene> city, GuestPtr<MapPerson> person, int a2, int a3);
+uint16_t Person_PickShopNearby(GuestPtr<CityScene> city, GuestPtr<MapPerson> person, int a2, int a3);
 uint16_t Person_TargetWork(GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
-int Person_TileHasCompanion(GuestPtr<CityScene> city, GuestPtr<MapPerson> person, GuestPtr<MapObject> building);
+int Person_BuildingHasRoom(GuestPtr<CityScene> city, GuestPtr<MapPerson> person, GuestPtr<MapObject> building);
 uint16_t Person_TargetVisit(GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
 uint16_t Person_TargetShop(GuestPtr<CityScene> city, GuestPtr<MapPerson> person, int a2, int a3);
 int16_t Person_TargetHome(GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
@@ -4617,7 +4617,7 @@ void TalkConv_NextLine(GuestPtr<TalkConv> conv);
 void TalkConv_Start(GuestPtr<TalkConv> conv, int byFamily, int target, int buildingOrMember, int slot, int arg5);
 GuestPtr<TalkConv> TalkConv_dtor(GuestPtr<TalkConv> conv, int16_t deleteFlag);
 GuestPtr<TalkConv> TalkConv_ctor(GuestPtr<TalkConv> conv, GuestPtr<CityScene> city);
-int WordsFn_CitySetFlag40(GuestPtr<WordsCtx> ctx);
+int WordsFn_FocusPadAfterTalk(GuestPtr<WordsCtx> ctx);
 int WordsFn_TalkEndChoosing(GuestPtr<WordsCtx> ctx);
 int WordsFn_TalkSelectActor(GuestPtr<WordsCtx> ctx);
 int WordsFn_EventRemoveWant(GuestPtr<WordsCtx> ctx);
@@ -4627,13 +4627,13 @@ int WordsFn_ClearPersonFlag20(GuestPtr<WordsCtx> ctx);
 int WordsFn_ActorFollow(GuestPtr<WordsCtx> ctx);
 int WordsFn_ActorDetach(GuestPtr<WordsCtx> ctx);
 int WordsFn_SelectEventActor(GuestPtr<WordsCtx> ctx);
-int WordsFn_EndEventA4Result(GuestPtr<WordsCtx> ctx);
-int WordsFn_StartEventA4(GuestPtr<WordsCtx> ctx);
-int WordsFn_EndEventA4(GuestPtr<WordsCtx> ctx);
-int WordsFn_SetEventA4Var(GuestPtr<WordsCtx> ctx);
-int WordsFn_EndEventA8Result(GuestPtr<WordsCtx> ctx);
-int WordsFn_EndEventA8(GuestPtr<WordsCtx> ctx);
-int WordsFn_SetEventA8Var(GuestPtr<WordsCtx> ctx);
+int WordsFn_FinishTalkEvent(GuestPtr<WordsCtx> ctx);
+int WordsFn_StartTalkEvent(GuestPtr<WordsCtx> ctx);
+int WordsFn_AbortTalkEvent(GuestPtr<WordsCtx> ctx);
+int WordsFn_SetTalkEventVar(GuestPtr<WordsCtx> ctx);
+int WordsFn_FinishSystemEvent(GuestPtr<WordsCtx> ctx);
+int WordsFn_AbortSystemEvent(GuestPtr<WordsCtx> ctx);
+int WordsFn_SetSystemEventVar(GuestPtr<WordsCtx> ctx);
 int WordsFn_SelectEventPersonB(GuestPtr<WordsCtx> ctx);
 int WordsFn_SelectEventPersonA(GuestPtr<WordsCtx> ctx);
 int WordsFn_EventQueueShift(GuestPtr<WordsCtx> ctx);
@@ -4653,10 +4653,10 @@ int WordsFn_SelectBuildingB(GuestPtr<WordsCtx> ctx);
 int WordsFn_SetCancelAllowed(GuestPtr<WordsCtx> ctx);
 int WordsFn_SetStoryFlagB(GuestPtr<WordsCtx> ctx);
 int WordsFn_ClearStoryFlagB(GuestPtr<WordsCtx> ctx);
-int WordsFn_SetVar1C5602(GuestPtr<WordsCtx> ctx);
-int WordsFn_EventA4Text(GuestPtr<WordsCtx> ctx);
-GuestPtr<char> WordsFn_TextEventA4Name(GuestPtr<WordsCtx> ctx);
-int WordsFn_EventA8Text(GuestPtr<WordsCtx> ctx);
+int WordsFn_SetScriptVar(GuestPtr<WordsCtx> ctx);
+int WordsFn_TalkEventText(GuestPtr<WordsCtx> ctx);
+GuestPtr<char> WordsFn_TextTalkEventName(GuestPtr<WordsCtx> ctx);
+int WordsFn_SystemEventText(GuestPtr<WordsCtx> ctx);
 GuestPtr<char> WordsFn_TextEventTitle(GuestPtr<WordsCtx> ctx);
 GuestPtr<char> WordsFn_TextOpenHours(GuestPtr<WordsCtx> ctx);
 GuestPtr<char> WordsFn_TextBagItemName(GuestPtr<WordsCtx> ctx);
@@ -4670,14 +4670,14 @@ GuestPtr<char> WordsFn_TextBuildingName(GuestPtr<WordsCtx> ctx);
 GuestPtr<char> WordsFn_TextMemberName2(GuestPtr<WordsCtx> ctx);
 GuestPtr<char> WordsFn_TextMemberName(GuestPtr<WordsCtx> ctx);
 GuestPtr<char> WordsFn_TextNameSlot(GuestPtr<WordsCtx> ctx);
-int WordsFn_EventA4Answer(GuestPtr<WordsCtx> ctx);
+int WordsFn_TalkEventAnswer(GuestPtr<WordsCtx> ctx);
 int WordsFn_EventSetActor(GuestPtr<WordsCtx> ctx);
 int WordsFn_EventActorIs(GuestPtr<WordsCtx> ctx);
-int WordsFn_EventA4Var(GuestPtr<WordsCtx> ctx);
-int WordsFn_EventA4IsTalk(GuestPtr<WordsCtx> ctx);
-int WordsFn_EventA8Answer(GuestPtr<WordsCtx> ctx);
-int WordsFn_EventA8Var(GuestPtr<WordsCtx> ctx);
-int WordsFn_EventA8Kind(GuestPtr<WordsCtx> ctx);
+int WordsFn_TalkEventVar(GuestPtr<WordsCtx> ctx);
+int WordsFn_TalkEventIsRequestOrVisit(GuestPtr<WordsCtx> ctx);
+int WordsFn_SystemEventAnswer(GuestPtr<WordsCtx> ctx);
+int WordsFn_SystemEventVar(GuestPtr<WordsCtx> ctx);
+int WordsFn_SystemEventNumber(GuestPtr<WordsCtx> ctx);
 int WordsFn_EventCountdown(GuestPtr<WordsCtx> ctx);
 int WordsFn_EventStage(GuestPtr<WordsCtx> ctx);
 int WordsFn_StartEvent(GuestPtr<WordsCtx> ctx);
@@ -4711,7 +4711,7 @@ int WordsFn_PersonFlagBit(GuestPtr<WordsCtx> ctx);
 uint32_t WordsFn_ScheduleState(GuestPtr<WordsCtx> ctx);
 int WordsFn_HomeIsType104(GuestPtr<WordsCtx> ctx);
 int WordsFn_Arg4(GuestPtr<WordsCtx> ctx);
-uint8_t WordsFn_MemberByte2B(GuestPtr<WordsCtx> ctx);
+uint8_t WordsFn_MemberLook(GuestPtr<WordsCtx> ctx);
 uint8_t WordsFn_MemberByte2A(GuestPtr<WordsCtx> ctx);
 uint16_t WordsFn_MemberCharType(GuestPtr<WordsCtx> ctx);
 int WordsFn_IsSpecialFamily(GuestPtr<WordsCtx> ctx);
@@ -4719,8 +4719,8 @@ int WordsFn_IsApplicant(GuestPtr<WordsCtx> ctx);
 int WordsFn_FamilyHasLeft(GuestPtr<WordsCtx> ctx);
 int WordsFn_FamilyInCity(GuestPtr<WordsCtx> ctx);
 int WordsFn_CanApply(GuestPtr<WordsCtx> ctx);
-int WordsFn_ScoreA8Tier(GuestPtr<WordsCtx> ctx);
-int WordsFn_ScoreA0Tier(GuestPtr<WordsCtx> ctx);
+int WordsFn_ConductTier(GuestPtr<WordsCtx> ctx);
+int WordsFn_ProsperityTier(GuestPtr<WordsCtx> ctx);
 int WordsFn_ApprovalTier(GuestPtr<WordsCtx> ctx);
 int WordsFn_MapHistoryTier(GuestPtr<WordsCtx> ctx);
 int WordsFn_FamilyCountTier(GuestPtr<WordsCtx> ctx);
@@ -4729,14 +4729,14 @@ int WordsFn_TimeOfDay(GuestPtr<WordsCtx> ctx);
 int WordsFn_BeforeSix(GuestPtr<WordsCtx> ctx);
 int WordsFn_WeatherTomorrow(GuestPtr<WordsCtx> ctx);
 int WordsFn_WeatherToday(GuestPtr<WordsCtx> ctx);
-int WordsFn_CityFlag2(GuestPtr<WordsCtx> ctx);
+int WordsFn_HolidayMonth(GuestPtr<WordsCtx> ctx);
 int WordsFn_Month(GuestPtr<WordsCtx> ctx);
 int WordsFn_StaminaZero(GuestPtr<WordsCtx> ctx);
 int WordsFn_StaminaTier(GuestPtr<WordsCtx> ctx);
 int WordsFn_StoryFlagB(GuestPtr<WordsCtx> ctx);
 int WordsFn_StoryFlagA(GuestPtr<WordsCtx> ctx);
-int WordsFn_GetVar1C5602(GuestPtr<WordsCtx> ctx);
-int WordsFn_Flag134(GuestPtr<WordsCtx> ctx);
+int WordsFn_ScriptVar(GuestPtr<WordsCtx> ctx);
+int WordsFn_FewChoicesLeft(GuestPtr<WordsCtx> ctx);
 int WordsFn_RandomN(GuestPtr<WordsCtx> ctx);
 int WordsFn_Random3(GuestPtr<WordsCtx> ctx);
 int WordsFn_Random50(GuestPtr<WordsCtx> ctx);
@@ -4763,14 +4763,14 @@ uint8_t WordsFn_BuildingCategory(GuestPtr<WordsCtx> ctx);
 int WordsFn_PersonHeading(GuestPtr<WordsCtx> ctx);
 int WordsFn_PersonWhere(GuestPtr<WordsCtx> ctx);
 int WordsFn_PersonAtBuilding(GuestPtr<WordsCtx> ctx);
-int WordsFn_StatusMid2(GuestPtr<WordsCtx> ctx);
-int WordsFn_StatusLow2(GuestPtr<WordsCtx> ctx);
+int WordsFn_TalksToday(GuestPtr<WordsCtx> ctx);
+int WordsFn_RecentTalks(GuestPtr<WordsCtx> ctx);
 int WordsFn_FriendLevelHigh(GuestPtr<WordsCtx> ctx);
 int WordsFn_NameSlotSet(GuestPtr<WordsCtx> ctx);
 void Words_CallCond(GuestPtr<Words> words, int index);
 int Words_CallText(GuestPtr<Words> words, int index);
 int Words_CallAct(GuestPtr<Words> words, int index);
-void Words_SetFlag134(GuestPtr<Words> words);
+void Words_SetFewChoicesLeft(GuestPtr<Words> words);
 void Words_SelectBagItem(GuestPtr<Words> words, int index);
 void Words_SetWantIndex(GuestPtr<Words> words, uint16_t index);
 int Words_SelectEvent(GuestPtr<Words> words, int choice);
@@ -4833,7 +4833,7 @@ int64_t Random_Next();
 void Random_Seed(int seed);
 void Random_Stir();
 void Gs_InitDisplay(uint16_t a0, int a1);
-void Pad_ClearBit40();
+void Pad_SwallowCross();
 void Pad_ReleaseFocus(int owner);
 void Pad_TakeFocus(int owner, int mask);
 int Pad_GetRepeat();
@@ -4864,8 +4864,8 @@ int McQueue_GetResult(int queue, int request);
 int McQueue_IsDone(int queue, int request);
 void McQueue_Init();
 void McQueue_Pump();
-int McManagerSub_DeletingDtor(int queue, int16_t deleteFlag);
-int McManagerSub_ctor(int queue);
+int McQueue_DeletingDtor(int queue, int16_t deleteFlag);
+int McQueue_ctor(int queue);
 void PacketBuf_Seek(int address);
 int PacketBuf_Tell();
 int Dma_KickVif1Now(uint32_t address);
@@ -4884,7 +4884,7 @@ void DmaList_InitPackets();
 void DmaList_Init();
 void Sound_StopAllPlaying();
 void Se_SetEnabled(int enabled, int resetVolumes);
-int Se_SetVoice15Enabled(int enabled, int a1);
+int Bgm_SetPlaying(int enabled, int a1);
 void Se_UpdateCityAmbience(int advance);
 int Se_UpdateListener();
 uint32_t Se_BuildingSoundState(GuestPtr<MapObject> obj, GuestPtr<BuildingType> btype);

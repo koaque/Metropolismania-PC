@@ -1,6 +1,6 @@
 // The bag: up to 20 slots (4, 10 or 20 by its size) of goods, each naming a goods record by group and index
-// (records of 0x88 bytes from 0x1BDAA0; each group's first record in the table at 0x1BDA9C), and ten shortcuts
-// holding music tracks. Also the applicants list's small helpers.
+// (records of 0x88 bytes from 0x1BDAA0; each group's first record in the table at 0x1BDA9C), and the ten music
+// tracks bought. Also the applicants list's small helpers.
 
 #include <bit>
 
@@ -81,20 +81,20 @@ namespace mm
         slot->count = goodsRecordOf(static_cast<uint32_t>(group), static_cast<uint32_t>(index))->count;
     }
 
-    // A music goods record puts its track (its value) in the first free shortcut (0xFFFF), unless a shortcut has it
+    // A music goods record puts its track (its value) in the first free music track entry (0xFFFF), unless one has it
     // already, and enables it in the BGM slot table.
     void Bag_AddMusicTrack(GuestPtr<Bag> bag, int group, int index)
     {
         const uint8_t track = goodsRecordOf(static_cast<uint32_t>(group), static_cast<uint32_t>(index))->value;
-        for (const BagShortcut &shortcut : bag->shortcuts)
-            if (static_cast<uint16_t>(shortcut.slot) == track)
+        for (const BagMusicTrack &music : bag->musicTracks)
+            if (static_cast<uint16_t>(music.track) == track)
                 return;
-        for (BagShortcut &shortcut : bag->shortcuts)
+        for (BagMusicTrack &music : bag->musicTracks)
         {
-            if (static_cast<uint16_t>(shortcut.slot) != 0xFFFFu)
+            if (static_cast<uint16_t>(music.track) != 0xFFFFu)
                 continue;
-            shortcut.slot = track;
-            shortcut.unk_02 = 1;
+            music.track = track;
+            music.enabled = 1;
             Bgm_SetTrackSlot(static_cast<char>(track), 1, 1);
             return;
         }
@@ -106,8 +106,8 @@ namespace mm
         bag->outfit = 0;
         for (BagSlot &slot : bag->slots)
             slot.group = 0;
-        for (BagShortcut &shortcut : bag->shortcuts)
-            shortcut.slot = -1;
+        for (BagMusicTrack &music : bag->musicTracks)
+            music.track = -1;
     }
 
     // The slot whose goods record's name (offset) is `id`. Slots are read up to the bag's size, and past it while
@@ -718,7 +718,7 @@ namespace mm
         }
 
         // The bag model's place slides between two points by t = time / 120: the place is (1 - t) * from + t * to (the products added
-        // as the FPU's accumulator does), and the model is drawn swaying at that time.
+        // as the FPU's accumulator does), and the model's animation is set to that time.
         void slideBag(uint32_t bag, ps2f time, uint32_t from)
         {
             constexpr uint32_t kTo = 0x001AEF00u;
@@ -772,7 +772,7 @@ namespace mm
         {
             bag->slide = bag->slide + ps2f(10.0f);
             slideBag(b, bag->slide, 0x001AEF10u);
-            Instance_DrawSwaying(model(), 0, bag->slide);
+            A3D_Animate(model(), 0, bag->slide);
             if (bag->slide < ps2f(120.0f))
                 break;
             setState(2);
@@ -841,7 +841,7 @@ namespace mm
             break;
         case 3:
             bag->slide = bag->slide - ps2f(10.0f);
-            Instance_DrawSwaying(model(), 0, bag->slide);
+            A3D_Animate(model(), 0, bag->slide);
             slideBag(b, bag->slide, 0x001AEF10u);
             if (bag->slide <= ps2f(0.0f))
             {
@@ -892,7 +892,7 @@ namespace mm
         case 6:
             bag->slide = bag->slide - ps2f(10.0f);
             slideBag(b, bag->slide, 0x001AEF20u);
-            Instance_DrawSwaying(model(), 0, bag->slide);
+            A3D_Animate(model(), 0, bag->slide);
             if (bag->slide <= ps2f(0.0f))
             {
                 city->hudVisible[1] = 1;
@@ -904,7 +904,7 @@ namespace mm
         case 7:
             bag->slide = bag->slide + ps2f(10.0f);
             slideBag(b, bag->slide, 0x001AEF20u);
-            Instance_DrawSwaying(model(), 0, bag->slide);
+            A3D_Animate(model(), 0, bag->slide);
             if (bag->slide < ps2f(120.0f))
                 break;
             Notice_Clear(city->notice);
@@ -1064,7 +1064,7 @@ namespace mm
             if (count > 0)
             {
                 Applicants_DrawDetails(applicants);
-                Instance_DrawSwaying(cardModel(), 0, applicants->rollPhase);
+                A3D_Animate(cardModel(), 0, applicants->rollPhase);
                 const int32_t relight = applicants->relight;
                 applicants->relight = 0;
                 if (relight != 0)

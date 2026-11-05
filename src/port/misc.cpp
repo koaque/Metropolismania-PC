@@ -86,13 +86,12 @@ namespace mm
         return 2;
     }
 
-    // char: the player's model, swaying while there is room for it, lit, holding the bag's current item
-    // (bag +2, provisional).
+    // char: the player's model, animated while there is room for it, lit, in the bag's outfit.
     void Player_Draw(GuestPtr<Player> player, GuestPtr<CityScene> city)
     {
         if (player->visible == 0)
             return;
-        Instance_DrawSwayingIfRoom(player->model, player->swayArg, player->swayPhase);
+        A3D_AnimateIfRoom(player->model, player->animation, player->animTime);
         A3DObject_UpdateMatrices(player->model);
         Instance_DrawModelLit(player->model, GuestPtr<Vec4>{player.address + 0x20u}, player->mode, city->bag->outfit);
     }
@@ -127,15 +126,15 @@ namespace mm
             else if ((Pad_Held(0) & 0x100000u) != 0 || (Pad_Held(0) & 0x1000u) != 0 || player->step == 1)
                 anim = pick(4);
         }
-        if (player->swayArg != anim)
+        if (player->animation != anim)
         {
-            player->swayArg = anim;
-            player->swayPhase = 0.0f;
+            player->animation = anim;
+            player->animTime = 0.0f;
         }
-        const ps2f length = A3D_GetAnimLength(player->model, player->swayArg);
-        player->swayPhase = player->swayPhase + ps2f(1.0f);
-        if (!(player->swayPhase < length))
-            player->swayPhase = player->swayArg < 4 ? ps2f(0.0f) : length / ps2f(5.0f);
+        const ps2f length = A3D_GetAnimLength(player->model, player->animation);
+        player->animTime = player->animTime + ps2f(1.0f);
+        if (!(player->animTime < length))
+            player->animTime = player->animation < 4 ? ps2f(0.0f) : length / ps2f(5.0f);
         if (player->mode != 1 || (Pad_Held(0) & 0x40u) == 0 || still())
             return;
         Sound_PlaySe(5, 0, 0x3C, 0.0f, 0.0f);
@@ -147,11 +146,11 @@ namespace mm
     // with +0x14 at 1..9 gives 2, anything else 1. In snow (weather 3) from 3:00 to 23:00, 0 becomes 1.
     void Player_PlayFootstep(GuestPtr<Player> player, GuestPtr<CityScene> city)
     {
-        const int anim = player->swayArg;
+        const int anim = player->animation;
         uint8_t variant;
         if (anim >= 4 && anim < 8)
         {
-            if (!(player->swayPhase == ps2f(10.0f)) && !(player->swayPhase == ps2f(30.0f)))
+            if (!(player->animTime == ps2f(10.0f)) && !(player->animTime == ps2f(30.0f)))
                 return;
             variant = 4;
             if (player->position.y < city->waterLevel)
@@ -169,7 +168,7 @@ namespace mm
             if (city->weatherToday == 3 && variant == 0 && city->clock >= 10800 && city->clock <= 82800)
                 variant = 1;
         }
-        else if (anim >= 8 && anim < 12 && player->swayPhase == ps2f(10.0f))
+        else if (anim >= 8 && anim < 12 && player->animTime == ps2f(10.0f))
             variant = 3;
         else
             return;
@@ -1077,14 +1076,14 @@ namespace mm
     int FileQueue_IsDone(int, int request) { return requestDone(globals::fileQueueHead.get(), globals::fileQueueTail.get(), request); }
 
     // family status bytes (one per acquaintance): bits 0-1, bits 2-3 and a level in the high nibble.
-    int StatusByte_ctorE0(int status)
+    int TalkStatus_ctor(int status)
     {
         port::store<uint8_t>(static_cast<uint32_t>(status) + 3u, 0xE0); // level 14, low bits clear
         return status;
     }
 
     // Level +1 while below 12; from level 2 on, bits 0-1 are cleared.
-    void StatusByte_IncLevel(GuestPtr<uint8_t> status)
+    void TalkStatus_Tick(GuestPtr<uint8_t> status)
     {
         const uint8_t level = *status >> 4;
         if (level >= 12)
@@ -1096,7 +1095,7 @@ namespace mm
     }
 
     // Ages the 256 member status entries in use, from the city clock (seconds) and month count: every
-    // 600 s the level rises (StatusByte_IncLevel), each midnight bits 2-3 clear, and at midnight of every
+    // 600 s the level rises (TalkStatus_Tick), each midnight bits 2-3 clear, and at midnight of every
     // 12th month levels 12 and 13 rise once more.
     void MemberStatus_Tick(int clock, int month)
     {
@@ -1107,7 +1106,7 @@ namespace mm
                 continue;
             const GuestPtr<uint8_t> status{entry + 3u};
             if (clock % 600 == 0)
-                StatusByte_IncLevel(status);
+                TalkStatus_Tick(status);
             if (clock % 86400 == 0 && ((*status & 0xFu) >> 2) != 0)
                 *status &= 0xF3;
             if (clock == 0 && month % 12 == 0)
@@ -1221,7 +1220,7 @@ namespace mm
     void StaticInit_StatusBytes()
     {
         for (uint32_t i = 0; i < 0x100; ++i)
-            StatusByte_ctorE0(static_cast<int>(globals::kMemberStatus + 4u * i));
+            TalkStatus_ctor(static_cast<int>(globals::kMemberStatus + 4u * i));
     }
 
     // Static constructor: the event type id table's 256 two-byte elements (__construct_array in the original).
@@ -1310,9 +1309,9 @@ namespace mm
         player->mode = mode;
         player->stepFrames = 0.0f;
         player->step = 0;
-        player->swayPhase = 0.0f;
+        player->animTime = 0.0f;
         player->target = -1;
-        Pad_ClearBit40();
+        Pad_SwallowCross();
     }
 
     // file: empties the disc request queue.
@@ -1369,7 +1368,8 @@ namespace mm
         stage->stage = -1;
         stage->money = 3000;
         stage->salary = 2500;
-        stage->unk_280 = 0;
+        stage->flags = 0;
+        stage->scriptVar = 0;
         for (StageName &name : stage->names)
             name.text[0] = '\0';
     }
@@ -1601,7 +1601,7 @@ namespace mm
         player->previousMode = 0;
         player->step = 0;
         player->stepFrames = 0.0f;
-        player->swayPhase = 0.0f;
+        player->animTime = 0.0f;
         player->heading = 0.0f;
         player->position.x = 0.0f;
         player->position.y = 0.0f;
@@ -1651,13 +1651,13 @@ namespace mm
         return phone;
     }
 
-    // bag: empty slots, no shortcuts, and the bag model scaled by 7 at its place from 0x1AEF10.
+    // bag: empty slots, no music tracks, and the bag model scaled by 7 at its place from 0x1AEF10.
     GuestPtr<Bag> Bag_ctor(GuestPtr<Bag> bag)
     {
         for (BagSlot &slot : bag->slots)
             slot.group = 0;
-        for (BagShortcut &shortcut : bag->shortcuts)
-            shortcut.slot = -1;
+        for (BagMusicTrack &music : bag->musicTracks)
+            music.track = -1;
         bag->model = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B24u)};
         bag->state = 0;
         bag->matrix = GuestPtr<Vec4>::of(bag->model->matrix[0]);
@@ -1794,7 +1794,7 @@ namespace mm
     // grows by one tick after every try.
     void Person_TickCounters(GuestPtr<CharClass>, GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
     {
-        StatusByte_IncLevel(GuestPtr<uint8_t>::of(person->status));
+        TalkStatus_Tick(GuestPtr<uint8_t>::of(person->status));
         if (person->cooldown != 0)
             --person->cooldown;
         if (globals::introCallDue.get() == 0)
@@ -1982,7 +1982,7 @@ namespace mm
         const ps2f acrossX = sdk::fmodf(offset + person->x, two);
         const ps2f acrossZ = sdk::fmodf(offset + person->z, two);
         const int blocked = Person_ProbeTile(cls, city, person, obj->tile);
-        if (Map_TileIndexFlag10(city->map, obj->tile) != 0)
+        if (Map_TileIndexWalkable(city->map, obj->tile) != 0)
         {
             const auto pavement = [&](ps2f f, ps2f oneSide, ps2f otherSide, ps2f straight) {
                 if ((!(f < ps2f(0.5f)) && f <= ps2f(1.0f)) || !(f <= ps2f(1.875f)))
@@ -2166,7 +2166,7 @@ namespace mm
             {
                 if (tile == 0x4000 || tile == person->previousTile)
                     break;
-                if (Map_TileIndexFlag10(city->map, tile) == 0)
+                if (Map_TileIndexWalkable(city->map, tile) == 0)
                     break;
                 const GuestPtr<MapObject> block = Map_GetTileFirstObject(city->map, tile);
                 for (int i = 0; i < 4; ++i)
@@ -2240,9 +2240,9 @@ namespace mm
         };
 
         GuestPtr<MapObject> here = Map_GetTileFirstObject(city->map, tile);
-        if (Map_TileIndexFlag10(city->map, static_cast<uint32_t>(tile)) != 0)
+        if (Map_TileIndexWalkable(city->map, static_cast<uint32_t>(tile)) != 0)
         {
-            if (peopleInside(dest) && Map_TileIndexFlag10(city->map, dest->entranceTile) != 0)
+            if (peopleInside(dest) && Map_TileIndexWalkable(city->map, dest->entranceTile) != 0)
             {
                 const GuestPtr<MapObject> entrance = Map_GetTileFirstObject(city->map, dest->entranceTile);
                 uint16_t waypoint;
@@ -2298,7 +2298,7 @@ namespace mm
         }
 
         here = Map_GetTileFirstObject(city->map, tile);
-        if (peopleInside(here) && Map_TileIndexFlag10(city->map, here->entranceTile) != 0)
+        if (peopleInside(here) && Map_TileIndexWalkable(city->map, here->entranceTile) != 0)
             return advance(here->entranceTile);
         const GuestPtr<Vec4> from{sp + 0xE0u}, to{sp + 0xD0u}, result{sp + 0xC0u};
         if (tileDistanceIn(from, to, result, here->tile, dest->tile) < ps2f(8.0f))
@@ -2309,7 +2309,7 @@ namespace mm
             {
                 const int tx = x + ring * port::load<int32_t>(globals::kPathStepX + 4u * static_cast<uint32_t>(dir));
                 const int tz = z + ring * port::load<int32_t>(globals::kPathStepZ + 4u * static_cast<uint32_t>(dir));
-                if (Map_TileFlag10(city->map, tx, tz) == 0)
+                if (Map_TileWalkable(city->map, tx, tz) == 0)
                     continue;
                 const uint16_t road = Map_GetTileObject(city->map, tx, tz)->tile;
                 if (road != 0x4000)
@@ -2469,7 +2469,7 @@ namespace mm
                         brake(gapTo(*other), rules.slow);
                         return;
                     }
-                if (Map_TileIndexFlag10(city->map, nextBlock->tile) == 0)
+                if (Map_TileIndexWalkable(city->map, nextBlock->tile) == 0)
                     return;
                 *cursor = nextBlock->firstPerson;
                 while (const GuestPtr<MapPerson> other = nextVehicle())
@@ -2485,7 +2485,7 @@ namespace mm
                 const uint16_t shape = nextBlock->variant;
                 if (shape == straight)
                 {
-                    if (obj->variant == straight && Map_TileIndexFlag10(city->map, blockAfter->tile) != 0 && blockAfter->variant == straight)
+                    if (obj->variant == straight && Map_TileIndexWalkable(city->map, blockAfter->tile) != 0 && blockAfter->variant == straight)
                         change = rules.gain;
                     return;
                 }
@@ -2587,7 +2587,7 @@ namespace mm
                 const ps2f one = 1.0f, two = 2.0f, offset = 128.0f;
                 const ps2f dx = sdk::fmodf(offset + vehicle->x, two) - one;
                 const ps2f dz = sdk::fmodf(offset + vehicle->z, two) - one;
-                if (Map_TileIndexFlag10(city->map, obj->tile) == 0)
+                if (Map_TileIndexWalkable(city->map, obj->tile) == 0)
                     updateSpeed(cls, city, vehicle, obj, 4, dx, dz);
                 else
                 {
@@ -2704,8 +2704,8 @@ namespace mm
     PORT_FN(Sky_BuildPackets);
     PORT_FN(McQueue_IsDone);
     PORT_FN(FileQueue_IsDone);
-    PORT_FN(StatusByte_ctorE0);
-    PORT_FN(StatusByte_IncLevel);
+    PORT_FN(TalkStatus_ctor);
+    PORT_FN(TalkStatus_Tick);
     PORT_FN(CharType_TickSlots);
     PORT_FN(MemberStatus_Tick);
     PORT_FN(EventData_DataSize);
@@ -2886,9 +2886,9 @@ namespace mm
 
     // Whether the building on a walkable tile has room: fewer than four residents inside (people with flag 0x100
     // not counted).
-    int Person_TileHasCompanion(GuestPtr<CityScene> city, GuestPtr<MapPerson>, GuestPtr<MapObject> building)
+    int Person_BuildingHasRoom(GuestPtr<CityScene> city, GuestPtr<MapPerson>, GuestPtr<MapObject> building)
     {
-        if (Map_TileIndexFlag10(city->map, building->tile) == 0)
+        if (Map_TileIndexWalkable(city->map, building->tile) == 0)
             return 0;
         port::GuestLocal<uint16_t> cursor;
         *cursor = building->firstPerson;
@@ -2915,7 +2915,7 @@ namespace mm
         const GuestPtr<MapObject> work = Map_GetRecord(city->map, person->work);
         if (person->target != kNoObject)
         {
-            if (Person_TileHasCompanion(city, person, Map_GetRecord(city->map, person->target)) == 0)
+            if (Person_BuildingHasRoom(city, person, Map_GetRecord(city->map, person->target)) == 0)
                 person->target = person->work;
             return person->target;
         }
@@ -2926,7 +2926,7 @@ namespace mm
             return person->target;
         }
         const GuestPtr<MapObject> entrance = Map_GetTileFirstObject(city->map, work->entranceTile);
-        person->target = Person_TileHasCompanion(city, person, entrance) != 0 ? entrance->id : person->work;
+        person->target = Person_BuildingHasRoom(city, person, entrance) != 0 ? entrance->id : person->work;
         return person->target;
     }
 
@@ -3001,7 +3001,7 @@ namespace mm
         return (GuestPtr<BuildingType>{globals::buildingTypeAddress(on->type)}->flags & 0x40u) != 0 ? 0 : 1;
     }
 
-    PORT_FN(Person_TileHasCompanion);
+    PORT_FN(Person_BuildingHasRoom);
     PORT_FN(Person_TargetVisit);
     PORT_FN(Person_TargetHome);
     PORT_FN(Person_FindIdleOfType);
@@ -3169,12 +3169,12 @@ namespace mm
         uint32_t statusLevel(uint8_t status) { return (status >> 4) & 0xFu; }
     }
 
-    uint8_t StatusByte_Low2(GuestPtr<uint8_t> status) { return *status & 3u; }
-    uint32_t StatusByte_Mid2(GuestPtr<uint8_t> status) { return (*status >> 2) & 3u; }
-    int StatusByte_LevelAbove13(GuestPtr<uint8_t> status) { return statusLevel(*status) >= 14 ? 1 : 0; }
+    uint8_t TalkStatus_RecentTalks(GuestPtr<uint8_t> status) { return *status & 3u; }
+    uint32_t TalkStatus_TalksToday(GuestPtr<uint8_t> status) { return (*status >> 2) & 3u; }
+    int TalkStatus_LongApart(GuestPtr<uint8_t> status) { return statusLevel(*status) >= 14 ? 1 : 0; }
 
     // Advances the low fields (each up to 2; the middle pair only from level 2), then the level starts over.
-    void StatusByte_Advance(GuestPtr<uint8_t> status)
+    void TalkStatus_RecordTalk(GuestPtr<uint8_t> status)
     {
         if (statusLevel(*status) >= 2)
         {
@@ -3188,14 +3188,14 @@ namespace mm
         *status = static_cast<uint8_t>(*status & 0x0Fu);
     }
 
-    void StatusByte_ClearMid2(GuestPtr<uint8_t> status)
+    void TalkStatus_NewDay(GuestPtr<uint8_t> status)
     {
         if (((*status >> 2) & 3u) != 0)
             *status = static_cast<uint8_t>(*status & 0xF3u);
     }
 
     // Levels 12 and 13 go one up (14 is the top).
-    void StatusByte_IncHighLevel(GuestPtr<uint8_t> status)
+    void TalkStatus_NewYear(GuestPtr<uint8_t> status)
     {
         const uint32_t level = statusLevel(*status);
         if (level < 12 || level >= 14)
@@ -3204,7 +3204,7 @@ namespace mm
     }
 
     // From level 12 the member gains `amount` friendship points.
-    void StatusByte_OnLevel12(int family, int member, GuestPtr<uint8_t> status, int amount, GuestPtr<uint32_t> approval)
+    void TalkStatus_AddFriendshipAfterBreak(int family, int member, GuestPtr<uint8_t> status, int amount, GuestPtr<uint32_t> approval)
     {
         if (statusLevel(*status) >= 12)
             Family_AddFriendship(family, member, GuestPtr<int32_t>{approval.address}, amount);
@@ -3256,13 +3256,13 @@ namespace mm
     PORT_FN(Stamina_SaveState);
     PORT_FN(Stamina_Zero);
     PORT_FN(Stamina_Eat);
-    PORT_FN(StatusByte_Low2);
-    PORT_FN(StatusByte_Mid2);
-    PORT_FN(StatusByte_LevelAbove13);
-    PORT_FN(StatusByte_Advance);
-    PORT_FN(StatusByte_ClearMid2);
-    PORT_FN(StatusByte_IncHighLevel);
-    PORT_FN(StatusByte_OnLevel12);
+    PORT_FN(TalkStatus_RecentTalks);
+    PORT_FN(TalkStatus_TalksToday);
+    PORT_FN(TalkStatus_LongApart);
+    PORT_FN(TalkStatus_RecordTalk);
+    PORT_FN(TalkStatus_NewDay);
+    PORT_FN(TalkStatus_NewYear);
+    PORT_FN(TalkStatus_AddFriendshipAfterBreak);
     PORT_FN(Talk_EndChoosing);
     PORT_FN(Talk_SelectPerson);
     PORT_FN(Talk_SetViewLit);
@@ -3322,7 +3322,7 @@ namespace mm
 
     // A shop for someone at (x, z): tile lists from a random one on (64 tries), a shop (type flag 0x40) with a
     // walkable entrance 5 to 9 tiles away (along x plus along z), taken with a one-in-three chance. 0x3F80 for none.
-    uint16_t Person_RandomTarget(GuestPtr<CityScene> city, GuestPtr<MapPerson>, int x, int z)
+    uint16_t Person_PickShopNearby(GuestPtr<CityScene> city, GuestPtr<MapPerson>, int x, int z)
     {
         port::GuestLocal<uint32_t> count;
         int list = Random_TimerMix() & 0x3F;
@@ -3335,7 +3335,7 @@ namespace mm
             {
                 const GuestPtr<MapObject> shop = Map_GetRecord(city->map, port::load<uint16_t>(item));
                 if ((GuestPtr<BuildingType>{globals::buildingTypeAddress(shop->type)}->flags & 0x40u) == 0 ||
-                    Map_TileIndexFlag10(city->map, shop->entranceTile) == 0)
+                    Map_TileIndexWalkable(city->map, shop->entranceTile) == 0)
                     continue;
                 const GuestPtr<MapObject> at = Map_GetTileFirstObject(city->map, shop->entranceTile);
                 const int distance = std::abs(at->tile % 128 - x) + std::abs(at->tile / 128 - z);
@@ -3447,7 +3447,7 @@ namespace mm
     }
 
     PORT_FN(Person_IsNearBuilding);
-    PORT_FN(Person_RandomTarget);
+    PORT_FN(Person_PickShopNearby);
     PORT_FN(Person_TargetShop);
     PORT_FN(Map_ReturnPeopleToWork);
     PORT_FN(Text_FormatTimeRange);
@@ -3480,7 +3480,7 @@ namespace mm
         case 4:
             return 7;
         case 5:
-            globals::stageFlags.set(static_cast<uint16_t>(globals::stageFlags.get() ^ 1u));
+            globals::stageState()->flags = static_cast<uint16_t>(globals::stageState()->flags ^ 1u); // the minimap
             return mode;
         case 6:
         case 7:
@@ -3498,7 +3498,7 @@ namespace mm
             return 1;
         case 13:
             Family_BefriendAll();
-            globals::stageFlags.set(static_cast<uint16_t>(globals::stageFlags.get() | 2u));
+            globals::stageState()->flags = static_cast<uint16_t>(globals::stageState()->flags | 2u);
             for (const int added : {4, 5, 8, 9, 0xA, 0xC})
                 Laptop_AddEntry(laptop, added);
             Laptop_RemoveEntry(laptop, 0xD);
@@ -3830,7 +3830,7 @@ namespace mm
             const uint32_t queue = mc->queue.address;
             if (queue != 0u)
             {
-                McManagerSub_DeletingDtor(static_cast<int>(queue), 1);
+                McQueue_DeletingDtor(static_cast<int>(queue), 1);
                 mc->queue = GuestPtr<void>{0u};
             }
             const GuestPtr<GameFile> file = mc->file;
@@ -4005,7 +4005,7 @@ namespace mm
         if (person->schedState == 0)
             person->schedState = Schedule_Evaluate(person->family, person->member);
         const GuestPtr<MapObject> workRecord = Map_GetRecord(city->map, person->work);
-        const int flag8 = CityScene_HasFlag8(city);
+        const int flag8 = CityScene_InFarewellParty(city);
         const int entry = Schedule_PickEntry(person->family, person->member, workRecord->type, person->schedState, flag8, person->flags & 0x10u);
         int32_t shifted = city->clock - static_cast<int32_t>(Math_SqrtBits(person->member + 6 * person->family)) % 3600;
         if (shifted < 0)
@@ -4062,7 +4062,7 @@ namespace mm
             destination = findIn(0x12 + (timer & 1), 1, skip);
             break;
         case 9:
-            destination = Person_RandomTarget(city, person, x, z);
+            destination = Person_PickShopNearby(city, person, x, z);
             break;
         case 10:
         {
@@ -4138,9 +4138,9 @@ namespace mm
             player->mode = previous;
             player->stepFrames = 0.0f;
             player->step = 0;
-            player->swayPhase = 0.0f;
+            player->animTime = 0.0f;
             player->target = -1;
-            Pad_ClearBit40();
+            Pad_SwallowCross();
         };
         const uint32_t kind = BagMenu_GetSetupKind(city->bag, GuestPtr<uint32_t>{sp + 0xACu});
         if (kind == 0xFFFFFFFFu)
@@ -4350,7 +4350,7 @@ namespace mm
                 person->schedState = Schedule_Evaluate(person->family, person->member);
             const GuestPtr<MapObject> work = Map_GetRecord(city->map, person->work);
             const bool lifted = (person->flags & 0x10u) != 0;
-            if (CityScene_HasFlag8(city) != 0)
+            if (CityScene_InFarewellParty(city) != 0)
                 return 29;
             if (lifted)
                 return 30;
@@ -4501,7 +4501,7 @@ namespace mm
         const uint32_t activity = Schedule_GetActivity(city, person);
         const int shifted = (activity & 0x80u) != 0 ? 1 : 0;
         const int inside = (person->flags & 0x400u) != 0 ? 1 : 0;
-        Instance_DrawSwaying2(GuestPtr<A3DObject>{model}, animation, fromInt(port::load<uint16_t>(frameAt)));
+        A3D_AnimateCharacter(GuestPtr<A3DObject>{model}, animation, fromInt(port::load<uint16_t>(frameAt)));
         A3DObject_UpdateMatrices(GuestPtr<A3DObject>{model});
         if (animation != 5 && Family_GetFriendship(person->family, person->member) >= 0x30)
             Person_TurnToPlayer(cls, city, person);
@@ -4556,7 +4556,7 @@ namespace mm
         const int inside = person && (person->flags & 0x400u) != 0 ? 1 : 0;
         if (!withinDrawBudget(model))
             return;
-        Instance_DrawSwaying2(GuestPtr<A3DObject>{model}, port::load<int32_t>(mesh.address), ps2f(floatAt(phase.address)));
+        A3D_AnimateCharacter(GuestPtr<A3DObject>{model}, port::load<int32_t>(mesh.address), ps2f(floatAt(phase.address)));
         A3DObject_UpdateMatrices(GuestPtr<A3DObject>{model});
         Instance_DrawModelEx(GuestPtr<A3DObject>{model}, GuestPtr<Vec4>{static_cast<uint32_t>(colour)}, 0, port::load<int32_t>(local), static_cast<int>(activity & 0x7Fu), shifted, inside, 4);
     }
@@ -4961,7 +4961,7 @@ namespace mm
             Person_CheckBuilding(cls, city, person);
         if ((timeFlags & 4u) != 0)
         {
-            StatusByte_ClearMid2(GuestPtr<uint8_t>::of(person->status));
+            TalkStatus_NewDay(GuestPtr<uint8_t>::of(person->status));
             const GuestPtr<MapObject> work = Map_GetRecord(map, person->work);
             const GuestPtr<BuildingType> workType{globals::buildingTypeAddress(work->type)};
             if ((workType->flags & 0x200u) != 0 && person->schedState >= 3)
@@ -4973,7 +4973,7 @@ namespace mm
             }
         }
         if ((timeFlags & 8u) != 0)
-            StatusByte_IncHighLevel(GuestPtr<uint8_t>::of(person->status));
+            TalkStatus_NewYear(GuestPtr<uint8_t>::of(person->status));
         if ((person->flags & 4u) != 0)
             return;
 

@@ -756,7 +756,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001290C0,mm_A3DObjectBase_DeletingDtor,84,game,gfx,verified,yes,2,2,"base destructor 0x12AB40, then delete when the flag is > 0"
 0x00129120,mm_LightSet_Init,228,game,gfx,verified,no,2,2,"(provisional, was mm_Unk129120_Init) base init; +0x190 = 0x110, +0x194 = 0xE0; 12 colour/direction slots and ambient set to 1.0"
 0x00129210,mm_A3D_GetAnimLength,24,game,gfx,verified,no,9,0,the length of a model's animation (its first track's last word)
-0x00129230,mm_Instance_DrawSwaying,816,game,gfx,verified,no,6,2,"(provisional, was mm_A3D_SineDeform) adds instances for mesh a2 of model a1 with sine-wave motion at time a0 (callers check the instance budget first)"
+0x00129230,mm_A3D_Animate,816,game,gfx,verified,no,6,2,"keyframe animation a1 of model a0 at time a2: each node track's pair of keys around the time sets the node's local matrix (quaternion slerp, linear position); draws nothing"
 0x00129570,mm_A3D_Relocate,988,game,gfx,verified,yes,2,3,"turns the loaded model's offsets into pointers, patches the addresses in its DMA chains (mm_DmaChain_*) and uploads its textures (mm_Dma_KickVif1Now)"
 0x00129950,mm_A3DObject_ChangeLuminosity,96,game,gfx,verified,yes,6,1,CA3DObject::ChangeLuminusity (name from its error string): sets node a2's colour (node +0x60) to the vec4 at a1; prints an error for a bad node index
 0x001299B0,mm_A3DObject_DrawNode,104,game,gfx,verified,no,15,1,queues node a1's packet (node +0x50) and its mesh packet (mesh +0x10); nodes are 0xC0 bytes at model +8
@@ -800,7 +800,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0012C320,mm_Bag_Clear,112,game,bag,verified,no,1,0,empties the 10 item slots and sets the 10 track ids to 0xFFFF
 0x0012C390,mm_Bag_ctor,248,game,bag,verified,no,1,0,empty bag plus its window data (0x1F3B24 ...)
 0x0012C490,mm_Bag_CreateGlobal,56,game,bag,verified,yes,1,2,0x1BDA18 = new bag (0x1AC bytes)
-0x0012C4D0,mm_Instance_DrawSwayingIfRoom,60,game,gfx,verified,no,6,1,mm_Instance_DrawSwaying when the model's nodes still fit in the 1800-instance budget
+0x0012C4D0,mm_A3D_AnimateIfRoom,60,game,gfx,verified,no,6,1,mm_A3D_Animate only while the model's nodes still fit in this frame's instance slots (0x708)
 0x0012C510,mm_InstanceBuf_Init,400,game,gfx,verified,yes,1,1,"allocates the two instance buffers and pre-fills each slot's DMA/VIF header (CNT 5, STCYCL, UNPACK)"
 0x0012C6A0,mm_Instance_DrawMesh,236,game,gfx,verified,no,18,1,writes matrix a1/a2 and colour into the next instance slot and queues it with the mesh packet
 0x0012C790,mm_Instance_DrawNode,240,game,gfx,verified,no,1,1,instance of node a2 of model a0 with colour a1
@@ -812,7 +812,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0012CB80,mm_CityCamera_Update,2688,game,camera,verified,no,1,8,"pad-driven city camera: move, rotate, zoom, keeps the eye above the terrain, updates fog, projection and matrices"
 0x0012D600,mm_CityCamera_DeletingDtor,92,game,camera,verified,yes,1,2,"camera destructor, then delete when the flag is > 0"
 0x0012D660,mm_CityCamera_ctor,80,game,camera,verified,yes,1,1,"camera constructor (0x161250) with eye (0, -29, 1.6), zoom level 1"
-0x0012D6B0,mm_Instance_DrawSwaying2,824,game,gfx,verified,no,2,2,"(provisional) second sine-wave instance variant, used by 0x133E80/0x1345E0"
+0x0012D6B0,mm_A3D_AnimateCharacter,824,game,gfx,verified,no,2,2,"the same code as mm_A3D_Animate (tracks without keys skipped a step earlier), used by the character draws (mm_Person_Draw, mm_Person_Draw2)"
 0x0012D9F0,mm_Instance_DrawModelLit,852,game,gfx,verified,no,1,1,"(provisional) instances of a model whose nodes hold mesh-table indexes: nodes 0-2 with their own meshes (node 0 offset, node 2 only for style 0), later nodes from the style's group of 13"
 0x0012DD50,mm_Instance_DrawNodeLimited,280,game,gfx,verified,no,1,1,"like mm_Instance_DrawNode, also capped by a second counter (gp)"
 0x0012DE70,mm_Instance_DrawModelEx,940,game,gfx,verified,no,4,2,"(provisional) as mm_Instance_DrawModelLit with per-call mesh offsets and flags, an optional attached part (0x1F3B80) at node 2, later nodes by group x the size at +0x60"
@@ -889,7 +889,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00137EA0,mm_Event_LoadState,164,game,event,verified,indirect,1,1,"reads the queue (0x200), the active list (0x224), a1 (0xA4) and each active event's data from the save file"
 0x00137F50,mm_Event_SaveState,164,game,event,verified,indirect,1,1,writes them
 0x00138000,mm_Event_CallAnswer,128,game,event,verified,indirect,2,0,"calls the Answer slot (+0x14) of the handler of the talk event a4 (0 talks[0], 1 talks[1]) with (event, city, actor, arg)"
-0x00138080,mm_Event_CallText,128,game,event,verified,indirect,2,0,calls handler slot +0x10 of the type of active event a2
+0x00138080,mm_Event_CallText,128,game,event,ported,indirect,2,0,calls handler slot +0x10 of the type of active event a2
 0x00138100,mm_Event_Update,2544,game,event,verified,indirect,1,13,"per frame: starts queued events whose conditions hold, runs and finishes active ones"
 0x00138AF0,mm_Event_CheckCondition,1712,game,event,verified,indirect,4,9,(provisional) checks an event type's start conditions against the city
 0x001391B0,mm_Event_TryStart,504,game,event,verified,indirect,1,3,(provisional) starts event a2 if its conditions hold
@@ -916,19 +916,19 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0013BAB0,mm_Pair_ctor,16,game,core,verified,no,1,0,two-byte element constructor (array init)
 0x0013BAC0,mm_MemberMeters_Reset,160,game,family,verified,no,1,0,(provisional) clears four counters and the member meter table at 0x1C59B0
 0x0013BB70,mm_MemberStatus_Lookup,448,game,family,verified,no,6,0,entry for family a0 member a1 in the table at 0x1F32F0 (adds one when missing)
-0x0013BD30,mm_MemberStatus_GetLow2,36,game,family,verified,no,1,1,"lookup, then bits 0-1"
-0x0013BD60,mm_MemberStatus_GetMid2,40,game,family,verified,no,1,1,"lookup, then bits 2-3"
-0x0013BD90,mm_MemberStatus_IsLevelAbove13,56,game,family,verified,no,1,1,"lookup, then level > 13"
-0x0013BDD0,mm_StatusByte_Low2,12,game,city,verified,no,2,0,bits 0-1 of *a0
-0x0013BDE0,mm_StatusByte_Mid2,16,game,city,verified,no,2,0,bits 2-3 of *a0
-0x0013BDF0,mm_StatusByte_LevelAbove13,36,game,city,verified,no,2,0,level (bits 4-7) > 13
-0x0013BE20,mm_MemberStatus_Advance,168,game,family,verified,no,1,1,"level > 1 bumps bits 2-3 (up to 2), then updates bits 0-1"
-0x0013BED0,mm_StatusByte_Advance,144,game,city,verified,no,1,0,the same advance on a status byte pointer
-0x0013BF60,mm_MemberStatus_OnLevel12,112,game,family,verified,no,1,2,"when the level is above 11, applies the friendship gain (0x13CB40)"
-0x0013BFD0,mm_StatusByte_OnLevel12,52,game,city,verified,no,1,1,friendship gain when the byte's level is above 11
-0x0013C010,mm_StatusByte_IncHighLevel,64,game,char,verified,no,1,0,(provisional) level 12..13 -> +1
-0x0013C050,mm_StatusByte_ClearMid2,48,game,char,verified,no,1,0,clears bits 2-3 when set
-0x0013C080,mm_StatusByte_IncLevel,108,game,char,verified,no,1,0,(provisional) level +1 below 12; above 1 clears bits 0-1
+0x0013BD30,mm_MemberStatus_RecentTalks,36,game,family,verified,no,1,1,mm_TalkStatus_RecentTalks of the member's status entry (mm_MemberStatus_Lookup)
+0x0013BD60,mm_MemberStatus_TalksToday,40,game,family,verified,no,1,1,mm_TalkStatus_TalksToday of the member's status entry
+0x0013BD90,mm_MemberStatus_LongApart,56,game,family,verified,no,1,1,mm_TalkStatus_LongApart of the member's status entry
+0x0013BDD0,mm_TalkStatus_RecentTalks,12,game,city,verified,no,2,0,"talks in the last twenty minutes (bits 0-1, up to 2)"
+0x0013BDE0,mm_TalkStatus_TalksToday,16,game,city,verified,no,2,0,"talks today, counted only twenty minutes or more after the one before (bits 2-3, up to 2)"
+0x0013BDF0,mm_TalkStatus_LongApart,36,game,city,verified,no,2,0,"time level 14: no talk since before the last new year, or never"
+0x0013BE20,mm_MemberStatus_RecordTalk,168,game,family,verified,no,1,1,mm_TalkStatus_RecordTalk on the member's status entry
+0x0013BED0,mm_TalkStatus_RecordTalk,144,game,city,verified,no,1,0,"a talk: today's count rises (only twenty minutes or more after the last), the recent count rises, the time level starts over"
+0x0013BF60,mm_MemberStatus_AddFriendshipAfterBreak,112,game,family,verified,no,1,2,mm_TalkStatus_AddFriendshipAfterBreak for the member's status entry
+0x0013BFD0,mm_TalkStatus_AddFriendshipAfterBreak,52,game,city,verified,no,1,1,from time level 12 (two hours or more since the last talk) the talk adds friendship points (mm_Family_AddFriendship)
+0x0013C010,mm_TalkStatus_NewYear,64,game,char,verified,no,1,0,the first day of the year: time levels 12 and 13 rise once (14 is the top)
+0x0013C050,mm_TalkStatus_NewDay,48,game,char,verified,no,1,0,midnight: today's talk count clears
+0x0013C080,mm_TalkStatus_Tick,108,game,char,verified,no,1,0,ten minutes of city time pass: the time level rises up to 12 (two hours); from level 2 (twenty minutes) the recent talk count clears
 0x0013C0F0,mm_MemberStatus_Tick,336,game,family,verified,no,1,0,every 600 s the level rises (up to 12); daily and yearly resets of the low bits
 0x0013C240,mm_Family_BefriendAll,732,game,family,verified,no,1,0,every member becomes a friend with meter 64 and every family known (bitset B); from a laptop entry
 0x0013C520,mm_Family_ResetForStage,204,game,family,verified,no,1,0,clears bitsets A and C and the counters for a new stage
@@ -939,7 +939,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0013C900,mm_Family_HasLeft,80,game,family,verified,no,2,0,bitset C: the family moved away
 0x0013C950,mm_Family_SetKnown,76,game,family,verified,no,1,0,"sets bit a0 of bitset B (0x1D4900, families known through the Town's Pages); called by mm_WordsFn_MarkFamilyKnown"
 0x0013C9A0,mm_Family_IsKnown,80,game,family,verified,no,4,0,bitset B: the family is known (Town's Pages)
-0x0013C9F0,mm_Family_SetFlagA,116,game,family,verified,no,1,0,sets bit a0 of bitset A and updates the counters
+0x0013C9F0,mm_Family_MoveIn,116,game,family,verified,no,1,0,a family moves in: its bit in the in-city bitset and both moved-in counters (the opposite of mm_Family_MoveAway)
 0x0013CA70,mm_Family_InCity,80,game,family,verified,no,14,0,bitset A: the family lives in the city
 0x0013CAC0,mm_Family_GetFriendshipBand,124,game,family,verified,no,8,0,"band 0..4 of member (a0, a1)'s meter (0, below 24, below 48, below 100, higher)"
 0x0013CB40,mm_Family_AddFriendship,648,game,family,verified,no,6,1,"adds a3 points to member (a0, a1)'s meter (clamped 0..120); rising may set the friend bit (chance from *a2, the approval)"
@@ -956,7 +956,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0013D6B0,mm_Family_Get,476,game,family,verified,yes,42,4,"family a0's record (0x1D4 bytes), loading it synchronously into the LRU cache if needed"
 0x0013D890,mm_Family_ResetState,436,game,family,verified,no,2,0,"clears member bytes, bitsets, counters and the cache tables"
 0x0013DA50,mm_Family_Init,152,game,family,verified,yes,1,7,"resets the family state, opens DATA\BIN\FAMILY.BIN and loads DATA\BIN\EACHSTR.BIN"
-0x0013DAF0,mm_StatusByte_ctorE0,80,game,family,verified,no,0,0,sets byte 3 to level 14 with bits 0-3 clear
+0x0013DAF0,mm_TalkStatus_ctor,80,game,family,verified,no,0,0,"a talk status byte (+3 of a member status entry) that has never been talked to: time level 14, counts clear"
 0x0013DB40,mm_Minimap_BuildPacket,1096,game,ui,verified,no,1,0,"builds the minimap DMA packet at +0x2000: palette 0x1AF180 to block 0x1E00, the cells as a 128 x 128 4-bit image to 0x1E01, then one sprite"
 0x0013DF90,mm_Minimap_SetView,144,game,ui,verified,no,1,1,rotates the minimap by the camera (sceVu0RotMatrixZ) and offsets it by the position (scale 0.0105)
 0x0013E020,mm_Minimap_Plot,388,game,ui,verified,no,9,0,marks tile a1 on the minimap with colour/size arguments
@@ -989,10 +989,10 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00141010,mm_CityMap_DeletingDtor,96,game,map,verified,yes,1,2,"vtable 0x1BCED0, then the render-level destructor"
 0x00141070,mm_CityMap_ctor,52,game,map,ported,yes,1,1,"render-level constructor, vtable 0x1BCED0"
 0x001410B0,mm_Map_TileFlag20,92,game,map,verified,no,1,0,"tile (a1, a2) flag 0x20 (0 off the map)"
-0x00141110,mm_Map_TileFlag01,92,game,map,verified,no,1,0,tile flag 0x01
+0x00141110,mm_Map_TileIsCorner,92,game,map,verified,no,1,0,"tile flag 1: the corner tile an object was placed from (mm_Map_PlaceObject), 0 off the map"
 0x00141170,mm_Map_TileFlag08,92,game,map,verified,no,1,0,tile flag 0x08
-0x001411D0,mm_Map_TileFlag10,92,game,map,verified,no,6,0,tile flag 0x10 (checked by movement)
-0x00141230,mm_Map_TileIndexFlag10,56,game,map,verified,no,12,0,flag 0x10 of tile index a1
+0x001411D0,mm_Map_TileWalkable,92,game,map,verified,no,6,0,"tile flag 0x10 (set under building types with flag 2), 0 off the map; checked by movement"
+0x00141230,mm_Map_TileIndexWalkable,56,game,map,verified,no,12,0,"tile flag 0x10 of tile index a1, 0 off the map"
 0x00141270,mm_Map_SetTileKind,100,game,map,verified,no,2,0,tile kind a2 (0..3) into tile flags 4 and 2
 0x001412E0,mm_Map_GetTileKind,80,game,map,verified,no,12,0,"tile kind 0..3 from tile flags (flag 4 = 2, flag 2 = 1)"
 0x00141330,mm_Map_SetTileHeight,76,game,map,verified,no,1,1,"tile a2's height word = a0, then updates its geometry"
@@ -1276,9 +1276,9 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0015DAB0,mm_McManager_ctor,128,game,save,verified,yes,3,4,"sub-object, file, slot tables"
 0x0015DB30,mm_Person_FindBuildingInList,444,game,char,verified,no,2,4,(provisional) a building of the wanted kind from a tile list near the person
 0x0015DCF0,mm_Person_PlaceHomeObject,800,game,char,verified,no,1,4,"a resident's home (kept in its target field): the current one, a home of the family near work with the claim meter below 60, or a new home of the work type's home type (+0x13A) placed on flat ground nearby; else the workplace"
-0x0015E010,mm_Person_RandomTarget,436,game,char,verified,no,1,6,(provisional) random target along walkable tiles
+0x0015E010,mm_Person_PickShopNearby,436,game,char,verified,no,1,6,"a shop for someone at (x, z): tile lists from a random one on (64 tries), a shop (type flag 0x40) with a walkable entrance 5 to 9 tiles away, taken with a one-in-three chance; 0x3F80 for none (activity 9)"
 0x0015E1D0,mm_Person_TargetWork,292,game,char,verified,no,2,2,(provisional)
-0x0015E300,mm_Person_TileHasCompanion,212,game,char,verified,no,1,2,(provisional) people on the tile matching the person
+0x0015E300,mm_Person_BuildingHasRoom,212,game,char,verified,no,1,2,whether the building stands on a walkable tile and has fewer than four residents inside (people with flag 0x100 not counted)
 0x0015E3E0,mm_Person_TargetVisit,276,game,char,verified,no,1,5,(provisional)
 0x0015E500,mm_Person_TargetShop,456,game,char,verified,no,1,4,(provisional)
 0x0015E6D0,mm_Person_TargetHome,296,game,char,verified,no,1,3,(provisional)
@@ -1363,7 +1363,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00164310,mm_BldgType_BaseCtor,1068,game,city,verified,yes,8,6,"base constructor: shared DATA\BIN\POSTNAME.BIN, model and parameters"
 0x00164740,mm_Math_MulMatVecVu0,44,game,math,verified,no,1,0,(provisional) VU0 matrix x vector
 0x00164770,mm_BldgAmusementPark_dtor,128,game,city,verified,yes,0,2,"category 11 (Amusement Park), vtable 0x1BD040"
-0x001647F0,mm_BldgAmusementPark_DrawAnim,232,game,city,verified,no,0,3,swaying ride animation between the opening hours
+0x001647F0,mm_BldgAmusementPark_DrawAnim,232,game,city,verified,no,0,3,the ride model's animation (mm_A3D_AnimateIfRoom) runs between the opening hours and finishes its cycle after them
 0x001648E0,mm_BldgAmusementPark_Draw,524,game,city,verified,no,0,4,instances for the park
 0x00164AF0,mm_BldgAmusementPark_ctor,64,game,city,verified,yes,1,1,"Building constructor, vtable 0x1BD040"
 0x00164B30,mm_BldgBusiness_dtor,112,game,city,verified,yes,0,2,"category 6 (factories, shops), vtable 0x1BD1C0"
@@ -1653,7 +1653,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0017B2D0,mm_TalkConv_Start,380,game,talk,verified,yes,2,6,"loads the script for a person (a1 0) or family member (a1 1), shows the card, sets the message"
 0x0017B450,mm_TalkConv_dtor,260,game,talk,verified,yes,0,2,"vtable 0x1BD860, deletes menu, name entry, card, money panel"
 0x0017B560,mm_TalkConv_ctor,152,game,talk,verified,yes,1,4,message window plus a menu window and the person card
-0x0017B600,mm_WordsFn_CitySetFlag40,20,game,talk,verified,no,0,0,#146 act: city flag 0x40 (pad focus returns after the talk)
+0x0017B600,mm_WordsFn_FocusPadAfterTalk,20,game,talk,verified,no,0,0,"#146 act: city flag 0x40, the pad focus returns when the talk ends"
 0x0017B620,mm_WordsFn_TalkEndChoosing,8,game,talk,verified,no,0,1,"#145 act: talk view choice cleared, session single target"
 0x0017B630,mm_WordsFn_TalkSelectActor,40,game,talk,verified,no,0,1,#144 act: talk view choice = actor arg of event +0xA4
 0x0017B660,mm_WordsFn_EventRemoveWant,96,game,talk,verified,no,0,1,#143 act: removes the want the event holds for its building type
@@ -1663,13 +1663,13 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0017B7D0,mm_WordsFn_ActorFollow,156,game,talk,verified,no,0,2,#139 act: person A leaves the building and follows actor arg
 0x0017B870,mm_WordsFn_ActorDetach,108,game,talk,verified,no,0,1,#138 act: detaches the subjects from the event
 0x0017B8E0,mm_WordsFn_SelectEventActor,168,game,talk,verified,no,0,2,#137 act: subjects B from actor arg of event +0xA4
-0x0017B990,mm_WordsFn_EndEventA4Result,16,game,talk,verified,indirect,0,1,#136 act: ends event slot +0xA4 with its result code
-0x0017B9A0,mm_WordsFn_StartEventA4,20,game,talk,verified,indirect,0,1,"#135 act: starts event slot +0xA4 (tiles, handler Start)"
-0x0017B9C0,mm_WordsFn_EndEventA4,16,game,talk,verified,indirect,0,1,#134 act: ends event slot +0xA4
-0x0017B9D0,mm_WordsFn_SetEventA4Var,24,game,talk,verified,no,0,0,#133 act: event slot +0xA4 variable = arg
-0x0017B9F0,mm_WordsFn_EndEventA8Result,16,game,talk,verified,indirect,0,1,#132 act: ends event slot +0xA8 with its result code
-0x0017BA00,mm_WordsFn_EndEventA8,16,game,talk,verified,indirect,0,1,"#131 act: ends event slot +0xA8 (handler End, tiles, requeue by kind)"
-0x0017BA10,mm_WordsFn_SetEventA8Var,24,game,talk,verified,no,0,0,#130 act: event slot +0xA8 variable = arg
+0x0017B990,mm_WordsFn_FinishTalkEvent,16,game,talk,verified,indirect,0,1,"#136 act: finishes the talk event (EventMgr.talks[0], mm_Event_Finish)"
+0x0017B9A0,mm_WordsFn_StartTalkEvent,20,game,talk,verified,indirect,0,1,"#135 act: starts the talk event (talks[0]: tiles, handler Start) with person A"
+0x0017B9C0,mm_WordsFn_AbortTalkEvent,16,game,talk,verified,indirect,0,1,"#134 act: abandons the talk event (talks[0], mm_Event_Abort)"
+0x0017B9D0,mm_WordsFn_SetTalkEventVar,24,game,talk,verified,no,0,0,#133 act: the talk event's variable (+10) = arg
+0x0017B9F0,mm_WordsFn_FinishSystemEvent,16,game,talk,verified,indirect,0,1,"#132 act: finishes the system event (talks[1], group 6: paydays, hunger, population milestones)"
+0x0017BA00,mm_WordsFn_AbortSystemEvent,16,game,talk,verified,indirect,0,1,"#131 act: abandons the system event (talks[1]: handler End, tiles, requeue by kind)"
+0x0017BA10,mm_WordsFn_SetSystemEventVar,24,game,talk,verified,no,0,0,#130 act: the system event's variable (+10) = arg
 0x0017BA30,mm_WordsFn_SelectEventPersonB,100,game,talk,verified,no,0,1,#129 act: subject B = the event's second person
 0x0017BAA0,mm_WordsFn_SelectEventPersonA,100,game,talk,verified,no,0,1,#128 act: subject B = the event's first person
 0x0017BB10,mm_WordsFn_EventQueueShift,12,game,talk,verified,no,0,1,#127 act: (provisional) requeues the first event and shifts the list
@@ -1689,10 +1689,10 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0017C3E0,mm_WordsFn_SetCancelAllowed,12,game,talk,verified,no,0,0,#113 act: context +0x130 = arg (cancel button allowed)
 0x0017C3F0,mm_WordsFn_SetStoryFlagB,80,game,talk,verified,no,0,0,#112 act: sets bit arg of 0x1C5530
 0x0017C440,mm_WordsFn_ClearStoryFlagB,84,game,talk,verified,no,0,0,#111 act: clears bit arg of 0x1C5530
-0x0017C4A0,mm_WordsFn_SetVar1C5602,16,game,talk,verified,no,0,0,#110 act: script variable 0x1C5602 = arg
-0x0017C4B0,mm_WordsFn_EventA4Text,20,game,talk,verified,indirect,0,1,#109 act: event slot +0xA4 handler Text with arg
-0x0017C4D0,mm_WordsFn_TextEventA4Name,48,game,talk,verified,no,0,0,#108 text: name of the event in slot +0xA4
-0x0017C500,mm_WordsFn_EventA8Text,20,game,talk,verified,indirect,0,1,#107 act: event slot +0xA8 handler Text with arg
+0x0017C4A0,mm_WordsFn_SetScriptVar,16,game,talk,verified,no,0,0,#110 act: the talk scripts' own variable (stage state +0x282) = arg
+0x0017C4B0,mm_WordsFn_TalkEventText,20,game,talk,verified,indirect,0,1,#109 act: the talk event's handler Text with arg
+0x0017C4D0,mm_WordsFn_TextTalkEventName,48,game,talk,verified,no,0,0,#108 text: the talk event's title (EVENT.BIN name)
+0x0017C500,mm_WordsFn_SystemEventText,20,game,talk,verified,indirect,0,1,#107 act: the system event's handler Text with arg
 0x0017C520,mm_WordsFn_TextEventTitle,16,game,talk,verified,yes,0,1,"#106 text: event title, with the member name when it has one"
 0x0017C530,mm_WordsFn_TextOpenHours,72,game,talk,verified,no,0,2,#105 text: opening hours of the family's building type
 0x0017C580,mm_WordsFn_TextBagItemName,68,game,talk,verified,no,0,0,#104 text: name of the selected bag item
@@ -1706,14 +1706,14 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0017C8A0,mm_WordsFn_TextMemberName2,120,game,talk,verified,yes,0,1,#96 text: (provisional) member second name (+0x5C)
 0x0017C920,mm_WordsFn_TextMemberName,120,game,talk,verified,yes,0,1,"#95 text: member name (+0x4C) of A, B or the result family"
 0x0017C9A0,mm_WordsFn_TextNameSlot,24,game,talk,verified,no,0,0,#94 text: name slot arg
-0x0017C9C0,mm_WordsFn_EventA4Answer,120,game,talk,verified,no,0,1,#93 act: the Answer slot (+0x14) of the talk's first event (talks[0]) with person A and arg
+0x0017C9C0,mm_WordsFn_TalkEventAnswer,120,game,talk,verified,no,0,1,#93 act: the Answer slot (+0x14) of the talk event (talks[0]) with person A and arg
 0x0017CA40,mm_WordsFn_EventSetActor,324,game,talk,verified,no,0,1,"#92 cond: sets actor arg of event +0xA4 to the subjects, marks the building"
 0x0017CB90,mm_WordsFn_EventActorIs,76,game,talk,verified,no,0,0,#91 cond: actor arg of event +0xA4 is subject A
-0x0017CBE0,mm_WordsFn_EventA4Var,20,game,talk,verified,no,0,0,#90 cond: event slot +0xA4 variable (+10)
-0x0017CC00,mm_WordsFn_EventA4IsTalk,80,game,talk,verified,no,0,0,#89 cond: (provisional) event slot +0xA4 kind is 1 or 2
-0x0017CC50,mm_WordsFn_EventA8Answer,120,game,talk,verified,no,0,1,#88 act: the Answer slot (+0x14) of the talk's second event (talks[1]) with person A and arg
-0x0017CCD0,mm_WordsFn_EventA8Var,20,game,talk,verified,no,0,0,#87 cond: event slot +0xA8 variable (+10)
-0x0017CCF0,mm_WordsFn_EventA8Kind,96,game,talk,verified,no,0,0,#86 cond: (provisional) kind of event slot +0xA8 plus 1
+0x0017CBE0,mm_WordsFn_TalkEventVar,20,game,talk,verified,no,0,0,#90 cond: the talk event's variable (+10)
+0x0017CC00,mm_WordsFn_TalkEventIsRequestOrVisit,80,game,talk,verified,no,0,0,#89 cond: the talk event's type is in group 1 (requests) or 2 (visitors)
+0x0017CC50,mm_WordsFn_SystemEventAnswer,120,game,talk,verified,no,0,1,#88 act: the Answer slot (+0x14) of the system event (talks[1]) with person A and arg
+0x0017CCD0,mm_WordsFn_SystemEventVar,20,game,talk,verified,no,0,0,#87 cond: the system event's variable (+10)
+0x0017CCF0,mm_WordsFn_SystemEventNumber,96,game,talk,verified,no,0,0,"#86 cond: the system event's number in its group plus 1, 0 without one"
 0x0017CD50,mm_WordsFn_EventCountdown,36,game,talk,verified,no,0,0,#85 cond: (provisional) 3 minus the event's counter
 0x0017CD80,mm_WordsFn_EventStage,168,game,talk,verified,no,0,1,#84 cond: (provisional) stage of the context's event
 0x0017CE30,mm_WordsFn_StartEvent,60,game,talk,verified,no,0,1,#83 act: starts an event from the script for person A
@@ -1747,16 +1747,16 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0017EA00,mm_WordsFn_ScheduleState,344,game,talk,verified,yes,0,1,"#58 cond: the person's schedule state, folded by arg (0..5)"
 0x0017EB60,mm_WordsFn_HomeIsType104,92,game,talk,verified,no,0,1,#57 cond: (provisional) the family's home type is 0x104 or 0x105
 0x0017EBC0,mm_WordsFn_Arg4,8,game,talk,verified,no,0,0,#56 cond: context +4
-0x0017EBD0,mm_WordsFn_MemberByte2B,68,game,talk,verified,yes,0,1,#55 cond: (provisional) member byte +0x2B
-0x0017EC20,mm_WordsFn_MemberByte2A,68,game,talk,verified,yes,0,1,#54 cond: (provisional) member byte +0x2A
+0x0017EBD0,mm_WordsFn_MemberLook,68,game,talk,verified,yes,0,1,"#55 cond: member A's look (FamilyMember +7, family record +0x2B)"
+0x0017EC20,mm_WordsFn_MemberByte2A,68,game,talk,verified,yes,0,1,#54 cond: member A's byte +6 (family record +0x2A); 0 in every FAMILY.BIN record
 0x0017EC70,mm_WordsFn_MemberCharType,104,game,talk,verified,yes,0,1,"#53 cond: member character type, folded (0x26 -> 13, others above 0x1D -> 0)"
 0x0017ECE0,mm_WordsFn_IsSpecialFamily,120,game,talk,verified,no,0,0,#52 cond: (provisional) family equals one of three ids in a gp table (arg selects)
 0x0017ED60,mm_WordsFn_IsApplicant,16,game,talk,verified,no,0,1,#51 cond: the family is on the applicant list
 0x0017ED70,mm_WordsFn_FamilyHasLeft,8,game,talk,verified,no,0,1,#50 cond: family A moved away (bitset C)
 0x0017ED80,mm_WordsFn_FamilyInCity,8,game,talk,verified,no,0,1,#49 cond: family A lives in the city (bitset A)
 0x0017ED90,mm_WordsFn_CanApply,116,game,talk,verified,no,0,1,"#48 cond: city flag 4, or flag 2 of 0x1C5600 with family A able to apply"
-0x0017EE10,mm_WordsFn_ScoreA8Tier,8,game,talk,verified,no,0,1,"#47 cond: placement score +0xA8 below 200, below 300, or higher"
-0x0017EE20,mm_WordsFn_ScoreA0Tier,8,game,talk,verified,no,0,1,"#46 cond: placement score +0xA0 below 200, below 300, or higher"
+0x0017EE10,mm_WordsFn_ConductTier,8,game,talk,verified,no,0,1,"#47 cond: mm_CityScene_ConductTier (residents' conduct below 200, below 300, or higher)"
+0x0017EE20,mm_WordsFn_ProsperityTier,8,game,talk,verified,no,0,1,"#46 cond: mm_CityScene_ProsperityTier (residents' prosperity below 200, below 300, or higher)"
 0x0017EE30,mm_WordsFn_ApprovalTier,60,game,talk,verified,no,0,1,#45 cond: approval tier folded to 0..2
 0x0017EE70,mm_WordsFn_MapHistoryTier,76,game,talk,verified,no,0,1,"#44 cond: map history sum: none, up to 10, more"
 0x0017EEC0,mm_WordsFn_FamilyCountTier,84,game,talk,verified,no,0,0,#43 cond: families in the city (0x1F32E0) in five bands (20/50/100/200)
@@ -1765,14 +1765,14 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0017EF90,mm_WordsFn_BeforeSix,16,game,talk,verified,no,0,0,#40 cond: clock before 6:00
 0x0017EFA0,mm_WordsFn_WeatherTomorrow,12,game,talk,verified,no,0,0,#39 cond: tomorrow's weather (city +0x94)
 0x0017EFB0,mm_WordsFn_WeatherToday,12,game,talk,verified,no,0,0,#38 cond: today's weather (city +0x90)
-0x0017EFC0,mm_WordsFn_CityFlag2,24,game,talk,verified,no,0,0,#37 cond: city flag 2
+0x0017EFC0,mm_WordsFn_HolidayMonth,24,game,talk,verified,no,0,0,"#37 cond: city flag 2, a holiday month (months 0, 3, 7, 10 of the year)"
 0x0017EFE0,mm_WordsFn_Month,36,game,talk,verified,no,0,0,#36 cond: month (city +0x88 mod 12)
 0x0017F010,mm_WordsFn_StaminaZero,12,game,talk,verified,no,0,1,"#35 cond: tail call mm_Stamina_Zero(city->stamina), always 0 (was mm_WordsFn_Nop35)"
 0x0017F020,mm_WordsFn_StaminaTier,12,game,talk,verified,no,0,1,"#34 cond: player stamina below 100000, below 1800001, or higher"
 0x0017F030,mm_WordsFn_StoryFlagB,76,game,talk,verified,no,0,0,#33 cond: bit arg of 0x1C5530 (set/cleared by #112/#111)
 0x0017F080,mm_WordsFn_StoryFlagA,76,game,talk,verified,no,0,0,#32 cond: bit arg of 0x1C5520
-0x0017F0D0,mm_WordsFn_GetVar1C5602,12,game,talk,verified,no,0,0,#31 cond: (provisional) script variable 0x1C5602 (set by #110)
-0x0017F0E0,mm_WordsFn_Flag134,8,game,talk,verified,no,0,0,#30 cond: context +0x134
+0x0017F0D0,mm_WordsFn_ScriptVar,12,game,talk,verified,no,0,0,"#31 cond: the talk scripts' own variable (stage state +0x282, set by #110)"
+0x0017F0E0,mm_WordsFn_FewChoicesLeft,8,game,talk,verified,no,0,0,#30 cond: fewer than two unused entries are left in the script's menu (mm_Words_ApplyChoice)
 0x0017F0F0,mm_WordsFn_RandomN,60,game,talk,verified,no,0,1,#29 cond: random mod arg
 0x0017F130,mm_WordsFn_Random3,92,game,talk,verified,no,0,1,#28 cond: random 0..2
 0x0017F190,mm_WordsFn_Random50,72,game,talk,verified,no,0,1,"#27 cond: random, about half"
@@ -1799,14 +1799,14 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0017FB00,mm_WordsFn_PersonHeading,180,game,talk,verified,no,0,1,"#6 cond: person's destination: 0 work, 1 home, 2 other building, 3 none"
 0x0017FBC0,mm_WordsFn_PersonWhere,180,game,talk,verified,no,0,1,"#5 cond: person's current building: 0 home, 1 work, 2 other building, 3 outside"
 0x0017FC80,mm_WordsFn_PersonAtBuilding,564,game,talk,verified,indirect,0,3,#4 cond: (provisional) where the person stands relative to the building and its hours
-0x0017FEC0,mm_WordsFn_StatusMid2,96,game,talk,verified,no,0,2,#3 cond: middle two bits of the status byte
-0x0017FF20,mm_WordsFn_StatusLow2,96,game,talk,verified,no,0,2,#2 cond: low two bits of the status byte
+0x0017FEC0,mm_WordsFn_TalksToday,96,game,talk,verified,no,0,2,#3 cond: talks with the person today (mm_MemberStatus_TalksToday or mm_TalkStatus_TalksToday)
+0x0017FF20,mm_WordsFn_RecentTalks,96,game,talk,verified,no,0,2,#2 cond: talks with the person in the last twenty minutes
 0x0017FF80,mm_WordsFn_FriendLevelHigh,148,game,talk,verified,no,0,3,#1 cond: friendship level above 13 for A/B (2 when not acquainted)
 0x00180020,mm_WordsFn_NameSlotSet,48,game,talk,verified,no,0,1,#0 cond: name slot (0x1C5380 + arg*16) is not empty
 0x00180050,mm_Words_CallCond,32,game,talk,verified,no,2,1,calls a condition through its member function pointer (__ptmf_scall)
 0x00180070,mm_Words_CallText,32,game,talk,verified,no,1,1,calls a text getter through its member function pointer
 0x00180090,mm_Words_CallAct,32,game,talk,verified,no,2,1,calls an action through its member function pointer
-0x001800B0,mm_Words_SetFlag134,16,game,talk,verified,no,1,0,context +0x134 = 1
+0x001800B0,mm_Words_SetFewChoicesLeft,16,game,talk,verified,no,1,0,the script's menu has fewer than two unused entries left (context +0x134 = 1)
 0x001800C0,mm_Words_SelectBagItem,192,game,talk,verified,no,1,0,context +0x24 = the a1-th bag item of kinds 0x10/0x11/0x13
 0x00180180,mm_Words_SetWantIndex,12,game,talk,verified,no,1,0,context +0x13A = a1 (the chosen want)
 0x00180190,mm_Words_SelectEvent,92,game,talk,verified,yes,1,1,"(provisional) context +0x138 = a1 - 1, event lookup for the family"
@@ -1821,20 +1821,20 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001804F0,mm_Words_ctor,48,game,talk,verified,yes,1,1,allocates the 0x140-byte context
 0x00180520,mm_CityScene_GetFade,8,game,city,verified,no,21,0,"fade counter (+0xCC), 0 when no fade runs"
 0x00180530,mm_CityScene_StartFade,52,game,city,verified,no,21,0,starts a fade (out or in by +0xC8) at speed a1 when none runs
-0x00180570,mm_CityScene_HasFlag8,20,game,city,verified,no,5,0,(provisional) city flag 8
+0x00180570,mm_CityScene_InFarewellParty,20,game,city,verified,no,5,0,"city flag 8: a farewell party is on (set when mm_EvFarewellParty_Update gathers the people, cleared at its end); people gather on the roads, schedules give the party row and the approval rise stops"
 0x00180590,mm_CityScene_AddApplicantFamily,212,game,city,verified,yes,5,2,adds family a1 to the applicants and gives the residents who introduced it a new introduction
 0x00180670,mm_CityScene_MissionProgress,212,game,city,verified,no,2,0,"percent: the map counter for the goal type 0x1C5550 over the families in the city (0x1F32E0), capped at 100"
 0x00180750,mm_CityScene_PopulationRank,132,game,city,verified,no,2,0,rank 1..8 from map +0x74 (100/300/500/1000/1500/2000/2500)
 0x001807E0,mm_CityScene_ApprovalTier,60,game,city,verified,no,2,0,"approval below 0, up to 50, up to 100, higher"
-0x00180820,mm_CityScene_ScoreA8Tier,48,game,city,verified,no,2,0,"placement score +0xA8 below 200, below 300, or higher"
-0x00180850,mm_CityScene_ScoreA0Tier,48,game,city,verified,no,2,0,"placement score +0xA0 below 200, below 300, or higher"
+0x00180820,mm_CityScene_ConductTier,48,game,city,verified,no,2,0,"the residents' conduct average (CityScene +0xA8): below 200 0, below 300 1, else 2"
+0x00180850,mm_CityScene_ProsperityTier,48,game,city,verified,no,2,0,"the residents' prosperity average (CityScene +0xA0): below 200 0, below 300 1, else 2"
 0x00180880,mm_CityScene_SaveGame,264,game,city,verified,no,1,13,"writes the save: header, camera, stage, events, families, map, laptop, wants, applicants, player, stamina"
 0x00180990,mm_CityScene_LoadGame,2388,game,city,verified,yes,1,50,load screen (REPORT.TEX) and loading every *_LoadState from the memory card
 0x001812F0,mm_CityScene_SaveStep,308,game,city,verified,yes,1,6,"save from the pause menu: map vertex buffers, open, write, wait"
 0x00181430,mm_CityScene_PopMode,68,game,city,verified,no,8,0,"pops the scene mode stack (+0x10.., depth +0x24)"
 0x00181480,mm_CityScene_PushMode,56,game,city,verified,no,5,0,pushes mode a1 on the mode stack
 0x001814C0,mm_CityScene_GetMode,8,game,city,verified,no,11,0,current mode (+0x10)
-0x001814D0,mm_CityScene_RecordPlacementScore,220,game,city,verified,no,1,0,decaying averages +0xA0 (a2) and +0xA8 (a1) of placement scores
+0x001814D0,mm_CityScene_RecordPlacementScore,220,game,city,verified,no,1,0,"a resident moves in: decaying averages of its class's prosperity (+0xA0, a2) and conduct (+0xA8, a1)"
 0x001815B0,mm_CityScene_AddApproval,16,game,city,verified,no,2,0,pending approval change +0xBC += a1
 0x001815C0,mm_CityScene_TalkEndChoosing,8,game,city,verified,no,1,1,tail call mm_Talk_EndChoosing(city->talk); pair of mm_CityScene_TalkSelectPerson
 0x001815D0,mm_CityScene_TalkSelectPerson,8,game,city,verified,no,2,1,talk view choice = slot of family a1 member a2
@@ -1885,7 +1885,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00184E30,mm_Random_Seed,160,game,random,verified,no,1,1,seeds the 55-entry table from a0 and stirs it three times
 0x00184ED0,mm_Random_Stir,140,game,random,verified,no,2,0,one ran3 refill pass over the 55 entries
 0x00184F60,mm_Gs_InitDisplay,652,game,gfx,verified,yes,1,16,"(provisional) display and draw environments, double buffer, clears both buffers (from mm_MainLoop)"
-0x001851F0,mm_Pad_ClearBit40,40,game,pad,verified,no,4,0,sets 0x1BDCC0 = 1 and clears button bit 0x40 in the pad words 0x1BDCA0 and 0x1BDCA4
+0x001851F0,mm_Pad_SwallowCross,40,game,pad,verified,no,4,0,consumes a Cross press (0x40): out of this frame's buttons and the held ones until released (0x1BDCC0 = 1)
 0x00185220,mm_Pad_ReleaseFocus,40,game,pad,verified,no,10,0,drops input focus if owner a0 (or -1 = anyone) holds it (0x1BDCB0/0x1BDCB4)
 0x00185250,mm_Pad_TakeFocus,28,game,pad,verified,no,6,0,takes input focus for owner a0 with button mask a1 when nobody holds it
 0x00185270,mm_Pad_GetRepeat,92,game,pad,verified,no,6,0,"held buttons with auto-repeat: first repeat after 30 frames, then every 5"
@@ -1916,8 +1916,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001869F0,mm_McQueue_IsDone,72,game,save,verified,no,6,0,1 when request a1 is no longer pending
 0x00186A40,mm_McQueue_Init,96,game,save,verified,yes,1,1,sceMcInit and clears the 64 request slots
 0x00186AA0,mm_McQueue_Pump,504,game,save,verified,yes,2,13,"issues the request at the queue tail (sceMcGetInfo ... sceMcSeek by command 1-12), then polls sceMcSync for its result"
-0x00186CA0,mm_McManagerSub_DeletingDtor,68,game,save,verified,yes,1,1,delete when the flag is > 0
-0x00186CF0,mm_McManagerSub_ctor,8,game,save,verified,no,1,0,returns this
+0x00186CA0,mm_McQueue_DeletingDtor,68,game,save,verified,yes,1,1,deletes the request queue when the flag is > 0
+0x00186CF0,mm_McQueue_ctor,8,game,save,verified,no,1,0,the card request queue object (1 byte): returns this
 0x00186D00,mm_PacketBuf_Seek,8,game,gfx,verified,no,11,0,sets the packet buffer write pointer (0x1BDCE8)
 0x00186D10,mm_PacketBuf_Tell,8,game,gfx,verified,no,11,0,returns the packet buffer write pointer (0x1BDCE8)
 0x00186D20,mm_Dma_KickVif1Now,192,game,gfx,verified,yes,3,2,"sends a two-tag chain (CALL a0, END) on VIF1 right away and waits for GS path idle before and after"
@@ -1936,7 +1936,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00187640,mm_DmaList_Init,104,game,gfx,verified,yes,1,2,"allocates the two 64 KB lists and the 0x8000-byte packet buffer, then builds the overlay packets (0x1873D0)"
 0x001876B0,mm_Sound_StopAllPlaying,156,game,sound,verified,no,1,3,asks the driver for its status (0x18F200) and stops every voice whose bit is set in the two 16-bit masks at +4 and +8
 0x00187750,mm_Se_SetEnabled,196,game,sound,ported,no,3,4,0x1BDD20 = a0; a0 == 0 stops all 16 + 15 effect voices; a1 != 0 resets their volumes (0xFFF and 0x100)
-0x00187820,mm_Se_SetVoice15Enabled,76,game,sound,verified,no,1,2,same as mm_Se_SetEnabled for the single voice 15 (volume 0xC0)
+0x00187820,mm_Bgm_SetPlaying,76,game,sound,verified,no,1,2,"the music (voice 15) on or off, and its volume back to 0xC0 when asked"
 0x00187870,mm_Se_UpdateCityAmbience,3152,game,sound,verified,no,1,8,"one quarter of the 2x2 blocks within 16 tiles of the listener per frame: building sounds (group 2), terrain sounds (group 3) and, within 8 tiles, vehicles; VU0 bearings from the listener; 17:00 chime 0x3B for busy cities"
 0x001884E0,mm_Se_UpdateListener,1092,game,sound,verified,no,2,1,copies the city camera's eye and target (camera +0x130/+0x140) into the listener vectors at 0x1FC650 and derives its orientation
 0x00188930,mm_Se_BuildingSoundState,1144,game,sound,verified,indirect,1,1,"a building object's ambient sound this frame: low byte the sound (0xFF none), 0x100 after the lead of its window, 0x200 entrance, 0x400 the type's own (+0x14E); each object once per frame (flag 4, again 0x4FF); the sound's schedule (SeSound +0x02) decides"

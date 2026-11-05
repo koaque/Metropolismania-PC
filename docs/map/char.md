@@ -61,9 +61,9 @@ People and the player character.
 | `0x00134A20` | `void mm_Person_Update(CharClass *cls, CityScene *city, MapPerson *person, uint32_t timeFlags)` | 3032 | yes | class 1 slot +0xC: a person's behaviour per tick: target building, walking, waiting, random choices |
 | `0x00135600` | `CharClass *mm_Person_dtor(CharClass *cls, int16_t deleteFlag)` | 96 | yes | vtable 0x1BCEB0, then the base destructor |
 | `0x00135660` | `PersonClass *mm_Person_ctor(PersonClass *cls, CharTypeRecord *record)` | 136 | no | base constructor, vtable 0x1BCEB0, walking speed +0x24 = record u16 +6 / 1e6 |
-| `0x0013C010` | `void mm_StatusByte_IncHighLevel(uint8_t *status)` | 64 | no | (provisional) level 12..13 -> +1 |
-| `0x0013C050` | `void mm_StatusByte_ClearMid2(uint8_t *status)` | 48 | no | clears bits 2-3 when set |
-| `0x0013C080` | `void mm_StatusByte_IncLevel(uint8_t *status)` | 108 | no | (provisional) level +1 below 12; above 1 clears bits 0-1 |
+| `0x0013C010` | `void mm_TalkStatus_NewYear(uint8_t *status)` | 64 | no | the first day of the year: time levels 12 and 13 rise once (14 is the top) |
+| `0x0013C050` | `void mm_TalkStatus_NewDay(uint8_t *status)` | 48 | no | midnight: today's talk count clears |
+| `0x0013C080` | `void mm_TalkStatus_Tick(uint8_t *status)` | 108 | no | ten minutes of city time pass: the time level rises up to 12 (two hours); from level 2 (twenty minutes) the recent talk count clears |
 | `0x001439D0` | `int mm_Player_FloorBelow(CityMap *map, float *position, int hit, float lift)` | 1048 | indirect | the object surface under the player: each object on the 3 x 3 tiles round it is asked (vtable +0x2C) whether a segment from the position down by 0.9 crosses its mesh; *hit gets the crossing, whose y the player lands on |
 | `0x00143DF0` | `int mm_Player_NearestObject(CityMap *map, float *position, uint32_t *hit, float *distance, float radius)` | 1144 | indirect | (provisional) objects on the 3 x 3 tiles around the player, nearest hit distance (100 = none) |
 | `0x00157D80` | `void mm_Player_LoadState(Player *player, McManager *mc)` | 20 | no | reads 0x38 bytes from the save file |
@@ -82,9 +82,9 @@ People and the player character.
 | `0x0015A520` | `Player *mm_Player_ctor(Player *player)` | 92 | no | model 0x1F3CD4 at +0x88, cleared state |
 | `0x0015DB30` | `int16_t mm_Person_FindBuildingInList(CityScene *city, int list, int x, int z, int mode, int16_t skipA, int16_t skipB)` | 444 | no | (provisional) a building of the wanted kind from a tile list near the person |
 | `0x0015DCF0` | `uint32_t mm_Person_PlaceHomeObject(CityScene *city, MapPerson *person)` | 800 | no | a resident's home (kept in its target field): the current one, a home of the family near work with the claim meter below 60, or a new home of the work type's home type (+0x13A) placed on flat ground nearby; else the workplace |
-| `0x0015E010` | `uint16_t mm_Person_RandomTarget(CityScene *city, MapPerson *person, int a2, int a3)` | 436 | no | (provisional) random target along walkable tiles |
+| `0x0015E010` | `uint16_t mm_Person_PickShopNearby(CityScene *city, MapPerson *person, int a2, int a3)` | 436 | no | a shop for someone at (x, z): tile lists from a random one on (64 tries), a shop (type flag 0x40) with a walkable entrance 5 to 9 tiles away, taken with a one-in-three chance; 0x3F80 for none (activity 9) |
 | `0x0015E1D0` | `uint16_t mm_Person_TargetWork(CityScene *city, MapPerson *person)` | 292 | no | (provisional) |
-| `0x0015E300` | `int mm_Person_TileHasCompanion(CityScene *city, MapPerson *person, MapObject *building)` | 212 | no | (provisional) people on the tile matching the person |
+| `0x0015E300` | `int mm_Person_BuildingHasRoom(CityScene *city, MapPerson *person, MapObject *building)` | 212 | no | whether the building stands on a walkable tile and has fewer than four residents inside (people with flag 0x100 not counted) |
 | `0x0015E3E0` | `uint16_t mm_Person_TargetVisit(CityScene *city, MapPerson *person)` | 276 | no | (provisional) |
 | `0x0015E500` | `uint16_t mm_Person_TargetShop(CityScene *city, MapPerson *person, int a2, int a3)` | 456 | no | (provisional) |
 | `0x0015E6D0` | `int16_t mm_Person_TargetHome(CityScene *city, MapPerson *person)` | 296 | no | (provisional) |

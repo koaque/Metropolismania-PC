@@ -29,13 +29,13 @@ namespace mm
 
     // ---- tiles
 
-    uint16_t Map_TileFlag01(GuestPtr<CityMap> map, int x, int z) { return tileFlag(map, x, z, 0x01); }
+    uint16_t Map_TileIsCorner(GuestPtr<CityMap> map, int x, int z) { return tileFlag(map, x, z, 0x01); }
     uint16_t Map_TileFlag08(GuestPtr<CityMap> map, int x, int z) { return tileFlag(map, x, z, 0x08); }
-    uint16_t Map_TileFlag10(GuestPtr<CityMap> map, int x, int z) { return tileFlag(map, x, z, 0x10); }
+    uint16_t Map_TileWalkable(GuestPtr<CityMap> map, int x, int z) { return tileFlag(map, x, z, 0x10); }
     uint16_t Map_TileFlag20(GuestPtr<CityMap> map, int x, int z) { return tileFlag(map, x, z, 0x20); }
 
     // Walkable flag (0x10) of a tile, 0 for indices off the map.
-    uint16_t Map_TileIndexFlag10(GuestPtr<CityMap> map, uint32_t tile)
+    uint16_t Map_TileIndexWalkable(GuestPtr<CityMap> map, uint32_t tile)
     {
         return tile < 0x4000u ? static_cast<uint16_t>(map->tiles[tile].flags & 0x10u) : 0;
     }
@@ -1146,11 +1146,11 @@ namespace mm
         return lists;
     }
 
-    PORT_FN(Map_TileFlag01);
+    PORT_FN(Map_TileIsCorner);
     PORT_FN(Map_TileFlag08);
-    PORT_FN(Map_TileFlag10);
+    PORT_FN(Map_TileWalkable);
     PORT_FN(Map_TileFlag20);
-    PORT_FN(Map_TileIndexFlag10);
+    PORT_FN(Map_TileIndexWalkable);
     PORT_FN(Map_GetTileKind);
     PORT_FN(MapObj_RayHit);
     PORT_FN(Map_SetTileKind);
@@ -2148,7 +2148,7 @@ namespace mm
 
     // ---- the map's ticks (batch 40)
 
-    // Every object that stands in the scan's current column of 128 (unk_14, stepping through 128 stripes; the scan is
+    // Every object that stands in the scan's current column of 128 (tickSlice, stepping through 128 stripes; the scan is
     // 0x3F80 records) asks its building type (vtable +0x10, with the "any flag-8 object" word) whether it falls down; if
     // so, a sound is requested (unless the type is flag 0x80), the minimap plots the lot, the object is removed (map slot
     // +0xC) and rubble is laid where it stood. After the scan has covered all 128 columns the flag-8 count and the

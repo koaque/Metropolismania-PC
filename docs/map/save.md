@@ -66,5 +66,5 @@ Saving and loading on the memory card.
 | `0x001869F0` | `int mm_McQueue_IsDone(int queue, int request)` | 72 | no | 1 when request a1 is no longer pending |
 | `0x00186A40` | `void mm_McQueue_Init(void)` | 96 | yes | sceMcInit and clears the 64 request slots |
 | `0x00186AA0` | `void mm_McQueue_Pump(void)` | 504 | yes | issues the request at the queue tail (sceMcGetInfo ... sceMcSeek by command 1-12), then polls sceMcSync for its result |
-| `0x00186CA0` | `int mm_McManagerSub_DeletingDtor(int queue, int16_t deleteFlag)` | 68 | yes | delete when the flag is > 0 |
-| `0x00186CF0` | `int mm_McManagerSub_ctor(int queue)` | 8 | no | returns this |
+| `0x00186CA0` | `int mm_McQueue_DeletingDtor(int queue, int16_t deleteFlag)` | 68 | yes | deletes the request queue when the flag is > 0 |
+| `0x00186CF0` | `int mm_McQueue_ctor(int queue)` | 8 | no | the card request queue object (1 byte): returns this |

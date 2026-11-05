@@ -30,11 +30,11 @@ Families: the residents who move into the city.
 |---|---|---:|---|---|
 | `0x0013BAC0` | `void mm_MemberMeters_Reset(int32_t *meters)` | 160 | no | (provisional) clears four counters and the member meter table at 0x1C59B0 |
 | `0x0013BB70` | `uint8_t *mm_MemberStatus_Lookup(int family, int member)` | 448 | no | entry for family a0 member a1 in the table at 0x1F32F0 (adds one when missing) |
-| `0x0013BD30` | `uint8_t mm_MemberStatus_GetLow2(int family, int member)` | 36 | no | lookup, then bits 0-1 |
-| `0x0013BD60` | `uint32_t mm_MemberStatus_GetMid2(int family, int member)` | 40 | no | lookup, then bits 2-3 |
-| `0x0013BD90` | `int mm_MemberStatus_IsLevelAbove13(int family, int member)` | 56 | no | lookup, then level > 13 |
-| `0x0013BE20` | `void mm_MemberStatus_Advance(int family, int member)` | 168 | no | level > 1 bumps bits 2-3 (up to 2), then updates bits 0-1 |
-| `0x0013BF60` | `int mm_MemberStatus_OnLevel12(int family, int member, int a2, int a3)` | 112 | no | when the level is above 11, applies the friendship gain (0x13CB40) |
+| `0x0013BD30` | `uint8_t mm_MemberStatus_RecentTalks(int family, int member)` | 36 | no | mm_TalkStatus_RecentTalks of the member's status entry (mm_MemberStatus_Lookup) |
+| `0x0013BD60` | `uint32_t mm_MemberStatus_TalksToday(int family, int member)` | 40 | no | mm_TalkStatus_TalksToday of the member's status entry |
+| `0x0013BD90` | `int mm_MemberStatus_LongApart(int family, int member)` | 56 | no | mm_TalkStatus_LongApart of the member's status entry |
+| `0x0013BE20` | `void mm_MemberStatus_RecordTalk(int family, int member)` | 168 | no | mm_TalkStatus_RecordTalk on the member's status entry |
+| `0x0013BF60` | `int mm_MemberStatus_AddFriendshipAfterBreak(int family, int member, int a2, int a3)` | 112 | no | mm_TalkStatus_AddFriendshipAfterBreak for the member's status entry |
 | `0x0013C0F0` | `void mm_MemberStatus_Tick(int clock, int month)` | 336 | no | every 600 s the level rises (up to 12); daily and yearly resets of the low bits |
 | `0x0013C240` | `void mm_Family_BefriendAll(void)` | 732 | no | every member becomes a friend with meter 64 and every family known (bitset B); from a laptop entry |
 | `0x0013C520` | `void mm_Family_ResetForStage(void)` | 204 | no | clears bitsets A and C and the counters for a new stage |
@@ -45,7 +45,7 @@ Families: the residents who move into the city.
 | `0x0013C900` | `int mm_Family_HasLeft(uint32_t family)` | 80 | no | bitset C: the family moved away |
 | `0x0013C950` | `void mm_Family_SetKnown(uint32_t family)` | 76 | no | sets bit a0 of bitset B (0x1D4900, families known through the Town's Pages); called by mm_WordsFn_MarkFamilyKnown |
 | `0x0013C9A0` | `int mm_Family_IsKnown(uint32_t family)` | 80 | no | bitset B: the family is known (Town's Pages) |
-| `0x0013C9F0` | `void mm_Family_SetFlagA(uint32_t family)` | 116 | no | sets bit a0 of bitset A and updates the counters |
+| `0x0013C9F0` | `void mm_Family_MoveIn(uint32_t family)` | 116 | no | a family moves in: its bit in the in-city bitset and both moved-in counters (the opposite of mm_Family_MoveAway) |
 | `0x0013CA70` | `int mm_Family_InCity(uint32_t family)` | 80 | no | bitset A: the family lives in the city |
 | `0x0013CAC0` | `int mm_Family_GetFriendshipBand(int family, int member)` | 124 | no | band 0..4 of member (a0, a1)'s meter (0, below 24, below 48, below 100, higher) |
 | `0x0013CB40` | `int64_t mm_Family_AddFriendship(int family, int member, int32_t *approval, int points)` | 648 | no | adds a3 points to member (a0, a1)'s meter (clamped 0..120); rising may set the friend bit (chance from *a2, the approval) |
@@ -62,5 +62,5 @@ Families: the residents who move into the city.
 | `0x0013D6B0` | `Family *mm_Family_Get(int family, int flags)` | 476 | yes | family a0's record (0x1D4 bytes), loading it synchronously into the LRU cache if needed |
 | `0x0013D890` | `void mm_Family_ResetState(void)` | 436 | no | clears member bytes, bitsets, counters and the cache tables |
 | `0x0013DA50` | `void mm_Family_Init(void)` | 152 | yes | resets the family state, opens DATA\BIN\FAMILY.BIN and loads DATA\BIN\EACHSTR.BIN |
-| `0x0013DAF0` | `int mm_StatusByte_ctorE0(int status)` | 80 | no | sets byte 3 to level 14 with bits 0-3 clear |
+| `0x0013DAF0` | `int mm_TalkStatus_ctor(int status)` | 80 | no | a talk status byte (+3 of a member status entry) that has never been talked to: time level 14, counts clear |
 | `0x00142F90` | `void mm_Family_AssignHome(CityMap *map, CityScene *city, int family, int object)` | 1004 | yes | (provisional) family records and flags when a family is assigned a building |

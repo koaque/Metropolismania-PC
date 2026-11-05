@@ -29,7 +29,7 @@ Sound on the EE side; the driver is YYSOUND on the IOP.
 |---|---|---:|---|---|
 | `0x001876B0` | `void mm_Sound_StopAllPlaying(void)` | 156 | no | asks the driver for its status (0x18F200) and stops every voice whose bit is set in the two 16-bit masks at +4 and +8 |
 | `0x00187750` | `void mm_Se_SetEnabled(int enabled, int resetVolumes)` | 196 | no | 0x1BDD20 = a0; a0 == 0 stops all 16 + 15 effect voices; a1 != 0 resets their volumes (0xFFF and 0x100) |
-| `0x00187820` | `int mm_Se_SetVoice15Enabled(int enabled, int a1)` | 76 | no | same as mm_Se_SetEnabled for the single voice 15 (volume 0xC0) |
+| `0x00187820` | `int mm_Bgm_SetPlaying(int enabled, int a1)` | 76 | no | the music (voice 15) on or off, and its volume back to 0xC0 when asked |
 | `0x00187870` | `void mm_Se_UpdateCityAmbience(int advance)` | 3152 | no | one quarter of the 2x2 blocks within 16 tiles of the listener per frame: building sounds (group 2), terrain sounds (group 3) and, within 8 tiles, vehicles; VU0 bearings from the listener; 17:00 chime 0x3B for busy cities |
 | `0x001884E0` | `int mm_Se_UpdateListener(void)` | 1092 | no | copies the city camera's eye and target (camera +0x130/+0x140) into the listener vectors at 0x1FC650 and derives its orientation |
 | `0x00188930` | `uint32_t mm_Se_BuildingSoundState(MapObject *obj, BuildingType *btype)` | 1144 | indirect | a building object's ambient sound this frame: low byte the sound (0xFF none), 0x100 after the lead of its window, 0x200 entrance, 0x400 the type's own (+0x14E); each object once per frame (flag 4, again 0x4FF); the sound's schedule (SeSound +0x02) decides |

@@ -14,7 +14,7 @@ namespace mm
 {
     int CityScene_GetMode(GuestPtr<CityScene> city) { return city->modeStack[0]; }
     int CityScene_GetFade(GuestPtr<CityScene> city) { return city->fade; }
-    int CityScene_HasFlag8(GuestPtr<CityScene> city) { return (city->flags & 8u) != 0; }
+    int CityScene_InFarewellParty(GuestPtr<CityScene> city) { return (city->flags & 8u) != 0; }
 
     // Starts a fade unless one runs: -0x80 when the fade level is 0, +0x80 otherwise.
     void CityScene_StartFade(GuestPtr<CityScene> city, int speed)
@@ -53,21 +53,22 @@ namespace mm
         return result;
     }
 
-    // Two decaying averages of placement scores (x10): once ten have been seen, the old sum keeps 9/10.
-    void CityScene_RecordPlacementScore(GuestPtr<CityScene> city, int scoreA8, int scoreA0)
+    // A resident moves in with the prosperity and conduct of its class (traits bits 9-11 and 12-14): two decaying averages
+    // (x10); once ten have been seen, the old sum keeps 9/10.
+    void CityScene_RecordPlacementScore(GuestPtr<CityScene> city, int conduct, int prosperity)
     {
-        if (++city->scoreA0Count > 9)
+        if (++city->prosperityCount > 9)
         {
-            city->scoreA0 = city->scoreA0 * 9 / 10;
-            city->scoreA0Count = 10;
+            city->prosperity = city->prosperity * 9 / 10;
+            city->prosperityCount = 10;
         }
-        city->scoreA0 += scoreA0 * 10;
-        if (++city->scoreA8Count > 9)
+        city->prosperity += prosperity * 10;
+        if (++city->conductCount > 9)
         {
-            city->scoreA8 = city->scoreA8 * 9 / 10;
-            city->scoreA8Count = 10;
+            city->conduct = city->conduct * 9 / 10;
+            city->conductCount = 10;
         }
-        city->scoreA8 += scoreA8 * 10;
+        city->conduct += conduct * 10;
     }
 
     // Bit set of the active laptop entries (each entry is a bit number).
@@ -647,7 +648,7 @@ namespace mm
                 if ((open & bit) == 0)
                     break;
                 const int tx = bx + ring * blockStepX(dir), tz = bz + ring * blockStepZ(dir);
-                if (Map_TileFlag10(city->map, tx, tz) == 0)
+                if (Map_TileWalkable(city->map, tx, tz) == 0)
                     continue;
                 if (isStraightRoad(Map_GetTileObject(city->map, tx, tz)->roadShape))
                 {
@@ -733,7 +734,7 @@ namespace mm
                 {
                     const int sx = x + port::load<int32_t>(0x001B1770u + 4u * *spot);
                     const int sz = z + port::load<int32_t>(0x001B1780u + 4u * *spot);
-                    if (Map_TileFlag10(city->map, sx, sz) != 0 || Map_TileFlag08(city->map, sx, sz) != 0)
+                    if (Map_TileWalkable(city->map, sx, sz) != 0 || Map_TileFlag08(city->map, sx, sz) != 0)
                         Map_PlaceObject(city->map, 0, 3, x, z, static_cast<int>(city.address));
                 }
                 const uint8_t mark = obj->look[4];
@@ -760,7 +761,7 @@ namespace mm
                     tz += btype->size;
                 else
                     tx -= 1;
-                if (Map_TileFlag10(city->map, tx, tz) != 0)
+                if (Map_TileWalkable(city->map, tx, tz) != 0)
                 {
                     *side = s;
                     return Map_GetTileObject(city->map, tx, tz)->tile;
@@ -785,7 +786,7 @@ namespace mm
                 tz += blockStepZ(dir);
                 tx += blockStepX(dir);
                 const uint32_t tile = static_cast<uint32_t>(tx + tz * 0x80);
-                if (Map_TileIndexFlag10(city->map, tile) == 0)
+                if (Map_TileIndexWalkable(city->map, tile) == 0)
                     break;
                 const GuestPtr<MapObject> next = Map_GetTileFirstObject(city->map, static_cast<int>(tile));
                 if (next->roadShape == 0)
@@ -814,7 +815,7 @@ namespace mm
                 tx += btype->size;
             else if (side == 0)
                 tz -= 1;
-            if (Map_TileFlag10(city->map, tx, tz) != 0)
+            if (Map_TileWalkable(city->map, tx, tz) != 0)
                 return 0;
             if ((globals::buildingTypeFlags(Map_GetTileObject(city->map, tx, tz)->type) & 8u) != 0)
                 return 1;
@@ -919,7 +920,7 @@ namespace mm
     }
 
     // A road block each tick. Its shape (variant) gets bit d for each direction d whose next block is road
-    // (Map_TileFlag10) and its links are refreshed. Unless all four of its tiles are at or below height 0, they
+    // (Map_TileWalkable) and its links are refreshed. Unless all four of its tiles are at or below height 0, they
     // are flattened to 0 and the ground from one tile before to three after is rebuilt. The mesh follows the
     // shape: traffic lights (+0 to +4) at crossings and T-junctions; on straight road the slope mesh (+1 along
     // x) where the ground on either side rises more than 0.8 above the road, else a street lamp (+0/+1 along z,
@@ -930,7 +931,7 @@ namespace mm
         const int x = obj->tile & 0x7F, z = obj->tile >> 7;
         int shape = 0;
         for (int dir = 0; dir < 4; ++dir)
-            if (Map_TileFlag10(city->map, x + blockStepX(dir), z + blockStepZ(dir)) != 0)
+            if (Map_TileWalkable(city->map, x + blockStepX(dir), z + blockStepZ(dir)) != 0)
                 shape += port::load<int32_t>(globals::kBlockDirBit + 4u * static_cast<uint32_t>(dir));
         obj->roadShape = static_cast<uint16_t>(shape);
         BldgRoad_FindNeighbours(btype, city, obj, x, z);
@@ -1380,7 +1381,7 @@ namespace mm
         *isUnit = 0;
         if (rule != type->rule)
             return kNone;
-        if (Map_TileFlag01(city->map, x, z) == 0)
+        if (Map_TileIsCorner(city->map, x, z) == 0)
             return kNone;
         if (kind != Map_GetTileKind(city->map, obj->tile))
             return kNone;
@@ -1610,7 +1611,7 @@ namespace mm
             const ps2f length = A3D_GetAnimLength(model.get(), 0);
             if (!(ps2f(frame.get()) < length))
                 frame.set(0.0f);
-            Instance_DrawSwayingIfRoom(model.get(), 0, frame.get());
+            A3D_AnimateIfRoom(model.get(), 0, frame.get());
             A3DObject_UpdateMatrices(model.get());
         }
     }
@@ -1702,7 +1703,7 @@ namespace mm
 
     PORT_FN(CityScene_GetMode);
     PORT_FN(CityScene_GetFade);
-    PORT_FN(CityScene_HasFlag8);
+    PORT_FN(CityScene_InFarewellParty);
     PORT_FN(CityScene_StartFade);
     PORT_FN(CityScene_PushMode);
     PORT_FN(CityScene_PopMode);
@@ -1963,18 +1964,18 @@ namespace mm
         return 8;
     }
 
-    int CityScene_ScoreA0Tier(GuestPtr<CityScene> city)
+    int CityScene_ProsperityTier(GuestPtr<CityScene> city)
     {
-        if (city->scoreA0 < 200)
+        if (city->prosperity < 200)
             return 0;
-        return city->scoreA0 < 300 ? 1 : 2;
+        return city->prosperity < 300 ? 1 : 2;
     }
 
-    int CityScene_ScoreA8Tier(GuestPtr<CityScene> city)
+    int CityScene_ConductTier(GuestPtr<CityScene> city)
     {
-        if (city->scoreA8 < 200)
+        if (city->conduct < 200)
             return 0;
-        return city->scoreA8 < 300 ? 1 : 2;
+        return city->conduct < 300 ? 1 : 2;
     }
 
     // The mission's progress in percent (0..100): by the stage's mission kind (stage state +0x1D0) a building count
@@ -2066,8 +2067,8 @@ namespace mm
     PORT_FN(CityScene_AddApproval);
     PORT_FN(CityScene_ApprovalTier);
     PORT_FN(CityScene_PopulationRank);
-    PORT_FN(CityScene_ScoreA0Tier);
-    PORT_FN(CityScene_ScoreA8Tier);
+    PORT_FN(CityScene_ProsperityTier);
+    PORT_FN(CityScene_ConductTier);
     PORT_FN(CityScene_MissionProgress);
     PORT_FN(CityScene_SaveGame);
     PORT_FN(CityCamera_SaveState);
@@ -3017,7 +3018,7 @@ namespace mm
                     line += 14;
                 break;
             case 5:
-                if ((globals::stageFlags.get() & 1u) != 0)
+                if ((globals::stageState()->flags & 1u) != 0)
                     line += 14;
                 break;
             case 9:
@@ -3156,7 +3157,7 @@ namespace mm
         const uint32_t base = frame.ptr().address;
         const GuestPtr<uint16_t> list{base + 0xC0u}; // the people gathered, by person index
         const GuestPtr<Vec4> position{base + 0x100u}, colour{base + 0x110u};
-        if (CityScene_HasFlag8(city) == 0)
+        if (CityScene_InFarewellParty(city) == 0)
         {
             BldgType_DrawOccupants2(btype, layer, city, obj, t0, flags, people);
             return;
@@ -4089,10 +4090,10 @@ namespace mm
         city->trafficTimer = 0;
         city->unk_9C = 0;
         city->waterLevel = 0.5f;
-        city->scoreA0 = 0xFA;
-        city->scoreA0Count = 0;
-        city->scoreA8 = 0xFA;
-        city->scoreA8Count = 0;
+        city->prosperity = 0xFA;
+        city->prosperityCount = 0;
+        city->conduct = 0xFA;
+        city->conductCount = 0;
         city->paydayScore = 0;
         city->hudVisible[0] = 1;
         city->hudVisible[1] = 1;
@@ -4223,12 +4224,12 @@ namespace mm
                         CityScene_PushMode(city, 7);
                 }
             }
-            if ((port::load<uint16_t>(0x001C5600u) & 2u) != 0u)
+            if ((globals::stageState()->flags & 2u) != 0u)
             {
                 if ((Pad_Held(0) & 0x900u) == 0x900u)
                 {
                     if ((Pad_Held(0) & 1u) != 0u)
-                        port::store<int32_t>(0x001C5548u, port::load<int32_t>(0x001C5548u) - 1);
+                        globals::stageState()->stage = globals::stageState()->stage - 1;
                     city->flags = city->flags | 0x10u;
                 }
                 if ((Pad_Held(0) & 0x800u) != 0u)
@@ -4350,7 +4351,7 @@ namespace mm
         Packet2_Draw(GuestPtr<uint32_t>::of(city->lights->packetA), 0);
         Packet_Draw(GuestPtr<uint32_t>::of(city->camera->packet));
         DmaList_QueueClearZ();
-        if (city->hudVisible[3] != 0 && (port::load<uint16_t>(0x001C5600u) & 1u) != 0u)
+        if (city->hudVisible[3] != 0 && (globals::stageState()->flags & 1u) != 0u)
             Minimap_Draw(city->minimap);
         PhoneCall_Draw(city->phoneCalls);
         Markers_Draw(city->markers);

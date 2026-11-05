@@ -25,7 +25,7 @@ typedef struct SaveTitle SaveTitle;
 typedef struct NameEntry NameEntry;
 typedef struct TitleScene TitleScene;
 typedef struct Bag Bag;
-typedef struct BagShortcut BagShortcut;
+typedef struct BagMusicTrack BagMusicTrack;
 typedef struct BagSlot BagSlot;
 typedef struct GoodsRecord GoodsRecord;
 typedef struct StatusPanel StatusPanel;
@@ -142,7 +142,7 @@ struct Frame {
 struct A3DObject {
     A3DModel *model;           /* +0x00 the loaded .A3D data */
     void *textures;            /* +0x04 the texture block while loading: its packets go to the GS, then it is freed (mm_A3D_Relocate) */
-    int32_t trackCount;        /* +0x08 node tracks per animation (mm_A3D_Relocate, mm_Instance_DrawSwaying) */
+    int32_t trackCount;        /* +0x08 node tracks per animation (mm_A3D_Relocate, mm_A3D_Animate) */
     uint8_t unk_0C[4];
     Vec4 matrix[4];            /* +0x10 object matrix (mm_Player_GetMatrix) */
     uint32_t *animations;      /* +0x50 one A3DTrack array address per animation (mm_A3D_Relocate) */
@@ -285,7 +285,7 @@ struct A3DNode {
     A3DNode *parent;           /* +0x00 null for a root */
     A3DMesh *mesh;             /* +0x04 null for none; with indexed 0 at load, an index into the mesh table (-1 none) */
     uint8_t unk_08[8];
-    Vec4 local[4];             /* +0x10 set by the animations (mm_Instance_DrawSwaying) */
+    Vec4 local[4];             /* +0x10 set by the animations (mm_A3D_Animate) */
     InstanceSlot slot;         /* +0x50 its draw packet: colour (+0x60) and world matrix (+0x70), whose last word (+0xAC) is
                                   non-zero once it is up to date (mm_A3DObject_UpdateNodeMatrix) */
 };
@@ -559,17 +559,18 @@ struct BagSlot {
     uint8_t unk_0E;            /* +0x0E 0xFF when bought */
     uint8_t unk_0F;
 };
-/* Bag shortcut (4 bytes). */
-struct BagShortcut {
-    int16_t slot;              /* +0x00 -1 = none */
-    int16_t unk_02;
+/* A music track bought (4 bytes; goods kind 0x16, mm_Bag_AddMusicTrack): the city music plays the enabled ones
+   (mm_Bgm_SetTrackSlot). */
+struct BagMusicTrack {
+    int16_t track;             /* +0x00 the goods' value, -1 = none */
+    int16_t enabled;           /* +0x02 */
 };
 struct Bag {
     uint16_t size;             /* +0x000 0 none, 1..3: 4, 10 or 20 slots (byte table 0x1B5B08, mm_WordsFn_GoodsBagFull) */
     uint16_t outfit;           /* +0x002 what the player wears (goods kind 0x15, its value; 0 the default): the player's
                                   mesh group (mm_Player_Draw); the one taken off goes back into the bag */
     BagSlot slots[20];         /* +0x004 */
-    BagShortcut shortcuts[10]; /* +0x144 */
+    BagMusicTrack musicTracks[10]; /* +0x144 */
     A3DObject *model;          /* +0x16C bag model (from 0x1F3B24) */
     TextBox *nameText;         /* +0x170 the selected item's name (mm_BagMenu_Update) */
     ListMenu *list;            /* +0x174 the item list */
@@ -704,8 +705,8 @@ struct EventType {
     uint16_t population;       /* +0x30 the population the city needs */
     uint16_t modules;          /* +0x32 the laptop modules it needs (bits, mm_Laptop_CountActive) */
     uint8_t approvalTier;      /* +0x34 1 + the approval tier it needs (mm_CityScene_ApprovalTier), 0 = any */
-    uint8_t scoreA0Tier;       /* +0x35 1 + the tier of mm_CityScene_ScoreA0Tier, 0 = any */
-    uint8_t scoreA8Tier;       /* +0x36 1 + the tier of mm_CityScene_ScoreA8Tier, 0 = any */
+    uint8_t prosperityTier;    /* +0x35 1 + the tier of mm_CityScene_ProsperityTier, 0 = any */
+    uint8_t conductTier;       /* +0x36 1 + the tier of mm_CityScene_ConductTier, 0 = any */
     uint8_t unk_37;
     uint16_t charTypes[4];     /* +0x38 the person's character type must be one of these (level 2: the first); 0 ends */
     uint8_t gender;            /* +0x40 1 + (person flags & 3), 0 = any */
@@ -925,7 +926,10 @@ struct EventMgr {
     uint8_t rank;              /* +0x02 the population rank reached (mm_CityScene_PopulationRank) */
     uint8_t unk_03;
     EventSlot slots[5];        /* +0x04 filled from the front; mm_EventMgr_RequeueFirst drops the first */
-    EventData *talks[3];       /* +0xA4 the event records the talk script works with (0x84, 0x24, 0x7C bytes; saved) */
+    /* The event records the talk script works with (0x84, 0x24, 0x7C bytes; saved): 0 the talk event (TalkEventData),
+       1 the system event (group 6: paydays, hunger, population milestones), 2 a level 2 event's while its Check runs
+       (mm_Event_CheckCondition). */
+    EventData *talks[3];       /* +0xA4 */
 };
 /* An entry of the event queue (2 bytes); event slots and event records start with the same pair. */
 struct EventQueueEntry {
@@ -1007,8 +1011,8 @@ struct Player {
     Vec4 position;             /* +0x10 */
     Vec4 colour;               /* +0x20 the tint the building under the player gives (mm_BldgType_DrawOccupant) */
     uint8_t unk_30[4];
-    float swayPhase;           /* +0x34 animation frame, passed to mm_Instance_DrawSwayingIfRoom (mm_Player_UpdateAction) */
-    int32_t swayArg;           /* +0x38 animation: 0-2 standing, 4-15 moving (mm_Player_UpdateAction) */
+    float animTime;            /* +0x34 the animation's frame (mm_Player_UpdateAction, mm_A3D_AnimateIfRoom) */
+    int32_t animation;         /* +0x38 the model's animation: 0-2 standing, 4-15 moving (mm_Player_UpdateAction) */
     int32_t visible;           /* +0x3C drawn when non-zero (mm_Player_Draw) */
     int32_t target;            /* +0x40 object or person the cursor points at, -1 none (mm_Player_PickTarget) */
     int32_t targetIsPerson;    /* +0x44 */
@@ -1129,7 +1133,8 @@ struct StageName { char text[0x10]; };
 /* Stage state at 0x1C5380, saved with the city (0x284 bytes). */
 struct StageState {
     StageName names[26];       /* +0x000 the city's name, the mayor's name, ... (cleared by mm_Stage_Reset) */
-    uint8_t unk_1A0[0x20];
+    uint32_t storyFlagsA[4];   /* +0x1A0 bits the talk scripts test (mm_WordsFn_StoryFlagA); no code sets them */
+    uint32_t storyFlagsB[4];   /* +0x1B0 bits the talk scripts set, clear and test (mm_WordsFn_StoryFlagB) */
     int32_t money;             /* +0x1C0 3000 at reset; goods are affordable up to it (mm_WordsFn_CanAfford) */
     int32_t salary;            /* +0x1C4 2500 at reset; added to the money each payday, 1250 more after a good month (mm_EvPayday_Update) */
     int32_t stage;             /* +0x1C8 stage number, -1 = none */
@@ -1140,7 +1145,9 @@ struct StageState {
     int32_t missionTarget;     /* +0x1D4 compared with mm_CityScene_MissionProgress (mm_EvMissionCleared_Check) */
     uint8_t terrain[0x68];     /* +0x1D8 the terrain generation parameters (mm_TerrainGen_Generate) */
     uint16_t introduced[32];   /* +0x240 families that apply at the start (mm_CityScene_ctor); none from stage 25 on */
-    int32_t unk_280;           /* +0x280 */
+    uint16_t flags;            /* +0x280 1 the minimap shows (laptop entry 5 toggles it); 2 set by laptop entry 13 with
+                                  mm_Family_BefriendAll: families then also apply when mm_Family_CanApply agrees */
+    int16_t scriptVar;         /* +0x282 the talk scripts' own variable (mm_WordsFn_ScriptVar, mm_WordsFn_SetScriptVar) */
 };
 /* Character type class object (0x24 bytes; the person class is 0x28 with its walking speed at +0x24),
    one per CHARTYPE.BIN record in the table at gp 0x1BDA3C. */

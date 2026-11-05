@@ -23,27 +23,27 @@ namespace mm
     // ---- conditions and values
 
     int WordsFn_Arg4(GuestPtr<WordsCtx> ctx) { return ctx->setupArg; }
-    int WordsFn_Flag134(GuestPtr<WordsCtx> ctx) { return ctx->flag134; }
+    int WordsFn_FewChoicesLeft(GuestPtr<WordsCtx> ctx) { return ctx->fewChoicesLeft; }
     int WordsFn_False(GuestPtr<WordsCtx>) { return 0; }
     int WordsFn_FamilyHasLeft(GuestPtr<WordsCtx> ctx) { return Family_HasLeft(ctx->familyA); }
     int WordsFn_FamilyInCity(GuestPtr<WordsCtx> ctx) { return Family_InCity(ctx->familyA); }
-    int WordsFn_ScoreA8Tier(GuestPtr<WordsCtx> ctx) { return CityScene_ScoreA8Tier(ctx->city); }
-    int WordsFn_ScoreA0Tier(GuestPtr<WordsCtx> ctx) { return CityScene_ScoreA0Tier(ctx->city); }
+    int WordsFn_ConductTier(GuestPtr<WordsCtx> ctx) { return CityScene_ConductTier(ctx->city); }
+    int WordsFn_ProsperityTier(GuestPtr<WordsCtx> ctx) { return CityScene_ProsperityTier(ctx->city); }
     int WordsFn_WeatherToday(GuestPtr<WordsCtx> ctx) { return ctx->city->weatherToday; }
     int WordsFn_WeatherTomorrow(GuestPtr<WordsCtx> ctx) { return ctx->city->weatherTomorrow; }
     int WordsFn_StaminaZero(GuestPtr<WordsCtx> ctx) { return Stamina_Zero(ctx->city->stamina); }
     int WordsFn_StaminaTier(GuestPtr<WordsCtx> ctx) { return Stamina_HungerLevel(ctx->city->stamina); }
     int WordsFn_IsApplicant(GuestPtr<WordsCtx> ctx) { return Applicants_Find(ctx->city->applicants, ctx->familyA); }
     int WordsFn_BeforeSix(GuestPtr<WordsCtx> ctx) { return ctx->city->clock < 21600 ? 1 : 0; }
-    int WordsFn_CityFlag2(GuestPtr<WordsCtx> ctx) { return (ctx->city->flags & 2u) != 0 ? 1 : 0; }
+    int WordsFn_HolidayMonth(GuestPtr<WordsCtx> ctx) { return (ctx->city->flags & 2u) != 0 ? 1 : 0; }
     int WordsFn_Month(GuestPtr<WordsCtx> ctx) { return ctx->city->monthCount % 12; }
     int WordsFn_PopulationRank(GuestPtr<WordsCtx> ctx) { return CityScene_PopulationRank(ctx->city) - 1; }
     int WordsFn_EventsActive(GuestPtr<WordsCtx> ctx) { return Event_CountActive(eventsOf(ctx)) > 0 ? 1 : 0; }
-    int WordsFn_EventA4Var(GuestPtr<WordsCtx> ctx) { return eventsOf(ctx)->talks[0]->var; }
-    int WordsFn_EventA8Var(GuestPtr<WordsCtx> ctx) { return eventsOf(ctx)->talks[1]->var; }
+    int WordsFn_TalkEventVar(GuestPtr<WordsCtx> ctx) { return eventsOf(ctx)->talks[0]->var; }
+    int WordsFn_SystemEventVar(GuestPtr<WordsCtx> ctx) { return eventsOf(ctx)->talks[1]->var; }
 
-    // The talk scripts' own variable (a halfword of the stage state at +0x282).
-    int WordsFn_GetVar1C5602(GuestPtr<WordsCtx>) { return globals::talkScriptVar.get(); }
+    // The talk scripts' own variable (in the stage state).
+    int WordsFn_ScriptVar(GuestPtr<WordsCtx>) { return globals::stageState()->scriptVar; }
 
     // Family A's id modulo the argument (with the EE's rule for a zero divisor: the id itself).
     int WordsFn_FamilyModArg(GuestPtr<WordsCtx> ctx)
@@ -89,13 +89,13 @@ namespace mm
         return port::guestV0();
     }
 
-    int WordsFn_SetVar1C5602(GuestPtr<WordsCtx> ctx)
+    int WordsFn_SetScriptVar(GuestPtr<WordsCtx> ctx)
     {
-        globals::talkScriptVar.set(ctx->arg);
+        globals::stageState()->scriptVar = ctx->arg;
         return port::guestV0();
     }
 
-    int WordsFn_CitySetFlag40(GuestPtr<WordsCtx> ctx)
+    int WordsFn_FocusPadAfterTalk(GuestPtr<WordsCtx> ctx)
     {
         ctx->city->flags |= 0x40u;
         return port::guestV0();
@@ -107,13 +107,13 @@ namespace mm
         return port::guestV0();
     }
 
-    int WordsFn_SetEventA4Var(GuestPtr<WordsCtx> ctx)
+    int WordsFn_SetTalkEventVar(GuestPtr<WordsCtx> ctx)
     {
         eventsOf(ctx)->talks[0]->var = static_cast<uint8_t>(ctx->arg);
         return port::guestV0();
     }
 
-    int WordsFn_SetEventA8Var(GuestPtr<WordsCtx> ctx)
+    int WordsFn_SetSystemEventVar(GuestPtr<WordsCtx> ctx)
     {
         eventsOf(ctx)->talks[1]->var = static_cast<uint8_t>(ctx->arg);
         return port::guestV0();
@@ -130,23 +130,23 @@ namespace mm
 
     int WordsFn_EventQueueShift(GuestPtr<WordsCtx> ctx) { return port::callGuest<int>(addr::EventMgr_RequeueFirst, eventsOf(ctx)); }
 
-    // End the talk's first (A4) or second (A8) event, finishing it or abandoning it.
-    int WordsFn_EndEventA4Result(GuestPtr<WordsCtx> ctx) { return port::callGuest<int>(addr::Event_Finish, eventsOf(ctx), ctx->city, 0); }
-    int WordsFn_EndEventA4(GuestPtr<WordsCtx> ctx) { return port::callGuest<int>(addr::Event_Abort, eventsOf(ctx), ctx->city, 0); }
-    int WordsFn_EndEventA8Result(GuestPtr<WordsCtx> ctx) { return port::callGuest<int>(addr::Event_Finish, eventsOf(ctx), ctx->city, 1); }
-    int WordsFn_EndEventA8(GuestPtr<WordsCtx> ctx) { return port::callGuest<int>(addr::Event_Abort, eventsOf(ctx), ctx->city, 1); }
+    // End the talk event (talks[0]) or the system event (talks[1]), finishing it or abandoning it.
+    int WordsFn_FinishTalkEvent(GuestPtr<WordsCtx> ctx) { return port::callGuest<int>(addr::Event_Finish, eventsOf(ctx), ctx->city, 0); }
+    int WordsFn_AbortTalkEvent(GuestPtr<WordsCtx> ctx) { return port::callGuest<int>(addr::Event_Abort, eventsOf(ctx), ctx->city, 0); }
+    int WordsFn_FinishSystemEvent(GuestPtr<WordsCtx> ctx) { return port::callGuest<int>(addr::Event_Finish, eventsOf(ctx), ctx->city, 1); }
+    int WordsFn_AbortSystemEvent(GuestPtr<WordsCtx> ctx) { return port::callGuest<int>(addr::Event_Abort, eventsOf(ctx), ctx->city, 1); }
 
-    int WordsFn_StartEventA4(GuestPtr<WordsCtx> ctx)
+    int WordsFn_StartTalkEvent(GuestPtr<WordsCtx> ctx)
     {
         return port::callGuest<int>(addr::Event_CallHandlerSlot, eventsOf(ctx), ctx->city, 0, ctx->personA);
     }
 
-    int WordsFn_EventA4Text(GuestPtr<WordsCtx> ctx)
+    int WordsFn_TalkEventText(GuestPtr<WordsCtx> ctx)
     {
         return port::callGuest<int>(addr::Event_CallText, eventsOf(ctx), ctx->city, 0, static_cast<int>(ctx->arg));
     }
 
-    int WordsFn_EventA8Text(GuestPtr<WordsCtx> ctx)
+    int WordsFn_SystemEventText(GuestPtr<WordsCtx> ctx)
     {
         return port::callGuest<int>(addr::Event_CallText, eventsOf(ctx), ctx->city, 1, static_cast<int>(ctx->arg));
     }
@@ -184,7 +184,6 @@ namespace mm
         // Bit `index` of a bitset of 32-bit words, with C's signed division for the word.
         uint32_t bitWord(uint32_t bitset, int index) { return bitset + static_cast<uint32_t>(4 * (index / 32)); }
         uint32_t bitMask(int index) { return 1u << (static_cast<uint32_t>(index) & 31u); }
-        constexpr uint32_t kStoryFlagsA = 0x001C5520u, kStoryFlagsB = 0x001C5530u;
         constexpr uint32_t kTextBuffer = 0x001F4EB0u;  // shared output of the formatting texts
         int32_t lowWord(int64_t value) { return static_cast<int32_t>(value); }
         // The EE's remainder (the dividend itself for a zero divisor).
@@ -271,33 +270,39 @@ namespace mm
         return sum < 11 ? 1 : 2;
     }
 
-    // The story flags: two bitsets (A at 0x1C5520, B at 0x1C5530). The tests return the masked word.
-    int WordsFn_StoryFlagA(GuestPtr<WordsCtx> ctx) { return static_cast<int>(port::load<uint32_t>(bitWord(kStoryFlagsA, ctx->arg)) & bitMask(ctx->arg)); }
-    int WordsFn_StoryFlagB(GuestPtr<WordsCtx> ctx) { return static_cast<int>(port::load<uint32_t>(bitWord(kStoryFlagsB, ctx->arg)) & bitMask(ctx->arg)); }
+    // The story flags: two bitsets of the stage state (any bit number, by guest address as the original). The tests
+    // return the masked word.
+    namespace
+    {
+        uint32_t storyFlagsA() { return GuestPtr<uint32_t>::of(globals::stageState()->storyFlagsA[0]).address; }
+        uint32_t storyFlagsB() { return GuestPtr<uint32_t>::of(globals::stageState()->storyFlagsB[0]).address; }
+    }
+    int WordsFn_StoryFlagA(GuestPtr<WordsCtx> ctx) { return static_cast<int>(port::load<uint32_t>(bitWord(storyFlagsA(), ctx->arg)) & bitMask(ctx->arg)); }
+    int WordsFn_StoryFlagB(GuestPtr<WordsCtx> ctx) { return static_cast<int>(port::load<uint32_t>(bitWord(storyFlagsB(), ctx->arg)) & bitMask(ctx->arg)); }
 
     int WordsFn_SetStoryFlagB(GuestPtr<WordsCtx> ctx)
     {
-        const uint32_t word = bitWord(kStoryFlagsB, ctx->arg);
+        const uint32_t word = bitWord(storyFlagsB(), ctx->arg);
         port::store<uint32_t>(word, port::load<uint32_t>(word) | bitMask(ctx->arg));
         return port::guestV0();
     }
 
     int WordsFn_ClearStoryFlagB(GuestPtr<WordsCtx> ctx)
     {
-        const uint32_t word = bitWord(kStoryFlagsB, ctx->arg);
+        const uint32_t word = bitWord(storyFlagsB(), ctx->arg);
         port::store<uint32_t>(word, port::load<uint32_t>(word) & ~bitMask(ctx->arg));
         return port::guestV0();
     }
 
-    // Whether the talk's first event is a resident's request or a visitor's (its type's group is 1 or 2).
-    int WordsFn_EventA4IsTalk(GuestPtr<WordsCtx> ctx)
+    // Whether the talk event is a resident's request or a visitor's (its type's group is 1 or 2).
+    int WordsFn_TalkEventIsRequestOrVisit(GuestPtr<WordsCtx> ctx)
     {
         const uint8_t talking = globals::eventType(eventsOf(ctx)->talks[0]->kind)->group;
         return talking == 1 || talking == 2 ? 1 : 0;
     }
 
-    // The second event's number in its type's group plus one, 0 without one.
-    int WordsFn_EventA8Kind(GuestPtr<WordsCtx> ctx)
+    // The system event's number in its type's group plus one, 0 without one.
+    int WordsFn_SystemEventNumber(GuestPtr<WordsCtx> ctx)
     {
         const uint8_t kind = eventsOf(ctx)->talks[1]->kind;
         return kind == 0 ? 0 : globals::eventType(kind)->number + 1;
@@ -363,8 +368,8 @@ namespace mm
         }
     }
 
-    int WordsFn_StatusMid2(GuestPtr<WordsCtx> ctx) { return memberStatus(ctx, addr::MemberStatus_GetMid2, addr::StatusByte_Mid2); }
-    int WordsFn_StatusLow2(GuestPtr<WordsCtx> ctx) { return memberStatus(ctx, addr::MemberStatus_GetLow2, addr::StatusByte_Low2); }
+    int WordsFn_TalksToday(GuestPtr<WordsCtx> ctx) { return memberStatus(ctx, addr::MemberStatus_TalksToday, addr::TalkStatus_TalksToday); }
+    int WordsFn_RecentTalks(GuestPtr<WordsCtx> ctx) { return memberStatus(ctx, addr::MemberStatus_RecentTalks, addr::TalkStatus_RecentTalks); }
 
     // Whether the city's wants list holds a want of person A.
     int WordsFn_HasWantForPerson(GuestPtr<WordsCtx> ctx)
@@ -393,7 +398,7 @@ namespace mm
 
     // ---- second group: texts
 
-    GuestPtr<char> WordsFn_TextEventA4Name(GuestPtr<WordsCtx> ctx) { return GuestPtr<char>::of(globals::eventType(eventsOf(ctx)->talks[0]->kind)->name[0]); }
+    GuestPtr<char> WordsFn_TextTalkEventName(GuestPtr<WordsCtx> ctx) { return globals::eventType(eventsOf(ctx)->talks[0]->kind).as<char>(); } // the name, at +0
 
     GuestPtr<char> WordsFn_TextPopulation(GuestPtr<WordsCtx> ctx)
     {
@@ -582,8 +587,8 @@ namespace mm
 
     // Handler slot +0x14 of the talk's first (A4) or second (A8) event, with person A and the argument.
     // mm_Event_CallAnswer returns nothing the port knows of; its v0 is the callbacks' result.
-    int WordsFn_EventA4Answer(GuestPtr<WordsCtx> ctx) { return eventCallAnswer(ctx, 0); }
-    int WordsFn_EventA8Answer(GuestPtr<WordsCtx> ctx) { return eventCallAnswer(ctx, 1); }
+    int WordsFn_TalkEventAnswer(GuestPtr<WordsCtx> ctx) { return eventCallAnswer(ctx, 0); }
+    int WordsFn_SystemEventAnswer(GuestPtr<WordsCtx> ctx) { return eventCallAnswer(ctx, 1); }
 
     // Person A becomes actor `arg` of the talk's first event and building A takes part (flag 0x200). Not for a
     // building with flag 0x40, and not over an actor at object 0 when object 0 has flag 0x200.
@@ -686,7 +691,7 @@ namespace mm
     int WordsFn_CanApply(GuestPtr<WordsCtx> ctx)
     {
         int agrees = 0;
-        if ((globals::stageFlags.get() & 2u) != 0)
+        if ((globals::stageState()->flags & 2u) != 0)
             agrees = Family_CanApply(ctx->familyA, ctx->city) != 0 ? 1 : 0;
         return ((ctx->city->flags & 4u) != 0 ? 1 : 0) | agrees;
     }
@@ -753,8 +758,8 @@ namespace mm
         const uint8_t which = record->value;
         if (category == 0x16)
         {
-            for (const BagShortcut &shortcut : ctx->city->bag->shortcuts)
-                if (static_cast<uint16_t>(shortcut.slot) == which)
+            for (const BagMusicTrack &music : ctx->city->bag->musicTracks)
+                if (static_cast<uint16_t>(music.track) == which)
                     return 1;
             return 0;
         }
@@ -823,7 +828,7 @@ namespace mm
         const Who who = whoByArg(ctx);
         if (Family_GetFriendship(who.family, who.member) == 0)
             return 2;
-        return memberStatus(ctx, addr::MemberStatus_IsLevelAbove13, addr::StatusByte_LevelAbove13);
+        return memberStatus(ctx, addr::MemberStatus_LongApart, addr::TalkStatus_LongApart);
     }
 
     // The target of person A (or B): 0 none, 1 a building other than their workplace, else whether the type of
@@ -1038,8 +1043,8 @@ namespace mm
     PORT_FN(WordsFn_ActorDetach);
     PORT_FN(WordsFn_ActorMoveTo);
     PORT_FN(WordsFn_ActorFollow);
-    PORT_FN(WordsFn_EventA4Answer);
-    PORT_FN(WordsFn_EventA8Answer);
+    PORT_FN(WordsFn_TalkEventAnswer);
+    PORT_FN(WordsFn_SystemEventAnswer);
     PORT_FN(WordsFn_EventSetActor);
     PORT_FN(WordsFn_SelectEventActor);
     PORT_FN(WordsFn_EventStage);
@@ -1083,18 +1088,18 @@ namespace mm
     PORT_FN(WordsFn_StoryFlagB);
     PORT_FN(WordsFn_SetStoryFlagB);
     PORT_FN(WordsFn_ClearStoryFlagB);
-    PORT_FN(WordsFn_EventA4IsTalk);
-    PORT_FN(WordsFn_EventA8Kind);
+    PORT_FN(WordsFn_TalkEventIsRequestOrVisit);
+    PORT_FN(WordsFn_SystemEventNumber);
     PORT_FN(WordsFn_TimeOfDay);
     PORT_FN(WordsFn_FamilyCountTier);
     PORT_FN(WordsFn_HomeTypeFlag100);
     PORT_FN(WordsFn_HomeIsType104);
     PORT_FN(WordsFn_BuildingClaim);
-    PORT_FN(WordsFn_StatusMid2);
-    PORT_FN(WordsFn_StatusLow2);
+    PORT_FN(WordsFn_TalksToday);
+    PORT_FN(WordsFn_RecentTalks);
     PORT_FN(WordsFn_HasWantForPerson);
     PORT_FN(WordsFn_FindWant);
-    PORT_FN(WordsFn_TextEventA4Name);
+    PORT_FN(WordsFn_TextTalkEventName);
     PORT_FN(WordsFn_TextPopulation);
     PORT_FN(WordsFn_TextOpenHours);
     PORT_FN(WordsFn_TextClaimLine);
@@ -1110,46 +1115,46 @@ namespace mm
     PORT_FN(WordsFn_SelectEventPersonA);
     PORT_FN(WordsFn_SelectEventPersonB);
     PORT_FN(WordsFn_Arg4);
-    PORT_FN(WordsFn_Flag134);
+    PORT_FN(WordsFn_FewChoicesLeft);
     PORT_FN(WordsFn_False);
     PORT_FN(WordsFn_FamilyHasLeft);
     PORT_FN(WordsFn_FamilyInCity);
-    PORT_FN(WordsFn_ScoreA8Tier);
-    PORT_FN(WordsFn_ScoreA0Tier);
+    PORT_FN(WordsFn_ConductTier);
+    PORT_FN(WordsFn_ProsperityTier);
     PORT_FN(WordsFn_WeatherToday);
     PORT_FN(WordsFn_WeatherTomorrow);
     PORT_FN(WordsFn_StaminaZero);
     PORT_FN(WordsFn_StaminaTier);
     PORT_FN(WordsFn_IsApplicant);
     PORT_FN(WordsFn_BeforeSix);
-    PORT_FN(WordsFn_CityFlag2);
+    PORT_FN(WordsFn_HolidayMonth);
     PORT_FN(WordsFn_Month);
     PORT_FN(WordsFn_PopulationRank);
     PORT_FN(WordsFn_EventsActive);
-    PORT_FN(WordsFn_EventA4Var);
-    PORT_FN(WordsFn_EventA8Var);
-    PORT_FN(WordsFn_GetVar1C5602);
+    PORT_FN(WordsFn_TalkEventVar);
+    PORT_FN(WordsFn_SystemEventVar);
+    PORT_FN(WordsFn_ScriptVar);
     PORT_FN(WordsFn_FamilyModArg);
     PORT_FN(WordsFn_PersonFlagBit);
     PORT_FN(WordsFn_EventCountdown);
     PORT_FN(WordsFn_FamilyKnown);
     PORT_FN(WordsFn_TextNameSlot);
     PORT_FN(WordsFn_SetCancelAllowed);
-    PORT_FN(WordsFn_SetVar1C5602);
-    PORT_FN(WordsFn_CitySetFlag40);
+    PORT_FN(WordsFn_SetScriptVar);
+    PORT_FN(WordsFn_FocusPadAfterTalk);
     PORT_FN(WordsFn_ClearPersonFlag20);
-    PORT_FN(WordsFn_SetEventA4Var);
-    PORT_FN(WordsFn_SetEventA8Var);
+    PORT_FN(WordsFn_SetTalkEventVar);
+    PORT_FN(WordsFn_SetSystemEventVar);
     PORT_FN(WordsFn_PlaySe);
     PORT_FN(WordsFn_TalkEndChoosing);
     PORT_FN(WordsFn_EventQueueShift);
-    PORT_FN(WordsFn_EndEventA4Result);
-    PORT_FN(WordsFn_EndEventA4);
-    PORT_FN(WordsFn_EndEventA8Result);
-    PORT_FN(WordsFn_EndEventA8);
-    PORT_FN(WordsFn_StartEventA4);
-    PORT_FN(WordsFn_EventA4Text);
-    PORT_FN(WordsFn_EventA8Text);
+    PORT_FN(WordsFn_FinishTalkEvent);
+    PORT_FN(WordsFn_AbortTalkEvent);
+    PORT_FN(WordsFn_FinishSystemEvent);
+    PORT_FN(WordsFn_AbortSystemEvent);
+    PORT_FN(WordsFn_StartTalkEvent);
+    PORT_FN(WordsFn_TalkEventText);
+    PORT_FN(WordsFn_SystemEventText);
     PORT_FN(WordsFn_SetPose);
     PORT_FN(WordsFn_TalkSelectActor);
 
@@ -1159,7 +1164,7 @@ namespace mm
     int Words_GetCancelAllowed(GuestPtr<Words> words) { return words->ctx->cancelAllowed; }
     int Words_GetFriendshipChanged(GuestPtr<Words> words) { return words->ctx->friendshipChanged; }
     void Words_SetArg(GuestPtr<Words> words, uint16_t arg) { words->ctx->arg = static_cast<int16_t>(arg); }
-    void Words_SetFlag134(GuestPtr<Words> words) { words->ctx->flag134 = 1; }
+    void Words_SetFewChoicesLeft(GuestPtr<Words> words) { words->ctx->fewChoicesLeft = 1; }
     void Words_SetWantIndex(GuestPtr<Words> words, uint16_t index) { words->ctx->wantIndex = static_cast<int16_t>(index); }
 
     // The same, for the game's one WORDS object.
@@ -1230,7 +1235,7 @@ namespace mm
     PORT_FN(Words_GetCancelAllowed);
     PORT_FN(Words_GetFriendshipChanged);
     PORT_FN(Words_SetArg);
-    PORT_FN(Words_SetFlag134);
+    PORT_FN(Words_SetFewChoicesLeft);
     PORT_FN(Words_SetWantIndex);
     PORT_FN(Words_CancelAllowed);
     PORT_FN(Words_FriendshipChanged);
@@ -1495,7 +1500,7 @@ namespace mm
         return BldgType_GetPostName(GuestPtr<BuildingType>{globals::buildingTypeAddress(homeType)}, role);
     }
 
-    uint8_t WordsFn_MemberByte2B(GuestPtr<WordsCtx> ctx)
+    uint8_t WordsFn_MemberLook(GuestPtr<WordsCtx> ctx)
     {
         return memberAt(Family_Get(ctx->familyA, 0), ctx->memberA)->look;
     }
@@ -1582,7 +1587,7 @@ namespace mm
     PORT_FN(WordsFn_TextMemberName2);
     PORT_FN(WordsFn_TextMemberName);
     PORT_FN(WordsFn_TextOccupation);
-    PORT_FN(WordsFn_MemberByte2B);
+    PORT_FN(WordsFn_MemberLook);
     PORT_FN(WordsFn_MemberByte2A);
     PORT_FN(WordsFn_MemberCharType);
     PORT_FN(WordsFn_MemberRole);
@@ -1607,7 +1612,7 @@ namespace mm
             ctx->bagSlot = GuestPtr<BagSlot>{0u};
             ctx->result = 0;
             ctx->cancelAllowed = 1;
-            ctx->flag134 = 0;
+            ctx->fewChoicesLeft = 0;
             ctx->arg = 0;
             ctx->eventSlot = 0;
             ctx->wantIndex = 0;
@@ -2017,7 +2022,7 @@ namespace mm
                 if ((port::load<uint8_t>(kUsed) & (1u << (j & 31))) != 0)
                     --left;
             if (left < 2)
-                Words_SetFlag134(words);
+                Words_SetFewChoicesLeft(words);
         }
         if (code == -0x7D4)
             add(static_cast<uint16_t>(Words_SelectEvent(words, choice)));

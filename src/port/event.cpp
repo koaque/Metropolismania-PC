@@ -1171,7 +1171,7 @@ namespace mm
             for (uint32_t item = items; item < end; item += 2u)
             {
                 const GuestPtr<MapObject> shop = Map_GetRecord(city->map, port::load<uint16_t>(item));
-                if ((typeOf(shop)->flags & 0x40u) == 0 || Map_TileIndexFlag10(city->map, shop->entranceTile) == 0 || shop->id == person->work)
+                if ((typeOf(shop)->flags & 0x40u) == 0 || Map_TileIndexWalkable(city->map, shop->entranceTile) == 0 || shop->id == person->work)
                     continue;
                 const GuestPtr<MapObject> at = Map_GetTileFirstObject(city->map, shop->entranceTile);
                 const int size = typeOf(at)->size;
@@ -1473,7 +1473,7 @@ namespace mm
             for (uint32_t i = 0, item = items; i < *count; ++i, item += 2u)
             {
                 const GuestPtr<MapObject> shop = Map_GetRecord(city->map, port::load<uint16_t>(item));
-                if ((typeOf(shop)->flags & 0x40u) == 0 || Map_TileIndexFlag10(city->map, shop->entranceTile) == 0 || shop->id == person->work)
+                if ((typeOf(shop)->flags & 0x40u) == 0 || Map_TileIndexWalkable(city->map, shop->entranceTile) == 0 || shop->id == person->work)
                     continue;
                 const GuestPtr<MapObject> at = Map_GetTileFirstObject(city->map, shop->entranceTile);
                 const int size = typeOf(at)->size;
@@ -3328,9 +3328,9 @@ namespace mm
                 }
             }
         }
-        if (row->scoreA0Tier != 0 && static_cast<int>(row->scoreA0Tier) - 1 != CityScene_ScoreA0Tier(city))
+        if (row->prosperityTier != 0 && static_cast<int>(row->prosperityTier) - 1 != CityScene_ProsperityTier(city))
             return 0;
-        if (row->scoreA8Tier != 0 && static_cast<int>(row->scoreA8Tier) - 1 != CityScene_ScoreA8Tier(city))
+        if (row->conductTier != 0 && static_cast<int>(row->conductTier) - 1 != CityScene_ConductTier(city))
             return 0;
         if (row->approvalTier != 0 && static_cast<int>(row->approvalTier) - 1 != CityScene_ApprovalTier(city))
             return 0;
@@ -4901,7 +4901,7 @@ namespace mm
                 city->overlay = GuestPtr<void>{overlay};
                 city->flags = city->flags | 8u;
                 party->stageStep = party->stageStep + 1;
-                Se_SetVoice15Enabled(0, 1);
+                Bgm_SetPlaying(0, 1);
                 Se_SetEnabled(1, 1);
                 port::store<int32_t>(kPartyFlag, 0);
                 break;
@@ -4995,7 +4995,7 @@ namespace mm
                 city->flags = city->flags | 0x10u;
                 city->flags = city->flags & ~8u;
                 Se_SetEnabled(1, 1);
-                Se_SetVoice15Enabled(0, 1);
+                Bgm_SetPlaying(0, 1);
                 port::store<int32_t>(kPartyFlag, 0);
                 Event_Finish(city->events, city, 0);
             }

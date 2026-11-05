@@ -91,7 +91,8 @@ struct MapTile {
     float height;              /* +0x00 terrain height (loaded with lwc1, mm_Map_GetTileHeightWord) */
     float verts[4];            /* +0x04 corner heights towards (-x,-z), (+x,-z), (+x,+z), (-x,+z) (mm_Map_UpdateTileGeometry) */
     uint16_t firstObject;      /* +0x14 0x3F80 = none */
-    uint16_t flags;            /* +0x16 0x10 = walkable */
+    uint16_t flags;            /* +0x16 1 an object's corner tile, 2 and 4 the tile kind (mm_Map_GetTileKind), 8 under a
+                                  building type with flag 1, 0x10 walkable (under a type with flag 2) */
 };
 
 /* Placed object (0x1C bytes): building, road, field ..., at CityMap +0x08. */
@@ -170,7 +171,7 @@ struct MapPerson {
     union {
         struct {
             uint8_t member;    /* +0x2E */
-            uint8_t status;    /* +0x2F friendship status byte */
+            uint8_t status;    /* +0x2F talk status: time since the last talk, talks just now and today (mm_TalkStatus_*) */
         };
         uint16_t awayTime;     /* +0x2E vehicles: off the road, 3 a tick; at 0xFD20 back at the depot (mm_Char2_Update) */
     };
@@ -542,7 +543,7 @@ struct WordsCtx {
     uint16_t candidates[64];   /* +0x30 */
     uint8_t unk_B0[0x80];
     int32_t cancelAllowed;     /* +0x130 */
-    int32_t flag134;           /* +0x134 */
+    int32_t fewChoicesLeft;    /* +0x134 fewer than two unused entries left in the script's menu (mm_Words_ApplyChoice) */
     int16_t eventSlot;         /* +0x138 */
     int16_t wantIndex;         /* +0x13A chosen want */
     int32_t friendshipChanged; /* +0x13C */
@@ -725,12 +726,17 @@ struct CityScene {
     int32_t weatherTomorrow;   /* +0x94 */
     int32_t weatherYesterday;  /* +0x98 */
     int32_t unk_9C;
-    int32_t scoreA0;           /* +0xA0 decaying average, starts at 250 */
-    int32_t scoreA0Count;      /* +0xA4 */
-    int32_t scoreA8;           /* +0xA8 */
-    int32_t scoreA8Count;      /* +0xAC */
+    int32_t prosperity;        /* +0xA0 decaying average (x10) of the residents' class traits bits 9-11 as they move in,
+                                  starts at 250; low tiers gate recession, unemployment and bad debt events, the top one
+                                  travel and gardening booms (EventType.prosperityTier) */
+    int32_t prosperityCount;   /* +0xA4 moves counted, up to 10 */
+    int32_t conduct;           /* +0xA8 the same for traits bits 12-14; the low tier gates the crime events (stalker crime,
+                                  bad cops and teachers) */
+    int32_t conductCount;      /* +0xAC */
     float waterLevel;          /* +0xB0 height of the water surface (mm_LayerG_Draw, mm_Se_PickTerrainAmbience) */
-    uint32_t flags;            /* +0xB4 2 holiday month, 4 popular (approval 118+), 0x40 pad focus after a talk */
+    uint32_t flags;            /* +0xB4 1 buildings tinted by claim (set at construction), 2 holiday month, 4 popular
+                                  (approval 118+), 8 a farewell party is on, 0x10 the city scene ends, 0x20 rolled each
+                                  month from October to March (1 in 4), 0x40 pad focus after a talk */
     int32_t paydayScore;       /* +0xB8 raised through the month; with the families moved in and out it decides the salary rise (mm_EvPayday_Update) */
     int32_t pendingApproval;   /* +0xBC */
     int32_t trafficPhase;      /* +0xC0 traffic lights: 0 lets traffic along z through, 2 along x, 1 and 3 neither (mm_Char2_UpdateSpeedUndrawn) */

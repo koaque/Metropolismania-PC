@@ -874,11 +874,11 @@ namespace mm
         const GuestPtr<MapPerson> record = card->city->map->people + card->person;
         card->friendship = fromInt(static_cast<int8_t>(Family_GetFriendship(record->family, record->member)));
         const GuestPtr<uint8_t> status{record.address + 0x2Fu};
-        int level = StatusByte_LevelAbove13(status);
+        int level = TalkStatus_LongApart(status);
         if (Family_GetFriendship(record->family, record->member) == 0)
             level = 2;
-        const uint32_t middle = StatusByte_Mid2(status);
-        const uint8_t low = StatusByte_Low2(status);
+        const uint32_t middle = TalkStatus_TalksToday(status);
+        const uint8_t low = TalkStatus_RecentTalks(status);
         if (level == 2)
             card->mood = 0;
         else if (low != 0)
@@ -1894,7 +1894,7 @@ namespace mm
                     const GuestPtr<MapPerson> person = city->map->people + conv->person;
                     const bool away = arg5 != 2 && arg5 != 3 && conv->peopleInside != 0 && person->activity == 5;
                     if (!away)
-                        StatusByte_OnLevel12(person->family, person->member, GuestPtr<uint8_t>::of(person->status), points(person->charType),
+                        TalkStatus_AddFriendshipAfterBreak(person->family, person->member, GuestPtr<uint8_t>::of(person->status), points(person->charType),
                                              GuestPtr<uint32_t>{port::guest(&city->approval)});
                 }
                 else
@@ -1903,7 +1903,7 @@ namespace mm
                     if (arg5 == 3 || Schedule_MemberActivity(city, static_cast<uint32_t>(family), member) != 5)
                     {
                         const uint32_t record = Family_Get(family, 0).address;
-                        MemberStatus_OnLevel12(family, member, points((GuestPtr<FamilyMember>{record + 0x24u} + member)->charType),
+                        MemberStatus_AddFriendshipAfterBreak(family, member, points((GuestPtr<FamilyMember>{record + 0x24u} + member)->charType),
                                                static_cast<int>(port::guest(&city->approval)));
                     }
                 }
@@ -1956,7 +1956,7 @@ namespace mm
     // The conversation window closing: once its close call (slot +0x18 of the vtable, step 0.1) is done the speaker window (+0x2D8)
     // is deleted and the state goes back to 0. The speaker's friendship status then moves on, unless nobody was at home (activity 5
     // for a person; the schedule says 5 for a member of a family): when the conversation ended well (the end flag +0x500 or a
-    // change the script made) the status byte advances (mm_StatusByte_Advance or mm_MemberStatus_Advance), otherwise a status level
+    // change the script made) the status byte advances (mm_TalkStatus_RecordTalk or mm_MemberStatus_RecordTalk), otherwise a status level
     // of 14 or more drops back to 13.
     void TalkConv_Closing(GuestPtr<TalkConv> conv)
     {
@@ -1977,7 +1977,7 @@ namespace mm
             if (arg5 != 2 && arg5 != 3 && conv->peopleInside != 0 && person->activity == 5)
                 return;
             if (conv->ended != 0 || Words_FriendshipChanged() != 0)
-                StatusByte_Advance(GuestPtr<uint8_t>::of(person->status));
+                TalkStatus_RecordTalk(GuestPtr<uint8_t>::of(person->status));
             else
                 lowerLevel(GuestPtr<uint8_t>::of(person->status));
             return;
@@ -1985,7 +1985,7 @@ namespace mm
         if (arg5 != 3 && Schedule_MemberActivity(city, static_cast<uint32_t>(conv->family), conv->member) == 5)
             return;
         if (conv->ended != 0 || Words_FriendshipChanged() != 0)
-            MemberStatus_Advance(conv->family, conv->member);
+            MemberStatus_RecordTalk(conv->family, conv->member);
         else
             lowerLevel(MemberStatus_Lookup(conv->family, conv->member));
     }
@@ -2357,7 +2357,7 @@ namespace mm
             ps2f phase = view->idleTime + fromInt(port::load<int32_t>(slotAt) % 90);
             if (!(phase < ps2f(180.0f)))
                 phase = phase - ps2f(180.0f);
-            Instance_DrawSwayingIfRoom(view->awayModel, 0, phase);
+            A3D_AnimateIfRoom(view->awayModel, 0, phase);
             Instance_DrawModel(view->awayModel, GuestPtr<Vec4>{nobodyHome ? kDimAway : globals::kDefaultColour}, 0, 0);
         };
         // Someone there: the class draws it (for a family member the person is 0 and the family and member are given, for a person on

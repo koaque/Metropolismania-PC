@@ -49,7 +49,7 @@ struct SaveTitle;
 struct NameEntry;
 struct TitleScene;
 struct Bag;
-struct BagShortcut;
+struct BagMusicTrack;
 struct BagSlot;
 struct GoodsRecord;
 struct StatusPanel;
@@ -166,7 +166,7 @@ struct Frame {
 struct A3DObject {
     GuestPtr<A3DModel> model;           /* +0x00 the loaded .A3D data */
     GuestPtr<void> textures;            /* +0x04 the texture block while loading: its packets go to the GS, then it is freed (mm_A3D_Relocate) */
-    int32_t trackCount;        /* +0x08 node tracks per animation (mm_A3D_Relocate, mm_Instance_DrawSwaying) */
+    int32_t trackCount;        /* +0x08 node tracks per animation (mm_A3D_Relocate, mm_A3D_Animate) */
     uint8_t unk_0C[4];
     Vec4 matrix[4];            /* +0x10 object matrix (mm_Player_GetMatrix) */
     GuestPtr<uint32_t> animations;      /* +0x50 one A3DTrack array address per animation (mm_A3D_Relocate) */
@@ -309,7 +309,7 @@ struct A3DNode {
     GuestPtr<A3DNode> parent;           /* +0x00 null for a root */
     GuestPtr<A3DMesh> mesh;             /* +0x04 null for none; with indexed 0 at load, an index into the mesh table (-1 none) */
     uint8_t unk_08[8];
-    Vec4 local[4];             /* +0x10 set by the animations (mm_Instance_DrawSwaying) */
+    Vec4 local[4];             /* +0x10 set by the animations (mm_A3D_Animate) */
     InstanceSlot slot;         /* +0x50 its draw packet: colour (+0x60) and world matrix (+0x70), whose last word (+0xAC) is
                                   non-zero once it is up to date (mm_A3DObject_UpdateNodeMatrix) */
 };
@@ -583,17 +583,18 @@ struct BagSlot {
     uint8_t unk_0E;            /* +0x0E 0xFF when bought */
     uint8_t unk_0F;
 };
-/* Bag shortcut (4 bytes). */
-struct BagShortcut {
-    int16_t slot;              /* +0x00 -1 = none */
-    int16_t unk_02;
+/* A music track bought (4 bytes; goods kind 0x16, mm_Bag_AddMusicTrack): the city music plays the enabled ones
+   (mm_Bgm_SetTrackSlot). */
+struct BagMusicTrack {
+    int16_t track;             /* +0x00 the goods' value, -1 = none */
+    int16_t enabled;           /* +0x02 */
 };
 struct Bag {
     uint16_t size;             /* +0x000 0 none, 1..3: 4, 10 or 20 slots (byte table 0x1B5B08, mm_WordsFn_GoodsBagFull) */
     uint16_t outfit;           /* +0x002 what the player wears (goods kind 0x15, its value; 0 the default): the player's
                                   mesh group (mm_Player_Draw); the one taken off goes back into the bag */
     BagSlot slots[20];         /* +0x004 */
-    BagShortcut shortcuts[10]; /* +0x144 */
+    BagMusicTrack musicTracks[10]; /* +0x144 */
     GuestPtr<A3DObject> model;          /* +0x16C bag model (from 0x1F3B24) */
     GuestPtr<TextBox> nameText;         /* +0x170 the selected item's name (mm_BagMenu_Update) */
     GuestPtr<ListMenu> list;            /* +0x174 the item list */
@@ -728,8 +729,8 @@ struct EventType {
     uint16_t population;       /* +0x30 the population the city needs */
     uint16_t modules;          /* +0x32 the laptop modules it needs (bits, mm_Laptop_CountActive) */
     uint8_t approvalTier;      /* +0x34 1 + the approval tier it needs (mm_CityScene_ApprovalTier), 0 = any */
-    uint8_t scoreA0Tier;       /* +0x35 1 + the tier of mm_CityScene_ScoreA0Tier, 0 = any */
-    uint8_t scoreA8Tier;       /* +0x36 1 + the tier of mm_CityScene_ScoreA8Tier, 0 = any */
+    uint8_t prosperityTier;    /* +0x35 1 + the tier of mm_CityScene_ProsperityTier, 0 = any */
+    uint8_t conductTier;       /* +0x36 1 + the tier of mm_CityScene_ConductTier, 0 = any */
     uint8_t unk_37;
     uint16_t charTypes[4];     /* +0x38 the person's character type must be one of these (level 2: the first); 0 ends */
     uint8_t gender;            /* +0x40 1 + (person flags & 3), 0 = any */
@@ -949,7 +950,10 @@ struct EventMgr {
     uint8_t rank;              /* +0x02 the population rank reached (mm_CityScene_PopulationRank) */
     uint8_t unk_03;
     EventSlot slots[5];        /* +0x04 filled from the front; mm_EventMgr_RequeueFirst drops the first */
-    GuestPtr<EventData> talks[3];       /* +0xA4 the event records the talk script works with (0x84, 0x24, 0x7C bytes; saved) */
+    /* The event records the talk script works with (0x84, 0x24, 0x7C bytes; saved): 0 the talk event (TalkEventData),
+       1 the system event (group 6: paydays, hunger, population milestones), 2 a level 2 event's while its Check runs
+       (mm_Event_CheckCondition). */
+    GuestPtr<EventData> talks[3];       /* +0xA4 */
 };
 /* An entry of the event queue (2 bytes); event slots and event records start with the same pair. */
 struct EventQueueEntry {
@@ -1031,8 +1035,8 @@ struct Player {
     Vec4 position;             /* +0x10 */
     Vec4 colour;               /* +0x20 the tint the building under the player gives (mm_BldgType_DrawOccupant) */
     uint8_t unk_30[4];
-    ps2f swayPhase;           /* +0x34 animation frame, passed to mm_Instance_DrawSwayingIfRoom (mm_Player_UpdateAction) */
-    int32_t swayArg;           /* +0x38 animation: 0-2 standing, 4-15 moving (mm_Player_UpdateAction) */
+    ps2f animTime;            /* +0x34 the animation's frame (mm_Player_UpdateAction, mm_A3D_AnimateIfRoom) */
+    int32_t animation;         /* +0x38 the model's animation: 0-2 standing, 4-15 moving (mm_Player_UpdateAction) */
     int32_t visible;           /* +0x3C drawn when non-zero (mm_Player_Draw) */
     int32_t target;            /* +0x40 object or person the cursor points at, -1 none (mm_Player_PickTarget) */
     int32_t targetIsPerson;    /* +0x44 */
@@ -1153,7 +1157,8 @@ struct StageName { char text[0x10]; };
 /* Stage state at 0x1C5380, saved with the city (0x284 bytes). */
 struct StageState {
     StageName names[26];       /* +0x000 the city's name, the mayor's name, ... (cleared by mm_Stage_Reset) */
-    uint8_t unk_1A0[0x20];
+    uint32_t storyFlagsA[4];   /* +0x1A0 bits the talk scripts test (mm_WordsFn_StoryFlagA); no code sets them */
+    uint32_t storyFlagsB[4];   /* +0x1B0 bits the talk scripts set, clear and test (mm_WordsFn_StoryFlagB) */
     int32_t money;             /* +0x1C0 3000 at reset; goods are affordable up to it (mm_WordsFn_CanAfford) */
     int32_t salary;            /* +0x1C4 2500 at reset; added to the money each payday, 1250 more after a good month (mm_EvPayday_Update) */
     int32_t stage;             /* +0x1C8 stage number, -1 = none */
@@ -1164,7 +1169,9 @@ struct StageState {
     int32_t missionTarget;     /* +0x1D4 compared with mm_CityScene_MissionProgress (mm_EvMissionCleared_Check) */
     uint8_t terrain[0x68];     /* +0x1D8 the terrain generation parameters (mm_TerrainGen_Generate) */
     uint16_t introduced[32];   /* +0x240 families that apply at the start (mm_CityScene_ctor); none from stage 25 on */
-    int32_t unk_280;           /* +0x280 */
+    uint16_t flags;            /* +0x280 1 the minimap shows (laptop entry 5 toggles it); 2 set by laptop entry 13 with
+                                  mm_Family_BefriendAll: families then also apply when mm_Family_CanApply agrees */
+    int16_t scriptVar;         /* +0x282 the talk scripts' own variable (mm_WordsFn_ScriptVar, mm_WordsFn_SetScriptVar) */
 };
 /* Character type class object (0x24 bytes; the person class is 0x28 with its walking speed at +0x24),
    one per CHARTYPE.BIN record in the table at gp 0x1BDA3C. */
@@ -1441,7 +1448,8 @@ struct MapTile {
     ps2f height;              /* +0x00 terrain height (loaded with lwc1, mm_Map_GetTileHeightWord) */
     ps2f verts[4];            /* +0x04 corner heights towards (-x,-z), (+x,-z), (+x,+z), (-x,+z) (mm_Map_UpdateTileGeometry) */
     uint16_t firstObject;      /* +0x14 0x3F80 = none */
-    uint16_t flags;            /* +0x16 0x10 = walkable */
+    uint16_t flags;            /* +0x16 1 an object's corner tile, 2 and 4 the tile kind (mm_Map_GetTileKind), 8 under a
+                                  building type with flag 1, 0x10 walkable (under a type with flag 2) */
 };
 
 /* Placed object (0x1C bytes): building, road, field ..., at CityMap +0x08. */
@@ -1520,7 +1528,7 @@ struct MapPerson {
     union {
         struct {
             uint8_t member;    /* +0x2E */
-            uint8_t status;    /* +0x2F friendship status byte */
+            uint8_t status;    /* +0x2F talk status: time since the last talk, talks just now and today (mm_TalkStatus_*) */
         };
         uint16_t awayTime;     /* +0x2E vehicles: off the road, 3 a tick; at 0xFD20 back at the depot (mm_Char2_Update) */
     };
@@ -1892,7 +1900,7 @@ struct WordsCtx {
     uint16_t candidates[64];   /* +0x30 */
     uint8_t unk_B0[0x80];
     int32_t cancelAllowed;     /* +0x130 */
-    int32_t flag134;           /* +0x134 */
+    int32_t fewChoicesLeft;    /* +0x134 fewer than two unused entries left in the script's menu (mm_Words_ApplyChoice) */
     int16_t eventSlot;         /* +0x138 */
     int16_t wantIndex;         /* +0x13A chosen want */
     int32_t friendshipChanged; /* +0x13C */
@@ -2075,12 +2083,17 @@ struct CityScene {
     int32_t weatherTomorrow;   /* +0x94 */
     int32_t weatherYesterday;  /* +0x98 */
     int32_t unk_9C;
-    int32_t scoreA0;           /* +0xA0 decaying average, starts at 250 */
-    int32_t scoreA0Count;      /* +0xA4 */
-    int32_t scoreA8;           /* +0xA8 */
-    int32_t scoreA8Count;      /* +0xAC */
+    int32_t prosperity;        /* +0xA0 decaying average (x10) of the residents' class traits bits 9-11 as they move in,
+                                  starts at 250; low tiers gate recession, unemployment and bad debt events, the top one
+                                  travel and gardening booms (EventType.prosperityTier) */
+    int32_t prosperityCount;   /* +0xA4 moves counted, up to 10 */
+    int32_t conduct;           /* +0xA8 the same for traits bits 12-14; the low tier gates the crime events (stalker crime,
+                                  bad cops and teachers) */
+    int32_t conductCount;      /* +0xAC */
     ps2f waterLevel;          /* +0xB0 height of the water surface (mm_LayerG_Draw, mm_Se_PickTerrainAmbience) */
-    uint32_t flags;            /* +0xB4 2 holiday month, 4 popular (approval 118+), 0x40 pad focus after a talk */
+    uint32_t flags;            /* +0xB4 1 buildings tinted by claim (set at construction), 2 holiday month, 4 popular
+                                  (approval 118+), 8 a farewell party is on, 0x10 the city scene ends, 0x20 rolled each
+                                  month from October to March (1 in 4), 0x40 pad focus after a talk */
     int32_t paydayScore;       /* +0xB8 raised through the month; with the families moved in and out it decides the salary rise (mm_EvPayday_Update) */
     int32_t pendingApproval;   /* +0xBC */
     int32_t trafficPhase;      /* +0xC0 traffic lights: 0 lets traffic along z through, 2 along x, 1 and 3 neither (mm_Char2_UpdateSpeedUndrawn) */
@@ -2582,11 +2595,12 @@ static_assert(offsetof(BagSlot, count) == 0x06, "BagSlot.count");
 static_assert(offsetof(BagSlot, month) == 0x08, "BagSlot.month");
 static_assert(offsetof(BagSlot, seller) == 0x0C, "BagSlot.seller");
 static_assert(offsetof(BagSlot, unk_0E) == 0x0E, "BagSlot.unk_0E");
-static_assert(offsetof(BagShortcut, slot) == 0x00, "BagShortcut.slot");
+static_assert(offsetof(BagMusicTrack, track) == 0x00, "BagMusicTrack.track");
+static_assert(offsetof(BagMusicTrack, enabled) == 0x02, "BagMusicTrack.enabled");
 static_assert(offsetof(Bag, size) == 0x000, "Bag.size");
 static_assert(offsetof(Bag, outfit) == 0x002, "Bag.outfit");
 static_assert(offsetof(Bag, slots) == 0x004, "Bag.slots");
-static_assert(offsetof(Bag, shortcuts) == 0x144, "Bag.shortcuts");
+static_assert(offsetof(Bag, musicTracks) == 0x144, "Bag.musicTracks");
 static_assert(offsetof(Bag, model) == 0x16C, "Bag.model");
 static_assert(offsetof(Bag, nameText) == 0x170, "Bag.nameText");
 static_assert(offsetof(Bag, list) == 0x174, "Bag.list");
@@ -2681,8 +2695,8 @@ static_assert(offsetof(EventType, finishAt) == 0x2E, "EventType.finishAt");
 static_assert(offsetof(EventType, population) == 0x30, "EventType.population");
 static_assert(offsetof(EventType, modules) == 0x32, "EventType.modules");
 static_assert(offsetof(EventType, approvalTier) == 0x34, "EventType.approvalTier");
-static_assert(offsetof(EventType, scoreA0Tier) == 0x35, "EventType.scoreA0Tier");
-static_assert(offsetof(EventType, scoreA8Tier) == 0x36, "EventType.scoreA8Tier");
+static_assert(offsetof(EventType, prosperityTier) == 0x35, "EventType.prosperityTier");
+static_assert(offsetof(EventType, conductTier) == 0x36, "EventType.conductTier");
 static_assert(offsetof(EventType, charTypes) == 0x38, "EventType.charTypes");
 static_assert(offsetof(EventType, gender) == 0x40, "EventType.gender");
 static_assert(offsetof(EventType, claimMeter) == 0x41, "EventType.claimMeter");
@@ -2867,8 +2881,8 @@ static_assert(offsetof(Player, step) == 0x08, "Player.step");
 static_assert(offsetof(Player, heading) == 0x0C, "Player.heading");
 static_assert(offsetof(Player, position) == 0x10, "Player.position");
 static_assert(offsetof(Player, colour) == 0x20, "Player.colour");
-static_assert(offsetof(Player, swayPhase) == 0x34, "Player.swayPhase");
-static_assert(offsetof(Player, swayArg) == 0x38, "Player.swayArg");
+static_assert(offsetof(Player, animTime) == 0x34, "Player.animTime");
+static_assert(offsetof(Player, animation) == 0x38, "Player.animation");
 static_assert(offsetof(Player, visible) == 0x3C, "Player.visible");
 static_assert(offsetof(Player, target) == 0x40, "Player.target");
 static_assert(offsetof(Player, targetIsPerson) == 0x44, "Player.targetIsPerson");
@@ -2959,6 +2973,8 @@ static_assert(offsetof(TownPages, savedRow) == 0x60, "TownPages.savedRow");
 static_assert(sizeof(StageName) == 0x10, "StageName size");
 static_assert(sizeof(StageState) == 0x284, "StageState size");
 static_assert(offsetof(StageState, names) == 0x000, "StageState.names");
+static_assert(offsetof(StageState, storyFlagsA) == 0x1A0, "StageState.storyFlagsA");
+static_assert(offsetof(StageState, storyFlagsB) == 0x1B0, "StageState.storyFlagsB");
 static_assert(offsetof(StageState, money) == 0x1C0, "StageState.money");
 static_assert(offsetof(StageState, salary) == 0x1C4, "StageState.salary");
 static_assert(offsetof(StageState, stage) == 0x1C8, "StageState.stage");
@@ -2967,7 +2983,8 @@ static_assert(offsetof(StageState, missionKind) == 0x1D0, "StageState.missionKin
 static_assert(offsetof(StageState, missionTarget) == 0x1D4, "StageState.missionTarget");
 static_assert(offsetof(StageState, terrain) == 0x1D8, "StageState.terrain");
 static_assert(offsetof(StageState, introduced) == 0x240, "StageState.introduced");
-static_assert(offsetof(StageState, unk_280) == 0x280, "StageState.unk_280");
+static_assert(offsetof(StageState, flags) == 0x280, "StageState.flags");
+static_assert(offsetof(StageState, scriptVar) == 0x282, "StageState.scriptVar");
 static_assert(offsetof(CharClass, parts) == 0x00, "CharClass.parts");
 static_assert(offsetof(CharClass, restartFrames) == 0x10, "CharClass.restartFrames");
 static_assert(offsetof(CharClass, voice) == 0x16, "CharClass.voice");
@@ -3393,7 +3410,7 @@ static_assert(offsetof(WordsCtx, arg) == 0x2A, "WordsCtx.arg");
 static_assert(offsetof(WordsCtx, candidateCount) == 0x2C, "WordsCtx.candidateCount");
 static_assert(offsetof(WordsCtx, candidates) == 0x30, "WordsCtx.candidates");
 static_assert(offsetof(WordsCtx, cancelAllowed) == 0x130, "WordsCtx.cancelAllowed");
-static_assert(offsetof(WordsCtx, flag134) == 0x134, "WordsCtx.flag134");
+static_assert(offsetof(WordsCtx, fewChoicesLeft) == 0x134, "WordsCtx.fewChoicesLeft");
 static_assert(offsetof(WordsCtx, eventSlot) == 0x138, "WordsCtx.eventSlot");
 static_assert(offsetof(WordsCtx, wantIndex) == 0x13A, "WordsCtx.wantIndex");
 static_assert(offsetof(WordsCtx, friendshipChanged) == 0x13C, "WordsCtx.friendshipChanged");
@@ -3507,10 +3524,10 @@ static_assert(offsetof(CityScene, approval) == 0x8C, "CityScene.approval");
 static_assert(offsetof(CityScene, weatherToday) == 0x90, "CityScene.weatherToday");
 static_assert(offsetof(CityScene, weatherTomorrow) == 0x94, "CityScene.weatherTomorrow");
 static_assert(offsetof(CityScene, weatherYesterday) == 0x98, "CityScene.weatherYesterday");
-static_assert(offsetof(CityScene, scoreA0) == 0xA0, "CityScene.scoreA0");
-static_assert(offsetof(CityScene, scoreA0Count) == 0xA4, "CityScene.scoreA0Count");
-static_assert(offsetof(CityScene, scoreA8) == 0xA8, "CityScene.scoreA8");
-static_assert(offsetof(CityScene, scoreA8Count) == 0xAC, "CityScene.scoreA8Count");
+static_assert(offsetof(CityScene, prosperity) == 0xA0, "CityScene.prosperity");
+static_assert(offsetof(CityScene, prosperityCount) == 0xA4, "CityScene.prosperityCount");
+static_assert(offsetof(CityScene, conduct) == 0xA8, "CityScene.conduct");
+static_assert(offsetof(CityScene, conductCount) == 0xAC, "CityScene.conductCount");
 static_assert(offsetof(CityScene, waterLevel) == 0xB0, "CityScene.waterLevel");
 static_assert(offsetof(CityScene, flags) == 0xB4, "CityScene.flags");
 static_assert(offsetof(CityScene, paydayScore) == 0xB8, "CityScene.paydayScore");
