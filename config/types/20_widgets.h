@@ -61,7 +61,7 @@ struct MenuWin {
     A3DObject *model;          /* +0x0C window model */
     ListMenu *list;            /* +0x10 */
     int32_t size;              /* +0x14 picks the window node: 3 + max(size - 2, 0) */
-    int32_t unk_18;            /* +0x18 */
+    int32_t choice;            /* +0x18 the item chosen, -1 none (mm_ListMenu_HandleInput) */
     int32_t unk_1C;            /* +0x1C */
 };
 /* Talk person card (0x38 bytes, vtable 0x1BD720), a widget: name, age and gauges of the person or family member

@@ -74,7 +74,7 @@ inline constexpr uint32_t Packet_Draw = 0x0012A2B0u;
 inline constexpr uint32_t Camera_BuildPacket = 0x0012A2C0u;
 inline constexpr uint32_t Camera_UpdateProjection = 0x0012A3A0u;
 inline constexpr uint32_t Camera_SetFogRange = 0x0012A5E0u;
-inline constexpr uint32_t LightSet_SetField20 = 0x0012A650u;
+inline constexpr uint32_t Camera_SetFogColour = 0x0012A650u;
 inline constexpr uint32_t Camera_UpdateLightMatrices = 0x0012A660u;
 inline constexpr uint32_t Camera_UpdateMatrices = 0x0012A6C0u;
 inline constexpr uint32_t Camera_DeletingDtor = 0x0012A750u;
@@ -129,11 +129,11 @@ inline constexpr uint32_t CharType_Draw = 0x0012EEF0u;
 inline constexpr uint32_t CharType_Update = 0x0012EF00u;
 inline constexpr uint32_t CharType_dtor = 0x0012EF10u;
 inline constexpr uint32_t CharType_ctor = 0x0012EF60u;
-inline constexpr uint32_t Char2_UpdateSpeedA = 0x0012F020u;
+inline constexpr uint32_t Char2_UpdateSpeedUndrawn = 0x0012F020u;
 inline constexpr uint32_t Char_CheckNeighbourTile = 0x0012FF00u;
-inline constexpr uint32_t Char2_UpdateSpeedB = 0x001300C0u;
-inline constexpr uint32_t Char2_MoveA = 0x00130FA0u;
-inline constexpr uint32_t Char2_MoveB = 0x001318A0u;
+inline constexpr uint32_t Char2_UpdateSpeedDrawn = 0x001300C0u;
+inline constexpr uint32_t Char2_MoveUndrawn = 0x00130FA0u;
+inline constexpr uint32_t Char2_MoveDrawn = 0x001318A0u;
 inline constexpr uint32_t Char2_Draw = 0x00132190u;
 inline constexpr uint32_t Char2_Update = 0x00132400u;
 inline constexpr uint32_t Char2_dtor = 0x00132820u;
@@ -1352,8 +1352,8 @@ inline constexpr uint32_t EvShopping_End = 0x00196660u;
 inline constexpr uint32_t EvShopping_Update = 0x00196720u;
 inline constexpr uint32_t EvShopping_Start = 0x00196970u;
 inline constexpr uint32_t EvShopping_Check = 0x001969F0u;
-inline constexpr uint32_t EventData_GetSize7C = 0x00196F10u;
-inline constexpr uint32_t EventData_GetSize1C = 0x00196F20u;
+inline constexpr uint32_t TalkEventData_DataSize = 0x00196F10u;
+inline constexpr uint32_t EventData_DataSize = 0x00196F20u;
 inline constexpr uint32_t EvNoodles_Answer = 0x00196F30u;
 inline constexpr uint32_t EvNoodles_End = 0x00196FF0u;
 inline constexpr uint32_t EvNoodles_Update = 0x001970F0u;
@@ -2256,17 +2256,18 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Camera_BuildPacket", addr::Camera_BuildPacket},
     {"Camera_DeletingDtor", addr::Camera_DeletingDtor},
     {"Camera_SetEyeTarget", addr::Camera_SetEyeTarget},
+    {"Camera_SetFogColour", addr::Camera_SetFogColour},
     {"Camera_SetFogRange", addr::Camera_SetFogRange},
     {"Camera_UpdateLightMatrices", addr::Camera_UpdateLightMatrices},
     {"Camera_UpdateMatrices", addr::Camera_UpdateMatrices},
     {"Camera_UpdateProjection", addr::Camera_UpdateProjection},
     {"Camera_ctor", addr::Camera_ctor},
     {"Char2_Draw", addr::Char2_Draw},
-    {"Char2_MoveA", addr::Char2_MoveA},
-    {"Char2_MoveB", addr::Char2_MoveB},
+    {"Char2_MoveDrawn", addr::Char2_MoveDrawn},
+    {"Char2_MoveUndrawn", addr::Char2_MoveUndrawn},
     {"Char2_Update", addr::Char2_Update},
-    {"Char2_UpdateSpeedA", addr::Char2_UpdateSpeedA},
-    {"Char2_UpdateSpeedB", addr::Char2_UpdateSpeedB},
+    {"Char2_UpdateSpeedDrawn", addr::Char2_UpdateSpeedDrawn},
+    {"Char2_UpdateSpeedUndrawn", addr::Char2_UpdateSpeedUndrawn},
     {"Char2_ctor", addr::Char2_ctor},
     {"Char2_dtor", addr::Char2_dtor},
     {"CharType_ClearSlots", addr::CharType_ClearSlots},
@@ -2482,8 +2483,7 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"EvUselessMiddleAged_Start", addr::EvUselessMiddleAged_Start},
     {"EvUselessMiddleAged_Update", addr::EvUselessMiddleAged_Update},
     {"EvWoman_Check", addr::EvWoman_Check},
-    {"EventData_GetSize1C", addr::EventData_GetSize1C},
-    {"EventData_GetSize7C", addr::EventData_GetSize7C},
+    {"EventData_DataSize", addr::EventData_DataSize},
     {"EventList_MoveAll", addr::EventList_MoveAll},
     {"EventList_MoveByMask", addr::EventList_MoveByMask},
     {"EventList_MoveDue", addr::EventList_MoveDue},
@@ -2624,7 +2624,6 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"LightSet_BuildPackets", addr::LightSet_BuildPackets},
     {"LightSet_DeletingDtor", addr::LightSet_DeletingDtor},
     {"LightSet_Init", addr::LightSet_Init},
-    {"LightSet_SetField20", addr::LightSet_SetField20},
     {"LightSet_UpdateByClock", addr::LightSet_UpdateByClock},
     {"LightSet_ctor", addr::LightSet_ctor},
     {"ListMenu_AddItems", addr::ListMenu_AddItems},
@@ -3174,6 +3173,7 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"TalkConv_Update", addr::TalkConv_Update},
     {"TalkConv_ctor", addr::TalkConv_ctor},
     {"TalkConv_dtor", addr::TalkConv_dtor},
+    {"TalkEventData_DataSize", addr::TalkEventData_DataSize},
     {"TalkMoney_Active", addr::TalkMoney_Active},
     {"TalkMoney_Closing", addr::TalkMoney_Closing},
     {"TalkMoney_Draw", addr::TalkMoney_Draw},
@@ -3752,7 +3752,7 @@ void Packet_Draw(GuestPtr<uint32_t> a0);
 void Camera_BuildPacket(GuestPtr<Camera> camera);
 void Camera_UpdateProjection(GuestPtr<Camera> camera);
 void Camera_SetFogRange(GuestPtr<Camera> camera, ps2f fogNear, ps2f fogFar);
-void LightSet_SetField20(GuestPtr<LightSet> lights, int value);
+void Camera_SetFogColour(GuestPtr<Camera> camera, int colour);
 void Camera_UpdateLightMatrices(GuestPtr<Camera> camera);
 void Camera_UpdateMatrices(GuestPtr<Camera> camera);
 GuestPtr<Camera> Camera_DeletingDtor(GuestPtr<Camera> camera, int16_t deleteFlag);
@@ -3806,16 +3806,16 @@ void CharType_Draw2(GuestPtr<CharClass> cls);
 void CharType_Draw(GuestPtr<CharClass> cls);
 int CharType_Update(GuestPtr<CharClass> cls);
 GuestPtr<CharClass> CharType_dtor(GuestPtr<CharClass> cls, int16_t deleteFlag);
-GuestPtr<CharClass> CharType_ctor(GuestPtr<CharClass> cls, GuestPtr<uint8_t> record);
-void Char2_UpdateSpeedA(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj, int dir, ps2f dx, ps2f dz);
+GuestPtr<CharClass> CharType_ctor(GuestPtr<CharClass> cls, GuestPtr<CharTypeRecord> record);
+void Char2_UpdateSpeedUndrawn(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj, int dir, ps2f dx, ps2f dz);
 int Char_CheckNeighbourTile(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, int x, int z);
-void Char2_UpdateSpeedB(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj, int dir, ps2f dx, ps2f dz);
-void Char2_MoveA(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj, int tile);
-void Char2_MoveB(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj, int tile);
+void Char2_UpdateSpeedDrawn(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj, int dir, ps2f dx, ps2f dz);
+void Char2_MoveUndrawn(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj, int tile);
+void Char2_MoveDrawn(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj, int tile);
 void Char2_Draw(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, GuestPtr<Vec4> colour, int flags, GuestPtr<Vec4> place);
 void Char2_Update(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, uint32_t timeFlags);
 GuestPtr<CharClass> Char2_dtor(GuestPtr<CharClass> cls, int16_t deleteFlag);
-GuestPtr<CharClass> Char2_ctor(GuestPtr<CharClass> cls, GuestPtr<uint8_t> record);
+GuestPtr<CharClass> Char2_ctor(GuestPtr<CharClass> cls, GuestPtr<CharTypeRecord> record);
 void CharType_LoadAll();
 void Person_CheckBuilding(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
 void Person_TickCounters(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
@@ -3829,7 +3829,7 @@ void Person_TurnToPlayer(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, Gues
 void Person_Draw(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, int a3, int t0, GuestPtr<int32_t> t1, int t2);
 void Person_Update(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, uint32_t timeFlags);
 GuestPtr<CharClass> Person_dtor(GuestPtr<CharClass> cls, int16_t deleteFlag);
-GuestPtr<PersonClass> Person_ctor(GuestPtr<PersonClass> cls, GuestPtr<uint8_t> record);
+GuestPtr<PersonClass> Person_ctor(GuestPtr<PersonClass> cls, GuestPtr<CharTypeRecord> record);
 void Event_ClearTileFlags(int listIndex);
 void Event_SetTileFlags(int listIndex);
 void ClaimIcon_GetColor(uint32_t icon, int level, GuestPtr<Vec4> colour);
@@ -5030,8 +5030,8 @@ void EvShopping_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvShopping_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int64_t EvShopping_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvShopping_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
-int EventData_GetSize7C();
-int EventData_GetSize1C();
+int TalkEventData_DataSize();
+int EventData_DataSize();
 int EvNoodles_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
 void EvNoodles_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvNoodles_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);

@@ -91,8 +91,12 @@ struct EvAdvertiseData;
 struct EvNoodlesData;
 struct EvMiddleAgedData;
 struct EvCaveManData;
+struct EvShoppingTogetherData;
+struct EvMessageData;
+struct EvAlienData;
 struct EvMissingChildrenData;
 struct CharClass;
+struct CharTypeRecord;
 struct CharClassVtable;
 struct PersonClass;
 struct StageName;
@@ -416,7 +420,9 @@ struct McManager {
     int32_t scanSlot;          /* +0x0C save slot being filled, 8 per card port */
     int32_t dirIndex;          /* +0x10 next directory entry to ask for on the card */
     int32_t request;           /* +0x14 last queued request */
-    uint8_t unk_18[8];
+    int32_t result;            /* +0x18 the result of the card calls (mm_SaveFile_PrepareDir) */
+    uint32_t iconBuffer;       /* +0x1C DATA\STATIC.ICO (0x13968 bytes) while it is copied into a new save folder
+                                  (mm_SaveFile_PrepareDir) */
     GuestPtr<GameFile> file;            /* +0x20 */
     int32_t fd;                /* +0x24 open save file descriptor */
 };
@@ -667,13 +673,14 @@ struct PhoneCallEntry {
     int32_t familyOnly;        /* +0x08 a call of the family (person 6000): it goes through only while the city is popular */
 };
 struct PhoneCalls {
-    GuestPtr<void> unk_00;              /* +0x00 from 0x1F3B08 at construction */
+    GuestPtr<A3DObject> iconModel;      /* +0x00 the menu window model (0x1F3B08); its node 1 is the phone icon */
     int32_t state;             /* +0x04 0 no call shown, 1 ringing, 2 answered (mm_PhoneCall_Update) */
     int32_t shown;             /* +0x08 the entry being shown */
     int32_t frames;            /* +0x0C frames in the state */
     PhoneCallEntry calls[4];   /* +0x10 queue */
-    int32_t unk_40;            /* +0x40 1 when a call is taken, negated when it ends */
-    int32_t unk_44;            /* +0x44 */
+    int32_t iconSlide;         /* +0x40 the icon slides in from 1 to 10 while a call shows; negated when it ends, it
+                                  slides back out up to 0 (mm_PhoneCall_Draw) */
+    int32_t ringFrames;        /* +0x44 frames since the call came: the ring every other 84, the blink */
     char caller[0x34];         /* +0x48 the caller's text, built once a call */
 };
 /* Event manager (0xB0 bytes); +0xA4 and +0xA8 are the events the talk script works with. */
@@ -737,10 +744,10 @@ struct EventHandler {
     uint32_t text;             /* +0x10 a text for the talk script (mm_Event_CallText) */
     uint32_t answer;           /* +0x14 the talk script's questions and actions (mm_Event_CallAnswer) */
 };
-/* An active event (0x1C bytes; some types keep more state, up to 0x7C, mm_EventData_GetSize7C): the first argument of
+/* An active event (0x1C bytes; some types keep more state, up to 0x7C, mm_TalkEventData_DataSize): the first argument of
    every mm_Ev*_ handler slot, and the three the talk works with (EventMgr talks). */
 struct EventData {
-    uint32_t vtable;           /* +0x00 the record's class (+8: its size, mm_EventData_GetSize7C) */
+    uint32_t vtable;           /* +0x00 the record's class (+8: its size, mm_TalkEventData_DataSize) */
     uint32_t update;           /* +0x04 its handler's Update slot (EventHandler.update), run every frame */
     uint8_t kind;              /* +0x08 row of the event table (EventType) */
     int8_t days;               /* +0x09 days left to run (EventType.days); when it finishes, the type's wait */
@@ -821,8 +828,11 @@ struct EvThiefData {
     uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
     ActorRef actors[4];        /* +0x0C */
     int32_t nextMonth;         /* +0x2C the month count of the next strike */
-    uint8_t unk_30[0xC];
+    int32_t unk_30;
+    int32_t countdown;         /* +0x34 60 frames between some phases */
+    int32_t searchDelay;       /* +0x38 frames until the next search for a building to rob (60) */
     int32_t strikes;           /* +0x3C buildings robbed (mm_EvThief_Answer) */
+    int32_t frames;            /* +0x40 */
 };
 /* A family member by family and member number (4 bytes; in lists 0 ends them). */
 struct MemberId {
@@ -856,6 +866,32 @@ struct EvCaveManData {
     int32_t counter;           /* +0x4C actors found (phase 3); the talk's count of families joined */
     int32_t frames;            /* +0x50 counted down or up */
     int32_t month;             /* +0x54 the month count noted; actors are told after it */
+};
+/* The shopping together event's record (mm_EvShoppingTogether_*). */
+struct EvShoppingTogetherData {
+    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    ActorRef actors[2];        /* +0x0C the one to take shopping, the shop's worker */
+    int32_t countdown;         /* +0x1C 180 at the start, one a call in phases 1 and 3 */
+    int32_t offTileCalls;      /* +0x20 calls near both with actor 0 off an open tile (pointed at after ten) */
+    int32_t farCalls;          /* +0x24 calls too far from actor 0 (pointed at every tenth) */
+    int32_t outcome;           /* +0x28 the talk's value: 0 met with 121 or more left, 1 with less, 2 met in phase 3, 3 sent
+                                  on alone */
+    int32_t frames;            /* +0x2C the event ends after 180 */
+};
+/* The alien event's record (mm_EvAlien_*). */
+struct EvAlienData {
+    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    ActorRef actors[6];        /* +0x0C 0 the resident it takes, 1 to 4 the families of the four buildings (2 the place it
+                                  lands, moved by mm_EvAlien_PickTarget, 3 its footprint is the goal), 5 the family of the
+                                  record at 0x1BDA8C */
+    int32_t month;             /* +0x3C the month count to wait for */
+    int32_t time;              /* +0x40 the clock to wait for on that day */
+    int32_t frames;            /* +0x44 counted down between phases, up at the end (720) */
+};
+/* A message event's record (mm_EvMsg_*, the payday): the EventData, then whether its phone call is up. */
+struct EvMessageData {
+    uint8_t unk_00[0x1C];      /* +0x00 the EventData */
+    int32_t callPosted;        /* +0x1C mm_EvMsg_End withdraws the call */
 };
 /* The missing children event's record (type 6, mm_EvMissingChildren_*). */
 struct EvMissingChildrenData {
@@ -1100,7 +1136,7 @@ struct StageState {
     int32_t salary;            /* +0x1C4 2500 at reset; added to the money each payday, 1250 more after a good month (mm_EvPayday_Update) */
     int32_t stage;             /* +0x1C8 stage number, -1 = none */
     int32_t quota;             /* +0x1CC population target (mm_EvQuota80_Check) */
-    uint8_t unk_1D0[4];
+    int32_t missionKind;       /* +0x1D0 the stage's mission besides the population (0 none; mm_CityScene_MissionProgress) */
     int32_t missionTarget;     /* +0x1D4 compared with mm_CityScene_MissionProgress (mm_EvMissionCleared_Check) */
     uint8_t unk_1D8[0xA8];
     int32_t unk_280;           /* +0x280 */
@@ -1109,9 +1145,8 @@ struct StageState {
    one per CHARTYPE.BIN record in the table at gp 0x1BDA3C. */
 struct CharClass {
     GuestPtr<void> parts[4];            /* +0x00 model parts, from the part table 0x1F3B90 by record bytes 8, 9, 10 and 14 */
-    uint16_t unk_10;           /* +0x10 record byte 11 */
-    uint16_t unk_12;           /* +0x12 record byte 12 */
-    uint16_t unk_14;           /* +0x14 record byte 13 */
+    uint16_t restartFrames[3]; /* +0x10 record bytes 11 to 13: by the person's look (flags & 3; look 3 reads on into the
+                                  voice), the frame an animation with restart -2 starts over at (mm_Person_Draw) */
     uint8_t voice;             /* +0x16 record byte 2: the message sound of its talks (mm_TalkConv_Start) */
     uint8_t unk_17;
     uint16_t flags;            /* +0x18 record halfword 4; 1: other people keep clear of this one
@@ -1129,6 +1164,20 @@ struct CharClassVtable {
     uint32_t draw;             /* +0x10 on the terrain (mm_Person_Draw, mm_Char2_Draw) */
     uint32_t drawAt;           /* +0x14 at a given matrix, in the talk views (mm_Person_Draw2) */
     uint32_t slot18;           /* +0x18 empty in every class */
+};
+/* A CHARTYPE.BIN record (0x18 bytes, mm_CharType_LoadAll): one character class each. */
+struct CharTypeRecord {
+    uint8_t kind;              /* +0x00 0 a plain type, 1 a person, 2 a vehicle */
+    uint8_t unk_01;
+    uint8_t voice;             /* +0x02 */
+    uint8_t unk_03;
+    uint16_t flags;            /* +0x04 */
+    uint16_t walkSpeed;        /* +0x06 a person's walking speed in millionths */
+    uint8_t parts[3];          /* +0x08 the first three model parts (the part table at 0x1F3B90) */
+    uint8_t restartFrames[3];  /* +0x0B */
+    uint8_t part3;             /* +0x0E the fourth model part */
+    uint8_t unk_0F[5];
+    uint32_t unk_14;           /* +0x14 kept in the class (+0x1C) */
 };
 /* Person character type (0x28 bytes, mm_Person_ctor). */
 struct PersonClass {
@@ -1298,16 +1347,20 @@ struct TalkSession;
 struct TalkView;
 struct MyHomeView;
 struct TalkPersonView;
+struct TalkFarView;
 struct TalkPose;
 struct WordsCtx;
 struct Words;
 struct Stamina;
 struct MemberStatus;
-struct CharTypeRecord;
 struct SeRequest;
 struct SeVoice;
 struct SeSound;
 struct ClaimThresholds;
+struct SoundStatus;
+struct BgmTrack;
+struct AmbienceSound;
+struct AmbienceCell;
 struct ClaimEntry;
 struct ClaimSupply;
 struct ClaimTally;
@@ -1435,7 +1488,7 @@ struct MapPerson {
     uint16_t family;           /* +0x2A */
     union {
         uint16_t introduces;   /* +0x2C family this resident can introduce */
-        uint16_t speed;        /* +0x2C vehicles: in 1/10000 of a tile a frame (mm_Char2_UpdateSpeedA) */
+        uint16_t speed;        /* +0x2C vehicles: in 1/10000 of a tile a frame (mm_Char2_UpdateSpeedUndrawn) */
     };
     union {
         struct {
@@ -1657,16 +1710,6 @@ struct MemberStatus {
     uint8_t status;            /* bits 0-1, bits 2-3, level in the high nibble */
 };
 
-/* Character type record from CHARTYPE.BIN (0x18 bytes). */
-struct CharTypeRecord {
-    uint8_t charClass;         /* +0x00 1 person, 2 other */
-    uint8_t unk_01[7];
-    uint8_t parts[3];          /* +0x08 model parts */
-    uint8_t unk_0B[3];
-    uint8_t part4;             /* +0x0E */
-    uint8_t unk_0F[9];
-};
-
 /* Player stamina (0xC bytes) at 0x1BDBB8. */
 struct Stamina {
     int32_t unk_00;
@@ -1703,25 +1746,26 @@ struct TalkPose {
     uint8_t pose;
 };
 
-/* Talk view base (0x270 bytes, vtable 0x1BD450): the building or family on screen with its people.
-   The near/far subclasses add camera vectors after it (allocations of 0x290 and 0x2A0 bytes). */
+/* Talk view base (0x270 bytes, vtable 0x1BD450): the building or family on screen with its people. The near views
+   (TalkPersonView) and the far building view (TalkFarView) add camera vectors after it (allocations of 0x2A0 and
+   0x290 bytes); the far view keeps its return eye over the targets. */
 struct TalkView {
     Widget base;
     int32_t unk_0C;
-    ps2f eye[4];              /* +0x10 camera eye at open */
-    ps2f target[4];           /* +0x20 camera target at open */
-    GuestPtr<void> buildingModel;       /* +0x30 */
+    Vec4 eye;                  /* +0x10 camera eye at open */
+    Vec4 target;               /* +0x20 camera target at open */
+    GuestPtr<A3DObject> buildingModel;  /* +0x30 the talk building model (0x1F3B2C) */
     GuestPtr<CityScene> city;           /* +0x34 */
     uint8_t unk_38[8];
     ps2f color[4];            /* +0x40 */
     uint8_t packet[0x20];      /* +0x50 draw packet */
     int32_t building;          /* +0x70 0x3F80 = by family */
     int32_t family;            /* +0x74 */
-    GuestPtr<void> nameBoxes[4];        /* +0x78 */
-    GuestPtr<void> frames[4];           /* +0x88 */
-    GuestPtr<void> cursorFrame;         /* +0x98 */
-    int32_t unk_9C;
-    GuestPtr<void> personModel;         /* +0xA0 */
+    GuestPtr<TextBox> nameBoxes[4];     /* +0x78 the names shown */
+    GuestPtr<Frame> frames[4];          /* +0x88 their friendship frames */
+    GuestPtr<Frame> cursorFrame;        /* +0x98 */
+    GuestPtr<A3DObject> awayModel;      /* +0x9C the first CHAROBJ.A3D model (0x1F3B40), drawn for someone away */
+    GuestPtr<A3DObject> personModel;    /* +0xA0 the talk person model (0x1F3B7C), under classes with flag 2 */
     ps2f zoom;                /* +0xA4 */
     ps2f idleTime;            /* +0xA8 counts frames, wraps at 180 */
     int32_t scrollMode;        /* +0xAC 1 zoom, 2 scroll */
@@ -1740,9 +1784,14 @@ struct TalkView {
     int32_t choosing;          /* +0x254 */
     int32_t forceLit;          /* +0x258 */
     int32_t unk_25C;
-    int32_t targetObject;      /* +0x260 */
-    int32_t targetPerson;      /* +0x264 */
-    uint8_t unk_268[8];
+    union {
+        struct {
+            int32_t targetObject;      /* +0x260 the building, or the family on the phone */
+            int32_t targetPerson;      /* +0x264 the person, or the member on the phone */
+            uint8_t unk_268[8];
+        };
+        Vec4 farReturnEye;             /* +0x260 the far building view hands the camera back to it (TalkFarView) */
+    };
 };
 
 /* The near and far views of a person (allocated 0x290 and 0x2A0 bytes): the talk view plus the camera. */
@@ -1751,6 +1800,14 @@ struct TalkPersonView {
     Vec4 eye;                  /* +0x270 behind the person, 1.3 along the view direction from 0.55 under the person */
     Vec4 target;               /* +0x280 the person, 0.9 under the position */
     ps2f facing;              /* +0x290 atan2 of the view direction (x, z) */
+};
+
+/* The far view of a building (0x290 bytes, vtable 0x1BD540, mm_TalkBldgFar_ctor): the talk view, the camera target to
+   return to (the eye is TalkView.farReturnEye) and the building. */
+struct TalkFarView {
+    TalkView base;
+    Vec4 returnTarget;         /* +0x270 */
+    int32_t building;          /* +0x280 */
 };
 
 /* The view inside a home (0x2A0 bytes, vtable 0x1BD810): the talk view plus the walk-around state (mm_MyHome_ctor). */
@@ -1903,6 +1960,42 @@ struct SeVoice {
     uint8_t unk_2B[5];
 };
 
+/* The sound driver's status (0x40 bytes) as YYSOUND sends it (0x20B7C0), and the game's view of it with the commands
+   still queued merged in (0x20B840, mm_Sound_GetStatus). */
+struct SoundStatus {
+    uint32_t unk_00;
+    uint32_t midiPlaying;      /* +0x04 bit per sequence slot */
+    uint32_t wavePlaying;      /* +0x08 bit per wave voice */
+    uint32_t busy;             /* +0x0C the driver has work */
+    uint8_t unk_10[8];
+    uint32_t unk_18;           /* +0x18 a third mask, merged with the queued one at 0x1BDD54 */
+    uint8_t unk_1C[0x24];
+};
+
+/* A city music track (2 bytes, 13 at 0x1F8120): 0 to 2 the moods' own, 3 to 12 the tracks bought (mm_Bgm_SetTrackSlot). */
+struct BgmTrack {
+    uint8_t bank;              /* +0x00 the music bank, 0xFF = free */
+    uint8_t enabled;           /* +0x01 */
+};
+
+/* An ambient sound (0x1C bytes, 11 at 0x1B35F0): where it is spread over the map and when it plays. */
+struct AmbienceSound {
+    uint8_t sound;             /* +0x00 the effect */
+    uint8_t monthFrom;         /* +0x01 mm_Se_MatchSchedule's months (0 any) */
+    uint8_t monthTo;           /* +0x02 */
+    uint8_t length;            /* +0x03 minutes of the window in each hour (0 the whole hour range) */
+    uint8_t lead;              /* +0x04 */
+    uint8_t unk_05[3];
+    uint8_t hours[4][2];       /* +0x08 from and to by the day's weather (0 fine, 1 to 3); from 0xFF: silent then */
+    uint16_t counts[6];        /* +0x10 cells of the 4096-cell grid per variant (mm_Se_BuildAmbienceMap) */
+};
+
+/* A cell of the ambience grid (2 bytes, 4096 at 0x1FC690, a cell per 2 x 2 tiles). */
+struct AmbienceCell {
+    uint8_t sound;             /* +0x00 the ambient sound + 1, 0 none */
+    uint8_t variant;           /* +0x01 */
+};
+
 /* Sound table entry (0x10 bytes) at 0x1B2EE0, by sound id (83). */
 struct SeSound {
     uint8_t flags;             /* +0x00 0x0F priority, 0x10 owned (an owner id, kept until stopped), 0x20 shared owner */
@@ -1959,7 +2052,7 @@ struct CityScene {
     uint32_t flags;            /* +0xB4 2 holiday month, 4 popular (approval 118+), 0x40 pad focus after a talk */
     int32_t paydayScore;       /* +0xB8 raised through the month; with the families moved in and out it decides the salary rise (mm_EvPayday_Update) */
     int32_t pendingApproval;   /* +0xBC */
-    int32_t trafficPhase;      /* +0xC0 traffic lights: 0 lets traffic along z through, 2 along x, 1 and 3 neither (mm_Char2_UpdateSpeedA) */
+    int32_t trafficPhase;      /* +0xC0 traffic lights: 0 lets traffic along z through, 2 along x, 1 and 3 neither (mm_Char2_UpdateSpeedUndrawn) */
     int32_t trafficTimer;      /* +0xC4 0..999 per tick: phase 0 below 400, 1 below 500, 2 below 900, then 3 */
     int32_t fadeLevel;         /* +0xC8 */
     int32_t fade;              /* +0xCC fade counter, 0 = none */
@@ -2031,7 +2124,7 @@ struct MenuWin {
     GuestPtr<A3DObject> model;          /* +0x0C window model */
     GuestPtr<ListMenu> list;            /* +0x10 */
     int32_t size;              /* +0x14 picks the window node: 3 + max(size - 2, 0) */
-    int32_t unk_18;            /* +0x18 */
+    int32_t choice;            /* +0x18 the item chosen, -1 none (mm_ListMenu_HandleInput) */
     int32_t unk_1C;            /* +0x1C */
 };
 /* Talk person card (0x38 bytes, vtable 0x1BD720), a widget: name, age and gauges of the person or family member
@@ -2340,6 +2433,8 @@ static_assert(offsetof(McManager, scanState) == 0x08, "McManager.scanState");
 static_assert(offsetof(McManager, scanSlot) == 0x0C, "McManager.scanSlot");
 static_assert(offsetof(McManager, dirIndex) == 0x10, "McManager.dirIndex");
 static_assert(offsetof(McManager, request) == 0x14, "McManager.request");
+static_assert(offsetof(McManager, result) == 0x18, "McManager.result");
+static_assert(offsetof(McManager, iconBuffer) == 0x1C, "McManager.iconBuffer");
 static_assert(offsetof(McManager, file) == 0x20, "McManager.file");
 static_assert(offsetof(McManager, fd) == 0x24, "McManager.fd");
 static_assert(offsetof(CardTime, second) == 0x01, "CardTime.second");
@@ -2522,13 +2617,13 @@ static_assert(offsetof(PhoneCallEntry, person) == 0x00, "PhoneCallEntry.person")
 static_assert(offsetof(PhoneCallEntry, family) == 0x04, "PhoneCallEntry.family");
 static_assert(offsetof(PhoneCallEntry, member) == 0x06, "PhoneCallEntry.member");
 static_assert(offsetof(PhoneCallEntry, familyOnly) == 0x08, "PhoneCallEntry.familyOnly");
-static_assert(offsetof(PhoneCalls, unk_00) == 0x00, "PhoneCalls.unk_00");
+static_assert(offsetof(PhoneCalls, iconModel) == 0x00, "PhoneCalls.iconModel");
 static_assert(offsetof(PhoneCalls, state) == 0x04, "PhoneCalls.state");
 static_assert(offsetof(PhoneCalls, shown) == 0x08, "PhoneCalls.shown");
 static_assert(offsetof(PhoneCalls, frames) == 0x0C, "PhoneCalls.frames");
 static_assert(offsetof(PhoneCalls, calls) == 0x10, "PhoneCalls.calls");
-static_assert(offsetof(PhoneCalls, unk_40) == 0x40, "PhoneCalls.unk_40");
-static_assert(offsetof(PhoneCalls, unk_44) == 0x44, "PhoneCalls.unk_44");
+static_assert(offsetof(PhoneCalls, iconSlide) == 0x40, "PhoneCalls.iconSlide");
+static_assert(offsetof(PhoneCalls, ringFrames) == 0x44, "PhoneCalls.ringFrames");
 static_assert(offsetof(PhoneCalls, caller) == 0x48, "PhoneCalls.caller");
 static_assert(offsetof(ActorRef, person) == 0x00, "ActorRef.person");
 static_assert(offsetof(ActorRef, object) == 0x02, "ActorRef.object");
@@ -2622,7 +2717,10 @@ static_assert(offsetof(EvPartyData, endStep) == 0x34, "EvPartyData.endStep");
 static_assert(offsetof(EvThiefData, unk_00) == 0x00, "EvThiefData.unk_00");
 static_assert(offsetof(EvThiefData, actors) == 0x0C, "EvThiefData.actors");
 static_assert(offsetof(EvThiefData, nextMonth) == 0x2C, "EvThiefData.nextMonth");
+static_assert(offsetof(EvThiefData, countdown) == 0x34, "EvThiefData.countdown");
+static_assert(offsetof(EvThiefData, searchDelay) == 0x38, "EvThiefData.searchDelay");
 static_assert(offsetof(EvThiefData, strikes) == 0x3C, "EvThiefData.strikes");
+static_assert(offsetof(EvThiefData, frames) == 0x40, "EvThiefData.frames");
 static_assert(offsetof(MemberId, family) == 0x0, "MemberId.family");
 static_assert(offsetof(MemberId, member) == 0x2, "MemberId.member");
 static_assert(offsetof(EvAdvertiseData, unk_00) == 0x00, "EvAdvertiseData.unk_00");
@@ -2641,6 +2739,20 @@ static_assert(offsetof(EvCaveManData, actors) == 0x0C, "EvCaveManData.actors");
 static_assert(offsetof(EvCaveManData, counter) == 0x4C, "EvCaveManData.counter");
 static_assert(offsetof(EvCaveManData, frames) == 0x50, "EvCaveManData.frames");
 static_assert(offsetof(EvCaveManData, month) == 0x54, "EvCaveManData.month");
+static_assert(offsetof(EvShoppingTogetherData, unk_00) == 0x00, "EvShoppingTogetherData.unk_00");
+static_assert(offsetof(EvShoppingTogetherData, actors) == 0x0C, "EvShoppingTogetherData.actors");
+static_assert(offsetof(EvShoppingTogetherData, countdown) == 0x1C, "EvShoppingTogetherData.countdown");
+static_assert(offsetof(EvShoppingTogetherData, offTileCalls) == 0x20, "EvShoppingTogetherData.offTileCalls");
+static_assert(offsetof(EvShoppingTogetherData, farCalls) == 0x24, "EvShoppingTogetherData.farCalls");
+static_assert(offsetof(EvShoppingTogetherData, outcome) == 0x28, "EvShoppingTogetherData.outcome");
+static_assert(offsetof(EvShoppingTogetherData, frames) == 0x2C, "EvShoppingTogetherData.frames");
+static_assert(offsetof(EvAlienData, unk_00) == 0x00, "EvAlienData.unk_00");
+static_assert(offsetof(EvAlienData, actors) == 0x0C, "EvAlienData.actors");
+static_assert(offsetof(EvAlienData, month) == 0x3C, "EvAlienData.month");
+static_assert(offsetof(EvAlienData, time) == 0x40, "EvAlienData.time");
+static_assert(offsetof(EvAlienData, frames) == 0x44, "EvAlienData.frames");
+static_assert(offsetof(EvMessageData, unk_00) == 0x00, "EvMessageData.unk_00");
+static_assert(offsetof(EvMessageData, callPosted) == 0x1C, "EvMessageData.callPosted");
 static_assert(offsetof(EvMissingChildrenData, unk_00) == 0x00, "EvMissingChildrenData.unk_00");
 static_assert(offsetof(EvMissingChildrenData, actors) == 0x0C, "EvMissingChildrenData.actors");
 static_assert(offsetof(EvMissingChildrenData, counter) == 0x24, "EvMissingChildrenData.counter");
@@ -2809,12 +2921,11 @@ static_assert(offsetof(StageState, money) == 0x1C0, "StageState.money");
 static_assert(offsetof(StageState, salary) == 0x1C4, "StageState.salary");
 static_assert(offsetof(StageState, stage) == 0x1C8, "StageState.stage");
 static_assert(offsetof(StageState, quota) == 0x1CC, "StageState.quota");
+static_assert(offsetof(StageState, missionKind) == 0x1D0, "StageState.missionKind");
 static_assert(offsetof(StageState, missionTarget) == 0x1D4, "StageState.missionTarget");
 static_assert(offsetof(StageState, unk_280) == 0x280, "StageState.unk_280");
 static_assert(offsetof(CharClass, parts) == 0x00, "CharClass.parts");
-static_assert(offsetof(CharClass, unk_10) == 0x10, "CharClass.unk_10");
-static_assert(offsetof(CharClass, unk_12) == 0x12, "CharClass.unk_12");
-static_assert(offsetof(CharClass, unk_14) == 0x14, "CharClass.unk_14");
+static_assert(offsetof(CharClass, restartFrames) == 0x10, "CharClass.restartFrames");
 static_assert(offsetof(CharClass, voice) == 0x16, "CharClass.voice");
 static_assert(offsetof(CharClass, flags) == 0x18, "CharClass.flags");
 static_assert(offsetof(CharClass, unk_1C) == 0x1C, "CharClass.unk_1C");
@@ -2824,6 +2935,15 @@ static_assert(offsetof(CharClassVtable, update) == 0x0C, "CharClassVtable.update
 static_assert(offsetof(CharClassVtable, draw) == 0x10, "CharClassVtable.draw");
 static_assert(offsetof(CharClassVtable, drawAt) == 0x14, "CharClassVtable.drawAt");
 static_assert(offsetof(CharClassVtable, slot18) == 0x18, "CharClassVtable.slot18");
+static_assert(sizeof(CharTypeRecord) == 0x18, "CharTypeRecord size");
+static_assert(offsetof(CharTypeRecord, kind) == 0x00, "CharTypeRecord.kind");
+static_assert(offsetof(CharTypeRecord, voice) == 0x02, "CharTypeRecord.voice");
+static_assert(offsetof(CharTypeRecord, flags) == 0x04, "CharTypeRecord.flags");
+static_assert(offsetof(CharTypeRecord, walkSpeed) == 0x06, "CharTypeRecord.walkSpeed");
+static_assert(offsetof(CharTypeRecord, parts) == 0x08, "CharTypeRecord.parts");
+static_assert(offsetof(CharTypeRecord, restartFrames) == 0x0B, "CharTypeRecord.restartFrames");
+static_assert(offsetof(CharTypeRecord, part3) == 0x0E, "CharTypeRecord.part3");
+static_assert(offsetof(CharTypeRecord, unk_14) == 0x14, "CharTypeRecord.unk_14");
 static_assert(sizeof(PersonClass) == 0x28, "PersonClass size");
 static_assert(offsetof(PersonClass, walkSpeed) == 0x24, "PersonClass.walkSpeed");
 static_assert(offsetof(TexImage, packet) == 0x000, "TexImage.packet");
@@ -3130,10 +3250,6 @@ static_assert(offsetof(Family, homeType) == 0x20, "Family.homeType");
 static_assert(offsetof(Family, memberCount) == 0x22, "Family.memberCount");
 static_assert(offsetof(Family, members) == 0x24, "Family.members");
 static_assert(sizeof(MemberStatus) == 0x4, "MemberStatus size");
-static_assert(sizeof(CharTypeRecord) == 0x18, "CharTypeRecord size");
-static_assert(offsetof(CharTypeRecord, charClass) == 0x00, "CharTypeRecord.charClass");
-static_assert(offsetof(CharTypeRecord, parts) == 0x08, "CharTypeRecord.parts");
-static_assert(offsetof(CharTypeRecord, part4) == 0x0E, "CharTypeRecord.part4");
 static_assert(sizeof(Stamina) == 0xC, "Stamina size");
 static_assert(offsetof(Stamina, value) == 0x04, "Stamina.value");
 static_assert(offsetof(Stamina, noticeTicks) == 0x08, "Stamina.noticeTicks");
@@ -3164,6 +3280,7 @@ static_assert(offsetof(TalkView, family) == 0x74, "TalkView.family");
 static_assert(offsetof(TalkView, nameBoxes) == 0x78, "TalkView.nameBoxes");
 static_assert(offsetof(TalkView, frames) == 0x88, "TalkView.frames");
 static_assert(offsetof(TalkView, cursorFrame) == 0x98, "TalkView.cursorFrame");
+static_assert(offsetof(TalkView, awayModel) == 0x9C, "TalkView.awayModel");
 static_assert(offsetof(TalkView, personModel) == 0xA0, "TalkView.personModel");
 static_assert(offsetof(TalkView, zoom) == 0xA4, "TalkView.zoom");
 static_assert(offsetof(TalkView, idleTime) == 0xA8, "TalkView.idleTime");
@@ -3184,9 +3301,12 @@ static_assert(offsetof(TalkView, choosing) == 0x254, "TalkView.choosing");
 static_assert(offsetof(TalkView, forceLit) == 0x258, "TalkView.forceLit");
 static_assert(offsetof(TalkView, targetObject) == 0x260, "TalkView.targetObject");
 static_assert(offsetof(TalkView, targetPerson) == 0x264, "TalkView.targetPerson");
+static_assert(offsetof(TalkView, farReturnEye) == 0x260, "TalkView.farReturnEye");
 static_assert(offsetof(TalkPersonView, eye) == 0x270, "TalkPersonView.eye");
 static_assert(offsetof(TalkPersonView, target) == 0x280, "TalkPersonView.target");
 static_assert(offsetof(TalkPersonView, facing) == 0x290, "TalkPersonView.facing");
+static_assert(offsetof(TalkFarView, returnTarget) == 0x270, "TalkFarView.returnTarget");
+static_assert(offsetof(TalkFarView, building) == 0x280, "TalkFarView.building");
 static_assert(sizeof(MyHomeView) == 0x2A0, "MyHomeView size");
 static_assert(offsetof(MyHomeView, position) == 0x270, "MyHomeView.position");
 static_assert(offsetof(MyHomeView, target) == 0x280, "MyHomeView.target");
@@ -3282,6 +3402,22 @@ static_assert(offsetof(SeVoice, heldLeft) == 0x20, "SeVoice.heldLeft");
 static_assert(offsetof(SeVoice, heldRight) == 0x24, "SeVoice.heldRight");
 static_assert(offsetof(SeVoice, heldPitch) == 0x28, "SeVoice.heldPitch");
 static_assert(offsetof(SeVoice, rest) == 0x2A, "SeVoice.rest");
+static_assert(offsetof(SoundStatus, midiPlaying) == 0x04, "SoundStatus.midiPlaying");
+static_assert(offsetof(SoundStatus, wavePlaying) == 0x08, "SoundStatus.wavePlaying");
+static_assert(offsetof(SoundStatus, busy) == 0x0C, "SoundStatus.busy");
+static_assert(offsetof(SoundStatus, unk_18) == 0x18, "SoundStatus.unk_18");
+static_assert(offsetof(BgmTrack, bank) == 0x00, "BgmTrack.bank");
+static_assert(offsetof(BgmTrack, enabled) == 0x01, "BgmTrack.enabled");
+static_assert(sizeof(AmbienceSound) == 0x1C, "AmbienceSound size");
+static_assert(offsetof(AmbienceSound, sound) == 0x00, "AmbienceSound.sound");
+static_assert(offsetof(AmbienceSound, monthFrom) == 0x01, "AmbienceSound.monthFrom");
+static_assert(offsetof(AmbienceSound, monthTo) == 0x02, "AmbienceSound.monthTo");
+static_assert(offsetof(AmbienceSound, length) == 0x03, "AmbienceSound.length");
+static_assert(offsetof(AmbienceSound, lead) == 0x04, "AmbienceSound.lead");
+static_assert(offsetof(AmbienceSound, hours) == 0x08, "AmbienceSound.hours");
+static_assert(offsetof(AmbienceSound, counts) == 0x10, "AmbienceSound.counts");
+static_assert(offsetof(AmbienceCell, sound) == 0x00, "AmbienceCell.sound");
+static_assert(offsetof(AmbienceCell, variant) == 0x01, "AmbienceCell.variant");
 static_assert(sizeof(SeSound) == 0x10, "SeSound size");
 static_assert(offsetof(SeSound, flags) == 0x00, "SeSound.flags");
 static_assert(offsetof(SeSound, maxVoices) == 0x01, "SeSound.maxVoices");
@@ -3377,7 +3513,7 @@ static_assert(sizeof(MenuWin) == 0x20, "MenuWin size");
 static_assert(offsetof(MenuWin, model) == 0x0C, "MenuWin.model");
 static_assert(offsetof(MenuWin, list) == 0x10, "MenuWin.list");
 static_assert(offsetof(MenuWin, size) == 0x14, "MenuWin.size");
-static_assert(offsetof(MenuWin, unk_18) == 0x18, "MenuWin.unk_18");
+static_assert(offsetof(MenuWin, choice) == 0x18, "MenuWin.choice");
 static_assert(offsetof(MenuWin, unk_1C) == 0x1C, "MenuWin.unk_1C");
 static_assert(offsetof(TalkCard, person) == 0x0C, "TalkCard.person");
 static_assert(offsetof(TalkCard, family) == 0x10, "TalkCard.family");

@@ -41,7 +41,7 @@ Rendering below the scene level.
 | `0x0012A260` | `A3DObject *mm_InstanceBase_ctor(A3DObject *model)` | 44 | no | (provisional) base object constructor, clears 0x1BDA10 |
 | `0x0012A2B0` | `void mm_Packet_Draw(uint32_t *a0)` | 8 | no | queues the packet whose address is the object's first word |
 | `0x0012A2C0` | `void mm_Camera_BuildPacket(Camera *camera)` | 216 | no | the camera's VU1 packet: a GS register write, then +0x10..+0x12F (matrices, fog) unpacked to VU1 address 0 |
-| `0x0012A650` | `void mm_LightSet_SetField20(LightSet *lights, int value)` | 12 | no | (provisional) (*this)+0x20 = a1, from the time-of-day update |
+| `0x0012A650` | `void mm_Camera_SetFogColour(Camera *camera, int colour)` | 12 | no | the fog colour (GS FOGCOL) in the camera's packet (word 8), from the sky's low colour each frame |
 | `0x0012C4D0` | `void mm_Instance_DrawSwayingIfRoom(A3DObject *model, int a1, float phase)` | 60 | no | mm_Instance_DrawSwaying when the model's nodes still fit in the 1800-instance budget |
 | `0x0012C510` | `void mm_InstanceBuf_Init(void)` | 400 | yes | allocates the two instance buffers and pre-fills each slot's DMA/VIF header (CNT 5, STCYCL, UNPACK) |
 | `0x0012C6A0` | `void mm_Instance_DrawMesh(A3DObject *model, Vec4 *matrix, Vec4 *colour, int mesh, int flags)` | 236 | no | writes matrix a1/a2 and colour into the next instance slot and queues it with the mesh packet |

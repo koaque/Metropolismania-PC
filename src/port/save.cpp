@@ -722,10 +722,9 @@ namespace mm
         constexpr uint32_t kKnownType0 = 0x001BDB78u, kKnownType1 = 0x001BDB7Cu;
         port::store<int32_t>(0x001BDB94u, portNumber);
         port::store<int32_t>(0x001BDB98u, name);
-        const uint32_t m = mc.address;
         const int queue = static_cast<int>(mc->queue.address);
         const uint32_t at = 4u * static_cast<uint32_t>(portNumber);
-        const GuestPtr<int32_t> result{m + 0x18u};
+        const GuestPtr<int32_t> result = GuestPtr<int32_t>::of(mc->result);
         const auto advance = [&] { mc->state = mc->state + 1; };
         const auto isDone = [&] { return McQueue_IsDone(queue, mc->request) != 0; };
         switch (static_cast<uint32_t>(mc->state))
@@ -795,9 +794,9 @@ namespace mm
             }
             break;
         case 9:
-            port::store<uint32_t>(m + 0x1Cu, sdk::malloc(0x13968u));
+            mc->iconBuffer = sdk::malloc(0x13968u);
             mc->request = File_Open(mc->file, GuestPtr<char>{0x001B7E30u});
-            mc->request = File_Read(mc->file, static_cast<int>(port::load<uint32_t>(m + 0x1Cu)), 1, 0x13968, 0);
+            mc->request = File_Read(mc->file, static_cast<int>(mc->iconBuffer), 1, 0x13968, 0);
             advance();
             break;
         case 10:
@@ -805,7 +804,7 @@ namespace mm
                 advance();
             break;
         case 11:
-            mc->request = McQueue_Open(queue, portNumber, 0x001B7E40, 0x202, GuestPtr<int32_t>{m + 0x24u});
+            mc->request = McQueue_Open(queue, portNumber, 0x001B7E40, 0x202, GuestPtr<int32_t>::of(mc->fd));
             advance();
             [[fallthrough]];
         case 12:
@@ -813,7 +812,7 @@ namespace mm
                 advance();
             break;
         case 13:
-            mc->request = McQueue_Write(queue, mc->fd, static_cast<int>(port::load<uint32_t>(m + 0x1Cu)), 0x13968, GuestPtr<int32_t>{0u});
+            mc->request = McQueue_Write(queue, mc->fd, static_cast<int>(mc->iconBuffer), 0x13968, GuestPtr<int32_t>{0u});
             mc->request = McQueue_Close(queue, mc->fd, GuestPtr<int32_t>{0u});
             advance();
             break;
@@ -828,10 +827,10 @@ namespace mm
         case 16:
             if (FileQueue_IsDone(static_cast<int>(mc->file.address), mc->request) != 0)
             {
-                if (port::load<uint32_t>(m + 0x1Cu) != 0u)
+                if (mc->iconBuffer != 0u)
                 {
-                    sdk::free(port::load<uint32_t>(m + 0x1Cu));
-                    port::store<uint32_t>(m + 0x1Cu, 0u);
+                    sdk::free(mc->iconBuffer);
+                    mc->iconBuffer = 0u;
                 }
                 mc->state = 0;
             }

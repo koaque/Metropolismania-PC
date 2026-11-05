@@ -509,12 +509,12 @@ namespace mm
         return distance;
     }
 
-    // Marks both actors' buildings and sets the timer (+0x1C) to 180.
+    // Marks both actors' buildings and sets the countdown to 180.
     GuestPtr<MapObject> EvShoppingTogether_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
         markBuilding(city, actorAt(data, 0)->object);
         const GuestPtr<MapObject> second = markBuilding(city, actorAt(data, 1)->object);
-        port::store<int32_t>(data.address + 0x1Cu, 180);
+        data.as<EvShoppingTogetherData>()->countdown = 180;
         return second;
     }
 
@@ -598,7 +598,7 @@ namespace mm
     namespace
     {
         // The message events' phases (var): 1 waits until the actor can be told (mm_EvActor_Notify), then a phone
-        // call is up (+0x1C) for 60 frames, plus the minutes left until 6:00 when it comes before then, or 360 more
+        // call is up for 60 frames, plus the minutes left until 6:00 when it comes before then, or 360 more
         // from 23:00; phase 2 counts that down and returns true when it runs out (the call taken down).
         bool messagePhase(GuestPtr<EventData> data, GuestPtr<CityScene> city)
         {
@@ -606,13 +606,13 @@ namespace mm
             {
                 if (--data->unk_14 > 0)
                     return false;
-                port::store<int32_t>(data.address + 0x1Cu, 0);
+                data.as<EvMessageData>()->callPosted = 0;
                 return true;
             }
             if (data->var != 1 || EvActor_Notify(city, GuestPtr<ActorRef>::of(data->actor)) == 0)
                 return false;
             ++data->var;
-            port::store<int32_t>(data.address + 0x1Cu, 1);
+            data.as<EvMessageData>()->callPosted = 1;
             data->unk_14 = 60;
             const int32_t clock = city->clock;
             if (clock < 21600)
@@ -655,7 +655,7 @@ namespace mm
     {
         if (data->var == 3)
         {
-            port::store<int32_t>(data.address + 0x1Cu, 0);
+            data.as<EvMessageData>()->callPosted = 0;
             const GuestPtr<StageState> stage = globals::stageState();
             const uint32_t score = static_cast<uint32_t>(city->paydayScore) + 2u * static_cast<uint32_t>(globals::familiesMovedInEvent.get()) -
                                    4u * static_cast<uint32_t>(globals::familiesLeftEvent.get());
@@ -834,10 +834,10 @@ namespace mm
         }
     }
 
-    // Withdraws the message's phone call if it posted one (+0x1C).
+    // Withdraws the message's phone call if it posted one.
     void EvMsg_End(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
-        if (port::load<uint32_t>(data.address + 0x1Cu) == 0)
+        if (data.as<EvMessageData>()->callPosted == 0)
             return;
         PhoneCall_Remove(city->phoneCalls, city, data->actor.family, data->actor.member);
     }
@@ -888,7 +888,7 @@ namespace mm
 
     int EvShoppingTogether_Answer(GuestPtr<EventData> data, GuestPtr<CityScene>, GuestPtr<ActorRef>, int mode)
     {
-        return mode == 0 ? port::load<int32_t>(data.address + 0x28u) : 0;
+        return mode == 0 ? data.as<EvShoppingTogetherData>()->outcome : 0;
     }
 
     // Whether the party (+0x28) has a quarter of the population.
@@ -4287,8 +4287,7 @@ namespace mm
 
     PORT_FN(EvEscort_Update);
 
-    // The shopping together event (phase in +0xA; actor 0 at +0xC, actor 1 at +0x14, the countdown at +0x1C, the counters at +0x20 and
-    // +0x24, the outcome at +0x28, the frame count at +0x2C). Phase 1 counts the countdown down: above 60 the player must be near
+    // The shopping together event (EvShoppingTogetherData; the phase in var). Phase 1 counts the countdown down: above 60 the player must be near
     // actor 1's building and actor 0 (then actor 0 is pointed at, on an open tile or after ten tries; the outcome is 1 for a
     // countdown under 121, else 0, and phase 5), else every tenth call actor 0 is pointed at; from 60 down, pointing at actor 0 on an
     // open tile moves it to phase 2. Phase 3 does the same while the countdown runs (outcome 2, phase 5) and when it ends points at
@@ -4296,22 +4295,20 @@ namespace mm
     // event after 180 frames.
     void EvShoppingTogether_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
-        const uint32_t d = data.address;
-        const GuestPtr<ActorRef> first{d + 0xCu}, second{d + 0x14u};
-        const auto get = [&](uint32_t offset) { return port::load<int32_t>(d + offset); };
-        const auto put = [&](uint32_t offset, int32_t value) { port::store<int32_t>(d + offset, value); };
+        const GuestPtr<EvShoppingTogetherData> ev = data.as<EvShoppingTogetherData>();
+        const GuestPtr<ActorRef> first = GuestPtr<ActorRef>::of(ev->actors[0]), second = GuestPtr<ActorRef>::of(ev->actors[1]);
         // Too far from actor 0 (three tiles or more): every tenth call it is pointed at while on an open tile.
         const auto farOff = [&] {
             if (Player_DistanceToPerson(city, first) < ps2f(3.0f))
             {
-                put(0x20, 0);
-                put(0x24, 0);
+                ev->offTileCalls = 0;
+                ev->farCalls = 0;
                 return;
             }
-            put(0x24, get(0x24) + 1);
-            if (get(0x24) >= 10 && Person_IsOnOpenTile(city, first) != 0 && EvActor_PointCursor(city, first) != 0)
-                put(0x24, 0);
-            put(0x20, 0);
+            ev->farCalls = ev->farCalls + 1;
+            if (ev->farCalls >= 10 && Person_IsOnOpenTile(city, first) != 0 && EvActor_PointCursor(city, first) != 0)
+                ev->farCalls = 0;
+            ev->offTileCalls = 0;
         };
         const auto nearBoth = [&] {
             return Player_DistanceToBuilding(city, second) < 2 && Player_DistanceToPerson(city, first) <= ps2f(1.0f);
@@ -4320,27 +4317,27 @@ namespace mm
         const auto meet = [&](int32_t outcome) {
             if (Person_IsOnOpenTile(city, first) == 0)
             {
-                put(0x20, get(0x20) + 1);
-                if (get(0x20) < 10)
+                ev->offTileCalls = ev->offTileCalls + 1;
+                if (ev->offTileCalls < 10)
                 {
-                    put(0x24, 0);
+                    ev->farCalls = 0;
                     return;
                 }
             }
             if (EvActor_PointCursor(city, first) == 0)
             {
-                put(0x24, 0);
+                ev->farCalls = 0;
                 return;
             }
-            put(0x28, outcome >= 0 ? outcome : (get(0x1C) < 0x79 ? 1 : 0));
+            ev->outcome = outcome >= 0 ? outcome : (ev->countdown < 0x79 ? 1 : 0);
             data->var = 5;
-            put(0x24, 0);
+            ev->farCalls = 0;
         };
         switch (data->var)
         {
         case 1:
-            put(0x1C, get(0x1C) - 1);
-            if (get(0x1C) < 0x3D)
+            ev->countdown = ev->countdown - 1;
+            if (ev->countdown < 0x3D)
             {
                 if (Person_IsOnOpenTile(city, first) != 0 && EvActor_PointCursor(city, first) != 0)
                     data->var = static_cast<uint8_t>(data->var + 1);
@@ -4351,8 +4348,8 @@ namespace mm
                 farOff();
             break;
         case 3:
-            put(0x1C, get(0x1C) - 1);
-            if (get(0x1C) > 0)
+            ev->countdown = ev->countdown - 1;
+            if (ev->countdown > 0)
             {
                 if (nearBoth())
                     meet(2);
@@ -4365,13 +4362,13 @@ namespace mm
                 EvActor_MoveTo(city, first, second, 1);
                 const GuestPtr<MapPerson> person = city->map->people + first->person;
                 person->flags = static_cast<uint16_t>(person->flags | 0x80u);
-                put(0x28, 3);
+                ev->outcome = 3;
                 data->var = static_cast<uint8_t>(data->var + 1);
             }
             break;
         case 6:
-            put(0x2C, get(0x2C) + 1);
-            if (get(0x2C) >= 0xB4)
+            ev->frames = ev->frames + 1;
+            if (ev->frames >= 0xB4)
                 Event_Finish(city->events, city, 0);
             break;
         default:
@@ -4381,8 +4378,7 @@ namespace mm
 
     PORT_FN(EvShoppingTogether_Update);
 
-    // The alien event's phases (phase in +0xA; actors at +0xC, +0x14, +0x1C (the place), +0x2C, +0x34; the day to wait for at +0x3C,
-    // the time at +0x40 and a countdown at +0x44). 1 plays sound 0x45 and notes the next day; 2 moves on when it comes; 3 from 10:00
+    // The alien event's phases (EvAlienData; the phase in var). 1 plays sound 0x45 and notes the next day; 2 moves on when it comes; 3 from 10:00
     // tells actor 1 and waits 60 frames; 4, 10 and 12 count the 60 down and go back a phase. 7 needs actor 0 on an open tile within a
     // tile of the player and a building picked for its tile (EvAlien_PickTarget): the place becomes that building (marked 0x200, the
     // old one's mark cleared). 9 and 11 tell the place's actor on the noted day and time (noon of the next day after 9). 22 points at
@@ -4390,34 +4386,33 @@ namespace mm
     // event after 720 frames.
     void EvAlien_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
-        const uint32_t d = data.address;
-        const GuestPtr<ActorRef> first{d + 0xCu};
-        const auto get = [&](uint32_t offset) { return port::load<int32_t>(d + offset); };
-        const auto put = [&](uint32_t offset, int32_t value) { port::store<int32_t>(d + offset, value); };
+        const GuestPtr<EvAlienData> ev = data.as<EvAlienData>();
+        const auto actor = [&](int i) { return GuestPtr<ActorRef>::of(ev->actors[i]); };
+        const GuestPtr<ActorRef> first = actor(0);
         const auto advance = [&] { data->var = static_cast<uint8_t>(data->var + 1); };
         switch (data->var)
         {
         case 1:
             Sound_PlaySe(0x45, 0, 0x3C, 0.0f, 0.0f);
             advance();
-            put(0x3C, city->monthCount + 1);
+            ev->month = city->monthCount + 1;
             break;
         case 2:
-            if (get(0x3C) < city->monthCount)
+            if (ev->month < city->monthCount)
                 data->var = 3;
             break;
         case 3:
-            if (city->clock >= 0x8CA0 && EvActor_Notify(city, GuestPtr<ActorRef>{d + 0x14u}) != 0)
+            if (city->clock >= 0x8CA0 && EvActor_Notify(city, actor(1)) != 0)
             {
                 advance();
-                put(0x44, 0x3C);
+                ev->frames = 0x3C;
             }
             break;
         case 4:
         case 10:
         case 12:
-            put(0x44, get(0x44) - 1);
-            if (get(0x44) <= 0)
+            ev->frames = ev->frames - 1;
+            if (ev->frames <= 0)
                 data->var = static_cast<uint8_t>(data->var - 1);
             break;
         case 7:
@@ -4431,9 +4426,9 @@ namespace mm
             if (!target || EvActor_PointCursor(city, first) == 0)
                 break;
             advance();
-            put(0x3C, city->monthCount + 1);
-            put(0x40, 0x8CA0);
-            const GuestPtr<ActorRef> place{d + 0x1Cu};
+            ev->month = city->monthCount + 1;
+            ev->time = 0x8CA0;
+            const GuestPtr<ActorRef> place = actor(2);
             if (place->object == target->id)
                 break;
             const GuestPtr<MapObject> old = Map_GetRecord(city->map, place->object);
@@ -4446,23 +4441,23 @@ namespace mm
             break;
         }
         case 9:
-            if (city->monthCount < get(0x3C) || city->clock < get(0x40))
+            if (city->monthCount < ev->month || city->clock < ev->time)
                 break;
-            if (EvActor_Notify(city, GuestPtr<ActorRef>{d + 0x1Cu}) != 0)
+            if (EvActor_Notify(city, actor(2)) != 0)
             {
                 advance();
-                put(0x44, 0x3C);
-                put(0x3C, city->monthCount + 1);
-                put(0x40, 0xA8C0);
+                ev->frames = 0x3C;
+                ev->month = city->monthCount + 1;
+                ev->time = 0xA8C0;
             }
             break;
         case 11:
-            if (city->monthCount < get(0x3C) || city->clock < get(0x40))
+            if (city->monthCount < ev->month || city->clock < ev->time)
                 break;
-            if (EvActor_Notify(city, GuestPtr<ActorRef>{d + 0x2Cu}) != 0)
+            if (EvActor_Notify(city, actor(4)) != 0)
             {
                 advance();
-                put(0x44, 0x3C);
+                ev->frames = 0x3C;
             }
             break;
         case 22:
@@ -4471,26 +4466,26 @@ namespace mm
                 break;
             port::GuestFrame<0x60> frame;
             const GuestPtr<uint32_t> rect{frame.ptr().address + 0x50u};
-            Building_GetFootprint(Map_GetRecord(city->map, port::load<uint16_t>(d + 0x26u)), 1, rect);
+            Building_GetFootprint(Map_GetRecord(city->map, ev->actors[3].object), 1, rect);
             const GuestPtr<MapPerson> person = city->map->people + first->person;
             const int z = sdk::fptosi(ps2f(64.0f) - person->z);
             const int x = sdk::fptosi(ps2f(64.0f) + person->x);
-            const int32_t x0 = port::load<int32_t>(rect.address), z0 = port::load<int32_t>(rect.address + 4u);
-            const int32_t x1 = port::load<int32_t>(rect.address + 8u), z1 = port::load<int32_t>(rect.address + 0xCu);
+            const GuestPtr<int32_t> footprint = rect.as<int32_t>();
+            const int32_t x0 = footprint[0], z0 = footprint[1], x1 = footprint[2], z1 = footprint[3];
             if (x >= x0 && x < x1 && z >= z0 && z < z1 && EvActor_PointCursor(city, first) != 0)
                 advance();
             break;
         }
         case 24:
-            if (EvActor_PointCursor(city, GuestPtr<ActorRef>{d + 0x34u}) != 0)
+            if (EvActor_PointCursor(city, actor(5)) != 0)
             {
                 advance();
-                put(0x44, 0);
+                ev->frames = 0;
             }
             break;
         case 26:
-            put(0x44, get(0x44) + 1);
-            if (get(0x44) >= 0x2D0)
+            ev->frames = ev->frames + 1;
+            if (ev->frames >= 0x2D0)
                 Event_Finish(city->events, city, 0);
             break;
         default:
@@ -5016,9 +5011,8 @@ namespace mm
 
     PORT_FN(EvFarewellParty_Update);
 
-    // The thief event's phases (jump table 0x1BA8E0; phase in +0xA; actor 0 at +0xC (the player's contact), 1 at +0x14 (the thief),
-    // 2 at +0x1C, 3 at +0x24 (the place); the day to wait for at +0x2C, countdowns at +0x34 and +0x38, a counter at +0x3C and the
-    // frames at +0x40). 1 waits for the day, then picks a building for the place (a free one of category 5, else 1, fitting the whole
+    // The thief event's phases (jump table 0x1BA8E0; EvThiefData, the phase in var; actor 0 the player's contact, 1 the thief, 2,
+    // 3 the place). 1 waits for the day, then picks a building for the place (a free one of category 5, else 1, fitting the whole
     // map rectangle at 0x1BA8D0; no repeat of the first actor's building), 60 frames at a time, and marks it (0x200); from 17:00 the
     // place is given up (unmarked, claim timer 1, flag 0x40) and the day set a day on; from 10:00 actor 3 is told and phase 2 follows.
     // 2 and 11 count 60 frames down back a phase; 3 points at actor 0 (within a tile after 180 frames, else every tenth call when three
@@ -5028,10 +5022,9 @@ namespace mm
     // wait for the place, 28 starts 720 frames and 29 ends the event).
     void EvThief_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
-        const uint32_t d = data.address;
-        const GuestPtr<ActorRef> first{d + 0xCu}, second{d + 0x14u}, third{d + 0x1Cu}, place{d + 0x24u};
-        const auto get = [&](uint32_t offset) { return port::load<int32_t>(d + offset); };
-        const auto put = [&](uint32_t offset, int32_t value) { port::store<int32_t>(d + offset, value); };
+        const GuestPtr<EvThiefData> ev = data.as<EvThiefData>();
+        const auto actor = [&](int i) { return GuestPtr<ActorRef>::of(ev->actors[i]); };
+        const GuestPtr<ActorRef> first = actor(0), second = actor(1), third = actor(2), place = actor(3);
         const auto advance = [&](int step) { data->var = static_cast<uint8_t>(data->var + step); };
         const auto stay = [&](GuestPtr<ActorRef> actor) { EvActor_MoveTo(city, actor, actor, 0); };
         constexpr uint32_t kWholeMap = 0x001BA8D0u;
@@ -5040,7 +5033,7 @@ namespace mm
         case 1:
         {
             stay(first);
-            if (city->monthCount < get(0x2C))
+            if (city->monthCount < ev->nextMonth)
                 break;
             if (place->object != 0x3F80)
             {
@@ -5049,7 +5042,7 @@ namespace mm
                     if (city->clock >= 0x8CA0 && EvActor_Notify(city, place) != 0)
                     {
                         advance(1);
-                        put(0x34, 0x3C);
+                        ev->countdown = 0x3C;
                     }
                     break;
                 }
@@ -5059,19 +5052,19 @@ namespace mm
                 given->flags = static_cast<uint16_t>(given->flags | 0x40u);
                 place->person = 0x1770;
                 place->object = 0x3F80;
-                put(0x3C, get(0x3C) + 1);
-                put(0x2C, city->monthCount + 1);
+                ev->strikes = ev->strikes + 1;
+                ev->nextMonth = city->monthCount + 1;
                 break;
             }
-            put(0x38, get(0x38) - 1);
-            if (get(0x38) > 0)
+            ev->searchDelay = ev->searchDelay - 1;
+            if (ev->searchDelay > 0)
                 break;
             GuestPtr<MapObject> found = EvThief_FindBuilding(city, 5, GuestPtr<int32_t>{kWholeMap});
             if (!found)
                 found = EvThief_FindBuilding(city, 1, GuestPtr<int32_t>{kWholeMap});
             if (!found || found->id == first->object)
             {
-                put(0x38, 0x3C);
+                ev->searchDelay = 0x3C;
                 break;
             }
             place->person = Map_FindPersonEntry(city->map, static_cast<int16_t>(found->family), 0)->index;
@@ -5084,37 +5077,37 @@ namespace mm
         case 2:
         case 11:
             stay(first);
-            put(0x34, get(0x34) - 1);
-            if (get(0x34) <= 0)
+            ev->countdown = ev->countdown - 1;
+            if (ev->countdown <= 0)
                 advance(-1);
             break;
         case 3:
-            put(0x40, get(0x40) + 1);
-            if (get(0x40) >= 0xB4)
+            ev->frames = ev->frames + 1;
+            if (ev->frames >= 0xB4)
             {
                 if (Player_DistanceToPerson(city, first) <= ps2f(1.0f) && EvActor_PointCursor(city, first) != 0)
                 {
                     advance(1);
-                    put(0x2C, city->monthCount + 1);
-                    put(0x40, 0);
+                    ev->nextMonth = city->monthCount + 1;
+                    ev->frames = 0;
                 }
                 break;
             }
-            if (get(0x40) % 10 != 0 || Player_DistanceToPerson(city, first) < ps2f(3.0f))
+            if (ev->frames % 10 != 0 || Player_DistanceToPerson(city, first) < ps2f(3.0f))
                 break;
             EvActor_PointCursor(city, first);
             break;
         case 5:
             stay(first);
-            if (city->monthCount >= get(0x2C) && city->clock >= 0x8CA0 && city->clock < 0xEF10 && EvActor_Notify(city, first) != 0)
+            if (city->monthCount >= ev->nextMonth && city->clock >= 0x8CA0 && city->clock < 0xEF10 && EvActor_Notify(city, first) != 0)
             {
                 advance(1);
-                put(0x34, 0x3C);
+                ev->countdown = 0x3C;
             }
             break;
         case 6:
-            put(0x34, get(0x34) - 1);
-            if (get(0x34) <= 0)
+            ev->countdown = ev->countdown - 1;
+            if (ev->countdown <= 0)
                 advance(-1);
             stay(first);
             break;
@@ -5123,19 +5116,19 @@ namespace mm
             stay(first);
             break;
         case 9:
-            put(0x38, 0xB4);
+            ev->searchDelay = 0xB4;
             advance(1);
             stay(first);
             break;
         case 10:
             stay(first);
-            put(0x38, get(0x38) - 1);
-            if (get(0x38) > 0)
+            ev->searchDelay = ev->searchDelay - 1;
+            if (ev->searchDelay > 0)
                 break;
             if (EvActor_Notify(city, second) != 0)
             {
                 advance(1);
-                put(0x34, 0x3C);
+                ev->countdown = 0x3C;
             }
             break;
         case 12:
@@ -5164,20 +5157,20 @@ namespace mm
             break;
         }
         case 18:
-            put(0x38, get(0x38) + 1);
-            if (get(0x38) >= 10)
+            ev->searchDelay = ev->searchDelay + 1;
+            if (ev->searchDelay >= 10)
             {
                 if (Player_DistanceToBuilding(city, first) < 2 && Player_DistanceToPerson(city, third) <= ps2f(1.0f) &&
                     EvActor_PointCursor(city, third) != 0)
                 {
                     EvActor_MoveTo(city, third, first, 1);
                     advance(1);
-                    put(0x38, 0);
+                    ev->searchDelay = 0;
                     break;
                 }
                 if (!(Player_DistanceToPerson(city, third) < ps2f(3.0f)))
                     EvActor_PointCursor(city, third);
-                put(0x38, 0);
+                ev->searchDelay = 0;
             }
             break;
         case 19:
@@ -5201,7 +5194,7 @@ namespace mm
                 if (EvActor_Notify(city, third) != 0)
                 {
                     advance(1);
-                    put(0x34, 0x3C);
+                    ev->countdown = 0x3C;
                 }
                 break;
             }
@@ -5209,8 +5202,8 @@ namespace mm
             stay(third);
             break;
         case 24:
-            put(0x34, get(0x34) - 1);
-            if (get(0x34) <= 0)
+            ev->countdown = ev->countdown - 1;
+            if (ev->countdown <= 0)
                 advance(-1);
             stay(second);
             stay(third);
@@ -5223,11 +5216,11 @@ namespace mm
             break;
         case 28:
             advance(1);
-            put(0x38, 0x2D0);
+            ev->searchDelay = 0x2D0;
             break;
         case 29:
-            put(0x38, get(0x38) - 1);
-            if (get(0x38) <= 0)
+            ev->searchDelay = ev->searchDelay - 1;
+            if (ev->searchDelay <= 0)
                 Event_Finish(city->events, city, 0);
             break;
         default:

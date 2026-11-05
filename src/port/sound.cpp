@@ -126,7 +126,7 @@ namespace mm
     void Sound_InitState()
     {
         for (uint32_t voice = 0; voice < 31; ++voice)
-            port::store<uint8_t>(globals::kSeVoices + 0x30u * voice, 0xFF);
+            globals::seVoice(voice)->sound = 0xFF;
         globals::soundLastClock.set(-1);
         globals::seRequestCount.set(0);
         globals::soundNextOwner.set(0);
@@ -146,8 +146,9 @@ namespace mm
     // skipped.
     void Se_BuildAmbienceMap()
     {
-        for (uint32_t cell = 0; cell < 0x1000; ++cell)
-            port::store<uint8_t>(globals::kAmbienceGrid + 2u * cell, 0);
+        const GuestPtr<AmbienceCell> grid{globals::kAmbienceGrid};
+        for (int32_t cell = 0; cell < 0x1000; ++cell)
+            grid[cell].sound = 0;
         const GuestPtr<CityScene> city = globals::soundCity.get();
         int day = city->monthCount;
         if (city->clock < 18000)
@@ -156,8 +157,7 @@ namespace mm
         for (int sound = 0; sound < 11; ++sound)
             for (int variant = 0; variant < 6; ++variant)
             {
-                const uint32_t entry = globals::kAmbienceCounts + 0x1Cu * static_cast<uint32_t>(sound) + 0x10u + 2u * static_cast<uint32_t>(variant);
-                uint16_t left = port::load<uint16_t>(entry);
+                uint16_t left = (GuestPtr<AmbienceSound>{globals::kAmbienceCounts} + sound)->counts[variant];
                 if (left == 0)
                     continue;
                 const int step = 0x1000 / left;
@@ -165,14 +165,14 @@ namespace mm
                 {
                     if (pos >= 0x1000)
                         pos -= 0x1000;
-                    const uint32_t cell = globals::kAmbienceGrid + 2u * static_cast<uint32_t>(pos);
-                    if (port::load<uint8_t>(cell) != 0)
+                    AmbienceCell &cell = grid[pos];
+                    if (cell.sound != 0)
                     {
                         ++pos;
                         continue;
                     }
-                    port::store<uint8_t>(cell, static_cast<uint8_t>(sound + 1));
-                    port::store<uint8_t>(cell + 1u, static_cast<uint8_t>(variant));
+                    cell.sound = static_cast<uint8_t>(sound + 1);
+                    cell.variant = static_cast<uint8_t>(variant);
                     --left;
                     pos += step;
                 }
@@ -201,7 +201,7 @@ namespace mm
             SoundCmd_MidiSetTrackVolume(static_cast<uint8_t>(voice), 0x100, 0);
         SoundCmd_MidiSetTrackVolume(15, 0xC0, 0);
         for (uint32_t voice = 0; voice < 31; ++voice)
-            port::store<uint8_t>(globals::kSeVoices + 0x30u * voice, 0xFF);
+            globals::seVoice(voice)->sound = 0xFF;
         globals::seRequestCount.set(0);
     }
 
@@ -209,17 +209,17 @@ namespace mm
     // kept within 1..0x3FFF) and pitch (flag 2).
     void Se_ApplyVoiceParams(uint32_t voice)
     {
-        const uint32_t v = globals::kSeVoices + 0x30u * voice;
-        if ((port::load<uint8_t>(v + 0x1Cu) & 1u) != 0)
+        const GuestPtr<SeVoice> v = globals::seVoice(voice);
+        if ((v->flags & 1u) != 0)
         {
-            const int16_t offset = port::load<int16_t>(v + 0x12u);
+            const int16_t offset = v->volumeOffset;
             const auto clamp = [](int volume) { return volume < 1 ? 1 : (volume > 0x3FFF ? 0x3FFF : volume); };
-            const int left = clamp(port::load<int32_t>(v + 0x14u) + offset);
-            const int right = clamp(port::load<int32_t>(v + 0x18u) + offset);
+            const int left = clamp(v->volumeLeft + offset);
+            const int right = clamp(v->volumeRight + offset);
             SoundCmd_WaveSetVolume(static_cast<uint8_t>(voice), left, right, 0);
         }
-        if ((port::load<uint8_t>(v + 0x1Cu) & 2u) != 0)
-            SoundCmd_WaveSetPitch(static_cast<uint8_t>(voice), port::load<uint16_t>(v + 0xAu), 0);
+        if ((v->flags & 2u) != 0)
+            SoundCmd_WaveSetPitch(static_cast<uint8_t>(voice), static_cast<uint16_t>(v->pitch), 0);
     }
 
     // Music table entries 3..12 at 0x1F8120: (track id, enabled), id 0xFF = free. Sets or adds track slot + 6
@@ -227,32 +227,32 @@ namespace mm
     // next one, or queues it (bit 7) behind a fade already running (provisional reading of 0x1BDCF0).
     void Bgm_SetTrackSlot(char slot, int play, int enable)
     {
-        constexpr uint32_t kTable = globals::kBgmTracks;
+        const GuestPtr<BgmTrack> tracks = globals::bgmTracks();
         const uint8_t id = static_cast<uint8_t>(slot + 6);
         const uint8_t enabled = enable != 0 ? 1 : 0;
         int found = -1;
         for (int i = 3; i < 13 && found == -1; ++i)
-            if (port::load<uint8_t>(kTable + 2u * static_cast<uint32_t>(i)) == id)
+            if (tracks[i].bank == id)
             {
-                port::store<uint8_t>(kTable + 2u * static_cast<uint32_t>(i) + 1u, enabled);
+                tracks[i].enabled = enabled;
                 found = i;
             }
         for (int i = 3; i < 13 && found == -1; ++i)
-            if (port::load<uint8_t>(kTable + 2u * static_cast<uint32_t>(i)) == 0xFF)
+            if (tracks[i].bank == 0xFF)
             {
-                port::store<uint8_t>(kTable + 2u * static_cast<uint32_t>(i), id);
-                port::store<uint8_t>(kTable + 2u * static_cast<uint32_t>(i) + 1u, enabled);
+                tracks[i].bank = id;
+                tracks[i].enabled = enabled;
                 found = i;
             }
         if (found == -1 || enable == 0 || play == 0)
             return;
         if (globals::bgmState.get() == 0)
         {
-            port::store<uint8_t>(0x001BDCF0u, static_cast<uint8_t>(found - 1));
+            globals::bgmTrack.set(static_cast<uint8_t>(found - 1));
             SoundCmd_MidiFade(15, 0, 200, 0);
         }
-        else if ((port::load<uint8_t>(0x001BDCF0u) & 0x80u) == 0)
-            port::store<uint8_t>(0x001BDCF0u, static_cast<uint8_t>(found + 0x7F));
+        else if ((globals::bgmTrack.get() & 0x80u) == 0)
+            globals::bgmTrack.set(static_cast<uint8_t>(found + 0x7F));
     }
 
     // The driver's status block as the game reads it: a copy with the plays, slots and third command group
@@ -262,11 +262,11 @@ namespace mm
         void refreshStatusView()
         {
             sdk::memcpy(globals::kSoundStatusView, globals::kSoundStatus, 0x40);
-            const auto merge = [](uint32_t offset, uint32_t queued)
-            { port::store<uint32_t>(globals::kSoundStatusView + offset, port::load<uint32_t>(globals::kSoundStatus + offset) | queued); };
-            merge(0x4, globals::soundSlotsQueued.get());
-            merge(0x8, globals::soundVoicesQueued.get());
-            merge(0x18, globals::soundStopsQueued.get());
+            const auto merge = [](uint32_t SoundStatus::*field, uint32_t queued)
+            { (*globals::soundStatusView()).*field = (*globals::soundStatus()).*field | queued; };
+            merge(&SoundStatus::midiPlaying, globals::soundSlotsQueued.get());
+            merge(&SoundStatus::wavePlaying, globals::soundVoicesQueued.get());
+            merge(&SoundStatus::unk_18, globals::soundStopsQueued.get());
         }
     }
 
@@ -280,7 +280,7 @@ namespace mm
     int Sound_IsBusy()
     {
         refreshStatusView();
-        if (port::load<int32_t>(globals::kSoundStatusView + 0xCu) != 0)
+        if (globals::soundStatusView()->busy != 0)
             return 1;
         return globals::soundCmdSent.get() != globals::soundCmdIndex.get();
     }
@@ -314,7 +314,7 @@ namespace mm
         }
         if (sequenceOver)
             return;
-        const auto trackBank = [](uint8_t track) { return port::load<uint8_t>(globals::kBgmTracks + 2u * track); };
+        const auto trackBank = [](uint8_t track) { return globals::bgmTracks()[track].bank; };
         const auto tempo = [](uint32_t bank) { return port::load<int32_t>(globals::kBgmTempos + 4u * bank); };
         if (CityScene_GetMode(globals::soundCity.get()) == 7 && globals::bgmState.get() == 0 && globals::bgmPlayedState.get() == 0)
         {
@@ -345,7 +345,7 @@ namespace mm
                 if (globals::bgmTrack.get() >= 13)
                     globals::bgmTrack.set(0);
                 track = globals::bgmTrack.get();
-            } while (trackBank(track) == 0xFF || port::load<uint8_t>(globals::kBgmTracks + 2u * track + 1u) == 0);
+            } while (trackBank(track) == 0xFF || globals::bgmTracks()[track].enabled == 0);
             bank = trackBank(track);
             break;
         }
@@ -402,22 +402,22 @@ namespace mm
     {
         if (!(distance <= ps2f(16.0f)) || sound == 0xFF || (group & 0xFFu) >= 4)
             return port::guestV0();
-        const uint32_t entry = globals::kSoundTable + 0x10u * sound;
+        const GuestPtr<SeSound> entry = globals::seSound(sound);
         const GuestPtr<SeRequest> requests{globals::kSeRequests};
         const int pan = sdk::fptosi(ps2f(4.0f) * angle);
         int result = pan;
         uint32_t channel = (group << 4) & 0xFFu;
         for (uint32_t k = 0; k < 4; ++k, ++channel)
         {
-            const uint8_t voice = port::load<uint8_t>(entry + 8u + 2u * k);
+            const uint8_t voice = entry->voices[2 * k];
             if (voice == 0xFF)
                 return result;
-            const uint8_t flags = port::load<uint8_t>(entry);
+            const uint8_t flags = entry->flags;
             SeRequest &request = requests[globals::seRequestCount.get()];
             request.sound = sound;
             request.voice = voice;
             request.owner = ((flags & 0x20u) != 0 ? 0xFFFFu : owner) + ((channel & 0xFFu) << 16);
-            request.voiceParam = static_cast<uint16_t>(port::load<uint8_t>(entry + 9u + 2u * k) + ((flags & 0xF0u) << 4));
+            request.voiceParam = static_cast<uint16_t>(entry->voices[2 * k + 1] + ((flags & 0xF0u) << 4));
             const uint32_t half = sdk::fptoui(distance / ps2f(2.0f));
             result = static_cast<int>(half);
             request.priority = static_cast<uint16_t>(((flags & 0xFu) << 8) + half);
@@ -428,7 +428,7 @@ namespace mm
             request.param19 = param19;
 
             const uint32_t low = request.priority & 0xFFu;
-            const uint8_t tableVolume = port::load<uint8_t>(globals::kSoundTable + 0x10u * request.sound + 3u);
+            const uint8_t tableVolume = globals::seSound(request.sound)->volume;
             const int32_t percent = tableVolume != 0 ? tableVolume : 100;
             const uint32_t panShare = static_cast<uint32_t>(pan) * low * 416u;
             uint32_t left = 0x3FFF, right = 0x3FFF;
@@ -475,7 +475,7 @@ namespace mm
     // v0 is first set as the original has it there: the flag test (0), or the new owner id.
     int Sound_PlaySe(int sound, int a1, int a2, ps2f angle, ps2f distance)
     {
-        const uint8_t flags = port::load<uint8_t>(globals::kSoundTable + 0x10u * static_cast<uint32_t>(sound & 0xFF));
+        const uint8_t flags = globals::seSound(static_cast<uint32_t>(sound & 0xFF))->flags;
         if ((flags & 0x10u) == 0)
         {
             port::setGuestV0(0);
@@ -772,7 +772,7 @@ namespace mm
         // next owner id, as Sound_PlaySe does.
         void requestPlain(uint8_t sound, uint16_t param0C)
         {
-            if ((port::load<uint8_t>(globals::kSoundTable + 0x10u * sound) & 0x10u) == 0)
+            if ((globals::seSound(sound)->flags & 0x10u) == 0)
             {
                 Se_Request(0, 0, sound, 0, 0, param0C, 0x3C, 0, 0.0f, 0.0f);
                 return;
@@ -1030,8 +1030,8 @@ namespace mm
             globals::bgmState.set(0);
             for (uint32_t track = 0; track < 13; ++track)
             {
-                port::store<uint8_t>(globals::kBgmTracks + 2u * track, static_cast<uint8_t>(track < 3 ? track : 0xFFu));
-                port::store<uint8_t>(globals::kBgmTracks + 2u * track + 1u, 1);
+                globals::bgmTracks()[static_cast<int32_t>(track)].bank = static_cast<uint8_t>(track < 3 ? track : 0xFFu);
+                globals::bgmTracks()[static_cast<int32_t>(track)].enabled = 1;
             }
             const GuestPtr<Bag> bag = city->bag;
             for (int i = 0; i < 10; ++i)
@@ -1494,22 +1494,21 @@ namespace mm
             return Map_TileFlag20(globals::soundCity.get()->map, x, z) != 0 ? 0x1C : 0x1D;
         const uint32_t wanted = variant != 0 ? static_cast<uint32_t>(variant - 1) & 0xFFu : 0u;
         const int cell = x / 2 + (z / 2) * 64;
-        const uint32_t gridCell = globals::kAmbienceGrid + 2u * static_cast<uint32_t>(cell);
-        const uint8_t sound = port::load<uint8_t>(gridCell);
-        if (sound == 0 || wanted != port::load<uint8_t>(gridCell + 1u))
+        const AmbienceCell &gridCell = GuestPtr<AmbienceCell>{globals::kAmbienceGrid}[cell];
+        const uint8_t sound = gridCell.sound;
+        if (sound == 0 || wanted != gridCell.variant)
             return 0xFF;
         const int weather = globals::soundCity.get()->weatherToday;
         const uint32_t weatherIndex = weather == 1 || weather == 2 || weather == 3 ? static_cast<uint32_t>(weather) : 0u;
-        const uint32_t entry = globals::kAmbienceCounts + 0x1Cu * ((sound - 1u) & 0xFFu);
-        const uint8_t hourFrom = port::load<uint8_t>(entry + 8u + 2u * weatherIndex);
+        const GuestPtr<AmbienceSound> entry = GuestPtr<AmbienceSound>{globals::kAmbienceCounts} + static_cast<int32_t>((sound - 1u) & 0xFFu);
+        const uint8_t hourFrom = entry->hours[weatherIndex][0];
         if (hourFrom == 0xFF)
             return 0xFF;
-        const int match = Se_MatchSchedule(port::load<uint8_t>(entry + 1u), port::load<uint8_t>(entry + 2u), hourFrom,
-                                           port::load<uint8_t>(entry + 9u + 2u * weatherIndex), port::load<uint8_t>(entry + 3u),
-                                           static_cast<uint32_t>(cell % 6) & 0xFFu, port::load<uint8_t>(entry + 4u));
+        const int match = Se_MatchSchedule(entry->monthFrom, entry->monthTo, hourFrom, entry->hours[weatherIndex][1], entry->length,
+                                           static_cast<uint32_t>(cell % 6) & 0xFFu, entry->lead);
         if (match == 0)
             return 0xFF;
-        const uint32_t id = port::load<uint8_t>(entry);
+        const uint32_t id = entry->sound;
         return match == 2 ? (id + 0x100u) & 0xFFFFu : id;
     }
 
@@ -1763,22 +1762,23 @@ namespace mm
     // word +0xC is set.
     int Sound_IsDriverBusy()
     {
-        sdk::memcpy(globals::kSoundStatusView, globals::kSoundStatus, 0x40);
-        port::store<uint32_t>(globals::kSoundStatusView + 4u, port::load<uint32_t>(globals::kSoundStatus + 4u) | globals::soundSlotsQueued.get());
-        port::store<uint32_t>(globals::kSoundStatusView + 8u, port::load<uint32_t>(globals::kSoundStatus + 8u) | globals::soundVoicesQueued.get());
-        port::store<uint32_t>(globals::kSoundStatusView + 0x18u, port::load<uint32_t>(globals::kSoundStatus + 0x18u) | globals::soundStopsQueued.get());
-        return port::load<uint32_t>(globals::kSoundStatusView + 0xCu) != 0 ? 1 : 0;
+        const GuestPtr<SoundStatus> view = globals::soundStatusView(), status = globals::soundStatus();
+        sdk::memcpy(view.address, status.address, 0x40);
+        view->midiPlaying = status->midiPlaying | globals::soundSlotsQueued.get();
+        view->wavePlaying = status->wavePlaying | globals::soundVoicesQueued.get();
+        view->unk_18 = status->unk_18 | globals::soundStopsQueued.get();
+        return view->busy != 0 ? 1 : 0;
     }
 
-    // Stops every playing voice: the B voices of status word +4, then the A voices of word +8.
+    // Stops everything playing: the sequence slots, then the wave voices.
     void Sound_StopAllPlaying()
     {
-        const uint32_t status = static_cast<uint32_t>(Sound_GetStatus());
+        const GuestPtr<SoundStatus> status{static_cast<uint32_t>(Sound_GetStatus())};
         for (uint32_t voice = 0; voice < 16; ++voice)
-            if ((port::load<uint32_t>(status + 4u) & (1u << voice)) != 0)
+            if ((status->midiPlaying & (1u << voice)) != 0)
                 SoundCmd_MidiStop(voice & 0xFFu, 0);
         for (uint32_t voice = 0; voice < 16; ++voice)
-            if ((port::load<uint32_t>(status + 8u) & (1u << voice)) != 0)
+            if ((status->wavePlaying & (1u << voice)) != 0)
                 SoundCmd_WaveStop(voice & 0xFFu, 0);
     }
 
@@ -1841,7 +1841,7 @@ namespace mm
         default:
             break;
         }
-        if ((port::load<uint8_t>(globals::kSoundTable + 0x10u * sound) & 0x10u) == 0)
+        if ((globals::seSound(sound)->flags & 0x10u) == 0)
         {
             Se_Request(0, 0, sound, 0, 0, pitch, 0x3C, 0, 0.0f, 0.0f);
             return;

@@ -67,8 +67,12 @@ typedef struct EvAdvertiseData EvAdvertiseData;
 typedef struct EvNoodlesData EvNoodlesData;
 typedef struct EvMiddleAgedData EvMiddleAgedData;
 typedef struct EvCaveManData EvCaveManData;
+typedef struct EvShoppingTogetherData EvShoppingTogetherData;
+typedef struct EvMessageData EvMessageData;
+typedef struct EvAlienData EvAlienData;
 typedef struct EvMissingChildrenData EvMissingChildrenData;
 typedef struct CharClass CharClass;
+typedef struct CharTypeRecord CharTypeRecord;
 typedef struct CharClassVtable CharClassVtable;
 typedef struct PersonClass PersonClass;
 typedef struct StageName StageName;
@@ -392,7 +396,9 @@ struct McManager {
     int32_t scanSlot;          /* +0x0C save slot being filled, 8 per card port */
     int32_t dirIndex;          /* +0x10 next directory entry to ask for on the card */
     int32_t request;           /* +0x14 last queued request */
-    uint8_t unk_18[8];
+    int32_t result;            /* +0x18 the result of the card calls (mm_SaveFile_PrepareDir) */
+    uint32_t iconBuffer;       /* +0x1C DATA\STATIC.ICO (0x13968 bytes) while it is copied into a new save folder
+                                  (mm_SaveFile_PrepareDir) */
     GameFile *file;            /* +0x20 */
     int32_t fd;                /* +0x24 open save file descriptor */
 };
@@ -643,13 +649,14 @@ struct PhoneCallEntry {
     int32_t familyOnly;        /* +0x08 a call of the family (person 6000): it goes through only while the city is popular */
 };
 struct PhoneCalls {
-    void *unk_00;              /* +0x00 from 0x1F3B08 at construction */
+    A3DObject *iconModel;      /* +0x00 the menu window model (0x1F3B08); its node 1 is the phone icon */
     int32_t state;             /* +0x04 0 no call shown, 1 ringing, 2 answered (mm_PhoneCall_Update) */
     int32_t shown;             /* +0x08 the entry being shown */
     int32_t frames;            /* +0x0C frames in the state */
     PhoneCallEntry calls[4];   /* +0x10 queue */
-    int32_t unk_40;            /* +0x40 1 when a call is taken, negated when it ends */
-    int32_t unk_44;            /* +0x44 */
+    int32_t iconSlide;         /* +0x40 the icon slides in from 1 to 10 while a call shows; negated when it ends, it
+                                  slides back out up to 0 (mm_PhoneCall_Draw) */
+    int32_t ringFrames;        /* +0x44 frames since the call came: the ring every other 84, the blink */
     char caller[0x34];         /* +0x48 the caller's text, built once a call */
 };
 /* Event manager (0xB0 bytes); +0xA4 and +0xA8 are the events the talk script works with. */
@@ -713,10 +720,10 @@ struct EventHandler {
     uint32_t text;             /* +0x10 a text for the talk script (mm_Event_CallText) */
     uint32_t answer;           /* +0x14 the talk script's questions and actions (mm_Event_CallAnswer) */
 };
-/* An active event (0x1C bytes; some types keep more state, up to 0x7C, mm_EventData_GetSize7C): the first argument of
+/* An active event (0x1C bytes; some types keep more state, up to 0x7C, mm_TalkEventData_DataSize): the first argument of
    every mm_Ev*_ handler slot, and the three the talk works with (EventMgr talks). */
 struct EventData {
-    uint32_t vtable;           /* +0x00 the record's class (+8: its size, mm_EventData_GetSize7C) */
+    uint32_t vtable;           /* +0x00 the record's class (+8: its size, mm_TalkEventData_DataSize) */
     uint32_t update;           /* +0x04 its handler's Update slot (EventHandler.update), run every frame */
     uint8_t kind;              /* +0x08 row of the event table (EventType) */
     int8_t days;               /* +0x09 days left to run (EventType.days); when it finishes, the type's wait */
@@ -797,8 +804,11 @@ struct EvThiefData {
     uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
     ActorRef actors[4];        /* +0x0C */
     int32_t nextMonth;         /* +0x2C the month count of the next strike */
-    uint8_t unk_30[0xC];
+    int32_t unk_30;
+    int32_t countdown;         /* +0x34 60 frames between some phases */
+    int32_t searchDelay;       /* +0x38 frames until the next search for a building to rob (60) */
     int32_t strikes;           /* +0x3C buildings robbed (mm_EvThief_Answer) */
+    int32_t frames;            /* +0x40 */
 };
 /* A family member by family and member number (4 bytes; in lists 0 ends them). */
 struct MemberId {
@@ -832,6 +842,32 @@ struct EvCaveManData {
     int32_t counter;           /* +0x4C actors found (phase 3); the talk's count of families joined */
     int32_t frames;            /* +0x50 counted down or up */
     int32_t month;             /* +0x54 the month count noted; actors are told after it */
+};
+/* The shopping together event's record (mm_EvShoppingTogether_*). */
+struct EvShoppingTogetherData {
+    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    ActorRef actors[2];        /* +0x0C the one to take shopping, the shop's worker */
+    int32_t countdown;         /* +0x1C 180 at the start, one a call in phases 1 and 3 */
+    int32_t offTileCalls;      /* +0x20 calls near both with actor 0 off an open tile (pointed at after ten) */
+    int32_t farCalls;          /* +0x24 calls too far from actor 0 (pointed at every tenth) */
+    int32_t outcome;           /* +0x28 the talk's value: 0 met with 121 or more left, 1 with less, 2 met in phase 3, 3 sent
+                                  on alone */
+    int32_t frames;            /* +0x2C the event ends after 180 */
+};
+/* The alien event's record (mm_EvAlien_*). */
+struct EvAlienData {
+    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    ActorRef actors[6];        /* +0x0C 0 the resident it takes, 1 to 4 the families of the four buildings (2 the place it
+                                  lands, moved by mm_EvAlien_PickTarget, 3 its footprint is the goal), 5 the family of the
+                                  record at 0x1BDA8C */
+    int32_t month;             /* +0x3C the month count to wait for */
+    int32_t time;              /* +0x40 the clock to wait for on that day */
+    int32_t frames;            /* +0x44 counted down between phases, up at the end (720) */
+};
+/* A message event's record (mm_EvMsg_*, the payday): the EventData, then whether its phone call is up. */
+struct EvMessageData {
+    uint8_t unk_00[0x1C];      /* +0x00 the EventData */
+    int32_t callPosted;        /* +0x1C mm_EvMsg_End withdraws the call */
 };
 /* The missing children event's record (type 6, mm_EvMissingChildren_*). */
 struct EvMissingChildrenData {
@@ -1076,7 +1112,7 @@ struct StageState {
     int32_t salary;            /* +0x1C4 2500 at reset; added to the money each payday, 1250 more after a good month (mm_EvPayday_Update) */
     int32_t stage;             /* +0x1C8 stage number, -1 = none */
     int32_t quota;             /* +0x1CC population target (mm_EvQuota80_Check) */
-    uint8_t unk_1D0[4];
+    int32_t missionKind;       /* +0x1D0 the stage's mission besides the population (0 none; mm_CityScene_MissionProgress) */
     int32_t missionTarget;     /* +0x1D4 compared with mm_CityScene_MissionProgress (mm_EvMissionCleared_Check) */
     uint8_t unk_1D8[0xA8];
     int32_t unk_280;           /* +0x280 */
@@ -1085,9 +1121,8 @@ struct StageState {
    one per CHARTYPE.BIN record in the table at gp 0x1BDA3C. */
 struct CharClass {
     void *parts[4];            /* +0x00 model parts, from the part table 0x1F3B90 by record bytes 8, 9, 10 and 14 */
-    uint16_t unk_10;           /* +0x10 record byte 11 */
-    uint16_t unk_12;           /* +0x12 record byte 12 */
-    uint16_t unk_14;           /* +0x14 record byte 13 */
+    uint16_t restartFrames[3]; /* +0x10 record bytes 11 to 13: by the person's look (flags & 3; look 3 reads on into the
+                                  voice), the frame an animation with restart -2 starts over at (mm_Person_Draw) */
     uint8_t voice;             /* +0x16 record byte 2: the message sound of its talks (mm_TalkConv_Start) */
     uint8_t unk_17;
     uint16_t flags;            /* +0x18 record halfword 4; 1: other people keep clear of this one
@@ -1105,6 +1140,20 @@ struct CharClassVtable {
     uint32_t draw;             /* +0x10 on the terrain (mm_Person_Draw, mm_Char2_Draw) */
     uint32_t drawAt;           /* +0x14 at a given matrix, in the talk views (mm_Person_Draw2) */
     uint32_t slot18;           /* +0x18 empty in every class */
+};
+/* A CHARTYPE.BIN record (0x18 bytes, mm_CharType_LoadAll): one character class each. */
+struct CharTypeRecord {
+    uint8_t kind;              /* +0x00 0 a plain type, 1 a person, 2 a vehicle */
+    uint8_t unk_01;
+    uint8_t voice;             /* +0x02 */
+    uint8_t unk_03;
+    uint16_t flags;            /* +0x04 */
+    uint16_t walkSpeed;        /* +0x06 a person's walking speed in millionths */
+    uint8_t parts[3];          /* +0x08 the first three model parts (the part table at 0x1F3B90) */
+    uint8_t restartFrames[3];  /* +0x0B */
+    uint8_t part3;             /* +0x0E the fourth model part */
+    uint8_t unk_0F[5];
+    uint32_t unk_14;           /* +0x14 kept in the class (+0x1C) */
 };
 /* Person character type (0x28 bytes, mm_Person_ctor). */
 struct PersonClass {

@@ -14,6 +14,33 @@ namespace mm
 {
     using packet::addressOf;
 
+    namespace
+    {
+        // The place the talk views draw a person at: the matrix's last row (0, 0.4, -3.65, 1).
+        void setTalkPlace(Vec4 &place)
+        {
+            place.x = 0.0f;
+            place.y = std::bit_cast<float>(0x3ECCCCCDu); // 0.4
+            place.z = std::bit_cast<float>(0xC069999Au); // -3.65
+            place.w = 1.0f;
+        }
+
+        // A model put at a place: x, y and z of the matrix's last row (w is left).
+        void copyPlace(Vec4 &to, const Vec4 &from)
+        {
+            to.x = from.x;
+            to.y = from.y;
+            to.z = from.z;
+        }
+
+        // The view's animation state and time of person slot `slot`, handed to a class's draw.
+        uint32_t animSlots(GuestPtr<TalkView> view, int slot) { return (GuestPtr<int32_t>::of(view->anim[0]) + slot).address; }
+        uint32_t animTimes(GuestPtr<TalkView> view, int slot) { return (GuestPtr<ps2f>::of(view->animTime[0]) + slot).address; }
+
+        // The business card's x by its slot (the table at 0x1B1B38).
+        float cardX(int32_t slot) { return GuestPtr<float>{0x001B1B38u}[slot]; }
+    }
+
     // The pose stored for a family member in the session's 32-entry table; 0 when there is none.
     int Talk_LookupPose(GuestPtr<TalkSession> talk, uint32_t family, uint32_t member, GuestPtr<uint32_t> pose)
     {
@@ -46,14 +73,11 @@ namespace mm
         view->forcedChoice = -1;
         view->forceLit = 0;
         view->city = city;
-        const GuestPtr<CityCamera> camera = view->city->cityCamera;
-        for (uint32_t i = 0; i < 16; i += 4)
-        {
-            port::store<uint32_t>(view.address + 0x10u + i, port::load<uint32_t>(camera.address + 0x130u + i)); // eye
-            port::store<uint32_t>(view.address + 0x20u + i, port::load<uint32_t>(camera.address + 0x140u + i)); // target
-        }
-        view->buildingModel = GuestPtr<void>{port::load<uint32_t>(0x001F3B2Cu)};
-        view->personModel = GuestPtr<void>{port::load<uint32_t>(0x001F3B7Cu)};
+        const GuestPtr<Camera> camera{view->city->cityCamera.address};
+        view->eye = camera->eye;
+        view->target = camera->target;
+        view->buildingModel = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B2Cu)};
+        view->personModel = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B7Cu)};
         view->color[0] = 0.5f;
         view->color[1] = 0.5f;
         view->color[2] = 0.5f;
@@ -71,10 +95,10 @@ namespace mm
         packet[7] = 0;
         for (int i = 0; i < 4; ++i)
         {
-            view->frames[i] = GuestPtr<void>{0};
-            view->nameBoxes[i] = GuestPtr<void>{0};
+            view->frames[i] = GuestPtr<Frame>{0};
+            view->nameBoxes[i] = GuestPtr<TextBox>{0};
         }
-        view->cursorFrame = GuestPtr<void>{0};
+        view->cursorFrame = GuestPtr<Frame>{0};
         for (int slot = 0; slot < 32; ++slot)
         {
             view->anim[slot] = 7;
@@ -90,7 +114,7 @@ namespace mm
     // The choice cursor: a small frame at the cursor column, drawn at once.
     void TalkView_DrawCursor(GuestPtr<TalkView> view)
     {
-        Frame_SetRect(GuestPtr<Frame>{view->cursorFrame.address}, view->cursorX, 0x26, 0x18, 0xC);
+        Frame_SetRect(view->cursorFrame, view->cursorX, 0x26, 0x18, 0xC);
         Dma_AppendCall(static_cast<int>(view->cursorFrame.address));
     }
 
@@ -99,9 +123,9 @@ namespace mm
     // building is at +0x280.
     namespace
     {
-        GuestPtr<Vec4> farReturnEye(GuestPtr<TalkView> view) { return GuestPtr<Vec4>{view.address + 0x260u}; }
-        GuestPtr<Vec4> farReturnTarget(GuestPtr<TalkView> view) { return GuestPtr<Vec4>{view.address + 0x270u}; }
-        int farBuilding(GuestPtr<TalkView> view) { return port::load<int32_t>(view.address + 0x280u); }
+        GuestPtr<Vec4> farReturnEye(GuestPtr<TalkView> view) { return GuestPtr<Vec4>::of(view->farReturnEye); }
+        GuestPtr<Vec4> farReturnTarget(GuestPtr<TalkView> view) { return GuestPtr<Vec4>::of(view.as<TalkFarView>()->returnTarget); }
+        int farBuilding(GuestPtr<TalkView> view) { return view.as<TalkFarView>()->building; }
         GuestPtr<Camera> cityCamera(GuestPtr<TalkView> view) { return GuestPtr<Camera>{view->city->cityCamera.address}; }
 
         void cameraOnObject(GuestPtr<TalkView> view, int object)
@@ -216,20 +240,20 @@ namespace mm
     // 0x40) it goes back to the city.
     void Talk_Closed(GuestPtr<TalkSession> talk)
     {
-        const auto slot = [](uint32_t widget, uint32_t offset) { return port::load<uint32_t>(port::load<uint32_t>(widget + 8u) + offset); };
+        const auto vtableOf = [](uint32_t widget) { return GuestPtr<Widget>{widget}->vtable; };
         const uint32_t view = talk->view.address;
-        if (port::callGuest<int>(slot(view, 0x1Cu), view) != 0)
+        if (port::callGuest<int>(vtableOf(view)->getState, view) != 0)
             return;
         CityScene_PopMode(talk->city);
         talk->base.state = 0;
         if (const uint32_t conversation = talk->conversation.address)
         {
-            port::callGuest<void>(slot(conversation, 8u), conversation, 1);
+            port::callGuest<void>(vtableOf(conversation)->dtor, conversation, 1);
             talk->conversation = GuestPtr<Widget>{0};
         }
         if (const uint32_t remaining = talk->view.address)
         {
-            port::callGuest<void>(slot(remaining, 8u), remaining, 1);
+            port::callGuest<void>(vtableOf(remaining)->dtor, remaining, 1);
             talk->view = GuestPtr<TalkView>{0};
         }
         talk->city->hudVisible[1] = 1;
@@ -307,8 +331,8 @@ namespace mm
         back->y = 0.0f;
         back->z = 0.4f;
         back->w = 0.0f;
-        vf(4) = load(GuestPtr<Vec4>{view.address + 0x20u});
-        vf(5) = load(GuestPtr<Vec4>{view.address + 0x10u});
+        vf(4) = load(GuestPtr<Vec4>::of(view->target));
+        vf(5) = load(GuestPtr<Vec4>::of(view->eye));
         set(vf(4), sub(vf(4), vf(5)), XYZW);
         store(direction, vf(4));
         direction->y = 0.0f;
@@ -417,9 +441,9 @@ namespace mm
     // (+0x260) turned by the angle at +0x290.
     namespace
     {
-        GuestPtr<Vec4> ownEye(GuestPtr<TalkView> view) { return GuestPtr<Vec4>{view.address + 0x270u}; }
-        GuestPtr<Vec4> ownTarget(GuestPtr<TalkView> view) { return GuestPtr<Vec4>{view.address + 0x280u}; }
-        float personAngle(GuestPtr<TalkView> view) { return port::load<float>(view.address + 0x290u); }
+        GuestPtr<Vec4> ownEye(GuestPtr<TalkView> view) { return GuestPtr<Vec4>::of(view.as<TalkPersonView>()->eye); }
+        GuestPtr<Vec4> ownTarget(GuestPtr<TalkView> view) { return GuestPtr<Vec4>::of(view.as<TalkPersonView>()->target); }
+        ps2f personAngle(GuestPtr<TalkView> view) { return view.as<TalkPersonView>()->facing; }
 
         bool fadeDone(GuestPtr<TalkView> view) { return CityScene_GetFade(view->city) == 0; }
 
@@ -838,7 +862,7 @@ namespace mm
         card->family = family;
         card->member = member;
         card->slot = slot;
-        const int column = port::load<int32_t>(0x001B1B28u + 4u * static_cast<uint32_t>(card->slot));
+        const int column = GuestPtr<int32_t>{0x001B1B28u}[card->slot]; // the card's screen column by slot
         TextBox_SetPos(card->upperText, (column + 0x6C0) * 0x10, 0x7C00, -0x100000);
         TextBox_SetPos(card->lowerText, (column + 0x6C0) * 0x10, 0x7D60, -0x100000);
         Frame_SetRect(card->frame, column + 0xB0, 0x45, 0x18, 0xC);
@@ -918,7 +942,7 @@ namespace mm
     // The menu window's update: a pressed choice runs the close (vtable +0x10).
     void MenuWin_Update(GuestPtr<MenuWin> menuwin)
     {
-        if (ListMenu_HandleInput(menuwin->list, GuestPtr<int32_t>{menuwin.address + 0x18u}) != 0)
+        if (ListMenu_HandleInput(menuwin->list, GuestPtr<int32_t>::of(menuwin->choice)) != 0)
             port::callGuest<void>(menuwin->base.vtable->close, menuwin);
     }
 
@@ -975,10 +999,10 @@ namespace mm
                     const ps2f to = port::load<float>((opening ? dest : current) + lane);
                     port::store<float>(out + lane, static_cast<float>(u * from + t * to));
                 }
-                port::store<uint32_t>(out + 12u, 0x3F800000u);
+                GuestPtr<Vec4>{out}->w = 1.0f;
             };
-            blend(eyeAt, view.address + 0x10u, view.address + 0x270u);
-            blend(targetAt, view.address + 0x20u, view.address + 0x280u);
+            blend(eyeAt, GuestPtr<Vec4>::of(view->eye).address, ownEye(view).address);
+            blend(targetAt, GuestPtr<Vec4>::of(view->target).address, ownTarget(view).address);
             cameraAt(view, GuestPtr<Vec4>{eyeAt}, GuestPtr<Vec4>{targetAt});
             view->city->talkOverlay = 1;
         }
@@ -1081,50 +1105,44 @@ namespace mm
     // flag 2 also gets the view's person model placed there first (and the person is then 0.15 lower).
     void TalkView_DrawPerson(GuestPtr<TalkView> view, int person)
     {
-        port::GuestFrame<0xD0> frame; // the matrix at +0x90, its position row at +0xC0
-        const uint32_t base = frame.ptr().address;
+        port::GuestFrame<0xD0> frame;
         const GuestPtr<MapPerson> who = view->city->map->people + person;
         if (!who)
             return;
         const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * who->charType)};
-        Dma_AppendCall(static_cast<int>(view.address + 0x50u));
-        const GuestPtr<Vec4> matrix{base + 0x90u};
+        Dma_AppendCall(static_cast<int>(GuestPtr<uint8_t>::of(view->packet[0]).address));
+        const GuestPtr<Vec4> matrix{frame.ptr().address + 0x90u};
         Mat4_Copy(matrix, GuestPtr<Vec4>{globals::kIdentityMatrix});
-        port::store<uint32_t>(base + 0xC0u, 0);
-        port::store<uint32_t>(base + 0xC4u, 0x3ECCCCCDu);
-        port::store<uint32_t>(base + 0xC8u, 0xC069999Au);
-        port::store<uint32_t>(base + 0xCCu, 0x3F800000u);
+        setTalkPlace(matrix[3]);
         if ((cls->flags & 2u) != 0)
         {
-            const uint32_t model = view->personModel.address;
-            Mat4_Copy(GuestPtr<Vec4>{model + 0x10u}, GuestPtr<Vec4>{globals::kIdentityMatrix});
-            port::store<uint32_t>(model + 0x40u, port::load<uint32_t>(base + 0xC0u)); // the position row of the matrix at +0x10
-            port::store<uint32_t>(model + 0x44u, port::load<uint32_t>(base + 0xC4u));
-            port::store<uint32_t>(model + 0x48u, port::load<uint32_t>(base + 0xC8u));
-            Instance_DrawModel(GuestPtr<A3DObject>{view->personModel.address}, GuestPtr<Vec4>{globals::kDefaultColour}, 0, 0);
-            port::store<float>(base + 0xC4u, static_cast<float>(ps2f(port::load<float>(base + 0xC4u)) - ps2f(0.15f)));
+            const GuestPtr<A3DObject> model = view->personModel;
+            Mat4_Copy(GuestPtr<Vec4>::of(model->matrix[0]), GuestPtr<Vec4>{globals::kIdentityMatrix});
+            copyPlace(model->matrix[3], matrix[3]);
+            Instance_DrawModel(view->personModel, GuestPtr<Vec4>{globals::kDefaultColour}, 0, 0);
+            matrix[3].y = static_cast<float>(ps2f(matrix[3].y) - ps2f(0.15f));
         }
         port::callGuest<void>(cls->vtable->drawAt, cls.address, view->city.address, who.address, 0, 0,
-                              matrix.address, globals::kDefaultColour, view.address + 0xD0u, view.address + 0x1D0u);
+                              matrix.address, globals::kDefaultColour, animSlots(view, 0), animTimes(view, 0));
         idleAfterDraw(view);
     }
 
     // The same for a person turned by `angle` about y, at its own position.
     void TalkView_DrawPersonTurned(GuestPtr<TalkView> view, int person, ps2f angle)
     {
-        port::GuestFrame<0xA0> frame; // the matrix at +0x60, its position row at +0x90
-        const uint32_t base = frame.ptr().address;
+        port::GuestFrame<0xA0> frame;
         const GuestPtr<MapPerson> who = view->city->map->people + person;
         if (!who)
             return;
         const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * who->charType)};
-        Dma_AppendCall(static_cast<int>(view.address + 0x50u));
-        sdk::sceVu0RotMatrixY(base + 0x60u, globals::kIdentityMatrix, angle);
-        port::store<float>(base + 0x90u, static_cast<float>(who->x));
-        port::store<float>(base + 0x94u, static_cast<float>(who->y));
-        port::store<float>(base + 0x98u, static_cast<float>(who->z));
+        Dma_AppendCall(static_cast<int>(GuestPtr<uint8_t>::of(view->packet[0]).address));
+        const GuestPtr<Vec4> matrix{frame.ptr().address + 0x60u};
+        sdk::sceVu0RotMatrixY(matrix.address, globals::kIdentityMatrix, angle);
+        matrix[3].x = static_cast<float>(who->x);
+        matrix[3].y = static_cast<float>(who->y);
+        matrix[3].z = static_cast<float>(who->z);
         port::callGuest<void>(cls->vtable->drawAt, cls.address, view->city.address, who.address, 0, 0,
-                              base + 0x60u, globals::kDefaultColour, view.address + 0xD0u, view.address + 0x1D0u);
+                              matrix.address, globals::kDefaultColour, animSlots(view, 0), animTimes(view, 0));
         idleAfterDraw(view);
     }
 
@@ -1194,7 +1212,7 @@ namespace mm
         const GuestPtr<Vec4> matrix = worldMatrix(modelNode(GuestPtr<A3DObject>{card->model.address}, 9)); // the gauge
         Mat4_Copy(matrix, GuestPtr<Vec4>{globals::kIdentityMatrix});
         const ps2f length = along / span;
-        matrix[3].x = port::load<float>(0x001B1B38u + 4u * static_cast<uint32_t>(card->slot));
+        matrix[3].x = cardX(card->slot);
         port::store<uint32_t>(addressOf(matrix[3].y), 0xBD79DB23u);
         port::store<uint32_t>(addressOf(matrix[3].z), 0xC08CCCCDu);
         matrix[0].x = length; // the gauge's length as its x scale
@@ -1311,7 +1329,7 @@ namespace mm
         {
             if (view)
             {
-                port::store<uint32_t>(view.address + 8u, vtable);
+                view->base.vtable = GuestPtr<WidgetVtable>{vtable};
                 TalkView_dtor(view, 0);
                 if (0 < deleteFlag)
                     sdk::operator_delete(view.address);
@@ -1409,19 +1427,18 @@ namespace mm
     // counted.
     void TalkView_SetTarget(GuestPtr<TalkView> view, int building, int family)
     {
-        const uint32_t v = view.address;
         view->building = building;
         view->family = family;
         for (uint32_t i = 0; i < 4u; ++i)
         {
             const uint32_t box = sdk::operator_new(0x40u);
-            port::store<uint32_t>(v + 0x78u + 4u * i, box != 0u ? TextBox_Init(GuestPtr<TextBox>{box}, 0xC, 1, -1).address : 0u);
+            view->nameBoxes[i] = box != 0u ? TextBox_Init(GuestPtr<TextBox>{box}, 0xC, 1, -1) : GuestPtr<TextBox>{0u};
             const uint32_t frame = sdk::operator_new(0xC0u);
-            port::store<uint32_t>(v + 0x88u + 4u * i, frame != 0u ? Frame_ctor(GuestPtr<Frame>{frame}, 0, 0, 0, 0x18, 0xC, 0x10000000u).address : 0u);
+            view->frames[i] = frame != 0u ? Frame_ctor(GuestPtr<Frame>{frame}, 0, 0, 0, 0x18, 0xC, 0x10000000u) : GuestPtr<Frame>{0u};
         }
         const uint32_t cursor = sdk::operator_new(0xC0u);
-        view->cursorFrame = GuestPtr<void>{cursor != 0u ? Frame_ctor(GuestPtr<Frame>{cursor}, 0x33, 0x64, 0x64, 0x18, 0xC, 0x10000000u).address : 0u};
-        view->unk_9C = static_cast<int32_t>(port::load<uint32_t>(0x001F3B40u));
+        view->cursorFrame = cursor != 0u ? Frame_ctor(GuestPtr<Frame>{cursor}, 0x33, 0x64, 0x64, 0x18, 0xC, 0x10000000u) : GuestPtr<Frame>{0u};
+        view->awayModel = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B40u)};
         view->zoom = std::bit_cast<float>(0xBE99999Au);
         view->idleTime = 0.0f;
         view->scrollMode = 0;
@@ -1467,12 +1484,12 @@ namespace mm
     {
         TalkView_ctor(view, city);
         view->base.vtable = GuestPtr<WidgetVtable>{0x001BD540u};
-        port::store<int32_t>(view.address + 0x280u, object);
+        view.as<TalkFarView>()->building = object;
         TalkView_SetTarget(view, farBuilding(view), 0);
         TalkView_CollectOccupants(view);
-        const uint32_t camera = city->cityCamera.address;
-        *farReturnEye(view) = *GuestPtr<Vec4>{camera + 0x130u};
-        *farReturnTarget(view) = *GuestPtr<Vec4>{camera + 0x140u};
+        const GuestPtr<Camera> camera{city->cityCamera.address};
+        view->farReturnEye = camera->eye;
+        view.as<TalkFarView>()->returnTarget = camera->target;
         return view;
     }
 
@@ -1510,27 +1527,28 @@ namespace mm
     {
         port::GuestFrame<0xD0> frame;
         const uint32_t line = frame.ptr().address + 0x60u, number = frame.ptr().address + 0xC8u;
-        uint32_t charType, variant, member;
+        uint32_t charType, variant;
+        GuestPtr<FamilyMember> member;
         if (card->person == 6000)
         {
             const GuestPtr<FamilyMember> who = GuestPtr<FamilyMember>::of(Family_Get(card->family, 0)->members[0]) + card->member;
             charType = who->charType;
             variant = who->look;
-            member = who.address;
+            member = who;
         }
         else
         {
             const GuestPtr<MapPerson> person{card->city->map->people.address + 0x30u * static_cast<uint32_t>(card->person)};
             Map_GetRecord(card->city->map, person->work);
-            const uint32_t family = Family_Get(person->family, 0).address;
+            const GuestPtr<Family> family = Family_Get(person->family, 0);
             charType = person->charType;
-            member = family + 0x48u * person->member + 0x24u;
+            member = GuestPtr<FamilyMember>::of(family->members[0]) + person->member;
             variant = person->flags & 3u;
         }
         const int friendship = sdk::fptosi(card->friendship);
         const uint32_t tier = friendship <= 0 ? 0u : (friendship < 0x18 ? 1u : (friendship < 0x30 ? 2u : (friendship < 100 ? 3u : 4u)));
-        Text_FormatPadded(GuestPtr<char>{number}, port::load<uint8_t>(member + 2u), 2);
-        sdk::sprintf(line, 0x001B9048u, member + 0x38u, member + 0x28u, number);
+        Text_FormatPadded(GuestPtr<char>{number}, member->age, 2);
+        sdk::sprintf(line, 0x001B9048u, GuestPtr<char>::of(member->name2[0]).address, GuestPtr<char>::of(member->name[0]).address, number);
         TextBox_SetText(card->upperText, GuestPtr<char>{line}, 0);
         sdk::sprintf(line, 0x001B9058u, port::load<uint32_t>(0x001B1B10u + 4u * tier));
         const uint32_t table = port::load<uint32_t>(0x001F3CE8u);
@@ -1667,9 +1685,10 @@ namespace mm
             return;
         const uint32_t node = worldMatrix(modelNode(card->model, 8)).address;
         Mat4_Copy(GuestPtr<Vec4>{node}, GuestPtr<Vec4>{0x001B2550u});
-        port::store<uint32_t>(node + 0x30u, port::load<uint32_t>(0x001B1B38u + 4u * static_cast<uint32_t>(card->slot)));
-        port::store<uint32_t>(node + 0x34u, 0xBD79DB23u);
-        port::store<uint32_t>(node + 0x38u, 0xC08CCCCDu);
+        const GuestPtr<Vec4> place = GuestPtr<Vec4>{node} + 3;
+        place->x = cardX(card->slot);
+        place->y = std::bit_cast<float>(0xBD79DB23u); // -0.0608
+        place->z = std::bit_cast<float>(0xC08CCCCDu); // -4.4
         const auto scale = [&](uint32_t offset, ps2f factor) {
             const ps2f value = ps2f(std::bit_cast<float>(port::load<uint32_t>(node + offset))) * factor;
             port::store<uint32_t>(node + offset, std::bit_cast<uint32_t>(value.v));
@@ -1836,7 +1855,7 @@ namespace mm
         const uint32_t menu = conv->menu.address;
         if (callSlot(menu) != 0)
             return result;
-        int32_t choice = port::load<int32_t>(menu + 0x18u);
+        int32_t choice = GuestPtr<MenuWin>{menu}->choice;
         if (choice == -1)
             choice = Words_CountChoices(conv->script, conv->city, conv->code) - 1;
         Words_ApplyChoice(conv->script, conv->city, conv->code, choice);
@@ -1844,7 +1863,7 @@ namespace mm
         conv->base.base.state = 3;
         TalkConv_NextLine(conv);
         if (conv->panel.address != 0u)
-            port::store<uint32_t>(conv->panel.address + 0x10u, port::load<uint32_t>(0x001C5540u));
+            conv->panel.as<TalkMoney>()->amount = globals::stageState()->money;
         return result;
     }
 
@@ -1912,27 +1931,22 @@ namespace mm
         const GuestPtr<Family> record = Family_Get(family, 0);
         if (!record)
             return;
-        const uint32_t cls = port::load<uint32_t>(globals::charClassTable.get() + 4u * port::load<uint16_t>(record.address + 0x48u * static_cast<uint32_t>(member) + 0x24u));
-        Dma_AppendCall(static_cast<int>(view.address + 0x50u));
-        const uint32_t matrix = sp + 0xA0u, translation = sp + 0xD0u;
-        Mat4_Copy(GuestPtr<Vec4>{matrix}, GuestPtr<Vec4>{0x001B2550u});
-        port::store<uint32_t>(translation, 0u);
-        port::store<uint32_t>(translation + 4u, 0x3ECCCCCDu);
-        port::store<uint32_t>(translation + 8u, 0xC069999Au);
-        port::store<uint32_t>(translation + 0xCu, 0x3F800000u);
-        if ((port::load<uint16_t>(cls + 0x18u) & 2u) != 0)
+        const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * record->members[member].charType)};
+        Dma_AppendCall(static_cast<int>(GuestPtr<uint8_t>::of(view->packet[0]).address));
+        const GuestPtr<Vec4> matrix{sp + 0xA0u};
+        Mat4_Copy(matrix, GuestPtr<Vec4>{0x001B2550u});
+        setTalkPlace(matrix[3]);
+        if ((cls->flags & 2u) != 0)
         {
-            const uint32_t node = view->personModel.address + 0x10u;
-            Mat4_Copy(GuestPtr<Vec4>{node}, GuestPtr<Vec4>{0x001B2550u});
-            port::store<uint32_t>(node + 0x30u, port::load<uint32_t>(translation));
-            port::store<uint32_t>(node + 0x34u, port::load<uint32_t>(translation + 4u));
-            port::store<uint32_t>(node + 0x38u, port::load<uint32_t>(translation + 8u));
-            Instance_DrawModel(GuestPtr<A3DObject>{view->personModel.address}, GuestPtr<Vec4>{0x001B26C0u}, 0, 0);
-            const ps2f dropped = ps2f(std::bit_cast<float>(port::load<uint32_t>(translation + 4u))) - ps2f(std::bit_cast<float>(0x3E19999Au));
-            port::store<uint32_t>(translation + 4u, std::bit_cast<uint32_t>(dropped.v));
+            const GuestPtr<A3DObject> model = view->personModel;
+            Mat4_Copy(GuestPtr<Vec4>::of(model->matrix[0]), GuestPtr<Vec4>{0x001B2550u});
+            copyPlace(model->matrix[3], matrix[3]);
+            Instance_DrawModel(view->personModel, GuestPtr<Vec4>{0x001B26C0u}, 0, 0);
+            const ps2f dropped = ps2f(matrix[3].y) - ps2f(std::bit_cast<float>(0x3E19999Au));
+            matrix[3].y = dropped.v;
         }
-        port::callGuest<void>(GuestPtr<CharClass>{cls}->vtable->drawAt, cls, view->city, 0, family, member, matrix, 0x001B26C0u,
-                              view.address + 0xD0u, view.address + 0x1D0u);
+        port::callGuest<void>(cls->vtable->drawAt, cls.address, view->city, 0, family, member, matrix.address, 0x001B26C0u,
+                              animSlots(view, 0), animTimes(view, 0));
         if (view->animTime[0] == ps2f(0.0f) && view->anim[0] != 7)
             view->anim[0] = 7;
     }
@@ -2299,26 +2313,27 @@ namespace mm
         using namespace vu0;
         port::GuestFrame<0x140> frame;
         const uint32_t sp = frame.ptr().address;
-        const uint32_t matrix = sp + 0xB0u, row3 = sp + 0xE0u, pos = sp + 0xF0u, colour = sp + 0x100u;
+        const GuestPtr<Vec4> matrix{sp + 0xB0u}, pos{sp + 0xF0u}, colour{sp + 0x100u};
+        Vec4 &row3 = matrix[3];
         constexpr uint32_t kDimAway = 0x001B1AD0u, kDimPerson = 0x001B1AE0u, kSeparator = 0x001B8FF8u;
         const ps2f step = std::bit_cast<float>(0x3E99999Au); // 0.3
         const ps2f leftEdge = std::bit_cast<float>(0xBF4CCCCDu), rightEdge = std::bit_cast<float>(0x3F4CCCCDu);
         const ps2f cullEdge = -1.0f;
 
-        port::store<uint32_t>(pos, port::load<uint32_t>(view.address + 0xA4u));
-        port::store<uint32_t>(pos + 4u, 0x3ECCCCCDu);
-        port::store<uint32_t>(pos + 8u, 0xC069999Au);
-        port::store<uint32_t>(pos + 0xCu, 0x3F800000u);
+        pos->x = view->zoom;
+        pos->y = std::bit_cast<float>(0x3ECCCCCDu); // 0.4
+        pos->z = std::bit_cast<float>(0xC069999Au); // -3.65
+        pos->w = 1.0f;
         int highlighted = view->chosenSlot;
         if (highlighted == -1)
             highlighted = view->cursorSlot;
         int slot = 0, drawn = 0;
         bool nobodyHome = false;
 
-        const auto posX = [&] { return ps2f(std::bit_cast<float>(port::load<uint32_t>(pos))); };
+        const auto posX = [&] { return ps2f(pos->x); };
         const auto advance = [&] {
             ++slot;
-            port::store<uint32_t>(pos, std::bit_cast<uint32_t>((posX() + step).v));
+            pos->x = (posX() + step).v;
         };
         // The screen x for a label at the position: 9000 * (x + 0.3) rounded towards zero to a multiple of 16, plus `bias`.
         const auto screenX = [&](int bias) {
@@ -2330,10 +2345,9 @@ namespace mm
         // Someone away: the second model at the position, swaying with a phase of the view's idle time plus a number of frames from the
         // seed (the square root of its float through VU0, whose bits modulo 90 give the frames).
         const auto drawAway = [&](int seed, uint32_t slotAt) {
-            const uint32_t model = static_cast<uint32_t>(view->unk_9C);
-            Mat4_Copy(GuestPtr<Vec4>{model + 0x10u}, GuestPtr<Vec4>{globals::kIdentityMatrix});
-            for (uint32_t i = 0; i < 12; i += 4)
-                port::store<uint32_t>(model + 0x40u + i, port::load<uint32_t>(pos + i));
+            const GuestPtr<A3DObject> model = view->awayModel;
+            Mat4_Copy(GuestPtr<Vec4>::of(model->matrix[0]), GuestPtr<Vec4>{globals::kIdentityMatrix});
+            copyPlace(model->matrix[3], *pos);
             port::store<int32_t>(slotAt, seed);
             vf(4) = load(GuestPtr<Vec4>{slotAt});
             set(vf(4), itof0(vf(4)), XYZW);
@@ -2343,52 +2357,50 @@ namespace mm
             ps2f phase = view->idleTime + fromInt(port::load<int32_t>(slotAt) % 90);
             if (!(phase < ps2f(180.0f)))
                 phase = phase - ps2f(180.0f);
-            Instance_DrawSwayingIfRoom(GuestPtr<A3DObject>{static_cast<uint32_t>(view->unk_9C)}, 0, phase);
-            Instance_DrawModel(GuestPtr<A3DObject>{static_cast<uint32_t>(view->unk_9C)}, GuestPtr<Vec4>{nobodyHome ? kDimAway : globals::kDefaultColour}, 0, 0);
+            Instance_DrawSwayingIfRoom(view->awayModel, 0, phase);
+            Instance_DrawModel(view->awayModel, GuestPtr<Vec4>{nobodyHome ? kDimAway : globals::kDefaultColour}, 0, 0);
         };
         // Someone there: the class draws it (for a family member the person is 0 and the family and member are given, for a person on
         // the map it is the record).
         const auto drawNormal = [&](GuestPtr<CharClass> cls, uint32_t person, int family, int member) {
-            sdk::sceVu0RotMatrixY(matrix, globals::kIdentityMatrix, posX());
-            for (uint32_t i = 0; i < 16; i += 4)
-                port::store<uint32_t>(row3 + i, port::load<uint32_t>(pos + i));
+            sdk::sceVu0RotMatrixY(matrix.address, globals::kIdentityMatrix, posX());
+            row3 = *pos;
             if (slot == highlighted)
-                for (uint32_t i = 0; i < 16; i += 4)
-                    port::store<uint32_t>(colour + i, port::load<uint32_t>(globals::kDefaultColour + i));
+                *colour = *GuestPtr<Vec4>{globals::kDefaultColour};
             else
             {
-                port::store<uint32_t>(colour, 0x3F4CCCCDu);
-                port::store<uint32_t>(colour + 4u, 0x3F4CCCCDu);
-                port::store<uint32_t>(colour + 8u, 0x3F4CCCCDu);
-                port::store<uint32_t>(colour + 0xCu, 0u);
+                colour->x = std::bit_cast<float>(0x3F4CCCCDu); // 0.8
+                colour->y = std::bit_cast<float>(0x3F4CCCCDu);
+                colour->z = std::bit_cast<float>(0x3F4CCCCDu);
+                colour->w = 0.0f;
             }
             if ((cls->flags & 2u) != 0)
             {
-                const uint32_t model = view->personModel.address;
-                Mat4_Copy(GuestPtr<Vec4>{model + 0x10u}, GuestPtr<Vec4>{globals::kIdentityMatrix});
-                for (uint32_t i = 0; i < 12; i += 4)
-                    port::store<uint32_t>(model + 0x40u + i, port::load<uint32_t>(pos + i));
-                Instance_DrawModel(GuestPtr<A3DObject>{model}, GuestPtr<Vec4>{nobodyHome ? kDimPerson : globals::kDefaultColour}, 0, 0);
-                const ps2f lowered = ps2f(std::bit_cast<float>(port::load<uint32_t>(row3 + 4u))) - ps2f(std::bit_cast<float>(0x3E19999Au));
-                port::store<uint32_t>(row3 + 4u, std::bit_cast<uint32_t>(lowered.v));
+                const GuestPtr<A3DObject> model = view->personModel;
+                Mat4_Copy(GuestPtr<Vec4>::of(model->matrix[0]), GuestPtr<Vec4>{globals::kIdentityMatrix});
+                copyPlace(model->matrix[3], *pos);
+                Instance_DrawModel(model, GuestPtr<Vec4>{nobodyHome ? kDimPerson : globals::kDefaultColour}, 0, 0);
+                const ps2f lowered = ps2f(row3.y) - ps2f(std::bit_cast<float>(0x3E19999Au));
+                row3.y = lowered.v;
             }
             port::callGuest<void>(cls->vtable->drawAt, cls.address, view->city.address, person, family, member,
-                                  matrix, colour, view.address + 0xD0u + 4u * static_cast<uint32_t>(slot), view.address + 0x1D0u + 4u * static_cast<uint32_t>(slot));
+                                  matrix.address, colour.address, animSlots(view, slot), animTimes(view, slot));
             if (view->animTime[slot] == ps2f(0.0f) && view->anim[slot] != 7)
                 view->anim[slot] = 7;
         };
         // The name of the member at `record` in the next name box, and its friendship frame when the band is not 0.
         const auto drawLabel = [&](uint32_t record, int row, int depth, int family, int member) {
-            const GuestPtr<TextBox> box{view->nameBoxes[drawn].address};
+            const GuestPtr<TextBox> box = view->nameBoxes[drawn];
+            const GuestPtr<FamilyMember> who{record};
             TextBox_SetPos(box, screenX(0x7060), (row + 0x790) * 16, depth);
-            TextBox_SetText(box, GuestPtr<char>{record + 0x38u}, 0);
+            TextBox_SetText(box, GuestPtr<char>::of(who->name2[0]), 0);
             TextBox_AppendText(box, GuestPtr<char>{kSeparator}, 0);
-            TextBox_AppendText(box, GuestPtr<char>{record + 0x28u}, 0);
+            TextBox_AppendText(box, GuestPtr<char>::of(who->name[0]), 0);
             TextBox_Draw(box);
             const int band = Family_GetFriendshipBand(family, member);
             if (band != 0)
             {
-                const GuestPtr<Frame> frameObject{view->frames[drawn].address};
+                const GuestPtr<Frame> frameObject = view->frames[drawn];
                 const int left = screenX(0x6EE0), top = (row + 0x790) * 16;
                 Frame_SetCorners(frameObject, left, top, left + 0x180, top + 0xC0);
                 Frame_SetStyle(frameObject, band + 9);

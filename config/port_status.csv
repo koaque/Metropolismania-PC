@@ -773,7 +773,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0012A2C0,mm_Camera_BuildPacket,216,game,gfx,verified,no,1,2,"the camera's VU1 packet: a GS register write, then +0x10..+0x12F (matrices, fog) unpacked to VU1 address 0"
 0x0012A3A0,mm_Camera_UpdateProjection,572,game,camera,verified,no,2,2,builds the projection and screen matrices from the view parameters at +0x2F4..+0x300
 0x0012A5E0,mm_Camera_SetFogRange,108,game,camera,verified,no,1,0,fog near a0 / far a1 (+0x308/+0x304) and the fog coefficients at +0x11C/+0x12C for a 0..255 fog value
-0x0012A650,mm_LightSet_SetField20,12,game,gfx,verified,no,1,0,"(provisional) (*this)+0x20 = a1, from the time-of-day update"
+0x0012A650,mm_Camera_SetFogColour,12,game,gfx,verified,no,1,0,"the fog colour (GS FOGCOL) in the camera's packet (word 8), from the sky's low colour each frame"
 0x0012A660,mm_Camera_UpdateLightMatrices,88,game,camera,verified,no,1,2,sceVu0NormalLightMatrix from the three light directions (+0x160..) and sceVu0LightColorMatrix from the light colours and ambient (+0x190..)
 0x0012A6C0,mm_Camera_UpdateMatrices,136,game,camera,verified,no,29,2,"dir = normalize(target - eye); sceVu0CameraMatrix into this+0x1E0 with up vector this+0x150; this+0x10 = this+0x220 x view, this+0x50 = this+0x260 x view"
 0x0012A750,mm_Camera_DeletingDtor,84,game,camera,verified,yes,4,2,"base destructor, then delete when the flag is > 0"
@@ -828,13 +828,13 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0012EF00,mm_CharType_Update,8,game,char,verified,no,0,0,base slot +0xC: returns 0
 0x0012EF10,mm_CharType_dtor,76,game,char,verified,yes,2,1,base vtable 0x1BCE70; delete when the flag is > 0
 0x0012EF60,mm_CharType_ctor,180,game,char,verified,no,3,0,"base vtable 0x1BCE70; four model parts from the table 0x1F3B90 by record bytes 8/9/10/14, sizes from bytes 11-13, ids from bytes 2/4/0x14"
-0x0012F020,mm_Char2_UpdateSpeedA,3808,game,char,verified,no,1,4,"a vehicle's speed (+0x2C) for its next step: brakes behind vehicles heading the same way, at junctions against the lights (trafficPhase), gains on straight road; direction 4 tests the tiles around (mm_Char_CheckNeighbourTile)"
+0x0012F020,mm_Char2_UpdateSpeedUndrawn,3808,game,char,verified,no,1,4,"a vehicle's speed (+0x2C) for its next step: brakes behind vehicles heading the same way, at junctions against the lights (trafficPhase), gains on straight road; direction 4 tests the tiles around (mm_Char_CheckNeighbourTile)"
 0x0012FF00,mm_Char_CheckNeighbourTile,440,game,char,verified,no,2,2,"(provisional, was mm_Path_CheckNeighbour) neighbour tile test shared by both probe functions (tables 0x1AEFF0/0x1AF020)"
-0x001300C0,mm_Char2_UpdateSpeedB,3808,game,char,verified,no,1,4,"mm_Char2_UpdateSpeedA with gentler rules (brake 80, slow 20, follow at a 20th, gain 10), for movement mode B"
-0x00130FA0,mm_Char2_MoveA,2300,game,char,verified,no,1,8,"class-2 movement mode A: on one frame in four steers for the waypoint or, on road, back into its lane (turning up to 0.16), sets the speed (mm_Char2_UpdateSpeedA), then moves along its heading and leaves the old tile's list"
-0x001318A0,mm_Char2_MoveB,2280,game,char,verified,no,1,8,"class-2 movement mode B: mode A steering every frame, turning up to 0.04, with mm_Char2_UpdateSpeedB"
+0x001300C0,mm_Char2_UpdateSpeedDrawn,3808,game,char,verified,no,1,4,"mm_Char2_UpdateSpeedUndrawn with gentler rules (brake 80, slow 20, follow at a 20th, gain 10), for a drawn vehicle"
+0x00130FA0,mm_Char2_MoveUndrawn,2300,game,char,verified,no,1,8,"a vehicle not drawn since its last update (person flag 0x1000 clear): on one frame in four steers for the waypoint or, on road, back into its lane (turning up to 0.16), sets the speed (mm_Char2_UpdateSpeedUndrawn), then moves along its heading and leaves the old tile's list"
+0x001318A0,mm_Char2_MoveDrawn,2280,game,char,verified,no,1,8,"a vehicle drawn since its last update (flag 0x1000): the same steering every frame, turning up to 0.04, with mm_Char2_UpdateSpeedDrawn"
 0x00132190,mm_Char2_Draw,612,game,char,verified,no,0,4,"class 2 slot +0x10: instance of the character on the terrain (height from 0x1415E0), within the draw range (0x1BD980)"
-0x00132400,mm_Char2_Update,1048,game,char,verified,yes,0,10,class 2 slot +0xC: moves the character (mode A or B) and updates its tile
+0x00132400,mm_Char2_Update,1048,game,char,verified,yes,0,10,class 2 slot +0xC: moves the vehicle (mm_Char2_MoveDrawn or mm_Char2_MoveUndrawn by the drawn flag) and updates its tile
 0x00132820,mm_Char2_dtor,96,game,char,verified,yes,0,2,"vtable 0x1BCE90, then the base destructor"
 0x00132880,mm_Char2_ctor,52,game,char,verified,no,1,1,"base constructor, vtable 0x1BCE90"
 0x001328C0,mm_CharType_LoadAll,416,game,char,verified,yes,1,11,"loads DATA\BIN\CHARTYPE.BIN and creates one class object per 0x18-byte record (class 0 base, 1 person, 2 class 2) in the table at gp 0x1BDA3C"
@@ -2082,8 +2082,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00196720,mm_EvShopping_Update,592,game,event,verified,no,0,3,type 8: Update
 0x00196970,mm_EvShopping_Start,120,game,event,verified,no,0,1,type 8: Start
 0x001969F0,mm_EvShopping_Check,1312,game,event,verified,indirect,0,8,"type 8 ""Shopping"": Check"
-0x00196F10,mm_EventData_GetSize7C,8,game,event,verified,no,0,0,(provisional) vtable size slot: 0x7C
-0x00196F20,mm_EventData_GetSize1C,8,game,event,verified,no,1,0,(provisional) vtable size slot: 0x1C (used by the event manager constructor)
+0x00196F10,mm_TalkEventData_DataSize,8,game,event,verified,no,0,0,"the talk event record class's data size (vtable 0x1BD8F8 slot +8, EventMgr.talks[0]): 0x7C"
+0x00196F20,mm_EventData_DataSize,8,game,event,verified,no,1,0,the base event record class's data size (vtable 0x1BD908 slot +8): 0x1C bytes after its first two words
 0x00196F30,mm_EvNoodles_Answer,192,game,event,verified,yes,0,1,type 13: Answer
 0x00196FF0,mm_EvNoodles_End,248,game,event,verified,no,0,2,type 13: End
 0x001970F0,mm_EvNoodles_Update,5984,game,event,verified,yes,0,19,type 13: Update

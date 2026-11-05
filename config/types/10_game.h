@@ -24,16 +24,20 @@ typedef struct TalkSession TalkSession;
 typedef struct TalkView TalkView;
 typedef struct MyHomeView MyHomeView;
 typedef struct TalkPersonView TalkPersonView;
+typedef struct TalkFarView TalkFarView;
 typedef struct TalkPose TalkPose;
 typedef struct WordsCtx WordsCtx;
 typedef struct Words Words;
 typedef struct Stamina Stamina;
 typedef struct MemberStatus MemberStatus;
-typedef struct CharTypeRecord CharTypeRecord;
 typedef struct SeRequest SeRequest;
 typedef struct SeVoice SeVoice;
 typedef struct SeSound SeSound;
 typedef struct ClaimThresholds ClaimThresholds;
+typedef struct SoundStatus SoundStatus;
+typedef struct BgmTrack BgmTrack;
+typedef struct AmbienceSound AmbienceSound;
+typedef struct AmbienceCell AmbienceCell;
 typedef struct ClaimEntry ClaimEntry;
 typedef struct ClaimSupply ClaimSupply;
 typedef struct ClaimTally ClaimTally;
@@ -161,7 +165,7 @@ struct MapPerson {
     uint16_t family;           /* +0x2A */
     union {
         uint16_t introduces;   /* +0x2C family this resident can introduce */
-        uint16_t speed;        /* +0x2C vehicles: in 1/10000 of a tile a frame (mm_Char2_UpdateSpeedA) */
+        uint16_t speed;        /* +0x2C vehicles: in 1/10000 of a tile a frame (mm_Char2_UpdateSpeedUndrawn) */
     };
     union {
         struct {
@@ -383,16 +387,6 @@ struct MemberStatus {
     uint8_t status;            /* bits 0-1, bits 2-3, level in the high nibble */
 };
 
-/* Character type record from CHARTYPE.BIN (0x18 bytes). */
-struct CharTypeRecord {
-    uint8_t charClass;         /* +0x00 1 person, 2 other */
-    uint8_t unk_01[7];
-    uint8_t parts[3];          /* +0x08 model parts */
-    uint8_t unk_0B[3];
-    uint8_t part4;             /* +0x0E */
-    uint8_t unk_0F[9];
-};
-
 /* Player stamina (0xC bytes) at 0x1BDBB8. */
 struct Stamina {
     int32_t unk_00;
@@ -429,25 +423,26 @@ struct TalkPose {
     uint8_t pose;
 };
 
-/* Talk view base (0x270 bytes, vtable 0x1BD450): the building or family on screen with its people.
-   The near/far subclasses add camera vectors after it (allocations of 0x290 and 0x2A0 bytes). */
+/* Talk view base (0x270 bytes, vtable 0x1BD450): the building or family on screen with its people. The near views
+   (TalkPersonView) and the far building view (TalkFarView) add camera vectors after it (allocations of 0x2A0 and
+   0x290 bytes); the far view keeps its return eye over the targets. */
 struct TalkView {
     Widget base;
     int32_t unk_0C;
-    float eye[4];              /* +0x10 camera eye at open */
-    float target[4];           /* +0x20 camera target at open */
-    void *buildingModel;       /* +0x30 */
+    Vec4 eye;                  /* +0x10 camera eye at open */
+    Vec4 target;               /* +0x20 camera target at open */
+    A3DObject *buildingModel;  /* +0x30 the talk building model (0x1F3B2C) */
     CityScene *city;           /* +0x34 */
     uint8_t unk_38[8];
     float color[4];            /* +0x40 */
     uint8_t packet[0x20];      /* +0x50 draw packet */
     int32_t building;          /* +0x70 0x3F80 = by family */
     int32_t family;            /* +0x74 */
-    void *nameBoxes[4];        /* +0x78 */
-    void *frames[4];           /* +0x88 */
-    void *cursorFrame;         /* +0x98 */
-    int32_t unk_9C;
-    void *personModel;         /* +0xA0 */
+    TextBox *nameBoxes[4];     /* +0x78 the names shown */
+    Frame *frames[4];          /* +0x88 their friendship frames */
+    Frame *cursorFrame;        /* +0x98 */
+    A3DObject *awayModel;      /* +0x9C the first CHAROBJ.A3D model (0x1F3B40), drawn for someone away */
+    A3DObject *personModel;    /* +0xA0 the talk person model (0x1F3B7C), under classes with flag 2 */
     float zoom;                /* +0xA4 */
     float idleTime;            /* +0xA8 counts frames, wraps at 180 */
     int32_t scrollMode;        /* +0xAC 1 zoom, 2 scroll */
@@ -466,9 +461,14 @@ struct TalkView {
     int32_t choosing;          /* +0x254 */
     int32_t forceLit;          /* +0x258 */
     int32_t unk_25C;
-    int32_t targetObject;      /* +0x260 */
-    int32_t targetPerson;      /* +0x264 */
-    uint8_t unk_268[8];
+    union {
+        struct {
+            int32_t targetObject;      /* +0x260 the building, or the family on the phone */
+            int32_t targetPerson;      /* +0x264 the person, or the member on the phone */
+            uint8_t unk_268[8];
+        };
+        Vec4 farReturnEye;             /* +0x260 the far building view hands the camera back to it (TalkFarView) */
+    };
 };
 
 /* The near and far views of a person (allocated 0x290 and 0x2A0 bytes): the talk view plus the camera. */
@@ -477,6 +477,14 @@ struct TalkPersonView {
     Vec4 eye;                  /* +0x270 behind the person, 1.3 along the view direction from 0.55 under the person */
     Vec4 target;               /* +0x280 the person, 0.9 under the position */
     float facing;              /* +0x290 atan2 of the view direction (x, z) */
+};
+
+/* The far view of a building (0x290 bytes, vtable 0x1BD540, mm_TalkBldgFar_ctor): the talk view, the camera target to
+   return to (the eye is TalkView.farReturnEye) and the building. */
+struct TalkFarView {
+    TalkView base;
+    Vec4 returnTarget;         /* +0x270 */
+    int32_t building;          /* +0x280 */
 };
 
 /* The view inside a home (0x2A0 bytes, vtable 0x1BD810): the talk view plus the walk-around state (mm_MyHome_ctor). */
@@ -629,6 +637,42 @@ struct SeVoice {
     uint8_t unk_2B[5];
 };
 
+/* The sound driver's status (0x40 bytes) as YYSOUND sends it (0x20B7C0), and the game's view of it with the commands
+   still queued merged in (0x20B840, mm_Sound_GetStatus). */
+struct SoundStatus {
+    uint32_t unk_00;
+    uint32_t midiPlaying;      /* +0x04 bit per sequence slot */
+    uint32_t wavePlaying;      /* +0x08 bit per wave voice */
+    uint32_t busy;             /* +0x0C the driver has work */
+    uint8_t unk_10[8];
+    uint32_t unk_18;           /* +0x18 a third mask, merged with the queued one at 0x1BDD54 */
+    uint8_t unk_1C[0x24];
+};
+
+/* A city music track (2 bytes, 13 at 0x1F8120): 0 to 2 the moods' own, 3 to 12 the tracks bought (mm_Bgm_SetTrackSlot). */
+struct BgmTrack {
+    uint8_t bank;              /* +0x00 the music bank, 0xFF = free */
+    uint8_t enabled;           /* +0x01 */
+};
+
+/* An ambient sound (0x1C bytes, 11 at 0x1B35F0): where it is spread over the map and when it plays. */
+struct AmbienceSound {
+    uint8_t sound;             /* +0x00 the effect */
+    uint8_t monthFrom;         /* +0x01 mm_Se_MatchSchedule's months (0 any) */
+    uint8_t monthTo;           /* +0x02 */
+    uint8_t length;            /* +0x03 minutes of the window in each hour (0 the whole hour range) */
+    uint8_t lead;              /* +0x04 */
+    uint8_t unk_05[3];
+    uint8_t hours[4][2];       /* +0x08 from and to by the day's weather (0 fine, 1 to 3); from 0xFF: silent then */
+    uint16_t counts[6];        /* +0x10 cells of the 4096-cell grid per variant (mm_Se_BuildAmbienceMap) */
+};
+
+/* A cell of the ambience grid (2 bytes, 4096 at 0x1FC690, a cell per 2 x 2 tiles). */
+struct AmbienceCell {
+    uint8_t sound;             /* +0x00 the ambient sound + 1, 0 none */
+    uint8_t variant;           /* +0x01 */
+};
+
 /* Sound table entry (0x10 bytes) at 0x1B2EE0, by sound id (83). */
 struct SeSound {
     uint8_t flags;             /* +0x00 0x0F priority, 0x10 owned (an owner id, kept until stopped), 0x20 shared owner */
@@ -685,7 +729,7 @@ struct CityScene {
     uint32_t flags;            /* +0xB4 2 holiday month, 4 popular (approval 118+), 0x40 pad focus after a talk */
     int32_t paydayScore;       /* +0xB8 raised through the month; with the families moved in and out it decides the salary rise (mm_EvPayday_Update) */
     int32_t pendingApproval;   /* +0xBC */
-    int32_t trafficPhase;      /* +0xC0 traffic lights: 0 lets traffic along z through, 2 along x, 1 and 3 neither (mm_Char2_UpdateSpeedA) */
+    int32_t trafficPhase;      /* +0xC0 traffic lights: 0 lets traffic along z through, 2 along x, 1 and 3 neither (mm_Char2_UpdateSpeedUndrawn) */
     int32_t trafficTimer;      /* +0xC4 0..999 per tick: phase 0 below 400, 1 below 500, 2 below 900, then 3 */
     int32_t fadeLevel;         /* +0xC8 */
     int32_t fade;              /* +0xCC fade counter, 0 = none */

@@ -628,7 +628,7 @@ namespace mm
         const uint32_t lowColour = lowR | lowG << 8 | lowB << 16 | 0x80000000u;
         bands[12] = topR | topG << 8 | topB << 16 | 0x80000000u; // RGBAQ: the top colour
         bands[24] = lowColour;                                   // RGBAQ: the low colour
-        LightSet_SetField20(GuestPtr<LightSet>{camera.address}, static_cast<int32_t>(bands[24])); // the fog colour of the camera's own packet
+        Camera_SetFogColour(GuestPtr<Camera>{camera.address}, static_cast<int32_t>(bands[24]));
 
         vf(4) = load(GuestPtr<Vec4>::of(base.target));
         vf(5) = load(GuestPtr<Vec4>::of(base.eye));
@@ -1214,8 +1214,8 @@ namespace mm
     }
 
     // event: the data size of the event handler classes (vtable slot).
-    int EventData_GetSize1C() { return 0x1C; }
-    int EventData_GetSize7C() { return 0x7C; }
+    int EventData_DataSize() { return 0x1C; }
+    int TalkEventData_DataSize() { return 0x7C; }
 
     // Static constructor: the 256 member status bytes (4 bytes apart; __construct_array in the original).
     void StaticInit_StatusBytes()
@@ -1242,7 +1242,7 @@ namespace mm
     }
 
     // char: the second character class type, a CharType with its own vtable.
-    GuestPtr<CharClass> Char2_ctor(GuestPtr<CharClass> cls, GuestPtr<uint8_t> record)
+    GuestPtr<CharClass> Char2_ctor(GuestPtr<CharClass> cls, GuestPtr<CharTypeRecord> record)
     {
         CharType_ctor(cls, record);
         cls->vtable = GuestPtr<CharClassVtable>{0x001BCE90u};
@@ -1375,20 +1375,19 @@ namespace mm
     }
 
     // char: a character type from its CHARTYPE.BIN record.
-    GuestPtr<CharClass> CharType_ctor(GuestPtr<CharClass> cls, GuestPtr<uint8_t> record)
+    GuestPtr<CharClass> CharType_ctor(GuestPtr<CharClass> cls, GuestPtr<CharTypeRecord> record)
     {
         const auto part = [](uint8_t index) { return GuestPtr<void>{port::load<uint32_t>(globals::kCharParts + 4u * index)}; };
         cls->vtable = GuestPtr<CharClassVtable>{0x001BCE70u};
-        cls->parts[0] = part(record[8]);
-        cls->parts[1] = part(record[9]);
-        cls->parts[2] = part(record[10]);
-        cls->parts[3] = part(record[14]);
-        cls->unk_10 = record[11];
-        cls->unk_12 = record[12];
-        cls->unk_14 = record[13];
-        cls->voice = record[2];
-        cls->flags = port::load<uint16_t>(record.address + 4u);
-        cls->unk_1C = port::load<uint32_t>(record.address + 0x14u);
+        cls->parts[0] = part(record->parts[0]);
+        cls->parts[1] = part(record->parts[1]);
+        cls->parts[2] = part(record->parts[2]);
+        cls->parts[3] = part(record->part3);
+        for (int i = 0; i < 3; ++i)
+            cls->restartFrames[i] = record->restartFrames[i];
+        cls->voice = record->voice;
+        cls->flags = record->flags;
+        cls->unk_1C = record->unk_14;
         return cls;
     }
 
@@ -1575,12 +1574,12 @@ namespace mm
         return person->work;
     }
 
-    // char: the person type adds its walking speed, record halfword 6 in millionths.
-    GuestPtr<PersonClass> Person_ctor(GuestPtr<PersonClass> cls, GuestPtr<uint8_t> record)
+    // char: the person type adds its walking speed (the record's, in millionths).
+    GuestPtr<PersonClass> Person_ctor(GuestPtr<PersonClass> cls, GuestPtr<CharTypeRecord> record)
     {
         CharType_ctor(GuestPtr<CharClass>::of(cls->base), record);
         cls->base.vtable = GuestPtr<CharClassVtable>{0x001BCEB0u};
-        cls->walkSpeed = fromInt(port::load<uint16_t>(record.address + 6u)) / ps2f(1000000.0f);
+        cls->walkSpeed = fromInt(record->walkSpeed) / ps2f(1000000.0f);
         return cls;
     }
 
@@ -1642,13 +1641,13 @@ namespace mm
 
     GuestPtr<PhoneCalls> PhoneCall_ctor(GuestPtr<PhoneCalls> phone)
     {
-        phone->unk_00 = GuestPtr<void>{port::load<uint32_t>(0x001F3B08u)};
+        phone->iconModel = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B08u)};
         for (PhoneCallEntry &call : phone->calls)
             call.family = 0;
         phone->state = 0;
         phone->shown = 0;
         phone->frames = 0;
-        phone->unk_40 = 0;
+        phone->iconSlide = 0;
         return phone;
     }
 
@@ -2660,34 +2659,34 @@ namespace mm
 
     // char (class 2): movement modes A and B. A steers on one frame in four and turns up to 0.16, B steers
     // every frame and turns up to 0.04 (with their own speed rules).
-    void Char2_MoveA(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj, int tile)
+    void Char2_MoveUndrawn(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj, int tile)
     {
-        moveVehicle(cls, city, vehicle, obj, tile, true, 0.16f, 0x1.87E246p+2f, Char2_UpdateSpeedA);
+        moveVehicle(cls, city, vehicle, obj, tile, true, 0.16f, 0x1.87E246p+2f, Char2_UpdateSpeedUndrawn);
     }
 
-    void Char2_MoveB(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj, int tile)
+    void Char2_MoveDrawn(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj, int tile)
     {
-        moveVehicle(cls, city, vehicle, obj, tile, false, 0.04f, 0x1.8F905Ap+2f, Char2_UpdateSpeedB);
+        moveVehicle(cls, city, vehicle, obj, tile, false, 0.04f, 0x1.8F905Ap+2f, Char2_UpdateSpeedDrawn);
     }
 
     // char (class 2): the vehicle speed of movement modes A and B, which differ only in their rules.
-    void Char2_UpdateSpeedA(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj,
+    void Char2_UpdateSpeedUndrawn(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj,
                             int dir, ps2f dx, ps2f dz)
     {
         updateVehicleSpeed(cls, city, vehicle, obj, dir, dx, dz, {-180, -60, 40, 40});
     }
 
-    void Char2_UpdateSpeedB(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj,
+    void Char2_UpdateSpeedDrawn(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj,
                             int dir, ps2f dx, ps2f dz)
     {
         updateVehicleSpeed(cls, city, vehicle, obj, dir, dx, dz, {-80, -20, 20, 10});
     }
 
     PORT_FN(BaseObject_ctor);
-    PORT_FN(Char2_UpdateSpeedA);
-    PORT_FN(Char2_UpdateSpeedB);
-    PORT_FN(Char2_MoveA);
-    PORT_FN(Char2_MoveB);
+    PORT_FN(Char2_UpdateSpeedUndrawn);
+    PORT_FN(Char2_UpdateSpeedDrawn);
+    PORT_FN(Char2_MoveUndrawn);
+    PORT_FN(Char2_MoveDrawn);
     PORT_FN(Pair_ctor);
     PORT_FN(Player_GetMatrix);
     PORT_FN(Camera_SetEyeTarget);
@@ -2709,8 +2708,8 @@ namespace mm
     PORT_FN(StatusByte_IncLevel);
     PORT_FN(CharType_TickSlots);
     PORT_FN(MemberStatus_Tick);
-    PORT_FN(EventData_GetSize1C);
-    PORT_FN(EventData_GetSize7C);
+    PORT_FN(EventData_DataSize);
+    PORT_FN(TalkEventData_DataSize);
     PORT_FN(StageObj_ctor);
     PORT_FN(StaticInit_StatusBytes);
     PORT_FN(StaticInit_EventTypeIds);
@@ -3029,7 +3028,7 @@ namespace mm
             Pad_ReleaseFocus(1);
             phone->frames = 0;
             phone->state = 0;
-            phone->unk_40 = -phone->unk_40;
+            phone->iconSlide = -phone->iconSlide;
             Notice_Clear(city->notice);
         }
     }
@@ -3235,23 +3234,19 @@ namespace mm
     // member, else the first free one (family 0).
     void Talk_SetPose(GuestPtr<TalkSession> talk, uint16_t family, uint8_t member, uint8_t pose)
     {
-        for (uint32_t i = 0; i < 32; ++i)
-        {
-            const uint32_t entry = talk.address + 0x40u + 4u * i;
-            if (port::load<uint16_t>(entry) == family && port::load<uint8_t>(entry + 2u) == member)
+        for (TalkPose &entry : talk->poses)
+            if (entry.family == family && entry.member == member)
             {
-                port::store<uint8_t>(entry + 3u, pose);
+                entry.pose = pose;
                 return;
             }
-        }
-        for (uint32_t i = 0; i < 32; ++i)
+        for (TalkPose &entry : talk->poses)
         {
-            const uint32_t entry = talk.address + 0x40u + 4u * i;
-            if (port::load<uint16_t>(entry) != 0)
+            if (entry.family != 0)
                 continue;
-            port::store<uint16_t>(entry, family);
-            port::store<uint8_t>(entry + 2u, member);
-            port::store<uint8_t>(entry + 3u, pose);
+            entry.family = family;
+            entry.member = member;
+            entry.pose = pose;
             return;
         }
     }
@@ -3619,15 +3614,16 @@ namespace mm
         globals::bagObject.set(bag);
     }
 
-    // The stamina record: 0, the limit 399999, 0.
+    // The stamina record: 0, its value 399999 at the start, no hunger notice counted.
     void Stamina_CreateGlobal()
     {
         const uint32_t record = sdk::operator_new(0x10u);
         if (record != 0u)
         {
-            port::store<uint32_t>(record, 0u);
-            port::store<uint32_t>(record + 8u, 0u);
-            port::store<uint32_t>(record + 4u, 399999u);
+            const GuestPtr<Stamina> stamina{record};
+            stamina->unk_00 = 0;
+            stamina->noticeTicks = 0;
+            stamina->value = 399999;
         }
         globals::staminaObject.set(record);
     }
@@ -3894,22 +3890,22 @@ namespace mm
         uint32_t cls = port::guestS2();
         for (int32_t i = 0; i < static_cast<int32_t>(port::load<uint32_t>(0x001BDA40u)); ++i)
         {
-            const uint32_t record = data + 0x18u * static_cast<uint32_t>(i);
-            const uint8_t kind = port::load<uint8_t>(record);
+            const GuestPtr<CharTypeRecord> record = GuestPtr<CharTypeRecord>{data} + i;
+            const uint8_t kind = record->kind;
             if (kind == 2)
             {
                 const uint32_t memory = sdk::operator_new(0x24u);
-                cls = memory != 0u ? Char2_ctor(GuestPtr<CharClass>{memory}, GuestPtr<uint8_t>{record}).address : 0u;
+                cls = memory != 0u ? Char2_ctor(GuestPtr<CharClass>{memory}, record).address : 0u;
             }
             else if (kind == 1)
             {
                 const uint32_t memory = sdk::operator_new(0x28u);
-                cls = memory != 0u ? Person_ctor(GuestPtr<PersonClass>{memory}, GuestPtr<uint8_t>{record}).address : 0u;
+                cls = memory != 0u ? Person_ctor(GuestPtr<PersonClass>{memory}, record).address : 0u;
             }
             else if (kind == 0)
             {
                 const uint32_t memory = sdk::operator_new(0x24u);
-                cls = memory != 0u ? CharType_ctor(GuestPtr<CharClass>{memory}, GuestPtr<uint8_t>{record}).address : 0u;
+                cls = memory != 0u ? CharType_ctor(GuestPtr<CharClass>{memory}, record).address : 0u;
             }
             port::store<uint32_t>(port::load<uint32_t>(0x001BDA3Cu) + 4u * static_cast<uint32_t>(i), cls);
         }
@@ -4229,7 +4225,7 @@ namespace mm
             Pad_ReleaseFocus(1);
             phone->frames = 0;
             phone->state = 0;
-            phone->unk_40 = -phone->unk_40;
+            phone->iconSlide = -phone->iconSlide;
             if (clearNotice)
                 Notice_Clear(city->notice);
         };
@@ -4253,8 +4249,8 @@ namespace mm
                 phone->shown = i;
                 phone->frames = 0;
                 Pad_TakeFocus(1, 0x1F0);
-                phone->unk_40 = 1;
-                phone->unk_44 = 0;
+                phone->iconSlide = 1;
+                phone->ringFrames = 0;
                 break;
             }
         }
@@ -4419,7 +4415,7 @@ namespace mm
             uint32_t index = static_cast<uint32_t>(person->flags) & 3u;
             if (index == 0)
                 index = (person->family & 1u) != 0 ? 0u : 3u;
-            return port::load<uint32_t>(cls.address + 4u * index);
+            return cls->parts[index].address;
         }
 
         // Whether a model still fits the frame's draw budget (two counters, at 0x1BDA28 against 0x708 and at 0x1BDA34 against the
@@ -4502,7 +4498,7 @@ namespace mm
             if (restart == -1)
                 port::store<uint16_t>(frameAt, static_cast<uint16_t>(length / 5));
             else if (restart == -2)
-                port::store<uint16_t>(frameAt, port::load<uint16_t>(cls.address + 0x10u + 2u * (person->flags & 3u)));
+                port::store<uint16_t>(frameAt, (GuestPtr<uint16_t>::of(cls->restartFrames[0]) + (person->flags & 3))[0]); // look 3 reads on
             else
                 port::store<uint16_t>(frameAt, static_cast<uint16_t>(restart));
         }
@@ -4542,7 +4538,8 @@ namespace mm
         else
         {
             const uint32_t part = Family_Get(static_cast<int>(family), 0)->members[member].look;
-            model = port::load<uint32_t>(cls.address + 4u * (part != 0 ? part : ((family & 1u) != 0 ? 0u : 3u)));
+            const uint32_t index = part != 0 ? part : ((family & 1u) != 0 ? 0u : 3u); // any look, as the original reads it
+            model = (GuestPtr<GuestPtr<void>>::of(cls->parts[0]) + static_cast<int32_t>(index))->address;
             activity = Schedule_BusinessActivity(city, family, static_cast<int>(member));
             port::store<int32_t>(local, 0);
             Talk_LookupPose(city->talk, family, member, GuestPtr<uint32_t>{local});
@@ -4696,9 +4693,9 @@ namespace mm
             else
             {
                 if ((vehicle->flags & 0x1000u) != 0)
-                    Char2_MoveB(cls, city, vehicle, here, tile);
+                    Char2_MoveDrawn(cls, city, vehicle, here, tile);
                 else
-                    Char2_MoveA(cls, city, vehicle, here, tile);
+                    Char2_MoveUndrawn(cls, city, vehicle, here, tile);
                 carryDriver();
             }
         }

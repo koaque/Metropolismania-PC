@@ -174,12 +174,11 @@ Renamed after this map: layer C is `PlacementLayer`, D `RainLayer` and E `SnowLa
 `mm_CityRender_DrawTerrain` (was DrawOverlays), `mm_CityRender_DrawWeather` (DrawSky), `mm_CityRender_DrawPlacement`
 (DrawBuildings), `mm_RainLayer_Draw` (LayerD_DrawSkyByClock), `mm_PlacementLayer_Draw` (LayerC_DrawBuildings),
 `mm_PlacementLayer_Set` (Terrain_SetVec), `mm_A3D_GetAnimLength` (A3D_GetMeshField0C), `mm_LayerA_BeginFrame`
-(LayerA_SetSource).
+(LayerA_SetSource), `mm_Camera_SetFogColour` (LightSet_SetField20: word 8 of the camera's packet, the GS FOGCOL data).
 
 Still to name:
 
 | Now | What it is |
 |---|---|
 | `mm_LightSet_BuildPackets`' packets A and B | the two model programs' set-up packets (with and without the second part), chosen by `mm_Packet2_Draw` |
-| `mm_LightSet_SetField20` | sets word 8 of an object's first packet; called on the camera, where that word is the fog colour (GS FOGCOL) |
 | layers A, B and F | what A's instances show is not known; B and F are terrain passes over tiles with flags 0x20/0x40 and 0x10 |

@@ -235,7 +235,7 @@ namespace mm
     }
 
     // The camera's VU1 packet, built in the packet buffer: a DMA cnt with a GIF A+D write of 0 to GS register
-    // 0x3D (FOGCOL, the fog colour: mm_LightSet_SetField20 sets it), a ref to the camera's 0x12 quadwords from its
+    // 0x3D (FOGCOL, the fog colour: mm_Camera_SetFogColour sets it), a ref to the camera's 0x12 quadwords from its
     // first screen matrix (both screen matrices, the light matrices, the fog vectors) unpacked to VU1 address 0, and a ret.
     void Camera_BuildPacket(GuestPtr<Camera> camera)
     {
@@ -1040,9 +1040,8 @@ namespace mm
         }
     }
 
-    // Word 8 of the object's first packet. Called on the camera (whose first word is its packet, mm_Camera_BuildPacket),
-    // where word 8 is the data of the GS register 0x3D (FOGCOL): the fog colour.
-    void LightSet_SetField20(GuestPtr<LightSet> lights, int value) { port::store<int32_t>(lights->packetA + 0x20u, value); }
+    // Word 8 of the camera's packet (mm_Camera_BuildPacket): the data of the GS register 0x3D (FOGCOL), the fog colour.
+    void Camera_SetFogColour(GuestPtr<Camera> camera, int colour) { port::store<int32_t>(camera->packet + 0x20u, colour); }
 
     PORT_FN(DmaList_BeginScene);
     PORT_FN(DmaList_KickFrame);
@@ -1102,7 +1101,7 @@ namespace mm
     PORT_FN(PacketBuf_Seek);
     PORT_FN(PacketBuf_Tell);
     PORT_FN(LayerA_BeginFrame);
-    PORT_FN(LightSet_SetField20);
+    PORT_FN(Camera_SetFogColour);
     PORT_FN(LightSet_UpdateByClock);
 
     // The other frame's 640 x 224 picture packet (the one not drawn into this frame).

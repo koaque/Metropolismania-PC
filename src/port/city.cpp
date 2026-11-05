@@ -302,10 +302,10 @@ namespace mm
     // thresholds are the first two halfwords of CLAIM.BIN.
     int ClaimMeter_Level(uint16_t meter)
     {
-        const uint32_t thresholds = globals::claimData.get();
-        if (meter <= port::load<uint16_t>(thresholds))
+        const GuestPtr<ClaimThresholds> thresholds = globals::claimThresholds();
+        if (meter <= thresholds->low)
             return 0;
-        return meter <= port::load<uint16_t>(thresholds + 2) ? 1 : 2;
+        return meter <= thresholds->high ? 1 : 2;
     }
 
     // A building's claim icon colour: the plain colour while the claim meter is low, else the claim's icon
@@ -411,14 +411,14 @@ namespace mm
             claims[i] = GuestPtr<BuildingType>{globals::buildingTypeAddress(entries[i].type)}->claimC;
     }
 
-    // Places the applicant card at `point`: both card models there (+0x30), and the card text positioned and
-    // sized from the point's x, y and depth (z) through fixed factors.
+    // Places the applicant card at `point`: both card models there (their matrices' last rows), and the card text
+    // positioned and sized from the point's x, y and depth (z) through fixed factors.
     void Applicants_PlaceAt(GuestPtr<Applicants> applicants, GuestPtr<ps2f> point)
     {
-        for (uint32_t axis = 0; axis < 3; ++axis)
+        for (int32_t axis = 0; axis < 3; ++axis)
         {
-            port::store<float>(applicants->frameMatrix.address + 0x30u + 4u * axis, static_cast<float>(point[axis]));
-            port::store<float>(applicants->cardMatrix.address + 0x30u + 4u * axis, static_cast<float>(point[axis]));
+            (GuestPtr<ps2f>::of(applicants->frameMatrix[3].x) + axis)[0] = point[axis];
+            (GuestPtr<ps2f>::of(applicants->cardMatrix[3].x) + axis)[0] = point[axis];
         }
         const ps2f depth = point[2];
         const auto scaled = [](float factor, ps2f value) { return sdk::fptosi(ps2f(factor) * value); };
@@ -1983,7 +1983,7 @@ namespace mm
     int CityScene_MissionProgress(GuestPtr<CityScene> city)
     {
         int32_t value = port::guestV0();
-        switch (port::load<uint32_t>(globals::kStageState + 0x1D0u))
+        switch (static_cast<uint32_t>(globals::stageState()->missionKind))
         {
         case 0:
             return 100;
@@ -2891,8 +2891,8 @@ namespace mm
             if (Map_CanPlace(city->map, static_cast<int>(family), GuestPtr<ApplicantEntry>{applicant}->type, x, z) == 0)
                 continue;
             Map_HighlightArea(city->map, x, z, home->size);
-            port::store<int16_t>(applicant + 2u, 3);
-            port::store<uint16_t>(applicant + 6u, obj->tile);
+            GuestPtr<ApplicantEntry>{applicant}->state = 3;
+            GuestPtr<ApplicantEntry>{applicant}->tile = obj->tile;
         }
         Minimap_Plot(city->minimap, obj->tile, btype->size, 4, 0);
         return 0;
@@ -2929,11 +2929,11 @@ namespace mm
     {
         applicants->slideFrame = applicants->slideFrame + 1;
         const int32_t frame = applicants->slideFrame;
-        const uint32_t model = applicants->cardNodeA.address;
+        Vec4 &place = applicants->cardNodeA[3];
         if (frame < 0x14)
         {
-            port::store<float>(model + 0x30u, static_cast<float>(ps2f(port::load<float>(model + 0x30u)) + ps2f(0.15f)));
-            const ps2f x = port::load<float>(model + 0x30u), scale = port::load<float>(model + 0x38u), y = port::load<float>(model + 0x34u);
+            place.x = ps2f(place.x) + ps2f(0.15f);
+            const ps2f x = place.x, scale = place.z, y = place.y;
             const int pixelX = sdk::fptosi(ps2f(144.0f) * (ps2f(0.015f) + ps2f(1.1f) * x));
             const int pixelY = sdk::fptosi(ps2f(72.0f) * (y - ps2f(0.03f)));
             placeCardText(applicants, pixelX, pixelY, scale);
@@ -2942,8 +2942,8 @@ namespace mm
         {
             if (frame < 0x42)
             {
-                port::store<float>(model + 0x34u, static_cast<float>(ps2f(port::load<float>(model + 0x34u)) + ps2f(0.4f)));
-                const ps2f x = port::load<float>(model + 0x30u), scale = port::load<float>(model + 0x38u), y = port::load<float>(model + 0x34u);
+                place.y = ps2f(place.y) + ps2f(0.4f);
+                const ps2f x = place.x, scale = place.z, y = place.y;
                 const int pixelX = sdk::fptosi(ps2f(144.0f) * x);
                 const int pixelY = sdk::fptosi(ps2f(72.0f) * (ps2f(1.11f) * y - ps2f(0.1f) * y));
                 placeCardText(applicants, pixelX, pixelY, scale);

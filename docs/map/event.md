@@ -30,7 +30,10 @@ City events (visitors, requests, incidents, paydays).
   `EvShoppingData` (the shopper, four sellers and their prices, the bill), `EvDeliveryData` (the catalogue entry and
   month, the delivery man's timers), `EvPartyData` (the farewell party: three actors, the guests, the party time),
   `EvThiefData` (the next strike's month, buildings robbed), `EvAdvertiseData` (the family members it brought),
-  `EvNoodlesData` (three shops' workers and buildings) and `EvMiddleAgedData` (the month, the talk's answer). The
+  `EvNoodlesData` (three shops' workers and buildings), `EvMiddleAgedData` (the month, the talk's answer),
+  `EvShoppingTogetherData` (the two actors, the countdown, the outcome), `EvAlienData` (six actors, the day and time
+  waited for, a frame count) and `EvMessageData` (the message events and the
+  payday: whether their phone call is up). The
   handlers see them through `data.as<...>()`.
 
 <!-- Generated below by tools/map_docs.py from config/port_status.csv. Edit function notes there, not here. -->
@@ -162,8 +165,8 @@ City events (visitors, requests, incidents, paydays).
 | `0x00196720` | `void mm_EvShopping_Update(EventData *data, CityScene *city)` | 592 | no | type 8: Update |
 | `0x00196970` | `int64_t mm_EvShopping_Start(EventData *data, CityScene *city)` | 120 | no | type 8: Start |
 | `0x001969F0` | `int mm_EvShopping_Check(EventData *data, CityScene *city, MapPerson *person)` | 1312 | indirect | type 8 "Shopping": Check |
-| `0x00196F10` | `int mm_EventData_GetSize7C(void)` | 8 | no | (provisional) vtable size slot: 0x7C |
-| `0x00196F20` | `int mm_EventData_GetSize1C(void)` | 8 | no | (provisional) vtable size slot: 0x1C (used by the event manager constructor) |
+| `0x00196F10` | `int mm_TalkEventData_DataSize(void)` | 8 | no | the talk event record class's data size (vtable 0x1BD8F8 slot +8, EventMgr.talks[0]): 0x7C |
+| `0x00196F20` | `int mm_EventData_DataSize(void)` | 8 | no | the base event record class's data size (vtable 0x1BD908 slot +8): 0x1C bytes after its first two words |
 | `0x00196F30` | `int mm_EvNoodles_Answer(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 192 | yes | type 13: Answer |
 | `0x00196FF0` | `void mm_EvNoodles_End(EventData *data, CityScene *city)` | 248 | no | type 13: End |
 | `0x001970F0` | `void mm_EvNoodles_Update(EventData *data, CityScene *city)` | 5984 | yes | type 13: Update |

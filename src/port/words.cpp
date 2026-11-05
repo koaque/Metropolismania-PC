@@ -1438,12 +1438,12 @@ namespace mm
 
     namespace
     {
-        // A family record holds six members of 0x48 bytes from +0x24; fields are read by guest address, so a wild member
-        // number wraps in RDRAM like the original's indexing.
-        constexpr uint32_t kMembersAt = 0x24u, kMemberSize = 0x48u;
-        uint32_t memberAt(GuestPtr<Family> family, uint32_t member) { return family.address + kMembersAt + kMemberSize * member; }
-        constexpr uint32_t kMemberCharType = 0x00u, kMemberFlags = 0x03u, kMemberRole = 0x04u, kMemberUnk06 = 0x06u, kMemberRange = 0x07u,
-                           kMemberName = 0x28u, kMemberName2 = 0x38u;
+        // A family's member by number, by guest address arithmetic, so a wild member number wraps in RDRAM like the
+        // original's indexing.
+        GuestPtr<FamilyMember> memberAt(GuestPtr<Family> family, uint32_t member)
+        {
+            return GuestPtr<FamilyMember>::of(family->members[0]) + static_cast<int32_t>(member);
+        }
 
         // The member named by the argument: B when it is 1, A when it is 0, otherwise the context's result family, member 0.
         struct MemberRef
@@ -1476,13 +1476,13 @@ namespace mm
     GuestPtr<char> WordsFn_TextMemberName2(GuestPtr<WordsCtx> ctx)
     {
         const MemberRef who = memberByThreeWayArg(ctx);
-        return GuestPtr<char>{memberAt(Family_Get(static_cast<int>(who.family), 0), who.member) + kMemberName2};
+        return GuestPtr<char>::of(memberAt(Family_Get(static_cast<int>(who.family), 0), who.member)->name2[0]);
     }
 
     GuestPtr<char> WordsFn_TextMemberName(GuestPtr<WordsCtx> ctx)
     {
         const MemberRef who = memberByThreeWayArg(ctx);
-        return GuestPtr<char>{memberAt(Family_Get(static_cast<int>(who.family), 0), who.member) + kMemberName};
+        return GuestPtr<char>::of(memberAt(Family_Get(static_cast<int>(who.family), 0), who.member)->name[0]);
     }
 
     // The member's post at their home's building type (STRTYPE POSTNAME).
@@ -1491,24 +1491,24 @@ namespace mm
         const MemberRef who = memberByThreeWayArg(ctx);
         const GuestPtr<Family> family = Family_Get(static_cast<int>(who.family), 0);
         const uint32_t homeType = family->homeType;
-        const uint8_t role = port::load<uint8_t>(memberAt(family, who.member) + kMemberRole);
+        const uint8_t role = memberAt(family, who.member)->role;
         return BldgType_GetPostName(GuestPtr<BuildingType>{globals::buildingTypeAddress(homeType)}, role);
     }
 
     uint8_t WordsFn_MemberByte2B(GuestPtr<WordsCtx> ctx)
     {
-        return port::load<uint8_t>(memberAt(Family_Get(ctx->familyA, 0), ctx->memberA) + kMemberRange);
+        return memberAt(Family_Get(ctx->familyA, 0), ctx->memberA)->look;
     }
 
     uint8_t WordsFn_MemberByte2A(GuestPtr<WordsCtx> ctx)
     {
-        return port::load<uint8_t>(memberAt(Family_Get(ctx->familyA, 0), ctx->memberA) + kMemberUnk06);
+        return memberAt(Family_Get(ctx->familyA, 0), ctx->memberA)->unk_06;
     }
 
     // The character type of member A, with the types above 0x1D folded: 0x26 becomes 0xD, the rest 0.
     uint16_t WordsFn_MemberCharType(GuestPtr<WordsCtx> ctx)
     {
-        uint16_t charType = port::load<uint16_t>(memberAt(Family_Get(ctx->familyA, 0), ctx->memberA) + kMemberCharType);
+        uint16_t charType = memberAt(Family_Get(ctx->familyA, 0), ctx->memberA)->charType;
         if (0x1D < charType)
             charType = charType == 0x26 ? 0xD : 0;
         return charType;
@@ -1529,8 +1529,8 @@ namespace mm
             family = Family_Get(ctx->familyB, 0);
             member = ctx->memberB;
         }
-        const uint8_t role = port::load<uint8_t>(memberAt(family, member) + kMemberRole);
-        const bool flag = (port::load<uint8_t>(memberAt(family, member) + kMemberFlags) & 1u) != 0;
+        const uint8_t role = memberAt(family, member)->role;
+        const bool flag = (memberAt(family, member)->flags & 1u) != 0;
         if (role == 2)
             return flag ? 5 : 4;
         if (role == 1)
@@ -1564,9 +1564,9 @@ namespace mm
         int changeFriendship(GuestPtr<WordsCtx> ctx, int base, int sign)
         {
             const GuestPtr<Family> family = Family_Get(ctx->familyA, 0);
-            const uint32_t charType = port::load<uint16_t>(memberAt(family, ctx->memberA) + kMemberCharType);
+            const uint32_t charType = memberAt(family, ctx->memberA)->charType;
             const uint32_t cls = port::load<uint32_t>(globals::charClassTable.get() + 4u * charType);
-            const int bits = static_cast<int>((port::load<uint32_t>(cls + 0x1Cu) & 0xE00000u) >> 0x15);
+            const int bits = static_cast<int>((GuestPtr<CharClass>{cls}->unk_1C & 0xE00000u) >> 0x15);
             const int points = bits + base;
             port::setGuestV0(bits);  // the friendship call returns v0 as it found it on some paths: the shifted bits here
             const int result = Family_AddFriendshipScaled(ctx->familyA, ctx->memberA, GuestPtr<int32_t>{ctx->city.address + 0x8Cu}, points, sign);
@@ -1650,7 +1650,7 @@ namespace mm
         const int32_t z0 = building->tile >> 7;
         const int32_t size = globals::buildingType(building->type)->size;
         const GuestPtr<Family> family = Family_Get(ctx->familyA, 0);
-        const int32_t range = port::load<int32_t>(0x001B97F0u + 4u * port::load<uint8_t>(memberAt(family, ctx->memberA) + kMemberRange));
+        const int32_t range = port::load<int32_t>(0x001B97F0u + 4u * memberAt(family, ctx->memberA)->look);
         const int32_t xStart = x0 - range, xEnd = x0 + size + range, zEnd = z0 + size + range;
         uint16_t homes[80];
         int32_t found = 0;
@@ -1708,7 +1708,7 @@ namespace mm
             ctx->buildingB = Map_GetRecord(ctx->city->map, ctx->candidates[index]);
             ctx->buildingTypeB = ctx->buildingB->type;
             const GuestPtr<Family> family = Family_Get(ctx->buildingB->family, 0);
-            const uint32_t members = port::load<uint16_t>(family.address + 0x22u);
+            const uint32_t members = family->memberCount;
             if (members != 0)
             {
                 const int32_t memberRoll = static_cast<int32_t>(Random_Next());
@@ -1798,9 +1798,9 @@ namespace mm
     int WordsFn_FindOutsideAcquaintance(GuestPtr<WordsCtx> ctx)
     {
         const MemberRef who = ctx->arg == 0 ? MemberRef{ctx->familyA, ctx->memberA} : MemberRef{ctx->familyB, ctx->memberB};
-        const uint32_t member = memberAt(Family_Get(who.family, 0), who.member);
-        const uint32_t end = member + 0x08u + 0x20u;
-        for (uint32_t at = member + 0x08u; port::load<uint16_t>(at) != 0 && at < end; at += 2u)
+        const uint32_t list = GuestPtr<uint16_t>::of(memberAt(Family_Get(who.family, 0), who.member)->acquaintances[0]).address;
+        const uint32_t end = list + 0x20u;
+        for (uint32_t at = list; port::load<uint16_t>(at) != 0 && at < end; at += 2u)
         {
             const uint32_t acquaintance = port::load<uint16_t>(at);
             const uint32_t type = static_cast<uint32_t>(Family_GetTypeIndex(static_cast<int>(acquaintance)));
@@ -1832,7 +1832,7 @@ namespace mm
         if (ctx->personA)
             charType = ctx->personA->charType;
         else
-            charType = port::load<uint16_t>(memberAt(Family_Get(ctx->familyA, 0), ctx->memberA) + kMemberCharType);
+            charType = memberAt(Family_Get(ctx->familyA, 0), ctx->memberA)->charType;
         const uint32_t likes = globals::goodsSectionD.get() + 2u * charType;
         const uint32_t list = globals::goodsSectionE.get();
         for (uint32_t at = list + 2u * port::load<uint16_t>(likes); at < list + 2u * port::load<uint16_t>(likes + 2u); at += 2u)
@@ -2293,10 +2293,9 @@ namespace mm
         port::store<uint8_t>(kWordsUsedMask, 4);
         words->line = 0;
         words->column = 0;
-        const uint32_t self = Family_Get(family, 0).address + 0x48u * static_cast<uint32_t>(member);
-        if (port::load<uint8_t>(self + 0x26u) < 13 || Family_GetFriendship(family, member) < 24)
+        if (memberAt(Family_Get(family, 0), static_cast<uint32_t>(member))->age < 13 || Family_GetFriendship(family, member) < 24)
             port::store<uint8_t>(kWordsUsedMask, static_cast<uint8_t>(port::load<uint8_t>(kWordsUsedMask) | 2u));
-        const GuestPtr<uint32_t> block = Words_ReadBlock(port::load<uint16_t>(Family_Get(family, 0).address + 0x48u * static_cast<uint32_t>(member) + 0x24u));
+        const GuestPtr<uint32_t> block = Words_ReadBlock(memberAt(Family_Get(family, 0), static_cast<uint32_t>(member))->charType);
         loadEventWords(city->events->talks[0]->kind);
         pickLineTable(block);
         return static_cast<int>(block.address);
@@ -2328,8 +2327,7 @@ namespace mm
                 break;
             }
         }
-        const uint32_t self = Family_Get(person->family, 0).address + 0x48u * person->member;
-        if (port::load<uint8_t>(self + 0x26u) < 13 || Family_GetFriendship(person->family, person->member) < 24)
+        if (memberAt(Family_Get(person->family, 0), person->member)->age < 13 || Family_GetFriendship(person->family, person->member) < 24)
             port::store<uint8_t>(kWordsUsedMask, static_cast<uint8_t>(port::load<uint8_t>(kWordsUsedMask) | 2u));
         return static_cast<int>(block.address);
     }
@@ -2668,7 +2666,8 @@ namespace mm
                 const uint32_t family = static_cast<uint32_t>(Family_IsCached(home->family));
                 if (family == 0)
                     continue;
-                const uint32_t first = family + 0x24u, end = first + 0x48u * port::load<uint16_t>(family + 0x22u);
+                const uint32_t first = memberAt(GuestPtr<Family>{family}, 0).address;
+                const uint32_t end = memberAt(GuestPtr<Family>{family}, GuestPtr<Family>{family}->memberCount).address;
                 for (uint32_t member = first; member < end; member += 0x48u)
                 {
                     const uint32_t memberIndex = static_cast<uint32_t>(static_cast<int32_t>(member - first) / 0x48);

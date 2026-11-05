@@ -12,6 +12,10 @@ Sound on the EE side; the driver is YYSOUND on the IOP.
   the sound enable flag, 0x18 the load pause flag.
 - `mm_Se_*`: sound effects. Voice group A has 16 effect voices (stop is command 4, WaveStop); group B has voices 0-15,
   with 15 used by the BGM (stop is command `0xD`, MidiStop).
+- Records: `SeVoice` (the 31 effect voices at `0x1F8140`), `SeSound` (the sound table at `0x1B2EE0`), `SoundStatus`
+  (the driver's status block: sequence slots and wave voices playing, busy), `BgmTrack` (13 city tracks at
+  `0x1F8120`: bank, enabled), `AmbienceSound` (11 ambient sounds: months, hours by weather, cells per variant) and
+  `AmbienceCell` (the 4096-cell grid at `0x1FC690`).
 - `mm_Bgm_*`: background music. `mm_Sound_*`: module loading (`LIBSD`, `SDRDRV`, `MODHSYN`, `MODMIDI`, `MODSEIN`,
   `YYSOUND`), RPC binding and the per-city sound setup.
 

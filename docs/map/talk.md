@@ -10,7 +10,7 @@ script for that person (`mm_Words_LoadForPerson`) or family member (`mm_Words_Lo
 | Class | Vtable | Used for |
 |---|---|---|
 | `mm_Talk_*` session | `0x1BD770` | one per city: `+0xC` city, `+0x10` view, `+0x14` conversation, `+0x18` building, `+0x1C` person (6000 none), `+0x20` family, `+0x24` member (6 = whole family), `+0x30` single target, `+0x40` 32 pose entries |
-| `mm_TalkView_*` base | `0x1BD450` | `+0x34` city, `+0x70` building (`0x3F80` = by family), `+0x74` family, `+0x260` target |
+| `mm_TalkView_*` base | `0x1BD450` | `TalkView`: `+0x34` city, `+0x70` building (`0x3F80` = by family), `+0x74` family, `+0x260` target; the near views add their camera (`TalkPersonView`), the far building view the camera to return to (`TalkFarView`, its eye over the targets) |
 | `mm_TalkPhoneFamily_*` / `mm_TalkPhoneMember_*` | `0x1BD4A0` / `0x1BD4F0` | a whole family / one member, from the Town's Pages |
 | `mm_TalkBldgFar_*` / `mm_TalkBldgNear_*` | `0x1BD540` / `0x1BD590` | a building and everyone in it |
 | `mm_TalkOccupantFar_*` / `mm_TalkOccupantNear_*` | `0x1BD5E0` / `0x1BD630` | one person at a building |

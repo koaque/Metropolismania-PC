@@ -3,6 +3,7 @@
 #include "game_functions.h"
 #include "game_globals.h"
 #include "widgets.h"
+#include "render.h"
 #include "lifetime.h"
 #include "sdk.h"
 #include "vu0.h"
@@ -610,7 +611,7 @@ namespace mm
     {
         if (pass != 2 || msgwin->base.state == 0)
             return;
-        const GuestPtr<Vec4> matrix{port::load<uint32_t>(msgwin->model->model.address + 8u) + static_cast<uint32_t>(msgwin->node) * 0xC0u + 0x70u};
+        const GuestPtr<Vec4> matrix = worldMatrix(modelNode(msgwin->model, msgwin->node));
         Mat4_Copy(matrix, GuestPtr<Vec4>{0x001B2550u}); // identity
         matrix[3].y = 0.01f;
         matrix[3].z = -4.4f;
@@ -641,7 +642,7 @@ namespace mm
             return;
         DmaList_QueueClearZ();
         const int node = (menuwin->size - 2 < 0 ? 0 : menuwin->size - 2) + 3;
-        const GuestPtr<Vec4> matrix{port::load<uint32_t>(menuwin->model->model.address + 8u) + static_cast<uint32_t>(node) * 0xC0u + 0x70u};
+        const GuestPtr<Vec4> matrix = worldMatrix(modelNode(menuwin->model, node));
         Mat4_Copy(matrix, GuestPtr<Vec4>{0x001B2550u}); // identity
         matrix[3].z = -4.4f;
         if (menuwin->base.state == 1)
@@ -911,7 +912,7 @@ namespace mm
         const ps2f t = pause->openTime / ps2f(120.0f);
         const ps2f rest = ps2f(1.0f) - t;
         const GuestPtr<Vec4> open{globals::kPauseWindowOpen}, closed{globals::kPauseWindowClosed};
-        const GuestPtr<Vec4> matrix{port::load<uint32_t>(window->model.address + 8u) + 0x70u};
+        const GuestPtr<Vec4> matrix = worldMatrix(modelNode(window, 0));
         matrix[3].x = rest * closed->x + t * open->x;
         matrix[3].y = rest * closed->y + t * open->y;
         matrix[3].z = rest * closed->z + t * open->z;
@@ -933,7 +934,7 @@ namespace mm
         // Node `node` of the model, unrotated and unscaled at (x, y, z).
         void placeNode(GuestPtr<A3DObject> model, int node, ps2f x, ps2f y, ps2f z)
         {
-            const GuestPtr<Vec4> matrix{port::load<uint32_t>(model->model.address + 8u) + static_cast<uint32_t>(node) * 0xC0u + 0x70u};
+            const GuestPtr<Vec4> matrix = worldMatrix(modelNode(model, node));
             Mat4_Copy(matrix, GuestPtr<Vec4>{globals::kIdentityMatrix});
             matrix[3].x = x;
             matrix[3].y = y;
@@ -1747,12 +1748,12 @@ namespace mm
         return 1;
     }
 
-    // ---- the home view (TalkView: +0x30 model, +0x34 city, +0x260 the home object)
+    // ---- the home view (a TalkView: its building model, city and the home object as its target)
 
     namespace
     {
-        GuestPtr<CityScene> viewCity(GuestPtr<TalkView> view) { return GuestPtr<CityScene>{port::load<uint32_t>(view.address + 0x34u)}; }
-        uint32_t viewObject(GuestPtr<TalkView> view) { return port::load<uint32_t>(view.address + 0x260u); }
+        GuestPtr<CityScene> viewCity(GuestPtr<TalkView> view) { return view->city; }
+        uint32_t viewObject(GuestPtr<TalkView> view) { return static_cast<uint32_t>(view->targetObject); }
     }
 
     // The tiles before the home entrance, by the facing: the footprint widened by one more than its size on three
@@ -1841,12 +1842,12 @@ namespace mm
         if ((home->flags & 0x20u) == 0)
             return;
         const GuestPtr<BuildingType> type{globals::buildingTypeAddress(home->type)};
-        const uint32_t model = view->buildingModel.address;
-        const uint32_t node = static_cast<uint32_t>(type->modelNode) + 0x19u;
-        const uint32_t matrix = port::load<uint32_t>(port::load<uint32_t>(model) + 8u) + 0xC0u * node + 0x70u;
-        MapObj_GetMatrix(viewCity(view)->map, static_cast<int>(viewObject(view)), GuestPtr<Vec4>{matrix});
-        port::store<int32_t>(matrix + 0x3Cu, 1);
-        A3DObject_DrawNode(GuestPtr<A3DObject>{model}, static_cast<int>(node));
+        const GuestPtr<A3DObject> model = view->buildingModel;
+        const int node = type->modelNode + 0x19;
+        const GuestPtr<Vec4> matrix = worldMatrix(modelNode(model, node));
+        MapObj_GetMatrix(viewCity(view)->map, static_cast<int>(viewObject(view)), matrix);
+        port::store<int32_t>(packet::addressOf(matrix[3].w), 1); // the matrix is up to date
+        A3DObject_DrawNode(model, node);
     }
 
     // ---- the name entry (+0x40 state, +0x70 slide frames, +0x78 rest height, +0x14 matrix)
@@ -1873,7 +1874,7 @@ namespace mm
             return entry->state;
         const ps2f height = ps2f(0x1.333334p-2f) + ps2f(static_cast<float>(entry->restHeight)) -  // 0.3
                             ps2f(0x1.89374cp-7f) * fromInt(entry->slideFrames);    // 0.012 per frame
-        port::store<float>(entry->boardMatrix.address + 0x34u, static_cast<float>(height));
+        entry->boardMatrix[3].y = static_cast<float>(height);
         if (entry->state == 3)
         {
             entry->slideFrames = entry->slideFrames + 1;
@@ -2870,10 +2871,9 @@ namespace mm
             entry->length = entry->length - 1;
         for (int length = sdk::strlen(port::guest(entry->name)); length < static_cast<int>(entry->maxLength); ++length)
             TextBox_AppendText(entry->nameText, GuestPtr<char>{0x001B8038u}, 0);
-        const uint32_t board = entry->boardMatrix.address;
         if (entry->noSlide == 0)
         {
-            port::store<float>(board + 0x34u, static_cast<float>(ps2f(static_cast<float>(entry->restHeight)) + ps2f(0.3f)));
+            entry->boardMatrix[3].y = static_cast<float>(ps2f(static_cast<float>(entry->restHeight)) + ps2f(0.3f));
             entry->state = 3;
         }
         else
@@ -3047,13 +3047,11 @@ namespace mm
         }
         if (moved)
         {
-            const uint32_t marker = entry->markerMatrix.address;
-            port::store<float>(marker + 0x30u, static_cast<float>(ps2f(static_cast<float>(entry->markerX)) + ps2f(0.016f) * fromInt(entry->column)));
+            entry->markerMatrix[3].x = static_cast<float>(ps2f(static_cast<float>(entry->markerX)) + ps2f(0.016f) * fromInt(entry->column));
         }
         if (stayed)
         {
-            const uint32_t marker = entry->markerMatrix.address;
-            port::store<float>(marker + 0x34u, static_cast<float>(ps2f(static_cast<float>(entry->markerY)) + ps2f(0.0227f) * fromInt(entry->row - entry->firstRow)));
+            entry->markerMatrix[3].y = static_cast<float>(ps2f(static_cast<float>(entry->markerY)) + ps2f(0.0227f) * fromInt(entry->row - entry->firstRow));
         }
     }
 
@@ -3321,8 +3319,10 @@ namespace mm
         pages->book = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B20u)};
         pages->mode = 0;
         pages->bookMatrix = GuestPtr<Vec4>{pages->book.address + 0x10u};
-        for (uint32_t i = 0; i < 3u; ++i)
-            port::store<uint32_t>(pages->bookMatrix.address + 0x30u + 4u * i, port::load<uint32_t>(0x001B1A60u + 4u * i));
+        const GuestPtr<Vec4> bookPlace{0x001B1A60u};
+        pages->bookMatrix[3].x = bookPlace->x;
+        pages->bookMatrix[3].y = bookPlace->y;
+        pages->bookMatrix[3].z = bookPlace->z;
         pages->openTime = 0.0f;
         for (uint32_t offset = 4u; offset <= 0x18u; offset += 4u)
             port::store<uint32_t>(pages.address + offset, 0u);
@@ -3625,38 +3625,38 @@ namespace mm
         }
     }
 
-    // The ringing phone icon: while a call shows (counter +0x40 not 0), the frame counter (+0x44) steps; every other 84 frames a
+    // The ringing phone icon: while a call shows (its slide not 0), the ring frame counter steps; every other 84 frames a
     // ring sound plays and the icon's colour alpha flips between 0 and 12 every other frame; the icon model's node 1 is placed
     // by the call counter's distance from 10 (sliding in over ten frames) and drawn.
     void PhoneCall_Draw(GuestPtr<PhoneCalls> phone)
     {
         port::GuestFrame<0x50> frame;
         const uint32_t sp = frame.ptr().address;
-        if (phone->unk_40 == 0)
+        if (phone->iconSlide == 0)
             return;
-        const uint32_t colour = sp + 0x40u;
-        port::store<uint32_t>(colour, 0x3F800000u);
-        port::store<uint32_t>(colour + 4u, 0x3F800000u);
-        port::store<uint32_t>(colour + 8u, 0x3F800000u);
-        port::store<int32_t>(colour + 0xCu, 0);
-        phone->unk_44 = phone->unk_44 + 1;
-        const int32_t frames = phone->unk_44;
+        const GuestPtr<Vec4> colour{sp + 0x40u}; // its fourth word an integer, as the luminosity change takes it
+        colour->x = 1.0f;
+        colour->y = 1.0f;
+        colour->z = 1.0f;
+        port::store<int32_t>(packet::addressOf(colour->w), 0);
+        phone->ringFrames = phone->ringFrames + 1;
+        const int32_t frames = phone->ringFrames;
         if ((divide(frames, 0x54) & 1) == 0)
         {
             Sound_PlaySe(0x27, 0, 0x3C, 0.0f, 0.0f);
-            port::store<int32_t>(colour + 0xCu, ((frames >> 1) & 1) != 0 ? 0xC : 0);
+            port::store<int32_t>(packet::addressOf(colour->w), ((frames >> 1) & 1) != 0 ? 0xC : 0);
         }
-        const int distance = sdk::abs(phone->unk_40);
+        const int distance = sdk::abs(phone->iconSlide);
         const ps2f slide = fromInt(10 - distance) / ps2f(10.0f);
-        const uint32_t matrix = port::load<uint32_t>(port::load<uint32_t>(phone->unk_00.address) + 8u) + 0x130u;
-        Mat4_Copy(GuestPtr<Vec4>{matrix}, GuestPtr<Vec4>{0x001B2550u});
-        port::store<uint32_t>(matrix + 0x30u, 0xBF428F5Cu);
-        port::store<float>(matrix + 0x34u, static_cast<float>(ps2f(0.62f) + slide));
-        port::store<uint32_t>(matrix + 0x38u, 0xC027AE14u);
-        A3DObject_ChangeLuminosity(GuestPtr<A3DObject>{phone->unk_00.address}, GuestPtr<uint32_t>{colour}, 1);
-        A3DObject_DrawNode(GuestPtr<A3DObject>{phone->unk_00.address}, 1);
-        if (phone->unk_40 < 10)
-            phone->unk_40 = phone->unk_40 + 1;
+        const GuestPtr<Vec4> matrix = worldMatrix(modelNode(phone->iconModel, 1));
+        Mat4_Copy(matrix, GuestPtr<Vec4>{0x001B2550u});
+        matrix[3].x = std::bit_cast<float>(0xBF428F5Cu); // -0.76
+        matrix[3].y = static_cast<float>(ps2f(0.62f) + slide);
+        matrix[3].z = std::bit_cast<float>(0xC027AE14u); // -2.62
+        A3DObject_ChangeLuminosity(phone->iconModel, GuestPtr<uint32_t>{colour.address}, 1);
+        A3DObject_DrawNode(phone->iconModel, 1);
+        if (phone->iconSlide < 10)
+            phone->iconSlide = phone->iconSlide + 1;
     }
 
     PORT_FN(Laptop_Draw);
@@ -3749,12 +3749,10 @@ namespace mm
         return menuwin;
     }
 
-    // Asks the window (virtual slot at +0x18 of its vtable at +8) to close with a step of 0.1; once it has, the list is
-    // deleted and the state (+0) goes to 0.
+    // Steps the window's closing by 0.1 (its Step slot); once it is done, the list is deleted and the state goes to 0.
     void MenuWin_Closing(GuestPtr<MenuWin> menuwin)
     {
-        const uint32_t vtable = menuwin->base.vtable.address;
-        if (port::callGuest<int64_t>(port::load<uint32_t>(vtable + 0x18u), menuwin, ps2f(0.1f)) != 0)
+        if (port::callGuest<int64_t>(menuwin->base.vtable->step, menuwin, ps2f(0.1f)) != 0)
         {
             lifetime::deleteWith(menuwin.address + 0x10u, [](uint32_t o) { ListMenu_dtor(GuestPtr<ListMenu>{o}, 1); });
             menuwin->base.state = 0;
@@ -4194,8 +4192,8 @@ namespace mm
         applicants->cardModel = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B68u)};
         applicants->frameMatrix = GuestPtr<Vec4>::of(applicants->frameModel->matrix[0]);
         applicants->cardMatrix = GuestPtr<Vec4>::of(applicants->cardModel->matrix[0]);
-        applicants->cardNodeA = GuestPtr<Vec4>{port::load<uint32_t>(applicants->cardModel->model.address + 8u) + 0x70u};
-        applicants->cardNodeB = GuestPtr<Vec4>{port::load<uint32_t>(applicants->cardModel->model.address + 8u) + 0x1F0u};
+        applicants->cardNodeA = worldMatrix(modelNode(applicants->cardModel, 0));
+        applicants->cardNodeB = worldMatrix(modelNode(applicants->cardModel, 2));
         applicants->top = 0;
         applicants->cursor = 0;
         applicants->rollPhase = 0.0f;
@@ -4267,14 +4265,14 @@ namespace mm
         box(entry->lineText, 0x10, 1, -1, 0x7D30, 0x7FD0);
         entry->model = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B6Cu)};
         entry->boardMatrix = GuestPtr<Vec4>{entry->model.address + 0x10u};
-        entry->markerMatrix = GuestPtr<Vec4>{port::load<uint32_t>(entry->model->model.address + 8u) + 0x130u};
+        entry->markerMatrix = worldMatrix(modelNode(entry->model, 1));
         entry->restHeight = 0.0f;
         entry->markerX = std::bit_cast<float>(0x3C03126Fu); // 0.008
         entry->markerY = std::bit_cast<float>(0x3B449BA6u); // 0.003
         Mat4_Copy(entry->markerMatrix, GuestPtr<Vec4>{0x001B2550u});
         entry->markerMatrix[3].x = entry->markerX;
         entry->markerMatrix[3].y = entry->markerY;
-        port::store<uint32_t>(entry->markerMatrix.address + 0x38u, port::load<uint32_t>(entry->boardMatrix.address + 0x38u));
+        entry->markerMatrix[3].z = entry->boardMatrix[3].z;
     }
 
     PORT_FN(NameEntry_CreateTexts);
@@ -4362,10 +4360,10 @@ namespace mm
         const uint32_t p = panel.address;
         BaseObject_ctor(static_cast<int>(p));
         panel->model = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B0Cu)};
-        const uint32_t model = panel->model.address;
-        port::store<uint32_t>(model + 0x40u, 0xBF47AE14u);
-        port::store<uint32_t>(model + 0x44u, 0xBF051EB8u);
-        port::store<uint32_t>(model + 0x48u, 0xC02CCCCDu);
+        const GuestPtr<A3DObject> model = panel->model;
+        model->matrix[3].x = std::bit_cast<float>(0xBF47AE14u); // -0.78
+        model->matrix[3].y = std::bit_cast<float>(0xBF051EB8u); // -0.52
+        model->matrix[3].z = std::bit_cast<float>(0xC02CCCCDu); // -2.7
         PacketBuf_Seek(static_cast<int>(StatusPanel_BuildPacket(panel, GuestPtr<uint32_t>{static_cast<uint32_t>(PacketBuf_Tell())}).address));
         panel->alertModel = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B00u)};
         const uint32_t words[] = {0x10000006u, 0u, 0x11000000u, 0x50000006u,
@@ -4417,12 +4415,10 @@ namespace mm
         ListMenu_SetItemText(menuwin->list, item, -1);
     }
 
-    // Once the opening call (slot +0x18 of the vtable at +8, with a step of 0.1) is done, the conversation goes to state 3 and
-    // its first line.
+    // Once the opening (its Step slot, by 0.1) is done, the conversation goes to state 3 and its first line.
     void TalkConv_Opening(GuestPtr<TalkConv> conv)
     {
-        const uint32_t vtable = conv->base.base.vtable.address;
-        if (port::callGuest<int64_t>(port::load<uint32_t>(vtable + 0x18u), conv, ps2f(0.1f)) != 0)
+        if (port::callGuest<int64_t>(conv->base.base.vtable->step, conv, ps2f(0.1f)) != 0)
         {
             conv->base.base.state = 3;
             TalkConv_NextLine(conv);
@@ -4439,10 +4435,9 @@ namespace mm
     {
         entry->vtable = GuestPtr<void>{0x001BCFE8u};
         NameEntry_CreateTexts(entry);
-        const auto node = [&] { return entry->boardMatrix.address; };
         entry->boardMatrix[3].y = entry->restHeight;
-        port::store<uint32_t>(node() + 0x38u, 0xC08CCCCDu);
-        port::store<uint32_t>(entry->markerMatrix.address + 0x38u, port::load<uint32_t>(node() + 0x38u));
+        entry->boardMatrix[3].z = std::bit_cast<float>(0xC08CCCCDu); // -4.4
+        entry->markerMatrix[3].z = entry->boardMatrix[3].z;
         entry->boardPlace[0] = entry->boardMatrix[3].x;
         entry->boardPlace[1] = entry->boardMatrix[3].y;
         entry->boardPlace[2] = entry->boardMatrix[3].z;
@@ -4479,11 +4474,11 @@ namespace mm
         applicants->top = index;
         applicants->cursor = index;
         Mat4_Copy(applicants->cardNodeA, GuestPtr<Vec4>{0x001B2550u});
-        const auto word = [&](uint32_t offset) { return ps2f(std::bit_cast<float>(port::load<uint32_t>(applicants->frameMatrix.address + offset))); };
-        const auto put = [&](uint32_t offset, ps2f value) { port::store<uint32_t>(applicants->cardNodeA.address + offset, std::bit_cast<uint32_t>(value.v)); };
-        put(0x30, word(0x30) - ps2f(3.0f));
-        put(0x34, word(0x34) - ps2f(2.5f));
-        port::store<uint32_t>(applicants->cardNodeA.address + 0x38u, port::load<uint32_t>(applicants->frameMatrix.address + 0x38u));
+        const Vec4 &frame = applicants->frameMatrix[3];
+        Vec4 &card = applicants->cardNodeA[3];
+        card.x = (ps2f(frame.x) - ps2f(3.0f)).v;
+        card.y = (ps2f(frame.y) - ps2f(2.5f)).v;
+        card.z = frame.z;
         Applicants_ScrollTo(applicants, -1);
         Applicants_BuildInfo(applicants);
         applicants->cardShown = 1;
@@ -5998,7 +5993,7 @@ namespace mm
         if (scene->fadeMode != 0)
             return;
         const auto window = [scene]() { return scene->window.address; };
-        const auto slot = [](uint32_t object, uint32_t offset) { return port::load<uint32_t>(port::load<uint32_t>(object + 8u) + offset); };
+        const auto vtable = [scene]() { return scene->window->base.vtable; };
         const auto nextStep = [scene]() { scene->phase = scene->phase + 1; };
         const uint32_t step = static_cast<uint32_t>(scene->phase);
         bool draw = true;
@@ -6033,7 +6028,7 @@ namespace mm
                 nextStep();
                 break;
             case 3:
-                if (port::callGuest<int64_t>(slot(window(), 0x28u), window()) != 0)
+                if (port::callGuest<int64_t>(vtable()->isActive, window()) != 0)
                     nextStep();
                 break;
             case 4:
@@ -6057,11 +6052,11 @@ namespace mm
                 }
                 break;
             case 7:
-                port::callGuest<int64_t>(slot(window(), 0x10u), window());
+                port::callGuest<int64_t>(vtable()->close, window());
                 nextStep();
                 break;
             case 8:
-                if (port::callGuest<int64_t>(slot(window(), 0x24u), window()) != 0)
+                if (port::callGuest<int64_t>(vtable()->isIdle, window()) != 0)
                     nextStep();
                 break;
             case 9:
@@ -6071,7 +6066,7 @@ namespace mm
                     break;
                 const uint32_t win = window();
                 if (win != 0u)
-                    port::callGuest<void>(slot(win, 8u), win, 1);
+                    port::callGuest<void>(GuestPtr<MsgWin>{win}->base.vtable->dtor, win, 1);
                 scene->window = GuestPtr<MsgWin>{0u};
                 scene->phase = 0;
                 scene->step = static_cast<uint8_t>(scene->step + 1);
@@ -6082,17 +6077,17 @@ namespace mm
         }
         if (!draw)
             return;
-        port::callGuest<int64_t>(slot(window(), 0x14u), window());
+        port::callGuest<int64_t>(vtable()->update, window());
         DmaList_QueueGsDefaults();
         Packet2_Draw(GuestPtr<uint32_t>{scene->lights.address}, 0);
         Packet_Draw(GuestPtr<uint32_t>{scene->camera.address});
         DmaList_QueueClearZ();
         const GuestPtr<A3DObject> building{scene->office.address};
-        const uint32_t matrix = port::load<uint32_t>(building->model.address + 8u) + 0xDF0u;
-        Mat4_Copy(GuestPtr<Vec4>{matrix}, GuestPtr<Vec4>{0x001B2550u});
-        port::store<uint32_t>(matrix + 0x30u, 0u);
-        port::store<uint32_t>(matrix + 0x34u, 0xBE23D70Au);
-        port::store<uint32_t>(matrix + 0x38u, 0xC075C28Fu);
+        const GuestPtr<Vec4> matrix = worldMatrix(modelNode(building, 0x12));
+        Mat4_Copy(matrix, GuestPtr<Vec4>{0x001B2550u});
+        matrix[3].x = 0.0f;
+        matrix[3].y = std::bit_cast<float>(0xBE23D70Au); // -0.16
+        matrix[3].z = std::bit_cast<float>(0xC075C28Fu); // -3.84
         A3DObject_ChangeLuminosity(building, GuestPtr<uint32_t>{0x001B26C0u}, 0);
         A3DObject_DrawNode(building, 0x12);
         for (uint32_t at = 0; at < 0x10u; at += 4u)
@@ -6122,7 +6117,7 @@ namespace mm
                 scene->unk_48 = -1;
             }
         }
-        port::callGuest<int64_t>(slot(window(), 0x20u), window(), 2);
+        port::callGuest<int64_t>(vtable()->draw, window(), 2);
         DmaList_QueueClearZ();
         DmaList_QueueFade(scene->fade, 0);
     }
@@ -6295,11 +6290,12 @@ namespace mm
             hour -= 12;
         if (!(minuteSeconds + 0x708 < 0xE10))
             minuteSeconds -= 0xE10;
-        const uint32_t hands = port::load<uint32_t>(port::load<uint32_t>(panel->model.address) + 8u);
+        const GuestPtr<A3DNode> hourHand = modelNode(panel->model, 1), minuteHand = modelNode(panel->model, 2);
         const ps2f pi = ps2f(std::bit_cast<float>(0x40490FDBu));
-        sdk::sceVu0RotMatrixZ(hands + 0xD0u, 0x001B2550u, (pi * ps2f(static_cast<float>(hour))) / ps2f(6.0f));
-        sdk::sceVu0RotMatrixZ(hands + 0x190u, 0x001B2550u, (pi * ps2f(static_cast<float>(minuteSeconds))) / ps2f(std::bit_cast<float>(0x44E10000u)));
-        port::store<uint32_t>(hands + 0xD0u + 0x38u, 0xBC23D70Au);
+        sdk::sceVu0RotMatrixZ(GuestPtr<Vec4>::of(hourHand->local[0]).address, 0x001B2550u, (pi * ps2f(static_cast<float>(hour))) / ps2f(6.0f));
+        sdk::sceVu0RotMatrixZ(GuestPtr<Vec4>::of(minuteHand->local[0]).address, 0x001B2550u,
+                              (pi * ps2f(static_cast<float>(minuteSeconds))) / ps2f(std::bit_cast<float>(0x44E10000u)));
+        hourHand->local[3].z = std::bit_cast<float>(0xBC23D70Au); // -0.01, over the minute hand
         const uint32_t quads = panel->panelPacket;
         // The two glyph floats of `digit` go to the quad words at `at` and at + 0x20.
         const auto glyph = [&](uint32_t at, int digit) {
@@ -6395,14 +6391,13 @@ namespace mm
             else
             {
                 sdk::strcpy(text, 0x001B6490u);
-                constexpr uint32_t kGoal = 0x001C554Cu;
-                const int32_t goal = port::load<int32_t>(kGoal);
+                const int32_t goal = globals::stageState()->quota;
                 const int32_t count = city->map->population;
                 if (count < goal)
                     sdk::sprintf(sp + 0x70u + static_cast<uint32_t>(sdk::strlen(text)), 0x001B64E0u, goal - count);
                 else
                     sdk::strcat(text, 0x001B64B0u);
-                const int32_t level = port::load<int32_t>(kGoal + 4u);
+                const int32_t level = globals::stageState()->missionKind;
                 if (level != 0)
                 {
                     const uint32_t end = static_cast<uint32_t>(sdk::strlen(text));
@@ -6411,14 +6406,14 @@ namespace mm
                 }
             }
             TextBox_SetText(panel->text[0], GuestPtr<char>{text}, 0);
-            Text_FormatMoney(GuestPtr<char>{sp + 0x170u}, port::load<int32_t>(0x001C5544u) * 2, 0x12, 0);
+            Text_FormatMoney(GuestPtr<char>{sp + 0x170u}, globals::stageState()->salary * 2, 0x12, 0);
             sdk::sprintf(text, 0x001B6538u, sp + 0x170u);
             TextBox_SetText(panel->text[2], GuestPtr<char>{text}, 0);
-            Text_FormatMoney(GuestPtr<char>{sp + 0x170u}, port::load<int32_t>(0x001C5540u), 0x13, 0);
+            Text_FormatMoney(GuestPtr<char>{sp + 0x170u}, globals::stageState()->money, 0x13, 0);
             sdk::sprintf(text, 0x001B6548u, sp + 0x170u);
             TextBox_SetText(panel->text[1], GuestPtr<char>{text}, 0);
         }
-        const int32_t marks = port::load<int32_t>(city->stamina.address + 4u);
+        const int32_t marks = city->stamina->value;
         const int32_t scaled = static_cast<int32_t>(static_cast<uint32_t>(marks) * 20u);
         panel->markCount = scaled / 2000000;
     }
@@ -6736,17 +6731,16 @@ namespace mm
             if (left != 0)
                 return;
             const int32_t picked = cursor->picked;
-            const uint32_t record = Map_GetRecord(map(), picked).address;
-            const uint32_t type = port::load<uint32_t>(port::load<uint32_t>(kBuildingTypes) + 4u * port::load<uint16_t>(record));
-            if ((port::load<uint16_t>(type + 0x136u) & 0x80u) == 0u)
+            const GuestPtr<MapObject> record = Map_GetRecord(map(), picked);
+            const GuestPtr<BuildingType> type{port::load<uint32_t>(port::load<uint32_t>(kBuildingTypes) + 4u * record->type)};
+            if ((type->flags & 0x80u) == 0u)
                 Sound_PlaySe(0x44, 0, 0x3C, 0.0f, 0.0f);
-            Minimap_Plot(city->minimap, port::load<uint16_t>(record + 4u), port::load<uint8_t>(type + 0x142u), 4, 0);
-            const uint32_t tile = port::load<uint16_t>(record + 4u);
-            const int size = port::load<uint8_t>(type + 0x142u);
+            Minimap_Plot(city->minimap, record->tile, type->size, 4, 0);
+            const uint32_t tile = record->tile;
+            const int size = type->size;
             CityScene_AddApproval(city, -0x14);
-            Applicants_RemoveFamily(city->applicants, port::load<uint16_t>(record + 0xCu));
-            const uint32_t owner = map().address;
-            port::callGuest<void>(port::load<uint32_t>(port::load<uint32_t>(owner + 0x64u) + 0xCu), owner, picked);
+            Applicants_RemoveFamily(city->applicants, record->family);
+            port::callGuest<void>(map()->vtable->clearObject, map(), picked);
             Map_PlaceRubbleArea(map(), static_cast<int>(tile & 0x7Fu), static_cast<int>(tile >> 7), size, static_cast<int>(c));
             CityScene_PopMode(city);
             if (CityScene_GetMode(city) == 0xA)

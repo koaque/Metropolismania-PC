@@ -713,7 +713,7 @@ address,name,kind,source
 0x0012A2C0,mm_Camera_BuildPacket,func,manual
 0x0012A3A0,mm_Camera_UpdateProjection,func,manual
 0x0012A5E0,mm_Camera_SetFogRange,func,manual
-0x0012A650,mm_LightSet_SetField20,func,manual
+0x0012A650,mm_Camera_SetFogColour,func,manual
 0x0012A660,mm_Camera_UpdateLightMatrices,func,manual
 0x0012A6C0,mm_Camera_UpdateMatrices,func,manual
 0x0012A750,mm_Camera_DeletingDtor,func,manual
@@ -768,11 +768,11 @@ address,name,kind,source
 0x0012EF00,mm_CharType_Update,func,manual
 0x0012EF10,mm_CharType_dtor,func,manual
 0x0012EF60,mm_CharType_ctor,func,manual
-0x0012F020,mm_Char2_UpdateSpeedA,func,manual
+0x0012F020,mm_Char2_UpdateSpeedUndrawn,func,manual
 0x0012FF00,mm_Char_CheckNeighbourTile,func,manual
-0x001300C0,mm_Char2_UpdateSpeedB,func,manual
-0x00130FA0,mm_Char2_MoveA,func,manual
-0x001318A0,mm_Char2_MoveB,func,manual
+0x001300C0,mm_Char2_UpdateSpeedDrawn,func,manual
+0x00130FA0,mm_Char2_MoveUndrawn,func,manual
+0x001318A0,mm_Char2_MoveDrawn,func,manual
 0x00132190,mm_Char2_Draw,func,manual
 0x00132400,mm_Char2_Update,func,manual
 0x00132820,mm_Char2_dtor,func,manual
@@ -2020,8 +2020,8 @@ address,name,kind,source
 0x00196720,mm_EvShopping_Update,func,manual
 0x00196970,mm_EvShopping_Start,func,manual
 0x001969F0,mm_EvShopping_Check,func,manual
-0x00196F10,mm_EventData_GetSize7C,func,manual
-0x00196F20,mm_EventData_GetSize1C,func,manual
+0x00196F10,mm_TalkEventData_DataSize,func,manual
+0x00196F20,mm_EventData_DataSize,func,manual
 0x00196F30,mm_EvNoodles_Answer,func,manual
 0x00196FF0,mm_EvNoodles_End,func,manual
 0x001970F0,mm_EvNoodles_Update,func,manual

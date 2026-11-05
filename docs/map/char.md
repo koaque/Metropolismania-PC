@@ -2,13 +2,17 @@
 
 People and the player character.
 
-- Character types come from `DATA\BIN\CHARTYPE.BIN` (0x18-byte records: byte 0 is the class, bytes 8, 9, 10 and 14
-  are model parts). Class objects sit in the table at gp `0x001BDA3C`; vtables: base `0x001BCE70`, class 2
+- Character types come from `DATA\BIN\CHARTYPE.BIN` (`CharTypeRecord`, 0x18 bytes: the kind (0 plain, 1 a person, 2 a
+  vehicle), the voice, the flags, a person's walking speed, four model parts and three restart frames).
+  `CharClass.restartFrames` gives the frame a looping animation starts over at, by the person's look. Class objects sit in the table at gp `0x001BDA3C`; vtables: base `0x001BCE70`, class 2
   `0x001BCE90`, class 1 (people) `0x001BCEB0`; slots `+8` dtor, `+0xC` update, `+0x10` draw, `+0x14` draw2.
 - People are the 0x30-byte records in the map object (`map`): `+0` x, `+8` z, `+0x10` next person on the tile,
   `+0x12` own index, `+0x14` workplace, `+0x16` building they are in (`0x3F80` = outside), `+0x1E` destination,
   `+0x20` follow target, `+0x22` flags, `+0x24` character type, `+0x26` schedule state, `+0x27` activity,
   `+0x28` home, `+0x2A` family, `+0x2C` family this resident can introduce, `+0x2E` member, `+0x2F` friendship status byte.
+- Person flag `0x1000` means drawn since the last update: the draw sets it and the update clears it. A drawn person
+  walks properly and a drawn vehicle steers every frame (`mm_Char2_MoveDrawn`); the others move more coarsely
+  (`mm_Char2_MoveUndrawn` steers one frame in four).
 - `mm_Person_*` moves people between home, work and other buildings by their schedules (`mm_Schedule_*`) and path
   waypoints (`mm_Path_*`, walkable tiles have flag `0x10`).
 - `mm_Player_*` is the player: walking, turning, picking the building or person in front, placing bag items and homes
@@ -33,16 +37,16 @@ People and the player character.
 | `0x0012EEF0` | `void mm_CharType_Draw(CharClass *cls)` | 8 | no | base slot +0x10: empty |
 | `0x0012EF00` | `int mm_CharType_Update(CharClass *cls)` | 8 | no | base slot +0xC: returns 0 |
 | `0x0012EF10` | `CharClass *mm_CharType_dtor(CharClass *cls, int16_t deleteFlag)` | 76 | yes | base vtable 0x1BCE70; delete when the flag is > 0 |
-| `0x0012EF60` | `CharClass *mm_CharType_ctor(CharClass *cls, uint8_t *record)` | 180 | no | base vtable 0x1BCE70; four model parts from the table 0x1F3B90 by record bytes 8/9/10/14, sizes from bytes 11-13, ids from bytes 2/4/0x14 |
-| `0x0012F020` | `void mm_Char2_UpdateSpeedA(CharClass *cls, CityScene *city, MapPerson *vehicle, MapObject *obj, int dir, float dx, float dz)` | 3808 | no | a vehicle's speed (+0x2C) for its next step: brakes behind vehicles heading the same way, at junctions against the lights (trafficPhase), gains on straight road; direction 4 tests the tiles around (mm_Char_CheckNeighbourTile) |
+| `0x0012EF60` | `CharClass *mm_CharType_ctor(CharClass *cls, CharTypeRecord *record)` | 180 | no | base vtable 0x1BCE70; four model parts from the table 0x1F3B90 by record bytes 8/9/10/14, sizes from bytes 11-13, ids from bytes 2/4/0x14 |
+| `0x0012F020` | `void mm_Char2_UpdateSpeedUndrawn(CharClass *cls, CityScene *city, MapPerson *vehicle, MapObject *obj, int dir, float dx, float dz)` | 3808 | no | a vehicle's speed (+0x2C) for its next step: brakes behind vehicles heading the same way, at junctions against the lights (trafficPhase), gains on straight road; direction 4 tests the tiles around (mm_Char_CheckNeighbourTile) |
 | `0x0012FF00` | `int mm_Char_CheckNeighbourTile(CharClass *cls, CityScene *city, MapPerson *person, int x, int z)` | 440 | no | (provisional, was mm_Path_CheckNeighbour) neighbour tile test shared by both probe functions (tables 0x1AEFF0/0x1AF020) |
-| `0x001300C0` | `void mm_Char2_UpdateSpeedB(CharClass *cls, CityScene *city, MapPerson *vehicle, MapObject *obj, int dir, float dx, float dz)` | 3808 | no | mm_Char2_UpdateSpeedA with gentler rules (brake 80, slow 20, follow at a 20th, gain 10), for movement mode B |
-| `0x00130FA0` | `void mm_Char2_MoveA(CharClass *cls, CityScene *city, MapPerson *vehicle, MapObject *obj, int tile)` | 2300 | no | class-2 movement mode A: on one frame in four steers for the waypoint or, on road, back into its lane (turning up to 0.16), sets the speed (mm_Char2_UpdateSpeedA), then moves along its heading and leaves the old tile's list |
-| `0x001318A0` | `void mm_Char2_MoveB(CharClass *cls, CityScene *city, MapPerson *vehicle, MapObject *obj, int tile)` | 2280 | no | class-2 movement mode B: mode A steering every frame, turning up to 0.04, with mm_Char2_UpdateSpeedB |
+| `0x001300C0` | `void mm_Char2_UpdateSpeedDrawn(CharClass *cls, CityScene *city, MapPerson *vehicle, MapObject *obj, int dir, float dx, float dz)` | 3808 | no | mm_Char2_UpdateSpeedUndrawn with gentler rules (brake 80, slow 20, follow at a 20th, gain 10), for a drawn vehicle |
+| `0x00130FA0` | `void mm_Char2_MoveUndrawn(CharClass *cls, CityScene *city, MapPerson *vehicle, MapObject *obj, int tile)` | 2300 | no | a vehicle not drawn since its last update (person flag 0x1000 clear): on one frame in four steers for the waypoint or, on road, back into its lane (turning up to 0.16), sets the speed (mm_Char2_UpdateSpeedUndrawn), then moves along its heading and leaves the old tile's list |
+| `0x001318A0` | `void mm_Char2_MoveDrawn(CharClass *cls, CityScene *city, MapPerson *vehicle, MapObject *obj, int tile)` | 2280 | no | a vehicle drawn since its last update (flag 0x1000): the same steering every frame, turning up to 0.04, with mm_Char2_UpdateSpeedDrawn |
 | `0x00132190` | `void mm_Char2_Draw(CharClass *cls, CityScene *city, MapPerson *person, Vec4 *colour, int flags, Vec4 *place)` | 612 | no | class 2 slot +0x10: instance of the character on the terrain (height from 0x1415E0), within the draw range (0x1BD980) |
-| `0x00132400` | `void mm_Char2_Update(CharClass *cls, CityScene *city, MapPerson *person, uint32_t timeFlags)` | 1048 | yes | class 2 slot +0xC: moves the character (mode A or B) and updates its tile |
+| `0x00132400` | `void mm_Char2_Update(CharClass *cls, CityScene *city, MapPerson *person, uint32_t timeFlags)` | 1048 | yes | class 2 slot +0xC: moves the vehicle (mm_Char2_MoveDrawn or mm_Char2_MoveUndrawn by the drawn flag) and updates its tile |
 | `0x00132820` | `CharClass *mm_Char2_dtor(CharClass *cls, int16_t deleteFlag)` | 96 | yes | vtable 0x1BCE90, then the base destructor |
-| `0x00132880` | `CharClass *mm_Char2_ctor(CharClass *cls, uint8_t *record)` | 52 | no | base constructor, vtable 0x1BCE90 |
+| `0x00132880` | `CharClass *mm_Char2_ctor(CharClass *cls, CharTypeRecord *record)` | 52 | no | base constructor, vtable 0x1BCE90 |
 | `0x001328C0` | `void mm_CharType_LoadAll(void)` | 416 | yes | loads DATA\BIN\CHARTYPE.BIN and creates one class object per 0x18-byte record (class 0 base, 1 person, 2 class 2) in the table at gp 0x1BDA3C |
 | `0x00132A70` | `void mm_Person_CheckBuilding(CharClass *cls, CityScene *city, MapPerson *person)` | 244 | yes | (provisional) person vs. its target building record: flags 0x20/0x200/4, the building's state byte +0x27 |
 | `0x00132B70` | `void mm_Person_TickCounters(CharClass *cls, CityScene *city, MapPerson *person)` | 300 | no | friendship level tick (+0x2F), +0x25 countdown, and with city flag 4 the family a resident introduces phones to ask about moving in (up to 4 calls) |
@@ -56,7 +60,7 @@ People and the player character.
 | `0x001345E0` | `void mm_Person_Draw(CharClass *cls, CityScene *city, MapPerson *person, int a3, int t0, int32_t *t1, int t2)` | 1088 | yes | class 1 slot +0x10: person instances on the terrain, within the draw range |
 | `0x00134A20` | `void mm_Person_Update(CharClass *cls, CityScene *city, MapPerson *person, uint32_t timeFlags)` | 3032 | yes | class 1 slot +0xC: a person's behaviour per tick: target building, walking, waiting, random choices |
 | `0x00135600` | `CharClass *mm_Person_dtor(CharClass *cls, int16_t deleteFlag)` | 96 | yes | vtable 0x1BCEB0, then the base destructor |
-| `0x00135660` | `PersonClass *mm_Person_ctor(PersonClass *cls, uint8_t *record)` | 136 | no | base constructor, vtable 0x1BCEB0, walking speed +0x24 = record u16 +6 / 1e6 |
+| `0x00135660` | `PersonClass *mm_Person_ctor(PersonClass *cls, CharTypeRecord *record)` | 136 | no | base constructor, vtable 0x1BCEB0, walking speed +0x24 = record u16 +6 / 1e6 |
 | `0x0013C010` | `void mm_StatusByte_IncHighLevel(uint8_t *status)` | 64 | no | (provisional) level 12..13 -> +1 |
 | `0x0013C050` | `void mm_StatusByte_ClearMid2(uint8_t *status)` | 48 | no | clears bits 2-3 when set |
 | `0x0013C080` | `void mm_StatusByte_IncLevel(uint8_t *status)` | 108 | no | (provisional) level +1 below 12; above 1 clears bits 0-1 |

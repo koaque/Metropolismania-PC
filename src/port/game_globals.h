@@ -292,6 +292,11 @@ namespace mm::globals
     // (sound + 1, variant), filled from the per-sound counts at 0x1B35F0 (11 rows of 0x1C bytes, six counts
     // from +0x10).
     inline constexpr uint32_t kSeVoices = 0x001F8140u;
+    inline GuestPtr<SeVoice> seVoice(uint32_t voice) { return GuestPtr<SeVoice>{kSeVoices} + static_cast<int32_t>(voice); }
+    inline GuestPtr<SeSound> seSound(uint32_t sound) { return GuestPtr<SeSound>{kSoundTable} + static_cast<int32_t>(sound); }
+    inline GuestPtr<BgmTrack> bgmTracks() { return GuestPtr<BgmTrack>{kBgmTracks}; }
+    inline GuestPtr<SoundStatus> soundStatus() { return GuestPtr<SoundStatus>{kSoundStatus}; }
+    inline GuestPtr<SoundStatus> soundStatusView() { return GuestPtr<SoundStatus>{kSoundStatusView}; }
     // Sound scripts (0x18 bytes, picked by a voice's voiceParam low byte): eight opcodes, then a uint16_t argument
     // for each (mm_Se_UpdateVoices).
     inline constexpr uint32_t kSeScripts = 0x001B3410u;
