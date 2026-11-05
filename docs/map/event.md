@@ -79,7 +79,7 @@ City events (visitors, requests, incidents, paydays).
 | `0x0018F980` | `void mm_EvShoppingTogether_End(EventData *data, CityScene *city)` | 192 | no | type 1: End (clears the building marks) |
 | `0x0018FA40` | `MapObject *mm_EvShoppingTogether_Start(EventData *data, CityScene *city)` | 116 | no | type 1: Start (marks the two buildings, timer 180) |
 | `0x0018FAC0` | `int mm_EvShoppingTogether_Check(EventData *data, CityScene *city, MapPerson *person)` | 460 | no | event type 1 "Shopping together": slot Check |
-| `0x0018FC90` | `int mm_EvAlien_Answer(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 56 | yes | type 16: Answer |
+| `0x0018FC90` | `int mm_EvAlien_Answer(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 56 | yes | type 16: Answer; at its start the first Spaceman's Home family applies |
 | `0x0018FCD0` | `void mm_EvAlien_End(EventData *data, CityScene *city)` | 120 | no | type 16: End (clears the building marks) |
 | `0x0018FD50` | `MapObject *mm_EvAlien_PickTarget(CityScene *city, int x, int z)` | 400 | no | the building the alien lands on at (x, z): of the (tile list, type) pairs at 0x1B3760 (ended by list 0), the first building whose family lives in the city, without a maxed meter, whose footprint widened by 1 holds the point |
 | `0x0018FEE0` | `void mm_EvAlien_Update(EventData *data, CityScene *city)` | 1184 | yes | type 16: Update (finishes after 720 ticks) |
@@ -96,7 +96,7 @@ City events (visitors, requests, incidents, paydays).
 | `0x001911F0` | `void mm_EvMsg_Update(EventData *data, CityScene *city)` | 292 | no | Update shared by most message events (25-28, 31-34, 36-40) |
 | `0x00191320` | `void mm_EvNoRetreat_Update(EventData *data, CityScene *city)` | 256 | no | type 24 "No retreat": Update |
 | `0x00191420` | `void mm_EvMsg_End(EventData *data, CityScene *city)` | 48 | no | End shared by the message events |
-| `0x00191450` | `int64_t mm_EvMsg_Start(EventData *data, CityScene *city)` | 36 | no | Start shared by the message events (types 23-41) |
+| `0x00191450` | `int64_t mm_EvMsg_Start(EventData *data, CityScene *city)` | 36 | no | Start shared by the message events (types 23-41): the message comes from the boss (Boss' Home family, member 0) |
 | `0x00191480` | `int mm_EvMissionCleared_Check(EventData *data, CityScene *city)` | 84 | no | type 41 "Mission Cleared": Check |
 | `0x001914E0` | `int mm_EvQuota80_Check(EventData *data, CityScene *city)` | 72 | no | type 40 "80% of the quota": Check |
 | `0x00191530` | `int mm_EvForciblyRetreat_Check(EventData *data, CityScene *city)` | 20 | no | type 35 "Forcibly Retreat": Check |
@@ -109,11 +109,11 @@ City events (visitors, requests, incidents, paydays).
 | `0x001917C0` | `int mm_EvWoman_Check(EventData *data, CityScene *city)` | 44 | no | type 28 "Woman": Check |
 | `0x001917F0` | `int mm_EvRiddle_Check(EventData *data, CityScene *city)` | 44 | no | type 27 "Riddle": Check |
 | `0x00191820` | `int mm_EvPopularity_Check(EventData *data, CityScene *city)` | 40 | no | type 26 "Popularity": Check |
-| `0x00191850` | `int mm_EvCaveMan_Answer(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 508 | yes | type 15: Answer |
+| `0x00191850` | `int mm_EvCaveMan_Answer(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 508 | yes | type 15: Answer; modes 0 to 3 bring in the four Staff Accom families, 7 the first Caveman's Home family |
 | `0x00191A50` | `void mm_EvCaveMan_Update(EventData *data, CityScene *city)` | 1652 | yes | type 15: Update |
 | `0x001920D0` | `void mm_EvCaveMan_End(EventData *data, CityScene *city)` | 192 | no | type 15: End |
 | `0x00192190` | `int64_t mm_EvCaveMan_Start(EventData *data, CityScene *city)` | 8 | no | type 15: Start |
-| `0x001921A0` | `int mm_EvCaveMan_Check(EventData *data, CityScene *city)` | 380 | no | type 15 "Cave Man": Check |
+| `0x001921A0` | `int mm_EvCaveMan_Check(EventData *data, CityScene *city)` | 380 | no | type 15 "Cave Man": Check; a cave with its family's first member on the map, with the first University family (member 2) and the first Caveman's Home family as actors |
 | `0x00192320` | `int mm_EvDeliveryMan_Answer(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 76 | indirect | type 3: Answer |
 | `0x00192490` | `char *mm_EvDeliveryMan_Text(EventData *data, CityScene *city, int index)` | 176 | no | type 3: Text |
 | `0x00192540` | `void mm_EvDeliveryMan_Update(EventData *data, CityScene *city)` | 328 | no | type 3: Update |
@@ -130,7 +130,7 @@ City events (visitors, requests, incidents, paydays).
 | `0x00193330` | `int mm_EvFarewellParty_Answer(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 60 | no | type 19: Answer |
 | `0x00193370` | `void mm_EvFarewellParty_End(EventData *data, CityScene *city)` | 104 | indirect | type 19: End |
 | `0x001933E0` | `void mm_EvFarewellParty_Update(EventData *data, CityScene *city)` | 1344 | yes | type 19: Update |
-| `0x00193920` | `MapObject *mm_EvFarewellParty_Start(EventData *data, CityScene *city)` | 520 | no | type 19 "Farewell Party": Start |
+| `0x00193920` | `MapObject *mm_EvFarewellParty_Start(EventData *data, CityScene *city)` | 520 | no | type 19 "Farewell Party": Start; the boss's family (Boss' Home) leaves, and residents who are close friends come |
 | `0x00193B30` | `int mm_EvForgetfulGranny_Check(EventData *data, CityScene *city, MapPerson *person)` | 44 | no | type 2 "Forgetful Granny": Check |
 | `0x00193B60` | `int mm_EvCrazyCult_Answer(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 96 | indirect | type 18: Answer |
 | `0x00193D00` | `void mm_EvCrazyCult_End(EventData *data, CityScene *city)` | 232 | no | type 18: End |
@@ -138,11 +138,11 @@ City events (visitors, requests, incidents, paydays).
 | `0x00193F40` | `void mm_EvCrazyCult_Phase2(EventData *data, CityScene *city)` | 516 | no | phases 10 to 16: 10 waits until everyone has been reached (+0x4C), 11 and 13 tell actor 3 when its time comes and 12 and 14 count those frames back, 15 finds the homes of actors 4, 5 and 1 (marked 0x200; back to 15 while one is missing) and 16 their persons (back to 16) |
 | `0x00194150` | `void mm_EvCrazyCult_Phase1(EventData *data, CityScene *city)` | 352 | no | phases 4 to 9: actor 2 waits and is told (4 to 7), then actor 3's family home is found (8) and its person (9, which sets the next wait to the next month at 7:00) |
 | `0x001942B0` | `void mm_EvCrazyCult_Update(EventData *data, CityScene *city)` | 992 | no | type 18: Update |
-| `0x00194690` | `int64_t mm_EvCrazyCult_Start(EventData *data, CityScene *city)` | 136 | no | type 18 "Crazy Cult": Start |
+| `0x00194690` | `int64_t mm_EvCrazyCult_Start(EventData *data, CityScene *city)` | 136 | no | type 18 "Crazy Cult": Start; the Zen Monk's and Shadow Monk's families and the first four Crazy Cult families as actors |
 | `0x00194720` | `int mm_EvAdoption_Answer(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 116 | indirect | type 12: Answer |
 | `0x001949F0` | `int mm_EvAdoption_Text(EventData *data, CityScene *city, int index)` | 56 | no | type 12: Text |
 | `0x00194A30` | `void mm_EvAdoption_Update(EventData *data, CityScene *city)` | 1452 | no | type 12: Update |
-| `0x00194FE0` | `uint32_t mm_EvAdoption_Start(EventData *data, CityScene *city)` | 184 | no | type 12 "Adoption": Start |
+| `0x00194FE0` | `uint32_t mm_EvAdoption_Start(EventData *data, CityScene *city)` | 184 | no | type 12 "Adoption": Start; the boss (Boss' Home family, member 0) asks, and the families with an application are listed |
 | `0x001950A0` | `uint32_t mm_EvUselessMiddleAged_Answer(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 48 | indirect | type 7: Answer |
 | `0x00195160` | `void mm_EvUselessMiddleAged_Update(EventData *data, CityScene *city)` | 160 | no | type 7: Update |
 | `0x00195200` | `void mm_EvUselessMiddleAged_End(EventData *data, CityScene *city)` | 140 | no | type 7: End |
@@ -158,7 +158,7 @@ City events (visitors, requests, incidents, paydays).
 | `0x001960C0` | `void mm_EvAdvertise_End(EventData *data, CityScene *city)` | 140 | no | type 9: End |
 | `0x00196150` | `void mm_EvAdvertise_Update(EventData *data, CityScene *city)` | 276 | no | type 9: Update |
 | `0x00196270` | `MapObject *mm_EvAdvertise_Start(EventData *data, CityScene *city)` | 48 | no | type 9: Start |
-| `0x001962A0` | `int mm_EvAdvertise_Check(EventData *data, CityScene *city, MapPerson *person)` | 192 | no | type 9 "To advertise": Check |
+| `0x001962A0` | `int mm_EvAdvertise_Check(EventData *data, CityScene *city, MapPerson *person)` | 192 | no | type 9 "To advertise": Check; the person's own shop (category 7 or 9) advertises in its family's month, or any month while newly built |
 | `0x00196360` | `int mm_EvShopping_Answer(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 120 | indirect | type 8: Answer |
 | `0x001965E0` | `char *mm_EvShopping_Text(EventData *data, CityScene *city, int index)` | 128 | no | type 8: Text |
 | `0x00196660` | `void mm_EvShopping_End(EventData *data, CityScene *city)` | 192 | no | type 8: End |
@@ -167,7 +167,7 @@ City events (visitors, requests, incidents, paydays).
 | `0x001969F0` | `int mm_EvShopping_Check(EventData *data, CityScene *city, MapPerson *person)` | 1312 | indirect | type 8 "Shopping": Check |
 | `0x00196F10` | `int mm_TalkEventData_DataSize(void)` | 8 | no | the talk event record class's data size (vtable 0x1BD8F8 slot +8, EventMgr.talks[0]): 0x7C |
 | `0x00196F20` | `int mm_EventData_DataSize(void)` | 8 | no | the base event record class's data size (vtable 0x1BD908 slot +8): 0x1C bytes after its first two words |
-| `0x00196F30` | `int mm_EvNoodles_Answer(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 192 | yes | type 13: Answer |
+| `0x00196F30` | `int mm_EvNoodles_Answer(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 192 | yes | type 13: Answer; at its start the first Noodle Shop family applies and is set up as two actors with the Studio Appartment (type 0xB8) family; at its end that family applies too |
 | `0x00196FF0` | `void mm_EvNoodles_End(EventData *data, CityScene *city)` | 248 | no | type 13: End |
 | `0x001970F0` | `void mm_EvNoodles_Update(EventData *data, CityScene *city)` | 5984 | yes | type 13: Update |
 | `0x00198850` | `int64_t mm_EvNoodles_Start(EventData *data, CityScene *city)` | 120 | no | type 13: Start |
@@ -175,7 +175,7 @@ City events (visitors, requests, incidents, paydays).
 | `0x00198B80` | `int mm_EvThief_Answer(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 252 | no | type 17: Answer |
 | `0x00198C80` | `void mm_EvThief_End(EventData *data, CityScene *city)` | 180 | no | type 17: End |
 | `0x00198D40` | `void mm_EvThief_Update(EventData *data, CityScene *city)` | 1964 | yes | type 17: Update |
-| `0x001994F0` | `int mm_EvThief_Check(EventData *data, CityScene *city)` | 492 | no | type 17 "Thief": Check |
+| `0x001994F0` | `int mm_EvThief_Check(EventData *data, CityScene *city)` | 492 | no | type 17 "Thief": Check; the first families of types 0xB9 (Studio Appartment) and 0x105 (Police Station) must live in the city with a home, and a building to rob be found |
 | `0x001996E0` | `int mm_EvRelationship_Answer(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 388 | no | Answer shared by types 20-22 |
 | `0x00199870` | `int mm_EvAffair_Check(EventData *data, CityScene *city, MapPerson *person)` | 564 | no | type 22 "An affair of": Check |
 | `0x00199AB0` | `int mm_EvBoyfriend_Check(EventData *data, CityScene *city, MapPerson *person)` | 604 | no | type 21 "Boyfriend of": Check |

@@ -101,7 +101,8 @@ namespace mm
         return port::guestV0();
     }
 
-    int WordsFn_ClearPersonFlag20(GuestPtr<WordsCtx> ctx)
+    // Person A is let go by the event: flag 0x20 (held, or following) cleared.
+    int WordsFn_ReleasePerson(GuestPtr<WordsCtx> ctx)
     {
         ctx->personA->flags &= 0xFFDFu;
         return port::guestV0();
@@ -209,10 +210,12 @@ namespace mm
         return Family_MeterAgrees(who.family, who.member, ctx->city->approval);
     }
 
-    int WordsFn_BuildingFlag100(GuestPtr<WordsCtx> ctx) { return (buildingByArg(ctx)->flags & 0x100u) != 0 ? 1 : 0; }
+    // Whether building A (or B) was built since the last morning (object flag 0x100, dropped between 6:00 and 7:00).
+    int WordsFn_BuildingNew(GuestPtr<WordsCtx> ctx) { return (buildingByArg(ctx)->flags & 0x100u) != 0 ? 1 : 0; }
     int WordsFn_BuildingFlag2(GuestPtr<WordsCtx> ctx) { return (buildingByArg(ctx)->flags & 2u) != 0 ? 1 : 0; }
 
-    int WordsFn_PersonFlag10(GuestPtr<WordsCtx> ctx)
+    // Whether person A (B with an argument) is ill today (flag 0x10, rolled each new day, mm_Person_Update).
+    int WordsFn_PersonIll(GuestPtr<WordsCtx> ctx)
     {
         const GuestPtr<MapPerson> person = ctx->arg != 0 ? ctx->personB : ctx->personA;
         return (person->flags & 0x10u) != 0 ? 1 : 0;
@@ -698,25 +701,26 @@ namespace mm
         return ((ctx->city->flags & 4u) != 0 ? 1 : 0) | agrees;
     }
 
-    // Whether family A is entry 0xFF (argument 0), 0xB7 (1) or 0x104 (2) of the family type table.
+    // Whether family A is the first family of a set type: the Noodle Shop (argument 0), the Studio Appartment of type 0xB8
+    // (1) or the Police Station of type 0x105 (2), the families the noodles and thief events bring in.
     int WordsFn_IsSpecialFamily(GuestPtr<WordsCtx> ctx)
     {
         uint32_t type;
         switch (ctx->arg)
         {
         case 0:
-            type = 0xFF;
+            type = globals::types::kNoodleShop;
             break;
         case 1:
-            type = 0xB7;
+            type = globals::types::kStudioAppartmentB8;
             break;
         case 2:
-            type = 0x104;
+            type = globals::types::kPoliceStation105;
             break;
         default:
             return 0;
         }
-        return port::load<uint16_t>(globals::familyTypeTable.get() + 2u * type) == ctx->familyA ? 1 : 0;
+        return globals::firstFamily(type) == ctx->familyA ? 1 : 0;
     }
 
     // Whether the money covers the goods' price.
@@ -1074,9 +1078,9 @@ namespace mm
     PORT_FN(WordsFn_FriendshipBand);
     PORT_FN(WordsFn_FriendshipTier);
     PORT_FN(WordsFn_MeterAgrees);
-    PORT_FN(WordsFn_BuildingFlag100);
+    PORT_FN(WordsFn_BuildingNew);
     PORT_FN(WordsFn_BuildingFlag2);
-    PORT_FN(WordsFn_PersonFlag10);
+    PORT_FN(WordsFn_PersonIll);
     PORT_FN(WordsFn_NameSlotSet);
     PORT_FN(WordsFn_ApplicantCountTier);
     PORT_FN(WordsFn_ApprovalTier);
@@ -1144,7 +1148,7 @@ namespace mm
     PORT_FN(WordsFn_SetCancelAllowed);
     PORT_FN(WordsFn_SetScriptVar);
     PORT_FN(WordsFn_FocusPadAfterTalk);
-    PORT_FN(WordsFn_ClearPersonFlag20);
+    PORT_FN(WordsFn_ReleasePerson);
     PORT_FN(WordsFn_SetTalkEventVar);
     PORT_FN(WordsFn_SetSystemEventVar);
     PORT_FN(WordsFn_PlaySe);

@@ -169,9 +169,21 @@ namespace mm::globals
     inline constexpr uint32_t kDefaultColour = 0x001B26C0u;              // Vec4: untinted instances
     inline constexpr uint32_t kClaimIconNoColour = kDefaultColour;       // Vec4 for level 0
 
-    // family: thresholds that map family ids to building type indexes (sorted u16 table and its length).
+    // family: DATA\BIN\EACHSTR.BIN, per building type the end (exclusive) of its family ids: type t's families run from
+    // entry t - 1 up to entry t (mm_Family_GetTypeIndex); and its length in halfwords.
     inline constexpr GuestVar<uint32_t> familyTypeTable{0x001BDA8Cu};
     inline constexpr GuestVar<int32_t> familyTypeCount{0x001BDA90u};
+    inline uint16_t familyTypeEnd(uint32_t type) { return port::load<uint16_t>(familyTypeTable.get() + 2u * type); }
+    // The first family of a building type (the end of the one before it): the events that bring in a set family take it.
+    inline uint16_t firstFamily(uint32_t type) { return familyTypeEnd(type - 1u); }
+    // Building types (STRTYPE.BIN record numbers) whose families the events name.
+    namespace types
+    {
+        inline constexpr uint32_t kZenMonksHome = 0xAC, kShadowMonksHome = 0xAD, kCrazyCult = 0xAE, kSpacemansHome = 0xAF,
+                                  kStaffAccom = 0xB0, kCavemansHome = 0xB1, kBossHome = 0xB2, kStudioAppartmentB8 = 0xB8,
+                                  kStudioAppartmentB9 = 0xB9, kNoodleShop = 0x100, kPoliceStation105 = 0x105,
+                                  kUniversity = 0x10D;
+    }
 
     // char: the introduction calls: the tick count the next call waits for (0 = none; one more after each try),
     // the ticks counted and the calls made (four at most).
@@ -242,8 +254,6 @@ namespace mm::globals
     inline constexpr GuestVar<uint32_t> assetLoadModel{0x001BDB58u};
     inline constexpr uint32_t kObjectModels = 0x001F3B00u;      // OBJECT.A3D models, one word each
     inline constexpr uint32_t kCharObjectModels = 0x001F3B40u;  // CHAROBJ.A3D models
-    inline constexpr GuestVar<uint32_t> eachStrData{0x001BDA8Cu};       // DATA\BIN\EACHSTR.BIN and its size in halfwords
-    inline constexpr GuestVar<int32_t> eachStrCount{0x001BDA90u};
 
     // save: per card port (two words each): card type (2 = PS2 memory card), free space, formatted, the
     // type at the last check, the type when the save slot scan ended, and the last result (-1, -2: a new

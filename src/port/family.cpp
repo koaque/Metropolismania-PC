@@ -378,11 +378,11 @@ namespace mm
         port::GuestLocal<GameFile> local;
         port::GuestLocal<int32_t> size;
         File_ctor(local, 0);
-        globals::eachStrData.set(static_cast<uint32_t>(File_LoadWhole(local, GuestPtr<char>{0x001B63B0u}, size)));
+        globals::familyTypeTable.set(static_cast<uint32_t>(File_LoadWhole(local, GuestPtr<char>{0x001B63B0u}, size)));
         int32_t length = *size;
         if (length < 0)
             length += 1;
-        globals::eachStrCount.set(length >> 1);
+        globals::familyTypeCount.set(length >> 1);
         File_dtor(local, -1);
     }
 

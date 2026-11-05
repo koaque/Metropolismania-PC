@@ -352,16 +352,16 @@ namespace mm
 
     // The camera for a talk at building `object`, eye first. The target is the middle of the footprint at the
     // object's height, the eye an offset turned by the tile's facing (the building matrix of its tile kind,
-    // translation row reset): the shared one (2.5 lower for type flag 0x10) for an object without the
-    // entrance flag (0x20), the type's own for an entrance of a type with flag 0x4000. The target then takes
-    // the eye's height. Other entrances use the person camera, which takes the target first.
+    // translation row reset): the shared one (2.5 lower for type flag 0x10) for an object still being built
+    // (no flag 0x20), the type's own for a built one of a type with flag 0x4000. The target then takes the
+    // eye's height. Other built ones use the person camera, which takes the target first.
     void TalkView_BuildingCamera(GuestPtr<TalkView> view, int object, GuestPtr<Vec4> eye, GuestPtr<Vec4> target)
     {
         using namespace vu0;
         const GuestPtr<MapObject> obj = Map_GetRecord(view->city->map, object);
         const GuestPtr<BuildingType> btype{globals::buildingTypeAddress(obj->type)};
-        const bool entrance = (obj->flags & 0x20u) != 0;
-        if (entrance && (btype->flags & 0x4000u) == 0)
+        const bool built = (obj->flags & 0x20u) != 0;
+        if (built && (btype->flags & 0x4000u) == 0)
         {
             TalkView_PersonCamera(view, object, target, eye);
             return;
@@ -374,7 +374,7 @@ namespace mm
         const auto kind = static_cast<uint32_t>(Map_GetTileKind(view->city->map, obj->tile));
         const GuestPtr<Vec4> turn{globals::kBuildingMatrices + 0x40u * kind};
         turn[3] = *GuestPtr<Vec4>{globals::kOriginPoint};
-        if (!entrance)
+        if (!built)
         {
             Math_MulMatVecVu0(eye, turn, GuestPtr<Vec4>{globals::kTalkEyeOffset});
             if ((btype->flags & 0x10u) != 0)

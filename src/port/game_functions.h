@@ -945,7 +945,7 @@ inline constexpr uint32_t WordsFn_TalkSelectActor = 0x0017B630u;
 inline constexpr uint32_t WordsFn_EventRemoveWant = 0x0017B660u;
 inline constexpr uint32_t WordsFn_EventAddWant = 0x0017B6C0u;
 inline constexpr uint32_t WordsFn_ActorMoveTo = 0x0017B720u;
-inline constexpr uint32_t WordsFn_ClearPersonFlag20 = 0x0017B7B0u;
+inline constexpr uint32_t WordsFn_ReleasePerson = 0x0017B7B0u;
 inline constexpr uint32_t WordsFn_ActorFollow = 0x0017B7D0u;
 inline constexpr uint32_t WordsFn_ActorDetach = 0x0017B870u;
 inline constexpr uint32_t WordsFn_SelectEventActor = 0x0017B8E0u;
@@ -1064,7 +1064,7 @@ inline constexpr uint32_t WordsFn_Random3 = 0x0017F130u;
 inline constexpr uint32_t WordsFn_Random50 = 0x0017F190u;
 inline constexpr uint32_t WordsFn_False = 0x0017F1E0u;
 inline constexpr uint32_t WordsFn_BuildingCrowd = 0x0017F1F0u;
-inline constexpr uint32_t WordsFn_BuildingFlag100 = 0x0017F300u;
+inline constexpr uint32_t WordsFn_BuildingNew = 0x0017F300u;
 inline constexpr uint32_t WordsFn_TryFriendAgrees = 0x0017F330u;
 inline constexpr uint32_t WordsFn_MeterAgrees = 0x0017F3E0u;
 inline constexpr uint32_t WordsFn_FindOutsideAcquaintance = 0x0017F420u;
@@ -1076,7 +1076,7 @@ inline constexpr uint32_t WordsFn_BuildingState = 0x0017F6D0u;
 inline constexpr uint32_t WordsFn_FriendshipTier = 0x0017F750u;
 inline constexpr uint32_t WordsFn_FriendshipBand = 0x0017F7C0u;
 inline constexpr uint32_t WordsFn_FamilyKnown = 0x0017F7F0u;
-inline constexpr uint32_t WordsFn_PersonFlag10 = 0x0017F820u;
+inline constexpr uint32_t WordsFn_PersonIll = 0x0017F820u;
 inline constexpr uint32_t WordsFn_IsBirthdayMonth = 0x0017F850u;
 inline constexpr uint32_t WordsFn_WorksAtHome = 0x0017F8D0u;
 inline constexpr uint32_t WordsFn_MemberRole = 0x0017F970u;
@@ -3394,8 +3394,8 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"WordsFn_BuildingCategory", addr::WordsFn_BuildingCategory},
     {"WordsFn_BuildingClaim", addr::WordsFn_BuildingClaim},
     {"WordsFn_BuildingCrowd", addr::WordsFn_BuildingCrowd},
-    {"WordsFn_BuildingFlag100", addr::WordsFn_BuildingFlag100},
     {"WordsFn_BuildingFlag2", addr::WordsFn_BuildingFlag2},
+    {"WordsFn_BuildingNew", addr::WordsFn_BuildingNew},
     {"WordsFn_BuildingOpen", addr::WordsFn_BuildingOpen},
     {"WordsFn_BuildingState", addr::WordsFn_BuildingState},
     {"WordsFn_BuildingsOverlap", addr::WordsFn_BuildingsOverlap},
@@ -3403,7 +3403,6 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"WordsFn_CanAfford", addr::WordsFn_CanAfford},
     {"WordsFn_CanApply", addr::WordsFn_CanApply},
     {"WordsFn_ClaimIs50", addr::WordsFn_ClaimIs50},
-    {"WordsFn_ClearPersonFlag20", addr::WordsFn_ClearPersonFlag20},
     {"WordsFn_ClearStoryFlagB", addr::WordsFn_ClearStoryFlagB},
     {"WordsFn_ConductTier", addr::WordsFn_ConductTier},
     {"WordsFn_EventActorIs", addr::WordsFn_EventActorIs},
@@ -3458,9 +3457,9 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"WordsFn_NameSlotSet", addr::WordsFn_NameSlotSet},
     {"WordsFn_NewIntroduction", addr::WordsFn_NewIntroduction},
     {"WordsFn_PersonAtBuilding", addr::WordsFn_PersonAtBuilding},
-    {"WordsFn_PersonFlag10", addr::WordsFn_PersonFlag10},
     {"WordsFn_PersonFlagBit", addr::WordsFn_PersonFlagBit},
     {"WordsFn_PersonHeading", addr::WordsFn_PersonHeading},
+    {"WordsFn_PersonIll", addr::WordsFn_PersonIll},
     {"WordsFn_PersonWhere", addr::WordsFn_PersonWhere},
     {"WordsFn_PickByCandidates", addr::WordsFn_PickByCandidates},
     {"WordsFn_PickClaimResident", addr::WordsFn_PickClaimResident},
@@ -3474,6 +3473,7 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"WordsFn_Random50", addr::WordsFn_Random50},
     {"WordsFn_RandomN", addr::WordsFn_RandomN},
     {"WordsFn_RecentTalks", addr::WordsFn_RecentTalks},
+    {"WordsFn_ReleasePerson", addr::WordsFn_ReleasePerson},
     {"WordsFn_ScheduleIs", addr::WordsFn_ScheduleIs},
     {"WordsFn_ScheduleState", addr::WordsFn_ScheduleState},
     {"WordsFn_ScriptVar", addr::WordsFn_ScriptVar},
@@ -4623,7 +4623,7 @@ int WordsFn_TalkSelectActor(GuestPtr<WordsCtx> ctx);
 int WordsFn_EventRemoveWant(GuestPtr<WordsCtx> ctx);
 int WordsFn_EventAddWant(GuestPtr<WordsCtx> ctx);
 int WordsFn_ActorMoveTo(GuestPtr<WordsCtx> ctx);
-int WordsFn_ClearPersonFlag20(GuestPtr<WordsCtx> ctx);
+int WordsFn_ReleasePerson(GuestPtr<WordsCtx> ctx);
 int WordsFn_ActorFollow(GuestPtr<WordsCtx> ctx);
 int WordsFn_ActorDetach(GuestPtr<WordsCtx> ctx);
 int WordsFn_SelectEventActor(GuestPtr<WordsCtx> ctx);
@@ -4742,7 +4742,7 @@ int WordsFn_Random3(GuestPtr<WordsCtx> ctx);
 int WordsFn_Random50(GuestPtr<WordsCtx> ctx);
 int WordsFn_False(GuestPtr<WordsCtx> ctx);
 int WordsFn_BuildingCrowd(GuestPtr<WordsCtx> ctx);
-int WordsFn_BuildingFlag100(GuestPtr<WordsCtx> ctx);
+int WordsFn_BuildingNew(GuestPtr<WordsCtx> ctx);
 int WordsFn_TryFriendAgrees(GuestPtr<WordsCtx> ctx);
 int WordsFn_MeterAgrees(GuestPtr<WordsCtx> ctx);
 int WordsFn_FindOutsideAcquaintance(GuestPtr<WordsCtx> ctx);
@@ -4754,7 +4754,7 @@ int WordsFn_BuildingState(GuestPtr<WordsCtx> ctx);
 int WordsFn_FriendshipTier(GuestPtr<WordsCtx> ctx);
 int WordsFn_FriendshipBand(GuestPtr<WordsCtx> ctx);
 int WordsFn_FamilyKnown(GuestPtr<WordsCtx> ctx);
-int WordsFn_PersonFlag10(GuestPtr<WordsCtx> ctx);
+int WordsFn_PersonIll(GuestPtr<WordsCtx> ctx);
 int WordsFn_IsBirthdayMonth(GuestPtr<WordsCtx> ctx);
 int WordsFn_WorksAtHome(GuestPtr<WordsCtx> ctx);
 int WordsFn_MemberRole(GuestPtr<WordsCtx> ctx);

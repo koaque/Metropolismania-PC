@@ -1011,10 +1011,10 @@ namespace mm
     // tile (+0x14) and side; unless the type has flag 0x20 and the second entrance test fails, the side is then
     // set from where the footprint sits in the 4-tile grid of road blocks, and kept as the tile's kind. The
     // ground under the footprint is levelled: above 0 to 0.1, else onto a multiple of 0.5 (with fmodf), and the
-    // geometry around it rebuilt when that changed it. Other parts take the main part's entrance tile. The
-    // entrance part (flag 0x20) clears +0x17 from 23:00:01, between 6:00 and 7:00 drops flag 0x100 (minimap
-    // colour 5), and returns mm_BldgClaims_Evaluate's result; other parts count +0x18 up from 7:00 to 18:59
-    // and at 24 are flagged 0x120 and start again. Last, the minimap colour by the claim meter's level (2: 10,
+    // geometry around it rebuilt when that changed it. Other parts take the main part's entrance tile. A built
+    // part (flag 0x20) clears +0x17 from 23:00:01, between 6:00 and 7:00 drops flag 0x100 (newly built; minimap
+    // colour 5), and returns mm_BldgClaims_Evaluate's result; a part being built counts its work (+0x18) up from
+    // 7:00 to 18:59, and at 24 it is built and new (flags 0x120) and the count starts again. Last, the minimap colour by the claim meter's level (2: 10,
     // 1: 9, else 5). The original's frame is reserved whole: the side and the rectangle are its slots.
     int Bldg_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int timeFlags)
     {
@@ -1086,7 +1086,7 @@ namespace mm
         }
         else if (!(city->clock < 25200) && city->clock < 68400)
         {
-            obj->variant = static_cast<uint8_t>(obj->variant + 1); // counts the hours open
+            obj->variant = static_cast<uint8_t>(obj->variant + 1); // the construction work
             if (obj->variant >= 24)
             {
                 obj->flags |= 0x120u;
@@ -1103,8 +1103,8 @@ namespace mm
         return result;
     }
 
-    // Offices tick like any building; a part that is no longer its tile's first object (and not the
-    // entrance) is flagged 0x120 and its variant byte cleared.
+    // Offices tick like any building; a part still being built that is no longer its tile's first object (another
+    // was stacked on it) is finished at once: built and new (0x120), its work count cleared.
     int BldgOffice_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int timeFlags)
     {
         const int result = Bldg_Tick(btype, city, obj, timeFlags);
@@ -1116,8 +1116,8 @@ namespace mm
         return result;
     }
 
-    // Housing ticks like any building; its entrance recounts the units, other parts that are no longer
-    // their tile's first object are flagged 0x120 with the variant byte cleared.
+    // Housing ticks like any building; once built it recounts the units, and a part still being built that is no
+    // longer its tile's first object is finished at once (0x120) with its work count cleared.
     int BldgHousing_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int timeFlags)
     {
         const int result = Bldg_Tick(btype, city, obj, timeFlags);
@@ -1838,7 +1838,8 @@ namespace mm
         }
 
         // Offices: the block's mesh set (three per set) from the size's table of three by the tile, then part 0 the
-        // block (its entrance one on), parts 1 and 2 the set's first, 3 its third, 4 its second.
+        // block (the set's second once built, else its construction mesh), parts 1 and 2 the set's first, 3 its third,
+        // 4 its second.
         int officeMesh(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, uint32_t part, uint32_t table)
         {
             const int size = btype->size;
@@ -3121,7 +3122,7 @@ namespace mm
         }
     }
 
-    // The ranch: its mesh from the city parts model, or for its entrance part the ranch models (the first always, then one
+    // The ranch: while being built its plain part from the city parts model, once built (flag 0x20) the ranch models (the first always, then one
     // of two by the type's answer in vtable +0x24), each at the building's place.
     void BldgRanch_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
                         ps2f x, ps2f y, ps2f z)
@@ -3274,7 +3275,7 @@ namespace mm
 
     // ---- the people of a building with an entrance (batch 40)
 
-    // Buildings of type flag 0x800 with their entrance part: the people standing in it (or outside, on it) are sorted into
+    // Built buildings (flag 0x20) of type flag 0x800: the people standing in it (or outside, on it) are sorted into
     // four groups, by class flag 1 (vehicles) and by whether this is their home: 0 residents living here,
     // 1 other residents, 2 vehicles of this building, 3 other vehicles. Each group has room for `groupSpots[group]` people (up to four)
     // that are placed at the type's people spots (x, y, z, a heading added to the table's at 0x1B2690),
@@ -3295,7 +3296,7 @@ namespace mm
         const GuestPtr<float> headings{0x001B2690u}; // by layer
         if ((btype->flags & 0x800u) == 0 || (obj->flags & 0x20u) == 0)
             return;
-        const int32_t hasEntrance = static_cast<int32_t>(port::callGuest<int64_t>(btype->vtable->isOpen, btype, city, obj));
+        const int32_t open = static_cast<int32_t>(port::callGuest<int64_t>(btype->vtable->isOpen, btype, city, obj));
         for (int32_t k = 0; k < 4; ++k)
             counts[k] = 0;
         for (GuestPtr<uint16_t> link = GuestPtr<uint16_t>::of(obj->firstPerson); *link != kNoPerson;)
@@ -3313,7 +3314,7 @@ namespace mm
         uint32_t running = static_cast<uint32_t>(layer);
         for (uint32_t group = 0; group < 4; ++group)
         {
-            if (hasEntrance == 0 && group != 2)
+            if (open == 0 && group != 2)
                 continue;
             const uint32_t limit = btype->groupSpots[group];
             if (limit == 0 || counts[static_cast<int32_t>(group)] == 0)

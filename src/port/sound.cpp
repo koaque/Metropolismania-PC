@@ -1087,9 +1087,10 @@ namespace mm
     }
 
     // A building object's ambient sound this frame, as a state word: the low byte is the sound (0xFF none), 0x100
-    // marks the part of its window after the lead, 0x200 an entrance object, 0x400 the type's own sound. Only
+    // marks the part of its window after the lead, 0x200 a built object, 0x400 the type's own sound. Only
     // types with flag 0x40 have one, and each object counts once per frame (object flag 4; again gives 0x4FF).
-    // Entrances play the type's sound, other objects of variant group 2 sound 6; the sound's schedule decides
+    // Built objects play the type's sound; one being built plays sound 6 in its third stage of
+    // work (variant 16 to 23); the sound's schedule decides
     // whether it plays now (see SeSound::schedule). "Occupied" is open (the type's vtable +0x24) with people in.
     uint32_t Se_BuildingSoundState(GuestPtr<MapObject> obj, GuestPtr<BuildingType> btype)
     {
@@ -1101,11 +1102,11 @@ namespace mm
         uint32_t state = btype->ambientSound;
         if (state != 0xFF)
             state = (state + 0x400) & 0xFFFFu;
-        uint32_t entrance = 0;
+        uint32_t built = 0;
         if ((obj->flags & 0x20u) != 0)
         {
             state = (state + 0x200) & 0xFFFFu;
-            entrance = 0x200;
+            built = 0x200;
         }
         else
             state = (obj->variant & 0xFFu) >> 3 == 2 ? 6 : 0xFF;
@@ -1166,7 +1167,7 @@ namespace mm
                 return state;
             break;
         }
-        return (static_cast<uint32_t>(static_cast<int16_t>(entrance)) + 0xFFu) & 0xFFFFu;
+        return (static_cast<uint32_t>(static_cast<int16_t>(built)) + 0xFFu) & 0xFFFFu;
     }
 
     namespace

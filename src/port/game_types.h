@@ -1458,7 +1458,8 @@ struct MapObject {
     uint16_t type;             /* +0x00 building type index (table at gp 0x1BDBF8) */
     uint16_t id;               /* +0x02 own index */
     uint16_t tile;             /* +0x04 x = low 7 bits, z = bits 7 and up */
-    uint16_t flags;            /* +0x06 1 highlight, 8 claim met, 0x20 entrance, 0x40 meter maxed, 0x200 event */
+    uint16_t flags;            /* +0x06 1 highlight, 8 claim met, 0x20 built (mm_Bldg_Tick), 0x40 meter maxed, 0x100 newly
+                                  built (until 6:00 to 7:00 the next morning), 0x200 event */
     uint16_t firstPerson;      /* +0x08 6000 = none */
     uint16_t nextOnTile;       /* +0x0A next object on the same tile */
     uint16_t family;           /* +0x0C family living here */
@@ -1491,8 +1492,10 @@ struct MapObject {
             uint16_t roadMesh;         /* +0x1A mesh drawn (0 = none; street lamps and traffic lights by range) */
         };
         struct {
-            uint8_t variant;           /* +0x18 bits 3-7 pick the model variant (mm_Bldg_FloorBelow); an entrance whose claim was
-                                          met counts up to 0x2D from 1 (mm_CityRender_CollectObjects) */
+            uint8_t variant;           /* +0x18 bits 3-7 pick the model variant (mm_Bldg_FloorBelow); while the object is
+                                          being built (no flag 0x20) it counts the work, one a tick from 7:00 to 18:59, 24
+                                          finishing it (mm_Bldg_Tick); a built one whose claim was met counts up to 0x2D from 1
+                                          (mm_CityRender_CollectObjects) */
             uint8_t unitShape;         /* +0x19 housing: the unit shape (mm_BldgHousing_UnitAt, table 0x1B14F0) */
             uint8_t style;             /* +0x1A housing: the style, 26 meshes each (mm_BldgHousing_Draw) */
             uint8_t unk_1B;
@@ -1517,7 +1520,8 @@ struct MapPerson {
     uint16_t destination;      /* +0x1E */
     uint16_t follow;           /* +0x20 follow target */
     uint16_t flags;            /* +0x22 4 gone off in its car, 8 has a car (member flag 4), 0x10 ill today (schedule row
-                                  30), 0x20 follows `follow`, 0x200 waits for `follow`, 0x1000 drawn since the last update */
+                                  30), 0x20 held by an event (stays, or follows `follow` when set; mm_EvActor_Detach, mm_EvActor_Follow),
+                                  0x200 waits for `follow`, 0x1000 drawn since the last update */
     uint8_t charType;          /* +0x24 index into the character type table (gp 0x1BDA3C) */
     uint8_t cooldown;          /* +0x25 counts down one per tick to 0 (mm_Person_TickCounters) */
     uint8_t schedState;        /* +0x26 the schedule (mm_Schedule_Evaluate): 1 under 4, 2 daycare, 3 primary school, 4 junior

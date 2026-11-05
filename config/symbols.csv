@@ -1597,7 +1597,7 @@ address,name,kind,source
 0x0017B660,mm_WordsFn_EventRemoveWant,func,manual
 0x0017B6C0,mm_WordsFn_EventAddWant,func,manual
 0x0017B720,mm_WordsFn_ActorMoveTo,func,manual
-0x0017B7B0,mm_WordsFn_ClearPersonFlag20,func,manual
+0x0017B7B0,mm_WordsFn_ReleasePerson,func,manual
 0x0017B7D0,mm_WordsFn_ActorFollow,func,manual
 0x0017B870,mm_WordsFn_ActorDetach,func,manual
 0x0017B8E0,mm_WordsFn_SelectEventActor,func,manual
@@ -1716,7 +1716,7 @@ address,name,kind,source
 0x0017F190,mm_WordsFn_Random50,func,manual
 0x0017F1E0,mm_WordsFn_False,func,manual
 0x0017F1F0,mm_WordsFn_BuildingCrowd,func,manual
-0x0017F300,mm_WordsFn_BuildingFlag100,func,manual
+0x0017F300,mm_WordsFn_BuildingNew,func,manual
 0x0017F330,mm_WordsFn_TryFriendAgrees,func,manual
 0x0017F3E0,mm_WordsFn_MeterAgrees,func,manual
 0x0017F420,mm_WordsFn_FindOutsideAcquaintance,func,manual
@@ -1728,7 +1728,7 @@ address,name,kind,source
 0x0017F750,mm_WordsFn_FriendshipTier,func,manual
 0x0017F7C0,mm_WordsFn_FriendshipBand,func,manual
 0x0017F7F0,mm_WordsFn_FamilyKnown,func,manual
-0x0017F820,mm_WordsFn_PersonFlag10,func,manual
+0x0017F820,mm_WordsFn_PersonIll,func,manual
 0x0017F850,mm_WordsFn_IsBirthdayMonth,func,manual
 0x0017F8D0,mm_WordsFn_WorksAtHome,func,manual
 0x0017F970,mm_WordsFn_MemberRole,func,manual

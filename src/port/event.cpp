@@ -56,7 +56,6 @@ namespace mm
         }
 
         // Entry `index` of the family type table (gp-0x7EE4).
-        uint16_t familyTypeEntry(uint32_t index) { return port::load<uint16_t>(globals::familyTypeTable.get() + 2u * index); }
     }
 
     // ---- the event manager and the queue
@@ -363,9 +362,9 @@ namespace mm
         }
     }
 
-    // A cave man (type 0x113 in tile list 0x15, entrance flag 0x20, no claim met or meter maxed, claim meter level 0)
-    // whose family's first member has a person record: actor 6 becomes that person at the cave, actor 5 family type
-    // entry 0x10C's third member, actor 7 entry 0xB0 (the other actors none), the cave is marked.
+    // A cave man (type 0x113 in tile list 0x15, built (flag 0x20), no claim met or meter maxed, claim meter level 0)
+    // whose family's first member has a person record: actor 6 becomes that person at the cave, actor 5 the third member of
+    // the first University family, actor 7 the first Caveman's Home family (the other actors none), the cave is marked.
     int EvCaveMan_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
         port::GuestFrame<0x70> frame;
@@ -391,9 +390,9 @@ namespace mm
             actorAt(data, 6)->family = cave->family;
             actorAt(data, 6)->member = 0;
             cave->flags |= 0x200u;
-            actorAt(data, 5)->family = familyTypeEntry(0x10C);
+            actorAt(data, 5)->family = globals::firstFamily(globals::types::kUniversity);
             actorAt(data, 5)->member = 2;
-            actorAt(data, 7)->family = familyTypeEntry(0xB0);
+            actorAt(data, 7)->family = globals::firstFamily(globals::types::kCavemansHome);
             return 1;
         }
         return 0;
@@ -424,18 +423,19 @@ namespace mm
         return 1;
     }
 
-    // The thief strikes when the families of type entries 0xB8 and 0x104 live in the city with a home, and there is a
+    // The thief strikes when the first families of types 0xB9 (Studio Appartment) and 0x105 (Police Station) live in the
+    // city with a home, and there is a
     // building to rob (mm_EvThief_FindBuilding, category 5, else 1): actor 0 the first family, actors 1 and 2 the
     // second family's first two members, actor 3 the robbed building's family; the buildings are marked.
     int EvThief_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
-        const uint16_t familyA = familyTypeEntry(0xB8);
+        const uint16_t familyA = globals::firstFamily(globals::types::kStudioAppartmentB9);
         if (Family_InCity(familyA) == 0)
             return 0;
         const GuestPtr<MapObject> homeA = Map_FindFamilyHome(city->map, familyA);
         if (!homeA)
             return 0;
-        const uint16_t familyB = familyTypeEntry(0x104);
+        const uint16_t familyB = globals::firstFamily(globals::types::kPoliceStation105);
         if (Family_InCity(familyB) == 0)
             return 0;
         const GuestPtr<MapObject> homeB = Map_FindFamilyHome(city->map, familyB);
@@ -457,8 +457,8 @@ namespace mm
         return 1;
     }
 
-    // The person's home is their own shop, of category 7 or 9 (not type 0x100), and unless it has flag 0x100,
-    // (family + member) % 12 is this month.
+    // The person's home is their own shop, of category 7 or 9 (not type 0x100), and unless it is newly built (flag 0x100:
+    // then any month), (family + member) % 12 is this month.
     int EvAdvertise_Check(GuestPtr<EventData>, GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
     {
         const GuestPtr<MapObject> home = Map_GetRecord(city->map, person->home);
@@ -476,13 +476,13 @@ namespace mm
     // it on): the record they marked last, or the register as found.
     int64_t EvCaveMan_Start(GuestPtr<EventData>, GuestPtr<CityScene>) { return port::guestV0Wide(); }
 
-    // The message comes from family type entry 0xB1's first member, with no person or building.
+    // The message comes from the boss (the first member of the Boss' Home family), with no person or building.
     int64_t EvMsg_Start(GuestPtr<EventData> data, GuestPtr<CityScene>)
     {
         const int64_t found = port::guestV0Wide();
         data->actor.person = kNoPerson;
         data->actor.object = kNoObject;
-        data->actor.family = familyTypeEntry(0xB1);
+        data->actor.family = globals::firstFamily(globals::types::kBossHome);
         data->actor.member = 0;
         return found;
     }
@@ -533,15 +533,15 @@ namespace mm
     // The noodle shop event lists its six buildings from +0x2C (actors 4 to 9).
     int64_t EvNoodles_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city) { return markActorBuildings(city, data, 4, 6); }
 
-    // Six actors without person or building: the first two from family type entries 0xAB and 0xAC, the others
-    // from entry 0xAD and the three after it (members unchanged).
+    // Six actors without person or building: the Zen Monk's and the Shadow Monk's families, then the first four Crazy Cult
+    // families (members unchanged).
     int64_t EvCrazyCult_Start(GuestPtr<EventData> data, GuestPtr<CityScene>)
     {
         const int64_t found = port::guestV0Wide();
-        actorAt(data, 0)->family = familyTypeEntry(0xAB);
-        actorAt(data, 1)->family = familyTypeEntry(0xAC);
+        actorAt(data, 0)->family = globals::firstFamily(globals::types::kZenMonksHome);
+        actorAt(data, 1)->family = globals::firstFamily(globals::types::kShadowMonksHome);
         for (int i = 0; i < 4; ++i)
-            actorAt(data, 2 + i)->family = static_cast<uint16_t>(familyTypeEntry(0xAD) + i);
+            actorAt(data, 2 + i)->family = static_cast<uint16_t>(globals::firstFamily(globals::types::kCrazyCult) + i);
         for (int i = 0; i < 6; ++i)
         {
             actorAt(data, i)->person = kNoPerson;
@@ -550,7 +550,7 @@ namespace mm
         return found;
     }
 
-    // The adoption comes from family type entry 0xB1's first member; the applicants (families 0 to 9999 with an
+    // The adoption comes from the boss (the first member of the Boss' Home family); the applicants (families 0 to 9999 with an
     // application) are listed as words from +0x24, then 24 bytes from 0x1B37D0 are copied to +0x4C (through the
     // original stack, then by memcpy, whose result, the destination, is what the start slot returns).
     uint32_t EvAdoption_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city)
@@ -559,7 +559,7 @@ namespace mm
         const GuestPtr<EvAdoptionData> adoption = data.as<EvAdoptionData>();
         data->actor.person = kNoPerson;
         data->actor.object = kNoObject;
-        data->actor.family = familyTypeEntry(0xB1);
+        data->actor.family = globals::firstFamily(globals::types::kBossHome);
         data->actor.member = 0;
         GuestPtr<int32_t> out = GuestPtr<int32_t>::of(adoption->applicants[0]); // runs on past the ten words like the original
         for (uint32_t family = 0; family < 10000; ++family)
@@ -1784,7 +1784,7 @@ namespace mm
     // (lists 0x12, then 0x13), 0x10A (list 0x18) and 0x104 (list 0x16); and a resident of character type 3 to 6
     // whose home is none of them, has its claim meter at level 0 and is not taken (flags 0x240). That
     // resident becomes actor 0 and the families' first members (and buildings) actors 1 to 4, the buildings
-    // marked (0x200); actor 5 is the family at +0x15C of the record at 0x1BDA8C, with no person or building.
+    // marked (0x200); actor 5 is the first Spaceman's Home family, with no person or building.
     int EvAlien_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
         port::GuestFrame<0x30> frame;
@@ -1844,7 +1844,7 @@ namespace mm
         const GuestPtr<ActorRef> last = actorAt(data, 5);
         last->person = kNoPerson;
         last->object = kNoObject;
-        last->family = port::load<uint16_t>(port::load<uint32_t>(0x001BDA8Cu) + 0x15Cu);
+        last->family = globals::firstFamily(globals::types::kSpacemansHome);
         last->member = 0;
         return 1;
     }
@@ -2106,7 +2106,7 @@ namespace mm
 
     // ---- farewell party, shopping (batch 39)
 
-    // The farewell party: the phone calls are cleared; actor 0 is the family at +0x162 of the record at 0x1BDA8C.
+    // The farewell party (the boss leaves): the phone calls are cleared; actor 0 is the Boss' Home family.
     // Residents (character types 1 to 0x1D) with friendship band 3 and up, living in a building other than types
     // 0xB9 and 0x105 with its claim meter at level 0, are the guests (+0x28 counts them); of those in schedule state
     // 6 and up the best friend is actor 1 (the first on a tie) and their home is marked. The party starts at
@@ -2117,7 +2117,7 @@ namespace mm
         PhoneCall_Next(city->phoneCalls, city);
         data->actor.person = kNoPerson;
         data->actor.object = kNoObject;
-        data->actor.family = port::load<uint16_t>(port::load<uint32_t>(0x001BDA8Cu) + 0x162u);
+        data->actor.family = globals::firstFamily(globals::types::kBossHome);
         data->actor.member = 0;
         GuestPtr<MapPerson> best{0};
         const uint32_t end = city->map->people.address + 6000u * 0x30u;
@@ -2758,8 +2758,8 @@ namespace mm
     }
 
     // Type 12 (adoption) answers the talk. The list at +0x4C has up to six entries of four bytes (a byte flag at +0, a
-    // halfword at +2 that picks a family of the family type table at 0x1BDA8C); the family tried is that table entry, or
-    // the next one the city lets apply.
+    // halfword at +2, a building type); the family tried is that type's first family (globals::firstFamily), or the next
+    // one the city lets apply.
     //   0: 1 when no orphanage (type 4) exists, 0 when there is one but no building of a type with flag 8 (type flags
     //      +0x136), else 2
     //   1: 1 when the asked actor's family is in the zero-ended family list at +0x24
@@ -2774,7 +2774,7 @@ namespace mm
         const GuestPtr<EvAdoptionData> adoption = data.as<EvAdoptionData>();
         // The first family at or after the entry's table family that the city lets apply.
         const auto familyFor = [&](GuestPtr<AdoptionChild> child) {
-            uint32_t family = port::load<uint16_t>(globals::familyTypeTable.get() + 2u * child->familyType - 2u);
+            uint32_t family = globals::firstFamily(child->familyType);
             while (Family_CanApply(family & 0xFFFFu, city) == 0)
                 family = (family + 1u) & 0xFFFFu;
             return family & 0xFFFFu;
@@ -4086,21 +4086,22 @@ namespace mm
 
     PORT_FN(Event_FindForFamily);
 
-    // The alien event's Answer slot (called with mode 0 at its start): the family at +0x15C of the event data table (0x1BDA8C) is
-    // added to the applicants, selected. The result is 0.
+    // The alien event's Answer slot (called with mode 0 at its start): the first Spaceman's Home family is added to the
+    // applicants, selected. The result is 0.
     int EvAlien_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode)
     {
         (void)data;
         (void)actor;
         if (mode == 0)
-            CityScene_AddApplicantFamily(city, port::load<uint16_t>(globals::eachStrData.get() + 0x15Cu), 1);
+            CityScene_AddApplicantFamily(city, globals::firstFamily(globals::types::kSpacemansHome), 1);
         return 0;
     }
 
     PORT_FN(EvAlien_Answer);
 
-    // The noodles event's Answer slot: mode 0 (start) adds the family at +0x1FE of the event data table to the applicants and sets up
-    // the event's three actors (the families at +0x1FE members 0 and 1 and +0x16E member 0, no person or building) with 60 frames
+    // The noodles event's Answer slot: mode 0 (start) adds the first Noodle Shop family to the applicants and sets up the event's
+    // three actors (that family's members 0 and 1, and member 0 of the first family of type 0xB8, a Studio Appartment; no person
+    // or building) with 60 frames
     // to wait; mode 1 (end) adds the third actor's family. The result is 0.
     int EvNoodles_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode)
     {
@@ -4113,17 +4114,17 @@ namespace mm
         }
         if (mode != 0)
             return 0;
-        const uint32_t table = globals::eachStrData.get();
-        CityScene_AddApplicantFamily(city, port::load<uint16_t>(table + 0x1FEu), 1);
-        noodles->actors[1].family = port::load<uint16_t>(table + 0x1FEu);
+        const uint16_t shop = globals::firstFamily(globals::types::kNoodleShop);
+        CityScene_AddApplicantFamily(city, shop, 1);
+        noodles->actors[1].family = shop;
         noodles->actors[1].member = 0;
         noodles->actors[1].person = kNoPerson;
         noodles->actors[1].object = kNoObject;
-        noodles->actors[2].family = port::load<uint16_t>(table + 0x1FEu);
+        noodles->actors[2].family = shop;
         noodles->actors[2].member = 1;
         noodles->actors[2].person = kNoPerson;
         noodles->actors[2].object = kNoObject;
-        noodles->actors[3].family = port::load<uint16_t>(globals::eachStrData.get() + 0x16Eu);
+        noodles->actors[3].family = globals::firstFamily(globals::types::kStudioAppartmentB8);
         noodles->actors[3].member = 0;
         noodles->actors[3].person = kNoPerson;
         noodles->actors[3].object = kNoObject;
@@ -4154,11 +4155,11 @@ namespace mm
 
     PORT_FN(EvActor_PointCursor);
 
-    // The cave man event's Answer slot (jump table 0x1BA060; modes above 8 give 0). Modes 0 to 3 add the family at +0x15E of the event
-    // data table (0x1BDA8C) plus the mode to the applicants, play sound 0x17 and make it the event's actor `mode` (member 2; for the
+    // The cave man event's Answer slot (jump table 0x1BA060; modes above 8 give 0). Modes 0 to 3 add Staff Accom family `mode` (the
+    // type's first family plus the mode) to the applicants, play sound 0x17 and make it the event's actor `mode` (member 2; for the
     // fourth member 1): mode 0 also makes the family actor 4's (member 1) and sets the counter to 1, 1 and 2 count it to 2
-    // and 3, 3 moves the event on (var) and clears it. 4 and 8 give the counter. 5 adds actor 5's family (the sound too), 7 that
-    // of +0x160. 6 asks whether actors 0 and 4 stand at their buildings and neither is asleep (activity 5).
+    // and 3, 3 moves the event on (var) and clears it. 4 and 8 give the counter. 5 adds actor 5's family (the sound too), 7 the
+    // first Caveman's Home family. 6 asks whether actors 0 and 4 stand at their buildings and neither is asleep (activity 5).
     int EvCaveMan_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode)
     {
         (void)actor;
@@ -4174,7 +4175,7 @@ namespace mm
         case 2:
         case 3:
         {
-            const uint32_t family = (static_cast<uint32_t>(mode) + port::load<int16_t>(globals::eachStrData.get() + 0x15Eu)) & 0xFFFFu;
+            const uint32_t family = (static_cast<uint32_t>(mode) + globals::firstFamily(globals::types::kStaffAccom)) & 0xFFFFu;
             addFamily(family);
             const GuestPtr<ActorRef> entry = actorAt(data, mode);
             entry->family = static_cast<uint16_t>(family);
@@ -4213,7 +4214,7 @@ namespace mm
             return (people + last->person)->activity != 5 ? 1 : 0;
         }
         case 7:
-            addFamily(port::load<uint16_t>(globals::eachStrData.get() + 0x160u));
+            addFamily(globals::firstFamily(globals::types::kCavemansHome));
             return 0;
         default:
             return 0;

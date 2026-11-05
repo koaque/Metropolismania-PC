@@ -885,7 +885,7 @@ namespace mm
         return cells < (0x3F80 - map->objectCount) + objects;
     }
 
-    // Placement rule (type +0x144) for stacking: the tile's top object must be an entrance (0x20), not
+    // Placement rule (type +0x144) for stacking: the tile's top object must be built (0x20), not
     // highlighted (1), of a type with the same rule, and the stack below the type's limit - 1.
     int Placement_CheckTypeRule(GuestPtr<CityMap> map, int type, int tile)
     {

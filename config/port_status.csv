@@ -935,7 +935,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0013C5F0,mm_Family_MakePhoneNumber,352,game,family,verified,no,1,0,"the family's number in the Town's Pages: 19 followed by the low six digits of 97 * family + 6920, with digits 1 to 5 in reverse order (digit k of the source lands at kPlace[k])"
 0x0013C770,mm_Family_LoadState,148,game,family,verified,no,1,1,"reads the member bytes (60000), the three bitsets (0x4E4 each), 0x1F32F0 (0x400) and the counters (0xC) from the save file"
 0x0013C810,mm_Family_SaveState,148,game,family,verified,no,1,1,writes them
-0x0013C8B0,mm_Family_GetTypeIndex,72,game,family,verified,no,20,0,building type index of a family id: first entry above a0 in the sorted id table (gp)
+0x0013C8B0,mm_Family_GetTypeIndex,72,game,family,verified,no,20,0,"the building type of a family id: the first entry of the family type table (EACHSTR.BIN, per type the end of its family ids) above it"
 0x0013C900,mm_Family_HasLeft,80,game,family,verified,no,2,0,bitset C: the family moved away
 0x0013C950,mm_Family_SetKnown,76,game,family,verified,no,1,0,"sets bit a0 of bitset B (0x1D4900, families known through the Town's Pages); called by mm_WordsFn_MarkFamilyKnown"
 0x0013C9A0,mm_Family_IsKnown,80,game,family,verified,no,4,0,bitset B: the family is known (Town's Pages)
@@ -1044,7 +1044,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00144B60,mm_Placement_CheckSlope,328,game,map,verified,no,1,1,"(map, x, z, size): whether any tile just beyond a side of the footprint lies lower than 0.5"
 0x00144CB0,mm_Map_CheckPlacement,760,game,map,verified,indirect,2,5,"1 when type a1 can stand at (a2, a3), 2 when its type rule forbids the tile, else 0: footprint on the map, neighbours, every footprint object of another unlocked flag-4 type that the type accepts (vtable +0x20), raised ground needing lower ground beside it"
 0x00144FB0,mm_Placement_CheckNeighbours,504,game,map,verified,no,1,0,"before placing over the size x size block at (x, z): the box around every object standing there (box = min x, min z, max x, max z, widened by two tiles within the map) and whether the cells those objects cover stay below the free object records plus the objects found"
-0x001451B0,mm_Placement_CheckTypeRule,244,game,map,verified,no,1,0,"placement rule (type +0x144) for stacking: the tile's top object must be an entrance (0x20), not highlighted (1), of a type with the same rule, and the stack below the type's limit - 1"
+0x001451B0,mm_Placement_CheckTypeRule,244,game,map,verified,no,1,0,"placement rule (type +0x144) for stacking: the tile's top object must be built (0x20), not highlighted (1), of a type with the same rule, and the stack below the type's limit - 1"
 0x001452B0,mm_MapObj_Delete,300,game,map,verified,no,2,2,"removes object a1 from its claim lists, clears its type and lowers the object and per-category counters (+0x24, +0x30 + category * 4, +0x40, +0x5C)"
 0x001453E0,mm_MapObj_Init,472,game,map,verified,indirect,3,2,"fills object record a1 (type, owner, position) and updates the tile lists"
 0x001455C0,mm_MapObj_FindFreeSlot,108,game,map,verified,no,1,0,advances the free object index (+0x10) to an empty record
@@ -1371,11 +1371,11 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00164C20,mm_BldgOffice_FloorBelow,224,game,city,verified,no,0,1,slot +0x2C
 0x00164D00,mm_BldgOffice_NearestHit,224,game,city,verified,no,0,1,slot +0x28
 0x00164DE0,mm_BldgOffice_Draw,852,game,city,verified,no,0,3,slot +0x14
-0x00165140,mm_BldgOffice_Tick,132,game,city,verified,no,0,2,Building tick plus a check of the tile's first object
+0x00165140,mm_BldgOffice_Tick,132,game,city,verified,no,0,2,building tick; a part still being built with another stacked on it is finished at once (0x120)
 0x001651D0,mm_BldgOffice_ctor,72,game,city,verified,yes,1,1,"Building constructor, vtable 0x1BD080, +0x160 from record byte 0x92"
 0x00165220,mm_BldgRanch_dtor,128,game,city,verified,yes,0,2,"category 12 (Ranch), vtable 0x1BD0C0"
 0x001652A0,mm_BldgRanch_DrawAnim,232,game,city,verified,no,0,3,animals' animation between the opening hours
-0x00165390,mm_BldgRanch_Draw,524,game,city,verified,indirect,0,4,instances for the ranch
+0x00165390,mm_BldgRanch_Draw,524,game,city,verified,indirect,0,4,"the ranch: its plain part while being built, the ranch models once built"
 0x001655A0,mm_BldgRanch_ctor,88,game,city,verified,yes,1,1,"Building constructor, vtable 0x1BD0C0, models from 0x1F3B50.."
 0x00165600,mm_Bldg_dtor,96,game,city,verified,yes,0,2,"intermediate Building class, vtable 0x1BD100"
 0x00165660,mm_ClaimMeter_Level,60,game,city,verified,no,15,0,"claim meter a0 against the thresholds at *0x1BDA50: 0 below low, 1 between, 2 above high"
@@ -1407,7 +1407,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001679C0,mm_BldgType_FindEntrance2,368,game,city,verified,no,1,2,whether a building of flag 8 lies within 3 tiles beyond side a5 (stops at walkable tiles)
 0x00167B40,mm_Bldg_DrawPeople,1452,game,city,verified,indirect,0,1,slot +0x18: people at the building
 0x00168100,mm_BldgBusiness_Draw,532,game,city,verified,no,0,3,slot +0x14 for Business and My Home: instances and claim icon
-0x00168320,mm_Bldg_Tick,1204,game,city,verified,no,4,11,"slot +0x10: main part finds its entrance and side (road-grid parity), levels the ground under the footprint (0.1 / multiples of 0.5); entrance part runs the claims (result), others count +0x18; minimap colour by claim level"
+0x00168320,mm_Bldg_Tick,1204,game,city,verified,no,4,11,slot +0x10: the main part finds its entrance tile and side (road-grid parity) and levels the ground under the footprint (0.1 / multiples of 0.5); a built part runs the claims (the result) and drops the newly built flag between 6:00 and 7:00; a part being built counts its work from 7:00 to 18:59 and at 24 is built (flags 0x120); minimap colour by claim level
 0x001687E0,mm_Bldg_InitRecord,44,game,city,verified,no,1,1,"slot +0xC: base init, record +0x14 = 0x4000"
 0x00168810,mm_BldgBusiness_ctor,52,game,city,verified,yes,8,1,"Building constructor, vtable 0x1BD1C0"
 0x00168850,mm_BldgKeepOut_dtor,96,game,city,verified,yes,0,2,"category 15 (Keep Out), vtable 0x1BD200"
@@ -1426,9 +1426,9 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001699E0,mm_BldgHousing_FloorBelow,196,game,city,verified,no,0,1,slot +0x2C
 0x00169AB0,mm_BldgHousing_NearestHit,196,game,city,verified,no,0,1,slot +0x28
 0x00169B80,mm_BldgHousing_Draw,928,game,city,verified,no,0,3,slot +0x14
-0x00169F20,mm_BldgHousing_UnitAt,372,game,city,verified,no,1,5,"whether the tile (x, z) holds a unit of the same housing block: same rule, flag-1 tile, terrain kind and height, and an entrance object (then *isUnit = 1). Returns its unit shape when more than `count` objects come before it on the tile, else 6"
+0x00169F20,mm_BldgHousing_UnitAt,372,game,city,verified,no,1,5,"whether the tile (x, z) holds a unit of the same housing block: same rule, flag-1 tile, terrain kind and height, and a built object (then *isUnit = 1). Returns its unit shape when more than `count` objects come before it on the tile, else 6"
 0x0016A0A0,mm_BldgHousing_CountUnits,756,game,city,verified,no,2,7,"a housing object's unit shape (variant high byte) from the units two tiles away along its terrain axis (tables 0x1B1480, 0x1B14C0); a changed shape passes style (mesh low byte) on and recurses into the neighbours"
-0x0016A3A0,mm_BldgHousing_Tick,160,game,city,verified,no,0,3,Building tick plus unit counting
+0x0016A3A0,mm_BldgHousing_Tick,160,game,city,verified,no,0,3,"building tick; once built the units are recounted, and a part still being built with another stacked on it is finished at once (0x120)"
 0x0016A440,mm_BldgHousing_InitRecord,80,game,city,verified,no,0,1,Building init; variant +0x1A = (x/2) mod 3
 0x0016A490,mm_BldgHousing_ctor,52,game,city,verified,yes,1,1,"Building constructor, vtable 0x1BD280"
 0x0016A4D0,mm_BldgMyHome_dtor,128,game,city,verified,yes,0,2,"category 10 (My Home), vtable 0x1BD2C0"
@@ -1522,7 +1522,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00173820,mm_TalkView_DrawPeople,3232,game,talk,verified,yes,3,18,"people at the building or of the family in a row with names, grades and the cursor"
 0x001744E0,mm_TalkView_AllAsleep,296,game,talk,verified,yes,2,4,"whether everyone is asleep (schedule activity 5, the night hours): for a family (`byFamily` 1) every member; for a building the people on its tile that count (not vehicles; outside or in this view's building). 1 when all are"
 0x00174610,mm_TalkView_DrawBuilding,916,game,talk,verified,yes,6,10,"the target building (a1 0: object, 1: family's home), lit when someone is home"
-0x001749B0,mm_TalkView_BuildingCamera,904,game,talk,verified,no,9,4,camera eye and target in front of the building's entrance
+0x001749B0,mm_TalkView_BuildingCamera,904,game,talk,verified,no,9,4,"camera eye and target for a talk at a building: the shared offset while it is being built, the type's own eye (type flag 0x4000) once built, else the person camera"
 0x00174D40,mm_TalkView_DrawCursor,64,game,talk,verified,no,3,2,cursor frame at +0xC0
 0x00174D80,mm_TalkView_CursorPerson,184,game,talk,verified,no,1,2,"person index of the cursor slot (+0xBC), 0x3F80 when none"
 0x00174E40,mm_TalkView_HandleInput,640,game,talk,verified,no,3,1,cursor left/right with scrolling and zoom steps (pad repeat)
@@ -1659,7 +1659,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0017B660,mm_WordsFn_EventRemoveWant,96,game,talk,verified,no,0,1,#143 act: removes the want the event holds for its building type
 0x0017B6C0,mm_WordsFn_EventAddWant,96,game,talk,verified,no,0,1,#142 act: the event holds a want for its building type
 0x0017B720,mm_WordsFn_ActorMoveTo,140,game,talk,verified,no,0,1,#141 act: moves the subjects to actor arg's place
-0x0017B7B0,mm_WordsFn_ClearPersonFlag20,20,game,talk,verified,no,0,0,#140 act: clears person A flag 0x20
+0x0017B7B0,mm_WordsFn_ReleasePerson,20,game,talk,verified,no,0,0,#140 act: person A is let go by the event (flag 0x20 cleared: no longer held or following)
 0x0017B7D0,mm_WordsFn_ActorFollow,156,game,talk,verified,no,0,2,#139 act: person A leaves the building and follows actor arg
 0x0017B870,mm_WordsFn_ActorDetach,108,game,talk,verified,no,0,1,#138 act: detaches the subjects from the event
 0x0017B8E0,mm_WordsFn_SelectEventActor,168,game,talk,verified,no,0,2,#137 act: subjects B from actor arg of event +0xA4
@@ -1750,7 +1750,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0017EBD0,mm_WordsFn_MemberLook,68,game,talk,verified,yes,0,1,"#55 cond: member A's look (FamilyMember +7, family record +0x2B)"
 0x0017EC20,mm_WordsFn_MemberByte2A,68,game,talk,verified,yes,0,1,#54 cond: member A's byte +6 (family record +0x2A); 0 in every FAMILY.BIN record
 0x0017EC70,mm_WordsFn_MemberCharType,104,game,talk,verified,yes,0,1,"#53 cond: member character type, folded (0x26 -> 13, others above 0x1D -> 0)"
-0x0017ECE0,mm_WordsFn_IsSpecialFamily,120,game,talk,verified,no,0,0,"#52 cond: whether family A is entry 0xFF (argument 0), 0xB7 (1) or 0x104 (2) of the family type table"
+0x0017ECE0,mm_WordsFn_IsSpecialFamily,120,game,talk,verified,no,0,0,"#52 cond: whether family A is the first family of the Noodle Shop (argument 0), of the Studio Appartment of type 0xB8 (1) or of the Police Station of type 0x105 (2): the families the noodles and thief events bring in"
 0x0017ED60,mm_WordsFn_IsApplicant,16,game,talk,verified,no,0,1,#51 cond: the family is on the applicant list
 0x0017ED70,mm_WordsFn_FamilyHasLeft,8,game,talk,verified,no,0,1,#50 cond: family A moved away (bitset C)
 0x0017ED80,mm_WordsFn_FamilyInCity,8,game,talk,verified,no,0,1,#49 cond: family A lives in the city (bitset A)
@@ -1778,7 +1778,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0017F190,mm_WordsFn_Random50,72,game,talk,verified,no,0,1,"#27 cond: random, about half"
 0x0017F1E0,mm_WordsFn_False,8,game,talk,verified,no,0,0,#26 cond: 0
 0x0017F1F0,mm_WordsFn_BuildingCrowd,260,game,talk,verified,no,0,1,"#25 cond: visitors at the building: none, some, over half capacity"
-0x0017F300,mm_WordsFn_BuildingFlag100,48,game,talk,verified,no,0,0,#24 cond: building flag 0x100
+0x0017F300,mm_WordsFn_BuildingNew,48,game,talk,verified,no,0,0,#24 cond: whether building A (or B) was built since the last morning (object flag 0x100)
 0x0017F330,mm_WordsFn_TryFriendAgrees,164,game,talk,verified,no,0,2,#23 act: mm_Family_FriendAgrees for member A when applicants and people have room
 0x0017F3E0,mm_WordsFn_MeterAgrees,52,game,talk,verified,no,0,1,"#22 cond: mm_Family_MeterAgrees for member B when arg (+0x2A) != 0, else member A, with the city's approval (was mm_WordsFn_Nop22: it only sets v0, so a void prototype hid it)"
 0x0017F420,mm_WordsFn_FindOutsideAcquaintance,260,game,talk,verified,yes,0,3,#21 cond: an acquaintance of member A from an Outside-category type who can apply; result word
@@ -1790,7 +1790,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0017F750,mm_WordsFn_FriendshipTier,100,game,talk,verified,no,0,1,"#15 cond: friendship value below 48, below 100, or higher"
 0x0017F7C0,mm_WordsFn_FriendshipBand,44,game,talk,verified,no,0,1,#14 cond: band of member A/B's friendship meter
 0x0017F7F0,mm_WordsFn_FamilyKnown,36,game,talk,verified,no,0,1,#13 cond: family A/B is known (bitset B)
-0x0017F820,mm_WordsFn_PersonFlag10,48,game,talk,verified,no,0,0,#12 cond: person +0x22 flag 0x10
+0x0017F820,mm_WordsFn_PersonIll,48,game,talk,verified,no,0,0,#12 cond: whether person A (B with an argument) is ill today (flag 0x10)
 0x0017F850,mm_WordsFn_IsBirthdayMonth,124,game,talk,verified,no,0,0,#11 cond: (family + member) mod 12 equals the month
 0x0017F8D0,mm_WordsFn_WorksAtHome,152,game,talk,verified,no,0,0,"#10 cond: the target of person A (or B): 0 none, 1 a building other than home, else whether the type of building A (or B) has flag 0x20 (an entrance)"
 0x0017F970,mm_WordsFn_MemberRole,184,game,talk,verified,yes,0,1,"#9 cond: 0..5 from the member's role and the flag bit 0: roles 2 gives 4/5, role 1 gives 3, role 0 gives 2, the others 0/1"
@@ -1939,7 +1939,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00187820,mm_Bgm_SetPlaying,76,game,sound,verified,no,1,2,"the music (voice 15) on or off, and its volume back to 0xC0 when asked"
 0x00187870,mm_Se_UpdateCityAmbience,3152,game,sound,verified,no,1,8,"one quarter of the 2x2 blocks within 16 tiles of the listener per frame: building sounds (group 2), terrain sounds (group 3) and, within 8 tiles, vehicles; VU0 bearings from the listener; 17:00 chime 0x3B for busy cities"
 0x001884E0,mm_Se_UpdateListener,1092,game,sound,verified,no,2,1,copies the city camera's eye and target (camera +0x130/+0x140) into the listener vectors at 0x1FC650 and derives its orientation
-0x00188930,mm_Se_BuildingSoundState,1144,game,sound,verified,indirect,1,1,"a building object's ambient sound this frame: low byte the sound (0xFF none), 0x100 after the lead of its window, 0x200 entrance, 0x400 the type's own (+0x14E); each object once per frame (flag 4, again 0x4FF); the sound's schedule (SeSound +0x02) decides"
+0x00188930,mm_Se_BuildingSoundState,1144,game,sound,verified,indirect,1,1,"a building object's ambient sound this frame: low byte the sound (0xFF none), 0x100 after the lead of its window, 0x200 built, 0x400 the type's own (+0x14E); one being built plays sound 6 in its third stage of work; each object once per frame (flag 4, again 0x4FF); the sound's schedule (SeSound +0x02) decides"
 0x00188DB0,mm_Se_InTimeWindow,300,game,sound,verified,no,1,0,"checks the game clock (seconds of day mod 3600, 0x1BDD34) against a window [a1, a2) offset per object; 0xFF = outside, 0x100 = inside"
 0x00188EE0,mm_Se_RequestTileSounds,468,game,sound,ported,no,1,4,"the vehicles on map tile (x, z) unless its object already has a request: engine 0x18 pitched by speed; the horn 0x1A at one-in-four while still allowed; returns what is left of the horn flag"
 0x001890C0,mm_Se_PickTerrainAmbience,508,game,sound,verified,no,1,3,"ambient sound id for a position: above the city's level threshold (+0xB0) picks 0x1C/0x1D, else from the 5-byte table at 0x1B35F0 through mm_Se_MatchSchedule"
@@ -1996,7 +1996,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0018F980,mm_EvShoppingTogether_End,192,game,event,verified,no,0,3,type 1: End (clears the building marks)
 0x0018FA40,mm_EvShoppingTogether_Start,116,game,event,verified,no,0,1,"type 1: Start (marks the two buildings, timer 180)"
 0x0018FAC0,mm_EvShoppingTogether_Check,460,game,event,verified,no,0,4,"event type 1 ""Shopping together"": slot Check"
-0x0018FC90,mm_EvAlien_Answer,56,game,event,verified,yes,0,1,type 16: Answer
+0x0018FC90,mm_EvAlien_Answer,56,game,event,verified,yes,0,1,type 16: Answer; at its start the first Spaceman's Home family applies
 0x0018FCD0,mm_EvAlien_End,120,game,event,verified,no,0,1,type 16: End (clears the building marks)
 0x0018FD50,mm_EvAlien_PickTarget,400,game,event,verified,no,1,4,"the building the alien lands on at (x, z): of the (tile list, type) pairs at 0x1B3760 (ended by list 0), the first building whose family lives in the city, without a maxed meter, whose footprint widened by 1 holds the point"
 0x0018FEE0,mm_EvAlien_Update,1184,game,event,verified,yes,0,11,type 16: Update (finishes after 720 ticks)
@@ -2013,7 +2013,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001911F0,mm_EvMsg_Update,292,game,event,verified,no,0,2,"Update shared by most message events (25-28, 31-34, 36-40)"
 0x00191320,mm_EvNoRetreat_Update,256,game,event,verified,no,0,2,"type 24 ""No retreat"": Update"
 0x00191420,mm_EvMsg_End,48,game,event,verified,no,0,1,End shared by the message events
-0x00191450,mm_EvMsg_Start,36,game,event,verified,no,0,0,Start shared by the message events (types 23-41)
+0x00191450,mm_EvMsg_Start,36,game,event,verified,no,0,0,"Start shared by the message events (types 23-41): the message comes from the boss (Boss' Home family, member 0)"
 0x00191480,mm_EvMissionCleared_Check,84,game,event,verified,no,0,1,"type 41 ""Mission Cleared"": Check"
 0x001914E0,mm_EvQuota80_Check,72,game,event,verified,no,0,0,"type 40 ""80% of the quota"": Check"
 0x00191530,mm_EvForciblyRetreat_Check,20,game,event,verified,no,0,0,"type 35 ""Forcibly Retreat"": Check"
@@ -2026,11 +2026,11 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001917C0,mm_EvWoman_Check,44,game,event,verified,no,0,0,"type 28 ""Woman"": Check"
 0x001917F0,mm_EvRiddle_Check,44,game,event,verified,no,0,0,"type 27 ""Riddle"": Check"
 0x00191820,mm_EvPopularity_Check,40,game,event,verified,no,0,0,"type 26 ""Popularity"": Check"
-0x00191850,mm_EvCaveMan_Answer,508,game,event,verified,yes,0,3,type 15: Answer
+0x00191850,mm_EvCaveMan_Answer,508,game,event,verified,yes,0,3,"type 15: Answer; modes 0 to 3 bring in the four Staff Accom families, 7 the first Caveman's Home family"
 0x00191A50,mm_EvCaveMan_Update,1652,game,event,verified,yes,0,12,type 15: Update
 0x001920D0,mm_EvCaveMan_End,192,game,event,verified,no,0,2,type 15: End
 0x00192190,mm_EvCaveMan_Start,8,game,event,verified,no,0,0,type 15: Start
-0x001921A0,mm_EvCaveMan_Check,380,game,event,verified,no,0,4,"type 15 ""Cave Man"": Check"
+0x001921A0,mm_EvCaveMan_Check,380,game,event,verified,no,0,4,"type 15 ""Cave Man"": Check; a cave with its family's first member on the map, with the first University family (member 2) and the first Caveman's Home family as actors"
 0x00192320,mm_EvDeliveryMan_Answer,76,game,event,verified,indirect,0,0,type 3: Answer
 0x00192490,mm_EvDeliveryMan_Text,176,game,event,verified,no,0,1,type 3: Text
 0x00192540,mm_EvDeliveryMan_Update,328,game,event,verified,no,0,3,type 3: Update
@@ -2047,7 +2047,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00193330,mm_EvFarewellParty_Answer,60,game,event,verified,no,0,0,type 19: Answer
 0x00193370,mm_EvFarewellParty_End,104,game,event,verified,indirect,0,1,type 19: End
 0x001933E0,mm_EvFarewellParty_Update,1344,game,event,verified,yes,0,19,type 19: Update
-0x00193920,mm_EvFarewellParty_Start,520,game,event,verified,no,0,5,"type 19 ""Farewell Party"": Start"
+0x00193920,mm_EvFarewellParty_Start,520,game,event,verified,no,0,5,"type 19 ""Farewell Party"": Start; the boss's family (Boss' Home) leaves, and residents who are close friends come"
 0x00193B30,mm_EvForgetfulGranny_Check,44,game,event,verified,no,0,0,"type 2 ""Forgetful Granny"": Check"
 0x00193B60,mm_EvCrazyCult_Answer,96,game,event,verified,indirect,0,0,type 18: Answer
 0x00193D00,mm_EvCrazyCult_End,232,game,event,verified,no,0,1,type 18: End
@@ -2055,11 +2055,11 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00193F40,mm_EvCrazyCult_Phase2,516,game,event,verified,no,1,3,"phases 10 to 16: 10 waits until everyone has been reached (+0x4C), 11 and 13 tell actor 3 when its time comes and 12 and 14 count those frames back, 15 finds the homes of actors 4, 5 and 1 (marked 0x200; back to 15 while one is missing) and 16 their persons (back to 16)"
 0x00194150,mm_EvCrazyCult_Phase1,352,game,event,verified,no,1,3,"phases 4 to 9: actor 2 waits and is told (4 to 7), then actor 3's family home is found (8) and its person (9, which sets the next wait to the next month at 7:00)"
 0x001942B0,mm_EvCrazyCult_Update,992,game,event,verified,no,0,6,type 18: Update
-0x00194690,mm_EvCrazyCult_Start,136,game,event,verified,no,0,0,"type 18 ""Crazy Cult"": Start"
+0x00194690,mm_EvCrazyCult_Start,136,game,event,verified,no,0,0,"type 18 ""Crazy Cult"": Start; the Zen Monk's and Shadow Monk's families and the first four Crazy Cult families as actors"
 0x00194720,mm_EvAdoption_Answer,116,game,event,verified,indirect,0,0,type 12: Answer
 0x001949F0,mm_EvAdoption_Text,56,game,event,verified,no,0,1,type 12: Text
 0x00194A30,mm_EvAdoption_Update,1452,game,event,verified,no,0,7,type 12: Update
-0x00194FE0,mm_EvAdoption_Start,184,game,event,verified,no,0,2,"type 12 ""Adoption"": Start"
+0x00194FE0,mm_EvAdoption_Start,184,game,event,verified,no,0,2,"type 12 ""Adoption"": Start; the boss (Boss' Home family, member 0) asks, and the families with an application are listed"
 0x001950A0,mm_EvUselessMiddleAged_Answer,48,game,event,verified,indirect,0,0,type 7: Answer
 0x00195160,mm_EvUselessMiddleAged_Update,160,game,event,verified,no,0,1,type 7: Update
 0x00195200,mm_EvUselessMiddleAged_End,140,game,event,verified,no,0,2,type 7: End
@@ -2075,7 +2075,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001960C0,mm_EvAdvertise_End,140,game,event,verified,no,0,2,type 9: End
 0x00196150,mm_EvAdvertise_Update,276,game,event,verified,no,0,2,type 9: Update
 0x00196270,mm_EvAdvertise_Start,48,game,event,verified,no,0,1,type 9: Start
-0x001962A0,mm_EvAdvertise_Check,192,game,event,verified,no,0,1,"type 9 ""To advertise"": Check"
+0x001962A0,mm_EvAdvertise_Check,192,game,event,verified,no,0,1,"type 9 ""To advertise"": Check; the person's own shop (category 7 or 9) advertises in its family's month, or any month while newly built"
 0x00196360,mm_EvShopping_Answer,120,game,event,verified,indirect,0,0,type 8: Answer
 0x001965E0,mm_EvShopping_Text,128,game,event,verified,no,0,1,type 8: Text
 0x00196660,mm_EvShopping_End,192,game,event,verified,no,0,2,type 8: End
@@ -2084,7 +2084,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001969F0,mm_EvShopping_Check,1312,game,event,verified,indirect,0,8,"type 8 ""Shopping"": Check"
 0x00196F10,mm_TalkEventData_DataSize,8,game,event,verified,no,0,0,"the talk event record class's data size (vtable 0x1BD8F8 slot +8, EventMgr.talks[0]): 0x7C"
 0x00196F20,mm_EventData_DataSize,8,game,event,verified,no,1,0,the base event record class's data size (vtable 0x1BD908 slot +8): 0x1C bytes after its first two words
-0x00196F30,mm_EvNoodles_Answer,192,game,event,verified,yes,0,1,type 13: Answer
+0x00196F30,mm_EvNoodles_Answer,192,game,event,verified,yes,0,1,type 13: Answer; at its start the first Noodle Shop family applies and is set up as two actors with the Studio Appartment (type 0xB8) family; at its end that family applies too
 0x00196FF0,mm_EvNoodles_End,248,game,event,verified,no,0,2,type 13: End
 0x001970F0,mm_EvNoodles_Update,5984,game,event,verified,yes,0,19,type 13: Update
 0x00198850,mm_EvNoodles_Start,120,game,event,verified,no,0,1,type 13: Start
@@ -2092,7 +2092,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00198B80,mm_EvThief_Answer,252,game,event,verified,no,0,1,type 17: Answer
 0x00198C80,mm_EvThief_End,180,game,event,verified,no,0,1,type 17: End
 0x00198D40,mm_EvThief_Update,1964,game,event,verified,yes,0,12,type 17: Update
-0x001994F0,mm_EvThief_Check,492,game,event,verified,no,0,4,"type 17 ""Thief"": Check"
+0x001994F0,mm_EvThief_Check,492,game,event,verified,no,0,4,"type 17 ""Thief"": Check; the first families of types 0xB9 (Studio Appartment) and 0x105 (Police Station) must live in the city with a home, and a building to rob be found"
 0x001996E0,mm_EvRelationship_Answer,388,game,event,verified,no,0,3,Answer shared by types 20-22
 0x00199870,mm_EvAffair_Check,564,game,event,verified,no,0,6,"type 22 ""An affair of"": Check"
 0x00199AB0,mm_EvBoyfriend_Check,604,game,event,verified,no,0,6,"type 21 ""Boyfriend of"": Check"

@@ -49,7 +49,7 @@ friendship changed. A is the person talked to.
 | `0x00173820` | `void mm_TalkView_DrawPeople(TalkView *view)` | 3232 | yes | people at the building or of the family in a row with names, grades and the cursor |
 | `0x001744E0` | `int mm_TalkView_AllAsleep(TalkView *view, int byFamily, int target)` | 296 | yes | whether everyone is asleep (schedule activity 5, the night hours): for a family (`byFamily` 1) every member; for a building the people on its tile that count (not vehicles; outside or in this view's building). 1 when all are |
 | `0x00174610` | `void mm_TalkView_DrawBuilding(TalkView *view, int byFamily, int target)` | 916 | yes | the target building (a1 0: object, 1: family's home), lit when someone is home |
-| `0x001749B0` | `void mm_TalkView_BuildingCamera(TalkView *view, int object, Vec4 *eye, Vec4 *target)` | 904 | no | camera eye and target in front of the building's entrance |
+| `0x001749B0` | `void mm_TalkView_BuildingCamera(TalkView *view, int object, Vec4 *eye, Vec4 *target)` | 904 | no | camera eye and target for a talk at a building: the shared offset while it is being built, the type's own eye (type flag 0x4000) once built, else the person camera |
 | `0x00174D40` | `void mm_TalkView_DrawCursor(TalkView *view)` | 64 | no | cursor frame at +0xC0 |
 | `0x00174D80` | `uint16_t mm_TalkView_CursorPerson(TalkView *view)` | 184 | no | person index of the cursor slot (+0xBC), 0x3F80 when none |
 | `0x00174E40` | `void mm_TalkView_HandleInput(TalkView *view)` | 640 | no | cursor left/right with scrolling and zoom steps (pad repeat) |
@@ -186,7 +186,7 @@ friendship changed. A is the person talked to.
 | `0x0017B660` | `int mm_WordsFn_EventRemoveWant(WordsCtx *ctx)` | 96 | no | #143 act: removes the want the event holds for its building type |
 | `0x0017B6C0` | `int mm_WordsFn_EventAddWant(WordsCtx *ctx)` | 96 | no | #142 act: the event holds a want for its building type |
 | `0x0017B720` | `int mm_WordsFn_ActorMoveTo(WordsCtx *ctx)` | 140 | no | #141 act: moves the subjects to actor arg's place |
-| `0x0017B7B0` | `int mm_WordsFn_ClearPersonFlag20(WordsCtx *ctx)` | 20 | no | #140 act: clears person A flag 0x20 |
+| `0x0017B7B0` | `int mm_WordsFn_ReleasePerson(WordsCtx *ctx)` | 20 | no | #140 act: person A is let go by the event (flag 0x20 cleared: no longer held or following) |
 | `0x0017B7D0` | `int mm_WordsFn_ActorFollow(WordsCtx *ctx)` | 156 | no | #139 act: person A leaves the building and follows actor arg |
 | `0x0017B870` | `int mm_WordsFn_ActorDetach(WordsCtx *ctx)` | 108 | no | #138 act: detaches the subjects from the event |
 | `0x0017B8E0` | `int mm_WordsFn_SelectEventActor(WordsCtx *ctx)` | 168 | no | #137 act: subjects B from actor arg of event +0xA4 |
@@ -277,7 +277,7 @@ friendship changed. A is the person talked to.
 | `0x0017EBD0` | `uint8_t mm_WordsFn_MemberLook(WordsCtx *ctx)` | 68 | yes | #55 cond: member A's look (FamilyMember +7, family record +0x2B) |
 | `0x0017EC20` | `uint8_t mm_WordsFn_MemberByte2A(WordsCtx *ctx)` | 68 | yes | #54 cond: member A's byte +6 (family record +0x2A); 0 in every FAMILY.BIN record |
 | `0x0017EC70` | `uint16_t mm_WordsFn_MemberCharType(WordsCtx *ctx)` | 104 | yes | #53 cond: member character type, folded (0x26 -> 13, others above 0x1D -> 0) |
-| `0x0017ECE0` | `int mm_WordsFn_IsSpecialFamily(WordsCtx *ctx)` | 120 | no | #52 cond: whether family A is entry 0xFF (argument 0), 0xB7 (1) or 0x104 (2) of the family type table |
+| `0x0017ECE0` | `int mm_WordsFn_IsSpecialFamily(WordsCtx *ctx)` | 120 | no | #52 cond: whether family A is the first family of the Noodle Shop (argument 0), of the Studio Appartment of type 0xB8 (1) or of the Police Station of type 0x105 (2): the families the noodles and thief events bring in |
 | `0x0017ED60` | `int mm_WordsFn_IsApplicant(WordsCtx *ctx)` | 16 | no | #51 cond: the family is on the applicant list |
 | `0x0017ED70` | `int mm_WordsFn_FamilyHasLeft(WordsCtx *ctx)` | 8 | no | #50 cond: family A moved away (bitset C) |
 | `0x0017ED80` | `int mm_WordsFn_FamilyInCity(WordsCtx *ctx)` | 8 | no | #49 cond: family A lives in the city (bitset A) |
@@ -305,7 +305,7 @@ friendship changed. A is the person talked to.
 | `0x0017F190` | `int mm_WordsFn_Random50(WordsCtx *ctx)` | 72 | no | #27 cond: random, about half |
 | `0x0017F1E0` | `int mm_WordsFn_False(WordsCtx *ctx)` | 8 | no | #26 cond: 0 |
 | `0x0017F1F0` | `int mm_WordsFn_BuildingCrowd(WordsCtx *ctx)` | 260 | no | #25 cond: visitors at the building: none, some, over half capacity |
-| `0x0017F300` | `int mm_WordsFn_BuildingFlag100(WordsCtx *ctx)` | 48 | no | #24 cond: building flag 0x100 |
+| `0x0017F300` | `int mm_WordsFn_BuildingNew(WordsCtx *ctx)` | 48 | no | #24 cond: whether building A (or B) was built since the last morning (object flag 0x100) |
 | `0x0017F330` | `int mm_WordsFn_TryFriendAgrees(WordsCtx *ctx)` | 164 | no | #23 act: mm_Family_FriendAgrees for member A when applicants and people have room |
 | `0x0017F3E0` | `int mm_WordsFn_MeterAgrees(WordsCtx *ctx)` | 52 | no | #22 cond: mm_Family_MeterAgrees for member B when arg (+0x2A) != 0, else member A, with the city's approval (was mm_WordsFn_Nop22: it only sets v0, so a void prototype hid it) |
 | `0x0017F420` | `int mm_WordsFn_FindOutsideAcquaintance(WordsCtx *ctx)` | 260 | yes | #21 cond: an acquaintance of member A from an Outside-category type who can apply; result word |
@@ -317,7 +317,7 @@ friendship changed. A is the person talked to.
 | `0x0017F750` | `int mm_WordsFn_FriendshipTier(WordsCtx *ctx)` | 100 | no | #15 cond: friendship value below 48, below 100, or higher |
 | `0x0017F7C0` | `int mm_WordsFn_FriendshipBand(WordsCtx *ctx)` | 44 | no | #14 cond: band of member A/B's friendship meter |
 | `0x0017F7F0` | `int mm_WordsFn_FamilyKnown(WordsCtx *ctx)` | 36 | no | #13 cond: family A/B is known (bitset B) |
-| `0x0017F820` | `int mm_WordsFn_PersonFlag10(WordsCtx *ctx)` | 48 | no | #12 cond: person +0x22 flag 0x10 |
+| `0x0017F820` | `int mm_WordsFn_PersonIll(WordsCtx *ctx)` | 48 | no | #12 cond: whether person A (B with an argument) is ill today (flag 0x10) |
 | `0x0017F850` | `int mm_WordsFn_IsBirthdayMonth(WordsCtx *ctx)` | 124 | no | #11 cond: (family + member) mod 12 equals the month |
 | `0x0017F8D0` | `int mm_WordsFn_WorksAtHome(WordsCtx *ctx)` | 152 | no | #10 cond: the target of person A (or B): 0 none, 1 a building other than home, else whether the type of building A (or B) has flag 0x20 (an entrance) |
 | `0x0017F970` | `int mm_WordsFn_MemberRole(WordsCtx *ctx)` | 184 | yes | #9 cond: 0..5 from the member's role and the flag bit 0: roles 2 gives 4/5, role 1 gives 3, role 0 gives 2, the others 0/1 |

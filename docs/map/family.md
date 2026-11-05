@@ -41,7 +41,7 @@ Families: the residents who move into the city.
 | `0x0013C5F0` | `int mm_Family_MakePhoneNumber(int family)` | 352 | no | the family's number in the Town's Pages: 19 followed by the low six digits of 97 * family + 6920, with digits 1 to 5 in reverse order (digit k of the source lands at kPlace[k]) |
 | `0x0013C770` | `void mm_Family_LoadState(McManager *mc)` | 148 | no | reads the member bytes (60000), the three bitsets (0x4E4 each), 0x1F32F0 (0x400) and the counters (0xC) from the save file |
 | `0x0013C810` | `void mm_Family_SaveState(McManager *mc)` | 148 | no | writes them |
-| `0x0013C8B0` | `int mm_Family_GetTypeIndex(int family)` | 72 | no | building type index of a family id: first entry above a0 in the sorted id table (gp) |
+| `0x0013C8B0` | `int mm_Family_GetTypeIndex(int family)` | 72 | no | the building type of a family id: the first entry of the family type table (EACHSTR.BIN, per type the end of its family ids) above it |
 | `0x0013C900` | `int mm_Family_HasLeft(uint32_t family)` | 80 | no | bitset C: the family moved away |
 | `0x0013C950` | `void mm_Family_SetKnown(uint32_t family)` | 76 | no | sets bit a0 of bitset B (0x1D4900, families known through the Town's Pages); called by mm_WordsFn_MarkFamilyKnown |
 | `0x0013C9A0` | `int mm_Family_IsKnown(uint32_t family)` | 80 | no | bitset B: the family is known (Town's Pages) |
