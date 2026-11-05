@@ -218,7 +218,7 @@ namespace mm
         view->target.y = view->target.y + view->pitch;
         Camera_SetEyeTarget(GuestPtr<Camera>{city->cityCamera.address}, GuestPtr<Vec4>{view.address + 0x270u}, GuestPtr<Vec4>{view.address + 0x280u});
         Camera_UpdateMatrices(GuestPtr<Camera>{city->cityCamera.address});
-        port::store<int32_t>(city.address + 0x28u, 0);
+        city->unk_28 = 0;
     }
 
     // The view of a home's inside: the walls' blob, the object, the home's size; the viewer starts at the entrance
@@ -231,7 +231,7 @@ namespace mm
         const uint32_t sp = frame.ptr().address;
         const GuestPtr<MyHomeView> view = home(talkView);
         TalkView_ctor(talkView, city);
-        view->base.base.vtable = GuestPtr<void>{0x001BD810u};
+        view->base.base.vtable = GuestPtr<WidgetVtable>{0x001BD810u};
         view->collision = GuestPtr<void>{port::load<uint32_t>(0x001F3CE0u)};
         view->base.targetObject = object;
         const GuestPtr<MapObject> record = Map_GetRecord(view->base.city->map, view->base.targetObject);
@@ -273,7 +273,7 @@ namespace mm
             const uint32_t sp = frame.ptr().address;
             const GuestPtr<TalkPersonView> view{talkView.address};
             TalkView_ctor(talkView, city);
-            view->base.base.vtable = GuestPtr<void>{vtable};
+            view->base.base.vtable = GuestPtr<WidgetVtable>{vtable};
             view->base.targetObject = person;
             const GuestPtr<MapPerson> who = city->map->people + view->base.targetObject;
             who->y = Map_SampleHeight(city->map, who->x, who->z);

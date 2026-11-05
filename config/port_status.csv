@@ -1300,7 +1300,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0015FCA0,mm_MenuWin_dtor,124,game,ui,verified,yes,0,3,"vtable 0x1BCF80, deletes the list menu, base destructor"
 0x0015FD20,mm_MenuWin_ctor,76,game,ui,verified,no,2,1,"base constructor, vtable 0x1BCF80"
 0x0015FD70,mm_Markers_Draw,184,game,city,verified,no,1,2,(provisional) model 0x1F3B28 with up to four nodes placed by the city update
-0x0015FE30,mm_Laptop_CheckOpen,212,game,ui,verified,no,1,3,(provisional) while Circle alone (0x20) is held in city mode 1 (and a2): hides HUD element 2 and sets +0x120; restores both on release
+0x0015FE30,mm_Laptop_CheckOpen,212,game,ui,verified,no,1,3,the building markers' Circle check (a Markers method): while Circle alone (0x20) is held in city mode 1 (and a2) hides the cursor and shows the markers; hides them again on release
 0x0015FF10,mm_Markers_dtor,76,game,city,verified,yes,0,1,(provisional) vtable 0x1BCFC8 at +0x128
 0x0015FF60,mm_Markers_ctor,216,game,city,verified,no,1,1,"(provisional) vtable 0x1BCFC8 at +0x128, models 0x1F3B28/0x1F3B08, nodes 1-3"
 0x00160040,mm_CityCamera_UpdateTimeOfDay,2544,game,camera,verified,no,2,8,"lights and sky by the clock: colours blended between two-hour slot tables (0x1B0E30.. 0x1B12B0), sun directions turned by the day's angle, sky packet colours, horizon, scroll and shimmer"

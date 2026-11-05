@@ -3,6 +3,7 @@
 
 #include "game_functions.h"
 #include "game_globals.h"
+#include "widgets.h"
 #include "sdk.h"
 #include "vu0.h"
 
@@ -78,31 +79,32 @@ namespace mm
         return bits;
     }
 
-    // While Circle alone (0x20) is held in the city view (and `allowed`), HUD element 2 is hidden and +0x120 set,
-    // once per press; any other input clears both again. Returns +0x120.
-    int Laptop_CheckOpen(GuestPtr<Laptop> laptop, GuestPtr<CityScene> city, int allowed)
+    // The building markers' Circle check (a markers method, named as a laptop one): while Circle alone (0x20) is held in the
+    // city view (and `allowed`), the cursor is hidden and the markers shown, once per press, with the fourth marker on node 4
+    // when laptop entry 4 is active; any other input hides them again. Returns whether they are shown.
+    int Laptop_CheckOpen(GuestPtr<Markers> markers, GuestPtr<CityScene> city, int allowed)
     {
         const uint32_t held = Pad_Held(0);
         if (held == 0x20u && CityScene_GetMode(city) == 1 && allowed != 0)
         {
-            if (laptop->circleHeld == 0)
+            if (markers->circleHeld == 0)
             {
                 city->hudVisible[2] = 0;
-                laptop->circleActive = 1;
+                markers->visible = 1;
                 if ((Laptop_CountActive() & 0x10u) != 0)
-                    laptop->unk_11C = 4;
+                    markers->nodes[3] = 4;
             }
         }
         else
         {
-            laptop->circleHeld = (held & 0x20u) != 0 ? 1 : 0;
-            if (laptop->circleActive != 0)
+            markers->circleHeld = (held & 0x20u) != 0 ? 1 : 0;
+            if (markers->visible != 0)
             {
                 city->hudVisible[2] = 1;
-                laptop->circleActive = 0;
+                markers->visible = 0;
             }
         }
-        return laptop->circleActive;
+        return markers->visible;
     }
 
     // The laptop's entries on a carousel, each frame. Entry i stands at angle (2 pi / count) x (count - i) plus
@@ -255,7 +257,7 @@ namespace mm
             skipEmpty();
             if (!(type < types))
                 break;
-            const uint32_t name = port::load<uint32_t>(globals::buildingTypeTable.get() + 4u * static_cast<uint32_t>(type)) + 0x110u;
+            const uint32_t name = port::guest(globals::buildingType(static_cast<uint32_t>(type))->name);
             Text_FormatPadded(GuestPtr<char>{number}, pages->index[type].startPage * 2 + 1, 4);
             for (uint32_t c = number; port::load<int8_t>(c) == ' '; ++c)
                 port::store<uint8_t>(c, '-');
@@ -469,7 +471,7 @@ namespace mm
             return static_cast<int>(base + 0xB40u);
         if (a3 == 15)
         {
-            const uint32_t own = port::load<uint8_t>(globals::buildingTypeAddress(static_cast<uint32_t>(a2)) + 0x14Bu);
+            const uint32_t own = globals::buildingType(static_cast<uint32_t>(a2))->schedule;
             return static_cast<int>(base + (own + 15u) * 0x60u);
         }
         return static_cast<int>(base + static_cast<uint32_t>(a3) * 0x60u);
@@ -578,18 +580,17 @@ namespace mm
         return wants;
     }
 
-    // Wasteland plots get a random look, kept in the bytes other buildings use for their claim (+0x10..+0x16).
+    // Wasteland plots get a random look, kept in the bytes other buildings use for their claim.
     void BldgWasteland_InitRecord(GuestPtr<BuildingType>, GuestPtr<MapObject> obj)
     {
         const auto random = [] { return static_cast<int32_t>(Random_Next()); };
-        const GuestPtr<uint8_t> look{obj.address + 0x10u};
-        look[0] = static_cast<uint8_t>(random());
-        look[1] = static_cast<uint8_t>(random());
-        look[2] = static_cast<uint8_t>(random() % 4);
-        look[3] = 0;
-        look[4] = 0;
-        look[5] = static_cast<uint8_t>(random() % 3);
-        look[6] = static_cast<uint8_t>(random() % 10);
+        obj->look[0] = static_cast<uint8_t>(random());
+        obj->look[1] = static_cast<uint8_t>(random());
+        obj->look[2] = static_cast<uint8_t>(random() % 4);
+        obj->look[3] = 0;
+        obj->look[4] = 0;
+        obj->look[5] = static_cast<uint8_t>(random() % 3);
+        obj->look[6] = static_cast<uint8_t>(random() % 10);
     }
 
     // ---- building drawing and road links
@@ -600,11 +601,11 @@ namespace mm
         int blockStepX(int dir) { return port::load<int32_t>(globals::kBlockStepX + 4u * static_cast<uint32_t>(dir)); }
         int blockStepZ(int dir) { return port::load<int32_t>(globals::kBlockStepZ + 4u * static_cast<uint32_t>(dir)); }
 
-        // Straight road pieces (variants 5 and 10) continue a road; anything else ends it.
-        bool isStraightRoad(uint16_t variant) { return variant == 5 || variant == 10; }
+        // Straight road pieces (shapes 5 and 10) continue a road; anything else ends it.
+        bool isStraightRoad(uint16_t shape) { return shape == 5 || shape == 10; }
     }
 
-    // Leveled ground: mesh +0x160 of the type, when the object's flag 1 is set.
+    // Leveled ground: the type's mesh, when the object's flag 1 is set.
     void BldgLeveled_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene>, GuestPtr<MapObject> obj, int, int flags,
                           ps2f x, ps2f y, ps2f z)
     {
@@ -615,7 +616,7 @@ namespace mm
         matrix[3].y = y;
         matrix[3].z = z;
         Instance_DrawMesh(globals::cityPartsModel.get(), matrix, GuestPtr<Vec4>{globals::kDefaultColour},
-                          port::load<int32_t>(btype.address + 0x160u), flags);
+                          btype.as<LeveledType>()->mesh, flags);
     }
 
     // Wasteland: one of the weed and rock meshes (row look[4] - 1, column look[5]) under one of four matrices
@@ -624,14 +625,13 @@ namespace mm
     void BldgWasteland_Draw(GuestPtr<BuildingType>, int, GuestPtr<CityScene>, GuestPtr<MapObject> obj, int, int flags,
                             ps2f x, ps2f y, ps2f z)
     {
-        const GuestPtr<uint8_t> look{obj.address + 0x10u};
-        if (look[4] == 0)
+        if (obj->look[4] == 0)
             return;
-        layerMatrix(look[2])[3].x = x + fromInt(look[0]) / ps2f(400.0f);
-        layerMatrix(look[2])[3].y = y;
-        layerMatrix(look[2])[3].z = z + fromInt(look[1]) / ps2f(400.0f);
-        Instance_DrawMesh(globals::wastelandModel.get(), layerMatrix(look[2]), GuestPtr<Vec4>{globals::kDefaultColour},
-                          look[5] + (look[4] - 1) * 3, flags);
+        layerMatrix(obj->look[2])[3].x = x + fromInt(obj->look[0]) / ps2f(400.0f);
+        layerMatrix(obj->look[2])[3].y = y;
+        layerMatrix(obj->look[2])[3].z = z + fromInt(obj->look[1]) / ps2f(400.0f);
+        Instance_DrawMesh(globals::wastelandModel.get(), layerMatrix(obj->look[2]), GuestPtr<Vec4>{globals::kDefaultColour},
+                          obj->look[5] + (obj->look[4] - 1) * 3, flags);
     }
 
     // A straight road within three blocks of (x, z), searching outwards. Each direction is given up at the
@@ -650,7 +650,7 @@ namespace mm
                 const int tx = bx + ring * blockStepX(dir), tz = bz + ring * blockStepZ(dir);
                 if (Map_TileFlag10(city->map, tx, tz) == 0)
                     continue;
-                if (isStraightRoad(Map_GetTileObject(city->map, tx, tz)->variant))
+                if (isStraightRoad(Map_GetTileObject(city->map, tx, tz)->roadShape))
                 {
                     *spot = static_cast<uint32_t>(dir);
                     return 1;
@@ -660,7 +660,7 @@ namespace mm
         return 0;
     }
 
-    // Wasteland each tick. A marked one (+0x14) loses its mark unless both triangles of its tile face straight
+    // Wasteland each tick. A marked one (weeds, look[4]) loses its mark unless both triangles of its tile face straight
     // down within 0.96 (VU0 cross products of the corner edges). The tile and its four neighbours are counted
     // above the water level: all five plot colour 0 on the minimap, some 8. With none, a roll of 6..10 out of
     // 32 by a straight road (mm_BldgWasteland_FindSpot) whose block has flag 0x10 or 8 places a type 3 object
@@ -673,7 +673,7 @@ namespace mm
         const GuestPtr<uint32_t> spot{sp + 0x11Cu};
         const int x = obj->tile & 0x7F, z = obj->tile >> 7;
         Map_GetTileVertex(city->map, obj->tile, corners);
-        if (static_cast<uint8_t>(obj->entranceTile) != 0)
+        if (obj->look[4] != 0)
         {
             using namespace vu0;
             Map_GetTileVertex(city->map, obj->tile, corners);
@@ -708,7 +708,7 @@ namespace mm
             const ps2f secondY = normal(cb, cd);
             const ps2f steep = -0x1.EB851Ep-1f;
             if (!(firstY <= steep) || !(secondY <= steep))
-                port::store<uint8_t>(obj.address + 0x14u, 0);
+                obj->look[4] = 0;
         }
 
         Map_GetTileHeightWord(city->map, obj->tile);
@@ -737,7 +737,7 @@ namespace mm
                     if (Map_TileFlag10(city->map, sx, sz) != 0 || Map_TileFlag08(city->map, sx, sz) != 0)
                         Map_PlaceObject(city->map, 0, 3, x, z, static_cast<int>(city.address));
                 }
-                const uint8_t mark = static_cast<uint8_t>(obj->entranceTile);
+                const uint8_t mark = obj->look[4];
                 colour = mark == 1 || mark == 3 || mark >= 7 ? 2 : (mark != 0 ? 6 : 1);
             }
         }
@@ -771,15 +771,14 @@ namespace mm
         return 0x4000;
     }
 
-    // A road piece's links (+0x10, one tile per direction, 0x4000 = none): for each direction its shape opens
-    // to (bit d of the variant), the first road block along it that is not straight road.
+    // A road piece's links (one tile per direction, 0x4000 = none): for each direction its shape opens to
+    // (bit d), the first road block along it that is not straight road.
     void BldgRoad_FindNeighbours(GuestPtr<BuildingType>, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int x, int z)
     {
-        const GuestPtr<uint16_t> links{obj.address + 0x10u};
         for (int dir = 0; dir < 4; ++dir)
         {
-            links[dir] = 0x4000;
-            if ((obj->variant & (1u << dir)) == 0)
+            obj->roadLinks[dir] = 0x4000;
+            if ((obj->roadShape & (1u << dir)) == 0)
                 continue;
             int tx = x, tz = z;
             for (;;)
@@ -790,11 +789,11 @@ namespace mm
                 if (Map_TileIndexFlag10(city->map, tile) == 0)
                     break;
                 const GuestPtr<MapObject> next = Map_GetTileFirstObject(city->map, static_cast<int>(tile));
-                if (next->variant == 0)
+                if (next->roadShape == 0)
                     break;
-                if (!isStraightRoad(next->variant))
+                if (!isStraightRoad(next->roadShape))
                 {
-                    links[dir] = next->tile;
+                    obj->roadLinks[dir] = next->tile;
                     break;
                 }
             }
@@ -882,14 +881,14 @@ namespace mm
         matrix[3].x = x;
         matrix[3].y = y;
         matrix[3].z = z;
-        if (obj->mesh == 0)
+        if (obj->roadMesh == 0)
             return;
         port::GuestLocal<Vec4> colour;
         *colour = *GuestPtr<Vec4>{globals::kDefaultColour};
         const auto drawLit = [&] { port::store<int32_t>(colour.ptr().address + 0xCu, 12); };
         obj->flags &= 0xFFEFu;
-        const int mesh = obj->mesh;
-        const int lamps = port::load<int32_t>(btype.address + 0x160u);
+        const int mesh = obj->roadMesh;
+        const int lamps = btype.as<RoadType>()->lampMesh;
         if (mesh >= lamps && mesh <= lamps + 3)
         {
             const int tile = obj->tile;
@@ -901,17 +900,17 @@ namespace mm
                 drawLit();
                 obj->flags |= 0x10u;
             }
-            Instance_DrawMesh(globals::cityPartsModel.get(), matrix, colour, obj->mesh, flags);
+            Instance_DrawMesh(globals::cityPartsModel.get(), matrix, colour, obj->roadMesh, flags);
             return;
         }
-        const auto lights = [&] { return port::load<int32_t>(btype.address + 0x164u); };
+        const auto lights = [&] { return btype.as<RoadType>()->lightMesh; };
         if (mesh < lights() || mesh > lights() + 4)
         {
             Instance_DrawMesh(globals::cityPartsModel.get(), matrix, colour, mesh, flags);
             return;
         }
         drawLit();
-        const uint32_t signals = 0x001B1540u + 4u * static_cast<uint32_t>(city->trafficPhase * 2 + (obj->mesh - lights()) * 8);
+        const uint32_t signals = 0x001B1540u + 4u * static_cast<uint32_t>(city->trafficPhase * 2 + (obj->roadMesh - lights()) * 8);
         Instance_DrawMesh(globals::cityPartsModel.get(), matrix, colour, lights() + port::load<int32_t>(signals), flags);
         const GuestPtr<Vec4> second = layerMatrix(3);
         second[3].x = x;
@@ -923,9 +922,9 @@ namespace mm
     // A road block each tick. Its shape (variant) gets bit d for each direction d whose next block is road
     // (Map_TileFlag10) and its links are refreshed. Unless all four of its tiles are at or below height 0, they
     // are flattened to 0 and the ground from one tile before to three after is rebuilt. The mesh follows the
-    // shape: traffic lights (type +0x164, +0 to +4) at crossings and T-junctions; on straight road the slope
-    // mesh (+0x168, +1 along x) where the ground on either side rises more than 0.8 above the road, else a
-    // street lamp (+0x160, +0/+1 along z, +2/+3 along x) on every eighth tile and the one two after it; none
+    // shape: traffic lights (+0 to +4) at crossings and T-junctions; on straight road the slope mesh (+1 along
+    // x) where the ground on either side rises more than 0.8 above the road, else a street lamp (+0/+1 along z,
+    // +2/+3 along x) on every eighth tile and the one two after it; none
     // on bends and dead ends. The block is then plotted on the minimap. Returns 0.
     int BldgRoad_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
     {
@@ -934,7 +933,7 @@ namespace mm
         for (int dir = 0; dir < 4; ++dir)
             if (Map_TileFlag10(city->map, x + blockStepX(dir), z + blockStepZ(dir)) != 0)
                 shape += port::load<int32_t>(globals::kBlockDirBit + 4u * static_cast<uint32_t>(dir));
-        obj->variant = static_cast<uint16_t>(shape);
+        obj->roadShape = static_cast<uint16_t>(shape);
         BldgRoad_FindNeighbours(btype, city, obj, x, z);
         const ps2f level = 0.0f;
         if (!(Map_GetHeightAt(city->map, x, z) <= level && Map_GetHeightAt(city->map, x + 1, z) <= level &&
@@ -952,27 +951,28 @@ namespace mm
             rect[3] = z + 3;
             Map_UpdateAreaGeometry(city->map, rect);
         }
-        obj->mesh = 0;
-        const int lamps = port::load<int16_t>(btype.address + 0x160u);
-        const int lights = port::load<int16_t>(btype.address + 0x164u);
-        const int slope = port::load<int16_t>(btype.address + 0x168u);
+        obj->roadMesh = 0;
+        const GuestPtr<RoadType> road = btype.as<RoadType>();
+        const int lamps = static_cast<int16_t>(road->lampMesh); // the low halves, as the game reads them here
+        const int lights = static_cast<int16_t>(road->lightMesh);
+        const int slope = static_cast<int16_t>(road->slopeMesh);
         const ps2f rise = 0.8f;
-        switch (obj->variant)
+        switch (obj->roadShape)
         {
         case 0xF:
-            obj->mesh = static_cast<uint16_t>(lights);
+            obj->roadMesh = static_cast<uint16_t>(lights);
             break;
         case 0xE:
-            obj->mesh = static_cast<uint16_t>(lights + 1);
+            obj->roadMesh = static_cast<uint16_t>(lights + 1);
             break;
         case 0xD:
-            obj->mesh = static_cast<uint16_t>(lights + 2);
+            obj->roadMesh = static_cast<uint16_t>(lights + 2);
             break;
         case 0xB:
-            obj->mesh = static_cast<uint16_t>(lights + 3);
+            obj->roadMesh = static_cast<uint16_t>(lights + 3);
             break;
         case 0x7:
-            obj->mesh = static_cast<uint16_t>(lights + 4);
+            obj->roadMesh = static_cast<uint16_t>(lights + 4);
             break;
         case 0x5: // along z
         {
@@ -980,11 +980,11 @@ namespace mm
             const ps2f before = Map_GetHeightAt(city->map, x - 1, z);
             const ps2f after = Map_GetHeightAt(city->map, x + btype->size, z);
             if (!(before - road <= rise) || !(after - road <= rise))
-                obj->mesh = static_cast<uint16_t>(slope);
+                obj->roadMesh = static_cast<uint16_t>(slope);
             else if (z % 8 == 0)
-                obj->mesh = static_cast<uint16_t>(lamps);
+                obj->roadMesh = static_cast<uint16_t>(lamps);
             else if (z % 8 == 2)
-                obj->mesh = static_cast<uint16_t>(lamps + 1);
+                obj->roadMesh = static_cast<uint16_t>(lamps + 1);
             break;
         }
         case 0xA: // along x
@@ -993,11 +993,11 @@ namespace mm
             const ps2f before = Map_GetHeightAt(city->map, x, z - 1);
             const ps2f after = Map_GetHeightAt(city->map, x, z + btype->size);
             if (!(before - road <= rise) || !(after - road <= rise))
-                obj->mesh = static_cast<uint16_t>(slope + 1);
+                obj->roadMesh = static_cast<uint16_t>(slope + 1);
             else if (x % 8 == 0)
-                obj->mesh = static_cast<uint16_t>(lamps + 2);
+                obj->roadMesh = static_cast<uint16_t>(lamps + 2);
             else if (x % 8 == 2)
-                obj->mesh = static_cast<uint16_t>(lamps + 3);
+                obj->roadMesh = static_cast<uint16_t>(lamps + 3);
             break;
         }
         default:
@@ -1075,7 +1075,7 @@ namespace mm
         if ((obj->flags & 0x20u) != 0)
         {
             if (!(city->clock < 82801))
-                port::store<uint8_t>(obj.address + 0x17u, 0);
+                obj->occupants = 0;
             const uint16_t flags = obj->flags;
             if ((flags & 0x100u) != 0 && city->clock < 25200 && !(city->clock < 21600))
             {
@@ -1086,12 +1086,11 @@ namespace mm
         }
         else if (!(city->clock < 25200) && city->clock < 68400)
         {
-            const uint32_t counter = obj.address + 0x18u;
-            port::store<uint8_t>(counter, static_cast<uint8_t>(port::load<uint8_t>(counter) + 1));
-            if (port::load<uint8_t>(counter) >= 24)
+            obj->variant = static_cast<uint8_t>(obj->variant + 1); // counts the hours open
+            if (obj->variant >= 24)
             {
                 obj->flags |= 0x120u;
-                port::store<uint8_t>(counter, 0);
+                obj->variant = 0;
             }
         }
         const int meter = ClaimMeter_Level(obj->claimMeter);
@@ -1112,7 +1111,7 @@ namespace mm
         if ((obj->flags & 0x20u) == 0 && obj->id != Map_GetTileFirstObject(city->map, obj->tile)->id)
         {
             obj->flags |= 0x120u;
-            port::store<uint8_t>(obj.address + 0x18u, 0);
+            obj->variant = 0;
         }
         return result;
     }
@@ -1127,7 +1126,7 @@ namespace mm
         else if (obj->id != Map_GetTileFirstObject(city->map, obj->tile)->id)
         {
             obj->flags |= 0x120u;
-            port::store<uint8_t>(obj.address + 0x18u, 0);
+            obj->variant = 0;
         }
         return result;
     }
@@ -1192,7 +1191,7 @@ namespace mm
         // A part that is not the entrance: its variant (bits 3-7 of +0x18) from the city parts model.
         void drawPlainPart(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> matrix, GuestPtr<Vec4> colour, int flags)
         {
-            Instance_DrawMesh(globals::cityPartsModel.get(), matrix, colour, btype->firstDrawMesh + ((obj->variant & 0xFFu) >> 3), flags);
+            Instance_DrawMesh(globals::cityPartsModel.get(), matrix, colour, btype->firstDrawMesh + (obj->variant >> 3), flags);
         }
     }
 
@@ -1292,7 +1291,7 @@ namespace mm
 
     // Offices: `part` is the block part being drawn (bits 0-2: 0..4; bit 3, set here for kind 0xC3, adds mesh
     // 0x67 on the parts with a second mesh). Parts choose up to two meshes from the entrance mesh on, varied by
-    // the block's position along the street ((tile / size) % 3); a type extra mesh (+0x160) goes with the first.
+    // the block's position along the street ((tile / size) % 3); the type's extra mesh goes with the first.
     // Part 0 of a non-entrance object draws its variant, untinted.
     void BldgOffice_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, GuestPtr<uint32_t> part,
                          int flags, ps2f x, ps2f y, ps2f z)
@@ -1323,7 +1322,7 @@ namespace mm
         if (first != 0)
         {
             Instance_DrawMesh(globals::blockModel.get(), matrix, colour, first + shift, flags);
-            const int extra = port::load<int32_t>(btype.address + 0x160u);
+            const int extra = btype.as<OfficeType>()->extraMesh;
             if (extra != 0)
                 Instance_DrawMesh(globals::blockModel.get(), matrix, colour, extra, flags);
         }
@@ -1341,8 +1340,8 @@ namespace mm
     void BldgHousing_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, GuestPtr<uint32_t> part,
                           int flags, ps2f x, ps2f y, ps2f z)
     {
-        const int shape = obj->variant >> 8;
-        const int base = btype->entranceDrawMesh + (obj->mesh & 0xFFu) * 26;
+        const int shape = obj->unitShape;
+        const int base = btype->entranceDrawMesh + obj->style * 26;
         const auto partMesh = [&](int index) { return base + port::load<int8_t>(globals::kHousingPartMesh + 4u * shape + index); };
         int first = -1, second = -1;
         switch (*part & 7u)
@@ -1392,7 +1391,7 @@ namespace mm
             return kNone;
         *isUnit = 1;
         if (count < Map_CountObjectsBefore(city->map, x, z, kNoObject))
-            return static_cast<uint8_t>(obj->variant >> 8);
+            return obj->unitShape;
         return kNone;
     }
 
@@ -1403,10 +1402,10 @@ namespace mm
     // is not its tile's first takes that one's style.
     void BldgHousing_CountUnits(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
     {
-        const auto shapeOf = [](GuestPtr<MapObject> o) { return static_cast<uint8_t>(o->variant >> 8); };
-        const auto setShape = [](GuestPtr<MapObject> o, uint8_t shape) { port::store<uint8_t>(o.address + 0x19u, shape); };
-        const auto styleOf = [](GuestPtr<MapObject> o) { return static_cast<uint8_t>(o->mesh); };
-        const auto setStyle = [](GuestPtr<MapObject> o, uint8_t style) { port::store<uint8_t>(o.address + 0x1Au, style); };
+        const auto shapeOf = [](GuestPtr<MapObject> o) { return o->unitShape; };
+        const auto setShape = [](GuestPtr<MapObject> o, uint8_t shape) { o->unitShape = shape; };
+        const auto styleOf = [](GuestPtr<MapObject> o) { return o->style; };
+        const auto setStyle = [](GuestPtr<MapObject> o, uint8_t style) { o->style = style; };
 
         port::GuestFrame<0xF0> frame;
         const uint32_t sp = frame.ptr().address;
@@ -1573,7 +1572,7 @@ namespace mm
         port::GuestLocal<Vec4> colour; // the original's slots: entry sp - 0x10 and - 0x20
         port::GuestLocal<Vec4> position;
         for (GuestPtr<uint16_t> link = GuestPtr<uint16_t>::of(obj->firstPerson); *link != kNoPerson;
-             link = GuestPtr<uint16_t>::of(people[*link].nextOnTile))
+             link = GuestPtr<uint16_t>::of(people[*link].nextHere))
         {
             const GuestPtr<MapPerson> person = people + *link;
             *colour = *GuestPtr<Vec4>{globals::kDefaultColour};
@@ -1665,7 +1664,7 @@ namespace mm
     // The road class adds the map object's (a1) variant to the base value.
     int BldgRoad_Slot1C(GuestPtr<BuildingType> btype, int a1)
     {
-        return btype->unk_143 + GuestPtr<MapObject>{static_cast<uint32_t>(a1)}->variant;
+        return btype->unk_143 + GuestPtr<MapObject>{static_cast<uint32_t>(a1)}->roadShape;
     }
 
     // Collision against a building's mesh: the entrance mesh for entrance objects, else the first mesh plus
@@ -1676,7 +1675,7 @@ namespace mm
         {
             if ((obj->flags & 0x20u) != 0)
                 return btype->entranceMesh * 2;
-            return (btype->firstMesh + ((obj->variant & 0xFFu) >> 3)) * 2;
+            return (btype->firstMesh + (obj->variant >> 3)) * 2;
         }
     }
 
@@ -1792,7 +1791,7 @@ namespace mm
     void BldgHousing_InitRecord(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj)
     {
         Bldg_InitRecord(btype, obj);
-        port::store<uint8_t>(obj.address + 0x1Au, static_cast<uint8_t>((obj->tile / 2) % 3));
+        obj->style = static_cast<uint8_t>((obj->tile / 2) % 3);
     }
 
     void BldgRoad_InitRecord(GuestPtr<BuildingType>, GuestPtr<MapObject> obj)
@@ -1806,7 +1805,7 @@ namespace mm
     uint8_t BldgField_Slot1C(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj)
     {
         if (obj->claimSlot != 0)
-            return port::load<uint8_t>(btype.address + 0x143u);
+            return btype->unk_143;
         const int16_t meter = static_cast<int16_t>(obj->claimMeter);
         if (meter < 2)
             return 0x11;
@@ -1817,18 +1816,18 @@ namespace mm
 
     namespace
     {
-        // The variant part of a building's collision mesh (the low byte of +0x18, in steps of 8).
+        // The variant part of a building's collision mesh (the variant byte in steps of 8).
         uint32_t variantMesh(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj)
         {
-            return btype->firstMesh + (port::load<uint8_t>(obj.address + 0x18u) >> 3);
+            return btype->firstMesh + (obj->variant >> 3);
         }
 
         // Housing: part 0 is the block itself (or its entrance), parts 1 and 2 and up take the unit shape's two
-        // entrance meshes (signed offsets from the type's entrance mesh, table 0x1B1520 by the shape at +0x19).
+        // entrance meshes (signed offsets from the type's entrance mesh, table 0x1B1520 by the unit shape).
         int housingMesh(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, uint32_t part)
         {
             const uint32_t which = part & 7u;
-            const uint32_t shape = 0x001B1520u + 2u * port::load<uint8_t>(obj.address + 0x19u);
+            const uint32_t shape = 0x001B1520u + 2u * obj->unitShape;
             if (which == 0)
             {
                 if ((obj->flags & 0x20u) == 0)
@@ -1905,11 +1904,11 @@ namespace mm
         return Collide_SegmentB(static_cast<int>(btype.address), mesh, point, matrix, hit, distance, f12);
     }
 
-    // Small goods stacks collide only from 0x27 goods (low byte of +0x10) on, one mesh per count.
+    // Small goods collide only from props mesh 0x27 on, one collision mesh each.
     int BldgSmallGoods_CollideA(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
                                 GuestPtr<uint32_t> hit, ps2f lift)
     {
-        const uint8_t count = port::load<uint8_t>(obj.address + 0x10u);
+        const uint8_t count = obj->goodsMesh;
         if (count < 0x27)
             return 0;
         return Collide_SegmentA(static_cast<int>(btype.address), (btype->entranceMesh + count - 0x27) * 2, point, matrix, hit, lift);
@@ -1918,7 +1917,7 @@ namespace mm
     int BldgSmallGoods_CollideB(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
                                 GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, ps2f f12)
     {
-        const uint8_t count = port::load<uint8_t>(obj.address + 0x10u);
+        const uint8_t count = obj->goodsMesh;
         if (count < 0x27)
             return 0;
         return Collide_SegmentB(static_cast<int>(btype.address), (btype->entranceMesh + count - 0x27) * 2, point, matrix, hit, distance, f12);
@@ -2062,7 +2061,7 @@ namespace mm
     int CityScene_TalkSelectPerson(GuestPtr<CityScene> city, int family, int member)
     {
         Talk_SelectPerson(city->talk, static_cast<uint32_t>(family), static_cast<uint32_t>(member));
-        return port::load<int32_t>(city->talk->view.address + 0xB8u);
+        return city->talk->view->forcedChoice;
     }
 
     PORT_FN(CityScene_AddApproval);
@@ -2230,7 +2229,7 @@ namespace mm
         Instance_DrawMesh(globals::propsModel.get(), matrix, GuestPtr<Vec4>{globals::kDefaultColour}, btype->firstDrawMesh, flags);
     }
 
-    // Small goods: mesh look[0] (object +0x10), raised by the height scale above ground unless the type has
+    // Small goods: their props mesh, raised by the height scale above ground unless the type has
     // flag 1. At night (before 4:00 or from 17:00) the colour's last word becomes the integer 12.
     void BldgSmallGoods_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
                              ps2f x, ps2f y, ps2f z)
@@ -2243,7 +2242,7 @@ namespace mm
         const int time = Clock_AddWrap(static_cast<int>(btype.address), city->clock, obj->id);
         if (time >= 0xEF10 || time < 0x3840)
             port::store<int32_t>(colour.ptr().address + 0xCu, 12);
-        Instance_DrawMesh(globals::propsModel.get(), matrix, colour, port::load<uint8_t>(obj.address + 0x10u), flags);
+        Instance_DrawMesh(globals::propsModel.get(), matrix, colour, obj->goodsMesh, flags);
     }
 
     // My Home: the common tick, and when it has nothing to report, the objects of type 2 along the side the home
@@ -2267,7 +2266,7 @@ namespace mm
             else if (facing == 0)
                 beside = Map_GetTileObject(city->map, tileX + i, tileZ - 1);
             if (beside->type == 2)
-                port::store<uint8_t>(beside.address + 0x14u, 0);
+                beside->look[4] = 0;
         }
         return result;
     }
@@ -2570,7 +2569,7 @@ namespace mm
             CityScene_AddApproval(city, 3);
             obj->claimMeter = 0;
             city->paydayScore = city->paydayScore + 1;
-            port::store<uint8_t>(obj.address + 0x18u, 1);
+            obj->variant = 1; // starts the count shown with the claim met
             Se_RequestForObject(obj->tile, 3, 0x1B, 0, 1, 0x28);
             Minimap_Plot(city->minimap, obj->tile, btype->size, 5, 0);
         }
@@ -2872,10 +2871,10 @@ namespace mm
         for (int k = 0; k < 3; ++k)
         {
             const bool open = neighbour[k]->type == 3 && (neighbour[k]->flags & 1u) == 0;
-            word[k] = open && heightAt[k] == ground ? port::load<int32_t>(neighbour[k].address + 0x10u) : 0;
+            word[k] = open && heightAt[k] == ground ? neighbour[k]->openSize : 0;
         }
         int32_t least = word[0] < word[1] ? (word[2] <= word[0] ? word[2] : word[0]) : (word[2] <= word[1] ? word[2] : word[1]);
-        port::store<int32_t>(obj.address + 0x10u, least + ((flags & 1u) == 0 ? 1 : 0));
+        obj->openSize = least + ((flags & 1u) == 0 ? 1 : 0);
         const ps2f height = settledHeight(ground, ps2f(0.05f));
         if (height != ground)
             Map_SetTileHeight(city->map, obj->tile, height);
@@ -2884,14 +2883,14 @@ namespace mm
         for (uint32_t applicant = static_cast<uint32_t>(Applicants_FindFrom(city->applicants, cursor, 2)); applicant != 0;
              applicant = static_cast<uint32_t>(Applicants_FindFrom(city->applicants, cursor, 2)))
         {
-            const uint32_t family = port::load<uint16_t>(applicant + 4u);
+            const uint32_t family = GuestPtr<ApplicantEntry>{applicant}->family;
             const GuestPtr<BuildingType> home{globals::buildingTypeAddress(static_cast<uint16_t>(Family_GetTypeIndex(static_cast<int>(family))))};
-            const uint32_t claim = static_cast<uint32_t>(port::load<int32_t>(obj.address + 0x10u));
+            const uint32_t claim = static_cast<uint32_t>(obj->openSize);
             if (!(home->size <= claim))
                 continue;
             if (BldgLeveled_CheckArea(btype, city, x, z, home->size, home->flags & 0x20u) == 0)
                 continue;
-            if (Map_CanPlace(city->map, static_cast<int>(family), port::load<uint16_t>(applicant + 0xAu), x, z) == 0)
+            if (Map_CanPlace(city->map, static_cast<int>(family), GuestPtr<ApplicantEntry>{applicant}->type, x, z) == 0)
                 continue;
             Map_HighlightArea(city->map, x, z, home->size);
             port::store<int16_t>(applicant + 2u, 3);
@@ -2956,8 +2955,8 @@ namespace mm
             {
                 port::store<int32_t>(a + 0x2B8u, 0);
                 const int32_t saved = port::load<int32_t>(a + 0x2C4u);
-                port::store<int32_t>(a + 0x2D0u, saved);
-                port::store<int32_t>(a + 0x2CCu, saved);
+                applicants->top = saved;
+                applicants->cursor = saved;
                 port::store<int32_t>(a + 0x2C0u, 0);
                 Applicants_ScrollTo(applicants, -1);
                 port::store<int32_t>(a + 0x29Cu, 0);
@@ -3036,7 +3035,7 @@ namespace mm
                 break;
             }
         }
-        TextBox_SetText(GuestPtr<TextBox>{port::load<uint32_t>(laptop.address + 0x44u)}, GuestPtr<char>{0x001AF6B0u + (line << 7)}, 0);
+        TextBox_SetText(laptop->text, GuestPtr<char>{0x001AF6B0u + (line << 7)}, 0);
     }
 
     PORT_FN(Laptop_SetItemText);
@@ -3082,45 +3081,45 @@ namespace mm
 
     // The people of a field: residents that are not class-flag-1 and stand on it (outside, or inside it) with no activity
     // are laid out at fixed spots round the field (the spot by their member, the first two members have their own, the
-    // rest share the second) and drawn in pose 5 (9 when the field has a claim, lifted by the type's float at +0x164);
+    // rest share the second) and drawn in pose 5 (9 when the field has a claim, lifted by the type's people lift);
     // anyone else is drawn as an occupant.
     void BldgField_DrawPeople(GuestPtr<BuildingType> btype, int, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
                               GuestPtr<MapPerson> people, ps2f x, ps2f y, ps2f z)
     {
         port::GuestFrame<0xA0> frame; // the colour at +0x80 and the position at +0x90
         const uint32_t base = frame.ptr().address;
-        for (uint32_t link = obj.address + 8u; port::load<uint16_t>(link) != kNoPerson;)
+        for (GuestPtr<uint16_t> link = GuestPtr<uint16_t>::of(obj->firstPerson); *link != kNoPerson;)
         {
-            const GuestPtr<MapPerson> person = people + port::load<uint16_t>(link);
+            const GuestPtr<MapPerson> person = people + *link;
             const GuestPtr<CharClass> cls = classOf(person);
             const bool onField = (cls->flags & 1u) == 0 && person->activity == 0 && (person->inside == kNoObject || person->inside == obj->id);
             if (!onField)
             {
                 BldgType_DrawOccupants(btype, city, obj, person, flags);
-                link = person.address + 0x10u;
+                link = GuestPtr<uint16_t>::of(person->nextHere);
                 continue;
             }
             const GuestPtr<Vec4> colour{base + 0x80u};
             *colour = *GuestPtr<Vec4>{globals::kDefaultColour};
             const uint32_t spot = 0x001B1460u + (person->member < 2 ? static_cast<uint32_t>(person->member) << 4 : 0x10u);
             const ps2f px = x + ps2f(port::load<float>(spot));
-            port::store<float>(person.address, static_cast<float>(px));
+            person->x = px;
             port::store<float>(base + 0x90u, static_cast<float>(px));
             const ps2f py = y + ps2f(port::load<float>(spot + 4u));
-            port::store<float>(person.address + 4u, static_cast<float>(py));
+            person->y = py;
             port::store<float>(base + 0x94u, static_cast<float>(py));
             const ps2f pz = z + ps2f(port::load<float>(spot + 8u));
-            port::store<float>(person.address + 8u, static_cast<float>(pz));
+            person->z = pz;
             port::store<float>(base + 0x98u, static_cast<float>(pz));
-            port::store<float>(base + 0x9Cu, port::load<float>(person.address + 0xCu));
+            port::store<float>(base + 0x9Cu, static_cast<float>(person->heading));
             int pose = 5;
             if (obj->claimSlot != 0)
             {
                 pose = 9;
-                port::store<float>(base + 0x94u, static_cast<float>(ps2f(port::load<float>(base + 0x94u)) + ps2f(port::load<float>(btype.address + 0x164u))));
+                port::store<float>(base + 0x94u, static_cast<float>(ps2f(port::load<float>(base + 0x94u)) + btype.as<FieldType>()->peopleLift));
             }
             drawPerson(cls, city, person, colour.address, flags, base + 0x90u, pose);
-            link = person.address + 0x10u;
+            link = GuestPtr<uint16_t>::of(person->nextHere);
         }
     }
 
@@ -3165,13 +3164,13 @@ namespace mm
         }
         const uint32_t list = base + 0xC0u;
         int count = 0;
-        for (uint32_t link = obj.address + 8u; port::load<uint16_t>(link) != kNoPerson;)
+        for (GuestPtr<uint16_t> link = GuestPtr<uint16_t>::of(obj->firstPerson); *link != kNoPerson;)
         {
-            const GuestPtr<MapPerson> person = people + port::load<uint16_t>(link);
+            const GuestPtr<MapPerson> person = people + *link;
             if ((classOf(person)->flags & 1u) != 0 || (person->flags & 0x100u) != 0)
             {
                 BldgType_DrawOccupants(btype, city, obj, person, flags);
-                link = person.address + 0x10u;
+                link = GuestPtr<uint16_t>::of(person->nextHere);
                 continue;
             }
             int place = 0;
@@ -3190,24 +3189,24 @@ namespace mm
             }
             port::store<uint16_t>(list + 2u * static_cast<uint32_t>(place), person->index);
             ++count;
-            link = person.address + 0x10u;
+            link = GuestPtr<uint16_t>::of(person->nextHere);
         }
         const uint32_t position = base + 0x100u;
         for (int i = 0; i < count && i < 4; ++i)
         {
             const GuestPtr<MapPerson> person = people + port::load<uint16_t>(list + 2u * static_cast<uint32_t>(i));
-            const uint32_t slot = 0x001B1670u + (static_cast<uint32_t>(obj->variant) << 4) + 4u * static_cast<uint32_t>(i);
+            const uint32_t slot = 0x001B1670u + (static_cast<uint32_t>(obj->roadShape) << 4) + 4u * static_cast<uint32_t>(i);
             const ps2f px = x + ps2f(port::load<float>(0x001B15E0u + 4u * port::load<uint32_t>(slot)));
-            port::store<float>(person.address, static_cast<float>(px));
+            person->x = px;
             port::store<float>(position, static_cast<float>(px));
             const ps2f pz = z + ps2f(port::load<float>(0x001B1610u + 4u * port::load<uint32_t>(slot)));
-            port::store<float>(person.address + 8u, static_cast<float>(pz));
+            person->z = pz;
             port::store<float>(position + 8u, static_cast<float>(pz));
-            const ps2f py = Map_SampleHeight(city->map, ps2f(port::load<float>(person.address)), ps2f(port::load<float>(person.address + 8u)));
-            port::store<float>(person.address + 4u, static_cast<float>(py));
+            const ps2f py = Map_SampleHeight(city->map, person->x, person->z);
+            person->y = py;
             port::store<float>(position + 4u, static_cast<float>(py));
             const float heading = port::load<float>(0x001B2690u + 4u * port::load<uint32_t>(0x001B1640u + 4u * port::load<uint32_t>(slot)));
-            port::store<float>(person.address + 0xCu, heading);
+            person->heading = heading;
             port::store<float>(position + 0xCu, heading);
             const GuestPtr<Vec4> colour{base + 0x110u};
             *colour = *GuestPtr<Vec4>{globals::kDefaultColour};
@@ -3218,8 +3217,8 @@ namespace mm
 
     PORT_FN(BldgType_DrawOccupants);
     // The crops of a field (nothing while its object has no claim slot): the matrix of the layer is put at the field's
-    // place (a little higher by the type's +0x160), and the month cycle (twelve steps, two to a stage of six) picks the
-    // stage: its mesh from the type's table at +0x180 is drawn as it is; the growing crop of table +0x186 follows with
+    // place (a little higher by the type's crop lift), and the month cycle (twelve steps, two to a stage of six) picks the
+    // stage: its crop mesh is drawn as it is; its growing mesh follows with
     // its height blended between this stage and the next by the day's progress (the clock over two days, the second
     // day of a two day cycle counting double), the layer matrix scaled by it.
     void BldgField_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
@@ -3233,23 +3232,23 @@ namespace mm
         int step = remainder(city->monthCount, 12) + 1;
         if (step == 12)
             step = 0;
+        const GuestPtr<FieldType> field = btype.as<FieldType>();
         const GuestPtr<Vec4> matrix = layerMatrix(static_cast<uint32_t>(layer));
         matrix[3].x = x;
-        matrix[3].y = y + ps2f(port::load<float>(btype.address + 0x160u));
+        matrix[3].y = y + field->cropLift;
         matrix[3].z = z;
         const int stage = step >> 1;
-        const uint8_t mesh = port::load<uint8_t>(btype.address + 0x180u + static_cast<uint32_t>(stage));
+        const uint8_t mesh = field->cropMesh[stage];
         if (mesh != 0)
             Instance_DrawMesh(globals::fieldModel.get(), matrix, GuestPtr<Vec4>{globals::kDefaultColour}, mesh, flags);
-        const uint32_t growing = btype.address + 0x186u + static_cast<uint32_t>(stage);
-        if (port::load<uint8_t>(growing) == 0)
+        if (field->growingMesh[stage] == 0)
             return;
         const ps2f progress = fromInt(static_cast<int32_t>(static_cast<uint32_t>((step & 1) + 1) * static_cast<uint32_t>(city->clock))) / ps2f(172800.0f);
         const GuestPtr<Vec4> scale{base + 0x90u};
         Mat4_Copy(scale, GuestPtr<Vec4>{globals::kIdentityMatrix});
         const int next = stage + 1 < 6 ? stage + 1 : 0;
-        const ps2f following(port::load<float>(btype.address + 0x168u + 4u * static_cast<uint32_t>(next)));
-        const ps2f current(port::load<float>(btype.address + 0x168u + 4u * static_cast<uint32_t>(stage)));
+        const ps2f following = field->growingHeight[next];
+        const ps2f current = field->growingHeight[stage];
         port::store<float>(base + 0xA4u, static_cast<float>(progress * following + (ps2f(1.0f) - progress) * current));
         for (int row = 0; row < 4; ++row)
             vf(1 + row) = load(GuestPtr<Vec4>{matrix.address + 0x10u * static_cast<uint32_t>(row)});
@@ -3265,7 +3264,7 @@ namespace mm
         for (int row = 0; row < 4; ++row)
             store(GuestPtr<Vec4>{scale.address + 0x10u * static_cast<uint32_t>(row)}, vf(9 + row));
         scale[3] = matrix[3];
-        Instance_DrawMesh(globals::fieldModel.get(), scale, GuestPtr<Vec4>{globals::kDefaultColour}, port::load<uint8_t>(growing), flags);
+        Instance_DrawMesh(globals::fieldModel.get(), scale, GuestPtr<Vec4>{globals::kDefaultColour}, field->growingMesh[stage], flags);
     }
 
     PORT_FN(BldgField_Draw);
@@ -3277,8 +3276,8 @@ namespace mm
 
     // Buildings of type flag 0x800 with their entrance part: the people standing in it (or outside, on it) are sorted into
     // four groups, by class flag 1 (vehicles and the like) and by whether this is their workplace: 0 residents working here,
-    // 1 other residents, 2 flagged workers, 3 other flagged. Each group has room for `unk_130[group]` people (up to four)
-    // that are placed at fixed spots of the type (records of 16 bytes: x, y, z, a heading added to the table's at 0x1B2690),
+    // 1 other residents, 2 flagged workers, 3 other flagged. Each group has room for `groupSpots[group]` people (up to four)
+    // that are placed at the type's people spots (x, y, z, a heading added to the table's at 0x1B2690),
     // drawn in pose 4. Group 0 is kept in order of the people's member numbers, the others by person index, but a person
     // inserted always lands in slot 0 (the original writes slot 0 after shifting the ones below it up). Groups with no
     // entrance answer (vtable +0x24) are skipped, except group 2. The spot record number runs on over the groups drawn.
@@ -3293,10 +3292,10 @@ namespace mm
         const uint32_t counts = base + 0x110u, lists = base + 0x120u, slots = base + 0x248u;
         for (uint32_t k = 0; k < 4; ++k)
             port::store<int32_t>(counts + 4u * k, 0);
-        for (uint32_t link = obj.address + 8u; port::load<uint16_t>(link) != kNoPerson;)
+        for (GuestPtr<uint16_t> link = GuestPtr<uint16_t>::of(obj->firstPerson); *link != kNoPerson;)
         {
-            const GuestPtr<MapPerson> person = people + port::load<uint16_t>(link);
-            link = person.address + 0x10u;
+            const GuestPtr<MapPerson> person = people + *link;
+            link = GuestPtr<uint16_t>::of(person->nextHere);
             if (person->inside != obj->id && person->inside != kNoObject)
                 continue;
             const bool flagged = (classOf(person)->flags & 1u) != 0;
@@ -3310,7 +3309,7 @@ namespace mm
         {
             if (hasEntrance == 0 && group != 2)
                 continue;
-            const uint32_t limit = port::load<uint8_t>(btype.address + 0x130u + group);
+            const uint32_t limit = btype->groupSpots[group];
             if (limit == 0 || port::load<int32_t>(counts + 4u * group) == 0)
                 continue;
             for (uint32_t i = 0; i < limit; ++i)
@@ -3323,7 +3322,7 @@ namespace mm
                     const uint32_t held = port::load<uint16_t>(slots + 2u * pos);
                     if (held != kNoPerson)
                     {
-                        const bool before = group == 0 ? (port::load<uint8_t>(people.address + 0x30u * candidate + 0x2Eu) < port::load<uint8_t>(people.address + 0x30u * held + 0x2Eu))
+                        const bool before = group == 0 ? (people[static_cast<int32_t>(candidate)].member < people[static_cast<int32_t>(held)].member)
                                                        : candidate < held;
                         if (!before)
                             continue;
@@ -3340,12 +3339,13 @@ namespace mm
                 if (held == kNoPerson)
                     continue;
                 const GuestPtr<MapPerson> person = people + held;
-                const uint32_t spot = btype.address + 16u * running;
-                port::store<float>(base + 0x220u, static_cast<float>(x + ps2f(port::load<float>(spot))));
-                port::store<float>(base + 0x224u, static_cast<float>(y + ps2f(port::load<float>(spot + 4u))));
-                port::store<float>(base + 0x228u, static_cast<float>(z + ps2f(port::load<float>(spot + 8u))));
-                const ps2f heading = ps2f(port::load<float>(0x001B2690u + 4u * static_cast<uint32_t>(layer))) + ps2f(port::load<float>(spot + 0xCu));
-                port::store<float>(person.address + 0xCu, static_cast<float>(heading));
+                // Spot `running` of the type; past the sixteen it reads on into the type's later fields, as the game does.
+                const GuestPtr<Vec4> spot = GuestPtr<Vec4>::of(btype->peopleSpots[0]) + static_cast<int32_t>(running);
+                port::store<float>(base + 0x220u, static_cast<float>(x + spot->x));
+                port::store<float>(base + 0x224u, static_cast<float>(y + spot->y));
+                port::store<float>(base + 0x228u, static_cast<float>(z + spot->z));
+                const ps2f heading = ps2f(port::load<float>(0x001B2690u + 4u * static_cast<uint32_t>(layer))) + spot->w;
+                person->heading = heading;
                 const ps2f pi = ps2f(3.1415927f);
                 if (heading <= -pi)
                     port::store<float>(base + 0x22Cu, static_cast<float>(heading + pi));
@@ -3587,16 +3587,14 @@ namespace mm
 
     // ---- The building type base constructor (plan P6 batch 2) ----
 
-    // Fills the type object `btype` from its record in the building data file (`record`, 0x9C bytes) for type number `id`: the
-    // table, the name, the sizes, the opening hours, the claim bytes and the four sets of four rows (the eye, the target and the
-    // two light offsets of the type, each carried through the four view matrices at 0x1B2590 and kept with the record's
-    // fourth lane). The first type made loads the shared file 0x1B8040 and copies the shared models; later ones only count
-    // (0x1BDBBC). A type that has any of the four claim bytes at +0x130 also gets flag 0x800.
-    GuestPtr<BuildingType> BldgType_BaseCtor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, uint16_t id)
+    // Fills the type object `btype` from its record in the building data file (`record`) for type number `id`: the table, the
+    // name, the sizes, the opening hours, the meshes, and the four people spots, each turned for the four views (through the
+    // view matrices at 0x1B2590, keeping the record's heading). The first type made loads the shared file 0x1B8040 and copies
+    // the shared models; later ones only count (0x1BDBBC). A type with spots for any group of people also gets flag 0x800.
+    GuestPtr<BuildingType> BldgType_BaseCtor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, uint16_t id)
     {
         port::GuestFrame<0xC0> frame;
         const uint32_t sp = frame.ptr().address;
-        const uint32_t b = btype.address, r = record.address;
         constexpr uint32_t kTypeCount = 0x001BDBBCu;
         btype->vtable = GuestPtr<BuildingTypeVtable>{0x001BD000u};
         if (port::load<int32_t>(kTypeCount) == 0)
@@ -3610,53 +3608,51 @@ namespace mm
             File_dtor(GuestPtr<GameFile>{sp + 0xB0u}, -1);
         }
         port::store<int32_t>(kTypeCount, port::load<int32_t>(kTypeCount) + 1);
-        port::store<uint16_t>(b + 0x134u, id);
-        sdk::strcpy(b + 0x110u, r);
-        const auto copy8 = [&](uint32_t to, uint32_t from) { port::store<uint8_t>(b + to, port::load<uint8_t>(r + from)); };
-        const auto copy16 = [&](uint32_t to, uint32_t from) { port::store<uint16_t>(b + to, port::load<uint16_t>(r + from)); };
-        const auto copy32 = [&](uint32_t to, uint32_t from) { port::store<uint32_t>(b + to, port::load<uint32_t>(r + from)); };
-        copy8(0x142, 0x21);
-        copy8(0x143, 0x22);
-        copy8(0x144, 0x23);
-        copy16(0x136, 0x24);
-        copy16(0x138, 0x26);
-        for (uint32_t i = 0; i < 8u; ++i)
-            copy8(0x145 + i, 0x28 + i);
-        copy16(0x13A, 0x30);
-        copy16(0x13C, 0x32);
-        copy16(0x13E, 0x34);
-        copy16(0x140, 0x36);
-        copy8(0x14D, 0x38);
-        copy8(0x14E, 0x39);
-        copy8(0x151, 0x90);
-        copy8(0x152, 0x91);
-        copy8(0x14F, 0x93);
-        copy8(0x150, 0x94);
-        copy8(0x158, 0x96);
-        copy8(0x159, 0x97);
-        copy32(0x100, 0x80);
-        copy32(0x104, 0x84);
-        copy32(0x108, 0x88);
-        copy32(0x10C, 0x8C);
-        sdk::memcpy(b + 0x154u, r + 0x3Cu, 4);
-        sdk::memcpy(b + 0x130u, r + 0x98u, 4);
-        const uint32_t vector = sp + 0xA0u;
-        for (uint32_t set = 0; set < 4u; ++set)
+        btype->kind = id;
+        sdk::strcpy(port::guest(btype->name), port::guest(record->name));
+        btype->size = record->size;
+        btype->unk_143 = record->unk_22;
+        btype->rule = record->rule;
+        btype->flags = record->flags;
+        btype->maxStack = record->maxStack;
+        btype->category = record->category;
+        btype->postGroup = record->postGroup;
+        btype->claimB = record->claimB;
+        btype->claimC = record->claimC;
+        btype->unk_149 = record->unk_2C;
+        btype->maxVisitors = record->maxVisitors;
+        btype->schedule = record->schedule;
+        btype->activity = record->activity;
+        btype->homeType = record->homeType;
+        btype->openMinute = record->openMinute;
+        btype->closeMinute = record->closeMinute;
+        btype->capacity = record->capacity;
+        btype->cooldown = record->cooldown;
+        btype->ambientSound = record->ambientSound;
+        btype->entranceDrawMesh = record->entranceDrawMesh;
+        btype->firstDrawMesh = record->firstDrawMesh;
+        btype->unk_14F = record->unk_93;
+        btype->modelNode = record->modelNode;
+        btype->entranceMesh = record->entranceMesh;
+        btype->firstMesh = record->firstMesh;
+        btype->talkEye = record->talkEye;
+        sdk::memcpy(port::guest(&btype->callFlags), port::guest(&record->callFlags), 4);
+        sdk::memcpy(port::guest(btype->groupSpots), port::guest(record->groupSpots), 4);
+        const GuestPtr<Vec4> spot{sp + 0xA0u};
+        for (int k = 0; k < 4; ++k)
         {
-            for (uint32_t lane = 0; lane < 4u; ++lane)
-                port::store<uint32_t>(vector + 4u * lane, port::load<uint32_t>(r + 0x40u + 0x10u * set + 4u * lane));
-            for (uint32_t row = 0; row < 4u; ++row)
+            *spot = record->peopleSpots[k];
+            for (int view = 0; view < 4; ++view)
             {
-                const uint32_t matrix = 0x001B2590u + 0x40u * row;
-                for (uint32_t word = 0; word < 4u; ++word)
-                    port::store<uint32_t>(matrix + 0x30u + 4u * word, port::load<uint32_t>(0x001B26A0u + 4u * word));
-                const uint32_t out = b + 0x40u * set + 0x10u * row;
-                Math_MulMatVecVu0(GuestPtr<Vec4>{out}, GuestPtr<Vec4>{matrix}, GuestPtr<Vec4>{vector});
-                port::store<uint32_t>(out + 0xCu, port::load<uint32_t>(vector + 0xCu));
+                const GuestPtr<Vec4> matrix = GuestPtr<Vec4>{0x001B2590u} + 4 * view;
+                matrix[3] = *GuestPtr<Vec4>{0x001B26A0u}; // no translation
+                const GuestPtr<Vec4> out = GuestPtr<Vec4>::of(btype->peopleSpots[4 * k + view]);
+                Math_MulMatVecVu0(out, matrix, spot);
+                out->w = spot->w; // the heading stays
             }
         }
-        if (port::load<uint8_t>(b + 0x130u) + port::load<uint8_t>(b + 0x131u) + port::load<uint8_t>(b + 0x132u) + port::load<uint8_t>(b + 0x133u) != 0)
-            port::store<uint16_t>(b + 0x136u, static_cast<uint16_t>(port::load<uint16_t>(b + 0x136u) | 0x800u));
+        if (btype->groupSpots[0] + btype->groupSpots[1] + btype->groupSpots[2] + btype->groupSpots[3] != 0)
+            btype->flags = static_cast<uint16_t>(btype->flags | 0x800u);
         return btype;
     }
 
@@ -3671,7 +3667,7 @@ namespace mm
     {
         constexpr uint32_t kBaseCtor = 0, kBldg = 1, kBusiness = 2;
 
-        GuestPtr<BuildingType> constructBuildingType(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id, int base, uint32_t table)
+        GuestPtr<BuildingType> constructBuildingType(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id, int base, uint32_t table)
         {
             if (base == kBaseCtor)
                 BldgType_BaseCtor(btype, record, static_cast<uint16_t>(id));
@@ -3683,55 +3679,50 @@ namespace mm
             return btype;
         }
 
-        // A record byte, widened, kept in a word of the type.
-        void keepRecordByte(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, uint32_t from, uint32_t to)
-        {
-            port::store<uint32_t>(btype.address + to, port::load<uint8_t>(record.address + from));
-        }
     }
 
-    GuestPtr<BuildingType> Bldg_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id)
+    GuestPtr<BuildingType> Bldg_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id)
     {
         return constructBuildingType(btype, record, id, kBaseCtor, 0x001BD100u);
     }
 
-    GuestPtr<BuildingType> BldgBusiness_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id)
+    GuestPtr<BuildingType> BldgBusiness_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id)
     {
         return constructBuildingType(btype, record, id, kBldg, 0x001BD1C0u);
     }
 
-    GuestPtr<BuildingType> BldgPort_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id)
+    GuestPtr<BuildingType> BldgPort_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id)
     {
         return constructBuildingType(btype, record, id, kBusiness, 0x001BD180u);
     }
 
-    GuestPtr<BuildingType> BldgKeepOut_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id)
+    GuestPtr<BuildingType> BldgKeepOut_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id)
     {
         return constructBuildingType(btype, record, id, kBaseCtor, 0x001BD200u);
     }
 
-    GuestPtr<BuildingType> BldgHousing_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id)
+    GuestPtr<BuildingType> BldgHousing_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id)
     {
         return constructBuildingType(btype, record, id, kBusiness, 0x001BD280u);
     }
 
-    GuestPtr<BuildingType> BldgMyHome_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id)
+    GuestPtr<BuildingType> BldgMyHome_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id)
     {
         return constructBuildingType(btype, record, id, kBusiness, 0x001BD2C0u);
     }
 
-    GuestPtr<BuildingType> BldgSmallGoods_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id)
+    GuestPtr<BuildingType> BldgSmallGoods_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id)
     {
         return constructBuildingType(btype, record, id, kBaseCtor, 0x001BD380u);
     }
 
-    GuestPtr<BuildingType> BldgWasteland_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id)
+    GuestPtr<BuildingType> BldgWasteland_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id)
     {
         return constructBuildingType(btype, record, id, kBaseCtor, 0x001BD3C0u);
     }
 
     // The pig farm shares the model at 0x1F3B5C (kept at 0x1BDC00).
-    GuestPtr<BuildingType> BldgPigFarm_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id)
+    GuestPtr<BuildingType> BldgPigFarm_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id)
     {
         constructBuildingType(btype, record, id, kBusiness, 0x001BD300u);
         port::store<uint32_t>(0x001BDC00u, port::load<uint32_t>(0x001F3B5Cu));
@@ -3739,23 +3730,23 @@ namespace mm
     }
 
     // The amusement park shares the ride model at 0x1F3B4C (kept at 0x1BDBE0).
-    GuestPtr<BuildingType> BldgAmusementPark_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id)
+    GuestPtr<BuildingType> BldgAmusementPark_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id)
     {
         constructBuildingType(btype, record, id, kBusiness, 0x001BD040u);
         port::store<uint32_t>(0x001BDBE0u, port::load<uint32_t>(0x001F3B4Cu));
         return btype;
     }
 
-    // The office keeps the byte at +0x92 of its record in a word at +0x160.
-    GuestPtr<BuildingType> BldgOffice_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id)
+    // The office keeps its extra mesh.
+    GuestPtr<BuildingType> BldgOffice_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id)
     {
         constructBuildingType(btype, record, id, kBusiness, 0x001BD080u);
-        keepRecordByte(btype, record, 0x92, 0x160);
+        btype.as<OfficeType>()->extraMesh = record->extraMesh;
         return btype;
     }
 
     // The ranch shares the animal models at 0x1F3B50, 0x1F3B54 and 0x1F3B58 (kept at 0x1BDBE8, 0x1BDBEC and 0x1BDBF0).
-    GuestPtr<BuildingType> BldgRanch_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id)
+    GuestPtr<BuildingType> BldgRanch_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id)
     {
         constructBuildingType(btype, record, id, kBusiness, 0x001BD0C0u);
         port::store<uint32_t>(0x001BDBE8u, port::load<uint32_t>(0x001F3B50u));
@@ -3764,50 +3755,50 @@ namespace mm
         return btype;
     }
 
-    GuestPtr<BuildingType> BldgLeveled_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id)
+    GuestPtr<BuildingType> BldgLeveled_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id)
     {
         constructBuildingType(btype, record, id, kBaseCtor, 0x001BD240u);
-        keepRecordByte(btype, record, 0x90, 0x160);
+        btype.as<LeveledType>()->mesh = record->entranceDrawMesh;
         return btype;
     }
 
-    GuestPtr<BuildingType> BldgRoad_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id)
+    GuestPtr<BuildingType> BldgRoad_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id)
     {
         constructBuildingType(btype, record, id, kBaseCtor, 0x001BD340u);
-        keepRecordByte(btype, record, 0x90, 0x160);
-        keepRecordByte(btype, record, 0x91, 0x164);
-        keepRecordByte(btype, record, 0x92, 0x168);
+        const GuestPtr<RoadType> road = btype.as<RoadType>();
+        road->lampMesh = record->entranceDrawMesh;
+        road->lightMesh = record->firstDrawMesh;
+        road->slopeMesh = record->extraMesh;
         return btype;
     }
 
-    // The field keeps two groups of four values from the record (+0x40..+0x4C and +0x50..+0x5C, the fourth of each divided by
-    // pi) as floats at +0x160 and +0x170, eight more as bytes at +0x180 (from +0x60..+0x7C, the fourth and eighth divided by
-    // pi) and the four bytes at +0x98 at +0x188.
-    GuestPtr<BuildingType> BldgField_ctor(GuestPtr<BuildingType> btype, GuestPtr<uint8_t> record, int id)
+    // The field reads the record's four people spots (each x, y, z and a heading, the heading divided by pi) as its own: the
+    // first two as its lifts and its first six growing heights, the last two (made bytes) as its six crop meshes and its
+    // first two growing meshes; the group spot bytes are its last four growing meshes.
+    GuestPtr<BuildingType> BldgField_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id)
     {
         constructBuildingType(btype, record, id, kBaseCtor, 0x001BD140u);
-        const uint32_t b = btype.address, r = record.address;
+        const GuestPtr<FieldType> field = btype.as<FieldType>();
         const ps2f pi(std::bit_cast<float>(0x40490FDBu));
-        const auto value = [&](uint32_t offset) { return ps2f(std::bit_cast<float>(port::load<uint32_t>(r + offset))); };
-        const auto keep = [&](uint32_t offset, ps2f v) { port::store<uint32_t>(b + offset, std::bit_cast<uint32_t>(v.v)); };
-        keep(0x160, value(0x40));
-        keep(0x164, value(0x44));
-        keep(0x168, value(0x48));
-        keep(0x16C, value(0x4C) / pi);
-        keep(0x170, value(0x50));
-        keep(0x174, value(0x54));
-        keep(0x178, value(0x58));
-        keep(0x17C, value(0x5C) / pi);
-        port::store<uint8_t>(b + 0x180u, static_cast<uint8_t>(sdk::fptoui(value(0x60))));
-        port::store<uint8_t>(b + 0x181u, static_cast<uint8_t>(sdk::fptoui(value(0x64))));
-        port::store<uint8_t>(b + 0x182u, static_cast<uint8_t>(sdk::fptoui(value(0x68))));
-        port::store<uint8_t>(b + 0x183u, static_cast<uint8_t>(sdk::fptoui(value(0x6C) / pi)));
-        port::store<uint8_t>(b + 0x184u, static_cast<uint8_t>(sdk::fptoui(value(0x70))));
-        port::store<uint8_t>(b + 0x185u, static_cast<uint8_t>(sdk::fptoui(value(0x74))));
-        port::store<uint8_t>(b + 0x186u, static_cast<uint8_t>(sdk::fptoui(value(0x78))));
-        port::store<uint8_t>(b + 0x187u, static_cast<uint8_t>(sdk::fptoui(value(0x7C) / pi)));
-        for (uint32_t i = 0; i < 4u; ++i)
-            port::store<uint8_t>(b + 0x188u + i, port::load<uint8_t>(r + 0x98u + i));
+        const auto meshOf = [](ps2f v) { return static_cast<uint8_t>(sdk::fptoui(v)); };
+        field->cropLift = record->peopleSpots[0].x;
+        field->peopleLift = record->peopleSpots[0].y;
+        field->growingHeight[0] = record->peopleSpots[0].z;
+        field->growingHeight[1] = record->peopleSpots[0].w / pi;
+        field->growingHeight[2] = record->peopleSpots[1].x;
+        field->growingHeight[3] = record->peopleSpots[1].y;
+        field->growingHeight[4] = record->peopleSpots[1].z;
+        field->growingHeight[5] = record->peopleSpots[1].w / pi;
+        field->cropMesh[0] = meshOf(record->peopleSpots[2].x);
+        field->cropMesh[1] = meshOf(record->peopleSpots[2].y);
+        field->cropMesh[2] = meshOf(record->peopleSpots[2].z);
+        field->cropMesh[3] = meshOf(record->peopleSpots[2].w / pi);
+        field->cropMesh[4] = meshOf(record->peopleSpots[3].x);
+        field->cropMesh[5] = meshOf(record->peopleSpots[3].y);
+        field->growingMesh[0] = meshOf(record->peopleSpots[3].z);
+        field->growingMesh[1] = meshOf(record->peopleSpots[3].w / pi);
+        for (int i = 0; i < 4; ++i)
+            field->growingMesh[2 + i] = record->groupSpots[i];
         return btype;
     }
 
@@ -3827,22 +3818,21 @@ namespace mm
     PORT_FN(BldgRoad_ctor);
     PORT_FN(BldgField_ctor);
 
-    // Adds the family to the applicants (with the month kept at +0x88) and shows it when `select` is not 0; then every
-    // resident of a class that counts (flag 1 clear) whose introduction (+0x2C) is this family gets a new one.
+    // Adds the family to the applicants (with the month count) and shows it when `select` is not 0; then every resident of a
+    // class that counts (flag 1 clear) whose introduction is this family gets a new one.
     void CityScene_AddApplicantFamily(GuestPtr<CityScene> city, uint32_t family, int select)
     {
-        Applicants_AddAndShow(GuestPtr<Applicants>{port::load<uint32_t>(city.address + 0x54u)}, static_cast<int>(family),
-                              port::load<int32_t>(city.address + 0x88u), select);
-        const uint32_t people = port::load<uint32_t>(port::load<uint32_t>(city.address + 0x50u) + 0x68u);
-        for (uint32_t person = people; person != people + 0x46500u; person += 0x30u)
+        Applicants_AddAndShow(city->applicants, static_cast<int>(family), city->monthCount, select);
+        const GuestPtr<MapPerson> people = city->map->people;
+        for (GuestPtr<MapPerson> person = people; person != people + 6000; ++person)
         {
-            const uint32_t type = port::load<uint8_t>(person + 0x24u);
+            const uint32_t type = person->charType;
             if (type == 0)
                 continue;
-            const uint32_t cls = port::load<uint32_t>(globals::charClassTable.get() + 4u * type);
-            if ((port::load<uint16_t>(cls + 0x18u) & 1u) != 0 || port::load<uint16_t>(person + 0x2Cu) != family)
+            const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * type)};
+            if ((cls->flags & 1u) != 0 || person->introduces != family)
                 continue;
-            port::store<uint16_t>(person + 0x2Cu, static_cast<uint16_t>(Family_PickIntroduction(port::load<uint16_t>(person + 0x2Au), port::load<uint8_t>(person + 0x2Eu), city)));
+            person->introduces = static_cast<uint16_t>(Family_PickIntroduction(person->family, person->member, city));
         }
     }
 
@@ -3852,9 +3842,9 @@ namespace mm
     // and 5 the base class, 1 wasteland, 2 leveled, 3 road, 4 field, 6 business, 7 office, 8 housing, 9 port, 10 my home, 11
     // amusement park, 12 ranch, 13 pig farm, 14 small goods, 15 keep-out); 0 when the memory is not there, and what the register
     // held for any other class.
-    GuestPtr<BuildingType> BldgType_Create(int id, GuestPtr<uint8_t> record)
+    GuestPtr<BuildingType> BldgType_Create(int id, GuestPtr<BuildingRecord> record)
     {
-        const uint32_t kind = port::load<uint8_t>(record.address + 0x20u);
+        const uint32_t kind = record->typeClass;
         if (kind >= 0x10u)
             return GuestPtr<BuildingType>{static_cast<uint32_t>(port::guestV0())};
         constexpr uint32_t sizes[16] = {0x160, 0x160, 0x170, 0x170, 0x210, 0x160, 0x160, 0x170, 0x160, 0x160, 0x160, 0x160, 0x160, 0x160, 0x160, 0x160};
@@ -3912,7 +3902,7 @@ namespace mm
         globals::buildingTypeTable.set(sdk::mw_NewArray(static_cast<uint32_t>(globals::buildingTypeCount.get()) << 2));
         for (uint32_t i = 0; i < static_cast<uint32_t>(globals::buildingTypeCount.get()); ++i)
             port::store<uint32_t>(globals::buildingTypeTable.get() + 4u * i,
-                                  BldgType_Create(static_cast<int>(i), GuestPtr<uint8_t>{data + 0x9Cu * i}).address);
+                                  BldgType_Create(static_cast<int>(i), GuestPtr<BuildingRecord>{data + 0x9Cu * i}).address);
         if (data != 0u)
             sdk::free(data);
         File_dtor(GuestPtr<GameFile>{file}, -1);
@@ -3922,17 +3912,17 @@ namespace mm
 
     // ---- Talks and the approval meter (plan P6 batch 2) ----
 
-    // Starts a talk (mm_Talk_Start on the session at +0x3C): when it starts, the city's mode stack moves one place down with mode 5
+    // Starts a talk (mm_Talk_Start on the city's session): when it starts, the city's mode stack moves one place down with mode 5
     // (the talk) on top, and the applicants window is set to 2. 1 when it started, otherwise 0.
     int CityScene_StartTalk(GuestPtr<CityScene> city, int byFamily, int target, int member, int arg5)
     {
-        if (Talk_Start(GuestPtr<TalkSession>{port::load<uint32_t>(city.address + 0x3Cu)}, byFamily, target, member, arg5, city) == 0)
+        if (Talk_Start(city->talk, byFamily, target, member, arg5, city) == 0)
             return 0;
         for (int i = 3; i >= 0; --i)
             city->modeStack[i + 1] = city->modeStack[i];
         city->modeStack[0] = 5;
         city->modeDepth = city->modeDepth + 1;
-        port::store<uint8_t>(port::load<uint32_t>(city.address + 0x54u) + 0x2C9u, 2);
+        city->applicants->enabled = 2;
         return 1;
     }
 
@@ -3941,7 +3931,6 @@ namespace mm
     void CityScene_UpdateApproval(GuestPtr<CityScene> city)
     {
         constexpr uint32_t kStarted = 0x001BDC58u, kTicks = 0x001BDC54u;
-        const uint32_t c = city.address;
         if (port::load<int8_t>(kStarted) == 0)
         {
             port::store<int32_t>(kTicks, 0);
@@ -3953,49 +3942,48 @@ namespace mm
             return;
         port::store<int32_t>(kTicks, 0);
         bool moved = false;
-        const int32_t pending = port::load<int32_t>(c + 0xBCu);
+        const int32_t pending = city->pendingApproval;
         if (pending > 0)
         {
-            port::store<int32_t>(c + 0x8Cu, port::load<int32_t>(c + 0x8Cu) + 1);
+            city->approval = city->approval + 1;
             moved = true;
-            port::store<int32_t>(c + 0xBCu, pending - 1);
+            city->pendingApproval = pending - 1;
         }
         else if (pending < 0)
         {
-            port::store<int32_t>(c + 0x8Cu, port::load<int32_t>(c + 0x8Cu) - 1);
+            city->approval = city->approval - 1;
             moved = true;
-            port::store<int32_t>(c + 0xBCu, port::load<int32_t>(c + 0xBCu) + 1);
+            city->pendingApproval = city->pendingApproval + 1;
         }
-        int32_t rating = port::load<int32_t>(c + 0x8Cu);
+        int32_t rating = city->approval;
         if (rating < -0x63)
             rating = -0x63;
         else if (rating >= 0x79)
             rating = 0x78;
-        port::store<int32_t>(c + 0x8Cu, rating);
+        city->approval = rating;
         if (moved)
-            StatusPanel_Update(GuestPtr<StatusPanel>{port::load<uint32_t>(c)}, city);
+            StatusPanel_Update(city->statusPanel, city);
     }
 
-    // When the view (+0x10, its slot +0x1C) says it is open (3), the talk goes to state 6 with no conversation (nothing at +0x30);
-    // otherwise the conversation window (+0x14) starts, for the family (the target at +0x20 and +0x24) when the person is 6000 and
-    // for the person (at +0x1C and +0x18) otherwise, and the talk goes to state 2.
+    // When the view (its widget state) is active (3), the talk goes to state 6 with no conversation when it has no
+    // single target; otherwise the conversation window starts, for the family (and member) when the person is 6000 and for
+    // the person (at its building) otherwise, and the talk goes to state 2.
     void Talk_Opening(GuestPtr<TalkSession> talk)
     {
-        const uint32_t t = talk.address;
-        const uint32_t view = port::load<uint32_t>(t + 0x10u);
-        if (port::callGuest<int64_t>(port::load<uint32_t>(port::load<uint32_t>(view + 8u) + 0x1Cu), view) != 3)
+        const uint32_t view = talk->view.address;
+        if (port::callGuest<int64_t>(widgetMethod(view, &WidgetVtable::getState), view) != 3)
             return;
-        if (port::load<int32_t>(t + 0x30u) == 0)
+        if (talk->singleTarget == 0)
         {
-            port::store<int32_t>(t, 6);
+            talk->base.state = 6;
             return;
         }
-        const GuestPtr<TalkConv> conv{port::load<uint32_t>(t + 0x14u)};
-        if (port::load<int32_t>(t + 0x1Cu) == 6000)
-            TalkConv_Start(conv, 1, port::load<int32_t>(t + 0x20u), port::load<int32_t>(t + 0x24u), port::load<int32_t>(t + 0x34u), port::load<int32_t>(t + 0x28u));
+        const GuestPtr<TalkConv> conv{talk->conversation.address};
+        if (talk->person == 6000)
+            TalkConv_Start(conv, 1, talk->family, talk->member, talk->slot, talk->arg5);
         else
-            TalkConv_Start(conv, 0, port::load<int32_t>(t + 0x1Cu), port::load<int32_t>(t + 0x18u), port::load<int32_t>(t + 0x34u), port::load<int32_t>(t + 0x28u));
-        port::store<int32_t>(t, 2);
+            TalkConv_Start(conv, 0, talk->person, talk->building, talk->slot, talk->arg5);
+        talk->base.state = 2;
     }
 
     PORT_FN(CityScene_StartTalk);
@@ -4011,21 +3999,21 @@ namespace mm
         const uint32_t a = applicants.address;
         if (port::load<int32_t>(a + 0x31Cu) != 4)
             return;
-        uint32_t entry = 0;
-        if (port::load<int32_t>(a + 0x280u) != 0)
-            entry = a + 0x14u * port::load<uint32_t>(a + 0x2CCu);
-        if (port::load<uint16_t>(entry + 2u) == 3)
+        GuestPtr<ApplicantEntry> entry{0u}; // with no applicants the game reads the start of memory
+        if (applicants->count != 0)
+            entry = applicants.as<ApplicantEntry>() + applicants->cursor;
+        if (static_cast<uint16_t>(entry->state) == 3)
         {
-            port::store<int32_t>(entry + 0x10u, 6);
-            const uint32_t type = static_cast<uint32_t>(Family_GetTypeIndex(port::load<uint16_t>(entry + 4u)));
-            const uint32_t tile = port::load<uint16_t>(entry + 6u);
-            Map_HighlightArea(city->map, static_cast<int>(tile & 0x7Fu), static_cast<int>(tile >> 7), port::load<uint8_t>(globals::buildingTypeAddress(type) + 0x142u));
+            entry->timer = 6;
+            const uint32_t type = static_cast<uint32_t>(Family_GetTypeIndex(entry->family));
+            const uint32_t tile = entry->tile;
+            Map_HighlightArea(city->map, static_cast<int>(tile & 0x7Fu), static_cast<int>(tile >> 7), globals::buildingType(type)->size);
         }
         Pad_TakeFocus(1, 0x10);
         port::store<int32_t>(a + 0x31Cu, 6);
         port::store<uint32_t>(a + 0x340u, 0x3CA3D70Au);
         Applicants_SetMode(applicants, 1);
-        Notice_Clear(GuestPtr<Notice>{port::load<uint32_t>(city.address + 0x7Cu)});
+        Notice_Clear(city->notice);
     }
 
     // An event actor points at a building: unless someone holds the pad focus, a talk about the building (its id at +2) starts
@@ -4053,7 +4041,7 @@ namespace mm
             return;
         if ((person->flags & 0x20u) != 0)
             return;
-        if ((person->flags & 0x200u) != 0 && port::load<int32_t>(city.address + 0x84u) < 0xC4E0)
+        if ((person->flags & 0x200u) != 0 && city->clock < 0xC4E0)
             return;
         if ((person->flags & 4u) != 0)
             return;
@@ -4084,34 +4072,33 @@ namespace mm
     {
         port::GuestFrame<0x90> frame;
         const uint32_t sp = frame.ptr().address;
-        const uint32_t c = city.address;
-        StageObj_ctor(static_cast<int>(c));
-        port::store<uint32_t>(c + 0x84u, 0x5460u);
-        port::store<uint32_t>(c + 0x88u, 3u);
-        port::store<uint32_t>(c + 0x8Cu, 0x32u);
-        port::store<uint32_t>(c + 0x90u, 0u);
-        port::store<uint32_t>(c + 0x94u, 0u);
-        port::store<uint32_t>(c + 0x98u, 0u);
-        port::store<uint32_t>(c + 0xB4u, 0u);
-        port::store<uint32_t>(c + 0xB4u, port::load<uint32_t>(c + 0xB4u) | 1u);
-        port::store<uint32_t>(c + 0xBCu, 0u);
-        port::store<uint32_t>(c + 0xC0u, 0u);
-        port::store<uint32_t>(c + 0xC4u, 0u);
-        port::store<uint32_t>(c + 0x9Cu, 0u);
-        port::store<uint32_t>(c + 0xB0u, 0x3F000000u);
-        port::store<uint32_t>(c + 0xA0u, 0xFAu);
-        port::store<uint32_t>(c + 0xA4u, 0u);
-        port::store<uint32_t>(c + 0xA8u, 0xFAu);
-        port::store<uint32_t>(c + 0xACu, 0u);
-        port::store<uint32_t>(c + 0xB8u, 0u);
-        port::store<uint32_t>(c + 0x2Cu, 1u);
-        port::store<uint32_t>(c + 0x30u, 1u);
-        port::store<uint32_t>(c + 0x34u, 1u);
-        port::store<uint32_t>(c + 0x38u, 1u);
-        port::store<uint32_t>(c + 0x28u, 0u);
-        port::store<uint32_t>(c + 0xC8u, 0x80u);
-        port::store<uint32_t>(c + 0xCCu, 0u);
-        port::store<uint32_t>(c + 0xD4u, 0u);
+        StageObj_ctor(static_cast<int>(city.address));
+        city->clock = 0x5460; // 6:00
+        city->monthCount = 3;
+        city->approval = 0x32;
+        city->weatherToday = 0;
+        city->weatherTomorrow = 0;
+        city->weatherYesterday = 0;
+        city->flags = 0u;
+        city->flags = city->flags | 1u;
+        city->pendingApproval = 0;
+        city->trafficPhase = 0;
+        city->trafficTimer = 0;
+        city->unk_9C = 0;
+        city->waterLevel = 0.5f;
+        city->scoreA0 = 0xFA;
+        city->scoreA0Count = 0;
+        city->scoreA8 = 0xFA;
+        city->scoreA8Count = 0;
+        city->paydayScore = 0;
+        city->hudVisible[0] = 1;
+        city->hudVisible[1] = 1;
+        city->hudVisible[2] = 1;
+        city->hudVisible[3] = 1;
+        city->unk_28 = 0;
+        city->fadeLevel = 0x80;
+        city->fade = 0;
+        city->unk_D4 = 0;
         BldgType_LoadAll();
         // A part of `size` bytes made by `constructor` (0 when the allocation fails).
         const auto build = [](uint32_t size, auto constructor) -> uint32_t {
@@ -4120,53 +4107,54 @@ namespace mm
                 object = constructor(object);
             return object;
         };
-        port::store<uint32_t>(c + 0x3Cu, build(0xC0u, [](uint32_t o) { return Talk_ctor(GuestPtr<TalkSession>{o}).address; }));
-        port::store<uint32_t>(c + 0x0u, build(0xC0u, [](uint32_t o) { return StatusPanel_ctor(GuestPtr<StatusPanel>{o}).address; }));
-        port::store<uint32_t>(c + 0x44u, build(0x310u, [](uint32_t o) { return Camera_ctor(GuestPtr<Camera>{o}).address; }));
+        city->talk = GuestPtr<TalkSession>{build(0xC0u, [](uint32_t o) { return Talk_ctor(GuestPtr<TalkSession>{o}).address; })};
+        city->statusPanel = GuestPtr<StatusPanel>{build(0xC0u, [](uint32_t o) { return StatusPanel_ctor(GuestPtr<StatusPanel>{o}).address; })};
+        city->camera = GuestPtr<Camera>{build(0x310u, [](uint32_t o) { return Camera_ctor(GuestPtr<Camera>{o}).address; })};
         *GuestPtr<Vec4>{sp + 0x70u} = *GuestPtr<Vec4>{0x001B2480u};
         *GuestPtr<Vec4>{sp + 0x80u} = *GuestPtr<Vec4>{0x001B2490u};
-        Camera_SetEyeTarget(GuestPtr<Camera>{port::load<uint32_t>(c + 0x44u)}, GuestPtr<Vec4>{sp + 0x70u}, GuestPtr<Vec4>{sp + 0x80u});
-        Camera_UpdateMatrices(GuestPtr<Camera>{port::load<uint32_t>(c + 0x44u)});
-        port::store<uint32_t>(c + 0x8u, build(0x99Cu, [](uint32_t o) { return PauseMenu_ctor(GuestPtr<PauseMenu>{o}).address; }));
-        port::store<uint32_t>(c + 0x74u, build(0x21DCu, [](uint32_t o) { return Minimap_ctor(GuestPtr<Minimap>{o}).address; }));
-        port::store<uint32_t>(c + 0x70u, build(0x1E0u, [](uint32_t o) { return CityCursor_ctor(GuestPtr<CityCursor>{o}).address; }));
-        port::store<uint32_t>(c + 0x6Cu, build(0x7Cu, [](uint32_t o) { return PhoneCall_ctor(GuestPtr<PhoneCalls>{o}).address; }));
-        port::store<uint32_t>(c + 0x68u, build(0xB0u, [](uint32_t o) { return EventMgr_ctor(GuestPtr<EventMgr>{o}).address; }));
-        port::store<uint32_t>(c + 0x5Cu, build(0x544u, [](uint32_t o) { return WantsWin_ctor(GuestPtr<WantsWin>{o}).address; }));
-        port::store<uint32_t>(c + 0x60u, port::load<uint32_t>(0x001BDA18u));
-        port::store<uint32_t>(c + 0x64u, port::load<uint32_t>(0x001BDBB8u));
-        port::store<uint32_t>(c + 0x4u, build(0x64u, [](uint32_t o) { return TownPages_Init(GuestPtr<TownPages>{o}).address; }));
-        port::store<uint32_t>(c + 0x48u, build(0x3E0u, [](uint32_t o) { return Laptop_ctor(GuestPtr<Laptop>{o}).address; }));
-        port::store<uint32_t>(c + 0x4Cu, build(0x540u, [](uint32_t o) { return CityCamera_ctor(GuestPtr<CityCamera>{o}).address; }));
-        port::store<uint32_t>(c + 0x40u, build(0x1B0u, [](uint32_t o) { return LightSet_ctor(GuestPtr<LightSet>{o}).address; }));
-        port::store<uint32_t>(c + 0x58u, build(0x90u, [](uint32_t o) { return Player_ctor(GuestPtr<Player>{o}).address; }));
-        port::store<uint32_t>(c + 0x54u, build(0x350u, [](uint32_t o) { return Applicants_ctor(GuestPtr<Applicants>{o}).address; }));
-        port::store<uint32_t>(c + 0x78u, build(0x130u, [](uint32_t o) { return Markers_ctor(GuestPtr<Markers>{o}).address; }));
-        port::store<uint32_t>(c + 0x7Cu, build(0x14u, [](uint32_t o) { return Notice_ctor(GuestPtr<Notice>{o}).address; }));
-        port::store<uint32_t>(c + 0x50u, build(0x2F90u, [](uint32_t o) { return CityMap_ctor(GuestPtr<CityMap>{o}).address; }));
-        port::store<uint32_t>(c + 0x80u, 0u);
-        TerrainGen_Generate(GuestPtr<CityMap>{port::load<uint32_t>(c + 0x50u)}, GuestPtr<uint8_t>{0x001C5558u});
-        port::store<uint32_t>(c + 0x10u, 0u);
-        port::store<uint32_t>(c + 0x24u, 1u);
+        Camera_SetEyeTarget(city->camera, GuestPtr<Vec4>{sp + 0x70u}, GuestPtr<Vec4>{sp + 0x80u});
+        Camera_UpdateMatrices(city->camera);
+        city->pauseMenu = GuestPtr<PauseMenu>{build(0x99Cu, [](uint32_t o) { return PauseMenu_ctor(GuestPtr<PauseMenu>{o}).address; })};
+        city->minimap = GuestPtr<Minimap>{build(0x21DCu, [](uint32_t o) { return Minimap_ctor(GuestPtr<Minimap>{o}).address; })};
+        city->cursor = GuestPtr<CityCursor>{build(0x1E0u, [](uint32_t o) { return CityCursor_ctor(GuestPtr<CityCursor>{o}).address; })};
+        city->phoneCalls = GuestPtr<PhoneCalls>{build(0x7Cu, [](uint32_t o) { return PhoneCall_ctor(GuestPtr<PhoneCalls>{o}).address; })};
+        city->events = GuestPtr<EventMgr>{build(0xB0u, [](uint32_t o) { return EventMgr_ctor(GuestPtr<EventMgr>{o}).address; })};
+        city->wants = GuestPtr<WantsWin>{build(0x544u, [](uint32_t o) { return WantsWin_ctor(GuestPtr<WantsWin>{o}).address; })};
+        city->bag = GuestPtr<Bag>{port::load<uint32_t>(0x001BDA18u)};
+        city->stamina = GuestPtr<Stamina>{port::load<uint32_t>(0x001BDBB8u)};
+        city->townPages = GuestPtr<TownPages>{build(0x64u, [](uint32_t o) { return TownPages_Init(GuestPtr<TownPages>{o}).address; })};
+        city->laptop = GuestPtr<Laptop>{build(0x3E0u, [](uint32_t o) { return Laptop_ctor(GuestPtr<Laptop>{o}).address; })};
+        city->cityCamera = GuestPtr<CityCamera>{build(0x540u, [](uint32_t o) { return CityCamera_ctor(GuestPtr<CityCamera>{o}).address; })};
+        city->lights = GuestPtr<LightSet>{build(0x1B0u, [](uint32_t o) { return LightSet_ctor(GuestPtr<LightSet>{o}).address; })};
+        city->player = GuestPtr<Player>{build(0x90u, [](uint32_t o) { return Player_ctor(GuestPtr<Player>{o}).address; })};
+        city->applicants = GuestPtr<Applicants>{build(0x350u, [](uint32_t o) { return Applicants_ctor(GuestPtr<Applicants>{o}).address; })};
+        city->markers = GuestPtr<Markers>{build(0x130u, [](uint32_t o) { return Markers_ctor(GuestPtr<Markers>{o}).address; })};
+        city->notice = GuestPtr<Notice>{build(0x14u, [](uint32_t o) { return Notice_ctor(GuestPtr<Notice>{o}).address; })};
+        city->map = GuestPtr<CityMap>{build(0x2F90u, [](uint32_t o) { return CityMap_ctor(GuestPtr<CityMap>{o}).address; })};
+        city->overlay = GuestPtr<void>{0u};
+        TerrainGen_Generate(city->map, GuestPtr<uint8_t>{0x001C5558u});
+        city->modeStack[0] = 0;
+        city->modeDepth = 1;
         constexpr uint32_t kIntroduced = 0x001C55C0u;
         for (uint32_t i = 0; i < 0x20u; ++i)
         {
             const uint32_t family = port::load<uint16_t>(kIntroduced + 2u * i);
             if (family == 0u)
                 continue;
-            Applicants_AddAndShow(GuestPtr<Applicants>{port::load<uint32_t>(c + 0x54u)}, static_cast<int>(family), port::load<int32_t>(c + 0x88u), 0);
-            const uint32_t people = port::load<uint32_t>(port::load<uint32_t>(c + 0x50u) + 0x68u);
-            for (uint32_t person = people; person != people + 0x46500u; person += 0x30u)
+            Applicants_AddAndShow(city->applicants, static_cast<int>(family), city->monthCount, 0);
+            // Residents (classes without flag 1) who could introduce this family introduce another one.
+            const GuestPtr<MapPerson> people = city->map->people;
+            for (GuestPtr<MapPerson> person = people; person != people + 6000; ++person)
             {
-                const uint32_t type = port::load<uint8_t>(person + 0x24u);
+                const uint32_t type = person->charType;
                 if (type == 0u)
                     continue;
-                const uint32_t record = port::load<uint32_t>(port::load<uint32_t>(0x001BDA3Cu) + 4u * type);
-                if ((port::load<uint16_t>(record + 0x18u) & 1u) != 0u)
+                const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * type)};
+                if ((cls->flags & 1u) != 0u)
                     continue;
-                if (port::load<uint16_t>(person + 0x2Cu) != family)
+                if (person->introduces != family)
                     continue;
-                port::store<uint16_t>(person + 0x2Cu, static_cast<uint16_t>(Family_PickIntroduction(port::load<uint16_t>(person + 0x2Au), port::load<uint8_t>(person + 0x2Eu), city)));
+                person->introduces = static_cast<uint16_t>(Family_PickIntroduction(person->family, person->member, city));
             }
         }
         Pad_ReleaseFocus(-1);
@@ -4183,21 +4171,20 @@ namespace mm
     // laptop and status panel; 3 the applicants (1 pops the mode, any answer but 3 pushes it); 4 the player, camera and applicants
     // (3 pops); 5 the camera's time of day, the talk and the panel; 6 the pause menu (the answer 2 when it is done); 7 the town's
     // pages; 8 the wants window; 9 the bag; 10 the cursor in its list mode; 11 the player, camera and bag; 13 the first morning (mode 1
-    // from 0x57A8 seconds). Then the common part: approval, the extra object (+0x80), notices, and the whole draw: sky, terrain,
+    // from 0x57A8 seconds). Then the common part: approval, an event's overlay, notices, and the whole draw: sky, terrain,
     // buildings, people, player, water and sky passes, minimap (debug flag bit 0), phone, markers, the mode's window, applicants,
     // cursor, status panel and fades. The answer is 1 when the city flag 0x10 is set (the city sound state reset and the member meters
     // cleared), else 0.
     uint32_t CityScene_Update(GuestPtr<CityScene> city)
     {
         port::GuestFrame<0x50> frame;
-        const uint32_t c = city.address;
-        const auto part = [c](uint32_t at) { return port::load<uint32_t>(c + at); };
+        // Widget methods (talk session) and the overlay's methods by vtable slot (neither vtable has a layout yet).
         const auto virtualCall = [](uint32_t object, uint32_t vtableAt, uint32_t slot, auto... args) {
             return port::callGuest<int64_t>(port::load<uint32_t>(port::load<uint32_t>(object + vtableAt) + slot), object, args...);
         };
-        const auto updateMap = [&]() { virtualCall(part(0x50u), 0x64u, 8u, c); };
-        BldgType_CallAll(port::load<int32_t>(c + 0x84u));
-        const uint32_t mode = part(0x10u);
+        const auto updateMap = [&]() { port::callGuest<int64_t>(city->map->vtable->tick, city->map, city); };
+        BldgType_CallAll(city->clock);
+        const int32_t mode = city->modeStack[0];
         switch (mode)
         {
         case 0:
@@ -4212,24 +4199,24 @@ namespace mm
             else
             {
                 CityScene_TickClock(city);
-                const int pad = PhoneCall_Update(GuestPtr<PhoneCalls>{part(0x6Cu)}, city);
-                StatusPanel_Update(GuestPtr<StatusPanel>{part(0x0u)}, city);
-                Player_Update(GuestPtr<Player>{part(0x58u)}, city);
-                CityCamera_Update(GuestPtr<CityCamera>{part(0x4Cu)}, city);
+                const int pad = PhoneCall_Update(city->phoneCalls, city);
+                StatusPanel_Update(city->statusPanel, city);
+                Player_Update(city->player, city);
+                CityCamera_Update(city->cityCamera, city);
                 updateMap();
-                Applicants_Update(GuestPtr<Applicants>{part(0x54u)}, city);
-                WantsWin_Update(GuestPtr<WantsWin>{part(0x5Cu)}, city);
-                Event_Update(GuestPtr<EventMgr>{part(0x68u)}, city);
-                CityCursor_Update(GuestPtr<CityCursor>{part(0x70u)}, city, pad);
-                Laptop_CheckOpen(GuestPtr<Laptop>{part(0x78u)}, city, pad);
-                if (part(0x10u) == 1u && pad != 0 && (Pad_Held(0) & 0x20u) != 0u)
+                Applicants_Update(city->applicants, city);
+                WantsWin_Update(city->wants, city);
+                Event_Update(city->events, city);
+                CityCursor_Update(city->cursor, city, pad);
+                Laptop_CheckOpen(city->markers, city, pad);
+                if (city->modeStack[0] == 1 && pad != 0 && (Pad_Held(0) & 0x20u) != 0u)
                 {
                     if ((Pad_Pressed(0) & 0x1000u) != 0u)
-                        Player_SetMode(GuestPtr<Player>{part(0x58u)}, 0);
+                        Player_SetMode(city->player, 0);
                     else if ((Pad_Pressed(0) & 0x4000u) != 0u)
                         CityScene_PushMode(city, 3);
                     else if ((Pad_Pressed(0) & 0x8000u) != 0u)
-                        Player_SetMode(GuestPtr<Player>{part(0x58u)}, 1);
+                        Player_SetMode(city->player, 1);
                     else if ((Pad_Pressed(0) & 0x2000u) != 0u && (Laptop_CountActive() & 0x10u) != 0u)
                         CityScene_PushMode(city, 7);
                 }
@@ -4240,25 +4227,25 @@ namespace mm
                 {
                     if ((Pad_Held(0) & 1u) != 0u)
                         port::store<int32_t>(0x001C5548u, port::load<int32_t>(0x001C5548u) - 1);
-                    port::store<uint32_t>(c + 0xB4u, part(0xB4u) | 0x10u);
+                    city->flags = city->flags | 0x10u;
                 }
                 if ((Pad_Held(0) & 0x800u) != 0u)
                 {
                     if ((Pad_Pressed(0) & 0x1000u) != 0u)
-                        port::store<int32_t>(c + 0xBCu, port::load<int32_t>(c + 0xBCu) + 10);
+                        city->pendingApproval = city->pendingApproval + 10;
                     if ((Pad_Pressed(0) & 0x4000u) != 0u)
-                        port::store<int32_t>(c + 0xBCu, port::load<int32_t>(c + 0xBCu) - 10);
+                        city->pendingApproval = city->pendingApproval - 10;
                 }
             }
             break;
         }
         case 2:
-            Laptop_Update(GuestPtr<Laptop>{part(0x48u)}, city);
-            StatusPanel_Update(GuestPtr<StatusPanel>{part(0x0u)}, city);
+            Laptop_Update(city->laptop, city);
+            StatusPanel_Update(city->statusPanel, city);
             break;
         case 3:
         {
-            const int answer = Applicants_Update(GuestPtr<Applicants>{part(0x54u)}, city);
+            const int answer = Applicants_Update(city->applicants, city);
             if (answer == 1)
                 CityScene_PopMode(city);
             else if (answer != 3)
@@ -4266,162 +4253,162 @@ namespace mm
             break;
         }
         case 4:
-            Player_Update(GuestPtr<Player>{part(0x58u)}, city);
-            CityCamera_Update(GuestPtr<CityCamera>{part(0x4Cu)}, city);
-            if (Applicants_Update(GuestPtr<Applicants>{part(0x54u)}, city) == 3)
+            Player_Update(city->player, city);
+            CityCamera_Update(city->cityCamera, city);
+            if (Applicants_Update(city->applicants, city) == 3)
                 CityScene_PopMode(city);
             break;
         case 5:
-            CityCamera_UpdateTimeOfDay(GuestPtr<CityCamera>{part(0x4Cu)}, city);
-            virtualCall(part(0x3Cu), 8u, 0x14u);
-            StatusPanel_Update(GuestPtr<StatusPanel>{part(0x0u)}, city);
+            CityCamera_UpdateTimeOfDay(city->cityCamera, city);
+            virtualCall(city->talk.address, 8u, 0x14u); // Update
+            StatusPanel_Update(city->statusPanel, city);
             break;
         case 6:
-            if (PauseMenu_Update(GuestPtr<PauseMenu>{part(0x8u)}, city) != 0)
+            if (PauseMenu_Update(city->pauseMenu, city) != 0)
             {
                 Sound_SetCity(GuestPtr<CityScene>{0u});
                 return 2;
             }
             break;
         case 7:
-            TownPages_Update(GuestPtr<TownPages>{part(0x4u)}, city);
+            TownPages_Update(city->townPages, city);
             break;
         case 8:
-            WantsWin_Update(GuestPtr<WantsWin>{part(0x5Cu)}, city);
+            WantsWin_Update(city->wants, city);
             break;
         case 9:
-            BagMenu_Update(GuestPtr<Bag>{part(0x60u)}, city);
+            BagMenu_Update(city->bag, city);
             break;
         case 10:
-            CityCursor_Update(GuestPtr<CityCursor>{part(0x70u)}, city, 1);
+            CityCursor_Update(city->cursor, city, 1);
             break;
         case 11:
-            Player_Update(GuestPtr<Player>{part(0x58u)}, city);
-            CityCamera_Update(GuestPtr<CityCamera>{part(0x4Cu)}, city);
-            BagMenu_Update(GuestPtr<Bag>{part(0x60u)}, city);
+            Player_Update(city->player, city);
+            CityCamera_Update(city->cityCamera, city);
+            BagMenu_Update(city->bag, city);
             break;
         case 13:
             CityScene_TickClock(city);
-            if (!(port::load<int32_t>(c + 0x84u) < 0x57A8))
+            if (!(city->clock < 0x57A8))
             {
-                port::store<uint32_t>(c + 0x10u, 1u);
+                city->modeStack[0] = 1;
                 Pad_ReleaseFocus(2);
             }
-            StatusPanel_Update(GuestPtr<StatusPanel>{part(0x0u)}, city);
-            Player_Update(GuestPtr<Player>{part(0x58u)}, city);
-            CityCamera_Update(GuestPtr<CityCamera>{part(0x4Cu)}, city);
+            StatusPanel_Update(city->statusPanel, city);
+            Player_Update(city->player, city);
+            CityCamera_Update(city->cityCamera, city);
             updateMap();
-            Applicants_Update(GuestPtr<Applicants>{part(0x54u)}, city);
-            WantsWin_Update(GuestPtr<WantsWin>{part(0x5Cu)}, city);
-            PhoneCall_Update(GuestPtr<PhoneCalls>{part(0x6Cu)}, city);
+            Applicants_Update(city->applicants, city);
+            WantsWin_Update(city->wants, city);
+            PhoneCall_Update(city->phoneCalls, city);
             break;
         default:
             break;
         }
         CityScene_UpdateApproval(city);
-        if (part(0x80u) != 0u)
-            virtualCall(part(0x80u), 0u, 0xCu, c);
-        Notice_Tick(GuestPtr<Notice>{part(0x7Cu)});
+        if (city->overlay)
+            virtualCall(city->overlay.address, 0u, 0xCu, city.address);
+        Notice_Tick(city->notice);
         DmaList_QueueClearZ();
-        Sky_Draw(GuestPtr<CityCamera>{part(0x4Cu)});
-        Packet_Draw(GuestPtr<uint32_t>{part(0x4Cu)});
-        const uint32_t camera = part(0x4Cu);
-        const int zoom = CityCamera_GetZoomLevel(GuestPtr<CityCamera>{camera}, city);
-        LightSet_UpdateByClock(GuestPtr<LightSet>{part(0x40u)}, port::load<int32_t>(c + 0x84u), port::load<int32_t>(c + 0x90u));
-        Terrain_Draw(GuestPtr<CityMap>{part(0x50u)}, GuestPtr<Vec4>{camera + 0x1E0u}, GuestPtr<Vec4>{camera + 0x130u}, zoom, port::load<int32_t>(c + 0x90u),
-                     port::load<int32_t>(c + 0x84u), ps2f(port::load<float>(c + 0xB0u)));
-        CityRender_DrawOverlays(GuestPtr<CityMap>{part(0x50u)}, city);
+        Sky_Draw(city->cityCamera);
+        Packet_Draw(GuestPtr<uint32_t>::of(city->cityCamera->base.packet));
+        const GuestPtr<CityCamera> camera = city->cityCamera;
+        const int zoom = CityCamera_GetZoomLevel(camera, city);
+        LightSet_UpdateByClock(city->lights, city->clock, city->weatherToday);
+        Terrain_Draw(city->map, GuestPtr<Vec4>::of(camera->base.view[0]), GuestPtr<Vec4>::of(camera->base.eye), zoom, city->weatherToday, city->clock,
+                     city->waterLevel);
+        CityRender_DrawOverlays(city->map, city);
         DmaList_QueueGsDefaults();
-        if (part(0x2Cu) != 0u)
+        if (city->hudVisible[0] != 0)
         {
-            Packet2_Draw(GuestPtr<uint32_t>{part(0x40u)}, 1);
-            CityRender_CollectObjects(GuestPtr<CityMap>{part(0x50u)}, city);
+            Packet2_Draw(GuestPtr<uint32_t>::of(city->lights->packetA), 1);
+            CityRender_CollectObjects(city->map, city);
         }
-        if (part(0x10u) == 5u)
-            virtualCall(part(0x3Cu), 8u, 0x20u, 0);
-        Packet2_Draw(GuestPtr<uint32_t>{part(0x40u)}, 0);
+        if (city->modeStack[0] == 5)
+            virtualCall(city->talk.address, 8u, 0x20u, 0); // Draw
+        Packet2_Draw(GuestPtr<uint32_t>::of(city->lights->packetA), 0);
         Perf_AdaptDrawRange();
-        if (part(0x30u) != 0u)
+        if (city->hudVisible[1] != 0)
         {
-            CityRender_UpdatePeople(GuestPtr<CityMap>{part(0x50u)}, city);
-            Player_Draw(GuestPtr<Player>{part(0x58u)}, city);
+            CityRender_UpdatePeople(city->map, city);
+            Player_Draw(city->player, city);
         }
-        if (part(0x10u) == 5u)
-            virtualCall(part(0x3Cu), 8u, 0x20u, 1);
-        CityRender_DrawWater(GuestPtr<CityMap>{part(0x50u)}, city);
-        const uint32_t weather = part(0x90u);
-        if (weather == 2u)
-            CityRender_DrawSky(GuestPtr<CityMap>{part(0x50u)}, city, 0, GuestPtr<Vec4>{part(0x4Cu) + 0x1E0u});
-        else if (weather == 3u)
-            CityRender_DrawSky(GuestPtr<CityMap>{part(0x50u)}, city, 1, GuestPtr<Vec4>{part(0x4Cu) + 0x1E0u});
-        CityRender_DrawBuildings(GuestPtr<CityMap>{part(0x50u)}, 0);
-        CityRender_DrawBuildings(GuestPtr<CityMap>{part(0x50u)}, 1);
-        CityRender_DrawInstanceLayer(GuestPtr<CityMap>{part(0x50u)});
+        if (city->modeStack[0] == 5)
+            virtualCall(city->talk.address, 8u, 0x20u, 1);
+        CityRender_DrawWater(city->map, city);
+        const int32_t weather = city->weatherToday;
+        if (weather == 2)
+            CityRender_DrawSky(city->map, city, 0, GuestPtr<Vec4>::of(city->cityCamera->base.view[0]));
+        else if (weather == 3)
+            CityRender_DrawSky(city->map, city, 1, GuestPtr<Vec4>::of(city->cityCamera->base.view[0]));
+        CityRender_DrawBuildings(city->map, 0);
+        CityRender_DrawBuildings(city->map, 1);
+        CityRender_DrawInstanceLayer(city->map);
         DmaList_QueueGsDefaults();
-        Packet2_Draw(GuestPtr<uint32_t>{part(0x40u)}, 0);
-        Packet_Draw(GuestPtr<uint32_t>{part(0x44u)});
+        Packet2_Draw(GuestPtr<uint32_t>::of(city->lights->packetA), 0);
+        Packet_Draw(GuestPtr<uint32_t>::of(city->camera->packet));
         DmaList_QueueClearZ();
-        if (part(0x38u) != 0u && (port::load<uint16_t>(0x001C5600u) & 1u) != 0u)
-            Minimap_Draw(GuestPtr<Minimap>{part(0x74u)});
-        PhoneCall_Draw(GuestPtr<PhoneCalls>{part(0x6Cu)});
-        Markers_Draw(GuestPtr<Markers>{part(0x78u)});
-        switch (part(0x10u))
+        if (city->hudVisible[3] != 0 && (port::load<uint16_t>(0x001C5600u) & 1u) != 0u)
+            Minimap_Draw(city->minimap);
+        PhoneCall_Draw(city->phoneCalls);
+        Markers_Draw(city->markers);
+        switch (city->modeStack[0])
         {
         case 2:
-            Laptop_Draw(GuestPtr<Laptop>{part(0x48u)});
+            Laptop_Draw(city->laptop);
             break;
         case 5:
-            virtualCall(part(0x3Cu), 8u, 0x20u, 2);
+            virtualCall(city->talk.address, 8u, 0x20u, 2);
             break;
         case 7:
-            TownPages_Draw(GuestPtr<TownPages>{part(0x4u)});
+            TownPages_Draw(city->townPages);
             break;
         case 8:
-            WantsWin_Draw(GuestPtr<WantsWin>{part(0x5Cu)});
+            WantsWin_Draw(city->wants);
             break;
         case 9:
         case 11:
-            BagMenu_Draw(GuestPtr<Bag>{part(0x60u)});
+            BagMenu_Draw(city->bag);
             break;
         case 6:
-            PauseMenu_Draw(GuestPtr<PauseMenu>{part(0x8u)});
+            PauseMenu_Draw(city->pauseMenu);
             break;
         default:
             break;
         }
-        Applicants_Draw(GuestPtr<Applicants>{part(0x54u)});
-        if (part(0x34u) != 0u)
-            CityCursor_Draw(GuestPtr<CityCursor>{part(0x70u)});
-        StatusPanel_Draw(GuestPtr<StatusPanel>{part(0x0u)});
-        if (part(0x80u) != 0u)
-            virtualCall(part(0x80u), 0u, 0x10u, 2);
-        Notice_Draw(GuestPtr<Notice>{part(0x7Cu)});
-        if (part(0x28u) != 0u)
+        Applicants_Draw(city->applicants);
+        if (city->hudVisible[2] != 0)
+            CityCursor_Draw(city->cursor);
+        StatusPanel_Draw(city->statusPanel);
+        if (city->overlay)
+            virtualCall(city->overlay.address, 0u, 0x10u, 2);
+        Notice_Draw(city->notice);
+        if (city->unk_28 != 0)
         {
             DmaList_QueueGsDefaults();
             DmaList_QueueOtherOverlay();
         }
-        if (part(0xC8u) != 0u)
-            DmaList_QueueFade(static_cast<int>(part(0xC8u)), port::load<int32_t>(c + 0xD4u));
-        const int32_t fade = port::load<int32_t>(c + 0xCCu);
+        if (city->fadeLevel != 0)
+            DmaList_QueueFade(city->fadeLevel, city->unk_D4);
+        const int32_t fade = city->fade;
         if (fade != 0)
         {
             if (fade > 0)
             {
-                port::store<int32_t>(c + 0xCCu, fade - port::load<int32_t>(c + 0xD0u));
-                if (port::load<int32_t>(c + 0xCCu) < 0)
-                    port::store<int32_t>(c + 0xCCu, 0);
-                port::store<int32_t>(c + 0xC8u, port::load<int32_t>(c + 0xCCu));
+                city->fade = fade - city->fadeSpeed;
+                if (city->fade < 0)
+                    city->fade = 0;
+                city->fadeLevel = city->fade;
             }
             else
             {
-                port::store<int32_t>(c + 0xCCu, fade + port::load<int32_t>(c + 0xD0u));
-                if (port::load<int32_t>(c + 0xCCu) > 0)
-                    port::store<int32_t>(c + 0xCCu, 0);
-                port::store<int32_t>(c + 0xC8u, port::load<int32_t>(c + 0xCCu) + 0x80);
+                city->fade = fade + city->fadeSpeed;
+                if (city->fade > 0)
+                    city->fade = 0;
+                city->fadeLevel = city->fade + 0x80;
             }
         }
-        if ((part(0xB4u) & 0x10u) == 0u)
+        if ((city->flags & 0x10u) == 0u)
             return 0;
         Sound_SetCity(GuestPtr<CityScene>{0u});
         MemberMeters_Reset(GuestPtr<int32_t>{0x001C5780u});
@@ -4445,7 +4432,6 @@ namespace mm
     // while loading goes on, 2 when it ended without a load.
     int CityScene_LoadGame(GuestPtr<CityScene> city)
     {
-        const uint32_t c = city.address;
         constexpr uint32_t kState = 0x001BDC68u, kStarted = 0x001BDC6Cu, kCard = 0x001BDA78u, kFlag = 0x001BDA7Cu, kTextA = 0x001BDC7Cu,
                            kTextB = 0x001BDC78u, kSprite = 0x001BDC80u, kFade = 0x001BDC84u, kTimer = 0x001BDC70u, kHandle = 0x001BDC74u;
         if (port::load<int8_t>(kStarted) == 0)
@@ -4453,7 +4439,7 @@ namespace mm
             port::store<int32_t>(kState, 0);
             port::store<uint8_t>(kStarted, 1);
         }
-        const auto mc = [c]() { return GuestPtr<McManager>{port::load<uint32_t>(c + 0xCu)}; };
+        const auto mc = [&]() { return city->loadCard; };
         const auto nextState = [&]() { port::store<int32_t>(kState, port::load<int32_t>(kState) + 1); };
         const auto setState = [&](int32_t value) { port::store<int32_t>(kState, value); };
         // A text box of `columns` by `rows` (style `style`), or 0 when the allocation fails.
@@ -4474,7 +4460,7 @@ namespace mm
             if (mc().address != 0u)
             {
                 const GuestPtr<McManager> manager = mc();
-                port::store<uint32_t>(c + 0xCu, 0u);
+                city->loadCard = GuestPtr<McManager>{0u};
                 McManager_dtor(manager, 1);
             }
         };
@@ -4490,7 +4476,7 @@ namespace mm
         case 0:
             if (port::load<int32_t>(kFlag) == 0)
             {
-                port::store<int32_t>(c + 0x10u, 0xD);
+                city->modeStack[0] = 0xD;
                 Pad_TakeFocus(2, -1);
                 CityScene_StartFade(city, 2);
                 Sound_SetCity(city);
@@ -4512,7 +4498,7 @@ namespace mm
                 uint32_t manager = sdk::operator_new(0x28u);
                 if (manager != 0u)
                     manager = McManager_ctor(GuestPtr<McManager>{manager}).address;
-                port::store<uint32_t>(c + 0xCu, manager);
+                city->loadCard = GuestPtr<McManager>{manager};
                 McManager_ClearSlots(mc());
                 port::store<int32_t>(kFade, 0x80);
                 nextState();
@@ -4581,7 +4567,7 @@ namespace mm
         case 4:
             if (SaveFile_IsDone(mc(), port::load<int32_t>(kHandle)) != 0)
             {
-                if (port::load<int32_t>(mc().address + 0x24u) < 0)
+                if (mc()->fd < 0)
                     setState(0xA);
                 else
                     nextState();
@@ -4591,19 +4577,19 @@ namespace mm
         case 5:
         {
             const GuestPtr<McManager> manager = mc();
-            MapSave_AllocBuffer(GuestPtr<CityMap>{port::load<uint32_t>(c + 0x50u)});
-            Stage_LoadState(static_cast<int>(c), manager);
-            SaveFile_Read(manager, static_cast<int>(c + 0x84u), 0x34);
-            CityCamera_LoadState(GuestPtr<CityCamera>{port::load<uint32_t>(c + 0x4Cu)}, manager);
-            Player_LoadState(GuestPtr<Player>{port::load<uint32_t>(c + 0x58u)}, manager);
-            Applicants_LoadState(GuestPtr<Applicants>{port::load<uint32_t>(c + 0x54u)}, manager);
-            Wants_LoadState(GuestPtr<WantsWin>{port::load<uint32_t>(c + 0x5Cu)}, manager);
+            MapSave_AllocBuffer(city->map);
+            Stage_LoadState(static_cast<int>(city.address), manager);
+            SaveFile_Read(manager, static_cast<int>(port::guest(&city->clock)), 0x34); // the clock through the flags
+            CityCamera_LoadState(city->cityCamera, manager);
+            Player_LoadState(city->player, manager);
+            Applicants_LoadState(city->applicants, manager);
+            Wants_LoadState(city->wants, manager);
             Family_LoadState(manager);
-            Map_LoadState(GuestPtr<CityMap>{port::load<uint32_t>(c + 0x50u)}, manager);
-            Bag_LoadState(GuestPtr<Bag>{port::load<uint32_t>(c + 0x60u)}, manager);
-            Stamina_LoadState(GuestPtr<Stamina>{port::load<uint32_t>(c + 0x64u)}, manager);
-            Laptop_LoadState(GuestPtr<Laptop>{port::load<uint32_t>(c + 0x48u)}, manager);
-            Event_LoadState(GuestPtr<EventMgr>{port::load<uint32_t>(c + 0x68u)}, manager);
+            Map_LoadState(city->map, manager);
+            Bag_LoadState(city->bag, manager);
+            Stamina_LoadState(city->stamina, manager);
+            Laptop_LoadState(city->laptop, manager);
+            Event_LoadState(city->events, manager);
             port::store<int32_t>(kHandle, SaveFile_Close(manager));
             nextState();
             draw = true;
@@ -4612,7 +4598,7 @@ namespace mm
         case 6:
             if (SaveFile_IsDone(mc(), port::load<int32_t>(kHandle)) != 0)
             {
-                MapSave_UnpackTiles(GuestPtr<CityMap>{port::load<uint32_t>(c + 0x50u)});
+                MapSave_UnpackTiles(city->map);
                 nextState();
             }
             draw = true;
@@ -4649,8 +4635,8 @@ namespace mm
             }
             setState(0);
             Sound_SetCity(city);
-            Event_InitForCity(GuestPtr<EventMgr>{port::load<uint32_t>(c + 0x68u)});
-            port::store<int32_t>(c + 0x10u, 1);
+            Event_InitForCity(city->events);
+            city->modeStack[0] = 1;
             CityScene_StartFade(city, 2);
             freeManager();
             freeSprite();

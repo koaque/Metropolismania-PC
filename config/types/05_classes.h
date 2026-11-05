@@ -15,6 +15,7 @@ typedef struct LightSet LightSet;
 typedef struct InstanceSlot InstanceSlot;
 typedef struct ListMenu ListMenu;
 typedef struct ListMenuItem ListMenuItem;
+typedef struct MenuWin MenuWin;
 typedef struct LoadingScreen LoadingScreen;
 typedef struct McManager McManager;
 typedef struct NameEntry NameEntry;
@@ -434,15 +435,16 @@ struct Bag {
     BagSlot slots[20];         /* +0x004 */
     BagShortcut shortcuts[10]; /* +0x144 */
     A3DObject *model;          /* +0x16C bag model (from 0x1F3B24) */
-    int32_t unk_170;
-    int32_t unk_174;
-    int32_t unk_178;
-    uint8_t unk_17C[0x18];
-    int32_t unk_194;
+    TextBox *nameText;         /* +0x170 the selected item's name (mm_BagMenu_Update) */
+    ListMenu *list;            /* +0x174 the item list */
+    MenuWin *question;         /* +0x178 the use or discard question */
+    Frame *frames[3];          /* +0x17C */
+    TextBox *labels[3];        /* +0x188 */
+    int32_t state;             /* +0x194 the bag menu's state (mm_BagMenu_Update) */
     Vec4 *matrix;              /* +0x198 the model's matrix */
-    int32_t unk_19C;
-    int32_t unk_1A0;
-    int32_t unk_1A4;           /* +0x1A4 -1 at construction */
+    float slide;               /* +0x19C how far the bag has slid in, 0 to 120 */
+    int32_t cursor;            /* +0x1A0 the slot under the cursor */
+    int32_t setupSlot;         /* +0x1A4 the slot whose item is being placed, -1 none (mm_BagMenu_GetSetupKind) */
     uint8_t unk_1A8[4];
 };
 /* Status panel (0xC0 bytes). */
@@ -466,7 +468,7 @@ struct PauseMenu {
     McManager *mc;             /* +0x0C */
     TextBox *message;          /* +0x10 */
     uint8_t unk_14[8];
-    int32_t unk_1C;            /* +0x1C message 5 names a card by it (mm_PauseMenu_ShowCardMessage) */
+    int32_t cardPort;          /* +0x1C the memory card port in use, 0 or 1 (message 5 names it, mm_PauseMenu_ShowCardMessage) */
     uint8_t unk_20[4];
     int32_t waitFrames;        /* +0x24 frames in the card message state (mm_PauseMenu_StateMain) */
     uint8_t unk_28[4];
@@ -506,16 +508,17 @@ struct PhoneCallEntry {
     int32_t person;            /* +0x00 */
     uint16_t family;           /* +0x04 0 = free entry */
     uint16_t member;           /* +0x06 */
-    int32_t unk_08;            /* +0x08 */
+    int32_t familyOnly;        /* +0x08 a call of the family (person 6000): it goes through only while the city is popular */
 };
 struct PhoneCalls {
     void *unk_00;              /* +0x00 from 0x1F3B08 at construction */
-    int32_t unk_04;            /* +0x04 a call is shown (mm_PhoneCall_Next) */
-    int32_t unk_08;
-    int32_t unk_0C;
-    PhoneCallEntry calls[4];   /* +0x10 queue, first entry shown */
-    int32_t unk_40;            /* +0x40 negated by mm_PhoneCall_Next */
-    uint8_t unk_44[0x38];
+    int32_t state;             /* +0x04 0 no call shown, 1 ringing, 2 answered (mm_PhoneCall_Update) */
+    int32_t shown;             /* +0x08 the entry being shown */
+    int32_t frames;            /* +0x0C frames in the state */
+    PhoneCallEntry calls[4];   /* +0x10 queue */
+    int32_t unk_40;            /* +0x40 1 when a call is taken, negated when it ends */
+    int32_t unk_44;            /* +0x44 */
+    char caller[0x34];         /* +0x48 the caller's text, built once a call */
 };
 /* Event manager (0xB0 bytes); +0xA4 and +0xA8 are the events the talk script works with. */
 /* One actor of a running event (8 bytes). */
@@ -593,7 +596,7 @@ struct WantsWin {
 };
 /* Laptop menu (0x3E0 bytes). */
 struct Laptop {
-    void *unk_00;              /* +0x00 from 0x1F3B08 at construction */
+    A3DObject *model;          /* +0x00 from 0x1F3B08 at construction */
     uint8_t unk_04[0xC];
     Vec4 radius;               /* +0x10 an entry's offset from the centre before its turn (mm_Laptop_Animate) */
     Vec4 centre;               /* +0x20 the carousel's centre */
@@ -602,12 +605,8 @@ struct Laptop {
     float scale;               /* +0x38 the entries' scale */
     int32_t state;             /* +0x3C 2: the selected entry is lifted */
     uint8_t unk_40[4];
-    int32_t unk_44;            /* +0x44 */
-    uint8_t unk_48[0xD4];
-    int32_t unk_11C;           /* +0x11C 4 when +0x120 gets set while entry bit 0x10 is active (mm_Laptop_CheckOpen) */
-    int32_t circleActive;      /* +0x120 set while Circle alone is held in the city view, cleared on release */
-    int32_t circleHeld;        /* +0x124 Circle was held last frame, so holding it does not set +0x120 again */
-    uint8_t unk_128[0x2A8];
+    TextBox *text;             /* +0x44 the selected entry's text (mm_Laptop_SetItemText) */
+    uint8_t unk_48[0x388];
     int32_t selected;          /* +0x3D0 the selected entry */
     uint8_t unk_3D4[0xC];
 };
@@ -618,7 +617,8 @@ struct Player {
     int32_t step;              /* +0x08 grid step in progress: 0 none, 1/2 along z, 5/6 along x, 3/4 turning (mm_Player_Move) */
     float heading;             /* +0x0C radians, -pi..pi (mm_Player_Turn) */
     Vec4 position;             /* +0x10 */
-    uint8_t unk_20[0x14];
+    Vec4 colour;               /* +0x20 the tint the building under the player gives (mm_BldgType_DrawOccupant) */
+    uint8_t unk_30[4];
     float swayPhase;           /* +0x34 animation frame, passed to mm_Instance_DrawSwayingIfRoom (mm_Player_UpdateAction) */
     int32_t swayArg;           /* +0x38 animation: 0-2 standing, 4-15 moving (mm_Player_UpdateAction) */
     int32_t visible;           /* +0x3C drawn when non-zero (mm_Player_Draw) */
@@ -626,9 +626,11 @@ struct Player {
     int32_t targetIsPerson;    /* +0x44 */
     int32_t unk_48;            /* +0x48 */
     float jumpSpeed;           /* +0x4C */
-    int32_t unk_50;            /* +0x50 */
+    float airTime;             /* +0x50 time in the air, 1/60 a frame (mm_Player_Update) */
     float moveSpeed;           /* +0x54 step per frame (mm_Player_Turn) */
-    uint8_t unk_58[0x28];
+    uint8_t unk_58[8];
+    Vec4 push;                 /* +0x60 the flat unit direction from the player to the object hit (mm_Player_Update) */
+    uint8_t unk_70[0x10];
     float stepFrames;          /* +0x80 frames left of the step (mm_Player_Move) */
     int32_t jumps;             /* +0x84 */
     A3DObject *model;          /* +0x88 */
@@ -637,11 +639,13 @@ struct Player {
 /* Applicant list entry (0x14 bytes). */
 struct ApplicantEntry {
     uint16_t index;            /* +0x00 own index */
-    int16_t state;             /* +0x02 0 free, 2 waiting */
+    int16_t state;             /* +0x02 0 free, 2 waiting, 3 to be placed, 6 being placed (mm_Applicants_StartPlacing) */
     uint16_t family;           /* +0x04 */
-    uint8_t unk_06[4];
+    uint16_t tile;             /* +0x06 where the player put its home (mm_Player_PlaceForApplicant) */
+    uint8_t unk_08[2];
     uint16_t type;             /* +0x0A building type the family wants (index into the table at gp 0x1BDBF8) */
-    uint8_t unk_0C[8];
+    uint8_t unk_0C[4];
+    int32_t timer;             /* +0x10 set to 6 when its placing starts */
 };
 /* Applicants list (0x350 bytes). */
 struct Applicants {
@@ -672,9 +676,10 @@ struct Markers {
     A3DObject *markerModel;    /* +0x004 from 0x1F3B08: the marker nodes */
     uint8_t unk_008[8];
     Vec4 matrices[16];         /* +0x010 four 4x4 matrices, one per marker */
-    int32_t nodes[4];          /* +0x110 node of markerModel per marker, -1 = none (1, 2, 3, -1 at construction) */
-    int32_t visible;           /* +0x120 */
-    int32_t unk_124;
+    int32_t nodes[4];          /* +0x110 node of markerModel per marker, -1 = none (1, 2, 3, -1 at construction; the fourth
+                                  becomes 4 when laptop entry 4 is active, mm_Laptop_CheckOpen) */
+    int32_t visible;           /* +0x120 set while Circle alone is held in the city view (mm_Laptop_CheckOpen) */
+    int32_t circleHeld;        /* +0x124 Circle was held with other buttons last frame, so it does not show the markers */
     void *vtable;              /* +0x128 */
     uint8_t unk_12C[4];
 };

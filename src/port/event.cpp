@@ -2735,7 +2735,7 @@ namespace mm
                 port::store<int32_t>(data.address + 0x50u, bits | bit);
                 if (port::load<int32_t>(data.address + 0x50u) >= 7)
                 {
-                    port::store<uint8_t>(data.address + 0xAu, 0x12);
+                    data->var = 0x12;
                     port::store<int32_t>(data.address + 0x40u, 0x6270);
                 }
                 return 0;
@@ -2834,7 +2834,7 @@ namespace mm
     int EvShopping_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef>, int mode)
     {
         const uint32_t goods = globals::shoppingTexts.get() + 0x28u * port::load<uint32_t>(data.address + 0x34u) + 0x20u;
-        const auto bag = [&] { return GuestPtr<Bag>{port::load<uint32_t>(city.address + 0x60u)}; };
+        const auto bag = [&] { return city->bag; };
         const auto at = [&](uint32_t offset) { return port::load<int32_t>(data.address + offset); };
         switch (static_cast<uint32_t>(mode))
         {
@@ -2880,15 +2880,15 @@ namespace mm
         }
     }
 
-    // The farewell party's end: the city's party object (+0x80) is destroyed (vtable +8, flag 1) and the party
+    // The farewell party's end: the city's overlay (the party object) is destroyed (vtable +8, flag 1) and the party
     // building loses its event mark.
     void EvFarewellParty_End(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
-        const uint32_t party = static_cast<uint32_t>(city->unk_80);
+        const uint32_t party = city->overlay.address;
         if (party != 0)
         {
             port::callGuest<void>(port::load<uint32_t>(port::load<uint32_t>(party) + 8u), party, 1);
-            city->unk_80 = 0;
+            city->overlay = GuestPtr<void>{0u};
         }
         Map_GetRecord(city->map, port::load<uint16_t>(data.address + 0x16u))->flags &= 0xFDFFu;
     }
@@ -3038,7 +3038,7 @@ namespace mm
     // the running event's type.
     uint8_t Event_TryStart(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
     {
-        if (GuestPtr<EventData>{port::load<uint32_t>(events.address + 0xA4u)}->kind == 0)
+        if (events->talkA->kind == 0)
         {
             const uint32_t queue = globals::eventQueueObject.get();
             const uint32_t end = bucketEntry(queue, port::load<int32_t>(bucketStart(queue, 4)));
@@ -3046,22 +3046,22 @@ namespace mm
             {
                 if (Event_CheckCondition(events, city, GuestPtr<uint8_t>{entry}, person) == 0)
                     continue;
-                fillEvent(GuestPtr<EventData>{port::load<uint32_t>(events.address + 0xA4u)}, entry, person);
+                fillEvent(events->talkA, entry, person);
                 EventQueue_RemoveAt(static_cast<int>(queue), 3, GuestPtr<uint16_t>{entry});
-                const GuestPtr<EventData> talk{port::load<uint32_t>(events.address + 0xA4u)};
+                const GuestPtr<EventData> talk{events->talkA.address};
                 const uint32_t row = globals::eventTypes.get() + 0x4Cu * talk->kind;
                 if (port::load<uint8_t>(row + 0x23u) == 3)
                 {
                     const uint32_t tileFlags = port::load<uint8_t>(row + 0x25u);
                     if (tileFlags != 0)
                         Event_SetTileFlags(static_cast<int>(tileFlags) - 1);
-                    port::store<uint8_t>(port::load<uint32_t>(events.address + 0xA4u) + 0xAu, 1);
-                    callHandler(row, 4u, GuestPtr<EventData>{port::load<uint32_t>(events.address + 0xA4u)}, city, person.address);
+                    events->talkA->var = 1;
+                    callHandler(row, 4u, events->talkA, city, person.address);
                 }
                 break;
             }
         }
-        return GuestPtr<EventData>{port::load<uint32_t>(events.address + 0xA4u)}->kind;
+        return events->talkA->kind;
     }
 
     // A talk script starts an event for the person: with fewer than five events running and none of them waiting on the
@@ -3094,10 +3094,10 @@ namespace mm
                 port::store<uint8_t>(slots, port::load<uint8_t>(entry));
                 port::store<int8_t>(slots + 1u, port::load<int8_t>(entry + 1u));
                 port::store<uint16_t>(events.address + 8u, person->family);
-                port::store<uint16_t>(events.address + 0xAu, person->member);
+                events->slots[0].memberA = person->member;
                 const uint32_t other = port::load<uint32_t>(events.address + 0xACu);
-                port::store<uint16_t>(events.address + 0xCu, port::load<uint16_t>(other + 0x10u));
-                port::store<uint16_t>(events.address + 0xEu, port::load<uint16_t>(other + 0x12u));
+                events->slots[0].familyB = port::load<uint16_t>(other + 0x10u);
+                events->slots[0].memberB = port::load<uint16_t>(other + 0x12u);
                 const uint32_t talk = port::load<uint32_t>(events.address + 0xACu);
                 sdk::memset(talk + 8u, 0, eventSize(talk));
                 EventQueue_RemoveAt(static_cast<int>(queue), 2, GuestPtr<uint16_t>{entry});
@@ -3487,7 +3487,7 @@ namespace mm
                                 continue;
                             now->kind = kind;
                             port::store<int8_t>(now.address + 9u, port::load<int8_t>(row + 0x29u));
-                            port::store<uint8_t>(now.address + 0xAu, 0);
+                            now->var = 0;
                             const uint32_t handler = port::load<uint8_t>(row + 0x24u);
                             port::store<uint32_t>(now.address + 4u, handler == 0 ? 0u : port::load<uint32_t>(port::load<uint32_t>(kEventHandlers + 4u * handler) + 8u));
                             const GuestPtr<ActorRef> actors{port::load<uint32_t>(cellA) + 0xCu};
@@ -3529,7 +3529,7 @@ namespace mm
                 continue;
             const uint32_t row = types + 0x4Cu * talk->kind;
             const uint32_t now = port::load<uint16_t>(events.address);
-            if (port::load<uint8_t>(talk.address + 0xAu) == 0)
+            if (talk->var == 0)
             {
                 if (!(now < port::load<uint16_t>(row + 0x2Au)))
                     beginEvent(row, GuestPtr<EventData>{port::load<uint32_t>(events.address + 0xA4u + 4u * i)}, city);
@@ -3704,10 +3704,10 @@ namespace mm
         const GuestPtr<BuildingType> shop{globals::buildingTypeAddress(work->type)};
         if (shop->category != 5)
             return 0;
-        port::store<uint16_t>(data.address + 0xCu, person->index);
-        port::store<uint16_t>(data.address + 0xEu, person->work);
-        port::store<uint16_t>(data.address + 0x10u, person->family);
-        port::store<uint16_t>(data.address + 0x12u, person->member);
+        data->actor.person = person->index;
+        data->actor.object = person->work;
+        data->actor.family = person->family;
+        data->actor.member = person->member;
         constexpr uint32_t kSerial = 0x001BDD5Cu, kShopCount = 0x001BDAB0u;
         const int32_t serial = port::load<int32_t>(kSerial);
         port::store<int32_t>(data.address + 0x34u, serial);
@@ -3825,8 +3825,8 @@ namespace mm
                 port::store<uint16_t>(at + 2u, 0);
             }
         }
-        port::store<uint32_t>(manager + 0xA4u, newEventObject(0x84u, true));
-        port::store<uint32_t>(manager + 0xA8u, newEventObject(0x24u, false));
+        events->talkA = GuestPtr<EventData>{newEventObject(0x84u, true)};
+        events->talkB = GuestPtr<EventData>{newEventObject(0x24u, false)};
         port::store<uint32_t>(manager + 0xACu, newEventObject(0x24u, false));
         globals::eventTypesCopy.set(globals::eventTypes.get());
         const int32_t stage = port::load<int32_t>(0x001C5548u);
@@ -3960,7 +3960,7 @@ namespace mm
             return 0;
         const GuestPtr<Family> family = Family_Get(person->family, 0);
         const uint32_t members = family.address + 0x24u;
-        const uint32_t count = port::load<uint16_t>(family.address + 0x22u);
+        const uint32_t count = family->memberCount;
         int32_t child = -1;
         for (uint32_t i = 0; i < count; ++i)
         {
@@ -4514,7 +4514,7 @@ namespace mm
                 if ((flags & 0x200u) == 0)
                 {
                     port::store<uint16_t>(record + 6u, static_cast<uint16_t>(flags | 0x200u));
-                    const uint32_t actor = d + 0xCu + 8u * port::load<uint16_t>(record + 0xCu) - 8u * port::load<uint16_t>(d + 0x10u);
+                    const uint32_t actor = d + 0xCu + 8u * port::load<uint16_t>(record + 0xCu) - 8u * data->actor.family;
                     port::store<uint16_t>(actor + 2u, port::load<uint16_t>(record + 2u));
                 }
                 ++found;
@@ -4894,7 +4894,7 @@ namespace mm
                         window = Frame_ctor(GuestPtr<Frame>{window}, 0x14, 0x21C, 0xC0, 0x18, 0xC, 0xFFFFFFFFu).address;
                     port::store<uint32_t>(overlay + 4u, window);
                 }
-                port::store<uint32_t>(city.address + 0x80u, overlay);
+                city->overlay = GuestPtr<void>{overlay};
                 city->flags = city->flags | 8u;
                 put(0x30, get(0x30) + 1);
                 Se_SetVoice15Enabled(0, 1);
@@ -4912,11 +4912,11 @@ namespace mm
                 if (CityScene_GetFade(city) != 0)
                     break;
                 Pad_ReleaseFocus(4);
-                const uint32_t overlay = port::load<uint32_t>(city.address + 0x80u);
+                const uint32_t overlay = city->overlay.address;
                 if (overlay != 0u)
                 {
                     port::callGuest<int64_t>(port::load<uint32_t>(port::load<uint32_t>(overlay) + 8u), overlay, 1);
-                    port::store<uint32_t>(city.address + 0x80u, 0u);
+                    city->overlay = GuestPtr<void>{0u};
                 }
                 data->var = 4;
                 port::store<int32_t>(kPartyFlag, 1);
@@ -4978,7 +4978,7 @@ namespace mm
             if (get(0x34) == 0)
             {
                 CityScene_StartFade(city, 1);
-                port::store<uint32_t>(city.address + 0x34u, 0u);
+                city->hudVisible[2] = 0;
                 put(0x34, get(0x34) + 1);
                 setVoices();
             }
@@ -5146,7 +5146,7 @@ namespace mm
                 break;
             Sound_PlaySe(0x46, 0, 0x3C, 0.0f, 0.0f);
             const GuestPtr<MapPerson> thief = city->map->people + first->person;
-            port::store<uint8_t>(thief.address + 0x26u, 0xE);
+            thief->schedState = 0xE;
             thief->activity = 5;
             EvActor_MoveTo(city, second, second, 1);
             advance(1);

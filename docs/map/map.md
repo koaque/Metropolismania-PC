@@ -118,7 +118,7 @@ placement checks (`mm_Placement_*`) and the per-object history (`mm_MapObj_*`) a
 | `0x00145CE0` | `void mm_Terrain_BuildStrip(CityMap *map, int x, int z, Vec4 *corner0, Vec4 *corner1, Vec4 *corner2, Vec4 *corner3)` | 2592 | no | the cliff sides of terrain tile (x, z): towards each neighbour whose facing corners stand higher, up to two triangles into the side buffer (CityMap +0x2D20, 0x86E vertices) |
 | `0x00146700` | `void mm_Terrain_DrawPatch(CityMap *map, int x, int z, int object, float centreX, float centreZ, float level)` | 1064 | indirect | one terrain tile's quad (mm_Terrain_AddQuad) with its draw flags (texture from the object type's vtable +0x1C, above the level, above 0, building layer, flag 0x10), edge-flattened off the map; tiles with an object also get their cliff sides |
 | `0x00146B30` | `void mm_Terrain_Draw(CityMap *map, Vec4 *view, Vec4 *camera, int zoom, int variant, int extra, float level)` | 2424 | no | (provisional) culls and draws the terrain around the camera |
-| `0x001474C0` | `uint32_t *mm_Terrain_BuildVu1PacketA(int a0, uint32_t *a1)` | 1556 | no | (provisional) VU1 packet referencing microcode at 0x1A76F0 |
-| `0x00147AE0` | `uint32_t *mm_Terrain_BuildVu1PacketB(int a0, uint32_t *a1)` | 1204 | no | (provisional) VU1 packet referencing microcode at 0x1A5EB0 |
-| `0x00147FA0` | `void mm_Terrain_InitParams(int a0)` | 336 | no | (provisional) default render parameters (+0x2E54..) |
+| `0x001474C0` | `uint32_t *mm_Terrain_BuildVu1PacketA(CityMap *map, uint32_t *packet)` | 1556 | no | (provisional) VU1 packet referencing microcode at 0x1A76F0 |
+| `0x00147AE0` | `uint32_t *mm_Terrain_BuildVu1PacketB(CityMap *map, uint32_t *packet)` | 1204 | no | (provisional) VU1 packet referencing microcode at 0x1A5EB0 |
+| `0x00147FA0` | `void mm_Terrain_InitParams(CityMap *map)` | 336 | no | (provisional) default render parameters (+0x2E54..) |
 | `0x0014C8B0` | `float mm_Map_HeightScale(float height)` | 40 | no | a0 * 0.6 + 0.08 |

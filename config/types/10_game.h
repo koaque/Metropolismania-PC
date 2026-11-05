@@ -11,9 +11,15 @@ typedef struct MapTile MapTile;
 typedef struct MapObject MapObject;
 typedef struct MapPerson MapPerson;
 typedef struct BuildingType BuildingType;
+typedef struct BuildingRecord BuildingRecord;
+typedef struct LeveledType LeveledType;
+typedef struct RoadType RoadType;
+typedef struct OfficeType OfficeType;
+typedef struct FieldType FieldType;
 typedef struct Family Family;
 typedef struct FamilyMember FamilyMember;
 typedef struct Widget Widget;
+typedef struct WidgetVtable WidgetVtable;
 typedef struct TalkSession TalkSession;
 typedef struct TalkView TalkView;
 typedef struct MyHomeView MyHomeView;
@@ -90,18 +96,41 @@ struct MapObject {
     uint16_t nextOnTile;       /* +0x0A next object on the same tile */
     uint16_t family;           /* +0x0C family living here */
     uint16_t unk_0E;
-    uint16_t claimMeter;       /* +0x10 rises while the claim is unmet (mm_ClaimMeter_Level) */
-    uint8_t claimSlot;         /* +0x12 entry in the type's claim section */
-    uint8_t claimTimer;        /* +0x13 runs down while the claim is met or the meter maxed; its tenth speeds the meter (mm_BldgClaims_Evaluate) */
-    uint16_t entranceTile;     /* +0x14 (provisional) */
-    uint8_t headingHere;       /* +0x16 people whose target it is (mm_MapPeople_RemoveForObject) */
-    uint8_t occupants;         /* +0x17 people inside, kept by types with flag 0x40 (mm_EvActor_Release) */
-    uint16_t variant;          /* +0x18 roads: shape, bit d = open towards direction d, 5 and 10 straight
-                                  (added to the model index by mm_BldgRoad_Slot1C); buildings: bits 3-7 pick
-                                  the model variant (mm_Bldg_CollideA); housing: the high byte is the unit
-                                  shape (mm_BldgHousing_UnitAt, table 0x1B14F0) */
-    uint16_t mesh;             /* +0x1A roads: mesh drawn (0 = none; street lamps and traffic lights by range);
-                                  housing: the low byte is the style, 26 meshes each (mm_BldgHousing_Draw) */
+    /* +0x10..+0x17: buildings keep their claim and people here; some classes use the bytes for their own data. */
+    union {
+        struct {
+            uint16_t claimMeter;       /* +0x10 rises while the claim is unmet (mm_ClaimMeter_Level) */
+            uint8_t claimSlot;         /* +0x12 entry in the type's claim section */
+            uint8_t claimTimer;        /* +0x13 runs down while the claim is met or the meter maxed; its tenth speeds the meter (mm_BldgClaims_Evaluate) */
+            uint16_t entranceTile;     /* +0x14 (provisional) */
+            uint8_t headingHere;       /* +0x16 people whose target it is (mm_MapPeople_RemoveForObject) */
+            uint8_t occupants;         /* +0x17 people inside, kept by types with flag 0x40 (mm_EvActor_Release) */
+        };
+        int32_t openSize;              /* +0x10 leveled land: the side of the open square of leveled land from here towards +x and
+                                          +z, one more than the least of the three neighbours' (none with flag 1); a family's house
+                                          fits when its size is at most this (mm_BldgLeveled_Tick) */
+        uint8_t look[7];               /* +0x10 wasteland, random (mm_BldgWasteland_InitRecord): the x and z nudge (/400), the
+                                          matrix (0..3), 0, the weed row (0 = none: cleared on steep tiles and next to a new home),
+                                          the column (0..2), and 0..9 */
+        uint8_t goodsMesh;             /* +0x10 small goods: the props mesh; from 0x27 on it also collides (mm_BldgSmallGoods_Draw) */
+        uint16_t roadLinks[4];         /* +0x10 roads: per direction its shape opens to, the tile of the first piece along it that is
+                                          not straight road, 0x4000 = none (mm_BldgRoad_FindNeighbours; vehicles follow them) */
+    };
+    /* +0x18..+0x1B: roads keep two halfwords, buildings four bytes. */
+    union {
+        struct {
+            uint16_t roadShape;        /* +0x18 bit d = open towards direction d, 5 and 10 straight (added to the model index by
+                                          mm_BldgRoad_Slot1C) */
+            uint16_t roadMesh;         /* +0x1A mesh drawn (0 = none; street lamps and traffic lights by range) */
+        };
+        struct {
+            uint8_t variant;           /* +0x18 bits 3-7 pick the model variant (mm_Bldg_CollideA); an entrance whose claim was
+                                          met counts up to 0x2D from 1 (mm_CityRender_CollectObjects) */
+            uint8_t unitShape;         /* +0x19 housing: the unit shape (mm_BldgHousing_UnitAt, table 0x1B14F0) */
+            uint8_t style;             /* +0x1A housing: the style, 26 meshes each (mm_BldgHousing_Draw) */
+            uint8_t unk_1B;
+        };
+    };
 };
 
 /* Person on the map (0x30 bytes): 6000 records at CityMap +0x68 (6000 = none). */
@@ -110,13 +139,13 @@ struct MapPerson {
     float y;                   /* +0x04 height */
     float z;                   /* +0x08 */
     float heading;             /* +0x0C atan2 of the facing (mm_Person_UpdatePose) */
-    uint16_t nextOnTile;       /* +0x10 */
+    uint16_t nextHere;         /* +0x10 the next person in the list of the object they are at (MapObject.firstPerson), 6000 = none */
     uint16_t index;            /* +0x12 own index */
     uint16_t work;             /* +0x14 workplace object */
     uint16_t inside;           /* +0x16 object the person is in, 0x3F80 = outside */
     uint16_t walkTile;         /* +0x18 tile the person walks to (mm_Person_UpdatePose); the waypoint (mm_Path_NextWaypoint) */
     uint16_t previousTile;     /* +0x1A the waypoint before it; mm_Path_PickRoadLink never leads back there */
-    uint8_t unk_1C[2];
+    uint16_t animFrame;        /* +0x1C the animation frame (mm_Person_Draw) */
     uint16_t destination;      /* +0x1E */
     uint16_t follow;           /* +0x20 follow target */
     uint16_t flags;            /* +0x22 */
@@ -126,9 +155,17 @@ struct MapPerson {
     uint8_t activity;          /* +0x27 */
     uint16_t target;           /* +0x28 building the person heads for, 0x3F80 = none (mm_Person_TargetWork) */
     uint16_t family;           /* +0x2A */
-    uint16_t introduces;       /* +0x2C family this resident can introduce; a vehicle's speed (mm_Char2_UpdateSpeedA) */
-    uint8_t member;            /* +0x2E */
-    uint8_t status;            /* +0x2F friendship status byte */
+    union {
+        uint16_t introduces;   /* +0x2C family this resident can introduce */
+        uint16_t speed;        /* +0x2C vehicles: in 1/10000 of a tile a frame (mm_Char2_UpdateSpeedA) */
+    };
+    union {
+        struct {
+            uint8_t member;    /* +0x2E */
+            uint8_t status;    /* +0x2F friendship status byte */
+        };
+        uint16_t awayTime;     /* +0x2E vehicles: off the road, 3 a tick; at 0xFD20 back at the depot (mm_Char2_Update) */
+    };
 };
 
 /* Object lists per claim item (0x8040 bytes) at CityMap +0x0C: 80 lists packed into one array. */
@@ -193,17 +230,62 @@ struct CityMap {
     LayerA *instances;         /* +0x2F8C */
 };
 
+/* A building type's record in DATA\BIN\STRTYPE.BIN (0x9C bytes): mm_BldgType_BaseCtor copies it into the type object, and
+   some classes read more of it (mm_BldgLeveled_ctor, mm_BldgRoad_ctor, mm_BldgOffice_ctor, mm_BldgField_ctor). */
+struct BuildingRecord {
+    char name[0x20];           /* +0x00 */
+    uint8_t typeClass;         /* +0x20 the class (mm_BldgType_Create): 0 and 5 the base, 1 wasteland, 2 leveled land, 3 road,
+                                  4 field, 6 business, 7 office, 8 housing, 9 port, 10 my home, 11 amusement park, 12 ranch,
+                                  13 pig farm, 14 small goods, 15 keep-out */
+    uint8_t size;              /* +0x21 */
+    uint8_t unk_22;            /* +0x22 */
+    uint8_t rule;              /* +0x23 */
+    uint16_t flags;            /* +0x24 */
+    uint16_t maxStack;         /* +0x26 */
+    uint8_t category;          /* +0x28 */
+    uint8_t postGroup;         /* +0x29 */
+    uint8_t claimB;            /* +0x2A */
+    uint8_t claimC;            /* +0x2B */
+    uint8_t unk_2C;            /* +0x2C */
+    uint8_t maxVisitors;       /* +0x2D */
+    uint8_t schedule;          /* +0x2E */
+    uint8_t activity;          /* +0x2F */
+    uint16_t homeType;         /* +0x30 */
+    uint16_t openMinute;       /* +0x32 */
+    uint16_t closeMinute;      /* +0x34 */
+    uint16_t capacity;         /* +0x36 */
+    uint8_t cooldown;          /* +0x38 */
+    uint8_t ambientSound;      /* +0x39 */
+    uint8_t unk_3A[2];
+    int8_t callFlags;          /* +0x3C copied with the next three bytes */
+    uint8_t unk_3D[3];
+    Vec4 peopleSpots[4];       /* +0x40 fields read these as their lifts and heights */
+    Vec4 talkEye;              /* +0x80 */
+    uint8_t entranceDrawMesh;  /* +0x90 leveled land: its mesh; roads: the lamp mesh */
+    uint8_t firstDrawMesh;     /* +0x91 roads: the traffic light mesh */
+    uint8_t extraMesh;         /* +0x92 offices: the extra mesh; roads: the slope mesh */
+    uint8_t unk_93;            /* +0x93 */
+    uint8_t modelNode;         /* +0x94 */
+    uint8_t unk_95;
+    uint8_t entranceMesh;      /* +0x96 */
+    uint8_t firstMesh;         /* +0x97 */
+    uint8_t groupSpots[4];     /* +0x98 */
+};
+
 /* Building type base (0x160 bytes): one object per type in the table at gp 0x1BDBF8; classes add fields after it. */
 struct BuildingType {
-    uint8_t unk_000[0x100];
+    Vec4 peopleSpots[16];      /* +0x000 where the people of a building stand: four spots (x, y, z offsets and a heading, record
+                                  +0x40), each turned for the four views; spot k in view v at 4k + v (mm_BldgType_BaseCtor,
+                                  mm_Bldg_DrawPeople) */
     Vec4 talkEye;              /* +0x100 eye offset from the building for a talk, type flag 0x4000 (mm_TalkView_BuildingCamera) */
     char name[0x20];           /* +0x110 */
-    uint8_t unk_130[4];
+    uint8_t groupSpots[4];     /* +0x130 spots for each group of people, taken in turn: its workers, others, and the same two of
+                                  class flag 1 (record +0x98; any of them sets flag 0x800, mm_Bldg_DrawPeople) */
     uint16_t kind;             /* +0x134 */
     uint16_t flags;            /* +0x136 0x10 talk camera 2.5 lower, 0x20, 0x40 people inside, 0x100, 0x4000 own talk eye (talkEye) */
     uint16_t maxStack;         /* +0x138 objects of the type one tile holds (mm_Placement_CheckTypeRule); the top one of a full stack
                                   is drawn with flag 3 (mm_CityRender_CollectObjects) */
-    uint8_t unk_13A[2];
+    uint16_t homeType;         /* +0x13A the type of the homes its workers set up around it (mm_Person_PlaceHomeObject) */
     uint16_t openMinute;       /* +0x13C minutes of the day */
     uint16_t closeMinute;      /* +0x13E */
     uint16_t capacity;         /* +0x140 */
@@ -214,7 +296,11 @@ struct BuildingType {
     uint8_t postGroup;         /* +0x146 group in POSTNAME.BIN (mm_BldgType_GetPostName) */
     uint8_t claimB;            /* +0x147 claim section B index */
     uint8_t claimC;            /* +0x148 claim section C index */
-    uint8_t unk_149[5];
+    uint8_t unk_149;
+    uint8_t maxVisitors;       /* +0x14A people heading here at most (mm_Person_FindBuildingInList) */
+    uint8_t schedule;          /* +0x14B the type's own schedule row, after the fifteen shared ones (mm_Schedule_PickEntry) */
+    uint8_t activity;          /* +0x14C what people do there (mm_Schedule_GetActivity) */
+    uint8_t cooldown;          /* +0x14D a visitor's cooldown on leaving (mm_Person_Update) */
     uint8_t ambientSound;      /* +0x14E sound id, 0xFF = none (mm_Se_BuildingSoundState) */
     uint8_t unk_14F;
     uint8_t modelNode;         /* +0x150 */
@@ -229,15 +315,50 @@ struct BuildingType {
     BuildingTypeVtable *vtable; /* +0x15C */
 };
 
+/* Leveled land (0x170 bytes, mm_BldgLeveled_ctor). */
+struct LeveledType {
+    BuildingType base;
+    int32_t mesh;              /* +0x160 record byte 0x90: drawn while the object's flag 1 is set (mm_BldgLeveled_Draw) */
+    uint8_t unk_164[0xC];
+};
+
+/* Road (0x170 bytes, mm_BldgRoad_ctor): the first meshes of its pieces, record bytes 0x90..0x92 (mm_BldgRoad_Tick). */
+struct RoadType {
+    BuildingType base;
+    int32_t lampMesh;          /* +0x160 street lamps: +0/+1 along z, +2/+3 along x */
+    int32_t lightMesh;         /* +0x164 traffic lights: +0..+4 */
+    int32_t slopeMesh;         /* +0x168 slopes: +1 along x */
+    uint8_t unk_16C[4];
+};
+
+/* Office (0x170 bytes, mm_BldgOffice_ctor). */
+struct OfficeType {
+    BuildingType base;
+    int32_t extraMesh;         /* +0x160 record byte 0x92: drawn with a block's first part, 0 = none (mm_BldgOffice_Draw) */
+    uint8_t unk_164[0xC];
+};
+
+/* Field (0x210 bytes, mm_BldgField_ctor; the constructor fills +0x160..+0x18B from the record as groups of four). */
+struct FieldType {
+    BuildingType base;
+    float cropLift;            /* +0x160 the crops are drawn this much higher (mm_BldgField_Draw) */
+    float peopleLift;          /* +0x164 the residents at a field with a claim are drawn this much higher (mm_BldgField_DrawPeople) */
+    float growingHeight[6];    /* +0x168 per stage of the month cycle, the growing crop's height (blended towards the next) */
+    uint8_t cropMesh[6];       /* +0x180 per stage, drawn as it is; 0 = none */
+    uint8_t growingMesh[6];    /* +0x186 per stage, scaled by the height; 0 = none (the last four are record +0x98..+0x9B) */
+    uint8_t unk_18C[0x84];
+};
+
 /* Family member (0x48 bytes) inside a family record. */
 struct FamilyMember {
     uint16_t charType;         /* +0x00 */
-    uint8_t unk_02;
+    uint8_t age;               /* +0x02 age group: below 2 small children, below 6 children (mm_Schedule_Evaluate) */
     uint8_t flags;             /* +0x03 */
     uint8_t role;              /* +0x04 */
     uint8_t unk_05;
     uint8_t unk_06;
-    uint8_t range;             /* +0x07 neighbourhood range index */
+    uint8_t look;              /* +0x07 the model part (0: by the family's parity, mm_Person_Draw), the person's first flags
+                                  (mm_Family_AssignHome) and the talk card's variant (mm_TalkCard_FillText) */
     uint16_t acquaintances[16]; /* +0x08 family ids this member can introduce, 0 ends */
     char name[16];             /* +0x28 */
     char name2[16];            /* +0x38 */
@@ -275,11 +396,26 @@ struct Stamina {
     int32_t unk_08;
 };
 
-/* Widget base (0xC bytes): state machine for windows and talk classes, vtable at +8. */
+/* Widget base (0xC bytes): state machine for windows and talk classes. */
 struct Widget {
-    int32_t state;             /* 0 idle, 1 opening, 2 opened, 3 active, 4 closing, 5 closed */
-    float timer;
-    void *vtable;
+    int32_t state;             /* +0x00 0 idle, 1 opening, 2 opened, 3 active, 4 closing, 5 closed */
+    float timer;               /* +0x04 0 to 1 within a state (mm_Widget_Step) */
+    WidgetVtable *vtable;      /* +0x08 0x1BD400 for the base class */
+};
+
+/* A widget class's virtual methods (0x44 bytes, docs/map/ui.md); each takes the widget first. */
+struct WidgetVtable {
+    uint8_t unk_00[8];
+    uint32_t dtor;             /* +0x08 the deleting destructor */
+    uint32_t open;             /* +0x0C to state 1 */
+    uint32_t close;            /* +0x10 to state 4 */
+    uint32_t update;           /* +0x14 runs the handler of the state, answers the state after it */
+    uint32_t step;             /* +0x18 (dt) the timer goes on by dt; at 1 the state advances (6 wraps to 0); 1 when it did */
+    uint32_t getState;         /* +0x1C */
+    uint32_t draw;             /* +0x20 (pass) */
+    uint32_t isIdle;           /* +0x24 state 0 */
+    uint32_t isActive;         /* +0x28 state 3 */
+    uint32_t onState[6];       /* +0x2C the handlers: idle, opening, opened, active, closing, closed */
 };
 
 /* Talk pose entry (0x4 bytes). */
@@ -484,7 +620,7 @@ struct CityScene {
     StatusPanel *statusPanel;  /* +0x00 */
     TownPages *townPages;      /* +0x04 */
     PauseMenu *pauseMenu;      /* +0x08 */
-    void *unk_0C;
+    McManager *loadCard;       /* +0x0C the memory card manager while a saved game loads (mm_CityScene_LoadGame) */
     int32_t modeStack[5];      /* +0x10 */
     int32_t modeDepth;         /* +0x24 */
     int32_t unk_28;
@@ -506,7 +642,7 @@ struct CityScene {
     Minimap *minimap;          /* +0x74 */
     Markers *markers;          /* +0x78 */
     Notice *notice;            /* +0x7C */
-    int32_t unk_80;
+    void *overlay;             /* +0x80 an event's object over the city (the farewell party): vtable +0xC update, +0x10 draw */
     int32_t clock;             /* +0x84 seconds, starts at 6:00 */
     int32_t monthCount;        /* +0x88 one month per in-game day */
     int32_t approval;          /* +0x8C -99..120, starts at 50 */

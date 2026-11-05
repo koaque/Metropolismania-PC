@@ -27,14 +27,14 @@ Rendering below the scene level.
 | `0x00129090` | `void mm_Packet2_Draw(uint32_t *packets, int second)` | 48 | no | queues packet a0[0], or a0[1] when a1 != 0 |
 | `0x001290C0` | `A3DObject *mm_A3DObjectBase_DeletingDtor(A3DObject *model, int16_t deleteFlag)` | 84 | yes | base destructor 0x12AB40, then delete when the flag is > 0 |
 | `0x00129120` | `int mm_LightSet_Init(LightSet *lights)` | 228 | no | (provisional, was mm_Unk129120_Init) base init; +0x190 = 0x110, +0x194 = 0xE0; 12 colour/direction slots and ambient set to 1.0 |
-| `0x00129210` | `float mm_A3D_GetMeshField0C(A3DObject *model, int mesh)` | 24 | no | word +0xC of mesh a1 in the model's mesh table (+0x50) |
+| `0x00129210` | `float mm_A3D_GetMeshField0C(A3DObject *model, int animation)` | 24 | no | word +0xC of mesh a1 in the model's mesh table (+0x50) |
 | `0x00129230` | `void mm_Instance_DrawSwaying(A3DObject *model, int anim, float time)` | 816 | no | (provisional, was mm_A3D_SineDeform) adds instances for mesh a2 of model a1 with sine-wave motion at time a0 (callers check the instance budget first) |
 | `0x00129570` | `void mm_A3D_Relocate(A3DObject *model, int indexed)` | 988 | yes | turns the loaded model's offsets into pointers, patches the addresses in its DMA chains (mm_DmaChain_*) and uploads its textures (mm_Dma_KickVif1Now) |
 | `0x00129950` | `int64_t mm_A3DObject_ChangeLuminosity(A3DObject *model, uint32_t *colour, int a2)` | 96 | yes | CA3DObject::ChangeLuminusity (name from its error string): sets node a2's colour (node +0x60) to the vec4 at a1; prints an error for a bad node index |
 | `0x001299B0` | `void mm_A3DObject_DrawNode(A3DObject *model, int node)` | 104 | no | queues node a1's packet (node +0x50) and its mesh packet (mesh +0x10); nodes are 0xC0 bytes at model +8 |
 | `0x00129A20` | `void mm_A3DObject_Draw(A3DObject *model)` | 228 | no | updates every node's world matrix (mm_A3DObject_UpdateNodeMatrix) and queues all nodes |
 | `0x00129B10` | `void mm_A3DObject_UpdateMatrices(A3DObject *model)` | 248 | no | world matrix of each node: root nodes = object matrix (this+0x10) x local, children via mm_A3DObject_UpdateNodeMatrix |
-| `0x00129C90` | `void mm_A3DObject_UpdateNodeMatrix(A3DObject *model, int32_t *node)` | 412 | no | node world matrix = parent's world matrix x local (recursive) |
+| `0x00129C90` | `void mm_A3DObject_UpdateNodeMatrix(A3DObject *model, A3DNode *node)` | 412 | no | node world matrix = parent's world matrix x local (recursive) |
 | `0x00129E30` | `A3DObject *mm_A3DObject_dtor(A3DObject *model, int16_t deleteFlag)` | 136 | yes | frees the model data (+0) and the node array (+0x50), base destructor; delete when the flag is > 0 |
 | `0x00129EC0` | `int mm_A3DObject_LoadAsync(A3DObject *model, GameFile *gamefile, int a2)` | 544 | yes | asynchronous .A3D load from an open file, one step per call (state gp 0x1BD...80A0): header into 0x1C5100, then data; 0 = busy, -1 = error |
 | `0x0012A0E0` | `int32_t *mm_A3DObject_Load(A3DObject *model, int file, int a2)` | 380 | yes | synchronous .A3D load: header (word counts), data and pointer table, then mm_A3D_Relocate |
@@ -85,18 +85,18 @@ Rendering below the scene level.
 | `0x0014CC60` | `LayerB *mm_LayerB_DeletingDtor(LayerB *layer, int16_t deleteFlag)` | 84 | yes | base destructor, then delete |
 | `0x0014CCC0` | `LayerB *mm_LayerB_ctor(LayerB *layer)` | 72 | no | base constructor, parameters, packet |
 | `0x0014CD10` | `int mm_LayerC_InTileRect(LayerC *layer, int x, int z)` | 108 | no | 1 when the layer's tile rectangle is active (+0x21C == 1) and tile (a1, a2) lies inside x +0x220..+0x228, z +0x224..+0x22C; mm_Terrain_DrawPatch then sets flag 4 on the patch (was mm_Terrain_Nop14CD10, not empty) |
-| `0x0014CD80` | `void mm_Terrain_SetVec(uint32_t *a0, int a1, uint32_t *a2, uint32_t *a3)` | 28 | no | (provisional) copies vec4 a3 into a0 with a1 |
+| `0x0014CD80` | `void mm_Terrain_SetVec(LayerC *layer, int mode, int32_t *rect, uint32_t *colour)` | 28 | no | (provisional) copies vec4 a3 into a0 with a1 |
 | `0x0014CDA0` | `uint32_t *mm_LayerC_BuildPacket(LayerC *layer, uint32_t *packet)` | 584 | no | (provisional) packet for layer C (microcode 0x1A7B30/0x1A8330) |
 | `0x0014CFF0` | `void mm_LayerC_InitParams(LayerC *layer)` | 252 | no | (provisional) |
 | `0x0014D0F0` | `void mm_LayerC_DrawBuildings(LayerC *layer, int packet, CityMap *map, int pass)` | 548 | no | (provisional) building models on visible tiles (map objects, node packets) |
 | `0x0014D320` | `LayerC *mm_LayerC_DeletingDtor(LayerC *layer, int16_t deleteFlag)` | 84 | yes | base destructor, then delete |
 | `0x0014D380` | `LayerC *mm_LayerC_ctor(LayerC *layer)` | 88 | no | base constructor, parameters, packet |
-| `0x0014D3E0` | `uint32_t *mm_LayerD_BuildPacket(LayerD *layer, uint32_t *packet, int32_t *a2)` | 1216 | no | (provisional) packet for layer D (microcode 0x1A8A00/0x1A8E20) |
+| `0x0014D3E0` | `uint32_t *mm_LayerD_BuildPacket(LayerD *layer, uint32_t *packet, int32_t *buffers)` | 1216 | no | (provisional) packet for layer D (microcode 0x1A8A00/0x1A8E20) |
 | `0x0014D8A0` | `void mm_LayerD_InitParams(LayerD *layer)` | 1652 | no | (provisional) |
 | `0x0014DF20` | `void mm_LayerD_DrawSkyByClock(LayerD *layer, int pass, int packet, int clock)` | 436 | no | (provisional) sky by the clock: day 5:00-19:00 variants |
 | `0x0014E0E0` | `LayerD *mm_LayerD_DeletingDtor(LayerD *layer, int16_t deleteFlag)` | 84 | yes | base destructor, then delete |
 | `0x0014E140` | `LayerD *mm_LayerD_ctor(LayerD *layer, int buffers)` | 88 | no | base constructor, parameters, packet |
-| `0x0014E1A0` | `uint32_t *mm_LayerE_BuildPacket(LayerE *layer, uint32_t *packet, int32_t *a2)` | 1796 | no | (provisional) packet for layer E (microcode 0x1A9A90/0x1A9F10) |
+| `0x0014E1A0` | `uint32_t *mm_LayerE_BuildPacket(LayerE *layer, uint32_t *packet, int32_t *buffers)` | 1796 | no | (provisional) packet for layer E (microcode 0x1A9A90/0x1A9F10) |
 | `0x0014E8B0` | `void mm_LayerE_InitParams(LayerE *layer)` | 1280 | no | (provisional) random placement with rotations (clouds or stars) |
 | `0x0014EDB0` | `void mm_LayerE_Draw(LayerE *layer, int pass, int packet, int a3, Vec4 *t0)` | 752 | no | (provisional) projected layer draw |
 | `0x0014F0A0` | `LayerE *mm_LayerE_DeletingDtor(LayerE *layer, int16_t deleteFlag)` | 84 | yes | base destructor, then delete |
@@ -107,7 +107,7 @@ Rendering below the scene level.
 | `0x0014F430` | `LayerF *mm_LayerF_DeletingDtor(LayerF *layer, int16_t deleteFlag)` | 84 | yes | base destructor, then delete |
 | `0x0014F490` | `LayerF *mm_LayerF_ctor(LayerF *layer)` | 72 | no | base constructor, parameters, packet |
 | `0x0014F4E0` | `void mm_LayerG_AnimateWaves(LayerG *layer, float weather)` | 776 | no | (provisional) sine-wave animation state (0x1BDAD8..) |
-| `0x0014F7F0` | `uint32_t *mm_LayerG_BuildPacket(LayerG *layer, uint32_t *packet, int32_t *a2)` | 1796 | no | (provisional) packet for layer G (microcode 0x1A6440) |
+| `0x0014F7F0` | `uint32_t *mm_LayerG_BuildPacket(LayerG *layer, uint32_t *packet, int32_t *buffers)` | 1796 | no | (provisional) packet for layer G (microcode 0x1A6440) |
 | `0x0014FF00` | `void mm_LayerG_InitParams(LayerG *layer)` | 392 | no | (provisional) |
 | `0x00150090` | `void mm_LayerG_Draw(LayerG *layer, int pass, float weather)` | 64 | no | (provisional) animates the waves and queues packet a1 |
 | `0x001500D0` | `LayerG *mm_LayerG_DeletingDtor(LayerG *layer, int16_t deleteFlag)` | 84 | yes | base destructor, then delete |
@@ -121,8 +121,8 @@ Rendering below the scene level.
 | `0x001614F0` | `int mm_TexSprite_BuildPacket(TexSprite *sprite)` | 2152 | no | builds the sprite's DMA packet: palette upload to block 0x1E00, then per tile a texel upload, texture flush and a textured sprite (TEX0, ST, XYZ2); returns the scaled tile height |
 | `0x00161D60` | `TexSprite *mm_TexSprite_dtor(TexSprite *sprite, int16_t deleteFlag)` | 136 | yes | vtable 0x1BCFD8, frees image and packet |
 | `0x00161DF0` | `int mm_TexSprite_Load(TexSprite *sprite, int file, int a2)` | 260 | yes | loads a .TEX file whole and builds its packet |
-| `0x00184030` | `int mm_DmaChain_Next(int reader)` | 208 | no | steps a DMA chain reader (+4 = current tag): CNT skips qwc+1, END stays, RET returns 0; caches tag id/qwc/words at +8..+0x24 |
-| `0x00184100` | `int mm_DmaChain_Begin(int reader, int chain)` | 20 | no | reader starts at a1 with an END marker so the first mm_DmaChain_Next reads the first tag |
+| `0x00184030` | `int mm_DmaChain_Next(DmaChainReader *reader)` | 208 | no | steps a DMA chain reader (+4 = current tag): CNT skips qwc+1, END stays, RET returns 0; caches tag id/qwc/words at +8..+0x24 |
+| `0x00184100` | `int mm_DmaChain_Begin(DmaChainReader *reader, int chain)` | 20 | no | reader starts at a1 with an END marker so the first mm_DmaChain_Next reads the first tag |
 | `0x00184F60` | `void mm_Gs_InitDisplay(uint16_t a0, int a1)` | 652 | yes | (provisional) display and draw environments, double buffer, clears both buffers (from mm_MainLoop) |
 | `0x00186D00` | `void mm_PacketBuf_Seek(int address)` | 8 | no | sets the packet buffer write pointer (0x1BDCE8) |
 | `0x00186D10` | `int mm_PacketBuf_Tell(void)` | 8 | no | returns the packet buffer write pointer (0x1BDCE8) |

@@ -3,7 +3,6 @@
 
 typedef struct SceneB SceneB;
 typedef struct MsgWin MsgWin;
-typedef struct MenuWin MenuWin;
 typedef struct TalkCard TalkCard;
 typedef struct TalkMoney TalkMoney;
 typedef struct TalkConv TalkConv;
@@ -59,10 +58,20 @@ struct TalkMoney {
 struct TalkConv {
     MsgWin base;
     CityScene *city;           /* +0x2CC */
-    int32_t unk_2D0;
+    int32_t script;            /* +0x2D0 the words script being read (mm_Words_LoadForPerson, mm_Words_Step) */
     MenuWin *menu;             /* +0x2D4 */
     Widget *panel;             /* +0x2D8 drawn while set (provisional: the money panel) */
     NameEntry *nameEntry;      /* +0x2DC while entering a name (state 8) */
     TalkCard *card;            /* +0x2E0 */
-    uint8_t unk_2E4[0x224];
+    int32_t code;              /* +0x2E4 what the script returned for the last piece: -0x1777 the end, -0x7D5 a menu with no
+                                  choice, -0x7D1 a typed answer, below -0x7A8 a name to enter (mm_TalkConv_NextLine) */
+    char text[0x200];          /* +0x2E8 the piece of text being shown */
+    int32_t byFamily;          /* +0x4E8 the talk's target, as mm_TalkConv_Start was given it */
+    int32_t person;            /* +0x4EC */
+    int32_t family;            /* +0x4F0 */
+    int32_t member;            /* +0x4F4 */
+    int32_t peopleInside;      /* +0x4F8 the building has people inside (type flag 0x40) */
+    int32_t arg5;              /* +0x4FC */
+    int32_t ended;             /* +0x500 the conversation reached its end (the friendship went up) */
+    int32_t typedAnswer;       /* +0x504 the script asked for a typed answer */
 };

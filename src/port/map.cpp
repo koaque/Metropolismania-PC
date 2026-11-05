@@ -226,7 +226,7 @@ namespace mm
         if (*cursor == kNoPerson)
             return GuestPtr<MapPerson>{0};
         const GuestPtr<MapPerson> person = map->people + *cursor;
-        *cursor = person->nextOnTile;
+        *cursor = person->nextHere;
         return person;
     }
 
@@ -251,12 +251,12 @@ namespace mm
     {
         for (GuestPtr<MapObject> obj = Map_GetTileFirstObject(map, tile);; obj = map->objects + obj->nextOnTile)
         {
-            for (uint16_t *link = &obj->firstPerson; *link != kNoPerson; link = &map->people[*link].nextOnTile)
+            for (uint16_t *link = &obj->firstPerson; *link != kNoPerson; link = &map->people[*link].nextHere)
                 if (*link == person)
                 {
                     MapPerson &entry = map->people[*link];
-                    *link = entry.nextOnTile;
-                    entry.nextOnTile = kNoPerson;
+                    *link = entry.nextHere;
+                    entry.nextHere = kNoPerson;
                     entry.flags |= 0x800u;
                     return obj->id;
                 }
@@ -269,7 +269,7 @@ namespace mm
     {
         const uint16_t first = map->objects[object].firstPerson;
         map->objects[object].firstPerson = static_cast<uint16_t>(person);
-        map->people[person].nextOnTile = first;
+        map->people[person].nextHere = first;
         map->people[person].flags &= 0xF7FFu;
     }
 
@@ -281,7 +281,7 @@ namespace mm
             MapPerson &person = map->people[*head];
             person.flags |= 0x800u;
             *head = kNoPerson;
-            head = GuestPtr<uint16_t>::of(person.nextOnTile);
+            head = GuestPtr<uint16_t>::of(person.nextHere);
         }
     }
 
@@ -293,12 +293,12 @@ namespace mm
             MapPerson &entry = map->people[*link];
             if (*link == person)
             {
-                *link = entry.nextOnTile;
-                entry.nextOnTile = kNoPerson;
+                *link = entry.nextHere;
+                entry.nextHere = kNoPerson;
                 entry.flags |= 0x800u;
                 return 1;
             }
-            link = &entry.nextOnTile;
+            link = &entry.nextHere;
         }
         return 0;
     }
@@ -537,7 +537,7 @@ namespace mm
         const uint16_t id = static_cast<uint16_t>(person);
         if ((map->people[id].flags & 0x800u) == 0)
             for (uint16_t o = map->tiles[tile & 0xFFFFu].firstObject; o != 0x3F80; o = map->objects[o].nextOnTile)
-                for (uint16_t p = map->objects[o].firstPerson; p != kNoPerson; p = map->people[p].nextOnTile)
+                for (uint16_t p = map->objects[o].firstPerson; p != kNoPerson; p = map->people[p].nextHere)
                     if (map->people[p].index == id)
                         return map->objects + o;
         return GuestPtr<MapObject>{0};
@@ -547,7 +547,7 @@ namespace mm
     GuestPtr<MapPerson> Map_FindWorkerOnTile(GuestPtr<CityMap> map, uint16_t work, uint32_t tile)
     {
         for (uint16_t o = map->tiles[tile & 0xFFFFu].firstObject; o != 0x3F80; o = map->objects[o].nextOnTile)
-            for (uint16_t p = map->objects[o].firstPerson; p != kNoPerson; p = map->people[p].nextOnTile)
+            for (uint16_t p = map->objects[o].firstPerson; p != kNoPerson; p = map->people[p].nextHere)
             {
                 const MapPerson &person = map->people[p];
                 const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person.charType)};

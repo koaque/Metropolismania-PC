@@ -123,7 +123,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x0015FC50` | `void mm_MenuWin_Opening(MenuWin *menuwin)` | 68 | indirect | state 1: Step(0.1), then active |
 | `0x0015FCA0` | `MenuWin *mm_MenuWin_dtor(MenuWin *menuwin, int16_t deleteFlag)` | 124 | yes | vtable 0x1BCF80, deletes the list menu, base destructor |
 | `0x0015FD20` | `MenuWin *mm_MenuWin_ctor(MenuWin *menuwin)` | 76 | no | base constructor, vtable 0x1BCF80 |
-| `0x0015FE30` | `int mm_Laptop_CheckOpen(Laptop *laptop, CityScene *city, int a2)` | 212 | no | (provisional) while Circle alone (0x20) is held in city mode 1 (and a2): hides HUD element 2 and sets +0x120; restores both on release |
+| `0x0015FE30` | `int mm_Laptop_CheckOpen(Markers *markers, CityScene *city, int a2)` | 212 | no | the building markers' Circle check (a Markers method): while Circle alone (0x20) is held in city mode 1 (and a2) hides the cursor and shows the markers; hides them again on release |
 | `0x00161F00` | `int mm_LoadingScreen_Update(LoadingScreen *loading, int fadeIn)` | 604 | no | loading screen frame: sprite circling or pulsing, background and sprite drawn, fade in or out by 4 (2 while fading, then 0 or 1), text once clear |
 | `0x00162160` | `int mm_LoadingScreen_SetText(LoadingScreen *loading, char *text)` | 12 | no | text box text |
 | `0x00162170` | `void mm_LoadingScreen_SetTextPos(LoadingScreen *loading, int x, int y)` | 28 | no | text box position (screen coordinates) |

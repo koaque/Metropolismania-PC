@@ -726,7 +726,7 @@ namespace mm
         port::store<int32_t>(0x001BDB94u, portNumber);
         port::store<int32_t>(0x001BDB98u, name);
         const uint32_t m = mc.address;
-        const int queue = static_cast<int>(port::load<uint32_t>(m));
+        const int queue = static_cast<int>(mc->queue.address);
         const uint32_t at = 4u * static_cast<uint32_t>(portNumber);
         const GuestPtr<int32_t> result{m + 0x18u};
         const auto advance = [&] { mc->state = mc->state + 1; };

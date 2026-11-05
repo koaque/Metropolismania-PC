@@ -39,6 +39,7 @@ struct LightSet;
 struct InstanceSlot;
 struct ListMenu;
 struct ListMenuItem;
+struct MenuWin;
 struct LoadingScreen;
 struct McManager;
 struct NameEntry;
@@ -458,15 +459,16 @@ struct Bag {
     BagSlot slots[20];         /* +0x004 */
     BagShortcut shortcuts[10]; /* +0x144 */
     GuestPtr<A3DObject> model;          /* +0x16C bag model (from 0x1F3B24) */
-    int32_t unk_170;
-    int32_t unk_174;
-    int32_t unk_178;
-    uint8_t unk_17C[0x18];
-    int32_t unk_194;
+    GuestPtr<TextBox> nameText;         /* +0x170 the selected item's name (mm_BagMenu_Update) */
+    GuestPtr<ListMenu> list;            /* +0x174 the item list */
+    GuestPtr<MenuWin> question;         /* +0x178 the use or discard question */
+    GuestPtr<Frame> frames[3];          /* +0x17C */
+    GuestPtr<TextBox> labels[3];        /* +0x188 */
+    int32_t state;             /* +0x194 the bag menu's state (mm_BagMenu_Update) */
     GuestPtr<Vec4> matrix;              /* +0x198 the model's matrix */
-    int32_t unk_19C;
-    int32_t unk_1A0;
-    int32_t unk_1A4;           /* +0x1A4 -1 at construction */
+    ps2f slide;               /* +0x19C how far the bag has slid in, 0 to 120 */
+    int32_t cursor;            /* +0x1A0 the slot under the cursor */
+    int32_t setupSlot;         /* +0x1A4 the slot whose item is being placed, -1 none (mm_BagMenu_GetSetupKind) */
     uint8_t unk_1A8[4];
 };
 /* Status panel (0xC0 bytes). */
@@ -490,7 +492,7 @@ struct PauseMenu {
     GuestPtr<McManager> mc;             /* +0x0C */
     GuestPtr<TextBox> message;          /* +0x10 */
     uint8_t unk_14[8];
-    int32_t unk_1C;            /* +0x1C message 5 names a card by it (mm_PauseMenu_ShowCardMessage) */
+    int32_t cardPort;          /* +0x1C the memory card port in use, 0 or 1 (message 5 names it, mm_PauseMenu_ShowCardMessage) */
     uint8_t unk_20[4];
     int32_t waitFrames;        /* +0x24 frames in the card message state (mm_PauseMenu_StateMain) */
     uint8_t unk_28[4];
@@ -530,16 +532,17 @@ struct PhoneCallEntry {
     int32_t person;            /* +0x00 */
     uint16_t family;           /* +0x04 0 = free entry */
     uint16_t member;           /* +0x06 */
-    int32_t unk_08;            /* +0x08 */
+    int32_t familyOnly;        /* +0x08 a call of the family (person 6000): it goes through only while the city is popular */
 };
 struct PhoneCalls {
     GuestPtr<void> unk_00;              /* +0x00 from 0x1F3B08 at construction */
-    int32_t unk_04;            /* +0x04 a call is shown (mm_PhoneCall_Next) */
-    int32_t unk_08;
-    int32_t unk_0C;
-    PhoneCallEntry calls[4];   /* +0x10 queue, first entry shown */
-    int32_t unk_40;            /* +0x40 negated by mm_PhoneCall_Next */
-    uint8_t unk_44[0x38];
+    int32_t state;             /* +0x04 0 no call shown, 1 ringing, 2 answered (mm_PhoneCall_Update) */
+    int32_t shown;             /* +0x08 the entry being shown */
+    int32_t frames;            /* +0x0C frames in the state */
+    PhoneCallEntry calls[4];   /* +0x10 queue */
+    int32_t unk_40;            /* +0x40 1 when a call is taken, negated when it ends */
+    int32_t unk_44;            /* +0x44 */
+    char caller[0x34];         /* +0x48 the caller's text, built once a call */
 };
 /* Event manager (0xB0 bytes); +0xA4 and +0xA8 are the events the talk script works with. */
 /* One actor of a running event (8 bytes). */
@@ -617,7 +620,7 @@ struct WantsWin {
 };
 /* Laptop menu (0x3E0 bytes). */
 struct Laptop {
-    GuestPtr<void> unk_00;              /* +0x00 from 0x1F3B08 at construction */
+    GuestPtr<A3DObject> model;          /* +0x00 from 0x1F3B08 at construction */
     uint8_t unk_04[0xC];
     Vec4 radius;               /* +0x10 an entry's offset from the centre before its turn (mm_Laptop_Animate) */
     Vec4 centre;               /* +0x20 the carousel's centre */
@@ -626,12 +629,8 @@ struct Laptop {
     ps2f scale;               /* +0x38 the entries' scale */
     int32_t state;             /* +0x3C 2: the selected entry is lifted */
     uint8_t unk_40[4];
-    int32_t unk_44;            /* +0x44 */
-    uint8_t unk_48[0xD4];
-    int32_t unk_11C;           /* +0x11C 4 when +0x120 gets set while entry bit 0x10 is active (mm_Laptop_CheckOpen) */
-    int32_t circleActive;      /* +0x120 set while Circle alone is held in the city view, cleared on release */
-    int32_t circleHeld;        /* +0x124 Circle was held last frame, so holding it does not set +0x120 again */
-    uint8_t unk_128[0x2A8];
+    GuestPtr<TextBox> text;             /* +0x44 the selected entry's text (mm_Laptop_SetItemText) */
+    uint8_t unk_48[0x388];
     int32_t selected;          /* +0x3D0 the selected entry */
     uint8_t unk_3D4[0xC];
 };
@@ -642,7 +641,8 @@ struct Player {
     int32_t step;              /* +0x08 grid step in progress: 0 none, 1/2 along z, 5/6 along x, 3/4 turning (mm_Player_Move) */
     ps2f heading;             /* +0x0C radians, -pi..pi (mm_Player_Turn) */
     Vec4 position;             /* +0x10 */
-    uint8_t unk_20[0x14];
+    Vec4 colour;               /* +0x20 the tint the building under the player gives (mm_BldgType_DrawOccupant) */
+    uint8_t unk_30[4];
     ps2f swayPhase;           /* +0x34 animation frame, passed to mm_Instance_DrawSwayingIfRoom (mm_Player_UpdateAction) */
     int32_t swayArg;           /* +0x38 animation: 0-2 standing, 4-15 moving (mm_Player_UpdateAction) */
     int32_t visible;           /* +0x3C drawn when non-zero (mm_Player_Draw) */
@@ -650,9 +650,11 @@ struct Player {
     int32_t targetIsPerson;    /* +0x44 */
     int32_t unk_48;            /* +0x48 */
     ps2f jumpSpeed;           /* +0x4C */
-    int32_t unk_50;            /* +0x50 */
+    ps2f airTime;             /* +0x50 time in the air, 1/60 a frame (mm_Player_Update) */
     ps2f moveSpeed;           /* +0x54 step per frame (mm_Player_Turn) */
-    uint8_t unk_58[0x28];
+    uint8_t unk_58[8];
+    Vec4 push;                 /* +0x60 the flat unit direction from the player to the object hit (mm_Player_Update) */
+    uint8_t unk_70[0x10];
     ps2f stepFrames;          /* +0x80 frames left of the step (mm_Player_Move) */
     int32_t jumps;             /* +0x84 */
     GuestPtr<A3DObject> model;          /* +0x88 */
@@ -661,11 +663,13 @@ struct Player {
 /* Applicant list entry (0x14 bytes). */
 struct ApplicantEntry {
     uint16_t index;            /* +0x00 own index */
-    int16_t state;             /* +0x02 0 free, 2 waiting */
+    int16_t state;             /* +0x02 0 free, 2 waiting, 3 to be placed, 6 being placed (mm_Applicants_StartPlacing) */
     uint16_t family;           /* +0x04 */
-    uint8_t unk_06[4];
+    uint16_t tile;             /* +0x06 where the player put its home (mm_Player_PlaceForApplicant) */
+    uint8_t unk_08[2];
     uint16_t type;             /* +0x0A building type the family wants (index into the table at gp 0x1BDBF8) */
-    uint8_t unk_0C[8];
+    uint8_t unk_0C[4];
+    int32_t timer;             /* +0x10 set to 6 when its placing starts */
 };
 /* Applicants list (0x350 bytes). */
 struct Applicants {
@@ -696,9 +700,10 @@ struct Markers {
     GuestPtr<A3DObject> markerModel;    /* +0x004 from 0x1F3B08: the marker nodes */
     uint8_t unk_008[8];
     Vec4 matrices[16];         /* +0x010 four 4x4 matrices, one per marker */
-    int32_t nodes[4];          /* +0x110 node of markerModel per marker, -1 = none (1, 2, 3, -1 at construction) */
-    int32_t visible;           /* +0x120 */
-    int32_t unk_124;
+    int32_t nodes[4];          /* +0x110 node of markerModel per marker, -1 = none (1, 2, 3, -1 at construction; the fourth
+                                  becomes 4 when laptop entry 4 is active, mm_Laptop_CheckOpen) */
+    int32_t visible;           /* +0x120 set while Circle alone is held in the city view (mm_Laptop_CheckOpen) */
+    int32_t circleHeld;        /* +0x124 Circle was held with other buttons last frame, so it does not show the markers */
     GuestPtr<void> vtable;              /* +0x128 */
     uint8_t unk_12C[4];
 };
@@ -936,9 +941,15 @@ struct MapTile;
 struct MapObject;
 struct MapPerson;
 struct BuildingType;
+struct BuildingRecord;
+struct LeveledType;
+struct RoadType;
+struct OfficeType;
+struct FieldType;
 struct Family;
 struct FamilyMember;
 struct Widget;
+struct WidgetVtable;
 struct TalkSession;
 struct TalkView;
 struct MyHomeView;
@@ -1015,18 +1026,41 @@ struct MapObject {
     uint16_t nextOnTile;       /* +0x0A next object on the same tile */
     uint16_t family;           /* +0x0C family living here */
     uint16_t unk_0E;
-    uint16_t claimMeter;       /* +0x10 rises while the claim is unmet (mm_ClaimMeter_Level) */
-    uint8_t claimSlot;         /* +0x12 entry in the type's claim section */
-    uint8_t claimTimer;        /* +0x13 runs down while the claim is met or the meter maxed; its tenth speeds the meter (mm_BldgClaims_Evaluate) */
-    uint16_t entranceTile;     /* +0x14 (provisional) */
-    uint8_t headingHere;       /* +0x16 people whose target it is (mm_MapPeople_RemoveForObject) */
-    uint8_t occupants;         /* +0x17 people inside, kept by types with flag 0x40 (mm_EvActor_Release) */
-    uint16_t variant;          /* +0x18 roads: shape, bit d = open towards direction d, 5 and 10 straight
-                                  (added to the model index by mm_BldgRoad_Slot1C); buildings: bits 3-7 pick
-                                  the model variant (mm_Bldg_CollideA); housing: the high byte is the unit
-                                  shape (mm_BldgHousing_UnitAt, table 0x1B14F0) */
-    uint16_t mesh;             /* +0x1A roads: mesh drawn (0 = none; street lamps and traffic lights by range);
-                                  housing: the low byte is the style, 26 meshes each (mm_BldgHousing_Draw) */
+    /* +0x10..+0x17: buildings keep their claim and people here; some classes use the bytes for their own data. */
+    union {
+        struct {
+            uint16_t claimMeter;       /* +0x10 rises while the claim is unmet (mm_ClaimMeter_Level) */
+            uint8_t claimSlot;         /* +0x12 entry in the type's claim section */
+            uint8_t claimTimer;        /* +0x13 runs down while the claim is met or the meter maxed; its tenth speeds the meter (mm_BldgClaims_Evaluate) */
+            uint16_t entranceTile;     /* +0x14 (provisional) */
+            uint8_t headingHere;       /* +0x16 people whose target it is (mm_MapPeople_RemoveForObject) */
+            uint8_t occupants;         /* +0x17 people inside, kept by types with flag 0x40 (mm_EvActor_Release) */
+        };
+        int32_t openSize;              /* +0x10 leveled land: the side of the open square of leveled land from here towards +x and
+                                          +z, one more than the least of the three neighbours' (none with flag 1); a family's house
+                                          fits when its size is at most this (mm_BldgLeveled_Tick) */
+        uint8_t look[7];               /* +0x10 wasteland, random (mm_BldgWasteland_InitRecord): the x and z nudge (/400), the
+                                          matrix (0..3), 0, the weed row (0 = none: cleared on steep tiles and next to a new home),
+                                          the column (0..2), and 0..9 */
+        uint8_t goodsMesh;             /* +0x10 small goods: the props mesh; from 0x27 on it also collides (mm_BldgSmallGoods_Draw) */
+        uint16_t roadLinks[4];         /* +0x10 roads: per direction its shape opens to, the tile of the first piece along it that is
+                                          not straight road, 0x4000 = none (mm_BldgRoad_FindNeighbours; vehicles follow them) */
+    };
+    /* +0x18..+0x1B: roads keep two halfwords, buildings four bytes. */
+    union {
+        struct {
+            uint16_t roadShape;        /* +0x18 bit d = open towards direction d, 5 and 10 straight (added to the model index by
+                                          mm_BldgRoad_Slot1C) */
+            uint16_t roadMesh;         /* +0x1A mesh drawn (0 = none; street lamps and traffic lights by range) */
+        };
+        struct {
+            uint8_t variant;           /* +0x18 bits 3-7 pick the model variant (mm_Bldg_CollideA); an entrance whose claim was
+                                          met counts up to 0x2D from 1 (mm_CityRender_CollectObjects) */
+            uint8_t unitShape;         /* +0x19 housing: the unit shape (mm_BldgHousing_UnitAt, table 0x1B14F0) */
+            uint8_t style;             /* +0x1A housing: the style, 26 meshes each (mm_BldgHousing_Draw) */
+            uint8_t unk_1B;
+        };
+    };
 };
 
 /* Person on the map (0x30 bytes): 6000 records at CityMap +0x68 (6000 = none). */
@@ -1035,13 +1069,13 @@ struct MapPerson {
     ps2f y;                   /* +0x04 height */
     ps2f z;                   /* +0x08 */
     ps2f heading;             /* +0x0C atan2 of the facing (mm_Person_UpdatePose) */
-    uint16_t nextOnTile;       /* +0x10 */
+    uint16_t nextHere;         /* +0x10 the next person in the list of the object they are at (MapObject.firstPerson), 6000 = none */
     uint16_t index;            /* +0x12 own index */
     uint16_t work;             /* +0x14 workplace object */
     uint16_t inside;           /* +0x16 object the person is in, 0x3F80 = outside */
     uint16_t walkTile;         /* +0x18 tile the person walks to (mm_Person_UpdatePose); the waypoint (mm_Path_NextWaypoint) */
     uint16_t previousTile;     /* +0x1A the waypoint before it; mm_Path_PickRoadLink never leads back there */
-    uint8_t unk_1C[2];
+    uint16_t animFrame;        /* +0x1C the animation frame (mm_Person_Draw) */
     uint16_t destination;      /* +0x1E */
     uint16_t follow;           /* +0x20 follow target */
     uint16_t flags;            /* +0x22 */
@@ -1051,9 +1085,17 @@ struct MapPerson {
     uint8_t activity;          /* +0x27 */
     uint16_t target;           /* +0x28 building the person heads for, 0x3F80 = none (mm_Person_TargetWork) */
     uint16_t family;           /* +0x2A */
-    uint16_t introduces;       /* +0x2C family this resident can introduce; a vehicle's speed (mm_Char2_UpdateSpeedA) */
-    uint8_t member;            /* +0x2E */
-    uint8_t status;            /* +0x2F friendship status byte */
+    union {
+        uint16_t introduces;   /* +0x2C family this resident can introduce */
+        uint16_t speed;        /* +0x2C vehicles: in 1/10000 of a tile a frame (mm_Char2_UpdateSpeedA) */
+    };
+    union {
+        struct {
+            uint8_t member;    /* +0x2E */
+            uint8_t status;    /* +0x2F friendship status byte */
+        };
+        uint16_t awayTime;     /* +0x2E vehicles: off the road, 3 a tick; at 0xFD20 back at the depot (mm_Char2_Update) */
+    };
 };
 
 /* Object lists per claim item (0x8040 bytes) at CityMap +0x0C: 80 lists packed into one array. */
@@ -1118,17 +1160,62 @@ struct CityMap {
     GuestPtr<LayerA> instances;         /* +0x2F8C */
 };
 
+/* A building type's record in DATA\BIN\STRTYPE.BIN (0x9C bytes): mm_BldgType_BaseCtor copies it into the type object, and
+   some classes read more of it (mm_BldgLeveled_ctor, mm_BldgRoad_ctor, mm_BldgOffice_ctor, mm_BldgField_ctor). */
+struct BuildingRecord {
+    char name[0x20];           /* +0x00 */
+    uint8_t typeClass;         /* +0x20 the class (mm_BldgType_Create): 0 and 5 the base, 1 wasteland, 2 leveled land, 3 road,
+                                  4 field, 6 business, 7 office, 8 housing, 9 port, 10 my home, 11 amusement park, 12 ranch,
+                                  13 pig farm, 14 small goods, 15 keep-out */
+    uint8_t size;              /* +0x21 */
+    uint8_t unk_22;            /* +0x22 */
+    uint8_t rule;              /* +0x23 */
+    uint16_t flags;            /* +0x24 */
+    uint16_t maxStack;         /* +0x26 */
+    uint8_t category;          /* +0x28 */
+    uint8_t postGroup;         /* +0x29 */
+    uint8_t claimB;            /* +0x2A */
+    uint8_t claimC;            /* +0x2B */
+    uint8_t unk_2C;            /* +0x2C */
+    uint8_t maxVisitors;       /* +0x2D */
+    uint8_t schedule;          /* +0x2E */
+    uint8_t activity;          /* +0x2F */
+    uint16_t homeType;         /* +0x30 */
+    uint16_t openMinute;       /* +0x32 */
+    uint16_t closeMinute;      /* +0x34 */
+    uint16_t capacity;         /* +0x36 */
+    uint8_t cooldown;          /* +0x38 */
+    uint8_t ambientSound;      /* +0x39 */
+    uint8_t unk_3A[2];
+    int8_t callFlags;          /* +0x3C copied with the next three bytes */
+    uint8_t unk_3D[3];
+    Vec4 peopleSpots[4];       /* +0x40 fields read these as their lifts and heights */
+    Vec4 talkEye;              /* +0x80 */
+    uint8_t entranceDrawMesh;  /* +0x90 leveled land: its mesh; roads: the lamp mesh */
+    uint8_t firstDrawMesh;     /* +0x91 roads: the traffic light mesh */
+    uint8_t extraMesh;         /* +0x92 offices: the extra mesh; roads: the slope mesh */
+    uint8_t unk_93;            /* +0x93 */
+    uint8_t modelNode;         /* +0x94 */
+    uint8_t unk_95;
+    uint8_t entranceMesh;      /* +0x96 */
+    uint8_t firstMesh;         /* +0x97 */
+    uint8_t groupSpots[4];     /* +0x98 */
+};
+
 /* Building type base (0x160 bytes): one object per type in the table at gp 0x1BDBF8; classes add fields after it. */
 struct BuildingType {
-    uint8_t unk_000[0x100];
+    Vec4 peopleSpots[16];      /* +0x000 where the people of a building stand: four spots (x, y, z offsets and a heading, record
+                                  +0x40), each turned for the four views; spot k in view v at 4k + v (mm_BldgType_BaseCtor,
+                                  mm_Bldg_DrawPeople) */
     Vec4 talkEye;              /* +0x100 eye offset from the building for a talk, type flag 0x4000 (mm_TalkView_BuildingCamera) */
     char name[0x20];           /* +0x110 */
-    uint8_t unk_130[4];
+    uint8_t groupSpots[4];     /* +0x130 spots for each group of people, taken in turn: its workers, others, and the same two of
+                                  class flag 1 (record +0x98; any of them sets flag 0x800, mm_Bldg_DrawPeople) */
     uint16_t kind;             /* +0x134 */
     uint16_t flags;            /* +0x136 0x10 talk camera 2.5 lower, 0x20, 0x40 people inside, 0x100, 0x4000 own talk eye (talkEye) */
     uint16_t maxStack;         /* +0x138 objects of the type one tile holds (mm_Placement_CheckTypeRule); the top one of a full stack
                                   is drawn with flag 3 (mm_CityRender_CollectObjects) */
-    uint8_t unk_13A[2];
+    uint16_t homeType;         /* +0x13A the type of the homes its workers set up around it (mm_Person_PlaceHomeObject) */
     uint16_t openMinute;       /* +0x13C minutes of the day */
     uint16_t closeMinute;      /* +0x13E */
     uint16_t capacity;         /* +0x140 */
@@ -1139,7 +1226,11 @@ struct BuildingType {
     uint8_t postGroup;         /* +0x146 group in POSTNAME.BIN (mm_BldgType_GetPostName) */
     uint8_t claimB;            /* +0x147 claim section B index */
     uint8_t claimC;            /* +0x148 claim section C index */
-    uint8_t unk_149[5];
+    uint8_t unk_149;
+    uint8_t maxVisitors;       /* +0x14A people heading here at most (mm_Person_FindBuildingInList) */
+    uint8_t schedule;          /* +0x14B the type's own schedule row, after the fifteen shared ones (mm_Schedule_PickEntry) */
+    uint8_t activity;          /* +0x14C what people do there (mm_Schedule_GetActivity) */
+    uint8_t cooldown;          /* +0x14D a visitor's cooldown on leaving (mm_Person_Update) */
     uint8_t ambientSound;      /* +0x14E sound id, 0xFF = none (mm_Se_BuildingSoundState) */
     uint8_t unk_14F;
     uint8_t modelNode;         /* +0x150 */
@@ -1154,15 +1245,50 @@ struct BuildingType {
     GuestPtr<BuildingTypeVtable> vtable; /* +0x15C */
 };
 
+/* Leveled land (0x170 bytes, mm_BldgLeveled_ctor). */
+struct LeveledType {
+    BuildingType base;
+    int32_t mesh;              /* +0x160 record byte 0x90: drawn while the object's flag 1 is set (mm_BldgLeveled_Draw) */
+    uint8_t unk_164[0xC];
+};
+
+/* Road (0x170 bytes, mm_BldgRoad_ctor): the first meshes of its pieces, record bytes 0x90..0x92 (mm_BldgRoad_Tick). */
+struct RoadType {
+    BuildingType base;
+    int32_t lampMesh;          /* +0x160 street lamps: +0/+1 along z, +2/+3 along x */
+    int32_t lightMesh;         /* +0x164 traffic lights: +0..+4 */
+    int32_t slopeMesh;         /* +0x168 slopes: +1 along x */
+    uint8_t unk_16C[4];
+};
+
+/* Office (0x170 bytes, mm_BldgOffice_ctor). */
+struct OfficeType {
+    BuildingType base;
+    int32_t extraMesh;         /* +0x160 record byte 0x92: drawn with a block's first part, 0 = none (mm_BldgOffice_Draw) */
+    uint8_t unk_164[0xC];
+};
+
+/* Field (0x210 bytes, mm_BldgField_ctor; the constructor fills +0x160..+0x18B from the record as groups of four). */
+struct FieldType {
+    BuildingType base;
+    ps2f cropLift;            /* +0x160 the crops are drawn this much higher (mm_BldgField_Draw) */
+    ps2f peopleLift;          /* +0x164 the residents at a field with a claim are drawn this much higher (mm_BldgField_DrawPeople) */
+    ps2f growingHeight[6];    /* +0x168 per stage of the month cycle, the growing crop's height (blended towards the next) */
+    uint8_t cropMesh[6];       /* +0x180 per stage, drawn as it is; 0 = none */
+    uint8_t growingMesh[6];    /* +0x186 per stage, scaled by the height; 0 = none (the last four are record +0x98..+0x9B) */
+    uint8_t unk_18C[0x84];
+};
+
 /* Family member (0x48 bytes) inside a family record. */
 struct FamilyMember {
     uint16_t charType;         /* +0x00 */
-    uint8_t unk_02;
+    uint8_t age;               /* +0x02 age group: below 2 small children, below 6 children (mm_Schedule_Evaluate) */
     uint8_t flags;             /* +0x03 */
     uint8_t role;              /* +0x04 */
     uint8_t unk_05;
     uint8_t unk_06;
-    uint8_t range;             /* +0x07 neighbourhood range index */
+    uint8_t look;              /* +0x07 the model part (0: by the family's parity, mm_Person_Draw), the person's first flags
+                                  (mm_Family_AssignHome) and the talk card's variant (mm_TalkCard_FillText) */
     uint16_t acquaintances[16]; /* +0x08 family ids this member can introduce, 0 ends */
     char name[16];             /* +0x28 */
     char name2[16];            /* +0x38 */
@@ -1200,11 +1326,26 @@ struct Stamina {
     int32_t unk_08;
 };
 
-/* Widget base (0xC bytes): state machine for windows and talk classes, vtable at +8. */
+/* Widget base (0xC bytes): state machine for windows and talk classes. */
 struct Widget {
-    int32_t state;             /* 0 idle, 1 opening, 2 opened, 3 active, 4 closing, 5 closed */
-    ps2f timer;
-    GuestPtr<void> vtable;
+    int32_t state;             /* +0x00 0 idle, 1 opening, 2 opened, 3 active, 4 closing, 5 closed */
+    ps2f timer;               /* +0x04 0 to 1 within a state (mm_Widget_Step) */
+    GuestPtr<WidgetVtable> vtable;      /* +0x08 0x1BD400 for the base class */
+};
+
+/* A widget class's virtual methods (0x44 bytes, docs/map/ui.md); each takes the widget first. */
+struct WidgetVtable {
+    uint8_t unk_00[8];
+    uint32_t dtor;             /* +0x08 the deleting destructor */
+    uint32_t open;             /* +0x0C to state 1 */
+    uint32_t close;            /* +0x10 to state 4 */
+    uint32_t update;           /* +0x14 runs the handler of the state, answers the state after it */
+    uint32_t step;             /* +0x18 (dt) the timer goes on by dt; at 1 the state advances (6 wraps to 0); 1 when it did */
+    uint32_t getState;         /* +0x1C */
+    uint32_t draw;             /* +0x20 (pass) */
+    uint32_t isIdle;           /* +0x24 state 0 */
+    uint32_t isActive;         /* +0x28 state 3 */
+    uint32_t onState[6];       /* +0x2C the handlers: idle, opening, opened, active, closing, closed */
 };
 
 /* Talk pose entry (0x4 bytes). */
@@ -1409,7 +1550,7 @@ struct CityScene {
     GuestPtr<StatusPanel> statusPanel;  /* +0x00 */
     GuestPtr<TownPages> townPages;      /* +0x04 */
     GuestPtr<PauseMenu> pauseMenu;      /* +0x08 */
-    GuestPtr<void> unk_0C;
+    GuestPtr<McManager> loadCard;       /* +0x0C the memory card manager while a saved game loads (mm_CityScene_LoadGame) */
     int32_t modeStack[5];      /* +0x10 */
     int32_t modeDepth;         /* +0x24 */
     int32_t unk_28;
@@ -1431,7 +1572,7 @@ struct CityScene {
     GuestPtr<Minimap> minimap;          /* +0x74 */
     GuestPtr<Markers> markers;          /* +0x78 */
     GuestPtr<Notice> notice;            /* +0x7C */
-    int32_t unk_80;
+    GuestPtr<void> overlay;             /* +0x80 an event's object over the city (the farewell party): vtable +0xC update, +0x10 draw */
     int32_t clock;             /* +0x84 seconds, starts at 6:00 */
     int32_t monthCount;        /* +0x88 one month per in-game day */
     int32_t approval;          /* +0x8C -99..120, starts at 50 */
@@ -1461,7 +1602,6 @@ struct CityScene {
 
 struct SceneB;
 struct MsgWin;
-struct MenuWin;
 struct TalkCard;
 struct TalkMoney;
 struct TalkConv;
@@ -1517,12 +1657,22 @@ struct TalkMoney {
 struct TalkConv {
     MsgWin base;
     GuestPtr<CityScene> city;           /* +0x2CC */
-    int32_t unk_2D0;
+    int32_t script;            /* +0x2D0 the words script being read (mm_Words_LoadForPerson, mm_Words_Step) */
     GuestPtr<MenuWin> menu;             /* +0x2D4 */
     GuestPtr<Widget> panel;             /* +0x2D8 drawn while set (provisional: the money panel) */
     GuestPtr<NameEntry> nameEntry;      /* +0x2DC while entering a name (state 8) */
     GuestPtr<TalkCard> card;            /* +0x2E0 */
-    uint8_t unk_2E4[0x224];
+    int32_t code;              /* +0x2E4 what the script returned for the last piece: -0x1777 the end, -0x7D5 a menu with no
+                                  choice, -0x7D1 a typed answer, below -0x7A8 a name to enter (mm_TalkConv_NextLine) */
+    char text[0x200];          /* +0x2E8 the piece of text being shown */
+    int32_t byFamily;          /* +0x4E8 the talk's target, as mm_TalkConv_Start was given it */
+    int32_t person;            /* +0x4EC */
+    int32_t family;            /* +0x4F0 */
+    int32_t member;            /* +0x4F4 */
+    int32_t peopleInside;      /* +0x4F8 the building has people inside (type flag 0x40) */
+    int32_t arg5;              /* +0x4FC */
+    int32_t ended;             /* +0x500 the conversation reached its end (the friendship went up) */
+    int32_t typedAnswer;       /* +0x504 the script asked for a typed answer */
 };
 
 // ---- 25_sdk.h
@@ -1826,8 +1976,16 @@ static_assert(offsetof(Bag, size) == 0x000, "Bag.size");
 static_assert(offsetof(Bag, slots) == 0x004, "Bag.slots");
 static_assert(offsetof(Bag, shortcuts) == 0x144, "Bag.shortcuts");
 static_assert(offsetof(Bag, model) == 0x16C, "Bag.model");
+static_assert(offsetof(Bag, nameText) == 0x170, "Bag.nameText");
+static_assert(offsetof(Bag, list) == 0x174, "Bag.list");
+static_assert(offsetof(Bag, question) == 0x178, "Bag.question");
+static_assert(offsetof(Bag, frames) == 0x17C, "Bag.frames");
+static_assert(offsetof(Bag, labels) == 0x188, "Bag.labels");
+static_assert(offsetof(Bag, state) == 0x194, "Bag.state");
 static_assert(offsetof(Bag, matrix) == 0x198, "Bag.matrix");
-static_assert(offsetof(Bag, unk_1A4) == 0x1A4, "Bag.unk_1A4");
+static_assert(offsetof(Bag, slide) == 0x19C, "Bag.slide");
+static_assert(offsetof(Bag, cursor) == 0x1A0, "Bag.cursor");
+static_assert(offsetof(Bag, setupSlot) == 0x1A4, "Bag.setupSlot");
 static_assert(sizeof(StatusPanel) == 0xC0, "StatusPanel size");
 static_assert(offsetof(StatusPanel, packet) == 0x00, "StatusPanel.packet");
 static_assert(offsetof(StatusPanel, model) == 0x90, "StatusPanel.model");
@@ -1844,7 +2002,7 @@ static_assert(offsetof(PauseMenu, mainMenu) == 0x04, "PauseMenu.mainMenu");
 static_assert(offsetof(PauseMenu, slotMenu) == 0x08, "PauseMenu.slotMenu");
 static_assert(offsetof(PauseMenu, mc) == 0x0C, "PauseMenu.mc");
 static_assert(offsetof(PauseMenu, message) == 0x10, "PauseMenu.message");
-static_assert(offsetof(PauseMenu, unk_1C) == 0x1C, "PauseMenu.unk_1C");
+static_assert(offsetof(PauseMenu, cardPort) == 0x1C, "PauseMenu.cardPort");
 static_assert(offsetof(PauseMenu, waitFrames) == 0x24, "PauseMenu.waitFrames");
 static_assert(offsetof(PauseMenu, openTime) == 0x2C, "PauseMenu.openTime");
 static_assert(offsetof(PauseMenu, unk_30) == 0x30, "PauseMenu.unk_30");
@@ -1872,11 +2030,15 @@ static_assert(sizeof(PhoneCallEntry) == 0xC, "PhoneCallEntry size");
 static_assert(offsetof(PhoneCallEntry, person) == 0x00, "PhoneCallEntry.person");
 static_assert(offsetof(PhoneCallEntry, family) == 0x04, "PhoneCallEntry.family");
 static_assert(offsetof(PhoneCallEntry, member) == 0x06, "PhoneCallEntry.member");
-static_assert(offsetof(PhoneCallEntry, unk_08) == 0x08, "PhoneCallEntry.unk_08");
+static_assert(offsetof(PhoneCallEntry, familyOnly) == 0x08, "PhoneCallEntry.familyOnly");
 static_assert(offsetof(PhoneCalls, unk_00) == 0x00, "PhoneCalls.unk_00");
-static_assert(offsetof(PhoneCalls, unk_04) == 0x04, "PhoneCalls.unk_04");
+static_assert(offsetof(PhoneCalls, state) == 0x04, "PhoneCalls.state");
+static_assert(offsetof(PhoneCalls, shown) == 0x08, "PhoneCalls.shown");
+static_assert(offsetof(PhoneCalls, frames) == 0x0C, "PhoneCalls.frames");
 static_assert(offsetof(PhoneCalls, calls) == 0x10, "PhoneCalls.calls");
 static_assert(offsetof(PhoneCalls, unk_40) == 0x40, "PhoneCalls.unk_40");
+static_assert(offsetof(PhoneCalls, unk_44) == 0x44, "PhoneCalls.unk_44");
+static_assert(offsetof(PhoneCalls, caller) == 0x48, "PhoneCalls.caller");
 static_assert(offsetof(ActorRef, person) == 0x00, "ActorRef.person");
 static_assert(offsetof(ActorRef, object) == 0x02, "ActorRef.object");
 static_assert(offsetof(ActorRef, family) == 0x04, "ActorRef.family");
@@ -1919,16 +2081,13 @@ static_assert(offsetof(WantsWin, unk_528) == 0x528, "WantsWin.unk_528");
 static_assert(offsetof(WantsWin, unk_52C) == 0x52C, "WantsWin.unk_52C");
 static_assert(offsetof(WantsWin, unk_538) == 0x538, "WantsWin.unk_538");
 static_assert(sizeof(Laptop) == 0x3E0, "Laptop size");
-static_assert(offsetof(Laptop, unk_00) == 0x00, "Laptop.unk_00");
+static_assert(offsetof(Laptop, model) == 0x00, "Laptop.model");
 static_assert(offsetof(Laptop, radius) == 0x10, "Laptop.radius");
 static_assert(offsetof(Laptop, centre) == 0x20, "Laptop.centre");
 static_assert(offsetof(Laptop, turn) == 0x30, "Laptop.turn");
 static_assert(offsetof(Laptop, scale) == 0x38, "Laptop.scale");
 static_assert(offsetof(Laptop, state) == 0x3C, "Laptop.state");
-static_assert(offsetof(Laptop, unk_44) == 0x44, "Laptop.unk_44");
-static_assert(offsetof(Laptop, unk_11C) == 0x11C, "Laptop.unk_11C");
-static_assert(offsetof(Laptop, circleActive) == 0x120, "Laptop.circleActive");
-static_assert(offsetof(Laptop, circleHeld) == 0x124, "Laptop.circleHeld");
+static_assert(offsetof(Laptop, text) == 0x44, "Laptop.text");
 static_assert(offsetof(Laptop, selected) == 0x3D0, "Laptop.selected");
 static_assert(sizeof(Player) == 0x90, "Player size");
 static_assert(offsetof(Player, mode) == 0x00, "Player.mode");
@@ -1936,6 +2095,7 @@ static_assert(offsetof(Player, previousMode) == 0x04, "Player.previousMode");
 static_assert(offsetof(Player, step) == 0x08, "Player.step");
 static_assert(offsetof(Player, heading) == 0x0C, "Player.heading");
 static_assert(offsetof(Player, position) == 0x10, "Player.position");
+static_assert(offsetof(Player, colour) == 0x20, "Player.colour");
 static_assert(offsetof(Player, swayPhase) == 0x34, "Player.swayPhase");
 static_assert(offsetof(Player, swayArg) == 0x38, "Player.swayArg");
 static_assert(offsetof(Player, visible) == 0x3C, "Player.visible");
@@ -1943,8 +2103,9 @@ static_assert(offsetof(Player, target) == 0x40, "Player.target");
 static_assert(offsetof(Player, targetIsPerson) == 0x44, "Player.targetIsPerson");
 static_assert(offsetof(Player, unk_48) == 0x48, "Player.unk_48");
 static_assert(offsetof(Player, jumpSpeed) == 0x4C, "Player.jumpSpeed");
-static_assert(offsetof(Player, unk_50) == 0x50, "Player.unk_50");
+static_assert(offsetof(Player, airTime) == 0x50, "Player.airTime");
 static_assert(offsetof(Player, moveSpeed) == 0x54, "Player.moveSpeed");
+static_assert(offsetof(Player, push) == 0x60, "Player.push");
 static_assert(offsetof(Player, stepFrames) == 0x80, "Player.stepFrames");
 static_assert(offsetof(Player, jumps) == 0x84, "Player.jumps");
 static_assert(offsetof(Player, model) == 0x88, "Player.model");
@@ -1952,7 +2113,9 @@ static_assert(sizeof(ApplicantEntry) == 0x14, "ApplicantEntry size");
 static_assert(offsetof(ApplicantEntry, index) == 0x00, "ApplicantEntry.index");
 static_assert(offsetof(ApplicantEntry, state) == 0x02, "ApplicantEntry.state");
 static_assert(offsetof(ApplicantEntry, family) == 0x04, "ApplicantEntry.family");
+static_assert(offsetof(ApplicantEntry, tile) == 0x06, "ApplicantEntry.tile");
 static_assert(offsetof(ApplicantEntry, type) == 0x0A, "ApplicantEntry.type");
+static_assert(offsetof(ApplicantEntry, timer) == 0x10, "ApplicantEntry.timer");
 static_assert(sizeof(Applicants) == 0x350, "Applicants size");
 static_assert(offsetof(Applicants, entries) == 0x000, "Applicants.entries");
 static_assert(offsetof(Applicants, count) == 0x280, "Applicants.count");
@@ -1972,6 +2135,7 @@ static_assert(offsetof(Markers, markerModel) == 0x004, "Markers.markerModel");
 static_assert(offsetof(Markers, matrices) == 0x010, "Markers.matrices");
 static_assert(offsetof(Markers, nodes) == 0x110, "Markers.nodes");
 static_assert(offsetof(Markers, visible) == 0x120, "Markers.visible");
+static_assert(offsetof(Markers, circleHeld) == 0x124, "Markers.circleHeld");
 static_assert(offsetof(Markers, vtable) == 0x128, "Markers.vtable");
 static_assert(sizeof(Notice) == 0x14, "Notice size");
 static_assert(offsetof(Notice, id) == 0x00, "Notice.id");
@@ -2150,19 +2314,27 @@ static_assert(offsetof(MapObject, claimTimer) == 0x13, "MapObject.claimTimer");
 static_assert(offsetof(MapObject, entranceTile) == 0x14, "MapObject.entranceTile");
 static_assert(offsetof(MapObject, headingHere) == 0x16, "MapObject.headingHere");
 static_assert(offsetof(MapObject, occupants) == 0x17, "MapObject.occupants");
+static_assert(offsetof(MapObject, openSize) == 0x10, "MapObject.openSize");
+static_assert(offsetof(MapObject, look) == 0x10, "MapObject.look");
+static_assert(offsetof(MapObject, goodsMesh) == 0x10, "MapObject.goodsMesh");
+static_assert(offsetof(MapObject, roadLinks) == 0x10, "MapObject.roadLinks");
+static_assert(offsetof(MapObject, roadShape) == 0x18, "MapObject.roadShape");
+static_assert(offsetof(MapObject, roadMesh) == 0x1A, "MapObject.roadMesh");
 static_assert(offsetof(MapObject, variant) == 0x18, "MapObject.variant");
-static_assert(offsetof(MapObject, mesh) == 0x1A, "MapObject.mesh");
+static_assert(offsetof(MapObject, unitShape) == 0x19, "MapObject.unitShape");
+static_assert(offsetof(MapObject, style) == 0x1A, "MapObject.style");
 static_assert(sizeof(MapPerson) == 0x30, "MapPerson size");
 static_assert(offsetof(MapPerson, x) == 0x00, "MapPerson.x");
 static_assert(offsetof(MapPerson, y) == 0x04, "MapPerson.y");
 static_assert(offsetof(MapPerson, z) == 0x08, "MapPerson.z");
 static_assert(offsetof(MapPerson, heading) == 0x0C, "MapPerson.heading");
-static_assert(offsetof(MapPerson, nextOnTile) == 0x10, "MapPerson.nextOnTile");
+static_assert(offsetof(MapPerson, nextHere) == 0x10, "MapPerson.nextHere");
 static_assert(offsetof(MapPerson, index) == 0x12, "MapPerson.index");
 static_assert(offsetof(MapPerson, work) == 0x14, "MapPerson.work");
 static_assert(offsetof(MapPerson, inside) == 0x16, "MapPerson.inside");
 static_assert(offsetof(MapPerson, walkTile) == 0x18, "MapPerson.walkTile");
 static_assert(offsetof(MapPerson, previousTile) == 0x1A, "MapPerson.previousTile");
+static_assert(offsetof(MapPerson, animFrame) == 0x1C, "MapPerson.animFrame");
 static_assert(offsetof(MapPerson, destination) == 0x1E, "MapPerson.destination");
 static_assert(offsetof(MapPerson, follow) == 0x20, "MapPerson.follow");
 static_assert(offsetof(MapPerson, flags) == 0x22, "MapPerson.flags");
@@ -2173,8 +2345,10 @@ static_assert(offsetof(MapPerson, activity) == 0x27, "MapPerson.activity");
 static_assert(offsetof(MapPerson, target) == 0x28, "MapPerson.target");
 static_assert(offsetof(MapPerson, family) == 0x2A, "MapPerson.family");
 static_assert(offsetof(MapPerson, introduces) == 0x2C, "MapPerson.introduces");
+static_assert(offsetof(MapPerson, speed) == 0x2C, "MapPerson.speed");
 static_assert(offsetof(MapPerson, member) == 0x2E, "MapPerson.member");
 static_assert(offsetof(MapPerson, status) == 0x2F, "MapPerson.status");
+static_assert(offsetof(MapPerson, awayTime) == 0x2E, "MapPerson.awayTime");
 static_assert(sizeof(TileLists) == 0x8040, "TileLists size");
 static_assert(offsetof(TileLists, items) == 0x0000, "TileLists.items");
 static_assert(offsetof(TileLists, start) == 0x7F00, "TileLists.start");
@@ -2225,12 +2399,47 @@ static_assert(offsetof(CityMap, water) == 0x2F80, "CityMap.water");
 static_assert(offsetof(CityMap, layerB) == 0x2F84, "CityMap.layerB");
 static_assert(offsetof(CityMap, placement) == 0x2F88, "CityMap.placement");
 static_assert(offsetof(CityMap, instances) == 0x2F8C, "CityMap.instances");
+static_assert(offsetof(BuildingRecord, name) == 0x00, "BuildingRecord.name");
+static_assert(offsetof(BuildingRecord, typeClass) == 0x20, "BuildingRecord.typeClass");
+static_assert(offsetof(BuildingRecord, size) == 0x21, "BuildingRecord.size");
+static_assert(offsetof(BuildingRecord, unk_22) == 0x22, "BuildingRecord.unk_22");
+static_assert(offsetof(BuildingRecord, rule) == 0x23, "BuildingRecord.rule");
+static_assert(offsetof(BuildingRecord, flags) == 0x24, "BuildingRecord.flags");
+static_assert(offsetof(BuildingRecord, maxStack) == 0x26, "BuildingRecord.maxStack");
+static_assert(offsetof(BuildingRecord, category) == 0x28, "BuildingRecord.category");
+static_assert(offsetof(BuildingRecord, postGroup) == 0x29, "BuildingRecord.postGroup");
+static_assert(offsetof(BuildingRecord, claimB) == 0x2A, "BuildingRecord.claimB");
+static_assert(offsetof(BuildingRecord, claimC) == 0x2B, "BuildingRecord.claimC");
+static_assert(offsetof(BuildingRecord, unk_2C) == 0x2C, "BuildingRecord.unk_2C");
+static_assert(offsetof(BuildingRecord, maxVisitors) == 0x2D, "BuildingRecord.maxVisitors");
+static_assert(offsetof(BuildingRecord, schedule) == 0x2E, "BuildingRecord.schedule");
+static_assert(offsetof(BuildingRecord, activity) == 0x2F, "BuildingRecord.activity");
+static_assert(offsetof(BuildingRecord, homeType) == 0x30, "BuildingRecord.homeType");
+static_assert(offsetof(BuildingRecord, openMinute) == 0x32, "BuildingRecord.openMinute");
+static_assert(offsetof(BuildingRecord, closeMinute) == 0x34, "BuildingRecord.closeMinute");
+static_assert(offsetof(BuildingRecord, capacity) == 0x36, "BuildingRecord.capacity");
+static_assert(offsetof(BuildingRecord, cooldown) == 0x38, "BuildingRecord.cooldown");
+static_assert(offsetof(BuildingRecord, ambientSound) == 0x39, "BuildingRecord.ambientSound");
+static_assert(offsetof(BuildingRecord, callFlags) == 0x3C, "BuildingRecord.callFlags");
+static_assert(offsetof(BuildingRecord, peopleSpots) == 0x40, "BuildingRecord.peopleSpots");
+static_assert(offsetof(BuildingRecord, talkEye) == 0x80, "BuildingRecord.talkEye");
+static_assert(offsetof(BuildingRecord, entranceDrawMesh) == 0x90, "BuildingRecord.entranceDrawMesh");
+static_assert(offsetof(BuildingRecord, firstDrawMesh) == 0x91, "BuildingRecord.firstDrawMesh");
+static_assert(offsetof(BuildingRecord, extraMesh) == 0x92, "BuildingRecord.extraMesh");
+static_assert(offsetof(BuildingRecord, unk_93) == 0x93, "BuildingRecord.unk_93");
+static_assert(offsetof(BuildingRecord, modelNode) == 0x94, "BuildingRecord.modelNode");
+static_assert(offsetof(BuildingRecord, entranceMesh) == 0x96, "BuildingRecord.entranceMesh");
+static_assert(offsetof(BuildingRecord, firstMesh) == 0x97, "BuildingRecord.firstMesh");
+static_assert(offsetof(BuildingRecord, groupSpots) == 0x98, "BuildingRecord.groupSpots");
 static_assert(sizeof(BuildingType) == 0x160, "BuildingType size");
+static_assert(offsetof(BuildingType, peopleSpots) == 0x000, "BuildingType.peopleSpots");
 static_assert(offsetof(BuildingType, talkEye) == 0x100, "BuildingType.talkEye");
 static_assert(offsetof(BuildingType, name) == 0x110, "BuildingType.name");
+static_assert(offsetof(BuildingType, groupSpots) == 0x130, "BuildingType.groupSpots");
 static_assert(offsetof(BuildingType, kind) == 0x134, "BuildingType.kind");
 static_assert(offsetof(BuildingType, flags) == 0x136, "BuildingType.flags");
 static_assert(offsetof(BuildingType, maxStack) == 0x138, "BuildingType.maxStack");
+static_assert(offsetof(BuildingType, homeType) == 0x13A, "BuildingType.homeType");
 static_assert(offsetof(BuildingType, openMinute) == 0x13C, "BuildingType.openMinute");
 static_assert(offsetof(BuildingType, closeMinute) == 0x13E, "BuildingType.closeMinute");
 static_assert(offsetof(BuildingType, capacity) == 0x140, "BuildingType.capacity");
@@ -2240,6 +2449,10 @@ static_assert(offsetof(BuildingType, category) == 0x145, "BuildingType.category"
 static_assert(offsetof(BuildingType, postGroup) == 0x146, "BuildingType.postGroup");
 static_assert(offsetof(BuildingType, claimB) == 0x147, "BuildingType.claimB");
 static_assert(offsetof(BuildingType, claimC) == 0x148, "BuildingType.claimC");
+static_assert(offsetof(BuildingType, maxVisitors) == 0x14A, "BuildingType.maxVisitors");
+static_assert(offsetof(BuildingType, schedule) == 0x14B, "BuildingType.schedule");
+static_assert(offsetof(BuildingType, activity) == 0x14C, "BuildingType.activity");
+static_assert(offsetof(BuildingType, cooldown) == 0x14D, "BuildingType.cooldown");
 static_assert(offsetof(BuildingType, ambientSound) == 0x14E, "BuildingType.ambientSound");
 static_assert(offsetof(BuildingType, modelNode) == 0x150, "BuildingType.modelNode");
 static_assert(offsetof(BuildingType, entranceDrawMesh) == 0x151, "BuildingType.entranceDrawMesh");
@@ -2248,11 +2461,26 @@ static_assert(offsetof(BuildingType, callFlags) == 0x154, "BuildingType.callFlag
 static_assert(offsetof(BuildingType, entranceMesh) == 0x158, "BuildingType.entranceMesh");
 static_assert(offsetof(BuildingType, firstMesh) == 0x159, "BuildingType.firstMesh");
 static_assert(offsetof(BuildingType, vtable) == 0x15C, "BuildingType.vtable");
+static_assert(sizeof(LeveledType) == 0x170, "LeveledType size");
+static_assert(offsetof(LeveledType, mesh) == 0x160, "LeveledType.mesh");
+static_assert(sizeof(RoadType) == 0x170, "RoadType size");
+static_assert(offsetof(RoadType, lampMesh) == 0x160, "RoadType.lampMesh");
+static_assert(offsetof(RoadType, lightMesh) == 0x164, "RoadType.lightMesh");
+static_assert(offsetof(RoadType, slopeMesh) == 0x168, "RoadType.slopeMesh");
+static_assert(sizeof(OfficeType) == 0x170, "OfficeType size");
+static_assert(offsetof(OfficeType, extraMesh) == 0x160, "OfficeType.extraMesh");
+static_assert(sizeof(FieldType) == 0x210, "FieldType size");
+static_assert(offsetof(FieldType, cropLift) == 0x160, "FieldType.cropLift");
+static_assert(offsetof(FieldType, peopleLift) == 0x164, "FieldType.peopleLift");
+static_assert(offsetof(FieldType, growingHeight) == 0x168, "FieldType.growingHeight");
+static_assert(offsetof(FieldType, cropMesh) == 0x180, "FieldType.cropMesh");
+static_assert(offsetof(FieldType, growingMesh) == 0x186, "FieldType.growingMesh");
 static_assert(sizeof(FamilyMember) == 0x48, "FamilyMember size");
 static_assert(offsetof(FamilyMember, charType) == 0x00, "FamilyMember.charType");
+static_assert(offsetof(FamilyMember, age) == 0x02, "FamilyMember.age");
 static_assert(offsetof(FamilyMember, flags) == 0x03, "FamilyMember.flags");
 static_assert(offsetof(FamilyMember, role) == 0x04, "FamilyMember.role");
-static_assert(offsetof(FamilyMember, range) == 0x07, "FamilyMember.range");
+static_assert(offsetof(FamilyMember, look) == 0x07, "FamilyMember.look");
 static_assert(offsetof(FamilyMember, acquaintances) == 0x08, "FamilyMember.acquaintances");
 static_assert(offsetof(FamilyMember, name) == 0x28, "FamilyMember.name");
 static_assert(offsetof(FamilyMember, name2) == 0x38, "FamilyMember.name2");
@@ -2268,6 +2496,20 @@ static_assert(offsetof(CharTypeRecord, part4) == 0x0E, "CharTypeRecord.part4");
 static_assert(sizeof(Stamina) == 0xC, "Stamina size");
 static_assert(offsetof(Stamina, value) == 0x04, "Stamina.value");
 static_assert(sizeof(Widget) == 0xC, "Widget size");
+static_assert(offsetof(Widget, state) == 0x00, "Widget.state");
+static_assert(offsetof(Widget, timer) == 0x04, "Widget.timer");
+static_assert(offsetof(Widget, vtable) == 0x08, "Widget.vtable");
+static_assert(sizeof(WidgetVtable) == 0x44, "WidgetVtable size");
+static_assert(offsetof(WidgetVtable, dtor) == 0x08, "WidgetVtable.dtor");
+static_assert(offsetof(WidgetVtable, open) == 0x0C, "WidgetVtable.open");
+static_assert(offsetof(WidgetVtable, close) == 0x10, "WidgetVtable.close");
+static_assert(offsetof(WidgetVtable, update) == 0x14, "WidgetVtable.update");
+static_assert(offsetof(WidgetVtable, step) == 0x18, "WidgetVtable.step");
+static_assert(offsetof(WidgetVtable, getState) == 0x1C, "WidgetVtable.getState");
+static_assert(offsetof(WidgetVtable, draw) == 0x20, "WidgetVtable.draw");
+static_assert(offsetof(WidgetVtable, isIdle) == 0x24, "WidgetVtable.isIdle");
+static_assert(offsetof(WidgetVtable, isActive) == 0x28, "WidgetVtable.isActive");
+static_assert(offsetof(WidgetVtable, onState) == 0x2C, "WidgetVtable.onState");
 static_assert(sizeof(TalkPose) == 0x4, "TalkPose size");
 static_assert(offsetof(TalkView, eye) == 0x10, "TalkView.eye");
 static_assert(offsetof(TalkView, target) == 0x20, "TalkView.target");
@@ -2401,6 +2643,7 @@ static_assert(sizeof(CityScene) == 0xD8, "CityScene size");
 static_assert(offsetof(CityScene, statusPanel) == 0x00, "CityScene.statusPanel");
 static_assert(offsetof(CityScene, townPages) == 0x04, "CityScene.townPages");
 static_assert(offsetof(CityScene, pauseMenu) == 0x08, "CityScene.pauseMenu");
+static_assert(offsetof(CityScene, loadCard) == 0x0C, "CityScene.loadCard");
 static_assert(offsetof(CityScene, modeStack) == 0x10, "CityScene.modeStack");
 static_assert(offsetof(CityScene, modeDepth) == 0x24, "CityScene.modeDepth");
 static_assert(offsetof(CityScene, hudVisible) == 0x2C, "CityScene.hudVisible");
@@ -2421,6 +2664,7 @@ static_assert(offsetof(CityScene, cursor) == 0x70, "CityScene.cursor");
 static_assert(offsetof(CityScene, minimap) == 0x74, "CityScene.minimap");
 static_assert(offsetof(CityScene, markers) == 0x78, "CityScene.markers");
 static_assert(offsetof(CityScene, notice) == 0x7C, "CityScene.notice");
+static_assert(offsetof(CityScene, overlay) == 0x80, "CityScene.overlay");
 static_assert(offsetof(CityScene, clock) == 0x84, "CityScene.clock");
 static_assert(offsetof(CityScene, monthCount) == 0x88, "CityScene.monthCount");
 static_assert(offsetof(CityScene, approval) == 0x8C, "CityScene.approval");
@@ -2470,10 +2714,21 @@ static_assert(offsetof(TalkMoney, model) == 0x14, "TalkMoney.model");
 static_assert(offsetof(TalkMoney, text) == 0x18, "TalkMoney.text");
 static_assert(sizeof(TalkConv) == 0x508, "TalkConv size");
 static_assert(offsetof(TalkConv, city) == 0x2CC, "TalkConv.city");
+static_assert(offsetof(TalkConv, script) == 0x2D0, "TalkConv.script");
 static_assert(offsetof(TalkConv, menu) == 0x2D4, "TalkConv.menu");
 static_assert(offsetof(TalkConv, panel) == 0x2D8, "TalkConv.panel");
 static_assert(offsetof(TalkConv, nameEntry) == 0x2DC, "TalkConv.nameEntry");
 static_assert(offsetof(TalkConv, card) == 0x2E0, "TalkConv.card");
+static_assert(offsetof(TalkConv, code) == 0x2E4, "TalkConv.code");
+static_assert(offsetof(TalkConv, text) == 0x2E8, "TalkConv.text");
+static_assert(offsetof(TalkConv, byFamily) == 0x4E8, "TalkConv.byFamily");
+static_assert(offsetof(TalkConv, person) == 0x4EC, "TalkConv.person");
+static_assert(offsetof(TalkConv, family) == 0x4F0, "TalkConv.family");
+static_assert(offsetof(TalkConv, member) == 0x4F4, "TalkConv.member");
+static_assert(offsetof(TalkConv, peopleInside) == 0x4F8, "TalkConv.peopleInside");
+static_assert(offsetof(TalkConv, arg5) == 0x4FC, "TalkConv.arg5");
+static_assert(offsetof(TalkConv, ended) == 0x500, "TalkConv.ended");
+static_assert(offsetof(TalkConv, typedAnswer) == 0x504, "TalkConv.typedAnswer");
 static_assert(offsetof(GifPacket, cursor) == 0x00, "GifPacket.cursor");
 static_assert(offsetof(GifPacket, base) == 0x04, "GifPacket.base");
 static_assert(offsetof(GifPacket, dmaTag) == 0x08, "GifPacket.dmaTag");

@@ -1503,7 +1503,7 @@ namespace mm
     {
         const MemberRef who = memberByThreeWayArg(ctx);
         const GuestPtr<Family> family = Family_Get(static_cast<int>(who.family), 0);
-        const uint32_t homeType = port::load<uint16_t>(family.address + 0x20u);
+        const uint32_t homeType = family->homeType;
         const uint8_t role = port::load<uint8_t>(memberAt(family, who.member) + kMemberRole);
         return BldgType_GetPostName(GuestPtr<BuildingType>{globals::buildingTypeAddress(homeType)}, role);
     }
@@ -1786,7 +1786,7 @@ namespace mm
     int WordsFn_PickOtherResident(GuestPtr<WordsCtx> ctx)
     {
         const GuestPtr<Family> family = Family_Get(ctx->buildingB->family, 0);
-        const uint32_t members = port::load<uint16_t>(family.address + 0x22u);
+        const uint32_t members = family->memberCount;
         if (members == 0)
             return 0;
         if (members < 2 && ctx->buildingB->family == ctx->familyA)
@@ -2059,7 +2059,7 @@ namespace mm
     // rest 7; 4 gives 0 for state 13 and 1 for the others; 5 gives the state less 1 (less 2 from 15), 15 when that is negative.
     uint32_t WordsFn_ScheduleState(GuestPtr<WordsCtx> ctx)
     {
-        const uint32_t state = (ctx->personA ? port::load<uint8_t>(ctx->personA.address + 0x26u) : Schedule_Evaluate(ctx->familyA, ctx->memberA)) & 0xFFu;
+        const uint32_t state = (ctx->personA ? ctx->personA->schedState : Schedule_Evaluate(ctx->familyA, ctx->memberA)) & 0xFFu;
         switch (ctx->arg)
         {
         case 0:
@@ -2100,7 +2100,7 @@ namespace mm
         port::store<int32_t>(offsetAt, ctx->arg);
         const GuestPtr<CityScene> city = ctx->city;
         const uint32_t c = city.address;
-        int32_t month = remainder(port::load<int32_t>(c + 0x88u), 12);
+        int32_t month = remainder(city->monthCount, 12);
         if (month < 0)
             month += 3;
         const uint32_t record = static_cast<uint32_t>(Goods_GetRecordOffset(ctx->buildingTypeB, ctx->familyB, month >> 2, GuestPtr<int32_t>{offsetAt}));
@@ -2124,8 +2124,8 @@ namespace mm
         else
             points = price < 0xC351 ? 0x14 : 0x1E;
         Family_AddFriendship(ctx->familyA, ctx->memberA, GuestPtr<int32_t>{c + 0x8Cu}, points);
-        const GuestPtr<Laptop> laptop{port::load<uint32_t>(c + 0x48u)};
-        const uint32_t bag = port::load<uint32_t>(c + 0x60u);
+        const GuestPtr<Laptop> laptop{city->laptop.address};
+        const uint32_t bag = city->bag.address;
         const uint32_t kind = port::load<uint8_t>(record + 4u);
         switch (kind)
         {
@@ -2154,17 +2154,17 @@ namespace mm
             if (port::load<uint16_t>(bag) == 0)
                 Laptop_AddEntry(laptop, 6);
             Bag_AddItem(GuestPtr<Bag>{bag}, ctx->buildingTypeB, port::load<int32_t>(offsetAt), static_cast<int16_t>(port::load<int32_t>(0x001C5548u)),
-                        port::load<int32_t>(c + 0x88u), static_cast<int16_t>(port::load<uint16_t>(ctx->buildingB.address + 0xCu)), 0xFF, 0);
+                        city->monthCount, static_cast<int16_t>(ctx->buildingB->family), 0xFF, 0);
             break;
         case 0x12:
         case 0x14:
-            Stamina_Eat(GuestPtr<Stamina>{port::load<uint32_t>(c + 0x64u)}, GuestPtr<uint8_t>{record});
+            Stamina_Eat(city->stamina, GuestPtr<uint8_t>{record});
             break;
         case 0x16:
             Bag_AddMusicTrack(GuestPtr<Bag>{bag}, ctx->buildingTypeB, port::load<int32_t>(offsetAt));
             break;
         case 0x19:
-            Applicants_Add(GuestPtr<Applicants>{port::load<uint32_t>(c + 0x54u)}, port::load<uint8_t>(record + 5u), port::load<int32_t>(c + 0x88u), 8);
+            Applicants_Add(city->applicants, port::load<uint8_t>(record + 5u), city->monthCount, 8);
             break;
         default:
             break;
@@ -2220,7 +2220,7 @@ namespace mm
     // map) is the script's argument.
     int WordsFn_ScheduleIs(GuestPtr<WordsCtx> ctx)
     {
-        const uint32_t activity = ctx->personA ? port::load<uint8_t>(ctx->personA.address + 0x27u) : Schedule_QueryB(ctx->city, ctx->familyA, ctx->memberA);
+        const uint32_t activity = ctx->personA ? ctx->personA->activity : Schedule_QueryB(ctx->city, ctx->familyA, ctx->memberA);
         return static_cast<int64_t>(activity) == static_cast<int64_t>(ctx->arg) ? 1 : 0;
     }
 
@@ -2615,7 +2615,7 @@ namespace mm
         const GuestPtr<Family> family = Family_Get(ctx->familyA, 0);
         const uint32_t first = family.address + 0x24u;
         uint32_t member = mode == 2 ? first : first + 0x48u * ctx->memberA;
-        const uint32_t end = mode == 2 ? member + 0x48u * port::load<uint16_t>(family.address + 0x22u) : member + 0x48u;
+        const uint32_t end = mode == 2 ? member + 0x48u * family->memberCount : member + 0x48u;
         for (; member < end; member += 0x48u)
         {
             const uint32_t list = member + 8u;
@@ -2734,7 +2734,7 @@ namespace mm
         ctx->buildingB = Map_GetRecord(ctx->city->map, port::load<uint16_t>(ctx.address + 0x30u + 2u * static_cast<uint32_t>(pick)));
         ctx->buildingTypeB = ctx->buildingB->type;
         const GuestPtr<Family> residents = Family_Get(ctx->buildingB->family, 0);
-        const uint32_t count = port::load<uint16_t>(residents.address + 0x22u);
+        const uint32_t count = residents->memberCount;
         if (count == 0)
             return 0;
         const int32_t which = static_cast<int32_t>(Random_Next()) % static_cast<int32_t>(count);
@@ -2882,17 +2882,17 @@ namespace mm
     // 0x1B9570 and 0x1B9100) called on the script's context (the first word of the object).
     void Words_CallCond(GuestPtr<Words> words, int index)
     {
-        callMember(0x001B9630u, static_cast<uint32_t>(index), port::load<uint32_t>(words.address));
+        callMember(0x001B9630u, static_cast<uint32_t>(index), words->ctx.address);
     }
 
     int Words_CallText(GuestPtr<Words> words, int index)
     {
-        return callMember(0x001B9570u, static_cast<uint32_t>(index), port::load<uint32_t>(words.address));
+        return callMember(0x001B9570u, static_cast<uint32_t>(index), words->ctx.address);
     }
 
     int Words_CallAct(GuestPtr<Words> words, int index)
     {
-        return callMember(0x001B9100u, static_cast<uint32_t>(index), port::load<uint32_t>(words.address));
+        return callMember(0x001B9100u, static_cast<uint32_t>(index), words->ctx.address);
     }
 
     PORT_FN(Words_CallCond);

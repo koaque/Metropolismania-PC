@@ -2,6 +2,7 @@
 
 #include "game_functions.h"
 #include "game_globals.h"
+#include "widgets.h"
 #include "lifetime.h"
 #include "sdk.h"
 #include "vu0.h"
@@ -14,7 +15,7 @@ namespace mm
     // Widget states: 0 idle, 1 opening, 2 opened, 3 active, 4 closing, 5 closed.
     GuestPtr<Widget> Widget_ctor(GuestPtr<Widget> widget)
     {
-        widget->vtable = GuestPtr<void>{0x001BD400u};
+        widget->vtable = GuestPtr<WidgetVtable>{0x001BD400u};
         widget->state = 0;
         widget->timer = 0.0f;
         return widget;
@@ -41,7 +42,7 @@ namespace mm
     {
         const uint32_t state = static_cast<uint32_t>(widget->state);
         if (state < 6)
-            port::callGuest<void>(port::load<uint32_t>(widget->vtable.address + 0x2Cu + 4u * state), widget.address);
+            port::callGuest<void>(widget->vtable->onState[state], widget.address);
         return widget->state;
     }
     void Widget_Idle(GuestPtr<Widget>) {}
@@ -551,7 +552,7 @@ namespace mm
     GuestPtr<MenuWin> MenuWin_ctor(GuestPtr<MenuWin> menuwin)
     {
         Widget_ctor(GuestPtr<Widget>::of(menuwin->base));
-        menuwin->base.vtable = GuestPtr<void>{0x001BCF80u};
+        menuwin->base.vtable = GuestPtr<WidgetVtable>{0x001BCF80u};
         menuwin->unk_1C = 0;
         menuwin->model = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B2Cu)};
         menuwin->list = GuestPtr<ListMenu>{0};
@@ -583,7 +584,7 @@ namespace mm
     {
         const auto draw = [&](uint32_t widget) {
             if (widget != 0)
-                port::callGuest<void>(port::load<uint32_t>(port::load<uint32_t>(widget + 8u) + 0x20u), widget, pass);
+                port::callGuest<void>(widgetMethod(widget, &WidgetVtable::draw), widget, pass);
         };
         draw(talk->view.address);
         draw(talk->conversation.address);
@@ -595,7 +596,7 @@ namespace mm
     {
         MsgWin_Draw(GuestPtr<MsgWin>::of(conv->base), pass);
         const auto draw = [&](uint32_t widget) {
-            port::callGuest<void>(port::load<uint32_t>(port::load<uint32_t>(widget + 8u) + 0x20u), widget, pass);
+            port::callGuest<void>(widgetMethod(widget, &WidgetVtable::draw), widget, pass);
         };
         draw(conv->menu.address);
         draw(conv->card.address);
@@ -1689,10 +1690,10 @@ namespace mm
     // y and height go through -0x8000 and back, as the original does.
     void Frame_GetRect(GuestPtr<Frame> frame, GuestPtr<uint32_t> x, GuestPtr<uint32_t> y, GuestPtr<uint32_t> width, GuestPtr<uint32_t> height)
     {
-        *x = port::load<uint32_t>(frame.address + 0x60u) & 0xFFFFu;
-        *y = static_cast<uint32_t>(port::load<int32_t>(frame.address + 0x60u) >> 16) & 0xFFFFu;
+        *x = frame->cornerA & 0xFFFFu;
+        *y = static_cast<uint32_t>(static_cast<int32_t>(frame->cornerA) >> 16) & 0xFFFFu;
         *width = port::load<uint16_t>(frame.address + 0x80u);
-        *height = static_cast<uint32_t>(port::load<int32_t>(frame.address + 0x80u) >> 16) & 0xFFFFu;
+        *height = static_cast<uint32_t>(static_cast<int32_t>(frame->cornerB) >> 16) & 0xFFFFu;
         *y = *y - 0x8000u;
         *height = *height - 0x8000u;
         *y = *y + 0x8000u;
@@ -1710,10 +1711,10 @@ namespace mm
     int MsgWin_NextLine(GuestPtr<MsgWin> msgwin, GuestPtr<char> text)
     {
         const uint32_t w = msgwin.address;
-        if (port::load<int32_t>(w) != 3)
+        if (msgwin->base.state != 3)
             return 0;
         sdk::strcpy(w + 0x18u, text.address);
-        port::store<int32_t>(w, 6);
+        msgwin->base.state = 6;
         port::store<uint32_t>(w + 0x2ACu, w + 0x18u);
         const int length = sdk::strcspn(port::load<uint32_t>(w + 0x2ACu), 0x001B5A78u);
         port::store<uint32_t>(w + 0x2B0u, port::load<uint32_t>(w + 0x2ACu) + static_cast<uint32_t>(length));
@@ -1834,14 +1835,14 @@ namespace mm
     // node + 0x19) placed by the object matrix (w set to 1) and drawn.
     void MyHome_Draw(GuestPtr<TalkView> view, int pass)
     {
-        if (pass != 1 || port::load<int32_t>(view.address) != 3)
+        if (pass != 1 || view->base.state != 3)
             return;
         Packet2_Draw(GuestPtr<uint32_t>{port::load<uint32_t>(viewCity(view).address + 0x40u)}, 1);
         const GuestPtr<MapObject> home = Map_GetRecord(viewCity(view)->map, static_cast<int>(viewObject(view)));
         if ((home->flags & 0x20u) == 0)
             return;
         const GuestPtr<BuildingType> type{globals::buildingTypeAddress(home->type)};
-        const uint32_t model = port::load<uint32_t>(view.address + 0x30u);
+        const uint32_t model = view->buildingModel.address;
         const uint32_t node = static_cast<uint32_t>(type->modelNode) + 0x19u;
         const uint32_t matrix = port::load<uint32_t>(port::load<uint32_t>(model) + 8u) + 0xC0u * node + 0x70u;
         MapObj_GetMatrix(viewCity(view)->map, static_cast<int>(viewObject(view)), GuestPtr<Vec4>{matrix});
@@ -2004,7 +2005,7 @@ namespace mm
     int Title_RandomCharParts(GuestPtr<SceneA> scene)
     {
         const uint32_t s = scene.address;
-        if (port::load<uint32_t>(s + 0xECu) != 0)
+        if (scene->previewModel.address != 0)
             return 1;
         int last = -1;
         for (int i = 0; i < 0x30; ++i)
@@ -2013,14 +2014,14 @@ namespace mm
         if (last < 0)
             return 0;
         const uint32_t pick = static_cast<uint32_t>(Random_TimerMix()) % static_cast<uint32_t>(last + 1);
-        port::store<uint32_t>(s + 0xECu, port::load<uint32_t>(globals::kCharParts + 4u * pick));
-        port::store<int32_t>(s + 0xF4u, 0);
-        port::store<float>(s + 0xF8u, -1.4f);
+        scene->previewModel = GuestPtr<A3DObject>{port::load<uint32_t>(globals::kCharParts + 4u * pick)};
+        scene->previewState = 0;
+        scene->previewTurn = -1.4f;
         port::store<int32_t>(s + 0xE4u, 0);
-        const ps2f meshValue = A3D_GetMeshField0C(GuestPtr<A3DObject>{port::load<uint32_t>(s + 0xECu)}, port::load<int32_t>(s + 0xF4u));
-        port::store<float>(s + 0xE8u, static_cast<float>(meshValue));
-        port::store<float>(s + 0xFCu, port::load<float>(0x001B1870u + 4u * pick));
-        port::store<uint32_t>(s + 0x100u, port::load<uint32_t>(0x001B1930u + 4u * pick));
+        const ps2f meshValue = A3D_GetMeshField0C(scene->previewModel, scene->previewState);
+        scene->previewEnd = static_cast<float>(meshValue);
+        scene->previewTurnStep = port::load<float>(0x001B1870u + 4u * pick);
+        scene->previewText = GuestPtr<char>{port::load<uint32_t>(0x001B1930u + 4u * pick)};
         return 1;
     }
 
@@ -2369,7 +2370,7 @@ namespace mm
             break;
         case 5:
             set(0x001B7530u);
-            append(pause->unk_1C == 0 ? 0x001B7588u : 0x001B7580u); // "1" or "2"
+            append(pause->cardPort == 0 ? 0x001B7588u : 0x001B7580u); // "1" or "2"
             append(0x001B7590u);                                      // "."
             break;
         case 6:
@@ -2774,7 +2775,7 @@ namespace mm
         else if (typeAt(cursor) == 0)
         {
             port::store<int32_t>(w + 0x2BCu, 0);
-            port::store<int32_t>(w, 3);
+            msgwin->base.state = 3;
             const int32_t column = static_cast<int32_t>(port::load<uint32_t>(w + 0x2B4u) - lines) % 0x24;
             if (column != 0)
             {
@@ -3294,11 +3295,11 @@ namespace mm
         if (pages)
         {
             lifetime::deleteFrame(pages.address + 0x4Cu);
-            const uint32_t index = port::load<uint32_t>(pages.address + 0x34u);
+            const uint32_t index = pages->index.address;
             if (index != 0u)
             {
                 sdk::operator_delete(index);
-                port::store<uint32_t>(pages.address + 0x34u, 0u);
+                pages->index = GuestPtr<TownPagesIndex>{0u};
             }
             for (uint32_t offset = 4u; offset <= 0x18u; offset += 4u)
                 lifetime::deleteTextBox(pages.address + offset);
@@ -3337,21 +3338,21 @@ namespace mm
         uint32_t frame = 0u;
         if (memory != 0u)
             frame = Frame_ctor(GuestPtr<Frame>{memory}, 0x1E, 0x64, 0x64, 0x18, 0xC, 0x10000000u).address;
-        port::store<uint32_t>(pages.address + 0x4Cu, frame);
-        port::store<uint32_t>(pages.address, port::load<uint32_t>(0x001F3B20u));
-        port::store<uint32_t>(pages.address + 0x1Cu, 0u);
-        port::store<uint32_t>(pages.address + 0x24u, port::load<uint32_t>(pages.address) + 0x10u);
+        pages->cursorFrame = GuestPtr<Frame>{frame};
+        pages->book = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B20u)};
+        pages->mode = 0;
+        pages->bookMatrix = GuestPtr<Vec4>{pages->book.address + 0x10u};
         for (uint32_t i = 0; i < 3u; ++i)
-            port::store<uint32_t>(port::load<uint32_t>(pages.address + 0x24u) + 0x30u + 4u * i, port::load<uint32_t>(0x001B1A60u + 4u * i));
+            port::store<uint32_t>(pages->bookMatrix.address + 0x30u + 4u * i, port::load<uint32_t>(0x001B1A60u + 4u * i));
         port::store<uint32_t>(pages.address + 0x28u, 0u);
         for (uint32_t offset = 4u; offset <= 0x18u; offset += 4u)
             port::store<uint32_t>(pages.address + offset, 0u);
-        port::store<uint32_t>(pages.address + 0x34u, 0u);
-        port::store<uint32_t>(pages.address + 0x2Cu, 0u);
-        port::store<uint32_t>(pages.address + 0x58u, 0u);
-        port::store<uint32_t>(pages.address + 0x5Cu, 0u);
-        port::store<uint32_t>(pages.address + 0x30u, 0u);
-        port::store<uint32_t>(pages.address + 0x60u, 0u);
+        pages->index = GuestPtr<TownPagesIndex>{0u};
+        pages->page = 0;
+        pages->unk_58 = 0;
+        pages->row = 0;
+        pages->savedPage = 0;
+        pages->savedRow = 0;
         return pages;
     }
 
@@ -3362,28 +3363,28 @@ namespace mm
     GuestPtr<TextBox> TextBox_Init(GuestPtr<TextBox> textbox, int columns, int rows, int style)
     {
         const uint32_t t = textbox.address;
-        port::store<int32_t>(t + 0x38u, columns << 1);
-        port::store<int32_t>(t + 0x3Cu, rows);
-        port::store<int32_t>(t + 0x18u, 0x6C00);
-        port::store<int32_t>(t + 0x1Cu, 0x7900);
-        port::store<int32_t>(t + 0x20u, 16000000);
-        port::store<int32_t>(t + 0x10u, 0xC0);
-        port::store<int32_t>(t + 0x14u, 0xB0);
-        port::store<int32_t>(t + 0x24u, port::load<int32_t>(t + 0x10u));
-        port::store<int32_t>(t + 0x28u, port::load<int32_t>(t + 0x14u));
-        port::store<int32_t>(t + 0x2Cu, 0);
-        const int32_t cells = port::load<int32_t>(t + 0x38u) * port::load<int32_t>(t + 0x3Cu);
+        textbox->columns = columns << 1;
+        textbox->rows = rows;
+        textbox->x = 0x6C00;
+        textbox->y = 0x7900;
+        textbox->z = 16000000;
+        textbox->charWidth = 0xC0;
+        textbox->charHeight = 0xB0;
+        textbox->pitchX = textbox->charWidth;
+        textbox->pitchY = textbox->charHeight;
+        textbox->cursor = 0;
+        const int32_t cells = textbox->columns * textbox->rows;
         if (style == -1)
             style = 0x001B24A0;
         else if (style == -2)
             style = 0x001B24E0;
         const int32_t paletteQuads = style != 0 ? 8 : 0;
-        port::store<int32_t>(t + 0xCu, style);
+        textbox->clut = style;
         port::store<uint32_t>(t + 8u, sdk::malloc(static_cast<uint32_t>(paletteQuads + 0xC + cells * 11) << 4));
-        TextBox_Build(textbox, port::load<int32_t>(t + 0xCu));
-        port::store<int32_t>(t + 0x2Cu, 0);
-        const int32_t count = port::load<int32_t>(t + 0x38u) * port::load<int32_t>(t + 0x3Cu);
-        uint32_t cell = port::load<uint32_t>(t + 0x34u) + 0x50u;
+        TextBox_Build(textbox, textbox->clut);
+        textbox->cursor = 0;
+        const int32_t count = textbox->columns * textbox->rows;
+        uint32_t cell = textbox->cells + 0x50u;
         for (int32_t i = 0; i < count; ++i, cell += 0x60u)
             port::store<uint32_t>(cell + 4u, port::load<uint32_t>(0x001BDC98u));
         return textbox;
@@ -3398,8 +3399,8 @@ namespace mm
     void TownPages_BuildIndex(GuestPtr<TownPages> pages)
     {
         const int32_t types = globals::familyTypeCount.get();
-        port::store<uint32_t>(pages.address + 0x34u, sdk::mw_NewArray(static_cast<uint32_t>(types) << 3));
-        const auto entry = [&](int32_t type) { return port::load<uint32_t>(pages.address + 0x34u) + 8u * static_cast<uint32_t>(type); };
+        pages->index = GuestPtr<TownPagesIndex>{sdk::mw_NewArray(static_cast<uint32_t>(types) << 3)};
+        const auto entry = [&](int32_t type) { return pages->index.address + 8u * static_cast<uint32_t>(type); };
         for (int32_t type = 0; type < types; ++type)
             port::store<uint16_t>(entry(type), 0);
         for (uint32_t family = 1; family < 10000u; ++family)
@@ -3424,10 +3425,10 @@ namespace mm
             ++knownTypes;
             pageCount += (static_cast<int32_t>(port::load<uint16_t>(e)) - 1) / 10 + 1;
         }
-        port::store<int32_t>(pages.address + 0x3Cu, pageCount);
-        port::store<int32_t>(pages.address + 0x38u, (knownTypes + 9) / 10);
-        if (port::load<int32_t>(pages.address + 0x38u) == 0)
-            port::store<int32_t>(pages.address + 0x38u, 1);
+        pages->pageCount = pageCount;
+        pages->contentsPages = (knownTypes + 9) / 10;
+        if (pages->contentsPages == 0)
+            pages->contentsPages = 1;
         for (int32_t type = 0; type < types; ++type)
         {
             const uint32_t e = entry(type);
@@ -3435,7 +3436,7 @@ namespace mm
             if (start != 0xFFFFu)
                 port::store<uint16_t>(e + 4u, static_cast<uint16_t>(start + port::load<uint16_t>(pages.address + 0x38u)));
         }
-        port::store<int32_t>(pages.address + 0x3Cu, port::load<int32_t>(pages.address + 0x3Cu) + port::load<int32_t>(pages.address + 0x38u));
+        pages->pageCount = pages->pageCount + pages->contentsPages;
     }
 
     PORT_FN(TownPages_BuildIndex);
@@ -3622,29 +3623,29 @@ namespace mm
         const uint32_t l = laptop.address;
         DmaList_QueueFade(0x50, 0);
         DmaList_QueueClearZ();
-        if (port::load<uint32_t>(l + 0x44u) != 0u)
-            TextBox_Draw(GuestPtr<TextBox>{port::load<uint32_t>(l + 0x44u)});
+        if (laptop->text.address != 0u)
+            TextBox_Draw(laptop->text);
         uint32_t node = 0x001F36F0u;
         for (int32_t i = 0; i < port::load<int32_t>(0x001BDAB8u); ++i, node += 4u)
         {
-            const uint32_t model = port::load<uint32_t>(l);
+            const uint32_t model = laptop->model.address;
             const int32_t nodeIndex = port::load<int32_t>(node);
             const uint32_t mesh = port::load<uint32_t>(port::load<uint32_t>(model) + 8u) + 0xC0u * static_cast<uint32_t>(nodeIndex);
             const uint32_t rows = l + 0x40u * static_cast<uint32_t>(i);
             for (uint32_t row = 0; row < 4u; ++row)
                 *GuestPtr<Vec4>{mesh + 0x70u + 0x10u * row} = *GuestPtr<Vec4>{rows + 0x50u + 0x10u * row};
             A3DObject_DrawNode(GuestPtr<A3DObject>{model}, nodeIndex);
-            if (port::load<int32_t>(l + 0x3Cu) == 2 && i == port::load<int32_t>(l + 0x3D0u))
+            if (laptop->state == 2 && i == laptop->selected)
             {
                 *GuestPtr<Vec4>{sp + 0x70u} = *GuestPtr<Vec4>{0x001AF690u};
                 port::store<int32_t>(sp + 0x7Cu, 0xC);
-                A3DObject_ChangeLuminosity(GuestPtr<A3DObject>{port::load<uint32_t>(l)}, GuestPtr<uint32_t>{sp + 0x70u}, port::load<int32_t>(node));
+                A3DObject_ChangeLuminosity(laptop->model, GuestPtr<uint32_t>{sp + 0x70u}, port::load<int32_t>(node));
             }
             else
             {
                 *GuestPtr<Vec4>{sp + 0x80u} = *GuestPtr<Vec4>{0x001AF6A0u};
                 port::store<int32_t>(sp + 0x8Cu, 0);
-                A3DObject_ChangeLuminosity(GuestPtr<A3DObject>{port::load<uint32_t>(l)}, GuestPtr<uint32_t>{sp + 0x80u}, port::load<int32_t>(node));
+                A3DObject_ChangeLuminosity(laptop->model, GuestPtr<uint32_t>{sp + 0x80u}, port::load<int32_t>(node));
             }
         }
     }
@@ -3657,31 +3658,31 @@ namespace mm
         port::GuestFrame<0x50> frame;
         const uint32_t sp = frame.ptr().address;
         const uint32_t p = phone.address;
-        if (port::load<int32_t>(p + 0x40u) == 0)
+        if (phone->unk_40 == 0)
             return;
         const uint32_t colour = sp + 0x40u;
         port::store<uint32_t>(colour, 0x3F800000u);
         port::store<uint32_t>(colour + 4u, 0x3F800000u);
         port::store<uint32_t>(colour + 8u, 0x3F800000u);
         port::store<int32_t>(colour + 0xCu, 0);
-        port::store<int32_t>(p + 0x44u, port::load<int32_t>(p + 0x44u) + 1);
-        const int32_t frames = port::load<int32_t>(p + 0x44u);
+        phone->unk_44 = phone->unk_44 + 1;
+        const int32_t frames = phone->unk_44;
         if ((divide(frames, 0x54) & 1) == 0)
         {
             Sound_PlaySe(0x27, 0, 0x3C, 0.0f, 0.0f);
             port::store<int32_t>(colour + 0xCu, ((frames >> 1) & 1) != 0 ? 0xC : 0);
         }
-        const int distance = sdk::abs(port::load<int32_t>(p + 0x40u));
+        const int distance = sdk::abs(phone->unk_40);
         const ps2f slide = fromInt(10 - distance) / ps2f(10.0f);
-        const uint32_t matrix = port::load<uint32_t>(port::load<uint32_t>(port::load<uint32_t>(p)) + 8u) + 0x130u;
+        const uint32_t matrix = port::load<uint32_t>(port::load<uint32_t>(phone->unk_00.address) + 8u) + 0x130u;
         Mat4_Copy(GuestPtr<Vec4>{matrix}, GuestPtr<Vec4>{0x001B2550u});
         port::store<uint32_t>(matrix + 0x30u, 0xBF428F5Cu);
         port::store<float>(matrix + 0x34u, static_cast<float>(ps2f(0.62f) + slide));
         port::store<uint32_t>(matrix + 0x38u, 0xC027AE14u);
-        A3DObject_ChangeLuminosity(GuestPtr<A3DObject>{port::load<uint32_t>(p)}, GuestPtr<uint32_t>{colour}, 1);
-        A3DObject_DrawNode(GuestPtr<A3DObject>{port::load<uint32_t>(p)}, 1);
-        if (port::load<int32_t>(p + 0x40u) < 10)
-            port::store<int32_t>(p + 0x40u, port::load<int32_t>(p + 0x40u) + 1);
+        A3DObject_ChangeLuminosity(GuestPtr<A3DObject>{phone->unk_00.address}, GuestPtr<uint32_t>{colour}, 1);
+        A3DObject_DrawNode(GuestPtr<A3DObject>{phone->unk_00.address}, 1);
+        if (phone->unk_40 < 10)
+            phone->unk_40 = phone->unk_40 + 1;
     }
 
     PORT_FN(Laptop_Draw);
@@ -3693,22 +3694,22 @@ namespace mm
     GuestPtr<ListMenu> ListMenu_ctor(GuestPtr<ListMenu> menu, int visible, int rowHeight, int a3, int cursorX, int cursorY, int cursorZ)
     {
         const uint32_t m = menu.address;
-        port::store<int32_t>(m + 0x264u, visible);
-        port::store<int32_t>(m + 0x268u, rowHeight);
-        port::store<int32_t>(m + 0x26Cu, a3);
-        port::store<int32_t>(m + 0x27Cu, 0);
-        port::store<int32_t>(m + 0x270u, 0);
-        port::store<int32_t>(m + 0x288u, 0);
-        port::store<int32_t>(m + 0x28Cu, 0);
-        port::store<int32_t>(m + 0x290u, 0);
-        port::store<int32_t>(m + 0x294u, 1);
-        port::store<int32_t>(m + 0x298u, 1);
-        port::store<int32_t>(m + 0x284u, 0);
+        menu->visibleItems = visible;
+        menu->itemHeight = rowHeight;
+        menu->unk_26C = a3;
+        menu->cursorY = 0;
+        menu->scroll = 0;
+        menu->unk_288 = 0;
+        menu->nextItem = 0;
+        menu->itemCount = 0;
+        menu->canCancel = 1;
+        menu->canSelect = 1;
+        menu->scrollStep = 0;
         const uint32_t memory = sdk::operator_new(0xC0u);
         uint32_t frame = 0u;
         if (memory != 0u)
             frame = Frame_ctor(GuestPtr<Frame>{memory}, 0x1E, 0, 0, 0x18, 0xC, 0x10000000u).address;
-        port::store<uint32_t>(m + 0xE0u, frame);
+        menu->cursorFrame = GuestPtr<Frame>{frame};
         for (uint32_t offset = 0xE4u; offset < 0xE4u + 32u * 0xCu; offset += 4u)
             port::store<uint32_t>(m + offset, 0u);
         const uint32_t header[] = {0x1000000Cu, 0u, 0x11000000u, 0x5000000Cu, 0x800Bu, 0x10000000u, 0xEu, 0u,
@@ -3782,7 +3783,7 @@ namespace mm
         if (port::callGuest<int64_t>(port::load<uint32_t>(vtable + 0x18u), menuwin, ps2f(0.1f)) != 0)
         {
             lifetime::deleteWith(menuwin.address + 0x10u, [](uint32_t o) { ListMenu_dtor(GuestPtr<ListMenu>{o}, 1); });
-            port::store<int32_t>(menuwin.address, 0);
+            menuwin->base.state = 0;
         }
     }
 
@@ -4102,14 +4103,14 @@ namespace mm
     {
         Widget_ctor(GuestPtr<Widget>{msgwin.address});
         port::store<uint32_t>(msgwin.address + 8u, 0x001BCE10u);
-        port::store<uint32_t>(msgwin.address + 0x10u, newTextBox(0x12, 4, -2));
-        TextBox_SetPos(GuestPtr<TextBox>{port::load<uint32_t>(msgwin.address + 0x10u)}, 0x7240, 0x8240, -0x100000);
+        msgwin->text = GuestPtr<TextBox>{newTextBox(0x12, 4, -2)};
+        TextBox_SetPos(msgwin->text, 0x7240, 0x8240, -0x100000);
         const uint32_t memory = sdk::operator_new(0xC0u);
         uint32_t arrow = 0u;
         if (memory != 0u)
             arrow = Frame_ctor(GuestPtr<Frame>{memory}, 0x14, 0x21C, 0xBA, 0x18, 0xC, 0x10000000u).address;
-        port::store<uint32_t>(msgwin.address + 0x14u, arrow);
-        port::store<uint32_t>(msgwin.address + 0xCu, port::load<uint32_t>(0x001F3B2Cu));
+        msgwin->arrowPacket = arrow;
+        msgwin->model = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B2Cu)};
         return msgwin;
     }
 
@@ -4120,11 +4121,11 @@ namespace mm
         port::store<uint32_t>(n + 8u, newTextBox(0x19, 1, -1));
         TextBox_SetPos(GuestPtr<TextBox>{port::load<uint32_t>(n + 8u)}, 0x7740, 0x84E0, -1);
         TextBox_SetCharSize(GuestPtr<TextBox>{port::load<uint32_t>(n + 8u)}, 0, 0xD0, 0, 0xE0);
-        port::store<int32_t>(n, -1);
-        port::store<uint32_t>(n + 0xCu, newTextBox(0x19, 1, -1));
-        TextBox_SetPos(GuestPtr<TextBox>{port::load<uint32_t>(n + 0xCu)}, 0x72E0, 0x8540, -1);
-        TextBox_SetCharSize(GuestPtr<TextBox>{port::load<uint32_t>(n + 0xCu)}, 0, 0xB0, 0, 0xC0);
-        port::store<int32_t>(n + 0x10u, 0);
+        notice->id = -1;
+        notice->text2 = GuestPtr<TextBox>{newTextBox(0x19, 1, -1)};
+        TextBox_SetPos(notice->text2, 0x72E0, 0x8540, -1);
+        TextBox_SetCharSize(notice->text2, 0, 0xB0, 0, 0xC0);
+        notice->unk_10 = 0;
         return notice;
     }
 
@@ -4136,20 +4137,20 @@ namespace mm
         uint32_t sprite = sdk::operator_new(0x38u);
         if (sprite != 0u)
             sprite = static_cast<uint32_t>(TexSprite_Load(GuestPtr<TexSprite>{sprite}, 0x001B7F70, 1));
-        port::store<uint32_t>(l, sprite);
+        loading->background = GuestPtr<TexSprite>{sprite};
         sprite = sdk::operator_new(0x38u);
         if (sprite != 0u)
             sprite = static_cast<uint32_t>(TexSprite_Load(GuestPtr<TexSprite>{sprite}, file, 1));
         port::store<uint32_t>(l + 4u, sprite);
-        TexSprite_SetPosScale(GuestPtr<TexSprite>{port::load<uint32_t>(l)}, 0x14, 0x14, 1, ps2f(1.0f), ps2f(1.0f));
+        TexSprite_SetPosScale(loading->background, 0x14, 0x14, 1, ps2f(1.0f), ps2f(1.0f));
         port::store<uint32_t>(l + 8u, newTextBox(0x18, 4, -1));
-        port::store<int32_t>(l + 0x10u, 0);
-        port::store<int32_t>(l + 0xCu, 0x80);
-        port::store<int32_t>(l + 0x14u, 0);
-        port::store<int32_t>(l + 0x18u, 0);
-        port::store<int32_t>(l + 0x1Cu, 1);
-        port::store<uint8_t>(l + 0x20u, style);
-        port::store<int32_t>(l + 0x24u, 0);
+        loading->frame = 0;
+        loading->fade = 0x80;
+        loading->spriteX = 0;
+        loading->spriteY = 0;
+        loading->spriteZ = 1;
+        loading->style = style;
+        loading->showText = 0;
         return loading;
     }
 
@@ -4181,22 +4182,22 @@ namespace mm
             uint32_t list = 0u;
             if (memory != 0u)
                 list = ListMenu_ctor(GuestPtr<ListMenu>{memory}, count, 0xC, 0x136, 0xB4, 0x8A, 0xFF0000).address;
-            port::store<uint32_t>(w + 0x10u, list);
-            port::store<int32_t>(w + 0x14u, count);
-            port::store<int32_t>(w + 0x1Cu, 1);
+            menuwin->list = GuestPtr<ListMenu>{list};
+            menuwin->size = count;
+            menuwin->unk_1C = 1;
             return;
         }
         if (count >= 5)
             count = 4;
-        port::store<int32_t>(w + 0x14u, count);
+        menuwin->size = count;
         const uint32_t memory = sdk::operator_new(0x2A0u);
         uint32_t list = 0u;
         if (memory != 0u)
-            list = ListMenu_ctor(GuestPtr<ListMenu>{memory}, port::load<int32_t>(w + 0x14u), 0xC, 0x11D, 0xC8, 0x8A, 0xFF0000).address;
-        port::store<uint32_t>(w + 0x10u, list);
+            list = ListMenu_ctor(GuestPtr<ListMenu>{memory}, menuwin->size, 0xC, 0x11D, 0xC8, 0x8A, 0xFF0000).address;
+        menuwin->list = GuestPtr<ListMenu>{list};
         if (menuId != -0x7D5 && menuId != -0x7D2)
-            port::store<int32_t>(port::load<uint32_t>(w + 0x10u) + 0x294u, 0);
-        port::store<int32_t>(w + 0x1Cu, 0);
+            menuwin->list->canCancel = 0;
+        menuwin->unk_1C = 0;
     }
 
     PORT_FN(MsgWin_ctor);
@@ -4216,22 +4217,22 @@ namespace mm
         StageObj_ctor(static_cast<int>(a + 0x289u));
         port::store<uint32_t>(a + 0x320u, 0x001BCF60u);
         port::store<uint32_t>(a + 0x29Cu, 0u);
-        port::store<uint32_t>(a + 0x294u, newTextBox(0x12, 4, -2));
-        TextBox_SetPos(GuestPtr<TextBox>{port::load<uint32_t>(a + 0x294u)}, 0x79C0, 0x8080, -0x100000);
+        applicants->cardText = GuestPtr<TextBox>{newTextBox(0x12, 4, -2)};
+        TextBox_SetPos(applicants->cardText, 0x79C0, 0x8080, -0x100000);
         port::store<uint32_t>(a + 0x28Cu, port::load<uint32_t>(0x001F3B10u));
         port::store<uint32_t>(a + 0x290u, port::load<uint32_t>(0x001F3B68u));
-        port::store<uint32_t>(a + 0x2A0u, port::load<uint32_t>(a + 0x28Cu) + 0x10u);
-        port::store<uint32_t>(a + 0x2A4u, port::load<uint32_t>(a + 0x290u) + 0x10u);
+        applicants->cardModelA = GuestPtr<void>{port::load<uint32_t>(a + 0x28Cu) + 0x10u};
+        applicants->cardModelB = GuestPtr<void>{port::load<uint32_t>(a + 0x290u) + 0x10u};
         port::store<uint32_t>(a + 0x2A8u, port::load<uint32_t>(port::load<uint32_t>(port::load<uint32_t>(a + 0x290u)) + 8u) + 0x70u);
         port::store<uint32_t>(a + 0x2ACu, port::load<uint32_t>(port::load<uint32_t>(port::load<uint32_t>(a + 0x290u)) + 8u) + 0x1F0u);
-        port::store<uint32_t>(a + 0x2D0u, 0u);
-        port::store<uint32_t>(a + 0x2CCu, 0u);
+        applicants->top = 0;
+        applicants->cursor = 0;
         port::store<uint32_t>(a + 0x2B0u, 0u);
         port::store<uint32_t>(a + 0x2B4u, 0u);
         port::store<uint32_t>(a + 0x2B8u, 0u);
-        port::store<uint32_t>(a + 0x2BCu, 0u);
+        applicants->unk_2BC = 0;
         port::store<uint8_t>(a + 0x2C8u, 0xFF);
-        port::store<uint8_t>(a + 0x2C9u, 1);
+        applicants->enabled = 1;
         return applicants;
     }
 
@@ -4245,7 +4246,7 @@ namespace mm
     {
         const uint32_t m = menu.address;
         if (item == -1)
-            item = port::load<int32_t>(m + 0x288u);
+            item = menu->unk_288;
         if (item >= 0x20)
             return;
         const uint32_t entry = m + 12u * static_cast<uint32_t>(item);
@@ -4272,8 +4273,8 @@ namespace mm
         }
         if (port::load<int32_t>(entry + 0xE8u) < height)
             port::store<int32_t>(entry + 0xE8u, height);
-        if (item == port::load<int32_t>(m + 0x288u))
-            port::store<int32_t>(m + 0x288u, item + 1);
+        if (item == menu->unk_288)
+            menu->unk_288 = item + 1;
     }
 
     PORT_FN(ListMenu_AddItems);
@@ -4321,9 +4322,9 @@ namespace mm
         const uint32_t seat = sp + 0x68u, month = sp + 0x78u, year = sp + 0x70u, members = sp + 0x80u, size = sp + 0x88u;
         constexpr uint32_t kText = 0x001F3790u;
         const uint32_t a = applicants.address;
-        if (port::load<int32_t>(a + 0x280u) == 0)
+        if (applicants->count == 0)
             return;
-        const uint32_t entry = a + 0x14u * port::load<uint32_t>(a + 0x2D0u);
+        const uint32_t entry = a + 0x14u * static_cast<uint32_t>(applicants->top);
         const uint32_t family = Family_Get(port::load<uint16_t>(entry + 4u), 0).address;
         const uint32_t type = globals::buildingTypeAddress(port::load<uint16_t>(family + 0x20u));
         Text_FormatPadded(GuestPtr<char>{seat}, port::load<uint8_t>(family + 0x26u), 2);
@@ -4369,7 +4370,7 @@ namespace mm
         const int base = sdk::strlen(kText);
         const uint32_t line = kText + static_cast<uint32_t>(base);
         const uint32_t table = port::load<uint32_t>(0x001BDA74u);
-        const uint32_t claim = port::load<uint16_t>(a + 0x2DCu + 2u * port::load<uint32_t>(a + 0x2D0u));
+        const uint32_t claim = port::load<uint16_t>(a + 0x2DCu + 2u * static_cast<uint32_t>(applicants->top));
         sdk::memcpy(line, table + port::load<uint16_t>(table + 2u * port::load<uint16_t>(table + 4u) + 2u * claim), 0x1A);
         port::store<uint8_t>(0x001F37AAu + static_cast<uint32_t>(base), 0);
         const int total = sdk::strlen(kText);
@@ -4378,7 +4379,7 @@ namespace mm
         sdk::sprintf(line + 0x1Eu, 0x001B7AB8u, size);
         const uint32_t state = port::load<uint16_t>(entry + 2u);
         port::store<uint8_t>(a + 0x2C8u, state < 8 ? port::load<uint8_t>(0x001BD998u + state) : 0);
-        TextBox_SetText(GuestPtr<TextBox>{port::load<uint32_t>(a + 0x294u)}, GuestPtr<char>{kText}, 0);
+        TextBox_SetText(applicants->cardText, GuestPtr<char>{kText}, 0);
     }
 
     PORT_FN(Applicants_BuildInfo);
@@ -4391,13 +4392,13 @@ namespace mm
     {
         const uint32_t p = panel.address;
         BaseObject_ctor(static_cast<int>(p));
-        port::store<uint32_t>(p + 0x90u, port::load<uint32_t>(0x001F3B0Cu));
-        const uint32_t model = port::load<uint32_t>(p + 0x90u);
+        panel->model = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B0Cu)};
+        const uint32_t model = panel->model.address;
         port::store<uint32_t>(model + 0x40u, 0xBF47AE14u);
         port::store<uint32_t>(model + 0x44u, 0xBF051EB8u);
         port::store<uint32_t>(model + 0x48u, 0xC02CCCCDu);
         PacketBuf_Seek(static_cast<int>(StatusPanel_BuildPacket(panel, GuestPtr<uint32_t>{static_cast<uint32_t>(PacketBuf_Tell())}).address));
-        port::store<uint32_t>(p + 0x94u, port::load<uint32_t>(0x001F3B00u));
+        panel->alertModel = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B00u)};
         const uint32_t words[] = {0x10000006u, 0u, 0x11000000u, 0x50000006u,
                                   4u, 0x10000000u, 0xEu, 0u,
                                   0u, 0u, 0x51u, 0u,
@@ -4419,11 +4420,11 @@ namespace mm
         box(0xA8, 0xC, 1, 0x8140, 0x8280);
         box(0xA4, 0xC, 1, 0x8140, 0x8350);
         box(0xAC, 5, 1, 0x8140, 0x8420);
-        TextBox_SetText(GuestPtr<TextBox>{port::load<uint32_t>(p + 0xACu)}, GuestPtr<char>{0x001B6550u}, 0);
-        port::store<uint32_t>(p + 0x98u, port::load<uint32_t>(0x001F3B34u));
-        port::store<uint32_t>(p + 0xB0u, 0u);
-        port::store<uint32_t>(p + 0xB4u, 0u);
-        port::store<uint32_t>(p + 0xBCu, 0u);
+        TextBox_SetText(panel->text[3], GuestPtr<char>{0x001B6550u}, 0);
+        panel->detailModel = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B34u)};
+        panel->detail = 0;
+        panel->alert = 0;
+        panel->unk_BC = 0;
         return panel;
     }
 
@@ -4442,9 +4443,9 @@ namespace mm
     // Adds a line to the menu window's list: the list gets an item of 13 columns (14 when the window is open) by 1 row, style -2.
     void MenuWin_FillItems(GuestPtr<MenuWin> menuwin, GuestPtr<char> item)
     {
-        const GuestPtr<ListMenu> list{port::load<uint32_t>(menuwin.address + 0x10u)};
-        ListMenu_AddItems(list, port::load<int32_t>(menuwin.address + 0x1Cu) == 0 ? 0xD : 0xE, 1, -1, -2, 0, -1);
-        ListMenu_SetItemText(GuestPtr<ListMenu>{port::load<uint32_t>(menuwin.address + 0x10u)}, item, -1);
+        const GuestPtr<ListMenu> list{menuwin->list.address};
+        ListMenu_AddItems(list, menuwin->unk_1C == 0 ? 0xD : 0xE, 1, -1, -2, 0, -1);
+        ListMenu_SetItemText(menuwin->list, item, -1);
     }
 
     // Once the opening call (slot +0x18 of the vtable at +8, with a step of 0.1) is done, the conversation goes to state 3 and
@@ -4454,7 +4455,7 @@ namespace mm
         const uint32_t vtable = port::load<uint32_t>(conv.address + 8u);
         if (port::callGuest<int64_t>(port::load<uint32_t>(vtable + 0x18u), conv, ps2f(0.1f)) != 0)
         {
-            port::store<int32_t>(conv.address, 3);
+            conv->base.base.state = 3;
             TalkConv_NextLine(conv);
         }
     }
@@ -4508,15 +4509,15 @@ namespace mm
         const uint32_t a = applicants.address;
         port::store<int32_t>(a + 0x2B8u, 1);
         port::store<int32_t>(a + 0x2C0u, 0);
-        port::store<uint32_t>(a + 0x2C4u, port::load<uint32_t>(a + 0x2D0u));
-        port::store<int32_t>(a + 0x2D0u, index);
-        port::store<int32_t>(a + 0x2CCu, index);
+        port::store<uint32_t>(a + 0x2C4u, static_cast<uint32_t>(applicants->top));
+        applicants->top = index;
+        applicants->cursor = index;
         Mat4_Copy(GuestPtr<Vec4>{port::load<uint32_t>(a + 0x2A8u)}, GuestPtr<Vec4>{0x001B2550u});
-        const auto word = [&](uint32_t offset) { return ps2f(std::bit_cast<float>(port::load<uint32_t>(port::load<uint32_t>(a + 0x2A0u) + offset))); };
+        const auto word = [&](uint32_t offset) { return ps2f(std::bit_cast<float>(port::load<uint32_t>(applicants->cardModelA.address + offset))); };
         const auto put = [&](uint32_t offset, ps2f value) { port::store<uint32_t>(port::load<uint32_t>(a + 0x2A8u) + offset, std::bit_cast<uint32_t>(value.v)); };
         put(0x30, word(0x30) - ps2f(3.0f));
         put(0x34, word(0x34) - ps2f(2.5f));
-        port::store<uint32_t>(port::load<uint32_t>(a + 0x2A8u) + 0x38u, port::load<uint32_t>(port::load<uint32_t>(a + 0x2A0u) + 0x38u));
+        port::store<uint32_t>(port::load<uint32_t>(a + 0x2A8u) + 0x38u, port::load<uint32_t>(applicants->cardModelA.address + 0x38u));
         Applicants_ScrollTo(applicants, -1);
         Applicants_BuildInfo(applicants);
         port::store<int32_t>(a + 0x29Cu, 1);
@@ -4533,7 +4534,7 @@ namespace mm
         ListMenu_ClearItem(list(), -1);
         ListMenu_SetCursor(list(), 0x58, 0x31, 0xFF0000);
         port::store<uint32_t>(p + 0x14u, 0u);
-        TextBox_SetText(GuestPtr<TextBox>{port::load<uint32_t>(p + 0x10u)}, GuestPtr<char>{0x001B73C0u}, 0);
+        TextBox_SetText(pause->message, GuestPtr<char>{0x001B73C0u}, 0);
         Pad_ClearBit40();
         PauseMenu_StateSlotSelect(pause);
         const int32_t waiting = port::load<int32_t>(p + 0x998u);
@@ -4585,13 +4586,13 @@ namespace mm
         uint32_t list = sdk::operator_new(0x2A0u);
         if (list != 0u)
             list = ListMenu_ctor(GuestPtr<ListMenu>{list}, 3, 0x30, 0x1C2, 0x1A4, 0x3C, 0xFF0000).address;
-        port::store<uint32_t>(s + 0xB0u, list);
+        scene->loadMenu = GuestPtr<ListMenu>{list};
         for (int i = 0; i < 0x10; ++i)
-            ListMenu_AddItems(GuestPtr<ListMenu>{port::load<uint32_t>(s + 0xB0u)}, 0x13, 3, 0, -1, 0, -1);
+            ListMenu_AddItems(scene->loadMenu, 0x13, 3, 0, -1, 0, -1);
         uint32_t mc = sdk::operator_new(0x28u);
         if (mc != 0u)
             mc = McManager_ctor(GuestPtr<McManager>{mc}).address;
-        port::store<uint32_t>(s + 0xB4u, mc);
+        scene->mc = GuestPtr<McManager>{mc};
         uint32_t lights = sdk::operator_new(0x1B0u);
         if (lights != 0u)
             lights = static_cast<uint32_t>(LightSet_Init(GuestPtr<LightSet>{lights}));
@@ -4605,30 +4606,30 @@ namespace mm
         Camera_SetEyeTarget(GuestPtr<Camera>{port::load<uint32_t>(s)}, GuestPtr<Vec4>{sp + 0x30u}, GuestPtr<Vec4>{sp + 0x40u});
         Camera_UpdateMatrices(GuestPtr<Camera>{port::load<uint32_t>(s)});
         port::store<uint32_t>(s + 0xC0u, 0u);
-        port::store<uint32_t>(s + 0xC4u, 0u);
-        port::store<uint32_t>(s + 0xC8u, 0u);
-        port::store<uint32_t>(s + 0xD8u, 0u);
-        port::store<uint32_t>(s + 0x48u, 0u);
-        port::store<uint32_t>(s + 0x3Cu, 0u);
-        port::store<uint32_t>(s + 0x40u, 0u);
+        scene->pressStep = 0;
+        scene->waitFrames = 0;
+        scene->introFrame = 0;
+        scene->pulseFrame = 0;
+        scene->choice = 0;
+        scene->choicePulsing = 0;
         port::store<uint32_t>(s + 0x54u, 0u);
         port::store<uint32_t>(0x001BDA7Cu, 0u);
-        port::store<int32_t>(s + 0xD0u, -1);
+        scene->layers = -1;
         port::store<uint32_t>(s + 0x4Cu, 1u);
         port::store<uint32_t>(s + 0xBCu, newTextBox(0x15, 0xC, -1));
         TextBox_SetPos(GuestPtr<TextBox>{port::load<uint32_t>(s + 0xBCu)}, 0x72E0, 0x7C20, -0x100000);
-        port::store<uint32_t>(s + 0x50u, 0u);
-        port::store<uint32_t>(s + 0x58u, 0u);
+        scene->logoSound = 0;
+        scene->showHint = 0;
         port::store<uint8_t>(s + 0x5Du, 0);
         port::store<uint8_t>(s + 0x5Cu, 0);
         port::store<uint16_t>(s + 0x5Eu, 0);
         port::store<uint8_t>(s + 0x60u, 0x3C);
         port::store<uint16_t>(s + 0x62u, 0);
-        port::store<uint8_t>(s + 0x70u, 0);
-        port::store<uint32_t>(s + 0xB8u, newTextBox(0x1E, 0xF, -1));
-        TextBox_SetPos(GuestPtr<TextBox>{port::load<uint32_t>(s + 0xB8u)}, 0x74C0, 0x7AE0, -0x100000);
+        scene->codeStep = 0;
+        scene->hintText = GuestPtr<TextBox>{newTextBox(0x1E, 0xF, -1)};
+        TextBox_SetPos(scene->hintText, 0x74C0, 0x7AE0, -0x100000);
         port::store<uint8_t>(s + 0xAEu, 0x3C);
-        port::store<uint32_t>(s + 0xECu, 0u);
+        scene->previewModel = GuestPtr<A3DObject>{0u};
         return scene;
     }
 
@@ -4643,9 +4644,9 @@ namespace mm
         port::GuestFrame<0x30> frame;
         const uint32_t choiceAt = frame.ptr().address + 0x2Cu;
         const uint32_t p = pause.address;
-        const GuestPtr<McManager> mc{port::load<uint32_t>(p + 0xCu)};
+        const GuestPtr<McManager> mc{pause->mc.address};
         McManagerUpdate(mc);
-        if (McManager_GetCardStatus(GuestPtr<McManager>{port::load<uint32_t>(p + 0xCu)}, port::load<int32_t>(p + 0x1Cu)) == 2)
+        if (McManager_GetCardStatus(pause->mc, pause->cardPort) == 2)
         {
             PauseMenu_ShowCardMessage(pause, 5);
             return;
@@ -4653,7 +4654,7 @@ namespace mm
         if (ListMenu_HandleInput(GuestPtr<ListMenu>{port::load<uint32_t>(p + 4u)}, GuestPtr<int32_t>{choiceAt}) == 0)
             return;
         const int32_t choice = port::load<int32_t>(choiceAt);
-        const GuestPtr<TextBox> message{port::load<uint32_t>(p + 0x10u)};
+        const GuestPtr<TextBox> message{pause->message.address};
         if (choice == 1 || choice == -1)
         {
             Pad_TakeFocus(1, 0x10);
@@ -4661,18 +4662,18 @@ namespace mm
             Pad_ReleaseFocus(1);
             TextBox_SetText(message, GuestPtr<char>{0x001B73C0u}, 0);
             TextBox_SetPos(message, 0x7600, 0x7E00, -0x100000);
-            port::store<int32_t>(p, 4);
+            pause->state = 4;
             return;
         }
-        McManager_ResetState(GuestPtr<McManager>{port::load<uint32_t>(p + 0xCu)});
-        port::store<int32_t>(p + 0x24u, 0);
+        McManager_ResetState(pause->mc);
+        pause->waitFrames = 0;
         port::store<int32_t>(p + 0x28u, 0);
         ListMenu_ClearItem(GuestPtr<ListMenu>{port::load<uint32_t>(p + 4u)}, -1);
         TextBox_SetPos(message, 0x7600, 0x7CC0, -0x100000);
         TextBox_SetCharSize(message, 0, 0xD0, 0, 0xE0);
         TextBox_SetText(message, GuestPtr<char>{0x001B73C0u}, 0);
         TextBox_SetPos(message, 0x7600, 0x7E00, -0x100000);
-        port::store<int32_t>(p, 6);
+        pause->state = 6;
     }
 
     PORT_FN(PauseMenu_StateWait);
@@ -4685,7 +4686,7 @@ namespace mm
     void CityCursor_Move(GuestPtr<CityCursor> cursor, GuestPtr<CityScene> city, int enabled)
     {
         const uint32_t c = cursor.address;
-        if (port::load<uint16_t>(c + 0x1A8u) == 0xFFFFu || enabled == 0)
+        if (cursor->targetKind == 0xFFFFu || enabled == 0)
             return;
         if (CityScene_GetMode(city) != 1)
             return;
@@ -4693,31 +4694,31 @@ namespace mm
             return;
         if ((Pad_Held(0) & 0x20u) != 0)
             return;
-        const auto player = [&] { return GuestPtr<Player>{port::load<uint32_t>(city.address + 0x58u)}; };
-        if (port::load<int32_t>(c + 0x1A4u) == 0)
+        const auto player = [&] { return city->player; };
+        if (cursor->targetId == 0)
         {
-            if (port::load<int32_t>(c + 0x1C0u) != 1)
+            if (cursor->lineCount != 1)
             {
                 CityScene_PushMode(city, 0xA);
-                port::store<int32_t>(c + 0x1C4u, 1);
-                port::store<int32_t>(c + 0x1C8u, 0);
-                port::store<int32_t>(c + 0x1CCu, 0);
+                cursor->mode = 1;
+                cursor->frameStep = 0;
+                cursor->openTimer = 0;
             }
             else if (Player_GetMode(player()) == 3)
-                CityCursor_SelectTile(cursor, port::load<uint16_t>(c + 0x1A8u), city);
+                CityCursor_SelectTile(cursor, cursor->targetKind, city);
             else
-                CityScene_StartTalk(city, 0, port::load<uint16_t>(c + 0x1A8u), 0x1770, 0);
+                CityScene_StartTalk(city, 0, cursor->targetKind, 0x1770, 0);
             return;
         }
         if (Player_GetMode(player()) == 3)
             return;
-        const GuestPtr<CityMap> map{port::load<uint32_t>(city.address + 0x50u)};
-        const uint32_t person = port::load<uint16_t>(c + 0x1A8u);
-        const uint32_t record = port::load<uint32_t>(map.address + 0x68u) + 0x30u * person;
+        const GuestPtr<CityMap> map{city->map.address};
+        const uint32_t person = cursor->targetKind;
+        const uint32_t record = map->people.address + 0x30u * person;
         const int x = sdk::fptosi(ps2f(64.0f) + ps2f(std::bit_cast<float>(port::load<uint32_t>(record))));
         const int z = sdk::fptosi(ps2f(64.0f) - ps2f(std::bit_cast<float>(port::load<uint32_t>(record + 8u))));
         const GuestPtr<MapObject> object = Map_FindPersonObjectOnTile(map, person, static_cast<uint16_t>(x + (z << 7)));
-        CityScene_StartTalk(city, 0, object->id, port::load<uint16_t>(c + 0x1A8u), 0);
+        CityScene_StartTalk(city, 0, object->id, cursor->targetKind, 0);
     }
 
     PORT_FN(CityCursor_Move);
@@ -4731,21 +4732,21 @@ namespace mm
     int PauseMenu_StateSave(GuestPtr<PauseMenu> pause, GuestPtr<CityScene> city)
     {
         const uint32_t p = pause.address;
-        const auto mc = [p]() { return GuestPtr<McManager>{port::load<uint32_t>(p + 0xCu)}; };
-        const auto nextStep = [p]() { port::store<int32_t>(p + 0x24u, port::load<int32_t>(p + 0x24u) + 1); };
+        const auto mc = [pause]() { return pause->mc; };
+        const auto nextStep = [pause]() { pause->waitFrames = pause->waitFrames + 1; };
         // Steps 1 and 7: the folder is ready (1, on to the next step) or the attempt failed (2, start over and answer 1).
         const auto folderStep = [&](int name, int create) {
-            const int result = SaveFile_PrepareDir(mc(), port::load<int32_t>(p + 0x1Cu), name, create);
+            const int result = SaveFile_PrepareDir(mc(), pause->cardPort, name, create);
             if (result == 2)
             {
-                port::store<int32_t>(p + 0x24u, 0);
+                pause->waitFrames = 0;
                 return true;
             }
             if (result == 1)
                 nextStep();
             return false;
         };
-        switch (port::load<uint32_t>(p + 0x24u))
+        switch (static_cast<uint32_t>(pause->waitFrames))
         {
         case 0:
             if (McManagerUpdate(mc()) < 2)
@@ -4756,7 +4757,7 @@ namespace mm
                 return 1;
             break;
         case 2:
-            SaveFile_DeleteIconSys(mc(), port::load<int32_t>(p + 0x1Cu));
+            SaveFile_DeleteIconSys(mc(), pause->cardPort);
             nextStep();
             break;
         case 3:
@@ -4771,13 +4772,13 @@ namespace mm
                 nextStep();
             else if (result == 2)
             {
-                port::store<int32_t>(p + 0x24u, 0);
+                pause->waitFrames = 0;
                 return 1;
             }
             break;
         }
         case 5:
-            SaveFile_WriteIconSys(mc(), port::load<int32_t>(p + 0x1Cu), static_cast<int>(p + 0x30u), 0);
+            SaveFile_WriteIconSys(mc(), pause->cardPort, static_cast<int>(p + 0x30u), 0);
             nextStep();
             break;
         case 7:
@@ -4787,25 +4788,25 @@ namespace mm
         case 8:
         {
             const GuestPtr<ListMenu> menu{port::load<uint32_t>(p + 4u)};
-            TextBox_SetText(GuestPtr<TextBox>{port::load<uint32_t>(p + 0x10u)}, GuestPtr<char>{0x001B73C0u}, 0);
+            TextBox_SetText(pause->message, GuestPtr<char>{0x001B73C0u}, 0);
             ListMenu_ClearItem(menu, -1);
             ListMenu_SetCursor(menu, 0x104, 0x3C, 0xFF0000);
             ListMenu_SetItemText(menu, GuestPtr<char>{0x001B73F0u}, -1); // "Resume"
             ListMenu_SetItemText(menu, GuestPtr<char>{0x001B73F8u}, -1); // "Save"
             ListMenu_SetItemText(menu, GuestPtr<char>{0x001B7400u}, -1); // "Quit"
             McManager_ClearSlots(mc());
-            port::store<int32_t>(p, 2);
+            pause->state = 2;
             break;
         }
         default:
             break;
         }
-        if (port::load<int32_t>(p + 0x24u) == 8)
+        if (pause->waitFrames == 8)
             return 0;
         const int32_t blink = port::load<int32_t>(p + 0x28u) + 1;
         port::store<int32_t>(p + 0x28u, blink);
         if ((blink & 0xF) == 0)
-            TextBox_SetText(GuestPtr<TextBox>{port::load<uint32_t>(p + 0x10u)}, GuestPtr<char>{(blink & 0x10) != 0 ? 0x001B7690u : 0x001B76E0u}, 0);
+            TextBox_SetText(pause->message, GuestPtr<char>{(blink & 0x10) != 0 ? 0x001B7690u : 0x001B76E0u}, 0);
         return 0;
     }
 
@@ -4823,16 +4824,16 @@ namespace mm
         port::GuestFrame<0x30> frame;
         const uint32_t choiceAt = frame.ptr().address + 0x2Cu;
         const uint32_t p = pause.address;
-        const auto mc = [p]() { return GuestPtr<McManager>{port::load<uint32_t>(p + 0xCu)}; };
+        const auto mc = [pause]() { return pause->mc; };
         const auto menu = [p]() { return GuestPtr<ListMenu>{port::load<uint32_t>(p + 4u)}; };
-        const auto message = [p]() { return GuestPtr<TextBox>{port::load<uint32_t>(p + 0x10u)}; };
-        const auto nextStep = [p]() { port::store<int32_t>(p + 0x24u, port::load<int32_t>(p + 0x24u) + 1); };
-        switch (port::load<int32_t>(p + 0x24u))
+        const auto message = [pause]() { return pause->message; };
+        const auto nextStep = [pause]() { pause->waitFrames = pause->waitFrames + 1; };
+        switch (pause->waitFrames)
         {
         case 0:
         {
             McManagerUpdate(mc());
-            if (McManager_GetCardStatus(mc(), port::load<int32_t>(p + 0x1Cu)) == 2)
+            if (McManager_GetCardStatus(mc(), pause->cardPort) == 2)
             {
                 PauseMenu_ShowCardMessage(pause, 5);
                 return;
@@ -4845,7 +4846,7 @@ namespace mm
                 Pad_TakeFocus(1, 0x10);
                 PauseMenu_Reset(pause);
                 Pad_ReleaseFocus(1);
-                port::store<int32_t>(p, 4);
+                pause->state = 4;
                 return;
             }
             nextStep();
@@ -4853,7 +4854,7 @@ namespace mm
         }
         case 1:
             McManagerUpdate(mc());
-            switch (McManager_GetCardStatus(mc(), port::load<int32_t>(p + 0x1Cu)))
+            switch (McManager_GetCardStatus(mc(), pause->cardPort))
             {
             case 4:
                 ListMenu_ClearItem(menu(), -1);
@@ -4879,7 +4880,7 @@ namespace mm
             return;
         case 3:
         {
-            const int result = SaveFile_Format(mc(), port::load<int32_t>(p + 0x1Cu));
+            const int result = SaveFile_Format(mc(), pause->cardPort);
             if (result == 2)
             {
                 PauseMenu_ShowCardMessage(pause, 4);
@@ -4888,12 +4889,12 @@ namespace mm
             if (result == 1)
             {
                 McManager_ResetState(mc());
-                port::store<int32_t>(p + 0x24u, 0);
+                pause->waitFrames = 0;
                 port::store<int32_t>(p + 0x28u, 0);
                 ListMenu_ClearItem(menu(), -1);
                 TextBox_SetPos(message(), 0x7600, 0x7CC0, -0x100000);
                 TextBox_SetCharSize(message(), 0, 0xD0, 0, 0xE0);
-                port::store<int32_t>(p, 6);
+                pause->state = 6;
                 return;
             }
             if (result != 0)
@@ -5037,7 +5038,7 @@ namespace mm
                 angle = (angle - ps2f(3.1415927f)) - ps2f(3.1415927f);
             return angle;
         };
-        const auto box = [&]() { return GuestPtr<TextBox>{port::load<uint32_t>(l + 0x44u)}; };
+        const auto box = [&]() { return laptop->text; };
         const auto showSelected = [&]() {
             Laptop_SetItemText(laptop, city, port::load<uint32_t>(globals::kLaptopEntries + 4u * static_cast<uint32_t>(laptop->selected)));
         };
@@ -5060,9 +5061,9 @@ namespace mm
             storeF(l + 0x30u, angle);
             laptop->state = 1;
             Sound_PlaySe(0xA, 0, 0x3C, 0.0f, 0.0f);
-            port::store<uint32_t>(c + 0x30u, 0u);
-            port::store<uint32_t>(c + 0x34u, 0u);
-            port::store<uint8_t>(port::load<uint32_t>(c + 0x54u) + 0x2C9u, 0);
+            city->hudVisible[1] = 0;
+            city->hudVisible[2] = 0;
+            city->applicants->enabled = 0;
             break;
         }
         case 1:
@@ -5073,7 +5074,7 @@ namespace mm
             storeF(l + 0x38u, ps2f(1.0f));
             laptop->state = 2;
             port::store<uint32_t>(l + 0x18u, 0xC0000000u);
-            port::store<uint32_t>(l + 0x44u, newTextBox(0xB, 5, -1));
+            laptop->text = GuestPtr<TextBox>{newTextBox(0xB, 5, -1)};
             TextBox_SetPos(box(), 0x6E80, 0x81C0, 100000);
             showSelected();
             break;
@@ -5150,15 +5151,15 @@ namespace mm
             storeF(l + 0x38u, ps2f(0.1f));
             laptop->state = 0;
             port::store<uint32_t>(l + 0x18u, 0u);
-            if (port::load<uint32_t>(l + 0x44u) != 0u)
+            if (laptop->text.address != 0u)
             {
                 TextBox_dtor(box(), 1);
-                port::store<uint32_t>(l + 0x44u, 0u);
+                laptop->text = GuestPtr<TextBox>{0u};
             }
             result = 1;
-            port::store<uint32_t>(c + 0x30u, 1u);
-            port::store<uint32_t>(c + 0x34u, 1u);
-            port::store<uint8_t>(port::load<uint32_t>(c + 0x54u) + 0x2C9u, 1);
+            city->hudVisible[1] = 1;
+            city->hudVisible[2] = 1;
+            city->applicants->enabled = 1;
             if (port::load<int32_t>(l + 0x48u) == 0)
                 result = Laptop_RunEntry(laptop, city);
             break;
@@ -5199,14 +5200,14 @@ namespace mm
         const uint32_t view = k + (port::load<uint32_t>(0x001BDCD0u) & 1u) * 0xD0u;
         const auto lineBox = [&](int32_t index) { return GuestPtr<TextBox>{port::load<uint32_t>(view + 4u * static_cast<uint32_t>(index))}; };
         const auto lineFrame = [&](int32_t index) { return GuestPtr<Frame>{port::load<uint32_t>(view + 0x14u + 4u * static_cast<uint32_t>(index))}; };
-        const auto count = [&]() { return port::load<int32_t>(k + 0x1C0u); };
+        const auto count = [&]() { return cursor->lineCount; };
         for (int i = 0; i < 5; ++i)
             Frame_SetStyle(lineFrame(i), 0);
-        port::store<int32_t>(k + 0x1C0u, 0);
-        const uint32_t kind = port::load<uint16_t>(k + 0x1A8u);
+        cursor->lineCount = 0;
+        const uint32_t kind = cursor->targetKind;
         if (kind != 0xFFFFu)
         {
-            if (port::load<int32_t>(k + 0x1A4u) == 0)
+            if (cursor->targetId == 0)
             {
                 const GuestPtr<MapObject> object = Map_GetRecord(city->map, static_cast<int>(kind));
                 const ps2f half = fromInt(port::load<uint8_t>(globals::buildingTypeAddress(object->type) + 0x142u)) / ps2f(2.0f);
@@ -5236,7 +5237,7 @@ namespace mm
                         if (band != 0)
                             Frame_SetStyle(lineFrame(count()), band + 9);
                     }
-                    port::store<int32_t>(k + 0x1C0u, count() + 1);
+                    cursor->lineCount = count() + 1;
                     next = here.address + 0xAu;
                 }
             }
@@ -5257,7 +5258,7 @@ namespace mm
                     const int band = Family_GetFriendshipBand(who->family, who->member);
                     if (band != 0)
                         Frame_SetStyle(lineFrame(count()), band + 9);
-                    port::store<int32_t>(k + 0x1C0u, count() + 1);
+                    cursor->lineCount = count() + 1;
                 }
             }
         }
@@ -5283,8 +5284,8 @@ namespace mm
     {
         const uint32_t s = scene.address;
         const int drawn = Title_DrawCommon(scene, 0x1F);
-        const auto next = [&]() { port::store<int32_t>(s + 0xC4u, port::load<int32_t>(s + 0xC4u) + 1); };
-        switch (port::load<uint32_t>(s + 0xC4u))
+        const auto next = [&]() { scene->pressStep = scene->pressStep + 1; };
+        switch (static_cast<uint32_t>(scene->pressStep))
         {
         case 0:
             SoundCmd_FadeB(0xF, 0, 0x10, 0);
@@ -5348,9 +5349,9 @@ namespace mm
         const uint32_t s = scene.address;
         port::store<uint32_t>(s + 0x54u, port::load<uint32_t>(0x001BDB54u));
         port::store<int32_t>(s + 0x4Cu, CityAssets_LoadStep());
-        const auto next = [&]() { port::store<int32_t>(s + 0xC4u, port::load<int32_t>(s + 0xC4u) + 1); };
+        const auto next = [&]() { scene->pressStep = scene->pressStep + 1; };
         const auto draw = [&]() { return Title_DrawCommon(scene, newGame != 0 ? 0x29 : 0x21); };
-        switch (port::load<uint32_t>(s + 0xC4u))
+        switch (static_cast<uint32_t>(scene->pressStep))
         {
         case 0:
             SoundCmd_FadeB(0xF, 0, 0x10, 0);
@@ -5373,7 +5374,7 @@ namespace mm
             return 0;
         }
         case 2:
-            if (LoadingScreen_Update(GuestPtr<LoadingScreen>{port::load<uint32_t>(s + 0x2Cu)}, 0) == 1)
+            if (LoadingScreen_Update(scene->loading, 0) == 1)
             {
                 int bars = (10 * port::load<int32_t>(s + 0x54u)) / 70;
                 if (bars > 16)
@@ -5392,7 +5393,7 @@ namespace mm
                 next();
             return 0;
         case 3:
-            if (LoadingScreen_Update(GuestPtr<LoadingScreen>{port::load<uint32_t>(s + 0x2Cu)}, 1) == 0)
+            if (LoadingScreen_Update(scene->loading, 1) == 0)
                 next();
             return 0;
         case 4:
@@ -5453,7 +5454,7 @@ namespace mm
         DmaList_QueueClearZ();
         Packet2_Draw(GuestPtr<uint32_t>{port::load<uint32_t>(s + 4u)}, 0);
         Packet_Draw(GuestPtr<uint32_t>{port::load<uint32_t>(s)});
-        const int card = McManagerUpdate(GuestPtr<McManager>{port::load<uint32_t>(s + 0xB4u)});
+        const int card = McManagerUpdate(scene->mc);
         const uint32_t mode = port::load<uint32_t>(s + 0xC0u);
         const auto setMode = [&](uint32_t value) { port::store<uint32_t>(s + 0xC0u, value); };
         const auto next = [&]() { setMode(port::load<uint32_t>(s + 0xC0u) + 1u); };
@@ -5467,7 +5468,7 @@ namespace mm
             if (SoundTest_Update(static_cast<int>(s)) != 0)
             {
                 setMode(5);
-                port::store<uint32_t>(s + 0xC4u, 0);
+                scene->pressStep = static_cast<int32_t>(0);
             }
             return 0;
         case 0xC:
@@ -5492,12 +5493,12 @@ namespace mm
             if (result == 1)
             {
                 setMode(0xA);
-                port::store<uint32_t>(s + 0xC4u, 0);
+                scene->pressStep = static_cast<int32_t>(0);
             }
             else if (result == 0)
             {
                 setMode(6);
-                port::store<uint32_t>(s + 0xC4u, 0);
+                scene->pressStep = static_cast<int32_t>(0);
             }
             return 0;
         }
@@ -5505,8 +5506,8 @@ namespace mm
             if (Title_OpeningMovieStep(scene) != 0)
             {
                 setMode(5);
-                port::store<uint32_t>(s + 0xC4u, 0);
-                port::store<uint32_t>(s + 0x50u, 0);
+                scene->pressStep = static_cast<int32_t>(0);
+                scene->logoSound = static_cast<int32_t>(0);
             }
             return 0;
         case 6:
@@ -5523,17 +5524,17 @@ namespace mm
                 SoundCmd_02_Zero();
                 SoundCmd_FadeB(0xF, 0, 0x10, 0);
                 setMode(7);
-                port::store<uint32_t>(s + 0xC4u, 0);
+                scene->pressStep = static_cast<int32_t>(0);
             }
             else if (result == 1)
             {
                 setMode(8);
-                port::store<uint32_t>(s + 0xC4u, 0);
+                scene->pressStep = static_cast<int32_t>(0);
             }
             else if (result == 0)
             {
                 setMode(9);
-                port::store<uint32_t>(s + 0xC4u, 0);
+                scene->pressStep = static_cast<int32_t>(0);
             }
             return 0;
         }
@@ -5541,15 +5542,15 @@ namespace mm
             stepLoader();
             if (Title_Intro(scene) != 0)
             {
-                port::store<uint32_t>(s + 0x40u, 0);
-                port::store<uint32_t>(s + 0xC4u, 0);
+                scene->choicePulsing = static_cast<int32_t>(0);
+                scene->pressStep = static_cast<int32_t>(0);
                 next();
             }
             if (Pad_Pressed(0) == 0x800u)
             {
-                TexSprite_SetAlpha(GuestPtr<TexSprite>{port::load<uint32_t>(s + 0xCu)}, 0x80, 0);
-                port::store<uint32_t>(s + 0x40u, 0);
-                port::store<uint32_t>(s + 0xC4u, 0);
+                TexSprite_SetAlpha(scene->titleSprite, 0x80, 0);
+                scene->choicePulsing = static_cast<int32_t>(0);
+                scene->pressStep = static_cast<int32_t>(0);
                 next();
             }
             return 0;
@@ -5559,7 +5560,7 @@ namespace mm
             stepLoader();
             if (SceneA_LogoStep(scene, static_cast<char>(mode - 2u)) != 0)
             {
-                port::store<uint32_t>(s + 0xC4u, 0);
+                scene->pressStep = static_cast<int32_t>(0);
                 next();
             }
             return 0;
@@ -5567,16 +5568,16 @@ namespace mm
             stepLoader();
             if (SceneA_MemoryCardCheck(scene, card) != 0)
             {
-                port::store<uint32_t>(s + 0xC4u, 0);
-                port::store<uint32_t>(s + 0xC8u, 0);
+                scene->pressStep = static_cast<int32_t>(0);
+                scene->waitFrames = static_cast<int32_t>(0);
                 next();
             }
             return 0;
         case 0:
             if (SceneA_Load(scene, 0) == 0)
                 return 0;
-            port::store<uint32_t>(s + 0xC4u, 0);
-            port::store<uint32_t>(s + 0xC8u, 0);
+            scene->pressStep = static_cast<int32_t>(0);
+            scene->waitFrames = static_cast<int32_t>(0);
             if (port::load<int32_t>(s + 0xE0u) != 0)
                 setMode(5);
             else
@@ -5603,10 +5604,10 @@ namespace mm
         const uint32_t sp = frame.ptr().address;
         const uint32_t cursorAt = sp + 0x108u, newestAt = sp + 0x10Cu, textAt = sp + 0x70u;
         const uint32_t p = pause.address;
-        const auto mc = [p]() { return GuestPtr<McManager>{port::load<uint32_t>(p + 0xCu)}; };
+        const auto mc = [pause]() { return pause->mc; };
         const auto slots = [p]() { return GuestPtr<ListMenu>{port::load<uint32_t>(p + 8u)}; };
         const auto main = [p]() { return GuestPtr<ListMenu>{port::load<uint32_t>(p + 4u)}; };
-        const auto message = [p]() { return GuestPtr<TextBox>{port::load<uint32_t>(p + 0x10u)}; };
+        const auto message = [pause]() { return pause->message; };
         port::store<int32_t>(cursorAt, 0);
         int newest = 0, count = 0;
         const int first = McManager_GetCardStatus(mc(), 0);
@@ -5661,40 +5662,40 @@ namespace mm
             ListMenu_SetItemText(main(), GuestPtr<char>{0x001B73F0u}, -1);
             ListMenu_SetItemText(main(), GuestPtr<char>{0x001B73F8u}, -1);
             ListMenu_SetItemText(main(), GuestPtr<char>{0x001B7400u}, -1);
-            port::store<int32_t>(p, 2);
+            pause->state = 2;
             return newest;
         }
         const int32_t listed = port::load<int32_t>(p + 0x18u);
         if (!(choice < listed))
         {
-            port::store<int32_t>(p + 0x1Cu, choice - listed);
+            pause->cardPort = choice - listed;
             if (first != 0 && first != 3)
-                port::store<int32_t>(p + 0x1Cu, 1);
-            port::store<int32_t>(p + 0x20u, McManager_PrepareNewSlot(mc(), port::load<int32_t>(p + 0x1Cu)));
-            if (McManager_IsCardUsable(mc(), port::load<int32_t>(p + 0x1Cu)) != 0)
+                pause->cardPort = 1;
+            port::store<int32_t>(p + 0x20u, McManager_PrepareNewSlot(mc(), pause->cardPort));
+            if (McManager_IsCardUsable(mc(), pause->cardPort) != 0)
             {
                 ListMenu_ClearItem(main(), -1);
                 ListMenu_SetCursor(main(), 0x118, 0x8C, 0xFF0000);
                 ListMenu_SetItemText(main(), GuestPtr<char>{0x001B7438u}, -1);
                 ListMenu_SetItemText(main(), GuestPtr<char>{0x001B7440u}, -1);
-                port::store<int32_t>(p + 0x24u, 0);
+                pause->waitFrames = 0;
                 TextBox_SetText(message(), GuestPtr<char>{0x001B7810u}, 0);
-                TextBox_AppendText(message(), GuestPtr<char>{port::load<int32_t>(p + 0x1Cu) != 0 ? 0x001B7580u : 0x001B7588u}, 0);
+                TextBox_AppendText(message(), GuestPtr<char>{pause->cardPort != 0 ? 0x001B7580u : 0x001B7588u}, 0);
                 TextBox_AppendText(message(), GuestPtr<char>{0x001B7850u}, 0);
                 TextBox_SetPos(message(), 0x72E0, 0x7CC0, -0x100000);
                 TextBox_SetCharSize(message(), 0, 0xD0, 0, 0xE0);
                 port::store<int32_t>(p + 0x28u, 0);
-                port::store<int32_t>(p, 5);
+                pause->state = 5;
             }
             else
             {
                 McManager_ResetState(mc());
-                port::store<int32_t>(p + 0x24u, 0);
+                pause->waitFrames = 0;
                 port::store<int32_t>(p + 0x28u, 0);
                 ListMenu_ClearItem(main(), -1);
                 TextBox_SetPos(message(), 0x7600, 0x7CC0, -0x100000);
                 TextBox_SetCharSize(message(), 0, 0xD0, 0, 0xE0);
-                port::store<int32_t>(p, 6);
+                pause->state = 6;
             }
         }
         else
@@ -5709,7 +5710,7 @@ namespace mm
             ListMenu_SetItemText(main(), GuestPtr<char>{0x001B7438u}, -1);
             ListMenu_SetItemText(main(), GuestPtr<char>{0x001B7440u}, -1);
             port::store<int32_t>(p + 0x998u, choice);
-            port::store<int32_t>(p, 7);
+            pause->state = 7;
         }
         return newest;
     }
@@ -5948,18 +5949,18 @@ namespace mm
         const uint32_t sp = frame.ptr().address;
         const uint32_t cursorAt = sp + 0xF8u, newestAt = sp + 0xFCu, textAt = sp + 0x60u;
         const uint32_t s = scene.address;
-        const auto menu = [s]() { return GuestPtr<ListMenu>{port::load<uint32_t>(s + 0xB0u)}; };
-        const auto mc = [s]() { return GuestPtr<McManager>{port::load<uint32_t>(s + 0xB4u)}; };
+        const auto menu = [scene]() { return scene->loadMenu; };
+        const auto mc = [scene]() { return scene->mc; };
         const auto message = [s]() { return GuestPtr<TextBox>{port::load<uint32_t>(s + 0xBCu)}; };
-        TexSprite_Draw(GuestPtr<TexSprite>{port::load<uint32_t>(s + 0xCu)});
-        A3DObject_Draw(GuestPtr<A3DObject>{port::load<uint32_t>(s + 0x24u)});
-        const int32_t step = port::load<int32_t>(s + 0xC4u);
+        TexSprite_Draw(scene->titleSprite);
+        A3DObject_Draw(scene->menuModel);
+        const int32_t step = scene->pressStep;
         if (step == 0)
         {
             port::store<int32_t>(s + 0xDCu, 0);
             ListMenu_ClearItem(menu(), -1);
             ListMenu_SetCursor(menu(), 0x62, 0x2C, 0xFF0000);
-            port::store<int32_t>(s + 0xC4u, port::load<int32_t>(s + 0xC4u) + 1);
+            scene->pressStep = scene->pressStep + 1;
         }
         else if (step != 1 && step != 2)
             return -1;
@@ -5983,10 +5984,10 @@ namespace mm
             ListMenu_SetItemText(menu(), GuestPtr<char>{textAt}, count);
             ++count;
         }
-        if (port::load<int32_t>(s + 0xC4u) == 1)
+        if (scene->pressStep == 1)
         {
             ListMenu_ScrollTo(menu(), newest);
-            port::store<int32_t>(s + 0xC4u, port::load<int32_t>(s + 0xC4u) + 1);
+            scene->pressStep = scene->pressStep + 1;
         }
         const int32_t listed = port::load<int32_t>(s + 0xDCu);
         if (listed != 0)
@@ -5995,19 +5996,19 @@ namespace mm
         port::store<int32_t>(s + 0xDCu, count);
         if (count == 0)
         {
-            if (port::load<int32_t>(s + 0xD8u) == 0)
+            if (scene->introFrame == 0)
                 ListMenu_ClearItem(menu(), -1);
             TextBox_SetPos(message(), 0x7560, 0x7F40, -0x100000);
             TextBox_SetCharSize(message(), 0, 0xD0, 0, 0xE0);
             TextBox_SetText(message(), GuestPtr<char>{0x001B8980u}, 0);
             TextBox_Draw(message());
-            const int32_t frames = port::load<int32_t>(s + 0xD8u) + 1;
-            port::store<int32_t>(s + 0xD8u, frames);
+            const int32_t frames = scene->introFrame + 1;
+            scene->introFrame = frames;
             return frames < 0x12D ? -1 : 0;
         }
         TextBox_SetText(message(), GuestPtr<char>{0x001B8330u}, 0);
         ListMenu_Draw(menu());
-        port::store<int32_t>(s + 0xD8u, 0);
+        scene->introFrame = 0;
         if (ListMenu_HandleInput(menu(), GuestPtr<int32_t>{cursorAt}) == 0)
             return -1;
         const int32_t choice = port::load<int32_t>(cursorAt);
@@ -6132,7 +6133,7 @@ namespace mm
         Packet_Draw(GuestPtr<uint32_t>{port::load<uint32_t>(s + 0x10u)});
         DmaList_QueueClearZ();
         const GuestPtr<A3DObject> building{port::load<uint32_t>(s + 0x54u)};
-        const uint32_t matrix = port::load<uint32_t>(port::load<uint32_t>(building.address) + 8u) + 0xDF0u;
+        const uint32_t matrix = port::load<uint32_t>(building->model.address + 8u) + 0xDF0u;
         Mat4_Copy(GuestPtr<Vec4>{matrix}, GuestPtr<Vec4>{0x001B2550u});
         port::store<uint32_t>(matrix + 0x30u, 0u);
         port::store<uint32_t>(matrix + 0x34u, 0xBE23D70Au);
@@ -6821,8 +6822,8 @@ namespace mm
         if (model != 0u)
             model = A3DObject_Load(GuestPtr<A3DObject>{model}, 0x001B5EF0, 1).address;
         A3DObject_dtor(GuestPtr<A3DObject>{model}, 1);
-        port::store<int32_t>(k + 0x1C0u, 0);
-        port::store<int32_t>(k + 0x1C4u, 0);
+        cursor->lineCount = 0;
+        cursor->mode = 0;
         const auto newFrame = [](int style, int x, int y) {
             uint32_t object = sdk::operator_new(0xC0u);
             if (object != 0u)
@@ -6925,7 +6926,7 @@ namespace mm
         port::GuestFrame<0x4060> frame;
         const uint32_t sp = frame.ptr().address;
         const uint32_t s = scene.address;
-        const auto nextStep = [s]() { port::store<int32_t>(s + 0xC8u, port::load<int32_t>(s + 0xC8u) + 1); };
+        const auto nextStep = [scene]() { scene->waitFrames = scene->waitFrames + 1; };
         // A sprite from the file `name` kept at the scene's field `at`.
         const auto loadSprite = [s](uint32_t at, uint32_t name) {
             uint32_t sprite = sdk::operator_new(0x38u);
@@ -6951,7 +6952,7 @@ namespace mm
             TexSprite_SetPosScale(GuestPtr<TexSprite>{sprite}, x, y, z, ps2f(1.0f), ps2f(1.0f));
         };
         const auto message = [s]() { return GuestPtr<TextBox>{port::load<uint32_t>(s + 0xBCu)}; };
-        const int32_t step = port::load<int32_t>(s + 0xC8u);
+        const int32_t step = scene->waitFrames;
         switch (step)
         {
         case 0:
@@ -6977,9 +6978,9 @@ namespace mm
         case 6:
         {
             const uint32_t model = loadModel(0x001B8D60u);
-            port::store<uint32_t>(s + 0x24u, model);
-            A3DObject_UpdateMatrices(GuestPtr<A3DObject>{port::load<uint32_t>(s + 0x24u)});
-            const uint32_t m = port::load<uint32_t>(s + 0x24u);
+            scene->menuModel = GuestPtr<A3DObject>{model};
+            A3DObject_UpdateMatrices(scene->menuModel);
+            const uint32_t m = scene->menuModel.address;
             port::store<uint32_t>(m + 0x40u, 0x40133333u);
             port::store<uint32_t>(m + 0x44u, 0x3E99999Au);
             port::store<uint32_t>(m + 0x48u, 0x40533333u);
@@ -6987,8 +6988,8 @@ namespace mm
             break;
         }
         case 7:
-            port::store<uint32_t>(s + 0x28u, loadModel(0x001B8D80u));
-            A3DObject_UpdateMatrices(GuestPtr<A3DObject>{port::load<uint32_t>(s + 0x28u)});
+            scene->logoModel = GuestPtr<A3DObject>{loadModel(0x001B8D80u)};
+            A3DObject_UpdateMatrices(scene->logoModel);
             nextStep();
             break;
         case 8:
@@ -7020,11 +7021,11 @@ namespace mm
             uint32_t loading = sdk::operator_new(0x28u);
             if (loading != 0u)
                 loading = LoadingScreen_ctor(GuestPtr<LoadingScreen>{loading}, 0x001B8E20, 1).address;
-            port::store<uint32_t>(s + 0x2Cu, loading);
-            const GuestPtr<LoadingScreen> screen{port::load<uint32_t>(s + 0x2Cu)};
+            scene->loading = GuestPtr<LoadingScreen>{loading};
+            const GuestPtr<LoadingScreen> screen{scene->loading.address};
             LoadingScreen_SetSpritePos(screen, 0x154, 0x168, 0x3F00);
             LoadingScreen_SetTextPos(screen, 0x108, 0x32);
-            port::store<int32_t>(port::load<uint32_t>(s + 0x2Cu) + 0x24u, 1);
+            scene->loading->showText = 1;
             nextStep();
             break;
         }
@@ -7034,11 +7035,11 @@ namespace mm
             break;
         case 16:
             place(loadSprite(0x34u, 0x001B8E60u), 0x40, 0x154, 1);
-            port::store<int32_t>(s + 0xC8u, 100);
+            scene->waitFrames = 100;
             break;
         case 100:
             if (port::load<int32_t>(s + 0xE0u) == 0)
-                port::store<int32_t>(s + 0xC8u, 0x68);
+                scene->waitFrames = 0x68;
             else
             {
                 Sound_StopAllSequences();

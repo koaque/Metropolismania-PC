@@ -344,7 +344,7 @@ namespace mm
                         }
                     }
                 }
-                *cursor = person->nextOnTile;
+                *cursor = person->nextHere;
             }
             if (nearest == kNoPerson)
                 continue;
@@ -622,11 +622,13 @@ namespace mm
         const uint32_t lowR = skyByte(globals::kSkyColourBySlotB, 0);
         const uint32_t lowG = skyByte(globals::kSkyColourBySlotB, 1);
         const uint32_t lowB = skyByte(globals::kSkyColourBySlotB, 2);
-        const uint32_t sky = camera.address;
+        // The words of the sky's packets (mm_Sky_BuildPackets) that change each frame.
+        uint32_t *const bands = camera->skyBands, *const picture = camera->skyPicture, *const glow = camera->skyGlow;
+        const auto putFloat = [](uint32_t &word, ps2f value) { word = std::bit_cast<uint32_t>(static_cast<float>(value)); };
         const uint32_t lowColour = lowR | lowG << 8 | lowB << 16 | 0x80000000u;
-        port::store<uint32_t>(sky + 0x340u, topR | topG << 8 | topB << 16 | 0x80000000u);
-        port::store<uint32_t>(sky + 0x370u, lowColour);
-        LightSet_SetField20(GuestPtr<LightSet>{camera.address}, port::load<int32_t>(sky + 0x370u)); // into the camera's own packet
+        bands[12] = topR | topG << 8 | topB << 16 | 0x80000000u; // RGBAQ: the top colour
+        bands[24] = lowColour;                                   // RGBAQ: the low colour
+        LightSet_SetField20(GuestPtr<LightSet>{camera.address}, static_cast<int32_t>(bands[24])); // the fog colour of the camera's own packet
 
         vf(4) = load(GuestPtr<Vec4>::of(base.target));
         vf(5) = load(GuestPtr<Vec4>::of(base.eye));
@@ -639,10 +641,10 @@ namespace mm
         else if (!(horizon < 0x201))
             horizon = 0x200;
         const uint32_t high = static_cast<uint32_t>(horizon) << 16;
-        port::store<uint32_t>(sky + 0x350u, high + 0x77006C00u);
-        port::store<uint32_t>(sky + 0x360u, high + 0x77009400u);
-        port::store<uint32_t>(sky + 0x380u, high + 0x7E006C00u);
-        port::store<uint32_t>(sky + 0x390u, high + 0x7E009400u);
+        bands[16] = high + 0x77006C00u; // XYZ2: the band edges, raised by the pitch
+        bands[20] = high + 0x77009400u;
+        bands[28] = high + 0x7E006C00u;
+        bands[32] = high + 0x7E009400u;
 
         const int scroll = globals::timeOfDayFrames.get() % 0x10E00;
         const ps2f heading = sdk::atan2f(-view->x, -view->z);
@@ -652,22 +654,22 @@ namespace mm
         else if (angle <= -pi)
             angle = angle + twoPi;
         const ps2f scrollUnits = toUnits * angle;
-        port::store<float>(sky + 0x420u, static_cast<float>(scrollUnits));
-        port::store<float>(sky + 0x440u, static_cast<float>(one + scrollUnits));
+        putFloat(picture[20], scrollUnits); // ST: the picture's left and right s, scrolled
+        putFloat(picture[28], one + scrollUnits);
         const uint32_t lift = static_cast<uint32_t>(sdk::fptosi(ps2f(4096.0f) * -view->y)) << 16;
-        port::store<uint32_t>(sky + 0x430u, lift + 0x70806A00u);
-        port::store<uint32_t>(sky + 0x450u, lift + 0x81009400u);
-        port::store<uint32_t>(sky + 0x4E0u, lift + 0x70806A00u);
-        port::store<uint32_t>(sky + 0x500u, lift + 0x81009400u);
-        port::store<uint32_t>(sky + 0x3F0u, lowColour);
+        picture[24] = lift + 0x70806A00u; // XYZ2: the corners, raised by the pitch
+        picture[32] = lift + 0x81009400u;
+        glow[28] = lift + 0x70806A00u;
+        glow[36] = lift + 0x81009400u;
+        picture[8] = lowColour; // RGBAQ: the picture blends into the low colour
         const ps2f turnUnits = toUnits * heading;
-        port::store<float>(sky + 0x4D0u, static_cast<float>(turnUnits));
-        port::store<float>(sky + 0x4F0u, static_cast<float>(one + turnUnits));
+        putFloat(glow[24], turnUnits); // ST: the glow turns with the view
+        putFloat(glow[32], one + turnUnits);
         int shimmer = globals::timeOfDayFrames.get() % 30;
         if (!(shimmer < 15))
             shimmer = 30 - shimmer;
         const uint32_t grey = 0xEAu - (topB + static_cast<uint32_t>(shimmer) * 2u);
-        port::store<uint32_t>(sky + 0x4A0u, grey << 24 | grey << 16 | grey << 8 | grey);
+        glow[12] = grey << 24 | grey << 16 | grey << 8 | grey; // the glow's colour
     }
 
     // The sky's three packets in the city camera, filled in each frame by mm_CityCamera_UpdateTimeOfDay: at +0x310
@@ -1326,9 +1328,9 @@ namespace mm
     // laptop
     GuestPtr<Laptop> Laptop_ctor(GuestPtr<Laptop> laptop)
     {
-        laptop->unk_00 = GuestPtr<void>{port::load<uint32_t>(0x001F3B08u)};
+        laptop->model = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B08u)};
         laptop->state = 0;
-        laptop->unk_44 = 0;
+        laptop->text = GuestPtr<TextBox>{0u};
         laptop->selected = 0;
         return laptop;
     }
@@ -1408,11 +1410,10 @@ namespace mm
             const GuestPtr<MapObject> obj = Map_GetRecord(city->map, id);
             if (Family_InCity(obj->family) == 0)
                 continue;
-            const uint32_t btype = globals::buildingTypeAddress(obj->type);
-            const GuestPtr<uint8_t> people{obj.address + 0x16u}; // [0] visitors, [1] occupants
-            if (mode == 0 && people[0] >= port::load<uint8_t>(btype + 0x14Au))
+            const GuestPtr<BuildingType> btype = globals::buildingType(obj->type);
+            if (mode == 0 && obj->headingHere >= btype->maxVisitors)
                 continue;
-            if (mode == 1 && people[1] >= port::load<uint16_t>(btype + 0x140u))
+            if (mode == 1 && obj->occupants >= btype->capacity)
                 continue;
             const int distance = sdk::abs((obj->tile & 0x7F) - x) + sdk::abs((obj->tile >> 7) - z);
             if (distance <= bestDistance)
@@ -1505,8 +1506,8 @@ namespace mm
             Person_FindBuildingInList(city, list, work->tile & 0x7F, work->tile >> 7, 0, static_cast<int16_t>(person->work), 0x3F80));
         if (person->target != 0x3F80)
         {
-            const GuestPtr<uint8_t> visitors{Map_GetRecord(city->map, person->target).address + 0x16u};
-            ++*visitors;
+            const GuestPtr<MapObject> target = Map_GetRecord(city->map, person->target);
+            ++target->headingHere;
         }
         return person->target;
     }
@@ -1515,7 +1516,7 @@ namespace mm
     // of the person's family with its claim meter below 120. Otherwise, around the workplace (24 offsets, 0x1B0C50
     // and 0x1B0CB0): a home of the family with the meter below 60 is taken, or, where the four tiles of the block
     // (0x1B0D10 and 0x1B0D20) are ground, wasteland or type 10 lying flat (corners within 0.05), a new home of the
-    // workplace type's home type (+0x13A) is placed. Failing all, the workplace. Returns the home.
+    // workplace type's home type is placed. Failing all, the workplace. Returns the home.
     uint32_t Person_PlaceHomeObject(GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
     {
         const auto homeOfFamily = [&](GuestPtr<MapObject> obj, int meterBelow) {
@@ -1562,7 +1563,7 @@ namespace mm
             }
             if (!open)
                 continue;
-            const int placed = Map_PlaceObject(city->map, person->family, port::load<uint16_t>(workType.address + 0x13Au), bx, bz,
+            const int placed = Map_PlaceObject(city->map, person->family, workType->homeType, bx, bz,
                                                static_cast<int>(city.address));
             if (placed != kNoObject)
             {
@@ -1611,7 +1612,7 @@ namespace mm
         player->target = -1;
         player->targetIsPerson = 0;
         player->unk_48 = 0;
-        player->unk_50 = 0;
+        player->airTime = 0.0f;
         player->jumpSpeed = 0.0f;
         player->jumps = 0;
         return player;
@@ -1633,7 +1634,7 @@ namespace mm
             call.person = person;
             call.family = static_cast<uint16_t>(family);
             call.member = member;
-            call.unk_08 = t0;
+            call.familyOnly = t0;
             return 1;
         }
         return 0;
@@ -1644,9 +1645,9 @@ namespace mm
         phone->unk_00 = GuestPtr<void>{port::load<uint32_t>(0x001F3B08u)};
         for (PhoneCallEntry &call : phone->calls)
             call.family = 0;
-        phone->unk_04 = 0;
-        phone->unk_08 = 0;
-        phone->unk_0C = 0;
+        phone->state = 0;
+        phone->shown = 0;
+        phone->frames = 0;
         phone->unk_40 = 0;
         return phone;
     }
@@ -1659,7 +1660,7 @@ namespace mm
         for (BagShortcut &shortcut : bag->shortcuts)
             shortcut.slot = -1;
         bag->model = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B24u)};
-        bag->unk_194 = 0;
+        bag->state = 0;
         bag->matrix = GuestPtr<Vec4>::of(bag->model->matrix[0]);
         bag->matrix[2].z = 7.0f;
         bag->matrix[1].y = 7.0f;
@@ -1668,16 +1669,18 @@ namespace mm
         bag->matrix[3].x = place->x;
         bag->matrix[3].y = place->y;
         bag->matrix[3].z = place->z;
-        bag->unk_19C = 0;
-        bag->unk_174 = 0;
-        bag->unk_178 = 0;
-        bag->unk_170 = 0;
+        bag->slide = 0.0f;
+        bag->list = GuestPtr<ListMenu>{0u};
+        bag->question = GuestPtr<MenuWin>{0u};
+        bag->nameText = GuestPtr<TextBox>{0u};
         bag->size = 0;
-        bag->unk_1A0 = 0;
+        bag->cursor = 0;
         bag->unk_002 = 0;
-        for (uint8_t &b : bag->unk_17C)
-            b = 0;
-        bag->unk_1A4 = -1;
+        for (GuestPtr<Frame> &frame : bag->frames)
+            frame = GuestPtr<Frame>{0u};
+        for (GuestPtr<TextBox> &label : bag->labels)
+            label = GuestPtr<TextBox>{0u};
+        bag->setupSlot = -1;
         return bag;
     }
 
@@ -1701,7 +1704,7 @@ namespace mm
             matrix[3].z = -0.1f;
         }
         markers->visible = 0;
-        markers->unk_124 = 0;
+        markers->circleHeld = 0;
         return markers;
     }
 
@@ -2404,7 +2407,7 @@ namespace mm
         {
             port::GuestFrame<0xD0> frame; // the people cursor sits at the original's sp + 0xCE
             const GuestPtr<uint16_t> cursor{frame.ptr().address + 0xCEu};
-            const int speed = vehicle->introduces;
+            const int speed = vehicle->speed;
             const int x = obj->tile % 128, z = obj->tile / 128;
             int change = -5, floor = 300, ceiling = 800;
             const auto brake = [&](ps2f gap, int slow) {
@@ -2526,9 +2529,9 @@ namespace mm
 
             const int next = speed + change;
             if (next < floor)
-                vehicle->introduces = static_cast<uint16_t>(floor);
+                vehicle->speed = static_cast<uint16_t>(floor);
             else
-                vehicle->introduces = static_cast<uint16_t>(ceiling < next ? ceiling : next);
+                vehicle->speed = static_cast<uint16_t>(ceiling < next ? ceiling : next);
         }
     }
 
@@ -2643,7 +2646,7 @@ namespace mm
 
             sdk::sceVu0RotMatrixY(turn.address, globals::kIdentityMatrix, vehicle->heading);
             step->w = 1.0f;
-            step->z = fromInt(-static_cast<int32_t>(vehicle->introduces)) / ps2f(10000.0f);
+            step->z = fromInt(-static_cast<int32_t>(vehicle->speed)) / ps2f(10000.0f);
             step->y = 0.0f;
             step->x = 0.0f;
             Math_MulMatVecVu0(step, turn, step);
@@ -2851,7 +2854,7 @@ namespace mm
             *laptopEntry(last) = -1;
             globals::laptopEntryCount.set(globals::laptopEntryCount.get() - 1);
             if (*laptopEntry(i) == -1)
-                port::store<int32_t>(laptop.address + 0x3D0u, port::load<int32_t>(laptop.address + 0x3D0u) - 1);
+                laptop->selected = laptop->selected - 1;
             return;
         }
     }
@@ -3013,29 +3016,23 @@ namespace mm
 
     namespace
     {
-        // The queued calls (four of 0xC bytes from +0x10: a word, two halfwords, a word) move up one; the last is
-        // left as it was except its first halfword cleared.
-        void shiftCalls(uint32_t phone)
+        // The queued calls move up one; the last is left as it was except its family cleared.
+        void shiftCalls(GuestPtr<PhoneCalls> phone)
         {
-            for (uint32_t entry = phone + 0x10u; entry < phone + 0x34u; entry += 0xCu)
-            {
-                port::store<uint32_t>(entry, port::load<uint32_t>(entry + 0xCu));
-                port::store<uint16_t>(entry + 4u, port::load<uint16_t>(entry + 0x10u));
-                port::store<uint16_t>(entry + 6u, port::load<uint16_t>(entry + 0x12u));
-                port::store<uint32_t>(entry + 8u, port::load<uint32_t>(entry + 0x14u));
-            }
-            port::store<uint16_t>(phone + 0x38u, 0);
+            for (int i = 0; i < 3; ++i)
+                phone->calls[i] = phone->calls[i + 1];
+            phone->calls[3].family = 0;
         }
 
-        // Ending the call being shown: the queue moves up, the pad focus is released, the call state (+4, +0xC)
-        // cleared, +0x40 negated and the notice cleared.
-        void endShownCall(uint32_t phone, GuestPtr<CityScene> city)
+        // Ending the call being shown: the queue moves up, the pad focus is released, the call state cleared, +0x40 negated and
+        // the notice cleared.
+        void endShownCall(GuestPtr<PhoneCalls> phone, GuestPtr<CityScene> city)
         {
             shiftCalls(phone);
             Pad_ReleaseFocus(1);
-            port::store<int32_t>(phone + 0xCu, 0);
-            port::store<int32_t>(phone + 4u, 0);
-            port::store<int32_t>(phone + 0x40u, -port::load<int32_t>(phone + 0x40u));
+            phone->frames = 0;
+            phone->state = 0;
+            phone->unk_40 = -phone->unk_40;
             Notice_Clear(city->notice);
         }
     }
@@ -3043,22 +3040,23 @@ namespace mm
     // The shown call ends (if one is shown) and the whole queue is cleared.
     void PhoneCall_Next(GuestPtr<PhoneCalls> phone, GuestPtr<CityScene> city)
     {
-        if (port::load<int32_t>(phone.address + 4u) != 0)
-            endShownCall(phone.address, city);
-        sdk::memset(phone.address + 0x10u, 0, 0x30);
+        if (phone->state != 0)
+            endShownCall(phone, city);
+        sdk::memset(port::guest(phone->calls), 0, 0x30);
     }
 
     // Withdraws the queued call of the family member: the shown one ends, another is cut out of the queue.
     void PhoneCall_Remove(GuestPtr<PhoneCalls> phone, GuestPtr<CityScene> city, uint32_t family, uint32_t member)
     {
-        const uint32_t first = phone.address + 0x10u, end = first + 0x30u;
+        const uint32_t first = port::guest(phone->calls), end = first + 0x30u;
         for (uint32_t entry = first; entry < end; entry += 0xCu)
         {
-            if (port::load<uint16_t>(entry + 4u) != family || port::load<uint16_t>(entry + 6u) != member)
+            const GuestPtr<PhoneCallEntry> call{entry};
+            if (call->family != family || call->member != member)
                 continue;
-            if (entry == first && port::load<int32_t>(phone.address + 4u) != 0)
+            if (entry == first && phone->state != 0)
             {
-                endShownCall(phone.address, city);
+                endShownCall(phone, city);
                 return;
             }
             const int32_t left = static_cast<int32_t>(end - entry) / 12;
@@ -3070,7 +3068,7 @@ namespace mm
         }
     }
 
-    int Player_GetMode(GuestPtr<Player> player) { return port::load<int32_t>(player.address); }
+    int Player_GetMode(GuestPtr<Player> player) { return player->mode; }
 
     void Player_SaveState(GuestPtr<Player> player, GuestPtr<McManager> mc) { SaveFile_Write(mc, static_cast<int>(player.address), 0x38); }
 
@@ -3147,7 +3145,7 @@ namespace mm
 
     void Stamina_Init(GuestPtr<Stamina> stamina)
     {
-        port::store<int32_t>(stamina.address, 0);
+        stamina->unk_00 = 0;
         port::store<int32_t>(stamina.address + 4u, 0x61A7F); // 399999
         port::store<int32_t>(stamina.address + 8u, 0);
     }
@@ -3216,25 +3214,24 @@ namespace mm
             Family_AddFriendship(family, member, GuestPtr<int32_t>{approval.address}, amount);
     }
 
-    // The talk view (+0x10) has no person chosen (-1) and the choosing ends (+0x3C).
+    // The talk view has no person chosen (-1) and the choosing ends.
     void Talk_EndChoosing(GuestPtr<TalkSession> talk)
     {
-        const uint32_t view = port::load<uint32_t>(talk.address + 0x10u);
-        port::store<int32_t>(view + 0xB8u, -1);
-        port::store<int32_t>(talk.address + 0x3Cu, 1);
+        talk->view->forcedChoice = -1;
+        talk->endChoosing = 1;
     }
 
     void Talk_SelectPerson(GuestPtr<TalkSession> talk, uint32_t family, uint32_t member)
     {
-        const uint32_t view = port::load<uint32_t>(talk.address + 0x10u);
-        port::store<int32_t>(view + 0xB8u, TalkView_FindPersonSlot(GuestPtr<TalkView>{view}, family, member));
+        const GuestPtr<TalkView> view = talk->view;
+        view->forcedChoice = TalkView_FindPersonSlot(view, family, member);
     }
 
     void Talk_SetViewLit(GuestPtr<TalkSession> talk)
     {
-        const uint32_t view = port::load<uint32_t>(talk.address + 0x10u);
-        if (view != 0)
-            port::store<int32_t>(view + 0x258u, 1);
+        const GuestPtr<TalkView> view = talk->view;
+        if (view)
+            view->forceLit = 1;
     }
 
     // The pose of a family member in the talk (32 entries of family, member, pose from +0x40): the entry of the
@@ -3473,7 +3470,7 @@ namespace mm
     int Laptop_RunEntry(GuestPtr<Laptop> laptop, GuestPtr<CityScene> city)
     {
         int mode = CityScene_GetMode(city);
-        const uint32_t entry = port::load<uint32_t>(globals::kLaptopEntries + 4u * port::load<uint32_t>(laptop.address + 0x3D0u));
+        const uint32_t entry = port::load<uint32_t>(globals::kLaptopEntries + 4u * static_cast<uint32_t>(laptop->selected));
         const auto player = [&](int playerMode) {
             Player_SetMode(city->player, playerMode);
             return 1;
@@ -3537,7 +3534,7 @@ namespace mm
     {
         if (cls)
         {
-            port::store<uint32_t>(cls.address + 0x20u, 0x001BCE70u);
+            cls->vtable = GuestPtr<CharClassVtable>{0x001BCE70u};
             if (0 < deleteFlag)
                 sdk::operator_delete(cls.address);
         }
@@ -3548,7 +3545,7 @@ namespace mm
     {
         if (markers)
         {
-            port::store<uint32_t>(markers.address + 0x128u, 0x001BCFC8u);
+            markers->vtable = GuestPtr<void>{0x001BCFC8u};
             if (0 < deleteFlag)
                 sdk::operator_delete(markers.address);
         }
@@ -3796,7 +3793,7 @@ namespace mm
     {
         if (cls)
         {
-            port::store<uint32_t>(cls.address + 0x20u, 0x001BCE90u);
+            cls->vtable = GuestPtr<CharClassVtable>{0x001BCE90u};
             CharType_dtor(cls, 0);
             if (0 < deleteFlag)
                 sdk::operator_delete(cls.address);
@@ -3808,7 +3805,7 @@ namespace mm
     {
         if (cls)
         {
-            port::store<uint32_t>(cls.address + 0x20u, 0x001BCEB0u);
+            cls->vtable = GuestPtr<CharClassVtable>{0x001BCEB0u};
             CharType_dtor(cls, 0);
             if (0 < deleteFlag)
                 sdk::operator_delete(cls.address);
@@ -3843,17 +3840,17 @@ namespace mm
     {
         if (mc)
         {
-            const uint32_t queue = port::load<uint32_t>(mc.address);
+            const uint32_t queue = mc->queue.address;
             if (queue != 0u)
             {
                 McManagerSub_DeletingDtor(static_cast<int>(queue), 1);
-                port::store<uint32_t>(mc.address, 0u);
+                mc->queue = GuestPtr<void>{0u};
             }
-            const uint32_t file = port::load<uint32_t>(mc.address + 0x20u);
-            if (file != 0u)
+            const GuestPtr<GameFile> file = mc->file;
+            if (file)
             {
-                File_dtor(GuestPtr<GameFile>{file}, 1);
-                port::store<uint32_t>(mc.address + 0x20u, 0u);
+                File_dtor(file, 1);
+                mc->file = GuestPtr<GameFile>{0u};
             }
             if (0 < deleteFlag)
                 sdk::operator_delete(mc.address);
@@ -3935,21 +3932,21 @@ namespace mm
     {
         constexpr uint32_t kTableA4 = 0x001BD9A4u, kTableA8 = 0x001BD9A8u, kTableAC = 0x001BD9ACu;
         const GuestPtr<Family> record = Family_Get(static_cast<int>(family), 0);
-        const uint32_t self = record.address + 0x24u + 0x48u * static_cast<uint32_t>(member);
-        const uint8_t age = port::load<uint8_t>(self + 2u);
+        const GuestPtr<FamilyMember> self = GuestPtr<FamilyMember>::of(record->members[0]) + member;
+        const uint8_t age = self->age;
         int children = 0;  // 1: a member under age group 2, 2: one under 6 (and none under 2)
-        const uint32_t count = port::load<uint16_t>(record.address + 0x22u);
+        const uint32_t count = record->memberCount;
         for (uint32_t i = 0; i < count; ++i)
         {
-            const uint8_t group = port::load<uint8_t>(record.address + 0x24u + 0x48u * i + 2u);
+            const uint8_t group = (GuestPtr<FamilyMember>::of(record->members[0]) + static_cast<int32_t>(i))->age;
             if (group < 2)
                 children = 1;
             else if (group < 6 && children == 0)
                 children = 2;
         }
-        const bool flagged = (port::load<uint8_t>(self + 3u) & 1u) != 0;
+        const bool flagged = (self->flags & 1u) != 0;
         const int type = Family_GetTypeIndex(static_cast<int>(family & 0xFFFFu));
-        const uint32_t typeFlags = port::load<uint16_t>(globals::buildingTypeAddress(static_cast<uint32_t>(type)) + 0x136u);
+        const uint32_t typeFlags = globals::buildingType(static_cast<uint32_t>(type))->flags;
         const auto second = [&]() -> uint8_t {
             if (children == 1)
                 return 9;
@@ -4152,9 +4149,9 @@ namespace mm
             const int32_t previous = player->previousMode;
             player->previousMode = player->mode;
             player->mode = previous;
-            port::store<uint32_t>(player.address + 0x80u, 0u);
-            port::store<uint32_t>(player.address + 0x8u, 0u);
-            port::store<uint32_t>(player.address + 0x34u, 0u);
+            player->stepFrames = 0.0f;
+            player->step = 0;
+            player->swayPhase = 0.0f;
             player->target = -1;
             Pad_ClearBit40();
         };
@@ -4165,7 +4162,7 @@ namespace mm
             return;
         }
         const uint32_t typeIndex = port::load<uint32_t>(sp + 0xACu) + 0x115u;
-        const int32_t size = port::load<uint8_t>(globals::buildingTypeAddress(typeIndex) + 0x142u);
+        const int32_t size = globals::buildingType(typeIndex)->size;
         const ps2f half = fromInt(size & 1) / ps2f(2.0f);
         const int x = sdk::fptosi(ps2f(64.0f) + (player->position.x + half - ps2f(0.5f)));
         const int z = sdk::fptosi(ps2f(64.0f) - (ps2f(0.5f) + (player->position.z - half)));
@@ -4217,7 +4214,7 @@ namespace mm
 
     // One frame of the phone calls (four queued, the first shown; each entry: the person, or 6000 for a call from a family member
     // without a person on the map, the family, the member and a flag). State 0 (nothing shown) takes the first queued call: the
-    // pad focus is taken and the state becomes 1 (the entry is +8). State 1 (ringing) builds the caller's text once ("Unknown", the
+    // pad focus is taken and the state becomes 1. State 1 (ringing) builds the caller's text once ("Unknown", the
     // family without friendship, or the member's name) and shows it as a notice; Circle accepts (state 2); the call ends after 600
     // frames, with Square, when the family is not in the city or (for a call of the family) when its flag is set and the city is not
     // popular, or when the person has no place on the map. State 2 waits 30 frames and then starts a talk with the person or the
@@ -4226,24 +4223,16 @@ namespace mm
     // was shown). The result is 1 when no call is on.
     int PhoneCall_Update(GuestPtr<PhoneCalls> phone, GuestPtr<CityScene> city)
     {
-        const uint32_t p = phone.address;
-        const uint32_t c = city.address;
-        const auto entryOf = [&](int32_t index) { return p + 0x10u + 12u * static_cast<uint32_t>(index); };
+        const auto entryOf = [&](int32_t index) { return GuestPtr<PhoneCallEntry>::of(phone->calls[0]) + index; };
         const auto endCall = [&](bool clearNotice) {
-            int32_t index = port::load<int32_t>(p + 8u);
+            int32_t index = phone->shown;
             for (; index < 3; ++index)
-            {
-                const uint32_t to = entryOf(index), from = to + 12u;
-                port::store<uint32_t>(to, port::load<uint32_t>(from));
-                port::store<uint16_t>(to + 4u, port::load<uint16_t>(from + 4u));
-                port::store<uint16_t>(to + 6u, port::load<uint16_t>(from + 6u));
-                port::store<uint32_t>(to + 8u, port::load<uint32_t>(from + 8u));
-            }
-            port::store<uint16_t>(entryOf(index) + 4u, 0);
+                *entryOf(index) = *entryOf(index + 1);
+            entryOf(index)->family = 0;
             Pad_ReleaseFocus(1);
-            port::store<int32_t>(p + 0xCu, 0);
-            port::store<int32_t>(p + 4u, 0);
-            port::store<int32_t>(p + 0x40u, -port::load<int32_t>(p + 0x40u));
+            phone->frames = 0;
+            phone->state = 0;
+            phone->unk_40 = -phone->unk_40;
             if (clearNotice)
                 Notice_Clear(city->notice);
         };
@@ -4254,92 +4243,92 @@ namespace mm
             const int z = sdk::fptosi(ps2f(64.0f) - who->z);
             return Map_FindPersonObjectOnTile(city->map, person & 0xFFFFu, static_cast<uint32_t>(x + (z << 7)) & 0xFFFFu);
         };
-        const int32_t state = port::load<int32_t>(p + 4u);
+        const uint32_t caller = port::guest(phone->caller);
+        const int32_t state = phone->state;
         if (state == 0)
         {
             for (int32_t i = 0; i < 4; ++i)
             {
-                if (port::load<uint16_t>(entryOf(i) + 4u) == 0)
+                if (entryOf(i)->family == 0)
                     continue;
-                port::store<int32_t>(p + 4u, 1);
-                port::store<uint8_t>(p + 0x48u, 0);
-                port::store<int32_t>(p + 8u, i);
-                port::store<int32_t>(p + 0xCu, 0);
+                phone->state = 1;
+                phone->caller[0] = 0;
+                phone->shown = i;
+                phone->frames = 0;
                 Pad_TakeFocus(1, 0x1F0);
-                port::store<int32_t>(p + 0x40u, 1);
-                port::store<int32_t>(p + 0x44u, 0);
+                phone->unk_40 = 1;
+                phone->unk_44 = 0;
                 break;
             }
         }
         else if (state == 1)
         {
-            const uint32_t entry = entryOf(port::load<int32_t>(p + 8u));
-            if (port::load<int8_t>(p + 0x48u) == 0)
+            const GuestPtr<PhoneCallEntry> entry = entryOf(phone->shown);
+            if (phone->caller[0] == 0)
             {
-                const uint32_t family = port::load<uint16_t>(entry + 4u);
+                const uint32_t family = entry->family;
                 const uint32_t record = static_cast<uint32_t>(Family_Prefetch(static_cast<int>(family), 0));
                 if (record != 0u)
                 {
                     if (Family_GetTypeIndex(static_cast<int>(family)) == 0xB2)
-                        sdk::sprintf(p + 0x48u, 0x001B8198u);
-                    else if (Family_GetFriendship(static_cast<int>(family), port::load<uint16_t>(entry + 6u)) == 0)
-                        sdk::sprintf(p + 0x48u, 0x001B81B0u);
+                        sdk::sprintf(caller, 0x001B8198u);
+                    else if (Family_GetFriendship(static_cast<int>(family), entry->member) == 0)
+                        sdk::sprintf(caller, 0x001B81B0u);
                     else
-                        sdk::sprintf(p + 0x48u, 0x001B81C8u, record + 0x48u * port::load<uint16_t>(entry + 6u) + 0x4Cu);
+                        sdk::sprintf(caller, 0x001B81C8u, record + 0x48u * entry->member + 0x4Cu); // the member's name
                 }
             }
-            if (port::load<int8_t>(p + 0x48u) != 0)
-                Notice_ShowCentered(city->notice, GuestPtr<char>{p + 0x48u}, 0x001B8170);
+            if (phone->caller[0] != 0)
+                Notice_ShowCentered(city->notice, GuestPtr<char>{caller}, 0x001B8170);
             if ((Pad_Pressed(1) & 0x20u) != 0)
             {
-                port::store<int32_t>(p + 0xCu, 0);
-                port::store<int32_t>(p + 4u, 2);
+                phone->frames = 0;
+                phone->state = 2;
                 Notice_Clear(city->notice);
             }
             else
             {
-                const int32_t counter = port::load<int32_t>(p + 0xCu) + 1;
-                port::store<int32_t>(p + 0xCu, counter);
+                const int32_t counter = phone->frames + 1;
+                phone->frames = counter;
                 if (counter >= 600 || (Pad_Pressed(1) & 0x80u) != 0)
                     endCall(true);
                 else
                 {
-                    const uint32_t shown = entryOf(port::load<int32_t>(p + 8u));
-                    const uint32_t family = port::load<uint16_t>(shown + 4u);
-                    if (port::load<int32_t>(shown) == 6000)
+                    const GuestPtr<PhoneCallEntry> shown = entryOf(phone->shown);
+                    const uint32_t family = shown->family;
+                    if (shown->person == 6000)
                     {
-                        if (Family_InCity(family) != 0 || (port::load<int32_t>(shown + 8u) != 0 && (city->flags & 4u) == 0))
+                        if (Family_InCity(family) != 0 || (shown->familyOnly != 0 && (city->flags & 4u) == 0))
                             endCall(true);
                     }
-                    else if (Family_InCity(family) == 0 || !objectOf(port::load<uint32_t>(shown)))
+                    else if (Family_InCity(family) == 0 || !objectOf(static_cast<uint32_t>(shown->person)))
                         endCall(true);
                 }
             }
         }
         else
         {
-            const int32_t counter = port::load<int32_t>(p + 0xCu) + 1;
-            port::store<int32_t>(p + 0xCu, counter);
+            const int32_t counter = phone->frames + 1;
+            phone->frames = counter;
             if (counter >= 0x1E)
             {
-                const uint32_t shown = entryOf(port::load<int32_t>(p + 8u));
-                const uint32_t family = port::load<uint16_t>(shown + 4u);
-                if (port::load<int32_t>(shown) == 6000)
+                const GuestPtr<PhoneCallEntry> shown = entryOf(phone->shown);
+                const uint32_t family = shown->family;
+                if (shown->person == 6000)
                 {
-                    if (port::load<int32_t>(shown + 8u) == 0 ||
-                        ((city->flags & 4u) != 0 && port::load<int32_t>(port::load<uint32_t>(c + 0x54u) + 0x280u) < 0x20))
-                        CityScene_StartTalk(city, 1, static_cast<int>(family), port::load<uint16_t>(shown + 6u), 3);
+                    if (shown->familyOnly == 0 || ((city->flags & 4u) != 0 && city->applicants->count < 0x20))
+                        CityScene_StartTalk(city, 1, static_cast<int>(family), shown->member, 3);
                 }
                 else if (Family_InCity(family) != 0)
                 {
-                    const GuestPtr<MapObject> object = objectOf(port::load<uint32_t>(shown));
+                    const GuestPtr<MapObject> object = objectOf(static_cast<uint32_t>(shown->person));
                     if (object)
-                        CityScene_StartTalk(city, 0, object->id, port::load<int32_t>(shown), 3);
+                        CityScene_StartTalk(city, 0, object->id, shown->person, 3);
                 }
                 endCall(false);
             }
         }
-        return port::load<int32_t>(p + 4u) == 0 ? 1 : 0;
+        return phone->state == 0 ? 1 : 0;
     }
 
     PORT_FN(PhoneCall_Update);
@@ -4360,10 +4349,10 @@ namespace mm
             return port::load<uint8_t>(port::load<uint32_t>(0x001BDBACu) + 96u * row + static_cast<uint32_t>(shifted / 3600 + 24 * variant));
         }
 
-        // The row of a family type's own schedule: the entry (the schedule state), or for 0xF the type's kind (+0x14B) after row 15.
+        // The row of a family type's own schedule: the entry (the schedule state), or for 0xF the type's own row after row 15.
         uint32_t scheduleRow(uint32_t entry, uint32_t type)
         {
-            return entry == 0xFu ? port::load<uint8_t>(globals::buildingTypeAddress(type) + 0x14Bu) + 0xFu : entry;
+            return entry == 0xFu ? globals::buildingType(type)->schedule + 0xFu : entry;
         }
 
         // The row a person's schedule uses: the schedule state is worked out first when it is 0; a city with flag 8 uses row 29, a
@@ -4382,14 +4371,14 @@ namespace mm
         }
     }
 
-    // char: the schedule of a family member at this hour, its upper three bits: when they are set, the kind (+0x14C) of the
+    // char: the schedule of a family member at this hour, its upper three bits: when they are set, the activity of the
     // building type of the family, else 0.
     uint8_t Schedule_QueryA(GuestPtr<CityScene> city, uint32_t family, int member)
     {
         const int type = Family_GetTypeIndex(static_cast<int>(family & 0xFFFFu));
         const uint32_t row = scheduleRow(Schedule_Evaluate(family, member), static_cast<uint32_t>(type));
         const uint32_t byte = scheduleByte(city, family, member, row);
-        return ((byte >> 5) & 7u) == 0 ? 0 : port::load<uint8_t>(globals::buildingTypeAddress(static_cast<uint32_t>(type)) + 0x14Cu);
+        return ((byte >> 5) & 7u) == 0 ? 0 : globals::buildingType(static_cast<uint32_t>(type))->activity;
     }
 
     // The same lookup's activity: the low five bits of the schedule byte.
@@ -4409,7 +4398,7 @@ namespace mm
         if (((byte >> 5) & 7u) == 0)
             return 0;
         const GuestPtr<MapObject> goal = person->target == kNoObject ? Map_GetRecord(city->map, person->work) : Map_GetRecord(city->map, person->target);
-        return port::load<uint8_t>(globals::buildingTypeAddress(goal->type) + 0x14Cu);
+        return globals::buildingType(goal->type)->activity;
     }
 
     // The same lookup's activity: the low five bits of the person's schedule byte.
@@ -4437,10 +4426,10 @@ namespace mm
         }
 
         // Whether a model still fits the frame's draw budget (two counters, at 0x1BDA28 against 0x708 and at 0x1BDA34 against the
-        // limit at 0x1BD980), by the cost halfword (+0x18) of the model's header.
+        // limit at 0x1BD980), by its node count.
         bool withinDrawBudget(uint32_t model)
         {
-            const int32_t cost = port::load<int16_t>(port::load<uint32_t>(model) + 0x18u);
+            const int32_t cost = GuestPtr<A3DObject>{model}->model->nodeCount;
             return cost + port::load<int32_t>(0x001BDA28u) < 0x708 && cost + port::load<int32_t>(0x001BDA34u) < port::load<int32_t>(0x001BD980u);
         }
 
@@ -4494,12 +4483,13 @@ namespace mm
         }
         if (!(ps2f(floatAt(position.address + 4u)) <= ps2f(0.5f)))
             return;
-        const uint32_t matrix = model + 0x10u;
-        sdk::sceVu0RotMatrixY(matrix, 0x001B2550u, ps2f(floatAt(position.address + 0xCu)));
-        port::store<uint32_t>(matrix + 0x30u, port::load<uint32_t>(position.address));
-        port::store<uint32_t>(matrix + 0x34u, port::load<uint32_t>(position.address + 4u));
-        port::store<uint32_t>(matrix + 0x38u, port::load<uint32_t>(position.address + 8u));
-        const uint32_t frameAt = person.address + 0x1Cu;
+        const GuestPtr<A3DObject> drawn{model};
+        const GuestPtr<Vec4> place = position.as<Vec4>(); // x, y, z and the heading
+        sdk::sceVu0RotMatrixY(port::guest(drawn->matrix), 0x001B2550u, place->w);
+        drawn->matrix[3].x = place->x;
+        drawn->matrix[3].y = place->y;
+        drawn->matrix[3].z = place->z;
+        const uint32_t frameAt = port::guest(&person->animFrame);
         if ((person->flags & 0x100u) == 0)
         {
             if (animation < 2)
@@ -4554,14 +4544,14 @@ namespace mm
         }
         else
         {
-            const uint32_t part = port::load<uint8_t>(Family_Get(static_cast<int>(family), 0).address + 0x48u * member + 0x2Bu);
+            const uint32_t part = Family_Get(static_cast<int>(family), 0)->members[member].look;
             model = port::load<uint32_t>(cls.address + 4u * (part != 0 ? part : ((family & 1u) != 0 ? 0u : 3u)));
             activity = Schedule_QueryA(city, family, static_cast<int>(member));
             port::store<int32_t>(local, 0);
             Talk_LookupPose(city->talk, family, member, GuestPtr<uint32_t>{local});
         }
-        for (uint32_t offset = 0; offset < 0x40u; offset += 8u)
-            port::store<uint64_t>(model + 0x10u + offset, port::load<uint64_t>(matrix.address + offset));
+        for (int row = 0; row < 4; ++row)
+            GuestPtr<A3DObject>{model}->matrix[row] = matrix[row];
         const ps2f now{floatAt(phase.address)};
         if (!(now < ps2f(0.0f)))
         {
@@ -4595,10 +4585,10 @@ namespace mm
     {
         port::GuestFrame<0xD0> frame;
         const uint32_t sp = frame.ptr().address;
-        const uint32_t entry = static_cast<uint32_t>(Applicants_GetSelected(city->applicants));
-        const uint32_t family = port::load<uint16_t>(entry + 4u);
+        const GuestPtr<ApplicantEntry> entry{static_cast<uint32_t>(Applicants_GetSelected(city->applicants))};
+        const uint32_t family = entry->family;
         const int typeIndex = Family_GetTypeIndex(static_cast<int>(family));
-        const int32_t size = port::load<uint8_t>(globals::buildingTypeAddress(static_cast<uint32_t>(typeIndex)) + 0x142u);
+        const int32_t size = globals::buildingType(static_cast<uint32_t>(typeIndex))->size;
         const ps2f half = fromInt(size & 1) / ps2f(2.0f);
         const int x = sdk::fptosi(ps2f(64.0f) + (player->position.x + half - ps2f(0.5f)));
         const int z = sdk::fptosi(ps2f(64.0f) - (ps2f(0.5f) + (player->position.z - half)));
@@ -4643,8 +4633,8 @@ namespace mm
                 return;
             }
             Map_LevelArea(city->map, port::load<int32_t>(sp + 0xB0u), port::load<int32_t>(sp + 0xB4u), size, static_cast<int>(city.address));
-            port::store<uint16_t>(entry + 2u, 3);
-            port::store<uint16_t>(entry + 6u, static_cast<uint16_t>(port::load<int16_t>(sp + 0xB0u) + (port::load<int16_t>(sp + 0xB4u) << 7)));
+            entry->state = 3;
+            entry->tile = static_cast<uint16_t>(port::load<int16_t>(sp + 0xB0u) + (port::load<int16_t>(sp + 0xB4u) << 7));
             Applicants_StartPlacing(city->applicants, city);
             Sound_PlaySe(3, 0, 0x3C, 0.0f, 0.0f);
             return;
@@ -4667,7 +4657,6 @@ namespace mm
     // back on its workplace's. With flag 0x800 the vehicle is then linked to the object under it (or its building); flag 0x1000 is cleared.
     void Char2_Update(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, uint32_t timeFlags)
     {
-        const uint32_t v = vehicle.address;
         constexpr uint16_t kNowhere = 0x3F80, kNoDriver = 0x1770, kNoTile = 0x4000;
         if ((timeFlags & 2u) != 0 && vehicle->inside != kNowhere && vehicle->target != kNoDriver)
         {
@@ -4679,27 +4668,27 @@ namespace mm
         const int z = sdk::fptosi(ps2f(64.0f) - vehicle->z);
         const int tile = x + (z << 7);
         const auto carryDriver = [&]() {
-            const GuestPtr<MapPerson> driver = city->map->people + port::load<uint16_t>(v + 0x28u);
-            port::store<uint32_t>(driver.address, port::load<uint32_t>(v));
-            port::store<uint32_t>(driver.address + 4u, port::load<uint32_t>(v + 4u));
-            port::store<uint32_t>(driver.address + 8u, port::load<uint32_t>(v + 8u));
+            const GuestPtr<MapPerson> driver = city->map->people + vehicle->target;
+            driver->x = vehicle->x;
+            driver->y = vehicle->y;
+            driver->z = vehicle->z;
         };
         if (vehicle->inside != kNowhere)
         {
-            port::store<uint16_t>(v + 0x2Eu, 0);
+            vehicle->awayTime = 0;
             const GuestPtr<MapObject> building = Map_GetRecord(city->map, vehicle->inside);
             const GuestPtr<MapObject> here = Map_GetTileFirstObject(city->map, tile);
             if (building->tile == here->tile)
             {
                 vehicle->inside = kNowhere;
-                port::store<uint16_t>(v + 0x1Eu, kNowhere);
+                vehicle->destination = kNowhere;
                 vehicle->walkTile = kNoTile;
                 vehicle->previousTile = kNoTile;
-                port::store<uint16_t>(v + 0x2Cu, 0);
+                vehicle->speed = 0;
                 const GuestPtr<MapPerson> driver = city->map->people + vehicle->target;
                 driver->flags = static_cast<uint16_t>(driver->flags & 0xFFFBu);
                 driver->inside = kNowhere;
-                port::store<uint16_t>(driver.address + 0x1Eu, kNowhere);
+                driver->destination = kNowhere;
                 driver->walkTile = kNoTile;
                 driver->previousTile = kNoTile;
                 carryDriver();
@@ -4718,12 +4707,11 @@ namespace mm
         }
         else
         {
-            const uint16_t counter = static_cast<uint16_t>(port::load<uint16_t>(v + 0x2Eu) + 3u);
-            port::store<uint16_t>(v + 0x2Eu, counter);
-            if (static_cast<int32_t>(port::load<uint16_t>(v + 0x2Eu)) >= 0xFD20)
+            vehicle->awayTime = static_cast<uint16_t>(vehicle->awayTime + 3u);
+            if (static_cast<int32_t>(vehicle->awayTime) >= 0xFD20)
             {
                 Map_UnlinkPersonFromTile(city->map, tile, vehicle->index);
-                port::store<uint16_t>(v + 0x2Eu, 0);
+                vehicle->awayTime = 0;
                 const uint32_t home = Map_GetRecord(city->map, vehicle->work)->tile;
                 vehicle->x = ps2f(0.5f) + (fromInt(static_cast<int32_t>(home & 0x7Fu)) - ps2f(64.0f));
                 vehicle->z = (fromInt(0x80 - static_cast<int32_t>(home >> 7)) - ps2f(64.0f)) - ps2f(0.5f);
@@ -4749,210 +4737,204 @@ namespace mm
 
     PORT_FN(Char2_Update);
 
-    // The player for one frame. The move speed (+0x54) follows the stamina object's counter (the count over 100000 over 140, plus 0.04;
-    // 0.02 with none). The tile the player stands on (+0x10 and +0x18, 64 added, as x and as the row) is found, then the move vector
-    // (sp+0x80, zero to start) is made by the mode (+0x0): 0 and 3 turn and show the placing highlight, 1 walks (Cross held lays a
-    // road on the tile) and shows it, 2 turns and places a family, 4 only turns, 5 turns and places a bag item (3 and 0 also pick the
-    // target). Moving, or rising, uses stamina. The vector is turned by the heading (the model's matrix, +0x88) and added to the
+    // The player for one frame. The move speed follows the stamina object's counter (the count over 100000 over 140, plus 0.04;
+    // 0.02 with none). The tile the player stands on (64 added to x, and to minus z as the row) is found, then the move vector
+    // (sp+0x80, zero to start) is made by the mode: 0 and 3 turn and show the placing highlight, 1 walks (Cross held lays a road on
+    // the tile) and shows it, 2 turns and places a family, 4 only turns, 5 turns and places a bag item (3 and 0 also pick the
+    // target). Moving, or rising, uses stamina. The vector is turned by the heading (the model's matrix) and added to the
     // position; Triangle or the two shoulder buttons jump (the speed -0.25 when not already rising fast, two jumps at most); gravity
-    // then speeds the fall (the time +0x50 over 60, 9.8 and 0.01) and moves the height (+0x14). The new spot (0.15 lower) is checked
-    // against the nearest object (radius 0.05 over the speed, at least 0.2): in the walk mode a hit flips the grid step (+0x8) and mirrors
+    // then speeds the fall (the time in the air over 60, 9.8 and 0.01) and moves the height. The new spot (0.15 lower) is checked
+    // against the nearest object (radius 0.05 over the speed, at least 0.2): in the walk mode a hit flips the grid step and mirrors
     // the step frames (2 over the speed minus them), in the other modes the player is pushed out along the unit direction to the hit; a
-    // second hit puts x and z back. The height of the ground (at most 0.4 over +0xB0 of the city, or the colliding object's top) then lands
-    // a fall (speed 0), settles a standing player (eased by a fifth when far above, snapped when close) or ends a jump; the model's matrix
-    // follows, the building occupant of the tile is drawn, the action, footstep and zoom flag (+0x3C) are updated, the cursor is shown
-    // in the modes 0 and 3, the minimap view is set and the pad focus 3 is let go of unless Cross is held.
+    // second hit puts x and z back. The height of the ground (at most 0.4 over the city's water level, or the colliding object's top)
+    // then lands a fall (speed 0), settles a standing player (eased by a fifth when far above, snapped when close) or ends a jump; the
+    // model's matrix follows, the building occupant of the tile is drawn, the action, footstep and visibility (by the zoom) are
+    // updated, the cursor is shown in the modes 0 and 3, the minimap view is set and the pad focus 3 is let go of unless Cross is held.
     void Player_Update(GuestPtr<Player> player, GuestPtr<CityScene> city)
     {
         port::GuestFrame<0xE0> frame;
         const uint32_t sp = frame.ptr().address;
-        const uint32_t p = player.address, c = city.address;
-        const auto loadF = [](uint32_t at) { return ps2f(std::bit_cast<float>(port::load<uint32_t>(at))); };
-        const auto storeF = [](uint32_t at, ps2f value) { port::store<uint32_t>(at, std::bit_cast<uint32_t>(value.v)); };
         const auto constant = [](uint32_t bits) { return ps2f(std::bit_cast<float>(bits)); };
-        const auto copyVec = [](uint32_t to, uint32_t from) {
-            for (uint32_t k = 0; k < 16u; k += 4u)
-                port::store<uint32_t>(to + k, port::load<uint32_t>(from + k));
-        };
-        const auto map = [c]() { return GuestPtr<CityMap>{port::load<uint32_t>(c + 0x50u)}; };
-        const uint32_t move = sp + 0x80u, hit = sp + 0xA0u, spot = sp + 0xB0u, before = sp + 0xC0u, distance = sp + 0xDCu;
-        copyVec(move, 0x001B26B0u);
-        const uint32_t stamina = port::load<uint32_t>(c + 0x64u);
-        const int32_t count = port::load<int32_t>(stamina + 4u);
+        const auto map = [&]() { return city->map; };
+        const GuestPtr<Vec4> move{sp + 0x80u}, hit{sp + 0xA0u}, spot{sp + 0xB0u}, before{sp + 0xC0u};
+        const GuestPtr<ps2f> distance{sp + 0xDCu};
+        *move = *GuestPtr<Vec4>{0x001B26B0u};
+        const int32_t count = city->stamina->value;
         if (count == 0)
-            port::store<uint32_t>(p + 0x54u, 0x3CA3D70Au);
+            player->moveSpeed = constant(0x3CA3D70Au);
         else
         {
             const ps2f base = ps2f(static_cast<float>(count / 100000));
-            storeF(p + 0x54u, base);
-            storeF(p + 0x54u, constant(0x3D23D70Au) + base / constant(0x430C0000u));
+            player->moveSpeed = base;
+            player->moveSpeed = constant(0x3D23D70Au) + base / constant(0x430C0000u);
         }
-        const int tileX = sdk::fptosi(constant(0x42800000u) + loadF(p + 0x10u));
-        const int tileZ = sdk::fptosi(constant(0x42800000u) - loadF(p + 0x18u));
+        const int tileX = sdk::fptosi(constant(0x42800000u) + player->position.x);
+        const int tileZ = sdk::fptosi(constant(0x42800000u) - player->position.z);
         const auto showHighlight = [&]() {
             Map_SetPlacementHighlight(map(), 0, GuestPtr<int32_t>{sp + 0x70u}, GuestPtr<uint32_t>{sp + 0x90u});
         };
-        switch (port::load<uint32_t>(p))
+        switch (static_cast<uint32_t>(player->mode))
         {
         case 0:
-            Player_Turn(player, GuestPtr<ps2f>{move});
+            Player_Turn(player, GuestPtr<ps2f>{move.address});
             showHighlight();
             Player_PickTarget(player, city);
             break;
         case 1:
-            Player_Move(player, GuestPtr<Vec4>{move});
+            Player_Move(player, move);
             if ((Pad_Held(0) & 0x40u) != 0u)
-                Map_PlaceRoad(map(), static_cast<uint32_t>(tileX), static_cast<uint32_t>(tileZ), static_cast<int>(c));
+                Map_PlaceRoad(map(), static_cast<uint32_t>(tileX), static_cast<uint32_t>(tileZ), static_cast<int>(city.address));
             showHighlight();
             break;
         case 2:
-            Player_Turn(player, GuestPtr<ps2f>{move});
+            Player_Turn(player, GuestPtr<ps2f>{move.address});
             Player_PlaceForApplicant(player, city);
             break;
         case 3:
-            Player_Turn(player, GuestPtr<ps2f>{move});
+            Player_Turn(player, GuestPtr<ps2f>{move.address});
             showHighlight();
             Player_PickTarget(player, city);
             break;
         case 4:
-            Player_Turn(player, GuestPtr<ps2f>{move});
+            Player_Turn(player, GuestPtr<ps2f>{move.address});
             break;
         case 5:
-            Player_Turn(player, GuestPtr<ps2f>{move});
+            Player_Turn(player, GuestPtr<ps2f>{move.address});
             Player_PlaceBagItem(player, city);
             break;
         default:
             break;
         }
-        if (!(ps2f(0.0f) == loadF(move)) || !(ps2f(0.0f) == loadF(move + 8u)) || loadF(p + 0x4Cu) < ps2f(0.0f))
-            Stamina_Tick(GuestPtr<Stamina>{port::load<uint32_t>(c + 0x64u)}, city);
-        copyVec(before, p + 0x10u);
-        const uint32_t matrix = port::load<uint32_t>(p + 0x88u) + 0x10u;
-        sdk::sceVu0RotMatrixY(matrix, 0x001B2550u, loadF(p + 0xCu));
-        sdk::sceVu0ApplyMatrix(move, matrix, move);
+        if (!(ps2f(0.0f) == move->x) || !(ps2f(0.0f) == move->z) || player->jumpSpeed < ps2f(0.0f))
+            Stamina_Tick(city->stamina, city);
+        *before = player->position;
+        const GuestPtr<Vec4> matrix = GuestPtr<Vec4>::of(player->model->matrix[0]);
+        sdk::sceVu0RotMatrixY(matrix.address, 0x001B2550u, player->heading);
+        sdk::sceVu0ApplyMatrix(move.address, matrix.address, move.address);
         {
             using namespace vu0;
-            vf(4) = load(GuestPtr<Vec4>{p + 0x10u});
-            vf(5) = load(GuestPtr<Vec4>{move});
+            vf(4) = load(GuestPtr<Vec4>::of(player->position));
+            vf(5) = load(move);
             set(vf(4), add(vf(4), vf(5)), XYZW);
-            store(GuestPtr<Vec4>{p + 0x10u}, vf(4));
+            store(GuestPtr<Vec4>::of(player->position), vf(4));
         }
         if ((Pad_Pressed(0) & 0x10u) != 0u || (Pad_Pressed(0) & 0x200u) != 0u || (Pad_Pressed(0) & 0x400u) != 0u)
         {
-            const ps2f speed = loadF(p + 0x4Cu);
-            if (!(speed < constant(0xBE99999Au)) && speed <= constant(0x3D8F5C29u) && port::load<int32_t>(p + 0x84u) < 2)
+            const ps2f speed = player->jumpSpeed;
+            if (!(speed < constant(0xBE99999Au)) && speed <= constant(0x3D8F5C29u) && player->jumps < 2)
             {
-                port::store<uint32_t>(p + 0x4Cu, 0xBE800000u);
-                port::store<uint32_t>(p + 0x50u, 0u);
-                const int32_t jumps = port::load<int32_t>(p + 0x84u);
-                port::store<int32_t>(p + 0x84u, jumps + 1);
+                player->jumpSpeed = constant(0xBE800000u);
+                player->airTime = 0.0f;
+                const int32_t jumps = player->jumps;
+                player->jumps = jumps + 1;
                 Se_PlayVariant(6);
             }
         }
-        if (!(ps2f(0.0f) == loadF(p + 0x4Cu)))
+        if (!(ps2f(0.0f) == player->jumpSpeed))
         {
-            storeF(p + 0x50u, loadF(p + 0x50u) + constant(0x3C888889u));
-            const ps2f pull = constant(0x3C23D70Au) * (constant(0x411CCCCDu) * loadF(p + 0x50u));
-            const ps2f speed = loadF(p + 0x4Cu) + pull;
-            storeF(p + 0x4Cu, speed);
-            storeF(p + 0x14u, loadF(p + 0x14u) + speed);
+            player->airTime = player->airTime + constant(0x3C888889u);
+            const ps2f pull = constant(0x3C23D70Au) * (constant(0x411CCCCDu) * player->airTime);
+            const ps2f speed = player->jumpSpeed + pull;
+            player->jumpSpeed = speed;
+            player->position.y = player->position.y + speed;
         }
-        copyVec(spot, p + 0x10u);
-        storeF(spot + 4u, loadF(spot + 4u) - constant(0x3E19999Au));
-        ps2f radius = constant(0x3D4CCCCDu) + loadF(p + 0x54u);
+        *spot = player->position;
+        spot->y = spot->y - constant(0x3E19999Au);
+        ps2f radius = constant(0x3D4CCCCDu) + player->moveSpeed;
         if (radius < constant(0x3E4CCCCDu))
             radius = constant(0x3E4CCCCDu);
-        if (Player_NearestObject(map(), GuestPtr<ps2f>{spot}, GuestPtr<uint32_t>{hit}, GuestPtr<ps2f>{distance}, radius) != 0)
+        if (Player_NearestObject(map(), GuestPtr<ps2f>{spot.address}, GuestPtr<uint32_t>{hit.address}, distance, radius) != 0)
         {
-            if (port::load<int32_t>(p) == 1)
+            if (player->mode == 1)
             {
-                const int32_t step = port::load<int32_t>(p + 8u);
+                const int32_t step = player->step;
                 if (step == 1 || step == 2)
                 {
-                    port::store<int32_t>(p + 8u, step == 1 ? 2 : 1);
-                    storeF(p + 0x80u, ps2f(2.0f) / loadF(p + 0x54u) - loadF(p + 0x80u));
+                    player->step = step == 1 ? 2 : 1;
+                    player->stepFrames = ps2f(2.0f) / player->moveSpeed - player->stepFrames;
                 }
             }
             else
             {
                 using namespace vu0;
-                vf(4) = load(GuestPtr<Vec4>{hit});
-                vf(5) = load(GuestPtr<Vec4>{spot});
+                const GuestPtr<Vec4> push = GuestPtr<Vec4>::of(player->push);
+                vf(4) = load(hit);
+                vf(5) = load(spot);
                 set(vf(4), sub(vf(4), vf(5)), XYZW);
-                store(GuestPtr<Vec4>{p + 0x60u}, vf(4));
-                port::store<uint32_t>(p + 0x64u, 0u);
-                vf(1) = load(GuestPtr<Vec4>{p + 0x60u});
+                store(push, vf(4));
+                player->push.y = 0.0f;
+                vf(1) = load(push);
                 set(vf(2), mul(vf(1), vf(1)), XYZW);
                 set(vf(2), add(vf(2), lane(vf(2), 1)), X);
                 set(vf(2), add(vf(2), lane(vf(2), 2)), X);
                 q() = rsqrt(x(vf(2)));
                 set(vf(2), mul(vf(1), _mm_set1_ps(q())), XYZ);
-                store(GuestPtr<Vec4>{p + 0x60u}, vf(2));
-                const ps2f push = (constant(0x3A83126Fu) + radius) - loadF(distance);
-                storeF(spot, loadF(spot) - loadF(p + 0x60u) * push);
-                storeF(spot + 8u, loadF(spot + 8u) - loadF(p + 0x68u) * push);
+                store(push, vf(2));
+                const ps2f out = (constant(0x3A83126Fu) + radius) - *distance;
+                spot->x = spot->x - player->push.x * out;
+                spot->z = spot->z - player->push.z * out;
             }
         }
-        if (Player_NearestObject(map(), GuestPtr<ps2f>{spot}, GuestPtr<uint32_t>{hit}, GuestPtr<ps2f>{distance}, radius) != 0)
+        if (Player_NearestObject(map(), GuestPtr<ps2f>{spot.address}, GuestPtr<uint32_t>{hit.address}, distance, radius) != 0)
         {
-            port::store<uint32_t>(spot, port::load<uint32_t>(before));
-            port::store<uint32_t>(spot + 8u, port::load<uint32_t>(before + 8u));
+            spot->x = before->x;
+            spot->z = before->z;
         }
-        port::store<uint32_t>(p + 0x10u, port::load<uint32_t>(spot));
-        port::store<uint32_t>(p + 0x18u, port::load<uint32_t>(spot + 8u));
-        ps2f ground = Map_SampleHeight(map(), loadF(p + 0x10u), loadF(p + 0x18u));
-        const ps2f ceiling = constant(0x3ECCCCCDu) + loadF(c + 0xB0u);
+        player->position.x = spot->x;
+        player->position.z = spot->z;
+        ps2f ground = Map_SampleHeight(map(), player->position.x, player->position.z);
+        const ps2f ceiling = constant(0x3ECCCCCDu) + city->waterLevel;
         if (!(ground <= ceiling))
             ground = ceiling;
-        if (Player_CollideObjects(map(), GuestPtr<ps2f>{p + 0x10u}, static_cast<int>(hit), constant(0x3F666666u)) != 0)
-            ground = loadF(hit + 4u);
-        const ps2f speed = loadF(p + 0x4Cu);
+        if (Player_CollideObjects(map(), GuestPtr<ps2f>::of(player->position.x), static_cast<int>(hit.address), constant(0x3F666666u)) != 0)
+            ground = hit->y;
+        const ps2f speed = player->jumpSpeed;
         if (!(speed <= ps2f(0.0f)))
         {
             // Falling: lands when the player is below the ground.
-            if (ground < loadF(p + 0x14u))
+            if (ground < player->position.y)
             {
-                storeF(p + 0x50u, ps2f(0.0f));
-                storeF(p + 0x4Cu, ps2f(0.0f));
-                storeF(p + 0x14u, ground);
-                port::store<int32_t>(p + 0x84u, 0);
+                player->airTime = ps2f(0.0f);
+                player->jumpSpeed = ps2f(0.0f);
+                player->position.y = ground;
+                player->jumps = 0;
             }
         }
         else if (ps2f(0.0f) == speed)
         {
-            const ps2f height = loadF(p + 0x14u);
+            const ps2f height = player->position.y;
             const ps2f above = height - ground;
             if (!(above <= constant(0x3DCCCCCDu)))
-                storeF(p + 0x4Cu, (-above) / ps2f(5.0f));
+                player->jumpSpeed = (-above) / ps2f(5.0f);
             else if (ground < height)
             {
-                storeF(p + 0x50u, ps2f(0.0f));
-                storeF(p + 0x14u, ground);
+                player->airTime = ps2f(0.0f);
+                player->position.y = ground;
             }
             else
             {
                 const ps2f below = ground - height;
                 if (!(below <= constant(0x3DCCCCCDu)))
-                    port::store<uint32_t>(p + 0x4Cu, 0x3A03126Fu);
+                    player->jumpSpeed = constant(0x3A03126Fu);
                 else if (!(ground <= height))
                 {
-                    storeF(p + 0x50u, ps2f(0.0f));
-                    storeF(p + 0x14u, ground);
+                    player->airTime = ps2f(0.0f);
+                    player->position.y = ground;
                 }
             }
         }
-        storeF(matrix + 0x30u, loadF(p + 0x10u));
-        storeF(matrix + 0x34u, loadF(p + 0x14u));
-        storeF(matrix + 0x38u, loadF(p + 0x18u));
-        const uint32_t tile = static_cast<uint32_t>(Map_GetTileObject(map(), tileX, tileZ).address);
-        BldgType_DrawOccupant(GuestPtr<BuildingType>{port::load<uint32_t>(port::load<uint32_t>(0x001BDBF8u) + 4u * port::load<uint16_t>(tile))}, GuestPtr<Vec4>{p + 0x20u},
-                              GuestPtr<MapPerson>{p + 0x10u}, city);
-        Player_UpdateAction(player, GuestPtr<Vec4>{move}, city);
+        matrix[3].x = player->position.x;
+        matrix[3].y = player->position.y;
+        matrix[3].z = player->position.z;
+        const GuestPtr<MapObject> tile = Map_GetTileObject(map(), tileX, tileZ);
+        BldgType_DrawOccupant(globals::buildingType(tile->type), GuestPtr<Vec4>::of(player->colour),
+                              GuestPtr<Vec4>::of(player->position).as<MapPerson>(), city); // the position as a person's x, y, z, heading
+        Player_UpdateAction(player, move, city);
         Player_PlayFootstep(player, city);
-        port::store<int32_t>(p + 0x3Cu, CityCamera_GetZoomLevel(GuestPtr<CityCamera>{port::load<uint32_t>(c + 0x4Cu)}, city) != 0 ? 1 : 0);
-        const int32_t mode = port::load<int32_t>(p);
-        port::store<int32_t>(port::load<uint32_t>(c + 0x70u) + 0x1A0u, (mode == 0 || mode == 3) ? 1 : 0);
-        Minimap_SetView(GuestPtr<Minimap>{port::load<uint32_t>(c + 0x74u)}, GuestPtr<ps2f>{p + 0x10u}, loadF(p + 0xCu));
+        player->visible = CityCamera_GetZoomLevel(city->cityCamera, city) != 0 ? 1 : 0;
+        const int32_t mode = player->mode;
+        city->cursor->visible = (mode == 0 || mode == 3) ? 1 : 0;
+        Minimap_SetView(city->minimap, GuestPtr<ps2f>::of(player->position.x), player->heading);
         if ((Pad_Held(3) & 0x40u) == 0u)
             Pad_ReleaseFocus(3);
     }
@@ -5071,7 +5053,7 @@ namespace mm
                 if (!walk)
                 {
                     if (person->destination != kNoObject)
-                        person->cooldown = port::load<uint8_t>(globals::buildingTypeAddress(building->type) + 0x14Du);
+                        person->cooldown = globals::buildingType(building->type)->cooldown;
                     person->inside = kNoObject;
                     person->destination = kNoObject;
                     person->walkTile = 0x4000;

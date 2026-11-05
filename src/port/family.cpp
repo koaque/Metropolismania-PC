@@ -511,68 +511,68 @@ namespace mm
         const ps2f z = (fromInt(0x80 - static_cast<int32_t>(tile >> 7)) - ps2f(64.0f)) - ps2f(0.5f);
         bool extra = false;
         const auto place = [&](uint32_t index) {
-            const GuestPtr<MapPerson> person{port::load<uint32_t>(map.address + 0x68u) + 0x30u * index};
+            const GuestPtr<MapPerson> person = map->people + static_cast<int32_t>(index);
             person->x = x;
-            port::store<uint32_t>(person.address + 4u, 0u);
+            person->y = 0.0f;
             person->z = z;
-            port::store<uint32_t>(person.address + 0xCu, 0u);
+            person->heading = 0.0f;
             return person;
         };
         for (int i = 0; i < record->memberCount; ++i)
         {
-            const uint32_t member = record.address + 0x48u * static_cast<uint32_t>(i);
+            const GuestPtr<FamilyMember> member = GuestPtr<FamilyMember>::of(record->members[0]) + i;
             const uint32_t index = nextFreePerson(map.address);
             const GuestPtr<MapPerson> person = place(index);
-            person->charType = port::load<uint8_t>(member + 0x24u);
-            person->nextOnTile = 6000;
+            person->charType = static_cast<uint8_t>(member->charType);
+            person->nextHere = 6000;
             person->index = static_cast<uint16_t>(index);
             person->work = static_cast<uint16_t>(object);
             person->inside = 0x3F80;
             person->destination = 0x3F80;
             person->walkTile = 0x4000;
             person->previousTile = 0x4000;
-            port::store<uint16_t>(person.address + 0x1Cu, 0);
+            person->animFrame = 0;
             person->cooldown = 0;
             person->target = 0x3F80;
             person->follow = 0;
             person->family = static_cast<uint16_t>(family);
             person->member = static_cast<uint8_t>(i);
             person->schedState = Schedule_Evaluate(person->family, person->member);
-            person->flags = port::load<uint8_t>(member + 0x2Bu);
+            person->flags = member->look;
             person->activity = 0x13;
             person->introduces = static_cast<uint16_t>(Family_PickIntroduction(person->family, person->member, city));
-            if ((port::load<uint8_t>(member + 0x27u) & 4u) != 0)
+            if ((member->flags & 4u) != 0)
             {
                 extra = true;
                 person->flags = static_cast<uint16_t>(person->flags | 8);
             }
             person->flags = static_cast<uint16_t>(person->flags | 0x800);
-            const uint32_t classWord = port::load<uint32_t>(port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType) + 0x1Cu);
+            const uint32_t classWord = GuestPtr<CharClass>{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)}->unk_1C;
             CityScene_RecordPlacementScore(city, static_cast<int>((classWord & 0x7000u) >> 12), static_cast<int>((classWord & 0xE00u) >> 9));
-            port::store<int32_t>(map.address + 0x74u, port::load<int32_t>(map.address + 0x74u) + 1);
-            port::store<int32_t>(map.address + 0x70u, port::load<int32_t>(map.address + 0x70u) + 1);
+            map->population = map->population + 1;
+            map->peopleInUse = map->peopleInUse + 1;
         }
-        const uint32_t category = port::load<uint8_t>(globals::buildingTypeAddress(house->type) + 0x14Bu);
-        if (category == 9 || category == 0xB)
+        const uint32_t schedule = globals::buildingType(house->type)->schedule;
+        if (schedule == 9 || schedule == 0xB)
             extra = false;
         if (extra)
         {
             const uint32_t index = nextFreePerson(map.address);
             const GuestPtr<MapPerson> person = place(index);
             person->charType = 0x34;
-            person->nextOnTile = 6000;
+            person->nextHere = 6000;
             person->index = static_cast<uint16_t>(index);
             person->flags = 0;
             person->work = static_cast<uint16_t>(object);
             person->inside = 0x3F80;
             person->walkTile = 0x4000;
             person->previousTile = 0x4000;
-            port::store<uint16_t>(person.address + 0x1Cu, 0);
+            person->animFrame = 0;
             person->target = 6000;
             person->family = 6000;
             person->introduces = 0;
             person->flags = static_cast<uint16_t>(person->flags | 0x800);
-            port::store<int32_t>(map.address + 0x70u, port::load<int32_t>(map.address + 0x70u) + 1);
+            map->peopleInUse = map->peopleInUse + 1;
         }
         Family_SetFlagA(static_cast<uint32_t>(family));
     }
