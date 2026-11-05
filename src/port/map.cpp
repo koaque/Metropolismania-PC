@@ -421,7 +421,7 @@ namespace mm
             const GuestPtr<BuildingType> btype{globals::buildingTypeAddress(obj->type)};
             port::callGuest<void>(btype->vtable->tick, btype, arg, obj, 0);
         }
-        map->unk_60 = 0;
+        map->applicantWait = 0;
         return object;
     }
 
@@ -2168,13 +2168,13 @@ namespace mm
             map->claimRecheck = 0x80;
             map->objectsChanged = 0;
         }
-        for (int32_t scan = map->unk_14; scan < 0x3F80; scan += 0x80)
+        for (int32_t scan = map->tickSlice; scan < 0x3F80; scan += 0x80)
         {
             const GuestPtr<MapObject> obj = map->objects + scan;
             if (obj->type == 0)
                 continue;
             const GuestPtr<BuildingType> btype{globals::buildingTypeAddress(obj->type)};
-            const int64_t falls = port::callGuest<int64_t>(btype->vtable->tick, btype, city, obj, map->unk_1C);
+            const int64_t falls = port::callGuest<int64_t>(btype->vtable->tick, btype, city, obj, map->flag8Pending);
             if (falls == 0)
                 continue;
             if ((btype->flags & 0x80u) == 0)
@@ -2184,23 +2184,23 @@ namespace mm
             const uint32_t tile = map->objects[scan].tile;
             Map_PlaceRubbleArea(map, static_cast<int>(tile & 0x7Fu), static_cast<int>(tile >> 7), btype->size, static_cast<int>(city.address));
         }
-        map->unk_14 = map->unk_14 + 1;
-        if (map->unk_14 >= 0x80)
+        map->tickSlice = map->tickSlice + 1;
+        if (map->tickSlice >= 0x80)
         {
-            if (map->unk_1C != 0 && map->flag8Objects > 0)
+            if (map->flag8Pending != 0 && map->flag8Objects > 0)
             {
                 map->flag8Objects = map->flag8Objects - 1;
                 city->pendingApproval = city->pendingApproval - 1;
             }
-            map->unk_1C = map->flag8Objects > 0 ? 1 : 0;
-            map->unk_14 = 0;
+            map->flag8Pending = map->flag8Objects > 0 ? 1 : 0;
+            map->tickSlice = 0;
             if (Applicants_AnyWaiting(city->applicants) == 0)
-                map->unk_60 = 0;
+                map->applicantWait = 0;
             if (city->clock < 0x6270 || !(city->clock < 0x10B30))
-                map->unk_60 = 0;
-            map->unk_60 = map->unk_60 + 1;
-            if (!(map->unk_60 < 5))
-                map->unk_60 = 0;
+                map->applicantWait = 0;
+            map->applicantWait = map->applicantWait + 1;
+            if (!(map->applicantWait < 5))
+                map->applicantWait = 0;
         }
         if (map->claimRecheck > 0)
             map->claimRecheck = static_cast<int16_t>(map->claimRecheck - 1);
@@ -2576,15 +2576,15 @@ namespace mm
         MapTiles_ctor(map);
         map->vtable = GuestPtr<CityMapVtable>{0x001BCEF0u};
         map->nextId = 1;
-        map->unk_14 = 0;
+        map->tickSlice = 0;
         map->flag8Objects = 0;
-        map->unk_1C = 0;
+        map->flag8Pending = 0;
         map->objectsChanged = 0;
         map->claimRecheck = 0;
         map->objectCount = 0;
         sdk::memset(addressOf(map->flag8History), 0, 6);
         map->refreshDelay = 0;
-        map->unk_60 = 0;
+        map->applicantWait = 0;
         for (int32_t &count : map->categoryCount)
             count = 0;
         map->bigCategory5Count = 0;

@@ -2292,7 +2292,7 @@ namespace mm
                 drawNode(btype->modelNode);
         }
         else
-            drawNode(btype->unk_14F);
+            drawNode(btype->openNode);
         DmaList_QueueClearZ();
     }
 

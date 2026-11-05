@@ -2807,8 +2807,8 @@ namespace mm
 
     // Whether leveled ground can go on an area of `size` at (x, z): the ring around it is counted per side, how
     // many of the `size` tiles along each side carry an object of a type with flag 2, with flag 0x40, and
-    // that are not roads (type 3). Sides that are full count; which sides are needed depends on the map's placement
-    // mode (+0x60): below 2 two sides of flag 2 or 0x40 (and with `needsFlag2`, one of flag 2), 2 the same
+    // that are not roads (type 3). Sides that are full count; which sides are needed depends on how long applicants
+    // have waited (CityMap.applicantWait): below 2 two sides of flag 2 or 0x40 (and with `needsFlag2`, one of flag 2), 2 the same
     // or one of flag 2 with another not road, above that any two sides of the three kinds with one of flag 2 or 0x40.
     int BldgLeveled_CheckArea(GuestPtr<BuildingType>, GuestPtr<CityScene> city, int x, int z, int size, int needsFlag2)
     {
@@ -2839,7 +2839,7 @@ namespace mm
             if (size <= notRoad[side])
                 ++fullNotRoad;
         }
-        const int mode = city->map->unk_60;
+        const int mode = city->map->applicantWait;
         if (mode < 2)
         {
             if (needsFlag2 == 0 || fullFlag2 != 0)
@@ -3635,7 +3635,7 @@ namespace mm
         btype->ambientSound = record->ambientSound;
         btype->entranceDrawMesh = record->entranceDrawMesh;
         btype->firstDrawMesh = record->firstDrawMesh;
-        btype->unk_14F = record->unk_93;
+        btype->openNode = record->openNode;
         btype->modelNode = record->modelNode;
         btype->entranceMesh = record->entranceMesh;
         btype->firstMesh = record->firstMesh;
@@ -4068,7 +4068,7 @@ namespace mm
     // (+0x3C), status panel (+0x0), camera (+0x44, placed with the eye and target vectors at 0x1B2480 and 0x1B2490), pause menu (+0x8),
     // minimap (+0x74), city cursor (+0x70), phone calls (+0x6C), event manager (+0x68), wants window (+0x5C), town's pages (+0x4), laptop
     // (+0x48), city camera (+0x4C), lights (+0x40), player (+0x58), applicants (+0x54), markers (+0x78), notice (+0x7C) and the map (+0x50),
-    // which the terrain is then generated on (the parameters at 0x1C5558). The 32 introduced families (0x1C55C0) are put in the applicants,
+    // which the terrain is then generated on (the stage's parameters). The stage's 32 introduced families are put in the applicants,
     // and the people of each (the type byte at +0x24 not zero and its type not marked) get their introduction picked. The pad's focus is
     // released.
     GuestPtr<CityScene> CityScene_ctor(GuestPtr<CityScene> city)
@@ -4135,13 +4135,12 @@ namespace mm
         city->notice = GuestPtr<Notice>{build(0x14u, [](uint32_t o) { return Notice_ctor(GuestPtr<Notice>{o}).address; })};
         city->map = GuestPtr<CityMap>{build(0x2F90u, [](uint32_t o) { return CityMap_ctor(GuestPtr<CityMap>{o}).address; })};
         city->overlay = GuestPtr<void>{0u};
-        TerrainGen_Generate(city->map, GuestPtr<uint8_t>{0x001C5558u});
+        TerrainGen_Generate(city->map, GuestPtr<uint8_t>::of(globals::stageState()->terrain[0]));
         city->modeStack[0] = 0;
         city->modeDepth = 1;
-        constexpr uint32_t kIntroduced = 0x001C55C0u;
         for (uint32_t i = 0; i < 0x20u; ++i)
         {
-            const uint32_t family = port::load<uint16_t>(kIntroduced + 2u * i);
+            const uint32_t family = globals::stageState()->introduced[i];
             if (family == 0u)
                 continue;
             Applicants_AddAndShow(city->applicants, static_cast<int>(family), city->monthCount, 0);

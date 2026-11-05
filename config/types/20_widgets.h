@@ -28,7 +28,7 @@ struct StageScene {
     int32_t scroll;            /* +0x3C the credits text's scroll (mm_StageScene_ShowTelop) */
     float animTime;            /* +0x40 the boss's animation frame */
     int32_t animation;         /* +0x44 the boss's animation */
-    int32_t unk_48;            /* +0x48 -1 at the briefing's start, 2 after its text */
+    int32_t nextAnimation;     /* +0x48 the boss's animation once the current one ends, -1 none (2 after the briefing's text) */
     int32_t briefingIndex;     /* +0x4C the message within the phase (mm_StageScene_BuildBriefingText) */
     int32_t briefingPhase;     /* +0x50 0 the stage's special messages, 1 its general text, 2 the goal */
     A3DObject *office;         /* +0x54 the office model (0x1F3B2C) the briefing is drawn in */
@@ -62,7 +62,8 @@ struct MenuWin {
     ListMenu *list;            /* +0x10 */
     int32_t size;              /* +0x14 picks the window node: 3 + max(size - 2, 0) */
     int32_t choice;            /* +0x18 the item chosen, -1 none (mm_ListMenu_HandleInput) */
-    int32_t unk_1C;            /* +0x1C */
+    int32_t wideList;          /* +0x1C the list of menu -0x7D1 (14 columns, any number of rows); others 13 columns and up
+                                  to 4 rows (mm_MenuWin_Open) */
 };
 /* Talk person card (0x38 bytes, vtable 0x1BD720), a widget: name, age and gauges of the person or family member
    chosen in a talk. */

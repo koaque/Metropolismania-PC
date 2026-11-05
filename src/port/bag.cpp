@@ -103,7 +103,7 @@ namespace mm
     void Bag_Clear(GuestPtr<Bag> bag)
     {
         bag->size = 0;
-        bag->unk_002 = 0;
+        bag->outfit = 0;
         for (BagSlot &slot : bag->slots)
             slot.group = 0;
         for (BagShortcut &shortcut : bag->shortcuts)
@@ -472,8 +472,8 @@ namespace mm
 
     // Uses the goods of the selected slot (+0x1A0) by their kind (byte 4 of the record): kinds 0x17, 0x1A, 0x1B and 0x1C start the
     // use (state 6 at +0x194, a time of 120.0 at +0x19C, sound 0x10) and mark the slot as the one in use (+0x1A4); kind 0x15 swaps
-    // the bag's halfword at +2 for the record's byte 5, takes the slot out and adds goods (group 5 when the old value was 0,
-    // otherwise group 0xE5 with index old - 1), then rebuilds the list; kinds 0x13 and 0x11 are eaten (mm_Stamina_Eat) and the slot
+    // the player's outfit for the record's value, takes the slot out and puts the old outfit back into the bag (goods group 5 when
+    // it was the default 0, otherwise group 0xE5 with index old - 1), then rebuilds the list; kinds 0x13 and 0x11 are eaten (mm_Stamina_Eat) and the slot
     // is taken out, the list rebuilt and sound 0xE played. Other kinds do nothing.
     void BagMenu_UseSelected(GuestPtr<Bag> bag, GuestPtr<CityScene> city)
     {
@@ -493,10 +493,10 @@ namespace mm
             break;
         case 0x15:
         {
-            const uint32_t previous = port::load<uint16_t>(b + 2u);
-            port::store<uint16_t>(b + 2u, record->value);
+            const uint32_t previous = bag->outfit;
+            bag->outfit = record->value;
             Bag_RemoveSlot(bag, GuestPtr<uint16_t>{b + (static_cast<uint32_t>(bag->cursor) << 4) + 4u});
-            Bag_AddItem(bag, previous == 0 ? 5 : 0xE5, previous == 0 ? 0 : static_cast<int>(previous) - 1, static_cast<int16_t>(port::load<int32_t>(0x001C5548u)),
+            Bag_AddItem(bag, previous == 0 ? 5 : 0xE5, previous == 0 ? 0 : static_cast<int>(previous) - 1, static_cast<int16_t>(globals::stageState()->stage),
                         city->monthCount, 0, 0xFF, 0);
             BagMenu_RefreshList(bag);
             break;

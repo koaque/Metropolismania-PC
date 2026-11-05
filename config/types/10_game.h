@@ -190,9 +190,11 @@ struct CityMap {
     MapObject *objects;        /* +0x08 */
     TileLists *tileLists;      /* +0x0C */
     int32_t nextId;            /* +0x10 next record to try for a new object (mm_Map_CreateObject); its low half is the object's id */
-    int32_t unk_14;
+    int32_t tickSlice;         /* +0x14 the objects ticked this frame are every 0x80th from it (0..0x7F, mm_MapObjects_Tick) */
     int32_t flag8Objects;      /* +0x18 objects of types with flag 8 */
-    int32_t unk_1C;            /* +0x1C set while there are any */
+    int32_t flag8Pending;      /* +0x1C flag8Objects was not 0 at the last sweep's end (every 0x80 frames); handed to the
+                                  type ticks; while it is set, each sweep's end takes one off flag8Objects and a point of
+                                  approval */
     int16_t objectsChanged;    /* +0x20 objects were added or removed (mm_MapObjects_Tick then starts the claim re-check) */
     int16_t claimRecheck;      /* +0x22 frames of claim section C re-checks left (0x80 after a change) */
     int32_t objectCount;       /* +0x24 object records in use (of 0x3F80) */
@@ -200,7 +202,9 @@ struct CityMap {
     int16_t refreshDelay;      /* +0x2E frames until objectsChanged is set (0x81 after a flag-2 type is placed) */
     int32_t categoryCount[11]; /* +0x30 buildings per STRTYPE.BIN category (mm_MapObj_Delete; category 4 only without type flag 0x80) */
     int32_t bigCategory5Count; /* +0x5C category 5 buildings of size 3 and up */
-    int32_t unk_60;            /* +0x60 cleared after each placement (mm_Map_PlaceObject) */
+    int32_t applicantWait;     /* +0x60 one more each sweep from 7:00 to 19:00 while applicants wait (0..4; cleared at night,
+                                  with none waiting and after each placement); from 2 on leveled ground takes homes on
+                                  fewer full sides (mm_BldgLeveled_CheckArea) */
     CityMapVtable *vtable;     /* +0x64 */
     MapPerson *people;         /* +0x68 */
     uint8_t unk_6C[4];
@@ -272,7 +276,7 @@ struct BuildingRecord {
     uint8_t entranceDrawMesh;  /* +0x90 leveled land: its mesh; roads: the lamp mesh */
     uint8_t firstDrawMesh;     /* +0x91 roads: the traffic light mesh */
     uint8_t extraMesh;         /* +0x92 offices: the extra mesh; roads: the slope mesh */
-    uint8_t unk_93;            /* +0x93 */
+    uint8_t openNode;          /* +0x93 BuildingType.openNode */
     uint8_t modelNode;         /* +0x94 */
     uint8_t unk_95;
     uint8_t entranceMesh;      /* +0x96 */
@@ -310,7 +314,7 @@ struct BuildingType {
     uint8_t activity;          /* +0x14C what people do there (mm_Schedule_GetActivity) */
     uint8_t cooldown;          /* +0x14D a visitor's cooldown on leaving (mm_Person_Update) */
     uint8_t ambientSound;      /* +0x14E sound id, 0xFF = none (mm_Se_BuildingSoundState) */
-    uint8_t unk_14F;
+    uint8_t openNode;          /* +0x14F the talk view's model node while the building is open (modelNode when closed) */
     uint8_t modelNode;         /* +0x150 */
     uint8_t entranceDrawMesh;  /* +0x151 businesses: mesh of the entrance (+1 for the closed sign, type flag 0x1000) */
     uint8_t firstDrawMesh;     /* +0x152 businesses: first mesh of the other parts, plus their variant */
@@ -520,7 +524,7 @@ struct TalkSession {
 /* WORDS talk script context (0x140 bytes). A is the person talked to, B a second subject. */
 struct WordsCtx {
     CityScene *city;           /* +0x00 */
-    int32_t unk_04;
+    int32_t setupArg;          /* +0x04 the set-up's fourth argument, read back by mm_WordsFn_Arg4 */
     uint16_t familyA;          /* +0x08 */
     uint16_t memberA;          /* +0x0A */
     MapPerson *personA;        /* +0x0C */
@@ -547,7 +551,7 @@ struct WordsCtx {
 /* The WORDS script object at 0x1BDDF0 (gp-0x7B80); its methods take a pointer to it. */
 struct Words {
     WordsCtx *ctx;             /* +0x00 0x140-byte context */
-    int32_t unk_04;
+    int32_t eventKind;         /* +0x04 the event whose words block (WORDSEVE.BIN) the extra table holds */
     int32_t extraLoaded;       /* +0x08 */
     int32_t bound;             /* +0x0C tables bound on first step */
     uint16_t line;             /* +0x10 */

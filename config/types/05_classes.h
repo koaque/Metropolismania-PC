@@ -58,6 +58,9 @@ typedef struct AdoptionChild AdoptionChild;
 typedef struct EvAdoptionData EvAdoptionData;
 typedef struct EvShoppingData EvShoppingData;
 typedef struct EvDeliveryData EvDeliveryData;
+typedef struct DeliveryItem DeliveryItem;
+typedef struct ShoppingList ShoppingList;
+typedef struct DeliveryCatalogue DeliveryCatalogue;
 typedef struct EvPartyData EvPartyData;
 typedef struct EvThiefData EvThiefData;
 typedef struct MemberId MemberId;
@@ -360,14 +363,14 @@ struct ListMenu {
     uint8_t unk_25C[8];
     int32_t visibleItems;      /* +0x264 */
     int32_t itemHeight;        /* +0x268 */
-    int32_t unk_26C;           /* +0x26C */
+    int32_t cursorWidth;       /* +0x26C the cursor bar reaches this far (plus 0x20) right of cursorDx (mm_ListMenu_SetCursor) */
     int32_t scroll;            /* +0x270 */
     int32_t cursorDx;          /* +0x274 */
     int32_t cursorDy;          /* +0x278 */
     int32_t cursorY;           /* +0x27C */
     int32_t depth;             /* +0x280 GS Z of the item texts */
     int32_t scrollStep;        /* +0x284 pixels the cursor or list still moves, 4 per frame (> 0 up, < 0 down) */
-    int32_t unk_288;
+    int32_t boxedItems;        /* +0x288 items given their text boxes; the next one for mm_ListMenu_AddItems */
     int32_t nextItem;          /* +0x28C item the next mm_ListMenu_SetItemText(-1) fills */
     int32_t itemCount;         /* +0x290 */
     int32_t canCancel;         /* +0x294 Triangle cancels (mm_ListMenu_HandleInput) */
@@ -536,10 +539,10 @@ struct GoodsRecord {
     int8_t priceDigits;        /* +0x02 the price is this times ten to the power of the next (mm_Goods_GetPrice) */
     uint8_t priceExponent;     /* +0x03 */
     uint8_t kind;              /* +0x04 what it is (mm_WordsFn_BuyGoods): 4, 5, 10, 11 laptop modules; 6 to 8 bags; 0x10
-                                  presents; 0x11 and 0x13 food to carry, 0x12 and 0x14 food eaten at once; 0x16 music;
-                                  0x17 and 0x1A to 0x1C things to place; 0x19 houses */
-    uint8_t value;             /* +0x05 by kind: the bag size (6 to 8), the music track (0x16), the family that applies
-                                  (0x19), ... */
+                                  presents; 0x11 and 0x13 food to carry, 0x12 and 0x14 food eaten at once; 0x15 clothes;
+                                  0x16 music; 0x17 and 0x1A to 0x1C things to place; 0x19 houses */
+    uint8_t value;             /* +0x05 by kind: the bag size (6 to 8), the outfit (0x15, Bag.outfit), the music track
+                                  (0x16), the family that applies (0x19), ... */
     int8_t count;              /* +0x06 copied to the bag slot; shown as xN for the kinds to place */
     uint8_t unk_07;
     char text[0x80];           /* +0x08 the description (bytes after its end are leftovers) */
@@ -563,7 +566,8 @@ struct BagShortcut {
 };
 struct Bag {
     uint16_t size;             /* +0x000 0 none, 1..3: 4, 10 or 20 slots (byte table 0x1B5B08, mm_WordsFn_GoodsBagFull) */
-    uint16_t unk_002;
+    uint16_t outfit;           /* +0x002 what the player wears (goods kind 0x15, its value; 0 the default): the player's
+                                  mesh group (mm_Player_Draw); the one taken off goes back into the bag */
     BagSlot slots[20];         /* +0x004 */
     BagShortcut shortcuts[10]; /* +0x144 */
     A3DObject *model;          /* +0x16C bag model (from 0x1F3B24) */
@@ -723,7 +727,8 @@ struct EventHandler {
 /* An active event (0x1C bytes; some types keep more state, up to 0x7C, mm_TalkEventData_DataSize): the first argument of
    every mm_Ev*_ handler slot, and the three the talk works with (EventMgr talks). */
 struct EventData {
-    uint32_t vtable;           /* +0x00 the record's class (+8: its size, mm_TalkEventData_DataSize) */
+    uint32_t vtable;           /* +0x00 the record's class: 0x1BD908, or 0x1BD8F8 for the talk event (+8: the data size,
+                                  mm_EventData_DataSize, mm_TalkEventData_DataSize) */
     uint32_t update;           /* +0x04 its handler's Update slot (EventHandler.update), run every frame */
     uint8_t kind;              /* +0x08 row of the event table (EventType) */
     int8_t days;               /* +0x09 days left to run (EventType.days); when it finishes, the type's wait */
@@ -732,8 +737,9 @@ struct EventData {
     uint8_t unk_0B;
     ActorRef actor;            /* +0x0C the main actor; types with more list them on from here, 8 bytes each, over the
                                   words below (talk scripts pick them by index, mm_WordsFn_SelectEventActor) */
-    int32_t unk_14;            /* +0x14 per type: a month (mm_EvUselessMiddleAged_Start) */
-    int32_t unk_18;            /* +0x18 per type: a timer, a distance (mm_EvBodyguard_Answer) */
+    int32_t typeWordA;         /* +0x14 the type's own: mostly a frame countdown or counter; a month noted
+                                  (mm_EvUselessMiddleAged_Start) */
+    int32_t typeWordB;         /* +0x18 the type's own: a countdown, a repeat count, a distance (mm_EvBodyguard_Answer) */
 };
 /* The Crazy Cult event's record (type 18, mm_EvCrazyCult_*): residents join the cult one by one while its members are
    found and told in turn. */
@@ -778,11 +784,27 @@ struct EvShoppingData {
     int32_t endFrames;         /* +0x58 the event ends after 240 */
 };
 /* The delivery man event's record (type 3, mm_EvDeliveryMan_*): in rain or snow a delivery comes from a nearby shop. */
+/* A shopping list of the shopping event (0x28 bytes, from GOODS.BIN; the table at 0x1BDAB4, its count at 0x1BDAB0),
+   taken in turn (mm_EvShopping_Check). */
+struct ShoppingList {
+    uint8_t unk_00[0x20];      /* +0x00 (the event's text 4 is the table's start) */
+    uint16_t goods[4];         /* +0x20 the goods wanted by name (their ids for mm_Bag_FindItem), 0 ends */
+};
+/* An item of the delivery man's catalogue (0x20 bytes). */
+struct DeliveryItem {
+    char name[0x1E];           /* +0x00 */
+    uint16_t price;            /* +0x1E */
+};
+/* A delivery man's catalogue (0x184 bytes, four at 0x1BA090): the building type that delivers, an item a month. */
+struct DeliveryCatalogue {
+    uint32_t buildingType;     /* +0x000 */
+    DeliveryItem items[12];    /* +0x004 by the month of the year */
+};
 struct EvDeliveryData {
     uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
     ActorRef actors[2];        /* +0x0C the customer, then the delivery man (his building and person) */
-    int32_t entry;             /* +0x1C the catalogue entry (0x1BA090, 0x184 bytes each, the building type first) */
-    int32_t month;             /* +0x20 the month of the year, which picks the item (0x20 bytes each) */
+    int32_t entry;             /* +0x1C the catalogue (DeliveryCatalogue) */
+    int32_t month;             /* +0x20 the month of the year, which picks the item */
     int32_t tellFrames;        /* +0x24 frames after the customer is told */
     int32_t walkFrames;        /* +0x28 the delivery man walks for 120 */
     int32_t waitFrames;        /* +0x2C then waits 60 */
@@ -1069,7 +1091,7 @@ struct Notice {
     int32_t timer;             /* +0x04 frames left */
     TextBox *text;             /* +0x08 */
     TextBox *text2;            /* +0x0C */
-    int32_t unk_10;            /* +0x10 second line shown */
+    int32_t secondLine;        /* +0x10 the second text is shown (mm_Notice_ShowCentered) */
 };
 /* Town's Pages index entry (8 bytes), one per family type (mm_TownPages_BuildIndex). */
 struct TownPagesIndex {
@@ -1111,10 +1133,13 @@ struct StageState {
     int32_t money;             /* +0x1C0 3000 at reset; goods are affordable up to it (mm_WordsFn_CanAfford) */
     int32_t salary;            /* +0x1C4 2500 at reset; added to the money each payday, 1250 more after a good month (mm_EvPayday_Update) */
     int32_t stage;             /* +0x1C8 stage number, -1 = none */
-    int32_t quota;             /* +0x1CC population target (mm_EvQuota80_Check) */
-    int32_t missionKind;       /* +0x1D0 the stage's mission besides the population (0 none; mm_CityScene_MissionProgress) */
+    int32_t quota;             /* +0x1CC population target (mm_EvQuota80_Check); from here on the stage's record of
+                                  STAGE.BIN (0xB4 bytes, mm_Stage_Load) */
+    int32_t missionKind;       /* +0x1D0 the stage's mission (its theme) besides the population (0 none;
+                                  mm_CityScene_MissionProgress, mm_Stage_FormatGoalText) */
     int32_t missionTarget;     /* +0x1D4 compared with mm_CityScene_MissionProgress (mm_EvMissionCleared_Check) */
-    uint8_t unk_1D8[0xA8];
+    uint8_t terrain[0x68];     /* +0x1D8 the terrain generation parameters (mm_TerrainGen_Generate) */
+    uint16_t introduced[32];   /* +0x240 families that apply at the start (mm_CityScene_ctor); none from stage 25 on */
     int32_t unk_280;           /* +0x280 */
 };
 /* Character type class object (0x24 bytes; the person class is 0x28 with its walking speed at +0x24),
@@ -1128,7 +1153,9 @@ struct CharClass {
     uint16_t flags;            /* +0x18 record halfword 4; 1: other people keep clear of this one
                                   (mm_Char_CheckNeighbourTile, mm_Map_FindWorkerOnTile) */
     uint8_t unk_1A[2];
-    uint32_t unk_1C;           /* +0x1C record word 0x14 */
+    uint32_t traits;           /* +0x1C record word 0x14: bits 9-11 and 12-14 are scored when a resident moves in
+                                  (mm_CityScene_RecordPlacementScore), bits 21-23 add to its friendship steps
+                                  (mm_WordsFn_FriendshipUp/Down) */
     CharClassVtable *vtable;   /* +0x20 */
 };
 /* A character class's virtual methods (0x1C bytes): base 0x1BCE70, class 2 0x1BCE90, people 0x1BCEB0 (docs/map/char.md).
@@ -1153,7 +1180,7 @@ struct CharTypeRecord {
     uint8_t restartFrames[3];  /* +0x0B */
     uint8_t part3;             /* +0x0E the fourth model part */
     uint8_t unk_0F[5];
-    uint32_t unk_14;           /* +0x14 kept in the class (+0x1C) */
+    uint32_t traits;           /* +0x14 CharClass.traits */
 };
 /* Person character type (0x28 bytes, mm_Person_ctor). */
 struct PersonClass {

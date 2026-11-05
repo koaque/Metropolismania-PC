@@ -432,11 +432,19 @@ namespace mm::globals
     // event: the delivery man's catalogue (0x184 bytes per entry, 0x20 per item: text at +4, price at +0x22), the
     // adoption event's 24 starting bytes, and the two buffers the handlers format money into.
     inline constexpr uint32_t kDeliveryCatalogue = 0x001BA090u;
+    inline GuestPtr<DeliveryCatalogue> deliveryCatalogue(int32_t entry) { return GuestPtr<DeliveryCatalogue>{kDeliveryCatalogue} + entry; }
+    // The item of a catalogue for a month, by guest address (any entry and month, as the original: the sum is not masked
+    // into RDRAM, so a stray one returns the same address the game would).
+    inline GuestPtr<DeliveryItem> deliveryItem(int32_t entry, int32_t month)
+    {
+        return GuestPtr<DeliveryItem>{deliveryCatalogue(entry).address + static_cast<uint32_t>(offsetof(DeliveryCatalogue, items))} + month;
+    }
     inline constexpr uint32_t kAdoptionStart = 0x001B37D0u;
     inline constexpr uint32_t kEventMoneyTextA = 0x0020B8A0u;
     inline constexpr uint32_t kEventMoneyTextB = 0x0020B8C0u;
     // event: the shopping event's goods texts (0x28 bytes per shop, halfword offsets into the names from +0x20).
     inline constexpr GuestVar<uint32_t> shoppingTexts{0x001BDAB4u};
+    inline GuestPtr<ShoppingList> shoppingList(int32_t index) { return GuestPtr<ShoppingList>{shoppingTexts.get()} + index; }
 
     // title: the "[SELECT]SoundTest" hint, and a function static of mm_Title_PressStart (word, then its byte flag).
     inline constexpr uint32_t kSoundTestHint = 0x001B89E0u;

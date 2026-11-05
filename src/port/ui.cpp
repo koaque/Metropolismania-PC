@@ -367,7 +367,7 @@ namespace mm
     {
         if (notice->id != -1)
             TextBox_Draw(notice->text);
-        if (notice->unk_10 != 0)
+        if (notice->secondLine != 0)
             TextBox_Draw(notice->text2);
     }
 
@@ -395,7 +395,7 @@ namespace mm
         menu->depth = depth;
         const int third = menu->itemHeight / 3;
         const uint32_t left = static_cast<uint32_t>(menu->cursorDx + 0x6A0) << 4;
-        const uint32_t right = static_cast<uint32_t>(menu->cursorDx + menu->unk_26C + 0x6C0) << 4;
+        const uint32_t right = static_cast<uint32_t>(menu->cursorDx + menu->cursorWidth + 0x6C0) << 4;
         const auto gsY = [](int y) { return static_cast<uint32_t>(y + 0x790) << 20; };
         uint32_t *packet = menu->cursorPacket;
         packet[0x00] = 0x79006C00u;
@@ -554,7 +554,7 @@ namespace mm
     {
         Widget_ctor(GuestPtr<Widget>::of(menuwin->base));
         menuwin->base.vtable = GuestPtr<WidgetVtable>{0x001BCF80u};
-        menuwin->unk_1C = 0;
+        menuwin->wideList = 0;
         menuwin->model = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B2Cu)};
         menuwin->list = GuestPtr<ListMenu>{0};
         menuwin->size = 0;
@@ -1621,7 +1621,7 @@ namespace mm
         if (--notice->timer < 1)
         {
             notice->id = -1;
-            notice->unk_10 = 0;
+            notice->secondLine = 0;
         }
     }
 
@@ -1906,7 +1906,7 @@ namespace mm
     void Notice_Clear(GuestPtr<Notice> notice)
     {
         notice->id = -1;
-        notice->unk_10 = 0;
+        notice->secondLine = 0;
     }
 
     // Notice `id` from the notice texts (48 bytes each from 0x1B81E0).
@@ -1935,7 +1935,7 @@ namespace mm
         notice->timer = 300;
         TextBox_SetPos(notice->text, noticeX(sdk::strlen(text.address), true), 0x8440, -1);
         TextBox_SetText(notice->text2, GuestPtr<char>{static_cast<uint32_t>(second)}, 0);
-        notice->unk_10 = 1;
+        notice->secondLine = 1;
     }
 
     PORT_FN(MsgWin_NextLine);
@@ -3140,13 +3140,13 @@ namespace mm
         return msgwin;
     }
 
-    // 32 item texts (12 bytes apart from +0xEC) and the frame at +0xE0.
+    // The 32 item texts and the cursor frame.
     GuestPtr<ListMenu> ListMenu_dtor(GuestPtr<ListMenu> menu, int16_t deleteFlag)
     {
         if (menu)
         {
             for (uint32_t i = 0; i < 32u; ++i)
-                lifetime::deleteTextBox(menu.address + 0xECu + 0xCu * i);
+                lifetime::deleteTextBox(packet::addressOf((GuestPtr<ListMenuItem>::of(menu->items[0]) + static_cast<int32_t>(i))->text));
             lifetime::deleteFrame(menu.address + 0xE0u);
             if (0 < deleteFlag)
                 sdk::operator_delete(menu.address);
@@ -3378,30 +3378,30 @@ namespace mm
     {
         const int32_t types = globals::familyTypeCount.get();
         pages->index = GuestPtr<TownPagesIndex>{sdk::mw_NewArray(static_cast<uint32_t>(types) << 3)};
-        const auto entry = [&](int32_t type) { return pages->index.address + 8u * static_cast<uint32_t>(type); };
+        const auto entry = [&](int32_t type) { return pages->index + type; };
         for (int32_t type = 0; type < types; ++type)
-            port::store<uint16_t>(entry(type), 0);
+            entry(type)->count = 0;
         for (uint32_t family = 1; family < 10000u; ++family)
         {
             if (Family_IsKnown(family) == 0)
                 continue;
             const int32_t type = Family_GetTypeIndex(static_cast<int>(family & 0xFFFFu));
-            if (port::load<uint16_t>(entry(type)) == 0)
-                port::store<uint16_t>(entry(type) + 2u, static_cast<uint16_t>(family));
-            port::store<uint16_t>(entry(type), static_cast<uint16_t>(port::load<uint16_t>(entry(type)) + 1u));
+            if (entry(type)->count == 0)
+                entry(type)->firstFamily = static_cast<uint16_t>(family);
+            entry(type)->count = static_cast<uint16_t>(entry(type)->count + 1u);
         }
         int32_t knownTypes = 0, pageCount = 0;
         for (int32_t type = 0; type < types; ++type)
         {
-            const uint32_t e = entry(type);
-            if (port::load<uint16_t>(e) == 0)
+            const GuestPtr<TownPagesIndex> e = entry(type);
+            if (e->count == 0)
             {
-                port::store<uint16_t>(e + 4u, 0);
+                e->startPage = 0;
                 continue;
             }
-            port::store<uint16_t>(e + 4u, static_cast<uint16_t>(pageCount));
+            e->startPage = static_cast<uint16_t>(pageCount);
             ++knownTypes;
-            pageCount += (static_cast<int32_t>(port::load<uint16_t>(e)) - 1) / 10 + 1;
+            pageCount += (static_cast<int32_t>(e->count) - 1) / 10 + 1;
         }
         pages->pageCount = pageCount;
         pages->contentsPages = (knownTypes + 9) / 10;
@@ -3409,10 +3409,10 @@ namespace mm
             pages->contentsPages = 1;
         for (int32_t type = 0; type < types; ++type)
         {
-            const uint32_t e = entry(type);
-            const uint16_t start = port::load<uint16_t>(e + 4u);
+            const GuestPtr<TownPagesIndex> e = entry(type);
+            const uint16_t start = e->startPage;
             if (start != 0xFFFFu)
-                port::store<uint16_t>(e + 4u, static_cast<uint16_t>(start + port::load<uint16_t>(pages.address + 0x38u)));
+                e->startPage = static_cast<uint16_t>(start + static_cast<uint16_t>(pages->contentsPages));
         }
         pages->pageCount = pages->pageCount + pages->contentsPages;
     }
@@ -3580,7 +3580,7 @@ namespace mm
                      port::load<uint32_t>(0x001B0820u + 4u * static_cast<uint32_t>(remainder(stage - 1, 0x19))));
         scene->briefingPhase = scene->briefingPhase + 1;
         scene->briefingIndex = 0;
-        scene->unk_48 = 2;
+        scene->nextAnimation = 2;
         return 1;
     }
 
@@ -3670,10 +3670,10 @@ namespace mm
         const uint32_t m = menu.address;
         menu->visibleItems = visible;
         menu->itemHeight = rowHeight;
-        menu->unk_26C = a3;
+        menu->cursorWidth = a3;
         menu->cursorY = 0;
         menu->scroll = 0;
-        menu->unk_288 = 0;
+        menu->boxedItems = 0;
         menu->nextItem = 0;
         menu->itemCount = 0;
         menu->canCancel = 1;
@@ -4096,7 +4096,7 @@ namespace mm
         notice->text2 = GuestPtr<TextBox>{newTextBox(0x19, 1, -1)};
         TextBox_SetPos(notice->text2, 0x72E0, 0x8540, -1);
         TextBox_SetCharSize(notice->text2, 0, 0xB0, 0, 0xC0);
-        notice->unk_10 = 0;
+        notice->secondLine = 0;
         return notice;
     }
 
@@ -4140,7 +4140,7 @@ namespace mm
     }
 
     // Opens the menu window: a list menu of `count` items (at most 4 except for menu -0x7D1, which keeps its count and a wider
-    // list) and the window open (+0x1C: 1 for -0x7D1, else 0; except for menus -0x7D5 and -0x7D2 the list's field +0x294 is
+    // list) and the window open (wideList: 1 for -0x7D1, else 0; except for menus -0x7D5 and -0x7D2 the list's field +0x294 is
     // cleared).
     void MenuWin_Open(GuestPtr<MenuWin> menuwin, int menuId, int count)
     {
@@ -4154,7 +4154,7 @@ namespace mm
                 list = ListMenu_ctor(GuestPtr<ListMenu>{memory}, count, 0xC, 0x136, 0xB4, 0x8A, 0xFF0000).address;
             menuwin->list = GuestPtr<ListMenu>{list};
             menuwin->size = count;
-            menuwin->unk_1C = 1;
+            menuwin->wideList = 1;
             return;
         }
         if (count >= 5)
@@ -4167,7 +4167,7 @@ namespace mm
         menuwin->list = GuestPtr<ListMenu>{list};
         if (menuId != -0x7D5 && menuId != -0x7D2)
             menuwin->list->canCancel = 0;
-        menuwin->unk_1C = 0;
+        menuwin->wideList = 0;
     }
 
     PORT_FN(MsgWin_ctor);
@@ -4210,20 +4210,19 @@ namespace mm
     // Gives item `item` of the list (the next free one when -1, up to 32) its text box of `columns` by `rows` characters in
     // `style`, unless it has one. `mode` picks the character size: -1 gives (0, 0xB0, 0xB0, 0xC0), 0 gives (0, 0xB0, 0, 0xC0)
     // and any other (0, 0xD0, 0, 0xE0). The item's height (+0xE8 in its 12-byte entry) grows to 12 a row (14 for the other modes)
-    // and the item count (+0x288) when this was the next item.
+    // and the boxed item count when this was the next item.
     void ListMenu_AddItems(GuestPtr<ListMenu> menu, int columns, int rows, int mode, int style, int, int item)
     {
-        const uint32_t m = menu.address;
         if (item == -1)
-            item = menu->unk_288;
+            item = menu->boxedItems;
         if (item >= 0x20)
             return;
-        const uint32_t entry = m + 12u * static_cast<uint32_t>(item);
-        if (port::load<uint32_t>(entry + 0xECu) != 0u)
+        const GuestPtr<ListMenuItem> entry = GuestPtr<ListMenuItem>::of(menu->items[0]) + item; // up to 31, as the original
+        if (entry->text)
             return;
         const uint32_t memory = sdk::operator_new(0x40u);
         const uint32_t box = memory != 0u ? TextBox_Init(GuestPtr<TextBox>{memory}, columns, rows, style).address : 0u;
-        port::store<uint32_t>(entry + 0xECu, box);
+        entry->text = GuestPtr<TextBox>{box};
         int height;
         if (mode == -1)
         {
@@ -4240,10 +4239,10 @@ namespace mm
             TextBox_SetCharSize(GuestPtr<TextBox>{box}, 0, 0xD0, 0, 0xE0);
             height = rows * 14;
         }
-        if (port::load<int32_t>(entry + 0xE8u) < height)
-            port::store<int32_t>(entry + 0xE8u, height);
-        if (item == menu->unk_288)
-            menu->unk_288 = item + 1;
+        if (entry->textHeight < height)
+            entry->textHeight = height;
+        if (item == menu->boxedItems)
+            menu->boxedItems = item + 1;
     }
 
     PORT_FN(ListMenu_AddItems);
@@ -4411,7 +4410,7 @@ namespace mm
     void MenuWin_FillItems(GuestPtr<MenuWin> menuwin, GuestPtr<char> item)
     {
         const GuestPtr<ListMenu> list{menuwin->list.address};
-        ListMenu_AddItems(list, menuwin->unk_1C == 0 ? 0xD : 0xE, 1, -1, -2, 0, -1);
+        ListMenu_AddItems(list, menuwin->wideList == 0 ? 0xD : 0xE, 1, -1, -2, 0, -1);
         ListMenu_SetItemText(menuwin->list, item, -1);
     }
 
@@ -4510,23 +4509,23 @@ namespace mm
     PORT_FN(Applicants_Select);
     PORT_FN(PauseMenu_Reset);
 
-    // The text of line `index` of the wants list into `out`: a line with a script (halfword +6 of its entry) is loaded from the
-    // wants script (mm_Words_LoadForWants); otherwise the want's family member and what is wanted (the claim line of the family's
-    // home type for the want's claim) are written as "%s %s ..." from the format at 0x1B73B0.
+    // The text of line `index` of the wants list into `out`: a want an event holds gets its line from that event's wants
+    // script (mm_Words_LoadForWants); otherwise the want's family member and what is wanted (the claim line of the family's
+    // home type for the want's claim slot) are written as "%s %s ..." from the format at 0x1B73B0.
     void WantsWin_FormatLine(GuestPtr<WantsWin> wants, GuestPtr<CityScene> city, int index, GuestPtr<char> out)
     {
-        const uint32_t w = wants.address;
-        const uint32_t entry = w + 4u * static_cast<uint32_t>(index);
-        const uint32_t want = w + 4u * port::load<uint16_t>(entry + 4u) + 0x104u;
-        if (port::load<uint16_t>(entry + 6u) != 0)
+        const GuestPtr<WantsIndex> entry = GuestPtr<WantsIndex>::of(wants->index[0]) + index;
+        const GuestPtr<Want> want{(GuestPtr<uint32_t>::of(wants->data[0]) + entry->offset).address};
+        if (entry->held != 0)
         {
-            Words_LoadForWants(city, static_cast<int16_t>(port::load<uint16_t>(entry + 6u)), port::load<int32_t>(want), out);
+            Words_LoadForWants(city, static_cast<int16_t>(entry->held), port::load<int32_t>(want.address), out); // its first word
             return;
         }
-        const uint32_t family = Family_Get(port::load<uint16_t>(want + 4u), 0).address;
-        const int claimLine = Claim_GetLine(globals::buildingType(port::load<uint16_t>(family + 0x20u))->claimB, port::load<int32_t>(want + 8u));
-        const uint32_t member = family + 0x48u * port::load<uint16_t>(want + 6u);
-        sdk::sprintf(out.address, 0x001B73B0u, member + 0x5Cu, member + 0x4Cu, claimLine);
+        const GuestPtr<Family> family = Family_Get(want->family, 0);
+        const int claimLine = Claim_GetLine(globals::buildingType(family->homeType)->claimB, static_cast<int32_t>(want->claimSlot));
+        const GuestPtr<FamilyMember> member = GuestPtr<FamilyMember>::of(family->members[0]) + want->member;
+        sdk::sprintf(out.address, 0x001B73B0u, GuestPtr<char>::of(member->name2[0]).address, GuestPtr<char>::of(member->name[0]).address,
+                     claimLine);
     }
 
     PORT_FN(WantsWin_FormatLine);
@@ -4897,14 +4896,14 @@ namespace mm
             return;
         }
         const int32_t types = globals::familyTypeCount.get();
-        const auto entryAt = [&](int32_t type) { return pages->index.address + 8u * static_cast<uint32_t>(type); };
+        const auto entryAt = [&](int32_t type) { return pages->index + type; };
         int32_t type = 0;
         if (types > 0)
         {
             do
             {
-                const uint32_t entry = entryAt(type);
-                if (port::load<uint16_t>(entry) != 0 && pages->page < static_cast<int32_t>(port::load<uint16_t>(entry + 4u)))
+                const GuestPtr<TownPagesIndex> entry = entryAt(type);
+                if (entry->count != 0 && pages->page < static_cast<int32_t>(entry->startPage))
                     break;
                 ++type;
             } while (type < types);
@@ -4912,7 +4911,7 @@ namespace mm
         uint16_t before;
         do
         {
-            before = port::load<uint16_t>(entryAt(type) - 8u);
+            before = entryAt(type - 1)->count; // the type before this one (index -1 reads before the table, as the original)
             --type;
         } while (before == 0);
         if (type == types)
@@ -4920,7 +4919,7 @@ namespace mm
             clear();
             return;
         }
-        sdk::sprintf(text, 0x001B8F98u, globals::buildingTypeAddress(static_cast<uint32_t>(type)) + 0x110u);
+        sdk::sprintf(text, 0x001B8F98u, GuestPtr<char>::of(globals::buildingType(static_cast<uint32_t>(type))->name[0]).address);
         if (sdk::strlen(text) >= 0x13)
             port::store<uint8_t>(text + 0x12u, 0xCD);
         else
@@ -4928,9 +4927,9 @@ namespace mm
         port::store<uint8_t>(text + 0x13u, 0);
         TextBox_SetText(pages->text[2], GuestPtr<char>{text}, 0);
         TextBox_SetText(pages->text[5], GuestPtr<char>{0x001B8FA8u}, 0);
-        const uint32_t entry = entryAt(type);
-        uint32_t family = port::load<uint16_t>(entry + 2u);
-        const int32_t skip = (pages->page - static_cast<int32_t>(port::load<uint16_t>(entry + 4u))) * 10;
+        const GuestPtr<TownPagesIndex> entry = entryAt(type);
+        uint32_t family = entry->firstFamily;
+        const int32_t skip = (pages->page - static_cast<int32_t>(entry->startPage)) * 10;
         int32_t counted = 0;
         if (skip > 0)
         {
@@ -4942,7 +4941,7 @@ namespace mm
             } while (counted < skip);
         }
         int32_t rows = 0;
-        while (counted < static_cast<int32_t>(port::load<uint16_t>(entryAt(type))))
+        while (counted < static_cast<int32_t>(entryAt(type)->count))
         {
             if (Family_IsKnown(family) != 0)
             {
@@ -5143,17 +5142,15 @@ namespace mm
     {
         port::GuestFrame<0xF0> frame;
         const uint32_t sp = frame.ptr().address;
-        const uint32_t k = cursor.address;
         const uint32_t point = sp + 0xC0u, text = sp + 0xD0u;
         const uint32_t matrix = city->cityCamera.address + 0x10u;
-        const auto loadF = [](uint32_t at) { return ps2f(std::bit_cast<float>(port::load<uint32_t>(at))); };
-        const auto storeF = [](uint32_t at, ps2f value) { port::store<uint32_t>(at, std::bit_cast<uint32_t>(value.v)); };
-        for (uint32_t lane = 0; lane < 4; ++lane)
-            port::store<uint32_t>(point + 4u * lane, port::load<uint32_t>(k + 0x1B0u + 4u * lane));
+        const GuestPtr<Vec4> place{point};
+        *place = cursor->targetPos;
         ps2f lift(0.0f);
-        const uint32_t view = k + (port::load<uint32_t>(0x001BDCD0u) & 1u) * 0xD0u;
-        const auto lineBox = [&](int32_t index) { return GuestPtr<TextBox>{port::load<uint32_t>(view + 4u * static_cast<uint32_t>(index))}; };
-        const auto lineFrame = [&](int32_t index) { return GuestPtr<Frame>{port::load<uint32_t>(view + 0x14u + 4u * static_cast<uint32_t>(index))}; };
+        // The view of this frame's parity; its lines are indexed by guest address, any count, as the original does.
+        const GuestPtr<CityCursorView> view = GuestPtr<CityCursorView>::of(cursor->views[port::load<uint32_t>(0x001BDCD0u) & 1u]);
+        const auto lineBox = [&](int32_t index) { return (GuestPtr<GuestPtr<TextBox>>::of(view->lines[0]) + index)[0]; };
+        const auto lineFrame = [&](int32_t index) { return (GuestPtr<GuestPtr<Frame>>::of(view->lineFrames[0]) + index)[0]; };
         const auto count = [&]() { return cursor->lineCount; };
         for (int i = 0; i < 5; ++i)
             Frame_SetStyle(lineFrame(i), 0);
@@ -5165,10 +5162,10 @@ namespace mm
             {
                 const GuestPtr<MapObject> object = Map_GetRecord(city->map, static_cast<int>(kind));
                 const ps2f half = fromInt(globals::buildingType(object->type)->size) / ps2f(2.0f);
-                storeF(point, (fromInt(object->tile & 0x7F) - ps2f(64.0f)) + half);
-                storeF(point + 8u, (fromInt(0x80 - (object->tile >> 7)) - ps2f(64.0f)) - half);
+                place->x = (fromInt(object->tile & 0x7F) - ps2f(64.0f)) + half;
+                place->z = (fromInt(0x80 - (object->tile >> 7)) - ps2f(64.0f)) - half;
                 lift = ps2f(0.6f);
-                uint32_t next = k + 0x1A8u;
+                uint32_t next = GuestPtr<uint16_t>::of(cursor->targetKind).address; // then each object's next on the tile
                 while (port::load<uint16_t>(next) != 0x3F80)
                 {
                     const GuestPtr<MapObject> here = Map_GetRecord(city->map, static_cast<int>(port::load<uint16_t>(next)));
@@ -5182,7 +5179,7 @@ namespace mm
                         int band = 0;
                         const uint32_t members = static_cast<uint32_t>(Family_Prefetch(static_cast<int>(family), 1));
                         if (members != 0u)
-                            for (int member = 0; member < port::load<uint16_t>(members + 0x22u); ++member)
+                            for (int member = 0; member < GuestPtr<Family>{members}->memberCount; ++member)
                             {
                                 const int found = Family_GetFriendshipBand(static_cast<int>(family), member);
                                 if (band < found)
@@ -5204,8 +5201,8 @@ namespace mm
                     TextBox_SetText(lineBox(0), GuestPtr<char>{0x001B5ED8u}, 1);
                 else
                 {
-                    storeF(point, who->x);
-                    storeF(point + 8u, who->z);
+                    place->x = who->x;
+                    place->z = who->z;
                     const uint32_t member = record + 0x48u * who->member;
                     sdk::sprintf(text, 0x001B5EE0u, member + 0x5Cu, member + 0x4Cu);
                     TextBox_SetText(lineBox(count()), GuestPtr<char>{text}, 1);
@@ -5216,15 +5213,15 @@ namespace mm
                 }
             }
         }
-        const GuestPtr<Frame> windowFrame{port::load<uint32_t>(view + 0x28u)};
+        const GuestPtr<Frame> windowFrame = view->frame;
         if (count() == 0)
             Frame_SetStyle(windowFrame, 0x32);
         else if (Player_GetMode(city->player) == 3)
             Frame_SetStyle(windowFrame, 0x35);
         else
             Frame_SetStyle(windowFrame, 0x34);
-        storeF(point + 4u, Map_SampleHeight(city->map, loadF(point), loadF(point + 8u)) - lift);
-        port::store<uint32_t>(point + 0xCu, 0x3F800000u);
+        place->y = Map_SampleHeight(city->map, place->x, place->z) - lift;
+        place->w = 1.0f;
         CityCursor_LayoutInfo(cursor, GuestPtr<Vec4>{point}, GuestPtr<Vec4>{matrix});
     }
 
@@ -6011,7 +6008,7 @@ namespace mm
                 scene->boss = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3C68u)};
                 scene->animTime = 0.0f;
                 scene->animation = 7;
-                scene->unk_48 = -1;
+                scene->nextAnimation = -1;
                 scene->fade = 0x80;
                 scene->briefingIndex = 0;
                 scene->briefingPhase = 0;
@@ -6110,11 +6107,11 @@ namespace mm
         if (!(time <= length))
         {
             scene->animTime = 0.0f;
-            const int32_t following = scene->unk_48;
+            const int32_t following = scene->nextAnimation;
             if (!(following < 0))
             {
                 scene->animation = following;
-                scene->unk_48 = -1;
+                scene->nextAnimation = -1;
             }
         }
         port::callGuest<int64_t>(vtable()->draw, window(), 2);

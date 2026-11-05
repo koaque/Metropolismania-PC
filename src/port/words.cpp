@@ -22,7 +22,7 @@ namespace mm
 
     // ---- conditions and values
 
-    int WordsFn_Arg4(GuestPtr<WordsCtx> ctx) { return ctx->unk_04; }
+    int WordsFn_Arg4(GuestPtr<WordsCtx> ctx) { return ctx->setupArg; }
     int WordsFn_Flag134(GuestPtr<WordsCtx> ctx) { return ctx->flag134; }
     int WordsFn_False(GuestPtr<WordsCtx>) { return 0; }
     int WordsFn_FamilyHasLeft(GuestPtr<WordsCtx> ctx) { return Family_HasLeft(ctx->familyA); }
@@ -1560,13 +1560,13 @@ namespace mm
     namespace
     {
         // The friendship change both actions make: the meter step is 3 (down) or 5 (up) plus bits 21-23 of the character
-        // type's class word; the result is what the friendship call leaves in v0.
+        // type's traits; the result is what the friendship call leaves in v0.
         int changeFriendship(GuestPtr<WordsCtx> ctx, int base, int sign)
         {
             const GuestPtr<Family> family = Family_Get(ctx->familyA, 0);
             const uint32_t charType = memberAt(family, ctx->memberA)->charType;
             const uint32_t cls = port::load<uint32_t>(globals::charClassTable.get() + 4u * charType);
-            const int bits = static_cast<int>((GuestPtr<CharClass>{cls}->unk_1C & 0xE00000u) >> 0x15);
+            const int bits = static_cast<int>((GuestPtr<CharClass>{cls}->traits & 0xE00000u) >> 0x15);
             const int points = bits + base;
             port::setGuestV0(bits);  // the friendship call returns v0 as it found it on some paths: the shifted bits here
             const int result = Family_AddFriendshipScaled(ctx->familyA, ctx->memberA, GuestPtr<int32_t>{ctx->city.address + 0x8Cu}, points, sign);
@@ -1597,7 +1597,7 @@ namespace mm
         // The fields both set-up calls clear: the second person and building, the results and the script's flags.
         void resetContext(GuestPtr<WordsCtx> ctx, GuestPtr<CityScene> city, int arg4)
         {
-            ctx->unk_04 = arg4;
+            ctx->setupArg = arg4;
             ctx->city = city;
             ctx->familyB = 0;
             ctx->memberB = 0;
@@ -2250,13 +2250,13 @@ namespace mm
                 words->extraLoaded = 0;
                 return;
             }
-            if (static_cast<int32_t>(kind) != words->unk_04)
+            if (static_cast<int32_t>(kind) != words->eventKind)
             {
                 const int32_t size = port::load<int32_t>(kEventBlockSize);
                 File_Seek(GuestPtr<GameFile>{port::load<uint32_t>(kEventFile)}, size * (static_cast<int32_t>(kind) - 1) + 4, 0, 0);
                 port::store<int32_t>(kReadResult, File_Read(GuestPtr<GameFile>{port::load<uint32_t>(kEventFile)}, static_cast<int>(words->extraTable.address), 1,
                                                             port::load<int32_t>(kEventBlockSize), 0));
-                words->unk_04 = static_cast<int32_t>(kind);
+                words->eventKind = static_cast<int32_t>(kind);
                 words->bound = 0;
             }
             words->extraLoaded = 1;

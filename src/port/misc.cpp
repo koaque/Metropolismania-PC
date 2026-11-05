@@ -94,7 +94,7 @@ namespace mm
             return;
         Instance_DrawSwayingIfRoom(player->model, player->swayArg, player->swayPhase);
         A3DObject_UpdateMatrices(player->model);
-        Instance_DrawModelLit(player->model, GuestPtr<Vec4>{player.address + 0x20u}, player->mode, city->bag->unk_002);
+        Instance_DrawModelLit(player->model, GuestPtr<Vec4>{player.address + 0x20u}, player->mode, city->bag->outfit);
     }
 
     // char: the player's animation (+0x38) from its movement and the pad. Standing still: 1 when at least 0.4
@@ -1387,7 +1387,7 @@ namespace mm
             cls->restartFrames[i] = record->restartFrames[i];
         cls->voice = record->voice;
         cls->flags = record->flags;
-        cls->unk_1C = record->unk_14;
+        cls->traits = record->traits;
         return cls;
     }
 
@@ -1674,7 +1674,7 @@ namespace mm
         bag->nameText = GuestPtr<TextBox>{0u};
         bag->size = 0;
         bag->cursor = 0;
-        bag->unk_002 = 0;
+        bag->outfit = 0;
         for (GuestPtr<Frame> &frame : bag->frames)
             frame = GuestPtr<Frame>{0u};
         for (GuestPtr<TextBox> &label : bag->labels)
@@ -3687,15 +3687,15 @@ namespace mm
     }
 
     // Moves on to the next stage: resets the families, counts the stage up and reads its 0xB4-byte record from
-    // DATA\BIN\STAGE.BIN (25 records, repeating). Past the 24th stage the target grows by half and the 32 bytes of
-    // per-stage totals at +0x240 of four 0x10-byte blocks are cleared.
+    // DATA\BIN\STAGE.BIN (25 records, repeating) over the stage state from the quota on. Past the 24th stage the quota
+    // grows by half and no families are introduced.
     void Stage_Load()
     {
-        constexpr uint32_t kStageNumber = 0x001C5548u;
-        constexpr uint32_t kStageRecord = 0x001C554Cu;
+        const GuestPtr<StageState> state = globals::stageState();
+        const uint32_t kStageRecord = GuestPtr<int32_t>::of(state->quota).address;
         Family_ResetForStage();
-        const int32_t stage = port::load<int32_t>(kStageNumber) + 1;
-        port::store<int32_t>(kStageNumber, stage);
+        const int32_t stage = state->stage + 1;
+        state->stage = stage;
         port::GuestLocal<GameFile> file;
         File_ctor(file, 0);
         File_Open(file, GuestPtr<char>{0x001B5D50u});
@@ -3704,47 +3704,41 @@ namespace mm
         File_Close(file);
         if (0x18 < stage)
         {
-            int32_t target = static_cast<int32_t>(port::load<uint32_t>(kStageRecord) * 3u);
+            int32_t target = static_cast<int32_t>(static_cast<uint32_t>(state->quota) * 3u);
             if (target < 0)
                 target += 1;
-            port::store<int32_t>(kStageRecord, target >> 1);
-            for (uint32_t block = 0; block < 4u; ++block)
-                for (uint32_t half = 0; half < 8u; ++half)
-                    port::store<uint16_t>(0x001C5380u + 0x10u * block + 0x240u + 2u * half, 0);
+            state->quota = target >> 1;
+            for (uint16_t &family : state->introduced)
+                family = 0;
         }
         File_dtor(file, -1);
     }
 
-    // The stage's target text: the population goal, and when the stage has a theme (word at 0x1C5550, not 0) the theme share
-    // with the theme's name. The strings are in tables at 0x1B5C90 and 0x1B5D30.
+    // The stage's target text: the population goal, and when the stage has a theme (its mission kind, not 0) the theme's
+    // target with the theme's name. The strings are in tables at 0x1B5C90 and 0x1B5D30.
     void Stage_FormatTargetText(int, GuestPtr<char> out)
     {
-        constexpr uint32_t kStageTheme = 0x001C5550u;
-        constexpr uint32_t kStageGoal = 0x001C554Cu;
-        constexpr uint32_t kStageThemeShare = 0x001C5554u;
-        sdk::sprintf(out.address, 0x001B5E70u, port::load<uint32_t>(0x001B5C90u + 4u * port::load<uint32_t>(kStageTheme)),
-                     port::load<uint32_t>(kStageGoal));
-        const int32_t theme = port::load<int32_t>(kStageTheme);
-        if (port::load<int32_t>(kStageTheme) != 0)
+        const GuestPtr<StageState> state = globals::stageState();
+        sdk::sprintf(out.address, 0x001B5E70u, GuestPtr<uint32_t>{0x001B5C90u}[state->missionKind], static_cast<uint32_t>(state->quota));
+        const int32_t theme = state->missionKind;
+        if (state->missionKind != 0)
         {
             const int length = sdk::strlen(out.address);
-            sdk::sprintf(out.address + static_cast<uint32_t>(length), 0x001B5EB0u, port::load<uint32_t>(kStageThemeShare),
-                         port::load<uint32_t>(0x001B5D30u + 4u * static_cast<uint32_t>(theme)));
+            sdk::sprintf(out.address + static_cast<uint32_t>(length), 0x001B5EB0u, static_cast<uint32_t>(state->missionTarget),
+                         GuestPtr<uint32_t>{0x001B5D30u}[theme]);
         }
     }
 
     // The stage's goal text: the population goal, and for a themed stage the share with its closing words by theme.
     void Stage_FormatGoalText(int, GuestPtr<char> out)
     {
-        constexpr uint32_t kStageTheme = 0x001C5550u;
-        constexpr uint32_t kStageGoal = 0x001C554Cu;
-        constexpr uint32_t kStageThemeShare = 0x001C5554u;
-        sdk::sprintf(out.address, 0x001B5D68u, port::load<uint32_t>(kStageGoal));
-        if (port::load<int32_t>(kStageTheme) != 0)
+        const GuestPtr<StageState> state = globals::stageState();
+        sdk::sprintf(out.address, 0x001B5D68u, static_cast<uint32_t>(state->quota));
+        if (state->missionKind != 0)
         {
             const int length = sdk::strlen(out.address);
-            sdk::sprintf(out.address + static_cast<uint32_t>(length), 0x001B5D80u, port::load<uint32_t>(kStageThemeShare));
-            const int32_t theme = port::load<int32_t>(kStageTheme);
+            sdk::sprintf(out.address + static_cast<uint32_t>(length), 0x001B5D80u, static_cast<uint32_t>(state->missionTarget));
+            const int32_t theme = state->missionKind;
             uint32_t ending;
             if (theme == 5)
                 ending = 0x001B5C40u;

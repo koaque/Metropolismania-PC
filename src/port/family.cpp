@@ -547,8 +547,8 @@ namespace mm
                 person->flags = static_cast<uint16_t>(person->flags | 8);
             }
             person->flags = static_cast<uint16_t>(person->flags | 0x800);
-            const uint32_t classWord = GuestPtr<CharClass>{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)}->unk_1C;
-            CityScene_RecordPlacementScore(city, static_cast<int>((classWord & 0x7000u) >> 12), static_cast<int>((classWord & 0xE00u) >> 9));
+            const uint32_t traits = GuestPtr<CharClass>{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)}->traits;
+            CityScene_RecordPlacementScore(city, static_cast<int>((traits & 0x7000u) >> 12), static_cast<int>((traits & 0xE00u) >> 9));
             map->population = map->population + 1;
             map->peopleInUse = map->peopleInUse + 1;
         }

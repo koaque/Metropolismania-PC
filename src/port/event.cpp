@@ -494,7 +494,7 @@ namespace mm
     GuestPtr<MapObject> EvUselessMiddleAged_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
         const GuestPtr<MapObject> record = markBuilding(city, data->actor.object);
-        data->unk_14 = city->monthCount;
+        data->typeWordA = city->monthCount;
         return record;
     }
 
@@ -505,7 +505,7 @@ namespace mm
         const GuestPtr<ActorRef> actor = GuestPtr<ActorRef>::of(data->actor);
         EvActor_Detach(city, actor);
         const int distance = Player_DistanceToBuilding(city, actor);
-        data->unk_18 = distance;
+        data->typeWordB = distance;
         return distance;
     }
 
@@ -583,15 +583,15 @@ namespace mm
     {
         if (data->var == 2)
         {
-            if (--data->unk_18 <= 0)
+            if (--data->typeWordB <= 0)
                 --data->var;
             return;
         }
-        if (data->var != 1 || city->monthCount == data->unk_14 || city->clock < 32400)
+        if (data->var != 1 || city->monthCount == data->typeWordA || city->clock < 32400)
             return;
         if (EvActor_Notify(city, GuestPtr<ActorRef>::of(data->actor)) == 0)
             return;
-        data->unk_18 = 60;
+        data->typeWordB = 60;
         ++data->var;
     }
 
@@ -604,7 +604,7 @@ namespace mm
         {
             if (data->var == 2)
             {
-                if (--data->unk_14 > 0)
+                if (--data->typeWordA > 0)
                     return false;
                 data.as<EvMessageData>()->callPosted = 0;
                 return true;
@@ -613,12 +613,12 @@ namespace mm
                 return false;
             ++data->var;
             data.as<EvMessageData>()->callPosted = 1;
-            data->unk_14 = 60;
+            data->typeWordA = 60;
             const int32_t clock = city->clock;
             if (clock < 21600)
-                data->unk_14 += 360 - clock / 60;
+                data->typeWordA += 360 - clock / 60;
             else if (clock >= 82801)
-                data->unk_14 += 360;
+                data->typeWordA += 360;
             return false;
         }
     }
@@ -642,7 +642,7 @@ namespace mm
     {
         if (!messagePhase(data, city))
             return;
-        if (++data->unk_18 < 5)
+        if (++data->typeWordB < 5)
             --data->var;
         else
             Event_Finish(city->events, city, 1);
@@ -677,7 +677,7 @@ namespace mm
         }
         if (!messagePhase(data, city))
             return;
-        if (++data->unk_18 < 5)
+        if (++data->typeWordB < 5)
             --data->var;
         else
             ++data->var;
@@ -698,12 +698,12 @@ namespace mm
         case 4:
             if (EvActor_Notify(city, GuestPtr<ActorRef>::of(data->actor)) == 0)
                 break;
-            data->unk_14 = 60;
+            data->typeWordA = 60;
             ++data->var;
             break;
         case 3:
         case 5:
-            if (--data->unk_14 <= 0)
+            if (--data->typeWordA <= 0)
                 --data->var;
             break;
         case 6:
@@ -861,8 +861,8 @@ namespace mm
         const GuestPtr<EvShoppingData> shopping = data.as<EvShoppingData>();
         if (index < 4)
         {
-            const uint32_t shop = globals::shoppingTexts.get() + 0x28u * static_cast<uint32_t>(shopping->shop);
-            return GuestPtr<char>{port::load<uint32_t>(0x001BDAA4u) + port::load<uint16_t>(shop + 2u * static_cast<uint32_t>(index) + 0x20u)};
+            const GuestPtr<ShoppingList> list = globals::shoppingList(shopping->shop);
+            return GuestPtr<char>{globals::goodsSectionC.get() + list->goods[index]};
         }
         if (index == 4)
             return GuestPtr<char>{globals::shoppingTexts.get()};
@@ -870,17 +870,16 @@ namespace mm
         return GuestPtr<char>{globals::kEventMoneyTextB};
     }
 
-    // Text 0: the catalogue item (+0x1C entry, +0x20 item); 1: its price as money; 0 for others.
+    // Text 0: the catalogue item's name; 1: its price as money; 0 for others.
     GuestPtr<char> EvDeliveryMan_Text(GuestPtr<EventData> data, GuestPtr<CityScene>, int index)
     {
         const GuestPtr<EvDeliveryData> delivery = data.as<EvDeliveryData>();
-        const uint32_t item = globals::kDeliveryCatalogue + 0x184u * static_cast<uint32_t>(delivery->entry) +
-                              0x20u * static_cast<uint32_t>(delivery->month);
+        const GuestPtr<DeliveryItem> item = globals::deliveryItem(delivery->entry, delivery->month);
         if (index == 0)
-            return GuestPtr<char>{item + 4u};
+            return item.as<char>(); // the name, at +0
         if (index != 1)
             return GuestPtr<char>{0};
-        Text_FormatMoney(GuestPtr<char>{globals::kEventMoneyTextA}, port::load<uint16_t>(item + 0x22u), 15, 1);
+        Text_FormatMoney(GuestPtr<char>{globals::kEventMoneyTextA}, item->price, 15, 1);
         return GuestPtr<char>{globals::kEventMoneyTextA};
     }
 
@@ -912,13 +911,13 @@ namespace mm
             state = 4;
         else if (distance < 6)
             state = 3;
-        else if (distance < data->unk_18)
+        else if (distance < data->typeWordB)
             state = 1;
-        else if (data->unk_18 < distance)
+        else if (data->typeWordB < distance)
             state = 2;
         else
             state = 0;
-        data->unk_18 = distance;
+        data->typeWordB = distance;
         return state;
     }
 
@@ -1900,10 +1899,10 @@ namespace mm
                 if (Map_FindPersonObjectOnTile(city->map, member->index, tileOf(member)).address != building.address)
                     continue;
                 int entry = -1;
-                for (uint32_t e = globals::kDeliveryCatalogue; e < globals::kDeliveryCatalogue + 4u * 0x184u; e += 0x184u)
-                    if (port::load<uint32_t>(e) == targetType)
+                for (int32_t e = 0; e < 4; ++e)
+                    if (globals::deliveryCatalogue(e)->buildingType == targetType)
                     {
-                        entry = static_cast<int>((e - globals::kDeliveryCatalogue) / 0x184u);
+                        entry = e;
                         break;
                     }
                 if (entry < 0)
@@ -2379,14 +2378,14 @@ namespace mm
             if (EvActor_Notify(city, actor) == 0)
                 return false;
             ++data->var;
-            data->unk_14 = 60;
+            data->typeWordA = 60;
             return true;
         };
         const auto advance = [&] {
-            data->unk_18 = 0;
+            data->typeWordB = 0;
             ++data->var;
         };
-        const auto tenth = [&] { return ++data->unk_14 >= 10; };
+        const auto tenth = [&] { return ++data->typeWordA >= 10; };
         switch (data->var)
         {
         case 1:
@@ -2399,9 +2398,9 @@ namespace mm
             {
                 const int32_t clock = city->clock;
                 if (clock < 21600)
-                    data->unk_14 += 360 - clock / 60;
+                    data->typeWordA += 360 - clock / 60;
                 else if (clock >= 82801)
-                    data->unk_14 += 360;
+                    data->typeWordA += 360;
             }
             break;
         case 2:
@@ -2412,9 +2411,9 @@ namespace mm
         case 16:
         case 19:
         case 22:
-            if (--data->unk_14 > 0)
+            if (--data->typeWordA > 0)
                 break;
-            if (++data->unk_18 < 6)
+            if (++data->typeWordB < 6)
                 --data->var;
             else if (data->var == 22)
                 Event_Finish(city->events, city, 0);
@@ -2435,7 +2434,7 @@ namespace mm
                     break;
                 }
             }
-            data->unk_14 = 0;
+            data->typeWordA = 0;
             break;
         }
         case 6:
@@ -2443,7 +2442,7 @@ namespace mm
                 break;
             if (city->map->population != 0)
                 advance();
-            data->unk_14 = 0;
+            data->typeWordA = 0;
             break;
         case 9:
         {
@@ -2461,7 +2460,7 @@ namespace mm
                 advance();
                 break;
             }
-            data->unk_14 = 0;
+            data->typeWordA = 0;
             break;
         }
         case 12:
@@ -2471,14 +2470,14 @@ namespace mm
             const int applicants = city->applicants->count;
             if (city->map->population + 2 * applicants >= 101)
             {
-                data->unk_18 = 0;
+                data->typeWordB = 0;
                 data->var = 15;
-                data->unk_14 = 0;
+                data->typeWordA = 0;
                 break;
             }
             if (applicants >= 32)
             {
-                data->unk_14 = 0;
+                data->typeWordA = 0;
                 break;
             }
             port::GuestLocal<uint32_t> count;
@@ -2515,7 +2514,7 @@ namespace mm
             }
             for (GuestPtr<AdoptionChild> child = children; child->claim != 0; ++child)
                 child->seen = 0;
-            data->unk_14 = 0;
+            data->typeWordA = 0;
             break;
         }
         case 17:
@@ -2677,14 +2676,13 @@ namespace mm
     }
 
     // Type 3 (the delivery man) answers the talk: 0 the catalogue entry (+0x1C), 1 and 2 whether the player is within 1 of
-    // actor 1 / actor 0, 3 and 4 add / take the price of the delivered goods (the catalogue entry's item for the month in
-    // +0x20, a halfword at 0x1BA0B2 + 0x184 * entry + 0x20 * month) to / from the money, 5 reads +0x34.
+    // actor 1 / actor 0, 3 and 4 add / take the price of the delivered goods (the catalogue's item for the month) to / from the
+    // money, 5 reads +0x34.
     int EvDeliveryMan_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef>, int mode)
     {
         const GuestPtr<EvDeliveryData> delivery = data.as<EvDeliveryData>();
         const auto price = [&] {
-            const uint32_t entry = static_cast<uint32_t>(delivery->entry), month = static_cast<uint32_t>(delivery->month);
-            return static_cast<int32_t>(port::load<uint16_t>(0x001BA0B2u + 0x184u * entry + 0x20u * month));
+            return static_cast<int32_t>(globals::deliveryItem(delivery->entry, delivery->month)->price);
         };
         switch (static_cast<uint32_t>(mode))
         {
@@ -2849,7 +2847,7 @@ namespace mm
     int EvShopping_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef>, int mode)
     {
         const GuestPtr<EvShoppingData> shopping = data.as<EvShoppingData>();
-        const uint32_t goods = globals::shoppingTexts.get() + 0x28u * static_cast<uint32_t>(shopping->shop) + 0x20u;
+        const uint32_t goods = GuestPtr<uint16_t>::of(globals::shoppingList(shopping->shop)->goods[0]).address;
         const auto bag = [&] { return city->bag; };
         switch (static_cast<uint32_t>(mode))
         {
@@ -2867,7 +2865,7 @@ namespace mm
         case 3:
         case 4:
         case 5:
-            return Bag_FindItem(bag(), port::load<uint16_t>(goods + 2u * static_cast<uint32_t>(mode - 2))) != 0 ? 0 : 1;
+            return Bag_FindItem(bag(), GuestPtr<uint16_t>{goods}[static_cast<int32_t>(mode - 2)]) != 0 ? 0 : 1;
         case 6:
             changeMoney(shopping->bill);
             return 0;
@@ -3728,11 +3726,11 @@ namespace mm
         constexpr uint32_t kSerial = 0x001BDD5Cu, kShopCount = 0x001BDAB0u;
         const int32_t serial = port::load<int32_t>(kSerial);
         shopping->shop = serial;
-        const uint32_t record = globals::shoppingTexts.get() + 0x28u * static_cast<uint32_t>(serial);
+        const GuestPtr<ShoppingList> list = globals::shoppingList(serial);
         port::store<int32_t>(kSerial, serial + 1);
         if (!(serial + 1 < port::load<int32_t>(kShopCount)))
             port::store<int32_t>(kSerial, 0);
-        sdk::memcpy(base + 0x120u, record + 0x20u, 8);
+        sdk::memcpy(base + 0x120u, GuestPtr<uint16_t>::of(list->goods[0]).address, 8);
         int remaining = 0;
         for (uint32_t at = base + 0x120u; port::load<uint16_t>(at) != 0 && at < base + 0x128u; at += 2u)
             ++remaining;
@@ -4234,9 +4232,9 @@ namespace mm
     {
         const GuestPtr<ActorRef> actor = GuestPtr<ActorRef>::of(data->actor);
         bool met = false;
-        data->unk_14 = data->unk_14 + 1;
-        if (data->unk_14 >= 10)
-            data->unk_14 = 0;
+        data->typeWordA = data->typeWordA + 1;
+        if (data->typeWordA >= 10)
+            data->typeWordA = 0;
         const int32_t minutes = city->clock / 60;
         const auto closeEnough = [&] {
             return Player_DistanceToBuilding(city, actor) < 2 && Player_DistanceToPerson(city, actor) <= ps2f(1.0f) && EvActor_PointCursor(city, actor) != 0;
@@ -4250,7 +4248,7 @@ namespace mm
                     met = true;
                     data->var = 4;
                 }
-                else if (data->unk_14 == 0 && Person_IsOnOpenTile(city, actor) != 0 && !(Player_DistanceToPerson(city, actor) <= ps2f(3.0f)))
+                else if (data->typeWordA == 0 && Person_IsOnOpenTile(city, actor) != 0 && !(Player_DistanceToPerson(city, actor) <= ps2f(3.0f)))
                     EvActor_PointCursor(city, actor);
             }
             else if (Person_IsOnOpenTile(city, actor) != 0 || minutes >= 0x532)
