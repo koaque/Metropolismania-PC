@@ -16,7 +16,7 @@ namespace mm
         // Actor `index` of the talk's first event (EventData::actors, by guest address for any index).
         GuestPtr<ActorRef> talkActor(GuestPtr<WordsCtx> ctx, int index)
         {
-            return GuestPtr<ActorRef>{eventsOf(ctx)->talkA.address + 0x0Cu + 8u * static_cast<uint32_t>(index)};
+            return GuestPtr<ActorRef>{eventsOf(ctx)->talks[0].address + 0x0Cu + 8u * static_cast<uint32_t>(index)};
         }
     }
 
@@ -39,8 +39,8 @@ namespace mm
     int WordsFn_Month(GuestPtr<WordsCtx> ctx) { return ctx->city->monthCount % 12; }
     int WordsFn_PopulationRank(GuestPtr<WordsCtx> ctx) { return CityScene_PopulationRank(ctx->city) - 1; }
     int WordsFn_EventsActive(GuestPtr<WordsCtx> ctx) { return Event_CountActive(eventsOf(ctx)) > 0 ? 1 : 0; }
-    int WordsFn_EventA4Var(GuestPtr<WordsCtx> ctx) { return eventsOf(ctx)->talkA->var; }
-    int WordsFn_EventA8Var(GuestPtr<WordsCtx> ctx) { return eventsOf(ctx)->talkB->var; }
+    int WordsFn_EventA4Var(GuestPtr<WordsCtx> ctx) { return eventsOf(ctx)->talks[0]->var; }
+    int WordsFn_EventA8Var(GuestPtr<WordsCtx> ctx) { return eventsOf(ctx)->talks[1]->var; }
 
     // The talk scripts' own variable (a halfword of the stage state at +0x282).
     int WordsFn_GetVar1C5602(GuestPtr<WordsCtx>) { return globals::talkScriptVar.get(); }
@@ -109,13 +109,13 @@ namespace mm
 
     int WordsFn_SetEventA4Var(GuestPtr<WordsCtx> ctx)
     {
-        eventsOf(ctx)->talkA->var = static_cast<uint8_t>(ctx->arg);
+        eventsOf(ctx)->talks[0]->var = static_cast<uint8_t>(ctx->arg);
         return port::guestV0();
     }
 
     int WordsFn_SetEventA8Var(GuestPtr<WordsCtx> ctx)
     {
-        eventsOf(ctx)->talkB->var = static_cast<uint8_t>(ctx->arg);
+        eventsOf(ctx)->talks[1]->var = static_cast<uint8_t>(ctx->arg);
         return port::guestV0();
     }
 
@@ -181,7 +181,6 @@ namespace mm
         GuestPtr<BuildingType> typeOfObject(GuestPtr<MapObject> obj) { return GuestPtr<BuildingType>{globals::buildingTypeAddress(obj->type)}; }
         GuestPtr<BuildingType> typeAt(int index) { return GuestPtr<BuildingType>{globals::buildingTypeAddress(static_cast<uint32_t>(index))}; }
         // Row `kind` of the event table (0x4C bytes each).
-        uint32_t eventType(uint8_t kind) { return globals::eventTypes.get() + 0x4Cu * kind; }
         // Bit `index` of a bitset of 32-bit words, with C's signed division for the word.
         uint32_t bitWord(uint32_t bitset, int index) { return bitset + static_cast<uint32_t>(4 * (index / 32)); }
         uint32_t bitMask(int index) { return 1u << (static_cast<uint32_t>(index) & 31u); }
@@ -290,18 +289,18 @@ namespace mm
         return port::guestV0();
     }
 
-    // Whether the talk's first event is of a talking kind (event table +0x20 is 1 or 2).
+    // Whether the talk's first event is a resident's request or a visitor's (its type's group is 1 or 2).
     int WordsFn_EventA4IsTalk(GuestPtr<WordsCtx> ctx)
     {
-        const uint8_t talking = port::load<uint8_t>(eventType(eventsOf(ctx)->talkA->kind) + 0x20u);
+        const uint8_t talking = globals::eventType(eventsOf(ctx)->talks[0]->kind)->group;
         return talking == 1 || talking == 2 ? 1 : 0;
     }
 
-    // The second event's kind (event table +0x21) plus one, 0 without one.
+    // The second event's number in its type's group plus one, 0 without one.
     int WordsFn_EventA8Kind(GuestPtr<WordsCtx> ctx)
     {
-        const uint8_t kind = eventsOf(ctx)->talkB->kind;
-        return kind == 0 ? 0 : port::load<uint8_t>(eventType(kind) + 0x21u) + 1;
+        const uint8_t kind = eventsOf(ctx)->talks[1]->kind;
+        return kind == 0 ? 0 : globals::eventType(kind)->number + 1;
     }
 
     // Night (before 3:00 or from 18:00) 2, morning 0, afternoon 1.
@@ -395,7 +394,7 @@ namespace mm
 
     // ---- second group: texts
 
-    GuestPtr<char> WordsFn_TextEventA4Name(GuestPtr<WordsCtx> ctx) { return GuestPtr<char>{eventType(eventsOf(ctx)->talkA->kind)}; }
+    GuestPtr<char> WordsFn_TextEventA4Name(GuestPtr<WordsCtx> ctx) { return GuestPtr<char>::of(globals::eventType(eventsOf(ctx)->talks[0]->kind)->name[0]); }
 
     GuestPtr<char> WordsFn_TextPopulation(GuestPtr<WordsCtx> ctx)
     {
@@ -481,8 +480,8 @@ namespace mm
 
     namespace
     {
-        // The building type of the talk's first event (event table +0x20 as a halfword).
-        int eventBuildingType(GuestPtr<WordsCtx> ctx) { return port::load<int16_t>(eventType(eventsOf(ctx)->talkA->kind) + 0x20u); }
+        // The id of the talk's first event's type (the wants it holds carry it).
+        int eventId(GuestPtr<WordsCtx> ctx) { return static_cast<int16_t>(globals::eventType(eventsOf(ctx)->talks[0]->kind)->id); }
 
         // Map_FindPersonEntry with the halfwords as the original loads them.
         GuestPtr<MapPerson> findPerson(GuestPtr<WordsCtx> ctx, uint16_t family, uint16_t member)
@@ -493,12 +492,12 @@ namespace mm
 
     int WordsFn_EventRemoveWant(GuestPtr<WordsCtx> ctx)
     {
-        return port::callGuest<int>(addr::Wants_RemoveEventHold, ctx->city->wants, eventBuildingType(ctx), static_cast<int>(ctx->arg));
+        return port::callGuest<int>(addr::Wants_RemoveEventHold, ctx->city->wants, eventId(ctx), static_cast<int>(ctx->arg));
     }
 
     int WordsFn_EventAddWant(GuestPtr<WordsCtx> ctx)
     {
-        return port::callGuest<int>(addr::Wants_AddEventHold, ctx->city->wants, eventBuildingType(ctx), static_cast<int>(ctx->arg));
+        return port::callGuest<int>(addr::Wants_AddEventHold, ctx->city->wants, eventId(ctx), static_cast<int>(ctx->arg));
     }
 
     // Person B becomes family A's member `memberIndex`.
@@ -622,14 +621,14 @@ namespace mm
         return type;
     }
 
-    // The stage of the event in the talk's slot (event table +0x21); for events of kind 5 (+0x20) plus the queue
+    // The stage of the event in the talk's slot (its type's number in its group); for group 5 plus the queue
     // position of event 5 less that of event 4 (the queue's length for one that is not queued).
     int WordsFn_EventStage(GuestPtr<WordsCtx> ctx)
     {
         const GuestPtr<EventMgr> events = eventsOf(ctx);
-        const uint32_t type = eventType(events->slots[ctx->eventSlot].kind);
-        const int stage = port::load<uint8_t>(type + 0x21u);
-        if (port::load<uint8_t>(type + 0x20u) != 5)
+        const GuestPtr<EventType> type = globals::eventType(events->slots[ctx->eventSlot].kind);
+        const int stage = type->number;
+        if (type->group != 5)
             return stage;
         const int at5 = EventQueue_Find(events, 5);
         return stage + at5 - EventQueue_Find(events, 4);
@@ -2313,7 +2312,7 @@ namespace mm
         if (port::load<uint8_t>(self + 0x26u) < 13 || Family_GetFriendship(family, member) < 24)
             port::store<uint8_t>(kWordsUsedMask, static_cast<uint8_t>(port::load<uint8_t>(kWordsUsedMask) | 2u));
         const GuestPtr<uint32_t> block = Words_ReadBlock(port::load<uint16_t>(Family_Get(family, 0).address + 0x48u * static_cast<uint32_t>(member) + 0x24u));
-        loadEventWords(city->events->talkA->kind);
+        loadEventWords(city->events->talks[0]->kind);
         pickLineTable(block);
         return static_cast<int>(block.address);
     }
@@ -2329,7 +2328,7 @@ namespace mm
         words->line = 0;
         words->column = 0;
         const GuestPtr<uint32_t> block = Words_ReadBlock(person->charType);
-        const uint32_t kind = arg5 == 0 ? Event_TryStart(city->events, city, person) : city->events->talkA->kind;
+        const uint32_t kind = arg5 == 0 ? Event_TryStart(city->events, city, person) : city->events->talks[0]->kind;
         loadEventWords(kind);
         pickLineTable(block);
         port::store<uint8_t>(kWordsUsedMask, 4);
@@ -2524,7 +2523,7 @@ namespace mm
     void Words_LoadForWants(GuestPtr<CityScene> city, int16_t id, int line, GuestPtr<char> out)
     {
         constexpr uint32_t kReadResult = 0x001BD9F4u;
-        const uint32_t kind = city->events->talkA->kind;
+        const uint32_t kind = city->events->talks[0]->kind;
         if (kind == 0 || static_cast<int32_t>(kind) != EventQueue_Find(city->events, id))
             return;
         const GuestPtr<uint32_t> block = Words_ReadBlock(0);

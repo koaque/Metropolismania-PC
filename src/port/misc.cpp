@@ -2076,7 +2076,7 @@ namespace mm
     {
         const GuestPtr<int32_t> levels{static_cast<uint32_t>(queue)};
         const uint32_t entries = static_cast<uint32_t>(queue) + 0x24u;
-        const auto priority = [](uint8_t type) { return port::load<int8_t>(globals::eventTypes.get() + 0x4Cu * type + 0x22u); };
+        const auto priority = [](uint8_t type) { return globals::eventType(type)->priority; };
         uint32_t slot = entries + 2u * static_cast<uint32_t>(levels[level] + start);
         const uint32_t end = entries + 2u * static_cast<uint32_t>(levels[level + 1]);
         const int8_t own = priority(id[0]);
@@ -3599,13 +3599,13 @@ namespace mm
                 EventQueue_InsertByPriority(queue, GuestPtr<uint8_t>{slot}, 6, 0);
             for (int i = 0; i < 2; ++i)
             {
-                const uint32_t talkAt = events.address + 0xA4u + 4u * static_cast<uint32_t>(i);
-                const uint32_t talk = port::load<uint32_t>(talkAt);
-                if (port::load<uint8_t>(talk + 8u) != 0)
-                    EventQueue_InsertByPriority(queue, GuestPtr<uint8_t>{talk + 8u}, 6, 0);
+                const uint32_t talkAt = port::guest(&events->talks[i]);
+                const GuestPtr<EventData> talk{port::load<uint32_t>(talkAt)};
+                if (talk->kind != 0)
+                    EventQueue_InsertByPriority(queue, GuestPtr<uint8_t>::of(talk->kind), 6, 0);
                 sdk::operator_delete(port::load<uint32_t>(talkAt));
             }
-            sdk::operator_delete(port::load<uint32_t>(events.address + 0xACu));
+            sdk::operator_delete(events->talks[2].address);
             if (0 < deleteFlag)
                 sdk::operator_delete(events.address);
         }

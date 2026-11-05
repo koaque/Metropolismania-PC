@@ -2103,25 +2103,25 @@ namespace mm
     }
 
     // Holds wants for a building type during an event: a one-word entry with the value.
-    int Wants_AddEventHold(GuestPtr<WantsWin> wants, uint16_t buildingType, int value)
+    int Wants_AddEventHold(GuestPtr<WantsWin> wants, uint16_t eventId, int value)
     {
         if (wants->count >= 64 || 256 - wants->wordsUsed <= 0)
             return 0;
         wants->index[wants->count].offset = wants->wordsUsed;
-        wants->index[wants->count].held = buildingType;
+        wants->index[wants->count].held = eventId;
         wants->data[wants->wordsUsed] = static_cast<uint32_t>(value);
         wants->count = static_cast<uint16_t>(wants->count + 1);
         wants->wordsUsed = static_cast<uint16_t>(wants->wordsUsed + 1);
         return 1;
     }
 
-    // Removes the event holds of a building type with the value. As in the original, the entry that moves into a
+    // Removes the holds of the event `eventId` with the value. As in the original, the entry that moves into a
     // removed one's place is skipped, and the later entries' offsets go down by one (those at 0 stay).
-    void Wants_RemoveEventHold(GuestPtr<WantsWin> wants, uint16_t buildingType, int value)
+    void Wants_RemoveEventHold(GuestPtr<WantsWin> wants, uint16_t eventId, int value)
     {
         for (int i = 0; i < wants->count; ++i)
         {
-            if (wants->index[i].held != buildingType)
+            if (wants->index[i].held != eventId)
                 continue;
             const uint32_t offset = wants->index[i].offset;
             if (wants->data[offset] != static_cast<uint32_t>(value))

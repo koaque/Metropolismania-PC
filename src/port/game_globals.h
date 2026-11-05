@@ -392,10 +392,12 @@ namespace mm::globals
     inline constexpr uint32_t kWaveScrollA = 0x001BDAE8u;
     inline constexpr uint32_t kWaveScrollB = 0x001BDAF0u;
 
-    // event: the event types loaded from EVENT.BIN (96 records of 0x4C bytes; priority is the signed byte at +0x22),
-    // and a second copy of that pointer the handlers' End slots read (gp-0x7C10).
+    // event: the event types loaded from EVENT.BIN (96 EventType records), and a second copy of that pointer the
+    // handlers' End slots read (gp-0x7C10); the type record of event kind `kind` through either.
     inline constexpr GuestVar<uint32_t> eventTypes{0x001BDA84u};
     inline constexpr GuestVar<uint32_t> eventTypesCopy{0x001BDD60u};
+    inline GuestPtr<EventType> eventType(uint32_t kind) { return GuestPtr<EventType>{eventTypes.get()} + static_cast<int32_t>(kind); }
+    inline GuestPtr<EventType> eventTypeCopy(uint32_t kind) { return GuestPtr<EventType>{eventTypesCopy.get()} + static_cast<int32_t>(kind); }
     inline constexpr GuestVar<int32_t> popularityTicks{0x001BDC50u}; // clock ticks since the last popularity check (every 110)
     // event: the waiting queue (event ids, uint16_t) and its length; the queue object handed to
     // mm_EventQueue_InsertByPriority; the offsets (words) into claimData of each event's tile list

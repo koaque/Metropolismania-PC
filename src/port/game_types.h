@@ -76,6 +76,15 @@ struct EvAdoptionData;
 struct EvShoppingData;
 struct EvDeliveryData;
 struct EvPartyData;
+struct EvThiefData;
+struct MemberId;
+struct EventType;
+struct EventHandler;
+struct EvAdvertiseData;
+struct EvNoodlesData;
+struct EvMiddleAgedData;
+struct EvCaveManData;
+struct EvMissingChildrenData;
 struct CharClass;
 struct CharClassVtable;
 struct PersonClass;
@@ -613,12 +622,64 @@ struct ActorRef {
     uint16_t family;           /* +0x04 */
     uint16_t member;           /* +0x06 */
 };
+/* An event type (0x4C bytes): a record of DATA\BIN\EVENT.BIN, 96 of them (mm_Event_LoadTypes). Times are minutes of the
+   day. Groups: 1 residents' requests, 2 visitors and incidents, 3 the farewell party, 4 city news and trends, 5 residents'
+   pastimes and gossip, 6 the game's own (paydays, population milestones, retreat, mission cleared). */
+struct EventType {
+    char name[0x20];           /* +0x00 the event's title; the mm_Ev*_ handlers are named after them */
+    union {
+        uint16_t id;           /* +0x20 group and number together: a save keeps the list of ids to match the table with
+                                  (mm_Event_InitForCity); wants an event holds carry it (mm_Wants_AddEventHold) */
+        struct {
+            uint8_t group;     /* +0x20 3: no second event starts while it runs; 4: from a full event slot it takes the
+                                  free first talk; 6: its Check gets the second talk event */
+            uint8_t number;    /* +0x21 within the group; talk scripts read it (mm_WordsFn_EventStage) */
+        };
+    };
+    int8_t priority;           /* +0x22 the order in a queue bucket, lowest first */
+    uint8_t level;             /* +0x23 the queue bucket it waits in; 1 and 5 ignore the start window, 2 takes one
+                                  character type */
+    uint8_t handler;           /* +0x24 index into the handler table at 0x1AF0D0 (EventHandler), 0 = none */
+    uint8_t tileFlags;         /* +0x25 1 + the tile flag set while it runs, 0 = none (mm_Event_SetTileFlags) */
+    uint8_t mask;              /* +0x26 tested by mm_EventList_MoveByMask26 */
+    uint8_t ranks;             /* +0x27 the population ranks it runs at (bit rank - 1): below them it waits in bucket 5,
+                                  after them it goes to bucket 6 (mm_Event_Update) */
+    int8_t wait;               /* +0x28 after it finishes: days to wait in bucket 4, 0 its own level again, -1 bucket 6,
+                                  -2 bucket 7 (mm_Event_Finish); also the first wait of every type */
+    int8_t days;               /* +0x29 the days it runs: each day takes one, and on the last it ends at finishAt */
+    uint16_t startFrom;        /* +0x2A the window it may start in (it may wrap past midnight) */
+    uint16_t startUntil;       /* +0x2C */
+    uint16_t finishAt;         /* +0x2E */
+    uint16_t population;       /* +0x30 the population the city needs */
+    uint16_t modules;          /* +0x32 the laptop modules it needs (bits, mm_Laptop_CountActive) */
+    uint8_t approvalTier;      /* +0x34 1 + the approval tier it needs (mm_CityScene_ApprovalTier), 0 = any */
+    uint8_t scoreA0Tier;       /* +0x35 1 + the tier of mm_CityScene_ScoreA0Tier, 0 = any */
+    uint8_t scoreA8Tier;       /* +0x36 1 + the tier of mm_CityScene_ScoreA8Tier, 0 = any */
+    uint8_t unk_37;
+    uint16_t charTypes[4];     /* +0x38 the person's character type must be one of these (level 2: the first); 0 ends */
+    uint8_t gender;            /* +0x40 1 + (person flags & 3), 0 = any */
+    uint8_t claimMeter;        /* +0x41 1: the person's workplace has its claim meter at level 0 */
+    uint8_t friendship;        /* +0x42 1: the person's friendship band is at least 1 */
+    uint8_t place;             /* +0x43 where the person stands: 1 in its workplace, 2 in its target, 3 between two
+                                  buildings, 4 outside its workplace at least 8 from its middle (mm_Event_CheckCondition) */
+    uint16_t workTypes[4];     /* +0x44 the person's workplace has one of these building types; 0 ends */
+};
+/* An event handler (0x18 bytes, one per handler id; the table at 0x1AF0D0 points at them): its slots, 0 = none. */
+struct EventHandler {
+    uint32_t check;            /* +0x00 whether the event may start (event, city, person) */
+    uint32_t start;            /* +0x04 */
+    uint32_t update;           /* +0x08 every frame (copied to EventData.update) */
+    uint32_t end;              /* +0x0C */
+    uint32_t slot10;           /* +0x10 */
+    uint32_t slot14;           /* +0x14 the talk script's questions (mm_Event_CallSlot14) */
+};
 /* An active event (0x1C bytes; some types keep more state, up to 0x7C, mm_EventData_GetSize7C): the first argument of
-   every mm_Ev*_ handler slot, and the two the talk works with (EventMgr talkA, talkB). */
+   every mm_Ev*_ handler slot, and the three the talk works with (EventMgr talks). */
 struct EventData {
-    uint8_t unk_00[8];
-    uint8_t kind;              /* +0x08 row of the event table (gp-0x7EEC, 0x4C bytes each) */
-    uint8_t unk_09;
+    uint32_t vtable;           /* +0x00 the record's class (+8: its size, mm_EventData_GetSize7C) */
+    uint32_t update;           /* +0x04 its handler's Update slot (EventHandler.update), run every frame */
+    uint8_t kind;              /* +0x08 row of the event table (EventType) */
+    int8_t days;               /* +0x09 days left to run (EventType.days); when it finishes, the type's wait */
     uint8_t var;               /* +0x0A a value talk scripts set and test; some types keep their phase in it
                                   (mm_EvUselessMiddleAged_Update) */
     uint8_t unk_0B;
@@ -691,23 +752,82 @@ struct EvPartyData {
     int32_t stageStep;         /* +0x30 the step of the party's staging (fade, clock, overlay, music) */
     int32_t endStep;           /* +0x34 the step of the end's staging */
 };
-/* One of the event manager's five talk slots (0x20 bytes). */
+/* The thief event's record (mm_EvThief_*). */
+struct EvThiefData {
+    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    ActorRef actors[4];        /* +0x0C */
+    int32_t nextMonth;         /* +0x2C the month count of the next strike */
+    uint8_t unk_30[0xC];
+    int32_t strikes;           /* +0x3C buildings robbed (mm_EvThief_Slot14) */
+};
+/* A family member by family and member number (4 bytes; in lists 0 ends them). */
+struct MemberId {
+    uint16_t family;           /* +0x0 */
+    uint16_t member;           /* +0x2 */
+};
+/* The advertisement event's record (mm_EvAdvertise_*): residents are sent to the event building. */
+struct EvAdvertiseData {
+    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    ActorRef actor;            /* +0x0C the event building and its contact */
+    int32_t tellFrames;        /* +0x14 frames after the contact is told */
+    int32_t unk_18;
+    int32_t endFrames;         /* +0x1C the event ends after 240 */
+    int32_t visitorCount;      /* +0x20 up to 15 */
+    MemberId visitors[15];     /* +0x24 the family members it brought */
+};
+/* The noodle shop event's record (type 13, mm_EvNoodles_*): three shops' workers and their buildings. */
+struct EvNoodlesData {
+    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    ActorRef actors[10];       /* +0x0C 1 to 3 the story's first, second and third; 4 to 6 the workers found, 7 to 9 their
+                                  partners at their buildings */
+    int32_t month;             /* +0x5C the month count to wait for */
+    int32_t time;              /* +0x60 and the time of day, in seconds */
+    int32_t timer;             /* +0x64 frames, counted down or up */
+};
+/* The cave man event's record (type 15, mm_EvCaveMan_*). */
+struct EvCaveManData {
+    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    ActorRef actors[8];        /* +0x0C 0 to 3 the families that join (mm_EvCaveMan_Slot14), 4 the leader, 5, 6 the cave
+                                  and its owner, 7 */
+    int32_t counter;           /* +0x4C actors found (phase 3); the talk's count of families joined */
+    int32_t frames;            /* +0x50 counted down or up */
+    int32_t month;             /* +0x54 the month count noted; actors are told after it */
+};
+/* The missing children event's record (type 6, mm_EvMissingChildren_*). */
+struct EvMissingChildrenData {
+    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    ActorRef actors[3];        /* +0x0C the parent, the child, the family's first member */
+    int32_t counter;           /* +0x24 frames after the parent is told, or calls while searching */
+    int32_t outcome;           /* +0x28 how the child was found: 1 near both, 2 stopped by the player (talk value) */
+    int32_t frames;            /* +0x2C the event ends after 180 */
+};
+/* The useless middle-aged man event's record (type 7, mm_EvUselessMiddleAged_*). */
+struct EvMiddleAgedData {
+    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    ActorRef actor;            /* +0x0C */
+    int32_t month;             /* +0x14 the month it started; he is told on a later one */
+    int32_t frames;            /* +0x18 frames after he is told */
+    int32_t answer;            /* +0x1C the talk's choice, modes 0 to 3 (mm_EvUselessMiddleAged_Slot14) */
+};
+/* One of the event manager's five event slots (0x20 bytes, filled from the front): an event a talk script started
+   (mm_Event_StartFromScript) with the residents it involves. Each day its counter goes down; at 0 the type joins the
+   queue again, and a group 4 type whose list is full takes the free first talk instead (mm_Event_Update). */
 struct EventSlot {
     uint8_t kind;              /* +0x00 row of the event table, 0 = free (mm_Event_CountActive, mm_WordsFn_EventStage) */
-    int8_t stage;              /* +0x01 talk scripts read 3 - stage (mm_WordsFn_EventCountdown) */
+    int8_t stage;              /* +0x01 days left; talk scripts read 3 - stage (mm_WordsFn_EventCountdown) */
     uint8_t unk_02[2];
     uint16_t familyA;          /* +0x04 the persons a talk script selects (mm_WordsFn_SelectEventPersonA/B) */
     uint16_t memberA;          /* +0x06 */
     uint16_t familyB;          /* +0x08 */
     uint16_t memberB;          /* +0x0A */
-    uint8_t unk_0C[0x14];
+    MemberId joined[5];        /* +0x0C the residents who joined it (mm_Event_FindForFamily) */
 };
 struct EventMgr {
-    int32_t unk_00;
+    uint16_t minute;           /* +0x00 the minute of the day the events last ran at (mm_Event_Update) */
+    uint8_t rank;              /* +0x02 the population rank reached (mm_CityScene_PopulationRank) */
+    uint8_t unk_03;
     EventSlot slots[5];        /* +0x04 filled from the front; mm_EventMgr_RequeueFirst drops the first */
-    GuestPtr<EventData> talkA;          /* +0xA4 the events the talk script works with */
-    GuestPtr<EventData> talkB;          /* +0xA8 */
-    uint8_t unk_AC[4];
+    GuestPtr<EventData> talks[3];       /* +0xA4 the event records the talk script works with (0x84, 0x24, 0x7C bytes; saved) */
 };
 /* Want (0x10 bytes) in the wants list's data area. */
 struct Want {
@@ -721,7 +841,7 @@ struct Want {
 /* Wants list index entry (4 bytes). */
 struct WantsIndex {
     uint16_t offset;           /* +0x00 the want's position in the data area, in words */
-    uint16_t held;             /* +0x02 non-zero: mm_Wants_Prune leaves it */
+    uint16_t held;             /* +0x02 the id of the event holding it (EventType.id); non-zero: mm_Wants_Prune leaves it */
 };
 /* Wants window (0x544 bytes); starts with the 0x504-byte wants list. */
 struct WantsWin {
@@ -2265,7 +2385,43 @@ static_assert(offsetof(ActorRef, person) == 0x00, "ActorRef.person");
 static_assert(offsetof(ActorRef, object) == 0x02, "ActorRef.object");
 static_assert(offsetof(ActorRef, family) == 0x04, "ActorRef.family");
 static_assert(offsetof(ActorRef, member) == 0x06, "ActorRef.member");
+static_assert(offsetof(EventType, name) == 0x00, "EventType.name");
+static_assert(offsetof(EventType, id) == 0x20, "EventType.id");
+static_assert(offsetof(EventType, group) == 0x20, "EventType.group");
+static_assert(offsetof(EventType, number) == 0x21, "EventType.number");
+static_assert(offsetof(EventType, priority) == 0x22, "EventType.priority");
+static_assert(offsetof(EventType, level) == 0x23, "EventType.level");
+static_assert(offsetof(EventType, handler) == 0x24, "EventType.handler");
+static_assert(offsetof(EventType, tileFlags) == 0x25, "EventType.tileFlags");
+static_assert(offsetof(EventType, mask) == 0x26, "EventType.mask");
+static_assert(offsetof(EventType, ranks) == 0x27, "EventType.ranks");
+static_assert(offsetof(EventType, wait) == 0x28, "EventType.wait");
+static_assert(offsetof(EventType, days) == 0x29, "EventType.days");
+static_assert(offsetof(EventType, startFrom) == 0x2A, "EventType.startFrom");
+static_assert(offsetof(EventType, startUntil) == 0x2C, "EventType.startUntil");
+static_assert(offsetof(EventType, finishAt) == 0x2E, "EventType.finishAt");
+static_assert(offsetof(EventType, population) == 0x30, "EventType.population");
+static_assert(offsetof(EventType, modules) == 0x32, "EventType.modules");
+static_assert(offsetof(EventType, approvalTier) == 0x34, "EventType.approvalTier");
+static_assert(offsetof(EventType, scoreA0Tier) == 0x35, "EventType.scoreA0Tier");
+static_assert(offsetof(EventType, scoreA8Tier) == 0x36, "EventType.scoreA8Tier");
+static_assert(offsetof(EventType, charTypes) == 0x38, "EventType.charTypes");
+static_assert(offsetof(EventType, gender) == 0x40, "EventType.gender");
+static_assert(offsetof(EventType, claimMeter) == 0x41, "EventType.claimMeter");
+static_assert(offsetof(EventType, friendship) == 0x42, "EventType.friendship");
+static_assert(offsetof(EventType, place) == 0x43, "EventType.place");
+static_assert(offsetof(EventType, workTypes) == 0x44, "EventType.workTypes");
+static_assert(sizeof(EventHandler) == 0x18, "EventHandler size");
+static_assert(offsetof(EventHandler, check) == 0x00, "EventHandler.check");
+static_assert(offsetof(EventHandler, start) == 0x04, "EventHandler.start");
+static_assert(offsetof(EventHandler, update) == 0x08, "EventHandler.update");
+static_assert(offsetof(EventHandler, end) == 0x0C, "EventHandler.end");
+static_assert(offsetof(EventHandler, slot10) == 0x10, "EventHandler.slot10");
+static_assert(offsetof(EventHandler, slot14) == 0x14, "EventHandler.slot14");
+static_assert(offsetof(EventData, vtable) == 0x00, "EventData.vtable");
+static_assert(offsetof(EventData, update) == 0x04, "EventData.update");
 static_assert(offsetof(EventData, kind) == 0x08, "EventData.kind");
+static_assert(offsetof(EventData, days) == 0x09, "EventData.days");
 static_assert(offsetof(EventData, var) == 0x0A, "EventData.var");
 static_assert(offsetof(EventData, actor) == 0x0C, "EventData.actor");
 static_assert(offsetof(EventData, unk_14) == 0x14, "EventData.unk_14");
@@ -2314,16 +2470,49 @@ static_assert(offsetof(EvPartyData, guests) == 0x28, "EvPartyData.guests");
 static_assert(offsetof(EvPartyData, partyTime) == 0x2C, "EvPartyData.partyTime");
 static_assert(offsetof(EvPartyData, stageStep) == 0x30, "EvPartyData.stageStep");
 static_assert(offsetof(EvPartyData, endStep) == 0x34, "EvPartyData.endStep");
-static_assert(sizeof(EventSlot) == 0x20, "EventSlot size");
+static_assert(offsetof(EvThiefData, unk_00) == 0x00, "EvThiefData.unk_00");
+static_assert(offsetof(EvThiefData, actors) == 0x0C, "EvThiefData.actors");
+static_assert(offsetof(EvThiefData, nextMonth) == 0x2C, "EvThiefData.nextMonth");
+static_assert(offsetof(EvThiefData, strikes) == 0x3C, "EvThiefData.strikes");
+static_assert(offsetof(MemberId, family) == 0x0, "MemberId.family");
+static_assert(offsetof(MemberId, member) == 0x2, "MemberId.member");
+static_assert(offsetof(EvAdvertiseData, unk_00) == 0x00, "EvAdvertiseData.unk_00");
+static_assert(offsetof(EvAdvertiseData, actor) == 0x0C, "EvAdvertiseData.actor");
+static_assert(offsetof(EvAdvertiseData, tellFrames) == 0x14, "EvAdvertiseData.tellFrames");
+static_assert(offsetof(EvAdvertiseData, endFrames) == 0x1C, "EvAdvertiseData.endFrames");
+static_assert(offsetof(EvAdvertiseData, visitorCount) == 0x20, "EvAdvertiseData.visitorCount");
+static_assert(offsetof(EvAdvertiseData, visitors) == 0x24, "EvAdvertiseData.visitors");
+static_assert(offsetof(EvNoodlesData, unk_00) == 0x00, "EvNoodlesData.unk_00");
+static_assert(offsetof(EvNoodlesData, actors) == 0x0C, "EvNoodlesData.actors");
+static_assert(offsetof(EvNoodlesData, month) == 0x5C, "EvNoodlesData.month");
+static_assert(offsetof(EvNoodlesData, time) == 0x60, "EvNoodlesData.time");
+static_assert(offsetof(EvNoodlesData, timer) == 0x64, "EvNoodlesData.timer");
+static_assert(offsetof(EvCaveManData, unk_00) == 0x00, "EvCaveManData.unk_00");
+static_assert(offsetof(EvCaveManData, actors) == 0x0C, "EvCaveManData.actors");
+static_assert(offsetof(EvCaveManData, counter) == 0x4C, "EvCaveManData.counter");
+static_assert(offsetof(EvCaveManData, frames) == 0x50, "EvCaveManData.frames");
+static_assert(offsetof(EvCaveManData, month) == 0x54, "EvCaveManData.month");
+static_assert(offsetof(EvMissingChildrenData, unk_00) == 0x00, "EvMissingChildrenData.unk_00");
+static_assert(offsetof(EvMissingChildrenData, actors) == 0x0C, "EvMissingChildrenData.actors");
+static_assert(offsetof(EvMissingChildrenData, counter) == 0x24, "EvMissingChildrenData.counter");
+static_assert(offsetof(EvMissingChildrenData, outcome) == 0x28, "EvMissingChildrenData.outcome");
+static_assert(offsetof(EvMissingChildrenData, frames) == 0x2C, "EvMissingChildrenData.frames");
+static_assert(offsetof(EvMiddleAgedData, unk_00) == 0x00, "EvMiddleAgedData.unk_00");
+static_assert(offsetof(EvMiddleAgedData, actor) == 0x0C, "EvMiddleAgedData.actor");
+static_assert(offsetof(EvMiddleAgedData, month) == 0x14, "EvMiddleAgedData.month");
+static_assert(offsetof(EvMiddleAgedData, frames) == 0x18, "EvMiddleAgedData.frames");
+static_assert(offsetof(EvMiddleAgedData, answer) == 0x1C, "EvMiddleAgedData.answer");
 static_assert(offsetof(EventSlot, kind) == 0x00, "EventSlot.kind");
 static_assert(offsetof(EventSlot, stage) == 0x01, "EventSlot.stage");
 static_assert(offsetof(EventSlot, familyA) == 0x04, "EventSlot.familyA");
 static_assert(offsetof(EventSlot, memberA) == 0x06, "EventSlot.memberA");
 static_assert(offsetof(EventSlot, familyB) == 0x08, "EventSlot.familyB");
 static_assert(offsetof(EventSlot, memberB) == 0x0A, "EventSlot.memberB");
+static_assert(offsetof(EventSlot, joined) == 0x0C, "EventSlot.joined");
+static_assert(offsetof(EventMgr, minute) == 0x00, "EventMgr.minute");
+static_assert(offsetof(EventMgr, rank) == 0x02, "EventMgr.rank");
 static_assert(offsetof(EventMgr, slots) == 0x04, "EventMgr.slots");
-static_assert(offsetof(EventMgr, talkA) == 0xA4, "EventMgr.talkA");
-static_assert(offsetof(EventMgr, talkB) == 0xA8, "EventMgr.talkB");
+static_assert(offsetof(EventMgr, talks) == 0xA4, "EventMgr.talks");
 static_assert(sizeof(Want) == 0x10, "Want size");
 static_assert(offsetof(Want, person) == 0x00, "Want.person");
 static_assert(offsetof(Want, object) == 0x02, "Want.object");

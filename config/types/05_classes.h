@@ -52,6 +52,15 @@ typedef struct EvAdoptionData EvAdoptionData;
 typedef struct EvShoppingData EvShoppingData;
 typedef struct EvDeliveryData EvDeliveryData;
 typedef struct EvPartyData EvPartyData;
+typedef struct EvThiefData EvThiefData;
+typedef struct MemberId MemberId;
+typedef struct EventType EventType;
+typedef struct EventHandler EventHandler;
+typedef struct EvAdvertiseData EvAdvertiseData;
+typedef struct EvNoodlesData EvNoodlesData;
+typedef struct EvMiddleAgedData EvMiddleAgedData;
+typedef struct EvCaveManData EvCaveManData;
+typedef struct EvMissingChildrenData EvMissingChildrenData;
 typedef struct CharClass CharClass;
 typedef struct CharClassVtable CharClassVtable;
 typedef struct PersonClass PersonClass;
@@ -589,12 +598,64 @@ struct ActorRef {
     uint16_t family;           /* +0x04 */
     uint16_t member;           /* +0x06 */
 };
+/* An event type (0x4C bytes): a record of DATA\BIN\EVENT.BIN, 96 of them (mm_Event_LoadTypes). Times are minutes of the
+   day. Groups: 1 residents' requests, 2 visitors and incidents, 3 the farewell party, 4 city news and trends, 5 residents'
+   pastimes and gossip, 6 the game's own (paydays, population milestones, retreat, mission cleared). */
+struct EventType {
+    char name[0x20];           /* +0x00 the event's title; the mm_Ev*_ handlers are named after them */
+    union {
+        uint16_t id;           /* +0x20 group and number together: a save keeps the list of ids to match the table with
+                                  (mm_Event_InitForCity); wants an event holds carry it (mm_Wants_AddEventHold) */
+        struct {
+            uint8_t group;     /* +0x20 3: no second event starts while it runs; 4: from a full event slot it takes the
+                                  free first talk; 6: its Check gets the second talk event */
+            uint8_t number;    /* +0x21 within the group; talk scripts read it (mm_WordsFn_EventStage) */
+        };
+    };
+    int8_t priority;           /* +0x22 the order in a queue bucket, lowest first */
+    uint8_t level;             /* +0x23 the queue bucket it waits in; 1 and 5 ignore the start window, 2 takes one
+                                  character type */
+    uint8_t handler;           /* +0x24 index into the handler table at 0x1AF0D0 (EventHandler), 0 = none */
+    uint8_t tileFlags;         /* +0x25 1 + the tile flag set while it runs, 0 = none (mm_Event_SetTileFlags) */
+    uint8_t mask;              /* +0x26 tested by mm_EventList_MoveByMask26 */
+    uint8_t ranks;             /* +0x27 the population ranks it runs at (bit rank - 1): below them it waits in bucket 5,
+                                  after them it goes to bucket 6 (mm_Event_Update) */
+    int8_t wait;               /* +0x28 after it finishes: days to wait in bucket 4, 0 its own level again, -1 bucket 6,
+                                  -2 bucket 7 (mm_Event_Finish); also the first wait of every type */
+    int8_t days;               /* +0x29 the days it runs: each day takes one, and on the last it ends at finishAt */
+    uint16_t startFrom;        /* +0x2A the window it may start in (it may wrap past midnight) */
+    uint16_t startUntil;       /* +0x2C */
+    uint16_t finishAt;         /* +0x2E */
+    uint16_t population;       /* +0x30 the population the city needs */
+    uint16_t modules;          /* +0x32 the laptop modules it needs (bits, mm_Laptop_CountActive) */
+    uint8_t approvalTier;      /* +0x34 1 + the approval tier it needs (mm_CityScene_ApprovalTier), 0 = any */
+    uint8_t scoreA0Tier;       /* +0x35 1 + the tier of mm_CityScene_ScoreA0Tier, 0 = any */
+    uint8_t scoreA8Tier;       /* +0x36 1 + the tier of mm_CityScene_ScoreA8Tier, 0 = any */
+    uint8_t unk_37;
+    uint16_t charTypes[4];     /* +0x38 the person's character type must be one of these (level 2: the first); 0 ends */
+    uint8_t gender;            /* +0x40 1 + (person flags & 3), 0 = any */
+    uint8_t claimMeter;        /* +0x41 1: the person's workplace has its claim meter at level 0 */
+    uint8_t friendship;        /* +0x42 1: the person's friendship band is at least 1 */
+    uint8_t place;             /* +0x43 where the person stands: 1 in its workplace, 2 in its target, 3 between two
+                                  buildings, 4 outside its workplace at least 8 from its middle (mm_Event_CheckCondition) */
+    uint16_t workTypes[4];     /* +0x44 the person's workplace has one of these building types; 0 ends */
+};
+/* An event handler (0x18 bytes, one per handler id; the table at 0x1AF0D0 points at them): its slots, 0 = none. */
+struct EventHandler {
+    uint32_t check;            /* +0x00 whether the event may start (event, city, person) */
+    uint32_t start;            /* +0x04 */
+    uint32_t update;           /* +0x08 every frame (copied to EventData.update) */
+    uint32_t end;              /* +0x0C */
+    uint32_t slot10;           /* +0x10 */
+    uint32_t slot14;           /* +0x14 the talk script's questions (mm_Event_CallSlot14) */
+};
 /* An active event (0x1C bytes; some types keep more state, up to 0x7C, mm_EventData_GetSize7C): the first argument of
-   every mm_Ev*_ handler slot, and the two the talk works with (EventMgr talkA, talkB). */
+   every mm_Ev*_ handler slot, and the three the talk works with (EventMgr talks). */
 struct EventData {
-    uint8_t unk_00[8];
-    uint8_t kind;              /* +0x08 row of the event table (gp-0x7EEC, 0x4C bytes each) */
-    uint8_t unk_09;
+    uint32_t vtable;           /* +0x00 the record's class (+8: its size, mm_EventData_GetSize7C) */
+    uint32_t update;           /* +0x04 its handler's Update slot (EventHandler.update), run every frame */
+    uint8_t kind;              /* +0x08 row of the event table (EventType) */
+    int8_t days;               /* +0x09 days left to run (EventType.days); when it finishes, the type's wait */
     uint8_t var;               /* +0x0A a value talk scripts set and test; some types keep their phase in it
                                   (mm_EvUselessMiddleAged_Update) */
     uint8_t unk_0B;
@@ -667,23 +728,82 @@ struct EvPartyData {
     int32_t stageStep;         /* +0x30 the step of the party's staging (fade, clock, overlay, music) */
     int32_t endStep;           /* +0x34 the step of the end's staging */
 };
-/* One of the event manager's five talk slots (0x20 bytes). */
+/* The thief event's record (mm_EvThief_*). */
+struct EvThiefData {
+    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    ActorRef actors[4];        /* +0x0C */
+    int32_t nextMonth;         /* +0x2C the month count of the next strike */
+    uint8_t unk_30[0xC];
+    int32_t strikes;           /* +0x3C buildings robbed (mm_EvThief_Slot14) */
+};
+/* A family member by family and member number (4 bytes; in lists 0 ends them). */
+struct MemberId {
+    uint16_t family;           /* +0x0 */
+    uint16_t member;           /* +0x2 */
+};
+/* The advertisement event's record (mm_EvAdvertise_*): residents are sent to the event building. */
+struct EvAdvertiseData {
+    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    ActorRef actor;            /* +0x0C the event building and its contact */
+    int32_t tellFrames;        /* +0x14 frames after the contact is told */
+    int32_t unk_18;
+    int32_t endFrames;         /* +0x1C the event ends after 240 */
+    int32_t visitorCount;      /* +0x20 up to 15 */
+    MemberId visitors[15];     /* +0x24 the family members it brought */
+};
+/* The noodle shop event's record (type 13, mm_EvNoodles_*): three shops' workers and their buildings. */
+struct EvNoodlesData {
+    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    ActorRef actors[10];       /* +0x0C 1 to 3 the story's first, second and third; 4 to 6 the workers found, 7 to 9 their
+                                  partners at their buildings */
+    int32_t month;             /* +0x5C the month count to wait for */
+    int32_t time;              /* +0x60 and the time of day, in seconds */
+    int32_t timer;             /* +0x64 frames, counted down or up */
+};
+/* The cave man event's record (type 15, mm_EvCaveMan_*). */
+struct EvCaveManData {
+    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    ActorRef actors[8];        /* +0x0C 0 to 3 the families that join (mm_EvCaveMan_Slot14), 4 the leader, 5, 6 the cave
+                                  and its owner, 7 */
+    int32_t counter;           /* +0x4C actors found (phase 3); the talk's count of families joined */
+    int32_t frames;            /* +0x50 counted down or up */
+    int32_t month;             /* +0x54 the month count noted; actors are told after it */
+};
+/* The missing children event's record (type 6, mm_EvMissingChildren_*). */
+struct EvMissingChildrenData {
+    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    ActorRef actors[3];        /* +0x0C the parent, the child, the family's first member */
+    int32_t counter;           /* +0x24 frames after the parent is told, or calls while searching */
+    int32_t outcome;           /* +0x28 how the child was found: 1 near both, 2 stopped by the player (talk value) */
+    int32_t frames;            /* +0x2C the event ends after 180 */
+};
+/* The useless middle-aged man event's record (type 7, mm_EvUselessMiddleAged_*). */
+struct EvMiddleAgedData {
+    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    ActorRef actor;            /* +0x0C */
+    int32_t month;             /* +0x14 the month it started; he is told on a later one */
+    int32_t frames;            /* +0x18 frames after he is told */
+    int32_t answer;            /* +0x1C the talk's choice, modes 0 to 3 (mm_EvUselessMiddleAged_Slot14) */
+};
+/* One of the event manager's five event slots (0x20 bytes, filled from the front): an event a talk script started
+   (mm_Event_StartFromScript) with the residents it involves. Each day its counter goes down; at 0 the type joins the
+   queue again, and a group 4 type whose list is full takes the free first talk instead (mm_Event_Update). */
 struct EventSlot {
     uint8_t kind;              /* +0x00 row of the event table, 0 = free (mm_Event_CountActive, mm_WordsFn_EventStage) */
-    int8_t stage;              /* +0x01 talk scripts read 3 - stage (mm_WordsFn_EventCountdown) */
+    int8_t stage;              /* +0x01 days left; talk scripts read 3 - stage (mm_WordsFn_EventCountdown) */
     uint8_t unk_02[2];
     uint16_t familyA;          /* +0x04 the persons a talk script selects (mm_WordsFn_SelectEventPersonA/B) */
     uint16_t memberA;          /* +0x06 */
     uint16_t familyB;          /* +0x08 */
     uint16_t memberB;          /* +0x0A */
-    uint8_t unk_0C[0x14];
+    MemberId joined[5];        /* +0x0C the residents who joined it (mm_Event_FindForFamily) */
 };
 struct EventMgr {
-    int32_t unk_00;
+    uint16_t minute;           /* +0x00 the minute of the day the events last ran at (mm_Event_Update) */
+    uint8_t rank;              /* +0x02 the population rank reached (mm_CityScene_PopulationRank) */
+    uint8_t unk_03;
     EventSlot slots[5];        /* +0x04 filled from the front; mm_EventMgr_RequeueFirst drops the first */
-    EventData *talkA;          /* +0xA4 the events the talk script works with */
-    EventData *talkB;          /* +0xA8 */
-    uint8_t unk_AC[4];
+    EventData *talks[3];       /* +0xA4 the event records the talk script works with (0x84, 0x24, 0x7C bytes; saved) */
 };
 /* Want (0x10 bytes) in the wants list's data area. */
 struct Want {
@@ -697,7 +817,7 @@ struct Want {
 /* Wants list index entry (4 bytes). */
 struct WantsIndex {
     uint16_t offset;           /* +0x00 the want's position in the data area, in words */
-    uint16_t held;             /* +0x02 non-zero: mm_Wants_Prune leaves it */
+    uint16_t held;             /* +0x02 the id of the event holding it (EventType.id); non-zero: mm_Wants_Prune leaves it */
 };
 /* Wants window (0x544 bytes); starts with the 0x504-byte wants list. */
 struct WantsWin {

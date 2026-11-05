@@ -434,8 +434,8 @@
 0x00150090 void mm_LayerG_Draw(LayerG *layer, int pass, float weather);
 0x001500D0 LayerG *mm_LayerG_DeletingDtor(LayerG *layer, int16_t deleteFlag);
 0x00150130 LayerG *mm_LayerG_ctor(LayerG *layer, int buffers);
-0x00150190 void mm_Wants_RemoveEventHold(WantsWin *wants, uint16_t buildingType, int value);
-0x001502A0 int mm_Wants_AddEventHold(WantsWin *wants, uint16_t buildingType, int value);
+0x00150190 void mm_Wants_RemoveEventHold(WantsWin *wants, uint16_t eventId, int value);
+0x001502A0 int mm_Wants_AddEventHold(WantsWin *wants, uint16_t eventId, int value);
 0x00150350 int mm_Wants_CheckEntry(WantsWin *wants, CityScene *city, uint16_t *entry);
 0x00150420 int mm_Wants_Find(WantsWin *wants, CityScene *city, uint32_t *claimSlot, uint32_t *object, uint32_t *person, int32_t *iterator);
 0x00150550 int mm_Wants_AddForPerson(WantsWin *wants, CityScene *city, MapPerson *person, int claimSlot);

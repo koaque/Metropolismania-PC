@@ -45,13 +45,13 @@ namespace mm
                     unmarkBuilding(city, actorAt(data, i)->object);
         }
 
-        // Drops the wants the event held for its building type (event table +0x20), holds 0 to count - 1.
+        // Drops the wants the event held (by its type's id), holds 0 to count - 1.
         void releaseWantHolds(GuestPtr<EventData> data, GuestPtr<CityScene> city, int count)
         {
             for (int i = 0; i < count; ++i)
             {
-                const int type = port::load<int16_t>(globals::eventTypesCopy.get() + 0x4Cu * data->kind + 0x20u);
-                port::callGuest<void>(addr::Wants_RemoveEventHold, city->wants, type, i);
+                const int id = static_cast<int16_t>(globals::eventTypeCopy(data->kind)->id);
+                port::callGuest<void>(addr::Wants_RemoveEventHold, city->wants, id, i);
             }
         }
 
@@ -693,7 +693,7 @@ namespace mm
         switch (phase)
         {
         case 1:
-            if (city->clock / 60 >= port::load<uint16_t>(globals::eventTypesCopy.get() + 0x4Cu * data->kind + 0x2Eu))
+            if (city->clock / 60 >= globals::eventTypeCopy(data->kind)->finishAt)
                 data->var = static_cast<uint8_t>(phase + 1);
             break;
         case 2:
@@ -710,8 +710,9 @@ namespace mm
             break;
         case 6:
         {
-            const int32_t frames = port::load<int32_t>(data.address + 0x1Cu) + 1;
-            port::store<int32_t>(data.address + 0x1Cu, frames);
+            const GuestPtr<EvAdvertiseData> ad = data.as<EvAdvertiseData>();
+            const int32_t frames = ad->endFrames + 1;
+            ad->endFrames = frames;
             if (frames >= 240)
                 Event_Finish(city->events, city, 0);
             break;
@@ -930,7 +931,7 @@ namespace mm
     {
         if (mode == 1)
         {
-            const int32_t count = port::load<int32_t>(data.address + 0x3Cu);
+            const int32_t count = data.as<EvThiefData>()->strikes;
             if (count >= 6)
                 return 4;
             if (count == 5)
@@ -949,17 +950,17 @@ namespace mm
             building->flags |= 0x40u;
             actorAt(data, 3)->person = kNoPerson;
             actorAt(data, 3)->object = kNoObject;
-            port::store<int32_t>(data.address + 0x3Cu, port::load<int32_t>(data.address + 0x3Cu) + 1);
+            data.as<EvThiefData>()->strikes = data.as<EvThiefData>()->strikes + 1;
         }
-        port::store<int32_t>(data.address + 0x2Cu, city->monthCount + 1);
+        data.as<EvThiefData>()->nextMonth = city->monthCount + 1;
         return 0;
     }
 
-    // Argument 0: +0x28. Argument 1: whether the actor's building and the event's (widened by 5) overlap.
+    // Argument 0: the outcome. Argument 1: whether the actor's building and the event's (widened by 5) overlap.
     int EvMissingChildren_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode)
     {
         if (mode == 0)
-            return port::load<int32_t>(data.address + 0x28u);
+            return data.as<EvMissingChildrenData>()->outcome;
         if (mode != 1)
             return 0;
         port::GuestFrame<0x60> frame;
@@ -1609,24 +1610,25 @@ namespace mm
         }
         if (!found)
             return 0;
-        for (uint32_t actor = data.address + 0xCu; actor < data.address + 0x5Cu; actor += 8u)
+        const GuestPtr<EvNoodlesData> noodles = data.as<EvNoodlesData>();
+        for (GuestPtr<ActorRef> actor = GuestPtr<ActorRef>::of(noodles->actors[0]); actor.address < GuestPtr<ActorRef>::of(noodles->actors[9]).address + 8u; ++actor)
         {
-            port::store<uint16_t>(actor, kNoPerson);
-            port::store<uint16_t>(actor + 2u, kNoObject);
+            actor->person = kNoPerson;
+            actor->object = kNoObject;
         }
         for (uint32_t k = 0; k < 3; ++k)
         {
             if (workers[k] == 0)
                 continue;
             const GuestPtr<MapPerson> worker{workers[k]};
-            const GuestPtr<ActorRef> actor{data.address + 0x2Cu + 8u * k};
+            const GuestPtr<ActorRef> actor = GuestPtr<ActorRef>::of(noodles->actors[4]) + static_cast<int32_t>(k);
             actor->person = worker->index;
             actor->object = worker->work;
             actor->family = worker->family;
             actor->member = worker->member;
         }
         for (uint32_t k = 0; k < 3; ++k)
-            port::store<uint16_t>(data.address + 0x46u + 8u * k, buildings[k]);
+            (GuestPtr<ActorRef>::of(noodles->actors[7]) + static_cast<int32_t>(k))->object = buildings[k];
         return 1;
     }
 
@@ -1641,11 +1643,11 @@ namespace mm
     {
         // Event buckets: nine bucket starts (+0; bucket k runs up to the start of k + 1) over two-byte entries from
         // +0x24 (the event type, then its wait counter as a signed byte). Each bucket is kept in the order of the
-        // types' priorities (EVENT.BIN record +0x22, signed), lowest first.
+        // types' priorities (EventType.priority), lowest first.
         uint32_t bucketEntry(uint32_t list, int32_t index) { return list + 0x24u + 2u * static_cast<uint32_t>(index); }
         uint32_t bucketStart(uint32_t list, int bucket) { return list + 4u * static_cast<uint32_t>(bucket); }
-        uint32_t eventRecord(uint32_t types, uint8_t type) { return types + 0x4Cu * type; }
-        int8_t priority(uint32_t types, uint8_t type) { return port::load<int8_t>(eventRecord(types, type) + 0x22u); }
+        GuestPtr<EventType> eventRecord(uint32_t types, uint8_t type) { return GuestPtr<EventType>{types} + type; }
+        int8_t priority(uint32_t types, uint8_t type) { return eventRecord(types, type)->priority; }
 
         // Moves the entries of bucket `from` that pass the test (on the type's record and the wait counter) to
         // bucket `to`, each after the entries of lower priority there (the search goes on from the last place
@@ -1707,54 +1709,54 @@ namespace mm
     // Every entry (the event manager's constructor and destructor).
     void EventList_MoveAll(int list, int from, int to)
     {
-        moveEntries(static_cast<uint32_t>(list), from, to, globals::eventTypes.get(), [](uint32_t, int8_t) { return true; });
+        moveEntries(static_cast<uint32_t>(list), from, to, globals::eventTypes.get(), [](GuestPtr<EventType>, int8_t) { return true; });
     }
 
     // The rest take the type records at ctx[0] and test values from ctx[1] on. Entries whose wait ran out.
     void EventList_MoveDue(int list, int from, int to, GuestPtr<int32_t> ctx)
     {
-        moveEntries(static_cast<uint32_t>(list), from, to, static_cast<uint32_t>(ctx[0]), [](uint32_t, int8_t wait) { return wait <= 0; });
+        moveEntries(static_cast<uint32_t>(list), from, to, static_cast<uint32_t>(ctx[0]), [](GuestPtr<EventType>, int8_t wait) { return wait <= 0; });
     }
 
-    // Entries whose wait ran out and whose type byte +0x23 is ctx[1].
+    // Entries whose wait ran out and whose type's level is ctx[1].
     void EventList_MoveDueTo(int list, int from, int to, GuestPtr<int32_t> ctx)
     {
         const uint32_t kind = static_cast<uint32_t>(ctx[1]);
         moveEntries(static_cast<uint32_t>(list), from, to, static_cast<uint32_t>(ctx[0]),
-                    [kind](uint32_t record, int8_t wait) { return wait <= 0 && port::load<uint8_t>(record + 0x23u) == kind; });
+                    [kind](GuestPtr<EventType> record, int8_t wait) { return wait <= 0 && record->level == kind; });
     }
 
-    // Entries whose rank mask (+0x27) shares a bit with ctx[1].
+    // Entries whose type's ranks share a bit with ctx[1].
     void EventList_MoveOffRank(int list, int from, int to, GuestPtr<int32_t> ctx)
     {
         const uint32_t rank = static_cast<uint32_t>(ctx[1]);
         moveEntries(static_cast<uint32_t>(list), from, to, static_cast<uint32_t>(ctx[0]),
-                    [rank](uint32_t record, int8_t) { return (rank & port::load<uint8_t>(record + 0x27u)) != 0; });
+                    [rank](GuestPtr<EventType> record, int8_t) { return (rank & record->ranks) != 0; });
     }
 
-    // The same rank test, and type byte +0x23 equal to ctx[2].
+    // The same rank test, and the type's level equal to ctx[2].
     void EventList_MoveOnRank(int list, int from, int to, GuestPtr<int32_t> ctx)
     {
         const uint32_t rank = static_cast<uint32_t>(ctx[1]), kind = static_cast<uint32_t>(ctx[2]);
-        moveEntries(static_cast<uint32_t>(list), from, to, static_cast<uint32_t>(ctx[0]), [rank, kind](uint32_t record, int8_t) {
-            return (rank & port::load<uint8_t>(record + 0x27u)) != 0 && port::load<uint8_t>(record + 0x23u) == kind;
+        moveEntries(static_cast<uint32_t>(list), from, to, static_cast<uint32_t>(ctx[0]), [rank, kind](GuestPtr<EventType> record, int8_t) {
+            return (rank & record->ranks) != 0 && record->level == kind;
         });
     }
 
-    // Entries whose rank mask shares no bit with ctx[1].
+    // Entries whose type's ranks share no bit with ctx[1].
     void EventList_MoveOffRankB(int list, int from, int to, GuestPtr<int32_t> ctx)
     {
         const uint32_t rank = static_cast<uint32_t>(ctx[1]);
         moveEntries(static_cast<uint32_t>(list), from, to, static_cast<uint32_t>(ctx[0]),
-                    [rank](uint32_t record, int8_t) { return (rank & port::load<uint8_t>(record + 0x27u)) == 0; });
+                    [rank](GuestPtr<EventType> record, int8_t) { return (rank & record->ranks) == 0; });
     }
 
-    // Entries whose mask +0x26 shares a bit with the byte at ctx + 4.
+    // Entries whose type's mask shares a bit with the byte at ctx + 4.
     void EventList_MoveByMask26(int list, int from, int to, GuestPtr<int32_t> ctx)
     {
         const uint32_t mask = port::load<uint8_t>(ctx.address + 4u);
         moveEntries(static_cast<uint32_t>(list), from, to, static_cast<uint32_t>(ctx[0]),
-                    [mask](uint32_t record, int8_t) { return (mask & port::load<uint8_t>(record + 0x26u)) != 0; });
+                    [mask](GuestPtr<EventType> record, int8_t) { return (mask & record->mask) != 0; });
     }
 
     PORT_FN(EventList_MoveAll);
@@ -2161,7 +2163,7 @@ namespace mm
         const GuestPtr<EvShoppingData> shopping = data.as<EvShoppingData>();
         const GuestPtr<ActorRef> actor = GuestPtr<ActorRef>::of(data->actor);
         EvActor_MoveTo(city, actor, actor, 0);
-        const auto time = [&] { return static_cast<int>(port::load<uint16_t>(globals::eventTypesCopy.get() + 0x4Cu * data->kind + 0x2Eu)); };
+        const auto time = [&] { return static_cast<int>(globals::eventTypeCopy(data->kind)->finishAt); };
         const auto tell = [&] {
             if (EvActor_Notify(city, actor) == 0)
                 return;
@@ -2293,15 +2295,14 @@ namespace mm
     // per family told.
     int EvAdvertise_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode)
     {
-        const uint32_t first = data.address + 0x24u, end = first + 0x3Cu;
-        const auto told = [&](uint32_t entry) {
-            return port::load<uint16_t>(entry) == actor->family && port::load<uint16_t>(entry + 2u) == actor->member;
-        };
-        const auto count = [&] { return port::load<int32_t>(data.address + 0x20u); };
+        const GuestPtr<EvAdvertiseData> ad = data.as<EvAdvertiseData>();
+        const GuestPtr<MemberId> first = GuestPtr<MemberId>::of(ad->visitors[0]), end = first + 15;
+        const auto told = [&](GuestPtr<MemberId> entry) { return entry->family == actor->family && entry->member == actor->member; };
+        const auto count = [&] { return ad->visitorCount; };
         switch (mode)
         {
         case 0:
-            for (uint32_t entry = first; port::load<uint16_t>(entry) != 0 && entry < end; entry += 4u)
+            for (GuestPtr<MemberId> entry = first; entry->family != 0 && entry.address < end.address; ++entry)
                 if (told(entry))
                     return 1;
             return 0;
@@ -2311,9 +2312,9 @@ namespace mm
                 data->var = 4;
                 return 6;
             }
-            for (uint32_t entry = first; entry < end; entry += 4u)
+            for (GuestPtr<MemberId> entry = first; entry.address < end.address; ++entry)
             {
-                if (port::load<uint16_t>(entry) == 0)
+                if (entry->family == 0)
                 {
                     if (EvAdvertise_ClaimsMatch(city, actor, GuestPtr<ActorRef>::of(data->actor)) == 0)
                         continue;
@@ -2331,19 +2332,19 @@ namespace mm
         case 2:
             if (data->var == 4 || count() >= 15)
                 return 0;
-            for (uint32_t entry = first; entry < end; entry += 4u)
+            for (GuestPtr<MemberId> entry = first; entry.address < end.address; ++entry)
             {
-                if (port::load<uint16_t>(entry) == 0)
+                if (entry->family == 0)
                 {
-                    port::store<uint16_t>(entry, actor->family);
-                    port::store<uint16_t>(entry + 2u, actor->member);
+                    entry->family = actor->family;
+                    entry->member = actor->member;
                     break;
                 }
                 if (told(entry))
                     return 0;
             }
             EvActor_MoveTo(city, actor, GuestPtr<ActorRef>::of(data->actor), 1);
-            port::store<int32_t>(data.address + 0x20u, count() + 1);
+            ad->visitorCount = count() + 1;
             if (count() >= 15)
                 data->var = 4;
             return 0;
@@ -2352,7 +2353,7 @@ namespace mm
                 return 2;
             return count() >= 5 ? 1 : 0;
         case 4:
-            Family_AddFriendship(actor->family, actor->member, GuestPtr<int32_t>{city.address + 0x8Cu}, 3 * count());
+            Family_AddFriendship(actor->family, actor->member, GuestPtr<int32_t>::of(city->approval), 3 * count());
             return 0;
         default:
             return 0;
@@ -2539,23 +2540,22 @@ namespace mm
 
     namespace
     {
-        // Event handler classes (table 0x1AF0D0, one vtable per handler id): Check, Start (+4), Update, End, Slot10
-        // (+0x10), Slot14 (+0x14). An event type's handler id is the byte at +0x24 of its row, 0 = none.
+        // Event handlers: the table 0x1AF0D0 points at one EventHandler per handler id (EventType.handler, 0 = none).
         constexpr uint32_t kEventHandlers = 0x001AF0D0u;
+        GuestPtr<EventHandler> eventHandler(uint32_t id) { return GuestPtr<EventHandler>{port::load<uint32_t>(kEventHandlers + 4u * id)}; }
 
-        // The talk event in manager slot `index` (talkA, talkB) and its handler slot at vtable `offset`; 0 when the
-        // event type has no handler or the handler lacks the slot.
-        uint32_t handlerSlot(GuestPtr<EventData> data, uint32_t offset)
+        // The handler slot `slot` of the event's type; 0 when the type has no handler or the handler lacks the slot.
+        uint32_t handlerSlot(GuestPtr<EventData> data, uint32_t EventHandler::*slot)
         {
-            const uint32_t id = port::load<uint8_t>(globals::eventTypes.get() + 0x4Cu * data->kind + 0x24u);
+            const uint32_t id = globals::eventType(data->kind)->handler;
             if (id == 0)
                 return 0;
-            return port::load<uint32_t>(port::load<uint32_t>(kEventHandlers + 4u * id) + offset);
+            return (*eventHandler(id)).*slot;
         }
 
         GuestPtr<EventData> talkEvent(GuestPtr<EventMgr> events, int index)
         {
-            return GuestPtr<EventData>{port::load<uint32_t>(events.address + 0xA4u + 4u * static_cast<uint32_t>(index))};
+            return events->talks[index];
         }
 
         // The money changes by `delta` and, when that leaves it negative, becomes 0 (or the largest value when the
@@ -2574,7 +2574,7 @@ namespace mm
     int64_t Event_CallSlot14(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int arg, int mode)
     {
         const GuestPtr<EventData> data = talkEvent(events, mode);
-        const uint32_t slot = handlerSlot(data, 0x14u);
+        const uint32_t slot = handlerSlot(data, &EventHandler::slot14);
         if (slot == 0)
             return 0;
         return port::callGuest<int64_t>(slot, data, city, actor, arg);
@@ -2584,7 +2584,7 @@ namespace mm
     int64_t Event_CallSlot10(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, int index, int arg)
     {
         const GuestPtr<EventData> data = talkEvent(events, index);
-        const uint32_t slot = handlerSlot(data, 0x10u);
+        const uint32_t slot = handlerSlot(data, &EventHandler::slot10);
         if (slot == 0)
             return 0;
         return port::callGuest<int64_t>(slot, data, city, arg);
@@ -2594,19 +2594,19 @@ namespace mm
     // and the handler runs. Without a handler the result register stays as it was (after the tile flags call).
     int64_t Event_CallHandlerSlot(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, int index, int arg)
     {
-        const uint32_t cell = events.address + 0xA4u + 4u * static_cast<uint32_t>(index);
-        const uint32_t row = globals::eventTypes.get() + 0x4Cu * GuestPtr<EventData>{port::load<uint32_t>(cell)}->kind;
-        const uint32_t tileFlags = port::load<uint8_t>(row + 0x25u);
+        const uint32_t cell = port::guest(&events->talks[index]);
+        const GuestPtr<EventType> row = globals::eventType(GuestPtr<EventData>{port::load<uint32_t>(cell)}->kind);
+        const uint32_t tileFlags = row->tileFlags;
         if (tileFlags != 0)
         {
             port::setGuestV0(static_cast<int32_t>(tileFlags));
             Event_SetTileFlags(static_cast<int>(tileFlags) - 1);
         }
-        port::store<uint8_t>(port::load<uint32_t>(cell) + 0xAu, 1);
-        const uint32_t id = port::load<uint8_t>(row + 0x24u);
+        GuestPtr<EventData>{port::load<uint32_t>(cell)}->var = 1;
+        const uint32_t id = row->handler;
         if (id != 0)
         {
-            const uint32_t slot = port::load<uint32_t>(port::load<uint32_t>(kEventHandlers + 4u * id) + 4u);
+            const uint32_t slot = eventHandler(id)->start;
             if (slot != 0)
                 return port::callGuest<int64_t>(slot, GuestPtr<EventData>{port::load<uint32_t>(cell)}, city, arg);
         }
@@ -2622,7 +2622,7 @@ namespace mm
         switch (mode)
         {
         case 4:
-            return port::load<uint32_t>(data.address + 0x1Cu);
+            return static_cast<uint32_t>(data.as<EvMiddleAgedData>()->answer);
         case 5:
             changeMoney(-100);
             return 0;
@@ -2633,7 +2633,7 @@ namespace mm
             changeMoney(200);
             return 0;
         default:
-            port::store<int32_t>(data.address + 0x1Cu, mode);
+            data.as<EvMiddleAgedData>()->answer = mode;
             return 0;
         }
     }
@@ -2925,46 +2925,46 @@ namespace mm
 
     namespace
     {
-        // A queued event's entry (type, wait counter) becomes the running event `talk`: its type, the type's first
-        // var byte (+0x29, stored at +9), var 0, the Update slot of its handler at +4 and, for a person, the first actor
-        // (person index, workplace, family, member).
+        // A queued event's entry (type, wait counter) becomes the running event `talk`: its type, the type's days,
+        // var 0, the Update slot of its handler and, for a person, the first actor (person index, workplace, family,
+        // member).
         void fillEvent(GuestPtr<EventData> talk, uint32_t entry, GuestPtr<MapPerson> person)
         {
             const uint8_t type = port::load<uint8_t>(entry);
-            const uint32_t row = globals::eventTypes.get() + 0x4Cu * type;
+            const GuestPtr<EventType> row = globals::eventType(type);
             talk->kind = type;
-            port::store<int8_t>(talk.address + 9u, port::load<int8_t>(row + 0x29u));
-            port::store<uint8_t>(talk.address + 0xAu, 0);
-            const uint32_t id = port::load<uint8_t>(row + 0x24u);
-            port::store<uint32_t>(talk.address + 4u, id == 0 ? 0u : port::load<uint32_t>(port::load<uint32_t>(kEventHandlers + 4u * id) + 8u));
+            talk->days = row->days;
+            talk->var = 0;
+            const uint32_t id = row->handler;
+            talk->update = id == 0 ? 0u : eventHandler(id)->update;
             if (person)
             {
-                port::store<uint16_t>(talk.address + 0xCu, person->index);
-                port::store<uint16_t>(talk.address + 0xEu, person->work);
-                port::store<uint16_t>(talk.address + 0x10u, person->family);
-                port::store<uint16_t>(talk.address + 0x12u, person->member);
+                talk->actor.person = person->index;
+                talk->actor.object = person->work;
+                talk->actor.family = person->family;
+                talk->actor.member = person->member;
             }
         }
 
         // The running event's size (vtable +8) of its handler class, for clearing it.
         int eventSize(uint32_t talk) { return port::callGuest<int>(port::load<uint32_t>(port::load<uint32_t>(talk) + 8u), talk); }
 
-        // The event in cell `cell` has its handler's slot at `offset` called with (event, city, third), if it has one.
-        void callHandler(uint32_t row, uint32_t offset, GuestPtr<EventData> talk, GuestPtr<CityScene> city, uint32_t third)
+        // The event `talk` of type `row` has its handler's `slot` called with (event, city, third), if it has one.
+        void callHandler(GuestPtr<EventType> row, uint32_t EventHandler::*slot, GuestPtr<EventData> talk, GuestPtr<CityScene> city, uint32_t third)
         {
-            const uint32_t id = port::load<uint8_t>(row + 0x24u);
+            const uint32_t id = row->handler;
             if (id == 0)
                 return;
-            const uint32_t slot = port::load<uint32_t>(port::load<uint32_t>(kEventHandlers + 4u * id) + offset);
-            if (slot != 0)
-                port::callGuest<void>(slot, talk, city, third);
+            const uint32_t function = (*eventHandler(id)).*slot;
+            if (function != 0)
+                port::callGuest<void>(function, talk, city, third);
         }
 
-        // The event type's own ending (handler slot +0xC), its tile flags cleared and released.
-        void endEventHandler(uint32_t row, GuestPtr<EventData> talk, GuestPtr<CityScene> city)
+        // The event type's own ending (its handler's End slot), its tile flags cleared and released.
+        void endEventHandler(GuestPtr<EventType> row, GuestPtr<EventData> talk, GuestPtr<CityScene> city)
         {
-            callHandler(row, 0xCu, talk, city, talk->kind); // a2 is the type byte the original had just loaded
-            const uint32_t tileFlags = port::load<uint8_t>(row + 0x25u);
+            callHandler(row, &EventHandler::end, talk, city, talk->kind); // a2 is the type byte the original had just loaded
+            const uint32_t tileFlags = row->tileFlags;
             if (tileFlags != 0)
             {
                 Event_ClearTileFlags(static_cast<int>(tileFlags) - 1);
@@ -2990,9 +2990,9 @@ namespace mm
         SaveFile_Read(mc, static_cast<int>(events.address), 0xA4);
         for (uint32_t i = 0; i < 2; ++i)
         {
-            const uint32_t talk = port::load<uint32_t>(events.address + 0xA4u + 4u * i);
+            const uint32_t talk = events->talks[i].address;
             const int size = eventSize(talk);
-            SaveFile_Read(mc, static_cast<int>(port::load<uint32_t>(events.address + 0xA4u + 4u * i) + 8u), size);
+            SaveFile_Read(mc, static_cast<int>(events->talks[i].address + 8u), size);
         }
     }
 
@@ -3003,9 +3003,9 @@ namespace mm
         SaveFile_Write(mc, static_cast<int>(events.address), 0xA4);
         for (uint32_t i = 0; i < 2; ++i)
         {
-            const uint32_t talk = port::load<uint32_t>(events.address + 0xA4u + 4u * i);
+            const uint32_t talk = events->talks[i].address;
             const int size = eventSize(talk);
-            SaveFile_Write(mc, static_cast<int>(port::load<uint32_t>(events.address + 0xA4u + 4u * i) + 8u), size);
+            SaveFile_Write(mc, static_cast<int>(events->talks[i].address + 8u), size);
         }
     }
 
@@ -3013,33 +3013,33 @@ namespace mm
     // for a type with level 4) as it was.
     void Event_Abort(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, int index)
     {
-        const uint32_t cell = events.address + 0xA4u + 4u * static_cast<uint32_t>(index);
+        const uint32_t cell = port::guest(&events->talks[index]);
         const GuestPtr<EventData> talk{port::load<uint32_t>(cell)};
-        const uint32_t row = globals::eventTypes.get() + 0x4Cu * talk->kind;
+        const GuestPtr<EventType> row = globals::eventType(talk->kind);
         endEventHandler(row, talk, city);
-        uint32_t level = port::load<uint8_t>(row + 0x23u);
+        uint32_t level = row->level;
         if (level == 4)
             level = 3;
         returnEvent(cell, level);
     }
 
-    // The talk event in slot `index` finishes. Its var byte (+0x28 of the type, signed) says where it queues next: above
+    // The talk event in slot `index` finishes. Its type's wait goes into its days and says where it queues next: above
     // 0 level 4, 0 its own level (3 for a type with level 4), -1 level 6, -2 level 7, any other value leaves the level
     // register as the caller had it.
     void Event_Finish(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, int index)
     {
-        const uint32_t cell = events.address + 0xA4u + 4u * static_cast<uint32_t>(index);
+        const uint32_t cell = port::guest(&events->talks[index]);
         const GuestPtr<EventData> talk{port::load<uint32_t>(cell)};
-        const uint32_t row = globals::eventTypes.get() + 0x4Cu * talk->kind;
+        const GuestPtr<EventType> row = globals::eventType(talk->kind);
         endEventHandler(row, talk, city);
-        const int8_t next = port::load<int8_t>(row + 0x28u);
-        port::store<int8_t>(port::load<uint32_t>(cell) + 9u, next);
+        const int8_t next = row->wait;
+        GuestPtr<EventData>{port::load<uint32_t>(cell)}->days = next;
         uint32_t level = static_cast<uint32_t>(port::guestS1());
         if (next > 0)
             level = 4;
         else if (next == 0)
         {
-            level = port::load<uint8_t>(row + 0x23u);
+            level = row->level;
             if (level == 4)
                 level = 3;
         }
@@ -3055,7 +3055,7 @@ namespace mm
     // the running event's type.
     uint8_t Event_TryStart(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
     {
-        if (events->talkA->kind == 0)
+        if (events->talks[0]->kind == 0)
         {
             const uint32_t queue = globals::eventQueueObject.get();
             const uint32_t end = bucketEntry(queue, port::load<int32_t>(bucketStart(queue, 4)));
@@ -3063,22 +3063,22 @@ namespace mm
             {
                 if (Event_CheckCondition(events, city, GuestPtr<uint8_t>{entry}, person) == 0)
                     continue;
-                fillEvent(events->talkA, entry, person);
+                fillEvent(events->talks[0], entry, person);
                 EventQueue_RemoveAt(static_cast<int>(queue), 3, GuestPtr<uint16_t>{entry});
-                const GuestPtr<EventData> talk{events->talkA.address};
-                const uint32_t row = globals::eventTypes.get() + 0x4Cu * talk->kind;
-                if (port::load<uint8_t>(row + 0x23u) == 3)
+                const GuestPtr<EventData> talk{events->talks[0].address};
+                const GuestPtr<EventType> row = globals::eventType(talk->kind);
+                if (row->level == 3)
                 {
-                    const uint32_t tileFlags = port::load<uint8_t>(row + 0x25u);
+                    const uint32_t tileFlags = row->tileFlags;
                     if (tileFlags != 0)
                         Event_SetTileFlags(static_cast<int>(tileFlags) - 1);
-                    events->talkA->var = 1;
-                    callHandler(row, 4u, events->talkA, city, person.address);
+                    events->talks[0]->var = 1;
+                    callHandler(row, &EventHandler::start, events->talks[0], city, person.address);
                 }
                 break;
             }
         }
-        return events->talkA->kind;
+        return events->talks[0]->kind;
     }
 
     // A talk script starts an event for the person: with fewer than five events running and none of them waiting on the
@@ -3094,7 +3094,7 @@ namespace mm
             return 0;
         const uint32_t types = globals::eventTypes.get();
         for (uint32_t slot = slots; port::load<uint8_t>(slot) != 0 && slot < slotsEnd; slot += 0x20u)
-            if (person->charType == port::load<uint16_t>(types + 0x4Cu * port::load<uint8_t>(slot) + 0x38u))
+            if (person->charType == (GuestPtr<EventType>{types} + port::load<uint8_t>(slot))->charTypes[0])
                 return 0;
         const uint32_t queue = globals::eventQueueObject.get();
         uint32_t entry = bucketEntry(queue, port::load<int32_t>(bucketStart(queue, 2)));
@@ -3112,10 +3112,10 @@ namespace mm
                 port::store<int8_t>(slots + 1u, port::load<int8_t>(entry + 1u));
                 events->slots[0].familyA = person->family;
                 events->slots[0].memberA = person->member;
-                const uint32_t other = port::load<uint32_t>(events.address + 0xACu);
-                events->slots[0].familyB = port::load<uint16_t>(other + 0x10u);
-                events->slots[0].memberB = port::load<uint16_t>(other + 0x12u);
-                const uint32_t talk = port::load<uint32_t>(events.address + 0xACu);
+                const GuestPtr<EventData> other = events->talks[2];
+                events->slots[0].familyB = other->actor.family;
+                events->slots[0].memberB = other->actor.member;
+                const uint32_t talk = events->talks[2].address;
                 sdk::memset(talk + 8u, 0, eventSize(talk));
                 EventQueue_RemoveAt(static_cast<int>(queue), 2, GuestPtr<uint16_t>{entry});
                 return 1;
@@ -3150,7 +3150,7 @@ namespace mm
         const uint32_t end = bucketEntry(queue, port::load<int32_t>(bucketStart(queue, 6)));
         if (!(entry < end))
             return 0;
-        const uint32_t cell = events.address + 0xA4u + 4u * index;
+        const uint32_t cell = port::guest(&events->talks[index]);
         do
         {
             if (port::load<uint8_t>(entry) == position && Event_CheckCondition(events, city, GuestPtr<uint8_t>{entry}, person) != 0)
@@ -3160,8 +3160,8 @@ namespace mm
                 if (running != 0)
                 {
                     const uint32_t types = globals::eventTypes.get();
-                    const int8_t newPriority = port::load<int8_t>(types + 0x4Cu * port::load<uint8_t>(entry) + 0x22u);
-                    const int8_t oldPriority = port::load<int8_t>(types + 0x4Cu * running + 0x22u);
+                    const int8_t newPriority = (GuestPtr<EventType>{types} + port::load<uint8_t>(entry))->priority;
+                    const int8_t oldPriority = (GuestPtr<EventType>{types} + running)->priority;
                     if (newPriority < oldPriority)
                     {
                         if (index == 1)
@@ -3178,12 +3178,12 @@ namespace mm
                 {
                     fillEvent(GuestPtr<EventData>{port::load<uint32_t>(cell)}, entry, person);
                     EventQueue_RemoveAt(static_cast<int>(queue), 5, GuestPtr<uint16_t>{entry});
-                    const uint32_t row = globals::eventTypes.get() + 0x4Cu * GuestPtr<EventData>{port::load<uint32_t>(cell)}->kind;
-                    const uint32_t tileFlags = port::load<uint8_t>(row + 0x25u);
+                    const GuestPtr<EventType> row = globals::eventType(GuestPtr<EventData>{port::load<uint32_t>(cell)}->kind);
+                    const uint32_t tileFlags = row->tileFlags;
                     if (tileFlags != 0)
                         Event_SetTileFlags(static_cast<int>(tileFlags) - 1);
-                    port::store<uint8_t>(port::load<uint32_t>(cell) + 0xAu, 1);
-                    callHandler(row, 4u, GuestPtr<EventData>{port::load<uint32_t>(cell)}, city, person.address);
+                    GuestPtr<EventData>{port::load<uint32_t>(cell)}->var = 1;
+                    callHandler(row, &EventHandler::start, GuestPtr<EventData>{port::load<uint32_t>(cell)}, city, person.address);
                     return 1;
                 }
             }
@@ -3203,24 +3203,21 @@ namespace mm
     // ---- the event scheduler (batch 40)
 
     // Whether the event type at `type` (a queue entry) may start now, for the person (null for a script-less start).
-    // The checks, in order, all on the type's 0x4C-byte record:
-    //   the time window +0x2A..+0x2C against the minute counter (not for the levels 1 and 5), the population +0x30, the
-    //   laptop modules +0x32, and for a person: the character types listed at +0x38 (one for level 2, else four), the
-    //   gender +0x40, the friendship band +0x42, the claim meter of the workplace +0x41, the workplace types at +0x44,
-    //   and where the person stands (+0x43: 1 in its workplace, 2 in its target, 3 away from the building it is
-    //   between, 4 outside its workplace at least 8 from its middle), then the score tiers +0x35, +0x36 and the
-    //   approval tier +0x34, and finally the handler's own Check slot (the handler of level 2 and of types of group 6
-    //   pass the actor of the talk event 2 or 1, else the first).
+    // The checks, in order, all on the type's record (EventType):
+    //   the start window against the minute counter (not for the levels 1 and 5), the population, the laptop modules,
+    //   and for a person: the character types (one for level 2, else four), the gender, the friendship band, the claim
+    //   meter of the workplace, the workplace types, and where the person stands (place: 1 in its workplace, 2 in its
+    //   target, 3 away from the building it is between, 4 outside its workplace at least 8 from its middle), then the
+    //   score tiers and the approval tier, and finally the handler's own Check slot (the handler of level 2 and of
+    //   types of group 6 pass the actor of the talk event 2 or 1, else the first).
     int64_t Event_CheckCondition(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, GuestPtr<uint8_t> type, GuestPtr<MapPerson> person)
     {
         port::GuestFrame<0xA0> frame; // the original's frame: the stack vectors below keep their leftover lanes
-        const uint32_t row = globals::eventTypes.get() + 0x4Cu * *type;
-        const auto byteAt = [&](uint32_t offset) { return static_cast<uint32_t>(port::load<uint8_t>(row + offset)); };
-        const auto halfAt = [&](uint32_t offset) { return static_cast<uint32_t>(port::load<uint16_t>(row + offset)); };
-        const uint32_t level = byteAt(0x23);
+        const GuestPtr<EventType> row = globals::eventType(*type);
+        const uint32_t level = row->level;
         if (level != 1 && level != 5)
         {
-            const uint32_t start = halfAt(0x2A), end = halfAt(0x2C), now = port::load<uint16_t>(events.address);
+            const uint32_t start = row->startFrom, end = row->startUntil, now = events->minute;
             if (end < start)
             {
                 if (end <= now && now < start)
@@ -3229,20 +3226,19 @@ namespace mm
             else if (now < start || end <= now)
                 return 0;
         }
-        if (city->map->population < static_cast<int32_t>(halfAt(0x30)))
+        if (city->map->population < static_cast<int32_t>(row->population))
             return 0;
-        const uint32_t modules = halfAt(0x32);
-        if (modules != (halfAt(0x32) & Laptop_CountActive()))
+        const uint32_t modules = row->modules;
+        if (modules != (row->modules & Laptop_CountActive()))
             return 0;
         if (person)
         {
-            if (halfAt(0x38) != 0)
+            if (row->charTypes[0] != 0)
             {
                 const uint32_t listed = level == 2 ? 1u : 4u;
                 bool found = false;
-                const uint32_t end = row + 0x38u + 2u * listed;
-                for (uint32_t at = row + 0x38u; port::load<uint16_t>(at) != 0 && at < end; at += 2u)
-                    if (port::load<uint16_t>(at) == person->charType)
+                for (uint32_t i = 0; i < listed && row->charTypes[i] != 0; ++i)
+                    if (row->charTypes[i] == person->charType)
                     {
                         found = true;
                         break;
@@ -3250,26 +3246,26 @@ namespace mm
                 if (!found)
                     return 0;
             }
-            if (byteAt(0x40) != 0 && static_cast<int32_t>(byteAt(0x40)) != (static_cast<int16_t>(person->flags) & 3) + 1)
+            if (row->gender != 0 && static_cast<int32_t>(row->gender) != (static_cast<int16_t>(person->flags) & 3) + 1)
                 return 0;
-            if (byteAt(0x42) != 0)
+            if (row->friendship != 0)
             {
                 const int band = Family_GetFriendshipBand(person->family, person->member);
-                if (byteAt(0x42) == 1 && band < 1)
+                if (row->friendship == 1 && band < 1)
                     return 0;
             }
             const GuestPtr<MapObject> work = Map_GetRecord(city->map, person->work);
-            if (byteAt(0x41) != 0)
+            if (row->claimMeter != 0)
             {
                 const int meter = ClaimMeter_Level(work->claimMeter);
-                if (byteAt(0x41) == 1 && meter != 0)
+                if (row->claimMeter == 1 && meter != 0)
                     return 0;
             }
-            if (halfAt(0x44) != 0)
+            if (row->workTypes[0] != 0)
             {
                 bool found = false;
-                for (uint32_t at = row + 0x44u; port::load<uint16_t>(at) != 0 && at < row + 0x4Cu; at += 2u)
-                    if (port::load<uint16_t>(at) == work->type)
+                for (uint32_t i = 0; i < 4 && row->workTypes[i] != 0; ++i)
+                    if (row->workTypes[i] == work->type)
                     {
                         found = true;
                         break;
@@ -3277,7 +3273,7 @@ namespace mm
                 if (!found)
                     return 0;
             }
-            if (byteAt(0x43) != 0)
+            if (row->place != 0)
             {
                 const int tileX = sdk::fptosi(ps2f(64.0f) + ps2f(person->x));
                 const int tileZ = sdk::fptosi(ps2f(64.0f) - ps2f(person->z));
@@ -3287,7 +3283,7 @@ namespace mm
                 const GuestPtr<BuildingType> hereType{globals::buildingTypeAddress(here->type)};
                 const bool hasEntrance = (hereType->flags & 0x20u) != 0;
                 const auto entranceAnswer = [&] { return port::callGuest<int64_t>(hereType->vtable->isOpen, hereType, city, here); };
-                switch (byteAt(0x43))
+                switch (row->place)
                 {
                 case 1:
                     if (here->id != person->work)
@@ -3335,20 +3331,20 @@ namespace mm
                 }
             }
         }
-        if (byteAt(0x35) != 0 && static_cast<int>(byteAt(0x35)) - 1 != CityScene_ScoreA0Tier(city))
+        if (row->scoreA0Tier != 0 && static_cast<int>(row->scoreA0Tier) - 1 != CityScene_ScoreA0Tier(city))
             return 0;
-        if (byteAt(0x36) != 0 && static_cast<int>(byteAt(0x36)) - 1 != CityScene_ScoreA8Tier(city))
+        if (row->scoreA8Tier != 0 && static_cast<int>(row->scoreA8Tier) - 1 != CityScene_ScoreA8Tier(city))
             return 0;
-        if (byteAt(0x34) != 0 && static_cast<int>(byteAt(0x34)) - 1 != CityScene_ApprovalTier(city))
+        if (row->approvalTier != 0 && static_cast<int>(row->approvalTier) - 1 != CityScene_ApprovalTier(city))
             return 0;
-        const uint32_t handler = byteAt(0x24);
+        const uint32_t handler = row->handler;
         if (handler == 0)
             return 1;
-        const uint32_t which = level == 2 ? 2u : byteAt(0x20) == 6 ? 1u : 0u;
-        const uint32_t check = port::load<uint32_t>(port::load<uint32_t>(kEventHandlers + 4u * handler));
+        const uint32_t which = level == 2 ? 2u : row->group == 6 ? 1u : 0u;
+        const uint32_t check = eventHandler(handler)->check;
         if (check == 0)
             return 1;
-        return port::callGuest<int64_t>(check, GuestPtr<EventData>{port::load<uint32_t>(events.address + 0xA4u + 4u * which)}, city, person);
+        return port::callGuest<int64_t>(check, events->talks[which], city, person);
     }
 
     namespace
@@ -3372,13 +3368,13 @@ namespace mm
 
         // A running event that has not begun (var 0) begins when its start time has come: its tile flags are set and
         // its Start slot runs (with the person slot 0).
-        void beginEvent(uint32_t row, GuestPtr<EventData> talk, GuestPtr<CityScene> city)
+        void beginEvent(GuestPtr<EventType> row, GuestPtr<EventData> talk, GuestPtr<CityScene> city)
         {
-            const uint32_t tileFlags = port::load<uint8_t>(row + 0x25u);
+            const uint32_t tileFlags = row->tileFlags;
             if (tileFlags != 0)
                 Event_SetTileFlags(static_cast<int>(tileFlags) - 1);
-            port::store<uint8_t>(talk.address + 0xAu, 1);
-            callHandler(row, 4u, talk, city, 0);
+            talk->var = 1;
+            callHandler(row, &EventHandler::start, talk, city, 0);
         }
     }
 
@@ -3392,32 +3388,32 @@ namespace mm
         const uint32_t queue = globals::eventQueueObject.get();
         const uint32_t types = globals::eventTypes.get();
         const int32_t minute = city->clock / 60;
-        const uint32_t counter = port::load<uint16_t>(events.address);
+        const uint32_t counter = events->minute;
         if (static_cast<uint32_t>(minute) == counter)
             return;
-        const uint32_t cellA = events.address + 0xA4u, cellB = events.address + 0xA8u;
-        const auto talkKind = [&](uint32_t cell) { return port::load<uint8_t>(port::load<uint32_t>(cell) + 8u); };
+        const uint32_t cellA = port::guest(&events->talks[0]), cellB = port::guest(&events->talks[1]);
+        const auto talkKind = [&](uint32_t cell) { return GuestPtr<EventData>{port::load<uint32_t>(cell)}->kind; };
         port::GuestFrame<0x90> frame;
         const uint32_t ctx = frame.ptr().address;
         if (!((static_cast<uint32_t>(minute) & 0xFFFFu) < counter))
         {
             // The same day: the counter follows the clock; on the hour a second event may start.
-            port::store<uint16_t>(events.address, static_cast<uint16_t>(minute));
-            if (port::load<uint16_t>(events.address) % 60 == 0 && talkKind(cellB) == 0)
+            events->minute = static_cast<uint16_t>(minute);
+            if (events->minute % 60 == 0 && talkKind(cellB) == 0)
             {
                 const uint8_t running = talkKind(cellA);
-                if (running == 0 || port::load<uint8_t>(types + 0x4Cu * running + 0x20u) != 3)
+                if (running == 0 || (GuestPtr<EventType>{types} + running)->group != 3)
                     startFromBucket(events, city, cellB, 0);
             }
         }
         else
         {
-            port::store<uint16_t>(events.address, static_cast<uint16_t>(minute));
-            const uint32_t rank = port::load<uint8_t>(events.address + 2u);
+            events->minute = static_cast<uint16_t>(minute);
+            const uint32_t rank = events->rank;
             if (static_cast<int32_t>(rank) < CityScene_PopulationRank(city))
             {
-                port::store<uint8_t>(events.address + 2u, static_cast<uint8_t>(CityScene_PopulationRank(city)));
-                const auto mask = [&] { return static_cast<int32_t>(1u << ((port::load<uint8_t>(events.address + 2u) - 1u) & 0x1Fu)); };
+                events->rank = static_cast<uint8_t>(CityScene_PopulationRank(city));
+                const auto mask = [&] { return static_cast<int32_t>(1u << ((events->rank - 1u) & 0x1Fu)); };
                 port::store<int32_t>(ctx + 0x60u, static_cast<int32_t>(types));
                 port::store<int32_t>(ctx + 0x64u, mask());
                 for (int bucket = 0; bucket < 4; ++bucket)
@@ -3439,11 +3435,11 @@ namespace mm
                 port::store<int8_t>(entry + 1u, static_cast<int8_t>(port::load<int8_t>(entry + 1u) - 1));
             for (int to = 0; to < 3; ++to)
             {
-                port::store<int32_t>(ctx + 0x80u, static_cast<int32_t>(port::load<uint32_t>(0x001BDA84u)));
+                port::store<int32_t>(ctx + 0x80u, static_cast<int32_t>(globals::eventTypes.get()));
                 port::store<int32_t>(ctx + 0x84u, to);
                 EventList_MoveDueTo(static_cast<int>(queue), 4, to, GuestPtr<int32_t>{ctx + 0x80u});
             }
-            port::store<int32_t>(ctx + 0x8Cu, static_cast<int32_t>(port::load<uint32_t>(0x001BDA84u)));
+            port::store<int32_t>(ctx + 0x8Cu, static_cast<int32_t>(globals::eventTypes.get()));
             EventList_MoveDue(static_cast<int>(queue), 4, 3, GuestPtr<int32_t>{ctx + 0x8Cu});
             // The postponed events (the running list) count down and return to bucket 4 when they run out.
             const uint32_t slotsEnd = events.address + 4u + 0xA0u;
@@ -3456,22 +3452,22 @@ namespace mm
                     slot += 0x20u;
                     continue;
                 }
-                port::store<int8_t>(slot + 1u, port::load<int8_t>(globals::eventTypes.get() + 0x4Cu * port::load<uint8_t>(slot) + 0x28u));
+                port::store<int8_t>(slot + 1u, globals::eventType(port::load<uint8_t>(slot))->wait);
                 EventQueue_InsertByPriority(static_cast<int>(queue), GuestPtr<uint8_t>{slot}, 4, 0);
                 const uint32_t last = events.address + 0x84u;
                 if (slot < last)
                     sdk::memmove(slot, slot + 0x20u, (static_cast<int32_t>(last - slot) >> 5) << 5);
                 sdk::memset(last, 0, 0x20);
             }
-            // The second talk event: while it runs its var +9 counts down (and finishes it at 0); when free, one may start.
+            // The second talk event: while it runs its days count down (and finish it at 0); when free, one may start.
             const GuestPtr<EventData> talkB{port::load<uint32_t>(cellB)};
             bool talkBDone = false;
             if (talkB->kind != 0)
             {
-                const int8_t counted = port::load<int8_t>(talkB.address + 9u);
+                const int8_t counted = talkB->days;
                 if (counted > 0)
                 {
-                    port::store<int8_t>(talkB.address + 9u, static_cast<int8_t>(counted - 1));
+                    talkB->days = static_cast<int8_t>(counted - 1);
                     if (!(static_cast<int8_t>(counted - 1) > 0))
                         Event_Finish(events, city, 1);
                 }
@@ -3480,7 +3476,7 @@ namespace mm
             if (!talkBDone)
             {
                 const uint8_t running = talkKind(cellA);
-                if (running == 0 || port::load<uint8_t>(types + 0x4Cu * running + 0x20u) != 3)
+                if (running == 0 || (GuestPtr<EventType>{types} + running)->group != 3)
                     startFromBucket(events, city, cellB, 0);
             }
             // The first talk event: while it runs the same countdown; when free, one from the next bucket, else a
@@ -3499,28 +3495,28 @@ namespace mm
                             const uint8_t kind = port::load<uint8_t>(slot);
                             if (kind == 0 || port::load<uint16_t>(slot + 0x1Cu) == 0)
                                 continue;
-                            const uint32_t row = types + 0x4Cu * kind;
-                            if (port::load<uint8_t>(row + 0x20u) != 4)
+                            const GuestPtr<EventType> row = GuestPtr<EventType>{types} + kind;
+                            if (row->group != 4)
                                 continue;
                             now->kind = kind;
-                            port::store<int8_t>(now.address + 9u, port::load<int8_t>(row + 0x29u));
+                            now->days = row->days;
                             now->var = 0;
-                            const uint32_t handler = port::load<uint8_t>(row + 0x24u);
-                            port::store<uint32_t>(now.address + 4u, handler == 0 ? 0u : port::load<uint32_t>(port::load<uint32_t>(kEventHandlers + 4u * handler) + 8u));
-                            const GuestPtr<ActorRef> actors{port::load<uint32_t>(cellA) + 0xCu};
-                            uint32_t actor = actors.address;
-                            for (uint32_t from = slot + 4u; from < slot + 0x20u; from += 4u, actor += 8u)
+                            const uint32_t handler = row->handler;
+                            now->update = handler == 0 ? 0u : eventHandler(handler)->update;
+                            // The slot's persons and joined residents become the actors.
+                            GuestPtr<ActorRef> actor{port::load<uint32_t>(cellA) + 0xCu};
+                            for (GuestPtr<MemberId> from{slot + 4u}; from.address < slot + 0x20u; ++from, ++actor)
                             {
-                                port::store<uint16_t>(actor + 4u, port::load<uint16_t>(from));
-                                port::store<uint16_t>(actor + 6u, port::load<uint16_t>(from + 2u));
-                                port::store<uint16_t>(actor, 6000);
-                                port::store<uint16_t>(actor + 2u, kNoObject);
+                                actor->family = from->family;
+                                actor->member = from->member;
+                                actor->person = kNoPerson;
+                                actor->object = kNoObject;
                             }
                             const uint32_t last = events.address + 0x84u;
                             if (slot < last)
                                 sdk::memmove(slot, slot + 0x20u, (static_cast<int32_t>(last - slot) >> 5) << 5);
                             sdk::memset(last, 0, 0x20);
-                            beginEvent(types + 0x4Cu * talkKind(cellA), GuestPtr<EventData>{port::load<uint32_t>(cellA)}, city);
+                            beginEvent(GuestPtr<EventType>{types} + talkKind(cellA), GuestPtr<EventData>{port::load<uint32_t>(cellA)}, city);
                             break;
                         }
                     }
@@ -3528,32 +3524,32 @@ namespace mm
             }
             else
             {
-                const int8_t counted = port::load<int8_t>(talkA.address + 9u);
+                const int8_t counted = talkA->days;
                 if (counted > 0)
                 {
-                    port::store<int8_t>(talkA.address + 9u, static_cast<int8_t>(counted - 1));
+                    talkA->days = static_cast<int8_t>(counted - 1);
                     if (!(static_cast<int8_t>(counted - 1) > 0))
                         Event_Finish(events, city, 0);
                 }
             }
         }
-        // Each talk event: one that has not begun (var 0) begins at its start time; a running one whose var +9 says
-        // 1 finishes at its end time; otherwise its Update slot runs.
+        // Each talk event: one that has not begun (var 0) begins at its start time; a running one on its last day
+        // finishes at its finish time; otherwise its Update slot runs.
         for (uint32_t i = 0; i < 2; ++i)
         {
-            const GuestPtr<EventData> talk{port::load<uint32_t>(events.address + 0xA4u + 4u * i)};
+            const GuestPtr<EventData> talk{events->talks[i].address};
             if (talk->kind == 0)
                 continue;
-            const uint32_t row = types + 0x4Cu * talk->kind;
-            const uint32_t now = port::load<uint16_t>(events.address);
+            const GuestPtr<EventType> row = GuestPtr<EventType>{types} + talk->kind;
+            const uint32_t now = events->minute;
             if (talk->var == 0)
             {
-                if (!(now < port::load<uint16_t>(row + 0x2Au)))
-                    beginEvent(row, GuestPtr<EventData>{port::load<uint32_t>(events.address + 0xA4u + 4u * i)}, city);
+                if (!(now < row->startFrom))
+                    beginEvent(row, events->talks[i], city);
             }
-            else if (port::load<int8_t>(talk.address + 9u) == 1 && !(now < port::load<uint16_t>(row + 0x2Eu)))
+            else if (talk->days == 1 && !(now < row->finishAt))
                 Event_Finish(events, city, static_cast<int>(i));
-            else if (const uint32_t update = port::load<uint32_t>(talk.address + 4u))
+            else if (const uint32_t update = talk->update)
                 port::callGuest<void>(update, talk, city);
         }
     }
@@ -3569,20 +3565,20 @@ namespace mm
         const uint32_t queue = globals::eventQueueObject.get();
         const uint32_t types = globals::eventTypes.get();
         const uint32_t tableEnd = types + 0x4Cu * static_cast<uint32_t>(globals::eventQueueLength.get());
-        const auto talkAt = [&](uint32_t i) { return port::load<uint32_t>(events.address + 0xA4u + 4u * i); };
+        const auto talkAt = [&](uint32_t i) { return events->talks[i].address; };
         const auto queueStart = [&] { return bucketEntry(queue, port::load<int32_t>(bucketStart(queue, 0))); };
         const auto queueEnd = [&] { return bucketEntry(queue, port::load<int32_t>(bucketStart(queue, 8))); };
         const uint32_t slotsEnd = events.address + 4u + 0xA0u;
         uint32_t saved = globals::kEventQueue;
-        uint32_t record = types;
+        GuestPtr<EventType> record{types};
         int32_t index = 0;
         bool changed = false;
-        while (record < tableEnd)
+        while (record.address < tableEnd)
         {
-            const uint32_t current = port::load<uint16_t>(record + 0x20u), old = port::load<uint16_t>(saved);
+            const uint32_t current = record->id, old = port::load<uint16_t>(saved);
             if (old == current)
             {
-                record += 0x4Cu;
+                ++record;
                 ++index;
                 saved += 2u;
                 continue;
@@ -3590,9 +3586,9 @@ namespace mm
             if (old > current && current != 0)
             {
                 // A type new to the saved game goes into the queue and the numbers from its index up shift.
-                const uint32_t rank = port::load<uint8_t>(events.address + 2u);
+                const uint32_t rank = events->rank;
                 const uint32_t mask = rank == 0 ? 0u : 1u << ((rank - 1u) & 0x1Fu);
-                const uint32_t rankMask = port::load<uint8_t>(record + 0x27u);
+                const uint32_t rankMask = record->ranks;
                 uint32_t level = 6;
                 if ((rankMask & mask & 0xFFu) == 0)
                 {
@@ -3601,20 +3597,20 @@ namespace mm
                 }
                 else
                 {
-                    level = port::load<uint8_t>(record + 0x23u);
+                    level = record->level;
                     if (level == 4)
                         level = 3;
                 }
                 const uint32_t entry = frame.ptr().address + 0x8Cu;
                 port::store<uint8_t>(entry, static_cast<uint8_t>(index));
-                port::store<int8_t>(entry + 1u, port::load<int8_t>(record + 0x28u));
+                port::store<int8_t>(entry + 1u, record->wait);
                 EventQueue_InsertByPriority(static_cast<int>(queue), GuestPtr<uint8_t>{entry}, static_cast<int>(level), 0);
                 for (uint32_t i = 0; i < 2; ++i)
                 {
                     const uint32_t talk = talkAt(i);
-                    const uint32_t kind = port::load<uint8_t>(talk + 8u);
+                    const uint32_t kind = GuestPtr<EventData>{talk}->kind;
                     if (kind != 0 && static_cast<int32_t>(kind) >= index)
-                        port::store<uint8_t>(talk + 8u, static_cast<uint8_t>(kind + 1));
+                        GuestPtr<EventData>{talk}->kind = static_cast<uint8_t>(kind + 1);
                 }
                 for (uint32_t slot = events.address + 4u; port::load<uint8_t>(slot) != 0 && slot < slotsEnd; slot += 0x20u)
                     if (static_cast<int32_t>(port::load<uint8_t>(slot)) >= index)
@@ -3622,7 +3618,7 @@ namespace mm
                 for (uint32_t at = queueStart(), end = queueEnd(); at < end; at += 2u)
                     if (static_cast<int32_t>(port::load<uint8_t>(at)) >= index)
                         port::store<uint8_t>(at, static_cast<uint8_t>(port::load<uint8_t>(at) + 1));
-                record += 0x4Cu;
+                ++record;
                 ++index;
                 changed = true;
                 continue;
@@ -3662,9 +3658,9 @@ namespace mm
             for (uint32_t i = 0; i < 2; ++i)
             {
                 const uint32_t talk = talkAt(i);
-                const uint32_t kind = port::load<uint8_t>(talk + 8u);
+                const uint32_t kind = GuestPtr<EventData>{talk}->kind;
                 if (kind != 0 && index < static_cast<int32_t>(kind))
-                    port::store<uint8_t>(talk + 8u, static_cast<uint8_t>(kind - 1));
+                    GuestPtr<EventData>{talk}->kind = static_cast<uint8_t>(kind - 1);
             }
             for (uint32_t slot = events.address + 4u; port::load<uint8_t>(slot) != 0 && slot < slotsEnd; slot += 0x20u)
                 if (index < static_cast<int32_t>(port::load<uint8_t>(slot)))
@@ -3681,21 +3677,21 @@ namespace mm
             uint32_t out = globals::kEventQueue;
             for (uint32_t at = types, end = types + 0x4Cu * static_cast<uint32_t>(globals::eventQueueLength.get()); at < end; at += 0x4Cu, out += 2u)
             {
-                port::store<uint8_t>(out, port::load<uint8_t>(at + 0x20u));
-                port::store<uint8_t>(out + 1u, port::load<uint8_t>(at + 0x21u));
+                port::store<uint8_t>(out, GuestPtr<EventType>{at}->group);
+                port::store<uint8_t>(out + 1u, GuestPtr<EventType>{at}->number);
             }
         }
         for (uint32_t i = 0; i < 2; ++i)
         {
             const uint32_t talk = talkAt(i);
-            const uint32_t kind = port::load<uint8_t>(talk + 8u);
+            const uint32_t kind = GuestPtr<EventData>{talk}->kind;
             if (kind == 0)
                 continue;
-            const uint32_t row = globals::eventTypes.get() + 0x4Cu * kind;
-            const uint32_t handler = port::load<uint8_t>(row + 0x24u);
-            port::store<uint32_t>(talk + 4u, handler == 0 ? 0u : port::load<uint32_t>(port::load<uint32_t>(kEventHandlers + 4u * handler) + 8u));
-            if (i == 0 && port::load<uint8_t>(talkAt(0) + 0xAu) != 0 && port::load<uint8_t>(row + 0x25u) != 0)
-                Event_SetTileFlags(static_cast<int>(port::load<uint8_t>(row + 0x25u)) - 1);
+            const GuestPtr<EventType> row = globals::eventType(kind);
+            const uint32_t handler = row->handler;
+            GuestPtr<EventData>{talk}->update = handler == 0 ? 0u : eventHandler(handler)->update;
+            if (i == 0 && GuestPtr<EventData>{talkAt(0)}->var != 0 && row->tileFlags != 0)
+                Event_SetTileFlags(static_cast<int>(row->tileFlags) - 1);
         }
     }
 
@@ -3843,8 +3839,8 @@ namespace mm
                 port::store<uint16_t>(at + 2u, 0);
             }
         }
-        events->talkA = GuestPtr<EventData>{newEventObject(0x84u, true)};
-        events->talkB = GuestPtr<EventData>{newEventObject(0x24u, false)};
+        events->talks[0] = GuestPtr<EventData>{newEventObject(0x84u, true)};
+        events->talks[1] = GuestPtr<EventData>{newEventObject(0x24u, false)};
         port::store<uint32_t>(manager + 0xACu, newEventObject(0x24u, false));
         globals::eventTypesCopy.set(globals::eventTypes.get());
         const int32_t stage = port::load<int32_t>(0x001C5548u);
@@ -3877,13 +3873,13 @@ namespace mm
             File_Seek(file, 0, 0, 0);
             File_Read(file, static_cast<int>(globals::eventTypes.get()), static_cast<int>(globals::eventQueueLength.get()), 0x4C, 0);
             File_Close(file);
-            // Bytes +0x20 and +0x21 of each record, into the table at 0x1C5790.
+            // Each type's id (group, number), into the table at 0x1C5790.
             uint32_t out = globals::kEventQueue;
             const uint32_t end = globals::eventTypes.get() + static_cast<uint32_t>(globals::eventQueueLength.get()) * 0x4Cu;
             for (uint32_t record = globals::eventTypes.get(); record < end; record += 0x4Cu)
             {
-                port::store<uint8_t>(out, port::load<uint8_t>(record + 0x20u));
-                port::store<uint8_t>(out + 1u, port::load<uint8_t>(record + 0x21u));
+                port::store<uint8_t>(out, GuestPtr<EventType>{record}->group);
+                port::store<uint8_t>(out + 1u, GuestPtr<EventType>{record}->number);
                 out += 2u;
             }
             uint32_t queue = sdk::operator_new(0x224u);
@@ -3904,7 +3900,7 @@ namespace mm
             for (uint32_t record = globals::eventTypes.get() + 0x4Cu; record < stop; record += 0x4Cu)
             {
                 port::store<uint8_t>(id.ptr().address, static_cast<uint8_t>(port::load<uint8_t>(id.ptr().address) + 1));
-                port::store<uint8_t>(id.ptr().address + 1u, port::load<uint8_t>(record + 0x28u));
+                port::store<uint8_t>(id.ptr().address + 1u, GuestPtr<EventType>{record}->wait);
                 EventQueue_InsertByPriority(static_cast<int>(globals::eventQueueObject.get()), GuestPtr<uint8_t>{id.ptr().address}, 6, 0);
             }
         }
@@ -3944,16 +3940,16 @@ namespace mm
     // by that member's name, cut to fit 24 characters and ended with a 0xC4 byte when it is cut. Built at 0x1C5990.
     GuestPtr<char> Event_FormatText(GuestPtr<EventMgr> events, int slot)
     {
-        const uint32_t entry = events.address + 0x20u * static_cast<uint32_t>(slot);
-        const uint32_t kind = port::load<uint8_t>(entry + 4u);
-        const uint32_t familyB = port::load<uint16_t>(entry + 0xCu);
-        const uint32_t title = globals::eventTypes.get() + 0x4Cu * kind;
+        const GuestPtr<EventSlot> entry = GuestPtr<EventSlot>::of(events->slots[slot]);
+        const uint32_t kind = entry->kind;
+        const uint32_t familyB = entry->familyB;
+        const uint32_t title = GuestPtr<char>::of(globals::eventType(kind)->name[0]).address;
         if (familyB == 0)
             return GuestPtr<char>{title};
         constexpr uint32_t kBuffer = 0x001C5990u;
         const GuestPtr<Family> family = Family_Get(static_cast<int>(familyB), 0);
         sdk::strcpy(kBuffer, title);
-        const uint32_t name = family.address + 0x4Cu + 0x48u * port::load<uint16_t>(entry + 0xEu);
+        const uint32_t name = GuestPtr<char>::of(family->members[entry->memberB].name[0]).address;
         const int length = sdk::strlen(kBuffer);
         const int nameLength = sdk::strlen(name);
         if (static_cast<uint32_t>(length + nameLength) < 0x19u)
@@ -3971,18 +3967,17 @@ namespace mm
 
     // The missing children event may start when the city has stage flag 2, the person's family has a member of character type
     // 1 or 2 (the child) and a shop is found for the person: the event then names the person's workplace, the family and the
-    // child (member index) for the first actor and the family's adult (member 0) for the second.
+    // child (member index) for actor 1 and the family's adult (member 0) for actor 2.
     int EvMissingChildren_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
     {
         if ((city->flags & 2u) == 0)
             return 0;
         const GuestPtr<Family> family = Family_Get(person->family, 0);
-        const uint32_t members = family.address + 0x24u;
         const uint32_t count = family->memberCount;
         int32_t child = -1;
         for (uint32_t i = 0; i < count; ++i)
         {
-            const uint32_t charType = port::load<uint16_t>(members + 0x48u * i);
+            const uint32_t charType = family->members[i].charType;
             if (charType == 1 || charType == 2)
             {
                 child = static_cast<int32_t>(i);
@@ -3993,15 +3988,15 @@ namespace mm
             return 0;
         if (EvActor_FindShop(city, person) == 0)
             return 0;
-        const uint32_t d = data.address;
-        port::store<uint16_t>(d + 0x16u, person->work);
-        port::store<uint16_t>(d + 0x18u, person->family);
-        port::store<uint16_t>(d + 0x1Au, static_cast<uint16_t>(child));
-        port::store<uint16_t>(d + 0x14u, Map_FindPersonEntry(city->map, static_cast<int16_t>(port::load<uint16_t>(d + 0x18u)), port::load<uint16_t>(d + 0x1Au))->index);
-        port::store<uint16_t>(d + 0x1Eu, person->work);
-        port::store<uint16_t>(d + 0x20u, person->family);
-        port::store<uint16_t>(d + 0x22u, 0);
-        port::store<uint16_t>(d + 0x1Cu, Map_FindPersonEntry(city->map, static_cast<int16_t>(port::load<uint16_t>(d + 0x20u)), port::load<uint16_t>(d + 0x22u))->index);
+        const GuestPtr<ActorRef> lost = actorAt(data, 1), adult = actorAt(data, 2);
+        lost->object = person->work;
+        lost->family = person->family;
+        lost->member = static_cast<uint16_t>(child);
+        lost->person = Map_FindPersonEntry(city->map, static_cast<int16_t>(lost->family), lost->member)->index;
+        adult->object = person->work;
+        adult->family = person->family;
+        adult->member = 0;
+        adult->person = Map_FindPersonEntry(city->map, static_cast<int16_t>(adult->family), adult->member)->index;
         return 1;
     }
 
@@ -4016,20 +4011,20 @@ namespace mm
     int Event_FindForFamily(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, int choice, GuestPtr<int16_t> familyMember)
     {
         port::GuestFrame<0x90> frame;
-        const uint32_t entry = events.address + 0x20u * static_cast<uint32_t>(choice);
+        const GuestPtr<EventSlot> entry = GuestPtr<EventSlot>::of(events->slots[choice]);
         const uint32_t member = familyMember.address;
         const uint32_t family = port::load<uint16_t>(member), index = port::load<uint16_t>(member + 2u);
-        if (port::load<uint16_t>(entry + 0xCu) == family && port::load<uint16_t>(entry + 0xEu) == index)
+        if (entry->familyB == family && entry->memberB == index)
             return 4;
-        const uint32_t type = globals::eventTypes.get() + 0x4Cu * port::load<uint8_t>(entry + 4u);
-        if (port::load<uint16_t>(type + 0x38u) != 0)
+        const GuestPtr<EventType> type = globals::eventType(entry->kind);
+        if (type->charTypes[0] != 0)
         {
             const GuestPtr<Family> record = Family_Get(static_cast<int>(family), 0);
-            const uint32_t charType = port::load<uint16_t>(record.address + 0x24u + 0x48u * index);
+            const uint32_t charType = record->members[index].charType;
             bool found = false;
-            for (uint32_t allowed = type + 0x38u; allowed < type + 0x40u; allowed += 2u)
+            for (uint32_t i = 0; i < 4; ++i)
             {
-                const uint32_t value = port::load<uint16_t>(allowed);
+                const uint32_t value = type->charTypes[i];
                 if (value == 0)
                     break;
                 if (value == charType)
@@ -4041,45 +4036,46 @@ namespace mm
             if (!found)
                 return 0;
         }
-        if (port::load<uint16_t>(entry + 8u) == family && port::load<uint16_t>(entry + 0xAu) == index)
+        if (entry->familyA == family && entry->memberA == index)
             return 3;
         int result = 2;
-        for (uint32_t list = entry + 0x10u; list < entry + 0x24u; list += 4u)
+        for (uint32_t k = 0; k < 5; ++k)
         {
-            if (port::load<uint16_t>(list) == 0)
+            const GuestPtr<MemberId> list = GuestPtr<MemberId>::of(entry->joined[k]);
+            if (list->family == 0)
             {
-                const uint32_t checkType = port::load<uint8_t>(type + 0x24u);
-                const uint32_t descriptor = checkType != 0 ? port::load<uint32_t>(0x001AF0D0u + 4u * checkType) : 0u;
-                const uint32_t check = descriptor != 0 ? port::load<uint32_t>(descriptor + 0x14u) : 0u;
+                const uint32_t checkType = type->handler;
+                const uint32_t descriptor = checkType != 0 ? eventHandler(checkType).address : 0u;
+                const uint32_t check = descriptor != 0 ? GuestPtr<EventHandler>{descriptor}->slot14 : 0u;
                 if (check == 0)
                 {
-                    port::store<uint16_t>(list, static_cast<uint16_t>(family));
-                    port::store<uint16_t>(list + 2u, static_cast<uint16_t>(index));
+                    list->family = static_cast<uint16_t>(family);
+                    list->member = static_cast<uint16_t>(index);
                     return 2;
                 }
-                const uint32_t probe = port::load<uint32_t>(events.address + 0xACu);
-                port::store<uint16_t>(probe + 0xCu, 6000);
-                port::store<uint16_t>(probe + 0xEu, 0x3F80);
-                port::store<uint16_t>(probe + 0x10u, port::load<uint16_t>(entry + 0xCu));
-                port::store<uint16_t>(probe + 0x12u, port::load<uint16_t>(entry + 0xEu));
+                const GuestPtr<EventData> probe = events->talks[2];
+                probe->actor.person = kNoPerson;
+                probe->actor.object = kNoObject;
+                probe->actor.family = entry->familyB;
+                probe->actor.member = entry->memberB;
                 const uint32_t arguments = frame.ptr().address + 0x88u;
                 port::store<uint64_t>(arguments, port::load<uint64_t>(0x001BD988u));
                 port::store<uint16_t>(arguments + 4u, static_cast<uint16_t>(family));
                 port::store<uint16_t>(arguments + 6u, static_cast<uint16_t>(index));
-                const uint32_t function = port::load<uint32_t>(port::load<uint32_t>(0x001AF0D0u + 4u * port::load<uint8_t>(type + 0x24u)) + 0x14u);
+                const uint32_t function = eventHandler(type->handler)->slot14;
                 if (port::callGuest<int64_t>(function, probe, city, arguments, 0) == 0)
                     result = 0;
                 else
                 {
-                    port::store<uint16_t>(list, port::load<uint16_t>(member));
-                    port::store<uint16_t>(list + 2u, port::load<uint16_t>(member + 2u));
+                    list->family = port::load<uint16_t>(member);
+                    list->member = port::load<uint16_t>(member + 2u);
                 }
-                const uint32_t after = port::load<uint32_t>(events.address + 0xACu);
-                const int size = port::callGuest<int>(port::load<uint32_t>(port::load<uint32_t>(after) + 8u), after);
+                const uint32_t after = events->talks[2].address;
+                const int size = eventSize(after);
                 sdk::memset(after + 8u, 0, size);
                 return result;
             }
-            if (port::load<uint16_t>(list) == family && port::load<uint16_t>(list + 2u) == index)
+            if (list->family == family && list->member == index)
                 return 1;
         }
         return result;
@@ -4106,29 +4102,29 @@ namespace mm
     int EvNoodles_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode)
     {
         (void)actor;
-        const uint32_t d = data.address;
+        const GuestPtr<EvNoodlesData> noodles = data.as<EvNoodlesData>();
         if (mode == 1)
         {
-            CityScene_AddApplicantFamily(city, port::load<uint16_t>(d + 0x28u), 1);
+            CityScene_AddApplicantFamily(city, noodles->actors[3].family, 1);
             return 0;
         }
         if (mode != 0)
             return 0;
         const uint32_t table = globals::eachStrData.get();
         CityScene_AddApplicantFamily(city, port::load<uint16_t>(table + 0x1FEu), 1);
-        port::store<uint16_t>(d + 0x18u, port::load<uint16_t>(table + 0x1FEu));
-        port::store<uint16_t>(d + 0x1Au, 0);
-        port::store<uint16_t>(d + 0x14u, 0x1770);
-        port::store<uint16_t>(d + 0x16u, 0x3F80);
-        port::store<uint16_t>(d + 0x20u, port::load<uint16_t>(table + 0x1FEu));
-        port::store<uint16_t>(d + 0x22u, 1);
-        port::store<uint16_t>(d + 0x1Cu, 0x1770);
-        port::store<uint16_t>(d + 0x1Eu, 0x3F80);
-        port::store<uint16_t>(d + 0x28u, port::load<uint16_t>(globals::eachStrData.get() + 0x16Eu));
-        port::store<uint16_t>(d + 0x2Au, 0);
-        port::store<uint16_t>(d + 0x24u, 0x1770);
-        port::store<uint16_t>(d + 0x26u, 0x3F80);
-        port::store<int32_t>(d + 0x64u, 0x3C);
+        noodles->actors[1].family = port::load<uint16_t>(table + 0x1FEu);
+        noodles->actors[1].member = 0;
+        noodles->actors[1].person = kNoPerson;
+        noodles->actors[1].object = kNoObject;
+        noodles->actors[2].family = port::load<uint16_t>(table + 0x1FEu);
+        noodles->actors[2].member = 1;
+        noodles->actors[2].person = kNoPerson;
+        noodles->actors[2].object = kNoObject;
+        noodles->actors[3].family = port::load<uint16_t>(globals::eachStrData.get() + 0x16Eu);
+        noodles->actors[3].member = 0;
+        noodles->actors[3].person = kNoPerson;
+        noodles->actors[3].object = kNoObject;
+        noodles->timer = 0x3C;
         return 0;
     }
 
@@ -4157,13 +4153,13 @@ namespace mm
 
     // The cave man event's slot 0x14 (jump table 0x1BA060; modes above 8 give 0). Modes 0 to 3 add the family at +0x15E of the event
     // data table (0x1BDA8C) plus the mode to the applicants, play sound 0x17 and make it the event's actor `mode` (member 2; for the
-    // fourth member 1): mode 0 also notes the family at +0x30 (+0x32 = 1) and sets the counter (+0x4C) to 1, 1 and 2 count it to 2
-    // and 3, 3 moves the event on (+0xA) and clears it. 4 and 8 give the counter. 5 adds the family at +0x38 (the sound too), 7 that
+    // fourth member 1): mode 0 also makes the family actor 4's (member 1) and sets the counter to 1, 1 and 2 count it to 2
+    // and 3, 3 moves the event on (var) and clears it. 4 and 8 give the counter. 5 adds actor 5's family (the sound too), 7 that
     // of +0x160. 6 asks whether actors 0 and 4 stand at their buildings and neither is doing activity 5.
     int EvCaveMan_Slot14(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode)
     {
         (void)actor;
-        const uint32_t d = data.address;
+        const GuestPtr<EvCaveManData> ev = data.as<EvCaveManData>();
         const auto addFamily = [&](uint32_t family) {
             CityScene_AddApplicantFamily(city, family, 1);
             Sound_PlaySe(0x17, 0, 0x3C, 0.0f, 0.0f);
@@ -4177,35 +4173,35 @@ namespace mm
         {
             const uint32_t family = (static_cast<uint32_t>(mode) + port::load<int16_t>(globals::eachStrData.get() + 0x15Eu)) & 0xFFFFu;
             addFamily(family);
-            const uint32_t entry = d + 0xCu + 8u * static_cast<uint32_t>(mode);
-            port::store<uint16_t>(entry + 4u, static_cast<uint16_t>(family));
+            const GuestPtr<ActorRef> entry = actorAt(data, mode);
+            entry->family = static_cast<uint16_t>(family);
             if (mode < 3)
             {
-                port::store<uint16_t>(entry + 6u, 2);
-                port::store<int32_t>(d + 0x4Cu, mode + 1);
+                entry->member = 2;
+                ev->counter = mode + 1;
                 if (mode == 0)
                 {
-                    port::store<uint16_t>(d + 0x30u, static_cast<uint16_t>(family));
-                    port::store<uint16_t>(d + 0x32u, 1);
+                    ev->actors[4].family = static_cast<uint16_t>(family);
+                    ev->actors[4].member = 1;
                 }
             }
             else
             {
-                port::store<uint16_t>(entry + 6u, 1);
+                entry->member = 1;
                 data->var = static_cast<uint8_t>(data->var + 1);
-                port::store<int32_t>(d + 0x4Cu, 0);
+                ev->counter = 0;
             }
             return 0;
         }
         case 4:
         case 8:
-            return port::load<int32_t>(d + 0x4Cu);
+            return ev->counter;
         case 5:
-            addFamily(port::load<uint16_t>(d + 0x38u));
+            addFamily(ev->actors[5].family);
             return 0;
         case 6:
         {
-            const GuestPtr<ActorRef> first{d + 0xCu}, last{d + 0x2Cu};
+            const GuestPtr<ActorRef> first = actorAt(data, 0), last = actorAt(data, 4);
             if (Person_IsAtBuilding(city, first, last) == 0 || Person_IsAtBuilding(city, last, last) == 0)
                 return 0;
             const GuestPtr<MapPerson> people = city->map->people;
@@ -4499,10 +4495,10 @@ namespace mm
 
     PORT_FN(EvAlien_Update);
 
-    // The cave man event's phases (phase in +0xA; actors at +0xC, +0x14, +0x1C, +0x24, +0x2C (the leader), +0x34, +0x3C and +0x44;
-    // the counter at +0x4C, a countdown at +0x50 and a day at +0x54). 2 marks the first four buildings of type 0xB0 (flag 0x200),
+    // The cave man event's phases (phase in var; EvCaveManData: eight actors, 4 the leader; the counter, a countdown and a
+    // month). 2 marks the first four buildings of type 0xB0 (flag 0x200),
     // giving their families' actors the building, and moves on once four are found (and again for each further one); 3 finds the
-    // person entries of the actors one by one (the leader's from +0x30/+0x32) and notes the day; 4 and 10 wait for a day after the
+    // person entries of the actors one by one (the leader's from its family and member) and notes the month; 4 and 10 wait for a day after the
     // noted one between 10:00 and 17:00 with the leader at its building and tell actor 4 or 3 (60 frames); 5 and 11 send them off and
     // count the 60 down back to the phase before; 6 to 9, 20 and 21 keep actors 0 and 4 where they are; 18 finds actor 5's building
     // or person entry; 24 sends actor 0 to actor 6 and marks it, 25 does so with the activity 10 and points at it (on an open tile
@@ -4510,30 +4506,28 @@ namespace mm
     // 26 releases it and points at it within a tile; 28 points at actor 7; 30 ends the event after 720 frames.
     void EvCaveMan_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
-        const uint32_t d = data.address;
-        const GuestPtr<ActorRef> first{d + 0xCu}, third{d + 0x24u}, fourth{d + 0x2Cu}, sixth{d + 0x3Cu};
-        const auto get = [&](uint32_t offset) { return port::load<int32_t>(d + offset); };
-        const auto put = [&](uint32_t offset, int32_t value) { port::store<int32_t>(d + offset, value); };
+        const GuestPtr<EvCaveManData> ev = data.as<EvCaveManData>();
+        const GuestPtr<ActorRef> first = actorAt(data, 0), third = actorAt(data, 3), fourth = actorAt(data, 4), sixth = actorAt(data, 6);
         const auto advance = [&](int step) { data->var = static_cast<uint8_t>(data->var + step); };
         // A day after the noted one, between 10:00 and 17:00.
-        const auto timeToTell = [&] { return get(0x54) < city->monthCount && city->clock >= 0x8CA0 && city->clock < 0xEF10; };
+        const auto timeToTell = [&] { return ev->month < city->monthCount && city->clock >= 0x8CA0 && city->clock < 0xEF10; };
         const auto person = [&](GuestPtr<ActorRef> actor) { return city->map->people + actor->person; };
         switch (data->var)
         {
         case 2:
         {
-            const uint32_t begin = Map_GetRecord(city->map, 0).address;
+            const GuestPtr<MapObject> begin = Map_GetRecord(city->map, 0);
             int found = 0;
-            for (uint32_t record = begin; record < begin + 0x6F200u; record += 0x1Cu)
+            for (GuestPtr<MapObject> record = begin; record.address < begin.address + 0x6F200u; ++record)
             {
-                if (port::load<uint16_t>(record) != 0xB0)
+                if (record->type != 0xB0)
                     continue;
-                const uint32_t flags = port::load<uint16_t>(record + 6u);
+                const uint32_t flags = record->flags;
                 if ((flags & 0x200u) == 0)
                 {
-                    port::store<uint16_t>(record + 6u, static_cast<uint16_t>(flags | 0x200u));
-                    const uint32_t actor = d + 0xCu + 8u * port::load<uint16_t>(record + 0xCu) - 8u * data->actor.family;
-                    port::store<uint16_t>(actor + 2u, port::load<uint16_t>(record + 2u));
+                    record->flags = static_cast<uint16_t>(flags | 0x200u);
+                    // The actor of the building's family (the families are numbered on from the first actor's).
+                    actorAt(data, record->family - data->actor.family)->object = record->id;
                 }
                 ++found;
                 if (found >= 4)
@@ -4543,40 +4537,38 @@ namespace mm
         }
         case 3:
         {
-            const uint32_t index = static_cast<uint32_t>(get(0x4C));
-            const uint32_t actor = d + 0xCu + 8u * index;
-            const GuestPtr<MapPerson> entry = Map_FindPersonEntry(city->map, static_cast<int16_t>(port::load<uint16_t>(d + 8u * index + 0x10u)),
-                                                                  port::load<uint16_t>(d + 8u * index + 0x12u));
+            const uint32_t index = static_cast<uint32_t>(ev->counter);
+            const GuestPtr<ActorRef> actor = actorAt(data, static_cast<int>(index));
+            const GuestPtr<MapPerson> entry = Map_FindPersonEntry(city->map, static_cast<int16_t>(actor->family), actor->member);
             if (!entry)
                 break;
-            port::store<uint16_t>(actor, entry->index);
-            if (get(0x4C) == 0)
+            actor->person = entry->index;
+            if (ev->counter == 0)
             {
-                port::store<uint16_t>(d + 0x2Eu, port::load<uint16_t>(actor + 2u));
-                port::store<uint16_t>(d + 0x2Cu, Map_FindPersonEntry(city->map, static_cast<int16_t>(port::load<uint16_t>(d + 0x30u)),
-                                                                     port::load<uint16_t>(d + 0x32u))->index);
+                ev->actors[4].object = actor->object;
+                ev->actors[4].person = Map_FindPersonEntry(city->map, static_cast<int16_t>(ev->actors[4].family), ev->actors[4].member)->index;
             }
-            put(0x4C, get(0x4C) + 1);
-            if (get(0x4C) >= 4)
+            ev->counter = ev->counter + 1;
+            if (ev->counter >= 4)
             {
-                put(0x4C, 0);
+                ev->counter = 0;
                 advance(1);
-                put(0x54, city->monthCount);
+                ev->month = city->monthCount;
             }
             break;
         }
         case 4:
             if (timeToTell() && Person_IsAtBuilding(city, fourth, fourth) != 0 && EvActor_Notify(city, fourth) != 0)
             {
-                put(0x50, 0x3C);
+                ev->frames = 0x3C;
                 advance(1);
             }
             break;
         case 5:
             EvActor_MoveTo(city, fourth, fourth, 0);
             EvActor_MoveTo(city, first, fourth, 0);
-            put(0x50, get(0x50) - 1);
-            if (get(0x50) <= 0)
+            ev->frames = ev->frames - 1;
+            if (ev->frames <= 0)
                 advance(-1);
             break;
         case 6:
@@ -4585,24 +4577,24 @@ namespace mm
         case 9:
             EvActor_MoveTo(city, first, first, 0);
             EvActor_MoveTo(city, fourth, fourth, 0);
-            put(0x54, city->monthCount);
+            ev->month = city->monthCount;
             break;
         case 10:
             if (timeToTell() && Person_IsAtBuilding(city, fourth, fourth) != 0 && EvActor_Notify(city, third) != 0)
             {
-                put(0x50, 0x3C);
+                ev->frames = 0x3C;
                 advance(1);
             }
             break;
         case 11:
             EvActor_MoveTo(city, third, third, 0);
-            put(0x50, get(0x50) - 1);
-            if (get(0x50) <= 0)
+            ev->frames = ev->frames - 1;
+            if (ev->frames <= 0)
                 advance(-1);
             break;
         case 18:
         {
-            const GuestPtr<ActorRef> fifth{d + 0x34u};
+            const GuestPtr<ActorRef> fifth = actorAt(data, 5);
             if (fifth->object == 0x3F80)
             {
                 const GuestPtr<MapObject> home = Map_FindFamilyHome(city->map, fifth->family);
@@ -4642,8 +4634,8 @@ namespace mm
             {
                 if (Player_DistanceToPerson(city, first) < ps2f(3.0f))
                     break;
-                put(0x50, get(0x50) + 1);
-                if (get(0x50) < 10 || EvActor_PointCursor(city, first) == 0)
+                ev->frames = ev->frames + 1;
+                if (ev->frames < 10 || EvActor_PointCursor(city, first) == 0)
                     break;
                 EvActor_Release(city, first);
                 advance(1);
@@ -4659,28 +4651,28 @@ namespace mm
             EvActor_Release(city, first);
             if (Player_DistanceToPerson(city, first) <= ps2f(1.0f) && EvActor_PointCursor(city, first) != 0)
             {
-                put(0x50, 0);
+                ev->frames = 0;
                 advance(-1);
             }
             break;
         case 28:
-            if (EvActor_PointCursor(city, GuestPtr<ActorRef>{d + 0x44u}) != 0)
+            if (EvActor_PointCursor(city, actorAt(data, 7)) != 0)
             {
                 advance(1);
-                put(0x50, 0);
+                ev->frames = 0;
             }
             break;
         case 30:
-            put(0x50, get(0x50) + 1);
-            if (get(0x50) >= 0x2D0)
+            ev->frames = ev->frames + 1;
+            if (ev->frames >= 0x2D0)
             {
                 Event_Finish(city->events, city, 0);
                 break;
             }
-            if (get(0x4C) != 0)
+            if (ev->counter != 0)
                 break;
-            if (Map_FindPersonEntry(city->map, static_cast<int16_t>(port::load<uint16_t>(d + 0x48u)), port::load<uint16_t>(d + 0x4Au)))
-                put(0x4C, get(0x4C) + 1);
+            if (Map_FindPersonEntry(city->map, static_cast<int16_t>(actorAt(data, 7)->family), actorAt(data, 7)->member))
+                ev->counter = ev->counter + 1;
             break;
         default:
             break;
@@ -4689,8 +4681,8 @@ namespace mm
 
     PORT_FN(EvCaveMan_Update);
 
-    // The missing children event's phases (jump table 0x1BA800; phase in +0xA; actor 0 at +0xC (the parent), actor 1 at +0x14 (the
-    // child), the counter at +0x24, the outcome at +0x28 and a frame count at +0x2C). 1 keeps the parent where it is and the child
+    // The missing children event's phases (jump table 0x1BA800; phase in var; EvMissingChildrenData: actor 0 the parent, actor 1
+    // the child, the counter, the outcome and a frame count). 1 keeps the parent where it is and the child
     // wandering; from 13:00 to 15:00, if a shop is found for the parent, it is told (60 frames), else the event ends. 2 and 6 count
     // the 60 down back a phase; 3 lets the child wander until 18:00; 4 waits for the child to be at its building; 5 tells the parent; 7
     // is the search: before 20:00 the parent stays and the child is pointed at on open tiles three tiles or more away every tenth
@@ -4700,10 +4692,8 @@ namespace mm
     // child's building; 16 ends the event after 180 frames.
     void EvMissingChildren_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
-        const uint32_t d = data.address;
-        const GuestPtr<ActorRef> first{d + 0xCu}, second{d + 0x14u};
-        const auto get = [&](uint32_t offset) { return port::load<int32_t>(d + offset); };
-        const auto put = [&](uint32_t offset, int32_t value) { port::store<int32_t>(d + offset, value); };
+        const GuestPtr<EvMissingChildrenData> ev = data.as<EvMissingChildrenData>();
+        const GuestPtr<ActorRef> first = actorAt(data, 0), second = actorAt(data, 1);
         const auto advance = [&](int step) { data->var = static_cast<uint8_t>(data->var + step); };
         const auto person = [&](GuestPtr<ActorRef> actor) { return city->map->people + actor->person; };
         switch (data->var)
@@ -4718,7 +4708,7 @@ namespace mm
                 if (EvActor_Notify(city, first) != 0)
                 {
                     advance(1);
-                    put(0x24, 0x3C);
+                    ev->counter = 0x3C;
                 }
                 break;
             }
@@ -4727,8 +4717,8 @@ namespace mm
         case 2:
             EvActor_MoveTo(city, first, first, 0);
             EvActor_Wander(city, second);
-            put(0x24, get(0x24) - 1);
-            if (get(0x24) <= 0)
+            ev->counter = ev->counter - 1;
+            if (ev->counter <= 0)
                 advance(-1);
             break;
         case 3:
@@ -4747,14 +4737,14 @@ namespace mm
             EvActor_MoveTo(city, first, first, 0);
             if (EvActor_Notify(city, first) != 0)
             {
-                put(0x24, 0x3C);
+                ev->counter = 0x3C;
                 advance(1);
             }
             break;
         case 6:
             EvActor_MoveTo(city, first, first, 0);
-            put(0x24, get(0x24) - 1);
-            if (get(0x24) <= 0)
+            ev->counter = ev->counter - 1;
+            if (ev->counter <= 0)
                 advance(-1);
             break;
         case 7:
@@ -4771,30 +4761,30 @@ namespace mm
                 {
                     EvActor_StopFollowing(city, second);
                     EvActor_Follow(city, first, second);
-                    put(0x28, 2);
+                    ev->outcome = 2;
                     advance(1);
                 }
-                put(0x24, 0);
+                ev->counter = 0;
                 break;
             }
-            put(0x24, get(0x24) + 1);
-            if (get(0x24) < 10 || Person_IsOnOpenTile(city, second) == 0)
+            ev->counter = ev->counter + 1;
+            if (ev->counter < 10 || Person_IsOnOpenTile(city, second) == 0)
                 break;
             EvActor_PointCursor(city, second);
-            put(0x24, 0);
+            ev->counter = 0;
             break;
         case 8:
         {
             EvActor_Release(city, second);
             if (!(Person_Distance(city, first, second) <= ps2f(1.0f)))
             {
-                put(0x24, 0);
+                ev->counter = 0;
                 break;
             }
             if (Person_IsOnOpenTile(city, first) == 0)
             {
-                put(0x24, get(0x24) + 1);
-                if (get(0x24) < 5)
+                ev->counter = ev->counter + 1;
+                if (ev->counter < 5)
                     break;
             }
             if (EvActor_PointCursor(city, first) == 0)
@@ -4814,8 +4804,8 @@ namespace mm
                 advance(1);
             break;
         case 12:
-            put(0x24, get(0x24) + 1);
-            if (get(0x24) < 10)
+            ev->counter = ev->counter + 1;
+            if (ev->counter < 10)
                 break;
             if (Player_DistanceToPerson(city, second) <= ps2f(1.0f) && Player_DistanceToPerson(city, first) <= ps2f(1.0f) &&
                 EvActor_PointCursor(city, first) != 0)
@@ -4826,9 +4816,9 @@ namespace mm
                 parent->follow = second->person;
                 EvActor_Follow(city, second, first);
                 advance(1);
-                put(0x28, 1);
+                ev->outcome = 1;
             }
-            put(0x24, 0);
+            ev->counter = 0;
             break;
         case 14:
             if (EvActor_PointCursor(city, second) != 0)
@@ -4838,8 +4828,8 @@ namespace mm
             }
             break;
         case 16:
-            put(0x2C, get(0x2C) + 1);
-            if (get(0x2C) >= 0xB4)
+            ev->frames = ev->frames + 1;
+            if (ev->frames >= 0xB4)
                 Event_Finish(city->events, city, 0);
             break;
         default:
@@ -5253,18 +5243,16 @@ namespace mm
     // building with people inside is emptied to 20 at 2:00 (clock / 60 == 0x78).
     void EvNoodles_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
-        const uint32_t d = data.address;
+        const GuestPtr<EvNoodlesData> noodles = data.as<EvNoodlesData>();
         const GuestPtr<CityMap> map = city->map;
-        const auto actor = [&](uint32_t offset) { return GuestPtr<ActorRef>{d + offset}; };
+        const auto actor = [&](int index) { return actorAt(data, index); };
         const auto partner = [&](GuestPtr<ActorRef> who) { return GuestPtr<ActorRef>{who.address + 0x18u}; };
-        const auto get = [&](uint32_t offset) { return port::load<int32_t>(d + offset); };
-        const auto put = [&](uint32_t offset, int32_t value) { port::store<int32_t>(d + offset, value); };
         const auto advance = [&](int step = 1) { data->var = static_cast<uint8_t>(data->var + step); };
         const auto record = [&](GuestPtr<ActorRef> who) { return map->people + who->person; };
         const auto address = [](GuestPtr<ActorRef> who) { return static_cast<int>(who.address); };
         // The actor of a group of three phases (a, middle, c): the first group member below the middle, the second at it, the third above.
-        const auto byPhase = [&](int middle) { return actor(data->var < middle ? 0x2Cu : (data->var > middle ? 0x3Cu : 0x34u)); };
-        const GuestPtr<ActorRef> first = actor(0x14), second = actor(0x1C), third = actor(0x24);
+        const auto byPhase = [&](int middle) { return actor(data->var < middle ? 4 : (data->var > middle ? 6 : 5)); };
+        const GuestPtr<ActorRef> first = actor(1), second = actor(2), third = actor(3);
         // The actor reached its partner's place and is stopped there: it walks to the partner, and once at the building (from 10:00)
         // is told.
         const auto standing = [&](GuestPtr<ActorRef> who) {
@@ -5302,13 +5290,13 @@ namespace mm
                 home->flags = static_cast<uint16_t>(home->flags | 0x200u);
                 break;
             }
-            put(0x64, get(0x64) - 1);
-            if (get(0x64) >= 1)
+            noodles->timer = noodles->timer - 1;
+            if (noodles->timer >= 1)
                 break;
             const GuestPtr<MapPerson> entry = Map_FindPersonEntry(map, static_cast<int16_t>(first->family), first->member);
             if (!entry)
             {
-                put(0x64, 0x3C);
+                noodles->timer = 0x3C;
                 break;
             }
             first->person = entry->index;
@@ -5322,23 +5310,23 @@ namespace mm
             break;
         }
         case 3:
-            if (actor(0x2C)->person == kNoPerson)
-                data->var = actor(0x34)->person == kNoPerson ? 0x16 : 0xD;
+            if (actor(4)->person == kNoPerson)
+                data->var = actor(5)->person == kNoPerson ? 0x16 : 0xD;
             else
                 data->var = 4;
-            put(0x5C, city->monthCount);
+            noodles->month = city->monthCount;
             break;
         case 4:
         case 0xD:
         case 0x16:
-            if (get(0x5C) < city->monthCount && city->clock > 0x707F)
+            if (noodles->month < city->monthCount && city->clock > 0x707F)
             {
                 const GuestPtr<ActorRef> who = byPhase(0xD);
                 EvActor_MoveTo(city, who, partner(who), 0);
                 if (city->clock >= 36000 && Person_IsAtBuilding(city, who, partner(who)) != 0 && EvActor_Notify(city, who) != 0)
                 {
                     advance();
-                    put(0x64, 0x3C);
+                    noodles->timer = 0x3C;
                 }
             }
             break;
@@ -5348,8 +5336,8 @@ namespace mm
         {
             const GuestPtr<ActorRef> who = byPhase(0xE);
             EvActor_MoveTo(city, who, partner(who), 0);
-            put(0x64, get(0x64) - 1);
-            if (get(0x64) < 1)
+            noodles->timer = noodles->timer - 1;
+            if (noodles->timer < 1)
                 advance(-1);
             break;
         }
@@ -5378,9 +5366,9 @@ namespace mm
             const ps2f away = Player_DistanceToPerson(city, who);
             if (!(away < ps2f(3.0f)))
             {
-                put(0x64, get(0x64) + 1);
-                if (get(0x64) >= 10 && EvActor_PointCursor(city, who) != 0)
-                    put(0x64, 0);
+                noodles->timer = noodles->timer + 1;
+                if (noodles->timer >= 10 && EvActor_PointCursor(city, who) != 0)
+                    noodles->timer = 0;
             }
             else if (away <= ps2f(1.0f) && Player_DistanceToBuilding(city, first) < 2 && EvActor_PointCursor(city, who) != 0)
             {
@@ -5409,18 +5397,18 @@ namespace mm
         case 0xC:
         {
             const GuestPtr<MapObject> building = Map_GetRecord(map, first->object);
-            const GuestPtr<ActorRef> who = actor(0x2C);
+            const GuestPtr<ActorRef> who = actor(4);
             EvActor_MoveTo(city, who, partner(who), 0);
             if (standing(who) || Person_IsNearBuilding(city, record(who), building, 6) != 0)
             {
-                if (actor(0x34)->person != kNoPerson)
+                if (actor(5)->person != kNoPerson)
                 {
-                    put(0x5C, city->monthCount);
+                    noodles->month = city->monthCount;
                     data->var = 0xD;
                 }
-                else if (actor(0x3C)->person != kNoPerson)
+                else if (actor(6)->person != kNoPerson)
                 {
-                    put(0x5C, city->monthCount);
+                    noodles->month = city->monthCount;
                     data->var = 0x16;
                 }
                 else
@@ -5431,13 +5419,13 @@ namespace mm
         case 0x15:
         {
             const GuestPtr<MapObject> building = Map_GetRecord(map, first->object);
-            const GuestPtr<ActorRef> who = actor(0x34);
+            const GuestPtr<ActorRef> who = actor(5);
             EvActor_MoveTo(city, who, partner(who), 0);
             if (standing(who) || Person_IsNearBuilding(city, record(who), building, 6) != 0)
             {
-                if (actor(0x3C)->person != kNoPerson)
+                if (actor(6)->person != kNoPerson)
                 {
-                    put(0x5C, city->monthCount);
+                    noodles->month = city->monthCount;
                     data->var = 0x16;
                 }
                 else
@@ -5450,7 +5438,7 @@ namespace mm
             EvActor_MoveTo(city, second, second, 0);
             const GuestPtr<MapObject> building = Map_GetRecord(map, first->object);
             building->occupants = 0x14;
-            const GuestPtr<ActorRef> who = actor(0x3C);
+            const GuestPtr<ActorRef> who = actor(6);
             EvActor_MoveTo(city, who, partner(who), 0);
             if (standing(who) || Person_IsNearBuilding(city, record(who), building, 6) != 0)
                 advance();
@@ -5470,23 +5458,23 @@ namespace mm
             break;
         case 0x24:
             EvActor_Wander(city, second);
-            put(0x64, 10);
+            noodles->timer = 10;
             advance();
             break;
         case 0x25:
             EvActor_Wander(city, second);
-            put(0x64, get(0x64) - 1);
-            if (get(0x64) < 1 && EvActor_Notify(city, third) != 0)
+            noodles->timer = noodles->timer - 1;
+            if (noodles->timer < 1 && EvActor_Notify(city, third) != 0)
             {
                 advance();
-                put(0x64, 0x3C);
+                noodles->timer = 0x3C;
             }
             break;
         case 0x26:
         case 0x2A:
             EvActor_Wander(city, second);
-            put(0x64, get(0x64) - 1);
-            if (get(0x64) < 1)
+            noodles->timer = noodles->timer - 1;
+            if (noodles->timer < 1)
                 advance(-1);
             break;
         case 0x27:
@@ -5506,8 +5494,8 @@ namespace mm
         case 0x28:
         {
             EvActor_Wander(city, second);
-            put(0x64, get(0x64) - 1);
-            if (get(0x64) >= 1)
+            noodles->timer = noodles->timer - 1;
+            if (noodles->timer >= 1)
                 break;
             const GuestPtr<MapPerson> entry = Map_FindPersonEntry(map, static_cast<int16_t>(third->family), third->member);
             if (entry)
@@ -5523,7 +5511,7 @@ namespace mm
             if (city->clock >= 36000 && city->clock < 0xB6D0 && EvActor_Notify(city, third) != 0)
             {
                 advance();
-                put(0x64, 0x3C);
+                noodles->timer = 0x3C;
             }
             break;
         case 0x2B:
@@ -5548,12 +5536,12 @@ namespace mm
                 }
                 else
                 {
-                    put(0x64, get(0x64) + 1);
-                    if (get(0x64) >= 10)
+                    noodles->timer = noodles->timer + 1;
+                    if (noodles->timer >= 10)
                     {
                         if (!(Player_DistanceToPerson(city, third) < ps2f(3.0f)))
                             EvActor_PointCursor(city, third);
-                        put(0x64, 0);
+                        noodles->timer = 0;
                     }
                 }
             }
@@ -5592,16 +5580,16 @@ namespace mm
                 who->flags = static_cast<uint16_t>(who->flags | 0x80u);
                 EvActor_Release(city, second);
                 advance();
-                put(0x64, 0);
+                noodles->timer = 0;
             }
             else
             {
-                put(0x64, get(0x64) + 1);
-                if (get(0x64) >= 10)
+                noodles->timer = noodles->timer + 1;
+                if (noodles->timer >= 10)
                 {
                     if (!(Player_DistanceToPerson(city, third) < ps2f(3.0f)) && Person_IsOnOpenTile(city, third) != 0)
                         EvActor_PointCursor(city, third);
-                    put(0x64, 0);
+                    noodles->timer = 0;
                 }
             }
             shelter();
@@ -5610,12 +5598,12 @@ namespace mm
             EvActor_Release(city, second);
             if (Person_Distance(city, second, third) <= ps2f(1.0f))
             {
-                put(0x64, get(0x64) + 1);
-                if (get(0x64) >= 4 && Player_DistanceToPerson(city, second) <= ps2f(1.0f) && EvActor_PointCursor(city, second) != 0)
+                noodles->timer = noodles->timer + 1;
+                if (noodles->timer >= 4 && Player_DistanceToPerson(city, second) <= ps2f(1.0f) && EvActor_PointCursor(city, second) != 0)
                     advance();
             }
             else
-                put(0x64, 0);
+                noodles->timer = 0;
             break;
         case 0x3B:
         case 0x3D:
@@ -5656,13 +5644,13 @@ namespace mm
                 record(second)->activity = 2;
                 record(first)->activity = 2;
                 advance();
-                put(0x5C, city->monthCount + 1);
-                put(0x60, 36000);
+                noodles->month = city->monthCount + 1;
+                noodles->time = 36000;
             }
             break;
         case 0x4E:
             EvActor_Wander(city, second);
-            if (get(0x5C) <= city->monthCount && get(0x60) <= city->clock)
+            if (noodles->month <= city->monthCount && noodles->time <= city->clock)
             {
                 EvActor_StopFollowing(city, third);
                 EvActor_MoveTo(city, third, third, 0);
@@ -5676,7 +5664,7 @@ namespace mm
                 if (EvActor_Notify(city, second) != 0)
                 {
                     advance();
-                    put(0x64, 0x3C);
+                    noodles->timer = 0x3C;
                 }
             }
             else
@@ -5688,8 +5676,8 @@ namespace mm
         case 0x50:
             EvActor_MoveTo(city, third, third, 0);
             EvActor_MoveTo(city, second, third, 1);
-            put(0x64, get(0x64) - 1);
-            if (get(0x64) < 1)
+            noodles->timer = noodles->timer - 1;
+            if (noodles->timer < 1)
                 advance(-1);
             break;
         case 0x51:
@@ -5730,12 +5718,12 @@ namespace mm
                 ++building->headingHere;
                 building->occupants = 0;
                 advance();
-                put(0x64, 0x5A0);
+                noodles->timer = 0x5A0;
             }
             break;
         case 0x61:
-            put(0x64, get(0x64) - 1);
-            if (get(0x64) < 1)
+            noodles->timer = noodles->timer - 1;
+            if (noodles->timer < 1)
                 Event_Finish(city->events, city, 0);
             break;
         default:

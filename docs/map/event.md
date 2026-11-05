@@ -2,23 +2,32 @@
 
 City events (visitors, requests, incidents, paydays).
 
-- Types come from `DATA\BIN\EVENT.BIN`: 96 records of 0x4C bytes, loaded to gp `0x001BDA84`. Byte `+0x24` is the
-  handler type, an index into the handler table at `0x001AF0D0`.
-- Handler records have six slots: `+0` Check (may the event start), `+4` Start, `+8` Update (every frame),
-  `+0xC` End, `+0x10` Slot10 and `+0x14` Slot14 (called from the talk script). `mm_Ev<Name>_<Slot>` functions are
-  named after the event titles.
-- The event manager (`mm_EventMgr_*`, city `+0x68`) keeps the active list (`0x001BDA88`) and the queue of waiting ids
-  (`0x001C5790`, count `0x001BDA80`, `mm_EventQueue_*`). Its slots `+0xA4` and `+0xA8` are the events the talk script
-  works with.
+- Types come from `DATA\BIN\EVENT.BIN`: 96 `EventType` records of 0x4C bytes, loaded to gp `0x001BDA84`. Each has a
+  title, a group and a number in it (1 residents' requests, 2 visitors and incidents, 3 the farewell party, 4 city news
+  and trends, 5 residents' pastimes and gossip, 6 the game's own: paydays, population milestones, retreat, mission
+  cleared), its queue level and priority, a handler id, the window it may start in and the time it finishes (minutes
+  of the day), the days it runs and then waits, and the conditions `mm_Event_CheckCondition` tests: population, laptop
+  modules, the person's character type, gender and friendship, the workplace's type and claim meter, where the person
+  stands, and the score and approval tiers.
+- The handler id indexes the table at `0x001AF0D0`, which points at one `EventHandler` per id with six slots: Check
+  (may the event start), Start, Update (every frame), End, Slot10 and Slot14 (called from the talk script).
+  `mm_Ev<Name>_<Slot>` functions are named after the event titles.
+- The event manager (`EventMgr`, `mm_EventMgr_*`, city `+0x68`) keeps the minute and population rank the queue last
+  moved at, five `EventSlot`s (events talk scripts started, with the residents they involve, counting days down) and
+  `talks[3]` (`+0xA4`), the event records the talk script works with. The waiting queue (`0x001BDA88`, ids at
+  `0x001C5790`, count `0x001BDA80`, `mm_EventQueue_*`, `mm_EventList_*`) keeps entries (type, days to wait) in eight
+  buckets, each in priority order: 0 and 1 feed the two talk events, 2 the talk scripts, 3 a person's talk, 4 counts
+  days down, 5 waits for a population rank; every type starts in 6, and finished ones go to 6 or 7 by their wait.
 - `mm_EvActor_*` moves the people taking part (follow, move to, detach, notify).
-- Every handler gets the active event's record (`EventData`, 0x1C bytes: kind at `+8`, var at `+0xA`, the main actor
-  at `+0xC` as an `ActorRef` of person, building, family and member, then two words per type). Types with more state
-  keep up to 0x7C bytes and list further actors from `+0xC` on, 8 bytes each. The talk's `+0xA4` and `+0xA8` are such
-  records. The manager's five talk slots start at `+4` (0x20 bytes, kind first).
+- Every handler gets the active event's record (`EventData`, 0x1C bytes: its class, its handler's Update slot, the
+  kind, the days left, var, the main actor at `+0xC` as an `ActorRef` of person, building, family and member, then two
+  words per type). Types with more state keep up to 0x7C bytes and list further actors from `+0xC` on, 8 bytes each.
 - Per-type record layouts in `config/types/05_classes.h`: `EvCultData` (Crazy Cult: six actors, the wait month and time,
   the spread counter, the members met), `EvAdoptionData` (the applying families and six `AdoptionChild` entries),
   `EvShoppingData` (the shopper, four sellers and their prices, the bill), `EvDeliveryData` (the catalogue entry and
-  month, the delivery man's timers) and `EvPartyData` (the farewell party: three actors, the guests, the party time). The
+  month, the delivery man's timers), `EvPartyData` (the farewell party: three actors, the guests, the party time),
+  `EvThiefData` (the next strike's month, buildings robbed), `EvAdvertiseData` (the family members it brought),
+  `EvNoodlesData` (three shops' workers and buildings) and `EvMiddleAgedData` (the month, the talk's answer). The
   handlers see them through `data.as<...>()`.
 
 <!-- Generated below by tools/map_docs.py from config/port_status.csv. Edit function notes there, not here. -->
