@@ -3269,7 +3269,7 @@ namespace mm
                     return 0;
                 const GuestPtr<BuildingType> hereType{globals::buildingTypeAddress(here->type)};
                 const bool hasEntrance = (hereType->flags & 0x20u) != 0;
-                const auto entranceAnswer = [&] { return port::callGuest<int64_t>(port::load<uint32_t>(hereType->vtable.address + 0x24u), hereType, city, here); };
+                const auto entranceAnswer = [&] { return port::callGuest<int64_t>(hereType->vtable->isOpen, hereType, city, here); };
                 switch (byteAt(0x43))
                 {
                 case 1:

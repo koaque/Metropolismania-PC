@@ -45,6 +45,7 @@ typedef struct TownPages TownPages;
 typedef struct TownPagesIndex TownPagesIndex;
 typedef struct EventData EventData;
 typedef struct CharClass CharClass;
+typedef struct CharClassVtable CharClassVtable;
 typedef struct PersonClass PersonClass;
 typedef struct StageName StageName;
 typedef struct StageState StageState;
@@ -744,7 +745,17 @@ struct CharClass {
                                   (mm_Char_CheckNeighbourTile, mm_Map_FindWorkerOnTile) */
     uint8_t unk_1A[2];
     uint32_t unk_1C;           /* +0x1C record word 0x14 */
-    void *vtable;              /* +0x20 */
+    CharClassVtable *vtable;   /* +0x20 */
+};
+/* A character class's virtual methods (0x1C bytes): base 0x1BCE70, class 2 0x1BCE90, people 0x1BCEB0 (docs/map/char.md).
+   Each takes the class first. */
+struct CharClassVtable {
+    uint8_t unk_00[8];
+    uint32_t dtor;             /* +0x08 */
+    uint32_t update;           /* +0x0C a person's tick (mm_Person_Update, mm_Char2_Update) */
+    uint32_t draw;             /* +0x10 on the terrain (mm_Person_Draw, mm_Char2_Draw) */
+    uint32_t drawAt;           /* +0x14 at a given matrix, in the talk views (mm_Person_Draw2) */
+    uint32_t slot18;           /* +0x18 empty in every class */
 };
 /* Person character type (0x28 bytes, mm_Person_ctor). */
 struct PersonClass {

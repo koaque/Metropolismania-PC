@@ -1105,7 +1105,7 @@ namespace mm
             Instance_DrawModel(GuestPtr<A3DObject>{view->personModel.address}, GuestPtr<Vec4>{globals::kDefaultColour}, 0, 0);
             port::store<float>(base + 0xC4u, static_cast<float>(ps2f(port::load<float>(base + 0xC4u)) - ps2f(0.15f)));
         }
-        port::callGuest<void>(port::load<uint32_t>(port::load<uint32_t>(cls.address + 0x20u) + 0x14u), cls.address, view->city.address, who.address, 0, 0,
+        port::callGuest<void>(cls->vtable->drawAt, cls.address, view->city.address, who.address, 0, 0,
                               matrix.address, globals::kDefaultColour, view.address + 0xD0u, view.address + 0x1D0u);
         idleAfterDraw(view);
     }
@@ -1124,7 +1124,7 @@ namespace mm
         port::store<float>(base + 0x90u, static_cast<float>(who->x));
         port::store<float>(base + 0x94u, static_cast<float>(who->y));
         port::store<float>(base + 0x98u, static_cast<float>(who->z));
-        port::callGuest<void>(port::load<uint32_t>(port::load<uint32_t>(cls.address + 0x20u) + 0x14u), cls.address, view->city.address, who.address, 0, 0,
+        port::callGuest<void>(cls->vtable->drawAt, cls.address, view->city.address, who.address, 0, 0,
                               base + 0x60u, globals::kDefaultColour, view.address + 0xD0u, view.address + 0x1D0u);
         idleAfterDraw(view);
     }
@@ -1936,7 +1936,7 @@ namespace mm
             const ps2f dropped = ps2f(std::bit_cast<float>(port::load<uint32_t>(translation + 4u))) - ps2f(std::bit_cast<float>(0x3E19999Au));
             port::store<uint32_t>(translation + 4u, std::bit_cast<uint32_t>(dropped.v));
         }
-        port::callGuest<void>(port::load<uint32_t>(port::load<uint32_t>(cls + 0x20u) + 0x14u), cls, view->city, 0, family, member, matrix, 0x001B26C0u,
+        port::callGuest<void>(GuestPtr<CharClass>{cls}->vtable->drawAt, cls, view->city, 0, family, member, matrix, 0x001B26C0u,
                               view.address + 0xD0u, view.address + 0x1D0u);
         if (view->animTime[0] == ps2f(0.0f) && view->anim[0] != 7)
             view->anim[0] = 7;
@@ -2236,7 +2236,7 @@ namespace mm
         const uint32_t sp = frame.ptr().address;
         const GuestPtr<CityScene> city = view->city;
         const auto slot = [&](uint32_t type, uint32_t record) {
-            return port::callGuest<int>(port::load<uint32_t>(port::load<uint32_t>(type + 0x15Cu) + 0x24u), type, city.address, record);
+            return port::callGuest<int>(GuestPtr<BuildingType>{type}->vtable->isOpen, type, city.address, record);
         };
         uint32_t type;
         int shown;
@@ -2378,7 +2378,7 @@ namespace mm
                 const ps2f lowered = ps2f(std::bit_cast<float>(port::load<uint32_t>(row3 + 4u))) - ps2f(std::bit_cast<float>(0x3E19999Au));
                 port::store<uint32_t>(row3 + 4u, std::bit_cast<uint32_t>(lowered.v));
             }
-            port::callGuest<void>(port::load<uint32_t>(port::load<uint32_t>(cls.address + 0x20u) + 0x14u), cls.address, view->city.address, person, family, member,
+            port::callGuest<void>(cls->vtable->drawAt, cls.address, view->city.address, person, family, member,
                                   matrix, colour, view.address + 0xD0u + 4u * static_cast<uint32_t>(slot), view.address + 0x1D0u + 4u * static_cast<uint32_t>(slot));
             if (view->animTime[slot] == ps2f(0.0f) && view->anim[slot] != 7)
                 view->anim[slot] = 7;

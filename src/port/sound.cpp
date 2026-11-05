@@ -1116,7 +1116,7 @@ namespace mm
         const GuestPtr<CityScene> city = globals::soundCity.get();
         const int clock = globals::soundClock.get();
         const auto occupied = [&] {
-            const uint32_t isOpen = port::load<uint32_t>(btype->vtable.address + 0x24u);
+            const uint32_t isOpen = btype->vtable->isOpen;
             return port::callGuest<int64_t>(isOpen, btype, city, obj) != 0 && obj->firstPerson != kNoPerson;
         };
         const uint32_t late = (state + 0x100) & 0xFFFFu;

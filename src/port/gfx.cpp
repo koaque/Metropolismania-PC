@@ -2013,7 +2013,7 @@ namespace mm
     GuestPtr<CityMap> CityRender_ctor(GuestPtr<CityMap> map)
     {
         MapPeople_ctor(map);
-        map->vtable = GuestPtr<void>{0x001BCF00u};
+        map->vtable = GuestPtr<CityMapVtable>{0x001BCF00u};
         map->sideBuffers[0] = GuestPtr<void>{sdk::malloc(0x8700u)};
         map->sideBuffers[1] = GuestPtr<void>{sdk::malloc(0x8700u)};
         map->terrainBuffers[0] = GuestPtr<void>{sdk::malloc(0x9C00u)};
@@ -2042,7 +2042,7 @@ namespace mm
     {
         if (map)
         {
-            map->vtable = GuestPtr<void>{0x001BCF00u};
+            map->vtable = GuestPtr<CityMapVtable>{0x001BCF00u};
             lifetime::deleteWith(addressOf(map->instances), [](uint32_t o) { LayerA_DeletingDtor(GuestPtr<LayerA>{o}, 1); });
             lifetime::deleteWith(addressOf(map->rain), [](uint32_t o) { LayerD_DeletingDtor(GuestPtr<LayerD>{o}, 1); });
             lifetime::deleteWith(addressOf(map->snow), [](uint32_t o) { LayerE_DeletingDtor(GuestPtr<LayerE>{o}, 1); });
@@ -2064,7 +2064,7 @@ namespace mm
     GuestPtr<CityMap> CityMap_ctor(GuestPtr<CityMap> map)
     {
         CityRender_ctor(map);
-        map->vtable = GuestPtr<void>{0x001BCED0u};
+        map->vtable = GuestPtr<CityMapVtable>{0x001BCED0u};
         return map;
     }
 
@@ -2072,7 +2072,7 @@ namespace mm
     {
         if (map)
         {
-            map->vtable = GuestPtr<void>{0x001BCED0u};
+            map->vtable = GuestPtr<CityMapVtable>{0x001BCED0u};
             CityRender_dtor(map, 0);
             if (0 < deleteFlag)
                 sdk::operator_delete(map.address);

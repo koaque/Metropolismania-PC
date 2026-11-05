@@ -85,7 +85,7 @@ namespace mm
             {
                 const int tile = tx + tz * kMapSize;
                 do
-                    port::callGuest<void>(port::load<uint32_t>(map->vtable.address + 0xCu), map.address, map->tiles[tile].firstObject);
+                    port::callGuest<void>(map->vtable->clearObject, map.address, map->tiles[tile].firstObject);
                 while (map->objects[map->tiles[tile].firstObject].type != 2);
             }
     }
@@ -351,7 +351,7 @@ namespace mm
                     return 0;
                 if ((btype->flags & 0x10u) != 0 && Map_GetHeightAt(map, tx, tz) <= ps2f(0.0f))
                     return 0;
-                const uint32_t accepts = port::load<uint32_t>(btype->vtable.address + 0x20u);
+                const uint32_t accepts = btype->vtable->acceptsOn;
                 if (port::callGuest<int64_t>(accepts, btype, obj, type, map, tx, tz) == 0)
                     return 0;
             }
@@ -419,7 +419,7 @@ namespace mm
         {
             const GuestPtr<MapObject> obj = map->objects + object;
             const GuestPtr<BuildingType> btype{globals::buildingTypeAddress(obj->type)};
-            port::callGuest<void>(port::load<uint32_t>(btype->vtable.address + 0x10u), btype, arg, obj, 0);
+            port::callGuest<void>(btype->vtable->tick, btype, arg, obj, 0);
         }
         map->unk_60 = 0;
         return object;
@@ -576,7 +576,7 @@ namespace mm
         port::store<uint32_t>(record().address + 0x18u, 0);
         record()->family = owner;
         const GuestPtr<BuildingType> btype{globals::buildingTypeAddress(static_cast<uint32_t>(type))};
-        port::callGuest<void>(port::load<uint32_t>(btype->vtable.address + 0xCu), btype.address, record().address);
+        port::callGuest<void>(btype->vtable->initRecord, btype.address, record().address);
         if ((btype->flags & 8u) != 0)
         {
             ++map->flag8Objects;
@@ -1066,7 +1066,7 @@ namespace mm
         }
 
         const GuestPtr<BuildingType> btype{globals::buildingTypeAddress(map->objects[object].type)};
-        const int64_t texture = port::callGuest<int64_t>(port::load<uint32_t>(btype->vtable.address + 0x1Cu), btype, map->objects + object);
+        const int64_t texture = port::callGuest<int64_t>(btype->vtable->groundTexture, btype, map->objects + object);
         uint32_t flags = texture != 0 ? 9u : 8u;
         const ps2f heights[4] = {a->y, b->y, c->y, d->y};
         for (const ps2f h : heights)
@@ -1108,7 +1108,7 @@ namespace mm
         matrix[3].x = static_cast<float>((fromInt(obj->tile & 0x7F) - ps2f(64.0f)) + half);
         port::store<uint32_t>(addressOf(matrix[3].y), 0);
         matrix[3].z = static_cast<float>((fromInt(128 - (obj->tile >> 7)) - ps2f(64.0f)) - half);
-        const uint32_t test = port::load<uint32_t>(btype->vtable.address + 0x30u);
+        const uint32_t test = btype->vtable->rayHit;
         return port::callGuest<int64_t>(test, btype, obj, a2, a3, matrix, arg) != 0 ? 1 : 0;
     }
 
@@ -2117,7 +2117,7 @@ namespace mm
         port::GuestFrame<0x190> frame; // the list of ids at +0x120, the matrix at +0x140, the flag word at +0x18C
         const uint32_t base = frame.ptr().address;
         const bool hit = eachObjectNear(map, position, base + 0x120u, base + 0x140u, base + 0x18Cu, [&](GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj) {
-            return port::callGuest<int64_t>(port::load<uint32_t>(btype->vtable.address + 0x2Cu), btype, obj, position, GuestPtr<Vec4>{base + 0x140u}, a2, base + 0x18Cu, radius) != 0;
+            return port::callGuest<int64_t>(btype->vtable->collideA, btype, obj, position, GuestPtr<Vec4>{base + 0x140u}, a2, base + 0x18Cu, radius) != 0;
         });
         return hit ? 1 : 0;
     }
@@ -2131,7 +2131,7 @@ namespace mm
         const uint32_t base = frame.ptr().address;
         *distance = 100.0f;
         eachObjectNear(map, position, base + 0x140u, base + 0x160u, base + 0x1ACu, [&](GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj) {
-            const int64_t answer = port::callGuest<int64_t>(port::load<uint32_t>(btype->vtable.address + 0x28u), btype, obj, position, GuestPtr<Vec4>{base + 0x160u}, base + 0x130u, base + 0x1A8u, base + 0x1ACu, radius);
+            const int64_t answer = port::callGuest<int64_t>(btype->vtable->collideB, btype, obj, position, GuestPtr<Vec4>{base + 0x160u}, base + 0x130u, base + 0x1A8u, base + 0x1ACu, radius);
             if (answer != 0 && ps2f(port::load<float>(base + 0x1A8u)) < ps2f(*distance))
             {
                 *distance = port::load<float>(base + 0x1A8u);
@@ -2173,13 +2173,13 @@ namespace mm
             if (obj->type == 0)
                 continue;
             const GuestPtr<BuildingType> btype{globals::buildingTypeAddress(obj->type)};
-            const int64_t falls = port::callGuest<int64_t>(port::load<uint32_t>(btype->vtable.address + 0x10u), btype, city, obj, map->unk_1C);
+            const int64_t falls = port::callGuest<int64_t>(btype->vtable->tick, btype, city, obj, map->unk_1C);
             if (falls == 0)
                 continue;
             if ((btype->flags & 0x80u) == 0)
                 Se_RequestForObject(map->objects[scan].tile, 3, 0x44, 0, 1, 10);
             Minimap_Plot(city->minimap, map->objects[scan].tile, btype->size, 4, 0);
-            port::callGuest<void>(port::load<uint32_t>(map->vtable.address + 0xCu), map, map->objects[scan].id);
+            port::callGuest<void>(map->vtable->clearObject, map, map->objects[scan].id);
             const uint32_t tile = map->objects[scan].tile;
             Map_PlaceRubbleArea(map, static_cast<int>(tile & 0x7Fu), static_cast<int>(tile >> 7), btype->size, static_cast<int>(city.address));
         }
@@ -2236,8 +2236,8 @@ namespace mm
             const GuestPtr<MapPerson> person = map->people + i;
             if (person->charType == 0)
                 continue;
-            const uint32_t cls = port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType);
-            port::callGuest<void>(port::load<uint32_t>(port::load<uint32_t>(cls + 0x20u) + 0xCu), cls, city, person, marks);
+            const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)};
+            port::callGuest<void>(cls->vtable->update, cls, city, person, marks);
         }
         MemberStatus_Tick(city->clock, city->monthCount);
         MapObjects_Tick(map, city);
@@ -2298,7 +2298,7 @@ namespace mm
                     port::store<uint32_t>(flagsAt, 0);
                     const GuestPtr<MapObject> current = map->objects + node->object;
                     const GuestPtr<BuildingType> type{globals::buildingTypeAddress(current->type)};
-                    port::callGuest<void>(port::load<uint32_t>(type->vtable.address + 0x18u),
+                    port::callGuest<void>(type->vtable->drawPeople,
                                           x, y, z, type, kind, city, current, flagsAt, mode, map->people);
                 }
             }
@@ -2366,7 +2366,7 @@ namespace mm
                                     port::store<uint32_t>(flagsAt, (flags & 8u) | (depth == lastType->maxStack ? 3u : 4u));
                             }
                             lastType = GuestPtr<BuildingType>{globals::buildingTypeAddress(level->type)};
-                            port::callGuest<void>(port::load<uint32_t>(lastType->vtable.address + 0x14u), x, y, z, lastType, kind, city, level, flagsAt, mode);
+                            port::callGuest<void>(lastType->vtable->draw, x, y, z, lastType, kind, city, level, flagsAt, mode);
                             const GuestPtr<MapObject> after = map->objects + reached;
                             if ((after->flags & 8u) != 0 && (after->flags & 0x20u) != 0)
                             {
@@ -2482,7 +2482,7 @@ namespace mm
     {
         if (map)
         {
-            map->vtable = GuestPtr<void>{0x001BCEF0u};
+            map->vtable = GuestPtr<CityMapVtable>{0x001BCEF0u};
             const uint32_t objects = map->objects.address;
             if (objects != 0u)
             {
@@ -2573,7 +2573,7 @@ namespace mm
     GuestPtr<CityMap> MapObjects_ctor(GuestPtr<CityMap> map)
     {
         MapTiles_ctor(map);
-        map->vtable = GuestPtr<void>{0x001BCEF0u};
+        map->vtable = GuestPtr<CityMapVtable>{0x001BCEF0u};
         map->nextId = 1;
         map->unk_14 = 0;
         map->flag8Objects = 0;
@@ -2616,7 +2616,7 @@ namespace mm
     GuestPtr<CityMap> MapPeople_ctor(GuestPtr<CityMap> map)
     {
         MapObjects_ctor(map);
-        map->vtable = GuestPtr<void>{0x001BCEE0u};
+        map->vtable = GuestPtr<CityMapVtable>{0x001BCEE0u};
         port::store<uint32_t>(addressOf(map->unk_6C), 0u);
         const uint32_t block = sdk::mw_NewArray(0x46510u);
         map->people = GuestPtr<MapPerson>{sdk::construct_new_array(block, addr::MapPerson_ctor, 0u, 0x30u, 6000u)};
@@ -2630,7 +2630,7 @@ namespace mm
     {
         if (map)
         {
-            map->vtable = GuestPtr<void>{0x001BCEE0u};
+            map->vtable = GuestPtr<CityMapVtable>{0x001BCEE0u};
             const uint32_t people = map->people.address;
             if (people != 0u)
             {

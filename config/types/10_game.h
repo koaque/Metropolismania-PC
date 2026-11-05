@@ -28,6 +28,33 @@ typedef struct SeRequest SeRequest;
 typedef struct SeVoice SeVoice;
 typedef struct SeSound SeSound;
 typedef struct ClaimThresholds ClaimThresholds;
+typedef struct CityMapVtable CityMapVtable;
+typedef struct BuildingTypeVtable BuildingTypeVtable;
+
+/* The city map's class (0x10 bytes): 0x1BCED0 for the whole map, 0x1BCEE0 at the people level, 0x1BCEF0 at the object level,
+   0x1BCF00 at the renderer level (the constructors and destructors set each in turn). */
+struct CityMapVtable {
+    uint8_t unk_00[8];
+    uint32_t tick;             /* +0x08 mm_MapPeople_Tick (mm_MapObjects_Tick at the object level) */
+    uint32_t clearObject;      /* +0x0C mm_CityMap_ClearObject (map, object id); empty below the whole map */
+};
+
+/* A building type class's virtual methods (docs/map/city.md; mm_BldgType_* are the base class's). Each takes the type first. */
+struct BuildingTypeVtable {
+    uint8_t unk_00[8];
+    uint32_t dtor;             /* +0x08 the deleting destructor (mm_BldgType_DeleteAll) */
+    uint32_t initRecord;       /* +0x0C a new object record of the type (mm_MapObj_Init) */
+    uint32_t tick;             /* +0x10 an object's tick (mm_Map_PlaceObject, mm_MapObjects_Tick: non-zero there makes the object collapse into rubble) */
+    uint32_t draw;             /* +0x14 one object of a stack (mm_CityRender_CollectObjects) */
+    uint32_t drawPeople;       /* +0x18 the people at an object (mm_CityRender_UpdatePeople) */
+    uint32_t groundTexture;    /* +0x1C non-zero: the tile gets a ground texture (mm_Terrain_DrawPatch) */
+    uint32_t acceptsOn;        /* +0x20 whether the type can be placed on an object (mm_Map_CheckPlacement) */
+    uint32_t isOpen;           /* +0x24 opening hours (mm_Bldg_IsOpen) */
+    uint32_t collideB;         /* +0x28 the nearest hit and its distance (mm_Player_NearestObject) */
+    uint32_t collideA;         /* +0x2C whether a circle touches the object (mm_Player_CollideObjects) */
+    uint32_t rayHit;           /* +0x30 whether a ray hits the object (mm_MapObj_RayHit) */
+    uint32_t animate;          /* +0x34 every frame with the time of day (mm_BldgType_CallAll): the ride animations */
+};
 
 /* A distance bucket of the terrain draw list (mm_Terrain_Draw): 150 of them at CityMap +0x78, chained through the first two words
    at the start of each frame; tiles are linked in by the distance from the camera. */
@@ -129,7 +156,7 @@ struct CityMap {
     int32_t categoryCount[11]; /* +0x30 buildings per STRTYPE.BIN category (mm_MapObj_Delete; category 4 only without type flag 0x80) */
     int32_t bigCategory5Count; /* +0x5C category 5 buildings of size 3 and up */
     int32_t unk_60;            /* +0x60 cleared after each placement (mm_Map_PlaceObject) */
-    void *vtable;              /* +0x64 */
+    CityMapVtable *vtable;     /* +0x64 */
     MapPerson *people;         /* +0x68 */
     uint8_t unk_6C[4];
     int32_t peopleInUse;       /* +0x70 person records in use, vehicles too (mm_MapPeople_RemoveForObject) */
@@ -199,7 +226,7 @@ struct BuildingType {
     uint8_t entranceMesh;      /* +0x158 collision mesh of an entrance object (flag 0x20) */
     uint8_t firstMesh;         /* +0x159 first collision mesh of the other objects, plus their variant */
     uint8_t unk_15A[2];
-    void *vtable;              /* +0x15C */
+    BuildingTypeVtable *vtable; /* +0x15C */
 };
 
 /* Family member (0x48 bytes) inside a family record. */

@@ -665,7 +665,7 @@ namespace mm
         {
             const GuestPtr<BuildingType> type = typeOfObject(building);
             port::setGuestV0(static_cast<int32_t>(globals::buildingTypeTable.get() + 4u * building->type));
-            return port::callGuest<int>(port::load<uint32_t>(type->vtable.address + 0x24u), type, ctx->city, building, a3);
+            return port::callGuest<int>(type->vtable->isOpen, type, ctx->city, building, a3);
         }
 
         // The person's building on their tile (mm_Map_FindPersonObjectOnTile), the tile from the position as

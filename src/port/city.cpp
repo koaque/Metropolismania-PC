@@ -1526,15 +1526,15 @@ namespace mm
         return 0;
     }
 
-    // Every frame: slot 0x34 of each building type with the time of day (the ride animations; others do nothing).
+    // Every frame: each building type's animate method with the time of day (the ride animations; others do nothing).
     void BldgType_CallAll(int time)
     {
         for (int i = 0; i < globals::buildingTypeCount.get(); ++i)
         {
-            const uint32_t btype = port::load<uint32_t>(globals::buildingTypeTable.get() + 4u * static_cast<uint32_t>(i));
-            if (btype == 0)
+            const GuestPtr<BuildingType> btype{port::load<uint32_t>(globals::buildingTypeTable.get() + 4u * static_cast<uint32_t>(i))};
+            if (!btype)
                 continue;
-            port::callGuest<void>(port::load<uint32_t>(port::load<uint32_t>(btype + 0x15Cu) + 0x34u), btype, time);
+            port::callGuest<void>(btype->vtable->animate, btype, time);
         }
     }
 
@@ -1588,7 +1588,7 @@ namespace mm
             else if ((person->flags & 0x80u) != 0)
                 pose = 1;
             BldgType_DrawOccupant(btype, colour, person, city);
-            const uint32_t draw = port::load<uint32_t>(cls->vtable.address + 0x10u);
+            const uint32_t draw = cls->vtable->draw;
             port::callGuest<void>(draw, cls.address, city.address, person.address, colour.ptr().address, flags, position.ptr().address, pose);
         }
     }
@@ -3050,11 +3050,11 @@ namespace mm
             return GuestPtr<CharClass>{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)};
         }
 
-        // The character class's draw slot (+0x10 of its vtable at +0x20) for `person`: drawn at `position` (x, y, z, heading)
+        // The character class's draw method for `person`: drawn at `position` (x, y, z, heading)
         // with `colour` in the given pose.
         void drawPerson(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, uint32_t colour, int flags, uint32_t position, int pose)
         {
-            port::callGuest<void>(port::load<uint32_t>(port::load<uint32_t>(cls.address + 0x20u) + 0x10u), cls.address, city.address, person.address, colour, flags, position, pose);
+            port::callGuest<void>(cls->vtable->draw, cls.address, city.address, person.address, colour, flags, position, pose);
         }
     }
 
@@ -3145,7 +3145,7 @@ namespace mm
             Instance_DrawModel(model, colour, 0, flags);
         };
         drawAt(globals::ranchModelA.get());
-        const int64_t open = port::callGuest<int64_t>(port::load<uint32_t>(btype->vtable.address + 0x24u), btype, city, obj);
+        const int64_t open = port::callGuest<int64_t>(btype->vtable->isOpen, btype, city, obj);
         drawAt(open == 0 ? globals::ranchModelC.get() : globals::ranchModelB.get());
     }
 
@@ -3289,7 +3289,7 @@ namespace mm
         const uint32_t base = frame.ptr().address;
         if ((btype->flags & 0x800u) == 0 || (obj->flags & 0x20u) == 0)
             return;
-        const int32_t hasEntrance = static_cast<int32_t>(port::callGuest<int64_t>(port::load<uint32_t>(btype->vtable.address + 0x24u), btype, city, obj));
+        const int32_t hasEntrance = static_cast<int32_t>(port::callGuest<int64_t>(btype->vtable->isOpen, btype, city, obj));
         const uint32_t counts = base + 0x110u, lists = base + 0x120u, slots = base + 0x248u;
         for (uint32_t k = 0; k < 4; ++k)
             port::store<int32_t>(counts + 4u * k, 0);
@@ -3378,7 +3378,7 @@ namespace mm
             if (btype)
             {
                 for (const uint32_t vtable : vtables)
-                    port::store<uint32_t>(btype.address + 0x15Cu, vtable);
+                    btype->vtable = GuestPtr<BuildingTypeVtable>{vtable};
                 BldgType_BaseDtor(btype, 0);
                 if (0 < deleteFlag)
                     sdk::operator_delete(btype.address);
@@ -3598,7 +3598,7 @@ namespace mm
         const uint32_t sp = frame.ptr().address;
         const uint32_t b = btype.address, r = record.address;
         constexpr uint32_t kTypeCount = 0x001BDBBCu;
-        port::store<uint32_t>(b + 0x15Cu, 0x001BD000u);
+        btype->vtable = GuestPtr<BuildingTypeVtable>{0x001BD000u};
         if (port::load<int32_t>(kTypeCount) == 0)
         {
             const uint32_t models[] = {0x001F3B44u, 0x001F3B48u, 0x001F3B64u, 0x001F3B60u, 0x001F3B74u, 0x001F3B78u};
@@ -3679,7 +3679,7 @@ namespace mm
                 Bldg_ctor(btype, record, id);
             else
                 BldgBusiness_ctor(btype, record, id);
-            port::store<uint32_t>(btype.address + 0x15Cu, table);
+            btype->vtable = GuestPtr<BuildingTypeVtable>{table};
             return btype;
         }
 

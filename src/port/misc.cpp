@@ -1243,7 +1243,7 @@ namespace mm
     GuestPtr<CharClass> Char2_ctor(GuestPtr<CharClass> cls, GuestPtr<uint8_t> record)
     {
         CharType_ctor(cls, record);
-        cls->vtable = GuestPtr<void>{0x001BCE90u};
+        cls->vtable = GuestPtr<CharClassVtable>{0x001BCE90u};
         return cls;
     }
 
@@ -1376,7 +1376,7 @@ namespace mm
     GuestPtr<CharClass> CharType_ctor(GuestPtr<CharClass> cls, GuestPtr<uint8_t> record)
     {
         const auto part = [](uint8_t index) { return GuestPtr<void>{port::load<uint32_t>(globals::kCharParts + 4u * index)}; };
-        cls->vtable = GuestPtr<void>{0x001BCE70u};
+        cls->vtable = GuestPtr<CharClassVtable>{0x001BCE70u};
         cls->parts[0] = part(record[8]);
         cls->parts[1] = part(record[9]);
         cls->parts[2] = part(record[10]);
@@ -1578,7 +1578,7 @@ namespace mm
     GuestPtr<PersonClass> Person_ctor(GuestPtr<PersonClass> cls, GuestPtr<uint8_t> record)
     {
         CharType_ctor(GuestPtr<CharClass>::of(cls->base), record);
-        cls->base.vtable = GuestPtr<void>{0x001BCEB0u};
+        cls->base.vtable = GuestPtr<CharClassVtable>{0x001BCEB0u};
         cls->walkSpeed = fromInt(port::load<uint16_t>(record.address + 6u)) / ps2f(1000000.0f);
         return cls;
     }
@@ -3560,7 +3560,7 @@ namespace mm
     {
         if (btype)
         {
-            port::store<uint32_t>(btype.address + 0x15Cu, 0x001BD000u);
+            btype->vtable = GuestPtr<BuildingTypeVtable>{0x001BD000u};
             globals::buildingTypeInstances.set(globals::buildingTypeInstances.get() - 1);
             if (globals::buildingTypeInstances.get() == 0 && globals::buildingTypeShared.get() != 0u)
             {
@@ -3573,16 +3573,16 @@ namespace mm
         return btype;
     }
 
-    // Deletes every building type object (virtual deleting destructor, vtable at +0x15C slot 2) and the table.
+    // Deletes every building type object (its virtual deleting destructor) and the table.
     void BldgType_DeleteAll()
     {
         for (int32_t i = 0; i < globals::buildingTypeCount.get(); ++i)
         {
             const uint32_t slot = globals::buildingTypeTable.get() + 4u * static_cast<uint32_t>(i);
-            const uint32_t object = port::load<uint32_t>(slot);
-            if (object == 0u)
+            const GuestPtr<BuildingType> object{port::load<uint32_t>(slot)};
+            if (!object)
                 continue;
-            port::callGuest<void>(port::load<uint32_t>(port::load<uint32_t>(object + 0x15Cu) + 8u), object, 1);
+            port::callGuest<void>(object->vtable->dtor, object, 1);
             port::store<uint32_t>(globals::buildingTypeTable.get() + 4u * static_cast<uint32_t>(i), 0u);
         }
         sdk::mw_DeleteArray(globals::buildingTypeTable.get());
