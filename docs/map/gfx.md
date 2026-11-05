@@ -131,7 +131,7 @@ Rendering below the scene level.
 | `0x00186E60` | `void mm_DmaList_QueueGsDefaults(void)` | 124 | no | CALLs the static packet 0x1B2760: standard alpha blend in ALPHA_1/2, TEST_1/2 alpha != 0 and Z >= |
 | `0x00186EE0` | `void mm_DmaList_QueueOtherOverlay(void)` | 152 | no | CALLs the other one of the two 0xBA0-byte packets at 0x1F69C0 built by 0x1873D0 |
 | `0x00186F80` | `void mm_DmaList_QueueClearScreen(void)` | 124 | no | CALLs the static packet 0x1B28E0: full-screen sprite writing colour 0 and Z 0 |
-| `0x00187000` | `void mm_DmaList_QueueFade(int alpha, int a1)` | 272 | no | full-screen black sprite with alpha a0 (patched into 0x1B2830/0x1B28A0); a1 == 0 draws it at Z 0xFFFFF000 (0x1B2800), else at Z max (0x1B2870) |
+| `0x00187000` | `void mm_DmaList_QueueFade(int alpha, int overAll)` | 272 | no | full-screen black sprite with alpha a0 (patched into 0x1B2830/0x1B28A0); a1 == 0 draws it at Z 0xFFFFF000 (0x1B2800), else at Z max (0x1B2870) |
 | `0x00187110` | `void mm_DmaList_QueueClearZ(void)` | 124 | no | CALLs the static packet 0x1B26D0: full-screen sprite that only writes Z = 0 (alpha test NEVER, AFAIL = ZB_ONLY) |
 | `0x00187190` | `void mm_DmaList_Rewind(void)` | 56 | yes | waits for GS path idle, then resets the write pointer to the start of the current list |
 | `0x001871D0` | `void mm_DmaList_Flip(void)` | 40 | no | switches to the other of the two 64 KB lists (0x1BD9C0/0x1BD9C4) |

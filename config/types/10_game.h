@@ -34,6 +34,9 @@ typedef struct SeRequest SeRequest;
 typedef struct SeVoice SeVoice;
 typedef struct SeSound SeSound;
 typedef struct ClaimThresholds ClaimThresholds;
+typedef struct ClaimEntry ClaimEntry;
+typedef struct ClaimSupply ClaimSupply;
+typedef struct ClaimTally ClaimTally;
 typedef struct CityMapVtable CityMapVtable;
 typedef struct BuildingTypeVtable BuildingTypeVtable;
 
@@ -393,8 +396,8 @@ struct CharTypeRecord {
 /* Player stamina (0xC bytes) at 0x1BDBB8. */
 struct Stamina {
     int32_t unk_00;
-    int32_t value;             /* +0x04 maximum 399999 */
-    int32_t unk_08;
+    int32_t value;             /* +0x04 399999 at the start; drains every tick, food adds to it up to 2000000 */
+    int32_t noticeTicks;       /* +0x08 ticks since the hunger notice was last shown; eating clears it (mm_Stamina_Tick) */
 };
 
 /* Widget base (0xC bytes): state machine for windows and talk classes. */
@@ -520,7 +523,7 @@ struct WordsCtx {
     uint16_t memberIndex;      /* +0x1A */
     MapPerson *personB;        /* +0x1C */
     MapObject *buildingB;      /* +0x20 */
-    void *bagSlot;             /* +0x24 */
+    BagSlot *bagSlot;          /* +0x24 the bag item the talk is about (mm_Words_SelectBagItem) */
     uint16_t result;           /* +0x28 */
     int16_t arg;               /* +0x2A */
     int32_t candidateCount;    /* +0x2C */
@@ -555,6 +558,29 @@ struct ClaimThresholds {
     uint8_t switchFactor;      /* +0x05 a building takes the neighbours' claim when its meter times this is below their weighted meters (mm_BldgClaims_WeighNeighbours) */
     uint8_t spreadStep;        /* +0x06 meter rise per weight of a claiming neighbour (mm_BldgClaims_Spread) */
     uint8_t holdTime;          /* +0x07 claim timer once the meter maxes out */
+};
+/* A claim a building type can have (8 bytes): CLAIM.BIN section B holds each type's list (mm_Claim_GetList by
+   BuildingType.claimB), ended by id 0; MapObject.claimSlot is the one the building has (mm_BldgClaims_Pick). */
+struct ClaimEntry {
+    uint8_t wish;              /* +0x00 0: what the neighbours supply counts down from the value (a need, met at 0);
+                                  else it counts up from minus the value, up to 0xFF (mm_BldgClaims_CountNearby) */
+    uint8_t unk_01;
+    uint16_t id;               /* +0x02 the item claimed, or from 0x8000 a group of items (mm_Claim_GetGroup) */
+    uint16_t value;            /* +0x04 the starting value; for id 0x32 the weight while the building has no entrance */
+    uint16_t reach;            /* +0x06 tiles around the footprint the neighbours count in */
+};
+/* An item a building type supplies (4 bytes): CLAIM.BIN section C holds each type's list (mm_Claim_GetSupplies by
+   BuildingType.claimC), ended by id 0. */
+struct ClaimSupply {
+    uint16_t id;               /* +0x00 the item */
+    uint16_t value;            /* +0x02 how much of it */
+};
+/* A claim's tally among a building's neighbours (4 bytes, mm_BldgClaims_WeighNeighbours): 0x1F4B90 holds two per item
+   (need, then wish), the groups from item 0x40. */
+struct ClaimTally {
+    uint8_t own;               /* +0x00 the building itself has a value for it */
+    uint8_t weight;            /* +0x01 the neighbours' weights */
+    uint16_t meters;           /* +0x02 their claim meters times their weights */
 };
 
 /* Sound effect request (0x1C bytes): the frame's requests at 0x1F8710, kept in priority order by
@@ -664,5 +690,5 @@ struct CityScene {
     int32_t fadeLevel;         /* +0xC8 */
     int32_t fade;              /* +0xCC fade counter, 0 = none */
     int32_t fadeSpeed;         /* +0xD0 */
-    int32_t unk_D4;
+    int32_t fadeOverAll;       /* +0xD4 the fade is drawn at the top Z, over everything (mm_DmaList_QueueFade); set when the pause menu quits */
 };

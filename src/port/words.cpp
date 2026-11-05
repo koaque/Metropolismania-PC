@@ -342,12 +342,11 @@ namespace mm
         return static_cast<uint32_t>(type - 0x104) < 2 ? 1 : 0;
     }
 
-    // Byte 0 of the building's claim entry (claim section B of its type, 8 bytes per claim slot).
+    // Whether the building's claim is a wish (else a need).
     int WordsFn_BuildingClaim(GuestPtr<WordsCtx> ctx)
     {
         const GuestPtr<MapObject> building = buildingByArg(ctx);
-        const int section = Claim_GetSectionB(typeOfObject(building)->claimB);
-        return port::load<uint8_t>(static_cast<uint32_t>(section) + 8u * building->claimSlot);
+        return Claim_GetList(typeOfObject(building)->claimB)[building->claimSlot].wish;
     }
 
     namespace
@@ -424,36 +423,30 @@ namespace mm
 
     namespace
     {
-        // The bag item's goods record: its group's first record (0x1BDA9C) plus its index, 0x88-byte records
-        // (0x1BDAA0) whose first halfword is the offset into the names (0x1BDAA4).
-        uint32_t bagItemRecord(GuestPtr<WordsCtx> ctx)
-        {
-            const uint32_t slot = ctx->bagSlot.address;
-            const uint32_t first = port::load<uint16_t>(port::load<uint32_t>(0x001BDA9Cu) + 4u * port::load<uint16_t>(slot));
-            return port::load<uint32_t>(0x001BDAA0u) + 0x88u * (port::load<uint16_t>(slot + 2u) + first);
-        }
+        // The bag item's goods record.
+        GuestPtr<GoodsRecord> bagItemRecord(GuestPtr<WordsCtx> ctx) { return globals::goodsAt(ctx->bagSlot->group, ctx->bagSlot->index); }
 
         // The goods record of building type B for family B in the season (month / 4), with the argument as the
         // offset in and out: a local in the caller's frame at `slot`.
-        uint32_t goodsRecord(GuestPtr<WordsCtx> ctx, uint32_t slot)
+        GuestPtr<GoodsRecord> goodsRecord(GuestPtr<WordsCtx> ctx, uint32_t slot)
         {
             const GuestPtr<int32_t> offset{slot};
             *offset = ctx->arg;
             const int season = (ctx->city->monthCount % 12) / 4;
-            return static_cast<uint32_t>(Goods_GetRecordOffset(ctx->buildingTypeB, ctx->familyB, season, offset));
+            return GuestPtr<GoodsRecord>{static_cast<uint32_t>(Goods_GetRecordOffset(ctx->buildingTypeB, ctx->familyB, season, offset))};
         }
     }
 
     GuestPtr<char> WordsFn_TextBagItemName(GuestPtr<WordsCtx> ctx)
     {
-        return GuestPtr<char>{port::load<uint32_t>(0x001BDAA4u) + port::load<uint16_t>(bagItemRecord(ctx))};
+        return GuestPtr<char>{globals::goodsSectionC.get() + bagItemRecord(ctx)->name};
     }
 
     GuestPtr<char> WordsFn_TextGoodsName(GuestPtr<WordsCtx> ctx)
     {
         port::GuestFrame<0x20> frame;
-        const uint32_t record = goodsRecord(ctx, frame.ptr().address + 0x1Cu);
-        return GuestPtr<char>{port::load<uint32_t>(0x001BDAA4u) + port::load<uint16_t>(record)};
+        const GuestPtr<GoodsRecord> record = goodsRecord(ctx, frame.ptr().address + 0x1Cu);
+        return GuestPtr<char>{globals::goodsSectionC.get() + record->name};
     }
 
     // ---- second group: actions
@@ -630,8 +623,8 @@ namespace mm
         const int stage = type->number;
         if (type->group != 5)
             return stage;
-        const int at5 = EventQueue_Find(events, 5);
-        return stage + at5 - EventQueue_Find(events, 4);
+        const int at5 = EventMgr_FindType(events, 5);
+        return stage + at5 - EventMgr_FindType(events, 4);
     }
 
     // ---- third group: buildings, people and goods
@@ -640,11 +633,10 @@ namespace mm
     {
         GuestPtr<MapPerson> personByArg(GuestPtr<WordsCtx> ctx) { return ctx->arg != 0 ? ctx->personB : ctx->personA; }
 
-        // The building's claim: the halfword at +2 of its entry in claim section B of its type.
+        // The item the building claims.
         int claimOf(GuestPtr<MapObject> building)
         {
-            const int section = Claim_GetSectionB(typeOfObject(building)->claimB);
-            return port::load<uint16_t>(static_cast<uint32_t>(section) + 8u * building->claimSlot + 2u);
+            return Claim_GetList(typeOfObject(building)->claimB)[building->claimSlot].id;
         }
 
         // Whether the clock is within type B's opening hours, which may run past midnight.
@@ -724,41 +716,41 @@ namespace mm
     int WordsFn_CanAfford(GuestPtr<WordsCtx> ctx)
     {
         port::GuestFrame<0x30> frame;
-        const uint32_t record = goodsRecord(ctx, frame.ptr().address + 0x2Cu);
+        const GuestPtr<GoodsRecord> record = goodsRecord(ctx, frame.ptr().address + 0x2Cu);
         const int32_t money = globals::stageState()->money;
-        return money < Goods_GetPrice(static_cast<int>(record)) ? 0 : 1;
+        return money < Goods_GetPrice(static_cast<int>(record.address)) ? 0 : 1;
     }
 
-    // For goods carried in the bag (category, record +4, from 0x10 except 0x12, 0x14, 0x16 and 0x19), whether the
+    // For goods carried in the bag (kinds from 0x10 except 0x12, 0x14, 0x16 and 0x19), whether the
     // bag is full: the last slot of its size holds an item.
     int WordsFn_GoodsBagFull(GuestPtr<WordsCtx> ctx)
     {
         port::GuestFrame<0x30> frame;
-        const uint32_t record = goodsRecord(ctx, frame.ptr().address + 0x2Cu);
-        const uint8_t category = port::load<uint8_t>(record + 4u);
+        const GuestPtr<GoodsRecord> record = goodsRecord(ctx, frame.ptr().address + 0x2Cu);
+        const uint8_t category = record->kind;
         if (category < 0x10 || category == 0x12 || category == 0x16 || category == 0x14 || category == 0x19)
             return 0;
         const GuestPtr<Bag> bag = ctx->city->bag;
         if (bag->size == 0)
             return 0;
         const uint32_t slots = port::load<uint8_t>(globals::kBagSlotsBySize + bag->size);
-        return port::load<uint16_t>(bag.address + 4u + 16u * (slots - 1u)) != 0 ? 1 : 0; // slots[slots - 1].item
+        return GuestPtr<BagSlot>{bag.address + 4u + 16u * (slots - 1u)}->group != 0 ? 1 : 0;
     }
 
     // Whether the goods are owned already: laptop goods by the active laptop entries (bit `category`, and
-    // categories 6 and 7 by entries 7 and 8), category 0x16 when a bag shortcut holds record +5, category 0x19 when
-    // mm_Family_CanApply refuses record +5.
+    // categories 6 and 7 by entries 7 and 8), category 0x16 when a bag shortcut holds its value (the track), category
+    // 0x19 when mm_Family_CanApply refuses its value (the family).
     int WordsFn_GoodsOwned(GuestPtr<WordsCtx> ctx)
     {
         port::GuestFrame<0x40> frame;
-        const uint32_t record = goodsRecord(ctx, frame.ptr().address + 0x3Cu);
+        const GuestPtr<GoodsRecord> record = goodsRecord(ctx, frame.ptr().address + 0x3Cu);
         const uint32_t active = Laptop_CountActive();
-        const uint8_t category = port::load<uint8_t>(record + 4u);
+        const uint8_t category = record->kind;
         if ((active & (1u << (category & 31u))) != 0)
             return 1;
         if (category >= 6 && category < 8)
             return (Laptop_CountActive() & 0x180u) != 0 ? 1 : 0;
-        const uint8_t which = port::load<uint8_t>(record + 5u);
+        const uint8_t which = record->value;
         if (category == 0x16)
         {
             for (const BagShortcut &shortcut : ctx->city->bag->shortcuts)
@@ -777,7 +769,7 @@ namespace mm
     // city pointer the original holds in v0 at the call, unless it changes it.
     int WordsFn_GiveBagItem(GuestPtr<WordsCtx> ctx)
     {
-        const int price = Goods_GetPrice(static_cast<int>(bagItemRecord(ctx)));
+        const int price = Goods_GetPrice(static_cast<int>(bagItemRecord(ctx).address));
         int steps;
         if (price < 1001)
             steps = 1;
@@ -800,7 +792,7 @@ namespace mm
         Family_AddFriendship(ctx->familyA, ctx->memberA, GuestPtr<int32_t>::of(ctx->city->approval), steps * 3);
         port::setGuestV0(static_cast<int32_t>(ctx->city.address));
         const int removed = port::callGuest<int>(addr::Bag_RemoveSlot, ctx->city->bag, ctx->bagSlot);
-        ctx->bagSlot = GuestPtr<void>{0};
+        ctx->bagSlot = GuestPtr<BagSlot>{0};
         return removed;
     }
 
@@ -1190,19 +1182,17 @@ namespace mm
     {
         const GuestPtr<WordsCtx> ctx = words->ctx;
         const GuestPtr<Bag> bag = ctx->city->bag;
-        const uint32_t groups = port::load<uint32_t>(0x001BDA9Cu), records = port::load<uint32_t>(0x001BDAA0u);
         const uint32_t first = bag.address + 4u;
         const uint32_t end = first + 16u * port::load<uint8_t>(globals::kBagSlotsBySize + bag->size);
         int count = 0;
-        for (uint32_t slot = first; port::load<uint16_t>(slot) != 0 && slot < end; slot += 16u)
+        for (GuestPtr<BagSlot> slot{first}; slot->group != 0 && slot.address < end; ++slot)
         {
-            const uint32_t record = port::load<uint16_t>(groups + 4u * port::load<uint16_t>(slot)) + port::load<uint16_t>(slot + 2u);
-            const uint8_t category = port::load<uint8_t>(records + 0x88u * record + 4u);
+            const uint8_t category = globals::goodsAt(slot->group, slot->index)->kind;
             if (category != 0x10 && category != 0x11 && category != 0x13)
                 continue;
             if (count++ == index)
             {
-                ctx->bagSlot = GuestPtr<void>{slot};
+                ctx->bagSlot = slot;
                 return;
             }
         }
@@ -1355,13 +1345,11 @@ namespace mm
         if (code != -2002)
             return 5;
         const GuestPtr<Bag> bag = city->bag;
-        const uint32_t groups = port::load<uint32_t>(0x001BDA9Cu), records = port::load<uint32_t>(0x001BDAA0u);
         const uint32_t end = bag.address + 4u + 16u * port::load<uint8_t>(globals::kBagSlotsBySize + bag->size);
         int count = 1;
-        for (uint32_t slot = bag.address + 4u; port::load<uint16_t>(slot) != 0 && slot < end; slot += 16u)
+        for (GuestPtr<BagSlot> slot{bag.address + 4u}; slot->group != 0 && slot.address < end; ++slot)
         {
-            const uint32_t record = port::load<uint16_t>(groups + 4u * port::load<uint16_t>(slot)) + port::load<uint16_t>(slot + 2u);
-            const uint8_t category = port::load<uint8_t>(records + 0x88u * record + 4u);
+            const uint8_t category = globals::goodsAt(slot->group, slot->index)->kind;
             if (category == 0x10 || category == 0x11 || category == 0x13)
                 ++count;
         }
@@ -1616,7 +1604,7 @@ namespace mm
             ctx->personB = GuestPtr<MapPerson>{0u};
             ctx->buildingB = GuestPtr<MapObject>{0u};
             ctx->buildingTypeB = 0;
-            ctx->bagSlot = GuestPtr<void>{0u};
+            ctx->bagSlot = GuestPtr<BagSlot>{0u};
             ctx->result = 0;
             ctx->cancelAllowed = 1;
             ctx->flag134 = 0;
@@ -1831,18 +1819,15 @@ namespace mm
     // item's id is in the character type's list of liked items.
     int WordsFn_LikesBagItem(GuestPtr<WordsCtx> ctx)
     {
-        const uint32_t bagSlot = ctx->bagSlot.address;
-        if (ctx->buildingA && port::load<uint16_t>(bagSlot) == 0x96)
+        const GuestPtr<BagSlot> bagSlot = ctx->bagSlot;
+        if (ctx->buildingA && bagSlot->group == 0x96)
         {
-            const uint32_t btype = globals::buildingTypeAddress(ctx->buildingA->type);
-            if (port::load<uint8_t>(btype + 0x145u) != 4)
+            const GuestPtr<BuildingType> btype{globals::buildingTypeAddress(ctx->buildingA->type)};
+            if (btype->category != 4)
                 return 0;
-            return port::load<uint8_t>(btype + 0x144u) == 0 ? 1 : 0;
+            return btype->rule == 0 ? 1 : 0;
         }
-        const uint32_t group = port::load<uint16_t>(bagSlot);
-        const uint32_t index = port::load<uint16_t>(bagSlot + 2u);
-        const uint32_t first = port::load<uint16_t>(globals::goodsSectionA.get() + 4u * group);
-        const uint32_t item = port::load<uint16_t>(globals::goodsSectionB.get() + 0x88u * (index + first));
+        const uint32_t item = globals::goodsAt(bagSlot->group, bagSlot->index)->name;
         uint32_t charType;
         if (ctx->personA)
             charType = ctx->personA->charType;
@@ -2102,8 +2087,8 @@ namespace mm
         int32_t month = remainder(city->monthCount, 12);
         if (month < 0)
             month += 3;
-        const uint32_t record = static_cast<uint32_t>(Goods_GetRecordOffset(ctx->buildingTypeB, ctx->familyB, month >> 2, GuestPtr<int32_t>{offsetAt}));
-        const int32_t price = Goods_GetPrice(static_cast<int>(record));
+        const GuestPtr<GoodsRecord> record{static_cast<uint32_t>(Goods_GetRecordOffset(ctx->buildingTypeB, ctx->familyB, month >> 2, GuestPtr<int32_t>{offsetAt}))};
+        const int32_t price = Goods_GetPrice(static_cast<int>(record.address));
         constexpr uint32_t kMoney = 0x001C5540u;
         const int32_t money = static_cast<int32_t>(port::load<uint32_t>(kMoney) - static_cast<uint32_t>(price));
         port::store<int32_t>(kMoney, money);
@@ -2125,7 +2110,7 @@ namespace mm
         Family_AddFriendship(ctx->familyA, ctx->memberA, GuestPtr<int32_t>{c + 0x8Cu}, points);
         const GuestPtr<Laptop> laptop{city->laptop.address};
         const uint32_t bag = city->bag.address;
-        const uint32_t kind = port::load<uint8_t>(record + 4u);
+        const uint32_t kind = record->kind;
         switch (kind)
         {
         case 4:
@@ -2138,8 +2123,8 @@ namespace mm
         case 7:
         case 8:
             Laptop_AddEntry(laptop, static_cast<int>(kind));
-            if (port::load<uint16_t>(bag) < port::load<uint8_t>(record + 5u))
-                port::store<uint16_t>(bag, port::load<uint8_t>(record + 5u));
+            if (port::load<uint16_t>(bag) < record->value)
+                port::store<uint16_t>(bag, record->value);
             break;
         case 0x10:
         case 0x11:
@@ -2157,13 +2142,13 @@ namespace mm
             break;
         case 0x12:
         case 0x14:
-            Stamina_Eat(city->stamina, GuestPtr<uint8_t>{record});
+            Stamina_Eat(city->stamina, record);
             break;
         case 0x16:
             Bag_AddMusicTrack(GuestPtr<Bag>{bag}, ctx->buildingTypeB, port::load<int32_t>(offsetAt));
             break;
         case 0x19:
-            Applicants_Add(city->applicants, port::load<uint8_t>(record + 5u), city->monthCount, 8);
+            Applicants_Add(city->applicants, record->value, city->monthCount, 8);
             break;
         default:
             break;
@@ -2183,13 +2168,13 @@ namespace mm
         port::GuestFrame<0x60> frame;
         const uint32_t local = frame.ptr().address + 0x5Cu;
         const uint32_t building = ctx->buildingA.address;
-        const uint32_t sections = static_cast<uint32_t>(Claim_GetSectionB(globals::buildingType(port::load<uint16_t>(building))->claimB));
-        const uint32_t entry = static_cast<uint32_t>(sections) + 8u * port::load<uint8_t>(building + 0x12u);
+        const GuestPtr<ClaimEntry> entry = Claim_GetList(globals::buildingType(port::load<uint16_t>(building))->claimB) +
+                                           GuestPtr<MapObject>{building}->claimSlot;
         port::store<uint32_t>(local, port::load<uint32_t>(0x001BDC20u));
-        port::store<uint16_t>(local, port::load<uint16_t>(entry + 2u));
+        port::store<uint16_t>(local, entry->id);
         uint32_t claims = local;
-        if (port::load<uint16_t>(entry + 2u) >= 0x8000)
-            claims = static_cast<uint32_t>(Claim_GetSectionD(port::load<uint16_t>(local)));
+        if (entry->id >= 0x8000)
+            claims = Claim_GetGroup(port::load<uint16_t>(local)).address;
         const uint32_t member = Family_Get(ctx->familyA, 0).address + 0x48u * ctx->memberA + 0x2Cu;
         const uint32_t end = member + 0x20u;
         for (uint32_t at = member;; at += 2u)
@@ -2200,7 +2185,7 @@ namespace mm
             if (Family_CanApply(family, ctx->city) == 0)
                 continue;
             const uint32_t type = static_cast<uint32_t>(Family_GetTypeIndex(static_cast<int>(port::load<uint16_t>(at)))) & 0xFFFFu;
-            for (uint32_t want = static_cast<uint32_t>(Claim_GetSectionC(globals::buildingType(type)->claimC)); port::load<uint16_t>(want) != 0; want += 4u)
+            for (uint32_t want = Claim_GetSupplies(globals::buildingType(type)->claimC).address; port::load<uint16_t>(want) != 0; want += 4u)
                 for (uint32_t have = claims; port::load<uint16_t>(have) != 0; have += 2u)
                     if (port::load<uint16_t>(want) == port::load<uint16_t>(have))
                     {
@@ -2219,7 +2204,7 @@ namespace mm
     // map) is the script's argument.
     int WordsFn_ScheduleIs(GuestPtr<WordsCtx> ctx)
     {
-        const uint32_t activity = ctx->personA ? ctx->personA->activity : Schedule_QueryB(ctx->city, ctx->familyA, ctx->memberA);
+        const uint32_t activity = ctx->personA ? ctx->personA->activity : Schedule_MemberActivity(ctx->city, ctx->familyA, ctx->memberA);
         return static_cast<int64_t>(activity) == static_cast<int64_t>(ctx->arg) ? 1 : 0;
     }
 
@@ -2334,10 +2319,9 @@ namespace mm
         port::store<uint8_t>(kWordsUsedMask, 4);
         const GuestPtr<Bag> bag = city->bag;
         const uint32_t end = bag.address + 4u + 16u * port::load<uint8_t>(globals::kBagSlotsBySize + bag->size);
-        for (uint32_t slot = bag.address + 4u; port::load<uint16_t>(slot) != 0 && slot < end; slot += 16u)
+        for (GuestPtr<BagSlot> slot{bag.address + 4u}; slot->group != 0 && slot.address < end; ++slot)
         {
-            const uint32_t first = port::load<uint16_t>(globals::goodsSectionA.get() + 4u * port::load<uint16_t>(slot));
-            const uint32_t category = port::load<uint8_t>(globals::goodsSectionB.get() + 0x88u * (port::load<uint16_t>(slot + 2u) + first) + 4u);
+            const uint32_t category = globals::goodsAt(slot->group, slot->index)->kind;
             if (category == 0x10 || category == 0x11 || category == 0x13)
             {
                 port::store<uint8_t>(kWordsUsedMask, 0);
@@ -2489,15 +2473,14 @@ namespace mm
             const GuestPtr<Bag> bag = city->bag;
             const uint32_t end = bag.address + 4u + 16u * port::load<uint8_t>(globals::kBagSlotsBySize + bag->size);
             int counted = 0;
-            for (uint32_t slot = bag.address + 4u; port::load<uint16_t>(slot) != 0 && slot < end; slot += 16u)
+            for (GuestPtr<BagSlot> slot{bag.address + 4u}; slot->group != 0 && slot.address < end; ++slot)
             {
-                const uint32_t first = port::load<uint16_t>(globals::goodsSectionA.get() + 4u * port::load<uint16_t>(slot));
-                const uint32_t record = globals::goodsSectionB.get() + 0x88u * (port::load<uint16_t>(slot + 2u) + first);
-                const uint32_t category = port::load<uint8_t>(record + 4u);
+                const GuestPtr<GoodsRecord> record = globals::goodsAt(slot->group, slot->index);
+                const uint32_t category = record->kind;
                 if (category != 0x10 && category != 0x11 && category != 0x13)
                     continue;
                 if (counted == index)
-                    return GuestPtr<char>{globals::goodsSectionC.get() + port::load<uint16_t>(record)};
+                    return GuestPtr<char>{globals::goodsSectionC.get() + record->name};
                 ++counted;
             }
             return defaultText(2u);
@@ -2505,7 +2488,7 @@ namespace mm
         if (index >= 4)
             return GuestPtr<char>{0x001BAD68u};
         const uint32_t goods = static_cast<uint32_t>(Words_GetGoods(GuestPtr<Words>{kWordsObject}, index));
-        sdk::strcpy(0x00718240u, globals::goodsSectionC.get() + port::load<uint16_t>(goods));
+        sdk::strcpy(0x00718240u, globals::goodsSectionC.get() + GuestPtr<GoodsRecord>{goods}->name);
         const uint32_t length = static_cast<uint32_t>(sdk::strlen(0x00718240u));
         const int price = Goods_GetPrice(static_cast<int>(goods));
         Text_FormatMoney(GuestPtr<char>{0x00718240u + length}, price, 0x1C - static_cast<int>(length), 0);
@@ -2524,7 +2507,7 @@ namespace mm
     {
         constexpr uint32_t kReadResult = 0x001BD9F4u;
         const uint32_t kind = city->events->talks[0]->kind;
-        if (kind == 0 || static_cast<int32_t>(kind) != EventQueue_Find(city->events, id))
+        if (kind == 0 || static_cast<int32_t>(kind) != EventMgr_FindType(city->events, id))
             return;
         const GuestPtr<uint32_t> block = Words_ReadBlock(0);
         const GuestPtr<Words> words{kWordsObject};
@@ -2585,13 +2568,12 @@ namespace mm
                 continue;
             const GuestPtr<CityMap> map = ctx->city->map;
             const uint32_t object = port::load<uint32_t>(sp + 0xACu);
-            const uint32_t section = static_cast<uint32_t>(
-                Claim_GetSectionB(globals::buildingType(Map_GetRecord(map, static_cast<int>(object))->type)->claimB));
-            const uint32_t value = port::load<uint16_t>(section + 8u * port::load<uint32_t>(sp + 0xA4u) + 2u);
+            const GuestPtr<ClaimEntry> list = Claim_GetList(globals::buildingType(Map_GetRecord(map, static_cast<int>(object))->type)->claimB);
+            const uint32_t value = list[static_cast<int32_t>(port::load<uint32_t>(sp + 0xA4u))].id;
             if (static_cast<int32_t>(value) < 0x8000)
                 port::store<uint16_t>(local, static_cast<uint16_t>(value));
             else
-                claims = static_cast<uint32_t>(Claim_GetSectionD(value));
+                claims = Claim_GetGroup(value).address;
             ctx->personB = ctx->city->map->people + port::load<uint32_t>(sp + 0xA8u);
             ctx->familyB = ctx->personB->family;
             ctx->memberB = ctx->personB->member;
@@ -2602,7 +2584,7 @@ namespace mm
         // Whether the home type of `family` claims one of the claims supplied; the types' claim section C lists end with a 0 value.
         const auto wantsOneOf = [&](uint32_t family) {
             const uint32_t type = static_cast<uint32_t>(Family_GetTypeIndex(static_cast<int>(family))) & 0xFFFFu;
-            for (uint32_t want = static_cast<uint32_t>(Claim_GetSectionC(globals::buildingType(type)->claimC));
+            for (uint32_t want = Claim_GetSupplies(globals::buildingType(type)->claimC).address;
                  port::load<uint16_t>(want) != 0; want += 4u)
                 for (uint32_t have = claims; port::load<uint16_t>(have) != 0; have += 2u)
                     if (port::load<uint16_t>(want) == port::load<uint16_t>(have))
@@ -2669,13 +2651,13 @@ namespace mm
         {
             if (index != ctx->wantIndex)
                 continue;
-            const uint32_t section = static_cast<uint32_t>(Claim_GetSectionB(
-                port::load<uint8_t>(globals::buildingTypeAddress(Map_GetRecord(ctx->city->map, static_cast<int>(port::load<uint32_t>(sp + 0x104u)))->type) + 0x147u)));
-            const uint32_t value = port::load<uint16_t>(section + 8u * port::load<uint32_t>(sp + 0x100u) + 2u);
+            const GuestPtr<ClaimEntry> list = Claim_GetList(
+                globals::buildingType(Map_GetRecord(ctx->city->map, static_cast<int>(port::load<uint32_t>(sp + 0x104u)))->type)->claimB);
+            const uint32_t value = list[static_cast<int32_t>(port::load<uint32_t>(sp + 0x100u))].id;
             if (static_cast<int32_t>(value) < 0x8000)
                 port::store<uint16_t>(local, static_cast<uint16_t>(value));
             else
-                claims = static_cast<uint32_t>(Claim_GetSectionD(value));
+                claims = Claim_GetGroup(value).address;
             break;
         }
         if (port::load<uint16_t>(claims) != 0)
@@ -2696,7 +2678,7 @@ namespace mm
                         if (Family_CanApply(port::load<uint16_t>(at), ctx->city) == 0)
                             continue;
                         const uint32_t type = static_cast<uint32_t>(Family_GetTypeIndex(static_cast<int>(port::load<uint16_t>(at)))) & 0xFFFFu;
-                        for (uint32_t want = static_cast<uint32_t>(Claim_GetSectionC(globals::buildingType(type)->claimC));
+                        for (uint32_t want = Claim_GetSupplies(globals::buildingType(type)->claimC).address;
                              port::load<uint16_t>(want) != 0; want += 4u)
                             for (uint32_t have = claims; port::load<uint16_t>(have) != 0; have += 2u)
                             {

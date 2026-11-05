@@ -43,11 +43,15 @@ struct MenuWin;
 struct PauseSlotText;
 struct LoadingScreen;
 struct McManager;
+struct CardTime;
+struct CardDirEntry;
+struct SaveTitle;
 struct NameEntry;
 struct TitleScene;
 struct Bag;
 struct BagShortcut;
 struct BagSlot;
+struct GoodsRecord;
 struct StatusPanel;
 struct PauseMenu;
 struct Minimap;
@@ -57,6 +61,9 @@ struct PhoneCalls;
 struct PhoneCallEntry;
 struct EventMgr;
 struct EventSlot;
+struct EventQueueEntry;
+struct EventQueue;
+struct EventTest;
 struct ActorRef;
 struct WantsWin;
 struct WantsIndex;
@@ -413,6 +420,35 @@ struct McManager {
     GuestPtr<GameFile> file;            /* +0x20 */
     int32_t fd;                /* +0x24 open save file descriptor */
 };
+/* A memory card time stamp (8 bytes): plain numbers, not BCD. */
+struct CardTime {
+    uint8_t unk_00;
+    uint8_t second;            /* +0x01 */
+    uint8_t minute;            /* +0x02 */
+    uint8_t hour;              /* +0x03 */
+    uint8_t day;               /* +0x04 */
+    uint8_t month;             /* +0x05 */
+    uint16_t year;             /* +0x06 */
+};
+/* A memory card directory entry (0x40 bytes): one per save slot (0x1F3F00), the scan's last read (0x1F4300), the
+   loaded save's (0x1C5640, mm_Title_LoadMenu). */
+struct CardDirEntry {
+    uint8_t unk_00[8];
+    CardTime modified;         /* +0x08 finds the newest save (mm_McManager_FormatSlotText); a save changed since it was
+                                  loaded is not overwritten */
+    uint8_t unk_10[0x10];
+    char name[0x20];           /* +0x20 the save folder's name */
+};
+/* A save's title as icon.sys keeps it (0x44 bytes, mm_McManager_BuildSaveTitle): the prefix and the city's name in
+   full-width characters, cut at 0x3C bytes, then four little-endian numbers for the load screen. */
+struct SaveTitle {
+    char text[0x3C];           /* +0x00 */
+    uint8_t end;               /* +0x3C 0 */
+    uint8_t months[2];         /* +0x3D months played */
+    int8_t approval;           /* +0x3F the approval rate */
+    uint8_t population[2];     /* +0x40 */
+    uint8_t stage[2];          /* +0x42 the stage number */
+};
 /* Name entry window (0x124 bytes): a keyboard of 6 columns on a board model (mm_NameEntry_*). */
 struct NameEntry {
     GuestPtr<A3DObject> model;          /* +0x000 the board (0x1F3B6C) */
@@ -510,10 +546,33 @@ struct TitleScene {
     GuestPtr<char> previewText;         /* +0x100 loading text shown once the preview waits */
 };
 /* Player's bag (0x1AC bytes). */
-/* Bag item slot (0x10 bytes). */
+/* A goods record (0x88 bytes): GOODS.BIN section B, grouped by the building type that sells them (section A holds each
+   group's first record, mm_Goods_GetRecordOffset). */
+struct GoodsRecord {
+    uint16_t name;             /* +0x00 its name: an offset into section C (mm_BagMenu_RefreshList); also its id
+                                  (mm_Bag_FindItem) */
+    int8_t priceDigits;        /* +0x02 the price is this times ten to the power of the next (mm_Goods_GetPrice) */
+    uint8_t priceExponent;     /* +0x03 */
+    uint8_t kind;              /* +0x04 what it is (mm_WordsFn_BuyGoods): 4, 5, 10, 11 laptop modules; 6 to 8 bags; 0x10
+                                  present s; 0x11 and 0x13 food to carry, 0x12 and 0x14 food eaten at once; 0x16 music;
+                                  0x17 and 0x1A to 0x1C things to place; 0x19 houses */
+    uint8_t value;             /* +0x05 by kind: the bag size (6 to 8), the music track (0x16), the family that applies
+                                  (0x19), ... */
+    int8_t count;              /* +0x06 copied to the bag slot; shown as xN for the kinds to place */
+    uint8_t unk_07;
+    char text[0x80];           /* +0x08 the description (bytes after its end are leftovers) */
+};
+/* Bag item slot (0x10 bytes, mm_Bag_AddItem). */
 struct BagSlot {
-    uint16_t item;             /* +0x00 0 = empty */
-    uint8_t unk_02[0xE];
+    uint16_t group;            /* +0x00 the goods group (the building type that sells it), 0 = empty */
+    uint16_t index;            /* +0x02 its record in the group */
+    int16_t stage;             /* +0x04 the stage it was bought in */
+    int8_t count;              /* +0x06 from the goods record */
+    uint8_t unk_07;
+    int32_t month;             /* +0x08 the month count it was bought in */
+    uint16_t seller;           /* +0x0C the family of the shop it came from */
+    uint8_t unk_0E;            /* +0x0E 0xFF when bought */
+    uint8_t unk_0F;
 };
 /* Bag shortcut (4 bytes). */
 struct BagShortcut {
@@ -569,7 +628,7 @@ struct PauseMenu {
     int32_t waitFrames;        /* +0x24 frames in the card message state (mm_PauseMenu_StateMain) */
     int32_t blink;             /* +0x28 frames, for the blinking while saving */
     ps2f openTime;            /* +0x2C rises by 10 per frame; the window is fully in at 120 */
-    char saveHeader[0x44];     /* +0x30 starts with the save name, default from 0x1B73D0 (Shift-JIS; mm_McManager_BuildSaveHeader) */
+    SaveTitle saveTitle;       /* +0x30 the city's save title (mm_McManager_BuildSaveTitle) */
     int32_t cardMessage;       /* +0x74 the message shown (mm_PauseMenu_ShowCardMessage) */
     PauseSlotText slotTexts[16]; /* +0x78 the listed saves' texts (the first byte cleared by mm_PauseMenu_Reset) */
     int32_t pendingChoice;     /* +0x998 the save to overwrite, -1 none */
@@ -646,7 +705,7 @@ struct EventType {
                                   character type */
     uint8_t handler;           /* +0x24 index into the handler table at 0x1AF0D0 (EventHandler), 0 = none */
     uint8_t tileFlags;         /* +0x25 1 + the tile flag set while it runs, 0 = none (mm_Event_SetTileFlags) */
-    uint8_t mask;              /* +0x26 tested by mm_EventList_MoveByMask26 */
+    uint8_t mask;              /* +0x26 tested by mm_EventList_MoveByMask */
     uint8_t ranks;             /* +0x27 the population ranks it runs at (bit rank - 1): below them it waits in bucket 5,
                                   after them it goes to bucket 6 (mm_Event_Update) */
     int8_t wait;               /* +0x28 after it finishes: days to wait in bucket 4, 0 its own level again, -1 bucket 6,
@@ -834,6 +893,28 @@ struct EventMgr {
     EventSlot slots[5];        /* +0x04 filled from the front; mm_EventMgr_RequeueFirst drops the first */
     GuestPtr<EventData> talks[3];       /* +0xA4 the event records the talk script works with (0x84, 0x24, 0x7C bytes; saved) */
 };
+/* An entry of the event queue (2 bytes); event slots and event records start with the same pair. */
+struct EventQueueEntry {
+    uint8_t type;              /* +0x00 row of the event table */
+    int8_t wait;               /* +0x01 days to wait in bucket 4, counted down each day (mm_Event_Update) */
+};
+/* The event queue (0x224 bytes, mm_Event_LoadTypes; saved with the city): every event type not running is in one of
+   eight buckets (docs/map/event.md), each kept in the order of the types' priorities, lowest first. */
+struct EventQueue {
+    int32_t starts[9];         /* +0x000 bucket k runs from entry starts[k] up to starts[k + 1]; the last is the count */
+    EventQueueEntry entries[0x100]; /* +0x024 */
+};
+/* The test of a queue move (mm_EventList_MoveDue and the others): the event table, then what the types are compared
+   with. */
+struct EventTest {
+    GuestPtr<EventType> types;          /* +0x00 */
+    union {
+        int32_t ranks;         /* +0x04 a rank bit, against the types' ranks */
+        int32_t level;         /* +0x04 against the types' levels (mm_EventList_MoveDueLevel) */
+        uint8_t mask;          /* +0x04 against the types' masks (mm_EventList_MoveByMask) */
+    };
+    int32_t rankLevel;         /* +0x08 the level, with a rank bit (mm_EventList_MoveInRankLevel) */
+};
 /* Want (0x10 bytes) in the wants list's data area. */
 struct Want {
     uint16_t person;           /* +0x00 who wants it (passed to mm_PhoneCall_Post) */
@@ -914,8 +995,8 @@ struct ApplicantEntry {
     uint16_t index;            /* +0x00 own index */
     int16_t state;             /* +0x02 0 free, 2 waiting, 3 to be placed, 6 being placed (mm_Applicants_StartPlacing) */
     uint16_t family;           /* +0x04 */
-    uint16_t tile;             /* +0x06 where the player put its home (mm_Player_PlaceForApplicant) */
-    uint8_t unk_08[2];
+    uint16_t tile;             /* +0x06 where the player put its home (mm_Player_PlaceForApplicant), 0x4000 not yet */
+    uint16_t home;             /* +0x08 the home built for it (mm_Applicants_AssignToBuilding), 0x3F80 none */
     uint16_t type;             /* +0x0A building type the family wants (index into the table at gp 0x1BDBF8) */
     int32_t month;             /* +0x0C the month count when it applied (mm_Applicants_BuildInfo) */
     int32_t timer;             /* +0x10 set to 6 when its placing starts */
@@ -1227,6 +1308,9 @@ struct SeRequest;
 struct SeVoice;
 struct SeSound;
 struct ClaimThresholds;
+struct ClaimEntry;
+struct ClaimSupply;
+struct ClaimTally;
 struct CityMapVtable;
 struct BuildingTypeVtable;
 
@@ -1586,8 +1670,8 @@ struct CharTypeRecord {
 /* Player stamina (0xC bytes) at 0x1BDBB8. */
 struct Stamina {
     int32_t unk_00;
-    int32_t value;             /* +0x04 maximum 399999 */
-    int32_t unk_08;
+    int32_t value;             /* +0x04 399999 at the start; drains every tick, food adds to it up to 2000000 */
+    int32_t noticeTicks;       /* +0x08 ticks since the hunger notice was last shown; eating clears it (mm_Stamina_Tick) */
 };
 
 /* Widget base (0xC bytes): state machine for windows and talk classes. */
@@ -1713,7 +1797,7 @@ struct WordsCtx {
     uint16_t memberIndex;      /* +0x1A */
     GuestPtr<MapPerson> personB;        /* +0x1C */
     GuestPtr<MapObject> buildingB;      /* +0x20 */
-    GuestPtr<void> bagSlot;             /* +0x24 */
+    GuestPtr<BagSlot> bagSlot;          /* +0x24 the bag item the talk is about (mm_Words_SelectBagItem) */
     uint16_t result;           /* +0x28 */
     int16_t arg;               /* +0x2A */
     int32_t candidateCount;    /* +0x2C */
@@ -1748,6 +1832,29 @@ struct ClaimThresholds {
     uint8_t switchFactor;      /* +0x05 a building takes the neighbours' claim when its meter times this is below their weighted meters (mm_BldgClaims_WeighNeighbours) */
     uint8_t spreadStep;        /* +0x06 meter rise per weight of a claiming neighbour (mm_BldgClaims_Spread) */
     uint8_t holdTime;          /* +0x07 claim timer once the meter maxes out */
+};
+/* A claim a building type can have (8 bytes): CLAIM.BIN section B holds each type's list (mm_Claim_GetList by
+   BuildingType.claimB), ended by id 0; MapObject.claimSlot is the one the building has (mm_BldgClaims_Pick). */
+struct ClaimEntry {
+    uint8_t wish;              /* +0x00 0: what the neighbours supply counts down from the value (a need, met at 0);
+                                  else it counts up from minus the value, up to 0xFF (mm_BldgClaims_CountNearby) */
+    uint8_t unk_01;
+    uint16_t id;               /* +0x02 the item claimed, or from 0x8000 a group of items (mm_Claim_GetGroup) */
+    uint16_t value;            /* +0x04 the starting value; for id 0x32 the weight while the building has no entrance */
+    uint16_t reach;            /* +0x06 tiles around the footprint the neighbours count in */
+};
+/* An item a building type supplies (4 bytes): CLAIM.BIN section C holds each type's list (mm_Claim_GetSupplies by
+   BuildingType.claimC), ended by id 0. */
+struct ClaimSupply {
+    uint16_t id;               /* +0x00 the item */
+    uint16_t value;            /* +0x02 how much of it */
+};
+/* A claim's tally among a building's neighbours (4 bytes, mm_BldgClaims_WeighNeighbours): 0x1F4B90 holds two per item
+   (need, then wish), the groups from item 0x40. */
+struct ClaimTally {
+    uint8_t own;               /* +0x00 the building itself has a value for it */
+    uint8_t weight;            /* +0x01 the neighbours' weights */
+    uint16_t meters;           /* +0x02 their claim meters times their weights */
 };
 
 /* Sound effect request (0x1C bytes): the frame's requests at 0x1F8710, kept in priority order by
@@ -1857,7 +1964,7 @@ struct CityScene {
     int32_t fadeLevel;         /* +0xC8 */
     int32_t fade;              /* +0xCC fade counter, 0 = none */
     int32_t fadeSpeed;         /* +0xD0 */
-    int32_t unk_D4;
+    int32_t fadeOverAll;       /* +0xD4 the fade is drawn at the top Z, over everything (mm_DmaList_QueueFade); set when the pause menu quits */
 };
 
 // ---- 20_widgets.h
@@ -2235,6 +2342,20 @@ static_assert(offsetof(McManager, dirIndex) == 0x10, "McManager.dirIndex");
 static_assert(offsetof(McManager, request) == 0x14, "McManager.request");
 static_assert(offsetof(McManager, file) == 0x20, "McManager.file");
 static_assert(offsetof(McManager, fd) == 0x24, "McManager.fd");
+static_assert(offsetof(CardTime, second) == 0x01, "CardTime.second");
+static_assert(offsetof(CardTime, minute) == 0x02, "CardTime.minute");
+static_assert(offsetof(CardTime, hour) == 0x03, "CardTime.hour");
+static_assert(offsetof(CardTime, day) == 0x04, "CardTime.day");
+static_assert(offsetof(CardTime, month) == 0x05, "CardTime.month");
+static_assert(offsetof(CardTime, year) == 0x06, "CardTime.year");
+static_assert(offsetof(CardDirEntry, modified) == 0x08, "CardDirEntry.modified");
+static_assert(offsetof(CardDirEntry, name) == 0x20, "CardDirEntry.name");
+static_assert(offsetof(SaveTitle, text) == 0x00, "SaveTitle.text");
+static_assert(offsetof(SaveTitle, end) == 0x3C, "SaveTitle.end");
+static_assert(offsetof(SaveTitle, months) == 0x3D, "SaveTitle.months");
+static_assert(offsetof(SaveTitle, approval) == 0x3F, "SaveTitle.approval");
+static_assert(offsetof(SaveTitle, population) == 0x40, "SaveTitle.population");
+static_assert(offsetof(SaveTitle, stage) == 0x42, "SaveTitle.stage");
 static_assert(sizeof(NameEntry) == 0x124, "NameEntry size");
 static_assert(offsetof(NameEntry, model) == 0x000, "NameEntry.model");
 static_assert(offsetof(NameEntry, hintText) == 0x004, "NameEntry.hintText");
@@ -2318,8 +2439,21 @@ static_assert(offsetof(TitleScene, previewState) == 0xF4, "TitleScene.previewSta
 static_assert(offsetof(TitleScene, previewTurn) == 0xF8, "TitleScene.previewTurn");
 static_assert(offsetof(TitleScene, previewTurnStep) == 0xFC, "TitleScene.previewTurnStep");
 static_assert(offsetof(TitleScene, previewText) == 0x100, "TitleScene.previewText");
+static_assert(offsetof(GoodsRecord, name) == 0x00, "GoodsRecord.name");
+static_assert(offsetof(GoodsRecord, priceDigits) == 0x02, "GoodsRecord.priceDigits");
+static_assert(offsetof(GoodsRecord, priceExponent) == 0x03, "GoodsRecord.priceExponent");
+static_assert(offsetof(GoodsRecord, kind) == 0x04, "GoodsRecord.kind");
+static_assert(offsetof(GoodsRecord, value) == 0x05, "GoodsRecord.value");
+static_assert(offsetof(GoodsRecord, count) == 0x06, "GoodsRecord.count");
+static_assert(offsetof(GoodsRecord, text) == 0x08, "GoodsRecord.text");
 static_assert(sizeof(BagSlot) == 0x10, "BagSlot size");
-static_assert(offsetof(BagSlot, item) == 0x00, "BagSlot.item");
+static_assert(offsetof(BagSlot, group) == 0x00, "BagSlot.group");
+static_assert(offsetof(BagSlot, index) == 0x02, "BagSlot.index");
+static_assert(offsetof(BagSlot, stage) == 0x04, "BagSlot.stage");
+static_assert(offsetof(BagSlot, count) == 0x06, "BagSlot.count");
+static_assert(offsetof(BagSlot, month) == 0x08, "BagSlot.month");
+static_assert(offsetof(BagSlot, seller) == 0x0C, "BagSlot.seller");
+static_assert(offsetof(BagSlot, unk_0E) == 0x0E, "BagSlot.unk_0E");
 static_assert(offsetof(BagShortcut, slot) == 0x00, "BagShortcut.slot");
 static_assert(offsetof(Bag, size) == 0x000, "Bag.size");
 static_assert(offsetof(Bag, slots) == 0x004, "Bag.slots");
@@ -2360,7 +2494,7 @@ static_assert(offsetof(PauseMenu, saveSlot) == 0x20, "PauseMenu.saveSlot");
 static_assert(offsetof(PauseMenu, waitFrames) == 0x24, "PauseMenu.waitFrames");
 static_assert(offsetof(PauseMenu, blink) == 0x28, "PauseMenu.blink");
 static_assert(offsetof(PauseMenu, openTime) == 0x2C, "PauseMenu.openTime");
-static_assert(offsetof(PauseMenu, saveHeader) == 0x30, "PauseMenu.saveHeader");
+static_assert(offsetof(PauseMenu, saveTitle) == 0x30, "PauseMenu.saveTitle");
 static_assert(offsetof(PauseMenu, cardMessage) == 0x74, "PauseMenu.cardMessage");
 static_assert(offsetof(PauseMenu, slotTexts) == 0x78, "PauseMenu.slotTexts");
 static_assert(offsetof(PauseMenu, pendingChoice) == 0x998, "PauseMenu.pendingChoice");
@@ -2528,6 +2662,15 @@ static_assert(offsetof(EventMgr, minute) == 0x00, "EventMgr.minute");
 static_assert(offsetof(EventMgr, rank) == 0x02, "EventMgr.rank");
 static_assert(offsetof(EventMgr, slots) == 0x04, "EventMgr.slots");
 static_assert(offsetof(EventMgr, talks) == 0xA4, "EventMgr.talks");
+static_assert(offsetof(EventQueueEntry, type) == 0x00, "EventQueueEntry.type");
+static_assert(offsetof(EventQueueEntry, wait) == 0x01, "EventQueueEntry.wait");
+static_assert(offsetof(EventQueue, starts) == 0x000, "EventQueue.starts");
+static_assert(offsetof(EventQueue, entries) == 0x024, "EventQueue.entries");
+static_assert(offsetof(EventTest, types) == 0x00, "EventTest.types");
+static_assert(offsetof(EventTest, ranks) == 0x04, "EventTest.ranks");
+static_assert(offsetof(EventTest, level) == 0x04, "EventTest.level");
+static_assert(offsetof(EventTest, mask) == 0x04, "EventTest.mask");
+static_assert(offsetof(EventTest, rankLevel) == 0x08, "EventTest.rankLevel");
 static_assert(sizeof(Want) == 0x10, "Want size");
 static_assert(offsetof(Want, person) == 0x00, "Want.person");
 static_assert(offsetof(Want, object) == 0x02, "Want.object");
@@ -2588,6 +2731,7 @@ static_assert(offsetof(ApplicantEntry, index) == 0x00, "ApplicantEntry.index");
 static_assert(offsetof(ApplicantEntry, state) == 0x02, "ApplicantEntry.state");
 static_assert(offsetof(ApplicantEntry, family) == 0x04, "ApplicantEntry.family");
 static_assert(offsetof(ApplicantEntry, tile) == 0x06, "ApplicantEntry.tile");
+static_assert(offsetof(ApplicantEntry, home) == 0x08, "ApplicantEntry.home");
 static_assert(offsetof(ApplicantEntry, type) == 0x0A, "ApplicantEntry.type");
 static_assert(offsetof(ApplicantEntry, month) == 0x0C, "ApplicantEntry.month");
 static_assert(offsetof(ApplicantEntry, timer) == 0x10, "ApplicantEntry.timer");
@@ -2992,6 +3136,7 @@ static_assert(offsetof(CharTypeRecord, parts) == 0x08, "CharTypeRecord.parts");
 static_assert(offsetof(CharTypeRecord, part4) == 0x0E, "CharTypeRecord.part4");
 static_assert(sizeof(Stamina) == 0xC, "Stamina size");
 static_assert(offsetof(Stamina, value) == 0x04, "Stamina.value");
+static_assert(offsetof(Stamina, noticeTicks) == 0x08, "Stamina.noticeTicks");
 static_assert(sizeof(Widget) == 0xC, "Widget size");
 static_assert(offsetof(Widget, state) == 0x00, "Widget.state");
 static_assert(offsetof(Widget, timer) == 0x04, "Widget.timer");
@@ -3098,6 +3243,15 @@ static_assert(offsetof(ClaimThresholds, step) == 0x04, "ClaimThresholds.step");
 static_assert(offsetof(ClaimThresholds, switchFactor) == 0x05, "ClaimThresholds.switchFactor");
 static_assert(offsetof(ClaimThresholds, spreadStep) == 0x06, "ClaimThresholds.spreadStep");
 static_assert(offsetof(ClaimThresholds, holdTime) == 0x07, "ClaimThresholds.holdTime");
+static_assert(offsetof(ClaimEntry, wish) == 0x00, "ClaimEntry.wish");
+static_assert(offsetof(ClaimEntry, id) == 0x02, "ClaimEntry.id");
+static_assert(offsetof(ClaimEntry, value) == 0x04, "ClaimEntry.value");
+static_assert(offsetof(ClaimEntry, reach) == 0x06, "ClaimEntry.reach");
+static_assert(offsetof(ClaimSupply, id) == 0x00, "ClaimSupply.id");
+static_assert(offsetof(ClaimSupply, value) == 0x02, "ClaimSupply.value");
+static_assert(offsetof(ClaimTally, own) == 0x00, "ClaimTally.own");
+static_assert(offsetof(ClaimTally, weight) == 0x01, "ClaimTally.weight");
+static_assert(offsetof(ClaimTally, meters) == 0x02, "ClaimTally.meters");
 static_assert(offsetof(SeRequest, sound) == 0x00, "SeRequest.sound");
 static_assert(offsetof(SeRequest, voice) == 0x01, "SeRequest.voice");
 static_assert(offsetof(SeRequest, owner) == 0x04, "SeRequest.owner");
@@ -3182,6 +3336,7 @@ static_assert(offsetof(CityScene, trafficTimer) == 0xC4, "CityScene.trafficTimer
 static_assert(offsetof(CityScene, fadeLevel) == 0xC8, "CityScene.fadeLevel");
 static_assert(offsetof(CityScene, fade) == 0xCC, "CityScene.fade");
 static_assert(offsetof(CityScene, fadeSpeed) == 0xD0, "CityScene.fadeSpeed");
+static_assert(offsetof(CityScene, fadeOverAll) == 0xD4, "CityScene.fadeOverAll");
 static_assert(offsetof(StageScene, widget) == 0x04, "StageScene.widget");
 static_assert(offsetof(StageScene, camera) == 0x10, "StageScene.camera");
 static_assert(offsetof(StageScene, lights) == 0x14, "StageScene.lights");

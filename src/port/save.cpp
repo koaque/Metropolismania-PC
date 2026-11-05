@@ -38,41 +38,42 @@ namespace mm
     int McManager_HasAnySave()
     {
         for (uint32_t i = 0; i < 16; ++i)
-            if (port::load<int32_t>(globals::kSaveSlotSizes + 4u * i) >= 1 && port::load<char>(globals::kSaveSlotNames + 0x44u * i) != '\0')
+            if (globals::saveSlotUsed(i))
                 return 1;
         return 0;
     }
 
-    // The header of the index-th save found over both cards (8 slots per card), and that save's card.
-    int McManager_GetSaveHeader(GuestPtr<McManager>, int index, GuestPtr<int32_t> card)
+    // The directory entry of the index-th save found over both cards (8 slots per card), and that save's card.
+    GuestPtr<CardDirEntry> McManager_GetSaveEntry(GuestPtr<McManager>, int index, GuestPtr<int32_t> card)
     {
         int found = 0;
         for (int slot = 0; slot < 16; ++slot)
         {
             const uint32_t s = static_cast<uint32_t>(slot);
-            if (port::load<int32_t>(globals::kSaveSlotSizes + 4u * s) < 1 || port::load<char>(globals::kSaveSlotNames + 0x44u * s) == '\0')
+            if (!globals::saveSlotUsed(s))
                 continue;
             if (found == index)
             {
                 *card = slot / 8;
-                return static_cast<int>(globals::kSaveSlotHeaders + 0x40u * s);
+                return globals::saveSlotEntry(s);
             }
             ++found;
         }
-        return 0;
+        return GuestPtr<CardDirEntry>{0u};
     }
 
     // The save's title for the memory card browser: the prefix, then the city name in full-width characters
     // (anything outside ASCII 0x20..0x7D as a stand-in) or a default when it has none; cut at 0x3C bytes,
-    // followed by the month count, approval, population and stage as little-endian bytes.
-    void McManager_BuildSaveHeader(GuestPtr<McManager>, GuestPtr<CityScene> city, GuestPtr<char> out)
+    // followed by the months played, approval, population and stage as little-endian bytes.
+    void McManager_BuildSaveTitle(GuestPtr<McManager>, GuestPtr<CityScene> city, GuestPtr<SaveTitle> title)
     {
-        sdk::strcpy(out.address, globals::kSaveTitlePrefix);
+        const uint32_t out = title.address;
+        sdk::strcpy(out, globals::kSaveTitlePrefix);
         if (port::load<int8_t>(globals::kStageState) == 0)
-            sdk::strcat(out.address, globals::kSaveTitleDefault);
+            sdk::strcat(out, globals::kSaveTitleDefault);
         else
         {
-            uint32_t dst = out.address + static_cast<uint32_t>(sdk::strlen(out.address));
+            uint32_t dst = out + static_cast<uint32_t>(sdk::strlen(out));
             for (uint32_t src = globals::kStageState; port::load<int8_t>(src) != 0; ++src, dst += 2u)
             {
                 const int8_t c = port::load<int8_t>(src);
@@ -82,29 +83,28 @@ namespace mm
             }
             port::store<uint8_t>(dst, 0);
         }
-        const auto putShort = [&](uint32_t offset, int32_t value) {
-            out[offset] = static_cast<char>(value);
-            out[offset + 1] = static_cast<char>(value / 256);
+        const auto putShort = [](uint8_t (&bytes)[2], int32_t value) {
+            bytes[0] = static_cast<uint8_t>(value);
+            bytes[1] = static_cast<uint8_t>(value / 256);
         };
-        out[0x3C] = 0;
-        putShort(0x3D, city->monthCount);
-        out[0x3F] = static_cast<char>(city->approval);
-        putShort(0x40, city->map->population);
-        putShort(0x42, globals::stageState()->stage);
+        title->end = 0;
+        putShort(title->months, city->monthCount);
+        title->approval = static_cast<int8_t>(city->approval);
+        putShort(title->population, city->map->population);
+        putShort(title->stage, globals::stageState()->stage);
     }
 
-    // The header of the save named `name` on a card (slots 0-7 for card 0, 8-15 for card 1), or 0.
-    int McManager_FindSave(GuestPtr<McManager>, GuestPtr<char> name, int card)
+    // The directory entry of the save named `name` on a card (slots 0-7 for card 0, 8-15 for card 1), or 0.
+    GuestPtr<CardDirEntry> McManager_FindSave(GuestPtr<McManager>, GuestPtr<char> name, int card)
     {
         const uint32_t first = card != 0 ? 8u : 0u, end = card != 0 ? 16u : 8u;
         for (uint32_t slot = first; slot < end; ++slot)
         {
-            const uint32_t header = globals::kSaveSlotHeaders + 0x40u * slot;
-            if (port::load<int32_t>(globals::kSaveSlotSizes + 4u * slot) >= 1 && port::load<char>(globals::kSaveSlotNames + 0x44u * slot) != 0 &&
-                sdk::strcmp(header + 0x20u, name.address) == 0)
-                return static_cast<int>(header);
+            const GuestPtr<CardDirEntry> entry = globals::saveSlotEntry(slot);
+            if (globals::saveSlotUsed(slot) && sdk::strcmp(GuestPtr<char>::of(entry->name[0]).address, name.address) == 0)
+                return entry;
         }
-        return 0;
+        return GuestPtr<CardDirEntry>{0u};
     }
 
     // Card state for the menus (provisional meanings): 4 no card or it changed since the last check,
@@ -135,8 +135,8 @@ namespace mm
         }
         for (uint32_t slot = 0; slot < 16; ++slot)
         {
-            port::store<int32_t>(globals::kSaveSlotSizes + 4u * slot, -4);
-            port::store<char>(globals::kSaveSlotNames + 0x44u * slot, '\0');
+            *globals::saveSlotFound(slot) = -4;
+            globals::saveSlotTitle(slot)->text[0] = '\0';
         }
     }
 
@@ -172,7 +172,7 @@ namespace mm
         const GuestPtr<int32_t> type{globals::kCardType}, formatted{globals::kCardFormatted}, result{globals::kCardResult};
         const GuestPtr<int32_t> checked{globals::kCardTypeChecked}, scanned{globals::kCardTypeScanned};
         const GuestPtr<int32_t> none{0};
-        const int entryName = static_cast<int>(globals::kScanDirEntry + 0x20u);
+        const int entryName = static_cast<int>(GuestPtr<char>::of(globals::scanDirEntry()->name[0]).address);
         int32_t &state = mc->scanState;
         const auto cardInfo = [&] {
             for (uint32_t p = 0; p < 2; ++p)
@@ -186,9 +186,9 @@ namespace mm
         const auto isNewCard = [](int32_t r) { return r == -1 || r == -2; };
         const auto forgetSlots = [&](uint32_t p) {
             for (uint32_t slot = 8u * p; slot < 8u * p + 8u; ++slot)
-                port::store<char>(globals::kSaveSlotNames + 0x44u * slot, '\0');
+                globals::saveSlotTitle(slot)->text[0] = '\0';
             for (uint32_t slot = 8u * p; slot < 8u * p + 8u; ++slot)
-                port::store<int32_t>(globals::kSaveSlotSizes + 4u * slot, -4);
+                *globals::saveSlotFound(slot) = -4;
             checked[static_cast<int32_t>(p)] = -1;
         };
         const auto nextPort = [&] {
@@ -279,7 +279,7 @@ namespace mm
                 const int entry = mc->dirIndex;
                 mc->dirIndex = entry + 1;
                 mc->request = McQueue_GetDir(queue, cardPort(), static_cast<int>(globals::kAnyEntryName), entry, 1,
-                                             static_cast<int>(globals::kScanDirEntry), GuestPtr<int32_t>{globals::cardDirEntries.address});
+                                             static_cast<int>(globals::scanDirEntry().address), GuestPtr<int32_t>{globals::cardDirEntries.address});
                 ++state;
             }
             else if (mc->scanSlot == 0)
@@ -373,12 +373,11 @@ namespace mm
             if (lastResult() >= 0)
             {
                 const auto slot = static_cast<uint32_t>(mc->scanSlot);
-                sdk::memcpy(globals::kSaveSlotNames + 0x44u * slot, globals::kIconSysBuffer + 0xC0u, 0x44);
-                const uint32_t header = globals::kSaveSlotHeaders + 0x40u * slot;
-                for (uint32_t i = 0; i < 0x40u; ++i)
-                    port::store<uint8_t>(header + i, port::load<uint8_t>(globals::kScanDirEntry + i));
-                port::store<int32_t>(globals::kSaveSlotSizes + 4u * slot, globals::cardDirEntries.get());
-                sdk::strcpy(globals::kSaveSlotFolders + 0x20u * slot, header + 0x20u);
+                sdk::memcpy(globals::saveSlotTitle(slot).address, globals::kIconSysBuffer + 0xC0u, 0x44);
+                const GuestPtr<CardDirEntry> entry = globals::saveSlotEntry(slot);
+                *entry = *globals::scanDirEntry();
+                *globals::saveSlotFound(slot) = globals::cardDirEntries.get();
+                sdk::strcpy(globals::saveSlotFolder(slot), GuestPtr<char>::of(entry->name[0]).address);
                 ++mc->scanSlot;
             }
             mc->request = McQueue_Close(queue, mc->fd, none);
@@ -479,9 +478,9 @@ namespace mm
     PORT_FN(SaveFile_Open);
     PORT_FN(McManagerSub_ctor);
     PORT_FN(McManager_HasAnySave);
-    PORT_FN(McManager_GetSaveHeader);
+    PORT_FN(McManager_GetSaveEntry);
     PORT_FN(McManager_FindSave);
-    PORT_FN(McManager_BuildSaveHeader);
+    PORT_FN(McManager_BuildSaveTitle);
     PORT_FN(McManager_GetCardStatus);
     PORT_FN(McManager_InitSlots);
     PORT_FN(McManager_ClearSlots);
@@ -605,9 +604,7 @@ namespace mm
         int found = 0;
         for (int i = 0; i < 16; ++i)
         {
-            if (port::load<int32_t>(globals::kSaveSlotSizes + 4u * static_cast<uint32_t>(i)) <= 0)
-                continue;
-            if (port::load<int8_t>(globals::kSaveSlotNames + 0x44u * static_cast<uint32_t>(i)) == 0)
+            if (!globals::saveSlotUsed(static_cast<uint32_t>(i)))
                 continue;
             if (found != index)
             {
@@ -615,7 +612,7 @@ namespace mm
                 continue;
             }
             *card = i / 8;
-            return static_cast<int>(globals::kSaveSlotFolders + 0x20u * static_cast<uint32_t>(i));
+            return static_cast<int>(globals::saveSlotFolder(static_cast<uint32_t>(i)));
         }
         return 0;
     }
@@ -865,54 +862,66 @@ namespace mm
                 port::store<uint8_t>(at + 1u, 0x40);
             }
         }
+
+        // The title's numbers as the original reads them back: the high byte signed, and for the stage the low byte too.
+        int32_t titleStage(GuestPtr<SaveTitle> title)
+        {
+            return static_cast<int32_t>(static_cast<int8_t>(title->stage[0])) + (static_cast<int32_t>(static_cast<int8_t>(title->stage[1])) << 8);
+        }
+        int32_t titleMonths(GuestPtr<SaveTitle> title)
+        {
+            return static_cast<int32_t>(title->months[0]) + (static_cast<int32_t>(static_cast<int8_t>(title->months[1])) << 8);
+        }
+        int32_t titlePopulation(GuestPtr<SaveTitle> title)
+        {
+            return static_cast<int32_t>(title->population[0]) + (static_cast<int32_t>(static_cast<int8_t>(title->population[1])) << 8);
+        }
     }
 
-    // Appends the line for save slot `slot` (0x44-byte records from 0x1F4340; none when the slot is empty) to `out`: a header,
-    // the day (+0x42, shown from 1 and wrapped at 100) in two digits, the name in the game's own letter table (halfword
-    // characters at the offset past the prefix at 0x1B7C50 mapped to ASCII-like codes by their place in the table at 0x1B7C70),
-    // a four-digit number (+0x40 mod 10000), a signed three-digit number (+0x3F) and, with `marked`, a trailing mark.
+    // Appends the line for save slot `slot` (none when its title is empty) to `out`: a header, the stage (shown from 1
+    // and wrapped at 100) in two digits, the city's name (the full-width characters past the title's prefix mapped back
+    // to ASCII by their place in the full-width table), the population (mod 10000) in four digits, the approval rate in
+    // three (with its sign) and, with `marked`, a trailing mark.
     void McManager_FormatSlotLine(GuestPtr<McManager>, int slot, GuestPtr<char> out, int marked)
     {
         port::GuestFrame<0x70> frame;
         const uint32_t number = frame.ptr().address + 0x60u;
-        const uint32_t record = 0x001F4340u + 0x44u * static_cast<uint32_t>(slot);
-        if (port::load<int8_t>(record) == 0)
+        const GuestPtr<SaveTitle> title = globals::saveSlotTitle(static_cast<uint32_t>(slot));
+        if (title->text[0] == 0)
             return;
         const auto append = [&](uint32_t format) {
             sdk::sprintf(out.address + static_cast<uint32_t>(sdk::strlen(out.address)), format, number);
         };
         sdk::strcat(out.address, 0x001B7DA0u);
-        const int32_t day = static_cast<int32_t>(port::load<int8_t>(record + 0x42u)) + (static_cast<int32_t>(port::load<int8_t>(record + 0x43u)) << 8);
-        Text_FormatPadded(GuestPtr<char>{number}, remainder(day + 1, 100), 2);
+        Text_FormatPadded(GuestPtr<char>{number}, remainder(titleStage(title) + 1, 100), 2);
         blankLeadingZeros(number, 1);
         append(0x001B7DA8u);
         uint32_t dst = out.address + static_cast<uint32_t>(sdk::strlen(out.address));
-        const uint32_t nameStart = record + static_cast<uint32_t>(sdk::strlen(0x001B7C50u));
+        const uint32_t nameStart = title.address + static_cast<uint32_t>(sdk::strlen(globals::kSaveTitlePrefix));
         for (uint32_t src = nameStart; port::load<int8_t>(src) != 0; src += 2u)
         {
             uint32_t code = 0;
-            for (uint32_t table = 0x001B7C70u; port::load<int8_t>(table) != 0 && port::load<uint16_t>(src) != port::load<uint16_t>(table); table += 2u)
+            for (uint32_t table = globals::kFullWidthAscii; port::load<int8_t>(table) != 0 && port::load<uint16_t>(src) != port::load<uint16_t>(table); table += 2u)
                 ++code;
             port::store<uint8_t>(dst, static_cast<uint8_t>(code + 0x20u));
             ++dst;
         }
         port::store<uint8_t>(dst, 0);
         append(0x001B7DB0u);
-        const int32_t value = static_cast<int32_t>(port::load<uint8_t>(record + 0x40u)) + (static_cast<int32_t>(port::load<int8_t>(record + 0x41u)) << 8);
-        Text_FormatPadded(GuestPtr<char>{number}, remainder(value, 10000), 4);
+        Text_FormatPadded(GuestPtr<char>{number}, remainder(titlePopulation(title), 10000), 4);
         blankLeadingZeros(number, 3);
         append(0x001B7DC0u);
-        const int32_t third = port::load<int8_t>(record + 0x3Fu);
-        if (third < 0)
+        const int32_t approval = title->approval;
+        if (approval < 0)
         {
-            const int32_t magnitude = -third;
+            const int32_t magnitude = -approval;
             Text_FormatPadded(GuestPtr<char>{number}, magnitude, 3);
             blankLeadingZeros(number, 2);
             port::store<uint8_t>(number + (magnitude < 10 ? 1u : 0u), '-');
         }
         else
         {
-            Text_FormatPadded(GuestPtr<char>{number}, third, 3);
+            Text_FormatPadded(GuestPtr<char>{number}, approval, 3);
             blankLeadingZeros(number, 2);
         }
         append(0x001B7DD0u);
@@ -922,7 +931,7 @@ namespace mm
 
     PORT_FN(McManager_FormatSlotLine);
 
-    // Makes a name for a new save on card slot `card` (32-byte names from 0x1F3CF0): the game's id string (pointer at
+    // Makes the folder name for a new save in slot `card` (the slots' folder names): the game's id string (pointer at
     // 0x1BD9A0) followed by eight digits of the console clock in seconds (the day of the month and the month taken in
     // 31-day units), or of the timer mix when the clock cannot be read. The original then compares the name with the other
     // slots' of the same card group and returns without doing anything about a match, so the port leaves that out.
@@ -941,7 +950,7 @@ namespace mm
             };
             value = decimal(6) * 0x28DE80u + decimal(5) * 0x15180u + decimal(3) * 0xE10u + decimal(2) * 0x3Cu + decimal(1);
         }
-        const uint32_t name = 0x001F3CF0u + (card & 0xFFu) * 0x20u;
+        const uint32_t name = globals::saveSlotFolder(card & 0xFFu);
         const uint32_t prefix = port::load<uint32_t>(0x001BD9A0u);
         sdk::strcpy(name, prefix);
         const uint32_t length = static_cast<uint32_t>(sdk::strlen(prefix));
@@ -955,10 +964,9 @@ namespace mm
 
     PORT_FN(McManager_NewSaveName);
 
-    // The text of the `index`th used save slot (a slot is used when its card state at 0x1F4780 is positive and its record is not
-    // empty), for the load screen's description: a header, the day, the month and year counters (+0x3D as a 16-bit count of
-    // months), the name, the four-digit number and the signed three-digit number, with their separators. Empty `out` when there
-    // is no such slot. The records are the ones McManager_FormatSlotLine reads.
+    // The text of the `index`th used save slot, for the load screen's description: a header, the stage, the month and year
+    // (from the months played), the city's name, the population and the approval rate, with their separators. Empty `out`
+    // when there is no such slot. The titles are the ones McManager_FormatSlotLine reads.
     void McManager_FormatSaveInfo(GuestPtr<McManager>, int index, GuestPtr<char> out)
     {
         port::GuestFrame<0x60> frame;
@@ -967,7 +975,7 @@ namespace mm
         int used = 0;
         for (int slot = 0; slot < 0x10; ++slot)
         {
-            if (0 < port::load<int32_t>(0x001F4780u + 4u * static_cast<uint32_t>(slot)) && port::load<int8_t>(0x001F4340u + 0x44u * static_cast<uint32_t>(slot)) != 0)
+            if (globals::saveSlotUsed(static_cast<uint32_t>(slot)))
             {
                 if (used == index)
                 {
@@ -982,17 +990,16 @@ namespace mm
             port::store<uint8_t>(out.address, 0);
             return;
         }
-        const uint32_t record = 0x001F4340u + 0x44u * static_cast<uint32_t>(found);
+        const GuestPtr<SaveTitle> title = globals::saveSlotTitle(static_cast<uint32_t>(found));
         const auto append = [&](uint32_t format) {
             sdk::sprintf(out.address + static_cast<uint32_t>(sdk::strlen(out.address)), format, number);
         };
         sdk::strcpy(out.address, 0x001B7D40u);
-        const int32_t day = static_cast<int32_t>(port::load<int8_t>(record + 0x42u)) + (static_cast<int32_t>(port::load<int8_t>(record + 0x43u)) << 8);
-        Text_FormatPadded(GuestPtr<char>{number}, remainder(day + 1, 100), 2);
+        Text_FormatPadded(GuestPtr<char>{number}, remainder(titleStage(title) + 1, 100), 2);
         blankLeadingZeros(number, 1);
         sdk::strcat(out.address, number);
         sdk::strcat(out.address, 0x001B7D48u);
-        const int32_t months = static_cast<int32_t>(port::load<uint8_t>(record + 0x3Du)) + (static_cast<int32_t>(port::load<int8_t>(record + 0x3Eu)) << 8);
+        const int32_t months = titleMonths(title);
         Text_FormatPadded(GuestPtr<char>{number}, remainder(months, 12) + 1, 2);
         blankLeadingZeros(number, 1);
         append(0x001B7D50u);
@@ -1000,33 +1007,32 @@ namespace mm
         blankLeadingZeros(number, 2);
         append(0x001B7D60u);
         uint32_t dst = out.address + static_cast<uint32_t>(sdk::strlen(out.address));
-        const uint32_t nameStart = record + static_cast<uint32_t>(sdk::strlen(0x001B7C50u));
+        const uint32_t nameStart = title.address + static_cast<uint32_t>(sdk::strlen(globals::kSaveTitlePrefix));
         for (uint32_t src = nameStart; port::load<int8_t>(src) != 0; src += 2u)
         {
             uint32_t code = 0;
-            for (uint32_t table = 0x001B7C70u; port::load<int8_t>(table) != 0 && port::load<uint16_t>(src) != port::load<uint16_t>(table); table += 2u)
+            for (uint32_t table = globals::kFullWidthAscii; port::load<int8_t>(table) != 0 && port::load<uint16_t>(src) != port::load<uint16_t>(table); table += 2u)
                 ++code;
             port::store<uint8_t>(dst, static_cast<uint8_t>(code + 0x20u));
             ++dst;
         }
         port::store<uint8_t>(dst, 0);
         sdk::strcat(out.address, 0x001B7D70u);
-        const int32_t value = static_cast<int32_t>(port::load<uint8_t>(record + 0x40u)) + (static_cast<int32_t>(port::load<int8_t>(record + 0x41u)) << 8);
-        Text_FormatPadded(GuestPtr<char>{number}, remainder(value, 10000), 4);
+        Text_FormatPadded(GuestPtr<char>{number}, remainder(titlePopulation(title), 10000), 4);
         blankLeadingZeros(number, 3);
         sdk::strcat(out.address, number);
         sdk::strcat(out.address, 0x001B7D80u);
-        const int32_t third = port::load<int8_t>(record + 0x3Fu);
-        if (third < 0)
+        const int32_t approval = title->approval;
+        if (approval < 0)
         {
-            const int32_t magnitude = -third;
+            const int32_t magnitude = -approval;
             Text_FormatPadded(GuestPtr<char>{number}, magnitude, 3);
             blankLeadingZeros(number, 2);
             port::store<uint8_t>(number + (magnitude < 10 ? 1u : 0u), '-');
         }
         else
         {
-            Text_FormatPadded(GuestPtr<char>{number}, third, 3);
+            Text_FormatPadded(GuestPtr<char>{number}, approval, 3);
             blankLeadingZeros(number, 2);
         }
         sdk::strcat(out.address, number);
@@ -1035,16 +1041,17 @@ namespace mm
 
     PORT_FN(McManager_FormatSaveInfo);
 
-    // The first free slot of the card (8 per card; a slot is free when its state at 0x1F4780 is not positive) gets a new name
-    // (McManager_NewSaveName) and its record address (0x20-byte records from 0x1F3CF0) is the result; 0 when all are used.
+    // The first free slot of the card (8 per card; a slot is free when the scan found no entry for it) gets a new folder name
+    // (McManager_NewSaveName) and that name is the result; 0 when all are used. Both take the slot's number within the card,
+    // so a slot on card 1 names the folder of the same number on card 0, as the original does.
     int McManager_PrepareNewSlot(GuestPtr<McManager> mc, int card)
     {
         for (int i = 0; i < 8; ++i)
         {
-            if (port::load<int32_t>(0x001F4780u + 4u * static_cast<uint32_t>(card * 8 + i)) <= 0)
+            if (*globals::saveSlotFound(static_cast<uint32_t>(card * 8 + i)) <= 0)
             {
                 McManager_NewSaveName(mc, static_cast<uint32_t>(i & 0xFF));
-                return 0x001F3CF0 + i * 0x20;
+                return static_cast<int>(globals::saveSlotFolder(static_cast<uint32_t>(i)));
             }
         }
         return 0;
@@ -1080,24 +1087,26 @@ namespace mm
         for (int slot = 0; slot < 0x10; ++slot)
         {
             const uint32_t index = static_cast<uint32_t>(slot);
-            if (port::load<int32_t>(globals::kSaveSlotSizes + 4u * index) <= 0 || port::load<int8_t>(globals::kSaveSlotNames + 0x44u * index) == 0)
+            if (!globals::saveSlotUsed(index))
                 continue;
             if (newest == -1)
             {
                 newest = slot;
                 continue;
             }
-            const uint32_t best = globals::kSaveSlotHeaders + 0x40u * static_cast<uint32_t>(newest);
-            const uint32_t current = globals::kSaveSlotHeaders + 0x40u * index;
-            if (port::load<uint16_t>(best + 0xEu) != port::load<uint16_t>(current + 0xEu))
+            const CardTime &best = globals::saveSlotEntry(static_cast<uint32_t>(newest))->modified;
+            const CardTime &current = globals::saveSlotEntry(index)->modified;
+            if (best.year != current.year)
             {
-                if (port::load<uint16_t>(best + 0xEu) < port::load<uint16_t>(current + 0xEu))
+                if (best.year < current.year)
                     newest = slot;
                 continue;
             }
-            for (uint32_t at = 0xD; at >= 9; --at)
+            static constexpr uint8_t CardTime::*kOrder[] = {&CardTime::month, &CardTime::day, &CardTime::hour, &CardTime::minute,
+                                                            &CardTime::second};
+            for (const auto field : kOrder)
             {
-                const uint8_t was = port::load<uint8_t>(best + at), now = port::load<uint8_t>(current + at);
+                const uint8_t was = best.*field, now = current.*field;
                 if (was != now)
                 {
                     if (was < now)
@@ -1110,8 +1119,7 @@ namespace mm
         for (;;)
         {
             slot = *cursor;
-            if (port::load<int32_t>(globals::kSaveSlotSizes + 4u * static_cast<uint32_t>(slot)) > 0 &&
-                port::load<int8_t>(globals::kSaveSlotNames + 0x44u * static_cast<uint32_t>(slot)) != 0)
+            if (globals::saveSlotUsed(static_cast<uint32_t>(slot)))
                 break;
             *cursor = *cursor + 1;
             if (*cursor >= 0x10)
@@ -1120,16 +1128,16 @@ namespace mm
                 return *cursor;
             }
         }
-        const uint32_t header = globals::kSaveSlotHeaders + 0x40u * static_cast<uint32_t>(slot);
+        const CardTime &saved = globals::saveSlotEntry(static_cast<uint32_t>(slot))->modified;
         port::store<uint64_t>(sp + 0xB0u, port::load<uint64_t>(0x001BDBA0u));
         const auto toBcd = [](uint32_t value) { return static_cast<uint8_t>((value / 10u) * 16u + value % 10u); };
         const auto fromBcd = [](uint8_t value) { return static_cast<int32_t>(value & 0xFu) + static_cast<int32_t>(value >> 4) * 10; };
-        port::store<uint8_t>(sp + 0xB1u, toBcd(port::load<uint8_t>(header + 9u)));
-        port::store<uint8_t>(sp + 0xB2u, toBcd(port::load<uint8_t>(header + 0xAu)));
-        port::store<uint8_t>(sp + 0xB3u, toBcd(port::load<uint8_t>(header + 0xBu)));
-        port::store<uint8_t>(sp + 0xB5u, toBcd(port::load<uint8_t>(header + 0xCu)));
-        port::store<uint8_t>(sp + 0xB6u, toBcd(port::load<uint8_t>(header + 0xDu)));
-        port::store<uint8_t>(sp + 0xB7u, toBcd(port::load<uint16_t>(header + 0xEu) % 100u));
+        port::store<uint8_t>(sp + 0xB1u, toBcd(saved.second));
+        port::store<uint8_t>(sp + 0xB2u, toBcd(saved.minute));
+        port::store<uint8_t>(sp + 0xB3u, toBcd(saved.hour));
+        port::store<uint8_t>(sp + 0xB5u, toBcd(saved.day));
+        port::store<uint8_t>(sp + 0xB6u, toBcd(saved.month));
+        port::store<uint8_t>(sp + 0xB7u, toBcd(saved.year % 100u));
         sdk::sceScfGetLocalTimefromRTC(sp + 0xB0u);
         const int32_t year = 2000 + fromBcd(port::load<uint8_t>(sp + 0xB7u));
         const int32_t day = fromBcd(port::load<uint8_t>(sp + 0xB5u));

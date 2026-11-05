@@ -157,9 +157,9 @@ inline constexpr uint32_t Event_SetTileFlags = 0x00135770u;
 inline constexpr uint32_t ClaimIcon_GetColor = 0x001357F0u;
 inline constexpr uint32_t Claim_PickVariant = 0x00135860u;
 inline constexpr uint32_t Claim_GetLine = 0x001358C0u;
-inline constexpr uint32_t Claim_GetSectionC = 0x00135940u;
-inline constexpr uint32_t Claim_GetSectionD = 0x00135960u;
-inline constexpr uint32_t Claim_GetSectionB = 0x00135990u;
+inline constexpr uint32_t Claim_GetSupplies = 0x00135940u;
+inline constexpr uint32_t Claim_GetGroup = 0x00135960u;
+inline constexpr uint32_t Claim_GetList = 0x00135990u;
 inline constexpr uint32_t Claim_Load = 0x001359B0u;
 inline constexpr uint32_t Stage_Load = 0x00135A70u;
 inline constexpr uint32_t Stage_FormatGoalText = 0x00135BC0u;
@@ -204,16 +204,16 @@ inline constexpr uint32_t Event_Finish = 0x00139B50u;
 inline constexpr uint32_t Event_Abort = 0x00139CC0u;
 inline constexpr uint32_t Event_Trigger = 0x00139DD0u;
 inline constexpr uint32_t Event_CallHandlerSlot = 0x0013A110u;
-inline constexpr uint32_t EventQueue_Find = 0x0013A1E0u;
+inline constexpr uint32_t EventMgr_FindType = 0x0013A1E0u;
 inline constexpr uint32_t EventMgr_dtor = 0x0013A250u;
 inline constexpr uint32_t EventMgr_ctor = 0x0013A360u;
 inline constexpr uint32_t Event_LoadTypes = 0x0013A560u;
 inline constexpr uint32_t EventList_MoveDue = 0x0013A770u;
-inline constexpr uint32_t EventList_MoveDueTo = 0x0013AA70u;
-inline constexpr uint32_t EventList_MoveOffRank = 0x0013ADF0u;
-inline constexpr uint32_t EventList_MoveOnRank = 0x0013B110u;
-inline constexpr uint32_t EventList_MoveOffRankB = 0x0013B460u;
-inline constexpr uint32_t EventList_MoveByMask26 = 0x0013B790u;
+inline constexpr uint32_t EventList_MoveDueLevel = 0x0013AA70u;
+inline constexpr uint32_t EventList_MoveInRank = 0x0013ADF0u;
+inline constexpr uint32_t EventList_MoveInRankLevel = 0x0013B110u;
+inline constexpr uint32_t EventList_MoveOutOfRank = 0x0013B460u;
+inline constexpr uint32_t EventList_MoveByMask = 0x0013B790u;
 inline constexpr uint32_t Pair_ctor = 0x0013BAB0u;
 inline constexpr uint32_t MemberMeters_Reset = 0x0013BAC0u;
 inline constexpr uint32_t MemberStatus_GetLow2 = 0x0013BD30u;
@@ -541,7 +541,7 @@ inline constexpr uint32_t CityAssets_LoadStep = 0x0015AE10u;
 inline constexpr uint32_t McManager_FindSave = 0x0015AF80u;
 inline constexpr uint32_t McManager_FormatSaveInfo = 0x0015B080u;
 inline constexpr uint32_t McManager_FormatSlotLine = 0x0015B540u;
-inline constexpr uint32_t McManager_BuildSaveHeader = 0x0015B890u;
+inline constexpr uint32_t McManager_BuildSaveTitle = 0x0015B890u;
 inline constexpr uint32_t SaveFile_GetResult = 0x0015BA40u;
 inline constexpr uint32_t SaveFile_IsDone = 0x0015BA50u;
 inline constexpr uint32_t SaveFile_Close = 0x0015BA60u;
@@ -556,7 +556,7 @@ inline constexpr uint32_t SaveFile_WriteIconSys = 0x0015BBC0u;
 inline constexpr uint32_t SaveFile_PrepareDir = 0x0015BC00u;
 inline constexpr uint32_t McManager_ResetState = 0x0015C020u;
 inline constexpr uint32_t McManager_PrepareNewSlot = 0x0015C030u;
-inline constexpr uint32_t McManager_GetSaveHeader = 0x0015C0A0u;
+inline constexpr uint32_t McManager_GetSaveEntry = 0x0015C0A0u;
 inline constexpr uint32_t McManager_GetSaveFolder = 0x0015C120u;
 inline constexpr uint32_t McManager_IsCardUsable = 0x0015C1A0u;
 inline constexpr uint32_t McManager_GetCardStatus = 0x0015C1F0u;
@@ -578,8 +578,8 @@ inline constexpr uint32_t Person_TargetShop = 0x0015E500u;
 inline constexpr uint32_t Person_TargetHome = 0x0015E6D0u;
 inline constexpr uint32_t Person_ChooseDestination = 0x0015E800u;
 inline constexpr uint32_t Math_SqrtBits = 0x0015EDE0u;
-inline constexpr uint32_t Schedule_QueryA = 0x0015EE10u;
-inline constexpr uint32_t Schedule_QueryB = 0x0015EFB0u;
+inline constexpr uint32_t Schedule_BusinessActivity = 0x0015EE10u;
+inline constexpr uint32_t Schedule_MemberActivity = 0x0015EFB0u;
 inline constexpr uint32_t Schedule_GetActivity = 0x0015F130u;
 inline constexpr uint32_t Schedule_GetBuildingActivity = 0x0015F340u;
 inline constexpr uint32_t Schedule_PickEntry = 0x0015F510u;
@@ -1603,7 +1603,7 @@ inline constexpr uint32_t sdk_memalign = 0x00120D90u;
 inline constexpr uint32_t sdk_std = 0x0011FEF8u;
 inline constexpr uint32_t sdk___sinit = 0x00120108u;
 inline constexpr uint32_t sdk_sprintf = 0x00123460u;
-inline constexpr uint32_t StaticInit_EventQueue = 0x001BAE80u;
+inline constexpr uint32_t StaticInit_EventTypeIds = 0x001BAE80u;
 inline constexpr uint32_t sdk_sread = 0x001234F0u;
 inline constexpr uint32_t sdk_swrite = 0x00123558u;
 inline constexpr uint32_t sdk_sseek = 0x001235D8u;
@@ -1792,8 +1792,8 @@ template <> inline constexpr bool at<0x0015D5B0u> = true; // McManager_NewSaveNa
 template <> inline constexpr bool at<0x0015DA30u> = true; // McManager_dtor
 template <> inline constexpr bool at<0x0015DAB0u> = true; // McManager_ctor
 template <> inline constexpr bool at<0x0015E800u> = true; // Person_ChooseDestination
-template <> inline constexpr bool at<0x0015EE10u> = true; // Schedule_QueryA
-template <> inline constexpr bool at<0x0015EFB0u> = true; // Schedule_QueryB
+template <> inline constexpr bool at<0x0015EE10u> = true; // Schedule_BusinessActivity
+template <> inline constexpr bool at<0x0015EFB0u> = true; // Schedule_MemberActivity
 template <> inline constexpr bool at<0x0015F130u> = true; // Schedule_GetActivity
 template <> inline constexpr bool at<0x0015F340u> = true; // Schedule_GetBuildingActivity
 template <> inline constexpr bool at<0x0015F590u> = true; // Schedule_Evaluate
@@ -2342,10 +2342,10 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"CityScene_dtor", addr::CityScene_dtor},
     {"ClaimIcon_GetColor", addr::ClaimIcon_GetColor},
     {"ClaimMeter_Level", addr::ClaimMeter_Level},
+    {"Claim_GetGroup", addr::Claim_GetGroup},
     {"Claim_GetLine", addr::Claim_GetLine},
-    {"Claim_GetSectionB", addr::Claim_GetSectionB},
-    {"Claim_GetSectionC", addr::Claim_GetSectionC},
-    {"Claim_GetSectionD", addr::Claim_GetSectionD},
+    {"Claim_GetList", addr::Claim_GetList},
+    {"Claim_GetSupplies", addr::Claim_GetSupplies},
     {"Claim_Load", addr::Claim_Load},
     {"Claim_PickVariant", addr::Claim_PickVariant},
     {"Clock_AddWrap", addr::Clock_AddWrap},
@@ -2485,16 +2485,16 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"EventData_GetSize1C", addr::EventData_GetSize1C},
     {"EventData_GetSize7C", addr::EventData_GetSize7C},
     {"EventList_MoveAll", addr::EventList_MoveAll},
-    {"EventList_MoveByMask26", addr::EventList_MoveByMask26},
+    {"EventList_MoveByMask", addr::EventList_MoveByMask},
     {"EventList_MoveDue", addr::EventList_MoveDue},
-    {"EventList_MoveDueTo", addr::EventList_MoveDueTo},
-    {"EventList_MoveOffRank", addr::EventList_MoveOffRank},
-    {"EventList_MoveOffRankB", addr::EventList_MoveOffRankB},
-    {"EventList_MoveOnRank", addr::EventList_MoveOnRank},
+    {"EventList_MoveDueLevel", addr::EventList_MoveDueLevel},
+    {"EventList_MoveInRank", addr::EventList_MoveInRank},
+    {"EventList_MoveInRankLevel", addr::EventList_MoveInRankLevel},
+    {"EventList_MoveOutOfRank", addr::EventList_MoveOutOfRank},
+    {"EventMgr_FindType", addr::EventMgr_FindType},
     {"EventMgr_RequeueFirst", addr::EventMgr_RequeueFirst},
     {"EventMgr_ctor", addr::EventMgr_ctor},
     {"EventMgr_dtor", addr::EventMgr_dtor},
-    {"EventQueue_Find", addr::EventQueue_Find},
     {"EventQueue_InsertByPriority", addr::EventQueue_InsertByPriority},
     {"EventQueue_RemoveAt", addr::EventQueue_RemoveAt},
     {"Event_Abort", addr::Event_Abort},
@@ -2732,15 +2732,15 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"McManagerSub_DeletingDtor", addr::McManagerSub_DeletingDtor},
     {"McManagerSub_ctor", addr::McManagerSub_ctor},
     {"McManagerUpdate", addr::McManagerUpdate},
-    {"McManager_BuildSaveHeader", addr::McManager_BuildSaveHeader},
+    {"McManager_BuildSaveTitle", addr::McManager_BuildSaveTitle},
     {"McManager_ClearSlots", addr::McManager_ClearSlots},
     {"McManager_FindSave", addr::McManager_FindSave},
     {"McManager_FormatSaveInfo", addr::McManager_FormatSaveInfo},
     {"McManager_FormatSlotLine", addr::McManager_FormatSlotLine},
     {"McManager_FormatSlotText", addr::McManager_FormatSlotText},
     {"McManager_GetCardStatus", addr::McManager_GetCardStatus},
+    {"McManager_GetSaveEntry", addr::McManager_GetSaveEntry},
     {"McManager_GetSaveFolder", addr::McManager_GetSaveFolder},
-    {"McManager_GetSaveHeader", addr::McManager_GetSaveHeader},
     {"McManager_HasAnySave", addr::McManager_HasAnySave},
     {"McManager_InitSlots", addr::McManager_InitSlots},
     {"McManager_IsCardUsable", addr::McManager_IsCardUsable},
@@ -3027,13 +3027,13 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"SaveFile_ResetState", addr::SaveFile_ResetState},
     {"SaveFile_Write", addr::SaveFile_Write},
     {"SaveFile_WriteIconSys", addr::SaveFile_WriteIconSys},
+    {"Schedule_BusinessActivity", addr::Schedule_BusinessActivity},
     {"Schedule_Evaluate", addr::Schedule_Evaluate},
     {"Schedule_GetActivity", addr::Schedule_GetActivity},
     {"Schedule_GetBuildingActivity", addr::Schedule_GetBuildingActivity},
     {"Schedule_Load", addr::Schedule_Load},
+    {"Schedule_MemberActivity", addr::Schedule_MemberActivity},
     {"Schedule_PickEntry", addr::Schedule_PickEntry},
-    {"Schedule_QueryA", addr::Schedule_QueryA},
-    {"Schedule_QueryB", addr::Schedule_QueryB},
     {"Se_ApplyVoiceParams", addr::Se_ApplyVoiceParams},
     {"Se_AssignVoices", addr::Se_AssignVoices},
     {"Se_BuildAmbienceMap", addr::Se_BuildAmbienceMap},
@@ -3125,7 +3125,7 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Stamina_SaveState", addr::Stamina_SaveState},
     {"Stamina_Tick", addr::Stamina_Tick},
     {"Stamina_Zero", addr::Stamina_Zero},
-    {"StaticInit_EventQueue", addr::StaticInit_EventQueue},
+    {"StaticInit_EventTypeIds", addr::StaticInit_EventTypeIds},
     {"StaticInit_StatusBytes", addr::StaticInit_StatusBytes},
     {"StaticInit_Words", addr::StaticInit_Words},
     {"StaticInit_WordsTable", addr::StaticInit_WordsTable},
@@ -3767,7 +3767,7 @@ void Bag_LoadState(GuestPtr<Bag> bag, GuestPtr<McManager> mc);
 void Bag_SaveState(GuestPtr<Bag> bag, GuestPtr<McManager> mc);
 void Bag_RemoveSlot(GuestPtr<Bag> bag, GuestPtr<uint16_t> slot);
 void Bag_AddMusicTrack(GuestPtr<Bag> bag, int group, int index);
-void Bag_AddItem(GuestPtr<Bag> bag, int group, int index, int16_t a3, int t0, int16_t t1, uint8_t t2, uint8_t t3);
+void Bag_AddItem(GuestPtr<Bag> bag, int group, int index, int16_t stage, int month, int16_t seller, uint8_t t2, uint8_t t3);
 int Bag_FindItem(GuestPtr<Bag> bag, uint32_t id);
 void BagMenu_UpdateItemText(GuestPtr<Bag> bag);
 void BagMenu_FinishUse(GuestPtr<Bag> bag, int used);
@@ -3835,9 +3835,9 @@ void Event_SetTileFlags(int listIndex);
 void ClaimIcon_GetColor(uint32_t icon, int level, GuestPtr<Vec4> colour);
 int Claim_PickVariant(uint32_t claim);
 int Claim_GetLine(int claim, int line);
-int Claim_GetSectionC(int index);
-int Claim_GetSectionD(uint32_t index);
-int Claim_GetSectionB(int index);
+GuestPtr<ClaimSupply> Claim_GetSupplies(int index);
+GuestPtr<uint16_t> Claim_GetGroup(uint32_t index);
+GuestPtr<ClaimEntry> Claim_GetList(int index);
 void Claim_Load();
 void Stage_Load();
 void Stage_FormatGoalText(int stage, GuestPtr<char> out);
@@ -3882,16 +3882,16 @@ void Event_Finish(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, int index
 void Event_Abort(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, int index);
 int Event_Trigger(GuestPtr<EventMgr> events, int16_t id, GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
 int64_t Event_CallHandlerSlot(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, int index, int arg);
-int EventQueue_Find(GuestPtr<EventMgr> events, int16_t id);
+int EventMgr_FindType(GuestPtr<EventMgr> events, int16_t id);
 GuestPtr<EventMgr> EventMgr_dtor(GuestPtr<EventMgr> events, int16_t deleteFlag);
 GuestPtr<EventMgr> EventMgr_ctor(GuestPtr<EventMgr> events);
 void Event_LoadTypes();
-void EventList_MoveDue(int list, int from, int to, GuestPtr<int32_t> ctx);
-void EventList_MoveDueTo(int list, int from, int to, GuestPtr<int32_t> ctx);
-void EventList_MoveOffRank(int list, int from, int to, GuestPtr<int32_t> ctx);
-void EventList_MoveOnRank(int list, int from, int to, GuestPtr<int32_t> ctx);
-void EventList_MoveOffRankB(int list, int from, int to, GuestPtr<int32_t> ctx);
-void EventList_MoveByMask26(int list, int from, int to, GuestPtr<int32_t> ctx);
+void EventList_MoveDue(GuestPtr<EventQueue> queue, int from, int to, GuestPtr<EventTest> test);
+void EventList_MoveDueLevel(GuestPtr<EventQueue> queue, int from, int to, GuestPtr<EventTest> test);
+void EventList_MoveInRank(GuestPtr<EventQueue> queue, int from, int to, GuestPtr<EventTest> test);
+void EventList_MoveInRankLevel(GuestPtr<EventQueue> queue, int from, int to, GuestPtr<EventTest> test);
+void EventList_MoveOutOfRank(GuestPtr<EventQueue> queue, int from, int to, GuestPtr<EventTest> test);
+void EventList_MoveByMask(GuestPtr<EventQueue> queue, int from, int to, GuestPtr<EventTest> test);
 int Pair_ctor(int pair);
 void MemberMeters_Reset(GuestPtr<int32_t> meters);
 uint8_t MemberStatus_GetLow2(int family, int member);
@@ -4216,10 +4216,10 @@ void CityAssets_BuildCharParts();
 void CityAssets_LoadCharObjs();
 void CityAssets_LoadObjects();
 int CityAssets_LoadStep();
-int McManager_FindSave(GuestPtr<McManager> mc, GuestPtr<char> name, int card);
+GuestPtr<CardDirEntry> McManager_FindSave(GuestPtr<McManager> mc, GuestPtr<char> name, int card);
 void McManager_FormatSaveInfo(GuestPtr<McManager> mc, int a1, GuestPtr<char> out);
 void McManager_FormatSlotLine(GuestPtr<McManager> mc, int slot, GuestPtr<char> out, int a3);
-void McManager_BuildSaveHeader(GuestPtr<McManager> mc, GuestPtr<CityScene> city, GuestPtr<char> out);
+void McManager_BuildSaveTitle(GuestPtr<McManager> mc, GuestPtr<CityScene> city, GuestPtr<SaveTitle> title);
 int SaveFile_GetResult(GuestPtr<McManager> mc, int a1);
 int SaveFile_IsDone(GuestPtr<McManager> mc, int a1);
 int SaveFile_Close(GuestPtr<McManager> mc);
@@ -4234,7 +4234,7 @@ void SaveFile_WriteIconSys(GuestPtr<McManager> mc, int a1, int a2, int a3);
 int SaveFile_PrepareDir(GuestPtr<McManager> mc, int a1, int a2, int a3);
 void McManager_ResetState(GuestPtr<McManager> mc);
 int McManager_PrepareNewSlot(GuestPtr<McManager> mc, int card);
-int McManager_GetSaveHeader(GuestPtr<McManager> mc, int index, GuestPtr<int32_t> card);
+GuestPtr<CardDirEntry> McManager_GetSaveEntry(GuestPtr<McManager> mc, int index, GuestPtr<int32_t> card);
 int McManager_GetSaveFolder(GuestPtr<McManager> mc, int a1, GuestPtr<int32_t> slot);
 int McManager_IsCardUsable(GuestPtr<McManager> mc, int card);
 uint8_t McManager_GetCardStatus(GuestPtr<McManager> mc, int card);
@@ -4256,8 +4256,8 @@ uint16_t Person_TargetShop(GuestPtr<CityScene> city, GuestPtr<MapPerson> person,
 int16_t Person_TargetHome(GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
 int16_t Person_ChooseDestination(GuestPtr<CityScene> city, GuestPtr<MapPerson> person, GuestPtr<uint32_t> activity, int exclude);
 uint32_t Math_SqrtBits(int value);
-uint8_t Schedule_QueryA(GuestPtr<CityScene> city, uint32_t family, int member);
-uint8_t Schedule_QueryB(GuestPtr<CityScene> city, uint32_t family, int member);
+uint8_t Schedule_BusinessActivity(GuestPtr<CityScene> city, uint32_t family, int member);
+uint8_t Schedule_MemberActivity(GuestPtr<CityScene> city, uint32_t family, int member);
 uint8_t Schedule_GetActivity(GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
 uint8_t Schedule_GetBuildingActivity(GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
 int Schedule_PickEntry(int a0, int a1, int a2, int a3, int t0, int t1);
@@ -4298,7 +4298,7 @@ GuestPtr<LoadingScreen> LoadingScreen_ctor(GuestPtr<LoadingScreen> loading, int 
 void Stamina_LoadState(GuestPtr<Stamina> stamina, GuestPtr<McManager> mc);
 void Stamina_SaveState(GuestPtr<Stamina> stamina, GuestPtr<McManager> mc);
 void Stamina_Tick(GuestPtr<Stamina> stamina, GuestPtr<CityScene> city);
-void Stamina_Eat(GuestPtr<Stamina> stamina, GuestPtr<uint8_t> goods);
+void Stamina_Eat(GuestPtr<Stamina> stamina, GuestPtr<GoodsRecord> goods);
 int Stamina_Zero(GuestPtr<Stamina> stamina);
 void Stamina_CreateGlobal();
 void NameEntry_HandleInput(GuestPtr<NameEntry> entry);
@@ -4351,7 +4351,7 @@ GuestPtr<BuildingType> Bldg_dtor(GuestPtr<BuildingType> btype, int16_t deleteFla
 int ClaimMeter_Level(uint16_t meter);
 void BldgClaims_Spread(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj);
 void BldgClaims_Pick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj);
-uint32_t BldgClaims_CountNearby(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<char> claimEntry, GuestPtr<int32_t> rect);
+uint32_t BldgClaims_CountNearby(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<ClaimEntry> claim, GuestPtr<int32_t> rect);
 void BldgClaims_CheckMet(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj);
 void BldgClaims_WeighNeighbours(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj);
 int BldgClaims_Evaluate(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int rise);
@@ -4873,7 +4873,7 @@ void Dma_AppendCall(int address);
 void DmaList_QueueGsDefaults();
 void DmaList_QueueOtherOverlay();
 void DmaList_QueueClearScreen();
-void DmaList_QueueFade(int alpha, int a1);
+void DmaList_QueueFade(int alpha, int overAll);
 void DmaList_QueueClearZ();
 void DmaList_Rewind();
 void DmaList_Flip();
@@ -4986,9 +4986,9 @@ void EvDeliveryMan_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 GuestPtr<MapObject> EvDeliveryMan_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvDeliveryMan_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
 int EvBugDamage_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city);
-void EventList_MoveAll(int list, int from, int to);
-void EventQueue_RemoveAt(int queue, int level, GuestPtr<uint16_t> entry);
-void EventQueue_InsertByPriority(int queue, GuestPtr<uint8_t> id, int level, int start);
+void EventList_MoveAll(GuestPtr<EventQueue> queue, int from, int to);
+void EventQueue_RemoveAt(GuestPtr<EventQueue> queue, int bucket, GuestPtr<EventQueueEntry> entry);
+void EventQueue_InsertByPriority(GuestPtr<EventQueue> queue, GuestPtr<EventQueueEntry> entry, int bucket, int start);
 void PartyPopup_Draw(int popup, int pass);
 void PartyPopup_Update(int popup, GuestPtr<CityScene> city);
 int PartyPopup_dtor(int popup, int16_t deleteFlag);
@@ -5281,7 +5281,7 @@ GuestPtr<void> sdk_memalign(int alignment, int size);
 void sdk_std(GuestPtr<void> stream, int flags, int descriptor, GuestPtr<void> owner);
 void sdk___sinit(GuestPtr<void> reentrancy);
 int sdk_sprintf(GuestPtr<char> destination, GuestPtr<char> format, uint64_t a2, uint64_t a3, uint64_t t0, uint64_t t1, uint64_t t2, uint64_t t3, uint64_t stack0, uint64_t stack1);
-void StaticInit_EventQueue();
+void StaticInit_EventTypeIds();
 int sdk_sread(GuestPtr<void> stream, GuestPtr<char> buffer, int count);
 int sdk_swrite(GuestPtr<void> stream, GuestPtr<char> buffer, int count);
 int sdk_sseek(GuestPtr<void> stream, int offset, int whence);

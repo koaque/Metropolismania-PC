@@ -15,9 +15,11 @@ City events (visitors, requests, incidents, paydays).
   `mm_Ev<Name>_<Slot>` functions are named after the event titles.
 - The event manager (`EventMgr`, `mm_EventMgr_*`, city `+0x68`) keeps the minute and population rank the queue last
   moved at, five `EventSlot`s (events talk scripts started, with the residents they involve, counting days down) and
-  `talks[3]` (`+0xA4`), the event records the talk script works with. The waiting queue (`0x001BDA88`, ids at
-  `0x001C5790`, count `0x001BDA80`, `mm_EventQueue_*`, `mm_EventList_*`) keeps entries (type, days to wait) in eight
-  buckets, each in priority order: 0 and 1 feed the two talk events, 2 the talk scripts, 3 a person's talk, 4 counts
+  `talks[3]` (`+0xA4`), the event records the talk script works with. The waiting queue (`EventQueue` at
+  `0x001BDA88`, `mm_EventQueue_*`, `mm_EventList_*`) keeps entries (`EventQueueEntry`: type, days to wait) in eight
+  buckets, each in priority order; the moves take an `EventTest` (the rank, level or mask to match). The types' ids
+  (`0x001C5790`, the count at `0x001BDA80`) are saved with the city, to match the queue with a later table
+  (`mm_Event_InitForCity`). The buckets: 0 and 1 feed the two talk events, 2 the talk scripts, 3 a person's talk, 4 counts
   days down, 5 waits for a population rank; every type starts in 6, and finished ones go to 6 or 7 by their wait.
 - `mm_EvActor_*` moves the people taking part (follow, move to, detach, notify).
 - Every handler gets the active event's record (`EventData`, 0x1C bytes: its class, its handler's Update slot, the
@@ -59,16 +61,16 @@ City events (visitors, requests, incidents, paydays).
 | `0x00139CC0` | `void mm_Event_Abort(EventMgr *events, CityScene *city, int index)` | 272 | indirect | (provisional) ends active event a2 without its normal finish |
 | `0x00139DD0` | `int mm_Event_Trigger(EventMgr *events, int16_t id, CityScene *city, MapPerson *person)` | 820 | indirect | (provisional) triggers event a1 now or queues it |
 | `0x0013A110` | `int64_t mm_Event_CallHandlerSlot(EventMgr *events, CityScene *city, int index, int arg)` | 204 | indirect | (provisional) calls a handler slot for active event a2 |
-| `0x0013A1E0` | `int mm_EventQueue_Find(EventMgr *events, int16_t id)` | 104 | no | position of id a1 in the waiting queue (0x1C5790, length 0x1BDA80), the length when it is not there |
+| `0x0013A1E0` | `int mm_EventMgr_FindType(EventMgr *events, int16_t id)` | 104 | no | the event type (row of the table) with id `id`, from the id table (0x1C5790); the type count when there is none |
 | `0x0013A250` | `EventMgr *mm_EventMgr_dtor(EventMgr *events, int16_t deleteFlag)` | 264 | yes | frees the event lists |
 | `0x0013A360` | `EventMgr *mm_EventMgr_ctor(EventMgr *events)` | 500 | yes | creates the event lists and handler objects |
 | `0x0013A560` | `void mm_Event_LoadTypes(void)` | 516 | yes | loads DATA\BIN\EVENT.BIN (0x4C-byte type records) |
-| `0x0013A770` | `void mm_EventList_MoveDue(int list, int from, int to, int32_t *ctx)` | 764 | no | (provisional) bucket a1 -> a2 for entries whose wait counter is at or below 0 |
-| `0x0013AA70` | `void mm_EventList_MoveDueTo(int list, int from, int to, int32_t *ctx)` | 884 | no | (provisional) like mm_EventList_MoveDue with an extra per-target test (a3[1]) |
-| `0x0013ADF0` | `void mm_EventList_MoveOffRank(int list, int from, int to, int32_t *ctx)` | 788 | no | (provisional) entries whose rank mask (+0x27) lacks the current rank bit |
-| `0x0013B110` | `void mm_EventList_MoveOnRank(int list, int from, int to, int32_t *ctx)` | 844 | no | (provisional) entries whose rank mask (+0x27) has the current rank bit |
-| `0x0013B460` | `void mm_EventList_MoveOffRankB(int list, int from, int to, int32_t *ctx)` | 804 | no | (provisional) second variant of the rank test, used to park entries in bucket 6 |
-| `0x0013B790` | `void mm_EventList_MoveByMask26(int list, int from, int to, int32_t *ctx)` | 788 | no | (provisional) entries whose mask at record +0x26 lacks a2[1] (event manager constructor) |
+| `0x0013A770` | `void mm_EventList_MoveDue(EventQueue *queue, int from, int to, EventTest *test)` | 764 | no | bucket `from` -> `to`: the entries whose wait ran out |
+| `0x0013AA70` | `void mm_EventList_MoveDueLevel(EventQueue *queue, int from, int to, EventTest *test)` | 884 | no | bucket `from` -> `to`: the entries whose wait ran out and whose type's level is the test's |
+| `0x0013ADF0` | `void mm_EventList_MoveInRank(EventQueue *queue, int from, int to, EventTest *test)` | 788 | no | bucket `from` -> `to`: the entries whose type runs at the test's rank (its ranks share a bit with it) |
+| `0x0013B110` | `void mm_EventList_MoveInRankLevel(EventQueue *queue, int from, int to, EventTest *test)` | 844 | no | bucket `from` -> `to`: the entries whose type runs at the test's rank and has the test's level |
+| `0x0013B460` | `void mm_EventList_MoveOutOfRank(EventQueue *queue, int from, int to, EventTest *test)` | 804 | no | bucket `from` -> `to`: the entries whose type does not run at the test's rank (to bucket 6 when the rank goes up) |
+| `0x0013B790` | `void mm_EventList_MoveByMask(EventQueue *queue, int from, int to, EventTest *test)` | 788 | no | bucket `from` -> `to`: the entries whose type's mask (+0x26) shares a bit with the test's (the stage's bit, event manager constructor) |
 | `0x0018F5D0` | `int mm_EvShoppingTogether_Answer(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 32 | no | type 1: Answer (returns +0x28 when a3 == 0) |
 | `0x0018F5F0` | `void mm_EvShoppingTogether_Update(EventData *data, CityScene *city)` | 900 | yes | type 1: Update |
 | `0x0018F980` | `void mm_EvShoppingTogether_End(EventData *data, CityScene *city)` | 192 | no | type 1: End (clears the building marks) |
@@ -116,9 +118,9 @@ City events (visitors, requests, incidents, paydays).
 | `0x00192750` | `MapObject *mm_EvDeliveryMan_Start(EventData *data, CityScene *city)` | 116 | no | type 3: Start |
 | `0x001927D0` | `int mm_EvDeliveryMan_Check(EventData *data, CityScene *city, MapPerson *person)` | 1272 | no | type 3 "Delivery Man": Check |
 | `0x00192CD0` | `int mm_EvBugDamage_Check(EventData *data, CityScene *city)` | 132 | no | type 11 "Bug damage": Check (its only slot) |
-| `0x00192D60` | `void mm_EventList_MoveAll(int list, int from, int to)` | 696 | no | (provisional) moves every entry from bucket a1 to a2 (event manager constructor and destructor) |
-| `0x00193020` | `void mm_EventQueue_RemoveAt(int queue, int level, uint16_t *entry)` | 148 | no | removes the id at a2 from queue level a1 and shifts the level starts |
-| `0x001930C0` | `void mm_EventQueue_InsertByPriority(int queue, uint8_t *id, int level, int start)` | 340 | no | inserts id *a1 into level a2 keeping the type priority order (type record +0x22) |
+| `0x00192D60` | `void mm_EventList_MoveAll(EventQueue *queue, int from, int to)` | 696 | no | bucket `from` -> `to`: every entry (event manager constructor and destructor) |
+| `0x00193020` | `void mm_EventQueue_RemoveAt(EventQueue *queue, int bucket, EventQueueEntry *entry)` | 148 | no | removes the id at a2 from queue level a1 and shifts the level starts |
+| `0x001930C0` | `void mm_EventQueue_InsertByPriority(EventQueue *queue, EventQueueEntry *entry, int bucket, int start)` | 340 | no | inserts id *a1 into level a2 keeping the type priority order (type record +0x22) |
 | `0x00193220` | `void mm_PartyPopup_Draw(int popup, int pass)` | 36 | no | (provisional) vtable 0x1BD8E0 draw: queues its packet in pass 2 |
 | `0x00193250` | `void mm_PartyPopup_Update(int popup, CityScene *city)` | 72 | no | (provisional) refreshes its window; button 0x40 closes (0x181430) |
 | `0x001932A0` | `int mm_PartyPopup_dtor(int popup, int16_t deleteFlag)` | 144 | yes | (provisional) vtable 0x1BD8E0 then base 0x1BD8B0; deletes its frame |

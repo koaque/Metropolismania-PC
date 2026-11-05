@@ -91,7 +91,7 @@ namespace mm::globals
     inline constexpr GuestVar<int32_t> wantsPruneTimer{0x001BDAF8u};
     inline constexpr GuestVar<int8_t> wantsPruneStarted{0x001BDAFCu};
     inline GuestPtr<ClaimThresholds> claimThresholds() { return GuestPtr<ClaimThresholds>{claimData.get()}; }
-    inline constexpr GuestVar<uint32_t> claimSectionC{0x001BDA58u};  // offset table (words) into claimData
+    inline constexpr GuestVar<uint32_t> claimSupplyOffsets{0x001BDA58u};  // per supply list, its offset (words) into claimData
 
     // core: frames since start (counted by mm_MainLoop); blinking effects use it.
     inline constexpr GuestVar<int32_t> frameCounter{0x001BDCACu};
@@ -132,9 +132,17 @@ namespace mm::globals
     inline constexpr GuestVar<uint32_t> goodsSectionD{0x001BDAA8u};
     inline constexpr GuestVar<uint32_t> goodsSectionE{0x001BDAACu};
     inline constexpr GuestVar<int32_t> goodsTextCount{0x001BDAB0u};
-    inline constexpr GuestVar<uint32_t> claimSection54{0x001BDA54u};     // pointers into claimData from its offset words (+8 ...)
-    inline constexpr GuestVar<uint32_t> claimSection5C{0x001BDA5Cu};
-    inline constexpr GuestVar<uint32_t> claimSection74{0x001BDA74u};
+    // The goods record `index` of group `group` (section A holds each group's first record).
+    inline GuestPtr<GoodsRecord> goodsAt(uint32_t group, uint32_t index)
+    {
+        const uint32_t first = port::load<uint16_t>(goodsSectionA.get() + 4u * group);
+        return GuestPtr<GoodsRecord>{goodsSectionB.get() + 0x88u * (index + first)};
+    }
+    // claim: the offset tables (per list, its offset in words into claimData) of the claim lists and the item groups, and
+    // the claim texts; pointers into claimData made from the file's offset words (+8 ...).
+    inline constexpr GuestVar<uint32_t> claimListOffsets{0x001BDA54u};
+    inline constexpr GuestVar<uint32_t> claimGroupOffsets{0x001BDA5Cu};
+    inline constexpr GuestVar<uint32_t> claimTexts{0x001BDA74u};
 
     // pad: set by mm_Pad_ClearBit40; mm_Pad_Update keeps Cross (0x40) out of the held buttons until it is released.
     inline constexpr GuestVar<int32_t> padSwallowCross{0x001BDCC0u};
@@ -250,9 +258,20 @@ namespace mm::globals
     inline constexpr uint32_t kCardResult = 0x001BDB88u;
     inline constexpr GuestVar<int32_t> cardDirEntries{0x001BDB90u};
     // save: the 16 save slots (8 per card): entries found when scanned (1 for a save, -4 = unknown), title
-    // (0x44 bytes, from icon.sys), directory entry (0x40 bytes, its name from +0x20) and folder name (0x20).
-    inline constexpr uint32_t kSaveSlotSizes = 0x001F4780u;
+    // (from icon.sys), directory entry and folder name (0x20 bytes).
+    inline constexpr uint32_t kSaveSlotFound = 0x001F4780u;
+    inline constexpr uint32_t kSaveSlotTitles = 0x001F4340u;
+    inline constexpr uint32_t kSaveSlotEntries = 0x001F3F00u;
     inline constexpr uint32_t kSaveSlotFolders = 0x001F3CF0u;
+    inline GuestPtr<int32_t> saveSlotFound(uint32_t slot) { return GuestPtr<int32_t>{kSaveSlotFound} + static_cast<int32_t>(slot); }
+    inline GuestPtr<SaveTitle> saveSlotTitle(uint32_t slot) { return GuestPtr<SaveTitle>{kSaveSlotTitles} + static_cast<int32_t>(slot); }
+    inline GuestPtr<CardDirEntry> saveSlotEntry(uint32_t slot) { return GuestPtr<CardDirEntry>{kSaveSlotEntries} + static_cast<int32_t>(slot); }
+    inline uint32_t saveSlotFolder(uint32_t slot) { return kSaveSlotFolders + 0x20u * slot; }
+    // A slot holds a save when the scan found its entry and it has a title.
+    inline bool saveSlotUsed(uint32_t slot) { return *saveSlotFound(slot) >= 1 && saveSlotTitle(slot)->text[0] != 0; }
+    // The loaded save's directory entry (checked before saving over it) and its description (McManager_FormatSaveInfo).
+    inline GuestPtr<CardDirEntry> loadedSaveEntry() { return GuestPtr<CardDirEntry>{0x001C5640u}; }
+    inline constexpr uint32_t kLoadedSaveInfo = 0x001C5680u;
     // save: the slot scan's names: the parent directory "..", "*" for any entry, "icon.sys"; the game's save
     // folder prefix (a pointer); the directory entry read (0x40 bytes) and the icon.sys buffer (0x3C4 bytes,
     // the title at +0xC0).
@@ -260,7 +279,7 @@ namespace mm::globals
     inline constexpr uint32_t kAnyEntryName = 0x001B7ED0u;
     inline constexpr uint32_t kIconSysName = 0x001B7E18u;
     inline constexpr GuestVar<uint32_t> saveFolderPrefix{0x001BD9A0u};
-    inline constexpr uint32_t kScanDirEntry = 0x001F4300u;
+    inline GuestPtr<CardDirEntry> scanDirEntry() { return GuestPtr<CardDirEntry>{0x001F4300u}; }
     inline constexpr uint32_t kIconSysBuffer = 0x001F47C0u;
     // save: the save title's prefix and default name, and the full-width (Shift-JIS) form of ASCII 0x20..0x7D
     // (two bytes each) with the stand-in for other characters.
@@ -268,8 +287,6 @@ namespace mm::globals
     inline constexpr uint32_t kSaveTitleDefault = 0x001B7E00u;
     inline constexpr uint32_t kFullWidthAscii = 0x001B7C70u;
     inline constexpr uint32_t kFullWidthUnknown = 0x001B7D6Cu;
-    inline constexpr uint32_t kSaveSlotNames = 0x001F4340u;
-    inline constexpr uint32_t kSaveSlotHeaders = 0x001F3F00u;
 
     // sound: the 31 effect voices (0x30 bytes, first byte 0xFF = free), and the ambience grid: 4096 cells of
     // (sound + 1, variant), filled from the per-sound counts at 0x1B35F0 (11 rows of 0x1C bytes, six counts
@@ -399,12 +416,13 @@ namespace mm::globals
     inline GuestPtr<EventType> eventType(uint32_t kind) { return GuestPtr<EventType>{eventTypes.get()} + static_cast<int32_t>(kind); }
     inline GuestPtr<EventType> eventTypeCopy(uint32_t kind) { return GuestPtr<EventType>{eventTypesCopy.get()} + static_cast<int32_t>(kind); }
     inline constexpr GuestVar<int32_t> popularityTicks{0x001BDC50u}; // clock ticks since the last popularity check (every 110)
-    // event: the waiting queue (event ids, uint16_t) and its length; the queue object handed to
-    // mm_EventQueue_InsertByPriority; the offsets (words) into claimData of each event's tile list
+    // event: each event type's id (group, number; saved with the city, to match the queue with the table of a later
+    // build) and the number of types; the event queue; the offsets (words) into claimData of each event's tile list
     // (mm_Event_SetTileFlags).
-    inline constexpr uint32_t kEventQueue = 0x001C5790u;
-    inline constexpr GuestVar<int32_t> eventQueueLength{0x001BDA80u};
+    inline constexpr uint32_t kEventTypeIds = 0x001C5790u;
+    inline constexpr GuestVar<int32_t> eventTypeCount{0x001BDA80u};
     inline constexpr GuestVar<uint32_t> eventQueueObject{0x001BDA88u};
+    inline GuestPtr<EventQueue> eventQueue() { return GuestPtr<EventQueue>{eventQueueObject.get()}; }
     inline constexpr GuestVar<uint32_t> eventTileLists{0x001BDA60u};
     // event: the delivery man's catalogue (0x184 bytes per entry, 0x20 per item: text at +4, price at +0x22), the
     // adoption event's 24 starting bytes, and the two buffers the handlers format money into.

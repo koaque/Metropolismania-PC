@@ -85,8 +85,8 @@ People and the player character.
 | `0x0015E500` | `uint16_t mm_Person_TargetShop(CityScene *city, MapPerson *person, int a2, int a3)` | 456 | no | (provisional) |
 | `0x0015E6D0` | `int16_t mm_Person_TargetHome(CityScene *city, MapPerson *person)` | 296 | no | (provisional) |
 | `0x0015E800` | `int16_t mm_Person_ChooseDestination(CityScene *city, MapPerson *person, uint32_t *activity, int exclude)` | 1492 | yes | (provisional) picks where a person goes next by schedule and needs, using the target helpers |
-| `0x0015EE10` | `uint8_t mm_Schedule_QueryA(CityScene *city, uint32_t family, int member)` | 416 | yes | (provisional) schedule lookup for drawing |
-| `0x0015EFB0` | `uint8_t mm_Schedule_QueryB(CityScene *city, uint32_t family, int member)` | 384 | yes | (provisional) schedule lookup used by the scripts |
+| `0x0015EE10` | `uint8_t mm_Schedule_BusinessActivity(CityScene *city, uint32_t family, int member)` | 416 | yes | the activity of the family's building type when the member's schedule byte for this hour has its upper three bits set (at the business), else 0 |
+| `0x0015EFB0` | `uint8_t mm_Schedule_MemberActivity(CityScene *city, uint32_t family, int member)` | 384 | yes | the member's activity this hour: the low five bits of its schedule byte (row by the schedule state, column by the hour, variants for holidays and bad weather) |
 | `0x0015F130` | `uint8_t mm_Schedule_GetActivity(CityScene *city, MapPerson *person)` | 520 | yes | (provisional) current activity of a person |
 | `0x0015F340` | `uint8_t mm_Schedule_GetBuildingActivity(CityScene *city, MapPerson *person)` | 452 | yes | (provisional) current activity for a person and building |
 | `0x0015F510` | `int mm_Schedule_PickEntry(int a0, int a1, int a2, int a3, int t0, int t1)` | 120 | no | (provisional) |
@@ -95,7 +95,7 @@ People and the player character.
 | `0x00162370` | `void mm_Stamina_LoadState(Stamina *stamina, McManager *mc)` | 20 | no | reads the 0xC-byte stamina record from the save file |
 | `0x00162390` | `void mm_Stamina_SaveState(Stamina *stamina, McManager *mc)` | 20 | no | writes it |
 | `0x001623B0` | `void mm_Stamina_Tick(Stamina *stamina, CityScene *city)` | 184 | no | stamina +4 drops by stamina/100000 + 1 per tick (not below 0) |
-| `0x00162470` | `void mm_Stamina_Eat(Stamina *stamina, uint8_t *goods)` | 124 | no | eating goods of categories 0x11-0x14 adds to stamina |
+| `0x00162470` | `void mm_Stamina_Eat(Stamina *stamina, GoodsRecord *goods)` | 124 | no | eating goods of categories 0x11-0x14 adds to stamina |
 | `0x001624F0` | `int mm_Stamina_Zero(Stamina *stamina)` | 8 | no | returns 0 (8 bytes); only reached by the tail call in mm_WordsFn_StaminaZero |
 | `0x00162500` | `int mm_Stamina_HungerLevel(Stamina *stamina)` | 64 | no | 0 below 100000, else a higher level (event "Hunger") |
 | `0x00162540` | `void mm_Stamina_Init(Stamina *stamina)` | 24 | no | stamina 399999 |

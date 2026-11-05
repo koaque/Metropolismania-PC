@@ -57,12 +57,12 @@ namespace mm
     void Dma_AppendCall(int address) { appendDmaCall(static_cast<uint32_t>(address) & 0x7FFFFFFFu); }
     void Dma_AppendCall_14C200(int address) { Dma_AppendCall(address); } // a thunk to the one above
 
-    // Full-screen black sprite with the given alpha (written into the static packet's colour first), on
-    // the first (a1 == 0) or the second fade packet.
-    void DmaList_QueueFade(int alpha, int a1)
+    // Full-screen black sprite with the given alpha (written into the static packet's colour first): the first fade
+    // packet draws it at Z 0xFFFFF000, the second (`overAll`) at the top Z.
+    void DmaList_QueueFade(int alpha, int overAll)
     {
         const uint32_t colour = static_cast<uint32_t>(alpha) << 24;
-        if (a1 == 0)
+        if (overAll == 0)
         {
             port::store<uint32_t>(0x001B2830u, colour);
             appendDmaCall(0x001B2800u);

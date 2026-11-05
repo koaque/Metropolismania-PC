@@ -5,7 +5,10 @@ Saving and loading on the memory card.
 - `mm_McQueue_*`: a 64-entry asynchronous command queue at `0x001F5CF0`, pumped once per frame with non-blocking
   `sceMcSync`.
 - `mm_McManager_*`: lists the cards (one directory entry per call) and finds the game's save directory and its
-  `icon.sys` (964 bytes).
+  `icon.sys` (964 bytes). Each of the 16 save slots (8 per card) keeps the directory entry (`CardDirEntry`, at
+  `0x1F3F00`; its time stamps find the newest save) and the icon.sys title (`SaveTitle`, at `0x1F4340`): the city's
+  name in full-width characters, then the months played, approval, population and stage that the load screen shows
+  (`mm_McManager_BuildSaveTitle`, `mm_McManager_FormatSlotLine`).
 - `mm_SaveFile_*` reads (`mm_SaveFile_Read`, `0x0015BA70`) and writes (`mm_SaveFile_Write`) blocks. Each subsystem has
   `*_LoadState` (reads) and `*_SaveState` (writes); `mm_CityScene_SaveGame` and `mm_CityScene_LoadGame` call them all.
 
@@ -17,10 +20,10 @@ Saving and loading on the memory card.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
-| `0x0015AF80` | `int mm_McManager_FindSave(McManager *mc, char *name, int card)` | 248 | no | (provisional) finds a save by name in the slot tables (0x1F3F00/0x1F4340/0x1F4780) |
+| `0x0015AF80` | `CardDirEntry *mm_McManager_FindSave(McManager *mc, char *name, int card)` | 248 | no | the directory entry of the save named `name` on a card (slots 0-7 or 8-15), or 0 |
 | `0x0015B080` | `void mm_McManager_FormatSaveInfo(McManager *mc, int a1, char *out)` | 1208 | yes | "Stage n Month m Year y "name" Population ... / Approval Rate ..." |
 | `0x0015B540` | `void mm_McManager_FormatSlotLine(McManager *mc, int slot, char *out, int a3)` | 848 | yes | short slot line " Stage n "name" Pop. ../A.R. ..%", "*Newest*" |
-| `0x0015B890` | `void mm_McManager_BuildSaveHeader(McManager *mc, CityScene *city, char *out)` | 428 | no | fills the save header from the stage state (0x1C5380) |
+| `0x0015B890` | `void mm_McManager_BuildSaveTitle(McManager *mc, CityScene *city, SaveTitle *title)` | 428 | no | the save's icon.sys title: the prefix and the city's name in full-width characters, then the months played, approval, population and stage |
 | `0x0015BA40` | `int mm_SaveFile_GetResult(McManager *mc, int a1)` | 8 | no | result of the file's last memory card request |
 | `0x0015BA50` | `int mm_SaveFile_IsDone(McManager *mc, int a1)` | 8 | no | whether the file's last request is done |
 | `0x0015BA60` | `int mm_SaveFile_Close(McManager *mc)` | 16 | no | queues close of the file's descriptor (+0x24) |
@@ -35,7 +38,7 @@ Saving and loading on the memory card.
 | `0x0015BC00` | `int mm_SaveFile_PrepareDir(McManager *mc, int a1, int a2, int a3)` | 1052 | yes | step machine: card info, mkdir/chdir, copies DATA\STATIC.ICO to STATIC.ICO |
 | `0x0015C020` | `void mm_McManager_ResetState(McManager *mc)` | 8 | no | state +4 = 0 |
 | `0x0015C030` | `int mm_McManager_PrepareNewSlot(McManager *mc, int card)` | 108 | yes | (provisional) fills the first empty slot of card a1 with a new save name |
-| `0x0015C0A0` | `int mm_McManager_GetSaveHeader(McManager *mc, int index, int32_t *card)` | 128 | no | the header of the index-th save found over both cards (a slot with a size and a name, 8 slots per card), and that save's card; 0 when there are fewer |
+| `0x0015C0A0` | `CardDirEntry *mm_McManager_GetSaveEntry(McManager *mc, int index, int32_t *card)` | 128 | no | the directory entry of the index-th save found over both cards (a slot with an entry and a title, 8 slots per card), and that save's card; 0 when there are fewer |
 | `0x0015C120` | `int mm_McManager_GetSaveFolder(McManager *mc, int a1, int32_t *slot)` | 128 | no | the folder name of the index-th save found over both cards (a slot with a size and a name, 8 slots per card), and that save's card; 0 when there are fewer |
 | `0x0015C1A0` | `int mm_McManager_IsCardUsable(McManager *mc, int card)` | 68 | no | (provisional) card a1 state 2 and no error |
 | `0x0015C1F0` | `uint8_t mm_McManager_GetCardStatus(McManager *mc, int card)` | 156 | no | card a1 status for the menus (formatted, unformatted, none, ...) |

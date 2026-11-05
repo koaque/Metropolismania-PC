@@ -856,9 +856,9 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001357F0,mm_ClaimIcon_GetColor,100,game,city,verified,no,3,0,"colour of a claim icon: id a0 (bit 15 selects the second half), level a1 (0 = white 0x1B26C0)"
 0x00135860,mm_Claim_PickVariant,84,game,claim,verified,no,1,0,entry variant by bit 0x8000 of a0 from the current speaker table (gp)
 0x001358C0,mm_Claim_GetLine,124,game,claim,verified,no,4,0,"line a1 of claim a0 (8-byte items), variant by bit 0x8000"
-0x00135940,mm_Claim_GetSectionC,32,game,claim,verified,no,9,0,CLAIM.BIN entry a0 via the offset table at file +0xC
-0x00135960,mm_Claim_GetSectionD,40,game,claim,verified,no,5,0,CLAIM.BIN entry (a0 & 0x7FFF) via the offset table at file +0x10
-0x00135990,mm_Claim_GetSectionB,32,game,claim,verified,no,15,0,CLAIM.BIN entry a0 via the offset table at file +8
+0x00135940,mm_Claim_GetSupplies,32,game,claim,verified,no,9,0,"supply list `index` (CLAIM.BIN section C, by BuildingType.claimC): the items a building type supplies and how much, ended by id 0"
+0x00135960,mm_Claim_GetGroup,40,game,claim,verified,no,5,0,item group `index` & 0x7FFF (CLAIM.BIN section D; a claim's id from 0x8000): 0-ended item ids
+0x00135990,mm_Claim_GetList,32,game,claim,verified,no,15,0,"claim list `index` (CLAIM.BIN section B, by BuildingType.claimB): 8-byte claims (need or wish, item or group, value, reach), ended by id 0"
 0x001359B0,mm_Claim_Load,184,game,claim,verified,yes,1,3,"loads DATA\BIN\CLAIM.BIN and resolves its section offsets (+8, +0xC, +0x10, +0x14, ...)"
 0x00135A70,mm_Stage_Load,328,game,stage,verified,yes,1,7,"reads this stage's record from DATA\BIN\STAGE.BIN into 0x1C5380 (target population 0x1C554C, theme 0x1C5550, theme share 0x1C5554)"
 0x00135BC0,mm_Stage_FormatGoalText,308,game,stage,verified,yes,1,3,"""%d people and %d%% must be the theme. Build a ..."" with the theme text (high-class, business, leisure, fishing, farming, industrial)"
@@ -903,16 +903,16 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00139CC0,mm_Event_Abort,272,game,event,verified,indirect,3,4,(provisional) ends active event a2 without its normal finish
 0x00139DD0,mm_Event_Trigger,820,game,event,verified,indirect,4,5,(provisional) triggers event a1 now or queues it
 0x0013A110,mm_Event_CallHandlerSlot,204,game,event,verified,indirect,1,1,(provisional) calls a handler slot for active event a2
-0x0013A1E0,mm_EventQueue_Find,104,game,event,verified,no,2,0,"position of id a1 in the waiting queue (0x1C5790, length 0x1BDA80), the length when it is not there"
+0x0013A1E0,mm_EventMgr_FindType,104,game,event,verified,no,2,0,"the event type (row of the table) with id `id`, from the id table (0x1C5790); the type count when there is none"
 0x0013A250,mm_EventMgr_dtor,264,game,event,verified,yes,1,3,frees the event lists
 0x0013A360,mm_EventMgr_ctor,500,game,event,verified,yes,1,5,creates the event lists and handler objects
 0x0013A560,mm_Event_LoadTypes,516,game,event,verified,yes,1,10,loads DATA\BIN\EVENT.BIN (0x4C-byte type records)
-0x0013A770,mm_EventList_MoveDue,764,game,event,verified,no,1,1,(provisional) bucket a1 -> a2 for entries whose wait counter is at or below 0
-0x0013AA70,mm_EventList_MoveDueTo,884,game,event,verified,no,1,1,(provisional) like mm_EventList_MoveDue with an extra per-target test (a3[1])
-0x0013ADF0,mm_EventList_MoveOffRank,788,game,event,verified,no,1,1,(provisional) entries whose rank mask (+0x27) lacks the current rank bit
-0x0013B110,mm_EventList_MoveOnRank,844,game,event,verified,no,1,1,(provisional) entries whose rank mask (+0x27) has the current rank bit
-0x0013B460,mm_EventList_MoveOffRankB,804,game,event,verified,no,1,1,"(provisional) second variant of the rank test, used to park entries in bucket 6"
-0x0013B790,mm_EventList_MoveByMask26,788,game,event,verified,no,1,1,(provisional) entries whose mask at record +0x26 lacks a2[1] (event manager constructor)
+0x0013A770,mm_EventList_MoveDue,764,game,event,verified,no,1,1,bucket `from` -> `to`: the entries whose wait ran out
+0x0013AA70,mm_EventList_MoveDueLevel,884,game,event,verified,no,1,1,bucket `from` -> `to`: the entries whose wait ran out and whose type's level is the test's
+0x0013ADF0,mm_EventList_MoveInRank,788,game,event,verified,no,1,1,bucket `from` -> `to`: the entries whose type runs at the test's rank (its ranks share a bit with it)
+0x0013B110,mm_EventList_MoveInRankLevel,844,game,event,verified,no,1,1,bucket `from` -> `to`: the entries whose type runs at the test's rank and has the test's level
+0x0013B460,mm_EventList_MoveOutOfRank,804,game,event,verified,no,1,1,bucket `from` -> `to`: the entries whose type does not run at the test's rank (to bucket 6 when the rank goes up)
+0x0013B790,mm_EventList_MoveByMask,788,game,event,verified,no,1,1,"bucket `from` -> `to`: the entries whose type's mask (+0x26) shares a bit with the test's (the stage's bit, event manager constructor)"
 0x0013BAB0,mm_Pair_ctor,16,game,core,verified,no,1,0,two-byte element constructor (array init)
 0x0013BAC0,mm_MemberMeters_Reset,160,game,family,verified,no,1,0,(provisional) clears four counters and the member meter table at 0x1C59B0
 0x0013BB70,mm_MemberStatus_Lookup,448,game,family,verified,no,6,0,entry for family a0 member a1 in the table at 0x1F32F0 (adds one when missing)
@@ -1244,10 +1244,10 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0015AA90,mm_CityAssets_LoadCharObjs,448,game,city,verified,yes,1,6,async load step for DATA\A3D\CHAROBJ.A3D
 0x0015AC50,mm_CityAssets_LoadObjects,448,game,city,verified,yes,1,6,async load step for DATA\A3D\OBJECT.A3D
 0x0015AE10,mm_CityAssets_LoadStep,356,game,city,verified,yes,2,7,state machine over the asset loads; returns when done
-0x0015AF80,mm_McManager_FindSave,248,game,save,verified,no,1,1,(provisional) finds a save by name in the slot tables (0x1F3F00/0x1F4340/0x1F4780)
+0x0015AF80,mm_McManager_FindSave,248,game,save,verified,no,1,1,"the directory entry of the save named `name` on a card (slots 0-7 or 8-15), or 0"
 0x0015B080,mm_McManager_FormatSaveInfo,1208,game,save,verified,yes,1,5,"""Stage n Month m Year y ""name"" Population ... / Approval Rate ..."""
 0x0015B540,mm_McManager_FormatSlotLine,848,game,save,verified,yes,1,4,"short slot line "" Stage n ""name"" Pop. ../A.R. ..%"", ""*Newest*"""
-0x0015B890,mm_McManager_BuildSaveHeader,428,game,save,verified,no,1,4,fills the save header from the stage state (0x1C5380)
+0x0015B890,mm_McManager_BuildSaveTitle,428,game,save,verified,no,1,4,"the save's icon.sys title: the prefix and the city's name in full-width characters, then the months played, approval, population and stage"
 0x0015BA40,mm_SaveFile_GetResult,8,game,save,verified,no,2,1,result of the file's last memory card request
 0x0015BA50,mm_SaveFile_IsDone,8,game,save,verified,no,2,1,whether the file's last request is done
 0x0015BA60,mm_SaveFile_Close,16,game,save,verified,no,2,1,queues close of the file's descriptor (+0x24)
@@ -1262,7 +1262,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0015BC00,mm_SaveFile_PrepareDir,1052,game,save,verified,yes,2,13,"step machine: card info, mkdir/chdir, copies DATA\STATIC.ICO to STATIC.ICO"
 0x0015C020,mm_McManager_ResetState,8,game,save,verified,no,6,0,state +4 = 0
 0x0015C030,mm_McManager_PrepareNewSlot,108,game,save,verified,yes,1,1,(provisional) fills the first empty slot of card a1 with a new save name
-0x0015C0A0,mm_McManager_GetSaveHeader,128,game,save,verified,no,1,0,"the header of the index-th save found over both cards (a slot with a size and a name, 8 slots per card), and that save's card; 0 when there are fewer"
+0x0015C0A0,mm_McManager_GetSaveEntry,128,game,save,verified,no,1,0,"the directory entry of the index-th save found over both cards (a slot with an entry and a title, 8 slots per card), and that save's card; 0 when there are fewer"
 0x0015C120,mm_McManager_GetSaveFolder,128,game,save,verified,no,1,0,"the folder name of the index-th save found over both cards (a slot with a size and a name, 8 slots per card), and that save's card; 0 when there are fewer"
 0x0015C1A0,mm_McManager_IsCardUsable,68,game,save,verified,no,1,0,(provisional) card a1 state 2 and no error
 0x0015C1F0,mm_McManager_GetCardStatus,156,game,save,verified,no,7,0,"card a1 status for the menus (formatted, unformatted, none, ...)"
@@ -1284,8 +1284,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0015E6D0,mm_Person_TargetHome,296,game,char,verified,no,1,3,(provisional)
 0x0015E800,mm_Person_ChooseDestination,1492,game,char,verified,yes,1,14,"(provisional) picks where a person goes next by schedule and needs, using the target helpers"
 0x0015EDE0,mm_Math_SqrtBits,48,game,math,verified,no,1,0,"bit pattern of sqrtf((float)a0) (VU0 VSQRT), returned in v0; mm_Person_ChooseDestination uses it mod 3600 as a per-person time offset"
-0x0015EE10,mm_Schedule_QueryA,416,game,char,verified,yes,1,2,(provisional) schedule lookup for drawing
-0x0015EFB0,mm_Schedule_QueryB,384,game,char,verified,yes,5,2,(provisional) schedule lookup used by the scripts
+0x0015EE10,mm_Schedule_BusinessActivity,416,game,char,verified,yes,1,2,"the activity of the family's building type when the member's schedule byte for this hour has its upper three bits set (at the business), else 0"
+0x0015EFB0,mm_Schedule_MemberActivity,384,game,char,verified,yes,5,2,"the member's activity this hour: the low five bits of its schedule byte (row by the schedule state, column by the hour, variants for holidays and bad weather)"
 0x0015F130,mm_Schedule_GetActivity,520,game,char,verified,yes,2,3,(provisional) current activity of a person
 0x0015F340,mm_Schedule_GetBuildingActivity,452,game,char,verified,yes,2,3,(provisional) current activity for a person and building
 0x0015F510,mm_Schedule_PickEntry,120,game,char,verified,no,1,0,(provisional)
@@ -2038,7 +2038,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00192750,mm_EvDeliveryMan_Start,116,game,event,verified,no,0,1,type 3: Start
 0x001927D0,mm_EvDeliveryMan_Check,1272,game,event,verified,no,0,7,"type 3 ""Delivery Man"": Check"
 0x00192CD0,mm_EvBugDamage_Check,132,game,event,verified,no,0,1,"type 11 ""Bug damage"": Check (its only slot)"
-0x00192D60,mm_EventList_MoveAll,696,game,event,verified,no,2,1,(provisional) moves every entry from bucket a1 to a2 (event manager constructor and destructor)
+0x00192D60,mm_EventList_MoveAll,696,game,event,verified,no,2,1,bucket `from` -> `to`: every entry (event manager constructor and destructor)
 0x00193020,mm_EventQueue_RemoveAt,148,game,event,verified,no,5,1,removes the id at a2 from queue level a1 and shifts the level starts
 0x001930C0,mm_EventQueue_InsertByPriority,340,game,event,verified,no,7,1,inserts id *a1 into level a2 keeping the type priority order (type record +0x22)
 0x00193220,mm_PartyPopup_Draw,36,game,event,verified,no,0,1,(provisional) vtable 0x1BD8E0 draw: queues its packet in pass 2

@@ -19,11 +19,15 @@ typedef struct MenuWin MenuWin;
 typedef struct PauseSlotText PauseSlotText;
 typedef struct LoadingScreen LoadingScreen;
 typedef struct McManager McManager;
+typedef struct CardTime CardTime;
+typedef struct CardDirEntry CardDirEntry;
+typedef struct SaveTitle SaveTitle;
 typedef struct NameEntry NameEntry;
 typedef struct TitleScene TitleScene;
 typedef struct Bag Bag;
 typedef struct BagShortcut BagShortcut;
 typedef struct BagSlot BagSlot;
+typedef struct GoodsRecord GoodsRecord;
 typedef struct StatusPanel StatusPanel;
 typedef struct PauseMenu PauseMenu;
 typedef struct Minimap Minimap;
@@ -33,6 +37,9 @@ typedef struct PhoneCalls PhoneCalls;
 typedef struct PhoneCallEntry PhoneCallEntry;
 typedef struct EventMgr EventMgr;
 typedef struct EventSlot EventSlot;
+typedef struct EventQueueEntry EventQueueEntry;
+typedef struct EventQueue EventQueue;
+typedef struct EventTest EventTest;
 typedef struct ActorRef ActorRef;
 typedef struct WantsWin WantsWin;
 typedef struct WantsIndex WantsIndex;
@@ -389,6 +396,35 @@ struct McManager {
     GameFile *file;            /* +0x20 */
     int32_t fd;                /* +0x24 open save file descriptor */
 };
+/* A memory card time stamp (8 bytes): plain numbers, not BCD. */
+struct CardTime {
+    uint8_t unk_00;
+    uint8_t second;            /* +0x01 */
+    uint8_t minute;            /* +0x02 */
+    uint8_t hour;              /* +0x03 */
+    uint8_t day;               /* +0x04 */
+    uint8_t month;             /* +0x05 */
+    uint16_t year;             /* +0x06 */
+};
+/* A memory card directory entry (0x40 bytes): one per save slot (0x1F3F00), the scan's last read (0x1F4300), the
+   loaded save's (0x1C5640, mm_Title_LoadMenu). */
+struct CardDirEntry {
+    uint8_t unk_00[8];
+    CardTime modified;         /* +0x08 finds the newest save (mm_McManager_FormatSlotText); a save changed since it was
+                                  loaded is not overwritten */
+    uint8_t unk_10[0x10];
+    char name[0x20];           /* +0x20 the save folder's name */
+};
+/* A save's title as icon.sys keeps it (0x44 bytes, mm_McManager_BuildSaveTitle): the prefix and the city's name in
+   full-width characters, cut at 0x3C bytes, then four little-endian numbers for the load screen. */
+struct SaveTitle {
+    char text[0x3C];           /* +0x00 */
+    uint8_t end;               /* +0x3C 0 */
+    uint8_t months[2];         /* +0x3D months played */
+    int8_t approval;           /* +0x3F the approval rate */
+    uint8_t population[2];     /* +0x40 */
+    uint8_t stage[2];          /* +0x42 the stage number */
+};
 /* Name entry window (0x124 bytes): a keyboard of 6 columns on a board model (mm_NameEntry_*). */
 struct NameEntry {
     A3DObject *model;          /* +0x000 the board (0x1F3B6C) */
@@ -486,10 +522,33 @@ struct TitleScene {
     char *previewText;         /* +0x100 loading text shown once the preview waits */
 };
 /* Player's bag (0x1AC bytes). */
-/* Bag item slot (0x10 bytes). */
+/* A goods record (0x88 bytes): GOODS.BIN section B, grouped by the building type that sells them (section A holds each
+   group's first record, mm_Goods_GetRecordOffset). */
+struct GoodsRecord {
+    uint16_t name;             /* +0x00 its name: an offset into section C (mm_BagMenu_RefreshList); also its id
+                                  (mm_Bag_FindItem) */
+    int8_t priceDigits;        /* +0x02 the price is this times ten to the power of the next (mm_Goods_GetPrice) */
+    uint8_t priceExponent;     /* +0x03 */
+    uint8_t kind;              /* +0x04 what it is (mm_WordsFn_BuyGoods): 4, 5, 10, 11 laptop modules; 6 to 8 bags; 0x10
+                                  presents; 0x11 and 0x13 food to carry, 0x12 and 0x14 food eaten at once; 0x16 music;
+                                  0x17 and 0x1A to 0x1C things to place; 0x19 houses */
+    uint8_t value;             /* +0x05 by kind: the bag size (6 to 8), the music track (0x16), the family that applies
+                                  (0x19), ... */
+    int8_t count;              /* +0x06 copied to the bag slot; shown as xN for the kinds to place */
+    uint8_t unk_07;
+    char text[0x80];           /* +0x08 the description (bytes after its end are leftovers) */
+};
+/* Bag item slot (0x10 bytes, mm_Bag_AddItem). */
 struct BagSlot {
-    uint16_t item;             /* +0x00 0 = empty */
-    uint8_t unk_02[0xE];
+    uint16_t group;            /* +0x00 the goods group (the building type that sells it), 0 = empty */
+    uint16_t index;            /* +0x02 its record in the group */
+    int16_t stage;             /* +0x04 the stage it was bought in */
+    int8_t count;              /* +0x06 from the goods record */
+    uint8_t unk_07;
+    int32_t month;             /* +0x08 the month count it was bought in */
+    uint16_t seller;           /* +0x0C the family of the shop it came from */
+    uint8_t unk_0E;            /* +0x0E 0xFF when bought */
+    uint8_t unk_0F;
 };
 /* Bag shortcut (4 bytes). */
 struct BagShortcut {
@@ -545,7 +604,7 @@ struct PauseMenu {
     int32_t waitFrames;        /* +0x24 frames in the card message state (mm_PauseMenu_StateMain) */
     int32_t blink;             /* +0x28 frames, for the blinking while saving */
     float openTime;            /* +0x2C rises by 10 per frame; the window is fully in at 120 */
-    char saveHeader[0x44];     /* +0x30 starts with the save name, default from 0x1B73D0 (Shift-JIS; mm_McManager_BuildSaveHeader) */
+    SaveTitle saveTitle;       /* +0x30 the city's save title (mm_McManager_BuildSaveTitle) */
     int32_t cardMessage;       /* +0x74 the message shown (mm_PauseMenu_ShowCardMessage) */
     PauseSlotText slotTexts[16]; /* +0x78 the listed saves' texts (the first byte cleared by mm_PauseMenu_Reset) */
     int32_t pendingChoice;     /* +0x998 the save to overwrite, -1 none */
@@ -622,7 +681,7 @@ struct EventType {
                                   character type */
     uint8_t handler;           /* +0x24 index into the handler table at 0x1AF0D0 (EventHandler), 0 = none */
     uint8_t tileFlags;         /* +0x25 1 + the tile flag set while it runs, 0 = none (mm_Event_SetTileFlags) */
-    uint8_t mask;              /* +0x26 tested by mm_EventList_MoveByMask26 */
+    uint8_t mask;              /* +0x26 tested by mm_EventList_MoveByMask */
     uint8_t ranks;             /* +0x27 the population ranks it runs at (bit rank - 1): below them it waits in bucket 5,
                                   after them it goes to bucket 6 (mm_Event_Update) */
     int8_t wait;               /* +0x28 after it finishes: days to wait in bucket 4, 0 its own level again, -1 bucket 6,
@@ -810,6 +869,28 @@ struct EventMgr {
     EventSlot slots[5];        /* +0x04 filled from the front; mm_EventMgr_RequeueFirst drops the first */
     EventData *talks[3];       /* +0xA4 the event records the talk script works with (0x84, 0x24, 0x7C bytes; saved) */
 };
+/* An entry of the event queue (2 bytes); event slots and event records start with the same pair. */
+struct EventQueueEntry {
+    uint8_t type;              /* +0x00 row of the event table */
+    int8_t wait;               /* +0x01 days to wait in bucket 4, counted down each day (mm_Event_Update) */
+};
+/* The event queue (0x224 bytes, mm_Event_LoadTypes; saved with the city): every event type not running is in one of
+   eight buckets (docs/map/event.md), each kept in the order of the types' priorities, lowest first. */
+struct EventQueue {
+    int32_t starts[9];         /* +0x000 bucket k runs from entry starts[k] up to starts[k + 1]; the last is the count */
+    EventQueueEntry entries[0x100]; /* +0x024 */
+};
+/* The test of a queue move (mm_EventList_MoveDue and the others): the event table, then what the types are compared
+   with. */
+struct EventTest {
+    EventType *types;          /* +0x00 */
+    union {
+        int32_t ranks;         /* +0x04 a rank bit, against the types' ranks */
+        int32_t level;         /* +0x04 against the types' levels (mm_EventList_MoveDueLevel) */
+        uint8_t mask;          /* +0x04 against the types' masks (mm_EventList_MoveByMask) */
+    };
+    int32_t rankLevel;         /* +0x08 the level, with a rank bit (mm_EventList_MoveInRankLevel) */
+};
 /* Want (0x10 bytes) in the wants list's data area. */
 struct Want {
     uint16_t person;           /* +0x00 who wants it (passed to mm_PhoneCall_Post) */
@@ -890,8 +971,8 @@ struct ApplicantEntry {
     uint16_t index;            /* +0x00 own index */
     int16_t state;             /* +0x02 0 free, 2 waiting, 3 to be placed, 6 being placed (mm_Applicants_StartPlacing) */
     uint16_t family;           /* +0x04 */
-    uint16_t tile;             /* +0x06 where the player put its home (mm_Player_PlaceForApplicant) */
-    uint8_t unk_08[2];
+    uint16_t tile;             /* +0x06 where the player put its home (mm_Player_PlaceForApplicant), 0x4000 not yet */
+    uint16_t home;             /* +0x08 the home built for it (mm_Applicants_AssignToBuilding), 0x3F80 none */
     uint16_t type;             /* +0x0A building type the family wants (index into the table at gp 0x1BDBF8) */
     int32_t month;             /* +0x0C the month count when it applied (mm_Applicants_BuildInfo) */
     int32_t timer;             /* +0x10 set to 6 when its placing starts */

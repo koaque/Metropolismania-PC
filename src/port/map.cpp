@@ -587,7 +587,7 @@ namespace mm
         else if ((btype->flags & 2u) != 0)
             map->refreshDelay = 0x81;
         TileLists_InsertAll(map->tileLists, static_cast<uint16_t>(object),
-                            GuestPtr<uint16_t>{static_cast<uint32_t>(Claim_GetSectionC(btype->claimC))});
+                            GuestPtr<uint16_t>{Claim_GetSupplies(btype->claimC).address});
         ++map->objectCount;
         const GuestPtr<int32_t> categoryCount = GuestPtr<int32_t>::of(map->categoryCount[0]) + btype->category;
         if (btype->category == 4)
@@ -793,7 +793,7 @@ namespace mm
         if (object <= 0 || object >= kNoObject)
             return;
         const GuestPtr<BuildingType> btype{globals::buildingTypeAddress(map->objects[object].type)};
-        TileLists_RemoveAll(map->tileLists, object, GuestPtr<int16_t>{static_cast<uint32_t>(Claim_GetSectionC(btype->claimC))});
+        TileLists_RemoveAll(map->tileLists, object, GuestPtr<int16_t>{Claim_GetSupplies(btype->claimC).address});
         map->objects[object].type = 0;
         --map->objectCount;
         const GuestPtr<int32_t> categoryCount = GuestPtr<int32_t>::of(map->categoryCount[0]) + btype->category;

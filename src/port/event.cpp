@@ -74,11 +74,11 @@ namespace mm
         return count;
     }
 
-    int EventQueue_Find(GuestPtr<EventMgr>, int16_t id)
+    int EventMgr_FindType(GuestPtr<EventMgr>, int16_t id)
     {
-        const uint32_t end = globals::kEventQueue + 2u * static_cast<uint32_t>(globals::eventQueueLength.get());
+        const uint32_t end = globals::kEventTypeIds + 2u * static_cast<uint32_t>(globals::eventTypeCount.get());
         int position = 0;
-        for (uint32_t entry = globals::kEventQueue; entry < end; entry += 2u, ++position)
+        for (uint32_t entry = globals::kEventTypeIds; entry < end; entry += 2u, ++position)
             if (port::load<uint16_t>(entry) == static_cast<uint16_t>(id))
                 return position;
         return position;
@@ -87,21 +87,20 @@ namespace mm
     void EventMgr_RequeueFirst(GuestPtr<EventMgr> events)
     {
         const uint32_t slots = events.address + 0x04u;
-        EventQueue_InsertByPriority(static_cast<int>(globals::eventQueueObject.get()), GuestPtr<uint8_t>{slots}, 2, 0);
+        EventQueue_InsertByPriority(globals::eventQueue(), GuestPtr<EventQueueEntry>{slots}, 2, 0);
         sdk::memmove(slots, slots + 0x20u, 0x80);
         sdk::memset(slots + 0x80u, 0, 0x20);
     }
 
-    // Removes the entry from the queue object: the ids after it move up (the length rounded down to whole ids,
-    // counted from the entry) and the ends of priority levels `level` + 1 to 8 move back one (the last is the length).
-    void EventQueue_RemoveAt(int queue, int level, GuestPtr<uint16_t> entry)
+    // Removes the entry from the queue: the entries after it move up (the length rounded down to whole entries,
+    // counted from the entry) and the starts of buckets `bucket` + 1 to 8 move back one (the last is the count).
+    void EventQueue_RemoveAt(GuestPtr<EventQueue> queue, int bucket, GuestPtr<EventQueueEntry> entry)
     {
-        const uint32_t base = static_cast<uint32_t>(queue);
-        const uint32_t end = base + 0x24u + 2u * port::load<uint32_t>(base + 0x20u);
+        const uint32_t end = (GuestPtr<EventQueueEntry>::of(queue->entries[0]) + queue->starts[8]).address;
         const int32_t bytes = static_cast<int32_t>(end - entry.address);
         sdk::memmove(entry.address, entry.address + 2u, (bytes / 2) * 2);
-        for (int i = level + 1; i < 9; ++i)
-            port::store<int32_t>(base + 4u * static_cast<uint32_t>(i), port::load<int32_t>(base + 4u * static_cast<uint32_t>(i)) - 1);
+        for (int i = bucket + 1; i < 9; ++i)
+            queue->starts[i] = queue->starts[i] - 1;
     }
 
     // The tile list of event `list` in the claim data: a count, then (record, 8 bytes) entries of 12 bytes. Setting
@@ -261,8 +260,7 @@ namespace mm
                 const GuestPtr<MapObject> building = Map_GetRecord(city->map, port::load<uint16_t>(item));
                 if (building->claimSlot == 0x18)
                     continue;
-                const int section = Claim_GetSectionB(typeOf(building)->claimB);
-                if (port::load<uint16_t>(static_cast<uint32_t>(section) + 8u * building->claimSlot + 2u) != 0)
+                if (Claim_GetList(typeOf(building)->claimB)[building->claimSlot].id != 0)
                     continue;
                 building->claimMeter = 0;
                 building->claimSlot = 0x18;
@@ -987,7 +985,7 @@ namespace mm
     }
 
     PORT_FN(Event_CountActive);
-    PORT_FN(EventQueue_Find);
+    PORT_FN(EventMgr_FindType);
     PORT_FN(EventMgr_RequeueFirst);
     PORT_FN(EventQueue_RemoveAt);
     PORT_FN(Event_SetTileFlags);
@@ -1346,10 +1344,10 @@ namespace mm
     namespace
     {
         // Whether a claim section C (four-byte entries, the id in the low half, ending at 0) lists the id.
-        bool sectionCLists(uint32_t sectionC, uint16_t id)
+        bool supplies(GuestPtr<ClaimSupply> supply, uint16_t id)
         {
-            for (uint32_t entry = sectionC; port::load<uint16_t>(entry) != 0; entry += 4u)
-                if (port::load<uint16_t>(entry) == id)
+            for (; supply->id != 0; ++supply)
+                if (supply->id == id)
                     return true;
             return false;
         }
@@ -1361,22 +1359,22 @@ namespace mm
     int EvAdvertise_ClaimsMatch(GuestPtr<CityScene> city, GuestPtr<ActorRef> actorA, GuestPtr<ActorRef> actorB)
     {
         const GuestPtr<MapObject> objB = Map_GetRecord(city->map, actorB->object);
-        const auto sectionC = static_cast<uint32_t>(Claim_GetSectionC(GuestPtr<BuildingType>{globals::buildingTypeAddress(objB->type)}->claimC));
+        const GuestPtr<ClaimSupply> suppliesB = Claim_GetSupplies(GuestPtr<BuildingType>{globals::buildingTypeAddress(objB->type)}->claimC);
         const GuestPtr<MapObject> objA = Map_GetRecord(city->map, actorA->object);
-        for (auto entry = static_cast<uint32_t>(Claim_GetSectionB(GuestPtr<BuildingType>{globals::buildingTypeAddress(objA->type)}->claimB));
-             port::load<uint16_t>(entry + 2u) != 0; entry += 8u)
+        for (GuestPtr<ClaimEntry> entry = Claim_GetList(GuestPtr<BuildingType>{globals::buildingTypeAddress(objA->type)}->claimB);
+             entry->id != 0; ++entry)
         {
-            if (port::load<uint8_t>(entry) != 0)
+            if (entry->wish != 0)
                 continue;
-            const uint16_t id = port::load<uint16_t>(entry + 2u);
+            const uint16_t id = entry->id;
             if (id < 0x8000)
             {
-                if (sectionCLists(sectionC, id))
+                if (supplies(suppliesB, id))
                     return 1;
                 continue;
             }
-            for (auto group = static_cast<uint32_t>(Claim_GetSectionD(id)); port::load<uint16_t>(group) != 0; group += 2u)
-                if (sectionCLists(sectionC, port::load<uint16_t>(group)))
+            for (GuestPtr<uint16_t> group = Claim_GetGroup(id); *group != 0; ++group)
+                if (supplies(suppliesB, *group))
                     return 1;
         }
         return 0;
@@ -1641,11 +1639,12 @@ namespace mm
 
     namespace
     {
-        // Event buckets: nine bucket starts (+0; bucket k runs up to the start of k + 1) over two-byte entries from
-        // +0x24 (the event type, then its wait counter as a signed byte). Each bucket is kept in the order of the
-        // types' priorities (EventType.priority), lowest first.
-        uint32_t bucketEntry(uint32_t list, int32_t index) { return list + 0x24u + 2u * static_cast<uint32_t>(index); }
-        uint32_t bucketStart(uint32_t list, int bucket) { return list + 4u * static_cast<uint32_t>(bucket); }
+        // The queue's buckets (EventQueue): bucket k runs from entry starts[k] up to the start of k + 1. Each bucket is
+        // kept in the order of the types' priorities (EventType.priority), lowest first. The code walks the entries by
+        // address, as the original does.
+        uint32_t entryAt(GuestPtr<EventQueue> queue, int32_t index) { return (GuestPtr<EventQueueEntry>::of(queue->entries[0]) + index).address; }
+        uint32_t bucketBegin(GuestPtr<EventQueue> queue, int bucket) { return entryAt(queue, queue->starts[bucket]); }
+        GuestPtr<EventQueueEntry> queueEntry(uint32_t address) { return GuestPtr<EventQueueEntry>{address}; }
         GuestPtr<EventType> eventRecord(uint32_t types, uint8_t type) { return GuestPtr<EventType>{types} + type; }
         int8_t priority(uint32_t types, uint8_t type) { return eventRecord(types, type)->priority; }
 
@@ -1653,15 +1652,15 @@ namespace mm
         // bucket `to`, each after the entries of lower priority there (the search goes on from the last place
         // taken), and shifts the buckets in between.
         template <typename Test>
-        void moveEntries(uint32_t list, int from, int to, uint32_t types, Test test)
+        void moveEntries(GuestPtr<EventQueue> queue, int from, int to, uint32_t types, Test test)
         {
-            const int32_t first = port::load<int32_t>(bucketStart(list, from));
-            const int32_t count = port::load<int32_t>(bucketStart(list, from + 1)) - first;
-            uint32_t source = bucketEntry(list, first);
-            uint32_t place = bucketEntry(list, port::load<int32_t>(bucketStart(list, to)));
-            uint32_t end = bucketEntry(list, port::load<int32_t>(bucketStart(list, to + 1)));
+            const int32_t first = queue->starts[from];
+            const int32_t count = queue->starts[from + 1] - first;
+            uint32_t source = entryAt(queue, first);
+            uint32_t place = bucketBegin(queue, to);
+            uint32_t end = bucketBegin(queue, to + 1);
             const auto findPlace = [&](int8_t prio) {
-                while (place < end && priority(types, port::load<uint8_t>(place)) < prio)
+                while (place < end && priority(types, queueEntry(place)->type) < prio)
                     place += 2u;
             };
             const auto entries = [](uint32_t a, uint32_t b) { return static_cast<int32_t>(a - b) / 2; };
@@ -1670,8 +1669,8 @@ namespace mm
             {
                 for (int32_t i = 0; i < count; ++i)
                 {
-                    const uint8_t type = port::load<uint8_t>(source);
-                    const int8_t wait = port::load<int8_t>(source + 1u);
+                    const uint8_t type = queueEntry(source)->type;
+                    const int8_t wait = queueEntry(source)->wait;
                     if (!test(eventRecord(types, type), wait))
                     {
                         source += 2u;
@@ -1679,93 +1678,93 @@ namespace mm
                     }
                     findPlace(priority(types, type));
                     sdk::memmove(source, source + 2u, 2 * (entries(place, source) - 1));
-                    port::store<uint8_t>(place - 2u, type);
-                    port::store<int8_t>(place - 1u, wait);
+                    queueEntry(place - 2u)->type = type;
+                    queueEntry(place - 2u)->wait = wait;
                     ++moved;
                 }
                 for (int bucket = from + 1; bucket <= to; ++bucket)
-                    port::store<int32_t>(bucketStart(list, bucket), port::load<int32_t>(bucketStart(list, bucket)) - moved);
+                    queue->starts[bucket] = queue->starts[bucket] - moved;
                 return;
             }
             for (int32_t i = 0; i < count; ++i, source += 2u)
             {
-                const uint8_t type = port::load<uint8_t>(source);
-                const int8_t wait = port::load<int8_t>(source + 1u);
+                const uint8_t type = queueEntry(source)->type;
+                const int8_t wait = queueEntry(source)->wait;
                 if (!test(eventRecord(types, type), wait))
                     continue;
                 findPlace(priority(types, type));
                 sdk::memmove(place + 2u, place, 2 * entries(source, place));
-                port::store<uint8_t>(place, type);
-                port::store<int8_t>(place + 1u, wait);
+                queueEntry(place)->type = type;
+                queueEntry(place)->wait = wait;
                 place += 2u;
                 end += 2u;
                 ++moved;
             }
             for (int bucket = to + 1; bucket <= from; ++bucket)
-                port::store<int32_t>(bucketStart(list, bucket), port::load<int32_t>(bucketStart(list, bucket)) + moved);
+                queue->starts[bucket] = queue->starts[bucket] + moved;
         }
     }
 
     // Every entry (the event manager's constructor and destructor).
-    void EventList_MoveAll(int list, int from, int to)
+    void EventList_MoveAll(GuestPtr<EventQueue> queue, int from, int to)
     {
-        moveEntries(static_cast<uint32_t>(list), from, to, globals::eventTypes.get(), [](GuestPtr<EventType>, int8_t) { return true; });
+        moveEntries(queue, from, to, globals::eventTypes.get(), [](GuestPtr<EventType>, int8_t) { return true; });
     }
 
-    // The rest take the type records at ctx[0] and test values from ctx[1] on. Entries whose wait ran out.
-    void EventList_MoveDue(int list, int from, int to, GuestPtr<int32_t> ctx)
+    // The rest take the event table and what to compare with from `test`. Entries whose wait ran out.
+    void EventList_MoveDue(GuestPtr<EventQueue> queue, int from, int to, GuestPtr<EventTest> test)
     {
-        moveEntries(static_cast<uint32_t>(list), from, to, static_cast<uint32_t>(ctx[0]), [](GuestPtr<EventType>, int8_t wait) { return wait <= 0; });
+        moveEntries(queue, from, to, test->types.address, [](GuestPtr<EventType>, int8_t wait) { return wait <= 0; });
     }
 
-    // Entries whose wait ran out and whose type's level is ctx[1].
-    void EventList_MoveDueTo(int list, int from, int to, GuestPtr<int32_t> ctx)
+    // Entries whose wait ran out and whose type's level is the test's.
+    void EventList_MoveDueLevel(GuestPtr<EventQueue> queue, int from, int to, GuestPtr<EventTest> test)
     {
-        const uint32_t kind = static_cast<uint32_t>(ctx[1]);
-        moveEntries(static_cast<uint32_t>(list), from, to, static_cast<uint32_t>(ctx[0]),
-                    [kind](GuestPtr<EventType> record, int8_t wait) { return wait <= 0 && record->level == kind; });
+        const uint32_t level = static_cast<uint32_t>(test->level);
+        moveEntries(queue, from, to, test->types.address,
+                    [level](GuestPtr<EventType> record, int8_t wait) { return wait <= 0 && record->level == level; });
     }
 
-    // Entries whose type's ranks share a bit with ctx[1].
-    void EventList_MoveOffRank(int list, int from, int to, GuestPtr<int32_t> ctx)
+    // Entries whose type runs at the test's rank (its ranks share a bit with it).
+    void EventList_MoveInRank(GuestPtr<EventQueue> queue, int from, int to, GuestPtr<EventTest> test)
     {
-        const uint32_t rank = static_cast<uint32_t>(ctx[1]);
-        moveEntries(static_cast<uint32_t>(list), from, to, static_cast<uint32_t>(ctx[0]),
+        const uint32_t rank = static_cast<uint32_t>(test->ranks);
+        moveEntries(queue, from, to, test->types.address,
                     [rank](GuestPtr<EventType> record, int8_t) { return (rank & record->ranks) != 0; });
     }
 
-    // The same rank test, and the type's level equal to ctx[2].
-    void EventList_MoveOnRank(int list, int from, int to, GuestPtr<int32_t> ctx)
+    // The same rank test, and the type's level equal to the test's.
+    void EventList_MoveInRankLevel(GuestPtr<EventQueue> queue, int from, int to, GuestPtr<EventTest> test)
     {
-        const uint32_t rank = static_cast<uint32_t>(ctx[1]), kind = static_cast<uint32_t>(ctx[2]);
-        moveEntries(static_cast<uint32_t>(list), from, to, static_cast<uint32_t>(ctx[0]), [rank, kind](GuestPtr<EventType> record, int8_t) {
-            return (rank & record->ranks) != 0 && record->level == kind;
+        const uint32_t rank = static_cast<uint32_t>(test->ranks), level = static_cast<uint32_t>(test->rankLevel);
+        moveEntries(queue, from, to, test->types.address, [rank, level](GuestPtr<EventType> record, int8_t) {
+            return (rank & record->ranks) != 0 && record->level == level;
         });
     }
 
-    // Entries whose type's ranks share no bit with ctx[1].
-    void EventList_MoveOffRankB(int list, int from, int to, GuestPtr<int32_t> ctx)
+    // Entries whose type does not run at the test's rank.
+    void EventList_MoveOutOfRank(GuestPtr<EventQueue> queue, int from, int to, GuestPtr<EventTest> test)
     {
-        const uint32_t rank = static_cast<uint32_t>(ctx[1]);
-        moveEntries(static_cast<uint32_t>(list), from, to, static_cast<uint32_t>(ctx[0]),
+        const uint32_t rank = static_cast<uint32_t>(test->ranks);
+        moveEntries(queue, from, to, test->types.address,
                     [rank](GuestPtr<EventType> record, int8_t) { return (rank & record->ranks) == 0; });
     }
 
-    // Entries whose type's mask shares a bit with the byte at ctx + 4.
-    void EventList_MoveByMask26(int list, int from, int to, GuestPtr<int32_t> ctx)
+    // Entries whose type's mask shares a bit with the test's.
+    void EventList_MoveByMask(GuestPtr<EventQueue> queue, int from, int to, GuestPtr<EventTest> test)
     {
-        const uint32_t mask = port::load<uint8_t>(ctx.address + 4u);
-        moveEntries(static_cast<uint32_t>(list), from, to, static_cast<uint32_t>(ctx[0]),
+        const uint32_t mask = test->mask;
+        moveEntries(queue, from, to, test->types.address,
                     [mask](GuestPtr<EventType> record, int8_t) { return (mask & record->mask) != 0; });
     }
 
     PORT_FN(EventList_MoveAll);
     PORT_FN(EventList_MoveDue);
-    PORT_FN(EventList_MoveDueTo);
-    PORT_FN(EventList_MoveOffRank);
-    PORT_FN(EventList_MoveOnRank);
-    PORT_FN(EventList_MoveOffRankB);
-    PORT_FN(EventList_MoveByMask26);
+    PORT_FN(EventList_MoveDueLevel);
+    PORT_FN(EventList_MoveInRank);
+    PORT_FN(EventList_MoveInRankLevel);
+    PORT_FN(EventList_MoveOutOfRank);
+    PORT_FN(EventList_MoveByMask);
 
     // ---- alien and delivery man start checks (batch 39)
 
@@ -2493,12 +2492,12 @@ namespace mm
                     const GuestPtr<MapObject> building = Map_GetRecord(city->map, port::load<uint16_t>(item));
                     if (building->claimSlot == 0x18 || ClaimMeter_Level(building->claimMeter) == 0)
                         continue;
-                    const uint32_t section = static_cast<uint32_t>(Claim_GetSectionB(typeOf(building)->claimB)) + 8u * building->claimSlot;
-                    if (port::load<uint8_t>(section) != 0)
+                    const GuestPtr<ClaimEntry> claim = Claim_GetList(typeOf(building)->claimB) + building->claimSlot;
+                    if (claim->wish != 0)
                         continue;
                     for (GuestPtr<AdoptionChild> child = children; child->claim != 0; ++child)
                     {
-                        if (child->claim != port::load<uint16_t>(section + 2u))
+                        if (child->claim != claim->id)
                             continue;
                         uint8_t seen = child->seen;
                         if ((seen & 0x80u) == 0 && ClaimMeter_Level(building->claimMeter) >= 2)
@@ -2884,11 +2883,10 @@ namespace mm
                 const int found = Bag_FindItem(bag(), port::load<uint16_t>(entry));
                 if (found == 0)
                     continue;
-                const uint32_t slot = static_cast<uint32_t>(found);
-                const uint32_t first = port::load<uint16_t>(port::load<uint32_t>(0x001BDA9Cu) + 4u * port::load<uint16_t>(slot));
-                const uint32_t record = port::load<uint32_t>(0x001BDAA0u) + 0x88u * (port::load<uint16_t>(slot + 2u) + first);
-                shopping->refund = static_cast<int32_t>(static_cast<uint32_t>(shopping->refund) + static_cast<uint32_t>(Goods_GetPrice(static_cast<int>(record))));
-                Bag_RemoveSlot(bag(), GuestPtr<uint16_t>{slot});
+                const GuestPtr<BagSlot> slot{static_cast<uint32_t>(found)};
+                const GuestPtr<GoodsRecord> record = globals::goodsAt(slot->group, slot->index);
+                shopping->refund = static_cast<int32_t>(static_cast<uint32_t>(shopping->refund) + static_cast<uint32_t>(Goods_GetPrice(static_cast<int>(record.address))));
+                Bag_RemoveSlot(bag(), GuestPtr<uint16_t>{slot.address});
             }
             return 0;
         default:
@@ -2975,7 +2973,8 @@ namespace mm
         // The finished event leaves the manager: its id goes back to the queue at `level` and its data is cleared.
         void returnEvent(uint32_t cell, uint32_t level)
         {
-            EventQueue_InsertByPriority(static_cast<int>(globals::eventQueueObject.get()), GuestPtr<uint8_t>{port::load<uint32_t>(cell) + 8u}, static_cast<int>(level), 0);
+            EventQueue_InsertByPriority(globals::eventQueue(), GuestPtr<uint8_t>::of(GuestPtr<EventData>{port::load<uint32_t>(cell)}->kind).as<EventQueueEntry>(),
+                                        static_cast<int>(level), 0);
             const uint32_t talk = port::load<uint32_t>(cell);
             sdk::memset(talk + 8u, 0, eventSize(talk));
         }
@@ -2985,7 +2984,7 @@ namespace mm
     // memory card, or come back from it.
     void Event_LoadState(GuestPtr<EventMgr> events, GuestPtr<McManager> mc)
     {
-        SaveFile_Read(mc, static_cast<int>(globals::kEventQueue), 0x200);
+        SaveFile_Read(mc, static_cast<int>(globals::kEventTypeIds), 0x200);
         SaveFile_Read(mc, static_cast<int>(globals::eventQueueObject.get()), 0x224);
         SaveFile_Read(mc, static_cast<int>(events.address), 0xA4);
         for (uint32_t i = 0; i < 2; ++i)
@@ -2998,7 +2997,7 @@ namespace mm
 
     void Event_SaveState(GuestPtr<EventMgr> events, GuestPtr<McManager> mc)
     {
-        SaveFile_Write(mc, static_cast<int>(globals::kEventQueue), 0x200);
+        SaveFile_Write(mc, static_cast<int>(globals::kEventTypeIds), 0x200);
         SaveFile_Write(mc, static_cast<int>(globals::eventQueueObject.get()), 0x224);
         SaveFile_Write(mc, static_cast<int>(events.address), 0xA4);
         for (uint32_t i = 0; i < 2; ++i)
@@ -3057,14 +3056,14 @@ namespace mm
     {
         if (events->talks[0]->kind == 0)
         {
-            const uint32_t queue = globals::eventQueueObject.get();
-            const uint32_t end = bucketEntry(queue, port::load<int32_t>(bucketStart(queue, 4)));
-            for (uint32_t entry = bucketEntry(queue, port::load<int32_t>(bucketStart(queue, 3))); entry < end; entry += 2u)
+            const GuestPtr<EventQueue> queue = globals::eventQueue();
+            const uint32_t end = bucketBegin(queue, 4);
+            for (uint32_t entry = bucketBegin(queue, 3); entry < end; entry += 2u)
             {
                 if (Event_CheckCondition(events, city, GuestPtr<uint8_t>{entry}, person) == 0)
                     continue;
                 fillEvent(events->talks[0], entry, person);
-                EventQueue_RemoveAt(static_cast<int>(queue), 3, GuestPtr<uint16_t>{entry});
+                EventQueue_RemoveAt(queue, 3, GuestPtr<EventQueueEntry>{entry});
                 const GuestPtr<EventData> talk{events->talks[0].address};
                 const GuestPtr<EventType> row = globals::eventType(talk->kind);
                 if (row->level == 3)
@@ -3096,9 +3095,9 @@ namespace mm
         for (uint32_t slot = slots; port::load<uint8_t>(slot) != 0 && slot < slotsEnd; slot += 0x20u)
             if (person->charType == (GuestPtr<EventType>{types} + port::load<uint8_t>(slot))->charTypes[0])
                 return 0;
-        const uint32_t queue = globals::eventQueueObject.get();
-        uint32_t entry = bucketEntry(queue, port::load<int32_t>(bucketStart(queue, 2)));
-        const uint32_t end = bucketEntry(queue, port::load<int32_t>(bucketStart(queue, 3)));
+        const GuestPtr<EventQueue> queue = globals::eventQueue();
+        uint32_t entry = bucketBegin(queue, 2);
+        const uint32_t end = bucketBegin(queue, 3);
         if (entry == end)
             return 0;
         do
@@ -3107,9 +3106,9 @@ namespace mm
             {
                 sdk::memmove(events.address + 0x24u, slots, 0x80);
                 sdk::memset(slots, 0, 0x20);
-                port::store<int8_t>(entry + 1u, 3);
-                port::store<uint8_t>(slots, port::load<uint8_t>(entry));
-                port::store<int8_t>(slots + 1u, port::load<int8_t>(entry + 1u));
+                queueEntry(entry)->wait = 3;
+                events->slots[0].kind = queueEntry(entry)->type;
+                events->slots[0].stage = queueEntry(entry)->wait;
                 events->slots[0].familyA = person->family;
                 events->slots[0].memberA = person->member;
                 const GuestPtr<EventData> other = events->talks[2];
@@ -3117,7 +3116,7 @@ namespace mm
                 events->slots[0].memberB = other->actor.member;
                 const uint32_t talk = events->talks[2].address;
                 sdk::memset(talk + 8u, 0, eventSize(talk));
-                EventQueue_RemoveAt(static_cast<int>(queue), 2, GuestPtr<uint16_t>{entry});
+                EventQueue_RemoveAt(queue, 2, GuestPtr<EventQueueEntry>{entry});
                 return 1;
             }
             entry += 2u;
@@ -3133,7 +3132,7 @@ namespace mm
     {
         const uint32_t index = static_cast<uint8_t>(id) == 6 ? 1u : 0u;
         uint32_t position = 0;
-        const uint32_t list = globals::kEventQueue, listEnd = list + 2u * static_cast<uint32_t>(globals::eventQueueLength.get());
+        const uint32_t list = globals::kEventTypeIds, listEnd = list + 2u * static_cast<uint32_t>(globals::eventTypeCount.get());
         if (list < listEnd)
         {
             uint32_t at = list;
@@ -3145,9 +3144,9 @@ namespace mm
                 ++position;
             } while (at < listEnd);
         }
-        const uint32_t queue = globals::eventQueueObject.get();
-        uint32_t entry = bucketEntry(queue, port::load<int32_t>(bucketStart(queue, 5)));
-        const uint32_t end = bucketEntry(queue, port::load<int32_t>(bucketStart(queue, 6)));
+        const GuestPtr<EventQueue> queue = globals::eventQueue();
+        uint32_t entry = bucketBegin(queue, 5);
+        const uint32_t end = bucketBegin(queue, 6);
         if (!(entry < end))
             return 0;
         const uint32_t cell = port::guest(&events->talks[index]);
@@ -3177,7 +3176,7 @@ namespace mm
                 if (start)
                 {
                     fillEvent(GuestPtr<EventData>{port::load<uint32_t>(cell)}, entry, person);
-                    EventQueue_RemoveAt(static_cast<int>(queue), 5, GuestPtr<uint16_t>{entry});
+                    EventQueue_RemoveAt(queue, 5, GuestPtr<EventQueueEntry>{entry});
                     const GuestPtr<EventType> row = globals::eventType(GuestPtr<EventData>{port::load<uint32_t>(cell)}->kind);
                     const uint32_t tileFlags = row->tileFlags;
                     if (tileFlags != 0)
@@ -3353,14 +3352,14 @@ namespace mm
         // the entry leaves the bucket. Returns whether one did.
         bool startFromBucket(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, uint32_t cell, int bucket)
         {
-            const uint32_t queue = globals::eventQueueObject.get();
-            const uint32_t end = bucketEntry(queue, port::load<int32_t>(bucketStart(queue, bucket + 1)));
-            for (uint32_t entry = bucketEntry(queue, port::load<int32_t>(bucketStart(queue, bucket))); entry < end; entry += 2u)
+            const GuestPtr<EventQueue> queue = globals::eventQueue();
+            const uint32_t end = bucketBegin(queue, bucket + 1);
+            for (uint32_t entry = bucketBegin(queue, bucket); entry < end; entry += 2u)
             {
                 if (Event_CheckCondition(events, city, GuestPtr<uint8_t>{entry}, GuestPtr<MapPerson>{0}) == 0)
                     continue;
                 fillEvent(GuestPtr<EventData>{port::load<uint32_t>(cell)}, entry, GuestPtr<MapPerson>{0});
-                EventQueue_RemoveAt(static_cast<int>(queue), bucket, GuestPtr<uint16_t>{entry});
+                EventQueue_RemoveAt(queue, bucket, GuestPtr<EventQueueEntry>{entry});
                 return true;
             }
             return false;
@@ -3385,7 +3384,7 @@ namespace mm
     // takes it. Last, each talk event begins when its start time has come, ends when its end time has, or updates.
     void Event_Update(GuestPtr<EventMgr> events, GuestPtr<CityScene> city)
     {
-        const uint32_t queue = globals::eventQueueObject.get();
+        const GuestPtr<EventQueue> queue = globals::eventQueue();
         const uint32_t types = globals::eventTypes.get();
         const int32_t minute = city->clock / 60;
         const uint32_t counter = events->minute;
@@ -3395,6 +3394,9 @@ namespace mm
         const auto talkKind = [&](uint32_t cell) { return GuestPtr<EventData>{port::load<uint32_t>(cell)}->kind; };
         port::GuestFrame<0x90> frame;
         const uint32_t ctx = frame.ptr().address;
+        // The tests handed to the queue's moves, where the original kept them in its frame.
+        const GuestPtr<EventTest> outOfRank{ctx + 0x60u}, inRankLevel{ctx + 0x68u}, inRank{ctx + 0x78u}, dueLevel{ctx + 0x80u},
+            due{ctx + 0x8Cu};
         if (!((static_cast<uint32_t>(minute) & 0xFFFFu) < counter))
         {
             // The same day: the counter follows the clock; on the hour a second event may start.
@@ -3414,46 +3416,47 @@ namespace mm
             {
                 events->rank = static_cast<uint8_t>(CityScene_PopulationRank(city));
                 const auto mask = [&] { return static_cast<int32_t>(1u << ((events->rank - 1u) & 0x1Fu)); };
-                port::store<int32_t>(ctx + 0x60u, static_cast<int32_t>(types));
-                port::store<int32_t>(ctx + 0x64u, mask());
+                outOfRank->types = GuestPtr<EventType>{types};
+                outOfRank->ranks = mask();
                 for (int bucket = 0; bucket < 4; ++bucket)
-                    EventList_MoveOffRankB(static_cast<int>(queue), bucket, 6, GuestPtr<int32_t>{ctx + 0x60u});
-                EventList_MoveOffRankB(static_cast<int>(queue), 4, 6, GuestPtr<int32_t>{ctx + 0x60u});
+                    EventList_MoveOutOfRank(queue, bucket, 6, outOfRank);
+                EventList_MoveOutOfRank(queue, 4, 6, outOfRank);
                 for (int to = 0; to < 3; ++to)
                 {
-                    port::store<int32_t>(ctx + 0x68u, static_cast<int32_t>(types));
-                    port::store<int32_t>(ctx + 0x6Cu, mask());
-                    port::store<int32_t>(ctx + 0x70u, to);
-                    EventList_MoveOnRank(static_cast<int>(queue), 5, to, GuestPtr<int32_t>{ctx + 0x68u});
+                    inRankLevel->types = GuestPtr<EventType>{types};
+                    inRankLevel->ranks = mask();
+                    inRankLevel->rankLevel = to;
+                    EventList_MoveInRankLevel(queue, 5, to, inRankLevel);
                 }
-                port::store<int32_t>(ctx + 0x78u, static_cast<int32_t>(types));
-                port::store<int32_t>(ctx + 0x7Cu, mask());
-                EventList_MoveOffRank(static_cast<int>(queue), 5, 3, GuestPtr<int32_t>{ctx + 0x78u});
+                inRank->types = GuestPtr<EventType>{types};
+                inRank->ranks = mask();
+                EventList_MoveInRank(queue, 5, 3, inRank);
             }
             // The entries waiting in bucket 4 count their wait down.
-            for (uint32_t entry = bucketEntry(queue, port::load<int32_t>(bucketStart(queue, 4))); entry != bucketEntry(queue, port::load<int32_t>(bucketStart(queue, 5))); entry += 2u)
-                port::store<int8_t>(entry + 1u, static_cast<int8_t>(port::load<int8_t>(entry + 1u) - 1));
+            for (uint32_t entry = bucketBegin(queue, 4); entry != bucketBegin(queue, 5); entry += 2u)
+                queueEntry(entry)->wait = static_cast<int8_t>(queueEntry(entry)->wait - 1);
             for (int to = 0; to < 3; ++to)
             {
-                port::store<int32_t>(ctx + 0x80u, static_cast<int32_t>(globals::eventTypes.get()));
-                port::store<int32_t>(ctx + 0x84u, to);
-                EventList_MoveDueTo(static_cast<int>(queue), 4, to, GuestPtr<int32_t>{ctx + 0x80u});
+                dueLevel->types = GuestPtr<EventType>{globals::eventTypes.get()};
+                dueLevel->level = to;
+                EventList_MoveDueLevel(queue, 4, to, dueLevel);
             }
-            port::store<int32_t>(ctx + 0x8Cu, static_cast<int32_t>(globals::eventTypes.get()));
-            EventList_MoveDue(static_cast<int>(queue), 4, 3, GuestPtr<int32_t>{ctx + 0x8Cu});
+            due->types = GuestPtr<EventType>{globals::eventTypes.get()};
+            EventList_MoveDue(queue, 4, 3, due);
             // The postponed events (the running list) count down and return to bucket 4 when they run out.
             const uint32_t slotsEnd = events.address + 4u + 0xA0u;
             for (uint32_t slot = events.address + 4u; port::load<uint8_t>(slot) != 0 && slot < slotsEnd;)
             {
-                const int8_t left = static_cast<int8_t>(port::load<int8_t>(slot + 1u) - 1);
-                port::store<int8_t>(slot + 1u, left);
+                const GuestPtr<EventSlot> postponed{slot};
+                const int8_t left = static_cast<int8_t>(postponed->stage - 1);
+                postponed->stage = left;
                 if (left > 0)
                 {
                     slot += 0x20u;
                     continue;
                 }
-                port::store<int8_t>(slot + 1u, globals::eventType(port::load<uint8_t>(slot))->wait);
-                EventQueue_InsertByPriority(static_cast<int>(queue), GuestPtr<uint8_t>{slot}, 4, 0);
+                postponed->stage = globals::eventType(postponed->kind)->wait;
+                EventQueue_InsertByPriority(queue, GuestPtr<EventQueueEntry>{slot}, 4, 0);
                 const uint32_t last = events.address + 0x84u;
                 if (slot < last)
                     sdk::memmove(slot, slot + 0x20u, (static_cast<int32_t>(last - slot) >> 5) << 5);
@@ -3562,14 +3565,14 @@ namespace mm
     void Event_InitForCity(GuestPtr<EventMgr> events)
     {
         port::GuestFrame<0x90> frame;
-        const uint32_t queue = globals::eventQueueObject.get();
+        const GuestPtr<EventQueue> queue = globals::eventQueue();
         const uint32_t types = globals::eventTypes.get();
-        const uint32_t tableEnd = types + 0x4Cu * static_cast<uint32_t>(globals::eventQueueLength.get());
+        const uint32_t tableEnd = types + 0x4Cu * static_cast<uint32_t>(globals::eventTypeCount.get());
         const auto talkAt = [&](uint32_t i) { return events->talks[i].address; };
-        const auto queueStart = [&] { return bucketEntry(queue, port::load<int32_t>(bucketStart(queue, 0))); };
-        const auto queueEnd = [&] { return bucketEntry(queue, port::load<int32_t>(bucketStart(queue, 8))); };
+        const auto queueStart = [&] { return bucketBegin(queue, 0); };
+        const auto queueEnd = [&] { return bucketBegin(queue, 8); };
         const uint32_t slotsEnd = events.address + 4u + 0xA0u;
-        uint32_t saved = globals::kEventQueue;
+        uint32_t saved = globals::kEventTypeIds;
         GuestPtr<EventType> record{types};
         int32_t index = 0;
         bool changed = false;
@@ -3601,10 +3604,10 @@ namespace mm
                     if (level == 4)
                         level = 3;
                 }
-                const uint32_t entry = frame.ptr().address + 0x8Cu;
-                port::store<uint8_t>(entry, static_cast<uint8_t>(index));
-                port::store<int8_t>(entry + 1u, record->wait);
-                EventQueue_InsertByPriority(static_cast<int>(queue), GuestPtr<uint8_t>{entry}, static_cast<int>(level), 0);
+                const GuestPtr<EventQueueEntry> entry{frame.ptr().address + 0x8Cu};
+                entry->type = static_cast<uint8_t>(index);
+                entry->wait = record->wait;
+                EventQueue_InsertByPriority(queue, entry, static_cast<int>(level), 0);
                 for (uint32_t i = 0; i < 2; ++i)
                 {
                     const uint32_t talk = talkAt(i);
@@ -3645,11 +3648,11 @@ namespace mm
                 }
                 for (int bucket = 0; !removed && bucket < 8; ++bucket)
                 {
-                    const uint32_t end = bucketEntry(queue, port::load<int32_t>(bucketStart(queue, bucket + 1)));
-                    for (uint32_t at = bucketEntry(queue, port::load<int32_t>(bucketStart(queue, bucket))); at < end; at += 2u)
+                    const uint32_t end = bucketBegin(queue, bucket + 1);
+                    for (uint32_t at = bucketBegin(queue, bucket); at < end; at += 2u)
                         if (static_cast<int32_t>(port::load<uint8_t>(at)) == index)
                         {
-                            EventQueue_RemoveAt(static_cast<int>(queue), bucket, GuestPtr<uint16_t>{at});
+                            EventQueue_RemoveAt(queue, bucket, GuestPtr<EventQueueEntry>{at});
                             removed = true;
                             break;
                         }
@@ -3673,9 +3676,9 @@ namespace mm
         }
         if (changed)
         {
-            sdk::memset(globals::kEventQueue, 0, 0x100);
-            uint32_t out = globals::kEventQueue;
-            for (uint32_t at = types, end = types + 0x4Cu * static_cast<uint32_t>(globals::eventQueueLength.get()); at < end; at += 0x4Cu, out += 2u)
+            sdk::memset(globals::kEventTypeIds, 0, 0x100);
+            uint32_t out = globals::kEventTypeIds;
+            for (uint32_t at = types, end = types + 0x4Cu * static_cast<uint32_t>(globals::eventTypeCount.get()); at < end; at += 0x4Cu, out += 2u)
             {
                 port::store<uint8_t>(out, GuestPtr<EventType>{at}->group);
                 port::store<uint8_t>(out + 1u, GuestPtr<EventType>{at}->number);
@@ -3841,25 +3844,27 @@ namespace mm
         }
         events->talks[0] = GuestPtr<EventData>{newEventObject(0x84u, true)};
         events->talks[1] = GuestPtr<EventData>{newEventObject(0x24u, false)};
-        port::store<uint32_t>(manager + 0xACu, newEventObject(0x24u, false));
+        events->talks[2] = GuestPtr<EventData>{newEventObject(0x24u, false)};
         globals::eventTypesCopy.set(globals::eventTypes.get());
-        const int32_t stage = port::load<int32_t>(0x001C5548u);
+        const int32_t stage = globals::stageState()->stage;
         if (stage >= 0)
         {
             if (stage == 0)
-                EventList_MoveAll(static_cast<int>(globals::eventQueueObject.get()), 7, 6);
-            // The context for the move: the event types array, then a mask with the bit of the stage (7 at most).
+                EventList_MoveAll(globals::eventQueue(), 7, 6);
+            // The test for the move: the event table, then a mask with the bit of the stage (7 at most). The original
+            // keeps it in eight bytes of its frame.
             port::GuestLocal<uint64_t> context;
-            port::store<uint32_t>(context.ptr().address, globals::eventTypes.get());
-            const int32_t shift = port::load<int32_t>(0x001C5548u) < 8 ? port::load<int32_t>(0x001C5548u) : 7;
-            port::store<uint8_t>(context.ptr().address + 4u, static_cast<uint8_t>(1u << (shift & 0x1F)));
-            EventList_MoveByMask26(static_cast<int>(globals::eventQueueObject.get()), 6, 5, GuestPtr<int32_t>{context.ptr().address});
+            const GuestPtr<EventTest> test{context.ptr().address};
+            test->types = GuestPtr<EventType>{globals::eventTypes.get()};
+            const int32_t shift = globals::stageState()->stage < 8 ? globals::stageState()->stage : 7;
+            test->mask = static_cast<uint8_t>(1u << (shift & 0x1F));
+            EventList_MoveByMask(globals::eventQueue(), 6, 5, test);
         }
         return events;
     }
 
-    // Reads DATA\BIN\EVENT.BIN (0x4C-byte records) into a new array, keeps two bytes of each record, creates the event queue
-    // (0x224 bytes) and queues every record after the first at level 6 by its priority byte (+0x28).
+    // Reads DATA\BIN\EVENT.BIN (0x4C-byte records) into a new array, keeps each type's id, creates the event queue and
+    // queues every type after the first in bucket 6 by its priority, with its wait.
     void Event_LoadTypes()
     {
         port::GuestLocal<GameFile> file;
@@ -3867,15 +3872,15 @@ namespace mm
         if (File_Open(file, GuestPtr<char>{0x001B6370u}) >= 0)
         {
             const uint32_t size = static_cast<uint32_t>(File_Seek(file, 0, 2, 0));
-            globals::eventQueueLength.set(static_cast<int32_t>(size / 0x4Cu));
-            const uint32_t count = static_cast<uint32_t>(globals::eventQueueLength.get());
+            globals::eventTypeCount.set(static_cast<int32_t>(size / 0x4Cu));
+            const uint32_t count = static_cast<uint32_t>(globals::eventTypeCount.get());
             globals::eventTypes.set(sdk::mw_NewArray(count * 0x4Cu));
             File_Seek(file, 0, 0, 0);
-            File_Read(file, static_cast<int>(globals::eventTypes.get()), static_cast<int>(globals::eventQueueLength.get()), 0x4C, 0);
+            File_Read(file, static_cast<int>(globals::eventTypes.get()), static_cast<int>(globals::eventTypeCount.get()), 0x4C, 0);
             File_Close(file);
-            // Each type's id (group, number), into the table at 0x1C5790.
-            uint32_t out = globals::kEventQueue;
-            const uint32_t end = globals::eventTypes.get() + static_cast<uint32_t>(globals::eventQueueLength.get()) * 0x4Cu;
+            // Each type's id (group, number), into the id table.
+            uint32_t out = globals::kEventTypeIds;
+            const uint32_t end = globals::eventTypes.get() + static_cast<uint32_t>(globals::eventTypeCount.get()) * 0x4Cu;
             for (uint32_t record = globals::eventTypes.get(); record < end; record += 0x4Cu)
             {
                 port::store<uint8_t>(out, GuestPtr<EventType>{record}->group);
@@ -3893,15 +3898,15 @@ namespace mm
                 sdk::memset(queue, 0, 0x24);
             }
             globals::eventQueueObject.set(queue);
-            port::GuestLocal<uint16_t> id;
-            port::store<uint8_t>(id.ptr().address, 0);
-            port::store<uint8_t>(id.ptr().address + 1u, 0);
-            const uint32_t stop = globals::eventTypes.get() + static_cast<uint32_t>(globals::eventQueueLength.get()) * 0x4Cu;
+            port::GuestLocal<EventQueueEntry> entry;
+            entry->type = 0;
+            entry->wait = 0;
+            const uint32_t stop = globals::eventTypes.get() + static_cast<uint32_t>(globals::eventTypeCount.get()) * 0x4Cu;
             for (uint32_t record = globals::eventTypes.get() + 0x4Cu; record < stop; record += 0x4Cu)
             {
-                port::store<uint8_t>(id.ptr().address, static_cast<uint8_t>(port::load<uint8_t>(id.ptr().address) + 1));
-                port::store<uint8_t>(id.ptr().address + 1u, GuestPtr<EventType>{record}->wait);
-                EventQueue_InsertByPriority(static_cast<int>(globals::eventQueueObject.get()), GuestPtr<uint8_t>{id.ptr().address}, 6, 0);
+                entry->type = static_cast<uint8_t>(entry->type + 1);
+                entry->wait = GuestPtr<EventType>{record}->wait;
+                EventQueue_InsertByPriority(globals::eventQueue(), entry, 6, 0);
             }
         }
         File_dtor(file, -1);

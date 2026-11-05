@@ -1698,7 +1698,7 @@ namespace mm
         {
             const GuestPtr<Family> family = Family_Get(target, 0);
             for (int i = 0; i < family->memberCount; ++i)
-                if (Schedule_QueryB(view->city, static_cast<uint32_t>(target), i) != 5)
+                if (Schedule_MemberActivity(view->city, static_cast<uint32_t>(target), i) != 5)
                     return 0;
             return 1;
         }
@@ -1881,7 +1881,7 @@ namespace mm
                 else
                 {
                     const int family = conv->family, member = conv->member;
-                    if (arg5 == 3 || Schedule_QueryB(city, static_cast<uint32_t>(family), member) != 5)
+                    if (arg5 == 3 || Schedule_MemberActivity(city, static_cast<uint32_t>(family), member) != 5)
                     {
                         const uint32_t record = Family_Get(family, 0).address;
                         MemberStatus_OnLevel12(family, member, points((GuestPtr<FamilyMember>{record + 0x24u} + member)->charType),
@@ -1968,7 +1968,7 @@ namespace mm
                 lowerLevel(GuestPtr<uint8_t>::of(person->status));
             return;
         }
-        if (arg5 != 3 && Schedule_QueryB(city, static_cast<uint32_t>(conv->family), conv->member) == 5)
+        if (arg5 != 3 && Schedule_MemberActivity(city, static_cast<uint32_t>(conv->family), conv->member) == 5)
             return;
         if (conv->ended != 0 || Words_FriendshipChanged() != 0)
             MemberStatus_Advance(conv->family, conv->member);
@@ -2414,7 +2414,7 @@ namespace mm
                     return;
                 const uint32_t record = family.address + 0x24u + 0x48u * static_cast<uint32_t>(member);
                 const GuestPtr<CharClass> cls = classOf(port::load<uint16_t>(record));
-                if (Schedule_QueryB(view->city, static_cast<uint32_t>(view->family), member) == 5)
+                if (Schedule_MemberActivity(view->city, static_cast<uint32_t>(view->family), member) == 5)
                     drawAway(family->memberCount + 6 * view->family, sp + 0x110u);
                 else
                     drawNormal(cls, 0, view->family, member);

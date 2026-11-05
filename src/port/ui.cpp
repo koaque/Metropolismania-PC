@@ -3880,7 +3880,7 @@ namespace mm
             makeCaptionBox(s, 0xD, 2);
             TextBox_SetCharSize(scene->caption, 0x120, 0xD0, 0x150, 0x140);
             TextBox_SetPos(scene->caption, 0x7880, 0x7F40, -0x100000);
-            sdk::strcpy(name, 0x001C5680u);
+            sdk::strcpy(name, globals::kLoadedSaveInfo);
             const uint32_t lineBreak = sdk::strchr(name, 0xA);
             if (lineBreak != 0u)
                 port::store<uint8_t>(lineBreak, 0);
@@ -4694,7 +4694,6 @@ namespace mm
     // text every 16 frames (the counter at +0x28).
     int PauseMenu_StateSave(GuestPtr<PauseMenu> pause, GuestPtr<CityScene> city)
     {
-        const uint32_t p = pause.address;
         const auto mc = [pause]() { return pause->mc; };
         const auto nextStep = [pause]() { pause->waitFrames = pause->waitFrames + 1; };
         // Steps 1 and 7: the folder is ready (1, on to the next step) or the attempt failed (2, start over and answer 1).
@@ -4741,7 +4740,7 @@ namespace mm
             break;
         }
         case 5:
-            SaveFile_WriteIconSys(mc(), pause->cardPort, static_cast<int>(p + 0x30u), 0);
+            SaveFile_WriteIconSys(mc(), pause->cardPort, static_cast<int>(GuestPtr<SaveTitle>::of(pause->saveTitle).address), 0);
             nextStep();
             break;
         case 7:
@@ -5688,7 +5687,6 @@ namespace mm
     {
         port::GuestFrame<0x50> frame;
         const uint32_t sp = frame.ptr().address;
-        const uint32_t p = pause.address, c = city.address;
         const auto mc = [pause]() { return pause->mc; };
         const auto main = [pause]() { return pause->mainMenu; };
         const auto slots = [pause]() { return pause->slotMenu; };
@@ -5756,7 +5754,7 @@ namespace mm
             city->hudVisible[1] = 0;
             city->hudVisible[2] = 0;
             applicantsEnabled(0);
-            McManager_BuildSaveHeader(mc(), city, GuestPtr<char>{p + 0x30u});
+            McManager_BuildSaveTitle(mc(), city, GuestPtr<SaveTitle>::of(pause->saveTitle));
             pause->state = 1;
             pause->openTime = 0.0f;
             Sound_PlaySe(7, 0, 0x3C, 0.0f, 0.0f);
@@ -5835,7 +5833,7 @@ namespace mm
             {
                 if (port::load<int32_t>(sp + 0x4Cu) == 0)
                 {
-                    port::store<int32_t>(c + 0xD4u, 1);
+                    city->fadeOverAll = 1;
                     pause->state = 0xB;
                     Bgm_FadeOut(0x20);
                     TextBox_SetText(message(), GuestPtr<char>{0x001B73C0u}, 0);
@@ -5883,7 +5881,7 @@ namespace mm
             if (!done)
                 return 0;
             city->fadeLevel = 0;
-            port::store<int32_t>(c + 0xD4u, 0);
+            city->fadeOverAll = 0;
             close(false);
             return 1;
         }
@@ -5973,12 +5971,11 @@ namespace mm
         const int32_t choice = port::load<int32_t>(cursorAt);
         if (choice == -1)
             return 0;
-        const uint32_t header = static_cast<uint32_t>(McManager_GetSaveHeader(mc(), choice, GuestPtr<int32_t>{0x001BDA78u}));
-        if (header == 0u)
+        const GuestPtr<CardDirEntry> entry = McManager_GetSaveEntry(mc(), choice, GuestPtr<int32_t>{0x001BDA78u});
+        if (entry.address == 0u)
             return -1;
-        for (uint32_t at = 0; at < 0x40u; at += 4u)
-            port::store<uint32_t>(0x001C5640u + at, port::load<uint32_t>(header + at));
-        McManager_FormatSaveInfo(mc(), choice, GuestPtr<char>{0x001C5680u});
+        *globals::loadedSaveEntry() = *entry;
+        McManager_FormatSaveInfo(mc(), choice, GuestPtr<char>{globals::kLoadedSaveInfo});
         return 1;
     }
 

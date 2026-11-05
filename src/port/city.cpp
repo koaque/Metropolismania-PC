@@ -319,8 +319,7 @@ namespace mm
             *colour = *GuestPtr<Vec4>{globals::kDefaultColour};
             return;
         }
-        const uint32_t claim = static_cast<uint32_t>(Claim_GetSectionB(btype->claimB)) + 8u * obj->claimSlot;
-        ClaimIcon_GetColor(port::load<uint16_t>(claim + 2u), level, colour);
+        ClaimIcon_GetColor(Claim_GetList(btype->claimB)[obj->claimSlot].id, level, colour);
         ps2f scale;
         if (level == 1)
         {
@@ -2373,23 +2372,21 @@ namespace mm
 
     // ---- claims (batch 39)
 
-    // How a claim entry (section B: a flag byte, the claimed id or a section D group from 0x8000, a start value, a
-    // reach) stands among the buildings of its tile lists overlapping the rectangle: each one's section C value
-    // for the id is taken off the start (a claim of need, flag 0: 0 as soon as it is met) or added to it (flag set:
-    // 0xFF from 0xFF on). The result is never below 0.
-    uint32_t BldgClaims_CountNearby(GuestPtr<BuildingType>, GuestPtr<CityScene> city, GuestPtr<char> claimEntry, GuestPtr<int32_t> rect)
+    // How a claim stands among the buildings of its items' tile lists (each item of its group, from 0x8000) that
+    // overlap the rectangle: what each one supplies of the item is taken off the value (a need, wish 0: 0 as soon as
+    // it is met) or added to minus the value (a wish: 0xFF from 0xFF on). The result is never below 0.
+    uint32_t BldgClaims_CountNearby(GuestPtr<BuildingType>, GuestPtr<CityScene> city, GuestPtr<ClaimEntry> claim, GuestPtr<int32_t> rect)
     {
-        const uint32_t entry = claimEntry.address;
-        const bool wish = port::load<uint8_t>(entry) != 0;
-        int32_t total = wish ? -static_cast<int32_t>(port::load<uint16_t>(entry + 4u)) : static_cast<int32_t>(port::load<uint16_t>(entry + 4u));
-        const uint16_t claimed = port::load<uint16_t>(entry + 2u);
-        uint32_t id = entry + 2u;
+        const bool wish = claim->wish != 0;
+        int32_t total = wish ? -static_cast<int32_t>(claim->value) : static_cast<int32_t>(claim->value);
+        const uint16_t claimed = claim->id;
+        GuestPtr<uint16_t> id = GuestPtr<uint16_t>::of(claim->id);
         if (claimed >= 0x8000)
-            id = static_cast<uint32_t>(Claim_GetSectionD(claimed));
+            id = Claim_GetGroup(claimed);
         port::GuestLocal<uint32_t> count;
         do
         {
-            uint32_t item = Map_GetTileList(city->map, port::load<uint16_t>(id), count).address;
+            uint32_t item = Map_GetTileList(city->map, *id, count).address;
             for (int i = 0; i < static_cast<int32_t>(*count); ++i, item += 2u)
             {
                 const GuestPtr<MapObject> building = Map_GetRecord(city->map, port::load<uint16_t>(item));
@@ -2397,55 +2394,55 @@ namespace mm
                 const int x = building->tile & 0x7F, z = building->tile >> 7, size = type->size;
                 if (!(rect[0] < x + size && x < rect[2] && rect[1] < z + size && z < rect[3]))
                     continue;
-                uint32_t value = static_cast<uint32_t>(Claim_GetSectionC(type->claimC));
-                while (port::load<uint16_t>(value) != port::load<uint16_t>(id))
-                    value += 4u;
+                GuestPtr<ClaimSupply> supply = Claim_GetSupplies(type->claimC);
+                while (supply->id != *id)
+                    ++supply;
                 if (!wish)
                 {
-                    total -= port::load<uint16_t>(value + 2u);
+                    total -= supply->value;
                     if (total < 1)
                         return 0;
                 }
                 else
                 {
-                    total += port::load<uint16_t>(value + 2u);
+                    total += supply->value;
                     if (total > 0xFE)
                         return 0xFF;
                 }
             }
             if (claimed < 0x8000)
                 break;
-            id += 2u;
-        } while (port::load<uint16_t>(id) != 0);
+            ++id;
+        } while (*id != 0);
         return total < 0 ? 0u : static_cast<uint32_t>(total);
     }
 
-    // Picks the building's claim: each entry of its section B weighs its value among the nearby buildings
-    // (mm_BldgClaims_CountNearby over the footprint widened by the entry's reach), or for id 0x32 its start value
-    // while the building has no entrance (0x4000). One is drawn by weight: it becomes the claim slot, its weight
-    // the claim timer, and a claim of need not at its start value marks the building (flag 2).
+    // Picks the building's claim: each claim of its type's list weighs its value among the nearby buildings
+    // (mm_BldgClaims_CountNearby over the footprint widened by the claim's reach), or for id 0x32 its value while
+    // the building has no entrance (0x4000). One is drawn by weight: it becomes the claim slot, its weight the
+    // claim timer, and a need not at its starting value marks the building (flag 2).
     void BldgClaims_Pick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
     {
         port::GuestFrame<0x40> frame;
         const uint32_t sp = frame.ptr().address;
         const GuestPtr<uint8_t> weights{sp};
         const GuestPtr<int32_t> rect{sp + 0x30u};
-        const uint32_t section = static_cast<uint32_t>(Claim_GetSectionB(btype->claimB));
+        const GuestPtr<ClaimEntry> claims = Claim_GetList(btype->claimB);
         const int x0 = obj->tile & 0x7F, z0 = obj->tile >> 7, x1 = x0 + btype->size, z1 = z0 + btype->size;
         int sum = 0;
         uint32_t k = 0;
-        for (uint32_t entry = section; port::load<uint16_t>(entry + 2u) != 0; entry += 8u, ++k)
+        for (GuestPtr<ClaimEntry> entry = claims; entry->id != 0; ++entry, ++k)
         {
-            if (port::load<uint16_t>(entry + 2u) == 0x32)
-                weights[k] = obj->entranceTile == 0x4000 ? static_cast<uint8_t>(port::load<uint16_t>(entry + 4u)) : 0;
+            if (entry->id == 0x32)
+                weights[k] = obj->entranceTile == 0x4000 ? static_cast<uint8_t>(entry->value) : 0;
             else
             {
-                const int reach = port::load<uint16_t>(entry + 6u);
+                const int reach = entry->reach;
                 rect[0] = x0 - reach;
                 rect[1] = z0 - reach;
                 rect[2] = x1 + reach;
                 rect[3] = z1 + reach;
-                weights[k] = static_cast<uint8_t>(BldgClaims_CountNearby(btype, city, GuestPtr<char>{entry}, rect));
+                weights[k] = static_cast<uint8_t>(BldgClaims_CountNearby(btype, city, entry, rect));
             }
             sum += weights[k];
         }
@@ -2457,8 +2454,8 @@ namespace mm
             ++slot;
         obj->claimSlot = slot;
         obj->claimTimer = weights[slot];
-        const uint32_t chosen = section + 8u * slot;
-        if (port::load<uint8_t>(chosen) == 0 && obj->claimTimer != port::load<uint16_t>(chosen + 4u))
+        const GuestPtr<ClaimEntry> chosen = claims + slot;
+        if (chosen->wish == 0 && obj->claimTimer != chosen->value)
             obj->flags |= 2u;
     }
 
@@ -2473,7 +2470,7 @@ namespace mm
         const GuestPtr<uint16_t> seen{frame.ptr().address + 0x20u};
         int seenCount = 0;
         const GuestPtr<ClaimThresholds> limits = globals::claimThresholds();
-        const uint32_t claim = static_cast<uint32_t>(Claim_GetSectionB(btype->claimB)) + 8u * obj->claimSlot;
+        const GuestPtr<ClaimEntry> claim = Claim_GetList(btype->claimB) + obj->claimSlot;
         const uint16_t tile = obj->tile;
         const int half = btype->size >> 1;
         uint32_t weight = 0x001B8060u;
@@ -2514,8 +2511,8 @@ namespace mm
                     if (other->claimSlot != 0x18 && limits->low < other->claimMeter && (other->flags & 0x40u) == 0)
                     {
                         const GuestPtr<BuildingType> type{globals::buildingTypeAddress(other->type)};
-                        const uint32_t theirs = static_cast<uint32_t>(Claim_GetSectionB(type->claimB)) + 8u * other->claimSlot;
-                        if (port::load<int16_t>(theirs + 2u) == port::load<int16_t>(claim + 2u) && port::load<int8_t>(theirs) == port::load<int8_t>(claim))
+                        const GuestPtr<ClaimEntry> theirs = Claim_GetList(type->claimB) + other->claimSlot;
+                        if (theirs->id == claim->id && theirs->wish == claim->wish)
                         {
                             const int before = claimBand(other->claimMeter);
                             other->claimMeter = static_cast<uint16_t>(other->claimMeter + port::load<uint8_t>(weight) * limits->spreadStep);
@@ -2545,19 +2542,19 @@ namespace mm
 
     namespace
     {
-        // A claim entry's value now: for id 0x32 its start value while the building has no entrance, else its value
-        // among the nearby buildings (the footprint widened by the entry's reach; the rectangle in `rect`).
-        uint32_t claimValue(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, uint32_t entry, GuestPtr<int32_t> rect)
+        // A claim's value now: for id 0x32 its value while the building has no entrance, else its value among the
+        // nearby buildings (the footprint widened by the claim's reach; the rectangle in `rect`).
+        uint32_t claimValue(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, GuestPtr<ClaimEntry> entry, GuestPtr<int32_t> rect)
         {
-            if (port::load<uint16_t>(entry + 2u) == 0x32)
-                return obj->entranceTile == 0x4000 ? port::load<uint16_t>(entry + 4u) : 0u;
-            const int reach = port::load<uint16_t>(entry + 6u);
+            if (entry->id == 0x32)
+                return obj->entranceTile == 0x4000 ? entry->value : 0u;
+            const int reach = entry->reach;
             const int x = obj->tile & 0x7F, z = obj->tile >> 7;
             rect[0] = x - reach;
             rect[1] = z - reach;
             rect[2] = x + btype->size + reach;
             rect[3] = z + btype->size + reach;
-            return BldgClaims_CountNearby(btype, city, GuestPtr<char>{entry}, rect);
+            return BldgClaims_CountNearby(btype, city, entry, rect);
         }
 
         // A claim is met: the building is marked (8, claim timer 100), the approval gains 3 and the payday score a
@@ -2582,7 +2579,7 @@ namespace mm
     void BldgClaims_CheckMet(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
     {
         port::GuestFrame<0x20> frame;
-        const uint32_t claim = static_cast<uint32_t>(Claim_GetSectionB(btype->claimB)) + 8u * obj->claimSlot;
+        const GuestPtr<ClaimEntry> claim = Claim_GetList(btype->claimB) + obj->claimSlot;
         const int value = static_cast<int>(claimValue(btype, city, obj, claim, GuestPtr<int32_t>{frame.ptr().address + 0x10u}));
         const int timer = obj->claimTimer;
         if (value < timer)
@@ -2597,7 +2594,7 @@ namespace mm
                 claimMet(btype, city, obj);
                 obj->flags &= 0xFFFDu;
             }
-            else if (port::load<uint8_t>(claim) == 0 && (obj->flags & 2u) == 0)
+            else if (claim->wish == 0 && (obj->flags & 2u) == 0)
             {
                 obj->flags |= 2u;
                 claimMet(btype, city, obj);
@@ -2608,7 +2605,7 @@ namespace mm
         else if (timer < value)
         {
             obj->claimTimer = static_cast<uint8_t>(value);
-            if ((obj->flags & 2u) != 0 && value == port::load<uint16_t>(claim + 4u))
+            if ((obj->flags & 2u) != 0 && value == claim->value)
                 obj->flags &= 0xFFFDu;
         }
     }
@@ -2629,20 +2626,21 @@ namespace mm
         const GuestPtr<int32_t> rect{sp + 0x50u};
         const GuestPtr<uint16_t> seen{sp + 0x60u};
         const GuestPtr<ClaimThresholds> limits = globals::claimThresholds();
-        const auto slotOf = [](uint32_t entry) {
-            uint32_t id = port::load<uint16_t>(entry + 2u);
+        // The tally of a claim: two per item (need, wish), the groups from 0x40.
+        const auto slotOf = [](GuestPtr<ClaimEntry> entry) {
+            uint32_t id = entry->id;
             if (id >= 0x8000)
                 id -= 0x7FC0;
-            return 0x001F4B90u + 4u * port::load<uint8_t>(entry) + 8u * id;
+            return GuestPtr<ClaimTally>{0x001F4B90u + 4u * entry->wish + 8u * id};
         };
         sdk::memset(0x001F4B90u, 0, 0x300);
-        const uint32_t section = static_cast<uint32_t>(Claim_GetSectionB(btype->claimB));
+        const GuestPtr<ClaimEntry> claims = Claim_GetList(btype->claimB);
         uint32_t k = 0;
-        for (uint32_t entry = section; port::load<uint16_t>(entry + 2u) != 0; entry += 8u, ++k)
+        for (GuestPtr<ClaimEntry> entry = claims; entry->id != 0; ++entry, ++k)
         {
             weights[k] = static_cast<uint8_t>(claimValue(btype, city, obj, entry, rect));
             if (weights[k] != 0)
-                port::store<uint8_t>(slotOf(entry), 1);
+                slotOf(entry)->own = 1;
         }
         int seenCount = 0;
         const uint16_t tile = obj->tile;
@@ -2686,12 +2684,12 @@ namespace mm
                     if (other->id != obj->id && other->claimSlot != 0x18 && limits->low < other->claimMeter)
                     {
                         const GuestPtr<BuildingType> type{globals::buildingTypeAddress(other->type)};
-                        const uint32_t slot = slotOf(static_cast<uint32_t>(Claim_GetSectionB(type->claimB)) + 8u * other->claimSlot);
-                        if (port::load<uint8_t>(slot) != 0)
+                        const GuestPtr<ClaimTally> slot = slotOf(Claim_GetList(type->claimB) + other->claimSlot);
+                        if (slot->own != 0)
                         {
-                            port::store<uint16_t>(slot + 2u, static_cast<uint16_t>(port::load<uint16_t>(slot + 2u) + other->claimMeter * port::load<uint8_t>(weight)));
-                            port::store<uint8_t>(slot + 1u, static_cast<uint8_t>(port::load<uint8_t>(slot + 1u) + port::load<uint8_t>(weight)));
-                            if (port::load<uint8_t>(slot + 1u) > 200)
+                            slot->meters = static_cast<uint16_t>(slot->meters + other->claimMeter * port::load<uint8_t>(weight));
+                            slot->weight = static_cast<uint8_t>(slot->weight + port::load<uint8_t>(weight));
+                            if (slot->weight > 200)
                             {
                                 full = true;
                                 break;
@@ -2709,20 +2707,20 @@ namespace mm
         uint32_t bestId = 0, bestFlag = 0, bestMeters = 0, bestWeights = 0;
         for (uint32_t i = 0; i < 0xC0u; ++i)
         {
-            const uint32_t slot = 0x001F4B90u + 4u * i;
-            if (port::load<uint8_t>(slot) == 0 || !(bestMeters < port::load<uint16_t>(slot + 2u)))
+            const GuestPtr<ClaimTally> slot = GuestPtr<ClaimTally>{0x001F4B90u} + static_cast<int32_t>(i);
+            if (slot->own == 0 || !(bestMeters < slot->meters))
                 continue;
             bestId = i >> 1;
             bestFlag = i & 1u;
-            bestWeights = port::load<uint8_t>(slot + 1u);
-            bestMeters = port::load<uint16_t>(slot + 2u);
+            bestWeights = slot->weight;
+            bestMeters = slot->meters;
         }
         if (bestWeights == 0)
             return;
         if (static_cast<int32_t>(bestId) > 0x3F)
             bestId += 0x7FC0;
-        const uint32_t own = section + 8u * obj->claimSlot;
-        if (bestId == port::load<uint16_t>(own + 2u) && bestFlag == port::load<uint8_t>(own))
+        const GuestPtr<ClaimEntry> own = claims + obj->claimSlot;
+        if (bestId == own->id && bestFlag == own->wish)
         {
             const uint32_t average = bestMeters / bestWeights;
             uint32_t step = limits->step;
@@ -2739,13 +2737,13 @@ namespace mm
         if (!(obj->claimMeter <= limits->high) || !(static_cast<uint32_t>(obj->claimMeter) * limits->switchFactor < bestMeters))
             return;
         int index = 0;
-        for (uint32_t entry = section; port::load<uint16_t>(entry + 2u) != 0; entry += 8u, ++index)
+        for (GuestPtr<ClaimEntry> entry = claims; entry->id != 0; ++entry, ++index)
         {
-            if (port::load<uint16_t>(entry + 2u) != bestId || port::load<uint8_t>(entry) != bestFlag)
+            if (entry->id != bestId || entry->wish != bestFlag)
                 continue;
             obj->claimSlot = static_cast<uint8_t>(index);
             obj->claimTimer = weights[index];
-            if (port::load<uint8_t>(entry) == 0 && obj->claimTimer != port::load<uint16_t>(entry + 4u))
+            if (entry->wish == 0 && obj->claimTimer != entry->value)
                 obj->flags |= 2u;
             else
                 obj->flags &= 0xFFFDu;
@@ -3085,8 +3083,9 @@ namespace mm
     void BldgField_DrawPeople(GuestPtr<BuildingType> btype, int, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
                               GuestPtr<MapPerson> people, ps2f x, ps2f y, ps2f z)
     {
-        port::GuestFrame<0xA0> frame; // the colour at +0x80 and the position at +0x90
-        const uint32_t base = frame.ptr().address;
+        port::GuestFrame<0xA0> frame;
+        const GuestPtr<Vec4> colour{frame.ptr().address + 0x80u}, position{frame.ptr().address + 0x90u};
+        const GuestPtr<Vec4> spots{0x001B1460u}; // the first two members' spots, the rest share the second
         for (GuestPtr<uint16_t> link = GuestPtr<uint16_t>::of(obj->firstPerson); *link != kNoPerson;)
         {
             const GuestPtr<MapPerson> person = people + *link;
@@ -3098,26 +3097,25 @@ namespace mm
                 link = GuestPtr<uint16_t>::of(person->nextHere);
                 continue;
             }
-            const GuestPtr<Vec4> colour{base + 0x80u};
             *colour = *GuestPtr<Vec4>{globals::kDefaultColour};
-            const uint32_t spot = 0x001B1460u + (person->member < 2 ? static_cast<uint32_t>(person->member) << 4 : 0x10u);
-            const ps2f px = x + ps2f(port::load<float>(spot));
+            const GuestPtr<Vec4> spot = spots + (person->member < 2 ? static_cast<int32_t>(person->member) : 1);
+            const ps2f px = x + ps2f(spot->x);
             person->x = px;
-            port::store<float>(base + 0x90u, static_cast<float>(px));
-            const ps2f py = y + ps2f(port::load<float>(spot + 4u));
+            position->x = static_cast<float>(px);
+            const ps2f py = y + ps2f(spot->y);
             person->y = py;
-            port::store<float>(base + 0x94u, static_cast<float>(py));
-            const ps2f pz = z + ps2f(port::load<float>(spot + 8u));
+            position->y = static_cast<float>(py);
+            const ps2f pz = z + ps2f(spot->z);
             person->z = pz;
-            port::store<float>(base + 0x98u, static_cast<float>(pz));
-            port::store<float>(base + 0x9Cu, static_cast<float>(person->heading));
+            position->z = static_cast<float>(pz);
+            position->w = static_cast<float>(person->heading);
             int pose = 5;
             if (obj->claimSlot != 0)
             {
                 pose = 9;
-                port::store<float>(base + 0x94u, static_cast<float>(ps2f(port::load<float>(base + 0x94u)) + btype.as<FieldType>()->peopleLift));
+                position->y = static_cast<float>(ps2f(position->y) + btype.as<FieldType>()->peopleLift);
             }
-            drawPerson(cls, city, person, colour.address, flags, base + 0x90u, pose);
+            drawPerson(cls, city, person, colour.address, flags, position.address, pose);
             link = GuestPtr<uint16_t>::of(person->nextHere);
         }
     }
@@ -3154,14 +3152,15 @@ namespace mm
     void BldgRoad_DrawPeople(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int t0, int flags,
                              GuestPtr<MapPerson> people, ps2f x, ps2f y, ps2f z)
     {
-        port::GuestFrame<0x120> frame; // the gathered indexes at +0xC0, the position at +0x100, the colour at +0x110
+        port::GuestFrame<0x120> frame;
         const uint32_t base = frame.ptr().address;
+        const GuestPtr<uint16_t> list{base + 0xC0u}; // the people gathered, by person index
+        const GuestPtr<Vec4> position{base + 0x100u}, colour{base + 0x110u};
         if (CityScene_HasFlag8(city) == 0)
         {
             BldgType_DrawOccupants2(btype, layer, city, obj, t0, flags, people);
             return;
         }
-        const uint32_t list = base + 0xC0u;
         int count = 0;
         for (GuestPtr<uint16_t> link = GuestPtr<uint16_t>::of(obj->firstPerson); *link != kNoPerson;)
         {
@@ -3173,44 +3172,45 @@ namespace mm
                 continue;
             }
             int place = 0;
-            for (uint32_t at = list; count > 0;)
+            while (count > 0)
             {
-                if (person->index < port::load<uint16_t>(at))
+                if (person->index < list[place])
                 {
                     for (int k = count; k > place; --k)
-                        port::store<uint16_t>(list + 2u * static_cast<uint32_t>(k), port::load<uint16_t>(list + 2u * static_cast<uint32_t>(k - 1)));
+                        list[k] = list[k - 1];
                     break;
                 }
                 ++place;
                 if (!(place < count))
                     break;
-                at += 2u;
             }
-            port::store<uint16_t>(list + 2u * static_cast<uint32_t>(place), person->index);
+            list[place] = person->index;
             ++count;
             link = GuestPtr<uint16_t>::of(person->nextHere);
         }
-        const uint32_t position = base + 0x100u;
+        // Each road shape has four corner numbers; by corner, its x and z offsets and its heading number (the headings
+        // are the table the building people use by layer).
+        const GuestPtr<uint32_t> shapeCorners{0x001B1670u}, cornerHeading{0x001B1640u};
+        const GuestPtr<float> cornerX{0x001B15E0u}, cornerZ{0x001B1610u}, headings{0x001B2690u};
         for (int i = 0; i < count && i < 4; ++i)
         {
-            const GuestPtr<MapPerson> person = people + port::load<uint16_t>(list + 2u * static_cast<uint32_t>(i));
-            const uint32_t slot = 0x001B1670u + (static_cast<uint32_t>(obj->roadShape) << 4) + 4u * static_cast<uint32_t>(i);
-            const ps2f px = x + ps2f(port::load<float>(0x001B15E0u + 4u * port::load<uint32_t>(slot)));
+            const GuestPtr<MapPerson> person = people + list[i];
+            const uint32_t corner = shapeCorners[4 * static_cast<int32_t>(obj->roadShape) + i];
+            const ps2f px = x + ps2f(cornerX[static_cast<int32_t>(corner)]);
             person->x = px;
-            port::store<float>(position, static_cast<float>(px));
-            const ps2f pz = z + ps2f(port::load<float>(0x001B1610u + 4u * port::load<uint32_t>(slot)));
+            position->x = static_cast<float>(px);
+            const ps2f pz = z + ps2f(cornerZ[static_cast<int32_t>(corner)]);
             person->z = pz;
-            port::store<float>(position + 8u, static_cast<float>(pz));
+            position->z = static_cast<float>(pz);
             const ps2f py = Map_SampleHeight(city->map, person->x, person->z);
             person->y = py;
-            port::store<float>(position + 4u, static_cast<float>(py));
-            const float heading = port::load<float>(0x001B2690u + 4u * port::load<uint32_t>(0x001B1640u + 4u * port::load<uint32_t>(slot)));
+            position->y = static_cast<float>(py);
+            const float heading = headings[static_cast<int32_t>(cornerHeading[static_cast<int32_t>(corner)])];
             person->heading = heading;
-            port::store<float>(position + 0xCu, heading);
-            const GuestPtr<Vec4> colour{base + 0x110u};
+            position->w = heading;
             *colour = *GuestPtr<Vec4>{globals::kDefaultColour};
             BldgType_DrawOccupant(btype, colour, person, city);
-            drawPerson(classOf(person), city, person, colour.address, flags, position, 8);
+            drawPerson(classOf(person), city, person, colour.address, flags, position.address, 8);
         }
     }
 
@@ -3283,14 +3283,20 @@ namespace mm
     void Bldg_DrawPeople(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
                          GuestPtr<MapPerson> people, ps2f x, ps2f y, ps2f z)
     {
-        port::GuestFrame<0x250> frame; // counts +0x110, the groups' lists +0x120 (0x40 each), the position +0x220, the colour +0x230, the slots +0x248
+        port::GuestFrame<0x250> frame;
         const uint32_t base = frame.ptr().address;
+        // The groups' counts and lists (0x20 people each), the slots of the group being placed, the position and colour
+        // handed to the draw.
+        const GuestPtr<int32_t> counts{base + 0x110u};
+        const GuestPtr<uint16_t> lists{base + 0x120u}, slots{base + 0x248u};
+        const GuestPtr<Vec4> position{base + 0x220u}, colour{base + 0x230u};
+        const auto list = [&](uint32_t group) { return lists + static_cast<int32_t>(0x20u * group); };
+        const GuestPtr<float> headings{0x001B2690u}; // by layer
         if ((btype->flags & 0x800u) == 0 || (obj->flags & 0x20u) == 0)
             return;
         const int32_t hasEntrance = static_cast<int32_t>(port::callGuest<int64_t>(btype->vtable->isOpen, btype, city, obj));
-        const uint32_t counts = base + 0x110u, lists = base + 0x120u, slots = base + 0x248u;
-        for (uint32_t k = 0; k < 4; ++k)
-            port::store<int32_t>(counts + 4u * k, 0);
+        for (int32_t k = 0; k < 4; ++k)
+            counts[k] = 0;
         for (GuestPtr<uint16_t> link = GuestPtr<uint16_t>::of(obj->firstPerson); *link != kNoPerson;)
         {
             const GuestPtr<MapPerson> person = people + *link;
@@ -3299,9 +3305,9 @@ namespace mm
                 continue;
             const bool flagged = (classOf(person)->flags & 1u) != 0;
             const uint32_t group = (flagged ? 2u : 0u) + (person->work == obj->id ? 0u : 1u);
-            const uint32_t n = static_cast<uint32_t>(port::load<int32_t>(counts + 4u * group));
-            port::store<uint16_t>(lists + 0x40u * group + 2u * n, person->index);
-            port::store<int32_t>(counts + 4u * group, static_cast<int32_t>(n + 1));
+            const int32_t n = counts[static_cast<int32_t>(group)];
+            list(group)[n] = person->index;
+            counts[static_cast<int32_t>(group)] = n + 1;
         }
         uint32_t running = static_cast<uint32_t>(layer);
         for (uint32_t group = 0; group < 4; ++group)
@@ -3309,16 +3315,16 @@ namespace mm
             if (hasEntrance == 0 && group != 2)
                 continue;
             const uint32_t limit = btype->groupSpots[group];
-            if (limit == 0 || port::load<int32_t>(counts + 4u * group) == 0)
+            if (limit == 0 || counts[static_cast<int32_t>(group)] == 0)
                 continue;
             for (uint32_t i = 0; i < limit; ++i)
-                port::store<uint16_t>(slots + 2u * i, kNoPerson);
-            for (int32_t c = 0; c < port::load<int32_t>(counts + 4u * group); ++c)
+                slots[static_cast<int32_t>(i)] = kNoPerson;
+            for (int32_t c = 0; c < counts[static_cast<int32_t>(group)]; ++c)
             {
-                const uint32_t candidate = port::load<uint16_t>(lists + 0x40u * group + 2u * static_cast<uint32_t>(c));
+                const uint32_t candidate = list(group)[c];
                 for (uint32_t pos = 0; pos < limit; ++pos)
                 {
-                    const uint32_t held = port::load<uint16_t>(slots + 2u * pos);
+                    const uint32_t held = slots[static_cast<int32_t>(pos)];
                     if (held != kNoPerson)
                     {
                         const bool before = group == 0 ? (people[static_cast<int32_t>(candidate)].member < people[static_cast<int32_t>(held)].member)
@@ -3327,38 +3333,37 @@ namespace mm
                             continue;
                     }
                     for (uint32_t k = limit - 1; pos < k; --k)
-                        port::store<uint16_t>(slots + 2u * k, port::load<uint16_t>(slots + 2u * (k - 1)));
-                    port::store<uint16_t>(slots, static_cast<uint16_t>(candidate));
+                        slots[static_cast<int32_t>(k)] = slots[static_cast<int32_t>(k - 1)];
+                    slots[0] = static_cast<uint16_t>(candidate);
                     break;
                 }
             }
             for (uint32_t i = 0; i < limit; ++i, running += 4u)
             {
-                const uint32_t held = port::load<uint16_t>(slots + 2u * i);
+                const uint32_t held = slots[static_cast<int32_t>(i)];
                 if (held == kNoPerson)
                     continue;
                 const GuestPtr<MapPerson> person = people + held;
                 // Spot `running` of the type; past the sixteen it reads on into the type's later fields, as the game does.
                 const GuestPtr<Vec4> spot = GuestPtr<Vec4>::of(btype->peopleSpots[0]) + static_cast<int32_t>(running);
-                port::store<float>(base + 0x220u, static_cast<float>(x + spot->x));
-                port::store<float>(base + 0x224u, static_cast<float>(y + spot->y));
-                port::store<float>(base + 0x228u, static_cast<float>(z + spot->z));
-                const ps2f heading = ps2f(port::load<float>(0x001B2690u + 4u * static_cast<uint32_t>(layer))) + spot->w;
+                position->x = static_cast<float>(x + spot->x);
+                position->y = static_cast<float>(y + spot->y);
+                position->z = static_cast<float>(z + spot->z);
+                const ps2f heading = ps2f(headings[layer]) + spot->w;
                 person->heading = heading;
                 const ps2f pi = ps2f(3.1415927f);
                 if (heading <= -pi)
-                    port::store<float>(base + 0x22Cu, static_cast<float>(heading + pi));
+                    position->w = static_cast<float>(heading + pi);
                 else if (heading <= pi)
-                    port::store<float>(base + 0x22Cu, static_cast<float>(heading));
+                    position->w = static_cast<float>(heading);
                 else
                 {
-                    port::store<float>(base + 0x22Cu, static_cast<float>(heading));
-                    port::store<float>(base + 0x22Cu, static_cast<float>(ps2f(port::load<float>(base + 0x22Cu)) - ps2f(6.2831855f)));
+                    position->w = static_cast<float>(heading);
+                    position->w = static_cast<float>(ps2f(position->w) - ps2f(6.2831855f));
                 }
-                const GuestPtr<Vec4> colour{base + 0x230u};
                 *colour = *GuestPtr<Vec4>{globals::kDefaultColour};
                 BldgType_DrawOccupant(btype, colour, person, city);
-                drawPerson(classOf(person), city, person, colour.address, flags, base + 0x220u, 4);
+                drawPerson(classOf(person), city, person, colour.address, flags, position.address, 4);
             }
         }
     }
@@ -4096,7 +4101,7 @@ namespace mm
         city->talkOverlay = 0;
         city->fadeLevel = 0x80;
         city->fade = 0;
-        city->unk_D4 = 0;
+        city->fadeOverAll = 0;
         BldgType_LoadAll();
         // A part of `size` bytes made by `constructor` (0 when the allocation fails).
         const auto build = [](uint32_t size, auto constructor) -> uint32_t {
@@ -4387,7 +4392,7 @@ namespace mm
             DmaList_QueueOtherOverlay();
         }
         if (city->fadeLevel != 0)
-            DmaList_QueueFade(city->fadeLevel, city->unk_D4);
+            DmaList_QueueFade(city->fadeLevel, city->fadeOverAll);
         const int32_t fade = city->fade;
         if (fade != 0)
         {
@@ -4483,7 +4488,7 @@ namespace mm
             {
                 port::store<int32_t>(kFlag, 0);
                 port::store<uint32_t>(kTextA, newBox(0x14, 3, -2));
-                TextBox_SetText(GuestPtr<TextBox>{port::load<uint32_t>(kTextA)}, GuestPtr<char>{0x001C5680u}, 0);
+                TextBox_SetText(GuestPtr<TextBox>{port::load<uint32_t>(kTextA)}, GuestPtr<char>{globals::kLoadedSaveInfo}, 0);
                 TextBox_SetPos(GuestPtr<TextBox>{port::load<uint32_t>(kTextA)}, 0x71A0, 0x7C20, 0xFF0000);
                 TextBox_SetCharSize(GuestPtr<TextBox>{port::load<uint32_t>(kTextA)}, 0, 0xB0, 0, 0xE0);
                 port::store<int32_t>(kTextB, 0);
@@ -4529,15 +4534,15 @@ namespace mm
                 setState(0x14);
                 break;
             }
-            const uint32_t header = static_cast<uint32_t>(McManager_FindSave(mc(), GuestPtr<char>{0x001C5660u}, port::load<int32_t>(kCard)));
-            if (header == 0u)
+            const GuestPtr<CardDirEntry> loaded = globals::loadedSaveEntry();
+            const GuestPtr<CardDirEntry> entry = McManager_FindSave(mc(), GuestPtr<char>::of(loaded->name[0]), port::load<int32_t>(kCard));
+            if (entry.address == 0u)
             {
                 setState(0x15);
                 break;
             }
-            if (port::load<uint16_t>(header + 0xEu) != port::load<uint16_t>(0x001C564Eu) || port::load<uint8_t>(header + 0xDu) != port::load<uint8_t>(0x001C564Du) ||
-                port::load<uint8_t>(header + 0xCu) != port::load<uint8_t>(0x001C564Cu) || port::load<uint8_t>(header + 0xBu) != port::load<uint8_t>(0x001C564Bu) ||
-                port::load<uint8_t>(header + 0xAu) != port::load<uint8_t>(0x001C564Au))
+            const CardTime &now = entry->modified, &was = loaded->modified;
+            if (now.year != was.year || now.month != was.month || now.day != was.day || now.hour != was.hour || now.minute != was.minute)
             {
                 setState(0x15);
                 break;
@@ -4549,7 +4554,7 @@ namespace mm
         }
         case 2:
         {
-            const int result = SaveFile_PrepareDir(mc(), port::load<int32_t>(kCard), 0x001C5660, 0);
+            const int result = SaveFile_PrepareDir(mc(), port::load<int32_t>(kCard), static_cast<int>(GuestPtr<char>::of(globals::loadedSaveEntry()->name[0]).address), 0);
             if (result == 1)
                 nextState();
             else if (result == 2)

@@ -1034,11 +1034,11 @@ namespace mm
     // font: glyph `ch` in the loaded font (0x90 bytes each).
     int Font_GetGlyph(uint32_t ch) { return static_cast<int>(globals::fontData.get() + (ch & 0xFFu) * 0x90u); }
 
-    // claim: entry `index` of CLAIM.BIN section C (word offsets from the start of the file).
-    int Claim_GetSectionC(int index)
+    // claim: supply list `index` (CLAIM.BIN section C; word offsets from the start of the file).
+    GuestPtr<ClaimSupply> Claim_GetSupplies(int index)
     {
-        const uint32_t offset = port::load<uint32_t>(globals::claimSectionC.get() + 4u * static_cast<uint32_t>(index));
-        return static_cast<int>(globals::claimData.get() + offset * 4u);
+        const uint32_t offset = port::load<uint32_t>(globals::claimSupplyOffsets.get() + 4u * static_cast<uint32_t>(index));
+        return GuestPtr<ClaimSupply>{globals::claimData.get() + offset * 4u};
     }
 
     // save: the result word of request slot `request` (1-based; 0 is the last of the 64 slots).
@@ -1224,11 +1224,11 @@ namespace mm
             StatusByte_ctorE0(static_cast<int>(globals::kMemberStatus + 4u * i));
     }
 
-    // Static constructor: the event queue's 256 two-byte elements (__construct_array in the original).
-    void StaticInit_EventQueue()
+    // Static constructor: the event type id table's 256 two-byte elements (__construct_array in the original).
+    void StaticInit_EventTypeIds()
     {
         for (uint32_t i = 0; i < 0x100; ++i)
-            Pair_ctor(static_cast<int>(globals::kEventQueue + 2u * i));
+            Pair_ctor(static_cast<int>(globals::kEventTypeIds + 2u * i));
     }
 
     // core: the game object's sound state and scene pointers start empty.
@@ -1470,7 +1470,7 @@ namespace mm
                 const GuestPtr<BuildingType> btype{globals::buildingTypeAddress(obj->type)};
                 if ((btype->flags & 8u) == 0 || obj->claimSlot == 0x18 || ClaimMeter_Level(obj->claimMeter) == 0)
                     continue;
-                const int8_t kind = port::load<int8_t>(static_cast<uint32_t>(Claim_GetSectionB(btype->claimB)) + 8u * obj->claimSlot);
+                const int8_t kind = static_cast<int8_t>(Claim_GetList(btype->claimB)[obj->claimSlot].wish);
                 if (first == 0)
                     first = kind;
                 else if (kind != first)
@@ -1656,7 +1656,7 @@ namespace mm
     GuestPtr<Bag> Bag_ctor(GuestPtr<Bag> bag)
     {
         for (BagSlot &slot : bag->slots)
-            slot.item = 0;
+            slot.group = 0;
         for (BagShortcut &shortcut : bag->shortcuts)
             shortcut.slot = -1;
         bag->model = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B24u)};
@@ -1735,11 +1735,11 @@ namespace mm
         stamina->value = before - (before / 100000 + 1);
         if (stamina->value < 0)
             stamina->value = 0;
-        ++stamina->unk_08;
-        if (stamina->value < before - before % 100000 && stamina->unk_08 > 8000)
+        ++stamina->noticeTicks;
+        if (stamina->value < before - before % 100000 && stamina->noticeTicks > 8000)
         {
             Notice_Show(city->notice, 0);
-            stamina->unk_08 = 0;
+            stamina->noticeTicks = 0;
         }
     }
 
@@ -2068,26 +2068,23 @@ namespace mm
             Map_UnlinkPersonFromTile(city->map, tile, person->index);
     }
 
-    // event: inserts the two-byte entry `id` (event type, data byte) into level `level` of the queue, searching
-    // from `start` within the level for the first entry whose type has no lower priority; the later levels' starts
-    // move up one entry. The queue keeps nine level starts (in entries; the ninth is the entry count) and the
-    // entries from +0x24.
-    void EventQueue_InsertByPriority(int queue, GuestPtr<uint8_t> id, int level, int start)
+    // event: inserts the entry (event type, wait) into bucket `bucket` of the queue, searching from `start` within the
+    // bucket for the first entry whose type has no lower priority; the later buckets' starts move up one entry.
+    void EventQueue_InsertByPriority(GuestPtr<EventQueue> queue, GuestPtr<EventQueueEntry> entry, int bucket, int start)
     {
-        const GuestPtr<int32_t> levels{static_cast<uint32_t>(queue)};
-        const uint32_t entries = static_cast<uint32_t>(queue) + 0x24u;
+        const GuestPtr<EventQueueEntry> entries = GuestPtr<EventQueueEntry>::of(queue->entries[0]);
         const auto priority = [](uint8_t type) { return globals::eventType(type)->priority; };
-        uint32_t slot = entries + 2u * static_cast<uint32_t>(levels[level] + start);
-        const uint32_t end = entries + 2u * static_cast<uint32_t>(levels[level + 1]);
-        const int8_t own = priority(id[0]);
-        while (slot < end && priority(port::load<uint8_t>(slot)) < own)
+        uint32_t slot = (entries + (queue->starts[bucket] + start)).address;
+        const uint32_t end = (entries + queue->starts[bucket + 1]).address;
+        const int8_t own = priority(entry->type);
+        while (slot < end && priority(GuestPtr<EventQueueEntry>{slot}->type) < own)
             slot += 2u;
-        const int bytes = static_cast<int32_t>(entries + 2u * static_cast<uint32_t>(levels[8]) - slot) / 2 * 2;
+        const int bytes = static_cast<int32_t>((entries + queue->starts[8]).address - slot) / 2 * 2;
         sdk::memmove(slot + 2u, slot, bytes);
-        port::store<uint8_t>(slot, id[0]);
-        port::store<uint8_t>(slot + 1u, id[1]);
-        for (int l = level + 1; l < 9; ++l)
-            ++levels[l];
+        GuestPtr<EventQueueEntry>{slot}->type = entry->type;
+        GuestPtr<EventQueueEntry>{slot}->wait = entry->wait;
+        for (int b = bucket + 1; b < 9; ++b)
+            ++queue->starts[b];
     }
 
     namespace
@@ -2697,7 +2694,7 @@ namespace mm
     PORT_FN(Mat4_Copy);
     PORT_FN(File_ctor);
     PORT_FN(Font_GetGlyph);
-    PORT_FN(Claim_GetSectionC);
+    PORT_FN(Claim_GetSupplies);
     PORT_FN(McQueue_GetResult);
     PORT_FN(McManager_ResetState);
     PORT_FN(Camera_SetFogRange);
@@ -2716,7 +2713,7 @@ namespace mm
     PORT_FN(EventData_GetSize7C);
     PORT_FN(StageObj_ctor);
     PORT_FN(StaticInit_StatusBytes);
-    PORT_FN(StaticInit_EventQueue);
+    PORT_FN(StaticInit_EventTypeIds);
     PORT_FN(GameInit);
     PORT_FN(Char2_ctor);
     PORT_FN(Char2_Draw);
@@ -2770,7 +2767,7 @@ namespace mm
         // The claim texts (0x1BDA74): two halfword tables of offsets into the texts, the second for codes with bit 15.
         int claimText(uint32_t code)
         {
-            const uint32_t texts = port::load<uint32_t>(0x001BDA74u);
+            const uint32_t texts = globals::claimTexts.get();
             const uint32_t table = texts + 2u * port::load<uint16_t>(texts + ((code & 0x8000u) != 0 ? 2u : 0u));
             return static_cast<int>(texts + port::load<uint16_t>(table + 2u * (code & 0xFFFF7FFFu)));
         }
@@ -2778,26 +2775,26 @@ namespace mm
 
     int Claim_PickVariant(uint32_t claim) { return claimText(claim); }
 
-    int Claim_GetSectionB(int index)
+    // Claim list `index` (CLAIM.BIN section B) and item group `index` (section D, from 0x8000; 0-ended ids).
+    GuestPtr<ClaimEntry> Claim_GetList(int index)
     {
-        return static_cast<int>(globals::claimData.get() + 4u * port::load<uint32_t>(port::load<uint32_t>(0x001BDA54u) + 4u * static_cast<uint32_t>(index)));
+        return GuestPtr<ClaimEntry>{globals::claimData.get() + 4u * port::load<uint32_t>(globals::claimListOffsets.get() + 4u * static_cast<uint32_t>(index))};
     }
 
-    int Claim_GetSectionD(uint32_t index)
+    GuestPtr<uint16_t> Claim_GetGroup(uint32_t index)
     {
-        return static_cast<int>(globals::claimData.get() + 4u * port::load<uint32_t>(port::load<uint32_t>(0x001BDA5Cu) + 4u * (index & 0x7FFFu)));
+        return GuestPtr<uint16_t>{globals::claimData.get() + 4u * port::load<uint32_t>(globals::claimGroupOffsets.get() + 4u * (index & 0x7FFFu))};
     }
 
-    // The text of line `line` of claim `claim` (section B entry +2, 8 bytes per line).
+    // The text of the item of entry `line` of claim list `claim`.
     int Claim_GetLine(int claim, int line)
     {
-        const uint32_t entry = static_cast<uint32_t>(Claim_GetSectionB(claim)) + 8u * static_cast<uint32_t>(line);
-        return claimText(port::load<uint16_t>(entry + 2u));
+        return claimText(Claim_GetList(claim)[line].id);
     }
 
     PORT_FN(Claim_PickVariant);
-    PORT_FN(Claim_GetSectionB);
-    PORT_FN(Claim_GetSectionD);
+    PORT_FN(Claim_GetList);
+    PORT_FN(Claim_GetGroup);
     PORT_FN(Claim_GetLine);
 
     // ---- laptop entries (batch 38)
@@ -3147,25 +3144,25 @@ namespace mm
     {
         stamina->unk_00 = 0;
         stamina->value = 0x61A7F; // 399999
-        port::store<int32_t>(stamina.address + 8u, 0);
+        stamina->noticeTicks = 0;
     }
 
     void Stamina_SaveState(GuestPtr<Stamina> stamina, GuestPtr<McManager> mc) { SaveFile_Write(mc, static_cast<int>(stamina.address), 0xC); }
 
     int Stamina_Zero(GuestPtr<Stamina>) { return 0; }
 
-    // Food (goods categories 0x11 to 0x14) adds 1000 per point (goods +5), up to 2000000; any goods clear +8.
-    void Stamina_Eat(GuestPtr<Stamina> stamina, GuestPtr<uint8_t> goods)
+    // Food (goods kinds 0x11 to 0x14) adds 1000 per point of the goods' value, up to 2000000; any goods clear the notice
+    // ticks.
+    void Stamina_Eat(GuestPtr<Stamina> stamina, GuestPtr<GoodsRecord> goods)
     {
-        const uint8_t category = goods[4];
+        const uint8_t category = goods->kind;
         if (category >= 0x11 && category <= 0x14)
         {
-            const uint32_t value = stamina.address + 4u;
-            port::store<int32_t>(value, static_cast<int32_t>(static_cast<uint32_t>(port::load<int32_t>(value)) + 1000u * goods[5]));
-            if (port::load<int32_t>(value) > 2000000)
-                port::store<int32_t>(value, 2000000);
+            stamina->value = static_cast<int32_t>(static_cast<uint32_t>(stamina->value) + 1000u * goods->value);
+            if (stamina->value > 2000000)
+                stamina->value = 2000000;
         }
-        port::store<int32_t>(stamina.address + 8u, 0);
+        stamina->noticeTicks = 0;
     }
 
     namespace
@@ -3591,18 +3588,18 @@ namespace mm
     {
         if (events)
         {
-            const int queue = static_cast<int>(globals::eventQueueObject.get());
+            const GuestPtr<EventQueue> queue = globals::eventQueue();
             for (int level = 5; level >= 0; --level)
                 EventList_MoveAll(queue, level, 6);
             const uint32_t slotsEnd = events.address + 4u + 0xA0u;
             for (uint32_t slot = events.address + 4u; port::load<uint8_t>(slot) != 0 && slot < slotsEnd; slot += 0x20u)
-                EventQueue_InsertByPriority(queue, GuestPtr<uint8_t>{slot}, 6, 0);
+                EventQueue_InsertByPriority(queue, GuestPtr<EventQueueEntry>{slot}, 6, 0);
             for (int i = 0; i < 2; ++i)
             {
                 const uint32_t talkAt = port::guest(&events->talks[i]);
                 const GuestPtr<EventData> talk{port::load<uint32_t>(talkAt)};
                 if (talk->kind != 0)
-                    EventQueue_InsertByPriority(queue, GuestPtr<uint8_t>::of(talk->kind), 6, 0);
+                    EventQueue_InsertByPriority(queue, GuestPtr<uint8_t>::of(talk->kind).as<EventQueueEntry>(), 6, 0);
                 sdk::operator_delete(port::load<uint32_t>(talkAt));
             }
             sdk::operator_delete(events->talks[2].address);
@@ -3656,9 +3653,9 @@ namespace mm
             uint32_t offsetWord;
         };
         const Section sections[] = {
-            {globals::claimSection54.address, 0x08u},   {globals::claimSectionC.address, 0x0Cu},  {globals::claimSection5C.address, 0x10u},
+            {globals::claimListOffsets.address, 0x08u}, {globals::claimSupplyOffsets.address, 0x0Cu}, {globals::claimGroupOffsets.address, 0x10u},
             {globals::eventTileLists.address, 0x14u},  {globals::claimIconSets.address, 0x18u},  {globals::claimIconColours.address, 0x1Cu},
-            {globals::claimSection74.address, 0x20u},
+            {globals::claimTexts.address, 0x20u},
         };
         for (const Section &section : sections)
         {
@@ -4373,7 +4370,7 @@ namespace mm
 
     // char: the schedule of a family member at this hour, its upper three bits: when they are set, the activity of the
     // building type of the family, else 0.
-    uint8_t Schedule_QueryA(GuestPtr<CityScene> city, uint32_t family, int member)
+    uint8_t Schedule_BusinessActivity(GuestPtr<CityScene> city, uint32_t family, int member)
     {
         const int type = Family_GetTypeIndex(static_cast<int>(family & 0xFFFFu));
         const uint32_t row = scheduleRow(Schedule_Evaluate(family, member), static_cast<uint32_t>(type));
@@ -4382,7 +4379,7 @@ namespace mm
     }
 
     // The same lookup's activity: the low five bits of the schedule byte.
-    uint8_t Schedule_QueryB(GuestPtr<CityScene> city, uint32_t family, int member)
+    uint8_t Schedule_MemberActivity(GuestPtr<CityScene> city, uint32_t family, int member)
     {
         const int type = Family_GetTypeIndex(static_cast<int>(family & 0xFFFFu));
         const uint32_t row = scheduleRow(Schedule_Evaluate(family, member), static_cast<uint32_t>(type));
@@ -4408,8 +4405,8 @@ namespace mm
         return scheduleByte(city, person->family, person->member, row) & 0x1Fu;
     }
 
-    PORT_FN(Schedule_QueryA);
-    PORT_FN(Schedule_QueryB);
+    PORT_FN(Schedule_BusinessActivity);
+    PORT_FN(Schedule_MemberActivity);
     PORT_FN(Schedule_GetActivity);
     PORT_FN(Schedule_GetBuildingActivity);
 
@@ -4546,7 +4543,7 @@ namespace mm
         {
             const uint32_t part = Family_Get(static_cast<int>(family), 0)->members[member].look;
             model = port::load<uint32_t>(cls.address + 4u * (part != 0 ? part : ((family & 1u) != 0 ? 0u : 3u)));
-            activity = Schedule_QueryA(city, family, static_cast<int>(member));
+            activity = Schedule_BusinessActivity(city, family, static_cast<int>(member));
             port::store<int32_t>(local, 0);
             Talk_LookupPose(city->talk, family, member, GuestPtr<uint32_t>{local});
         }
