@@ -2015,8 +2015,17 @@ namespace mm
     int Talk_Start(GuestPtr<TalkSession> talk, int byFamily, int target, int member, int origin, GuestPtr<CityScene> city)
     {
         using namespace vu0;
-        port::GuestFrame<0xA0> frame;
-        const uint32_t sp = frame.ptr().address;
+        // The vectors keep their leftover y and w lanes.
+        struct Locals
+        {
+            uint8_t gap_00[0x70];
+            Vec4 eye;                  // +0x70 the city camera's eye (x and z written)
+            Vec4 middle;               // +0x80 the building's middle (x and z written)
+            Vec4 distance;             // +0x90 the distance between them, in every lane
+        };
+        static_assert(offsetof(Locals, eye) == 0x70 && offsetof(Locals, middle) == 0x80 && offsetof(Locals, distance) == 0x90 &&
+                      sizeof(Locals) == 0xA0);
+        port::GuestFrameOf<Locals> frame;
         if (talk->base.state != 0)
             return 0;
         talk->city = city;
@@ -2068,25 +2077,25 @@ namespace mm
         if (talk->building != 0x3F80)
         {
             const GuestPtr<CityScene> inside{talk->city.address};
-            const uint32_t camera = inside->cityCamera.field(&CityCamera::base).field(&Camera::eye).address;
+            const Vec4 &camera = inside->cityCamera->base.eye;
             const GuestPtr<MapObject> object = Map_GetRecord(inside->map, talk->building);
             const ps2f size = fromInt(globals::buildingType(object->type)->size);
             const uint32_t tile = object->tile;
             const ps2f centreX = ((fromInt(static_cast<int32_t>(tile & 0x7Fu)) - ps2f(64.0f)) + size / ps2f(2.0f));
             const ps2f centreZ = ((fromInt(0x80 - static_cast<int32_t>(tile >> 7)) - ps2f(64.0f)) - size / ps2f(2.0f));
-            port::store<uint32_t>(sp + 0x70u, port::load<uint32_t>(camera));
-            port::store<uint32_t>(sp + 0x80u, std::bit_cast<uint32_t>(centreX.v));
-            port::store<uint32_t>(sp + 0x78u, port::load<uint32_t>(camera + 8u));
-            port::store<uint32_t>(sp + 0x88u, std::bit_cast<uint32_t>(centreZ.v));
-            vf(4) = load(GuestPtr<Vec4>{sp + 0x80u});
-            vf(5) = load(GuestPtr<Vec4>{sp + 0x70u});
+            frame->eye.x = camera.x;
+            frame->middle.x = centreX;
+            frame->eye.z = camera.z;
+            frame->middle.z = centreZ;
+            vf(4) = load(frame.at(&Locals::middle));
+            vf(5) = load(frame.at(&Locals::eye));
             set(vf(6), sub(vf(5), vf(4)), XYZW);
             set(vf(7), mul(vf(6), vf(6)), XYZ);
             set(vf(8), add(vf(7), lane(vf(7), 2)), X);
             q() = sqrtQ(vu0::x(vf(8)));
             set(vf(9), add(vf(0), _mm_set1_ps(q())), XYZW);
-            store(GuestPtr<Vec4>{sp + 0x90u}, vf(9));
-            isNear = ps2f(std::bit_cast<float>(port::load<uint32_t>(sp + 0x90u))) <= ps2f(20.0f);
+            store(frame.at(&Locals::distance), vf(9));
+            isNear = frame->distance.x <= ps2f(20.0f);
         }
         // The view: made, built by the constructor from the session's fields, and kept in view.
         const auto makeView = [&](uint32_t size, auto construct) {
@@ -2248,8 +2257,14 @@ namespace mm
     // The screen's Z is then cleared (mm_DmaList_QueueClearZ).
     void TalkView_DrawBuilding(GuestPtr<TalkView> view, int byFamily, int target)
     {
-        port::GuestFrame<0xA0> frame;
-        const uint32_t sp = frame.ptr().address;
+        struct Locals
+        {
+            uint8_t gap_00[0x60];
+            Vec4 place[4];             // +0x60 the finished building's matrix: turned by the talk eye's w, then moved
+                                       // to the eye
+        };
+        static_assert(offsetof(Locals, place) == 0x60 && sizeof(Locals) == 0xA0);
+        port::GuestFrameOf<Locals> frame;
         const GuestPtr<CityScene> city = view->city;
         const auto slot = [&](uint32_t type, uint32_t record) {
             return port::callGuest<int>(GuestPtr<BuildingType>{type}->vtable->isOpen, type, city.address, record);
@@ -2272,7 +2287,7 @@ namespace mm
         const auto drawNode = [&](uint32_t node) {
             const GuestPtr<A3DObject> model{view->buildingModel.address};
             const bool allAsleep = TalkView_AllAsleep(view, byFamily, target) != 0;
-            A3DObject_ChangeLuminosity(model, GuestPtr<uint32_t>{allAsleep ? 0x001B1B00u : 0x001B26C0u}, static_cast<int>(node));
+            A3DObject_ChangeLuminosity(model, GuestPtr<Vec4>{allAsleep ? 0x001B1B00u : 0x001B26C0u}, static_cast<int>(node));
             const GuestPtr<Vec4> matrix = worldMatrix(modelNode(model, static_cast<int>(node)));
             Mat4_Copy(matrix, GuestPtr<Vec4>{globals::kIdentityMatrix});
             matrix[3].x = 0.0f;
@@ -2287,13 +2302,13 @@ namespace mm
         else if ((flags & 0x8000u) != 0)
         {
             // The finished building's mesh at the type's talk eye offset, turned by its w.
-            sdk::sceVu0RotMatrixY(sp + 0x60u, globals::kIdentityMatrix, btype->talkEye.w);
-            const GuestPtr<Vec4> place{sp + 0x90u};
-            place->x = btype->talkEye.x;
-            place->y = btype->talkEye.y;
-            place->z = btype->talkEye.z;
+            const GuestPtr<Vec4> place = frame.at(&Locals::place);
+            sdk::sceVu0RotMatrixY(place.address, globals::kIdentityMatrix, btype->talkEye.w);
+            frame->place[3].x = btype->talkEye.x;
+            frame->place[3].y = btype->talkEye.y;
+            frame->place[3].z = btype->talkEye.z;
             Packet2_Draw(GuestPtr<uint32_t>{city->lights.address}, 1);
-            Instance_DrawMesh(globals::businessModel.get(), GuestPtr<Vec4>{sp + 0x60u}, GuestPtr<Vec4>{globals::kDefaultColour},
+            Instance_DrawMesh(globals::businessModel.get(), place, GuestPtr<Vec4>{globals::kDefaultColour},
                               btype->builtMesh, 1);
             Packet2_Draw(GuestPtr<uint32_t>{city->lights.address}, 0);
         }

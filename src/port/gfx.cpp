@@ -532,7 +532,7 @@ namespace mm
         PlacementLayer_Draw(map->placement, static_cast<int>(map->chunkPackets[parity]), map, pass);
     }
 
-    void Map_SetPlacementHighlight(GuestPtr<CityMap> map, int mode, GuestPtr<int32_t> rect, GuestPtr<uint32_t> colour)
+    void Map_SetPlacementHighlight(GuestPtr<CityMap> map, int mode, GuestPtr<TileRect> rect, GuestPtr<Vec4> colour)
     {
         PlacementLayer_Set(map->placement, mode, rect, colour);
     }
@@ -932,7 +932,7 @@ namespace mm
     {
         if (layer->rectActive != 1)
             return 0;
-        return x >= layer->rectX0 && x <= layer->rectX1 && z >= layer->rectZ0 && z <= layer->rectZ1;
+        return x >= layer->rect.x0 && x <= layer->rect.x1 && z >= layer->rect.z0 && z <= layer->rect.z1;
     }
 
     // Switches to the other of the two DMA lists.
@@ -1670,8 +1670,8 @@ namespace mm
 
     // The placement layer draws the highlighted rectangle: in mode 1 (pass 0) its three packets around the map's own
     // for this frame; in mode 2 (pass 1) the placement marker, node 0 of the marker model (node 1 for a size 3
-    // building) put at the middle of the footprint at (rectX0, rectZ0), 0.8 above the tile for the ground and for each
-    // object stacked on it (heights grow downwards).
+    // building) put at the middle of the footprint at (rect.x0, rect.z0), 0.8 above the tile for the ground and for
+    // each object stacked on it (heights grow downwards).
     void PlacementLayer_Draw(GuestPtr<PlacementLayer> layer, int packet, GuestPtr<CityMap> map, int pass)
     {
         if (layer->rectActive == 1 && pass == 0)
@@ -1682,8 +1682,8 @@ namespace mm
         }
         else if (layer->rectActive == 2 && pass == 1)
         {
-            ps2f height = Map_GetHeightAt(map, layer->rectX0, layer->rectZ0) - ps2f(0.8f);
-            GuestPtr<MapObject> obj = Map_GetTileObject(map, layer->rectX0, layer->rectZ0);
+            ps2f height = Map_GetHeightAt(map, layer->rect.x0, layer->rect.z0) - ps2f(0.8f);
+            GuestPtr<MapObject> obj = Map_GetTileObject(map, layer->rect.x0, layer->rect.z0);
             const GuestPtr<BuildingType> type{globals::buildingTypeAddress(obj->type)};
             const int node = type->size == 3 ? 1 : 0;
             for (; obj->nextOnTile != kNoObject; obj = Map_GetRecord(map, obj->nextOnTile))
@@ -1692,9 +1692,9 @@ namespace mm
             const GuestPtr<A3DNode> markerNode = model->model->nodes + node;
             Mat4_Copy(worldMatrix(markerNode), GuestPtr<Vec4>{globals::kIdentityMatrix});
             Vec4 &position = markerNode->slot.matrix[3];
-            position.x = fromInt(layer->rectX0) - ps2f(64.0f) + fromInt(type->size) / ps2f(2.0f);
+            position.x = fromInt(layer->rect.x0) - ps2f(64.0f) + fromInt(type->size) / ps2f(2.0f);
             position.y = height;
-            position.z = fromInt(0x80 - layer->rectZ0) - ps2f(64.0f) - fromInt(type->size) / ps2f(2.0f);
+            position.z = fromInt(0x80 - layer->rect.z0) - ps2f(64.0f) - fromInt(type->size) / ps2f(2.0f);
             Dma_AppendCall(static_cast<int>(layer->markerPacket));
             A3DObject_DrawNode(model, node);
             Dma_AppendCall(static_cast<int>(layer->endPacket));
@@ -1789,9 +1789,10 @@ namespace mm
         return model;
     }
 
-    // Sets the colour (four words) of node `index`'s draw packet when the node has a mesh; an index past the model's node
-    // count is reported with printf. The result is printf's, or all of what v0 held when the call was made.
-    int64_t A3DObject_ChangeLuminosity(GuestPtr<A3DObject> model, GuestPtr<uint32_t> colour, int index)
+    // Sets the colour of node `index`'s draw packet (InstanceSlot.colour; w the colour table entry) when the node has
+    // a mesh; an index past the model's node count is reported with printf. The result is printf's, or all of what v0
+    // held when the call was made.
+    int64_t A3DObject_ChangeLuminosity(GuestPtr<A3DObject> model, GuestPtr<Vec4> colour, int index)
     {
         const int64_t entryV0 = port::guestV0Wide();
         const GuestPtr<A3DModel> data = model->model;
@@ -1800,7 +1801,7 @@ namespace mm
             return port::callGuest<int64_t>(sdk::addr::printf, 0x001B5A90u);
         const GuestPtr<A3DNode> node = nodes + index;
         if (node->mesh)
-            node->slot.colour = *GuestPtr<Vec4>{colour.address};
+            node->slot.colour = *colour;
         return entryV0;
     }
 

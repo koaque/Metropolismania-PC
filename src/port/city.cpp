@@ -944,12 +944,11 @@ namespace mm
             Map_SetAreaHeight(city->map, x + 1, z, 1, level);
             Map_SetAreaHeight(city->map, x, z + 1, 1, level);
             Map_SetAreaHeight(city->map, x + 1, z + 1, 1, level);
-            port::GuestLocal<Vec4> rectSlot; // four int32 (x0, z0, x1, z1) on the guest stack
-            const GuestPtr<int32_t> rect{rectSlot.ptr().address};
-            rect[0] = x - 1;
-            rect[1] = z - 1;
-            rect[2] = x + 3;
-            rect[3] = z + 3;
+            port::GuestLocal<TileRect> rect;
+            rect->x0 = x - 1;
+            rect->z0 = z - 1;
+            rect->x1 = x + 3;
+            rect->z1 = z + 3;
             Map_UpdateAreaGeometry(city->map, rect);
         }
         obj->roadMesh = 0;
@@ -1066,11 +1065,11 @@ namespace mm
             if (!(level == height))
             {
                 Map_SetAreaHeight(city->map, x, z, btype->size, level);
-                const GuestPtr<int32_t> rect{sp + 0x90u}; // x0, z0, x1, z1
-                rect[0] = x - 1;
-                rect[1] = z + btype->size - 1;
-                rect[2] = rect[0] + btype->size + 2;
-                rect[3] = rect[1] + btype->size + 2;
+                const GuestPtr<TileRect> rect{sp + 0x90u};
+                rect->x0 = x - 1;
+                rect->z0 = z + btype->size - 1;
+                rect->x1 = rect->x0 + btype->size + 2;
+                rect->z1 = rect->z0 + btype->size + 2;
                 Map_UpdateAreaGeometry(city->map, rect);
             }
         }
@@ -1140,12 +1139,11 @@ namespace mm
         const int result = Bldg_Tick(btype, city, obj, timeFlags);
         const int x = obj->tile & 0x7F, z = obj->tile >> 7;
         Map_SetAreaHeight(city->map, x, z, 3, 2.5f);
-        port::GuestLocal<Vec4> rectSlot; // four int32 (x0, z0, x1, z1) on the guest stack
-        const GuestPtr<int32_t> rect{rectSlot.ptr().address};
-        rect[0] = x - 4;
-        rect[1] = z + btype->size - 4;
-        rect[2] = rect[0] + btype->size + 8;
-        rect[3] = rect[1] + btype->size + 8;
+        port::GuestLocal<TileRect> rect;
+        rect->x0 = x - 4;
+        rect->z0 = z + btype->size - 4;
+        rect->x1 = rect->x0 + btype->size + 8;
+        rect->z1 = rect->z0 + btype->size + 8;
         Map_UpdateAreaGeometry(city->map, rect);
         return result;
     }
@@ -1683,13 +1681,13 @@ namespace mm
     }
 
     int Bldg_FloorBelow(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
-                      GuestPtr<uint32_t> hit, ps2f lift)
+                      GuestPtr<Vec4> hit, ps2f lift)
     {
         return Collide_MeshFloorBelow(static_cast<int>(btype.address), collisionMesh(btype, obj), point, matrix, hit, lift);
     }
 
     int Bldg_NearestHit(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
-                      GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, ps2f range)
+                      GuestPtr<Vec4> hit, GuestPtr<ps2f> distance, ps2f range)
     {
         return Collide_MeshNearestHit(static_cast<int>(btype.address), collisionMesh(btype, obj), point, matrix, hit, distance, range);
     }
@@ -1869,25 +1867,25 @@ namespace mm
     }
 
     int BldgHousing_FloorBelow(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
-                             GuestPtr<uint32_t> hit, GuestPtr<uint32_t> part, ps2f lift)
+                             GuestPtr<Vec4> hit, GuestPtr<uint32_t> part, ps2f lift)
     {
         return Collide_MeshFloorBelow(static_cast<int>(btype.address), housingMesh(btype, obj, *part), point, matrix, hit, lift);
     }
 
     int BldgHousing_NearestHit(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
-                             GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, GuestPtr<uint32_t> part, ps2f range)
+                             GuestPtr<Vec4> hit, GuestPtr<ps2f> distance, GuestPtr<uint32_t> part, ps2f range)
     {
         return Collide_MeshNearestHit(static_cast<int>(btype.address), housingMesh(btype, obj, *part), point, matrix, hit, distance, range);
     }
 
     int BldgOffice_FloorBelow(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
-                            GuestPtr<uint32_t> hit, GuestPtr<uint32_t> part, ps2f lift)
+                            GuestPtr<Vec4> hit, GuestPtr<uint32_t> part, ps2f lift)
     {
         return Collide_MeshFloorBelow(static_cast<int>(btype.address), officeMesh(btype, obj, *part, 0x001B1428u), point, matrix, hit, lift);
     }
 
     int BldgOffice_NearestHit(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
-                            GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, GuestPtr<uint32_t> part, ps2f range)
+                            GuestPtr<Vec4> hit, GuestPtr<ps2f> distance, GuestPtr<uint32_t> part, ps2f range)
     {
         return Collide_MeshNearestHit(static_cast<int>(btype.address), officeMesh(btype, obj, *part, 0x001B1408u), point, matrix, hit, distance, range);
     }
@@ -1895,7 +1893,7 @@ namespace mm
     // Ports collide 2.5 higher (at ground level over their dug block): 2.5 is taken off the matrix's translation y
     // first (heights grow downwards), and it stays so.
     int BldgPort_FloorBelow(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
-                          GuestPtr<uint32_t> hit, ps2f lift)
+                          GuestPtr<Vec4> hit, ps2f lift)
     {
         const int mesh = (obj->flags & 0x20u) != 0 ? btype->builtCollision * 2 : static_cast<int>(variantMesh(btype, obj) * 2u);
         matrix[3].y = ps2f(matrix[3].y) - ps2f(2.5f);
@@ -1903,7 +1901,7 @@ namespace mm
     }
 
     int BldgPort_NearestHit(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
-                          GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, ps2f range)
+                          GuestPtr<Vec4> hit, GuestPtr<ps2f> distance, ps2f range)
     {
         const int mesh = (obj->flags & 0x20u) != 0 ? btype->builtCollision * 2 : static_cast<int>(variantMesh(btype, obj) * 2u);
         matrix[3].y = ps2f(matrix[3].y) - ps2f(2.5f);
@@ -1912,7 +1910,7 @@ namespace mm
 
     // Small goods collide only from props mesh 0x27 on, one collision mesh each.
     int BldgSmallGoods_FloorBelow(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
-                                GuestPtr<uint32_t> hit, ps2f lift)
+                                GuestPtr<Vec4> hit, ps2f lift)
     {
         const uint8_t count = obj->goodsMesh;
         if (count < 0x27)
@@ -1921,7 +1919,7 @@ namespace mm
     }
 
     int BldgSmallGoods_NearestHit(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
-                                GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, ps2f range)
+                                GuestPtr<Vec4> hit, GuestPtr<ps2f> distance, ps2f range)
     {
         const uint8_t count = obj->goodsMesh;
         if (count < 0x27)
@@ -2383,7 +2381,7 @@ namespace mm
     // How a claim stands among the buildings of its items' tile lists (each item of its group, from 0x8000) that
     // overlap the rectangle: what each one supplies of the item is taken off the value (a need, wish 0: 0 as soon as
     // it is met) or added to minus the value (a wish: 0xFF from 0xFF on). The result is never below 0.
-    uint32_t BldgClaims_CountNearby(GuestPtr<BuildingType>, GuestPtr<CityScene> city, GuestPtr<ClaimEntry> claim, GuestPtr<int32_t> rect)
+    uint32_t BldgClaims_CountNearby(GuestPtr<BuildingType>, GuestPtr<CityScene> city, GuestPtr<ClaimEntry> claim, GuestPtr<TileRect> rect)
     {
         const bool wish = claim->wish != 0;
         int32_t total = wish ? -static_cast<int32_t>(claim->value) : static_cast<int32_t>(claim->value);
@@ -2400,7 +2398,7 @@ namespace mm
                 const GuestPtr<MapObject> building = Map_GetRecord(city->map, port::load<uint16_t>(item));
                 const GuestPtr<BuildingType> type{globals::buildingTypeAddress(building->type)};
                 const int x = building->tile & 0x7F, z = building->tile >> 7, size = type->size;
-                if (!(rect[0] < x + size && x < rect[2] && rect[1] < z + size && z < rect[3]))
+                if (!(rect->x0 < x + size && x < rect->x1 && rect->z0 < z + size && z < rect->z1))
                     continue;
                 GuestPtr<ClaimSupply> supply = Claim_GetSupplies(type->claimC);
                 while (supply->id != *id)
@@ -2434,7 +2432,7 @@ namespace mm
         port::GuestFrame<0x40> frame;
         const uint32_t sp = frame.ptr().address;
         const GuestPtr<uint8_t> weights{sp};
-        const GuestPtr<int32_t> rect{sp + 0x30u};
+        const GuestPtr<TileRect> rect{sp + 0x30u};
         const GuestPtr<ClaimEntry> claims = Claim_GetList(btype->claimB);
         const int x0 = obj->tile & 0x7F, z0 = obj->tile >> 7, x1 = x0 + btype->size, z1 = z0 + btype->size;
         int sum = 0;
@@ -2446,10 +2444,10 @@ namespace mm
             else
             {
                 const int reach = entry->reach;
-                rect[0] = x0 - reach;
-                rect[1] = z0 - reach;
-                rect[2] = x1 + reach;
-                rect[3] = z1 + reach;
+                rect->x0 = x0 - reach;
+                rect->z0 = z0 - reach;
+                rect->x1 = x1 + reach;
+                rect->z1 = z1 + reach;
                 weights[k] = static_cast<uint8_t>(BldgClaims_CountNearby(btype, city, entry, rect));
             }
             sum += weights[k];
@@ -2552,16 +2550,16 @@ namespace mm
     {
         // A claim's value now: for id 0x32 its value while the building has no entrance, else its value among the
         // nearby buildings (the footprint widened by the claim's reach; the rectangle in `rect`).
-        uint32_t claimValue(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, GuestPtr<ClaimEntry> entry, GuestPtr<int32_t> rect)
+        uint32_t claimValue(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, GuestPtr<ClaimEntry> entry, GuestPtr<TileRect> rect)
         {
             if (entry->id == 0x32)
                 return obj->entranceTile == 0x4000 ? entry->value : 0u;
             const int reach = entry->reach;
             const int x = obj->tile & 0x7F, z = obj->tile >> 7;
-            rect[0] = x - reach;
-            rect[1] = z - reach;
-            rect[2] = x + btype->size + reach;
-            rect[3] = z + btype->size + reach;
+            rect->x0 = x - reach;
+            rect->z0 = z - reach;
+            rect->x1 = x + btype->size + reach;
+            rect->z1 = z + btype->size + reach;
             return BldgClaims_CountNearby(btype, city, entry, rect);
         }
 
@@ -2586,9 +2584,15 @@ namespace mm
     // and a marked claim back at its start value loses flag 2.
     void BldgClaims_CheckMet(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
     {
-        port::GuestFrame<0x20> frame;
+        struct Locals
+        {
+            uint8_t gap_00[0x10];
+            TileRect nearby;           // +0x10 the footprint widened by the claim's reach
+        };
+        static_assert(offsetof(Locals, nearby) == 0x10 && sizeof(Locals) == 0x20);
+        port::GuestFrameOf<Locals> frame;
         const GuestPtr<ClaimEntry> claim = Claim_GetList(btype->claimB) + obj->claimSlot;
-        const int value = static_cast<int>(claimValue(btype, city, obj, claim, GuestPtr<int32_t>{frame.ptr().address + 0x10u}));
+        const int value = static_cast<int>(claimValue(btype, city, obj, claim, frame.at(&Locals::nearby)));
         const int timer = obj->claimTimer;
         if (value < timer)
         {
@@ -2631,7 +2635,7 @@ namespace mm
         port::GuestFrame<0x1C0> frame;
         const uint32_t sp = frame.ptr().address;
         const GuestPtr<uint8_t> weights{sp + 0x20u};
-        const GuestPtr<int32_t> rect{sp + 0x50u};
+        const GuestPtr<TileRect> rect{sp + 0x50u};
         const GuestPtr<uint16_t> seen{sp + 0x60u};
         const GuestPtr<ClaimThresholds> limits = globals::claimThresholds();
         // The tally of a claim: two per item (need, wish), the groups from 0x40.
@@ -2801,11 +2805,11 @@ namespace mm
             if (height != ground)
             {
                 Map_SetAreaHeight(city->map, x, z, btype->size, height);
-                const GuestPtr<int32_t> rect{sp + 0x70u};
-                rect[0] = x - 1;
-                rect[1] = z + btype->size - 1;
-                rect[2] = rect[0] + btype->size + 2;
-                rect[3] = rect[1] + btype->size + 2;
+                const GuestPtr<TileRect> rect{sp + 0x70u};
+                rect->x0 = x - 1;
+                rect->z0 = z + btype->size - 1;
+                rect->x1 = rect->x0 + btype->size + 2;
+                rect->z1 = rect->z0 + btype->size + 2;
                 Map_UpdateAreaGeometry(city->map, rect);
             }
         }
@@ -3506,41 +3510,41 @@ namespace mm
     {
         if (!city)
             return city;
-        const auto direct = [&](uint32_t offset, auto destroy) {
-            const uint32_t object = port::load<uint32_t>(city.address + offset);
-            if (object != 0u)
+        // A child deleted by its destructor (flag 1), then its field cleared.
+        const auto direct = [&]<typename T>(GuestPtr<T> CityScene::*member, auto destroy) {
+            if (const GuestPtr<T> object = (*city).*member)
             {
-                destroy(object);
-                port::store<uint32_t>(city.address + offset, 0u);
+                destroy(object, 1);
+                (*city).*member = GuestPtr<T>{0};
             }
         };
-        const auto virtualDelete = [&](uint32_t offset, uint32_t vtableAt) {
-            const uint32_t object = port::load<uint32_t>(city.address + offset);
-            if (object != 0u)
+        // A child deleted through its own vtable (at `vtableAt` in it; slot +8, the deleting destructor).
+        const auto virtualDelete = [&]<typename T>(GuestPtr<T> CityScene::*member, uint32_t vtableAt) {
+            if (const GuestPtr<T> object = (*city).*member)
             {
-                port::callGuest<void>(port::load<uint32_t>(port::load<uint32_t>(object + vtableAt) + 8u), object, 1);
-                port::store<uint32_t>(city.address + offset, 0u);
+                port::callGuest<void>(port::load<uint32_t>(port::load<uint32_t>(object.address + vtableAt) + 8u), object, 1);
+                (*city).*member = GuestPtr<T>{0};
             }
         };
-        direct(0x08u, [](uint32_t o) { PauseMenu_dtor(GuestPtr<PauseMenu>{o}, 1); });
-        direct(0x74u, [](uint32_t o) { Minimap_DeletingDtor(GuestPtr<Minimap>{o}, 1); });
-        direct(0x70u, [](uint32_t o) { CityCursor_dtor(GuestPtr<CityCursor>{o}, 1); });
-        direct(0x6Cu, [](uint32_t o) { PhoneCall_DeletingDtor(GuestPtr<PhoneCalls>{o}, 1); });
-        direct(0x68u, [](uint32_t o) { EventMgr_dtor(GuestPtr<EventMgr>{o}, 1); });
-        direct(0x5Cu, [](uint32_t o) { WantsWin_dtor(GuestPtr<WantsWin>{o}, 1); });
-        virtualDelete(0x54u, 0x320u);
-        direct(0x58u, [](uint32_t o) { Player_DeletingDtor(GuestPtr<Player>{o}, 1); });
-        direct(0x50u, [](uint32_t o) { CityMap_DeletingDtor(GuestPtr<CityMap>{o}, 1); });
-        direct(0x40u, [](uint32_t o) { LightSet_DeletingDtor(GuestPtr<LightSet>{o}, 1); });
-        direct(0x4Cu, [](uint32_t o) { CityCamera_DeletingDtor(GuestPtr<CityCamera>{o}, 1); });
-        direct(0x48u, [](uint32_t o) { Laptop_dtor(GuestPtr<Laptop>{o}, 1); });
-        direct(0x04u, [](uint32_t o) { TownPages_dtor(GuestPtr<TownPages>{o}, 1); });
-        direct(0x44u, [](uint32_t o) { Camera_DeletingDtor(GuestPtr<Camera>{o}, 1); });
-        direct(0x00u, [](uint32_t o) { StatusPanel_dtor(GuestPtr<StatusPanel>{o}, 1); });
-        virtualDelete(0x3Cu, 8u);
-        virtualDelete(0x78u, 0x128u);
-        direct(0x7Cu, [](uint32_t o) { Notice_dtor(GuestPtr<Notice>{o}, 1); });
-        virtualDelete(0x80u, 0u);
+        direct(&CityScene::pauseMenu, PauseMenu_dtor);
+        direct(&CityScene::minimap, Minimap_DeletingDtor);
+        direct(&CityScene::cursor, CityCursor_dtor);
+        direct(&CityScene::phoneCalls, PhoneCall_DeletingDtor);
+        direct(&CityScene::events, EventMgr_dtor);
+        direct(&CityScene::wants, WantsWin_dtor);
+        virtualDelete(&CityScene::applicants, offsetof(Applicants, vtable));
+        direct(&CityScene::player, Player_DeletingDtor);
+        direct(&CityScene::map, CityMap_DeletingDtor);
+        direct(&CityScene::lights, LightSet_DeletingDtor);
+        direct(&CityScene::cityCamera, CityCamera_DeletingDtor);
+        direct(&CityScene::laptop, Laptop_dtor);
+        direct(&CityScene::townPages, TownPages_dtor);
+        direct(&CityScene::camera, Camera_DeletingDtor);
+        direct(&CityScene::statusPanel, StatusPanel_dtor);
+        virtualDelete(&CityScene::talk, offsetof(Widget, vtable));
+        virtualDelete(&CityScene::markers, offsetof(Markers, vtable));
+        direct(&CityScene::notice, Notice_dtor);
+        virtualDelete(&CityScene::overlay, 0u);
         BldgType_DeleteAll();
         Stage_DeletingDtor(static_cast<int>(city.address), 0);
         if (0 < deleteFlag)
@@ -3604,10 +3608,24 @@ namespace mm
     // name, the sizes, the opening hours, the meshes, and the four people spots, each turned for the four views (through the
     // view matrices at 0x1B2590, keeping the record's heading). The first type made loads the shared file 0x1B8040 and copies
     // the shared models; later ones only count (0x1BDBBC). A type with spots for any group of people also gets flag 0x800.
+    namespace
+    {
+        // BldgType_BaseCtor's frame.
+        struct BaseCtorFrame
+        {
+            uint8_t gap_00[0xA0];
+            Vec4 spot;                 // +0xA0 a people spot from the record, turned for each facing
+            GameFile file;             // +0xB0 the shared file
+            uint8_t gap_B8[4];
+            int32_t size;              // +0xBC its size (mm_File_LoadWhole)
+        };
+        static_assert(offsetof(BaseCtorFrame, spot) == 0xA0 && offsetof(BaseCtorFrame, file) == 0xB0 &&
+                      offsetof(BaseCtorFrame, size) == 0xBC && sizeof(BaseCtorFrame) == 0xC0);
+    }
+
     GuestPtr<BuildingType> BldgType_BaseCtor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, uint16_t id)
     {
-        port::GuestFrame<0xC0> frame;
-        const uint32_t sp = frame.ptr().address;
+        port::GuestFrameOf<BaseCtorFrame> frame;
         constexpr uint32_t kTypeCount = 0x001BDBBCu;
         btype->vtable = GuestPtr<BuildingTypeVtable>{0x001BD000u};
         if (port::load<int32_t>(kTypeCount) == 0)
@@ -3616,9 +3634,10 @@ namespace mm
             for (uint32_t i = 0; i < 6u; ++i)
                 port::store<uint32_t>(0x001BDBC4u + 4u * i, port::load<uint32_t>(models[i]));
             port::store<uint32_t>(0x001BDBDCu, port::load<uint32_t>(0x001F3CE4u));
-            File_ctor(GuestPtr<GameFile>{sp + 0xB0u}, 0);
-            port::store<int32_t>(0x001BDBC0u, File_LoadWhole(GuestPtr<GameFile>{sp + 0xB0u}, GuestPtr<char>{0x001B8040u}, GuestPtr<int32_t>{sp + 0xBCu}));
-            File_dtor(GuestPtr<GameFile>{sp + 0xB0u}, -1);
+            const GuestPtr<GameFile> file = frame.at(&BaseCtorFrame::file);
+            File_ctor(file, 0);
+            port::store<int32_t>(0x001BDBC0u, File_LoadWhole(file, GuestPtr<char>{0x001B8040u}, frame.at(&BaseCtorFrame::size)));
+            File_dtor(file, -1);
         }
         port::store<int32_t>(kTypeCount, port::load<int32_t>(kTypeCount) + 1);
         btype->kind = id;
@@ -3651,7 +3670,7 @@ namespace mm
         btype->talkEye = record->talkEye;
         sdk::memcpy(port::guest(&btype->callFlags), port::guest(&record->callFlags), 4);
         sdk::memcpy(port::guest(btype->groupSpots), port::guest(record->groupSpots), 4);
-        const GuestPtr<Vec4> spot{sp + 0xA0u};
+        const GuestPtr<Vec4> spot = frame.at(&BaseCtorFrame::spot);
         for (int k = 0; k < 4; ++k)
         {
             *spot = record->peopleSpots[k];
@@ -4081,10 +4100,22 @@ namespace mm
     // which the terrain is then generated on (the stage's parameters). The stage's 32 introduced families are put in the applicants,
     // and the people of each (charType not zero and its type not marked) get their introduction picked. The pad's focus is
     // released.
+    namespace
+    {
+        // CityScene_ctor's frame.
+        struct SceneCtorFrame
+        {
+            uint8_t gap_00[0x70];
+            Vec4 eye;                  // +0x70 the camera's first eye (0, 0, -5)
+            Vec4 target;               // +0x80 and target (the origin)
+        };
+        static_assert(offsetof(SceneCtorFrame, eye) == 0x70 && offsetof(SceneCtorFrame, target) == 0x80 &&
+                      sizeof(SceneCtorFrame) == 0x90);
+    }
+
     GuestPtr<CityScene> CityScene_ctor(GuestPtr<CityScene> city)
     {
-        port::GuestFrame<0x90> frame;
-        const uint32_t sp = frame.ptr().address;
+        port::GuestFrameOf<SceneCtorFrame> frame;
         Stage_ctor(static_cast<int>(city.address));
         city->clock = 0x5460; // 6:00
         city->monthCount = 3;
@@ -4123,9 +4154,9 @@ namespace mm
         city->talk = GuestPtr<TalkSession>{build(0xC0u, [](uint32_t o) { return Talk_ctor(GuestPtr<TalkSession>{o}).address; })};
         city->statusPanel = GuestPtr<StatusPanel>{build(0xC0u, [](uint32_t o) { return StatusPanel_ctor(GuestPtr<StatusPanel>{o}).address; })};
         city->camera = GuestPtr<Camera>{build(0x310u, [](uint32_t o) { return Camera_ctor(GuestPtr<Camera>{o}).address; })};
-        *GuestPtr<Vec4>{sp + 0x70u} = *GuestPtr<Vec4>{0x001B2480u};
-        *GuestPtr<Vec4>{sp + 0x80u} = *GuestPtr<Vec4>{0x001B2490u};
-        Camera_SetEyeTarget(city->camera, GuestPtr<Vec4>{sp + 0x70u}, GuestPtr<Vec4>{sp + 0x80u});
+        frame->eye = *GuestPtr<Vec4>{0x001B2480u};
+        frame->target = *GuestPtr<Vec4>{0x001B2490u};
+        Camera_SetEyeTarget(city->camera, frame.at(&SceneCtorFrame::eye), frame.at(&SceneCtorFrame::target));
         Camera_UpdateMatrices(city->camera);
         city->pauseMenu = GuestPtr<PauseMenu>{build(0x99Cu, [](uint32_t o) { return PauseMenu_ctor(GuestPtr<PauseMenu>{o}).address; })};
         city->minimap = GuestPtr<Minimap>{build(0x21DCu, [](uint32_t o) { return Minimap_ctor(GuestPtr<Minimap>{o}).address; })};

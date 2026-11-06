@@ -1331,10 +1331,7 @@ struct PlacementLayer {
     uint32_t markerPacket;     /* +0x214 ALPHA_1 0x30_00000048, +0x070..+0x20F to VU1 0x12 and the program 0x1A8330 */
     uint32_t endPacket;        /* +0x218 ALPHA_1 back to 0x20_00000044 */
     int32_t rectActive;        /* +0x21C 1: the highlight (mm_PlacementLayer_InTileRect), 2: the marker */
-    int32_t rectX0;            /* +0x220 */
-    int32_t rectZ0;            /* +0x224 */
-    int32_t rectX1;            /* +0x228 */
-    int32_t rectZ1;            /* +0x22C */
+    TileRect rect;             /* +0x220 the highlighted block (x1 and z1 inside it); the marker uses x0 and z0 */
     A3DObject *marker;         /* +0x230 the marker model (0x1F3B1C) */
     uint8_t unk_234[0xC];
 };

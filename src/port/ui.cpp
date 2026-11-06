@@ -1763,58 +1763,49 @@ namespace mm
 
     // The tiles before the home entrance, by the facing: the footprint widened by one more than its size on three
     // sides (the facing side kept), clamped to the map (0..128).
-    void MyHome_EntranceRect(GuestPtr<TalkView>, int facing, int x, int z, int size, GuestPtr<int32_t> rect)
+    void MyHome_EntranceRect(GuestPtr<TalkView>, int facing, int x, int z, int size, GuestPtr<TileRect> rect)
     {
         const int e = size + 1;
         switch (facing)
         {
         case 0:
-            rect[0] = x - e;
-            rect[1] = z;
-            rect[2] = e + (x + size);
-            rect[3] = e + (z + size);
+            *rect = TileRect{x - e, z, e + (x + size), e + (z + size)};
             break;
         case 1:
-            rect[0] = x - e;
-            rect[1] = z - e;
-            rect[2] = x + size;
-            rect[3] = e + (z + size);
+            *rect = TileRect{x - e, z - e, x + size, e + (z + size)};
             break;
         case 2:
-            rect[0] = x - e;
-            rect[1] = z - e;
-            rect[2] = e + (x + size);
-            rect[3] = z + size;
+            *rect = TileRect{x - e, z - e, e + (x + size), z + size};
             break;
         case 3:
-            rect[0] = x;
-            rect[1] = z - e;
-            rect[2] = e + (x + size);
-            rect[3] = e + (z + size);
+            *rect = TileRect{x, z - e, e + (x + size), e + (z + size)};
             break;
         default:
             break;
         }
-        for (int i = 0; i < 4; ++i)
-        {
-            const int32_t value = rect[i];
-            rect[i] = value < 0 ? 0 : (value < 129 ? value : 128);
-        }
+        for (int32_t *corner : {&rect->x0, &rect->z0, &rect->x1, &rect->z1})
+            *corner = *corner < 0 ? 0 : (*corner < 129 ? *corner : 128);
     }
 
     // The top objects before the home entrance get or lose flag 0x80.
     void MyHome_MarkEntrance(GuestPtr<TalkView> view, int set)
     {
-        port::GuestFrame<0x60> frame;
+        struct Locals
+        {
+            uint8_t gap_00[0x50];
+            TileRect entrance;         // +0x50 the tiles before the entrance (x1 and z1 past them)
+        };
+        static_assert(offsetof(Locals, entrance) == 0x50 && sizeof(Locals) == 0x60);
+        port::GuestFrameOf<Locals> frame;
         const GuestPtr<CityMap> map = viewCity(view)->map;
         const GuestPtr<MapObject> home = Map_GetRecord(map, static_cast<int>(viewObject(view)));
         const GuestPtr<BuildingType> type{globals::buildingTypeAddress(home->type)};
         const int facing = Map_GetTileFacing(map, home->tile);
-        const GuestPtr<int32_t> rect{frame.ptr().address + 0x50u};
+        const GuestPtr<TileRect> rect = frame.at(&Locals::entrance);
         MyHome_EntranceRect(view, facing, home->tile & 0x7F, home->tile >> 7, type->size, rect);
-        for (int z = rect[1]; z < rect[3]; ++z)
+        for (int z = rect->z0; z < rect->z1; ++z)
         {
-            for (int x = rect[0]; x < rect[2]; ++x)
+            for (int x = rect->x0; x < rect->x1; ++x)
             {
                 const GuestPtr<MapObject> object = Map_GetTileObject(viewCity(view)->map, x, z);
                 if (set != 0)
@@ -2140,10 +2131,47 @@ namespace mm
 
     // ---- the city cursor (batch 39)
 
+    namespace
+    {
+        // A box on the screen in GS window units (1/16 pixel).
+        struct ScreenBox
+        {
+            int32_t x0, y0, x1, y1;
+        };
+
+        // A picked building's opening box: about the first corner of the cursor view's frame (mm_Frame_GetRect), 100
+        // units across and 25 down for each step of the open timer run so far (30 less the timer, 15 at most) to every
+        // side; a side with an end outside 0..0xFFFF is cleared. The view's sprite takes the corners (xyzA left and
+        // top, xyzB right and bottom).
+        void openPickBox(GuestPtr<CityCursor> cursor, GuestPtr<CityCursorView> view, GuestPtr<ScreenBox> box)
+        {
+            Frame_GetRect(view->frame, box.field(&ScreenBox::x0).as<uint32_t>(), box.field(&ScreenBox::y0).as<uint32_t>(),
+                          box.field(&ScreenBox::x1).as<uint32_t>(), box.field(&ScreenBox::y1).as<uint32_t>());
+            int32_t steps = 30 - cursor->openTimer;
+            if (steps >= 16)
+                steps = 15;
+            const int32_t down = 25 * steps, across = 4 * down;
+            const int32_t x = box->x0, y = box->y0;
+            *box = ScreenBox{x - across, y - down, x + across, y + down};
+            const auto outside = [](int32_t a, int32_t b) { return a < 0 || b < 0 || a >= 0x10000 || b >= 0x10000; };
+            if (outside(box->x0, box->x1))
+            {
+                box->x1 = 0;
+                box->x0 = 0;
+            }
+            if (outside(box->y0, box->y1))
+            {
+                box->y1 = 0;
+                box->y0 = 0;
+            }
+            view->sprite.xyzA.xy = static_cast<uint32_t>(box->x0) | (static_cast<uint32_t>(box->y0) << 16);
+            view->sprite.xyzB.xy = static_cast<uint32_t>(box->x1) | (static_cast<uint32_t>(box->y1) << 16);
+        }
+    }
+
     // Picking a building: one marked by an event (flag 0x200) queues event 0x106; otherwise the building menu opens
-    // (mode 0xA) for it, the cursor in mode 4 with its open timer at 30, and this frame's info window rectangle is
-    // set from the frame (grown by 100 and 25 per step of the timer run so far, 15 at most; a rectangle reaching
-    // outside 0..0xFFFF becomes 0) as the view's sprite corners (xyzA left and top, xyzB right and bottom).
+    // (mode 0xA) for it, the cursor in mode 4 with its open timer at 30, and this frame's view gets its opening box
+    // (openPickBox).
     void CityCursor_SelectTile(GuestPtr<CityCursor> cursor, int object, GuestPtr<CityScene> city)
     {
         if ((Map_GetRecord(city->map, object)->flags & 0x200u) != 0)
@@ -2155,34 +2183,16 @@ namespace mm
         CityScene_PushMode(city, 0xA);
         cursor->mode = 4;
         cursor->openTimer = 30;
-        port::GuestFrame<0x60> frame;
-        const uint32_t sp = frame.ptr().address;
-        const GuestPtr<int32_t> rect{sp + 0x4Cu};
+        struct Locals
+        {
+            uint8_t gap_00[0x4C];
+            ScreenBox box;             // +0x4C
+            uint8_t gap_5C[4];
+        };
+        static_assert(offsetof(Locals, box) == 0x4C && sizeof(Locals) == 0x60);
+        port::GuestFrameOf<Locals> frame;
         const GuestPtr<CityCursorView> view = cursor.field(&CityCursor::views) + static_cast<int32_t>(port::load<uint32_t>(0x001BDCD0u) & 1u);
-        Frame_GetRect(view->frame, GuestPtr<uint32_t>{rect.address}, GuestPtr<uint32_t>{rect.address + 4u},
-                      GuestPtr<uint32_t>{rect.address + 8u}, GuestPtr<uint32_t>{rect.address + 12u});
-        int steps = 30 - cursor->openTimer;
-        if (steps >= 16)
-            steps = 15;
-        const int grow = 25 * steps, wide = 4 * grow;
-        const int x = rect[0], y = rect[1];
-        rect[0] = x - wide;
-        rect[1] = y - grow;
-        rect[2] = x + wide;
-        rect[3] = y + grow;
-        const auto outside = [](int32_t a, int32_t b) { return a < 0 || b < 0 || a >= 0x10000 || b >= 0x10000; };
-        if (outside(rect[0], rect[2]))
-        {
-            rect[2] = 0;
-            rect[0] = 0;
-        }
-        if (outside(rect[1], rect[3]))
-        {
-            rect[3] = 0;
-            rect[1] = 0;
-        }
-        view->sprite.xyzA.xy = static_cast<uint32_t>(rect[0]) | (static_cast<uint32_t>(rect[1]) << 16);
-        view->sprite.xyzB.xy = static_cast<uint32_t>(rect[2]) | (static_cast<uint32_t>(rect[3]) << 16);
+        openPickBox(cursor, view, frame.at(&Locals::box));
     }
 
     PORT_FN(CityCursor_SelectTile);
@@ -3482,8 +3492,14 @@ namespace mm
     // and camera, the camera placed with the eye and target vectors at 0x1B08D0 and 0x1B08E0.
     GuestPtr<StageScene> StageScene_ctor(GuestPtr<StageScene> scene, int loadStage)
     {
-        port::GuestFrame<0x50> frame;
-        const uint32_t sp = frame.ptr().address;
+        struct Locals
+        {
+            uint8_t gap_00[0x30];
+            Vec4 target;               // +0x30 the camera's target
+            Vec4 eye;                  // +0x40 and eye
+        };
+        static_assert(offsetof(Locals, target) == 0x30 && offsetof(Locals, eye) == 0x40 && sizeof(Locals) == 0x50);
+        port::GuestFrameOf<Locals> frame;
         const uint32_t s = scene.address;
         Stage_ctor(static_cast<int>(s));
         Widget_ctor(GuestPtr<Widget>::of(scene->widget));
@@ -3508,9 +3524,9 @@ namespace mm
         if (camera != 0u)
             camera = Camera_ctor(GuestPtr<Camera>{camera}).address;
         scene->camera = GuestPtr<Camera>{camera};
-        *GuestPtr<Vec4>{sp + 0x40u} = *GuestPtr<Vec4>{0x001B08D0u};
-        *GuestPtr<Vec4>{sp + 0x30u} = *GuestPtr<Vec4>{0x001B08E0u};
-        Camera_SetEyeTarget(scene->camera, GuestPtr<Vec4>{sp + 0x40u}, GuestPtr<Vec4>{sp + 0x30u});
+        frame->eye = *GuestPtr<Vec4>{0x001B08D0u};
+        frame->target = *GuestPtr<Vec4>{0x001B08E0u};
+        Camera_SetEyeTarget(scene->camera, frame.at(&Locals::eye), frame.at(&Locals::target));
         Camera_UpdateMatrices(scene->camera);
         return scene;
     }
@@ -3599,8 +3615,14 @@ namespace mm
     // entry (while the laptop is in state 2) is lit with the colour at 0x1AF690 (alpha 12), the others with the one at 0x1AF6A0.
     void Laptop_Draw(GuestPtr<Laptop> laptop)
     {
-        port::GuestFrame<0x90> frame;
-        const uint32_t sp = frame.ptr().address;
+        struct Locals
+        {
+            uint8_t gap_00[0x70];
+            Vec4 selected;             // +0x70 the selected entry's colour (w the colour table entry, 12)
+            Vec4 other;                // +0x80 the others' (entry 0)
+        };
+        static_assert(offsetof(Locals, selected) == 0x70 && offsetof(Locals, other) == 0x80 && sizeof(Locals) == 0x90);
+        port::GuestFrameOf<Locals> frame;
         DmaList_QueueFade(0x50, 0);
         DmaList_QueueClearZ();
         if (laptop->text.address != 0u)
@@ -3617,15 +3639,15 @@ namespace mm
             A3DObject_DrawNode(GuestPtr<A3DObject>{model}, nodeIndex);
             if (laptop->state == 2 && i == laptop->selected)
             {
-                *GuestPtr<Vec4>{sp + 0x70u} = *GuestPtr<Vec4>{0x001AF690u};
-                port::store<int32_t>(sp + 0x7Cu, 0xC);
-                A3DObject_ChangeLuminosity(laptop->model, GuestPtr<uint32_t>{sp + 0x70u}, port::load<int32_t>(node));
+                frame->selected = *GuestPtr<Vec4>{0x001AF690u};
+                port::store<int32_t>(packet::addressOf(frame->selected.w), 0xC);
+                A3DObject_ChangeLuminosity(laptop->model, frame.at(&Locals::selected), port::load<int32_t>(node));
             }
             else
             {
-                *GuestPtr<Vec4>{sp + 0x80u} = *GuestPtr<Vec4>{0x001AF6A0u};
-                port::store<int32_t>(sp + 0x8Cu, 0);
-                A3DObject_ChangeLuminosity(laptop->model, GuestPtr<uint32_t>{sp + 0x80u}, port::load<int32_t>(node));
+                frame->other = *GuestPtr<Vec4>{0x001AF6A0u};
+                port::store<int32_t>(packet::addressOf(frame->other.w), 0);
+                A3DObject_ChangeLuminosity(laptop->model, frame.at(&Locals::other), port::load<int32_t>(node));
             }
         }
     }
@@ -3658,7 +3680,7 @@ namespace mm
         matrix[3].x = std::bit_cast<float>(0xBF428F5Cu); // -0.76
         matrix[3].y = static_cast<float>(ps2f(0.62f) + slide);
         matrix[3].z = std::bit_cast<float>(0xC027AE14u); // -2.62
-        A3DObject_ChangeLuminosity(phone->iconModel, GuestPtr<uint32_t>{colour.address}, 1);
+        A3DObject_ChangeLuminosity(phone->iconModel, colour, 1);
         A3DObject_DrawNode(phone->iconModel, 1);
         if (phone->iconSlide < 10)
             phone->iconSlide = phone->iconSlide + 1;
@@ -4540,8 +4562,14 @@ namespace mm
     // line box of 30 by 15 (hintText) with their places.
     GuestPtr<TitleScene> TitleScene_ctor(GuestPtr<TitleScene> scene, int afterGame)
     {
-        port::GuestFrame<0x50> frame;
-        const uint32_t sp = frame.ptr().address;
+        struct Locals
+        {
+            uint8_t gap_00[0x30];
+            Vec4 eye;                  // +0x30 the camera's eye
+            Vec4 target;               // +0x40 and target
+        };
+        static_assert(offsetof(Locals, eye) == 0x30 && offsetof(Locals, target) == 0x40 && sizeof(Locals) == 0x50);
+        port::GuestFrameOf<Locals> frame;
         const uint32_t s = scene.address;
         Stage_ctor(static_cast<int>(s));
         scene->afterGame = afterGame;
@@ -4564,9 +4592,9 @@ namespace mm
         if (camera != 0u)
             camera = Camera_ctor(GuestPtr<Camera>{camera}).address;
         scene->camera = GuestPtr<Camera>{camera};
-        *GuestPtr<Vec4>{sp + 0x30u} = *GuestPtr<Vec4>{0x001B17C0u};
-        *GuestPtr<Vec4>{sp + 0x40u} = *GuestPtr<Vec4>{0x001B17D0u};
-        Camera_SetEyeTarget(scene->camera, GuestPtr<Vec4>{sp + 0x30u}, GuestPtr<Vec4>{sp + 0x40u});
+        frame->eye = *GuestPtr<Vec4>{0x001B17C0u};
+        frame->target = *GuestPtr<Vec4>{0x001B17D0u};
+        Camera_SetEyeTarget(scene->camera, frame.at(&Locals::eye), frame.at(&Locals::target));
         Camera_UpdateMatrices(scene->camera);
         scene->mode = 0;
         scene->pressStep = 0;
@@ -5300,8 +5328,14 @@ namespace mm
     // are made; the result is 1 (and 0x1BDA7C = 0) or, with `newGame` set, 2 (and 0x1BDA7C = 1). 0 until then.
     int TitleScene_StartGame(GuestPtr<TitleScene> scene, int newGame)
     {
-        port::GuestFrame<0x50> frame;
-        const uint32_t sp = frame.ptr().address;
+        struct Locals
+        {
+            uint8_t gap_00[0x30];
+            Vec4 eye;                  // +0x30 the camera's eye
+            Vec4 target;               // +0x40 and target
+        };
+        static_assert(offsetof(Locals, eye) == 0x30 && offsetof(Locals, target) == 0x40 && sizeof(Locals) == 0x50);
+        port::GuestFrameOf<Locals> frame;
         const uint32_t s = scene.address;
         scene->loadProgress = static_cast<int32_t>(port::load<uint32_t>(0x001BDB54u));
         scene->loadStep = CityAssets_LoadStep();
@@ -5319,13 +5353,10 @@ namespace mm
             if (draw() != 1)
                 return 0;
             next();
-            for (uint32_t offset = 0; offset < 0x10u; offset += 8u)
-            {
-                port::store<uint64_t>(sp + 0x30u + offset, port::load<uint64_t>(0x001B19F0u + offset));
-                port::store<uint64_t>(sp + 0x40u + offset, port::load<uint64_t>(0x001B1A00u + offset));
-            }
+            frame->eye = *GuestPtr<Vec4>{0x001B19F0u};
+            frame->target = *GuestPtr<Vec4>{0x001B1A00u};
             const GuestPtr<Camera> camera{scene->camera.address};
-            Camera_SetEyeTarget(camera, GuestPtr<Vec4>{sp + 0x30u}, GuestPtr<Vec4>{sp + 0x40u});
+            Camera_SetEyeTarget(camera, frame.at(&Locals::eye), frame.at(&Locals::target));
             Camera_UpdateMatrices(camera);
             return 0;
         }
@@ -5656,7 +5687,7 @@ namespace mm
         }
         else
         {
-            pause->saveSlot = McManager_GetSaveFolder(mc(), choice, GuestPtr<int32_t>{p + 0x1Cu});
+            pause->saveSlot = McManager_GetSaveFolder(mc(), choice, pause.field(&PauseMenu::cardPort));
             TextBox_SetPos(message(), 0x71C0, 0x7C20, -0x100000);
             TextBox_SetText(message(), GuestPtr<char>{(GuestPtr<PauseSlotText>::of(pause->slotTexts[0]) + choice).address}, 0);
             TextBox_AppendText(message(), GuestPtr<char>{0x001B78B0u}, 0);
@@ -5683,8 +5714,14 @@ namespace mm
     // the city's fadeLevel up by 2 to 128 and then does the same, but leaves the state at 11 (the result 1). 0 otherwise.
     int PauseMenu_Update(GuestPtr<PauseMenu> pause, GuestPtr<CityScene> city)
     {
-        port::GuestFrame<0x50> frame;
-        const uint32_t sp = frame.ptr().address;
+        struct Locals
+        {
+            uint8_t gap_00[0x48];
+            int32_t mainChoice;        // +0x48 the main list's choice (state 2)
+            int32_t closeChoice;       // +0x4C the closing question's (state 8)
+        };
+        static_assert(offsetof(Locals, mainChoice) == 0x48 && offsetof(Locals, closeChoice) == 0x4C && sizeof(Locals) == 0x50);
+        port::GuestFrameOf<Locals> frame;
         const auto mc = [pause]() { return pause->mc; };
         const auto main = [pause]() { return pause->mainMenu; };
         const auto slots = [pause]() { return pause->slotMenu; };
@@ -5773,9 +5810,9 @@ namespace mm
         case 2:
         {
             McManagerUpdate(mc());
-            if (ListMenu_HandleInput(main(), GuestPtr<int32_t>{sp + 0x48u}) == 0)
+            if (ListMenu_HandleInput(main(), frame.at(&Locals::mainChoice)) == 0)
                 return 0;
-            const int32_t choice = port::load<int32_t>(sp + 0x48u);
+            const int32_t choice = frame->mainChoice;
             if (choice == 2)
             {
                 TextBox_SetPos(message(), 0x7240, 0x7CC0, -0x100000);
@@ -5827,9 +5864,9 @@ namespace mm
             return 0;
         case 8:
         {
-            if (ListMenu_HandleInput(main(), GuestPtr<int32_t>{sp + 0x4Cu}) != 0)
+            if (ListMenu_HandleInput(main(), frame.at(&Locals::closeChoice)) != 0)
             {
-                if (port::load<int32_t>(sp + 0x4Cu) == 0)
+                if (frame->closeChoice == 0)
                 {
                     city->fadeOverAll = 1;
                     pause->state = 0xB;
@@ -5993,8 +6030,14 @@ namespace mm
     // then the window's slot 0x20 and the fade.
     void StageScene_MissionBriefing(GuestPtr<StageScene> scene)
     {
-        port::GuestFrame<0x90> frame;
-        const uint32_t sp = frame.ptr().address;
+        struct Locals
+        {
+            uint8_t gap_00[0x40];
+            Vec4 colour;               // +0x40 the boss's colour (that of the colour at 0x1B26C0)
+            Vec4 matrix[4];            // +0x50 the boss's placement
+        };
+        static_assert(offsetof(Locals, colour) == 0x40 && offsetof(Locals, matrix) == 0x50 && sizeof(Locals) == 0x90);
+        port::GuestFrameOf<Locals> frame;
         if (scene->fadeMode != 0)
             return;
         const auto window = [scene]() { return scene->window.address; };
@@ -6093,22 +6136,18 @@ namespace mm
         matrix[3].x = 0.0f;
         matrix[3].y = std::bit_cast<float>(0xBE23D70Au); // -0.16
         matrix[3].z = std::bit_cast<float>(0xC075C28Fu); // -3.84
-        A3DObject_ChangeLuminosity(building, GuestPtr<uint32_t>{0x001B26C0u}, 0);
+        A3DObject_ChangeLuminosity(building, GuestPtr<Vec4>{0x001B26C0u}, 0);
         A3DObject_DrawNode(building, 0x12);
-        for (uint32_t at = 0; at < 0x10u; at += 4u)
-            port::store<uint32_t>(sp + 0x40u + at, port::load<uint32_t>(0x001B26C0u + at));
+        frame->colour = *GuestPtr<Vec4>{0x001B26C0u};
         const GuestPtr<A3DObject> actor{scene->boss.address};
         const ps2f length = A3D_GetAnimLength(actor, scene->animation);
-        Mat4_Copy(GuestPtr<Vec4>{sp + 0x50u}, GuestPtr<Vec4>{0x001B2550u});
-        port::store<uint32_t>(sp + 0x80u, 0u);
-        port::store<uint32_t>(sp + 0x84u, 0x3ECCCCCDu);
-        port::store<uint32_t>(sp + 0x88u, 0xC069999Au);
-        port::store<uint32_t>(sp + 0x8Cu, 0x3F800000u);
+        Mat4_Copy(frame.at(&Locals::matrix), GuestPtr<Vec4>{globals::kIdentityMatrix});
+        frame->matrix[3] = Vec4{0.0f, std::bit_cast<float>(0x3ECCCCCDu), std::bit_cast<float>(0xC069999Au), 1.0f}; // 0.4, -3.65
         for (uint32_t row = 0; row < 4u; ++row)
-            actor->matrix[row] = *GuestPtr<Vec4>{sp + (row == 3u ? 0x80u : 0x50u + 0x10u * row)};
+            actor->matrix[row] = frame->matrix[row];
         A3D_AnimateIfRoom(actor, scene->animation, ps2f(static_cast<float>(scene->animTime)));
         A3DObject_UpdateMatrices(actor);
-        Instance_DrawModelEx(actor, GuestPtr<Vec4>{sp + 0x40u}, 0, 0, 0, 0, 0, 4);
+        Instance_DrawModelEx(actor, frame.at(&Locals::colour), 0, 0, 0, 0, 0, 4);
         const ps2f time = ps2f(static_cast<float>(scene->animTime)) + ps2f(2.0f);
         scene->animTime = static_cast<float>(time);
         if (!(time <= length))
@@ -6280,8 +6319,17 @@ namespace mm
     // text boxes. The marks shown (markCount) are the count of the city's stamina object times 20 over two million.
     void StatusPanel_Update(GuestPtr<StatusPanel> panel, GuestPtr<CityScene> city)
     {
-        port::GuestFrame<0x190> frame;
-        const uint32_t sp = frame.ptr().address;
+        struct Locals
+        {
+            uint8_t gap_00[0x60];
+            uint8_t digits[0x10];      // +0x60 a number's digits (mm_Text_SplitDigits)
+            char text[0x100];          // +0x70 the line made for the detail text boxes
+            char money[0x20];          // +0x170 an amount (mm_Text_FormatMoney)
+        };
+        static_assert(offsetof(Locals, digits) == 0x60 && offsetof(Locals, text) == 0x70 && offsetof(Locals, money) == 0x170 &&
+                      sizeof(Locals) == 0x190);
+        port::GuestFrameOf<Locals> frame;
+        const GuestPtr<uint8_t> digits = frame.at(&Locals::digits);
         const uint32_t p = panel.address, c = city.address;
         constexpr uint32_t kGlyphs = 0x001AF610u;
         const auto word = [](uint32_t at) { return port::load<uint32_t>(at); };
@@ -6314,9 +6362,9 @@ namespace mm
         const auto place = [&](uint32_t at, uint32_t low, uint32_t high, uint32_t offset) {
             port::store<uint32_t>(quads + at, (word(low) + offset) | (word(high) << 16));
         };
-        const auto digitAt = [&](uint32_t index) { return static_cast<int>(port::load<int8_t>(sp + 0x60u + index)); };
+        const auto digitAt = [&](uint32_t index) { return static_cast<int>(static_cast<int8_t>(frame->digits[index])); };
         const int32_t month = city->monthCount % 12 + 1;
-        Text_SplitDigits(GuestPtr<uint8_t>{sp + 0x60u}, month, 2);
+        Text_SplitDigits(digits, month, 2);
         if (!(month < 10))
         {
             glyph(0xD0u, digitAt(0));
@@ -6328,7 +6376,7 @@ namespace mm
             blank(0x110u);
         }
         const int32_t year = city->monthCount / 12 + 1;
-        Text_SplitDigits(GuestPtr<uint8_t>{sp + 0x60u}, year, 2);
+        Text_SplitDigits(digits, year, 2);
         if (!(year < 10))
         {
             glyph(0x1D0u, digitAt(0));
@@ -6353,7 +6401,7 @@ namespace mm
             port::store<uint32_t>(quads + 0x250u, 0x3F280000u);
             port::store<uint32_t>(quads + 0x270u, 0x3F400000u);
         }
-        Text_SplitDigits(GuestPtr<uint8_t>{sp + 0x60u}, city->map->population, 4);
+        Text_SplitDigits(digits, city->map->population, 4);
         glyph(0x2D0u, digitAt(0));
         glyph(0x310u, digitAt(1));
         glyph(0x350u, digitAt(2));
@@ -6369,13 +6417,13 @@ namespace mm
             place(0x2C0u, 0x001AF4E8u, 0x001AF4ECu, 0u);
         }
         const int32_t balance = city->approval;
-        Text_SplitDigits(GuestPtr<uint8_t>{sp + 0x60u}, std::abs(balance), 3);
+        Text_SplitDigits(digits, std::abs(balance), 3);
         if (balance < 0)
         {
             port::store<uint32_t>(quads + 0x410u, 0x80B48C00u);
             port::store<uint32_t>(quads + 0x420u, 0x3F700000u);
             port::store<uint32_t>(quads + 0x440u, 0x3F800000u);
-            port::store<uint8_t>(sp + 0x60u, 0);
+            frame->digits[0] = 0;
         }
         else
         {
@@ -6389,7 +6437,7 @@ namespace mm
             panel->infoFrames = panel->infoFrames + 1;
             if (!(static_cast<uint32_t>(panel->infoFrames) < 0x3C0u))
                 panel->infoFrames = 0;
-            const uint32_t text = sp + 0x70u;
+            const uint32_t text = frame.at(&Locals::text).address, money = frame.at(&Locals::money).address;
             if (static_cast<uint32_t>(panel->infoFrames) < 0x1E0u)
                 Stage_FormatTargetText(static_cast<int>(c), GuestPtr<char>{text});
             else
@@ -6398,7 +6446,7 @@ namespace mm
                 const int32_t goal = globals::stageState()->quota;
                 const int32_t count = city->map->population;
                 if (count < goal)
-                    sdk::sprintf(sp + 0x70u + static_cast<uint32_t>(sdk::strlen(text)), 0x001B64E0u, goal - count);
+                    sdk::sprintf(text + static_cast<uint32_t>(sdk::strlen(text)), 0x001B64E0u, goal - count);
                 else
                     sdk::strcat(text, 0x001B64B0u);
                 const int32_t level = globals::stageState()->missionKind;
@@ -6406,15 +6454,15 @@ namespace mm
                 {
                     const uint32_t end = static_cast<uint32_t>(sdk::strlen(text));
                     const int progress = CityScene_MissionProgress(city);
-                    sdk::sprintf(sp + 0x70u + end, 0x001B6510u, progress, port::load<uint32_t>(0x001B6470u + 4u * static_cast<uint32_t>(level)));
+                    sdk::sprintf(text + end, 0x001B6510u, progress, port::load<uint32_t>(0x001B6470u + 4u * static_cast<uint32_t>(level)));
                 }
             }
             TextBox_SetText(panel->text[0], GuestPtr<char>{text}, 0);
-            Text_FormatMoney(GuestPtr<char>{sp + 0x170u}, globals::stageState()->salary * 2, 0x12, 0);
-            sdk::sprintf(text, 0x001B6538u, sp + 0x170u);
+            Text_FormatMoney(GuestPtr<char>{money}, globals::stageState()->salary * 2, 0x12, 0);
+            sdk::sprintf(text, 0x001B6538u, money);
             TextBox_SetText(panel->text[2], GuestPtr<char>{text}, 0);
-            Text_FormatMoney(GuestPtr<char>{sp + 0x170u}, globals::stageState()->money, 0x13, 0);
-            sdk::sprintf(text, 0x001B6548u, sp + 0x170u);
+            Text_FormatMoney(GuestPtr<char>{money}, globals::stageState()->money, 0x13, 0);
+            sdk::sprintf(text, 0x001B6548u, money);
             TextBox_SetText(panel->text[1], GuestPtr<char>{text}, 0);
         }
         const int32_t marks = city->stamina->value;
@@ -6436,12 +6484,17 @@ namespace mm
     // pops the city mode (state 0). The active flag is set while the window waits for input.
     void WantsWin_Update(GuestPtr<WantsWin> wants, GuestPtr<CityScene> city)
     {
-        port::GuestFrame<0x340> frame;
-        const uint32_t sp = frame.ptr().address;
-        const uint32_t w = wants.address, c = city.address;
-        const auto loadF = [](uint32_t at) { return ps2f(std::bit_cast<float>(port::load<uint32_t>(at))); };
-        const auto storeF = [](uint32_t at, ps2f value) { port::store<uint32_t>(at, std::bit_cast<uint32_t>(value.v)); };
-        const auto box = [w](uint32_t at) { return GuestPtr<TextBox>{port::load<uint32_t>(w + at)}; };
+        struct Locals
+        {
+            uint8_t gap_00[0x40];
+            char opened[0x100];        // +0x40 the page's texts as the window opens
+            char forward[0x100];       // +0x140 after turning forward
+            char back[0x100];          // +0x240 after turning back
+        };
+        static_assert(offsetof(Locals, opened) == 0x40 && offsetof(Locals, forward) == 0x140 && offsetof(Locals, back) == 0x240 &&
+                      sizeof(Locals) == 0x340);
+        port::GuestFrameOf<Locals> frame;
+        const auto box = [wants](int i) { return wants->texts[i]; };
         const auto model = [wants]() { return wants->model; };
         if (CityScene_GetMode(city) != 8)
         {
@@ -6452,29 +6505,29 @@ namespace mm
         const auto slide = [&](ps2f time) {
             const ps2f t = time / ps2f(10.0f);
             const ps2f rest = ps2f(1.0f) - t;
-            const auto lerp = [&](uint32_t to, uint32_t from) { return rest * loadF(from) + t * loadF(to); };
-            storeF((wants->matrix + 3).field(&Vec4::x).address, lerp(0x001B08F0u, 0x001B0900u));
-            storeF((wants->matrix + 3).field(&Vec4::y).address, lerp(0x001B08F4u, 0x001B0904u));
-            storeF((wants->matrix + 3).field(&Vec4::z).address, lerp(0x001B08F8u, 0x001B0908u));
+            const GuestPtr<Vec4> to{0x001B08F0u}, from{0x001B0900u};
+            wants->matrix[3].x = rest * from->x + t * to->x;
+            wants->matrix[3].y = rest * from->y + t * to->y;
+            wants->matrix[3].z = rest * from->z + t * to->z;
         };
         // The page's lines and numbers: the two wants lines in texts[0] and texts[1] (after emptying them) and the two page numbers.
-        const auto fillPage = [&](uint32_t buffer) {
-            TextBox_SetText(box(0x508u), GuestPtr<char>{0x001B73A8u}, 0);
-            TextBox_SetText(box(0x50Cu), GuestPtr<char>{0x001B73A8u}, 0);
+        const auto fillPage = [&](GuestPtr<char> buffer) {
+            TextBox_SetText(box(0), GuestPtr<char>{0x001B73A8u}, 0);
+            TextBox_SetText(box(1), GuestPtr<char>{0x001B73A8u}, 0);
             const int32_t first = wants->page << 1;
-            Text_FormatPadded(GuestPtr<char>{buffer}, first + 1, 4);
-            TextBox_SetText(box(0x510u), GuestPtr<char>{buffer}, 0);
-            Text_FormatPadded(GuestPtr<char>{buffer}, (wants->page << 1) + 2, 4);
-            TextBox_SetText(box(0x514u), GuestPtr<char>{buffer}, 0);
+            Text_FormatPadded(buffer, first + 1, 4);
+            TextBox_SetText(box(2), buffer, 0);
+            Text_FormatPadded(buffer, (wants->page << 1) + 2, 4);
+            TextBox_SetText(box(3), buffer, 0);
             if (first < wants->count)
             {
-                WantsWin_FormatLine(wants, city, first, GuestPtr<char>{buffer});
-                TextBox_SetText(box(0x508u), GuestPtr<char>{buffer}, 0);
+                WantsWin_FormatLine(wants, city, first, buffer);
+                TextBox_SetText(box(0), buffer, 0);
             }
             if (first + 1 < wants->count)
             {
-                WantsWin_FormatLine(wants, city, first + 1, GuestPtr<char>{buffer});
-                TextBox_SetText(box(0x50Cu), GuestPtr<char>{buffer}, 0);
+                WantsWin_FormatLine(wants, city, first + 1, buffer);
+                TextBox_SetText(box(1), buffer, 0);
             }
         };
         const auto applicantsEnabled = [city](uint8_t value) { city->applicants->enabled = value; };
@@ -6504,18 +6557,18 @@ namespace mm
             {
                 wants->state = 2;
                 wants->texts[0] = GuestPtr<TextBox>{newTextBox(8, 0xA, -2)};
-                TextBox_SetPos(box(0x508u), 0x7240, 0x7DE0, -0x100000);
-                TextBox_SetCharSize(box(0x508u), 0, 0, 0xB0, 0);
+                TextBox_SetPos(box(0), 0x7240, 0x7DE0, -0x100000);
+                TextBox_SetCharSize(box(0), 0, 0, 0xB0, 0);
                 wants->texts[1] = GuestPtr<TextBox>{newTextBox(8, 0xA, -2)};
-                TextBox_SetPos(box(0x50Cu), 0x8260, 0x7DE0, -0x100000);
-                TextBox_SetCharSize(box(0x50Cu), 0, 0, 0xB0, 0);
+                TextBox_SetPos(box(1), 0x8260, 0x7DE0, -0x100000);
+                TextBox_SetCharSize(box(1), 0, 0, 0xB0, 0);
                 wants->texts[2] = GuestPtr<TextBox>{newTextBox(4, 1, -2)};
-                TextBox_SetPos(box(0x510u), 0x7600, 0x8440, -0x100000);
-                TextBox_SetCharSize(box(0x510u), 0, 0x90, 0, 0xA0);
+                TextBox_SetPos(box(2), 0x7600, 0x8440, -0x100000);
+                TextBox_SetCharSize(box(2), 0, 0x90, 0, 0xA0);
                 wants->texts[3] = GuestPtr<TextBox>{newTextBox(4, 1, -2)};
-                TextBox_SetPos(box(0x514u), 0x8540, 0x8440, -0x100000);
-                TextBox_SetCharSize(box(0x514u), 0, 0x90, 0, 0xA0);
-                fillPage(sp + 0x40u);
+                TextBox_SetPos(box(3), 0x8540, 0x8440, -0x100000);
+                TextBox_SetCharSize(box(3), 0, 0x90, 0, 0xA0);
+                fillPage(frame.at(&Locals::opened));
             }
             wants->textsShown = 0;
             return;
@@ -6526,14 +6579,14 @@ namespace mm
             {
                 wants->state = 4;
                 wants->animTime = std::bit_cast<float>(0x41C80000u);
-                if (box(0x50Cu))
+                if (box(1))
                 {
-                    TextBox_dtor(box(0x50Cu), 1);
+                    TextBox_dtor(box(1), 1);
                     wants->texts[1] = GuestPtr<TextBox>{0u};
                 }
-                if (box(0x508u))
+                if (box(0))
                 {
-                    TextBox_dtor(box(0x508u), 1);
+                    TextBox_dtor(box(0), 1);
                     wants->texts[0] = GuestPtr<TextBox>{0u};
                 }
                 Sound_PlaySe(8, 0, 0x3C, 0.0f, 0.0f);
@@ -6567,7 +6620,7 @@ namespace mm
             if (sdk::fptosi(time) == 60)
             {
                 wants->page = wants->page + (back ? -1 : 1);
-                fillPage(back ? sp + 0x240u : sp + 0x140u);
+                fillPage(back ? frame.at(&Locals::back) : frame.at(&Locals::forward));
                 Sound_PlaySe(9, 0, 0x3C, 0.0f, 0.0f);
             }
             A3D_Animate(model(), 0, ps2f(120.0f) + wants->animTime);
@@ -6630,9 +6683,14 @@ namespace mm
     // 10); the cursor goes back to mode 0.
     void CityCursor_Update(GuestPtr<CityCursor> cursor, GuestPtr<CityScene> city, int enabled)
     {
-        port::GuestFrame<0x80> frame;
-        const uint32_t sp = frame.ptr().address;
-        const uint32_t k = cursor.address, c = city.address;
+        struct Locals
+        {
+            uint8_t gap_00[0x70];
+            ScreenBox box;             // +0x70
+        };
+        static_assert(offsetof(Locals, box) == 0x70 && sizeof(Locals) == 0x80);
+        port::GuestFrameOf<Locals> frame;
+        const uint32_t c = city.address;
         constexpr uint32_t kBuildingTypes = 0x001BDBF8u; // pointer to the table of building type records
         if (cursor->visible == 0)
             return;
@@ -6651,7 +6709,7 @@ namespace mm
                 Sound_PlaySe(1, 0, 0x3C, 0.0f, 0.0f);
                 const int32_t wanted = cursor->frameStep / 6;
                 int32_t index = 0;
-                uint32_t at = k + 0x1A8u;
+                uint32_t at = cursor.field(&CityCursor::target).address;
                 for (;;)
                 {
                     const uint32_t id = port::load<uint16_t>(at);
@@ -6707,31 +6765,7 @@ namespace mm
         }
         case 4:
         {
-            const GuestPtr<CityCursorView> view = GuestPtr<CityCursorView>::of(cursor->views[parity]);
-            Frame_GetRect(view->frame, GuestPtr<uint32_t>{sp + 0x70u}, GuestPtr<uint32_t>{sp + 0x74u},
-                          GuestPtr<uint32_t>{sp + 0x78u}, GuestPtr<uint32_t>{sp + 0x7Cu});
-            int32_t steps = 0x1E - cursor->openTimer;
-            if (!(steps < 0x10))
-                steps = 0xF;
-            const int32_t halfHeight = steps * 25, halfWidth = halfHeight * 4;
-            const int32_t x = port::load<int32_t>(sp + 0x70u), y = port::load<int32_t>(sp + 0x74u);
-            port::store<int32_t>(sp + 0x70u, x - halfWidth);
-            port::store<int32_t>(sp + 0x74u, y - halfHeight);
-            port::store<int32_t>(sp + 0x78u, x + halfWidth);
-            port::store<int32_t>(sp + 0x7Cu, y + halfHeight);
-            // Both ends of a side must be inside 0..0xFFFF, else both go to 0.
-            const auto clamp = [&](uint32_t low, uint32_t high) {
-                const int32_t a = port::load<int32_t>(sp + low), b = port::load<int32_t>(sp + high);
-                if (a < 0 || b < 0 || !(a < 0x10000) || !(b < 0x10000))
-                {
-                    port::store<int32_t>(sp + high, 0);
-                    port::store<int32_t>(sp + low, 0);
-                }
-            };
-            clamp(0x70u, 0x78u);
-            clamp(0x74u, 0x7Cu);
-            view->sprite.xyzA.xy = port::load<uint32_t>(sp + 0x70u) | (port::load<uint32_t>(sp + 0x74u) << 16);
-            view->sprite.xyzB.xy = port::load<uint32_t>(sp + 0x78u) | (port::load<uint32_t>(sp + 0x7Cu) << 16);
+            openPickBox(cursor, GuestPtr<CityCursorView>::of(cursor->views[parity]), frame.at(&Locals::box));
             const int32_t left = cursor->openTimer - 1;
             cursor->openTimer = left;
             if (left != 0)
@@ -6828,16 +6862,21 @@ namespace mm
     // zero a sound command and load the bank 7; 107 answers 1 once the sounds are idle (without drawing). 0 otherwise.
     int TitleScene_Load(GuestPtr<TitleScene> scene, int)
     {
-        port::GuestFrame<0x4060> frame;
-        const uint32_t sp = frame.ptr().address;
-        const uint32_t s = scene.address;
+        struct Locals
+        {
+            uint8_t gap_00[0x20];
+            TexImage images[4];        // +0x20 the loaders of steps 2 to 5 (0x1010 bytes each)
+        };
+        static_assert(offsetof(Locals, images) == 0x20 && sizeof(Locals) == 0x4060);
+        port::GuestFrameOf<Locals> frame;
+        const GuestPtr<TexImage> images = frame.at(&Locals::images);
         const auto nextStep = [scene]() { scene->waitFrames = scene->waitFrames + 1; };
-        // A sprite from the file `name` kept at the scene's field `at`.
-        const auto loadSprite = [s](uint32_t at, uint32_t name) {
+        // A sprite from the file `name` kept in the scene's field `field`.
+        const auto loadSprite = [](GuestPtr<TexSprite> &field, uint32_t name) {
             uint32_t sprite = sdk::operator_new(0x38u);
             if (sprite != 0u)
                 sprite = static_cast<uint32_t>(TexSprite_Load(GuestPtr<TexSprite>{sprite}, static_cast<int>(name), 1));
-            port::store<uint32_t>(s + at, sprite);
+            field = GuestPtr<TexSprite>{sprite};
             return sprite;
         };
         const auto loadModel = [](uint32_t name) {
@@ -6847,11 +6886,11 @@ namespace mm
             return model;
         };
         // A texture image read, uploaded and freed again through the loader at `buffer`.
-        const auto loadImage = [&](uint32_t buffer, uint32_t name, int textureBlock, int clutBlock) {
-            TexImage_Load(GuestPtr<TexImage>{buffer}, GuestPtr<char>{name}, textureBlock, clutBlock);
-            TexImage_Upload(GuestPtr<TexImage>{buffer});
+        const auto loadImage = [&](GuestPtr<TexImage> buffer, uint32_t name, int textureBlock, int clutBlock) {
+            TexImage_Load(buffer, GuestPtr<char>{name}, textureBlock, clutBlock);
+            TexImage_Upload(buffer);
             nextStep();
-            TexImage_dtor(GuestPtr<TexImage>{buffer}, -1);
+            TexImage_dtor(buffer, -1);
         };
         const auto place = [](uint32_t sprite, int x, int y, int z) {
             TexSprite_SetPosScale(GuestPtr<TexSprite>{sprite}, x, y, z, ps2f(1.0f), ps2f(1.0f));
@@ -6869,26 +6908,25 @@ namespace mm
             nextStep();
             break;
         case 2:
-            loadImage(sp + 0x20u, 0x001B8D20u, 0x2588, 0x2584);
+            loadImage(images + 0, 0x001B8D20u, 0x2588, 0x2584);
             break;
         case 3:
-            loadImage(sp + 0x1030u, 0x001B8D30u, 0x278C, 0x2788);
+            loadImage(images + 1, 0x001B8D30u, 0x278C, 0x2788);
             break;
         case 4:
-            loadImage(sp + 0x2040u, 0x001B8D40u, 0x27A4, 0x27A0);
+            loadImage(images + 2, 0x001B8D40u, 0x27A4, 0x27A0);
             break;
         case 5:
-            loadImage(sp + 0x3050u, 0x001B8D50u, 0x27B8, 0x27B4);
+            loadImage(images + 3, 0x001B8D50u, 0x27B8, 0x27B4);
             break;
         case 6:
         {
             const uint32_t model = loadModel(0x001B8D60u);
             scene->menuModel = GuestPtr<A3DObject>{model};
             A3DObject_UpdateMatrices(scene->menuModel);
-            const uint32_t m = scene->menuModel.address;
-            port::store<uint32_t>(m + 0x40u, 0x40133333u);
-            port::store<uint32_t>(m + 0x44u, 0x3E99999Au);
-            port::store<uint32_t>(m + 0x48u, 0x40533333u);
+            scene->menuModel->matrix[3].x = std::bit_cast<float>(0x40133333u); // 2.3
+            scene->menuModel->matrix[3].y = std::bit_cast<float>(0x3E99999Au); // 0.3
+            scene->menuModel->matrix[3].z = std::bit_cast<float>(0x40533333u); // 3.3
             nextStep();
             break;
         }
@@ -6898,27 +6936,27 @@ namespace mm
             nextStep();
             break;
         case 8:
-            place(loadSprite(0xCu, 0x001B8DA0u), 0, 0, 0x3E00);
+            place(loadSprite(scene->titleSprite, 0x001B8DA0u), 0, 0, 0x3E00);
             nextStep();
             break;
         case 9:
-            place(loadSprite(0x10u, 0x001B8DC0u), 0, 0, 0x3F00);
+            place(loadSprite(scene->logoLetters[0], 0x001B8DC0u), 0, 0, 0x3F00);
             nextStep();
             break;
         case 10:
-            place(loadSprite(0x14u, 0x001B8DC0u), 0, 0, 0x3F00);
+            place(loadSprite(scene->logoLetters[1], 0x001B8DC0u), 0, 0, 0x3F00);
             nextStep();
             break;
         case 11:
-            place(loadSprite(0x18u, 0x001B8DC0u), 0, 0, 0x3F00);
+            place(loadSprite(scene->logoLetters[2], 0x001B8DC0u), 0, 0, 0x3F00);
             nextStep();
             break;
         case 12:
-            TexSprite_GreenToAlpha(GuestPtr<TexSprite>{loadSprite(0x1Cu, 0x001B8DE0u)});
+            TexSprite_GreenToAlpha(GuestPtr<TexSprite>{loadSprite(scene->choices[0], 0x001B8DE0u)});
             nextStep();
             break;
         case 13:
-            TexSprite_GreenToAlpha(GuestPtr<TexSprite>{loadSprite(0x20u, 0x001B8E00u)});
+            TexSprite_GreenToAlpha(GuestPtr<TexSprite>{loadSprite(scene->choices[1], 0x001B8E00u)});
             nextStep();
             break;
         case 14:
@@ -6935,11 +6973,11 @@ namespace mm
             break;
         }
         case 15:
-            place(loadSprite(0x30u, 0x001B8E40u), 0x40, 0x154, 1);
+            place(loadSprite(scene->loadingFrame, 0x001B8E40u), 0x40, 0x154, 1);
             nextStep();
             break;
         case 16:
-            place(loadSprite(0x34u, 0x001B8E60u), 0x40, 0x154, 1);
+            place(loadSprite(scene->loadingBar, 0x001B8E60u), 0x40, 0x154, 1);
             scene->waitFrames = 100;
             break;
         case 100:

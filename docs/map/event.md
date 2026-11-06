@@ -190,5 +190,5 @@ City events (visitors, requests, incidents, paydays).
 | `0x0019A860` | `int mm_EvActor_Detach(CityScene *city, ActorRef *actor)` | 308 | no | (city, actor) person `actor` leaves its building, follow flag set with no target |
 | `0x0019A9A0` | `void mm_EvActor_Release(CityScene *city, ActorRef *actor)` | 212 | no | (city, actor) person `actor` leaves its building and drops flags 0x80/0x100 |
 | `0x0019AB20` | `int mm_EvActor_MoveTo(CityScene *city, ActorRef *actor, ActorRef *target, int arrive)` | 816 | no | (city, actor, target, arrive) moves person `actor` towards building `target`; 1 on arrival |
-| `0x0019B4F0` | `MapObject *mm_EvAlien_FindBuilding(CityScene *city, int list, uint32_t type, int32_t *rect)` | 400 | no | the first available building of `type` in tile list `list` that overlaps the rectangle |
-| `0x0019B680` | `MapObject *mm_EvThief_FindBuilding(CityScene *city, uint32_t category, int32_t *rect)` | 448 | no | the first available building of `category` in any of the 80 tile lists that overlaps the rectangle |
+| `0x0019B4F0` | `MapObject *mm_EvAlien_FindBuilding(CityScene *city, int list, uint32_t type, TileRect *rect)` | 400 | no | the first available building of `type` in tile list `list` that overlaps the rectangle |
+| `0x0019B680` | `MapObject *mm_EvThief_FindBuilding(CityScene *city, uint32_t category, TileRect *rect)` | 448 | no | the first available building of `category` in any of the 80 tile lists that overlaps the rectangle |

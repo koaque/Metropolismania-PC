@@ -66,8 +66,15 @@ def gen_types() -> tuple[str, set[str]]:
         out.append(f"// ---- {header.name}")
         current = None
         last_comment = ""
+        in_comment = False  # inside a /* ... */ that began on an earlier line: copied as it is
         for line in header.read_text(encoding="utf-8").splitlines():
             stripped = line.strip()
+            if in_comment:
+                in_comment = "*/" not in line
+                out.append(line)
+                continue
+            opened = line.rfind("/*")
+            in_comment = opened >= 0 and "*/" not in line[opened:]
             if m := TYPEDEF.match(line):
                 out.append(f"struct {m.group(1)};")
                 continue

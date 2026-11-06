@@ -8,6 +8,7 @@
 #include "game_globals.h"
 #include "widgets.h"
 #include "lifetime.h"
+#include "render.h"
 #include "sdk.h"
 
 namespace mm
@@ -127,7 +128,7 @@ namespace mm
 
     // Removes the slot: the ones after it move up and the last of the size is emptied; a size 1 bag left empty
     // has no size again.
-    void Bag_RemoveSlot(GuestPtr<Bag> bag, GuestPtr<uint16_t> slot)
+    void Bag_RemoveSlot(GuestPtr<Bag> bag, GuestPtr<BagSlot> slot)
     {
         const int slots = port::load<uint8_t>(globals::kBagSlotsBySize + bag->size);
         for (int i = 0; i < slots; ++i)
@@ -135,9 +136,8 @@ namespace mm
             if (slotAddress(bag, static_cast<uint32_t>(i)) != slot.address)
                 continue;
             for (int j = i; j < slots - 1; ++j)
-                for (uint32_t k = 0; k < 16u; k += 4u)
-                    port::store<uint32_t>(slotAddress(bag, static_cast<uint32_t>(j)) + k, port::load<uint32_t>(slotAddress(bag, static_cast<uint32_t>(j + 1)) + k));
-            port::store<uint16_t>(slotAddress(bag, static_cast<uint32_t>(slots - 1)), 0);
+                bag->slots[j] = bag->slots[j + 1];
+            bag->slots[slots - 1].group = 0;
             if (bag->size == 1 && bag->slots[0].group == 0)
                 bag->size = 0;
             return;
@@ -264,50 +264,50 @@ namespace mm
     // packets and texts (the item name and, with the usable flag, its description) and the closing widget are drawn.
     void BagMenu_Draw(GuestPtr<Bag> bag)
     {
-        const uint32_t b = bag.address;
         const GuestPtr<A3DObject> frameModel{port::load<uint32_t>(0x001F3B08u)};
         A3DObject_UpdateMatrices(bag->model);
         int node = bag->size + 5;
-        const uint32_t source = port::load<uint32_t>(port::load<uint32_t>(bag->model.address) + 8u) + 0x70u;
+        const GuestPtr<Vec4> source = worldMatrix(modelNode(bag->model, 0));
         if (node == 5)
             ++node;
-        const uint32_t dest = port::load<uint32_t>(frameModel->model.address + 8u) + 0xC0u * static_cast<uint32_t>(node);
-        for (uint32_t row = 0; row < 0x40; row += 0x10)
-            *GuestPtr<Vec4>{dest + 0x70u + row} = *GuestPtr<Vec4>{source + row};
+        const GuestPtr<Vec4> dest = worldMatrix(modelNode(frameModel, node));
+        for (int row = 0; row < 4; ++row)
+            dest[row] = source[row];
         A3DObject_DrawNode(frameModel, node);
         if (static_cast<uint32_t>(bag->state) >= 5)
             return;
-        const auto packet = [&](uint32_t offset) {
-            if (port::load<int32_t>(b + offset) != 0)
-                Dma_AppendCall(port::load<int32_t>(b + offset));
+        // A frame's packet and a text box, when they are there.
+        const auto packet = [](GuestPtr<Frame> frame) {
+            if (frame)
+                Dma_AppendCall(static_cast<int32_t>(frame.address));
         };
-        const auto text = [&](uint32_t offset) {
-            if (port::load<uint32_t>(b + offset) != 0)
-                TextBox_Draw(GuestPtr<TextBox>{port::load<uint32_t>(b + offset)});
+        const auto text = [](GuestPtr<TextBox> box) {
+            if (box)
+                TextBox_Draw(box);
         };
         if (bag->list.address != 0)
         {
             DmaList_QueueClearZ();
-            const uint32_t nodes = port::load<uint32_t>(port::load<uint32_t>(bag->model.address) + 8u) + 0x130u;
-            Mat4_Copy(GuestPtr<Vec4>{nodes}, GuestPtr<Vec4>{globals::kIdentityMatrix});
-            port::store<uint32_t>(nodes + 0x38u, 0xC08CCCCDu);
+            const GuestPtr<Vec4> backdrop = worldMatrix(modelNode(bag->model, 1));
+            Mat4_Copy(backdrop, GuestPtr<Vec4>{globals::kIdentityMatrix});
+            backdrop[3].z = std::bit_cast<float>(0xC08CCCCDu); // -4.4
             A3DObject_DrawNode(bag->model, 1);
         }
         if (bag->list.address != 0)
             ListMenu_Draw(bag->list);
-        text(0x170u);
-        if (port::load<uint16_t>(b + 16u * static_cast<uint32_t>(bag->cursor) + 4u) != 0)
+        text(bag->nameText);
+        if ((bag.field(&Bag::slots) + bag->cursor)->group != 0)
         {
-            packet(0x184u);
-            text(0x190u);
+            packet(bag->frames[2]);
+            text(bag->labels[2]);
             if (bag->usable != 0)
             {
-                packet(0x17Cu);
-                text(0x188u);
+                packet(bag->frames[0]);
+                text(bag->labels[0]);
             }
         }
-        packet(0x180u);
-        text(0x18Cu);
+        packet(bag->frames[1]);
+        text(bag->labels[1]);
         const uint32_t closing = bag->question.address;
         if (closing != 0)
             port::callGuest<void>(widgetMethod(closing, &WidgetVtable::draw), closing, 2);
@@ -373,14 +373,13 @@ namespace mm
     // the slot's count, and an empty slot is removed; the selection is cleared and the list rebuilt.
     void BagMenu_FinishUse(GuestPtr<Bag> bag, int used)
     {
-        const uint32_t b = bag.address;
         bag->state = 7;
         bag->slide = 0.0f;
-        const auto count = [&] { return b + (static_cast<uint32_t>(bag->setupSlot) << 4) + 0xAu; };
+        const GuestPtr<BagSlot> slot = bag.field(&Bag::slots) + bag->setupSlot;
         if (used != 0)
-            port::store<uint8_t>(count(), static_cast<uint8_t>(port::load<uint8_t>(count()) - 1u));
-        if (port::load<uint8_t>(count()) == 0)
-            Bag_RemoveSlot(bag, GuestPtr<uint16_t>{count() - 6u});
+            slot->count = static_cast<int8_t>(slot->count - 1);
+        if (slot->count == 0)
+            Bag_RemoveSlot(bag, slot);
         bag->setupSlot = -1;
         BagMenu_RefreshList(bag);
     }
@@ -478,8 +477,7 @@ namespace mm
     // is taken out, the list rebuilt and sound 0xE played. Other kinds do nothing.
     void BagMenu_UseSelected(GuestPtr<Bag> bag, GuestPtr<CityScene> city)
     {
-        const uint32_t b = bag.address;
-        const GuestPtr<BagSlot> slot{b + (static_cast<uint32_t>(bag->cursor) << 4) + 4u};
+        const GuestPtr<BagSlot> slot = bag.field(&Bag::slots) + bag->cursor;
         const GuestPtr<GoodsRecord> record = goodsRecordOf(slot->group, slot->index);
         switch (record->kind)
         {
@@ -496,7 +494,7 @@ namespace mm
         {
             const uint32_t previous = bag->outfit;
             bag->outfit = record->value;
-            Bag_RemoveSlot(bag, GuestPtr<uint16_t>{b + (static_cast<uint32_t>(bag->cursor) << 4) + 4u});
+            Bag_RemoveSlot(bag, slot);
             Bag_AddItem(bag, previous == 0 ? 5 : 0xE5, previous == 0 ? 0 : static_cast<int>(previous) - 1, static_cast<int16_t>(globals::stageState()->stage),
                         city->monthCount, 0, 0xFF, 0);
             BagMenu_RefreshList(bag);
@@ -505,7 +503,7 @@ namespace mm
         case 0x13:
         case 0x11:
             Stamina_Eat(city->stamina, record);
-            Bag_RemoveSlot(bag, GuestPtr<uint16_t>{b + (static_cast<uint32_t>(bag->cursor) << 4) + 4u});
+            Bag_RemoveSlot(bag, slot);
             BagMenu_RefreshList(bag);
             Sound_PlaySe(0xE, 0, 0x3C, ps2f(0.0f), ps2f(0.0f));
             break;
@@ -720,18 +718,15 @@ namespace mm
 
         // The bag model's place slides between two points by t = time / 120: the place is (1 - t) * from + t * to (the products added
         // as the FPU's accumulator does), and the model's animation is set to that time.
-        void slideBag(uint32_t bag, ps2f time, uint32_t from)
+        void slideBag(GuestPtr<Bag> bag, ps2f time, uint32_t from)
         {
-            constexpr uint32_t kTo = 0x001AEF00u;
+            const GuestPtr<Vec4> start{from}, end{0x001AEF00u};
             const ps2f t = time / ps2f(120.0f);
             const ps2f rest = ps2f(1.0f) - t;
-            for (uint32_t axis = 0; axis < 3; ++axis)
-            {
-                const ps2f a = ps2f(std::bit_cast<float>(port::load<uint32_t>(from + 4u * axis)));
-                const ps2f b = ps2f(std::bit_cast<float>(port::load<uint32_t>(kTo + 4u * axis)));
-                const ps2f place = (rest * a) + (t * b);
-                port::store<uint32_t>(port::guest(&GuestPtr<Bag>{bag}->matrix[3].x) + 4u * axis, std::bit_cast<uint32_t>(place.v));
-            }
+            Vec4 &place = bag->matrix[3];
+            place.x = (rest * start->x) + (t * end->x);
+            place.y = (rest * start->y) + (t * end->y);
+            place.z = (rest * start->z) + (t * end->z);
         }
     }
 
@@ -746,13 +741,15 @@ namespace mm
     // to mode 11 and the player's mode 5, 7 back.
     void BagMenu_Update(GuestPtr<Bag> bag, GuestPtr<CityScene> city)
     {
-        port::GuestFrame<0x80> frame;
-        const uint32_t sp = frame.ptr().address;
-        const uint32_t b = bag.address;
-        const auto loadF = [](uint32_t at) { return ps2f(std::bit_cast<float>(port::load<uint32_t>(at))); };
-        const auto storeF = [](uint32_t at, ps2f value) { port::store<uint32_t>(at, std::bit_cast<uint32_t>(value.v)); };
+        struct Locals
+        {
+            uint8_t gap_00[0x40];
+            char text[0x40];           // +0x40 the selected item's name for the notice (state 5)
+        };
+        static_assert(offsetof(Locals, text) == 0x40 && sizeof(Locals) == 0x80);
+        port::GuestFrameOf<Locals> frame;
         const auto setState = [&](int32_t state) { bag->state = state; };
-        const auto slotOf = [&]() { return b + 16u * static_cast<uint32_t>(bag->cursor); };
+        const auto selected = [&]() { return bag.field(&Bag::slots) + bag->cursor; };
         const auto model = [&]() { return bag->model; };
         const auto hudBack = [&]() {
             city->hudVisible[1] = 1;
@@ -772,7 +769,7 @@ namespace mm
         case 1:
         {
             bag->slide = bag->slide + ps2f(10.0f);
-            slideBag(b, bag->slide, 0x001AEF10u);
+            slideBag(bag, bag->slide, 0x001AEF10u);
             A3D_Animate(model(), 0, bag->slide);
             if (bag->slide < ps2f(120.0f))
                 break;
@@ -781,8 +778,8 @@ namespace mm
             if (list != 0u)
                 list = ListMenu_ctor(GuestPtr<ListMenu>{list}, 6, 0x10, 0x127, 0x5A, 0x3C, 0xFF0000).address;
             bag->list = GuestPtr<ListMenu>{list};
-            port::store<uint32_t>(list + 0x298u, 0u);
-            port::store<uint32_t>(list + 0x294u, 0u);
+            bag->list->canSelect = 0;
+            bag->list->canCancel = 0;
             for (int i = 0; i < port::load<uint8_t>(globals::kBagSlotsBySize + bag->size); ++i)
                 ListMenu_AddItems(bag->list, 0xC, 1, 0, -1, 0, -1);
             BagMenu_RefreshList(bag);
@@ -803,16 +800,16 @@ namespace mm
             break;
         }
         case 2:
-            ListMenu_HandleInput(bag->list, GuestPtr<int32_t>{b + 0x1A0u});
+            ListMenu_HandleInput(bag->list, bag.field(&Bag::cursor));
             BagMenu_UpdateItemText(bag);
             if ((Pad_Pressed(0) & 0x40u) != 0)
             {
-                if (port::load<uint16_t>(slotOf() + 4u) != 0)
+                if (selected()->group != 0)
                     BagMenu_UseSelected(bag, city);
             }
             else if ((Pad_Pressed(0) & 0x80u) != 0)
             {
-                if (port::load<uint16_t>(slotOf() + 4u) != 0)
+                if (selected()->group != 0)
                 {
                     setState(4);
                     uint32_t question = sdk::operator_new(0x20u);
@@ -828,22 +825,21 @@ namespace mm
             {
                 setState(3);
                 bag->slide = std::bit_cast<float>(0x42F00000u);
-                lifetime::deleteWith(b + 0x174u, [](uint32_t list) { ListMenu_dtor(GuestPtr<ListMenu>{list}, 1); });
-                lifetime::deleteVirtual(b + 0x178u, 8);
-                lifetime::deleteTextBox(b + 0x170u);
-                lifetime::deleteFrame(b + 0x17Cu);
-                lifetime::deleteFrame(b + 0x180u);
-                lifetime::deleteFrame(b + 0x184u);
-                lifetime::deleteTextBox(b + 0x188u);
-                lifetime::deleteTextBox(b + 0x18Cu);
-                lifetime::deleteTextBox(b + 0x190u);
+                lifetime::deleteWith(bag.field(&Bag::list).address,
+                                     [](uint32_t list) { ListMenu_dtor(GuestPtr<ListMenu>{list}, 1); });
+                lifetime::deleteVirtual(bag.field(&Bag::question).address, offsetof(Widget, vtable));
+                lifetime::deleteTextBox(bag.field(&Bag::nameText).address);
+                for (int i = 0; i < 3; ++i)
+                    lifetime::deleteFrame((bag.field(&Bag::frames) + i).address);
+                for (int i = 0; i < 3; ++i)
+                    lifetime::deleteTextBox((bag.field(&Bag::labels) + i).address);
                 Sound_PlaySe(8, 0, 0x3C, 0.0f, 0.0f);
             }
             break;
         case 3:
             bag->slide = bag->slide - ps2f(10.0f);
             A3D_Animate(model(), 0, bag->slide);
-            slideBag(b, bag->slide, 0x001AEF10u);
+            slideBag(bag, bag->slide, 0x001AEF10u);
             if (bag->slide <= ps2f(0.0f))
             {
                 setState(0);
@@ -859,20 +855,20 @@ namespace mm
                 break;
             const int32_t answer = bag->question->choice;
             setState(2);
-            lifetime::deleteVirtual(b + 0x178u, 8);
+            lifetime::deleteVirtual(bag.field(&Bag::question).address, offsetof(Widget, vtable));
             if (answer == 0)
             {
                 Sound_PlaySe(0xF, 0, 0x3C, 0.0f, 0.0f);
-                Bag_RemoveSlot(bag, GuestPtr<uint16_t>{slotOf() + 4u});
+                Bag_RemoveSlot(bag, selected());
                 BagMenu_RefreshList(bag);
             }
             break;
         }
         case 5:
         {
-            const uint32_t buffer = sp + 0x40u;
-            port::store<uint8_t>(buffer, 0);
-            const GuestPtr<BagSlot> slot{slotOf() + 4u};
+            const uint32_t buffer = frame.at(&Locals::text).address;
+            frame->text[0] = 0;
+            const GuestPtr<BagSlot> slot = selected();
             const uint32_t item = slot->group;
             if (item != 0)
             {
@@ -882,7 +878,7 @@ namespace mm
                 const uint32_t kind = record->kind;
                 if (kind == 0x17 || kind - 0x1Au < 2u || kind == 0x1C)
                 {
-                    const uint32_t count = static_cast<uint8_t>(GuestPtr<BagSlot>{slotOf() + 4u}->count);
+                    const uint32_t count = static_cast<uint8_t>(selected()->count);
                     if (static_cast<int32_t>(count) >= 2)
                         sdk::sprintf(buffer + static_cast<uint32_t>(sdk::strlen(buffer)), 0x001B5B48u, count);
                 }
@@ -892,7 +888,7 @@ namespace mm
         }
         case 6:
             bag->slide = bag->slide - ps2f(10.0f);
-            slideBag(b, bag->slide, 0x001AEF20u);
+            slideBag(bag, bag->slide, 0x001AEF20u);
             A3D_Animate(model(), 0, bag->slide);
             if (bag->slide <= ps2f(0.0f))
             {
@@ -904,7 +900,7 @@ namespace mm
             break;
         case 7:
             bag->slide = bag->slide + ps2f(10.0f);
-            slideBag(b, bag->slide, 0x001AEF20u);
+            slideBag(bag, bag->slide, 0x001AEF20u);
             A3D_Animate(model(), 0, bag->slide);
             if (bag->slide < ps2f(120.0f))
                 break;
@@ -920,6 +916,26 @@ namespace mm
 
     PORT_FN(BagMenu_Update);
 
+    namespace
+    {
+        // The claim colour of the entry (the icon of the first item its home supplies, level 1, mm_ClaimIcon_GetColor)
+        // with each of red, green and blue brought halfway to 1 from where it is, and colour table entry 12 (lit) in w.
+        void entryColour(GuestPtr<Applicants> applicants, int32_t entry, GuestPtr<Vec4> out)
+        {
+            const uint32_t icon = Claim_GetSupplies(applicants->claims[entry])->id;
+            ClaimIcon_GetColor(icon, 1, out);
+            for (ps2f Vec4::*lane : {&Vec4::x, &Vec4::y, &Vec4::z})
+            {
+                const ps2f value = (*out).*lane;
+                if (value < ps2f(1.0f))
+                    (*out).*lane = ps2f(1.0f) - ps2f(0.5f) * (ps2f(1.0f) - value);
+                else
+                    (*out).*lane = ps2f(1.0f) + ps2f(0.5f) * (value - ps2f(1.0f));
+            }
+            port::store<int32_t>(out.field(&Vec4::w).address, 12);
+        }
+    }
+
     // The lighting of the applicant card's claim icons as the cursor and the shown entry (top) move. Idle (rollDir
     // 0), a gap between them starts a step: forward (top < cursor: direction +1, the icon of the top entry lit on the eight nodes of the
     // table at 0x1B7A10, the cursor's on the first) or backward (direction -1, rollPhase at 40, the other way round). Moving, the
@@ -929,13 +945,18 @@ namespace mm
     // its distance from 1 on each of red, green and blue.
     void Applicants_DrawDetails(GuestPtr<Applicants> applicants)
     {
-        port::GuestFrame<0x90> frame;
-        const uint32_t sp = frame.ptr().address;
-        const auto loadF = [](uint32_t at) { return ps2f(std::bit_cast<float>(port::load<uint32_t>(at))); };
-        const auto storeF = [](uint32_t at, ps2f value) { port::store<uint32_t>(at, std::bit_cast<uint32_t>(value.v)); };
-        // The index in the field at `at` is kept among the entries (0 to count - 1).
-        const auto clampIndex = [&](uint32_t at) {
-            const int32_t index = port::load<int32_t>(at);
+        struct Locals
+        {
+            uint8_t gap_00[0x60];
+            Vec4 settled;              // +0x60 the colour once the roll ends
+            Vec4 forward;              // +0x70 the colours as a roll forward starts
+            Vec4 backward;             // +0x80 and a roll back
+        };
+        static_assert(offsetof(Locals, settled) == 0x60 && offsetof(Locals, forward) == 0x70 &&
+                      offsetof(Locals, backward) == 0x80 && sizeof(Locals) == 0x90);
+        port::GuestFrameOf<Locals> frame;
+        // The index is kept among the entries (0 to count - 1).
+        const auto clampIndex = [&](int32_t &index) {
             int32_t clamped = 0;
             if (index >= 0)
             {
@@ -943,27 +964,16 @@ namespace mm
                 if (!(clamped < index))
                     clamped = index;
             }
-            port::store<int32_t>(at, clamped);
-        };
-        const auto entryColour = [&](int32_t entry, uint32_t out) {
-            const uint32_t icon = Claim_GetSupplies(applicants->claims[entry])->id;
-            ClaimIcon_GetColor(icon, 1, GuestPtr<Vec4>{out});
-            for (uint32_t lane = 0; lane < 3; ++lane)
-            {
-                const ps2f value = loadF(out + 4u * lane);
-                if (value < ps2f(1.0f))
-                    storeF(out + 4u * lane, ps2f(1.0f) - ps2f(0.5f) * (ps2f(1.0f) - value));
-                else
-                    storeF(out + 4u * lane, ps2f(1.0f) + ps2f(0.5f) * (value - ps2f(1.0f)));
-            }
-            port::store<int32_t>(GuestPtr<Vec4>{out}.field(&Vec4::w).address, 12); // colour table entry 12: lit
+            index = clamped;
         };
         const auto model = [&]() { return applicants->frameModel; };
-        const auto lightAll = [&](uint32_t colour) {
+        const auto lightAll = [&](GuestPtr<Vec4> colour) {
             for (uint32_t node = 0; node < 8; ++node)
-                A3DObject_ChangeLuminosity(model(), GuestPtr<uint32_t>{colour}, port::load<uint8_t>(0x001B7A10u + node));
+                A3DObject_ChangeLuminosity(model(), colour, port::load<uint8_t>(0x001B7A10u + node));
         };
-        const auto lightFirst = [&](uint32_t colour) { A3DObject_ChangeLuminosity(model(), GuestPtr<uint32_t>{colour}, 0); };
+        const auto lightFirst = [&](GuestPtr<Vec4> colour) { A3DObject_ChangeLuminosity(model(), colour, 0); };
+        const GuestPtr<Vec4> forward = frame.at(&Locals::forward), backward = frame.at(&Locals::backward);
+        const GuestPtr<Vec4> settled = frame.at(&Locals::settled);
         if (applicants->rollDir == ps2f(0.0f))
         {
             if (applicants->count == 0)
@@ -972,24 +982,24 @@ namespace mm
             if (top < cursor)
             {
                 applicants->rollDir = std::bit_cast<float>(0x3F800000u);
-                clampIndex(port::guest(&applicants->cursor));
-                clampIndex(port::guest(&applicants->top));
-                entryColour(applicants->top, sp + 0x70u);
-                lightAll(sp + 0x70u);
-                entryColour(applicants->cursor, sp + 0x70u);
-                lightFirst(sp + 0x70u);
+                clampIndex(applicants->cursor);
+                clampIndex(applicants->top);
+                entryColour(applicants, applicants->top, forward);
+                lightAll(forward);
+                entryColour(applicants, applicants->cursor, forward);
+                lightFirst(forward);
                 applicants->stateColour = 0xFF;
             }
             else if (cursor < top)
             {
                 applicants->rollDir = std::bit_cast<float>(0xBF800000u);
                 applicants->rollPhase = std::bit_cast<float>(0x42200000u);
-                clampIndex(port::guest(&applicants->cursor));
-                clampIndex(port::guest(&applicants->top));
-                entryColour(applicants->top, sp + 0x80u);
-                lightFirst(sp + 0x80u);
-                entryColour(applicants->cursor, sp + 0x80u);
-                lightAll(sp + 0x80u);
+                clampIndex(applicants->cursor);
+                clampIndex(applicants->top);
+                entryColour(applicants, applicants->top, backward);
+                lightFirst(backward);
+                entryColour(applicants, applicants->cursor, backward);
+                lightAll(backward);
             }
             return;
         }
@@ -1014,9 +1024,9 @@ namespace mm
             return;
         applicants->rollPhase = 0.0f;
         applicants->rollDir = 0.0f;
-        entryColour(applicants->top, sp + 0x60u);
-        lightAll(sp + 0x60u);
-        lightFirst(sp + 0x60u);
+        entryColour(applicants, applicants->top, settled);
+        lightAll(settled);
+        lightFirst(settled);
     }
 
     PORT_FN(Applicants_DrawDetails);
@@ -1035,28 +1045,18 @@ namespace mm
     // node 0; the card text (cardText) shows when cardShown is set and there are entries.
     void Applicants_Draw(GuestPtr<Applicants> applicants)
     {
-        port::GuestFrame<0xB0> frame;
-        const uint32_t sp = frame.ptr().address;
-        const auto loadF = [](uint32_t at) { return ps2f(std::bit_cast<float>(port::load<uint32_t>(at))); };
-        const auto storeF = [](uint32_t at, ps2f value) { port::store<uint32_t>(at, std::bit_cast<uint32_t>(value.v)); };
+        struct Locals
+        {
+            uint8_t gap_00[0x90];
+            Vec4 colour;               // +0x90 an icon's colour
+            Vec4 relit;                // +0xA0 the card's, when relit
+        };
+        static_assert(offsetof(Locals, colour) == 0x90 && offsetof(Locals, relit) == 0xA0 && sizeof(Locals) == 0xB0);
+        port::GuestFrameOf<Locals> frame;
         const auto constant = [](uint32_t bits) { return ps2f(std::bit_cast<float>(bits)); };
         const auto cardModel = [applicants]() { return applicants->frameModel; };
         const auto iconModel = [applicants]() { return applicants->cardModel; };
-        // The claim colour of the entry (the icon of the first item its home supplies, level 1) with each of red, green and
-        // blue brought halfway to 1 from where it is, and 12 in the fourth place.
-        const auto entryColour = [&](int32_t entry, uint32_t out) {
-            const uint32_t icon = Claim_GetSupplies(applicants->claims[entry])->id;
-            ClaimIcon_GetColor(icon, 1, GuestPtr<Vec4>{out});
-            for (uint32_t lane = 0; lane < 3; ++lane)
-            {
-                const ps2f value = loadF(out + 4u * lane);
-                if (value < ps2f(1.0f))
-                    storeF(out + 4u * lane, ps2f(1.0f) - ps2f(0.5f) * (ps2f(1.0f) - value));
-                else
-                    storeF(out + 4u * lane, ps2f(1.0f) + ps2f(0.5f) * (value - ps2f(1.0f)));
-            }
-            port::store<int32_t>(GuestPtr<Vec4>{out}.field(&Vec4::w).address, 12); // colour table entry 12: lit
-        };
+        const GuestPtr<Vec4> colour = frame.at(&Locals::colour), relit = frame.at(&Locals::relit);
         const uint8_t mode = applicants->enabled;
         if (mode == 0)
             return;
@@ -1072,10 +1072,10 @@ namespace mm
                 applicants->relight = 0;
                 if (relight != 0)
                 {
-                    entryColour(applicants->top, sp + 0xA0u);
-                    A3DObject_ChangeLuminosity(cardModel(), GuestPtr<uint32_t>{sp + 0xA0u}, 0);
+                    entryColour(applicants, applicants->top, relit);
+                    A3DObject_ChangeLuminosity(cardModel(), relit, 0);
                     for (uint32_t node = 0; node < 8; ++node)
-                        A3DObject_ChangeLuminosity(cardModel(), GuestPtr<uint32_t>{sp + 0xA0u}, port::load<uint8_t>(0x001B7A10u + node));
+                        A3DObject_ChangeLuminosity(cardModel(), relit, port::load<uint8_t>(0x001B7A10u + node));
                 }
                 A3DObject_Draw(cardModel());
                 const int32_t shown = applicants->count;
@@ -1100,18 +1100,18 @@ namespace mm
                     Mat4_Copy(world, GuestPtr<Vec4>{0x001B2550u});
                     const Vec4 &card = applicants->cardMatrix[3];
                     const ps2f place = ps2f(static_cast<float>(i)) * spacing;
-                    storeF(port::guest(&world[3].x), (loadF(port::guest(&card.x)) + place) - constant(0x3F866666u));
-                    storeF(port::guest(&world[3].y), constant(0xBF3AE148u) + loadF(port::guest(&card.y)));
+                    world[3].x = (card.x + place) - constant(0x3F866666u);
+                    world[3].y = constant(0xBF3AE148u) + card.y;
                     const int32_t cursor = applicants->sliding != 0 ? applicants->savedTop : applicants->cursor;
                     if (cursor == i)
-                        storeF(port::guest(&world[3].z), loadF(port::guest(&card.z)) - constant(0x3D8F5C29u));
+                        world[3].z = card.z - constant(0x3D8F5C29u);
                     else
                     {
                         const int32_t distance = std::abs(cursor - i);
-                        storeF(port::guest(&world[3].z), (loadF(port::guest(&card.z)) + constant(0x3A83126Fu) * ps2f(static_cast<float>(distance))) - constant(0x3CF5C28Fu));
+                        world[3].z = (card.z + constant(0x3A83126Fu) * ps2f(static_cast<float>(distance))) - constant(0x3CF5C28Fu);
                     }
-                    entryColour(i, sp + 0x90u);
-                    Instance_DrawNode(iconModel(), GuestPtr<Vec4>{sp + 0x90u}, static_cast<int>(node), 0);
+                    entryColour(applicants, i, colour);
+                    Instance_DrawNode(iconModel(), colour, static_cast<int>(node), 0);
                 }
                 const uint8_t marker = applicants->stateColour;
                 if (marker != 0xFF)
@@ -1120,27 +1120,27 @@ namespace mm
                     Mat4_Copy(GuestPtr<Vec4>{markerMatrix}, GuestPtr<Vec4>{0x001B2550u});
                     Vec4 &markerAt = applicants->cardNodeB[3];
                     const Vec4 &frameAt = applicants->frameMatrix[3];
-                    storeF(port::guest(&markerAt.x), loadF(port::guest(&frameAt.x)) + loadF(0x001B7A20u + 4u * marker));
-                    port::store<uint32_t>(port::guest(&markerAt.y), port::load<uint32_t>(port::guest(&frameAt.y)));
-                    port::store<uint32_t>(port::guest(&markerAt.z), port::load<uint32_t>(port::guest(&frameAt.z)));
-                    Instance_DrawNode(iconModel(), GuestPtr<Vec4>{sp + 0x90u}, 2, 0);
+                    markerAt.x = frameAt.x + GuestPtr<ps2f>{0x001B7A20u}[marker];
+                    markerAt.y = frameAt.y;
+                    markerAt.z = frameAt.z;
+                    Instance_DrawNode(iconModel(), colour, 2, 0);
                 }
             }
             else
             {
-                port::store<uint32_t>(sp + 0x90u, 0x437F0000u);
-                port::store<uint32_t>(sp + 0x94u, 0x437F0000u);
-                port::store<uint32_t>(sp + 0x98u, 0x437F0000u);
-                port::store<int32_t>(sp + 0x9Cu, 12);
-                Instance_DrawMesh(iconModel(), GuestPtr<Vec4>{applicants->frameMatrix.address}, GuestPtr<Vec4>{sp + 0x90u}, 4, 0);
+                frame->colour.x = 255.0f;
+                frame->colour.y = 255.0f;
+                frame->colour.z = 255.0f;
+                port::store<int32_t>(colour.field(&Vec4::w).address, 12); // colour table entry 12
+                Instance_DrawMesh(iconModel(), GuestPtr<Vec4>{applicants->frameMatrix.address}, colour, 4, 0);
             }
         }
         if (applicants->sliding != 0)
         {
             Applicants_Layout(applicants);
             DmaList_QueueClearZ();
-            entryColour(applicants->top, sp + 0x90u);
-            Instance_DrawNode(iconModel(), GuestPtr<Vec4>{sp + 0x90u}, 0, 0);
+            entryColour(applicants, applicants->top, colour);
+            Instance_DrawNode(iconModel(), colour, 0, 0);
         }
         if (applicants->cardShown != 0 && applicants->count != 0)
             TextBox_Draw(applicants->cardText);

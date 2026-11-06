@@ -145,8 +145,13 @@ namespace mm
     void SnowLayer_Draw(GuestPtr<SnowLayer> layer, int pass, int packet, int clock, GuestPtr<Vec4> view)
     {
         using namespace vu0;
-        port::GuestFrame<0xA0> frame; // the screen parameters at +0x90
-        const uint32_t sp = frame.ptr().address;
+        struct Locals
+        {
+            uint8_t gap_00[0x90];
+            Vec4 screen;               // +0x90 mm_Math_ProjectionMatrix's screen: half-size 800 by 800 (then 1 and 10)
+        };
+        static_assert(offsetof(Locals, screen) == 0x90 && sizeof(Locals) == 0xA0);
+        port::GuestFrameOf<Locals> frame;
         int32_t t;
         if (clock < 0x10B30)
             t = clock < 0x4651 ? clock : 0x4650;
@@ -175,12 +180,10 @@ namespace mm
                 y = F(0xC2200000u);
             flake.y = y;
         }
-        port::store<uint32_t>(sp + 0x90u, 0x44480000u);
-        port::store<uint32_t>(sp + 0x94u, 0x44480000u);
-        port::store<uint32_t>(sp + 0x98u, 0x3F800000u);
-        port::store<uint32_t>(sp + 0x9Cu, 0x41200000u);
+        frame->screen = Vec4{800.0f, 800.0f, 1.0f, 10.0f};
         const GuestPtr<Vec4> projection = GuestPtr<Vec4>::of(layer->projection[0]);
-        Math_ProjectionMatrix(GuestPtr<ps2f>{projection.address}, GuestPtr<ps2f>{sp + 0x90u}, F(0x44400000u), F(0x3F800000u), F(0x42480000u));
+        Math_ProjectionMatrix(GuestPtr<ps2f>{projection.address}, frame.at(&Locals::screen).as<ps2f>(), F(0x44400000u),
+                              F(0x3F800000u), F(0x42480000u));
         for (int row = 0; row < 4; ++row)
             vf(1 + row) = load(view + row);
         for (int row = 0; row < 4; ++row)

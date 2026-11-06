@@ -1080,8 +1080,30 @@ namespace mm
     // 16) and is the result.
     int McManager_FormatSlotText(GuestPtr<McManager> mc, GuestPtr<int32_t> cursor, GuestPtr<char> text, GuestPtr<uint32_t> isNewest)
     {
-        port::GuestFrame<0xD0> frame;
-        const uint32_t sp = frame.ptr().address;
+        // A clock as the real-time clock keeps it, every field in BCD.
+        struct BcdClock
+        {
+            uint8_t status;
+            uint8_t second;
+            uint8_t minute;
+            uint8_t hour;
+            uint8_t pad;
+            uint8_t day;
+            uint8_t month;
+            uint8_t year;              // since 2000
+        };
+        struct Locals
+        {
+            uint8_t gap_00[0xB0];
+            BcdClock clock;            // +0xB0 the save's time, made local (mm_sceScfGetLocalTimefromRTC)
+            char yearText[0xC];        // +0xB8
+            char dayText[4];           // +0xC4
+            char hourText[4];          // +0xC8
+            char minuteText[4];        // +0xCC
+        };
+        static_assert(offsetof(Locals, clock) == 0xB0 && offsetof(Locals, yearText) == 0xB8 && offsetof(Locals, dayText) == 0xC4 &&
+                      offsetof(Locals, minuteText) == 0xCC && sizeof(Locals) == 0xD0);
+        port::GuestFrameOf<Locals> frame;
         int newest = -1;
         for (int slot = 0; slot < 0x10; ++slot)
         {
@@ -1128,22 +1150,25 @@ namespace mm
             }
         }
         const CardTime &saved = globals::saveSlotEntry(static_cast<uint32_t>(slot))->modified;
-        port::store<uint64_t>(sp + 0xB0u, port::load<uint64_t>(0x001BDBA0u));
+        frame->clock = *GuestPtr<BcdClock>{0x001BDBA0u};
         const auto toBcd = [](uint32_t value) { return static_cast<uint8_t>((value / 10u) * 16u + value % 10u); };
         const auto fromBcd = [](uint8_t value) { return static_cast<int32_t>(value & 0xFu) + static_cast<int32_t>(value >> 4) * 10; };
-        port::store<uint8_t>(sp + 0xB1u, toBcd(saved.second));
-        port::store<uint8_t>(sp + 0xB2u, toBcd(saved.minute));
-        port::store<uint8_t>(sp + 0xB3u, toBcd(saved.hour));
-        port::store<uint8_t>(sp + 0xB5u, toBcd(saved.day));
-        port::store<uint8_t>(sp + 0xB6u, toBcd(saved.month));
-        port::store<uint8_t>(sp + 0xB7u, toBcd(saved.year % 100u));
-        sdk::sceScfGetLocalTimefromRTC(sp + 0xB0u);
-        const int32_t year = 2000 + fromBcd(port::load<uint8_t>(sp + 0xB7u));
-        const int32_t day = fromBcd(port::load<uint8_t>(sp + 0xB5u));
-        Text_FormatPadded(GuestPtr<char>{sp + 0xB8u}, year, 4);
-        Text_FormatPadded(GuestPtr<char>{sp + 0xC4u}, day, 2);
-        Text_FormatPadded(GuestPtr<char>{sp + 0xC8u}, fromBcd(port::load<uint8_t>(sp + 0xB3u)), 2);
-        Text_FormatPadded(GuestPtr<char>{sp + 0xCCu}, fromBcd(port::load<uint8_t>(sp + 0xB2u)), 2);
+        BcdClock &clock = frame->clock;
+        clock.second = toBcd(saved.second);
+        clock.minute = toBcd(saved.minute);
+        clock.hour = toBcd(saved.hour);
+        clock.day = toBcd(saved.day);
+        clock.month = toBcd(saved.month);
+        clock.year = toBcd(saved.year % 100u);
+        sdk::sceScfGetLocalTimefromRTC(frame.at(&Locals::clock).address);
+        const int32_t year = 2000 + fromBcd(clock.year);
+        const int32_t day = fromBcd(clock.day);
+        const uint32_t yearText = frame.at(&Locals::yearText).address, dayText = frame.at(&Locals::dayText).address;
+        const uint32_t hourText = frame.at(&Locals::hourText).address, minuteText = frame.at(&Locals::minuteText).address;
+        Text_FormatPadded(GuestPtr<char>{yearText}, year, 4);
+        Text_FormatPadded(GuestPtr<char>{dayText}, day, 2);
+        Text_FormatPadded(GuestPtr<char>{hourText}, fromBcd(clock.hour), 2);
+        Text_FormatPadded(GuestPtr<char>{minuteText}, fromBcd(clock.minute), 2);
         uint32_t suffix = 0;
         switch (day % 10)
         {
@@ -1159,9 +1184,9 @@ namespace mm
         default:
             break;
         }
-        const int32_t month = fromBcd(port::load<uint8_t>(sp + 0xB6u));
+        const int32_t month = fromBcd(clock.month);
         sdk::sprintf(text.address, 0x001B7EA0u, *cursor < 8 ? 1 : 2, port::load<uint32_t>(0x001B0B8Cu + 4u * static_cast<uint32_t>(month)),
-                     sp + 0xC4u, port::load<uint32_t>(0x001B0BC0u + 4u * suffix), sp + 0xB8u, sp + 0xC8u, sp + 0xCCu);
+                     dayText, port::load<uint32_t>(0x001B0BC0u + 4u * suffix), yearText, hourText, minuteText);
         *isNewest = *cursor == newest ? 1u : 0u;
         McManager_FormatSlotLine(mc, *cursor, text, *cursor == newest ? 1 : 0);
         *cursor = *cursor + 1;

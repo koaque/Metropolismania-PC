@@ -79,8 +79,9 @@ struct BuildingTypeVtable {
     uint32_t acceptsOn;        /* +0x20 whether the type can be placed on an object (mm_Map_CheckPlacement) */
     uint32_t isOpen;           /* +0x24 opening hours (mm_Bldg_IsOpen) */
     uint32_t nearestHit;       /* +0x28 the nearest hit and its distance (mm_Player_NearestObject) */
-    uint32_t floorBelow;       /* +0x2C whether a segment from a point down crosses the object, the crossing out (the
-                                  surface the player stands on, mm_Player_FloorBelow) */
+    uint32_t floorBelow;       /* +0x2C whether a segment from a point up by a lift (to y - lift; heights grow
+                                  downwards) crosses the object, the highest crossing out: the surface the player is
+                                  put on (mm_Player_FloorBelow) */
     uint32_t rayHit;           /* +0x30 whether a ray hits the object (mm_MapObj_RayHit) */
     uint32_t animate;          /* +0x34 every frame with the time of day (mm_BldgType_CallAll): the ride animations */
 };
@@ -535,6 +536,7 @@ struct TalkFarView {
     TalkView base;
     Vec4 returnTarget;         /* +0x270 */
     int32_t building;          /* +0x280 */
+    uint8_t unk_284[0xC];
 };
 
 /* The view inside a home (0x2A0 bytes, vtable 0x1BD810): the talk view plus the walk-around state (mm_MyHome_ctor). */

@@ -269,16 +269,24 @@ namespace mm
         }
     }
 
-    // The building's footprint widened by `margin` on each side: x0, z0, x1, z1 (x1 and z1 past the last tile).
-    void Building_GetFootprint(GuestPtr<MapObject> building, int margin, GuestPtr<uint32_t> rect)
+    namespace
     {
-        const uint32_t size = typeOf(building)->size;
-        rect[0] = building->tile & 0x7Fu;
-        rect[1] = static_cast<uint32_t>(building->tile >> 7);
-        rect[2] = static_cast<uint32_t>(margin) + (rect[0] + size);
-        rect[3] = static_cast<uint32_t>(margin) + (rect[1] + size);
-        rect[0] = rect[0] - static_cast<uint32_t>(margin);
-        rect[1] = rect[1] - static_cast<uint32_t>(margin);
+        // Whether two blocks overlap, and whether a block holds tile (x, z); x1 and z1 lie one past the block, as
+        // mm_Building_GetFootprint gives them.
+        bool overlap(const TileRect &a, const TileRect &b) { return a.x0 < b.x1 && b.x0 < a.x1 && a.z0 < b.z1 && b.z0 < a.z1; }
+        bool holds(const TileRect &r, int x, int z) { return x >= r.x0 && x < r.x1 && z >= r.z0 && z < r.z1; }
+    }
+
+    // The building's footprint widened by `margin` on each side (x1 and z1 past the last tile).
+    void Building_GetFootprint(GuestPtr<MapObject> building, int margin, GuestPtr<TileRect> rect)
+    {
+        const int size = typeOf(building)->size;
+        rect->x0 = building->tile & 0x7F;
+        rect->z0 = building->tile >> 7;
+        rect->x1 = margin + (rect->x0 + size);
+        rect->z1 = margin + (rect->z0 + size);
+        rect->x0 = rect->x0 - margin;
+        rect->z0 = rect->z0 - margin;
     }
 
     // ---- Check slots: whether the event may start
@@ -403,18 +411,23 @@ namespace mm
     // (its family's first member).
     int EvShoppingTogether_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
     {
-        port::GuestFrame<0x60> frame;
+        struct Locals
+        {
+            uint8_t gap_00[0x50];
+            TileRect shop;             // +0x50 the shop's footprint widened by 5
+        };
+        static_assert(offsetof(Locals, shop) == 0x50 && sizeof(Locals) == 0x60);
+        port::GuestFrameOf<Locals> frame;
         if (person->charType < 7 || person->charType >= 30 || person->inside == kNoObject)
             return 0;
         const GuestPtr<MapObject> shop = Map_GetRecord(city->map, person->inside);
         const uint8_t category = typeOf(shop)->category;
         if (category < 6 || category >= 11 || shop->id == person->home || shop->id == person->target || (shop->flags & 0x40u) != 0)
             return 0;
-        const GuestPtr<int32_t> rect{frame.ptr().address + 0x50u};
-        Building_GetFootprint(shop, 5, GuestPtr<uint32_t>{rect.address});
+        Building_GetFootprint(shop, 5, frame.at(&Locals::shop));
         const int z = sdk::fptosi(ps2f(64.0f) - ps2f(person->z));
         const int x = sdk::fptosi(ps2f(64.0f) + ps2f(person->x));
-        if (x >= rect[0] && x < rect[2] && z >= rect[1] && z < rect[3])
+        if (holds(frame->shop, x, z))
             return 0;
         actorAt(data, 1)->object = shop->id;
         actorAt(data, 1)->family = shop->family;
@@ -441,7 +454,7 @@ namespace mm
         const GuestPtr<MapObject> homeB = Map_FindFamilyHome(city->map, familyB);
         if (!homeB)
             return 0;
-        const GuestPtr<int32_t> rect{0x001BA8D0u};
+        const GuestPtr<TileRect> rect{globals::kWholeMapRect};
         GuestPtr<MapObject> target = EvThief_FindBuilding(city, 5, rect);
         if (!target)
             target = EvThief_FindBuilding(city, 1, rect);
@@ -555,7 +568,14 @@ namespace mm
     // original stack, then by memcpy, whose result, the destination, is what the start slot returns).
     uint32_t EvAdoption_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
-        port::GuestFrame<0x70> frame;
+        struct Locals
+        {
+            uint8_t gap_00[0x50];
+            AdoptionChild children[6]; // +0x50 the children, copied in from their table
+            uint8_t gap_68[8];
+        };
+        static_assert(offsetof(Locals, children) == 0x50 && sizeof(Locals) == 0x70);
+        port::GuestFrameOf<Locals> frame;
         const GuestPtr<EvAdoptionData> adoption = data.as<EvAdoptionData>();
         data->actor.person = kNoPerson;
         data->actor.object = kNoObject;
@@ -569,10 +589,9 @@ namespace mm
             *out = static_cast<int32_t>(family);
             ++out;
         }
-        const uint32_t scratch = frame.ptr().address + 0x50u;
-        for (uint32_t i = 0; i < 0x18u; i += 4u)
-            port::store<uint32_t>(scratch + i, port::load<uint32_t>(globals::kAdoptionStart + i));
-        return sdk::memcpy(port::guest(adoption->children), scratch, 0x18);
+        for (int i = 0; i < 6; ++i)
+            frame->children[i] = GuestPtr<AdoptionChild>{globals::kAdoptionStart}[i];
+        return sdk::memcpy(port::guest(adoption->children), frame.at(&Locals::children).address, 0x18);
     }
 
     // ---- Update slots
@@ -960,11 +979,17 @@ namespace mm
             return data.as<EvMissingChildrenData>()->outcome;
         if (mode != 1)
             return 0;
-        port::GuestFrame<0x60> frame;
-        const GuestPtr<int32_t> a{frame.ptr().address + 0x40u}, b{frame.ptr().address + 0x50u};
-        Building_GetFootprint(Map_GetRecord(city->map, data->actor.object), 5, GuestPtr<uint32_t>{a.address});
-        Building_GetFootprint(Map_GetRecord(city->map, actor->object), 0, GuestPtr<uint32_t>{b.address});
-        return a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3] ? 1 : 0;
+        struct Locals
+        {
+            uint8_t gap_00[0x40];
+            TileRect event;            // +0x40 the event's building widened by 5
+            TileRect actor;            // +0x50 the actor's
+        };
+        static_assert(offsetof(Locals, event) == 0x40 && offsetof(Locals, actor) == 0x50 && sizeof(Locals) == 0x60);
+        port::GuestFrameOf<Locals> frame;
+        Building_GetFootprint(Map_GetRecord(city->map, data->actor.object), 5, frame.at(&Locals::event));
+        Building_GetFootprint(Map_GetRecord(city->map, actor->object), 0, frame.at(&Locals::actor));
+        return overlap(frame->event, frame->actor) ? 1 : 0;
     }
 
     // ---- the party popup
@@ -1058,11 +1083,11 @@ namespace mm
     namespace
     {
         // Whether the building's footprint overlaps the rectangle (x0, z0, x1, z1; the ends excluded).
-        bool overlapsRect(GuestPtr<MapObject> building, GuestPtr<int32_t> rect)
+        bool overlapsRect(GuestPtr<MapObject> building, GuestPtr<TileRect> rect)
         {
             const int size = typeOf(building)->size;
             const int x = building->tile & 0x7F, z = building->tile >> 7;
-            return rect[0] < x + size && x < rect[2] && rect[1] < z + size && z < rect[3];
+            return rect->x0 < x + size && x < rect->x1 && rect->z0 < z + size && z < rect->z1;
         }
 
         // A building that can take part: its family lives in the city and it has no claim met and no maxed meter.
@@ -1070,7 +1095,7 @@ namespace mm
     }
 
     // The first available building of `type` in tile list `list` that overlaps the rectangle.
-    GuestPtr<MapObject> EvAlien_FindBuilding(GuestPtr<CityScene> city, int list, uint32_t type, GuestPtr<int32_t> rect)
+    GuestPtr<MapObject> EvAlien_FindBuilding(GuestPtr<CityScene> city, int list, uint32_t type, GuestPtr<TileRect> rect)
     {
         port::GuestFrame<0x80> frame;
         const GuestPtr<uint32_t> count{frame.ptr().address + 0x7Cu};
@@ -1086,7 +1111,7 @@ namespace mm
     }
 
     // The first available building of `category` in any of the 80 tile lists that overlaps the rectangle.
-    GuestPtr<MapObject> EvThief_FindBuilding(GuestPtr<CityScene> city, uint32_t category, GuestPtr<int32_t> rect)
+    GuestPtr<MapObject> EvThief_FindBuilding(GuestPtr<CityScene> city, uint32_t category, GuestPtr<TileRect> rect)
     {
         port::GuestFrame<0x90> frame;
         const GuestPtr<uint32_t> count{frame.ptr().address + 0x8Cu};
@@ -1109,9 +1134,16 @@ namespace mm
     // point.
     GuestPtr<MapObject> EvAlien_PickTarget(GuestPtr<CityScene> city, int x, int z)
     {
-        port::GuestFrame<0xC0> frame;
-        const GuestPtr<uint32_t> count{frame.ptr().address + 0xBCu};
-        const GuestPtr<int32_t> rect{frame.ptr().address + 0xA0u};
+        struct Locals
+        {
+            uint8_t gap_00[0xA0];
+            TileRect footprint;        // +0xA0 a building's footprint widened by 1
+            uint8_t gap_B0[0xC];
+            uint32_t count;            // +0xBC the tile list's length
+        };
+        static_assert(offsetof(Locals, footprint) == 0xA0 && offsetof(Locals, count) == 0xBC && sizeof(Locals) == 0xC0);
+        port::GuestFrameOf<Locals> frame;
+        const GuestPtr<uint32_t> count = frame.at(&Locals::count);
         for (uint32_t pair = 0x001B3760u; port::load<uint16_t>(pair) != 0; pair += 4u)
         {
             const uint32_t items = Map_GetTileList(city->map, port::load<uint16_t>(pair), count).address;
@@ -1121,8 +1153,8 @@ namespace mm
                 const GuestPtr<MapObject> building = Map_GetRecord(city->map, port::load<uint16_t>(item));
                 if (building->type != port::load<uint16_t>(pair + 2u) || Family_InCity(building->family) == 0 || (building->flags & 0x40u) != 0)
                     continue;
-                Building_GetFootprint(building, 1, GuestPtr<uint32_t>{rect.address});
-                if (x >= rect[0] && x < rect[2] && z >= rect[1] && z < rect[3])
+                Building_GetFootprint(building, 1, frame.at(&Locals::footprint));
+                if (holds(frame->footprint, x, z))
                     return building;
             }
         }
@@ -1135,17 +1167,23 @@ namespace mm
     {
         if (mode != 0)
             return 0;
-        port::GuestFrame<0x90> frame;
+        struct Locals
+        {
+            uint8_t gap_00[0x70];
+            TileRect actorHome;        // +0x70 the actor's home widened by 10
+            TileRect eventHome;        // +0x80 the event's
+        };
+        static_assert(offsetof(Locals, actorHome) == 0x70 && offsetof(Locals, eventHome) == 0x80 && sizeof(Locals) == 0x90);
+        port::GuestFrameOf<Locals> frame;
         const GuestPtr<MapObject> homeA = Map_FindFamilyHome(city->map, actor->family);
         if (homeA)
         {
             const GuestPtr<MapObject> homeB = Map_FindFamilyHome(city->map, data->actor.family);
             if (homeB)
             {
-                const GuestPtr<int32_t> a{frame.ptr().address + 0x70u}, b{frame.ptr().address + 0x80u};
-                Building_GetFootprint(homeA, 10, GuestPtr<uint32_t>{a.address});
-                Building_GetFootprint(homeB, 0, GuestPtr<uint32_t>{b.address});
-                if (a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3])
+                Building_GetFootprint(homeA, 10, frame.at(&Locals::actorHome));
+                Building_GetFootprint(homeB, 0, frame.at(&Locals::eventHome));
+                if (overlap(frame->actorHome, frame->eventHome))
                     return 1;
             }
         }
@@ -1501,15 +1539,25 @@ namespace mm
         // of the zero-ended table, a building other than that home whose family lives in the city, without a
         // maxed meter and with its claim meter at level 0, overlapping that area, with a resident of that family
         // who passes the test (list id, person). That resident becomes the event's actor family and member.
+        // findSuitor's frame (that of each caller).
+        struct SuitorFrame
+        {
+            TileRect area;             // +0x00 the person's home widened by 5
+            TileRect footprint;        // +0x10 a building's
+            uint32_t count;            // +0x20 the tile list's length
+            uint16_t cursor;           // +0x24 the people cursor
+            uint8_t gap_26[0xA];
+        };
+        static_assert(offsetof(SuitorFrame, footprint) == 0x10 && offsetof(SuitorFrame, count) == 0x20 &&
+                      offsetof(SuitorFrame, cursor) == 0x24 && sizeof(SuitorFrame) == 0x30);
+
         template <typename Suits>
         int findSuitor(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, uint32_t lists, Suits suits)
         {
-            port::GuestFrame<0x30> frame;
-            const uint32_t sp = frame.ptr().address;
-            const GuestPtr<int32_t> area{sp}, rect{sp + 0x10u};
-            const GuestPtr<uint32_t> count{sp + 0x20u};
-            const GuestPtr<uint16_t> cursor{sp + 0x24u};
-            Building_GetFootprint(Map_GetRecord(city->map, person->home), 5, GuestPtr<uint32_t>{area.address});
+            port::GuestFrameOf<SuitorFrame> frame;
+            const GuestPtr<uint32_t> count = frame.at(&SuitorFrame::count);
+            const GuestPtr<uint16_t> cursor = frame.at(&SuitorFrame::cursor);
+            Building_GetFootprint(Map_GetRecord(city->map, person->home), 5, frame.at(&SuitorFrame::area));
             for (uint32_t list = lists; port::load<int32_t>(list) != 0; list += 4u)
             {
                 const int32_t id = port::load<int32_t>(list);
@@ -1522,8 +1570,8 @@ namespace mm
                     const GuestPtr<MapObject> building = Map_GetRecord(city->map, port::load<uint16_t>(item));
                     if (Family_InCity(building->family) == 0 || (building->flags & 0x40u) != 0 || ClaimMeter_Level(building->claimMeter) != 0)
                         continue;
-                    Building_GetFootprint(building, 0, GuestPtr<uint32_t>{rect.address});
-                    if (!(area[0] < rect[2] && rect[0] < area[2] && area[1] < rect[3] && rect[1] < area[3]))
+                    Building_GetFootprint(building, 0, frame.at(&SuitorFrame::footprint));
+                    if (!overlap(frame->area, frame->footprint))
                         continue;
                     *cursor = building->firstPerson;
                     while (const GuestPtr<MapPerson> resident = People_Next(city->map, cursor))
@@ -1777,7 +1825,6 @@ namespace mm
             actor->member = person->member;
         }
 
-        bool overlap(GuestPtr<int32_t> a, GuestPtr<int32_t> b) { return a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]; }
     }
 
     // The alien needs four buildings anywhere on the map: of type 0xE7 (tile list 0xB), one of the types at 0x1B3750
@@ -1787,12 +1834,15 @@ namespace mm
     // marked (0x200); actor 5 is the first Spaceman's Home family, with no person or building.
     int EvAlien_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
-        port::GuestFrame<0x30> frame;
-        const GuestPtr<int32_t> whole{frame.ptr().address};
-        whole[0] = 0;
-        whole[1] = 0;
-        whole[2] = 128;
-        whole[3] = 128;
+        struct Locals
+        {
+            TileRect whole;            // +0x00 the whole map
+            uint8_t gap_10[0x20];
+        };
+        static_assert(sizeof(Locals) == 0x30);
+        port::GuestFrameOf<Locals> frame;
+        const GuestPtr<TileRect> whole = frame.at(&Locals::whole);
+        *whole = TileRect{0, 0, 128, 128};
         uint32_t found[4];
         for (uint32_t k = 0; k < 4; ++k)
             found[k] = port::load<uint32_t>(0x0020B880u + 4u * k); // the original's initial values
@@ -1861,20 +1911,28 @@ namespace mm
             return 0;
         if (city->weatherToday != 2 && city->weatherToday != 3)
             return 0;
-        port::GuestFrame<0x40> frame;
-        const uint32_t sp = frame.ptr().address;
-        const GuestPtr<int32_t> near{sp}, wide{sp + 0x10u}, rect{sp + 0x20u};
-        const GuestPtr<uint32_t> count{sp + 0x30u};
+        struct Locals
+        {
+            TileRect near;             // +0x00 the target widened by 10
+            TileRect wide;             // +0x10 and by 30
+            TileRect footprint;        // +0x20 a building's
+            uint32_t count;            // +0x30 the tile list's length
+            uint8_t gap_34[0xC];
+        };
+        static_assert(offsetof(Locals, wide) == 0x10 && offsetof(Locals, footprint) == 0x20 && offsetof(Locals, count) == 0x30 &&
+                      sizeof(Locals) == 0x40);
+        port::GuestFrameOf<Locals> frame;
+        const GuestPtr<uint32_t> count = frame.at(&Locals::count);
         const bool holiday = (city->flags & 2u) != 0;
         const uint32_t table = holiday ? 0x001B3780u : 0x001BD9D0u;
         const int lists = holiday ? 5 : 2;
         const GuestPtr<MapObject> target = Map_GetRecord(city->map, person->target);
         const uint16_t targetType = target->type;
-        Building_GetFootprint(target, 10, GuestPtr<uint32_t>{near.address});
-        wide[0] = near[0] - 20;
-        wide[1] = near[1] - 20;
-        wide[2] = near[2] + 20;
-        wide[3] = near[3] + 20;
+        Building_GetFootprint(target, 10, frame.at(&Locals::near));
+        frame->wide.x0 = frame->near.x0 - 20;
+        frame->wide.z0 = frame->near.z0 - 20;
+        frame->wide.x1 = frame->near.x1 + 20;
+        frame->wide.z1 = frame->near.z1 + 20;
         uint32_t list = table + 4u * static_cast<uint32_t>(static_cast<int32_t>(Random_Next()) % lists);
         for (int tries = 0; tries < lists; ++tries, list += 4u)
         {
@@ -1889,11 +1947,11 @@ namespace mm
                 if (item >= items + 2u * *count)
                     item = items;
                 const GuestPtr<MapObject> building = Map_GetRecord(city->map, port::load<uint16_t>(item));
-                Building_GetFootprint(building, 0, GuestPtr<uint32_t>{rect.address});
-                if (overlap(near, rect))
+                Building_GetFootprint(building, 0, frame.at(&Locals::footprint));
+                if (overlap(frame->near, frame->footprint))
                     continue;
-                Building_GetFootprint(building, 0, GuestPtr<uint32_t>{rect.address});
-                if (!overlap(wide, rect))
+                Building_GetFootprint(building, 0, frame.at(&Locals::footprint));
+                if (!overlap(frame->wide, frame->footprint))
                     continue;
                 const GuestPtr<MapPerson> member = Map_FindPersonEntry(city->map, static_cast<int16_t>(building->family), 0);
                 if (Map_FindPersonObjectOnTile(city->map, member->index, tileOf(member)).address != building.address)
@@ -2883,7 +2941,7 @@ namespace mm
                 const GuestPtr<BagSlot> slot{static_cast<uint32_t>(found)};
                 const GuestPtr<GoodsRecord> record = globals::goodsAt(slot->group, slot->index);
                 shopping->refund = static_cast<int32_t>(static_cast<uint32_t>(shopping->refund) + static_cast<uint32_t>(Goods_GetPrice(static_cast<int>(record.address))));
-                Bag_RemoveSlot(bag(), GuestPtr<uint16_t>{slot.address});
+                Bag_RemoveSlot(bag(), slot);
             }
             return 0;
         default:
@@ -3208,7 +3266,17 @@ namespace mm
     //   types of group 6 pass the actor of the talk event 2 or 1, else the first).
     int64_t Event_CheckCondition(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, GuestPtr<uint8_t> type, GuestPtr<MapPerson> person)
     {
-        port::GuestFrame<0xA0> frame; // the original's frame: the stack vectors below keep their leftover lanes
+        // The original's frame: the vectors keep their leftover y and w lanes.
+        struct Locals
+        {
+            uint8_t gap_00[0x70];
+            Vec4 middle;               // +0x70 the home's middle (x and z written)
+            Vec4 self;                 // +0x80 the person (x and z written)
+            Vec4 distance;             // +0x90 the distance between them, in every lane
+        };
+        static_assert(offsetof(Locals, middle) == 0x70 && offsetof(Locals, self) == 0x80 && offsetof(Locals, distance) == 0x90 &&
+                      sizeof(Locals) == 0xA0);
+        port::GuestFrameOf<Locals> frame;
         const GuestPtr<EventType> row = globals::eventType(*type);
         const uint32_t level = row->level;
         if (level != 1 && level != 5)
@@ -3303,22 +3371,20 @@ namespace mm
                         return 0;
                     using namespace vu0;
                     const ps2f size = fromInt(GuestPtr<BuildingType>{globals::buildingTypeAddress(home->type)}->size);
-                    const uint32_t base = frame.ptr().address;
                     const uint32_t tile = home->tile;
-                    const GuestPtr<float> a{base + 0x80u}, b{base + 0x70u};
-                    port::store<float>(a.address, static_cast<float>(person->x));
-                    port::store<float>(b.address, static_cast<float>((fromInt(static_cast<int32_t>(tile & 0x7F)) - ps2f(64.0f)) + size / ps2f(2.0f)));
-                    port::store<float>(a.address + 8u, static_cast<float>(person->z));
-                    port::store<float>(b.address + 8u, static_cast<float>((fromInt(0x80 - static_cast<int32_t>(tile >> 7)) - ps2f(64.0f)) - size / ps2f(2.0f)));
-                    vf(4) = load(GuestPtr<Vec4>{a.address});
-                    vf(5) = load(GuestPtr<Vec4>{b.address});
+                    frame->self.x = person->x;
+                    frame->middle.x = (fromInt(static_cast<int32_t>(tile & 0x7F)) - ps2f(64.0f)) + size / ps2f(2.0f);
+                    frame->self.z = person->z;
+                    frame->middle.z = (fromInt(0x80 - static_cast<int32_t>(tile >> 7)) - ps2f(64.0f)) - size / ps2f(2.0f);
+                    vf(4) = load(frame.at(&Locals::self));
+                    vf(5) = load(frame.at(&Locals::middle));
                     set(vf(6), sub(vf(5), vf(4)), XYZW);
                     set(vf(7), mul(vf(6), vf(6)), XYZ);
                     set(vf(8), add(vf(7), lane(vf(7), 2)), X);
                     q() = sqrtQ(x(vf(8)));
                     set(vf(9), add(vf(0), _mm_set1_ps(q())), XYZW);
-                    store(GuestPtr<Vec4>{base + 0x90u}, vf(9));
-                    if (ps2f(port::load<float>(base + 0x90u)) < ps2f(8.0f))
+                    store(frame.at(&Locals::distance), vf(9));
+                    if (frame->distance.x < ps2f(8.0f))
                         return 0;
                     break;
                 }
@@ -3712,8 +3778,17 @@ namespace mm
     int EvShopping_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
     {
         const GuestPtr<EvShoppingData> shopping = data.as<EvShoppingData>();
-        port::GuestFrame<0x130> frame; // the wanted goods at +0x120, the tile list count at +0x128, a goods offset at +0x12C, the footprint at +0x110
-        const uint32_t base = frame.ptr().address;
+        struct Locals
+        {
+            uint8_t gap_000[0x110];
+            TileRect footprint;        // +0x110 a shop's footprint
+            uint16_t wanted[4];        // +0x120 the goods still without a seller (0 once found)
+            uint32_t count;            // +0x128 the tile list's length
+            int32_t offset;            // +0x12C the goods record offset: the pass, advanced by mm_Goods_GetRecordOffset
+        };
+        static_assert(offsetof(Locals, footprint) == 0x110 && offsetof(Locals, wanted) == 0x120 &&
+                      offsetof(Locals, count) == 0x128 && offsetof(Locals, offset) == 0x12C && sizeof(Locals) == 0x130);
+        port::GuestFrameOf<Locals> frame;
         const GuestPtr<MapObject> home = Map_GetRecord(city->map, person->home);
         const GuestPtr<BuildingType> homeType{globals::buildingTypeAddress(home->type)};
         if (homeType->category != 5) // homes
@@ -3729,20 +3804,18 @@ namespace mm
         port::store<int32_t>(kSerial, serial + 1);
         if (!(serial + 1 < port::load<int32_t>(kShopCount)))
             port::store<int32_t>(kSerial, 0);
-        sdk::memcpy(base + 0x120u, GuestPtr<uint16_t>::of(list->goods[0]).address, 8);
+        sdk::memcpy(frame.at(&Locals::wanted).address, GuestPtr<uint16_t>::of(list->goods[0]).address, 8);
         int remaining = 0;
-        for (uint32_t at = base + 0x120u; port::load<uint16_t>(at) != 0 && at < base + 0x128u; at += 2u)
+        while (remaining < 4 && frame->wanted[remaining] != 0)
             ++remaining;
         shopping->goodsCount = remaining;
         // The area shops are searched in: the home's tile, its size and 30 tiles more on every side.
-        const int32_t tile = home->tile;
-        const int32_t areaX0 = (tile & 0x7F) - 30, areaZ0 = (tile >> 7) - 30;
-        const int32_t areaX1 = (tile & 0x7F) + homeType->size + 30, areaZ1 = (tile >> 7) + homeType->size + 30;
-        const uint32_t footprint = base + 0x110u;
+        const int32_t tile = home->tile, homeSize = homeType->size;
+        const TileRect area{(tile & 0x7F) - 30, (tile >> 7) - 30, (tile & 0x7F) + homeSize + 30, (tile >> 7) + homeSize + 30};
         for (int list = 0; list < 0x50; ++list)
         {
-            const uint32_t items = Map_GetTileList(city->map, list, GuestPtr<uint32_t>{base + 0x128u}).address;
-            const uint32_t end = items + 2u * port::load<uint32_t>(base + 0x128u);
+            const uint32_t items = Map_GetTileList(city->map, list, frame.at(&Locals::count)).address;
+            const uint32_t end = items + 2u * frame->count;
             for (uint32_t at = items; at < end; at += 2u)
             {
                 const GuestPtr<MapObject> obj = Map_GetRecord(city->map, port::load<uint16_t>(at));
@@ -3750,32 +3823,30 @@ namespace mm
                     continue;
                 if ((obj->flags & 0x20u) == 0 || (obj->flags & 0x240u) != 0)
                     continue;
-                Building_GetFootprint(obj, 0, GuestPtr<uint32_t>{footprint});
-                const int32_t fx0 = port::load<int32_t>(footprint), fz0 = port::load<int32_t>(footprint + 4u);
-                const int32_t fx1 = port::load<int32_t>(footprint + 8u), fz1 = port::load<int32_t>(footprint + 12u);
-                if (!(areaX0 < fx1 && fx0 < areaX1 && areaZ0 < fz1 && fz0 < areaZ1))
+                Building_GetFootprint(obj, 0, frame.at(&Locals::footprint));
+                if (!overlap(area, frame->footprint))
                     continue;
                 if (!Map_FindPersonEntry(city->map, static_cast<int16_t>(obj->family), 0))
                     continue;
                 for (int pass = 0; pass < 4; ++pass)
                 {
-                    port::store<int32_t>(base + 0x12Cu, pass);
+                    frame->offset = pass;
                     const int32_t month = remainder(city->monthCount, 12);
-                    const int goods = Goods_GetRecordOffset(obj->type, obj->family, (month < 0 ? month + 3 : month) >> 2, GuestPtr<int32_t>{base + 0x12Cu});
-                    for (uint32_t entry = base + 0x120u; entry < base + 0x128u; entry += 2u)
+                    const int goods = Goods_GetRecordOffset(obj->type, obj->family, (month < 0 ? month + 3 : month) >> 2,
+                                                            frame.at(&Locals::offset));
+                    for (int k = 0; k < 4; ++k)
                     {
-                        const uint32_t wanted = port::load<uint16_t>(entry);
+                        const uint32_t wanted = frame->wanted[k];
                         if (wanted == 0 || wanted != port::load<uint16_t>(static_cast<uint32_t>(goods)))
                             continue;
-                        const uint32_t number = (entry + 2u - (base + 0x120u)) >> 1;
-                        port::store<uint16_t>(entry, 0);
-                        const GuestPtr<ActorRef> slot = GuestPtr<ActorRef>::of(shopping->actors[0]) + static_cast<int32_t>(number);
+                        frame->wanted[k] = 0;
+                        const GuestPtr<ActorRef> slot = GuestPtr<ActorRef>::of(shopping->actors[0]) + (k + 1); // the seller
                         slot->object = obj->id;
                         slot->family = obj->family;
                         slot->member = 0;
                         const GuestPtr<MapPerson> seller = Map_FindPersonEntry(city->map, static_cast<int16_t>(slot->family), slot->member);
                         slot->person = seller->index;
-                        (GuestPtr<int32_t>::of(shopping->prices[0]) + static_cast<int32_t>((entry - (base + 0x120u)) >> 1))[0] = Goods_GetPrice(goods);
+                        shopping->prices[k] = Goods_GetPrice(goods);
                         --remaining;
                         shopping->bill = static_cast<int32_t>(static_cast<uint32_t>(shopping->bill) + static_cast<uint32_t>(Goods_GetPrice(goods)));
                         if (remaining <= 0)
@@ -4012,7 +4083,13 @@ namespace mm
     // cleared again, and a no ends in 0).
     int Event_FindForFamily(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, int choice, GuestPtr<int16_t> familyMember)
     {
-        port::GuestFrame<0x90> frame;
+        struct Locals
+        {
+            uint8_t gap_00[0x88];
+            ActorRef asked;            // +0x88 the member asked about, for the handler's answer slot
+        };
+        static_assert(offsetof(Locals, asked) == 0x88 && sizeof(Locals) == 0x90);
+        port::GuestFrameOf<Locals> frame;
         const GuestPtr<EventSlot> entry = GuestPtr<EventSlot>::of(events->slots[choice]);
         const uint32_t member = familyMember.address;
         const uint32_t family = port::load<uint16_t>(member), index = port::load<uint16_t>(member + 2u);
@@ -4060,12 +4137,11 @@ namespace mm
                 probe->actor.object = kNoObject;
                 probe->actor.family = entry->familyB;
                 probe->actor.member = entry->memberB;
-                const uint32_t arguments = frame.ptr().address + 0x88u;
-                port::store<uint64_t>(arguments, port::load<uint64_t>(0x001BD988u));
-                port::store<uint16_t>(arguments + 4u, static_cast<uint16_t>(family));
-                port::store<uint16_t>(arguments + 6u, static_cast<uint16_t>(index));
+                frame->asked = *GuestPtr<ActorRef>{globals::kNoActor};
+                frame->asked.family = static_cast<uint16_t>(family);
+                frame->asked.member = static_cast<uint16_t>(index);
                 const uint32_t function = eventHandler(type->handler)->answer;
-                if (port::callGuest<int64_t>(function, probe, city, arguments, 0) == 0)
+                if (port::callGuest<int64_t>(function, probe, city, frame.at(&Locals::asked), 0) == 0)
                     result = 0;
                 else
                 {
@@ -4462,15 +4538,18 @@ namespace mm
         {
             if (!(Player_DistanceToPerson(city, first) <= ps2f(1.0f)))
                 break;
-            port::GuestFrame<0x60> frame;
-            const GuestPtr<uint32_t> rect{frame.ptr().address + 0x50u};
-            Building_GetFootprint(Map_GetRecord(city->map, ev->actors[3].object), 1, rect);
+            struct Locals
+            {
+                uint8_t gap_00[0x50];
+                TileRect goal;         // +0x50 actor 3's building widened by 1
+            };
+            static_assert(offsetof(Locals, goal) == 0x50 && sizeof(Locals) == 0x60);
+            port::GuestFrameOf<Locals> frame;
+            Building_GetFootprint(Map_GetRecord(city->map, ev->actors[3].object), 1, frame.at(&Locals::goal));
             const GuestPtr<MapPerson> person = city->map->people + first->person;
             const int z = sdk::fptosi(ps2f(64.0f) - person->z);
             const int x = sdk::fptosi(ps2f(64.0f) + person->x);
-            const GuestPtr<int32_t> footprint = rect.as<int32_t>();
-            const int32_t x0 = footprint[0], z0 = footprint[1], x1 = footprint[2], z1 = footprint[3];
-            if (x >= x0 && x < x1 && z >= z0 && z < z1 && EvActor_PointCursor(city, first) != 0)
+            if (holds(frame->goal, x, z) && EvActor_PointCursor(city, first) != 0)
                 advance();
             break;
         }
@@ -4849,8 +4928,15 @@ namespace mm
     // the event. The pending approval is limited so the approval stays within 100 on every call.
     void EvFarewellParty_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
-        port::GuestFrame<0x90> frame;
-        const uint32_t sp = frame.ptr().address;
+        struct Locals
+        {
+            uint8_t gap_00[0x40];
+            Vec4 playerMatrix[4];      // +0x40
+            uint8_t gap_80[0xE];
+            uint16_t cursor;           // +0x8E the people cursor
+        };
+        static_assert(offsetof(Locals, playerMatrix) == 0x40 && offsetof(Locals, cursor) == 0x8E && sizeof(Locals) == 0x90);
+        port::GuestFrameOf<Locals> frame;
         const GuestPtr<EvPartyData> party = data.as<EvPartyData>();
         constexpr uint32_t kVoiceA = 0x001BDD14u, kVoiceB = 0x001BDD18u, kPartyFlag = 0x001BDD24u;
         const auto setVoices = [&]() {
@@ -4937,15 +5023,15 @@ namespace mm
                 data->var = 5;
                 break;
             }
-            Player_GetMatrix(city->player, GuestPtr<Vec4>{sp + 0x40u});
-            const int z = sdk::fptosi(ps2f(64.0f) - ps2f(std::bit_cast<float>(port::load<uint32_t>(sp + 0x78u))));
-            const int x = sdk::fptosi(ps2f(64.0f) + ps2f(std::bit_cast<float>(port::load<uint32_t>(sp + 0x70u))));
+            Player_GetMatrix(city->player, frame.at(&Locals::playerMatrix));
+            const int z = sdk::fptosi(ps2f(64.0f) - frame->playerMatrix[3].z);
+            const int x = sdk::fptosi(ps2f(64.0f) + frame->playerMatrix[3].x);
             const GuestPtr<MapObject> under = Map_GetTileObject(city->map, x, z);
             if (under->type != 4)
                 break;
-            port::store<uint16_t>(sp + 0x8Eu, under->firstPerson);
+            frame->cursor = under->firstPerson;
             const GuestPtr<ActorRef> chosen = actorAt(data, 2);
-            while (const GuestPtr<MapPerson> candidate = People_Next(city->map, GuestPtr<uint16_t>{sp + 0x8Eu}))
+            while (const GuestPtr<MapPerson> candidate = People_Next(city->map, frame.at(&Locals::cursor)))
             {
                 const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * candidate->charType)};
                 if ((cls->flags & 1u) != 0 || Family_GetFriendshipBand(candidate->family, candidate->member) < 4)
@@ -5025,7 +5111,6 @@ namespace mm
         const GuestPtr<ActorRef> first = actor(0), second = actor(1), third = actor(2), place = actor(3);
         const auto advance = [&](int step) { data->var = static_cast<uint8_t>(data->var + step); };
         const auto stay = [&](GuestPtr<ActorRef> actor) { EvActor_MoveTo(city, actor, actor, 0); };
-        constexpr uint32_t kWholeMap = 0x001BA8D0u;
         switch (data->var)
         {
         case 1:
@@ -5057,9 +5142,9 @@ namespace mm
             ev->searchDelay = ev->searchDelay - 1;
             if (ev->searchDelay > 0)
                 break;
-            GuestPtr<MapObject> found = EvThief_FindBuilding(city, 5, GuestPtr<int32_t>{kWholeMap});
+            GuestPtr<MapObject> found = EvThief_FindBuilding(city, 5, GuestPtr<TileRect>{globals::kWholeMapRect});
             if (!found)
-                found = EvThief_FindBuilding(city, 1, GuestPtr<int32_t>{kWholeMap});
+                found = EvThief_FindBuilding(city, 1, GuestPtr<TileRect>{globals::kWholeMapRect});
             if (!found || found->id == first->object)
             {
                 ev->searchDelay = 0x3C;

@@ -3095,10 +3095,17 @@ namespace mm
 
     namespace
     {
-        // The horizontal distance between a point and the player (the player matrix in the frame at +0x20).
-        ps2f distanceToPlayer(GuestPtr<CityScene> city, uint32_t frameBase, uint32_t point)
+        // Player_DistanceToPerson's and Player_DistanceToPoint's frame.
+        struct PlayerDistanceFrame
         {
-            const GuestPtr<Vec4> matrix{frameBase + 0x20u};
+            uint8_t gap_00[0x20];
+            Vec4 playerMatrix[4];      // +0x20
+        };
+        static_assert(offsetof(PlayerDistanceFrame, playerMatrix) == 0x20 && sizeof(PlayerDistanceFrame) == 0x60);
+
+        // The horizontal distance between a point and the player (the player matrix in `matrix`).
+        ps2f distanceToPlayer(GuestPtr<CityScene> city, GuestPtr<Vec4> matrix, uint32_t point)
+        {
             Player_GetMatrix(city->player, matrix);
             const ps2f dx = ps2f(port::load<float>(point)) - ps2f(matrix[3].x);
             const ps2f dz = ps2f(port::load<float>(point + 8u)) - ps2f(matrix[3].z);
@@ -3108,14 +3115,14 @@ namespace mm
 
     ps2f Player_DistanceToPerson(GuestPtr<CityScene> city, GuestPtr<ActorRef> actor)
     {
-        port::GuestFrame<0x60> frame;
-        return distanceToPlayer(city, frame.ptr().address, (city->map->people + actor->person).address);
+        port::GuestFrameOf<PlayerDistanceFrame> frame;
+        return distanceToPlayer(city, frame.at(&PlayerDistanceFrame::playerMatrix), (city->map->people + actor->person).address);
     }
 
     ps2f Player_DistanceToPoint(GuestPtr<CityScene> city, GuestPtr<ps2f> point)
     {
-        port::GuestFrame<0x60> frame;
-        return distanceToPlayer(city, frame.ptr().address, point.address);
+        port::GuestFrameOf<PlayerDistanceFrame> frame;
+        return distanceToPlayer(city, frame.at(&PlayerDistanceFrame::playerMatrix), point.address);
     }
 
     // The horizontal distance between two actors.
@@ -4125,16 +4132,44 @@ namespace mm
 
     PORT_FN(Person_ChooseDestination);
 
+    namespace
+    {
+        // Player_PlaceBagItem's frame.
+        struct PlaceItemFrame
+        {
+            uint8_t gap_00[0x80];
+            TileRect footprint;        // +0x80 the item's footprint (x1 and z1 inside it)
+            Vec4 colour;               // +0x90 the highlight: blue when it can be placed, red when not
+            uint8_t gap_A0[0xC];
+            uint32_t kind;             // +0xAC the item's kind (mm_BagMenu_GetSetupKind): its building type is 0x115 on
+        };
+        static_assert(offsetof(PlaceItemFrame, footprint) == 0x80 && offsetof(PlaceItemFrame, colour) == 0x90 &&
+                      offsetof(PlaceItemFrame, kind) == 0xAC && sizeof(PlaceItemFrame) == 0xB0);
+
+        // Player_PlaceForApplicant's frame.
+        struct PlaceHomeFrame
+        {
+            uint8_t gap_00[0xB0];
+            TileRect footprint;        // +0xB0 the building's footprint (x1 and z1 inside it; one past from
+                                       // mm_Placement_FindSpot)
+            Vec4 colour;               // +0xC0 the highlight's colour
+        };
+        static_assert(offsetof(PlaceHomeFrame, footprint) == 0xB0 && offsetof(PlaceHomeFrame, colour) == 0xC0 &&
+                      sizeof(PlaceHomeFrame) == 0xD0);
+
+        // The highlight's colours (r, g, b, a).
+        constexpr Vec4 kCanPlace{0.0f, 0.0f, 255.0f, 64.0f}, kCannotPlace{255.0f, 0.0f, 0.0f, 64.0f};
+    }
+
     // Placing a Small Goods item from the bag with the player's cursor (mode 5): the item's footprint (the size of its
-    // building type, 0x115 + the bag item's index) is centred on the tile under the cursor (half a tile further for an odd size)
+    // building type, 0x115 + the item's kind) is centred on the tile under the cursor (half a tile further for an odd size)
     // and tested (mm_Map_CanPlace); the footprint is highlighted in blue when it can be placed and red when not. Cross places it
     // (mm_Map_PlaceSmallGoods, sound 3, one of the item used up) or, when it cannot be placed, plays sound 4; Triangle cancels
     // (sound 2, the item kept). Placing and cancelling, and an item with no setup kind (-1), take the player back to its previous
     // mode with the step, sway and target cleared.
     void Player_PlaceBagItem(GuestPtr<Player> player, GuestPtr<CityScene> city)
     {
-        port::GuestFrame<0xB0> frame;
-        const uint32_t sp = frame.ptr().address;
+        port::GuestFrameOf<PlaceItemFrame> frame;
         const auto leave = [&]() {
             const int32_t previous = player->previousMode;
             player->previousMode = player->mode;
@@ -4145,45 +4180,28 @@ namespace mm
             player->target = -1;
             Pad_SwallowCross();
         };
-        const uint32_t kind = BagMenu_GetSetupKind(city->bag, GuestPtr<uint32_t>{sp + 0xACu});
-        if (kind == 0xFFFFFFFFu)
+        const uint32_t value = BagMenu_GetSetupKind(city->bag, frame.at(&PlaceItemFrame::kind));
+        if (value == 0xFFFFFFFFu)
         {
             leave();
             return;
         }
-        const uint32_t typeIndex = port::load<uint32_t>(sp + 0xACu) + 0x115u;
+        const uint32_t typeIndex = frame->kind + 0x115u;
         const int32_t size = globals::buildingType(typeIndex)->size;
         const ps2f half = fromInt(size & 1) / ps2f(2.0f);
         const int x = sdk::fptosi(ps2f(64.0f) + (player->position.x + half - ps2f(0.5f)));
         const int z = sdk::fptosi(ps2f(64.0f) - (ps2f(0.5f) + (player->position.z - half)));
         const int before = (size - 1) / 2, after = size / 2;
         const int x0 = x - before, z0 = z - before;
-        port::store<int32_t>(sp + 0x80u, x0);
-        port::store<int32_t>(sp + 0x84u, z0);
-        port::store<int32_t>(sp + 0x88u, x + after);
-        port::store<int32_t>(sp + 0x8Cu, z + after);
+        frame->footprint = TileRect{x0, z0, x + after, z + after};
         const int canPlace = Map_CanPlace(city->map, 0, static_cast<int>(typeIndex), x0, z0);
-        if (canPlace == 1)
-        {
-            port::store<uint32_t>(sp + 0x90u, 0u);
-            port::store<uint32_t>(sp + 0x94u, 0u);
-            port::store<uint32_t>(sp + 0x98u, 0x437F0000u);
-            port::store<uint32_t>(sp + 0x9Cu, 0x42800000u);
-        }
-        else
-        {
-            port::store<uint32_t>(sp + 0x90u, 0x437F0000u);
-            port::store<uint32_t>(sp + 0x94u, 0u);
-            port::store<uint32_t>(sp + 0x98u, 0u);
-            port::store<uint32_t>(sp + 0x9Cu, 0x42800000u);
-        }
-        Map_SetPlacementHighlight(city->map, 1, GuestPtr<int32_t>{sp + 0x80u}, GuestPtr<uint32_t>{sp + 0x90u});
+        frame->colour = canPlace == 1 ? kCanPlace : kCannotPlace;
+        Map_SetPlacementHighlight(city->map, 1, frame.at(&PlaceItemFrame::footprint), frame.at(&PlaceItemFrame::colour));
         if ((Pad_Pressed(0) & 0x40u) != 0)
         {
             if (canPlace == 1)
             {
-                Map_PlaceSmallGoods(city->map, x0, z0, city, static_cast<uint8_t>(kind),
-                                    static_cast<int>(port::load<uint32_t>(sp + 0xACu)));
+                Map_PlaceSmallGoods(city->map, x0, z0, city, static_cast<uint8_t>(value), static_cast<int>(frame->kind));
                 Sound_PlaySe(3, 0, 0x3C, 0.0f, 0.0f);
                 BagMenu_FinishUse(city->bag, 1);
                 leave();
@@ -4574,8 +4592,7 @@ namespace mm
     // list (sound 2).
     void Player_PlaceForApplicant(GuestPtr<Player> player, GuestPtr<CityScene> city)
     {
-        port::GuestFrame<0xD0> frame;
-        const uint32_t sp = frame.ptr().address;
+        port::GuestFrameOf<PlaceHomeFrame> frame;
         const GuestPtr<ApplicantEntry> entry{static_cast<uint32_t>(Applicants_GetSelected(city->applicants))};
         const uint32_t family = entry->family;
         const int typeIndex = Family_GetTypeIndex(static_cast<int>(family));
@@ -4585,19 +4602,13 @@ namespace mm
         const int z = sdk::fptosi(ps2f(64.0f) - (ps2f(0.5f) + (player->position.z - half)));
         const int before = (size - 1) / 2, after = size / 2;
         const int x0 = x - before, z0 = z - before;
-        port::store<int32_t>(sp + 0xB0u, x0);
-        port::store<int32_t>(sp + 0xB4u, z0);
-        port::store<int32_t>(sp + 0xB8u, x + after);
-        port::store<int32_t>(sp + 0xBCu, z + after);
+        frame->footprint = TileRect{x0, z0, x + after, z + after};
         int placeable = Map_CanPlace(city->map, static_cast<int>(family), typeIndex, x0, z0);
-        const GuestPtr<int32_t> rect{sp + 0xB0u};
-        const GuestPtr<uint32_t> colour{sp + 0xC0u};
+        const GuestPtr<TileRect> rect = frame.at(&PlaceHomeFrame::footprint);
+        const GuestPtr<Vec4> colour = frame.at(&PlaceHomeFrame::colour);
         if (placeable == 1)
         {
-            port::store<uint32_t>(sp + 0xC0u, 0u);
-            port::store<uint32_t>(sp + 0xC4u, 0u);
-            port::store<uint32_t>(sp + 0xC8u, 0x437F0000u);
-            port::store<uint32_t>(sp + 0xCCu, 0x42800000u);
+            frame->colour = kCanPlace;
             Map_SetPlacementHighlight(city->map, 1, rect, colour);
         }
         else if (placeable == 2)
@@ -4609,10 +4620,7 @@ namespace mm
                 Map_SetPlacementHighlight(city->map, 2, rect, colour);
             else
             {
-                port::store<uint32_t>(sp + 0xC0u, 0x437F0000u);
-                port::store<uint32_t>(sp + 0xC4u, 0u);
-                port::store<uint32_t>(sp + 0xC8u, 0u);
-                port::store<uint32_t>(sp + 0xCCu, 0x42800000u);
+                frame->colour = kCannotPlace;
                 Map_SetPlacementHighlight(city->map, 1, rect, colour);
             }
         }
@@ -4623,9 +4631,10 @@ namespace mm
                 Sound_PlaySe(4, 0, 0x3C, 0.0f, 0.0f);
                 return;
             }
-            Map_LevelArea(city->map, port::load<int32_t>(sp + 0xB0u), port::load<int32_t>(sp + 0xB4u), size, city);
+            Map_LevelArea(city->map, frame->footprint.x0, frame->footprint.z0, size, city);
             entry->state = 3;
-            entry->tile = static_cast<uint16_t>(port::load<int16_t>(sp + 0xB0u) + (port::load<int16_t>(sp + 0xB4u) << 7));
+            entry->tile = static_cast<uint16_t>(static_cast<int16_t>(frame->footprint.x0) +
+                                                (static_cast<int16_t>(frame->footprint.z0) << 7));
             Applicants_StartPlacing(city->applicants, city);
             Sound_PlaySe(3, 0, 0x3C, 0.0f, 0.0f);
             return;
@@ -4728,9 +4737,31 @@ namespace mm
 
     PORT_FN(Vehicle_Update);
 
+    namespace
+    {
+        // Player_Update's frame.
+        struct PlayerUpdateFrame
+        {
+            uint8_t gap_00[0x70];
+            TileRect idleRect;         // +0x70 never written: turning the highlight off (mode 0) hands on what the
+                                       // stack holds here and in idleColour
+            Vec4 move;                 // +0x80 this frame's move (mm_Player_Move, mm_Player_Turn)
+            Vec4 idleColour;           // +0x90
+            Vec4 hit;                  // +0xA0 an object's hit point, then the floor's
+            Vec4 spot;                 // +0xB0 where the player would stand
+            Vec4 before;               // +0xC0 the position before the move
+            uint8_t gap_D0[0xC];
+            ps2f distance;             // +0xDC the hit's distance
+        };
+        static_assert(offsetof(PlayerUpdateFrame, idleRect) == 0x70 && offsetof(PlayerUpdateFrame, move) == 0x80 &&
+                      offsetof(PlayerUpdateFrame, idleColour) == 0x90 && offsetof(PlayerUpdateFrame, hit) == 0xA0 &&
+                      offsetof(PlayerUpdateFrame, before) == 0xC0 && offsetof(PlayerUpdateFrame, distance) == 0xDC &&
+                      sizeof(PlayerUpdateFrame) == 0xE0);
+    }
+
     // The player for one frame. The move speed follows the stamina object's counter (the count over 100000 over 140,
     // plus 0.04; 0.02 with none). The tile the player stands on (64 added to x, and to minus z as the row) is found,
-    // then the move vector (sp+0x80, zero to start) is made by the mode: 0 and 3 turn and show the placing highlight, 1
+    // then the move vector (zero to start) is made by the mode: 0 and 3 turn and show the placing highlight, 1
     // walks (Cross held lays a road on the tile) and shows it, 2 turns and places a family, 4 only turns, 5 turns and
     // places a bag item (3 and 0 also pick the target). Moving, or rising, uses stamina. The vector is turned by the
     // heading (the model's matrix) and added to the position; Triangle or the two shoulder buttons jump (the speed
@@ -4745,13 +4776,13 @@ namespace mm
     // set and the pad focus 3 is let go of unless Cross is held.
     void Player_Update(GuestPtr<Player> player, GuestPtr<CityScene> city)
     {
-        port::GuestFrame<0xE0> frame;
-        const uint32_t sp = frame.ptr().address;
+        port::GuestFrameOf<PlayerUpdateFrame> frame;
         const auto constant = [](uint32_t bits) { return ps2f(std::bit_cast<float>(bits)); };
         const auto map = [&]() { return city->map; };
-        const GuestPtr<Vec4> move{sp + 0x80u}, hit{sp + 0xA0u}, spot{sp + 0xB0u}, before{sp + 0xC0u};
-        const GuestPtr<ps2f> distance{sp + 0xDCu};
-        *move = *GuestPtr<Vec4>{0x001B26B0u};
+        const GuestPtr<Vec4> move = frame.at(&PlayerUpdateFrame::move), hit = frame.at(&PlayerUpdateFrame::hit);
+        const GuestPtr<Vec4> spot = frame.at(&PlayerUpdateFrame::spot), before = frame.at(&PlayerUpdateFrame::before);
+        const GuestPtr<ps2f> distance = frame.at(&PlayerUpdateFrame::distance);
+        *move = *GuestPtr<Vec4>{globals::kZeroVector};
         const int32_t count = city->stamina->value;
         if (count == 0)
             player->moveSpeed = constant(0x3CA3D70Au);
@@ -4764,7 +4795,7 @@ namespace mm
         const int tileX = sdk::fptosi(constant(0x42800000u) + player->position.x);
         const int tileZ = sdk::fptosi(constant(0x42800000u) - player->position.z);
         const auto showHighlight = [&]() {
-            Map_SetPlacementHighlight(map(), 0, GuestPtr<int32_t>{sp + 0x70u}, GuestPtr<uint32_t>{sp + 0x90u});
+            Map_SetPlacementHighlight(map(), 0, frame.at(&PlayerUpdateFrame::idleRect), frame.at(&PlayerUpdateFrame::idleColour));
         };
         switch (static_cast<uint32_t>(player->mode))
         {
@@ -4836,7 +4867,7 @@ namespace mm
         ps2f radius = constant(0x3D4CCCCDu) + player->moveSpeed;
         if (radius < constant(0x3E4CCCCDu))
             radius = constant(0x3E4CCCCDu);
-        if (Player_NearestObject(map(), GuestPtr<ps2f>{spot.address}, GuestPtr<uint32_t>{hit.address}, distance, radius) != 0)
+        if (Player_NearestObject(map(), GuestPtr<ps2f>{spot.address}, hit, distance, radius) != 0)
         {
             if (player->mode == 1)
             {
@@ -4868,7 +4899,7 @@ namespace mm
                 spot->z = spot->z - player->push.z * out;
             }
         }
-        if (Player_NearestObject(map(), GuestPtr<ps2f>{spot.address}, GuestPtr<uint32_t>{hit.address}, distance, radius) != 0)
+        if (Player_NearestObject(map(), GuestPtr<ps2f>{spot.address}, hit, distance, radius) != 0)
         {
             spot->x = before->x;
             spot->z = before->z;
@@ -4879,7 +4910,7 @@ namespace mm
         const ps2f ceiling = constant(0x3ECCCCCDu) + city->waterLevel;
         if (!(ground <= ceiling))
             ground = ceiling;
-        if (Player_FloorBelow(map(), GuestPtr<ps2f>::of(player->position.x), static_cast<int>(hit.address), constant(0x3F666666u)) != 0)
+        if (Player_FloorBelow(map(), GuestPtr<ps2f>::of(player->position.x), hit, constant(0x3F666666u)) != 0)
             ground = hit->y;
         const ps2f speed = player->jumpSpeed;
         if (!(speed <= ps2f(0.0f)))
@@ -4951,13 +4982,37 @@ namespace mm
     //    and the person is dropped from the tile (flag 4).
     // Flag 0x800 keeps the person within 63 of the middle and files it under the building or tile object it is in. Walking uses
     // Person_Walk with flag 0x1000, else Person_UpdatePose (flag 0x100 is set after either). Flag 0x1000 is cleared at the end.
+    namespace
+    {
+        // The vectors of a distance in the plane worked out through VU0.
+        struct PlaneDistance
+        {
+            Vec4 target;               // the point (x and z written)
+            Vec4 self;                 // the person (x and z written)
+            Vec4 result;               // the distance in every lane
+        };
+
+        // Person_Update's frame.
+        struct PersonUpdateFrame
+        {
+            uint8_t gap_00[0x90];
+            Vec4 playerMatrix[4];      // +0x90 the player's, for a person that follows the player
+            PlaneDistance stay;        // +0xD0 whether a follower on its building's tile stays
+            PlaneDistance run;         // +0x100 whether a follower runs
+            uint8_t gap_130[0xC];
+            uint32_t activity;         // +0x13C mm_Person_ChooseDestination's activity
+        };
+        static_assert(offsetof(PersonUpdateFrame, playerMatrix) == 0x90 && offsetof(PersonUpdateFrame, stay) == 0xD0 &&
+                      offsetof(PersonUpdateFrame, run) == 0x100 && offsetof(PersonUpdateFrame, activity) == 0x13C &&
+                      sizeof(PersonUpdateFrame) == 0x140);
+    }
+
     void Person_Update(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, uint32_t timeFlags)
     {
         using namespace vu0;
-        port::GuestFrame<0x140> frame;
-        const uint32_t sp = frame.ptr().address;
+        port::GuestFrameOf<PersonUpdateFrame> frame;
         const GuestPtr<CityMap> map = city->map;
-        const GuestPtr<Vec4> playerMatrix{sp + 0x90u};
+        const GuestPtr<Vec4> playerMatrix = frame.at(&PersonUpdateFrame::playerMatrix);
         const ps2f centre = 64.0f;
 
         if ((timeFlags & 1u) != 0)
@@ -5011,8 +5066,9 @@ namespace mm
         };
         // The distance in the plane from the person to (tx, tz), through VU0 as the original does. Only x and z of the two points
         // are written; their y and w lanes are whatever the frame held.
-        const auto distanceTo = [&](ps2f tx, ps2f tz, uint32_t pointAt, uint32_t personAt, uint32_t resultAt) {
-            const GuestPtr<Vec4> target{pointAt}, self{personAt}, result{resultAt};
+        const auto distanceTo = [&](ps2f tx, ps2f tz, GuestPtr<PlaneDistance> vectors) {
+            const GuestPtr<Vec4> target = vectors.field(&PlaneDistance::target), self = vectors.field(&PlaneDistance::self);
+            const GuestPtr<Vec4> result = vectors.field(&PlaneDistance::result);
             self->x = person->x;
             target->x = tx;
             self->z = person->z;
@@ -5043,7 +5099,7 @@ namespace mm
                     const int targetZ = sdk::fptosi(centre - fz);
                     const int targetX = sdk::fptosi(centre + fx);
                     if (Map_GetTileObject(map, targetX, targetZ)->tile == here->tile)
-                        walk = !(distanceTo(fx, fz, sp + 0xD0u, sp + 0xE0u, sp + 0xF0u) < ps2f(0.5f));
+                        walk = !(distanceTo(fx, fz, frame.at(&PersonUpdateFrame::stay)) < ps2f(0.5f));
                 }
                 if (!walk)
                 {
@@ -5070,7 +5126,7 @@ namespace mm
                     {
                         ps2f fx, fz;
                         followedPosition(fx, fz);
-                        if (distanceTo(fx, fz, sp + 0x100u, sp + 0x110u, sp + 0x120u) <= ps2f(1.5f))
+                        if (distanceTo(fx, fz, frame.at(&PersonUpdateFrame::run)) <= ps2f(1.5f))
                             person->flags = static_cast<uint16_t>(person->flags & 0xFF7Fu);
                         else
                             person->flags = static_cast<uint16_t>(person->flags | 0x80u);
@@ -5103,7 +5159,8 @@ namespace mm
                 here = Map_FindPersonObjectOnTile(map, person->index, static_cast<uint32_t>(tile) & 0xFFFFu);
                 if (!here)
                     here = Map_GetTileFirstObject(map, tile);
-                person->inside = static_cast<uint16_t>(Person_ChooseDestination(city, person, GuestPtr<uint32_t>{sp + 0x13Cu}, here->id));
+                person->inside = static_cast<uint16_t>(
+                    Person_ChooseDestination(city, person, frame.at(&PersonUpdateFrame::activity), here->id));
                 if (person->inside != kNoObject)
                 {
                     const GuestPtr<MapObject> destination = Map_GetRecord(map, person->inside);

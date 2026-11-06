@@ -467,6 +467,10 @@ namespace mm::globals
     inline constexpr GuestVar<uint32_t> eventQueueObject{0x001BDA88u};
     inline GuestPtr<EventQueue> eventQueue() { return GuestPtr<EventQueue>{eventQueueObject.get()}; }
     inline constexpr GuestVar<uint32_t> eventTileLists{0x001BDA60u};
+    // event: the whole map as a block (0, 0, 128, 128), where the thief looks for a building to rob; an ActorRef with
+    // no person and no building.
+    inline constexpr uint32_t kWholeMapRect = 0x001BA8D0u;
+    inline constexpr uint32_t kNoActor = 0x001BD988u;
     // event: the delivery man's catalogue (0x184 bytes per entry, 0x20 per item: text at +4, price at +0x22), the
     // adoption event's 24 starting bytes, and the two buffers the handlers format money into.
     inline constexpr uint32_t kDeliveryCatalogue = 0x001BA090u;
@@ -506,6 +510,7 @@ namespace mm::globals
     // gfx: an identity matrix (four Vec4).
     inline constexpr uint32_t kIdentityMatrix = 0x001B2550u;
     inline constexpr uint32_t kOriginPoint = 0x001B26A0u; // (0, 0, 0, 1)
+    inline constexpr uint32_t kZeroVector = 0x001B26B0u;  // (0, 0, 0, 0)
     // terrain generation (mm_TerrainGen_Generate): by terrain type 0..4, the Smooth strength, radius and floor
     // (floats), and for the plants of a cell the 16 object kinds (ints) drawn for plant style 2 and 3.
     inline constexpr uint32_t kHillStrength = 0x001AF1C0u;

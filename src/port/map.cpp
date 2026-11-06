@@ -331,7 +331,7 @@ namespace mm
     // that is not lowered (at or below 0) for a type with flag 0x10 (a port stands in the water), or refused by the
     // type (acceptsOn slot). Other than wasteland (2) and leveled land (3), a type placed under the water (deeper than
     // 0.5; heights grow downwards) also needs dry ground beside it (mm_Placement_LandBeside).
-    int Map_CheckPlacement(GuestPtr<CityMap> map, uint32_t type, int x, int z, GuestPtr<int32_t> rect)
+    int Map_CheckPlacement(GuestPtr<CityMap> map, uint32_t type, int x, int z, GuestPtr<TileRect> rect)
     {
         port::GuestFrame<0xE0> frame;
         const int tile = x + z * 128;
@@ -390,18 +390,26 @@ namespace mm
         return map->nextId;
     }
 
+    namespace
+    {
+        // Map_PlaceObject's frame.
+        struct PlaceObjectFrame
+        {
+            uint8_t gap_00[0x70];
+            TileRect rebuild;          // +0x70 the tiles whose geometry is rebuilt (mm_Placement_CheckNeighbours)
+        };
+        static_assert(offsetof(PlaceObjectFrame, rebuild) == 0x70 && sizeof(PlaceObjectFrame) == 0x80);
+    }
+
     // Places an object of `type` at (x, z) for `owner` when the placement test allows it (0x3F80 when not):
     // result 1 clears the footprint and creates the object normally; any other result puts a new record on top
     // of the tile's list. The touched area's geometry is then rebuilt and the type is told (tick slot, with
     // the city and the object).
     int Map_PlaceObject(GuestPtr<CityMap> map, int owner, int type, int x, int z, GuestPtr<CityScene> city)
     {
-        port::GuestFrame<0x80> frame;
-        const GuestPtr<int32_t> rect{frame.ptr().address + 0x70u};
-        rect[0] = 0x7F;
-        rect[1] = 0x7F;
-        rect[2] = 0;
-        rect[3] = 0;
+        port::GuestFrameOf<PlaceObjectFrame> frame;
+        const GuestPtr<TileRect> rect = frame.at(&PlaceObjectFrame::rebuild);
+        *rect = TileRect{0x7F, 0x7F, 0, 0};
         const int placement = Map_CheckPlacement(map, static_cast<uint32_t>(type), x, z, rect);
         if (placement == 0)
             return kNoObject;
@@ -834,25 +842,25 @@ namespace mm
             TileLists_Remove(lists, static_cast<uint32_t>(item), static_cast<uint16_t>(*pairs));
     }
 
-    // Recomputes the geometry of every tile in rect = (x0, z0, x1, z1), inclusive.
-    void Map_UpdateAreaGeometry(GuestPtr<CityMap> map, GuestPtr<int32_t> rect)
+    // Recomputes the geometry of every tile in the block (x1 and z1 inside it).
+    void Map_UpdateAreaGeometry(GuestPtr<CityMap> map, GuestPtr<TileRect> rect)
     {
-        for (int z = rect[1]; z <= rect[3]; ++z)
-            for (int x = rect[0]; x <= rect[2]; ++x)
+        for (int z = rect->z0; z <= rect->z1; ++z)
+            for (int x = rect->x0; x <= rect->x1; ++x)
                 Map_UpdateTileGeometry(map, x, z);
     }
 
     // Before placing over the size x size block at (x, z): the box around every object standing there
-    // (box = min x, min z, max x, max z, widened by two tiles within the map) and whether the cells those
+    // (its tiles, x1 and z1 inside, widened by two tiles within the map) and whether the cells those
     // objects cover stay below the free object records plus the objects found. A tile whose first object is
     // record 0 counts as empty, and an object is counted once per tile of the block it covers, as in the
     // original.
-    int Placement_CheckNeighbours(GuestPtr<CityMap> map, int x, int z, int size, GuestPtr<int32_t> box)
+    int Placement_CheckNeighbours(GuestPtr<CityMap> map, int x, int z, int size, GuestPtr<TileRect> box)
     {
-        box[3] = 0;
-        box[2] = 0;
-        box[1] = 0x7F;
-        box[0] = 0x7F;
+        box->z1 = 0;
+        box->x1 = 0;
+        box->z0 = 0x7F;
+        box->x0 = 0x7F;
         int cells = 0, objects = 0;
         for (int row = z; row < z + size; ++row)
             for (int col = x, tile = x + row * kMapSize; col < x + size; ++col, ++tile)
@@ -867,25 +875,25 @@ namespace mm
                 for (int cz = oz; cz < oz + objSize; ++cz)
                     for (int cx = ox; cx < ox + objSize; ++cx)
                     {
-                        if (cx < box[0])
-                            box[0] = cx;
-                        if (cz < box[1])
-                            box[1] = cz;
-                        if (box[2] < cx)
-                            box[2] = cx;
-                        if (box[3] < cz)
-                            box[3] = cz;
+                        if (cx < box->x0)
+                            box->x0 = cx;
+                        if (cz < box->z0)
+                            box->z0 = cz;
+                        if (box->x1 < cx)
+                            box->x1 = cx;
+                        if (box->z1 < cz)
+                            box->z1 = cz;
                         ++cells;
                     }
             }
-        if (box[0] >= 2)
-            box[0] -= 2;
-        if (box[1] >= 2)
-            box[1] -= 2;
-        if (box[2] < 0x7F)
-            box[2] += 2;
-        if (box[3] < 0x7F)
-            box[3] += 2;
+        if (box->x0 >= 2)
+            box->x0 -= 2;
+        if (box->z0 >= 2)
+            box->z0 -= 2;
+        if (box->x1 < 0x7F)
+            box->x1 += 2;
+        if (box->z1 < 0x7F)
+            box->z1 += 2;
         return cells < (kObjectSlots - map->objectCount) + objects;
     }
 
@@ -1809,11 +1817,22 @@ namespace mm
 
     // ---- areas, people lookups, history, saving (batch 38)
 
-    // Whether type `typeIndex` can be placed at (x, z) (mm_Map_CheckPlacement, its rectangle in this frame).
+    namespace
+    {
+        // Map_CanPlace's frame.
+        struct CanPlaceFrame
+        {
+            uint8_t gap_00[0x10];
+            TileRect rebuild;          // +0x10 mm_Map_CheckPlacement's block, not used after
+        };
+        static_assert(offsetof(CanPlaceFrame, rebuild) == 0x10 && sizeof(CanPlaceFrame) == 0x20);
+    }
+
+    // Whether type `typeIndex` can be placed at (x, z) (mm_Map_CheckPlacement, its block in this frame).
     int Map_CanPlace(GuestPtr<CityMap> map, int, int typeIndex, int x, int z)
     {
-        port::GuestFrame<0x20> frame;
-        return Map_CheckPlacement(map, static_cast<uint32_t>(typeIndex), x, z, GuestPtr<int32_t>{frame.ptr().address + 0x10u});
+        port::GuestFrameOf<CanPlaceFrame> frame;
+        return Map_CheckPlacement(map, static_cast<uint32_t>(typeIndex), x, z, frame.at(&CanPlaceFrame::rebuild));
     }
 
     // The resident (a class without flag 1) of the family and member, or 0.
@@ -1981,13 +2000,10 @@ namespace mm
     }
 
     // The placement highlight: its colour, its rectangle (x0, z0, x1, z1) and its mode (1 the highlight, 2 the marker).
-    void PlacementLayer_Set(GuestPtr<PlacementLayer> layer, int mode, GuestPtr<int32_t> rect, GuestPtr<uint32_t> colour)
+    void PlacementLayer_Set(GuestPtr<PlacementLayer> layer, int mode, GuestPtr<TileRect> rect, GuestPtr<Vec4> colour)
     {
-        layer->colourA = *GuestPtr<Vec4>{colour.address};
-        layer->rectX0 = rect[0];
-        layer->rectZ0 = rect[1];
-        layer->rectX1 = rect[2];
-        layer->rectZ1 = rect[3];
+        layer->colourA = *colour;
+        layer->rect = *rect;
         layer->rectActive = mode;
     }
 
@@ -2004,14 +2020,14 @@ namespace mm
     // round to the other end), the first where the map answers 2 (placeable and highlighted). The rectangle (x, z,
     // x + size, z + size) is filled in and 1 returned; other sizes and failures give 0.
     int Placement_FindSpot(GuestPtr<Player> player, GuestPtr<CityScene> city, int family, int typeIndex, int x, int z, int half,
-                           GuestPtr<int32_t> rect)
+                           GuestPtr<TileRect> rect)
     {
         const GuestPtr<BuildingType> type{globals::buildingTypeAddress(typeIndex)};
         const auto found = [&](int tileX, int tileZ) {
-            rect[0] = tileX;
-            rect[1] = tileZ;
-            rect[2] = rect[0] + type->size;
-            rect[3] = rect[1] + type->size;
+            rect->x0 = tileX;
+            rect->z0 = tileZ;
+            rect->x1 = rect->x0 + type->size;
+            rect->z1 = rect->z0 + type->size;
             return 1;
         };
         if (type->size == 2)
@@ -2122,15 +2138,47 @@ namespace mm
         }
     }
 
-    // Whether an object round the player has a surface below the position within `lift`: each object's type is asked
-    // (floorBelow slot) with the position, the placement matrix, `hit` (where the crossing goes; the player lands on its
-    // y) and the flag word.
-    int Player_FloorBelow(GuestPtr<CityMap> map, GuestPtr<ps2f> position, int hit, ps2f lift)
+    namespace
     {
-        port::GuestFrame<0x190> frame; // the list of ids at +0x120, the matrix at +0x140, the flag word at +0x18C
-        const uint32_t base = frame.ptr().address;
-        const bool found = eachObjectNear(map, position, base + 0x120u, base + 0x140u, base + 0x18Cu, [&](GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj) {
-            return port::callGuest<int64_t>(btype->vtable->floorBelow, btype, obj, position, GuestPtr<Vec4>{base + 0x140u}, hit, base + 0x18Cu, lift) != 0;
+        // Player_FloorBelow's frame.
+        struct FloorBelowFrame
+        {
+            uint8_t gap_000[0x120];
+            uint16_t seen[16];         // +0x120 the objects visited, one a tile of the nine
+            Vec4 matrix[4];            // +0x140 the object's placement matrix
+            uint8_t gap_180[0xC];
+            uint32_t part;             // +0x18C the part word, as in the collision walks
+        };
+        static_assert(offsetof(FloorBelowFrame, seen) == 0x120 && offsetof(FloorBelowFrame, matrix) == 0x140 &&
+                      offsetof(FloorBelowFrame, part) == 0x18C && sizeof(FloorBelowFrame) == 0x190);
+
+        // Player_NearestObject's frame.
+        struct NearestObjectFrame
+        {
+            uint8_t gap_000[0x130];
+            Vec4 hit;                  // +0x130 an object's hit point
+            uint16_t seen[16];         // +0x140 the objects visited
+            Vec4 matrix[4];            // +0x160 the object's placement matrix
+            uint8_t gap_1A0[8];
+            ps2f distance;             // +0x1A8 the hit's distance
+            uint32_t part;             // +0x1AC the part word
+        };
+        static_assert(offsetof(NearestObjectFrame, hit) == 0x130 && offsetof(NearestObjectFrame, seen) == 0x140 &&
+                      offsetof(NearestObjectFrame, matrix) == 0x160 && offsetof(NearestObjectFrame, distance) == 0x1A8 &&
+                      offsetof(NearestObjectFrame, part) == 0x1AC && sizeof(NearestObjectFrame) == 0x1B0);
+    }
+
+    // Whether an object round the player has a surface the position is under by at most `lift` (heights grow
+    // downwards): each object's type is asked (floorBelow slot) with the position, the placement matrix, `hit` (where
+    // the crossing goes; the player is put at its y) and the part word.
+    int Player_FloorBelow(GuestPtr<CityMap> map, GuestPtr<ps2f> position, GuestPtr<Vec4> hit, ps2f lift)
+    {
+        port::GuestFrameOf<FloorBelowFrame> frame;
+        const GuestPtr<Vec4> matrix = frame.at(&FloorBelowFrame::matrix);
+        const GuestPtr<uint32_t> part = frame.at(&FloorBelowFrame::part);
+        const bool found = eachObjectNear(map, position, frame.at(&FloorBelowFrame::seen).address, matrix.address,
+                                          part.address, [&](GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj) {
+            return port::callGuest<int64_t>(btype->vtable->floorBelow, btype, obj, position, matrix, hit, part, lift) != 0;
         });
         return found ? 1 : 0;
     }
@@ -2138,17 +2186,21 @@ namespace mm
     // The nearest hit among the objects round the player: *distance starts at 100 and takes the smallest distance an
     // object's type reports (nearestHit slot, with the hit point and the distance as outputs); *hit gets the hit point
     // (four words). The answer is whether anything was hit.
-    int Player_NearestObject(GuestPtr<CityMap> map, GuestPtr<ps2f> position, GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, ps2f radius)
+    int Player_NearestObject(GuestPtr<CityMap> map, GuestPtr<ps2f> position, GuestPtr<Vec4> hit, GuestPtr<ps2f> distance, ps2f radius)
     {
-        port::GuestFrame<0x1B0> frame; // the list at +0x140, the matrix at +0x160, the hit point at +0x130, its distance at +0x1A8, flags at +0x1AC
-        const uint32_t base = frame.ptr().address;
+        port::GuestFrameOf<NearestObjectFrame> frame;
+        const GuestPtr<Vec4> matrix = frame.at(&NearestObjectFrame::matrix);
+        const GuestPtr<uint32_t> part = frame.at(&NearestObjectFrame::part);
         *distance = 100.0f;
-        eachObjectNear(map, position, base + 0x140u, base + 0x160u, base + 0x1ACu, [&](GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj) {
-            const int64_t answer = port::callGuest<int64_t>(btype->vtable->nearestHit, btype, obj, position, GuestPtr<Vec4>{base + 0x160u}, base + 0x130u, base + 0x1A8u, base + 0x1ACu, radius);
-            if (answer != 0 && ps2f(port::load<float>(base + 0x1A8u)) < ps2f(*distance))
+        eachObjectNear(map, position, frame.at(&NearestObjectFrame::seen).address, matrix.address, part.address,
+                       [&](GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj) {
+            const int64_t answer = port::callGuest<int64_t>(btype->vtable->nearestHit, btype, obj, position, matrix,
+                                                            frame.at(&NearestObjectFrame::hit),
+                                                            frame.at(&NearestObjectFrame::distance), part, radius);
+            if (answer != 0 && frame->distance < *distance)
             {
-                *distance = port::load<float>(base + 0x1A8u);
-                *GuestPtr<Vec4>{hit.address} = *GuestPtr<Vec4>{base + 0x130u};
+                *distance = frame->distance;
+                *hit = frame->hit;
             }
             return false;
         });

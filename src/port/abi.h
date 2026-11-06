@@ -399,6 +399,23 @@ namespace port
         uint32_t outerBottom_;
     };
 
+    // GuestFrame<sizeof(Frame)> seen as `Frame`, a struct laid out like the original's frame: its locals by name at
+    // the offsets the original used (`gap_` members are parts the port does not use: stack arguments, the saved
+    // registers). Same reservation and address as GuestFrame. `->` reaches the locals; at(&Frame::member) is a
+    // local's guest address, to hand to a guest function.
+    template <typename Frame>
+    class GuestFrameOf : public GuestFrame<sizeof(Frame)>
+    {
+        static_assert(sizeof(Frame) % 16 == 0, "a stack frame is a multiple of 16 bytes");
+        static_assert(std::is_standard_layout_v<Frame> && std::is_trivially_copyable_v<Frame>);
+
+    public:
+        mm::GuestPtr<Frame> ptr() const { return mm::GuestPtr<Frame>{GuestFrame<sizeof(Frame)>::ptr().address}; }
+        Frame *operator->() const { return ptr().get(); }
+        template <typename M>
+        auto at(M Frame::*member) const { return ptr().field(member); }
+    };
+
     // Return address given to guest callees; never a real code address.
     inline constexpr uint32_t kReturnSentinel = 0x00000FF0u;
 

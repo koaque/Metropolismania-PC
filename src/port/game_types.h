@@ -12,6 +12,7 @@ namespace mm
 /* Math types shared by the game's structs; parsed before the classes that embed them. */
 
 struct Vec4;
+struct TileRect;
 
 /* VU0-style vector (0x10 bytes); a 4x4 matrix is four of them. */
 struct Vec4 {
@@ -19,6 +20,15 @@ struct Vec4 {
     ps2f y;                   /* +0x04 */
     ps2f z;                   /* +0x08 */
     ps2f w;                   /* +0x0C */
+};
+
+/* A block of map tiles (0x10 bytes): its corner columns (x) and rows (z). Whether x1 and z1 lie inside the block or
+   one past it is the function's own (mm_Map_UpdateAreaGeometry: inside). */
+struct TileRect {
+    int32_t x0;                /* +0x00 */
+    int32_t z0;                /* +0x04 */
+    int32_t x1;                /* +0x08 */
+    int32_t z1;                /* +0x0C */
 };
 
 // ---- 05_classes.h
@@ -624,7 +634,7 @@ struct GoodsRecord {
     int8_t priceDigits;        /* +0x02 the price is this times ten to the power of the next (mm_Goods_GetPrice) */
     uint8_t priceExponent;     /* +0x03 */
     uint8_t kind;              /* +0x04 what it is (mm_WordsFn_BuyGoods): 4, 5, 10, 11 laptop modules; 6 to 8 bags; 0x10
-                                  present s; 0x11 and 0x13 food to carry, 0x12 and 0x14 food eaten at once; 0x15 clothes;
+                                  presents; 0x11 and 0x13 food to carry, 0x12 and 0x14 food eaten at once; 0x15 clothes;
                                   0x16 music; 0x17 and 0x1A to 0x1C things to place; 0x19 houses */
     uint8_t value;             /* +0x05 by kind: the bag size (6 to 8), the outfit (0x15, Bag.outfit), the music track
                                   (0x16), the family that applies (0x19), ... */
@@ -1355,10 +1365,7 @@ struct PlacementLayer {
     uint32_t markerPacket;     /* +0x214 ALPHA_1 0x30_00000048, +0x070..+0x20F to VU1 0x12 and the program 0x1A8330 */
     uint32_t endPacket;        /* +0x218 ALPHA_1 back to 0x20_00000044 */
     int32_t rectActive;        /* +0x21C 1: the highlight (mm_PlacementLayer_InTileRect), 2: the marker */
-    int32_t rectX0;            /* +0x220 */
-    int32_t rectZ0;            /* +0x224 */
-    int32_t rectX1;            /* +0x228 */
-    int32_t rectZ1;            /* +0x22C */
+    TileRect rect;             /* +0x220 the highlighted block (x1 and z1 inside it); the marker uses x0 and z0 */
     GuestPtr<A3DObject> marker;         /* +0x230 the marker model (0x1F3B1C) */
     uint8_t unk_234[0xC];
 };
@@ -1509,8 +1516,9 @@ struct BuildingTypeVtable {
     uint32_t acceptsOn;        /* +0x20 whether the type can be placed on an object (mm_Map_CheckPlacement) */
     uint32_t isOpen;           /* +0x24 opening hours (mm_Bldg_IsOpen) */
     uint32_t nearestHit;       /* +0x28 the nearest hit and its distance (mm_Player_NearestObject) */
-    uint32_t floorBelow;       /* +0x2C whether a segment from a point down crosses the object, the crossing out (the
-                                  surface the player stands on, mm_Player_FloorBelow) */
+    uint32_t floorBelow;       /* +0x2C whether a segment from a point up by a lift (to y - lift; heights grow
+                                  downwards) crosses the object, the highest crossing out: the surface the player is
+                                  put on (mm_Player_FloorBelow) */
     uint32_t rayHit;           /* +0x30 whether a ray hits the object (mm_MapObj_RayHit) */
     uint32_t animate;          /* +0x34 every frame with the time of day (mm_BldgType_CallAll): the ride animations */
 };
@@ -1965,6 +1973,7 @@ struct TalkFarView {
     TalkView base;
     Vec4 returnTarget;         /* +0x270 */
     int32_t building;          /* +0x280 */
+    uint8_t unk_284[0xC];
 };
 
 /* The view inside a home (0x2A0 bytes, vtable 0x1BD810): the talk view plus the walk-around state (mm_MyHome_ctor). */
@@ -2360,7 +2369,7 @@ struct CityScene {
                                   bad cops and teachers) */
     int32_t conductCount;      /* +0xAC */
     ps2f waterLevel;          /* +0xB0 height of the water surface, 0.5 (heights grow downwards: deeper tiles are under
-                                  wate r; mm_LayerG_Draw, mm_Se_PickTerrainAmbience) */
+                                  water; mm_LayerG_Draw, mm_Se_PickTerrainAmbience) */
     uint32_t flags;            /* +0xB4 1 buildings tinted by claim (set at construction), 2 holiday month, 4 popular
                                   (approval 118+), 8 a farewell party is on, 0x10 the city scene ends, 0x20 a cold going
                                   round: rolled each month from October to March (1 in 4), more people fall ill
@@ -2552,6 +2561,11 @@ static_assert(offsetof(Vec4, x) == 0x00, "Vec4.x");
 static_assert(offsetof(Vec4, y) == 0x04, "Vec4.y");
 static_assert(offsetof(Vec4, z) == 0x08, "Vec4.z");
 static_assert(offsetof(Vec4, w) == 0x0C, "Vec4.w");
+static_assert(sizeof(TileRect) == 0x10, "TileRect size");
+static_assert(offsetof(TileRect, x0) == 0x00, "TileRect.x0");
+static_assert(offsetof(TileRect, z0) == 0x04, "TileRect.z0");
+static_assert(offsetof(TileRect, x1) == 0x08, "TileRect.x1");
+static_assert(offsetof(TileRect, z1) == 0x0C, "TileRect.z1");
 static_assert(sizeof(TextBox) == 0x40, "TextBox size");
 static_assert(offsetof(TextBox, packet) == 0x08, "TextBox.packet");
 static_assert(offsetof(TextBox, clut) == 0x0C, "TextBox.clut");
@@ -2575,6 +2589,7 @@ static_assert(offsetof(GsStWrite, reg) == 0x08, "GsStWrite.reg");
 static_assert(offsetof(GsXyzWrite, xy) == 0x00, "GsXyzWrite.xy");
 static_assert(offsetof(GsXyzWrite, z) == 0x04, "GsXyzWrite.z");
 static_assert(offsetof(GsXyzWrite, reg) == 0x08, "GsXyzWrite.reg");
+static_assert(sizeof(SpritePacket) == 0xA0, "SpritePacket size");
 static_assert(offsetof(SpritePacket, dmaTag) == 0x00, "SpritePacket.dmaTag");
 static_assert(offsetof(SpritePacket, vifCodes) == 0x08, "SpritePacket.vifCodes");
 static_assert(offsetof(SpritePacket, gifTag) == 0x10, "SpritePacket.gifTag");
@@ -2599,6 +2614,7 @@ static_assert(offsetof(A3DObject, textures) == 0x04, "A3DObject.textures");
 static_assert(offsetof(A3DObject, trackCount) == 0x08, "A3DObject.trackCount");
 static_assert(offsetof(A3DObject, matrix) == 0x10, "A3DObject.matrix");
 static_assert(offsetof(A3DObject, animations) == 0x50, "A3DObject.animations");
+static_assert(sizeof(CharPartModel) == 0x70, "CharPartModel size");
 static_assert(offsetof(CharPartModel, groupSize) == 0x60, "CharPartModel.groupSize");
 static_assert(sizeof(Camera) == 0x310, "Camera size");
 static_assert(offsetof(Camera, packet) == 0x000, "Camera.packet");
@@ -2677,6 +2693,7 @@ static_assert(offsetof(TexSprite, clipWidth) == 0x28, "TexSprite.clipWidth");
 static_assert(offsetof(TexSprite, clipHeight) == 0x2C, "TexSprite.clipHeight");
 static_assert(offsetof(TexSprite, frameX) == 0x30, "TexSprite.frameX");
 static_assert(offsetof(TexSprite, frameY) == 0x34, "TexSprite.frameY");
+static_assert(sizeof(InstanceSlot) == 0x70, "InstanceSlot size");
 static_assert(offsetof(InstanceSlot, header) == 0x00, "InstanceSlot.header");
 static_assert(offsetof(InstanceSlot, colour) == 0x10, "InstanceSlot.colour");
 static_assert(offsetof(InstanceSlot, matrix) == 0x20, "InstanceSlot.matrix");
@@ -2720,6 +2737,7 @@ static_assert(offsetof(DmaChainReader, vifCode0) == 0x18, "DmaChainReader.vifCod
 static_assert(offsetof(DmaChainReader, vifCommand1) == 0x1C, "DmaChainReader.vifCommand1");
 static_assert(offsetof(DmaChainReader, vifCode1) == 0x20, "DmaChainReader.vifCode1");
 static_assert(offsetof(DmaChainReader, data) == 0x24, "DmaChainReader.data");
+static_assert(sizeof(TerrainPassParams) == 0x120, "TerrainPassParams size");
 static_assert(offsetof(TerrainPassParams, colour) == 0x00, "TerrainPassParams.colour");
 static_assert(offsetof(TerrainPassParams, tex0) == 0x10, "TerrainPassParams.tex0");
 static_assert(offsetof(TerrainPassParams, outputOffset) == 0x20, "TerrainPassParams.outputOffset");
@@ -2733,6 +2751,7 @@ static_assert(offsetof(CityCursorView, lineFrames) == 0x14, "CityCursorView.line
 static_assert(offsetof(CityCursorView, frame) == 0x28, "CityCursorView.frame");
 static_assert(offsetof(CityCursorView, fadeFrame) == 0x2C, "CityCursorView.fadeFrame");
 static_assert(offsetof(CityCursorView, sprite) == 0x30, "CityCursorView.sprite");
+static_assert(sizeof(LightSet) == 0x1B0, "LightSet size");
 static_assert(offsetof(LightSet, packetA) == 0x00, "LightSet.packetA");
 static_assert(offsetof(LightSet, packetB) == 0x04, "LightSet.packetB");
 static_assert(offsetof(LightSet, groupA) == 0x10, "LightSet.groupA");
@@ -2742,6 +2761,7 @@ static_assert(offsetof(LightSet, instanceColour) == 0x1A0, "LightSet.instanceCol
 static_assert(sizeof(ListMenuItem) == 0xC, "ListMenuItem size");
 static_assert(offsetof(ListMenuItem, textHeight) == 0x00, "ListMenuItem.textHeight");
 static_assert(offsetof(ListMenuItem, text) == 0x04, "ListMenuItem.text");
+static_assert(sizeof(ListMenuMask) == 0xE0, "ListMenuMask size");
 static_assert(offsetof(ListMenuMask, dmaTag) == 0x00, "ListMenuMask.dmaTag");
 static_assert(offsetof(ListMenuMask, vifCodes) == 0x08, "ListMenuMask.vifCodes");
 static_assert(offsetof(ListMenuMask, gifTag) == 0x10, "ListMenuMask.gifTag");
@@ -2796,8 +2816,10 @@ static_assert(offsetof(CardTime, hour) == 0x03, "CardTime.hour");
 static_assert(offsetof(CardTime, day) == 0x04, "CardTime.day");
 static_assert(offsetof(CardTime, month) == 0x05, "CardTime.month");
 static_assert(offsetof(CardTime, year) == 0x06, "CardTime.year");
+static_assert(sizeof(CardDirEntry) == 0x40, "CardDirEntry size");
 static_assert(offsetof(CardDirEntry, modified) == 0x08, "CardDirEntry.modified");
 static_assert(offsetof(CardDirEntry, name) == 0x20, "CardDirEntry.name");
+static_assert(sizeof(SaveTitle) == 0x44, "SaveTitle size");
 static_assert(offsetof(SaveTitle, text) == 0x00, "SaveTitle.text");
 static_assert(offsetof(SaveTitle, end) == 0x3C, "SaveTitle.end");
 static_assert(offsetof(SaveTitle, months) == 0x3D, "SaveTitle.months");
@@ -2889,6 +2911,7 @@ static_assert(offsetof(TitleScene, previewState) == 0xF4, "TitleScene.previewSta
 static_assert(offsetof(TitleScene, previewTurn) == 0xF8, "TitleScene.previewTurn");
 static_assert(offsetof(TitleScene, previewTurnStep) == 0xFC, "TitleScene.previewTurnStep");
 static_assert(offsetof(TitleScene, previewText) == 0x100, "TitleScene.previewText");
+static_assert(sizeof(GoodsRecord) == 0x88, "GoodsRecord size");
 static_assert(offsetof(GoodsRecord, name) == 0x00, "GoodsRecord.name");
 static_assert(offsetof(GoodsRecord, priceDigits) == 0x02, "GoodsRecord.priceDigits");
 static_assert(offsetof(GoodsRecord, priceExponent) == 0x03, "GoodsRecord.priceExponent");
@@ -2988,6 +3011,7 @@ static_assert(offsetof(ActorRef, person) == 0x00, "ActorRef.person");
 static_assert(offsetof(ActorRef, object) == 0x02, "ActorRef.object");
 static_assert(offsetof(ActorRef, family) == 0x04, "ActorRef.family");
 static_assert(offsetof(ActorRef, member) == 0x06, "ActorRef.member");
+static_assert(sizeof(EventType) == 0x4C, "EventType size");
 static_assert(offsetof(EventType, name) == 0x00, "EventType.name");
 static_assert(offsetof(EventType, id) == 0x20, "EventType.id");
 static_assert(offsetof(EventType, group) == 0x20, "EventType.group");
@@ -3021,6 +3045,7 @@ static_assert(offsetof(EventHandler, update) == 0x08, "EventHandler.update");
 static_assert(offsetof(EventHandler, end) == 0x0C, "EventHandler.end");
 static_assert(offsetof(EventHandler, text) == 0x10, "EventHandler.text");
 static_assert(offsetof(EventHandler, answer) == 0x14, "EventHandler.answer");
+static_assert(sizeof(EventData) == 0x1C, "EventData size");
 static_assert(offsetof(EventData, vtable) == 0x00, "EventData.vtable");
 static_assert(offsetof(EventData, update) == 0x04, "EventData.update");
 static_assert(offsetof(EventData, kind) == 0x08, "EventData.kind");
@@ -3057,6 +3082,7 @@ static_assert(offsetof(EvShoppingData, bill) == 0x4C, "EvShoppingData.bill");
 static_assert(offsetof(EvShoppingData, refund) == 0x50, "EvShoppingData.refund");
 static_assert(offsetof(EvShoppingData, tellFrames) == 0x54, "EvShoppingData.tellFrames");
 static_assert(offsetof(EvShoppingData, endFrames) == 0x58, "EvShoppingData.endFrames");
+static_assert(sizeof(ShoppingList) == 0x28, "ShoppingList size");
 static_assert(offsetof(ShoppingList, unk_00) == 0x00, "ShoppingList.unk_00");
 static_assert(offsetof(ShoppingList, goods) == 0x20, "ShoppingList.goods");
 static_assert(sizeof(DeliveryItem) == 0x20, "DeliveryItem size");
@@ -3130,6 +3156,7 @@ static_assert(offsetof(EvMiddleAgedData, actor) == 0x0C, "EvMiddleAgedData.actor
 static_assert(offsetof(EvMiddleAgedData, month) == 0x14, "EvMiddleAgedData.month");
 static_assert(offsetof(EvMiddleAgedData, frames) == 0x18, "EvMiddleAgedData.frames");
 static_assert(offsetof(EvMiddleAgedData, answer) == 0x1C, "EvMiddleAgedData.answer");
+static_assert(sizeof(EventSlot) == 0x20, "EventSlot size");
 static_assert(offsetof(EventSlot, kind) == 0x00, "EventSlot.kind");
 static_assert(offsetof(EventSlot, stage) == 0x01, "EventSlot.stage");
 static_assert(offsetof(EventSlot, familyA) == 0x04, "EventSlot.familyA");
@@ -3143,6 +3170,7 @@ static_assert(offsetof(EventMgr, slots) == 0x04, "EventMgr.slots");
 static_assert(offsetof(EventMgr, talks) == 0xA4, "EventMgr.talks");
 static_assert(offsetof(EventQueueEntry, type) == 0x00, "EventQueueEntry.type");
 static_assert(offsetof(EventQueueEntry, wait) == 0x01, "EventQueueEntry.wait");
+static_assert(sizeof(EventQueue) == 0x224, "EventQueue size");
 static_assert(offsetof(EventQueue, starts) == 0x000, "EventQueue.starts");
 static_assert(offsetof(EventQueue, entries) == 0x024, "EventQueue.entries");
 static_assert(offsetof(EventTest, types) == 0x00, "EventTest.types");
@@ -3262,6 +3290,7 @@ static_assert(offsetof(Notice, secondLine) == 0x10, "Notice.secondLine");
 static_assert(offsetof(TownPagesIndex, count) == 0x00, "TownPagesIndex.count");
 static_assert(offsetof(TownPagesIndex, firstFamily) == 0x02, "TownPagesIndex.firstFamily");
 static_assert(offsetof(TownPagesIndex, startPage) == 0x04, "TownPagesIndex.startPage");
+static_assert(sizeof(TownPages) == 0x64, "TownPages size");
 static_assert(offsetof(TownPages, book) == 0x00, "TownPages.book");
 static_assert(offsetof(TownPages, text) == 0x04, "TownPages.text");
 static_assert(offsetof(TownPages, mode) == 0x1C, "TownPages.mode");
@@ -3297,12 +3326,14 @@ static_assert(offsetof(StageState, terrain) == 0x1D8, "StageState.terrain");
 static_assert(offsetof(StageState, introduced) == 0x240, "StageState.introduced");
 static_assert(offsetof(StageState, flags) == 0x280, "StageState.flags");
 static_assert(offsetof(StageState, scriptVar) == 0x282, "StageState.scriptVar");
+static_assert(sizeof(CharClass) == 0x24, "CharClass size");
 static_assert(offsetof(CharClass, parts) == 0x00, "CharClass.parts");
 static_assert(offsetof(CharClass, restartFrames) == 0x10, "CharClass.restartFrames");
 static_assert(offsetof(CharClass, voice) == 0x16, "CharClass.voice");
 static_assert(offsetof(CharClass, flags) == 0x18, "CharClass.flags");
 static_assert(offsetof(CharClass, traits) == 0x1C, "CharClass.traits");
 static_assert(offsetof(CharClass, vtable) == 0x20, "CharClass.vtable");
+static_assert(sizeof(CharClassVtable) == 0x1C, "CharClassVtable size");
 static_assert(offsetof(CharClassVtable, dtor) == 0x08, "CharClassVtable.dtor");
 static_assert(offsetof(CharClassVtable, update) == 0x0C, "CharClassVtable.update");
 static_assert(offsetof(CharClassVtable, draw) == 0x10, "CharClassVtable.draw");
@@ -3319,6 +3350,7 @@ static_assert(offsetof(CharTypeRecord, part3) == 0x0E, "CharTypeRecord.part3");
 static_assert(offsetof(CharTypeRecord, traits) == 0x14, "CharTypeRecord.traits");
 static_assert(sizeof(PersonClass) == 0x28, "PersonClass size");
 static_assert(offsetof(PersonClass, walkSpeed) == 0x24, "PersonClass.walkSpeed");
+static_assert(sizeof(TexImage) == 0x1010, "TexImage size");
 static_assert(offsetof(TexImage, packet) == 0x000, "TexImage.packet");
 static_assert(offsetof(TexImage, file) == 0x1000, "TexImage.file");
 static_assert(sizeof(TexImageFile) == 0x20, "TexImageFile size");
@@ -3327,6 +3359,7 @@ static_assert(offsetof(TexImageFile, paletteEntries) == 0x08, "TexImageFile.pale
 static_assert(offsetof(TexImageFile, hasTexels) == 0x0C, "TexImageFile.hasTexels");
 static_assert(offsetof(TexImageFile, side) == 0x14, "TexImageFile.side");
 static_assert(offsetof(TexImageFile, uploadSpan) == 0x18, "TexImageFile.uploadSpan");
+static_assert(sizeof(LayerAInstance) == 0x90, "LayerAInstance size");
 static_assert(offsetof(LayerAInstance, meshPair) == 0x00, "LayerAInstance.meshPair");
 static_assert(offsetof(LayerAInstance, matrix) == 0x10, "LayerAInstance.matrix");
 static_assert(offsetof(LayerAInstance, packet) == 0x50, "LayerAInstance.packet");
@@ -3362,10 +3395,7 @@ static_assert(offsetof(PlacementLayer, highlightPacket) == 0x210, "PlacementLaye
 static_assert(offsetof(PlacementLayer, markerPacket) == 0x214, "PlacementLayer.markerPacket");
 static_assert(offsetof(PlacementLayer, endPacket) == 0x218, "PlacementLayer.endPacket");
 static_assert(offsetof(PlacementLayer, rectActive) == 0x21C, "PlacementLayer.rectActive");
-static_assert(offsetof(PlacementLayer, rectX0) == 0x220, "PlacementLayer.rectX0");
-static_assert(offsetof(PlacementLayer, rectZ0) == 0x224, "PlacementLayer.rectZ0");
-static_assert(offsetof(PlacementLayer, rectX1) == 0x228, "PlacementLayer.rectX1");
-static_assert(offsetof(PlacementLayer, rectZ1) == 0x22C, "PlacementLayer.rectZ1");
+static_assert(offsetof(PlacementLayer, rect) == 0x220, "PlacementLayer.rect");
 static_assert(offsetof(PlacementLayer, marker) == 0x230, "PlacementLayer.marker");
 static_assert(offsetof(RainLayer, gifTag) == 0x000, "RainLayer.gifTag");
 static_assert(offsetof(RainLayer, colourA) == 0x010, "RainLayer.colourA");
@@ -3409,6 +3439,7 @@ static_assert(offsetof(LayerG, waveParamsA) == 0x1F0, "LayerG.waveParamsA");
 static_assert(offsetof(LayerG, waveParamsB) == 0x200, "LayerG.waveParamsB");
 static_assert(offsetof(LayerG, packets) == 0x210, "LayerG.packets");
 static_assert(offsetof(LayerG, texCoordsRest) == 0x220, "LayerG.texCoordsRest");
+static_assert(sizeof(CityMapVtable) == 0x10, "CityMapVtable size");
 static_assert(offsetof(CityMapVtable, tick) == 0x08, "CityMapVtable.tick");
 static_assert(offsetof(CityMapVtable, clearObject) == 0x0C, "CityMapVtable.clearObject");
 static_assert(offsetof(BuildingTypeVtable, dtor) == 0x08, "BuildingTypeVtable.dtor");
@@ -3536,6 +3567,7 @@ static_assert(offsetof(CityMap, water) == 0x2F80, "CityMap.water");
 static_assert(offsetof(CityMap, layerB) == 0x2F84, "CityMap.layerB");
 static_assert(offsetof(CityMap, placement) == 0x2F88, "CityMap.placement");
 static_assert(offsetof(CityMap, instances) == 0x2F8C, "CityMap.instances");
+static_assert(sizeof(BuildingRecord) == 0x9C, "BuildingRecord size");
 static_assert(offsetof(BuildingRecord, name) == 0x00, "BuildingRecord.name");
 static_assert(offsetof(BuildingRecord, typeClass) == 0x20, "BuildingRecord.typeClass");
 static_assert(offsetof(BuildingRecord, size) == 0x21, "BuildingRecord.size");
@@ -3651,6 +3683,7 @@ static_assert(offsetof(WidgetVtable, isIdle) == 0x24, "WidgetVtable.isIdle");
 static_assert(offsetof(WidgetVtable, isActive) == 0x28, "WidgetVtable.isActive");
 static_assert(offsetof(WidgetVtable, onState) == 0x2C, "WidgetVtable.onState");
 static_assert(sizeof(TalkPose) == 0x4, "TalkPose size");
+static_assert(sizeof(TalkView) == 0x270, "TalkView size");
 static_assert(offsetof(TalkView, eye) == 0x10, "TalkView.eye");
 static_assert(offsetof(TalkView, target) == 0x20, "TalkView.target");
 static_assert(offsetof(TalkView, buildingModel) == 0x30, "TalkView.buildingModel");
@@ -3687,6 +3720,7 @@ static_assert(offsetof(TalkView, farReturnEye) == 0x260, "TalkView.farReturnEye"
 static_assert(offsetof(TalkPersonView, eye) == 0x270, "TalkPersonView.eye");
 static_assert(offsetof(TalkPersonView, target) == 0x280, "TalkPersonView.target");
 static_assert(offsetof(TalkPersonView, facing) == 0x290, "TalkPersonView.facing");
+static_assert(sizeof(TalkFarView) == 0x290, "TalkFarView size");
 static_assert(offsetof(TalkFarView, returnTarget) == 0x270, "TalkFarView.returnTarget");
 static_assert(offsetof(TalkFarView, building) == 0x280, "TalkFarView.building");
 static_assert(sizeof(MyHomeView) == 0x2A0, "MyHomeView size");
@@ -3756,6 +3790,7 @@ static_assert(offsetof(WordsTypeBase, line) == 0x00, "WordsTypeBase.line");
 static_assert(offsetof(WordsTypeBase, choice) == 0x02, "WordsTypeBase.choice");
 static_assert(offsetof(WordsTypeBase, answer) == 0x04, "WordsTypeBase.answer");
 static_assert(offsetof(WordsTypeBase, string) == 0x06, "WordsTypeBase.string");
+static_assert(sizeof(WordsTables) == 0x74, "WordsTables size");
 static_assert(offsetof(WordsTables, banks) == 0x00, "WordsTables.banks");
 static_assert(offsetof(WordsTables, typeBases) == 0x60, "WordsTables.typeBases");
 static_assert(offsetof(WordsTables, lineRemap) == 0x64, "WordsTables.lineRemap");
@@ -3779,6 +3814,7 @@ static_assert(offsetof(ClaimSupply, value) == 0x02, "ClaimSupply.value");
 static_assert(offsetof(ClaimTally, own) == 0x00, "ClaimTally.own");
 static_assert(offsetof(ClaimTally, weight) == 0x01, "ClaimTally.weight");
 static_assert(offsetof(ClaimTally, meters) == 0x02, "ClaimTally.meters");
+static_assert(sizeof(SeRequest) == 0x1C, "SeRequest size");
 static_assert(offsetof(SeRequest, sound) == 0x00, "SeRequest.sound");
 static_assert(offsetof(SeRequest, voice) == 0x01, "SeRequest.voice");
 static_assert(offsetof(SeRequest, owner) == 0x04, "SeRequest.owner");
@@ -3791,6 +3827,7 @@ static_assert(offsetof(SeRequest, volumeLeft) == 0x10, "SeRequest.volumeLeft");
 static_assert(offsetof(SeRequest, volumeRight) == 0x14, "SeRequest.volumeRight");
 static_assert(offsetof(SeRequest, cooldown) == 0x18, "SeRequest.cooldown");
 static_assert(offsetof(SeRequest, hold) == 0x19, "SeRequest.hold");
+static_assert(sizeof(SeVoice) == 0x30, "SeVoice size");
 static_assert(offsetof(SeVoice, sound) == 0x00, "SeVoice.sound");
 static_assert(offsetof(SeVoice, voice) == 0x01, "SeVoice.voice");
 static_assert(offsetof(SeVoice, owner) == 0x04, "SeVoice.owner");
@@ -3810,6 +3847,7 @@ static_assert(offsetof(SeVoice, heldRight) == 0x24, "SeVoice.heldRight");
 static_assert(offsetof(SeVoice, heldPitch) == 0x28, "SeVoice.heldPitch");
 static_assert(offsetof(SeVoice, rest) == 0x2A, "SeVoice.rest");
 static_assert(offsetof(SeVoice, unk_2B) == 0x2B, "SeVoice.unk_2B");
+static_assert(sizeof(SoundStatus) == 0x40, "SoundStatus size");
 static_assert(offsetof(SoundStatus, result) == 0x00, "SoundStatus.result");
 static_assert(offsetof(SoundStatus, midiPlaying) == 0x04, "SoundStatus.midiPlaying");
 static_assert(offsetof(SoundStatus, wavePlaying) == 0x08, "SoundStatus.wavePlaying");
@@ -3862,6 +3900,7 @@ static_assert(offsetof(SoundCmdMidiOpen, sqName) == 0x00, "SoundCmdMidiOpen.sqNa
 static_assert(offsetof(SoundCmdMidiOpen, hdName) == 0x04, "SoundCmdMidiOpen.hdName");
 static_assert(offsetof(SoundCmdMidiOpen, bdName) == 0x08, "SoundCmdMidiOpen.bdName");
 static_assert(offsetof(SoundCmdMidiOpen, id) == 0x0C, "SoundCmdMidiOpen.id");
+static_assert(sizeof(SoundCmd) == 0xD0, "SoundCmd size");
 static_assert(offsetof(SoundCmd, command) == 0x00, "SoundCmd.command");
 static_assert(offsetof(SoundCmd, sent) == 0x04, "SoundCmd.sent");
 static_assert(offsetof(SoundCmd, kept) == 0x08, "SoundCmd.kept");
@@ -3946,6 +3985,7 @@ static_assert(offsetof(CityScene, fade) == 0xCC, "CityScene.fade");
 static_assert(offsetof(CityScene, fadeSpeed) == 0xD0, "CityScene.fadeSpeed");
 static_assert(offsetof(CityScene, fadeOverAll) == 0xD4, "CityScene.fadeOverAll");
 static_assert(offsetof(StageSceneVtable, dtor) == 0x4C, "StageSceneVtable.dtor");
+static_assert(sizeof(StageScene) == 0x104, "StageScene size");
 static_assert(offsetof(StageScene, stageBase) == 0x00, "StageScene.stageBase");
 static_assert(offsetof(StageScene, widget) == 0x04, "StageScene.widget");
 static_assert(offsetof(StageScene, camera) == 0x10, "StageScene.camera");
@@ -3990,6 +4030,7 @@ static_assert(offsetof(MenuWin, list) == 0x10, "MenuWin.list");
 static_assert(offsetof(MenuWin, size) == 0x14, "MenuWin.size");
 static_assert(offsetof(MenuWin, choice) == 0x18, "MenuWin.choice");
 static_assert(offsetof(MenuWin, wideList) == 0x1C, "MenuWin.wideList");
+static_assert(sizeof(TalkCard) == 0x38, "TalkCard size");
 static_assert(offsetof(TalkCard, person) == 0x0C, "TalkCard.person");
 static_assert(offsetof(TalkCard, family) == 0x10, "TalkCard.family");
 static_assert(offsetof(TalkCard, member) == 0x14, "TalkCard.member");
@@ -4001,6 +4042,7 @@ static_assert(offsetof(TalkCard, city) == 0x28, "TalkCard.city");
 static_assert(offsetof(TalkCard, friendship) == 0x2C, "TalkCard.friendship");
 static_assert(offsetof(TalkCard, frame) == 0x30, "TalkCard.frame");
 static_assert(offsetof(TalkCard, mood) == 0x34, "TalkCard.mood");
+static_assert(sizeof(TalkMoney) == 0x1C, "TalkMoney size");
 static_assert(offsetof(TalkMoney, shown) == 0x0C, "TalkMoney.shown");
 static_assert(offsetof(TalkMoney, amount) == 0x10, "TalkMoney.amount");
 static_assert(offsetof(TalkMoney, model) == 0x14, "TalkMoney.model");

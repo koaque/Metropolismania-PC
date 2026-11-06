@@ -375,29 +375,57 @@ namespace mm
     int WordsFn_TalksToday(GuestPtr<WordsCtx> ctx) { return memberStatus(ctx, addr::MemberStatus_TalksToday, addr::TalkStatus_TalksToday); }
     int WordsFn_RecentTalks(GuestPtr<WordsCtx> ctx) { return memberStatus(ctx, addr::MemberStatus_RecentTalks, addr::TalkStatus_RecentTalks); }
 
+    namespace
+    {
+        // mm_Wants_Find's answers and where its search goes on, kept together in the callers' frames.
+        struct WantCursor
+        {
+            uint32_t claimSlot;        // the want's claim slot
+            uint32_t object;           // its building
+            uint32_t person;           // and person
+            int32_t iterator;          // where the next search starts (0: the first want)
+        };
+
+        // The next want from the cursor on; 0 when none is left.
+        int nextWant(GuestPtr<CityScene> city, GuestPtr<WantCursor> want)
+        {
+            return Wants_Find(city->wants, city, want.field(&WantCursor::claimSlot), want.field(&WantCursor::object),
+                              want.field(&WantCursor::person), want.field(&WantCursor::iterator));
+        }
+    }
+
     // Whether the city's wants list holds a want of person A.
     int WordsFn_HasWantForPerson(GuestPtr<WordsCtx> ctx)
     {
-        port::GuestFrame<0x30> frame;
-        const uint32_t sp = frame.ptr().address;
-        port::store<uint32_t>(sp + 0x2Cu, 0);
+        struct Locals
+        {
+            uint8_t gap_00[0x20];
+            WantCursor want;           // +0x20
+        };
+        static_assert(offsetof(Locals, want) == 0x20 && sizeof(Locals) == 0x30);
+        port::GuestFrameOf<Locals> frame;
+        const GuestPtr<WantCursor> want = frame.at(&Locals::want);
+        want->iterator = 0;
         for (;;)
         {
-            if (Wants_Find(ctx->city->wants, ctx->city, GuestPtr<uint32_t>{sp + 0x20u}, GuestPtr<uint32_t>{sp + 0x24u},
-                           GuestPtr<uint32_t>{sp + 0x28u}, GuestPtr<int32_t>{sp + 0x2Cu}) == 0)
+            if (nextWant(ctx->city, want) == 0)
                 return 0;
-            if (port::load<uint32_t>(sp + 0x28u) == ctx->personA->index)
+            if (want->person == ctx->personA->index)
                 return 1;
         }
     }
 
     int WordsFn_FindWant(GuestPtr<WordsCtx> ctx)
     {
-        port::GuestFrame<0x20> frame;
-        const uint32_t sp = frame.ptr().address;
-        port::store<uint32_t>(sp + 0x1Cu, 0);
-        return Wants_Find(ctx->city->wants, ctx->city, GuestPtr<uint32_t>{sp + 0x10u}, GuestPtr<uint32_t>{sp + 0x14u},
-                          GuestPtr<uint32_t>{sp + 0x18u}, GuestPtr<int32_t>{sp + 0x1Cu});
+        struct Locals
+        {
+            uint8_t gap_00[0x10];
+            WantCursor want;           // +0x10
+        };
+        static_assert(offsetof(Locals, want) == 0x10 && sizeof(Locals) == 0x20);
+        port::GuestFrameOf<Locals> frame;
+        frame->want.iterator = 0;
+        return nextWant(ctx->city, frame.at(&Locals::want));
     }
 
     // ---- second group: texts
@@ -942,14 +970,19 @@ namespace mm
     // 2 when a want's building has building A's claim, else whether the wants list has room for 4 more words.
     int WordsFn_WantClaimMatch(GuestPtr<WordsCtx> ctx)
     {
-        port::GuestFrame<0x50> frame;
-        const uint32_t sp = frame.ptr().address;
-        const int claim = claimOf(ctx->buildingA);
-        port::store<uint32_t>(sp + 0x4Cu, 0);
-        while (Wants_Find(ctx->city->wants, ctx->city, GuestPtr<uint32_t>{sp + 0x40u}, GuestPtr<uint32_t>{sp + 0x44u},
-                          GuestPtr<uint32_t>{sp + 0x48u}, GuestPtr<int32_t>{sp + 0x4Cu}) != 0)
+        struct Locals
         {
-            if (claimOf(Map_GetRecord(ctx->city->map, static_cast<int>(port::load<uint32_t>(sp + 0x44u)))) == claim)
+            uint8_t gap_00[0x40];
+            WantCursor want;           // +0x40
+        };
+        static_assert(offsetof(Locals, want) == 0x40 && sizeof(Locals) == 0x50);
+        port::GuestFrameOf<Locals> frame;
+        const GuestPtr<WantCursor> want = frame.at(&Locals::want);
+        const int claim = claimOf(ctx->buildingA);
+        want->iterator = 0;
+        while (nextWant(ctx->city, want) != 0)
+        {
+            if (claimOf(Map_GetRecord(ctx->city->map, static_cast<int>(want->object))) == claim)
                 return 2;
         }
         return Wants_HasRoom(ctx->city->wants, 4);
@@ -958,16 +991,20 @@ namespace mm
     // The claim line of the chosen want's building (want number wantIndex in the wants list), 0 past the end.
     GuestPtr<char> WordsFn_TextWantClaim(GuestPtr<WordsCtx> ctx)
     {
-        port::GuestFrame<0x40> frame;
-        const uint32_t sp = frame.ptr().address;
-        port::store<uint32_t>(sp + 0x3Cu, 0);
-        for (int i = 0; Wants_Find(ctx->city->wants, ctx->city, GuestPtr<uint32_t>{sp + 0x30u}, GuestPtr<uint32_t>{sp + 0x34u},
-                                   GuestPtr<uint32_t>{sp + 0x38u}, GuestPtr<int32_t>{sp + 0x3Cu}) != 0;
-             ++i)
+        struct Locals
+        {
+            uint8_t gap_00[0x30];
+            WantCursor want;           // +0x30
+        };
+        static_assert(offsetof(Locals, want) == 0x30 && sizeof(Locals) == 0x40);
+        port::GuestFrameOf<Locals> frame;
+        const GuestPtr<WantCursor> want = frame.at(&Locals::want);
+        want->iterator = 0;
+        for (int i = 0; nextWant(ctx->city, want) != 0; ++i)
         {
             if (i != ctx->wantIndex)
                 continue;
-            const GuestPtr<MapObject> building = Map_GetRecord(ctx->city->map, static_cast<int>(port::load<uint32_t>(sp + 0x34u)));
+            const GuestPtr<MapObject> building = Map_GetRecord(ctx->city->map, static_cast<int>(want->object));
             return GuestPtr<char>{static_cast<uint32_t>(Claim_GetLine(typeOfObject(building)->claimB, building->claimSlot))};
         }
         return GuestPtr<char>{0};
@@ -1354,12 +1391,16 @@ namespace mm
             return Event_CountActive(city->events) + 1;
         if (code == -2003)
         {
-            port::GuestFrame<0x20> frame;
-            const uint32_t sp = frame.ptr().address;
-            const GuestPtr<int32_t> iterator{sp + 0xCu};
-            *iterator = 0;
+            struct Locals
+            {
+                WantCursor want;       // +0x00
+                uint8_t gap_10[0x10];
+            };
+            static_assert(sizeof(Locals) == 0x20);
+            port::GuestFrameOf<Locals> frame;
+            frame->want.iterator = 0;
             int found = 0;
-            while (Wants_Find(city->wants, city, GuestPtr<uint32_t>{sp}, GuestPtr<uint32_t>{sp + 4u}, GuestPtr<uint32_t>{sp + 8u}, iterator) != 0)
+            while (nextWant(city, frame.at(&Locals::want)) != 0)
                 ++found;
             return found;
         }
@@ -2426,8 +2467,13 @@ namespace mm
     GuestPtr<char> Words_GetChoiceText(int script, GuestPtr<CityScene> city, int code, int index)
     {
         (void)script;
-        port::GuestFrame<0x50> frame;
-        const uint32_t sp = frame.ptr().address;
+        struct Locals
+        {
+            uint8_t gap_00[0x40];
+            WantCursor want;           // +0x40 the wants for code -0x7D3
+        };
+        static_assert(offsetof(Locals, want) == 0x40 && sizeof(Locals) == 0x50);
+        port::GuestFrameOf<Locals> frame;
         const GuestPtr<WordsBank> common = globals::wordsBank(1);
         const auto defaultText = [&](int32_t string)
         {
@@ -2477,16 +2523,16 @@ namespace mm
         }
         if (code == -0x7D3)
         {
-            port::store<int32_t>(sp + 0x4Cu, 0);
+            const GuestPtr<WantCursor> want = frame.at(&Locals::want);
+            want->iterator = 0;
             for (int counted = 0;; ++counted)
             {
-                if (Wants_Find(city->wants, city, GuestPtr<uint32_t>{sp + 0x40u}, GuestPtr<uint32_t>{sp + 0x44u}, GuestPtr<uint32_t>{sp + 0x48u},
-                               GuestPtr<int32_t>{sp + 0x4Cu}) == 0)
+                if (nextWant(city, want) == 0)
                     return GuestPtr<char>{0};
                 if (counted == index)
                     break;
             }
-            const GuestPtr<MapObject> object = Map_GetRecord(city->map, static_cast<int>(port::load<uint32_t>(sp + 0x44u)));
+            const GuestPtr<MapObject> object = Map_GetRecord(city->map, static_cast<int>(want->object));
             return GuestPtr<char>{static_cast<uint32_t>(
                 Claim_GetLine(globals::buildingType(object->type)->claimB, object->claimSlot))};
         }
@@ -2577,27 +2623,38 @@ namespace mm
     // and, in mode 1, person A's introduction (introduces); mode 2 also notes the member (memberIndex). 1 on a match, else 0.
     int WordsFn_SuppliesWantBody(GuestPtr<WordsCtx> ctx, int mode)
     {
-        port::GuestFrame<0xB0> frame;
-        const uint32_t sp = frame.ptr().address;
-        const uint32_t local = sp + 0x9Cu;
+        // The want's answers sit here in another order than WantCursor's.
+        struct Locals
+        {
+            uint8_t gap_00[0x9C];
+            uint16_t oneClaim[2];      // +0x9C a list of one claim (from 0x1BDC24: the id, then the 0 that ends it)
+            int32_t iterator;          // +0xA0 mm_Wants_Find's place
+            uint32_t claimSlot;        // +0xA4 the want's claim slot
+            uint32_t person;           // +0xA8 its person
+            uint32_t object;           // +0xAC its building
+        };
+        static_assert(offsetof(Locals, oneClaim) == 0x9C && offsetof(Locals, iterator) == 0xA0 &&
+                      offsetof(Locals, object) == 0xAC && sizeof(Locals) == 0xB0);
+        port::GuestFrameOf<Locals> frame;
+        const uint32_t local = frame.at(&Locals::oneClaim).address;
         port::store<uint32_t>(local, port::load<uint32_t>(0x001BDC24u));
-        port::store<int32_t>(sp + 0xA0u, 0);
+        frame->iterator = 0;
         uint32_t claims = local;
-        for (int index = 0; Wants_Find(ctx->city->wants, ctx->city, GuestPtr<uint32_t>{sp + 0xA4u}, GuestPtr<uint32_t>{sp + 0xACu},
-                                       GuestPtr<uint32_t>{sp + 0xA8u}, GuestPtr<int32_t>{sp + 0xA0u}) != 0;
+        for (int index = 0; Wants_Find(ctx->city->wants, ctx->city, frame.at(&Locals::claimSlot), frame.at(&Locals::object),
+                                       frame.at(&Locals::person), frame.at(&Locals::iterator)) != 0;
              ++index)
         {
             if (index != ctx->wantIndex)
                 continue;
             const GuestPtr<CityMap> map = ctx->city->map;
-            const uint32_t object = port::load<uint32_t>(sp + 0xACu);
+            const uint32_t object = frame->object;
             const GuestPtr<ClaimEntry> list = Claim_GetList(globals::buildingType(Map_GetRecord(map, static_cast<int>(object))->type)->claimB);
-            const uint32_t value = list[static_cast<int32_t>(port::load<uint32_t>(sp + 0xA4u))].id;
+            const uint32_t value = list[static_cast<int32_t>(frame->claimSlot)].id;
             if (static_cast<int32_t>(value) < 0x8000)
-                port::store<uint16_t>(local, static_cast<uint16_t>(value));
+                frame->oneClaim[0] = static_cast<uint16_t>(value);
             else
                 claims = Claim_GetGroup(value).address;
-            ctx->personB = ctx->city->map->people + port::load<uint32_t>(sp + 0xA8u);
+            ctx->personB = ctx->city->map->people + frame->person;
             ctx->familyB = ctx->personB->family;
             ctx->memberB = ctx->personB->member;
             ctx->buildingB = Map_GetRecord(ctx->city->map, static_cast<int>(object));
@@ -2658,27 +2715,32 @@ namespace mm
     // home becomes person B (1). 0 when there is no candidate or no resident.
     int WordsFn_PickClaimResident(GuestPtr<WordsCtx> ctx)
     {
-        port::GuestFrame<0x110> frame;
-        const uint32_t sp = frame.ptr().address;
-        const uint32_t local = sp + 0xFCu;
+        struct Locals
+        {
+            uint8_t gap_00[0xFC];
+            uint16_t oneClaim[2];      // +0xFC a list of one claim (from 0x1BDC1C: the id, then the 0 that ends it)
+            WantCursor want;           // +0x100
+        };
+        static_assert(offsetof(Locals, oneClaim) == 0xFC && offsetof(Locals, want) == 0x100 && sizeof(Locals) == 0x110);
+        port::GuestFrameOf<Locals> frame;
+        const GuestPtr<WantCursor> want = frame.at(&Locals::want);
+        const uint32_t local = frame.at(&Locals::oneClaim).address;
         Words_CollectNearbyHomes(ctx, ctx->buildingA);
         if (ctx->candidateCount == 0)
             return 0;
         port::store<uint32_t>(local, port::load<uint32_t>(0x001BDC1Cu));
-        port::store<int32_t>(sp + 0x10Cu, 0);
+        want->iterator = 0;
         uint32_t claims = local;
         int result = 0;
-        for (int index = 0; Wants_Find(ctx->city->wants, ctx->city, GuestPtr<uint32_t>{sp + 0x100u}, GuestPtr<uint32_t>{sp + 0x104u},
-                                       GuestPtr<uint32_t>{sp + 0x108u}, GuestPtr<int32_t>{sp + 0x10Cu}) != 0;
-             ++index)
+        for (int index = 0; nextWant(ctx->city, want) != 0; ++index)
         {
             if (index != ctx->wantIndex)
                 continue;
             const GuestPtr<ClaimEntry> list = Claim_GetList(
-                globals::buildingType(Map_GetRecord(ctx->city->map, static_cast<int>(port::load<uint32_t>(sp + 0x104u)))->type)->claimB);
-            const uint32_t value = list[static_cast<int32_t>(port::load<uint32_t>(sp + 0x100u))].id;
+                globals::buildingType(Map_GetRecord(ctx->city->map, static_cast<int>(want->object))->type)->claimB);
+            const uint32_t value = list[static_cast<int32_t>(want->claimSlot)].id;
             if (static_cast<int32_t>(value) < 0x8000)
-                port::store<uint16_t>(local, static_cast<uint16_t>(value));
+                frame->oneClaim[0] = static_cast<uint16_t>(value);
             else
                 claims = Claim_GetGroup(value).address;
             break;
