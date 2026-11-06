@@ -669,7 +669,7 @@ namespace mm
     {
         if (!fadeDone(view))
             return;
-        cameraAt(view, GuestPtr<Vec4>{view.address + 0x10u}, GuestPtr<Vec4>{view.address + 0x20u});
+        cameraAt(view, view.field(&TalkView::eye), view.field(&TalkView::target));
         fadeTo(view, 5);
     }
 
@@ -873,7 +873,7 @@ namespace mm
         }
         const GuestPtr<MapPerson> record = card->city->map->people + card->person;
         card->friendship = fromInt(static_cast<int8_t>(Family_GetFriendship(record->family, record->member)));
-        const GuestPtr<uint8_t> status{record.address + 0x2Fu};
+        const GuestPtr<uint8_t> status = record.field(&MapPerson::status);
         int level = TalkStatus_LongApart(status);
         if (Family_GetFriendship(record->family, record->member) == 0)
             level = 2;
@@ -1231,7 +1231,7 @@ namespace mm
         if (money)
         {
             money->base.vtable = GuestPtr<WidgetVtable>{0x001BD7C0u};
-            lifetime::deleteTextBox(money.address + 0x18u);
+            lifetime::deleteTextBox(money.field(&TalkMoney::text).address);
             Widget_dtor(GuestPtr<Widget>{money.address}, 0);
             if (0 < deleteFlag)
                 sdk::operator_delete(money.address);
@@ -1244,8 +1244,8 @@ namespace mm
         if (card)
         {
             card->base.vtable = GuestPtr<WidgetVtable>{0x001BD720u};
-            lifetime::deleteTextBox(card.address + 0x20u);
-            lifetime::deleteTextBox(card.address + 0x24u);
+            lifetime::deleteTextBox(card.field(&TalkCard::lowerText).address);
+            lifetime::deleteTextBox(card.field(&TalkCard::upperText).address);
             lifetime::deleteFrame(card.address + 0x30u);
             Widget_dtor(GuestPtr<Widget>{card.address}, 0);
             if (0 < deleteFlag)
@@ -1260,8 +1260,8 @@ namespace mm
         if (talk)
         {
             talk->base.vtable = GuestPtr<WidgetVtable>{0x001BD770u};
-            lifetime::deleteVirtual(talk.address + 0x14u, 8);
-            lifetime::deleteVirtual(talk.address + 0x10u, 8);
+            lifetime::deleteVirtual(talk.field(&TalkSession::conversation).address, 8);
+            lifetime::deleteVirtual(talk.field(&TalkSession::view).address, 8);
             Widget_dtor(GuestPtr<Widget>{talk.address}, 0);
             if (0 < deleteFlag)
                 sdk::operator_delete(talk.address);
@@ -1277,7 +1277,7 @@ namespace mm
             view->base.vtable = GuestPtr<WidgetVtable>{0x001BD450u};
             for (uint32_t i = 0; i < 4u; ++i)
             {
-                lifetime::deleteTextBox(view.address + 0x78u + 4u * i);
+                lifetime::deleteTextBox((view.field(&TalkView::nameBoxes) + i).address);
                 lifetime::deleteFrame(view.address + 0x88u + 4u * i);
             }
             lifetime::deleteFrame(view.address + 0x98u);
@@ -1355,10 +1355,10 @@ namespace mm
         if (conv)
         {
             conv->base.base.vtable = GuestPtr<WidgetVtable>{0x001BD860u};
-            lifetime::deleteVirtual(conv.address + 0x2E0u, 8);
-            lifetime::deleteVirtual(conv.address + 0x2D4u, 8);
-            lifetime::deleteVirtual(conv.address + 0x2D8u, 8);
-            lifetime::deleteVirtual(conv.address + 0x2DCu, 0x120);
+            lifetime::deleteVirtual(conv.field(&TalkConv::card).address, 8);
+            lifetime::deleteVirtual(conv.field(&TalkConv::menu).address, 8);
+            lifetime::deleteVirtual(conv.field(&TalkConv::panel).address, 8);
+            lifetime::deleteVirtual(conv.field(&TalkConv::nameEntry).address, 0x120);
             MsgWin_dtor(GuestPtr<MsgWin>{conv.address}, 0);
             if (0 < deleteFlag)
                 sdk::operator_delete(conv.address);
@@ -1538,7 +1538,7 @@ namespace mm
         }
         else
         {
-            const GuestPtr<MapPerson> person{card->city->map->people.address + 0x30u * static_cast<uint32_t>(card->person)};
+            const GuestPtr<MapPerson> person = card->city->map->people + card->person;
             Map_GetRecord(card->city->map, person->home);
             const GuestPtr<Family> family = Family_Get(person->family, 0);
             charType = person->charType;
@@ -1760,7 +1760,7 @@ namespace mm
         }
         if (!forced && (Pad_Pressed(0) & 0x40u) == 0)
             return;
-        if (TalkView_GetChoice(talk->view, GuestPtr<uint32_t>{choiceAt}, GuestPtr<uint32_t>{talk.address + 0x34u}) == 0)
+        if (TalkView_GetChoice(talk->view, GuestPtr<uint32_t>{choiceAt}, talk.field(&TalkSession::slot).as<uint32_t>()) == 0)
             return;
         if (talk->building == 0x3F80)
         {
@@ -1838,7 +1838,7 @@ namespace mm
                 if (code < -0x7A8)
                     sdk::strcpy(0x001C5380u + (static_cast<uint32_t>(code + 0x7D0) << 4), conv->nameEntry.address + 0x1Cu);
                 else
-                    Words_MatchTypedAnswer(conv->script, GuestPtr<char>{conv->nameEntry.address + 0x1Cu});
+                    Words_MatchTypedAnswer(conv->script, conv->nameEntry.field(&NameEntry::name));
                 NameEntry_Close(conv->nameEntry);
                 conv->base.base.state = 3;
                 TalkConv_NextLine(conv);
@@ -2057,7 +2057,7 @@ namespace mm
         if (talk->building != 0x3F80)
         {
             const GuestPtr<CityScene> inside{talk->city.address};
-            const uint32_t camera = inside->cityCamera.address + 0x130u;
+            const uint32_t camera = inside->cityCamera.field(&CityCamera::base).field(&Camera::eye).address;
             const GuestPtr<MapObject> object = Map_GetRecord(inside->map, talk->building);
             const ps2f size = fromInt(globals::buildingType(object->type)->size);
             const uint32_t tile = object->tile;
@@ -2424,7 +2424,7 @@ namespace mm
             {
                 if (!(member < family->memberCount))
                     return;
-                const uint32_t record = family.address + 0x24u + 0x48u * static_cast<uint32_t>(member);
+                const uint32_t record = (family.field(&Family::members) + static_cast<int32_t>(member)).address;
                 const GuestPtr<CharClass> cls = classOf(port::load<uint16_t>(record));
                 if (Schedule_MemberActivity(view->city, static_cast<uint32_t>(view->family), member) == 5)
                     drawAway(family->memberCount + 6 * view->family, sp + 0x110u);
@@ -2477,7 +2477,7 @@ namespace mm
             if (!(posX() < cullEdge) && drawn < 4)
             {
                 const GuestPtr<Family> family = Family_Get(person->family, 0);
-                const uint32_t record = family.address + 0x24u + 0x48u * person->member;
+                const uint32_t record = (family.field(&Family::members) + person->member).address;
                 if (view->choosing == 0)
                     drawLabel(record, seen % 2 == 0 ? 0xBA : 0xAA, 0x200000, person->family, person->member);
                 ++drawn;

@@ -41,7 +41,7 @@ namespace mm
     {
         if (applicants->count == 0)
             return 0;
-        return static_cast<int>(applicants.address + 0x14u * static_cast<uint32_t>(applicants->cursor));
+        return static_cast<int>((applicants.field(&Applicants::entries) + applicants->cursor).address);
     }
 
     void Applicants_RemoveFamily(GuestPtr<Applicants> applicants, uint32_t family)
@@ -365,7 +365,7 @@ namespace mm
             }
             ListMenu_SetItemText(list(), GuestPtr<char>{line}, -1);
         }
-        return ListMenu_HandleInput(list(), GuestPtr<int32_t>{bag.address + 0x1A0u});
+        return ListMenu_HandleInput(list(), bag.field(&Bag::cursor));
     }
 
     // Ends the use of the selected slot (state 7, the slide time, slide, cleared): when something was used up one is taken from

@@ -447,11 +447,11 @@ namespace mm
     void Map_LoadState(GuestPtr<CityMap> map, GuestPtr<McManager> mc)
     {
         SaveFile_Read(mc, static_cast<int>(map->packedTiles.address), 0x18000);
-        SaveFile_Read(mc, static_cast<int>(map.address + 0x10u), 0x20);
+        SaveFile_Read(mc, static_cast<int>(map.field(&CityMap::nextId).address), 0x20);
         SaveFile_Read(mc, static_cast<int>(map->objects.address), 0x6F200);
         TileLists_LoadState(map->tileLists, mc);
         SaveFile_Read(mc, static_cast<int>(map->people.address), 0x46500);
-        SaveFile_Read(mc, static_cast<int>(map.address + 0x6Cu), 0xC);
+        SaveFile_Read(mc, static_cast<int>(map.field(&CityMap::freePerson).address), 0xC);
     }
 
     // Families: member bytes, the three bitsets, the member status entries and the three counters.

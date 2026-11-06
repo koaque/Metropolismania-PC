@@ -545,7 +545,7 @@ namespace mm
         {
             if (wants->index[i].held != 0)
                 continue;
-            const GuestPtr<Want> want{wants.address + 0x104u + 4u * wants->index[i].offset};
+            const GuestPtr<Want> want = (wants.field(&WantsWin::data) + wants->index[i].offset).as<Want>();
             const int state = Wants_CheckEntry(wants, city, GuestPtr<uint16_t>{want.address});
             const auto phone = [&] { return PhoneCall_Post(city->phoneCalls, want->person, want->family, want->member, 0) != 0; };
             if (state == 2)
@@ -2031,7 +2031,7 @@ namespace mm
                 city->approval = 120;
         }
         Stage_SaveState(static_cast<int>(city.address), mc);
-        SaveFile_Write(mc, static_cast<int>(city.address + 0x84u), 0x34);
+        SaveFile_Write(mc, static_cast<int>(city.field(&CityScene::clock).address), 0x34);
         CityCamera_SaveState(city->cityCamera, mc);
         Player_SaveState(city->player, mc);
         Applicants_SaveState(city->applicants, mc);
@@ -2047,8 +2047,8 @@ namespace mm
 
     void CityCamera_SaveState(GuestPtr<CityCamera> camera, GuestPtr<McManager> mc)
     {
-        SaveFile_Write(mc, static_cast<int>(camera.address + 0x530u), 4);
-        SaveFile_Write(mc, static_cast<int>(camera.address + 0x130u), 0x1D4);
+        SaveFile_Write(mc, static_cast<int>(camera.field(&CityCamera::zoomLevel).address), 4);
+        SaveFile_Write(mc, static_cast<int>(camera.field(&CityCamera::base).field(&Camera::eye).address), 0x1D4);
     }
 
     // Hand on to the talk; the callees' v0 is left as they leave it.
@@ -2148,7 +2148,7 @@ namespace mm
     {
         if (Wants_HasRoom(wants, 4) == 0)
             return 0;
-        const GuestPtr<Want> want{wants.address + 0x104u + 4u * wants->wordsUsed};
+        const GuestPtr<Want> want = (wants.field(&WantsWin::data) + wants->wordsUsed).as<Want>();
         want->person = person->index;
         want->object = person->home;
         want->family = person->family;
@@ -2176,7 +2176,7 @@ namespace mm
             *iterator = i + 1;
             if (wants->index[i].held != 0)
                 continue;
-            const GuestPtr<Want> want{wants.address + 0x104u + 4u * wants->index[i].offset};
+            const GuestPtr<Want> want = (wants.field(&WantsWin::data) + wants->index[i].offset).as<Want>();
             const int state = Wants_CheckEntry(wants, city, GuestPtr<uint16_t>{want.address});
             if (state == 0 || state == 3)
             {

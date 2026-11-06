@@ -649,7 +649,7 @@ namespace mm
                 const ps2f d = distance->x;
                 if (!(d < radius))
                     continue;
-                const GuestPtr<uint8_t> mark{Map_GetTileObject(map, tx, tz).address + 0x14u};
+                const GuestPtr<uint8_t> mark = Map_GetTileObject(map, tx, tz).field(&MapObject::look) + 4; // the weed row
                 if (kind == 2)
                 {
                     if (*mark == 0)
@@ -1904,7 +1904,7 @@ namespace mm
     // The new-object history: one period older (the bytes move up one) and an empty newest period.
     void CityMap_PushNewBuildings(GuestPtr<CityMap> map)
     {
-        sdk::memmove(map.address + 0x29u, map.address + 0x28u, 5);
+        sdk::memmove((map.field(&CityMap::newBuildings) + 1).address, map.field(&CityMap::newBuildings).address, 5);
         map->newBuildings[0] = 0;
     }
 

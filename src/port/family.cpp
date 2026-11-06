@@ -458,7 +458,7 @@ namespace mm
     uint32_t Family_PickIntroduction(int family, int member, GuestPtr<CityScene> city)
     {
         const GuestPtr<Family> record = Family_Get(family, 0);
-        const uint32_t acquaintances = record.address + 0x24u + 0x48u * static_cast<uint32_t>(member) + 8u;
+        const uint32_t acquaintances = (record.field(&Family::members) + member).field(&FamilyMember::acquaintances).address;
         for (uint32_t i = 0; i < 16u; ++i)
         {
             const uint32_t id = port::load<uint16_t>(acquaintances + 2u * i);

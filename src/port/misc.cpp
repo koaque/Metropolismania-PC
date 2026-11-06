@@ -93,7 +93,7 @@ namespace mm
             return;
         A3D_AnimateIfRoom(player->model, player->animation, player->animTime);
         A3DObject_UpdateMatrices(player->model);
-        Instance_DrawModelLit(player->model, GuestPtr<Vec4>{player.address + 0x20u}, player->mode, city->bag->outfit);
+        Instance_DrawModelLit(player->model, player.field(&Player::colour), player->mode, city->bag->outfit);
     }
 
     // char: the player's animation from its movement and the pad. Standing still: 1 when at least 0.4
@@ -245,7 +245,7 @@ namespace mm
         {
             const GuestPtr<Vec4> direction{sp + 0xA0u};
             vf(4) = load(aim);
-            vf(5) = load(GuestPtr<Vec4>{player.address + 0x10u});
+            vf(5) = load(player.field(&Player::position));
             set(vf(4), sub(vf(4), vf(5)), XYZW);
             vf(1) = vf(4);
             set(vf(2), mul(vf(1), vf(1)), XYZW);
@@ -280,7 +280,7 @@ namespace mm
         store(to, vf(4));
         *step = *GuestPtr<Vec4>{globals::kPickStep};
         Math_MulMatVecVu0(step, turn, step);
-        *walk = *GuestPtr<Vec4>{player.address + 0x10u};
+        *walk = *player.field(&Player::position);
         const int endX = sdk::fptosi(ps2f(64.0f) + to->x);
         const int endZ = sdk::fptosi(ps2f(64.0f) - to->z);
 
@@ -725,7 +725,7 @@ namespace mm
             0x44u, 0x20u, 0x42u, 0,                                           // ALPHA_1: the usual blend
             0x60000000u, 0, 0, 0,                                             // ret
         };
-        const GuestPtr<uint32_t> p{camera.address + 0x310u};
+        const GuestPtr<uint32_t> p = camera.field(&CityCamera::skyBands);
         for (int32_t i = 0; i < static_cast<int32_t>(sizeof(words) / sizeof(words[0])); ++i)
             p[i] = words[i];
     }
@@ -2153,7 +2153,7 @@ namespace mm
         else if (!(inX <= farEdge))
             skip = 1;
 
-        const auto links = [](GuestPtr<MapObject> block) { return GuestPtr<uint16_t>{block.address + 0x10u}; };
+        const auto links = [](GuestPtr<MapObject> block) { return block.field(&MapObject::roadLinks); };
         ps2f nearest = 128.0f;
         uint16_t result = 0x4000;
         for (int dir = 0; dir < 4; ++dir)
@@ -2225,7 +2225,7 @@ namespace mm
             return 0x4000;
         const uint32_t sp = frame.ptr().address;
         const GuestPtr<MapObject> dest = Map_GetRecord(city->map, person->inside);
-        const auto links = [](GuestPtr<MapObject> block) { return GuestPtr<uint16_t>{block.address + 0x10u}; };
+        const auto links = [](GuestPtr<MapObject> block) { return block.field(&MapObject::roadLinks); };
         const auto linksTo = [&](GuestPtr<MapObject> block, uint16_t to) {
             for (int i = 0; i < 4; ++i)
                 if (links(block)[i] == to)

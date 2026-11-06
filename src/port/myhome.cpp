@@ -114,7 +114,7 @@ namespace mm
             if (MyHome_WallHit(talkView, GuestPtr<Vec4>{sp + 0x30u}, GuestPtr<uint32_t>{sp + 0x70u}, GuestPtr<ps2f>{sp + 0x9Cu}) == 0)
                 continue;
             vf(4) = load(GuestPtr<Vec4>{sp + 0x70u});
-            vf(5) = load(GuestPtr<Vec4>{view.address + 0x270u});
+            vf(5) = load(view.field(&MyHomeView::position));
             set(vf(4), sub(vf(4), vf(5)), XYZW);
             store(GuestPtr<Vec4>{sp + 0x80u}, vf(4));
             port::store<uint32_t>(sp + 0x84u, 0);
@@ -198,10 +198,10 @@ namespace mm
         view->pitch = pitch;
         sdk::sceVu0RotMatrixY(sp + 0x50u, globals::kIdentityMatrix, view->facing);
         applyMatrix(GuestPtr<Vec4>{sp + 0x50u}, move, move);
-        vf(4) = load(GuestPtr<Vec4>{view.address + 0x270u});
+        vf(4) = load(view.field(&MyHomeView::position));
         vf(5) = load(move);
         set(vf(4), add(vf(4), vf(5)), XYZW);
-        store(GuestPtr<Vec4>{view.address + 0x270u}, vf(4));
+        store(view.field(&MyHomeView::position), vf(4));
         MyHome_Collide(talkView);
         const ps2f floor = MapObj_GetHeight(city->map, static_cast<uint32_t>(view->base.targetObject)) - ps2f(0.5f);
         if (!(view->position.y <= floor))
@@ -211,12 +211,12 @@ namespace mm
         port::store<uint32_t>(sp + 0x48u, 0x3DCCCCCDu);
         port::store<uint32_t>(sp + 0x4Cu, 0);
         applyMatrix(GuestPtr<Vec4>{sp + 0x50u}, move, move);
-        vf(4) = load(GuestPtr<Vec4>{view.address + 0x270u});
+        vf(4) = load(view.field(&MyHomeView::position));
         vf(5) = load(move);
         set(vf(4), sub(vf(4), vf(5)), XYZW);
-        store(GuestPtr<Vec4>{view.address + 0x280u}, vf(4));
+        store(view.field(&MyHomeView::target), vf(4));
         view->target.y = view->target.y + view->pitch;
-        Camera_SetEyeTarget(GuestPtr<Camera>{city->cityCamera.address}, GuestPtr<Vec4>{view.address + 0x270u}, GuestPtr<Vec4>{view.address + 0x280u});
+        Camera_SetEyeTarget(GuestPtr<Camera>{city->cityCamera.address}, view.field(&MyHomeView::position), view.field(&MyHomeView::target));
         Camera_UpdateMatrices(GuestPtr<Camera>{city->cityCamera.address});
         city->talkOverlay = 0;
     }
@@ -243,7 +243,7 @@ namespace mm
         view->target.y = MapObj_GetHeight(view->base.city->map, static_cast<uint32_t>(object)) - F(0x3F000000u);
         view->target.z = (fromInt(0x80 - (record->tile >> 7)) - F(0x42800000u)) - half;
         view->target.w = std::bit_cast<float>(0x3F800000u);
-        *GuestPtr<Vec4>{view.address + 0x270u} = *GuestPtr<Vec4>{view.address + 0x280u};
+        view->position = view->target;
         const int kind = Map_GetTileKind(view->base.city->map, record->tile);
         port::store<uint32_t>(view.address + 0x290u, port::load<uint32_t>(0x001B2690u + 4u * static_cast<uint32_t>(kind)));
         sdk::sceVu0RotMatrixY(sp + 0x60u, globals::kIdentityMatrix, view->facing);
@@ -252,10 +252,10 @@ namespace mm
         port::store<float>(sp + 0x58u, static_cast<float>(F(0x3F000000u) * footprint - F(0x3DCCCCCDu)));
         port::store<uint32_t>(sp + 0x5Cu, 0);
         applyMatrix(GuestPtr<Vec4>{sp + 0x60u}, GuestPtr<Vec4>{sp + 0x50u}, GuestPtr<Vec4>{sp + 0x50u});
-        vf(4) = load(GuestPtr<Vec4>{view.address + 0x270u});
+        vf(4) = load(view.field(&MyHomeView::position));
         vf(5) = load(GuestPtr<Vec4>{sp + 0x50u});
         set(vf(4), add(vf(4), vf(5)), XYZW);
-        store(GuestPtr<Vec4>{view.address + 0x270u}, vf(4));
+        store(view.field(&MyHomeView::position), vf(4));
         view->pitch = F(0);
         return talkView;
     }
@@ -280,17 +280,17 @@ namespace mm
             view->target.x = who->x;
             view->target.y = who->y - F(0x3EE66666u);
             view->target.z = who->z;
-            port::store<uint32_t>(view.address + 0x28Cu, 0x3F800000u);
+            view->target.w = std::bit_cast<float>(0x3F800000u);
             view->eye.x = who->x;
             view->eye.y = who->y - F(0x3F0CCCCDu);
             view->eye.z = who->z;
-            port::store<uint32_t>(view.address + 0x27Cu, 0x3F800000u);
+            view->eye.w = std::bit_cast<float>(0x3F800000u);
             port::store<uint32_t>(sp + 0x50u, 0);
             port::store<uint32_t>(sp + 0x54u, 0);
             port::store<uint32_t>(sp + 0x58u, 0x3FA66666u);
             port::store<uint32_t>(sp + 0x5Cu, 0);
-            vf(4) = load(GuestPtr<Vec4>{view.address + 0x20u});
-            vf(5) = load(GuestPtr<Vec4>{view.address + 0x10u});
+            vf(4) = load(view.field(&TalkPersonView::base).field(&TalkView::target));
+            vf(5) = load(view.field(&TalkPersonView::base).field(&TalkView::eye));
             set(vf(4), sub(vf(4), vf(5)), XYZW);
             store(GuestPtr<Vec4>{sp + 0x40u}, vf(4));
             port::store<uint32_t>(sp + 0x44u, 0);
@@ -308,10 +308,10 @@ namespace mm
             port::store<float>(sp + 0x80u, static_cast<float>(-directionX));
             port::store<float>(sp + 0x88u, static_cast<float>(-directionZ));
             applyMatrix(GuestPtr<Vec4>{sp + 0x60u}, GuestPtr<Vec4>{sp + 0x50u}, GuestPtr<Vec4>{sp + 0x50u});
-            vf(4) = load(GuestPtr<Vec4>{view.address + 0x270u});
+            vf(4) = load(view.field(&TalkPersonView::eye));
             vf(5) = load(GuestPtr<Vec4>{sp + 0x50u});
             set(vf(4), add(vf(4), vf(5)), XYZW);
-            store(GuestPtr<Vec4>{view.address + 0x270u}, vf(4));
+            store(view.field(&TalkPersonView::eye), vf(4));
             const ps2f floor = Map_SampleHeight(city->map, view->eye.x, view->eye.z) - ps2f(0.5f);
             if (!(view->eye.y <= floor))
                 view->eye.y = floor;

@@ -94,6 +94,16 @@ namespace mm
         // The same address as another type: a derived class (a building type's own class), or a view the game takes of it.
         template <typename U>
         GuestPtr<U> as() const { return GuestPtr<U>{address}; }
+        // A field's address as the original computes it, this address plus the field's offset (an array field gives its
+        // first element). Unlike `of`, nothing goes through host memory, so a sum outside RDRAM stays as it is.
+        template <typename C, typename F>
+        GuestPtr<std::remove_extent_t<F>> field(F C::*member) const
+        {
+            static_assert(std::is_same_v<C, T>, "field() takes a member of the pointed-to struct");
+            static const T probe{};
+            const auto offset = reinterpret_cast<const char *>(&(probe.*member)) - reinterpret_cast<const char *>(&probe);
+            return GuestPtr<std::remove_extent_t<F>>{address + static_cast<uint32_t>(offset)};
+        }
 
         // The guest address of an object reached through guest memory (a field, an array element).
         static GuestPtr of(const T *pointer) { return GuestPtr{port::guest(pointer)}; }

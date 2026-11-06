@@ -542,7 +542,7 @@ struct TitleScene {
     int32_t layers;            /* +0xD0 layer set drawn */
     int32_t idleTimer;         /* +0xD4 idle frames (restarted at 1800; provisional) */
     int32_t introFrame;        /* +0xD8 logo intro counter: title sprite alpha, then frames of the letters, then frames left (mm_Title_Intro) */
-    uint8_t unk_DC[4];
+    int32_t savesListed;       /* +0xDC the load screen's count of saves listed (mm_Title_LoadMenu) */
     int32_t afterGame;         /* +0xE0 made again after a city ended (game state 1): the logos and card check are skipped
                                   and the game data is only reset (mm_TitleScene_StartGame) */
     ps2f previewTime;         /* +0xE4 frame of the new-game preview model's animation (mm_Title_NewGameIntro) */
@@ -2592,6 +2592,7 @@ static_assert(offsetof(TitleScene, fade) == 0xCC, "TitleScene.fade");
 static_assert(offsetof(TitleScene, layers) == 0xD0, "TitleScene.layers");
 static_assert(offsetof(TitleScene, idleTimer) == 0xD4, "TitleScene.idleTimer");
 static_assert(offsetof(TitleScene, introFrame) == 0xD8, "TitleScene.introFrame");
+static_assert(offsetof(TitleScene, savesListed) == 0xDC, "TitleScene.savesListed");
 static_assert(offsetof(TitleScene, afterGame) == 0xE0, "TitleScene.afterGame");
 static_assert(offsetof(TitleScene, previewTime) == 0xE4, "TitleScene.previewTime");
 static_assert(offsetof(TitleScene, previewEnd) == 0xE8, "TitleScene.previewEnd");

@@ -16,7 +16,7 @@ namespace mm
         // Actor `index` of the talk's first event (EventData::actors, by guest address for any index).
         GuestPtr<ActorRef> talkActor(GuestPtr<WordsCtx> ctx, int index)
         {
-            return GuestPtr<ActorRef>{eventsOf(ctx)->talks[0].address + 0x0Cu + 8u * static_cast<uint32_t>(index)};
+            return eventsOf(ctx)->talks[0].field(&EventData::actor) + index;
         }
     }
 
@@ -367,7 +367,7 @@ namespace mm
             const GuestPtr<MapPerson> person = ctx->arg != 0 ? ctx->personB : ctx->personA;
             if (!person)
                 return port::callGuest<int>(fromFamily, static_cast<int>(who.family), static_cast<int>(who.member));
-            return port::callGuest<int>(fromByte, person.address + 0x2Fu);
+            return port::callGuest<int>(fromByte, person.field(&MapPerson::status).address);
         }
     }
 
@@ -428,7 +428,7 @@ namespace mm
     GuestPtr<char> WordsFn_TextBuildingName(GuestPtr<WordsCtx> ctx)
     {
         const int type = ctx->arg == 1 ? ctx->buildingTypeB : Family_GetTypeIndex(ctx->arg == 0 ? ctx->familyA : ctx->result);
-        return GuestPtr<char>{typeAt(type).address + 0x110u};
+        return typeAt(type).field(&BuildingType::name);
     }
 
     namespace
@@ -1580,7 +1580,7 @@ namespace mm
             const int bits = static_cast<int>((GuestPtr<CharClass>{cls}->traits & 0xE00000u) >> 0x15);
             const int points = bits + base;
             port::setGuestV0(bits);  // the friendship call returns v0 as it found it on some paths: the shifted bits here
-            const int result = Family_AddFriendshipScaled(ctx->familyA, ctx->memberA, GuestPtr<int32_t>{ctx->city.address + 0x8Cu}, points, sign);
+            const int result = Family_AddFriendshipScaled(ctx->familyA, ctx->memberA, ctx->city.field(&CityScene::approval), points, sign);
             ctx->friendshipChanged = 1;
             return result;
         }
@@ -2186,7 +2186,7 @@ namespace mm
         uint32_t claims = local;
         if (entry->id >= 0x8000)
             claims = Claim_GetGroup(port::load<uint16_t>(local)).address;
-        const uint32_t member = Family_Get(ctx->familyA, 0).address + 0x48u * ctx->memberA + 0x2Cu;
+        const uint32_t member = (Family_Get(ctx->familyA, 0).field(&Family::members) + ctx->memberA).field(&FamilyMember::acquaintances).address;
         const uint32_t end = member + 0x20u;
         for (uint32_t at = member;; at += 2u)
         {
@@ -2603,7 +2603,7 @@ namespace mm
         if (mode == 0)
             return Family_CanApply(ctx->familyA, ctx->city) != 0 && wantsOneOf(ctx->familyA) ? 1 : 0;
         const GuestPtr<Family> family = Family_Get(ctx->familyA, 0);
-        const uint32_t first = family.address + 0x24u;
+        const uint32_t first = family.field(&Family::members).address;
         uint32_t member = mode == 2 ? first : first + 0x48u * ctx->memberA;
         const uint32_t end = mode == 2 ? member + 0x48u * family->memberCount : member + 0x48u;
         for (; member < end; member += 0x48u)

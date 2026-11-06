@@ -710,7 +710,7 @@ namespace mm
         const GuestPtr<CityCursorView> view = GuestPtr<CityCursorView>::of(cursor->views[parity]);
         Dma_AppendCall(static_cast<int>(view->frame.address));
         // lineCount is not checked against 5, so the lines are read as guest addresses like the original.
-        const GuestPtr<uint32_t> lines{view.address}, lineFrames{view.address + 0x14u};
+        const GuestPtr<uint32_t> lines{view.address}, lineFrames = view.field(&CityCursorView::lineFrames).as<uint32_t>();
         for (int i = 0; i < cursor->lineCount; ++i)
         {
             TextBox_Draw(GuestPtr<TextBox>{lines[i]});
@@ -719,7 +719,7 @@ namespace mm
         if (cursor->mode == 4)
         {
             DmaList_QueueClearZ();
-            Dma_AppendCall(static_cast<int>(view.address + 0x30u));
+            Dma_AppendCall(static_cast<int>(view.field(&CityCursorView::extraPacket).address));
         }
         else if (cursor->mode != 0)
         {
@@ -768,7 +768,7 @@ namespace mm
         const uint32_t parity = port::load<uint32_t>(0x001BDCD0u) & 1u;
         const GuestPtr<CityCursorView> view = GuestPtr<CityCursorView>::of(cursor->views[parity]);
         // As in CityCursor_Draw, lineCount is not checked against 5.
-        const GuestPtr<uint32_t> lineText{view.address}, lineFrames{view.address + 0x14u};
+        const GuestPtr<uint32_t> lineText{view.address}, lineFrames = view.field(&CityCursorView::lineFrames).as<uint32_t>();
         int y = lineY << 4;
         for (int i = 0; i < cursor->lineCount; ++i)
         {
@@ -831,7 +831,7 @@ namespace mm
     {
         constexpr uint64_t kTex0 = 0x1E01ull | (2ull << 14) | (0x14ull << 20) | (7ull << 26) | (7ull << 30) | (1ull << 34) |
                                    (0x1E00ull << 37) | (2ull << 61);
-        emitWords(GuestPtr<uint32_t>{minimap.address + 0x2000u},
+        emitWords(minimap.field(&Minimap::packet).as<uint32_t>(),
                   {0x10000006, 0, 0x11000000, 0x50000006,
                    4, 0x10000000, 0xE, 0,
                    0, 0, 0x51, 0,
@@ -899,7 +899,7 @@ namespace mm
         for (uint32_t offset = 0; offset < 0x14; offset += 4)
             port::store<uint32_t>(pause.address + offset, 0);
         pause->openTime = 0.0f;
-        sdk::strcpy(pause.address + 0x30u, 0x001B73D0u);
+        sdk::strcpy(pause.field(&PauseMenu::saveTitle).address, 0x001B73D0u);
         return pause;
     }
 
@@ -1837,7 +1837,7 @@ namespace mm
     {
         if (pass != 1 || view->base.state != 3)
             return;
-        Packet2_Draw(GuestPtr<uint32_t>{port::load<uint32_t>(viewCity(view).address + 0x40u)}, 1);
+        Packet2_Draw(GuestPtr<uint32_t>{viewCity(view)->lights.address}, 1);
         const GuestPtr<MapObject> home = Map_GetRecord(viewCity(view)->map, static_cast<int>(viewObject(view)));
         if ((home->flags & 0x20u) == 0)
             return;
@@ -2058,7 +2058,7 @@ namespace mm
         const uint32_t sp = frame.ptr().address;
         const auto F = [](uint32_t bits) { return ps2f(std::bit_cast<float>(bits)); };
         const GuestPtr<Vec4> colour{sp + 0x20u}, matrix{sp + 0x30u}, turnMatrix{sp + 0x70u};
-        const auto rowOf = [](GuestPtr<Vec4> base, int i) { return GuestPtr<Vec4>{base.address + 0x10u * static_cast<uint32_t>(i)}; };
+        const auto rowOf = [](GuestPtr<Vec4> base, int i) { return base + i; };
         *colour = *GuestPtr<Vec4>{0x001B26C0u};
         Mat4_Copy(matrix, GuestPtr<Vec4>{globals::kIdentityMatrix});
         const int state = scene->previewState;
@@ -2153,8 +2153,8 @@ namespace mm
         port::GuestFrame<0x60> frame;
         const uint32_t sp = frame.ptr().address;
         const GuestPtr<int32_t> rect{sp + 0x4Cu};
-        const uint32_t view = cursor.address + 0xD0u * (port::load<uint32_t>(0x001BDCD0u) & 1u);
-        Frame_GetRect(GuestPtr<Frame>{port::load<uint32_t>(view + 0x28u)}, GuestPtr<uint32_t>{rect.address}, GuestPtr<uint32_t>{rect.address + 4u},
+        const GuestPtr<CityCursorView> view = cursor.field(&CityCursor::views) + static_cast<int32_t>(port::load<uint32_t>(0x001BDCD0u) & 1u);
+        Frame_GetRect(view->frame, GuestPtr<uint32_t>{rect.address}, GuestPtr<uint32_t>{rect.address + 4u},
                       GuestPtr<uint32_t>{rect.address + 8u}, GuestPtr<uint32_t>{rect.address + 12u});
         int steps = 30 - cursor->openTimer;
         if (steps >= 16)
@@ -2176,8 +2176,9 @@ namespace mm
             rect[3] = 0;
             rect[1] = 0;
         }
-        port::store<uint32_t>(view + 0x90u, static_cast<uint32_t>(rect[0]) | (static_cast<uint32_t>(rect[1]) << 16));
-        port::store<uint32_t>(view + 0xB0u, static_cast<uint32_t>(rect[2]) | (static_cast<uint32_t>(rect[3]) << 16));
+        const uint32_t packet = view.field(&CityCursorView::extraPacket).address;
+        port::store<uint32_t>(packet + 0x60u, static_cast<uint32_t>(rect[0]) | (static_cast<uint32_t>(rect[1]) << 16));
+        port::store<uint32_t>(packet + 0x80u, static_cast<uint32_t>(rect[2]) | (static_cast<uint32_t>(rect[3]) << 16));
     }
 
     PORT_FN(CityCursor_SelectTile);
@@ -3131,8 +3132,8 @@ namespace mm
         if (msgwin)
         {
             msgwin->base.vtable = GuestPtr<WidgetVtable>{0x001BCE10u};
-            lifetime::deleteFrame(msgwin.address + 0x14u);
-            lifetime::deleteTextBox(msgwin.address + 0x10u);
+            lifetime::deleteFrame(msgwin.field(&MsgWin::arrowPacket).address);
+            lifetime::deleteTextBox(msgwin.field(&MsgWin::text).address);
             Widget_dtor(GuestPtr<Widget>{msgwin.address}, 0);
             if (0 < deleteFlag)
                 sdk::operator_delete(msgwin.address);
@@ -3147,7 +3148,7 @@ namespace mm
         {
             for (uint32_t i = 0; i < 32u; ++i)
                 lifetime::deleteTextBox(packet::addressOf((GuestPtr<ListMenuItem>::of(menu->items[0]) + static_cast<int32_t>(i))->text));
-            lifetime::deleteFrame(menu.address + 0xE0u);
+            lifetime::deleteFrame(menu.field(&ListMenu::cursorFrame).address);
             if (0 < deleteFlag)
                 sdk::operator_delete(menu.address);
         }
@@ -3233,7 +3234,7 @@ namespace mm
     {
         if (laptop)
         {
-            lifetime::deleteTextBox(laptop.address + 0x44u);
+            lifetime::deleteTextBox(laptop.field(&Laptop::text).address);
             if (0 < deleteFlag)
                 sdk::operator_delete(laptop.address);
         }
@@ -3259,7 +3260,7 @@ namespace mm
         if (notice)
         {
             lifetime::deleteTextBox(notice.address + 8u);
-            lifetime::deleteTextBox(notice.address + 0xCu);
+            lifetime::deleteTextBox(notice.field(&Notice::text2).address);
             if (0 < deleteFlag)
                 sdk::operator_delete(notice.address);
         }
@@ -3271,7 +3272,7 @@ namespace mm
     {
         if (pages)
         {
-            lifetime::deleteFrame(pages.address + 0x4Cu);
+            lifetime::deleteFrame(pages.field(&TownPages::cursorFrame).address);
             const uint32_t index = pages->index.address;
             if (index != 0u)
             {
@@ -3318,7 +3319,7 @@ namespace mm
         pages->cursorFrame = GuestPtr<Frame>{frame};
         pages->book = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B20u)};
         pages->mode = 0;
-        pages->bookMatrix = GuestPtr<Vec4>{pages->book.address + 0x10u};
+        pages->bookMatrix = pages->book.field(&A3DObject::matrix);
         const GuestPtr<Vec4> bookPlace{0x001B1A60u};
         pages->bookMatrix[3].x = bookPlace->x;
         pages->bookMatrix[3].y = bookPlace->y;
@@ -3715,8 +3716,8 @@ namespace mm
         {
             lifetime::deleteWith(pause.address + 4u, [](uint32_t o) { ListMenu_dtor(GuestPtr<ListMenu>{o}, 1); });
             lifetime::deleteWith(pause.address + 8u, [](uint32_t o) { ListMenu_dtor(GuestPtr<ListMenu>{o}, 1); });
-            lifetime::deleteWith(pause.address + 0xCu, [](uint32_t o) { McManager_dtor(GuestPtr<McManager>{o}, 1); });
-            lifetime::deleteTextBox(pause.address + 0x10u);
+            lifetime::deleteWith(pause.field(&PauseMenu::mc).address, [](uint32_t o) { McManager_dtor(GuestPtr<McManager>{o}, 1); });
+            lifetime::deleteTextBox(pause.field(&PauseMenu::message).address);
             if (0 < deleteFlag)
                 sdk::operator_delete(pause.address);
         }
@@ -3741,7 +3742,7 @@ namespace mm
         if (menuwin)
         {
             menuwin->base.vtable = GuestPtr<WidgetVtable>{0x001BCF80u};
-            lifetime::deleteWith(menuwin.address + 0x10u, [](uint32_t o) { ListMenu_dtor(GuestPtr<ListMenu>{o}, 1); });
+            lifetime::deleteWith(menuwin.field(&MenuWin::list).address, [](uint32_t o) { ListMenu_dtor(GuestPtr<ListMenu>{o}, 1); });
             Widget_dtor(GuestPtr<Widget>{menuwin.address}, 0);
             if (0 < deleteFlag)
                 sdk::operator_delete(menuwin.address);
@@ -3754,7 +3755,7 @@ namespace mm
     {
         if (port::callGuest<int64_t>(menuwin->base.vtable->step, menuwin, ps2f(0.1f)) != 0)
         {
-            lifetime::deleteWith(menuwin.address + 0x10u, [](uint32_t o) { ListMenu_dtor(GuestPtr<ListMenu>{o}, 1); });
+            lifetime::deleteWith(menuwin.field(&MenuWin::list).address, [](uint32_t o) { ListMenu_dtor(GuestPtr<ListMenu>{o}, 1); });
             menuwin->base.state = 0;
         }
     }
@@ -3824,10 +3825,11 @@ namespace mm
         void drawCaptionScene(uint32_t scene)
         {
             DmaList_QueueGsDefaults();
-            Packet2_Draw(GuestPtr<uint32_t>{port::load<uint32_t>(scene + 0x14u)}, 0);
-            Packet_Draw(GuestPtr<uint32_t>{port::load<uint32_t>(scene + 0x10u)});
+            const GuestPtr<StageScene> stage{scene};
+            Packet2_Draw(GuestPtr<uint32_t>{stage->lights.address}, 0);
+            Packet_Draw(GuestPtr<uint32_t>{stage->camera.address});
             DmaList_QueueClearZ();
-            TextBox_Draw(GuestPtr<TextBox>{port::load<uint32_t>(scene + 0x18u)});
+            TextBox_Draw(stage->caption);
         }
 
         // The caption's text box (caption), style -1; none when the allocation fails.
@@ -3843,8 +3845,8 @@ namespace mm
         // The phase counts up by one and the fade is set to black.
         void nextCaptionPhase(uint32_t scene)
         {
-            port::store<int32_t>(scene + 0x34u, port::load<int32_t>(scene + 0x34u) + 1);
-            port::store<int32_t>(scene + 0x38u, 0x80);
+            GuestPtr<StageScene>{scene}->phase = GuestPtr<StageScene>{scene}->phase + 1;
+            GuestPtr<StageScene>{scene}->fade = 0x80;
         }
     }
 
@@ -4263,7 +4265,7 @@ namespace mm
         box(entry->nameText, 0xC, 1, -1, 0x7DA0, 0x8120);
         box(entry->lineText, 0x10, 1, -1, 0x7D30, 0x7FD0);
         entry->model = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B6Cu)};
-        entry->boardMatrix = GuestPtr<Vec4>{entry->model.address + 0x10u};
+        entry->boardMatrix = entry->model.field(&A3DObject::matrix);
         entry->markerMatrix = worldMatrix(modelNode(entry->model, 1));
         entry->restHeight = 0.0f;
         entry->markerX = std::bit_cast<float>(0x3C03126Fu); // 0.008
@@ -4672,7 +4674,7 @@ namespace mm
             return;
         const GuestPtr<CityMap> map{city->map.address};
         const uint32_t person = cursor->target;
-        const uint32_t record = map->people.address + 0x30u * person;
+        const uint32_t record = (map->people + static_cast<int32_t>(person)).address;
         const int x = sdk::fptosi(ps2f(64.0f) + ps2f(std::bit_cast<float>(port::load<uint32_t>(record))));
         const int z = sdk::fptosi(ps2f(64.0f) - ps2f(std::bit_cast<float>(port::load<uint32_t>(record + 8u))));
         const GuestPtr<MapObject> object = Map_FindPersonObjectOnTile(map, person, static_cast<uint16_t>(x + (z << 7)));
@@ -5144,7 +5146,7 @@ namespace mm
         port::GuestFrame<0xF0> frame;
         const uint32_t sp = frame.ptr().address;
         const uint32_t point = sp + 0xC0u, text = sp + 0xD0u;
-        const uint32_t matrix = city->cityCamera.address + 0x10u;
+        const uint32_t matrix = city->cityCamera.field(&CityCamera::base).field(&Camera::worldScreenA).address;
         const GuestPtr<Vec4> place{point};
         *place = cursor->targetPos;
         ps2f lift(0.0f);
@@ -5190,7 +5192,7 @@ namespace mm
                             Frame_SetStyle(lineFrame(count()), band + 9);
                     }
                     cursor->lineCount = count() + 1;
-                    next = here.address + 0xAu;
+                    next = here.field(&MapObject::nextOnTile).address;
                 }
             }
             else
@@ -5889,7 +5891,7 @@ namespace mm
     // 0 empties the slot list (loadMenu), puts its cursor at (0x62, 0x2C) and goes on to 1. While either memory card is still being
     // checked (status 4) the "checking" text shows, the list is emptied and the answer is -1. Otherwise the saves on the cards are
     // listed (one line each, from McManager_FormatSlotText; the newest save's line is scrolled to once, in step 1, which goes on to 2),
-    // lines left from a longer list are emptied and the count is kept at +0xDC. With saves the "choose" text shows and the list takes
+    // lines left from a longer list are emptied and the count is kept in savesListed. With saves the "choose" text shows and the list takes
     // input: Triangle answers 0 (back), Cross copies the chosen save's 0x40-byte header to 0x1C5640 and its description (McManager_
     // FormatSaveInfo) to 0x1C5680 and answers 1. With no save the "no data" text shows for 300 frames (introFrame, which the cursor
     // restarts) and the answer is 0. -1 otherwise.
@@ -5907,7 +5909,7 @@ namespace mm
         const int32_t step = scene->pressStep;
         if (step == 0)
         {
-            port::store<int32_t>(s + 0xDCu, 0);
+            scene->savesListed = 0;
             ListMenu_ClearItem(menu(), -1);
             ListMenu_SetCursor(menu(), 0x62, 0x2C, 0xFF0000);
             scene->pressStep = scene->pressStep + 1;
@@ -5939,11 +5941,11 @@ namespace mm
             ListMenu_ScrollTo(menu(), newest);
             scene->pressStep = scene->pressStep + 1;
         }
-        const int32_t listed = port::load<int32_t>(s + 0xDCu);
+        const int32_t listed = scene->savesListed;
         if (listed != 0)
             for (int stale = listed - 1; !(stale < count); --stale)
                 ListMenu_ClearItem(menu(), stale);
-        port::store<int32_t>(s + 0xDCu, count);
+        scene->savesListed = count;
         if (count == 0)
         {
             if (scene->introFrame == 0)
@@ -6448,9 +6450,9 @@ namespace mm
             const ps2f t = time / ps2f(10.0f);
             const ps2f rest = ps2f(1.0f) - t;
             const auto lerp = [&](uint32_t to, uint32_t from) { return rest * loadF(from) + t * loadF(to); };
-            storeF(wants->matrix.address + 0x30u, lerp(0x001B08F0u, 0x001B0900u));
-            storeF(wants->matrix.address + 0x34u, lerp(0x001B08F4u, 0x001B0904u));
-            storeF(wants->matrix.address + 0x38u, lerp(0x001B08F8u, 0x001B0908u));
+            storeF((wants->matrix + 3).field(&Vec4::x).address, lerp(0x001B08F0u, 0x001B0900u));
+            storeF((wants->matrix + 3).field(&Vec4::y).address, lerp(0x001B08F4u, 0x001B0904u));
+            storeF((wants->matrix + 3).field(&Vec4::z).address, lerp(0x001B08F8u, 0x001B0908u));
         };
         // The page's lines and numbers: the two wants lines in texts[0] and texts[1] (after emptying them) and the two page numbers.
         const auto fillPage = [&](uint32_t buffer) {
@@ -6658,7 +6660,7 @@ namespace mm
                             CityScene_StartTalk(city, 0, static_cast<int>(id), 0x1770, 0);
                         return;
                     }
-                    at = Map_GetRecord(map(), static_cast<int>(id)).address + 0xAu;
+                    at = Map_GetRecord(map(), static_cast<int>(id)).field(&MapObject::nextOnTile).address;
                     ++index;
                 }
             }
@@ -7077,9 +7079,9 @@ namespace mm
             const ps2f t = time / ps2f(10.0f);
             const ps2f rest = ps2f(1.0f) - t;
             const auto lerp = [&](uint32_t to, uint32_t from) { return rest * loadF(from) + t * loadF(to); };
-            storeF(pages->bookMatrix.address + 0x30u, lerp(0x001B1A50u, 0x001B1A60u));
-            storeF(pages->bookMatrix.address + 0x34u, lerp(0x001B1A54u, 0x001B1A64u));
-            storeF(pages->bookMatrix.address + 0x38u, lerp(0x001B1A58u, 0x001B1A68u));
+            storeF((pages->bookMatrix + 3).field(&Vec4::x).address, lerp(0x001B1A50u, 0x001B1A60u));
+            storeF((pages->bookMatrix + 3).field(&Vec4::y).address, lerp(0x001B1A54u, 0x001B1A64u));
+            storeF((pages->bookMatrix + 3).field(&Vec4::z).address, lerp(0x001B1A58u, 0x001B1A68u));
         };
         // Goes back to the page and row the book came from (state 6, the flip).
         const auto goBack = [&]() {

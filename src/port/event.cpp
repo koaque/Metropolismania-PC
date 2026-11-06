@@ -15,7 +15,7 @@ namespace mm
         // Actor `index` of an event that lists several (8 bytes each from EventData::actor).
         GuestPtr<ActorRef> actorAt(GuestPtr<EventData> data, int index)
         {
-            return GuestPtr<ActorRef>{data.address + 0x0Cu + 8u * static_cast<uint32_t>(index)};
+            return data.field(&EventData::actor) + index;
         }
 
         // Marks the object record and hands it back: the start slots leave it in v0, which the talk script reads.
@@ -85,7 +85,7 @@ namespace mm
 
     void EventMgr_RequeueFirst(GuestPtr<EventMgr> events)
     {
-        const uint32_t slots = events.address + 0x04u;
+        const uint32_t slots = events.field(&EventMgr::slots).address;
         EventQueue_InsertByPriority(globals::eventQueue(), GuestPtr<EventQueueEntry>{slots}, 2, 0);
         sdk::memmove(slots, slots + 0x20u, 0x80);
         sdk::memset(slots + 0x80u, 0, 0x20);
@@ -3101,7 +3101,7 @@ namespace mm
         {
             if (Event_CheckCondition(events, city, GuestPtr<uint8_t>{entry}, person) != 0)
             {
-                sdk::memmove(events.address + 0x24u, slots, 0x80);
+                sdk::memmove((events.field(&EventMgr::slots) + 1).address, slots, 0x80);
                 sdk::memset(slots, 0, 0x20);
                 queueEntry(entry)->wait = 3;
                 events->slots[0].kind = queueEntry(entry)->type;
@@ -3454,7 +3454,7 @@ namespace mm
                 }
                 postponed->stage = globals::eventType(postponed->kind)->wait;
                 EventQueue_InsertByPriority(queue, GuestPtr<EventQueueEntry>{slot}, 4, 0);
-                const uint32_t last = events.address + 0x84u;
+                const uint32_t last = (events.field(&EventMgr::slots) + 4).address;
                 if (slot < last)
                     sdk::memmove(slot, slot + 0x20u, (static_cast<int32_t>(last - slot) >> 5) << 5);
                 sdk::memset(last, 0, 0x20);
@@ -3489,11 +3489,11 @@ namespace mm
                     const GuestPtr<EventData> now{port::load<uint32_t>(cellA)};
                     if (now->kind == 0)
                     {
-                        const uint32_t first = events.address + 4u;
-                        for (uint32_t slot = events.address + 0x84u; slot >= first; slot -= 0x20u)
+                        const uint32_t first = events.field(&EventMgr::slots).address;
+                        for (uint32_t slot = (events.field(&EventMgr::slots) + 4).address; slot >= first; slot -= 0x20u)
                         {
                             const uint8_t kind = port::load<uint8_t>(slot);
-                            if (kind == 0 || port::load<uint16_t>(slot + 0x1Cu) == 0)
+                            if (kind == 0 || GuestPtr<EventSlot>{slot}->joined[4].family == 0)
                                 continue;
                             const GuestPtr<EventType> row = GuestPtr<EventType>{types} + kind;
                             if (row->group != 4)
@@ -3512,7 +3512,7 @@ namespace mm
                                 actor->person = kNoPerson;
                                 actor->object = kNoObject;
                             }
-                            const uint32_t last = events.address + 0x84u;
+                            const uint32_t last = (events.field(&EventMgr::slots) + 4).address;
                             if (slot < last)
                                 sdk::memmove(slot, slot + 0x20u, (static_cast<int32_t>(last - slot) >> 5) << 5);
                             sdk::memset(last, 0, 0x20);
@@ -3636,7 +3636,7 @@ namespace mm
                 {
                     if (static_cast<int32_t>(port::load<uint8_t>(slot)) != index)
                         continue;
-                    const uint32_t last = events.address + 0x84u;
+                    const uint32_t last = (events.field(&EventMgr::slots) + 4).address;
                     if (slot < last)
                         sdk::memmove(slot, slot + 0x20u, (static_cast<int32_t>(last - slot) >> 5) << 5);
                     sdk::memset(last, 0, 0x20);
@@ -5242,7 +5242,7 @@ namespace mm
         const GuestPtr<EvNoodlesData> noodles = data.as<EvNoodlesData>();
         const GuestPtr<CityMap> map = city->map;
         const auto actor = [&](int index) { return actorAt(data, index); };
-        const auto partner = [&](GuestPtr<ActorRef> who) { return GuestPtr<ActorRef>{who.address + 0x18u}; };
+        const auto partner = [&](GuestPtr<ActorRef> who) { return who + 3; };
         const auto advance = [&](int step = 1) { data->var = static_cast<uint8_t>(data->var + step); };
         const auto record = [&](GuestPtr<ActorRef> who) { return map->people + who->person; };
         const auto address = [](GuestPtr<ActorRef> who) { return static_cast<int>(who.address); };
