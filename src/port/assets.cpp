@@ -6,11 +6,12 @@
 
 namespace mm
 {
-    // The 81 character part models (the table at 0x1F3B90, filled from CHAR.A3D) each hold 13 groups of `groupSize` meshes
-    // in their mesh table. A group whose first mesh has word +8 below 4 is overwritten with another group of the model: the
-    // second group (group 1 takes the first). The mesh after the last group takes the last group's first mesh when its own
-    // word +8 is below 4. Then each animation whose first track has a single key is replaced by animation 7, and tracks 2,
-    // 3, 7, 10, 13 and 16 of every animation lose their keys.
+    // The 81 character part models (the table at 0x1F3B90, filled from CHAR.A3D) each hold 13 groups of `groupSize`
+    // meshes in their mesh table. A group whose first mesh has fewer than 4 vertices (CHAR.A3D's placeholders are one
+    // triangle) is overwritten with another group of the model: the second group (group 1 takes the first). The second
+    // mesh after the groups takes the first one after them when it is a placeholder too. Then each animation whose
+    // first track has a single key is replaced by animation 7, and tracks 2, 3, 7, 10, 13 and 16 of every animation
+    // lose their keys.
     void CityAssets_BuildCharParts()
     {
         for (uint32_t slot = 0; slot < 0x51; ++slot)
@@ -22,7 +23,7 @@ namespace mm
             for (int group = 0; group < 13; ++group, first += per)
             {
                 const GuestPtr<A3DMesh> mesh{data->meshes[first]};
-                if (!(static_cast<int32_t>(mesh->unk_08) < 4))
+                if (!(static_cast<int32_t>(mesh->vertexCount) < 4))
                     continue;
                 for (int32_t k = 0; k < per; ++k)
                 {
@@ -32,7 +33,7 @@ namespace mm
                 }
             }
             const GuestPtr<uint32_t> end = data->meshes + 13 * per; // the mesh after the last group
-            if (static_cast<int32_t>(GuestPtr<A3DMesh>{end[1]}->unk_08) < 4)
+            if (static_cast<int32_t>(GuestPtr<A3DMesh>{end[1]}->vertexCount) < 4)
                 end[1] = end[0];
 
             const GuestPtr<uint32_t> animations = model->animations;

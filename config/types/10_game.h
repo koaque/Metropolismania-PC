@@ -278,7 +278,8 @@ struct BuildingRecord {
     uint8_t postGroup;         /* +0x29 */
     uint8_t claimB;            /* +0x2A */
     uint8_t claimC;            /* +0x2B */
-    uint8_t unk_2C;            /* +0x2C */
+    uint8_t unk_2C;            /* +0x2C 100 in all 232 building types, 0 in the 49 others (land, roads, homes, markers);
+                                  copied to BuildingType +0x149, which nothing reads */
     uint8_t maxVisitors;       /* +0x2D */
     uint8_t schedule;          /* +0x2E */
     uint8_t activity;          /* +0x2F */
@@ -334,7 +335,7 @@ struct BuildingType {
     uint8_t postGroup;         /* +0x146 group in POSTNAME.BIN (mm_BldgType_GetPostName) */
     uint8_t claimB;            /* +0x147 claim section B index */
     uint8_t claimC;            /* +0x148 claim section C index */
-    uint8_t unk_149;
+    uint8_t unk_149;           /* +0x149 from STRTYPE.BIN +0x2C (100 for buildings); nothing reads it */
     uint8_t maxVisitors;       /* +0x14A people heading here at most (mm_Person_FindBuildingInList) */
     uint8_t schedule;          /* +0x14B the type's own schedule row, after the fifteen shared ones (mm_Schedule_PickEntry) */
     uint8_t activity;          /* +0x14C what people do there (mm_Schedule_GetActivity) */
@@ -422,7 +423,7 @@ struct MemberStatus {
 
 /* Player stamina (0xC bytes) at 0x1BDBB8. */
 struct Stamina {
-    int32_t unk_00;
+    int32_t unk_00;            /* +0x00 cleared by mm_Stamina_Init and saved; nothing reads it */
     int32_t value;             /* +0x04 399999 at the start; drains every tick, food adds to it up to 2000000 */
     int32_t noticeTicks;       /* +0x08 ticks since the hunger notice was last shown; eating clears it (mm_Stamina_Tick) */
 };
@@ -667,18 +668,21 @@ struct SeVoice {
     int32_t heldRight;         /* +0x24 */
     int16_t heldPitch;         /* +0x28 group A: the pitch of the loudest */
     uint8_t rest;              /* +0x2A group A: frames before a freed voice is reused (20 when started) */
-    uint8_t unk_2B[5];
+    uint8_t unk_2B[5];         /* +0x2B the first three cleared when a group A voice starts; nothing reads them */
 };
 
 /* The sound driver's status (0x40 bytes) as YYSOUND sends it (0x20B7C0), and the game's view of it with the commands
    still queued merged in (0x20B840, mm_Sound_GetStatus). */
 struct SoundStatus {
-    uint32_t unk_00;
+    int32_t result;            /* +0x00 the last command's result, -3 when the driver was busy (YYSOUND's ee_put[0]) */
     uint32_t midiPlaying;      /* +0x04 bit per sequence slot */
     uint32_t wavePlaying;      /* +0x08 bit per wave voice */
-    uint32_t busy;             /* +0x0C the driver has work */
-    uint8_t unk_10[8];
-    uint32_t unk_18;           /* +0x18 a third mask, merged with the queued one at 0x1BDD54 */
+    uint32_t busy;             /* +0x0C the driver has work: its requests not run yet */
+    int32_t lastId;            /* +0x10 the id of the last command taken, -1 when the driver was busy */
+    int32_t checkResult;       /* +0x14 the request the EE waits for (command 0x3000): its id when it ran, minus it when it
+                                  failed */
+    uint32_t speechTracks;     /* +0x18 bit per wave track a spoken voice uses, from its start to its end mark; merged with the
+                                  queued mask at 0x1BDD54, which nothing sets */
     uint8_t unk_1C[0x24];
 };
 
@@ -753,7 +757,7 @@ struct CityScene {
     int32_t weatherToday;      /* +0x90 0 clear, 2 rain, 3 snow */
     int32_t weatherTomorrow;   /* +0x94 */
     int32_t weatherYesterday;  /* +0x98 */
-    int32_t unk_9C;
+    int32_t unk_9C;            /* +0x9C cleared by mm_CityScene_ctor; nothing reads it */
     int32_t prosperity;        /* +0xA0 decaying average (x10) of the residents' class traits bits 9-11 as they move in,
                                   starts at 250; low tiers gate recession, unemployment and bad debt events, the top one
                                   travel and gardening booms (EventType.prosperityTier) */

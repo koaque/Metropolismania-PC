@@ -3197,7 +3197,7 @@ namespace mm
         // Each road shape has four corner numbers; by corner, its x and z offsets and its heading number (the headings
         // are the table the building people use by layer).
         const GuestPtr<uint32_t> shapeCorners{0x001B1670u}, cornerHeading{0x001B1640u};
-        const GuestPtr<float> cornerX{0x001B15E0u}, cornerZ{0x001B1610u}, headings{0x001B2690u};
+        const GuestPtr<float> cornerX{0x001B15E0u}, cornerZ{0x001B1610u}, headings{globals::kKindHeadings};
         for (int i = 0; i < count && i < 4; ++i)
         {
             const GuestPtr<MapPerson> person = people + list[i];
@@ -3297,7 +3297,7 @@ namespace mm
         const GuestPtr<uint16_t> lists{base + 0x120u}, slots{base + 0x248u};
         const GuestPtr<Vec4> position{base + 0x220u}, colour{base + 0x230u};
         const auto list = [&](uint32_t group) { return lists + static_cast<int32_t>(0x20u * group); };
-        const GuestPtr<float> headings{0x001B2690u}; // by layer
+        const GuestPtr<float> headings{globals::kKindHeadings}; // by layer (the tile kind)
         if ((btype->flags & 0x800u) == 0 || (obj->flags & 0x20u) == 0)
             return;
         const int32_t open = static_cast<int32_t>(port::callGuest<int64_t>(btype->vtable->isOpen, btype, city, obj));
@@ -3539,7 +3539,7 @@ namespace mm
         direct(0x7Cu, [](uint32_t o) { Notice_dtor(GuestPtr<Notice>{o}, 1); });
         virtualDelete(0x80u, 0u);
         BldgType_DeleteAll();
-        StageObj_DeletingDtor(static_cast<int>(city.address), 0);
+        Stage_DeletingDtor(static_cast<int>(city.address), 0);
         if (0 < deleteFlag)
             sdk::operator_delete(city.address);
         return city;
@@ -4080,7 +4080,7 @@ namespace mm
     {
         port::GuestFrame<0x90> frame;
         const uint32_t sp = frame.ptr().address;
-        StageObj_ctor(static_cast<int>(city.address));
+        Stage_ctor(static_cast<int>(city.address));
         city->clock = 0x5460; // 6:00
         city->monthCount = 3;
         city->approval = 0x32;

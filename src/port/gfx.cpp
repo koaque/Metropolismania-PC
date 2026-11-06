@@ -168,11 +168,13 @@ namespace mm
     }
 
     // The water waves (layer G). A phase runs from -pi/2 to pi/2 in steps of 0.05, then starts over with the
-    // sway direction flipped; sin(phase) and sin(phase + pi/2) (wrapped, flipping its own direction) give two
-    // sway offsets of up to 0.05. The first point set sways by one and scrolls forward 0.002 a frame, the
-    // second (1.2 times the sway, 0.7 to the side) by the other and scrolls back 0.001; points at x 0.5 take
-    // the other offset. Both scrolls wrap at 1.
-    void LayerG_AnimateWaves(GuestPtr<LayerG> layer, ps2f weather)
+    // direction flipped. The program (0x1A6440) moves each corner of a quad under the water to the water level plus
+    // 0.06 * direction * sin((|z| mod pi) + phase - pi/2), a wave along z (waveParams). sin(phase) and
+    // sin(phase + pi/2) (wrapped, flipping its own direction) give two sway offsets of up to 0.05 for the two textures'
+    // coordinates: the first set's s sways by one and its t scrolls forward 0.002 a frame, the second's (1.2 times
+    // the sway, 0.7 to the side) by the other and scrolls back 0.001; corners at s 0.5 take the other offset. Both
+    // scrolls wrap at 1.
+    void LayerG_AnimateWaves(GuestPtr<LayerG> layer, ps2f waterLevel)
     {
         const auto initOnce = [](uint32_t address, uint32_t bits) {
             if (port::load<int8_t>(address + 4u) == 0)
@@ -202,7 +204,7 @@ namespace mm
         layer->waveParamsA.x = 1.0f;
         layer->waveParamsB.w = 0.0f;
         layer->waveParamsB.z = phase;
-        layer->waveParamsB.y = weather;
+        layer->waveParamsB.y = waterLevel;
         layer->waveParamsB.x = ps2f(0.06f) * direction;
         ps2f angleB = halfPi + phase;
         ps2f directionB = direction;
@@ -221,16 +223,16 @@ namespace mm
             scrollB = scrollB + ps2f(1.0f);
         for (int i = 0; i < 12; ++i)
         {
-            layer->wavesA[i].y = layer->waveBase[i].y + scrollA;
-            const ps2f x = layer->waveBase[i].x;
-            layer->wavesA[i].x = ps2f(0.5f) == x ? x + swayB : x + swayA;
+            layer->texCoordsA[i].y = layer->texCoordsRest[i].y + scrollA;
+            const ps2f x = layer->texCoordsRest[i].x;
+            layer->texCoordsA[i].x = ps2f(0.5f) == x ? x + swayB : x + swayA;
         }
         const ps2f swayA2 = ps2f(1.2f) * swayA, swayB2 = ps2f(1.2f) * swayB;
         for (int i = 0; i < 12; ++i)
         {
-            layer->wavesB[i].y = layer->waveBase[i].y + scrollB;
-            const ps2f x = layer->waveBase[i].x;
-            layer->wavesB[i].x = ps2f(0.7f) + (x + (ps2f(0.5f) == x ? swayA2 : swayB2));
+            layer->texCoordsB[i].y = layer->texCoordsRest[i].y + scrollB;
+            const ps2f x = layer->texCoordsRest[i].x;
+            layer->texCoordsB[i].x = ps2f(0.7f) + (x + (ps2f(0.5f) == x ? swayA2 : swayB2));
         }
     }
 
@@ -718,7 +720,9 @@ namespace mm
     {
         constexpr int kMaxInstances = 0x708;
 
-        // Fills the next instance slot with a matrix, flags and colour and queues it.
+        // Fills the next instance slot with a matrix, flags and colour and queues it. The flags go in the matrix's last
+        // word, where the model programs read them as the draw mode: 0x1A3C80 fogs each vertex for any non-zero mode;
+        // 0x1A4780 fogs for 2, clips the triangles that cross the view volume for 1 (CityRender_CollectObjects).
         void queueSlot(GuestPtr<Vec4> matrix, GuestPtr<Vec4> colour, int flags)
         {
             const uint32_t buffer = port::load<uint32_t>(globals::kInstanceBuffers + 4u * static_cast<uint32_t>(globals::instanceBuffer.get()));
@@ -1127,10 +1131,11 @@ namespace mm
 
     // ---- batch 38
 
-    // The water: the waves move with the weather, then this frame's packet (one per terrain buffer) is queued.
-    void LayerG_Draw(GuestPtr<LayerG> layer, int pass, ps2f weather)
+    // The water: the waves move on (around the water level), then this frame's packet (one per terrain buffer) is
+    // queued.
+    void LayerG_Draw(GuestPtr<LayerG> layer, int pass, ps2f waterLevel)
     {
-        LayerG_AnimateWaves(layer, weather);
+        LayerG_AnimateWaves(layer, waterLevel);
         Dma_AppendCall(static_cast<int>(layer->packets[pass]));
     }
 
@@ -1247,7 +1252,7 @@ namespace mm
         putWords(layer->params.mask, {0, 0, 0, 0x10u});
     }
 
-    // Layer G (the water) keeps its texture coordinates at rest (waveBase) and copies them to both wave sets.
+    // Layer G (the water) keeps its texture coordinates at rest (texCoordsRest) and copies them to both textures' sets.
     void LayerG_InitParams(GuestPtr<LayerG> layer)
     {
         putFloats(layer->colour, 128.0f, 128.0f, 128.0f, 60.0f);
@@ -1256,11 +1261,11 @@ namespace mm
         putWords(layer->primB, {0x27Cu, 0, 0, 0});
         putWords(layer->primA, {0x7Cu, 0, 0, 0});
         putWords(layer->mask, {0, 0, 0, 2u});
-        putHalvesStq(layer->waveBase);
+        putHalvesStq(layer->texCoordsRest);
         for (int i = 0; i < 12; ++i)
         {
-            layer->wavesA[i] = layer->waveBase[i];
-            layer->wavesB[i] = layer->waveBase[i];
+            layer->texCoordsA[i] = layer->texCoordsRest[i];
+            layer->texCoordsB[i] = layer->texCoordsRest[i];
         }
     }
 
@@ -1307,14 +1312,16 @@ namespace mm
         putWords(layer->tex0B, {0x9930a708u, 0x4004b085u, 0x0u, 0x0u});
     }
 
-    // The rain's parameters: the GIF tag of the streaks (96 loops of RGBAQ, XYZF2 twice, blended lines), two colours,
-    // 16 drop offsets and twelve streaks as pairs of end points; then the wet ground pass (mask 1).
+    // The rain's parameters: the GIF tag of the streaks (96 loops of RGBAQ, XYZF2 twice, blended lines), the colours
+    // of a streak's lower and upper end, the quad flag mask (8: every quad), 16 drop offsets and twelve streaks as pairs
+    // of end points; then the wet ground pass (mask 1). Its program (0x1A8A00) draws the twelve streaks on every
+    // quad, moved by one drop (picked by a hash of the quad's position) and wrapped into the 40 above the ground.
     void RainLayer_InitParams(GuestPtr<RainLayer> layer)
     {
         putWords(layer->gifTag, {0x8060u, 0x4034c000u, 0x4141u, 0x0u});
         putFloats(layer->colourA, 765.0f, 765.0f, 765.0f, 40.0f);
         putFloats(layer->colourB, 765.0f, 765.0f, 765.0f, 0.0f);
-        layer->unk_030[0] = 8;
+        layer->mask[0] = 8;
         static constexpr float kDropY[16] = {0.1f, 35.4f, 9.6f, 15.8f, 1.3f, 24.6f, 13.3f, 8.7f,
                                              36.8f, 18.1f, 28.0f, 11.6f, 28.8f, 31.5f, 4.2f, 7.9f};
         for (int i = 0; i < 16; ++i)
@@ -1710,11 +1717,12 @@ namespace mm
 
     // ---- the rain by the clock (batch 39)
 
-    // The rain for the time of day (clock in seconds; the seconds up to 5:00, 18000, and after 18:00 the distance from
-    // midnight, 0x15180 less the clock; between them the clock held at 18000): the streak colour's three lanes set to
-    // 765 and its w to clock / 450, the ground pass's ALPHA_1 FIX to clock / 600; the sixteen drops fall 0.4 a frame
-    // within 40; the ground pass's TEX0 steps through six texture pages, one every two frames (the splashes); then the
-    // pass's ground packet, the frame's chunk packet, the end packet and the pass's streak packet are queued.
+    // The rain for the time of day (clock in seconds; the seconds up to 5:00, 18000, and from 19:00 (0x10B30) the
+    // distance from midnight, 0x15180 less the clock; between them the clock held at 18000): the lower end's colour
+    // lanes set to 765 and its alpha to clock / 450, the ground pass's ALPHA_1 FIX to clock / 600; the sixteen drops
+    // fall 0.4 a frame within 40; the ground pass's TEX0 steps through six texture pages, one every two frames (the
+    // splashes); then the pass's ground packet, the frame's chunk packet, the end packet and the pass's streak packet
+    // are queued.
     void RainLayer_Draw(GuestPtr<RainLayer> layer, int pass, int packet, int clock)
     {
         if (clock < 0x10B30)

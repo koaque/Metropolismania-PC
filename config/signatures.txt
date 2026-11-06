@@ -160,8 +160,8 @@
 0x00135DA0 void mm_Stage_LoadState(int stage, McManager *mc);
 0x00135DC0 void mm_Stage_SaveState(int stage, McManager *mc);
 0x00135DE0 void mm_Stage_Reset(void);
-0x00135E90 int mm_StageObj_DeletingDtor(int stage, int16_t deleteFlag);
-0x00135EE0 int mm_StageObj_ctor(int stage);
+0x00135E90 int mm_Stage_DeletingDtor(int stage, int16_t deleteFlag);
+0x00135EE0 int mm_Stage_ctor(int stage);
 0x00135EF0 void mm_CityCursor_SelectTile(CityCursor *cursor, int tile, CityScene *city);
 0x001360C0 void mm_CityCursor_UpdateInfo(CityCursor *cursor, CityScene *city);
 0x001365C0 void mm_CityCursor_Move(CityCursor *cursor, CityScene *city, int a2);
@@ -428,10 +428,10 @@
 0x0014F400 void mm_LayerF_Draw(LayerF *layer, int packet);
 0x0014F430 LayerF *mm_LayerF_DeletingDtor(LayerF *layer, int16_t deleteFlag);
 0x0014F490 LayerF *mm_LayerF_ctor(LayerF *layer);
-0x0014F4E0 void mm_LayerG_AnimateWaves(LayerG *layer, float weather);
+0x0014F4E0 void mm_LayerG_AnimateWaves(LayerG *layer, float waterLevel);
 0x0014F7F0 uint32_t *mm_LayerG_BuildPacket(LayerG *layer, uint32_t *packet, int32_t *buffers);
 0x0014FF00 void mm_LayerG_InitParams(LayerG *layer);
-0x00150090 void mm_LayerG_Draw(LayerG *layer, int pass, float weather);
+0x00150090 void mm_LayerG_Draw(LayerG *layer, int pass, float waterLevel);
 0x001500D0 LayerG *mm_LayerG_DeletingDtor(LayerG *layer, int16_t deleteFlag);
 0x00150130 LayerG *mm_LayerG_ctor(LayerG *layer, int buffers);
 0x00150190 void mm_Wants_RemoveEventHold(WantsWin *wants, uint16_t eventId, int value);

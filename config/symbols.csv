@@ -806,8 +806,8 @@ address,name,kind,source
 0x00135DA0,mm_Stage_LoadState,func,manual
 0x00135DC0,mm_Stage_SaveState,func,manual
 0x00135DE0,mm_Stage_Reset,func,manual
-0x00135E90,mm_StageObj_DeletingDtor,func,manual
-0x00135EE0,mm_StageObj_ctor,func,manual
+0x00135E90,mm_Stage_DeletingDtor,func,manual
+0x00135EE0,mm_Stage_ctor,func,manual
 0x00135EF0,mm_CityCursor_SelectTile,func,manual
 0x001360C0,mm_CityCursor_UpdateInfo,func,manual
 0x001365C0,mm_CityCursor_Move,func,manual

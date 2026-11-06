@@ -167,8 +167,8 @@ inline constexpr uint32_t Stage_FormatTargetText = 0x00135D00u;
 inline constexpr uint32_t Stage_LoadState = 0x00135DA0u;
 inline constexpr uint32_t Stage_SaveState = 0x00135DC0u;
 inline constexpr uint32_t Stage_Reset = 0x00135DE0u;
-inline constexpr uint32_t StageObj_DeletingDtor = 0x00135E90u;
-inline constexpr uint32_t StageObj_ctor = 0x00135EE0u;
+inline constexpr uint32_t Stage_DeletingDtor = 0x00135E90u;
+inline constexpr uint32_t Stage_ctor = 0x00135EE0u;
 inline constexpr uint32_t CityCursor_SelectTile = 0x00135EF0u;
 inline constexpr uint32_t CityCursor_UpdateInfo = 0x001360C0u;
 inline constexpr uint32_t CityCursor_Move = 0x001365C0u;
@@ -1683,7 +1683,7 @@ template <> inline constexpr bool at<0x001359B0u> = true; // Claim_Load
 template <> inline constexpr bool at<0x00135A70u> = true; // Stage_Load
 template <> inline constexpr bool at<0x00135BC0u> = true; // Stage_FormatGoalText
 template <> inline constexpr bool at<0x00135D00u> = true; // Stage_FormatTargetText
-template <> inline constexpr bool at<0x00135E90u> = true; // StageObj_DeletingDtor
+template <> inline constexpr bool at<0x00135E90u> = true; // Stage_DeletingDtor
 template <> inline constexpr bool at<0x001360C0u> = true; // CityCursor_UpdateInfo
 template <> inline constexpr bool at<0x001365C0u> = true; // CityCursor_Move
 template <> inline constexpr bool at<0x00136770u> = true; // CityCursor_Update
@@ -3099,8 +3099,6 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Sound_StopAllPlaying", addr::Sound_StopAllPlaying},
     {"Sound_StopAllSequences", addr::Sound_StopAllSequences},
     {"Sound_Update", addr::Sound_Update},
-    {"StageObj_DeletingDtor", addr::StageObj_DeletingDtor},
-    {"StageObj_ctor", addr::StageObj_ctor},
     {"StageScene_BuildBriefingText", addr::StageScene_BuildBriefingText},
     {"StageScene_MissionBriefing", addr::StageScene_MissionBriefing},
     {"StageScene_ShowApprovalRate", addr::StageScene_ShowApprovalRate},
@@ -3110,12 +3108,14 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"StageScene_Update", addr::StageScene_Update},
     {"StageScene_ctor", addr::StageScene_ctor},
     {"StageScene_dtor", addr::StageScene_dtor},
+    {"Stage_DeletingDtor", addr::Stage_DeletingDtor},
     {"Stage_FormatGoalText", addr::Stage_FormatGoalText},
     {"Stage_FormatTargetText", addr::Stage_FormatTargetText},
     {"Stage_Load", addr::Stage_Load},
     {"Stage_LoadState", addr::Stage_LoadState},
     {"Stage_Reset", addr::Stage_Reset},
     {"Stage_SaveState", addr::Stage_SaveState},
+    {"Stage_ctor", addr::Stage_ctor},
     {"Stamina_CreateGlobal", addr::Stamina_CreateGlobal},
     {"Stamina_Eat", addr::Stamina_Eat},
     {"Stamina_HungerLevel", addr::Stamina_HungerLevel},
@@ -3845,8 +3845,8 @@ void Stage_FormatTargetText(int stage, GuestPtr<char> out);
 void Stage_LoadState(int stage, GuestPtr<McManager> mc);
 void Stage_SaveState(int stage, GuestPtr<McManager> mc);
 void Stage_Reset();
-int StageObj_DeletingDtor(int stage, int16_t deleteFlag);
-int StageObj_ctor(int stage);
+int Stage_DeletingDtor(int stage, int16_t deleteFlag);
+int Stage_ctor(int stage);
 void CityCursor_SelectTile(GuestPtr<CityCursor> cursor, int tile, GuestPtr<CityScene> city);
 void CityCursor_UpdateInfo(GuestPtr<CityCursor> cursor, GuestPtr<CityScene> city);
 void CityCursor_Move(GuestPtr<CityCursor> cursor, GuestPtr<CityScene> city, int a2);
@@ -4113,10 +4113,10 @@ void LayerF_InitParams(GuestPtr<LayerF> layer);
 void LayerF_Draw(GuestPtr<LayerF> layer, int packet);
 GuestPtr<LayerF> LayerF_DeletingDtor(GuestPtr<LayerF> layer, int16_t deleteFlag);
 GuestPtr<LayerF> LayerF_ctor(GuestPtr<LayerF> layer);
-void LayerG_AnimateWaves(GuestPtr<LayerG> layer, ps2f weather);
+void LayerG_AnimateWaves(GuestPtr<LayerG> layer, ps2f waterLevel);
 GuestPtr<uint32_t> LayerG_BuildPacket(GuestPtr<LayerG> layer, GuestPtr<uint32_t> packet, GuestPtr<int32_t> buffers);
 void LayerG_InitParams(GuestPtr<LayerG> layer);
-void LayerG_Draw(GuestPtr<LayerG> layer, int pass, ps2f weather);
+void LayerG_Draw(GuestPtr<LayerG> layer, int pass, ps2f waterLevel);
 GuestPtr<LayerG> LayerG_DeletingDtor(GuestPtr<LayerG> layer, int16_t deleteFlag);
 GuestPtr<LayerG> LayerG_ctor(GuestPtr<LayerG> layer, int buffers);
 void Wants_RemoveEventHold(GuestPtr<WantsWin> wants, uint16_t eventId, int value);

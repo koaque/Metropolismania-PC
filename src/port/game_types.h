@@ -33,6 +33,7 @@ struct Camera;
 struct CityCamera;
 struct GameFile;
 struct FileRequest;
+struct McRequest;
 struct TexSprite;
 struct TexFileHeader;
 struct LightSet;
@@ -195,8 +196,9 @@ struct Camera {
     Vec4 ambient;              /* +0x1C0 */
     ps2f viewWidth;           /* +0x1D0 (mm_Camera_UpdateProjection) */
     ps2f viewHeight;          /* +0x1D4 */
-    ps2f unk_1D8;             /* +0x1D8 1.0 from mm_Camera_ctor */
-    ps2f unk_1DC;             /* +0x1DC 10.0 from mm_Camera_ctor */
+    ps2f unk_1D8;             /* +0x1D8 1.0, set beside the view size before each projection update (mm_Camera_ctor,
+                                  mm_CityCamera_Update); nothing reads it */
+    ps2f unk_1DC;             /* +0x1DC 10.0, likewise; nothing reads it */
     Vec4 view[4];              /* +0x1E0 world to camera (sceVu0CameraMatrix) */
     Vec4 screenA[4];           /* +0x220 */
     Vec4 screenB[4];           /* +0x260 */
@@ -238,6 +240,15 @@ struct FileRequest {
     int32_t bytes;             /* +0x10 bytes to read */
     int32_t offset;            /* +0x14 seek offset */
     int32_t whence;            /* +0x18 seek origin */
+};
+/* Memory card request slot (0x24 bytes, 64 at 0x1F5CF0), queued by mm_McQueue_* and issued by mm_McQueue_Pump. */
+struct McRequest {
+    int32_t command;           /* +0x00 1 GetInfo, 2 GetDir, 3 Format, 4 Mkdir, 5 Chdir, 6 Open, 7 Close, 8 Delete, 9 Read,
+                                  10 Write, 11 Unformat, 12 Seek; 0 free */
+    int32_t state;             /* +0x04 0 not issued yet, 1 issued (polled with sceMcSync) */
+    int32_t syncCommand;       /* +0x08 the command sceMcSync reports */
+    uint32_t result;           /* +0x0C where the result goes; 0: into this word itself (mm_McQueue_GetResult reads it) */
+    int32_t args[5];           /* +0x10 the SDK call's arguments (the port or the file first) */
 };
 /* .TEX image header (0x20 bytes): the palette, then the tiles row by row, each tileWords words. */
 struct TexFileHeader {
@@ -294,7 +305,9 @@ struct A3DModel {
 struct A3DMesh {
     uint32_t data;             /* +0x00 a word offset that mm_A3D_Relocate turns into an address */
     uint32_t sizeWords;        /* +0x04 the block's size in words */
-    uint32_t unk_08;           /* +0x08 a character part group whose first mesh has this below 4 is replaced (mm_CityAssets_BuildCharParts) */
+    uint32_t vertexCount;      /* +0x08 the vertices of all its batches (their GIF tags' NLOOP together in 176 of CHAR.A3D model
+                                  0's 177 meshes, 2 fewer in one); CHAR.A3D's placeholders have 3, and a character part group
+                                  whose first mesh has fewer than 4 is replaced (mm_CityAssets_BuildCharParts) */
     uint8_t unk_0C[4];
     uint32_t chain[4];         /* +0x10 start of the DMA chain */
 };
@@ -580,8 +593,8 @@ struct BagSlot {
     uint8_t unk_07;
     int32_t month;             /* +0x08 the month count it was bought in */
     uint16_t seller;           /* +0x0C the family of the shop it came from */
-    uint8_t unk_0E;            /* +0x0E 0xFF when bought */
-    uint8_t unk_0F;
+    uint8_t unk_0E;            /* +0x0E 0xFF from both callers of mm_Bag_AddItem; nothing reads it */
+    uint8_t unk_0F;            /* +0x0F 0 from both callers; nothing reads it */
 };
 /* A music track bought (4 bytes; goods kind 0x16, mm_Bag_AddMusicTrack): the city music plays the enabled ones
    (mm_Bgm_SetTrackSlot). */
@@ -1041,7 +1054,7 @@ struct Player {
     int32_t visible;           /* +0x3C drawn when non-zero (mm_Player_Draw) */
     int32_t target;            /* +0x40 object or person the cursor points at, -1 none (mm_Player_PickTarget) */
     int32_t targetIsPerson;    /* +0x44 */
-    int32_t unk_48;            /* +0x48 */
+    int32_t unk_48;            /* +0x48 cleared by mm_Player_ctor; nothing reads it */
     ps2f jumpSpeed;           /* +0x4C */
     ps2f airTime;             /* +0x50 time in the air, 1/60 a frame (mm_Player_Update) */
     ps2f moveSpeed;           /* +0x54 step per frame (mm_Player_Turn) */
@@ -1069,7 +1082,9 @@ struct Applicants {
     ApplicantEntry entries[32]; /* +0x000 */
     int32_t count;             /* +0x280 */
     int32_t shownCount;        /* +0x284 entries drawn the last time (mm_Applicants_Draw) */
-    uint8_t unk_288[4];        /* +0x288 (the stage object base at +0x289 is handed to mm_StageObj_ctor) */
+    uint8_t unk_288;
+    uint8_t stage;             /* +0x289 an empty Stage object (mm_Stage_ctor; its data is the static stage state) */
+    uint8_t unk_28A[2];
     GuestPtr<A3DObject> frameModel;     /* +0x28C 0x1F3B10 */
     GuestPtr<A3DObject> cardModel;      /* +0x290 0x1F3B68 */
     GuestPtr<TextBox> cardText;         /* +0x294 */
@@ -1299,11 +1314,13 @@ struct PlacementLayer {
 };
 struct RainLayer {
     uint32_t gifTag[4];        /* +0x000 VU1 0x12: 96 loops of RGBAQ, XYZF2 twice, PRIM 0x69 (blended lines) */
-    Vec4 colourA;              /* +0x010 VU1 0x13 (765, 765, 765, the clock's brightness: 0..40) */
-    Vec4 colourB;              /* +0x020 VU1 0x14 (765, 765, 765, 0) */
-    int32_t unk_030[4];        /* +0x030 VU1 0x15 (8) */
-    Vec4 drops[16];            /* +0x040 VU1 0x16..0x25 (40, y): y falls 0.4 a frame and wraps at 40 */
-    Vec4 streaks[24];          /* +0x140 VU1 0x26..0x3D: the two ends of twelve streaks */
+    Vec4 colourA;              /* +0x010 VU1 0x13 (765, 765, 765, 0..40 by the clock): a streak's lower end, times the ambient
+                                  light and clamped at 255; its w is the alpha */
+    Vec4 colourB;              /* +0x020 VU1 0x14 (765, 765, 765, 0): the upper end, clear */
+    uint32_t mask[4];          /* +0x030 VU1 0x15: x 8, the quad flag mask (every quad has flag 8) */
+    Vec4 drops[16];            /* +0x040 VU1 0x16..0x25 (40, y): y falls 0.4 a frame and wraps at 40; a hash of each quad's
+                                  position picks one, added to its streaks' heights (wrapped into -40..0) */
+    Vec4 streaks[24];          /* +0x140 VU1 0x26..0x3D: the two ends of twelve streaks per quad (lower, then upper) */
     uint32_t startPackets[2];  /* +0x2C0 per terrain buffer: +0x000..+0x2BF to VU1 0x12, the program 0x1A8A00, then the chunks */
     uint8_t unk_2C8[8];
     TerrainPassParams ground;  /* +0x2D0 the wet ground pass (program 0x1A8E20): mask 1, its TEX0 cycles every twelve frames */
@@ -1314,13 +1331,15 @@ struct RainLayer {
 };
 struct SnowLayer {
     uint32_t gifTag[4];        /* +0x000 VU1 0x12: 8 loops per step of ST, XYZF2 twice, PRIM 0x76 (blended sprites) */
-    Vec4 unk_010[3];           /* +0x010 VU1 0x13..0x15: (0, 0, 1, 0), (1, 1, 1, 0), (10, 5, 0, 0) */
-    Vec4 points[13];           /* +0x040 VU1 0x16..0x22 */
-    Vec4 turns[32];            /* +0x110 VU1 0x23..0x42: eight rotation matrices about y */
+    Vec4 spriteST[2];          /* +0x010 VU1 0x13, 0x14: the flake sprite's two corners' ST, (0, 0, q 1) and (1, 1, q 1) */
+    Vec4 spriteSize;           /* +0x030 VU1 0x15 (10, 5): the sprite's size, times 10 / w on the screen */
+    Vec4 points[13];           /* +0x040 VU1 0x16..0x22: the flakes of a quad, before its turn */
+    Vec4 turns[32];            /* +0x110 VU1 0x23..0x42: eight rotation matrices about y (a hash of the quad picks one) */
     Vec4 projection[4];        /* +0x310 VU1 0x43..0x46: the projection times the view (mm_SnowLayer_Draw) */
-    Vec4 flakes[32];           /* +0x350 VU1 0x47..0x66: x and z within 0.5, y from -40 to 0 in steps of 0.03 a frame, then again */
-    int32_t steps;             /* +0x550 VU1 0x67: the clock's night length / 1500 + 1 */
-    int32_t unk_554;           /* +0x554 8 */
+    Vec4 flakes[32];           /* +0x350 VU1 0x47..0x66: offsets added to a quad's flakes (a hash of the quad picks one): x and z
+                                  within 0.5, y from -40 to 0 in steps of 0.03 a frame, then again */
+    int32_t flakesPerQuad;     /* +0x550 VU1 0x67.x: the first n points drawn on each quad, 1 to 13 (by the clock) */
+    int32_t mask;              /* +0x554 VU1 0x67.y: the quad flag mask, 8 (every quad) */
     uint8_t unk_558[8];
     uint32_t startPackets[2];  /* +0x560 per terrain buffer: RGBAQ (its alpha, the top byte of +0x20, from the clock), ALPHA_1 and
                                   TEX0_1 (the flake), +0x000..+0x55F to VU1 0x12, the program 0x1A9A90, then the chunks */
@@ -1339,20 +1358,23 @@ struct LayerF {
     uint8_t unk_134[0xC];
 };
 struct LayerG {
-    Vec4 colour;               /* +0x000 VU1 0x1C (128, 128, 128, 60) */
-    uint8_t unk_010[0x10];
-    uint32_t outputOffsets[4]; /* +0x020 VU1 0x1E (0x40, 0x10) */
-    uint32_t gifTag[4];        /* +0x030 VU1 0x1F: 32 loops of 13 registers */
-    uint32_t primB[4];         /* +0x040 VU1 0x20 PRIM 0x27C: blended strip in GS context 2 */
-    uint32_t primA[4];         /* +0x050 VU1 0x21 PRIM 0x7C: the same in context 1 */
-    Vec4 wavesA[12];           /* +0x060 VU1 0x22..0x2D wave points: x sways, y scrolls (mm_LayerG_AnimateWaves) */
-    Vec4 wavesB[12];           /* +0x120 VU1 0x2E..0x39 second set, swaying the other way, scrolling back */
-    uint32_t mask[4];          /* +0x1E0 VU1 0x3A: w 2 */
-    Vec4 waveParamsA;          /* +0x1F0 VU1 0x3B (1, phase - pi/2, 1/pi, pi) */
-    Vec4 waveParamsB;          /* +0x200 VU1 0x3C (0.06 * direction, weather, phase, 0) */
+    Vec4 colour;               /* +0x000 VU1 0x1C (128, 128, 128, 60): times each triangle's light */
+    uint8_t unk_010[0x10];     /* +0x010 VU1 0x1D, which the program does not read */
+    uint32_t outputOffsets[4]; /* +0x020 VU1 0x1E (0x40, 0x10): the output offset and 16 quads per chunk */
+    uint32_t gifTag[4];        /* +0x030 VU1 0x1F: 32 loops of 13 registers (each quad twice) */
+    uint32_t primB[4];         /* +0x040 VU1 0x20 PRIM 0x27C: blended strip in GS context 2, with texCoordsA */
+    uint32_t primA[4];         /* +0x050 VU1 0x21 PRIM 0x7C: the same in context 1, with texCoordsB */
+    Vec4 texCoordsA[12];       /* +0x060 VU1 0x22..0x2D: three sets of four corners' ST, picked like the ground's by the quad's
+                                  set word; s sways, t scrolls (mm_LayerG_AnimateWaves) */
+    Vec4 texCoordsB[12];       /* +0x120 VU1 0x2E..0x39: the second texture's, swaying the other way, scrolling back */
+    uint32_t mask[4];          /* +0x1E0 VU1 0x3A: w 2, the quad flag mask (a corner under the water) */
+    Vec4 waveParamsA;          /* +0x1F0 VU1 0x3B (1, phase - pi/2, 1/pi, pi): the wave's z scale and phase, and pi for
+                                  |z| mod pi */
+    Vec4 waveParamsB;          /* +0x200 VU1 0x3C (0.06 * direction, the water level, phase, 0): each corner's height becomes
+                                  the level + 0.06 * direction * sin((|z| mod pi) + phase - pi/2); z is not read */
     uint32_t packets[2];       /* +0x210 per terrain buffer: GS state, the program 0x1A6440, +0x000..+0x20F to VU1 0x1C, the chunks */
     uint8_t unk_218[8];
-    Vec4 waveBase[12];         /* +0x220 the points at rest */
+    Vec4 texCoordsRest[12];    /* +0x220 the texture coordinates at rest (the quarters of a 2 x 2 texture) */
 };
 
 // ---- 10_game.h
@@ -1636,7 +1658,8 @@ struct BuildingRecord {
     uint8_t postGroup;         /* +0x29 */
     uint8_t claimB;            /* +0x2A */
     uint8_t claimC;            /* +0x2B */
-    uint8_t unk_2C;            /* +0x2C */
+    uint8_t unk_2C;            /* +0x2C 100 in all 232 building types, 0 in the 49 others (land, roads, homes, markers);
+                                  copied to BuildingType +0x149, which nothing reads */
     uint8_t maxVisitors;       /* +0x2D */
     uint8_t schedule;          /* +0x2E */
     uint8_t activity;          /* +0x2F */
@@ -1692,7 +1715,7 @@ struct BuildingType {
     uint8_t postGroup;         /* +0x146 group in POSTNAME.BIN (mm_BldgType_GetPostName) */
     uint8_t claimB;            /* +0x147 claim section B index */
     uint8_t claimC;            /* +0x148 claim section C index */
-    uint8_t unk_149;
+    uint8_t unk_149;           /* +0x149 from STRTYPE.BIN +0x2C (100 for buildings); nothing reads it */
     uint8_t maxVisitors;       /* +0x14A people heading here at most (mm_Person_FindBuildingInList) */
     uint8_t schedule;          /* +0x14B the type's own schedule row, after the fifteen shared ones (mm_Schedule_PickEntry) */
     uint8_t activity;          /* +0x14C what people do there (mm_Schedule_GetActivity) */
@@ -1780,7 +1803,7 @@ struct MemberStatus {
 
 /* Player stamina (0xC bytes) at 0x1BDBB8. */
 struct Stamina {
-    int32_t unk_00;
+    int32_t unk_00;            /* +0x00 cleared by mm_Stamina_Init and saved; nothing reads it */
     int32_t value;             /* +0x04 399999 at the start; drains every tick, food adds to it up to 2000000 */
     int32_t noticeTicks;       /* +0x08 ticks since the hunger notice was last shown; eating clears it (mm_Stamina_Tick) */
 };
@@ -2025,18 +2048,21 @@ struct SeVoice {
     int32_t heldRight;         /* +0x24 */
     int16_t heldPitch;         /* +0x28 group A: the pitch of the loudest */
     uint8_t rest;              /* +0x2A group A: frames before a freed voice is reused (20 when started) */
-    uint8_t unk_2B[5];
+    uint8_t unk_2B[5];         /* +0x2B the first three cleared when a group A voice starts; nothing reads them */
 };
 
 /* The sound driver's status (0x40 bytes) as YYSOUND sends it (0x20B7C0), and the game's view of it with the commands
    still queued merged in (0x20B840, mm_Sound_GetStatus). */
 struct SoundStatus {
-    uint32_t unk_00;
+    int32_t result;            /* +0x00 the last command's result, -3 when the driver was busy (YYSOUND's ee_put[0]) */
     uint32_t midiPlaying;      /* +0x04 bit per sequence slot */
     uint32_t wavePlaying;      /* +0x08 bit per wave voice */
-    uint32_t busy;             /* +0x0C the driver has work */
-    uint8_t unk_10[8];
-    uint32_t unk_18;           /* +0x18 a third mask, merged with the queued one at 0x1BDD54 */
+    uint32_t busy;             /* +0x0C the driver has work: its requests not run yet */
+    int32_t lastId;            /* +0x10 the id of the last command taken, -1 when the driver was busy */
+    int32_t checkResult;       /* +0x14 the request the EE waits for (command 0x3000): its id when it ran, minus it when it
+                                  failed */
+    uint32_t speechTracks;     /* +0x18 bit per wave track a spoken voice uses, from its start to its end mark; merged with the
+                                  queued mask at 0x1BDD54, which nothing sets */
     uint8_t unk_1C[0x24];
 };
 
@@ -2111,7 +2137,7 @@ struct CityScene {
     int32_t weatherToday;      /* +0x90 0 clear, 2 rain, 3 snow */
     int32_t weatherTomorrow;   /* +0x94 */
     int32_t weatherYesterday;  /* +0x98 */
-    int32_t unk_9C;
+    int32_t unk_9C;            /* +0x9C cleared by mm_CityScene_ctor; nothing reads it */
     int32_t prosperity;        /* +0xA0 decaying average (x10) of the residents' class traits bits 9-11 as they move in,
                                   starts at 250; low tiers gate recession, unemployment and bad debt events, the top one
                                   travel and gardening booms (EventType.prosperityTier) */
@@ -2146,9 +2172,10 @@ struct TalkMoney;
 struct TalkConv;
 
 /* The stage scene: the stage transition (0x104 bytes, mm_StageScene_*): title cards, approval rate, the boss's briefing, the mission
-   movie and the credits text, one step of the action table 0x1B07C0 at a time. A stage object with a widget at +4. */
+   movie and the credits text, one step of the action table 0x1B07C0 at a time. An empty Stage base (padded) with a widget
+   at +4. */
 struct StageScene {
-    uint32_t unk_00;
+    uint32_t stageBase;        /* +0x00 the empty Stage base (mm_Stage_ctor; its data is the static stage state) */
     Widget widget;             /* +0x04 vtable 0x1BCF18 */
     GuestPtr<Camera> camera;            /* +0x10 */
     GuestPtr<LightSet> lights;          /* +0x14 */
@@ -2160,7 +2187,7 @@ struct StageScene {
     uint8_t fadeMode;          /* +0x29 0 none, 1 fading out, 2 fading in */
     uint8_t unk_2A[2];
     int32_t fadeFrame;         /* +0x2C frames of the fade */
-    int32_t unk_30;
+    int32_t unk_30;            /* +0x30 cleared by mm_StageScene_ctor; nothing reads it */
     int32_t phase;             /* +0x34 the sub-step within the step */
     int32_t fade;              /* +0x38 the screen's fade, 0 to 0x80 */
     int32_t scroll;            /* +0x3C the credits text's scroll (mm_StageScene_ShowTelop) */
@@ -2388,6 +2415,12 @@ static_assert(offsetof(FileRequest, buffer) == 0x0C, "FileRequest.buffer");
 static_assert(offsetof(FileRequest, bytes) == 0x10, "FileRequest.bytes");
 static_assert(offsetof(FileRequest, offset) == 0x14, "FileRequest.offset");
 static_assert(offsetof(FileRequest, whence) == 0x18, "FileRequest.whence");
+static_assert(sizeof(McRequest) == 0x24, "McRequest size");
+static_assert(offsetof(McRequest, command) == 0x00, "McRequest.command");
+static_assert(offsetof(McRequest, state) == 0x04, "McRequest.state");
+static_assert(offsetof(McRequest, syncCommand) == 0x08, "McRequest.syncCommand");
+static_assert(offsetof(McRequest, result) == 0x0C, "McRequest.result");
+static_assert(offsetof(McRequest, args) == 0x10, "McRequest.args");
 static_assert(sizeof(TexFileHeader) == 0x20, "TexFileHeader size");
 static_assert(offsetof(TexFileHeader, paletteSize) == 0x04, "TexFileHeader.paletteSize");
 static_assert(offsetof(TexFileHeader, tileWords) == 0x08, "TexFileHeader.tileWords");
@@ -2425,7 +2458,7 @@ static_assert(offsetof(A3DModel, animationCount) == 0x1C, "A3DModel.animationCou
 static_assert(offsetof(A3DModel, chainCount) == 0x1E, "A3DModel.chainCount");
 static_assert(offsetof(A3DMesh, data) == 0x00, "A3DMesh.data");
 static_assert(offsetof(A3DMesh, sizeWords) == 0x04, "A3DMesh.sizeWords");
-static_assert(offsetof(A3DMesh, unk_08) == 0x08, "A3DMesh.unk_08");
+static_assert(offsetof(A3DMesh, vertexCount) == 0x08, "A3DMesh.vertexCount");
 static_assert(offsetof(A3DMesh, chain) == 0x10, "A3DMesh.chain");
 static_assert(offsetof(A3DChainBlock, sizeWords) == 0x00, "A3DChainBlock.sizeWords");
 static_assert(offsetof(A3DChainBlock, chain) == 0x10, "A3DChainBlock.chain");
@@ -2627,6 +2660,7 @@ static_assert(offsetof(BagSlot, count) == 0x06, "BagSlot.count");
 static_assert(offsetof(BagSlot, month) == 0x08, "BagSlot.month");
 static_assert(offsetof(BagSlot, seller) == 0x0C, "BagSlot.seller");
 static_assert(offsetof(BagSlot, unk_0E) == 0x0E, "BagSlot.unk_0E");
+static_assert(offsetof(BagSlot, unk_0F) == 0x0F, "BagSlot.unk_0F");
 static_assert(offsetof(BagMusicTrack, track) == 0x00, "BagMusicTrack.track");
 static_assert(offsetof(BagMusicTrack, enabled) == 0x02, "BagMusicTrack.enabled");
 static_assert(offsetof(Bag, size) == 0x000, "Bag.size");
@@ -2940,7 +2974,7 @@ static_assert(sizeof(Applicants) == 0x350, "Applicants size");
 static_assert(offsetof(Applicants, entries) == 0x000, "Applicants.entries");
 static_assert(offsetof(Applicants, count) == 0x280, "Applicants.count");
 static_assert(offsetof(Applicants, shownCount) == 0x284, "Applicants.shownCount");
-static_assert(offsetof(Applicants, unk_288) == 0x288, "Applicants.unk_288");
+static_assert(offsetof(Applicants, stage) == 0x289, "Applicants.stage");
 static_assert(offsetof(Applicants, frameModel) == 0x28C, "Applicants.frameModel");
 static_assert(offsetof(Applicants, cardModel) == 0x290, "Applicants.cardModel");
 static_assert(offsetof(Applicants, cardText) == 0x294, "Applicants.cardText");
@@ -3091,7 +3125,7 @@ static_assert(offsetof(PlacementLayer, marker) == 0x230, "PlacementLayer.marker"
 static_assert(offsetof(RainLayer, gifTag) == 0x000, "RainLayer.gifTag");
 static_assert(offsetof(RainLayer, colourA) == 0x010, "RainLayer.colourA");
 static_assert(offsetof(RainLayer, colourB) == 0x020, "RainLayer.colourB");
-static_assert(offsetof(RainLayer, unk_030) == 0x030, "RainLayer.unk_030");
+static_assert(offsetof(RainLayer, mask) == 0x030, "RainLayer.mask");
 static_assert(offsetof(RainLayer, drops) == 0x040, "RainLayer.drops");
 static_assert(offsetof(RainLayer, streaks) == 0x140, "RainLayer.streaks");
 static_assert(offsetof(RainLayer, startPackets) == 0x2C0, "RainLayer.startPackets");
@@ -3100,13 +3134,14 @@ static_assert(offsetof(RainLayer, groundExtra) == 0x3F0, "RainLayer.groundExtra"
 static_assert(offsetof(RainLayer, groundPackets) == 0x400, "RainLayer.groundPackets");
 static_assert(offsetof(RainLayer, endPacket) == 0x408, "RainLayer.endPacket");
 static_assert(offsetof(SnowLayer, gifTag) == 0x000, "SnowLayer.gifTag");
-static_assert(offsetof(SnowLayer, unk_010) == 0x010, "SnowLayer.unk_010");
+static_assert(offsetof(SnowLayer, spriteST) == 0x010, "SnowLayer.spriteST");
+static_assert(offsetof(SnowLayer, spriteSize) == 0x030, "SnowLayer.spriteSize");
 static_assert(offsetof(SnowLayer, points) == 0x040, "SnowLayer.points");
 static_assert(offsetof(SnowLayer, turns) == 0x110, "SnowLayer.turns");
 static_assert(offsetof(SnowLayer, projection) == 0x310, "SnowLayer.projection");
 static_assert(offsetof(SnowLayer, flakes) == 0x350, "SnowLayer.flakes");
-static_assert(offsetof(SnowLayer, steps) == 0x550, "SnowLayer.steps");
-static_assert(offsetof(SnowLayer, unk_554) == 0x554, "SnowLayer.unk_554");
+static_assert(offsetof(SnowLayer, flakesPerQuad) == 0x550, "SnowLayer.flakesPerQuad");
+static_assert(offsetof(SnowLayer, mask) == 0x554, "SnowLayer.mask");
 static_assert(offsetof(SnowLayer, startPackets) == 0x560, "SnowLayer.startPackets");
 static_assert(offsetof(SnowLayer, ground) == 0x570, "SnowLayer.ground");
 static_assert(offsetof(SnowLayer, groundExtra) == 0x690, "SnowLayer.groundExtra");
@@ -3117,17 +3152,18 @@ static_assert(offsetof(LayerF, params) == 0x000, "LayerF.params");
 static_assert(offsetof(LayerF, extra) == 0x120, "LayerF.extra");
 static_assert(offsetof(LayerF, packet) == 0x130, "LayerF.packet");
 static_assert(offsetof(LayerG, colour) == 0x000, "LayerG.colour");
+static_assert(offsetof(LayerG, unk_010) == 0x010, "LayerG.unk_010");
 static_assert(offsetof(LayerG, outputOffsets) == 0x020, "LayerG.outputOffsets");
 static_assert(offsetof(LayerG, gifTag) == 0x030, "LayerG.gifTag");
 static_assert(offsetof(LayerG, primB) == 0x040, "LayerG.primB");
 static_assert(offsetof(LayerG, primA) == 0x050, "LayerG.primA");
-static_assert(offsetof(LayerG, wavesA) == 0x060, "LayerG.wavesA");
-static_assert(offsetof(LayerG, wavesB) == 0x120, "LayerG.wavesB");
+static_assert(offsetof(LayerG, texCoordsA) == 0x060, "LayerG.texCoordsA");
+static_assert(offsetof(LayerG, texCoordsB) == 0x120, "LayerG.texCoordsB");
 static_assert(offsetof(LayerG, mask) == 0x1E0, "LayerG.mask");
 static_assert(offsetof(LayerG, waveParamsA) == 0x1F0, "LayerG.waveParamsA");
 static_assert(offsetof(LayerG, waveParamsB) == 0x200, "LayerG.waveParamsB");
 static_assert(offsetof(LayerG, packets) == 0x210, "LayerG.packets");
-static_assert(offsetof(LayerG, waveBase) == 0x220, "LayerG.waveBase");
+static_assert(offsetof(LayerG, texCoordsRest) == 0x220, "LayerG.texCoordsRest");
 static_assert(offsetof(CityMapVtable, tick) == 0x08, "CityMapVtable.tick");
 static_assert(offsetof(CityMapVtable, clearObject) == 0x0C, "CityMapVtable.clearObject");
 static_assert(offsetof(BuildingTypeVtable, dtor) == 0x08, "BuildingTypeVtable.dtor");
@@ -3306,6 +3342,7 @@ static_assert(offsetof(BuildingType, category) == 0x145, "BuildingType.category"
 static_assert(offsetof(BuildingType, postGroup) == 0x146, "BuildingType.postGroup");
 static_assert(offsetof(BuildingType, claimB) == 0x147, "BuildingType.claimB");
 static_assert(offsetof(BuildingType, claimC) == 0x148, "BuildingType.claimC");
+static_assert(offsetof(BuildingType, unk_149) == 0x149, "BuildingType.unk_149");
 static_assert(offsetof(BuildingType, maxVisitors) == 0x14A, "BuildingType.maxVisitors");
 static_assert(offsetof(BuildingType, schedule) == 0x14B, "BuildingType.schedule");
 static_assert(offsetof(BuildingType, activity) == 0x14C, "BuildingType.activity");
@@ -3348,6 +3385,7 @@ static_assert(offsetof(Family, memberCount) == 0x22, "Family.memberCount");
 static_assert(offsetof(Family, members) == 0x24, "Family.members");
 static_assert(sizeof(MemberStatus) == 0x4, "MemberStatus size");
 static_assert(sizeof(Stamina) == 0xC, "Stamina size");
+static_assert(offsetof(Stamina, unk_00) == 0x00, "Stamina.unk_00");
 static_assert(offsetof(Stamina, value) == 0x04, "Stamina.value");
 static_assert(offsetof(Stamina, noticeTicks) == 0x08, "Stamina.noticeTicks");
 static_assert(sizeof(Widget) == 0xC, "Widget size");
@@ -3501,10 +3539,14 @@ static_assert(offsetof(SeVoice, heldLeft) == 0x20, "SeVoice.heldLeft");
 static_assert(offsetof(SeVoice, heldRight) == 0x24, "SeVoice.heldRight");
 static_assert(offsetof(SeVoice, heldPitch) == 0x28, "SeVoice.heldPitch");
 static_assert(offsetof(SeVoice, rest) == 0x2A, "SeVoice.rest");
+static_assert(offsetof(SeVoice, unk_2B) == 0x2B, "SeVoice.unk_2B");
+static_assert(offsetof(SoundStatus, result) == 0x00, "SoundStatus.result");
 static_assert(offsetof(SoundStatus, midiPlaying) == 0x04, "SoundStatus.midiPlaying");
 static_assert(offsetof(SoundStatus, wavePlaying) == 0x08, "SoundStatus.wavePlaying");
 static_assert(offsetof(SoundStatus, busy) == 0x0C, "SoundStatus.busy");
-static_assert(offsetof(SoundStatus, unk_18) == 0x18, "SoundStatus.unk_18");
+static_assert(offsetof(SoundStatus, lastId) == 0x10, "SoundStatus.lastId");
+static_assert(offsetof(SoundStatus, checkResult) == 0x14, "SoundStatus.checkResult");
+static_assert(offsetof(SoundStatus, speechTracks) == 0x18, "SoundStatus.speechTracks");
 static_assert(offsetof(BgmTrack, bank) == 0x00, "BgmTrack.bank");
 static_assert(offsetof(BgmTrack, enabled) == 0x01, "BgmTrack.enabled");
 static_assert(sizeof(AmbienceSound) == 0x1C, "AmbienceSound size");
@@ -3558,6 +3600,7 @@ static_assert(offsetof(CityScene, approval) == 0x8C, "CityScene.approval");
 static_assert(offsetof(CityScene, weatherToday) == 0x90, "CityScene.weatherToday");
 static_assert(offsetof(CityScene, weatherTomorrow) == 0x94, "CityScene.weatherTomorrow");
 static_assert(offsetof(CityScene, weatherYesterday) == 0x98, "CityScene.weatherYesterday");
+static_assert(offsetof(CityScene, unk_9C) == 0x9C, "CityScene.unk_9C");
 static_assert(offsetof(CityScene, prosperity) == 0xA0, "CityScene.prosperity");
 static_assert(offsetof(CityScene, prosperityCount) == 0xA4, "CityScene.prosperityCount");
 static_assert(offsetof(CityScene, conduct) == 0xA8, "CityScene.conduct");
@@ -3572,6 +3615,7 @@ static_assert(offsetof(CityScene, fadeLevel) == 0xC8, "CityScene.fadeLevel");
 static_assert(offsetof(CityScene, fade) == 0xCC, "CityScene.fade");
 static_assert(offsetof(CityScene, fadeSpeed) == 0xD0, "CityScene.fadeSpeed");
 static_assert(offsetof(CityScene, fadeOverAll) == 0xD4, "CityScene.fadeOverAll");
+static_assert(offsetof(StageScene, stageBase) == 0x00, "StageScene.stageBase");
 static_assert(offsetof(StageScene, widget) == 0x04, "StageScene.widget");
 static_assert(offsetof(StageScene, camera) == 0x10, "StageScene.camera");
 static_assert(offsetof(StageScene, lights) == 0x14, "StageScene.lights");
@@ -3581,6 +3625,7 @@ static_assert(offsetof(StageScene, stage) == 0x24, "StageScene.stage");
 static_assert(offsetof(StageScene, step) == 0x28, "StageScene.step");
 static_assert(offsetof(StageScene, fadeMode) == 0x29, "StageScene.fadeMode");
 static_assert(offsetof(StageScene, fadeFrame) == 0x2C, "StageScene.fadeFrame");
+static_assert(offsetof(StageScene, unk_30) == 0x30, "StageScene.unk_30");
 static_assert(offsetof(StageScene, phase) == 0x34, "StageScene.phase");
 static_assert(offsetof(StageScene, fade) == 0x38, "StageScene.fade");
 static_assert(offsetof(StageScene, scroll) == 0x3C, "StageScene.scroll");

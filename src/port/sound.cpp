@@ -255,8 +255,8 @@ namespace mm
             globals::bgmTrack.set(static_cast<uint8_t>(found + 0x7F));
     }
 
-    // The driver's status block as the game reads it: a copy with the plays, slots and third command group
-    // still waiting in the command ring merged in (words 1, 2 and 6).
+    // The driver's status block as the game reads it: a copy with the sequence slots, wave voices and speech tracks
+    // of the commands still waiting in the command ring merged in (words 1, 2 and 6).
     namespace
     {
         void refreshStatusView()
@@ -266,7 +266,7 @@ namespace mm
             { (*globals::soundStatusView()).*field = (*globals::soundStatus()).*field | queued; };
             merge(&SoundStatus::midiPlaying, globals::soundSlotsQueued.get());
             merge(&SoundStatus::wavePlaying, globals::soundVoicesQueued.get());
-            merge(&SoundStatus::unk_18, globals::soundStopsQueued.get());
+            merge(&SoundStatus::speechTracks, globals::soundSpeechQueued.get());
         }
     }
 
@@ -1768,7 +1768,7 @@ namespace mm
         sdk::memcpy(view.address, status.address, 0x40);
         view->midiPlaying = status->midiPlaying | globals::soundSlotsQueued.get();
         view->wavePlaying = status->wavePlaying | globals::soundVoicesQueued.get();
-        view->unk_18 = status->unk_18 | globals::soundStopsQueued.get();
+        view->speechTracks = status->speechTracks | globals::soundSpeechQueued.get();
         return view->busy != 0 ? 1 : 0;
     }
 
@@ -1902,7 +1902,7 @@ namespace mm
         globals::soundCmdSent.set(0);
         globals::soundVoicesQueued.set(0);
         globals::soundSlotsQueued.set(0);
-        globals::soundStopsQueued.set(0);
+        globals::soundSpeechQueued.set(0);
         port::store<uint32_t>(0x0020B800u, 0u);
         for (uint32_t voice = 0; voice < 0x100; ++voice)
             port::store<uint32_t>(0x001FE6C0u + 0xD0u * voice, 0u);

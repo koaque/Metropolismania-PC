@@ -9,6 +9,7 @@ typedef struct Camera Camera;
 typedef struct CityCamera CityCamera;
 typedef struct GameFile GameFile;
 typedef struct FileRequest FileRequest;
+typedef struct McRequest McRequest;
 typedef struct TexSprite TexSprite;
 typedef struct TexFileHeader TexFileHeader;
 typedef struct LightSet LightSet;
@@ -171,8 +172,9 @@ struct Camera {
     Vec4 ambient;              /* +0x1C0 */
     float viewWidth;           /* +0x1D0 (mm_Camera_UpdateProjection) */
     float viewHeight;          /* +0x1D4 */
-    float unk_1D8;             /* +0x1D8 1.0 from mm_Camera_ctor */
-    float unk_1DC;             /* +0x1DC 10.0 from mm_Camera_ctor */
+    float unk_1D8;             /* +0x1D8 1.0, set beside the view size before each projection update (mm_Camera_ctor,
+                                  mm_CityCamera_Update); nothing reads it */
+    float unk_1DC;             /* +0x1DC 10.0, likewise; nothing reads it */
     Vec4 view[4];              /* +0x1E0 world to camera (sceVu0CameraMatrix) */
     Vec4 screenA[4];           /* +0x220 */
     Vec4 screenB[4];           /* +0x260 */
@@ -214,6 +216,15 @@ struct FileRequest {
     int32_t bytes;             /* +0x10 bytes to read */
     int32_t offset;            /* +0x14 seek offset */
     int32_t whence;            /* +0x18 seek origin */
+};
+/* Memory card request slot (0x24 bytes, 64 at 0x1F5CF0), queued by mm_McQueue_* and issued by mm_McQueue_Pump. */
+struct McRequest {
+    int32_t command;           /* +0x00 1 GetInfo, 2 GetDir, 3 Format, 4 Mkdir, 5 Chdir, 6 Open, 7 Close, 8 Delete, 9 Read,
+                                  10 Write, 11 Unformat, 12 Seek; 0 free */
+    int32_t state;             /* +0x04 0 not issued yet, 1 issued (polled with sceMcSync) */
+    int32_t syncCommand;       /* +0x08 the command sceMcSync reports */
+    uint32_t result;           /* +0x0C where the result goes; 0: into this word itself (mm_McQueue_GetResult reads it) */
+    int32_t args[5];           /* +0x10 the SDK call's arguments (the port or the file first) */
 };
 /* .TEX image header (0x20 bytes): the palette, then the tiles row by row, each tileWords words. */
 struct TexFileHeader {
@@ -270,7 +281,9 @@ struct A3DModel {
 struct A3DMesh {
     uint32_t data;             /* +0x00 a word offset that mm_A3D_Relocate turns into an address */
     uint32_t sizeWords;        /* +0x04 the block's size in words */
-    uint32_t unk_08;           /* +0x08 a character part group whose first mesh has this below 4 is replaced (mm_CityAssets_BuildCharParts) */
+    uint32_t vertexCount;      /* +0x08 the vertices of all its batches (their GIF tags' NLOOP together in 176 of CHAR.A3D model
+                                  0's 177 meshes, 2 fewer in one); CHAR.A3D's placeholders have 3, and a character part group
+                                  whose first mesh has fewer than 4 is replaced (mm_CityAssets_BuildCharParts) */
     uint8_t unk_0C[4];
     uint32_t chain[4];         /* +0x10 start of the DMA chain */
 };
@@ -556,8 +569,8 @@ struct BagSlot {
     uint8_t unk_07;
     int32_t month;             /* +0x08 the month count it was bought in */
     uint16_t seller;           /* +0x0C the family of the shop it came from */
-    uint8_t unk_0E;            /* +0x0E 0xFF when bought */
-    uint8_t unk_0F;
+    uint8_t unk_0E;            /* +0x0E 0xFF from both callers of mm_Bag_AddItem; nothing reads it */
+    uint8_t unk_0F;            /* +0x0F 0 from both callers; nothing reads it */
 };
 /* A music track bought (4 bytes; goods kind 0x16, mm_Bag_AddMusicTrack): the city music plays the enabled ones
    (mm_Bgm_SetTrackSlot). */
@@ -1017,7 +1030,7 @@ struct Player {
     int32_t visible;           /* +0x3C drawn when non-zero (mm_Player_Draw) */
     int32_t target;            /* +0x40 object or person the cursor points at, -1 none (mm_Player_PickTarget) */
     int32_t targetIsPerson;    /* +0x44 */
-    int32_t unk_48;            /* +0x48 */
+    int32_t unk_48;            /* +0x48 cleared by mm_Player_ctor; nothing reads it */
     float jumpSpeed;           /* +0x4C */
     float airTime;             /* +0x50 time in the air, 1/60 a frame (mm_Player_Update) */
     float moveSpeed;           /* +0x54 step per frame (mm_Player_Turn) */
@@ -1045,7 +1058,9 @@ struct Applicants {
     ApplicantEntry entries[32]; /* +0x000 */
     int32_t count;             /* +0x280 */
     int32_t shownCount;        /* +0x284 entries drawn the last time (mm_Applicants_Draw) */
-    uint8_t unk_288[4];        /* +0x288 (the stage object base at +0x289 is handed to mm_StageObj_ctor) */
+    uint8_t unk_288;
+    uint8_t stage;             /* +0x289 an empty Stage object (mm_Stage_ctor; its data is the static stage state) */
+    uint8_t unk_28A[2];
     A3DObject *frameModel;     /* +0x28C 0x1F3B10 */
     A3DObject *cardModel;      /* +0x290 0x1F3B68 */
     TextBox *cardText;         /* +0x294 */
@@ -1275,11 +1290,13 @@ struct PlacementLayer {
 };
 struct RainLayer {
     uint32_t gifTag[4];        /* +0x000 VU1 0x12: 96 loops of RGBAQ, XYZF2 twice, PRIM 0x69 (blended lines) */
-    Vec4 colourA;              /* +0x010 VU1 0x13 (765, 765, 765, the clock's brightness: 0..40) */
-    Vec4 colourB;              /* +0x020 VU1 0x14 (765, 765, 765, 0) */
-    int32_t unk_030[4];        /* +0x030 VU1 0x15 (8) */
-    Vec4 drops[16];            /* +0x040 VU1 0x16..0x25 (40, y): y falls 0.4 a frame and wraps at 40 */
-    Vec4 streaks[24];          /* +0x140 VU1 0x26..0x3D: the two ends of twelve streaks */
+    Vec4 colourA;              /* +0x010 VU1 0x13 (765, 765, 765, 0..40 by the clock): a streak's lower end, times the ambient
+                                  light and clamped at 255; its w is the alpha */
+    Vec4 colourB;              /* +0x020 VU1 0x14 (765, 765, 765, 0): the upper end, clear */
+    uint32_t mask[4];          /* +0x030 VU1 0x15: x 8, the quad flag mask (every quad has flag 8) */
+    Vec4 drops[16];            /* +0x040 VU1 0x16..0x25 (40, y): y falls 0.4 a frame and wraps at 40; a hash of each quad's
+                                  position picks one, added to its streaks' heights (wrapped into -40..0) */
+    Vec4 streaks[24];          /* +0x140 VU1 0x26..0x3D: the two ends of twelve streaks per quad (lower, then upper) */
     uint32_t startPackets[2];  /* +0x2C0 per terrain buffer: +0x000..+0x2BF to VU1 0x12, the program 0x1A8A00, then the chunks */
     uint8_t unk_2C8[8];
     TerrainPassParams ground;  /* +0x2D0 the wet ground pass (program 0x1A8E20): mask 1, its TEX0 cycles every twelve frames */
@@ -1290,13 +1307,15 @@ struct RainLayer {
 };
 struct SnowLayer {
     uint32_t gifTag[4];        /* +0x000 VU1 0x12: 8 loops per step of ST, XYZF2 twice, PRIM 0x76 (blended sprites) */
-    Vec4 unk_010[3];           /* +0x010 VU1 0x13..0x15: (0, 0, 1, 0), (1, 1, 1, 0), (10, 5, 0, 0) */
-    Vec4 points[13];           /* +0x040 VU1 0x16..0x22 */
-    Vec4 turns[32];            /* +0x110 VU1 0x23..0x42: eight rotation matrices about y */
+    Vec4 spriteST[2];          /* +0x010 VU1 0x13, 0x14: the flake sprite's two corners' ST, (0, 0, q 1) and (1, 1, q 1) */
+    Vec4 spriteSize;           /* +0x030 VU1 0x15 (10, 5): the sprite's size, times 10 / w on the screen */
+    Vec4 points[13];           /* +0x040 VU1 0x16..0x22: the flakes of a quad, before its turn */
+    Vec4 turns[32];            /* +0x110 VU1 0x23..0x42: eight rotation matrices about y (a hash of the quad picks one) */
     Vec4 projection[4];        /* +0x310 VU1 0x43..0x46: the projection times the view (mm_SnowLayer_Draw) */
-    Vec4 flakes[32];           /* +0x350 VU1 0x47..0x66: x and z within 0.5, y from -40 to 0 in steps of 0.03 a frame, then again */
-    int32_t steps;             /* +0x550 VU1 0x67: the clock's night length / 1500 + 1 */
-    int32_t unk_554;           /* +0x554 8 */
+    Vec4 flakes[32];           /* +0x350 VU1 0x47..0x66: offsets added to a quad's flakes (a hash of the quad picks one): x and z
+                                  within 0.5, y from -40 to 0 in steps of 0.03 a frame, then again */
+    int32_t flakesPerQuad;     /* +0x550 VU1 0x67.x: the first n points drawn on each quad, 1 to 13 (by the clock) */
+    int32_t mask;              /* +0x554 VU1 0x67.y: the quad flag mask, 8 (every quad) */
     uint8_t unk_558[8];
     uint32_t startPackets[2];  /* +0x560 per terrain buffer: RGBAQ (its alpha, the top byte of +0x20, from the clock), ALPHA_1 and
                                   TEX0_1 (the flake), +0x000..+0x55F to VU1 0x12, the program 0x1A9A90, then the chunks */
@@ -1315,18 +1334,21 @@ struct LayerF {
     uint8_t unk_134[0xC];
 };
 struct LayerG {
-    Vec4 colour;               /* +0x000 VU1 0x1C (128, 128, 128, 60) */
-    uint8_t unk_010[0x10];
-    uint32_t outputOffsets[4]; /* +0x020 VU1 0x1E (0x40, 0x10) */
-    uint32_t gifTag[4];        /* +0x030 VU1 0x1F: 32 loops of 13 registers */
-    uint32_t primB[4];         /* +0x040 VU1 0x20 PRIM 0x27C: blended strip in GS context 2 */
-    uint32_t primA[4];         /* +0x050 VU1 0x21 PRIM 0x7C: the same in context 1 */
-    Vec4 wavesA[12];           /* +0x060 VU1 0x22..0x2D wave points: x sways, y scrolls (mm_LayerG_AnimateWaves) */
-    Vec4 wavesB[12];           /* +0x120 VU1 0x2E..0x39 second set, swaying the other way, scrolling back */
-    uint32_t mask[4];          /* +0x1E0 VU1 0x3A: w 2 */
-    Vec4 waveParamsA;          /* +0x1F0 VU1 0x3B (1, phase - pi/2, 1/pi, pi) */
-    Vec4 waveParamsB;          /* +0x200 VU1 0x3C (0.06 * direction, weather, phase, 0) */
+    Vec4 colour;               /* +0x000 VU1 0x1C (128, 128, 128, 60): times each triangle's light */
+    uint8_t unk_010[0x10];     /* +0x010 VU1 0x1D, which the program does not read */
+    uint32_t outputOffsets[4]; /* +0x020 VU1 0x1E (0x40, 0x10): the output offset and 16 quads per chunk */
+    uint32_t gifTag[4];        /* +0x030 VU1 0x1F: 32 loops of 13 registers (each quad twice) */
+    uint32_t primB[4];         /* +0x040 VU1 0x20 PRIM 0x27C: blended strip in GS context 2, with texCoordsA */
+    uint32_t primA[4];         /* +0x050 VU1 0x21 PRIM 0x7C: the same in context 1, with texCoordsB */
+    Vec4 texCoordsA[12];       /* +0x060 VU1 0x22..0x2D: three sets of four corners' ST, picked like the ground's by the quad's
+                                  set word; s sways, t scrolls (mm_LayerG_AnimateWaves) */
+    Vec4 texCoordsB[12];       /* +0x120 VU1 0x2E..0x39: the second texture's, swaying the other way, scrolling back */
+    uint32_t mask[4];          /* +0x1E0 VU1 0x3A: w 2, the quad flag mask (a corner under the water) */
+    Vec4 waveParamsA;          /* +0x1F0 VU1 0x3B (1, phase - pi/2, 1/pi, pi): the wave's z scale and phase, and pi for
+                                  |z| mod pi */
+    Vec4 waveParamsB;          /* +0x200 VU1 0x3C (0.06 * direction, the water level, phase, 0): each corner's height becomes
+                                  the level + 0.06 * direction * sin((|z| mod pi) + phase - pi/2); z is not read */
     uint32_t packets[2];       /* +0x210 per terrain buffer: GS state, the program 0x1A6440, +0x000..+0x20F to VU1 0x1C, the chunks */
     uint8_t unk_218[8];
-    Vec4 waveBase[12];         /* +0x220 the points at rest */
+    Vec4 texCoordsRest[12];    /* +0x220 the texture coordinates at rest (the quarters of a 2 x 2 texture) */
 };

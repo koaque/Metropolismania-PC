@@ -246,7 +246,8 @@ namespace mm
         view->target.w = std::bit_cast<float>(0x3F800000u);
         view->position = view->target;
         const int kind = Map_GetTileKind(view->base.city->map, record->tile);
-        port::store<uint32_t>(view.address + 0x290u, port::load<uint32_t>(0x001B2690u + 4u * static_cast<uint32_t>(kind)));
+        port::store<uint32_t>(view.field(&MyHomeView::facing).address,
+                              port::load<uint32_t>(globals::kKindHeadings + 4u * static_cast<uint32_t>(kind)));
         sdk::sceVu0RotMatrixY(sp + 0x60u, globals::kIdentityMatrix, view->facing);
         port::store<uint32_t>(sp + 0x50u, 0);
         port::store<uint32_t>(sp + 0x54u, 0);

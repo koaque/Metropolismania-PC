@@ -1047,7 +1047,7 @@ namespace mm
         int slot = request - 1;
         if (slot < 0)
             slot = 63;
-        return port::load<int32_t>(globals::kMcRequests + 0x24u * static_cast<uint32_t>(slot) + 0xCu);
+        return static_cast<int32_t>((GuestPtr<McRequest>{globals::kMcRequests} + slot)->result);
     }
 
     void McManager_ResetState(GuestPtr<McManager> mc) { mc->state = 0; }
@@ -1319,7 +1319,7 @@ namespace mm
     void FileQueue_Init()
     {
         for (uint32_t i = 0; i < 0x40; ++i)
-            port::store<int32_t>(globals::kFileRequests + 0x1Cu * i, 0);
+            (GuestPtr<FileRequest>{globals::kFileRequests} + static_cast<int32_t>(i))->op = 0;
         globals::fileQueueTail.set(0);
         globals::fileQueueHead.set(0);
         globals::fileQueueCount.set(0);
@@ -1756,8 +1756,9 @@ namespace mm
         globals::laptopEntryCount.set(globals::laptopDefaultCount.get());
     }
 
-    // stage: the stage object starts with an empty city name.
-    int StageObj_ctor(int stage)
+    // The empty Stage class: the base of the title, stage and city scenes and a member of the applicants window. Its data
+    // is the static stage state (0x1C5380), and making one clears its first byte, the city's name (no city yet).
+    int Stage_ctor(int stage)
     {
         port::store<uint8_t>(globals::kStageState, 0);
         return stage;
@@ -2711,7 +2712,7 @@ namespace mm
     PORT_FN(MemberStatus_Tick);
     PORT_FN(EventData_DataSize);
     PORT_FN(TalkEventData_DataSize);
-    PORT_FN(StageObj_ctor);
+    PORT_FN(Stage_ctor);
     PORT_FN(StaticInit_StatusBytes);
     PORT_FN(StaticInit_EventTypeIds);
     PORT_FN(GameInit);
@@ -3680,7 +3681,8 @@ namespace mm
         File_dtor(file, -1);
     }
 
-    int StageObj_DeletingDtor(int stage, int16_t deleteFlag)
+    // An empty Stage has nothing to destroy: the object is deleted when the flag is above 0.
+    int Stage_DeletingDtor(int stage, int16_t deleteFlag)
     {
         if (stage != 0 && 0 < deleteFlag)
             sdk::operator_delete(static_cast<uint32_t>(stage));
@@ -3760,7 +3762,7 @@ namespace mm
 
     PORT_FN(Stage_FormatTargetText);
     PORT_FN(Stage_FormatGoalText);
-    PORT_FN(StageObj_DeletingDtor);
+    PORT_FN(Stage_DeletingDtor);
     PORT_FN(Stage_Load);
     PORT_FN(Player_DeletingDtor);
     PORT_FN(CharType_dtor);

@@ -866,8 +866,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00135DA0,mm_Stage_LoadState,24,game,stage,verified,no,1,1,reads the stage state (0x284 bytes at 0x1C5380) from the save file
 0x00135DC0,mm_Stage_SaveState,24,game,stage,verified,no,1,1,writes the stage state
 0x00135DE0,mm_Stage_Reset,168,game,stage,verified,no,2,0,"defaults: no stage, 3000 and 2500, cleared tables"
-0x00135E90,mm_StageObj_DeletingDtor,68,game,stage,verified,yes,4,1,delete when the flag is > 0
-0x00135EE0,mm_StageObj_ctor,16,game,stage,verified,no,4,0,clears 0x1C5380
+0x00135E90,mm_Stage_DeletingDtor,68,game,stage,verified,yes,4,1,"(this, deleteFlag) an empty Stage has nothing to destroy: deletes the object when the flag is above 0"
+0x00135EE0,mm_Stage_ctor,16,game,stage,verified,no,4,0,"(this) the empty Stage base of the title, stage and city scenes and a member of the applicants window (+0x289); its data is the static stage state (0x1C5380), and making one clears its first byte, the city's name (no city: the save title then takes the default)"
 0x00135EF0,mm_CityCursor_SelectTile,456,game,ui,verified,no,2,4,"picking a building: one marked by an event (flag 0x200) queues event 0x106; otherwise the building menu opens (mode 0xA) for it, the cursor in mode 4 with its open timer at 30, and this frame's info window rectangle is set from the frame (grown by 100 and 25 per step of the timer run so far, 15 at most"
 0x001360C0,mm_CityCursor_UpdateInfo,1272,game,ui,verified,yes,1,9,"the info window of the city cursor: the view for this frame's parity (0x1BDCD0 & 1) has its five line frames reset to style 0 and the lines refilled from what the cursor points at (target, 0xFFFF for nothing; a building when targetIsPerson is 0, otherwise a person)"
 0x001365C0,mm_CityCursor_Move,420,game,ui,verified,yes,1,9,"the Cross button on the thing under the cursor (target; 0xFFFF for nothing), when the city is in mode 1 and the Square-side button 0x20 is not held. A cursor on a building (targetIsPerson 0) either picks the tile (the player is in mode 3) or starts a talk about the object (mode view 1), or asks for mode 0xA with its marks reset"
@@ -1141,10 +1141,10 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0014F400,mm_LayerF_Draw,48,game,gfx,verified,no,1,1,"layer F: its packet, then a call of the terrain chunk packet"
 0x0014F430,mm_LayerF_DeletingDtor,84,game,gfx,verified,yes,1,2,"base destructor, then delete"
 0x0014F490,mm_LayerF_ctor,72,game,gfx,verified,no,1,5,"base constructor, parameters, packet"
-0x0014F4E0,mm_LayerG_AnimateWaves,776,game,gfx,verified,no,1,1,"the water waves (layer G). A phase runs from -pi/2 to pi/2 in steps of 0.05, then starts over with the sway direction flipped; sin(phase) and sin(phase + pi/2) (wrapped, flipping its own direction) give two sway offsets of up to 0.05. The first point set sways by one and scrolls forward 0.002 a frame, the second (1.2 times the sway, 0.7 to the side) by the other and scrolls back 0.001"
+0x0014F4E0,mm_LayerG_AnimateWaves,776,game,gfx,verified,no,1,1,"(layer, waterLevel) the water's phase and direction (wave height 0.06 along z around the water level, computed by the program 0x1A6440) and the sway and scroll of its two textures' coordinates"
 0x0014F7F0,mm_LayerG_BuildPacket,1796,game,gfx,verified,no,1,0,"layer G (the water): two sections, one per terrain buffer. Each starts with the GS state for both contexts (ALPHA_1 and ALPHA_2, TEX0_1 and TEX0_2), the program 0x1A6440 and the layer's parameters, then the buffer's quads in 39 chunks of 0x400 bytes (4 groups of 8, then 7 singles) and a RET. Returns the end"
 0x0014FF00,mm_LayerG_InitParams,392,game,gfx,verified,no,1,0,layer G (the water) keeps its texture coordinates at rest (waveBase) and copies them to both wave sets
-0x00150090,mm_LayerG_Draw,64,game,gfx,verified,no,1,2,"the water: the waves move with the weather, then this frame's packet (one per terrain buffer) is queued"
+0x00150090,mm_LayerG_Draw,64,game,gfx,verified,no,1,2,"(layer, pass, waterLevel) the water: the waves move on around the water level, then this frame's packet (one per terrain buffer) is queued"
 0x001500D0,mm_LayerG_DeletingDtor,84,game,gfx,verified,yes,1,2,"base destructor, then delete"
 0x00150130,mm_LayerG_ctor,88,game,gfx,verified,no,1,5,"base constructor, parameters, packet"
 0x00150190,mm_Wants_RemoveEventHold,272,game,city,verified,no,9,0,removes the entry an event holds for building type a1 with value a2 (events ending)

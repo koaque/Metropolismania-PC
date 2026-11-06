@@ -2321,11 +2321,13 @@ namespace mm
     }
 
     // The same walk for drawing the buildings: objects not marked yet and without flag 0x80 go through every object of
-    // their stack (bottom up, 0.8 lower for each above the first) with the type's draw slot, the flag word
-    // as in the collision walks (1 for the first, then 2, with 3 or 4 added to the top one), and the detail level 2 when
-    // the camera is below -10 or the object is past the fog start, 1 when the camera is within the footprint's reach, else
-    // 0. A built object whose claim was met (flags 0x20 and 8) with a counting variant byte (up to 0x2D) also asks LayerA
-    // for an instance at the highest object that counts.
+    // their stack (bottom up, 0.8 higher for each above the first; heights grow downwards) with the type's draw slot, the
+    // flag word as in the collision walks (1 for the first, then 2, with 3 or 4 added to the top one), and the draw mode
+    // that each instance passes to the model program (0x1A4780 reads it from the instance matrix's last word): 2 (fog per
+    // vertex) when the camera is more than 10 above the ground (y below -10) or the object is past the fog start, 1 (clip
+    // the triangles that cross the view volume instead of dropping them) when the camera is within the footprint's reach,
+    // else 0. A built object whose claim was met (flags 0x20 and 8) with a counting variant byte (up to 0x2D) also asks
+    // LayerA for an instance at the highest object that counts.
     void CityRender_CollectObjects(GuestPtr<CityMap> map, GuestPtr<CityScene> city)
     {
         port::GuestFrame<0xE0> frame; // the flag word at +0xDC

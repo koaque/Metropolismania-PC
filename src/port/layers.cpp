@@ -91,15 +91,18 @@ namespace mm
     }
 
 
-    // The snow's parameters: three vectors, thirteen points, eight turns about y (an angle each, random, with its rotation
-    // matrix) and 32 random flake offsets (x and z within half, y up to 40 down); then the snowy ground pass (mask x 8).
+    // The snow's parameters: the flake sprite's corner ST and size, thirteen points (the flakes of a quad), eight turns
+    // about y (an angle each, random, with its rotation matrix), 32 random flake offsets (x and z within half, y up to 40
+    // higher) and the quad flag mask (8: every quad); then the snowy ground pass (mask x 8). Its program (0x1A9A90) draws
+    // the first flakesPerQuad points on every quad, turned by one turn and moved by one offset (both picked by a hash of
+    // the quad's position), wrapped into the 40 above the ground.
     void SnowLayer_InitParams(GuestPtr<SnowLayer> layer)
     {
         port::GuestFrame<0x50> frame; // spills only: the callees' frames start where they did
         const auto randomScale = [] { return fromInt(sdk::abs(static_cast<int32_t>(Random_Next()))) / F(0x461C4000u); };
-        putWords(addressOf(layer->unk_010[0]), {0x0u, 0x0u, 0x3F800000u, 0x0u});
-        putWords(addressOf(layer->unk_010[1]), {0x3F800000u, 0x3F800000u, 0x3F800000u, 0x0u});
-        putWords(addressOf(layer->unk_010[2]), {0x41200000u, 0x40A00000u, 0x0u, 0x0u});
+        putWords(addressOf(layer->spriteST[0]), {0x0u, 0x0u, 0x3F800000u, 0x0u});
+        putWords(addressOf(layer->spriteST[1]), {0x3F800000u, 0x3F800000u, 0x3F800000u, 0x0u});
+        putWords(addressOf(layer->spriteSize), {0x41200000u, 0x40A00000u, 0x0u, 0x0u});
         static constexpr uint32_t kPoints[13][4] = {
             {0xBF75C28Fu, 0x42080000u, 0xBDD2F1AAu, 0x3F800000u}, {0x0u, 0x42180000u, 0x3ED0624Eu, 0x3F800000u},
             {0xBEF5C28Fu, 0x41D00000u, 0xBF5E353Fu, 0x3F800000u}, {0x3EF5C28Fu, 0x41E80000u, 0xBDD2F1AAu, 0x3F800000u},
@@ -111,7 +114,7 @@ namespace mm
         };
         for (int i = 0; i < 13; ++i)
             putWords(addressOf(layer->points[i]), {kPoints[i][0], kPoints[i][1], kPoints[i][2], kPoints[i][3]});
-        layer->unk_554 = 8;
+        layer->mask = 8;
         for (int i = 0; i < 8; ++i)
         {
             const ps2f angle = sdk::fmodf(randomScale(), F(0x40C90FDBu)) - F(0x40490FDBu);
@@ -131,12 +134,13 @@ namespace mm
 
     PORT_FN(SnowLayer_InitParams);
 
-    // The snow drawn for the clock (seconds): the night length t (the clock held at 5 hours before 18:00, else the distance
-    // from midnight) sets the step count (t / 1500 + 1, the flakes' GIF tag loops 8 per step), the flakes' alpha (t / 144, in
-    // the RGBAQ of the pass's start packet) and the ground pass's ALPHA_1 FIX (t / 180); the eight turn angles advance by
-    // 0.03 (wrapping above pi) with their matrices rebuilt, the 32 flakes move 0.03 in y (back to -40 once they reach 0); the
-    // projection (800 by 800, 768 away, 1 to 50) is multiplied by the view matrix; then the pass's ground packet, the frame's
-    // chunk packet, the pass's flake packet and the end packet are queued.
+    // The snow drawn for the clock (seconds): the time t from midnight (the clock, at most 5 hours, before 19:00
+    // (0x10B30), else the distance to midnight) sets the flakes per quad (t / 1500 + 1, so 1 to 13; the GIF tag loops 8
+    // per flake, one per quad of a chunk's eight), the flakes' alpha (t / 144, in the RGBAQ of the pass's start packet)
+    // and the ground pass's ALPHA_1 FIX (t / 180); the eight turn angles advance by 0.03 (wrapping above pi) with their
+    // matrices rebuilt, the 32 flakes move 0.03 in y (back to -40 once they reach 0); the projection (800 by 800, 768
+    // away, 1 to 50) is multiplied by the view matrix; then the pass's ground packet, the frame's chunk packet, the
+    // pass's flake packet and the end packet are queued.
     void SnowLayer_Draw(GuestPtr<SnowLayer> layer, int pass, int packet, int clock, GuestPtr<Vec4> view)
     {
         using namespace vu0;
@@ -147,14 +151,14 @@ namespace mm
             t = clock < 0x4651 ? clock : 0x4650;
         else
             t = sdk::abs(clock - 0x15180);
-        layer->steps = t / 1500 + 1;
+        layer->flakesPerQuad = t / 1500 + 1;
         const uint32_t start = layer->startPackets[pass];
         port::store<uint32_t>(start + 0x20u, (port::load<uint32_t>(start + 0x20u) & 0x00FFFFFFu) | (static_cast<uint32_t>(t / 144) << 24)); // RGBAQ's A
         port::store<int32_t>(layer->groundPackets[pass] + 0x24u, t / 180); // ALPHA_1's FIX
         layer->gifTag[3] = 0;
         layer->gifTag[2] = 0x4242;
         layer->gifTag[1] = 0x403B4000u;
-        layer->gifTag[0] = (static_cast<uint32_t>(layer->steps) << 3) | 0x8000u;
+        layer->gifTag[0] = (static_cast<uint32_t>(layer->flakesPerQuad) << 3) | 0x8000u;
         for (int i = 0; i < 8; ++i)
         {
             ps2f angle = layer->angles[i] + F(0x3CF5C28Fu);

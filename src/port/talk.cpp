@@ -84,9 +84,9 @@ namespace mm
         view->color[3] = 1.0f;
         // DMA packet sending the colour to VU1: REF tag to it, then STCYCL and UNPACK V4-32 to VU address 0x0F,
         // then a RET tag.
-        const GuestPtr<uint32_t> packet{view.address + 0x50u};
+        const GuestPtr<uint32_t> packet = view.field(&TalkView::packet).as<uint32_t>();
         packet[0] = 0x30000001u;
-        packet[1] = (view.address + 0x40u) & 0x7FFFFFFFu;
+        packet[1] = view.field(&TalkView::color).address & 0x7FFFFFFFu;
         packet[2] = 0x01000101u;
         packet[3] = 0x6C01000Fu;
         packet[4] = 0x60000000u;
@@ -1246,7 +1246,7 @@ namespace mm
             card->base.vtable = GuestPtr<WidgetVtable>{0x001BD720u};
             lifetime::deleteTextBox(card.field(&TalkCard::lowerText).address);
             lifetime::deleteTextBox(card.field(&TalkCard::upperText).address);
-            lifetime::deleteFrame(card.address + 0x30u);
+            lifetime::deleteFrame(card.field(&TalkCard::frame).address);
             Widget_dtor(GuestPtr<Widget>{card.address}, 0);
             if (0 < deleteFlag)
                 sdk::operator_delete(card.address);
@@ -1278,9 +1278,9 @@ namespace mm
             for (uint32_t i = 0; i < 4u; ++i)
             {
                 lifetime::deleteTextBox((view.field(&TalkView::nameBoxes) + i).address);
-                lifetime::deleteFrame(view.address + 0x88u + 4u * i);
+                lifetime::deleteFrame((view.field(&TalkView::frames) + i).address);
             }
-            lifetime::deleteFrame(view.address + 0x98u);
+            lifetime::deleteFrame(view.field(&TalkView::cursorFrame).address);
             Widget_dtor(GuestPtr<Widget>{view.address}, 0);
             if (0 < deleteFlag)
                 sdk::operator_delete(view.address);
@@ -1835,8 +1835,10 @@ namespace mm
             if (NameEntry_Update(conv->nameEntry) == 2)
             {
                 const int32_t code = conv->code;
+                // Codes below -0x7A8 take the typed name into the stage state's names[code + 0x7D0].
                 if (code < -0x7A8)
-                    sdk::strcpy(0x001C5380u + (static_cast<uint32_t>(code + 0x7D0) << 4), conv->nameEntry.address + 0x1Cu);
+                    sdk::strcpy(globals::kStageState + (static_cast<uint32_t>(code + 0x7D0) << 4),
+                                conv->nameEntry.field(&NameEntry::name).address);
                 else
                     Words_MatchTypedAnswer(conv->script, conv->nameEntry.field(&NameEntry::name));
                 NameEntry_Close(conv->nameEntry);

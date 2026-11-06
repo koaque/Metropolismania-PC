@@ -59,7 +59,8 @@ namespace mm::globals
     inline constexpr GuestVar<int32_t> soundCmdSent{0x001BDD48u};    // entries before it have been sent (mm_SoundCmd_Flush)
     inline constexpr GuestVar<uint32_t> soundVoicesQueued{0x001BDD4Cu}; // bit per voice with a queued play (cmd 3)
     inline constexpr GuestVar<uint32_t> soundSlotsQueued{0x001BDD50u};  // bit per sequence slot with a queued play (cmd 0xC)
-    inline constexpr GuestVar<uint32_t> soundStopsQueued{0x001BDD54u};  // a third mask of queued commands (mm_Sound_GetStatus)
+    // Queued speech tracks (merged into SoundStatus.speechTracks); nothing sets it.
+    inline constexpr GuestVar<uint32_t> soundSpeechQueued{0x001BDD54u};
     inline constexpr GuestVar<uint16_t> soundNextOwner{0x001BDCFCu};    // owner id for the next owned effect, wraps at 0xFF
     // sound: the city music: 13 tracks of (bank, enabled), the bank file names (SQ, HD, BD, 0x10 bytes each,
     // 0x30 per bank) and each bank's tempo word.
@@ -107,13 +108,13 @@ namespace mm::globals
     inline constexpr GuestVar<uint32_t> dmaListPtr{0x001BDCE0u};     // write position in the current list
     inline constexpr GuestVar<int32_t> packetBufPos{0x001BDCE8u};
 
-    // save: memory card request slots (0x24 bytes each, 64 of them); the result word is at +0xC. Requests
-    // are queued at the tail; the head moves as they complete.
+    // save: memory card request slots (McRequest, 64 of them). Requests are queued at the tail; the head moves as
+    // they complete.
     inline constexpr uint32_t kMcRequests = 0x001F5CF0u;
     inline constexpr GuestVar<int32_t> mcQueueTail{0x001BDCD4u};
     inline constexpr GuestVar<int32_t> mcQueueHead{0x001BDCD8u};
 
-    // file: the disc request queue, same scheme (0x1C-byte slots, 64 of them, state word first).
+    // file: the disc request queue, same scheme (FileRequest slots, 64 of them, the operation first).
     inline constexpr uint32_t kFileRequests = 0x001F4ED0u;
     inline constexpr GuestVar<int32_t> fileQueueTail{0x001BDC88u};
     inline constexpr GuestVar<int32_t> fileQueueHead{0x001BDC8Cu};
@@ -352,6 +353,9 @@ namespace mm::globals
     inline constexpr uint32_t kFogFarByLevel = 0x001AEFC0u;
     inline constexpr uint32_t kPathStepX = 0x001AEFD0u; // int[4]: 0, 2, 0, -2 (the same steps, mm_Path_NextWaypoint's copy)
     inline constexpr uint32_t kPathStepZ = 0x001AEFE0u; // int[4]: -2, 0, 2, 0
+    // The heading (turn about y) for each tile kind 0..3 (mm_Map_GetTileKind), float[4]: pi, -pi/2, 0, pi/2. The
+    // building people, the road corners and the my-home view turn by it.
+    inline constexpr uint32_t kKindHeadings = 0x001B2690u;
     // Housing blocks: mesh offset of each of the four block parts, per unit shape (int8[11][4]).
     inline constexpr uint32_t kHousingPartMesh = 0x001B14F0u;
     // The eight tiles around a tile and the tile itself, as x and z steps (int[9] each).

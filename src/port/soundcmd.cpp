@@ -242,16 +242,17 @@ namespace mm
     PORT_FN(SoundCmd_SetLoadPause);
     PORT_FN(SoundCmd_CancelWavePlay);
 
-    // Sends the queued sound commands to the IOP driver, one per call and only while the RPC client is idle. The driver's status
-    // block (SoundStatus at 0x20B7C0) names the sequence slots (midiPlaying), wave voices (wavePlaying) and a third mask (unk_18)
-    // it has finished with, which leave the queued masks; with the queue empty the counters restart (and the masks clear, unless
-    // the driver reports itself busy).
-    // A command is a 0xD0-byte entry of the ring at 0x1FE6C0 (256 entries; command at +0, "sent" flag at +4, the arguments from
-    // +0x10; the next to send is 0x1BDD48 and the next free 0x1BDD44): a sent one waits for the driver's reply word (0x20B800) and is
-    // then retired; a new one is copied (or, for the commands with names, built with the path prefixes of 0x1B9D50 to 0x1B9DB0 and
-    // ".." at 0x1B9D68) into the send buffer at 0x20B6C0 and called as RPC function 0x1001 to 0x3001 (command 0x17: function 2).
-    // With 192 commands or more waiting, the ring is compacted to the commands that must not be lost (1, 2, 4, 5, 7, 9 to 0x10, 0x17 and
-    // 0x18) with a log line, and a second line says when it is still that full.
+    // Sends the queued sound commands to the IOP driver, one per call and only while the RPC client is idle. The bits
+    // the driver's status block (SoundStatus at 0x20B7C0) reports in use, sequence slots (midiPlaying), wave voices
+    // (wavePlaying) and the tracks spoken voices use (speechTracks), leave the queued masks (the driver has taken those
+    // commands); with the queue empty the counters restart (and the masks clear, unless the driver reports itself
+    // busy). A command is a 0xD0-byte entry of the ring at 0x1FE6C0 (256 entries; command at +0, "sent" flag at +4, the
+    // arguments from +0x10; the next to send is 0x1BDD48 and the next free 0x1BDD44): a sent one waits for the driver's
+    // reply word (0x20B800) and is then retired; a new one is copied (or, for the commands with names, built with the
+    // path prefixes of 0x1B9D50 to 0x1B9DB0 and ".." at 0x1B9D68) into the send buffer at 0x20B6C0 and called as RPC
+    // function 0x1001 to 0x3001 (command 0x17: function 2). With 192 commands or more waiting, the ring is compacted to
+    // the commands that must not be lost (1, 2, 4, 5, 7, 9 to 0x10, 0x17 and 0x18) with a log line, and a second line
+    // says when it is still that full.
     void SoundCmd_Flush()
     {
         constexpr uint32_t kRing = 0x001FE6C0u, kClient = 0x001FE690u, kStatus = 0x0020B7C0u, kSend = 0x0020B6C0u, kReply = 0x0020B800u;
@@ -263,10 +264,10 @@ namespace mm
             return count;
         };
         sdk::FlushCache(0);
-        const uint32_t slots = globals::soundSlotsQueued.get(), voices = globals::soundVoicesQueued.get(), stops = globals::soundStopsQueued.get();
+        const uint32_t slots = globals::soundSlotsQueued.get(), voices = globals::soundVoicesQueued.get(), speech = globals::soundSpeechQueued.get();
         const GuestPtr<SoundStatus> status{kStatus};
         globals::soundSlotsQueued.set(slots & (slots ^ status->midiPlaying));
-        globals::soundStopsQueued.set(stops & (stops ^ status->unk_18));
+        globals::soundSpeechQueued.set(speech & (speech ^ status->speechTracks));
         globals::soundVoicesQueued.set(voices & (voices ^ status->wavePlaying));
         if (globals::soundCmdSent.get() == globals::soundCmdIndex.get())
         {
@@ -277,7 +278,7 @@ namespace mm
                 return;
             globals::soundVoicesQueued.set(0);
             globals::soundSlotsQueued.set(0);
-            globals::soundStopsQueued.set(0);
+            globals::soundSpeechQueued.set(0);
             return;
         }
         if (sdk::sceSifCheckStatRpc(kClient) == 0)

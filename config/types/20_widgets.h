@@ -8,9 +8,10 @@ typedef struct TalkMoney TalkMoney;
 typedef struct TalkConv TalkConv;
 
 /* The stage scene: the stage transition (0x104 bytes, mm_StageScene_*): title cards, approval rate, the boss's briefing, the mission
-   movie and the credits text, one step of the action table 0x1B07C0 at a time. A stage object with a widget at +4. */
+   movie and the credits text, one step of the action table 0x1B07C0 at a time. An empty Stage base (padded) with a widget
+   at +4. */
 struct StageScene {
-    uint32_t unk_00;
+    uint32_t stageBase;        /* +0x00 the empty Stage base (mm_Stage_ctor; its data is the static stage state) */
     Widget widget;             /* +0x04 vtable 0x1BCF18 */
     Camera *camera;            /* +0x10 */
     LightSet *lights;          /* +0x14 */
@@ -22,7 +23,7 @@ struct StageScene {
     uint8_t fadeMode;          /* +0x29 0 none, 1 fading out, 2 fading in */
     uint8_t unk_2A[2];
     int32_t fadeFrame;         /* +0x2C frames of the fade */
-    int32_t unk_30;
+    int32_t unk_30;            /* +0x30 cleared by mm_StageScene_ctor; nothing reads it */
     int32_t phase;             /* +0x34 the sub-step within the step */
     int32_t fade;              /* +0x38 the screen's fade, 0 to 0x80 */
     int32_t scroll;            /* +0x3C the credits text's scroll (mm_StageScene_ShowTelop) */

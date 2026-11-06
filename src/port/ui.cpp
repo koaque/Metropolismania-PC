@@ -3241,14 +3241,15 @@ namespace mm
         return laptop;
     }
 
-    // The applicants window embeds a stage object at the odd offset +0x289, whose destructor is called with flag 0.
+    // The applicants window embeds an empty Stage object at the odd offset +0x289, whose destructor is called with flag
+    // 0.
     GuestPtr<Applicants> ApplicantsBase_dtor(GuestPtr<Applicants> applicants, int16_t deleteFlag)
     {
         if (applicants)
         {
             applicants->vtable = GuestPtr<void>{0x001BCF60u};
             lifetime::deleteTextBox(port::guest(&applicants->cardText));
-            StageObj_DeletingDtor(static_cast<int>(port::guest(applicants->unk_288) + 1u), 0);
+            Stage_DeletingDtor(static_cast<int>(port::guest(&applicants->stage)), 0);
             if (0 < deleteFlag)
                 sdk::operator_delete(applicants.address);
         }
@@ -3480,7 +3481,7 @@ namespace mm
         port::GuestFrame<0x50> frame;
         const uint32_t sp = frame.ptr().address;
         const uint32_t s = scene.address;
-        StageObj_ctor(static_cast<int>(s));
+        Stage_ctor(static_cast<int>(s));
         Widget_ctor(GuestPtr<Widget>::of(scene->widget));
         scene->vtable = GuestPtr<void>{0x001BCF10u};
         scene->widget.vtable = GuestPtr<WidgetVtable>{0x001BCF18u};
@@ -3770,7 +3771,7 @@ namespace mm
             lifetime::deleteWith(port::guest(&scene->lights), [](uint32_t o) { LightSet_DeletingDtor(GuestPtr<LightSet>{o}, 1); });
             lifetime::deleteWith(port::guest(&scene->camera), [](uint32_t o) { Camera_DeletingDtor(GuestPtr<Camera>{o}, 1); });
             Widget_dtor(GuestPtr<Widget>::of(scene->widget), 0);
-            StageObj_DeletingDtor(static_cast<int>(scene.address), 0);
+            Stage_DeletingDtor(static_cast<int>(scene.address), 0);
             if (0 < deleteFlag)
                 sdk::operator_delete(scene.address);
         }
@@ -3801,7 +3802,7 @@ namespace mm
         lifetime::deleteVirtual(at + 0x1Cu, 0);
         lifetime::deleteVirtual(at + 0x20u, 0);
         lifetime::deleteTextBox(at + 0xBCu);
-        StageObj_DeletingDtor(static_cast<int>(at), 0);
+        Stage_DeletingDtor(static_cast<int>(at), 0);
         if (0 < deleteFlag)
             sdk::operator_delete(at);
         return scene;
@@ -4185,7 +4186,7 @@ namespace mm
     GuestPtr<Applicants> ApplicantsBase_ctor(GuestPtr<Applicants> applicants)
     {
         Applicants_Clear(applicants);
-        StageObj_ctor(static_cast<int>(port::guest(applicants->unk_288) + 1u));
+        Stage_ctor(static_cast<int>(port::guest(&applicants->stage)));
         applicants->vtable = GuestPtr<void>{0x001BCF60u};
         applicants->cardShown = 0;
         applicants->cardText = GuestPtr<TextBox>{newTextBox(0x12, 4, -2)};
@@ -4542,7 +4543,7 @@ namespace mm
         port::GuestFrame<0x50> frame;
         const uint32_t sp = frame.ptr().address;
         const uint32_t s = scene.address;
-        StageObj_ctor(static_cast<int>(s));
+        Stage_ctor(static_cast<int>(s));
         scene->afterGame = a1;
         Stage_Reset();
         uint32_t list = sdk::operator_new(0x2A0u);

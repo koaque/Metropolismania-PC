@@ -1,6 +1,6 @@
 // The memory card request queue: 64 slots of 0x24 bytes, filled at the tail and issued one at a time by
-// mm_McQueue_Pump (sceMcOpen ... sceMcSeek). Each slot: +0 command, +4 state, +0xC where to put the result
-// (0: the slot's own word at +0xC), arguments from +0x10. The queue functions return the new tail.
+// mm_McQueue_Pump (sceMcOpen ... sceMcSeek). Each slot (McRequest): the command, its state, where to put the result
+// (0: the slot's own result word), the arguments. The queue functions return the new tail.
 
 #include "game_functions.h"
 #include "game_globals.h"
@@ -15,16 +15,13 @@ namespace mm
         int queueRequest(int32_t command, uint32_t result, std::initializer_list<int32_t> args)
         {
             const int32_t tail = globals::mcQueueTail.get();
-            const uint32_t slot = globals::kMcRequests + 0x24u * static_cast<uint32_t>(tail);
-            port::store<int32_t>(slot + 0x0, command);
-            port::store<int32_t>(slot + 0x4, 0);
-            uint32_t offset = 0x10;
+            const GuestPtr<McRequest> slot = GuestPtr<McRequest>{globals::kMcRequests} + tail;
+            slot->command = command;
+            slot->state = 0;
+            int32_t i = 0;
             for (int32_t arg : args)
-            {
-                port::store<int32_t>(slot + offset, arg);
-                offset += 4;
-            }
-            port::store<uint32_t>(slot + 0xC, result);
+                slot->args[i++] = arg;
+            slot->result = result;
             const int32_t next = tail + 1;
             globals::mcQueueTail.set(next > 63 ? 0 : next);
             return globals::mcQueueTail.get();
@@ -85,10 +82,10 @@ namespace mm
     void McQueue_Init()
     {
         sdk::sceMcInit();
-        for (uint32_t slot = 0; slot < 64u; ++slot)
-            port::store<uint32_t>(0x001F5CF0u + 0x24u * slot, 0u);
-        port::store<uint32_t>(0x001BDCD4u, 0u);
-        port::store<uint32_t>(0x001BDCD8u, 0u);
+        for (int32_t slot = 0; slot < 64; ++slot)
+            (GuestPtr<McRequest>{globals::kMcRequests} + slot)->command = 0;
+        globals::mcQueueTail.set(0);
+        globals::mcQueueHead.set(0);
     }
 
     PORT_FN(McQueue_Init);
@@ -100,12 +97,12 @@ namespace mm
         const int32_t head = globals::mcQueueHead.get();
         if (head == globals::mcQueueTail.get())
             return;
-        const uint32_t slot = globals::kMcRequests + 0x24u * static_cast<uint32_t>(head);
-        const int32_t command = port::load<int32_t>(slot);
+        const GuestPtr<McRequest> slot = GuestPtr<McRequest>{globals::kMcRequests} + head;
+        const int32_t command = slot->command;
         if (command == 0)
             return;
-        const auto arg = [&](uint32_t index) { return port::load<int32_t>(slot + 0x10u + 4u * index); };
-        if (port::load<int32_t>(slot + 4u) == 0)
+        const auto arg = [&](int32_t index) { return slot->args[index]; };
+        if (slot->state == 0)
         {
             int64_t result = -1;
             switch (static_cast<uint32_t>(command))
@@ -150,16 +147,16 @@ namespace mm
                 break;
             }
             if (result == 0)
-                port::store<int32_t>(slot + 4u, 1);
+                slot->state = 1;
             return;
         }
-        uint32_t resultAt = port::load<uint32_t>(slot + 0xCu);
+        uint32_t resultAt = slot->result;
         if (resultAt == 0)
-            resultAt = slot + 0xCu;
-        if (sdk::sceMcSync(1, slot + 8u, resultAt) != 0)
+            resultAt = slot.field(&McRequest::result).address;
+        if (sdk::sceMcSync(1, slot.field(&McRequest::syncCommand).address, resultAt) != 0)
         {
-            port::store<int32_t>(slot + 4u, 0);
-            port::store<int32_t>(slot, 0);
+            slot->state = 0;
+            slot->command = 0;
             globals::mcQueueHead.set(globals::mcQueueHead.get() + 1);
             if (!(globals::mcQueueHead.get() < 0x40))
                 globals::mcQueueHead.set(0);
