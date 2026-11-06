@@ -1478,7 +1478,7 @@
 0x001A2C40 int mm_Words_LoadForFamily(int family, int member, int arg5, CityScene *city);
 0x001A2DF0 int mm_Words_LoadForPerson(MapPerson *person, int arg5, CityScene *city);
 0x001A3050 uint32_t *mm_Words_ReadBlock(int a0);
-0x001A31A0 int mm_Words_OpenFiles(int a0);
+0x001A31A0 WordsBlock *mm_WordsBlock_ctor(WordsBlock *entry);
 0x001A3250 void mm_Words_Init(void);
 0x001BAEA0 void mm_StaticInit_StatusBytes(void);
 0x001BAEC0 void mm_StaticInit_WordsTable(void);

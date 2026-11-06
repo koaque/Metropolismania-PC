@@ -58,6 +58,8 @@ struct PauseMenu;
 struct Minimap;
 struct CityCursor;
 struct CityCursorView;
+struct GsAdWrite;
+struct CursorSprite;
 struct PhoneCalls;
 struct PhoneCallEntry;
 struct EventMgr;
@@ -364,13 +366,33 @@ struct TerrainPassParams {
     Vec4 stq[12];              /* +0x50 VU1 0x21..0x2C texture coordinates: three sets of four */
     uint32_t mask[4];          /* +0x110 VU1 0x2D: w is the quad flags the pass draws */
 };
+/* A GS register write of an A+D packet (16 bytes): the 64-bit value, then the register's address. */
+struct GsAdWrite {
+    uint32_t value[2];         /* +0x00 low and high words */
+    uint32_t reg[2];           /* +0x08 the register (low word) */
+};
+/* The city cursor's opening sprite (0xA0 bytes, mm_CityCursor_ctor): a CNT tag of 8 quadwords with FLUSH and DIRECT 8,
+   then a GIF tag of 7 loops of one A+D register (EOP), the seven writes and a RET tag. */
+struct CursorSprite {
+    uint32_t dmaTag[2];        /* +0x00 CNT 8 */
+    uint32_t vifCodes[2];      /* +0x08 FLUSH, DIRECT 8 */
+    uint32_t gifTag[4];        /* +0x10 */
+    GsAdWrite rgbaq;           /* +0x20 (0x80, 0x80, 0x80, 0x80), Q 1 */
+    GsAdWrite tex0;            /* +0x30 TEX0_1: 128 by 64, 8-bit with a 32-bit palette (TBP0 0x3E8A, CBP 0x3EAA) */
+    GsAdWrite prim;            /* +0x40 0x16: a textured sprite */
+    GsAdWrite stA;             /* +0x50 ST (0, 0) */
+    GsAdWrite xyzA;            /* +0x60 XYZF2 the top left corner (mm_CityCursor_Update, mm_CityCursor_SelectTile) */
+    GsAdWrite stB;             /* +0x70 ST (1, 1) */
+    GsAdWrite xyzB;            /* +0x80 XYZF2 the bottom right corner */
+    uint32_t ret[4];           /* +0x90 RET */
+};
 /* One parity's half of the city cursor (0xD0 bytes): info lines, packets and the fade frame. */
 struct CityCursorView {
     GuestPtr<TextBox> lines[5];         /* +0x00 */
     GuestPtr<Frame> lineFrames[5];      /* +0x14 a frame behind each line (a frame's packet starts the frame) */
     GuestPtr<Frame> frame;              /* +0x28 the info window's frame */
     GuestPtr<Frame> fadeFrame;          /* +0x2C */
-    uint8_t extraPacket[0xA0]; /* +0x30 drawn in mode 4 */
+    CursorSprite sprite;       /* +0x30 drawn in mode 4: it opens out from the info frame */
 };
 /* Light set (0x1B0 bytes): the colour table of the model programs, two groups of twelve, coloured by the clock
    (mm_LightSet_UpdateByClock). Its two packets upload +0x10..+0x1AF to VU1 0x12..0x2B (docs/RENDER_PIPELINE.md). */
@@ -1416,6 +1438,7 @@ struct WordsAnswer;
 struct WordsBank;
 struct WordsTypeBase;
 struct WordsTables;
+struct WordsBlock;
 struct Stamina;
 struct MemberStatus;
 struct SeRequest;
@@ -1966,18 +1989,22 @@ struct WordsCtx {
     int32_t friendshipChanged; /* +0x13C */
 };
 
-/* The WORDS script object at 0x1BDDF0 (gp-0x7B80); its methods take a pointer to it. */
+/* The WORDS script object at 0x1BDDF0 (gp-0x7B80); its methods take a pointer to it. A script runs a list of words
+   (scriptWords, read from scriptPos on); a word of 5000 and up is a line of text, whose own words are read from column
+   on (mm_Words_StepImpl, mm_Words_ExpandLine). */
 struct Words {
     GuestPtr<WordsCtx> ctx;             /* +0x00 0x140-byte context */
-    int32_t eventKind;         /* +0x04 the event whose words block (WORDSEVE.BIN) the extra table holds */
-    int32_t extraLoaded;       /* +0x08 */
-    int32_t bound;             /* +0x0C tables bound on first step */
-    uint16_t line;             /* +0x10 */
+    int32_t eventKind;         /* +0x04 the event whose words block (WORDSEVE.BIN) eventBlock holds */
+    int32_t eventLoaded;       /* +0x08 the script uses the event words (bank 3) */
+    int32_t bound;             /* +0x0C banks 0 and 3 bound to the current blocks (first step); cleared when either changes */
+    uint16_t scriptPos;        /* +0x10 the word being run in scriptWords */
     uint16_t unk_12;
-    uint16_t column;           /* +0x14 */
-    uint8_t unk_16[0xA];
-    GuestPtr<void> extraTable;          /* +0x20 */
-    GuestPtr<void> lineTable;           /* +0x24 */
+    uint16_t column;           /* +0x14 the word reached in the current line of text; not 0 while a line is left part-way */
+    uint8_t unk_16[2];
+    GuestPtr<void> commonData;          /* +0x18 WORDSCOM.BIN, read whole at start-up (bank 1) */
+    GuestPtr<void> typeData;            /* +0x1C WORDSTEN.BIN, read whole at start-up (bank 2 and its remaps) */
+    GuestPtr<void> eventBlock;          /* +0x20 one block of WORDSEVE.BIN (bank 3) */
+    GuestPtr<int16_t> scriptWords;      /* +0x24 the script block's words, or those the event block gives for it */
 };
 
 /* A WORDS answer record (4 bytes): how its string is picked, then its first string (the next record's first ends its
@@ -2014,6 +2041,12 @@ struct WordsTables {
     GuestPtr<uint16_t> choiceRemap;     /* +0x68 */
     GuestPtr<uint16_t> answerRemap;     /* +0x6C */
     GuestPtr<uint16_t> stringRemap;     /* +0x70 */
+};
+/* An entry of the cache of WORDS.BIN script blocks (8 bytes, mm_WordsBlock_ctor; the cache's eight slots each point at
+   a word that points at one). */
+struct WordsBlock {
+    int32_t number;            /* +0x00 the block held (0 while empty); block n starts at 4 + (n - 1) * the block size */
+    GuestPtr<uint8_t> data;             /* +0x04 one block: its first word the offset of its script words */
 };
 
 /* The claim meter limits at the start of the claim data (gp 0x1BDA50). */
@@ -2536,12 +2569,25 @@ static_assert(offsetof(TerrainPassParams, gifTag) == 0x30, "TerrainPassParams.gi
 static_assert(offsetof(TerrainPassParams, prim) == 0x40, "TerrainPassParams.prim");
 static_assert(offsetof(TerrainPassParams, stq) == 0x50, "TerrainPassParams.stq");
 static_assert(offsetof(TerrainPassParams, mask) == 0x110, "TerrainPassParams.mask");
+static_assert(offsetof(GsAdWrite, value) == 0x00, "GsAdWrite.value");
+static_assert(offsetof(GsAdWrite, reg) == 0x08, "GsAdWrite.reg");
+static_assert(offsetof(CursorSprite, dmaTag) == 0x00, "CursorSprite.dmaTag");
+static_assert(offsetof(CursorSprite, vifCodes) == 0x08, "CursorSprite.vifCodes");
+static_assert(offsetof(CursorSprite, gifTag) == 0x10, "CursorSprite.gifTag");
+static_assert(offsetof(CursorSprite, rgbaq) == 0x20, "CursorSprite.rgbaq");
+static_assert(offsetof(CursorSprite, tex0) == 0x30, "CursorSprite.tex0");
+static_assert(offsetof(CursorSprite, prim) == 0x40, "CursorSprite.prim");
+static_assert(offsetof(CursorSprite, stA) == 0x50, "CursorSprite.stA");
+static_assert(offsetof(CursorSprite, xyzA) == 0x60, "CursorSprite.xyzA");
+static_assert(offsetof(CursorSprite, stB) == 0x70, "CursorSprite.stB");
+static_assert(offsetof(CursorSprite, xyzB) == 0x80, "CursorSprite.xyzB");
+static_assert(offsetof(CursorSprite, ret) == 0x90, "CursorSprite.ret");
 static_assert(sizeof(CityCursorView) == 0xD0, "CityCursorView size");
 static_assert(offsetof(CityCursorView, lines) == 0x00, "CityCursorView.lines");
 static_assert(offsetof(CityCursorView, lineFrames) == 0x14, "CityCursorView.lineFrames");
 static_assert(offsetof(CityCursorView, frame) == 0x28, "CityCursorView.frame");
 static_assert(offsetof(CityCursorView, fadeFrame) == 0x2C, "CityCursorView.fadeFrame");
-static_assert(offsetof(CityCursorView, extraPacket) == 0x30, "CityCursorView.extraPacket");
+static_assert(offsetof(CityCursorView, sprite) == 0x30, "CityCursorView.sprite");
 static_assert(offsetof(LightSet, packetA) == 0x00, "LightSet.packetA");
 static_assert(offsetof(LightSet, packetB) == 0x04, "LightSet.packetB");
 static_assert(offsetof(LightSet, groupA) == 0x10, "LightSet.groupA");
@@ -3534,12 +3580,14 @@ static_assert(offsetof(WordsCtx, wantIndex) == 0x13A, "WordsCtx.wantIndex");
 static_assert(offsetof(WordsCtx, friendshipChanged) == 0x13C, "WordsCtx.friendshipChanged");
 static_assert(offsetof(Words, ctx) == 0x00, "Words.ctx");
 static_assert(offsetof(Words, eventKind) == 0x04, "Words.eventKind");
-static_assert(offsetof(Words, extraLoaded) == 0x08, "Words.extraLoaded");
+static_assert(offsetof(Words, eventLoaded) == 0x08, "Words.eventLoaded");
 static_assert(offsetof(Words, bound) == 0x0C, "Words.bound");
-static_assert(offsetof(Words, line) == 0x10, "Words.line");
+static_assert(offsetof(Words, scriptPos) == 0x10, "Words.scriptPos");
 static_assert(offsetof(Words, column) == 0x14, "Words.column");
-static_assert(offsetof(Words, extraTable) == 0x20, "Words.extraTable");
-static_assert(offsetof(Words, lineTable) == 0x24, "Words.lineTable");
+static_assert(offsetof(Words, commonData) == 0x18, "Words.commonData");
+static_assert(offsetof(Words, typeData) == 0x1C, "Words.typeData");
+static_assert(offsetof(Words, eventBlock) == 0x20, "Words.eventBlock");
+static_assert(offsetof(Words, scriptWords) == 0x24, "Words.scriptWords");
 static_assert(offsetof(WordsAnswer, mode) == 0x00, "WordsAnswer.mode");
 static_assert(offsetof(WordsAnswer, first) == 0x02, "WordsAnswer.first");
 static_assert(sizeof(WordsBank) == 0x18, "WordsBank size");
@@ -3559,6 +3607,8 @@ static_assert(offsetof(WordsTables, lineRemap) == 0x64, "WordsTables.lineRemap")
 static_assert(offsetof(WordsTables, choiceRemap) == 0x68, "WordsTables.choiceRemap");
 static_assert(offsetof(WordsTables, answerRemap) == 0x6C, "WordsTables.answerRemap");
 static_assert(offsetof(WordsTables, stringRemap) == 0x70, "WordsTables.stringRemap");
+static_assert(offsetof(WordsBlock, number) == 0x00, "WordsBlock.number");
+static_assert(offsetof(WordsBlock, data) == 0x04, "WordsBlock.data");
 static_assert(offsetof(ClaimThresholds, low) == 0x00, "ClaimThresholds.low");
 static_assert(offsetof(ClaimThresholds, high) == 0x02, "ClaimThresholds.high");
 static_assert(offsetof(ClaimThresholds, step) == 0x04, "ClaimThresholds.step");

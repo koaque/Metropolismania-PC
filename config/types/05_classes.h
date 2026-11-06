@@ -34,6 +34,8 @@ typedef struct PauseMenu PauseMenu;
 typedef struct Minimap Minimap;
 typedef struct CityCursor CityCursor;
 typedef struct CityCursorView CityCursorView;
+typedef struct GsAdWrite GsAdWrite;
+typedef struct CursorSprite CursorSprite;
 typedef struct PhoneCalls PhoneCalls;
 typedef struct PhoneCallEntry PhoneCallEntry;
 typedef struct EventMgr EventMgr;
@@ -340,13 +342,33 @@ struct TerrainPassParams {
     Vec4 stq[12];              /* +0x50 VU1 0x21..0x2C texture coordinates: three sets of four */
     uint32_t mask[4];          /* +0x110 VU1 0x2D: w is the quad flags the pass draws */
 };
+/* A GS register write of an A+D packet (16 bytes): the 64-bit value, then the register's address. */
+struct GsAdWrite {
+    uint32_t value[2];         /* +0x00 low and high words */
+    uint32_t reg[2];           /* +0x08 the register (low word) */
+};
+/* The city cursor's opening sprite (0xA0 bytes, mm_CityCursor_ctor): a CNT tag of 8 quadwords with FLUSH and DIRECT 8,
+   then a GIF tag of 7 loops of one A+D register (EOP), the seven writes and a RET tag. */
+struct CursorSprite {
+    uint32_t dmaTag[2];        /* +0x00 CNT 8 */
+    uint32_t vifCodes[2];      /* +0x08 FLUSH, DIRECT 8 */
+    uint32_t gifTag[4];        /* +0x10 */
+    GsAdWrite rgbaq;           /* +0x20 (0x80, 0x80, 0x80, 0x80), Q 1 */
+    GsAdWrite tex0;            /* +0x30 TEX0_1: 128 by 64, 8-bit with a 32-bit palette (TBP0 0x3E8A, CBP 0x3EAA) */
+    GsAdWrite prim;            /* +0x40 0x16: a textured sprite */
+    GsAdWrite stA;             /* +0x50 ST (0, 0) */
+    GsAdWrite xyzA;            /* +0x60 XYZF2 the top left corner (mm_CityCursor_Update, mm_CityCursor_SelectTile) */
+    GsAdWrite stB;             /* +0x70 ST (1, 1) */
+    GsAdWrite xyzB;            /* +0x80 XYZF2 the bottom right corner */
+    uint32_t ret[4];           /* +0x90 RET */
+};
 /* One parity's half of the city cursor (0xD0 bytes): info lines, packets and the fade frame. */
 struct CityCursorView {
     TextBox *lines[5];         /* +0x00 */
     Frame *lineFrames[5];      /* +0x14 a frame behind each line (a frame's packet starts the frame) */
     Frame *frame;              /* +0x28 the info window's frame */
     Frame *fadeFrame;          /* +0x2C */
-    uint8_t extraPacket[0xA0]; /* +0x30 drawn in mode 4 */
+    CursorSprite sprite;       /* +0x30 drawn in mode 4: it opens out from the info frame */
 };
 /* Light set (0x1B0 bytes): the colour table of the model programs, two groups of twelve, coloured by the clock
    (mm_LightSet_UpdateByClock). Its two packets upload +0x10..+0x1AF to VU1 0x12..0x2B (docs/RENDER_PIPELINE.md). */

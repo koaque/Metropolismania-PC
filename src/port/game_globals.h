@@ -228,6 +228,20 @@ namespace mm::globals
     inline GuestPtr<WordsTables> wordsTables() { return GuestPtr<WordsTables>{kWordsTables}; }
     inline GuestPtr<WordsBank> wordsBank(int32_t bank) { return GuestPtr<WordsBank>{kWordsTables} + bank; }
     inline constexpr uint32_t kWordsGoodsText = 0x00718240u;
+    // The WORDS script object, the two files of script blocks (opened by the first mm_WordsBlock_ctor, which counts its
+    // callers) and their block sizes (each file's first word), the queued read of the last block, the entries of the
+    // -2005 menu not offered (bit n for entry n: used, or not open to this person), and the cache of eight script blocks
+    // (a most-recently-used list of pointers to records: the block number, then its data).
+    inline constexpr uint32_t kWords = 0x001BDDF0u;
+    inline GuestPtr<Words> words() { return GuestPtr<Words>{kWords}; }
+    inline constexpr GuestVar<GuestPtr<GameFile>> wordsFile{0x001BDDDCu};      // WORDS.BIN
+    inline constexpr GuestVar<GuestPtr<GameFile>> wordsEventFile{0x001BDDE0u}; // WORDSEVE.BIN, a block per event kind
+    inline constexpr GuestVar<int32_t> wordsFileUsers{0x001BDDE4u};
+    inline constexpr GuestVar<int32_t> wordsBlockSize{0x001BDDE8u};
+    inline constexpr GuestVar<int32_t> wordsEventBlockSize{0x001BDDECu};
+    inline constexpr GuestVar<int32_t> wordsPendingRead{0x001BD9F4u}; // File_Read's result; -1 once the queue is waited for
+    inline constexpr GuestVar<uint8_t> wordsHiddenChoices{0x001BDE18u};
+    inline constexpr uint32_t kWordsBlockCache = 0x00718190u, kWordsBlockCacheEnd = 0x007181B0u;
 
     // bag: the slots of each bag size (bytes 0, 4, 10, 20 for sizes 0 to 3).
     inline constexpr uint32_t kBagSlotsBySize = 0x001B5B08u;

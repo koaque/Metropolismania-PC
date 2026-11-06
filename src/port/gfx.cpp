@@ -20,6 +20,10 @@ namespace mm
     using packet::putHalvesStq;
     using packet::putWords;
     using packet::tagAddress;
+    using packet::packTex0;
+    using packet::kGsTex0_1;
+    using packet::kPsmCt32;
+    using packet::kPsmT4;
 
     // The length of animation `animation` of the model: its first track's length word.
     ps2f A3D_GetAnimLength(GuestPtr<A3DObject> model, int animation)
@@ -1466,28 +1470,11 @@ namespace mm
             putWords(at + 0x10u, {0x8003u, 0x10000000u, 0xEu, 0x0u});
             putWords(at + 0x20u, {0x80808080u, 0x3F800000u, 0x1u, 0x0u});
             putWords(at + 0x30u, {0x48u, 0x30u, 0x42u, 0x0u});
-            putWords(at + 0x40u, {0x0u, 0x0u, 0x6u, 0x0u});
-            const auto field16 = [&](uint32_t offset, uint16_t keep, uint16_t value) {
-                port::store<uint16_t>(at + offset, static_cast<uint16_t>((port::load<uint16_t>(at + offset) & keep) | value));
-            };
-            const auto field8 = [&](uint32_t offset, uint8_t keep, uint8_t value) {
-                port::store<uint8_t>(at + offset, static_cast<uint8_t>((port::load<uint8_t>(at + offset) & keep) | value));
-            };
-            const auto field64 = [&](uint64_t keep, uint64_t value) {
-                port::store<uint64_t>(at + 0x40u, (port::load<uint64_t>(at + 0x40u) & keep) | value);
-            };
-            field16(0x40u, 0xC000u, 0x3F70u);                                      // TBP0
-            field64(0xFFFFFFFFFFF03FFFull, 1ull << 14);                            // TBW
-            field16(0x42u, 0xFC0Fu, 0x140u);                                       // PSM
-            field8(0x43u, 0xC3u, static_cast<uint8_t>((Math_Log2(0x20) & 0xF) << 2)); // TW
-            field64(0xFFFFFFFC3FFFFFFFull, static_cast<uint64_t>(Math_Log2(0x20) & 0xF) << 30); // TH
-            field8(0x44u, 0xFBu, 0x4u);                                            // TCC
-            field8(0x44u, 0xE7u, 0x0u);                                            // TFX
-            field64(0xFFF8001FFFFFFFFFull, 0x3F72ull << 37);                       // CBP
-            field8(0x46u, 0x87u, 0x0u);                                            // CPSM
-            field8(0x46u, 0x7Fu, 0x0u);                                            // CSM
-            field8(0x47u, 0xE0u, 0x0u);                                            // CSA
-            field8(0x47u, 0x1Fu, 0x20u);                                           // CLD
+            // TEX0_1 of the flake: 32 by 32, 4-bit with a 32-bit palette.
+            const uint32_t width = static_cast<uint32_t>(Math_Log2(0x20)), height = static_cast<uint32_t>(Math_Log2(0x20));
+            const uint64_t tex0 = packTex0({.tbp0 = 0x3F70u, .tbw = 1u, .psm = kPsmT4, .tw = width, .th = height, .tcc = 1u, .tfx = 0u,
+                                            .cbp = 0x3F72u, .cpsm = kPsmCt32, .csm = 0u, .csa = 0u, .cld = 1u});
+            putWords(at + 0x40u, {static_cast<uint32_t>(tex0), static_cast<uint32_t>(tex0 >> 32), kGsTex0_1, 0x0u});
             putWords(at + 0x50u, {0x50000000u, 0x1A9A90u, 0x0u, 0x0u});
             putWords(at + 0x60u, {0x30000056u, layerTag, 0x1000101u, 0x6C560012u});
             putWords(at + 0x70u, {0x10000000u, 0x0u, 0x300007Cu, 0x20001C2u});

@@ -1485,7 +1485,7 @@ inline constexpr uint32_t Words_LoadForWants = 0x001A29E0u;
 inline constexpr uint32_t Words_LoadForFamily = 0x001A2C40u;
 inline constexpr uint32_t Words_LoadForPerson = 0x001A2DF0u;
 inline constexpr uint32_t Words_ReadBlock = 0x001A3050u;
-inline constexpr uint32_t Words_OpenFiles = 0x001A31A0u;
+inline constexpr uint32_t WordsBlock_ctor = 0x001A31A0u;
 inline constexpr uint32_t Words_Init = 0x001A3250u;
 inline constexpr uint32_t StaticInit_StatusBytes = 0x001BAEA0u;
 inline constexpr uint32_t StaticInit_WordsTable = 0x001BAEC0u;
@@ -2060,7 +2060,7 @@ template <> inline constexpr bool at<0x001A29E0u> = true; // Words_LoadForWants
 template <> inline constexpr bool at<0x001A2C40u> = true; // Words_LoadForFamily
 template <> inline constexpr bool at<0x001A2DF0u> = true; // Words_LoadForPerson
 template <> inline constexpr bool at<0x001A3050u> = true; // Words_ReadBlock
-template <> inline constexpr bool at<0x001A31A0u> = true; // Words_OpenFiles
+template <> inline constexpr bool at<0x001A31A0u> = true; // WordsBlock_ctor
 template <> inline constexpr bool at<0x001A3250u> = true; // Words_Init
 template <> inline constexpr bool at<0x001A3538u> = true; // sdk_GetRomName
 template <> inline constexpr bool at<0x001A35D8u> = true; // sdk_IsT10K
@@ -3378,6 +3378,7 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Widget_Update", addr::Widget_Update},
     {"Widget_ctor", addr::Widget_ctor},
     {"Widget_dtor", addr::Widget_dtor},
+    {"WordsBlock_ctor", addr::WordsBlock_ctor},
     {"WordsFn_AbortSystemEvent", addr::WordsFn_AbortSystemEvent},
     {"WordsFn_AbortTalkEvent", addr::WordsFn_AbortTalkEvent},
     {"WordsFn_AcquaintanceSuppliesClaim", addr::WordsFn_AcquaintanceSuppliesClaim},
@@ -3548,7 +3549,6 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Words_LoadForPerson", addr::Words_LoadForPerson},
     {"Words_LoadForWants", addr::Words_LoadForWants},
     {"Words_MatchTypedAnswer", addr::Words_MatchTypedAnswer},
-    {"Words_OpenFiles", addr::Words_OpenFiles},
     {"Words_PickResidentByType", addr::Words_PickResidentByType},
     {"Words_ReadBlock", addr::Words_ReadBlock},
     {"Words_SelectBagItem", addr::Words_SelectBagItem},
@@ -5163,7 +5163,7 @@ void Words_LoadForWants(GuestPtr<CityScene> city, int16_t id, int line, GuestPtr
 int Words_LoadForFamily(int family, int member, int arg5, GuestPtr<CityScene> city);
 int Words_LoadForPerson(GuestPtr<MapPerson> person, int arg5, GuestPtr<CityScene> city);
 GuestPtr<uint32_t> Words_ReadBlock(int a0);
-int Words_OpenFiles(int a0);
+GuestPtr<WordsBlock> WordsBlock_ctor(GuestPtr<WordsBlock> entry);
 void Words_Init();
 void StaticInit_StatusBytes();
 void StaticInit_WordsTable();

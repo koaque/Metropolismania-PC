@@ -700,8 +700,8 @@ namespace mm
         frame->cornerB = static_cast<uint32_t>(x1) | (static_cast<uint32_t>(y1) << 16);
     }
 
-    // The cursor's info window for this frame: its packet and info lines, then either the extra packet over
-    // a cleared Z (mode 4) or a dimmed screen with the fade frame (other non-zero modes).
+    // The cursor's info window for this frame: its packet and info lines, then either the opening sprite (CursorSprite)
+    // over a cleared Z (mode 4) or a dimmed screen with the fade frame (other non-zero modes).
     void CityCursor_Draw(GuestPtr<CityCursor> cursor)
     {
         if (cursor->visible == 0)
@@ -719,7 +719,7 @@ namespace mm
         if (cursor->mode == 4)
         {
             DmaList_QueueClearZ();
-            Dma_AppendCall(static_cast<int>(view.field(&CityCursorView::extraPacket).address));
+            Dma_AppendCall(static_cast<int>(view.field(&CityCursorView::sprite).address));
         }
         else if (cursor->mode != 0)
         {
@@ -2138,7 +2138,7 @@ namespace mm
     // Picking a building: one marked by an event (flag 0x200) queues event 0x106; otherwise the building menu opens
     // (mode 0xA) for it, the cursor in mode 4 with its open timer at 30, and this frame's info window rectangle is
     // set from the frame (grown by 100 and 25 per step of the timer run so far, 15 at most; a rectangle reaching
-    // outside 0..0xFFFF becomes 0) into the extra packet's words +0x60 (left, top) and +0x80 (right, bottom).
+    // outside 0..0xFFFF becomes 0) as the view's sprite corners (xyzA left and top, xyzB right and bottom).
     void CityCursor_SelectTile(GuestPtr<CityCursor> cursor, int object, GuestPtr<CityScene> city)
     {
         if ((Map_GetRecord(city->map, object)->flags & 0x200u) != 0)
@@ -2176,9 +2176,8 @@ namespace mm
             rect[3] = 0;
             rect[1] = 0;
         }
-        const uint32_t packet = view.field(&CityCursorView::extraPacket).address;
-        port::store<uint32_t>(packet + 0x60u, static_cast<uint32_t>(rect[0]) | (static_cast<uint32_t>(rect[1]) << 16));
-        port::store<uint32_t>(packet + 0x80u, static_cast<uint32_t>(rect[2]) | (static_cast<uint32_t>(rect[3]) << 16));
+        view->sprite.xyzA.value[0] = static_cast<uint32_t>(rect[0]) | (static_cast<uint32_t>(rect[1]) << 16);
+        view->sprite.xyzB.value[0] = static_cast<uint32_t>(rect[2]) | (static_cast<uint32_t>(rect[3]) << 16);
     }
 
     PORT_FN(CityCursor_SelectTile);
@@ -3212,15 +3211,15 @@ namespace mm
     {
         if (cursor)
         {
-            for (uint32_t view = 0; view < 2u; ++view)
+            for (int32_t parity = 0; parity < 2; ++parity)
             {
-                const uint32_t base = cursor.address + 0xD0u * view;
-                lifetime::deleteFrame(base + 0x2Cu);
-                lifetime::deleteFrame(base + 0x28u);
-                for (uint32_t line = 0; line < 5u; ++line)
+                CityCursorView &view = cursor->views[parity];
+                lifetime::deleteFrame(port::guest(&view.fadeFrame));
+                lifetime::deleteFrame(port::guest(&view.frame));
+                for (int32_t line = 0; line < 5; ++line)
                 {
-                    lifetime::deleteTextBox(base + 4u * line);
-                    lifetime::deleteFrame(base + 0x14u + 4u * line);
+                    lifetime::deleteTextBox(port::guest(&view.lines[line]));
+                    lifetime::deleteFrame(port::guest(&view.lineFrames[line]));
                 }
             }
             BaseObject_dtor(static_cast<int>(cursor.address), 0);
@@ -6615,16 +6614,18 @@ namespace mm
 
     PORT_FN(WantsWin_Update);
 
-    // The city cursor's info window for one frame (nothing while visible is clear). The info text is refreshed (CityCursor_UpdateInfo), then
-    // by the mode: 0 moves the cursor (CityCursor_Move, with the enabled flag); 1 is the info list: Cross (with Circle not held)
-    // takes the entry the frame step (frameStep) is on (twelve to a line, six to an entry: the entries are the chain of ids from target,
-    // each record's next in nextOnTile, ending at 0x3F80), picking the tile in the placing mode (3) and starting a talk otherwise; Triangle
-    // closes it (mode 0, the city mode popped); up (when there is a line above) and down (when the step is above 0) start the step
-    // scrolling (modes 2 and 3, sound 0). 2 and 3 move the step by one a frame (up, down) for twelve frames (openTimer), then back to 1.
-    // 4 clears the picked building: the window frame of this frame's view shrinks around its centre over the timer (the box grows from
-    // 25 by 100 units at most 15 steps, kept in the 16 bit range), and when the timer (30 at the pick) runs out the picked building
-    // is plotted on the minimap, its family removed from the applicants, the approval lowered by 20, the tile area turned to rubble
-    // and the mode popped (twice if the city is then in mode 10); the cursor goes back to mode 0.
+    // The city cursor's info window for one frame (nothing while visible is clear). The info text is refreshed
+    // (CityCursor_UpdateInfo), then by the mode: 0 moves the cursor (CityCursor_Move, with the enabled flag); 1 is the
+    // info list: Cross (with Circle not held) takes the entry the frame step (frameStep) is on (twelve to a line, six
+    // to an entry: the entries are the chain of ids from target, each record's next in nextOnTile, ending at 0x3F80),
+    // picking the tile in the placing mode (3) and starting a talk otherwise; Triangle closes it (mode 0, the city mode
+    // popped); up (when there is a line above) and down (when the step is above 0) start the step scrolling (modes 2
+    // and 3, sound 0). 2 and 3 move the step by one a frame (up, down) for twelve frames (openTimer), then back to 1. 4
+    // clears the picked building: this frame's view's sprite (CursorSprite) opens out around the info frame's position
+    // as the timer runs down (25 by 100 units a step, at most 15 steps, kept in the 16 bit range), and when the timer
+    // (30 at the pick) runs out the picked building is plotted on the minimap, its family removed from the applicants,
+    // the approval lowered by 20, the tile area turned to rubble and the mode popped (twice if the city is then in mode
+    // 10); the cursor goes back to mode 0.
     void CityCursor_Update(GuestPtr<CityCursor> cursor, GuestPtr<CityScene> city, int enabled)
     {
         port::GuestFrame<0x80> frame;
@@ -6704,8 +6705,8 @@ namespace mm
         }
         case 4:
         {
-            const uint32_t view = k + 0xD0u * parity;
-            Frame_GetRect(GuestPtr<Frame>{port::load<uint32_t>(view + 0x28u)}, GuestPtr<uint32_t>{sp + 0x70u}, GuestPtr<uint32_t>{sp + 0x74u},
+            const GuestPtr<CityCursorView> view = GuestPtr<CityCursorView>::of(cursor->views[parity]);
+            Frame_GetRect(view->frame, GuestPtr<uint32_t>{sp + 0x70u}, GuestPtr<uint32_t>{sp + 0x74u},
                           GuestPtr<uint32_t>{sp + 0x78u}, GuestPtr<uint32_t>{sp + 0x7Cu});
             int32_t steps = 0x1E - cursor->openTimer;
             if (!(steps < 0x10))
@@ -6727,8 +6728,8 @@ namespace mm
             };
             clamp(0x70u, 0x78u);
             clamp(0x74u, 0x7Cu);
-            port::store<uint32_t>(view + 0x90u, port::load<uint32_t>(sp + 0x70u) | (port::load<uint32_t>(sp + 0x74u) << 16));
-            port::store<uint32_t>(view + 0xB0u, port::load<uint32_t>(sp + 0x78u) | (port::load<uint32_t>(sp + 0x7Cu) << 16));
+            view->sprite.xyzA.value[0] = port::load<uint32_t>(sp + 0x70u) | (port::load<uint32_t>(sp + 0x74u) << 16);
+            view->sprite.xyzB.value[0] = port::load<uint32_t>(sp + 0x78u) | (port::load<uint32_t>(sp + 0x7Cu) << 16);
             const int32_t left = cursor->openTimer - 1;
             cursor->openTimer = left;
             if (left != 0)
@@ -6758,11 +6759,12 @@ namespace mm
 
     PORT_FN(CityCursor_Update);
 
-    // The city cursor: the base object, a model loaded (0x1B5EF0) and deleted again at once, the lines and the fade counters cleared,
-    // and for each of the two views (0xD0 bytes, one per frame parity) five text boxes (15 by 1, style -1, lines) with five frames
-    // (lineFrames, a 24 by 12 box) and the two frames of the fade (frame and fadeFrame), then the view's GS packet (extraPacket):
-    // the TEX0 style register in its fourth quadword (the sizes are log2 of 128 and 64 in its texture width and height fields) and the sprite, colour and
-    // coordinate words after it.
+    // The city cursor: the base object, a model loaded (0x1B5EF0) and deleted again at once, the lines and the fade
+    // counters cleared, and for each of the two views (0xD0 bytes, one per frame parity) five text boxes (15 by 1,
+    // style -1, lines) with five frames (lineFrames, a 24 by 12 box), the info frame (style 0x32) and the fade frame
+    // (0x1E), then the view's opening sprite (CursorSprite): a 128 by 64 texture of 8-bit colours (the sizes as log2 in
+    // TEX0), corners in 12.4 fixed point from (0x6C00, 0x7900) to (0x9400, 0x8000) until mm_CityCursor_Update opens it
+    // out.
     GuestPtr<CityCursor> CityCursor_ctor(GuestPtr<CityCursor> cursor)
     {
         port::GuestFrame<0x60> frame;
@@ -6780,84 +6782,35 @@ namespace mm
                 object = Frame_ctor(GuestPtr<Frame>{object}, style, x, y, 0x18, 0xC, 0xFFF00000u).address;
             return object;
         };
-        for (uint32_t view = 0; view < 2; ++view)
+        for (int32_t parity = 0; parity < 2; ++parity)
         {
-            const uint32_t v = k + 0xD0u * view;
-            for (uint32_t i = 0; i < 5; ++i)
+            const GuestPtr<CityCursorView> view = GuestPtr<CityCursorView>::of(cursor->views[parity]);
+            for (int32_t i = 0; i < 5; ++i)
             {
                 uint32_t text = sdk::operator_new(0x40u);
                 if (text != 0u)
                     text = TextBox_Init(GuestPtr<TextBox>{text}, 0xF, 1, -1).address;
-                port::store<uint32_t>(v + 4u * i, text);
-                uint32_t box = sdk::operator_new(0xC0u);
-                if (box != 0u)
-                    box = Frame_ctor(GuestPtr<Frame>{box}, 0, 0, 0, 0x18, 0xC, 0xFFF00000u).address;
-                port::store<uint32_t>(v + 0x14u + 4u * i, box);
+                view->lines[i] = GuestPtr<TextBox>{text};
+                view->lineFrames[i] = GuestPtr<Frame>{newFrame(0, 0, 0)};
             }
-            uint32_t fadeA = sdk::operator_new(0xC0u);
-            if (fadeA != 0u)
-                fadeA = Frame_ctor(GuestPtr<Frame>{fadeA}, 0x32, 0x64, 0x64, 0x18, 0xC, 0xFFF00000u).address;
-            port::store<uint32_t>(v + 0x28u, fadeA);
-            uint32_t fadeB = sdk::operator_new(0xC0u);
-            if (fadeB != 0u)
-                fadeB = Frame_ctor(GuestPtr<Frame>{fadeB}, 0x1E, 0x64, 0x64, 0x18, 0xC, 0xFFF00000u).address;
-            port::store<uint32_t>(v + 0x2Cu, fadeB);
-            port::store<uint32_t>(v + 0x30u, 0x10000008u);
-            port::store<uint32_t>(v + 0x34u, 0u);
-            port::store<uint32_t>(v + 0x38u, 0x11000000u);
-            port::store<uint32_t>(v + 0x3Cu, 0x50000008u);
-            port::store<uint32_t>(v + 0x4Cu, 0u);
-            port::store<uint32_t>(v + 0x48u, 0xEu);
-            port::store<uint32_t>(v + 0x44u, 0x10000000u);
-            port::store<uint32_t>(v + 0x40u, 0x8007u);
-            port::store<uint32_t>(v + 0x5Cu, 0u);
-            port::store<uint32_t>(v + 0x58u, 1u);
-            port::store<uint32_t>(v + 0x54u, 0x3F800000u);
-            port::store<uint32_t>(v + 0x50u, 0x80808080u);
-            port::store<uint32_t>(v + 0x6Cu, 0u);
-            port::store<uint32_t>(v + 0x68u, 6u);
-            port::store<uint32_t>(v + 0x64u, 0u);
-            port::store<uint32_t>(v + 0x60u, 0u);
-            // The TEX0-like register at +0x60 piece by piece.
-            port::store<uint16_t>(v + 0x60u, static_cast<uint16_t>((port::load<uint16_t>(v + 0x60u) & 0xC000u) | 0x3E8Au));
-            port::store<uint64_t>(v + 0x60u, (port::load<uint64_t>(v + 0x60u) & 0xFFFFFFFFFFF03FFFull) | 0x8000ull);
-            port::store<uint16_t>(v + 0x62u, static_cast<uint16_t>((port::load<uint16_t>(v + 0x62u) & 0xFC0Fu) | 0x130u));
-            const int widthLog = Math_Log2(0x80);
-            const uint8_t widthByte = port::load<uint8_t>(v + 0x63u);
-            const int heightLog = Math_Log2(0x40);
-            port::store<uint8_t>(v + 0x63u, static_cast<uint8_t>((widthByte & 0xC3u) | ((static_cast<uint32_t>(widthLog) & 0xFu) << 2)));
-            port::store<uint64_t>(v + 0x60u, (port::load<uint64_t>(v + 0x60u) & 0xFFFFFFFC3FFFFFFFull) | (static_cast<uint64_t>(static_cast<uint32_t>(heightLog) & 0xFu) << 30));
-            port::store<uint8_t>(v + 0x64u, static_cast<uint8_t>((port::load<uint8_t>(v + 0x64u) & 0xFBu) | 4u));
-            port::store<uint8_t>(v + 0x64u, static_cast<uint8_t>(port::load<uint8_t>(v + 0x64u) & 0xE7u));
-            port::store<uint64_t>(v + 0x60u, (port::load<uint64_t>(v + 0x60u) & 0xFFF8001FFFFFFFFFull) | (0x3EAAull << 37));
-            port::store<uint8_t>(v + 0x66u, static_cast<uint8_t>(port::load<uint8_t>(v + 0x66u) & 0x87u));
-            port::store<uint8_t>(v + 0x66u, static_cast<uint8_t>(port::load<uint8_t>(v + 0x66u) & 0x7Fu));
-            port::store<uint8_t>(v + 0x67u, static_cast<uint8_t>(port::load<uint8_t>(v + 0x67u) & 0xE0u));
-            port::store<uint8_t>(v + 0x67u, static_cast<uint8_t>((port::load<uint8_t>(v + 0x67u) & 0x1Fu) | 0x20u));
-            port::store<uint32_t>(v + 0x7Cu, 0u);
-            port::store<uint32_t>(v + 0x78u, 0u);
-            port::store<uint32_t>(v + 0x74u, 0u);
-            port::store<uint32_t>(v + 0x70u, 0x16u);
-            port::store<uint32_t>(v + 0x8Cu, 0u);
-            port::store<uint32_t>(v + 0x88u, 2u);
-            port::store<uint32_t>(v + 0x84u, 0u);
-            port::store<uint32_t>(v + 0x80u, 0u);
-            port::store<uint32_t>(v + 0x9Cu, 0u);
-            port::store<uint32_t>(v + 0x98u, 4u);
-            port::store<uint32_t>(v + 0x94u, 0x0FFF0000u);
-            port::store<uint32_t>(v + 0x90u, 0x79006C00u);
-            port::store<uint32_t>(v + 0xACu, 0u);
-            port::store<uint32_t>(v + 0xA8u, 2u);
-            port::store<uint32_t>(v + 0xA4u, 0x3F800000u);
-            port::store<uint32_t>(v + 0xA0u, 0x3F800000u);
-            port::store<uint32_t>(v + 0xBCu, 0u);
-            port::store<uint32_t>(v + 0xB8u, 4u);
-            port::store<uint32_t>(v + 0xB4u, 0x0FFF0000u);
-            port::store<uint32_t>(v + 0xB0u, 0x80009400u);
-            port::store<uint32_t>(v + 0xC0u, 0x60000000u);
-            port::store<uint32_t>(v + 0xC4u, 0u);
-            port::store<uint32_t>(v + 0xC8u, 0u);
-            port::store<uint32_t>(v + 0xCCu, 0u);
+            view->frame = GuestPtr<Frame>{newFrame(0x32, 0x64, 0x64)};
+            view->fadeFrame = GuestPtr<Frame>{newFrame(0x1E, 0x64, 0x64)};
+            CursorSprite &sprite = view->sprite;
+            packet::putWords(sprite.dmaTag, {packet::kCnt | 8u, 0u});
+            packet::putWords(sprite.vifCodes, {0x11000000u, 0x50000008u});         // FLUSH, DIRECT 8
+            packet::putWords(sprite.gifTag, {0x8007u, 0x10000000u, 0xEu, 0u});     // 7 loops (EOP) of A+D
+            packet::putAd(sprite.rgbaq, 0x80808080u, 0x3F800000u, packet::kGsRgbaq);
+            const uint32_t width = static_cast<uint32_t>(Math_Log2(0x80)), height = static_cast<uint32_t>(Math_Log2(0x40));
+            packet::putAd(sprite.tex0,
+                          packet::packTex0({.tbp0 = 0x3E8Au, .tbw = 2u, .psm = packet::kPsmT8, .tw = width, .th = height, .tcc = 1u,
+                                            .tfx = 0u, .cbp = 0x3EAAu, .cpsm = packet::kPsmCt32, .csm = 0u, .csa = 0u, .cld = 1u}),
+                          packet::kGsTex0_1);
+            packet::putAd(sprite.prim, 0x16u, 0u, packet::kGsPrim);
+            packet::putAd(sprite.stA, 0u, 0u, packet::kGsSt);
+            packet::putAd(sprite.xyzA, 0x79006C00u, 0x0FFF0000u, packet::kGsXyzf2);
+            packet::putAd(sprite.stB, 0x3F800000u, 0x3F800000u, packet::kGsSt);
+            packet::putAd(sprite.xyzB, 0x80009400u, 0x0FFF0000u, packet::kGsXyzf2);
+            packet::putWords(sprite.ret, {packet::kRet, 0u, 0u, 0u});
         }
         return cursor;
     }

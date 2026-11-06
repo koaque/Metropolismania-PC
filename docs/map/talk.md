@@ -350,19 +350,19 @@ friendship changed. A is the person talked to.
 | `0x001A0F90` | `char *mm_Words_GetEntryDefault(void)` | 580 | no | default text for a name entry question |
 | `0x001A11E0` | `int16_t mm_Words_GetEntryMode(void)` | 504 | no | the answer mode of the current entry |
 | `0x001A13E0` | `char *mm_Words_GetChoiceText(int script, CityScene *city, int code, int index)` | 1036 | yes | text of menu choice a3 for code a2: goods with prices ("Don't buy"), claims, wants, events |
-| `0x001A17F0` | `void mm_Words_ApplyChoice(int script, CityScene *city, int code, int choice)` | 504 | yes | stores menu choice a3 for code a2 (bag item, want, event, argument) and jumps |
+| `0x001A17F0` | `void mm_Words_ApplyChoice(int script, CityScene *city, int code, int choice)` | 504 | yes | (script, city, code, choice) applies a menu choice: the script moves on by the entry's place (Words column, or scriptPos); also hides a -2005 entry, adds the event chosen, selects a bag item, or sets the want index or the argument |
 | `0x001A19F0` | `int mm_Words_CountChoices(int script, CityScene *city, int code)` | 664 | no | number of menu choices for code a2 |
 | `0x001A1CA0` | `void mm_Words_AppendClipped(char *buffer, char *text)` | 312 | no | appends a piece of text to a line being built, joined the way English wants it: a space between words, none after a line break, '(' or '<', or before a line break or punctuation ('.', '?', ',', ')', '>', an apostrophe). Two full stops make one, and a word ending in s takes "'s" as a bare "'" |
 | `0x001A1DE0` | `int16_t mm_Words_ExpandLine(int32_t *script, int code, char *out)` | 2044 | no | expands a script line: conditions pick branches, text getters fill in names, actions run |
-| `0x001A2620` | `int16_t mm_Words_StepImpl(int32_t *script, char *buffer)` | 888 | yes | binds the loaded tables on first use, then runs codes until the next message or end code |
+| `0x001A2620` | `int16_t mm_Words_StepImpl(int32_t *script, char *buffer)` | 888 | yes | (entry, buffer) binds banks 0 and 3 and picks the script's words when they are not bound, then runs the script's words until one gives a result (a line of text left part-way, an end code) |
 | `0x001A29B0` | `int16_t mm_Words_Step(int32_t *script, char *buffer)` | 8 | yes | next message of the running script (to mm_Words_StepImpl) |
 | `0x001A29C0` | `int mm_Words_FriendshipChanged(void)` | 8 | no | the global context's friendshipChanged |
 | `0x001A29D0` | `int mm_Words_CancelAllowed(void)` | 8 | no | the global context's cancelAllowed |
 | `0x001A29E0` | `void mm_Words_LoadForWants(CityScene *city, int16_t id, int line, char *out)` | 596 | yes | script for a wants window line (event or default), reads its block |
 | `0x001A2C40` | `int mm_Words_LoadForFamily(int family, int member, int arg5, CityScene *city)` | 424 | yes | script for family a1 member a2 (talk by phone), reads its block |
 | `0x001A2DF0` | `int mm_Words_LoadForPerson(MapPerson *person, int arg5, CityScene *city)` | 604 | yes | script for person a1 (may start an event), reads its block |
-| `0x001A3050` | `uint32_t *mm_Words_ReadBlock(int a0)` | 336 | yes | reads a script block from the open WORDS file into the buffer |
-| `0x001A31A0` | `int mm_Words_OpenFiles(int a0)` | 172 | yes | opens DATA\BIN\WORDS.BIN and WORDSEVE.BIN for streaming |
+| `0x001A3050` | `uint32_t *mm_Words_ReadBlock(int a0)` | 336 | yes | (block) finds a script block in the cache of eight (most recently used first), reading it from WORDS.BIN into the last entry when it is not there; returns the first slot's word |
+| `0x001A31A0` | `WordsBlock *mm_WordsBlock_ctor(WordsBlock *entry)` | 172 | yes | (entry) a script block cache entry (WordsBlock): block 0 and a buffer of one block; the first one made opens WORDS.BIN and WORDSEVE.BIN, and each is counted |
 | `0x001A3250` | `void mm_Words_Init(void)` | 744 | yes | loads the WORDS, WORDSEVE, WORDSCOM and WORDSTEN tables at game start |
 | `0x001BAEC0` | `void mm_StaticInit_WordsTable(void)` | 7884 | no | copies the WORDS member function table template (0x1B1B48) to 0x1B9100 |
 | `0x001BCD90` | `void mm_StaticInit_Words(void)` | 52 | yes | constructs the WORDS object (0x1BDDF0) and registers its destructor |

@@ -32,6 +32,7 @@ typedef struct WordsAnswer WordsAnswer;
 typedef struct WordsBank WordsBank;
 typedef struct WordsTypeBase WordsTypeBase;
 typedef struct WordsTables WordsTables;
+typedef struct WordsBlock WordsBlock;
 typedef struct Stamina Stamina;
 typedef struct MemberStatus MemberStatus;
 typedef struct SeRequest SeRequest;
@@ -582,18 +583,22 @@ struct WordsCtx {
     int32_t friendshipChanged; /* +0x13C */
 };
 
-/* The WORDS script object at 0x1BDDF0 (gp-0x7B80); its methods take a pointer to it. */
+/* The WORDS script object at 0x1BDDF0 (gp-0x7B80); its methods take a pointer to it. A script runs a list of words
+   (scriptWords, read from scriptPos on); a word of 5000 and up is a line of text, whose own words are read from column
+   on (mm_Words_StepImpl, mm_Words_ExpandLine). */
 struct Words {
     WordsCtx *ctx;             /* +0x00 0x140-byte context */
-    int32_t eventKind;         /* +0x04 the event whose words block (WORDSEVE.BIN) the extra table holds */
-    int32_t extraLoaded;       /* +0x08 */
-    int32_t bound;             /* +0x0C tables bound on first step */
-    uint16_t line;             /* +0x10 */
+    int32_t eventKind;         /* +0x04 the event whose words block (WORDSEVE.BIN) eventBlock holds */
+    int32_t eventLoaded;       /* +0x08 the script uses the event words (bank 3) */
+    int32_t bound;             /* +0x0C banks 0 and 3 bound to the current blocks (first step); cleared when either changes */
+    uint16_t scriptPos;        /* +0x10 the word being run in scriptWords */
     uint16_t unk_12;
-    uint16_t column;           /* +0x14 */
-    uint8_t unk_16[0xA];
-    void *extraTable;          /* +0x20 */
-    void *lineTable;           /* +0x24 */
+    uint16_t column;           /* +0x14 the word reached in the current line of text; not 0 while a line is left part-way */
+    uint8_t unk_16[2];
+    void *commonData;          /* +0x18 WORDSCOM.BIN, read whole at start-up (bank 1) */
+    void *typeData;            /* +0x1C WORDSTEN.BIN, read whole at start-up (bank 2 and its remaps) */
+    void *eventBlock;          /* +0x20 one block of WORDSEVE.BIN (bank 3) */
+    int16_t *scriptWords;      /* +0x24 the script block's words, or those the event block gives for it */
 };
 
 /* A WORDS answer record (4 bytes): how its string is picked, then its first string (the next record's first ends its
@@ -630,6 +635,12 @@ struct WordsTables {
     uint16_t *choiceRemap;     /* +0x68 */
     uint16_t *answerRemap;     /* +0x6C */
     uint16_t *stringRemap;     /* +0x70 */
+};
+/* An entry of the cache of WORDS.BIN script blocks (8 bytes, mm_WordsBlock_ctor; the cache's eight slots each point at
+   a word that points at one). */
+struct WordsBlock {
+    int32_t number;            /* +0x00 the block held (0 while empty); block n starts at 4 + (n - 1) * the block size */
+    uint8_t *data;             /* +0x04 one block: its first word the offset of its script words */
 };
 
 /* The claim meter limits at the start of the claim data (gp 0x1BDA50). */

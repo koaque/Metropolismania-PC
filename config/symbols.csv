@@ -2153,7 +2153,7 @@ address,name,kind,source
 0x001A2C40,mm_Words_LoadForFamily,func,manual
 0x001A2DF0,mm_Words_LoadForPerson,func,manual
 0x001A3050,mm_Words_ReadBlock,func,manual
-0x001A31A0,mm_Words_OpenFiles,func,manual
+0x001A31A0,mm_WordsBlock_ctor,func,manual
 0x001A3250,mm_Words_Init,func,manual
 0x001A3538,GetRomName,func,ps2_analyzer
 0x001A35D8,IsT10K,func,ps2_analyzer

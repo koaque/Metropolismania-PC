@@ -1174,8 +1174,8 @@ namespace mm
     void Words_SetWantIndex(GuestPtr<Words> words, uint16_t index) { words->ctx->wantIndex = static_cast<int16_t>(index); }
 
     // The same, for the game's one WORDS object.
-    int Words_CancelAllowed() { return Words_GetCancelAllowed(GuestPtr<Words>{0x001BDDF0u}); }
-    int Words_FriendshipChanged() { return Words_GetFriendshipChanged(GuestPtr<Words>{0x001BDDF0u}); }
+    int Words_CancelAllowed() { return Words_GetCancelAllowed(globals::words()); }
+    int Words_FriendshipChanged() { return Words_GetFriendshipChanged(globals::words()); }
 
     // The goods record of building type B for family B and the time of year ((month mod 12) / 4), entry `index`.
     int Words_GetGoods(GuestPtr<Words> words, int index)
@@ -1258,17 +1258,18 @@ namespace mm
         // tables are indexed through the remaps, from the type's bases (WordsTypeBase).
         GuestPtr<WordsTypeBase> typeBase()
         {
-            const int32_t type = static_cast<int32_t>(Words_GetBuildingTypeB(GuestPtr<Words>{0x001BDDF0u}));
+            const int32_t type = static_cast<int32_t>(Words_GetBuildingTypeB(globals::words()));
             return globals::wordsTables()->typeBases + type;
         }
 
         uint32_t remapped(GuestPtr<uint16_t> remap, int index, uint16_t base) { return remap[index + base]; }
 
-        // The code at the script's current line and column of its line table (Words line, column, lineTable).
+        // The code at the current word of the line of text the script is on (Words scriptWords, scriptPos and column).
         int currentCode()
         {
-            const int code = port::load<int16_t>(port::load<uint32_t>(0x001BDE14u) + 2u * port::load<uint16_t>(0x001BDE00u)) - 5000;
-            const uint32_t column = port::load<uint16_t>(0x001BDE04u);
+            const GuestPtr<Words> words = globals::words();
+            const int code = words->scriptWords[words->scriptPos] - 5000;
+            const uint32_t column = words->column;
             const int bank = code / 1000, index = code % 1000;
             const uint32_t line = bank == 2 ? remapped(globals::wordsTables()->lineRemap, index, typeBase()->line)
                                             : globals::wordsBank(bank)->lineOffsets[index];
@@ -1306,6 +1307,7 @@ namespace mm
     // first); the column moves on once, and once more on a match.
     void Words_MatchTypedAnswer(int, GuestPtr<char> typed)
     {
+        const GuestPtr<Words> words = globals::words();
         const int code = currentCode();
         const int bank = (code - 5000) / 1000;
         const GuestPtr<WordsAnswer> record = answerRecord(code);
@@ -1314,17 +1316,17 @@ namespace mm
         {
             if (sdk::strcmp(typed.address, bankString(bank, answerRecord(code)->first + static_cast<uint32_t>(i))) == 0)
             {
-                port::store<uint16_t>(0x001BDE04u, static_cast<uint16_t>(port::load<uint16_t>(0x001BDE04u) + 1));
+                words->column = static_cast<uint16_t>(words->column + 1);
                 break;
             }
         }
-        port::store<uint16_t>(0x001BDE04u, static_cast<uint16_t>(port::load<uint16_t>(0x001BDE04u) + 1));
+        words->column = static_cast<uint16_t>(words->column + 1);
     }
 
-    // The number of choices of a choice code: from bank choice ranges for codes below -2005; for -2005 the entries
-    // of bank 1's first range not yet answered (the mask byte at 0x1BDE18, Words +0x28); for -2004 the running events plus
-    // one; for -2003 the wants that still hold; for -2002 one more than the bag's food (goods categories 0x10, 0x11
-    // and 0x13); otherwise 5.
+    // The number of choices of a choice code: from bank choice ranges for codes below -2005; for -2005 the entries of
+    // bank 1's first range still offered (the bits of globals::wordsHiddenChoices clear); for -2004 the running events
+    // plus one; for -2003 the wants that still hold; for -2002 one more than the bag's food (goods categories 0x10,
+    // 0x11 and 0x13); otherwise 5.
     int Words_CountChoices(int, GuestPtr<CityScene> city, int code)
     {
         if (code < -2005)
@@ -1342,7 +1344,7 @@ namespace mm
             const int entries = range[1] - range[0];
             int left = entries;
             for (int i = 0; i < entries; ++i)
-                if ((port::load<uint8_t>(0x001BDE18u) & (1u << (i & 31))) != 0)
+                if ((globals::wordsHiddenChoices.get() & (1u << (i & 31))) != 0)
                     --left;
             return left;
         }
@@ -1870,64 +1872,63 @@ namespace mm
 
     // ---- The WORDS script files (plan P6 batch 2) ----
 
-    // Opens the script files on the first call (WORDS.BIN and WORDSEVE.BIN, 0x8000-byte buffers) and counts the users; the
-    // object gets a state of 0 and a block buffer of one script block.
-    int Words_OpenFiles(int words)
+    // A new entry of the script block cache (WordsBlock): empty (block 0), with a buffer of one block. The first one
+    // opens the script files (WORDS.BIN and WORDSEVE.BIN, 0x8000-byte buffers); each one is counted.
+    GuestPtr<WordsBlock> WordsBlock_ctor(GuestPtr<WordsBlock> entry)
     {
-        constexpr uint32_t kBlockSize = 0x001BDDE8u, kUsers = 0x001BDDE4u, kWordsFile = 0x001BDDDCu, kEventFile = 0x001BDDE0u;
-        port::store<int32_t>(static_cast<uint32_t>(words), 0);
-        port::store<uint32_t>(static_cast<uint32_t>(words) + 4u, sdk::mw_NewArray(port::load<uint32_t>(kBlockSize)));
-        if (port::load<int32_t>(kUsers) == 0)
+        entry->number = 0;
+        entry->data = GuestPtr<uint8_t>{sdk::mw_NewArray(static_cast<uint32_t>(globals::wordsBlockSize.get()))};
+        if (globals::wordsFileUsers.get() == 0)
         {
-            const auto open = [](uint32_t holder, uint32_t path) {
+            const auto open = [](GuestVar<GuestPtr<GameFile>> holder, uint32_t path) {
                 const uint32_t memory = sdk::operator_new(8u);
                 uint32_t file = 0u;
                 if (memory != 0u)
                     file = File_ctor(GuestPtr<GameFile>{memory}, 0x8000).address;
-                port::store<uint32_t>(holder, file);
+                holder.set(GuestPtr<GameFile>{file});
                 File_Open(GuestPtr<GameFile>{file}, GuestPtr<char>{path});
             };
-            open(kWordsFile, 0x001BAD90u);
-            open(kEventFile, 0x001BADB0u);
+            open(globals::wordsFile, 0x001BAD90u);
+            open(globals::wordsEventFile, 0x001BADB0u);
             FileQueue_WaitAll(0);
         }
-        port::store<int32_t>(kUsers, port::load<int32_t>(kUsers) + 1);
-        return words;
+        globals::wordsFileUsers.set(globals::wordsFileUsers.get() + 1);
+        return entry;
     }
 
-    // Finds a script block in the cache of 8 (a most-recently-used list at 0x718190, each entry reached through two
-    // pointers): block 0 means the first entry's block (0x16 when that is 0 too). A block not cached replaces the last entry:
-    // it is read from WORDS.BIN (block number - 1 blocks past the first word) into that entry. The entry found moves to the
-    // front of the list. Returns the first entry.
+    // Finds a script block in the cache of eight (a most-recently-used list; each slot points at a word that points at
+    // its WordsBlock): block 0 means the first entry's block (0x16 when that is 0 too). A block not cached replaces the
+    // last entry: it is read from WORDS.BIN (block number - 1 blocks past the file's first word, the block size) into
+    // that entry's buffer, and the read is left queued. The entry found moves to the front of the list and the banks
+    // are bound again on the next step (Words bound cleared). Returns the first slot's word.
     GuestPtr<uint32_t> Words_ReadBlock(int block)
     {
-        constexpr uint32_t kList = 0x00718190u, kListEnd = 0x007181B0u;
-        constexpr uint32_t kBlockSize = 0x001BDDE8u, kWordsFile = 0x001BDDDCu, kReadResult = 0x001BD9F4u, kCleared = 0x001BDDFCu;
-        const auto idAt = [](uint32_t slot) { return port::load<int32_t>(port::load<uint32_t>(port::load<uint32_t>(slot))); };
+        constexpr uint32_t kList = globals::kWordsBlockCache, kListEnd = globals::kWordsBlockCacheEnd;
+        const auto entryAt = [](uint32_t slot) { return GuestPtr<WordsBlock>{port::load<uint32_t>(port::load<uint32_t>(slot))}; };
         if (block == 0)
         {
-            block = idAt(kList);
+            block = entryAt(kList)->number;
             if (block == 0)
                 block = 0x16;
         }
         uint32_t slot = kList;
-        while (slot < kListEnd && block != idAt(slot))
+        while (slot < kListEnd && block != entryAt(slot)->number)
             slot += 4u;
         if (slot != kList)
         {
             if (slot == kListEnd)
             {
                 slot -= 4u;
-                const uint32_t record = port::load<uint32_t>(port::load<uint32_t>(slot));
-                port::store<int32_t>(record, block);
-                const int32_t size = port::load<int32_t>(kBlockSize);
-                File_Seek(GuestPtr<GameFile>{port::load<uint32_t>(kWordsFile)}, size * (port::load<int32_t>(record) - 1) + 4, 0, 0);
-                port::store<int32_t>(kReadResult, File_Read(GuestPtr<GameFile>{port::load<uint32_t>(kWordsFile)}, static_cast<int>(port::load<uint32_t>(record + 4u)), 1, size, 0));
+                const GuestPtr<WordsBlock> entry = entryAt(slot);
+                entry->number = block;
+                const int32_t size = globals::wordsBlockSize.get();
+                File_Seek(globals::wordsFile.get(), size * (entry->number - 1) + 4, 0, 0);
+                globals::wordsPendingRead.set(File_Read(globals::wordsFile.get(), static_cast<int>(entry->data.address), 1, size, 0));
             }
-            const uint32_t entry = port::load<uint32_t>(slot);
+            const uint32_t moved = port::load<uint32_t>(slot);
             sdk::memmove(kList + 4u, kList, slot - kList);
-            port::store<uint32_t>(kList, entry);
-            port::store<uint32_t>(kCleared, 0u);
+            port::store<uint32_t>(kList, moved);
+            globals::words()->bound = 0;
         }
         return GuestPtr<uint32_t>{port::load<uint32_t>(kList)};
     }
@@ -1935,11 +1936,11 @@ namespace mm
     // The static Words object (0x1BDDF0) is constructed at start-up and registered to be destroyed at exit.
     void StaticInit_Words()
     {
-        const GuestPtr<Words> words = Words_ctor(GuestPtr<Words>{0x001BDDF0u});
+        const GuestPtr<Words> words = Words_ctor(globals::words());
         sdk::mw_register_global_object(words.address, 0x00180490u, 0x007181B0u);
     }
 
-    PORT_FN(Words_OpenFiles);
+    PORT_FN(WordsBlock_ctor);
     PORT_FN(Words_ReadBlock);
     PORT_FN(StaticInit_Words);
 
@@ -1996,18 +1997,19 @@ namespace mm
 
     PORT_FN(Words_SelectEvent);
 
-    // Applies the choice made in a script's menu (`code` says which menu, `choice` the entry). The running total of the answers
-    // (a halfword at 0x1BDE04, or at 0x1BDE00 while that is 0) grows by the choice for the menus below -0x7D4 and for -0x7D1.
-    // Menu -0x7D5 picks the choice-th entry not yet used (a bit mask of used ones at 0x1BDE18; the used ones before it count into
-    // the total), marks it used and, when fewer than two of the table's entries are left, sets the script's flag 0x134; -0x7D4
-    // adds the event chosen (mm_Words_SelectEvent); -0x7D2 selects the bag item when the choice is not the last entry and counts
-    // it; -0x7D3 sets the want index and -0x7D1 the argument.
+    // Applies the choice made in a script's menu (`code` says which menu, `choice` the entry). The script moves on by
+    // the entry's place in the menu: its column while it is part-way through a line of text (Words column not 0),
+    // otherwise its place in the script's words (scriptPos). Menus below -0x7D4 and -0x7D1 move on by the choice. Menu
+    // -0x7D5 picks the choice-th entry still offered (globals::wordsHiddenChoices; the hidden ones before it count in
+    // the move as well), hides it and, when fewer than two of the menu's entries are left, sets the script's flag
+    // 0x134; -0x7D4 moves on by the result of the event chosen (mm_Words_SelectEvent); -0x7D2 selects the bag item when
+    // the choice is not the last entry and moves on by one; -0x7D3 sets the want index and -0x7D1 the argument.
     void Words_ApplyChoice(int script, GuestPtr<CityScene> city, int code, int choice)
     {
-        constexpr uint32_t kWords = 0x001BDDF0u, kUsed = 0x001BDE18u;
-        const GuestPtr<Words> words{kWords};
-        const uint32_t total = port::load<uint16_t>(0x001BDE04u) != 0 ? 0x001BDE04u : 0x001BDE00u;
-        const auto add = [&](uint32_t amount) { port::store<uint16_t>(total, static_cast<uint16_t>(port::load<uint16_t>(total) + amount)); };
+        const GuestPtr<Words> words = globals::words();
+        const GuestPtr<uint16_t> place = words->column != 0 ? words.field(&Words::column) : words.field(&Words::scriptPos);
+        const auto add = [&](uint32_t amount) { place[0] = static_cast<uint16_t>(place[0] + amount); };
+        const auto hidden = [] { return static_cast<uint32_t>(globals::wordsHiddenChoices.get()); };
         if (code < -0x7D4 || code == -0x7D1)
             add(static_cast<uint16_t>(choice));
         if (code == -0x7D5)
@@ -2017,7 +2019,7 @@ namespace mm
             for (uint32_t i = 0;; ++i)
             {
                 bit = 1u << (i & 31u);
-                if ((port::load<uint8_t>(kUsed) & bit) == 0)
+                if ((hidden() & bit) == 0)
                 {
                     ++unused;
                     if (choice < unused)
@@ -2026,12 +2028,12 @@ namespace mm
                 else
                     add(1);
             }
-            port::store<uint8_t>(kUsed, static_cast<uint8_t>(port::load<uint8_t>(kUsed) | (bit & 0xFFu)));
+            globals::wordsHiddenChoices.set(static_cast<uint8_t>(hidden() | (bit & 0xFFu)));
             const GuestPtr<uint16_t> table = globals::wordsBank(1)->choiceRanges;
             const int entries = static_cast<int>(table[1]) - static_cast<int>(table[0]);
             int left = entries;
             for (int j = 0; j < entries; ++j)
-                if ((port::load<uint8_t>(kUsed) & (1u << (j & 31))) != 0)
+                if ((hidden() & (1u << (j & 31))) != 0)
                     --left;
             if (left < 2)
                 Words_SetFewChoicesLeft(words);
@@ -2254,67 +2256,66 @@ namespace mm
 
     namespace
     {
-        constexpr uint32_t kWordsObject = 0x001BDDF0u, kWordsUsedMask = 0x001BDE18u;
-
-        // The event words (WORDSEVE.BIN, a block per event kind) a script may use: kind 0 has none. A kind that is not the one held
-        // is read into the object's extra table (the block size is in 0x1BDDEC) and forgets the line tables bound so far.
+        // The event words (WORDSEVE.BIN, a block per event kind) a script may use: kind 0 has none. A kind that is not
+        // the one held is read into eventBlock (the read left queued), and the banks are bound again on the next step.
         void loadEventWords(uint32_t kind)
         {
-            constexpr uint32_t kEventFile = 0x001BDDE0u, kEventBlockSize = 0x001BDDECu, kReadResult = 0x001BD9F4u;
-            const GuestPtr<Words> words{kWordsObject};
+            const GuestPtr<Words> words = globals::words();
             if (kind == 0)
             {
-                words->extraLoaded = 0;
+                words->eventLoaded = 0;
                 return;
             }
             if (static_cast<int32_t>(kind) != words->eventKind)
             {
-                const int32_t size = port::load<int32_t>(kEventBlockSize);
-                File_Seek(GuestPtr<GameFile>{port::load<uint32_t>(kEventFile)}, size * (static_cast<int32_t>(kind) - 1) + 4, 0, 0);
-                port::store<int32_t>(kReadResult, File_Read(GuestPtr<GameFile>{port::load<uint32_t>(kEventFile)}, static_cast<int>(words->extraTable.address), 1,
-                                                            port::load<int32_t>(kEventBlockSize), 0));
+                const int32_t size = globals::wordsEventBlockSize.get();
+                File_Seek(globals::wordsEventFile.get(), size * (static_cast<int32_t>(kind) - 1) + 4, 0, 0);
+                globals::wordsPendingRead.set(File_Read(globals::wordsEventFile.get(), static_cast<int>(words->eventBlock.address), 1,
+                                                        globals::wordsEventBlockSize.get(), 0));
                 words->eventKind = static_cast<int32_t>(kind);
                 words->bound = 0;
             }
-            words->extraLoaded = 1;
+            words->eventLoaded = 1;
         }
 
-        // Once the tables are bound the line table points at the block's own lines, or, with event words loaded, at the lines the
-        // event block names for this block (an entry below 0 keeps the block's own).
-        void pickLineTable(GuestPtr<uint32_t> blockPtr)
+        // Once the banks are bound, the script runs its block's own words or, with event words loaded, the words the
+        // event block gives for that block (the event block's first header word leads to an entry per block number, its
+        // second to the words; an entry below 0 keeps the block's own). `slot` is the cache slot's word
+        // (mm_Words_ReadBlock).
+        void pickScriptWords(GuestPtr<uint32_t> slot)
         {
-            const GuestPtr<Words> words{kWordsObject};
+            const GuestPtr<Words> words = globals::words();
             if (words->bound == 0)
                 return;
-            const uint32_t record = port::load<uint32_t>(blockPtr.address);
-            const uint32_t data = port::load<uint32_t>(record + 4u);
-            words->lineTable = GuestPtr<void>{data + port::load<uint32_t>(data)};
-            if (words->extraLoaded == 0)
+            const GuestPtr<WordsBlock> entry{port::load<uint32_t>(slot.address)};
+            const uint32_t data = entry->data.address;
+            words->scriptWords = GuestPtr<int16_t>{data + port::load<uint32_t>(data)};
+            if (words->eventLoaded == 0)
                 return;
-            const uint32_t extra = words->extraTable.address;
-            const int32_t entry = port::load<int16_t>(extra + port::load<uint32_t>(extra) + 2u * port::load<uint32_t>(record));
-            if (entry >= 0)
-                words->lineTable = GuestPtr<void>{extra + port::load<uint32_t>(extra + 4u) + 2u * static_cast<uint32_t>(entry)};
+            const uint32_t event = words->eventBlock.address;
+            const int32_t first = port::load<int16_t>(event + port::load<uint32_t>(event) + 2u * static_cast<uint32_t>(entry->number));
+            if (first >= 0)
+                words->scriptWords = GuestPtr<int16_t>{event + port::load<uint32_t>(event + 4u) + 2u * static_cast<uint32_t>(first)};
         }
     }
 
-    // Prepares the script of a family member: the object is set to the member (mm_Words_SetFamily), the entries 1 and 2 of the
-    // choice menus are marked unavailable (bit 2 always; bit 1 for a member under 13 or with a friendship under 24, the used
-    // mask at 0x1BDE18), the line and column restart, the member's script block is read (mm_Words_ReadBlock, by the first
-    // halfword of its record), the event words for the city's current event are loaded and the line table picked. The result is the
-    // block.
+    // Prepares the script of a family member: the object is set to the member (mm_Words_SetFamily), entries 1 and 2 of
+    // the -2005 menu are hidden (globals::wordsHiddenChoices: bit 2 always; bit 1 for a member under 13 or with a
+    // friendship under 24), the script restarts at its first word, the member's script block is read
+    // (mm_Words_ReadBlock, by their character type), the event words for the city's current event are loaded and the
+    // script's words picked. The result is the block's cache slot.
     int Words_LoadForFamily(int family, int member, int arg5, GuestPtr<CityScene> city)
     {
-        const GuestPtr<Words> words{kWordsObject};
+        const GuestPtr<Words> words = globals::words();
         Words_SetFamily(words, family, static_cast<uint16_t>(member), arg5, city);
-        port::store<uint8_t>(kWordsUsedMask, 4);
-        words->line = 0;
+        globals::wordsHiddenChoices.set(4);
+        words->scriptPos = 0;
         words->column = 0;
         if (memberAt(Family_Get(family, 0), static_cast<uint32_t>(member))->age < 13 || Family_GetFriendship(family, member) < 24)
-            port::store<uint8_t>(kWordsUsedMask, static_cast<uint8_t>(port::load<uint8_t>(kWordsUsedMask) | 2u));
+            globals::wordsHiddenChoices.set(static_cast<uint8_t>(globals::wordsHiddenChoices.get() | 2u));
         const GuestPtr<uint32_t> block = Words_ReadBlock(memberAt(Family_Get(family, 0), static_cast<uint32_t>(member))->charType);
         loadEventWords(city->events->talks[0]->kind);
-        pickLineTable(block);
+        pickScriptWords(block);
         return static_cast<int>(block.address);
     }
 
@@ -2324,15 +2325,15 @@ namespace mm
     // entry is unavailable, and with none the age and friendship rule applies to the person's family member.
     int Words_LoadForPerson(GuestPtr<MapPerson> person, int arg5, GuestPtr<CityScene> city)
     {
-        const GuestPtr<Words> words{kWordsObject};
+        const GuestPtr<Words> words = globals::words();
         Words_SetPerson(words, person, arg5, city);
-        words->line = 0;
+        words->scriptPos = 0;
         words->column = 0;
         const GuestPtr<uint32_t> block = Words_ReadBlock(person->charType);
         const uint32_t kind = arg5 == 0 ? Event_TryStart(city->events, city, person) : city->events->talks[0]->kind;
         loadEventWords(kind);
-        pickLineTable(block);
-        port::store<uint8_t>(kWordsUsedMask, 4);
+        pickScriptWords(block);
+        globals::wordsHiddenChoices.set(4);
         const GuestPtr<Bag> bag = city->bag;
         const uint32_t end = bag.address + 4u + 16u * port::load<uint8_t>(globals::kBagSlotsBySize + bag->size);
         for (GuestPtr<BagSlot> slot{bag.address + 4u}; slot->group != 0 && slot.address < end; ++slot)
@@ -2340,59 +2341,59 @@ namespace mm
             const uint32_t category = globals::goodsAt(slot->group, slot->index)->kind;
             if (category == 0x10 || category == 0x11 || category == 0x13)
             {
-                port::store<uint8_t>(kWordsUsedMask, 0);
+                globals::wordsHiddenChoices.set(0);
                 break;
             }
         }
         if (memberAt(Family_Get(person->family, 0), person->member)->age < 13 || Family_GetFriendship(person->family, person->member) < 24)
-            port::store<uint8_t>(kWordsUsedMask, static_cast<uint8_t>(port::load<uint8_t>(kWordsUsedMask) | 2u));
+            globals::wordsHiddenChoices.set(static_cast<uint8_t>(globals::wordsHiddenChoices.get() | 2u));
         return static_cast<int>(block.address);
     }
 
     PORT_FN(Words_LoadForFamily);
     PORT_FN(Words_LoadForPerson);
 
-    // Reads the script data at start-up with a synchronous file on the stack: two table files are read whole (0x1BADD0 into a block
-    // at 0x1BDE08 with six table pointers made from its first six offsets at 0x7181D8, and 0x1BADF0 into a block at 0x1BDE0C with
-    // eleven pointers, five at 0x718220 and six at 0x7181F0), the event words file (0x1BADB0) gives its block size (0x1BDDEC) and
-    // the buffer for one block (0x1BDE10), and the words file (0x1BAD90) gives its block size (0x1BDDE8) and, with it, the eight
-    // cache entries of the block list at 0x718190 (a pointer to a record that opens the files, mm_Words_OpenFiles).
+    // Reads the script data at start-up with a synchronous file on the stack: WORDSCOM.BIN and WORDSTEN.BIN are read
+    // whole (Words commonData and typeData), WORDSEVE.BIN gives its block size and eventBlock a buffer of one block,
+    // and WORDS.BIN gives its block size and, with it, the eight entries of the block cache (each slot points at a word
+    // that points at a new WordsBlock, mm_WordsBlock_ctor).
     void Words_Init()
     {
         port::GuestFrame<0x50> frame;
         const GuestPtr<GameFile> file{frame.ptr().address + 0x48u};
+        const GuestPtr<Words> words = globals::words();
         File_ctor(file, 0);
         // A whole file into a new block: the block is kept in `holder` before it is read.
-        const auto readWhole = [&](uint32_t path, uint32_t holder) {
+        const auto readWhole = [&](uint32_t path, GuestPtr<void> &holder) {
             File_Open(file, GuestPtr<char>{path});
             const int size = File_Seek(file, 0, 2, 0);
             File_Seek(file, 0, 0, 0);
-            port::store<uint32_t>(holder, sdk::mw_NewArray(static_cast<uint32_t>(size)));
-            File_Read(file, static_cast<int>(port::load<uint32_t>(holder)), size, 1, 0);
+            holder = GuestPtr<void>{sdk::mw_NewArray(static_cast<uint32_t>(size))};
+            File_Read(file, static_cast<int>(holder.address), size, 1, 0);
             File_Close(file);
         };
         // WORDSCOM.BIN's six table offsets bind bank 1; WORDSTEN.BIN's eleven bind the remaps (typeBases to
         // stringRemap), then bank 2.
         const GuestPtr<uint32_t> bank1 = globals::wordsBank(1).as<uint32_t>(), bank2 = globals::wordsBank(2).as<uint32_t>();
         const GuestPtr<uint32_t> remaps = globals::wordsTables().field(&WordsTables::typeBases).as<uint32_t>();
-        readWhole(0x001BADD0u, 0x001BDE08u);
+        readWhole(0x001BADD0u, words->commonData);
         for (int32_t i = 0; i < 6; ++i)
         {
-            const uint32_t block = port::load<uint32_t>(0x001BDE08u);
+            const uint32_t block = words->commonData.address;
             bank1[i] = block + port::load<uint32_t>(block + 4u * static_cast<uint32_t>(i));
         }
-        readWhole(0x001BADF0u, 0x001BDE0Cu);
+        readWhole(0x001BADF0u, words->typeData);
         for (int32_t i = 0; i < 11; ++i)
         {
-            const uint32_t block = port::load<uint32_t>(0x001BDE0Cu);
+            const uint32_t block = words->typeData.address;
             (i < 5 ? remaps[i] : bank2[i - 5]) = block + port::load<uint32_t>(block + 4u * static_cast<uint32_t>(i));
         }
         File_Open(file, GuestPtr<char>{0x001BADB0u});
-        File_Read(file, 0x001BDDECu, 1, 4, 0);
+        File_Read(file, static_cast<int>(globals::wordsEventBlockSize.address), 1, 4, 0);
         File_Close(file);
-        port::store<uint32_t>(0x001BDE10u, sdk::mw_NewArray(port::load<uint32_t>(0x001BDDECu)));
+        words->eventBlock = GuestPtr<void>{sdk::mw_NewArray(static_cast<uint32_t>(globals::wordsEventBlockSize.get()))};
         File_Open(file, GuestPtr<char>{0x001BAD90u});
-        File_Read(file, 0x001BDDE8u, 1, 4, 0);
+        File_Read(file, static_cast<int>(globals::wordsBlockSize.address), 1, 4, 0);
         for (uint32_t i = 0; i < 8; ++i)
         {
             const uint32_t holder = sdk::operator_new(4u);
@@ -2400,28 +2401,27 @@ namespace mm
             {
                 uint32_t record = sdk::operator_new(8u);
                 if (record != 0u)
-                    record = static_cast<uint32_t>(Words_OpenFiles(static_cast<int>(record)));
+                    record = WordsBlock_ctor(GuestPtr<WordsBlock>{record}).address;
                 port::store<uint32_t>(holder, record);
             }
-            port::store<uint32_t>(0x00718190u + 4u * i, holder);
+            port::store<uint32_t>(globals::kWordsBlockCache + 4u * i, holder);
         }
         File_dtor(file, -1);
     }
 
     PORT_FN(Words_Init);
 
-    // The text of a choice in a script menu, by the menu's code. Below -2005 the code names a table: group g = (code + 6000) /
-    // 1000 and entry h = (code + 6000) % 1000 look the text up through the offset tables the script files were bound to at start-up
-    // (0x7181C8, 24 bytes a group: the entry offsets at +0, the choice offsets at +8, the text at +0xC; group 2 goes through the
-    // building type of the script's context first). The special codes: -2005 the index-th choice not marked in the used mask
-    // (0x1BDE18); -2004 the default choice text for index 0, otherwise the text of the city's event slot index - 1; -2003 the claim
-    // line of the index-th open want of the wants window; -2002 the name of the index-th bag item of category 0x10, 0x11 or 0x13
-    // (or the default when there are fewer); any other code gives goods number index (under 4) with its price right-aligned to 28
-    // characters in a buffer at 0x718240, or a fixed text from 4 on.
+    // The text of a choice in a script menu, by the menu's code. Below -2005 the code names a menu of a bank (bank
+    // (code + 6000) / 1000, menu (code + 6000) % 1000): the text is the menu's index-th string, from the first its
+    // choice range gives (bank 2's menus through the building type's remap). The special codes: -2005 the index-th
+    // entry still offered (globals::wordsHiddenChoices); -2004 the default choice text for index 0, otherwise the text
+    // of the city's event slot index - 1; -2003 the claim line of the index-th open want of the wants window; -2002 the
+    // name of the index-th bag item of category 0x10, 0x11 or 0x13 (or the default when there are fewer); any other
+    // code gives goods number index (under 4) with its price right-aligned to 28 characters in
+    // globals::kWordsGoodsText, or a fixed text from 4 on.
     GuestPtr<char> Words_GetChoiceText(int script, GuestPtr<CityScene> city, int code, int index)
     {
         (void)script;
-        constexpr uint32_t kWordsObject = 0x001BDDF0u;
         port::GuestFrame<0x50> frame;
         const uint32_t sp = frame.ptr().address;
         const GuestPtr<WordsBank> common = globals::wordsBank(1);
@@ -2448,11 +2448,11 @@ namespace mm
         }
         if (code == -0x7D5)
         {
-            const uint32_t used = port::load<uint8_t>(0x001BDE18u);
+            const uint32_t hidden = globals::wordsHiddenChoices.get();
             int bit = 0, seen = 0;
             for (;;)
             {
-                if ((used & (1u << bit)) != 0)
+                if ((hidden & (1u << bit)) != 0)
                 {
                     ++bit;
                     continue;
@@ -2505,7 +2505,7 @@ namespace mm
         }
         if (index >= 4)
             return GuestPtr<char>{0x001BAD68u};
-        const uint32_t goods = static_cast<uint32_t>(Words_GetGoods(GuestPtr<Words>{kWordsObject}, index));
+        const uint32_t goods = static_cast<uint32_t>(Words_GetGoods(globals::words(), index));
         sdk::strcpy(globals::kWordsGoodsText, globals::goodsSectionC.get() + GuestPtr<GoodsRecord>{goods}->name);
         const uint32_t length = static_cast<uint32_t>(sdk::strlen(globals::kWordsGoodsText));
         const int price = Goods_GetPrice(static_cast<int>(goods));
@@ -2519,45 +2519,44 @@ namespace mm
     // not 0) and the event queue holds the id at the same place as the kind, the script block of the default speaker is
     // read, the Words object is reset (family 0, member 0, argument 4), the output text cleared, and the event words
     // for the kind loaded. The first time the tables are bound: any read still running is waited for, bank 0's six
-    // tables (WordsTables, from the block's header offsets) and, with event words, bank 3's are set, the line table is
-    // picked as for a family (mm_Words_LoadForFamily) and the tables count as bound. The line (+3000) is then expanded
-    // into `out`.
+    // tables (WordsTables, from the block's header offsets) and, with event words, bank 3's are set, the script's words
+    // are picked as for a family (mm_Words_LoadForFamily) and the banks count as bound. The line (+3000) is then
+    // expanded into `out`.
     void Words_LoadForWants(GuestPtr<CityScene> city, int16_t id, int line, GuestPtr<char> out)
     {
-        constexpr uint32_t kReadResult = 0x001BD9F4u;
         const uint32_t kind = city->events->talks[0]->kind;
         if (kind == 0 || static_cast<int32_t>(kind) != EventMgr_FindType(city->events, id))
             return;
         const GuestPtr<uint32_t> block = Words_ReadBlock(0);
-        const GuestPtr<Words> words{kWordsObject};
+        const GuestPtr<Words> words = globals::words();
         Words_SetFamily(words, 0, 0, 4, city);
-        words->line = 0;
+        words->scriptPos = 0;
         words->column = 0;
         port::store<uint8_t>(out.address, 0);
         loadEventWords(kind);
         if (words->bound == 0)
         {
-            const uint32_t record = port::load<uint32_t>(block.address);
-            if (port::load<int32_t>(kReadResult) >= 0)
+            const GuestPtr<WordsBlock> entry{port::load<uint32_t>(block.address)};
+            if (globals::wordsPendingRead.get() >= 0)
             {
                 FileQueue_WaitAll(0);
-                port::store<int32_t>(kReadResult, -1);
+                globals::wordsPendingRead.set(-1);
             }
-            const uint32_t data = port::load<uint32_t>(record + 4u);
+            const uint32_t data = entry->data.address;
             const GuestPtr<uint32_t> bank0 = globals::wordsBank(0).as<uint32_t>(), bank3 = globals::wordsBank(3).as<uint32_t>();
             for (int32_t i = 0; i < 6; ++i)
                 bank0[i] = data + port::load<uint32_t>(data + 4u + 4u * static_cast<uint32_t>(i));
-            const bool extraLoaded = words->extraLoaded != 0;
-            const uint32_t extra = words->extraTable.address;
-            if (extraLoaded)
+            const bool eventLoaded = words->eventLoaded != 0;
+            const uint32_t event = words->eventBlock.address;
+            if (eventLoaded)
                 for (int32_t i = 0; i < 6; ++i)
-                    bank3[i] = extra + port::load<uint32_t>(extra + 8u + 4u * static_cast<uint32_t>(i));
-            words->lineTable = GuestPtr<void>{data + port::load<uint32_t>(data)};
-            if (extraLoaded)
+                    bank3[i] = event + port::load<uint32_t>(event + 8u + 4u * static_cast<uint32_t>(i));
+            words->scriptWords = GuestPtr<int16_t>{data + port::load<uint32_t>(data)};
+            if (eventLoaded)
             {
-                const int32_t entry = port::load<int16_t>(extra + port::load<uint32_t>(extra) + 2u * port::load<uint32_t>(record));
-                if (entry >= 0)
-                    words->lineTable = GuestPtr<void>{extra + port::load<uint32_t>(extra + 4u) + 2u * static_cast<uint32_t>(entry)};
+                const int32_t first = port::load<int16_t>(event + port::load<uint32_t>(event) + 2u * static_cast<uint32_t>(entry->number));
+                if (first >= 0)
+                    words->scriptWords = GuestPtr<int16_t>{event + port::load<uint32_t>(event + 4u) + 2u * static_cast<uint32_t>(first)};
             }
             words->bound = 1;
         }
@@ -2750,59 +2749,56 @@ namespace mm
 
     PORT_FN(WordsFn_PickClaimResident);
 
-    // One step of the WORDS script interpreter: reads the script's words from the current position (0x1BDE00) in the
-    // current block (0x1BDE14) until one gives a result other than -6009 ("go on") and returns it. The first call also
-    // waits for the file queue, binds the tables of the two script banks (WordsTables banks 0 and 3) to their data and
-    // picks the block of the script in the second bank. Words: below -9010 the context's argument is set (word +
-    // 10000); -9010 up to -8001 an action through its pointer, whose result says how many words to skip (from -8900 on
-    // the action is word + 8927; from -8960 the argument is the word's 26ths from -8960 and the action the remainder +
-    // 1; below that the argument is word + 9000 and the action 0); 5000 and up a line of text, added to the buffer
-    // after a separator unless it adds nothing (its result is returned at once when the stop flag at 0x1BDE04 is set);
-    // 0 to 4999 jump to that word; -6010 up to -1 that result; -6011 starts the script over; below that a condition
-    // call (word + 7000).
+    // One step of the WORDS script interpreter on a cached script block (`script` is its WordsBlock): reads the script's
+    // words from scriptPos on until one gives a result other than -6009 ("go on") and returns it. While the banks are not
+    // bound it first waits for a read still queued, binds bank 0 to the script block and, with event words, bank 3 to the
+    // event block (WordsTables, from the blocks' header offsets), and picks the script's words as mm_Words_LoadForWants
+    // does. Words: below -9010 the context's argument is set (word + 10000); -9010 up to -8001 an action through its
+    // pointer, whose result says how many words to skip (from -8900 on the action is word + 8927; from -8960 the argument
+    // is the word's 26ths from -8960 and the action the remainder + 1; below that the argument is word + 9000 and the
+    // action 0); 5000 and up a line of text, added to the buffer after a separator unless it adds nothing (its result is
+    // returned at once when the line was left part-way, Words column not 0); 0 to 4999 jump to that word; -6010 up to -1
+    // that result; -6011 starts the script over; below that a condition call (word + 7000).
     int16_t Words_StepImpl(GuestPtr<int32_t> script, GuestPtr<char> buffer)
     {
-        constexpr uint32_t kInitialised = 0x001BDDFCu, kWaited = 0x001BD9F4u, kBankFlag = 0x001BDDF8u, kBank2 = 0x001BDE10u,
-                           kCurrent = 0x001BDE14u, kPosition = 0x001BDE00u, kStopFlag = 0x001BDE04u, kWords = 0x001BDDF0u;
-        const uint32_t s = script.address;
-        const GuestPtr<Words> words{kWords};
-        if (port::load<int32_t>(kInitialised) == 0)
+        const GuestPtr<WordsBlock> entry{script.address};
+        const GuestPtr<Words> words = globals::words();
+        if (words->bound == 0)
         {
-            if (port::load<int32_t>(kWaited) >= 0)
+            if (globals::wordsPendingRead.get() >= 0)
             {
                 FileQueue_WaitAll(0);
-                port::store<int32_t>(kWaited, -1);
+                globals::wordsPendingRead.set(-1);
             }
-            const uint32_t base = port::load<uint32_t>(s + 4u);
-            const int32_t bank2 = port::load<int32_t>(kBankFlag);
+            const uint32_t data = entry->data.address;
+            const int32_t eventLoaded = words->eventLoaded;
             const GuestPtr<uint32_t> bank0 = globals::wordsBank(0).as<uint32_t>(), bank3 = globals::wordsBank(3).as<uint32_t>();
             for (int32_t i = 0; i < 6; ++i)
-                bank0[i] = base + port::load<uint32_t>(base + 4u + 4u * static_cast<uint32_t>(i));
-            if (bank2 != 0)
+                bank0[i] = data + port::load<uint32_t>(data + 4u + 4u * static_cast<uint32_t>(i));
+            if (eventLoaded != 0)
             {
-                const uint32_t second = port::load<uint32_t>(kBank2);
+                const uint32_t event = words->eventBlock.address;
                 for (int32_t i = 0; i < 6; ++i)
-                    bank3[i] = second + port::load<uint32_t>(second + 8u + 4u * static_cast<uint32_t>(i));
+                    bank3[i] = event + port::load<uint32_t>(event + 8u + 4u * static_cast<uint32_t>(i));
             }
-            const uint32_t again = port::load<uint32_t>(s + 4u);
-            port::store<uint32_t>(kCurrent, again + port::load<uint32_t>(again));
-            if (bank2 != 0)
+            words->scriptWords = GuestPtr<int16_t>{data + port::load<uint32_t>(data)};
+            if (eventLoaded != 0)
             {
-                const uint32_t second = port::load<uint32_t>(kBank2);
-                const int32_t entry = port::load<int16_t>(second + port::load<uint32_t>(second) + 2u * port::load<uint32_t>(s));
-                if (entry >= 0)
-                    port::store<uint32_t>(kCurrent, second + port::load<uint32_t>(second + 4u) + 2u * static_cast<uint32_t>(entry));
+                const uint32_t event = words->eventBlock.address;
+                const int32_t first = port::load<int16_t>(event + port::load<uint32_t>(event) + 2u * static_cast<uint32_t>(entry->number));
+                if (first >= 0)
+                    words->scriptWords = GuestPtr<int16_t>{event + port::load<uint32_t>(event + 4u) + 2u * static_cast<uint32_t>(first)};
             }
-            port::store<int32_t>(kInitialised, 1);
+            words->bound = 1;
         }
         port::store<uint8_t>(buffer.address, 0);
         int32_t result = -0x1779;
         for (;;)
         {
-            const int32_t token = port::load<int16_t>(port::load<uint32_t>(kCurrent) + 2u * port::load<uint16_t>(kPosition));
+            const int32_t token = words->scriptWords[words->scriptPos];
             const auto act = [&](int index) { return port::callGuest<int>(addr::Words_CallAct, words, index); };
             const auto skip = [&](int count) {
-                port::store<uint16_t>(kPosition, static_cast<uint16_t>(port::load<uint16_t>(kPosition) + (static_cast<uint32_t>(count) & 0xFFFFu)));
+                words->scriptPos = static_cast<uint16_t>(words->scriptPos + (static_cast<uint32_t>(count) & 0xFFFFu));
             };
             if (token < -0x2332)
                 Words_SetArg(words, static_cast<uint16_t>(token + 0x2710));
@@ -2834,28 +2830,29 @@ namespace mm
                 result = Words_ExpandLine(script, token - 0x1388, buffer);
                 if (separated && length + 1 == sdk::strlen(buffer.address))
                     port::store<uint8_t>(buffer.address + static_cast<uint32_t>(length), 0);
-                if (port::load<uint16_t>(kStopFlag) != 0)
+                if (words->column != 0)
                     return static_cast<int16_t>(result);
             }
             else if (token >= 0)
-                port::store<uint16_t>(kPosition, static_cast<uint16_t>(token - 1));
+                words->scriptPos = static_cast<uint16_t>(token - 1);
             else if (token >= -0x177A)
                 result = token;
             else if (token != -0x177B)
                 port::callGuest<int>(addr::Words_CallCond, words, token + 0x1B58);
             else
             {
-                const uint32_t base = port::load<uint32_t>(s + 4u);
-                port::store<uint32_t>(kCurrent, base + port::load<uint32_t>(base));
-                port::store<uint16_t>(kPosition, 0xFFFFu);
+                const uint32_t data = entry->data.address;
+                words->scriptWords = GuestPtr<int16_t>{data + port::load<uint32_t>(data)};
+                words->scriptPos = 0xFFFFu;
             }
-            port::store<uint16_t>(kPosition, static_cast<uint16_t>(port::load<uint16_t>(kPosition) + 1u));
+            words->scriptPos = static_cast<uint16_t>(words->scriptPos + 1u);
             if (result != -0x1779)
                 return static_cast<int16_t>(result);
         }
     }
 
-    // The same through the script's pointer (the object holds it in its first word).
+    // The same through the script's cache slot word (what mm_Words_LoadForPerson and mm_Words_LoadForFamily return),
+    // which points at its WordsBlock.
     int16_t Words_Step(GuestPtr<int32_t> script, GuestPtr<char> buffer)
     {
         return Words_StepImpl(GuestPtr<int32_t>{port::load<uint32_t>(script.address)}, buffer);
@@ -2903,9 +2900,9 @@ namespace mm
     PORT_FN(Words_CallText);
     PORT_FN(Words_CallAct);
 
-    // Expands one line of script text (`code` = bank * 1000 + line) into `out`, from the column the script has reached (0x1BDE04)
-    // until a word ends the step. `script` is not used. The words of a line, read from the bank's line codes (bank 2 through the
-    // building type's remap):
+    // Expands one line of script text (`code` = bank * 1000 + line) into `out`, from the column the script has reached
+    // (Words column) until a word ends the step. `script` is not used. The words of a line, read from the bank's line
+    // codes (bank 2 through the building type's remap):
     //   10000 and up   a string of the bank (bank = (word - 10000) / 1000), appended to the output like a spoken word
     //   5000 to 9999   an answer (bank = (word - 5000) / 1000): its selector picks which of the answer record's strings is added;
     //                  below -9000 a random one, otherwise the result of an action (the same ranges as below)
@@ -2922,8 +2919,7 @@ namespace mm
     // The result is the last word read.
     int16_t Words_ExpandLine(GuestPtr<int32_t>, int code, GuestPtr<char> out)
     {
-        constexpr uint32_t kWords = 0x001BDDF0u, kColumn = 0x001BDE04u;
-        const GuestPtr<Words> words{kWords};
+        const GuestPtr<Words> words = globals::words();
         const int bank = code / 1000, index = code % 1000;
         const auto word = [&](uint32_t column) {
             const uint32_t line = bank == 2 ? remapped(globals::wordsTables()->lineRemap, index, typeBase()->line)
@@ -2932,7 +2928,7 @@ namespace mm
         };
         const auto act = [&](int number) { return port::callGuest<int>(addr::Words_CallAct, words, number); };
         const auto getText = [&](int number) { return port::callGuest<uint32_t>(addr::Words_CallText, words, number); };
-        uint32_t column = port::load<uint16_t>(kColumn);
+        uint32_t column = words->column;
         int32_t token = word(column);
         while (token >= -6000 || token < -6009)
         {
@@ -3011,7 +3007,7 @@ namespace mm
             {
                 if (token >= -6010)
                 {
-                    port::store<uint16_t>(kColumn, static_cast<uint16_t>(column + 1u));
+                    words->column = static_cast<uint16_t>(column + 1u);
                     return static_cast<int16_t>(token);
                 }
                 port::callGuest<int>(addr::Words_CallCond, words, token + 7000);
@@ -3021,7 +3017,7 @@ namespace mm
             column += 1u;
             token = word(column);
         }
-        port::store<uint16_t>(kColumn, 0);
+        words->column = 0;
         return static_cast<int16_t>(token);
     }
 

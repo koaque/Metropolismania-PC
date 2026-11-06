@@ -58,6 +58,39 @@ namespace mm::packet
 
     inline void putFloats(Vec4 &field, float x, float y, float z, float w) { putFloats(addressOf(field), {x, y, z, w}); }
 
+    // The GS TEX0 register from its fields, each cut to its width. The game sets them one by one through a bitfield
+    // struct; together they cover all 64 bits, so the packed value is what those stores leave.
+    struct Tex0
+    {
+        uint32_t tbp0, tbw, psm, tw, th, tcc, tfx, cbp, cpsm, csm, csa, cld;
+    };
+
+    constexpr uint64_t packTex0(const Tex0 &t)
+    {
+        return (uint64_t{t.tbp0 & 0x3FFFu}) | (uint64_t{t.tbw & 0x3Fu} << 14) | (uint64_t{t.psm & 0x3Fu} << 20) |
+               (uint64_t{t.tw & 0xFu} << 26) | (uint64_t{t.th & 0xFu} << 30) | (uint64_t{t.tcc & 1u} << 34) |
+               (uint64_t{t.tfx & 3u} << 35) | (uint64_t{t.cbp & 0x3FFFu} << 37) | (uint64_t{t.cpsm & 0xFu} << 51) |
+               (uint64_t{t.csm & 1u} << 55) | (uint64_t{t.csa & 0x1Fu} << 56) | (uint64_t{t.cld & 7u} << 61);
+    }
+
+    // The pixel formats the game's textures use (TEX0 PSM).
+    inline constexpr uint32_t kPsmCt32 = 0x00u, kPsmT8 = 0x13u, kPsmT4 = 0x14u;
+
+    // GS register addresses, as A+D writes name them.
+    inline constexpr uint32_t kGsPrim = 0x00u, kGsRgbaq = 0x01u, kGsSt = 0x02u, kGsXyzf2 = 0x04u, kGsTex0_1 = 0x06u;
+
+    // One A+D write: the register's value (low word, high word), then its address.
+    inline void putAd(GsAdWrite &write, uint32_t low, uint32_t high, uint32_t reg)
+    {
+        putWords(write.value, {low, high});
+        putWords(write.reg, {reg, 0u});
+    }
+
+    inline void putAd(GsAdWrite &write, uint64_t value, uint32_t reg)
+    {
+        putAd(write, static_cast<uint32_t>(value), static_cast<uint32_t>(value >> 32), reg);
+    }
+
     // A CALL tag to `target` and, in the next quadword, an END tag (which the next call written over it replaces).
     inline void putCallThenEnd(uint32_t at, uint32_t target) { putWords(at, {kCall, target, 0u, 0u, kEnd, 0u, 0u, 0u}); }
 

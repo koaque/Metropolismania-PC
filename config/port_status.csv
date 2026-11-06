@@ -875,9 +875,9 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00136C80,mm_CityCursor_SetTarget,44,game,ui,verified,no,1,0,"the thing under the cursor: object or person index `target`, whether it is a person (`isPerson`), and its position (target, targetIsPerson, targetPos)"
 0x00136CB0,mm_Math_ProjectPoint,60,game,math,verified,no,1,0,projects a 3D point with the given matrices (VU0)
 0x00136CF0,mm_CityCursor_LayoutInfo,536,game,ui,verified,no,1,3,"places the info window next to the projected cursor point (GS units, 4 fraction bits): x kept within 0x7080..0x9140, the lines stacked upwards from 24 pixels above it, or from 12 pixels below it when they would run off the top (y 0x7A60 at least), and kept above y 0x8700 at the bottom"
-0x00136F10,mm_CityCursor_Draw,276,game,ui,verified,no,1,6,"the cursor's info window for this frame: its packet and info lines, then either the extra packet over a cleared Z (mode 4) or a dimmed screen with the fade frame (other non-zero modes)"
+0x00136F10,mm_CityCursor_Draw,276,game,ui,verified,no,1,6,"the cursor's info window for this frame: its packet and info lines, then either the opening sprite (CursorSprite) over a cleared Z (mode 4) or a dimmed screen with the fade frame (other non-zero modes)"
 0x00137030,mm_CityCursor_dtor,268,game,ui,verified,yes,1,4,"two views of 0xD0 bytes: the fade and info frames, then five lines each with the frame behind it"
-0x00137140,mm_CityCursor_ctor,1064,game,ui,verified,yes,1,7,"the city cursor: the base object, a model loaded (0x1B5EF0) and deleted again at once, the lines and the fade counters cleared, and for each of the two views (0xD0 bytes, one per frame parity) five text boxes (15 by 1, style -1, lines) with five frames (lineFrames, a 24 by 12 box) and the two frames of the fade (frame and fadeFrame), then the view's GS packet (extraPacket): the TEX0 style register in its fourth quadword (the sizes are log2 of 128 and 64 in its texture width and height fields) and the sprite, colour and coordinate words after it"
+0x00137140,mm_CityCursor_ctor,1064,game,ui,verified,yes,1,7,"the city cursor: the base object, a model loaded (0x1B5EF0) and deleted again at once, the lines and the fade counters cleared, and for each of the two views (one per frame parity) five text boxes with their frames, the info frame and the fade frame, then the view's opening sprite (CursorSprite: a 128 by 64 texture of 8-bit colours as an A+D packet)"
 0x00137570,mm_TileLists_LoadState,92,game,map,verified,no,1,1,"reads the tile lists from the save file: the items (0x7F00 bytes), then start and count (0xA0 bytes each)"
 0x001375D0,mm_TileLists_SaveState,92,game,map,verified,no,1,1,writes them
 0x00137630,mm_TileLists_Remove,204,game,map,verified,no,1,0,"removes item a1 from list a2 (shifts the rest down, fixes the starts); 1 if it was there"
@@ -2203,19 +2203,19 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001A0F90,mm_Words_GetEntryDefault,580,game,talk,verified,no,1,1,default text for a name entry question
 0x001A11E0,mm_Words_GetEntryMode,504,game,talk,verified,no,1,1,the answer mode of the current entry
 0x001A13E0,mm_Words_GetChoiceText,1036,game,talk,verified,yes,1,10,"text of menu choice a3 for code a2: goods with prices (""Don't buy""), claims, wants, events"
-0x001A17F0,mm_Words_ApplyChoice,504,game,talk,verified,yes,1,6,"stores menu choice a3 for code a2 (bag item, want, event, argument) and jumps"
+0x001A17F0,mm_Words_ApplyChoice,504,game,talk,verified,yes,1,6,"(script, city, code, choice) applies a menu choice: the script moves on by the entry's place (Words column, or scriptPos); also hides a -2005 entry, adds the event chosen, selects a bag item, or sets the want index or the argument"
 0x001A19F0,mm_Words_CountChoices,664,game,talk,verified,no,3,3,number of menu choices for code a2
 0x001A1CA0,mm_Words_AppendClipped,312,game,talk,verified,no,1,2,"appends a piece of text to a line being built, joined the way English wants it: a space between words, none after a line break, '(' or '<', or before a line break or punctuation ('.', '?', ',', ')', '>', an apostrophe). Two full stops make one, and a word ending in s takes ""'s"" as a bare ""'"""
 0x001A1DE0,mm_Words_ExpandLine,2044,game,talk,verified,no,2,7,"expands a script line: conditions pick branches, text getters fill in names, actions run"
-0x001A2620,mm_Words_StepImpl,888,game,talk,verified,yes,1,7,"binds the loaded tables on first use, then runs codes until the next message or end code"
+0x001A2620,mm_Words_StepImpl,888,game,talk,verified,yes,1,7,"(entry, buffer) binds banks 0 and 3 and picks the script's words when they are not bound, then runs the script's words until one gives a result (a line of text left part-way, an end code)"
 0x001A29B0,mm_Words_Step,8,game,talk,verified,yes,1,1,next message of the running script (to mm_Words_StepImpl)
 0x001A29C0,mm_Words_FriendshipChanged,8,game,talk,verified,no,1,1,the global context's friendshipChanged
 0x001A29D0,mm_Words_CancelAllowed,8,game,talk,verified,no,1,1,the global context's cancelAllowed
 0x001A29E0,mm_Words_LoadForWants,596,game,talk,verified,yes,1,7,"script for a wants window line (event or default), reads its block"
 0x001A2C40,mm_Words_LoadForFamily,424,game,talk,ported,yes,1,6,"script for family a1 member a2 (talk by phone), reads its block"
 0x001A2DF0,mm_Words_LoadForPerson,604,game,talk,verified,yes,1,7,"script for person a1 (may start an event), reads its block"
-0x001A3050,mm_Words_ReadBlock,336,game,talk,verified,yes,3,3,reads a script block from the open WORDS file into the buffer
-0x001A31A0,mm_Words_OpenFiles,172,game,talk,verified,yes,1,5,opens DATA\BIN\WORDS.BIN and WORDSEVE.BIN for streaming
+0x001A3050,mm_Words_ReadBlock,336,game,talk,verified,yes,3,3,"(block) finds a script block in the cache of eight (most recently used first), reading it from WORDS.BIN into the last entry when it is not there; returns the first slot's word"
+0x001A31A0,mm_WordsBlock_ctor,172,game,talk,verified,yes,1,5,"(entry) a script block cache entry (WordsBlock): block 0 and a buffer of one block; the first one made opens WORDS.BIN and WORDSEVE.BIN, and each is counted"
 0x001A3250,mm_Words_Init,744,game,talk,verified,yes,1,9,"loads the WORDS, WORDSEVE, WORDSCOM and WORDSTEN tables at game start"
 0x001A3538,GetRomName,156,sdk,,verified,yes,1,4,
 0x001A35D8,IsT10K,64,sdk,,verified,yes,7,1,
