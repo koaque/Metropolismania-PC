@@ -28,6 +28,10 @@ typedef struct TalkFarView TalkFarView;
 typedef struct TalkPose TalkPose;
 typedef struct WordsCtx WordsCtx;
 typedef struct Words Words;
+typedef struct WordsAnswer WordsAnswer;
+typedef struct WordsBank WordsBank;
+typedef struct WordsTypeBase WordsTypeBase;
+typedef struct WordsTables WordsTables;
 typedef struct Stamina Stamina;
 typedef struct MemberStatus MemberStatus;
 typedef struct SeRequest SeRequest;
@@ -590,6 +594,42 @@ struct Words {
     uint8_t unk_16[0xA];
     void *extraTable;          /* +0x20 */
     void *lineTable;           /* +0x24 */
+};
+
+/* A WORDS answer record (4 bytes): how its string is picked, then its first string (the next record's first ends its
+   strings). */
+struct WordsAnswer {
+    int16_t mode;              /* +0x00 below -9000 a string at random; -8900 and up action mode + 8927 picks it; from -8960
+                                  the argument (mode + 8960) / 26 and action the remainder + 1; else the argument mode + 9000
+                                  and action 0 (mm_Words_ExpandLine); also the entry's answer mode (mm_Words_GetEntryMode) */
+    uint16_t first;            /* +0x02 */
+};
+/* A WORDS text bank (0x18 bytes): six tables, bound from a words block's header offsets. */
+struct WordsBank {
+    uint16_t *lineOffsets;     /* +0x00 per line: its first code in lineCodes */
+    int16_t *lineCodes;        /* +0x04 a line's codes, one per column */
+    uint16_t *choiceRanges;    /* +0x08 per choice code: its first string (the next one's first ends it) */
+    WordsAnswer *answers;      /* +0x0C */
+    uint16_t *stringOffsets;   /* +0x10 per string: its offset in strings */
+    char *strings;             /* +0x14 */
+};
+/* A building type's first entry in each of the remaps of bank 2 (8 bytes). */
+struct WordsTypeBase {
+    uint16_t line;             /* +0x00 */
+    uint16_t choice;           /* +0x02 */
+    uint16_t answer;           /* +0x04 */
+    uint16_t string;           /* +0x06 */
+};
+/* The WORDS tables at 0x7181C0 (0x74 bytes): the four banks (0 the script's own block, 1 WORDSCOM.BIN,
+   2 WORDSTEN.BIN for the building type of the talk, 3 the event words of WORDSEVE.BIN), then bank 2's remaps, indexed
+   from the type's base: its lines, choices and answers by entry, its strings by number (an offset into bank 2's strings). */
+struct WordsTables {
+    WordsBank banks[4];        /* +0x00 */
+    WordsTypeBase *typeBases;  /* +0x60 by building type */
+    uint16_t *lineRemap;       /* +0x64 */
+    uint16_t *choiceRemap;     /* +0x68 */
+    uint16_t *answerRemap;     /* +0x6C */
+    uint16_t *stringRemap;     /* +0x70 */
 };
 
 /* The claim meter limits at the start of the claim data (gp 0x1BDA50). */

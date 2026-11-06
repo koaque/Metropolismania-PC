@@ -338,7 +338,7 @@ namespace mm
         const int size = btype->size;
         if (x < 0 || z < 0 || x + size >= 0x80 || z + size >= 0x80)
             return 0;
-        if (map->objectCount >= 0x3F80)
+        if (map->objectCount >= kObjectSlots)
             return 0;
         if (Placement_CheckTypeRule(map, static_cast<int>(type), tile) != 0)
             return 2;
@@ -885,7 +885,7 @@ namespace mm
             box[2] += 2;
         if (box[3] < 0x7F)
             box[3] += 2;
-        return cells < (0x3F80 - map->objectCount) + objects;
+        return cells < (kObjectSlots - map->objectCount) + objects;
     }
 
     // Placement rule (the type's rule) for stacking: the tile's top object must be built (0x20), not
@@ -1650,7 +1650,7 @@ namespace mm
         sdk::sceVu0MulMatrix(projectionWide.address, projectionWide.address, view.address);
         // The view's rotation, inverted, turns the offset to where the camera looks from.
         std::memcpy(inverse.get(), view.get(), 3 * sizeof(Vec4));
-        store(GuestPtr<Vec4>{inverse.address + 0x30u}, vf(0));
+        store(inverse + 3, vf(0));
         sdk::sceVu0InversMatrix(inverse.address, inverse.address);
         applyMatrix(inverse, offset, offset);
         offset->x = ps2f(offset->x) + ps2f(camera->x);
@@ -1676,13 +1676,13 @@ namespace mm
         map->sideVertices = 0;
         map->sideWrite = map->sideBuffers[parity];
         vf(1) = load(projection);
-        vf(2) = load(GuestPtr<Vec4>{projection.address + 0x10u});
-        vf(3) = load(GuestPtr<Vec4>{projection.address + 0x20u});
-        vf(4) = load(GuestPtr<Vec4>{projection.address + 0x30u});
+        vf(2) = load(projection + 1);
+        vf(3) = load(projection + 2);
+        vf(4) = load(projection + 3);
         vf(5) = load(projectionWide);
-        vf(6) = load(GuestPtr<Vec4>{projectionWide.address + 0x10u});
-        vf(7) = load(GuestPtr<Vec4>{projectionWide.address + 0x20u});
-        vf(8) = load(GuestPtr<Vec4>{projectionWide.address + 0x30u});
+        vf(6) = load(projectionWide + 1);
+        vf(7) = load(projectionWide + 2);
+        vf(8) = load(projectionWide + 3);
         vf(9) = load(camera);
         here->z = half + (fromInt(0x80 - top) - mapHalf);
         here->w = one;
@@ -1892,7 +1892,7 @@ namespace mm
     {
         SaveFile_Write(mc, static_cast<int>(map->packedTiles.address), 0x18000);
         SaveFile_Write(mc, static_cast<int>(addressOf(map->nextId)), 0x20); // nextId .. newBuildings, refreshDelay
-        SaveFile_Write(mc, static_cast<int>(map->objects.address), 0x6F200);
+        SaveFile_Write(mc, static_cast<int>(map->objects.address), static_cast<int>(kObjectTableBytes));
         TileLists_SaveState(map->tileLists, mc);
         SaveFile_Write(mc, static_cast<int>(map->people.address), 0x46500);
         SaveFile_Write(mc, static_cast<int>(addressOf(map->freePerson)), 0xC); // freePerson, peopleInUse, population

@@ -12,6 +12,11 @@ namespace mm
     // Index sentinels: no person (MapPerson), no object (MapObject; also "outside" and "none" in object fields).
     inline constexpr uint16_t kNoPerson = 6000;
     inline constexpr uint16_t kNoObject = 0x3F80;
+    // The object table (CityMap.objects): its records, kNoObject being one past them, and its size in bytes (saved
+    // whole).
+    inline constexpr int32_t kObjectSlots = 0x3F80;
+    inline constexpr uint32_t kObjectTableBytes = 0x6F200u;
+    static_assert(kObjectTableBytes == kObjectSlots * sizeof(MapObject));
 }
 
 namespace mm::globals
@@ -216,6 +221,13 @@ namespace mm::globals
     // "Forest Hills", "Rhinecliff" ... there), then the mayor's name at +0x10.
     inline constexpr uint32_t kStageState = 0x001C5380u;
     inline GuestPtr<StageState> stageState() { return GuestPtr<StageState>{kStageState}; }
+
+    // words: the text banks and bank 2's remaps (WordsTables), bound as the words files and script blocks load; then the
+    // buffer a goods choice's name and price are written to (0x1C bytes).
+    inline constexpr uint32_t kWordsTables = 0x007181C0u;
+    inline GuestPtr<WordsTables> wordsTables() { return GuestPtr<WordsTables>{kWordsTables}; }
+    inline GuestPtr<WordsBank> wordsBank(int32_t bank) { return GuestPtr<WordsBank>{kWordsTables} + bank; }
+    inline constexpr uint32_t kWordsGoodsText = 0x00718240u;
 
     // bag: the slots of each bag size (bytes 0, 4, 10, 20 for sizes 0 to 3).
     inline constexpr uint32_t kBagSlotsBySize = 0x001B5B08u;

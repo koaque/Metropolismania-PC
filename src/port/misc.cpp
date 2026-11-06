@@ -1288,7 +1288,7 @@ namespace mm
             return;
         const int clock = city->clock;
         const bool night = clock >= 61200 || clock < 14400;
-        port::store<int32_t>(colour.address + 0xCu, night && person->target != kNoPerson ? 12 : 0);
+        port::store<int32_t>(colour.field(&Vec4::w).address, night && person->target != kNoPerson ? 12 : 0); // colour table entry
         const int homeType = Map_GetRecord(city->map, person->home)->type;
         const int node = homeType == 0xAF ? 7 : homeType == 0xB1 ? 8 : person->index % 7;
         const GuestPtr<A3DObject> model{cls->parts[0].address};

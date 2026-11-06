@@ -152,7 +152,7 @@ namespace mm
             vf(5) = load(GuestPtr<Vec4>::of(laptop->centre));
             set(vf(4), add(vf(4), vf(5)), XYZW);
             store(place, vf(4));
-            const GuestPtr<Vec4> entry{laptop.address + 0x50u + 0x40u * static_cast<uint32_t>(i)};
+            const GuestPtr<Vec4> entry = laptop.field(&Laptop::entryMatrices) + 4 * i;
             Mat4_Copy(entry, identity);
             entry[3] = *place;
             Mat4_MulVu0(entry, entry, scale);
@@ -886,7 +886,7 @@ namespace mm
             return;
         port::GuestLocal<Vec4> colour;
         *colour = *GuestPtr<Vec4>{globals::kDefaultColour};
-        const auto drawLit = [&] { port::store<int32_t>(colour.ptr().address + 0xCu, 12); };
+        const auto drawLit = [&] { port::store<int32_t>(colour.ptr().field(&Vec4::w).address, 12); }; // colour table entry 12
         obj->flags &= 0xFFEFu;
         const int mesh = obj->roadMesh;
         const int lamps = btype.as<RoadType>()->lampMesh;
@@ -1171,7 +1171,7 @@ namespace mm
         }
 
         // A lit instance: colour w word 12.
-        void setLit(GuestPtr<Vec4> colour) { port::store<int32_t>(colour.address + 0xCu, 12); }
+        void setLit(GuestPtr<Vec4> colour) { port::store<int32_t>(colour.field(&Vec4::w).address, 12); } // colour table entry 12
 
         // Business hours lighting: unlit 4:00..16:59 and while closed, by the object's shifted clock.
         bool litAfterDark(int time, int open, int close)
@@ -2246,7 +2246,7 @@ namespace mm
         *colour = *GuestPtr<Vec4>{globals::kDefaultColour};
         const int time = Clock_AddWrap(static_cast<int>(btype.address), city->clock, obj->id);
         if (time >= 0xEF10 || time < 0x3840)
-            port::store<int32_t>(colour.ptr().address + 0xCu, 12);
+            port::store<int32_t>(colour.ptr().field(&Vec4::w).address, 12); // colour table entry 12: lit
         Instance_DrawMesh(globals::propsModel.get(), matrix, colour, obj->goodsMesh, flags);
     }
 
@@ -2309,7 +2309,7 @@ namespace mm
         set(vf(9), sub(vf(10), vf(9)), XYZW);
         set(vf(9), add(vf(9), lane(vf(0), 3)), XYZW);
         store(colour, vf(9));
-        port::store<int32_t>(colour.address + 0xCu, 12);
+        port::store<int32_t>(colour.field(&Vec4::w).address, 12); // colour table entry 12: lit
     }
 
     PORT_FN(BldgType_OccupantMatrix);
@@ -3256,9 +3256,9 @@ namespace mm
         const ps2f current = field->growingHeight[stage];
         port::store<float>(base + 0xA4u, static_cast<float>(progress * following + (ps2f(1.0f) - progress) * current));
         for (int row = 0; row < 4; ++row)
-            vf(1 + row) = load(GuestPtr<Vec4>{matrix.address + 0x10u * static_cast<uint32_t>(row)});
+            vf(1 + row) = load(matrix + row);
         for (int row = 0; row < 4; ++row)
-            vf(5 + row) = load(GuestPtr<Vec4>{scale.address + 0x10u * static_cast<uint32_t>(row)});
+            vf(5 + row) = load(scale + row);
         for (int row = 0; row < 3; ++row)
         {
             set(acc(), mul(vf(5), lane(vf(1 + row), 0)), XYZW);
@@ -3267,7 +3267,7 @@ namespace mm
             set(vf(9 + row), add(acc(), mul(vf(8), lane(vf(1 + row), 3))), XYZW);
         }
         for (int row = 0; row < 4; ++row)
-            store(GuestPtr<Vec4>{scale.address + 0x10u * static_cast<uint32_t>(row)}, vf(9 + row));
+            store(scale + row, vf(9 + row));
         scale[3] = matrix[3];
         Instance_DrawMesh(globals::fieldModel.get(), scale, GuestPtr<Vec4>{globals::kDefaultColour}, field->growingMesh[stage], flags);
     }

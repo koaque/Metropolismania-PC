@@ -515,12 +515,12 @@ namespace mm
     // Texture colours (RGBA bytes): the palette, or every pixel of an image without one.
     namespace
     {
-        uint32_t texColourCount(GuestPtr<uint8_t> image)
+        uint32_t texColourCount(GuestPtr<TexFileHeader> image)
         {
-            const uint16_t paletteSize = port::load<uint16_t>(image.address + 4u);
+            const uint16_t paletteSize = image->paletteSize;
             if (paletteSize != 0)
                 return paletteSize;
-            return static_cast<uint32_t>(port::load<uint16_t>(image.address + 0x10u)) * port::load<uint16_t>(image.address + 0x12u);
+            return static_cast<uint32_t>(image->tileWidth) * image->tileHeight;
         }
     }
 
@@ -528,7 +528,7 @@ namespace mm
     void TexSprite_SetAlpha(GuestPtr<TexSprite> sprite, uint8_t alpha, int keepClear)
     {
         const GuestPtr<uint8_t> image{sprite->image.address};
-        const uint32_t count = texColourCount(image);
+        const uint32_t count = texColourCount(sprite->image);
         GuestPtr<uint8_t> colour = image + 0x20;
         for (uint32_t i = 0; i < count; ++i, colour = colour + 4)
             if (keepClear == 0 || colour[3] != 0)
@@ -540,7 +540,7 @@ namespace mm
     void TexSprite_GreenToAlpha(GuestPtr<TexSprite> sprite)
     {
         const GuestPtr<uint8_t> image{sprite->image.address};
-        const uint32_t count = texColourCount(image);
+        const uint32_t count = texColourCount(sprite->image);
         GuestPtr<uint8_t> colour = image + 0x20;
         for (uint32_t i = 0; i < count; ++i, colour = colour + 4)
             if (colour[0] == colour[2] && colour[0] != colour[1] && colour[3] != 0)
@@ -1693,7 +1693,7 @@ namespace mm
     {
         *x = frame->cornerA & 0xFFFFu;
         *y = static_cast<uint32_t>(static_cast<int32_t>(frame->cornerA) >> 16) & 0xFFFFu;
-        *width = port::load<uint16_t>(frame.address + 0x80u);
+        *width = frame->cornerB & 0xFFFFu;
         *height = static_cast<uint32_t>(static_cast<int32_t>(frame->cornerB) >> 16) & 0xFFFFu;
         *y = *y - 0x8000u;
         *height = *height - 0x8000u;
@@ -3591,13 +3591,12 @@ namespace mm
     // ---- Drawing the laptop and the phone call icon (plan P6 batch 2) ----
 
     // Draws the laptop: the fade and depth clear, its title text, and for each entry (count at 0x1BDAB8) the model node (list at
-    // 0x1F36F0) with that entry's matrix rows (laptop +0x50 and 0x40 apiece) copied into the node's mesh first; the selected
+    // 0x1F36F0) with that entry's matrix (entryMatrices) copied into the node's draw slot first; the selected
     // entry (while the laptop is in state 2) is lit with the colour at 0x1AF690 (alpha 12), the others with the one at 0x1AF6A0.
     void Laptop_Draw(GuestPtr<Laptop> laptop)
     {
         port::GuestFrame<0x90> frame;
         const uint32_t sp = frame.ptr().address;
-        const uint32_t l = laptop.address;
         DmaList_QueueFade(0x50, 0);
         DmaList_QueueClearZ();
         if (laptop->text.address != 0u)
@@ -3607,10 +3606,10 @@ namespace mm
         {
             const uint32_t model = laptop->model.address;
             const int32_t nodeIndex = port::load<int32_t>(node);
-            const uint32_t mesh = port::load<uint32_t>(port::load<uint32_t>(model) + 8u) + 0xC0u * static_cast<uint32_t>(nodeIndex);
-            const uint32_t rows = l + 0x40u * static_cast<uint32_t>(i);
-            for (uint32_t row = 0; row < 4u; ++row)
-                *GuestPtr<Vec4>{mesh + 0x70u + 0x10u * row} = *GuestPtr<Vec4>{rows + 0x50u + 0x10u * row};
+            const GuestPtr<A3DNode> target = laptop->model->model->nodes + nodeIndex;
+            const GuestPtr<Vec4> rows = laptop.field(&Laptop::entryMatrices) + 4 * i;
+            for (int32_t row = 0; row < 4; ++row)
+                target->slot.matrix[row] = rows[row];
             A3DObject_DrawNode(GuestPtr<A3DObject>{model}, nodeIndex);
             if (laptop->state == 2 && i == laptop->selected)
             {
@@ -3834,12 +3833,12 @@ namespace mm
         }
 
         // The caption's text box (caption), style -1; none when the allocation fails.
-        GuestPtr<TextBox> makeCaptionBox(uint32_t scene, int columns, int rows)
+        GuestPtr<TextBox> makeCaptionBox(GuestPtr<StageScene> scene, int columns, int rows)
         {
             uint32_t box = sdk::operator_new(0x40u);
             if (box != 0u)
                 box = TextBox_Init(GuestPtr<TextBox>{box}, columns, rows, -1).address;
-            port::store<uint32_t>(scene + 0x18u, box);
+            scene->caption = GuestPtr<TextBox>{box};
             return GuestPtr<TextBox>{box};
         }
 
@@ -3860,7 +3859,7 @@ namespace mm
         {
             const uint32_t number = frame.ptr().address + 0x2Cu;
             Text_FormatPadded(GuestPtr<char>{number}, scene->stage, 3);
-            makeCaptionBox(s, 0xD, 1);
+            makeCaptionBox(scene, 0xD, 1);
             TextBox_SetCharSize(scene->caption, 0x120, 0xD0, 0x150, 0x140);
             TextBox_SetPos(scene->caption, 0x7880, 0x7F40, -0x100000);
             TextBox_SetText(scene->caption, GuestPtr<char>{0x001B7210u}, 0);
@@ -3878,7 +3877,7 @@ namespace mm
         if (scene->phase == 0)
         {
             const uint32_t name = frame.ptr().address + 0x20u;
-            makeCaptionBox(s, 0xD, 2);
+            makeCaptionBox(scene, 0xD, 2);
             TextBox_SetCharSize(scene->caption, 0x120, 0xD0, 0x150, 0x140);
             TextBox_SetPos(scene->caption, 0x7880, 0x7F40, -0x100000);
             sdk::strcpy(name, globals::kLoadedSaveInfo);
@@ -3922,7 +3921,7 @@ namespace mm
         }
         else if (current == 0)
         {
-            makeCaptionBox(s, 0xD, 6);
+            makeCaptionBox(scene, 0xD, 6);
             TextBox_SetCharSize(text(), 0, 0xD0, 0, 0x140);
             TextBox_SetPos(text(), 0x7600, 0x7C20, -0x100000);
             TextBox_SetText(text(), GuestPtr<char>{0x001B7220u}, 0);
@@ -3979,7 +3978,7 @@ namespace mm
             sdk::strcat(0x001F3750u, 0x001B7308u);
             sdk::strcat(0x001F3770u, 0x001B7310u);
             SoundCmd_MidiOpen(7, 0x001F3730, 0x001F3750, 0x001F3770, 0);
-            makeCaptionBox(s, 0x11, 0x14);
+            makeCaptionBox(scene, 0x11, 0x14);
             TextBox_SetCharSize(text(), 0, 0xD0, 0, 0x140);
             if (kind != 2)
                 TextBox_SetText(text(), GuestPtr<char>{port::load<uint32_t>(0x001B0800u + 4u * kind)}, 0);
@@ -4591,7 +4590,7 @@ namespace mm
         scene->codeStep = 0;
         scene->hintText = GuestPtr<TextBox>{newTextBox(0x1E, 0xF, -1)};
         TextBox_SetPos(scene->hintText, 0x74C0, 0x7AE0, -0x100000);
-        port::store<uint8_t>(s + 0xAEu, 0x3C);
+        scene->unk_AE = 0x3C;
         scene->previewModel = GuestPtr<A3DObject>{0u};
         return scene;
     }

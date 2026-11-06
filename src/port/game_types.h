@@ -543,7 +543,9 @@ struct TitleScene {
     uint8_t unk_71[3];
     int32_t testPage;          /* +0x74 the sound test's page: 0 effects, 1 music, 100 and up its opening and closing */
     int32_t bankLoading;       /* +0x78 a song's bank is loading */
-    uint8_t unk_7C[0x34];
+    uint8_t unk_7C[0x32];
+    uint8_t unk_AE;            /* +0xAE 0x3C from mm_TitleScene_ctor (as the note); nothing reads it */
+    uint8_t unk_AF;
     GuestPtr<ListMenu> loadMenu;        /* +0xB0 layer set 0x28/0x29 */
     GuestPtr<McManager> mc;             /* +0xB4 */
     GuestPtr<TextBox> hintText;         /* +0xB8 */
@@ -1036,7 +1038,9 @@ struct Laptop {
     int32_t turnDir;           /* +0x40 0 turns one way, 1 the other (mm_Laptop_Update) */
     GuestPtr<TextBox> text;             /* +0x44 the selected entry's text (mm_Laptop_SetItemText) */
     int32_t cancelled;         /* +0x48 closed with Triangle; with Cross the entry runs */
-    uint8_t unk_4C[0x384];
+    uint8_t unk_4C[4];
+    Vec4 entryMatrices[56];    /* +0x50 four rows per entry, 14 entries: turned, scaled and placed (mm_Laptop_Animate), copied
+                                  into the entry's node to draw it (mm_Laptop_Draw) */
     int32_t selected;          /* +0x3D0 the selected entry */
     uint8_t unk_3D4[0xC];
 };
@@ -1408,6 +1412,10 @@ struct TalkFarView;
 struct TalkPose;
 struct WordsCtx;
 struct Words;
+struct WordsAnswer;
+struct WordsBank;
+struct WordsTypeBase;
+struct WordsTables;
 struct Stamina;
 struct MemberStatus;
 struct SeRequest;
@@ -1970,6 +1978,42 @@ struct Words {
     uint8_t unk_16[0xA];
     GuestPtr<void> extraTable;          /* +0x20 */
     GuestPtr<void> lineTable;           /* +0x24 */
+};
+
+/* A WORDS answer record (4 bytes): how its string is picked, then its first string (the next record's first ends its
+   strings). */
+struct WordsAnswer {
+    int16_t mode;              /* +0x00 below -9000 a string at random; -8900 and up action mode + 8927 picks it; from -8960
+                                  the argument (mode + 8960) / 26 and action the remainder + 1; else the argument mode + 9000
+                                  and action 0 (mm_Words_ExpandLine); also the entry's answer mode (mm_Words_GetEntryMode) */
+    uint16_t first;            /* +0x02 */
+};
+/* A WORDS text bank (0x18 bytes): six tables, bound from a words block's header offsets. */
+struct WordsBank {
+    GuestPtr<uint16_t> lineOffsets;     /* +0x00 per line: its first code in lineCodes */
+    GuestPtr<int16_t> lineCodes;        /* +0x04 a line's codes, one per column */
+    GuestPtr<uint16_t> choiceRanges;    /* +0x08 per choice code: its first string (the next one's first ends it) */
+    GuestPtr<WordsAnswer> answers;      /* +0x0C */
+    GuestPtr<uint16_t> stringOffsets;   /* +0x10 per string: its offset in strings */
+    GuestPtr<char> strings;             /* +0x14 */
+};
+/* A building type's first entry in each of the remaps of bank 2 (8 bytes). */
+struct WordsTypeBase {
+    uint16_t line;             /* +0x00 */
+    uint16_t choice;           /* +0x02 */
+    uint16_t answer;           /* +0x04 */
+    uint16_t string;           /* +0x06 */
+};
+/* The WORDS tables at 0x7181C0 (0x74 bytes): the four banks (0 the script's own block, 1 WORDSCOM.BIN,
+   2 WORDSTEN.BIN for the building type of the talk, 3 the event words of WORDSEVE.BIN), then bank 2's remaps, indexed
+   from the type's base: its lines, choices and answers by entry, its strings by number (an offset into bank 2's strings). */
+struct WordsTables {
+    WordsBank banks[4];        /* +0x00 */
+    GuestPtr<WordsTypeBase> typeBases;  /* +0x60 by building type */
+    GuestPtr<uint16_t> lineRemap;       /* +0x64 */
+    GuestPtr<uint16_t> choiceRemap;     /* +0x68 */
+    GuestPtr<uint16_t> answerRemap;     /* +0x6C */
+    GuestPtr<uint16_t> stringRemap;     /* +0x70 */
 };
 
 /* The claim meter limits at the start of the claim data (gp 0x1BDA50). */
@@ -2625,6 +2669,7 @@ static_assert(offsetof(TitleScene, playingSong) == 0x6C, "TitleScene.playingSong
 static_assert(offsetof(TitleScene, codeStep) == 0x70, "TitleScene.codeStep");
 static_assert(offsetof(TitleScene, testPage) == 0x74, "TitleScene.testPage");
 static_assert(offsetof(TitleScene, bankLoading) == 0x78, "TitleScene.bankLoading");
+static_assert(offsetof(TitleScene, unk_AE) == 0xAE, "TitleScene.unk_AE");
 static_assert(offsetof(TitleScene, loadMenu) == 0xB0, "TitleScene.loadMenu");
 static_assert(offsetof(TitleScene, mc) == 0xB4, "TitleScene.mc");
 static_assert(offsetof(TitleScene, hintText) == 0xB8, "TitleScene.hintText");
@@ -2940,6 +2985,7 @@ static_assert(offsetof(Laptop, state) == 0x3C, "Laptop.state");
 static_assert(offsetof(Laptop, turnDir) == 0x40, "Laptop.turnDir");
 static_assert(offsetof(Laptop, text) == 0x44, "Laptop.text");
 static_assert(offsetof(Laptop, cancelled) == 0x48, "Laptop.cancelled");
+static_assert(offsetof(Laptop, entryMatrices) == 0x50, "Laptop.entryMatrices");
 static_assert(offsetof(Laptop, selected) == 0x3D0, "Laptop.selected");
 static_assert(sizeof(Player) == 0x90, "Player size");
 static_assert(offsetof(Player, mode) == 0x00, "Player.mode");
@@ -3494,6 +3540,25 @@ static_assert(offsetof(Words, line) == 0x10, "Words.line");
 static_assert(offsetof(Words, column) == 0x14, "Words.column");
 static_assert(offsetof(Words, extraTable) == 0x20, "Words.extraTable");
 static_assert(offsetof(Words, lineTable) == 0x24, "Words.lineTable");
+static_assert(offsetof(WordsAnswer, mode) == 0x00, "WordsAnswer.mode");
+static_assert(offsetof(WordsAnswer, first) == 0x02, "WordsAnswer.first");
+static_assert(sizeof(WordsBank) == 0x18, "WordsBank size");
+static_assert(offsetof(WordsBank, lineOffsets) == 0x00, "WordsBank.lineOffsets");
+static_assert(offsetof(WordsBank, lineCodes) == 0x04, "WordsBank.lineCodes");
+static_assert(offsetof(WordsBank, choiceRanges) == 0x08, "WordsBank.choiceRanges");
+static_assert(offsetof(WordsBank, answers) == 0x0C, "WordsBank.answers");
+static_assert(offsetof(WordsBank, stringOffsets) == 0x10, "WordsBank.stringOffsets");
+static_assert(offsetof(WordsBank, strings) == 0x14, "WordsBank.strings");
+static_assert(offsetof(WordsTypeBase, line) == 0x00, "WordsTypeBase.line");
+static_assert(offsetof(WordsTypeBase, choice) == 0x02, "WordsTypeBase.choice");
+static_assert(offsetof(WordsTypeBase, answer) == 0x04, "WordsTypeBase.answer");
+static_assert(offsetof(WordsTypeBase, string) == 0x06, "WordsTypeBase.string");
+static_assert(offsetof(WordsTables, banks) == 0x00, "WordsTables.banks");
+static_assert(offsetof(WordsTables, typeBases) == 0x60, "WordsTables.typeBases");
+static_assert(offsetof(WordsTables, lineRemap) == 0x64, "WordsTables.lineRemap");
+static_assert(offsetof(WordsTables, choiceRemap) == 0x68, "WordsTables.choiceRemap");
+static_assert(offsetof(WordsTables, answerRemap) == 0x6C, "WordsTables.answerRemap");
+static_assert(offsetof(WordsTables, stringRemap) == 0x70, "WordsTables.stringRemap");
 static_assert(offsetof(ClaimThresholds, low) == 0x00, "ClaimThresholds.low");
 static_assert(offsetof(ClaimThresholds, high) == 0x02, "ClaimThresholds.high");
 static_assert(offsetof(ClaimThresholds, step) == 0x04, "ClaimThresholds.step");

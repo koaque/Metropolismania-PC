@@ -955,7 +955,7 @@ namespace mm
                 else
                     storeF(out + 4u * lane, ps2f(1.0f) + ps2f(0.5f) * (value - ps2f(1.0f)));
             }
-            port::store<int32_t>(out + 0xCu, 12);
+            port::store<int32_t>(GuestPtr<Vec4>{out}.field(&Vec4::w).address, 12); // colour table entry 12: lit
         };
         const auto model = [&]() { return applicants->frameModel; };
         const auto lightAll = [&](uint32_t colour) {
@@ -1052,7 +1052,7 @@ namespace mm
                 else
                     storeF(out + 4u * lane, ps2f(1.0f) + ps2f(0.5f) * (value - ps2f(1.0f)));
             }
-            port::store<int32_t>(out + 0xCu, 12);
+            port::store<int32_t>(GuestPtr<Vec4>{out}.field(&Vec4::w).address, 12); // colour table entry 12: lit
         };
         const uint8_t mode = applicants->enabled;
         if (mode == 0)

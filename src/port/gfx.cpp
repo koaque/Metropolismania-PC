@@ -314,7 +314,7 @@ namespace mm
     void TexImage_Convert(GuestPtr<TexImage> image, uint32_t textureBlock, uint32_t clutBlock)
     {
         const GuestPtr<TexImageFile> file = image->file;
-        const uint32_t palette = file.address + 0x20u;
+        const uint32_t palette = file.address + static_cast<uint32_t>(sizeof(TexImageFile)); // after the header
         uint32_t texels = palette + 4u * static_cast<uint32_t>(file->paletteEntries);
         GuestPtr<uint32_t> p{image.address};
         if (file->paletteEntries != 0)
@@ -376,7 +376,7 @@ namespace mm
         uint32_t tileQwords = static_cast<uint32_t>(static_cast<int32_t>(static_cast<uint32_t>(image->tileWidth) * image->tileHeight) / 4);
         const int log2Width = Math_Log2(image->tileWidth);
         const int log2Height = Math_Log2(image->tileHeight);
-        const uint32_t palette = image.address + 0x20u;
+        const uint32_t palette = image.address + static_cast<uint32_t>(sizeof(TexFileHeader)); // after the header
         sprite->upload = palette;
         int bufferWidth = image->tileWidth / 64;
         if (bufferWidth == 0)

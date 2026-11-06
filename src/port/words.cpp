@@ -1253,18 +1253,16 @@ namespace mm
 
     namespace
     {
-        // The WORDS text banks: records of 0x18 bytes at 0x7181C0, each with tables of line offsets (+0) into line
-        // codes (+4), choice ranges (+8), answer records (+0xC, four bytes: mode, first string), string offsets
-        // (+0x10) and strings (+0x14). Bank 2 belongs to the building type of the talk: its tables are indexed
-        // through per-type remap tables (type records of 8 bytes at *0x718220; remaps for lines *0x718224, choices
-        // *0x718228, answers *0x71822C).
-        uint32_t bankTable(int bank, uint32_t field) { return port::load<uint32_t>(0x007181C0u + 0x18u * static_cast<uint32_t>(bank) + field); }
-
-        uint32_t remapped(uint32_t remap, int index, uint32_t part)
+        // The WORDS text banks (WordsTables at 0x7181C0): per bank, line offsets into line codes, choice ranges, answer
+        // records (mode, first string), string offsets and strings. Bank 2 belongs to the building type of the talk: its
+        // tables are indexed through the remaps, from the type's bases (WordsTypeBase).
+        GuestPtr<WordsTypeBase> typeBase()
         {
-            const uint32_t type = port::load<uint32_t>(0x00718220u) + 8u * Words_GetBuildingTypeB(GuestPtr<Words>{0x001BDDF0u});
-            return port::load<uint16_t>(port::load<uint32_t>(remap) + 2u * static_cast<uint32_t>(index + port::load<uint16_t>(type + part)));
+            const int32_t type = static_cast<int32_t>(Words_GetBuildingTypeB(GuestPtr<Words>{0x001BDDF0u}));
+            return globals::wordsTables()->typeBases + type;
         }
+
+        uint32_t remapped(GuestPtr<uint16_t> remap, int index, uint16_t base) { return remap[index + base]; }
 
         // The code at the script's current line and column of its line table (Words line, column, lineTable).
         int currentCode()
@@ -1272,30 +1270,36 @@ namespace mm
             const int code = port::load<int16_t>(port::load<uint32_t>(0x001BDE14u) + 2u * port::load<uint16_t>(0x001BDE00u)) - 5000;
             const uint32_t column = port::load<uint16_t>(0x001BDE04u);
             const int bank = code / 1000, index = code % 1000;
-            const uint32_t line = bank == 2 ? remapped(0x00718224u, index, 0) : port::load<uint16_t>(bankTable(bank, 0) + 2u * static_cast<uint32_t>(index));
-            return port::load<int16_t>(bankTable(bank, 4) + 2u * (column + line));
+            const uint32_t line = bank == 2 ? remapped(globals::wordsTables()->lineRemap, index, typeBase()->line)
+                                            : globals::wordsBank(bank)->lineOffsets[index];
+            return globals::wordsBank(bank)->lineCodes[static_cast<int32_t>(column + line)];
         }
 
         // The answer record of an answer code (5000 and up).
-        uint32_t answerRecord(int code)
+        GuestPtr<WordsAnswer> answerRecord(int code)
         {
             const int bank = (code - 5000) / 1000, index = (code - 5000) % 1000;
             if (bank == 2)
-                return bankTable(2, 0xC) + 4u * remapped(0x0071822Cu, index, 4);
-            return bankTable(bank, 0xC) + 4u * static_cast<uint32_t>(index);
+                return globals::wordsBank(2)->answers +
+                       static_cast<int32_t>(remapped(globals::wordsTables()->answerRemap, index, typeBase()->answer));
+            return globals::wordsBank(bank)->answers + index;
         }
 
-        uint32_t bankString(int bank, uint32_t index) { return bankTable(bank, 0x14) + port::load<uint16_t>(bankTable(bank, 0x10) + 2u * index); }
+        uint32_t bankString(int bank, uint32_t index)
+        {
+            const GuestPtr<WordsBank> b = globals::wordsBank(bank);
+            return b->strings.address + b->stringOffsets[static_cast<int32_t>(index)];
+        }
     }
 
     // The answer mode of the current entry.
-    int16_t Words_GetEntryMode() { return port::load<int16_t>(answerRecord(currentCode())); }
+    int16_t Words_GetEntryMode() { return answerRecord(currentCode())->mode; }
 
     // The default answer of the current entry: its first string.
     GuestPtr<char> Words_GetEntryDefault()
     {
         const int code = currentCode();
-        return GuestPtr<char>{bankString((code - 5000) / 1000, port::load<uint16_t>(answerRecord(code) + 2u))};
+        return GuestPtr<char>{bankString((code - 5000) / 1000, answerRecord(code)->first)};
     }
 
     // Checks a typed answer against the current entry's other strings (from its second up to the next entry's
@@ -1304,11 +1308,11 @@ namespace mm
     {
         const int code = currentCode();
         const int bank = (code - 5000) / 1000;
-        const uint32_t record = answerRecord(code);
-        const int strings = port::load<uint16_t>(record + 6u) - port::load<uint16_t>(record + 2u);
+        const GuestPtr<WordsAnswer> record = answerRecord(code);
+        const int strings = (record + 1)->first - record->first;
         for (int i = 1; i < strings; ++i)
         {
-            if (sdk::strcmp(typed.address, bankString(bank, port::load<uint16_t>(answerRecord(code) + 2u) + static_cast<uint32_t>(i))) == 0)
+            if (sdk::strcmp(typed.address, bankString(bank, answerRecord(code)->first + static_cast<uint32_t>(i))) == 0)
             {
                 port::store<uint16_t>(0x001BDE04u, static_cast<uint16_t>(port::load<uint16_t>(0x001BDE04u) + 1));
                 break;
@@ -1326,14 +1330,16 @@ namespace mm
         if (code < -2005)
         {
             const int bank = (code + 6000) / 1000, index = (code + 6000) % 1000;
-            const uint32_t range = bank == 2 ? bankTable(2, 8) + 2u * remapped(0x00718228u, index, 2)
-                                             : bankTable(bank, 8) + 2u * static_cast<uint32_t>(index);
-            return port::load<uint16_t>(range + 2u) - port::load<uint16_t>(range);
+            const GuestPtr<uint16_t> range =
+                bank == 2 ? globals::wordsBank(2)->choiceRanges +
+                                static_cast<int32_t>(remapped(globals::wordsTables()->choiceRemap, index, typeBase()->choice))
+                          : globals::wordsBank(bank)->choiceRanges + index;
+            return range[1] - range[0];
         }
         if (code == -2005)
         {
-            const uint32_t range = bankTable(1, 8);
-            const int entries = port::load<uint16_t>(range + 2u) - port::load<uint16_t>(range);
+            const GuestPtr<uint16_t> range = globals::wordsBank(1)->choiceRanges;
+            const int entries = range[1] - range[0];
             int left = entries;
             for (int i = 0; i < entries; ++i)
                 if ((port::load<uint8_t>(0x001BDE18u) & (1u << (i & 31))) != 0)
@@ -2021,8 +2027,8 @@ namespace mm
                     add(1);
             }
             port::store<uint8_t>(kUsed, static_cast<uint8_t>(port::load<uint8_t>(kUsed) | (bit & 0xFFu)));
-            const uint32_t table = port::load<uint32_t>(0x007181E0u);
-            const int entries = static_cast<int>(port::load<uint16_t>(table + 2u)) - static_cast<int>(port::load<uint16_t>(table));
+            const GuestPtr<uint16_t> table = globals::wordsBank(1)->choiceRanges;
+            const int entries = static_cast<int>(table[1]) - static_cast<int>(table[0]);
             int left = entries;
             for (int j = 0; j < entries; ++j)
                 if ((port::load<uint8_t>(kUsed) & (1u << (j & 31))) != 0)
@@ -2365,17 +2371,21 @@ namespace mm
             File_Read(file, static_cast<int>(port::load<uint32_t>(holder)), size, 1, 0);
             File_Close(file);
         };
+        // WORDSCOM.BIN's six table offsets bind bank 1; WORDSTEN.BIN's eleven bind the remaps (typeBases to
+        // stringRemap), then bank 2.
+        const GuestPtr<uint32_t> bank1 = globals::wordsBank(1).as<uint32_t>(), bank2 = globals::wordsBank(2).as<uint32_t>();
+        const GuestPtr<uint32_t> remaps = globals::wordsTables().field(&WordsTables::typeBases).as<uint32_t>();
         readWhole(0x001BADD0u, 0x001BDE08u);
-        for (uint32_t i = 0; i < 6; ++i)
+        for (int32_t i = 0; i < 6; ++i)
         {
             const uint32_t block = port::load<uint32_t>(0x001BDE08u);
-            port::store<uint32_t>(0x007181D8u + 4u * i, block + port::load<uint32_t>(block + 4u * i));
+            bank1[i] = block + port::load<uint32_t>(block + 4u * static_cast<uint32_t>(i));
         }
         readWhole(0x001BADF0u, 0x001BDE0Cu);
-        for (uint32_t i = 0; i < 11; ++i)
+        for (int32_t i = 0; i < 11; ++i)
         {
             const uint32_t block = port::load<uint32_t>(0x001BDE0Cu);
-            port::store<uint32_t>((i < 5 ? 0x00718220u + 4u * i : 0x007181F0u + 4u * (i - 5u)), block + port::load<uint32_t>(block + 4u * i));
+            (i < 5 ? remaps[i] : bank2[i - 5]) = block + port::load<uint32_t>(block + 4u * static_cast<uint32_t>(i));
         }
         File_Open(file, GuestPtr<char>{0x001BADB0u});
         File_Read(file, 0x001BDDECu, 1, 4, 0);
@@ -2411,11 +2421,13 @@ namespace mm
     GuestPtr<char> Words_GetChoiceText(int script, GuestPtr<CityScene> city, int code, int index)
     {
         (void)script;
-        constexpr uint32_t kGroups = 0x007181C8u, kDefaults = 0x007181E8u, kWordsObject = 0x001BDDF0u;
+        constexpr uint32_t kWordsObject = 0x001BDDF0u;
         port::GuestFrame<0x50> frame;
         const uint32_t sp = frame.ptr().address;
-        const auto defaultText = [&](uint32_t second) {
-            return GuestPtr<char>{port::load<uint32_t>(kDefaults + 4u) + port::load<uint16_t>(port::load<uint32_t>(kDefaults) + second)};
+        const GuestPtr<WordsBank> common = globals::wordsBank(1);
+        const auto defaultText = [&](int32_t string)
+        {
+            return GuestPtr<char>{common->strings.address + common->stringOffsets[string]};
         };
         if (code < -0x7D5)
         {
@@ -2423,18 +2435,16 @@ namespace mm
             const int entry = (code + 6000) % 1000;
             if (group != 2)
             {
-                const uint32_t table = kGroups + 24u * static_cast<uint32_t>(group);
-                const uint32_t first = port::load<uint16_t>(port::load<uint32_t>(table) + 2u * static_cast<uint32_t>(entry));
-                const uint32_t offset = port::load<uint16_t>(port::load<uint32_t>(table + 8u) + 2u * static_cast<uint32_t>(index + static_cast<int>(first)));
-                return GuestPtr<char>{port::load<uint32_t>(table + 0xCu) + offset};
+                const GuestPtr<WordsBank> bank = globals::wordsBank(group);
+                const uint32_t first = bank->choiceRanges[entry];
+                const uint32_t offset = bank->stringOffsets[index + static_cast<int>(first)];
+                return GuestPtr<char>{bank->strings.address + offset};
             }
-            const uint32_t type = port::load<uint32_t>(0x00718220u) + 8u * Words_GetBuildingTypeB(GuestPtr<Words>{kWordsObject});
-            const uint32_t table = kGroups + 48u;
-            const uint32_t kind = port::load<uint16_t>(type + 2u);
-            const uint32_t line = port::load<uint16_t>(port::load<uint32_t>(0x00718228u) + 2u * (static_cast<uint32_t>(entry) + kind));
-            const uint32_t block = port::load<uint16_t>(port::load<uint32_t>(table) + 2u * line);
-            const uint32_t offset = port::load<uint16_t>(port::load<uint32_t>(table + 8u) + 2u * (static_cast<uint32_t>(index) + block));
-            return GuestPtr<char>{port::load<uint32_t>(table + 0xCu) + offset};
+            const GuestPtr<WordsBank> bank = globals::wordsBank(2);
+            const uint32_t line = remapped(globals::wordsTables()->choiceRemap, entry, typeBase()->choice);
+            const uint32_t block = bank->choiceRanges[static_cast<int32_t>(line)];
+            const uint32_t offset = bank->stringOffsets[static_cast<int32_t>(static_cast<uint32_t>(index) + block)];
+            return GuestPtr<char>{bank->strings.address + offset};
         }
         if (code == -0x7D5)
         {
@@ -2452,14 +2462,13 @@ namespace mm
                     break;
                 ++bit;
             }
-            const uint32_t base = port::load<uint16_t>(port::load<uint32_t>(0x007181E0u));
-            return GuestPtr<char>{port::load<uint32_t>(0x007181ECu) +
-                                  port::load<uint16_t>(port::load<uint32_t>(0x007181E8u) + 2u * (static_cast<uint32_t>(bit) + base))};
+            const uint32_t base = common->choiceRanges[0];
+            return defaultText(static_cast<int32_t>(static_cast<uint32_t>(bit) + base));
         }
         if (code == -0x7D4)
         {
             if (index == 0)
-                return GuestPtr<char>{port::load<uint32_t>(0x007181ECu) + port::load<uint16_t>(port::load<uint32_t>(0x007181E8u))};
+                return defaultText(0);
             return Event_FormatText(city->events, index - 1);
         }
         if (code == -0x7D3)
@@ -2492,26 +2501,27 @@ namespace mm
                     return GuestPtr<char>{globals::goodsSectionC.get() + record->name};
                 ++counted;
             }
-            return defaultText(2u);
+            return defaultText(1);
         }
         if (index >= 4)
             return GuestPtr<char>{0x001BAD68u};
         const uint32_t goods = static_cast<uint32_t>(Words_GetGoods(GuestPtr<Words>{kWordsObject}, index));
-        sdk::strcpy(0x00718240u, globals::goodsSectionC.get() + GuestPtr<GoodsRecord>{goods}->name);
-        const uint32_t length = static_cast<uint32_t>(sdk::strlen(0x00718240u));
+        sdk::strcpy(globals::kWordsGoodsText, globals::goodsSectionC.get() + GuestPtr<GoodsRecord>{goods}->name);
+        const uint32_t length = static_cast<uint32_t>(sdk::strlen(globals::kWordsGoodsText));
         const int price = Goods_GetPrice(static_cast<int>(goods));
-        Text_FormatMoney(GuestPtr<char>{0x00718240u + length}, price, 0x1C - static_cast<int>(length), 0);
-        return GuestPtr<char>{0x00718240u};
+        Text_FormatMoney(GuestPtr<char>{globals::kWordsGoodsText + length}, price, 0x1C - static_cast<int>(length), 0);
+        return GuestPtr<char>{globals::kWordsGoodsText};
     }
 
     PORT_FN(Words_GetChoiceText);
 
-    // The text of a line of the wants window that has its own script: when the city has an event running (its kind is not 0) and
-    // the event queue holds the id at the same place as the kind, the script block of the default speaker is read, the Words object
-    // is reset (family 0, member 0, argument 4), the output text cleared, and the event words for the kind loaded. The first time
-    // the tables are bound: any read still running is waited for, the six table pointers (0x7181C0, from the block's header
-    // offsets) and, with event words, the six extra ones (0x718208) are set, the line table is picked as for a family
-    // (mm_Words_LoadForFamily) and the tables count as bound. The line (+3000) is then expanded into `out`.
+    // The text of a line of the wants window that has its own script: when the city has an event running (its kind is
+    // not 0) and the event queue holds the id at the same place as the kind, the script block of the default speaker is
+    // read, the Words object is reset (family 0, member 0, argument 4), the output text cleared, and the event words
+    // for the kind loaded. The first time the tables are bound: any read still running is waited for, bank 0's six
+    // tables (WordsTables, from the block's header offsets) and, with event words, bank 3's are set, the line table is
+    // picked as for a family (mm_Words_LoadForFamily) and the tables count as bound. The line (+3000) is then expanded
+    // into `out`.
     void Words_LoadForWants(GuestPtr<CityScene> city, int16_t id, int line, GuestPtr<char> out)
     {
         constexpr uint32_t kReadResult = 0x001BD9F4u;
@@ -2534,13 +2544,14 @@ namespace mm
                 port::store<int32_t>(kReadResult, -1);
             }
             const uint32_t data = port::load<uint32_t>(record + 4u);
-            for (uint32_t i = 0; i < 6; ++i)
-                port::store<uint32_t>(0x007181C0u + 4u * i, data + port::load<uint32_t>(data + 4u + 4u * i));
+            const GuestPtr<uint32_t> bank0 = globals::wordsBank(0).as<uint32_t>(), bank3 = globals::wordsBank(3).as<uint32_t>();
+            for (int32_t i = 0; i < 6; ++i)
+                bank0[i] = data + port::load<uint32_t>(data + 4u + 4u * static_cast<uint32_t>(i));
             const bool extraLoaded = words->extraLoaded != 0;
             const uint32_t extra = words->extraTable.address;
             if (extraLoaded)
-                for (uint32_t i = 0; i < 6; ++i)
-                    port::store<uint32_t>(0x00718208u + 4u * i, extra + port::load<uint32_t>(extra + 8u + 4u * i));
+                for (int32_t i = 0; i < 6; ++i)
+                    bank3[i] = extra + port::load<uint32_t>(extra + 8u + 4u * static_cast<uint32_t>(i));
             words->lineTable = GuestPtr<void>{data + port::load<uint32_t>(data)};
             if (extraLoaded)
             {
@@ -2739,15 +2750,16 @@ namespace mm
 
     PORT_FN(WordsFn_PickClaimResident);
 
-    // One step of the WORDS script interpreter: reads the script's words from the current position (0x1BDE00) in the current block
-    // (0x1BDE14) until one gives a result other than -6009 ("go on") and returns it. The first call also waits for the file queue,
-    // points the tables of the two script banks (0x7181C0 and 0x718208) at their data and picks the block of the script in the
-    // second bank. Words: below -9010 the context's argument is set (word + 10000); -9010 up to -8001 an action through its pointer,
-    // whose result says how many words to skip (from -8900 on the action is word + 8927; from -8960 the argument is the word's
-    // 26ths from -8960 and the action the remainder + 1; below that the argument is word + 9000 and the action 0); 5000 and up a
-    // line of text, added to the buffer after a separator unless it adds nothing (its result is returned at once when the stop flag
-    // at 0x1BDE04 is set); 0 to 4999 jump to that word; -6010 up to -1 that result; -6011 starts the script over; below that a
-    // condition call (word + 7000).
+    // One step of the WORDS script interpreter: reads the script's words from the current position (0x1BDE00) in the
+    // current block (0x1BDE14) until one gives a result other than -6009 ("go on") and returns it. The first call also
+    // waits for the file queue, binds the tables of the two script banks (WordsTables banks 0 and 3) to their data and
+    // picks the block of the script in the second bank. Words: below -9010 the context's argument is set (word +
+    // 10000); -9010 up to -8001 an action through its pointer, whose result says how many words to skip (from -8900 on
+    // the action is word + 8927; from -8960 the argument is the word's 26ths from -8960 and the action the remainder +
+    // 1; below that the argument is word + 9000 and the action 0); 5000 and up a line of text, added to the buffer
+    // after a separator unless it adds nothing (its result is returned at once when the stop flag at 0x1BDE04 is set);
+    // 0 to 4999 jump to that word; -6010 up to -1 that result; -6011 starts the script over; below that a condition
+    // call (word + 7000).
     int16_t Words_StepImpl(GuestPtr<int32_t> script, GuestPtr<char> buffer)
     {
         constexpr uint32_t kInitialised = 0x001BDDFCu, kWaited = 0x001BD9F4u, kBankFlag = 0x001BDDF8u, kBank2 = 0x001BDE10u,
@@ -2763,13 +2775,14 @@ namespace mm
             }
             const uint32_t base = port::load<uint32_t>(s + 4u);
             const int32_t bank2 = port::load<int32_t>(kBankFlag);
-            for (uint32_t i = 0; i < 6; ++i)
-                port::store<uint32_t>(0x007181C0u + 4u * i, base + port::load<uint32_t>(base + 4u + 4u * i));
+            const GuestPtr<uint32_t> bank0 = globals::wordsBank(0).as<uint32_t>(), bank3 = globals::wordsBank(3).as<uint32_t>();
+            for (int32_t i = 0; i < 6; ++i)
+                bank0[i] = base + port::load<uint32_t>(base + 4u + 4u * static_cast<uint32_t>(i));
             if (bank2 != 0)
             {
                 const uint32_t second = port::load<uint32_t>(kBank2);
-                for (uint32_t i = 0; i < 6; ++i)
-                    port::store<uint32_t>(0x00718208u + 4u * i, second + port::load<uint32_t>(second + 8u + 4u * i));
+                for (int32_t i = 0; i < 6; ++i)
+                    bank3[i] = second + port::load<uint32_t>(second + 8u + 4u * static_cast<uint32_t>(i));
             }
             const uint32_t again = port::load<uint32_t>(s + 4u);
             port::store<uint32_t>(kCurrent, again + port::load<uint32_t>(again));
@@ -2913,8 +2926,9 @@ namespace mm
         const GuestPtr<Words> words{kWords};
         const int bank = code / 1000, index = code % 1000;
         const auto word = [&](uint32_t column) {
-            const uint32_t line = bank == 2 ? remapped(0x00718224u, index, 0) : port::load<uint16_t>(bankTable(bank, 0) + 2u * static_cast<uint32_t>(index));
-            return static_cast<int32_t>(port::load<int16_t>(bankTable(bank, 4) + 2u * (column + line)));
+            const uint32_t line = bank == 2 ? remapped(globals::wordsTables()->lineRemap, index, typeBase()->line)
+                                            : globals::wordsBank(bank)->lineOffsets[index];
+            return static_cast<int32_t>(globals::wordsBank(bank)->lineCodes[static_cast<int32_t>(column + line)]);
         };
         const auto act = [&](int number) { return port::callGuest<int>(addr::Words_CallAct, words, number); };
         const auto getText = [&](int number) { return port::callGuest<uint32_t>(addr::Words_CallText, words, number); };
@@ -2925,18 +2939,21 @@ namespace mm
             if (token >= 10000)
             {
                 const int stringBank = (token - 10000) / 1000, number = (token - 10000) % 1000;
-                const uint32_t text = stringBank == 2 ? bankTable(2, 0x14) + remapped(0x00718230u, number, 6) : bankString(stringBank, static_cast<uint32_t>(number));
+                const uint32_t text =
+                    stringBank == 2 ? globals::wordsBank(2)->strings.address +
+                                          remapped(globals::wordsTables()->stringRemap, number, typeBase()->string)
+                                    : bankString(stringBank, static_cast<uint32_t>(number));
                 Words_AppendClipped(out, GuestPtr<char>{text});
             }
             else if (token >= 5000)
             {
                 const int answerBank = (token - 5000) / 1000;
-                const int selector = port::load<int16_t>(answerRecord(token));
+                const int selector = answerRecord(token)->mode;
                 int choice;
                 if (selector < -9000)
                 {
-                    const uint32_t record = answerRecord(token);
-                    const int count = port::load<uint16_t>(record + 6u) - port::load<uint16_t>(record + 2u);
+                    const GuestPtr<WordsAnswer> record = answerRecord(token);
+                    const int count = (record + 1)->first - record->first;
                     choice = count != 0 ? eeRemainder(lowWord(Random_Next()), count) : 0;
                 }
                 else if (selector >= -8900)
@@ -2951,7 +2968,8 @@ namespace mm
                     Words_SetArg(words, static_cast<uint16_t>(selector + 9000));
                     choice = act(0);
                 }
-                Words_AppendClipped(out, GuestPtr<char>{bankString(answerBank, static_cast<uint32_t>(choice) + port::load<uint16_t>(answerRecord(token) + 2u))});
+                const uint32_t first = answerRecord(token)->first;
+                Words_AppendClipped(out, GuestPtr<char>{bankString(answerBank, static_cast<uint32_t>(choice) + first)});
             }
             else if (token < -9010)
                 Words_SetArg(words, static_cast<uint16_t>(token + 10000));

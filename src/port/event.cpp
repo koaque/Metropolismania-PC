@@ -2784,7 +2784,7 @@ namespace mm
         {
             bool orphanage = false, special = false;
             const uint32_t first = Map_GetRecord(city->map, 0).address;
-            for (uint32_t record = first; record < first + 0x6F200u; record += 0x1Cu)
+            for (uint32_t record = first; record < first + kObjectTableBytes; record += static_cast<uint32_t>(sizeof(MapObject)))
             {
                 const uint32_t type = port::load<uint16_t>(record);
                 if (!orphanage && type == 4)
@@ -4516,7 +4516,7 @@ namespace mm
         {
             const GuestPtr<MapObject> begin = Map_GetRecord(city->map, 0);
             int found = 0;
-            for (GuestPtr<MapObject> record = begin; record.address < begin.address + 0x6F200u; ++record)
+            for (GuestPtr<MapObject> record = begin; record.address < begin.address + kObjectTableBytes; ++record)
             {
                 if (record->type != 0xB0)
                     continue;

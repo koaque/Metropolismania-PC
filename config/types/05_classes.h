@@ -519,7 +519,9 @@ struct TitleScene {
     uint8_t unk_71[3];
     int32_t testPage;          /* +0x74 the sound test's page: 0 effects, 1 music, 100 and up its opening and closing */
     int32_t bankLoading;       /* +0x78 a song's bank is loading */
-    uint8_t unk_7C[0x34];
+    uint8_t unk_7C[0x32];
+    uint8_t unk_AE;            /* +0xAE 0x3C from mm_TitleScene_ctor (as the note); nothing reads it */
+    uint8_t unk_AF;
     ListMenu *loadMenu;        /* +0xB0 layer set 0x28/0x29 */
     McManager *mc;             /* +0xB4 */
     TextBox *hintText;         /* +0xB8 */
@@ -1012,7 +1014,9 @@ struct Laptop {
     int32_t turnDir;           /* +0x40 0 turns one way, 1 the other (mm_Laptop_Update) */
     TextBox *text;             /* +0x44 the selected entry's text (mm_Laptop_SetItemText) */
     int32_t cancelled;         /* +0x48 closed with Triangle; with Cross the entry runs */
-    uint8_t unk_4C[0x384];
+    uint8_t unk_4C[4];
+    Vec4 entryMatrices[56];    /* +0x50 four rows per entry, 14 entries: turned, scaled and placed (mm_Laptop_Animate), copied
+                                  into the entry's node to draw it (mm_Laptop_Draw) */
     int32_t selected;          /* +0x3D0 the selected entry */
     uint8_t unk_3D4[0xC];
 };
