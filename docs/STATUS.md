@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-10-15. Upstream PS2Recomp pinned at `eb8688b2` (2026-10-14).
+Last updated: 2026-11-06. Upstream PS2Recomp pinned at `eb8688b2` (2026-10-14). The numbered log below keeps the order its items were written in, each dated; the plans that followed the milestones (the readable port and after) are summarised at the end, in [After the milestones](#after-the-milestones).
 
 ## Milestones
 
@@ -11,10 +11,10 @@ Last updated: 2026-10-15. Upstream PS2Recomp pinned at `eb8688b2` (2026-10-14).
 | M2 | Extract and analyze | Done | 2,091 functions; 569 named (558 from PS2Recomp's SDK signature scan, 11 by hand); VU microcode located |
 | M3 | First recompile and build | Done | Recompile: 0 errors, 467 control-flow warnings, 14,380 C++ files. `ps2EntryRunner.exe` builds with MSVC (RelWithDebInfo, 0 warnings) |
 | M4 | Boot to logos, title, memory card check | Done | Natsume logo, title screen, memory card check pass; New Game starts loading |
-| M5 | Title screen and input | Done (scripted) | Cross/Start reach New Game; keyboard and pad work |
-| M6 | City rendering (VU1 path, GS) | In progress | City terrain renders (about 40k triangles / 2 s); 4:3 presentation fixed; buildings, people and lighting still to check |
-| M7 | Movies (PSS), sound (YYSOUND, HD/BD/SQ), memory card | In progress | **Sound plays**: new SPU2 emulation (`patches/0117`), title and city music from the game's own sequences; reverb and streamed PCM still missing. Memory card check passes; the intro movie plays (`patches/0122`), its sound still missing (AutoDMA input) |
-| M8 | Performance, widescreen, hi-res, Linux, installer | Not started | |
+| M5 | Title screen and input | Done | Keyboard, pad and scripted input; frames reach the screen soon after the vertical blank and input is read at the game's own pad read (item 19; its XInput path has not been tried with an XInput pad) |
+| M6 | City rendering (VU1 path, GS) | Done | Whole city frames since the DMA chain fix (item 17): terrain, buildings, people, water, weather, the HUD and the minimap. Eleven views of the same save match PCSX2 apart from the water's animation phase, where snowflakes and pedestrians land, and edge stair steps (the paragraph above item 0). Drawn on the CPU (the runtime's software GS); how the city is drawn is mapped in [RENDER_PIPELINE.md](RENDER_PIPELINE.md) |
+| M7 | Movies (PSS), sound (YYSOUND, HD/BD/SQ), memory card | Done | Movies play with picture and sound (items 13, 15, 16), at about 80 to 95% speed (item 20); music and effects through the SPU2 emulation with reverb (item 12); the memory card check passes and saves load from a PCSX2 memory card |
+| M8 | Performance, widescreen, hi-res, Linux, installer | Performance in progress, the rest not started | Heavy city views at about 43 fps with frame skip off, 50 to 58 game frames a second with it on (items 20 to 26); 60 needs both the rasterizer and the game thread faster (item 26). Paused for the reverse-engineering pass (see the end) |
 
 ## Recompile details (M3)
 
@@ -32,7 +32,7 @@ Last updated: 2026-10-15. Upstream PS2Recomp pinned at `eb8688b2` (2026-10-14).
 
 ## Boot triage log (M4)
 
-**Where it is now (2026-10-15):** boots, loads all 10 IOP modules on the IOP emulator, shows the **Natsume logo**, a second logo and the **title screen** (with "(c) 2002 Natsume Inc. (c) 2001 Indi Software / MEDIA FACTORY"), passes the memory card check, starts a **New Game**, reaches the intro movie, and (with `MMPC_SKIP_MOVIES=1`) enters the **city game**: the HUD (Month 4, Year 1, Pop 0, Ar 50%) and cursor render over the sky. The **3D city terrain now renders** (after replacing the runtime's HLE `sceVu0` matrix library with the game's own code). Movies still stall.
+**Where it is now (2026-11-06):** boots, loads all 10 IOP modules (run as C++ translated ahead of time, [IOP.md](IOP.md)), shows the **Natsume logo**, a second logo and the **title screen** (with "(c) 2002 Natsume Inc. (c) 2001 Indi Software / MEDIA FACTORY"), passes the memory card check, plays the intro movie with its sound, starts a **New Game** or loads a save, and runs the **city** with whole frames, music and sound. It has not been played through: the checks are scripted runs and autoplay in the city. (On 2026-10-15 it reached only the HUD over the sky, then the terrain; the items below say how it got here.)
 
 Graphics are checked against PCSX2 (2026-10-28: native frame buffers from savestates, eleven frame-aligned city views of the same save): the remaining differences are the water's animation phase, random snowflakes and pedestrians, and some edge pixels. Rechecked on 2026-11-04 with the same eleven views (mean difference 3.9 to 9.2 of 255 per view): over the views with the most water, its mean colour and saturation are the same in both (saturation 0.348 and 0.348); the snowflakes have the same shape and size and only land in other places; the edge pixels are thin triangles whose stair steps fall at other places, and the minimap frame's shading differs by a pixel. People differ because the game mixes the count of hardware timer 0 into the random numbers behind their choices (`Random_TimerMix`), so they follow emulated timing. Our runtime gives the same frames on every run (bit-identical to the 2026-10-28 dumps), and PCSX2 gave the identical start view in two runs. The earlier notes did not hold up: PCSX2 shows no 3D model on the title screen either, and the Natsume logo has the same colours. The display flicker is fixed (item 11).
 
@@ -70,3 +70,21 @@ Graphics are checked against PCSX2 (2026-10-28: native frame buffers from savest
 14. **Black-frame flicker fixed; movie audio in progress.** With the GS worker thread on, whole black frames appeared now and then (5 of 60 captures during a logo fade; none with `PS2X_GS_THREAD=0`). The presenter read DISPFB first and then waited for the worker to catch up before reading VRAM; during that wait the game flipped and cleared the buffer it had named. `patches/0126` queues the presentation in the worker's command stream instead, under the same lock as GIF processing, so DISPFB and VRAM come from the same point of the drawing; the worker only copies VRAM there and the presenter converts the copy, so the worker is not slowed down. Burst captures of the logos, the title and the city (still and while the camera pans) show no black frames and no half-line shifts. `patches/0127` adds `PS2X_WINDOW_POS=x,y` (open the window there, unfocused); `pipeline.py run` sets it from `game_window_pos` in `work/local.json`. Movie audio: `patches/0123` adds SPU2 AutoDMA input (the PCM the game streams from the PSS), `patches/0125` runs libmpeg stream callbacks inside the demux call in stream order, as libmpeg does (queued, they ran after the game had reused that part of its ring; the same fix as ran-j/PS2Recomp#254). That removed the clipping, but the movie audio is still mostly noise, and about 80% of the audio callbacks refuse their packet because the game's audio buffer is full (libmpeg would stop demuxing there; this HLE drops the packet). Also seen: a block of garbled glyphs under the subtitles while the movie plays.
 8. **Movies (before).** `mm_PlayMissionMovie` (`0x0019DE10`) plays `DATA\MPEG\MISSION<n>.PSS` in a blocking loop that polls the pad itself (Start/Cross fades it out). The runtime's MPEG path decodes only a few frames and the picture is garbled, so `MMPC_SKIP_MOVIES=1` (override module) returns "played" at once. With that, the game reaches **scene C, the city**.
 6. **Scripted input** (`patches/0101`). `PS2X_PAD_SCRIPT` feeds timed button presses for unattended tests (`pipeline.py run --pad file`).
+
+## After the milestones
+
+From 2026-10-16 the work followed plans for a readable source port rather than the milestones above. Each change was checked against the original before it counted: rewritten game code by the differential tests (calls recorded from a running game, replayed through the rewritten and the recompiled code, with identical memory, registers and results), the VU1 and IOP translations against the interpreter, and all of it by runs of the game.
+
+| Plan | State | What it did |
+|---|---|---|
+| P1 Map | Done | Every game function named, classified by subsystem and given a prototype (`config/signatures.txt`), the structs in `config/types/`, one page per subsystem in [map/](map/README.md) |
+| P2 Port infrastructure | Done | `src/port/guest.h` and `abi.h` (guest pointers, calls between rewritten and recompiled code), capture and difftest |
+| P3 Readable port | Done (2026-10-25) | All 1,481 game functions rewritten as readable C++ in `src/port/`, 1,432 of them verified by the differential tests ([PORT_STATUS.md](PORT_STATUS.md)) |
+| P4 VU1 ahead of time | Done | Pre-timed VU1 programs, then the same programs compiled to C++ (items 10 and 21, [VU1_PROGRAMS.md](VU1_PROGRAMS.md)) |
+| P5 IOP | Done (2026-10-28) | The sound driver YYSOUND rewritten as readable C++ and the ten IOP modules translated ahead of time ([IOP.md](IOP.md)) |
+| P6 Code that can block | Done (2026-10-25) | Rewritten functions that can reach a thread switch run on fibers ([FIBERS.md](FIBERS.md)) |
+| P7 Platform layer | Done (2026-10-27) | The SDK and C runtime functions the rewritten code uses, written as plain C++ in `src/port/platform/`, and what that showed about the runtime ([PLATFORM_FINDINGS.md](PLATFORM_FINDINGS.md)) |
+| G1 Graphics correctness | Done (2026-11-04) | Whole frames (item 17) and the comparisons with PCSX2 (the paragraph above item 0) |
+| G2 Game speed and input | Done for its first steps | The game's 60 Hz timing (item 18), input lag (item 19), frame skip (item 20); full speed is P8's |
+| P8 Performance | Paused (2026-11-04) | Items 21 to 26: the heavy city views from 21.1 to 43.5 fps with frame skip off |
+| R1 Reverse-engineering pass | In progress (since 2026-11-04) | Struct fields by name instead of raw memory offsets (2,736 lines down to 156, 115 of them in the movie player, left as it is on purpose), placeholder functions and structs renamed, and the city's render pipeline mapped down to each of its 13 VU1 programs ([RENDER_PIPELINE.md](RENDER_PIPELINE.md)). A native renderer that replaces the emulated graphics hardware is meant to build on it |
