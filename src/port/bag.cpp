@@ -1021,16 +1021,18 @@ namespace mm
 
     PORT_FN(Applicants_DrawDetails);
 
-    // The applicants panel for one frame (nothing while enabled is 0). With mode 1 and entries: the details step (Applicants_
-    // DrawDetails), the card model (frameModel) played at rollPhase and, once relight was set, lit again with the shown entry's
-    // colour (the flag is cleared) on all of its nodes; then the model is drawn, a changed entry count (shownCount) scrolls to the top, and
-    // the entries' icons are placed on the nodes of the icon model (cardModel): the node is the second of the table at 0x1B7A18 for
-    // an entry of kind 4 to 7, else the first; the matrix at that node is the identity moved by the entry's place (the spacing is
-    // 2.2 over the count, kept between 0.05 and 0.1; the shown entry sits 0.07 lower, the others 0.001 a place of distance from
-    // the cursor, less 0.03) and the node is drawn with the entry's brightened claim colour. Past the entries the marker (cardNodeB,
-    // when stateColour is not 0xFF) is placed beside the card (a depth from the table at 0x1B7A20) and drawn on node 2. With no entries
-    // a white mesh 4 of the icon model is drawn instead. Whenever the mode is not 0 and sliding is set, the layout runs and the
-    // shown entry's icon is drawn on node 0; the card text (cardText) shows when cardShown is set and there are entries.
+    // The applicants panel for one frame (nothing while enabled is 0). With mode 1 and entries: the details step
+    // (Applicants_DrawDetails), the card model (frameModel) played at rollPhase and, once relight was set, lit again
+    // with the shown entry's colour (the flag is cleared) on all of its nodes; then the model is drawn, a changed entry
+    // count (shownCount) scrolls to the top, and the entries' icons are placed on the nodes of the icon model
+    // (cardModel): the node is the second of the table at 0x1B7A18 for an entry of kind 4 to 7, else the first; the
+    // matrix at that node is the identity moved by the entry's place (the spacing is 2.2 over the count, kept between
+    // 0.05 and 0.1, along x; y 0.73 less than the card's; z 0.07 less for the shown entry, 0.001 more a place of
+    // distance from the cursor less 0.03 for the others) and the node is drawn with the entry's brightened claim
+    // colour. Past the entries the marker (cardNodeB, when stateColour is not 0xFF) is placed beside the card (an x
+    // offset from the table at 0x1B7A20) and drawn on node 2. With no entries a white mesh 4 of the icon model is drawn
+    // instead. Whenever the mode is not 0 and sliding is set, the layout runs and the shown entry's icon is drawn on
+    // node 0; the card text (cardText) shows when cardShown is set and there are entries.
     void Applicants_Draw(GuestPtr<Applicants> applicants)
     {
         port::GuestFrame<0xB0> frame;

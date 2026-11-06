@@ -48,15 +48,15 @@ friendship changed. A is the person talked to.
 | `0x001737C0` | `void mm_TalkView_ToggleAnim(TalkView *view)` | 88 | no | the chosen person (slot 0 when none), when idle, plays animation 2 or 3 by turns from its start |
 | `0x00173820` | `void mm_TalkView_DrawPeople(TalkView *view)` | 3232 | yes | people at the building or of the family in a row with names, grades and the cursor |
 | `0x001744E0` | `int mm_TalkView_AllAsleep(TalkView *view, int byFamily, int target)` | 296 | yes | whether everyone is asleep (schedule activity 5, the night hours): for a family (`byFamily` 1) every member; for a building the people on its tile that count (not vehicles; outside or in this view's building). 1 when all are |
-| `0x00174610` | `void mm_TalkView_DrawBuilding(TalkView *view, int byFamily, int target)` | 916 | yes | the target building (a1 0: object, 1: family's home), lit when someone is home |
+| `0x00174610` | `void mm_TalkView_DrawBuilding(TalkView *view, int byFamily, int target)` | 916 | yes | (view, byFamily, target) the target building (`byFamily` 0: object, 1: family's home), lit when someone is home |
 | `0x001749B0` | `void mm_TalkView_BuildingCamera(TalkView *view, int object, Vec4 *eye, Vec4 *target)` | 904 | no | camera eye and target for a talk at a building: the shared offset while it is being built, the type's own eye (type flag 0x4000) once built, else the person camera |
 | `0x00174D40` | `void mm_TalkView_DrawCursor(TalkView *view)` | 64 | no | the cursor frame at cursorX |
 | `0x00174D80` | `uint16_t mm_TalkView_CursorPerson(TalkView *view)` | 184 | no | person index of the cursor slot (cursorSlot), 0x3F80 when none |
 | `0x00174E40` | `void mm_TalkView_HandleInput(TalkView *view)` | 640 | no | cursor left/right with scrolling and zoom steps (pad repeat) |
-| `0x001750C0` | `int mm_TalkView_GetChoice(TalkView *view, uint32_t *person, uint32_t *slot)` | 176 | no | the chosen person (a1) and slot (a2) once a choice is made |
-| `0x00175170` | `uint32_t mm_TalkView_FindPersonSlot(TalkView *view, uint32_t family, uint32_t member)` | 260 | no | slot of the person with family a1 and member a2 |
+| `0x001750C0` | `int mm_TalkView_GetChoice(TalkView *view, uint32_t *person, uint32_t *slot)` | 176 | no | (view, person, slot) the chosen person (`person`) and slot (`slot`) once a choice is made |
+| `0x00175170` | `uint32_t mm_TalkView_FindPersonSlot(TalkView *view, uint32_t family, uint32_t member)` | 260 | no | (view, family, member) slot of the person with family `family` and member `member` |
 | `0x00175280` | `void mm_TalkView_CountPeople(TalkView *view)` | 200 | yes | people present (peopleCount), or family members when by family |
-| `0x00175350` | `void mm_TalkView_SetTarget(TalkView *view, int building, int family)` | 288 | yes | building a1 / family a2, name text boxes and frames |
+| `0x00175350` | `void mm_TalkView_SetTarget(TalkView *view, int building, int family)` | 288 | yes | (view, building, family) building `building` / family `family`, name text boxes and frames |
 | `0x00175470` | `void mm_TalkView_PersonCamera(TalkView *view, int object, Vec4 *target, Vec4 *eye)` | 620 | no | the camera for a talk at a building: target at the footprint middle below the object's height, eye 0.4 back along the view's flattened direction |
 | `0x001756E0` | `void mm_TalkView_DrawMember(TalkView *view, int family, int member)` | 448 | yes | draws a family member in the phone view: the draw packet of the view is appended, the local matrix is the standard one with its translation at (0, 0.4, -3.6); for a character class with flag 2 the view's person model gets the same place and is drawn with the default colour, and the local matrix drops by 0.15 |
 | `0x001758A0` | `void mm_TalkView_DrawPerson(TalkView *view, int person)` | 436 | indirect | the person at record `person` is drawn in front of the camera at (0, 0.4, -3.65): the character class's drawAt slot with an identity matrix moved there, the default colour and the view's animation slots. A class with flag 2 also gets the view's person model placed there first (and the person is then 0.15 higher) |
@@ -67,22 +67,22 @@ friendship changed. A is the person talked to.
 | `0x00175E50` | `void mm_TalkPhoneFamily_Closed(TalkView *view)` | 64 | no | waits for the fade, then idle |
 | `0x00175E90` | `void mm_TalkPhoneFamily_Closing(TalkView *view)` | 68 | no | waits for the fade, fades again |
 | `0x00175EE0` | `void mm_TalkPhoneFamily_Close(TalkView *view)` | 52 | no | starts the fade and closes |
-| `0x00175F20` | `void mm_TalkPhoneFamily_Active(TalkView *view)` | 8 | no |  |
-| `0x00175F30` | `void mm_TalkPhoneFamily_Opened(TalkView *view)` | 52 | no |  |
+| `0x00175F20` | `void mm_TalkPhoneFamily_Active(TalkView *view)` | 8 | no | (view) active state: the view's input (mm_TalkView_HandleInput) |
+| `0x00175F30` | `void mm_TalkPhoneFamily_Opened(TalkView *view)` | 52 | no | (view) opened state: on to the active state (3) once the fade is done |
 | `0x00175F70` | `void mm_TalkPhoneFamily_Opening(TalkView *view)` | 68 | no | waits for the fade, fades again |
 | `0x00175FC0` | `void mm_TalkPhoneFamily_Open(TalkView *view)` | 52 | no | starts the fade and opens |
 | `0x00176000` | `TalkView *mm_TalkPhoneFamily_dtor(TalkView *view, int16_t deleteFlag)` | 96 | yes | vtable 0x1BD4A0 |
-| `0x00176060` | `TalkView *mm_TalkPhoneFamily_ctor(TalkView *view, CityScene *city, int family)` | 88 | yes | vtable 0x1BD4A0, family a2 |
+| `0x00176060` | `TalkView *mm_TalkPhoneFamily_ctor(TalkView *view, CityScene *city, int family)` | 88 | yes | (view, city, family) vtable 0x1BD4A0, family `family` |
 | `0x001760C0` | `void mm_TalkPhoneMember_Draw(TalkView *view, int pass)` | 92 | yes | the phone view of one family member, in its draw pass: the building and the member (mm_TalkView_DrawMember) |
 | `0x00176120` | `void mm_TalkPhoneMember_Closed(TalkView *view)` | 64 | no | waits for the fade, then idle |
 | `0x00176160` | `void mm_TalkPhoneMember_Closing(TalkView *view)` | 68 | no | waits for the fade, fades again |
 | `0x001761B0` | `void mm_TalkPhoneMember_Close(TalkView *view)` | 52 | no | starts the fade and closes |
-| `0x001761F0` | `void mm_TalkPhoneMember_Active(TalkView *view)` | 8 | no |  |
+| `0x001761F0` | `void mm_TalkPhoneMember_Active(TalkView *view)` | 8 | no | (view) active state: nothing |
 | `0x00176200` | `void mm_TalkPhoneMember_Opened(TalkView *view)` | 52 | no | waits for the fade |
 | `0x00176240` | `void mm_TalkPhoneMember_Opening(TalkView *view)` | 68 | no | waits for the fade, fades again |
 | `0x00176290` | `void mm_TalkPhoneMember_Open(TalkView *view)` | 52 | no | starts the fade and opens |
 | `0x001762D0` | `TalkView *mm_TalkPhoneMember_dtor(TalkView *view, int16_t deleteFlag)` | 96 | yes | vtable 0x1BD4F0 |
-| `0x00176330` | `TalkView *mm_TalkPhoneMember_ctor(TalkView *view, CityScene *city, int family, int member)` | 84 | no | vtable 0x1BD4F0, family a2, member a3 |
+| `0x00176330` | `TalkView *mm_TalkPhoneMember_ctor(TalkView *view, CityScene *city, int family, int member)` | 84 | no | (view, city, family, member) vtable 0x1BD4F0, family `family`, member `member` |
 | `0x00176390` | `void mm_TalkBldgFar_Draw(TalkView *view, int pass)` | 92 | yes | vtable 0x1BD540: building with its occupants, camera cut |
 | `0x001763F0` | `void mm_TalkBldgFar_Closed(TalkView *view)` | 96 | no | restores the camera, waits for the fade |
 | `0x00176450` | `void mm_TalkBldgFar_Closing(TalkView *view)` | 120 | no | building camera until the fade ends |
@@ -92,13 +92,13 @@ friendship changed. A is the person talked to.
 | `0x001765E0` | `void mm_TalkBldgFar_Opening(TalkView *view)` | 100 | no | waits for the fade, fades again |
 | `0x00176650` | `void mm_TalkBldgFar_Open(TalkView *view)` | 52 | no | starts the fade and opens |
 | `0x00176690` | `TalkView *mm_TalkBldgFar_dtor(TalkView *view, int16_t deleteFlag)` | 96 | yes | vtable 0x1BD540 |
-| `0x001766F0` | `TalkView *mm_TalkBldgFar_ctor(TalkView *view, CityScene *city, int object)` | 128 | yes | vtable 0x1BD540, building a2, collects its occupants |
+| `0x001766F0` | `TalkView *mm_TalkBldgFar_ctor(TalkView *view, CityScene *city, int object)` | 128 | yes | (view, city, object) vtable 0x1BD540, building `object`, collects its occupants |
 | `0x00176770` | `void mm_TalkBldgNear_Draw(TalkView *view, int pass)` | 84 | yes | vtable 0x1BD590: building with its occupants, camera pans |
 | `0x001767D0` | `void mm_TalkBldgNear_Closing(TalkView *view)` | 276 | indirect | camera pans back |
 | `0x001768F0` | `void mm_TalkBldgNear_Active(TalkView *view)` | 96 | no | building camera and cursor input |
 | `0x00176950` | `void mm_TalkBldgNear_Opening(TalkView *view)` | 256 | indirect | camera pans to the building |
 | `0x00176A50` | `TalkView *mm_TalkBldgNear_dtor(TalkView *view, int16_t deleteFlag)` | 96 | yes | vtable 0x1BD590 |
-| `0x00176AB0` | `TalkView *mm_TalkBldgNear_ctor(TalkView *view, CityScene *city, int object)` | 116 | yes | vtable 0x1BD590, building a2, collects its occupants |
+| `0x00176AB0` | `TalkView *mm_TalkBldgNear_ctor(TalkView *view, CityScene *city, int object)` | 116 | yes | (view, city, object) vtable 0x1BD590, building `object`, collects its occupants |
 | `0x00176B30` | `void mm_TalkOccupantFar_Draw(TalkView *view, int pass)` | 88 | yes | vtable 0x1BD5E0: one person at a building, camera cut |
 | `0x00176B90` | `void mm_TalkOccupantFar_Closed(TalkView *view)` | 96 | no | restores the camera, waits for the fade |
 | `0x00176BF0` | `void mm_TalkOccupantFar_Closing(TalkView *view)` | 120 | no | building camera until the fade ends |
@@ -108,40 +108,40 @@ friendship changed. A is the person talked to.
 | `0x00176D70` | `void mm_TalkOccupantFar_Opening(TalkView *view)` | 100 | no | waits for the fade, fades again |
 | `0x00176DE0` | `void mm_TalkOccupantFar_Open(TalkView *view)` | 52 | no | starts the fade and opens |
 | `0x00176E20` | `TalkView *mm_TalkOccupantFar_dtor(TalkView *view, int16_t deleteFlag)` | 96 | yes | vtable 0x1BD5E0 |
-| `0x00176E80` | `TalkView *mm_TalkOccupantFar_ctor(TalkView *view, CityScene *city, int object, int person)` | 116 | no | vtable 0x1BD5E0, building a2, person a3 |
+| `0x00176E80` | `TalkView *mm_TalkOccupantFar_ctor(TalkView *view, CityScene *city, int object, int person)` | 116 | no | (view, city, object, person) vtable 0x1BD5E0, building `object`, person `person` |
 | `0x00176F00` | `void mm_TalkOccupantNear_Draw(TalkView *view, int pass)` | 80 | yes | vtable 0x1BD630: one person at a building, camera pans |
 | `0x00176F50` | `void mm_TalkOccupantNear_Closing(TalkView *view)` | 276 | indirect | camera pans back |
 | `0x00177070` | `void mm_TalkOccupantNear_Active(TalkView *view)` | 88 | no | building camera |
 | `0x001770D0` | `void mm_TalkOccupantNear_Opening(TalkView *view)` | 256 | indirect | camera pans to the person |
 | `0x001771D0` | `TalkView *mm_TalkOccupantNear_dtor(TalkView *view, int16_t deleteFlag)` | 96 | yes | vtable 0x1BD630 |
-| `0x00177230` | `TalkView *mm_TalkOccupantNear_ctor(TalkView *view, CityScene *city, int object, int person)` | 112 | no | vtable 0x1BD630, building a2, person a3 |
+| `0x00177230` | `TalkView *mm_TalkOccupantNear_ctor(TalkView *view, CityScene *city, int object, int person)` | 112 | no | (view, city, object, person) vtable 0x1BD630, building `object`, person `person` |
 | `0x001772A0` | `void mm_TalkPersonFar_Draw(TalkView *view, int pass)` | 64 | no | vtable 0x1BD680: a person outside, camera cut |
 | `0x001772E0` | `void mm_TalkPersonFar_Closed(TalkView *view)` | 64 | no | waits for the fade, then idle |
 | `0x00177320` | `void mm_TalkPersonFar_Closing(TalkView *view)` | 100 | no | camera until the fade ends |
 | `0x00177390` | `void mm_TalkPersonFar_Close(TalkView *view)` | 52 | no | starts the fade and closes |
-| `0x001773D0` | `void mm_TalkPersonFar_Active(TalkView *view)` | 8 | no |  |
+| `0x001773D0` | `void mm_TalkPersonFar_Active(TalkView *view)` | 8 | no | (view) active state: nothing |
 | `0x001773E0` | `void mm_TalkPersonFar_Opened(TalkView *view)` | 52 | no | waits for the fade |
 | `0x00177420` | `void mm_TalkPersonFar_Opening(TalkView *view)` | 100 | no | camera, waits for the fade, fades again |
 | `0x00177490` | `void mm_TalkPersonFar_Open(TalkView *view)` | 52 | no | starts the fade and opens |
 | `0x001774D0` | `TalkView *mm_TalkPersonFar_dtor(TalkView *view, int16_t deleteFlag)` | 96 | yes | vtable 0x1BD680 |
-| `0x00177530` | `TalkView *mm_TalkPersonFar_ctor(TalkView *view, CityScene *city, int person)` | 548 | no | vtable 0x1BD680, person a2: camera facing them from the terrain heights |
+| `0x00177530` | `TalkView *mm_TalkPersonFar_ctor(TalkView *view, CityScene *city, int person)` | 548 | no | (view, city, person) vtable 0x1BD680, person `person`: camera facing them from the terrain heights |
 | `0x00177760` | `void mm_TalkPersonNear_Draw(TalkView *view, int pass)` | 40 | no | vtable 0x1BD6D0: a person outside, camera pans |
 | `0x00177790` | `void mm_TalkPersonNear_Closing(TalkView *view)` | 276 | indirect | camera pans back |
 | `0x001778B0` | `void mm_TalkPersonNear_Active(TalkView *view)` | 72 | no | camera held on the person |
 | `0x00177900` | `void mm_TalkPersonNear_Opening(TalkView *view)` | 268 | indirect | camera pans to the person |
 | `0x00177A10` | `TalkView *mm_TalkPersonNear_dtor(TalkView *view, int16_t deleteFlag)` | 96 | yes | vtable 0x1BD6D0 |
-| `0x00177A70` | `TalkView *mm_TalkPersonNear_ctor(TalkView *view, CityScene *city, int person)` | 548 | no | vtable 0x1BD6D0, person a2: camera facing them from the terrain heights |
+| `0x00177A70` | `TalkView *mm_TalkPersonNear_ctor(TalkView *view, CityScene *city, int person)` | 548 | no | (view, city, person) vtable 0x1BD6D0, person `person`: camera facing them from the terrain heights |
 | `0x00177CA0` | `void mm_TalkCard_FillText(TalkCard *card)` | 648 | yes | name, age and how recently met ("Met today", "Been awhile", "Lives in next town") |
 | `0x00177F30` | `void mm_TalkCard_DrawGauges(TalkCard *card)` | 788 | no | the card's friendship meter follows the real friendship of the person (or the family member by phone when the person is 6000) towards it: up by 0.02 a frame below 1, else 0.1 (and down by 0.1), snapping on arrival. The face frame takes the friendship band (style 0, or the band + 9) |
 | `0x00178250` | `void mm_TalkCard_Draw(TalkCard *card, int pass)` | 256 | yes | vtable 0x1BD720: card model, texts and gauges while active |
-| `0x00178350` | `void mm_TalkCard_Show(TalkCard *card, int person, int family, int member, int slot)` | 480 | no | opens for person a1 (or family a2 member a3) at slot a4, with the friendship and the mood face |
+| `0x00178350` | `void mm_TalkCard_Show(TalkCard *card, int person, int family, int member, int slot)` | 480 | no | (card, person, family, member, slot) opens for person `person` (or family `family` member `member`) at slot `slot`, with the friendship and the mood face |
 | `0x00178530` | `TalkCard *mm_TalkCard_dtor(TalkCard *card, int16_t deleteFlag)` | 172 | yes | vtable 0x1BD720 |
 | `0x001785E0` | `TalkCard *mm_TalkCard_ctor(TalkCard *card, CityScene *city)` | 220 | yes | vtable 0x1BD720, two text boxes and a frame |
 | `0x001786C0` | `void mm_Talk_SetViewLit(TalkSession *talk)` | 24 | no | forces the talk's view lit (TalkView.forceLit) when it has one |
 | `0x001786E0` | `int mm_Talk_LookupPose(TalkSession *talk, uint32_t family, uint32_t member, uint32_t *pose)` | 80 | no | the pose stored for a family member in the session's 32-entry table; 0 when there is none |
-| `0x00178730` | `void mm_Talk_SetPose(TalkSession *talk, uint16_t family, uint8_t member, uint8_t pose)` | 124 | no | stores pose a3 for family a1 member a2 in the 32-entry table (poses: u16 family, u8 member, u8 pose): updates a matching entry, else fills the first free one; pair of mm_Talk_LookupPose |
+| `0x00178730` | `void mm_Talk_SetPose(TalkSession *talk, uint16_t family, uint8_t member, uint8_t pose)` | 124 | no | (talk, family, member, pose) stores pose `pose` for family `family` member `member` in the 32-entry table (poses: u16 family, u8 member, u8 pose): updates a matching entry, else fills the first free one; pair of mm_Talk_LookupPose |
 | `0x001787B0` | `void mm_Talk_EndChoosing(TalkSession *talk)` | 24 | no | the view's forcedChoice = -1, endChoosing = 1 |
-| `0x001787D0` | `void mm_Talk_SelectPerson(TalkSession *talk, uint32_t family, uint32_t member)` | 44 | no | forces the view's choice (forcedChoice) to the slot of family a1 member a2 |
+| `0x001787D0` | `void mm_Talk_SelectPerson(TalkSession *talk, uint32_t family, uint32_t member)` | 44 | no | (talk, family, member) forces the view's choice (forcedChoice) to the slot of family `family` member `member` |
 | `0x00178800` | `void mm_Talk_ChooseInput(TalkSession *talk)` | 348 | yes | choosing a person: confirm (0x40) starts the conversation, cancel (0x10) closes |
 | `0x00178960` | `void mm_Talk_Closed(TalkSession *talk)` | 240 | indirect | state 5: when the view is idle, pops the scene mode, deletes view and conversation, restores HUD |
 | `0x00178A50` | `void mm_Talk_Closing(TalkSession *talk)` | 120 | indirect | state 4: when the conversation is idle, closes the view or goes back to choosing |
@@ -149,18 +149,18 @@ friendship changed. A is the person talked to.
 | `0x00178B40` | `void mm_Talk_Opened(TalkSession *talk)` | 104 | indirect | state 2: waits for the conversation to open |
 | `0x00178BB0` | `void mm_Talk_Opening(TalkSession *talk)` | 168 | yes | state 1: when the view is active, starts the conversation or choosing |
 | `0x00178C60` | `int mm_Talk_Update(TalkSession *talk)` | 228 | yes | updates view and conversation, then the state machine |
-| `0x00178D50` | `int mm_Talk_Start(TalkSession *talk, int byFamily, int target, int member, int arg5, CityScene *city)` | 1332 | yes | target building a2/person a3 or family a2/member a3; picks the view class (near/far, home, person) and the conversation |
+| `0x00178D50` | `int mm_Talk_Start(TalkSession *talk, int byFamily, int target, int member, int arg5, CityScene *city)` | 1332 | yes | (talk, byFamily, target, member, arg5, city) target building `target`/person `member` or family `target`/member `member`; picks the view class (near/far, home, person) and the conversation |
 | `0x00179290` | `void mm_Talk_Draw(TalkSession *talk, int pass)` | 96 | indirect | draws view and conversation |
 | `0x001792F0` | `TalkSession *mm_Talk_dtor(TalkSession *talk, int16_t deleteFlag)` | 180 | yes | vtable 0x1BD770 |
 | `0x001793B0` | `TalkSession *mm_Talk_ctor(TalkSession *talk)` | 68 | no | vtable 0x1BD770 |
 | `0x00179400` | `void mm_TalkMoney_Draw(TalkMoney *money, int pass)` | 156 | no | vtable 0x1BD7C0: panel model and the money text |
 | `0x001794A0` | `void mm_TalkMoney_Closing(TalkMoney *money)` | 68 | indirect | Step(0.1), then idle |
-| `0x001794F0` | `void mm_TalkMoney_Active(TalkMoney *money)` | 100 | no |  |
+| `0x001794F0` | `void mm_TalkMoney_Active(TalkMoney *money)` | 100 | no | (money) the amount shown counts 100 a frame towards the real one, never past it |
 | `0x00179560` | `void mm_TalkMoney_Opening(TalkMoney *money)` | 68 | indirect | Step(0.1), then active |
 | `0x001795B0` | `TalkMoney *mm_TalkMoney_dtor(TalkMoney *money, int16_t deleteFlag)` | 124 | yes | vtable 0x1BD7C0 |
-| `0x00179630` | `TalkMoney *mm_TalkMoney_ctor(TalkMoney *money, int amount)` | 188 | yes | vtable 0x1BD7C0, amount a1 (player money 0x1C5540) |
+| `0x00179630` | `TalkMoney *mm_TalkMoney_ctor(TalkMoney *money, int amount)` | 188 | yes | (money, amount) vtable 0x1BD7C0, amount `amount` (player money 0x1C5540) |
 | `0x001796F0` | `void mm_MyHome_EntranceRect(TalkView *view, int facing, int x, int z, int size, int32_t *rect)` | 360 | no | tile rectangle in front of a building by facing (0-3), clamped to the map |
-| `0x00179860` | `void mm_MyHome_MarkEntrance(TalkView *view, int set)` | 300 | no | sets (a1 1) or clears tile flag 0x80 in front of the home |
+| `0x00179860` | `void mm_MyHome_MarkEntrance(TalkView *view, int set)` | 300 | no | (view, set) sets (`set` 1) or clears tile flag 0x80 in front of the home |
 | `0x00179990` | `int mm_MyHome_FloorHit(TalkView *view, Vec4 *matrix, uint32_t *hit)` | 492 | no | the home's floor under the viewer: the segment from 0.51 below the position up to it against the interior's floor triangles; of the crossings the highest (smallest y) wins and is stored in *hit. 1 when there was one |
 | `0x00179B80` | `int mm_MyHome_WallHit(TalkView *view, Vec4 *matrix, uint32_t *hit, float *distance)` | 488 | no | the walls: the same triangles of the wall range against the ray from the viewer along each wall's normal within 0.2; the nearest distance is left in *distance (100 when none) and its hit point in *hit |
 | `0x00179D70` | `void mm_MyHome_Collide(TalkView *view)` | 412 | no | keeps the viewer out of the walls (two passes: each wall found pushes the viewer back along its direction by what is missing from 0.2) and on the floor (0.5 over a floor hit, else sinking by 0.05, never above -0.5) |
@@ -170,14 +170,14 @@ friendship changed. A is the person talked to.
 | `0x0017A4D0` | `void mm_MyHome_Opening(TalkView *view)` | 312 | indirect | camera moves into the home |
 | `0x0017A610` | `void mm_MyHome_Close(TalkView *view)` | 136 | no | refills stamina (mm_Stamina_Init) when below the maximum, clears the entrance, closes |
 | `0x0017A6A0` | `TalkView *mm_MyHome_dtor(TalkView *view, int16_t deleteFlag)` | 96 | yes | vtable 0x1BD810 |
-| `0x0017A700` | `TalkView *mm_MyHome_ctor(TalkView *view, CityScene *city, int object)` | 600 | no | vtable 0x1BD810, building a2, camera start from its entrance |
+| `0x0017A700` | `TalkView *mm_MyHome_ctor(TalkView *view, CityScene *city, int object)` | 600 | no | (view, city, object) vtable 0x1BD810, building `object`, camera start from its entrance |
 | `0x0017A960` | `void mm_TalkConv_Draw(TalkConv *conv, int pass)` | 164 | indirect | vtable 0x1BD860: message window, menu, name entry, card and money panel |
 | `0x0017AA10` | `void mm_TalkConv_Closing(TalkConv *conv)` | 448 | yes | Step(0.1); then friendship status updates for the person or family member |
 | `0x0017ABD0` | `void mm_TalkConv_Active(TalkConv *conv)` | 848 | yes | script code handling: choice menus, money panel, name entry, end of talk |
 | `0x0017AF20` | `void mm_TalkConv_Opening(TalkConv *conv)` | 80 | yes | Step(0.1), then active and the first line |
 | `0x0017AF70` | `int mm_TalkConv_Update(TalkConv *conv)` | 388 | yes | name entry results, menu choices back into the script, message window update |
 | `0x0017B100` | `void mm_TalkConv_NextLine(TalkConv *conv)` | 456 | yes | next script line; the end code (-6007) applies the friendship gain |
-| `0x0017B2D0` | `void mm_TalkConv_Start(TalkConv *conv, int byFamily, int target, int buildingOrMember, int slot, int arg5)` | 380 | yes | loads the script for a person (a1 0) or family member (a1 1), shows the card, sets the message |
+| `0x0017B2D0` | `void mm_TalkConv_Start(TalkConv *conv, int byFamily, int target, int buildingOrMember, int slot, int arg5)` | 380 | yes | (conv, byFamily, target, buildingOrMember, slot, arg5) loads the script for a person (`byFamily` 0) or family member (`byFamily` 1), shows the card, sets the message |
 | `0x0017B450` | `TalkConv *mm_TalkConv_dtor(TalkConv *conv, int16_t deleteFlag)` | 260 | yes | vtable 0x1BD860, deletes menu, name entry, card, money panel |
 | `0x0017B560` | `TalkConv *mm_TalkConv_ctor(TalkConv *conv, CityScene *city)` | 152 | yes | message window plus a menu window and the person card |
 | `0x0017B600` | `int mm_WordsFn_FocusPadAfterTalk(WordsCtx *ctx)` | 20 | no | #146 act: city flag 0x40, the pad focus returns when the talk ends |
@@ -334,24 +334,24 @@ friendship changed. A is the person talked to.
 | `0x00180070` | `int mm_Words_CallText(Words *words, int index)` | 32 | no | calls a text getter through its member function pointer |
 | `0x00180090` | `int mm_Words_CallAct(Words *words, int index)` | 32 | no | calls an action through its member function pointer |
 | `0x001800B0` | `void mm_Words_SetFewChoicesLeft(Words *words)` | 16 | no | the script's menu has fewer than two unused entries left (fewChoicesLeft = 1) |
-| `0x001800C0` | `void mm_Words_SelectBagItem(Words *words, int index)` | 192 | no | bagSlot = the a1-th bag item of kinds 0x10/0x11/0x13 |
-| `0x00180180` | `void mm_Words_SetWantIndex(Words *words, uint16_t index)` | 12 | no | wantIndex = a1 (the chosen want) |
+| `0x001800C0` | `void mm_Words_SelectBagItem(Words *words, int index)` | 192 | no | (words, index) bagSlot = the `index`-th bag item of kinds 0x10/0x11/0x13 |
+| `0x00180180` | `void mm_Words_SetWantIndex(Words *words, uint16_t index)` | 12 | no | (words, index) wantIndex = `index` (the chosen want) |
 | `0x00180190` | `int mm_Words_SelectEvent(Words *words, int choice)` | 92 | yes | chooses event `choice` - 1 of the city's list for the script (0 is no choice and gives 0): asks whether the first person of the script can take part in it (mm_Event_FindForFamily); the result is its code plus one |
-| `0x001801F0` | `int mm_Words_GetGoods(Words *words, int index)` | 88 | no | goods record a1 for building type B this season |
+| `0x001801F0` | `int mm_Words_GetGoods(Words *words, int index)` | 88 | no | (words, index) goods record `index` for building type B this season |
 | `0x00180250` | `uint16_t mm_Words_GetBuildingTypeB(Words *words)` | 12 | no | the context's buildingTypeB |
-| `0x00180260` | `void mm_Words_SetArg(Words *words, uint16_t arg)` | 12 | no | the context's arg = a1 |
+| `0x00180260` | `void mm_Words_SetArg(Words *words, uint16_t arg)` | 12 | no | (words, arg) the context's arg = `arg` |
 | `0x00180270` | `int mm_Words_GetFriendshipChanged(Words *words)` | 12 | no | the context's friendshipChanged (set by #116/#117) |
 | `0x00180280` | `int mm_Words_GetCancelAllowed(Words *words)` | 12 | no | the context's cancelAllowed |
-| `0x00180290` | `void mm_Words_SetFamily(Words *words, int family, uint16_t member, int arg4, CityScene *city)` | 248 | yes | subject A = family a1 member a2 (prefetches the family), clears the rest |
-| `0x00180390` | `void mm_Words_SetPerson(Words *words, MapPerson *person, int arg4, CityScene *city)` | 256 | yes | subject A = person a1 with home building, clears the rest |
+| `0x00180290` | `void mm_Words_SetFamily(Words *words, int family, uint16_t member, int arg4, CityScene *city)` | 248 | yes | (words, family, member, arg4, city) subject A = family `family` member `member` (prefetches the family), clears the rest |
+| `0x00180390` | `void mm_Words_SetPerson(Words *words, MapPerson *person, int arg4, CityScene *city)` | 256 | yes | (words, person, arg4, city) subject A = person `person` with home building, clears the rest |
 | `0x00180490` | `Words *mm_Words_dtor(Words *words, int16_t deleteFlag)` | 84 | yes | frees the 0x140-byte context |
 | `0x001804F0` | `Words *mm_Words_ctor(Words *words)` | 48 | yes | allocates the 0x140-byte context |
 | `0x001A0C40` | `void mm_Words_MatchTypedAnswer(int script, char *typed)` | 840 | no | which answer of the current question matches the typed text (strcmp) |
 | `0x001A0F90` | `char *mm_Words_GetEntryDefault(void)` | 580 | no | default text for a name entry question |
 | `0x001A11E0` | `int16_t mm_Words_GetEntryMode(void)` | 504 | no | the answer mode of the current entry |
-| `0x001A13E0` | `char *mm_Words_GetChoiceText(int script, CityScene *city, int code, int index)` | 1036 | yes | text of menu choice a3 for code a2: goods with prices ("Don't buy"), claims, wants, events |
+| `0x001A13E0` | `char *mm_Words_GetChoiceText(int script, CityScene *city, int code, int index)` | 1036 | yes | (script, city, code, index) text of menu choice `index` for code `code`: goods with prices ("Don't buy"), claims, wants, events |
 | `0x001A17F0` | `void mm_Words_ApplyChoice(int script, CityScene *city, int code, int choice)` | 504 | yes | (script, city, code, choice) applies a menu choice: the script moves on by the entry's place (Words column, or scriptPos); also hides a -2005 entry, adds the event chosen, selects a bag item, or sets the want index or the argument |
-| `0x001A19F0` | `int mm_Words_CountChoices(int script, CityScene *city, int code)` | 664 | no | number of menu choices for code a2 |
+| `0x001A19F0` | `int mm_Words_CountChoices(int script, CityScene *city, int code)` | 664 | no | (script, city, code) number of menu choices for code `code` |
 | `0x001A1CA0` | `void mm_Words_AppendClipped(char *buffer, char *text)` | 312 | no | appends a piece of text to a line being built, joined the way English wants it: a space between words, none after a line break, '(' or '<', or before a line break or punctuation ('.', '?', ',', ')', '>', an apostrophe). Two full stops make one, and a word ending in s takes "'s" as a bare "'" |
 | `0x001A1DE0` | `int16_t mm_Words_ExpandLine(int32_t *script, int code, char *out)` | 2044 | no | expands a script line: conditions pick branches, text getters fill in names, actions run |
 | `0x001A2620` | `int16_t mm_Words_StepImpl(int32_t *script, char *buffer)` | 888 | yes | (entry, buffer) binds banks 0 and 3 and picks the script's words when they are not bound, then runs the script's words until one gives a result (a line of text left part-way, an end code) |
@@ -359,8 +359,8 @@ friendship changed. A is the person talked to.
 | `0x001A29C0` | `int mm_Words_FriendshipChanged(void)` | 8 | no | the global context's friendshipChanged |
 | `0x001A29D0` | `int mm_Words_CancelAllowed(void)` | 8 | no | the global context's cancelAllowed |
 | `0x001A29E0` | `void mm_Words_LoadForWants(CityScene *city, int16_t id, int line, char *out)` | 596 | yes | script for a wants window line (event or default), reads its block |
-| `0x001A2C40` | `int mm_Words_LoadForFamily(int family, int member, int arg5, CityScene *city)` | 424 | yes | script for family a1 member a2 (talk by phone), reads its block |
-| `0x001A2DF0` | `int mm_Words_LoadForPerson(MapPerson *person, int arg5, CityScene *city)` | 604 | yes | script for person a1 (may start an event), reads its block |
+| `0x001A2C40` | `int mm_Words_LoadForFamily(int family, int member, int arg5, CityScene *city)` | 424 | yes | (family, member, arg5, city) the script of family `family` member `member` (a talk by phone): the subject set, the -2005 menu's entries hidden by age and friendship, the member's block read, the event words loaded; returns the block's cache slot |
+| `0x001A2DF0` | `int mm_Words_LoadForPerson(MapPerson *person, int arg5, CityScene *city)` | 604 | yes | (person, arg5, city) the script of person `person`: its character type's block, the event words of the event it starts (when `arg5` is 0) or the city's, the menus marked; returns the block's cache slot |
 | `0x001A3050` | `uint32_t *mm_Words_ReadBlock(int block)` | 336 | yes | (block) finds a script block in the cache of eight (most recently used first), reading it from WORDS.BIN into the last entry when it is not there; returns the first slot's word |
 | `0x001A31A0` | `WordsBlock *mm_WordsBlock_ctor(WordsBlock *entry)` | 172 | yes | (entry) a script block cache entry (WordsBlock): block 0 and a buffer of one block; the first one made opens WORDS.BIN and WORDSEVE.BIN, and each is counted |
 | `0x001A3250` | `void mm_Words_Init(void)` | 744 | yes | loads the WORDS, WORDSEVE, WORDSCOM and WORDSTEN tables at game start |

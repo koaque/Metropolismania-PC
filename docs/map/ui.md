@@ -30,7 +30,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x00128A90` | `void mm_MsgWin_Opening(MsgWin *msgwin)` | 68 | indirect | state 1: Step(0.1), then active |
 | `0x00128AE0` | `int mm_MsgWin_Update(MsgWin *msgwin)` | 108 | no | typing (state 6): button 0x40 skips the delay, then mm_MsgWin_TypeNext; other states run the base update (0x173450) |
 | `0x00128B50` | `void mm_MsgWin_Draw(MsgWin *msgwin, int pass)` | 356 | no | in pass 2: fades the window model node by state (alpha via its matrix row 0x1B2550), draws it and the text box |
-| `0x00128CF0` | `int mm_MsgWin_SetMessage(MsgWin *msgwin, int message, uint8_t sound)` | 136 | no | starts message a1 with sound code a2: resets buffers and cursors, clears the text box |
+| `0x00128CF0` | `int mm_MsgWin_SetMessage(MsgWin *msgwin, int message, uint8_t sound)` | 136 | no | (msgwin, message, sound) starts message `message` with sound code `sound`: resets buffers and cursors, clears the text box |
 | `0x00128D80` | `MsgWin *mm_MsgWin_dtor(MsgWin *msgwin, int16_t deleteFlag)` | 148 | yes | vtable 0x1BCE10; deletes the frame (0x14C210) and the text box, base destructor 0x173560 |
 | `0x00128E20` | `MsgWin *mm_MsgWin_ctor(MsgWin *msgwin)` | 184 | yes | vtable 0x1BCE10; text box 18x4 (style -2) at 0x7240,0x8240 and a 0xC0-byte window frame (0x14C270) |
 | `0x00135EF0` | `void mm_CityCursor_SelectTile(CityCursor *cursor, int tile, CityScene *city)` | 456 | no | picking a building: one marked by an event (flag 0x200) queues event 0x106; otherwise the building menu opens (mode 0xA) for it, the cursor in mode 4 with its open timer at 30, and this frame's info window rectangle is set from the frame (grown by 100 and 25 per step of the timer run so far, 15 at most |
@@ -44,7 +44,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x00137140` | `CityCursor *mm_CityCursor_ctor(CityCursor *cursor)` | 1064 | yes | the city cursor: the base object, a model loaded (0x1B5EF0) and deleted again at once, the lines and the fade counters cleared, and for each of the two views (one per frame parity) five text boxes with their frames, the info frame and the fade frame, then the view's opening sprite (SpritePacket: a 128 by 64 texture of 8-bit colours) |
 | `0x0013DB40` | `void mm_Minimap_BuildPacket(Minimap *minimap)` | 1096 | no | builds the minimap DMA packet (packet): palette 0x1AF180 to block 0x1E00, the cells as a 128 x 128 4-bit image to 0x1E01, then one sprite |
 | `0x0013DF90` | `void mm_Minimap_SetView(Minimap *minimap, float *camera, float angle)` | 144 | no | rotates the minimap by the camera (sceVu0RotMatrixZ) and offsets it by the position (scale 0.0105) |
-| `0x0013E020` | `void mm_Minimap_Plot(Minimap *minimap, uint32_t tile, int size, int colour, int keepHigher)` | 388 | no | marks tile a1 on the minimap with colour/size arguments |
+| `0x0013E020` | `void mm_Minimap_Plot(Minimap *minimap, uint32_t tile, int size, int colour, int keepHigher)` | 388 | no | (minimap, tile, size, colour, keepHigher) marks tile `tile` on the minimap with colour/size arguments |
 | `0x0013E1B0` | `void mm_Minimap_Draw(Minimap *minimap)` | 180 | no | draws the minimap models; marker colour blinks every 32 frames |
 | `0x0013E270` | `Minimap *mm_Minimap_DeletingDtor(Minimap *minimap, int16_t deleteFlag)` | 84 | yes | base destructor, then delete |
 | `0x0013E2D0` | `Minimap *mm_Minimap_ctor(Minimap *minimap)` | 172 | no | base constructor, models from 0x1F3B14/0x1F3B18, builds the packet |
@@ -56,7 +56,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x0014AB80` | `void mm_Laptop_LoadState(Laptop *laptop, McManager *mc)` | 68 | no | reads gp 0x1BDAB8.. (4 bytes) and the 14 laptop entries at 0x1F36F0 (0x38 bytes) from the save file |
 | `0x0014ABD0` | `void mm_Laptop_SaveState(Laptop *laptop, McManager *mc)` | 68 | no | writes them |
 | `0x0014AC20` | `uint32_t mm_Laptop_CountActive(void)` | 232 | no | active laptop entries |
-| `0x0014AD10` | `void mm_Laptop_SetItemText(Laptop *laptop, CityScene *city, uint32_t item)` | 108 | indirect | text for laptop item a2 (14 items, jump table 0x1B6570); default "-Laptop Computer- Save or quit the game." |
+| `0x0014AD10` | `void mm_Laptop_SetItemText(Laptop *laptop, CityScene *city, uint32_t item)` | 108 | indirect | (laptop, city, item) text for laptop item `item` (14 items, jump table 0x1B6570); default "-Laptop Computer- Save or quit the game." |
 | `0x0014AE10` | `void mm_Laptop_RemoveEntry(Laptop *laptop, int entry)` | 184 | no | removes the entry: the ones after it move up, the last slot is freed, and the cursor (selected) steps back when nothing follows |
 | `0x0014AED0` | `void mm_Laptop_AddEntry(Laptop *laptop, int entry)` | 256 | no | adds an entry (14 slots, -1 free) unless it is there. Entries 6 to 8 are tiers of one thing: a better one replaces a worse, a worse one is not added |
 | `0x0014AFD0` | `void mm_Laptop_Draw(Laptop *laptop)` | 356 | yes | laptop model (luminosity per item), text, fade |
@@ -73,14 +73,14 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x0014C210` | `Frame *mm_Frame_DeletingDtor(Frame *frame, int16_t deleteFlag)` | 84 | yes | base destructor, then delete |
 | `0x0014C270` | `Frame *mm_Frame_ctor(Frame *frame, int style, int x, int y, int width, int height, uint32_t depth)` | 580 | no | (frame, style, x, y, width, height, depth) a window frame: the sprite packet template (0x1B04B0), then the style, place and size, and the corners' depth (their Z: callers pass 0x10000000, 0xFFF00000, 0xFFFFFFFF, 0xFF0000) |
 | `0x0014C4C0` | `void mm_WaitText_Draw(void)` | 68 | no | blinking "Please wait...." text box (0x1BDAC4) |
-| `0x0014C510` | `int mm_WaitText_Append(char *text)` | 16 | no | appends a0 to the wait text |
-| `0x0014C520` | `void mm_WaitText_Set(char *text)` | 16 | no | sets the wait text to a0 |
+| `0x0014C510` | `int mm_WaitText_Append(char *text)` | 16 | no | (text) appends `text` to the wait text |
+| `0x0014C520` | `void mm_WaitText_Set(char *text)` | 16 | no | (text) sets the wait text to `text` |
 | `0x0014C530` | `void mm_WaitText_Delete(void)` | 44 | yes | deletes the wait text box |
 | `0x0014C560` | `void mm_WaitText_Create(char *text)` | 180 | yes | creates the wait text box ("Please wait....") |
-| `0x00150990` | `void mm_ListMenu_ScrollTo(ListMenu *menu, int item)` | 80 | no | scroll so item a1 is visible (visibleItems, itemHeight) |
+| `0x00150990` | `void mm_ListMenu_ScrollTo(ListMenu *menu, int item)` | 80 | no | (menu, item) scroll so item `item` is visible (visibleItems, itemHeight) |
 | `0x001509E0` | `void mm_ListMenu_Place(ListMenu *menu, int x, int y, int depth)` | 188 | no | (menu, x, y, depth) places the list's box at x, y (screen pixels) with its texts' depth, and sets the four sprites of its clipping mask (ListMenuMask) around the box |
-| `0x00150AA0` | `void mm_ListMenu_ClearItem(ListMenu *menu, int item)` | 216 | no | empties the text of item a1 (the last one is popped), or of every item and resets the counts (-1) |
-| `0x00150B80` | `void mm_ListMenu_SetItemText(ListMenu *menu, char *text, int item)` | 148 | no | text of item a2 (-1 = selected) |
+| `0x00150AA0` | `void mm_ListMenu_ClearItem(ListMenu *menu, int item)` | 216 | no | (menu, item) empties the text of item `item` (the last one is popped), or of every item and resets the counts (-1) |
+| `0x00150B80` | `void mm_ListMenu_SetItemText(ListMenu *menu, char *text, int item)` | 148 | no | (menu, text, item) text of item `item` (-1 = selected) |
 | `0x00150C20` | `void mm_ListMenu_AddItems(ListMenu *menu, int columns, int rows, int mode, int style, int unused_t1, int item)` | 384 | yes | (menu, columns, rows, mode, style, unused_t1, item) gives item `item` (the next free one for -1) its text box of columns by rows characters in `style`; `mode` picks the character size and the item's height |
 | `0x00150DA0` | `int mm_ListMenu_HandleInput(ListMenu *menu, int32_t *choice)` | 888 | no | cursor with key repeat, select/cancel, sounds; returns the result |
 | `0x00151140` | `void mm_ListMenu_Draw(ListMenu *menu)` | 340 | no | (menu) the clipping mask first, then the item texts (one row beyond each end of the box too, for the mask to cut while scrolling), then the cursor frame; Z is cleared afterwards |
@@ -109,21 +109,21 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x00155B50` | `void mm_Applicants_ScrollTo(Applicants *applicants, int index)` | 260 | no | after entry `index` left the list (-1: none did): pulls the two list positions back over it, clamps them to the list and refreshes each entry's claim section |
 | `0x00155C60` | `void mm_Applicants_PlaceAt(Applicants *applicants, float *point)` | 408 | no | places the applicant card at `point`: both card models there (their matrices' last rows), and the card text positioned and sized from the point's x, y and depth (z) through fixed factors |
 | `0x00155E00` | `void mm_Applicants_DrawDetails(Applicants *applicants)` | 1620 | yes | the lighting of the applicant card's claim icons as the cursor and the shown entry (top) move. Idle (rollDir 0), a gap between them starts a step: forward (top < cursor: direction +1, the icon of the top entry lit on the eight nodes of the table at 0x1B7A10, the cursor's on the first) or backward (direction -1, rollPhase at 40, the other way round) |
-| `0x00156470` | `void mm_Applicants_Draw(Applicants *applicants)` | 1540 | yes | the applicants panel |
+| `0x00156470` | `void mm_Applicants_Draw(Applicants *applicants)` | 1540 | yes | (applicants) the applicants panel: the card model, the entries' icons on the icon model's nodes along the card, the marker beside it and the card text |
 | `0x00156A90` | `Applicants *mm_ApplicantsBase_dtor(Applicants *applicants, int16_t deleteFlag)` | 124 | yes | vtable 0x1BCF60, deletes its text box |
 | `0x00156B10` | `Applicants *mm_ApplicantsBase_ctor(Applicants *applicants)` | 320 | yes | vtable 0x1BCF60, text box, empty list |
 | `0x00157110` | `int mm_Applicants_Update(Applicants *applicants, CityScene *city)` | 1660 | yes | the applicants panel per frame: cursor, prefetching family records, assigning |
 | `0x001577A0` | `Applicants *mm_Applicants_dtor(Applicants *applicants, int16_t deleteFlag)` | 96 | yes | vtable 0x1BCF70, then the base destructor |
 | `0x00157800` | `Applicants *mm_Applicants_ctor(Applicants *applicants)` | 156 | yes | base constructor, vtable 0x1BCF70 |
 | `0x0015F920` | `void mm_MenuWin_FillItems(MenuWin *menuwin, char *item)` | 104 | yes | fills its list (13 or 14 items) |
-| `0x0015F990` | `void mm_MenuWin_Open(MenuWin *menuwin, int menuId, int count)` | 248 | yes | creates its list menus for menu id a1 (-2001 ...) |
+| `0x0015F990` | `void mm_MenuWin_Open(MenuWin *menuwin, int menuId, int count)` | 248 | yes | (menuwin, menuId, count) creates its list menus for menu id `menuId` (-2001 ...) |
 | `0x0015FA90` | `void mm_MenuWin_Draw(MenuWin *menuwin, int pass)` | 268 | no | window model and list menu in pass 2 |
 | `0x0015FBA0` | `void mm_MenuWin_Closing(MenuWin *menuwin)` | 92 | yes | state 4: Step(0.1), frees the frame, then idle |
 | `0x0015FC00` | `void mm_MenuWin_Update(MenuWin *menuwin)` | 68 | indirect | list input; on a choice calls its close slot |
 | `0x0015FC50` | `void mm_MenuWin_Opening(MenuWin *menuwin)` | 68 | indirect | state 1: Step(0.1), then active |
 | `0x0015FCA0` | `MenuWin *mm_MenuWin_dtor(MenuWin *menuwin, int16_t deleteFlag)` | 124 | yes | vtable 0x1BCF80, deletes the list menu, base destructor |
 | `0x0015FD20` | `MenuWin *mm_MenuWin_ctor(MenuWin *menuwin)` | 76 | no | base constructor, vtable 0x1BCF80 |
-| `0x0015FE30` | `int mm_Markers_CheckCircle(Markers *markers, CityScene *city, int allowed)` | 212 | no | the building markers' Circle check (a Markers method): while Circle alone (0x20) is held in city mode 1 (and a2) hides the cursor and shows the markers; hides them again on release |
+| `0x0015FE30` | `int mm_Markers_CheckCircle(Markers *markers, CityScene *city, int allowed)` | 212 | no | (markers, city, allowed) the building markers' Circle check (a Markers method): while Circle alone (0x20) is held in city mode 1 (and `allowed`) hides the cursor and shows the markers; hides them again on release |
 | `0x00161F00` | `int mm_LoadingScreen_Update(LoadingScreen *loading, int fadeIn)` | 604 | no | loading screen frame: sprite circling or pulsing, background and sprite drawn, fade in or out by 4 (2 while fading, then 0 or 1), text once clear |
 | `0x00162160` | `int mm_LoadingScreen_SetText(LoadingScreen *loading, char *text)` | 12 | no | text box text |
 | `0x00162170` | `void mm_LoadingScreen_SetTextPos(LoadingScreen *loading, int x, int y)` | 28 | no | text box position (screen coordinates) |
@@ -134,12 +134,12 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x00162C50` | `void mm_NameEntry_Draw(NameEntry *entry)` | 644 | no | draws the name entry (state; 0 draws nothing, 1 is typing, else only the board model): the typed name padded to its length (maxLength) with filler glyphs (0x1B8038), the character under the cursor (length) blinking between a space and '*' at the 16th frame of its 32-frame cycle (blink) |
 | `0x00162EE0` | `int mm_NameEntry_Update(NameEntry *entry)` | 240 | no | states 3 and 4 slide the panel in (26 frames, then input) and out (to closed); state 1 takes input. Returns the state |
 | `0x00162FD0` | `void mm_NameEntry_Close(NameEntry *entry)` | 48 | no | closes the name entry: unless it is closed already it slides out over 25 frames (state 4), or closes at once (state 0) when it does not slide |
-| `0x00163000` | `void mm_NameEntry_Setup(NameEntry *entry, uint32_t mode, uint8_t maxLength, int noSlide, int hint, char *text)` | 912 | no | opens the name entry: the keyboard set (`mode`, the text pointer table at 0x1B13E0), the name length (up to 24, maxLength) with the name cleared or taken from `text`, the scrolling hint (`hint`, else empty; scrolled when longer than 10 characters), the cursor at the end of the name, the state (3 when `a3` is 0, else 1) with the board model placed (0.3 lower in state 3), the keyboard text from its first line (6 characters a line) and the arrows for more lines above and below (moreAbove, moreBelow) |
+| `0x00163000` | `void mm_NameEntry_Setup(NameEntry *entry, uint32_t mode, uint8_t maxLength, int noSlide, int hint, char *text)` | 912 | no | (entry, mode, maxLength, noSlide, hint, text) opens the name entry: the keyboard set (`mode`, the text pointer table at 0x1B13E0), the name length (up to 24, maxLength) with the name cleared or taken from `text`, the scrolling hint (`hint`, else empty; scrolled when longer than 10 characters), the cursor at the end of the name, the state (3 when ``noSlide`` is 0, else 1) with the board model placed (0.3 lower in state 3), the keyboard text from its first line (6 characters a line) and the arrows for more lines above and below (moreAbove, moreBelow) |
 | `0x00163390` | `NameEntry *mm_NameEntry_dtor(NameEntry *entry, int16_t deleteFlag)` | 184 | yes | the name entry's destructor: its four text boxes (hintText, keysText, nameText, lineText) deleted, then the object when asked |
 | `0x00163450` | `void mm_NameEntry_CreateTexts(NameEntry *entry)` | 424 | yes | the four text boxes of the name entry window (hintText 16 by 1, keysText 3 by 4 with larger glyphs, nameText 12 by 1 and lineText 16 by 1, all at depth 0x10001000), and the model it shows: the shared model (0x1F3B6C, model), its matrix (boardMatrix) and the world matrix of its node 1 (markerMatrix), set to the one at 0x1B2550 moved to markerX, markerY and the board's z |
 | `0x00163600` | `NameEntry *mm_NameEntry_ctor(NameEntry *entry)` | 136 | yes | the name entry window: its texts, then the board placed at restHeight and z -4.4 (the marker takes the same z) and the place kept in boardPlace |
 | `0x0016C3A0` | `void mm_PhoneCall_Next(PhoneCalls *phone, CityScene *city)` | 204 | no | shifts the call queue and drops input focus |
-| `0x0016C470` | `void mm_PhoneCall_Remove(PhoneCalls *phone, CityScene *city, uint32_t family, uint32_t member)` | 372 | no | removes the queued call for (a2, a3) |
+| `0x0016C470` | `void mm_PhoneCall_Remove(PhoneCalls *phone, CityScene *city, uint32_t family, uint32_t member)` | 372 | no | (phone, city, family, member) removes the queued call for (`family`, `member`) |
 | `0x0016C5F0` | `int mm_PhoneCall_Post(PhoneCalls *phone, int person, uint32_t family, uint16_t member, int familyOnly)` | 124 | no | (phone, person, family, member, familyOnly) queues a call from a family member (4 entries; none when the family already has one); 1 when queued |
 | `0x0016C670` | `void mm_PhoneCall_Draw(PhoneCalls *phone)` | 364 | yes | phone model, ringing light and sound |
 | `0x0016C7E0` | `int mm_PhoneCall_Update(PhoneCalls *phone, CityScene *city)` | 1940 | yes | ringing phone: "Call from boss", "Call from stranger", "Call from %s", answering, input focus |
@@ -150,7 +150,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x0016D0A0` | `void mm_Notice_Clear(Notice *notice)` | 16 | no | id -1, hidden |
 | `0x0016D0B0` | `void mm_Notice_ShowCentered(Notice *notice, char *text, int second)` | 168 | no | centred text for 300 frames |
 | `0x0016D160` | `void mm_Notice_ShowText(Notice *notice, char *text)` | 144 | no | text for 300 frames |
-| `0x0016D1F0` | `void mm_Notice_Show(Notice *notice, int id)` | 180 | no | notice a1 from the table at 0x1B81E0 ("A bit hungry." ...), 300 frames |
+| `0x0016D1F0` | `void mm_Notice_Show(Notice *notice, int id)` | 180 | no | (notice, id) notice `id` from the table at 0x1B81E0 ("A bit hungry." ...), 300 frames |
 | `0x0016D2B0` | `Notice *mm_Notice_dtor(Notice *notice, int16_t deleteFlag)` | 124 | yes | deletes its two text boxes |
 | `0x0016D330` | `Notice *mm_Notice_ctor(Notice *notice)` | 208 | yes | creates its two text boxes |
 | `0x0016D400` | `int mm_SoundTest_BgmPage(TitleScene *scene, uint32_t repeated, uint32_t pressed, uint32_t held)` | 936 | no | sound test BGM page: loads banks, plays/stops sequences |
@@ -167,7 +167,7 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x00172130` | `void mm_TownPages_Update(TownPages *pages, CityScene *city)` | 4136 | yes | open animation, page turning and cursor input, calling a resident (mm_CityScene_StartTalk) |
 | `0x00173160` | `TownPages *mm_TownPages_dtor(TownPages *pages, int16_t deleteFlag)` | 268 | yes | frame, entry table and six text boxes |
 | `0x00173270` | `TownPages *mm_TownPages_Init(TownPages *pages)` | 212 | yes | book model 0x1F3B20, cursor frame, cleared state |
-| `0x00173350` | `int mm_Widget_Step(Widget *widget, float dt)` | 92 | no | step slot: timer += f12; at 1.0 timer = 0 and state + 1 (6 wraps to 0), returns 1 |
+| `0x00173350` | `int mm_Widget_Step(Widget *widget, float dt)` | 92 | no | (widget, dt) step slot: timer += `dt`; at 1.0 timer = 0 and state + 1 (6 wraps to 0), returns 1 |
 | `0x001733B0` | `void mm_Widget_Closed(Widget *widget)` | 24 | indirect | base onState slot of state 5 (closed): Step(1.0) |
 | `0x001733D0` | `void mm_Widget_Closing(Widget *widget)` | 24 | indirect | base onState slot of state 4 (closing): Step(1.0) |
 | `0x001733F0` | `void mm_Widget_Active(Widget *widget)` | 8 | no | base onState slot of state 3 (active): nothing |
@@ -188,4 +188,4 @@ the Town's Pages (the residents' phone book), name entry, the loading screen and
 | `0x00183E40` | `void mm_TextBox_SetPos(TextBox *textbox, int x, int y, int z)` | 20 | no | x, y and z in GS units, then rebuilds |
 | `0x00183E60` | `void mm_TextBox_SetPosAndSize(TextBox *textbox, int x, int y, int charWidth, int charHeight, int pitchX, int pitchY, int z)` | 36 | no | position, glyph size and pitch at once, then rebuilds |
 | `0x00183E90` | `TextBox *mm_TextBox_dtor(TextBox *textbox, int16_t deleteFlag)` | 112 | yes | sceGsSyncPath, frees the packet (+8); deletes this when the flag is > 0 |
-| `0x00183F00` | `TextBox *mm_TextBox_Init(TextBox *textbox, int columns, int rows, int style)` | 300 | yes | grid of (a1*2) cols x a2 rows; default pos 0x6C00,0x7900 z 16000000, glyph 0xC0 x 0xB0; a3 = style table (-1 -> 0x1B24A0, -2 -> 0x1B24E0, 0 none) in clut; mallocs the packet |
+| `0x00183F00` | `TextBox *mm_TextBox_Init(TextBox *textbox, int columns, int rows, int style)` | 300 | yes | (textbox, columns, rows, style) grid of (`columns`*2) cols x `rows` rows; default pos 0x6C00,0x7900 z 16000000, glyph 0xC0 x 0xB0; `style` = style table (-1 -> 0x1B24A0, -2 -> 0x1B24E0, 0 none) in clut; mallocs the packet |

@@ -72,9 +72,9 @@ People and the player character.
 | `0x00157DF0` | `void mm_Player_PlayFootstep(Player *player, CityScene *city)` | 528 | no | footsteps on frames 10/30 of the walking animations (4-7) and frame 10 of 8-11, on the ground only: variant by the object on the tile, the water level and snow |
 | `0x00158000` | `void mm_Player_UpdateAction(Player *player, Vec4 *move, CityScene *city)` | 880 | no | the player's animation from its movement, pad direction and height (idle 0-2, moving 4-15), advances its frame; sound 5 while walking with pad 0x40 |
 | `0x00158370` | `void mm_Player_PickTarget(Player *player, CityScene *city)` | 1704 | no | keeps or drops the player's target (gone, or 30 frames off the heading by pi/8), then steps a ray along the heading: a flag-0x40 building it hits, or while walking the nearest resident within 0.3 of the ray; sets the city cursor |
-| `0x00159320` | `void mm_Player_SetMode(Player *player, int mode)` | 56 | no | mode a1 (-1 = previous), remembers the previous mode, resets the mode timer |
+| `0x00159320` | `void mm_Player_SetMode(Player *player, int mode)` | 56 | no | (player, mode) mode `mode` (-1 = previous), remembers the previous mode, resets the mode timer |
 | `0x00159360` | `int mm_Player_GetMode(Player *player)` | 8 | no | current mode |
-| `0x00159370` | `void mm_Player_Draw(Player *player, CityScene *city)` | 100 | no | player model instances |
+| `0x00159370` | `void mm_Player_Draw(Player *player, CityScene *city)` | 100 | no | (player, city) the player's model, animated while there is room for it, lit, in the bag's outfit |
 | `0x001593E0` | `void mm_Player_Move(Player *player, Vec4 *move)` | 1896 | no | the player's grid steps: the pad starts a step (forward/back/sideways 2/speed frames, turns 32 frames); idle, eases onto the block middle and a quarter turn; the step moves the move vector or turns pi/64 |
 | `0x00159B50` | `void mm_Player_Turn(Player *player, float *move)` | 428 | no | turning and moving with the pad unless Circle is held: up and down set the z step, the analog stick's sideways bits the x step, right and left turn by 0.02 (wrapping at pi) |
 | `0x00159D00` | `void mm_Player_Update(Player *player, CityScene *city)` | 1988 | yes | player per frame by mode: movement, camera, minimap, footsteps, placing items and homes |
@@ -104,12 +104,12 @@ People and the player character.
 | `0x00162500` | `int mm_Stamina_HungerLevel(Stamina *stamina)` | 64 | no | 0 below 100000, else a higher level (event "Hunger") |
 | `0x00162540` | `void mm_Stamina_Init(Stamina *stamina)` | 24 | no | stamina 399999 |
 | `0x00162560` | `void mm_Stamina_CreateGlobal(void)` | 60 | yes | 0x1BDBB8 = new stamina record |
-| `0x0019AA80` | `void mm_Person_ExitBuilding(CityScene *city, MapPerson *person)` | 160 | no | if person a1 is inside a building: lowers the building's occupant count (occupants) and marks the person outside |
+| `0x0019AA80` | `void mm_Person_ExitBuilding(CityScene *city, MapPerson *person)` | 160 | no | (city, person) if person `person` is inside a building: lowers the building's occupant count (occupants) and marks the person outside |
 | `0x0019AE50` | `int mm_Person_IsOnOpenTile(CityScene *city, ActorRef *actor)` | 212 | no | whether the actor stands on a building of theirs that does not keep its people inside (type flag 0x40), never while flag 4 is set |
-| `0x0019AF30` | `int mm_Person_IsAtBuilding(CityScene *city, ActorRef *actor, ActorRef *target)` | 232 | no | person a1 (6000 counts as yes) stands at building a2 |
-| `0x0019B020` | `MapPerson *mm_Person_FindIdleOfType(CityScene *city, MapObject *building, uint32_t charType)` | 136 | no | first person of char type a2 whose home building is free (0x165660) |
-| `0x0019B0B0` | `int mm_Person_IsNearBuilding(CityScene *city, MapPerson *person, MapObject *obj, int range)` | 424 | no | person position within a3 tiles of building a2's footprint |
-| `0x0019B260` | `int mm_Player_DistanceToBuilding(CityScene *city, ActorRef *actor)` | 360 | no | tiles between the player and the building of actor a1 (footprint aware); a0 is the city |
-| `0x0019B3D0` | `float mm_Player_DistanceToPerson(CityScene *city, ActorRef *actor)` | 104 | no | distance from the player to person a1 (sqrt) |
-| `0x0019B440` | `float mm_Player_DistanceToPoint(CityScene *city, float *point)` | 80 | no | distance from the player to point a1 |
-| `0x0019B490` | `float mm_Person_Distance(CityScene *city, ActorRef *actorA, ActorRef *actorB)` | 84 | no | distance between persons a1 and a2 |
+| `0x0019AF30` | `int mm_Person_IsAtBuilding(CityScene *city, ActorRef *actor, ActorRef *target)` | 232 | no | (city, actor, target) person `actor` (6000 counts as yes) stands at building `target` |
+| `0x0019B020` | `MapPerson *mm_Person_FindIdleOfType(CityScene *city, MapObject *building, uint32_t charType)` | 136 | no | (city, building, charType) first person of char type `charType` whose home building is free (0x165660) |
+| `0x0019B0B0` | `int mm_Person_IsNearBuilding(CityScene *city, MapPerson *person, MapObject *obj, int range)` | 424 | no | (city, person, obj, range) person position within `range` tiles of building `obj`'s footprint |
+| `0x0019B260` | `int mm_Player_DistanceToBuilding(CityScene *city, ActorRef *actor)` | 360 | no | (city, actor) tiles between the player and the building of actor `actor` (footprint aware) |
+| `0x0019B3D0` | `float mm_Player_DistanceToPerson(CityScene *city, ActorRef *actor)` | 104 | no | (city, actor) distance from the player to person `actor` (sqrt) |
+| `0x0019B440` | `float mm_Player_DistanceToPoint(CityScene *city, float *point)` | 80 | no | (city, point) distance from the player to point `point` |
+| `0x0019B490` | `float mm_Person_Distance(CityScene *city, ActorRef *actorA, ActorRef *actorB)` | 84 | no | (city, actorA, actorB) distance between persons `actorA` and `actorB` |

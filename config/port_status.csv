@@ -747,22 +747,22 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00128A90,mm_MsgWin_Opening,68,game,ui,verified,indirect,0,0,"state 1: Step(0.1), then active"
 0x00128AE0,mm_MsgWin_Update,108,game,ui,verified,no,1,3,"typing (state 6): button 0x40 skips the delay, then mm_MsgWin_TypeNext; other states run the base update (0x173450)"
 0x00128B50,mm_MsgWin_Draw,356,game,ui,verified,no,1,4,"in pass 2: fades the window model node by state (alpha via its matrix row 0x1B2550), draws it and the text box"
-0x00128CC0,mm_Mat4_Copy,36,game,math,verified,no,29,0,copies a 4x4 float matrix (16 words) from a1 to a0
-0x00128CF0,mm_MsgWin_SetMessage,136,game,ui,verified,no,2,2,"starts message a1 with sound code a2: resets buffers and cursors, clears the text box"
+0x00128CC0,mm_Mat4_Copy,36,game,math,verified,no,29,0,"(dst, src) copies a 4x4 float matrix (16 words) from `src` to `dst`"
+0x00128CF0,mm_MsgWin_SetMessage,136,game,ui,verified,no,2,2,"(msgwin, message, sound) starts message `message` with sound code `sound`: resets buffers and cursors, clears the text box"
 0x00128D80,mm_MsgWin_dtor,148,game,ui,verified,yes,1,4,"vtable 0x1BCE10; deletes the frame (0x14C210) and the text box, base destructor 0x173560"
 0x00128E20,mm_MsgWin_ctor,184,game,ui,verified,yes,2,5,"vtable 0x1BCE10; text box 18x4 (style -2) at 0x7240,0x8240 and a 0xC0-byte window frame (0x14C270)"
 0x00128EE0,mm_LightSet_BuildPackets,432,game,gfx,verified,no,1,2,"two VU1 packets (packetA, packetB): the set's 26 quadwords from groupA to VU1 0x12, a call of the program chain (0x1A3C80 / 0x1A4780), VIF base and offset"
-0x00129090,mm_Packet2_Draw,48,game,gfx,verified,no,9,1,"queues packet a0[0], or a0[1] when a1 != 0"
+0x00129090,mm_Packet2_Draw,48,game,gfx,verified,no,9,1,"(packets, second) queues packet `packets`[0], or `packets`[1] when `second` != 0"
 0x001290C0,mm_A3DObjectBase_DeletingDtor,84,game,gfx,verified,yes,2,2,"base destructor 0x12AB40, then delete when the flag is > 0"
 0x00129120,mm_LightSet_Init,228,game,gfx,verified,no,2,2,"light set base setup: the two programs' output offsets (0x110 and 0xE0), every colour of both groups and the instance colour set to 1, then its packets. Returns the set"
 0x00129210,mm_A3D_GetAnimLength,24,game,gfx,verified,no,9,0,the length of a model's animation (its first track's last word)
-0x00129230,mm_A3D_Animate,816,game,gfx,verified,no,6,2,"keyframe animation a1 of model a0 at time a2: each node track's pair of keys around the time sets the node's local matrix (quaternion slerp, linear position); draws nothing"
+0x00129230,mm_A3D_Animate,816,game,gfx,verified,no,6,2,"(model, anim, time) keyframe animation `anim` of the model at `time`: each node track's pair of keys around the time sets the node's local matrix (quaternion slerp, linear position); draws nothing"
 0x00129570,mm_A3D_Relocate,988,game,gfx,verified,yes,2,3,"turns the loaded model's offsets into pointers, patches the addresses in its DMA chains (mm_DmaChain_*) and uploads its textures (mm_Dma_KickVif1Now)"
 0x00129950,mm_A3DObject_ChangeLuminosity,96,game,gfx,verified,yes,6,1,CA3DObject::ChangeLuminusity (name from its error string): sets node `index`'s colour (its slot's colour) to the vec4 at `colour` when the node has a mesh; prints an error for a bad node index
 0x001299B0,mm_A3DObject_DrawNode,104,game,gfx,verified,no,15,1,queues node `index`'s packet (its slot) and its mesh's chain; nodes are 0xC0 bytes (the model data's nodes)
 0x00129A20,mm_A3DObject_Draw,228,game,gfx,verified,no,10,2,updates every node's world matrix (mm_A3DObject_UpdateNodeMatrix) and queues all nodes
 0x00129B10,mm_A3DObject_UpdateMatrices,248,game,gfx,verified,no,10,2,"world matrix of each node: root nodes = the object's matrix x local, children via mm_A3DObject_UpdateNodeMatrix"
-0x00129C10,mm_Mat4_MulVu0,116,game,math,verified,no,2,0,"a0 = a1 x a2 (4x4, VU0 macro mode)"
+0x00129C10,mm_Mat4_MulVu0,116,game,math,verified,no,2,0,"(out, a, b) `out` = `a` x `b` (4x4, VU0 macro mode)"
 0x00129C90,mm_A3DObject_UpdateNodeMatrix,412,game,gfx,verified,no,3,2,node world matrix = parent's world matrix x local (recursive)
 0x00129E30,mm_A3DObject_dtor,136,game,gfx,verified,yes,4,3,"frees the model data (model) and the animation table (animations), base destructor; delete when the flag is > 0"
 0x00129EC0,mm_A3DObject_LoadAsync,544,game,gfx,verified,yes,3,8,"asynchronous .A3D load from an open file, one step per call (state gp 0x1BD...80A0): header into 0x1C5100, then data; 0 = busy, -1 = error"
@@ -778,7 +778,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0012A6C0,mm_Camera_UpdateMatrices,136,game,camera,verified,no,29,2,"dir = normalize(target - eye); sceVu0CameraMatrix into view with the up vector; worldScreenA = screenA x view, worldScreenB = screenB x view"
 0x0012A750,mm_Camera_DeletingDtor,84,game,camera,verified,yes,4,2,"base destructor, then delete when the flag is > 0"
 0x0012A7B0,mm_Camera_ctor,856,game,camera,verified,no,4,8,"default light directions/colours, eye/target, fog and projection, then all matrices"
-0x0012AB10,mm_Vec3_Normalize,36,game,math,verified,no,1,0,"a0 = a1 / |a1| (VU0, xyz)"
+0x0012AB10,mm_Vec3_Normalize,36,game,math,verified,no,1,0,"(out, v) `out` = `v` / |`v`| (VU0, xyz)"
 0x0012AB40,mm_BaseObject_dtor,68,game,core,verified,yes,15,1,common base destructor: delete when the flag is > 0
 0x0012AB90,mm_BaseObject_ctor,8,game,core,verified,no,16,0,common base constructor: returns this
 0x0012ABA0,mm_GameUpdate,572,game,game,verified,yes,0,12,"Game class (vtable 0x1BCE60) slot +0xC, once per frame: sound update, then the scene state machine (state): creates, updates and deletes the title, stage briefing and city scenes"
@@ -786,12 +786,12 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0012AE20,mm_Main,100,game,game,ported,yes,1,6,"probes the heap, runs static init, constructs the App on the stack, switches it to the Game vtable 0x1BCE60, runs mm_MainLoop, destroys it"
 0x0012AE90,mm_Bag_LoadState,20,game,bag,verified,no,1,1,reads the bag's first 0x16C bytes (items and track ids) from the save (mm_SaveFile_Read); only caller mm_CityScene_LoadGame
 0x0012AEB0,mm_Bag_SaveState,20,game,bag,verified,no,1,1,writes the bag's first 0x16C bytes to the save (mm_SaveFile_Write); only caller mm_CityScene_SaveGame
-0x0012AED0,mm_Bag_RemoveSlot,236,game,bag,verified,no,4,0,removes item slot a1 (16 bytes each from +4) and shifts the rest down; capacity per bag type from 0x1B5B08
-0x0012AFC0,mm_Bag_AddMusicTrack,180,game,bag,verified,no,1,1,"adds the track id of goods item (a1, a2) to the ten music tracks (musicTracks) if missing and registers it with mm_Bgm_SetTrackSlot"
+0x0012AED0,mm_Bag_RemoveSlot,236,game,bag,verified,no,4,0,"(bag, slot) removes item slot `slot` (16 bytes each from +4) and shifts the rest down; capacity per bag type from 0x1B5B08"
+0x0012AFC0,mm_Bag_AddMusicTrack,180,game,bag,verified,no,1,1,"(bag, group, index) adds the track id of goods item (`group`, `index`) to the ten music tracks (musicTracks) if missing and registers it with mm_Bgm_SetTrackSlot"
 0x0012B080,mm_Bag_AddItem,136,game,bag,verified,no,2,0,"(bag, group, index, stage, month, seller, unk0E, unk0F) puts the goods (record `index` of group `group`) in the first empty slot with the stage and month it was bought in, the seller's family and its count from the goods record; the bag gets size 1 if it had none. unk0E and unk0F go to the slot's write-only bytes (0xFF and 0 from both callers)"
-0x0012B110,mm_Bag_FindItem,148,game,bag,verified,no,0,0,slot holding the item whose id is a1
+0x0012B110,mm_Bag_FindItem,148,game,bag,verified,no,0,0,"(bag, id) slot holding the item whose id is `id`"
 0x0012B1B0,mm_BagMenu_UpdateItemText,380,game,bag,verified,no,1,1,"item name and the action text for the selected slot: ""Empty bag"", ""Eat"", ""Drink"", ""New clothes"", ""Set up"""
-0x0012B330,mm_BagMenu_FinishUse,124,game,bag,verified,yes,1,2,"after using an item: count - 1 when a1, removes the slot when empty, refreshes the list"
+0x0012B330,mm_BagMenu_FinishUse,124,game,bag,verified,yes,1,2,"(bag, used) after using an item: count - 1 when `used`, removes the slot when empty, refreshes the list"
 0x0012B3B0,mm_BagMenu_GetSetupKind,180,game,bag,verified,no,1,0,for the item being used: kind 3/2/1 for goods categories 0x1C/0x1B/0x1A (placeable items)
 0x0012B470,mm_BagMenu_UseSelected,420,game,bag,verified,yes,1,5,"uses the selected item by goods category (placing, eating, ...), with sounds"
 0x0012B620,mm_BagMenu_RefreshList,312,game,bag,verified,yes,3,6,"rebuilds the item list text (""name * count"")"
@@ -851,11 +851,11 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00134A20,mm_Person_Update,3032,game,char,verified,yes,0,20,"class 1 update slot: a person's behaviour per tick: target building, walking, waiting, random choices"
 0x00135600,mm_Person_dtor,96,game,char,verified,yes,0,2,"vtable 0x1BCEB0, then the base destructor"
 0x00135660,mm_Person_ctor,136,game,char,verified,no,1,1,"base constructor, vtable 0x1BCEB0, walkSpeed = the record's walkSpeed / 1e6"
-0x001356F0,mm_Event_ClearTileFlags,120,game,event,verified,no,2,0,restores the claim records of event a0's tile list (claimData lists at 0x1BDA60): each record's first 8 bytes from its second 8
-0x00135770,mm_Event_SetTileFlags,120,game,event,verified,no,5,0,"copies each entry of event a0's tile list (record, 8 bytes; 12 bytes per entry) over its claim record's first 8 bytes"
-0x001357F0,mm_ClaimIcon_GetColor,100,game,city,verified,no,3,0,"colour of a claim icon: id a0 (bit 15 selects the second half), level a1 (0 = white 0x1B26C0)"
-0x00135860,mm_Claim_PickVariant,84,game,claim,verified,no,1,0,entry variant by bit 0x8000 of a0 from the current speaker table (gp)
-0x001358C0,mm_Claim_GetLine,124,game,claim,verified,no,4,0,"line a1 of claim a0 (8-byte items), variant by bit 0x8000"
+0x001356F0,mm_Event_ClearTileFlags,120,game,event,verified,no,2,0,(listIndex) restores the claim records of event `listIndex`'s tile list (claimData lists at 0x1BDA60): each record's first 8 bytes from its second 8
+0x00135770,mm_Event_SetTileFlags,120,game,event,verified,no,5,0,"(listIndex) copies each entry of event `listIndex`'s tile list (record, 8 bytes; 12 bytes per entry) over its claim record's first 8 bytes"
+0x001357F0,mm_ClaimIcon_GetColor,100,game,city,verified,no,3,0,"(icon, level, colour) colour of a claim icon: id `icon` (bit 15 selects the second half), level `level` (0 = white 0x1B26C0)"
+0x00135860,mm_Claim_PickVariant,84,game,claim,verified,no,1,0,(claim) entry variant by bit 0x8000 of `claim` from the current speaker table (gp)
+0x001358C0,mm_Claim_GetLine,124,game,claim,verified,no,4,0,"(claim, line) line `line` of claim `claim` (8-byte items), variant by bit 0x8000"
 0x00135940,mm_Claim_GetSupplies,32,game,claim,verified,no,9,0,"supply list `index` (CLAIM.BIN section C, by BuildingType.claimC): the items a building type supplies and how much, ended by id 0"
 0x00135960,mm_Claim_GetGroup,40,game,claim,verified,no,5,0,item group `index` & 0x7FFF (CLAIM.BIN section D; a claim's id from 0x8000): 0-ended item ids
 0x00135990,mm_Claim_GetList,32,game,claim,verified,no,15,0,"claim list `index` (CLAIM.BIN section B, by BuildingType.claimB): 8-byte claims (need or wish, item or group, value, reach), ended by id 0"
@@ -880,16 +880,16 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00137140,mm_CityCursor_ctor,1064,game,ui,verified,yes,1,7,"the city cursor: the base object, a model loaded (0x1B5EF0) and deleted again at once, the lines and the fade counters cleared, and for each of the two views (one per frame parity) five text boxes with their frames, the info frame and the fade frame, then the view's opening sprite (SpritePacket: a 128 by 64 texture of 8-bit colours)"
 0x00137570,mm_TileLists_LoadState,92,game,map,verified,no,1,1,"reads the tile lists from the save file: the items (0x7F00 bytes), then start and count (0xA0 bytes each)"
 0x001375D0,mm_TileLists_SaveState,92,game,map,verified,no,1,1,writes them
-0x00137630,mm_TileLists_Remove,204,game,map,verified,no,1,0,"removes item a1 from list a2 (shifts the rest down, fixes the starts); 1 if it was there"
-0x00137700,mm_TileLists_RemoveAll,92,game,map,verified,no,1,1,mm_TileLists_Remove of item a1 for each list in a zero-terminated pair list
-0x00137760,mm_TileLists_InsertAll,172,game,map,verified,no,1,0,inserts item a1 at the start of each list in a zero-terminated pair list
-0x00137810,mm_TileLists_Get,32,game,map,verified,no,1,0,"start of list a1, count to *a2"
+0x00137630,mm_TileLists_Remove,204,game,map,verified,no,1,0,"(lists, item, list) removes item `item` from list `list` (shifts the rest down, fixes the starts); 1 if it was there"
+0x00137700,mm_TileLists_RemoveAll,92,game,map,verified,no,1,1,"(lists, item, pairs) mm_TileLists_Remove of item `item` for each list in a zero-terminated pair list"
+0x00137760,mm_TileLists_InsertAll,172,game,map,verified,no,1,0,"(lists, item, pairs) inserts item `item` at the start of each list in a zero-terminated pair list"
+0x00137810,mm_TileLists_Get,32,game,map,verified,no,1,0,"(lists, list, count) start of list `list`, count to *`count`"
 0x00137830,mm_TileLists_Clear,152,game,map,verified,no,1,0,empties all 80 lists
 0x001378D0,mm_Event_InitForCity,1448,game,event,verified,indirect,1,5,"after a game is loaded the event lists are matched with the event table of this build: the ids saved with the game (the list at 0x1C5790, one halfword per type record) against the table's. A type that was not in the saved list is put in the waiting queue (by its rank and level) and every stored type number from it on goes up by one"
-0x00137EA0,mm_Event_LoadState,164,game,event,verified,indirect,1,1,"reads the queue (0x200), the active list (0x224), a1 (0xA4) and each active event's data from the save file"
+0x00137EA0,mm_Event_LoadState,164,game,event,verified,indirect,1,1,"(events, mc) reads from the save file the event type ids (0x200 bytes), the event queue (0x224), the manager itself (0xA4) and the data of its two talk events"
 0x00137F50,mm_Event_SaveState,164,game,event,verified,indirect,1,1,writes them
-0x00138000,mm_Event_CallAnswer,128,game,event,verified,indirect,2,0,"calls the answer slot of the handler of the talk event a4 (0 talks[0], 1 talks[1]) with (event, city, actor, arg)"
-0x00138080,mm_Event_CallText,128,game,event,verified,indirect,2,0,calls the text slot of the handler of the type of active event a2
+0x00138000,mm_Event_CallAnswer,128,game,event,verified,indirect,2,0,"(events, city, actor, arg, index) calls the answer slot of the handler of talk event `index` (0 talks[0], 1 talks[1]) with the event, the city, `actor` and `arg`"
+0x00138080,mm_Event_CallText,128,game,event,verified,indirect,2,0,"(events, city, index, arg) calls the text slot of the handler of the type of active event `index`"
 0x00138100,mm_Event_Update,2544,game,event,verified,indirect,1,13,"per frame: starts queued events whose conditions hold, runs and finishes active ones"
 0x00138AF0,mm_Event_CheckCondition,1712,game,event,verified,indirect,4,9,"whether the event type at `type` (a queue entry) may start now, for the person (null for a script-less start)"
 0x001391B0,mm_Event_TryStart,504,game,event,verified,indirect,1,3,"with no event running in the first talk slot, the first event waiting at level 3 whose condition holds for the person starts there; one that starts at level 3 also sets its tile flags and runs its Start slot. The result is the running event's type"
@@ -899,7 +899,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001398D0,mm_Event_FormatText,296,game,event,verified,yes,2,4,"the title text of an event slot: the event type's title, or with a second family in the slot (familyB) the title followed by that member's name, cut to fit 24 characters and ended with a 0xC4 byte when it is cut. Built at 0x1C5990"
 0x00139A00,mm_Event_CountActive,56,game,event,verified,no,2,0,"talk slots in use (EventMgr +4, 0x20 bytes each, up to 5; counting stops at the first free one)"
 0x00139A40,mm_Event_ReleaseTiles,264,game,event,verified,no,2,3,"buildings in the 80 tile lists whose claim (section B entry +2) is 0 drop it: meter 0, claim slot 0x18, flags 8 and 0x40 cleared"
-0x00139B50,mm_Event_Finish,356,game,event,verified,indirect,19,4,"ends active event a2: releases its tiles, calls its handler, removes it (called by the event handlers)"
+0x00139B50,mm_Event_Finish,356,game,event,verified,indirect,19,4,"(events, city, index) ends active event `index`: releases its tiles, calls its handler, removes it (called by the event handlers)"
 0x00139CC0,mm_Event_Abort,272,game,event,verified,indirect,3,4,"the talk event in slot `index` is cut short: its handler ends it, and it goes back to the waiting queue (level 3 for a type with level 4) as it was"
 0x00139DD0,mm_Event_Trigger,820,game,event,verified,indirect,4,5,"an event id (the position in the event list of the loaded EVENT.BIN) is triggered from outside (a script, a talk): the waiting entries of that id in bucket 5 are tried; the first whose condition holds takes the talk slot (1 for id 6, else 0) when that is free or its event has a higher priority value (it is aborted for slot 1, else finished first), runs its Start slot and the call returns 1"
 0x0013A110,mm_Event_CallHandlerSlot,204,game,event,verified,indirect,1,1,"the talk starts the event's own handler (the Start slot at +4): its tile flags are set, the event's var becomes 1 and the handler runs. Without a handler the result register stays as it was (after the tile flags call)"
@@ -915,7 +915,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0013B790,mm_EventList_MoveByMask,788,game,event,verified,no,1,1,"bucket `from` -> `to`: the entries whose type's mask shares a bit with the test's (the stage's bit, event manager constructor)"
 0x0013BAB0,mm_Pair_ctor,16,game,core,verified,no,1,0,two-byte element constructor (array init)
 0x0013BAC0,mm_MemberMeters_Reset,160,game,family,verified,no,1,0,"counts the member bytes (all 60000, friend flag included) by band: 2 to 24, 25 to 48, 49 to 100, 101 and up"
-0x0013BB70,mm_MemberStatus_Lookup,448,game,family,verified,no,6,0,entry for family a0 member a1 in the table at 0x1F32F0 (adds one when missing)
+0x0013BB70,mm_MemberStatus_Lookup,448,game,family,verified,no,6,0,"(family, member) entry for family `family` member `member` in the table at 0x1F32F0 (adds one when missing)"
 0x0013BD30,mm_MemberStatus_RecentTalks,36,game,family,verified,no,1,1,mm_TalkStatus_RecentTalks of the member's status entry (mm_MemberStatus_Lookup)
 0x0013BD60,mm_MemberStatus_TalksToday,40,game,family,verified,no,1,1,mm_TalkStatus_TalksToday of the member's status entry
 0x0013BD90,mm_MemberStatus_LongApart,56,game,family,verified,no,1,1,mm_TalkStatus_LongApart of the member's status entry
@@ -937,33 +937,33 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0013C810,mm_Family_SaveState,148,game,family,verified,no,1,1,writes them
 0x0013C8B0,mm_Family_GetTypeIndex,72,game,family,verified,no,20,0,"the building type of a family id: the first entry of the family type table (EACHSTR.BIN, per type the end of its family ids) above it"
 0x0013C900,mm_Family_HasLeft,80,game,family,verified,no,2,0,bitset C: the family moved away
-0x0013C950,mm_Family_SetKnown,76,game,family,verified,no,1,0,"sets bit a0 of bitset B (0x1D4900, families known through the Town's Pages); called by mm_WordsFn_MarkFamilyKnown"
+0x0013C950,mm_Family_SetKnown,76,game,family,verified,no,1,0,"(family) sets bit `family` of bitset B (0x1D4900, families known through the Town's Pages); called by mm_WordsFn_MarkFamilyKnown"
 0x0013C9A0,mm_Family_IsKnown,80,game,family,verified,no,4,0,bitset B: the family is known (Town's Pages)
 0x0013C9F0,mm_Family_MoveIn,116,game,family,verified,no,1,0,a family moves in: its bit in the in-city bitset and both moved-in counters (the opposite of mm_Family_MoveAway)
 0x0013CA70,mm_Family_InCity,80,game,family,verified,no,14,0,bitset A: the family lives in the city
-0x0013CAC0,mm_Family_GetFriendshipBand,124,game,family,verified,no,8,0,"band 0..4 of member (a0, a1)'s meter (0, below 24, below 48, below 100, higher)"
-0x0013CB40,mm_Family_AddFriendship,648,game,family,verified,no,6,1,"adds a3 points to member (a0, a1)'s meter (clamped 0..120); rising may set the friend bit (chance from *a2, the approval)"
-0x0013CDF0,mm_Family_AddFriendshipScaled,8,game,family,verified,no,2,1,"mm_Family_AddFriendship with a3 * t0 (t0 = +1 gain, -1 loss)"
-0x0013CE00,mm_Family_GetFriendship,60,game,family,verified,no,11,0,"member (a0, a1)'s meter value, capped at 120"
-0x0013CE40,mm_Family_MoveAway,164,game,family,ported,no,1,0,"family a0 leaves: bitset A -> C, families in the city - 1, families left + 1"
-0x0013CEF0,mm_Family_ClearMemberFlag,44,game,family,verified,no,1,0,"clears bit 7 of member byte (a0, a1)"
-0x0013CF20,mm_Family_PickIntroduction,480,game,family,verified,yes,5,3,"an acquaintance of member (a0, a1) who can apply (type limit from 0x1C5548); 0 when none"
-0x0013D110,mm_Family_CanApply,364,game,family,verified,no,9,2,"family a0 is not in the city, has not left, is not already applying, and there is room for its people"
-0x0013D280,mm_Family_FriendAgrees,176,game,family,verified,no,3,0,"friend bit set and meter at least 100, or at least 48 with approval a2 >= 0, or at least 24 with a2 >= 50"
-0x0013D330,mm_Family_MeterAgrees,152,game,family,verified,no,1,0,"member (a0, a1)'s meter (capped at 120) is at least 100, or at least 48 with approval a2 >= 0, or at least 24 with a2 >= 50; mm_Family_FriendAgrees without the friend bit"
-0x0013D3D0,mm_Family_IsCached,196,game,family,verified,no,1,1,whether family a0's record has finished loading into the cache
-0x0013D4A0,mm_Family_Prefetch,520,game,family,verified,yes,5,3,starts an asynchronous load of family a0's record into the cache (LRU)
-0x0013D6B0,mm_Family_Get,476,game,family,verified,yes,42,4,"family a0's record (0x1D4 bytes), loading it synchronously into the LRU cache if needed"
+0x0013CAC0,mm_Family_GetFriendshipBand,124,game,family,verified,no,8,0,"(family, member) band 0..4 of member (`family`, `member`)'s meter (0, below 24, below 48, below 100, higher)"
+0x0013CB40,mm_Family_AddFriendship,648,game,family,verified,no,6,1,"(family, member, approval, points) adds `points` (eighths of a level) to member (`family`, `member`)'s meter, kept within 0..120; a member who is not a friend yet and gains a step becomes one with a chance of the larger of the level and *`approval` in 120, and *`approval` moves by the change of the friendship band"
+0x0013CDF0,mm_Family_AddFriendshipScaled,8,game,family,verified,no,2,1,"(family, member, approval, points, sign) mm_Family_AddFriendship with `points` x `sign` (+1 a gain, -1 a loss)"
+0x0013CE00,mm_Family_GetFriendship,60,game,family,verified,no,11,0,"(family, member) member (`family`, `member`)'s meter value, capped at 120"
+0x0013CE40,mm_Family_MoveAway,164,game,family,ported,no,1,0,"(family) family `family` leaves: bitset A -> C, families in the city - 1, families left + 1"
+0x0013CEF0,mm_Family_ClearMemberFlag,44,game,family,verified,no,1,0,"(family, member) clears bit 7 of member byte (`family`, `member`)"
+0x0013CF20,mm_Family_PickIntroduction,480,game,family,verified,yes,5,3,"(family, member, city) an acquaintance of member (`family`, `member`) who can apply (type limit from 0x1C5548); 0 when none"
+0x0013D110,mm_Family_CanApply,364,game,family,verified,no,9,2,"(family, city) family `family` is not in the city, has not left, is not already applying, and there is room for its people"
+0x0013D280,mm_Family_FriendAgrees,176,game,family,verified,no,3,0,"(family, member, approval) friend bit set and meter at least 100, or at least 48 with approval `approval` >= 0, or at least 24 with `approval` >= 50"
+0x0013D330,mm_Family_MeterAgrees,152,game,family,verified,no,1,0,"(family, member, approval) member (`family`, `member`)'s meter (capped at 120) is at least 100, or at least 48 with approval `approval` >= 0, or at least 24 with `approval` >= 50; mm_Family_FriendAgrees without the friend bit"
+0x0013D3D0,mm_Family_IsCached,196,game,family,verified,no,1,1,(family) whether family `family`'s record has finished loading into the cache
+0x0013D4A0,mm_Family_Prefetch,520,game,family,verified,yes,5,3,"(family, flags) starts an asynchronous load of family `family`'s record into the cache (LRU)"
+0x0013D6B0,mm_Family_Get,476,game,family,verified,yes,42,4,"(family, flags) family `family`'s record (0x1D4 bytes), loading it synchronously into the LRU cache if needed"
 0x0013D890,mm_Family_ResetState,436,game,family,verified,no,2,0,"clears member bytes, bitsets, counters and the cache tables"
 0x0013DA50,mm_Family_Init,152,game,family,verified,yes,1,7,"resets the family state, opens DATA\BIN\FAMILY.BIN and loads DATA\BIN\EACHSTR.BIN"
 0x0013DAF0,mm_TalkStatus_ctor,80,game,family,verified,no,0,0,"a talk status byte (+3 of a member status entry) that has never been talked to: time level 14, counts clear"
 0x0013DB40,mm_Minimap_BuildPacket,1096,game,ui,verified,no,1,0,"builds the minimap DMA packet (packet): palette 0x1AF180 to block 0x1E00, the cells as a 128 x 128 4-bit image to 0x1E01, then one sprite"
 0x0013DF90,mm_Minimap_SetView,144,game,ui,verified,no,1,1,rotates the minimap by the camera (sceVu0RotMatrixZ) and offsets it by the position (scale 0.0105)
-0x0013E020,mm_Minimap_Plot,388,game,ui,verified,no,9,0,marks tile a1 on the minimap with colour/size arguments
+0x0013E020,mm_Minimap_Plot,388,game,ui,verified,no,9,0,"(minimap, tile, size, colour, keepHigher) marks tile `tile` on the minimap with colour/size arguments"
 0x0013E1B0,mm_Minimap_Draw,180,game,ui,verified,no,1,2,draws the minimap models; marker colour blinks every 32 frames
 0x0013E270,mm_Minimap_DeletingDtor,84,game,ui,verified,yes,1,2,"base destructor, then delete"
 0x0013E2D0,mm_Minimap_ctor,172,game,ui,verified,no,1,2,"base constructor, models from 0x1F3B14/0x1F3B18, builds the packet"
-0x0013E380,mm_Goods_GetPrice,72,game,goods,verified,no,5,3,price of goods item a0: byte +2 x 10^(byte +3)
+0x0013E380,mm_Goods_GetPrice,72,game,goods,verified,no,5,3,(item) price of goods item `item`: byte +2 x 10^(byte +3)
 0x0013E3D0,mm_Goods_GetRecordOffset,132,game,goods,verified,no,7,0,"(group, family, season, offset) advances *offset by the group's records per variant for the shop's family (modulo the variants), and by four per season when the group has two or more records per variant; returns the record's address"
 0x0013E460,mm_Goods_Load,192,game,goods,verified,yes,1,3,loads DATA\BIN\GOODS.BIN and resolves its section offsets (0x1BDA9C..0x1BDAB4)
 0x0013E520,mm_MapSave_UnpackTiles,1164,game,map,verified,yes,1,2,"after loading: unpacks the 6-byte-per-tile save buffer (height/2048, first object, flags) into the tiles, then rebuilds"
@@ -977,7 +977,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0013F210,mm_Map_PlaceRubbleArea,196,game,map,verified,no,2,1,"(map, x, z, size, city) places A Rubble Heap (type 10) over a size x size area"
 0x0013F2E0,mm_Map_PlaceRoad,28,game,map,verified,no,1,1,"(map, x, z, city) places Road (type 4) at even coordinates (2 x 2 road pieces)"
 0x0013F300,mm_Map_LevelArea,196,game,map,verified,no,1,1,"(map, x, z, size, city) places Leveled land (type 3) over a size x size area"
-0x0013F3D0,mm_CityMap_ClearObject,496,game,map,verified,no,0,5,"city map clearObject slot: removes object a1's people and the object, refills its footprint with Wasteland"
+0x0013F3D0,mm_CityMap_ClearObject,496,game,map,verified,no,0,5,"(map, object) city map clearObject slot: removes object `object`'s people and the object, refills its footprint with Wasteland"
 0x0013F5D0,mm_Map_ClearArea,264,game,map,verified,indirect,1,0,removes objects from each tile of a size x size square (the map's ClearObject slot) until wasteland (type 2) comes first
 0x0013F6E0,mm_Map_PlaceObject,376,game,map,verified,indirect,7,7,"(map, owner, type, x, z, city) places an object of `type` at (x, z) for `owner` after the placement check (new or stacked), rebuilds the area's geometry and tells the type (tick slot, with the city and the object); returns its index or 0x3F80"
 0x0013F860,mm_Map_CanPlace,40,game,map,verified,no,4,1,placement test without placing (mm_Map_CheckPlacement)
@@ -988,20 +988,20 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00140B60,mm_TerrainGen_Generate,1180,game,map,verified,no,1,7,"terrain generation: builds the whole map from a 10 x 10 grid of cells (16 tiles each) behind a 4-byte river header (`params`). A cell byte holds the terrain type in bits 0..2 (1 to 4: hills of four heights, mm_TerrainGen_Hill; 6 a lake and 7 the sea, mm_TerrainGen_Basin) and a plant style in bits 4..6"
 0x00141010,mm_CityMap_DeletingDtor,96,game,map,verified,yes,1,2,"vtable 0x1BCED0, then the render-level destructor"
 0x00141070,mm_CityMap_ctor,52,game,map,ported,yes,1,1,"render-level constructor, vtable 0x1BCED0"
-0x001410B0,mm_Map_TileIsSea,92,game,map,verified,no,1,0,"whether tile (a1, a2) belongs to the sea (tile flag 0x20: lowered by a type 7 terrain cell, mm_TerrainGen_Basin; layer B draws its bed with GROUND.TEX's sand, part 17, where a lake gets rock, part 24; ambience 0x1C instead of 0x1D); 0 off the map"
+0x001410B0,mm_Map_TileIsSea,92,game,map,verified,no,1,0,"(map, x, z) whether tile (`x`, `z`) belongs to the sea (tile flag 0x20: lowered by a type 7 terrain cell, mm_TerrainGen_Basin; layer B draws its bed with GROUND.TEX's sand, part 17, where a lake gets rock, part 24; ambience 0x1C instead of 0x1D); 0 off the map"
 0x00141110,mm_Map_TileIsCorner,92,game,map,verified,no,1,0,"tile flag 1: the corner tile an object was placed from (mm_Map_PlaceObject), 0 off the map"
-0x00141170,mm_Map_TileIsLeveled,92,game,map,verified,no,1,0,"whether tile (a1, a2) is leveled ground (tile flag 8: leveled land or anything standing on it, a type with flag 1); 0 off the map"
+0x00141170,mm_Map_TileIsLeveled,92,game,map,verified,no,1,0,"(map, x, z) whether tile (`x`, `z`) is leveled ground (tile flag 8: leveled land or anything standing on it, a type with flag 1); 0 off the map"
 0x001411D0,mm_Map_TileWalkable,92,game,map,verified,no,6,0,"tile flag 0x10 (set under building types with flag 2), 0 off the map; checked by movement"
-0x00141230,mm_Map_TileIndexWalkable,56,game,map,verified,no,12,0,"tile flag 0x10 of tile index a1, 0 off the map"
+0x00141230,mm_Map_TileIndexWalkable,56,game,map,verified,no,12,0,"(map, tile) tile flag 0x10 of tile index `tile`, 0 off the map"
 0x00141270,mm_Map_SetTileFacing,100,game,map,verified,no,2,0,"(map, tile, facing) the side the tile's building faces into tile flags 4 and 2 (from the entrance search: mm_Bldg_Tick, mm_BldgSmallGoods_Tick)"
 0x001412E0,mm_Map_GetTileFacing,80,game,map,verified,no,12,0,"(map, tile) the side the tile's building faces, 0..3 (-z, +x, +z, -x as BldgType_FindEntrance numbers them), from tile flags 4 (high bit) and 2 (low bit)"
-0x00141330,mm_Map_SetTileHeight,76,game,map,verified,no,1,1,"tile a2's height word = a0, then updates its geometry"
-0x00141380,mm_Map_SetAreaHeight,244,game,map,verified,no,4,1,sets the height of an a4 x a4 area to a0 and updates the tile geometry
-0x00141480,mm_Map_GetTileVertexClamped,144,game,map,verified,no,1,0,copies the tile's four vertex heights (verts) at clamped coordinates into a3
-0x00141510,mm_Map_GetTileVertex,80,game,map,verified,no,1,0,copies tile a1's four vertex heights (verts) into a2 and returns the last one
-0x00141560,mm_Map_GetTileHeightWord,28,game,map,verified,no,13,0,"tile a1's height (+0, a float, loaded with lwc1)"
-0x00141580,mm_Map_GetHeightAt,92,game,map,verified,no,11,0,"height word at clamped (a1, a2)"
-0x001415E0,mm_Map_SampleHeight,676,game,map,verified,no,9,3,"terrain height at world (a0, a1), interpolated over the tile's triangles"
+0x00141330,mm_Map_SetTileHeight,76,game,map,verified,no,1,1,"(map, tile, height) tile `tile`'s height = `height`, then its corner geometry is rebuilt (mm_Map_UpdateTileGeometry)"
+0x00141380,mm_Map_SetAreaHeight,244,game,map,verified,no,4,1,"(map, x, z, size, height) sets the height of a `size` by `size` area at (`x`, `z`) to `height` and updates the tile geometry"
+0x00141480,mm_Map_GetTileVertexClamped,144,game,map,verified,no,1,0,"(map, x, z, out) copies the tile's four vertex heights (verts) at clamped coordinates into `out`"
+0x00141510,mm_Map_GetTileVertex,80,game,map,verified,no,1,0,"(map, tile, out) copies tile `tile`'s four vertex heights (verts) into `out` and returns the last one"
+0x00141560,mm_Map_GetTileHeightWord,28,game,map,verified,no,13,0,"(map, tile) tile `tile`'s height (+0, a float, loaded with lwc1)"
+0x00141580,mm_Map_GetHeightAt,92,game,map,verified,no,11,0,"(map, x, z) height word at clamped (`x`, `z`)"
+0x001415E0,mm_Map_SampleHeight,676,game,map,verified,no,9,3,"(map, x, z) terrain height at world (`x`, `z`), interpolated over the tile's triangles"
 0x00141890,mm_Math_TriangleNormal,60,game,math,verified,no,3,0,"unit normal of triangle (a, b, c) in out.xyz via VU0; out.w = (w of vf6 as earlier VU0 code left it) squared (used by mm_Map_SampleHeight)"
 0x001418D0,mm_Map_UpdateTileGeometry,1536,game,map,verified,no,5,0,"recomputes tile (x, z)'s four corner heights from its 3 x 3 neighbourhood"
 0x00141ED0,mm_Map_UpdateAreaGeometry,136,game,map,verified,no,5,1,mm_Map_UpdateTileGeometry over a rectangle
@@ -1010,43 +1010,43 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00142510,mm_MapTiles_ctor,84,game,map,verified,yes,1,3,allocates 128x128 tiles of 0x18 bytes
 0x00142590,mm_Map_ReturnPeopleHome,496,game,map,verified,no,1,4,"every person leaves the building lists they are in and stands on their home's tile (centre, height 0), outside, walk and flags reset; residents lose their target, vehicles get 6000 (no driver)"
 0x00142790,mm_Map_FindPersonEntry,148,game,map,verified,no,24,0,"the resident (a class without flag 1) of the family and member, or 0"
-0x00142830,mm_Map_FindPersonObjectOnTile,216,game,map,verified,no,15,0,object on tile a2 whose people list holds person a1 (skipped for people with flag 0x800)
+0x00142830,mm_Map_FindPersonObjectOnTile,216,game,map,verified,no,15,0,"(map, person, tile) object on tile `tile` whose people list holds person `person` (skipped for people with flag 0x800)"
 0x00142910,mm_Map_FindVehicleOfDriver,132,game,map,verified,no,1,0,"the vehicle (class flag 1) that person `driver` drives (its target), or 0: where a person gone off in its car (flag 4) is"
-0x001429A0,mm_Map_FindVehicleOnTile,200,game,map,verified,no,1,0,"a vehicle (class flag 1) of building a1 among the people listed at the objects of the tile; 0 for none (a person with a car looks for it, mm_Person_Update)"
-0x00142A70,mm_People_RemoveChain,68,game,map,verified,no,1,0,marks every person in the chain from *a1 removed (flag 0x800) and clears the head
-0x00142AC0,mm_People_Next,64,game,map,verified,no,24,0,"*a1 = the next person in its list (nextHere), unless it is 6000"
-0x00142B00,mm_People_UnlinkFromList,96,game,map,ported,no,2,0,unlinks person a2 from the list starting at *a1 and flags it 0x800; 1 if found
-0x00142B60,mm_MapObj_AddPerson,68,game,map,verified,no,3,0,pushes person a2 onto object a1's person list
-0x00142BB0,mm_Map_UnlinkPersonFromTile,204,game,map,verified,no,7,1,"removes person a2 from the tile's person list, flags it 0x800"
-0x00142C90,mm_MapPeople_RemoveForObject,760,game,map,verified,no,1,5,"deletes the people whose home is object a1 (counters, headingHere of the building they head for, occupants of the one they are in, residents), puts everyone else in it outside; if one of its own went, its family moves away"
+0x001429A0,mm_Map_FindVehicleOnTile,200,game,map,verified,no,1,0,"(map, home, tile) a vehicle (class flag 1) of building `home` among the people listed at the objects of the tile; 0 for none (a person with a car looks for it, mm_Person_Update)"
+0x00142A70,mm_People_RemoveChain,68,game,map,verified,no,1,0,"(map, head) marks every person in the chain from *`head` removed (flag 0x800) and clears the head"
+0x00142AC0,mm_People_Next,64,game,map,verified,no,24,0,"(map, cursor) *`cursor` = the next person in its list (nextHere), unless it is 6000"
+0x00142B00,mm_People_UnlinkFromList,96,game,map,ported,no,2,0,"(map, head, person) unlinks person `person` from the list starting at *`head` and flags it 0x800; 1 if found"
+0x00142B60,mm_MapObj_AddPerson,68,game,map,verified,no,3,0,"(map, object, person) pushes person `person` onto object `object`'s person list"
+0x00142BB0,mm_Map_UnlinkPersonFromTile,204,game,map,verified,no,7,1,"(map, tile, person) removes person `person` from the tile's person list, flags it 0x800"
+0x00142C90,mm_MapPeople_RemoveForObject,760,game,map,verified,no,1,5,"(map, object) deletes the people whose home is object `object` (counters, headingHere of the building they head for, occupants of the one they are in, residents), puts everyone else in it outside; if one of its own went, its family moves away"
 0x00142F90,mm_Family_AssignHome,1004,game,family,verified,yes,1,5,"moves a family in: a person record for each member at the middle of the building's tile (their home, MapPerson.home), with a schedule state, the member's look as its flags (8 added for drivers) and an introduction, each scored for its character class; drivers bring the family's car (character type 0x34) unless the building's schedule is 9 or 0xB. The population rises and the family is flagged (mm_Family_MoveIn)"
 0x00143380,mm_MapPeople_Tick,408,game,map,verified,indirect,0,3,"people level slot +8: ticks each person's class with time flags (1 every 600 s, 2 hourly, 4 daily, 8 yearly), member status, then the object level"
 0x00143520,mm_MapPeople_dtor,132,game,map,verified,yes,1,3,"vtable 0x1BCEE0, frees the people array, object-level destructor"
 0x001435B0,mm_MapPeople_ctor,124,game,map,ported,yes,1,3,"object-level constructor, vtable 0x1BCEE0, 6000 people of 0x30 bytes"
-0x00143690,mm_MapObj_GetHeight,192,game,map,verified,no,4,1,height of object a1: its tile's height less 0.8 (0.8 higher) for each object stacked under it
+0x00143690,mm_MapObj_GetHeight,192,game,map,verified,no,4,1,"(map, object) height of object `object`: its tile's height less 0.8 (0.8 higher) for each object stacked under it"
 0x00143750,mm_CityMap_PushNewBuildings,52,game,map,verified,no,1,1,"new month: the six monthly counts of new buildings for families (newBuildings, type flag 8) move on by one, this month's starting at 0"
 0x00143790,mm_CityMap_SumNewBuildings,56,game,map,verified,no,1,0,the new buildings for families in the last six months (the sum of newBuildings)
 0x001437D0,mm_MapObj_RayHit,500,game,map,verified,indirect,1,1,"(map, tile, from, to, hit) whether the type of the first object on a tile reports a ray hit (rayHit slot, passed the ray's ends, the hit record and the object's matrix: the matrix of its facing at the footprint middle, y 0); the game's slots answer by type only (mm_BldgType_RayHit 0, mm_Bldg_RayHit 1)"
 0x001439D0,mm_Player_FloorBelow,1048,game,char,verified,indirect,1,3,"the object surface under the player: each object on the 3 x 3 tiles round it is asked (floorBelow slot) whether a segment from the position down by 0.9 crosses its mesh; *hit gets the crossing, whose y the player lands on"
 0x00143DF0,mm_Player_NearestObject,1144,game,char,verified,indirect,1,3,"the nearest hit among the objects round the player: *distance starts at 100 and takes the smallest distance an object's type reports (nearestHit slot, with the hit point and the distance as outputs); *hit gets the hit point (four words). The answer is whether anything was hit"
-0x00144270,mm_MapObj_GetMatrix,364,game,map,verified,no,2,2,"0x40-byte box matrix of object a1 from the tile-kind table, at its position and height"
-0x001443E0,mm_Map_CountObjectsBefore,92,game,map,verified,no,2,0,"number of objects on tile (a1, a2) before object a3"
-0x00144440,mm_Map_FindFamilyHome,128,game,map,verified,no,10,0,"object (people-inside type) whose family is a1, scanning objects 1..0x3F7F"
-0x001444C0,mm_Map_UnhighlightArea,164,game,map,verified,no,2,0,clears flag 1 on the top object of each tile in an a3 x a3 area (placement highlight)
-0x00144570,mm_Map_HighlightArea,164,game,map,verified,no,2,0,sets flag 1 on the top object of each tile in an a3 x a3 area
-0x00144620,mm_Map_GetTileList,8,game,map,verified,no,18,1,start and count of tile list a1 (the map's tileLists)
-0x00144630,mm_Map_GetTileFirstObject,48,game,map,verified,no,20,0,object record of tile a1's first object
+0x00144270,mm_MapObj_GetMatrix,364,game,map,verified,no,2,2,"(map, object, matrix) the 0x40-byte matrix of object `object`: the matrix of its facing at its position and height"
+0x001443E0,mm_Map_CountObjectsBefore,92,game,map,verified,no,2,0,"(map, x, z, object) number of objects on tile (`x`, `z`) before object `object`"
+0x00144440,mm_Map_FindFamilyHome,128,game,map,verified,no,10,0,"(map, family) object (people-inside type) whose family is `family`, scanning objects 1..0x3F7F"
+0x001444C0,mm_Map_UnhighlightArea,164,game,map,verified,no,2,0,"(map, x, z, size) clears flag 1 on the top object of each tile in a `size` by `size` area at (`x`, `z`) (placement highlight)"
+0x00144570,mm_Map_HighlightArea,164,game,map,verified,no,2,0,"(map, x, z, size) sets flag 1 on the top object of each tile in a `size` by `size` area at (`x`, `z`)"
+0x00144620,mm_Map_GetTileList,8,game,map,verified,no,18,1,"(map, list, count) start and count of tile list `list` (the map's tileLists)"
+0x00144630,mm_Map_GetTileFirstObject,48,game,map,verified,no,20,0,"(map, tile) object record of tile `tile`'s first object"
 0x00144660,mm_Map_GetTileObject,96,game,map,verified,no,31,0,128x128 grid of 0x18-byte tiles (tiles); a tile's firstObject indexes the 0x1C-byte object records (objects); coordinates outside 0..127 return record 0
 0x001446C0,mm_Map_GetRecord,24,game,map,verified,no,126,0,map+8 + index*0x1C (record table shared with mm_Map_GetTileObject)
-0x001446E0,mm_Map_RemoveObjectFromTile,132,game,map,verified,no,1,0,unlinks object a2 from tile a1's object list
-0x00144770,mm_Map_AppendObjectToTile,76,game,map,verified,no,1,0,links object a2 at the end of tile a1's object list
+0x001446E0,mm_Map_RemoveObjectFromTile,132,game,map,verified,no,1,0,"(map, tile, object) unlinks object `object` from tile `tile`'s object list"
+0x00144770,mm_Map_AppendObjectToTile,76,game,map,verified,no,1,0,"(map, tile, object) links object `object` at the end of tile `tile`'s object list"
 0x001447C0,mm_Map_CreateObject,908,game,map,verified,no,4,2,"places a new `type` object for `owner` at (x, z): the next free object record (the search wraps from 0x3F80 to 1 and gives record 0 after 0x3F81 tries) is filled (MapObj_Init) and covers the size x size block. Each tile's old object is deleted, the tile points at the new one, keeps only flag 0x20 and gains 8 (type flag 1) or 0x10 (type flag 2)"
 0x00144B60,mm_Placement_LandBeside,328,game,map,verified,no,1,1,"(map, x, z, size): whether dry ground (less than 0.5 deep, above the water: heights grow downwards) lies just beyond a side of the footprint"
-0x00144CB0,mm_Map_CheckPlacement,760,game,map,verified,indirect,2,5,"1 when type a1 can stand at (a2, a3), 2 when its type rule forbids the tile, else 0: footprint on the map, neighbours, every footprint object of another unlocked flag-4 type that the type accepts (acceptsOn slot), ground under the water needing dry ground beside it"
+0x00144CB0,mm_Map_CheckPlacement,760,game,map,verified,indirect,2,5,"(map, type, x, z, rect) 1 when type `type` can stand at (`x`, `z`), 2 when its type rule forbids the tile, else 0: footprint on the map, neighbours, every footprint object of another unlocked flag-4 type that the type accepts (acceptsOn slot), ground under the water needing dry ground beside it"
 0x00144FB0,mm_Placement_CheckNeighbours,504,game,map,verified,no,1,0,"before placing over the size x size block at (x, z): the box around every object standing there (box = min x, min z, max x, max z, widened by two tiles within the map) and whether the cells those objects cover stay below the free object records plus the objects found"
 0x001451B0,mm_Placement_CheckTypeRule,244,game,map,verified,no,1,0,"placement rule (the type's rule) for stacking: the tile's top object must be built (0x20), not highlighted (1), of a type with the same rule, and the stack below the type's limit - 1"
-0x001452B0,mm_MapObj_Delete,300,game,map,verified,no,2,2,"removes object a1 from its claim lists, clears its type and lowers the counters: objectCount, the category's categoryCount (category 4 only without type flag 0x80) and bigCategory5Count for a category 5 type of size 3 or more"
-0x001453E0,mm_MapObj_Init,472,game,map,verified,indirect,3,2,"fills object record a1 (type, owner, position) and updates the tile lists"
+0x001452B0,mm_MapObj_Delete,300,game,map,verified,no,2,2,"(map, object) removes object `object` from its claim lists, clears its type and lowers the counters: objectCount, the category's categoryCount (category 4 only without type flag 0x80) and bigCategory5Count for a category 5 type of size 3 or more"
+0x001453E0,mm_MapObj_Init,472,game,map,verified,indirect,3,2,"(map, object, type, owner, tile) fills object record `object` (type, owner, position) and updates the tile lists"
 0x001455C0,mm_MapObj_FindFreeSlot,108,game,map,verified,no,1,0,advances the free object index (nextId) to an empty record
 0x00145630,mm_MapObjects_ClearObject,8,game,map,verified,no,0,0,the clearObject slot at the object level: empty
 0x00145640,mm_MapObjects_Tick,608,game,map,verified,indirect,1,4,"every object that stands in the scan's current column of 128 (tickSlice, stepping through 128 stripes; the scan is 0x3F80 records) asks its building type (tick slot, with the ""any flag-8 object"" word) whether it falls down; if so, a sound is requested (unless the type is flag 0x80), the minimap plots the lot, the object is removed (the map's clearObject slot) and rubble is laid where it stood"
@@ -1088,7 +1088,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0014AB80,mm_Laptop_LoadState,68,game,ui,verified,no,1,1,reads gp 0x1BDAB8.. (4 bytes) and the 14 laptop entries at 0x1F36F0 (0x38 bytes) from the save file
 0x0014ABD0,mm_Laptop_SaveState,68,game,ui,verified,no,1,1,writes them
 0x0014AC20,mm_Laptop_CountActive,232,game,ui,verified,no,5,0,active laptop entries
-0x0014AD10,mm_Laptop_SetItemText,108,game,ui,verified,indirect,1,1,"text for laptop item a2 (14 items, jump table 0x1B6570); default ""-Laptop Computer- Save or quit the game."""
+0x0014AD10,mm_Laptop_SetItemText,108,game,ui,verified,indirect,1,1,"(laptop, city, item) text for laptop item `item` (14 items, jump table 0x1B6570); default ""-Laptop Computer- Save or quit the game."""
 0x0014AE10,mm_Laptop_RemoveEntry,184,game,ui,verified,no,1,0,"removes the entry: the ones after it move up, the last slot is freed, and the cursor (selected) steps back when nothing follows"
 0x0014AED0,mm_Laptop_AddEntry,256,game,ui,verified,no,3,0,"adds an entry (14 slots, -1 free) unless it is there. Entries 6 to 8 are tiers of one thing: a better one replaces a worse, a worse one is not added"
 0x0014AFD0,mm_Laptop_Draw,356,game,ui,verified,yes,1,5,"laptop model (luminosity per item), text, fade"
@@ -1106,20 +1106,20 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0014C210,mm_Frame_DeletingDtor,84,game,ui,verified,yes,8,2,"base destructor, then delete"
 0x0014C270,mm_Frame_ctor,580,game,ui,verified,no,8,2,"(frame, style, x, y, width, height, depth) a window frame: the sprite packet template (0x1B04B0), then the style, place and size, and the corners' depth (their Z: callers pass 0x10000000, 0xFFF00000, 0xFFFFFFFF, 0xFF0000)"
 0x0014C4C0,mm_WaitText_Draw,68,game,ui,verified,no,1,1,"blinking ""Please wait...."" text box (0x1BDAC4)"
-0x0014C510,mm_WaitText_Append,16,game,ui,verified,no,1,1,appends a0 to the wait text
-0x0014C520,mm_WaitText_Set,16,game,ui,verified,no,1,1,sets the wait text to a0
+0x0014C510,mm_WaitText_Append,16,game,ui,verified,no,1,1,(text) appends `text` to the wait text
+0x0014C520,mm_WaitText_Set,16,game,ui,verified,no,1,1,(text) sets the wait text to `text`
 0x0014C530,mm_WaitText_Delete,44,game,ui,verified,yes,1,1,deletes the wait text box
 0x0014C560,mm_WaitText_Create,180,game,ui,verified,yes,1,5,"creates the wait text box (""Please wait...."")"
 0x0014C620,mm_LightSet_UpdateByClock,508,game,gfx,verified,no,1,1,"interpolates the light colours over the day (2-hour segments, tables 0x1B0550/0x1B0670)"
 0x0014C820,mm_LightSet_DeletingDtor,84,game,gfx,verified,yes,2,2,"base destructor, then delete"
 0x0014C880,mm_LightSet_ctor,40,game,gfx,verified,no,2,1,mm_LightSet_Init
-0x0014C8B0,mm_Map_BottomHeight,40,game,map,verified,no,2,0,the drawn bottom's height over lowered ground: 0.6 * a0 + 0.08 (the copy layer B draws; people and goods there stand on it)
+0x0014C8B0,mm_Map_BottomHeight,40,game,map,verified,no,2,0,(height) the drawn bottom's height over lowered ground: 0.08 + 0.6 x `height` (the copy layer B draws; people and goods there stand on it)
 0x0014C8E0,mm_LayerB_BuildPacket,372,game,gfx,verified,no,1,0,"layer B's packets: the first calls the chain at 0x1AA340, uploads the layer's parameters (19 quadwords) to VU1 0x1C, sets the VIF base and offset and starts the program; the second uploads the second pass's texture and mask to 0x1D and 0x2D and starts the program again"
 0x0014CA60,mm_LayerB_InitParams,428,game,gfx,verified,no,1,0,"layer B's two passes: the first over the quads with flag 0x20, the second (its own texture) over those with 0x40"
 0x0014CC10,mm_LayerB_Draw,76,game,gfx,verified,no,1,1,"layer B: its two passes (packets A and B), each followed by a call of the terrain chunk packet"
 0x0014CC60,mm_LayerB_DeletingDtor,84,game,gfx,verified,yes,1,2,"base destructor, then delete"
 0x0014CCC0,mm_LayerB_ctor,72,game,gfx,verified,no,1,5,"base constructor, parameters, packet"
-0x0014CD10,mm_PlacementLayer_InTileRect,108,game,gfx,verified,no,1,0,"1 when the layer's tile rectangle is active (rectActive == 1) and tile (a1, a2) lies inside x rectX0..rectX1, z rectZ0..rectZ1; mm_Terrain_DrawPatch then sets flag 4 on the patch (was mm_Terrain_Nop14CD10, not empty)"
+0x0014CD10,mm_PlacementLayer_InTileRect,108,game,gfx,verified,no,1,0,"(layer, x, z) 1 when the layer's tile rectangle is active (rectActive == 1) and tile (`x`, `z`) lies inside x rectX0..rectX1, z rectZ0..rectZ1; mm_Terrain_DrawPatch then sets flag 4 on the patch (was mm_Terrain_Nop14CD10, not empty)"
 0x0014CD80,mm_PlacementLayer_Set,28,game,gfx,verified,no,1,0,"the placement highlight: its colour, its rectangle (x0, z0, x1, z1) and its mode (1 the highlight, 2 the marker)"
 0x0014CDA0,mm_PlacementLayer_BuildPacket,584,game,gfx,verified,no,1,0,packets of the placement highlight (microcode 0x1A7B30) and the marker (0x1A8330)
 0x0014CFF0,mm_PlacementLayer_InitParams,252,game,gfx,verified,no,1,0,"draw parameters of the placement highlight (two colours, the output offset, a GIF tag of 26 loops, the fill and outline PRIMs, mask 4) and of the marker"
@@ -1147,20 +1147,20 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00150090,mm_LayerG_Draw,64,game,gfx,verified,no,1,2,"(layer, pass, waterLevel) the water: the waves move on around the water level, then this frame's packet (one per terrain buffer) is queued"
 0x001500D0,mm_LayerG_DeletingDtor,84,game,gfx,verified,yes,1,2,"base destructor, then delete"
 0x00150130,mm_LayerG_ctor,88,game,gfx,verified,no,1,5,"base constructor, parameters, packet"
-0x00150190,mm_Wants_RemoveEventHold,272,game,city,verified,no,9,0,removes the entry an event holds for building type a1 with value a2 (events ending)
-0x001502A0,mm_Wants_AddEventHold,172,game,city,verified,no,1,0,one-word entry held by an event for building type a1 (needs a free entry and word)
+0x00150190,mm_Wants_RemoveEventHold,272,game,city,verified,no,9,0,"(wants, eventId, value) removes the holds of event `eventId` (EventType.id) with `value`, the hold's number (events ending); as in the original, the entry that moves into a removed one's place is skipped"
+0x001502A0,mm_Wants_AddEventHold,172,game,city,verified,no,1,0,"(wants, eventId, value) a one-word entry held by event `eventId` (EventType.id) with `value`, the hold's number, when an entry and a word are free"
 0x00150350,mm_Wants_CheckEntry,208,game,city,ported,no,2,2,"a want's state: 2 no longer holds (family gone, claim changed, meter not above the low threshold), 1 met (flags 0x48), 3 meter above the high threshold and not phoned yet, else 0"
-0x00150420,mm_Wants_Find,292,game,city,verified,no,8,1,"next open resident want from iterator *a5: claim slot a2, object a3, person a4"
-0x00150550,mm_Wants_AddForPerson,256,game,city,verified,no,1,1,records person a2's want (claim slot a3) when an entry and four words are free
+0x00150420,mm_Wants_Find,292,game,city,verified,no,8,1,"(wants, city, claimSlot, object, person, iterator) the next want (from *`iterator` on, which it advances) that still holds or is pressing: its claim slot, building and person into *`claimSlot`, *`object` and *`person`; event holds are passed over; 0 when none is left"
+0x00150550,mm_Wants_AddForPerson,256,game,city,verified,no,1,1,"(wants, city, person, claimSlot) records person `person`'s want (claim slot `claimSlot`) when an entry and four words are free"
 0x00150650,mm_Wants_LoadState,20,game,city,verified,no,1,1,reads the 0x504-byte list from the save file
 0x00150670,mm_Wants_SaveState,20,game,city,verified,no,1,1,writes it
 0x00150690,mm_Wants_Prune,672,game,city,verified,no,1,2,"every 121st call: wants no longer holding are removed, met ones once the family's call is queued; pressing ones (state 3) get the call once"
-0x00150940,mm_Wants_HasRoom,52,game,city,verified,no,1,0,entry count below 0x40 and at least a1 words left of 0x100
+0x00150940,mm_Wants_HasRoom,52,game,city,verified,no,1,0,"(wants, words) entry count below 0x40 and at least `words` words left of 0x100"
 0x00150980,mm_Wants_ctor,16,game,city,verified,no,1,0,zeroes the two counters
-0x00150990,mm_ListMenu_ScrollTo,80,game,ui,verified,no,5,0,"scroll so item a1 is visible (visibleItems, itemHeight)"
+0x00150990,mm_ListMenu_ScrollTo,80,game,ui,verified,no,5,0,"(menu, item) scroll so item `item` is visible (visibleItems, itemHeight)"
 0x001509E0,mm_ListMenu_Place,188,game,ui,verified,no,7,0,"(menu, x, y, depth) places the list's box at x, y (screen pixels) with its texts' depth, and sets the four sprites of its clipping mask (ListMenuMask) around the box"
-0x00150AA0,mm_ListMenu_ClearItem,216,game,ui,verified,no,10,1,"empties the text of item a1 (the last one is popped), or of every item and resets the counts (-1)"
-0x00150B80,mm_ListMenu_SetItemText,148,game,ui,verified,no,7,1,text of item a2 (-1 = selected)
+0x00150AA0,mm_ListMenu_ClearItem,216,game,ui,verified,no,10,1,"(menu, item) empties the text of item `item` (the last one is popped), or of every item and resets the counts (-1)"
+0x00150B80,mm_ListMenu_SetItemText,148,game,ui,verified,no,7,1,"(menu, text, item) text of item `item` (-1 = selected)"
 0x00150C20,mm_ListMenu_AddItems,384,game,ui,verified,yes,4,3,"(menu, columns, rows, mode, style, unused_t1, item) gives item `item` (the next free one for -1) its text box of columns by rows characters in `style`; `mode` picks the character size and the item's height"
 0x00150DA0,mm_ListMenu_HandleInput,888,game,ui,verified,no,8,4,"cursor with key repeat, select/cancel, sounds; returns the result"
 0x00151140,mm_ListMenu_Draw,340,game,ui,verified,no,5,6,"(menu) the clipping mask first, then the item texts (one row beyond each end of the box too, for the mask to cut while scrolling), then the cursor frame; Z is cleared afterwards"
@@ -1194,9 +1194,9 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001550A0,mm_Applicants_CountActive,68,game,city,verified,no,3,0,applicants whose state (+2) is below 7
 0x001550F0,mm_Applicants_LoadState,20,game,city,verified,no,1,1,reads 0x284 bytes from the save file
 0x00155110,mm_Applicants_SaveState,20,game,city,verified,no,1,1,writes 0x284 bytes
-0x00155130,mm_Applicants_Find,60,game,city,verified,no,4,0,index of the applicant for family a1
-0x00155170,mm_Applicants_FindFrom,100,game,city,verified,no,1,0,next applicant from iterator *a1 whose state (+2) is a2 (32 entries)
-0x001551E0,mm_Applicants_Add,184,game,city,verified,yes,2,1,adds family a1 (max 32 entries of 0x14 bytes)
+0x00155130,mm_Applicants_Find,60,game,city,verified,no,4,0,"(applicants, family) index of the applicant for family `family`"
+0x00155170,mm_Applicants_FindFrom,100,game,city,verified,no,1,0,"(applicants, iterator, state) next applicant from iterator *`iterator` whose state (+2) is `state` (32 entries)"
+0x001551E0,mm_Applicants_Add,184,game,city,verified,yes,2,1,"(applicants, family, month, state) adds family `family` (max 32 entries of 0x14 bytes)"
 0x001552A0,mm_Applicants_Clear,132,game,city,verified,no,1,0,empties the list
 0x00155330,mm_Applicants_Layout,820,game,ui,verified,no,1,3,"the card slides in over the first 20 frames of its counter (slideFrame; its x grows by 0.15 a frame), stays, and from frame 60 for 6 frames drifts (its y grows by 0.4 a frame); after that the counter, sliding and cardShown clear, the cursor and the top entry take the saved entry (savedTop) and the list scrolls back to its first entry"
 0x00155670,mm_Applicants_Select,184,game,ui,verified,yes,1,3,"puts the cursor on applicant `index` (the top one before is kept in savedTop): the card model's matrix is the standard one moved 3 and 2.5 units from the first model's place, the view scrolls to nothing, the card text is built, and the mode goes to 1 (cardShown)"
@@ -1205,34 +1205,34 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00155B50,mm_Applicants_ScrollTo,260,game,ui,verified,no,6,0,"after entry `index` left the list (-1: none did): pulls the two list positions back over it, clamps them to the list and refreshes each entry's claim section"
 0x00155C60,mm_Applicants_PlaceAt,408,game,ui,verified,no,2,2,"places the applicant card at `point`: both card models there (their matrices' last rows), and the card text positioned and sized from the point's x, y and depth (z) through fixed factors"
 0x00155E00,mm_Applicants_DrawDetails,1620,game,ui,verified,yes,1,7,"the lighting of the applicant card's claim icons as the cursor and the shown entry (top) move. Idle (rollDir 0), a gap between them starts a step: forward (top < cursor: direction +1, the icon of the top entry lit on the eight nodes of the table at 0x1B7A10, the cursor's on the first) or backward (direction -1, rollPhase at 40, the other way round)"
-0x00156470,mm_Applicants_Draw,1540,game,ui,verified,yes,1,14,the applicants panel
+0x00156470,mm_Applicants_Draw,1540,game,ui,verified,yes,1,14,"(applicants) the applicants panel: the card model, the entries' icons on the icon model's nodes along the card, the marker beside it and the card text"
 0x00156A90,mm_ApplicantsBase_dtor,124,game,ui,verified,yes,1,3,"vtable 0x1BCF60, deletes its text box"
 0x00156B10,mm_ApplicantsBase_ctor,320,game,ui,verified,yes,1,5,"vtable 0x1BCF60, text box, empty list"
 0x00156C50,mm_Applicants_AnyWaiting,52,game,city,verified,no,1,0,whether any applicant entry is waiting (state 2)
-0x00156C90,mm_Applicants_RemoveFamily,80,game,city,verified,no,1,1,removes the entry for family a1
-0x00156CE0,mm_Applicants_RemoveAt,148,game,city,verified,no,2,1,removes entry a1 and shifts the rest
+0x00156C90,mm_Applicants_RemoveFamily,80,game,city,verified,no,1,1,"(applicants, family) removes the entry for family `family`"
+0x00156CE0,mm_Applicants_RemoveAt,148,game,city,verified,no,2,1,"(applicants, index) removes entry `index` and shifts the rest"
 0x00156D80,mm_Applicants_AssignToBuilding,512,game,city,verified,yes,1,6,"places the family's object and assigns its home building, then removes the entry"
 0x00156F80,mm_Applicants_StartPlacing,260,game,city,verified,yes,1,5,"placement mode: state 3 -> 6, highlights the footprint, takes pad focus, clears the notice"
-0x00157090,mm_Applicants_AddAndShow,68,game,city,verified,yes,2,2,"mm_Applicants_Add, selected when a3 != 0"
+0x00157090,mm_Applicants_AddAndShow,68,game,city,verified,yes,2,2,"(applicants, family, month, select) mm_Applicants_Add, selected when `select` != 0"
 0x001570E0,mm_Applicants_GetSelected,48,game,city,verified,no,1,0,selected entry or 0
 0x00157110,mm_Applicants_Update,1660,game,ui,verified,yes,1,14,"the applicants panel per frame: cursor, prefetching family records, assigning"
 0x001577A0,mm_Applicants_dtor,96,game,ui,verified,yes,0,2,"vtable 0x1BCF70, then the base destructor"
 0x00157800,mm_Applicants_ctor,156,game,ui,verified,yes,1,4,"base constructor, vtable 0x1BCF70"
-0x001578A0,mm_Pad_GetData,52,game,pad,verified,no,3,0,"port a0's 32-byte pad buffer (0x1F3AC0) when its state is ready (100), else 0"
+0x001578A0,mm_Pad_GetData,52,game,pad,verified,no,3,0,"(port) port `port`'s 32-byte pad buffer (0x1F3AC0) when its state is ready (100), else 0"
 0x001578E0,mm_Pad_Poll,924,game,pad,verified,yes,3,8,"scePadRead and the pad state machine: analog mode, actuator alignment, pressure mode"
-0x00157CB0,mm_PadInit,200,game,pad,verified,yes,1,3,
+0x00157CB0,mm_PadInit,200,game,pad,verified,yes,1,3,"() scePadInit, then for both ports their state words cleared and the pad opened (scePadPortOpen, a 0x100-byte buffer each), then sceGsSyncPath"
 0x00157D80,mm_Player_LoadState,20,game,char,verified,no,1,1,reads 0x38 bytes from the save file
 0x00157DA0,mm_Player_SaveState,20,game,char,verified,no,1,1,writes 0x38 bytes
 0x00157DC0,mm_Player_GetMatrix,40,game,char,verified,no,8,0,the player model's matrix (model)
 0x00157DF0,mm_Player_PlayFootstep,528,game,char,verified,no,1,3,"footsteps on frames 10/30 of the walking animations (4-7) and frame 10 of 8-11, on the ground only: variant by the object on the tile, the water level and snow"
 0x00158000,mm_Player_UpdateAction,880,game,char,verified,no,1,3,"the player's animation from its movement, pad direction and height (idle 0-2, moving 4-15), advances its frame; sound 5 while walking with pad 0x40"
 0x00158370,mm_Player_PickTarget,1704,game,char,verified,no,1,10,"keeps or drops the player's target (gone, or 30 frames off the heading by pi/8), then steps a ray along the heading: a flag-0x40 building it hits, or while walking the nearest resident within 0.3 of the ray; sets the city cursor"
-0x00158A20,mm_Placement_FindSpot,748,game,city,verified,no,1,1,"tries offsets around (a5, a6) until mm_Map_CanPlace returns 2; writes the footprint rectangle"
+0x00158A20,mm_Placement_FindSpot,748,game,city,verified,no,1,1,"(player, city, family, typeIndex, x, z, half, rect) a spot for a building of the family's type near (`x`, `z`): for a size 2 home the four tiles from one back along each axis, for size 3 the 5 x 5 tiles from the player's side (`half` from x and z), the first the map answers 2 for (placeable and highlighted); fills `rect` (x, z, x + size, z + size) and returns 1, else 0"
 0x00158D10,mm_Player_PlaceBagItem,756,game,city,verified,yes,1,9,"placing an item from the bag: preview, confirm (button 0x40), place object, finish use"
 0x00159010,mm_Player_PlaceForApplicant,780,game,city,verified,yes,1,10,"placement preview for the selected applicant: footprint highlight green or red, then mm_Placement_FindSpot"
-0x00159320,mm_Player_SetMode,56,game,char,verified,no,4,1,"mode a1 (-1 = previous), remembers the previous mode, resets the mode timer"
+0x00159320,mm_Player_SetMode,56,game,char,verified,no,4,1,"(player, mode) mode `mode` (-1 = previous), remembers the previous mode, resets the mode timer"
 0x00159360,mm_Player_GetMode,8,game,char,verified,no,3,0,current mode
-0x00159370,mm_Player_Draw,100,game,char,verified,no,1,3,player model instances
+0x00159370,mm_Player_Draw,100,game,char,verified,no,1,3,"(player, city) the player's model, animated while there is room for it, lit, in the bag's outfit"
 0x001593E0,mm_Player_Move,1896,game,char,verified,no,1,2,"the player's grid steps: the pad starts a step (forward/back/sideways 2/speed frames, turns 32 frames); idle, eases onto the block middle and a quarter turn; the step moves the move vector or turns pi/64"
 0x00159B50,mm_Player_Turn,428,game,char,verified,no,1,1,"turning and moving with the pad unless Circle is held: up and down set the z step, the analog stick's sideways bits the x step, right and left turn by 0.02 (wrapping at pi)"
 0x00159D00,mm_Player_Update,1988,game,char,verified,yes,1,24,"player per frame by mode: movement, camera, minimap, footsteps, placing items and homes"
@@ -1251,13 +1251,13 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0015BA40,mm_SaveFile_GetResult,8,game,save,verified,no,2,1,result of the file's last memory card request
 0x0015BA50,mm_SaveFile_IsDone,8,game,save,verified,no,2,1,whether the file's last request is done
 0x0015BA60,mm_SaveFile_Close,16,game,save,verified,no,2,1,queues close of the file's descriptor (fd)
-0x0015BA70,mm_SaveFile_Read,28,game,save,verified,no,13,1,queues sceMcRead of a2 bytes into a1 from the open save file
-0x0015BA90,mm_SaveFile_Write,28,game,save,verified,no,13,1,queues sceMcWrite of a2 bytes from a1 to the open save file
-0x0015BAB0,mm_SaveFile_Open,24,game,save,verified,no,2,1,"queues sceMcOpen of a1 on the current port/slot (gp), descriptor to fd"
+0x0015BA70,mm_SaveFile_Read,28,game,save,verified,no,13,1,"(mc, buffer, size) queues sceMcRead of `size` bytes into `buffer` from the open save file"
+0x0015BA90,mm_SaveFile_Write,28,game,save,verified,no,13,1,"(mc, buffer, size) queues sceMcWrite of `size` bytes from `buffer` to the open save file"
+0x0015BAB0,mm_SaveFile_Open,24,game,save,verified,no,2,1,"(mc, mode) queues sceMcOpen of `mode` on the current port/slot (gp), descriptor to fd"
 0x0015BAD0,mm_SaveFile_Format,140,game,save,verified,no,1,2,format step machine; returns when done
 0x0015BB60,mm_SaveFile_ResetState,8,game,save,verified,no,1,0,state +4 = 0
 0x0015BB70,mm_SaveFile_PollDone,12,game,save,verified,no,1,1,whether the queued request (request) is done
-0x0015BB80,mm_SaveFile_DeleteIconSys,64,game,save,verified,no,1,1,queues delete of icon.sys in directory a1
+0x0015BB80,mm_SaveFile_DeleteIconSys,64,game,save,verified,no,1,1,"(mc, dir) queues delete of icon.sys in directory `dir`"
 0x0015BBC0,mm_SaveFile_WriteIconSys,56,game,save,ported,yes,1,1,"(mc, port, title, result) starts writing icon.sys and the save description (mm_McSave_WriteIconSys on the manager's queue); the request is kept in `request`"
 0x0015BC00,mm_SaveFile_PrepareDir,1052,game,save,verified,yes,2,13,"step machine: card info, mkdir/chdir, copies DATA\STATIC.ICO to STATIC.ICO"
 0x0015C020,mm_McManager_ResetState,8,game,save,verified,no,6,0,state +4 = 0
@@ -1265,7 +1265,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0015C0A0,mm_McManager_GetSaveEntry,128,game,save,verified,no,1,0,"the directory entry of the index-th save found over both cards (a slot with an entry and a title, 8 slots per card), and that save's card; 0 when there are fewer"
 0x0015C120,mm_McManager_GetSaveFolder,128,game,save,verified,no,1,0,"the folder name of the index-th save found over both cards (a slot with a size and a name, 8 slots per card), and that save's card; 0 when there are fewer"
 0x0015C1A0,mm_McManager_IsCardUsable,68,game,save,verified,no,1,0,a card is usable when it is a PS2 memory card (type 2) and its word at kCardFormatted is 0
-0x0015C1F0,mm_McManager_GetCardStatus,156,game,save,verified,no,7,0,"card a1 status for the menus (formatted, unformatted, none, ...)"
+0x0015C1F0,mm_McManager_GetCardStatus,156,game,save,verified,no,7,0,"(mc, card) card `card` status for the menus (formatted, unformatted, none, ...)"
 0x0015C290,mm_McManager_FormatSlotText,1588,game,save,verified,yes,2,4,"""Slot %d: %s %s%s, %s. %shrs %smins"" with the RTC time"
 0x0015C8D0,mm_McManager_HasAnySave,84,game,save,verified,no,2,0,whether any slot holds a save
 0x0015C930,mm_McManagerUpdate,3200,game,save,verified,no,7,13,"memory card scan, a step a frame: card info, then each port's save folders (prefix, file sizes) into the 16 save slots; 0 idle, 1 busy, 2 inside a save folder"
@@ -1283,7 +1283,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0015E500,mm_Person_PickUpFromDaycare,456,game,char,verified,no,1,4,"at the building on tile (x, z), unless it is home, a daycare-age child of the family there follows the person, who waits, and home is the target; otherwise the first daycare (tile list 0x17) with such a child there; 0x3F80 for none (activity 14)"
 0x0015E6D0,mm_Person_TakeToDaycare,296,game,char,verified,no,1,3,"a daycare-age child of the family at home (a resident in schedule state 2) heads for its target or school (mm_Person_TargetSchool) and follows the person, who waits for it (flag 0x200); 0x3F80 when there is none (activity 13)"
 0x0015E800,mm_Person_ChooseDestination,1492,game,char,verified,yes,1,14,"where a resident goes next. The activity comes from the person's schedule entry (mm_Schedule_PickEntry): the clock, shifted by a spread of the person (the square root bits of 6 * family + member, mod 3600), picks the hour, and the row is chosen by the holiday month (+2) and bad weather (+1). It is kept in the person (activity) and in *activity (its low 5 bits)"
-0x0015EDE0,mm_Math_SqrtBits,48,game,math,verified,no,1,0,"bit pattern of sqrtf((float)a0) (VU0 VSQRT), returned in v0; mm_Person_ChooseDestination uses it mod 3600 as a per-person time offset"
+0x0015EDE0,mm_Math_SqrtBits,48,game,math,verified,no,1,0,"(value) bit pattern of sqrtf((float)`value`) (VU0 VSQRT), returned in v0; mm_Person_ChooseDestination uses it mod 3600 as a per-person time offset"
 0x0015EE10,mm_Schedule_BusinessActivity,416,game,char,verified,yes,1,2,"the activity of the family's building type when the member's schedule byte for this hour has its upper three bits set (at the business), else 0"
 0x0015EFB0,mm_Schedule_MemberActivity,384,game,char,verified,yes,5,2,"the member's activity this hour: the low five bits of its schedule byte (row by the schedule state, column by the hour, variants for holidays and bad weather)"
 0x0015F130,mm_Schedule_GetActivity,520,game,char,verified,yes,2,3,"what the person's schedule makes of the building it heads for (the target, or home with none): the building type's activity when the schedule byte's upper part is not 0, else 0"
@@ -1292,7 +1292,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0015F590,mm_Schedule_Evaluate,828,game,char,verified,yes,7,2,"the schedule a family member follows (0 to 0xF): by age (byte +2, in years) 1 under 4, 2 daycare (4 to 6), 3 primary school (7 to 12), 4 junior high (13 to 15), 5 high school (16 to 18); older members by their place in the family (member 0, 1 or the rest), whether the family has a child under 2 or under 6 and whether the member has flag 1. The head of the family, and everyone in homes of type flag 0x400, gets 0xF (the home type's own; 6, university, for a head under 24 in Student Accom)"
 0x0015F8D0,mm_Schedule_Load,68,game,char,verified,yes,1,3,loads DATA\BIN\SCHEDULE.BIN
 0x0015F920,mm_MenuWin_FillItems,104,game,ui,verified,yes,2,2,fills its list (13 or 14 items)
-0x0015F990,mm_MenuWin_Open,248,game,ui,verified,yes,2,3,creates its list menus for menu id a1 (-2001 ...)
+0x0015F990,mm_MenuWin_Open,248,game,ui,verified,yes,2,3,"(menuwin, menuId, count) creates its list menus for menu id `menuId` (-2001 ...)"
 0x0015FA90,mm_MenuWin_Draw,268,game,ui,verified,no,0,4,window model and list menu in pass 2
 0x0015FBA0,mm_MenuWin_Closing,92,game,ui,verified,yes,0,1,"state 4: Step(0.1), frees the frame, then idle"
 0x0015FC00,mm_MenuWin_Update,68,game,ui,verified,indirect,0,1,list input; on a choice calls its close slot
@@ -1300,7 +1300,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0015FCA0,mm_MenuWin_dtor,124,game,ui,verified,yes,0,3,"vtable 0x1BCF80, deletes the list menu, base destructor"
 0x0015FD20,mm_MenuWin_ctor,76,game,ui,verified,no,2,1,"base constructor, vtable 0x1BCF80"
 0x0015FD70,mm_Markers_Draw,184,game,city,verified,no,1,2,"the base model, then each marker's node with its matrix"
-0x0015FE30,mm_Markers_CheckCircle,212,game,ui,verified,no,1,3,the building markers' Circle check (a Markers method): while Circle alone (0x20) is held in city mode 1 (and a2) hides the cursor and shows the markers; hides them again on release
+0x0015FE30,mm_Markers_CheckCircle,212,game,ui,verified,no,1,3,"(markers, city, allowed) the building markers' Circle check (a Markers method): while Circle alone (0x20) is held in city mode 1 (and `allowed`) hides the cursor and shows the markers; hides them again on release"
 0x0015FF10,mm_Markers_dtor,76,game,city,verified,yes,0,1,"the markers' destructor: the vtable set back to 0x1BCFC8, the object freed when asked"
 0x0015FF60,mm_Markers_ctor,216,game,city,verified,no,1,1,"four marker matrices, identity moved to the offsets at 0x1B0DB0 and 0.1 down"
 0x00160040,mm_CityCamera_UpdateTimeOfDay,2544,game,camera,verified,no,2,8,"lights and sky by the clock: colours blended between two-hour slot tables (0x1B0E30.. 0x1B12B0), sun directions turned by the day's angle, sky packet colours, horizon, scroll and shimmer"
@@ -1312,7 +1312,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00161330,mm_TexSprite_SetClip,124,game,gfx,verified,no,1,1,"tiles shown (clipWidth, clipHeight, up to the image's tiles past the frame), then rebuilds; mm_TexSprite_BuildPacket uses them as end tiles"
 0x001613B0,mm_TexSprite_GreenToAlpha,148,game,gfx,verified,no,1,0,"turns the green-tinted grey colours (red = blue != green) translucent: alpha 0x80 - green / 2, then green set to red. Transparent colours are left alone"
 0x00161450,mm_TexSprite_SetAlpha,108,game,gfx,verified,no,3,0,"sets every colour's alpha; with `keepClear`, fully transparent colours stay so"
-0x001614C0,mm_TexSprite_SetPosScale,24,game,gfx,verified,no,10,1,"position a3..a5 and scale a0/a1, then rebuilds"
+0x001614C0,mm_TexSprite_SetPosScale,24,game,gfx,verified,no,10,1,"(sprite, x, y, z, scaleX, scaleY) the sprite's position (`x`, `y`, `z`) and scale (`scaleX`, `scaleY`), then its packet is rebuilt (mm_TexSprite_BuildPacket)"
 0x001614E0,mm_TexSprite_Draw,8,game,gfx,verified,no,14,1,queues the sprite packet (+8)
 0x001614F0,mm_TexSprite_BuildPacket,2152,game,gfx,verified,no,4,2,"builds the sprite's DMA packet: palette upload to block 0x1E00, then per tile a texel upload, texture flush and a textured sprite (TEX0, ST, XYZ2); returns the scaled tile height"
 0x00161D60,mm_TexSprite_dtor,136,game,gfx,verified,yes,0,2,"vtable 0x1BCFD8, frees image and packet"
@@ -1335,14 +1335,14 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00162C50,mm_NameEntry_Draw,644,game,ui,verified,no,1,7,"draws the name entry (state; 0 draws nothing, 1 is typing, else only the board model): the typed name padded to its length (maxLength) with filler glyphs (0x1B8038), the character under the cursor (length) blinking between a space and '*' at the 16th frame of its 32-frame cycle (blink)"
 0x00162EE0,mm_NameEntry_Update,240,game,ui,verified,no,1,1,"states 3 and 4 slide the panel in (26 frames, then input) and out (to closed); state 1 takes input. Returns the state"
 0x00162FD0,mm_NameEntry_Close,48,game,ui,verified,no,1,0,"closes the name entry: unless it is closed already it slides out over 25 frames (state 4), or closes at once (state 0) when it does not slide"
-0x00163000,mm_NameEntry_Setup,912,game,ui,verified,no,1,5,"opens the name entry: the keyboard set (`mode`, the text pointer table at 0x1B13E0), the name length (up to 24, maxLength) with the name cleared or taken from `text`, the scrolling hint (`hint`, else empty; scrolled when longer than 10 characters), the cursor at the end of the name, the state (3 when `a3` is 0, else 1) with the board model placed (0.3 lower in state 3), the keyboard text from its first line (6 characters a line) and the arrows for more lines above and below (moreAbove, moreBelow)"
+0x00163000,mm_NameEntry_Setup,912,game,ui,verified,no,1,5,"(entry, mode, maxLength, noSlide, hint, text) opens the name entry: the keyboard set (`mode`, the text pointer table at 0x1B13E0), the name length (up to 24, maxLength) with the name cleared or taken from `text`, the scrolling hint (`hint`, else empty; scrolled when longer than 10 characters), the cursor at the end of the name, the state (3 when ``noSlide`` is 0, else 1) with the board model placed (0.3 lower in state 3), the keyboard text from its first line (6 characters a line) and the arrows for more lines above and below (moreAbove, moreBelow)"
 0x00163390,mm_NameEntry_dtor,184,game,ui,ported,yes,0,2,"the name entry's destructor: its four text boxes (hintText, keysText, nameText, lineText) deleted, then the object when asked"
 0x00163450,mm_NameEntry_CreateTexts,424,game,ui,verified,yes,1,5,"the four text boxes of the name entry window (hintText 16 by 1, keysText 3 by 4 with larger glyphs, nameText 12 by 1 and lineText 16 by 1, all at depth 0x10001000), and the model it shows: the shared model (0x1F3B6C, model), its matrix (boardMatrix) and the world matrix of its node 1 (markerMatrix), set to the one at 0x1B2550 moved to markerX, markerY and the board's z"
 0x00163600,mm_NameEntry_ctor,136,game,ui,verified,yes,1,1,"the name entry window: its texts, then the board placed at restHeight and z -4.4 (the marker takes the same z) and the place kept in boardPlace"
 0x00163690,mm_Collide_MeshFloorBelow,436,game,city,verified,no,5,1,whether the segment from the point down by `lift` crosses a triangle of the mesh (the matrix places it); the highest crossing (lowest y) goes to *hit
 0x00163850,mm_Collide_MeshNearestHit,444,game,city,verified,no,5,1,"the nearest crossing of a ray from the point along each triangle's normal within the range: its distance in *distance (100 when none), the point in *hit"
 0x00163A10,mm_BldgType_Animate,8,game,city,verified,no,0,0,base animate slot: nothing
-0x00163A20,mm_BldgType_IsOpenAt,184,game,city,verified,no,1,0,"open between openMinute and closeMinute (minutes of the day, a2 shifts the time); closed in holiday months (city flag 2) for types with flag 0x2000"
+0x00163A20,mm_BldgType_IsOpenAt,184,game,city,verified,no,1,0,"(btype, city, obj) open between openMinute and closeMinute (minutes of the day, `obj` shifts the time); closed in holiday months (city flag 2) for types with flag 0x2000"
 0x00163AE0,mm_Clock_AddWrap,52,game,city,verified,no,8,0,"(unused_a0, time, offset) time + (offset mod 3600), wrapped at 86400 (seconds per day)"
 0x00163B20,mm_BldgType_IsMyHome,32,game,city,verified,no,1,0,"type kind in 5..8, the My Home types"
 0x00163B40,mm_BldgType_DrawOccupants,256,game,city,verified,indirect,2,1,"(btype, city, obj, person, mode) one person in a building's crowd: the colour of BldgType_DrawOccupant at the person's own position and heading, in pose 6 (flag 0x40), 1 (flag 0x80) or 0"
@@ -1358,7 +1358,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00164220,mm_BldgType_Draw,8,game,city,verified,no,0,0,base draw slot
 0x00164230,mm_BldgType_Tick,8,game,city,verified,no,0,0,base tick slot
 0x00164240,mm_BldgType_InitRecord,8,game,city,verified,no,0,0,base initRecord slot
-0x00164250,mm_BldgType_GetPostName,44,game,city,verified,no,1,0,"POSTNAME.BIN string (data at 0x1BDBC0): offset table entry for the type's post group (postGroup), then entry a1; used by mm_WordsFn_TextOccupation"
+0x00164250,mm_BldgType_GetPostName,44,game,city,verified,no,1,0,"(btype, post) POSTNAME.BIN string (data at 0x1BDBC0): offset table entry for the type's post group (postGroup), then entry `post`; used by mm_WordsFn_TextOccupation"
 0x00164280,mm_BldgType_BaseDtor,136,game,city,verified,yes,15,2,vtable 0x1BD000; releases the shared name data when the last type goes
 0x00164310,mm_BldgType_BaseCtor,1068,game,city,verified,yes,8,6,"base constructor: shared DATA\BIN\POSTNAME.BIN, model and parameters"
 0x00164740,mm_Math_MulMatVecVu0,44,game,math,verified,no,1,0,out = v x matrix (row vector)
@@ -1368,8 +1368,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00164AF0,mm_BldgAmusementPark_ctor,64,game,city,verified,yes,1,1,"Building constructor, vtable 0x1BD040"
 0x00164B30,mm_BldgBusiness_dtor,112,game,city,verified,yes,0,2,"category 6 (factories, shops), vtable 0x1BD1C0"
 0x00164BA0,mm_BldgOffice_dtor,128,game,city,verified,yes,0,2,"category 7 (offices), vtable 0x1BD080"
-0x00164C20,mm_BldgOffice_FloorBelow,224,game,city,verified,no,0,1,floorBelow slot
-0x00164D00,mm_BldgOffice_NearestHit,224,game,city,verified,no,0,1,nearestHit slot
+0x00164C20,mm_BldgOffice_FloorBelow,224,game,city,verified,no,0,1,"(btype, obj, point, matrix, hit, part, lift) floorBelow slot: mm_Collide_MeshFloorBelow with the collision mesh of the block part *`part` (table 0x1B1428)"
+0x00164D00,mm_BldgOffice_NearestHit,224,game,city,verified,no,0,1,"(btype, obj, point, matrix, hit, distance, part, range) nearestHit slot: mm_Collide_MeshNearestHit with the collision mesh of the block part *`part` (table 0x1B1408)"
 0x00164DE0,mm_BldgOffice_Draw,852,game,city,verified,no,0,3,"(btype, facing, city, obj, part, mode, x, y, z) offices: the part word (bits 0-2, see mm_CityRender_CollectObjects; bit 3, set here for kind 0xC3, adds mesh 0x67) picks up to two meshes from the built mesh on, varied by the block's place along the street ((tile / size) % 3); part 0 of an object being built draws its construction stage"
 0x00165140,mm_BldgOffice_Tick,132,game,city,verified,no,0,2,building tick; a part still being built with another stacked on it is finished at once (0x120)
 0x001651D0,mm_BldgOffice_ctor,72,game,city,verified,yes,1,1,"Building constructor, vtable 0x1BD080, extraMesh from the record's extraMesh"
@@ -1378,7 +1378,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00165390,mm_BldgRanch_Draw,524,game,city,verified,indirect,0,4,"(btype, facing, city, obj, part, mode, x, y, z) the ranch: its plain part while being built, the ranch models once built (the first always, then one of two by the type's isOpen answer)"
 0x001655A0,mm_BldgRanch_ctor,88,game,city,verified,yes,1,1,"Building constructor, vtable 0x1BD0C0, models from 0x1F3B50.."
 0x00165600,mm_Bldg_dtor,96,game,city,verified,yes,0,2,"intermediate Building class, vtable 0x1BD100"
-0x00165660,mm_ClaimMeter_Level,60,game,city,verified,no,15,0,"claim meter a0 against the thresholds at *0x1BDA50: 0 below low, 1 between, 2 above high"
+0x00165660,mm_ClaimMeter_Level,60,game,city,verified,no,15,0,"(meter) claim meter `meter` against the thresholds at *0x1BDA50: 0 below low, 1 between, 2 above high"
 0x001656A0,mm_BldgClaims_Spread,932,game,city,verified,no,1,3,"the building's claim spreads to its neighbours: over the 13 x 13 weight grid (every other tile) each building first met there, and the objects stacked on it, with the same claim (flag and id), above the low threshold and not maxed, get their meter raised by weight x spread step; at 0xFF it maxes out (flag 0x40, hold time); a claim rising a band costs a point of approval"
 0x00165A50,mm_BldgClaims_Pick,504,game,city,verified,no,1,3,"draws the building's claim: each section B entry weighs its value among the nearby buildings (mm_BldgClaims_CountNearby; id 0x32 weighs its start value while the building has no entrance), one is drawn by weight as the claim slot and timer, a need not at its start value marks the building (flag 2)"
 0x00165C50,mm_BldgClaims_CountNearby,552,game,city,verified,no,3,4,"the value of a claim entry (flag, id or section D group, start value, reach) among the buildings of its tile lists overlapping the rectangle: a need counts down from the start by each building's section C value (0 once met), a wish counts up (cap 0xFF)"
@@ -1395,16 +1395,16 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00167170,mm_BldgField_Tick,408,game,city,verified,no,0,3,marks residents on the minimap
 0x00167310,mm_BldgField_ctor,348,game,city,verified,yes,1,2,"base constructor, vtable 0x1BD140, crop parameters from the record"
 0x00167470,mm_BldgPort_dtor,128,game,city,verified,yes,0,2,"category 9 (fishing ports), vtable 0x1BD180"
-0x001674F0,mm_BldgPort_FloorBelow,84,game,city,verified,no,0,1,floorBelow slot
-0x00167550,mm_BldgPort_NearestHit,84,game,city,verified,no,0,1,nearestHit slot
+0x001674F0,mm_BldgPort_FloorBelow,84,game,city,verified,no,0,1,"(btype, obj, point, matrix, hit, lift) floorBelow slot: ports collide 2.5 higher (at ground level over their dug block): 2.5 comes off the matrix's translation y first, and stays off"
+0x00167550,mm_BldgPort_NearestHit,84,game,city,verified,no,0,1,"(btype, obj, point, matrix, hit, distance, range) nearestHit slot: the built or stage collision mesh, 2.5 higher as in mm_BldgPort_FloorBelow"
 0x001675B0,mm_BldgPort_Draw,504,game,city,verified,no,0,3,"(btype, facing, city, obj, part, mode, x, y, z) ports: like a business, lit after dark while open (hours of the object's own type), drawn 2.5 higher; once built from the business model"
-0x001677B0,mm_BldgPort_Tick,236,game,city,verified,no,0,3,building tick
+0x001677B0,mm_BldgPort_Tick,236,game,city,verified,no,0,3,"(btype, city, obj, timeFlags) ports dig their 3x3 block down to 2.5 (heights grow downwards) and rebuild the ground around it, four tiles beyond the building"
 0x001678A0,mm_BldgPort_ctor,52,game,city,verified,yes,1,1,"Building constructor, vtable 0x1BD180"
 0x001678E0,mm_Bldg_IsOpen,72,game,city,verified,no,0,1,isOpen slot: opening hours for a building or its type
 0x00167930,mm_Bldg_RayHit,8,game,city,verified,no,0,0,the building class's rayHit slot: always a hit (1)
-0x00167940,mm_Bldg_FloorBelow,64,game,city,verified,no,0,1,floorBelow slot
-0x00167980,mm_Bldg_NearestHit,64,game,city,verified,no,0,1,nearestHit slot
-0x001679C0,mm_BldgType_FindEntrance2,368,game,city,verified,no,1,2,whether a building of flag 8 lies within 3 tiles beyond side a5 (stops at walkable tiles)
+0x00167940,mm_Bldg_FloorBelow,64,game,city,verified,no,0,1,"(btype, obj, point, matrix, hit, lift) floorBelow slot: mm_Collide_MeshFloorBelow with the object's collision mesh (the built one, or the stage's by variant >> 3)"
+0x00167980,mm_Bldg_NearestHit,64,game,city,verified,no,0,1,"(btype, obj, point, matrix, hit, distance, range) nearestHit slot: mm_Collide_MeshNearestHit with the object's collision mesh (the built one, or the stage's by variant >> 3)"
+0x001679C0,mm_BldgType_FindEntrance2,368,game,city,verified,no,1,2,"(btype, city, x, z, side) whether a building of type flag 8 stands on the blocks beyond `side` of the footprint at (`x`, `z`), up to two blocks out; a walkable tile in between ends the search"
 0x00167B40,mm_Bldg_DrawPeople,1452,game,city,verified,indirect,0,1,"(btype, facing, city, obj, part, mode, people, x, y, z) the people at a built building of type flag 0x800, in four groups (residents living here, other residents, its vehicles, other vehicles) at the type's people spots for its facing, in pose 4"
 0x00168100,mm_BldgBusiness_Draw,532,game,city,verified,no,0,3,"(btype, facing, city, obj, part, mode, x, y, z) businesses and My Home: the claim icon tint while the city shows claims, lit after dark while open, the plain part while being built, the built mesh once built (the next mesh while closed, type flag 0x1000)"
 0x00168320,mm_Bldg_Tick,1204,game,city,verified,no,4,11,tick slot: the main part finds its entrance tile and side (road-grid parity) and levels the ground under the footprint (0.1 / multiples of 0.5); a built part runs the claims (the result) and drops the newly built flag between 6:00 and 7:00; a part being built counts its work from 7:00 to 18:59 and at 24 is built (flags 0x120); minimap colour by claim level
@@ -1458,7 +1458,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0016C2A0,mm_BldgWasteland_InitRecord,180,game,city,verified,no,0,1,random appearance bytes
 0x0016C360,mm_BldgWasteland_ctor,52,game,city,verified,yes,1,1,"base constructor, vtable 0x1BD3C0"
 0x0016C3A0,mm_PhoneCall_Next,204,game,ui,verified,no,1,3,shifts the call queue and drops input focus
-0x0016C470,mm_PhoneCall_Remove,372,game,ui,verified,no,1,4,"removes the queued call for (a2, a3)"
+0x0016C470,mm_PhoneCall_Remove,372,game,ui,verified,no,1,4,"(phone, city, family, member) removes the queued call for (`family`, `member`)"
 0x0016C5F0,mm_PhoneCall_Post,124,game,ui,ported,no,3,0,"(phone, person, family, member, familyOnly) queues a call from a family member (4 entries; none when the family already has one); 1 when queued"
 0x0016C670,mm_PhoneCall_Draw,364,game,ui,verified,yes,1,5,"phone model, ringing light and sound"
 0x0016C7E0,mm_PhoneCall_Update,1940,game,ui,verified,yes,1,13,"ringing phone: ""Call from boss"", ""Call from stranger"", ""Call from %s"", answering, input focus"
@@ -1469,7 +1469,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0016D0A0,mm_Notice_Clear,16,game,ui,verified,no,5,0,"id -1, hidden"
 0x0016D0B0,mm_Notice_ShowCentered,168,game,ui,verified,no,1,3,centred text for 300 frames
 0x0016D160,mm_Notice_ShowText,144,game,ui,verified,no,1,3,text for 300 frames
-0x0016D1F0,mm_Notice_Show,180,game,ui,verified,no,3,3,"notice a1 from the table at 0x1B81E0 (""A bit hungry."" ...), 300 frames"
+0x0016D1F0,mm_Notice_Show,180,game,ui,verified,no,3,3,"(notice, id) notice `id` from the table at 0x1B81E0 (""A bit hungry."" ...), 300 frames"
 0x0016D2B0,mm_Notice_dtor,124,game,ui,verified,yes,1,2,deletes its two text boxes
 0x0016D330,mm_Notice_ctor,208,game,ui,verified,yes,1,4,creates its two text boxes
 0x0016D400,mm_SoundTest_BgmPage,936,game,ui,verified,no,1,14,"sound test BGM page: loads banks, plays/stops sequences"
@@ -1480,7 +1480,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0016E270,mm_Title_DrawCommon,456,game,scene,verified,no,4,6,"title screen layers, logo animation and fades"
 0x0016E440,mm_Title_LoadMenu,1024,game,scene,verified,yes,1,16,load game screen: memory card slots and their info
 0x0016E840,mm_Title_PressStart,260,game,scene,verified,no,1,5,"title idle screen (""[SELECT]SoundTest"")"
-0x0016E950,mm_TitleScene_StartGame,764,game,scene,verified,yes,1,27,
+0x0016E950,mm_TitleScene_StartGame,764,game,scene,verified,yes,1,27,"(scene, newGame) the start of a game, one step a call (pressStep) while the city's asset loader is stepped: the title faded and drawn, the camera placed, the loading bar shown until the loader is done, the loading screen faded, the title music stopped; then a new game (afterGame clear) loads the character types, families, claims, words, goods, stamina, bag and event types, a loaded one resets the stage, families, stamina and bag, and the laptop entries are made; 1, or 2 with `newGame`, once done, else 0"
 0x0016EC50,mm_Title_NewGameIntro,1300,game,scene,verified,no,1,8,new game intro scene with town models and loading text
 0x0016F170,mm_Title_RandomCharParts,248,game,scene,verified,no,1,2,random character parts for the intro
 0x0016F270,mm_Title_OpeningMovieStep,424,game,scene,verified,yes,1,9,"plays the opening movie, then loads TITLE.SQ/HD/BD"
@@ -1490,9 +1490,9 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0016FAA0,mm_Title_Intro,696,game,scene,verified,no,1,10,"title logo intro, six steps: music, logo model animation with timed effects (0x1B1A20), title sprite fade-in, bouncing letters, 50-frame hold; returns 1 when done"
 0x0016FD60,mm_Title_LogoLetters,436,game,scene,verified,no,1,2,logo letter sprites (table 0x1B17E0)
 0x0016FF20,mm_TitleScene_MemoryCardCheck,944,game,scene,verified,no,1,8,"boot memory card check: goes on when a save or a fine card is found, else shows which slot has no card or too little space and waits for Cross (card states at 0x1BDC04/08)"
-0x001702D0,mm_TitleScene_LogoStep,464,game,boot,verified,yes,1,5,"one logo (a1: 0 NATSUME, 1 MF_US, else LOGO.TEX): load, fade in, hold 140 frames, fade out, free"
+0x001702D0,mm_TitleScene_LogoStep,464,game,boot,verified,yes,1,5,"(scene, logo) one logo (`logo`: 0 NATSUME, 1 MF_US, else LOGO.TEX): load, fade in, hold 140 frames, fade out, free"
 0x001704A0,mm_TitleScene_Load,1852,game,scene,verified,yes,1,21,"(scene, unused_a1) the title scene's assets, one step a call (waitFrames): models, texture images, sprites, the loading screen, then the sound banks once the sounds are idle; 1 when done"
-0x00170BE0,mm_TitleScene_Update,1004,game,scene,verified,yes,1,19,
+0x00170BE0,mm_TitleScene_Update,1004,game,scene,verified,yes,1,19,"(scene) one frame of the title scene by its mode: the assets loaded, the memory card check, the three logos, the intro, the title screen (new game, load, opening movie, sound test), the load menu, then the start of a new or loaded game (mm_TitleScene_StartGame); 1 or 2 once a game starts, else 0"
 0x00170FD0,mm_TitleScene_dtor,588,game,boot,verified,yes,1,9,"deletes camera, models, menus, memory card manager, loading screen and text boxes"
 0x00171220,mm_TitleScene_ctor,640,game,scene,verified,yes,1,12,"(scene, afterGame) the title scene: its stage object, the menu list, the memory card manager, the lights and the camera, a message box and a hint line; `afterGame` (1 when the game state was 1) stops the opening sequences (mm_TitleScene_Load)"
 0x001714A0,mm_TownPages_SelectedEntry,440,game,ui,verified,no,1,1,"the entry under the cursor. On a contents page: the family type in row `row`, counting only types with known families, 10 per page. On a family page: the family id, counting known families from the first one of the type whose listing the page belongs to"
@@ -1504,7 +1504,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00172130,mm_TownPages_Update,4136,game,ui,verified,yes,1,19,"open animation, page turning and cursor input, calling a resident (mm_CityScene_StartTalk)"
 0x00173160,mm_TownPages_dtor,268,game,ui,verified,yes,1,3,"frame, entry table and six text boxes"
 0x00173270,mm_TownPages_Init,212,game,ui,verified,yes,1,2,"book model 0x1F3B20, cursor frame, cleared state"
-0x00173350,mm_Widget_Step,92,game,ui,verified,no,0,0,"step slot: timer += f12; at 1.0 timer = 0 and state + 1 (6 wraps to 0), returns 1"
+0x00173350,mm_Widget_Step,92,game,ui,verified,no,0,0,"(widget, dt) step slot: timer += `dt`; at 1.0 timer = 0 and state + 1 (6 wraps to 0), returns 1"
 0x001733B0,mm_Widget_Closed,24,game,ui,verified,indirect,0,0,base onState slot of state 5 (closed): Step(1.0)
 0x001733D0,mm_Widget_Closing,24,game,ui,verified,indirect,0,0,base onState slot of state 4 (closing): Step(1.0)
 0x001733F0,mm_Widget_Active,8,game,ui,verified,no,0,0,base onState slot of state 3 (active): nothing
@@ -1521,15 +1521,15 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001737C0,mm_TalkView_ToggleAnim,88,game,talk,verified,no,1,0,"the chosen person (slot 0 when none), when idle, plays animation 2 or 3 by turns from its start"
 0x00173820,mm_TalkView_DrawPeople,3232,game,talk,verified,yes,3,18,"people at the building or of the family in a row with names, grades and the cursor"
 0x001744E0,mm_TalkView_AllAsleep,296,game,talk,verified,yes,2,4,"whether everyone is asleep (schedule activity 5, the night hours): for a family (`byFamily` 1) every member; for a building the people on its tile that count (not vehicles; outside or in this view's building). 1 when all are"
-0x00174610,mm_TalkView_DrawBuilding,916,game,talk,verified,yes,6,10,"the target building (a1 0: object, 1: family's home), lit when someone is home"
+0x00174610,mm_TalkView_DrawBuilding,916,game,talk,verified,yes,6,10,"(view, byFamily, target) the target building (`byFamily` 0: object, 1: family's home), lit when someone is home"
 0x001749B0,mm_TalkView_BuildingCamera,904,game,talk,verified,no,9,4,"camera eye and target for a talk at a building: the shared offset while it is being built, the type's own eye (type flag 0x4000) once built, else the person camera"
 0x00174D40,mm_TalkView_DrawCursor,64,game,talk,verified,no,3,2,the cursor frame at cursorX
 0x00174D80,mm_TalkView_CursorPerson,184,game,talk,verified,no,1,2,"person index of the cursor slot (cursorSlot), 0x3F80 when none"
 0x00174E40,mm_TalkView_HandleInput,640,game,talk,verified,no,3,1,cursor left/right with scrolling and zoom steps (pad repeat)
-0x001750C0,mm_TalkView_GetChoice,176,game,talk,verified,no,1,1,the chosen person (a1) and slot (a2) once a choice is made
-0x00175170,mm_TalkView_FindPersonSlot,260,game,talk,verified,no,1,2,slot of the person with family a1 and member a2
+0x001750C0,mm_TalkView_GetChoice,176,game,talk,verified,no,1,1,"(view, person, slot) the chosen person (`person`) and slot (`slot`) once a choice is made"
+0x00175170,mm_TalkView_FindPersonSlot,260,game,talk,verified,no,1,2,"(view, family, member) slot of the person with family `family` and member `member`"
 0x00175280,mm_TalkView_CountPeople,200,game,talk,verified,yes,1,3,"people present (peopleCount), or family members when by family"
-0x00175350,mm_TalkView_SetTarget,288,game,talk,verified,yes,3,4,"building a1 / family a2, name text boxes and frames"
+0x00175350,mm_TalkView_SetTarget,288,game,talk,verified,yes,3,4,"(view, building, family) building `building` / family `family`, name text boxes and frames"
 0x00175470,mm_TalkView_PersonCamera,620,game,talk,verified,no,3,3,"the camera for a talk at a building: target at the footprint middle below the object's height, eye 0.4 back along the view's flattened direction"
 0x001756E0,mm_TalkView_DrawMember,448,game,talk,verified,yes,1,4,"draws a family member in the phone view: the draw packet of the view is appended, the local matrix is the standard one with its translation at (0, 0.4, -3.6); for a character class with flag 2 the view's person model gets the same place and is drawn with the default colour, and the local matrix drops by 0.15"
 0x001758A0,mm_TalkView_DrawPerson,436,game,talk,verified,indirect,2,3,"the person at record `person` is drawn in front of the camera at (0, 0.4, -3.65): the character class's drawAt slot with an identity matrix moved there, the default colour and the view's animation slots. A class with flag 2 also gets the view's person model placed there first (and the person is then 0.15 higher)"
@@ -1540,22 +1540,22 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00175E50,mm_TalkPhoneFamily_Closed,64,game,talk,verified,no,0,1,"waits for the fade, then idle"
 0x00175E90,mm_TalkPhoneFamily_Closing,68,game,talk,verified,no,0,2,"waits for the fade, fades again"
 0x00175EE0,mm_TalkPhoneFamily_Close,52,game,talk,verified,no,0,2,starts the fade and closes
-0x00175F20,mm_TalkPhoneFamily_Active,8,game,talk,verified,no,0,1,
-0x00175F30,mm_TalkPhoneFamily_Opened,52,game,talk,verified,no,0,1,
+0x00175F20,mm_TalkPhoneFamily_Active,8,game,talk,verified,no,0,1,(view) active state: the view's input (mm_TalkView_HandleInput)
+0x00175F30,mm_TalkPhoneFamily_Opened,52,game,talk,verified,no,0,1,(view) opened state: on to the active state (3) once the fade is done
 0x00175F70,mm_TalkPhoneFamily_Opening,68,game,talk,verified,no,0,2,"waits for the fade, fades again"
 0x00175FC0,mm_TalkPhoneFamily_Open,52,game,talk,verified,no,0,2,starts the fade and opens
 0x00176000,mm_TalkPhoneFamily_dtor,96,game,talk,verified,yes,0,2,vtable 0x1BD4A0
-0x00176060,mm_TalkPhoneFamily_ctor,88,game,talk,ported,yes,1,2,"vtable 0x1BD4A0, family a2"
+0x00176060,mm_TalkPhoneFamily_ctor,88,game,talk,ported,yes,1,2,"(view, city, family) vtable 0x1BD4A0, family `family`"
 0x001760C0,mm_TalkPhoneMember_Draw,92,game,talk,verified,yes,0,2,"the phone view of one family member, in its draw pass: the building and the member (mm_TalkView_DrawMember)"
 0x00176120,mm_TalkPhoneMember_Closed,64,game,talk,verified,no,0,1,"waits for the fade, then idle"
 0x00176160,mm_TalkPhoneMember_Closing,68,game,talk,verified,no,0,2,"waits for the fade, fades again"
 0x001761B0,mm_TalkPhoneMember_Close,52,game,talk,verified,no,0,2,starts the fade and closes
-0x001761F0,mm_TalkPhoneMember_Active,8,game,talk,verified,no,0,0,
+0x001761F0,mm_TalkPhoneMember_Active,8,game,talk,verified,no,0,0,(view) active state: nothing
 0x00176200,mm_TalkPhoneMember_Opened,52,game,talk,verified,no,0,1,waits for the fade
 0x00176240,mm_TalkPhoneMember_Opening,68,game,talk,verified,no,0,2,"waits for the fade, fades again"
 0x00176290,mm_TalkPhoneMember_Open,52,game,talk,verified,no,0,2,starts the fade and opens
 0x001762D0,mm_TalkPhoneMember_dtor,96,game,talk,verified,yes,0,2,vtable 0x1BD4F0
-0x00176330,mm_TalkPhoneMember_ctor,84,game,talk,verified,no,1,1,"vtable 0x1BD4F0, family a2, member a3"
+0x00176330,mm_TalkPhoneMember_ctor,84,game,talk,verified,no,1,1,"(view, city, family, member) vtable 0x1BD4F0, family `family`, member `member`"
 0x00176390,mm_TalkBldgFar_Draw,92,game,talk,verified,yes,0,3,"vtable 0x1BD540: building with its occupants, camera cut"
 0x001763F0,mm_TalkBldgFar_Closed,96,game,talk,verified,no,0,3,"restores the camera, waits for the fade"
 0x00176450,mm_TalkBldgFar_Closing,120,game,talk,verified,no,0,5,building camera until the fade ends
@@ -1565,13 +1565,13 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001765E0,mm_TalkBldgFar_Opening,100,game,talk,verified,no,0,4,"waits for the fade, fades again"
 0x00176650,mm_TalkBldgFar_Open,52,game,talk,verified,no,0,2,starts the fade and opens
 0x00176690,mm_TalkBldgFar_dtor,96,game,talk,verified,yes,0,2,vtable 0x1BD540
-0x001766F0,mm_TalkBldgFar_ctor,128,game,talk,verified,yes,1,3,"vtable 0x1BD540, building a2, collects its occupants"
+0x001766F0,mm_TalkBldgFar_ctor,128,game,talk,verified,yes,1,3,"(view, city, object) vtable 0x1BD540, building `object`, collects its occupants"
 0x00176770,mm_TalkBldgNear_Draw,84,game,talk,verified,yes,0,3,"vtable 0x1BD590: building with its occupants, camera pans"
 0x001767D0,mm_TalkBldgNear_Closing,276,game,talk,verified,indirect,0,2,camera pans back
 0x001768F0,mm_TalkBldgNear_Active,96,game,talk,verified,no,0,4,building camera and cursor input
 0x00176950,mm_TalkBldgNear_Opening,256,game,talk,verified,indirect,0,2,camera pans to the building
 0x00176A50,mm_TalkBldgNear_dtor,96,game,talk,verified,yes,0,2,vtable 0x1BD590
-0x00176AB0,mm_TalkBldgNear_ctor,116,game,talk,verified,yes,1,4,"vtable 0x1BD590, building a2, collects its occupants"
+0x00176AB0,mm_TalkBldgNear_ctor,116,game,talk,verified,yes,1,4,"(view, city, object) vtable 0x1BD590, building `object`, collects its occupants"
 0x00176B30,mm_TalkOccupantFar_Draw,88,game,talk,verified,yes,0,2,"vtable 0x1BD5E0: one person at a building, camera cut"
 0x00176B90,mm_TalkOccupantFar_Closed,96,game,talk,verified,no,0,3,"restores the camera, waits for the fade"
 0x00176BF0,mm_TalkOccupantFar_Closing,120,game,talk,verified,no,0,5,building camera until the fade ends
@@ -1581,40 +1581,40 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00176D70,mm_TalkOccupantFar_Opening,100,game,talk,verified,no,0,4,"waits for the fade, fades again"
 0x00176DE0,mm_TalkOccupantFar_Open,52,game,talk,verified,no,0,2,starts the fade and opens
 0x00176E20,mm_TalkOccupantFar_dtor,96,game,talk,verified,yes,0,2,vtable 0x1BD5E0
-0x00176E80,mm_TalkOccupantFar_ctor,116,game,talk,verified,no,1,1,"vtable 0x1BD5E0, building a2, person a3"
+0x00176E80,mm_TalkOccupantFar_ctor,116,game,talk,verified,no,1,1,"(view, city, object, person) vtable 0x1BD5E0, building `object`, person `person`"
 0x00176F00,mm_TalkOccupantNear_Draw,80,game,talk,verified,yes,0,2,"vtable 0x1BD630: one person at a building, camera pans"
 0x00176F50,mm_TalkOccupantNear_Closing,276,game,talk,verified,indirect,0,2,camera pans back
 0x00177070,mm_TalkOccupantNear_Active,88,game,talk,verified,no,0,3,building camera
 0x001770D0,mm_TalkOccupantNear_Opening,256,game,talk,verified,indirect,0,2,camera pans to the person
 0x001771D0,mm_TalkOccupantNear_dtor,96,game,talk,verified,yes,0,2,vtable 0x1BD630
-0x00177230,mm_TalkOccupantNear_ctor,112,game,talk,verified,no,1,2,"vtable 0x1BD630, building a2, person a3"
+0x00177230,mm_TalkOccupantNear_ctor,112,game,talk,verified,no,1,2,"(view, city, object, person) vtable 0x1BD630, building `object`, person `person`"
 0x001772A0,mm_TalkPersonFar_Draw,64,game,talk,verified,no,0,1,"vtable 0x1BD680: a person outside, camera cut"
 0x001772E0,mm_TalkPersonFar_Closed,64,game,talk,verified,no,0,1,"waits for the fade, then idle"
 0x00177320,mm_TalkPersonFar_Closing,100,game,talk,verified,no,0,4,camera until the fade ends
 0x00177390,mm_TalkPersonFar_Close,52,game,talk,verified,no,0,2,starts the fade and closes
-0x001773D0,mm_TalkPersonFar_Active,8,game,talk,verified,no,0,0,
+0x001773D0,mm_TalkPersonFar_Active,8,game,talk,verified,no,0,0,(view) active state: nothing
 0x001773E0,mm_TalkPersonFar_Opened,52,game,talk,verified,no,0,1,waits for the fade
 0x00177420,mm_TalkPersonFar_Opening,100,game,talk,verified,no,0,4,"camera, waits for the fade, fades again"
 0x00177490,mm_TalkPersonFar_Open,52,game,talk,verified,no,0,2,starts the fade and opens
 0x001774D0,mm_TalkPersonFar_dtor,96,game,talk,verified,yes,0,2,vtable 0x1BD680
-0x00177530,mm_TalkPersonFar_ctor,548,game,talk,verified,no,1,4,"vtable 0x1BD680, person a2: camera facing them from the terrain heights"
+0x00177530,mm_TalkPersonFar_ctor,548,game,talk,verified,no,1,4,"(view, city, person) vtable 0x1BD680, person `person`: camera facing them from the terrain heights"
 0x00177760,mm_TalkPersonNear_Draw,40,game,talk,verified,no,0,1,"vtable 0x1BD6D0: a person outside, camera pans"
 0x00177790,mm_TalkPersonNear_Closing,276,game,talk,verified,indirect,0,2,camera pans back
 0x001778B0,mm_TalkPersonNear_Active,72,game,talk,verified,no,0,2,camera held on the person
 0x00177900,mm_TalkPersonNear_Opening,268,game,talk,verified,indirect,0,2,camera pans to the person
 0x00177A10,mm_TalkPersonNear_dtor,96,game,talk,verified,yes,0,2,vtable 0x1BD6D0
-0x00177A70,mm_TalkPersonNear_ctor,548,game,talk,verified,no,1,4,"vtable 0x1BD6D0, person a2: camera facing them from the terrain heights"
+0x00177A70,mm_TalkPersonNear_ctor,548,game,talk,verified,no,1,4,"(view, city, person) vtable 0x1BD6D0, person `person`: camera facing them from the terrain heights"
 0x00177CA0,mm_TalkCard_FillText,648,game,talk,verified,yes,1,8,"name, age and how recently met (""Met today"", ""Been awhile"", ""Lives in next town"")"
 0x00177F30,mm_TalkCard_DrawGauges,788,game,talk,verified,no,1,5,"the card's friendship meter follows the real friendship of the person (or the family member by phone when the person is 6000) towards it: up by 0.02 a frame below 1, else 0.1 (and down by 0.1), snapping on arrival. The face frame takes the friendship band (style 0, or the band + 9)"
 0x00178250,mm_TalkCard_Draw,256,game,talk,verified,yes,0,7,"vtable 0x1BD720: card model, texts and gauges while active"
-0x00178350,mm_TalkCard_Show,480,game,talk,verified,no,1,7,"opens for person a1 (or family a2 member a3) at slot a4, with the friendship and the mood face"
+0x00178350,mm_TalkCard_Show,480,game,talk,verified,no,1,7,"(card, person, family, member, slot) opens for person `person` (or family `family` member `member`) at slot `slot`, with the friendship and the mood face"
 0x00178530,mm_TalkCard_dtor,172,game,talk,verified,yes,0,4,vtable 0x1BD720
 0x001785E0,mm_TalkCard_ctor,220,game,talk,verified,yes,1,4,"vtable 0x1BD720, two text boxes and a frame"
 0x001786C0,mm_Talk_SetViewLit,24,game,talk,verified,no,1,0,forces the talk's view lit (TalkView.forceLit) when it has one
 0x001786E0,mm_Talk_LookupPose,80,game,talk,verified,no,1,0,the pose stored for a family member in the session's 32-entry table; 0 when there is none
-0x00178730,mm_Talk_SetPose,124,game,talk,verified,no,1,0,"stores pose a3 for family a1 member a2 in the 32-entry table (poses: u16 family, u8 member, u8 pose): updates a matching entry, else fills the first free one; pair of mm_Talk_LookupPose"
+0x00178730,mm_Talk_SetPose,124,game,talk,verified,no,1,0,"(talk, family, member, pose) stores pose `pose` for family `family` member `member` in the 32-entry table (poses: u16 family, u8 member, u8 pose): updates a matching entry, else fills the first free one; pair of mm_Talk_LookupPose"
 0x001787B0,mm_Talk_EndChoosing,24,game,talk,verified,no,1,0,"the view's forcedChoice = -1, endChoosing = 1"
-0x001787D0,mm_Talk_SelectPerson,44,game,talk,verified,no,1,1,forces the view's choice (forcedChoice) to the slot of family a1 member a2
+0x001787D0,mm_Talk_SelectPerson,44,game,talk,verified,no,1,1,"(talk, family, member) forces the view's choice (forcedChoice) to the slot of family `family` member `member`"
 0x00178800,mm_Talk_ChooseInput,348,game,talk,verified,yes,1,3,"choosing a person: confirm (0x40) starts the conversation, cancel (0x10) closes"
 0x00178960,mm_Talk_Closed,240,game,talk,verified,indirect,0,2,"state 5: when the view is idle, pops the scene mode, deletes view and conversation, restores HUD"
 0x00178A50,mm_Talk_Closing,120,game,talk,verified,indirect,0,0,"state 4: when the conversation is idle, closes the view or goes back to choosing"
@@ -1622,18 +1622,18 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00178B40,mm_Talk_Opened,104,game,talk,verified,indirect,0,0,state 2: waits for the conversation to open
 0x00178BB0,mm_Talk_Opening,168,game,talk,verified,yes,0,1,"state 1: when the view is active, starts the conversation or choosing"
 0x00178C60,mm_Talk_Update,228,game,talk,verified,yes,0,2,"updates view and conversation, then the state machine"
-0x00178D50,mm_Talk_Start,1332,game,talk,verified,yes,1,17,"target building a2/person a3 or family a2/member a3; picks the view class (near/far, home, person) and the conversation"
+0x00178D50,mm_Talk_Start,1332,game,talk,verified,yes,1,17,"(talk, byFamily, target, member, arg5, city) target building `target`/person `member` or family `target`/member `member`; picks the view class (near/far, home, person) and the conversation"
 0x00179290,mm_Talk_Draw,96,game,talk,verified,indirect,0,0,draws view and conversation
 0x001792F0,mm_Talk_dtor,180,game,talk,verified,yes,0,2,vtable 0x1BD770
 0x001793B0,mm_Talk_ctor,68,game,talk,verified,no,1,1,vtable 0x1BD770
 0x00179400,mm_TalkMoney_Draw,156,game,talk,verified,no,0,6,vtable 0x1BD7C0: panel model and the money text
 0x001794A0,mm_TalkMoney_Closing,68,game,talk,verified,indirect,0,0,"Step(0.1), then idle"
-0x001794F0,mm_TalkMoney_Active,100,game,talk,verified,no,0,0,
+0x001794F0,mm_TalkMoney_Active,100,game,talk,verified,no,0,0,"(money) the amount shown counts 100 a frame towards the real one, never past it"
 0x00179560,mm_TalkMoney_Opening,68,game,talk,verified,indirect,0,0,"Step(0.1), then active"
 0x001795B0,mm_TalkMoney_dtor,124,game,talk,ported,yes,0,3,vtable 0x1BD7C0
-0x00179630,mm_TalkMoney_ctor,188,game,talk,verified,yes,1,5,"vtable 0x1BD7C0, amount a1 (player money 0x1C5540)"
+0x00179630,mm_TalkMoney_ctor,188,game,talk,verified,yes,1,5,"(money, amount) vtable 0x1BD7C0, amount `amount` (player money 0x1C5540)"
 0x001796F0,mm_MyHome_EntranceRect,360,game,talk,verified,no,1,0,"tile rectangle in front of a building by facing (0-3), clamped to the map"
-0x00179860,mm_MyHome_MarkEntrance,300,game,talk,verified,no,2,4,sets (a1 1) or clears tile flag 0x80 in front of the home
+0x00179860,mm_MyHome_MarkEntrance,300,game,talk,verified,no,2,4,"(view, set) sets (`set` 1) or clears tile flag 0x80 in front of the home"
 0x00179990,mm_MyHome_FloorHit,492,game,talk,verified,no,1,2,the home's floor under the viewer: the segment from 0.51 below the position up to it against the interior's floor triangles; of the crossings the highest (smallest y) wins and is stored in *hit. 1 when there was one
 0x00179B80,mm_MyHome_WallHit,488,game,talk,verified,no,1,2,the walls: the same triangles of the wall range against the ray from the viewer along each wall's normal within 0.2; the nearest distance is left in *distance (100 when none) and its hit point in *hit
 0x00179D70,mm_MyHome_Collide,412,game,talk,verified,no,1,3,"keeps the viewer out of the walls (two passes: each wall found pushes the viewer back along its direction by what is missing from 0.2) and on the floor (0.5 over a floor hit, else sinking by 0.05, never above -0.5)"
@@ -1643,14 +1643,14 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0017A4D0,mm_MyHome_Opening,312,game,talk,verified,indirect,0,4,camera moves into the home
 0x0017A610,mm_MyHome_Close,136,game,talk,verified,no,0,4,"refills stamina (mm_Stamina_Init) when below the maximum, clears the entrance, closes"
 0x0017A6A0,mm_MyHome_dtor,96,game,talk,verified,yes,0,2,vtable 0x1BD810
-0x0017A700,mm_MyHome_ctor,600,game,talk,verified,no,1,5,"vtable 0x1BD810, building a2, camera start from its entrance"
+0x0017A700,mm_MyHome_ctor,600,game,talk,verified,no,1,5,"(view, city, object) vtable 0x1BD810, building `object`, camera start from its entrance"
 0x0017A960,mm_TalkConv_Draw,164,game,talk,verified,indirect,0,2,"vtable 0x1BD860: message window, menu, name entry, card and money panel"
 0x0017AA10,mm_TalkConv_Closing,448,game,talk,verified,yes,0,5,Step(0.1); then friendship status updates for the person or family member
 0x0017ABD0,mm_TalkConv_Active,848,game,talk,verified,yes,0,16,"script code handling: choice menus, money panel, name entry, end of talk"
 0x0017AF20,mm_TalkConv_Opening,80,game,talk,verified,yes,0,1,"Step(0.1), then active and the first line"
 0x0017AF70,mm_TalkConv_Update,388,game,talk,verified,yes,0,8,"name entry results, menu choices back into the script, message window update"
 0x0017B100,mm_TalkConv_NextLine,456,game,talk,verified,yes,3,6,next script line; the end code (-6007) applies the friendship gain
-0x0017B2D0,mm_TalkConv_Start,380,game,talk,verified,yes,2,6,"loads the script for a person (a1 0) or family member (a1 1), shows the card, sets the message"
+0x0017B2D0,mm_TalkConv_Start,380,game,talk,verified,yes,2,6,"(conv, byFamily, target, buildingOrMember, slot, arg5) loads the script for a person (`byFamily` 0) or family member (`byFamily` 1), shows the card, sets the message"
 0x0017B450,mm_TalkConv_dtor,260,game,talk,verified,yes,0,2,"vtable 0x1BD860, deletes menu, name entry, card, money panel"
 0x0017B560,mm_TalkConv_ctor,152,game,talk,verified,yes,1,4,message window plus a menu window and the person card
 0x0017B600,mm_WordsFn_FocusPadAfterTalk,20,game,talk,verified,no,0,0,"#146 act: city flag 0x40, the pad focus returns when the talk ends"
@@ -1807,22 +1807,22 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00180070,mm_Words_CallText,32,game,talk,verified,no,1,1,calls a text getter through its member function pointer
 0x00180090,mm_Words_CallAct,32,game,talk,verified,no,2,1,calls an action through its member function pointer
 0x001800B0,mm_Words_SetFewChoicesLeft,16,game,talk,verified,no,1,0,the script's menu has fewer than two unused entries left (fewChoicesLeft = 1)
-0x001800C0,mm_Words_SelectBagItem,192,game,talk,verified,no,1,0,bagSlot = the a1-th bag item of kinds 0x10/0x11/0x13
-0x00180180,mm_Words_SetWantIndex,12,game,talk,verified,no,1,0,wantIndex = a1 (the chosen want)
+0x001800C0,mm_Words_SelectBagItem,192,game,talk,verified,no,1,0,"(words, index) bagSlot = the `index`-th bag item of kinds 0x10/0x11/0x13"
+0x00180180,mm_Words_SetWantIndex,12,game,talk,verified,no,1,0,"(words, index) wantIndex = `index` (the chosen want)"
 0x00180190,mm_Words_SelectEvent,92,game,talk,verified,yes,1,1,chooses event `choice` - 1 of the city's list for the script (0 is no choice and gives 0): asks whether the first person of the script can take part in it (mm_Event_FindForFamily); the result is its code plus one
-0x001801F0,mm_Words_GetGoods,88,game,talk,verified,no,1,1,goods record a1 for building type B this season
+0x001801F0,mm_Words_GetGoods,88,game,talk,verified,no,1,1,"(words, index) goods record `index` for building type B this season"
 0x00180250,mm_Words_GetBuildingTypeB,12,game,talk,verified,no,6,0,the context's buildingTypeB
-0x00180260,mm_Words_SetArg,12,game,talk,verified,no,3,0,the context's arg = a1
+0x00180260,mm_Words_SetArg,12,game,talk,verified,no,3,0,"(words, arg) the context's arg = `arg`"
 0x00180270,mm_Words_GetFriendshipChanged,12,game,talk,verified,no,1,0,the context's friendshipChanged (set by #116/#117)
 0x00180280,mm_Words_GetCancelAllowed,12,game,talk,verified,no,1,0,the context's cancelAllowed
-0x00180290,mm_Words_SetFamily,248,game,talk,verified,yes,2,1,"subject A = family a1 member a2 (prefetches the family), clears the rest"
-0x00180390,mm_Words_SetPerson,256,game,talk,verified,yes,1,2,"subject A = person a1 with home building, clears the rest"
+0x00180290,mm_Words_SetFamily,248,game,talk,verified,yes,2,1,"(words, family, member, arg4, city) subject A = family `family` member `member` (prefetches the family), clears the rest"
+0x00180390,mm_Words_SetPerson,256,game,talk,verified,yes,1,2,"(words, person, arg4, city) subject A = person `person` with home building, clears the rest"
 0x00180490,mm_Words_dtor,84,game,talk,verified,yes,0,1,frees the 0x140-byte context
 0x001804F0,mm_Words_ctor,48,game,talk,verified,yes,1,1,allocates the 0x140-byte context
 0x00180520,mm_CityScene_GetFade,8,game,city,verified,no,21,0,"fade counter (fade), 0 when no fade runs"
-0x00180530,mm_CityScene_StartFade,52,game,city,verified,no,21,0,starts a fade (out or in by fadeLevel) at speed a1 when none runs
+0x00180530,mm_CityScene_StartFade,52,game,city,verified,no,21,0,"(city, speed) starts a fade (out or in by fadeLevel) at speed `speed` when none runs"
 0x00180570,mm_CityScene_InFarewellParty,20,game,city,verified,no,5,0,"city flag 8: a farewell party is on (set when mm_EvFarewellParty_Update gathers the people, cleared at its end); people gather on the roads, schedules give the party row and the approval rise stops"
-0x00180590,mm_CityScene_AddApplicantFamily,212,game,city,verified,yes,5,2,adds family a1 to the applicants and gives the residents who introduced it a new introduction
+0x00180590,mm_CityScene_AddApplicantFamily,212,game,city,verified,yes,5,2,"(city, family, select) adds family `family` to the applicants and gives the residents who introduced it a new introduction"
 0x00180670,mm_CityScene_MissionProgress,212,game,city,verified,no,2,0,"percent: the map counter for the goal type 0x1C5550 over the families in the city (0x1F32E0), capped at 100"
 0x00180750,mm_CityScene_PopulationRank,132,game,city,verified,no,2,0,rank 1..8 from the map's population (100/300/500/1000/1500/2000/2500)
 0x001807E0,mm_CityScene_ApprovalTier,60,game,city,verified,no,2,0,"approval below 0, up to 50, up to 100, higher"
@@ -1832,12 +1832,12 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00180990,mm_CityScene_LoadGame,2388,game,city,verified,yes,1,50,load screen (REPORT.TEX) and loading every *_LoadState from the memory card
 0x001812F0,mm_CityScene_SaveStep,308,game,city,verified,yes,1,6,"save from the pause menu: map vertex buffers, open, write, wait"
 0x00181430,mm_CityScene_PopMode,68,game,city,verified,no,8,0,"pops the scene mode stack (modeStack, modeDepth)"
-0x00181480,mm_CityScene_PushMode,56,game,city,verified,no,5,0,pushes mode a1 on the mode stack
+0x00181480,mm_CityScene_PushMode,56,game,city,verified,no,5,0,"(city, mode) pushes mode `mode` on the mode stack"
 0x001814C0,mm_CityScene_GetMode,8,game,city,verified,no,11,0,current mode (modeStack[0])
-0x001814D0,mm_CityScene_RecordPlacementScore,220,game,city,verified,no,1,0,"a resident moves in: decaying averages of its class's prosperity (prosperity, a2) and conduct (conduct, a1)"
-0x001815B0,mm_CityScene_AddApproval,16,game,city,verified,no,2,0,pending approval change (pendingApproval) += a1
+0x001814D0,mm_CityScene_RecordPlacementScore,220,game,city,verified,no,1,0,"(city, conduct, prosperity) a resident moves in with its class's `conduct` and `prosperity` (traits bits 12-14 and 9-11): two decaying averages (x10); once ten have been seen, the old sum keeps 9/10"
+0x001815B0,mm_CityScene_AddApproval,16,game,city,verified,no,2,0,"(city, delta) pending approval change (pendingApproval) += `delta`"
 0x001815C0,mm_CityScene_TalkEndChoosing,8,game,city,verified,no,1,1,tail call mm_Talk_EndChoosing(city->talk); pair of mm_CityScene_TalkSelectPerson
-0x001815D0,mm_CityScene_TalkSelectPerson,8,game,city,verified,no,2,1,talk view choice = slot of family a1 member a2
+0x001815D0,mm_CityScene_TalkSelectPerson,8,game,city,verified,no,2,1,"(city, family, member) talk view choice = slot of family `family` member `member`"
 0x001815E0,mm_CityScene_StartTalk,128,game,city,verified,yes,6,1,"mm_Talk_Start, then pushes mode 5 and hides the HUD"
 0x00181660,mm_CityScene_UpdateApproval,204,game,city,verified,yes,1,1,every 6 frames moves the approval rate one step toward the pending change
 0x00181730,mm_CityScene_TickClock,724,game,city,verified,no,1,3,"clock, approval drift and events, new day: month, weather, map daily update"
@@ -1848,11 +1848,11 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00182BF0,mm_Collide_NormalRayTriangle,304,game,math,verified,no,2,3,"whether the line from the origin along the triangle's normal meets triangle (a, b, c) closer than the range: the plane, the crossing into hit, its distance, then the inside test"
 0x00182D20,mm_Collide_PointInTriangle,356,game,math,verified,no,2,0,"whether point p lies inside triangle (a, b, c), on VU0: the normals (a - p) x (c - p), (b - a) x (c - a) and (p - b) x (c - b) must all face the same way (no dot product of neighbours below 0)"
 0x00182E90,mm_Collide_SegmentTriangle,400,game,math,verified,no,2,3,"whether the segment from start to end crosses triangle (a, b, c): the crossing with the plane must lie between the ends and inside the triangle"
-0x00183020,mm_Text_FormatTimeRange,444,game,text,verified,no,1,2,"""H:MM"" of minute a1, glyph 0xC2 (0x1B9AD8) as separator, then ""H:MM"" of minute a2, into a0; used by mm_WordsFn_TextOpenHours"
-0x001831E0,mm_Text_FormatMoney,144,game,text,verified,no,5,3,'$' + mm_Text_FormatThousands(value); right-aligns to width a2 with spaces unless a3 != 0
+0x00183020,mm_Text_FormatTimeRange,444,game,text,verified,no,1,2,"(out, fromMinute, toMinute) ""H:MM"" of minute `fromMinute`, glyph 0xC2 (0x1B9AD8) as separator, then ""H:MM"" of minute `toMinute`, into `out`; used by mm_WordsFn_TextOpenHours"
+0x001831E0,mm_Text_FormatMoney,144,game,text,verified,no,5,3,"(out, value, width, leftAlign) '$' + mm_Text_FormatThousands(value); right-aligns to width `width` with spaces unless `leftAlign` != 0"
 0x00183270,mm_Text_FormatThousands,296,game,text,verified,no,2,2,"decimal string with ',' every three digits; negative values via abs (0x11E810)"
-0x001833A0,mm_Text_SplitDigits,168,game,text,verified,no,1,0,"number to per-digit values (0-9, 10 for a leading blank) for digit sprites, width a2, powers of ten at 0x1B9AB0"
-0x00183450,mm_Text_FormatPadded,176,game,text,verified,no,12,0,"right-aligned decimal with leading spaces, width a2 (powers of ten at 0x1B9AB0)"
+0x001833A0,mm_Text_SplitDigits,168,game,text,verified,no,1,0,"(out, value, count) number to per-digit values (0-9, 10 for a leading blank) for digit sprites, width `count`, powers of ten at 0x1B9AB0"
+0x00183450,mm_Text_FormatPadded,176,game,text,verified,no,12,0,"(out, value, width) right-aligned decimal with leading spaces, width `width` (powers of ten at 0x1B9AB0)"
 0x00183500,mm_TextBox_Build,1556,game,ui,verified,no,4,0,"rebuilds the text box's DMA packet: palette upload (when clut != 0), one glyph upload per cell to GS block 0x1E01 + 2n, then a packed GIF tag of one textured sprite per cell"
 0x00183B20,mm_TextBox_Draw,8,game,ui,verified,no,28,1,queues the text box packet (this+8) with mm_Dma_AppendCall
 0x00183B30,mm_TextBox_AppendText,692,game,ui,verified,no,17,2,"lays out text from the cursor on, wrapping words at ' \n\r'; glyphs from mm_Font_GetGlyph"
@@ -1861,16 +1861,16 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00183E40,mm_TextBox_SetPos,20,game,ui,verified,no,32,1,"x, y and z in GS units, then rebuilds"
 0x00183E60,mm_TextBox_SetPosAndSize,36,game,ui,verified,no,2,1,"position, glyph size and pitch at once, then rebuilds"
 0x00183E90,mm_TextBox_dtor,112,game,ui,verified,yes,27,3,"sceGsSyncPath, frees the packet (+8); deletes this when the flag is > 0"
-0x00183F00,mm_TextBox_Init,300,game,ui,verified,yes,23,2,"grid of (a1*2) cols x a2 rows; default pos 0x6C00,0x7900 z 16000000, glyph 0xC0 x 0xB0; a3 = style table (-1 -> 0x1B24A0, -2 -> 0x1B24E0, 0 none) in clut; mallocs the packet"
+0x00183F00,mm_TextBox_Init,300,game,ui,verified,yes,23,2,"(textbox, columns, rows, style) grid of (`columns`*2) cols x `rows` rows; default pos 0x6C00,0x7900 z 16000000, glyph 0xC0 x 0xB0; `style` = style table (-1 -> 0x1B24A0, -2 -> 0x1B24E0, 0 none) in clut; mallocs the packet"
 0x00184030,mm_DmaChain_Next,208,game,gfx,verified,no,1,0,"steps a DMA chain reader (tag: the current tag): CNT skips qwc+1, END stays, RET returns 0; caches the tag's id, qwc, address, VIF words and data"
-0x00184100,mm_DmaChain_Begin,20,game,gfx,verified,no,1,0,reader starts at a1 with an END marker so the first mm_DmaChain_Next reads the first tag
+0x00184100,mm_DmaChain_Begin,20,game,gfx,verified,no,1,0,"(reader, chain) reader starts at `chain` with an END marker so the first mm_DmaChain_Next reads the first tag"
 0x00184120,mm_File_Seek,388,game,file,ported,yes,10,5,"(file, offset, whence, readyMode) sceLseek; a synchronous file first waits for the request queue to drain, an asynchronous one queues the seek (with sceCdDiskReady's mode for when it is issued)"
 0x001842B0,mm_File_Read,408,game,file,verified,yes,13,5,"(file, buffer, count, size, readyMode) sceRead of count x size bytes; synchronous files wait for the queue first, asynchronous ones queue the request (0x1F4ED0) with sceCdDiskReady's mode"
 0x00184450,mm_File_Close,320,game,file,verified,yes,10,5,"sceClose, fd (+0) = -1; synchronous files wait for the queue first"
 0x00184590,mm_File_Open,384,game,file,verified,yes,12,8,"waits for the disc, builds ""cdrom0:\"" + path + "";1"" (0x1B9AF8), sceOpen"
-0x00184710,mm_File_LoadWhole,164,game,file,verified,yes,11,5,"opens a1, mallocs the file size, reads it all, closes; size to *a2 if given; returns the buffer"
-0x001847C0,mm_FileQueue_IsDone,72,game,file,verified,no,8,0,"1 when request a1 is no longer in the 64-entry queue (head 0x1BDC88, tail 0x1BDC8C)"
-0x00184810,mm_FileQueue_WaitFor,212,game,file,ported,yes,1,4,pumps the queue until request a1 is done
+0x00184710,mm_File_LoadWhole,164,game,file,verified,yes,11,5,"(file, path, size) opens `path`, mallocs the file size, reads it all, closes; size to *`size` if given; returns the buffer"
+0x001847C0,mm_FileQueue_IsDone,72,game,file,verified,no,8,0,"(queue, request) 1 when request `request` is no longer in the 64-entry queue (head 0x1BDC88, tail 0x1BDC8C)"
+0x00184810,mm_FileQueue_WaitFor,212,game,file,ported,yes,1,4,"(queue, request, quiet) pumps the queue until request `request` is done"
 0x001848F0,mm_FileQueue_WaitAll,140,game,file,verified,yes,5,4,pumps the queue until it is empty
 0x00184980,mm_FileQueue_Init,76,game,file,verified,no,1,0,clears the 64 request slots (0x1C bytes each at 0x1F4ED0) and the head/tail counters
 0x001849D0,mm_FileQueue_Pump,396,game,file,verified,yes,7,5,runs the request at the queue tail (open/read/seek/close/ioctl) once the disc is ready
@@ -1882,12 +1882,12 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00184CD0,mm_Heap_Probe,84,game,mem,verified,yes,1,2,malloc(0x17E5D70) then free; returns that size (checks the heap can hold it)
 0x00184D30,mm_Random_TimerMix,164,game,random,verified,no,9,0,"steps a five-word cascade at 0x1B2520 and adds timer 0 (T0_COUNT) into its first word, which it returns: noise for sound variations"
 0x00184DE0,mm_Random_Next,80,game,random,verified,no,20,1,"subtractive generator (Knuth/Numerical Recipes ran3, 55 entries at 0x1F55D0, modulus 1e9)"
-0x00184E30,mm_Random_Seed,160,game,random,verified,no,1,1,seeds the 55-entry table from a0 and stirs it three times
+0x00184E30,mm_Random_Seed,160,game,random,verified,no,1,1,(seed) seeds the 55-entry table from `seed` and stirs it three times
 0x00184ED0,mm_Random_Stir,140,game,random,verified,no,2,0,one ran3 refill pass over the 55 entries
 0x00184F60,mm_Gs_InitDisplay,652,game,gfx,verified,yes,1,16,"sets up the display: the display environment (0x1F5B10, a frame 8 units on: its first fields as the flag bits below), the draw environment (0x1F5B20) for the given width and a height worked out from the screen's, the double buffer (0x1F5AC0: width by half the height, cleared) and a GIF packet made in a 0x60 byte block that sets five GS registers (the one tag at 0x1B2540 opens it"
 0x001851F0,mm_Pad_SwallowCross,40,game,pad,verified,no,4,0,consumes a Cross press (0x40): out of this frame's buttons and the held ones until released (0x1BDCC0 = 1)
-0x00185220,mm_Pad_ReleaseFocus,40,game,pad,verified,no,10,0,drops input focus if owner a0 (or -1 = anyone) holds it (0x1BDCB0/0x1BDCB4)
-0x00185250,mm_Pad_TakeFocus,28,game,pad,verified,no,6,0,takes input focus for owner a0 with button mask a1 when nobody holds it
+0x00185220,mm_Pad_ReleaseFocus,40,game,pad,verified,no,10,0,(owner) drops input focus if owner `owner` (or -1 = anyone) holds it (0x1BDCB0/0x1BDCB4)
+0x00185250,mm_Pad_TakeFocus,28,game,pad,verified,no,6,0,"(owner, mask) takes input focus for owner `owner` with button mask `mask` when nobody holds it"
 0x00185270,mm_Pad_GetRepeat,92,game,pad,verified,no,6,0,"held buttons with auto-repeat: first repeat after 30 frames, then every 5"
 0x001852D0,mm_Pad_Pressed,60,game,pad,verified,no,26,0,"pressed buttons (0x1BDCA4), minus the focus mask when another owner holds input focus"
 0x00185310,mm_Pad_Held,60,game,pad,verified,no,13,0,"held buttons (0x1BDCA0), minus the focus mask when another owner holds input focus"
@@ -1896,10 +1896,10 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001856C0,mm_App_OnInit,8,game,app,verified,no,0,0,App base class (vtable 0x1BD8D0) slot +8; empty
 0x001856D0,mm_App_dtor,108,game,app,ported,yes,1,4,"vtable 0x1BD8D0; shuts down sound (0x18F450), frees the DMA lists and the font; deletes this when the flag is > 0"
 0x00185740,mm_App_ctor,644,game,app,ported,yes,1,21,"(was mm_InitSystemModules) vtable 0x1BD8D0; boots the IOP with IOPRP243.IMG, inits CD/SIF/file system, seeds the random generator with 12345, loads SIO2MAN/MCMAN/MCSERV/PADMAN, inits pad, file queue, font, memory card queue, DMA lists and sound"
-0x001859D0,mm_Math_LinePlaneIntersect,724,game,math,verified,no,3,0,"intersection of a line with plane a0..a3 (a,b,c,d), handles axis-parallel cases"
+0x001859D0,mm_Math_LinePlaneIntersect,724,game,math,verified,no,3,0,"(point, out, dx, dy, dz, a, b, c, d) where the line through `point` with direction (`dx`, `dy`, `dz`) meets the plane a x + b y + c z + d = 0: *`out` = (x, y, z, 1) and 1, or 0 when the line runs parallel to it; zero direction components take their own formulas"
 0x00185CB0,mm_Math_RayPlaneDistance,228,game,math,verified,no,1,1,"(from, to, planePoint, hit, *distance): where the ray from `from` towards `to` meets the plane through planePoint facing along it; returns (f0) and stores the distance from planePoint to that point, v0 = 1"
-0x00185DA0,mm_Math_ProjectionMatrix,204,game,math,verified,no,2,1,"perspective matrix into a3: m0 = 2n/w, m5 = 2n/h, m10 = (f+n)/(f-n), m14 = -2fn/(f-n), m11 = 1, from a1 = near, a2 = far and the screen size in a4"
-0x00185E70,mm_Math_Log2,56,game,math,verified,no,5,0,floor(log2(a0)) for a0 >= 1
+0x00185DA0,mm_Math_ProjectionMatrix,204,game,math,verified,no,2,1,"(matrix, screen, distance, zNear, zFar) a perspective matrix into `matrix`: m0 = 2n / w and m5 = 2n / h, w and h being twice `screen`[0] and `screen`[1] scaled by `zNear` / `distance`; m10 = (f + n) / (f - n), m14 = -2fn / (f - n), m11 = 1, m15 = 0, with n = `zNear` and f = `zFar`"
+0x00185E70,mm_Math_Log2,56,game,math,verified,no,5,0,(value) floor(log2(`value`)) for `value` >= 1
 0x00185EB0,mm_McSave_WriteIconSys,1120,game,save,verified,yes,1,7,"builds the icon.sys header ('PS2D', title, STATIC.ICO icons) in 0x1F65F0 and writes it through the memory card queue"
 0x00186310,mm_McQueue_Seek,152,game,save,verified,no,1,0,queues sceMcSeek (command 12); returns the request id
 0x001863B0,mm_McQueue_Write,152,game,save,ported,no,2,0,queues sceMcWrite (command 10)
@@ -1912,20 +1912,20 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001867D0,mm_McQueue_Format,120,game,save,ported,no,1,0,queues sceMcFormat (command 3)
 0x00186850,mm_McQueue_GetDir,184,game,save,verified,no,1,0,queues sceMcGetDir (command 2)
 0x00186910,mm_McQueue_GetInfo,168,game,save,verified,no,2,0,queues sceMcGetInfo (command 1)
-0x001869C0,mm_McQueue_GetResult,48,game,save,verified,no,2,0,"result word of request a1 (64 slots of 0x24 bytes at 0x1F5CF0, result at +0xC)"
-0x001869F0,mm_McQueue_IsDone,72,game,save,verified,no,6,0,1 when request a1 is no longer pending
+0x001869C0,mm_McQueue_GetResult,48,game,save,verified,no,2,0,"(queue, request) result word of request `request` (64 slots of 0x24 bytes at 0x1F5CF0, result at +0xC)"
+0x001869F0,mm_McQueue_IsDone,72,game,save,verified,no,6,0,"(queue, request) 1 when request `request` is no longer pending"
 0x00186A40,mm_McQueue_Init,96,game,save,verified,yes,1,1,sceMcInit and clears the 64 request slots
 0x00186AA0,mm_McQueue_Pump,504,game,save,verified,yes,2,13,"issues the request at the queue tail (sceMcGetInfo ... sceMcSeek by command 1-12), then polls sceMcSync for its result"
 0x00186CA0,mm_McQueue_DeletingDtor,68,game,save,verified,yes,1,1,deletes the request queue when the flag is > 0
 0x00186CF0,mm_McQueue_ctor,8,game,save,verified,no,1,0,the card request queue object (1 byte): returns this
 0x00186D00,mm_PacketBuf_Seek,8,game,gfx,verified,no,11,0,sets the packet buffer write pointer (0x1BDCE8)
 0x00186D10,mm_PacketBuf_Tell,8,game,gfx,verified,no,11,0,returns the packet buffer write pointer (0x1BDCE8)
-0x00186D20,mm_Dma_KickVif1Now,192,game,gfx,verified,yes,3,2,"sends a two-tag chain (CALL a0, END) on VIF1 right away and waits for GS path idle before and after"
-0x00186DE0,mm_Dma_AppendCall,116,game,gfx,verified,no,29,0,"appends a DMA CALL tag (id 5) to address a0 at the gp list pointer, then an END tag the next append overwrites; at most 0x4000 qwords per list"
+0x00186D20,mm_Dma_KickVif1Now,192,game,gfx,verified,yes,3,2,"(address) sends a two-tag chain (CALL `address`, END) on VIF1 right away and waits for GS path idle before and after"
+0x00186DE0,mm_Dma_AppendCall,116,game,gfx,verified,no,29,0,"(address) appends a DMA CALL tag (id 5) to address `address` at the gp list pointer, then an END tag the next append overwrites; at most 0x4000 qwords per list"
 0x00186E60,mm_DmaList_QueueGsDefaults,124,game,gfx,verified,no,6,0,"CALLs the static packet 0x1B2760: standard alpha blend in ALPHA_1/2, TEST_1/2 alpha != 0 and Z >="
 0x00186EE0,mm_DmaList_QueueOtherOverlay,152,game,gfx,verified,no,1,0,CALLs the other one of the two 0xBA0-byte packets at 0x1F69C0 built by 0x1873D0
 0x00186F80,mm_DmaList_QueueClearScreen,124,game,gfx,verified,no,3,0,CALLs the static packet 0x1B28E0: full-screen sprite writing colour 0 and Z 0
-0x00187000,mm_DmaList_QueueFade,272,game,gfx,verified,no,9,0,"full-screen black sprite with alpha a0 (patched into 0x1B2830/0x1B28A0); a1 == 0 draws it at Z 0xFFFFF000 (0x1B2800), else at Z max (0x1B2870)"
+0x00187000,mm_DmaList_QueueFade,272,game,gfx,verified,no,9,0,"(alpha, overAll) full-screen black sprite with alpha `alpha` (patched into 0x1B2830/0x1B28A0); `overAll` == 0 draws it at Z 0xFFFFF000 (0x1B2800), else at Z max (0x1B2870)"
 0x00187110,mm_DmaList_QueueClearZ,124,game,gfx,verified,no,21,0,"CALLs the static packet 0x1B26D0: full-screen sprite that only writes Z = 0 (alpha test NEVER, AFAIL = ZB_ONLY)"
 0x00187190,mm_DmaList_Rewind,56,game,gfx,verified,yes,1,1,"waits for GS path idle, then resets the write pointer to the start of the current list"
 0x001871D0,mm_DmaList_Flip,40,game,gfx,verified,no,2,0,switches to the other of the two 64 KB lists (0x1BD9C0/0x1BD9C4)
@@ -1935,31 +1935,31 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001873D0,mm_DmaList_InitPackets,616,game,gfx,verified,no,1,0,builds two static packets at 0x1F69C0 that draw a 640 x 224 picture from GS block 0x8000 (+0x8C0) as 5 x 7 sprites of 128 x 32
 0x00187640,mm_DmaList_Init,104,game,gfx,verified,yes,1,2,"allocates the two 64 KB lists and the 0x8000-byte packet buffer, then builds the overlay packets (0x1873D0)"
 0x001876B0,mm_Sound_StopAllPlaying,156,game,sound,verified,no,1,3,asks the driver for its status (0x18F200) and stops every voice whose bit is set in the two 16-bit masks at +4 and +8
-0x00187750,mm_Se_SetEnabled,196,game,sound,ported,no,3,4,0x1BDD20 = a0; a0 == 0 stops all 16 + 15 effect voices; a1 != 0 resets their volumes (0xFFF and 0x100)
+0x00187750,mm_Se_SetEnabled,196,game,sound,ported,no,3,4,"(enabled, resetVolumes) 0x1BDD20 = `enabled`; `enabled` == 0 stops all 16 + 15 effect voices; `resetVolumes` != 0 resets their volumes (0xFFF and 0x100)"
 0x00187820,mm_Bgm_SetPlaying,76,game,sound,verified,no,1,2,"the music (voice 15) on or off, and its volume back to 0xC0 when asked"
 0x00187870,mm_Se_UpdateCityAmbience,3152,game,sound,verified,no,1,8,"one quarter of the 2x2 blocks within 16 tiles of the listener per frame: building sounds (group 2), terrain sounds (group 3) and, within 8 tiles, vehicles; VU0 bearings from the listener; 17:00 chime 0x3B for busy cities"
 0x001884E0,mm_Se_UpdateListener,1092,game,sound,verified,no,2,1,copies the city camera's eye and target into the listener vectors at 0x1FC650 and derives its orientation
 0x00188930,mm_Se_BuildingSoundState,1144,game,sound,verified,indirect,1,1,"a building object's ambient sound this frame: low byte the sound (0xFF none), 0x100 after the lead of its window, 0x200 built, 0x400 the type's own (ambientSound); one being built plays sound 6 in its third stage of work; each object once per frame (flag 4, again 0x4FF); the sound's schedule (SeSound schedule) decides"
-0x00188DB0,mm_Se_InTimeWindow,300,game,sound,verified,no,1,0,"checks the game clock (seconds of day mod 3600, 0x1BDD34) against a window [a1, a2) offset per object; 0xFF = outside, 0x100 = inside"
+0x00188DB0,mm_Se_InTimeWindow,300,game,sound,verified,no,1,0,"(obj, start, length) checks the game clock (seconds of day mod 3600, 0x1BDD34) against a window [`start`, `length`) offset per object; 0xFF = outside, 0x100 = inside"
 0x00188EE0,mm_Se_RequestTileSounds,468,game,sound,ported,no,1,4,"the vehicles on map tile (x, z) unless its object already has a request: engine 0x18 pitched by speed; the horn 0x1A at one-in-four while still allowed; returns what is left of the horn flag"
 0x001890C0,mm_Se_PickTerrainAmbience,508,game,sound,verified,no,1,3,"ambient sound id for a position: above the city's water level picks 0x1C/0x1D, else from the 5-byte table at 0x1B35F0 through mm_Se_MatchSchedule"
 0x001892D0,mm_Se_MatchSchedule,912,game,sound,verified,no,1,0,1 when the current month (monthCount mod 12) and hour/minute (0x1BDD34) fall inside the given month and time ranges
 0x00189660,mm_Se_Request,1244,game,sound,verified,no,7,2,"(owner, group, sound, param0A, param18, pitch, note, param19, angle, distance) adds a sound request (position, sound id, priority, volume, pitch, note) to the request list at 0x1F8710 (count at gp 0x1BDD08); ids look up the 16-byte sound table 0x1B2EE0"
-0x00189B40,mm_Se_StopOwner,260,game,sound,verified,no,1,2,"stops every effect voice (16 at 0x1F8140, 15 at 0x1F8440, 0x30 bytes each) and request owned by a0"
+0x00189B40,mm_Se_StopOwner,260,game,sound,verified,no,1,2,"(owner) stops every effect voice (16 at 0x1F8140, 15 at 0x1F8440, 0x30 bytes each) and request owned by `owner`"
 0x00189C50,mm_Se_RequestForObject,1876,game,sound,verified,no,2,3,requests the sounds of a moving or placed object by its type and distance to the listener
 0x0018A3B0,mm_Sound_PlaySe,148,game,sound,verified,no,31,1,"(sound, pitch, note, angle, distance) plays sound id sound & 0xFF through mm_Se_Request (note 60, 0x3C, plays it as recorded); ids flagged 0x10 in the 16-byte table 0x1B2EE0 get a rotating owner id (0x1BDCFC, wraps at 255)"
-0x0018A450,mm_Se_PlayMessageSound,1456,game,sound,verified,no,1,1,"message window sound for code a0 (0x14, 0x0A, ...), several fixed sound ids"
+0x0018A450,mm_Se_PlayMessageSound,1456,game,sound,verified,no,1,1,"(code) message window sound for code `code` (0x14, 0x0A, ...), several fixed sound ids"
 0x0018AA00,mm_Se_PlayVariant,1148,game,sound,verified,no,2,2,"plays one of seven effects (0x29, 0x2A, 0x2B, 0x2D with a random pitch 0..199 from mm_Random_TimerMix; 0x3E, 0x2C, 0x2E)"
 0x0018AE80,mm_Se_UpdateTimeOfDay,452,game,sound,verified,no,1,1,"time-of-day cues: fades sound 0x36 by the clock (silent 6:00-18:00), chime 0x37 at fixed times in months 7-8"
 0x0018B050,mm_Se_UpdateVoices,2736,game,sound,verified,no,1,9,"per frame, by priority class: one step of each busy voice's sound script (0x1B3410, 0x18 bytes by voiceParam low byte): start, wait, branch at random, pitch slides, volume offset, stop"
-0x0018BB10,mm_Se_ApplyVoiceParams,188,game,sound,verified,no,1,2,"voice a0: volume L/R clamped to 1..0x3FFF (flag 1, 0x18DD90) and pitch (flag 2, 0x18DC70)"
+0x0018BB10,mm_Se_ApplyVoiceParams,188,game,sound,verified,no,1,2,"(voice) voice `voice`: volume L/R clamped to 1..0x3FFF (flag 1, 0x18DD90) and pitch (flag 2, 0x18DC70)"
 0x0018BBD0,mm_Se_AssignVoices,2952,game,sound,verified,no,1,2,"sorts the frame's requests by priority into the 16 + 15 effect voice slots, stealing low-priority voices"
 0x0018C770,mm_Sound_Update,580,game,sound,verified,no,1,11,"per frame from mm_GameUpdate: assigns and updates effect voices, city ambience, time-of-day cues and the BGM state"
 0x0018C9C0,mm_Sound_SetCity,516,game,sound,verified,no,2,8,sets the city object (0x1BDD00) used by the sound code; null stops all effect voices and resets their volumes
 0x0018CBD0,mm_Sound_StopAllSequences,60,game,sound,verified,no,3,1,queues cmd 0xB for sequence slots 7..0
 0x0018CC10,mm_Sound_LoadPlaylandBanks,88,game,sound,verified,no,2,1,queues cmd 9 (load SQ/HD/BD bank) for the 4 bank name triples at 0x1B2E20 (PLAYLAND.SQ ...)
-0x0018CC70,mm_Bgm_FadeOut,48,game,sound,verified,no,1,1,"cmd 0xE on voice 15 to volume 0 over a0, BGM state (gp 0x1BDCF4?) = 4"
-0x0018CCA0,mm_Bgm_SetActive,132,game,sound,verified,no,1,4,"a0 == 0 fades the BGM out (state 4); otherwise stops a pending jingle, restores volume 0xC0 and sets state 3"
+0x0018CC70,mm_Bgm_FadeOut,48,game,sound,verified,no,1,1,(time) cmd 0xE on voice 15 to volume 0 over `time`; the mood becomes fading out (state 4)
+0x0018CCA0,mm_Bgm_SetActive,132,game,sound,verified,no,1,4,"(active) `active` == 0 fades the BGM out (state 4); otherwise stops a pending jingle, restores volume 0xC0 and sets state 3"
 0x0018CD30,mm_Bgm_SetTrackSlot,360,game,sound,verified,no,2,1,"sets or adds track slot + 6 in the music table (0x1F8120, entries 3..12 of (id, enabled)); with play: fades voice 15 out with it next, or queues it (0x1BDCF0)"
 0x0018CEA0,mm_Bgm_Update,688,game,sound,verified,no,1,7,"picks the BGM for the city state (flags, approval) and switches banks (NOMAL_A.SQ/HD/BD ...) when the driver is idle"
 0x0018D150,mm_SoundCmd_WaveClose0,12,game,sound,verified,no,6,1,"mm_SoundCmd_WaveClose(0, 0): closes wave file 0"
@@ -1991,7 +1991,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0018F280,mm_Sound_LoadModules,452,game,sound,verified,yes,1,2,"(was mm_LoadSoundModules) loads LIBSD, SDRDRV, MODMIDI, MODHSYN, MODSEIN, YYSOUND, retrying each until it loads"
 0x0018F450,mm_Sound_Shutdown,80,game,sound,ported,yes,1,2,YYSound RPC function 0
 0x0018F4A0,mm_Sound_Init,300,game,sound,ported,yes,1,6,"(was mm_InitSound) loads the modules, binds RPC 0x12346, sends function 1 with the status block address, clears the command ring"
-0x0018F5D0,mm_EvShoppingTogether_Answer,32,game,event,verified,no,0,0,type 1: Answer (returns the outcome when a3 == 0)
+0x0018F5D0,mm_EvShoppingTogether_Answer,32,game,event,verified,no,0,0,"(data, city, actor, mode) type 1: Answer (returns the outcome when `mode` == 0)"
 0x0018F5F0,mm_EvShoppingTogether_Update,900,game,event,verified,yes,0,7,type 1: Update
 0x0018F980,mm_EvShoppingTogether_End,192,game,event,verified,no,0,3,type 1: End (clears the building marks)
 0x0018FA40,mm_EvShoppingTogether_Start,116,game,event,verified,no,0,1,"type 1: Start (marks the two buildings, timer 180)"
@@ -2039,8 +2039,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001927D0,mm_EvDeliveryMan_Check,1272,game,event,verified,no,0,7,"type 3 ""Delivery Man"": Check"
 0x00192CD0,mm_EvBugDamage_Check,132,game,event,verified,no,0,1,"type 11 ""Bug damage"": Check (its only slot)"
 0x00192D60,mm_EventList_MoveAll,696,game,event,verified,no,2,1,bucket `from` -> `to`: every entry (event manager constructor and destructor)
-0x00193020,mm_EventQueue_RemoveAt,148,game,event,verified,no,5,1,removes the id at a2 from queue level a1 and shifts the level starts
-0x001930C0,mm_EventQueue_InsertByPriority,340,game,event,verified,no,7,1,inserts id *a1 into level a2 keeping the type priority order (the type's priority)
+0x00193020,mm_EventQueue_RemoveAt,148,game,event,verified,no,5,1,"(queue, bucket, entry) removes the id at `entry` from queue level `bucket` and shifts the level starts"
+0x001930C0,mm_EventQueue_InsertByPriority,340,game,event,verified,no,7,1,"(queue, entry, bucket, start) inserts id *`entry` into level `bucket` keeping the type priority order (the type's priority)"
 0x00193220,mm_PartyPopup_Draw,36,game,event,verified,no,0,1,in draw pass 2 the popup frame packet (+4) is called
 0x00193250,mm_PartyPopup_Update,72,game,event,verified,no,0,3,shows notice 1 and closes on Circle (0x40)
 0x001932A0,mm_PartyPopup_dtor,144,game,event,ported,yes,0,3,the vtable steps down to the derived class's destructor state and back to the base class's; the GS is waited for before the frame it may still draw is deleted
@@ -2102,23 +2102,23 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0019A140,mm_EvActor_PointAtBuilding,108,game,event,verified,yes,2,2,"an event actor points at a building: unless someone holds the pad focus, a talk about the building (its id at +2) starts and its person is selected from the actor's family and member (+4, +6). 1 when the talk started"
 0x0019A1B0,mm_EvActor_Wander,752,game,event,verified,no,2,6,"in the first minute of the day the person takes the weather flag. Outside or at home, the person goes into a shop away from them: tile lists from a random one on (64 tries), the first shop (type flag 0x40) with a walkable entrance, not their home, that they are not within 5 tiles of; none found leaves them outside"
 0x0019A4A0,mm_EvActor_FindShop,524,game,event,verified,no,2,5,"whether there is a shop (type flag 0x40) with a walkable entrance, other than the person's home, that the person is not within 5 tiles of (the shop at the entrance tile, its footprint widened by 5)"
-0x0019A6B0,mm_EvActor_StopFollowing,84,game,event,verified,no,8,0,"the actor's person stops following (flags 0x20 and 0x80 cleared, follow target none); a0 is the city"
-0x0019A710,mm_EvActor_Follow,332,game,event,verified,no,3,1,"person a1 leaves its building and follows person a2 (flag 0x20, follow)"
-0x0019A860,mm_EvActor_Detach,308,game,event,verified,no,3,1,"person a1 leaves its building, follow flag set with no target"
-0x0019A9A0,mm_EvActor_Release,212,game,event,verified,no,3,1,person a1 leaves its building and drops flags 0x80/0x100
-0x0019AA80,mm_Person_ExitBuilding,160,game,char,verified,no,1,1,if person a1 is inside a building: lowers the building's occupant count (occupants) and marks the person outside
-0x0019AB20,mm_EvActor_MoveTo,816,game,event,verified,no,10,4,moves person a1 towards building a2; 1 on arrival
+0x0019A6B0,mm_EvActor_StopFollowing,84,game,event,verified,no,8,0,"(city, actor) the actor's person stops following (flags 0x20 and 0x80 cleared, follow target none)"
+0x0019A710,mm_EvActor_Follow,332,game,event,verified,no,3,1,"(city, actor, target) person `actor` leaves its building and follows person `target` (flag 0x20, follow)"
+0x0019A860,mm_EvActor_Detach,308,game,event,verified,no,3,1,"(city, actor) person `actor` leaves its building, follow flag set with no target"
+0x0019A9A0,mm_EvActor_Release,212,game,event,verified,no,3,1,"(city, actor) person `actor` leaves its building and drops flags 0x80/0x100"
+0x0019AA80,mm_Person_ExitBuilding,160,game,char,verified,no,1,1,"(city, person) if person `person` is inside a building: lowers the building's occupant count (occupants) and marks the person outside"
+0x0019AB20,mm_EvActor_MoveTo,816,game,event,verified,no,10,4,"(city, actor, target, arrive) moves person `actor` towards building `target`; 1 on arrival"
 0x0019AE50,mm_Person_IsOnOpenTile,212,game,char,verified,no,6,2,"whether the actor stands on a building of theirs that does not keep its people inside (type flag 0x40), never while flag 4 is set"
-0x0019AF30,mm_Person_IsAtBuilding,232,game,char,verified,no,5,2,person a1 (6000 counts as yes) stands at building a2
-0x0019B020,mm_Person_FindIdleOfType,136,game,char,verified,no,1,3,first person of char type a2 whose home building is free (0x165660)
-0x0019B0B0,mm_Person_IsNearBuilding,424,game,char,verified,no,1,2,person position within a3 tiles of building a2's footprint
-0x0019B260,mm_Player_DistanceToBuilding,360,game,char,verified,no,7,3,tiles between the player and the building of actor a1 (footprint aware); a0 is the city
-0x0019B3D0,mm_Player_DistanceToPerson,104,game,char,verified,no,7,2,distance from the player to person a1 (sqrt)
-0x0019B440,mm_Player_DistanceToPoint,80,game,char,verified,no,1,2,distance from the player to point a1
-0x0019B490,mm_Person_Distance,84,game,char,verified,no,2,1,distance between persons a1 and a2
+0x0019AF30,mm_Person_IsAtBuilding,232,game,char,verified,no,5,2,"(city, actor, target) person `actor` (6000 counts as yes) stands at building `target`"
+0x0019B020,mm_Person_FindIdleOfType,136,game,char,verified,no,1,3,"(city, building, charType) first person of char type `charType` whose home building is free (0x165660)"
+0x0019B0B0,mm_Person_IsNearBuilding,424,game,char,verified,no,1,2,"(city, person, obj, range) person position within `range` tiles of building `obj`'s footprint"
+0x0019B260,mm_Player_DistanceToBuilding,360,game,char,verified,no,7,3,"(city, actor) tiles between the player and the building of actor `actor` (footprint aware)"
+0x0019B3D0,mm_Player_DistanceToPerson,104,game,char,verified,no,7,2,"(city, actor) distance from the player to person `actor` (sqrt)"
+0x0019B440,mm_Player_DistanceToPoint,80,game,char,verified,no,1,2,"(city, point) distance from the player to point `point`"
+0x0019B490,mm_Person_Distance,84,game,char,verified,no,2,1,"(city, actorA, actorB) distance between persons `actorA` and `actorB`"
 0x0019B4F0,mm_EvAlien_FindBuilding,400,game,event,verified,no,1,3,the first available building of `type` in tile list `list` that overlaps the rectangle
 0x0019B680,mm_EvThief_FindBuilding,448,game,event,verified,no,2,3,the first available building of `category` in any of the 80 tile lists that overlaps the rectangle
-0x0019B840,mm_Building_GetFootprint,136,game,city,verified,no,10,0,"from a placed building (type a0[0], packed tile a0[2] = x | y<<7) and margin a1: x, y and the far corner from the type's size into a2[0..3]"
+0x0019B840,mm_Building_GetFootprint,136,game,city,verified,no,10,0,"(building, margin, rect) the building's footprint widened by `margin` on each side into `rect`: x0, z0, x1, z1 (x1 and z1 past the last tile)"
 0x0019B8D0,mm_Movie_SetSpuMasterVolume,100,game,movie,verified,yes,1,1,sceSdRemote SetParam: master volume left/right (0x980/0xA80) of both cores to a0
 0x0019B940,mm_Movie_SendToIop2Area,840,game,movie,verified,no,1,3,(sendToIOP2area) copies up to two EE ring areas into up to two IOP ring areas with sceSifSetDma and waits for each
 0x0019BC90,mm_Movie_AudioDecSendToIop,476,game,movie,verified,yes,1,2,"(audioDecSendToIOP) in preset or play state, sends as much PCM as fits behind the SPU2 AutoDMA play position (sceSdRemote 0x8100) in 1 KB units"
@@ -2202,9 +2202,9 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001A0C40,mm_Words_MatchTypedAnswer,840,game,talk,verified,no,1,2,which answer of the current question matches the typed text (strcmp)
 0x001A0F90,mm_Words_GetEntryDefault,580,game,talk,verified,no,1,1,default text for a name entry question
 0x001A11E0,mm_Words_GetEntryMode,504,game,talk,verified,no,1,1,the answer mode of the current entry
-0x001A13E0,mm_Words_GetChoiceText,1036,game,talk,verified,yes,1,10,"text of menu choice a3 for code a2: goods with prices (""Don't buy""), claims, wants, events"
+0x001A13E0,mm_Words_GetChoiceText,1036,game,talk,verified,yes,1,10,"(script, city, code, index) text of menu choice `index` for code `code`: goods with prices (""Don't buy""), claims, wants, events"
 0x001A17F0,mm_Words_ApplyChoice,504,game,talk,verified,yes,1,6,"(script, city, code, choice) applies a menu choice: the script moves on by the entry's place (Words column, or scriptPos); also hides a -2005 entry, adds the event chosen, selects a bag item, or sets the want index or the argument"
-0x001A19F0,mm_Words_CountChoices,664,game,talk,verified,no,3,3,number of menu choices for code a2
+0x001A19F0,mm_Words_CountChoices,664,game,talk,verified,no,3,3,"(script, city, code) number of menu choices for code `code`"
 0x001A1CA0,mm_Words_AppendClipped,312,game,talk,verified,no,1,2,"appends a piece of text to a line being built, joined the way English wants it: a space between words, none after a line break, '(' or '<', or before a line break or punctuation ('.', '?', ',', ')', '>', an apostrophe). Two full stops make one, and a word ending in s takes ""'s"" as a bare ""'"""
 0x001A1DE0,mm_Words_ExpandLine,2044,game,talk,verified,no,2,7,"expands a script line: conditions pick branches, text getters fill in names, actions run"
 0x001A2620,mm_Words_StepImpl,888,game,talk,verified,yes,1,7,"(entry, buffer) binds banks 0 and 3 and picks the script's words when they are not bound, then runs the script's words until one gives a result (a line of text left part-way, an end code)"
@@ -2212,8 +2212,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001A29C0,mm_Words_FriendshipChanged,8,game,talk,verified,no,1,1,the global context's friendshipChanged
 0x001A29D0,mm_Words_CancelAllowed,8,game,talk,verified,no,1,1,the global context's cancelAllowed
 0x001A29E0,mm_Words_LoadForWants,596,game,talk,verified,yes,1,7,"script for a wants window line (event or default), reads its block"
-0x001A2C40,mm_Words_LoadForFamily,424,game,talk,ported,yes,1,6,"script for family a1 member a2 (talk by phone), reads its block"
-0x001A2DF0,mm_Words_LoadForPerson,604,game,talk,verified,yes,1,7,"script for person a1 (may start an event), reads its block"
+0x001A2C40,mm_Words_LoadForFamily,424,game,talk,ported,yes,1,6,"(family, member, arg5, city) the script of family `family` member `member` (a talk by phone): the subject set, the -2005 menu's entries hidden by age and friendship, the member's block read, the event words loaded; returns the block's cache slot"
+0x001A2DF0,mm_Words_LoadForPerson,604,game,talk,verified,yes,1,7,"(person, arg5, city) the script of person `person`: its character type's block, the event words of the event it starts (when `arg5` is 0) or the city's, the menus marked; returns the block's cache slot"
 0x001A3050,mm_Words_ReadBlock,336,game,talk,verified,yes,3,3,"(block) finds a script block in the cache of eight (most recently used first), reading it from WORDS.BIN into the last entry when it is not there; returns the first slot's word"
 0x001A31A0,mm_WordsBlock_ctor,172,game,talk,verified,yes,1,5,"(entry) a script block cache entry (WordsBlock): block 0 and a buffer of one block; the first one made opens WORDS.BIN and WORDSEVE.BIN, and each is counted"
 0x001A3250,mm_Words_Init,744,game,talk,verified,yes,1,9,"loads the WORDS, WORDSEVE, WORDSCOM and WORDSTEN tables at game start"

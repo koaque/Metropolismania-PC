@@ -1688,9 +1688,9 @@ namespace mm
     }
 
     int Bldg_NearestHit(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
-                      GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, ps2f f12)
+                      GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, ps2f range)
     {
-        return Collide_MeshNearestHit(static_cast<int>(btype.address), collisionMesh(btype, obj), point, matrix, hit, distance, f12);
+        return Collide_MeshNearestHit(static_cast<int>(btype.address), collisionMesh(btype, obj), point, matrix, hit, distance, range);
     }
 
     // Open hours apply to the building as a whole (no object) and to a built object; one being built is never open.
@@ -1874,9 +1874,9 @@ namespace mm
     }
 
     int BldgHousing_NearestHit(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
-                             GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, GuestPtr<uint32_t> part, ps2f f12)
+                             GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, GuestPtr<uint32_t> part, ps2f range)
     {
-        return Collide_MeshNearestHit(static_cast<int>(btype.address), housingMesh(btype, obj, *part), point, matrix, hit, distance, f12);
+        return Collide_MeshNearestHit(static_cast<int>(btype.address), housingMesh(btype, obj, *part), point, matrix, hit, distance, range);
     }
 
     int BldgOffice_FloorBelow(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
@@ -1886,9 +1886,9 @@ namespace mm
     }
 
     int BldgOffice_NearestHit(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
-                            GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, GuestPtr<uint32_t> part, ps2f f12)
+                            GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, GuestPtr<uint32_t> part, ps2f range)
     {
-        return Collide_MeshNearestHit(static_cast<int>(btype.address), officeMesh(btype, obj, *part, 0x001B1408u), point, matrix, hit, distance, f12);
+        return Collide_MeshNearestHit(static_cast<int>(btype.address), officeMesh(btype, obj, *part, 0x001B1408u), point, matrix, hit, distance, range);
     }
 
     // Ports collide 2.5 higher (at ground level over their dug block): 2.5 is taken off the matrix's translation y
@@ -1902,11 +1902,11 @@ namespace mm
     }
 
     int BldgPort_NearestHit(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
-                          GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, ps2f f12)
+                          GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, ps2f range)
     {
         const int mesh = (obj->flags & 0x20u) != 0 ? btype->builtCollision * 2 : static_cast<int>(variantMesh(btype, obj) * 2u);
         matrix[3].y = ps2f(matrix[3].y) - ps2f(2.5f);
-        return Collide_MeshNearestHit(static_cast<int>(btype.address), mesh, point, matrix, hit, distance, f12);
+        return Collide_MeshNearestHit(static_cast<int>(btype.address), mesh, point, matrix, hit, distance, range);
     }
 
     // Small goods collide only from props mesh 0x27 on, one collision mesh each.
@@ -1920,12 +1920,12 @@ namespace mm
     }
 
     int BldgSmallGoods_NearestHit(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
-                                GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, ps2f f12)
+                                GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, ps2f range)
     {
         const uint8_t count = obj->goodsMesh;
         if (count < 0x27)
             return 0;
-        return Collide_MeshNearestHit(static_cast<int>(btype.address), (btype->builtCollision + count - 0x27) * 2, point, matrix, hit, distance, f12);
+        return Collide_MeshNearestHit(static_cast<int>(btype.address), (btype->builtCollision + count - 0x27) * 2, point, matrix, hit, distance, range);
     }
 
     PORT_FN(Bldg_InitRecordBase);
@@ -2097,7 +2097,7 @@ namespace mm
     PORT_FN(BldgType_RayHit);
 
     // ---- the wants list (batch 38): up to 64 index entries over a data area of 256 words. A want takes four
-    // words; an event hold takes one, with the building type in the index entry's held field.
+    // words; an event hold takes one, with the holding event's id (EventType.id) in the index entry's held field.
 
     // Room for an entry of `words` words.
     int Wants_HasRoom(GuestPtr<WantsWin> wants, int words)
@@ -2107,7 +2107,7 @@ namespace mm
         return 256 - wants->wordsUsed < words ? 0 : 1;
     }
 
-    // Holds wants for a building type during an event: a one-word entry with the value.
+    // An event's hold (event `eventId`, EventType.id): a one-word entry with `value`, the hold's number (0 on).
     int Wants_AddEventHold(GuestPtr<WantsWin> wants, uint16_t eventId, int value)
     {
         if (wants->count >= 64 || 256 - wants->wordsUsed <= 0)

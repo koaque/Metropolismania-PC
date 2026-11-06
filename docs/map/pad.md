@@ -12,12 +12,12 @@ Cross is `0x0040` and Start is `0x0800`; the analog sticks add bits `0x100000` .
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
-| `0x001578A0` | `int mm_Pad_GetData(int port)` | 52 | no | port a0's 32-byte pad buffer (0x1F3AC0) when its state is ready (100), else 0 |
+| `0x001578A0` | `int mm_Pad_GetData(int port)` | 52 | no | (port) port `port`'s 32-byte pad buffer (0x1F3AC0) when its state is ready (100), else 0 |
 | `0x001578E0` | `void mm_Pad_Poll(void)` | 924 | yes | scePadRead and the pad state machine: analog mode, actuator alignment, pressure mode |
-| `0x00157CB0` | `void mm_PadInit(void)` | 200 | yes |  |
+| `0x00157CB0` | `void mm_PadInit(void)` | 200 | yes | () scePadInit, then for both ports their state words cleared and the pad opened (scePadPortOpen, a 0x100-byte buffer each), then sceGsSyncPath |
 | `0x001851F0` | `void mm_Pad_SwallowCross(void)` | 40 | no | consumes a Cross press (0x40): out of this frame's buttons and the held ones until released (0x1BDCC0 = 1) |
-| `0x00185220` | `void mm_Pad_ReleaseFocus(int owner)` | 40 | no | drops input focus if owner a0 (or -1 = anyone) holds it (0x1BDCB0/0x1BDCB4) |
-| `0x00185250` | `void mm_Pad_TakeFocus(int owner, int mask)` | 28 | no | takes input focus for owner a0 with button mask a1 when nobody holds it |
+| `0x00185220` | `void mm_Pad_ReleaseFocus(int owner)` | 40 | no | (owner) drops input focus if owner `owner` (or -1 = anyone) holds it (0x1BDCB0/0x1BDCB4) |
+| `0x00185250` | `void mm_Pad_TakeFocus(int owner, int mask)` | 28 | no | (owner, mask) takes input focus for owner `owner` with button mask `mask` when nobody holds it |
 | `0x00185270` | `int mm_Pad_GetRepeat(void)` | 92 | no | held buttons with auto-repeat: first repeat after 30 frames, then every 5 |
 | `0x001852D0` | `uint32_t mm_Pad_Pressed(int owner)` | 60 | no | pressed buttons (0x1BDCA4), minus the focus mask when another owner holds input focus |
 | `0x00185310` | `uint32_t mm_Pad_Held(int owner)` | 60 | no | held buttons (0x1BDCA0), minus the focus mask when another owner holds input focus |

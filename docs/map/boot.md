@@ -11,5 +11,5 @@ The title scene's logo sequence (`mm_TitleScene_LogoStep`: NATSUME, MF_US and LO
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
-| `0x001702D0` | `int mm_TitleScene_LogoStep(TitleScene *scene, char logo)` | 464 | yes | one logo (a1: 0 NATSUME, 1 MF_US, else LOGO.TEX): load, fade in, hold 140 frames, fade out, free |
+| `0x001702D0` | `int mm_TitleScene_LogoStep(TitleScene *scene, char logo)` | 464 | yes | (scene, logo) one logo (`logo`: 0 NATSUME, 1 MF_US, else LOGO.TEX): load, fade in, hold 140 frames, fade out, free |
 | `0x00170FD0` | `TitleScene *mm_TitleScene_dtor(TitleScene *scene, int16_t deleteFlag)` | 588 | yes | deletes camera, models, menus, memory card manager, loading screen and text boxes |

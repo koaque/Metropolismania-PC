@@ -12,5 +12,5 @@ The game's random number generator and timer mixing.
 |---|---|---:|---|---|
 | `0x00184D30` | `int mm_Random_TimerMix(void)` | 164 | no | steps a five-word cascade at 0x1B2520 and adds timer 0 (T0_COUNT) into its first word, which it returns: noise for sound variations |
 | `0x00184DE0` | `int64_t mm_Random_Next(void)` | 80 | no | subtractive generator (Knuth/Numerical Recipes ran3, 55 entries at 0x1F55D0, modulus 1e9) |
-| `0x00184E30` | `void mm_Random_Seed(int seed)` | 160 | no | seeds the 55-entry table from a0 and stirs it three times |
+| `0x00184E30` | `void mm_Random_Seed(int seed)` | 160 | no | (seed) seeds the 55-entry table from `seed` and stirs it three times |
 | `0x00184ED0` | `void mm_Random_Stir(void)` | 140 | no | one ran3 refill pass over the 55 entries |

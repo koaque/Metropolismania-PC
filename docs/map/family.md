@@ -29,7 +29,7 @@ Families: the residents who move into the city.
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
 | `0x0013BAC0` | `void mm_MemberMeters_Reset(int32_t *meters)` | 160 | no | counts the member bytes (all 60000, friend flag included) by band: 2 to 24, 25 to 48, 49 to 100, 101 and up |
-| `0x0013BB70` | `uint8_t *mm_MemberStatus_Lookup(int family, int member)` | 448 | no | entry for family a0 member a1 in the table at 0x1F32F0 (adds one when missing) |
+| `0x0013BB70` | `uint8_t *mm_MemberStatus_Lookup(int family, int member)` | 448 | no | (family, member) entry for family `family` member `member` in the table at 0x1F32F0 (adds one when missing) |
 | `0x0013BD30` | `uint8_t mm_MemberStatus_RecentTalks(int family, int member)` | 36 | no | mm_TalkStatus_RecentTalks of the member's status entry (mm_MemberStatus_Lookup) |
 | `0x0013BD60` | `uint32_t mm_MemberStatus_TalksToday(int family, int member)` | 40 | no | mm_TalkStatus_TalksToday of the member's status entry |
 | `0x0013BD90` | `int mm_MemberStatus_LongApart(int family, int member)` | 56 | no | mm_TalkStatus_LongApart of the member's status entry |
@@ -43,23 +43,23 @@ Families: the residents who move into the city.
 | `0x0013C810` | `void mm_Family_SaveState(McManager *mc)` | 148 | no | writes them |
 | `0x0013C8B0` | `int mm_Family_GetTypeIndex(int family)` | 72 | no | the building type of a family id: the first entry of the family type table (EACHSTR.BIN, per type the end of its family ids) above it |
 | `0x0013C900` | `int mm_Family_HasLeft(uint32_t family)` | 80 | no | bitset C: the family moved away |
-| `0x0013C950` | `void mm_Family_SetKnown(uint32_t family)` | 76 | no | sets bit a0 of bitset B (0x1D4900, families known through the Town's Pages); called by mm_WordsFn_MarkFamilyKnown |
+| `0x0013C950` | `void mm_Family_SetKnown(uint32_t family)` | 76 | no | (family) sets bit `family` of bitset B (0x1D4900, families known through the Town's Pages); called by mm_WordsFn_MarkFamilyKnown |
 | `0x0013C9A0` | `int mm_Family_IsKnown(uint32_t family)` | 80 | no | bitset B: the family is known (Town's Pages) |
 | `0x0013C9F0` | `void mm_Family_MoveIn(uint32_t family)` | 116 | no | a family moves in: its bit in the in-city bitset and both moved-in counters (the opposite of mm_Family_MoveAway) |
 | `0x0013CA70` | `int mm_Family_InCity(uint32_t family)` | 80 | no | bitset A: the family lives in the city |
-| `0x0013CAC0` | `int mm_Family_GetFriendshipBand(int family, int member)` | 124 | no | band 0..4 of member (a0, a1)'s meter (0, below 24, below 48, below 100, higher) |
-| `0x0013CB40` | `int64_t mm_Family_AddFriendship(int family, int member, int32_t *approval, int points)` | 648 | no | adds a3 points to member (a0, a1)'s meter (clamped 0..120); rising may set the friend bit (chance from *a2, the approval) |
-| `0x0013CDF0` | `int mm_Family_AddFriendshipScaled(int family, int member, int32_t *approval, int points, int sign)` | 8 | no | mm_Family_AddFriendship with a3 * t0 (t0 = +1 gain, -1 loss) |
-| `0x0013CE00` | `uint8_t mm_Family_GetFriendship(int family, int member)` | 60 | no | member (a0, a1)'s meter value, capped at 120 |
-| `0x0013CE40` | `void mm_Family_MoveAway(uint32_t family)` | 164 | no | family a0 leaves: bitset A -> C, families in the city - 1, families left + 1 |
-| `0x0013CEF0` | `void mm_Family_ClearMemberFlag(int family, int member)` | 44 | no | clears bit 7 of member byte (a0, a1) |
-| `0x0013CF20` | `uint32_t mm_Family_PickIntroduction(int family, int member, CityScene *city)` | 480 | yes | an acquaintance of member (a0, a1) who can apply (type limit from 0x1C5548); 0 when none |
-| `0x0013D110` | `int mm_Family_CanApply(uint32_t family, CityScene *city)` | 364 | no | family a0 is not in the city, has not left, is not already applying, and there is room for its people |
-| `0x0013D280` | `int mm_Family_FriendAgrees(int family, int member, int approval)` | 176 | no | friend bit set and meter at least 100, or at least 48 with approval a2 >= 0, or at least 24 with a2 >= 50 |
-| `0x0013D330` | `int mm_Family_MeterAgrees(int family, int member, int approval)` | 152 | no | member (a0, a1)'s meter (capped at 120) is at least 100, or at least 48 with approval a2 >= 0, or at least 24 with a2 >= 50; mm_Family_FriendAgrees without the friend bit |
-| `0x0013D3D0` | `int mm_Family_IsCached(int family)` | 196 | no | whether family a0's record has finished loading into the cache |
-| `0x0013D4A0` | `int mm_Family_Prefetch(int family, int flags)` | 520 | yes | starts an asynchronous load of family a0's record into the cache (LRU) |
-| `0x0013D6B0` | `Family *mm_Family_Get(int family, int flags)` | 476 | yes | family a0's record (0x1D4 bytes), loading it synchronously into the LRU cache if needed |
+| `0x0013CAC0` | `int mm_Family_GetFriendshipBand(int family, int member)` | 124 | no | (family, member) band 0..4 of member (`family`, `member`)'s meter (0, below 24, below 48, below 100, higher) |
+| `0x0013CB40` | `int64_t mm_Family_AddFriendship(int family, int member, int32_t *approval, int points)` | 648 | no | (family, member, approval, points) adds `points` (eighths of a level) to member (`family`, `member`)'s meter, kept within 0..120; a member who is not a friend yet and gains a step becomes one with a chance of the larger of the level and *`approval` in 120, and *`approval` moves by the change of the friendship band |
+| `0x0013CDF0` | `int mm_Family_AddFriendshipScaled(int family, int member, int32_t *approval, int points, int sign)` | 8 | no | (family, member, approval, points, sign) mm_Family_AddFriendship with `points` x `sign` (+1 a gain, -1 a loss) |
+| `0x0013CE00` | `uint8_t mm_Family_GetFriendship(int family, int member)` | 60 | no | (family, member) member (`family`, `member`)'s meter value, capped at 120 |
+| `0x0013CE40` | `void mm_Family_MoveAway(uint32_t family)` | 164 | no | (family) family `family` leaves: bitset A -> C, families in the city - 1, families left + 1 |
+| `0x0013CEF0` | `void mm_Family_ClearMemberFlag(int family, int member)` | 44 | no | (family, member) clears bit 7 of member byte (`family`, `member`) |
+| `0x0013CF20` | `uint32_t mm_Family_PickIntroduction(int family, int member, CityScene *city)` | 480 | yes | (family, member, city) an acquaintance of member (`family`, `member`) who can apply (type limit from 0x1C5548); 0 when none |
+| `0x0013D110` | `int mm_Family_CanApply(uint32_t family, CityScene *city)` | 364 | no | (family, city) family `family` is not in the city, has not left, is not already applying, and there is room for its people |
+| `0x0013D280` | `int mm_Family_FriendAgrees(int family, int member, int approval)` | 176 | no | (family, member, approval) friend bit set and meter at least 100, or at least 48 with approval `approval` >= 0, or at least 24 with `approval` >= 50 |
+| `0x0013D330` | `int mm_Family_MeterAgrees(int family, int member, int approval)` | 152 | no | (family, member, approval) member (`family`, `member`)'s meter (capped at 120) is at least 100, or at least 48 with approval `approval` >= 0, or at least 24 with `approval` >= 50; mm_Family_FriendAgrees without the friend bit |
+| `0x0013D3D0` | `int mm_Family_IsCached(int family)` | 196 | no | (family) whether family `family`'s record has finished loading into the cache |
+| `0x0013D4A0` | `int mm_Family_Prefetch(int family, int flags)` | 520 | yes | (family, flags) starts an asynchronous load of family `family`'s record into the cache (LRU) |
+| `0x0013D6B0` | `Family *mm_Family_Get(int family, int flags)` | 476 | yes | (family, flags) family `family`'s record (0x1D4 bytes), loading it synchronously into the LRU cache if needed |
 | `0x0013D890` | `void mm_Family_ResetState(void)` | 436 | no | clears member bytes, bitsets, counters and the cache tables |
 | `0x0013DA50` | `void mm_Family_Init(void)` | 152 | yes | resets the family state, opens DATA\BIN\FAMILY.BIN and loads DATA\BIN\EACHSTR.BIN |
 | `0x0013DAF0` | `int mm_TalkStatus_ctor(int status)` | 80 | no | a talk status byte (+3 of a member status entry) that has never been talked to: time level 14, counts clear |

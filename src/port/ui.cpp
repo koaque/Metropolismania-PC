@@ -5889,14 +5889,15 @@ namespace mm
 
     PORT_FN(PauseMenu_Update);
 
-    // The title's load game screen (mode 8) for one frame: the title sprite and the menu model are drawn, then by the step (pressStep):
-    // 0 empties the slot list (loadMenu), puts its cursor at (0x62, 0x2C) and goes on to 1. While either memory card is still being
-    // checked (status 4) the "checking" text shows, the list is emptied and the answer is -1. Otherwise the saves on the cards are
-    // listed (one line each, from McManager_FormatSlotText; the newest save's line is scrolled to once, in step 1, which goes on to 2),
-    // lines left from a longer list are emptied and the count is kept in savesListed. With saves the "choose" text shows and the list takes
-    // input: Triangle answers 0 (back), Cross copies the chosen save's 0x40-byte header to 0x1C5640 and its description (McManager_
-    // FormatSaveInfo) to 0x1C5680 and answers 1. With no save the "no data" text shows for 300 frames (introFrame, which the cursor
-    // restarts) and the answer is 0. -1 otherwise.
+    // The title's load game screen (mode 8) for one frame: the title sprite and the menu model are drawn, then by the
+    // step (pressStep): 0 empties the slot list (loadMenu), puts its cursor at (0x62, 0x2C) and goes on to 1. While
+    // either memory card is still being checked (status 4) the "checking" text shows, the list is emptied and the
+    // answer is -1. Otherwise the saves on the cards are listed (one line each, from McManager_FormatSlotText; the
+    // newest save's line is scrolled to once, in step 1, which goes on to 2), lines left from a longer list are emptied
+    // and the count is kept in savesListed. With saves the "choose" text shows and the list takes input: Triangle
+    // answers 0 (back), Cross copies the chosen save's 0x40-byte header to 0x1C5640 and its description
+    // (McManager_FormatSaveInfo) to 0x1C5680 and answers 1. With no save the "no data" text shows for 300 frames
+    // (introFrame, which the cursor restarts) and the answer is 0. -1 otherwise.
     int Title_LoadMenu(GuestPtr<TitleScene> scene)
     {
         port::GuestFrame<0x100> frame;

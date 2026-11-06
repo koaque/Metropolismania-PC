@@ -19,8 +19,8 @@ thresholds (`ClaimThresholds`); offset tables (in words) lead to its lists.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
-| `0x00135860` | `int mm_Claim_PickVariant(uint32_t claim)` | 84 | no | entry variant by bit 0x8000 of a0 from the current speaker table (gp) |
-| `0x001358C0` | `int mm_Claim_GetLine(int claim, int line)` | 124 | no | line a1 of claim a0 (8-byte items), variant by bit 0x8000 |
+| `0x00135860` | `int mm_Claim_PickVariant(uint32_t claim)` | 84 | no | (claim) entry variant by bit 0x8000 of `claim` from the current speaker table (gp) |
+| `0x001358C0` | `int mm_Claim_GetLine(int claim, int line)` | 124 | no | (claim, line) line `line` of claim `claim` (8-byte items), variant by bit 0x8000 |
 | `0x00135940` | `ClaimSupply *mm_Claim_GetSupplies(int index)` | 32 | no | supply list `index` (CLAIM.BIN section C, by BuildingType.claimC): the items a building type supplies and how much, ended by id 0 |
 | `0x00135960` | `uint16_t *mm_Claim_GetGroup(uint32_t index)` | 40 | no | item group `index` & 0x7FFF (CLAIM.BIN section D; a claim's id from 0x8000): 0-ended item ids |
 | `0x00135990` | `ClaimEntry *mm_Claim_GetList(int index)` | 32 | no | claim list `index` (CLAIM.BIN section B, by BuildingType.claimB): 8-byte claims (need or wish, item or group, value, reach), ended by id 0 |

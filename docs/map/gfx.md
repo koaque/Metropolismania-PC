@@ -24,11 +24,11 @@ Rendering below the scene level.
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
 | `0x00128EE0` | `void mm_LightSet_BuildPackets(LightSet *lights)` | 432 | no | two VU1 packets (packetA, packetB): the set's 26 quadwords from groupA to VU1 0x12, a call of the program chain (0x1A3C80 / 0x1A4780), VIF base and offset |
-| `0x00129090` | `void mm_Packet2_Draw(uint32_t *packets, int second)` | 48 | no | queues packet a0[0], or a0[1] when a1 != 0 |
+| `0x00129090` | `void mm_Packet2_Draw(uint32_t *packets, int second)` | 48 | no | (packets, second) queues packet `packets`[0], or `packets`[1] when `second` != 0 |
 | `0x001290C0` | `A3DObject *mm_A3DObjectBase_DeletingDtor(A3DObject *model, int16_t deleteFlag)` | 84 | yes | base destructor 0x12AB40, then delete when the flag is > 0 |
 | `0x00129120` | `int mm_LightSet_Init(LightSet *lights)` | 228 | no | light set base setup: the two programs' output offsets (0x110 and 0xE0), every colour of both groups and the instance colour set to 1, then its packets. Returns the set |
 | `0x00129210` | `float mm_A3D_GetAnimLength(A3DObject *model, int animation)` | 24 | no | the length of a model's animation (its first track's last word) |
-| `0x00129230` | `void mm_A3D_Animate(A3DObject *model, int anim, float time)` | 816 | no | keyframe animation a1 of model a0 at time a2: each node track's pair of keys around the time sets the node's local matrix (quaternion slerp, linear position); draws nothing |
+| `0x00129230` | `void mm_A3D_Animate(A3DObject *model, int anim, float time)` | 816 | no | (model, anim, time) keyframe animation `anim` of the model at `time`: each node track's pair of keys around the time sets the node's local matrix (quaternion slerp, linear position); draws nothing |
 | `0x00129570` | `void mm_A3D_Relocate(A3DObject *model, int indexed)` | 988 | yes | turns the loaded model's offsets into pointers, patches the addresses in its DMA chains (mm_DmaChain_*) and uploads its textures (mm_Dma_KickVif1Now) |
 | `0x00129950` | `int64_t mm_A3DObject_ChangeLuminosity(A3DObject *model, uint32_t *colour, int index)` | 96 | yes | CA3DObject::ChangeLuminusity (name from its error string): sets node `index`'s colour (its slot's colour) to the vec4 at `colour` when the node has a mesh; prints an error for a bad node index |
 | `0x001299B0` | `void mm_A3DObject_DrawNode(A3DObject *model, int node)` | 104 | no | queues node `index`'s packet (its slot) and its mesh's chain; nodes are 0xC0 bytes (the model data's nodes) |
@@ -84,7 +84,7 @@ Rendering below the scene level.
 | `0x0014CC10` | `void mm_LayerB_Draw(LayerB *layer, int packet)` | 76 | no | layer B: its two passes (packets A and B), each followed by a call of the terrain chunk packet |
 | `0x0014CC60` | `LayerB *mm_LayerB_DeletingDtor(LayerB *layer, int16_t deleteFlag)` | 84 | yes | base destructor, then delete |
 | `0x0014CCC0` | `LayerB *mm_LayerB_ctor(LayerB *layer)` | 72 | no | base constructor, parameters, packet |
-| `0x0014CD10` | `int mm_PlacementLayer_InTileRect(PlacementLayer *layer, int x, int z)` | 108 | no | 1 when the layer's tile rectangle is active (rectActive == 1) and tile (a1, a2) lies inside x rectX0..rectX1, z rectZ0..rectZ1; mm_Terrain_DrawPatch then sets flag 4 on the patch (was mm_Terrain_Nop14CD10, not empty) |
+| `0x0014CD10` | `int mm_PlacementLayer_InTileRect(PlacementLayer *layer, int x, int z)` | 108 | no | (layer, x, z) 1 when the layer's tile rectangle is active (rectActive == 1) and tile (`x`, `z`) lies inside x rectX0..rectX1, z rectZ0..rectZ1; mm_Terrain_DrawPatch then sets flag 4 on the patch (was mm_Terrain_Nop14CD10, not empty) |
 | `0x0014CD80` | `void mm_PlacementLayer_Set(PlacementLayer *layer, int mode, int32_t *rect, uint32_t *colour)` | 28 | no | the placement highlight: its colour, its rectangle (x0, z0, x1, z1) and its mode (1 the highlight, 2 the marker) |
 | `0x0014CDA0` | `uint32_t *mm_PlacementLayer_BuildPacket(PlacementLayer *layer, uint32_t *packet)` | 584 | no | packets of the placement highlight (microcode 0x1A7B30) and the marker (0x1A8330) |
 | `0x0014CFF0` | `void mm_PlacementLayer_InitParams(PlacementLayer *layer)` | 252 | no | draw parameters of the placement highlight (two colours, the output offset, a GIF tag of 26 loops, the fill and outline PRIMs, mask 4) and of the marker |
@@ -116,22 +116,22 @@ Rendering below the scene level.
 | `0x00161330` | `int mm_TexSprite_SetClip(TexSprite *sprite, uint32_t width, uint32_t height)` | 124 | no | tiles shown (clipWidth, clipHeight, up to the image's tiles past the frame), then rebuilds; mm_TexSprite_BuildPacket uses them as end tiles |
 | `0x001613B0` | `void mm_TexSprite_GreenToAlpha(TexSprite *sprite)` | 148 | no | turns the green-tinted grey colours (red = blue != green) translucent: alpha 0x80 - green / 2, then green set to red. Transparent colours are left alone |
 | `0x00161450` | `void mm_TexSprite_SetAlpha(TexSprite *sprite, uint8_t alpha, int keepClear)` | 108 | no | sets every colour's alpha; with `keepClear`, fully transparent colours stay so |
-| `0x001614C0` | `int mm_TexSprite_SetPosScale(TexSprite *sprite, int x, int y, int z, float scaleX, float scaleY)` | 24 | no | position a3..a5 and scale a0/a1, then rebuilds |
+| `0x001614C0` | `int mm_TexSprite_SetPosScale(TexSprite *sprite, int x, int y, int z, float scaleX, float scaleY)` | 24 | no | (sprite, x, y, z, scaleX, scaleY) the sprite's position (`x`, `y`, `z`) and scale (`scaleX`, `scaleY`), then its packet is rebuilt (mm_TexSprite_BuildPacket) |
 | `0x001614E0` | `void mm_TexSprite_Draw(TexSprite *sprite)` | 8 | no | queues the sprite packet (+8) |
 | `0x001614F0` | `int mm_TexSprite_BuildPacket(TexSprite *sprite)` | 2152 | no | builds the sprite's DMA packet: palette upload to block 0x1E00, then per tile a texel upload, texture flush and a textured sprite (TEX0, ST, XYZ2); returns the scaled tile height |
 | `0x00161D60` | `TexSprite *mm_TexSprite_dtor(TexSprite *sprite, int16_t deleteFlag)` | 136 | yes | vtable 0x1BCFD8, frees image and packet |
 | `0x00161DF0` | `int mm_TexSprite_Load(TexSprite *sprite, int file, int blend)` | 260 | yes | loads a .TEX file whole and builds its packet |
 | `0x00184030` | `int mm_DmaChain_Next(DmaChainReader *reader)` | 208 | no | steps a DMA chain reader (tag: the current tag): CNT skips qwc+1, END stays, RET returns 0; caches the tag's id, qwc, address, VIF words and data |
-| `0x00184100` | `int mm_DmaChain_Begin(DmaChainReader *reader, int chain)` | 20 | no | reader starts at a1 with an END marker so the first mm_DmaChain_Next reads the first tag |
+| `0x00184100` | `int mm_DmaChain_Begin(DmaChainReader *reader, int chain)` | 20 | no | (reader, chain) reader starts at `chain` with an END marker so the first mm_DmaChain_Next reads the first tag |
 | `0x00184F60` | `void mm_Gs_InitDisplay(uint16_t width, int height)` | 652 | yes | sets up the display: the display environment (0x1F5B10, a frame 8 units on: its first fields as the flag bits below), the draw environment (0x1F5B20) for the given width and a height worked out from the screen's, the double buffer (0x1F5AC0: width by half the height, cleared) and a GIF packet made in a 0x60 byte block that sets five GS registers (the one tag at 0x1B2540 opens it |
 | `0x00186D00` | `void mm_PacketBuf_Seek(int address)` | 8 | no | sets the packet buffer write pointer (0x1BDCE8) |
 | `0x00186D10` | `int mm_PacketBuf_Tell(void)` | 8 | no | returns the packet buffer write pointer (0x1BDCE8) |
-| `0x00186D20` | `int mm_Dma_KickVif1Now(uint32_t address)` | 192 | yes | sends a two-tag chain (CALL a0, END) on VIF1 right away and waits for GS path idle before and after |
-| `0x00186DE0` | `void mm_Dma_AppendCall(int address)` | 116 | no | appends a DMA CALL tag (id 5) to address a0 at the gp list pointer, then an END tag the next append overwrites; at most 0x4000 qwords per list |
+| `0x00186D20` | `int mm_Dma_KickVif1Now(uint32_t address)` | 192 | yes | (address) sends a two-tag chain (CALL `address`, END) on VIF1 right away and waits for GS path idle before and after |
+| `0x00186DE0` | `void mm_Dma_AppendCall(int address)` | 116 | no | (address) appends a DMA CALL tag (id 5) to address `address` at the gp list pointer, then an END tag the next append overwrites; at most 0x4000 qwords per list |
 | `0x00186E60` | `void mm_DmaList_QueueGsDefaults(void)` | 124 | no | CALLs the static packet 0x1B2760: standard alpha blend in ALPHA_1/2, TEST_1/2 alpha != 0 and Z >= |
 | `0x00186EE0` | `void mm_DmaList_QueueOtherOverlay(void)` | 152 | no | CALLs the other one of the two 0xBA0-byte packets at 0x1F69C0 built by 0x1873D0 |
 | `0x00186F80` | `void mm_DmaList_QueueClearScreen(void)` | 124 | no | CALLs the static packet 0x1B28E0: full-screen sprite writing colour 0 and Z 0 |
-| `0x00187000` | `void mm_DmaList_QueueFade(int alpha, int overAll)` | 272 | no | full-screen black sprite with alpha a0 (patched into 0x1B2830/0x1B28A0); a1 == 0 draws it at Z 0xFFFFF000 (0x1B2800), else at Z max (0x1B2870) |
+| `0x00187000` | `void mm_DmaList_QueueFade(int alpha, int overAll)` | 272 | no | (alpha, overAll) full-screen black sprite with alpha `alpha` (patched into 0x1B2830/0x1B28A0); `overAll` == 0 draws it at Z 0xFFFFF000 (0x1B2800), else at Z max (0x1B2870) |
 | `0x00187110` | `void mm_DmaList_QueueClearZ(void)` | 124 | no | CALLs the static packet 0x1B26D0: full-screen sprite that only writes Z = 0 (alpha test NEVER, AFAIL = ZB_ONLY) |
 | `0x00187190` | `void mm_DmaList_Rewind(void)` | 56 | yes | waits for GS path idle, then resets the write pointer to the start of the current list |
 | `0x001871D0` | `void mm_DmaList_Flip(void)` | 40 | no | switches to the other of the two 64 KB lists (0x1BD9C0/0x1BD9C4) |

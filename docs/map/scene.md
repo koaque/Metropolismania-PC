@@ -24,7 +24,7 @@ the stage introduction (city name, stage title, approval rate) and the mission b
 | `0x0016E270` | `int mm_Title_DrawCommon(TitleScene *scene, int layers)` | 456 | no | title screen layers, logo animation and fades |
 | `0x0016E440` | `int mm_Title_LoadMenu(TitleScene *scene)` | 1024 | yes | load game screen: memory card slots and their info |
 | `0x0016E840` | `int mm_Title_PressStart(TitleScene *scene)` | 260 | no | title idle screen ("[SELECT]SoundTest") |
-| `0x0016E950` | `int mm_TitleScene_StartGame(TitleScene *scene, int newGame)` | 764 | yes |  |
+| `0x0016E950` | `int mm_TitleScene_StartGame(TitleScene *scene, int newGame)` | 764 | yes | (scene, newGame) the start of a game, one step a call (pressStep) while the city's asset loader is stepped: the title faded and drawn, the camera placed, the loading bar shown until the loader is done, the loading screen faded, the title music stopped; then a new game (afterGame clear) loads the character types, families, claims, words, goods, stamina, bag and event types, a loaded one resets the stage, families, stamina and bag, and the laptop entries are made; 1, or 2 with `newGame`, once done, else 0 |
 | `0x0016EC50` | `void mm_Title_NewGameIntro(TitleScene *scene)` | 1300 | no | new game intro scene with town models and loading text |
 | `0x0016F170` | `int mm_Title_RandomCharParts(TitleScene *scene)` | 248 | no | random character parts for the intro |
 | `0x0016F270` | `int mm_Title_OpeningMovieStep(TitleScene *scene)` | 424 | yes | plays the opening movie, then loads TITLE.SQ/HD/BD |
@@ -35,5 +35,5 @@ the stage introduction (city name, stage title, approval rate) and the mission b
 | `0x0016FD60` | `int mm_Title_LogoLetters(TitleScene *scene)` | 436 | no | logo letter sprites (table 0x1B17E0) |
 | `0x0016FF20` | `int mm_TitleScene_MemoryCardCheck(TitleScene *scene, int noPolling)` | 944 | no | boot memory card check: goes on when a save or a fine card is found, else shows which slot has no card or too little space and waits for Cross (card states at 0x1BDC04/08) |
 | `0x001704A0` | `int mm_TitleScene_Load(TitleScene *scene, int unused_a1)` | 1852 | yes | (scene, unused_a1) the title scene's assets, one step a call (waitFrames): models, texture images, sprites, the loading screen, then the sound banks once the sounds are idle; 1 when done |
-| `0x00170BE0` | `int mm_TitleScene_Update(TitleScene *scene)` | 1004 | yes |  |
+| `0x00170BE0` | `int mm_TitleScene_Update(TitleScene *scene)` | 1004 | yes | (scene) one frame of the title scene by its mode: the assets loaded, the memory card check, the three logos, the intro, the title screen (new game, load, opening movie, sound test), the load menu, then the start of a new or loaded game (mm_TitleScene_StartGame); 1 or 2 once a game starts, else 0 |
 | `0x00171220` | `TitleScene *mm_TitleScene_ctor(TitleScene *scene, int afterGame)` | 640 | yes | (scene, afterGame) the title scene: its stage object, the menu list, the memory card manager, the lights and the camera, a message box and a hint line; `afterGame` (1 when the game state was 1) stops the opening sequences (mm_TitleScene_Load) |

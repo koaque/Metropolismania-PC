@@ -15,9 +15,9 @@ queue (`mm_FileQueue_*`) that `mm_MainLoop` pumps every frame; `mm_FileQueue_Wai
 | `0x001842B0` | `int mm_File_Read(GameFile *file, int buffer, int count, int size, uint16_t readyMode)` | 408 | yes | (file, buffer, count, size, readyMode) sceRead of count x size bytes; synchronous files wait for the queue first, asynchronous ones queue the request (0x1F4ED0) with sceCdDiskReady's mode |
 | `0x00184450` | `int mm_File_Close(GameFile *file)` | 320 | yes | sceClose, fd (+0) = -1; synchronous files wait for the queue first |
 | `0x00184590` | `int mm_File_Open(GameFile *file, char *path)` | 384 | yes | waits for the disc, builds "cdrom0:\" + path + ";1" (0x1B9AF8), sceOpen |
-| `0x00184710` | `int mm_File_LoadWhole(GameFile *file, char *path, int32_t *size)` | 164 | yes | opens a1, mallocs the file size, reads it all, closes; size to *a2 if given; returns the buffer |
-| `0x001847C0` | `int mm_FileQueue_IsDone(int queue, int request)` | 72 | no | 1 when request a1 is no longer in the 64-entry queue (head 0x1BDC88, tail 0x1BDC8C) |
-| `0x00184810` | `void mm_FileQueue_WaitFor(int queue, int request, int quiet)` | 212 | yes | pumps the queue until request a1 is done |
+| `0x00184710` | `int mm_File_LoadWhole(GameFile *file, char *path, int32_t *size)` | 164 | yes | (file, path, size) opens `path`, mallocs the file size, reads it all, closes; size to *`size` if given; returns the buffer |
+| `0x001847C0` | `int mm_FileQueue_IsDone(int queue, int request)` | 72 | no | (queue, request) 1 when request `request` is no longer in the 64-entry queue (head 0x1BDC88, tail 0x1BDC8C) |
+| `0x00184810` | `void mm_FileQueue_WaitFor(int queue, int request, int quiet)` | 212 | yes | (queue, request, quiet) pumps the queue until request `request` is done |
 | `0x001848F0` | `void mm_FileQueue_WaitAll(int quiet)` | 140 | yes | pumps the queue until it is empty |
 | `0x00184980` | `void mm_FileQueue_Init(void)` | 76 | no | clears the 64 request slots (0x1C bytes each at 0x1F4ED0) and the head/tail counters |
 | `0x001849D0` | `int mm_FileQueue_Pump(void)` | 396 | yes | runs the request at the queue tail (open/read/seek/close/ioctl) once the disc is ready |
