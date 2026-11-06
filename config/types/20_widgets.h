@@ -115,7 +115,7 @@ struct TalkConv {
     int32_t family;            /* +0x4F0 */
     int32_t member;            /* +0x4F4 */
     int32_t peopleInside;      /* +0x4F8 the building has people inside (type flag 0x40) */
-    int32_t arg5;              /* +0x4FC */
+    int32_t origin;            /* +0x4FC how the talk began (TalkSession.origin) */
     int32_t ended;             /* +0x500 the conversation reached its end (the friendship went up) */
     int32_t typedAnswer;       /* +0x504 the script asked for a typed answer */
 };

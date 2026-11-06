@@ -22,7 +22,8 @@ namespace mm
 
     // ---- conditions and values
 
-    int WordsFn_Arg4(GuestPtr<WordsCtx> ctx) { return ctx->setupArg; }
+    // #56: how the talk began (0 the cursor, 1 the town pages, 2 an event actor at a person, 3 a phone call).
+    int WordsFn_TalkOrigin(GuestPtr<WordsCtx> ctx) { return ctx->origin; }
     int WordsFn_FewChoicesLeft(GuestPtr<WordsCtx> ctx) { return ctx->fewChoicesLeft; }
     int WordsFn_False(GuestPtr<WordsCtx>) { return 0; }
     int WordsFn_FamilyHasLeft(GuestPtr<WordsCtx> ctx) { return Family_HasLeft(ctx->familyA); }
@@ -1121,7 +1122,7 @@ namespace mm
     PORT_FN(WordsFn_SelectMemberB);
     PORT_FN(WordsFn_SelectEventPersonA);
     PORT_FN(WordsFn_SelectEventPersonB);
-    PORT_FN(WordsFn_Arg4);
+    PORT_FN(WordsFn_TalkOrigin);
     PORT_FN(WordsFn_FewChoicesLeft);
     PORT_FN(WordsFn_False);
     PORT_FN(WordsFn_FamilyHasLeft);
@@ -1493,16 +1494,16 @@ namespace mm
         return GuestPtr<char>{Family_Get(static_cast<int>(family), 0).address};
     }
 
-    GuestPtr<char> WordsFn_TextMemberName2(GuestPtr<WordsCtx> ctx)
+    GuestPtr<char> WordsFn_TextMemberGivenName(GuestPtr<WordsCtx> ctx)
     {
         const MemberRef who = memberByThreeWayArg(ctx);
-        return GuestPtr<char>::of(memberAt(Family_Get(static_cast<int>(who.family), 0), who.member)->name2[0]);
+        return GuestPtr<char>::of(memberAt(Family_Get(static_cast<int>(who.family), 0), who.member)->givenName[0]);
     }
 
-    GuestPtr<char> WordsFn_TextMemberName(GuestPtr<WordsCtx> ctx)
+    GuestPtr<char> WordsFn_TextMemberSurname(GuestPtr<WordsCtx> ctx)
     {
         const MemberRef who = memberByThreeWayArg(ctx);
-        return GuestPtr<char>::of(memberAt(Family_Get(static_cast<int>(who.family), 0), who.member)->name[0]);
+        return GuestPtr<char>::of(memberAt(Family_Get(static_cast<int>(who.family), 0), who.member)->surname[0]);
     }
 
     // The member's post at their home's building type (STRTYPE POSTNAME).
@@ -1520,7 +1521,7 @@ namespace mm
         return memberAt(Family_Get(ctx->familyA, 0), ctx->memberA)->look;
     }
 
-    uint8_t WordsFn_MemberByte2A(GuestPtr<WordsCtx> ctx)
+    uint8_t WordsFn_MemberUnk06(GuestPtr<WordsCtx> ctx)
     {
         return memberAt(Family_Get(ctx->familyA, 0), ctx->memberA)->unk_06;
     }
@@ -1599,11 +1600,11 @@ namespace mm
     int WordsFn_FriendshipUp(GuestPtr<WordsCtx> ctx) { return changeFriendship(ctx, 5, 1); }
 
     PORT_FN(WordsFn_TextFamilyRecord);
-    PORT_FN(WordsFn_TextMemberName2);
-    PORT_FN(WordsFn_TextMemberName);
+    PORT_FN(WordsFn_TextMemberGivenName);
+    PORT_FN(WordsFn_TextMemberSurname);
     PORT_FN(WordsFn_TextOccupation);
     PORT_FN(WordsFn_MemberLook);
-    PORT_FN(WordsFn_MemberByte2A);
+    PORT_FN(WordsFn_MemberUnk06);
     PORT_FN(WordsFn_MemberCharType);
     PORT_FN(WordsFn_MemberRole);
     PORT_FN(WordsFn_BuildingCategory);
@@ -1615,9 +1616,9 @@ namespace mm
     namespace
     {
         // The fields both set-up calls clear: the second person and building, the results and the script's flags.
-        void resetContext(GuestPtr<WordsCtx> ctx, GuestPtr<CityScene> city, int arg4)
+        void resetContext(GuestPtr<WordsCtx> ctx, GuestPtr<CityScene> city, int origin)
         {
-            ctx->setupArg = arg4;
+            ctx->origin = origin;
             ctx->city = city;
             ctx->familyB = 0;
             ctx->memberB = 0;
@@ -1636,7 +1637,8 @@ namespace mm
     }
 
     // Starts a script on a family member: the family is prefetched into the cache, person and building A stay empty.
-    void Words_SetFamily(GuestPtr<Words> words, int family, uint16_t member, int arg4, GuestPtr<CityScene> city)
+    // `origin` is how the talk began (WordsCtx.origin, read by the script's condition #56).
+    void Words_SetFamily(GuestPtr<Words> words, int family, uint16_t member, int origin, GuestPtr<CityScene> city)
     {
         Family_Prefetch(family, 0);
         const GuestPtr<WordsCtx> ctx = words->ctx;
@@ -1644,11 +1646,11 @@ namespace mm
         ctx->memberA = member;
         ctx->personA = GuestPtr<MapPerson>{0u};
         ctx->buildingA = GuestPtr<MapObject>{0u};
-        resetContext(ctx, city, arg4);
+        resetContext(ctx, city, origin);
     }
 
     // The same for a person on the map: building A is the person's home.
-    void Words_SetPerson(GuestPtr<Words> words, GuestPtr<MapPerson> person, int arg4, GuestPtr<CityScene> city)
+    void Words_SetPerson(GuestPtr<Words> words, GuestPtr<MapPerson> person, int origin, GuestPtr<CityScene> city)
     {
         Family_Prefetch(person->family, 0);
         const GuestPtr<WordsCtx> ctx = words->ctx;
@@ -1656,7 +1658,7 @@ namespace mm
         ctx->memberA = person->member;
         ctx->personA = person;
         ctx->buildingA = Map_GetRecord(city->map, person->home);
-        resetContext(ctx, city, arg4);
+        resetContext(ctx, city, origin);
     }
 
     // Lists (in ctx->candidates, up to 128) the ids of the objects the family may call on: the occupied homes with
@@ -2305,10 +2307,10 @@ namespace mm
     // friendship under 24), the script restarts at its first word, the member's script block is read
     // (mm_Words_ReadBlock, by their character type), the event words for the city's current event are loaded and the
     // script's words picked. The result is the block's cache slot.
-    int Words_LoadForFamily(int family, int member, int arg5, GuestPtr<CityScene> city)
+    int Words_LoadForFamily(int family, int member, int origin, GuestPtr<CityScene> city)
     {
         const GuestPtr<Words> words = globals::words();
-        Words_SetFamily(words, family, static_cast<uint16_t>(member), arg5, city);
+        Words_SetFamily(words, family, static_cast<uint16_t>(member), origin, city);
         globals::wordsHiddenChoices.set(4);
         words->scriptPos = 0;
         words->column = 0;
@@ -2320,18 +2322,19 @@ namespace mm
         return static_cast<int>(block.address);
     }
 
-    // The same for a person in the city: the script block is the one of the character type (charType), the event words are for the
-    // event the person starts (mm_Event_TryStart, when arg5 is 0) or the city's current one. The choice menus are marked as
-    // above, but with an item of category 0x10, 0x11 or 0x13 among the bag's slots (its size picks how many are looked at) no
-    // entry is unavailable, and with none the age and friendship rule applies to the person's family member.
-    int Words_LoadForPerson(GuestPtr<MapPerson> person, int arg5, GuestPtr<CityScene> city)
+    // The same for a person in the city: the script block is the one of the character type (charType), the event words
+    // are for the event the person starts (mm_Event_TryStart, when `origin` is 0: the player walked up) or the city's
+    // current one. The choice menus are marked as above, but with an item of category 0x10, 0x11 or 0x13 among the
+    // bag's slots (its size picks how many are looked at) no entry is unavailable, and with none the age and friendship
+    // rule applies to the person's family member.
+    int Words_LoadForPerson(GuestPtr<MapPerson> person, int origin, GuestPtr<CityScene> city)
     {
         const GuestPtr<Words> words = globals::words();
-        Words_SetPerson(words, person, arg5, city);
+        Words_SetPerson(words, person, origin, city);
         words->scriptPos = 0;
         words->column = 0;
         const GuestPtr<uint32_t> block = Words_ReadBlock(person->charType);
-        const uint32_t kind = arg5 == 0 ? Event_TryStart(city->events, city, person) : city->events->talks[0]->kind;
+        const uint32_t kind = origin == 0 ? Event_TryStart(city->events, city, person) : city->events->talks[0]->kind;
         loadEventWords(kind);
         pickScriptWords(block);
         globals::wordsHiddenChoices.set(4);

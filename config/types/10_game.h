@@ -198,14 +198,14 @@ struct MapPerson {
     uint16_t family;           /* +0x2A */
     union {
         uint16_t introduces;   /* +0x2C family this resident can introduce */
-        uint16_t speed;        /* +0x2C vehicles: in 1/10000 of a tile a frame (mm_Char2_UpdateSpeedUndrawn) */
+        uint16_t speed;        /* +0x2C vehicles: in 1/10000 of a tile a frame (mm_Vehicle_UpdateSpeedUndrawn) */
     };
     union {
         struct {
             uint8_t member;    /* +0x2E */
             uint8_t status;    /* +0x2F talk status: time since the last talk, talks just now and today (mm_TalkStatus_*) */
         };
-        uint16_t awayTime;     /* +0x2E vehicles: off the road, 3 a tick; at 0xFD20 back at the depot (mm_Char2_Update) */
+        uint16_t awayTime;     /* +0x2E vehicles: off the road, 3 a tick; at 0xFD20 back at the depot (mm_Vehicle_Update) */
     };
 };
 
@@ -412,13 +412,14 @@ struct FamilyMember {
     uint8_t flags;             /* +0x03 1 (a schedule choice, mm_Schedule_Evaluate), 4 drives: the family gets a car
                                   (mm_Family_AssignHome) */
     uint8_t role;              /* +0x04 */
-    uint8_t unk_05;
-    uint8_t unk_06;
-    uint8_t look;              /* +0x07 the model part (0: by the family's parity, mm_Person_Draw), the person's first flags
+    uint8_t unk_05;            /* +0x05 0 for every member in FAMILY.BIN; nothing reads it */
+    uint8_t unk_06;            /* +0x06 0 for every member in FAMILY.BIN and never written; only the talk scripts'
+                                  condition #54 reads it (mm_WordsFn_MemberUnk06) */
+    uint8_t look;             /* +0x07 the model part (0: by the family's parity, mm_Person_Draw), the person's first flags
                                   (mm_Family_AssignHome) and the talk card's variant (mm_TalkCard_FillText) */
     uint16_t acquaintances[16]; /* +0x08 family ids this member can introduce, 0 ends */
-    char name[16];             /* +0x28 */
-    char name2[16];            /* +0x38 */
+    char surname[16];          /* +0x28 the family name */
+    char givenName[16];        /* +0x38 written before the surname ("%s %s", mm_TalkView_DrawPeople) */
 };
 
 /* Family record from FAMILY.BIN (0x1D4 bytes), cached in 256 slots at 0x1D52E0. */
@@ -557,7 +558,8 @@ struct TalkSession {
     int32_t person;            /* +0x1C 6000 = none */
     int32_t family;            /* +0x20 */
     int32_t member;            /* +0x24 6 = whole family */
-    int32_t arg5;              /* +0x28 */
+    int32_t origin;            /* +0x28 how the talk began (mm_CityScene_StartTalk): 0 the cursor, 1 the town pages,
+                                  2 an event actor at a person, 3 a phone call */
     int32_t peopleInside;      /* +0x2C the building type has flag 0x40 */
     int32_t singleTarget;      /* +0x30 */
     int32_t slot;              /* +0x34 */
@@ -569,7 +571,8 @@ struct TalkSession {
 /* WORDS talk script context (0x140 bytes). A is the person talked to, B a second subject. */
 struct WordsCtx {
     CityScene *city;           /* +0x00 */
-    int32_t setupArg;          /* +0x04 the set-up's fourth argument, read back by mm_WordsFn_Arg4 */
+    int32_t origin;            /* +0x04 how the talk began (TalkSession.origin), read by the script
+                                  (mm_WordsFn_TalkOrigin) */
     uint16_t familyA;          /* +0x08 */
     uint16_t memberA;          /* +0x0A */
     MapPerson *personA;        /* +0x0C */
@@ -694,14 +697,16 @@ struct SeRequest {
     uint8_t unk_02[2];
     uint32_t owner;            /* +0x04 owner id (0xFFFF for sounds with flag 0x20) + (group * 16 + voice index) << 16 */
     uint16_t priority;         /* +0x08 the sound's priority bits << 8 + half the distance; lower comes first */
-    uint8_t param0A;           /* +0x0A mm_Se_Request's a3; non-zero only updates a voice already playing it (mm_Se_AssignVoices) */
+    uint8_t updateOnly;        /* +0x0A non-zero: only updates a voice already playing the sound, never starts one
+                                  (mm_Se_AssignVoices; the building sounds pass object state flag 0x100) */
     uint8_t note;              /* +0x0B the note the sample plays at (60 as recorded; mm_Sound_PlaySe passes 60) */
     int16_t pitch;             /* +0x0C the voice's pitch */
     uint16_t voiceParam;       /* +0x0E second voice list byte + (sound flags & 0xF0) << 4 */
     int32_t volumeLeft;        /* +0x10 1..0x3FFF */
     int32_t volumeRight;       /* +0x14 */
-    uint8_t param18;           /* +0x18 t0, frames before the sound can start again */
-    uint8_t param19;           /* +0x19 t3, frames the voice is kept without requests */
+    uint8_t cooldown;          /* +0x18 frames before the sound can start again once it starts (SeSound.cooldown;
+                                  0 none) */
+    uint8_t hold;              /* +0x19 frames its voice is kept without requests (SeVoice.hold) */
     uint8_t unk_1A[2];
 };
 
@@ -932,7 +937,7 @@ struct CityScene {
                                   (mm_Person_Update), 0x40 pad focus after a talk */
     int32_t paydayScore;       /* +0xB8 raised through the month; with the families moved in and out it decides the salary rise (mm_EvPayday_Update) */
     int32_t pendingApproval;   /* +0xBC */
-    int32_t trafficPhase;      /* +0xC0 traffic lights: 0 lets traffic along z through, 2 along x, 1 and 3 neither (mm_Char2_UpdateSpeedUndrawn) */
+    int32_t trafficPhase;      /* +0xC0 traffic lights: 0 lets traffic along z through, 2 along x, 1 and 3 neither (mm_Vehicle_UpdateSpeedUndrawn) */
     int32_t trafficTimer;      /* +0xC4 0..999 per tick: phase 0 below 400, 1 below 500, 2 below 900, then 3 */
     int32_t fadeLevel;         /* +0xC8 */
     int32_t fade;              /* +0xCC fade counter, 0 = none */

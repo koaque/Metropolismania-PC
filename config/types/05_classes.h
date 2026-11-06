@@ -96,7 +96,7 @@ typedef struct SnowLayer SnowLayer;
 typedef struct LayerF LayerF;
 typedef struct LayerG LayerG;
 typedef struct LayerAInstance LayerAInstance;
-typedef struct InstanceModel InstanceModel;
+typedef struct CharPartModel CharPartModel;
 typedef struct TerrainPassParams TerrainPassParams;
 typedef struct A3DModel A3DModel;
 typedef struct A3DNode A3DNode;
@@ -179,10 +179,12 @@ struct A3DObject {
     uint32_t *animations;      /* +0x50 one A3DTrack array address per animation (mm_A3D_Relocate) */
     uint8_t unk_54[0xC];
 };
-/* A model drawn as instances in mesh groups (mm_InstanceModel_ctor; people and the player): a model, then the group size. */
-struct InstanceModel {
+/* A character part model from CHAR.A3D (0x70 bytes, mm_CharPartModel_ctor; the table at 0x1F3B90, people's parts and
+   the player's model at entry 81): an instanced model (mm_InstanceModel_ctor), then the meshes per group. */
+struct CharPartModel {
     A3DObject base;
-    int32_t groupSize;         /* +0x60 meshes per group: node 0's mesh index / 13 (mm_InstanceModel_LoadAsync) */
+    int32_t groupSize;         /* +0x60 meshes per group: node 0's mesh index / 13 (mm_CharPartModel_LoadAsync) */
+    uint8_t unk_64[0xC];
 };
 /* Camera (0x310 bytes). */
 struct Camera {
@@ -1071,7 +1073,7 @@ struct Player {
     int32_t step;              /* +0x08 grid step in progress: 0 none, 1/2 along z, 5/6 along x, 3/4 turning (mm_Player_Move) */
     float heading;             /* +0x0C radians, -pi..pi (mm_Player_Turn) */
     Vec4 position;             /* +0x10 */
-    Vec4 colour;               /* +0x20 the tint the building under the player gives (mm_BldgType_DrawOccupant) */
+    Vec4 colour;               /* +0x20 the tint the building under the player gives (mm_BldgType_PersonLight) */
     uint8_t unk_30[4];
     float animTime;            /* +0x34 the animation's frame (mm_Player_UpdateAction, mm_A3D_AnimateIfRoom) */
     int32_t animation;         /* +0x38 the model's animation: 0-2 standing, 4-15 moving (mm_Player_UpdateAction) */
@@ -1229,14 +1231,14 @@ struct CharClass {
                                   (mm_WordsFn_FriendshipUp/Down) */
     CharClassVtable *vtable;   /* +0x20 */
 };
-/* A character class's virtual methods (0x1C bytes): base 0x1BCE70, class 2 0x1BCE90, people 0x1BCEB0 (docs/map/char.md).
-   Each takes the class first. */
+/* A character class's virtual methods (0x1C bytes): base 0x1BCE70, vehicles 0x1BCE90, people 0x1BCEB0
+   (docs/map/char.md). Each takes the class first. */
 struct CharClassVtable {
     uint8_t unk_00[8];
     uint32_t dtor;             /* +0x08 */
-    uint32_t update;           /* +0x0C a person's tick (mm_Person_Update, mm_Char2_Update) */
-    uint32_t draw;             /* +0x10 on the terrain (mm_Person_Draw, mm_Char2_Draw) */
-    uint32_t drawAt;           /* +0x14 at a given matrix, in the talk views (mm_Person_Draw2) */
+    uint32_t update;           /* +0x0C a person's tick (mm_Person_Update, mm_Vehicle_Update) */
+    uint32_t draw;             /* +0x10 on the terrain (mm_Person_Draw, mm_Vehicle_Draw) */
+    uint32_t drawAt;           /* +0x14 at a given matrix, in the talk views (mm_Person_DrawAt) */
     uint32_t slot18;           /* +0x18 empty in every class */
 };
 /* A CHARTYPE.BIN record (0x18 bytes, mm_CharType_LoadAll): one character class each. */

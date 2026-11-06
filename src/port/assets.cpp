@@ -17,7 +17,7 @@ namespace mm
         for (uint32_t slot = 0; slot < 0x51; ++slot)
         {
             const GuestPtr<A3DObject> model{port::load<uint32_t>(globals::kCharParts + 4u * slot)};
-            const int32_t per = GuestPtr<InstanceModel>{model.address}->groupSize;
+            const int32_t per = GuestPtr<CharPartModel>{model.address}->groupSize;
             const GuestPtr<A3DModel> data = model->model;
             int32_t first = 0;
             for (int group = 0; group < 13; ++group, first += per)
@@ -193,7 +193,7 @@ namespace mm
         {
             uint32_t model = sdk::operator_new(0x70u);
             if (model != 0u)
-                model = InstanceModel_ctor2(GuestPtr<A3DObject>{model}).address;
+                model = CharPartModel_ctor(GuestPtr<A3DObject>{model}).address;
             globals::assetLoadModel.set(model);
             assetOpenFile(0x001B7B50u);
             break;
@@ -204,7 +204,7 @@ namespace mm
             break;
         case 2:
         {
-            const int result = InstanceModel_LoadAsync(GuestPtr<A3DObject>{globals::assetLoadModel.get()}, GuestPtr<GameFile>{globals::assetLoadFile.get()},
+            const int result = CharPartModel_LoadAsync(GuestPtr<A3DObject>{globals::assetLoadModel.get()}, GuestPtr<GameFile>{globals::assetLoadFile.get()},
                                                        globals::assetLoadIndex.get() == 0x52 ? 1 : 0);
             if (result == 1)
             {
@@ -212,7 +212,7 @@ namespace mm
                 globals::assetLoadIndex.set(globals::assetLoadIndex.get() + 1);
                 uint32_t model = sdk::operator_new(0x70u);
                 if (model != 0u)
-                    model = InstanceModel_ctor2(GuestPtr<A3DObject>{model}).address;
+                    model = CharPartModel_ctor(GuestPtr<A3DObject>{model}).address;
                 globals::assetLoadModel.set(model);
                 globals::assetLoadCount.set(globals::assetLoadCount.get() + 1);
             }

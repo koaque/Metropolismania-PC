@@ -371,14 +371,14 @@ namespace mm
             std::swap(a.voice, b.voice);
             std::swap(a.owner, b.owner);
             std::swap(a.priority, b.priority);
-            std::swap(a.param0A, b.param0A);
+            std::swap(a.updateOnly, b.updateOnly);
             std::swap(a.note, b.note);
             std::swap(a.pitch, b.pitch);
             std::swap(a.voiceParam, b.voiceParam);
             std::swap(a.volumeLeft, b.volumeLeft);
             std::swap(a.volumeRight, b.volumeRight);
-            std::swap(a.param18, b.param18);
-            std::swap(a.param19, b.param19);
+            std::swap(a.cooldown, b.cooldown);
+            std::swap(a.hold, b.hold);
         }
 
         // One side's volume: `level` less the attenuation, scaled to the sound's volume in percent and kept
@@ -396,9 +396,11 @@ namespace mm
     // A request for the same owner and sound already queued keeps the louder volumes instead; otherwise the new
     // one goes into the list by priority and the count rises, up to 578. Sounds beyond distance 16, sound 0xFF
     // and groups from 4 on are ignored. Returns the last voice's fptoui result (the pan for a sound without
-    // voices); when it queues nothing, v0 as it found it.
-    int Se_Request(uint16_t owner, uint32_t group, uint8_t sound, uint8_t param0A, uint8_t param18, uint16_t pitch,
-                   uint8_t note, uint8_t param19, ps2f angle, ps2f distance)
+    // voices); when it queues nothing, v0 as it found it. `updateOnly` requests only refresh a voice already
+    // playing the sound; `cooldown` is the frames before the sound can start again once it starts, `hold` the
+    // frames its voice is kept without requests.
+    int Se_Request(uint16_t owner, uint32_t group, uint8_t sound, uint8_t updateOnly, uint8_t cooldown, uint16_t pitch,
+                   uint8_t note, uint8_t hold, ps2f angle, ps2f distance)
     {
         if (!(distance <= ps2f(16.0f)) || sound == 0xFF || (group & 0xFFu) >= 4)
             return port::guestV0();
@@ -421,11 +423,11 @@ namespace mm
             const uint32_t half = sdk::fptoui(distance / ps2f(2.0f));
             result = static_cast<int>(half);
             request.priority = static_cast<uint16_t>(((flags & 0xFu) << 8) + half);
-            request.param0A = param0A;
+            request.updateOnly = updateOnly;
             request.pitch = static_cast<int16_t>(pitch);
             request.note = note;
-            request.param18 = param18;
-            request.param19 = param19;
+            request.cooldown = cooldown;
+            request.hold = hold;
 
             const uint32_t low = request.priority & 0xFFu;
             const uint8_t tableVolume = globals::seSound(request.sound)->volume;
@@ -506,8 +508,8 @@ namespace mm
             if (groupA)
                 voice.note = request.note;
             voice.voiceParam = request.voiceParam;
-            voice.hold = request.param19;
-            if (request.param19 != 0)
+            voice.hold = request.hold;
+            if (request.hold != 0)
             {
                 const auto sum = [](int32_t a, int32_t b) { return static_cast<int32_t>(static_cast<uint32_t>(a) + static_cast<uint32_t>(b)); };
                 if (groupA && sum(voice.heldLeft, voice.heldRight) < sum(request.volumeLeft, request.volumeRight))
@@ -546,7 +548,7 @@ namespace mm
             voice.voiceParam = request.voiceParam;
             voice.volumeLeft = request.volumeLeft;
             voice.volumeRight = request.volumeRight;
-            voice.hold = request.param19;
+            voice.hold = request.hold;
             voice.heldLeft = request.volumeLeft;
             voice.heldRight = request.volumeRight;
             voice.scriptStep = 0;
@@ -581,7 +583,7 @@ namespace mm
                 request.sound = 0xFF;
                 return true;
             }
-            if (request.param0A != 0)
+            if (request.updateOnly != 0)
                 return false;
             for (int v = first; v < first + count; ++v)
             {
@@ -649,8 +651,8 @@ namespace mm
             SeSound &sound = sounds[request.sound];
             if (!(sound.playing < sound.maxVoices) || sound.cooldown != 0)
                 continue;
-            if (request.param18 != 0)
-                sound.cooldown = request.param18;
+            if (request.cooldown != 0)
+                sound.cooldown = request.cooldown;
             bool started = false;
             for (int k = 0; k < 4; ++k)
             {
@@ -1222,8 +1224,9 @@ namespace mm
     // effect without a place (owned by a running counter that wraps at 0xFF), anything else a plain request too (group 0,
     // owner `object`). Group 10 and the others skip sound 0xFF; groups 1 to 3 do nothing while the owner already has a
     // request this frame (group in bits 20 to 23 of the owner key). Placed sounds get their bearing and distance from
-    // the listener (VU0), the distance cut to 15.5 from 16 up when `clampFar` is set. Without a city nothing happens.
-    void Se_RequestForObject(uint32_t object, uint32_t group, uint32_t sound, int pitch, int clampFar, int param18)
+    // the listener (VU0), the distance cut to 15.5 from 16 up when `clampFar` is set; `cooldown` goes to the requests
+    // (mm_Se_Request). Without a city nothing happens.
+    void Se_RequestForObject(uint32_t object, uint32_t group, uint32_t sound, int pitch, int clampFar, int cooldown)
     {
         using namespace vu0;
         const GuestPtr<CityScene> city = globals::soundCity.get();
@@ -1247,7 +1250,7 @@ namespace mm
             ps2f distance = b.distance;
             if (!(distance < ps2f(16.0f)) && clampFar != 0)
                 distance = ps2f(15.5f);
-            Se_Request(owner, placedGroup, static_cast<uint8_t>(placedSound), 0, static_cast<uint8_t>(param18),
+            Se_Request(owner, placedGroup, static_cast<uint8_t>(placedSound), 0, static_cast<uint8_t>(cooldown),
                        static_cast<uint16_t>(pitch), 0x3C, 0, b.cosine, distance);
         };
         const ps2f centre = 64.0f;
@@ -1257,7 +1260,7 @@ namespace mm
             {
                 const uint16_t next = globals::soundNextOwner.get();
                 globals::soundNextOwner.set(static_cast<uint16_t>(next + 1));
-                Se_Request(next, 0, static_cast<uint8_t>(sound), 0, static_cast<uint8_t>(param18), static_cast<uint16_t>(pitch),
+                Se_Request(next, 0, static_cast<uint8_t>(sound), 0, static_cast<uint8_t>(cooldown), static_cast<uint16_t>(pitch),
                            0x3C, 0, 0.0f, 0.0f);
                 if (globals::soundNextOwner.get() == 0xFF)
                     globals::soundNextOwner.set(0);
@@ -1295,7 +1298,7 @@ namespace mm
             place(1, sound, soundPosition(person->x, person->y, person->z));
         }
         else if ((sound & 0xFFu) != 0xFF)
-            Se_Request(owner, 0, static_cast<uint8_t>(sound), 0, static_cast<uint8_t>(param18), static_cast<uint16_t>(pitch),
+            Se_Request(owner, 0, static_cast<uint8_t>(sound), 0, static_cast<uint8_t>(cooldown), static_cast<uint16_t>(pitch),
                        0x3C, 0, 0.0f, 0.0f);
     }
 

@@ -3951,7 +3951,7 @@ namespace mm
         constexpr uint32_t kBuffer = 0x001C5990u;
         const GuestPtr<Family> family = Family_Get(static_cast<int>(familyB), 0);
         sdk::strcpy(kBuffer, title);
-        const uint32_t name = GuestPtr<char>::of(family->members[entry->memberB].name[0]).address;
+        const uint32_t name = GuestPtr<char>::of(family->members[entry->memberB].surname[0]).address;
         const int length = sdk::strlen(kBuffer);
         const int nameLength = sdk::strlen(name);
         if (static_cast<uint32_t>(length + nameLength) < 0x19u)

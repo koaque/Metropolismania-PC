@@ -803,7 +803,7 @@ namespace mm
 
     // Whether a building of type flag 8 stands on the blocks beyond `side` of a footprint, up to two blocks
     // out; a walkable tile in between ends the search.
-    int BldgType_FindEntrance2(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, int x, int z, int side)
+    int BldgType_BuildingBeyondSide(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, int x, int z, int side)
     {
         for (int ring = 0; ring < 3; ++ring)
         {
@@ -1031,7 +1031,7 @@ namespace mm
         else
         {
             obj->entranceTile = BldgType_FindEntrance(btype, city, x, z, side);
-            if ((btype->flags & 0x20u) == 0 || BldgType_FindEntrance2(btype, city, x, z, *side) != 0)
+            if ((btype->flags & 0x20u) == 0 || BldgType_BuildingBeyondSide(btype, city, x, z, *side) != 0)
             {
                 const int size = btype->size;
                 if ((*side & 1) != 0)
@@ -1539,10 +1539,11 @@ namespace mm
         }
     }
 
-    // A building occupant's colour: set by the occupant slot of the first lit object (flag 0x10) on the person's
-    // tile or on the four tiles beside the block (north, east, south, west); otherwise untinted with w 0. (The
-    // original also fetches a fifth tile, from past the end of its offset table, and never looks at it.)
-    void BldgType_DrawOccupant(GuestPtr<BuildingType> btype, GuestPtr<Vec4> colour, GuestPtr<MapPerson> person, GuestPtr<CityScene> city)
+    // The colour of `person` (or of the player, whose position passes for one): the light (mm_BldgType_LightAt, called
+    // directly) of the first lit object (flag 0x10: street lamps, open businesses after dark) on the person's tile or
+    // on the four tiles beside the block (north, east, south, west); otherwise untinted with w 0. (The original also
+    // fetches a fifth tile, from past the end of its offset table, and never looks at it.)
+    void BldgType_PersonLight(GuestPtr<BuildingType> btype, GuestPtr<Vec4> colour, GuestPtr<MapPerson> person, GuestPtr<CityScene> city)
     {
         const int x = sdk::fptosi(ps2f(64.0f) + person->x);
         const int z = sdk::fptosi(ps2f(64.0f) - person->z);
@@ -1555,7 +1556,7 @@ namespace mm
         {
             if ((obj->flags & 0x10u) != 0)
             {
-                BldgType_OccupantMatrix(typeOf(obj), colour, GuestPtr<Vec4>{person.address}, obj->tile);
+                BldgType_LightAt(typeOf(obj), colour, GuestPtr<Vec4>{person.address}, obj->tile);
                 return;
             }
             if (i == 4)
@@ -1566,9 +1567,9 @@ namespace mm
         colour->w = 0.0f;
     }
 
-    // The people inside a building: each one's colour (BldgType_DrawOccupant), then its character class's draw
-    // slot at its position and heading, in pose 6 (flag 0x40), 1 (running, 0x80) or 0.
-    void BldgType_DrawOccupants2(GuestPtr<BuildingType> btype, int, GuestPtr<CityScene> city, GuestPtr<MapObject> obj,
+    // The base drawPeople slot: the people at a building, each one's colour (mm_BldgType_PersonLight), then its
+    // character class's draw slot at its position and heading, in pose 6 (flag 0x40), 1 (running, 0x80) or 0.
+    void BldgType_DrawPeople(GuestPtr<BuildingType> btype, int, GuestPtr<CityScene> city, GuestPtr<MapObject> obj,
                                  GuestPtr<uint32_t>, int mode, GuestPtr<MapPerson> people)
     {
         port::GuestLocal<Vec4> colour; // the original's slots: entry sp - 0x10 and - 0x20
@@ -1588,7 +1589,7 @@ namespace mm
                 pose = 6;
             else if ((person->flags & 0x80u) != 0)
                 pose = 1;
-            BldgType_DrawOccupant(btype, colour, person, city);
+            BldgType_PersonLight(btype, colour, person, city);
             const uint32_t draw = cls->vtable->draw;
             port::callGuest<void>(draw, cls.address, city.address, person.address, colour.ptr().address, mode, position.ptr().address, pose);
         }
@@ -1736,7 +1737,7 @@ namespace mm
     PORT_FN(BldgRoad_Draw);
     PORT_FN(BldgRoad_Tick);
     PORT_FN(Bldg_Tick);
-    PORT_FN(BldgType_FindEntrance2);
+    PORT_FN(BldgType_BuildingBeyondSide);
     PORT_FN(BldgField_Tick);
     PORT_FN(BldgOffice_Tick);
     PORT_FN(BldgHousing_Tick);
@@ -1750,10 +1751,10 @@ namespace mm
     PORT_FN(BldgHousing_Draw);
     PORT_FN(BldgHousing_UnitAt);
     PORT_FN(BldgHousing_CountUnits);
-    PORT_FN(BldgType_DrawOccupant);
+    PORT_FN(BldgType_PersonLight);
     PORT_FN(BldgType_CallAll);
     PORT_FN(BldgClaims_Evaluate);
-    PORT_FN(BldgType_DrawOccupants2);
+    PORT_FN(BldgType_DrawPeople);
     PORT_FN(Schedule_PickEntry);
     PORT_FN(Stamina_HungerLevel);
     PORT_FN(Clock_AddWrap);
@@ -2282,10 +2283,11 @@ namespace mm
 
     // ---- batch 38
 
-    // The shade of a person drawn at a building: 2.5 - min(max(d, 0), 1.5) in every lane, d being the horizontal
-    // distance from the footprint's centre to `position`; the last word then becomes the integer 12. The centre
-    // (height 1.5, w 2.5) goes through the stack and VU0 is left as the original leaves it (vf4 to vf11, Q).
-    void BldgType_OccupantMatrix(GuestPtr<BuildingType> btype, GuestPtr<Vec4> colour, GuestPtr<Vec4> position, uint32_t tile)
+    // The light a lit object (at `tile`, of type `btype`) gives a person at `position`: 2.5 - min(max(d, 0), 1.5) in
+    // every lane, d being the horizontal distance from the footprint's centre to `position`; the last word then becomes
+    // the integer 12. The centre (height 1.5, w 2.5) goes through the stack and VU0 is left as the original leaves it
+    // (vf4 to vf11, Q).
+    void BldgType_LightAt(GuestPtr<BuildingType> btype, GuestPtr<Vec4> colour, GuestPtr<Vec4> position, uint32_t tile)
     {
         using namespace vu0;
         const ps2f size = fromInt(btype->size);
@@ -2312,7 +2314,7 @@ namespace mm
         port::store<int32_t>(colour.field(&Vec4::w).address, 12); // colour table entry 12: lit
     }
 
-    PORT_FN(BldgType_OccupantMatrix);
+    PORT_FN(BldgType_LightAt);
 
     // ---- the clock (batch 39)
 
@@ -3060,9 +3062,9 @@ namespace mm
         }
     }
 
-    // One person in a building's crowd: the colour of BldgType_DrawOccupant at the person's own position and heading, in
-    // pose 6 (flag 0x40), 1 (flag 0x80) or 0.
-    void BldgType_DrawOccupants(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject>, GuestPtr<MapPerson> person, int mode)
+    // One person at a building, drawn by its character class's draw slot in the light of mm_BldgType_PersonLight, at
+    // its own position and heading, in pose 6 (flag 0x40), 1 (flag 0x80) or 0.
+    void BldgType_DrawPerson(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject>, GuestPtr<MapPerson> person, int mode)
     {
         port::GuestFrame<0x80> frame; // the colour at +0x60 and the position at +0x70
         const uint32_t base = frame.ptr().address;
@@ -3078,7 +3080,7 @@ namespace mm
             pose = 6;
         else if ((person->flags & 0x80u) != 0)
             pose = 1;
-        BldgType_DrawOccupant(btype, colour, person, city);
+        BldgType_PersonLight(btype, colour, person, city);
         drawPerson(cls, city, person, colour.address, mode, position.address, pose);
     }
 
@@ -3099,7 +3101,7 @@ namespace mm
             const bool onField = (cls->flags & 1u) == 0 && person->activity == 0 && (person->inside == kNoObject || person->inside == obj->id);
             if (!onField)
             {
-                BldgType_DrawOccupants(btype, city, obj, person, mode);
+                BldgType_DrawPerson(btype, city, obj, person, mode);
                 link = GuestPtr<uint16_t>::of(person->nextHere);
                 continue;
             }
@@ -3151,7 +3153,7 @@ namespace mm
         drawAt(open == 0 ? globals::ranchModelC.get() : globals::ranchModelB.get());
     }
 
-    // A road: with the city flag 8 off its people are drawn as in a building (BldgType_DrawOccupants2); with it on, the
+    // A road: with the city flag 8 off its people are drawn as in a building (BldgType_DrawPeople); with it on, the
     // residents that are neither class flag 1 nor person flag 0x100 are gathered by person index (up to four are drawn)
     // and placed on the road by its shape (the corner table at 0x1B1670, 4 slots a shape) in pose 8, each at its ground
     // height facing the table's way; the others are drawn as occupants.
@@ -3164,7 +3166,7 @@ namespace mm
         const GuestPtr<Vec4> position{base + 0x100u}, colour{base + 0x110u};
         if (CityScene_InFarewellParty(city) == 0)
         {
-            BldgType_DrawOccupants2(btype, facing, city, obj, part, mode, people);
+            BldgType_DrawPeople(btype, facing, city, obj, part, mode, people);
             return;
         }
         int count = 0;
@@ -3173,7 +3175,7 @@ namespace mm
             const GuestPtr<MapPerson> person = people + *link;
             if ((classOf(person)->flags & 1u) != 0 || (person->flags & 0x100u) != 0)
             {
-                BldgType_DrawOccupants(btype, city, obj, person, mode);
+                BldgType_DrawPerson(btype, city, obj, person, mode);
                 link = GuestPtr<uint16_t>::of(person->nextHere);
                 continue;
             }
@@ -3215,12 +3217,12 @@ namespace mm
             person->heading = heading;
             position->w = heading;
             *colour = *GuestPtr<Vec4>{globals::kDefaultColour};
-            BldgType_DrawOccupant(btype, colour, person, city);
+            BldgType_PersonLight(btype, colour, person, city);
             drawPerson(classOf(person), city, person, colour.address, mode, position.address, 8);
         }
     }
 
-    PORT_FN(BldgType_DrawOccupants);
+    PORT_FN(BldgType_DrawPerson);
     // The crops of a field (nothing while its object has no claim slot): the matrix of its facing is put at the field's
     // place (a little higher by the type's crop lift), and the month cycle (twelve steps, two to a stage of six) picks
     // the stage: its crop mesh is drawn as it is; its growing mesh follows with its height blended between this stage
@@ -3369,7 +3371,7 @@ namespace mm
                     position->w = static_cast<float>(ps2f(position->w) - ps2f(6.2831855f));
                 }
                 *colour = *GuestPtr<Vec4>{globals::kDefaultColour};
-                BldgType_DrawOccupant(btype, colour, person, city);
+                BldgType_PersonLight(btype, colour, person, city);
                 drawPerson(classOf(person), city, person, colour.address, mode, position.address, 4);
             }
         }
@@ -3923,11 +3925,13 @@ namespace mm
 
     // ---- Talks and the approval meter (plan P6 batch 2) ----
 
-    // Starts a talk (mm_Talk_Start on the city's session): when it starts, the city's mode stack moves one place down with mode 5
-    // (the talk) on top, and the applicants window is set to 2. 1 when it started, otherwise 0.
-    int CityScene_StartTalk(GuestPtr<CityScene> city, int byFamily, int target, int member, int arg5)
+    // Starts a talk (mm_Talk_Start on the city's session): when it starts, the city's mode stack moves one place down
+    // with mode 5 (the talk) on top, and the applicants window is set to 2. 1 when it started, otherwise 0. `origin` is
+    // how the talk began: 0 the cursor, 1 the town pages, 2 an event actor at a person, 3 a phone call (or the town
+    // pages for a family without a home while stage flag 2 is set).
+    int CityScene_StartTalk(GuestPtr<CityScene> city, int byFamily, int target, int member, int origin)
     {
-        if (Talk_Start(city->talk, byFamily, target, member, arg5, city) == 0)
+        if (Talk_Start(city->talk, byFamily, target, member, origin, city) == 0)
             return 0;
         for (int i = 3; i >= 0; --i)
             city->modeStack[i + 1] = city->modeStack[i];
@@ -3991,9 +3995,9 @@ namespace mm
         }
         const GuestPtr<TalkConv> conv{talk->conversation.address};
         if (talk->person == 6000)
-            TalkConv_Start(conv, 1, talk->family, talk->member, talk->slot, talk->arg5);
+            TalkConv_Start(conv, 1, talk->family, talk->member, talk->slot, talk->origin);
         else
-            TalkConv_Start(conv, 0, talk->person, talk->building, talk->slot, talk->arg5);
+            TalkConv_Start(conv, 0, talk->person, talk->building, talk->slot, talk->origin);
         talk->base.state = 2;
     }
 

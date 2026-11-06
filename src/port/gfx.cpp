@@ -837,7 +837,7 @@ namespace mm
     // The same kind of model with the offsets passed in, all with `mode`: node 0 with its mesh + `offset0`;
     // node 1 with its mesh + `offset1` unless that is 4 or more; when `attach` is set, mesh 0 of the part model
     // at 0x1F3B80 (also kept at 0x1BDA38) at node 2; node 3 with its mesh + `offset3`; then each later node that
-    // has a mesh, with mesh (its place from node 4) + group x the model's group size (an InstanceModel's).
+    // has a mesh, with mesh (its place from node 4) + group x the model's group size (an CharPartModel's).
     // No room check; the second count rises by the node count.
     void Instance_DrawModelEx(GuestPtr<A3DObject> model, GuestPtr<Vec4> colour, int mode, int offset0, int group, int offset3,
                               int attach, int offset1)
@@ -860,7 +860,7 @@ namespace mm
         {
             if (meshOf(4 + i) == -1)
                 continue;
-            queueTableMesh(model, matrix(4 + i), colour, i + group * GuestPtr<InstanceModel>{model.address}->groupSize, mode);
+            queueTableMesh(model, matrix(4 + i), colour, i + group * GuestPtr<CharPartModel>{model.address}->groupSize, mode);
         }
         globals::instanceLimitedCount.set(globals::instanceLimitedCount.get() + count());
     }
@@ -1996,13 +1996,13 @@ namespace mm
     PORT_FN(InstanceModel_ctor);
 
     // The constructor of the derived instance model: the base one, nothing more.
-    GuestPtr<A3DObject> InstanceModel_ctor2(GuestPtr<A3DObject> model)
+    GuestPtr<A3DObject> CharPartModel_ctor(GuestPtr<A3DObject> model)
     {
         InstanceModel_ctor(model);
         return model;
     }
 
-    PORT_FN(InstanceModel_ctor2);
+    PORT_FN(CharPartModel_ctor);
 
     // ---- The city renderer (plan P6 batch 2) ----
 
@@ -2137,15 +2137,15 @@ namespace mm
 
     // The asynchronous model load; when it finished (1) for a model whose nodes keep mesh indexes (`indexed` 0), the
     // model's group size is node 0's mesh index divided by 13.
-    int InstanceModel_LoadAsync(GuestPtr<A3DObject> model, GuestPtr<GameFile> file, int indexed)
+    int CharPartModel_LoadAsync(GuestPtr<A3DObject> model, GuestPtr<GameFile> file, int indexed)
     {
         const int result = A3DObject_LoadAsync(model, file, indexed);
         if (result == 1 && indexed == 0)
-            GuestPtr<InstanceModel>{model.address}->groupSize = divide(meshIndex(model->model->nodes), 13);
+            GuestPtr<CharPartModel>{model.address}->groupSize = divide(meshIndex(model->model->nodes), 13);
         return result;
     }
 
-    PORT_FN(InstanceModel_LoadAsync);
+    PORT_FN(CharPartModel_LoadAsync);
 
     namespace
     {

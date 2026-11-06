@@ -1241,22 +1241,22 @@ namespace mm
         game->city = GuestPtr<CityScene>{};
     }
 
-    // char: the second character class type, a CharType with its own vtable.
-    GuestPtr<CharClass> Char2_ctor(GuestPtr<CharClass> cls, GuestPtr<CharTypeRecord> record)
+    // char: the vehicle class (CHARTYPE.BIN records of kind 2), a CharType with its own vtable.
+    GuestPtr<CharClass> Vehicle_ctor(GuestPtr<CharClass> cls, GuestPtr<CharTypeRecord> record)
     {
         CharType_ctor(cls, record);
         cls->vtable = GuestPtr<CharClassVtable>{0x001BCE90u};
         return cls;
     }
 
-    // char: class 2 draw slot, a character of this class on the terrain, while there is room for another
+    // char: the vehicle class's draw slot, a vehicle on the terrain, while there is room for another
     // instance (fewer than 1800 queued, fewer than the limit at 0x1BD980 of the limited ones). Marks the person
     // drawn (flag 0x1000) and eases its height towards the ground: 0.1 per frame within 0.2 of it, straight
     // onto it beyond. Only a person at height 0.5 or below is drawn: lit (colour w word 12) before 4:00 and
     // from 17:00 unless target (the driver) holds 6000 (compared as a person id here), as node 7 or 8 of the first model
     // part when its home is of type 0xAF or 0xB1 (the spaceman's and the caveman's), else node (own index % 7), turned by place.w about y
     // and moved to place.xyz.
-    void Char2_Draw(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, GuestPtr<Vec4> colour,
+    void Vehicle_Draw(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, GuestPtr<Vec4> colour,
                     int flags, GuestPtr<Vec4> place)
     {
         if (!(globals::instanceCount.get() + 1 < 0x708))
@@ -2379,7 +2379,7 @@ namespace mm
 
     namespace
     {
-        // How hard a class 2 vehicle brakes, slows, follows and speeds up (movement modes A and B).
+        // How hard a vehicle brakes, slows, follows and speeds up (movement modes A and B).
         struct SpeedRules
         {
             int brake;  // nearer than 1.2 to a vehicle ahead, or close to a junction against the lights
@@ -2536,7 +2536,7 @@ namespace mm
     {
         using SpeedUpdate = void (*)(GuestPtr<CharClass>, GuestPtr<CityScene>, GuestPtr<MapPerson>, GuestPtr<MapObject>, int, ps2f, ps2f);
 
-        // A class 2 vehicle's step from tile `tile` (object `obj`). When it steers (mode A: on one frame in
+        // A vehicle's step from tile `tile` (object `obj`). When it steers (mode A: on one frame in
         // four, by its index), it aims at the middle of its waypoint's object (walkTile), straight along an axis
         // when that is within 0.01, and its speed is updated for its offset within its two-tile block: off
         // road with the tiles-around test; on road for the way it heads (within pi/4), aiming pi/8 off that
@@ -2658,36 +2658,36 @@ namespace mm
         }
     }
 
-    // char (class 2): movement modes A and B. A steers on one frame in four and turns up to 0.16, B steers
+    // char (vehicles): movement modes A and B. A steers on one frame in four and turns up to 0.16, B steers
     // every frame and turns up to 0.04 (with their own speed rules).
-    void Char2_MoveUndrawn(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj, int tile)
+    void Vehicle_MoveUndrawn(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj, int tile)
     {
-        moveVehicle(cls, city, vehicle, obj, tile, true, 0.16f, 0x1.87E246p+2f, Char2_UpdateSpeedUndrawn);
+        moveVehicle(cls, city, vehicle, obj, tile, true, 0.16f, 0x1.87E246p+2f, Vehicle_UpdateSpeedUndrawn);
     }
 
-    void Char2_MoveDrawn(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj, int tile)
+    void Vehicle_MoveDrawn(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj, int tile)
     {
-        moveVehicle(cls, city, vehicle, obj, tile, false, 0.04f, 0x1.8F905Ap+2f, Char2_UpdateSpeedDrawn);
+        moveVehicle(cls, city, vehicle, obj, tile, false, 0.04f, 0x1.8F905Ap+2f, Vehicle_UpdateSpeedDrawn);
     }
 
-    // char (class 2): the vehicle speed of movement modes A and B, which differ only in their rules.
-    void Char2_UpdateSpeedUndrawn(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj,
+    // char (vehicles): the speed of movement modes A and B, which differ only in their rules.
+    void Vehicle_UpdateSpeedUndrawn(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj,
                             int dir, ps2f dx, ps2f dz)
     {
         updateVehicleSpeed(cls, city, vehicle, obj, dir, dx, dz, {-180, -60, 40, 40});
     }
 
-    void Char2_UpdateSpeedDrawn(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj,
+    void Vehicle_UpdateSpeedDrawn(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj,
                             int dir, ps2f dx, ps2f dz)
     {
         updateVehicleSpeed(cls, city, vehicle, obj, dir, dx, dz, {-80, -20, 20, 10});
     }
 
     PORT_FN(BaseObject_ctor);
-    PORT_FN(Char2_UpdateSpeedUndrawn);
-    PORT_FN(Char2_UpdateSpeedDrawn);
-    PORT_FN(Char2_MoveUndrawn);
-    PORT_FN(Char2_MoveDrawn);
+    PORT_FN(Vehicle_UpdateSpeedUndrawn);
+    PORT_FN(Vehicle_UpdateSpeedDrawn);
+    PORT_FN(Vehicle_MoveUndrawn);
+    PORT_FN(Vehicle_MoveDrawn);
     PORT_FN(Pair_ctor);
     PORT_FN(Player_GetMatrix);
     PORT_FN(Camera_SetEyeTarget);
@@ -2715,8 +2715,8 @@ namespace mm
     PORT_FN(StaticInit_StatusBytes);
     PORT_FN(StaticInit_EventTypeIds);
     PORT_FN(GameInit);
-    PORT_FN(Char2_ctor);
-    PORT_FN(Char2_Draw);
+    PORT_FN(Vehicle_ctor);
+    PORT_FN(Vehicle_Draw);
     PORT_FN(Player_UpdateAction);
     PORT_FN(Player_PlayFootstep);
     PORT_FN(Player_PickTarget);
@@ -3273,13 +3273,13 @@ namespace mm
 
     void App_OnInit() {}
     void CharType_Draw(GuestPtr<CharClass>) {}
-    void CharType_Draw2(GuestPtr<CharClass>) {}
+    void CharType_DrawAt(GuestPtr<CharClass>) {}
     void CharType_Slot18(GuestPtr<CharClass>) {}
     int CharType_Update(GuestPtr<CharClass>) { return 0; }
 
     PORT_FN(App_OnInit);
     PORT_FN(CharType_Draw);
-    PORT_FN(CharType_Draw2);
+    PORT_FN(CharType_DrawAt);
     PORT_FN(CharType_Slot18);
     PORT_FN(CharType_Update);
 
@@ -3778,7 +3778,7 @@ namespace mm
     // ---- Destructors (plan P6 batch 2) ----
 
     // The character classes: their own vtable, then CharType_dtor's base state.
-    GuestPtr<CharClass> Char2_dtor(GuestPtr<CharClass> cls, int16_t deleteFlag)
+    GuestPtr<CharClass> Vehicle_dtor(GuestPtr<CharClass> cls, int16_t deleteFlag)
     {
         if (cls)
         {
@@ -3862,7 +3862,7 @@ namespace mm
         return app;
     }
 
-    PORT_FN(Char2_dtor);
+    PORT_FN(Vehicle_dtor);
     PORT_FN(Person_dtor);
     PORT_FN(CityCamera_DeletingDtor);
     PORT_FN(LightSet_DeletingDtor);
@@ -3891,7 +3891,7 @@ namespace mm
             if (kind == 2)
             {
                 const uint32_t memory = sdk::operator_new(0x24u);
-                cls = memory != 0u ? Char2_ctor(GuestPtr<CharClass>{memory}, record).address : 0u;
+                cls = memory != 0u ? Vehicle_ctor(GuestPtr<CharClass>{memory}, record).address : 0u;
             }
             else if (kind == 1)
             {
@@ -4518,7 +4518,7 @@ namespace mm
     // pose of the talk session for the family and member is fetched into a local (claim state first for a person). The matrix is
     // copied to the model and the animation phase (*phase, not before 0) goes on by 2 a call until it passes the length of the
     // mesh (*mesh), when it restarts and the mesh switches between 2 and 3.
-    void Person_Draw2(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, uint32_t family, uint32_t member,
+    void Person_DrawAt(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, uint32_t family, uint32_t member,
                       GuestPtr<Vec4> matrix, int colour, GuestPtr<int32_t> mesh, GuestPtr<ps2f> phase)
     {
         port::GuestFrame<0xB0> frame;
@@ -4564,7 +4564,7 @@ namespace mm
         Instance_DrawModelEx(GuestPtr<A3DObject>{model}, GuestPtr<Vec4>{static_cast<uint32_t>(colour)}, 0, port::load<int32_t>(local), static_cast<int>(activity & 0x7Fu), shifted, inside, 4);
     }
 
-    PORT_FN(Person_Draw2);
+    PORT_FN(Person_DrawAt);
 
     // Placing the selected applicant's building with the player's cursor (mode 6): the footprint of the building type of the family
     // (the type's size) is centred on the tile under the cursor as for a bag item and tested (mm_Map_CanPlace for
@@ -4646,7 +4646,7 @@ namespace mm
     // walk tile 0x4000 or on the tile of the first object at it) or moves by the kind of its class (flag 0x1000: B, else A), the
     // driver carried along. Outside: a counter (awayTime, 3 a call) runs to 0xFD20, when the vehicle is taken off its tile and put
     // back on its home's. With flag 0x800 the vehicle is then linked to the object under it (or its building); flag 0x1000 is cleared.
-    void Char2_Update(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, uint32_t timeFlags)
+    void Vehicle_Update(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, uint32_t timeFlags)
     {
         constexpr uint16_t kNowhere = 0x3F80, kNoDriver = 0x1770, kNoTile = 0x4000;
         if ((timeFlags & 2u) != 0 && vehicle->inside != kNowhere && vehicle->target != kNoDriver)
@@ -4690,9 +4690,9 @@ namespace mm
             else
             {
                 if ((vehicle->flags & 0x1000u) != 0)
-                    Char2_MoveDrawn(cls, city, vehicle, here, tile);
+                    Vehicle_MoveDrawn(cls, city, vehicle, here, tile);
                 else
-                    Char2_MoveUndrawn(cls, city, vehicle, here, tile);
+                    Vehicle_MoveUndrawn(cls, city, vehicle, here, tile);
                 carryDriver();
             }
         }
@@ -4726,7 +4726,7 @@ namespace mm
         vehicle->flags = static_cast<uint16_t>(vehicle->flags & 0xEFFFu);
     }
 
-    PORT_FN(Char2_Update);
+    PORT_FN(Vehicle_Update);
 
     // The player for one frame. The move speed follows the stamina object's counter (the count over 100000 over 140,
     // plus 0.04; 0.02 with none). The tile the player stands on (64 added to x, and to minus z as the row) is found,
@@ -4920,7 +4920,7 @@ namespace mm
         matrix[3].y = player->position.y;
         matrix[3].z = player->position.z;
         const GuestPtr<MapObject> tile = Map_GetTileObject(map(), tileX, tileZ);
-        BldgType_DrawOccupant(globals::buildingType(tile->type), GuestPtr<Vec4>::of(player->colour),
+        BldgType_PersonLight(globals::buildingType(tile->type), GuestPtr<Vec4>::of(player->colour),
                               GuestPtr<Vec4>::of(player->position).as<MapPerson>(), city); // the position as a person's x, y, z, heading
         Player_UpdateAction(player, move, city);
         Player_PlayFootstep(player, city);

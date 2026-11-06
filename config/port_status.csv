@@ -805,45 +805,45 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0012C6A0,mm_Instance_DrawMesh,236,game,gfx,verified,no,18,1,"(model, matrix, colour, mesh, mode) an instance slot (the matrix, the colour, the draw mode in the matrix's last word) and the mesh's chain, while fewer than 1800 instances are queued"
 0x0012C790,mm_Instance_DrawNode,240,game,gfx,verified,no,1,1,"(model, colour, node, mode) an instance of a node with its world matrix and its mesh, while fewer than 1800 instances are queued"
 0x0012C880,mm_Instance_DrawModel,324,game,gfx,verified,no,6,2,"(model, colour, reserve, mode) updates the model's node matrices and adds an instance per node with a mesh, when its nodes plus `reserve` still fit"
-0x0012C9D0,mm_InstanceModel_ctor,68,game,gfx,verified,yes,2,2,model constructor; the first one allocates the instance buffers
+0x0012C9D0,mm_InstanceModel_ctor,68,game,gfx,verified,yes,2,2,"(model) an instanced model (0x60 bytes; CHAROBJ.A3D's, and the base of mm_CharPartModel_ctor): mm_InstanceBase_ctor, then the model count at 0x1BDA2C rises, the first one allocating the instance buffers (mm_InstanceBuf_Init)"
 0x0012CA20,mm_CityCamera_LoadState,76,game,camera,verified,no,1,1,reads the zoom level (4 bytes) and the camera from its eye on (0x1D4 bytes) from the save file
 0x0012CA70,mm_CityCamera_SaveState,76,game,camera,verified,no,1,1,writes the same two blocks
 0x0012CAC0,mm_CityCamera_GetZoomLevel,192,game,camera,verified,no,2,3,"height of the eye above the terrain (0x1415E0) as a zoom level: 0 above -1.15, 1 above -7.1, ..."
 0x0012CB80,mm_CityCamera_Update,2688,game,camera,verified,no,1,8,"pad-driven city camera: move, rotate, zoom, keeps the eye above the terrain, updates fog, projection and matrices"
 0x0012D600,mm_CityCamera_DeletingDtor,92,game,camera,verified,yes,1,2,"camera destructor, then delete when the flag is > 0"
 0x0012D660,mm_CityCamera_ctor,80,game,camera,verified,yes,1,1,"camera constructor (0x161250) with eye (0, -29, 1.6), zoom level 1"
-0x0012D6B0,mm_A3D_AnimateCharacter,824,game,gfx,verified,no,2,2,"the same code as mm_A3D_Animate (tracks without keys skipped a step earlier), used by the character draws (mm_Person_Draw, mm_Person_Draw2)"
+0x0012D6B0,mm_A3D_AnimateCharacter,824,game,gfx,verified,no,2,2,"the same code as mm_A3D_Animate (tracks without keys skipped a step earlier), used by the character draws (mm_Person_Draw, mm_Person_DrawAt)"
 0x0012D9F0,mm_Instance_DrawModelLit,852,game,gfx,verified,no,1,1,"a model whose nodes hold mesh indexes, with no room check (the callers make it): nodes 0 and 1, and node 2 for style 0, each with its own mesh, node 0's offset by `variant`; then each later node that has a mesh, with the meshes of the style's group of 13 in turn. Draw mode 0. The second count rises by the node count. Used for the player (mm_Player_Draw: variant = its mode, style = the bag's item)"
 0x0012DD50,mm_Instance_DrawNodeLimited,280,game,gfx,verified,no,1,1,"like mm_Instance_DrawNode, also capped by a second counter (gp)"
 0x0012DE70,mm_Instance_DrawModelEx,940,game,gfx,verified,no,4,2,"the same kind of model with the offsets passed in, all with draw mode `mode`: node 0 with its mesh + `offset0`; node 1 with its mesh + `offset1` unless that is 4 or more; when `attach` is set, mesh 0 of the part model at 0x1F3B80 (also kept at 0x1BDA38) at node 2; node 3 with its mesh + `offset3`"
-0x0012E220,mm_InstanceModel_LoadAsync,120,game,gfx,verified,yes,1,1,"(model, file, indexed) mm_A3DObject_LoadAsync; when done (1) for a model whose nodes keep mesh indexes (`indexed` 0) it stores groupSize (the first node's mesh index / 13)"
-0x0012E2A0,mm_InstanceModel_ctor2,40,game,gfx,verified,yes,1,1,mm_InstanceModel_ctor wrapper
+0x0012E220,mm_CharPartModel_LoadAsync,120,game,gfx,verified,yes,1,1,"(model, file, indexed) mm_A3DObject_LoadAsync; when done (1) for a model whose nodes keep mesh indexes (`indexed` 0) it stores groupSize (the first node's mesh index / 13)"
+0x0012E2A0,mm_CharPartModel_ctor,40,game,gfx,verified,yes,1,1,"(model) a character part model (0x70 bytes; CHAR.A3D, mm_CityAssets_LoadChars): mm_InstanceModel_ctor, nothing of its own"
 0x0012E2D0,mm_Perf_AdaptDrawRange,152,game,gfx,verified,no,1,1,"once a frame: the second instance limit follows the frame load, dropping by 12 per percent above 95, else rising by 1, within 255..935 (the second count restarts)"
 0x0012E370,mm_Path_PickRoadLink,1092,game,char,verified,no,1,3,"the road link to take from one road block towards another: follows each link through bends, up to 9 blocks, nearest junction wins (was mm_Path_ScanLine)"
 0x0012E7D0,mm_Path_NextWaypoint,1588,game,char,verified,no,2,7,"the person's next waypoint towards its building (inside), every 8th frame (else 0x4000): road entrance, shared links or mm_Path_PickRoadLink on roads, nearest road off them; sets walkTile and previousTile"
 0x0012EE20,mm_Path_TileDistance,176,game,char,verified,no,2,0,the distance between two tiles on the ground plane (VU0)
 0x0012EED0,mm_CharType_Slot18,8,game,char,verified,no,0,0,base slot18: empty
-0x0012EEE0,mm_CharType_Draw2,8,game,char,verified,no,0,0,base drawAt slot: empty
+0x0012EEE0,mm_CharType_DrawAt,8,game,char,verified,no,0,0,"(cls) base drawAt slot (vtable 0x1BCE70 +0x14, kept by the class at 0x1BCE90): empty"
 0x0012EEF0,mm_CharType_Draw,8,game,char,verified,no,0,0,base draw slot: empty
 0x0012EF00,mm_CharType_Update,8,game,char,verified,no,0,0,base update slot: returns 0
 0x0012EF10,mm_CharType_dtor,76,game,char,verified,yes,2,1,base vtable 0x1BCE70; delete when the flag is > 0
 0x0012EF60,mm_CharType_ctor,180,game,char,verified,no,3,0,"base vtable 0x1BCE70; four model parts from the table 0x1F3B90 by record bytes 8/9/10/14, sizes from bytes 11-13, ids from bytes 2/4/0x14"
-0x0012F020,mm_Char2_UpdateSpeedUndrawn,3808,game,char,verified,no,1,4,"a vehicle's speed (speed) for its next step: brakes behind vehicles heading the same way, at junctions against the lights (trafficPhase), gains on straight road; direction 4 tests the tiles around (mm_Char_CheckNeighbourTile)"
+0x0012F020,mm_Vehicle_UpdateSpeedUndrawn,3808,game,char,verified,no,1,4,"a vehicle's speed (speed) for its next step: brakes behind vehicles heading the same way, at junctions against the lights (trafficPhase), gains on straight road; direction 4 tests the tiles around (mm_Char_CheckNeighbourTile)"
 0x0012FF00,mm_Char_CheckNeighbourTile,440,game,char,verified,no,2,2,"whether, on the tile (x, z) or the eight around it, someone with a higher index who is outdoors and whose character class has flag 1 stands within 0.8 of `person`"
-0x001300C0,mm_Char2_UpdateSpeedDrawn,3808,game,char,verified,no,1,4,"mm_Char2_UpdateSpeedUndrawn with gentler rules (brake 80, slow 20, follow at a 20th, gain 10), for a drawn vehicle"
-0x00130FA0,mm_Char2_MoveUndrawn,2300,game,char,verified,no,1,8,"a vehicle not drawn since its last update (person flag 0x1000 clear): on one frame in four steers for the waypoint or, on road, back into its lane (turning up to 0.16), sets the speed (mm_Char2_UpdateSpeedUndrawn), then moves along its heading and leaves the old tile's list"
-0x001318A0,mm_Char2_MoveDrawn,2280,game,char,verified,no,1,8,"a vehicle drawn since its last update (flag 0x1000): the same steering every frame, turning up to 0.04, with mm_Char2_UpdateSpeedDrawn"
-0x00132190,mm_Char2_Draw,612,game,char,verified,no,0,4,"class 2 draw slot: instance of the character on the terrain (height from 0x1415E0), within the draw range (0x1BD980)"
-0x00132400,mm_Char2_Update,1048,game,char,verified,yes,0,10,class 2 update slot: moves the vehicle (mm_Char2_MoveDrawn or mm_Char2_MoveUndrawn by the drawn flag) and updates its tile
-0x00132820,mm_Char2_dtor,96,game,char,verified,yes,0,2,"vtable 0x1BCE90, then the base destructor"
-0x00132880,mm_Char2_ctor,52,game,char,verified,no,1,1,"base constructor, vtable 0x1BCE90"
-0x001328C0,mm_CharType_LoadAll,416,game,char,verified,yes,1,11,"loads DATA\BIN\CHARTYPE.BIN and creates one class object per 0x18-byte record (class 0 base, 1 person, 2 class 2) in the table at gp 0x1BDA3C"
+0x001300C0,mm_Vehicle_UpdateSpeedDrawn,3808,game,char,verified,no,1,4,"mm_Vehicle_UpdateSpeedUndrawn with gentler rules (brake 80, slow 20, follow at a 20th, gain 10), for a drawn vehicle"
+0x00130FA0,mm_Vehicle_MoveUndrawn,2300,game,char,verified,no,1,8,"a vehicle not drawn since its last update (person flag 0x1000 clear): on one frame in four steers for the waypoint or, on road, back into its lane (turning up to 0.16), sets the speed (mm_Vehicle_UpdateSpeedUndrawn), then moves along its heading and leaves the old tile's list"
+0x001318A0,mm_Vehicle_MoveDrawn,2280,game,char,verified,no,1,8,"a vehicle drawn since its last update (flag 0x1000): the same steering every frame, turning up to 0.04, with mm_Vehicle_UpdateSpeedDrawn"
+0x00132190,mm_Vehicle_Draw,612,game,char,verified,no,0,4,"(cls, city, person, colour, flags, place) the vehicle class's draw slot: an instance of the vehicle on the terrain (height from mm_Map_SampleHeight), within the draw range (0x1BD980)"
+0x00132400,mm_Vehicle_Update,1048,game,char,verified,yes,0,10,"(cls, city, vehicle, timeFlags) the vehicle class's update slot: moves the vehicle (mm_Vehicle_MoveDrawn or mm_Vehicle_MoveUndrawn by the drawn flag) and updates its tile"
+0x00132820,mm_Vehicle_dtor,96,game,char,verified,yes,0,2,"vtable 0x1BCE90, then the base destructor"
+0x00132880,mm_Vehicle_ctor,52,game,char,verified,no,1,1,"(cls, record) the vehicle class (CHARTYPE.BIN records of kind 2, 0x24 bytes; mm_CharType_LoadAll): the base constructor, then vtable 0x1BCE90"
+0x001328C0,mm_CharType_LoadAll,416,game,char,verified,yes,1,11,"loads DATA\BIN\CHARTYPE.BIN and creates one class object per 0x18-byte record (kind 0 base, 1 people, 2 vehicles) in the table at gp 0x1BDA3C"
 0x00132A70,mm_Person_CheckBuilding,244,game,char,verified,yes,1,2,"a person inside a building (not 0x3F80) is checked against the schedule: nothing happens for a person with flag 0x20 or 4, or with flag 0x200 while the city's clock is below 0xC4E0, or whose activity is the building's one"
 0x00132B70,mm_Person_TickCounters,300,game,char,verified,no,1,4,"the talk status tick (status), the cooldown countdown, and with city flag 4 the family a resident introduces (introduces) phones to ask about moving in (up to 4 calls)"
 0x00132CA0,mm_Person_ProbeTile,248,game,char,verified,no,1,2,whether someone with a higher index stands within 0.25 of `person` on the tile it would step onto. The list is walked in index order: the first lower or equal index ends the search
 0x00132DA0,mm_Person_Walk,3528,game,char,verified,no,1,10,"a person's walk each frame: aims at the building on its waypoint (or the followed person), keeps to a pavement lane on road, steps aside when the tile ahead is taken, turns and steps at its class's walking speed"
 0x00133B70,mm_Person_UpdatePose,780,game,char,verified,no,1,5,"on every 8th frame (by the person's index), turns the person towards the middle of the building on the tile it walks to and moves it one step along its facing (VU0, the matrix times the step vector): the class's walking speed plus (index & 3) / 2000, times 8, doubled while running (flag 0x80). A person that left `tile` is unlinked from it, unless flag 0x800 holds it there"
-0x00133E80,mm_Person_Draw2,700,game,char,verified,yes,0,9,"the same with a pose already chosen: the class's part and the schedule byte are those of the person, or (with none) of the family and member given: the member's look (FamilyMember look) when set, else by the family's parity as above. The pose of the talk session for the family and member is fetched into a local (claim state first for a person)"
+0x00133E80,mm_Person_DrawAt,700,game,char,verified,yes,0,9,"(cls, city, person, family, member, matrix, colour, mesh, phase) people's drawAt slot (vtable 0x1BCEB0 +0x14), at a given matrix in the talk views: as mm_Person_Draw with a pose already chosen; the class's part and the schedule byte are those of the person, or (with none) of the family and member given: the member's look (FamilyMember look) when set, else by the family's parity (as in mm_Person_Draw). The pose of the talk session for the family and member is fetched into a local (claim state first for a person)"
 0x00134140,mm_CharType_TickSlots,92,game,char,verified,no,1,0,counts down the 25 character type slot timers (0x1C5310) and frees a slot (0x1C5110 = 6000) when its timer reaches 0
 0x001341A0,mm_CharType_ClearSlots,184,game,char,verified,no,1,0,frees all 25 character type slots (0x1C5110 = 6000) and clears their timers (0x1C5310)
 0x00134260,mm_Person_TurnToPlayer,896,game,char,verified,no,1,2,"turns a person's model part (nodes 0 and 3) to face the player, blended 9:1 with the direction kept in its slot (0x1C5110/0x1C5180/0x1C5310) (was mm_Person_BuildPose)"
@@ -1345,16 +1345,16 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00163A20,mm_BldgType_IsOpenAt,184,game,city,verified,no,1,0,"(btype, city, obj) open between openMinute and closeMinute (minutes of the day, `obj` shifts the time); closed in holiday months (city flag 2) for types with flag 0x2000"
 0x00163AE0,mm_Clock_AddWrap,52,game,city,verified,no,8,0,"(unused_a0, time, offset) time + (offset mod 3600), wrapped at 86400 (seconds per day)"
 0x00163B20,mm_BldgType_IsMyHome,32,game,city,verified,no,1,0,"type kind in 5..8, the My Home types"
-0x00163B40,mm_BldgType_DrawOccupants,256,game,city,verified,indirect,2,1,"(btype, city, obj, person, mode) one person in a building's crowd: the colour of BldgType_DrawOccupant at the person's own position and heading, in pose 6 (flag 0x40), 1 (flag 0x80) or 0"
-0x00163C40,mm_BldgType_OccupantMatrix,292,game,city,verified,no,1,0,"the shade of a person drawn at a building: 2.5 - min(max(d, 0), 1.5) in every lane, d being the horizontal distance from the footprint's centre to `position`; the last word then becomes the integer 12"
-0x00163D70,mm_BldgType_DrawOccupant,400,game,city,verified,no,5,3,"a building occupant's colour: set by the occupant slot of the first lit object (flag 0x10) on the person's tile or on the four tiles beside the block (north, east, south, west); otherwise untinted with w 0"
+0x00163B40,mm_BldgType_DrawPerson,256,game,city,verified,indirect,2,1,"(btype, city, obj, person, mode) one person at a building (on a field or road, the ones those do not place): its colour from mm_BldgType_PersonLight, then its character class's draw slot at its own position and heading, in pose 6 (flag 0x40), 1 (flag 0x80) or 0"
+0x00163C40,mm_BldgType_LightAt,292,game,city,verified,no,1,0,"(btype, colour, position, tile) the light a lit object at `tile` gives at `position`: 2.5 - min(max(d, 0), 1.5) in x, y and z, d being the horizontal distance from the footprint's centre; the last word then becomes the integer 12 (colour table entry 12, lit)"
+0x00163D70,mm_BldgType_PersonLight,400,game,city,verified,no,5,3,"(btype, colour, person, city) the colour of a person (or of the player, whose position passes for one): the light (mm_BldgType_LightAt, called directly) of the first lit object (flag 0x10: street lamps, open businesses after dark) on its tile or on the four tiles beside the block (north, east, south, west); otherwise untinted with w 0"
 0x00163F00,mm_BldgType_FindEntrance,344,game,city,verified,no,2,2,"the walkable tile next to a building's footprint (size tiles from (x, z)), trying the four sides at distance 0, then 1 and 2 blocks out. Returns its object's tile and the side, or 0x4000 and side 0"
 0x00164060,mm_BldgType_RayHit,8,game,city,verified,no,0,0,base rayHit slot: no hit (0)
 0x00164070,mm_BldgType_FloorBelow,8,game,city,verified,no,0,0,base floorBelow slot
 0x00164080,mm_BldgType_NearestHit,8,game,city,verified,no,0,0,base nearestHit slot
 0x00164090,mm_BldgType_GroundTexture,8,game,city,verified,no,0,0,base groundTexture slot: the type's own ground texture (groundTexture)
 0x001640A0,mm_BldgType_AcceptsOn,8,game,city,verified,no,0,0,base acceptsOn slot: any type can be placed on an object (1)
-0x001640B0,mm_BldgType_DrawOccupants2,356,game,city,verified,indirect,1,1,"(btype, facing, city, obj, part, mode, people) the people inside a building: each one's colour (BldgType_DrawOccupant), then its character class's draw slot at its position and heading, in pose 6 (flag 0x40), 1 (running, 0x80) or 0"
+0x001640B0,mm_BldgType_DrawPeople,356,game,city,verified,indirect,1,1,"(btype, facing, city, obj, part, mode, people) base drawPeople slot (vtable 0x1BD000 +0x18): the people on the object's list, each with its colour (mm_BldgType_PersonLight), then its character class's draw slot at its position and heading, in pose 6 (flag 0x40), 1 (running, 0x80) or 0"
 0x00164220,mm_BldgType_Draw,8,game,city,verified,no,0,0,base draw slot
 0x00164230,mm_BldgType_Tick,8,game,city,verified,no,0,0,base tick slot
 0x00164240,mm_BldgType_InitRecord,8,game,city,verified,no,0,0,base initRecord slot
@@ -1404,7 +1404,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00167930,mm_Bldg_RayHit,8,game,city,verified,no,0,0,the building class's rayHit slot: always a hit (1)
 0x00167940,mm_Bldg_FloorBelow,64,game,city,verified,no,0,1,"(btype, obj, point, matrix, hit, lift) floorBelow slot: mm_Collide_MeshFloorBelow with the object's collision mesh (the built one, or the stage's by variant >> 3)"
 0x00167980,mm_Bldg_NearestHit,64,game,city,verified,no,0,1,"(btype, obj, point, matrix, hit, distance, range) nearestHit slot: mm_Collide_MeshNearestHit with the object's collision mesh (the built one, or the stage's by variant >> 3)"
-0x001679C0,mm_BldgType_FindEntrance2,368,game,city,verified,no,1,2,"(btype, city, x, z, side) whether a building of type flag 8 stands on the blocks beyond `side` of the footprint at (`x`, `z`), up to two blocks out; a walkable tile in between ends the search"
+0x001679C0,mm_BldgType_BuildingBeyondSide,368,game,city,verified,no,1,2,"(btype, city, x, z, side) whether a building where families move in (type flag 8: offices, businesses, ports, housing) stands beyond `side` of the footprint at (`x`, `z`): the tile next to that side, then one and two blocks out; a walkable tile first ends the search with 0. mm_Bldg_Tick keeps the side mm_BldgType_FindEntrance found only for an entrance type (flag 0x20) with no such building beyond it"
 0x00167B40,mm_Bldg_DrawPeople,1452,game,city,verified,indirect,0,1,"(btype, facing, city, obj, part, mode, people, x, y, z) the people at a built building of type flag 0x800, in four groups (residents living here, other residents, its vehicles, other vehicles) at the type's people spots for its facing, in pose 4"
 0x00168100,mm_BldgBusiness_Draw,532,game,city,verified,no,0,3,"(btype, facing, city, obj, part, mode, x, y, z) businesses and My Home: the claim icon tint while the city shows claims, lit after dark while open, the plain part while being built, the built mesh once built (the next mesh while closed, type flag 0x1000)"
 0x00168320,mm_Bldg_Tick,1204,game,city,verified,no,4,11,tick slot: the main part finds its entrance tile and side (road-grid parity) and levels the ground under the footprint (0.1 / multiples of 0.5); a built part runs the claims (the result) and drops the newly built flag between 6:00 and 7:00; a part being built counts its work from 7:00 to 18:59 and at 24 is built (flags 0x120); minimap colour by claim level
@@ -1439,7 +1439,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0016A9A0,mm_BldgPigFarm_ctor,64,game,city,verified,yes,1,1,"Building constructor, vtable 0x1BD300"
 0x0016A9E0,mm_BldgRoad_dtor,96,game,city,verified,yes,0,2,"category 3 (road), vtable 0x1BD340"
 0x0016AA40,mm_BldgRoad_FindNeighbours,296,game,city,verified,no,1,2,"a road piece's links (one tile per direction, 0x4000 = none): for each direction its shape opens to (bit d), the first road block along it that is not straight road"
-0x0016AB70,mm_BldgRoad_DrawPeople,908,game,city,verified,indirect,0,5,"(btype, facing, city, obj, part, mode, people, x, y, z) a road: with the city flag 8 off its people are drawn as in a building (BldgType_DrawOccupants2); with it on, the residents that are neither class flag 1 nor person flag 0x100 are gathered by person index (up to four are drawn) and placed on the road by its shape (the corner table at 0x1B1670, 4 slots a shape) in pose 8, each at its ground height facing the table's way"
+0x0016AB70,mm_BldgRoad_DrawPeople,908,game,city,verified,indirect,0,5,"(btype, facing, city, obj, part, mode, people, x, y, z) a road: with the city flag 8 off its people are drawn as in a building (BldgType_DrawPeople); with it on, the residents that are neither class flag 1 nor person flag 0x100 are gathered by person index (up to four are drawn) and placed on the road by its shape (the corner table at 0x1B1670, 4 slots a shape) in pose 8, each at its ground height facing the table's way"
 0x0016AF10,mm_BldgRoad_Draw,688,game,city,verified,no,0,1,"(btype, facing, city, obj, part, mode, x, y, z) a road piece under the facing 0 matrix, its street lamps lit after dark and its traffic lights by the city's light phase"
 0x0016B1C0,mm_BldgRoad_Tick,1164,game,city,verified,no,0,7,"road shape from neighbouring road blocks, fills its tiles up to ground level 0 when any is lowered, picks the lamp, traffic-light or slope mesh, marks the minimap"
 0x0016B650,mm_BldgRoad_InitRecord,24,game,city,verified,no,0,0,initRecord slot
@@ -1622,7 +1622,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00178B40,mm_Talk_Opened,104,game,talk,verified,indirect,0,0,state 2: waits for the conversation to open
 0x00178BB0,mm_Talk_Opening,168,game,talk,verified,yes,0,1,"state 1: when the view is active, starts the conversation or choosing"
 0x00178C60,mm_Talk_Update,228,game,talk,verified,yes,0,2,"updates view and conversation, then the state machine"
-0x00178D50,mm_Talk_Start,1332,game,talk,verified,yes,1,17,"(talk, byFamily, target, member, arg5, city) target building `target`/person `member` or family `target`/member `member`; picks the view class (near/far, home, person) and the conversation"
+0x00178D50,mm_Talk_Start,1332,game,talk,verified,yes,1,17,"(talk, byFamily, target, member, origin, city) target building `target`/person `member` or family `target`/member `member`; picks the view class (near/far, home, person) and the conversation; `origin`: how the talk began (0 the cursor, 1 the town pages, 2 an event actor at a person, 3 a phone call)"
 0x00179290,mm_Talk_Draw,96,game,talk,verified,indirect,0,0,draws view and conversation
 0x001792F0,mm_Talk_dtor,180,game,talk,verified,yes,0,2,vtable 0x1BD770
 0x001793B0,mm_Talk_ctor,68,game,talk,verified,no,1,1,vtable 0x1BD770
@@ -1650,7 +1650,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0017AF20,mm_TalkConv_Opening,80,game,talk,verified,yes,0,1,"Step(0.1), then active and the first line"
 0x0017AF70,mm_TalkConv_Update,388,game,talk,verified,yes,0,8,"name entry results, menu choices back into the script, message window update"
 0x0017B100,mm_TalkConv_NextLine,456,game,talk,verified,yes,3,6,next script line; the end code (-6007) applies the friendship gain
-0x0017B2D0,mm_TalkConv_Start,380,game,talk,verified,yes,2,6,"(conv, byFamily, target, buildingOrMember, slot, arg5) loads the script for a person (`byFamily` 0) or family member (`byFamily` 1), shows the card, sets the message"
+0x0017B2D0,mm_TalkConv_Start,380,game,talk,verified,yes,2,6,"(conv, byFamily, target, buildingOrMember, slot, origin) loads the script for a person (`byFamily` 0) or family member (`byFamily` 1), shows the card, sets the message; `origin`: how the talk began (0 the cursor, 1 the town pages, 2 an event actor at a person, 3 a phone call)"
 0x0017B450,mm_TalkConv_dtor,260,game,talk,verified,yes,0,2,"vtable 0x1BD860, deletes menu, name entry, card, money panel"
 0x0017B560,mm_TalkConv_ctor,152,game,talk,verified,yes,1,4,message window plus a menu window and the person card
 0x0017B600,mm_WordsFn_FocusPadAfterTalk,20,game,talk,verified,no,0,0,"#146 act: city flag 0x40, the pad focus returns when the talk ends"
@@ -1703,8 +1703,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0017C760,mm_WordsFn_TextFamilyRecord,60,game,talk,verified,yes,0,1,"#99 text: the family record of the building's family (arg 1), of family A (arg 0), or of the result family"
 0x0017C7A0,mm_WordsFn_TextOccupation,144,game,talk,verified,yes,0,2,#98 text: the member's post at their home's building type (STRTYPE POSTNAME)
 0x0017C830,mm_WordsFn_TextBuildingName,104,game,talk,verified,no,0,1,#97 text: building type name
-0x0017C8A0,mm_WordsFn_TextMemberName2,120,game,talk,verified,yes,0,1,#96 text: the second name (name2) of the member the argument picks
-0x0017C920,mm_WordsFn_TextMemberName,120,game,talk,verified,yes,0,1,"#95 text: member name of A, B or the result family"
+0x0017C8A0,mm_WordsFn_TextMemberGivenName,120,game,talk,verified,yes,0,1,"#96 text: the given name of the member the argument picks (member A, member B, or the result family's first)"
+0x0017C920,mm_WordsFn_TextMemberSurname,120,game,talk,verified,yes,0,1,"#95 text: the surname of the member the argument picks (member A, member B, or the result family's first)"
 0x0017C9A0,mm_WordsFn_TextNameSlot,24,game,talk,verified,no,0,0,#94 text: name slot arg
 0x0017C9C0,mm_WordsFn_TalkEventAnswer,120,game,talk,verified,no,0,1,#93 act: the answer slot of the talk event (talks[0]) with person A and arg
 0x0017CA40,mm_WordsFn_EventSetActor,324,game,talk,verified,no,0,1,"#92 cond: sets the talk event's actor arg to the subjects, marks the building"
@@ -1746,9 +1746,9 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0017E9E0,mm_WordsFn_PersonFlagBit,32,game,talk,verified,no,0,0,#59 cond: person flags bit arg
 0x0017EA00,mm_WordsFn_ScheduleState,344,game,talk,verified,yes,0,1,"#58 cond: the person's schedule state, folded by arg (0..5)"
 0x0017EB60,mm_WordsFn_HomeIsPoliceStation,92,game,talk,verified,no,0,1,#57 cond: whether family A's home is a police station (type 0x104 or 0x105); always 0 with an argument
-0x0017EBC0,mm_WordsFn_Arg4,8,game,talk,verified,no,0,0,#56 cond: context +4
+0x0017EBC0,mm_WordsFn_TalkOrigin,8,game,talk,verified,no,0,0,"#56 cond: how the talk began (WordsCtx origin: 0 the cursor, 1 the town pages, 2 an event actor at a person, 3 a phone call)"
 0x0017EBD0,mm_WordsFn_MemberLook,68,game,talk,verified,yes,0,1,#55 cond: member A's look (FamilyMember look)
-0x0017EC20,mm_WordsFn_MemberByte2A,68,game,talk,verified,yes,0,1,#54 cond: member A's byte unk_06 (FamilyMember +6); 0 in every FAMILY.BIN record
+0x0017EC20,mm_WordsFn_MemberUnk06,68,game,talk,verified,yes,0,1,"#54 cond: member A's byte unk_06 (FamilyMember +6): 0 for every member in FAMILY.BIN and never written, so the answer is always 0"
 0x0017EC70,mm_WordsFn_MemberCharType,104,game,talk,verified,yes,0,1,"#53 cond: member character type, folded (0x26 -> 13, others above 0x1D -> 0)"
 0x0017ECE0,mm_WordsFn_IsSpecialFamily,120,game,talk,verified,no,0,0,"#52 cond: whether family A is the first family of the Noodle Shop (argument 0), of the Studio Appartment of type 0xB8 (1) or of the Police Station of type 0x105 (2): the families the noodles and thief events bring in"
 0x0017ED60,mm_WordsFn_IsApplicant,16,game,talk,verified,no,0,1,#51 cond: the family is on the applicant list
@@ -1815,8 +1815,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00180260,mm_Words_SetArg,12,game,talk,verified,no,3,0,"(words, arg) the context's arg = `arg`"
 0x00180270,mm_Words_GetFriendshipChanged,12,game,talk,verified,no,1,0,the context's friendshipChanged (set by #116/#117)
 0x00180280,mm_Words_GetCancelAllowed,12,game,talk,verified,no,1,0,the context's cancelAllowed
-0x00180290,mm_Words_SetFamily,248,game,talk,verified,yes,2,1,"(words, family, member, arg4, city) subject A = family `family` member `member` (prefetches the family), clears the rest"
-0x00180390,mm_Words_SetPerson,256,game,talk,verified,yes,1,2,"(words, person, arg4, city) subject A = person `person` with home building, clears the rest"
+0x00180290,mm_Words_SetFamily,248,game,talk,verified,yes,2,1,"(words, family, member, origin, city) subject A = family `family` member `member` (prefetches the family), clears the rest; `origin`: how the talk began (0 the cursor, 1 the town pages, 2 an event actor at a person, 3 a phone call)"
+0x00180390,mm_Words_SetPerson,256,game,talk,verified,yes,1,2,"(words, person, origin, city) subject A = person `person` with home building, clears the rest; `origin`: how the talk began (0 the cursor, 1 the town pages, 2 an event actor at a person, 3 a phone call)"
 0x00180490,mm_Words_dtor,84,game,talk,verified,yes,0,1,frees the 0x140-byte context
 0x001804F0,mm_Words_ctor,48,game,talk,verified,yes,1,1,allocates the 0x140-byte context
 0x00180520,mm_CityScene_GetFade,8,game,city,verified,no,21,0,"fade counter (fade), 0 when no fade runs"
@@ -1838,7 +1838,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001815B0,mm_CityScene_AddApproval,16,game,city,verified,no,2,0,"(city, delta) pending approval change (pendingApproval) += `delta`"
 0x001815C0,mm_CityScene_TalkEndChoosing,8,game,city,verified,no,1,1,tail call mm_Talk_EndChoosing(city->talk); pair of mm_CityScene_TalkSelectPerson
 0x001815D0,mm_CityScene_TalkSelectPerson,8,game,city,verified,no,2,1,"(city, family, member) talk view choice = slot of family `family` member `member`"
-0x001815E0,mm_CityScene_StartTalk,128,game,city,verified,yes,6,1,"mm_Talk_Start, then pushes mode 5 and hides the HUD"
+0x001815E0,mm_CityScene_StartTalk,128,game,city,verified,yes,6,1,"(city, byFamily, target, member, origin) mm_Talk_Start, then pushes mode 5 and hides the HUD; `origin`: how the talk began (0 the cursor, 1 the town pages, 2 an event actor at a person, 3 a phone call; the town pages pass 3 for a family without a home while stage flag 2 is set)"
 0x00181660,mm_CityScene_UpdateApproval,204,game,city,verified,yes,1,1,every 6 frames moves the approval rate one step toward the pending change
 0x00181730,mm_CityScene_TickClock,724,game,city,verified,no,1,3,"clock, approval drift and events, new day: month, weather, map daily update"
 0x00181A10,mm_CityScene_Update,2600,game,city,verified,yes,1,58,"city frame by mode: camera, cursor, player, menus, windows, events, drawing"
@@ -1944,9 +1944,9 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00188EE0,mm_Se_RequestTileSounds,468,game,sound,ported,no,1,4,"the vehicles on map tile (x, z) unless its object already has a request: engine 0x18 pitched by speed; the horn 0x1A at one-in-four while still allowed; returns what is left of the horn flag"
 0x001890C0,mm_Se_PickTerrainAmbience,508,game,sound,verified,no,1,3,"ambient sound id for a position: above the city's water level picks 0x1C/0x1D, else from the 5-byte table at 0x1B35F0 through mm_Se_MatchSchedule"
 0x001892D0,mm_Se_MatchSchedule,912,game,sound,verified,no,1,0,1 when the current month (monthCount mod 12) and hour/minute (0x1BDD34) fall inside the given month and time ranges
-0x00189660,mm_Se_Request,1244,game,sound,verified,no,7,2,"(owner, group, sound, param0A, param18, pitch, note, param19, angle, distance) adds a sound request (position, sound id, priority, volume, pitch, note) to the request list at 0x1F8710 (count at gp 0x1BDD08); ids look up the 16-byte sound table 0x1B2EE0"
+0x00189660,mm_Se_Request,1244,game,sound,verified,no,7,2,"(owner, group, sound, updateOnly, cooldown, pitch, note, hold, angle, distance) adds a sound request (position, sound id, priority, volume, pitch, note) to the request list at 0x1F8710 (count at gp 0x1BDD08); ids look up the 16-byte sound table 0x1B2EE0"
 0x00189B40,mm_Se_StopOwner,260,game,sound,verified,no,1,2,"(owner) stops every effect voice (16 at 0x1F8140, 15 at 0x1F8440, 0x30 bytes each) and request owned by `owner`"
-0x00189C50,mm_Se_RequestForObject,1876,game,sound,verified,no,2,3,requests the sounds of a moving or placed object by its type and distance to the listener
+0x00189C50,mm_Se_RequestForObject,1876,game,sound,verified,no,2,3,"(object, group, sound, pitch, clampFar, cooldown) requests the sounds of a moving or placed object by its type and distance to the listener; `cooldown` goes to the requests (mm_Se_Request)"
 0x0018A3B0,mm_Sound_PlaySe,148,game,sound,verified,no,31,1,"(sound, pitch, note, angle, distance) plays sound id sound & 0xFF through mm_Se_Request (note 60, 0x3C, plays it as recorded); ids flagged 0x10 in the 16-byte table 0x1B2EE0 get a rotating owner id (0x1BDCFC, wraps at 255)"
 0x0018A450,mm_Se_PlayMessageSound,1456,game,sound,verified,no,1,1,"(code) message window sound for code `code` (0x14, 0x0A, ...), several fixed sound ids"
 0x0018AA00,mm_Se_PlayVariant,1148,game,sound,verified,no,2,2,"plays one of seven effects (0x29, 0x2A, 0x2B, 0x2D with a random pitch 0..199 from mm_Random_TimerMix; 0x3E, 0x2C, 0x2E)"
@@ -2212,8 +2212,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001A29C0,mm_Words_FriendshipChanged,8,game,talk,verified,no,1,1,the global context's friendshipChanged
 0x001A29D0,mm_Words_CancelAllowed,8,game,talk,verified,no,1,1,the global context's cancelAllowed
 0x001A29E0,mm_Words_LoadForWants,596,game,talk,verified,yes,1,7,"script for a wants window line (event or default), reads its block"
-0x001A2C40,mm_Words_LoadForFamily,424,game,talk,ported,yes,1,6,"(family, member, arg5, city) the script of family `family` member `member` (a talk by phone): the subject set, the -2005 menu's entries hidden by age and friendship, the member's block read, the event words loaded; returns the block's cache slot"
-0x001A2DF0,mm_Words_LoadForPerson,604,game,talk,verified,yes,1,7,"(person, arg5, city) the script of person `person`: its character type's block, the event words of the event it starts (when `arg5` is 0) or the city's, the menus marked; returns the block's cache slot"
+0x001A2C40,mm_Words_LoadForFamily,424,game,talk,ported,yes,1,6,"(family, member, origin, city) the script of family `family` member `member` (a talk by phone): the subject set, the -2005 menu's entries hidden by age and friendship, the member's block read, the event words loaded; returns the block's cache slot"
+0x001A2DF0,mm_Words_LoadForPerson,604,game,talk,verified,yes,1,7,"(person, origin, city) the script of person `person`: its character type's block, the event words of the event it starts (when `origin` is 0: the player walked up) or the city's, the menus marked; returns the block's cache slot"
 0x001A3050,mm_Words_ReadBlock,336,game,talk,verified,yes,3,3,"(block) finds a script block in the cache of eight (most recently used first), reading it from WORDS.BIN into the last entry when it is not there; returns the first slot's word"
 0x001A31A0,mm_WordsBlock_ctor,172,game,talk,verified,yes,1,5,"(entry) a script block cache entry (WordsBlock): block 0 and a buffer of one block; the first one made opens WORDS.BIN and WORDSEVE.BIN, and each is counted"
 0x001A3250,mm_Words_Init,744,game,talk,verified,yes,1,9,"loads the WORDS, WORDSEVE, WORDSCOM and WORDSTEN tables at game start"

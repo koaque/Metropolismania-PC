@@ -1548,7 +1548,8 @@ namespace mm
         const int friendship = sdk::fptosi(card->friendship);
         const uint32_t tier = friendship <= 0 ? 0u : (friendship < 0x18 ? 1u : (friendship < 0x30 ? 2u : (friendship < 100 ? 3u : 4u)));
         Text_FormatPadded(GuestPtr<char>{number}, member->age, 2);
-        sdk::sprintf(line, 0x001B9048u, GuestPtr<char>::of(member->name2[0]).address, GuestPtr<char>::of(member->name[0]).address, number);
+        sdk::sprintf(line, 0x001B9048u, GuestPtr<char>::of(member->givenName[0]).address,
+                     GuestPtr<char>::of(member->surname[0]).address, number);
         TextBox_SetText(card->upperText, GuestPtr<char>{line}, 0);
         sdk::sprintf(line, 0x001B9058u, port::load<uint32_t>(0x001B1B10u + 4u * tier));
         const uint32_t table = port::load<uint32_t>(0x001F3CE8u);
@@ -1765,7 +1766,7 @@ namespace mm
         if (talk->building == 0x3F80)
         {
             talk->member = port::load<int32_t>(choiceAt);
-            TalkConv_Start(GuestPtr<TalkConv>{talk->conversation.address}, 1, talk->family, talk->member, talk->slot, talk->arg5);
+            TalkConv_Start(GuestPtr<TalkConv>{talk->conversation.address}, 1, talk->family, talk->member, talk->slot, talk->origin);
         }
         else
         {
@@ -1773,7 +1774,8 @@ namespace mm
             const GuestPtr<MapPerson> person = talk->city->map->people + talk->person;
             talk->family = person->family;
             talk->member = person->member;
-            TalkConv_Start(GuestPtr<TalkConv>{talk->conversation.address}, 0, talk->person, talk->building, talk->slot, talk->arg5);
+            TalkConv_Start(GuestPtr<TalkConv>{talk->conversation.address}, 0, talk->person, talk->building, talk->slot,
+                           talk->origin);
         }
         talk->view->scrollMode = 3;
         talk->base.state = 2;
@@ -1781,24 +1783,26 @@ namespace mm
 
     PORT_FN(Talk_ChooseInput);
 
-    // Starts the conversation window on a person (`byFamily` 0: `target` is the person, `buildingOrMember` the building they are at)
-    // or on a family member (`byFamily` 1: the family and the member). The script text is loaded (mm_Words_LoadForPerson or
-    // mm_Words_LoadForFamily) and kept in script, the business card is shown for the speaker, the window's own record of the
-    // speaker is kept (person, with peopleInside set when the building has people inside; family and member for a member, with
-    // peopleInside 1), and the message `slot` is set with the speaker's character class sound.
-    void TalkConv_Start(GuestPtr<TalkConv> conv, int byFamily, int target, int buildingOrMember, int slot, int arg5)
+    // Starts the conversation window on a person (`byFamily` 0: `target` is the person, `buildingOrMember` the building
+    // they are at) or on a family member (`byFamily` 1: the family and the member). The script text is loaded
+    // (mm_Words_LoadForPerson or mm_Words_LoadForFamily) and kept in script, the business card is shown for the
+    // speaker, the window's own record of the speaker is kept (person, with peopleInside set when the building has
+    // people inside; family and member for a member, with peopleInside 1), and the message `slot` is set with the
+    // speaker's character class sound. `origin` is how the talk began (0 the cursor, 1 the town pages, 2 an event actor
+    // at a person, 3 a phone call).
+    void TalkConv_Start(GuestPtr<TalkConv> conv, int byFamily, int target, int buildingOrMember, int slot, int origin)
     {
         const uint32_t c = conv.address;
         conv->ended = 0;
         conv->typedAnswer = 0;
         conv->byFamily = byFamily;
-        conv->arg5 = arg5;
+        conv->origin = origin;
         const GuestPtr<CityScene> city{conv->city.address};
         uint32_t charType;
         if (byFamily == 0)
         {
             const GuestPtr<MapPerson> person = city->map->people + target;
-            conv->script = Words_LoadForPerson(person, arg5, city);
+            conv->script = Words_LoadForPerson(person, origin, city);
             conv->person = target;
             const GuestPtr<MapObject> where = Map_GetRecord(conv->city->map, buildingOrMember);
             conv->peopleInside = (globals::buildingType(where->type)->flags & 0x40u) != 0 ? 1 : 0;
@@ -1807,7 +1811,7 @@ namespace mm
         }
         else
         {
-            conv->script = Words_LoadForFamily(target, buildingOrMember, arg5, conv->city);
+            conv->script = Words_LoadForFamily(target, buildingOrMember, origin, conv->city);
             TalkCard_Show(conv->card, 6000, target, buildingOrMember, slot);
             charType = (GuestPtr<FamilyMember>::of(Family_Get(target, 0)->members[0]) + buildingOrMember)->charType;
             conv->family = target;
@@ -1871,10 +1875,12 @@ namespace mm
 
     PORT_FN(TalkConv_Update);
 
-    // Reads the next piece of the script into the message window's buffer (text) and acts on what the script returned (code): at
-    // the end of a conversation (-0x1777) the speaker's friendship goes up once (by the speaker's class bits 21 to 23 plus 4,
-    // and not when the speaker is asleep, activity 5) and the end flag (ended) is set; a menu with no choice (-0x7D5) sets
-    // the end flag too and -0x7D1 sets the typed answer flag (typedAnswer). The text is then shown (mm_MsgWin_NextLine).
+    // Reads the next piece of the script into the message window's buffer (text) and acts on what the script returned
+    // (code): at the end of a conversation (-0x1777) the speaker's friendship goes up once (by the speaker's class bits
+    // 21 to 23 plus 4; not for a person asleep, activity 5, in a building with people inside unless the talk came from
+    // an event actor or a call, origin 2 or 3, nor for a family member whose schedule says asleep unless phoned, origin
+    // 3) and the end flag (ended) is set; a menu with no choice (-0x7D5) sets the end flag too and -0x7D1 sets the
+    // typed answer flag (typedAnswer). The text is then shown (mm_MsgWin_NextLine).
     void TalkConv_NextLine(GuestPtr<TalkConv> conv)
     {
         const uint32_t c = conv.address;
@@ -1887,7 +1893,7 @@ namespace mm
             if (conv->typedAnswer == 0)
             {
                 const GuestPtr<CityScene> city{conv->city.address};
-                const int32_t arg5 = conv->arg5;
+                const int32_t origin = conv->origin;
                 const auto points = [](uint32_t charType) {
                     const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * charType)};
                     return static_cast<int>((cls->traits & 0xE00000u) >> 21) + 4;
@@ -1895,7 +1901,7 @@ namespace mm
                 if (conv->byFamily == 0)
                 {
                     const GuestPtr<MapPerson> person = city->map->people + conv->person;
-                    const bool asleep = arg5 != 2 && arg5 != 3 && conv->peopleInside != 0 && person->activity == 5;
+                    const bool asleep = origin != 2 && origin != 3 && conv->peopleInside != 0 && person->activity == 5;
                     if (!asleep)
                         TalkStatus_AddFriendshipAfterBreak(person->family, person->member, GuestPtr<uint8_t>::of(person->status), points(person->charType),
                                              GuestPtr<uint32_t>{port::guest(&city->approval)});
@@ -1903,10 +1909,11 @@ namespace mm
                 else
                 {
                     const int family = conv->family, member = conv->member;
-                    if (arg5 == 3 || Schedule_MemberActivity(city, static_cast<uint32_t>(family), member) != 5)
+                    if (origin == 3 || Schedule_MemberActivity(city, static_cast<uint32_t>(family), member) != 5)
                     {
-                        const uint32_t record = Family_Get(family, 0).address;
-                        MemberStatus_AddFriendshipAfterBreak(family, member, points((GuestPtr<FamilyMember>{record + 0x24u} + member)->charType),
+                        const GuestPtr<Family> record = Family_Get(family, 0);
+                        const GuestPtr<FamilyMember> who = GuestPtr<FamilyMember>::of(record->members[0]) + member;
+                        MemberStatus_AddFriendshipAfterBreak(family, member, points(who->charType),
                                                static_cast<int>(port::guest(&city->approval)));
                     }
                 }
@@ -1956,11 +1963,12 @@ namespace mm
 
     PORT_FN(TalkView_DrawMember);
 
-    // The conversation window closing: once its close call (the step slot, by 0.1) is done the money panel (panel)
-    // is deleted and the state goes back to 0. The speaker's friendship status then moves on, unless the speaker was asleep (activity 5
-    // for a person; the schedule says 5 for a member of a family): when the conversation ended well (the end flag, ended, or a
-    // change the script made) the status byte advances (mm_TalkStatus_RecordTalk or mm_MemberStatus_RecordTalk), otherwise a status level
-    // of 14 or more drops back to 13.
+    // The conversation window closing: once its close call (the step slot, by 0.1) is done the money panel (panel) is
+    // deleted and the state goes back to 0. The speaker's friendship status then moves on, unless the speaker was
+    // asleep (as in mm_TalkConv_NextLine: activity 5 for a person in a building with people inside, origin 0 or 1; the
+    // schedule says 5 for a member of a family not phoned): when the conversation ended well (the end flag, ended, or a
+    // change the script made) the status byte advances (mm_TalkStatus_RecordTalk or mm_MemberStatus_RecordTalk),
+    // otherwise a status level of 14 or more drops back to 13.
     void TalkConv_Closing(GuestPtr<TalkConv> conv)
     {
         const uint32_t c = conv.address;
@@ -1968,7 +1976,7 @@ namespace mm
             return;
         lifetime::deleteVirtual(c + 0x2D8u, 8);
         conv->base.base.state = 0;
-        const int32_t arg5 = conv->arg5;
+        const int32_t origin = conv->origin;
         const auto lowerLevel = [](GuestPtr<uint8_t> status) {
             if (((*status >> 4) & 0xFu) >= 0xE)
                 *status = static_cast<uint8_t>((*status & 0x0Fu) | 0xD0u);
@@ -1977,7 +1985,7 @@ namespace mm
         if (conv->byFamily == 0)
         {
             const GuestPtr<MapPerson> person = city->map->people + conv->person;
-            if (arg5 != 2 && arg5 != 3 && conv->peopleInside != 0 && person->activity == 5)
+            if (origin != 2 && origin != 3 && conv->peopleInside != 0 && person->activity == 5)
                 return;
             if (conv->ended != 0 || Words_FriendshipChanged() != 0)
                 TalkStatus_RecordTalk(GuestPtr<uint8_t>::of(person->status));
@@ -1985,7 +1993,7 @@ namespace mm
                 lowerLevel(GuestPtr<uint8_t>::of(person->status));
             return;
         }
-        if (arg5 != 3 && Schedule_MemberActivity(city, static_cast<uint32_t>(conv->family), conv->member) == 5)
+        if (origin != 3 && Schedule_MemberActivity(city, static_cast<uint32_t>(conv->family), conv->member) == 5)
             return;
         if (conv->ended != 0 || Words_FriendshipChanged() != 0)
             MemberStatus_RecordTalk(conv->family, conv->member);
@@ -2004,7 +2012,7 @@ namespace mm
     // a building the occupant view) in their near or far versions, a whole family the family phone view, a member the member
     // view. The conversation window is made too, the HUD flags of the city (hudVisible[1] to [3]) go off and the poses are cleared.
     // The result is 1.
-    int Talk_Start(GuestPtr<TalkSession> talk, int byFamily, int target, int member, int arg5, GuestPtr<CityScene> city)
+    int Talk_Start(GuestPtr<TalkSession> talk, int byFamily, int target, int member, int origin, GuestPtr<CityScene> city)
     {
         using namespace vu0;
         port::GuestFrame<0xA0> frame;
@@ -2012,7 +2020,7 @@ namespace mm
         if (talk->base.state != 0)
             return 0;
         talk->city = city;
-        talk->arg5 = arg5;
+        talk->origin = origin;
         talk->slot = 1;
         talk->endChoosing = 0;
         int isMyHome = 0;
@@ -2309,8 +2317,8 @@ namespace mm
     // the character class's drawAt slot turned about y by the position, in the default colour for the highlighted slot
     // (the chosen one, else the cursor's) and a grey for the rest, with the view's person model first for a class with
     // flag 2 (and the person then 0.15 higher). Up to four of them (and none left of -1) are counted for the name boxes
-    // (nameBoxes) and frames (frames); unless the view is choosing, each gets its name (the member's two name fields,
-    // name2 then name, with a separator) on a row that alternates, and a friendship frame of the member's band + 9 when
+    // (nameBoxes) and frames (frames); unless the view is choosing, each gets its name (the member's given name, a
+    // separator, then the surname) on a row that alternates, and a friendship frame of the member's band + 9 when
     // it has one. The original's frame is reserved whole.
     void TalkView_DrawPeople(GuestPtr<TalkView> view)
     {
@@ -2397,9 +2405,9 @@ namespace mm
             const GuestPtr<TextBox> box = view->nameBoxes[drawn];
             const GuestPtr<FamilyMember> who{record};
             TextBox_SetPos(box, screenX(0x7060), (row + 0x790) * 16, depth);
-            TextBox_SetText(box, GuestPtr<char>::of(who->name2[0]), 0);
+            TextBox_SetText(box, GuestPtr<char>::of(who->givenName[0]), 0);
             TextBox_AppendText(box, GuestPtr<char>{kSeparator}, 0);
-            TextBox_AppendText(box, GuestPtr<char>::of(who->name[0]), 0);
+            TextBox_AppendText(box, GuestPtr<char>::of(who->surname[0]), 0);
             TextBox_Draw(box);
             const int band = Family_GetFriendshipBand(family, member);
             if (band != 0)

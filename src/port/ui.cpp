@@ -4311,7 +4311,8 @@ namespace mm
                 sdk::sprintf(kText, 0x001B7A38u, 0x001C53A0u, 0x001C5390u);
         }
         else
-            sdk::sprintf(kText, 0x001B7A38u, port::guest(family->members[0].name2), port::guest(family->members[0].name)); // the first member's names
+            // the first member's names
+            sdk::sprintf(kText, 0x001B7A38u, port::guest(family->members[0].givenName), port::guest(family->members[0].surname));
         port::store<uint8_t>(0x001F37A9u, 0);
         int length = sdk::strlen(kText);
         sdk::memset(kText + static_cast<uint32_t>(length), 0x20, 0x1E - length);
@@ -4527,8 +4528,8 @@ namespace mm
         const GuestPtr<Family> family = Family_Get(want->family, 0);
         const int claimLine = Claim_GetLine(globals::buildingType(family->homeType)->claimB, static_cast<int32_t>(want->claimSlot));
         const GuestPtr<FamilyMember> member = GuestPtr<FamilyMember>::of(family->members[0]) + want->member;
-        sdk::sprintf(out.address, 0x001B73B0u, GuestPtr<char>::of(member->name2[0]).address, GuestPtr<char>::of(member->name[0]).address,
-                     claimLine);
+        sdk::sprintf(out.address, 0x001B73B0u, GuestPtr<char>::of(member->givenName[0]).address,
+                     GuestPtr<char>::of(member->surname[0]).address, claimLine);
     }
 
     PORT_FN(WantsWin_FormatLine);

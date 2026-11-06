@@ -117,34 +117,34 @@ inline constexpr uint32_t A3D_AnimateCharacter = 0x0012D6B0u;
 inline constexpr uint32_t Instance_DrawModelLit = 0x0012D9F0u;
 inline constexpr uint32_t Instance_DrawNodeLimited = 0x0012DD50u;
 inline constexpr uint32_t Instance_DrawModelEx = 0x0012DE70u;
-inline constexpr uint32_t InstanceModel_LoadAsync = 0x0012E220u;
-inline constexpr uint32_t InstanceModel_ctor2 = 0x0012E2A0u;
+inline constexpr uint32_t CharPartModel_LoadAsync = 0x0012E220u;
+inline constexpr uint32_t CharPartModel_ctor = 0x0012E2A0u;
 inline constexpr uint32_t Perf_AdaptDrawRange = 0x0012E2D0u;
 inline constexpr uint32_t Path_PickRoadLink = 0x0012E370u;
 inline constexpr uint32_t Path_NextWaypoint = 0x0012E7D0u;
 inline constexpr uint32_t Path_TileDistance = 0x0012EE20u;
 inline constexpr uint32_t CharType_Slot18 = 0x0012EED0u;
-inline constexpr uint32_t CharType_Draw2 = 0x0012EEE0u;
+inline constexpr uint32_t CharType_DrawAt = 0x0012EEE0u;
 inline constexpr uint32_t CharType_Draw = 0x0012EEF0u;
 inline constexpr uint32_t CharType_Update = 0x0012EF00u;
 inline constexpr uint32_t CharType_dtor = 0x0012EF10u;
 inline constexpr uint32_t CharType_ctor = 0x0012EF60u;
-inline constexpr uint32_t Char2_UpdateSpeedUndrawn = 0x0012F020u;
+inline constexpr uint32_t Vehicle_UpdateSpeedUndrawn = 0x0012F020u;
 inline constexpr uint32_t Char_CheckNeighbourTile = 0x0012FF00u;
-inline constexpr uint32_t Char2_UpdateSpeedDrawn = 0x001300C0u;
-inline constexpr uint32_t Char2_MoveUndrawn = 0x00130FA0u;
-inline constexpr uint32_t Char2_MoveDrawn = 0x001318A0u;
-inline constexpr uint32_t Char2_Draw = 0x00132190u;
-inline constexpr uint32_t Char2_Update = 0x00132400u;
-inline constexpr uint32_t Char2_dtor = 0x00132820u;
-inline constexpr uint32_t Char2_ctor = 0x00132880u;
+inline constexpr uint32_t Vehicle_UpdateSpeedDrawn = 0x001300C0u;
+inline constexpr uint32_t Vehicle_MoveUndrawn = 0x00130FA0u;
+inline constexpr uint32_t Vehicle_MoveDrawn = 0x001318A0u;
+inline constexpr uint32_t Vehicle_Draw = 0x00132190u;
+inline constexpr uint32_t Vehicle_Update = 0x00132400u;
+inline constexpr uint32_t Vehicle_dtor = 0x00132820u;
+inline constexpr uint32_t Vehicle_ctor = 0x00132880u;
 inline constexpr uint32_t CharType_LoadAll = 0x001328C0u;
 inline constexpr uint32_t Person_CheckBuilding = 0x00132A70u;
 inline constexpr uint32_t Person_TickCounters = 0x00132B70u;
 inline constexpr uint32_t Person_ProbeTile = 0x00132CA0u;
 inline constexpr uint32_t Person_Walk = 0x00132DA0u;
 inline constexpr uint32_t Person_UpdatePose = 0x00133B70u;
-inline constexpr uint32_t Person_Draw2 = 0x00133E80u;
+inline constexpr uint32_t Person_DrawAt = 0x00133E80u;
 inline constexpr uint32_t CharType_TickSlots = 0x00134140u;
 inline constexpr uint32_t CharType_ClearSlots = 0x001341A0u;
 inline constexpr uint32_t Person_TurnToPlayer = 0x00134260u;
@@ -637,16 +637,16 @@ inline constexpr uint32_t BldgType_Animate = 0x00163A10u;
 inline constexpr uint32_t BldgType_IsOpenAt = 0x00163A20u;
 inline constexpr uint32_t Clock_AddWrap = 0x00163AE0u;
 inline constexpr uint32_t BldgType_IsMyHome = 0x00163B20u;
-inline constexpr uint32_t BldgType_DrawOccupants = 0x00163B40u;
-inline constexpr uint32_t BldgType_OccupantMatrix = 0x00163C40u;
-inline constexpr uint32_t BldgType_DrawOccupant = 0x00163D70u;
+inline constexpr uint32_t BldgType_DrawPerson = 0x00163B40u;
+inline constexpr uint32_t BldgType_LightAt = 0x00163C40u;
+inline constexpr uint32_t BldgType_PersonLight = 0x00163D70u;
 inline constexpr uint32_t BldgType_FindEntrance = 0x00163F00u;
 inline constexpr uint32_t BldgType_RayHit = 0x00164060u;
 inline constexpr uint32_t BldgType_FloorBelow = 0x00164070u;
 inline constexpr uint32_t BldgType_NearestHit = 0x00164080u;
 inline constexpr uint32_t BldgType_GroundTexture = 0x00164090u;
 inline constexpr uint32_t BldgType_AcceptsOn = 0x001640A0u;
-inline constexpr uint32_t BldgType_DrawOccupants2 = 0x001640B0u;
+inline constexpr uint32_t BldgType_DrawPeople = 0x001640B0u;
 inline constexpr uint32_t BldgType_Draw = 0x00164220u;
 inline constexpr uint32_t BldgType_Tick = 0x00164230u;
 inline constexpr uint32_t BldgType_InitRecord = 0x00164240u;
@@ -696,7 +696,7 @@ inline constexpr uint32_t Bldg_IsOpen = 0x001678E0u;
 inline constexpr uint32_t Bldg_RayHit = 0x00167930u;
 inline constexpr uint32_t Bldg_FloorBelow = 0x00167940u;
 inline constexpr uint32_t Bldg_NearestHit = 0x00167980u;
-inline constexpr uint32_t BldgType_FindEntrance2 = 0x001679C0u;
+inline constexpr uint32_t BldgType_BuildingBeyondSide = 0x001679C0u;
 inline constexpr uint32_t Bldg_DrawPeople = 0x00167B40u;
 inline constexpr uint32_t BldgBusiness_Draw = 0x00168100u;
 inline constexpr uint32_t Bldg_Tick = 0x00168320u;
@@ -989,8 +989,8 @@ inline constexpr uint32_t WordsFn_TextClaimLine = 0x0017C720u;
 inline constexpr uint32_t WordsFn_TextFamilyRecord = 0x0017C760u;
 inline constexpr uint32_t WordsFn_TextOccupation = 0x0017C7A0u;
 inline constexpr uint32_t WordsFn_TextBuildingName = 0x0017C830u;
-inline constexpr uint32_t WordsFn_TextMemberName2 = 0x0017C8A0u;
-inline constexpr uint32_t WordsFn_TextMemberName = 0x0017C920u;
+inline constexpr uint32_t WordsFn_TextMemberGivenName = 0x0017C8A0u;
+inline constexpr uint32_t WordsFn_TextMemberSurname = 0x0017C920u;
 inline constexpr uint32_t WordsFn_TextNameSlot = 0x0017C9A0u;
 inline constexpr uint32_t WordsFn_TalkEventAnswer = 0x0017C9C0u;
 inline constexpr uint32_t WordsFn_EventSetActor = 0x0017CA40u;
@@ -1032,9 +1032,9 @@ inline constexpr uint32_t WordsFn_ScheduleIs = 0x0017E990u;
 inline constexpr uint32_t WordsFn_PersonFlagBit = 0x0017E9E0u;
 inline constexpr uint32_t WordsFn_ScheduleState = 0x0017EA00u;
 inline constexpr uint32_t WordsFn_HomeIsPoliceStation = 0x0017EB60u;
-inline constexpr uint32_t WordsFn_Arg4 = 0x0017EBC0u;
+inline constexpr uint32_t WordsFn_TalkOrigin = 0x0017EBC0u;
 inline constexpr uint32_t WordsFn_MemberLook = 0x0017EBD0u;
-inline constexpr uint32_t WordsFn_MemberByte2A = 0x0017EC20u;
+inline constexpr uint32_t WordsFn_MemberUnk06 = 0x0017EC20u;
 inline constexpr uint32_t WordsFn_MemberCharType = 0x0017EC70u;
 inline constexpr uint32_t WordsFn_IsSpecialFamily = 0x0017ECE0u;
 inline constexpr uint32_t WordsFn_IsApplicant = 0x0017ED60u;
@@ -1668,14 +1668,14 @@ template <> inline constexpr bool at<0x0012C510u> = true; // InstanceBuf_Init
 template <> inline constexpr bool at<0x0012C9D0u> = true; // InstanceModel_ctor
 template <> inline constexpr bool at<0x0012D600u> = true; // CityCamera_DeletingDtor
 template <> inline constexpr bool at<0x0012D660u> = true; // CityCamera_ctor
-template <> inline constexpr bool at<0x0012E220u> = true; // InstanceModel_LoadAsync
-template <> inline constexpr bool at<0x0012E2A0u> = true; // InstanceModel_ctor2
+template <> inline constexpr bool at<0x0012E220u> = true; // CharPartModel_LoadAsync
+template <> inline constexpr bool at<0x0012E2A0u> = true; // CharPartModel_ctor
 template <> inline constexpr bool at<0x0012EF10u> = true; // CharType_dtor
-template <> inline constexpr bool at<0x00132400u> = true; // Char2_Update
-template <> inline constexpr bool at<0x00132820u> = true; // Char2_dtor
+template <> inline constexpr bool at<0x00132400u> = true; // Vehicle_Update
+template <> inline constexpr bool at<0x00132820u> = true; // Vehicle_dtor
 template <> inline constexpr bool at<0x001328C0u> = true; // CharType_LoadAll
 template <> inline constexpr bool at<0x00132A70u> = true; // Person_CheckBuilding
-template <> inline constexpr bool at<0x00133E80u> = true; // Person_Draw2
+template <> inline constexpr bool at<0x00133E80u> = true; // Person_DrawAt
 template <> inline constexpr bool at<0x001345E0u> = true; // Person_Draw
 template <> inline constexpr bool at<0x00134A20u> = true; // Person_Update
 template <> inline constexpr bool at<0x00135600u> = true; // Person_dtor
@@ -1920,8 +1920,8 @@ template <> inline constexpr bool at<0x0017C150u> = true; // WordsFn_FriendshipU
 template <> inline constexpr bool at<0x0017C520u> = true; // WordsFn_TextEventTitle
 template <> inline constexpr bool at<0x0017C760u> = true; // WordsFn_TextFamilyRecord
 template <> inline constexpr bool at<0x0017C7A0u> = true; // WordsFn_TextOccupation
-template <> inline constexpr bool at<0x0017C8A0u> = true; // WordsFn_TextMemberName2
-template <> inline constexpr bool at<0x0017C920u> = true; // WordsFn_TextMemberName
+template <> inline constexpr bool at<0x0017C8A0u> = true; // WordsFn_TextMemberGivenName
+template <> inline constexpr bool at<0x0017C920u> = true; // WordsFn_TextMemberSurname
 template <> inline constexpr bool at<0x0017CEA0u> = true; // WordsFn_LikesBagItem
 template <> inline constexpr bool at<0x0017D2E0u> = true; // WordsFn_AnyAcquaintanceSuppliesWant
 template <> inline constexpr bool at<0x0017D2F0u> = true; // WordsFn_AcquaintanceSuppliesWant
@@ -1937,7 +1937,7 @@ template <> inline constexpr bool at<0x0017E890u> = true; // WordsFn_PickOtherRe
 template <> inline constexpr bool at<0x0017E990u> = true; // WordsFn_ScheduleIs
 template <> inline constexpr bool at<0x0017EA00u> = true; // WordsFn_ScheduleState
 template <> inline constexpr bool at<0x0017EBD0u> = true; // WordsFn_MemberLook
-template <> inline constexpr bool at<0x0017EC20u> = true; // WordsFn_MemberByte2A
+template <> inline constexpr bool at<0x0017EC20u> = true; // WordsFn_MemberUnk06
 template <> inline constexpr bool at<0x0017EC70u> = true; // WordsFn_MemberCharType
 template <> inline constexpr bool at<0x0017F420u> = true; // WordsFn_FindOutsideAcquaintance
 template <> inline constexpr bool at<0x0017F530u> = true; // WordsFn_GetIntroduction
@@ -2220,24 +2220,24 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"BldgType_Animate", addr::BldgType_Animate},
     {"BldgType_BaseCtor", addr::BldgType_BaseCtor},
     {"BldgType_BaseDtor", addr::BldgType_BaseDtor},
+    {"BldgType_BuildingBeyondSide", addr::BldgType_BuildingBeyondSide},
     {"BldgType_CallAll", addr::BldgType_CallAll},
     {"BldgType_Create", addr::BldgType_Create},
     {"BldgType_DeleteAll", addr::BldgType_DeleteAll},
     {"BldgType_Draw", addr::BldgType_Draw},
-    {"BldgType_DrawOccupant", addr::BldgType_DrawOccupant},
-    {"BldgType_DrawOccupants", addr::BldgType_DrawOccupants},
-    {"BldgType_DrawOccupants2", addr::BldgType_DrawOccupants2},
+    {"BldgType_DrawPeople", addr::BldgType_DrawPeople},
+    {"BldgType_DrawPerson", addr::BldgType_DrawPerson},
     {"BldgType_FindEntrance", addr::BldgType_FindEntrance},
-    {"BldgType_FindEntrance2", addr::BldgType_FindEntrance2},
     {"BldgType_FloorBelow", addr::BldgType_FloorBelow},
     {"BldgType_GetPostName", addr::BldgType_GetPostName},
     {"BldgType_GroundTexture", addr::BldgType_GroundTexture},
     {"BldgType_InitRecord", addr::BldgType_InitRecord},
     {"BldgType_IsMyHome", addr::BldgType_IsMyHome},
     {"BldgType_IsOpenAt", addr::BldgType_IsOpenAt},
+    {"BldgType_LightAt", addr::BldgType_LightAt},
     {"BldgType_LoadAll", addr::BldgType_LoadAll},
     {"BldgType_NearestHit", addr::BldgType_NearestHit},
-    {"BldgType_OccupantMatrix", addr::BldgType_OccupantMatrix},
+    {"BldgType_PersonLight", addr::BldgType_PersonLight},
     {"BldgType_RayHit", addr::BldgType_RayHit},
     {"BldgType_Tick", addr::BldgType_Tick},
     {"BldgWasteland_Draw", addr::BldgWasteland_Draw},
@@ -2266,17 +2266,11 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Camera_UpdateMatrices", addr::Camera_UpdateMatrices},
     {"Camera_UpdateProjection", addr::Camera_UpdateProjection},
     {"Camera_ctor", addr::Camera_ctor},
-    {"Char2_Draw", addr::Char2_Draw},
-    {"Char2_MoveDrawn", addr::Char2_MoveDrawn},
-    {"Char2_MoveUndrawn", addr::Char2_MoveUndrawn},
-    {"Char2_Update", addr::Char2_Update},
-    {"Char2_UpdateSpeedDrawn", addr::Char2_UpdateSpeedDrawn},
-    {"Char2_UpdateSpeedUndrawn", addr::Char2_UpdateSpeedUndrawn},
-    {"Char2_ctor", addr::Char2_ctor},
-    {"Char2_dtor", addr::Char2_dtor},
+    {"CharPartModel_LoadAsync", addr::CharPartModel_LoadAsync},
+    {"CharPartModel_ctor", addr::CharPartModel_ctor},
     {"CharType_ClearSlots", addr::CharType_ClearSlots},
     {"CharType_Draw", addr::CharType_Draw},
-    {"CharType_Draw2", addr::CharType_Draw2},
+    {"CharType_DrawAt", addr::CharType_DrawAt},
     {"CharType_LoadAll", addr::CharType_LoadAll},
     {"CharType_Slot18", addr::CharType_Slot18},
     {"CharType_TickSlots", addr::CharType_TickSlots},
@@ -2579,9 +2573,7 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Heap_Probe", addr::Heap_Probe},
     {"InstanceBase_ctor", addr::InstanceBase_ctor},
     {"InstanceBuf_Init", addr::InstanceBuf_Init},
-    {"InstanceModel_LoadAsync", addr::InstanceModel_LoadAsync},
     {"InstanceModel_ctor", addr::InstanceModel_ctor},
-    {"InstanceModel_ctor2", addr::InstanceModel_ctor2},
     {"Instance_DrawMesh", addr::Instance_DrawMesh},
     {"Instance_DrawModel", addr::Instance_DrawModel},
     {"Instance_DrawModelEx", addr::Instance_DrawModelEx},
@@ -2943,7 +2935,7 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Person_ChooseDestination", addr::Person_ChooseDestination},
     {"Person_Distance", addr::Person_Distance},
     {"Person_Draw", addr::Person_Draw},
-    {"Person_Draw2", addr::Person_Draw2},
+    {"Person_DrawAt", addr::Person_DrawAt},
     {"Person_ExitBuilding", addr::Person_ExitBuilding},
     {"Person_FindBuildingInList", addr::Person_FindBuildingInList},
     {"Person_FindIdleOfType", addr::Person_FindIdleOfType},
@@ -3342,6 +3334,14 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"TownPages_Update", addr::TownPages_Update},
     {"TownPages_dtor", addr::TownPages_dtor},
     {"Vec3_Normalize", addr::Vec3_Normalize},
+    {"Vehicle_Draw", addr::Vehicle_Draw},
+    {"Vehicle_MoveDrawn", addr::Vehicle_MoveDrawn},
+    {"Vehicle_MoveUndrawn", addr::Vehicle_MoveUndrawn},
+    {"Vehicle_Update", addr::Vehicle_Update},
+    {"Vehicle_UpdateSpeedDrawn", addr::Vehicle_UpdateSpeedDrawn},
+    {"Vehicle_UpdateSpeedUndrawn", addr::Vehicle_UpdateSpeedUndrawn},
+    {"Vehicle_ctor", addr::Vehicle_ctor},
+    {"Vehicle_dtor", addr::Vehicle_dtor},
     {"WaitText_Append", addr::WaitText_Append},
     {"WaitText_Create", addr::WaitText_Create},
     {"WaitText_Delete", addr::WaitText_Delete},
@@ -3390,7 +3390,6 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"WordsFn_AnyAcquaintanceSuppliesWant", addr::WordsFn_AnyAcquaintanceSuppliesWant},
     {"WordsFn_ApplicantCountTier", addr::WordsFn_ApplicantCountTier},
     {"WordsFn_ApprovalTier", addr::WordsFn_ApprovalTier},
-    {"WordsFn_Arg4", addr::WordsFn_Arg4},
     {"WordsFn_BeforeSix", addr::WordsFn_BeforeSix},
     {"WordsFn_BuildingCategory", addr::WordsFn_BuildingCategory},
     {"WordsFn_BuildingClaim", addr::WordsFn_BuildingClaim},
@@ -3448,10 +3447,10 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"WordsFn_LaptopHasBit", addr::WordsFn_LaptopHasBit},
     {"WordsFn_LikesBagItem", addr::WordsFn_LikesBagItem},
     {"WordsFn_MarkFamilyKnown", addr::WordsFn_MarkFamilyKnown},
-    {"WordsFn_MemberByte2A", addr::WordsFn_MemberByte2A},
     {"WordsFn_MemberCharType", addr::WordsFn_MemberCharType},
     {"WordsFn_MemberLook", addr::WordsFn_MemberLook},
     {"WordsFn_MemberRole", addr::WordsFn_MemberRole},
+    {"WordsFn_MemberUnk06", addr::WordsFn_MemberUnk06},
     {"WordsFn_MeterAgrees", addr::WordsFn_MeterAgrees},
     {"WordsFn_Month", addr::WordsFn_Month},
     {"WordsFn_NameSlotSet", addr::WordsFn_NameSlotSet},
@@ -3505,6 +3504,7 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"WordsFn_TalkEventIsRequestOrVisit", addr::WordsFn_TalkEventIsRequestOrVisit},
     {"WordsFn_TalkEventText", addr::WordsFn_TalkEventText},
     {"WordsFn_TalkEventVar", addr::WordsFn_TalkEventVar},
+    {"WordsFn_TalkOrigin", addr::WordsFn_TalkOrigin},
     {"WordsFn_TalkSelectActor", addr::WordsFn_TalkSelectActor},
     {"WordsFn_TalksToday", addr::WordsFn_TalksToday},
     {"WordsFn_TextBagItemName", addr::WordsFn_TextBagItemName},
@@ -3513,8 +3513,8 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"WordsFn_TextEventTitle", addr::WordsFn_TextEventTitle},
     {"WordsFn_TextFamilyRecord", addr::WordsFn_TextFamilyRecord},
     {"WordsFn_TextGoodsName", addr::WordsFn_TextGoodsName},
-    {"WordsFn_TextMemberName", addr::WordsFn_TextMemberName},
-    {"WordsFn_TextMemberName2", addr::WordsFn_TextMemberName2},
+    {"WordsFn_TextMemberGivenName", addr::WordsFn_TextMemberGivenName},
+    {"WordsFn_TextMemberSurname", addr::WordsFn_TextMemberSurname},
     {"WordsFn_TextNameSlot", addr::WordsFn_TextNameSlot},
     {"WordsFn_TextNewBuildings", addr::WordsFn_TextNewBuildings},
     {"WordsFn_TextOccupation", addr::WordsFn_TextOccupation},
@@ -3795,34 +3795,34 @@ void A3D_AnimateCharacter(GuestPtr<A3DObject> model, int anim, ps2f time);
 void Instance_DrawModelLit(GuestPtr<A3DObject> model, GuestPtr<Vec4> colour, int variant, int style);
 void Instance_DrawNodeLimited(GuestPtr<A3DObject> model, GuestPtr<Vec4> colour, int node, int mode);
 void Instance_DrawModelEx(GuestPtr<A3DObject> model, GuestPtr<Vec4> colour, int mode, int offset0, int group, int offset3, int attach, int offset1);
-int InstanceModel_LoadAsync(GuestPtr<A3DObject> model, GuestPtr<GameFile> file, int indexed);
-GuestPtr<A3DObject> InstanceModel_ctor2(GuestPtr<A3DObject> model);
+int CharPartModel_LoadAsync(GuestPtr<A3DObject> model, GuestPtr<GameFile> file, int indexed);
+GuestPtr<A3DObject> CharPartModel_ctor(GuestPtr<A3DObject> model);
 void Perf_AdaptDrawRange();
 uint16_t Path_PickRoadLink(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapObject> target, GuestPtr<MapObject> from, GuestPtr<MapPerson> person);
 uint16_t Path_NextWaypoint(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, int tile);
 ps2f Path_TileDistance(int unused_a0, uint32_t tileA, uint32_t tileB);
 void CharType_Slot18(GuestPtr<CharClass> cls);
-void CharType_Draw2(GuestPtr<CharClass> cls);
+void CharType_DrawAt(GuestPtr<CharClass> cls);
 void CharType_Draw(GuestPtr<CharClass> cls);
 int CharType_Update(GuestPtr<CharClass> cls);
 GuestPtr<CharClass> CharType_dtor(GuestPtr<CharClass> cls, int16_t deleteFlag);
 GuestPtr<CharClass> CharType_ctor(GuestPtr<CharClass> cls, GuestPtr<CharTypeRecord> record);
-void Char2_UpdateSpeedUndrawn(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj, int dir, ps2f dx, ps2f dz);
+void Vehicle_UpdateSpeedUndrawn(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj, int dir, ps2f dx, ps2f dz);
 int Char_CheckNeighbourTile(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, int x, int z);
-void Char2_UpdateSpeedDrawn(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj, int dir, ps2f dx, ps2f dz);
-void Char2_MoveUndrawn(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj, int tile);
-void Char2_MoveDrawn(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj, int tile);
-void Char2_Draw(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, GuestPtr<Vec4> colour, int flags, GuestPtr<Vec4> place);
-void Char2_Update(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, uint32_t timeFlags);
-GuestPtr<CharClass> Char2_dtor(GuestPtr<CharClass> cls, int16_t deleteFlag);
-GuestPtr<CharClass> Char2_ctor(GuestPtr<CharClass> cls, GuestPtr<CharTypeRecord> record);
+void Vehicle_UpdateSpeedDrawn(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj, int dir, ps2f dx, ps2f dz);
+void Vehicle_MoveUndrawn(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj, int tile);
+void Vehicle_MoveDrawn(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, GuestPtr<MapObject> obj, int tile);
+void Vehicle_Draw(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, GuestPtr<Vec4> colour, int flags, GuestPtr<Vec4> place);
+void Vehicle_Update(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, uint32_t timeFlags);
+GuestPtr<CharClass> Vehicle_dtor(GuestPtr<CharClass> cls, int16_t deleteFlag);
+GuestPtr<CharClass> Vehicle_ctor(GuestPtr<CharClass> cls, GuestPtr<CharTypeRecord> record);
 void CharType_LoadAll();
 void Person_CheckBuilding(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
 void Person_TickCounters(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
 int Person_ProbeTile(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, uint32_t tile);
 void Person_Walk(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, GuestPtr<MapObject> obj, int tile);
 void Person_UpdatePose(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, int unused_a3, int tile);
-void Person_Draw2(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, uint32_t family, uint32_t member, GuestPtr<Vec4> matrix, int colour, GuestPtr<int32_t> mesh, GuestPtr<ps2f> phase);
+void Person_DrawAt(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, uint32_t family, uint32_t member, GuestPtr<Vec4> matrix, int colour, GuestPtr<int32_t> mesh, GuestPtr<ps2f> phase);
 void CharType_TickSlots();
 void CharType_ClearSlots();
 void Person_TurnToPlayer(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
@@ -4315,16 +4315,16 @@ void BldgType_Animate(GuestPtr<BuildingType> btype);
 int BldgType_IsOpenAt(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj);
 int Clock_AddWrap(int unused_a0, int time, int offset);
 int BldgType_IsMyHome(GuestPtr<BuildingType> btype);
-void BldgType_DrawOccupants(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, GuestPtr<MapPerson> person, int mode);
-void BldgType_OccupantMatrix(GuestPtr<BuildingType> btype, GuestPtr<Vec4> colour, GuestPtr<Vec4> position, uint32_t tile);
-void BldgType_DrawOccupant(GuestPtr<BuildingType> btype, GuestPtr<Vec4> colour, GuestPtr<MapPerson> person, GuestPtr<CityScene> city);
+void BldgType_DrawPerson(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, GuestPtr<MapPerson> person, int mode);
+void BldgType_LightAt(GuestPtr<BuildingType> btype, GuestPtr<Vec4> colour, GuestPtr<Vec4> position, uint32_t tile);
+void BldgType_PersonLight(GuestPtr<BuildingType> btype, GuestPtr<Vec4> colour, GuestPtr<MapPerson> person, GuestPtr<CityScene> city);
 uint16_t BldgType_FindEntrance(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, int x, int z, GuestPtr<int32_t> side);
 int BldgType_RayHit(GuestPtr<BuildingType> btype);
 int BldgType_FloorBelow(GuestPtr<BuildingType> btype);
 int BldgType_NearestHit(GuestPtr<BuildingType> btype);
 uint8_t BldgType_GroundTexture(GuestPtr<BuildingType> btype);
 int BldgType_AcceptsOn(GuestPtr<BuildingType> btype);
-void BldgType_DrawOccupants2(GuestPtr<BuildingType> btype, int facing, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, GuestPtr<uint32_t> part, int mode, GuestPtr<MapPerson> people);
+void BldgType_DrawPeople(GuestPtr<BuildingType> btype, int facing, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, GuestPtr<uint32_t> part, int mode, GuestPtr<MapPerson> people);
 void BldgType_Draw(GuestPtr<BuildingType> btype);
 int BldgType_Tick(GuestPtr<BuildingType> btype);
 void BldgType_InitRecord(GuestPtr<BuildingType> btype);
@@ -4374,7 +4374,7 @@ int Bldg_IsOpen(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr
 int Bldg_RayHit(GuestPtr<BuildingType> btype);
 int Bldg_FloorBelow(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit, ps2f lift);
 int Bldg_NearestHit(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, ps2f range);
-int BldgType_FindEntrance2(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, int x, int z, int side);
+int BldgType_BuildingBeyondSide(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, int x, int z, int side);
 void Bldg_DrawPeople(GuestPtr<BuildingType> btype, int facing, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, GuestPtr<uint32_t> part, int mode, GuestPtr<MapPerson> people, ps2f x, ps2f y, ps2f z);
 void BldgBusiness_Draw(GuestPtr<BuildingType> btype, int facing, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, GuestPtr<uint32_t> part, int mode, ps2f x, ps2f y, ps2f z);
 int Bldg_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int timeFlags);
@@ -4586,7 +4586,7 @@ void Talk_Active(GuestPtr<TalkSession> talk);
 void Talk_Opened(GuestPtr<TalkSession> talk);
 void Talk_Opening(GuestPtr<TalkSession> talk);
 int Talk_Update(GuestPtr<TalkSession> talk);
-int Talk_Start(GuestPtr<TalkSession> talk, int byFamily, int target, int member, int arg5, GuestPtr<CityScene> city);
+int Talk_Start(GuestPtr<TalkSession> talk, int byFamily, int target, int member, int origin, GuestPtr<CityScene> city);
 void Talk_Draw(GuestPtr<TalkSession> talk, int pass);
 GuestPtr<TalkSession> Talk_dtor(GuestPtr<TalkSession> talk, int16_t deleteFlag);
 GuestPtr<TalkSession> Talk_ctor(GuestPtr<TalkSession> talk);
@@ -4614,7 +4614,7 @@ void TalkConv_Active(GuestPtr<TalkConv> conv);
 void TalkConv_Opening(GuestPtr<TalkConv> conv);
 int TalkConv_Update(GuestPtr<TalkConv> conv);
 void TalkConv_NextLine(GuestPtr<TalkConv> conv);
-void TalkConv_Start(GuestPtr<TalkConv> conv, int byFamily, int target, int buildingOrMember, int slot, int arg5);
+void TalkConv_Start(GuestPtr<TalkConv> conv, int byFamily, int target, int buildingOrMember, int slot, int origin);
 GuestPtr<TalkConv> TalkConv_dtor(GuestPtr<TalkConv> conv, int16_t deleteFlag);
 GuestPtr<TalkConv> TalkConv_ctor(GuestPtr<TalkConv> conv, GuestPtr<CityScene> city);
 int WordsFn_FocusPadAfterTalk(GuestPtr<WordsCtx> ctx);
@@ -4667,8 +4667,8 @@ GuestPtr<char> WordsFn_TextClaimLine(GuestPtr<WordsCtx> ctx);
 GuestPtr<char> WordsFn_TextFamilyRecord(GuestPtr<WordsCtx> ctx);
 GuestPtr<char> WordsFn_TextOccupation(GuestPtr<WordsCtx> ctx);
 GuestPtr<char> WordsFn_TextBuildingName(GuestPtr<WordsCtx> ctx);
-GuestPtr<char> WordsFn_TextMemberName2(GuestPtr<WordsCtx> ctx);
-GuestPtr<char> WordsFn_TextMemberName(GuestPtr<WordsCtx> ctx);
+GuestPtr<char> WordsFn_TextMemberGivenName(GuestPtr<WordsCtx> ctx);
+GuestPtr<char> WordsFn_TextMemberSurname(GuestPtr<WordsCtx> ctx);
 GuestPtr<char> WordsFn_TextNameSlot(GuestPtr<WordsCtx> ctx);
 int WordsFn_TalkEventAnswer(GuestPtr<WordsCtx> ctx);
 int WordsFn_EventSetActor(GuestPtr<WordsCtx> ctx);
@@ -4710,9 +4710,9 @@ int WordsFn_ScheduleIs(GuestPtr<WordsCtx> ctx);
 int WordsFn_PersonFlagBit(GuestPtr<WordsCtx> ctx);
 uint32_t WordsFn_ScheduleState(GuestPtr<WordsCtx> ctx);
 int WordsFn_HomeIsPoliceStation(GuestPtr<WordsCtx> ctx);
-int WordsFn_Arg4(GuestPtr<WordsCtx> ctx);
+int WordsFn_TalkOrigin(GuestPtr<WordsCtx> ctx);
 uint8_t WordsFn_MemberLook(GuestPtr<WordsCtx> ctx);
-uint8_t WordsFn_MemberByte2A(GuestPtr<WordsCtx> ctx);
+uint8_t WordsFn_MemberUnk06(GuestPtr<WordsCtx> ctx);
 uint16_t WordsFn_MemberCharType(GuestPtr<WordsCtx> ctx);
 int WordsFn_IsSpecialFamily(GuestPtr<WordsCtx> ctx);
 int WordsFn_IsApplicant(GuestPtr<WordsCtx> ctx);
@@ -4779,8 +4779,8 @@ uint16_t Words_GetBuildingTypeB(GuestPtr<Words> words);
 void Words_SetArg(GuestPtr<Words> words, uint16_t arg);
 int Words_GetFriendshipChanged(GuestPtr<Words> words);
 int Words_GetCancelAllowed(GuestPtr<Words> words);
-void Words_SetFamily(GuestPtr<Words> words, int family, uint16_t member, int arg4, GuestPtr<CityScene> city);
-void Words_SetPerson(GuestPtr<Words> words, GuestPtr<MapPerson> person, int arg4, GuestPtr<CityScene> city);
+void Words_SetFamily(GuestPtr<Words> words, int family, uint16_t member, int origin, GuestPtr<CityScene> city);
+void Words_SetPerson(GuestPtr<Words> words, GuestPtr<MapPerson> person, int origin, GuestPtr<CityScene> city);
 GuestPtr<Words> Words_dtor(GuestPtr<Words> words, int16_t deleteFlag);
 GuestPtr<Words> Words_ctor(GuestPtr<Words> words);
 void CityScene_AddApplicantFamily(GuestPtr<CityScene> city, uint32_t family, int select);
@@ -4789,7 +4789,7 @@ int CityScene_LoadGame(GuestPtr<CityScene> city);
 int CityScene_SaveStep(GuestPtr<CityScene> city, GuestPtr<McManager> mc);
 int CityScene_TalkEndChoosing(GuestPtr<CityScene> city);
 int CityScene_TalkSelectPerson(GuestPtr<CityScene> city, int family, int member);
-int CityScene_StartTalk(GuestPtr<CityScene> city, int byFamily, int target, int member, int arg5);
+int CityScene_StartTalk(GuestPtr<CityScene> city, int byFamily, int target, int member, int origin);
 uint32_t CityScene_Update(GuestPtr<CityScene> city);
 GuestPtr<CityScene> CityScene_dtor(GuestPtr<CityScene> city, int16_t deleteFlag);
 GuestPtr<CityScene> CityScene_ctor(GuestPtr<CityScene> city);
@@ -4892,9 +4892,9 @@ int Se_InTimeWindow(GuestPtr<MapObject> obj, uint32_t start, int length);
 int Se_RequestTileSounds(int x, int z, int horn, ps2f angle, ps2f distance);
 uint32_t Se_PickTerrainAmbience(int x, int z, int variant);
 int Se_MatchSchedule(uint32_t monthFrom, uint32_t monthTo, uint32_t hourFrom, uint32_t hourTo, uint32_t length, uint32_t start10, int lead);
-int Se_Request(uint16_t owner, uint32_t group, uint8_t sound, uint8_t param0A, uint8_t param18, uint16_t pitch, uint8_t note, uint8_t param19, ps2f angle, ps2f distance);
+int Se_Request(uint16_t owner, uint32_t group, uint8_t sound, uint8_t updateOnly, uint8_t cooldown, uint16_t pitch, uint8_t note, uint8_t hold, ps2f angle, ps2f distance);
 void Se_StopOwner(char owner);
-void Se_RequestForObject(uint32_t object, uint32_t group, uint32_t sound, int pitch, int clampFar, int param18);
+void Se_RequestForObject(uint32_t object, uint32_t group, uint32_t sound, int pitch, int clampFar, int cooldown);
 int Sound_PlaySe(int sound, int pitch, int note, ps2f angle, ps2f distance);
 void Se_PlayMessageSound(char code);
 void Se_PlayVariant(uint8_t variant);
@@ -5160,8 +5160,8 @@ int16_t Words_Step(GuestPtr<int32_t> script, GuestPtr<char> buffer);
 int Words_FriendshipChanged();
 int Words_CancelAllowed();
 void Words_LoadForWants(GuestPtr<CityScene> city, int16_t id, int line, GuestPtr<char> out);
-int Words_LoadForFamily(int family, int member, int arg5, GuestPtr<CityScene> city);
-int Words_LoadForPerson(GuestPtr<MapPerson> person, int arg5, GuestPtr<CityScene> city);
+int Words_LoadForFamily(int family, int member, int origin, GuestPtr<CityScene> city);
+int Words_LoadForPerson(GuestPtr<MapPerson> person, int origin, GuestPtr<CityScene> city);
 GuestPtr<uint32_t> Words_ReadBlock(int block);
 GuestPtr<WordsBlock> WordsBlock_ctor(GuestPtr<WordsBlock> entry);
 void Words_Init();

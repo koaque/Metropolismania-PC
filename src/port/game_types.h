@@ -120,7 +120,7 @@ struct SnowLayer;
 struct LayerF;
 struct LayerG;
 struct LayerAInstance;
-struct InstanceModel;
+struct CharPartModel;
 struct TerrainPassParams;
 struct A3DModel;
 struct A3DNode;
@@ -203,10 +203,12 @@ struct A3DObject {
     GuestPtr<uint32_t> animations;      /* +0x50 one A3DTrack array address per animation (mm_A3D_Relocate) */
     uint8_t unk_54[0xC];
 };
-/* A model drawn as instances in mesh groups (mm_InstanceModel_ctor; people and the player): a model, then the group size. */
-struct InstanceModel {
+/* A character part model from CHAR.A3D (0x70 bytes, mm_CharPartModel_ctor; the table at 0x1F3B90, people's parts and
+   the player's model at entry 81): an instanced model (mm_InstanceModel_ctor), then the meshes per group. */
+struct CharPartModel {
     A3DObject base;
-    int32_t groupSize;         /* +0x60 meshes per group: node 0's mesh index / 13 (mm_InstanceModel_LoadAsync) */
+    int32_t groupSize;         /* +0x60 meshes per group: node 0's mesh index / 13 (mm_CharPartModel_LoadAsync) */
+    uint8_t unk_64[0xC];
 };
 /* Camera (0x310 bytes). */
 struct Camera {
@@ -1095,7 +1097,7 @@ struct Player {
     int32_t step;              /* +0x08 grid step in progress: 0 none, 1/2 along z, 5/6 along x, 3/4 turning (mm_Player_Move) */
     ps2f heading;             /* +0x0C radians, -pi..pi (mm_Player_Turn) */
     Vec4 position;             /* +0x10 */
-    Vec4 colour;               /* +0x20 the tint the building under the player gives (mm_BldgType_DrawOccupant) */
+    Vec4 colour;               /* +0x20 the tint the building under the player gives (mm_BldgType_PersonLight) */
     uint8_t unk_30[4];
     ps2f animTime;            /* +0x34 the animation's frame (mm_Player_UpdateAction, mm_A3D_AnimateIfRoom) */
     int32_t animation;         /* +0x38 the model's animation: 0-2 standing, 4-15 moving (mm_Player_UpdateAction) */
@@ -1253,14 +1255,14 @@ struct CharClass {
                                   (mm_WordsFn_FriendshipUp/Down) */
     GuestPtr<CharClassVtable> vtable;   /* +0x20 */
 };
-/* A character class's virtual methods (0x1C bytes): base 0x1BCE70, class 2 0x1BCE90, people 0x1BCEB0 (docs/map/char.md).
-   Each takes the class first. */
+/* A character class's virtual methods (0x1C bytes): base 0x1BCE70, vehicles 0x1BCE90, people 0x1BCEB0
+   (docs/map/char.md). Each takes the class first. */
 struct CharClassVtable {
     uint8_t unk_00[8];
     uint32_t dtor;             /* +0x08 */
-    uint32_t update;           /* +0x0C a person's tick (mm_Person_Update, mm_Char2_Update) */
-    uint32_t draw;             /* +0x10 on the terrain (mm_Person_Draw, mm_Char2_Draw) */
-    uint32_t drawAt;           /* +0x14 at a given matrix, in the talk views (mm_Person_Draw2) */
+    uint32_t update;           /* +0x0C a person's tick (mm_Person_Update, mm_Vehicle_Update) */
+    uint32_t draw;             /* +0x10 on the terrain (mm_Person_Draw, mm_Vehicle_Draw) */
+    uint32_t drawAt;           /* +0x14 at a given matrix, in the talk views (mm_Person_DrawAt) */
     uint32_t slot18;           /* +0x18 empty in every class */
 };
 /* A CHARTYPE.BIN record (0x18 bytes, mm_CharType_LoadAll): one character class each. */
@@ -1626,14 +1628,14 @@ struct MapPerson {
     uint16_t family;           /* +0x2A */
     union {
         uint16_t introduces;   /* +0x2C family this resident can introduce */
-        uint16_t speed;        /* +0x2C vehicles: in 1/10000 of a tile a frame (mm_Char2_UpdateSpeedUndrawn) */
+        uint16_t speed;        /* +0x2C vehicles: in 1/10000 of a tile a frame (mm_Vehicle_UpdateSpeedUndrawn) */
     };
     union {
         struct {
             uint8_t member;    /* +0x2E */
             uint8_t status;    /* +0x2F talk status: time since the last talk, talks just now and today (mm_TalkStatus_*) */
         };
-        uint16_t awayTime;     /* +0x2E vehicles: off the road, 3 a tick; at 0xFD20 back at the depot (mm_Char2_Update) */
+        uint16_t awayTime;     /* +0x2E vehicles: off the road, 3 a tick; at 0xFD20 back at the depot (mm_Vehicle_Update) */
     };
 };
 
@@ -1840,13 +1842,14 @@ struct FamilyMember {
     uint8_t flags;             /* +0x03 1 (a schedule choice, mm_Schedule_Evaluate), 4 drives: the family gets a car
                                   (mm_Family_AssignHome) */
     uint8_t role;              /* +0x04 */
-    uint8_t unk_05;
-    uint8_t unk_06;
-    uint8_t look;              /* +0x07 the model part (0: by the family's parity, mm_Person_Draw), the person's first flags
+    uint8_t unk_05;            /* +0x05 0 for every member in FAMILY.BIN; nothing reads it */
+    uint8_t unk_06;            /* +0x06 0 for every member in FAMILY.BIN and never written; only the talk scripts'
+                                  condition #54 reads it (mm_WordsFn_MemberUnk06) */
+    uint8_t look;             /* +0x07 the model part (0: by the family's parity, mm_Person_Draw), the person's first flags
                                   (mm_Family_AssignHome) and the talk card's variant (mm_TalkCard_FillText) */
     uint16_t acquaintances[16]; /* +0x08 family ids this member can introduce, 0 ends */
-    char name[16];             /* +0x28 */
-    char name2[16];            /* +0x38 */
+    char surname[16];          /* +0x28 the family name */
+    char givenName[16];        /* +0x38 written before the surname ("%s %s", mm_TalkView_DrawPeople) */
 };
 
 /* Family record from FAMILY.BIN (0x1D4 bytes), cached in 256 slots at 0x1D52E0. */
@@ -1985,7 +1988,8 @@ struct TalkSession {
     int32_t person;            /* +0x1C 6000 = none */
     int32_t family;            /* +0x20 */
     int32_t member;            /* +0x24 6 = whole family */
-    int32_t arg5;              /* +0x28 */
+    int32_t origin;            /* +0x28 how the talk began (mm_CityScene_StartTalk): 0 the cursor, 1 the town pages,
+                                  2 an event actor at a person, 3 a phone call */
     int32_t peopleInside;      /* +0x2C the building type has flag 0x40 */
     int32_t singleTarget;      /* +0x30 */
     int32_t slot;              /* +0x34 */
@@ -1997,7 +2001,8 @@ struct TalkSession {
 /* WORDS talk script context (0x140 bytes). A is the person talked to, B a second subject. */
 struct WordsCtx {
     GuestPtr<CityScene> city;           /* +0x00 */
-    int32_t setupArg;          /* +0x04 the set-up's fourth argument, read back by mm_WordsFn_Arg4 */
+    int32_t origin;            /* +0x04 how the talk began (TalkSession.origin), read by the script
+                                  (mm_WordsFn_TalkOrigin) */
     uint16_t familyA;          /* +0x08 */
     uint16_t memberA;          /* +0x0A */
     GuestPtr<MapPerson> personA;        /* +0x0C */
@@ -2122,14 +2127,16 @@ struct SeRequest {
     uint8_t unk_02[2];
     uint32_t owner;            /* +0x04 owner id (0xFFFF for sounds with flag 0x20) + (group * 16 + voice index) << 16 */
     uint16_t priority;         /* +0x08 the sound's priority bits << 8 + half the distance; lower comes first */
-    uint8_t param0A;           /* +0x0A mm_Se_Request's a3; non-zero only updates a voice already playing it (mm_Se_AssignVoices) */
+    uint8_t updateOnly;        /* +0x0A non-zero: only updates a voice already playing the sound, never starts one
+                                  (mm_Se_AssignVoices; the building sounds pass object state flag 0x100) */
     uint8_t note;              /* +0x0B the note the sample plays at (60 as recorded; mm_Sound_PlaySe passes 60) */
     int16_t pitch;             /* +0x0C the voice's pitch */
     uint16_t voiceParam;       /* +0x0E second voice list byte + (sound flags & 0xF0) << 4 */
     int32_t volumeLeft;        /* +0x10 1..0x3FFF */
     int32_t volumeRight;       /* +0x14 */
-    uint8_t param18;           /* +0x18 t0, frames before the sound can start again */
-    uint8_t param19;           /* +0x19 t3, frames the voice is kept without requests */
+    uint8_t cooldown;          /* +0x18 frames before the sound can start again once it starts (SeSound.cooldown;
+                                  0 none) */
+    uint8_t hold;              /* +0x19 frames its voice is kept without requests (SeVoice.hold) */
     uint8_t unk_1A[2];
 };
 
@@ -2360,7 +2367,7 @@ struct CityScene {
                                   (mm_Person_Update), 0x40 pad focus after a talk */
     int32_t paydayScore;       /* +0xB8 raised through the month; with the families moved in and out it decides the salary rise (mm_EvPayday_Update) */
     int32_t pendingApproval;   /* +0xBC */
-    int32_t trafficPhase;      /* +0xC0 traffic lights: 0 lets traffic along z through, 2 along x, 1 and 3 neither (mm_Char2_UpdateSpeedUndrawn) */
+    int32_t trafficPhase;      /* +0xC0 traffic lights: 0 lets traffic along z through, 2 along x, 1 and 3 neither (mm_Vehicle_UpdateSpeedUndrawn) */
     int32_t trafficTimer;      /* +0xC4 0..999 per tick: phase 0 below 400, 1 below 500, 2 below 900, then 3 */
     int32_t fadeLevel;         /* +0xC8 */
     int32_t fade;              /* +0xCC fade counter, 0 = none */
@@ -2486,7 +2493,7 @@ struct TalkConv {
     int32_t family;            /* +0x4F0 */
     int32_t member;            /* +0x4F4 */
     int32_t peopleInside;      /* +0x4F8 the building has people inside (type flag 0x40) */
-    int32_t arg5;              /* +0x4FC */
+    int32_t origin;            /* +0x4FC how the talk began (TalkSession.origin) */
     int32_t ended;             /* +0x500 the conversation reached its end (the friendship went up) */
     int32_t typedAnswer;       /* +0x504 the script asked for a typed answer */
 };
@@ -2592,7 +2599,7 @@ static_assert(offsetof(A3DObject, textures) == 0x04, "A3DObject.textures");
 static_assert(offsetof(A3DObject, trackCount) == 0x08, "A3DObject.trackCount");
 static_assert(offsetof(A3DObject, matrix) == 0x10, "A3DObject.matrix");
 static_assert(offsetof(A3DObject, animations) == 0x50, "A3DObject.animations");
-static_assert(offsetof(InstanceModel, groupSize) == 0x60, "InstanceModel.groupSize");
+static_assert(offsetof(CharPartModel, groupSize) == 0x60, "CharPartModel.groupSize");
 static_assert(sizeof(Camera) == 0x310, "Camera size");
 static_assert(offsetof(Camera, packet) == 0x000, "Camera.packet");
 static_assert(offsetof(Camera, worldScreenA) == 0x010, "Camera.worldScreenA");
@@ -3613,10 +3620,12 @@ static_assert(offsetof(FamilyMember, charType) == 0x00, "FamilyMember.charType")
 static_assert(offsetof(FamilyMember, age) == 0x02, "FamilyMember.age");
 static_assert(offsetof(FamilyMember, flags) == 0x03, "FamilyMember.flags");
 static_assert(offsetof(FamilyMember, role) == 0x04, "FamilyMember.role");
+static_assert(offsetof(FamilyMember, unk_05) == 0x05, "FamilyMember.unk_05");
+static_assert(offsetof(FamilyMember, unk_06) == 0x06, "FamilyMember.unk_06");
 static_assert(offsetof(FamilyMember, look) == 0x07, "FamilyMember.look");
 static_assert(offsetof(FamilyMember, acquaintances) == 0x08, "FamilyMember.acquaintances");
-static_assert(offsetof(FamilyMember, name) == 0x28, "FamilyMember.name");
-static_assert(offsetof(FamilyMember, name2) == 0x38, "FamilyMember.name2");
+static_assert(offsetof(FamilyMember, surname) == 0x28, "FamilyMember.surname");
+static_assert(offsetof(FamilyMember, givenName) == 0x38, "FamilyMember.givenName");
 static_assert(sizeof(Family) == 0x1D4, "Family size");
 static_assert(offsetof(Family, homeType) == 0x20, "Family.homeType");
 static_assert(offsetof(Family, memberCount) == 0x22, "Family.memberCount");
@@ -3695,7 +3704,7 @@ static_assert(offsetof(TalkSession, building) == 0x18, "TalkSession.building");
 static_assert(offsetof(TalkSession, person) == 0x1C, "TalkSession.person");
 static_assert(offsetof(TalkSession, family) == 0x20, "TalkSession.family");
 static_assert(offsetof(TalkSession, member) == 0x24, "TalkSession.member");
-static_assert(offsetof(TalkSession, arg5) == 0x28, "TalkSession.arg5");
+static_assert(offsetof(TalkSession, origin) == 0x28, "TalkSession.origin");
 static_assert(offsetof(TalkSession, peopleInside) == 0x2C, "TalkSession.peopleInside");
 static_assert(offsetof(TalkSession, singleTarget) == 0x30, "TalkSession.singleTarget");
 static_assert(offsetof(TalkSession, slot) == 0x34, "TalkSession.slot");
@@ -3703,7 +3712,7 @@ static_assert(offsetof(TalkSession, endChoosing) == 0x3C, "TalkSession.endChoosi
 static_assert(offsetof(TalkSession, poses) == 0x40, "TalkSession.poses");
 static_assert(sizeof(WordsCtx) == 0x140, "WordsCtx size");
 static_assert(offsetof(WordsCtx, city) == 0x00, "WordsCtx.city");
-static_assert(offsetof(WordsCtx, setupArg) == 0x04, "WordsCtx.setupArg");
+static_assert(offsetof(WordsCtx, origin) == 0x04, "WordsCtx.origin");
 static_assert(offsetof(WordsCtx, familyA) == 0x08, "WordsCtx.familyA");
 static_assert(offsetof(WordsCtx, memberA) == 0x0A, "WordsCtx.memberA");
 static_assert(offsetof(WordsCtx, personA) == 0x0C, "WordsCtx.personA");
@@ -3774,14 +3783,14 @@ static_assert(offsetof(SeRequest, sound) == 0x00, "SeRequest.sound");
 static_assert(offsetof(SeRequest, voice) == 0x01, "SeRequest.voice");
 static_assert(offsetof(SeRequest, owner) == 0x04, "SeRequest.owner");
 static_assert(offsetof(SeRequest, priority) == 0x08, "SeRequest.priority");
-static_assert(offsetof(SeRequest, param0A) == 0x0A, "SeRequest.param0A");
+static_assert(offsetof(SeRequest, updateOnly) == 0x0A, "SeRequest.updateOnly");
 static_assert(offsetof(SeRequest, note) == 0x0B, "SeRequest.note");
 static_assert(offsetof(SeRequest, pitch) == 0x0C, "SeRequest.pitch");
 static_assert(offsetof(SeRequest, voiceParam) == 0x0E, "SeRequest.voiceParam");
 static_assert(offsetof(SeRequest, volumeLeft) == 0x10, "SeRequest.volumeLeft");
 static_assert(offsetof(SeRequest, volumeRight) == 0x14, "SeRequest.volumeRight");
-static_assert(offsetof(SeRequest, param18) == 0x18, "SeRequest.param18");
-static_assert(offsetof(SeRequest, param19) == 0x19, "SeRequest.param19");
+static_assert(offsetof(SeRequest, cooldown) == 0x18, "SeRequest.cooldown");
+static_assert(offsetof(SeRequest, hold) == 0x19, "SeRequest.hold");
 static_assert(offsetof(SeVoice, sound) == 0x00, "SeVoice.sound");
 static_assert(offsetof(SeVoice, voice) == 0x01, "SeVoice.voice");
 static_assert(offsetof(SeVoice, owner) == 0x04, "SeVoice.owner");
@@ -4010,7 +4019,7 @@ static_assert(offsetof(TalkConv, person) == 0x4EC, "TalkConv.person");
 static_assert(offsetof(TalkConv, family) == 0x4F0, "TalkConv.family");
 static_assert(offsetof(TalkConv, member) == 0x4F4, "TalkConv.member");
 static_assert(offsetof(TalkConv, peopleInside) == 0x4F8, "TalkConv.peopleInside");
-static_assert(offsetof(TalkConv, arg5) == 0x4FC, "TalkConv.arg5");
+static_assert(offsetof(TalkConv, origin) == 0x4FC, "TalkConv.origin");
 static_assert(offsetof(TalkConv, ended) == 0x500, "TalkConv.ended");
 static_assert(offsetof(TalkConv, typedAnswer) == 0x504, "TalkConv.typedAnswer");
 static_assert(offsetof(GifPacket, cursor) == 0x00, "GifPacket.cursor");

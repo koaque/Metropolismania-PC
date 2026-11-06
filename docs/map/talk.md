@@ -149,7 +149,7 @@ friendship changed. A is the person talked to.
 | `0x00178B40` | `void mm_Talk_Opened(TalkSession *talk)` | 104 | indirect | state 2: waits for the conversation to open |
 | `0x00178BB0` | `void mm_Talk_Opening(TalkSession *talk)` | 168 | yes | state 1: when the view is active, starts the conversation or choosing |
 | `0x00178C60` | `int mm_Talk_Update(TalkSession *talk)` | 228 | yes | updates view and conversation, then the state machine |
-| `0x00178D50` | `int mm_Talk_Start(TalkSession *talk, int byFamily, int target, int member, int arg5, CityScene *city)` | 1332 | yes | (talk, byFamily, target, member, arg5, city) target building `target`/person `member` or family `target`/member `member`; picks the view class (near/far, home, person) and the conversation |
+| `0x00178D50` | `int mm_Talk_Start(TalkSession *talk, int byFamily, int target, int member, int origin, CityScene *city)` | 1332 | yes | (talk, byFamily, target, member, origin, city) target building `target`/person `member` or family `target`/member `member`; picks the view class (near/far, home, person) and the conversation; `origin`: how the talk began (0 the cursor, 1 the town pages, 2 an event actor at a person, 3 a phone call) |
 | `0x00179290` | `void mm_Talk_Draw(TalkSession *talk, int pass)` | 96 | indirect | draws view and conversation |
 | `0x001792F0` | `TalkSession *mm_Talk_dtor(TalkSession *talk, int16_t deleteFlag)` | 180 | yes | vtable 0x1BD770 |
 | `0x001793B0` | `TalkSession *mm_Talk_ctor(TalkSession *talk)` | 68 | no | vtable 0x1BD770 |
@@ -177,7 +177,7 @@ friendship changed. A is the person talked to.
 | `0x0017AF20` | `void mm_TalkConv_Opening(TalkConv *conv)` | 80 | yes | Step(0.1), then active and the first line |
 | `0x0017AF70` | `int mm_TalkConv_Update(TalkConv *conv)` | 388 | yes | name entry results, menu choices back into the script, message window update |
 | `0x0017B100` | `void mm_TalkConv_NextLine(TalkConv *conv)` | 456 | yes | next script line; the end code (-6007) applies the friendship gain |
-| `0x0017B2D0` | `void mm_TalkConv_Start(TalkConv *conv, int byFamily, int target, int buildingOrMember, int slot, int arg5)` | 380 | yes | (conv, byFamily, target, buildingOrMember, slot, arg5) loads the script for a person (`byFamily` 0) or family member (`byFamily` 1), shows the card, sets the message |
+| `0x0017B2D0` | `void mm_TalkConv_Start(TalkConv *conv, int byFamily, int target, int buildingOrMember, int slot, int origin)` | 380 | yes | (conv, byFamily, target, buildingOrMember, slot, origin) loads the script for a person (`byFamily` 0) or family member (`byFamily` 1), shows the card, sets the message; `origin`: how the talk began (0 the cursor, 1 the town pages, 2 an event actor at a person, 3 a phone call) |
 | `0x0017B450` | `TalkConv *mm_TalkConv_dtor(TalkConv *conv, int16_t deleteFlag)` | 260 | yes | vtable 0x1BD860, deletes menu, name entry, card, money panel |
 | `0x0017B560` | `TalkConv *mm_TalkConv_ctor(TalkConv *conv, CityScene *city)` | 152 | yes | message window plus a menu window and the person card |
 | `0x0017B600` | `int mm_WordsFn_FocusPadAfterTalk(WordsCtx *ctx)` | 20 | no | #146 act: city flag 0x40, the pad focus returns when the talk ends |
@@ -230,8 +230,8 @@ friendship changed. A is the person talked to.
 | `0x0017C760` | `char *mm_WordsFn_TextFamilyRecord(WordsCtx *ctx)` | 60 | yes | #99 text: the family record of the building's family (arg 1), of family A (arg 0), or of the result family |
 | `0x0017C7A0` | `char *mm_WordsFn_TextOccupation(WordsCtx *ctx)` | 144 | yes | #98 text: the member's post at their home's building type (STRTYPE POSTNAME) |
 | `0x0017C830` | `char *mm_WordsFn_TextBuildingName(WordsCtx *ctx)` | 104 | no | #97 text: building type name |
-| `0x0017C8A0` | `char *mm_WordsFn_TextMemberName2(WordsCtx *ctx)` | 120 | yes | #96 text: the second name (name2) of the member the argument picks |
-| `0x0017C920` | `char *mm_WordsFn_TextMemberName(WordsCtx *ctx)` | 120 | yes | #95 text: member name of A, B or the result family |
+| `0x0017C8A0` | `char *mm_WordsFn_TextMemberGivenName(WordsCtx *ctx)` | 120 | yes | #96 text: the given name of the member the argument picks (member A, member B, or the result family's first) |
+| `0x0017C920` | `char *mm_WordsFn_TextMemberSurname(WordsCtx *ctx)` | 120 | yes | #95 text: the surname of the member the argument picks (member A, member B, or the result family's first) |
 | `0x0017C9A0` | `char *mm_WordsFn_TextNameSlot(WordsCtx *ctx)` | 24 | no | #94 text: name slot arg |
 | `0x0017C9C0` | `int mm_WordsFn_TalkEventAnswer(WordsCtx *ctx)` | 120 | no | #93 act: the answer slot of the talk event (talks[0]) with person A and arg |
 | `0x0017CA40` | `int mm_WordsFn_EventSetActor(WordsCtx *ctx)` | 324 | no | #92 cond: sets the talk event's actor arg to the subjects, marks the building |
@@ -273,9 +273,9 @@ friendship changed. A is the person talked to.
 | `0x0017E9E0` | `int mm_WordsFn_PersonFlagBit(WordsCtx *ctx)` | 32 | no | #59 cond: person flags bit arg |
 | `0x0017EA00` | `uint32_t mm_WordsFn_ScheduleState(WordsCtx *ctx)` | 344 | yes | #58 cond: the person's schedule state, folded by arg (0..5) |
 | `0x0017EB60` | `int mm_WordsFn_HomeIsPoliceStation(WordsCtx *ctx)` | 92 | no | #57 cond: whether family A's home is a police station (type 0x104 or 0x105); always 0 with an argument |
-| `0x0017EBC0` | `int mm_WordsFn_Arg4(WordsCtx *ctx)` | 8 | no | #56 cond: context +4 |
+| `0x0017EBC0` | `int mm_WordsFn_TalkOrigin(WordsCtx *ctx)` | 8 | no | #56 cond: how the talk began (WordsCtx origin: 0 the cursor, 1 the town pages, 2 an event actor at a person, 3 a phone call) |
 | `0x0017EBD0` | `uint8_t mm_WordsFn_MemberLook(WordsCtx *ctx)` | 68 | yes | #55 cond: member A's look (FamilyMember look) |
-| `0x0017EC20` | `uint8_t mm_WordsFn_MemberByte2A(WordsCtx *ctx)` | 68 | yes | #54 cond: member A's byte unk_06 (FamilyMember +6); 0 in every FAMILY.BIN record |
+| `0x0017EC20` | `uint8_t mm_WordsFn_MemberUnk06(WordsCtx *ctx)` | 68 | yes | #54 cond: member A's byte unk_06 (FamilyMember +6): 0 for every member in FAMILY.BIN and never written, so the answer is always 0 |
 | `0x0017EC70` | `uint16_t mm_WordsFn_MemberCharType(WordsCtx *ctx)` | 104 | yes | #53 cond: member character type, folded (0x26 -> 13, others above 0x1D -> 0) |
 | `0x0017ECE0` | `int mm_WordsFn_IsSpecialFamily(WordsCtx *ctx)` | 120 | no | #52 cond: whether family A is the first family of the Noodle Shop (argument 0), of the Studio Appartment of type 0xB8 (1) or of the Police Station of type 0x105 (2): the families the noodles and thief events bring in |
 | `0x0017ED60` | `int mm_WordsFn_IsApplicant(WordsCtx *ctx)` | 16 | no | #51 cond: the family is on the applicant list |
@@ -342,8 +342,8 @@ friendship changed. A is the person talked to.
 | `0x00180260` | `void mm_Words_SetArg(Words *words, uint16_t arg)` | 12 | no | (words, arg) the context's arg = `arg` |
 | `0x00180270` | `int mm_Words_GetFriendshipChanged(Words *words)` | 12 | no | the context's friendshipChanged (set by #116/#117) |
 | `0x00180280` | `int mm_Words_GetCancelAllowed(Words *words)` | 12 | no | the context's cancelAllowed |
-| `0x00180290` | `void mm_Words_SetFamily(Words *words, int family, uint16_t member, int arg4, CityScene *city)` | 248 | yes | (words, family, member, arg4, city) subject A = family `family` member `member` (prefetches the family), clears the rest |
-| `0x00180390` | `void mm_Words_SetPerson(Words *words, MapPerson *person, int arg4, CityScene *city)` | 256 | yes | (words, person, arg4, city) subject A = person `person` with home building, clears the rest |
+| `0x00180290` | `void mm_Words_SetFamily(Words *words, int family, uint16_t member, int origin, CityScene *city)` | 248 | yes | (words, family, member, origin, city) subject A = family `family` member `member` (prefetches the family), clears the rest; `origin`: how the talk began (0 the cursor, 1 the town pages, 2 an event actor at a person, 3 a phone call) |
+| `0x00180390` | `void mm_Words_SetPerson(Words *words, MapPerson *person, int origin, CityScene *city)` | 256 | yes | (words, person, origin, city) subject A = person `person` with home building, clears the rest; `origin`: how the talk began (0 the cursor, 1 the town pages, 2 an event actor at a person, 3 a phone call) |
 | `0x00180490` | `Words *mm_Words_dtor(Words *words, int16_t deleteFlag)` | 84 | yes | frees the 0x140-byte context |
 | `0x001804F0` | `Words *mm_Words_ctor(Words *words)` | 48 | yes | allocates the 0x140-byte context |
 | `0x001A0C40` | `void mm_Words_MatchTypedAnswer(int script, char *typed)` | 840 | no | which answer of the current question matches the typed text (strcmp) |
@@ -359,8 +359,8 @@ friendship changed. A is the person talked to.
 | `0x001A29C0` | `int mm_Words_FriendshipChanged(void)` | 8 | no | the global context's friendshipChanged |
 | `0x001A29D0` | `int mm_Words_CancelAllowed(void)` | 8 | no | the global context's cancelAllowed |
 | `0x001A29E0` | `void mm_Words_LoadForWants(CityScene *city, int16_t id, int line, char *out)` | 596 | yes | script for a wants window line (event or default), reads its block |
-| `0x001A2C40` | `int mm_Words_LoadForFamily(int family, int member, int arg5, CityScene *city)` | 424 | yes | (family, member, arg5, city) the script of family `family` member `member` (a talk by phone): the subject set, the -2005 menu's entries hidden by age and friendship, the member's block read, the event words loaded; returns the block's cache slot |
-| `0x001A2DF0` | `int mm_Words_LoadForPerson(MapPerson *person, int arg5, CityScene *city)` | 604 | yes | (person, arg5, city) the script of person `person`: its character type's block, the event words of the event it starts (when `arg5` is 0) or the city's, the menus marked; returns the block's cache slot |
+| `0x001A2C40` | `int mm_Words_LoadForFamily(int family, int member, int origin, CityScene *city)` | 424 | yes | (family, member, origin, city) the script of family `family` member `member` (a talk by phone): the subject set, the -2005 menu's entries hidden by age and friendship, the member's block read, the event words loaded; returns the block's cache slot |
+| `0x001A2DF0` | `int mm_Words_LoadForPerson(MapPerson *person, int origin, CityScene *city)` | 604 | yes | (person, origin, city) the script of person `person`: its character type's block, the event words of the event it starts (when `origin` is 0: the player walked up) or the city's, the menus marked; returns the block's cache slot |
 | `0x001A3050` | `uint32_t *mm_Words_ReadBlock(int block)` | 336 | yes | (block) finds a script block in the cache of eight (most recently used first), reading it from WORDS.BIN into the last entry when it is not there; returns the first slot's word |
 | `0x001A31A0` | `WordsBlock *mm_WordsBlock_ctor(WordsBlock *entry)` | 172 | yes | (entry) a script block cache entry (WordsBlock): block 0 and a buffer of one block; the first one made opens WORDS.BIN and WORDSEVE.BIN, and each is counted |
 | `0x001A3250` | `void mm_Words_Init(void)` | 744 | yes | loads the WORDS, WORDSEVE, WORDSCOM and WORDSTEN tables at game start |

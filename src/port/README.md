@@ -69,7 +69,7 @@ Do not edit the two generated headers; `pipeline.py stage` rewrites them.
      first guest call, so that the callee's frame stays below them as it did in the original.
    - A function that calls such a function (directly, or through `callGuest`) reserves its own
      original frame first with `port::GuestFrame<Size>` (the size from its `addiu $sp, $sp, -Size`),
-     so the callee's slots land over the same leftover stack data (`mm_Char2_Draw`).
+     so the callee's slots land over the same leftover stack data (`mm_Vehicle_Draw`).
    - The address of such a frame can reach hardware state: `mm_Sky_Load` builds its DMA packet on
      the stack and `mm_Dma_KickVif1Now` writes the packet's address into the chain buffer that the
      difftest compares, so `mm_CityCamera_BaseCtor` and `mm_CityCamera_ctor` declare their own
