@@ -320,8 +320,8 @@ inline constexpr uint32_t MapPeople_Tick = 0x00143380u;
 inline constexpr uint32_t MapPeople_dtor = 0x00143520u;
 inline constexpr uint32_t MapPeople_ctor = 0x001435B0u;
 inline constexpr uint32_t MapObj_GetHeight = 0x00143690u;
-inline constexpr uint32_t MapObj_PushHistory = 0x00143750u;
-inline constexpr uint32_t MapObj_SumHistory = 0x00143790u;
+inline constexpr uint32_t CityMap_PushNewBuildings = 0x00143750u;
+inline constexpr uint32_t CityMap_SumNewBuildings = 0x00143790u;
 inline constexpr uint32_t MapObj_RayHit = 0x001437D0u;
 inline constexpr uint32_t Player_FloorBelow = 0x001439D0u;
 inline constexpr uint32_t Player_NearestObject = 0x00143DF0u;
@@ -1044,7 +1044,7 @@ inline constexpr uint32_t WordsFn_CanApply = 0x0017ED90u;
 inline constexpr uint32_t WordsFn_ConductTier = 0x0017EE10u;
 inline constexpr uint32_t WordsFn_ProsperityTier = 0x0017EE20u;
 inline constexpr uint32_t WordsFn_ApprovalTier = 0x0017EE30u;
-inline constexpr uint32_t WordsFn_MapHistoryTier = 0x0017EE70u;
+inline constexpr uint32_t WordsFn_NewBuildingsTier = 0x0017EE70u;
 inline constexpr uint32_t WordsFn_FamilyCountTier = 0x0017EEC0u;
 inline constexpr uint32_t WordsFn_PopulationRank = 0x0017EF20u;
 inline constexpr uint32_t WordsFn_TimeOfDay = 0x0017EF40u;
@@ -2309,6 +2309,8 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"CityCursor_dtor", addr::CityCursor_dtor},
     {"CityMap_ClearObject", addr::CityMap_ClearObject},
     {"CityMap_DeletingDtor", addr::CityMap_DeletingDtor},
+    {"CityMap_PushNewBuildings", addr::CityMap_PushNewBuildings},
+    {"CityMap_SumNewBuildings", addr::CityMap_SumNewBuildings},
     {"CityMap_ctor", addr::CityMap_ctor},
     {"CityRender_CollectObjects", addr::CityRender_CollectObjects},
     {"CityRender_DrawInstanceLayer", addr::CityRender_DrawInstanceLayer},
@@ -2650,9 +2652,7 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"MapObj_GetHeight", addr::MapObj_GetHeight},
     {"MapObj_GetMatrix", addr::MapObj_GetMatrix},
     {"MapObj_Init", addr::MapObj_Init},
-    {"MapObj_PushHistory", addr::MapObj_PushHistory},
     {"MapObj_RayHit", addr::MapObj_RayHit},
-    {"MapObj_SumHistory", addr::MapObj_SumHistory},
     {"MapObject_ctor", addr::MapObject_ctor},
     {"MapObjects_ClearObject", addr::MapObjects_ClearObject},
     {"MapObjects_Tick", addr::MapObjects_Tick},
@@ -3446,7 +3446,6 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"WordsFn_IsSpecialFamily", addr::WordsFn_IsSpecialFamily},
     {"WordsFn_LaptopHasBit", addr::WordsFn_LaptopHasBit},
     {"WordsFn_LikesBagItem", addr::WordsFn_LikesBagItem},
-    {"WordsFn_MapHistoryTier", addr::WordsFn_MapHistoryTier},
     {"WordsFn_MarkFamilyKnown", addr::WordsFn_MarkFamilyKnown},
     {"WordsFn_MemberByte2A", addr::WordsFn_MemberByte2A},
     {"WordsFn_MemberCharType", addr::WordsFn_MemberCharType},
@@ -3455,6 +3454,7 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"WordsFn_MeterAgrees", addr::WordsFn_MeterAgrees},
     {"WordsFn_Month", addr::WordsFn_Month},
     {"WordsFn_NameSlotSet", addr::WordsFn_NameSlotSet},
+    {"WordsFn_NewBuildingsTier", addr::WordsFn_NewBuildingsTier},
     {"WordsFn_NewIntroduction", addr::WordsFn_NewIntroduction},
     {"WordsFn_PersonAtBuilding", addr::WordsFn_PersonAtBuilding},
     {"WordsFn_PersonFlagBit", addr::WordsFn_PersonFlagBit},
@@ -3851,7 +3851,7 @@ void CityCursor_SelectTile(GuestPtr<CityCursor> cursor, int tile, GuestPtr<CityS
 void CityCursor_UpdateInfo(GuestPtr<CityCursor> cursor, GuestPtr<CityScene> city);
 void CityCursor_Move(GuestPtr<CityCursor> cursor, GuestPtr<CityScene> city, int a2);
 void CityCursor_Update(GuestPtr<CityCursor> cursor, GuestPtr<CityScene> city, int a2);
-void CityCursor_SetTarget(GuestPtr<CityCursor> cursor, uint16_t kind, int id, GuestPtr<Vec4> position);
+void CityCursor_SetTarget(GuestPtr<CityCursor> cursor, uint16_t target, int isPerson, GuestPtr<Vec4> position);
 void Math_ProjectPoint(int unused_a0, GuestPtr<Vec4> out, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix);
 void CityCursor_LayoutInfo(GuestPtr<CityCursor> cursor, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix);
 void CityCursor_Draw(GuestPtr<CityCursor> cursor);
@@ -3998,8 +3998,8 @@ void MapPeople_Tick(GuestPtr<CityMap> map, GuestPtr<CityScene> city);
 GuestPtr<CityMap> MapPeople_dtor(GuestPtr<CityMap> map, int16_t deleteFlag);
 GuestPtr<CityMap> MapPeople_ctor(GuestPtr<CityMap> map);
 ps2f MapObj_GetHeight(GuestPtr<CityMap> map, uint32_t object);
-void MapObj_PushHistory(GuestPtr<CityMap> map);
-int MapObj_SumHistory(GuestPtr<CityMap> map);
+void CityMap_PushNewBuildings(GuestPtr<CityMap> map);
+int CityMap_SumNewBuildings(GuestPtr<CityMap> map);
 int MapObj_RayHit(GuestPtr<CityMap> map, uint32_t tile, int a2, int a3, int arg);
 int Player_FloorBelow(GuestPtr<CityMap> map, GuestPtr<ps2f> position, int hit, ps2f lift);
 int Player_NearestObject(GuestPtr<CityMap> map, GuestPtr<ps2f> position, GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, ps2f radius);
@@ -4722,7 +4722,7 @@ int WordsFn_CanApply(GuestPtr<WordsCtx> ctx);
 int WordsFn_ConductTier(GuestPtr<WordsCtx> ctx);
 int WordsFn_ProsperityTier(GuestPtr<WordsCtx> ctx);
 int WordsFn_ApprovalTier(GuestPtr<WordsCtx> ctx);
-int WordsFn_MapHistoryTier(GuestPtr<WordsCtx> ctx);
+int WordsFn_NewBuildingsTier(GuestPtr<WordsCtx> ctx);
 int WordsFn_FamilyCountTier(GuestPtr<WordsCtx> ctx);
 int WordsFn_PopulationRank(GuestPtr<WordsCtx> ctx);
 int WordsFn_TimeOfDay(GuestPtr<WordsCtx> ctx);

@@ -1052,7 +1052,7 @@ namespace mm
         globals::ambienceEnabled.set(1);
     }
 
-    // The vehicles on a tile (people whose class has flag 1 and whose +0x28 is set), unless the tile's object
+    // The vehicles on a tile (people whose class has flag 1 and whose target is set), unless the tile's object
     // already has a request this frame (owner: object id, group 1): each sounds its engine (0x18) at a pitch of
     // 200 per 40 of speed, and while `horn` is still set, a one-in-four chance of the horn (0x1A) uses it up.
     // Returns what is left of `horn`.
@@ -1075,7 +1075,7 @@ namespace mm
             const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)};
             if ((cls->flags & 1u) == 0 || person->target == kNoPerson)
                 continue;
-            const uint16_t pitch = static_cast<uint16_t>(static_cast<int16_t>(person->introduces / 40) * 200);
+            const uint16_t pitch = static_cast<uint16_t>(static_cast<int16_t>(person->speed / 40) * 200);
             Se_Request(obj->id, 1, 0x18, 0, 0, pitch, 0x3C, 5, angle, distance);
             if (horn != 0 && (Random_TimerMix() & 3) == 0)
             {
@@ -1091,7 +1091,7 @@ namespace mm
     // types with flag 0x40 have one, and each object counts once per frame (object flag 4; again gives 0x4FF).
     // Built objects play the type's sound; one being built plays sound 6 in its third stage of
     // work (variant 16 to 23); the sound's schedule decides
-    // whether it plays now (see SeSound::schedule). "Occupied" is open (the type's vtable +0x24) with people in.
+    // whether it plays now (see SeSound::schedule). "Occupied" is open (the type's isOpen slot) with people in.
     uint32_t Se_BuildingSoundState(GuestPtr<MapObject> obj, GuestPtr<BuildingType> btype)
     {
         if ((btype->flags & 0x40u) == 0 || obj->id == 0)
@@ -1302,11 +1302,12 @@ namespace mm
     // next quarter; 0: the quarter from the clock; phase 4 would be all of them). For each block:
     //  - the building object's ambient sound (mm_Se_BuildingSoundState) from its footprint's middle, group 2;
     //  - the terrain sound (mm_Se_PickTerrainAmbience) for what stands there: 1 outside the map, else the kind
-    //    table by the object's +0x14, then 2 for types 2-4, 3 for type flag 0x80, 5 for flag 0x40; group 3;
+    //    table by the object's byte look[4] (wasteland's weed row; the low byte of entranceTile on buildings, read all the
+    //    same), then 2 for types 2-4, 3 for type flag 0x80, 5 for flag 0x40; group 3;
     //  - within 8 tiles, with the listener on the ground, the vehicles on its four tiles. The horn is allowed once,
     //    when the clock is at the month's five-minute slot of the hour or half an hour after it.
     // Then the objects' once-per-frame marks are cleared, and at 17:00 a city of 100 people or more with five
-    // entrances sounding in the quarter rings sound 0x3B. The sound clock is the clock in steps of 12 s (120 s
+    // built buildings sounding in the quarter rings sound 0x3B. The sound clock is the clock in steps of 12 s (120 s
     // before 6:00).
     void Se_UpdateCityAmbience(int advance)
     {
@@ -1366,7 +1367,7 @@ namespace mm
 
         const GuestPtr<Vec4> listener{globals::kListener};
         const ps2f half = 0.5f, centre = 64.0f;
-        uint16_t entrances = 0;
+        uint16_t built = 0;
         for (int dz = z0; dz <= z1; dz += 2)
             for (int dx = x0; dx <= x1; dx += 2)
             {
@@ -1378,7 +1379,7 @@ namespace mm
 
                 const uint32_t state = Se_BuildingSoundState(obj, btype) & 0xFFFFu;
                 if ((state & 0x200u) != 0)
-                    ++entrances;
+                    ++built;
                 if ((state & 0xFFu) != 0xFF)
                 {
                     const ps2f size = fromInt(btype->size);
@@ -1447,7 +1448,7 @@ namespace mm
                 obj->flags = static_cast<uint16_t>(obj->flags & 0xFFFBu);
             }
 
-        if (entrances >= 5 && city->map->population >= 100 && globals::soundClock.get() == 61200)
+        if (built >= 5 && city->map->population >= 100 && globals::soundClock.get() == 61200)
             requestPlain(0x3B, 0);
     }
 
@@ -1480,7 +1481,7 @@ namespace mm
             Se_Request(0, 0, 0x37, 0, 0, 0, 0x3C, 0, 0.0f, 0.0f);
     }
 
-    // The ambience sound for a map position (0xFF: none). Ground above the water level (city +0xB0) gets
+    // The ambience sound for a map position (0xFF: none). Ground above the water level (waterLevel) gets
     // 0x1C, or 0x1D on tiles without flag 0x20. Lower ground looks up its 2x2 block in the ambience grid: the
     // cell's sound must exist and match `variant` (1-based, 0 = 0), and the sound's schedule must hold now
     // for today's weather (hours per weather in its table entry), with the start inside the hour staggered
@@ -1760,7 +1761,7 @@ namespace mm
     }
 
     // The driver status as the game sees it (the received block with the queued commands merged in); busy while its
-    // word +0xC is set.
+    // busy word is set.
     int Sound_IsDriverBusy()
     {
         const GuestPtr<SoundStatus> view = globals::soundStatusView(), status = globals::soundStatus();

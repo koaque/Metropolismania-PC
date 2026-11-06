@@ -119,8 +119,8 @@ namespace mm
     }
 
     // The far view of a building (allocated 0x2A0 bytes) keeps the camera to return to: the eye in the base
-    // view's last 16 bytes (+0x260, over targetObject and targetPerson) and the target at +0x270. The
-    // building is at +0x280.
+    // view's last 16 bytes (farReturnEye, over targetObject and targetPerson) and the target in returnTarget. The
+    // building is `building` (TalkFarView).
     namespace
     {
         GuestPtr<Vec4> farReturnEye(GuestPtr<TalkView> view) { return GuestPtr<Vec4>::of(view->farReturnEye); }
@@ -168,7 +168,7 @@ namespace mm
     }
 
     // Picking a person at the building: left and right (with key repeat, or towards a forced choice) move the
-    // cursor over the three people in view, 16 pixels a frame for 10 frames, or past the edge zoom the view
+    // cursor over the three people in view, 16 pixels a frame for 10 frames, or past the edge scroll the view
     // by 0.03 a frame for 10 frames while the people shift by one. The idle timer runs on throughout.
     void TalkView_HandleInput(GuestPtr<TalkView> view)
     {
@@ -182,9 +182,9 @@ namespace mm
         else if (mode == 1)
         {
             if (view->scrollDir == 1)
-                view->zoom = view->zoom + ps2f(0.03f);
+                view->rowX = view->rowX + ps2f(0.03f);
             else
-                view->zoom = view->zoom - ps2f(0.03f);
+                view->rowX = view->rowX - ps2f(0.03f);
             if (++view->scrollStep >= 10)
                 view->scrollMode = 0;
         }
@@ -392,9 +392,9 @@ namespace mm
         eye->w = 1.0f;
     }
 
-    // For a talk at a building (+0x70; 0x3F80, a talk with a family, has nothing to do): the building's workers
+    // For a talk at a building (building; 0x3F80, a talk with a family, has nothing to do): the building's residents
     // among the people listed at it, outside or already in it and of a class without flag 1, are sorted by
-    // their +0x2E byte, highest first, then each is unlinked from the building's tile and, when it was linked
+    // their member number, highest first, then each is unlinked from the building's tile and, when it was linked
     // there, added to the building. The sorted list sits in the original's frame (sp + 0x60, its cursor at
     // + 0x7E), and as in the original an insertion only shifts the entries up to the 6th, however long the list.
     void TalkView_CollectOccupants(GuestPtr<TalkView> view)
@@ -436,9 +436,9 @@ namespace mm
 
     // ---- the other talk views (batch 38)
 
-    // Occupant, person and phone views keep a camera of their own after the base view, eye at +0x270 and target
-    // at +0x280: the far views return to it, the near views look through it. Person views draw the person
-    // (+0x260) turned by the angle at +0x290.
+    // Occupant, person and phone views keep a camera of their own after the base view (TalkPersonView eye and target):
+    // the far views return to it, the near views look through it. Person views draw the person (targetObject) turned by
+    // the angle in facing.
     namespace
     {
         GuestPtr<Vec4> ownEye(GuestPtr<TalkView> view) { return GuestPtr<Vec4>::of(view.as<TalkPersonView>()->eye); }
@@ -558,7 +558,7 @@ namespace mm
         view->animFlip[slot] = view->animFlip[slot] ^ 1;
     }
 
-    // The near views look through their camera and clear the city's word +0x28 every frame; the near view of a
+    // The near views look through their camera and clear the city's talkOverlay every frame; the near view of a
     // building also takes the cursor input.
     void TalkBldgNear_Active(GuestPtr<TalkView> view)
     {
@@ -939,7 +939,7 @@ namespace mm
             money->base.state = 3;
     }
 
-    // The menu window's update: a pressed choice runs the close (vtable +0x10).
+    // The menu window's update: a pressed choice runs the close slot.
     void MenuWin_Update(GuestPtr<MenuWin> menuwin)
     {
         if (ListMenu_HandleInput(menuwin->list, GuestPtr<int32_t>::of(menuwin->choice)) != 0)
@@ -947,7 +947,7 @@ namespace mm
     }
 
     // The talk session follows its conversation: while the conversation shows its message (state 6) the people
-    // keep their idle animation going; status 4 asks the session to close (vtable +0x10), 3 or 6 mean the session
+    // keep their idle animation going; status 4 asks the session to close (close slot), 3 or 6 mean the session
     // is open, 0 that the close can finish (a single target closes the view too, else the view's choice resets).
     void Talk_Active(GuestPtr<TalkSession> talk)
     {
@@ -983,11 +983,11 @@ namespace mm
 
     namespace
     {
-        // The camera moves between the one the view opened with (eye +0x10, target +0x20) and the near one stored
-        // after the base view (eye +0x270, target +0x280), blended by the widget timer t as (1 - t) * a + t * b:
+        // The camera moves between the one the view opened with (eye, target) and the near one stored after the
+        // base view (TalkPersonView eye and target), blended by the widget timer t as (1 - t) * a + t * b:
         // opening from the first to the second, closing back (a and b swapped). The vectors are built in the
-        // caller's 0x40-byte frame (eye at +0x20, target at +0x30), w 1.0; then the camera is set and updated and
-        // the city's word +0x28 raised.
+        // caller's 0x40-byte frame (eye at sp + 0x20, target at sp + 0x30), w 1.0; then the camera is set and updated
+        // and the city's talkOverlay raised.
         void blendNearCamera(GuestPtr<TalkView> view, bool opening, uint32_t eyeAt, uint32_t targetAt)
         {
             const auto blend = [&](uint32_t out, uint32_t current, uint32_t dest) {
@@ -1044,7 +1044,7 @@ namespace mm
             view->base.state = 3;
     }
 
-    // My Home: opening marks the entrance once the step ends (if the home has its entrance flag); closing also
+    // My Home: opening marks the entrance once the step ends (if the home is built, flag 0x20); closing also
     // shows the HUD again.
     void MyHome_Opening(GuestPtr<TalkView> view)
     {
@@ -1101,7 +1101,7 @@ namespace mm
     }
 
     // The person at record `person` is drawn in front of the camera at (0, 0.4, -3.65): the character class's draw slot
-    // (vtable +0x14) with an identity matrix moved there, the default colour and the view's animation slots. A class with
+    // (drawAt slot) with an identity matrix moved there, the default colour and the view's animation slots. A class with
     // flag 2 also gets the view's person model placed there first (and the person is then 0.15 lower).
     void TalkView_DrawPerson(GuestPtr<TalkView> view, int person)
     {
@@ -1254,7 +1254,7 @@ namespace mm
         return card;
     }
 
-    // The conversation (+0x14) and the view (+0x10) delete themselves through their vtables (at +8).
+    // The conversation and the view delete themselves through their vtables (the destructor slot).
     GuestPtr<TalkSession> Talk_dtor(GuestPtr<TalkSession> talk, int16_t deleteFlag)
     {
         if (talk)
@@ -1269,7 +1269,7 @@ namespace mm
         return talk;
     }
 
-    // Four name boxes (+0x78) and four frames (+0x88), then the cursor frame at +0x98.
+    // Four name boxes (nameBoxes) and four frames (frames), then the cursor frame (cursorFrame).
     GuestPtr<TalkView> TalkView_dtor(GuestPtr<TalkView> view, int16_t deleteFlag)
     {
         if (view)
@@ -1348,8 +1348,8 @@ namespace mm
     GuestPtr<TalkView> TalkPersonNear_dtor(GuestPtr<TalkView> view, int16_t deleteFlag) { return talkViewDtor(view, deleteFlag, 0x001BD6D0u); }
     GuestPtr<TalkView> MyHome_dtor(GuestPtr<TalkView> view, int16_t deleteFlag) { return talkViewDtor(view, deleteFlag, 0x001BD810u); }
 
-    // The conversation window: its speaker, listener and cursor objects (+0x2E0, +0x2D4, +0x2D8) and the name entry (+0x2DC, its
-    // vtable at +0x120) delete themselves through their vtables, then the message window below it.
+    // The conversation window: its business card, menu window and money panel (card, menu, panel) and the name entry
+    // (nameEntry) delete themselves through their vtables, then the message window below it.
     GuestPtr<TalkConv> TalkConv_dtor(GuestPtr<TalkConv> conv, int16_t deleteFlag)
     {
         if (conv)
@@ -1377,8 +1377,8 @@ namespace mm
     PORT_FN(MyHome_dtor);
     PORT_FN(TalkConv_dtor);
 
-    // The money window: the amount is shown (+0xC) and kept (+0x10), the talk building model is shared (+0x14, from 0x1F3B2C)
-    // and a text box of 8 columns, 1 row and style -2 (+0x18) is made, placed at (0x8040, 0x85A0, -0x100000) with the
+    // The money window: the amount is shown (shown) and kept (amount), the talk building model is shared (model, from
+    // 0x1F3B2C) and a text box of 8 columns, 1 row and style -2 (text) is made, placed at (0x8040, 0x85A0, -0x100000) with the
     // character size 0, 0, 0xB0, 0.
     GuestPtr<TalkMoney> TalkMoney_ctor(GuestPtr<TalkMoney> money, int amount)
     {
@@ -1396,8 +1396,8 @@ namespace mm
 
     PORT_FN(TalkMoney_ctor);
 
-    // The business card window: the city (+0x28), the shared building model (+0x1C, from 0x1F3B2C), a text box of 9 by 6 (+0x20),
-    // one of 14 by 2 (+0x24) and a frame (+0x30).
+    // The business card window: the city, the shared building model (model, from 0x1F3B2C), a text box of 9 by 6 (lowerText),
+    // one of 14 by 2 (upperText) and a frame.
     GuestPtr<TalkCard> TalkCard_ctor(GuestPtr<TalkCard> card, GuestPtr<CityScene> city)
     {
         const uint32_t c = card.address;
@@ -1422,8 +1422,8 @@ namespace mm
     PORT_FN(TalkCard_ctor);
 
     // Sets what the talk view shows (building `building`, 0x3F80 for a family, and `family`): four name boxes (12 by 1) each with
-    // a frame, the cursor frame (+0x98, style 0x33 at 100, 100), the shared person model (+0x9C, from 0x1F3B40), the zoom
-    // (-0.3 at +0xA4) and the scroll and idle state cleared (the idle counter's limit is 0x78 at +0xC0); then the people are
+    // a frame, the cursor frame (style 0x33 at 100, 100), the shared person model (awayModel, from 0x1F3B40), the row's x
+    // (rowX, -0.3) and the scroll and idle state cleared, the cursor's x (cursorX) at 0x78; then the people are
     // counted.
     void TalkView_SetTarget(GuestPtr<TalkView> view, int building, int family)
     {
@@ -1439,7 +1439,7 @@ namespace mm
         const uint32_t cursor = sdk::operator_new(0xC0u);
         view->cursorFrame = cursor != 0u ? Frame_ctor(GuestPtr<Frame>{cursor}, 0x33, 0x64, 0x64, 0x18, 0xC, 0x10000000u) : GuestPtr<Frame>{0u};
         view->awayModel = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B40u)};
-        view->zoom = std::bit_cast<float>(0xBE99999Au);
+        view->rowX = std::bit_cast<float>(0xBE99999Au);
         view->idleTime = 0.0f;
         view->scrollMode = 0;
         view->scrollDir = 0;
@@ -1478,7 +1478,7 @@ namespace mm
         return view;
     }
 
-    // A building seen from far away: the building (+0x280) shown, its occupants collected, and the city camera's eye and target
+    // A building seen from far away: the building (TalkFarView building) shown, its occupants collected, and the city camera's eye and target
     // kept to return to.
     GuestPtr<TalkView> TalkBldgFar_ctor(GuestPtr<TalkView> view, GuestPtr<CityScene> city, int object)
     {
@@ -1493,8 +1493,8 @@ namespace mm
         return view;
     }
 
-    // The conversation window: the message window below it, the city (+0x2CC), the menu window (+0x2D4) and the business card
-    // window (+0x2E0), with no speaker (+0x2D8) or name entry (+0x2DC) yet.
+    // The conversation window: the message window below it, the city, the menu window (menu) and the business card
+    // window (card), with no money panel (panel) or name entry (nameEntry) yet.
     GuestPtr<TalkConv> TalkConv_ctor(GuestPtr<TalkConv> conv, GuestPtr<CityScene> city)
     {
         const uint32_t c = conv.address;
@@ -1649,9 +1649,9 @@ namespace mm
 
     // ---- The talk session and the card's drawing (plan P6 batch 2) ----
 
-    // Updates the view (+0x10) and the conversation window (+0x14) through their vtables, lets the view's mode 3 (+0xAC) end when
+    // Updates the view and the conversation window through their vtables, lets the view's scroll mode 3 (scrollMode) end when
     // the conversation says it is idle, then updates the session itself; in its state 6 the session takes the input
-    // (mm_Talk_ChooseInput) and the view stops choosing (+0x254 0), in any other state the view is choosing (1). The state is
+    // (mm_Talk_ChooseInput) and the view stops choosing (choosing 0), in any other state the view is choosing (1). The state is
     // returned.
     int Talk_Update(GuestPtr<TalkSession> talk)
     {
@@ -1677,7 +1677,7 @@ namespace mm
     }
 
     // The business card, drawn in pass 2 while it is showing (state 3): its model's matrix (the node at +0x670 of the model's
-    // data) is the standard one put at the card's place (x from the table at 0x1B1B38 by the slot at +0x18, -0.0608 and -4.4),
+    // data) is the standard one put at the card's place (x from the table at 0x1B1B38 by the card's slot, -0.0608 and -4.4),
     // stretched 1.5 across and 1.3 up, the model's node 8 is drawn, then the texts, the gauges and the frame.
     void TalkCard_Draw(GuestPtr<TalkCard> card, int pass)
     {
@@ -1739,8 +1739,8 @@ namespace mm
 
     PORT_FN(TalkView_AllAsleep);
 
-    // The input of the choosing state: the Triangle button (0x10; unless a choice is already forced in the view, +0xB8) or a talk
-    // that must end at once (+0x3C) closes the talk and its view and ends it (state 5). The Cross button (0x40) or a forced choice
+    // The input of the choosing state: the Triangle button (0x10; unless a choice is already forced in the view, forcedChoice) or a talk
+    // that must end at once (endChoosing) closes the talk and its view and ends it (state 5). The Cross button (0x40) or a forced choice
     // takes the choice the view reports: for a building it is a person (whose family and member are noted) and the conversation
     // starts about them, for a family it is a member. The view goes to mode 3 and the talk to state 2.
     void Talk_ChooseInput(GuestPtr<TalkSession> talk)
@@ -1783,9 +1783,9 @@ namespace mm
 
     // Starts the conversation window on a person (`byFamily` 0: `target` is the person, `buildingOrMember` the building they are at)
     // or on a family member (`byFamily` 1: the family and the member). The script text is loaded (mm_Words_LoadForPerson or
-    // mm_Words_LoadForFamily) and kept at +0x2D0, the business card is shown for the speaker, the window's own record of the
-    // speaker is kept (+0x4EC for a person with +0x4F8 set when the building has people inside; +0x4F0 and +0x4F4 for a member with
-    // +0x4F8 1), and the message `slot` is set with the speaker's character class sound.
+    // mm_Words_LoadForFamily) and kept in script, the business card is shown for the speaker, the window's own record of the
+    // speaker is kept (person, with peopleInside set when the building has people inside; family and member for a member, with
+    // peopleInside 1), and the message `slot` is set with the speaker's character class sound.
     void TalkConv_Start(GuestPtr<TalkConv> conv, int byFamily, int target, int buildingOrMember, int slot, int arg5)
     {
         const uint32_t c = conv.address;
@@ -1819,10 +1819,10 @@ namespace mm
 
     PORT_FN(TalkConv_Start);
 
-    // Updates the conversation: the speaker (+0x2D8), the name entry (+0x2DC; in state 8 a finished entry, result 2, is stored at the
+    // Updates the conversation: the money panel (panel), the name entry (nameEntry; in state 8 a finished entry, result 2, is stored at the
     // table 0x1C5380 for the codes below -0x7A8 or checked as the typed answer of the script, then closed, back to state 3 and the
-    // next line), the business card (+0x2E0) and the message window below. When the window reports 7 (a menu asked for) and the
-    // menu (+0x2D4) has closed, its choice (the last entry when none) is applied to the script (mm_Words_ApplyChoice), the state
+    // next line), the business card (card) and the message window below. When the window reports 7 (a menu asked for) and the
+    // menu (menu) has closed, its choice (the last entry when none) is applied to the script (mm_Words_ApplyChoice), the state
     // goes back to 3 with the next line, and the speaker is given the player's money. The window's result is returned.
     int TalkConv_Update(GuestPtr<TalkConv> conv)
     {
@@ -1869,10 +1869,10 @@ namespace mm
 
     PORT_FN(TalkConv_Update);
 
-    // Reads the next piece of the script into the message window's buffer (+0x2E8) and acts on what the script returned (+0x2E4): at
+    // Reads the next piece of the script into the message window's buffer (text) and acts on what the script returned (code): at
     // the end of a conversation (-0x1777) the speaker's friendship goes up once (by the speaker's class bits 21 to 23 plus 4,
-    // and not when the speaker is asleep, activity 5) and the end flag (+0x500) is set; a menu with no choice (-0x7D5) sets
-    // the end flag too and -0x7D1 sets the typed answer flag (+0x504). The text is then shown (mm_MsgWin_NextLine).
+    // and not when the speaker is asleep, activity 5) and the end flag (ended) is set; a menu with no choice (-0x7D5) sets
+    // the end flag too and -0x7D1 sets the typed answer flag (typedAnswer). The text is then shown (mm_MsgWin_NextLine).
     void TalkConv_NextLine(GuestPtr<TalkConv> conv)
     {
         const uint32_t c = conv.address;
@@ -1921,8 +1921,8 @@ namespace mm
 
     // Draws a family member in the phone view: the draw packet of the view is appended, the local matrix is the standard one with
     // its translation at (0, 0.4, -3.6); for a character class with flag 2 the view's person model gets the same place and is drawn
-    // with the default colour, and the local matrix drops by 0.15; the class's own draw slot (+0x14 of its table at +0x20) then
-    // draws the member with the matrix, the animation state (+0xD0) and times (+0x1D0) of the view; a first animation time of 0
+    // with the default colour, and the local matrix drops by 0.15; the class's own drawAt slot then
+    // draws the member with the matrix, the animation state (anim) and times (animTime) of the view; a first animation time of 0
     // puts the first slot to the idle animation 7.
     void TalkView_DrawMember(GuestPtr<TalkView> view, int family, int member)
     {
@@ -1953,9 +1953,9 @@ namespace mm
 
     PORT_FN(TalkView_DrawMember);
 
-    // The conversation window closing: once its close call (slot +0x18 of the vtable, step 0.1) is done the speaker window (+0x2D8)
+    // The conversation window closing: once its close call (the step slot, by 0.1) is done the money panel (panel)
     // is deleted and the state goes back to 0. The speaker's friendship status then moves on, unless the speaker was asleep (activity 5
-    // for a person; the schedule says 5 for a member of a family): when the conversation ended well (the end flag +0x500 or a
+    // for a person; the schedule says 5 for a member of a family): when the conversation ended well (the end flag, ended, or a
     // change the script made) the status byte advances (mm_TalkStatus_RecordTalk or mm_MemberStatus_RecordTalk), otherwise a status level
     // of 14 or more drops back to 13.
     void TalkConv_Closing(GuestPtr<TalkConv> conv)
@@ -1999,7 +1999,7 @@ namespace mm
     // in the ground plane, from the camera's eye to the building's centre; a talk with no building counts as near) and what is
     // talked to: a My Home type gets the home view, a building the building view, a person the person view (a person inside
     // a building the occupant view) in their near or far versions, a whole family the family phone view, a member the member
-    // view. The conversation window is made too, the HUD flags of the city (+0x30 to +0x38) go off and the poses are cleared.
+    // view. The conversation window is made too, the HUD flags of the city (hudVisible[1] to [3]) go off and the poses are cleared.
     // The result is 1.
     int Talk_Start(GuestPtr<TalkSession> talk, int byFamily, int target, int member, int arg5, GuestPtr<CityScene> city)
     {
@@ -2077,7 +2077,7 @@ namespace mm
             store(GuestPtr<Vec4>{sp + 0x90u}, vf(9));
             isNear = ps2f(std::bit_cast<float>(port::load<uint32_t>(sp + 0x90u))) <= ps2f(20.0f);
         }
-        // The view: made, built by the constructor from the session's fields, and kept at +0x10.
+        // The view: made, built by the constructor from the session's fields, and kept in view.
         const auto makeView = [&](uint32_t size, auto construct) {
             uint32_t view = sdk::operator_new(size);
             if (view != 0u)
@@ -2144,9 +2144,9 @@ namespace mm
 
     PORT_FN(Talk_Start);
 
-    // The conversation's state for what the script asked for (the code at +0x2E4). A code from -6000 up to -2001 is a menu of choices
-    // (mm_Words_CountChoices of them, listed in the menu window +0x2D4, state 7); -2001 also opens the money panel (+0x2D8, made when
-    // missing). A code from -2000 up is a name entry (state 8): the entry window (+0x2DC, made when missing) is set up with a slot of
+    // The conversation's state for what the script asked for (the code in code). A code from -6000 up to -2001 is a menu of choices
+    // (mm_Words_CountChoices of them, listed in the menu window, menu, state 7); -2001 also opens the money panel (panel, made when
+    // missing). A code from -2000 up is a name entry (state 8): the entry window (nameEntry, made when missing) is set up with a slot of
     // the answer table at 0x1C5380 for codes below -1960, else with the script's default answer copied to 0x1F4E90 without its
     // trailing blanks (the longest answer being that of the default). Below -6000 the line is shown and waits for a button: Triangle
     // (when the script allows cancelling) or, at the end of the conversation (-0x1777 in state 3), Cross closes the panel, the card
@@ -2229,9 +2229,9 @@ namespace mm
     PORT_FN(TalkConv_Active);
 
     // The building shown in a talk view. `byFamily` 0: `target` is a building (nothing is drawn when its record lacks flag 0x20),
-    // 1: a family, whose home type is used. The type's draw check (slot +0x24 of the object at +0x15C: the type, the city and the
-    // record, 0 for a family) says whether to draw; with no yes and the view not forced lit (+0x258) the type's node 0x150 is
-    // shown dimmed and nobody-at-home aware. Otherwise: type flag 0x8000 draws the entrance mesh of the type's table with its
+    // 1: a family, whose home type is used. The type's draw check (its isOpen slot: the type, the city and the
+    // record, 0 for a family) says whether to draw; with no yes and the view not forced lit (forceLit) the type's node 0x150 is
+    // shown dimmed and nobody-at-home aware. Otherwise: type flag 0x8000 draws the type's built mesh (business model) with its
     // own rotation and position between the two light packets; 0x4000 (by family only) shows node 0x150 and else node 0x14F, each
     // dimmed (0x1B1B00) when nobody is home and untinted (0x1B26C0) otherwise, its matrix reset to the camera spot (0, -0.16, -3.84).
     // The screen's Z is then cleared (mm_DmaList_QueueClearZ).
@@ -2275,15 +2275,15 @@ namespace mm
             drawNode(btype->modelNode);
         else if ((flags & 0x8000u) != 0)
         {
-            // The entrance mesh at the type's talk eye offset, turned by its w.
+            // The finished building's mesh at the type's talk eye offset, turned by its w.
             sdk::sceVu0RotMatrixY(sp + 0x60u, globals::kIdentityMatrix, btype->talkEye.w);
             const GuestPtr<Vec4> place{sp + 0x90u};
             place->x = btype->talkEye.x;
             place->y = btype->talkEye.y;
             place->z = btype->talkEye.z;
             Packet2_Draw(GuestPtr<uint32_t>{city->lights.address}, 1);
-            Instance_DrawMesh(globals::entranceModel.get(), GuestPtr<Vec4>{sp + 0x60u}, GuestPtr<Vec4>{globals::kDefaultColour},
-                              btype->entranceDrawMesh, 1);
+            Instance_DrawMesh(globals::businessModel.get(), GuestPtr<Vec4>{sp + 0x60u}, GuestPtr<Vec4>{globals::kDefaultColour},
+                              btype->builtMesh, 1);
             Packet2_Draw(GuestPtr<uint32_t>{city->lights.address}, 0);
         }
         else if ((flags & 0x4000u) != 0)
@@ -2298,15 +2298,15 @@ namespace mm
 
     PORT_FN(TalkView_DrawBuilding);
 
-    // The people of a talk view, in a row from the view's scroll position (+0xA4) at 0.3 apart, at height 0.4 and depth -3.65: the
-    // members of the family when the view is by family (+0x70 is 0x3F80), else the people of the building that count (a class
+    // The people of a talk view, in a row from the view's scroll position (rowX) at 0.3 apart, at height 0.4 and depth -3.65: the
+    // members of the family when the view is by family (building is 0x3F80), else the people of the building that count (a class
     // without flag 1, outside or in this building). Those left of -0.8 are only counted past; drawing goes on while the position is
-    // at most 0.8. Someone who is away (activity or schedule 5) is the view's second model (+0x9C) swaying with a phase of its own
-    // (dimmed when nobody is home); anyone else is drawn by the character class's draw slot (vtable +0x14) turned about y by the
+    // at most 0.8. Someone who is away (activity or schedule 5) is the view's second model (awayModel) swaying with a phase of its own
+    // (dimmed when nobody is home); anyone else is drawn by the character class's drawAt slot turned about y by the
     // position, in the default colour for the highlighted slot (the chosen one, else the cursor's) and a grey for the rest, with the
     // view's person model first for a class with flag 2 (and the person then 0.15 lower). Up to four of them (and none left of -1)
-    // are counted for the name boxes (+0x78) and frames (+0x88); unless the view is choosing, each gets its name (the member's two
-    // name fields, +0x38 then +0x28, with a separator) on a row that alternates, and a friendship frame of the member's band + 9
+    // are counted for the name boxes (nameBoxes) and frames (frames); unless the view is choosing, each gets its name (the member's two
+    // name fields, name2 then name, with a separator) on a row that alternates, and a friendship frame of the member's band + 9
     // when it has one. The original's frame is reserved whole.
     void TalkView_DrawPeople(GuestPtr<TalkView> view)
     {
@@ -2320,7 +2320,7 @@ namespace mm
         const ps2f leftEdge = std::bit_cast<float>(0xBF4CCCCDu), rightEdge = std::bit_cast<float>(0x3F4CCCCDu);
         const ps2f cullEdge = -1.0f;
 
-        pos->x = view->zoom;
+        pos->x = view->rowX;
         pos->y = std::bit_cast<float>(0x3ECCCCCDu); // 0.4
         pos->z = std::bit_cast<float>(0xC069999Au); // -3.65
         pos->w = 1.0f;

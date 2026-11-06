@@ -166,7 +166,7 @@
 0x001360C0 void mm_CityCursor_UpdateInfo(CityCursor *cursor, CityScene *city);
 0x001365C0 void mm_CityCursor_Move(CityCursor *cursor, CityScene *city, int a2);
 0x00136770 void mm_CityCursor_Update(CityCursor *cursor, CityScene *city, int a2);
-0x00136C80 void mm_CityCursor_SetTarget(CityCursor *cursor, uint16_t kind, int id, Vec4 *position);
+0x00136C80 void mm_CityCursor_SetTarget(CityCursor *cursor, uint16_t target, int isPerson, Vec4 *position);
 0x00136CB0 void mm_Math_ProjectPoint(int unused_a0, Vec4 *out, Vec4 *point, Vec4 *matrix);
 0x00136CF0 void mm_CityCursor_LayoutInfo(CityCursor *cursor, Vec4 *point, Vec4 *matrix);
 0x00136F10 void mm_CityCursor_Draw(CityCursor *cursor);
@@ -313,8 +313,8 @@
 0x00143520 CityMap *mm_MapPeople_dtor(CityMap *map, int16_t deleteFlag);
 0x001435B0 CityMap *mm_MapPeople_ctor(CityMap *map);
 0x00143690 float mm_MapObj_GetHeight(CityMap *map, uint32_t object);
-0x00143750 void mm_MapObj_PushHistory(CityMap *map);
-0x00143790 int mm_MapObj_SumHistory(CityMap *map);
+0x00143750 void mm_CityMap_PushNewBuildings(CityMap *map);
+0x00143790 int mm_CityMap_SumNewBuildings(CityMap *map);
 0x001437D0 int mm_MapObj_RayHit(CityMap *map, uint32_t tile, int a2, int a3, int arg);
 0x001439D0 int mm_Player_FloorBelow(CityMap *map, float *position, int hit, float lift);
 0x00143DF0 int mm_Player_NearestObject(CityMap *map, float *position, uint32_t *hit, float *distance, float radius);
@@ -1037,7 +1037,7 @@
 0x0017EE10 int mm_WordsFn_ConductTier(WordsCtx *ctx);
 0x0017EE20 int mm_WordsFn_ProsperityTier(WordsCtx *ctx);
 0x0017EE30 int mm_WordsFn_ApprovalTier(WordsCtx *ctx);
-0x0017EE70 int mm_WordsFn_MapHistoryTier(WordsCtx *ctx);
+0x0017EE70 int mm_WordsFn_NewBuildingsTier(WordsCtx *ctx);
 0x0017EEC0 int mm_WordsFn_FamilyCountTier(WordsCtx *ctx);
 0x0017EF20 int mm_WordsFn_PopulationRank(WordsCtx *ctx);
 0x0017EF40 int mm_WordsFn_TimeOfDay(WordsCtx *ctx);

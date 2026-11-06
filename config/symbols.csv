@@ -964,8 +964,8 @@ address,name,kind,source
 0x00143520,mm_MapPeople_dtor,func,manual
 0x001435B0,mm_MapPeople_ctor,func,manual
 0x00143690,mm_MapObj_GetHeight,func,manual
-0x00143750,mm_MapObj_PushHistory,func,manual
-0x00143790,mm_MapObj_SumHistory,func,manual
+0x00143750,mm_CityMap_PushNewBuildings,func,manual
+0x00143790,mm_CityMap_SumNewBuildings,func,manual
 0x001437D0,mm_MapObj_RayHit,func,manual
 0x001439D0,mm_Player_FloorBelow,func,manual
 0x00143DF0,mm_Player_NearestObject,func,manual
@@ -1696,7 +1696,7 @@ address,name,kind,source
 0x0017EE10,mm_WordsFn_ConductTier,func,manual
 0x0017EE20,mm_WordsFn_ProsperityTier,func,manual
 0x0017EE30,mm_WordsFn_ApprovalTier,func,manual
-0x0017EE70,mm_WordsFn_MapHistoryTier,func,manual
+0x0017EE70,mm_WordsFn_NewBuildingsTier,func,manual
 0x0017EEC0,mm_WordsFn_FamilyCountTier,func,manual
 0x0017EF20,mm_WordsFn_PopulationRank,func,manual
 0x0017EF40,mm_WordsFn_TimeOfDay,func,manual

@@ -243,8 +243,9 @@ namespace mm
     PORT_FN(SoundCmd_CancelWavePlay);
 
     // Sends the queued sound commands to the IOP driver, one per call and only while the RPC client is idle. The driver's status
-    // block (0x20B7C0) names the sequence slots (+4), effect voices (+8) and stops (+0x18) it has finished with, which leave the
-    // queued masks; with the queue empty the counters restart (and the masks clear, unless the driver reports itself busy at +0xC).
+    // block (SoundStatus at 0x20B7C0) names the sequence slots (midiPlaying), wave voices (wavePlaying) and a third mask (unk_18)
+    // it has finished with, which leave the queued masks; with the queue empty the counters restart (and the masks clear, unless
+    // the driver reports itself busy).
     // A command is a 0xD0-byte entry of the ring at 0x1FE6C0 (256 entries; command at +0, "sent" flag at +4, the arguments from
     // +0x10; the next to send is 0x1BDD48 and the next free 0x1BDD44): a sent one waits for the driver's reply word (0x20B800) and is
     // then retired; a new one is copied (or, for the commands with names, built with the path prefixes of 0x1B9D50 to 0x1B9DB0 and
@@ -263,12 +264,13 @@ namespace mm
         };
         sdk::FlushCache(0);
         const uint32_t slots = globals::soundSlotsQueued.get(), voices = globals::soundVoicesQueued.get(), stops = globals::soundStopsQueued.get();
-        globals::soundSlotsQueued.set(slots & (slots ^ port::load<uint32_t>(kStatus + 4u)));
-        globals::soundStopsQueued.set(stops & (stops ^ port::load<uint32_t>(kStatus + 0x18u)));
-        globals::soundVoicesQueued.set(voices & (voices ^ port::load<uint32_t>(kStatus + 8u)));
+        const GuestPtr<SoundStatus> status{kStatus};
+        globals::soundSlotsQueued.set(slots & (slots ^ status->midiPlaying));
+        globals::soundStopsQueued.set(stops & (stops ^ status->unk_18));
+        globals::soundVoicesQueued.set(voices & (voices ^ status->wavePlaying));
         if (globals::soundCmdSent.get() == globals::soundCmdIndex.get())
         {
-            const bool driverBusy = port::load<uint32_t>(kStatus + 0xCu) != 0;
+            const bool driverBusy = status->busy != 0;
             globals::soundCmdIndex.set(0);
             globals::soundCmdSent.set(0);
             if (driverBusy)

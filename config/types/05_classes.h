@@ -582,7 +582,7 @@ struct Bag {
     float slide;               /* +0x19C how far the bag has slid in, 0 to 120 */
     int32_t cursor;            /* +0x1A0 the slot under the cursor */
     int32_t setupSlot;         /* +0x1A4 the slot whose item is being placed, -1 none (mm_BagMenu_GetSetupKind) */
-    uint8_t unk_1A8[4];
+    int32_t usable;            /* +0x1A8 the goods under the cursor can be used: their action and description show */
 };
 /* Status panel (0xC0 bytes). */
 struct StatusPanel {
@@ -632,8 +632,8 @@ struct Minimap {
 struct CityCursor {
     CityCursorView views[2];   /* +0x000 one per frame parity (0x1BDCD0 & 1) */
     int32_t visible;           /* +0x1A0 */
-    int32_t targetId;          /* +0x1A4 */
-    uint16_t targetKind;       /* +0x1A8 */
+    int32_t targetIsPerson;    /* +0x1A4 0: target is an object, else a person */
+    uint16_t target;           /* +0x1A8 the object or person index, 0xFFFF none (from the player's target) */
     uint8_t unk_1AA[6];
     Vec4 targetPos;            /* +0x1B0 */
     int32_t lineCount;         /* +0x1C0 info lines shown */
@@ -1215,7 +1215,7 @@ struct TexImageFile {
 };
 /* City render layers, built by mm_CityRender_ctor, each with its own VU1 packets (docs/RENDER_PIPELINE.md). The terrain
    layers (B, C, D, E, F, G) draw the frame's terrain quads again with their own program and parameters, each the quads
-   whose flags match its mask. A: instances at entrances (0x2440); B: two passes over raised ground (0x230); C: the
+   whose flags match its mask. A: claim-met instances (0x2440); B: two passes over raised ground (0x230); C: the
    placement highlight and marker (0x240); D: rain (0x410); E: snow (0x6E0); F: a blended pass (0x140); G: the water (0x2E0). */
 
 /* An instance of layer A (0x90 bytes, mm_LayerA_AddInstance). Its draw packet's RET tag (+0x80) is the next instance's

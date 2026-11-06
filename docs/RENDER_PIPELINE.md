@@ -141,7 +141,7 @@ The snowflakes that land in other places than in PCSX2 (docs/STATUS.md, line 37)
 | 0x1A7B30 | placement highlight (layer C, pass 0, while a building is being placed) | read only | a terrain pass, unlit, with its own seven quadwords at 0x1C: two colours (255, 0, 0, 128) and (0, 0, 0, 128), the output offset, a GIF tag of 26 loops of 14 registers, PRIM 0x44 (blended triangle strip) and 0x82 (antialiased line strip), and mask 4 at 0x22.w; most likely a red fill and an outline of each highlighted tile; how the program tests the mask is not read yet |
 | 0x1A8330 | placement marker (layer C, pass 1) and layer A | read only | a model program (see above); the marker is node 0 or 1 of the marker model at the footprint's centre |
 
-Layer A holds instances added by `mm_CityRender_CollectObjects` for entrances whose variant byte counts up (flag 8 and 0x20 objects, the byte counts to 0x2D and starts over): meshes 2n and 2n + 1 of the layer's model for a building of size n + 1, turned and squashed in y by the count, fading as it grows. What they show in the game is not known yet.
+Layer A holds instances added by `mm_CityRender_CollectObjects` for built objects whose claim was met and whose variant byte counts up (object flags 0x20 built and 8 claim met; the byte starts at 1 when the claim is met, counts to 0x2D and starts over): meshes 2n and 2n + 1 of the layer's model for a building of size n + 1, turned and squashed in y by the count, fading as it grows. What they show in the game is not confirmed; the timing points to a short effect when a building's claim is met.
 
 ## .A3D models
 

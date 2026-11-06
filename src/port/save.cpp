@@ -152,7 +152,7 @@ namespace mm
         }
     }
 
-    // The memory card scan, one step a frame (+0x08). 0 to 5: card info for both ports, asked a second time
+    // The memory card scan, one step a frame (scanState). 0 to 5: card info for both ports, asked a second time
     // when a PS2 card is unformatted (a port reporting a new card is marked unchecked). 6: a port whose card
     // is new or of another type forgets its 8 slots; if a port is unchecked and a PS2 card is in, the slot
     // scan starts, else the types count as checked. 10 to 13: each port with a PS2 card goes to its root.
@@ -442,8 +442,8 @@ namespace mm
         SaveFile_Read(mc, static_cast<int>(GuestPtr<uint16_t>::of(lists->count[0]).address), 0xA0);
     }
 
-    // The map: packed tiles, the 0x20 bytes at +0x10, the objects, the tile lists, the people and the three
-    // words from +0x6C (population among them).
+    // The map: packed tiles, the 0x20 bytes from nextId on, the objects, the tile lists, the people and the three
+    // words freePerson, peopleInUse and population.
     void Map_LoadState(GuestPtr<CityMap> map, GuestPtr<McManager> mc)
     {
         SaveFile_Read(mc, static_cast<int>(map->packedTiles.address), 0x18000);
@@ -1059,7 +1059,7 @@ namespace mm
     PORT_FN(McManager_PrepareNewSlot);
 
     // Starts writing the icon and the save description file (mm_McSave_WriteIconSys on the manager's queue with the three arguments
-    // given): the request is kept at +0x14 and the two state words at 0x1BDB78 and 0x1BDB7C go back to -1.
+    // given): the request is kept in request and the two state words at 0x1BDB78 and 0x1BDB7C go back to -1.
     void SaveFile_WriteIconSys(GuestPtr<McManager> mc, int a1, int a2, int a3)
     {
         mc->request = McSave_WriteIconSys(static_cast<int>(mc->queue.address), a1, a2, a3);
@@ -1072,7 +1072,7 @@ namespace mm
     // The load screen's slot list, one slot per call. The newest of the 16 slots is found first (a slot counts when its size is
     // above 0 and it has a name; the saved time is compared by year, month, day, hour, minute, second). The slot at the cursor is
     // then taken, or the next one that counts (the cursor wraps to 0 with nothing written when none is left): its saved time
-    // (a clock as the BIOS keeps it: second, minute, hour, day, month and year at +9..+0xE of its header, each a plain number)
+    // (a clock as the BIOS keeps it: the directory entry's modified second, minute, hour, day, month and year, each a plain number)
     // is turned into the console's local time (sceScfGetLocalTimefromRTC) and written as "Slot %d: %s %s%s, %s. %shrs %smins"
     // (the card number, the month name, the day with its ordinal suffix, the year, the hours and the minutes). The day suffix is
     // "th" except for the days ending in 1, 2 and 3, where 11 and 12 (but not 13) keep "th". *isNewest tells whether this is the

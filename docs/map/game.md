@@ -12,6 +12,6 @@ briefing) and scene C (the city, `mm_CityScene_*` in `city`).
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
-| `0x0012ABA0` | `void mm_GameUpdate(Game *game)` | 572 | yes | Game class (vtable 0x1BCE60) slot +0xC, once per frame: sound update, then the scene state machine (+4): creates/updates/deletes the title, intro and city scenes |
+| `0x0012ABA0` | `void mm_GameUpdate(Game *game)` | 572 | yes | Game class (vtable 0x1BCE60) slot +0xC, once per frame: sound update, then the scene state machine (state): creates, updates and deletes the title, stage briefing and city scenes |
 | `0x0012ADE0` | `void mm_GameInit(Game *game)` | 52 | no | Game slot +8: sound state init, scene state 0, no scenes |
 | `0x0012AE20` | `int mm_Main(void)` | 100 | yes | probes the heap, runs static init, constructs the App on the stack, switches it to the Game vtable 0x1BCE60, runs mm_MainLoop, destroys it |

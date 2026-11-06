@@ -14,7 +14,7 @@ city `+0x60`), `mm_BagMenu_*` is the bag window. Item kinds come from the goods 
 | `0x0012AE90` | `void mm_Bag_LoadState(Bag *bag, McManager *mc)` | 20 | no | reads the bag's first 0x16C bytes (items and track ids) from the save (mm_SaveFile_Read); only caller mm_CityScene_LoadGame |
 | `0x0012AEB0` | `void mm_Bag_SaveState(Bag *bag, McManager *mc)` | 20 | no | writes the bag's first 0x16C bytes to the save (mm_SaveFile_Write); only caller mm_CityScene_SaveGame |
 | `0x0012AED0` | `void mm_Bag_RemoveSlot(Bag *bag, uint16_t *slot)` | 236 | no | removes item slot a1 (16 bytes each from +4) and shifts the rest down; capacity per bag type from 0x1B5B08 |
-| `0x0012AFC0` | `void mm_Bag_AddMusicTrack(Bag *bag, int group, int index)` | 180 | no | adds the track id of goods item (a1, a2) to the 10-entry list at +0x144 if missing and registers it with mm_Bgm_SetTrackSlot |
+| `0x0012AFC0` | `void mm_Bag_AddMusicTrack(Bag *bag, int group, int index)` | 180 | no | adds the track id of goods item (a1, a2) to the ten music tracks (musicTracks) if missing and registers it with mm_Bgm_SetTrackSlot |
 | `0x0012B080` | `void mm_Bag_AddItem(Bag *bag, int group, int index, int16_t stage, int month, int16_t seller, uint8_t t2, uint8_t t3)` | 136 | no | puts goods item (group a1, index a2) with count and flags into the first empty slot |
 | `0x0012B110` | `int mm_Bag_FindItem(Bag *bag, uint32_t id)` | 148 | no | slot holding the item whose id is a1 |
 | `0x0012B1B0` | `void mm_BagMenu_UpdateItemText(Bag *bag)` | 380 | no | item name and the action text for the selected slot: "Empty bag", "Eat", "Drink", "New clothes", "Set up" |

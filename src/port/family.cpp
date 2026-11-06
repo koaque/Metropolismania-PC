@@ -162,7 +162,7 @@ namespace mm
         return meterAgrees(byte & 0x7Fu, approval);
     }
 
-    // A family may apply when its home type's call level (+0x154, low 7 bits) is reached by the stage, it is not in
+    // A family may apply when its home type's call level (callFlags, low 7 bits) is reached by the stage, it is not in
     // the city, has not left and has no application, and the person records have room: 231 more, or seven for each
     // active applicant and seven more.
     int Family_CanApply(uint32_t family, GuestPtr<CityScene> city)
@@ -476,31 +476,31 @@ namespace mm
 
     namespace
     {
-        // The next free person record (one whose character type, +0x24, is 0) from the cursor at +0x6C of the map, which
+        // The next free person record (one whose charType is 0) from the map's cursor (freePerson), which
         // moves on past the used ones and wraps at 6000. After 6001 used records in a row the answer is record 0, in use or not.
         uint32_t nextFreePerson(uint32_t map)
         {
             int steps = 0;
             for (;;)
             {
-                const uint32_t cursor = port::load<uint32_t>(map + 0x6Cu);
-                if (port::load<uint8_t>(port::load<uint32_t>(map + 0x68u) + cursor * 0x30u + 0x24u) == 0)
+                const uint32_t cursor = GuestPtr<CityMap>{map}->freePerson;
+                if (GuestPtr<CityMap>{map}->people[cursor].charType == 0)
                     return cursor;
                 ++steps;
-                port::store<uint32_t>(map + 0x6Cu, cursor + 1u);
+                GuestPtr<CityMap>{map}->freePerson = cursor + 1u;
                 if (steps >= 0x1771)
                     return 0;
-                if (port::load<int32_t>(map + 0x6Cu) >= 0x1770)
-                    port::store<uint32_t>(map + 0x6Cu, 0u);
+                if (static_cast<int32_t>(GuestPtr<CityMap>{map}->freePerson) >= 0x1770)
+                    GuestPtr<CityMap>{map}->freePerson = 0u;
             }
         }
     }
 
     // Puts the members of `family` on the map at the tile of building `object`: a person record for each, at the middle of the
     // tile (x from the low 7 bits of the tile, z from the high bits counted from the far edge), walking nowhere, with the
-    // family and member numbers, a schedule state, the member's flags (+0x2B of the member record, 8 added for members with
-    // bit 4 of +0x27), activity 0x13 and an introduction; each counts in the placement score of its character class. When some
-    // member drives (flag 4 of +0x27) and the building's schedule is not 9 or 0xB, the family's car (character type 0x34, a
+    // family and member numbers, a schedule state, the person's flags (the member's look byte, 8 added for members with
+    // member flag 4), activity 0x13 and an introduction; each counts in the placement score of its character class. When some
+    // member drives (member flag 4) and the building's schedule is not 9 or 0xB, the family's car (character type 0x34, a
     // vehicle) is made at the same spot. The family is then flagged (mm_Family_MoveIn).
     void Family_AssignHome(GuestPtr<CityMap> map, GuestPtr<CityScene> city, int family, int object)
     {

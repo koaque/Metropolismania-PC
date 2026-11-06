@@ -37,8 +37,8 @@ namespace mm
 
     int Widget_GetState(GuestPtr<Widget> widget) { return widget->state; }
 
-    // Runs the handler for the widget's state (vtable +0x2C idle, +0x30 opening, +0x34 opened, +0x38 active,
-    // +0x3C closing, +0x40 closed) and returns the state after it.
+    // Runs the handler for the widget's state (the vtable's onState slots: idle, opening, opened, active,
+    // closing, closed) and returns the state after it.
     int Widget_Update(GuestPtr<Widget> widget)
     {
         const uint32_t state = static_cast<uint32_t>(widget->state);
@@ -580,7 +580,7 @@ namespace mm
         return Widget_Update(GuestPtr<Widget>::of(msgwin->base));
     }
 
-    // The talk session's view and conversation, each through its widget draw slot (+0x20).
+    // The talk session's view and conversation, each through its widget draw slot.
     void Talk_Draw(GuestPtr<TalkSession> talk, int pass)
     {
         const auto draw = [&](uint32_t widget) {
@@ -780,10 +780,10 @@ namespace mm
         Frame_SetCorners(view->frame, x - 0x180, windowTop << 4, x, port::load<int32_t>(sy));
     }
 
-    void CityCursor_SetTarget(GuestPtr<CityCursor> cursor, uint16_t kind, int id, GuestPtr<Vec4> position)
+    void CityCursor_SetTarget(GuestPtr<CityCursor> cursor, uint16_t target, int isPerson, GuestPtr<Vec4> position)
     {
-        cursor->targetId = id;
-        cursor->targetKind = kind;
+        cursor->targetIsPerson = isPerson;
+        cursor->target = target;
         cursor->targetPos = *position;
     }
 
@@ -904,7 +904,7 @@ namespace mm
     }
 
     // The pause menu: the window (node 0 of the shared window model, scaled by 4) slides from its closed to its
-    // open position as the menu opens (+0x2C reaching 120), then the slot list while picking a slot (state 4)
+    // open position as the menu opens (openTime reaching 120), then the slot list while picking a slot (state 4)
     // or else the main menu, then the message box.
     void PauseMenu_Draw(GuestPtr<PauseMenu> pause)
     {
@@ -980,7 +980,7 @@ namespace mm
         A3DObject_Draw(panel->alertModel);
     }
 
-    // The status panel's packet at `packet` (kept at +0x9C): grey RGBAQ, TEX0 for its 256 x 128 8-bit texture
+    // The status panel's packet at `packet` (kept in panelPacket): grey RGBAQ, TEX0 for its 256 x 128 8-bit texture
     // at block 0x3F7C (palette at 0x3FFC, CLUT load 1), PRIM textured sprite, then the table's 19 sprites at
     // depth 0xFFF000, with the colour set again before the 16th and 19th; a ret ends it. Returns the address
     // after it.
@@ -1125,7 +1125,7 @@ namespace mm
         return -1;
     }
 
-    // title: the logo intro, one step (+0xC4) per frame. 0 starts the intro music (sequence slot 15) and goes
+    // title: the logo intro, one step (pressStep) per frame. 0 starts the intro music (sequence slot 15) and goes
     // straight on to 1: the logo model's animation under the title layers until mm_Title_DrawCommon reports
     // them done. 2 plays the rest of the animation; 3 fades the title sprite in (alpha 0 to 127, one a frame),
     // then plays sound 0x4F; 4 shows it while the logo letters bounce in; 5 holds it 50 frames and returns 1
@@ -1241,7 +1241,7 @@ namespace mm
     // title: the menu choices at rest. The selected one, at full size, wobbles: its offset is the vectors
     // (0, -5) and (0, -10) turned about z (one turn per 62 and per 188 frames), the first giving y and both
     // adding up for x. The other is drawn at 0.6, and with a single choice only the first is shown, as in
-    // mm_Title_DrawChoices; +0x48 counts the frames. The original's frame is reserved whole and its two
+    // mm_Title_DrawChoices; pulseFrame counts the frames. The original's frame is reserved whole and its two
     // vectors and two matrices kept at their offsets in it, as sceVu0RotMatrixZ runs as guest code.
     void Title_DrawChoicesIdle(GuestPtr<TitleScene> scene)
     {
@@ -1282,7 +1282,7 @@ namespace mm
         }
     }
 
-    // boot: the memory card check before the title, one step (+0xC4) per call; returns 1 when the game may go
+    // boot: the memory card check before the title, one step (pressStep) per call; returns 1 when the game may go
     // on. 0: on at once when the card manager reports a save or a slot is fine; waits while a card is still
     // being read; else places the warning box. 1: the warning: no card in either slot, or which slot lacks the
     // space (both, 1 or 2), and "press Cross". 2: moves on when a save or a fine card turns up, goes back to 1
@@ -1687,7 +1687,7 @@ namespace mm
 
     // ---- batch 38
 
-    // The frame's place and size: x and y from the word at +0x60, width and height from +0x80 (halfwords each);
+    // The frame's place and size: x and y from cornerA, width and height from cornerB (halfwords each);
     // y and height go through -0x8000 and back, as the original does.
     void Frame_GetRect(GuestPtr<Frame> frame, GuestPtr<uint32_t> x, GuestPtr<uint32_t> y, GuestPtr<uint32_t> width, GuestPtr<uint32_t> height)
     {
@@ -1705,7 +1705,7 @@ namespace mm
 
     // ---- batch 38
 
-    // ---- the message window: a 0x200-byte text being typed (+0x18), the shown lines (+0x218, four of 0x24)
+    // ---- the message window: a 0x200-byte text being typed (source), the shown lines (lines, four of 0x24)
 
     // Starts the next text (in state 3): copied in, typing from its start up to the first delimiter (0x1B5A78);
     // with four lines shown the oldest scrolls away. Returns 1, or 0 in other states.
@@ -1831,7 +1831,7 @@ namespace mm
         Widget_Close(GuestPtr<Widget>{view.address});
     }
 
-    // Pass 1, while open (state 3): the light packets and, for a home with an entrance, its model node (the type
+    // Pass 1, while open (state 3): the light packets and, for a built home (flag 0x20), its model node (the type
     // node + 0x19) placed by the object matrix (w set to 1) and drawn.
     void MyHome_Draw(GuestPtr<TalkView> view, int pass)
     {
@@ -1850,7 +1850,7 @@ namespace mm
         A3DObject_DrawNode(model, node);
     }
 
-    // ---- the name entry (+0x40 state, +0x70 slide frames, +0x78 rest height, +0x14 matrix)
+    // ---- the name entry (state, slideFrames, restHeight, boardMatrix)
 
     void NameEntry_Close(GuestPtr<NameEntry> entry)
     {
@@ -1996,9 +1996,9 @@ namespace mm
 
     // ---- batch 38
 
-    // The intro's character: while none is shown (+0xEC), one of the loaded character parts (the 48 at 0x1F3B90,
-    // up to the last one loaded) at random, from mesh 0 (+0xF4), at height -1.4 (+0xF8), its timer (+0xE4)
-    // cleared, the mesh value at +0xE8 and the part's two values from 0x1B1870 (a float) and 0x1B1930. 0 when no
+    // The intro's character: while none is shown (previewModel), one of the loaded character parts (the 48 at 0x1F3B90,
+    // up to the last one loaded) at random, in phase 0 (previewState), turned -1.4 (previewTurn), its time (previewTime)
+    // cleared, its animation's length in previewEnd and the part's turn step and text from 0x1B1870 (a float) and 0x1B1930. 0 when no
     // part is loaded.
     int Title_RandomCharParts(GuestPtr<TitleScene> scene)
     {
@@ -2022,8 +2022,8 @@ namespace mm
         return 1;
     }
 
-    // The BGM page of the sound test (`test`, its text box at +0xB8): the controls, then the volume (+0x64, 5
-    // wide), the tempo (+0x62, signed, 3 wide) and the song number (+0x5C, 2 wide).
+    // The BGM page of the sound test (`test`, its text box hintText): the controls, then the volume (5
+    // wide), the tempo (signed, 3 wide) and the song number (song, 2 wide).
     void SoundTest_BgmText(GuestPtr<TitleScene> scene)
     {
         const auto box = [scene] { return scene->hintText; };
@@ -2043,7 +2043,7 @@ namespace mm
     }
 
     // The new-game screen's character preview (picked by mm_Title_RandomCharParts), drawn every frame at (turn, 0.94, 0.36)
-    // in three phases (+0xF4). 0: it slides in from the left, turned a quarter away and swinging round as turn passes
+    // in three phases (previewState). 0: it slides in from the left, turned a quarter away and swinging round as turn passes
     // -0.1, until turn reaches 0, when it waits (8) with the part's own loading text. 8: its animation plays once
     // through (time +2 a frame), then it turns out (1) under the empty text: the quarter turn comes back while turn
     // (stepping twice as fast) passes 0.2, and at 1.4 the model is dropped. Phases 0 and 1 keep the animation looping
@@ -2184,9 +2184,9 @@ namespace mm
 
     // ---- the sound test's effect page (batch 39)
 
-    // The effect page's text: the controls, then the pan (+0x68, signed: "L" or "R" and 2 digits, or "Center"), the
-    // distance (+0x69, 2 wide), the note (+0x60, 3 wide), the pitch (+0x5E, signed, 5 wide) and the effect number
-    // (+0x5D, 3 wide).
+    // The effect page's text: the controls, then the pan (signed: "L" or "R" and 2 digits, or "Center"), the
+    // distance (2 wide), the note (3 wide), the pitch (signed, 5 wide) and the effect number
+    // (effect, 3 wide).
     void SoundTest_SeText(GuestPtr<TitleScene> scene)
     {
         const auto box = [scene] { return scene->hintText; };
@@ -2333,7 +2333,7 @@ namespace mm
 
     // Shows a memory card message: the card manager and its slots are reset, the wait counter cleared, the main menu
     // emptied and the message box placed (and for 6 to 8, "Memory card ... in slot 1/2 does not have enough space to
-    // save" moved left). Messages 0 and 2 to 5 pick their text (5 names a card by +0x1C, then "."), 1 and anything
+    // save" moved left). Messages 0 and 2 to 5 pick their text (5 names a card by cardPort, then "."), 1 and anything
     // above 8 have none. The state becomes 10.
     void PauseMenu_ShowCardMessage(GuestPtr<PauseMenu> pause, int message)
     {
@@ -2448,10 +2448,10 @@ namespace mm
         }
     }
 
-    // The music page's input: up and down pick the song (0 to 0x13, wrapping), left and right the tempo (+0x62, within
-    // +-0xFF, reset on 0x200), the two keys 4 and 1 the volume (+0x64, by 100 within 0..0x3FFF, both held 0x27FF). The
+    // The music page's input: up and down pick the song (0 to 0x13, wrapping), left and right the tempo (within
+    // +-0xFF, reset on 0x200), the two keys 4 and 1 the volume (by 100 within 0..0x3FFF, both held 0x27FF). The
     // song plays on 0x40 (the same song again just plays; another first fades out and loads its bank once it is
-    // out) and stops on 0x10. While a bank loads (+0x78) the page waits for the driver. Returns 1 when the page
+    // out) and stops on 0x10. While a bank loads (bankLoading) the page waits for the driver. Returns 1 when the page
     // changed (the text is then rebuilt and drawn here, so 0 is returned when it drew).
     int SoundTest_BgmPage(GuestPtr<TitleScene> scene, uint32_t repeated, uint32_t pressed, uint32_t held)
     {
@@ -2647,10 +2647,10 @@ namespace mm
 
     // ---- the name entry screen (batch 39)
 
-    // Draws the name entry (state +0x40; 0 draws nothing, 1 is typing, else only the board model): the typed name
-    // (+0x1C) padded to its length (byte +0x68) with filler glyphs (0x1B8038), the character under the cursor (+0x5C)
-    // blinking between a space and '*' at the 16th frame of its 32-frame cycle (+0x6C); every ten frames the scrolling
-    // line (position +0x104, text +0x84, shown ten characters wide) moves on a character; then the text boxes, the board
+    // Draws the name entry (state; 0 draws nothing, 1 is typing, else only the board model): the typed name
+    // padded to its length (maxLength) with filler glyphs (0x1B8038), the character under the cursor (length)
+    // blinking between a space and '*' at the 16th frame of its 32-frame cycle (blink); every ten frames the scrolling
+    // line (position hintScroll, text hint, shown ten characters wide) moves on a character; then the text boxes, the board
     // model's meshes (the cursor too while the cycle is before frame 16) and the name box.
     void NameEntry_Draw(GuestPtr<NameEntry> entry)
     {
@@ -2719,10 +2719,10 @@ namespace mm
     // ---- typing a message (batch 39)
 
     // Types the next character of the message into the lines (36 columns, 4 lines): every `typeDelay` frames (a counter
-    // at 0x1BDA08) a character moves from the text (read at +0x2AC) to the line buffer (+0x218, written at +0x2B4). A
+    // at 0x1BDA08) a character moves from the text (read at readAt) to the line buffer (lines, written at writeAt). A
     // message outside brackets (the bracket glyph pairs at 0x1B5A70 and 0x1B5A72) plays its sound for the character.
     // At the end of a word (up to the next delimiter, 0x1B5A78) that does not fit the line, the rest of the line is
-    // padded with spaces first (+0x2B8 marks a word that exactly fills it); a line break pads the same. At the end of
+    // padded with spaces first (exactFit marks a word that exactly fills it); a line break pads the same. At the end of
     // the text the state becomes 3 and the last line is padded. With four lines full, the oldest scrolls away.
     void MsgWin_TypeNext(GuestPtr<MsgWin> msgwin)
     {
@@ -2824,11 +2824,11 @@ namespace mm
 
     // ---- starting the name entry (batch 39)
 
-    // Opens the name entry: the keyboard set (`mode`, the text pointer table at 0x1B13E0), the name length (up to 24, byte
-    // +0x68) with the name cleared or taken from `text`, the scrolling hint (`hint`, else empty; scrolled when longer than
-    // 10 characters), the cursor at the end of the name, the state (+0x40: 3 when `a3` is 0, else 1) with the board model
-    // placed (its y at +0x34, 0.3 higher in state 3), the keyboard text from its first line (6 characters a line) and the
-    // arrows for more lines above and below (+0x60, +0x64).
+    // Opens the name entry: the keyboard set (`mode`, the text pointer table at 0x1B13E0), the name length (up to 24,
+    // maxLength) with the name cleared or taken from `text`, the scrolling hint (`hint`, else empty; scrolled when longer than
+    // 10 characters), the cursor at the end of the name, the state (3 when `a3` is 0, else 1) with the board model
+    // placed (the y of its matrix, 0.3 higher in state 3), the keyboard text from its first line (6 characters a line) and the
+    // arrows for more lines above and below (moreAbove, moreBelow).
     void NameEntry_Setup(GuestPtr<NameEntry> entry, uint32_t mode, uint8_t maxLength, int a3, int hint, GuestPtr<char> text)
     {
         const auto empty = [] { return GuestPtr<char>{0x001B7F90u}; };
@@ -2901,14 +2901,14 @@ namespace mm
 
     // ---- the name entry's input (batch 40)
 
-    // One frame of the name entry. The keyboard is a grid of 6 columns (+0x48 the cursor column, +0x4C its row, +0x50
-    // the first row shown of the +0x54 rows, 4 shown) over the keys of the set at 0x1B13E0 (+0x44; +0x58 keys; a key
+    // One frame of the name entry. The keyboard is a grid of 6 columns (column the cursor column, row its row, firstRow
+    // the first row shown of the `rows`, 4 shown) over the keys of the set at 0x1B13E0 (keySet; keyCount keys; a key
     // byte of 0xFF is "done", 0xFE a space, 0xFD a delete). Held directions (the pad's repeat bits) move the cursor
-    // (up and down scroll the key text and set the arrows +0x60 / +0x64), the square-like bits 8 and 2 step over or put
+    // (up and down scroll the key text and set the arrows moreAbove / moreBelow), the square-like bits 8 and 2 step over or put
     // a space, 4 and 1 delete, and then the pressed buttons: 0x40 types the key under the cursor, 0x10 finishes
-    // (state +0x40 becomes 2). The name is at +0x1C with its length in +0x5C (at most the byte +0x68); +0x6C restarts
-    // the cursor blink. The marker (object +0x18) follows the cursor column (0.016 a column) and row (0.0227 a row)
-    // from the bases at +0x7C / +0x80.
+    // (state becomes 2). The name is in name with its length in length (at most maxLength); blink restarts
+    // the cursor blink. The marker (markerMatrix) follows the cursor column (0.016 a column) and row (0.0227 a row)
+    // from the bases markerX / markerY.
     void NameEntry_HandleInput(GuestPtr<NameEntry> entry)
     {
         bool moved = false, stayed = false;
@@ -3471,9 +3471,9 @@ namespace mm
 
     PORT_FN(TitleScene_LogoStep);
 
-    // The stage briefing scene: the stage object base and a widget at +4, the scene's own vtables (+0x100 and +0xC), the fields
-    // cleared, and with `loadStage` the next stage read (stage number + 1 kept at +0x24); then its light set (+0x14) and camera
-    // (+0x10), the camera placed with the eye and target vectors at 0x1B08D0 and 0x1B08E0.
+    // The stage briefing scene: the stage object base and a widget (widget), the scene's own vtables (vtable and the widget's),
+    // the fields cleared, and with `loadStage` the next stage read (stage number + 1 kept in stage); then its light set (lights)
+    // and camera, the camera placed with the eye and target vectors at 0x1B08D0 and 0x1B08E0.
     GuestPtr<StageScene> StageScene_ctor(GuestPtr<StageScene> scene, int loadStage)
     {
         port::GuestFrame<0x50> frame;
@@ -3511,7 +3511,7 @@ namespace mm
 
     PORT_FN(StageScene_ctor);
 
-    // Builds the stage briefing's next text into the scene's buffer (+0x5C) and returns 1 while there is more: phase 0 looks the
+    // Builds the stage briefing's next text into the scene's buffer (text) and returns 1 while there is more: phase 0 looks the
     // stage number up in the list at 0x1B71F0 (a stage can have several special messages, one per call), then phase 1 gives the
     // stage's general text, phase 2 the goal in two parts (the heading at 0x1B72A0 with the goal text, then 0x1B72D0); the last part
     // ends it with 0 and clears the phase.
@@ -3663,7 +3663,7 @@ namespace mm
     PORT_FN(PhoneCall_Draw);
 
     // Builds a list menu: `visible` rows of `rowHeight`, a cursor frame, 32 empty items (3 words each from +0xE4), and the DMA
-    // packet the menu draws with (the header at +0 and the eight cursor entries at +0x40, the footer at +0xC0), then places the
+    // packet the menu draws with (the header at +0 and the eight cursor entries in cursorPacket, the footer at +0xC0), then places the
     // cursor with the last three arguments.
     GuestPtr<ListMenu> ListMenu_ctor(GuestPtr<ListMenu> menu, int visible, int rowHeight, int a3, int cursorX, int cursorY, int cursorZ)
     {
@@ -3708,7 +3708,7 @@ namespace mm
 
     // ---- Window and scene destructors (plan P6 batch 2) ----
 
-    // The two list menus (+4, +8), the save manager (+0xC) and the text box (+0x10).
+    // The two list menus (mainMenu, slotMenu), the save manager (mc) and the text box (message).
     GuestPtr<PauseMenu> PauseMenu_dtor(GuestPtr<PauseMenu> pause, int16_t deleteFlag)
     {
         if (pause)
@@ -3735,7 +3735,7 @@ namespace mm
         return applicants;
     }
 
-    // The list menu (+0x10), then the widget below.
+    // The list menu (list), then the widget below.
     GuestPtr<MenuWin> MenuWin_dtor(GuestPtr<MenuWin> menuwin, int16_t deleteFlag)
     {
         if (menuwin)
@@ -3759,7 +3759,7 @@ namespace mm
         }
     }
 
-    // The lights (+0x14) and the camera (+0x10), then the widget at +4 and the stage object base.
+    // The lights and the camera, then the widget and the stage object base.
     GuestPtr<StageScene> StageScene_dtor(GuestPtr<StageScene> scene, int16_t deleteFlag)
     {
         if (scene)
@@ -3776,9 +3776,9 @@ namespace mm
         return scene;
     }
 
-    // The logo scene's children: the text boxes (+0xB8, +0xBC), the three objects at +0x10.. and those at +0xC, +0x1C, +0x20,
-    // +0x30 and +0x34 that delete themselves through their vtables, the models (+0x24, +0x28, +0x4), the list menu (+0xB0),
-    // the save manager (+0xB4), the camera (+0) and the loading screen (+0x2C); then the stage object base.
+    // The logo scene's children: the text boxes (hintText, messageBox), the sprites logoLetters, titleSprite, choices,
+    // loadingFrame and loadingBar that delete themselves through their vtables, the models (menuModel, logoModel) and the
+    // light set, the list menu (loadMenu), the save manager (mc), the camera and the loading screen; then the stage object base.
     GuestPtr<TitleScene> TitleScene_dtor(GuestPtr<TitleScene> scene, int16_t deleteFlag)
     {
         if (!scene)
@@ -3815,8 +3815,8 @@ namespace mm
 
     // ---- The briefing scene's captions (plan P6 batch 2) ----
     //
-    // Each caption is a text box (+0x18) over the scene's lights (+0x14) and camera (+0x10), with the phase at +0x34 (0 makes the
-    // box) and a fade at +0x38 (0x80 black, 0 clear) that is drawn over everything while it is at most 0x80.
+    // Each caption is a text box (caption) over the scene's lights and camera, with the phase (phase; 0 makes the
+    // box) and a fade (fade; 0x80 black, 0 clear) that is drawn over everything while it is at most 0x80.
 
     namespace
     {
@@ -3830,7 +3830,7 @@ namespace mm
             TextBox_Draw(GuestPtr<TextBox>{port::load<uint32_t>(scene + 0x18u)});
         }
 
-        // The caption's text box (+0x18), style -1; none when the allocation fails.
+        // The caption's text box (caption), style -1; none when the allocation fails.
         GuestPtr<TextBox> makeCaptionBox(uint32_t scene, int columns, int rows)
         {
             uint32_t box = sdk::operator_new(0x40u);
@@ -3848,7 +3848,7 @@ namespace mm
         }
     }
 
-    // The stage number (three digits from +0x24) under the stage title text.
+    // The stage number (three digits from stage) under the stage title text.
     void StageScene_ShowStageTitle(GuestPtr<StageScene> scene)
     {
         port::GuestFrame<0x30> frame;
@@ -3890,7 +3890,7 @@ namespace mm
 
     // The approval table: four rows of a name (padded to 16 characters, from the table at 0x1B0790 + 4) and a five-digit value
     // (from 0x1C5780). Phase 1 fades in (one step a frame), the phases up to 0x12C hold, and at 0x12C it fades out; when it is
-    // dark the box goes, the phase restarts and the count of captions shown (+0x28) grows. The fade is drawn while it is at
+    // dark the box goes, the phase restarts and the count of captions shown (step) grows. The fade is drawn while it is at
     // most 0x80.
     void StageScene_ShowApprovalRate(GuestPtr<StageScene> scene)
     {
@@ -3951,12 +3951,12 @@ namespace mm
     PORT_FN(StageScene_ShowCityName);
     PORT_FN(StageScene_ShowApprovalRate);
 
-    // The scrolling telop of the briefing. The kind of telop follows the stage (+0x24): 0 for stage 1, 1 for stage 5, 2 for the
+    // The scrolling telop of the briefing. The kind of telop follows the stage: 0 for stage 1, 1 for stage 5, 2 for the
     // others (which also name the city and its mayor). Phase 0 loads the sound bank and writes the text into a box of 17 by 20,
-    // 1 starts the music once the sound driver is idle, 2 scrolls the box up (+0x3C grows by 2 a frame; on stage 6 by 1, and by 2
+    // 1 starts the music once the sound driver is idle, 2 scrolls the box up (scroll grows by 2 a frame; on stage 6 by 1, and by 2
     // every seventh frame) until Start or Cross is pressed (not on stage 6) or the scroll has gone far enough, then the fade
-    // (+0x38, counting up from 1) takes the picture out, the music is stopped, the box and the sprite (+0x20) are deleted and
-    // the phase restarts with one more caption counted (+0x28).
+    // (fade, counting up from 1) takes the picture out, the music is stopped, the box and the picture are deleted and
+    // the phase restarts with the step counted on (step).
     void StageScene_ShowTelop(GuestPtr<StageScene> scene)
     {
         const uint32_t s = scene.address;
@@ -4069,8 +4069,8 @@ namespace mm
         }
     }
 
-    // The message window: a text box of 18 by 4 (style -2) in the window, a frame for the "more" arrow at +0x14, and the shared
-    // building model (0x1F3B2C) at +0xC.
+    // The message window: a text box of 18 by 4 (style -2) in the window, a frame for the "more" arrow (arrowPacket), and the shared
+    // building model (0x1F3B2C, model).
     GuestPtr<MsgWin> MsgWin_ctor(GuestPtr<MsgWin> msgwin)
     {
         Widget_ctor(GuestPtr<Widget>{msgwin.address});
@@ -4086,7 +4086,7 @@ namespace mm
         return msgwin;
     }
 
-    // The notice line: two single-row text boxes of 25 columns (+8 and +0xC), nothing shown (id -1, no second line).
+    // The notice line: two single-row text boxes of 25 columns (text and text2), nothing shown (id -1, no second line).
     GuestPtr<Notice> Notice_ctor(GuestPtr<Notice> notice)
     {
         notice->text = GuestPtr<TextBox>{newTextBox(0x19, 1, -1)};
@@ -4140,7 +4140,7 @@ namespace mm
     }
 
     // Opens the menu window: a list menu of `count` items (at most 4 except for menu -0x7D1, which keeps its count and a wider
-    // list) and the window open (wideList: 1 for -0x7D1, else 0; except for menus -0x7D5 and -0x7D2 the list's field +0x294 is
+    // list) and the window open (wideList: 1 for -0x7D1, else 0; except for menus -0x7D5 and -0x7D2 the list's canCancel is
     // cleared).
     void MenuWin_Open(GuestPtr<MenuWin> menuwin, int menuId, int count)
     {
@@ -4176,10 +4176,10 @@ namespace mm
     PORT_FN(WaitText_Create);
     PORT_FN(MenuWin_Open);
 
-    // The applicants window base: the list cleared, its stage object (at +0x289), a text box of 18 by 4 (+0x294) for the card, the
-    // two card models (+0x28C from 0x1F3B10 and +0x290 from 0x1F3B68) with their nodes (+0x2A0, +0x2A4 the models' +0x10, and
-    // +0x2A8, +0x2AC the second model's data pointers at +0x70 and +0x1F0), and the cursor state (-1 for none at +0x2C8, enabled
-    // at +0x2C9).
+    // The applicants window base: the list cleared, its stage object (at +0x289), a text box of 18 by 4 (cardText) for the card,
+    // the two card models (frameModel from 0x1F3B10 and cardModel from 0x1F3B68) with their matrices (frameMatrix, cardMatrix: the
+    // models' own, and cardNodeA, cardNodeB: the second model's data pointers at +0x70 and +0x1F0), and the cursor state (-1 for
+    // none in stateColour, enabled in enabled).
     GuestPtr<Applicants> ApplicantsBase_ctor(GuestPtr<Applicants> applicants)
     {
         Applicants_Clear(applicants);
@@ -4209,7 +4209,7 @@ namespace mm
 
     // Gives item `item` of the list (the next free one when -1, up to 32) its text box of `columns` by `rows` characters in
     // `style`, unless it has one. `mode` picks the character size: -1 gives (0, 0xB0, 0xB0, 0xC0), 0 gives (0, 0xB0, 0, 0xC0)
-    // and any other (0, 0xD0, 0, 0xE0). The item's height (+0xE8 in its 12-byte entry) grows to 12 a row (14 for the other modes)
+    // and any other (0, 0xD0, 0, 0xE0). The item's height (the second word of its 12-byte entry) grows to 12 a row (14 for the other modes)
     // and the boxed item count when this was the next item.
     void ListMenu_AddItems(GuestPtr<ListMenu> menu, int columns, int rows, int mode, int style, int, int item)
     {
@@ -4247,10 +4247,10 @@ namespace mm
 
     PORT_FN(ListMenu_AddItems);
 
-    // The four text boxes of the name entry window (the title line of 16 by 1 at +4, the letters of 3 by 4 at +8, the name of
-    // 12 by 1 at +0xC and the number of 16 by 1 at +0x10, all at depth 0x10001000), and the model it shows: the shared model
-    // (0x1F3B6C, kept at +0), its node (+0x14, the model's +0x10), the matrix at +0x130 of its data (+0x18) set to the one at
-    // 0x1B2550 with the two scale words (+0x7C, +0x80) and the node's +0x38 put into it.
+    // The four text boxes of the name entry window (hintText 16 by 1, keysText 3 by 4 with larger glyphs, nameText 12 by 1 and
+    // lineText 16 by 1, all at depth 0x10001000), and the model it shows: the shared model (0x1F3B6C, model), its matrix
+    // (boardMatrix) and the world matrix of its node 1 (markerMatrix), set to the one at 0x1B2550 moved to markerX, markerY and
+    // the board's z.
     void NameEntry_CreateTexts(GuestPtr<NameEntry> entry)
     {
         const auto box = [&](GuestPtr<TextBox> &field, int columns, int rows, int style, int x, int y) {
@@ -4276,12 +4276,12 @@ namespace mm
 
     PORT_FN(NameEntry_CreateTexts);
 
-    // The card text of the applicant under the cursor (+0x2D0), built in the buffer at 0x1F3790: the family's names (or, for the
+    // The card text of the applicant under the cursor (top), built in the buffer at 0x1F3790: the family's names (or, for the
     // home types 5 to 8, the mayor's and the city's, or a fixed text when there are none) padded to 30 characters; for the other
-    // types two numbers of the family; the month and the year (a month count at +0xC split by 12), the name of the home type
-    // and its mark by +0x144; and, 30 characters further on, a line of 26 bytes of the building's description (picked by the
+    // types two numbers of the family; the month and the year (the entry's month count split by 12), the name of the home type
+    // and its mark by the type's rule; and, 30 characters further on, a line of 26 bytes of the building's description (picked by the
     // applicant's claim section) and the size of the type. The state's colour (the table at 0x1BD998 for states below 8) is put
-    // at +0x2C8 and the text goes into the card's text box (+0x294). Nothing without applicants.
+    // in stateColour and the text goes into the card's text box (cardText). Nothing without applicants.
     void Applicants_BuildInfo(GuestPtr<Applicants> applicants)
     {
         port::GuestFrame<0x90> frame;
@@ -4350,10 +4350,11 @@ namespace mm
 
     PORT_FN(Applicants_BuildInfo);
 
-    // The status panel: the panel model (0x1F3B0C, kept at +0x90) with its light moved (0xBF47AE14, 0xBF051EB8, 0xC02CCCCD at
-    // +0x40), the panel's draw packet built at the packet buffer's position, the alert model (+0x94 from 0x1F3B00), the 0x90-byte
-    // image transfer packet of the alert at +0 (data at 0x1AF370), four text boxes of the detail view (+0xA0, +0xA8, +0xA4 of
-    // 12 columns and +0xAC of 5, the last with the text at 0x1B6550) and the detail model (+0x98 from 0x1F3B34).
+    // The status panel: the panel model (0x1F3B0C, model) with its light moved (0xBF47AE14, 0xBF051EB8, 0xC02CCCCD at the
+    // model's +0x40), the panel's draw packet built at the packet buffer's position, the alert model (alertModel from 0x1F3B00),
+    // the 0x90-byte image transfer packet of the alert (packet, data at 0x1AF370), four text boxes of the detail view (text[0],
+    // text[2] and text[1] of 12 columns and text[3] of 5, the last with the text at 0x1B6550) and the detail model (detailModel
+    // from 0x1F3B34).
     GuestPtr<StatusPanel> StatusPanel_ctor(GuestPtr<StatusPanel> panel)
     {
         const uint32_t p = panel.address;
@@ -4398,7 +4399,7 @@ namespace mm
 
     // ---- Small window functions (plan P6 batch 2) ----
 
-    // Sets the applicants window mode (+0x29C); mode 1 builds the card text of the applicant under the cursor.
+    // Sets the applicants window mode (cardShown); mode 1 builds the card text of the applicant under the cursor.
     void Applicants_SetMode(GuestPtr<Applicants> applicants, int mode)
     {
         applicants->cardShown = mode;
@@ -4428,8 +4429,8 @@ namespace mm
     PORT_FN(MenuWin_FillItems);
     PORT_FN(TalkConv_Opening);
 
-    // The name entry window: its texts, then the model's light (the node at +0x14 gets the word at +0x78 at +0x34 and -4.4 at +0x38)
-    // copied to the matrix node (+0x18, +0x38) and kept at +0x114..+0x11C.
+    // The name entry window: its texts, then the board placed at restHeight and z -4.4 (the marker takes the same z) and the
+    // place kept in boardPlace.
     GuestPtr<NameEntry> NameEntry_ctor(GuestPtr<NameEntry> entry)
     {
         entry->vtable = GuestPtr<void>{0x001BCFE8u};
@@ -4444,8 +4445,8 @@ namespace mm
         return entry;
     }
 
-    // The applicants window: the base, its table (0x1BCF70), the pointer state at +0x31C..+0x33C (the point (0, 2.3, 0, 1) at
-    // +0x330 is what the cards are placed at), mode 0 and nothing selected.
+    // The applicants window: the base, its table (0x1BCF70), the pointer state from mode to cardPoint (the point (0, 2.3, 0, 1) in
+    // cardPoint is what the cards are placed at), mode 0 and nothing selected.
     GuestPtr<Applicants> Applicants_ctor(GuestPtr<Applicants> applicants)
     {
         ApplicantsBase_ctor(applicants);
@@ -4463,7 +4464,7 @@ namespace mm
         return applicants;
     }
 
-    // Puts the cursor on applicant `index` (the one before is kept at +0x2C4): the card model's matrix is the standard one moved
+    // Puts the cursor on applicant `index` (the top one before is kept in savedTop): the card model's matrix is the standard one moved
     // 3 and 2.5 units from the first model's place, the view scrolls to nothing, the card text is built, and the mode goes to 1.
     void Applicants_Select(GuestPtr<Applicants> applicants, int index)
     {
@@ -4485,8 +4486,8 @@ namespace mm
     }
 
     // Back to the pause menu's first page: the list cleared and its cursor put at (0x58, 0x31), the message text restored (0x1B73C0),
-    // the Cross press consumed, the slot select state run once, the list scrolled to the item that was waiting (+0x998), and the
-    // 16 slot marks (one byte every 0x92 from +0x78) cleared.
+    // the Cross press consumed, the slot select state run once, the list scrolled to the item that was waiting (pendingChoice), and the
+    // 16 slot marks (one byte in each of slotTexts) cleared.
     void PauseMenu_Reset(GuestPtr<PauseMenu> pause)
     {
         const auto list = [&] { return pause->slotMenu; };
@@ -4530,10 +4531,10 @@ namespace mm
 
     PORT_FN(WantsWin_FormatLine);
 
-    // The title scene: its stage object (the value of `a1` at +0xE0), the stage reset, the menu list of 3 by 48 items at +0xB0 with
-    // sixteen items of 19 columns, the memory card manager (+0xB4), the lights (+4) and the camera (+0), set to the eye and target at
-    // 0x1B17C0 and 0x1B17D0; the scene's state cleared (a mode of -1 at +0xD0, 1 at +0x4C), a message box of 21 by 12 (+0xBC) and a
-    // line box of 30 by 15 (+0xB8) with their places.
+    // The title scene: its stage object (the value of `a1` in afterGame), the stage reset, the menu list of 3 by 48 items (loadMenu)
+    // with sixteen items of 19 columns, the memory card manager (mc), the lights and the camera, set to the eye and target at
+    // 0x1B17C0 and 0x1B17D0; the scene's state cleared (layers -1, loadStep 1), a message box of 21 by 12 (messageBox) and a
+    // line box of 30 by 15 (hintText) with their places.
     GuestPtr<TitleScene> TitleScene_ctor(GuestPtr<TitleScene> scene, int a1)
     {
         port::GuestFrame<0x50> frame;
@@ -4594,7 +4595,7 @@ namespace mm
 
     PORT_FN(TitleScene_ctor);
 
-    // The pause menu's card check state: the card manager is stepped; when the card in the slot at +0x1C reports 2 the menu shows
+    // The pause menu's card check state: the card manager is stepped; when the card in the slot (cardPort) reports 2 the menu shows
     // card message 5. Otherwise the main menu (+4) takes its input: choice 1 or the cancel (-1) gives the pad focus back, resets
     // the menu and goes to state 4 (the slot menu); any other choice resets the manager, clears the list and shows the message box
     // at its first place, and goes to state 6.
@@ -4636,14 +4637,14 @@ namespace mm
 
     PORT_FN(PauseMenu_StateWait);
 
-    // The Cross button on the thing under the cursor (+0x1A8; 0xFFFF for nothing), when the city is in mode 1 and the Square-side
-    // button 0x20 is not held. A cursor with no person view (+0x1A4 zero) either picks the tile (the player is in mode 3) or
+    // The Cross button on the thing under the cursor (target; 0xFFFF for nothing), when the city is in mode 1 and the Square-side
+    // button 0x20 is not held. A cursor on a building (targetIsPerson 0) either picks the tile (the player is in mode 3) or
     // starts a talk about the object (mode view 1), or asks for mode 0xA with its marks reset; with a person view, unless the
     // player is in mode 3, a talk starts about the building at the person's tile (x and z on the 128-tile map, from the map's
     // person record).
     void CityCursor_Move(GuestPtr<CityCursor> cursor, GuestPtr<CityScene> city, int enabled)
     {
-        if (cursor->targetKind == 0xFFFFu || enabled == 0)
+        if (cursor->target == 0xFFFFu || enabled == 0)
             return;
         if (CityScene_GetMode(city) != 1)
             return;
@@ -4652,7 +4653,7 @@ namespace mm
         if ((Pad_Held(0) & 0x20u) != 0)
             return;
         const auto player = [&] { return city->player; };
-        if (cursor->targetId == 0)
+        if (cursor->targetIsPerson == 0)
         {
             if (cursor->lineCount != 1)
             {
@@ -4662,30 +4663,30 @@ namespace mm
                 cursor->openTimer = 0;
             }
             else if (Player_GetMode(player()) == 3)
-                CityCursor_SelectTile(cursor, cursor->targetKind, city);
+                CityCursor_SelectTile(cursor, cursor->target, city);
             else
-                CityScene_StartTalk(city, 0, cursor->targetKind, 0x1770, 0);
+                CityScene_StartTalk(city, 0, cursor->target, 0x1770, 0);
             return;
         }
         if (Player_GetMode(player()) == 3)
             return;
         const GuestPtr<CityMap> map{city->map.address};
-        const uint32_t person = cursor->targetKind;
+        const uint32_t person = cursor->target;
         const uint32_t record = map->people.address + 0x30u * person;
         const int x = sdk::fptosi(ps2f(64.0f) + ps2f(std::bit_cast<float>(port::load<uint32_t>(record))));
         const int z = sdk::fptosi(ps2f(64.0f) - ps2f(std::bit_cast<float>(port::load<uint32_t>(record + 8u))));
         const GuestPtr<MapObject> object = Map_FindPersonObjectOnTile(map, person, static_cast<uint16_t>(x + (z << 7)));
-        CityScene_StartTalk(city, 0, object->id, cursor->targetKind, 0);
+        CityScene_StartTalk(city, 0, object->id, cursor->target, 0);
     }
 
     PORT_FN(CityCursor_Move);
 
-    // The pause menu's save state, one step a frame on the counter at +0x24: 0 wait for the card manager to settle, 1 make the
+    // The pause menu's save state, one step a frame on its step counter (waitFrames): 0 wait for the card manager to settle, 1 make the
     // slot's save folder (mm_SaveFile_PrepareDir), 2 queue the delete of its icon.sys, 3 wait for that, 4 write the city
-    // (mm_CityScene_SaveStep, which answers 2 to give up), 5 write icon.sys with the save name at +0x30, 6 wait for that, 7 step
+    // (mm_CityScene_SaveStep, which answers 2 to give up), 5 write icon.sys with the save name (saveTitle), 6 wait for that, 7 step
     // back out of the folder (the ".." at 0x1B7688), 8 show the main menu again and go to state 2. Giving up (a result of 2) puts the
     // counter back to 0 and returns 1. In the steps before 8 the message alternates between the saving text and the do-not-remove
-    // text every 16 frames (the counter at +0x28).
+    // text every 16 frames (the blink counter).
     int PauseMenu_StateSave(GuestPtr<PauseMenu> pause, GuestPtr<CityScene> city)
     {
         const auto mc = [pause]() { return pause->mc; };
@@ -4768,13 +4769,13 @@ namespace mm
 
     PORT_FN(PauseMenu_StateSave);
 
-    // The pause menu's format state, a step machine on the counter at +0x24: 0 the card check (the same as in the wait state: a
+    // The pause menu's format state, a step machine on its step counter (waitFrames): 0 the card check (the same as in the wait state: a
     // card that reports 2 shows message 5, choice 1 or the cancel hands the pad focus back and returns to the slot menu at state 4,
     // any other choice goes on), 1 look at the card's status (4 still being checked, so the "Now checking memory card" text; 3
     // goes on after resetting the save file; 2 shows message 5; anything else message 2), 2 wait for the card manager to settle,
     // 3 format the card (mm_SaveFile_Format: 2 failed and shows message 4; 1 done, back to the save state 6 with the manager
     // reset; 0 still running, and the "Formatting memory card" text alternates with the do-not-remove text every 16 frames on the
-    // counter at +0x28).
+    // blink counter).
     void PauseMenu_StateFormat(GuestPtr<PauseMenu> pause)
     {
         port::GuestFrame<0x30> frame;
@@ -4971,14 +4972,14 @@ namespace mm
 
     PORT_FN(TownPages_FillPage);
 
-    // One frame of the laptop (city mode 2). The entries sit on a carousel (count at 0x1BDAB8, `selected` at +0x3D0, the turn at +0x30
-    // toward the angle at +0x34); the states at +0x3C: 0 sets the carousel up (the entry angles, scale 0.1) and sound 10, taking the
+    // One frame of the laptop (city mode 2). The entries sit on a carousel (count at 0x1BDAB8, `selected`, the turn moving
+    // toward turnTarget); the states (state): 0 sets the carousel up (the entry angles, scale 0.1) and sound 10, taking the
     // applicants' flag away and the HUD off; 1 grows it (scale +0.1, lift -0.25) until the scale reaches 1, then makes the text box
-    // (+0x44) and shows the selected entry's text; 2 waits for Triangle (leave, sound 11, nothing run), Cross (leave and run the
+    // (text) and shows the selected entry's text; 2 waits for Triangle (leave, sound 11, nothing run), Cross (leave and run the
     // entry) or left and right (the next entry the other way, sound 12, state 3); 3 turns the carousel by 0.1 a frame (direction at
-    // +0x40) until it is within 0.2 of the wanted angle, snaps and shows the text; 4 shrinks it (scale -0.2, lift +0.2) until
+    // turnDir) until it is within 0.2 of the wanted angle, snaps and shows the text; 4 shrinks it (scale -0.2, lift +0.2) until
     // the scale is below 0.1, then deletes the text box, gives the HUD and the applicants' flag back and runs the entry (mm_Laptop_RunEntry)
-    // unless left with Triangle (+0x48). The result is the city mode wanted next: 1 leaves the mode (popped), 2 stays, any other
+    // unless left with Triangle (cancelled). The result is the city mode wanted next: 1 leaves the mode (popped), 2 stays, any other
     // mode is pushed.
     int Laptop_Update(GuestPtr<Laptop> laptop, GuestPtr<CityScene> city)
     {
@@ -5131,9 +5132,9 @@ namespace mm
     PORT_FN(Laptop_Update);
 
     // The info window of the city cursor: the view for this frame's parity (0x1BDCD0 & 1) has its five line frames reset to style 0
-    // and the lines refilled from what the cursor points at (kind +0x1A8, 0xFFFF for nothing; +0x1A4 0 for a building, otherwise a
-    // person). A building lists the families of all the objects on its tile, starting with the pointed one (the chain of the
-    // objects' +0xA, ended by 0x3F80): the family name (a family not in the cache gets the text at 0x1B5ED8) and a frame style 9 plus the
+    // and the lines refilled from what the cursor points at (target, 0xFFFF for nothing; a building when targetIsPerson is 0,
+    // otherwise a person). A building lists the families of all the objects on its tile, starting with the pointed one (the chain of the
+    // objects' nextOnTile, ended by 0x3F80): the family name (a family not in the cache gets the text at 0x1B5ED8) and a frame style 9 plus the
     // best friendship band of its members. A person gives one line, "name" over "phone" from the formats at 0x1B5EE0, with the
     // frame style of its band. The window's own frame is style 0x32 with no line, 0x35 when the player is in mode 3, else 0x34. The
     // anchor is the pointed place (a building's centre, a person's feet) with its height from the terrain, 0.6 below it for
@@ -5155,17 +5156,17 @@ namespace mm
         for (int i = 0; i < 5; ++i)
             Frame_SetStyle(lineFrame(i), 0);
         cursor->lineCount = 0;
-        const uint32_t kind = cursor->targetKind;
-        if (kind != 0xFFFFu)
+        const uint32_t target = cursor->target;
+        if (target != 0xFFFFu)
         {
-            if (cursor->targetId == 0)
+            if (cursor->targetIsPerson == 0)
             {
-                const GuestPtr<MapObject> object = Map_GetRecord(city->map, static_cast<int>(kind));
+                const GuestPtr<MapObject> object = Map_GetRecord(city->map, static_cast<int>(target));
                 const ps2f half = fromInt(globals::buildingType(object->type)->size) / ps2f(2.0f);
                 place->x = (fromInt(object->tile & 0x7F) - ps2f(64.0f)) + half;
                 place->z = (fromInt(0x80 - (object->tile >> 7)) - ps2f(64.0f)) - half;
                 lift = ps2f(0.6f);
-                uint32_t next = GuestPtr<uint16_t>::of(cursor->targetKind).address; // then each object's next on the tile
+                uint32_t next = GuestPtr<uint16_t>::of(cursor->target).address; // then each object's next on the tile
                 while (port::load<uint16_t>(next) != 0x3F80)
                 {
                     const GuestPtr<MapObject> here = Map_GetRecord(city->map, static_cast<int>(port::load<uint16_t>(next)));
@@ -5195,7 +5196,7 @@ namespace mm
             else
             {
                 lift = ps2f(0.6f);
-                const GuestPtr<MapPerson> who = city->map->people + static_cast<int>(kind);
+                const GuestPtr<MapPerson> who = city->map->people + static_cast<int>(target);
                 const uint32_t record = static_cast<uint32_t>(Family_Prefetch(who->family, 1));
                 if (record == 0u)
                     TextBox_SetText(lineBox(0), GuestPtr<char>{0x001B5ED8u}, 1);
@@ -5227,7 +5228,7 @@ namespace mm
 
     PORT_FN(CityCursor_UpdateInfo);
 
-    // The title scene's steps around the opening movie (the step at +0xC4; the title is drawn with all five layers first on every
+    // The title scene's steps around the opening movie (the step, pressStep; the title is drawn with all five layers first on every
     // call): 0 fades voice 15 out; 1 (once the draw reports 1) stops sound sequence 7; 2 and 3 wait for the sound driver (2 also
     // sends command 2); 4 plays the opening movie; 5 (the disc ready, 2) resets the voices; 6 waits for the driver; 7 (the disc
     // ready) loads the title sound bank into slot 7; 8 returns 1 once the driver is idle. 0 until then.
@@ -5284,12 +5285,12 @@ namespace mm
 
     PORT_FN(Title_OpeningMovieStep);
 
-    // The title scene's start of a game (the step at +0xC4; every call also steps the city's asset loader, whose result is kept at
-    // +0x4C and the progress at +0x54 copied from 0x1BDB54). 0 fades voice 15 out and draws the title (layer set 0x29 when
+    // The title scene's start of a game (the step, pressStep; every call also steps the city's asset loader, whose result is kept
+    // in loadStep and the progress in loadProgress, copied from 0x1BDB54). 0 fades voice 15 out and draws the title (layer set 0x29 when
     // `newGame` is set, else 0x21); 1 (once the draw reports 1) puts the camera at its eye and target from 0x1B19F0 and 0x1B1A00;
     // 2 shows the loading bar (the progress in 17ths of 10, at most 16 bars) and the intro text while the loading screen is up, and
-    // goes on when the loader is done (+0x4C = 0); 3 fades the loading screen out; 4 and 5 stop the title music and wait for the
-    // sound driver; 6 sets the game up: for a new game (+0xE0 clear) the character types, families, claims, words, goods, stamina,
+    // goes on when the loader is done (loadStep 0); 3 fades the loading screen out; 4 and 5 stop the title music and wait for the
+    // sound driver; 6 sets the game up: for a new game (afterGame clear) the character types, families, claims, words, goods, stamina,
     // bag and event types are loaded, for a loaded one the stage, families, stamina and bag are reset, then the laptop entries
     // are made; the result is 1 (and 0x1BDA7C = 0) or, with `newGame` set, 2 (and 0x1BDA7C = 1). 0 until then.
     int TitleScene_StartGame(GuestPtr<TitleScene> scene, int newGame)
@@ -5390,8 +5391,8 @@ namespace mm
 
     PORT_FN(TitleScene_StartGame);
 
-    // One frame of the title scene (the mode at +0xC0): clears the screen and Z, draws the scene's packets and camera, steps the
-    // memory card manager and then runs the mode. 0 loads the scene's assets (TitleScene_Load), then on to 1 (or 5 when +0xE0 is set);
+    // One frame of the title scene (by its mode): clears the screen and Z, draws the scene's packets and camera, steps the
+    // memory card manager and then runs the mode. 0 loads the scene's assets (TitleScene_Load), then on to 1 (or 5 when afterGame is set);
     // 1 is the memory card check; 2 to 4 the three logos; 5 the title intro (Cross, 0x800, skips into the title at once); 6 the
     // title screen, whose answer is 0 new game (9), 1 load (8), 2 the opening movie (7, after the music fades out) or 10 the sound
     // test (0xFF, which goes back to 5 when done); 8 the load menu (1 starts a loaded game: 0xA, 0 goes back: 6); 9 and 0xA start
@@ -5541,13 +5542,13 @@ namespace mm
     PORT_FN(TitleScene_Update);
 
     // The pause menu's save slot state (4): the two cards' states are read; while either is still being checked the "checking memory
-    // card" text shows and nothing is listed. Otherwise the slot menu (+8) lists the saves on the cards (their texts copied to
-    // +0x78, 0x92 bytes each; the count goes to +0x18, the newest save's index is the result) and, for a card that is unformatted
+    // card" text shows and nothing is listed. Otherwise the slot menu (slotMenu) lists the saves on the cards (their texts copied to
+    // slotTexts, 0x92 bytes each; the count goes to savesListed, the newest save's index is the result) and, for a card that is unformatted
     // or has room (states 0 and 3 and a new slot to make), a "new save" line each; items left from a longer list are emptied. With
     // nothing listed, card message 0 (both cards in state 2), 6 (the second), 7 (the first) or 8 shows. The menu's choice: the
-    // cancel (-1) goes back to the main menu (state 2); a new slot makes the save slot (+0x20) and, if the card is usable, asks to
-    // confirm (state 5), else resets the manager (state 6); an existing save is looked up (+0x20, the card at +0x1C) and shown with
-    // the overwrite question (state 7, the choice kept at +0x998).
+    // cancel (-1) goes back to the main menu (state 2); a new slot makes the save slot (saveSlot) and, if the card is usable, asks to
+    // confirm (state 5), else resets the manager (state 6); an existing save is looked up (saveSlot, the card in cardPort) and shown with
+    // the overwrite question (state 7, the choice kept in pendingChoice).
     int PauseMenu_StateSlotSelect(GuestPtr<PauseMenu> pause)
     {
         port::GuestFrame<0x110> frame;
@@ -5667,14 +5668,14 @@ namespace mm
 
     PORT_FN(PauseMenu_StateSlotSelect);
 
-    // One frame of the pause menu (the state at +0): 0 makes its parts (the main list of three items at +4, the slot list of sixteen
-    // at +8, the memory card manager at +0xC, the message box at +0x10 and the save header at +0x30), hides the city's HUD and
-    // goes to 1; 1 slides in (+0x2C up by 10 to 120) and fills the main list (state 2); 2 takes the main list's choice (0 or the
+    // One frame of the pause menu (by its state): 0 makes its parts (the main list of three items, mainMenu, the slot list of sixteen
+    // (slotMenu), the memory card manager (mc), the message box (message) and the save header (saveTitle)), hides the city's HUD and
+    // goes to 1; 1 slides in (openTime up by 10 to 120) and fills the main list (state 2); 2 takes the main list's choice (0 or the
     // cancel closes with 9 and the sound 8, 1 goes to the card check 3, 2 shows the settings question: state 8); 3 shows the "checking
-    // memory card" text and, with the manager idle, goes to 4 (the slot menu) with the choice reset (+0x998 = -1); 4 to 7 and 10 are
+    // memory card" text and, with the manager idle, goes to 4 (the slot menu) with the choice reset (pendingChoice -1); 4 to 7 and 10 are
     // the slot, format, save, wait and main states; 8 closes the pause (state 0xB) on its first choice or goes back to 2; 9 slides
-    // out (+0x2C down by 10) and, with the manager idle, frees the parts, shows the HUD again and pops the city mode; 11 counts
-    // +0xC8 up by 2 to 128 and then does the same, but leaves the state at 11 (the result 1). 0 otherwise.
+    // out (openTime down by 10) and, with the manager idle, frees the parts, shows the HUD again and pops the city mode; 11 counts
+    // the city's fadeLevel up by 2 to 128 and then does the same, but leaves the state at 11 (the result 1). 0 otherwise.
     int PauseMenu_Update(GuestPtr<PauseMenu> pause, GuestPtr<CityScene> city)
     {
         port::GuestFrame<0x50> frame;
@@ -5884,13 +5885,13 @@ namespace mm
 
     PORT_FN(PauseMenu_Update);
 
-    // The title's load game screen (mode 8) for one frame: the title sprite and the menu model are drawn, then by the step at +0xC4:
-    // 0 empties the slot list (+0xB0), puts its cursor at (0x62, 0x2C) and goes on to 1. While either memory card is still being
+    // The title's load game screen (mode 8) for one frame: the title sprite and the menu model are drawn, then by the step (pressStep):
+    // 0 empties the slot list (loadMenu), puts its cursor at (0x62, 0x2C) and goes on to 1. While either memory card is still being
     // checked (status 4) the "checking" text shows, the list is emptied and the answer is -1. Otherwise the saves on the cards are
     // listed (one line each, from McManager_FormatSlotText; the newest save's line is scrolled to once, in step 1, which goes on to 2),
     // lines left from a longer list are emptied and the count is kept at +0xDC. With saves the "choose" text shows and the list takes
     // input: Triangle answers 0 (back), Cross copies the chosen save's 0x40-byte header to 0x1C5640 and its description (McManager_
-    // FormatSaveInfo) to 0x1C5680 and answers 1. With no save the "no data" text shows for 300 frames (+0xD8, which the cursor
+    // FormatSaveInfo) to 0x1C5680 and answers 1. With no save the "no data" text shows for 300 frames (introFrame, which the cursor
     // restarts) and the answer is 0. -1 otherwise.
     int Title_LoadMenu(GuestPtr<TitleScene> scene)
     {
@@ -5973,15 +5974,16 @@ namespace mm
 
     PORT_FN(Title_LoadMenu);
 
-    // The stage briefing scene for one frame (nothing once +0x29 is set). The step at +0x34: 0 makes the message window (+0x58) and keeps
-    // the shared building model (0x1F3B2C) at +0x54 and the model at 0x1F3C68 at +0xFC, with the fade (+0x38) at 128; 1 fades in (4 a
+    // The stage briefing scene for one frame (nothing once fadeMode is set). The step (phase): 0 makes the message window (window) and
+    // keeps the shared building model (0x1F3B2C) in office and the model at 0x1F3C68 in boss, with the fade at 128; 1 fades in (4 a
     // frame); 2 sets the window's first message (sound 0x3C); 3 and 8 wait for the window's slots 0x28 and 0x24 to say they are done;
     // 4 builds the next briefing text (StageScene_BuildBriefingText): with text it goes into the window (MsgWin_NextLine) and on to 5,
     // without the scene goes to 7; 5 waits out the typing (window state 6); 6 waits for Cross alone (sound 1, back to 4); 7 calls slot
-    // 0x10 once; 9 fades out (4 a frame) and, at 128, deletes the window and starts over with the stage count (+0x28) one up, drawing
+    // 0x10 once; 9 fades out (4 a frame) and, at 128, deletes the window and starts over with the stage count (step) one up, drawing
     // nothing more this frame. Every other frame draws: the window (slot 0x14), the light set and camera, the building model with its
-    // matrix moved to (0, -0.16, -3.84) and node 0x12, and the model at +0xFC put in place (translation row 0, 0.4, -3.65, 1) and
-    // played (+0x40 grows by 2 a frame and wraps at the animation's length, where the next animation, if any (+0x48), takes over),
+    // matrix moved to (0, -0.16, -3.84) and node 0x12, and the boss model put in place (translation row 0, 0.4, -3.65, 1) and
+    // played (animTime grows by 2 a frame and wraps at the animation's length, where the next animation, if any (nextAnimation),
+    // takes over),
     // then the window's slot 0x20 and the fade.
     void StageScene_MissionBriefing(GuestPtr<StageScene> scene)
     {
@@ -6121,14 +6123,14 @@ namespace mm
 
     PORT_FN(StageScene_MissionBriefing);
 
-    // The stage briefing scene for one frame. What happens is looked up by the stage (7 at most) and the phase (+0x28, a byte) in the
-    // table at 0x1B07C0 (eight bytes a stage): 0 answers 1 (the scene is over) unless +0x29 is set; 1 starts the sound change (+0x29 = 2,
-    // +0x2C = 0) and the next phase; 2 plays the stage's mission movie and goes on when it has played; 3 the telop, 4 the briefing,
-    // 10 the approval rate; 5 starts the sound change the other way (+0x29 = 1); 6 and 7 go to the next phase; 8 stops the sounds and goes
-    // on; 9 plays the movie and, when it has played, puts up the full-screen picture (+0x20, a sprite of 0x1B7350); 11 and 12 show the
-    // stage title or the city name (or, with +0x29 clear, go on and delete the caption box at +0x18); other codes do nothing. Then the
-    // sound change runs: with +0x29 at 2 the sequences are stopped (+0x2C 0 to 1), then the scene waits for the sounds to stop (back to
-    // 0); with +0x29 at 1 it waits for the disc, resets the voices and loads the playland banks (+0x2C 0 to 1), then waits for the sounds
+    // The stage briefing scene for one frame. What happens is looked up by the stage (7 at most) and the phase (step, a byte) in the
+    // table at 0x1B07C0 (eight bytes a stage): 0 answers 1 (the scene is over) unless fadeMode is set; 1 starts the sound change
+    // (fadeMode 2, fadeFrame 0) and the next phase; 2 plays the stage's mission movie and goes on when it has played; 3 the telop, 4 the briefing,
+    // 10 the approval rate; 5 starts the sound change the other way (fadeMode 1); 6 and 7 go to the next phase; 8 stops the sounds and goes
+    // on; 9 plays the movie and, when it has played, puts up the full-screen picture (picture, a sprite of 0x1B7350); 11 and 12 show the
+    // stage title or the city name (or, with fadeMode clear, go on and delete the caption box); other codes do nothing. Then the
+    // sound change runs: with fadeMode 2 the sequences are stopped (fadeFrame 0 to 1), then the scene waits for the sounds to stop (back to
+    // 0); with fadeMode 1 it waits for the disc, resets the voices and loads the playland banks (fadeFrame 0 to 1), then waits for the sounds
     // (back to 0). The result is 0 while the scene goes on.
     int StageScene_Update(GuestPtr<StageScene> scene)
     {
@@ -6137,7 +6139,7 @@ namespace mm
         const uint32_t row = static_cast<uint32_t>(stage < 8 ? stage : 7);
         const uint32_t action = port::load<uint8_t>(0x001B07C0u + (row << 3) + scene->step);
         const auto nextPhase = [scene]() { scene->step = static_cast<uint8_t>(scene->step + 1); };
-        // The caption box at +0x18 is deleted once the scene moves on.
+        // The caption box (caption) is deleted once the scene moves on.
         const auto goOn = [&]() {
             scene->phase = 0;
             nextPhase();
@@ -6262,15 +6264,15 @@ namespace mm
 
     PORT_FN(StageScene_Update);
 
-    // The status panel for one frame. The clock hand matrices of the panel model (+0x90, at 0xD0 and 0x190 in its node table) turn
+    // The status panel for one frame. The clock hand matrices of the panel model (model, at 0xD0 and 0x190 in its node table) turn
     // with the hour (pi per 6, kept between -6 and 5) and the seconds into the hour (pi per 1800, kept between -1800 and 1799), the
-    // first one lowered by 0.01. The digit glyph quads in the panel packet (+0x9C) are set from the glyph tables at 0x1AF610 (two floats
-    // a digit, 10 blank): the month (the month count +0x88 mod 12, plus 1), the year (the count over 12, plus 1, with the frame words
-    // beside it moved 0xC0 outward or inward by the digits), the four digit population (+0x74 of the map), and the signed three digit
-    // balance (+0x8C: the colour word by its size, 50 and 100 the limits, and a minus sign when negative). The alert (+0xB4) is the city
-    // flag 4; the detail view (+0xB0) is on in the city mode 2. With the detail view on, the timer (+0xBC, 960 long) shows the stage
+    // first one lowered by 0.01. The digit glyph quads in the panel packet (panelPacket) are set from the glyph tables at 0x1AF610 (two floats
+    // a digit, 10 blank): the month (the city's monthCount mod 12, plus 1), the year (the count over 12, plus 1, with the frame words
+    // beside it moved 0xC0 outward or inward by the digits), the four digit population (the map's population), and the signed three digit
+    // approval (the colour word by its size, 50 and 100 the limits, and a minus sign when negative). The alert (alert) is the city
+    // flag 4; the detail view (detail) is on in the city mode 2. With the detail view on, the timer (infoFrames, 960 long) shows the stage
     // target text for 480 frames and then the goal's remainder and the mission progress text, and the two money lines go into the other
-    // text boxes. The marks shown (+0xB8) are the count of the object at +0x64 times 20 over two million.
+    // text boxes. The marks shown (markCount) are the count of the city's stamina object times 20 over two million.
     void StatusPanel_Update(GuestPtr<StatusPanel> panel, GuestPtr<CityScene> city)
     {
         port::GuestFrame<0x190> frame;
@@ -6418,8 +6420,8 @@ namespace mm
     PORT_FN(StatusPanel_Update);
 
     // The residents' wants window for one frame. Outside the city mode 8 the wants are pruned (Wants_Prune) and that is all. In mode 8 the
-    // state at +0x51C: 0 starts (the window time +0x528 and the active flag +0x518 cleared, the city's two update flags at +0x30 and +0x34
-    // cleared, the applicants panel switched off, sound 7) and goes to 1; 1 slides the window model's matrix (+0x524, translation from
+    // state (state): 0 starts (the window time animTime and the active flag textsShown cleared, the city's two HUD flags hudVisible[1], [2]
+    // cleared, the applicants panel switched off, sound 7) and goes to 1; 1 slides the window model's matrix (matrix, translation from
     // the point at 0x1B08F0 to the one at 0x1B0900 over 10 frames, then the model played at 8 a frame), and after 25 frames makes the
     // four text boxes (two lines of the wants page, two page numbers) and fills them (state 2); 2 waits for Triangle or Cross (the
     // boxes are deleted, sound 8, the time set to 25: state 4) or for left (page back, if not the first: state 3 with the direction 1 and
@@ -6450,7 +6452,7 @@ namespace mm
             storeF(wants->matrix.address + 0x34u, lerp(0x001B08F4u, 0x001B0904u));
             storeF(wants->matrix.address + 0x38u, lerp(0x001B08F8u, 0x001B0908u));
         };
-        // The page's lines and numbers: the two wants lines in the boxes at +0x508 and +0x50C (after emptying them) and the two page numbers.
+        // The page's lines and numbers: the two wants lines in texts[0] and texts[1] (after emptying them) and the two page numbers.
         const auto fillPage = [&](uint32_t buffer) {
             TextBox_SetText(box(0x508u), GuestPtr<char>{0x001B73A8u}, 0);
             TextBox_SetText(box(0x50Cu), GuestPtr<char>{0x001B73A8u}, 0);
@@ -6609,12 +6611,12 @@ namespace mm
 
     PORT_FN(WantsWin_Update);
 
-    // The city cursor's info window for one frame (nothing while +0x1A0 is clear). The info text is refreshed (CityCursor_UpdateInfo), then
-    // by the mode at +0x1C4: 0 moves the cursor (CityCursor_Move, with the enabled flag); 1 is the info list: Cross (with Circle not held)
-    // takes the entry the frame step (+0x1C8) is on (twelve to a line, six to an entry: the entries are the chain of ids from +0x1A8,
-    // each record's next at +0xA, ending at 0x3F80), picking the tile in the placing mode (3) and starting a talk otherwise; Triangle
+    // The city cursor's info window for one frame (nothing while visible is clear). The info text is refreshed (CityCursor_UpdateInfo), then
+    // by the mode: 0 moves the cursor (CityCursor_Move, with the enabled flag); 1 is the info list: Cross (with Circle not held)
+    // takes the entry the frame step (frameStep) is on (twelve to a line, six to an entry: the entries are the chain of ids from target,
+    // each record's next in nextOnTile, ending at 0x3F80), picking the tile in the placing mode (3) and starting a talk otherwise; Triangle
     // closes it (mode 0, the city mode popped); up (when there is a line above) and down (when the step is above 0) start the step
-    // scrolling (modes 2 and 3, sound 0). 2 and 3 move the step by one a frame (up, down) for twelve frames (+0x1CC), then back to 1.
+    // scrolling (modes 2 and 3, sound 0). 2 and 3 move the step by one a frame (up, down) for twelve frames (openTimer), then back to 1.
     // 4 clears the picked building: the window frame of this frame's view shrinks around its centre over the timer (the box grows from
     // 25 by 100 units at most 15 steps, kept in the 16 bit range), and when the timer (30 at the pick) runs out the picked building
     // is plotted on the minimap, its family removed from the applicants, the approval lowered by 20, the tile area turned to rubble
@@ -6753,9 +6755,9 @@ namespace mm
     PORT_FN(CityCursor_Update);
 
     // The city cursor: the base object, a model loaded (0x1B5EF0) and deleted again at once, the lines and the fade counters cleared,
-    // and for each of the two views (0xD0 bytes, one per frame parity) five text boxes (15 by 1, style -1, at +0x00) with five frames
-    // (+0x14, a 24 by 12 box) and the two frames of the fade (+0x28 and +0x2C), then the view's GS packet at +0x30: the TEX0 style
-    // register at +0x60 (the sizes are log2 of 128 and 64 in its texture width and height fields) and the sprite, colour and
+    // and for each of the two views (0xD0 bytes, one per frame parity) five text boxes (15 by 1, style -1, lines) with five frames
+    // (lineFrames, a 24 by 12 box) and the two frames of the fade (frame and fadeFrame), then the view's GS packet (extraPacket):
+    // the TEX0 style register in its fourth quadword (the sizes are log2 of 128 and 64 in its texture width and height fields) and the sprite, colour and
     // coordinate words after it.
     GuestPtr<CityCursor> CityCursor_ctor(GuestPtr<CityCursor> cursor)
     {
@@ -6858,11 +6860,11 @@ namespace mm
 
     PORT_FN(CityCursor_ctor);
 
-    // The title scene's asset loader, one step a call (the step at +0xC8; the loading text box at +0xBC is drawn every call). 0 shows the
+    // The title scene's asset loader, one step a call (the step, waitFrames; the loading text box, messageBox, is drawn every call). 0 shows the
     // loading text; 1 loads a model (0x1B8D00) and deletes it at once; 2 to 5 load the four texture images (0x1B8D20 to 0x1B8D50, each
-    // through a 0x1010-byte loader on the stack); 6 and 7 load the two models (+0x24, which is also scaled, and +0x28); 8 to 0xB load
-    // the sprites at +0xC, +0x10, +0x14 and +0x18; 0xC and 0xD load the sprites at +0x1C and +0x20 (green made alpha); 0xE makes the
-    // loading screen (+0x2C); 0xF and 0x10 load the sprites at +0x30 and +0x34 (the last goes to step 100). 100 skips to 104 unless +0xE0
+    // through a 0x1010-byte loader on the stack); 6 and 7 load the two models (menuModel, which is also scaled, and logoModel); 8 to 0xB load
+    // the sprites titleSprite and logoLetters; 0xC and 0xD load the two choices (green made alpha); 0xE makes the
+    // loading screen (loading); 0xF and 0x10 load loadingFrame and loadingBar (the last goes to step 100). 100 skips to 104 unless afterGame
     // is set, which stops the sequences; 101 to 106 wait for the sounds to be idle and the disc ready, reset the voices (bank set 1),
     // zero a sound command and load the bank 7; 107 answers 1 once the sounds are idle (without drawing). 0 otherwise.
     int TitleScene_Load(GuestPtr<TitleScene> scene, int)
@@ -7027,17 +7029,17 @@ namespace mm
 
     PORT_FN(TitleScene_Load);
 
-    // The Town's Pages book for one frame. The state at +0x1C: 0 starts (the open time +0x28 at 0, the city's update flags off, the applicants
-    // panel off, sound 7); 1 slides the book model's matrix (+0x24) in over 10 frames, plays it, and after 25 frames makes the six text boxes
+    // The Town's Pages book for one frame. The state (mode): 0 starts (the open time openTime at 0, the city's update flags off, the applicants
+    // panel off, sound 7); 1 slides the book model's matrix (bookMatrix) in over 10 frames, plays it, and after 25 frames makes the six text boxes
     // (the three lines and the page numbers), builds the index, fills the page and puts the cursor on its row; 2 waits for input: Triangle
     // closes the book (state 4, time 25, the boxes and the index freed, sound 8), Start goes back from a family page to the contents (state 6
     // with the page and row it came from), Cross picks the entry under the cursor (a contents entry opens its first page, a family page entry
-    // closes the book with the family kept in +0x48; the last row, 10, closes it from the contents or goes back from a family page), and the
-    // d-pad moves the cursor (state 5) or turns the page (state 3, direction in +0x20); 3 turns the page (the time moves by 6; when its whole
+    // closes the book with the family kept in chosenFamily; the last row, 10, closes it from the contents or goes back from a family page), and the
+    // d-pad moves the cursor (state 5) or turns the page (state 3, direction in turnBack); 3 turns the page (the time moves by 6; when its whole
     // part is 60 the page changes and is filled) and then puts the cursor on its row; 4 slides the book out and, at the end, gives the city
     // its update flags and the applicants panel back, then starts the talk with the family kept (a family type's home, or the family itself
-    // for the debug flag 2) or, with none, pops the city mode; 5 moves the cursor sprite (+0x50 and +0x54) half the way to the row's place
-    // (the table at 0x1B1A70) a frame; 6 flips to the page in +0x44 (the model played out and back, the page changed at 23).
+    // for the debug flag 2) or, with none, pops the city mode; 5 moves the cursor sprite (cursorX and cursorY) half the way to the row's place
+    // (the table at 0x1B1A70) a frame; 6 flips to the page in targetPage (the model played out and back, the page changed at 23).
     void TownPages_Update(GuestPtr<TownPages> pages, GuestPtr<CityScene> city)
     {
         const uint32_t p = pages.address, c = city.address;

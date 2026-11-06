@@ -96,11 +96,11 @@ namespace mm
         Instance_DrawModelLit(player->model, GuestPtr<Vec4>{player.address + 0x20u}, player->mode, city->bag->outfit);
     }
 
-    // char: the player's animation (+0x38) from its movement and the pad. Standing still: 1 when at least 0.4
+    // char: the player's animation from its movement and the pad. Standing still: 1 when at least 0.4
     // above the water level, else 2 while approval is below 0, else 0. Moving, by direction (pad bits
-    // or the player's +0x08 code): 0x400000, 0x4000 or code 2 gives 5; 0x800000 or code 5 gives 7; 0x200000
+    // or the player's step code): 0x400000, 0x4000 or code 2 gives 5; 0x800000 or code 5 gives 7; 0x200000
     // or code 6 gives 6; 0x100000, 0x1000 or code 1 gives 4; plus 8 while walking (mode 1) with pad 0x40 held,
-    // else plus 4 when at least 0.4 above the level. A changed animation restarts at frame 0 (+0x34); frames
+    // else plus 4 when at least 0.4 above the level. A changed animation restarts at frame 0 (animTime); frames
     // advance by 1 and wrap to 0, or to a fifth of the length (mm_A3D_GetAnimLength) for animations 4 and up.
     // Walking with pad 0x40 held while moving plays sound 5.
     void Player_UpdateAction(GuestPtr<Player> player, GuestPtr<Vec4> move, GuestPtr<CityScene> city)
@@ -143,7 +143,7 @@ namespace mm
     // char: the player's footsteps (mm_Se_PlayVariant), on frames 10 and 30 of animations 4-7 and frame 10 of
     // animations 8-11 (3), and only on the ground (jump speed 0..0.01). For 4-7, at or above the water level
     // gives 4; below it the object on the tile decides: a road (type 4) or a type with flag 0x40 gives 0, type 2
-    // with +0x14 at 1..9 gives 2, anything else 1. In snow (weather 3) from 3:00 to 23:00, 0 becomes 1.
+    // (wasteland) with weeds (look[4], read as entranceTile's low byte) at 1..9 gives 2, anything else 1. In snow (weather 3) from 3:00 to 23:00, 0 becomes 1.
     void Player_PlayFootstep(GuestPtr<Player> player, GuestPtr<CityScene> city)
     {
         const int anim = player->animation;
@@ -549,7 +549,7 @@ namespace mm
     // The city's lights and sky by the clock, each frame. The tables hold twelve two-hour slots per day (and
     // twelve more for weather other than clear); every colour is blended between this slot's and the next
     // slot's entry by the seconds t into the slot, ((7200 - t) x this + t x next) / 7200. Lights 0 and 1 point along (0, 1, 0) and (0, -1, 0) turned by the day's angle about z and pi/8
-    // about x, light 2 straight up in 0.2 grey, and the light matrices follow. The sky packet (from +0x340)
+    // about x, light 2 straight up in 0.2 grey, and the light matrices follow. The sky packet (skyBands)
     // gets its two colours (x 256 as GS bytes), its horizon from the view's pitch, its scroll from a frame
     // counter and the view's heading, and a shimmering grey. The original's frame is reserved whole.
     void CityCamera_UpdateTimeOfDay(GuestPtr<CityCamera> camera, GuestPtr<CityScene> city)
@@ -671,9 +671,9 @@ namespace mm
         glow[12] = grey << 24 | grey << 16 | grey << 8 | grey; // the glow's colour
     }
 
-    // The sky's three packets in the city camera, filled in each frame by mm_CityCamera_UpdateTimeOfDay: at +0x310
-    // a gouraud strip of two bands (colours at +0x340 and +0x370); at +0x3D0 a blended sprite of the 512 x 128
-    // 4-bit texture at block 0x3EAE (palette 0x3F2E); at +0x470 an additive sprite (ALPHA 0x48, fixed 0x30) of
+    // The sky's three packets in the city camera, filled in each frame by mm_CityCamera_UpdateTimeOfDay: skyBands, a
+    // gouraud strip of two bands (colours in its fourth and seventh quadwords); skyPicture, a blended sprite of the 512 x 128
+    // 4-bit texture at block 0x3EAE (palette 0x3F2E); skyGlow, an additive sprite (ALPHA 0x48, fixed 0x30) of
     // the 256 x 128 texture at 0x3F2F (palette 0x3F6F), the usual blend (0x44) restored after it. The sprites'
     // ST and heights are rewritten later.
     void Sky_BuildPackets(GuestPtr<CityCamera> camera)
@@ -687,7 +687,7 @@ namespace mm
         const int glowW = Math_Log2(0x100), glowH = Math_Log2(0x80);
         const uint64_t glowTex = tex0(0x3F2F, 4, glowW, glowH, 0x3F6F);
         const uint32_t words[] = {
-            // +0x310: the bands
+            // skyBands: the bands
             0x1000000Au, 0, 0x11000000u, 0x5000000Au,                         // cnt 10; VIF flush, direct 10
             0x00008009u, 0x10000000u, 0x0000000Eu, 0,                         // GIF tag: 9 loops, eop, A+D
             0x0Cu, 0, 0, 0,                                                   // PRIM: gouraud triangle strip
@@ -700,7 +700,7 @@ namespace mm
             0x87006C00u, 1, 0x04u, 0,
             0x87009400u, 1, 0x04u, 0,
             0x60000000u, 0, 0, 0,                                             // ret
-            // +0x3D0: the sky texture
+            // skyPicture: the sky texture
             0x10000008u, 0, 0x11000000u, 0x50000008u,                         // cnt 8; flush, direct 8
             0x00008007u, 0x10000000u, 0x0000000Eu, 0,                         // GIF tag: 7 loops, eop, A+D
             0x70808080u, 0x3F800000u, 0x01u, 0,                               // RGBAQ
@@ -711,7 +711,7 @@ namespace mm
             0x3F800000u, 0x3F800000u, 0x02u, 0,                               // ST
             0x80009400u, 1, 0x04u, 0,                                         // XYZ2
             0x60000000u, 0, 0, 0,                                             // ret
-            // +0x470: the glow
+            // skyGlow: the glow
             0x1000000Au, 0, 0x11000000u, 0x5000000Au,                         // cnt 10; flush, direct 10
             0x00008009u, 0x10000000u, 0x0000000Eu, 0,                         // GIF tag: 9 loops, eop, A+D
             0x48u, 0x30u, 0x42u, 0,                                           // ALPHA_1: additive, fixed 0x30
@@ -1248,11 +1248,11 @@ namespace mm
         return cls;
     }
 
-    // char: class 2 slot +0x10, a character of this class on the terrain, while there is room for another
+    // char: class 2 draw slot, a character of this class on the terrain, while there is room for another
     // instance (fewer than 1800 queued, fewer than the limit at 0x1BD980 of the limited ones). Marks the person
     // drawn (flag 0x1000) and eases its height towards the ground: 0.1 per frame within 0.2 of it, straight
     // onto it beyond. Only a person at height 0.5 or below is drawn: lit (colour w word 12) before 4:00 and
-    // from 17:00 unless +0x28 holds 6000 (compared as a person id here), as node 7 or 8 of the first model
+    // from 17:00 unless target (the driver) holds 6000 (compared as a person id here), as node 7 or 8 of the first model
     // part when its home is of type 0xAF or 0xB1 (the spaceman's and the caveman's), else node (own index % 7), turned by place.w about y
     // and moved to place.xyz.
     void Char2_Draw(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, GuestPtr<Vec4> colour,
@@ -1393,7 +1393,7 @@ namespace mm
 
     // char: the nearest building (city-block distance from (x, z), within the list's own range at 0x1B0D30)
     // of tile list `list` whose family lives in the city, other than skipA and skipB. Mode 0 also wants
-    // room for visitors (+0x16 below type +0x14A), mode 1 room for occupants (+0x17 below the capacity).
+    // room for visitors (headingHere below the type's maxVisitors), mode 1 room for occupants (occupants below the capacity).
     // Ties go to the later entry. Returns 0x3F80 when none qualifies.
     int16_t Person_FindBuildingInList(GuestPtr<CityScene> city, int list, int x, int z, int mode, int16_t skipA, int16_t skipB)
     {
@@ -1486,7 +1486,7 @@ namespace mm
 
     // char: a person without a target of its own (none, or home) picks the school nearest home from the tile list for
     // its schedule state: 2 daycare (0x17), 3 primary school (0x18), 4 junior high (0x19), 5 high school (0x1A), else
-    // university (0x1B). The chosen school counts one more visitor (+0x16). Returns the target.
+    // university (0x1B). The chosen school counts one more visitor (headingHere). Returns the target.
     uint16_t Person_TargetSchool(GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
     {
         if (person->target != 0x3F80 && person->target != person->home)
@@ -1787,10 +1787,10 @@ namespace mm
         }
     }
 
-    // char: a resident's tick. Friendship rises (+0x2F), the countdown at +0x25 runs down, and while the city has
+    // char: a resident's tick. The talk status ticks (status), the cooldown runs down, and while the city has
     // flag 4 the introduction calls go on: when the tick count reaches the next call's, the family this resident
     // introduces phones about moving in, provided it can apply, the applicants have room (under 32) and its type
-    // phones (+0x154 bit 7); each call lowers the city's pending approval, and after four they stop. The wait
+    // phones (callFlags bit 7); each call lowers the city's pending approval, and after four they stop. The wait
     // grows by one tick after every try.
     void Person_TickCounters(GuestPtr<CharClass>, GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
     {
@@ -2125,10 +2125,10 @@ namespace mm
         return tileDistanceIn(from, to, result, tileA, tileB);
     }
 
-    // path: the link (+0x10, a road block tile) to take from road block `from` towards road block `target`.
+    // path: the link (roadLinks, a road block tile) to take from road block `from` towards road block `target`.
     // Each link of `from` is followed, turning at bends (shapes 3, 6, 9, 0xC), for up to 9 blocks; skipped
     // are the direction of the block edge the person stands within 0.05 of, and paths that reach the person's
-    // previous waypoint (+0x1A), no road, or a dead end. Reaching one of `target`'s links returns that first link at once;
+    // previous waypoint (previousTile), no road, or a dead end. Reaching one of `target`'s links returns that first link at once;
     // reaching a junction (shapes 7, 0xB, 0xD, 0xE, 0xF) keeps it when the junction lies nearer to one of
     // `target`'s links than any before (within 128 tiles). Returns 0x4000 when nothing qualifies. The tile
     // distance goes through this function's own slots, as in the original: from (link) at entry sp - 0x10, to
@@ -2205,14 +2205,14 @@ namespace mm
         return result;
     }
 
-    // path: the next waypoint for `person` at `tile`, towards the building it is bound for (+0x16). Each person
+    // path: the next waypoint for `person` at `tile`, towards the building it is bound for (inside). Each person
     // gets one every eighth frame (index % 8 = frame counter % 8); other frames return 0x4000 and change nothing.
-    // The waypoint becomes its +0x18 and the old one its +0x1A, except that on a bend +0x1A stays.
+    // The waypoint becomes its walkTile and the old one its previousTile, except that on a bend previousTile stays.
     //  - On a road, to a building with people inside (type flag 0x40) and a road entrance: the building itself
     //    from the entrance block; the entrance block when it links to this one; else this block's link that the
     //    entrance block links to as well (the entrance block when the two line up in x or z); else
     //    mm_Path_PickRoadLink's link, or the entrance block when it finds none.
-    //  - On a road, to any other building: this block's link (not back to +0x1A) nearest the building, when
+    //  - On a road, to any other building: this block's link (not back to previousTile) nearest the building, when
     //    nearer than this block; else the building.
     //  - Off the road: a building with people inside and a road entrance is left by it; within 8 tiles the
     //    building itself; else the first road within two block steps (by distance, then direction), or the first
@@ -2387,7 +2387,7 @@ namespace mm
             int gain;   // on straight road, or with the tiles around clear
         };
 
-        // A vehicle's speed (+0x2C) for its step from block `obj` in direction `dir` (0..3: tile z down, x up,
+        // A vehicle's speed (speed) for its step from block `obj` in direction `dir` (0..3: tile z down, x up,
         // z up, x down; world z runs against tile z), `dx` and `dz` its offset within its two-tile block
         // (-1..1). Other vehicles (class flag 1) count when heading within 3pi/8 of the same way: the first
         // ahead of it on its block brakes it (to as low as 0) when nearer than 1.2, else slows it (to 150);
@@ -2536,7 +2536,7 @@ namespace mm
         using SpeedUpdate = void (*)(GuestPtr<CharClass>, GuestPtr<CityScene>, GuestPtr<MapPerson>, GuestPtr<MapObject>, int, ps2f, ps2f);
 
         // A class 2 vehicle's step from tile `tile` (object `obj`). When it steers (mode A: on one frame in
-        // four, by its index), it aims at the middle of its waypoint's object (+0x18), straight along an axis
+        // four, by its index), it aims at the middle of its waypoint's object (walkTile), straight along an axis
         // when that is within 0.01, and its speed is updated for its offset within its two-tile block: off
         // road with the tiles-around test; on road for the way it heads (within pi/4), aiming pi/8 off that
         // way to get back into its lane (0.2 to 0.3 from the block's middle line, to the same side of its
@@ -2836,7 +2836,7 @@ namespace mm
         }
     }
 
-    // Removes the entry: the ones after it move up, the last slot is freed, and the cursor (+0x3D0) steps back when
+    // Removes the entry: the ones after it move up, the last slot is freed, and the cursor (selected) steps back when
     // nothing follows.
     void Laptop_RemoveEntry(GuestPtr<Laptop> laptop, int entry)
     {
@@ -3020,7 +3020,7 @@ namespace mm
             phone->calls[3].family = 0;
         }
 
-        // Ending the call being shown: the queue moves up, the pad focus is released, the call state cleared, +0x40 negated and
+        // Ending the call being shown: the queue moves up, the pad focus is released, the call state cleared, iconSlide negated and
         // the notice cleared.
         void endShownCall(GuestPtr<PhoneCalls> phone, GuestPtr<CityScene> city)
         {
@@ -3230,7 +3230,7 @@ namespace mm
             view->forceLit = 1;
     }
 
-    // The pose of a family member in the talk (32 entries of family, member, pose from +0x40): the entry of the
+    // The pose of a family member in the talk (poses: 32 entries of family, member, pose): the entry of the
     // member, else the first free one (family 0).
     void Talk_SetPose(GuestPtr<TalkSession> talk, uint16_t family, uint8_t member, uint8_t pose)
     {
@@ -3454,7 +3454,7 @@ namespace mm
 
     // ---- the laptop's menu (batch 39)
 
-    // Runs the selected laptop entry (+0x3D0 into the entry list) and returns the scene mode to go to (the current one
+    // Runs the selected laptop entry (selected, into the entry list) and returns the scene mode to go to (the current one
     // when nothing changes): 0 mode 6; 1, 2, 9 and 11 put the player in mode 0, 1, 3 or 4 (mode 1); 3 mode 3; 4 mode 7;
     // 5 toggles stage flag 1; 6 to 8 mode 9; 10 mode 8; 12 queues event 6 and drops its entry (mode 1). 13 is a debug
     // unlock: every family a friend, stage flag 2, entries 4, 5, 8, 9, 0xA and 0xC added and 0xD dropped, the largest
@@ -3578,7 +3578,7 @@ namespace mm
     }
 
     // Returns every event to the queue's free level, queues the ones still in the manager's slots, frees the two talk
-    // events and the buffer at +0xAC.
+    // events and the third one's data (talks[2]).
     GuestPtr<EventMgr> EventMgr_dtor(GuestPtr<EventMgr> events, int16_t deleteFlag)
     {
         if (events)
@@ -3822,7 +3822,7 @@ namespace mm
         return lights;
     }
 
-    // The request queue object (+0) and the file (+0x20), each deleted with flag 1.
+    // The request queue object (queue) and the file (file), each deleted with flag 1.
     GuestPtr<McManager> McManager_dtor(GuestPtr<McManager> mc, int16_t deleteFlag)
     {
         if (mc)
@@ -3983,7 +3983,7 @@ namespace mm
 
     // char: where a resident goes next. The activity comes from the person's schedule entry (mm_Schedule_PickEntry): the clock,
     // shifted by a spread of the person (the square root bits of 6 * family + member, mod 3600), picks the hour, and the row is
-    // chosen by the holiday month (+2) and bad weather (+1). It is kept in the person (+0x27) and in *activity (its low 5 bits).
+    // chosen by the holiday month (+2) and bad weather (+1). It is kept in the person (activity) and in *activity (its low 5 bits).
     // How a building is found depends on it: 0 a farmer's field (mm_Person_TargetField); 1 and 2 a port (list 10) or an office or
     // factory (list 8), kept as the target (its heading count goes up); 3 the target, or home; 4 a school; 5, 6, 11 and 12 home;
     // 7 and 8 a building of lists 11 to 13 or 18 and 19, picked by the count of timer 0; 9 a random target; 10 a list from the
@@ -4123,7 +4123,7 @@ namespace mm
 
     PORT_FN(Person_ChooseDestination);
 
-    // Placing a Small Goods item from the bag with the player's cursor (mode 5): the item's footprint (the size byte at +0x142 of its
+    // Placing a Small Goods item from the bag with the player's cursor (mode 5): the item's footprint (the size of its
     // building type, 0x115 + the bag item's index) is centred on the tile under the cursor (half a tile further for an odd size)
     // and tested (mm_Map_CanPlace); the footprint is highlighted in blue when it can be placed and red when not. Cross places it
     // (mm_Map_PlaceSmallGoods, sound 3, one of the item used up) or, when it cannot be placed, plays sound 4; Triangle cancels
@@ -4207,7 +4207,7 @@ namespace mm
     // frames, with Square, when the family is not in the city or (for a call of the family) when its flag is set and the city is not
     // popular, or when the person has no place on the map. State 2 waits 30 frames and then starts a talk with the person or the
     // member (a call of the family only when its flag is 0 or the city is popular with fewer than 32 applicants waiting) and ends
-    // the call. Ending a call moves the later ones up, gives the pad back and swaps the sign of +0x40 (the notice is cleared when it
+    // the call. Ending a call moves the later ones up, gives the pad back and swaps the sign of iconSlide (the notice is cleared when it
     // was shown). The result is 1 when no call is on.
     int PhoneCall_Update(GuestPtr<PhoneCalls> phone, GuestPtr<CityScene> city)
     {
@@ -4378,7 +4378,7 @@ namespace mm
     }
 
     // What the person's schedule makes of the building it heads for (the target, or home with none): the kind of the
-    // building's type (+0x14C) when the schedule byte's upper part is not 0, else 0.
+    // building type's activity when the schedule byte's upper part is not 0, else 0.
     uint8_t Schedule_GetActivity(GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
     {
         const uint32_t row = personScheduleRow(city, person);
@@ -4431,9 +4431,9 @@ namespace mm
     }
 
     // Draws a person with a pose of the class's model. The model's matrix is turned by the heading in the position block (t1:
-    // x, y, z at +0 to +8 place the model, the heading is at +0x0C, and +4 is also checked to be 0.5 or less before drawing) while the
+    // its x, y and z place the model, the heading is its w, and y is also checked to be 0.5 or less before drawing) while the
     // person's own height eases to the ground under it (0.1 a call, or at once from over 0.2 away). The animation (t2) is 7 for
-    // the two first ones while the person is not in flag 0x100; the person's frame (+0x1C) steps on by the animation's table
+    // the two first ones while the person is not in flag 0x100; the person's frame (animFrame) steps on by the animation's table
     // (0x1AF080) and restarts at its table's value (0x1AF050: -1 a fifth of the length, -2 the class's start for the person's
     // flags, else the value). People whose friendship reaches 48 turn to the player (but not in animation 5).
     void Person_Draw(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, int colour, int flags, GuestPtr<int32_t> position, int animation)
@@ -4512,7 +4512,7 @@ namespace mm
     PORT_FN(Person_Draw);
 
     // The same with a pose already chosen: the class's part and the schedule byte are those of the person, or (with none) of the
-    // family and member given: the member's part byte (+0x2B of its record) when set, else by the family's parity as above. The
+    // family and member given: the member's look (FamilyMember look) when set, else by the family's parity as above. The
     // pose of the talk session for the family and member is fetched into a local (claim state first for a person). The matrix is
     // copied to the model and the animation phase (*phase, not before 0) goes on by 2 a call until it passes the length of the
     // mesh (*mesh), when it restarts and the mesh switches between 2 and 3.
@@ -4565,7 +4565,7 @@ namespace mm
     PORT_FN(Person_Draw2);
 
     // Placing the selected applicant's building with the player's cursor (mode 6): the footprint of the building type of the family
-    // (the size byte at +0x142 of the type) is centred on the tile under the cursor as for a bag item and tested (mm_Map_CanPlace for
+    // (the type's size) is centred on the tile under the cursor as for a bag item and tested (mm_Map_CanPlace for
     // the family; 1 means free and is highlighted in blue). Any other answer but 2 asks mm_Placement_FindSpot for a spot nearby
     // (red when there is none); the highlight is mode 2 (cleared) when the spot is taken. Cross places it (levels the ground, the
     // applicant's state 3 and its tile, back to the list, sound 3) when it can be placed, else plays sound 4; Triangle goes back to the
@@ -4637,12 +4637,12 @@ namespace mm
 
     PORT_FN(Player_PlaceForApplicant);
 
-    // One update of a vehicle (a person record of the vehicle classes, its driver the person at +0x28, 6000 for none). With the
+    // One update of a vehicle (a person record of the vehicle classes, its driver the person in target, 6000 for none). With the
     // time flag 2 a vehicle in a building whose driver's activity has changed heads for the exit (walk tile = the building's tile).
     // Inside a building: on the building's own tile the driver gets out (the vehicle outside, both given the "nowhere" tiles, the
     // driver put where the vehicle is, no driver left); on another tile the vehicle follows the path (mm_Path_NextWaypoint at the
     // walk tile 0x4000 or on the tile of the first object at it) or moves by the kind of its class (flag 0x1000: B, else A), the
-    // driver carried along. Outside: a counter (+0x2E, 3 a call) runs to 0xFD20, when the vehicle is taken off its tile and put
+    // driver carried along. Outside: a counter (awayTime, 3 a call) runs to 0xFD20, when the vehicle is taken off its tile and put
     // back on its home's. With flag 0x800 the vehicle is then linked to the object under it (or its building); flag 0x1000 is cleared.
     void Char2_Update(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> vehicle, uint32_t timeFlags)
     {

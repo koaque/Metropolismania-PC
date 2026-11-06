@@ -144,7 +144,7 @@ namespace mm
         }
     }
 
-    // The goods record of the slot being set up (+0x1A4, -1 none): returns its value and writes how it is used for
+    // The goods record of the slot being set up (setupSlot, -1 none): returns its value and writes how it is used for
     // categories 0x17 (0), 0x1A (1), 0x1B (2) and 0x1C (3).
     uint32_t BagMenu_GetSetupKind(GuestPtr<Bag> bag, GuestPtr<uint32_t> kind)
     {
@@ -173,8 +173,8 @@ namespace mm
         return record->value;
     }
 
-    // The menu's texts for the slot under the cursor (+0x1A0): the goods name (record +8, or the empty text) in the
-    // text box at +0x170, and for usable goods the action in the one at +0x188 with the usable flag (+0x1A8).
+    // The menu's texts for the slot under the cursor (cursor): the goods name (the record's, or the empty text) in the
+    // text box nameText, and for usable goods the action in labels[0] with the usable flag (usable).
     void BagMenu_UpdateItemText(GuestPtr<Bag> bag)
     {
         const GuestPtr<BagSlot> slot{slotAddress(bag, static_cast<uint32_t>(bag->cursor))};
@@ -214,7 +214,7 @@ namespace mm
             return;
         }
         TextBox_SetText(bag->labels[0], GuestPtr<char>{action}, 0);
-        port::store<int32_t>(bag.address + 0x1A8u, usable);
+        bag->usable = usable;
     }
 
     // ---- goods records
@@ -260,7 +260,7 @@ namespace mm
     // The bag in the city menu: the bag model's matrix (node 0) is copied to the frame node of the size (size + 5, or 6 for
     // no bag) of the shared bag-slot model, which is drawn. While the menu is in a state below 5 the list's backdrop (node 1
     // of the bag model, matrix reset, 4.4 away, with the Z buffer cleared first), its list and text, the selected slot's
-    // packets and texts (the item name and, with the flag in +0x1A8, its description) and the closing widget are drawn.
+    // packets and texts (the item name and, with the usable flag, its description) and the closing widget are drawn.
     void BagMenu_Draw(GuestPtr<Bag> bag)
     {
         const uint32_t b = bag.address;
@@ -299,7 +299,7 @@ namespace mm
         {
             packet(0x184u);
             text(0x190u);
-            if (port::load<uint32_t>(b + 0x1A8u) != 0)
+            if (bag->usable != 0)
             {
                 packet(0x17Cu);
                 text(0x188u);
@@ -339,9 +339,9 @@ namespace mm
 
     // ---- The bag's item list (plan P6 batch 2) ----
 
-    // Rebuilds the list menu (+0x174) from the bag slots, up to the first empty one and within the slots its size gives: the goods'
+    // Rebuilds the list menu (list) from the bag slots, up to the first empty one and within the slots its size gives: the goods'
     // name (the offset in the record, into the text at 0x1BDAA4), and for the goods of kinds 0x17, 0x1A, 0x1B and 0x1C that
-    // stack, a count appended when there are two or more. The list is then updated against the selection at +0x1A0 and
+    // stack, a count appended when there are two or more. The list is then updated against the selection (cursor) and
     // its result returned.
     int BagMenu_RefreshList(GuestPtr<Bag> bag)
     {
@@ -368,7 +368,7 @@ namespace mm
         return ListMenu_HandleInput(list(), GuestPtr<int32_t>{bag.address + 0x1A0u});
     }
 
-    // Ends the use of the selected slot (state 7, the use flag at +0x19C cleared): when something was used up one is taken from
+    // Ends the use of the selected slot (state 7, the slide time, slide, cleared): when something was used up one is taken from
     // the slot's count, and an empty slot is removed; the selection is cleared and the list rebuilt.
     void BagMenu_FinishUse(GuestPtr<Bag> bag, int used)
     {
@@ -470,8 +470,8 @@ namespace mm
 
     PORT_FN(Applicants_AssignToBuilding);
 
-    // Uses the goods of the selected slot (+0x1A0) by their kind (byte 4 of the record): kinds 0x17, 0x1A, 0x1B and 0x1C start the
-    // use (state 6 at +0x194, a time of 120.0 at +0x19C, sound 0x10) and mark the slot as the one in use (+0x1A4); kind 0x15 swaps
+    // Uses the goods of the selected slot (cursor) by their kind (byte 4 of the record): kinds 0x17, 0x1A, 0x1B and 0x1C start the
+    // use (state 6, a slide time of 120.0, sound 0x10) and mark the slot as the one in use (setupSlot); kind 0x15 swaps
     // the player's outfit for the record's value, takes the slot out and puts the old outfit back into the bag (goods group 5 when
     // it was the default 0, otherwise group 0xE5 with index old - 1), then rebuilds the list; kinds 0x13 and 0x11 are eaten (mm_Stamina_Eat) and the slot
     // is taken out, the list rebuilt and sound 0xE played. Other kinds do nothing.
@@ -515,10 +515,10 @@ namespace mm
 
     PORT_FN(BagMenu_UseSelected);
 
-    // One frame of the applicants list (city modes 3 and 4). The card moves with a point at +0x330 (x, y, z) and a speed at +0x340
-    // that doubles every frame; the states at +0x31C: 0 closed: every 11 frames the next entry (of 32, +0x324) is assigned a
+    // One frame of the applicants list (city modes 3 and 4). The card moves with a point (cardPoint: x, y, z) and a speed (step)
+    // that doubles every frame; the states (mode): 0 closed: every 11 frames the next entry (of 32, assignIndex) is assigned a
     // building (mm_Applicants_AssignToBuilding), and in city mode 3 the list opens (state 1, speed 0.02, sound 7); 1 slides in
-    // (the y falls by the speed to 0.21), then waits (2) and the HUD flags of the city (+0x34, +0x38) go off; 2 waits for
+    // (the y falls by the speed to 0.21), then waits (2) and the HUD flags of the city (hudVisible[2], [3]) go off; 2 waits for
     // Triangle (close: state 3, sound 8), Cross (place the selected entry, when it is of a kind 1 to 3 or 8: state 5) or left and
     // right (the next family of the entry prefetched); 3 slides out (y rises to 2.3) and the list is shut (mode 0, result 1);
     // 4 shows the notice for the selected entry's kind (1 and 2: by the building type, 3: notice 3); 5 flies the card away (x
@@ -734,10 +734,10 @@ namespace mm
         }
     }
 
-    // One frame of the bag menu (city mode 11 and the modes around it). `time` (+0x19C) counts the bag model's slide in 10s up to
-    // 120; the states at +0x194: 0 clears the HUD flags and the applicants' flag, plays sound 7 and starts the slide; 1 slides it in
+    // One frame of the bag menu (city mode 11 and the modes around it). `time` (slide) counts the bag model's slide in 10s up to
+    // 120; the states (state): 0 clears the HUD flags and the applicants' flag, plays sound 7 and starts the slide; 1 slides it in
     // (the model moves from 0x1AEF10 to 0x1AEF00), and at 120 builds the list menu (4, 10 or 20 items by the bag size), the text
-    // boxes and frames, and goes to 2; 2 is the menu: the list takes the pad (the choice is +0x1A0), the item text is updated, Cross
+    // boxes and frames, and goes to 2; 2 is the menu: the list takes the pad (the choice is cursor), the item text is updated, Cross
     // uses a filled slot (mm_BagMenu_UseSelected), Square opens the throw away question (state 4) and Triangle shuts it all (sound
     // 8, state 3); 3 slides out and gives the HUD back and leaves the mode; 4 runs the question, and a Yes (0) removes the slot (sound
     // 15) and refreshes the list; 5 shows the selected item's name (and its count when it is a food, drink or clothes item with
@@ -919,9 +919,9 @@ namespace mm
 
     PORT_FN(BagMenu_Update);
 
-    // The lighting of the applicant card's claim icons as the cursor (+0x2CC) and the shown entry (top, +0x2D0) move. Idle (+0x2B4 =
+    // The lighting of the applicant card's claim icons as the cursor and the shown entry (top) move. Idle (rollDir
     // 0), a gap between them starts a step: forward (top < cursor: direction +1, the icon of the top entry lit on the eight nodes of the
-    // table at 0x1B7A10, the cursor's on the first) or backward (direction -1, the phase +0x2B0 at 40, the other way round). Moving, the
+    // table at 0x1B7A10, the cursor's on the first) or backward (direction -1, rollPhase at 40, the other way round). Moving, the
     // phase runs by twice the direction; at 20 the shown entry steps toward the cursor (by the direction when they are next to each
     // other, else to the entry beside it), the info text is rebuilt (mode 1) and sound 9 plays; past 40 or below 0 the step ends and
     // the shown entry's icon is lit on all the nodes. An icon's colour (mm_ClaimIcon_GetColor, level 1) is brightened by halving
@@ -1020,16 +1020,16 @@ namespace mm
 
     PORT_FN(Applicants_DrawDetails);
 
-    // The applicants panel for one frame (nothing while +0x2C9 is 0). With mode 1 and entries: the details step (Applicants_
-    // DrawDetails), the card model (+0x28C) played at the phase +0x2B0 and, once +0x2BC was set, lit again with the shown entry's
-    // colour (the flag is cleared) on all of its nodes; then the model is drawn, a changed entry count (+0x284) scrolls to the top, and
-    // the entries' icons are placed on the nodes of the icon model (+0x290): the node is the second of the table at 0x1B7A18 for
+    // The applicants panel for one frame (nothing while enabled is 0). With mode 1 and entries: the details step (Applicants_
+    // DrawDetails), the card model (frameModel) played at rollPhase and, once relight was set, lit again with the shown entry's
+    // colour (the flag is cleared) on all of its nodes; then the model is drawn, a changed entry count (shownCount) scrolls to the top, and
+    // the entries' icons are placed on the nodes of the icon model (cardModel): the node is the second of the table at 0x1B7A18 for
     // an entry of kind 4 to 7, else the first; the matrix at that node is the identity moved by the entry's place (the spacing is
     // 2.2 over the count, kept between 0.05 and 0.1; the shown entry sits 0.07 lower, the others 0.001 a place of distance from
-    // the cursor, less 0.03) and the node is drawn with the entry's brightened claim colour. Past the entries the marker (+0x2AC,
-    // when +0x2C8 is not 0xFF) is placed beside the card (a depth from the table at 0x1B7A20) and drawn on node 2. With no entries
-    // a white mesh 4 of the icon model is drawn instead. Whenever the mode is not 0 and +0x2B8 is set, the layout runs and the
-    // shown entry's icon is drawn on node 0; the card text (+0x294) shows when +0x29C is set and there are entries.
+    // the cursor, less 0.03) and the node is drawn with the entry's brightened claim colour. Past the entries the marker (cardNodeB,
+    // when stateColour is not 0xFF) is placed beside the card (a depth from the table at 0x1B7A20) and drawn on node 2. With no entries
+    // a white mesh 4 of the icon model is drawn instead. Whenever the mode is not 0 and sliding is set, the layout runs and the
+    // shown entry's icon is drawn on node 0; the card text (cardText) shows when cardShown is set and there are entries.
     void Applicants_Draw(GuestPtr<Applicants> applicants)
     {
         port::GuestFrame<0xB0> frame;

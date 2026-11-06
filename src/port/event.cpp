@@ -518,7 +518,7 @@ namespace mm
         return second;
     }
 
-    // Marks both actors' buildings; the delivery state (+0x34) starts at 2.
+    // Marks both actors' buildings; the delivery state (state) starts at 2.
     GuestPtr<MapObject> EvDeliveryMan_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
         const GuestPtr<EvDeliveryData> delivery = data.as<EvDeliveryData>();
@@ -530,7 +530,7 @@ namespace mm
 
     int64_t EvShopping_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city) { return markActorBuildings(city, data, 0, 5); }
 
-    // The noodle shop event lists its six buildings from +0x2C (actors 4 to 9).
+    // The noodle shop event lists its six buildings in actors 4 to 9.
     int64_t EvNoodles_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city) { return markActorBuildings(city, data, 4, 6); }
 
     // Six actors without person or building: the Zen Monk's and the Shadow Monk's families, then the first four Crazy Cult
@@ -551,7 +551,7 @@ namespace mm
     }
 
     // The adoption comes from the boss (the first member of the Boss' Home family); the applicants (families 0 to 9999 with an
-    // application) are listed as words from +0x24, then 24 bytes from 0x1B37D0 are copied to +0x4C (through the
+    // application) are listed as words in applicants, then 24 bytes from 0x1B37D0 are copied to children (through the
     // original stack, then by memcpy, whose result, the destination, is what the start slot returns).
     uint32_t EvAdoption_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
@@ -637,7 +637,7 @@ namespace mm
             Event_Finish(city->events, city, 1);
     }
 
-    // The message is repeated: back to waiting for the first four calls, finished after the fifth (+0x18 counts).
+    // The message is repeated: back to waiting for the first four calls, finished after the fifth (typeWordB counts).
     void EvMsg_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
         if (!messagePhase(data, city))
@@ -683,7 +683,7 @@ namespace mm
             ++data->var;
     }
 
-    // The advertisement's phases (var): 1 waits for the opening minute (event table +0x2E), 2 and 4 wait until the
+    // The advertisement's phases (var): 1 waits for the event type's time (finishAt), 2 and 4 wait until the
     // actor can be told, 3 and 5 count 60 frames back down a phase, 6 ends the event after 240 frames.
     void EvAdvertise_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
@@ -844,7 +844,7 @@ namespace mm
 
     // ---- Text slots: texts for the talk
 
-    // The claim variant text of the chosen applicant's claim (byte table from +0x4C, picked by +0x20); 0 for other
+    // The claim variant text of the chosen applicant's claim (the claim bytes of children, picked by pick); 0 for other
     // indexes.
     int EvAdoption_Text(GuestPtr<EventData> data, GuestPtr<CityScene>, int index)
     {
@@ -855,7 +855,7 @@ namespace mm
         return Claim_PickVariant((GuestPtr<AdoptionChild>::of(adoption->children[0]) + static_cast<int32_t>(pick))->claim);
     }
 
-    // Texts 0 to 3: the goods of the shop (+0x34); 4: the texts table itself; above: the bill (+0x4C) as money.
+    // Texts 0 to 3: the goods of the shop (shop); 4: the texts table itself; above: the bill as money.
     GuestPtr<char> EvShopping_Text(GuestPtr<EventData> data, GuestPtr<CityScene>, int index)
     {
         const GuestPtr<EvShoppingData> shopping = data.as<EvShoppingData>();
@@ -890,7 +890,7 @@ namespace mm
         return mode == 0 ? data.as<EvShoppingTogetherData>()->outcome : 0;
     }
 
-    // Whether the party (+0x28) has a quarter of the population.
+    // Whether the party (guests) has a quarter of the population.
     int EvFarewellParty_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef>, int mode)
     {
         const GuestPtr<EvPartyData> party = data.as<EvPartyData>();
@@ -900,7 +900,7 @@ namespace mm
     }
 
     // How the escorted person keeps up: 4 within 2 tiles of the player, 3 within 6, else 1 closer than last time,
-    // 2 farther, 0 the same; the distance is kept (+0x18).
+    // 2 farther, 0 the same; the distance is kept (typeWordB).
     int EvBodyguard_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef>, int mode)
     {
         if (mode != 0)
@@ -922,7 +922,7 @@ namespace mm
     }
 
     // Argument 0: the thief struck at the actor's building (its claim meter maxed, the fourth actor cleared, the
-    // count +0x3C raised) and the next month (+0x2C) noted; 0. Argument 1: by the count, 0 none, 1 up to 3, 2 at 4,
+    // count (strikes) raised) and the next month (nextMonth) noted; 0. Argument 1: by the count, 0 none, 1 up to 3, 2 at 4,
     // 3 at 5, 4 from 6.
     int EvThief_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode)
     {
@@ -1187,8 +1187,8 @@ namespace mm
 
     namespace
     {
-        // The crazy cult's waiting phases (shared by phases 1 and 3): wait for the month (+0x3C) and the time
-        // (+0x40), tell the actor (then 60 frames, the time six hours later), or count those frames back down a
+        // The crazy cult's waiting phases (shared by phases 1 and 3): wait for the month (waitMonth) and the
+        // time (waitTime), tell the actor (then 60 frames, the time six hours later), or count those frames back down a
         // phase (the time six hours back).
         void cultWait(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor)
         {
@@ -1395,7 +1395,7 @@ namespace mm
 
         // Whether the actor may go into building `to`: always into the event's own building, the person's target or
         // a building that does not count its people (type flag 0x40); otherwise as one more occupant when it must
-        // arrive or there is room (capacity +0x140).
+        // arrive or there is room (the type's capacity).
         bool mayEnter(GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, GuestPtr<MapPerson> person, uint16_t to, int arrive)
         {
             if (to == actor->object || to == person->target)
@@ -1853,7 +1853,7 @@ namespace mm
     // delivery catalogue (0x1BA090, four entries of 0x184 bytes, the type first). From a random entry of the tile
     // lists (five at 0x1B3780 in holiday months, else two at 0x1BD9D0) and a random item on, a building outside the
     // target's footprint widened by 10 but inside it widened by 30, whose family's first member stands on it. That
-    // building and person become actor 1; +0x1C takes the catalogue entry and +0x20 the month.
+    // building and person become actor 1; entry takes the catalogue entry and month the month.
     int EvDeliveryMan_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
     {
         const GuestPtr<EvDeliveryData> delivery = data.as<EvDeliveryData>();
@@ -1956,7 +1956,7 @@ namespace mm
         }
     }
 
-    // Phases 10 to 16: 10 waits until everyone has been reached (+0x4C), 11 and 13 tell actor 3 when its time comes
+    // Phases 10 to 16: 10 waits until everyone has been reached (allJoined), 11 and 13 tell actor 3 when its time comes
     // and 12 and 14 count those frames back, 15 finds the homes of actors 4, 5 and 1 (marked 0x200; back to 15 while
     // one is missing) and 16 their persons (back to 16).
     void EvCrazyCult_Phase2(GuestPtr<EventData> data, GuestPtr<CityScene> city)
@@ -2012,7 +2012,7 @@ namespace mm
         }
     }
 
-    // While the cult runs, every 30 frames (+0x48) one more resident takes flag 0x400; in phases 10 to 16 +0x4C then
+    // While the cult runs, every 30 frames (spreadFrames) one more resident takes flag 0x400; in phases 10 to 16 allJoined then
     // tells whether everyone has it. Phases 2 and 3 find actor 2's home and person (then waiting for the next month
     // at 7:00); 4 to 9, 10 to 16 and 0x12 to 0x15 go to the phase handlers; 0x1B sets the next wait, 0x1C tells
     // actor 0 when its time comes and 0x1D counts 60 frames back.
@@ -2108,9 +2108,9 @@ namespace mm
 
     // The farewell party (the boss leaves): the phone calls are cleared; actor 0 is the Boss' Home family.
     // Residents (character types 1 to 0x1D) with friendship band 3 and up, living in a building other than types
-    // 0xB9 and 0x105 with its claim meter at level 0, are the guests (+0x28 counts them); of those in schedule state
+    // 0xB9 and 0x105 with its claim meter at level 0, are the guests (guests counts them); of those in schedule state
     // 6 and up the best friend is actor 1 (the first on a tie) and their home is marked. The party starts at
-    // 13:00 plus an hour per 50 guests (+0x2C, seconds, 19:00 at the latest); +0x1C becomes 0xFFFF.
+    // 13:00 plus an hour per 50 guests (partyTime, seconds, 19:00 at the latest); actor 2's person becomes 0xFFFF.
     GuestPtr<MapObject> EvFarewellParty_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
         const GuestPtr<EvPartyData> party = data.as<EvPartyData>();
@@ -2153,7 +2153,7 @@ namespace mm
     }
 
     // Shopping: actor 0 keeps heading for its building; by phase (jump table 0x1BA8A0) 1 waits until four hours
-    // before the event type's time (+0x2E, minutes), 2 goes to 5 within two hours of it or tells the actor, 5 goes
+    // before the event type's time (finishAt, minutes), 2 goes to 5 within two hours of it or tells the actor, 5 goes
     // to 8 once it has passed or tells the actor, 8 tells the actor, 3, 6 and 9 count 60 frames back, and 10 and 11
     // end the event after 240 frames.
     void EvShopping_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city)
@@ -2284,8 +2284,8 @@ namespace mm
         }
     }
 
-    // The advertisement keeps the families told (+0x24, fifteen (family, member) pairs, a zero family ends them) and
-    // their count (+0x20). Argument 0: whether the actor was told. 1: for an actor told, where it stands (4 on the
+    // The advertisement keeps the families told (visitors, fifteen (family, member) pairs, a zero family ends them) and
+    // their count (visitorCount). Argument 0: whether the actor was told. 1: for an actor told, where it stands (4 on the
     // event building, 3 inside it, else 5); else 0 once the list runs out, or at the first free place 2 (1 when the
     // event building is full, 15 occupants) if the actor's building claims what the event building offers; 6 with
     // the list full (the phase becomes 4). 2: adds the actor (once), moves it into the event building and counts it
@@ -2365,11 +2365,11 @@ namespace mm
 
     // The adoption's phases (jump table 0x1BA780). 1, 4, 7, 10, 13 and 15 wait until actor 0 can be told (then 60
     // frames, plus the minutes until 6:00 or 360 more from 23:00); 2, 5, 8, 11, 14, 16 and 19 count those down and
-    // go back to telling until the sixth time (+0x18), then on; 22 likewise, ending the event after the sixth. Every
-    // tenth frame (+0x14) 3 waits for an object of type 3 or 4, 6 for any residents, 9 for any friend, and 12 for 101
-    // residents and twice the applicants (then phase 15) or, with fewer than 32 applicants, for a claim of the list at
-    // +0x4C seen ten times with one of them pressing (claim meter level 2 and up; +0x20 takes its place). 17 and 20
-    // note the month (+0x1C); 18 and 21 tell actor 0 from noon of a later month.
+    // go back to telling until the sixth time (toldCount), then on; 22 likewise, ending the event after the sixth. Every
+    // tenth frame (frames) 3 waits for an object of type 3 or 4, 6 for any residents, 9 for any friend, and 12 for 101
+    // residents and twice the applicants (then phase 15) or, with fewer than 32 applicants, for a claim of the list in
+    // children seen ten times with one of them pressing (claim meter level 2 and up; pick takes its place). 17 and 20
+    // note the month (month); 18 and 21 tell actor 0 from noon of a later month.
     void EvAdoption_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
         const GuestPtr<EvAdoptionData> adoption = data.as<EvAdoptionData>();
@@ -2611,7 +2611,7 @@ namespace mm
         return port::guestV0Wide();
     }
 
-    // Type 7 (the useless middle-aged man) answers the talk: modes 0-3 store the mode in +0x1C, 4 reads it back, 5 takes
+    // Type 7 (the useless middle-aged man) answers the talk: modes 0-3 store the mode in answer, 4 reads it back, 5 takes
     // 100 from the money, 6 gives 50, 7 gives 200.
     uint32_t EvUselessMiddleAged_Answer(GuestPtr<EventData> data, GuestPtr<CityScene>, GuestPtr<ActorRef>, int mode)
     {
@@ -2675,9 +2675,9 @@ namespace mm
         return out;
     }
 
-    // Type 3 (the delivery man) answers the talk: 0 the catalogue entry (+0x1C), 1 and 2 whether the player is within 1 of
+    // Type 3 (the delivery man) answers the talk: 0 the catalogue entry (entry), 1 and 2 whether the player is within 1 of
     // actor 1 / actor 0, 3 and 4 add / take the price of the delivered goods (the catalogue's item for the month) to / from the
-    // money, 5 reads +0x34.
+    // money, 5 reads the delivery state.
     int EvDeliveryMan_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef>, int mode)
     {
         const GuestPtr<EvDeliveryData> delivery = data.as<EvDeliveryData>();
@@ -2707,8 +2707,8 @@ namespace mm
 
     // Type 18 (the crazy cult) answers the talk: 0, 1, 3 and 4 add the families stored in the event data to the
     // applicants, 2 asks whether at least three more applicants fit, 5 counts the asked actor's family among the three
-    // actors (list at 0x1B37C0, as for the event's phases): the first time each one is asked bit k of +0x50 is set (the
-    // answer 0); asking again answers 1, and with all three bits set (7) the event moves to its next var (0x12) and sets +0x40.
+    // actors (list at 0x1B37C0, as for the event's phases): the first time each one is asked bit k of metBits is set (the
+    // answer 0); asking again answers 1, and with all three bits set (7) the event moves to its next var (0x12) and sets waitTime.
     int EvCrazyCult_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode)
     {
         const GuestPtr<EvCultData> cult = data.as<EvCultData>();
@@ -2757,15 +2757,14 @@ namespace mm
         }
     }
 
-    // Type 12 (adoption) answers the talk. The list at +0x4C has up to six entries of four bytes (a byte flag at +0, a
-    // halfword at +2, a building type); the family tried is that type's first family (globals::firstFamily), or the next
+    // Type 12 (adoption) answers the talk. The list (children) has up to six entries of four bytes (a byte flag, claim, and
+    // the building type, familyType); the family tried is that type's first family (globals::firstFamily), or the next
     // one the city lets apply.
-    //   0: 1 when no orphanage (type 4) exists, 0 when there is one but no building of a type with flag 8 (type flags
-    //      +0x136), else 2
-    //   1: 1 when the asked actor's family is in the zero-ended family list at +0x24
-    //   2: 1 while +0x60 is 0
-    //   3: the family of list entry +0x20 is added to the applicants, the entry removed (list shifted down)
-    //   4: 1 while the halfword +0x4E is 0
+    //   0: 1 when no orphanage (type 4) exists, 0 when there is one but no building of a type with flag 8, else 2
+    //   1: 1 when the asked actor's family is in the zero-ended family list (applicants)
+    //   2: 1 while the sixth entry (children[5]) is 0
+    //   3: the family of list entry `pick` is added to the applicants, the entry removed (list shifted down)
+    //   4: 1 while the first entry's building type (children[0].familyType) is 0
     //   5: 0 when one of the list's entries from the second on has no flag byte, checked once more than there is room
     //      for applicants, else 1
     //   6: the families of all list entries are added to the applicants
@@ -2840,10 +2839,10 @@ namespace mm
         }
     }
 
-    // Type 1x (shopping) answers the talk. The shop's record (0x28 bytes in the table at 0x1BDAB4, index +0x34) lists four
-    // goods (halfwords at +0x20). Modes: 0 the count at +0x38 less one; 1 how many of the goods the bag lacks; 2 to 5 whether
-    // the bag lacks good 0 to 3; 6 adds +0x4C to the money, 7 takes it, 8 takes +0x4C and +0x50; 9 moves the goods found in
-    // the bag out of it into the money counter at +0x50 (their prices).
+    // Type 1x (shopping) answers the talk. The shop's record (ShoppingList, 0x28 bytes in the table at 0x1BDAB4, index shop)
+    // lists four goods. Modes: 0 the count (goodsCount) less one; 1 how many of the goods the bag lacks; 2 to 5 whether
+    // the bag lacks good 0 to 3; 6 adds the bill to the money, 7 takes it, 8 takes the bill and refund; 9 moves the goods found in
+    // the bag out of it into the money counter refund (their prices).
     int EvShopping_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef>, int mode)
     {
         const GuestPtr<EvShoppingData> shopping = data.as<EvShoppingData>();
@@ -3079,8 +3078,8 @@ namespace mm
     }
 
     // A talk script starts an event for the person: with fewer than five events running and none of them waiting on the
-    // person's character type (a halfword at +0x38 of the type), the first event waiting at level 2 whose condition holds
-    // takes the first running slot (the others move up), with the person as actor A and the event data at +0xAC as B.
+    // person's character type (the type's charTypes[0]), the first event waiting at level 2 whose condition holds
+    // takes the first running slot (the others move up), with the person as actor A and the actor of the third talk event (talks[2]) as B.
     int Event_StartFromScript(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
     {
         const uint32_t slots = events.address + 4u, slotsEnd = slots + 0xA0u;
@@ -3703,12 +3702,12 @@ namespace mm
     // ---- the shopping event's start (batch 40)
 
     // A person at a shop (a building of category 5) starts a shopping trip: the person is the first actor and the shop
-    // record (0x28 bytes each in the table at 0x1BDAB4, taken in turn: counter 0x1BDD5C) lists up to four goods (halfwords
-    // at +0x20, stored in the event's +0x34 as the record number and counted in +0x38). The buildings round the shop (a
+    // record (0x28 bytes each in the table at 0x1BDAB4, taken in turn: counter 0x1BDD5C) lists up to four goods (ShoppingList
+    // goods; the record number is stored in shop and the goods counted in goodsCount). The buildings round the shop (a
     // square 30 tiles wider than its footprint) that are shops with an entrance and neither flag 0x240 are searched, in
     // the order of the map's 80 tile lists, for a resident family that sells the wanted goods this season: each item found
-    // takes an actor slot in the event data (+0x8 * item + 0xC: person index, +0xE: shop, +0x10: family), its price goes to
-    // +0x3C + 4 * item and the total (+0x4C). When every item has a seller the total is rounded up to the next thousand
+    // takes an actor slot in the event data (actors[item]: the person index, the shop as object, the family), its price
+    // goes to prices[item] and the total to bill. When every item has a seller the total is rounded up to the next thousand
     // and the event starts (1); when the whole map has been searched without that the event data is cleared (0).
     int EvShopping_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
     {
@@ -4006,11 +4005,11 @@ namespace mm
     PORT_FN(EvMissingChildren_Check);
 
     // Whether the family member `familyMember` (family, member) can be added to the event slot `choice`: 4 when the member is
-    // already its second person, 0 when the event type lists the character types it takes (up to four halfwords at +0x38 of the
-    // type's record) and the member's is not among them, 3 when the member is its first person, 1 when the member is already on
-    // its list of five, otherwise 2 (the member goes on the list: straight away, or, for a type with a check function at +0x14
-    // of its descriptor, only when the check passes; it is run on the event data kept at +0xAC, which is then cleared again,
-    // and a failed check ends in 0).
+    // already its second person, 0 when the event type lists the character types it takes (charTypes, up to four) and the
+    // member's is not among them, 3 when the member is its first person, 1 when the member is already on its list of five,
+    // otherwise 2 (the member goes on the list: straight away, or, for a type whose handler has an answer slot, only when that
+    // answer says yes; it is asked with the third talk event's data (talks[2]) set to the slot's second person, which is
+    // cleared again, and a no ends in 0).
     int Event_FindForFamily(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, int choice, GuestPtr<int16_t> familyMember)
     {
         port::GuestFrame<0x90> frame;
@@ -4223,7 +4222,7 @@ namespace mm
 
     PORT_FN(EvCaveMan_Answer);
 
-    // The escort event (phase in +0xA; the counter at +0x14 wraps at ten). Phase 1: before 22:00 the escort is met once the player is
+    // The escort event (phase in var; the counter typeWordA wraps at ten). Phase 1: before 22:00 the escort is met once the player is
     // within one tile of the actor's building and a tile of the person (then phase 4); failing that, on every tenth call, an actor
     // on open tile more than three tiles away is pointed at. From 22:00 (an actor off open tiles only from 22:10) pointing at the actor
     // moves it to phase 2. Phase 2: before 23:00 the same meeting gives phase 5; from 23:00 (23:10 for an actor off open tiles) a
@@ -4838,15 +4837,15 @@ namespace mm
 
     PORT_FN(EvMissingChildren_Update);
 
-    // The farewell party's phases (jump table 0x1BA6E0; phase in +0xA; actor 1 at +0x14, the countdown at +0x24, the time to wait to
-    // at +0x2C and the step of the staging at +0x30 and +0x34). 1 tells actor 1 between 6:00 and 23:00 (60 frames, phase 2); 2 counts
-    // the 60 down back to phase 1. 3 stages the party by +0x30: 0 fades out (and sets the two voice levels at 0x1BDD14/18 to 100), 1
+    // The farewell party's phases (jump table 0x1BA6E0; phase in var; actor 1, the countdown tellFrames, the time to wait to
+    // partyTime and the steps of the staging stageStep and endStep). 1 tells actor 1 between 6:00 and 23:00 (60 frames, phase 2); 2 counts
+    // the 60 down back to phase 1. 3 stages the party by stageStep: 0 fades out (and sets the two voice levels at 0x1BDD14/18 to 100), 1
     // (when the fade is done) moves the clock to 10:00 (a day on when it was later), brings the people home, pushes the party mode
-    // (12), makes the party's overlay (an 8-byte object with a frame of 0xC0 bytes at +0x80 of the city) and starts the party sound,
+    // (12), makes the party's overlay (an 8-byte object with a frame of 0xC0 bytes, the city's overlay) and starts the party sound,
     // 2 fades back in with the music on, 3 (done) closes the overlay and goes to phase 4. 4 until the time: finds the people on the
     // tile under the player when it is a type 4 building, and points at the first friend (friendship band 4 or more, class flag 1
     // clear) within a tile of the player that is not already the one chosen (actor 2); after it phase 5. 5 points at actor 0 or 1 (by
-    // 0x1C5548) at night, tells them by day and waits 60 frames; 6 counts them down to phase 5. 7 stages the end by +0x34 and finishes
+    // 0x1C5548) at night, tells them by day and waits 60 frames; 6 counts them down to phase 5. 7 stages the end by endStep and finishes
     // the event. The pending approval is limited so the approval stays within 100 on every call.
     void EvFarewellParty_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
@@ -5229,10 +5228,10 @@ namespace mm
 
     PORT_FN(EvThief_Update);
 
-    // Event type 13: the story is a state machine on `var` (+0xA) over three to four actors: the first (+0x14), second (+0x1C) and third
-    // (+0x24), and three more (+0x2C, +0x34, +0x3C) each with a partner 0x18 on (+0x44, +0x4C, +0x54) that go through the same steps one
-    // after the other (phases 4 to 9 and 0xC to 0x1C in threes: the group picks its actor by the phase). The timer is at +0x64, the
-    // day to wait for at +0x5C and the time of day at +0x60. State 1 finds the first actor's home and the people; 3 chooses which
+    // Event type 13: the story is a state machine on `var` over three to four actors: actors 1, 2 and 3, and three more (4, 5
+    // and 6) each with a partner three on (7, 8 and 9) that go through the same steps one after the other (phases 4 to 9 and
+    // 0xC to 0x1C in threes: the group picks its actor by the phase). The timer is `timer`, the day to wait for `month` and
+    // the time of day `time`. State 1 finds the first actor's home and the people; 3 chooses which
     // group goes on; 4/0xD/0x16 wait for the day and 10:00 then have the actor walk to its partner and phone; 5/0xE/0x17 wait out the
     // timer; 6/0xF/0x18 send the actor home; 7/0x10/0x19 and 9/0x12/0x1B bring the player near; 0xA/0x13/0x1C walk the actor and the
     // first one to the first one's building; 0xC, 0x15 and 0x1E move on once the actor is on the building; 0x1F to 0x58 are the

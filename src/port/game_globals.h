@@ -313,7 +313,7 @@ namespace mm::globals
     inline constexpr GuestVar<uint16_t> seRequestCount{0x001BDD08u};
     inline constexpr uint32_t kAmbienceGrid = 0x001FC690u;
     inline constexpr uint32_t kAmbienceCounts = 0x001B35F0u;
-    // Terrain ambience variant by an object's +0x14 byte (10 entries; 0 = decide by the object's type).
+    // Terrain ambience variant by an object's look[4] byte (10 entries; 0 = decide by the object's type).
     inline constexpr uint32_t kAmbienceKinds = 0x001B3728u;
 
     // gfx: model instance slots for this frame: the two buffers (by frame), which one is current, how many are
@@ -331,13 +331,13 @@ namespace mm::globals
     inline constexpr uint32_t kBuildingMatrices = 0x001B2590u;
     inline constexpr GuestVar<GuestPtr<A3DObject>> cityPartsModel{0x001BDBD0u};
     inline constexpr GuestVar<GuestPtr<A3DObject>> wastelandModel{0x001BDBCCu};
-    inline constexpr GuestVar<GuestPtr<A3DObject>> entranceModel{0x001BDBC4u};   // business entrances
+    inline constexpr GuestVar<GuestPtr<A3DObject>> businessModel{0x001BDBC4u};   // finished businesses and ports (BuildingType.builtMesh)
     inline constexpr GuestVar<GuestPtr<A3DObject>> blockModel{0x001BDBC8u};      // office and housing block parts
     inline constexpr GuestVar<GuestPtr<A3DObject>> parkRideModel{0x001BDBE0u};   // theme park ride (animated)
     inline constexpr GuestVar<GuestPtr<A3DObject>> propsModel{0x001BDBD4u};      // small goods stalls and keep-out parts
     inline constexpr GuestVar<GuestPtr<A3DObject>> fieldModel{0x001BDBD8u};      // the crops of a field
-    inline constexpr GuestVar<GuestPtr<A3DObject>> pigFarmModel{0x001BDC00u};    // the pig farm entrance
-    inline constexpr GuestVar<GuestPtr<A3DObject>> ranchModelA{0x001BDBE8u};     // the ranch entrance, always drawn
+    inline constexpr GuestVar<GuestPtr<A3DObject>> pigFarmModel{0x001BDC00u};    // the pig farm once built
+    inline constexpr GuestVar<GuestPtr<A3DObject>> ranchModelA{0x001BDBE8u};     // the ranch once built, always drawn
     inline constexpr GuestVar<GuestPtr<A3DObject>> ranchModelB{0x001BDBECu};     // drawn on top when the type's slot +0x24 answers yes
     inline constexpr GuestVar<GuestPtr<A3DObject>> ranchModelC{0x001BDBF0u};     // drawn on top when it answers no
     inline constexpr uint32_t kBlockStepX = 0x001B13F0u; // int[4]: 0, 2, 0, -2
@@ -496,7 +496,7 @@ namespace mm::globals
     inline constexpr uint32_t kTerrainZoomHeightsB = 0x001AF350u;
     // The frame counter whose low bit picks the double buffers (0x1BDCD0).
     inline constexpr uint32_t kFrameParity = 0x001BDCD0u;
-    // talk: the eye's offset from a building object without the entrance flag (1.01, -0.59, 0.01, 1), turned
+    // talk: the eye's offset from a building object still being built (no flag 0x20; 1.01, -0.59, 0.01, 1), turned
     // by the tile's facing (mm_TalkView_BuildingCamera).
     inline constexpr uint32_t kTalkEyeOffset = 0x001B1AF0u;
     // city lights and sky by the time of day (mm_CityCamera_UpdateTimeOfDay): the two sun directions (0, 1, 0, 1)

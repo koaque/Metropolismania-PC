@@ -17,12 +17,12 @@ namespace mm
 
         GuestPtr<MyHomeView> home(GuestPtr<TalkView> view) { return GuestPtr<MyHomeView>{view.address}; }
 
-        // The interior's triangles are in the blob at +0x298 of the view: a table of (floor start, wall start) index
-        // pairs per building size class (the byte at +0x150 of the building type), then the triangles as in the
+        // The interior's triangles are in the view's collision blob: a table of (floor start, wall start) index
+        // pairs per building type's modelNode byte, then the triangles as in the
         // exterior collision meshes. The index of the next pair ends a range.
         uint32_t tableEntry(GuestPtr<MyHomeView> view, GuestPtr<BuildingType> btype, uint32_t word)
         {
-            return port::load<uint32_t>(view->collision.address + 8u * port::load<uint8_t>(btype.address + 0x150u) + 4u * word);
+            return port::load<uint32_t>(view->collision.address + 8u * btype->modelNode + 4u * word);
         }
 
         GuestPtr<BuildingType> homeType(GuestPtr<MyHomeView> view)

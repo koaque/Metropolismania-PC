@@ -76,7 +76,7 @@ namespace mm
 
     ps2f Map_HeightScale(ps2f height) { return ps2f(0.08f) + ps2f(0.6f) * height; }
 
-    // Clears a size x size square at (x, z): each tile loses its first object (the map's ClearObject slot, +0xC)
+    // Clears a size x size square at (x, z): each tile loses its first object (the map's clearObject slot)
     // until a type-2 object (wasteland) comes first.
     void Map_ClearArea(GuestPtr<CityMap> map, int x, int z, int size)
     {
@@ -324,8 +324,8 @@ namespace mm
     // Whether `type` can stand at (x, z): 1 yes, 2 when its type rule forbids the tile, 0 when its footprint
     // leaves the map, the map holds 0x3F80 objects, the neighbours forbid it (mm_Placement_CheckNeighbours,
     // which also widens `rect`), or a footprint tile's object is of the same type, locked (flag 1), of a type
-    // without flag 4, on ground at or below 0 for a type with flag 0x10, or refused by the type (vtable
-    // +0x20). Other than ground (2) and wasteland (3), a type placed above height 0.5 also needs lower ground
+    // without flag 4, on ground at or below 0 for a type with flag 0x10, or refused by the type (acceptsOn
+    // slot). Other than wasteland (2) and leveled land (3), a type placed above height 0.5 also needs lower ground
     // beside it (mm_Placement_CheckSlope).
     int Map_CheckPlacement(GuestPtr<CityMap> map, uint32_t type, int x, int z, GuestPtr<int32_t> rect)
     {
@@ -388,7 +388,7 @@ namespace mm
 
     // Places an object of `type` at (x, z) for `owner` when the placement test allows it (0x3F80 when not):
     // result 1 clears the footprint and creates the object normally; any other result puts a new record on top
-    // of the tile's list. The touched area's geometry is then rebuilt and the type is told (vtable +0x10, with
+    // of the tile's list. The touched area's geometry is then rebuilt and the type is told (tick slot, with
     // `arg` and the object).
     int Map_PlaceObject(GuestPtr<CityMap> map, int owner, int type, int x, int z, int arg)
     {
@@ -440,13 +440,13 @@ namespace mm
     }
 
     // A building goes. Its people (home = object) are taken off the tile they stand on and freed (charType 0);
-    // for residents (classes without flag 1) the building they were heading for loses one from its +0x16 count,
-    // the one they were in (a type with flag 0x40) one from +0x17, and the population drops. Everyone else in it
+    // for residents (classes without flag 1) the building they were heading for loses one from headingHere,
+    // the one they were in (a type with flag 0x40) one from occupants, and the population drops. Everyone else in it
     // is put outside, and targets and destinations naming it are cleared. If one of its own went, the building's
     // family moves away.
     void MapPeople_RemoveForObject(GuestPtr<CityMap> map, uint32_t object)
     {
-        bool workerLeft = false;
+        bool ownLeft = false;
         for (int i = 0; i < 6000; ++i)
         {
             MapPerson &person = map->people[i];
@@ -495,15 +495,15 @@ namespace mm
                 --map->population;
             }
             --map->peopleInUse;
-            workerLeft = true;
+            ownLeft = true;
         }
-        if (workerLeft)
+        if (ownLeft)
             Family_MoveAway(map->objects[object].family);
     }
 
-    // Clears an object off the map: its people (its own list and everyone tied to it), then, unless it is ground
+    // Clears an object off the map: its people (its own list and everyone tied to it), then, unless it is wasteland
     // (type 2), its tile link and footprint, whose tiles take the first object left on its tile; the record is
-    // deleted, and a footprint left empty is filled with ground objects. A type with flag 8 marks the objects
+    // deleted, and a footprint left empty is filled with wasteland. A type with flag 8 marks the objects
     // changed.
     void CityMap_ClearObject(GuestPtr<CityMap> map, int object)
     {
@@ -543,7 +543,7 @@ namespace mm
         return GuestPtr<MapObject>{0};
     }
 
-    // A vehicle (character class flag 1, at class +0x18) of building `home` among the people listed at the tile's objects.
+    // A vehicle (character class flag 1) of building `home` among the people listed at the tile's objects.
     GuestPtr<MapPerson> Map_FindVehicleOnTile(GuestPtr<CityMap> map, uint16_t home, uint32_t tile)
     {
         for (uint16_t o = map->tiles[tile & 0xFFFFu].firstObject; o != 0x3F80; o = map->objects[o].nextOnTile)
@@ -558,7 +558,7 @@ namespace mm
     }
 
     // Fills object record `object` for a new `type` object owned by `owner` (a family) on `tile` and runs the
-    // type's InitRecord slot (+0xC), then counts it the way MapObj_Delete uncounts it: a type with flag 8 adds to
+    // type's initRecord slot, then counts it the way MapObj_Delete uncounts it: a type with flag 8 adds to
     // the flag-8 objects and this period's history entry (up to 255) and marks the objects changed, one with flag
     // 2 starts the refresh delay (0x81 ticks); the object goes into its claim section's tile lists, the object
     // count and its category count.
@@ -581,8 +581,8 @@ namespace mm
         {
             ++map->flag8Objects;
             map->objectsChanged = 1;
-            if (map->flag8History[0] < 0xFF)
-                ++map->flag8History[0];
+            if (map->newBuildings[0] < 0xFF)
+                ++map->newBuildings[0];
         }
         else if ((btype->flags & 2u) != 0)
             map->refreshDelay = 0x81;
@@ -602,7 +602,7 @@ namespace mm
     }
 
     // Terrain generation: marks the objects of the low tiles (height 0.1 or below) whose centres lie within
-    // `radius` of tile (x, z)'s with a scenery kind (the object's +0x14 byte). Kind 2 only where none is set,
+    // `radius` of tile (x, z)'s with a weed row (the object's look[4]). Kind 2 only where none is set,
     // kind 0 clears; other kinds take each tile with a chance falling off with the distance (a random 0..9 at
     // most ten times the fraction of the radius left). Distances on VU0; the original's frame is reserved
     // whole and its two points kept at their offsets.
@@ -885,7 +885,7 @@ namespace mm
         return cells < (0x3F80 - map->objectCount) + objects;
     }
 
-    // Placement rule (type +0x144) for stacking: the tile's top object must be built (0x20), not
+    // Placement rule (the type's rule) for stacking: the tile's top object must be built (0x20), not
     // highlighted (1), of a type with the same rule, and the stack below the type's limit - 1.
     int Placement_CheckTypeRule(GuestPtr<CityMap> map, int type, int tile)
     {
@@ -1010,8 +1010,8 @@ namespace mm
 
     // One terrain tile's quad around (centreX, centreZ): its corners take the tile's corner heights. With no
     // object (outside the map) the nearest tile's are used, flattened along the edge it lies beyond. The draw
-    // flags (t3 of mm_Terrain_AddQuad) start at 8: +1 when the object's type gives a texture (vtable +0x1C,
-    // with the object; passed on as the texture), 2 when a corner rises above `level`, 0x20 or 0x40 (tile flag 0x20 or not) when a
+    // flags (t3 of mm_Terrain_AddQuad) start at 8: +1 when the object's type gives a texture (groundTexture
+    // slot, with the object; passed on as the texture), 2 when a corner rises above `level`, 0x20 or 0x40 (tile flag 0x20 or not) when a
     // corner is above 0 on a type without flag 1, 4 inside the buildings layer's tile rectangle, 0x10 when the
     // tile and its first object both have flag 0x10. A tile with an object also gets its cliff sides.
     void Terrain_DrawPatch(GuestPtr<CityMap> map, int x, int z, int object, ps2f centreX, ps2f centreZ, ps2f level)
@@ -1091,8 +1091,8 @@ namespace mm
             Terrain_BuildStrip(map, x, z, a, b, c, d);
     }
 
-    // Whether a ray hits the first object on `tile` (record 0 off the map): the object's type tests it (vtable
-    // +0x30, passed a2, a3, arg and the object's matrix: the building matrix of its terrain kind with the
+    // Whether a ray hits the first object on `tile` (record 0 off the map): the object's type tests it (rayHit
+    // slot, passed a2, a3, arg and the object's matrix: the building matrix of its terrain kind with the
     // footprint's middle as translation, y 0). 1 or 0.
     int MapObj_RayHit(GuestPtr<CityMap> map, uint32_t tile, int a2, int a3, int arg)
     {
@@ -1869,22 +1869,22 @@ namespace mm
     void Map_LevelArea(GuestPtr<CityMap> map, int x, int z, int size, int arg) { fillArea(map, x, z, size, 3, arg); }
     void Map_PlaceRubbleArea(GuestPtr<CityMap> map, int x, int z, int size, int arg) { fillArea(map, x, z, size, 0xA, arg); }
 
-    // Places small goods of `kind` (types 0x115 on) and gives the new object its count (byte +0x10).
+    // Places small goods of `kind` (types 0x115 on) and gives the new object its props mesh (goodsMesh).
     void Map_PlaceSmallGoods(GuestPtr<CityMap> map, int x, int z, int a3, uint8_t value, int kind)
     {
         const int object = Map_PlaceObject(map, 0, kind + 0x115, x, z, a3);
         if (object != kNoObject)
-            port::store<uint8_t>((map->objects + object).address + 0x10u, value);
+            map->objects[object].goodsMesh = value;
     }
 
     void Map_SaveState(GuestPtr<CityMap> map, GuestPtr<McManager> mc)
     {
         SaveFile_Write(mc, static_cast<int>(map->packedTiles.address), 0x18000);
-        SaveFile_Write(mc, static_cast<int>(addressOf(map->nextId)), 0x20); // nextId .. flag8History, refreshDelay
+        SaveFile_Write(mc, static_cast<int>(addressOf(map->nextId)), 0x20); // nextId .. newBuildings, refreshDelay
         SaveFile_Write(mc, static_cast<int>(map->objects.address), 0x6F200);
         TileLists_SaveState(map->tileLists, mc);
         SaveFile_Write(mc, static_cast<int>(map->people.address), 0x46500);
-        SaveFile_Write(mc, static_cast<int>(addressOf(map->unk_6C)), 0xC); // unk_6C, peopleInUse, population
+        SaveFile_Write(mc, static_cast<int>(addressOf(map->freePerson)), 0xC); // freePerson, peopleInUse, population
     }
 
     // The object matrix: the building matrix of the tile kind, moved to the footprint centre on the terrain.
@@ -1902,16 +1902,16 @@ namespace mm
     }
 
     // The new-object history: one period older (the bytes move up one) and an empty newest period.
-    void MapObj_PushHistory(GuestPtr<CityMap> map)
+    void CityMap_PushNewBuildings(GuestPtr<CityMap> map)
     {
         sdk::memmove(map.address + 0x29u, map.address + 0x28u, 5);
-        map->flag8History[0] = 0;
+        map->newBuildings[0] = 0;
     }
 
-    int MapObj_SumHistory(GuestPtr<CityMap> map)
+    int CityMap_SumNewBuildings(GuestPtr<CityMap> map)
     {
         int sum = 0;
-        for (const uint8_t count : map->flag8History)
+        for (const uint8_t count : map->newBuildings)
             sum += count;
         return sum;
     }
@@ -1928,8 +1928,8 @@ namespace mm
     PORT_FN(Map_PlaceSmallGoods);
     PORT_FN(Map_SaveState);
     PORT_FN(MapObj_GetMatrix);
-    PORT_FN(MapObj_PushHistory);
-    PORT_FN(MapObj_SumHistory);
+    PORT_FN(CityMap_PushNewBuildings);
+    PORT_FN(CityMap_SumNewBuildings);
     PORT_FN(MapObjects_ClearObject);
 
     // ---- tile lists, terrain (batch 38)
@@ -2042,7 +2042,7 @@ namespace mm
         // matrix (the layer matrix of the tile's kind, its position row set to the footprint's middle, the ground height
         // plus the lift (0.8 for each object above the first) and the footprint's far edge) is built at `matrix`, and a
         // flag word at `flagsAt` is kept: 1 for the first object, 2 for those above, with 3 or 4 added to the top one
-        // (3 when its depth equals the type's halfword at +0x138, else 4; the first object alone keeps its 1) and bit 8
+        // (3 when its depth equals the type's maxStack, else 4; the first object alone keeps its 1) and bit 8
         // carried over. `visit(btype, obj)` returns true to stop the walk.
         template <typename Visit>
         bool eachObjectNear(GuestPtr<CityMap> map, GuestPtr<ps2f> position, uint32_t list, uint32_t matrix, uint32_t flagsAt, Visit visit)
@@ -2111,7 +2111,7 @@ namespace mm
     }
 
     // Whether an object round the player has a surface below the position within `lift`: each object's type is asked
-    // (vtable +0x2C) with the position, the placement matrix, `hit` (where the crossing goes; the player lands on its
+    // (floorBelow slot) with the position, the placement matrix, `hit` (where the crossing goes; the player lands on its
     // y) and the flag word.
     int Player_FloorBelow(GuestPtr<CityMap> map, GuestPtr<ps2f> position, int hit, ps2f lift)
     {
@@ -2124,7 +2124,7 @@ namespace mm
     }
 
     // The nearest hit among the objects round the player: *distance starts at 100 and takes the smallest distance an
-    // object's type reports (vtable +0x28, with the hit point and the distance as outputs); *hit gets the hit point
+    // object's type reports (nearestHit slot, with the hit point and the distance as outputs); *hit gets the hit point
     // (four words). The answer is whether anything was hit.
     int Player_NearestObject(GuestPtr<CityMap> map, GuestPtr<ps2f> position, GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, ps2f radius)
     {
@@ -2149,9 +2149,9 @@ namespace mm
     // ---- the map's ticks (batch 40)
 
     // Every object that stands in the scan's current column of 128 (tickSlice, stepping through 128 stripes; the scan is
-    // 0x3F80 records) asks its building type (vtable +0x10, with the "any flag-8 object" word) whether it falls down; if
-    // so, a sound is requested (unless the type is flag 0x80), the minimap plots the lot, the object is removed (map slot
-    // +0xC) and rubble is laid where it stood. After the scan has covered all 128 columns the flag-8 count and the
+    // 0x3F80 records) asks its building type (tick slot, with the "any flag-8 object" word) whether it falls down; if
+    // so, a sound is requested (unless the type is flag 0x80), the minimap plots the lot, the object is removed (the map's
+    // clearObject slot) and rubble is laid where it stood. After the scan has covered all 128 columns the flag-8 count and the
     // approval it gave drop by one, the applicants' counter is reset when nobody waits or the clock is outside
     // 7:36..18:12 (or counts to 4 then wraps), and the claim re-check counter counts down.
     void MapObjects_Tick(GuestPtr<CityMap> map, GuestPtr<CityScene> city)
@@ -2208,7 +2208,7 @@ namespace mm
 
     // Once a second: bit 1 flags the 600-tick marks (every 600 ticks, and with at least two people on the map and
     // the city flag 4 the intro call timer restarts at a random point in the first half of the people), 2 the hours, 4
-    // the days and 8 the first day of a twelve-month cycle. Every person's class then ticks it (vtable +0xC), the
+    // the days and 8 the first day of a twelve-month cycle. Every person's class then ticks it (update slot), the
     // member statuses follow and the map's objects tick.
     void MapPeople_Tick(GuestPtr<CityMap> map, GuestPtr<CityScene> city)
     {
@@ -2251,9 +2251,9 @@ namespace mm
 
     namespace
     {
-        // The camera's list of what is in view starts at the first distance bucket: nodes with the next node at +0, the
-        // object index at +8 (0 for a bucket) and the camera distance at +0xC (TerrainEntry); a second walk starts at the
-        // last bucket and follows the links at +4 (mm_CityRender_CollectObjects). The objects drawn this frame
+        // The camera's list of what is in view starts at the first distance bucket: nodes (TerrainEntry) with the next node,
+        // the object index (0 for a bucket) and the camera distance; a second walk starts at the last bucket and follows
+        // the prev links (mm_CityRender_CollectObjects). The objects drawn this frame
         // (map->sorted) lose their "drawn" flag 4 at the end.
         void clearDrawnFlags(GuestPtr<CityMap> map)
         {
@@ -2270,8 +2270,8 @@ namespace mm
         ps2f footprintZ(uint32_t tile, ps2f half) { return (fromInt(0x80 - static_cast<int32_t>(tile >> 7)) - ps2f(64.0f)) - half; }
     }
 
-    // Every object in view that is not drawn yet this frame (flag 4 marks it) has its type's draw-people slot (vtable
-    // +0x18) called with the footprint's middle and the ground height, the tile kind, the city, the object, a flag word
+    // Every object in view that is not drawn yet this frame (flag 4 marks it) has its type's drawPeople slot
+    // called with the footprint's middle and the ground height, the tile kind, the city, the object, a flag word
     // (0) and the detail level (2 when the camera distance + 1 is past the fog start, else 0).
     void CityRender_UpdatePeople(GuestPtr<CityMap> map, GuestPtr<CityScene> city)
     {
@@ -2310,11 +2310,11 @@ namespace mm
     }
 
     // The same walk for drawing the buildings: objects not marked yet and without flag 0x80 go through every object of
-    // their stack (bottom up, 0.8 lower for each above the first) with the type's draw slot (vtable +0x14), the flag word
+    // their stack (bottom up, 0.8 lower for each above the first) with the type's draw slot, the flag word
     // as in the collision walks (1 for the first, then 2, with 3 or 4 added to the top one), and the detail level 2 when
     // the camera is below -10 or the object is past the fog start, 1 when the camera is within the footprint's reach, else
-    // 0. A flag-8 entrance with a counting variant byte (+0x18, up to 0x2D) also asks LayerA for an instance at the highest
-    // object that counts.
+    // 0. A built object whose claim was met (flags 0x20 and 8) with a counting variant byte (up to 0x2D) also asks LayerA
+    // for an instance at the highest object that counts.
     void CityRender_CollectObjects(GuestPtr<CityMap> map, GuestPtr<CityScene> city)
     {
         port::GuestFrame<0xE0> frame; // the flag word at +0xDC
@@ -2582,7 +2582,7 @@ namespace mm
         map->objectsChanged = 0;
         map->claimRecheck = 0;
         map->objectCount = 0;
-        sdk::memset(addressOf(map->flag8History), 0, 6);
+        sdk::memset(addressOf(map->newBuildings), 0, 6);
         map->refreshDelay = 0;
         map->applicantWait = 0;
         for (int32_t &count : map->categoryCount)
@@ -2618,7 +2618,7 @@ namespace mm
     {
         MapObjects_ctor(map);
         map->vtable = GuestPtr<CityMapVtable>{0x001BCEE0u};
-        port::store<uint32_t>(addressOf(map->unk_6C), 0u);
+        map->freePerson = 0;
         const uint32_t block = sdk::mw_NewArray(0x46510u);
         map->people = GuestPtr<MapPerson>{sdk::construct_new_array(block, addr::MapPerson_ctor, 0u, 0x30u, 6000u)};
         map->peopleInUse = 0;

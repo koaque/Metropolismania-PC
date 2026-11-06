@@ -114,7 +114,7 @@ namespace mm
     // The game's frame. The sound is updated, then the state (+4) picks one step: 0 and 1 make the title scene (a 0x104 byte
     // object, the argument 0 or 1 for the constructor) and go to 2; 2 runs the title until it answers (1 goes on to the briefing
     // with state 3, anything else to state 7, the title scene is deleted); 3 and 7 make the briefing scene (0x104 bytes, loading
-    // stage 1 from state 3, 0 from state 7) and go to 4; 4 runs it until it answers, deletes it through its vtable (at +0x100,
+    // stage 1 from state 3, 0 from state 7) and go to 4; 4 runs it until it answers, deletes it through its vtable (vtable,
     // slot +0x4C) and goes to 5; 5 makes the city scene (0xD8 bytes) and goes to 6; 6 runs the city, which answers 2 (back to the
     // title, state 1) or 1 (the next briefing, state 3) when it ends, and deletes it. The display list is rewound whenever a
     // scene is deleted. Other states do nothing.

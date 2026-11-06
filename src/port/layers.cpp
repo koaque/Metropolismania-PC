@@ -1,4 +1,4 @@
-// Render layer A (instances at entrances) and the snow layer; the rest are in gfx.cpp.
+// Render layer A (instances over built objects whose claim was met) and the snow layer; the rest are in gfx.cpp.
 
 #include "game_functions.h"
 #include "game_globals.h"

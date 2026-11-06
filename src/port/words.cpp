@@ -264,10 +264,10 @@ namespace mm
         return actor->member == ctx->memberA ? 1 : 0;
     }
 
-    // Objects new in the last periods: none 0, up to 10 1, more 2.
-    int WordsFn_MapHistoryTier(GuestPtr<WordsCtx> ctx)
+    // The new buildings for families in the last six months: none 0, up to 10 1, more 2.
+    int WordsFn_NewBuildingsTier(GuestPtr<WordsCtx> ctx)
     {
-        const int sum = MapObj_SumHistory(ctx->city->map);
+        const int sum = CityMap_SumNewBuildings(ctx->city->map);
         if (sum == 0)
             return 0;
         return sum < 11 ? 1 : 2;
@@ -403,11 +403,11 @@ namespace mm
 
     GuestPtr<char> WordsFn_TextTalkEventName(GuestPtr<WordsCtx> ctx) { return globals::eventType(eventsOf(ctx)->talks[0]->kind).as<char>(); } // the name, at +0
 
-    // Last month's count of new buildings for families (type flag 8: offices, businesses, ports, housing; CityMap.flag8History
+    // Last month's count of new buildings for families (type flag 8: offices, businesses, ports, housing; CityMap.newBuildings
     // slot 1), with thousands separators.
     GuestPtr<char> WordsFn_TextNewBuildings(GuestPtr<WordsCtx> ctx)
     {
-        Text_FormatThousands(GuestPtr<char>{kTextBuffer}, ctx->city->map->flag8History[1]);
+        Text_FormatThousands(GuestPtr<char>{kTextBuffer}, ctx->city->map->newBuildings[1]);
         return GuestPtr<char>{kTextBuffer};
     }
 
@@ -590,7 +590,7 @@ namespace mm
         return EvActor_Follow(ctx->city, actor, target);
     }
 
-    // Handler slot +0x14 of the talk's first (A4) or second (A8) event, with person A and the argument.
+    // The answer slot of the handler of the talk's first or second event (talks[0], talks[1]), with person A and the argument.
     // mm_Event_CallAnswer returns nothing the port knows of; its v0 is the callbacks' result.
     int WordsFn_TalkEventAnswer(GuestPtr<WordsCtx> ctx) { return eventCallAnswer(ctx, 0); }
     int WordsFn_SystemEventAnswer(GuestPtr<WordsCtx> ctx) { return eventCallAnswer(ctx, 1); }
@@ -660,7 +660,7 @@ namespace mm
             return minute >= open && minute < close;
         }
 
-        // A building's own opening test: slot +0x24 of its type, called with (type, city, building, a3). v0 holds the
+        // A building's own opening test: its type's isOpen slot, called with (type, city, building, a3). v0 holds the
         // type's entry in the type table at the call.
         int callOpenSlot(GuestPtr<WordsCtx> ctx, GuestPtr<MapObject> building, uint32_t a3)
         {
@@ -1089,7 +1089,7 @@ namespace mm
     PORT_FN(WordsFn_Random3);
     PORT_FN(WordsFn_LaptopHasBit);
     PORT_FN(WordsFn_EventActorIs);
-    PORT_FN(WordsFn_MapHistoryTier);
+    PORT_FN(WordsFn_NewBuildingsTier);
     PORT_FN(WordsFn_StoryFlagA);
     PORT_FN(WordsFn_StoryFlagB);
     PORT_FN(WordsFn_SetStoryFlagB);
@@ -1266,7 +1266,7 @@ namespace mm
             return port::load<uint16_t>(port::load<uint32_t>(remap) + 2u * static_cast<uint32_t>(index + port::load<uint16_t>(type + part)));
         }
 
-        // The code at the script's current line (Words +0x10) and column (+0x14) of its line table (+0x24).
+        // The code at the script's current line and column of its line table (Words line, column, lineTable).
         int currentCode()
         {
             const int code = port::load<int16_t>(port::load<uint32_t>(0x001BDE14u) + 2u * port::load<uint16_t>(0x001BDE00u)) - 5000;
@@ -1318,7 +1318,7 @@ namespace mm
     }
 
     // The number of choices of a choice code: from bank choice ranges for codes below -2005; for -2005 the entries
-    // of bank 1's first range not yet answered (the mask byte at Words +0x28); for -2004 the running events plus
+    // of bank 1's first range not yet answered (the mask byte at 0x1BDE18, Words +0x28); for -2004 the running events plus
     // one; for -2003 the wants that still hold; for -2002 one more than the bag's food (goods categories 0x10, 0x11
     // and 0x13); otherwise 5.
     int Words_CountChoices(int, GuestPtr<CityScene> city, int code)
@@ -1942,7 +1942,7 @@ namespace mm
     // The title text of the event in the script's slot.
     GuestPtr<char> WordsFn_TextEventTitle(GuestPtr<WordsCtx> ctx) { return Event_FormatText(ctx->city->events, ctx->eventSlot); }
 
-    // The person the script talks to gets a new family to introduce (the 16-bit pick is kept at +0x2C); the result is the pick,
+    // The person the script talks to gets a new family to introduce (the 16-bit pick is kept in introduces); the result is the pick,
     // or what the register held when there is no such person.
     int WordsFn_NewIntroduction(GuestPtr<WordsCtx> ctx)
     {
@@ -1957,8 +1957,8 @@ namespace mm
     PORT_FN(WordsFn_TextEventTitle);
     PORT_FN(WordsFn_NewIntroduction);
 
-    // The family introduction of the script's first side (when the arg at +0x2A is 0) or second side: a person there keeps their
-    // own (+0x2C), otherwise one is picked for the family and member. The pick (16 bits) becomes the result (+0x28); 1 when
+    // The family introduction of the script's first side (when the arg is 0) or second side: a person there keeps their
+    // own (introduces), otherwise one is picked for the family and member. The pick (16 bits) becomes the result; 1 when
     // it is not 0.
     int WordsFn_GetIntroduction(GuestPtr<WordsCtx> ctx)
     {
@@ -2049,7 +2049,7 @@ namespace mm
     PORT_FN(Words_ApplyChoice);
 
     // The script person's schedule state (kept in their record, or worked out for a family member who is not on the map) turned
-    // into the number a talk script tests, by the script's argument (+0x2A): 0 gives states 1 and 2 as 0 and 1, 3 as 2 and the
+    // into the number a talk script tests, by the script's argument (arg): 0 gives states 1 and 2 as 0 and 1, 3 as 2 and the
     // rest 3; 1 gives 4 and 5 as 0 and 1, the rest 2; 2 gives 6 and 7 as 0 and 1, the rest 2; 3 gives states 6 to 12 as 0 to 6, the
     // rest 7; 4 gives 0 for state 13 and 1 for the others; 5 gives the state less 1 (less 2 from 15), 15 when that is negative.
     uint32_t WordsFn_ScheduleState(GuestPtr<WordsCtx> ctx)
@@ -2081,7 +2081,7 @@ namespace mm
 
     PORT_FN(WordsFn_ScheduleState);
 
-    // The player buys the goods the script points at (group +0x14, variant +0x16, the season from the month at +0x88 of the city):
+    // The player buys the goods the script points at (by building type B and family B, the season from the city's month):
     // the price comes off the money at 0x1C5540 (saturating: a purchase that overflows leaves INT_MAX, any other shortfall 0) and
     // the seller's family gains friendship by price band (2 up to 100, 3 up to 1000, 4 up to 5000, 5 up to 10000, 20 up to
     // 50000, 30 above). What happens next depends on the goods' kind: kinds 4, 5, 10 and 11 add a laptop entry; 6 to 8 add one and
@@ -2169,10 +2169,10 @@ namespace mm
 
     PORT_FN(WordsFn_BuyGoods);
 
-    // Looks through the acquaintances (up to 16 families at +0x2C of the script person's member record) of the script's family
+    // Looks through the acquaintances (up to 16 families, the script person's member record) of the script's family
     // for one that can apply to the city and whose home type claims something the building A supplies: the claim list of the
     // building (a single value, or the list of section D when the value has bit 15) is compared with the type's claims (section
-    // C of the acquaintance's home type); the first match becomes the person's introduction (+0x2C) and the result (+0x28) and
+    // C of the acquaintance's home type); the first match becomes the person's introduction (introduces) and the result and
     // gives 1. 0 when there is none.
     int WordsFn_AcquaintanceSuppliesClaim(GuestPtr<WordsCtx> ctx)
     {
@@ -2229,7 +2229,7 @@ namespace mm
         }
     }
 
-    // The same for the family introduced to the script's person (the result at +0x28): after it, the person's member flag is
+    // The same for the family introduced to the script's person (the result): after it, the person's member flag is
     // cleared and the introduction forgotten.
     void WordsFn_InviteIntroduced(GuestPtr<WordsCtx> ctx)
     {
@@ -2312,7 +2312,7 @@ namespace mm
         return static_cast<int>(block.address);
     }
 
-    // The same for a person in the city: the script block is the one of the character type (+0x24), the event words are for the
+    // The same for a person in the city: the script block is the one of the character type (charType), the event words are for the
     // event the person starts (mm_Event_TryStart, when arg5 is 0) or the city's current one. The choice menus are marked as
     // above, but with an item of category 0x10, 0x11 or 0x13 among the bag's slots (its size picks how many are looked at) no
     // entry is unavailable, and with none the age and friendship rule applies to the person's family member.
@@ -2555,12 +2555,12 @@ namespace mm
 
     PORT_FN(Words_LoadForWants);
 
-    // The common body of the three "supplies a want" scripts. The want the wants window offers at the chosen index (+0x13A of the
-    // context) gives the script's other person and building (B) and the claims the building supplies: a single value of the building
+    // The common body of the three "supplies a want" scripts. The want the wants window offers at the chosen index (the context's
+    // wantIndex) gives the script's other person and building (B) and the claims the building supplies: a single value of the building
     // type's claim section B entry, or the list of section D when the value has bit 15 set. Mode 0 (a family) asks whether the home
     // type of family A claims one of them. Modes 1 (an acquaintance of member A) and 2 (of any member of the family) look through the
     // acquaintances (up to 16 families each) that can apply to the city for one whose home type claims one: it becomes the result
-    // (+0x28) and, in mode 1, person A's introduction (+0x2C); mode 2 also notes the member (+0x1A). 1 on a match, else 0.
+    // and, in mode 1, person A's introduction (introduces); mode 2 also notes the member (memberIndex). 1 on a match, else 0.
     int WordsFn_SuppliesWantBody(GuestPtr<WordsCtx> ctx, int mode)
     {
         port::GuestFrame<0xB0> frame;
@@ -2635,11 +2635,11 @@ namespace mm
     PORT_FN(WordsFn_AcquaintanceSuppliesWant);
     PORT_FN(WordsFn_FamilySuppliesWant);
 
-    // Picks the resident a claim script talks about. The homes around building A are collected (candidates, +0x2C of the context),
+    // Picks the resident a claim script talks about. The homes around building A are collected (candidates, candidateCount),
     // and the claims the selected want asks for are worked out as in WordsFn_SuppliesWantBody. The residents of each candidate home
     // that are loaded are looked through: the acquaintances of each member (up to 16 families) that can apply to the city, whose
     // home type claims one of the claims, give person B (the home's family, the member's index); 4 when that member's friendship
-    // allows it (family B, member B, building B, its type and the result at +0x28 are set), else the search goes on and ends with
+    // allows it (family B, member B, building B, its type and the result are set), else the search goes on and ends with
     // 3. With no result (and arg -1000) a resident by type is tried (2); with none either a random resident of a random candidate
     // home becomes person B (1). 0 when there is no candidate or no resident.
     int WordsFn_PickClaimResident(GuestPtr<WordsCtx> ctx)

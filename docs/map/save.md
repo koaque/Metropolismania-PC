@@ -26,13 +26,13 @@ Saving and loading on the memory card.
 | `0x0015B890` | `void mm_McManager_BuildSaveTitle(McManager *mc, CityScene *city, SaveTitle *title)` | 428 | no | the save's icon.sys title: the prefix and the city's name in full-width characters, then the months played, approval, population and stage |
 | `0x0015BA40` | `int mm_SaveFile_GetResult(McManager *mc, int a1)` | 8 | no | result of the file's last memory card request |
 | `0x0015BA50` | `int mm_SaveFile_IsDone(McManager *mc, int a1)` | 8 | no | whether the file's last request is done |
-| `0x0015BA60` | `int mm_SaveFile_Close(McManager *mc)` | 16 | no | queues close of the file's descriptor (+0x24) |
+| `0x0015BA60` | `int mm_SaveFile_Close(McManager *mc)` | 16 | no | queues close of the file's descriptor (fd) |
 | `0x0015BA70` | `int mm_SaveFile_Read(McManager *mc, int buffer, int size)` | 28 | no | queues sceMcRead of a2 bytes into a1 from the open save file |
 | `0x0015BA90` | `int mm_SaveFile_Write(McManager *mc, int buffer, int size)` | 28 | no | queues sceMcWrite of a2 bytes from a1 to the open save file |
-| `0x0015BAB0` | `int mm_SaveFile_Open(McManager *mc, int mode)` | 24 | no | queues sceMcOpen of a1 on the current port/slot (gp), descriptor to +0x24 |
+| `0x0015BAB0` | `int mm_SaveFile_Open(McManager *mc, int mode)` | 24 | no | queues sceMcOpen of a1 on the current port/slot (gp), descriptor to fd |
 | `0x0015BAD0` | `int mm_SaveFile_Format(McManager *mc, int port)` | 140 | no | format step machine; returns when done |
 | `0x0015BB60` | `void mm_SaveFile_ResetState(McManager *mc)` | 8 | no | state +4 = 0 |
-| `0x0015BB70` | `int mm_SaveFile_PollDone(McManager *mc)` | 12 | no | whether request +0x14 is done |
+| `0x0015BB70` | `int mm_SaveFile_PollDone(McManager *mc)` | 12 | no | whether the queued request (request) is done |
 | `0x0015BB80` | `void mm_SaveFile_DeleteIconSys(McManager *mc, int dir)` | 64 | no | queues delete of icon.sys in directory a1 |
 | `0x0015BBC0` | `void mm_SaveFile_WriteIconSys(McManager *mc, int a1, int a2, int a3)` | 56 | yes | writes icon.sys (mm_McSave_WriteIconSys) |
 | `0x0015BC00` | `int mm_SaveFile_PrepareDir(McManager *mc, int a1, int a2, int a3)` | 1052 | yes | step machine: card info, mkdir/chdir, copies DATA\STATIC.ICO to STATIC.ICO |

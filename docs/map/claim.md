@@ -24,4 +24,4 @@ thresholds (`ClaimThresholds`); offset tables (in words) lead to its lists.
 | `0x00135940` | `ClaimSupply *mm_Claim_GetSupplies(int index)` | 32 | no | supply list `index` (CLAIM.BIN section C, by BuildingType.claimC): the items a building type supplies and how much, ended by id 0 |
 | `0x00135960` | `uint16_t *mm_Claim_GetGroup(uint32_t index)` | 40 | no | item group `index` & 0x7FFF (CLAIM.BIN section D; a claim's id from 0x8000): 0-ended item ids |
 | `0x00135990` | `ClaimEntry *mm_Claim_GetList(int index)` | 32 | no | claim list `index` (CLAIM.BIN section B, by BuildingType.claimB): 8-byte claims (need or wish, item or group, value, reach), ended by id 0 |
-| `0x001359B0` | `void mm_Claim_Load(void)` | 184 | yes | loads DATA\BIN\CLAIM.BIN and resolves its section offsets (+8, +0xC, +0x10, +0x14, ...) |
+| `0x001359B0` | `void mm_Claim_Load(void)` | 184 | yes | loads DATA\BIN\CLAIM.BIN and resolves its seven sections from the header words 2 to 8: claim lists, supplies, groups, event tile lists, icon sets, icon colours and texts |

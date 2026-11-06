@@ -110,7 +110,7 @@ namespace mm
 
     // The laptop's entries on a carousel, each frame. Entry i stands at angle (2 pi / count) x (count - i) plus
     // the carousel's turn, kept within -pi..pi; its matrix (from +0x50, 0x40 bytes each) is that turn about y
-    // times a tilt of pi/12 about x, placed at the turned radius vector plus the centre and scaled by +0x38. In
+    // times a tilt of pi/12 about x, placed at the turned radius vector plus the centre and scaled by scale. In
     // state 2 the selected entry moves by kLaptopLift. The original's frame is reserved whole and its matrices
     // kept at their offsets; like the original it also builds a scale-5 matrix there that nothing reads.
     void Laptop_Animate(GuestPtr<Laptop> laptop)
@@ -823,9 +823,9 @@ namespace mm
         return 0;
     }
 
-    // A field is worked from 7:00 to 15:59 on ordinary days (weather 0 or 1, not a holiday): its meter (+0x10)
+    // A field is worked from 7:00 to 15:59 on ordinary days (weather 0 or 1, not a holiday): its meter (claimMeter, signed)
     // drops by 1 (8 when its family is not in the city) and every person on it who is headed for it adds 6,
-    // or 25 once the field is established (+0x12); at 120 it becomes established with the meter at 250.
+    // or 25 once the field is established (claimSlot); at 120 it becomes established with the meter at 250.
     // Marks the field on the minimap and returns 1 when the meter has fallen below -49.
     int BldgField_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
     {
@@ -870,10 +870,10 @@ namespace mm
         }
     }
 
-    // A road piece: its mesh under the layer 0 matrix. Street lamps (four meshes from type +0x160) are drawn
+    // A road piece: its mesh under the layer 0 matrix. Street lamps (four meshes from the type's lampMesh) are drawn
     // lit (colour w word 12, object flag 0x10) after dark, each block a little later than the last; traffic
-    // lights (five meshes from +0x164) are drawn lit as two signal meshes chosen by the light phase (city
-    // +0xC0, 0..3) from the table at 0x1B1540, the second under the layer 3 matrix.
+    // lights (five meshes from lightMesh) are drawn lit as two signal meshes chosen by the light phase (the city's
+    // trafficPhase, 0..3) from the table at 0x1B1540, the second under the layer 3 matrix.
     void BldgRoad_Draw(GuestPtr<BuildingType> btype, int, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
                        ps2f x, ps2f y, ps2f z)
     {
@@ -1007,13 +1007,13 @@ namespace mm
         return 0;
     }
 
-    // A building part each tick (type slot +0x10). The main part (its tile's first object) finds its entrance
-    // tile (+0x14) and side; unless the type has flag 0x20 and the second entrance test fails, the side is then
+    // A building part each tick (the type's tick slot). The main part (its tile's first object) finds its entrance
+    // tile (entranceTile) and side; unless the type has flag 0x20 and the second entrance test fails, the side is then
     // set from where the footprint sits in the 4-tile grid of road blocks, and kept as the tile's kind. The
     // ground under the footprint is levelled: above 0 to 0.1, else onto a multiple of 0.5 (with fmodf), and the
     // geometry around it rebuilt when that changed it. Other parts take the main part's entrance tile. A built
-    // part (flag 0x20) clears +0x17 from 23:00:01, between 6:00 and 7:00 drops flag 0x100 (newly built; minimap
-    // colour 5), and returns mm_BldgClaims_Evaluate's result; a part being built counts its work (+0x18) up from
+    // part (flag 0x20) clears occupants from 23:00:01, between 6:00 and 7:00 drops flag 0x100 (newly built; minimap
+    // colour 5), and returns mm_BldgClaims_Evaluate's result; a part being built counts its work (variant) up from
     // 7:00 to 18:59, and at 24 it is built and new (flags 0x120) and the count starts again. Last, the minimap colour by the claim meter's level (2: 10,
     // 1: 9, else 5). The original's frame is reserved whole: the side and the rectangle are its slots.
     int Bldg_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int timeFlags)
@@ -1148,10 +1148,10 @@ namespace mm
         return result;
     }
 
-    // Shops and offices: tinted by their claim icon colour when the city shows claims (flag 1). The entrance
+    // Shops and offices: tinted by their claim icon colour when the city shows claims (flag 1). A built one
     // is lit (colour w word 12, object flag 0x10) outside 4:00..16:59 while open by the building's own
-    // shifted clock, and drawn from the entrance model, with the closed-sign mesh after hours for type flag
-    // 0x1000; other parts draw their variant from the city parts model.
+    // shifted clock, and drawn from the business model, with the closed-sign mesh after hours for type flag
+    // 0x1000; one being built draws its construction stage from the city parts model.
     namespace
     {
         GuestPtr<BuildingType> typeOf(GuestPtr<MapObject> obj)
@@ -1188,10 +1188,10 @@ namespace mm
             return matrix;
         }
 
-        // A part that is not the entrance: its variant (bits 3-7 of +0x18) from the city parts model.
+        // An object being built: its construction stage (variant >> 3) from the city parts model.
         void drawPlainPart(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> matrix, GuestPtr<Vec4> colour, int flags)
         {
-            Instance_DrawMesh(globals::cityPartsModel.get(), matrix, colour, btype->firstDrawMesh + (obj->variant >> 3), flags);
+            Instance_DrawMesh(globals::cityPartsModel.get(), matrix, colour, btype->stageMesh + (obj->variant >> 3), flags);
         }
     }
 
@@ -1215,14 +1215,14 @@ namespace mm
             drawPlainPart(btype, obj, matrix, colour, flags);
             return;
         }
-        int mesh = btype->entranceDrawMesh;
+        int mesh = btype->builtMesh;
         if ((btype->flags & 0x1000u) != 0 && (time < open || close < time))
             ++mesh;
-        Instance_DrawMesh(globals::entranceModel.get(), matrix, colour, mesh, flags);
+        Instance_DrawMesh(globals::businessModel.get(), matrix, colour, mesh, flags);
     }
 
-    // Ports: like a business, lit after dark while open (hours of the object's own type), drawn 2.5 lower; the
-    // entrance from the entrance model.
+    // Ports: like a business, lit after dark while open (hours of the object's own type), drawn 2.5 lower; once
+    // built from the business model.
     void BldgPort_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
                        ps2f x, ps2f y, ps2f z)
     {
@@ -1239,12 +1239,12 @@ namespace mm
             obj->flags &= 0xFFEFu;
         const GuestPtr<Vec4> matrix = placeLayer(layer, x, y - ps2f(2.5f), z);
         if ((obj->flags & 0x20u) != 0)
-            Instance_DrawMesh(globals::entranceModel.get(), matrix, colour, btype->entranceDrawMesh, flags);
+            Instance_DrawMesh(globals::businessModel.get(), matrix, colour, btype->builtMesh, flags);
         else
             drawPlainPart(btype, obj, matrix, colour, flags);
     }
 
-    // Theme parks: lit like a port; the entrance is the animated ride model, moved to the building.
+    // Theme parks: lit like a port; once built, the animated ride model, moved to the building.
     void BldgAmusementPark_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
                                 ps2f x, ps2f y, ps2f z)
     {
@@ -1290,23 +1290,23 @@ namespace mm
     }
 
     // Offices: `part` is the block part being drawn (bits 0-2: 0..4; bit 3, set here for kind 0xC3, adds mesh
-    // 0x67 on the parts with a second mesh). Parts choose up to two meshes from the entrance mesh on, varied by
+    // 0x67 on the parts with a second mesh). Parts choose up to two meshes from the built mesh on, varied by
     // the block's position along the street ((tile / size) % 3); the type's extra mesh goes with the first.
-    // Part 0 of a non-entrance object draws its variant, untinted.
+    // Part 0 of an object being built draws its construction stage, untinted.
     void BldgOffice_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, GuestPtr<uint32_t> part,
                          int flags, ps2f x, ps2f y, ps2f z)
     {
         if (btype->kind == 0xC3)
             *part |= 8u;
         int first = 0, second = 0;
-        const int entrance = btype->entranceDrawMesh;
+        const int base = btype->builtMesh;
         switch (*part & 7u)
         {
-        case 0: first = entrance; second = entrance + 3; break;
-        case 1: first = entrance; break;
-        case 2: first = entrance + 1; break;
-        case 3: first = entrance + 1; second = entrance + 2; break;
-        case 4: first = entrance + 1; second = entrance + 3; break;
+        case 0: first = base; second = base + 3; break;
+        case 1: first = base; break;
+        case 2: first = base + 1; break;
+        case 3: first = base + 1; second = base + 2; break;
+        case 4: first = base + 1; second = base + 3; break;
         default: break;
         }
         port::GuestLocal<Vec4> colour;
@@ -1335,13 +1335,13 @@ namespace mm
         drawBlockHighlight(btype, obj, matrix, colour, flags);
     }
 
-    // Housing: parts 0..4 take one mesh (parts 3 and 4 two) from the entrance mesh on, offset per unit shape
-    // (the high byte of +0x18, table 0x1B14F0) and by 26 per style (the low byte of +0x1A).
+    // Housing: parts 0..4 take one mesh (parts 3 and 4 two) from the built mesh on, offset per unit shape
+    // (unitShape, table 0x1B14F0) and by 26 per style (style).
     void BldgHousing_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, GuestPtr<uint32_t> part,
                           int flags, ps2f x, ps2f y, ps2f z)
     {
         const int shape = obj->unitShape;
-        const int base = btype->entranceDrawMesh + obj->style * 26;
+        const int base = btype->builtMesh + obj->style * 26;
         const auto partMesh = [&](int index) { return base + port::load<int8_t>(globals::kHousingPartMesh + 4u * shape + index); };
         int first = -1, second = -1;
         switch (*part & 7u)
@@ -1370,7 +1370,7 @@ namespace mm
     }
 
     // Whether the tile (x, z) holds a unit of the same housing block: same rule, flag-1 tile, terrain kind and
-    // height, and an entrance object (then *isUnit = 1). Returns its unit shape when more than `count` objects
+    // height, and a built object (then *isUnit = 1). Returns its unit shape when more than `count` objects
     // come before it on the tile, else 6.
     uint8_t BldgHousing_UnitAt(GuestPtr<BuildingType>, int kind, int x, int z, int count, uint16_t rule, GuestPtr<CityScene> city,
                                GuestPtr<uint32_t> isUnit, ps2f height)
@@ -1565,7 +1565,7 @@ namespace mm
     }
 
     // The people inside a building: each one's colour (BldgType_DrawOccupant), then its character class's draw
-    // slot (+0x10) at its position and heading, in pose 6 (flag 0x40), 1 (running, 0x80) or 0.
+    // slot at its position and heading, in pose 6 (flag 0x40), 1 (running, 0x80) or 0.
     void BldgType_DrawOccupants2(GuestPtr<BuildingType> btype, int, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
                                  GuestPtr<MapPerson> people)
     {
@@ -1667,15 +1667,15 @@ namespace mm
         return btype->groundTexture + GuestPtr<MapObject>{static_cast<uint32_t>(a1)}->roadShape;
     }
 
-    // Collision against a building's mesh: the entrance mesh for entrance objects, else the first mesh plus
-    // the object's variant (two meshes per variant).
+    // Collision against a building's mesh: the built collision mesh once built (flag 0x20), else the one of its
+    // construction stage (variant >> 3); the mesh index is doubled.
     namespace
     {
         int collisionMesh(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj)
         {
             if ((obj->flags & 0x20u) != 0)
-                return btype->entranceMesh * 2;
-            return (btype->firstMesh + (obj->variant >> 3)) * 2;
+                return btype->builtCollision * 2;
+            return (btype->stageCollision + (obj->variant >> 3)) * 2;
         }
     }
 
@@ -1691,7 +1691,7 @@ namespace mm
         return Collide_MeshNearestHit(static_cast<int>(btype.address), collisionMesh(btype, obj), point, matrix, hit, distance, f12);
     }
 
-    // Open hours apply to the building as a whole (no object) and to its entrance; other parts are never open.
+    // Open hours apply to the building as a whole (no object) and to a built object; one being built is never open.
     int Bldg_IsOpen(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
     {
         if (!obj)
@@ -1819,11 +1819,12 @@ namespace mm
         // The variant part of a building's collision mesh (the variant byte in steps of 8).
         uint32_t variantMesh(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj)
         {
-            return btype->firstMesh + (obj->variant >> 3);
+            return btype->stageCollision + (obj->variant >> 3);
         }
 
-        // Housing: part 0 is the block itself (or its entrance), parts 1 and 2 and up take the unit shape's two
-        // entrance meshes (signed offsets from the type's entrance mesh, table 0x1B1520 by the unit shape).
+        // Housing: part 0 is its construction stage while being built; once built, parts 0 and 1 take the unit
+        // shape's first mesh and the others its second (signed offsets from the type's built collision mesh, table
+        // 0x1B1520 by the unit shape).
         int housingMesh(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, uint32_t part)
         {
             const uint32_t which = part & 7u;
@@ -1832,9 +1833,9 @@ namespace mm
             {
                 if ((obj->flags & 0x20u) == 0)
                     return static_cast<int>(variantMesh(btype, obj) * 2u);
-                return (btype->entranceMesh + port::load<int8_t>(shape)) * 2;
+                return (btype->builtCollision + port::load<int8_t>(shape)) * 2;
             }
-            return (btype->entranceMesh + port::load<int8_t>(shape + (which == 1 ? 0u : 1u))) * 2;
+            return (btype->builtCollision + port::load<int8_t>(shape + (which == 1 ? 0u : 1u))) * 2;
         }
 
         // Offices: the block's mesh set (three per set) from the size's table of three by the tile, then part 0 the
@@ -1845,7 +1846,7 @@ namespace mm
             const int size = btype->size;
             const int column = remainder(divide(obj->tile, size), 3);
             const uint32_t set = port::load<uint32_t>(table + 12u * static_cast<uint32_t>(size) + 4u * static_cast<uint32_t>(column));
-            uint32_t mesh = btype->entranceMesh + 3u * set;
+            uint32_t mesh = btype->builtCollision + 3u * set;
             switch (part & 7u)
             {
             case 0:
@@ -1892,7 +1893,7 @@ namespace mm
     int BldgPort_FloorBelow(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
                           GuestPtr<uint32_t> hit, ps2f lift)
     {
-        const int mesh = (obj->flags & 0x20u) != 0 ? btype->entranceMesh * 2 : static_cast<int>(variantMesh(btype, obj) * 2u);
+        const int mesh = (obj->flags & 0x20u) != 0 ? btype->builtCollision * 2 : static_cast<int>(variantMesh(btype, obj) * 2u);
         matrix[3].y = ps2f(matrix[3].y) - ps2f(2.5f);
         return Collide_MeshFloorBelow(static_cast<int>(btype.address), mesh, point, matrix, hit, lift);
     }
@@ -1900,7 +1901,7 @@ namespace mm
     int BldgPort_NearestHit(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
                           GuestPtr<uint32_t> hit, GuestPtr<ps2f> distance, ps2f f12)
     {
-        const int mesh = (obj->flags & 0x20u) != 0 ? btype->entranceMesh * 2 : static_cast<int>(variantMesh(btype, obj) * 2u);
+        const int mesh = (obj->flags & 0x20u) != 0 ? btype->builtCollision * 2 : static_cast<int>(variantMesh(btype, obj) * 2u);
         matrix[3].y = ps2f(matrix[3].y) - ps2f(2.5f);
         return Collide_MeshNearestHit(static_cast<int>(btype.address), mesh, point, matrix, hit, distance, f12);
     }
@@ -1912,7 +1913,7 @@ namespace mm
         const uint8_t count = obj->goodsMesh;
         if (count < 0x27)
             return 0;
-        return Collide_MeshFloorBelow(static_cast<int>(btype.address), (btype->entranceMesh + count - 0x27) * 2, point, matrix, hit, lift);
+        return Collide_MeshFloorBelow(static_cast<int>(btype.address), (btype->builtCollision + count - 0x27) * 2, point, matrix, hit, lift);
     }
 
     int BldgSmallGoods_NearestHit(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
@@ -1921,7 +1922,7 @@ namespace mm
         const uint8_t count = obj->goodsMesh;
         if (count < 0x27)
             return 0;
-        return Collide_MeshNearestHit(static_cast<int>(btype.address), (btype->entranceMesh + count - 0x27) * 2, point, matrix, hit, distance, f12);
+        return Collide_MeshNearestHit(static_cast<int>(btype.address), (btype->builtCollision + count - 0x27) * 2, point, matrix, hit, distance, f12);
     }
 
     PORT_FN(Bldg_InitRecordBase);
@@ -1979,7 +1980,7 @@ namespace mm
         return city->conduct < 300 ? 1 : 2;
     }
 
-    // The mission's progress in percent (0..100): by the stage's mission kind (stage state +0x1D0) a building count
+    // The mission's progress in percent (0..100): by the stage's mission kind (the stage state's missionKind) a building count
     // of the map (kind 0 is always 100), times 100 over the target (0x1F32E0); 0 without a target. Unknown kinds use
     // v0 as it came in.
     int CityScene_MissionProgress(GuestPtr<CityScene> city)
@@ -2079,7 +2080,7 @@ namespace mm
     // ---- batch 38
 
     // The name of a post (job) at a building type, from POSTNAME.BIN (loaded at 0x1BDBC0): an offset table by
-    // post group (type byte +0x146), each group an offset table by post.
+    // post group (the type's postGroup), each group an offset table by post.
     GuestPtr<char> BldgType_GetPostName(GuestPtr<BuildingType> btype, int post)
     {
         const uint32_t names = port::load<uint32_t>(0x001BDBC0u);
@@ -2189,7 +2190,7 @@ namespace mm
 
     void Wants_SaveState(GuestPtr<WantsWin> wants, GuestPtr<McManager> mc) { SaveFile_Write(mc, static_cast<int>(wants.address), 0x504); }
 
-    // The window model, and while shown (+0x518) its four text boxes.
+    // The window model, and while shown (textsShown) its four text boxes.
     void WantsWin_Draw(GuestPtr<WantsWin> wants)
     {
         A3DObject_Draw(wants->model);
@@ -2211,7 +2212,7 @@ namespace mm
     // ---- more building types (batch 38)
 
     // Keep-out parts face the map edge they stand on (x 2, z 2, x 125, else matrix 0). On low ground
-    // (tile height 0.8 or less) the entrance mesh; otherwise the other mesh, at the water level.
+    // (tile height 0.8 or less) the type's built mesh; otherwise its stage mesh, at the water level.
     void BldgKeepOut_Draw(GuestPtr<BuildingType> btype, int, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
                           ps2f x, ps2f y, ps2f z)
     {
@@ -2223,11 +2224,11 @@ namespace mm
         matrix[3].z = z;
         if (Map_GetTileHeightWord(city->map, obj->tile) <= ps2f(0.8f))
         {
-            Instance_DrawMesh(globals::propsModel.get(), matrix, GuestPtr<Vec4>{globals::kDefaultColour}, btype->entranceDrawMesh, flags);
+            Instance_DrawMesh(globals::propsModel.get(), matrix, GuestPtr<Vec4>{globals::kDefaultColour}, btype->builtMesh, flags);
             return;
         }
         matrix[3].y = city->waterLevel;
-        Instance_DrawMesh(globals::propsModel.get(), matrix, GuestPtr<Vec4>{globals::kDefaultColour}, btype->firstDrawMesh, flags);
+        Instance_DrawMesh(globals::propsModel.get(), matrix, GuestPtr<Vec4>{globals::kDefaultColour}, btype->stageMesh, flags);
     }
 
     // Small goods: their props mesh, raised by the height scale above ground unless the type has
@@ -2247,7 +2248,7 @@ namespace mm
     }
 
     // My Home: the common tick, and when it has nothing to report, the objects of type 2 along the side the home
-    // faces (the row or column next to it, one tile past each corner) get their byte +0x14 cleared.
+    // faces (the row or column next to it, one tile past each corner) lose their weeds (look[4] cleared).
     int BldgMyHome_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
     {
         const int result = Bldg_Tick(btype, city, obj, 0);
@@ -2317,7 +2318,7 @@ namespace mm
     // becomes popular at 118 and event 0x206 is queued from 100. At midnight the month advances: holiday months (0,
     // 3, 7, 10) get flag 2, the weather moves on a day (tomorrow rain on every fifth month from the second, snow in
     // months 11, 0 and 1), the placement history moves, and in months 9 to 2 flag 0x20 is set with a one-in-two
-    // chance. The traffic lights then step (+0xC4 counts to 1000; phases from 0, 400, 500 and 900).
+    // chance. The traffic lights then step (trafficTimer counts to 1000; phases from 0, 400, 500 and 900).
     void CityScene_TickClock(GuestPtr<CityScene> city)
     {
         city->clock = city->clock + (city->clock < 21600 ? 30 : 3);
@@ -2358,7 +2359,7 @@ namespace mm
             }
             else
                 city->weatherTomorrow = 0;
-            MapObj_PushHistory(city->map);
+            CityMap_PushNewBuildings(city->map);
             city->flags = city->flags & ~0x20u;
             if ((month < 3 || month >= 9) && (Random_TimerMix() & 0x100) < 0x40)
                 city->flags = city->flags | 0x20u;
@@ -2853,7 +2854,7 @@ namespace mm
         return (fullStop + fullFlag2 != 0 && fullFlag2 + fullNotRoad + fullStop > 1) ? 1 : 0;
     }
 
-    // Leveled ground: the claim word at +0x10 (meter, slot and timer as one signed word) takes the smallest of the
+    // Leveled ground: openSize (the side of the open square of leveled land from here) takes the smallest of the
     // neighbours' (x + 1, z), (x + 1, z + 1) and (x, z + 1) that are leveled ground at the same height (else 0), plus
     // one while the object has no flag 1. The ground settles (0.05 above ground), and every waiting applicant
     // (state 2) whose home would fit (its size within that word, CheckArea and Map_CanPlace) gets the area
@@ -2908,8 +2909,8 @@ namespace mm
 
     namespace
     {
-        // The applicants card text: its place and size follow the card model's values (x at +0x30, y at +0x34, scale
-        // at +0x38 of the record at Applicants +0x2A8): the pixel offsets scale with the model, the text box
+        // The applicants card text: its place and size follow the card model's values (the x, y and, as the scale,
+        // z of the translation row of cardNodeA): the pixel offsets scale with the model, the text box
         // shrinks with it.
         void placeCardText(GuestPtr<Applicants> applicants, int x, int y, ps2f scale)
         {
@@ -2924,9 +2925,9 @@ namespace mm
         }
     }
 
-    // The card slides in over the first 20 frames of its counter (+0x2C0; its x grows by 0.15 a frame), stays, and from
-    // frame 60 for 6 frames drifts (its y grows by 0.4 a frame); after that the counter and +0x2B8 clear, the
-    // cursor and the top entry take the saved entry (+0x2C4) and the list scrolls back to its first entry.
+    // The card slides in over the first 20 frames of its counter (slideFrame; its x grows by 0.15 a frame), stays, and
+    // from frame 60 for 6 frames drifts (its y grows by 0.4 a frame); after that the counter, sliding and cardShown clear,
+    // the cursor and the top entry take the saved entry (savedTop) and the list scrolls back to its first entry.
     void Applicants_Layout(GuestPtr<Applicants> applicants)
     {
         applicants->slideFrame = applicants->slideFrame + 1;
@@ -2968,7 +2969,7 @@ namespace mm
     // ---- the pig farm (batch 39)
 
     // Pig farms are drawn like theme parks: lit after dark within the opening hours of the object's type, the
-    // entrance from its own model (placed by the object's matrix), the other parts from the city parts.
+    // built one from its own model (placed by the object's matrix), one being built from the city parts.
     void BldgPigFarm_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
                           ps2f x, ps2f y, ps2f z)
     {
@@ -3123,7 +3124,7 @@ namespace mm
     }
 
     // The ranch: while being built its plain part from the city parts model, once built (flag 0x20) the ranch models (the first always, then one
-    // of two by the type's answer in vtable +0x24), each at the building's place.
+    // of two by the type's isOpen answer), each at the building's place.
     void BldgRanch_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
                         ps2f x, ps2f y, ps2f z)
     {
@@ -3273,15 +3274,15 @@ namespace mm
     PORT_FN(BldgRanch_Draw);
     PORT_FN(BldgRoad_DrawPeople);
 
-    // ---- the people of a building with an entrance (batch 40)
+    // ---- the people of a built building (batch 40)
 
     // Built buildings (flag 0x20) of type flag 0x800: the people standing in it (or outside, on it) are sorted into
     // four groups, by class flag 1 (vehicles) and by whether this is their home: 0 residents living here,
     // 1 other residents, 2 vehicles of this building, 3 other vehicles. Each group has room for `groupSpots[group]` people (up to four)
     // that are placed at the type's people spots (x, y, z, a heading added to the table's at 0x1B2690),
     // drawn in pose 4. Group 0 is kept in order of the people's member numbers, the others by person index, but a person
-    // inserted always lands in slot 0 (the original writes slot 0 after shifting the ones below it up). Groups with no
-    // entrance answer (vtable +0x24) are skipped, except group 2. The spot record number runs on over the groups drawn.
+    // inserted always lands in slot 0 (the original writes slot 0 after shifting the ones below it up). While the
+    // building is not open (isOpen slot) the groups are skipped, except group 2. The spot record number runs on over the groups drawn.
     void Bldg_DrawPeople(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
                          GuestPtr<MapPerson> people, ps2f x, ps2f y, ps2f z)
     {
@@ -3376,7 +3377,7 @@ namespace mm
 
     namespace
     {
-        // The destructor of a building type class: the vtable pointer at +0x15C steps down the class chain (the
+        // The destructor of a building type class: the vtable pointer (vtable) steps down the class chain (the
         // derived class's vtable first, the base class's last), then the base destructor and the delete.
         GuestPtr<BuildingType> destroyBuildingType(GuestPtr<BuildingType> btype, int16_t deleteFlag,
                                                    std::initializer_list<uint32_t> vtables)
@@ -3492,9 +3493,9 @@ namespace mm
 
     // Deletes everything the city scene owns, in this order: pause menu, minimap, cursor, phone calls, event manager, wants
     // window, applicants window, player, map, lights, city camera, laptop, Town's Pages, camera, status panel, the talk, the
-    // markers, the notice, the object at +0x80; then all building types and the stage object base (flag 0). Each child is deleted
-    // with flag 1 and its field cleared; the applicants window, talk, markers and +0x80 object delete themselves through their
-    // vtables (the vtable pointer sits at +0x320, +8, +0x128 and +0, and the deleting destructor is slot 2).
+    // markers, the notice, the overlay object; then all building types and the stage object base (flag 0). Each child is
+    // deleted with flag 1 and its field cleared; the applicants window, talk, markers and overlay delete themselves through
+    // their own vtables (the deleting destructor is slot 2).
     GuestPtr<CityScene> CityScene_dtor(GuestPtr<CityScene> city, int16_t deleteFlag)
     {
         if (!city)
@@ -3635,12 +3636,12 @@ namespace mm
         btype->capacity = record->capacity;
         btype->cooldown = record->cooldown;
         btype->ambientSound = record->ambientSound;
-        btype->entranceDrawMesh = record->entranceDrawMesh;
-        btype->firstDrawMesh = record->firstDrawMesh;
+        btype->builtMesh = record->builtMesh;
+        btype->stageMesh = record->stageMesh;
         btype->openNode = record->openNode;
         btype->modelNode = record->modelNode;
-        btype->entranceMesh = record->entranceMesh;
-        btype->firstMesh = record->firstMesh;
+        btype->builtCollision = record->builtCollision;
+        btype->stageCollision = record->stageCollision;
         btype->talkEye = record->talkEye;
         sdk::memcpy(port::guest(&btype->callFlags), port::guest(&record->callFlags), 4);
         sdk::memcpy(port::guest(btype->groupSpots), port::guest(record->groupSpots), 4);
@@ -3667,7 +3668,7 @@ namespace mm
     // ---- The building type constructors (plan P6 batch 2) ----
     //
     // Each runs the constructor of its base (the shared one, or the business one for the types built on the business type) with the
-    // same arguments, then puts its own table at +0x15C, and takes what else it needs from the record.
+    // same arguments, then puts its own table in vtable, and takes what else it needs from the record.
 
     namespace
     {
@@ -3764,7 +3765,7 @@ namespace mm
     GuestPtr<BuildingType> BldgLeveled_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id)
     {
         constructBuildingType(btype, record, id, kBaseCtor, 0x001BD240u);
-        btype.as<LeveledType>()->mesh = record->entranceDrawMesh;
+        btype.as<LeveledType>()->mesh = record->builtMesh;
         return btype;
     }
 
@@ -3772,8 +3773,8 @@ namespace mm
     {
         constructBuildingType(btype, record, id, kBaseCtor, 0x001BD340u);
         const GuestPtr<RoadType> road = btype.as<RoadType>();
-        road->lampMesh = record->entranceDrawMesh;
-        road->lightMesh = record->firstDrawMesh;
+        road->lampMesh = record->builtMesh;
+        road->lightMesh = record->stageMesh;
         road->slopeMesh = record->extraMesh;
         return btype;
     }
@@ -3932,7 +3933,7 @@ namespace mm
         return 1;
     }
 
-    // Every sixth call the approval rating (+0x8C) takes one step towards the pending change (+0xBC), is kept within -99 and 120,
+    // Every sixth call the approval rating (approval) takes one step towards the pending change (pendingApproval), is kept within -99 and 120,
     // and the status panel is refreshed when it moved.
     void CityScene_UpdateApproval(GuestPtr<CityScene> city)
     {
@@ -3997,7 +3998,7 @@ namespace mm
     PORT_FN(Talk_Opening);
 
     // With the window in mode 4: an applicant under the cursor that is waiting to be placed (state 3) goes to state 6 (its timer
-    // at +0x10 set) and the footprint of its home type is highlighted on the map at its tile. Whatever its state, the pad's focus
+    // set) and the footprint of its home type is highlighted on the map at its tile. Whatever its state, the pad's focus
     // is then taken for the window (owner 1, the Cross button), the window goes to mode 6 and its step to 0.02, the card text is
     // rebuilt and the notice line cleared.
     void Applicants_StartPlacing(GuestPtr<Applicants> applicants, GuestPtr<CityScene> city)
@@ -4037,7 +4038,7 @@ namespace mm
     PORT_FN(EvActor_PointAtBuilding);
 
     // A person inside a building (not 0x3F80) is checked against the schedule: nothing happens for a person with flag 0x20 or 4, or
-    // with flag 0x200 while the city's clock word (+0x84) is below 0xC4E0, or whose activity is the building's one. Otherwise a
+    // with flag 0x200 while the city's clock is below 0xC4E0, or whose activity is the building's one. Otherwise a
     // person with flag 0x200 walks on from the building's tile, and any other leaves the building (outside, walking to nowhere,
     // flag 0x100 and the cool-down cleared).
     void Person_CheckBuilding(GuestPtr<CharClass>, GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
@@ -4065,13 +4066,12 @@ namespace mm
 
     PORT_FN(Person_CheckBuilding);
 
-    // The city scene: the stage object base, the starting state (6:00, the third month, approval 50, the update flags at +0x2C to +0x38 and
-    // the city flag bit 1 set, the fade at 128), the building types loaded, and each part made in turn and kept in its field: the talk
-    // (+0x3C), status panel (+0x0), camera (+0x44, placed with the eye and target vectors at 0x1B2480 and 0x1B2490), pause menu (+0x8),
-    // minimap (+0x74), city cursor (+0x70), phone calls (+0x6C), event manager (+0x68), wants window (+0x5C), town's pages (+0x4), laptop
-    // (+0x48), city camera (+0x4C), lights (+0x40), player (+0x58), applicants (+0x54), markers (+0x78), notice (+0x7C) and the map (+0x50),
+    // The city scene: the stage object base, the starting state (6:00, the third month, approval 50, the four hudVisible flags and
+    // the city flag bit 1 set, the fade at 128), the building types loaded, and each part made in turn and kept in its field: the talk,
+    // status panel, camera (placed with the eye and target vectors at 0x1B2480 and 0x1B2490), pause menu, minimap, city cursor, phone
+    // calls, event manager, wants window, town's pages, laptop, city camera, lights, player, applicants, markers, notice and the map,
     // which the terrain is then generated on (the stage's parameters). The stage's 32 introduced families are put in the applicants,
-    // and the people of each (the type byte at +0x24 not zero and its type not marked) get their introduction picked. The pad's focus is
+    // and the people of each (charType not zero and its type not marked) get their introduction picked. The pad's focus is
     // released.
     GuestPtr<CityScene> CityScene_ctor(GuestPtr<CityScene> city)
     {
@@ -4167,7 +4167,7 @@ namespace mm
 
     PORT_FN(CityScene_ctor);
 
-    // One frame of the city scene: the building types are called with the clock, then the mode's update runs (the mode is at +0x10).
+    // One frame of the city scene: the building types are called with the clock, then the mode's update runs (the mode is modeStack[0]).
     // 0 loads a game (its result is the answer). 1 is the walk mode: Start (Circle not held) pushes the laptop mode (2), Select the
     // pause menu (6); otherwise the clock, phone, status panel, player, camera, map, applicants, wants window, events, cursor and
     // markers are stepped, and with Circle held the pad picks a player mode (up, left), the applicants (down: mode 3) or the town's
@@ -4424,11 +4424,11 @@ namespace mm
     // Loading a saved game, one step a call (the step in the word at 0x1BDC68; its state words: the card index 0x1BDA78, a "start a new
     // load" flag 0x1BDA7C, the wait texts 0x1BDC7C and 0x1BDC78, the sprite 0x1BDC80, the fade 0x1BDC84, a timer 0x1BDC70 and the
     // file handle 0x1BDC74). 0 without the flag takes the pad, fades and turns the city sound to its state (mode 13); with it, clears
-    // the flag and makes the wait text, the sprite and a memory card manager (+0xC) and goes on to 1. 1 steps the manager and fades in,
+    // the flag and makes the wait text, the sprite and a memory card manager (loadCard) and goes on to 1. 1 steps the manager and fades in,
     // then by the card's state: 4 waits, 3 and a missing save go to 0x15, 2 shows the "no memory card" lines (0x14, a timer of 200
     // frames); a save found whose time matches the chosen one resets the manager (step 2). 2 prepares the save folder (1 goes on, 2 to
     // 0xA), 3 opens the file, 4 waits for it (an open that failed goes to 0xA), 5 reads every part of the city (the stage state, the
-    // 0x34 bytes at +0x84, the camera, player, applicants, wants, families, map, bag, stamina, laptop and events) and closes the file,
+    // 0x34 bytes from clock on, the camera, player, applicants, wants, families, map, bag, stamina, laptop and events) and closes the file,
     // 6 unpacks the map's tiles when the file is closed, 7 and 8 check the folder and the result (a bad result goes to 0xA), 9 fades out
     // (16 a frame) and then finishes the load: the city mode 1 and a fade in, the manager, sprite and text freed. 0xA gives up
     // (0x15), 0x14 counts out the message, 0x15 shows the failure text and 0x16 answers (Cross retries from step 1, Triangle goes

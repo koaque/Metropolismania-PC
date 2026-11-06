@@ -161,7 +161,8 @@ struct MapPerson {
     uint16_t animFrame;        /* +0x1C the animation frame (mm_Person_Draw) */
     uint16_t destination;      /* +0x1E */
     uint16_t follow;           /* +0x20 follow target */
-    uint16_t flags;            /* +0x22 4 gone off in its car, 8 has a car (member flag 4), 0x10 ill today (schedule row
+    uint16_t flags;            /* +0x22 bits 0-1 the look (the member's look, 0 to 2: the class's model part, 0 taking part 0
+                                  or 3 by the family's parity), 4 gone off in its car, 8 has a car (member flag 4), 0x10 ill today (schedule row
                                   30), 0x20 held by an event (stays, or follows `follow` when set; mm_EvActor_Detach, mm_EvActor_Follow),
                                   0x200 waits for `follow`, 0x1000 drawn since the last update */
     uint8_t charType;          /* +0x24 index into the character type table (gp 0x1BDA3C) */
@@ -202,14 +203,16 @@ struct CityMap {
     TileLists *tileLists;      /* +0x0C */
     int32_t nextId;            /* +0x10 next record to try for a new object (mm_Map_CreateObject); its low half is the object's id */
     int32_t tickSlice;         /* +0x14 the objects ticked this frame are every 0x80th from it (0..0x7F, mm_MapObjects_Tick) */
-    int32_t flag8Objects;      /* +0x18 objects of types with flag 8 */
+    int32_t flag8Objects;      /* +0x18 new buildings for families (type flag 8) still to cost approval: one more for each placed
+                                  (none less when one goes), one off with a point of approval at each sweep's end */
     int32_t flag8Pending;      /* +0x1C flag8Objects was not 0 at the last sweep's end (every 0x80 frames); handed to the
                                   type ticks; while it is set, each sweep's end takes one off flag8Objects and a point of
                                   approval */
     int16_t objectsChanged;    /* +0x20 objects were added or removed (mm_MapObjects_Tick then starts the claim re-check) */
     int16_t claimRecheck;      /* +0x22 frames of claim section C re-checks left (0x80 after a change) */
     int32_t objectCount;       /* +0x24 object records in use (of 0x3F80) */
-    uint8_t flag8History[6];   /* +0x28 new flag-8 objects per period, newest first (mm_MapObj_PushHistory) */
+    uint8_t newBuildings[6];   /* +0x28 new buildings for families (type flag 8) per month, this month first (up to 255;
+                                  mm_CityMap_PushNewBuildings at each new month) */
     int16_t refreshDelay;      /* +0x2E frames until objectsChanged is set (0x81 after a flag-2 type is placed) */
     int32_t categoryCount[11]; /* +0x30 buildings per STRTYPE.BIN category (mm_MapObj_Delete; category 4 only without type flag 0x80) */
     int32_t bigCategory5Count; /* +0x5C category 5 buildings of size 3 and up */
@@ -218,7 +221,7 @@ struct CityMap {
                                   fewer full sides (mm_BldgLeveled_CheckArea) */
     CityMapVtable *vtable;     /* +0x64 */
     MapPerson *people;         /* +0x68 */
-    uint8_t unk_6C[4];
+    uint32_t freePerson;       /* +0x6C where the search for a free person record starts (mm_Family_PlaceInBuilding), wraps at 6000 */
     int32_t peopleInUse;       /* +0x70 person records in use, vehicles too (mm_MapPeople_RemoveForObject) */
     int32_t population;        /* +0x74 residents: people records of classes without flag 1 */
     TerrainNode buckets[150];  /* +0x78 */
@@ -284,14 +287,14 @@ struct BuildingRecord {
     uint8_t unk_3D[3];
     Vec4 peopleSpots[4];       /* +0x40 fields read these as their lifts and heights */
     Vec4 talkEye;              /* +0x80 */
-    uint8_t entranceDrawMesh;  /* +0x90 leveled land: its mesh; roads: the lamp mesh */
-    uint8_t firstDrawMesh;     /* +0x91 roads: the traffic light mesh */
+    uint8_t builtMesh;         /* +0x90 BuildingType.builtMesh; leveled land: its mesh; roads: the lamp mesh */
+    uint8_t stageMesh;         /* +0x91 BuildingType.stageMesh; roads: the traffic light mesh */
     uint8_t extraMesh;         /* +0x92 offices: the extra mesh; roads: the slope mesh */
     uint8_t openNode;          /* +0x93 BuildingType.openNode */
     uint8_t modelNode;         /* +0x94 */
     uint8_t unk_95;
-    uint8_t entranceMesh;      /* +0x96 */
-    uint8_t firstMesh;         /* +0x97 */
+    uint8_t builtCollision;    /* +0x96 BuildingType.builtCollision */
+    uint8_t stageCollision;    /* +0x97 BuildingType.stageCollision */
     uint8_t groupSpots[4];     /* +0x98 */
 };
 
@@ -329,13 +332,15 @@ struct BuildingType {
     uint8_t ambientSound;      /* +0x14E sound id, 0xFF = none (mm_Se_BuildingSoundState) */
     uint8_t openNode;          /* +0x14F the talk view's model node while the building is open (modelNode when closed) */
     uint8_t modelNode;         /* +0x150 */
-    uint8_t entranceDrawMesh;  /* +0x151 businesses: mesh of the entrance (+1 for the closed sign, type flag 0x1000) */
-    uint8_t firstDrawMesh;     /* +0x152 businesses: first mesh of the other parts, plus their variant */
+    uint8_t builtMesh;         /* +0x151 the finished building's mesh (businesses and ports: in the business model, +1 for the
+                                  closed sign with type flag 0x1000); offices and housing take their parts' meshes from it on */
+    uint8_t stageMesh;         /* +0x152 while being built: the first construction mesh (city parts model), plus the stage
+                                  (variant >> 3) */
     uint8_t unk_153;
     int8_t callFlags;          /* +0x154 bit 7: families of this type phone when introduced (mm_Person_TickCounters) */
     uint8_t unk_155[3];
-    uint8_t entranceMesh;      /* +0x158 collision mesh of an entrance object (flag 0x20) */
-    uint8_t firstMesh;         /* +0x159 first collision mesh of the other objects, plus their variant */
+    uint8_t builtCollision;    /* +0x158 collision mesh of a built object (flag 0x20) */
+    uint8_t stageCollision;    /* +0x159 while being built: the first collision mesh, plus the stage (variant >> 3) */
     uint8_t unk_15A[2];
     BuildingTypeVtable *vtable; /* +0x15C */
 };
@@ -461,7 +466,7 @@ struct TalkView {
     Frame *cursorFrame;        /* +0x98 */
     A3DObject *awayModel;      /* +0x9C the first CHAROBJ.A3D model (0x1F3B40), drawn for someone away */
     A3DObject *personModel;    /* +0xA0 the talk person model (0x1F3B7C), under classes with flag 2 */
-    float zoom;                /* +0xA4 */
+    float rowX;                /* +0xA4 the people row's x (-0.3 at the start), scrolled 0.03 a frame */
     float idleTime;            /* +0xA8 counts frames, wraps at 180 */
     int32_t scrollMode;        /* +0xAC 1 zoom, 2 scroll */
     int32_t scrollDir;         /* +0xB0 */
