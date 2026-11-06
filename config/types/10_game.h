@@ -88,11 +88,15 @@ struct TerrainEntry {
 
 /* Map tile (0x18 bytes): 128 x 128 of them at CityMap +0x04. */
 struct MapTile {
-    float height;              /* +0x00 terrain height (loaded with lwc1, mm_Map_GetTileHeightWord) */
+    float height;              /* +0x00 terrain height, growing downwards (y points down): 0 ground level, above 0 lowered
+                                  (the water's basins, the surface at waterLevel 0.5), below 0 raised (hills);
+                                  loaded with lwc1 (mm_Map_GetTileHeightWord) */
     float verts[4];            /* +0x04 corner heights towards (-x,-z), (+x,-z), (+x,+z), (-x,+z) (mm_Map_UpdateTileGeometry) */
     uint16_t firstObject;      /* +0x14 0x3F80 = none */
-    uint16_t flags;            /* +0x16 1 an object's corner tile, 2 and 4 the tile kind (mm_Map_GetTileKind), 8 under a
-                                  building type with flag 1, 0x10 walkable (under a type with flag 2) */
+    uint16_t flags;            /* +0x16 1 an object's corner tile, 2 and 4 the tile kind (mm_Map_GetTileKind), 8 leveled
+                                  ground (under a type with flag 1: leveled land or a building on it), 0x10 walkable (under
+                                  a type with flag 2, the road), 0x20 the sea (lowered by a type 7 terrain cell, kept under
+                                  objects: layer B's sand bottom instead of a lake's rock, ambience 0x1C instead of 0x1D) */
 };
 
 /* Placed object (0x1C bytes): building, road, field ..., at CityMap +0x08. */
@@ -100,8 +104,10 @@ struct MapObject {
     uint16_t type;             /* +0x00 building type index (table at gp 0x1BDBF8) */
     uint16_t id;               /* +0x02 own index */
     uint16_t tile;             /* +0x04 x = low 7 bits, z = bits 7 and up */
-    uint16_t flags;            /* +0x06 1 highlight, 8 claim met, 0x20 built (mm_Bldg_Tick), 0x40 meter maxed, 0x100 newly
-                                  built (until 6:00 to 7:00 the next morning), 0x200 event */
+    uint16_t flags;            /* +0x06 1 highlight, 2 need partly met (a need claim moved off its start value; it met the
+                                  claim once, mm_BldgClaims_CheckMet), 8 claim met, 0x10 lit (set by its draw after dark: a
+                                  road's street lamps, a business while open), 0x20 built (mm_Bldg_Tick), 0x40 meter
+                                  maxed, 0x100 newly built (until 6:00 to 7:00 the next morning), 0x200 event */
     uint16_t firstPerson;      /* +0x08 6000 = none */
     uint16_t nextOnTile;       /* +0x0A next object on the same tile */
     uint16_t family;           /* +0x0C family living here */
@@ -246,7 +252,7 @@ struct CityMap {
                                   CALLed once per pass after the pass's own packet */
     uint32_t groundPacket;     /* +0x2F68 the program 0x1A5EB0 and groundParams */
     uint32_t sidePackets[2];   /* +0x2F6C per side buffer: the program 0x1A76F0, the parameters and the triangles. The game stores the
-                                  first's address in both (mm_Terrain_BuildVu1PacketA), so odd frames draw the even frame's buffer */
+                                  first's address in both (mm_Terrain_BuildSidePackets), so odd frames draw the even frame's buffer */
     RainLayer *rain;              /* +0x2F74 */
     SnowLayer *snow;              /* +0x2F78 */
     LayerF *layerF;            /* +0x2F7C */
@@ -308,8 +314,12 @@ struct BuildingType {
     uint8_t groupSpots[4];     /* +0x130 spots for each group of people, taken in turn: its workers, others, and the same two of
                                   class flag 1 (record +0x98; any of them sets flag 0x800, mm_Bldg_DrawPeople) */
     uint16_t kind;             /* +0x134 */
-    uint16_t flags;            /* +0x136 8 families move in (offices, businesses, ports, housing), 0x10 talk camera 2.5 lower,
-                                  0x20 an entrance, 0x40 people inside, 0x80 a field, 0x100,
+    uint16_t flags;            /* +0x136 1 leveled ground (leveled land and the buildings on it: tile flag 8, no
+                                  bottom layer B), 2 walkable (the road: tile flag 0x10), 8 families move in (offices,
+                                  businesses, ports, housing), 0x10 a port (the 22 port types: only on lowered ground;
+                                  drawn, collided and talked to 2.5 higher, at ground level over its dug block), 0x20 an
+                                  entrance, 0x40 people inside, 0x80 a field, 0x100 (only the talk scripts test it,
+                                  mm_WordsFn_HomeTypeFlag100),
                                   0x200 its people may fall ill (mm_Person_Update), 0x4000 own talk eye (talkEye) */
     uint16_t maxStack;         /* +0x138 objects of the type one tile holds (mm_Placement_CheckTypeRule); the top one of a full stack
                                   is drawn with flag 3 (mm_CityRender_CollectObjects) */
@@ -497,8 +507,8 @@ struct TalkView {
 /* The near and far views of a person (allocated 0x290 and 0x2A0 bytes): the talk view plus the camera. */
 struct TalkPersonView {
     TalkView base;
-    Vec4 eye;                  /* +0x270 behind the person, 1.3 along the view direction from 0.55 under the person */
-    Vec4 target;               /* +0x280 the person, 0.9 under the position */
+    Vec4 eye;                  /* +0x270 behind the person, 1.3 along the view direction from 0.55 above the person */
+    Vec4 target;               /* +0x280 the person, 0.45 above its position */
     float facing;              /* +0x290 atan2 of the view direction (x, z) */
 };
 
@@ -751,7 +761,8 @@ struct CityScene {
     int32_t conduct;           /* +0xA8 the same for traits bits 12-14; the low tier gates the crime events (stalker crime,
                                   bad cops and teachers) */
     int32_t conductCount;      /* +0xAC */
-    float waterLevel;          /* +0xB0 height of the water surface (mm_LayerG_Draw, mm_Se_PickTerrainAmbience) */
+    float waterLevel;          /* +0xB0 height of the water surface, 0.5 (heights grow downwards: deeper tiles are under
+                                  water; mm_LayerG_Draw, mm_Se_PickTerrainAmbience) */
     uint32_t flags;            /* +0xB4 1 buildings tinted by claim (set at construction), 2 holiday month, 4 popular
                                   (approval 118+), 8 a farewell party is on, 0x10 the city scene ends, 0x20 a cold going
                                   round: rolled each month from October to March (1 in 4), more people fall ill

@@ -2826,10 +2826,10 @@ namespace mm
     // ---- starting the name entry (batch 39)
 
     // Opens the name entry: the keyboard set (`mode`, the text pointer table at 0x1B13E0), the name length (up to 24,
-    // maxLength) with the name cleared or taken from `text`, the scrolling hint (`hint`, else empty; scrolled when longer than
-    // 10 characters), the cursor at the end of the name, the state (3 when `a3` is 0, else 1) with the board model
-    // placed (the y of its matrix, 0.3 higher in state 3), the keyboard text from its first line (6 characters a line) and the
-    // arrows for more lines above and below (moreAbove, moreBelow).
+    // maxLength) with the name cleared or taken from `text`, the scrolling hint (`hint`, else empty; scrolled when
+    // longer than 10 characters), the cursor at the end of the name, the state (3 when `a3` is 0, else 1) with the
+    // board model placed (the y of its matrix, 0.3 lower in state 3), the keyboard text from its first line (6
+    // characters a line) and the arrows for more lines above and below (moreAbove, moreBelow).
     void NameEntry_Setup(GuestPtr<NameEntry> entry, uint32_t mode, uint8_t maxLength, int a3, int hint, GuestPtr<char> text)
     {
         const auto empty = [] { return GuestPtr<char>{0x001B7F90u}; };
@@ -5133,14 +5133,16 @@ namespace mm
 
     PORT_FN(Laptop_Update);
 
-    // The info window of the city cursor: the view for this frame's parity (0x1BDCD0 & 1) has its five line frames reset to style 0
-    // and the lines refilled from what the cursor points at (target, 0xFFFF for nothing; a building when targetIsPerson is 0,
-    // otherwise a person). A building lists the families of all the objects on its tile, starting with the pointed one (the chain of the
-    // objects' nextOnTile, ended by 0x3F80): the family name (a family not in the cache gets the text at 0x1B5ED8) and a frame style 9 plus the
-    // best friendship band of its members. A person gives one line, "name" over "phone" from the formats at 0x1B5EE0, with the
-    // frame style of its band. The window's own frame is style 0x32 with no line, 0x35 when the player is in mode 3, else 0x34. The
-    // anchor is the pointed place (a building's centre, a person's feet) with its height from the terrain, 0.6 below it for
-    // anything pointed at, and the window is laid out next to its projection (mm_CityCursor_LayoutInfo).
+    // The info window of the city cursor: the view for this frame's parity (0x1BDCD0 & 1) has its five line frames
+    // reset to style 0 and the lines refilled from what the cursor points at (target, 0xFFFF for nothing; a building
+    // when targetIsPerson is 0, otherwise a person). A building lists the families of all the objects on its tile,
+    // starting with the pointed one (the chain of the objects' nextOnTile, ended by 0x3F80): the family name (a family
+    // not in the cache gets the text at 0x1B5ED8) and a frame style 9 plus the best friendship band of its members. A
+    // person gives one line, "name" over "phone" from the formats at 0x1B5EE0, with the frame style of its band. The
+    // window's own frame is style 0x32 with no line, 0x35 when the player is in mode 3, else 0x34. The anchor is the
+    // pointed place (a building's centre, a person's feet) with its height from the terrain, 0.6 above it for anything
+    // pointed at (heights grow downwards), and the window is laid out next to its projection
+    // (mm_CityCursor_LayoutInfo).
     void CityCursor_UpdateInfo(GuestPtr<CityCursor> cursor, GuestPtr<CityScene> city)
     {
         port::GuestFrame<0xF0> frame;

@@ -32,8 +32,9 @@ namespace mm
         }
     }
 
-    // The home's floor under the viewer: the segment from 0.51 above the position down to it against the interior's
-    // floor triangles; of the crossings the lowest y wins and is stored in *hit. 1 when there was one.
+    // The home's floor under the viewer: the segment from 0.51 below the position up to it (heights grow downwards)
+    // against the interior's floor triangles; of the crossings the highest (smallest y) wins and is stored in *hit. 1
+    // when there was one.
     int MyHome_FloorHit(GuestPtr<TalkView> talkView, GuestPtr<Vec4> matrix, GuestPtr<uint32_t> hit)
     {
         port::GuestFrame<0xF0> frame;
@@ -51,7 +52,7 @@ namespace mm
             vu0::applyMatrix(matrix, GuestPtr<Vec4>{triangle}, GuestPtr<Vec4>{sp + 0xA0u});
             vu0::applyMatrix(matrix, GuestPtr<Vec4>{triangle + 0x10u}, GuestPtr<Vec4>{sp + 0xB0u});
             vu0::applyMatrix(matrix, GuestPtr<Vec4>{triangle + 0x20u}, GuestPtr<Vec4>{sp + 0xC0u});
-            if (Collide_SegmentTriangle(GuestPtr<Vec4>{sp + 0xD0u}, GuestPtr<Vec4>{view.address + 0x270u}, GuestPtr<Vec4>{sp + 0xA0u},
+            if (Collide_SegmentTriangle(GuestPtr<Vec4>{sp + 0xD0u}, view.field(&MyHomeView::position), GuestPtr<Vec4>{sp + 0xA0u},
                                      GuestPtr<Vec4>{sp + 0xB0u}, GuestPtr<Vec4>{sp + 0xC0u}, GuestPtr<Vec4>{sp + 0xE0u}) != 0)
             {
                 const ps2f y(port::load<float>(sp + 0xE4u));
@@ -84,7 +85,7 @@ namespace mm
             vu0::applyMatrix(matrix, GuestPtr<Vec4>{triangle}, GuestPtr<Vec4>{sp + 0xA0u});
             vu0::applyMatrix(matrix, GuestPtr<Vec4>{triangle + 0x10u}, GuestPtr<Vec4>{sp + 0xB0u});
             vu0::applyMatrix(matrix, GuestPtr<Vec4>{triangle + 0x20u}, GuestPtr<Vec4>{sp + 0xC0u});
-            if (Collide_NormalRayTriangle(GuestPtr<Vec4>{view.address + 0x270u}, GuestPtr<Vec4>{sp + 0xA0u}, GuestPtr<Vec4>{sp + 0xB0u},
+            if (Collide_NormalRayTriangle(view.field(&MyHomeView::position), GuestPtr<Vec4>{sp + 0xA0u}, GuestPtr<Vec4>{sp + 0xB0u},
                                      GuestPtr<Vec4>{sp + 0xC0u}, GuestPtr<Vec4>{sp + 0xD0u}, GuestPtr<ps2f>{sp + 0xECu}, F(0x3E4CCCCDu)) != 0)
             {
                 const ps2f found(port::load<float>(sp + 0xECu));
@@ -146,7 +147,7 @@ namespace mm
     // Walking with the pad: Triangle forwards and Cross backwards (0.04 a frame along z), Circle and Square turn by
     // 0.02 (wrapping at plus and minus pi), the two bumpers tilt the view (limits -0.05 and 0.1), the other pad bits
     // step sideways by 0.04. The move is turned by the facing and added to the position, the walls and floor push
-    // back, the position may not rise above the floor 0.5 below the building, and the camera looks from the position
+    // back, the position stays at least 0.5 above the building's base, and the camera looks from the position
     // at the point 0.1 ahead. A home that is not walkable (flag 0x20 of its object clear) just keeps its camera.
     void MyHome_Active(GuestPtr<TalkView> talkView)
     {
@@ -260,10 +261,10 @@ namespace mm
         return talkView;
     }
 
-    // The near and far views of a person share everything but the vtable: the person's height is set from the terrain (it is
-    // written back into the person), the target is the person 0.9 under its position, the eye starts 0.55 under it
-    // and moves 1.3 along the flat view direction (the view's own eye to target, normalised), and may not rise above
-    // the terrain minus 0.5; the facing is that direction's angle.
+    // The near and far views of a person share everything but the vtable: the person's height is set from the terrain
+    // (it is written back into the person), the target is 0.45 above the person's position, the eye starts 0.55 above
+    // it and moves 1.3 along the flat view direction (the view's own eye to target, normalised), and stays at least 0.5
+    // above the terrain (heights grow downwards); the facing is that direction's angle.
     namespace
     {
         GuestPtr<TalkView> personViewCtor(GuestPtr<TalkView> talkView, GuestPtr<CityScene> city, int person, uint32_t vtable)

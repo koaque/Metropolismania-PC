@@ -96,26 +96,26 @@ namespace mm
         Instance_DrawModelLit(player->model, player.field(&Player::colour), player->mode, city->bag->outfit);
     }
 
-    // char: the player's animation from its movement and the pad. Standing still: 1 when at least 0.4
-    // above the water level, else 2 while approval is below 0, else 0. Moving, by direction (pad bits
-    // or the player's step code): 0x400000, 0x4000 or code 2 gives 5; 0x800000 or code 5 gives 7; 0x200000
-    // or code 6 gives 6; 0x100000, 0x1000 or code 1 gives 4; plus 8 while walking (mode 1) with pad 0x40 held,
-    // else plus 4 when at least 0.4 above the level. A changed animation restarts at frame 0 (animTime); frames
-    // advance by 1 and wrap to 0, or to a fifth of the length (mm_A3D_GetAnimLength) for animations 4 and up.
-    // Walking with pad 0x40 held while moving plays sound 5.
+    // char: the player's animation from its movement and the pad. Standing still: 1 when at least 0.4 under the water
+    // surface (heights grow downwards), else 2 while approval is below 0, else 0. Moving, by direction (pad bits or the
+    // player's step code): 0x400000, 0x4000 or code 2 gives 5; 0x800000 or code 5 gives 7; 0x200000 or code 6 gives 6;
+    // 0x100000, 0x1000 or code 1 gives 4; plus 8 while walking (mode 1) with pad 0x40 held, else plus 4 when at least
+    // 0.4 under the surface. A changed animation restarts at frame 0 (animTime); frames advance by 1 and wrap to 0, or
+    // to a fifth of the length (mm_A3D_GetAnimLength) for animations 4 and up. Walking with pad 0x40 held while moving
+    // plays sound 5.
     void Player_UpdateAction(GuestPtr<Player> player, GuestPtr<Vec4> move, GuestPtr<CityScene> city)
     {
-        const bool high = !(player->position.y < ps2f(0.4f) + city->waterLevel);
+        const bool deep = !(player->position.y < ps2f(0.4f) + city->waterLevel);
         const auto still = [&] { return move->x == ps2f(0.0f) && move->z == ps2f(0.0f); };
         int anim = 0;
         if (still())
-            anim = high ? 1 : (city->approval < 0 ? 2 : 0);
+            anim = deep ? 1 : (city->approval < 0 ? 2 : 0);
         else
         {
             const auto pick = [&](int base) {
                 if (player->mode == 1 && (Pad_Held(0) & 0x40u) != 0)
                     return base + 8;
-                return high ? base + 4 : base;
+                return deep ? base + 4 : base;
             };
             if ((Pad_Held(0) & 0x400000u) != 0 || (Pad_Held(0) & 0x4000u) != 0 || player->step == 2)
                 anim = pick(5);
@@ -141,9 +141,10 @@ namespace mm
     }
 
     // char: the player's footsteps (mm_Se_PlayVariant), on frames 10 and 30 of animations 4-7 and frame 10 of
-    // animations 8-11 (3), and only on the ground (jump speed 0..0.01). For 4-7, at or above the water level
-    // gives 4; below it the object on the tile decides: a road (type 4) or a type with flag 0x40 gives 0, type 2
-    // (wasteland) with weeds (look[4], read as entranceTile's low byte) at 1..9 gives 2, anything else 1. In snow (weather 3) from 3:00 to 23:00, 0 becomes 1.
+    // animations 8-11 (3), and only on the ground (jump speed 0..0.01). For 4-7, in the water (at or under the water
+    // level) gives 4; on dry ground the object on the tile decides: a road (type 4) or a type with flag 0x40 gives 0,
+    // type 2 (wasteland) with weeds (look[4], read as entranceTile's low byte) at 1..9 gives 2, anything else 1. In
+    // snow (weather 3) from 3:00 to 23:00, 0 becomes 1.
     void Player_PlayFootstep(GuestPtr<Player> player, GuestPtr<CityScene> city)
     {
         const int anim = player->animation;
@@ -730,19 +731,19 @@ namespace mm
             p[i] = words[i];
     }
 
-    // The city camera each frame (heights grow downwards). The projection is reset, then the pad steps the
-    // zoom level: L1 or R1 out to 3, L2 or R2 in to 0. Each level has an eye offset in the player's frame, from
-    // the clear weather table or the other one, blended over the last two hours of a day before bad weather
-    // and the first two after it. At levels 2 and 3 the offset shortens while the player is below 0, down to
-    // level 3's. The wanted eye stays no higher than level 3's height and at least 0.6 above the ground, and
-    // the camera's eye moves towards it by at most 0.8 a frame (0.1 in mode 13): height first, rising 1.5
-    // times as fast, while sinking lets the sideways step grow by 1.3. Level 0 holds the eye 0.5 above the
-    // player. The target is 0.7 above the player at levels 2 and 3; at 0 and 1 it is 2 ahead of the player
-    // (level 1 at that point's height), eased a fifth of the way a frame to 0.7 above the ground there (level
-    // 0: two thirds of the eye's height less 0.5, if that is higher, and at once while the player jumps), and
-    // at least 0.2 above zero. The fog's far distance is interpolated by the eye's height between the levels'
-    // heights, its near distance 3 closer, and 14 more in bad weather (ramped over the same two hours). The
-    // original's frame is reserved whole: the level table sits at sp + 0xF0 and the fog search reads past it.
+    // The city camera each frame (heights grow downwards). The projection is reset, then the pad steps the zoom level:
+    // L1 or R1 out to 3, L2 or R2 in to 0. Each level has an eye offset in the player's frame, from the clear weather
+    // table or the other one, blended over the last two hours of a day before bad weather and the first two after it.
+    // At levels 2 and 3 the offset shortens while the player stands above ground level (y below 0), down to level 3's.
+    // The wanted eye stays no higher than level 3's height and at least 0.6 above the ground, and the camera's eye
+    // moves towards it by at most 0.8 a frame (0.1 in mode 13): height first, rising 1.5 times as fast, while sinking
+    // lets the sideways step grow by 1.3. Level 0 holds the eye 0.5 above the player. The target is 0.7 above the
+    // player at levels 2 and 3; at 0 and 1 it is 2 ahead of the player (level 1 at that point's height), eased a fifth
+    // of the way a frame to 0.7 above the ground there (level 0: two thirds of the eye's height less 0.5, if that is
+    // higher, and at once while the player jumps), and at least 0.2 above zero. The fog's far distance is interpolated
+    // by the eye's height between the levels' heights, its near distance 3 closer, and 14 more in bad weather (ramped
+    // over the same two hours). The original's frame is reserved whole: the level table sits at sp + 0xF0 and the fog
+    // search reads past it.
     void CityCamera_Update(GuestPtr<CityCamera> camera, GuestPtr<CityScene> city)
     {
         using namespace vu0;
@@ -4726,19 +4727,21 @@ namespace mm
 
     PORT_FN(Char2_Update);
 
-    // The player for one frame. The move speed follows the stamina object's counter (the count over 100000 over 140, plus 0.04;
-    // 0.02 with none). The tile the player stands on (64 added to x, and to minus z as the row) is found, then the move vector
-    // (sp+0x80, zero to start) is made by the mode: 0 and 3 turn and show the placing highlight, 1 walks (Cross held lays a road on
-    // the tile) and shows it, 2 turns and places a family, 4 only turns, 5 turns and places a bag item (3 and 0 also pick the
-    // target). Moving, or rising, uses stamina. The vector is turned by the heading (the model's matrix) and added to the
-    // position; Triangle or the two shoulder buttons jump (the speed -0.25 when not already rising fast, two jumps at most); gravity
-    // then speeds the fall (the time in the air over 60, 9.8 and 0.01) and moves the height. The new spot (0.15 lower) is checked
-    // against the nearest object (radius 0.05 over the speed, at least 0.2): in the walk mode a hit flips the grid step and mirrors
-    // the step frames (2 over the speed minus them), in the other modes the player is pushed out along the unit direction to the hit; a
-    // second hit puts x and z back. The height of the ground (at most 0.4 over the city's water level, or the colliding object's top)
-    // then lands a fall (speed 0), settles a standing player (eased by a fifth when far above, snapped when close) or ends a jump; the
-    // model's matrix follows, the building occupant of the tile is drawn, the action, footstep and visibility (by the zoom) are
-    // updated, the cursor is shown in the modes 0 and 3, the minimap view is set and the pad focus 3 is let go of unless Cross is held.
+    // The player for one frame. The move speed follows the stamina object's counter (the count over 100000 over 140,
+    // plus 0.04; 0.02 with none). The tile the player stands on (64 added to x, and to minus z as the row) is found,
+    // then the move vector (sp+0x80, zero to start) is made by the mode: 0 and 3 turn and show the placing highlight, 1
+    // walks (Cross held lays a road on the tile) and shows it, 2 turns and places a family, 4 only turns, 5 turns and
+    // places a bag item (3 and 0 also pick the target). Moving, or rising, uses stamina. The vector is turned by the
+    // heading (the model's matrix) and added to the position; Triangle or the two shoulder buttons jump (the speed
+    // -0.25 when not already rising fast, two jumps at most); gravity then speeds the fall (the time in the air over
+    // 60, 9.8 and 0.01) and moves the height. The new spot (0.15 higher) is checked against the nearest object (radius
+    // 0.05 over the speed, at least 0.2): in the walk mode a hit flips the grid step and mirrors the step frames (2
+    // over the speed minus them), in the other modes the player is pushed out along the unit direction to the hit; a
+    // second hit puts x and z back. The height of the ground (at most 0.4 over the city's water level, or the colliding
+    // object's top) then lands a fall (speed 0), settles a standing player (eased by a fifth when far above, snapped
+    // when close) or ends a jump; the model's matrix follows, the building occupant of the tile is drawn, the action,
+    // footstep and visibility (by the zoom) are updated, the cursor is shown in the modes 0 and 3, the minimap view is
+    // set and the pad focus 3 is let go of unless Cross is held.
     void Player_Update(GuestPtr<Player> player, GuestPtr<CityScene> city)
     {
         port::GuestFrame<0xE0> frame;

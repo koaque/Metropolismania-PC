@@ -981,16 +981,16 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0013F5D0,mm_Map_ClearArea,264,game,map,verified,indirect,1,0,removes objects from each tile of a size x size square (the map's ClearObject slot) until wasteland (type 2) comes first
 0x0013F6E0,mm_Map_PlaceObject,376,game,map,verified,indirect,7,7,"places an object of type a2 at (a3, a4) after the placement check (new or stacked), updates geometry; returns its index or 0x3F80"
 0x0013F860,mm_Map_CanPlace,40,game,map,verified,no,4,1,placement test without placing (mm_Map_CheckPlacement)
-0x0013F890,mm_TerrainGen_SampleSmooth,444,game,map,verified,no,1,0,"terrain generation: how far, in tiles, the nearest land (a tile above height 0) lies from tile (x, z) along the four axes, up to 15 (100 when there is none; the distance counts the steps all four directions were clear for)"
-0x0013FA50,mm_TerrainGen_Smooth,796,game,map,verified,no,1,2,"terrain generation: pulls the tiles within `radius` of tile (x, z)'s centre (the tiles in a window `reach` + 4 wide) down towards the sea: a tile with land `s` steps away (SampleSmooth, above 0) takes strength * (radius - distance) / radius, no lower than -0.022 * s * s and than `floor`, when that is below its height. Distances on VU0, as the scatter"
-0x0013FD80,mm_TerrainGen_Hills,1800,game,map,verified,no,1,2,"terrain generation: a hill on the 16-tile block (cx, cz): a bump of height 5 and reach 9 at its middle, then a ring of radius 7 walked as a midpoint circle (x from 7 down, y from 0 up) with a size-and-position-jittered bump (mode 2) on each of the eight mirror points of every step. The jitter is up to 2 tiles either way and the size wobbles by up to 5 (the first bump of a step) or 3 (the rest)"
+0x0013F890,mm_TerrainGen_StepsToWater,444,game,map,verified,no,1,0,"terrain generation: the steps along the four axes from tile (x, z) to the nearest lowered tile (height above 0, below ground level: the water's basins), up to 15; 100 when there is none"
+0x0013FA50,mm_TerrainGen_Hill,796,game,map,verified,no,1,2,"terrain generation: raises the land within `radius` of tile (x, z)'s centre into a hill (heights grow downwards, so higher is smaller): a tile `s` steps from the water (mm_TerrainGen_StepsToWater, above 0; water is left alone) takes strength * (radius - distance) / radius, but rises no higher than 0.022 * s * s (sloping down to the shore) and than `top`, where that is higher than the tile stands. Distances on VU0"
+0x0013FD80,mm_TerrainGen_Basin,1800,game,map,verified,no,1,2,"terrain generation: a basin, the sea or a lake, on the 16-tile block (cx, cz) (heights grow downwards, so its bumps dig): a bump of depth 5 and reach 9 at its middle, then a ring of radius 7 walked as a midpoint circle (x from 7 down, y from 0 up) with a size-and-position-jittered bump (mode 2, the deeper) on each of the eight mirror points of every step. The jitter is up to 2 tiles either way and the size wobbles by up to 5 (the first bump of a step) or 3 (the rest); `sea` sets tile flag 0x20 on the tiles the bumps lower below ground level"
 0x00140490,mm_TerrainGen_River,1732,game,map,verified,no,1,10,"terrain generation: one river. It starts on the map's edge at a point set by `start` and walks in steps. Each step moves the position by (0, 0, 1.5 + width) turned by two Y rotations, one swaying with sin(phase) and one turning with cos(heading), and drops a mode 3 bump of reach 1.5 + width + |cos(phase)| (and 1.4 times that for height, at least 3.2) at the tile the position falls on"
-0x00140B60,mm_TerrainGen_Generate,1180,game,map,verified,no,1,7,"terrain generation: builds the whole map from a 10 x 10 grid of cells (16 tiles each) behind a 4-byte river header (`params`). A cell byte holds the terrain type in bits 0..2 (6 and 7: hills, 7 the high kind; 1 to 4: smoothed towards the sea) and a plant style in bits 4..6"
+0x00140B60,mm_TerrainGen_Generate,1180,game,map,verified,no,1,7,"terrain generation: builds the whole map from a 10 x 10 grid of cells (16 tiles each) behind a 4-byte river header (`params`). A cell byte holds the terrain type in bits 0..2 (1 to 4: hills of four heights, mm_TerrainGen_Hill; 6 a lake and 7 the sea, mm_TerrainGen_Basin) and a plant style in bits 4..6"
 0x00141010,mm_CityMap_DeletingDtor,96,game,map,verified,yes,1,2,"vtable 0x1BCED0, then the render-level destructor"
 0x00141070,mm_CityMap_ctor,52,game,map,ported,yes,1,1,"render-level constructor, vtable 0x1BCED0"
-0x001410B0,mm_Map_TileFlag20,92,game,map,verified,no,1,0,"tile (a1, a2) flag 0x20 (0 off the map)"
+0x001410B0,mm_Map_TileIsSea,92,game,map,verified,no,1,0,"whether tile (a1, a2) belongs to the sea (tile flag 0x20: lowered by a type 7 terrain cell, mm_TerrainGen_Basin; layer B draws its bed with GROUND.TEX's sand, part 17, where a lake gets rock, part 24; ambience 0x1C instead of 0x1D); 0 off the map"
 0x00141110,mm_Map_TileIsCorner,92,game,map,verified,no,1,0,"tile flag 1: the corner tile an object was placed from (mm_Map_PlaceObject), 0 off the map"
-0x00141170,mm_Map_TileFlag08,92,game,map,verified,no,1,0,tile flag 0x08
+0x00141170,mm_Map_TileIsLeveled,92,game,map,verified,no,1,0,"whether tile (a1, a2) is leveled ground (tile flag 8: leveled land or anything standing on it, a type with flag 1); 0 off the map"
 0x001411D0,mm_Map_TileWalkable,92,game,map,verified,no,6,0,"tile flag 0x10 (set under building types with flag 2), 0 off the map; checked by movement"
 0x00141230,mm_Map_TileIndexWalkable,56,game,map,verified,no,12,0,"tile flag 0x10 of tile index a1, 0 off the map"
 0x00141270,mm_Map_SetTileKind,100,game,map,verified,no,2,0,tile kind a2 (0..3) into tile flags 4 and 2
@@ -1023,7 +1023,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00143380,mm_MapPeople_Tick,408,game,map,verified,indirect,0,3,"people level slot +8: ticks each person's class with time flags (1 every 600 s, 2 hourly, 4 daily, 8 yearly), member status, then the object level"
 0x00143520,mm_MapPeople_dtor,132,game,map,verified,yes,1,3,"vtable 0x1BCEE0, frees the people array, object-level destructor"
 0x001435B0,mm_MapPeople_ctor,124,game,map,ported,yes,1,3,"object-level constructor, vtable 0x1BCEE0, 6000 people of 0x30 bytes"
-0x00143690,mm_MapObj_GetHeight,192,game,map,verified,no,4,1,height of object a1: its tile's height minus 0.8 for each object stacked below it
+0x00143690,mm_MapObj_GetHeight,192,game,map,verified,no,4,1,height of object a1: its tile's height less 0.8 (0.8 higher) for each object stacked under it
 0x00143750,mm_CityMap_PushNewBuildings,52,game,map,verified,no,1,1,"new month: the six monthly counts of new buildings for families (newBuildings, type flag 8) move on by one, this month's starting at 0"
 0x00143790,mm_CityMap_SumNewBuildings,56,game,map,verified,no,1,0,the new buildings for families in the last six months (the sum of newBuildings)
 0x001437D0,mm_MapObj_RayHit,500,game,map,verified,indirect,1,1,whether the type of the first object on a tile reports a ray hit (rayHit slot) with the object's matrix: building matrix of its terrain kind (0x1B2590) at the footprint middle
@@ -1041,8 +1041,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001446E0,mm_Map_RemoveObjectFromTile,132,game,map,verified,no,1,0,unlinks object a2 from tile a1's object list
 0x00144770,mm_Map_AppendObjectToTile,76,game,map,verified,no,1,0,links object a2 at the end of tile a1's object list
 0x001447C0,mm_Map_CreateObject,908,game,map,verified,no,4,2,"places a new `type` object for `owner` at (x, z): the next free object record (the search wraps from 0x3F80 to 1 and gives record 0 after 0x3F81 tries) is filled (MapObj_Init) and covers the size x size block. Each tile's old object is deleted, the tile points at the new one, keeps only flag 0x20 and gains 8 (type flag 1) or 0x10 (type flag 2)"
-0x00144B60,mm_Placement_CheckSlope,328,game,map,verified,no,1,1,"(map, x, z, size): whether any tile just beyond a side of the footprint lies lower than 0.5"
-0x00144CB0,mm_Map_CheckPlacement,760,game,map,verified,indirect,2,5,"1 when type a1 can stand at (a2, a3), 2 when its type rule forbids the tile, else 0: footprint on the map, neighbours, every footprint object of another unlocked flag-4 type that the type accepts (acceptsOn slot), raised ground needing lower ground beside it"
+0x00144B60,mm_Placement_LandBeside,328,game,map,verified,no,1,1,"(map, x, z, size): whether dry ground (less than 0.5 deep, above the water: heights grow downwards) lies just beyond a side of the footprint"
+0x00144CB0,mm_Map_CheckPlacement,760,game,map,verified,indirect,2,5,"1 when type a1 can stand at (a2, a3), 2 when its type rule forbids the tile, else 0: footprint on the map, neighbours, every footprint object of another unlocked flag-4 type that the type accepts (acceptsOn slot), ground under the water needing dry ground beside it"
 0x00144FB0,mm_Placement_CheckNeighbours,504,game,map,verified,no,1,0,"before placing over the size x size block at (x, z): the box around every object standing there (box = min x, min z, max x, max z, widened by two tiles within the map) and whether the cells those objects cover stay below the free object records plus the objects found"
 0x001451B0,mm_Placement_CheckTypeRule,244,game,map,verified,no,1,0,"placement rule (the type's rule) for stacking: the tile's top object must be built (0x20), not highlighted (1), of a type with the same rule, and the stack below the type's limit - 1"
 0x001452B0,mm_MapObj_Delete,300,game,map,verified,no,2,2,"removes object a1 from its claim lists, clears its type and lowers the counters: objectCount, the category's categoryCount (category 4 only without type flag 0x80) and bigCategory5Count for a category 5 type of size 3 or more"
@@ -1057,8 +1057,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00145CE0,mm_Terrain_BuildStrip,2592,game,map,verified,no,1,0,"the cliff sides of terrain tile (x, z): towards each neighbour whose facing corners stand higher, up to two triangles into the side buffer (sideWrite, 0x86E vertices)"
 0x00146700,mm_Terrain_DrawPatch,1064,game,map,verified,indirect,1,3,"one terrain tile's quad (mm_Terrain_AddQuad) with its draw flags (texture from the object type's groundTexture slot, above the level, above 0, building layer, flag 0x10), edge-flattened off the map; tiles with an object also get their cliff sides"
 0x00146B30,mm_Terrain_Draw,2424,game,map,verified,no,1,6,"terrain drawing: the city's terrain patches around the camera, one frame. `zoom` is the camera step; steps 0 and 1 read their projection and reach straight from the tables, the others blend between two table rows by the camera height (`variant` picks the far-distance and height tables)"
-0x001474C0,mm_Terrain_BuildVu1PacketA,1556,game,map,verified,no,1,0,"terrain packet A, the cliff sides (program 0x1A76F0): a header that uploads the side parameters, then the first side buffer in 20 chunks of 0x6C0 bytes (2 groups of 8, 4 singles) and a RET, the header again and the second buffer the same. The map keeps the start in both side packet slots (the second section's start is never kept). Returns the end"
-0x00147AE0,mm_Terrain_BuildVu1PacketB,1204,game,map,verified,no,1,0,"terrain packet B: the base ground pass (program 0x1A5EB0 and the ground parameters, ending in a RET), then for each terrain buffer the chunk packet that every pass CALLs: its quads in 24 chunks of 0x680 bytes (3 groups of 8, each chunk a REF, the UNPACK and an MSCNT) and a RET. Returns the end"
+0x001474C0,mm_Terrain_BuildSidePackets,1556,game,map,verified,no,1,0,"the cliff sides' packets (program 0x1A76F0): a header that uploads the side parameters, then the first side buffer in 20 chunks of 0x6C0 bytes (2 groups of 8, 4 singles) and a RET, the header again and the second buffer the same. The map keeps the start in both side packet slots (the second section's start is never kept). Returns the end"
+0x00147AE0,mm_Terrain_BuildGroundPackets,1204,game,map,verified,no,1,0,"the base ground pass (program 0x1A5EB0 and the ground parameters, ending in a RET), then for each terrain buffer the chunk packet that every pass CALLs: its quads in 24 chunks of 0x680 bytes (3 groups of 8, each chunk a REF, the UNPACK and an MSCNT) and a RET. Returns the end"
 0x00147FA0,mm_Terrain_InitParams,336,game,map,verified,no,1,0,"the cliff sides' parameters: triangles, their texture coordinates along s only"
 0x001480F0,mm_CityRender_InitParams,356,game,gfx,verified,no,1,0,"GS register defaults of the render level: the base ground pass (groundParams, mask 1) and the cliff sides (sideColour, sideTex0, the GIF tag and the texture coordinates)"
 0x00148260,mm_CityRender_UpdatePeople,568,game,gfx,verified,indirect,1,2,"every object in view that is not drawn yet this frame (flag 4 marks it) has its type's drawPeople slot called with the footprint's middle and the ground height, the tile kind, the city, the object, a flag word (0) and the detail level (2 when the camera distance + 1 is past the fog start, else 0)"
@@ -1113,7 +1113,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0014C620,mm_LightSet_UpdateByClock,508,game,gfx,verified,no,1,1,"interpolates the light colours over the day (2-hour segments, tables 0x1B0550/0x1B0670)"
 0x0014C820,mm_LightSet_DeletingDtor,84,game,gfx,verified,yes,2,2,"base destructor, then delete"
 0x0014C880,mm_LightSet_ctor,40,game,gfx,verified,no,2,1,mm_LightSet_Init
-0x0014C8B0,mm_Map_HeightScale,40,game,map,verified,no,2,0,a0 * 0.6 + 0.08
+0x0014C8B0,mm_Map_BottomHeight,40,game,map,verified,no,2,0,the drawn bottom's height over lowered ground: 0.6 * a0 + 0.08 (the copy layer B draws; people and goods there stand on it)
 0x0014C8E0,mm_LayerB_BuildPacket,372,game,gfx,verified,no,1,0,"layer B's packets: the first calls the chain at 0x1AA340, uploads the layer's parameters (19 quadwords) to VU1 0x1C, sets the VIF base and offset and starts the program; the second uploads the second pass's texture and mask to 0x1D and 0x2D and starts the program again"
 0x0014CA60,mm_LayerB_InitParams,428,game,gfx,verified,no,1,0,"layer B's two passes: the first over the quads with flag 0x20, the second (its own texture) over those with 0x40"
 0x0014CC10,mm_LayerB_Draw,76,game,gfx,verified,no,1,1,"layer B: its two passes (packets A and B), each followed by a call of the terrain chunk packet"
@@ -1123,7 +1123,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0014CD80,mm_PlacementLayer_Set,28,game,gfx,verified,no,1,0,"the placement highlight: its colour, its rectangle (x0, z0, x1, z1) and its mode (1 the highlight, 2 the marker)"
 0x0014CDA0,mm_PlacementLayer_BuildPacket,584,game,gfx,verified,no,1,0,packets of the placement highlight (microcode 0x1A7B30) and the marker (0x1A8330)
 0x0014CFF0,mm_PlacementLayer_InitParams,252,game,gfx,verified,no,1,0,"draw parameters of the placement highlight (two colours, the output offset, a GIF tag of 26 loops, the fill and outline PRIMs, mask 4) and of the marker"
-0x0014D0F0,mm_PlacementLayer_Draw,548,game,gfx,verified,no,1,6,"pass 0 (mode 1) the highlighted rectangle's three packets around the map's own; pass 1 (mode 2) the placement marker, node 0 of the marker model (node 1 for a size 3 building) at the middle of the footprint, below the tile and each object stacked on it"
+0x0014D0F0,mm_PlacementLayer_Draw,548,game,gfx,verified,no,1,6,"pass 0 (mode 1) the highlighted rectangle's three packets around the map's own; pass 1 (mode 2) the placement marker, node 0 of the marker model (node 1 for a size 3 building) at the middle of the footprint, 0.8 above the tile and each object stacked on it"
 0x0014D320,mm_PlacementLayer_DeletingDtor,84,game,gfx,verified,yes,1,2,"base destructor, then delete"
 0x0014D380,mm_PlacementLayer_ctor,88,game,gfx,verified,no,1,5,"base constructor, parameters, packet"
 0x0014D3E0,mm_RainLayer_BuildPacket,1216,game,gfx,verified,no,1,0,packets of the rain: the streaks (microcode 0x1A8A00) and the wet ground pass (0x1A8E20)
@@ -1335,7 +1335,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00162C50,mm_NameEntry_Draw,644,game,ui,verified,no,1,7,"draws the name entry (state; 0 draws nothing, 1 is typing, else only the board model): the typed name padded to its length (maxLength) with filler glyphs (0x1B8038), the character under the cursor (length) blinking between a space and '*' at the 16th frame of its 32-frame cycle (blink)"
 0x00162EE0,mm_NameEntry_Update,240,game,ui,verified,no,1,1,"states 3 and 4 slide the panel in (26 frames, then input) and out (to closed); state 1 takes input. Returns the state"
 0x00162FD0,mm_NameEntry_Close,48,game,ui,verified,no,1,0,"closes the name entry: unless it is closed already it slides out over 25 frames (state 4), or closes at once (state 0) when it does not slide"
-0x00163000,mm_NameEntry_Setup,912,game,ui,verified,no,1,5,"opens the name entry: the keyboard set (`mode`, the text pointer table at 0x1B13E0), the name length (up to 24, maxLength) with the name cleared or taken from `text`, the scrolling hint (`hint`, else empty; scrolled when longer than 10 characters), the cursor at the end of the name, the state (3 when `a3` is 0, else 1) with the board model placed (0.3 higher in state 3), the keyboard text from its first line (6 characters a line) and the arrows for more lines above and below (moreAbove, moreBelow)"
+0x00163000,mm_NameEntry_Setup,912,game,ui,verified,no,1,5,"opens the name entry: the keyboard set (`mode`, the text pointer table at 0x1B13E0), the name length (up to 24, maxLength) with the name cleared or taken from `text`, the scrolling hint (`hint`, else empty; scrolled when longer than 10 characters), the cursor at the end of the name, the state (3 when `a3` is 0, else 1) with the board model placed (0.3 lower in state 3), the keyboard text from its first line (6 characters a line) and the arrows for more lines above and below (moreAbove, moreBelow)"
 0x00163390,mm_NameEntry_dtor,184,game,ui,ported,yes,0,2,"the name entry's destructor: its four text boxes (hintText, keysText, nameText, lineText) deleted, then the object when asked"
 0x00163450,mm_NameEntry_CreateTexts,424,game,ui,verified,yes,1,5,"the four text boxes of the name entry window (hintText 16 by 1, keysText 3 by 4 with larger glyphs, nameText 12 by 1 and lineText 16 by 1, all at depth 0x10001000), and the model it shows: the shared model (0x1F3B6C, model), its matrix (boardMatrix) and the world matrix of its node 1 (markerMatrix), set to the one at 0x1B2550 moved to markerX, markerY and the board's z"
 0x00163600,mm_NameEntry_ctor,136,game,ui,verified,yes,1,1,"the name entry window: its texts, then the board placed at restHeight and z -4.4 (the marker takes the same z) and the place kept in boardPlace"
@@ -1398,7 +1398,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001674F0,mm_BldgPort_FloorBelow,84,game,city,verified,no,0,1,floorBelow slot
 0x00167550,mm_BldgPort_NearestHit,84,game,city,verified,no,0,1,nearestHit slot
 0x001675B0,mm_BldgPort_Draw,504,game,city,verified,no,0,3,draw slot
-0x001677B0,mm_BldgPort_Tick,236,game,city,verified,no,0,3,Building tick plus terrain height changes at the shore
+0x001677B0,mm_BldgPort_Tick,236,game,city,verified,no,0,3,building tick
 0x001678A0,mm_BldgPort_ctor,52,game,city,verified,yes,1,1,"Building constructor, vtable 0x1BD180"
 0x001678E0,mm_Bldg_IsOpen,72,game,city,verified,no,0,1,isOpen slot: opening hours for a building or its type
 0x00167930,mm_Bldg_RayHit,8,game,city,verified,no,0,0,the building class's rayHit slot: always a hit (1)
@@ -1441,20 +1441,20 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0016AA40,mm_BldgRoad_FindNeighbours,296,game,city,verified,no,1,2,"a road piece's links (one tile per direction, 0x4000 = none): for each direction its shape opens to (bit d), the first road block along it that is not straight road"
 0x0016AB70,mm_BldgRoad_DrawPeople,908,game,city,verified,indirect,0,5,"a road: with the city flag 8 off its people are drawn as in a building (BldgType_DrawOccupants2); with it on, the residents that are neither class flag 1 nor person flag 0x100 are gathered by person index (up to four are drawn) and placed on the road by its shape (the corner table at 0x1B1670, 4 slots a shape) in pose 8, each at its ground height facing the table's way"
 0x0016AF10,mm_BldgRoad_Draw,688,game,city,verified,no,0,1,road piece instances by neighbour connections
-0x0016B1C0,mm_BldgRoad_Tick,1164,game,city,verified,no,0,7,"road shape from neighbouring road blocks, flattens its tiles to 0, picks the lamp, traffic-light or slope mesh, marks the minimap"
+0x0016B1C0,mm_BldgRoad_Tick,1164,game,city,verified,no,0,7,"road shape from neighbouring road blocks, fills its tiles up to ground level 0 when any is lowered, picks the lamp, traffic-light or slope mesh, marks the minimap"
 0x0016B650,mm_BldgRoad_InitRecord,24,game,city,verified,no,0,0,initRecord slot
 0x0016B670,mm_BldgRoad_GroundTexture,16,game,city,verified,no,0,0,a road's ground texture: the type's own plus the object's road shape
 0x0016B680,mm_BldgRoad_ctor,88,game,city,verified,yes,1,1,"base constructor, vtable 0x1BD340, two parameters from record bytes 0x90/0x91"
 0x0016B6E0,mm_BldgSmallGoods_dtor,96,game,city,verified,yes,0,2,"category 14 (Small Goods), vtable 0x1BD380"
 0x0016B740,mm_BldgSmallGoods_FloorBelow,64,game,city,verified,no,0,1,segment test A when goodsMesh > 0x26
 0x0016B780,mm_BldgSmallGoods_NearestHit,64,game,city,verified,no,0,1,segment test B when goodsMesh > 0x26
-0x0016B7C0,mm_BldgSmallGoods_Draw,316,game,city,verified,no,0,3,item instances scaled by height
+0x0016B7C0,mm_BldgSmallGoods_Draw,316,game,city,verified,no,0,3,item instances
 0x0016B900,mm_BldgSmallGoods_Tick,540,game,city,verified,no,0,7,"entrance, terrain, minimap"
 0x0016BB20,mm_BldgSmallGoods_ctor,52,game,city,verified,yes,1,1,"base constructor, vtable 0x1BD380"
 0x0016BB60,mm_BldgWasteland_dtor,96,game,city,verified,yes,0,2,"category 1 (wasteland), vtable 0x1BD3C0"
 0x0016BBC0,mm_BldgWasteland_Draw,296,game,city,verified,no,0,1,weed/rock instances
 0x0016BCF0,mm_BldgWasteland_FindSpot,332,game,city,verified,no,1,2,"a straight road within three blocks of (x, z), searching outwards. Each direction is given up at the first walkable block that is not straight road, and the search of a ring stops at the first direction given up. Returns 1 with the direction in `spot`"
-0x0016BE40,mm_BldgWasteland_Tick,1120,game,city,verified,no,0,9,"drops the weeds (look[4]) of wasteland on a sloping tile (VU0 normals), plots its minimap colour by how much of it lies above the water level, and under water may place a type 3 object by a straight road"
+0x0016BE40,mm_BldgWasteland_Tick,1120,game,city,verified,no,0,9,"drops the weeds (look[4]) of wasteland on a sloping tile (VU0 normals), plots its minimap colour by how much of it lies under the water, and on dry land may level it (a type 3 object) by a straight road"
 0x0016C2A0,mm_BldgWasteland_InitRecord,180,game,city,verified,no,0,1,random appearance bytes
 0x0016C360,mm_BldgWasteland_ctor,52,game,city,verified,yes,1,1,"base constructor, vtable 0x1BD3C0"
 0x0016C3A0,mm_PhoneCall_Next,204,game,ui,verified,no,1,3,shifts the call queue and drops input focus
@@ -1532,7 +1532,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00175350,mm_TalkView_SetTarget,288,game,talk,verified,yes,3,4,"building a1 / family a2, name text boxes and frames"
 0x00175470,mm_TalkView_PersonCamera,620,game,talk,verified,no,3,3,"the camera for a talk at a building: target at the footprint middle below the object's height, eye 0.4 back along the view's flattened direction"
 0x001756E0,mm_TalkView_DrawMember,448,game,talk,verified,yes,1,4,"draws a family member in the phone view: the draw packet of the view is appended, the local matrix is the standard one with its translation at (0, 0.4, -3.6); for a character class with flag 2 the view's person model gets the same place and is drawn with the default colour, and the local matrix drops by 0.15"
-0x001758A0,mm_TalkView_DrawPerson,436,game,talk,verified,indirect,2,3,"the person at record `person` is drawn in front of the camera at (0, 0.4, -3.65): the character class's drawAt slot with an identity matrix moved there, the default colour and the view's animation slots. A class with flag 2 also gets the view's person model placed there first (and the person is then 0.15 lower)"
+0x001758A0,mm_TalkView_DrawPerson,436,game,talk,verified,indirect,2,3,"the person at record `person` is drawn in front of the camera at (0, 0.4, -3.65): the character class's drawAt slot with an identity matrix moved there, the default colour and the view's animation slots. A class with flag 2 also gets the view's person model placed there first (and the person is then 0.15 higher)"
 0x00175A60,mm_TalkView_DrawPersonTurned,268,game,talk,verified,indirect,2,2,"the same for a person turned by `angle` about y, at its own position"
 0x00175B70,mm_TalkView_dtor,212,game,talk,verified,yes,9,4,"vtable 0x1BD450, text boxes and frames"
 0x00175C50,mm_TalkView_ctor,408,game,talk,verified,no,9,1,"vtable 0x1BD450, camera copy, models 0x1F3B2C/0x1F3B7C, packets"
@@ -1634,7 +1634,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00179630,mm_TalkMoney_ctor,188,game,talk,verified,yes,1,5,"vtable 0x1BD7C0, amount a1 (player money 0x1C5540)"
 0x001796F0,mm_MyHome_EntranceRect,360,game,talk,verified,no,1,0,"tile rectangle in front of a building by facing (0-3), clamped to the map"
 0x00179860,mm_MyHome_MarkEntrance,300,game,talk,verified,no,2,4,sets (a1 1) or clears tile flag 0x80 in front of the home
-0x00179990,mm_MyHome_FloorHit,492,game,talk,verified,no,1,2,the home's floor under the viewer: the segment from 0.51 above the position down to it against the interior's floor triangles; of the crossings the lowest y wins and is stored in *hit. 1 when there was one
+0x00179990,mm_MyHome_FloorHit,492,game,talk,verified,no,1,2,the home's floor under the viewer: the segment from 0.51 below the position up to it against the interior's floor triangles; of the crossings the highest (smallest y) wins and is stored in *hit. 1 when there was one
 0x00179B80,mm_MyHome_WallHit,488,game,talk,verified,no,1,2,the walls: the same triangles of the wall range against the ray from the viewer along each wall's normal within 0.2; the nearest distance is left in *distance (100 when none) and its hit point in *hit
 0x00179D70,mm_MyHome_Collide,412,game,talk,verified,no,1,3,"keeps the viewer out of the walls (two passes: each wall found pushes the viewer back along its direction by what is missing from 0.2) and on the floor (0.5 over a floor hit, else sinking by 0.05, never above -0.5)"
 0x00179F10,mm_MyHome_Draw,232,game,talk,verified,no,0,4,vtable 0x1BD810: the home interior model while active
@@ -1758,7 +1758,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0017EE10,mm_WordsFn_ConductTier,8,game,talk,verified,no,0,1,"#47 cond: mm_CityScene_ConductTier (residents' conduct below 200, below 300, or higher)"
 0x0017EE20,mm_WordsFn_ProsperityTier,8,game,talk,verified,no,0,1,"#46 cond: mm_CityScene_ProsperityTier (residents' prosperity below 200, below 300, or higher)"
 0x0017EE30,mm_WordsFn_ApprovalTier,60,game,talk,verified,no,0,1,#45 cond: approval tier folded to 0..2
-0x0017EE70,mm_WordsFn_NewBuildingsTier,76,game,talk,verified,no,0,1,"#44 cond: map history sum: none, up to 10, more"
+0x0017EE70,mm_WordsFn_NewBuildingsTier,76,game,talk,verified,no,0,1,"#44 cond: the new buildings for families in the last six months: none 0, up to 10 1, more 2"
 0x0017EEC0,mm_WordsFn_FamilyCountTier,84,game,talk,verified,no,0,0,#43 cond: families in the city (0x1F32E0) in five bands (20/50/100/200)
 0x0017EF20,mm_WordsFn_PopulationRank,32,game,talk,verified,no,0,1,#42 cond: population rank (1..8) minus 1
 0x0017EF40,mm_WordsFn_TimeOfDay,80,game,talk,verified,no,0,0,"#41 cond: 0 from 3:00 to 12:00, 1 to 18:00, else 2"
@@ -1783,7 +1783,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0017F3E0,mm_WordsFn_MeterAgrees,52,game,talk,verified,no,0,1,"#22 cond: mm_Family_MeterAgrees for member B when arg != 0, else member A, with the city's approval (was mm_WordsFn_Nop22: it only sets v0, so a void prototype hid it)"
 0x0017F420,mm_WordsFn_FindOutsideAcquaintance,260,game,talk,verified,yes,0,3,#21 cond: an acquaintance of member A from an Outside-category type who can apply; result word
 0x0017F530,mm_WordsFn_GetIntroduction,136,game,talk,verified,yes,0,1,#20 cond: the family subject A/B introduces (picks one when the person has none); nonzero when there is one
-0x0017F5C0,mm_WordsFn_BuildingFlag2,48,game,talk,verified,no,0,0,#19 cond: building flag 2
+0x0017F5C0,mm_WordsFn_BuildingNeedPartlyMet,48,game,talk,verified,no,0,0,"#19 cond: building A's (B's with an argument) need is partly met (object flag 2: a need claim moved off its start value, and claimMet ran once for it)"
 0x0017F5F0,mm_WordsFn_ClaimIs50,108,game,talk,verified,no,0,1,#18 cond: claim entry value 0x32
 0x0017F660,mm_WordsFn_BuildingClaim,100,game,talk,verified,no,0,1,#17 cond: the building's claim entry (CLAIM.BIN section B)
 0x0017F6D0,mm_WordsFn_BuildingState,128,game,talk,verified,no,0,1,"#16 cond: building flags 8 (claim met, 3) / 0x40 (meter maxed, 4), else its claim meter level"

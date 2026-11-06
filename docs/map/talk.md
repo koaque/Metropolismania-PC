@@ -59,7 +59,7 @@ friendship changed. A is the person talked to.
 | `0x00175350` | `void mm_TalkView_SetTarget(TalkView *view, int building, int family)` | 288 | yes | building a1 / family a2, name text boxes and frames |
 | `0x00175470` | `void mm_TalkView_PersonCamera(TalkView *view, int object, Vec4 *target, Vec4 *eye)` | 620 | no | the camera for a talk at a building: target at the footprint middle below the object's height, eye 0.4 back along the view's flattened direction |
 | `0x001756E0` | `void mm_TalkView_DrawMember(TalkView *view, int family, int member)` | 448 | yes | draws a family member in the phone view: the draw packet of the view is appended, the local matrix is the standard one with its translation at (0, 0.4, -3.6); for a character class with flag 2 the view's person model gets the same place and is drawn with the default colour, and the local matrix drops by 0.15 |
-| `0x001758A0` | `void mm_TalkView_DrawPerson(TalkView *view, int person)` | 436 | indirect | the person at record `person` is drawn in front of the camera at (0, 0.4, -3.65): the character class's drawAt slot with an identity matrix moved there, the default colour and the view's animation slots. A class with flag 2 also gets the view's person model placed there first (and the person is then 0.15 lower) |
+| `0x001758A0` | `void mm_TalkView_DrawPerson(TalkView *view, int person)` | 436 | indirect | the person at record `person` is drawn in front of the camera at (0, 0.4, -3.65): the character class's drawAt slot with an identity matrix moved there, the default colour and the view's animation slots. A class with flag 2 also gets the view's person model placed there first (and the person is then 0.15 higher) |
 | `0x00175A60` | `void mm_TalkView_DrawPersonTurned(TalkView *view, int person, float angle)` | 268 | indirect | the same for a person turned by `angle` about y, at its own position |
 | `0x00175B70` | `TalkView *mm_TalkView_dtor(TalkView *view, int16_t deleteFlag)` | 212 | yes | vtable 0x1BD450, text boxes and frames |
 | `0x00175C50` | `TalkView *mm_TalkView_ctor(TalkView *view, CityScene *city)` | 408 | no | vtable 0x1BD450, camera copy, models 0x1F3B2C/0x1F3B7C, packets |
@@ -161,7 +161,7 @@ friendship changed. A is the person talked to.
 | `0x00179630` | `TalkMoney *mm_TalkMoney_ctor(TalkMoney *money, int amount)` | 188 | yes | vtable 0x1BD7C0, amount a1 (player money 0x1C5540) |
 | `0x001796F0` | `void mm_MyHome_EntranceRect(TalkView *view, int facing, int x, int z, int size, int32_t *rect)` | 360 | no | tile rectangle in front of a building by facing (0-3), clamped to the map |
 | `0x00179860` | `void mm_MyHome_MarkEntrance(TalkView *view, int set)` | 300 | no | sets (a1 1) or clears tile flag 0x80 in front of the home |
-| `0x00179990` | `int mm_MyHome_FloorHit(TalkView *view, Vec4 *matrix, uint32_t *hit)` | 492 | no | the home's floor under the viewer: the segment from 0.51 above the position down to it against the interior's floor triangles; of the crossings the lowest y wins and is stored in *hit. 1 when there was one |
+| `0x00179990` | `int mm_MyHome_FloorHit(TalkView *view, Vec4 *matrix, uint32_t *hit)` | 492 | no | the home's floor under the viewer: the segment from 0.51 below the position up to it against the interior's floor triangles; of the crossings the highest (smallest y) wins and is stored in *hit. 1 when there was one |
 | `0x00179B80` | `int mm_MyHome_WallHit(TalkView *view, Vec4 *matrix, uint32_t *hit, float *distance)` | 488 | no | the walls: the same triangles of the wall range against the ray from the viewer along each wall's normal within 0.2; the nearest distance is left in *distance (100 when none) and its hit point in *hit |
 | `0x00179D70` | `void mm_MyHome_Collide(TalkView *view)` | 412 | no | keeps the viewer out of the walls (two passes: each wall found pushes the viewer back along its direction by what is missing from 0.2) and on the floor (0.5 over a floor hit, else sinking by 0.05, never above -0.5) |
 | `0x00179F10` | `void mm_MyHome_Draw(TalkView *view, int pass)` | 232 | no | vtable 0x1BD810: the home interior model while active |
@@ -285,7 +285,7 @@ friendship changed. A is the person talked to.
 | `0x0017EE10` | `int mm_WordsFn_ConductTier(WordsCtx *ctx)` | 8 | no | #47 cond: mm_CityScene_ConductTier (residents' conduct below 200, below 300, or higher) |
 | `0x0017EE20` | `int mm_WordsFn_ProsperityTier(WordsCtx *ctx)` | 8 | no | #46 cond: mm_CityScene_ProsperityTier (residents' prosperity below 200, below 300, or higher) |
 | `0x0017EE30` | `int mm_WordsFn_ApprovalTier(WordsCtx *ctx)` | 60 | no | #45 cond: approval tier folded to 0..2 |
-| `0x0017EE70` | `int mm_WordsFn_NewBuildingsTier(WordsCtx *ctx)` | 76 | no | #44 cond: map history sum: none, up to 10, more |
+| `0x0017EE70` | `int mm_WordsFn_NewBuildingsTier(WordsCtx *ctx)` | 76 | no | #44 cond: the new buildings for families in the last six months: none 0, up to 10 1, more 2 |
 | `0x0017EEC0` | `int mm_WordsFn_FamilyCountTier(WordsCtx *ctx)` | 84 | no | #43 cond: families in the city (0x1F32E0) in five bands (20/50/100/200) |
 | `0x0017EF20` | `int mm_WordsFn_PopulationRank(WordsCtx *ctx)` | 32 | no | #42 cond: population rank (1..8) minus 1 |
 | `0x0017EF40` | `int mm_WordsFn_TimeOfDay(WordsCtx *ctx)` | 80 | no | #41 cond: 0 from 3:00 to 12:00, 1 to 18:00, else 2 |
@@ -310,7 +310,7 @@ friendship changed. A is the person talked to.
 | `0x0017F3E0` | `int mm_WordsFn_MeterAgrees(WordsCtx *ctx)` | 52 | no | #22 cond: mm_Family_MeterAgrees for member B when arg != 0, else member A, with the city's approval (was mm_WordsFn_Nop22: it only sets v0, so a void prototype hid it) |
 | `0x0017F420` | `int mm_WordsFn_FindOutsideAcquaintance(WordsCtx *ctx)` | 260 | yes | #21 cond: an acquaintance of member A from an Outside-category type who can apply; result word |
 | `0x0017F530` | `int mm_WordsFn_GetIntroduction(WordsCtx *ctx)` | 136 | yes | #20 cond: the family subject A/B introduces (picks one when the person has none); nonzero when there is one |
-| `0x0017F5C0` | `int mm_WordsFn_BuildingFlag2(WordsCtx *ctx)` | 48 | no | #19 cond: building flag 2 |
+| `0x0017F5C0` | `int mm_WordsFn_BuildingNeedPartlyMet(WordsCtx *ctx)` | 48 | no | #19 cond: building A's (B's with an argument) need is partly met (object flag 2: a need claim moved off its start value, and claimMet ran once for it) |
 | `0x0017F5F0` | `int mm_WordsFn_ClaimIs50(WordsCtx *ctx)` | 108 | no | #18 cond: claim entry value 0x32 |
 | `0x0017F660` | `int mm_WordsFn_BuildingClaim(WordsCtx *ctx)` | 100 | no | #17 cond: the building's claim entry (CLAIM.BIN section B) |
 | `0x0017F6D0` | `int mm_WordsFn_BuildingState(WordsCtx *ctx)` | 128 | no | #16 cond: building flags 8 (claim met, 3) / 0x40 (meter maxed, 4), else its claim meter level |

@@ -661,10 +661,11 @@ namespace mm
     }
 
     // Wasteland each tick. A marked one (weeds, look[4]) loses its mark unless both triangles of its tile face straight
-    // down within 0.96 (VU0 cross products of the corner edges). The tile and its four neighbours are counted
-    // above the water level: all five plot colour 0 on the minimap, some 8. With none, a roll of 6..10 out of
-    // 32 by a straight road (mm_BldgWasteland_FindSpot) whose block has flag 0x10 or 8 places a type 3 object
-    // here, and the colour goes by the mark: 0 gives 1, 1, 3 and 7 up give 2, the others 6. Returns 0.
+    // up within 0.96 (normals towards -y, as y points down; VU0 cross products of the corner edges). The tile and its
+    // four neighbours under the water (deeper than waterLevel) are counted: all five plot colour 0 on the minimap, some
+    // 8. With none, dry land, a roll of 6..10 out of 32 by a straight road (mm_BldgWasteland_FindSpot) whose block is
+    // walkable or leveled ground (tile flags 0x10, 8) levels this tile (a type 3 object, leveled land), and the colour
+    // goes by the mark: 0 gives 1, 1, 3 and 7 up give 2, the others 6. Returns 0.
     int BldgWasteland_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
     {
         port::GuestFrame<0x120> frame;
@@ -712,10 +713,10 @@ namespace mm
         }
 
         Map_GetTileHeightWord(city->map, obj->tile);
-        int above = 0;
+        int wet = 0;
         const auto count = [&](ps2f height) {
             if (!(height <= ps2f(city->waterLevel)))
-                ++above;
+                ++wet;
         };
         count(Map_GetTileHeightWord(city->map, obj->tile));
         count(Map_GetHeightAt(city->map, x + 1, z));
@@ -723,10 +724,10 @@ namespace mm
         count(Map_GetHeightAt(city->map, x, z + 1));
         count(Map_GetHeightAt(city->map, x, z - 1));
         int colour = 0;
-        if (above != 5)
+        if (wet != 5)
         {
             colour = 8;
-            if (above == 0)
+            if (wet == 0)
             {
                 const int roll = static_cast<int32_t>(Random_Next()) & 0x1F;
                 if (roll >= 6 && roll < 11 && BldgWasteland_FindSpot(btype, city, static_cast<int>(obj.address), static_cast<uint32_t>(x),
@@ -734,7 +735,7 @@ namespace mm
                 {
                     const int sx = x + port::load<int32_t>(0x001B1770u + 4u * *spot);
                     const int sz = z + port::load<int32_t>(0x001B1780u + 4u * *spot);
-                    if (Map_TileWalkable(city->map, sx, sz) != 0 || Map_TileFlag08(city->map, sx, sz) != 0)
+                    if (Map_TileWalkable(city->map, sx, sz) != 0 || Map_TileIsLeveled(city->map, sx, sz) != 0)
                         Map_PlaceObject(city->map, 0, 3, x, z, static_cast<int>(city.address));
                 }
                 const uint8_t mark = obj->look[4];
@@ -920,12 +921,12 @@ namespace mm
     }
 
     // A road block each tick. Its shape (variant) gets bit d for each direction d whose next block is road
-    // (Map_TileWalkable) and its links are refreshed. Unless all four of its tiles are at or below height 0, they
-    // are flattened to 0 and the ground from one tile before to three after is rebuilt. The mesh follows the
-    // shape: traffic lights (+0 to +4) at crossings and T-junctions; on straight road the slope mesh (+1 along
-    // x) where the ground on either side rises more than 0.8 above the road, else a street lamp (+0/+1 along z,
-    // +2/+3 along x) on every eighth tile and the one two after it; none
-    // on bends and dead ends. The block is then plotted on the minimap. Returns 0.
+    // (Map_TileWalkable) and its links are refreshed. When any of its four tiles lies below ground level (height above
+    // 0: heights grow downwards), all four are set to 0 and the ground from one tile before to three after is rebuilt.
+    // The mesh follows the shape: traffic lights (+0 to +4) at crossings and T-junctions; on straight road the slope
+    // mesh (+1 along x) where the ground on either side lies more than 0.8 below the road (an embankment), else a
+    // street lamp (+0/+1 along z, +2/+3 along x) on every eighth tile and the one two after it; none on bends and dead
+    // ends. The block is then plotted on the minimap. Returns 0.
     int BldgRoad_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
     {
         const int x = obj->tile & 0x7F, z = obj->tile >> 7;
@@ -1007,15 +1008,16 @@ namespace mm
         return 0;
     }
 
-    // A building part each tick (the type's tick slot). The main part (its tile's first object) finds its entrance
-    // tile (entranceTile) and side; unless the type has flag 0x20 and the second entrance test fails, the side is then
-    // set from where the footprint sits in the 4-tile grid of road blocks, and kept as the tile's kind. The
-    // ground under the footprint is levelled: above 0 to 0.1, else onto a multiple of 0.5 (with fmodf), and the
-    // geometry around it rebuilt when that changed it. Other parts take the main part's entrance tile. A built
+    // A building part each tick (the type's tick slot). The main part (its tile's first object) finds its entrance tile
+    // (entranceTile) and side; unless the type has flag 0x20 and the second entrance test fails, the side is then set
+    // from where the footprint sits in the 4-tile grid of road blocks, and kept as the tile's kind. The ground under
+    // the footprint is levelled: lowered ground (above 0) to 0.1, raised ground onto a multiple of 0.5 (with fmodf),
+    // and the geometry around it rebuilt when that changed it. Other parts take the main part's entrance tile. A built
     // part (flag 0x20) clears occupants from 23:00:01, between 6:00 and 7:00 drops flag 0x100 (newly built; minimap
-    // colour 5), and returns mm_BldgClaims_Evaluate's result; a part being built counts its work (variant) up from
-    // 7:00 to 18:59, and at 24 it is built and new (flags 0x120) and the count starts again. Last, the minimap colour by the claim meter's level (2: 10,
-    // 1: 9, else 5). The original's frame is reserved whole: the side and the rectangle are its slots.
+    // colour 5), and returns mm_BldgClaims_Evaluate's result; a part being built counts its work (variant) up from 7:00
+    // to 18:59, and at 24 it is built and new (flags 0x120) and the count starts again. Last, the minimap colour by the
+    // claim meter's level (2: 10, 1: 9, else 5). The original's frame is reserved whole: the side and the rectangle are
+    // its slots.
     int Bldg_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int timeFlags)
     {
         port::GuestFrame<0xB0> frame;
@@ -1131,8 +1133,8 @@ namespace mm
         return result;
     }
 
-    // Ports level their 3x3 block to height 2.5 and rebuild the ground around it, the rectangle reaching
-    // four tiles beyond the building (offset by its size towards +z, as in the original).
+    // Ports dig their 3x3 block down to 2.5 (heights grow downwards) and rebuild the ground around it, the rectangle
+    // reaching four tiles beyond the building (offset by its size towards +z, as in the original).
     int BldgPort_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int timeFlags)
     {
         const int result = Bldg_Tick(btype, city, obj, timeFlags);
@@ -1221,8 +1223,8 @@ namespace mm
         Instance_DrawMesh(globals::businessModel.get(), matrix, colour, mesh, flags);
     }
 
-    // Ports: like a business, lit after dark while open (hours of the object's own type), drawn 2.5 lower; once
-    // built from the business model.
+    // Ports: like a business, lit after dark while open (hours of the object's own type), drawn 2.5 higher (at ground
+    // level over their dug block); once built from the business model.
     void BldgPort_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
                        ps2f x, ps2f y, ps2f z)
     {
@@ -1889,7 +1891,8 @@ namespace mm
         return Collide_MeshNearestHit(static_cast<int>(btype.address), officeMesh(btype, obj, *part, 0x001B1408u), point, matrix, hit, distance, f12);
     }
 
-    // Ports collide 2.5 lower: the matrix's translation y is lowered first (and stays lowered).
+    // Ports collide 2.5 higher (at ground level over their dug block): 2.5 is taken off the matrix's translation y
+    // first (heights grow downwards), and it stays so.
     int BldgPort_FloorBelow(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
                           GuestPtr<uint32_t> hit, ps2f lift)
     {
@@ -2231,13 +2234,13 @@ namespace mm
         Instance_DrawMesh(globals::propsModel.get(), matrix, GuestPtr<Vec4>{globals::kDefaultColour}, btype->stageMesh, flags);
     }
 
-    // Small goods: their props mesh, raised by the height scale above ground unless the type has
-    // flag 1. At night (before 4:00 or from 17:00) the colour's last word becomes the integer 12.
+    // Small goods: their props mesh, on lowered ground at the drawn bottom's height (Map_BottomHeight) unless the type
+    // has flag 1. At night (before 4:00 or from 17:00) the colour's last word becomes the integer 12.
     void BldgSmallGoods_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
                              ps2f x, ps2f y, ps2f z)
     {
         if ((btype->flags & 1u) == 0 && !(y <= ps2f(0.0f)))
-            y = Map_HeightScale(y);
+            y = Map_BottomHeight(y);
         const GuestPtr<Vec4> matrix = placeLayer(layer, x, y, z);
         port::GuestLocal<Vec4> colour;
         *colour = *GuestPtr<Vec4>{globals::kDefaultColour};
@@ -2761,13 +2764,13 @@ namespace mm
 
     namespace
     {
-        // The height a flat building settles to. Above ground (a positive tile height) it is `aboveGround`.
-        // Below, the height is cut to the half-unit grid: a remainder (fmod 0.5) over 0.1 takes 0.1 off, one of
-        // -0.4 or less goes down to the lower half unit, any other takes the remainder off.
-        ps2f settledHeight(ps2f height, ps2f aboveGround)
+        // The height a flat building settles to (heights grow downwards). On lowered ground (a positive tile height) it
+        // is `lowered`, just below ground level. Raised ground is cut to the half-unit grid: a remainder (fmod 0.5) over
+        // 0.1 takes 0.1 off, one of -0.4 or less goes on to the next half unit up, any other takes the remainder off.
+        ps2f settledHeight(ps2f height, ps2f lowered)
         {
             if (!(height <= ps2f(0.0f)))
-                return aboveGround;
+                return lowered;
             const ps2f remainder = sdk::fmodf(height, ps2f(0.5f));
             if (ps2f(0.0f) == remainder)
                 return height;
@@ -2780,7 +2783,7 @@ namespace mm
     }
 
     // Small goods: the tile kind from the entrance search, and for a type with flag 1 the ground under it settles
-    // (0.1 above ground) and the area around it is rebuilt; then the minimap shows it (colour 1).
+    // (lowered ground to 0.1) and the area around it is rebuilt; then the minimap shows it (colour 1).
     int BldgSmallGoods_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
     {
         port::GuestFrame<0x90> frame;
@@ -2856,7 +2859,7 @@ namespace mm
 
     // Leveled ground: openSize (the side of the open square of leveled land from here) takes the smallest of the
     // neighbours' (x + 1, z), (x + 1, z + 1) and (x, z + 1) that are leveled ground at the same height (else 0), plus
-    // one while the object has no flag 1. The ground settles (0.05 above ground), and every waiting applicant
+    // one while the object has no flag 1. The ground settles (lowered ground to 0.05), and every waiting applicant
     // (state 2) whose home would fit (its size within that word, CheckArea and Map_CanPlace) gets the area
     // highlighted and its state 3 with this tile. The minimap shows it (colour 4).
     int BldgLeveled_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)

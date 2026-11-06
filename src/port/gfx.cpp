@@ -1294,7 +1294,10 @@ namespace mm
     PORT_FN(CityRender_InitParams);
     PORT_FN(Terrain_InitParams);
 
-    // Layer B's two passes: the first over the quads with flag 0x20, the second (its own texture) over those with 0x40.
+    // Layer B, the bottom of the water: its program draws each quad again with the corners' heights at 0.6 y + 0.08
+    // (extra). Heights grow downwards, so the copy lies above the ground only where that is deeper than 0.2: the sand or
+    // rock covers the bottom and the low strip of shore, seen through the water. The first pass lays sand (GROUND.TEX
+    // part 17) over the quads with flag 0x20 (the sea), the second rock (part 24, tex0B) over those with 0x40 (a lake).
     void LayerB_InitParams(GuestPtr<LayerB> layer)
     {
         packet::putPassParams(layer->params, {128.0f, 128.0f, 128.0f, 128.0f}, 0x9930a698u, 0x4004b085u, 0x3cu);
@@ -1581,7 +1584,7 @@ namespace mm
     // Terrain packet A, the cliff sides (program 0x1A76F0): a header that uploads the side parameters, then the first side
     // buffer in 20 chunks of 0x6C0 bytes (2 groups of 8, 4 singles) and a RET, the header again and the second buffer the
     // same. The map keeps the start in both side packet slots (the second section's start is never kept). Returns the end.
-    GuestPtr<uint32_t> Terrain_BuildVu1PacketA(GuestPtr<CityMap> map, GuestPtr<uint32_t> packet)
+    GuestPtr<uint32_t> Terrain_BuildSidePackets(GuestPtr<CityMap> map, GuestPtr<uint32_t> packet)
     {
         const uint32_t tag = tagAddress(map->sideColour);
         const auto header = [&](uint32_t at) {
@@ -1630,7 +1633,7 @@ namespace mm
     // Terrain packet B: the base ground pass (program 0x1A5EB0 and the ground parameters, ending in a RET), then for each
     // terrain buffer the chunk packet that every pass CALLs: its quads in 24 chunks of 0x680 bytes (3 groups of 8, each
     // chunk a REF, the UNPACK and an MSCNT) and a RET. Returns the end.
-    GuestPtr<uint32_t> Terrain_BuildVu1PacketB(GuestPtr<CityMap> map, GuestPtr<uint32_t> packet)
+    GuestPtr<uint32_t> Terrain_BuildGroundPackets(GuestPtr<CityMap> map, GuestPtr<uint32_t> packet)
     {
         const auto chunk = [](uint32_t at, uint32_t source) {
             putWords(at + 0x0u, {0x30000068u, source & 0x7FFFFFFFu, 0x0u, 0x6C688000u});
@@ -1665,15 +1668,15 @@ namespace mm
         return GuestPtr<uint32_t>{at};
     }
 
-    PORT_FN(Terrain_BuildVu1PacketA);
-    PORT_FN(Terrain_BuildVu1PacketB);
+    PORT_FN(Terrain_BuildSidePackets);
+    PORT_FN(Terrain_BuildGroundPackets);
 
     // ---- drawing the placement layer (batch 39)
 
-    // The placement layer draws the highlighted rectangle: in mode 1 (pass 0) its three packets around the map's own for this
-    // frame; in mode 2 (pass 1) the placement marker, node 0 of the marker model (node 1 for a size 3 building) put
-    // at the middle of the footprint at (rectX0, rectZ0), 0.8 below the tile for the ground and below each object
-    // stacked on it.
+    // The placement layer draws the highlighted rectangle: in mode 1 (pass 0) its three packets around the map's own
+    // for this frame; in mode 2 (pass 1) the placement marker, node 0 of the marker model (node 1 for a size 3
+    // building) put at the middle of the footprint at (rectX0, rectZ0), 0.8 above the tile for the ground and for each
+    // object stacked on it (heights grow downwards).
     void PlacementLayer_Draw(GuestPtr<PlacementLayer> layer, int packet, GuestPtr<CityMap> map, int pass)
     {
         if (layer->rectActive == 1 && pass == 0)
@@ -2020,8 +2023,8 @@ namespace mm
         map->terrainBuffers[1] = GuestPtr<void>{sdk::malloc(0x9C00u)};
         CityRender_InitParams(map);
         Terrain_InitParams(map);
-        PacketBuf_Seek(static_cast<int>(Terrain_BuildVu1PacketB(map, GuestPtr<uint32_t>{static_cast<uint32_t>(PacketBuf_Tell())}).address));
-        PacketBuf_Seek(static_cast<int>(Terrain_BuildVu1PacketA(map, GuestPtr<uint32_t>{static_cast<uint32_t>(PacketBuf_Tell())}).address));
+        PacketBuf_Seek(static_cast<int>(Terrain_BuildGroundPackets(map, GuestPtr<uint32_t>{static_cast<uint32_t>(PacketBuf_Tell())}).address));
+        PacketBuf_Seek(static_cast<int>(Terrain_BuildSidePackets(map, GuestPtr<uint32_t>{static_cast<uint32_t>(PacketBuf_Tell())}).address));
         const int buffers = static_cast<int>(addressOf(map->terrainBuffers));
         const auto make = [&](uint32_t size, auto &field, auto construct) {
             const uint32_t memory = sdk::operator_new(size);

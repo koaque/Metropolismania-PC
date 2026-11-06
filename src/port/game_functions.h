@@ -279,16 +279,16 @@ inline constexpr uint32_t CityMap_ClearObject = 0x0013F3D0u;
 inline constexpr uint32_t Map_ClearArea = 0x0013F5D0u;
 inline constexpr uint32_t Map_PlaceObject = 0x0013F6E0u;
 inline constexpr uint32_t Map_CanPlace = 0x0013F860u;
-inline constexpr uint32_t TerrainGen_SampleSmooth = 0x0013F890u;
-inline constexpr uint32_t TerrainGen_Smooth = 0x0013FA50u;
-inline constexpr uint32_t TerrainGen_Hills = 0x0013FD80u;
+inline constexpr uint32_t TerrainGen_StepsToWater = 0x0013F890u;
+inline constexpr uint32_t TerrainGen_Hill = 0x0013FA50u;
+inline constexpr uint32_t TerrainGen_Basin = 0x0013FD80u;
 inline constexpr uint32_t TerrainGen_River = 0x00140490u;
 inline constexpr uint32_t TerrainGen_Generate = 0x00140B60u;
 inline constexpr uint32_t CityMap_DeletingDtor = 0x00141010u;
 inline constexpr uint32_t CityMap_ctor = 0x00141070u;
-inline constexpr uint32_t Map_TileFlag20 = 0x001410B0u;
+inline constexpr uint32_t Map_TileIsSea = 0x001410B0u;
 inline constexpr uint32_t Map_TileIsCorner = 0x00141110u;
-inline constexpr uint32_t Map_TileFlag08 = 0x00141170u;
+inline constexpr uint32_t Map_TileIsLeveled = 0x00141170u;
 inline constexpr uint32_t Map_TileWalkable = 0x001411D0u;
 inline constexpr uint32_t Map_TileIndexWalkable = 0x00141230u;
 inline constexpr uint32_t Map_SetTileKind = 0x00141270u;
@@ -335,7 +335,7 @@ inline constexpr uint32_t Map_GetTileObject = 0x00144660u;
 inline constexpr uint32_t Map_RemoveObjectFromTile = 0x001446E0u;
 inline constexpr uint32_t Map_AppendObjectToTile = 0x00144770u;
 inline constexpr uint32_t Map_CreateObject = 0x001447C0u;
-inline constexpr uint32_t Placement_CheckSlope = 0x00144B60u;
+inline constexpr uint32_t Placement_LandBeside = 0x00144B60u;
 inline constexpr uint32_t Map_CheckPlacement = 0x00144CB0u;
 inline constexpr uint32_t Placement_CheckNeighbours = 0x00144FB0u;
 inline constexpr uint32_t Placement_CheckTypeRule = 0x001451B0u;
@@ -351,8 +351,8 @@ inline constexpr uint32_t Terrain_AddQuad = 0x00145C10u;
 inline constexpr uint32_t Terrain_BuildStrip = 0x00145CE0u;
 inline constexpr uint32_t Terrain_DrawPatch = 0x00146700u;
 inline constexpr uint32_t Terrain_Draw = 0x00146B30u;
-inline constexpr uint32_t Terrain_BuildVu1PacketA = 0x001474C0u;
-inline constexpr uint32_t Terrain_BuildVu1PacketB = 0x00147AE0u;
+inline constexpr uint32_t Terrain_BuildSidePackets = 0x001474C0u;
+inline constexpr uint32_t Terrain_BuildGroundPackets = 0x00147AE0u;
 inline constexpr uint32_t Terrain_InitParams = 0x00147FA0u;
 inline constexpr uint32_t CityRender_InitParams = 0x001480F0u;
 inline constexpr uint32_t CityRender_UpdatePeople = 0x00148260u;
@@ -407,7 +407,7 @@ inline constexpr uint32_t WaitText_Create = 0x0014C560u;
 inline constexpr uint32_t LightSet_UpdateByClock = 0x0014C620u;
 inline constexpr uint32_t LightSet_DeletingDtor = 0x0014C820u;
 inline constexpr uint32_t LightSet_ctor = 0x0014C880u;
-inline constexpr uint32_t Map_HeightScale = 0x0014C8B0u;
+inline constexpr uint32_t Map_BottomHeight = 0x0014C8B0u;
 inline constexpr uint32_t LayerB_BuildPacket = 0x0014C8E0u;
 inline constexpr uint32_t LayerB_InitParams = 0x0014CA60u;
 inline constexpr uint32_t LayerB_Draw = 0x0014CC10u;
@@ -1069,7 +1069,7 @@ inline constexpr uint32_t WordsFn_TryFriendAgrees = 0x0017F330u;
 inline constexpr uint32_t WordsFn_MeterAgrees = 0x0017F3E0u;
 inline constexpr uint32_t WordsFn_FindOutsideAcquaintance = 0x0017F420u;
 inline constexpr uint32_t WordsFn_GetIntroduction = 0x0017F530u;
-inline constexpr uint32_t WordsFn_BuildingFlag2 = 0x0017F5C0u;
+inline constexpr uint32_t WordsFn_BuildingNeedPartlyMet = 0x0017F5C0u;
 inline constexpr uint32_t WordsFn_ClaimIs50 = 0x0017F5F0u;
 inline constexpr uint32_t WordsFn_BuildingClaim = 0x0017F660u;
 inline constexpr uint32_t WordsFn_BuildingState = 0x0017F6D0u;
@@ -2671,6 +2671,7 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"MapTiles_ctor", addr::MapTiles_ctor},
     {"MapTiles_dtor", addr::MapTiles_dtor},
     {"Map_AppendObjectToTile", addr::Map_AppendObjectToTile},
+    {"Map_BottomHeight", addr::Map_BottomHeight},
     {"Map_CanPlace", addr::Map_CanPlace},
     {"Map_CheckPlacement", addr::Map_CheckPlacement},
     {"Map_ClearArea", addr::Map_ClearArea},
@@ -2690,7 +2691,6 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Map_GetTileObject", addr::Map_GetTileObject},
     {"Map_GetTileVertex", addr::Map_GetTileVertex},
     {"Map_GetTileVertexClamped", addr::Map_GetTileVertexClamped},
-    {"Map_HeightScale", addr::Map_HeightScale},
     {"Map_HighlightArea", addr::Map_HighlightArea},
     {"Map_LevelArea", addr::Map_LevelArea},
     {"Map_LoadState", addr::Map_LoadState},
@@ -2706,10 +2706,10 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Map_SetPlacementHighlight", addr::Map_SetPlacementHighlight},
     {"Map_SetTileHeight", addr::Map_SetTileHeight},
     {"Map_SetTileKind", addr::Map_SetTileKind},
-    {"Map_TileFlag08", addr::Map_TileFlag08},
-    {"Map_TileFlag20", addr::Map_TileFlag20},
     {"Map_TileIndexWalkable", addr::Map_TileIndexWalkable},
     {"Map_TileIsCorner", addr::Map_TileIsCorner},
+    {"Map_TileIsLeveled", addr::Map_TileIsLeveled},
+    {"Map_TileIsSea", addr::Map_TileIsSea},
     {"Map_TileWalkable", addr::Map_TileWalkable},
     {"Map_UnhighlightArea", addr::Map_UnhighlightArea},
     {"Map_UnlinkPersonFromTile", addr::Map_UnlinkPersonFromTile},
@@ -2980,9 +2980,9 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"PlacementLayer_Set", addr::PlacementLayer_Set},
     {"PlacementLayer_ctor", addr::PlacementLayer_ctor},
     {"Placement_CheckNeighbours", addr::Placement_CheckNeighbours},
-    {"Placement_CheckSlope", addr::Placement_CheckSlope},
     {"Placement_CheckTypeRule", addr::Placement_CheckTypeRule},
     {"Placement_FindSpot", addr::Placement_FindSpot},
+    {"Placement_LandBeside", addr::Placement_LandBeside},
     {"PlayMissionMovie", addr::PlayMissionMovie},
     {"PlayOpeningMovie", addr::PlayOpeningMovie},
     {"Player_DeletingDtor", addr::Player_DeletingDtor},
@@ -3268,16 +3268,16 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Talk_ctor", addr::Talk_ctor},
     {"Talk_dtor", addr::Talk_dtor},
     {"TerrainGen_ApplyBump", addr::TerrainGen_ApplyBump},
+    {"TerrainGen_Basin", addr::TerrainGen_Basin},
     {"TerrainGen_Generate", addr::TerrainGen_Generate},
-    {"TerrainGen_Hills", addr::TerrainGen_Hills},
+    {"TerrainGen_Hill", addr::TerrainGen_Hill},
     {"TerrainGen_River", addr::TerrainGen_River},
-    {"TerrainGen_SampleSmooth", addr::TerrainGen_SampleSmooth},
     {"TerrainGen_ScatterObjects", addr::TerrainGen_ScatterObjects},
-    {"TerrainGen_Smooth", addr::TerrainGen_Smooth},
+    {"TerrainGen_StepsToWater", addr::TerrainGen_StepsToWater},
     {"Terrain_AddQuad", addr::Terrain_AddQuad},
+    {"Terrain_BuildGroundPackets", addr::Terrain_BuildGroundPackets},
+    {"Terrain_BuildSidePackets", addr::Terrain_BuildSidePackets},
     {"Terrain_BuildStrip", addr::Terrain_BuildStrip},
-    {"Terrain_BuildVu1PacketA", addr::Terrain_BuildVu1PacketA},
-    {"Terrain_BuildVu1PacketB", addr::Terrain_BuildVu1PacketB},
     {"Terrain_Draw", addr::Terrain_Draw},
     {"Terrain_DrawPatch", addr::Terrain_DrawPatch},
     {"Terrain_InitParams", addr::Terrain_InitParams},
@@ -3394,7 +3394,7 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"WordsFn_BuildingCategory", addr::WordsFn_BuildingCategory},
     {"WordsFn_BuildingClaim", addr::WordsFn_BuildingClaim},
     {"WordsFn_BuildingCrowd", addr::WordsFn_BuildingCrowd},
-    {"WordsFn_BuildingFlag2", addr::WordsFn_BuildingFlag2},
+    {"WordsFn_BuildingNeedPartlyMet", addr::WordsFn_BuildingNeedPartlyMet},
     {"WordsFn_BuildingNew", addr::WordsFn_BuildingNew},
     {"WordsFn_BuildingOpen", addr::WordsFn_BuildingOpen},
     {"WordsFn_BuildingState", addr::WordsFn_BuildingState},
@@ -3957,16 +3957,16 @@ void CityMap_ClearObject(GuestPtr<CityMap> map, int object);
 void Map_ClearArea(GuestPtr<CityMap> map, int x, int z, int size);
 int Map_PlaceObject(GuestPtr<CityMap> map, int owner, int type, int x, int z, int arg);
 int Map_CanPlace(GuestPtr<CityMap> map, int family, int typeIndex, int x, int z);
-ps2f TerrainGen_SampleSmooth(GuestPtr<CityMap> map, int x, int z);
-void TerrainGen_Smooth(GuestPtr<CityMap> map, int a1, int a2, ps2f f12, ps2f f13, ps2f f14);
-void TerrainGen_Hills(GuestPtr<CityMap> map, int cx, int cz, int high);
+ps2f TerrainGen_StepsToWater(GuestPtr<CityMap> map, int x, int z);
+void TerrainGen_Hill(GuestPtr<CityMap> map, int cx, int cz, ps2f strength, ps2f radius, ps2f top);
+void TerrainGen_Basin(GuestPtr<CityMap> map, int cx, int cz, int sea);
 void TerrainGen_River(GuestPtr<CityMap> map, int edge, int start, int width, int curveA, int curveB, int direction, int wobbleA, int wobbleB);
 void TerrainGen_Generate(GuestPtr<CityMap> map, GuestPtr<uint8_t> params);
 GuestPtr<CityMap> CityMap_DeletingDtor(GuestPtr<CityMap> map, int16_t deleteFlag);
 GuestPtr<CityMap> CityMap_ctor(GuestPtr<CityMap> map);
-uint16_t Map_TileFlag20(GuestPtr<CityMap> map, int x, int z);
+uint16_t Map_TileIsSea(GuestPtr<CityMap> map, int x, int z);
 uint16_t Map_TileIsCorner(GuestPtr<CityMap> map, int x, int z);
-uint16_t Map_TileFlag08(GuestPtr<CityMap> map, int x, int z);
+uint16_t Map_TileIsLeveled(GuestPtr<CityMap> map, int x, int z);
 uint16_t Map_TileWalkable(GuestPtr<CityMap> map, int x, int z);
 uint16_t Map_TileIndexWalkable(GuestPtr<CityMap> map, uint32_t tile);
 void Map_SetTileKind(GuestPtr<CityMap> map, int tile, uint32_t kind);
@@ -4013,7 +4013,7 @@ GuestPtr<MapObject> Map_GetTileObject(GuestPtr<CityMap> map, int x, int z);
 void Map_RemoveObjectFromTile(GuestPtr<CityMap> map, int tile, uint32_t object);
 void Map_AppendObjectToTile(GuestPtr<CityMap> map, int tile, uint16_t object);
 int Map_CreateObject(GuestPtr<CityMap> map, int owner, int type, int x, int z);
-int Placement_CheckSlope(GuestPtr<CityMap> map, int x, int z, int size);
+int Placement_LandBeside(GuestPtr<CityMap> map, int x, int z, int size);
 int Map_CheckPlacement(GuestPtr<CityMap> map, uint32_t type, int x, int z, GuestPtr<int32_t> rect);
 int Placement_CheckNeighbours(GuestPtr<CityMap> map, int x, int z, int size, GuestPtr<int32_t> box);
 int Placement_CheckTypeRule(GuestPtr<CityMap> map, int type, int tile);
@@ -4029,8 +4029,8 @@ void Terrain_AddQuad(GuestPtr<CityMap> map, GuestPtr<Vec4> a, GuestPtr<Vec4> b, 
 void Terrain_BuildStrip(GuestPtr<CityMap> map, int x, int z, GuestPtr<Vec4> corner0, GuestPtr<Vec4> corner1, GuestPtr<Vec4> corner2, GuestPtr<Vec4> corner3);
 void Terrain_DrawPatch(GuestPtr<CityMap> map, int x, int z, int object, ps2f centreX, ps2f centreZ, ps2f level);
 void Terrain_Draw(GuestPtr<CityMap> map, GuestPtr<Vec4> view, GuestPtr<Vec4> camera, int zoom, int variant, int extra, ps2f level);
-GuestPtr<uint32_t> Terrain_BuildVu1PacketA(GuestPtr<CityMap> map, GuestPtr<uint32_t> packet);
-GuestPtr<uint32_t> Terrain_BuildVu1PacketB(GuestPtr<CityMap> map, GuestPtr<uint32_t> packet);
+GuestPtr<uint32_t> Terrain_BuildSidePackets(GuestPtr<CityMap> map, GuestPtr<uint32_t> packet);
+GuestPtr<uint32_t> Terrain_BuildGroundPackets(GuestPtr<CityMap> map, GuestPtr<uint32_t> packet);
 void Terrain_InitParams(GuestPtr<CityMap> map);
 void CityRender_InitParams(GuestPtr<CityMap> map);
 void CityRender_UpdatePeople(GuestPtr<CityMap> map, GuestPtr<CityScene> city);
@@ -4085,7 +4085,7 @@ void WaitText_Create(GuestPtr<char> text);
 void LightSet_UpdateByClock(GuestPtr<LightSet> lights, int clock, int weather);
 GuestPtr<LightSet> LightSet_DeletingDtor(GuestPtr<LightSet> lights, int16_t deleteFlag);
 GuestPtr<LightSet> LightSet_ctor(GuestPtr<LightSet> lights);
-ps2f Map_HeightScale(ps2f height);
+ps2f Map_BottomHeight(ps2f height);
 GuestPtr<uint32_t> LayerB_BuildPacket(GuestPtr<LayerB> layer, GuestPtr<uint32_t> packet);
 void LayerB_InitParams(GuestPtr<LayerB> layer);
 void LayerB_Draw(GuestPtr<LayerB> layer, int packet);
@@ -4747,7 +4747,7 @@ int WordsFn_TryFriendAgrees(GuestPtr<WordsCtx> ctx);
 int WordsFn_MeterAgrees(GuestPtr<WordsCtx> ctx);
 int WordsFn_FindOutsideAcquaintance(GuestPtr<WordsCtx> ctx);
 int WordsFn_GetIntroduction(GuestPtr<WordsCtx> ctx);
-int WordsFn_BuildingFlag2(GuestPtr<WordsCtx> ctx);
+int WordsFn_BuildingNeedPartlyMet(GuestPtr<WordsCtx> ctx);
 int WordsFn_ClaimIs50(GuestPtr<WordsCtx> ctx);
 int WordsFn_BuildingClaim(GuestPtr<WordsCtx> ctx);
 int WordsFn_BuildingState(GuestPtr<WordsCtx> ctx);

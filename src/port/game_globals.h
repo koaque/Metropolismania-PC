@@ -478,9 +478,9 @@ namespace mm::globals
     inline constexpr uint32_t kOriginPoint = 0x001B26A0u; // (0, 0, 0, 1)
     // terrain generation (mm_TerrainGen_Generate): by terrain type 0..4, the Smooth strength, radius and floor
     // (floats), and for the plants of a cell the 16 object kinds (ints) drawn for plant style 2 and 3.
-    inline constexpr uint32_t kSmoothStrength = 0x001AF1C0u;
-    inline constexpr uint32_t kSmoothRadius = 0x001AF1E0u;
-    inline constexpr uint32_t kSmoothFloor = 0x001AF200u;
+    inline constexpr uint32_t kHillStrength = 0x001AF1C0u;
+    inline constexpr uint32_t kHillRadius = 0x001AF1E0u;
+    inline constexpr uint32_t kHillTop = 0x001AF200u;
     inline constexpr uint32_t kScatterKindsStyle2 = 0x001AF220u;
     inline constexpr uint32_t kScatterKindsStyle3 = 0x001AF260u;
     // terrain drawing (mm_Terrain_Draw), by camera zoom step: the projection's x and y extent, the camera's z offset (floats),

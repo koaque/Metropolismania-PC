@@ -212,7 +212,7 @@ namespace mm
 
     // Whether building A (or B) was built since the last morning (object flag 0x100, dropped between 6:00 and 7:00).
     int WordsFn_BuildingNew(GuestPtr<WordsCtx> ctx) { return (buildingByArg(ctx)->flags & 0x100u) != 0 ? 1 : 0; }
-    int WordsFn_BuildingFlag2(GuestPtr<WordsCtx> ctx) { return (buildingByArg(ctx)->flags & 2u) != 0 ? 1 : 0; }
+    int WordsFn_BuildingNeedPartlyMet(GuestPtr<WordsCtx> ctx) { return (buildingByArg(ctx)->flags & 2u) != 0 ? 1 : 0; }
 
     // Whether person A (B with an argument) is ill today (flag 0x10, rolled each new day, mm_Person_Update).
     int WordsFn_PersonIll(GuestPtr<WordsCtx> ctx)
@@ -1079,7 +1079,7 @@ namespace mm
     PORT_FN(WordsFn_FriendshipTier);
     PORT_FN(WordsFn_MeterAgrees);
     PORT_FN(WordsFn_BuildingNew);
-    PORT_FN(WordsFn_BuildingFlag2);
+    PORT_FN(WordsFn_BuildingNeedPartlyMet);
     PORT_FN(WordsFn_PersonIll);
     PORT_FN(WordsFn_NameSlotSet);
     PORT_FN(WordsFn_ApplicantCountTier);

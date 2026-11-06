@@ -90,13 +90,13 @@ The ground of the whole visible city is one buffer of quads, filled on the CPU e
 | Flag | Set when (`mm_Terrain_DrawPatch`) | Drawn by |
 |---|---|---|
 | 0x01 | the object's type gives a ground texture | base ground (0x1A5EB0, mask 1); rain and snow ground passes (mask 1) |
-| 0x02 | a corner rises above the level passed in | the water, most likely: layer G's parameters carry mask 2 (VU1 0x3A.w); its program's test is not read yet |
+| 0x02 | a corner lies under the water: its height is above the level passed in (the water level, 0.5; heights grow downwards) | the water: layer G's program (0x1A6440) loads its mask word (VU1 0x3A.w, 2) and skips the quads without the bit |
 | 0x04 | the tile is in the placement rectangle (`mm_PlacementLayer_InTileRect`) | placement highlight: layer C's parameters carry mask 4 (VU1 0x22.w); its program's test is not read yet |
 | 0x08 | always | |
 | 0x10 | the tile and its first object both have flag 0x10 | layer F (0x1A91C0, mask 0x10) |
-| 0x20, 0x40 | a corner is above 0 on a type without flag 1: 0x20 when the tile has flag 0x20, else 0x40 | layer B (0x1AA340): its first pass mask 0x20, its second pass mask 0x40 with a texture of its own |
+| 0x20, 0x40 | a corner lies below ground level (height above 0) on a type without flag 1 (not leveled ground): 0x20 in the sea (tile flag 0x20), else 0x40 (a lake) | layer B (0x1AA340), the bottom: its first pass mask 0x20 with GROUND.TEX's sand (part 17, GS block 0x2698), its second pass mask 0x40 with its rock (part 24, block 0x2708) |
 
-What tile and object flags 0x10 and 0x20 mean for the player is not known yet.
+Heights grow downwards (y points down): 0 is ground level, the water surface is at 0.5, basins go down to 3.2 and hills rise to -3.6. STAGE.BIN's terrain cells say what the generator does where: types 1 to 4 raise hills of four heights (`mm_TerrainGen_Hill`, tops -1.6, -2.8, -2.0 and -3.6), 6 digs a lake and 7 the sea (`mm_TerrainGen_Basin`). The stage briefings agree, record by record (record 9, "divided by 4 lakes", has only type 6; record 19, "between the southern sea and northern lake", both; record 23, "a little island without vegetation", is 98 sea cells and no plants; record 4, "a high tableland", 70 type 1 cells; record 24, "you see nothing", only flat cells). Tile flag 0x20 marks the tiles the sea lowered, and objects placed later keep it. Layer B is the bottom: its program (0x1AA340) loads each quad's four corners, sets their w to 0 and their height to 0.6 y + 0.08 (the parameters at 0x2E), then draws them like the ground. That copy lies above the real ground only where the ground is deeper than 0.2, so with the depth test the sand (sea) or rock (lakes) covers the bottom and the low strip of shore, seen through the water. Tile flag 0x10 is walkable ground (the road, a type with flag 2). Object flag 0x10 is lit: each draw sets it after dark (a road piece while its street lamps are on, a business while open) and clears it otherwise, so layer F's pass (quad flag 0x10) covers the road tiles whose lamps are lit.
 
 **The passes' parameters.** Each pass uploads its own 17 to 19 quadwords to 0x1C and runs MSCAL 0, then the frame's chunk packet (`CityMap.chunkPackets[parity]`) sends the quads to VU1 104 quadwords (26 quads) at a time, each followed by MSCNT. The same chunk packet is called once per pass. Parameter block, as captured (`TerrainPassParams` in `config/types/05_classes.h`; the layers keep it at the start or at `ground`):
 
@@ -109,7 +109,7 @@ What tile and object flags 0x10 and 0x20 mean for the player is not known yet.
 | 0x20 | PRIM: 0x3C (strip, Gouraud, textured, fog), 0x7C for layer F (blended) |
 | 0x21-0x2C | three sets of four texture coordinates (the quarters of a 2 x 2 texture) |
 | 0x2D.w | the pass's flag mask (the snow's ground pass sets x to 8 and leaves w) |
-| 0x2E | per pass: layer B 0.6 and 0.08, the rain ground pass (0, -0.01, 0, 1); not read yet in the programs |
+| 0x2E | per pass: layer B 0.6 and 0.08 (each corner's height becomes 0.6 y + 0.08, read in 0x1AA340), the rain ground pass (0, -0.01, 0, 1) (not read yet) |
 
 **Programs.**
 
@@ -120,7 +120,7 @@ What tile and object flags 0x10 and 0x20 mean for the player is not known yet.
 | 0x1A91C0 | layer F | recorded | unlit, alpha blended (the packet sets ALPHA_1 to 0x30_00000048 first); mask 0x10; no matching quad in the captures |
 | 0x1A76F0 | cliff sides (terrain packet A) | recorded | the same for triangles: 3 quadwords each (TEX0 low word, texture-coordinate set, 1), 36 per chunk of 108 quadwords, one TEX0 per triangle |
 
-The cliff sides are double-buffered like the quads (`CityMap.sideBuffers`, filled by frame parity), but `mm_Terrain_BuildVu1PacketA` stores the start of the first buffer's packet in both of the map's side packet slots (checked against the decompile), so odd frames draw the triangles of the frame before. A port that wants both buffers drawn would store the second section's start there.
+The cliff sides are double-buffered like the quads (`CityMap.sideBuffers`, filled by frame parity), but `mm_Terrain_BuildSidePackets` stores the start of the first buffer's packet in both of the map's side packet slots (checked against the decompile), so odd frames draw the triangles of the frame before. A port that wants both buffers drawn would store the second section's start there.
 
 ## Weather and water
 
@@ -166,7 +166,7 @@ Read from the loader (`mm_A3DObject_Load`, `mm_A3DObject_LoadAsync`, `mm_A3D_Rel
 
 * No run of 0x1A7B30, 0x1A8330's batch loop, or the rain programs (0x1A8A00, 0x1A8E20) has been captured; the Rhinecliff save has snow, not rain. A capture with rain, and one while placing a building, would show them.
 * The water program's quad selection and wave formula, and 0x1A4780's second part, have not been read in detail.
-* Whether the water and the placement highlight programs test the masks their parameters carry (2 and 4), and what tile flags 0x10 and 0x20 mean.
+* Whether the water and the placement highlight programs test the masks their parameters carry (2 and 4).
 
 ## Names (plan R1 step 3)
 
@@ -181,4 +181,4 @@ Still to name:
 | Now | What it is |
 |---|---|
 | `mm_LightSet_BuildPackets`' packets A and B | the two model programs' set-up packets (with and without the second part), chosen by `mm_Packet2_Draw` |
-| layers A, B and F | what A's instances show is not known; B and F are terrain passes over tiles with flags 0x20/0x40 and 0x10 |
+| layers A, B and F | what A's instances show is not known; B is the bottom of the water, sand in the sea and rock in lakes; F is a blended pass over road tiles whose street lamps are lit (object flag 0x10) |

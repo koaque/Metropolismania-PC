@@ -1481,11 +1481,11 @@ namespace mm
             Se_Request(0, 0, 0x37, 0, 0, 0, 0x3C, 0, 0.0f, 0.0f);
     }
 
-    // The ambience sound for a map position (0xFF: none). Ground above the water level (waterLevel) gets
-    // 0x1C, or 0x1D on tiles without flag 0x20. Lower ground looks up its 2x2 block in the ambience grid: the
-    // cell's sound must exist and match `variant` (1-based, 0 = 0), and the sound's schedule must hold now
-    // for today's weather (hours per weather in its table entry), with the start inside the hour staggered
-    // by the cell. A sound past the lead part of its window comes back with 0x100 added.
+    // The ambience sound for a map position (0xFF: none). Ground under the water (deeper than waterLevel: heights grow
+    // downwards) gets 0x1C in the sea (tile flag 0x20), else 0x1D (a lake). Dry ground looks up its 2x2 block in the
+    // ambience grid: the cell's sound must exist and match `variant` (1-based, 0 = 0), and the sound's schedule must hold
+    // now for today's weather (hours per weather in its table entry), with the start inside the hour staggered by the
+    // cell. A sound past the lead part of its window comes back with 0x100 added.
     uint32_t Se_PickTerrainAmbience(int x, int z, int variant)
     {
         const GuestPtr<CityScene> city = globals::soundCity.get();
@@ -1493,7 +1493,7 @@ namespace mm
             return 0xFF;
         const ps2f height = Map_GetHeightAt(globals::soundCity.get()->map, x, z);
         if (globals::soundCity.get()->waterLevel < height)
-            return Map_TileFlag20(globals::soundCity.get()->map, x, z) != 0 ? 0x1C : 0x1D;
+            return Map_TileIsSea(globals::soundCity.get()->map, x, z) != 0 ? 0x1C : 0x1D;
         const uint32_t wanted = variant != 0 ? static_cast<uint32_t>(variant - 1) & 0xFFu : 0u;
         const int cell = x / 2 + (z / 2) * 64;
         const AmbienceCell &gridCell = GuestPtr<AmbienceCell>{globals::kAmbienceGrid}[cell];

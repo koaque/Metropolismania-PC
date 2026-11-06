@@ -30,9 +30,9 @@ namespace mm
     // ---- tiles
 
     uint16_t Map_TileIsCorner(GuestPtr<CityMap> map, int x, int z) { return tileFlag(map, x, z, 0x01); }
-    uint16_t Map_TileFlag08(GuestPtr<CityMap> map, int x, int z) { return tileFlag(map, x, z, 0x08); }
+    uint16_t Map_TileIsLeveled(GuestPtr<CityMap> map, int x, int z) { return tileFlag(map, x, z, 0x08); }
     uint16_t Map_TileWalkable(GuestPtr<CityMap> map, int x, int z) { return tileFlag(map, x, z, 0x10); }
-    uint16_t Map_TileFlag20(GuestPtr<CityMap> map, int x, int z) { return tileFlag(map, x, z, 0x20); }
+    uint16_t Map_TileIsSea(GuestPtr<CityMap> map, int x, int z) { return tileFlag(map, x, z, 0x20); }
 
     // Walkable flag (0x10) of a tile, 0 for indices off the map.
     uint16_t Map_TileIndexWalkable(GuestPtr<CityMap> map, uint32_t tile)
@@ -74,7 +74,9 @@ namespace mm
 
     ps2f Map_GetHeightAt(GuestPtr<CityMap> map, int x, int z) { return tileAt(map, clampToMap(x), clampToMap(z)).height; }
 
-    ps2f Map_HeightScale(ps2f height) { return ps2f(0.08f) + ps2f(0.6f) * height; }
+    // The drawn bottom's height over lowered ground (heights grow downwards): the copy layer B draws, at 0.6 of the depth
+    // plus 0.08. People and goods on lowered ground stand on it (Map_SampleHeight).
+    ps2f Map_BottomHeight(ps2f height) { return ps2f(0.08f) + ps2f(0.6f) * height; }
 
     // Clears a size x size square at (x, z): each tile loses its first object (the map's clearObject slot)
     // until a type-2 object (wasteland) comes first.
@@ -91,8 +93,8 @@ namespace mm
     }
 
     // The ground height at world (x, z): the tile's four corner heights make two triangles split along a
-    // diagonal, and the plane of the one the point is in gives the height (scaled by Map_HeightScale when
-    // above 0). Off the map, the edge tile and edge coordinate are used. The corners and the plane go through
+    // diagonal, and the plane of the one the point is in gives the height (the drawn bottom's, Map_BottomHeight, on
+    // lowered ground: above 0, heights grow downwards). Off the map, the edge tile and edge coordinate are used. The corners and the plane go through
     // stack vectors as in the original: their w lanes are never written and VU0 loads them.
     ps2f Map_SampleHeight(GuestPtr<CityMap> map, ps2f x, ps2f z)
     {
@@ -161,7 +163,7 @@ namespace mm
         const ps2f height = -(plane->w + (plane->x * px + plane->z * pz)) / plane->y;
         if (height <= ps2f(0.0f))
             return height;
-        return Map_HeightScale(height);
+        return Map_BottomHeight(height);
     }
 
     // The tile's four vertex values; returns the last one.
@@ -230,8 +232,8 @@ namespace mm
         return person;
     }
 
-    // Objects on one tile stack: each one sits 0.8 below the one before it in the tile's list. 0 when the
-    // object is not in its own tile's list.
+    // Objects on one tile stack: each one sits 0.8 above the one before it in the tile's list (0.8 less: heights grow
+    // downwards). 0 when the object is not in its own tile's list.
     ps2f MapObj_GetHeight(GuestPtr<CityMap> map, uint32_t object)
     {
         const uint16_t tile = map->objects[object].tile;
@@ -303,9 +305,10 @@ namespace mm
         return 0;
     }
 
-    // Whether ground lower than 0.5 lies just outside the footprint: one tile beyond each side, at the side's
-    // corner, (x, z - 1), (x + size, z), (x, z + size) and (x - 1, z), counting tiles on the map only.
-    int Placement_CheckSlope(GuestPtr<CityMap> map, int x, int z, int size)
+    // Whether dry ground (less than 0.5 deep, above the water: heights grow downwards) lies just outside the footprint:
+    // one tile beyond each side, at the side's corner, (x, z - 1), (x + size, z), (x, z + size) and (x - 1, z),
+    // counting tiles on the map only.
+    int Placement_LandBeside(GuestPtr<CityMap> map, int x, int z, int size)
     {
         port::GuestFrame<0x70> frame;
         const int xs[4] = {x, x + size, x, x - 1};
@@ -321,12 +324,12 @@ namespace mm
         return 0;
     }
 
-    // Whether `type` can stand at (x, z): 1 yes, 2 when its type rule forbids the tile, 0 when its footprint
-    // leaves the map, the map holds 0x3F80 objects, the neighbours forbid it (mm_Placement_CheckNeighbours,
-    // which also widens `rect`), or a footprint tile's object is of the same type, locked (flag 1), of a type
-    // without flag 4, on ground at or below 0 for a type with flag 0x10, or refused by the type (acceptsOn
-    // slot). Other than wasteland (2) and leveled land (3), a type placed above height 0.5 also needs lower ground
-    // beside it (mm_Placement_CheckSlope).
+    // Whether `type` can stand at (x, z): 1 yes, 2 when its type rule forbids the tile, 0 when its footprint leaves the
+    // map, the map holds 0x3F80 objects, the neighbours forbid it (mm_Placement_CheckNeighbours, which also widens
+    // `rect`), or a footprint tile's object is of the same type, locked (flag 1), of a type without flag 4, on ground
+    // that is not lowered (at or below 0) for a type with flag 0x10 (a port stands in the water), or refused by the
+    // type (acceptsOn slot). Other than wasteland (2) and leveled land (3), a type placed under the water (deeper than
+    // 0.5; heights grow downwards) also needs dry ground beside it (mm_Placement_LandBeside).
     int Map_CheckPlacement(GuestPtr<CityMap> map, uint32_t type, int x, int z, GuestPtr<int32_t> rect)
     {
         port::GuestFrame<0xE0> frame;
@@ -359,7 +362,7 @@ namespace mm
             return 1;
         if (Map_GetTileHeightWord(map, tile) <= ps2f(0.5f))
             return 1;
-        return Placement_CheckSlope(map, x, z, size) != 0 ? 1 : 0;
+        return Placement_LandBeside(map, x, z, size) != 0 ? 1 : 0;
     }
 
     // Links `object` at the end of tile `tile`'s object list.
@@ -1008,12 +1011,14 @@ namespace mm
         terrainSide(map, corner1, right.verts[0], corner2, right.verts[3], oddZ, false);
     }
 
-    // One terrain tile's quad around (centreX, centreZ): its corners take the tile's corner heights. With no
-    // object (outside the map) the nearest tile's are used, flattened along the edge it lies beyond. The draw
-    // flags (t3 of mm_Terrain_AddQuad) start at 8: +1 when the object's type gives a texture (groundTexture
-    // slot, with the object; passed on as the texture), 2 when a corner rises above `level`, 0x20 or 0x40 (tile flag 0x20 or not) when a
-    // corner is above 0 on a type without flag 1, 4 inside the buildings layer's tile rectangle, 0x10 when the
-    // tile and its first object both have flag 0x10. A tile with an object also gets its cliff sides.
+    // One terrain tile's quad around (centreX, centreZ): its corners take the tile's corner heights. With no object
+    // (outside the map) the nearest tile's are used, flattened along the edge it lies beyond. The draw flags (t3 of
+    // mm_Terrain_AddQuad) start at 8: +1 when the object's type gives a texture (groundTexture slot, with the object;
+    // passed on as the texture), 2 when a corner lies under the water (above `level`: heights grow downwards), 0x20 or
+    // 0x40 (the sea, tile flag 0x20, or a lake) when a corner lies below ground level (above 0) on a type without flag
+    // 1 (layer B, the sand or rock bottom), 4 inside the buildings layer's tile rectangle, 0x10 when the tile is
+    // walkable and its first object lit (both flags 0x10: a road with its street lamps on, layer F). A tile with an
+    // object also gets its cliff sides.
     void Terrain_DrawPatch(GuestPtr<CityMap> map, int x, int z, int object, ps2f centreX, ps2f centreZ, ps2f level)
     {
         port::GuestFrame<0xE0> frame;
@@ -1147,9 +1152,9 @@ namespace mm
     }
 
     PORT_FN(Map_TileIsCorner);
-    PORT_FN(Map_TileFlag08);
+    PORT_FN(Map_TileIsLeveled);
     PORT_FN(Map_TileWalkable);
-    PORT_FN(Map_TileFlag20);
+    PORT_FN(Map_TileIsSea);
     PORT_FN(Map_TileIndexWalkable);
     PORT_FN(Map_GetTileKind);
     PORT_FN(MapObj_RayHit);
@@ -1158,7 +1163,7 @@ namespace mm
     PORT_FN(Map_SetTileHeight);
     PORT_FN(Map_GetTileHeightWord);
     PORT_FN(Map_GetHeightAt);
-    PORT_FN(Map_HeightScale);
+    PORT_FN(Map_BottomHeight);
     PORT_FN(Map_SampleHeight);
     PORT_FN(Map_ClearArea);
     PORT_FN(Map_GetTileVertex);
@@ -1185,11 +1190,12 @@ namespace mm
     PORT_FN(MapObj_Init);
     PORT_FN(Map_CreateObject);
     PORT_FN(Map_UpdateTileGeometry);
-    // Terrain generation: how far, in tiles, the nearest land (a tile above height 0) lies from tile (x, z) along the four
-    // axes, up to 15 (100 when there is none; the distance counts the steps all four directions were clear for).
-    ps2f TerrainGen_SampleSmooth(GuestPtr<CityMap> map, int x, int z)
+    // Terrain generation: how far, in tiles, the nearest water lies from tile (x, z) along the four axes: a lowered tile,
+    // height above 0, which is below ground level since heights grow downwards. Up to 15 (100 when there is none; the
+    // distance counts the steps all four directions were clear for).
+    ps2f TerrainGen_StepsToWater(GuestPtr<CityMap> map, int x, int z)
     {
-        const auto land = [&](int tx, int tz) {
+        const auto lowered = [&](int tx, int tz) {
             if (tx < 0 || tx >= kMapSize || tz < 0 || tz >= kMapSize)
                 return false;
             return !(tileAt(map, tx, tz).height <= ps2f(0.0f));
@@ -1197,18 +1203,19 @@ namespace mm
         ps2f steps(0.0f);
         for (int d = 0; d < 16; ++d)
         {
-            if (land(x + d, z) || land(x - d, z) || land(x, z + d) || land(x, z - d))
+            if (lowered(x + d, z) || lowered(x - d, z) || lowered(x, z + d) || lowered(x, z - d))
                 return steps;
             steps = steps + ps2f(1.0f);
         }
         return ps2f(100.0f);
     }
 
-    // Terrain generation: pulls the tiles within `radius` of tile (x, z)'s centre (the tiles in a window `reach` + 4 wide) down
-    // towards the sea: a tile with land `s` steps away (SampleSmooth, above 0) takes strength * (radius - distance) /
-    // radius, no lower than -0.022 * s * s and than `floor`, when that is below its height. Distances on VU0, as the
-    // scatter; the original's frame is reserved whole and its points kept at their offsets.
-    void TerrainGen_Smooth(GuestPtr<CityMap> map, int cx, int cz, ps2f strength, ps2f radius, ps2f floorHeight)
+    // Terrain generation: raises the land within `radius` of tile (x, z)'s centre (the tiles in a window `reach` + 4
+    // wide) into a hill. Heights grow downwards, so higher is smaller: a tile `s` steps from the water (StepsToWater,
+    // above 0; water is left alone) takes strength * (radius - distance) / radius, but rises no higher than 0.022 * s *
+    // s (the slope down to the shore) and than `top`, where that is higher than the tile stands. Distances on VU0, as
+    // the scatter; the original's frame is reserved whole and its points kept at their offsets.
+    void TerrainGen_Hill(GuestPtr<CityMap> map, int cx, int cz, ps2f strength, ps2f radius, ps2f top)
     {
         using namespace vu0;
         port::GuestFrame<0x90> frame;
@@ -1248,27 +1255,28 @@ namespace mm
                 const ps2f d = distance->x;
                 if (!(d < radius))
                     continue;
-                const ps2f land = TerrainGen_SampleSmooth(map, x, z);
-                if (land <= ps2f(0.0f))
+                const ps2f steps = TerrainGen_StepsToWater(map, x, z);
+                if (steps <= ps2f(0.0f))
                     continue;
-                const ps2f squared = land * land;
+                const ps2f squared = steps * steps;
                 ps2f pull = (strength * (radius - d)) / radius;
                 const ps2f cap = -(ps2f(std::bit_cast<float>(0x3CB43958u)) * squared);
                 if (pull <= cap)
                     pull = cap;
-                if (pull <= floorHeight)
-                    pull = floorHeight;
+                if (pull <= top)
+                    pull = top;
                 if (pull < tileAt(map, x, z).height)
                     tileAt(map, x, z).height = pull;
             }
         }
     }
 
-    // Terrain generation: a round bump of strength `height` and reach `radius` at tile (x, z)'s centre. Each tile within the
-    // radius takes a pull: the height scaled by the fraction of the radius left (at most 3.2), or for mode 3 the fourth power
-    // of that fraction cut to 0..1 after scaling by 4, and from then on, for every later tile too, the mode is 0. When the pull is larger in size than the
-    // tile's height (soft doubles), mode 0 averages the two, 1 takes the smaller, 2 the larger, other modes leave the tile;
-    // every tile is then held to 3.2 at most, and with flag 0x20 a tile above sea level gets its tile flag 0x20. (The
+    // Terrain generation: a round bump of strength `height` and reach `radius` at tile (x, z)'s centre. Each tile
+    // within the radius takes a pull: the height scaled by the fraction of the radius left (at most 3.2), or for mode 3
+    // the fourth power of that fraction cut to 0..1 after scaling by 4, and from then on, for every later tile too, the
+    // mode is 0. When the pull is larger in size than the tile's height (soft doubles), mode 0 averages the two, 1
+    // takes the smaller, 2 the larger, other modes leave the tile; every tile is then held to 3.2 at most (the
+    // deepest), and with flag 0x20 a tile lowered below ground level (above 0) gets tile flag 0x20 (the sea). (The
     // original leaves a float in f0, which its callers do not read.)
     void TerrainGen_ApplyBump(GuestPtr<CityMap> map, int x, int z, int mode, uint32_t flags, ps2f height, ps2f radius)
     {
@@ -1350,16 +1358,17 @@ namespace mm
         }
     }
 
-    // Terrain generation: a hill on the 16-tile block (cx, cz): a bump of height 5 and reach 9 at its middle, then a ring of
-    // radius 7 walked as a midpoint circle (x from 7 down, y from 0 up) with a size-and-position-jittered bump (mode 2) on
-    // each of the eight mirror points of every step. The jitter is up to 2 tiles either way and the size wobbles by up to 5
-    // (the first bump of a step) or 3 (the rest); `high` sets tile flag 0x20 on the land the bumps raise. The original
+    // Terrain generation: a basin, the sea or a lake, on the 16-tile block (cx, cz); heights grow downwards, so its
+    // bumps dig. A bump of depth 5 and reach 9 at its middle, then a ring of radius 7 walked as a midpoint circle (x
+    // from 7 down, y from 0 up) with a size-and-position-jittered bump (mode 2, the deeper) on each of the eight mirror
+    // points of every step. The jitter is up to 2 tiles either way and the size wobbles by up to 5 (the first bump of a
+    // step) or 3 (the rest); `sea` sets tile flag 0x20 on the tiles the bumps lower below ground level. The original
     // returns whatever its last bump left in v0, which its one caller (Generate) never reads.
-    void TerrainGen_Hills(GuestPtr<CityMap> map, int cx, int cz, int high)
+    void TerrainGen_Basin(GuestPtr<CityMap> map, int cx, int cz, int sea)
     {
         port::GuestFrame<0x110> frame;
         const int centreX = (cx << 4) + 8, centreZ = (cz << 4) + 8;
-        const uint32_t flags = high != 0 ? 0x20u : 0u;
+        const uint32_t flags = sea != 0 ? 0x20u : 0u;
         const ps2f wobbleUnit(std::bit_cast<float>(0x38D1B717u)), shrink(std::bit_cast<float>(0x3E99999Au)), base(5.0f);
         const auto draw = [] { return static_cast<int32_t>(Random_Next()); };
         const auto jitter = [&] { return draw() % 4 - 2; };
@@ -1393,14 +1402,15 @@ namespace mm
         } while (x >= y);
     }
 
-    // Terrain generation: one river. It starts on the map's edge at a point set by `start` and walks in steps. Each step
-    // moves the position by (0, 0, 1.5 + width) turned by two Y rotations, one swaying with sin(phase) and one turning with
-    // cos(heading), and drops a mode 3 bump of reach 1.5 + width + |cos(phase)| (and 1.4 times that for height, at least 3.2)
-    // at the tile the position falls on. `edge` says how the walk's axes lie on the map (0 to 3), `direction` where the
-    // heading starts (0, 90, 180, -90 degrees). The first bump waits for a tile at or below height 1; later bumps stop the
-    // river when they land on tiles above 1.6, and so does leaving the map by more than four tiles.
-    // curveA, curveB, wobbleA and wobbleB are the river's shape (the turning rate and the sway). The original's frame is kept
-    // for its two matrices and the position vectors.
+    // Terrain generation: one river. It starts on the map's edge at a point set by `start` and walks in steps. Each
+    // step moves the position by (0, 0, 1.5 + width) turned by two Y rotations, one swaying with sin(phase) and one
+    // turning with cos(heading), and drops a mode 3 bump of reach 1.5 + width + |cos(phase)| (and 1.4 times that for
+    // height, at least 3.2) at the tile the position falls on. `edge` says how the walk's axes lie on the map (0 to 3),
+    // `direction` where the heading starts (0, 90, 180, -90 degrees). The first bump waits for a tile at or below
+    // height 1 (no deeper than 1: heights grow downwards); later bumps stop the river when they land on tiles deeper
+    // than 1.6, and so does leaving the map by more than four tiles. curveA, curveB, wobbleA and wobbleB are the
+    // river's shape (the turning rate and the sway). The original's frame is kept for its two matrices and the position
+    // vectors.
     void TerrainGen_River(GuestPtr<CityMap> map, int edge, int start, int width, int curveA, int curveB, int direction,
                           int wobbleA, int wobbleB)
     {
@@ -1499,11 +1509,12 @@ namespace mm
         }
     }
 
-    // Terrain generation: builds the whole map from a 10 x 10 grid of cells (16 tiles each) behind a 4-byte river header
-    // (`params`). A cell byte holds the terrain type in bits 0..2 (6 and 7: hills, 7 the high kind; 1 to 4: smoothed
-    // towards the sea) and a plant style in bits 4..6. In turn: hills, the two rivers (header bytes 0..3), the smoothing, 16
-    // plant spots per cell (style 0 none, 1 kind 2, 2 and 3 a kind drawn from a table, any other keeps the last kind) each
-    // with a scatter of kind 2 and the drawn kind, the border objects (type 11) on the edge tiles, and every tile's geometry.
+    // Terrain generation: builds the whole map from a 10 x 10 grid of cells (16 tiles each) behind a 4-byte river
+    // header (`params`). A cell byte holds the terrain type in bits 0..2 (1 to 4: hills of four heights, by the tables
+    // at kHillStrength/Radius/Top; 6 a lake and 7 the sea, dug by TerrainGen_Basin) and a plant style in bits 4..6,
+    // plants only on cells below 5. In turn: the basins, the two rivers (header bytes 0..3), the hills, 16 plant spots
+    // per cell (style 0 none, 1 kind 2, 2 and 3 a kind drawn from a table, any other keeps the last kind) each with a
+    // scatter of kind 2 and the drawn kind, the border objects (type 11) on the edge tiles, and every tile's geometry.
     void TerrainGen_Generate(GuestPtr<CityMap> map, GuestPtr<uint8_t> params)
     {
         port::GuestFrame<0x110> frame;
@@ -1513,9 +1524,9 @@ namespace mm
             {
                 const unsigned type = cell(8 - row, 8 - column) & 7u;
                 if (type == 7)
-                    TerrainGen_Hills(map, column, row, 1);
+                    TerrainGen_Basin(map, column, row, 1);
                 else if (type == 6)
-                    TerrainGen_Hills(map, column, row, 0);
+                    TerrainGen_Basin(map, column, row, 0);
             }
         for (int i = 0; i < 2; ++i)
         {
@@ -1530,10 +1541,10 @@ namespace mm
                 const unsigned type = cell(row, column) & 7u;
                 if (type == 0 || type >= 5)
                     continue;
-                TerrainGen_Smooth(map, 0x88 - 16 * column, 0x88 - 16 * row,
-                                  port::load<float>(globals::kSmoothStrength + 4 * type),
-                                  port::load<float>(globals::kSmoothRadius + 4 * type),
-                                  port::load<float>(globals::kSmoothFloor + 4 * type));
+                TerrainGen_Hill(map, 0x88 - 16 * column, 0x88 - 16 * row,
+                                  port::load<float>(globals::kHillStrength + 4 * type),
+                                  port::load<float>(globals::kHillRadius + 4 * type),
+                                  port::load<float>(globals::kHillTop + 4 * type));
             }
         int kind = 0; // the original's register: styles 4 to 7 keep whatever was drawn last
         for (int row = 0; row < 10; ++row)
@@ -1776,16 +1787,16 @@ namespace mm
     PORT_FN(Terrain_Draw);
     PORT_FN(TerrainGen_River);
     PORT_FN(TerrainGen_Generate);
-    PORT_FN(TerrainGen_Hills);
-    PORT_FN(TerrainGen_SampleSmooth);
-    PORT_FN(TerrainGen_Smooth);
+    PORT_FN(TerrainGen_Basin);
+    PORT_FN(TerrainGen_StepsToWater);
+    PORT_FN(TerrainGen_Hill);
     PORT_FN(TerrainGen_ScatterObjects);
     PORT_FN(MapObj_Delete);
     PORT_FN(People_UnlinkFromList);
     PORT_FN(Map_AppendObjectToTile);
     PORT_FN(MapObj_FindFreeSlot);
     PORT_FN(Map_PlaceObject);
-    PORT_FN(Placement_CheckSlope);
+    PORT_FN(Placement_LandBeside);
     PORT_FN(Map_CheckPlacement);
     PORT_FN(Map_RemoveObjectFromTile);
     PORT_FN(MapPeople_RemoveForObject);

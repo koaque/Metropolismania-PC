@@ -306,10 +306,10 @@ namespace mm
         Widget_Close(GuestPtr<Widget>::of(view->base));
     }
 
-    // The camera for a talk at building `object`: the target at the middle of its footprint, half a unit below
-    // the object's height (2.5 lower for type flag 0x10); the eye at the target plus 0.4 back along the view's
-    // direction (its open target minus eye, flattened and normalized). The original's frame is reserved whole
-    // and its vectors and matrix kept at their offsets.
+    // The camera for a talk at building `object`: the target at the middle of its footprint, half a unit above the
+    // object's height (2.5 higher for type flag 0x10, a port: heights grow downwards); the eye at the target plus 0.4
+    // back along the view's direction (its open target minus eye, flattened and normalized). The original's frame is
+    // reserved whole and its vectors and matrix kept at their offsets.
     void TalkView_PersonCamera(GuestPtr<TalkView> view, int object, GuestPtr<Vec4> target, GuestPtr<Vec4> eye)
     {
         using namespace vu0;
@@ -352,7 +352,7 @@ namespace mm
 
     // The camera for a talk at building `object`, eye first. The target is the middle of the footprint at the
     // object's height, the eye an offset turned by the tile's facing (the building matrix of its tile kind,
-    // translation row reset): the shared one (2.5 lower for type flag 0x10) for an object still being built
+    // translation row reset): the shared one (2.5 higher for type flag 0x10) for an object still being built
     // (no flag 0x20), the type's own for a built one of a type with flag 0x4000. The target then takes the
     // eye's height. Other built ones use the person camera, which takes the target first.
     void TalkView_BuildingCamera(GuestPtr<TalkView> view, int object, GuestPtr<Vec4> eye, GuestPtr<Vec4> target)
@@ -1102,7 +1102,7 @@ namespace mm
 
     // The person at record `person` is drawn in front of the camera at (0, 0.4, -3.65): the character class's draw slot
     // (drawAt slot) with an identity matrix moved there, the default colour and the view's animation slots. A class with
-    // flag 2 also gets the view's person model placed there first (and the person is then 0.15 lower).
+    // flag 2 also gets the view's person model placed there first (and the person is then 0.15 higher).
     void TalkView_DrawPerson(GuestPtr<TalkView> view, int person)
     {
         port::GuestFrame<0xD0> frame;
@@ -1921,7 +1921,7 @@ namespace mm
 
     // Draws a family member in the phone view: the draw packet of the view is appended, the local matrix is the standard one with
     // its translation at (0, 0.4, -3.6); for a character class with flag 2 the view's person model gets the same place and is drawn
-    // with the default colour, and the local matrix drops by 0.15; the class's own drawAt slot then
+    // with the default colour, and the local matrix rises by 0.15 (y less 0.15); the class's own drawAt slot then
     // draws the member with the matrix, the animation state (anim) and times (animTime) of the view; a first animation time of 0
     // puts the first slot to the idle animation 7.
     void TalkView_DrawMember(GuestPtr<TalkView> view, int family, int member)
@@ -2298,16 +2298,17 @@ namespace mm
 
     PORT_FN(TalkView_DrawBuilding);
 
-    // The people of a talk view, in a row from the view's scroll position (rowX) at 0.3 apart, at height 0.4 and depth -3.65: the
-    // members of the family when the view is by family (building is 0x3F80), else the people of the building that count (a class
-    // without flag 1, outside or in this building). Those left of -0.8 are only counted past; drawing goes on while the position is
-    // at most 0.8. Someone who is away (activity or schedule 5) is the view's second model (awayModel) swaying with a phase of its own
-    // (dimmed when nobody is home); anyone else is drawn by the character class's drawAt slot turned about y by the
-    // position, in the default colour for the highlighted slot (the chosen one, else the cursor's) and a grey for the rest, with the
-    // view's person model first for a class with flag 2 (and the person then 0.15 lower). Up to four of them (and none left of -1)
-    // are counted for the name boxes (nameBoxes) and frames (frames); unless the view is choosing, each gets its name (the member's two
-    // name fields, name2 then name, with a separator) on a row that alternates, and a friendship frame of the member's band + 9
-    // when it has one. The original's frame is reserved whole.
+    // The people of a talk view, in a row from the view's scroll position (rowX) at 0.3 apart, at height 0.4 and depth
+    // -3.65: the members of the family when the view is by family (building is 0x3F80), else the people of the building
+    // that count (a class without flag 1, outside or in this building). Those left of -0.8 are only counted past;
+    // drawing goes on while the position is at most 0.8. Someone who is away (activity or schedule 5) is the view's
+    // second model (awayModel) swaying with a phase of its own (dimmed when nobody is home); anyone else is drawn by
+    // the character class's drawAt slot turned about y by the position, in the default colour for the highlighted slot
+    // (the chosen one, else the cursor's) and a grey for the rest, with the view's person model first for a class with
+    // flag 2 (and the person then 0.15 higher). Up to four of them (and none left of -1) are counted for the name boxes
+    // (nameBoxes) and frames (frames); unless the view is choosing, each gets its name (the member's two name fields,
+    // name2 then name, with a separator) on a row that alternates, and a friendship frame of the member's band + 9 when
+    // it has one. The original's frame is reserved whole.
     void TalkView_DrawPeople(GuestPtr<TalkView> view)
     {
         using namespace vu0;
