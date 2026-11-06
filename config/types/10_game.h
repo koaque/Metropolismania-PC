@@ -98,7 +98,7 @@ struct MapTile {
                                   loaded with lwc1 (mm_Map_GetTileHeightWord) */
     float verts[4];            /* +0x04 corner heights towards (-x,-z), (+x,-z), (+x,+z), (-x,+z) (mm_Map_UpdateTileGeometry) */
     uint16_t firstObject;      /* +0x14 0x3F80 = none */
-    uint16_t flags;            /* +0x16 1 an object's corner tile, 2 and 4 the tile kind (mm_Map_GetTileKind), 8 leveled
+    uint16_t flags;            /* +0x16 1 an object's corner tile, 2 and 4 the side its building faces (mm_Map_GetTileFacing), 8 leveled
                                   ground (under a type with flag 1: leveled land or a building on it), 0x10 walkable (under
                                   a type with flag 2, the road), 0x20 the sea (lowered by a type 7 terrain cell, kept under
                                   objects: layer B's sand bottom instead of a lake's rock, ambience 0x1C instead of 0x1D) */
@@ -313,7 +313,7 @@ struct BuildingRecord {
 /* Building type base (0x160 bytes): one object per type in the table at gp 0x1BDBF8; classes add fields after it. */
 struct BuildingType {
     Vec4 peopleSpots[16];      /* +0x000 where the people of a building stand: four spots (x, y, z offsets and a heading, record
-                                  +0x40), each turned for the four views; spot k in view v at 4k + v (mm_BldgType_BaseCtor,
+                                  +0x40), each turned for the four facings; spot k for facing f at 4k + f (mm_BldgType_BaseCtor,
                                   mm_Bldg_DrawPeople) */
     Vec4 talkEye;              /* +0x100 eye offset from the building for a talk, type flag 0x4000 (mm_TalkView_BuildingCamera) */
     char name[0x20];           /* +0x110 */
@@ -531,7 +531,7 @@ struct MyHomeView {
     TalkView base;
     Vec4 position;             /* +0x270 viewer position, from the home's entrance */
     Vec4 target;               /* +0x280 looked-at point (position minus 0.1 along the facing) */
-    float facing;              /* +0x290 turn about y, from the tile kind */
+    float facing;              /* +0x290 turn about y, from the tile's facing */
     float pitch;               /* +0x294 looking up and down, -0.05 to 0.1 */
     void *collision;           /* +0x298 the interior's triangle blob (table at 0x1F3CE0) */
     int32_t size;              /* +0x29C building size */
@@ -685,8 +685,8 @@ struct SeRequest {
     uint32_t owner;            /* +0x04 owner id (0xFFFF for sounds with flag 0x20) + (group * 16 + voice index) << 16 */
     uint16_t priority;         /* +0x08 the sound's priority bits << 8 + half the distance; lower comes first */
     uint8_t param0A;           /* +0x0A mm_Se_Request's a3; non-zero only updates a voice already playing it (mm_Se_AssignVoices) */
-    uint8_t param0B;           /* +0x0B t2 (0x3C from mm_Sound_PlaySe) */
-    int16_t param0C;           /* +0x0C t1, the voice's pitch */
+    uint8_t note;              /* +0x0B the note the sample plays at (60 as recorded; mm_Sound_PlaySe passes 60) */
+    int16_t pitch;             /* +0x0C the voice's pitch */
     uint16_t voiceParam;       /* +0x0E second voice list byte + (sound flags & 0xF0) << 4 */
     int32_t volumeLeft;        /* +0x10 1..0x3FFF */
     int32_t volumeRight;       /* +0x14 */
@@ -704,7 +704,7 @@ struct SeVoice {
     uint32_t owner;            /* +0x04 as SeRequest */
     uint16_t priority;         /* +0x08 the highest is stolen first */
     int16_t pitch;             /* +0x0A group A, sent with flag 2 (mm_Se_ApplyVoiceParams) */
-    uint8_t param0B;           /* +0x0C group A */
+    uint8_t note;              /* +0x0C group A: the request's note, sent with mm_SoundCmd_WavePlay */
     uint8_t scriptStep;        /* +0x0D step in the sound script (mm_Se_UpdateVoices) */
     uint16_t scriptTimer;      /* +0x0E frames left in a wait step; pitch slides keep a step count in the high byte */
     uint16_t voiceParam;       /* +0x10 low byte: sound script (0x1B3410 + 0x18 each); 0x100 (sound flag 0x10): kept

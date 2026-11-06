@@ -351,7 +351,7 @@ namespace mm
     }
 
     // The camera for a talk at building `object`, eye first. The target is the middle of the footprint at the
-    // object's height, the eye an offset turned by the tile's facing (the building matrix of its tile kind,
+    // object's height, the eye an offset turned by the tile's facing (the matrix of its facing,
     // translation row reset): the shared one (2.5 higher for type flag 0x10) for an object still being built
     // (no flag 0x20), the type's own for a built one of a type with flag 0x4000. The target then takes the
     // eye's height. Other built ones use the person camera, which takes the target first.
@@ -371,8 +371,8 @@ namespace mm
         target->y = MapObj_GetHeight(view->city->map, static_cast<uint32_t>(object));
         target->z = (fromInt(128 - obj->tile / 128) - centre) - half;
         target->w = 1.0f;
-        const auto kind = static_cast<uint32_t>(Map_GetTileKind(view->city->map, obj->tile));
-        const GuestPtr<Vec4> turn{globals::kBuildingMatrices + 0x40u * kind};
+        const auto facing = static_cast<uint32_t>(Map_GetTileFacing(view->city->map, obj->tile));
+        const GuestPtr<Vec4> turn{globals::kBuildingMatrices + 0x40u * facing};
         turn[3] = *GuestPtr<Vec4>{globals::kOriginPoint};
         if (!built)
         {

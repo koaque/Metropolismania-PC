@@ -42,10 +42,11 @@ namespace mm
         return layer;
     }
 
-    // One more instance in this frame's buffer (at most 32): meshes 2(a1 - 1) and the next; its matrix a turn about y of
-    // (a2 - 1) / 100 times a scale that squashes y by 0.08 per step up to 6 steps, then x, y and z (the height lowered past
-    // step 25); its fade 0x40 less 1.5 per step.
-    void LayerA_AddInstance(GuestPtr<LayerA> layer, int a1, int a2, ps2f x, ps2f y, ps2f z)
+    // One more instance in this frame's buffer (at most 32) for a building of `size`, `age` frames into its effect (1 to
+    // 45, mm_CityRender_CollectObjects), its step being age - 1: meshes 2(size - 1) and the next; its matrix a turn
+    // about y of step / 100 times a scale in y of 0.08 per step (growing from nothing, up to 24 steps), then x, y and z,
+    // 0.12 higher for each step past 24 (heights grow downwards); its fade 0x40 less 1.5 per step, not below 0.
+    void LayerA_AddInstance(GuestPtr<LayerA> layer, int size, int age, ps2f x, ps2f y, ps2f z)
     {
         using namespace vu0;
         port::GuestFrame<0x90> frame; // the scale matrix at +0x50
@@ -54,8 +55,8 @@ namespace mm
             return;
         // The instance is looked up again for every use, as in the original.
         const auto instance = [&] { return layerAInstance(layer, layer->count); };
-        const ps2f step = fromInt(a2 - 1);
-        instance()->meshPair = a1 - 1;
+        const ps2f step = fromInt(age - 1);
+        instance()->meshPair = size - 1;
         sdk::sceVu0RotMatrixY(addressOf(instance()->matrix), globals::kIdentityMatrix, F(0x3C23D70Au) * step);
         ps2f capped = F(0x41C00000u);
         if (step <= capped)
@@ -77,7 +78,7 @@ namespace mm
         for (int row = 0; row < 4; ++row)
             store(turn + row, vf(9 + row));
         instance()->matrix[3].x = x;
-        const int32_t tens = static_cast<int32_t>(15 * static_cast<uint32_t>(a2 - 1)) / 10;
+        const int32_t tens = static_cast<int32_t>(15 * static_cast<uint32_t>(age - 1)) / 10;
         instance()->matrix[3].y = y;
         instance()->matrix[3].z = z;
         int32_t fade = 0x40 - tens;
@@ -85,7 +86,7 @@ namespace mm
         if (fade < 0)
             fade = 0;
         instance()->fade = fade;
-        if (!(a2 - 1 < 0x19))
+        if (!(age - 1 < 0x19))
             instance()->matrix[3].y = instance()->matrix[3].y - F(0x3DF5C28Fu) * (step - F(0x41C00000u));
         layer->count = layer->count + 1;
     }

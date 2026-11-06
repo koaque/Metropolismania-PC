@@ -933,8 +933,8 @@ address,name,kind,source
 0x00141170,mm_Map_TileIsLeveled,func,manual
 0x001411D0,mm_Map_TileWalkable,func,manual
 0x00141230,mm_Map_TileIndexWalkable,func,manual
-0x00141270,mm_Map_SetTileKind,func,manual
-0x001412E0,mm_Map_GetTileKind,func,manual
+0x00141270,mm_Map_SetTileFacing,func,manual
+0x001412E0,mm_Map_GetTileFacing,func,manual
 0x00141330,mm_Map_SetTileHeight,func,manual
 0x00141380,mm_Map_SetAreaHeight,func,manual
 0x00141480,mm_Map_GetTileVertexClamped,func,manual
@@ -1096,7 +1096,7 @@ address,name,kind,source
 0x00150940,mm_Wants_HasRoom,func,manual
 0x00150980,mm_Wants_ctor,func,manual
 0x00150990,mm_ListMenu_ScrollTo,func,manual
-0x001509E0,mm_ListMenu_SetCursor,func,manual
+0x001509E0,mm_ListMenu_Place,func,manual
 0x00150AA0,mm_ListMenu_ClearItem,func,manual
 0x00150B80,mm_ListMenu_SetItemText,func,manual
 0x00150C20,mm_ListMenu_AddItems,func,manual

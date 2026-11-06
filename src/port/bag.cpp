@@ -64,7 +64,7 @@ namespace mm
 
     // Puts the goods in the first empty slot (the bag gets size 1 if it had none); byte 6 comes from the goods
     // record.
-    void Bag_AddItem(GuestPtr<Bag> bag, int group, int index, int16_t stage, int month, int16_t seller, uint8_t t2, uint8_t t3)
+    void Bag_AddItem(GuestPtr<Bag> bag, int group, int index, int16_t stage, int month, int16_t seller, uint8_t unk0E, uint8_t unk0F)
     {
         if (bag->size == 0)
             bag->size = 1;
@@ -76,8 +76,8 @@ namespace mm
         slot->stage = stage;
         slot->month = month;
         slot->seller = static_cast<uint16_t>(seller);
-        slot->unk_0E = t2;
-        slot->unk_0F = t3;
+        slot->unk_0E = unk0E;
+        slot->unk_0F = unk0F;
         slot->count = goodsRecordOf(static_cast<uint32_t>(group), static_cast<uint32_t>(index))->count;
     }
 
@@ -229,14 +229,15 @@ namespace mm
     }
 
     // The goods record of a group: the offset (in and out) advances by the group's records per variant (byte 3) for
-    // variant a1 (modulo byte 2), and by a2 more when the group has two or more records per variant (the season).
-    int Goods_GetRecordOffset(int group, int a1, int a2, GuestPtr<int32_t> offset)
+    // the shop's family (modulo the variants, byte 2), and by four per season when the group has two or more records
+    // per variant.
+    int Goods_GetRecordOffset(int group, int family, int season, GuestPtr<int32_t> offset)
     {
         const uint32_t entry = port::load<uint32_t>(0x001BDA9Cu) + 4u * static_cast<uint32_t>(group);
         const uint32_t variants = port::load<uint8_t>(entry + 2u), perVariant = port::load<uint8_t>(entry + 3u);
-        *offset = static_cast<int32_t>(static_cast<uint32_t>(*offset) + perVariant * (static_cast<uint32_t>(remainder(a1, static_cast<int32_t>(variants))) * 4u));
+        *offset = static_cast<int32_t>(static_cast<uint32_t>(*offset) + perVariant * (static_cast<uint32_t>(remainder(family, static_cast<int32_t>(variants))) * 4u));
         if (port::load<uint8_t>(entry + 3u) >= 2)
-            *offset = static_cast<int32_t>(static_cast<uint32_t>(*offset) + static_cast<uint32_t>(a2) * 4u);
+            *offset = static_cast<int32_t>(static_cast<uint32_t>(*offset) + static_cast<uint32_t>(season) * 4u);
         return static_cast<int>(port::load<uint32_t>(0x001BDAA0u) + 0x88u * (static_cast<uint32_t>(*offset) + port::load<uint16_t>(entry)));
     }
 
@@ -439,7 +440,7 @@ namespace mm
                 Map_UnhighlightArea(city->map, static_cast<int>(tile & 0x7Fu), static_cast<int>(tile >> 7),
                                     globals::buildingType(homeType)->size);
                 const int placed = Map_PlaceObject(city->map, static_cast<int>(family), static_cast<int>(homeType),
-                                                   static_cast<int>(tile & 0x7Fu), static_cast<int>(tile >> 7), static_cast<int>(city.address));
+                                                   static_cast<int>(tile & 0x7Fu), static_cast<int>(tile >> 7), city);
                 if (placed == 0x3F80)
                     setState(1);
                 else

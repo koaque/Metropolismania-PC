@@ -713,35 +713,35 @@ namespace mm
     void A3D_AnimateCharacter(GuestPtr<A3DObject> model, int anim, ps2f time) { A3D_Animate(model, anim, time); }
 
     // Animates a model only while its nodes still fit in this frame's instance slots.
-    void A3D_AnimateIfRoom(GuestPtr<A3DObject> model, int a1, ps2f phase)
+    void A3D_AnimateIfRoom(GuestPtr<A3DObject> model, int anim, ps2f phase)
     {
         const int16_t nodes = model->model->nodeCount;
         if (nodes < 0x708 - globals::instanceCount.get())
-            A3D_Animate(model, a1, phase);
+            A3D_Animate(model, anim, phase);
     }
 
     namespace
     {
         constexpr int kMaxInstances = 0x708;
 
-        // Fills the next instance slot with a matrix, flags and colour and queues it. The flags go in the matrix's last
-        // word, where the model programs read them as the draw mode: 0x1A3C80 fogs each vertex for any non-zero mode;
+        // Fills the next instance slot with a matrix, draw mode and colour and queues it. The mode goes in the matrix's
+        // last word, where the model programs read it: 0x1A3C80 fogs each vertex for any non-zero mode;
         // 0x1A4780 fogs for 2, clips the triangles that cross the view volume for 1 (CityRender_CollectObjects).
-        void queueSlot(GuestPtr<Vec4> matrix, GuestPtr<Vec4> colour, int flags)
+        void queueSlot(GuestPtr<Vec4> matrix, GuestPtr<Vec4> colour, int mode)
         {
             const uint32_t buffer = port::load<uint32_t>(globals::kInstanceBuffers + 4u * static_cast<uint32_t>(globals::instanceBuffer.get()));
             const GuestPtr<InstanceSlot> slot = GuestPtr<InstanceSlot>{buffer} + globals::instanceCount.get();
             for (int row = 0; row < 4; ++row)
                 slot->matrix[row] = matrix[row];
-            port::store<int32_t>(addressOf(slot->matrix[3].w), flags);
+            port::store<int32_t>(addressOf(slot->matrix[3].w), mode);
             slot->colour = *colour;
             Dma_AppendCall(static_cast<int>(slot.address));
         }
 
         // An instance slot, then the mesh of node `node`, when it has one (models whose nodes hold mesh addresses).
-        void queueInstance(GuestPtr<A3DObject> model, GuestPtr<Vec4> matrix, GuestPtr<Vec4> colour, int node, int flags)
+        void queueInstance(GuestPtr<A3DObject> model, GuestPtr<Vec4> matrix, GuestPtr<Vec4> colour, int node, int mode)
         {
-            queueSlot(matrix, colour, flags);
+            queueSlot(matrix, colour, mode);
             const GuestPtr<A3DMesh> mesh = model->model->nodes[node].mesh;
             if (mesh)
                 Dma_AppendCall(chainOf(mesh));
@@ -749,9 +749,9 @@ namespace mm
         }
 
         // For models whose nodes hold mesh indexes (-1 = none): an instance slot, then mesh `index` from the mesh table.
-        void queueTableMesh(GuestPtr<A3DObject> model, GuestPtr<Vec4> matrix, GuestPtr<Vec4> colour, int index, int flags)
+        void queueTableMesh(GuestPtr<A3DObject> model, GuestPtr<Vec4> matrix, GuestPtr<Vec4> colour, int index, int mode)
         {
-            queueSlot(matrix, colour, flags);
+            queueSlot(matrix, colour, mode);
             Dma_AppendCall(chainOf(GuestPtr<A3DMesh>{model->model->meshes[index]}));
             globals::instanceCount.set(globals::instanceCount.get() + 1);
         }
@@ -763,16 +763,16 @@ namespace mm
         int32_t meshIndex(GuestPtr<A3DNode> node) { return static_cast<int32_t>(node->mesh.address); }
     }
 
-    void Instance_DrawMesh(GuestPtr<A3DObject> model, GuestPtr<Vec4> matrix, GuestPtr<Vec4> colour, int mesh, int flags)
+    void Instance_DrawMesh(GuestPtr<A3DObject> model, GuestPtr<Vec4> matrix, GuestPtr<Vec4> colour, int mesh, int mode)
     {
         if (globals::instanceCount.get() < kMaxInstances)
-            queueInstance(model, matrix, colour, mesh, flags);
+            queueInstance(model, matrix, colour, mesh, mode);
     }
 
-    void Instance_DrawNode(GuestPtr<A3DObject> model, GuestPtr<Vec4> colour, int node, int flags)
+    void Instance_DrawNode(GuestPtr<A3DObject> model, GuestPtr<Vec4> colour, int node, int mode)
     {
         if (globals::instanceCount.get() < kMaxInstances)
-            queueInstance(model, nodeMatrix(model, node), colour, node, flags);
+            queueInstance(model, nodeMatrix(model, node), colour, node, mode);
     }
 
     // Once a frame: the second instance limit follows the frame load, dropping by 12 per percent above 95,
@@ -791,7 +791,7 @@ namespace mm
 
     // A whole model as instances, when its nodes plus `reserve` still fit in this frame's slots: matrices
     // updated, then every node with a mesh queued with its world matrix, until the slots run out.
-    void Instance_DrawModel(GuestPtr<A3DObject> model, GuestPtr<Vec4> colour, int reserve, int flags)
+    void Instance_DrawModel(GuestPtr<A3DObject> model, GuestPtr<Vec4> colour, int reserve, int mode)
     {
         if (model->model->nodeCount + reserve >= kMaxInstances - globals::instanceCount.get())
             return;
@@ -802,7 +802,7 @@ namespace mm
             const GuestPtr<A3DNode> node = nodes + i;
             if (!node->mesh)
                 continue;
-            queueInstance(model, worldMatrix(node), colour, i, flags);
+            queueInstance(model, worldMatrix(node), colour, i, mode);
             if (globals::instanceCount.get() >= kMaxInstances)
                 return;
         }
@@ -810,7 +810,7 @@ namespace mm
 
     // A model whose nodes hold mesh indexes, with no room check (the callers make it): nodes 0 and 1, and node 2
     // for style 0, each with its own mesh, node 0's offset by `variant`; then each later node that has a mesh,
-    // with the meshes of the style's group of 13 in turn. Flags 0. The second count rises by the node count.
+    // with the meshes of the style's group of 13 in turn. Draw mode 0. The second count rises by the node count.
     // Used for the player (mm_Player_Draw: variant = its mode, style = the bag's item).
     void Instance_DrawModelLit(GuestPtr<A3DObject> model, GuestPtr<Vec4> colour, int variant, int style)
     {
@@ -833,43 +833,43 @@ namespace mm
         globals::instanceLimitedCount.set(globals::instanceLimitedCount.get() + count());
     }
 
-    // The same kind of model with the offsets passed in, all with `flags`: node 0 with its mesh + `offset0`;
+    // The same kind of model with the offsets passed in, all with `mode`: node 0 with its mesh + `offset0`;
     // node 1 with its mesh + `offset1` unless that is 4 or more; when `attach` is set, mesh 0 of the part model
     // at 0x1F3B80 (also kept at 0x1BDA38) at node 2; node 3 with its mesh + `offset3`; then each later node that
     // has a mesh, with mesh (its place from node 4) + group x the model's group size (an InstanceModel's).
     // No room check; the second count rises by the node count.
-    void Instance_DrawModelEx(GuestPtr<A3DObject> model, GuestPtr<Vec4> colour, int flags, int offset0, int group, int offset3,
+    void Instance_DrawModelEx(GuestPtr<A3DObject> model, GuestPtr<Vec4> colour, int mode, int offset0, int group, int offset3,
                               int attach, int offset1)
     {
         const GuestPtr<A3DNode> nodes = model->model->nodes;
         const auto matrix = [&](int i) { return worldMatrix(nodes + i); };
         const auto meshOf = [&](int i) { return meshIndex(nodes + i); };
         const auto count = [&] { return model->model->nodeCount; };
-        queueTableMesh(model, matrix(0), colour, meshOf(0) + offset0, flags);
+        queueTableMesh(model, matrix(0), colour, meshOf(0) + offset0, mode);
         if (offset1 < 4)
-            queueTableMesh(model, matrix(1), colour, meshOf(1) + offset1, flags);
+            queueTableMesh(model, matrix(1), colour, meshOf(1) + offset1, mode);
         if (attach != 0)
         {
             const uint32_t part = port::load<uint32_t>(0x001F3B80u);
             port::store<uint32_t>(0x001BDA38u, part);
-            Instance_DrawMesh(GuestPtr<A3DObject>{part}, matrix(2), colour, 0, flags);
+            Instance_DrawMesh(GuestPtr<A3DObject>{part}, matrix(2), colour, 0, mode);
         }
-        queueTableMesh(model, matrix(3), colour, meshOf(3) + offset3, flags);
+        queueTableMesh(model, matrix(3), colour, meshOf(3) + offset3, mode);
         for (int i = 0; i < count() - 4; ++i)
         {
             if (meshOf(4 + i) == -1)
                 continue;
-            queueTableMesh(model, matrix(4 + i), colour, i + group * GuestPtr<InstanceModel>{model.address}->groupSize, flags);
+            queueTableMesh(model, matrix(4 + i), colour, i + group * GuestPtr<InstanceModel>{model.address}->groupSize, mode);
         }
         globals::instanceLimitedCount.set(globals::instanceLimitedCount.get() + count());
     }
 
     // As Instance_DrawNode, also within a second count and limit.
-    void Instance_DrawNodeLimited(GuestPtr<A3DObject> model, GuestPtr<Vec4> colour, int node, int flags)
+    void Instance_DrawNodeLimited(GuestPtr<A3DObject> model, GuestPtr<Vec4> colour, int node, int mode)
     {
         if (globals::instanceCount.get() >= kMaxInstances || globals::instanceLimitedCount.get() >= globals::instanceLimit.get())
             return;
-        queueInstance(model, nodeMatrix(model, node), colour, node, flags);
+        queueInstance(model, nodeMatrix(model, node), colour, node, mode);
         globals::instanceLimitedCount.set(globals::instanceLimitedCount.get() + 1);
     }
 
@@ -1121,12 +1121,12 @@ namespace mm
 
     // The weather: pass 0 the rain, other passes the snow, each with this frame's chunk packet (by the parity of
     // 0x1BDCD0). The city calls it only in rain (2) or snow (3).
-    void CityRender_DrawWeather(GuestPtr<CityMap> map, GuestPtr<CityScene> city, int pass, GuestPtr<Vec4> a3)
+    void CityRender_DrawWeather(GuestPtr<CityMap> map, GuestPtr<CityScene> city, int pass, GuestPtr<Vec4> view)
     {
         const uint32_t parity = port::load<uint32_t>(0x001BDCD0u) & 1u;
         const int packet = static_cast<int>(map->chunkPackets[parity]);
         if (pass != 0)
-            SnowLayer_Draw(map->snow, static_cast<int>(parity), packet, city->clock, a3);
+            SnowLayer_Draw(map->snow, static_cast<int>(parity), packet, city->clock, view);
         else
             RainLayer_Draw(map->rain, static_cast<int>(parity), packet, city->clock);
     }
@@ -1818,13 +1818,14 @@ namespace mm
         return image;
     }
 
-    // Loads the texture file `name` whole into the image and converts it for upload (a2, a3: texture and palette blocks).
-    int TexImage_Load(GuestPtr<TexImage> image, GuestPtr<char> name, int a2, int a3)
+    // Loads the texture file `name` whole into the image and converts it for upload (the texels to `textureBlock`, the
+    // palette to `clutBlock`).
+    int TexImage_Load(GuestPtr<TexImage> image, GuestPtr<char> name, int textureBlock, int clutBlock)
     {
         port::GuestLocal<GameFile> file;
         File_ctor(file, 0);
         image->file = GuestPtr<TexImageFile>{static_cast<uint32_t>(File_LoadWhole(file, name, GuestPtr<int32_t>{0u}))};
-        TexImage_Convert(image, a2, a3);
+        TexImage_Convert(image, textureBlock, clutBlock);
         File_dtor(file, -1);
         return static_cast<int>(image.address);
     }
@@ -2132,12 +2133,12 @@ namespace mm
     PORT_FN(CityCamera_BaseCtor);
     PORT_FN(CityCamera_ctor);
 
-    // The asynchronous model load; when it finished (1) for a model whose nodes keep mesh indexes (a2 is 0), the model's
-    // group size is node 0's mesh index divided by 13.
-    int InstanceModel_LoadAsync(GuestPtr<A3DObject> model, GuestPtr<GameFile> gamefile, int a2)
+    // The asynchronous model load; when it finished (1) for a model whose nodes keep mesh indexes (`indexed` 0), the
+    // model's group size is node 0's mesh index divided by 13.
+    int InstanceModel_LoadAsync(GuestPtr<A3DObject> model, GuestPtr<GameFile> file, int indexed)
     {
-        const int result = A3DObject_LoadAsync(model, gamefile, a2);
-        if (result == 1 && a2 == 0)
+        const int result = A3DObject_LoadAsync(model, file, indexed);
+        if (result == 1 && indexed == 0)
             GuestPtr<InstanceModel>{model.address}->groupSize = divide(meshIndex(model->model->nodes), 13);
         return result;
     }

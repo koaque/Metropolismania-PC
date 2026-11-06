@@ -1060,9 +1060,9 @@ namespace mm
 
     // Starts writing the icon and the save description file (mm_McSave_WriteIconSys on the manager's queue with the three arguments
     // given): the request is kept in request and the two state words at 0x1BDB78 and 0x1BDB7C go back to -1.
-    void SaveFile_WriteIconSys(GuestPtr<McManager> mc, int a1, int a2, int a3)
+    void SaveFile_WriteIconSys(GuestPtr<McManager> mc, int port, int title, int result)
     {
-        mc->request = McSave_WriteIconSys(static_cast<int>(mc->queue.address), a1, a2, a3);
+        mc->request = McSave_WriteIconSys(static_cast<int>(mc->queue.address), port, title, result);
         port::store<int32_t>(0x001BDB78u, -1);
         port::store<int32_t>(0x001BDB7Cu, -1);
     }

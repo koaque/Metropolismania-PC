@@ -34,6 +34,6 @@ the stage introduction (city name, stage title, approval rate) and the mission b
 | `0x0016FAA0` | `int mm_Title_Intro(TitleScene *scene)` | 696 | no | title logo intro, six steps: music, logo model animation with timed effects (0x1B1A20), title sprite fade-in, bouncing letters, 50-frame hold; returns 1 when done |
 | `0x0016FD60` | `int mm_Title_LogoLetters(TitleScene *scene)` | 436 | no | logo letter sprites (table 0x1B17E0) |
 | `0x0016FF20` | `int mm_TitleScene_MemoryCardCheck(TitleScene *scene, int noPolling)` | 944 | no | boot memory card check: goes on when a save or a fine card is found, else shows which slot has no card or too little space and waits for Cross (card states at 0x1BDC04/08) |
-| `0x001704A0` | `int mm_TitleScene_Load(TitleScene *scene, int a1)` | 1852 | yes |  |
+| `0x001704A0` | `int mm_TitleScene_Load(TitleScene *scene, int unused_a1)` | 1852 | yes | (scene, unused_a1) the title scene's assets, one step a call (waitFrames): models, texture images, sprites, the loading screen, then the sound banks once the sounds are idle; 1 when done |
 | `0x00170BE0` | `int mm_TitleScene_Update(TitleScene *scene)` | 1004 | yes |  |
-| `0x00171220` | `TitleScene *mm_TitleScene_ctor(TitleScene *scene, int a1)` | 640 | yes |  |
+| `0x00171220` | `TitleScene *mm_TitleScene_ctor(TitleScene *scene, int afterGame)` | 640 | yes | (scene, afterGame) the title scene: its stage object, the menu list, the memory card manager, the lights and the camera, a message box and a hint line; `afterGame` (1 when the game state was 1) stops the opening sequences (mm_TitleScene_Load) |

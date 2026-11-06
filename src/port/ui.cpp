@@ -386,26 +386,28 @@ namespace mm
         }
     }
 
-    // The cursor bar's packet words: GS XY corners (12.4 fixed point, offset 0x6C0 and 0x790) around the cursor
-    // offset, a third of an item above and below the list, and fixed texture words.
-    void ListMenu_SetCursor(GuestPtr<ListMenu> menu, int dx, int dy, int depth)
+    // Places the list's box at x, y (screen pixels) with its texts' depth, and the clipping mask's four sprites around
+    // the box (ListMenuMask), to the screen's edges. The box runs from 0x20 left of x (the cursor frame's column) to
+    // width right of it, and from a third of a row above the first row to a third of a row below the last. Corners
+    // are GS 12.4 fixed point with the screen (640 by 224) at 0x6C0, 0x790.
+    void ListMenu_Place(GuestPtr<ListMenu> menu, int x, int y, int depth)
     {
-        menu->cursorDx = dx;
-        menu->cursorDy = dy;
+        menu->x = x;
+        menu->y = y;
         menu->depth = depth;
         const int third = menu->itemHeight / 3;
-        const uint32_t left = static_cast<uint32_t>(menu->cursorDx + 0x6A0) << 4;
-        const uint32_t right = static_cast<uint32_t>(menu->cursorDx + menu->cursorWidth + 0x6C0) << 4;
-        const auto gsY = [](int y) { return static_cast<uint32_t>(y + 0x790) << 20; };
-        uint32_t *packet = menu->cursorPacket;
-        packet[0x00] = 0x79006C00u;
-        packet[0x04] = left | 0x87000000u;
-        packet[0x08] = left | 0x79000000u;
-        packet[0x0C] = gsY(menu->cursorDy - third) | right;
-        packet[0x10] = gsY(menu->cursorDy + menu->visibleItems * menu->itemHeight + third) | left;
-        packet[0x14] = right | 0x87000000u;
-        packet[0x18] = right | 0x79000000u;
-        packet[0x1C] = 0x87009400u;
+        const uint32_t left = static_cast<uint32_t>(menu->x + 0x6A0) << 4;
+        const uint32_t right = static_cast<uint32_t>(menu->x + menu->width + 0x6C0) << 4;
+        const auto gsY = [](int row) { return static_cast<uint32_t>(row + 0x790) << 20; };
+        GsAdWrite *corner = menu->mask.corners;
+        corner[0].value[0] = 0x79006C00u;                // left of the box: the screen's top left
+        corner[1].value[0] = left | 0x87000000u;         // to the box's left at the bottom
+        corner[2].value[0] = left | 0x79000000u;         // above: the box's left at the top
+        corner[3].value[0] = gsY(menu->y - third) | right;       // to the box's top right
+        corner[4].value[0] = gsY(menu->y + menu->visibleItems * menu->itemHeight + third) | left; // below
+        corner[5].value[0] = right | 0x87000000u;
+        corner[6].value[0] = right | 0x79000000u;        // right of the box: its right at the top
+        corner[7].value[0] = 0x87009400u;                // to the screen's bottom right
     }
 
     // List items: a text box each. Item numbers are checked against 32 only (the list holds 31), so they are
@@ -433,25 +435,26 @@ namespace mm
             menu->itemCount = menu->nextItem;
     }
 
-    // The menu (its own packet first), the item texts on screen centred in their rows, then the cursor frame
-    // beside the cursor row; Z is cleared afterwards.
+    // The menu: its clipping mask first (ListMenuMask), then the item texts centred in their rows (one row beyond each
+    // end of the box too, for the mask to cut while the list scrolls), then the cursor frame beside the cursor row; Z
+    // is cleared afterwards, which takes the mask away again.
     void ListMenu_Draw(GuestPtr<ListMenu> menu)
     {
         if (menu->itemCount == 0)
             return;
         Dma_AppendCall(static_cast<int>(menu.address));
-        int y = menu->scroll + menu->cursorDy;
+        int y = menu->scroll + menu->y;
         for (int i = 0; i < menu->itemCount; ++i, y += menu->itemHeight)
         {
             const int height = menu->itemHeight;
-            const bool visible = menu->cursorDy - height <= y && y <= menu->cursorDy + height * (menu->visibleItems + 1);
+            const bool visible = menu->y - height <= y && y <= menu->y + height * (menu->visibleItems + 1);
             if (!visible || !listItem(menu, i)->text)
                 continue;
             const int centre = (height - listItem(menu, i)->textHeight) / 2;
-            TextBox_SetPos(listItem(menu, i)->text, (menu->cursorDx + 0x6C0) << 4, (y + centre + 0x790) << 4, menu->depth);
+            TextBox_SetPos(listItem(menu, i)->text, (menu->x + 0x6C0) << 4, (y + centre + 0x790) << 4, menu->depth);
             TextBox_Draw(listItem(menu, i)->text);
         }
-        Frame_SetRect(menu->cursorFrame, menu->cursorDx - 0x20, (menu->itemHeight - 12) / 2 + menu->cursorDy + menu->cursorY, 0x18, 0xC);
+        Frame_SetRect(menu->cursorFrame, menu->x - 0x20, (menu->itemHeight - 12) / 2 + menu->y + menu->cursorY, 0x18, 0xC);
         Dma_AppendCall(static_cast<int>(menu->cursorFrame.address));
         DmaList_QueueClearZ();
     }
@@ -1650,7 +1653,7 @@ namespace mm
     PORT_FN(Notice_Draw);
     PORT_FN(ListMenu_ScrollTo);
     PORT_FN(MenuWin_ctor);
-    PORT_FN(ListMenu_SetCursor);
+    PORT_FN(ListMenu_Place);
     PORT_FN(ListMenu_SetItemText);
     PORT_FN(ListMenu_ClearItem);
     PORT_FN(ListMenu_Draw);
@@ -1804,7 +1807,7 @@ namespace mm
         const GuestPtr<CityMap> map = viewCity(view)->map;
         const GuestPtr<MapObject> home = Map_GetRecord(map, static_cast<int>(viewObject(view)));
         const GuestPtr<BuildingType> type{globals::buildingTypeAddress(home->type)};
-        const int facing = Map_GetTileKind(map, home->tile);
+        const int facing = Map_GetTileFacing(map, home->tile);
         const GuestPtr<int32_t> rect{frame.ptr().address + 0x50u};
         MyHome_EntranceRect(view, facing, home->tile & 0x7F, home->tile >> 7, type->size, rect);
         for (int z = rect[1]; z < rect[3]; ++z)
@@ -2413,7 +2416,7 @@ namespace mm
             return;
         TextBox_SetText(pause->message, GuestPtr<char>{0x001B73C0u}, 0);
         ListMenu_ClearItem(pause->mainMenu, -1);
-        ListMenu_SetCursor(pause->mainMenu, 0x104, 0x3C, 0xFF0000);
+        ListMenu_Place(pause->mainMenu, 0x104, 0x3C, 0xFF0000);
         ListMenu_SetItemText(pause->mainMenu, GuestPtr<char>{0x001B73F0u}, -1); // "Resume"
         ListMenu_SetItemText(pause->mainMenu, GuestPtr<char>{0x001B73F8u}, -1); // "Save"
         ListMenu_SetItemText(pause->mainMenu, GuestPtr<char>{0x001B7400u}, -1); // "Quit"
@@ -2826,10 +2829,10 @@ namespace mm
 
     // Opens the name entry: the keyboard set (`mode`, the text pointer table at 0x1B13E0), the name length (up to 24,
     // maxLength) with the name cleared or taken from `text`, the scrolling hint (`hint`, else empty; scrolled when
-    // longer than 10 characters), the cursor at the end of the name, the state (3 when `a3` is 0, else 1) with the
+    // longer than 10 characters), the cursor at the end of the name, the state (3 when `noSlide` is 0, else 1) with the
     // board model placed (the y of its matrix, 0.3 lower in state 3), the keyboard text from its first line (6
     // characters a line) and the arrows for more lines above and below (moreAbove, moreBelow).
-    void NameEntry_Setup(GuestPtr<NameEntry> entry, uint32_t mode, uint8_t maxLength, int a3, int hint, GuestPtr<char> text)
+    void NameEntry_Setup(GuestPtr<NameEntry> entry, uint32_t mode, uint8_t maxLength, int noSlide, int hint, GuestPtr<char> text)
     {
         const auto empty = [] { return GuestPtr<char>{0x001B7F90u}; };
         entry->keySet = static_cast<int32_t>(mode & 0xFFu);
@@ -2839,7 +2842,7 @@ namespace mm
         entry->maxLength = maxLength;
         for (int i = 0; i < maxLength + 1; ++i)
             entry->name[i] = static_cast<char>(0);
-        entry->noSlide = a3;
+        entry->noSlide = noSlide;
         entry->slideFrames = 0;
         entry->moreAbove = 0;
         entry->moreBelow = 0;
@@ -3662,15 +3665,15 @@ namespace mm
     PORT_FN(Laptop_Draw);
     PORT_FN(PhoneCall_Draw);
 
-    // Builds a list menu: `visible` rows of `rowHeight`, a cursor frame, 32 empty items (3 words each from +0xE4), and the DMA
-    // packet the menu draws with (the header at +0 and the eight cursor entries in cursorPacket, the footer at +0xC0), then places the
-    // cursor with the last three arguments.
-    GuestPtr<ListMenu> ListMenu_ctor(GuestPtr<ListMenu> menu, int visible, int rowHeight, int a3, int cursorX, int cursorY, int cursorZ)
+    // Builds a list menu: `visible` rows of `rowHeight` in a box reaching `width` right of x, a cursor frame, 32 empty
+    // items (3 words each from +0xE4) and the clipping mask the menu draws first (ListMenuMask: its corners all 0 until
+    // placed), then places the list at x, y with its texts' depth (mm_ListMenu_Place).
+    GuestPtr<ListMenu> ListMenu_ctor(GuestPtr<ListMenu> menu, int visible, int rowHeight, int width, int x, int y, int depth)
     {
         const uint32_t m = menu.address;
         menu->visibleItems = visible;
         menu->itemHeight = rowHeight;
-        menu->cursorWidth = a3;
+        menu->width = width;
         menu->cursorY = 0;
         menu->scroll = 0;
         menu->boxedItems = 0;
@@ -3686,21 +3689,17 @@ namespace mm
         menu->cursorFrame = GuestPtr<Frame>{frame};
         for (uint32_t offset = 0xE4u; offset < 0xE4u + 32u * 0xCu; offset += 4u)
             port::store<uint32_t>(m + offset, 0u);
-        const uint32_t header[] = {0x1000000Cu, 0u, 0x11000000u, 0x5000000Cu, 0x800Bu, 0x10000000u, 0xEu, 0u,
-                                   0x32001u, 0u, 0x47u, 0u, 6u, 0u, 0u, 0u};
-        for (uint32_t i = 0; i < 16u; ++i)
-            port::store<uint32_t>(m + 4u * i, header[i]);
-        for (uint32_t entry = 0; entry < 8u; ++entry)
-        {
-            port::store<uint32_t>(m + 0x40u + 0x10u * entry, 0u);
-            port::store<uint32_t>(m + 0x44u + 0x10u * entry, 0xFFFFFFFFu);
-            port::store<uint32_t>(m + 0x48u + 0x10u * entry, 4u);
-            port::store<uint32_t>(m + 0x4Cu + 0x10u * entry, 0u);
-        }
-        const uint32_t footer[] = {0x5000Fu, 0u, 0x47u, 0u, 0x60000000u, 0u, 0u, 0u};
-        for (uint32_t i = 0; i < 8u; ++i)
-            port::store<uint32_t>(m + 0xC0u + 4u * i, footer[i]);
-        ListMenu_SetCursor(menu, cursorX, cursorY, cursorZ);
+        ListMenuMask &mask = menu->mask;
+        packet::putWords(mask.dmaTag, {packet::kCnt | 0xCu, 0u});
+        packet::putWords(mask.vifCodes, {0x11000000u, 0x5000000Cu});           // FLUSH, DIRECT 12
+        packet::putWords(mask.gifTag, {0x800Bu, 0x10000000u, 0xEu, 0u});       // 11 loops (EOP) of A+D
+        packet::putAd(mask.maskTest, 0x32001u, 0u, packet::kGsTest1);
+        packet::putAd(mask.prim, 6u, 0u, packet::kGsPrim);
+        for (GsAdWrite &corner : mask.corners)
+            packet::putAd(corner, 0u, 0xFFFFFFFFu, packet::kGsXyzf2);          // Z 0xFFFFFF, the greatest
+        packet::putAd(mask.drawTest, 0x5000Fu, 0u, packet::kGsTest1);
+        packet::putWords(mask.ret, {packet::kRet, 0u, 0u, 0u});
+        ListMenu_Place(menu, x, y, depth);
         return menu;
     }
 
@@ -4493,7 +4492,7 @@ namespace mm
     {
         const auto list = [&] { return pause->slotMenu; };
         ListMenu_ClearItem(list(), -1);
-        ListMenu_SetCursor(list(), 0x58, 0x31, 0xFF0000);
+        ListMenu_Place(list(), 0x58, 0x31, 0xFF0000);
         pause->itemsListed = 0;
         TextBox_SetText(pause->message, GuestPtr<char>{0x001B73C0u}, 0);
         Pad_SwallowCross();
@@ -4532,17 +4531,17 @@ namespace mm
 
     PORT_FN(WantsWin_FormatLine);
 
-    // The title scene: its stage object (the value of `a1` in afterGame), the stage reset, the menu list of 3 by 48 items (loadMenu)
+    // The title scene: its stage object (`afterGame` kept), the stage reset, the menu list of 3 by 48 items (loadMenu)
     // with sixteen items of 19 columns, the memory card manager (mc), the lights and the camera, set to the eye and target at
     // 0x1B17C0 and 0x1B17D0; the scene's state cleared (layers -1, loadStep 1), a message box of 21 by 12 (messageBox) and a
     // line box of 30 by 15 (hintText) with their places.
-    GuestPtr<TitleScene> TitleScene_ctor(GuestPtr<TitleScene> scene, int a1)
+    GuestPtr<TitleScene> TitleScene_ctor(GuestPtr<TitleScene> scene, int afterGame)
     {
         port::GuestFrame<0x50> frame;
         const uint32_t sp = frame.ptr().address;
         const uint32_t s = scene.address;
         Stage_ctor(static_cast<int>(s));
-        scene->afterGame = a1;
+        scene->afterGame = afterGame;
         Stage_Reset();
         uint32_t list = sdk::operator_new(0x2A0u);
         if (list != 0u)
@@ -4748,7 +4747,7 @@ namespace mm
             const GuestPtr<ListMenu> menu{pause->mainMenu.address};
             TextBox_SetText(pause->message, GuestPtr<char>{0x001B73C0u}, 0);
             ListMenu_ClearItem(menu, -1);
-            ListMenu_SetCursor(menu, 0x104, 0x3C, 0xFF0000);
+            ListMenu_Place(menu, 0x104, 0x3C, 0xFF0000);
             ListMenu_SetItemText(menu, GuestPtr<char>{0x001B73F0u}, -1); // "Resume"
             ListMenu_SetItemText(menu, GuestPtr<char>{0x001B73F8u}, -1); // "Save"
             ListMenu_SetItemText(menu, GuestPtr<char>{0x001B7400u}, -1); // "Quit"
@@ -5612,7 +5611,7 @@ namespace mm
         if (choice == -1)
         {
             ListMenu_ClearItem(main(), -1);
-            ListMenu_SetCursor(main(), 0x104, 0x3C, 0xFF0000);
+            ListMenu_Place(main(), 0x104, 0x3C, 0xFF0000);
             ListMenu_SetItemText(main(), GuestPtr<char>{0x001B73F0u}, -1);
             ListMenu_SetItemText(main(), GuestPtr<char>{0x001B73F8u}, -1);
             ListMenu_SetItemText(main(), GuestPtr<char>{0x001B7400u}, -1);
@@ -5629,7 +5628,7 @@ namespace mm
             if (McManager_IsCardUsable(mc(), pause->cardPort) != 0)
             {
                 ListMenu_ClearItem(main(), -1);
-                ListMenu_SetCursor(main(), 0x118, 0x8C, 0xFF0000);
+                ListMenu_Place(main(), 0x118, 0x8C, 0xFF0000);
                 ListMenu_SetItemText(main(), GuestPtr<char>{0x001B7438u}, -1);
                 ListMenu_SetItemText(main(), GuestPtr<char>{0x001B7440u}, -1);
                 pause->waitFrames = 0;
@@ -5660,7 +5659,7 @@ namespace mm
             TextBox_AppendText(message(), GuestPtr<char>{0x001B78B0u}, 0);
             ListMenu_ClearItem(main(), -1);
             ListMenu_ScrollTo(main(), 0);
-            ListMenu_SetCursor(main(), 0x118, 0x8C, 0xFF0000);
+            ListMenu_Place(main(), 0x118, 0x8C, 0xFF0000);
             ListMenu_SetItemText(main(), GuestPtr<char>{0x001B7438u}, -1);
             ListMenu_SetItemText(main(), GuestPtr<char>{0x001B7440u}, -1);
             pause->pendingChoice = choice;
@@ -5690,7 +5689,7 @@ namespace mm
         const auto applicantsEnabled = [city](uint8_t value) { city->applicants->enabled = value; };
         const auto mainItems = [&]() {
             ListMenu_ClearItem(main(), -1);
-            ListMenu_SetCursor(main(), 0x104, 0x3C, 0xFF0000);
+            ListMenu_Place(main(), 0x104, 0x3C, 0xFF0000);
             ListMenu_SetItemText(main(), GuestPtr<char>{0x001B73F0u}, -1);
             ListMenu_SetItemText(main(), GuestPtr<char>{0x001B73F8u}, -1);
             ListMenu_SetItemText(main(), GuestPtr<char>{0x001B7400u}, -1);
@@ -5780,7 +5779,7 @@ namespace mm
                 TextBox_SetCharSize(message(), 0, 0xD0, 0, 0xE0);
                 TextBox_SetText(message(), GuestPtr<char>{0x001B7410u}, 0);
                 ListMenu_ClearItem(main(), -1);
-                ListMenu_SetCursor(main(), 0x118, 0x50, 0xFF0000);
+                ListMenu_Place(main(), 0x118, 0x50, 0xFF0000);
                 ListMenu_SetItemText(main(), GuestPtr<char>{0x001B7438u}, -1);
                 ListMenu_SetItemText(main(), GuestPtr<char>{0x001B7440u}, -1);
                 ListMenu_ScrollTo(main(), 1);
@@ -5912,7 +5911,7 @@ namespace mm
         {
             scene->savesListed = 0;
             ListMenu_ClearItem(menu(), -1);
-            ListMenu_SetCursor(menu(), 0x62, 0x2C, 0xFF0000);
+            ListMenu_Place(menu(), 0x62, 0x2C, 0xFF0000);
             scene->pressStep = scene->pressStep + 1;
         }
         else if (step != 1 && step != 2)
@@ -6745,7 +6744,7 @@ namespace mm
             CityScene_AddApproval(city, -0x14);
             Applicants_RemoveFamily(city->applicants, record->family);
             port::callGuest<void>(map()->vtable->clearObject, map(), picked);
-            Map_PlaceRubbleArea(map(), static_cast<int>(tile & 0x7Fu), static_cast<int>(tile >> 7), size, static_cast<int>(c));
+            Map_PlaceRubbleArea(map(), static_cast<int>(tile & 0x7Fu), static_cast<int>(tile >> 7), size, GuestPtr<CityScene>{c});
             CityScene_PopMode(city);
             if (CityScene_GetMode(city) == 0xA)
                 CityScene_PopMode(city);
@@ -6845,8 +6844,8 @@ namespace mm
             return model;
         };
         // A texture image read, uploaded and freed again through the loader at `buffer`.
-        const auto loadImage = [&](uint32_t buffer, uint32_t name, int a2, int a3) {
-            TexImage_Load(GuestPtr<TexImage>{buffer}, GuestPtr<char>{name}, a2, a3);
+        const auto loadImage = [&](uint32_t buffer, uint32_t name, int textureBlock, int clutBlock) {
+            TexImage_Load(GuestPtr<TexImage>{buffer}, GuestPtr<char>{name}, textureBlock, clutBlock);
             Dma_KickVif1Now_1490D0(buffer);
             nextStep();
             TexImage_dtor(GuestPtr<TexImage>{buffer}, -1);

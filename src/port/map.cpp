@@ -40,17 +40,18 @@ namespace mm
         return tile < 0x4000u ? static_cast<uint16_t>(map->tiles[tile].flags & 0x10u) : 0;
     }
 
-    // Tile kind 0..3 in flags 4 (high bit) and 2 (low bit).
-    int Map_GetTileKind(GuestPtr<CityMap> map, int tile)
+    // The side the tile's building faces, 0..3 (-z, +x, +z, -x as BldgType_FindEntrance numbers them), in flags 4
+    // (high bit) and 2 (low bit).
+    int Map_GetTileFacing(GuestPtr<CityMap> map, int tile)
     {
         const uint16_t flags = map->tiles[tile].flags;
         return ((flags & 4) ? 2 : 0) + ((flags & 2) ? 1 : 0);
     }
 
     // Roads go on even tiles only (2x2 blocks), owned by nobody, type 4.
-    void Map_PlaceRoad(GuestPtr<CityMap> map, uint32_t x, uint32_t z, int arg)
+    void Map_PlaceRoad(GuestPtr<CityMap> map, uint32_t x, uint32_t z, GuestPtr<CityScene> city)
     {
-        Map_PlaceObject(map, 0, 4, static_cast<int>(x & ~1u), static_cast<int>(z & ~1u), arg);
+        Map_PlaceObject(map, 0, 4, static_cast<int>(x & ~1u), static_cast<int>(z & ~1u), city);
     }
 
     void Map_SetTileHeight(GuestPtr<CityMap> map, uint32_t tile, ps2f height)
@@ -60,12 +61,12 @@ namespace mm
         Map_UpdateTileGeometry(map, index % kMapSize, index / kMapSize);
     }
 
-    void Map_SetTileKind(GuestPtr<CityMap> map, int tile, uint32_t kind)
+    void Map_SetTileFacing(GuestPtr<CityMap> map, int tile, uint32_t facing)
     {
         uint16_t flags = map->tiles[tile].flags & 0xFFF9u;
-        if (kind & 2)
+        if (facing & 2)
             flags |= 4;
-        if (kind & 1)
+        if (facing & 1)
             flags |= 2;
         map->tiles[tile].flags = flags;
     }
@@ -392,8 +393,8 @@ namespace mm
     // Places an object of `type` at (x, z) for `owner` when the placement test allows it (0x3F80 when not):
     // result 1 clears the footprint and creates the object normally; any other result puts a new record on top
     // of the tile's list. The touched area's geometry is then rebuilt and the type is told (tick slot, with
-    // `arg` and the object).
-    int Map_PlaceObject(GuestPtr<CityMap> map, int owner, int type, int x, int z, int arg)
+    // the city and the object).
+    int Map_PlaceObject(GuestPtr<CityMap> map, int owner, int type, int x, int z, GuestPtr<CityScene> city)
     {
         port::GuestFrame<0x80> frame;
         const GuestPtr<int32_t> rect{frame.ptr().address + 0x70u};
@@ -422,7 +423,7 @@ namespace mm
         {
             const GuestPtr<MapObject> obj = map->objects + object;
             const GuestPtr<BuildingType> btype{globals::buildingTypeAddress(obj->type)};
-            port::callGuest<void>(btype->vtable->tick, btype, arg, obj, 0);
+            port::callGuest<void>(btype->vtable->tick, btype, city, obj, 0);
         }
         map->applicantWait = 0;
         return object;
@@ -909,11 +910,11 @@ namespace mm
 
     // ---- terrain drawing
 
-    // Appends a quad (four vertices) to the terrain buffer while there is room (0x9BD vertices). The w
-    // words carry draw data (docs/RENDER_PIPELINE.md): the first TEX0's low word from t1 (with the base at 0x1BD990),
-    // the second the VU1 address of a texture-coordinate set (0x21 plus an entry of the table at 0x1AF360), the third
-    // the quad's flags (t3); the fourth vertex is copied whole.
-    void Terrain_AddQuad(GuestPtr<CityMap> map, GuestPtr<Vec4> a, GuestPtr<Vec4> b, GuestPtr<Vec4> c, GuestPtr<Vec4> d, int t1, int t2, int t3)
+    // Appends a quad (four vertices) to the terrain buffer while there is room (0x9BD vertices). The w words carry draw
+    // data (docs/RENDER_PIPELINE.md): the first TEX0's low word from `texture` (1 on, the base at 0x1BD990), the second
+    // the VU1 address of texture-coordinate set `coordSet` (0x21 plus its entry of the table at 0x1AF360), the third the
+    // quad's `flags`; the fourth vertex is copied whole.
+    void Terrain_AddQuad(GuestPtr<CityMap> map, GuestPtr<Vec4> a, GuestPtr<Vec4> b, GuestPtr<Vec4> c, GuestPtr<Vec4> d, int texture, int coordSet, int flags)
     {
         if (map->terrainQuads >= 0x9BD)
             return;
@@ -925,9 +926,9 @@ namespace mm
                 port::store<uint32_t>(addressOf(dst->w), *w);
             map->terrainWrite.address += 16u;
         };
-        const uint32_t w0 = port::load<uint32_t>(0x001BD990u) | static_cast<uint32_t>((t1 - 1) * 0x40 / 4 + 0x2588);
-        const uint32_t w1 = port::load<uint32_t>(0x001AF360u + 4u * static_cast<uint32_t>(t2)) + 0x21u;
-        const uint32_t w2 = static_cast<uint32_t>(t3);
+        const uint32_t w0 = port::load<uint32_t>(0x001BD990u) | static_cast<uint32_t>((texture - 1) * 0x40 / 4 + 0x2588);
+        const uint32_t w1 = port::load<uint32_t>(0x001AF360u + 4u * static_cast<uint32_t>(coordSet)) + 0x21u;
+        const uint32_t w2 = static_cast<uint32_t>(flags);
         put(a, &w0);
         put(b, &w1);
         put(c, &w2);
@@ -1097,24 +1098,24 @@ namespace mm
     }
 
     // Whether a ray hits the first object on `tile` (record 0 off the map): the object's type tests it (rayHit
-    // slot, passed a2, a3, arg and the object's matrix: the building matrix of its terrain kind with the
-    // footprint's middle as translation, y 0). 1 or 0.
-    int MapObj_RayHit(GuestPtr<CityMap> map, uint32_t tile, int a2, int a3, int arg)
+    // slot, passed the ray's ends, the hit record and the object's matrix: the matrix of its facing with the
+    // footprint's middle as translation, y 0). 1 or 0. The game's slots answer by type only.
+    int MapObj_RayHit(GuestPtr<CityMap> map, uint32_t tile, int from, int to, int hit)
     {
         port::GuestFrame<0x90> frame;
         const GuestPtr<Vec4> matrix{frame.ptr().address + 0x50u};
         const int tx = static_cast<int>(tile & 0x7Fu), tz = static_cast<int>((tile & 0xFFFFu) >> 7);
         const GuestPtr<MapObject> obj = tz < 0x80 && tx < 0x80 ? map->objects + map->tiles[tx + tz * 128].firstObject : map->objects;
-        const int kind = Map_GetTileKind(map, obj->tile);
+        const int facing = Map_GetTileFacing(map, obj->tile);
         for (int row = 0; row < 4; ++row)
-            matrix[row] = GuestPtr<Vec4>{globals::kBuildingMatrices + 0x40u * static_cast<uint32_t>(kind)}[row];
+            matrix[row] = GuestPtr<Vec4>{globals::kBuildingMatrices + 0x40u * static_cast<uint32_t>(facing)}[row];
         const GuestPtr<BuildingType> btype{globals::buildingTypeAddress(obj->type)};
         const ps2f half = fromInt(btype->size) / ps2f(2.0f);
         matrix[3].x = static_cast<float>((fromInt(obj->tile & 0x7F) - ps2f(64.0f)) + half);
         port::store<uint32_t>(addressOf(matrix[3].y), 0);
         matrix[3].z = static_cast<float>((fromInt(128 - (obj->tile >> 7)) - ps2f(64.0f)) - half);
         const uint32_t test = btype->vtable->rayHit;
-        return port::callGuest<int64_t>(test, btype, obj, a2, a3, matrix, arg) != 0 ? 1 : 0;
+        return port::callGuest<int64_t>(test, btype, obj, from, to, matrix, hit) != 0 ? 1 : 0;
     }
 
     // ---- tile lists
@@ -1156,9 +1157,9 @@ namespace mm
     PORT_FN(Map_TileWalkable);
     PORT_FN(Map_TileIsSea);
     PORT_FN(Map_TileIndexWalkable);
-    PORT_FN(Map_GetTileKind);
+    PORT_FN(Map_GetTileFacing);
     PORT_FN(MapObj_RayHit);
-    PORT_FN(Map_SetTileKind);
+    PORT_FN(Map_SetTileFacing);
     PORT_FN(Map_PlaceRoad);
     PORT_FN(Map_SetTileHeight);
     PORT_FN(Map_GetTileHeightWord);
@@ -1867,23 +1868,23 @@ namespace mm
         }
 
         // Places object type `type` on every tile of a size x size area.
-        void fillArea(GuestPtr<CityMap> map, int x, int z, int size, int type, int arg)
+        void fillArea(GuestPtr<CityMap> map, int x, int z, int size, int type, GuestPtr<CityScene> city)
         {
             for (int dz = 0; dz < size; ++dz)
                 for (int dx = 0; dx < size; ++dx)
-                    Map_PlaceObject(map, 0, type, x + dx, z + dz, arg);
+                    Map_PlaceObject(map, 0, type, x + dx, z + dz, city);
         }
     }
 
     void Map_HighlightArea(GuestPtr<CityMap> map, int x, int z, int size) { markArea(map, x, z, size, true); }
     void Map_UnhighlightArea(GuestPtr<CityMap> map, int x, int z, int size) { markArea(map, x, z, size, false); }
-    void Map_LevelArea(GuestPtr<CityMap> map, int x, int z, int size, int arg) { fillArea(map, x, z, size, 3, arg); }
-    void Map_PlaceRubbleArea(GuestPtr<CityMap> map, int x, int z, int size, int arg) { fillArea(map, x, z, size, 0xA, arg); }
+    void Map_LevelArea(GuestPtr<CityMap> map, int x, int z, int size, GuestPtr<CityScene> city) { fillArea(map, x, z, size, 3, city); }
+    void Map_PlaceRubbleArea(GuestPtr<CityMap> map, int x, int z, int size, GuestPtr<CityScene> city) { fillArea(map, x, z, size, 0xA, city); }
 
     // Places small goods of `kind` (types 0x115 on) and gives the new object its props mesh (goodsMesh).
-    void Map_PlaceSmallGoods(GuestPtr<CityMap> map, int x, int z, int a3, uint8_t value, int kind)
+    void Map_PlaceSmallGoods(GuestPtr<CityMap> map, int x, int z, GuestPtr<CityScene> city, uint8_t value, int kind)
     {
-        const int object = Map_PlaceObject(map, 0, kind + 0x115, x, z, a3);
+        const int object = Map_PlaceObject(map, 0, kind + 0x115, x, z, city);
         if (object != kNoObject)
             map->objects[object].goodsMesh = value;
     }
@@ -1898,13 +1899,13 @@ namespace mm
         SaveFile_Write(mc, static_cast<int>(addressOf(map->freePerson)), 0xC); // freePerson, peopleInUse, population
     }
 
-    // The object matrix: the building matrix of the tile kind, moved to the footprint centre on the terrain.
+    // The object matrix: the matrix of its facing, moved to the footprint centre on the terrain.
     void MapObj_GetMatrix(GuestPtr<CityMap> map, int object, GuestPtr<Vec4> matrix)
     {
         const GuestPtr<MapObject> obj = map->objects + object;
-        const int kind = Map_GetTileKind(map, obj->tile);
+        const int facing = Map_GetTileFacing(map, obj->tile);
         for (int row = 0; row < 4; ++row)
-            matrix[row] = GuestPtr<Vec4>{globals::kBuildingMatrices + 0x40u * static_cast<uint32_t>(kind)}[row];
+            matrix[row] = GuestPtr<Vec4>{globals::kBuildingMatrices + 0x40u * static_cast<uint32_t>(facing)}[row];
         const int x = obj->tile & 0x7F, z = obj->tile >> 7;
         const ps2f half = fromInt(GuestPtr<BuildingType>{globals::buildingTypeAddress(obj->type)}->size) / ps2f(2.0f);
         matrix[3].x = fromInt(x) - ps2f(64.0f) + half;
@@ -2050,11 +2051,11 @@ namespace mm
     {
         // Visits every object stack on the 3x3 tiles round the position, each object once (a list of the ids seen is
         // kept in the caller's frame at `list`), the stack's objects from the bottom up. For each the tile's placement
-        // matrix (the layer matrix of the tile's kind, its position row set to the footprint's middle, the ground height
-        // plus the lift (0.8 for each object above the first) and the footprint's far edge) is built at `matrix`, and a
-        // flag word at `flagsAt` is kept: 1 for the first object, 2 for those above, with 3 or 4 added to the top one
-        // (3 when its depth equals the type's maxStack, else 4; the first object alone keeps its 1) and bit 8
-        // carried over. `visit(btype, obj)` returns true to stop the walk.
+        // matrix (the matrix of the tile's facing, its position row set to the footprint's middle, the ground height
+        // 0.8 higher for each object above the first (heights grow downwards) and the footprint's far edge) is built at
+        // `matrix`, and a part word at `flagsAt` is kept: 1 for the first object, 2 for those above it, 3 for the top of
+        // a full stack (its depth equals the type's maxStack), 4 for the top of a lower one and 0 for a lone object, the
+        // 8 bit carried over. `visit(btype, obj)` returns true to stop the walk.
         template <typename Visit>
         bool eachObjectNear(GuestPtr<CityMap> map, GuestPtr<ps2f> position, uint32_t list, uint32_t matrix, uint32_t flagsAt, Visit visit)
         {
@@ -2097,9 +2098,9 @@ namespace mm
                             else
                                 port::store<uint32_t>(flagsAt, (flags & 8u) | (depth == GuestPtr<BuildingType>{firstType}->maxStack ? 3u : 4u));
                         }
-                        const int kind = Map_GetTileKind(map, obj->tile);
+                        const int facing = Map_GetTileFacing(map, obj->tile);
                         for (uint32_t row = 0; row < 0x40; row += 0x10)
-                            *GuestPtr<Vec4>{matrix + row} = *GuestPtr<Vec4>{0x001B2590u + static_cast<uint32_t>(kind) * 0x40u + row};
+                            *GuestPtr<Vec4>{matrix + row} = *GuestPtr<Vec4>{globals::kBuildingMatrices + static_cast<uint32_t>(facing) * 0x40u + row};
                         const GuestPtr<BuildingType> btype{globals::buildingTypeAddress(obj->type)};
                         const ps2f half = fromInt(btype->size) / ps2f(2.0f);
                         const uint32_t tile = obj->tile;
@@ -2193,7 +2194,7 @@ namespace mm
             Minimap_Plot(city->minimap, map->objects[scan].tile, btype->size, 4, 0);
             port::callGuest<void>(map->vtable->clearObject, map, map->objects[scan].id);
             const uint32_t tile = map->objects[scan].tile;
-            Map_PlaceRubbleArea(map, static_cast<int>(tile & 0x7Fu), static_cast<int>(tile >> 7), btype->size, static_cast<int>(city.address));
+            Map_PlaceRubbleArea(map, static_cast<int>(tile & 0x7Fu), static_cast<int>(tile >> 7), btype->size, city);
         }
         map->tickSlice = map->tickSlice + 1;
         if (map->tickSlice >= 0x80)
@@ -2282,8 +2283,8 @@ namespace mm
     }
 
     // Every object in view that is not drawn yet this frame (flag 4 marks it) has its type's drawPeople slot
-    // called with the footprint's middle and the ground height, the tile kind, the city, the object, a flag word
-    // (0) and the detail level (2 when the camera distance + 1 is past the fog start, else 0).
+    // called with the footprint's middle and the ground height, the facing, the city, the object, a part word
+    // (0) and the draw mode (2, fog, when the camera distance + 1 is past the fog start, else 0).
     void CityRender_UpdatePeople(GuestPtr<CityMap> map, GuestPtr<CityScene> city)
     {
         port::GuestFrame<0x70> frame; // the flag word at +0x6C
@@ -2299,7 +2300,7 @@ namespace mm
                 if ((obj->flags & 4u) == 0)
                 {
                     obj->flags = static_cast<uint16_t>(obj->flags | 4u);
-                    const int kind = Map_GetTileKind(map, obj->tile);
+                    const int facing = Map_GetTileFacing(map, obj->tile);
                     const GuestPtr<BuildingType> btype{globals::buildingTypeAddress(obj->type)};
                     const uint32_t tile = obj->tile;
                     const ps2f half = fromInt(btype->size) / ps2f(2.0f);
@@ -2311,7 +2312,7 @@ namespace mm
                     const GuestPtr<MapObject> current = map->objects + node->object;
                     const GuestPtr<BuildingType> type{globals::buildingTypeAddress(current->type)};
                     port::callGuest<void>(type->vtable->drawPeople,
-                                          x, y, z, type, kind, city, current, flagsAt, mode, map->people);
+                                          x, y, z, type, facing, city, current, flagsAt, mode, map->people);
                 }
             }
             node = GuestPtr<TerrainEntry>{node->next};
@@ -2322,7 +2323,7 @@ namespace mm
 
     // The same walk for drawing the buildings: objects not marked yet and without flag 0x80 go through every object of
     // their stack (bottom up, 0.8 higher for each above the first; heights grow downwards) with the type's draw slot, the
-    // flag word as in the collision walks (1 for the first, then 2, with 3 or 4 added to the top one), and the draw mode
+    // part word as in the collision walks (1 for the first, then 2; 3 or 4 for the top one, 0 alone), and the draw mode
     // that each instance passes to the model program (0x1A4780 reads it from the instance matrix's last word): 2 (fog per
     // vertex) when the camera is more than 10 above the ground (y below -10) or the object is past the fog start, 1 (clip
     // the triangles that cross the view volume instead of dropping them) when the camera is within the footprint's reach,
@@ -2349,7 +2350,7 @@ namespace mm
                     obj->flags = static_cast<uint16_t>(obj->flags | 4u);
                     if ((obj->flags & 0x80u) == 0)
                     {
-                        const int kind = Map_GetTileKind(map, obj->tile);
+                        const int facing = Map_GetTileFacing(map, obj->tile);
                         GuestPtr<BuildingType> btype{globals::buildingTypeAddress(obj->type)};
                         const ps2f size = fromInt(btype->size);
                         const uint32_t tile = obj->tile;
@@ -2380,7 +2381,7 @@ namespace mm
                                     port::store<uint32_t>(flagsAt, (flags & 8u) | (depth == lastType->maxStack ? 3u : 4u));
                             }
                             lastType = GuestPtr<BuildingType>{globals::buildingTypeAddress(level->type)};
-                            port::callGuest<void>(lastType->vtable->draw, x, y, z, lastType, kind, city, level, flagsAt, mode);
+                            port::callGuest<void>(lastType->vtable->draw, x, y, z, lastType, facing, city, level, flagsAt, mode);
                             const GuestPtr<MapObject> after = map->objects + reached;
                             if ((after->flags & 8u) != 0 && (after->flags & 0x20u) != 0)
                             {

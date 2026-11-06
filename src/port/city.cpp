@@ -597,7 +597,7 @@ namespace mm
 
     namespace
     {
-        GuestPtr<Vec4> layerMatrix(uint32_t layer) { return GuestPtr<Vec4>{globals::kBuildingMatrices + 0x40u * layer}; }
+        GuestPtr<Vec4> facingMatrix(uint32_t facing) { return GuestPtr<Vec4>{globals::kBuildingMatrices + 0x40u * facing}; }
         int blockStepX(int dir) { return port::load<int32_t>(globals::kBlockStepX + 4u * static_cast<uint32_t>(dir)); }
         int blockStepZ(int dir) { return port::load<int32_t>(globals::kBlockStepZ + 4u * static_cast<uint32_t>(dir)); }
 
@@ -606,32 +606,32 @@ namespace mm
     }
 
     // Leveled ground: the type's mesh, when the object's flag 1 is set.
-    void BldgLeveled_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene>, GuestPtr<MapObject> obj, int, int flags,
-                          ps2f x, ps2f y, ps2f z)
+    void BldgLeveled_Draw(GuestPtr<BuildingType> btype, int facing, GuestPtr<CityScene>, GuestPtr<MapObject> obj,
+                          GuestPtr<uint32_t>, int mode, ps2f x, ps2f y, ps2f z)
     {
         if ((obj->flags & 1u) == 0)
             return;
-        const GuestPtr<Vec4> matrix = layerMatrix(static_cast<uint32_t>(layer));
+        const GuestPtr<Vec4> matrix = facingMatrix(static_cast<uint32_t>(facing));
         matrix[3].x = x;
         matrix[3].y = y;
         matrix[3].z = z;
         Instance_DrawMesh(globals::cityPartsModel.get(), matrix, GuestPtr<Vec4>{globals::kDefaultColour},
-                          btype.as<LeveledType>()->mesh, flags);
+                          btype.as<LeveledType>()->mesh, mode);
     }
 
-    // Wasteland: one of the weed and rock meshes (row look[4] - 1, column look[5]) under one of four matrices
-    // (look[2]), nudged by look[0] and look[1] / 400 (see mm_BldgWasteland_InitRecord). Nothing while look[4]
+    // Wasteland: one of the weed and rock meshes (row look[4] - 1, column look[5]) under one of the four facings'
+    // matrices (look[2]), nudged by look[0] and look[1] / 400 (see mm_BldgWasteland_InitRecord). Nothing while look[4]
     // is 0.
-    void BldgWasteland_Draw(GuestPtr<BuildingType>, int, GuestPtr<CityScene>, GuestPtr<MapObject> obj, int, int flags,
+    void BldgWasteland_Draw(GuestPtr<BuildingType>, int, GuestPtr<CityScene>, GuestPtr<MapObject> obj, GuestPtr<uint32_t>, int mode,
                             ps2f x, ps2f y, ps2f z)
     {
         if (obj->look[4] == 0)
             return;
-        layerMatrix(obj->look[2])[3].x = x + fromInt(obj->look[0]) / ps2f(400.0f);
-        layerMatrix(obj->look[2])[3].y = y;
-        layerMatrix(obj->look[2])[3].z = z + fromInt(obj->look[1]) / ps2f(400.0f);
-        Instance_DrawMesh(globals::wastelandModel.get(), layerMatrix(obj->look[2]), GuestPtr<Vec4>{globals::kDefaultColour},
-                          obj->look[5] + (obj->look[4] - 1) * 3, flags);
+        facingMatrix(obj->look[2])[3].x = x + fromInt(obj->look[0]) / ps2f(400.0f);
+        facingMatrix(obj->look[2])[3].y = y;
+        facingMatrix(obj->look[2])[3].z = z + fromInt(obj->look[1]) / ps2f(400.0f);
+        Instance_DrawMesh(globals::wastelandModel.get(), facingMatrix(obj->look[2]), GuestPtr<Vec4>{globals::kDefaultColour},
+                          obj->look[5] + (obj->look[4] - 1) * 3, mode);
     }
 
     // A straight road within three blocks of (x, z), searching outwards. Each direction is given up at the
@@ -736,7 +736,7 @@ namespace mm
                     const int sx = x + port::load<int32_t>(0x001B1770u + 4u * *spot);
                     const int sz = z + port::load<int32_t>(0x001B1780u + 4u * *spot);
                     if (Map_TileWalkable(city->map, sx, sz) != 0 || Map_TileIsLeveled(city->map, sx, sz) != 0)
-                        Map_PlaceObject(city->map, 0, 3, x, z, static_cast<int>(city.address));
+                        Map_PlaceObject(city->map, 0, 3, x, z, city);
                 }
                 const uint8_t mark = obj->look[4];
                 colour = mark == 1 || mark == 3 || mark >= 7 ? 2 : (mark != 0 ? 6 : 1);
@@ -871,14 +871,14 @@ namespace mm
         }
     }
 
-    // A road piece: its mesh under the layer 0 matrix. Street lamps (four meshes from the type's lampMesh) are drawn
-    // lit (colour w word 12, object flag 0x10) after dark, each block a little later than the last; traffic
-    // lights (five meshes from lightMesh) are drawn lit as two signal meshes chosen by the light phase (the city's
-    // trafficPhase, 0..3) from the table at 0x1B1540, the second under the layer 3 matrix.
-    void BldgRoad_Draw(GuestPtr<BuildingType> btype, int, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
-                       ps2f x, ps2f y, ps2f z)
+    // A road piece: its mesh under the facing 0 matrix (a half turn). Street lamps (four meshes from the type's
+    // lampMesh) are drawn lit (colour w word 12, object flag 0x10) after dark, each block a little later than the last;
+    // traffic lights (five meshes from lightMesh) are drawn lit as two signal meshes chosen by the light phase (the
+    // city's trafficPhase, 0..3) from the table at 0x1B1540, the second under the facing 3 matrix.
+    void BldgRoad_Draw(GuestPtr<BuildingType> btype, int, GuestPtr<CityScene> city, GuestPtr<MapObject> obj,
+                       GuestPtr<uint32_t>, int mode, ps2f x, ps2f y, ps2f z)
     {
-        const GuestPtr<Vec4> matrix = layerMatrix(0);
+        const GuestPtr<Vec4> matrix = facingMatrix(0);
         matrix[3].x = x;
         matrix[3].y = y;
         matrix[3].z = z;
@@ -901,23 +901,23 @@ namespace mm
                 drawLit();
                 obj->flags |= 0x10u;
             }
-            Instance_DrawMesh(globals::cityPartsModel.get(), matrix, colour, obj->roadMesh, flags);
+            Instance_DrawMesh(globals::cityPartsModel.get(), matrix, colour, obj->roadMesh, mode);
             return;
         }
         const auto lights = [&] { return btype.as<RoadType>()->lightMesh; };
         if (mesh < lights() || mesh > lights() + 4)
         {
-            Instance_DrawMesh(globals::cityPartsModel.get(), matrix, colour, mesh, flags);
+            Instance_DrawMesh(globals::cityPartsModel.get(), matrix, colour, mesh, mode);
             return;
         }
         drawLit();
         const uint32_t signals = 0x001B1540u + 4u * static_cast<uint32_t>(city->trafficPhase * 2 + (obj->roadMesh - lights()) * 8);
-        Instance_DrawMesh(globals::cityPartsModel.get(), matrix, colour, lights() + port::load<int32_t>(signals), flags);
-        const GuestPtr<Vec4> second = layerMatrix(3);
+        Instance_DrawMesh(globals::cityPartsModel.get(), matrix, colour, lights() + port::load<int32_t>(signals), mode);
+        const GuestPtr<Vec4> second = facingMatrix(3);
         second[3].x = x;
         second[3].y = y;
         second[3].z = z;
-        Instance_DrawMesh(globals::cityPartsModel.get(), second, colour, lights() + port::load<int32_t>(signals + 4u), flags);
+        Instance_DrawMesh(globals::cityPartsModel.get(), second, colour, lights() + port::load<int32_t>(signals + 4u), mode);
     }
 
     // A road block each tick. Its shape (variant) gets bit d for each direction d whose next block is road
@@ -1010,7 +1010,7 @@ namespace mm
 
     // A building part each tick (the type's tick slot). The main part (its tile's first object) finds its entrance tile
     // (entranceTile) and side; unless the type has flag 0x20 and the second entrance test fails, the side is then set
-    // from where the footprint sits in the 4-tile grid of road blocks, and kept as the tile's kind. The ground under
+    // from where the footprint sits in the 4-tile grid of road blocks, and kept as the tile's facing. The ground under
     // the footprint is levelled: lowered ground (above 0) to 0.1, raised ground onto a multiple of 0.5 (with fmodf),
     // and the geometry around it rebuilt when that changed it. Other parts take the main part's entrance tile. A built
     // part (flag 0x20) clears occupants from 23:00:01, between 6:00 and 7:00 drops flag 0x100 (newly built; minimap
@@ -1045,7 +1045,7 @@ namespace mm
                     *side = x4 == 2 ? 1 : (x + size) % 4 == 1 ? 3 : x4 == 1 ? 1 : 3;
                 }
             }
-            Map_SetTileKind(city->map, obj->tile, static_cast<uint32_t>(*side));
+            Map_SetTileFacing(city->map, obj->tile, static_cast<uint32_t>(*side));
             const ps2f height = Map_GetTileHeightWord(city->map, obj->tile);
             ps2f level = height;
             if (!(height <= ps2f(0.0f)))
@@ -1180,10 +1180,10 @@ namespace mm
             return !(daytime || time < open || time >= close);
         }
 
-        // Places the layer's matrix at the building's position.
-        GuestPtr<Vec4> placeLayer(int layer, ps2f x, ps2f y, ps2f z)
+        // The matrix of the building's facing, placed at its position.
+        GuestPtr<Vec4> placeFacing(int facing, ps2f x, ps2f y, ps2f z)
         {
-            const GuestPtr<Vec4> matrix = layerMatrix(static_cast<uint32_t>(layer));
+            const GuestPtr<Vec4> matrix = facingMatrix(static_cast<uint32_t>(facing));
             matrix[3].x = x;
             matrix[3].y = y;
             matrix[3].z = z;
@@ -1191,14 +1191,14 @@ namespace mm
         }
 
         // An object being built: its construction stage (variant >> 3) from the city parts model.
-        void drawPlainPart(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> matrix, GuestPtr<Vec4> colour, int flags)
+        void drawPlainPart(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> matrix, GuestPtr<Vec4> colour, int mode)
         {
-            Instance_DrawMesh(globals::cityPartsModel.get(), matrix, colour, btype->stageMesh + (obj->variant >> 3), flags);
+            Instance_DrawMesh(globals::cityPartsModel.get(), matrix, colour, btype->stageMesh + (obj->variant >> 3), mode);
         }
     }
 
-    void BldgBusiness_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
-                           ps2f x, ps2f y, ps2f z)
+    void BldgBusiness_Draw(GuestPtr<BuildingType> btype, int facing, GuestPtr<CityScene> city, GuestPtr<MapObject> obj,
+                           GuestPtr<uint32_t>, int mode, ps2f x, ps2f y, ps2f z)
     {
         port::GuestLocal<Vec4> colour;
         buildingColour(btype, city, obj, colour);
@@ -1211,22 +1211,22 @@ namespace mm
         }
         else
             obj->flags &= 0xFFEFu;
-        const GuestPtr<Vec4> matrix = placeLayer(layer, x, y, z);
+        const GuestPtr<Vec4> matrix = placeFacing(facing, x, y, z);
         if ((obj->flags & 0x20u) == 0)
         {
-            drawPlainPart(btype, obj, matrix, colour, flags);
+            drawPlainPart(btype, obj, matrix, colour, mode);
             return;
         }
         int mesh = btype->builtMesh;
         if ((btype->flags & 0x1000u) != 0 && (time < open || close < time))
             ++mesh;
-        Instance_DrawMesh(globals::businessModel.get(), matrix, colour, mesh, flags);
+        Instance_DrawMesh(globals::businessModel.get(), matrix, colour, mesh, mode);
     }
 
     // Ports: like a business, lit after dark while open (hours of the object's own type), drawn 2.5 higher (at ground
     // level over their dug block); once built from the business model.
-    void BldgPort_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
-                       ps2f x, ps2f y, ps2f z)
+    void BldgPort_Draw(GuestPtr<BuildingType> btype, int facing, GuestPtr<CityScene> city, GuestPtr<MapObject> obj,
+                       GuestPtr<uint32_t>, int mode, ps2f x, ps2f y, ps2f z)
     {
         const GuestPtr<BuildingType> type = typeOf(obj);
         port::GuestLocal<Vec4> colour;
@@ -1239,16 +1239,16 @@ namespace mm
         }
         else
             obj->flags &= 0xFFEFu;
-        const GuestPtr<Vec4> matrix = placeLayer(layer, x, y - ps2f(2.5f), z);
+        const GuestPtr<Vec4> matrix = placeFacing(facing, x, y - ps2f(2.5f), z);
         if ((obj->flags & 0x20u) != 0)
-            Instance_DrawMesh(globals::businessModel.get(), matrix, colour, btype->builtMesh, flags);
+            Instance_DrawMesh(globals::businessModel.get(), matrix, colour, btype->builtMesh, mode);
         else
-            drawPlainPart(btype, obj, matrix, colour, flags);
+            drawPlainPart(btype, obj, matrix, colour, mode);
     }
 
     // Theme parks: lit like a port; once built, the animated ride model, moved to the building.
-    void BldgAmusementPark_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
-                                ps2f x, ps2f y, ps2f z)
+    void BldgAmusementPark_Draw(GuestPtr<BuildingType> btype, int facing, GuestPtr<CityScene> city, GuestPtr<MapObject> obj,
+                                GuestPtr<uint32_t>, int mode, ps2f x, ps2f y, ps2f z)
     {
         const GuestPtr<BuildingType> type = typeOf(obj);
         port::GuestLocal<Vec4> colour;
@@ -1261,16 +1261,16 @@ namespace mm
         }
         else
             obj->flags &= 0xFFEFu;
-        const GuestPtr<Vec4> matrix = placeLayer(layer, x, y, z);
+        const GuestPtr<Vec4> matrix = placeFacing(facing, x, y, z);
         if ((obj->flags & 0x20u) == 0)
         {
-            drawPlainPart(btype, obj, matrix, colour, flags);
+            drawPlainPart(btype, obj, matrix, colour, mode);
             return;
         }
         const GuestPtr<A3DObject> ride = globals::parkRideModel.get();
         for (int row = 0; row < 4; ++row)
             ride->matrix[row] = matrix[row];
-        Instance_DrawModel(ride, colour, 0, flags);
+        Instance_DrawModel(ride, colour, 0, mode);
     }
 
     namespace
@@ -1284,10 +1284,10 @@ namespace mm
         }
 
         // The highlight frame of a selected block (object flag 1), sized by the type.
-        void drawBlockHighlight(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> matrix, GuestPtr<Vec4> colour, int flags)
+        void drawBlockHighlight(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> matrix, GuestPtr<Vec4> colour, int mode)
         {
             if ((obj->flags & 1u) != 0)
-                Instance_DrawMesh(globals::cityPartsModel.get(), matrix, colour, btype->size + 0x19, flags);
+                Instance_DrawMesh(globals::cityPartsModel.get(), matrix, colour, btype->size + 0x19, mode);
         }
     }
 
@@ -1295,8 +1295,8 @@ namespace mm
     // 0x67 on the parts with a second mesh). Parts choose up to two meshes from the built mesh on, varied by
     // the block's position along the street ((tile / size) % 3); the type's extra mesh goes with the first.
     // Part 0 of an object being built draws its construction stage, untinted.
-    void BldgOffice_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, GuestPtr<uint32_t> part,
-                         int flags, ps2f x, ps2f y, ps2f z)
+    void BldgOffice_Draw(GuestPtr<BuildingType> btype, int facing, GuestPtr<CityScene> city, GuestPtr<MapObject> obj,
+                         GuestPtr<uint32_t> part, int mode, ps2f x, ps2f y, ps2f z)
     {
         if (btype->kind == 0xC3)
             *part |= 8u;
@@ -1314,33 +1314,33 @@ namespace mm
         port::GuestLocal<Vec4> colour;
         buildingColour(btype, city, obj, colour);
         litWhileOccupied(btype, city, obj, colour);
-        const GuestPtr<Vec4> matrix = placeLayer(layer, x, y, z);
+        const GuestPtr<Vec4> matrix = placeFacing(facing, x, y, z);
         if ((*part & 7u) == 0 && (obj->flags & 0x20u) == 0)
         {
-            drawPlainPart(btype, obj, matrix, GuestPtr<Vec4>{globals::kDefaultColour}, flags);
+            drawPlainPart(btype, obj, matrix, GuestPtr<Vec4>{globals::kDefaultColour}, mode);
             return;
         }
         const int shift = divide(obj->tile, btype->size) % 3 * 4;
         if (first != 0)
         {
-            Instance_DrawMesh(globals::blockModel.get(), matrix, colour, first + shift, flags);
+            Instance_DrawMesh(globals::blockModel.get(), matrix, colour, first + shift, mode);
             const int extra = btype.as<OfficeType>()->extraMesh;
             if (extra != 0)
-                Instance_DrawMesh(globals::blockModel.get(), matrix, colour, extra, flags);
+                Instance_DrawMesh(globals::blockModel.get(), matrix, colour, extra, mode);
         }
         if (second != 0)
         {
-            Instance_DrawMesh(globals::blockModel.get(), matrix, colour, second + shift, flags);
+            Instance_DrawMesh(globals::blockModel.get(), matrix, colour, second + shift, mode);
             if ((*part & 8u) != 0)
-                Instance_DrawMesh(globals::blockModel.get(), matrix, colour, 0x67, flags);
+                Instance_DrawMesh(globals::blockModel.get(), matrix, colour, 0x67, mode);
         }
-        drawBlockHighlight(btype, obj, matrix, colour, flags);
+        drawBlockHighlight(btype, obj, matrix, colour, mode);
     }
 
     // Housing: parts 0..4 take one mesh (parts 3 and 4 two) from the built mesh on, offset per unit shape
     // (unitShape, table 0x1B14F0) and by 26 per style (style).
-    void BldgHousing_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, GuestPtr<uint32_t> part,
-                          int flags, ps2f x, ps2f y, ps2f z)
+    void BldgHousing_Draw(GuestPtr<BuildingType> btype, int facing, GuestPtr<CityScene> city, GuestPtr<MapObject> obj,
+                          GuestPtr<uint32_t> part, int mode, ps2f x, ps2f y, ps2f z)
     {
         const int shape = obj->unitShape;
         const int base = btype->builtMesh + obj->style * 26;
@@ -1358,23 +1358,23 @@ namespace mm
         port::GuestLocal<Vec4> colour;
         buildingColour(btype, city, obj, colour);
         litWhileOccupied(btype, city, obj, colour);
-        const GuestPtr<Vec4> matrix = placeLayer(layer, x, y, z);
+        const GuestPtr<Vec4> matrix = placeFacing(facing, x, y, z);
         if ((*part & 7u) == 0 && (obj->flags & 0x20u) == 0)
         {
-            drawPlainPart(btype, obj, matrix, GuestPtr<Vec4>{globals::kDefaultColour}, flags);
+            drawPlainPart(btype, obj, matrix, GuestPtr<Vec4>{globals::kDefaultColour}, mode);
             return;
         }
         if (first != -1)
-            Instance_DrawMesh(globals::blockModel.get(), matrix, colour, first, flags);
+            Instance_DrawMesh(globals::blockModel.get(), matrix, colour, first, mode);
         if (second != -1)
-            Instance_DrawMesh(globals::blockModel.get(), matrix, colour, second, flags);
-        drawBlockHighlight(btype, obj, matrix, colour, flags);
+            Instance_DrawMesh(globals::blockModel.get(), matrix, colour, second, mode);
+        drawBlockHighlight(btype, obj, matrix, colour, mode);
     }
 
-    // Whether the tile (x, z) holds a unit of the same housing block: same rule, flag-1 tile, terrain kind and
+    // Whether the tile (x, z) holds a unit of the same housing block: same rule, flag-1 tile, facing and
     // height, and a built object (then *isUnit = 1). Returns its unit shape when more than `count` objects
     // come before it on the tile, else 6.
-    uint8_t BldgHousing_UnitAt(GuestPtr<BuildingType>, int kind, int x, int z, int count, uint16_t rule, GuestPtr<CityScene> city,
+    uint8_t BldgHousing_UnitAt(GuestPtr<BuildingType>, int facing, int x, int z, int count, uint16_t rule, GuestPtr<CityScene> city,
                                GuestPtr<uint32_t> isUnit, ps2f height)
     {
         constexpr uint8_t kNone = 6;
@@ -1385,7 +1385,7 @@ namespace mm
             return kNone;
         if (Map_TileIsCorner(city->map, x, z) == 0)
             return kNone;
-        if (kind != Map_GetTileKind(city->map, obj->tile))
+        if (facing != Map_GetTileFacing(city->map, obj->tile))
             return kNone;
         if (!(height == ps2f(Map_GetTileHeightWord(city->map, obj->tile))))
             return kNone;
@@ -1398,7 +1398,7 @@ namespace mm
     }
 
     // Works out a housing object's unit shape (variant high byte) from the units two tiles away on either side
-    // along its terrain kind's axis (table 0x1B1480, 7 x 7), merged with the shape of the tile's first object
+    // along the street it faces (table 0x1B1480, 7 x 7), merged with the shape of the tile's first object
     // when they differ (table 0x1B14C0, 6 per row). When the shape changed, the neighbouring units take or give
     // the style (mesh low byte) and are worked out again in turn, each object on their tiles. An object that
     // is not its tile's first takes that one's style.
@@ -1415,19 +1415,19 @@ namespace mm
         const uint8_t oldShape = shapeOf(obj);
         const int x = obj->tile & 0x7F, z = obj->tile >> 7;
         const int count = Map_CountObjectsBefore(city->map, x, z, obj->id);
-        const int kind = Map_GetTileKind(city->map, obj->tile);
+        const int facing = Map_GetTileFacing(city->map, obj->tile);
         const ps2f height = Map_GetTileHeightWord(city->map, obj->tile);
         const GuestPtr<BuildingType> own = typeOf(obj);
         int xA = x, zA = z, xB = x, zB = z;
-        switch (kind)
+        switch (facing)
         {
         case 0: xA = x - 2, xB = x + 2; break;
         case 1: zA = z - 2, zB = z + 2; break;
         case 2: xA = x + 2, xB = x - 2; break;
         case 3: zA = z + 2, zB = z - 2; break;
         }
-        const uint8_t shapeA = BldgHousing_UnitAt(btype, kind, xA, zA, count, own->rule, city, isUnitA, height);
-        const uint8_t shapeB = BldgHousing_UnitAt(btype, kind, xB, zB, count, own->rule, city, isUnitB, height);
+        const uint8_t shapeA = BldgHousing_UnitAt(btype, facing, xA, zA, count, own->rule, city, isUnitA, height);
+        const uint8_t shapeB = BldgHousing_UnitAt(btype, facing, xB, zB, count, own->rule, city, isUnitB, height);
         setShape(obj, port::load<uint8_t>(0x001B1480u + 7u * shapeB + shapeA));
         const GuestPtr<MapObject> first = Map_GetTileObject(city->map, x, z);
         if (shapeOf(first) != shapeOf(obj))
@@ -1568,8 +1568,8 @@ namespace mm
 
     // The people inside a building: each one's colour (BldgType_DrawOccupant), then its character class's draw
     // slot at its position and heading, in pose 6 (flag 0x40), 1 (running, 0x80) or 0.
-    void BldgType_DrawOccupants2(GuestPtr<BuildingType> btype, int, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
-                                 GuestPtr<MapPerson> people)
+    void BldgType_DrawOccupants2(GuestPtr<BuildingType> btype, int, GuestPtr<CityScene> city, GuestPtr<MapObject> obj,
+                                 GuestPtr<uint32_t>, int mode, GuestPtr<MapPerson> people)
     {
         port::GuestLocal<Vec4> colour; // the original's slots: entry sp - 0x10 and - 0x20
         port::GuestLocal<Vec4> position;
@@ -1590,7 +1590,7 @@ namespace mm
                 pose = 1;
             BldgType_DrawOccupant(btype, colour, person, city);
             const uint32_t draw = cls->vtable->draw;
-            port::callGuest<void>(draw, cls.address, city.address, person.address, colour.ptr().address, flags, position.ptr().address, pose);
+            port::callGuest<void>(draw, cls.address, city.address, person.address, colour.ptr().address, mode, position.ptr().address, pose);
         }
     }
 
@@ -1663,10 +1663,10 @@ namespace mm
     // The My Home types are kinds 5 to 8.
     int BldgType_IsMyHome(GuestPtr<BuildingType> btype) { return btype->kind > 4 && btype->kind < 9; }
 
-    // The road class adds the map object's (a1) variant to the base value.
-    int BldgRoad_GroundTexture(GuestPtr<BuildingType> btype, int a1)
+    // The road class adds the object's road shape to the type's ground texture.
+    int BldgRoad_GroundTexture(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj)
     {
-        return btype->groundTexture + GuestPtr<MapObject>{static_cast<uint32_t>(a1)}->roadShape;
+        return btype->groundTexture + obj->roadShape;
     }
 
     // Collision against a building's mesh: the built collision mesh once built (flag 0x20), else the one of its
@@ -2214,40 +2214,40 @@ namespace mm
 
     // ---- more building types (batch 38)
 
-    // Keep-out parts face the map edge they stand on (x 2, z 2, x 125, else matrix 0). On low ground
-    // (tile height 0.8 or less) the type's built mesh; otherwise its stage mesh, at the water level.
-    void BldgKeepOut_Draw(GuestPtr<BuildingType> btype, int, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
-                          ps2f x, ps2f y, ps2f z)
+    // Keep-out parts face into the map from the edge they stand on (facing 1 at x 2, 2 at z 2, 3 at x 125, else 0). On
+    // low ground (tile height 0.8 or less) the type's built mesh; otherwise its stage mesh, at the water level.
+    void BldgKeepOut_Draw(GuestPtr<BuildingType> btype, int, GuestPtr<CityScene> city, GuestPtr<MapObject> obj,
+                          GuestPtr<uint32_t>, int mode, ps2f x, ps2f y, ps2f z)
     {
         const int tileX = obj->tile % 128, tileZ = obj->tile / 128;
         const uint32_t facing = tileX == 2 ? 1u : tileZ == 2 ? 2u : tileX == 125 ? 3u : 0u;
-        const GuestPtr<Vec4> matrix = layerMatrix(facing);
+        const GuestPtr<Vec4> matrix = facingMatrix(facing);
         matrix[3].x = x;
         matrix[3].y = y;
         matrix[3].z = z;
         if (Map_GetTileHeightWord(city->map, obj->tile) <= ps2f(0.8f))
         {
-            Instance_DrawMesh(globals::propsModel.get(), matrix, GuestPtr<Vec4>{globals::kDefaultColour}, btype->builtMesh, flags);
+            Instance_DrawMesh(globals::propsModel.get(), matrix, GuestPtr<Vec4>{globals::kDefaultColour}, btype->builtMesh, mode);
             return;
         }
         matrix[3].y = city->waterLevel;
-        Instance_DrawMesh(globals::propsModel.get(), matrix, GuestPtr<Vec4>{globals::kDefaultColour}, btype->stageMesh, flags);
+        Instance_DrawMesh(globals::propsModel.get(), matrix, GuestPtr<Vec4>{globals::kDefaultColour}, btype->stageMesh, mode);
     }
 
     // Small goods: their props mesh, on lowered ground at the drawn bottom's height (Map_BottomHeight) unless the type
     // has flag 1. At night (before 4:00 or from 17:00) the colour's last word becomes the integer 12.
-    void BldgSmallGoods_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
-                             ps2f x, ps2f y, ps2f z)
+    void BldgSmallGoods_Draw(GuestPtr<BuildingType> btype, int facing, GuestPtr<CityScene> city, GuestPtr<MapObject> obj,
+                             GuestPtr<uint32_t>, int mode, ps2f x, ps2f y, ps2f z)
     {
         if ((btype->flags & 1u) == 0 && !(y <= ps2f(0.0f)))
             y = Map_BottomHeight(y);
-        const GuestPtr<Vec4> matrix = placeLayer(layer, x, y, z);
+        const GuestPtr<Vec4> matrix = placeFacing(facing, x, y, z);
         port::GuestLocal<Vec4> colour;
         *colour = *GuestPtr<Vec4>{globals::kDefaultColour};
         const int time = Clock_AddWrap(static_cast<int>(btype.address), city->clock, obj->id);
         if (time >= 0xEF10 || time < 0x3840)
             port::store<int32_t>(colour.ptr().field(&Vec4::w).address, 12); // colour table entry 12: lit
-        Instance_DrawMesh(globals::propsModel.get(), matrix, colour, obj->goodsMesh, flags);
+        Instance_DrawMesh(globals::propsModel.get(), matrix, colour, obj->goodsMesh, mode);
     }
 
     // My Home: the common tick, and when it has nothing to report, the objects of type 2 along the side the home
@@ -2255,7 +2255,7 @@ namespace mm
     int BldgMyHome_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
     {
         const int result = Bldg_Tick(btype, city, obj, 0);
-        const int facing = Map_GetTileKind(city->map, obj->tile);
+        const int facing = Map_GetTileFacing(city->map, obj->tile);
         if (result != 0)
             return result;
         const int tileX = obj->tile % 128, tileZ = obj->tile / 128, size = btype->size;
@@ -2782,7 +2782,7 @@ namespace mm
         }
     }
 
-    // Small goods: the tile kind from the entrance search, and for a type with flag 1 the ground under it settles
+    // Small goods: the facing from the entrance search, and for a type with flag 1 the ground under it settles
     // (lowered ground to 0.1) and the area around it is rebuilt; then the minimap shows it (colour 1).
     int BldgSmallGoods_Tick(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject> obj)
     {
@@ -2791,7 +2791,7 @@ namespace mm
         const int x = obj->tile & 0x7F, z = obj->tile >> 7;
         const GuestPtr<int32_t> side{sp + 0x8Cu};
         BldgType_FindEntrance(btype, city, x, z, side);
-        Map_SetTileKind(city->map, obj->tile, static_cast<uint32_t>(*side));
+        Map_SetTileFacing(city->map, obj->tile, static_cast<uint32_t>(*side));
         if ((btype->flags & 1u) != 0)
         {
             const ps2f ground = Map_GetTileHeightWord(city->map, obj->tile);
@@ -2973,8 +2973,8 @@ namespace mm
 
     // Pig farms are drawn like theme parks: lit after dark within the opening hours of the object's type, the
     // built one from its own model (placed by the object's matrix), one being built from the city parts.
-    void BldgPigFarm_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
-                          ps2f x, ps2f y, ps2f z)
+    void BldgPigFarm_Draw(GuestPtr<BuildingType> btype, int facing, GuestPtr<CityScene> city, GuestPtr<MapObject> obj,
+                          GuestPtr<uint32_t>, int mode, ps2f x, ps2f y, ps2f z)
     {
         const GuestPtr<BuildingType> type = typeOf(obj);
         port::GuestLocal<Vec4> colour;
@@ -2987,16 +2987,16 @@ namespace mm
         }
         else
             obj->flags &= 0xFFEFu;
-        const GuestPtr<Vec4> matrix = placeLayer(layer, x, y, z);
+        const GuestPtr<Vec4> matrix = placeFacing(facing, x, y, z);
         if ((obj->flags & 0x20u) == 0)
         {
-            drawPlainPart(btype, obj, matrix, colour, flags);
+            drawPlainPart(btype, obj, matrix, colour, mode);
             return;
         }
         const GuestPtr<A3DObject> model = globals::pigFarmModel.get();
         for (int row = 0; row < 4; ++row)
             model->matrix[row] = matrix[row];
-        Instance_DrawModel(model, colour, 0, flags);
+        Instance_DrawModel(model, colour, 0, mode);
     }
 
     PORT_FN(BldgPigFarm_Draw);
@@ -3054,15 +3054,15 @@ namespace mm
 
         // The character class's draw method for `person`: drawn at `position` (x, y, z, heading)
         // with `colour` in the given pose.
-        void drawPerson(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, uint32_t colour, int flags, uint32_t position, int pose)
+        void drawPerson(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, uint32_t colour, int mode, uint32_t position, int pose)
         {
-            port::callGuest<void>(cls->vtable->draw, cls.address, city.address, person.address, colour, flags, position, pose);
+            port::callGuest<void>(cls->vtable->draw, cls.address, city.address, person.address, colour, mode, position, pose);
         }
     }
 
     // One person in a building's crowd: the colour of BldgType_DrawOccupant at the person's own position and heading, in
     // pose 6 (flag 0x40), 1 (flag 0x80) or 0.
-    void BldgType_DrawOccupants(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject>, GuestPtr<MapPerson> person, int flags)
+    void BldgType_DrawOccupants(GuestPtr<BuildingType> btype, GuestPtr<CityScene> city, GuestPtr<MapObject>, GuestPtr<MapPerson> person, int mode)
     {
         port::GuestFrame<0x80> frame; // the colour at +0x60 and the position at +0x70
         const uint32_t base = frame.ptr().address;
@@ -3079,15 +3079,15 @@ namespace mm
         else if ((person->flags & 0x80u) != 0)
             pose = 1;
         BldgType_DrawOccupant(btype, colour, person, city);
-        drawPerson(cls, city, person, colour.address, flags, position.address, pose);
+        drawPerson(cls, city, person, colour.address, mode, position.address, pose);
     }
 
     // The people of a field: residents that are not class-flag-1 and stand on it (outside, or inside it) with no activity
     // are laid out at fixed spots round the field (the spot by their member, the first two members have their own, the
     // rest share the second) and drawn in pose 5 (9 when the field has a claim, lifted by the type's people lift);
     // anyone else is drawn as an occupant.
-    void BldgField_DrawPeople(GuestPtr<BuildingType> btype, int, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
-                              GuestPtr<MapPerson> people, ps2f x, ps2f y, ps2f z)
+    void BldgField_DrawPeople(GuestPtr<BuildingType> btype, int, GuestPtr<CityScene> city, GuestPtr<MapObject> obj,
+                              GuestPtr<uint32_t>, int mode, GuestPtr<MapPerson> people, ps2f x, ps2f y, ps2f z)
     {
         port::GuestFrame<0xA0> frame;
         const GuestPtr<Vec4> colour{frame.ptr().address + 0x80u}, position{frame.ptr().address + 0x90u};
@@ -3099,7 +3099,7 @@ namespace mm
             const bool onField = (cls->flags & 1u) == 0 && person->activity == 0 && (person->inside == kNoObject || person->inside == obj->id);
             if (!onField)
             {
-                BldgType_DrawOccupants(btype, city, obj, person, flags);
+                BldgType_DrawOccupants(btype, city, obj, person, mode);
                 link = GuestPtr<uint16_t>::of(person->nextHere);
                 continue;
             }
@@ -3121,30 +3121,30 @@ namespace mm
                 pose = 9;
                 position->y = static_cast<float>(ps2f(position->y) + btype.as<FieldType>()->peopleLift);
             }
-            drawPerson(cls, city, person, colour.address, flags, position.address, pose);
+            drawPerson(cls, city, person, colour.address, mode, position.address, pose);
             link = GuestPtr<uint16_t>::of(person->nextHere);
         }
     }
 
     // The ranch: while being built its plain part from the city parts model, once built (flag 0x20) the ranch models (the first always, then one
     // of two by the type's isOpen answer), each at the building's place.
-    void BldgRanch_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
-                        ps2f x, ps2f y, ps2f z)
+    void BldgRanch_Draw(GuestPtr<BuildingType> btype, int facing, GuestPtr<CityScene> city, GuestPtr<MapObject> obj,
+                        GuestPtr<uint32_t>, int mode, ps2f x, ps2f y, ps2f z)
     {
         port::GuestFrame<0x80> frame; // the colour at +0x70
         const GuestPtr<Vec4> colour{frame.ptr().address + 0x70u};
         buildingColour(btype, city, obj, colour);
         Clock_AddWrap(static_cast<int>(btype.address), city->clock, obj->id);
-        const GuestPtr<Vec4> matrix = placeLayer(layer, x, y, z);
+        const GuestPtr<Vec4> matrix = placeFacing(facing, x, y, z);
         if ((obj->flags & 0x20u) == 0)
         {
-            drawPlainPart(btype, obj, matrix, colour, flags);
+            drawPlainPart(btype, obj, matrix, colour, mode);
             return;
         }
         const auto drawAt = [&](GuestPtr<A3DObject> model) {
             for (int row = 0; row < 4; ++row)
                 model->matrix[row] = matrix[row];
-            Instance_DrawModel(model, colour, 0, flags);
+            Instance_DrawModel(model, colour, 0, mode);
         };
         drawAt(globals::ranchModelA.get());
         const int64_t open = port::callGuest<int64_t>(btype->vtable->isOpen, btype, city, obj);
@@ -3155,8 +3155,8 @@ namespace mm
     // residents that are neither class flag 1 nor person flag 0x100 are gathered by person index (up to four are drawn)
     // and placed on the road by its shape (the corner table at 0x1B1670, 4 slots a shape) in pose 8, each at its ground
     // height facing the table's way; the others are drawn as occupants.
-    void BldgRoad_DrawPeople(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int t0, int flags,
-                             GuestPtr<MapPerson> people, ps2f x, ps2f y, ps2f z)
+    void BldgRoad_DrawPeople(GuestPtr<BuildingType> btype, int facing, GuestPtr<CityScene> city, GuestPtr<MapObject> obj,
+                             GuestPtr<uint32_t> part, int mode, GuestPtr<MapPerson> people, ps2f x, ps2f y, ps2f z)
     {
         port::GuestFrame<0x120> frame;
         const uint32_t base = frame.ptr().address;
@@ -3164,7 +3164,7 @@ namespace mm
         const GuestPtr<Vec4> position{base + 0x100u}, colour{base + 0x110u};
         if (CityScene_InFarewellParty(city) == 0)
         {
-            BldgType_DrawOccupants2(btype, layer, city, obj, t0, flags, people);
+            BldgType_DrawOccupants2(btype, facing, city, obj, part, mode, people);
             return;
         }
         int count = 0;
@@ -3173,7 +3173,7 @@ namespace mm
             const GuestPtr<MapPerson> person = people + *link;
             if ((classOf(person)->flags & 1u) != 0 || (person->flags & 0x100u) != 0)
             {
-                BldgType_DrawOccupants(btype, city, obj, person, flags);
+                BldgType_DrawOccupants(btype, city, obj, person, mode);
                 link = GuestPtr<uint16_t>::of(person->nextHere);
                 continue;
             }
@@ -3195,9 +3195,9 @@ namespace mm
             link = GuestPtr<uint16_t>::of(person->nextHere);
         }
         // Each road shape has four corner numbers; by corner, its x and z offsets and its heading number (the headings
-        // are the table the building people use by layer).
+        // are the table the building people use by facing).
         const GuestPtr<uint32_t> shapeCorners{0x001B1670u}, cornerHeading{0x001B1640u};
-        const GuestPtr<float> cornerX{0x001B15E0u}, cornerZ{0x001B1610u}, headings{globals::kKindHeadings};
+        const GuestPtr<float> cornerX{0x001B15E0u}, cornerZ{0x001B1610u}, headings{globals::kFacingHeadings};
         for (int i = 0; i < count && i < 4; ++i)
         {
             const GuestPtr<MapPerson> person = people + list[i];
@@ -3216,21 +3216,21 @@ namespace mm
             position->w = heading;
             *colour = *GuestPtr<Vec4>{globals::kDefaultColour};
             BldgType_DrawOccupant(btype, colour, person, city);
-            drawPerson(classOf(person), city, person, colour.address, flags, position.address, 8);
+            drawPerson(classOf(person), city, person, colour.address, mode, position.address, 8);
         }
     }
 
     PORT_FN(BldgType_DrawOccupants);
-    // The crops of a field (nothing while its object has no claim slot): the matrix of the layer is put at the field's
-    // place (a little higher by the type's crop lift), and the month cycle (twelve steps, two to a stage of six) picks the
-    // stage: its crop mesh is drawn as it is; its growing mesh follows with
-    // its height blended between this stage and the next by the day's progress (the clock over two days, the second
-    // day of a two day cycle counting double), the layer matrix scaled by it.
-    void BldgField_Draw(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
-                        ps2f x, ps2f y, ps2f z)
+    // The crops of a field (nothing while its object has no claim slot): the matrix of its facing is put at the field's
+    // place (a little higher by the type's crop lift), and the month cycle (twelve steps, two to a stage of six) picks
+    // the stage: its crop mesh is drawn as it is; its growing mesh follows with its height blended between this stage
+    // and the next by the day's progress (the clock over two days, the second day of a two day cycle counting double),
+    // the facing matrix scaled by it.
+    void BldgField_Draw(GuestPtr<BuildingType> btype, int facing, GuestPtr<CityScene> city, GuestPtr<MapObject> obj,
+                        GuestPtr<uint32_t>, int mode, ps2f x, ps2f y, ps2f z)
     {
         using namespace vu0;
-        port::GuestFrame<0xD0> frame; // the scale matrix at +0x90, then the product with the layer matrix
+        port::GuestFrame<0xD0> frame; // the scale matrix at +0x90, then the product with the facing matrix
         const uint32_t base = frame.ptr().address;
         if (obj->claimSlot == 0)
             return;
@@ -3238,14 +3238,14 @@ namespace mm
         if (step == 12)
             step = 0;
         const GuestPtr<FieldType> field = btype.as<FieldType>();
-        const GuestPtr<Vec4> matrix = layerMatrix(static_cast<uint32_t>(layer));
+        const GuestPtr<Vec4> matrix = facingMatrix(static_cast<uint32_t>(facing));
         matrix[3].x = x;
         matrix[3].y = y + field->cropLift;
         matrix[3].z = z;
         const int stage = step >> 1;
         const uint8_t mesh = field->cropMesh[stage];
         if (mesh != 0)
-            Instance_DrawMesh(globals::fieldModel.get(), matrix, GuestPtr<Vec4>{globals::kDefaultColour}, mesh, flags);
+            Instance_DrawMesh(globals::fieldModel.get(), matrix, GuestPtr<Vec4>{globals::kDefaultColour}, mesh, mode);
         if (field->growingMesh[stage] == 0)
             return;
         const ps2f progress = fromInt(static_cast<int32_t>(static_cast<uint32_t>((step & 1) + 1) * static_cast<uint32_t>(city->clock))) / ps2f(172800.0f);
@@ -3269,7 +3269,7 @@ namespace mm
         for (int row = 0; row < 4; ++row)
             store(scale + row, vf(9 + row));
         scale[3] = matrix[3];
-        Instance_DrawMesh(globals::fieldModel.get(), scale, GuestPtr<Vec4>{globals::kDefaultColour}, field->growingMesh[stage], flags);
+        Instance_DrawMesh(globals::fieldModel.get(), scale, GuestPtr<Vec4>{globals::kDefaultColour}, field->growingMesh[stage], mode);
     }
 
     PORT_FN(BldgField_Draw);
@@ -3280,14 +3280,15 @@ namespace mm
     // ---- the people of a built building (batch 40)
 
     // Built buildings (flag 0x20) of type flag 0x800: the people standing in it (or outside, on it) are sorted into
-    // four groups, by class flag 1 (vehicles) and by whether this is their home: 0 residents living here,
-    // 1 other residents, 2 vehicles of this building, 3 other vehicles. Each group has room for `groupSpots[group]` people (up to four)
-    // that are placed at the type's people spots (x, y, z, a heading added to the table's at 0x1B2690),
-    // drawn in pose 4. Group 0 is kept in order of the people's member numbers, the others by person index, but a person
-    // inserted always lands in slot 0 (the original writes slot 0 after shifting the ones below it up). While the
-    // building is not open (isOpen slot) the groups are skipped, except group 2. The spot record number runs on over the groups drawn.
-    void Bldg_DrawPeople(GuestPtr<BuildingType> btype, int layer, GuestPtr<CityScene> city, GuestPtr<MapObject> obj, int, int flags,
-                         GuestPtr<MapPerson> people, ps2f x, ps2f y, ps2f z)
+    // four groups, by class flag 1 (vehicles) and by whether this is their home: 0 residents living here, 1 other
+    // residents, 2 vehicles of this building, 3 other vehicles. Each group has room for `groupSpots[group]` people (up
+    // to four) that are placed at the type's people spots for its facing (x, y, z, a heading added to the facing's),
+    // drawn in pose 4. Group 0 is kept in order of the people's member numbers, the others by person index, but a
+    // person inserted always lands in slot 0 (the original writes slot 0 after shifting the ones below it up). While
+    // the building is not open (isOpen slot) the groups are skipped, except group 2. The spot record number runs on
+    // over the groups drawn.
+    void Bldg_DrawPeople(GuestPtr<BuildingType> btype, int facing, GuestPtr<CityScene> city, GuestPtr<MapObject> obj,
+                         GuestPtr<uint32_t>, int mode, GuestPtr<MapPerson> people, ps2f x, ps2f y, ps2f z)
     {
         port::GuestFrame<0x250> frame;
         const uint32_t base = frame.ptr().address;
@@ -3297,7 +3298,7 @@ namespace mm
         const GuestPtr<uint16_t> lists{base + 0x120u}, slots{base + 0x248u};
         const GuestPtr<Vec4> position{base + 0x220u}, colour{base + 0x230u};
         const auto list = [&](uint32_t group) { return lists + static_cast<int32_t>(0x20u * group); };
-        const GuestPtr<float> headings{globals::kKindHeadings}; // by layer (the tile kind)
+        const GuestPtr<float> headings{globals::kFacingHeadings}; // by facing
         if ((btype->flags & 0x800u) == 0 || (obj->flags & 0x20u) == 0)
             return;
         const int32_t open = static_cast<int32_t>(port::callGuest<int64_t>(btype->vtable->isOpen, btype, city, obj));
@@ -3315,7 +3316,7 @@ namespace mm
             list(group)[n] = person->index;
             counts[static_cast<int32_t>(group)] = n + 1;
         }
-        uint32_t running = static_cast<uint32_t>(layer);
+        uint32_t running = static_cast<uint32_t>(facing); // the spots come in fours, one for each facing
         for (uint32_t group = 0; group < 4; ++group)
         {
             if (open == 0 && group != 2)
@@ -3355,7 +3356,7 @@ namespace mm
                 position->x = static_cast<float>(x + spot->x);
                 position->y = static_cast<float>(y + spot->y);
                 position->z = static_cast<float>(z + spot->z);
-                const ps2f heading = ps2f(headings[layer]) + spot->w;
+                const ps2f heading = ps2f(headings[facing]) + spot->w;
                 person->heading = heading;
                 const ps2f pi = ps2f(3.1415927f);
                 if (heading <= -pi)
@@ -3369,7 +3370,7 @@ namespace mm
                 }
                 *colour = *GuestPtr<Vec4>{globals::kDefaultColour};
                 BldgType_DrawOccupant(btype, colour, person, city);
-                drawPerson(classOf(person), city, person, colour.address, flags, position.address, 4);
+                drawPerson(classOf(person), city, person, colour.address, mode, position.address, 4);
             }
         }
     }
@@ -3652,11 +3653,11 @@ namespace mm
         for (int k = 0; k < 4; ++k)
         {
             *spot = record->peopleSpots[k];
-            for (int view = 0; view < 4; ++view)
+            for (int facing = 0; facing < 4; ++facing)
             {
-                const GuestPtr<Vec4> matrix = GuestPtr<Vec4>{0x001B2590u} + 4 * view;
+                const GuestPtr<Vec4> matrix = GuestPtr<Vec4>{globals::kBuildingMatrices} + 4 * facing;
                 matrix[3] = *GuestPtr<Vec4>{0x001B26A0u}; // no translation
-                const GuestPtr<Vec4> out = GuestPtr<Vec4>::of(btype->peopleSpots[4 * k + view]);
+                const GuestPtr<Vec4> out = GuestPtr<Vec4>::of(btype->peopleSpots[4 * k + facing]);
                 Math_MulMatVecVu0(out, matrix, spot);
                 out->w = spot->w; // the heading stays
             }

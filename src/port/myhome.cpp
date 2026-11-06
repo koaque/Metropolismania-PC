@@ -224,7 +224,7 @@ namespace mm
 
     // The view of a home's inside: the walls' blob, the object, the home's size; the viewer starts at the entrance
     // (x from the tile and half the size, y 0.5 under the object's height, z by the mirrored tile row minus half the
-    // size), faces by the tile's kind and steps in by size / 2 - 0.1 along that facing.
+    // size), faces by the tile's facing and steps in by size / 2 - 0.1 along that facing.
     GuestPtr<TalkView> MyHome_ctor(GuestPtr<TalkView> talkView, GuestPtr<CityScene> city, int object)
     {
         using namespace vu0;
@@ -245,9 +245,9 @@ namespace mm
         view->target.z = (fromInt(0x80 - (record->tile >> 7)) - F(0x42800000u)) - half;
         view->target.w = std::bit_cast<float>(0x3F800000u);
         view->position = view->target;
-        const int kind = Map_GetTileKind(view->base.city->map, record->tile);
+        const int facing = Map_GetTileFacing(view->base.city->map, record->tile);
         port::store<uint32_t>(view.field(&MyHomeView::facing).address,
-                              port::load<uint32_t>(globals::kKindHeadings + 4u * static_cast<uint32_t>(kind)));
+                              port::load<uint32_t>(globals::kFacingHeadings + 4u * static_cast<uint32_t>(facing)));
         sdk::sceVu0RotMatrixY(sp + 0x60u, globals::kIdentityMatrix, view->facing);
         port::store<uint32_t>(sp + 0x50u, 0);
         port::store<uint32_t>(sp + 0x54u, 0);

@@ -352,9 +352,9 @@ namespace mm::globals
     inline constexpr GuestVar<int32_t> instanceLimit{0x001BD980u};
     inline constexpr GuestVar<float> frameLoad{0x001BD9B8u};          // last frame's load in percent (provisional)
 
-    // city: building drawing. Matrices the draw slots fill in (one 4x4 per layer, translation in the last
-    // row), the models holding the road and building meshes and the wasteland meshes, and the steps to the
-    // four neighbouring 2x2 blocks (north, east, south, west).
+    // city: building drawing. The four facings' matrices (a turn about y by kFacingHeadings), which the draw slots fill
+    // in with the translation in the last row, the models holding the road and building meshes and the wasteland
+    // meshes, and the steps to the four neighbouring 2x2 blocks (north, east, south, west).
     inline constexpr uint32_t kBuildingMatrices = 0x001B2590u;
     inline constexpr GuestVar<GuestPtr<A3DObject>> cityPartsModel{0x001BDBD0u};
     inline constexpr GuestVar<GuestPtr<A3DObject>> wastelandModel{0x001BDBCCu};
@@ -379,9 +379,9 @@ namespace mm::globals
     inline constexpr uint32_t kFogFarByLevel = 0x001AEFC0u;
     inline constexpr uint32_t kPathStepX = 0x001AEFD0u; // int[4]: 0, 2, 0, -2 (the same steps, mm_Path_NextWaypoint's copy)
     inline constexpr uint32_t kPathStepZ = 0x001AEFE0u; // int[4]: -2, 0, 2, 0
-    // The heading (turn about y) for each tile kind 0..3 (mm_Map_GetTileKind), float[4]: pi, -pi/2, 0, pi/2. The
+    // The heading (turn about y) for each facing 0..3 (mm_Map_GetTileFacing), float[4]: pi, -pi/2, 0, pi/2. The
     // building people, the road corners and the my-home view turn by it.
-    inline constexpr uint32_t kKindHeadings = 0x001B2690u;
+    inline constexpr uint32_t kFacingHeadings = 0x001B2690u;
     // Housing blocks: mesh offset of each of the four block parts, per unit shape (int8[11][4]).
     inline constexpr uint32_t kHousingPartMesh = 0x001B14F0u;
     // The eight tiles around a tile and the tile itself, as x and z steps (int[9] each).

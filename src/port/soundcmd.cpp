@@ -1,6 +1,8 @@
 // The sound command queue: each function fills the next entry of the ring for the YYSOUND driver and
 // returns that entry's index. Arguments go to +0x10 onwards; which fields a command uses, and their widths,
-// differ per command, so each writes exactly its own.
+// differ per command, so each writes exactly its own. From +0x10 most entries are the driver's own argument block
+// (YYSOUND.IRX's ST_* structs, config/iop/yysound_types.h), sent as they are: the request id the driver reports
+// back, then the track (an effect voice or a sequence slot) and the file (a bank) where the command has them.
 
 #include "game_functions.h"
 #include "game_globals.h"
@@ -61,61 +63,63 @@ namespace mm
         }
     }
 
-    int SoundCmd_WaveOpen(uint32_t a0, uint32_t a1, int a2, int a3, uint32_t t0)
+    int SoundCmd_WaveOpen(uint32_t bank, uint32_t type, int hdName, int bdName, uint32_t id)
     {
         const int32_t index = globals::soundCmdIndex.get();
         const uint32_t entry = entryAt(index);
         put<int32_t>(entry, 0x0, 1);
         put<int32_t>(entry, 0x4, 0);
-        put<uint32_t>(entry, 0xC, a0 & 0xFFu);
-        put<int32_t>(entry, 0x10, a2);
-        put<int32_t>(entry, 0x14, a3);
-        put<uint32_t>(entry, 0x18, t0 & 0xFFFFu);
-        put<uint32_t>(entry, 0x1C, a1 & 0xFFu);
+        put<uint32_t>(entry, 0xC, bank & 0xFFu);
+        put<int32_t>(entry, 0x10, hdName);
+        put<int32_t>(entry, 0x14, bdName);
+        put<uint32_t>(entry, 0x18, id & 0xFFFFu);
+        put<uint32_t>(entry, 0x1C, type & 0xFFu);
         put<int32_t>(entry, 0x8, 0);
         return advance(index);
     }
 
-    int SoundCmd_WaveClose(uint32_t a0, uint32_t a1) { return pairCommand(2, a0, a1); }
+    int SoundCmd_WaveClose(uint32_t bank, uint32_t id) { return pairCommand(2, bank, id); }
     int SoundCmd_WaveClose0() { return SoundCmd_WaveClose(0, 0); }
 
-    // Plays sound `sound` of bank `bank` on an effect voice and marks the voice busy.
-    int SoundCmd_WavePlay(uint32_t voice, uint8_t bank, uint16_t sound, uint8_t a3, uint8_t t0, uint8_t t1, int t2, uint16_t t3)
+    // Plays sound `sound` of bank `bank` on an effect voice and marks the voice busy: with `program`, at `note` (60
+    // plays it as recorded), `loop` times (0 until stopped). `kept` (+8, not sent; nothing reads it) is 1 for a voice
+    // kept until stopped.
+    int SoundCmd_WavePlay(uint32_t voice, uint8_t bank, uint16_t sound, uint8_t program, uint8_t note, uint8_t loop, int kept, uint16_t id)
     {
         const int32_t index = globals::soundCmdIndex.get();
         const uint32_t entry = entryAt(index);
         put<int32_t>(entry, 0x0, 3);
         put<int32_t>(entry, 0x4, 0);
         put<int32_t>(entry, 0xC, 0);
-        put<int32_t>(entry, 0x8, t2);
+        put<int32_t>(entry, 0x8, kept);
         put<uint8_t>(entry, 0x12, static_cast<uint8_t>(voice));
         put<uint8_t>(entry, 0x13, bank);
-        put<uint8_t>(entry, 0x16, a3);
-        put<uint8_t>(entry, 0x17, t0);
-        put<uint8_t>(entry, 0x18, t1);
-        put<uint16_t>(entry, 0x10, t3);
+        put<uint8_t>(entry, 0x16, program);
+        put<uint8_t>(entry, 0x17, note);
+        put<uint8_t>(entry, 0x18, loop);
+        put<uint16_t>(entry, 0x10, id);
         put<uint16_t>(entry, 0x14, sound);
         globals::soundVoicesQueued.set(globals::soundVoicesQueued.get() | (1u << (voice & 31u)));
         return advance(index);
     }
 
-    int SoundCmd_WaveStop(uint32_t voice, uint32_t a1) { return pairCommand(4, voice, a1); }
+    int SoundCmd_WaveStop(uint32_t voice, uint32_t id) { return pairCommand(4, voice, id); }
 
-    int SoundCmd_WaveFade(uint8_t voice, uint16_t a1, uint16_t a2, uint16_t a3, uint16_t t0, uint16_t t1)
+    int SoundCmd_WaveFade(uint8_t voice, uint16_t leftGoal, uint16_t rightGoal, uint16_t leftStep, uint16_t rightStep, uint16_t id)
     {
         const int32_t index = globals::soundCmdIndex.get();
         const uint32_t entry = entryAt(index);
         begin(entry, 5);
         put<uint8_t>(entry, 0x12, voice);
-        put<uint16_t>(entry, 0x14, a1);
-        put<uint16_t>(entry, 0x16, a2);
-        put<uint16_t>(entry, 0x18, a3);
-        put<uint16_t>(entry, 0x1A, t0);
-        put<uint16_t>(entry, 0x10, t1);
+        put<uint16_t>(entry, 0x14, leftGoal);
+        put<uint16_t>(entry, 0x16, rightGoal);
+        put<uint16_t>(entry, 0x18, leftStep);
+        put<uint16_t>(entry, 0x1A, rightStep);
+        put<uint16_t>(entry, 0x10, id);
         return advance(index);
     }
 
-    int SoundCmd_WaveSetVolume(uint8_t voice, int left, int right, uint16_t a3)
+    int SoundCmd_WaveSetVolume(uint8_t voice, int left, int right, uint16_t id)
     {
         const int32_t index = globals::soundCmdIndex.get();
         const uint32_t entry = entryAt(index);
@@ -123,15 +127,15 @@ namespace mm
         put<uint8_t>(entry, 0x12, voice);
         put<int32_t>(entry, 0x14, left);
         put<int32_t>(entry, 0x18, right);
-        put<uint16_t>(entry, 0x10, a3);
+        put<uint16_t>(entry, 0x10, id);
         return advance(index);
     }
 
-    int SoundCmd_WaveSetTrackVolume(uint8_t voice, int volume, uint16_t a2) { return voiceCommand<int32_t>(7, voice, volume, a2); }
-    int SoundCmd_WaveSetPitch(uint8_t voice, uint16_t pitch, uint16_t a2) { return voiceCommand<uint16_t>(8, voice, pitch, a2); }
+    int SoundCmd_WaveSetTrackVolume(uint8_t voice, int volume, uint16_t id) { return voiceCommand<int32_t>(7, voice, volume, id); }
+    int SoundCmd_WaveSetPitch(uint8_t voice, uint16_t pitch, uint16_t id) { return voiceCommand<uint16_t>(8, voice, pitch, id); }
 
-    // Loads a sound bank: SQ, HD and BD file names into slot `slot`.
-    int SoundCmd_MidiOpen(uint32_t slot, int sqName, int hdName, int bdName, uint32_t flags)
+    // Loads a sound bank: SQ, HD and BD file names into slot `slot`; `id` is the request id.
+    int SoundCmd_MidiOpen(uint32_t slot, int sqName, int hdName, int bdName, uint32_t id)
     {
         const int32_t index = globals::soundCmdIndex.get();
         const uint32_t entry = entryAt(index);
@@ -141,33 +145,34 @@ namespace mm
         put<int32_t>(entry, 0x10, sqName);
         put<int32_t>(entry, 0x14, hdName);
         put<int32_t>(entry, 0x18, bdName);
-        put<uint32_t>(entry, 0x1C, flags & 0xFFFFu);
+        put<uint32_t>(entry, 0x1C, id & 0xFFFFu);
         put<int32_t>(entry, 0x8, 0);
         return advance(index);
     }
 
-    int SoundCmd_MidiClose(uint32_t slot, uint32_t a1) { return pairCommand(0xB, slot, a1); }
+    int SoundCmd_MidiClose(uint32_t slot, uint32_t id) { return pairCommand(0xB, slot, id); }
 
-    // Plays a sequence in slot `slot` and marks the slot busy.
-    int SoundCmd_MidiPlay(uint32_t slot, uint8_t a1, uint8_t a2, int a3, uint16_t t0)
+    // Plays the sequence of bank `file` (opened by SoundCmd_MidiOpen) in slot `slot`, `loop` times (0 until stopped),
+    // and marks the slot busy; `kept` as for SoundCmd_WavePlay.
+    int SoundCmd_MidiPlay(uint32_t slot, uint8_t file, uint8_t loop, int kept, uint16_t id)
     {
         const int32_t index = globals::soundCmdIndex.get();
         const uint32_t entry = entryAt(index);
         put<int32_t>(entry, 0x0, 0xC);
         put<int32_t>(entry, 0x4, 0);
         put<int32_t>(entry, 0xC, 0);
-        put<int32_t>(entry, 0x8, a3);
+        put<int32_t>(entry, 0x8, kept);
         put<uint8_t>(entry, 0x12, static_cast<uint8_t>(slot));
-        put<uint8_t>(entry, 0x13, a1);
-        put<uint8_t>(entry, 0x14, a2);
-        put<uint16_t>(entry, 0x10, t0);
+        put<uint8_t>(entry, 0x13, file);
+        put<uint8_t>(entry, 0x14, loop);
+        put<uint16_t>(entry, 0x10, id);
         globals::soundSlotsQueued.set(globals::soundSlotsQueued.get() | (1u << (slot & 31u)));
         return advance(index);
     }
 
-    int SoundCmd_MidiStop(uint32_t voice, uint32_t a1) { return pairCommand(0xD, voice, a1); }
+    int SoundCmd_MidiStop(uint32_t voice, uint32_t id) { return pairCommand(0xD, voice, id); }
 
-    int SoundCmd_MidiFade(uint8_t voice, uint16_t target, uint16_t time, uint16_t a3)
+    int SoundCmd_MidiFade(uint8_t voice, uint16_t target, uint16_t time, uint16_t id)
     {
         const int32_t index = globals::soundCmdIndex.get();
         const uint32_t entry = entryAt(index);
@@ -175,13 +180,13 @@ namespace mm
         put<uint8_t>(entry, 0x12, voice);
         put<uint16_t>(entry, 0x14, target);
         put<uint16_t>(entry, 0x16, time);
-        put<uint16_t>(entry, 0x10, a3);
+        put<uint16_t>(entry, 0x10, id);
         return advance(index);
     }
 
-    int SoundCmd_MidiSetVolume(uint8_t voice, int a1, uint16_t a2) { return voiceCommand<int32_t>(0xF, voice, a1, a2); }
-    int SoundCmd_MidiSetTrackVolume(uint8_t voice, int volume, uint16_t a2) { return voiceCommand<int32_t>(0x10, voice, volume, a2); }
-    int SoundCmd_MidiSetTempo(uint8_t voice, uint16_t a1, uint16_t a2) { return voiceCommand<uint16_t>(0x11, voice, a1, a2); }
+    int SoundCmd_MidiSetVolume(uint8_t voice, int volume, uint16_t id) { return voiceCommand<int32_t>(0xF, voice, volume, id); }
+    int SoundCmd_MidiSetTrackVolume(uint8_t voice, int volume, uint16_t id) { return voiceCommand<int32_t>(0x10, voice, volume, id); }
+    int SoundCmd_MidiSetTempo(uint8_t voice, uint16_t tempo, uint16_t id) { return voiceCommand<uint16_t>(0x11, voice, tempo, id); }
 
     // Tells the driver the disc is busy (1) or free (0); only the command and that byte are written.
     int SoundCmd_SetLoadPause(uint32_t busy)

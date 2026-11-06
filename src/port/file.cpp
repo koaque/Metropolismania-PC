@@ -51,7 +51,7 @@ namespace mm
     }
 
     // Seeks (synchronously, after the queue is empty) or queues a seek; returns the position, or the queue tail.
-    int File_Seek(GuestPtr<GameFile> file, int offset, int whence, uint16_t t0)
+    int File_Seek(GuestPtr<GameFile> file, int offset, int whence, uint16_t readyMode)
     {
         if (file->fd < 0)
             return 0;
@@ -68,14 +68,14 @@ namespace mm
         const GuestPtr<FileRequest> request = requestAt(globals::fileQueueTail.get());
         request->op = 3;
         request->state = 0;
-        request->t0 = t0;
+        request->readyMode = readyMode;
         request->fd = file->fd;
         request->offset = offset;
         request->whence = whence;
         return finishRequest();
     }
 
-    int File_Read(GuestPtr<GameFile> file, int buffer, int count, int size, uint16_t t0)
+    int File_Read(GuestPtr<GameFile> file, int buffer, int count, int size, uint16_t readyMode)
     {
         if (file->fd < 0)
             return 0;
@@ -92,7 +92,7 @@ namespace mm
         const GuestPtr<FileRequest> request = requestAt(globals::fileQueueTail.get());
         request->op = 4;
         request->state = 0;
-        request->t0 = t0;
+        request->readyMode = readyMode;
         request->fd = file->fd;
         request->buffer = buffer;
         request->bytes = count * size;
@@ -114,7 +114,7 @@ namespace mm
         const GuestPtr<FileRequest> request = requestAt(globals::fileQueueTail.get());
         request->op = 2;
         request->state = 0;
-        request->t0 = 0;
+        request->readyMode = 0;
         request->fd = file->fd;
         return finishRequest();
     }
@@ -139,7 +139,7 @@ namespace mm
             const GuestPtr<FileRequest> request = requestAt(globals::fileQueueTail.get());
             request->op = 1;
             request->state = 1;
-            request->t0 = 0;
+            request->readyMode = 0;
             request->fd = file->fd;
             finishRequest();
         }
@@ -228,7 +228,7 @@ namespace mm
             return v0;
         if (request->state == 0)
         {
-            const int64_t ready = sdk::sceCdDiskReady(request->t0);
+            const int64_t ready = sdk::sceCdDiskReady(request->readyMode);
             if (ready != 2)
                 return static_cast<int32_t>(ready);
             v0 = 2;

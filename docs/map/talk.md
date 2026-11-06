@@ -253,7 +253,7 @@ friendship changed. A is the person talked to.
 | `0x0017D2E0` | `int mm_WordsFn_AnyAcquaintanceSuppliesWant(WordsCtx *ctx)` | 8 | yes | #76 cond: the same over every member of family A; result word and member index (memberIndex) |
 | `0x0017D2F0` | `int mm_WordsFn_AcquaintanceSuppliesWant(WordsCtx *ctx)` | 8 | yes | #75 cond: an acquaintance of member A who can apply supplies the chosen want's claim; result word |
 | `0x0017D300` | `int mm_WordsFn_FamilySuppliesWant(WordsCtx *ctx)` | 8 | yes | #74 cond: family A can apply and its type supplies the chosen want's claim |
-| `0x0017D310` | `int mm_WordsFn_SuppliesWantBody(WordsCtx *ctx, int a1)` | 896 | yes | shared body of #74/#75/#76 (entered past their prologues) |
+| `0x0017D310` | `int mm_WordsFn_SuppliesWantBody(WordsCtx *ctx, int mode)` | 896 | yes | shared body of #74/#75/#76 (entered past their prologues) |
 | `0x0017D6A0` | `int mm_WordsFn_AcquaintanceSuppliesClaim(WordsCtx *ctx)` | 380 | yes | #73 cond: an acquaintance of member A who can apply and whose type supplies building A's claim; stored as the person's introduction |
 | `0x0017D820` | `int mm_WordsFn_WantClaimMatch(WordsCtx *ctx)` | 240 | no | #72 cond: an open want with the same claim as building A, else a room check |
 | `0x0017D910` | `int mm_WordsFn_HasWantForPerson(WordsCtx *ctx)` | 104 | no | #71 cond: person A has an open want |
@@ -361,7 +361,7 @@ friendship changed. A is the person talked to.
 | `0x001A29E0` | `void mm_Words_LoadForWants(CityScene *city, int16_t id, int line, char *out)` | 596 | yes | script for a wants window line (event or default), reads its block |
 | `0x001A2C40` | `int mm_Words_LoadForFamily(int family, int member, int arg5, CityScene *city)` | 424 | yes | script for family a1 member a2 (talk by phone), reads its block |
 | `0x001A2DF0` | `int mm_Words_LoadForPerson(MapPerson *person, int arg5, CityScene *city)` | 604 | yes | script for person a1 (may start an event), reads its block |
-| `0x001A3050` | `uint32_t *mm_Words_ReadBlock(int a0)` | 336 | yes | (block) finds a script block in the cache of eight (most recently used first), reading it from WORDS.BIN into the last entry when it is not there; returns the first slot's word |
+| `0x001A3050` | `uint32_t *mm_Words_ReadBlock(int block)` | 336 | yes | (block) finds a script block in the cache of eight (most recently used first), reading it from WORDS.BIN into the last entry when it is not there; returns the first slot's word |
 | `0x001A31A0` | `WordsBlock *mm_WordsBlock_ctor(WordsBlock *entry)` | 172 | yes | (entry) a script block cache entry (WordsBlock): block 0 and a buffer of one block; the first one made opens WORDS.BIN and WORDSEVE.BIN, and each is counted |
 | `0x001A3250` | `void mm_Words_Init(void)` | 744 | yes | loads the WORDS, WORDSEVE, WORDSCOM and WORDSTEN tables at game start |
 | `0x001BAEC0` | `void mm_StaticInit_WordsTable(void)` | 7884 | no | copies the WORDS member function table template (0x1B1B48) to 0x1B9100 |

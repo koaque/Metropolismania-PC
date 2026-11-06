@@ -15,6 +15,7 @@ typedef struct TexFileHeader TexFileHeader;
 typedef struct LightSet LightSet;
 typedef struct InstanceSlot InstanceSlot;
 typedef struct ListMenu ListMenu;
+typedef struct ListMenuMask ListMenuMask;
 typedef struct ListMenuItem ListMenuItem;
 typedef struct MenuWin MenuWin;
 typedef struct PauseSlotText PauseSlotText;
@@ -212,7 +213,7 @@ struct GameFile {
 struct FileRequest {
     int32_t op;                /* +0x00 0 free, 1 open, 2 close, 3 seek, 4 read */
     uint16_t state;            /* +0x04 0 not issued yet, 1 issued (poll with sceIoctl) */
-    uint16_t t0;               /* +0x06 argument of sceCdDiskReady */
+    uint16_t readyMode;        /* +0x06 sceCdDiskReady's mode: 0 waits for the drive, 1 only asks */
     int32_t fd;                /* +0x08 */
     int32_t buffer;            /* +0x0C read destination */
     int32_t bytes;             /* +0x10 bytes to read */
@@ -262,7 +263,7 @@ struct TexSprite {
 struct InstanceSlot {
     uint32_t header[4];        /* +0x00 CNT 5 tag; STCYCL, UNPACK V4-32 of 5 quadwords to 0x2B (mm_InstanceBuf_Init) */
     Vec4 colour;               /* +0x10 VU1 0x2B; w picks the colour table entry */
-    Vec4 matrix[4];            /* +0x20 VU1 0x2C..0x2F; the last word (+0x5C) carries the caller's flags */
+    Vec4 matrix[4];            /* +0x20 VU1 0x2C..0x2F; the last word (+0x5C) carries the draw mode */
     uint32_t trailer[4];       /* +0x60 RET tag; MSCAL 0, FLUSH */
 };
 /* A .A3D model as loaded (mm_A3DObject_Load, mm_A3DObject_LoadAsync): the file's 16-byte header, the table offsets that
@@ -387,21 +388,33 @@ struct ListMenuItem {
     TextBox *text;             /* +0x04 */
     int32_t unk_08;
 };
+/* A list menu's clipping mask (0xE0 bytes, mm_ListMenu_ctor): a CNT tag of 12 quadwords with FLUSH and DIRECT 12, a
+   GIF tag of 11 loops of one A+D register (EOP), then the writes. Four plain sprites cover the screen around the
+   list's box at the greatest Z (0xFFFFFF), writing Z only; the Z test after them (GEQUAL) hides what the menu draws
+   outside the box until Z is cleared (mm_ListMenu_Draw). */
+struct ListMenuMask {
+    uint32_t dmaTag[2];        /* +0x00 CNT 12 */
+    uint32_t vifCodes[2];      /* +0x08 FLUSH, DIRECT 12 */
+    uint32_t gifTag[4];        /* +0x10 */
+    GsAdWrite maskTest;        /* +0x20 TEST_1 0x32001: alpha test NEVER, writing Z only when it fails; Z test ALWAYS */
+    GsAdWrite prim;            /* +0x30 6: sprites, not textured */
+    GsAdWrite corners[8];      /* +0x40 XYZF2 two a sprite: left of the box, above, below, right (mm_ListMenu_Place) */
+    GsAdWrite drawTest;        /* +0xC0 TEST_1 0x5000F: alpha not 0; Z test GEQUAL */
+    uint32_t ret[4];           /* +0xD0 RET */
+};
 /* List menu widget (0x2A0 bytes). */
 struct ListMenu {
-    uint8_t unk_000[0x40];
-    uint32_t cursorPacket[0x20]; /* +0x040 GS packet of the cursor bar (mm_ListMenu_SetCursor) */
-    uint8_t unk_0C0[0x20];
+    ListMenuMask mask;         /* +0x000 drawn first (mm_ListMenu_Draw) */
     Frame *cursorFrame;        /* +0x0E0 */
     uint8_t unk_0E4[4];
     ListMenuItem items[31];    /* +0x0E8 (the code accepts item numbers up to 31) */
     uint8_t unk_25C[8];
     int32_t visibleItems;      /* +0x264 */
     int32_t itemHeight;        /* +0x268 */
-    int32_t cursorWidth;       /* +0x26C the cursor bar reaches this far (plus 0x20) right of cursorDx (mm_ListMenu_SetCursor) */
+    int32_t width;             /* +0x26C the box reaches this far right of x (and 0x20 left of it, for the cursor frame) */
     int32_t scroll;            /* +0x270 */
-    int32_t cursorDx;          /* +0x274 */
-    int32_t cursorDy;          /* +0x278 */
+    int32_t x;                 /* +0x274 the texts' left edge in screen pixels; the box starts 0x20 left of it (mm_ListMenu_Place) */
+    int32_t y;                 /* +0x278 the first row's top */
     int32_t cursorY;           /* +0x27C */
     int32_t depth;             /* +0x280 GS Z of the item texts */
     int32_t scrollStep;        /* +0x284 pixels the cursor or list still moves, 4 per frame (> 0 up, < 0 down) */
@@ -1264,7 +1277,7 @@ struct TexImageFile {
 struct LayerAInstance {
     int32_t meshPair;          /* +0x00 draws meshes 2n and 2n + 1 of the layer's model */
     uint8_t unk_04[0xC];
-    Vec4 matrix[4];            /* +0x10 a turn about y times a squash in y, then the position */
+    Vec4 matrix[4];            /* +0x10 a turn about y times a scale in y that grows the effect, then the position */
     uint32_t packet[8];        /* +0x50 CNT 2 tag with FLUSH and DIRECT 2, then a GIF tag of one A+D register */
     uint32_t alpha;            /* +0x70 ALPHA_1 (0x68: blend with a fixed alpha) */
     int32_t fade;              /* +0x74 ALPHA_1's FIX: 0x40 less 1.5 per step, not below 0 */

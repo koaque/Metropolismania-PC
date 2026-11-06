@@ -1563,8 +1563,7 @@ namespace mm
             }
             if (!open)
                 continue;
-            const int placed = Map_PlaceObject(city->map, person->family, homeType->fieldType, bx, bz,
-                                               static_cast<int>(city.address));
+            const int placed = Map_PlaceObject(city->map, person->family, homeType->fieldType, bx, bz, city);
             if (placed != kNoObject)
             {
                 person->target = static_cast<uint16_t>(placed);
@@ -1621,7 +1620,7 @@ namespace mm
     // phone: an empty call queue.
     // Queues a phone call from a family member, unless that family already has one queued: the first free entry
     // (family 0) of four. 1 when queued.
-    int PhoneCall_Post(GuestPtr<PhoneCalls> phone, int person, uint32_t family, uint16_t member, int t0)
+    int PhoneCall_Post(GuestPtr<PhoneCalls> phone, int person, uint32_t family, uint16_t member, int familyOnly)
     {
         for (int i = 0; i < 4; ++i)
             if (phone->calls[i].family == family)
@@ -1634,7 +1633,7 @@ namespace mm
             call.person = person;
             call.family = static_cast<uint16_t>(family);
             call.member = member;
-            call.familyOnly = t0;
+            call.familyOnly = familyOnly;
             return 1;
         }
         return 0;
@@ -4183,7 +4182,7 @@ namespace mm
         {
             if (canPlace == 1)
             {
-                Map_PlaceSmallGoods(city->map, x0, z0, static_cast<int>(city.address), static_cast<uint8_t>(kind),
+                Map_PlaceSmallGoods(city->map, x0, z0, city, static_cast<uint8_t>(kind),
                                     static_cast<int>(port::load<uint32_t>(sp + 0xACu)));
                 Sound_PlaySe(3, 0, 0x3C, 0.0f, 0.0f);
                 BagMenu_FinishUse(city->bag, 1);
@@ -4439,7 +4438,7 @@ namespace mm
     // the two first ones while the person is not in flag 0x100; the person's frame (animFrame) steps on by the animation's table
     // (0x1AF080) and restarts at its table's value (0x1AF050: -1 a fifth of the length, -2 the class's start for the person's
     // flags, else the value). People whose friendship reaches 48 turn to the player (but not in animation 5).
-    void Person_Draw(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, int colour, int flags, GuestPtr<int32_t> position, int animation)
+    void Person_Draw(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, int colour, int mode, GuestPtr<int32_t> position, int animation)
     {
         port::GuestFrame<0xC0> frame; // the callees' frames land where they did under the original's
         const uint32_t model = personPart(cls, person);
@@ -4509,7 +4508,7 @@ namespace mm
         A3DObject_UpdateMatrices(GuestPtr<A3DObject>{model});
         if (animation != 5 && Family_GetFriendship(person->family, person->member) >= 0x30)
             Person_TurnToPlayer(cls, city, person);
-        Instance_DrawModelEx(GuestPtr<A3DObject>{model}, GuestPtr<Vec4>{static_cast<uint32_t>(colour)}, flags, claimed, static_cast<int>(activity & 0x7Fu), shifted, inside, attach);
+        Instance_DrawModelEx(GuestPtr<A3DObject>{model}, GuestPtr<Vec4>{static_cast<uint32_t>(colour)}, mode, claimed, static_cast<int>(activity & 0x7Fu), shifted, inside, attach);
     }
 
     PORT_FN(Person_Draw);
@@ -4624,7 +4623,7 @@ namespace mm
                 Sound_PlaySe(4, 0, 0x3C, 0.0f, 0.0f);
                 return;
             }
-            Map_LevelArea(city->map, port::load<int32_t>(sp + 0xB0u), port::load<int32_t>(sp + 0xB4u), size, static_cast<int>(city.address));
+            Map_LevelArea(city->map, port::load<int32_t>(sp + 0xB0u), port::load<int32_t>(sp + 0xB4u), size, city);
             entry->state = 3;
             entry->tile = static_cast<uint16_t>(port::load<int16_t>(sp + 0xB0u) + (port::load<int16_t>(sp + 0xB4u) << 7));
             Applicants_StartPlacing(city->applicants, city);
@@ -4777,7 +4776,7 @@ namespace mm
         case 1:
             Player_Move(player, move);
             if ((Pad_Held(0) & 0x40u) != 0u)
-                Map_PlaceRoad(map(), static_cast<uint32_t>(tileX), static_cast<uint32_t>(tileZ), static_cast<int>(city.address));
+                Map_PlaceRoad(map(), static_cast<uint32_t>(tileX), static_cast<uint32_t>(tileZ), city);
             showHighlight();
             break;
         case 2:

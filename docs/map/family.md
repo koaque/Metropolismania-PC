@@ -34,7 +34,7 @@ Families: the residents who move into the city.
 | `0x0013BD60` | `uint32_t mm_MemberStatus_TalksToday(int family, int member)` | 40 | no | mm_TalkStatus_TalksToday of the member's status entry |
 | `0x0013BD90` | `int mm_MemberStatus_LongApart(int family, int member)` | 56 | no | mm_TalkStatus_LongApart of the member's status entry |
 | `0x0013BE20` | `void mm_MemberStatus_RecordTalk(int family, int member)` | 168 | no | mm_TalkStatus_RecordTalk on the member's status entry |
-| `0x0013BF60` | `int mm_MemberStatus_AddFriendshipAfterBreak(int family, int member, int a2, int a3)` | 112 | no | mm_TalkStatus_AddFriendshipAfterBreak for the member's status entry |
+| `0x0013BF60` | `int mm_MemberStatus_AddFriendshipAfterBreak(int family, int member, int points, int approval)` | 112 | no | mm_TalkStatus_AddFriendshipAfterBreak for the member's status entry |
 | `0x0013C0F0` | `void mm_MemberStatus_Tick(int clock, int month)` | 336 | no | every 600 s the level rises (up to 12); daily and yearly resets of the low bits |
 | `0x0013C240` | `void mm_Family_BefriendAll(void)` | 732 | no | every member becomes a friend with meter 64 and every family known (bitset B); from a laptop entry |
 | `0x0013C520` | `void mm_Family_ResetForStage(void)` | 204 | no | clears bitsets A and C and the counters for a new stage |

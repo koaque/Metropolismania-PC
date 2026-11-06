@@ -21,11 +21,11 @@ Saving and loading on the memory card.
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
 | `0x0015AF80` | `CardDirEntry *mm_McManager_FindSave(McManager *mc, char *name, int card)` | 248 | no | the directory entry of the save named `name` on a card (slots 0-7 or 8-15), or 0 |
-| `0x0015B080` | `void mm_McManager_FormatSaveInfo(McManager *mc, int a1, char *out)` | 1208 | yes | "Stage n Month m Year y "name" Population ... / Approval Rate ..." |
-| `0x0015B540` | `void mm_McManager_FormatSlotLine(McManager *mc, int slot, char *out, int a3)` | 848 | yes | short slot line " Stage n "name" Pop. ../A.R. ..%", "*Newest*" |
+| `0x0015B080` | `void mm_McManager_FormatSaveInfo(McManager *mc, int index, char *out)` | 1208 | yes | "Stage n Month m Year y "name" Population ... / Approval Rate ..." |
+| `0x0015B540` | `void mm_McManager_FormatSlotLine(McManager *mc, int slot, char *out, int marked)` | 848 | yes | short slot line " Stage n "name" Pop. ../A.R. ..%", "*Newest*" |
 | `0x0015B890` | `void mm_McManager_BuildSaveTitle(McManager *mc, CityScene *city, SaveTitle *title)` | 428 | no | the save's icon.sys title: the prefix and the city's name in full-width characters, then the months played, approval, population and stage |
-| `0x0015BA40` | `int mm_SaveFile_GetResult(McManager *mc, int a1)` | 8 | no | result of the file's last memory card request |
-| `0x0015BA50` | `int mm_SaveFile_IsDone(McManager *mc, int a1)` | 8 | no | whether the file's last request is done |
+| `0x0015BA40` | `int mm_SaveFile_GetResult(McManager *mc, int request)` | 8 | no | result of the file's last memory card request |
+| `0x0015BA50` | `int mm_SaveFile_IsDone(McManager *mc, int request)` | 8 | no | whether the file's last request is done |
 | `0x0015BA60` | `int mm_SaveFile_Close(McManager *mc)` | 16 | no | queues close of the file's descriptor (fd) |
 | `0x0015BA70` | `int mm_SaveFile_Read(McManager *mc, int buffer, int size)` | 28 | no | queues sceMcRead of a2 bytes into a1 from the open save file |
 | `0x0015BA90` | `int mm_SaveFile_Write(McManager *mc, int buffer, int size)` | 28 | no | queues sceMcWrite of a2 bytes from a1 to the open save file |
@@ -34,12 +34,12 @@ Saving and loading on the memory card.
 | `0x0015BB60` | `void mm_SaveFile_ResetState(McManager *mc)` | 8 | no | state +4 = 0 |
 | `0x0015BB70` | `int mm_SaveFile_PollDone(McManager *mc)` | 12 | no | whether the queued request (request) is done |
 | `0x0015BB80` | `void mm_SaveFile_DeleteIconSys(McManager *mc, int dir)` | 64 | no | queues delete of icon.sys in directory a1 |
-| `0x0015BBC0` | `void mm_SaveFile_WriteIconSys(McManager *mc, int a1, int a2, int a3)` | 56 | yes | writes icon.sys (mm_McSave_WriteIconSys) |
-| `0x0015BC00` | `int mm_SaveFile_PrepareDir(McManager *mc, int a1, int a2, int a3)` | 1052 | yes | step machine: card info, mkdir/chdir, copies DATA\STATIC.ICO to STATIC.ICO |
+| `0x0015BBC0` | `void mm_SaveFile_WriteIconSys(McManager *mc, int port, int title, int result)` | 56 | yes | (mc, port, title, result) starts writing icon.sys and the save description (mm_McSave_WriteIconSys on the manager's queue); the request is kept in `request` |
+| `0x0015BC00` | `int mm_SaveFile_PrepareDir(McManager *mc, int portNumber, int name, int allowCreate)` | 1052 | yes | step machine: card info, mkdir/chdir, copies DATA\STATIC.ICO to STATIC.ICO |
 | `0x0015C020` | `void mm_McManager_ResetState(McManager *mc)` | 8 | no | state +4 = 0 |
 | `0x0015C030` | `int mm_McManager_PrepareNewSlot(McManager *mc, int card)` | 108 | yes | the first free slot of the card (8 per card; a slot is free when the scan found no entry for it) gets a new folder name (McManager_NewSaveName) and that name is the result; 0 when all are used. Both take the slot's number within the card, so a slot on card 1 names the folder of the same number on card 0, as the original does |
 | `0x0015C0A0` | `CardDirEntry *mm_McManager_GetSaveEntry(McManager *mc, int index, int32_t *card)` | 128 | no | the directory entry of the index-th save found over both cards (a slot with an entry and a title, 8 slots per card), and that save's card; 0 when there are fewer |
-| `0x0015C120` | `int mm_McManager_GetSaveFolder(McManager *mc, int a1, int32_t *slot)` | 128 | no | the folder name of the index-th save found over both cards (a slot with a size and a name, 8 slots per card), and that save's card; 0 when there are fewer |
+| `0x0015C120` | `int mm_McManager_GetSaveFolder(McManager *mc, int index, int32_t *card)` | 128 | no | the folder name of the index-th save found over both cards (a slot with a size and a name, 8 slots per card), and that save's card; 0 when there are fewer |
 | `0x0015C1A0` | `int mm_McManager_IsCardUsable(McManager *mc, int card)` | 68 | no | a card is usable when it is a PS2 memory card (type 2) and its word at kCardFormatted is 0 |
 | `0x0015C1F0` | `uint8_t mm_McManager_GetCardStatus(McManager *mc, int card)` | 156 | no | card a1 status for the menus (formatted, unformatted, none, ...) |
 | `0x0015C290` | `int mm_McManager_FormatSlotText(McManager *mc, int32_t *cursor, char *text, uint32_t *isNewest)` | 1588 | yes | "Slot %d: %s %s%s, %s. %shrs %smins" with the RTC time |
@@ -50,7 +50,7 @@ Saving and loading on the memory card.
 | `0x0015D9A0` | `void mm_McManager_InitSlots(void)` | 136 | no | forgets both cards and every save slot |
 | `0x0015DA30` | `McManager *mm_McManager_dtor(McManager *mc, int16_t deleteFlag)` | 124 | yes | deletes its sub-object and file |
 | `0x0015DAB0` | `McManager *mm_McManager_ctor(McManager *mc)` | 128 | yes | sub-object, file, slot tables |
-| `0x00185EB0` | `int mm_McSave_WriteIconSys(int a0, int a1, int a2, int a3)` | 1120 | yes | builds the icon.sys header ('PS2D', title, STATIC.ICO icons) in 0x1F65F0 and writes it through the memory card queue |
+| `0x00185EB0` | `int mm_McSave_WriteIconSys(int queue, int port, int title, int result)` | 1120 | yes | builds the icon.sys header ('PS2D', title, STATIC.ICO icons) in 0x1F65F0 and writes it through the memory card queue |
 | `0x00186310` | `int mm_McQueue_Seek(int queue, int fd, int offset, int mode)` | 152 | no | queues sceMcSeek (command 12); returns the request id |
 | `0x001863B0` | `int mm_McQueue_Write(int queue, int fd, int buffer, int size, int32_t *result)` | 152 | no | queues sceMcWrite (command 10) |
 | `0x00186450` | `int mm_McQueue_Read(int queue, int fd, int buffer, int size, int32_t *result)` | 152 | no | queues sceMcRead (command 9) |

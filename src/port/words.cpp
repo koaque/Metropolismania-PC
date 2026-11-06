@@ -660,13 +660,14 @@ namespace mm
             return minute >= open && minute < close;
         }
 
-        // A building's own opening test: its type's isOpen slot, called with (type, city, building, a3). v0 holds the
-        // type's entry in the type table at the call.
-        int callOpenSlot(GuestPtr<WordsCtx> ctx, GuestPtr<MapObject> building, uint32_t a3)
+        // A building's own opening test: its type's isOpen slot, called with (type, city, building) and a fourth
+        // argument, `heldA3`, that the slots ignore: what the caller's a3 held. v0 holds the type's entry in the type
+        // table at the call.
+        int callOpenSlot(GuestPtr<WordsCtx> ctx, GuestPtr<MapObject> building, uint32_t heldA3)
         {
             const GuestPtr<BuildingType> type = typeOfObject(building);
             port::setGuestV0(static_cast<int32_t>(globals::buildingTypeTable.get() + 4u * building->type));
-            return port::callGuest<int>(type->vtable->isOpen, type, ctx->city, building, a3);
+            return port::callGuest<int>(type->vtable->isOpen, type, ctx->city, building, heldA3);
         }
 
         // The person's building on their tile (mm_Map_FindPersonObjectOnTile), the tile from the position as

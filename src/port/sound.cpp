@@ -372,8 +372,8 @@ namespace mm
             std::swap(a.owner, b.owner);
             std::swap(a.priority, b.priority);
             std::swap(a.param0A, b.param0A);
-            std::swap(a.param0B, b.param0B);
-            std::swap(a.param0C, b.param0C);
+            std::swap(a.note, b.note);
+            std::swap(a.pitch, b.pitch);
             std::swap(a.voiceParam, b.voiceParam);
             std::swap(a.volumeLeft, b.volumeLeft);
             std::swap(a.volumeRight, b.volumeRight);
@@ -397,8 +397,8 @@ namespace mm
     // one goes into the list by priority and the count rises, up to 578. Sounds beyond distance 16, sound 0xFF
     // and groups from 4 on are ignored. Returns the last voice's fptoui result (the pan for a sound without
     // voices); when it queues nothing, v0 as it found it.
-    int Se_Request(uint16_t owner, uint32_t group, uint8_t sound, uint8_t param0A, uint8_t param18, uint16_t param0C,
-                   uint8_t param0B, uint8_t param19, ps2f angle, ps2f distance)
+    int Se_Request(uint16_t owner, uint32_t group, uint8_t sound, uint8_t param0A, uint8_t param18, uint16_t pitch,
+                   uint8_t note, uint8_t param19, ps2f angle, ps2f distance)
     {
         if (!(distance <= ps2f(16.0f)) || sound == 0xFF || (group & 0xFFu) >= 4)
             return port::guestV0();
@@ -422,8 +422,8 @@ namespace mm
             result = static_cast<int>(half);
             request.priority = static_cast<uint16_t>(((flags & 0xFu) << 8) + half);
             request.param0A = param0A;
-            request.param0C = static_cast<int16_t>(param0C);
-            request.param0B = param0B;
+            request.pitch = static_cast<int16_t>(pitch);
+            request.note = note;
             request.param18 = param18;
             request.param19 = param19;
 
@@ -473,18 +473,18 @@ namespace mm
     // sound (buying goods, adding a want, inviting a family ...) pass it on, and the script adds an action's
     // result to its line (0 here: no skip). Where Se_Request queues nothing it returns v0 as it found it, so
     // v0 is first set as the original has it there: the flag test (0), or the new owner id.
-    int Sound_PlaySe(int sound, int a1, int a2, ps2f angle, ps2f distance)
+    int Sound_PlaySe(int sound, int pitch, int note, ps2f angle, ps2f distance)
     {
         const uint8_t flags = globals::seSound(static_cast<uint32_t>(sound & 0xFF))->flags;
         if ((flags & 0x10u) == 0)
         {
             port::setGuestV0(0);
-            return Se_Request(0, 0, static_cast<uint8_t>(sound), 0, 0, static_cast<uint16_t>(a1), static_cast<uint8_t>(a2), 0, angle, distance);
+            return Se_Request(0, 0, static_cast<uint8_t>(sound), 0, 0, static_cast<uint16_t>(pitch), static_cast<uint8_t>(note), 0, angle, distance);
         }
         const uint16_t owner = globals::soundNextOwner.get();
         globals::soundNextOwner.set(static_cast<uint16_t>(owner + 1));
         port::setGuestV0(owner + 1);
-        const int result = Se_Request(owner, 0, static_cast<uint8_t>(sound), 0, 0, static_cast<uint16_t>(a1), static_cast<uint8_t>(a2), 0, angle, distance);
+        const int result = Se_Request(owner, 0, static_cast<uint8_t>(sound), 0, 0, static_cast<uint16_t>(pitch), static_cast<uint8_t>(note), 0, angle, distance);
         if (globals::soundNextOwner.get() == 0xFF)
             globals::soundNextOwner.set(0);
         return result;
@@ -504,14 +504,14 @@ namespace mm
             voice.flags = 0;
             voice.priority = request.priority;
             if (groupA)
-                voice.param0B = request.param0B;
+                voice.note = request.note;
             voice.voiceParam = request.voiceParam;
             voice.hold = request.param19;
             if (request.param19 != 0)
             {
                 const auto sum = [](int32_t a, int32_t b) { return static_cast<int32_t>(static_cast<uint32_t>(a) + static_cast<uint32_t>(b)); };
                 if (groupA && sum(voice.heldLeft, voice.heldRight) < sum(request.volumeLeft, request.volumeRight))
-                    voice.heldPitch = request.param0C;
+                    voice.heldPitch = request.pitch;
                 if (voice.heldLeft < request.volumeLeft)
                     voice.heldLeft = request.volumeLeft;
                 if (voice.heldRight < request.volumeRight)
@@ -521,12 +521,12 @@ namespace mm
             {
                 if (voice.volumeLeft != request.volumeLeft || voice.volumeRight != request.volumeRight)
                     voice.flags = 1;
-                if (groupA && voice.pitch != request.param0C)
+                if (groupA && voice.pitch != request.pitch)
                     voice.flags |= 2;
                 voice.volumeLeft = request.volumeLeft;
                 voice.volumeRight = request.volumeRight;
                 if (groupA)
-                    voice.pitch = request.param0C;
+                    voice.pitch = request.pitch;
             }
             voice.flags |= 0x80;
         }
@@ -540,8 +540,8 @@ namespace mm
             voice.priority = request.priority;
             if (groupA)
             {
-                voice.pitch = request.param0C;
-                voice.param0B = request.param0B;
+                voice.pitch = request.pitch;
+                voice.note = request.note;
             }
             voice.voiceParam = request.voiceParam;
             voice.volumeLeft = request.volumeLeft;
@@ -554,7 +554,7 @@ namespace mm
             voice.volumeOffset = 0;
             if (groupA)
             {
-                voice.heldPitch = request.param0C;
+                voice.heldPitch = request.pitch;
                 voice.rest = 20;
                 voice.unk_2B[0] = 0;
                 voice.unk_2B[1] = 0;
@@ -588,7 +588,7 @@ namespace mm
                 SeVoice &voice = voices[v];
                 if (voice.sound != 0xFF || (groupA && voice.rest != 0))
                     continue;
-                const bool pitched = request.param0C != 0;
+                const bool pitched = request.pitch != 0;
                 startVoice(voice, request, groupA);
                 voice.flags = groupA && pitched ? 3 : 1;
                 return true;
@@ -739,8 +739,9 @@ namespace mm
             return {port::load<uint8_t>(script + voice.scriptStep), port::load<uint16_t>(script + 8u + 2u * voice.scriptStep)};
         }
 
-        // The note of a start step: the argument's low byte, raised at random by up to its high byte.
-        uint8_t scriptNote(uint16_t arg)
+        // How many times a start step plays its sound (the driver's loop count, 0 until stopped): the argument's low
+        // byte, raised at random by up to its high byte.
+        uint8_t playCount(uint16_t arg)
         {
             uint32_t note = arg & 0xFFu;
             const uint32_t spread = static_cast<uint32_t>(arg >> 8);
@@ -768,18 +769,18 @@ namespace mm
                 ++voice.scriptStep;
         }
 
-        // A non-positional request (group 0, angle and distance 0) with param0C as given; owned sounds take the
+        // A non-positional request (group 0, angle and distance 0) with the pitch given; owned sounds take the
         // next owner id, as Sound_PlaySe does.
-        void requestPlain(uint8_t sound, uint16_t param0C)
+        void requestPlain(uint8_t sound, uint16_t pitch)
         {
             if ((globals::seSound(sound)->flags & 0x10u) == 0)
             {
-                Se_Request(0, 0, sound, 0, 0, param0C, 0x3C, 0, 0.0f, 0.0f);
+                Se_Request(0, 0, sound, 0, 0, pitch, 0x3C, 0, 0.0f, 0.0f);
                 return;
             }
             const uint16_t owner = globals::soundNextOwner.get();
             globals::soundNextOwner.set(static_cast<uint16_t>(owner + 1));
-            Se_Request(owner, 0, sound, 0, 0, param0C, 0x3C, 0, 0.0f, 0.0f);
+            Se_Request(owner, 0, sound, 0, 0, pitch, 0x3C, 0, 0.0f, 0.0f);
             if (globals::soundNextOwner.get() == 0xFF)
                 globals::soundNextOwner.set(0);
         }
@@ -811,7 +812,7 @@ namespace mm
             case 1:
                 voice.flags = 3;
                 Se_ApplyVoiceParams(index);
-                SoundCmd_WavePlay(index, 0, 0, voice.voice, voice.param0B, scriptNote(step.arg), (voice.voiceParam & 0x100u) != 0 ? 1 : 0, 0);
+                SoundCmd_WavePlay(index, 0, 0, voice.voice, voice.note, playCount(step.arg), (voice.voiceParam & 0x100u) != 0 ? 1 : 0, 0);
                 ++voice.scriptStep;
                 return;
             case 2:
@@ -888,7 +889,7 @@ namespace mm
             case 1:
                 voice.flags = 1;
                 sendVolumeB(index, voice);
-                SoundCmd_MidiPlay(index, static_cast<uint8_t>(voice.voice + 0x38u), scriptNote(step.arg),
+                SoundCmd_MidiPlay(index, static_cast<uint8_t>(voice.voice + 0x38u), playCount(step.arg),
                                       (voice.voiceParam & 0x100u) != 0 ? 1 : 0, 0);
                 ++voice.scriptStep;
                 return;

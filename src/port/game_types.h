@@ -39,6 +39,7 @@ struct TexFileHeader;
 struct LightSet;
 struct InstanceSlot;
 struct ListMenu;
+struct ListMenuMask;
 struct ListMenuItem;
 struct MenuWin;
 struct PauseSlotText;
@@ -236,7 +237,7 @@ struct GameFile {
 struct FileRequest {
     int32_t op;                /* +0x00 0 free, 1 open, 2 close, 3 seek, 4 read */
     uint16_t state;            /* +0x04 0 not issued yet, 1 issued (poll with sceIoctl) */
-    uint16_t t0;               /* +0x06 argument of sceCdDiskReady */
+    uint16_t readyMode;        /* +0x06 sceCdDiskReady's mode: 0 waits for the drive, 1 only asks */
     int32_t fd;                /* +0x08 */
     int32_t buffer;            /* +0x0C read destination */
     int32_t bytes;             /* +0x10 bytes to read */
@@ -286,7 +287,7 @@ struct TexSprite {
 struct InstanceSlot {
     uint32_t header[4];        /* +0x00 CNT 5 tag; STCYCL, UNPACK V4-32 of 5 quadwords to 0x2B (mm_InstanceBuf_Init) */
     Vec4 colour;               /* +0x10 VU1 0x2B; w picks the colour table entry */
-    Vec4 matrix[4];            /* +0x20 VU1 0x2C..0x2F; the last word (+0x5C) carries the caller's flags */
+    Vec4 matrix[4];            /* +0x20 VU1 0x2C..0x2F; the last word (+0x5C) carries the draw mode */
     uint32_t trailer[4];       /* +0x60 RET tag; MSCAL 0, FLUSH */
 };
 /* A .A3D model as loaded (mm_A3DObject_Load, mm_A3DObject_LoadAsync): the file's 16-byte header, the table offsets that
@@ -411,21 +412,33 @@ struct ListMenuItem {
     GuestPtr<TextBox> text;             /* +0x04 */
     int32_t unk_08;
 };
+/* A list menu's clipping mask (0xE0 bytes, mm_ListMenu_ctor): a CNT tag of 12 quadwords with FLUSH and DIRECT 12, a
+   GIF tag of 11 loops of one A+D register (EOP), then the writes. Four plain sprites cover the screen around the
+   list's box at the greatest Z (0xFFFFFF), writing Z only; the Z test after them (GEQUAL) hides what the menu draws
+   outside the box until Z is cleared (mm_ListMenu_Draw). */
+struct ListMenuMask {
+    uint32_t dmaTag[2];        /* +0x00 CNT 12 */
+    uint32_t vifCodes[2];      /* +0x08 FLUSH, DIRECT 12 */
+    uint32_t gifTag[4];        /* +0x10 */
+    GsAdWrite maskTest;        /* +0x20 TEST_1 0x32001: alpha test NEVER, writing Z only when it fails; Z test ALWAYS */
+    GsAdWrite prim;            /* +0x30 6: sprites, not textured */
+    GsAdWrite corners[8];      /* +0x40 XYZF2 two a sprite: left of the box, above, below, right (mm_ListMenu_Place) */
+    GsAdWrite drawTest;        /* +0xC0 TEST_1 0x5000F: alpha not 0; Z test GEQUAL */
+    uint32_t ret[4];           /* +0xD0 RET */
+};
 /* List menu widget (0x2A0 bytes). */
 struct ListMenu {
-    uint8_t unk_000[0x40];
-    uint32_t cursorPacket[0x20]; /* +0x040 GS packet of the cursor bar (mm_ListMenu_SetCursor) */
-    uint8_t unk_0C0[0x20];
+    ListMenuMask mask;         /* +0x000 drawn first (mm_ListMenu_Draw) */
     GuestPtr<Frame> cursorFrame;        /* +0x0E0 */
     uint8_t unk_0E4[4];
     ListMenuItem items[31];    /* +0x0E8 (the code accepts item numbers up to 31) */
     uint8_t unk_25C[8];
     int32_t visibleItems;      /* +0x264 */
     int32_t itemHeight;        /* +0x268 */
-    int32_t cursorWidth;       /* +0x26C the cursor bar reaches this far (plus 0x20) right of cursorDx (mm_ListMenu_SetCursor) */
+    int32_t width;             /* +0x26C the box reaches this far right of x (and 0x20 left of it, for the cursor frame) */
     int32_t scroll;            /* +0x270 */
-    int32_t cursorDx;          /* +0x274 */
-    int32_t cursorDy;          /* +0x278 */
+    int32_t x;                 /* +0x274 the texts' left edge in screen pixels; the box starts 0x20 left of it (mm_ListMenu_Place) */
+    int32_t y;                 /* +0x278 the first row's top */
     int32_t cursorY;           /* +0x27C */
     int32_t depth;             /* +0x280 GS Z of the item texts */
     int32_t scrollStep;        /* +0x284 pixels the cursor or list still moves, 4 per frame (> 0 up, < 0 down) */
@@ -1288,7 +1301,7 @@ struct TexImageFile {
 struct LayerAInstance {
     int32_t meshPair;          /* +0x00 draws meshes 2n and 2n + 1 of the layer's model */
     uint8_t unk_04[0xC];
-    Vec4 matrix[4];            /* +0x10 a turn about y times a squash in y, then the position */
+    Vec4 matrix[4];            /* +0x10 a turn about y times a scale in y that grows the effect, then the position */
     uint32_t packet[8];        /* +0x50 CNT 2 tag with FLUSH and DIRECT 2, then a GIF tag of one A+D register */
     uint32_t alpha;            /* +0x70 ALPHA_1 (0x68: blend with a fixed alpha) */
     int32_t fade;              /* +0x74 ALPHA_1's FIX: 0x40 less 1.5 per step, not below 0 */
@@ -1504,7 +1517,7 @@ struct MapTile {
                                   loaded with lwc1 (mm_Map_GetTileHeightWord) */
     ps2f verts[4];            /* +0x04 corner heights towards (-x,-z), (+x,-z), (+x,+z), (-x,+z) (mm_Map_UpdateTileGeometry) */
     uint16_t firstObject;      /* +0x14 0x3F80 = none */
-    uint16_t flags;            /* +0x16 1 an object's corner tile, 2 and 4 the tile kind (mm_Map_GetTileKind), 8 leveled
+    uint16_t flags;            /* +0x16 1 an object's corner tile, 2 and 4 the side its building faces (mm_Map_GetTileFacing), 8 leveled
                                   ground (under a type with flag 1: leveled land or a building on it), 0x10 walkable (under
                                   a type with flag 2, the road), 0x20 the sea (lowered by a type 7 terrain cell, kept under
                                   objects: layer B's sand bottom instead of a lake's rock, ambience 0x1C instead of 0x1D) */
@@ -1719,7 +1732,7 @@ struct BuildingRecord {
 /* Building type base (0x160 bytes): one object per type in the table at gp 0x1BDBF8; classes add fields after it. */
 struct BuildingType {
     Vec4 peopleSpots[16];      /* +0x000 where the people of a building stand: four spots (x, y, z offsets and a heading, record
-                                  +0x40), each turned for the four views; spot k in view v at 4k + v (mm_BldgType_BaseCtor,
+                                  +0x40), each turned for the four facings; spot k for facing f at 4k + f (mm_BldgType_BaseCtor,
                                   mm_Bldg_DrawPeople) */
     Vec4 talkEye;              /* +0x100 eye offset from the building for a talk, type flag 0x4000 (mm_TalkView_BuildingCamera) */
     char name[0x20];           /* +0x110 */
@@ -1937,7 +1950,7 @@ struct MyHomeView {
     TalkView base;
     Vec4 position;             /* +0x270 viewer position, from the home's entrance */
     Vec4 target;               /* +0x280 looked-at point (position minus 0.1 along the facing) */
-    ps2f facing;              /* +0x290 turn about y, from the tile kind */
+    ps2f facing;              /* +0x290 turn about y, from the tile's facing */
     ps2f pitch;               /* +0x294 looking up and down, -0.05 to 0.1 */
     GuestPtr<void> collision;           /* +0x298 the interior's triangle blob (table at 0x1F3CE0) */
     int32_t size;              /* +0x29C building size */
@@ -2091,8 +2104,8 @@ struct SeRequest {
     uint32_t owner;            /* +0x04 owner id (0xFFFF for sounds with flag 0x20) + (group * 16 + voice index) << 16 */
     uint16_t priority;         /* +0x08 the sound's priority bits << 8 + half the distance; lower comes first */
     uint8_t param0A;           /* +0x0A mm_Se_Request's a3; non-zero only updates a voice already playing it (mm_Se_AssignVoices) */
-    uint8_t param0B;           /* +0x0B t2 (0x3C from mm_Sound_PlaySe) */
-    int16_t param0C;           /* +0x0C t1, the voice's pitch */
+    uint8_t note;              /* +0x0B the note the sample plays at (60 as recorded; mm_Sound_PlaySe passes 60) */
+    int16_t pitch;             /* +0x0C the voice's pitch */
     uint16_t voiceParam;       /* +0x0E second voice list byte + (sound flags & 0xF0) << 4 */
     int32_t volumeLeft;        /* +0x10 1..0x3FFF */
     int32_t volumeRight;       /* +0x14 */
@@ -2110,7 +2123,7 @@ struct SeVoice {
     uint32_t owner;            /* +0x04 as SeRequest */
     uint16_t priority;         /* +0x08 the highest is stolen first */
     int16_t pitch;             /* +0x0A group A, sent with flag 2 (mm_Se_ApplyVoiceParams) */
-    uint8_t param0B;           /* +0x0C group A */
+    uint8_t note;              /* +0x0C group A: the request's note, sent with mm_SoundCmd_WavePlay */
     uint8_t scriptStep;        /* +0x0D step in the sound script (mm_Se_UpdateVoices) */
     uint16_t scriptTimer;      /* +0x0E frames left in a wait step; pitch slides keep a step count in the high byte */
     uint16_t voiceParam;       /* +0x10 low byte: sound script (0x1B3410 + 0x18 each); 0x100 (sound flag 0x10): kept
@@ -2486,7 +2499,7 @@ static_assert(offsetof(GameFile, async) == 0x04, "GameFile.async");
 static_assert(sizeof(FileRequest) == 0x1C, "FileRequest size");
 static_assert(offsetof(FileRequest, op) == 0x00, "FileRequest.op");
 static_assert(offsetof(FileRequest, state) == 0x04, "FileRequest.state");
-static_assert(offsetof(FileRequest, t0) == 0x06, "FileRequest.t0");
+static_assert(offsetof(FileRequest, readyMode) == 0x06, "FileRequest.readyMode");
 static_assert(offsetof(FileRequest, fd) == 0x08, "FileRequest.fd");
 static_assert(offsetof(FileRequest, buffer) == 0x0C, "FileRequest.buffer");
 static_assert(offsetof(FileRequest, bytes) == 0x10, "FileRequest.bytes");
@@ -2597,16 +2610,24 @@ static_assert(offsetof(LightSet, instanceColour) == 0x1A0, "LightSet.instanceCol
 static_assert(sizeof(ListMenuItem) == 0xC, "ListMenuItem size");
 static_assert(offsetof(ListMenuItem, textHeight) == 0x00, "ListMenuItem.textHeight");
 static_assert(offsetof(ListMenuItem, text) == 0x04, "ListMenuItem.text");
+static_assert(offsetof(ListMenuMask, dmaTag) == 0x00, "ListMenuMask.dmaTag");
+static_assert(offsetof(ListMenuMask, vifCodes) == 0x08, "ListMenuMask.vifCodes");
+static_assert(offsetof(ListMenuMask, gifTag) == 0x10, "ListMenuMask.gifTag");
+static_assert(offsetof(ListMenuMask, maskTest) == 0x20, "ListMenuMask.maskTest");
+static_assert(offsetof(ListMenuMask, prim) == 0x30, "ListMenuMask.prim");
+static_assert(offsetof(ListMenuMask, corners) == 0x40, "ListMenuMask.corners");
+static_assert(offsetof(ListMenuMask, drawTest) == 0xC0, "ListMenuMask.drawTest");
+static_assert(offsetof(ListMenuMask, ret) == 0xD0, "ListMenuMask.ret");
 static_assert(sizeof(ListMenu) == 0x2A0, "ListMenu size");
-static_assert(offsetof(ListMenu, cursorPacket) == 0x040, "ListMenu.cursorPacket");
+static_assert(offsetof(ListMenu, mask) == 0x000, "ListMenu.mask");
 static_assert(offsetof(ListMenu, cursorFrame) == 0x0E0, "ListMenu.cursorFrame");
 static_assert(offsetof(ListMenu, items) == 0x0E8, "ListMenu.items");
 static_assert(offsetof(ListMenu, visibleItems) == 0x264, "ListMenu.visibleItems");
 static_assert(offsetof(ListMenu, itemHeight) == 0x268, "ListMenu.itemHeight");
-static_assert(offsetof(ListMenu, cursorWidth) == 0x26C, "ListMenu.cursorWidth");
+static_assert(offsetof(ListMenu, width) == 0x26C, "ListMenu.width");
 static_assert(offsetof(ListMenu, scroll) == 0x270, "ListMenu.scroll");
-static_assert(offsetof(ListMenu, cursorDx) == 0x274, "ListMenu.cursorDx");
-static_assert(offsetof(ListMenu, cursorDy) == 0x278, "ListMenu.cursorDy");
+static_assert(offsetof(ListMenu, x) == 0x274, "ListMenu.x");
+static_assert(offsetof(ListMenu, y) == 0x278, "ListMenu.y");
 static_assert(offsetof(ListMenu, cursorY) == 0x27C, "ListMenu.cursorY");
 static_assert(offsetof(ListMenu, depth) == 0x280, "ListMenu.depth");
 static_assert(offsetof(ListMenu, scrollStep) == 0x284, "ListMenu.scrollStep");
@@ -3629,8 +3650,8 @@ static_assert(offsetof(SeRequest, voice) == 0x01, "SeRequest.voice");
 static_assert(offsetof(SeRequest, owner) == 0x04, "SeRequest.owner");
 static_assert(offsetof(SeRequest, priority) == 0x08, "SeRequest.priority");
 static_assert(offsetof(SeRequest, param0A) == 0x0A, "SeRequest.param0A");
-static_assert(offsetof(SeRequest, param0B) == 0x0B, "SeRequest.param0B");
-static_assert(offsetof(SeRequest, param0C) == 0x0C, "SeRequest.param0C");
+static_assert(offsetof(SeRequest, note) == 0x0B, "SeRequest.note");
+static_assert(offsetof(SeRequest, pitch) == 0x0C, "SeRequest.pitch");
 static_assert(offsetof(SeRequest, voiceParam) == 0x0E, "SeRequest.voiceParam");
 static_assert(offsetof(SeRequest, volumeLeft) == 0x10, "SeRequest.volumeLeft");
 static_assert(offsetof(SeRequest, volumeRight) == 0x14, "SeRequest.volumeRight");
@@ -3641,7 +3662,7 @@ static_assert(offsetof(SeVoice, voice) == 0x01, "SeVoice.voice");
 static_assert(offsetof(SeVoice, owner) == 0x04, "SeVoice.owner");
 static_assert(offsetof(SeVoice, priority) == 0x08, "SeVoice.priority");
 static_assert(offsetof(SeVoice, pitch) == 0x0A, "SeVoice.pitch");
-static_assert(offsetof(SeVoice, param0B) == 0x0C, "SeVoice.param0B");
+static_assert(offsetof(SeVoice, note) == 0x0C, "SeVoice.note");
 static_assert(offsetof(SeVoice, scriptStep) == 0x0D, "SeVoice.scriptStep");
 static_assert(offsetof(SeVoice, scriptTimer) == 0x0E, "SeVoice.scriptTimer");
 static_assert(offsetof(SeVoice, voiceParam) == 0x10, "SeVoice.voiceParam");

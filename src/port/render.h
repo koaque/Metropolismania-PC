@@ -77,7 +77,8 @@ namespace mm::packet
     inline constexpr uint32_t kPsmCt32 = 0x00u, kPsmT8 = 0x13u, kPsmT4 = 0x14u;
 
     // GS register addresses, as A+D writes name them.
-    inline constexpr uint32_t kGsPrim = 0x00u, kGsRgbaq = 0x01u, kGsSt = 0x02u, kGsXyzf2 = 0x04u, kGsTex0_1 = 0x06u;
+    inline constexpr uint32_t kGsPrim = 0x00u, kGsRgbaq = 0x01u, kGsSt = 0x02u, kGsXyzf2 = 0x04u, kGsTex0_1 = 0x06u,
+                              kGsTest1 = 0x47u;
 
     // One A+D write: the register's value (low word, high word), then its address.
     inline void putAd(GsAdWrite &write, uint32_t low, uint32_t high, uint32_t reg)

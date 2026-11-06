@@ -11,8 +11,8 @@ queue (`mm_FileQueue_*`) that `mm_MainLoop` pumps every frame; `mm_FileQueue_Wai
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
-| `0x00184120` | `int mm_File_Seek(GameFile *file, int offset, int whence, uint16_t t0)` | 388 | yes | sceLseek; a synchronous file (+4 == 0) first waits for the request queue to drain |
-| `0x001842B0` | `int mm_File_Read(GameFile *file, int buffer, int count, int size, uint16_t t0)` | 408 | yes | sceRead; synchronous files wait for the queue first, asynchronous ones queue the request (0x1F4ED0) |
+| `0x00184120` | `int mm_File_Seek(GameFile *file, int offset, int whence, uint16_t readyMode)` | 388 | yes | (file, offset, whence, readyMode) sceLseek; a synchronous file first waits for the request queue to drain, an asynchronous one queues the seek (with sceCdDiskReady's mode for when it is issued) |
+| `0x001842B0` | `int mm_File_Read(GameFile *file, int buffer, int count, int size, uint16_t readyMode)` | 408 | yes | (file, buffer, count, size, readyMode) sceRead of count x size bytes; synchronous files wait for the queue first, asynchronous ones queue the request (0x1F4ED0) with sceCdDiskReady's mode |
 | `0x00184450` | `int mm_File_Close(GameFile *file)` | 320 | yes | sceClose, fd (+0) = -1; synchronous files wait for the queue first |
 | `0x00184590` | `int mm_File_Open(GameFile *file, char *path)` | 384 | yes | waits for the disc, builds "cdrom0:\" + path + ";1" (0x1B9AF8), sceOpen |
 | `0x00184710` | `int mm_File_LoadWhole(GameFile *file, char *path, int32_t *size)` | 164 | yes | opens a1, mallocs the file size, reads it all, closes; size to *a2 if given; returns the buffer |
