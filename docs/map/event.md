@@ -10,8 +10,10 @@ City events (visitors, requests, incidents, paydays).
   modules, the person's character type, gender and friendship, the workplace's type and claim meter, where the person
   stands, and the score and approval tiers.
 - The handler id indexes the table at `0x001AF0D0`, which points at one `EventHandler` per id with six slots: Check
-  (may the event start), Start, Update (every frame), End, Text (a text for the talk script) and Answer (the talk
-  script's questions and actions).
+  (may the event start), Start, Update, End, Text (a text for the talk script) and Answer (the talk script's questions
+  and actions). `mm_Event_Update` runs every frame but acts only when the city clock's minute changes, so the Update
+  slots run once a game minute (20 frames by day, 2 before 6:00), and every timer the event records keep counts
+  minutes.
   `mm_Ev<Name>_<Slot>` functions are named after the event titles.
 - The event manager (`EventMgr`, `mm_EventMgr_*`, city `+0x68`) keeps the minute and population rank the queue last
   moved at, five `EventSlot`s (events talk scripts started, with the residents they involve, counting days down) and
@@ -25,16 +27,17 @@ City events (visitors, requests, incidents, paydays).
 - Every handler gets the active event's record (`EventData`, 0x1C bytes: its class, its handler's Update slot, the
   kind, the days left, var, the main actor at `+0xC` as an `ActorRef` of person, building, family and member, then two
   words per type). Types with more state keep up to 0x7C bytes and list further actors from `+0xC` on, 8 bytes each.
-- Per-type record layouts in `config/types/05_classes.h`: `EvCultData` (Crazy Cult: six actors, the wait month and time,
+- Per-type record layouts in `config/types/05_classes.h`, each starting with the `EventHeader` (EventData's first 0xC
+  bytes): `EvCultData` (Crazy Cult: six actors, the wait month and time,
   the spread counter, the members met), `EvAdoptionData` (the applying families and six `AdoptionChild` entries),
   `EvShoppingData` (the shopper, four sellers and their prices, the bill), `EvDeliveryData` (the catalogue entry and
   month, the delivery man's timers), `EvPartyData` (the farewell party: three actors, the guests, the party time),
   `EvThiefData` (the next strike's month, buildings robbed), `EvAdvertiseData` (the family members it brought),
   `EvNoodlesData` (three shops' workers and buildings), `EvMiddleAgedData` (the month, the talk's answer),
   `EvShoppingTogetherData` (the two actors, the countdown, the outcome), `EvAlienData` (six actors, the day and time
-  waited for, a frame count) and `EvMessageData` (the message events and the
-  payday: whether their phone call is up). The
-  handlers see them through `data.as<...>()`.
+  waited for, a minute count), `EvMessageData` (the message events and the payday: the call's minutes, the calls made,
+  whether the call is up) and `EvEscortData` (the escort of types 2 and 5: the player's last distance from the actor's
+  building). The handlers see them through `data.as<...>()`.
 
 <!-- Generated below by tools/map_docs.py from config/port_status.csv. Edit function notes there, not here. -->
 
@@ -51,7 +54,7 @@ City events (visitors, requests, incidents, paydays).
 | `0x00137F50` | `void mm_Event_SaveState(EventMgr *events, McManager *mc)` | 164 | indirect | writes them |
 | `0x00138000` | `int64_t mm_Event_CallAnswer(EventMgr *events, CityScene *city, ActorRef *actor, int arg, int index)` | 128 | indirect | (events, city, actor, arg, index) calls the answer slot of the handler of talk event `index` (0 talks[0], 1 talks[1]) with the event, the city, `actor` and `arg` |
 | `0x00138080` | `int64_t mm_Event_CallText(EventMgr *events, CityScene *city, int index, int arg)` | 128 | indirect | (events, city, index, arg) calls the text slot of the handler of the type of active event `index` |
-| `0x00138100` | `void mm_Event_Update(EventMgr *events, CityScene *city)` | 2544 | indirect | per frame: starts queued events whose conditions hold, runs and finishes active ones |
+| `0x00138100` | `void mm_Event_Update(EventMgr *events, CityScene *city)` | 2544 | indirect | every frame, acting once the city clock's minute changes: starts queued events whose conditions hold, runs the active ones' Update slots (so once a game minute) and finishes them |
 | `0x00138AF0` | `int64_t mm_Event_CheckCondition(EventMgr *events, CityScene *city, uint8_t *type, MapPerson *person)` | 1712 | indirect | whether the event type at `type` (a queue entry) may start now, for the person (null for a script-less start) |
 | `0x001391B0` | `uint8_t mm_Event_TryStart(EventMgr *events, CityScene *city, MapPerson *person)` | 504 | indirect | with no event running in the first talk slot, the first event waiting at level 3 whose condition holds for the person starts there; one that starts at level 3 also sets its tile flags and runs its Start slot. The result is the running event's type |
 | `0x001393B0` | `int mm_Event_FindForFamily(EventMgr *events, CityScene *city, int choice, int16_t *familyMember)` | 708 | yes | whether the family member `familyMember` (family, member) can be added to the event slot `choice`: 4 when the member is already its second person, 0 when the event type lists the character types it takes (charTypes, up to four) and the member's is not among them, 3 when the member is its first person, 1 when the member is already on its list of five, otherwise 2 (the member goes on the list: straight away, or, for a type whose handler has an answer slot, only when that answer, asked with a probe of the slot's second person and the member as argument, says yes) |
@@ -84,10 +87,10 @@ City events (visitors, requests, incidents, paydays).
 | `0x0018FD50` | `MapObject *mm_EvAlien_PickTarget(CityScene *city, int x, int z)` | 400 | no | the building the alien lands on at (x, z): of the (tile list, type) pairs at 0x1B3760 (ended by list 0), the first building whose family lives in the city, without a maxed meter, whose footprint widened by 1 holds the point |
 | `0x0018FEE0` | `void mm_EvAlien_Update(EventData *data, CityScene *city)` | 1184 | yes | type 16: Update (finishes after 720 ticks) |
 | `0x00190380` | `int mm_EvAlien_Check(EventData *data, CityScene *city)` | 832 | no | type 16 "Alien": Check |
-| `0x001906C0` | `int mm_EvBodyguard_Answer(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 140 | no | type 5: Answer |
+| `0x001906C0` | `int mm_EvBodyguard_Answer(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 140 | no | type 5: Answer; mode 0: how near the player is to the actor's building (4 within 2 tiles, 3 within 6, else 1 nearer than last time, 2 farther, 0 the same; EvEscortData.distance keeps it) |
 | `0x00190750` | `void mm_EvEscort_End(EventData *data, CityScene *city)` | 148 | no | End shared by types 2 and 5 |
 | `0x001907F0` | `void mm_EvEscort_Update(EventData *data, CityScene *city)` | 768 | yes | Update shared by types 2 and 5 |
-| `0x00190AF0` | `int mm_EvEscort_Start(EventData *data, CityScene *city)` | 96 | no | Start shared by types 2 "Forgetful Granny" and 5 "Bodyguard" |
+| `0x00190AF0` | `int mm_EvEscort_Start(EventData *data, CityScene *city)` | 96 | no | Start shared by types 2 "Forgetful Granny" and 5 "Bodyguard": marks the building, detaches the actor, keeps the player's distance from the building (EvEscortData.distance) |
 | `0x00190B50` | `int mm_EvBodyguard_Check(EventData *data, CityScene *city)` | 8 | no | type 5 "Bodyguard": Check |
 | `0x00190B60` | `int mm_EvMsg_Answer(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 612 | no | Answer shared by types 23, 29, 30, 35, 41 |
 | `0x00190DD0` | `char *mm_EvPayday_Text(EventData *data, CityScene *city, uint32_t value)` | 72 | indirect | Text shared by types 29 and 30 |
@@ -134,9 +137,9 @@ City events (visitors, requests, incidents, paydays).
 | `0x00193B30` | `int mm_EvForgetfulGranny_Check(EventData *data, CityScene *city, MapPerson *person)` | 44 | no | type 2 "Forgetful Granny": Check |
 | `0x00193B60` | `int mm_EvCrazyCult_Answer(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 96 | indirect | type 18: Answer |
 | `0x00193D00` | `void mm_EvCrazyCult_End(EventData *data, CityScene *city)` | 232 | no | type 18: End |
-| `0x00193DF0` | `void mm_EvCrazyCult_Phase3(EventData *data, CityScene *city)` | 324 | no | phases 0x12 to 0x15: actor 0 waits and is told (0x12, 0x13), then its family home is found (0x14) and its person (0x15) |
-| `0x00193F40` | `void mm_EvCrazyCult_Phase2(EventData *data, CityScene *city)` | 516 | no | phases 10 to 16: 10 waits until everyone has been reached (allJoined), 11 and 13 tell actor 3 when its time comes and 12 and 14 count those frames back, 15 finds the homes of actors 4, 5 and 1 (marked 0x200; back to 15 while one is missing) and 16 their persons (back to 16) |
-| `0x00194150` | `void mm_EvCrazyCult_Phase1(EventData *data, CityScene *city)` | 352 | no | phases 4 to 9: actor 2 waits and is told (4 to 7), then actor 3's family home is found (8) and its person (9, which sets the next wait to the next month at 7:00) |
+| `0x00193DF0` | `void mm_EvCrazyCult_TellLeader(EventData *data, CityScene *city)` | 324 | no | phases 0x11 to 0x15: actor 0 (a leader, the Zen Monk's family) waits and is told (0x12, 0x13), then its family home is found (0x14) and its person (0x15) |
+| `0x00193F40` | `void mm_EvCrazyCult_TellSecondMember(EventData *data, CityScene *city)` | 516 | no | phases 10 to 16: 10 waits until every resident has joined (allJoined), 11 and 13 tell actor 3 (the second member) when its time comes and 12 and 14 count those minutes back, 15 finds the homes of actors 4, 5 and 1 (marked 0x200; back to 15 while one is missing) and 16 their persons (back to 16) |
+| `0x00194150` | `void mm_EvCrazyCult_TellFirstMember(EventData *data, CityScene *city)` | 352 | no | phases 4 to 9: actor 2 (the first cult member) waits and is told (4 to 7), then actor 3's family home is found (8) and its person (9, which sets the next wait to the next month at 7:00) |
 | `0x001942B0` | `void mm_EvCrazyCult_Update(EventData *data, CityScene *city)` | 992 | no | type 18: Update |
 | `0x00194690` | `int64_t mm_EvCrazyCult_Start(EventData *data, CityScene *city)` | 136 | no | type 18 "Crazy Cult": Start; the Zen Monk's and Shadow Monk's families and the first four Crazy Cult families as actors |
 | `0x00194720` | `int mm_EvAdoption_Answer(EventData *data, CityScene *city, ActorRef *actor, int mode)` | 116 | indirect | type 12: Answer |

@@ -1063,7 +1063,7 @@
 0x0017F420 int mm_WordsFn_FindOutsideAcquaintance(WordsCtx *ctx);
 0x0017F530 int mm_WordsFn_GetIntroduction(WordsCtx *ctx);
 0x0017F5C0 int mm_WordsFn_BuildingNeedPartlyMet(WordsCtx *ctx);
-0x0017F5F0 int mm_WordsFn_ClaimIs50(WordsCtx *ctx);
+0x0017F5F0 int mm_WordsFn_ClaimIsRoad(WordsCtx *ctx);
 0x0017F660 int mm_WordsFn_BuildingClaim(WordsCtx *ctx);
 0x0017F6D0 int mm_WordsFn_BuildingState(WordsCtx *ctx);
 0x0017F750 int mm_WordsFn_FriendshipTier(WordsCtx *ctx);
@@ -1225,7 +1225,7 @@
 0x0018CCA0 int mm_Bgm_SetActive(int active);
 0x0018CD30 void mm_Bgm_SetTrackSlot(char slot, int play, int enable);
 0x0018CEA0 void mm_Bgm_Update(void);
-0x0018D150 int mm_SoundCmd_WaveClose0(void);
+0x0018D150 int mm_SoundCmd_WaveCloseBankSet(void);
 0x0018D160 void mm_Sound_ResetVoices(int bankSet);
 0x0018D280 void mm_Se_BuildAmbienceMap(void);
 0x0018D3E0 void mm_Sound_InitState(void);
@@ -1314,9 +1314,9 @@
 0x00193B30 int mm_EvForgetfulGranny_Check(EventData *data, CityScene *city, MapPerson *person);
 0x00193B60 int mm_EvCrazyCult_Answer(EventData *data, CityScene *city, ActorRef *actor, int mode);
 0x00193D00 void mm_EvCrazyCult_End(EventData *data, CityScene *city);
-0x00193DF0 void mm_EvCrazyCult_Phase3(EventData *data, CityScene *city);
-0x00193F40 void mm_EvCrazyCult_Phase2(EventData *data, CityScene *city);
-0x00194150 void mm_EvCrazyCult_Phase1(EventData *data, CityScene *city);
+0x00193DF0 void mm_EvCrazyCult_TellLeader(EventData *data, CityScene *city);
+0x00193F40 void mm_EvCrazyCult_TellSecondMember(EventData *data, CityScene *city);
+0x00194150 void mm_EvCrazyCult_TellFirstMember(EventData *data, CityScene *city);
 0x001942B0 void mm_EvCrazyCult_Update(EventData *data, CityScene *city);
 0x00194690 int64_t mm_EvCrazyCult_Start(EventData *data, CityScene *city);
 0x00194720 int mm_EvAdoption_Answer(EventData *data, CityScene *city, ActorRef *actor, int mode);

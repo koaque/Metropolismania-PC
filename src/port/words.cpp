@@ -719,7 +719,9 @@ namespace mm
         }
     }
 
-    int WordsFn_ClaimIs50(GuestPtr<WordsCtx> ctx) { return claimOf(buildingByArg(ctx)) == 0x32 ? 1 : 0; }
+    // Whether building A's claim (B's with a nonzero argument) is the road claim, 0x32 (it counts while the building
+    // has no entrance).
+    int WordsFn_ClaimIsRoad(GuestPtr<WordsCtx> ctx) { return claimOf(buildingByArg(ctx)) == 0x32 ? 1 : 0; }
 
     // Whether family A may apply: always while the city is popular (flag 4), and with stage flag 2 when
     // mm_Family_CanApply agrees.
@@ -957,7 +959,7 @@ namespace mm
         int visitors = 0;
         while (const GuestPtr<MapPerson> person = People_Next(ctx->city->map, cursor))
         {
-            const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)};
+            const GuestPtr<CharClass> cls = globals::charClass(person->charType);
             if ((cls->flags & 1u) != 0 || person->target == building->id || person->home == building->id)
                 continue;
             ++visitors;
@@ -1093,7 +1095,7 @@ namespace mm
     PORT_FN(WordsFn_EventSetActor);
     PORT_FN(WordsFn_SelectEventActor);
     PORT_FN(WordsFn_EventStage);
-    PORT_FN(WordsFn_ClaimIs50);
+    PORT_FN(WordsFn_ClaimIsRoad);
     PORT_FN(WordsFn_CanApply);
     PORT_FN(WordsFn_IsSpecialFamily);
     PORT_FN(WordsFn_CanAfford);
@@ -1436,7 +1438,7 @@ namespace mm
             *cursor = building->firstPerson;
             while (const GuestPtr<MapPerson> person = People_Next(ctx->city->map, cursor))
             {
-                const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)};
+                const GuestPtr<CharClass> cls = globals::charClass(person->charType);
                 if ((cls->flags & 1u) != 0 || person->family != building->family)
                     continue;
                 const int arg = ctx->arg;
@@ -1627,8 +1629,7 @@ namespace mm
         {
             const GuestPtr<Family> family = Family_Get(ctx->familyA, 0);
             const uint32_t charType = memberAt(family, ctx->memberA)->charType;
-            const uint32_t cls = port::load<uint32_t>(globals::charClassTable.get() + 4u * charType);
-            const int bits = static_cast<int>((GuestPtr<CharClass>{cls}->traits & 0xE00000u) >> 0x15);
+            const int bits = static_cast<int>((globals::charClass(charType)->traits & 0xE00000u) >> 0x15);
             const int points = bits + base;
             port::setGuestV0(bits);  // the friendship call returns v0 as it found it on some paths: the shifted bits here
             const int result = Family_AddFriendshipScaled(ctx->familyA, ctx->memberA, ctx->city.field(&CityScene::approval), points, sign);
@@ -1809,7 +1810,7 @@ namespace mm
             *cursor = object->firstPerson;
             while (const GuestPtr<MapPerson> person = People_Next(ctx->city->map, cursor))
             {
-                const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)};
+                const GuestPtr<CharClass> cls = globals::charClass(person->charType);
                 if ((cls->flags & 1u) != 0 || person->family != object->family)
                     continue;
                 ctx->personB = person;  // stored before the test of introduces: the original does it in a branch delay slot

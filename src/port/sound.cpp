@@ -1075,7 +1075,7 @@ namespace mm
             const GuestPtr<MapPerson> person = People_Next(globals::soundCity.get()->map, cursor);
             if (!person)
                 continue;
-            const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)};
+            const GuestPtr<CharClass> cls = globals::charClass(person->charType);
             if ((cls->flags & 1u) == 0 || person->target == kNoPerson)
                 continue;
             const uint16_t pitch = static_cast<uint16_t>(static_cast<int16_t>(person->speed / 40) * 200);

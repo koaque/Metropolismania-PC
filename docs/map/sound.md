@@ -55,7 +55,7 @@ Sound on the EE side; the driver is YYSOUND on the IOP.
 | `0x0018CCA0` | `int mm_Bgm_SetActive(int active)` | 132 | no | (active) `active` == 0 fades the BGM out (state 4); otherwise stops a pending jingle, restores volume 0xC0 and sets state 3 |
 | `0x0018CD30` | `void mm_Bgm_SetTrackSlot(char slot, int play, int enable)` | 360 | no | sets or adds track slot + 6 in the music table (0x1F8120, entries 3..12 of (id, enabled)); with play: fades voice 15 out with it next, or queues it (0x1BDCF0) |
 | `0x0018CEA0` | `void mm_Bgm_Update(void)` | 688 | no | picks the BGM for the city state (flags, approval) and switches banks (NOMAL_A.SQ/HD/BD ...) when the driver is idle |
-| `0x0018D150` | `int mm_SoundCmd_WaveClose0(void)` | 12 | no | mm_SoundCmd_WaveClose(0, 0): closes wave file 0 |
+| `0x0018D150` | `int mm_SoundCmd_WaveCloseBankSet(void)` | 12 | no | mm_SoundCmd_WaveClose(0, 0): closes the sound bank set that mm_Sound_ResetVoices opens (wave bank 0, file 0) |
 | `0x0018D160` | `void mm_Sound_ResetVoices(int bankSet)` | 284 | no | queues cmd 1, resets all voice volumes (0xFFF group A, 0x100 group B, 0xC0 voice 15) and clears the effect voice tables |
 | `0x0018D280` | `void mm_Se_BuildAmbienceMap(void)` | 348 | no | clears the 4096-entry ambience grid at 0x1FC690 and fills it from the city map and the table at 0x1B35F0 |
 | `0x0018D3E0` | `void mm_Sound_InitState(void)` | 196 | no | called by mm_GameInit: marks all 31 effect voices free (0xFF) and clears the sound globals |

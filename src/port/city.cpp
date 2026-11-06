@@ -1577,7 +1577,7 @@ namespace mm
         {
             const GuestPtr<MapPerson> person = people + *link;
             *colour = *GuestPtr<Vec4>{globals::kDefaultColour};
-            const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)};
+            const GuestPtr<CharClass> cls = globals::charClass(person->charType);
             position->x = person->x;
             position->y = person->y;
             position->z = person->z;
@@ -2392,10 +2392,10 @@ namespace mm
         port::GuestLocal<uint32_t> count;
         do
         {
-            uint32_t item = Map_GetTileList(city->map, *id, count).address;
-            for (int i = 0; i < static_cast<int32_t>(*count); ++i, item += 2u)
+            GuestPtr<uint16_t> item = Map_GetTileList(city->map, *id, count);
+            for (int i = 0; i < static_cast<int32_t>(*count); ++i, ++item)
             {
-                const GuestPtr<MapObject> building = Map_GetRecord(city->map, port::load<uint16_t>(item));
+                const GuestPtr<MapObject> building = Map_GetRecord(city->map, *item);
                 const GuestPtr<BuildingType> type{globals::buildingTypeAddress(building->type)};
                 const int x = building->tile & 0x7F, z = building->tile >> 7, size = type->size;
                 if (!(rect->x0 < x + size && x < rect->x1 && rect->z0 < z + size && z < rect->z1))
@@ -3055,7 +3055,7 @@ namespace mm
     {
         GuestPtr<CharClass> classOf(GuestPtr<MapPerson> person)
         {
-            return GuestPtr<CharClass>{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)};
+            return globals::charClass(person->charType);
         }
 
         // The character class's draw method for `person`: drawn at `position` (x, y, z, heading)
@@ -3856,12 +3856,12 @@ namespace mm
     {
         Applicants_AddAndShow(city->applicants, static_cast<int>(family), city->monthCount, select);
         const GuestPtr<MapPerson> people = city->map->people;
-        for (GuestPtr<MapPerson> person = people; person != people + 6000; ++person)
+        for (GuestPtr<MapPerson> person = people; person != people + kPersonSlots; ++person)
         {
             const uint32_t type = person->charType;
             if (type == 0)
                 continue;
-            const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * type)};
+            const GuestPtr<CharClass> cls = globals::charClass(type);
             if ((cls->flags & 1u) != 0 || person->introduces != family)
                 continue;
             person->introduces = static_cast<uint16_t>(Family_PickIntroduction(person->family, person->member, city));
@@ -4187,12 +4187,12 @@ namespace mm
             Applicants_AddAndShow(city->applicants, static_cast<int>(family), city->monthCount, 0);
             // Residents (classes without flag 1) who could introduce this family introduce another one.
             const GuestPtr<MapPerson> people = city->map->people;
-            for (GuestPtr<MapPerson> person = people; person != people + 6000; ++person)
+            for (GuestPtr<MapPerson> person = people; person != people + kPersonSlots; ++person)
             {
                 const uint32_t type = person->charType;
                 if (type == 0u)
                     continue;
-                const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * type)};
+                const GuestPtr<CharClass> cls = globals::charClass(type);
                 if ((cls->flags & 1u) != 0u)
                     continue;
                 if (person->introduces != family)

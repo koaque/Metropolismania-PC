@@ -79,7 +79,8 @@ namespace mm
     }
 
     int SoundCmd_WaveClose(uint32_t bank, uint32_t id) { return pairCommand(2, bank, id); }
-    int SoundCmd_WaveClose0() { return SoundCmd_WaveClose(0, 0); }
+    // Closes the sound bank set mm_Sound_ResetVoices opens (wave bank 0, file 0).
+    int SoundCmd_WaveCloseBankSet() { return SoundCmd_WaveClose(0, 0); }
 
     // Plays sound `sound` of bank `bank` on an effect voice and marks the voice busy: with `program`, at `note` (60
     // plays it as recorded), `loop` times (0 until stopped). `kept` (+8, not sent; nothing reads it) is 1 for a voice
@@ -245,7 +246,7 @@ namespace mm
 
     PORT_FN(SoundCmd_WaveOpen);
     PORT_FN(SoundCmd_WaveClose);
-    PORT_FN(SoundCmd_WaveClose0);
+    PORT_FN(SoundCmd_WaveCloseBankSet);
     PORT_FN(SoundCmd_WavePlay);
     PORT_FN(SoundCmd_WaveStop);
     PORT_FN(SoundCmd_WaveFade);

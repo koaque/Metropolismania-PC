@@ -413,7 +413,7 @@ namespace mm
             const GuestPtr<MapPerson> person = People_Next(view->city->map, cursor);
             if (!person)
                 break;
-            const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)};
+            const GuestPtr<CharClass> cls = globals::charClass(person->charType);
             if ((cls->flags & 1u) != 0)
                 continue;
             if (person->inside != kNoObject && person->inside != view->building)
@@ -482,7 +482,7 @@ namespace mm
                 const GuestPtr<MapPerson> person = People_Next(view->city->map, cursor);
                 if (!person)
                     return person;
-                const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)};
+                const GuestPtr<CharClass> cls = globals::charClass(person->charType);
                 if ((cls->flags & 1u) != 0)
                     continue;
                 if (person->inside != kNoObject && person->inside != view->building)
@@ -1109,7 +1109,7 @@ namespace mm
         const GuestPtr<MapPerson> who = view->city->map->people + person;
         if (!who)
             return;
-        const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * who->charType)};
+        const GuestPtr<CharClass> cls = globals::charClass(who->charType);
         Dma_AppendCall(static_cast<int>(GuestPtr<uint8_t>::of(view->packet[0]).address));
         const GuestPtr<Vec4> matrix{frame.ptr().address + 0x90u};
         Mat4_Copy(matrix, GuestPtr<Vec4>{globals::kIdentityMatrix});
@@ -1134,7 +1134,7 @@ namespace mm
         const GuestPtr<MapPerson> who = view->city->map->people + person;
         if (!who)
             return;
-        const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * who->charType)};
+        const GuestPtr<CharClass> cls = globals::charClass(who->charType);
         Dma_AppendCall(static_cast<int>(GuestPtr<uint8_t>::of(view->packet[0]).address));
         const GuestPtr<Vec4> matrix{frame.ptr().address + 0x60u};
         sdk::sceVu0RotMatrixY(matrix.address, globals::kIdentityMatrix, angle);
@@ -1310,7 +1310,7 @@ namespace mm
         view->peopleCount = 0;
         while (const GuestPtr<MapPerson> person = People_Next(view->city->map, cursor))
         {
-            const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)};
+            const GuestPtr<CharClass> cls = globals::charClass(person->charType);
             if ((cls->flags & 1u) != 0)
                 continue;
             if (person->inside == 0x3F80 || static_cast<int32_t>(person->inside) == view->building)
@@ -1727,7 +1727,7 @@ namespace mm
         *cursor = Map_GetRecord(map, target)->firstPerson;
         while (const GuestPtr<MapPerson> person = People_Next(map, cursor))
         {
-            const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)};
+            const GuestPtr<CharClass> cls = globals::charClass(person->charType);
             if ((cls->flags & 1u) != 0)
                 continue;
             if (person->inside != 0x3F80 && static_cast<int32_t>(person->inside) != view->building)
@@ -1818,7 +1818,7 @@ namespace mm
             conv->member = buildingOrMember;
             conv->peopleInside = 1;
         }
-        MsgWin_SetMessage(GuestPtr<MsgWin>{c}, slot, GuestPtr<CharClass>{port::load<uint32_t>(globals::charClassTable.get() + 4u * charType)}->voice);
+        MsgWin_SetMessage(GuestPtr<MsgWin>{c}, slot, globals::charClass(charType)->voice);
     }
 
     PORT_FN(TalkConv_Start);
@@ -1895,7 +1895,7 @@ namespace mm
                 const GuestPtr<CityScene> city{conv->city.address};
                 const int32_t origin = conv->origin;
                 const auto points = [](uint32_t charType) {
-                    const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * charType)};
+                    const GuestPtr<CharClass> cls = globals::charClass(charType);
                     return static_cast<int>((cls->traits & 0xE00000u) >> 21) + 4;
                 };
                 if (conv->byFamily == 0)
@@ -1941,7 +1941,7 @@ namespace mm
         const GuestPtr<Family> record = Family_Get(family, 0);
         if (!record)
             return;
-        const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * record->members[member].charType)};
+        const GuestPtr<CharClass> cls = globals::charClass(record->members[member].charType);
         Dma_AppendCall(static_cast<int>(GuestPtr<uint8_t>::of(view->packet[0]).address));
         const GuestPtr<Vec4> matrix{sp + 0xA0u};
         Mat4_Copy(matrix, GuestPtr<Vec4>{0x001B2550u});
@@ -2367,7 +2367,7 @@ namespace mm
             const int scaled = sdk::fptosi(ps2f(9000.0f) * (step + posX()));
             return scaled / 16 * 16 + bias;
         };
-        const auto classOf = [&](uint32_t charType) { return GuestPtr<CharClass>{port::load<uint32_t>(globals::charClassTable.get() + 4u * charType)}; };
+        const auto classOf = [&](uint32_t charType) { return globals::charClass(charType); };
 
         // Someone away: the second model at the position, swaying with a phase of the view's idle time plus a number of frames from the
         // seed (the square root of its float through VU0, whose bits modulo 90 give the frames).

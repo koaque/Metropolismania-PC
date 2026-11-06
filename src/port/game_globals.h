@@ -17,6 +17,8 @@ namespace mm
     inline constexpr int32_t kObjectSlots = 0x3F80;
     inline constexpr uint32_t kObjectTableBytes = 0x6F200u;
     static_assert(kObjectTableBytes == kObjectSlots * sizeof(MapObject));
+    // The person table (CityMap.people): its records, kNoPerson being one past them.
+    inline constexpr int32_t kPersonSlots = 6000;
 }
 
 namespace mm::globals
@@ -199,6 +201,10 @@ namespace mm::globals
 
     // char: the character class objects, one per CHARTYPE.BIN record (pointer table).
     inline constexpr GuestVar<uint32_t> charClassTable{0x001BDA3Cu};
+    inline GuestPtr<CharClass> charClass(uint32_t type)
+    {
+        return GuestPtr<GuestPtr<CharClass>>{charClassTable.get()}[static_cast<int32_t>(type)];
+    }
 
     // family: the 256 member status entries (MemberStatus, 4 bytes each).
     inline constexpr uint32_t kMemberStatus = 0x001F32F0u;

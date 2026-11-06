@@ -464,7 +464,7 @@ namespace mm
             MapPerson &person = map->people[i];
             if (person.charType == 0)
                 continue;
-            const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person.charType)};
+            const GuestPtr<CharClass> cls = globals::charClass(person.charType);
             if (person.home != object)
             {
                 if (person.inside == object)
@@ -562,7 +562,7 @@ namespace mm
             for (uint16_t p = map->objects[o].firstPerson; p != kNoPerson; p = map->people[p].nextHere)
             {
                 const MapPerson &person = map->people[p];
-                const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person.charType)};
+                const GuestPtr<CharClass> cls = globals::charClass(person.charType);
                 if (home == person.home && (cls->flags & 1u) != 0)
                     return map->people + p;
             }
@@ -1843,7 +1843,7 @@ namespace mm
             const GuestPtr<MapPerson> person = map->people + i;
             if (person->charType == 0)
                 continue;
-            const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)};
+            const GuestPtr<CharClass> cls = globals::charClass(person->charType);
             if ((cls->flags & 1u) == 0 && person->family == static_cast<uint16_t>(family) && person->member == member)
                 return person;
         }
@@ -1859,7 +1859,7 @@ namespace mm
             const GuestPtr<MapPerson> person{p};
             if (person->charType == 0)
                 continue;
-            const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)};
+            const GuestPtr<CharClass> cls = globals::charClass(person->charType);
             if ((cls->flags & 1u) != 0 && person->target == static_cast<uint16_t>(driver))
                 return person;
         }
@@ -2301,7 +2301,7 @@ namespace mm
             const GuestPtr<MapPerson> person = map->people + i;
             if (person->charType == 0)
                 continue;
-            const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)};
+            const GuestPtr<CharClass> cls = globals::charClass(person->charType);
             port::callGuest<void>(cls->vtable->update, cls, city, person, marks);
         }
         MemberStatus_Tick(city->clock, city->monthCount);

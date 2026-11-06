@@ -59,6 +59,7 @@ typedef struct Notice Notice;
 typedef struct TownPages TownPages;
 typedef struct TownPagesIndex TownPagesIndex;
 typedef struct EventData EventData;
+typedef struct EventHeader EventHeader;
 typedef struct EvCultData EvCultData;
 typedef struct AdoptionChild AdoptionChild;
 typedef struct EvAdoptionData EvAdoptionData;
@@ -78,6 +79,7 @@ typedef struct EvMiddleAgedData EvMiddleAgedData;
 typedef struct EvCaveManData EvCaveManData;
 typedef struct EvShoppingTogetherData EvShoppingTogetherData;
 typedef struct EvMessageData EvMessageData;
+typedef struct EvEscortData EvEscortData;
 typedef struct EvAlienData EvAlienData;
 typedef struct EvMissingChildrenData EvMissingChildrenData;
 typedef struct CharClass CharClass;
@@ -781,7 +783,7 @@ struct EventType {
 struct EventHandler {
     uint32_t check;            /* +0x00 whether the event may start (event, city, person) */
     uint32_t start;            /* +0x04 */
-    uint32_t update;           /* +0x08 every frame (copied to EventData.update) */
+    uint32_t update;           /* +0x08 once a game minute (copied to EventData.update; mm_Event_Update) */
     uint32_t end;              /* +0x0C */
     uint32_t text;             /* +0x10 a text for the talk script (mm_Event_CallText) */
     uint32_t answer;           /* +0x14 the talk script's questions and actions (mm_Event_CallAnswer) */
@@ -791,7 +793,8 @@ struct EventHandler {
 struct EventData {
     uint32_t vtable;           /* +0x00 the record's class: 0x1BD908, or 0x1BD8F8 for the talk event (+8: the data size,
                                   mm_EventData_DataSize, mm_TalkEventData_DataSize) */
-    uint32_t update;           /* +0x04 its handler's Update slot (EventHandler.update), run every frame */
+    uint32_t update;           /* +0x04 its handler's Update slot (EventHandler.update), run once a minute of the city
+                                  clock (mm_Event_Update; the counters the types keep in their records count minutes) */
     uint8_t kind;              /* +0x08 row of the event table (EventType) */
     int8_t days;               /* +0x09 days left to run (EventType.days); when it finishes, the type's wait */
     uint8_t var;               /* +0x0A a value talk scripts set and test; some types keep their phase in it
@@ -799,19 +802,28 @@ struct EventData {
     uint8_t unk_0B;
     ActorRef actor;            /* +0x0C the main actor; types with more list them on from here, 8 bytes each, over the
                                   words below (talk scripts pick them by index, mm_WordsFn_SelectEventActor) */
-    int32_t typeWordA;         /* +0x14 the type's own: mostly a frame countdown or counter; a month noted
-                                  (mm_EvUselessMiddleAged_Start) */
-    int32_t typeWordB;         /* +0x18 the type's own: a countdown, a repeat count, a distance (mm_EvBodyguard_Answer) */
+    int32_t typeWordA;         /* +0x14 the type's own: see its record (EvMessageData, EvEscortData, ...) */
+    int32_t typeWordB;         /* +0x18 the same */
+};
+/* The header of every event record (0xC bytes): EventData's first fields, with which the per-type records below
+   start. */
+struct EventHeader {
+    uint32_t vtable;           /* +0x00 */
+    uint32_t update;           /* +0x04 */
+    uint8_t kind;              /* +0x08 */
+    int8_t days;               /* +0x09 */
+    uint8_t var;               /* +0x0A the phase, for most types */
+    uint8_t unk_0B;
 };
 /* The Crazy Cult event's record (type 18, mm_EvCrazyCult_*): residents join the cult one by one while its members are
    found and told in turn. */
 struct EvCultData {
-    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    EventHeader header;        /* +0x00 */
     ActorRef actors[6];        /* +0x0C its leaders (family entries 0xAB, 0xAC) and four members (0xAD on) */
     int32_t waitMonth;         /* +0x3C the month count to wait for */
     int32_t waitTime;          /* +0x40 and the time of day, in seconds */
-    int32_t tellFrames;        /* +0x44 frames after an actor is told */
-    int32_t spreadFrames;      /* +0x48 every 30 frames another resident joins (person flag 0x400) */
+    int32_t tellMinutes;       /* +0x44 minutes after an actor is told (60, counted down) */
+    int32_t spreadMinutes;     /* +0x48 every 30 minutes another resident joins (person flag 0x400) */
     int32_t allJoined;         /* +0x4C every resident has joined */
     int32_t metBits;           /* +0x50 the members the player has talked to (bit k for the actor in the list at 0x1B37C0);
                                   at 7 the leader is told next (mm_EvCrazyCult_Answer) */
@@ -824,9 +836,9 @@ struct AdoptionChild {
 };
 /* The adoption event's record (mm_EvAdoption_*). */
 struct EvAdoptionData {
-    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    EventHeader header;        /* +0x00 */
     ActorRef actor;            /* +0x0C the adoption's contact (family entry 0xB1, member 0) */
-    int32_t frames;            /* +0x14 a timer, or every tenth frame a check */
+    int32_t minutes;           /* +0x14 a timer, or every tenth minute a check */
     int32_t toldCount;         /* +0x18 times the contact was told, six at most */
     int32_t month;             /* +0x1C the month count noted (phases 17 and 20) */
     int32_t pick;              /* +0x20 the child whose claim the city met */
@@ -835,15 +847,15 @@ struct EvAdoptionData {
 };
 /* The shopping event's record (mm_EvShopping_*): a resident is sent round the shops for up to four goods. */
 struct EvShoppingData {
-    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    EventHeader header;        /* +0x00 */
     ActorRef actors[5];        /* +0x0C the shopper, then the seller of each of the goods */
     int32_t shop;              /* +0x34 the shop's record (0x28 bytes each in the table at 0x1BDAB4; goods at +0x20) */
     int32_t goodsCount;        /* +0x38 goods on its list */
     int32_t prices[4];         /* +0x3C */
     int32_t bill;              /* +0x4C their total, rounded up to the next thousand */
     int32_t refund;            /* +0x50 the prices of the goods taken back out of the bag (mm_EvShopping_Answer mode 9) */
-    int32_t tellFrames;        /* +0x54 frames after the shopper is told */
-    int32_t endFrames;         /* +0x58 the event ends after 240 */
+    int32_t tellMinutes;       /* +0x54 minutes after the shopper is told (60, counted down) */
+    int32_t endMinutes;        /* +0x58 the event ends after 240 */
 };
 /* The delivery man event's record (type 3, mm_EvDeliveryMan_*): in rain or snow a delivery comes from a nearby shop. */
 /* A shopping list of the shopping event (0x28 bytes, from GOODS.BIN; the table at 0x1BDAB4, its count at 0x1BDAB0),
@@ -863,22 +875,22 @@ struct DeliveryCatalogue {
     DeliveryItem items[12];    /* +0x004 by the month of the year */
 };
 struct EvDeliveryData {
-    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    EventHeader header;        /* +0x00 */
     ActorRef actors[2];        /* +0x0C the customer, then the delivery man (his building and person) */
     int32_t entry;             /* +0x1C the catalogue (DeliveryCatalogue) */
     int32_t month;             /* +0x20 the month of the year, which picks the item */
-    int32_t tellFrames;        /* +0x24 frames after the customer is told */
-    int32_t walkFrames;        /* +0x28 the delivery man walks for 120 */
-    int32_t waitFrames;        /* +0x2C then waits 60 */
-    int32_t endFrames;         /* +0x30 the event ends after 240 */
+    int32_t tellMinutes;       /* +0x24 minutes after the customer is told (60, counted down) */
+    int32_t walkMinutes;       /* +0x28 the delivery man walks for 120 */
+    int32_t waitMinutes;       /* +0x2C then waits 60 */
+    int32_t endMinutes;        /* +0x30 the event ends after 240 */
     int32_t state;             /* +0x34 2 at the start, 0 once he has walked, 1 once he has waited (talk value 5) */
 };
 /* The farewell party event's record (mm_EvFarewellParty_*): a family leaves, and the residents who are friends come. */
 struct EvPartyData {
-    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    EventHeader header;        /* +0x00 */
     ActorRef actors[3];        /* +0x0C the leaving family, the closest friend among the grown-up guests (their home
                                   marked), the friend the player points at */
-    int32_t tellFrames;        /* +0x24 frames after an actor is told */
+    int32_t tellMinutes;       /* +0x24 minutes after an actor is told (60, counted down) */
     int32_t guests;            /* +0x28 residents who are friends enough to come (a quarter of the population fills it) */
     int32_t partyTime;         /* +0x2C the party's time of day in seconds: 13:00 plus an hour per 50 guests, 19:00 at most */
     int32_t stageStep;         /* +0x30 the step of the party's staging (fade, clock, overlay, music) */
@@ -886,14 +898,16 @@ struct EvPartyData {
 };
 /* The thief event's record (mm_EvThief_*). */
 struct EvThiefData {
-    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    EventHeader header;        /* +0x00 */
     ActorRef actors[4];        /* +0x0C */
     int32_t nextMonth;         /* +0x2C the month count of the next strike */
     int32_t unk_30;
-    int32_t countdown;         /* +0x34 60 frames between some phases */
-    int32_t searchDelay;       /* +0x38 frames until the next search for a building to rob (60) */
+    int32_t countdown;         /* +0x34 60 minutes between some phases */
+    int32_t timer;             /* +0x38 minutes, counted down until the next search for a building to rob (60),
+                                  before actor 1 is told (180, phase 10) and before the end (720, phase 29); up to ten
+                                  in phase 18 (a check every tenth) */
     int32_t strikes;           /* +0x3C buildings robbed (mm_EvThief_Answer) */
-    int32_t frames;            /* +0x40 */
+    int32_t minutes;           /* +0x40 phase 3's: actor 0 is pointed at every tenth, met within a tile from 180 */
 };
 /* A family member by family and member number (4 bytes; in lists 0 ends them). */
 struct MemberId {
@@ -902,72 +916,86 @@ struct MemberId {
 };
 /* The advertisement event's record (mm_EvAdvertise_*): residents are sent to the event building. */
 struct EvAdvertiseData {
-    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    EventHeader header;        /* +0x00 */
     ActorRef actor;            /* +0x0C the event building and its contact */
-    int32_t tellFrames;        /* +0x14 frames after the contact is told */
+    int32_t tellMinutes;       /* +0x14 minutes after the contact is told (60, counted down) */
     int32_t unk_18;
-    int32_t endFrames;         /* +0x1C the event ends after 240 */
+    int32_t endMinutes;        /* +0x1C the event ends after 240 */
     int32_t visitorCount;      /* +0x20 up to 15 */
     MemberId visitors[15];     /* +0x24 the family members it brought */
 };
 /* The noodle shop event's record (type 13, mm_EvNoodles_*): three shops' workers and their buildings. */
 struct EvNoodlesData {
-    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    EventHeader header;        /* +0x00 */
     ActorRef actors[10];       /* +0x0C 1 to 3 the story's first, second and third; 4 to 6 the workers found, 7 to 9 their
                                   partners at their buildings */
     int32_t month;             /* +0x5C the month count to wait for */
     int32_t time;              /* +0x60 and the time of day, in seconds */
-    int32_t timer;             /* +0x64 frames, counted down or up */
+    int32_t timer;             /* +0x64 minutes, counted down or up */
 };
 /* The cave man event's record (type 15, mm_EvCaveMan_*). */
 struct EvCaveManData {
-    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    EventHeader header;        /* +0x00 */
     ActorRef actors[8];        /* +0x0C 0 to 3 the families that join (mm_EvCaveMan_Answer), 4 the leader, 5, 6 the cave
                                   and its owner, 7 */
     int32_t counter;           /* +0x4C actors found (phase 3); the talk's count of families joined */
-    int32_t frames;            /* +0x50 counted down or up */
+    int32_t minutes;           /* +0x50 counted down or up */
     int32_t month;             /* +0x54 the month count noted; actors are told after it */
 };
 /* The shopping together event's record (mm_EvShoppingTogether_*). */
 struct EvShoppingTogetherData {
-    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    EventHeader header;        /* +0x00 */
     ActorRef actors[2];        /* +0x0C the one to take shopping, the shop's worker */
     int32_t countdown;         /* +0x1C 180 at the start, one a call in phases 1 and 3 */
     int32_t offTileCalls;      /* +0x20 calls near both with actor 0 off an open tile (pointed at after ten) */
     int32_t farCalls;          /* +0x24 calls too far from actor 0 (pointed at every tenth) */
     int32_t outcome;           /* +0x28 the talk's value: 0 met with 121 or more left, 1 with less, 2 met in phase 3, 3 sent
                                   on alone */
-    int32_t frames;            /* +0x2C the event ends after 180 */
+    int32_t minutes;           /* +0x2C the event ends after 180 */
 };
 /* The alien event's record (mm_EvAlien_*). */
 struct EvAlienData {
-    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    EventHeader header;        /* +0x00 */
     ActorRef actors[6];        /* +0x0C 0 the resident it takes, 1 to 4 the families of the four buildings (2 the place it
                                   lands, moved by mm_EvAlien_PickTarget, 3 its footprint is the goal), 5 the family of the
                                   record at 0x1BDA8C */
     int32_t month;             /* +0x3C the month count to wait for */
     int32_t time;              /* +0x40 the clock to wait for on that day */
-    int32_t frames;            /* +0x44 counted down between phases, up at the end (720) */
+    int32_t minutes;           /* +0x44 counted down between phases, up at the end (720) */
 };
-/* A message event's record (mm_EvMsg_*, the payday): the EventData, then whether its phone call is up. */
+/* A message event's record (mm_EvMsg_*, mm_EvNoRetreat_Update, mm_EvPayday_Update): a phone call from the boss, which
+   some types make again. */
 struct EvMessageData {
-    uint8_t unk_00[0x1C];      /* +0x00 the EventData */
+    EventHeader header;        /* +0x00 */
+    ActorRef actor;            /* +0x0C the boss (mm_EvMsg_Start) */
+    int32_t callMinutes;       /* +0x14 minutes the call stays up: 60, plus those until 6:00 before then, or 360 more
+                                  from 23:00 */
+    int32_t callCount;         /* +0x18 calls made; after the fifth the message is through (the payday then pays) */
     int32_t callPosted;        /* +0x1C mm_EvMsg_End withdraws the call */
+};
+/* The escort event's record (types 2 "Forgetful Granny" and 5 "Bodyguard", mm_EvEscort_*): the actor follows the
+   player to its building. */
+struct EvEscortData {
+    EventHeader header;        /* +0x00 */
+    ActorRef actor;            /* +0x0C */
+    int32_t minutes;           /* +0x14 counted 0 to 9 and round again; phase 1 points at an actor far off on 0 */
+    int32_t distance;          /* +0x18 the player's distance from the actor's building last time, in tiles
+                                  (mm_EvBodyguard_Answer) */
 };
 /* The missing children event's record (type 6, mm_EvMissingChildren_*). */
 struct EvMissingChildrenData {
-    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    EventHeader header;        /* +0x00 */
     ActorRef actors[3];        /* +0x0C the parent, the child, the family's first member */
-    int32_t counter;           /* +0x24 frames after the parent is told, or calls while searching */
+    int32_t counter;           /* +0x24 minutes after the parent is told, or minutes searching */
     int32_t outcome;           /* +0x28 how the child was found: 1 near both, 2 stopped by the player (talk value) */
-    int32_t frames;            /* +0x2C the event ends after 180 */
+    int32_t minutes;           /* +0x2C the event ends after 180 */
 };
 /* The useless middle-aged man event's record (type 7, mm_EvUselessMiddleAged_*). */
 struct EvMiddleAgedData {
-    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    EventHeader header;        /* +0x00 */
     ActorRef actor;            /* +0x0C */
     int32_t month;             /* +0x14 the month it started; he is told on a later one */
-    int32_t frames;            /* +0x18 frames after he is told */
+    int32_t minutes;           /* +0x18 minutes after he is told (60, counted down) */
     int32_t answer;            /* +0x1C the talk's choice, modes 0 to 3 (mm_EvUselessMiddleAged_Answer) */
 };
 /* One of the event manager's five event slots (0x20 bytes, filled from the front): an event a talk script started

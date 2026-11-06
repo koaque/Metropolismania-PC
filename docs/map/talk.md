@@ -311,7 +311,7 @@ friendship changed. A is the person talked to.
 | `0x0017F420` | `int mm_WordsFn_FindOutsideAcquaintance(WordsCtx *ctx)` | 260 | yes | #21 cond: an acquaintance of member A from an Outside-category type who can apply; result word |
 | `0x0017F530` | `int mm_WordsFn_GetIntroduction(WordsCtx *ctx)` | 136 | yes | #20 cond: the family subject A/B introduces (picks one when the person has none); nonzero when there is one |
 | `0x0017F5C0` | `int mm_WordsFn_BuildingNeedPartlyMet(WordsCtx *ctx)` | 48 | no | #19 cond: building A's (B's with an argument) need is partly met (object flag 2: a need claim moved off its start value, and claimMet ran once for it) |
-| `0x0017F5F0` | `int mm_WordsFn_ClaimIs50(WordsCtx *ctx)` | 108 | no | #18 cond: claim entry value 0x32 |
+| `0x0017F5F0` | `int mm_WordsFn_ClaimIsRoad(WordsCtx *ctx)` | 108 | no | #18 cond: whether the claim of building A (B with a nonzero argument) is the road claim (0x32 in CLAIM.BIN, which counts while the building has no entrance) |
 | `0x0017F660` | `int mm_WordsFn_BuildingClaim(WordsCtx *ctx)` | 100 | no | #17 cond: the building's claim entry (CLAIM.BIN section B) |
 | `0x0017F6D0` | `int mm_WordsFn_BuildingState(WordsCtx *ctx)` | 128 | no | #16 cond: building flags 8 (claim met, 3) / 0x40 (meter maxed, 4), else its claim meter level |
 | `0x0017F750` | `int mm_WordsFn_FriendshipTier(WordsCtx *ctx)` | 100 | no | #15 cond: friendship value below 48, below 100, or higher |

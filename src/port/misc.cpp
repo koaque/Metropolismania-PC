@@ -317,7 +317,7 @@ namespace mm
             uint16_t nearest = kNoPerson;
             while (const GuestPtr<MapPerson> person = People_Next(city->map, cursor))
             {
-                const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)};
+                const GuestPtr<CharClass> cls = globals::charClass(person->charType);
                 if ((cls->flags & 1u) == 0)
                 {
                     aim->x = person->x;
@@ -1784,7 +1784,7 @@ namespace mm
 
         GuestPtr<CharClass> charClassOf(const MapPerson &person)
         {
-            return GuestPtr<CharClass>{port::load<uint32_t>(globals::charClassTable.get() + 4u * person.charType)};
+            return globals::charClass(person.charType);
         }
     }
 
@@ -2880,7 +2880,7 @@ namespace mm
 
         bool isResidentClass(GuestPtr<MapPerson> person)
         {
-            const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)};
+            const GuestPtr<CharClass> cls = globals::charClass(person->charType);
             return (cls->flags & 1u) == 0;
         }
     }
@@ -3336,12 +3336,13 @@ namespace mm
         int list = Random_TimerMix() & 0x3F;
         for (int tries = 0; tries < 0x40; ++tries)
         {
-            const uint32_t items = Map_GetTileList(city->map, list, count).address;
+            const GuestPtr<uint16_t> items = Map_GetTileList(city->map, list, count);
             if (++list >= 0x40)
                 list = 0;
-            for (uint32_t i = 0, item = items; static_cast<int32_t>(i) < static_cast<int32_t>(*count); ++i, item += 2u)
+            GuestPtr<uint16_t> item = items;
+            for (uint32_t i = 0; static_cast<int32_t>(i) < static_cast<int32_t>(*count); ++i, ++item)
             {
-                const GuestPtr<MapObject> shop = Map_GetRecord(city->map, port::load<uint16_t>(item));
+                const GuestPtr<MapObject> shop = Map_GetRecord(city->map, *item);
                 if ((GuestPtr<BuildingType>{globals::buildingTypeAddress(shop->type)}->flags & 0x40u) == 0 ||
                     Map_TileIndexWalkable(city->map, shop->entranceTile) == 0)
                     continue;
@@ -3367,7 +3368,7 @@ namespace mm
             while (*cursor != kNoPerson)
             {
                 const GuestPtr<MapPerson> member = People_Next(city->map, cursor);
-                const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * member->charType)};
+                const GuestPtr<CharClass> cls = globals::charClass(member->charType);
                 if ((cls->flags & 1u) == 0 && member->family == person->family && member->schedState == 2)
                     return member;
             }
@@ -3394,10 +3395,11 @@ namespace mm
             }
         }
         port::GuestLocal<uint32_t> count;
-        const uint32_t items = Map_GetTileList(city->map, 0x17, count).address;
-        for (uint32_t i = 0, item = items; static_cast<int32_t>(i) < static_cast<int32_t>(*count); ++i, item += 2u)
+        const GuestPtr<uint16_t> items = Map_GetTileList(city->map, 0x17, count);
+        GuestPtr<uint16_t> item = items;
+        for (uint32_t i = 0; static_cast<int32_t>(i) < static_cast<int32_t>(*count); ++i, ++item)
         {
-            const GuestPtr<MapObject> shop = Map_GetRecord(city->map, port::load<uint16_t>(item));
+            const GuestPtr<MapObject> shop = Map_GetRecord(city->map, *item);
             if (companionAt(city, shop, person, cursor))
                 return shop->id;
         }
@@ -3430,7 +3432,7 @@ namespace mm
             person->previousTile = 0x4000;
             person->cooldown = 0;
             person->flags &= 0xFC1Bu;
-            const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)};
+            const GuestPtr<CharClass> cls = globals::charClass(person->charType);
             person->target = (cls->flags & 1u) != 0 ? kNoPerson : kNoObject;
         }
     }

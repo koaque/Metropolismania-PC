@@ -890,7 +890,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00137F50,mm_Event_SaveState,164,game,event,verified,indirect,1,1,writes them
 0x00138000,mm_Event_CallAnswer,128,game,event,verified,indirect,2,0,"(events, city, actor, arg, index) calls the answer slot of the handler of talk event `index` (0 talks[0], 1 talks[1]) with the event, the city, `actor` and `arg`"
 0x00138080,mm_Event_CallText,128,game,event,verified,indirect,2,0,"(events, city, index, arg) calls the text slot of the handler of the type of active event `index`"
-0x00138100,mm_Event_Update,2544,game,event,verified,indirect,1,13,"per frame: starts queued events whose conditions hold, runs and finishes active ones"
+0x00138100,mm_Event_Update,2544,game,event,verified,indirect,1,13,"every frame, acting once the city clock's minute changes: starts queued events whose conditions hold, runs the active ones' Update slots (so once a game minute) and finishes them"
 0x00138AF0,mm_Event_CheckCondition,1712,game,event,verified,indirect,4,9,"whether the event type at `type` (a queue entry) may start now, for the person (null for a script-less start)"
 0x001391B0,mm_Event_TryStart,504,game,event,verified,indirect,1,3,"with no event running in the first talk slot, the first event waiting at level 3 whose condition holds for the person starts there; one that starts at level 3 also sets its tile flags and runs its Start slot. The result is the running event's type"
 0x001393B0,mm_Event_FindForFamily,708,game,event,verified,yes,1,2,"whether the family member `familyMember` (family, member) can be added to the event slot `choice`: 4 when the member is already its second person, 0 when the event type lists the character types it takes (charTypes, up to four) and the member's is not among them, 3 when the member is its first person, 1 when the member is already on its list of five, otherwise 2 (the member goes on the list: straight away, or, for a type whose handler has an answer slot, only when that answer, asked with a probe of the slot's second person and the member as argument, says yes)"
@@ -1784,7 +1784,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0017F420,mm_WordsFn_FindOutsideAcquaintance,260,game,talk,verified,yes,0,3,#21 cond: an acquaintance of member A from an Outside-category type who can apply; result word
 0x0017F530,mm_WordsFn_GetIntroduction,136,game,talk,verified,yes,0,1,#20 cond: the family subject A/B introduces (picks one when the person has none); nonzero when there is one
 0x0017F5C0,mm_WordsFn_BuildingNeedPartlyMet,48,game,talk,verified,no,0,0,"#19 cond: building A's (B's with an argument) need is partly met (object flag 2: a need claim moved off its start value, and claimMet ran once for it)"
-0x0017F5F0,mm_WordsFn_ClaimIs50,108,game,talk,verified,no,0,1,#18 cond: claim entry value 0x32
+0x0017F5F0,mm_WordsFn_ClaimIsRoad,108,game,talk,verified,no,0,1,"#18 cond: whether the claim of building A (B with a nonzero argument) is the road claim (0x32 in CLAIM.BIN, which counts while the building has no entrance)"
 0x0017F660,mm_WordsFn_BuildingClaim,100,game,talk,verified,no,0,1,#17 cond: the building's claim entry (CLAIM.BIN section B)
 0x0017F6D0,mm_WordsFn_BuildingState,128,game,talk,verified,no,0,1,"#16 cond: building flags 8 (claim met, 3) / 0x40 (meter maxed, 4), else its claim meter level"
 0x0017F750,mm_WordsFn_FriendshipTier,100,game,talk,verified,no,0,1,"#15 cond: friendship value below 48, below 100, or higher"
@@ -1962,7 +1962,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0018CCA0,mm_Bgm_SetActive,132,game,sound,verified,no,1,4,"(active) `active` == 0 fades the BGM out (state 4); otherwise stops a pending jingle, restores volume 0xC0 and sets state 3"
 0x0018CD30,mm_Bgm_SetTrackSlot,360,game,sound,verified,no,2,1,"sets or adds track slot + 6 in the music table (0x1F8120, entries 3..12 of (id, enabled)); with play: fades voice 15 out with it next, or queues it (0x1BDCF0)"
 0x0018CEA0,mm_Bgm_Update,688,game,sound,verified,no,1,7,"picks the BGM for the city state (flags, approval) and switches banks (NOMAL_A.SQ/HD/BD ...) when the driver is idle"
-0x0018D150,mm_SoundCmd_WaveClose0,12,game,sound,verified,no,6,1,"mm_SoundCmd_WaveClose(0, 0): closes wave file 0"
+0x0018D150,mm_SoundCmd_WaveCloseBankSet,12,game,sound,verified,no,6,1,"mm_SoundCmd_WaveClose(0, 0): closes the sound bank set that mm_Sound_ResetVoices opens (wave bank 0, file 0)"
 0x0018D160,mm_Sound_ResetVoices,284,game,sound,verified,no,4,3,"queues cmd 1, resets all voice volumes (0xFFF group A, 0x100 group B, 0xC0 voice 15) and clears the effect voice tables"
 0x0018D280,mm_Se_BuildAmbienceMap,348,game,sound,verified,no,2,0,clears the 4096-entry ambience grid at 0x1FC690 and fills it from the city map and the table at 0x1B35F0
 0x0018D3E0,mm_Sound_InitState,196,game,sound,verified,no,1,0,called by mm_GameInit: marks all 31 effect voices free (0xFF) and clears the sound globals
@@ -2001,10 +2001,10 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0018FD50,mm_EvAlien_PickTarget,400,game,event,verified,no,1,4,"the building the alien lands on at (x, z): of the (tile list, type) pairs at 0x1B3760 (ended by list 0), the first building whose family lives in the city, without a maxed meter, whose footprint widened by 1 holds the point"
 0x0018FEE0,mm_EvAlien_Update,1184,game,event,verified,yes,0,11,type 16: Update (finishes after 720 ticks)
 0x00190380,mm_EvAlien_Check,832,game,event,verified,no,0,4,"type 16 ""Alien"": Check"
-0x001906C0,mm_EvBodyguard_Answer,140,game,event,verified,no,0,1,type 5: Answer
+0x001906C0,mm_EvBodyguard_Answer,140,game,event,verified,no,0,1,"type 5: Answer; mode 0: how near the player is to the actor's building (4 within 2 tiles, 3 within 6, else 1 nearer than last time, 2 farther, 0 the same; EvEscortData.distance keeps it)"
 0x00190750,mm_EvEscort_End,148,game,event,verified,no,0,3,End shared by types 2 and 5
 0x001907F0,mm_EvEscort_Update,768,game,event,verified,yes,0,6,Update shared by types 2 and 5
-0x00190AF0,mm_EvEscort_Start,96,game,event,verified,no,0,3,"Start shared by types 2 ""Forgetful Granny"" and 5 ""Bodyguard"""
+0x00190AF0,mm_EvEscort_Start,96,game,event,verified,no,0,3,"Start shared by types 2 ""Forgetful Granny"" and 5 ""Bodyguard"": marks the building, detaches the actor, keeps the player's distance from the building (EvEscortData.distance)"
 0x00190B50,mm_EvBodyguard_Check,8,game,event,verified,no,0,0,"type 5 ""Bodyguard"": Check"
 0x00190B60,mm_EvMsg_Answer,612,game,event,verified,no,0,7,"Answer shared by types 23, 29, 30, 35, 41"
 0x00190DD0,mm_EvPayday_Text,72,game,event,verified,indirect,0,0,Text shared by types 29 and 30
@@ -2051,9 +2051,9 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00193B30,mm_EvForgetfulGranny_Check,44,game,event,verified,no,0,0,"type 2 ""Forgetful Granny"": Check"
 0x00193B60,mm_EvCrazyCult_Answer,96,game,event,verified,indirect,0,0,type 18: Answer
 0x00193D00,mm_EvCrazyCult_End,232,game,event,verified,no,0,1,type 18: End
-0x00193DF0,mm_EvCrazyCult_Phase3,324,game,event,verified,no,1,3,"phases 0x12 to 0x15: actor 0 waits and is told (0x12, 0x13), then its family home is found (0x14) and its person (0x15)"
-0x00193F40,mm_EvCrazyCult_Phase2,516,game,event,verified,no,1,3,"phases 10 to 16: 10 waits until everyone has been reached (allJoined), 11 and 13 tell actor 3 when its time comes and 12 and 14 count those frames back, 15 finds the homes of actors 4, 5 and 1 (marked 0x200; back to 15 while one is missing) and 16 their persons (back to 16)"
-0x00194150,mm_EvCrazyCult_Phase1,352,game,event,verified,no,1,3,"phases 4 to 9: actor 2 waits and is told (4 to 7), then actor 3's family home is found (8) and its person (9, which sets the next wait to the next month at 7:00)"
+0x00193DF0,mm_EvCrazyCult_TellLeader,324,game,event,verified,no,1,3,"phases 0x11 to 0x15: actor 0 (a leader, the Zen Monk's family) waits and is told (0x12, 0x13), then its family home is found (0x14) and its person (0x15)"
+0x00193F40,mm_EvCrazyCult_TellSecondMember,516,game,event,verified,no,1,3,"phases 10 to 16: 10 waits until every resident has joined (allJoined), 11 and 13 tell actor 3 (the second member) when its time comes and 12 and 14 count those minutes back, 15 finds the homes of actors 4, 5 and 1 (marked 0x200; back to 15 while one is missing) and 16 their persons (back to 16)"
+0x00194150,mm_EvCrazyCult_TellFirstMember,352,game,event,verified,no,1,3,"phases 4 to 9: actor 2 (the first cult member) waits and is told (4 to 7), then actor 3's family home is found (8) and its person (9, which sets the next wait to the next month at 7:00)"
 0x001942B0,mm_EvCrazyCult_Update,992,game,event,verified,no,0,6,type 18: Update
 0x00194690,mm_EvCrazyCult_Start,136,game,event,verified,no,0,0,"type 18 ""Crazy Cult"": Start; the Zen Monk's and Shadow Monk's families and the first four Crazy Cult families as actors"
 0x00194720,mm_EvAdoption_Answer,116,game,event,verified,indirect,0,0,type 12: Answer

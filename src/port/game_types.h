@@ -93,6 +93,7 @@ struct Notice;
 struct TownPages;
 struct TownPagesIndex;
 struct EventData;
+struct EventHeader;
 struct EvCultData;
 struct AdoptionChild;
 struct EvAdoptionData;
@@ -112,6 +113,7 @@ struct EvMiddleAgedData;
 struct EvCaveManData;
 struct EvShoppingTogetherData;
 struct EvMessageData;
+struct EvEscortData;
 struct EvAlienData;
 struct EvMissingChildrenData;
 struct CharClass;
@@ -815,7 +817,7 @@ struct EventType {
 struct EventHandler {
     uint32_t check;            /* +0x00 whether the event may start (event, city, person) */
     uint32_t start;            /* +0x04 */
-    uint32_t update;           /* +0x08 every frame (copied to EventData.update) */
+    uint32_t update;           /* +0x08 once a game minute (copied to EventData.update; mm_Event_Update) */
     uint32_t end;              /* +0x0C */
     uint32_t text;             /* +0x10 a text for the talk script (mm_Event_CallText) */
     uint32_t answer;           /* +0x14 the talk script's questions and actions (mm_Event_CallAnswer) */
@@ -825,7 +827,8 @@ struct EventHandler {
 struct EventData {
     uint32_t vtable;           /* +0x00 the record's class: 0x1BD908, or 0x1BD8F8 for the talk event (+8: the data size,
                                   mm_EventData_DataSize, mm_TalkEventData_DataSize) */
-    uint32_t update;           /* +0x04 its handler's Update slot (EventHandler.update), run every frame */
+    uint32_t update;           /* +0x04 its handler's Update slot (EventHandler.update), run once a minute of the city
+                                  clock (mm_Event_Update; the counters the types keep in their records count minutes) */
     uint8_t kind;              /* +0x08 row of the event table (EventType) */
     int8_t days;               /* +0x09 days left to run (EventType.days); when it finishes, the type's wait */
     uint8_t var;               /* +0x0A a value talk scripts set and test; some types keep their phase in it
@@ -833,19 +836,28 @@ struct EventData {
     uint8_t unk_0B;
     ActorRef actor;            /* +0x0C the main actor; types with more list them on from here, 8 bytes each, over the
                                   words below (talk scripts pick them by index, mm_WordsFn_SelectEventActor) */
-    int32_t typeWordA;         /* +0x14 the type's own: mostly a frame countdown or counter; a month noted
-                                  (mm_EvUselessMiddleAged_Start) */
-    int32_t typeWordB;         /* +0x18 the type's own: a countdown, a repeat count, a distance (mm_EvBodyguard_Answer) */
+    int32_t typeWordA;         /* +0x14 the type's own: see its record (EvMessageData, EvEscortData, ...) */
+    int32_t typeWordB;         /* +0x18 the same */
+};
+/* The header of every event record (0xC bytes): EventData's first fields, with which the per-type records below
+   start. */
+struct EventHeader {
+    uint32_t vtable;           /* +0x00 */
+    uint32_t update;           /* +0x04 */
+    uint8_t kind;              /* +0x08 */
+    int8_t days;               /* +0x09 */
+    uint8_t var;               /* +0x0A the phase, for most types */
+    uint8_t unk_0B;
 };
 /* The Crazy Cult event's record (type 18, mm_EvCrazyCult_*): residents join the cult one by one while its members are
    found and told in turn. */
 struct EvCultData {
-    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    EventHeader header;        /* +0x00 */
     ActorRef actors[6];        /* +0x0C its leaders (family entries 0xAB, 0xAC) and four members (0xAD on) */
     int32_t waitMonth;         /* +0x3C the month count to wait for */
     int32_t waitTime;          /* +0x40 and the time of day, in seconds */
-    int32_t tellFrames;        /* +0x44 frames after an actor is told */
-    int32_t spreadFrames;      /* +0x48 every 30 frames another resident joins (person flag 0x400) */
+    int32_t tellMinutes;       /* +0x44 minutes after an actor is told (60, counted down) */
+    int32_t spreadMinutes;     /* +0x48 every 30 minutes another resident joins (person flag 0x400) */
     int32_t allJoined;         /* +0x4C every resident has joined */
     int32_t metBits;           /* +0x50 the members the player has talked to (bit k for the actor in the list at 0x1B37C0);
                                   at 7 the leader is told next (mm_EvCrazyCult_Answer) */
@@ -858,9 +870,9 @@ struct AdoptionChild {
 };
 /* The adoption event's record (mm_EvAdoption_*). */
 struct EvAdoptionData {
-    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    EventHeader header;        /* +0x00 */
     ActorRef actor;            /* +0x0C the adoption's contact (family entry 0xB1, member 0) */
-    int32_t frames;            /* +0x14 a timer, or every tenth frame a check */
+    int32_t minutes;           /* +0x14 a timer, or every tenth minute a check */
     int32_t toldCount;         /* +0x18 times the contact was told, six at most */
     int32_t month;             /* +0x1C the month count noted (phases 17 and 20) */
     int32_t pick;              /* +0x20 the child whose claim the city met */
@@ -869,15 +881,15 @@ struct EvAdoptionData {
 };
 /* The shopping event's record (mm_EvShopping_*): a resident is sent round the shops for up to four goods. */
 struct EvShoppingData {
-    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    EventHeader header;        /* +0x00 */
     ActorRef actors[5];        /* +0x0C the shopper, then the seller of each of the goods */
     int32_t shop;              /* +0x34 the shop's record (0x28 bytes each in the table at 0x1BDAB4; goods at +0x20) */
     int32_t goodsCount;        /* +0x38 goods on its list */
     int32_t prices[4];         /* +0x3C */
     int32_t bill;              /* +0x4C their total, rounded up to the next thousand */
     int32_t refund;            /* +0x50 the prices of the goods taken back out of the bag (mm_EvShopping_Answer mode 9) */
-    int32_t tellFrames;        /* +0x54 frames after the shopper is told */
-    int32_t endFrames;         /* +0x58 the event ends after 240 */
+    int32_t tellMinutes;       /* +0x54 minutes after the shopper is told (60, counted down) */
+    int32_t endMinutes;        /* +0x58 the event ends after 240 */
 };
 /* The delivery man event's record (type 3, mm_EvDeliveryMan_*): in rain or snow a delivery comes from a nearby shop. */
 /* A shopping list of the shopping event (0x28 bytes, from GOODS.BIN; the table at 0x1BDAB4, its count at 0x1BDAB0),
@@ -897,22 +909,22 @@ struct DeliveryCatalogue {
     DeliveryItem items[12];    /* +0x004 by the month of the year */
 };
 struct EvDeliveryData {
-    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    EventHeader header;        /* +0x00 */
     ActorRef actors[2];        /* +0x0C the customer, then the delivery man (his building and person) */
     int32_t entry;             /* +0x1C the catalogue (DeliveryCatalogue) */
     int32_t month;             /* +0x20 the month of the year, which picks the item */
-    int32_t tellFrames;        /* +0x24 frames after the customer is told */
-    int32_t walkFrames;        /* +0x28 the delivery man walks for 120 */
-    int32_t waitFrames;        /* +0x2C then waits 60 */
-    int32_t endFrames;         /* +0x30 the event ends after 240 */
+    int32_t tellMinutes;       /* +0x24 minutes after the customer is told (60, counted down) */
+    int32_t walkMinutes;       /* +0x28 the delivery man walks for 120 */
+    int32_t waitMinutes;       /* +0x2C then waits 60 */
+    int32_t endMinutes;        /* +0x30 the event ends after 240 */
     int32_t state;             /* +0x34 2 at the start, 0 once he has walked, 1 once he has waited (talk value 5) */
 };
 /* The farewell party event's record (mm_EvFarewellParty_*): a family leaves, and the residents who are friends come. */
 struct EvPartyData {
-    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    EventHeader header;        /* +0x00 */
     ActorRef actors[3];        /* +0x0C the leaving family, the closest friend among the grown-up guests (their home
                                   marked), the friend the player points at */
-    int32_t tellFrames;        /* +0x24 frames after an actor is told */
+    int32_t tellMinutes;       /* +0x24 minutes after an actor is told (60, counted down) */
     int32_t guests;            /* +0x28 residents who are friends enough to come (a quarter of the population fills it) */
     int32_t partyTime;         /* +0x2C the party's time of day in seconds: 13:00 plus an hour per 50 guests, 19:00 at most */
     int32_t stageStep;         /* +0x30 the step of the party's staging (fade, clock, overlay, music) */
@@ -920,14 +932,16 @@ struct EvPartyData {
 };
 /* The thief event's record (mm_EvThief_*). */
 struct EvThiefData {
-    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    EventHeader header;        /* +0x00 */
     ActorRef actors[4];        /* +0x0C */
     int32_t nextMonth;         /* +0x2C the month count of the next strike */
     int32_t unk_30;
-    int32_t countdown;         /* +0x34 60 frames between some phases */
-    int32_t searchDelay;       /* +0x38 frames until the next search for a building to rob (60) */
+    int32_t countdown;         /* +0x34 60 minutes between some phases */
+    int32_t timer;             /* +0x38 minutes, counted down until the next search for a building to rob (60),
+                                  before actor 1 is told (180, phase 10) and before the end (720, phase 29); up to ten
+                                  in phase 18 (a check every tenth) */
     int32_t strikes;           /* +0x3C buildings robbed (mm_EvThief_Answer) */
-    int32_t frames;            /* +0x40 */
+    int32_t minutes;           /* +0x40 phase 3's: actor 0 is pointed at every tenth, met within a tile from 180 */
 };
 /* A family member by family and member number (4 bytes; in lists 0 ends them). */
 struct MemberId {
@@ -936,72 +950,86 @@ struct MemberId {
 };
 /* The advertisement event's record (mm_EvAdvertise_*): residents are sent to the event building. */
 struct EvAdvertiseData {
-    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    EventHeader header;        /* +0x00 */
     ActorRef actor;            /* +0x0C the event building and its contact */
-    int32_t tellFrames;        /* +0x14 frames after the contact is told */
+    int32_t tellMinutes;       /* +0x14 minutes after the contact is told (60, counted down) */
     int32_t unk_18;
-    int32_t endFrames;         /* +0x1C the event ends after 240 */
+    int32_t endMinutes;        /* +0x1C the event ends after 240 */
     int32_t visitorCount;      /* +0x20 up to 15 */
     MemberId visitors[15];     /* +0x24 the family members it brought */
 };
 /* The noodle shop event's record (type 13, mm_EvNoodles_*): three shops' workers and their buildings. */
 struct EvNoodlesData {
-    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    EventHeader header;        /* +0x00 */
     ActorRef actors[10];       /* +0x0C 1 to 3 the story's first, second and third; 4 to 6 the workers found, 7 to 9 their
                                   partners at their buildings */
     int32_t month;             /* +0x5C the month count to wait for */
     int32_t time;              /* +0x60 and the time of day, in seconds */
-    int32_t timer;             /* +0x64 frames, counted down or up */
+    int32_t timer;             /* +0x64 minutes, counted down or up */
 };
 /* The cave man event's record (type 15, mm_EvCaveMan_*). */
 struct EvCaveManData {
-    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    EventHeader header;        /* +0x00 */
     ActorRef actors[8];        /* +0x0C 0 to 3 the families that join (mm_EvCaveMan_Answer), 4 the leader, 5, 6 the cave
                                   and its owner, 7 */
     int32_t counter;           /* +0x4C actors found (phase 3); the talk's count of families joined */
-    int32_t frames;            /* +0x50 counted down or up */
+    int32_t minutes;           /* +0x50 counted down or up */
     int32_t month;             /* +0x54 the month count noted; actors are told after it */
 };
 /* The shopping together event's record (mm_EvShoppingTogether_*). */
 struct EvShoppingTogetherData {
-    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    EventHeader header;        /* +0x00 */
     ActorRef actors[2];        /* +0x0C the one to take shopping, the shop's worker */
     int32_t countdown;         /* +0x1C 180 at the start, one a call in phases 1 and 3 */
     int32_t offTileCalls;      /* +0x20 calls near both with actor 0 off an open tile (pointed at after ten) */
     int32_t farCalls;          /* +0x24 calls too far from actor 0 (pointed at every tenth) */
     int32_t outcome;           /* +0x28 the talk's value: 0 met with 121 or more left, 1 with less, 2 met in phase 3, 3 sent
                                   on alone */
-    int32_t frames;            /* +0x2C the event ends after 180 */
+    int32_t minutes;           /* +0x2C the event ends after 180 */
 };
 /* The alien event's record (mm_EvAlien_*). */
 struct EvAlienData {
-    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    EventHeader header;        /* +0x00 */
     ActorRef actors[6];        /* +0x0C 0 the resident it takes, 1 to 4 the families of the four buildings (2 the place it
                                   lands, moved by mm_EvAlien_PickTarget, 3 its footprint is the goal), 5 the family of the
                                   record at 0x1BDA8C */
     int32_t month;             /* +0x3C the month count to wait for */
     int32_t time;              /* +0x40 the clock to wait for on that day */
-    int32_t frames;            /* +0x44 counted down between phases, up at the end (720) */
+    int32_t minutes;           /* +0x44 counted down between phases, up at the end (720) */
 };
-/* A message event's record (mm_EvMsg_*, the payday): the EventData, then whether its phone call is up. */
+/* A message event's record (mm_EvMsg_*, mm_EvNoRetreat_Update, mm_EvPayday_Update): a phone call from the boss, which
+   some types make again. */
 struct EvMessageData {
-    uint8_t unk_00[0x1C];      /* +0x00 the EventData */
+    EventHeader header;        /* +0x00 */
+    ActorRef actor;            /* +0x0C the boss (mm_EvMsg_Start) */
+    int32_t callMinutes;       /* +0x14 minutes the call stays up: 60, plus those until 6:00 before then, or 360 more
+                                  from 23:00 */
+    int32_t callCount;         /* +0x18 calls made; after the fifth the message is through (the payday then pays) */
     int32_t callPosted;        /* +0x1C mm_EvMsg_End withdraws the call */
+};
+/* The escort event's record (types 2 "Forgetful Granny" and 5 "Bodyguard", mm_EvEscort_*): the actor follows the
+   player to its building. */
+struct EvEscortData {
+    EventHeader header;        /* +0x00 */
+    ActorRef actor;            /* +0x0C */
+    int32_t minutes;           /* +0x14 counted 0 to 9 and round again; phase 1 points at an actor far off on 0 */
+    int32_t distance;          /* +0x18 the player's distance from the actor's building last time, in tiles
+                                  (mm_EvBodyguard_Answer) */
 };
 /* The missing children event's record (type 6, mm_EvMissingChildren_*). */
 struct EvMissingChildrenData {
-    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    EventHeader header;        /* +0x00 */
     ActorRef actors[3];        /* +0x0C the parent, the child, the family's first member */
-    int32_t counter;           /* +0x24 frames after the parent is told, or calls while searching */
+    int32_t counter;           /* +0x24 minutes after the parent is told, or minutes searching */
     int32_t outcome;           /* +0x28 how the child was found: 1 near both, 2 stopped by the player (talk value) */
-    int32_t frames;            /* +0x2C the event ends after 180 */
+    int32_t minutes;           /* +0x2C the event ends after 180 */
 };
 /* The useless middle-aged man event's record (type 7, mm_EvUselessMiddleAged_*). */
 struct EvMiddleAgedData {
-    uint8_t unk_00[0xC];       /* +0x00 the EventData header (kind, var) */
+    EventHeader header;        /* +0x00 */
     ActorRef actor;            /* +0x0C */
     int32_t month;             /* +0x14 the month it started; he is told on a later one */
-    int32_t frames;            /* +0x18 frames after he is told */
+    int32_t minutes;           /* +0x18 minutes after he is told (60, counted down) */
     int32_t answer;            /* +0x1C the talk's choice, modes 0 to 3 (mm_EvUselessMiddleAged_Answer) */
 };
 /* One of the event manager's five event slots (0x20 bytes, filled from the front): an event a talk script started
@@ -3054,34 +3082,40 @@ static_assert(offsetof(EventData, var) == 0x0A, "EventData.var");
 static_assert(offsetof(EventData, actor) == 0x0C, "EventData.actor");
 static_assert(offsetof(EventData, typeWordA) == 0x14, "EventData.typeWordA");
 static_assert(offsetof(EventData, typeWordB) == 0x18, "EventData.typeWordB");
-static_assert(offsetof(EvCultData, unk_00) == 0x00, "EvCultData.unk_00");
+static_assert(sizeof(EventHeader) == 0xC, "EventHeader size");
+static_assert(offsetof(EventHeader, vtable) == 0x00, "EventHeader.vtable");
+static_assert(offsetof(EventHeader, update) == 0x04, "EventHeader.update");
+static_assert(offsetof(EventHeader, kind) == 0x08, "EventHeader.kind");
+static_assert(offsetof(EventHeader, days) == 0x09, "EventHeader.days");
+static_assert(offsetof(EventHeader, var) == 0x0A, "EventHeader.var");
+static_assert(offsetof(EvCultData, header) == 0x00, "EvCultData.header");
 static_assert(offsetof(EvCultData, actors) == 0x0C, "EvCultData.actors");
 static_assert(offsetof(EvCultData, waitMonth) == 0x3C, "EvCultData.waitMonth");
 static_assert(offsetof(EvCultData, waitTime) == 0x40, "EvCultData.waitTime");
-static_assert(offsetof(EvCultData, tellFrames) == 0x44, "EvCultData.tellFrames");
-static_assert(offsetof(EvCultData, spreadFrames) == 0x48, "EvCultData.spreadFrames");
+static_assert(offsetof(EvCultData, tellMinutes) == 0x44, "EvCultData.tellMinutes");
+static_assert(offsetof(EvCultData, spreadMinutes) == 0x48, "EvCultData.spreadMinutes");
 static_assert(offsetof(EvCultData, allJoined) == 0x4C, "EvCultData.allJoined");
 static_assert(offsetof(EvCultData, metBits) == 0x50, "EvCultData.metBits");
 static_assert(offsetof(AdoptionChild, claim) == 0x0, "AdoptionChild.claim");
 static_assert(offsetof(AdoptionChild, seen) == 0x1, "AdoptionChild.seen");
 static_assert(offsetof(AdoptionChild, familyType) == 0x2, "AdoptionChild.familyType");
-static_assert(offsetof(EvAdoptionData, unk_00) == 0x00, "EvAdoptionData.unk_00");
+static_assert(offsetof(EvAdoptionData, header) == 0x00, "EvAdoptionData.header");
 static_assert(offsetof(EvAdoptionData, actor) == 0x0C, "EvAdoptionData.actor");
-static_assert(offsetof(EvAdoptionData, frames) == 0x14, "EvAdoptionData.frames");
+static_assert(offsetof(EvAdoptionData, minutes) == 0x14, "EvAdoptionData.minutes");
 static_assert(offsetof(EvAdoptionData, toldCount) == 0x18, "EvAdoptionData.toldCount");
 static_assert(offsetof(EvAdoptionData, month) == 0x1C, "EvAdoptionData.month");
 static_assert(offsetof(EvAdoptionData, pick) == 0x20, "EvAdoptionData.pick");
 static_assert(offsetof(EvAdoptionData, applicants) == 0x24, "EvAdoptionData.applicants");
 static_assert(offsetof(EvAdoptionData, children) == 0x4C, "EvAdoptionData.children");
-static_assert(offsetof(EvShoppingData, unk_00) == 0x00, "EvShoppingData.unk_00");
+static_assert(offsetof(EvShoppingData, header) == 0x00, "EvShoppingData.header");
 static_assert(offsetof(EvShoppingData, actors) == 0x0C, "EvShoppingData.actors");
 static_assert(offsetof(EvShoppingData, shop) == 0x34, "EvShoppingData.shop");
 static_assert(offsetof(EvShoppingData, goodsCount) == 0x38, "EvShoppingData.goodsCount");
 static_assert(offsetof(EvShoppingData, prices) == 0x3C, "EvShoppingData.prices");
 static_assert(offsetof(EvShoppingData, bill) == 0x4C, "EvShoppingData.bill");
 static_assert(offsetof(EvShoppingData, refund) == 0x50, "EvShoppingData.refund");
-static_assert(offsetof(EvShoppingData, tellFrames) == 0x54, "EvShoppingData.tellFrames");
-static_assert(offsetof(EvShoppingData, endFrames) == 0x58, "EvShoppingData.endFrames");
+static_assert(offsetof(EvShoppingData, tellMinutes) == 0x54, "EvShoppingData.tellMinutes");
+static_assert(offsetof(EvShoppingData, endMinutes) == 0x58, "EvShoppingData.endMinutes");
 static_assert(sizeof(ShoppingList) == 0x28, "ShoppingList size");
 static_assert(offsetof(ShoppingList, unk_00) == 0x00, "ShoppingList.unk_00");
 static_assert(offsetof(ShoppingList, goods) == 0x20, "ShoppingList.goods");
@@ -3091,70 +3125,77 @@ static_assert(offsetof(DeliveryItem, price) == 0x1E, "DeliveryItem.price");
 static_assert(sizeof(DeliveryCatalogue) == 0x184, "DeliveryCatalogue size");
 static_assert(offsetof(DeliveryCatalogue, buildingType) == 0x000, "DeliveryCatalogue.buildingType");
 static_assert(offsetof(DeliveryCatalogue, items) == 0x004, "DeliveryCatalogue.items");
-static_assert(offsetof(EvDeliveryData, unk_00) == 0x00, "EvDeliveryData.unk_00");
+static_assert(offsetof(EvDeliveryData, header) == 0x00, "EvDeliveryData.header");
 static_assert(offsetof(EvDeliveryData, actors) == 0x0C, "EvDeliveryData.actors");
 static_assert(offsetof(EvDeliveryData, entry) == 0x1C, "EvDeliveryData.entry");
 static_assert(offsetof(EvDeliveryData, month) == 0x20, "EvDeliveryData.month");
-static_assert(offsetof(EvDeliveryData, tellFrames) == 0x24, "EvDeliveryData.tellFrames");
-static_assert(offsetof(EvDeliveryData, walkFrames) == 0x28, "EvDeliveryData.walkFrames");
-static_assert(offsetof(EvDeliveryData, waitFrames) == 0x2C, "EvDeliveryData.waitFrames");
-static_assert(offsetof(EvDeliveryData, endFrames) == 0x30, "EvDeliveryData.endFrames");
+static_assert(offsetof(EvDeliveryData, tellMinutes) == 0x24, "EvDeliveryData.tellMinutes");
+static_assert(offsetof(EvDeliveryData, walkMinutes) == 0x28, "EvDeliveryData.walkMinutes");
+static_assert(offsetof(EvDeliveryData, waitMinutes) == 0x2C, "EvDeliveryData.waitMinutes");
+static_assert(offsetof(EvDeliveryData, endMinutes) == 0x30, "EvDeliveryData.endMinutes");
 static_assert(offsetof(EvDeliveryData, state) == 0x34, "EvDeliveryData.state");
-static_assert(offsetof(EvPartyData, unk_00) == 0x00, "EvPartyData.unk_00");
+static_assert(offsetof(EvPartyData, header) == 0x00, "EvPartyData.header");
 static_assert(offsetof(EvPartyData, actors) == 0x0C, "EvPartyData.actors");
-static_assert(offsetof(EvPartyData, tellFrames) == 0x24, "EvPartyData.tellFrames");
+static_assert(offsetof(EvPartyData, tellMinutes) == 0x24, "EvPartyData.tellMinutes");
 static_assert(offsetof(EvPartyData, guests) == 0x28, "EvPartyData.guests");
 static_assert(offsetof(EvPartyData, partyTime) == 0x2C, "EvPartyData.partyTime");
 static_assert(offsetof(EvPartyData, stageStep) == 0x30, "EvPartyData.stageStep");
 static_assert(offsetof(EvPartyData, endStep) == 0x34, "EvPartyData.endStep");
-static_assert(offsetof(EvThiefData, unk_00) == 0x00, "EvThiefData.unk_00");
+static_assert(offsetof(EvThiefData, header) == 0x00, "EvThiefData.header");
 static_assert(offsetof(EvThiefData, actors) == 0x0C, "EvThiefData.actors");
 static_assert(offsetof(EvThiefData, nextMonth) == 0x2C, "EvThiefData.nextMonth");
 static_assert(offsetof(EvThiefData, countdown) == 0x34, "EvThiefData.countdown");
-static_assert(offsetof(EvThiefData, searchDelay) == 0x38, "EvThiefData.searchDelay");
+static_assert(offsetof(EvThiefData, timer) == 0x38, "EvThiefData.timer");
 static_assert(offsetof(EvThiefData, strikes) == 0x3C, "EvThiefData.strikes");
-static_assert(offsetof(EvThiefData, frames) == 0x40, "EvThiefData.frames");
+static_assert(offsetof(EvThiefData, minutes) == 0x40, "EvThiefData.minutes");
 static_assert(offsetof(MemberId, family) == 0x0, "MemberId.family");
 static_assert(offsetof(MemberId, member) == 0x2, "MemberId.member");
-static_assert(offsetof(EvAdvertiseData, unk_00) == 0x00, "EvAdvertiseData.unk_00");
+static_assert(offsetof(EvAdvertiseData, header) == 0x00, "EvAdvertiseData.header");
 static_assert(offsetof(EvAdvertiseData, actor) == 0x0C, "EvAdvertiseData.actor");
-static_assert(offsetof(EvAdvertiseData, tellFrames) == 0x14, "EvAdvertiseData.tellFrames");
-static_assert(offsetof(EvAdvertiseData, endFrames) == 0x1C, "EvAdvertiseData.endFrames");
+static_assert(offsetof(EvAdvertiseData, tellMinutes) == 0x14, "EvAdvertiseData.tellMinutes");
+static_assert(offsetof(EvAdvertiseData, endMinutes) == 0x1C, "EvAdvertiseData.endMinutes");
 static_assert(offsetof(EvAdvertiseData, visitorCount) == 0x20, "EvAdvertiseData.visitorCount");
 static_assert(offsetof(EvAdvertiseData, visitors) == 0x24, "EvAdvertiseData.visitors");
-static_assert(offsetof(EvNoodlesData, unk_00) == 0x00, "EvNoodlesData.unk_00");
+static_assert(offsetof(EvNoodlesData, header) == 0x00, "EvNoodlesData.header");
 static_assert(offsetof(EvNoodlesData, actors) == 0x0C, "EvNoodlesData.actors");
 static_assert(offsetof(EvNoodlesData, month) == 0x5C, "EvNoodlesData.month");
 static_assert(offsetof(EvNoodlesData, time) == 0x60, "EvNoodlesData.time");
 static_assert(offsetof(EvNoodlesData, timer) == 0x64, "EvNoodlesData.timer");
-static_assert(offsetof(EvCaveManData, unk_00) == 0x00, "EvCaveManData.unk_00");
+static_assert(offsetof(EvCaveManData, header) == 0x00, "EvCaveManData.header");
 static_assert(offsetof(EvCaveManData, actors) == 0x0C, "EvCaveManData.actors");
 static_assert(offsetof(EvCaveManData, counter) == 0x4C, "EvCaveManData.counter");
-static_assert(offsetof(EvCaveManData, frames) == 0x50, "EvCaveManData.frames");
+static_assert(offsetof(EvCaveManData, minutes) == 0x50, "EvCaveManData.minutes");
 static_assert(offsetof(EvCaveManData, month) == 0x54, "EvCaveManData.month");
-static_assert(offsetof(EvShoppingTogetherData, unk_00) == 0x00, "EvShoppingTogetherData.unk_00");
+static_assert(offsetof(EvShoppingTogetherData, header) == 0x00, "EvShoppingTogetherData.header");
 static_assert(offsetof(EvShoppingTogetherData, actors) == 0x0C, "EvShoppingTogetherData.actors");
 static_assert(offsetof(EvShoppingTogetherData, countdown) == 0x1C, "EvShoppingTogetherData.countdown");
 static_assert(offsetof(EvShoppingTogetherData, offTileCalls) == 0x20, "EvShoppingTogetherData.offTileCalls");
 static_assert(offsetof(EvShoppingTogetherData, farCalls) == 0x24, "EvShoppingTogetherData.farCalls");
 static_assert(offsetof(EvShoppingTogetherData, outcome) == 0x28, "EvShoppingTogetherData.outcome");
-static_assert(offsetof(EvShoppingTogetherData, frames) == 0x2C, "EvShoppingTogetherData.frames");
-static_assert(offsetof(EvAlienData, unk_00) == 0x00, "EvAlienData.unk_00");
+static_assert(offsetof(EvShoppingTogetherData, minutes) == 0x2C, "EvShoppingTogetherData.minutes");
+static_assert(offsetof(EvAlienData, header) == 0x00, "EvAlienData.header");
 static_assert(offsetof(EvAlienData, actors) == 0x0C, "EvAlienData.actors");
 static_assert(offsetof(EvAlienData, month) == 0x3C, "EvAlienData.month");
 static_assert(offsetof(EvAlienData, time) == 0x40, "EvAlienData.time");
-static_assert(offsetof(EvAlienData, frames) == 0x44, "EvAlienData.frames");
-static_assert(offsetof(EvMessageData, unk_00) == 0x00, "EvMessageData.unk_00");
+static_assert(offsetof(EvAlienData, minutes) == 0x44, "EvAlienData.minutes");
+static_assert(offsetof(EvMessageData, header) == 0x00, "EvMessageData.header");
+static_assert(offsetof(EvMessageData, actor) == 0x0C, "EvMessageData.actor");
+static_assert(offsetof(EvMessageData, callMinutes) == 0x14, "EvMessageData.callMinutes");
+static_assert(offsetof(EvMessageData, callCount) == 0x18, "EvMessageData.callCount");
 static_assert(offsetof(EvMessageData, callPosted) == 0x1C, "EvMessageData.callPosted");
-static_assert(offsetof(EvMissingChildrenData, unk_00) == 0x00, "EvMissingChildrenData.unk_00");
+static_assert(offsetof(EvEscortData, header) == 0x00, "EvEscortData.header");
+static_assert(offsetof(EvEscortData, actor) == 0x0C, "EvEscortData.actor");
+static_assert(offsetof(EvEscortData, minutes) == 0x14, "EvEscortData.minutes");
+static_assert(offsetof(EvEscortData, distance) == 0x18, "EvEscortData.distance");
+static_assert(offsetof(EvMissingChildrenData, header) == 0x00, "EvMissingChildrenData.header");
 static_assert(offsetof(EvMissingChildrenData, actors) == 0x0C, "EvMissingChildrenData.actors");
 static_assert(offsetof(EvMissingChildrenData, counter) == 0x24, "EvMissingChildrenData.counter");
 static_assert(offsetof(EvMissingChildrenData, outcome) == 0x28, "EvMissingChildrenData.outcome");
-static_assert(offsetof(EvMissingChildrenData, frames) == 0x2C, "EvMissingChildrenData.frames");
-static_assert(offsetof(EvMiddleAgedData, unk_00) == 0x00, "EvMiddleAgedData.unk_00");
+static_assert(offsetof(EvMissingChildrenData, minutes) == 0x2C, "EvMissingChildrenData.minutes");
+static_assert(offsetof(EvMiddleAgedData, header) == 0x00, "EvMiddleAgedData.header");
 static_assert(offsetof(EvMiddleAgedData, actor) == 0x0C, "EvMiddleAgedData.actor");
 static_assert(offsetof(EvMiddleAgedData, month) == 0x14, "EvMiddleAgedData.month");
-static_assert(offsetof(EvMiddleAgedData, frames) == 0x18, "EvMiddleAgedData.frames");
+static_assert(offsetof(EvMiddleAgedData, minutes) == 0x18, "EvMiddleAgedData.minutes");
 static_assert(offsetof(EvMiddleAgedData, answer) == 0x1C, "EvMiddleAgedData.answer");
 static_assert(sizeof(EventSlot) == 0x20, "EventSlot size");
 static_assert(offsetof(EventSlot, kind) == 0x00, "EventSlot.kind");

@@ -91,6 +91,8 @@ namespace mm
         explicit operator bool() const { return address != 0; }
         bool operator==(const GuestPtr &other) const { return address == other.address; }
         bool operator!=(const GuestPtr &other) const { return address != other.address; }
+        // By address, unsigned as the original's sltu compares them.
+        bool operator<(const GuestPtr &other) const { return address < other.address; }
         // The same address as another type: a derived class (a building type's own class), or a view the game takes of it.
         template <typename U>
         GuestPtr<U> as() const { return GuestPtr<U>{address}; }

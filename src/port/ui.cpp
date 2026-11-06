@@ -2587,7 +2587,7 @@ namespace mm
             SoundCmd_MidiStop(0xF, 0);
             SoundCmd_MidiClose(7, 0);
             Sound_StopAllSequences();
-            SoundCmd_WaveClose0();
+            SoundCmd_WaveCloseBankSet();
             Sound_ResetVoices(1);
             SoundCmd_MidiOpen(7, 0x001B8728, 0x001B8738, 0x001B8748, 0);
             setPage(page() + 1);
@@ -2603,7 +2603,7 @@ namespace mm
             if ((port::load<uint32_t>(static_cast<uint32_t>(Sound_GetStatus()) + 4u) & 0x8000u) == 0)
             {
                 SoundCmd_MidiClose(7, 0);
-                SoundCmd_WaveClose0();
+                SoundCmd_WaveCloseBankSet();
                 Sound_ResetVoices(0);
                 Sound_LoadPlaylandBanks();
                 setPage(page() + 1);
@@ -5284,7 +5284,7 @@ namespace mm
         case 2:
             if (Sound_IsBusy() != 0)
                 return 0;
-            SoundCmd_WaveClose0();
+            SoundCmd_WaveCloseBankSet();
             next();
             return 0;
         case 3:
@@ -5385,7 +5385,7 @@ namespace mm
             return 0;
         case 4:
             SoundCmd_MidiClose(7, 0);
-            SoundCmd_WaveClose0();
+            SoundCmd_WaveCloseBankSet();
             next();
             return 0;
         case 5:
@@ -5508,7 +5508,7 @@ namespace mm
             }
             else if (result == 2)
             {
-                SoundCmd_WaveClose0();
+                SoundCmd_WaveCloseBankSet();
                 SoundCmd_MidiFade(0xF, 0, 0x10, 0);
                 setMode(7);
                 scene->pressStep = static_cast<int32_t>(0);
@@ -6282,7 +6282,7 @@ namespace mm
             else if (phase == 0)
             {
                 Sound_StopAllSequences();
-                SoundCmd_WaveClose0();
+                SoundCmd_WaveCloseBankSet();
                 scene->fadeFrame = scene->fadeFrame + 1;
             }
         }
@@ -6996,7 +6996,7 @@ namespace mm
                 nextStep();
             break;
         case 102:
-            SoundCmd_WaveClose0();
+            SoundCmd_WaveCloseBankSet();
             nextStep();
             break;
         case 104:

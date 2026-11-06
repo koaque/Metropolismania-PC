@@ -1070,7 +1070,7 @@ inline constexpr uint32_t WordsFn_MeterAgrees = 0x0017F3E0u;
 inline constexpr uint32_t WordsFn_FindOutsideAcquaintance = 0x0017F420u;
 inline constexpr uint32_t WordsFn_GetIntroduction = 0x0017F530u;
 inline constexpr uint32_t WordsFn_BuildingNeedPartlyMet = 0x0017F5C0u;
-inline constexpr uint32_t WordsFn_ClaimIs50 = 0x0017F5F0u;
+inline constexpr uint32_t WordsFn_ClaimIsRoad = 0x0017F5F0u;
 inline constexpr uint32_t WordsFn_BuildingClaim = 0x0017F660u;
 inline constexpr uint32_t WordsFn_BuildingState = 0x0017F6D0u;
 inline constexpr uint32_t WordsFn_FriendshipTier = 0x0017F750u;
@@ -1232,7 +1232,7 @@ inline constexpr uint32_t Bgm_FadeOut = 0x0018CC70u;
 inline constexpr uint32_t Bgm_SetActive = 0x0018CCA0u;
 inline constexpr uint32_t Bgm_SetTrackSlot = 0x0018CD30u;
 inline constexpr uint32_t Bgm_Update = 0x0018CEA0u;
-inline constexpr uint32_t SoundCmd_WaveClose0 = 0x0018D150u;
+inline constexpr uint32_t SoundCmd_WaveCloseBankSet = 0x0018D150u;
 inline constexpr uint32_t Sound_ResetVoices = 0x0018D160u;
 inline constexpr uint32_t Se_BuildAmbienceMap = 0x0018D280u;
 inline constexpr uint32_t Sound_InitState = 0x0018D3E0u;
@@ -1321,9 +1321,9 @@ inline constexpr uint32_t EvFarewellParty_Start = 0x00193920u;
 inline constexpr uint32_t EvForgetfulGranny_Check = 0x00193B30u;
 inline constexpr uint32_t EvCrazyCult_Answer = 0x00193B60u;
 inline constexpr uint32_t EvCrazyCult_End = 0x00193D00u;
-inline constexpr uint32_t EvCrazyCult_Phase3 = 0x00193DF0u;
-inline constexpr uint32_t EvCrazyCult_Phase2 = 0x00193F40u;
-inline constexpr uint32_t EvCrazyCult_Phase1 = 0x00194150u;
+inline constexpr uint32_t EvCrazyCult_TellLeader = 0x00193DF0u;
+inline constexpr uint32_t EvCrazyCult_TellSecondMember = 0x00193F40u;
+inline constexpr uint32_t EvCrazyCult_TellFirstMember = 0x00194150u;
 inline constexpr uint32_t EvCrazyCult_Update = 0x001942B0u;
 inline constexpr uint32_t EvCrazyCult_Start = 0x00194690u;
 inline constexpr uint32_t EvAdoption_Answer = 0x00194720u;
@@ -2409,10 +2409,10 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"EvCaveMan_Update", addr::EvCaveMan_Update},
     {"EvCrazyCult_Answer", addr::EvCrazyCult_Answer},
     {"EvCrazyCult_End", addr::EvCrazyCult_End},
-    {"EvCrazyCult_Phase1", addr::EvCrazyCult_Phase1},
-    {"EvCrazyCult_Phase2", addr::EvCrazyCult_Phase2},
-    {"EvCrazyCult_Phase3", addr::EvCrazyCult_Phase3},
     {"EvCrazyCult_Start", addr::EvCrazyCult_Start},
+    {"EvCrazyCult_TellFirstMember", addr::EvCrazyCult_TellFirstMember},
+    {"EvCrazyCult_TellLeader", addr::EvCrazyCult_TellLeader},
+    {"EvCrazyCult_TellSecondMember", addr::EvCrazyCult_TellSecondMember},
     {"EvCrazyCult_Update", addr::EvCrazyCult_Update},
     {"EvDeliveryMan_Answer", addr::EvDeliveryMan_Answer},
     {"EvDeliveryMan_Check", addr::EvDeliveryMan_Check},
@@ -3063,7 +3063,7 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"SoundCmd_MidiStop", addr::SoundCmd_MidiStop},
     {"SoundCmd_SetLoadPause", addr::SoundCmd_SetLoadPause},
     {"SoundCmd_WaveClose", addr::SoundCmd_WaveClose},
-    {"SoundCmd_WaveClose0", addr::SoundCmd_WaveClose0},
+    {"SoundCmd_WaveCloseBankSet", addr::SoundCmd_WaveCloseBankSet},
     {"SoundCmd_WaveFade", addr::SoundCmd_WaveFade},
     {"SoundCmd_WaveOpen", addr::SoundCmd_WaveOpen},
     {"SoundCmd_WavePlay", addr::SoundCmd_WavePlay},
@@ -3402,7 +3402,7 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"WordsFn_BuyGoods", addr::WordsFn_BuyGoods},
     {"WordsFn_CanAfford", addr::WordsFn_CanAfford},
     {"WordsFn_CanApply", addr::WordsFn_CanApply},
-    {"WordsFn_ClaimIs50", addr::WordsFn_ClaimIs50},
+    {"WordsFn_ClaimIsRoad", addr::WordsFn_ClaimIsRoad},
     {"WordsFn_ClearStoryFlagB", addr::WordsFn_ClearStoryFlagB},
     {"WordsFn_ConductTier", addr::WordsFn_ConductTier},
     {"WordsFn_EventActorIs", addr::WordsFn_EventActorIs},
@@ -4748,7 +4748,7 @@ int WordsFn_MeterAgrees(GuestPtr<WordsCtx> ctx);
 int WordsFn_FindOutsideAcquaintance(GuestPtr<WordsCtx> ctx);
 int WordsFn_GetIntroduction(GuestPtr<WordsCtx> ctx);
 int WordsFn_BuildingNeedPartlyMet(GuestPtr<WordsCtx> ctx);
-int WordsFn_ClaimIs50(GuestPtr<WordsCtx> ctx);
+int WordsFn_ClaimIsRoad(GuestPtr<WordsCtx> ctx);
 int WordsFn_BuildingClaim(GuestPtr<WordsCtx> ctx);
 int WordsFn_BuildingState(GuestPtr<WordsCtx> ctx);
 int WordsFn_FriendshipTier(GuestPtr<WordsCtx> ctx);
@@ -4910,7 +4910,7 @@ void Bgm_FadeOut(int time);
 int Bgm_SetActive(int active);
 void Bgm_SetTrackSlot(char slot, int play, int enable);
 void Bgm_Update();
-int SoundCmd_WaveClose0();
+int SoundCmd_WaveCloseBankSet();
 void Sound_ResetVoices(int bankSet);
 void Se_BuildAmbienceMap();
 void Sound_InitState();
@@ -4999,9 +4999,9 @@ GuestPtr<MapObject> EvFarewellParty_Start(GuestPtr<EventData> data, GuestPtr<Cit
 int EvForgetfulGranny_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
 int EvCrazyCult_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);
 void EvCrazyCult_End(GuestPtr<EventData> data, GuestPtr<CityScene> city);
-void EvCrazyCult_Phase3(GuestPtr<EventData> data, GuestPtr<CityScene> city);
-void EvCrazyCult_Phase2(GuestPtr<EventData> data, GuestPtr<CityScene> city);
-void EvCrazyCult_Phase1(GuestPtr<EventData> data, GuestPtr<CityScene> city);
+void EvCrazyCult_TellLeader(GuestPtr<EventData> data, GuestPtr<CityScene> city);
+void EvCrazyCult_TellSecondMember(GuestPtr<EventData> data, GuestPtr<CityScene> city);
+void EvCrazyCult_TellFirstMember(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 void EvCrazyCult_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int64_t EvCrazyCult_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city);
 int EvAdoption_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode);

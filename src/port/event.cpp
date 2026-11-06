@@ -252,11 +252,11 @@ namespace mm
         const GuestPtr<uint32_t> count{frame.ptr().address + 0x6Cu};
         for (int list = 0; list < 80; ++list)
         {
-            const uint32_t items = Map_GetTileList(city->map, list, count).address;
-            const uint32_t end = items + 2u * *count;
-            for (uint32_t item = items; item < end; item += 2u)
+            const GuestPtr<uint16_t> items = Map_GetTileList(city->map, list, count);
+            const GuestPtr<uint16_t> end = items + static_cast<int32_t>(*count);
+            for (GuestPtr<uint16_t> item = items; item < end; ++item)
             {
-                const GuestPtr<MapObject> building = Map_GetRecord(city->map, port::load<uint16_t>(item));
+                const GuestPtr<MapObject> building = Map_GetRecord(city->map, *item);
                 if (building->claimSlot == 0x18)
                     continue;
                 if (Claim_GetList(typeOf(building)->claimB)[building->claimSlot].id != 0)
@@ -339,12 +339,11 @@ namespace mm
     // 150 objects of type 10 on the map.
     int EvBugDamage_Check(GuestPtr<EventData>, GuestPtr<CityScene> city)
     {
-        const uint32_t first = Map_GetRecord(city->map, 0).address;
-        const uint32_t end = first + 0x3F80u * 0x1Cu;
+        const GuestPtr<MapObject> first = Map_GetRecord(city->map, 0);
         int count = 0;
-        for (uint32_t object = first; object < end; object += 0x1Cu)
+        for (GuestPtr<MapObject> object = first; object != first + kObjectSlots; ++object)
         {
-            if (port::load<uint16_t>(object) != 10)
+            if (object->type != 10)
                 continue;
             if (++count >= 150)
                 return 1;
@@ -377,11 +376,11 @@ namespace mm
     {
         port::GuestFrame<0x70> frame;
         const GuestPtr<uint32_t> count{frame.ptr().address + 0x6Cu};
-        const uint32_t items = Map_GetTileList(city->map, 0x15, count).address;
-        const uint32_t end = items + 2u * *count;
-        for (uint32_t item = items; item < end; item += 2u)
+        const GuestPtr<uint16_t> items = Map_GetTileList(city->map, 0x15, count);
+        const GuestPtr<uint16_t> end = items + static_cast<int32_t>(*count);
+        for (GuestPtr<uint16_t> item = items; item < end; ++item)
         {
-            const GuestPtr<MapObject> cave = Map_GetRecord(city->map, port::load<uint16_t>(item));
+            const GuestPtr<MapObject> cave = Map_GetRecord(city->map, *item);
             if (cave->type != 0x113 || (cave->flags & 0x20u) == 0 || (cave->flags & 0x240u) != 0 || ClaimMeter_Level(cave->claimMeter) != 0)
                 continue;
             const GuestPtr<MapPerson> person = port::callGuest<GuestPtr<MapPerson>>(addr::Map_FindPersonEntry, city->map,
@@ -507,18 +506,18 @@ namespace mm
     GuestPtr<MapObject> EvUselessMiddleAged_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
         const GuestPtr<MapObject> record = markBuilding(city, data->actor.object);
-        data->typeWordA = city->monthCount;
+        data.as<EvMiddleAgedData>()->month = city->monthCount;
         return record;
     }
 
-    // Marks the building, detaches the actor and keeps their distance from the player.
+    // Marks the building, detaches the actor and keeps the player's distance from the building (distance).
     int EvEscort_Start(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
         markBuilding(city, data->actor.object);
         const GuestPtr<ActorRef> actor = GuestPtr<ActorRef>::of(data->actor);
         EvActor_Detach(city, actor);
         const int distance = Player_DistanceToBuilding(city, actor);
-        data->typeWordB = distance;
+        data.as<EvEscortData>()->distance = distance;
         return distance;
     }
 
@@ -597,47 +596,49 @@ namespace mm
     // ---- Update slots
 
     // Phase 1 (var): from 9:00 on a later month than it started, the actor is told (mm_EvActor_Notify) and phase 2
-    // starts with a 60-frame timer; phase 2 goes back to 1 when the timer runs out.
+    // starts with a 60-minute timer; phase 2 goes back to 1 when the timer runs out.
     void EvUselessMiddleAged_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
+        const GuestPtr<EvMiddleAgedData> man = data.as<EvMiddleAgedData>();
         if (data->var == 2)
         {
-            if (--data->typeWordB <= 0)
+            if (--man->minutes <= 0)
                 --data->var;
             return;
         }
-        if (data->var != 1 || city->monthCount == data->typeWordA || city->clock < 32400)
+        if (data->var != 1 || city->monthCount == man->month || city->clock < 32400)
             return;
         if (EvActor_Notify(city, GuestPtr<ActorRef>::of(data->actor)) == 0)
             return;
-        data->typeWordB = 60;
+        man->minutes = 60;
         ++data->var;
     }
 
     namespace
     {
         // The message events' phases (var): 1 waits until the actor can be told (mm_EvActor_Notify), then a phone
-        // call is up for 60 frames, plus the minutes left until 6:00 when it comes before then, or 360 more
+        // call is up for 60 minutes (callMinutes), plus those left until 6:00 when it comes before then, or 360 more
         // from 23:00; phase 2 counts that down and returns true when it runs out (the call taken down).
         bool messagePhase(GuestPtr<EventData> data, GuestPtr<CityScene> city)
         {
+            const GuestPtr<EvMessageData> message = data.as<EvMessageData>();
             if (data->var == 2)
             {
-                if (--data->typeWordA > 0)
+                if (--message->callMinutes > 0)
                     return false;
-                data.as<EvMessageData>()->callPosted = 0;
+                message->callPosted = 0;
                 return true;
             }
             if (data->var != 1 || EvActor_Notify(city, GuestPtr<ActorRef>::of(data->actor)) == 0)
                 return false;
             ++data->var;
-            data.as<EvMessageData>()->callPosted = 1;
-            data->typeWordA = 60;
+            message->callPosted = 1;
+            message->callMinutes = 60;
             const int32_t clock = city->clock;
             if (clock < 21600)
-                data->typeWordA += 360 - clock / 60;
+                message->callMinutes += 360 - clock / 60;
             else if (clock >= 82801)
-                data->typeWordA += 360;
+                message->callMinutes += 360;
             return false;
         }
     }
@@ -656,12 +657,12 @@ namespace mm
             Event_Finish(city->events, city, 1);
     }
 
-    // The message is repeated: back to waiting for the first four calls, finished after the fifth (typeWordB counts).
+    // The message is repeated: back to waiting for the first four calls, finished after the fifth (callCount).
     void EvMsg_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
         if (!messagePhase(data, city))
             return;
-        if (++data->typeWordB < 5)
+        if (++data.as<EvMessageData>()->callCount < 5)
             --data->var;
         else
             Event_Finish(city->events, city, 1);
@@ -696,16 +697,17 @@ namespace mm
         }
         if (!messagePhase(data, city))
             return;
-        if (++data->typeWordB < 5)
+        if (++data.as<EvMessageData>()->callCount < 5)
             --data->var;
         else
             ++data->var;
     }
 
     // The advertisement's phases (var): 1 waits for the event type's time (finishAt), 2 and 4 wait until the
-    // actor can be told, 3 and 5 count 60 frames back down a phase, 6 ends the event after 240 frames.
+    // actor can be told, 3 and 5 count 60 minutes back down a phase, 6 ends the event after 240 minutes.
     void EvAdvertise_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
+        const GuestPtr<EvAdvertiseData> ad = data.as<EvAdvertiseData>();
         const uint8_t phase = data->var;
         switch (phase)
         {
@@ -717,20 +719,19 @@ namespace mm
         case 4:
             if (EvActor_Notify(city, GuestPtr<ActorRef>::of(data->actor)) == 0)
                 break;
-            data->typeWordA = 60;
+            ad->tellMinutes = 60;
             ++data->var;
             break;
         case 3:
         case 5:
-            if (--data->typeWordA <= 0)
+            if (--ad->tellMinutes <= 0)
                 --data->var;
             break;
         case 6:
         {
-            const GuestPtr<EvAdvertiseData> ad = data.as<EvAdvertiseData>();
-            const int32_t frames = ad->endFrames + 1;
-            ad->endFrames = frames;
-            if (frames >= 240)
+            const int32_t minutes = ad->endMinutes + 1;
+            ad->endMinutes = minutes;
+            if (minutes >= 240)
                 Event_Finish(city->events, city, 0);
             break;
         }
@@ -744,13 +745,12 @@ namespace mm
     // Residents lose person flag 0x400 and the six buildings are released.
     void EvCrazyCult_End(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
-        const uint32_t people = city->map->people.address;
-        for (uint32_t p = people; p < people + 6000u * 0x30u; p += 0x30u)
+        const GuestPtr<MapPerson> people = city->map->people;
+        for (GuestPtr<MapPerson> person = people; person != people + kPersonSlots; ++person)
         {
-            const GuestPtr<MapPerson> person{p};
             if (person->charType == 0)
                 continue;
-            const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)};
+            const GuestPtr<CharClass> cls = globals::charClass(person->charType);
             if ((cls->flags & 1u) == 0)
                 person->flags &= 0xFBFFu;
         }
@@ -918,25 +918,26 @@ namespace mm
         return party->guests >= city->map->population / 4 ? 1 : 0;
     }
 
-    // How the escorted person keeps up: 4 within 2 tiles of the player, 3 within 6, else 1 closer than last time,
-    // 2 farther, 0 the same; the distance is kept (typeWordB).
+    // How near the player is to the actor's building, where the escort ends: 4 within 2 tiles, 3 within 6, else 1
+    // nearer than last time, 2 farther, 0 the same; the distance is kept (distance).
     int EvBodyguard_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef>, int mode)
     {
         if (mode != 0)
             return 0;
+        const GuestPtr<EvEscortData> escort = data.as<EvEscortData>();
         const int distance = Player_DistanceToBuilding(city, GuestPtr<ActorRef>::of(data->actor));
         int state;
         if (distance < 2)
             state = 4;
         else if (distance < 6)
             state = 3;
-        else if (distance < data->typeWordB)
+        else if (distance < escort->distance)
             state = 1;
-        else if (data->typeWordB < distance)
+        else if (escort->distance < distance)
             state = 2;
         else
             state = 0;
-        data->typeWordB = distance;
+        escort->distance = distance;
         return state;
     }
 
@@ -1099,11 +1100,11 @@ namespace mm
     {
         port::GuestFrame<0x80> frame;
         const GuestPtr<uint32_t> count{frame.ptr().address + 0x7Cu};
-        const uint32_t items = Map_GetTileList(city->map, list, count).address;
-        const uint32_t end = items + 2u * *count;
-        for (uint32_t item = items; item < end; item += 2u)
+        const GuestPtr<uint16_t> items = Map_GetTileList(city->map, list, count);
+        const GuestPtr<uint16_t> end = items + static_cast<int32_t>(*count);
+        for (GuestPtr<uint16_t> item = items; item < end; ++item)
         {
-            const GuestPtr<MapObject> building = Map_GetRecord(city->map, port::load<uint16_t>(item));
+            const GuestPtr<MapObject> building = Map_GetRecord(city->map, *item);
             if (building->type == type && available(building) && overlapsRect(building, rect))
                 return building;
         }
@@ -1117,11 +1118,11 @@ namespace mm
         const GuestPtr<uint32_t> count{frame.ptr().address + 0x8Cu};
         for (int list = 0; list < 80; ++list)
         {
-            const uint32_t items = Map_GetTileList(city->map, list, count).address;
-            const uint32_t end = items + 2u * *count;
-            for (uint32_t item = items; item < end; item += 2u)
+            const GuestPtr<uint16_t> items = Map_GetTileList(city->map, list, count);
+            const GuestPtr<uint16_t> end = items + static_cast<int32_t>(*count);
+            for (GuestPtr<uint16_t> item = items; item < end; ++item)
             {
-                const GuestPtr<MapObject> building = Map_GetRecord(city->map, port::load<uint16_t>(item));
+                const GuestPtr<MapObject> building = Map_GetRecord(city->map, *item);
                 if (typeOf(building)->category == category && available(building) && overlapsRect(building, rect))
                     return building;
             }
@@ -1146,11 +1147,11 @@ namespace mm
         const GuestPtr<uint32_t> count = frame.at(&Locals::count);
         for (uint32_t pair = 0x001B3760u; port::load<uint16_t>(pair) != 0; pair += 4u)
         {
-            const uint32_t items = Map_GetTileList(city->map, port::load<uint16_t>(pair), count).address;
-            const uint32_t end = items + 2u * *count;
-            for (uint32_t item = items; item < end; item += 2u)
+            const GuestPtr<uint16_t> items = Map_GetTileList(city->map, port::load<uint16_t>(pair), count);
+            const GuestPtr<uint16_t> end = items + static_cast<int32_t>(*count);
+            for (GuestPtr<uint16_t> item = items; item < end; ++item)
             {
-                const GuestPtr<MapObject> building = Map_GetRecord(city->map, port::load<uint16_t>(item));
+                const GuestPtr<MapObject> building = Map_GetRecord(city->map, *item);
                 if (building->type != port::load<uint16_t>(pair + 2u) || Family_InCity(building->family) == 0 || (building->flags & 0x40u) != 0)
                     continue;
                 Building_GetFootprint(building, 1, frame.at(&Locals::footprint));
@@ -1204,11 +1205,11 @@ namespace mm
         const GuestPtr<uint32_t> count{frame.ptr().address + 0xBCu};
         for (int list = 0; list < 80; ++list)
         {
-            const uint32_t items = Map_GetTileList(city->map, list, count).address;
-            const uint32_t end = items + 2u * *count;
-            for (uint32_t item = items; item < end; item += 2u)
+            const GuestPtr<uint16_t> items = Map_GetTileList(city->map, list, count);
+            const GuestPtr<uint16_t> end = items + static_cast<int32_t>(*count);
+            for (GuestPtr<uint16_t> item = items; item < end; ++item)
             {
-                const GuestPtr<MapObject> shop = Map_GetRecord(city->map, port::load<uint16_t>(item));
+                const GuestPtr<MapObject> shop = Map_GetRecord(city->map, *item);
                 if ((typeOf(shop)->flags & 0x40u) == 0 || Map_TileIndexWalkable(city->map, shop->entranceTile) == 0 || shop->id == person->home)
                     continue;
                 const GuestPtr<MapObject> at = Map_GetTileFirstObject(city->map, shop->entranceTile);
@@ -1225,9 +1226,9 @@ namespace mm
 
     namespace
     {
-        // The crazy cult's waiting phases (shared by phases 1 and 3): wait for the month (waitMonth) and the
-        // time (waitTime), tell the actor (then 60 frames, the time six hours later), or count those frames back down a
-        // phase (the time six hours back).
+        // The crazy cult's waiting phases (mm_EvCrazyCult_TellFirstMember, TellSecondMember and TellLeader): wait for
+        // the month (waitMonth) and the time (waitTime), tell the actor (then 60 minutes, and the time six hours later),
+        // or count those minutes back down a phase (the time six hours back).
         void cultWait(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor)
         {
             const GuestPtr<EvCultData> cult = data.as<EvCultData>();
@@ -1236,16 +1237,16 @@ namespace mm
             if (EvActor_Notify(city, actor) == 0)
                 return;
             ++data->var;
-            cult->tellFrames = 60;
+            cult->tellMinutes = 60;
             cult->waitTime = cult->waitTime + 21600;
         }
 
         void cultCountDown(GuestPtr<EventData> data)
         {
             const GuestPtr<EvCultData> cult = data.as<EvCultData>();
-            const int32_t frames = cult->tellFrames - 1;
-            cult->tellFrames = frames;
-            if (frames > 0)
+            const int32_t minutes = cult->tellMinutes - 1;
+            cult->tellMinutes = minutes;
+            if (minutes > 0)
                 return;
             cult->waitTime = cult->waitTime - 21600;
             --data->var;
@@ -1254,7 +1255,7 @@ namespace mm
 
     // Phases 4 to 9: actor 2 waits and is told (4 to 7), then actor 3's family home is found (8) and its person (9,
     // which sets the next wait to the next month at 7:00).
-    void EvCrazyCult_Phase1(GuestPtr<EventData> data, GuestPtr<CityScene> city)
+    void EvCrazyCult_TellFirstMember(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
         const GuestPtr<EvCultData> cult = data.as<EvCultData>();
         switch (data->var)
@@ -1291,7 +1292,7 @@ namespace mm
 
     // Phases 0x12 to 0x15: actor 0 waits and is told (0x12, 0x13), then its family home is found (0x14) and its
     // person (0x15).
-    void EvCrazyCult_Phase3(GuestPtr<EventData> data, GuestPtr<CityScene> city)
+    void EvCrazyCult_TellLeader(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
         switch (data->var)
         {
@@ -1321,17 +1322,17 @@ namespace mm
         }
     }
 
-    // The delivery man's phases (jump table 0x1BA6C0): 1 walks to actor 1 for 120 frames, 2 and 5 tell actor 0
-    // (60 frames), 3 and 6 count down, 4 waits 60 frames, 7 ends the event after 240.
+    // The delivery man's phases (jump table 0x1BA6C0): 1 walks to actor 1 for 120 minutes, 2 and 5 tell actor 0
+    // (60 minutes), 3 and 6 count down, 4 waits 60 minutes, 7 ends the event after 240.
     void EvDeliveryMan_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
         const GuestPtr<EvDeliveryData> delivery = data.as<EvDeliveryData>();
-        const auto tick = [](int32_t &frames) { return ++frames; };
+        const auto tick = [](int32_t &minutes) { return ++minutes; };
         switch (data->var)
         {
         case 1:
             EvActor_MoveTo(city, actorAt(data, 1), actorAt(data, 1), 0);
-            if (tick(delivery->walkFrames) < 120)
+            if (tick(delivery->walkMinutes) < 120)
                 break;
             delivery->state = 0;
             ++data->var;
@@ -1340,26 +1341,26 @@ namespace mm
         case 5:
             if (EvActor_Notify(city, GuestPtr<ActorRef>::of(data->actor)) == 0)
                 break;
-            delivery->tellFrames = 60;
+            delivery->tellMinutes = 60;
             ++data->var;
             break;
         case 3:
         case 6:
         {
-            const int32_t frames = delivery->tellFrames - 1;
-            delivery->tellFrames = frames;
-            if (frames <= 0)
+            const int32_t minutes = delivery->tellMinutes - 1;
+            delivery->tellMinutes = minutes;
+            if (minutes <= 0)
                 --data->var;
             break;
         }
         case 4:
-            if (tick(delivery->waitFrames) < 60)
+            if (tick(delivery->waitMinutes) < 60)
                 break;
             delivery->state = 1;
             ++data->var;
             break;
         case 7:
-            if (tick(delivery->endFrames) >= 240)
+            if (tick(delivery->endMinutes) >= 240)
                 Event_Finish(city->events, city, 0);
             break;
         default:
@@ -1372,8 +1373,8 @@ namespace mm
     PORT_FN(EvAlien_PickTarget);
     PORT_FN(EvRelationship_Answer);
     PORT_FN(EvActor_FindShop);
-    PORT_FN(EvCrazyCult_Phase1);
-    PORT_FN(EvCrazyCult_Phase3);
+    PORT_FN(EvCrazyCult_TellFirstMember);
+    PORT_FN(EvCrazyCult_TellLeader);
     PORT_FN(EvDeliveryMan_Update);
 
     // ---- batch 38
@@ -1505,12 +1506,13 @@ namespace mm
         int list = Random_TimerMix() & 0x3F;
         for (int tries = 0; tries < 0x40; ++tries)
         {
-            const uint32_t items = Map_GetTileList(city->map, list, count).address;
+            const GuestPtr<uint16_t> items = Map_GetTileList(city->map, list, count);
             if (++list >= 0x40)
                 list = 0;
-            for (uint32_t i = 0, item = items; i < *count; ++i, item += 2u)
+            GuestPtr<uint16_t> item = items;
+            for (uint32_t i = 0; i < *count; ++i, ++item)
             {
-                const GuestPtr<MapObject> shop = Map_GetRecord(city->map, port::load<uint16_t>(item));
+                const GuestPtr<MapObject> shop = Map_GetRecord(city->map, *item);
                 if ((typeOf(shop)->flags & 0x40u) == 0 || Map_TileIndexWalkable(city->map, shop->entranceTile) == 0 || shop->id == person->home)
                     continue;
                 const GuestPtr<MapObject> at = Map_GetTileFirstObject(city->map, shop->entranceTile);
@@ -1561,13 +1563,13 @@ namespace mm
             for (uint32_t list = lists; port::load<int32_t>(list) != 0; list += 4u)
             {
                 const int32_t id = port::load<int32_t>(list);
-                const uint32_t items = Map_GetTileList(city->map, id, count).address;
-                const uint32_t end = items + 2u * *count;
-                for (uint32_t item = items; item < end; item += 2u)
+                const GuestPtr<uint16_t> items = Map_GetTileList(city->map, id, count);
+                const GuestPtr<uint16_t> end = items + static_cast<int32_t>(*count);
+                for (GuestPtr<uint16_t> item = items; item < end; ++item)
                 {
-                    if (port::load<uint16_t>(item) == person->home)
+                    if (*item == person->home)
                         continue;
-                    const GuestPtr<MapObject> building = Map_GetRecord(city->map, port::load<uint16_t>(item));
+                    const GuestPtr<MapObject> building = Map_GetRecord(city->map, *item);
                     if (Family_InCity(building->family) == 0 || (building->flags & 0x40u) != 0 || ClaimMeter_Level(building->claimMeter) != 0)
                         continue;
                     Building_GetFootprint(building, 0, frame.at(&SuitorFrame::footprint));
@@ -1576,7 +1578,7 @@ namespace mm
                     *cursor = building->firstPerson;
                     while (const GuestPtr<MapPerson> resident = People_Next(city->map, cursor))
                     {
-                        const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * resident->charType)};
+                        const GuestPtr<CharClass> cls = globals::charClass(resident->charType);
                         if ((cls->flags & 1u) != 0 || resident->family != building->family || !suits(id, resident))
                             continue;
                         data->actor.family = resident->family;
@@ -1630,11 +1632,10 @@ namespace mm
             buildings[k] = port::load<uint16_t>(0x001BD9D8u + 2u * k);
         }
         int found = 0;
-        const uint32_t first = Map_GetRecord(city->map, 1).address;
-        const uint32_t end = first + 0x3F80u * 0x1Cu;
-        for (uint32_t record = first; !(workers[0] && workers[1] && workers[2]) && record < end; record += 0x1Cu)
+        // From record 1, kObjectSlots records: the last is one past the table, as in the original.
+        const GuestPtr<MapObject> first = Map_GetRecord(city->map, 1);
+        for (GuestPtr<MapObject> obj = first; !(workers[0] && workers[1] && workers[2]) && obj != first + kObjectSlots; ++obj)
         {
-            const GuestPtr<MapObject> obj{record};
             if (obj->type == 0 || ClaimMeter_Level(obj->claimMeter) != 0)
                 continue;
             for (uint32_t k = 0; k < 3; ++k)
@@ -1861,10 +1862,9 @@ namespace mm
         if (found[1] == 0)
             return 0;
         uint16_t chosen[4] = {kNoPerson, kNoObject, 0, 0};
-        const uint32_t end = city->map->people.address + 6000u * 0x30u;
-        for (uint32_t p = city->map->people.address; p < end; p += 0x30u)
+        const GuestPtr<MapPerson> people = city->map->people;
+        for (GuestPtr<MapPerson> person = people; person != people + kPersonSlots; ++person)
         {
-            const GuestPtr<MapPerson> person{p};
             if (person->charType < 3 || person->charType >= 7)
                 continue;
             const GuestPtr<MapObject> home = Map_GetRecord(city->map, person->home);
@@ -1938,15 +1938,15 @@ namespace mm
         {
             if (list >= table + 4u * static_cast<uint32_t>(lists))
                 list = table;
-            const uint32_t items = Map_GetTileList(city->map, port::load<int32_t>(list), count).address;
+            const GuestPtr<uint16_t> items = Map_GetTileList(city->map, port::load<int32_t>(list), count);
             if (*count == 0)
                 continue;
-            uint32_t item = items + 2u * static_cast<uint32_t>(static_cast<int32_t>(Random_Next()) % static_cast<int32_t>(*count));
-            for (int i = 0; i < static_cast<int32_t>(*count); ++i, item += 2u)
+            GuestPtr<uint16_t> item = items + static_cast<int32_t>(Random_Next()) % static_cast<int32_t>(*count);
+            for (int i = 0; i < static_cast<int32_t>(*count); ++i, ++item)
             {
-                if (item >= items + 2u * *count)
+                if (!(item < items + static_cast<int32_t>(*count)))
                     item = items;
-                const GuestPtr<MapObject> building = Map_GetRecord(city->map, port::load<uint16_t>(item));
+                const GuestPtr<MapObject> building = Map_GetRecord(city->map, *item);
                 Building_GetFootprint(building, 0, frame.at(&Locals::footprint));
                 if (overlap(frame->near, frame->footprint))
                     continue;
@@ -1988,13 +1988,12 @@ namespace mm
         // The next resident (a class without flag 1) without flag 0x400 takes it; false when all have it.
         bool flagNextResident(GuestPtr<CityScene> city)
         {
-            const uint32_t end = city->map->people.address + 6000u * 0x30u;
-            for (uint32_t p = city->map->people.address; p < end; p += 0x30u)
+            const GuestPtr<MapPerson> people = city->map->people;
+            for (GuestPtr<MapPerson> person = people; person != people + kPersonSlots; ++person)
             {
-                const GuestPtr<MapPerson> person{p};
                 if (person->charType == 0)
                     continue;
-                const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)};
+                const GuestPtr<CharClass> cls = globals::charClass(person->charType);
                 if ((cls->flags & 1u) != 0 || (person->flags & 0x400u) != 0)
                     continue;
                 person->flags |= 0x400u;
@@ -2015,9 +2014,9 @@ namespace mm
     }
 
     // Phases 10 to 16: 10 waits until everyone has been reached (allJoined), 11 and 13 tell actor 3 when its time comes
-    // and 12 and 14 count those frames back, 15 finds the homes of actors 4, 5 and 1 (marked 0x200; back to 15 while
+    // and 12 and 14 count those minutes back, 15 finds the homes of actors 4, 5 and 1 (marked 0x200; back to 15 while
     // one is missing) and 16 their persons (back to 16).
-    void EvCrazyCult_Phase2(GuestPtr<EventData> data, GuestPtr<CityScene> city)
+    void EvCrazyCult_TellSecondMember(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
         const GuestPtr<EvCultData> cult = data.as<EvCultData>();
         switch (data->var)
@@ -2070,29 +2069,29 @@ namespace mm
         }
     }
 
-    // While the cult runs, every 30 frames (spreadFrames) one more resident takes flag 0x400; in phases 10 to 16 allJoined then
-    // tells whether everyone has it. Phases 2 and 3 find actor 2's home and person (then waiting for the next month
-    // at 7:00); 4 to 9, 10 to 16 and 0x12 to 0x15 go to the phase handlers; 0x1B sets the next wait, 0x1C tells
-    // actor 0 when its time comes and 0x1D counts 60 frames back.
+    // While the cult runs, every 30 minutes (spreadMinutes) one more resident takes flag 0x400; in phases 10 to 16
+    // allJoined then tells whether everyone has it. Phases 2 and 3 find actor 2's home and person (then waiting for the
+    // next month at 7:00); 4 to 9, 10 to 16 and 0x12 to 0x15 go to the phase handlers; 0x1B sets the next wait, 0x1C
+    // tells actor 0 when its time comes and 0x1D counts 60 minutes back.
     void EvCrazyCult_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
         const GuestPtr<EvCultData> cult = data.as<EvCultData>();
         const int var = data->var;
         const auto due = [&] {
-            const int32_t frames = cult->spreadFrames - 1;
-            cult->spreadFrames = frames;
-            return frames <= 0;
+            const int32_t minutes = cult->spreadMinutes - 1;
+            cult->spreadMinutes = minutes;
+            return minutes <= 0;
         };
         if (var < 10)
         {
             if (due())
             {
                 flagNextResident(city);
-                cult->spreadFrames = 30;
+                cult->spreadMinutes = 30;
             }
             if (var >= 4)
             {
-                EvCrazyCult_Phase1(data, city);
+                EvCrazyCult_TellFirstMember(data, city);
                 return;
             }
             const GuestPtr<ActorRef> actor = actorAt(data, 2);
@@ -2122,14 +2121,14 @@ namespace mm
             if (due())
             {
                 cult->allJoined = flagNextResident(city) ? 0 : 1;
-                cult->spreadFrames = 30;
+                cult->spreadMinutes = 30;
             }
-            EvCrazyCult_Phase2(data, city);
+            EvCrazyCult_TellSecondMember(data, city);
             return;
         }
         if (var < 0x16)
         {
-            EvCrazyCult_Phase3(data, city);
+            EvCrazyCult_TellLeader(data, city);
             return;
         }
         switch (var)
@@ -2144,13 +2143,13 @@ namespace mm
             if (EvActor_Notify(city, GuestPtr<ActorRef>::of(data->actor)) == 0)
                 break;
             ++data->var;
-            cult->tellFrames = 60;
+            cult->tellMinutes = 60;
             break;
         case 0x1D:
         {
-            const int32_t frames = cult->tellFrames - 1;
-            cult->tellFrames = frames;
-            if (frames <= 0)
+            const int32_t minutes = cult->tellMinutes - 1;
+            cult->tellMinutes = minutes;
+            if (minutes <= 0)
                 --data->var;
             break;
         }
@@ -2159,7 +2158,7 @@ namespace mm
         }
     }
 
-    PORT_FN(EvCrazyCult_Phase2);
+    PORT_FN(EvCrazyCult_TellSecondMember);
     PORT_FN(EvCrazyCult_Update);
 
     // ---- farewell party, shopping (batch 39)
@@ -2178,10 +2177,9 @@ namespace mm
         data->actor.family = globals::firstFamily(globals::types::kBossHome);
         data->actor.member = 0;
         GuestPtr<MapPerson> best{0};
-        const uint32_t end = city->map->people.address + 6000u * 0x30u;
-        for (uint32_t p = city->map->people.address; p < end; p += 0x30u)
+        const GuestPtr<MapPerson> people = city->map->people;
+        for (GuestPtr<MapPerson> person = people; person != people + kPersonSlots; ++person)
         {
-            const GuestPtr<MapPerson> person{p};
             if (person->charType == 0 || person->charType >= 0x1E)
                 continue;
             if (Family_GetFriendshipBand(person->family, person->member) < 3)
@@ -2212,8 +2210,8 @@ namespace mm
 
     // Shopping: actor 0 keeps heading for its building; by phase (jump table 0x1BA8A0) 1 waits until four hours
     // before the event type's time (finishAt, minutes), 2 goes to 5 within two hours of it or tells the actor, 5 goes
-    // to 8 once it has passed or tells the actor, 8 tells the actor, 3, 6 and 9 count 60 frames back, and 10 and 11
-    // end the event after 240 frames.
+    // to 8 once it has passed or tells the actor, 8 tells the actor, 3, 6 and 9 count 60 minutes back, and 10 and 11
+    // end the event after 240 minutes.
     void EvShopping_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
         const GuestPtr<EvShoppingData> shopping = data.as<EvShoppingData>();
@@ -2224,7 +2222,7 @@ namespace mm
             if (EvActor_Notify(city, actor) == 0)
                 return;
             ++data->var;
-            shopping->tellFrames = 60;
+            shopping->tellMinutes = 60;
         };
         const int minutes = city->clock / 60;
         switch (data->var)
@@ -2243,9 +2241,9 @@ namespace mm
         case 6:
         case 9:
         {
-            const int32_t frames = shopping->tellFrames - 1;
-            shopping->tellFrames = frames;
-            if (frames <= 0)
+            const int32_t minutes = shopping->tellMinutes - 1;
+            shopping->tellMinutes = minutes;
+            if (minutes <= 0)
                 --data->var;
             break;
         }
@@ -2261,9 +2259,9 @@ namespace mm
         case 10:
         case 11:
         {
-            const int32_t frames = shopping->endFrames + 1;
-            shopping->endFrames = frames;
-            if (frames >= 241)
+            const int32_t minutes = shopping->endMinutes + 1;
+            shopping->endMinutes = minutes;
+            if (minutes >= 241)
                 Event_Finish(city->events, city, 0);
             break;
         }
@@ -2320,10 +2318,9 @@ namespace mm
             return 0;
         case 3:
         {
-            const uint32_t end = city->map->people.address + 6000u * 0x30u;
-            for (uint32_t p = city->map->people.address; p < end; p += 0x30u)
+            const GuestPtr<MapPerson> people = city->map->people;
+            for (GuestPtr<MapPerson> person = people; person != people + kPersonSlots; ++person)
             {
-                const GuestPtr<MapPerson> person{p};
                 if (person->charType == 0 || person->charType >= 0x1E || person->schedState < 6)
                     continue;
                 if (Family_GetFriendshipBand(person->family, person->member) < 3)
@@ -2422,12 +2419,12 @@ namespace mm
     // ---- adoption (batch 39)
 
     // The adoption's phases (jump table 0x1BA780). 1, 4, 7, 10, 13 and 15 wait until actor 0 can be told (then 60
-    // frames, plus the minutes until 6:00 or 360 more from 23:00); 2, 5, 8, 11, 14, 16 and 19 count those down and
-    // go back to telling until the sixth time (toldCount), then on; 22 likewise, ending the event after the sixth. Every
-    // tenth frame (frames) 3 waits for an object of type 3 or 4, 6 for any residents, 9 for any friend, and 12 for 101
-    // residents and twice the applicants (then phase 15) or, with fewer than 32 applicants, for a claim of the list in
-    // children seen ten times with one of them pressing (claim meter level 2 and up; pick takes its place). 17 and 20
-    // note the month (month); 18 and 21 tell actor 0 from noon of a later month.
+    // minutes, plus those until 6:00 or 360 more from 23:00); 2, 5, 8, 11, 14, 16 and 19 count those down and go
+    // back to telling until the sixth time (toldCount), then on; 22 likewise, ending the event after the sixth. Every
+    // tenth minute (minutes) 3 waits for an object of type 3 or 4, 6 for any residents, 9 for any friend, and 12 for
+    // 101 residents and twice the applicants (then phase 15) or, with fewer than 32 applicants, for a claim of the list
+    // in children seen ten times with one of them pressing (claim meter level 2 and up; pick takes its place). 17 and
+    // 20 note the month (month); 18 and 21 tell actor 0 from noon of a later month.
     void EvAdoption_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
         const GuestPtr<EvAdoptionData> adoption = data.as<EvAdoptionData>();
@@ -2436,14 +2433,14 @@ namespace mm
             if (EvActor_Notify(city, actor) == 0)
                 return false;
             ++data->var;
-            data->typeWordA = 60;
+            adoption->minutes = 60;
             return true;
         };
         const auto advance = [&] {
-            data->typeWordB = 0;
+            adoption->toldCount = 0;
             ++data->var;
         };
-        const auto tenth = [&] { return ++data->typeWordA >= 10; };
+        const auto tenth = [&] { return ++adoption->minutes >= 10; };
         switch (data->var)
         {
         case 1:
@@ -2456,9 +2453,9 @@ namespace mm
             {
                 const int32_t clock = city->clock;
                 if (clock < 21600)
-                    data->typeWordA += 360 - clock / 60;
+                    adoption->minutes += 360 - clock / 60;
                 else if (clock >= 82801)
-                    data->typeWordA += 360;
+                    adoption->minutes += 360;
             }
             break;
         case 2:
@@ -2469,9 +2466,9 @@ namespace mm
         case 16:
         case 19:
         case 22:
-            if (--data->typeWordA > 0)
+            if (--adoption->minutes > 0)
                 break;
-            if (++data->typeWordB < 6)
+            if (++adoption->toldCount < 6)
                 --data->var;
             else if (data->var == 22)
                 Event_Finish(city->events, city, 0);
@@ -2482,17 +2479,16 @@ namespace mm
         {
             if (!tenth())
                 break;
-            const uint32_t first = Map_GetRecord(city->map, 0).address;
-            for (uint32_t record = first; record < first + 0x3F80u * 0x1Cu; record += 0x1Cu)
+            const GuestPtr<MapObject> first = Map_GetRecord(city->map, 0);
+            for (GuestPtr<MapObject> record = first; record != first + kObjectSlots; ++record)
             {
-                const uint16_t type = port::load<uint16_t>(record);
-                if (type == 3 || type == 4)
+                if (record->type == 3 || record->type == 4)
                 {
                     advance();
                     break;
                 }
             }
-            data->typeWordA = 0;
+            adoption->minutes = 0;
             break;
         }
         case 6:
@@ -2500,25 +2496,24 @@ namespace mm
                 break;
             if (city->map->population != 0)
                 advance();
-            data->typeWordA = 0;
+            adoption->minutes = 0;
             break;
         case 9:
         {
             if (!tenth())
                 break;
-            const uint32_t end = city->map->people.address + 6000u * 0x30u;
-            for (uint32_t p = city->map->people.address; p < end; p += 0x30u)
+            const GuestPtr<MapPerson> people = city->map->people;
+            for (GuestPtr<MapPerson> person = people; person != people + kPersonSlots; ++person)
             {
-                const GuestPtr<MapPerson> person{p};
                 if (person->charType == 0)
                     continue;
-                const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * person->charType)};
+                const GuestPtr<CharClass> cls = globals::charClass(person->charType);
                 if ((cls->flags & 1u) != 0 || Family_GetFriendship(person->family, person->member) == 0)
                     continue;
                 advance();
                 break;
             }
-            data->typeWordA = 0;
+            adoption->minutes = 0;
             break;
         }
         case 12:
@@ -2528,25 +2523,25 @@ namespace mm
             const int applicants = city->applicants->count;
             if (city->map->population + 2 * applicants >= 101)
             {
-                data->typeWordB = 0;
+                adoption->toldCount = 0;
                 data->var = 15;
-                data->typeWordA = 0;
+                adoption->minutes = 0;
                 break;
             }
             if (applicants >= 32)
             {
-                data->typeWordA = 0;
+                adoption->minutes = 0;
                 break;
             }
             port::GuestLocal<uint32_t> count;
             const GuestPtr<AdoptionChild> children = GuestPtr<AdoptionChild>::of(adoption->children[0]);
             for (int list = 0; list < 0x50; ++list)
             {
-                const uint32_t items = Map_GetTileList(city->map, list, count).address;
-                const uint32_t end = items + 2u * *count;
-                for (uint32_t item = items; item < end; item += 2u)
+                const GuestPtr<uint16_t> items = Map_GetTileList(city->map, list, count);
+                const GuestPtr<uint16_t> end = items + static_cast<int32_t>(*count);
+                for (GuestPtr<uint16_t> item = items; item < end; ++item)
                 {
-                    const GuestPtr<MapObject> building = Map_GetRecord(city->map, port::load<uint16_t>(item));
+                    const GuestPtr<MapObject> building = Map_GetRecord(city->map, *item);
                     if (building->claimSlot == 0x18 || ClaimMeter_Level(building->claimMeter) == 0)
                         continue;
                     const GuestPtr<ClaimEntry> claim = Claim_GetList(typeOf(building)->claimB) + building->claimSlot;
@@ -2572,7 +2567,7 @@ namespace mm
             }
             for (GuestPtr<AdoptionChild> child = children; child->claim != 0; ++child)
                 child->seen = 0;
-            data->typeWordA = 0;
+            adoption->minutes = 0;
             break;
         }
         case 17:
@@ -3440,11 +3435,13 @@ namespace mm
         }
     }
 
-    // The scheduler, called every frame. The minute counter (events +0) follows the city clock. When the clock wraps
-    // to a new day, the waiting lists are reorganised (the population rank, the due waits) and the running events'
-    // counters tick; every minute of the day (at the hour) the first fitting waiting entry takes the second talk slot,
-    // and when the first talk slot is free one from the next bucket, or a postponed event from the running list,
-    // takes it. Last, each talk event begins when its start time has come, ends when its end time has, or updates.
+    // The scheduler, called every frame; it does nothing until the city clock's minute changes (minute), so the
+    // events' Update slots run once a game minute (every 20 frames by day, every other one before 6:00,
+    // mm_CityScene_TickClock) and the counters the event records keep count minutes. When the clock wraps to a new
+    // day, the waiting lists are reorganised (the population rank, the due waits) and the running events' counters
+    // tick; every minute of the day (at the hour) the first fitting waiting entry takes the second talk slot, and when
+    // the first talk slot is free one from the next bucket, or a postponed event from the running list, takes it.
+    // Last, each talk event begins when its start time has come, ends when its end time has, or updates.
     void Event_Update(GuestPtr<EventMgr> events, GuestPtr<CityScene> city)
     {
         const GuestPtr<EventQueue> queue = globals::eventQueue();
@@ -3814,11 +3811,11 @@ namespace mm
         const TileRect area{(tile & 0x7F) - 30, (tile >> 7) - 30, (tile & 0x7F) + homeSize + 30, (tile >> 7) + homeSize + 30};
         for (int list = 0; list < 0x50; ++list)
         {
-            const uint32_t items = Map_GetTileList(city->map, list, frame.at(&Locals::count)).address;
-            const uint32_t end = items + 2u * frame->count;
-            for (uint32_t at = items; at < end; at += 2u)
+            const GuestPtr<uint16_t> items = Map_GetTileList(city->map, list, frame.at(&Locals::count));
+            const GuestPtr<uint16_t> end = items + static_cast<int32_t>(frame->count);
+            for (GuestPtr<uint16_t> at = items; at < end; ++at)
             {
-                const GuestPtr<MapObject> obj = Map_GetRecord(city->map, port::load<uint16_t>(at));
+                const GuestPtr<MapObject> obj = Map_GetRecord(city->map, *at);
                 if (port::load<uint8_t>(port::load<uint32_t>(0x001BDA9Cu) + 4u * obj->type + 2u) == 0)
                     continue;
                 if ((obj->flags & 0x20u) == 0 || (obj->flags & 0x240u) != 0)
@@ -4174,10 +4171,10 @@ namespace mm
 
     PORT_FN(EvAlien_Answer);
 
-    // The noodles event's Answer slot: mode 0 (start) adds the first Noodle Shop family to the applicants and sets up the event's
-    // three actors (that family's members 0 and 1, and member 0 of the first family of type 0xB8, a Studio Appartment; no person
-    // or building) with 60 frames
-    // to wait; mode 1 (end) adds the third actor's family. The result is 0.
+    // The noodles event's Answer slot: mode 0 (start) adds the first Noodle Shop family to the applicants and sets up
+    // the event's three actors (that family's members 0 and 1, and member 0 of the first family of type 0xB8, a Studio
+    // Appartment; no person or building) with 60 minutes to wait; mode 1 (end) adds the third actor's family. The
+    // result is 0.
     int EvNoodles_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef> actor, int mode)
     {
         (void)actor;
@@ -4217,7 +4214,7 @@ namespace mm
     {
         if (globals::padFocusOwner.get() != 0)
             return 0;
-        if (actor->person == 0x1770)
+        if (actor->person == kNoPerson)
             return CityScene_StartTalk(city, 1, actor->family, actor->member, 3);
         const GuestPtr<MapPerson> person = city->map->people + actor->person;
         const int z = sdk::fptosi(ps2f(64.0f) - person->z);
@@ -4298,19 +4295,21 @@ namespace mm
 
     PORT_FN(EvCaveMan_Answer);
 
-    // The escort event (phase in var; the counter typeWordA wraps at ten). Phase 1: before 22:00 the escort is met once the player is
-    // within one tile of the actor's building and a tile of the person (then phase 4); failing that, on every tenth call, an actor
-    // on open tile more than three tiles away is pointed at. From 22:00 (an actor off open tiles only from 22:10) pointing at the actor
-    // moves it to phase 2. Phase 2: before 23:00 the same meeting gives phase 5; from 23:00 (23:10 for an actor off open tiles) a
-    // point at the actor stops its following, moves it to its own spot, marks the person (flag 0x80) and moves on to phase 3. A
-    // meeting also stops the following and moves the actor to its spot.
+    // The escort event (EvEscortData; phase in var; minutes wraps at ten). Phase 1: before 22:00 the escort is met once
+    // the player is within one tile of the actor's building and a tile of the person (then phase 4); failing that, on
+    // every tenth call, an actor on open tile more than three tiles away is pointed at. From 22:00 (an actor off open
+    // tiles only from 22:10) pointing at the actor moves it to phase 2. Phase 2: before 23:00 the same meeting gives
+    // phase 5; from 23:00 (23:10 for an actor off open tiles) a point at the actor stops its following, moves it to its
+    // own spot, marks the person (flag 0x80) and moves on to phase 3. A meeting also stops the following and moves the
+    // actor to its spot.
     void EvEscort_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
+        const GuestPtr<EvEscortData> escort = data.as<EvEscortData>();
         const GuestPtr<ActorRef> actor = GuestPtr<ActorRef>::of(data->actor);
         bool met = false;
-        data->typeWordA = data->typeWordA + 1;
-        if (data->typeWordA >= 10)
-            data->typeWordA = 0;
+        escort->minutes = escort->minutes + 1;
+        if (escort->minutes >= 10)
+            escort->minutes = 0;
         const int32_t minutes = city->clock / 60;
         const auto closeEnough = [&] {
             return Player_DistanceToBuilding(city, actor) < 2 && Player_DistanceToPerson(city, actor) <= ps2f(1.0f) && EvActor_PointCursor(city, actor) != 0;
@@ -4324,7 +4323,8 @@ namespace mm
                     met = true;
                     data->var = 4;
                 }
-                else if (data->typeWordA == 0 && Person_IsOnOpenTile(city, actor) != 0 && !(Player_DistanceToPerson(city, actor) <= ps2f(3.0f)))
+                else if (escort->minutes == 0 && Person_IsOnOpenTile(city, actor) != 0 &&
+                         !(Player_DistanceToPerson(city, actor) <= ps2f(3.0f)))
                     EvActor_PointCursor(city, actor);
             }
             else if (Person_IsOnOpenTile(city, actor) != 0 || minutes >= 0x532)
@@ -4361,12 +4361,12 @@ namespace mm
 
     PORT_FN(EvEscort_Update);
 
-    // The shopping together event (EvShoppingTogetherData; the phase in var). Phase 1 counts the countdown down: above 60 the player must be near
-    // actor 1's building and actor 0 (then actor 0 is pointed at, on an open tile or after ten tries; the outcome is 1 for a
-    // countdown under 121, else 0, and phase 5), else every tenth call actor 0 is pointed at; from 60 down, pointing at actor 0 on an
-    // open tile moves it to phase 2. Phase 3 does the same while the countdown runs (outcome 2, phase 5) and when it ends points at
-    // actor 0, has it stop following and walk to actor 1, marks it (flag 0x80, outcome 3) and moves on to phase 4. Phase 6 ends the
-    // event after 180 frames.
+    // The shopping together event (EvShoppingTogetherData; the phase in var). Phase 1 counts the countdown down: above
+    // 60 the player must be near actor 1's building and actor 0 (then actor 0 is pointed at, on an open tile or after
+    // ten tries; the outcome is 1 for a countdown under 121, else 0, and phase 5), else every tenth call actor 0 is
+    // pointed at; from 60 down, pointing at actor 0 on an open tile moves it to phase 2. Phase 3 does the same while
+    // the countdown runs (outcome 2, phase 5) and when it ends points at actor 0, has it stop following and walk to
+    // actor 1, marks it (flag 0x80, outcome 3) and moves on to phase 4. Phase 6 ends the event after 180 minutes.
     void EvShoppingTogether_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
         const GuestPtr<EvShoppingTogetherData> ev = data.as<EvShoppingTogetherData>();
@@ -4441,8 +4441,8 @@ namespace mm
             }
             break;
         case 6:
-            ev->frames = ev->frames + 1;
-            if (ev->frames >= 0xB4)
+            ev->minutes = ev->minutes + 1;
+            if (ev->minutes >= 0xB4)
                 Event_Finish(city->events, city, 0);
             break;
         default:
@@ -4452,12 +4452,13 @@ namespace mm
 
     PORT_FN(EvShoppingTogether_Update);
 
-    // The alien event's phases (EvAlienData; the phase in var). 1 plays sound 0x45 and notes the next day; 2 moves on when it comes; 3 from 10:00
-    // tells actor 1 and waits 60 frames; 4, 10 and 12 count the 60 down and go back a phase. 7 needs actor 0 on an open tile within a
-    // tile of the player and a building picked for its tile (EvAlien_PickTarget): the place becomes that building (marked 0x200, the
-    // old one's mark cleared). 9 and 11 tell the place's actor on the noted day and time (noon of the next day after 9). 22 points at
-    // actor 0 within a tile of the player once it stands on the footprint of actor 3's building, 24 points at actor 5 and 26 ends the
-    // event after 720 frames.
+    // The alien event's phases (EvAlienData; the phase in var). 1 plays sound 0x45 and notes the next day; 2 moves on
+    // when it comes; 3 from 10:00 tells actor 1 and waits 60 minutes; 4, 10 and 12 count the 60 down and go back a
+    // phase. 7 needs actor 0 on an open tile within a tile of the player and a building picked for its tile
+    // (EvAlien_PickTarget): the place becomes that building (marked 0x200, the old one's mark cleared). 9 and 11 tell
+    // the place's actor on the noted day and time (noon of the next day after 9). 22 points at actor 0 within a tile of
+    // the player once it stands on the footprint of actor 3's building, 24 points at actor 5 and 26 ends the event
+    // after 720 minutes.
     void EvAlien_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
         const GuestPtr<EvAlienData> ev = data.as<EvAlienData>();
@@ -4479,14 +4480,14 @@ namespace mm
             if (city->clock >= 0x8CA0 && EvActor_Notify(city, actor(1)) != 0)
             {
                 advance();
-                ev->frames = 0x3C;
+                ev->minutes = 0x3C;
             }
             break;
         case 4:
         case 10:
         case 12:
-            ev->frames = ev->frames - 1;
-            if (ev->frames <= 0)
+            ev->minutes = ev->minutes - 1;
+            if (ev->minutes <= 0)
                 data->var = static_cast<uint8_t>(data->var - 1);
             break;
         case 7:
@@ -4520,7 +4521,7 @@ namespace mm
             if (EvActor_Notify(city, actor(2)) != 0)
             {
                 advance();
-                ev->frames = 0x3C;
+                ev->minutes = 0x3C;
                 ev->month = city->monthCount + 1;
                 ev->time = 0xA8C0;
             }
@@ -4531,7 +4532,7 @@ namespace mm
             if (EvActor_Notify(city, actor(4)) != 0)
             {
                 advance();
-                ev->frames = 0x3C;
+                ev->minutes = 0x3C;
             }
             break;
         case 22:
@@ -4557,12 +4558,12 @@ namespace mm
             if (EvActor_PointCursor(city, actor(5)) != 0)
             {
                 advance();
-                ev->frames = 0;
+                ev->minutes = 0;
             }
             break;
         case 26:
-            ev->frames = ev->frames + 1;
-            if (ev->frames >= 0x2D0)
+            ev->minutes = ev->minutes + 1;
+            if (ev->minutes >= 0x2D0)
                 Event_Finish(city->events, city, 0);
             break;
         default:
@@ -4572,15 +4573,16 @@ namespace mm
 
     PORT_FN(EvAlien_Update);
 
-    // The cave man event's phases (phase in var; EvCaveManData: eight actors, 4 the leader; the counter, a countdown and a
-    // month). 2 marks the first four buildings of type 0xB0 (flag 0x200),
-    // giving their families' actors the building, and moves on once four are found (and again for each further one); 3 finds the
-    // person entries of the actors one by one (the leader's from its family and member) and notes the month; 4 and 10 wait for a day after the
-    // noted one between 10:00 and 17:00 with the leader at its building and tell actor 4 or 3 (60 frames); 5 and 11 send them off and
-    // count the 60 down back to the phase before; 6 to 9, 20 and 21 keep actors 0 and 4 where they are; 18 finds actor 5's building
-    // or person entry; 24 sends actor 0 to actor 6 and marks it, 25 does so with the activity 10 and points at it (on an open tile
-    // after ten tries, three tiles or more from the player; else once it is at actor 6's building: the talk's view lit and phase 27);
-    // 26 releases it and points at it within a tile; 28 points at actor 7; 30 ends the event after 720 frames.
+    // The cave man event's phases (phase in var; EvCaveManData: eight actors, 4 the leader; the counter, a countdown
+    // and a month). 2 marks the first four buildings of type 0xB0 (flag 0x200), giving their families' actors the
+    // building, and moves on once four are found (and again for each further one); 3 finds the person entries of the
+    // actors one by one (the leader's from its family and member) and notes the month; 4 and 10 wait for a day after
+    // the noted one between 10:00 and 17:00 with the leader at its building and tell actor 4 or 3 (60 minutes); 5 and
+    // 11 send them off and count the 60 down back to the phase before; 6 to 9, 20 and 21 keep actors 0 and 4 where they
+    // are; 18 finds actor 5's building or person entry; 24 sends actor 0 to actor 6 and marks it, 25 does so with the
+    // activity 10 and points at it (on an open tile after ten tries, three tiles or more from the player; else once it
+    // is at actor 6's building: the talk's view lit and phase 27); 26 releases it and points at it within a tile; 28
+    // points at actor 7; 30 ends the event after 720 minutes.
     void EvCaveMan_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
         const GuestPtr<EvCaveManData> ev = data.as<EvCaveManData>();
@@ -4637,15 +4639,15 @@ namespace mm
         case 4:
             if (timeToTell() && Person_IsAtBuilding(city, fourth, fourth) != 0 && EvActor_Notify(city, fourth) != 0)
             {
-                ev->frames = 0x3C;
+                ev->minutes = 0x3C;
                 advance(1);
             }
             break;
         case 5:
             EvActor_MoveTo(city, fourth, fourth, 0);
             EvActor_MoveTo(city, first, fourth, 0);
-            ev->frames = ev->frames - 1;
-            if (ev->frames <= 0)
+            ev->minutes = ev->minutes - 1;
+            if (ev->minutes <= 0)
                 advance(-1);
             break;
         case 6:
@@ -4659,20 +4661,20 @@ namespace mm
         case 10:
             if (timeToTell() && Person_IsAtBuilding(city, fourth, fourth) != 0 && EvActor_Notify(city, third) != 0)
             {
-                ev->frames = 0x3C;
+                ev->minutes = 0x3C;
                 advance(1);
             }
             break;
         case 11:
             EvActor_MoveTo(city, third, third, 0);
-            ev->frames = ev->frames - 1;
-            if (ev->frames <= 0)
+            ev->minutes = ev->minutes - 1;
+            if (ev->minutes <= 0)
                 advance(-1);
             break;
         case 18:
         {
             const GuestPtr<ActorRef> fifth = actorAt(data, 5);
-            if (fifth->object == 0x3F80)
+            if (fifth->object == kNoObject)
             {
                 const GuestPtr<MapObject> home = Map_FindFamilyHome(city->map, fifth->family);
                 if (!home)
@@ -4711,8 +4713,8 @@ namespace mm
             {
                 if (Player_DistanceToPerson(city, first) < ps2f(3.0f))
                     break;
-                ev->frames = ev->frames + 1;
-                if (ev->frames < 10 || EvActor_PointCursor(city, first) == 0)
+                ev->minutes = ev->minutes + 1;
+                if (ev->minutes < 10 || EvActor_PointCursor(city, first) == 0)
                     break;
                 EvActor_Release(city, first);
                 advance(1);
@@ -4728,7 +4730,7 @@ namespace mm
             EvActor_Release(city, first);
             if (Player_DistanceToPerson(city, first) <= ps2f(1.0f) && EvActor_PointCursor(city, first) != 0)
             {
-                ev->frames = 0;
+                ev->minutes = 0;
                 advance(-1);
             }
             break;
@@ -4736,12 +4738,12 @@ namespace mm
             if (EvActor_PointCursor(city, actorAt(data, 7)) != 0)
             {
                 advance(1);
-                ev->frames = 0;
+                ev->minutes = 0;
             }
             break;
         case 30:
-            ev->frames = ev->frames + 1;
-            if (ev->frames >= 0x2D0)
+            ev->minutes = ev->minutes + 1;
+            if (ev->minutes >= 0x2D0)
             {
                 Event_Finish(city->events, city, 0);
                 break;
@@ -4758,15 +4760,16 @@ namespace mm
 
     PORT_FN(EvCaveMan_Update);
 
-    // The missing children event's phases (jump table 0x1BA800; phase in var; EvMissingChildrenData: actor 0 the parent, actor 1
-    // the child, the counter, the outcome and a frame count). 1 keeps the parent where it is and the child
-    // wandering; from 13:00 to 15:00, if a shop is found for the parent, it is told (60 frames), else the event ends. 2 and 6 count
-    // the 60 down back a phase; 3 lets the child wander until 18:00; 4 waits for the child to be at its building; 5 tells the parent; 7
-    // is the search: before 20:00 the parent stays and the child is pointed at on open tiles three tiles or more away every tenth
-    // call, and within three tiles of the player and four of its building it is stopped and followed by the parent (outcome 2); from
-    // 20:00 the parent follows the child at once (phase 12). 8 releases the child and, near it, points at the parent and has it
-    // follow the child; 10 releases and points at the child; 12 does the same near both (outcome 1); 14 puts the parent inside the
-    // child's building; 16 ends the event after 180 frames.
+    // The missing children event's phases (jump table 0x1BA800; phase in var; EvMissingChildrenData: actor 0 the
+    // parent, actor 1 the child, the counter, the outcome and a minute count). 1 keeps the parent where it is and the
+    // child wandering; from 13:00 to 15:00, if a shop is found for the parent, it is told (60 minutes), else the event
+    // ends. 2 and 6 count the 60 down back a phase; 3 lets the child wander until 18:00; 4 waits for the child to be at
+    // its building; 5 tells the parent; 7 is the search: before 20:00 the parent stays and the child is pointed at on
+    // open tiles three tiles or more away every tenth call, and within three tiles of the player and four of its
+    // building it is stopped and followed by the parent (outcome 2); from 20:00 the parent follows the child at once
+    // (phase 12). 8 releases the child and, near it, points at the parent and has it follow the child; 10 releases and
+    // points at the child; 12 does the same near both (outcome 1); 14 puts the parent inside the child's building; 16
+    // ends the event after 180 minutes.
     void EvMissingChildren_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
         const GuestPtr<EvMissingChildrenData> ev = data.as<EvMissingChildrenData>();
@@ -4905,8 +4908,8 @@ namespace mm
             }
             break;
         case 16:
-            ev->frames = ev->frames + 1;
-            if (ev->frames >= 0xB4)
+            ev->minutes = ev->minutes + 1;
+            if (ev->minutes >= 0xB4)
                 Event_Finish(city->events, city, 0);
             break;
         default:
@@ -4916,16 +4919,18 @@ namespace mm
 
     PORT_FN(EvMissingChildren_Update);
 
-    // The farewell party's phases (jump table 0x1BA6E0; phase in var; actor 1, the countdown tellFrames, the time to wait to
-    // partyTime and the steps of the staging stageStep and endStep). 1 tells actor 1 between 6:00 and 23:00 (60 frames, phase 2); 2 counts
-    // the 60 down back to phase 1. 3 stages the party by stageStep: 0 fades out (and sets the two voice levels at 0x1BDD14/18 to 100), 1
-    // (when the fade is done) moves the clock to 10:00 (a day on when it was later), brings the people home, pushes the party mode
-    // (12), makes the party's overlay (an 8-byte object with a frame of 0xC0 bytes, the city's overlay) and starts the party sound,
-    // 2 fades back in with the music on, 3 (done) closes the overlay and goes to phase 4. 4 until the time: finds the people on the
-    // tile under the player when it is a type 4 building, and points at the first friend (friendship band 4 or more, class flag 1
-    // clear) within a tile of the player that is not already the one chosen (actor 2); after it phase 5. 5 points at actor 0 or 1 (by
-    // 0x1C5548) at night, tells them by day and waits 60 frames; 6 counts them down to phase 5. 7 stages the end by endStep and finishes
-    // the event. The pending approval is limited so the approval stays within 100 on every call.
+    // The farewell party's phases (jump table 0x1BA6E0; phase in var; actor 1, the countdown tellMinutes, the time to
+    // wait to partyTime and the steps of the staging stageStep and endStep). 1 tells actor 1 between 6:00 and 23:00 (60
+    // minutes, phase 2); 2 counts the 60 down back to phase 1. 3 stages the party by stageStep: 0 fades out (and sets
+    // the two voice levels at 0x1BDD14/18 to 100), 1 (when the fade is done) moves the clock to 10:00 (a day on when it
+    // was later), brings the people home, pushes the party mode (12), makes the party's overlay (an 8-byte object with
+    // a frame of 0xC0 bytes, the city's overlay) and starts the party sound, 2 fades back in with the music on, 3
+    // (done) closes the overlay and goes to phase 4. 4 until the time: finds the people on the tile under the player
+    // when it is a type 4 building, and points at the first friend (friendship band 4 or more, class flag 1 clear)
+    // within a tile of the player that is not already the one chosen (actor 2); after it phase 5. 5 points at actor 0
+    // or 1 (by 0x1C5548) at night, tells them by day and waits 60 minutes; 6 counts them down to phase 5. 7 stages the
+    // end by endStep and finishes the event. The pending approval is limited so the approval stays within 100 on every
+    // call.
     void EvFarewellParty_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
         struct Locals
@@ -4949,12 +4954,12 @@ namespace mm
             if (city->clock >= 0x5460 && city->clock < 0x14370 && EvActor_Notify(city, actorAt(data, 1)) != 0)
             {
                 data->var = 2;
-                party->tellFrames = 0x3C;
+                party->tellMinutes = 0x3C;
             }
             break;
         case 2:
-            party->tellFrames = party->tellFrames - 1;
-            if (party->tellFrames <= 0)
+            party->tellMinutes = party->tellMinutes - 1;
+            if (party->tellMinutes <= 0)
                 data->var = static_cast<uint8_t>(data->var - 1);
             break;
         case 3:
@@ -5033,7 +5038,7 @@ namespace mm
             const GuestPtr<ActorRef> chosen = actorAt(data, 2);
             while (const GuestPtr<MapPerson> candidate = People_Next(city->map, frame.at(&Locals::cursor)))
             {
-                const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * candidate->charType)};
+                const GuestPtr<CharClass> cls = globals::charClass(candidate->charType);
                 if ((cls->flags & 1u) != 0 || Family_GetFriendshipBand(candidate->family, candidate->member) < 4)
                     continue;
                 if (!(Player_DistanceToPoint(city, GuestPtr<ps2f>{candidate.address}) <= ps2f(1.0f)) || chosen->person == candidate->index)
@@ -5055,13 +5060,13 @@ namespace mm
             if ((night ? EvActor_PointCursor(city, actor) : EvActor_Notify(city, actor)) != 0)
             {
                 data->var = 6;
-                party->tellFrames = 0x3C;
+                party->tellMinutes = 0x3C;
             }
             break;
         }
         case 6:
-            party->tellFrames = party->tellFrames - 1;
-            if (party->tellFrames <= 0)
+            party->tellMinutes = party->tellMinutes - 1;
+            if (party->tellMinutes <= 0)
                 data->var = 5;
             break;
         case 7:
@@ -5095,15 +5100,16 @@ namespace mm
 
     PORT_FN(EvFarewellParty_Update);
 
-    // The thief event's phases (jump table 0x1BA8E0; EvThiefData, the phase in var; actor 0 the player's contact, 1 the thief, 2,
-    // 3 the place). 1 waits for the day, then picks a building for the place (a free one of category 5, else 1, fitting the whole
-    // map rectangle at 0x1BA8D0; no repeat of the first actor's building), 60 frames at a time, and marks it (0x200); from 17:00 the
-    // place is given up (unmarked, claim timer 1, flag 0x40) and the day set a day on; from 10:00 actor 3 is told and phase 2 follows.
-    // 2 and 11 count 60 frames down back a phase; 3 points at actor 0 (within a tile after 180 frames, else every tenth call when three
-    // tiles or more away); 5 and 10 tell actor 0 or 1 in daytime or after the countdown; 6 to 8 keep actor 0 in place; 9 starts 180
-    // frames; 12 to 14 and 18 to 29 move the actors around (13 brings actor 1 to actor 0 between 20:00 and 21:00, 14 starts the chase
-    // with sound 0x46 and the thief's schedule 14 and activity 5, 18 gets actor 2 to the thief, 19 points at the building, 22 and 23
-    // wait for the place, 28 starts 720 frames and 29 ends the event).
+    // The thief event's phases (jump table 0x1BA8E0; EvThiefData, the phase in var; actor 0 the player's contact, 1 the
+    // thief, 2, 3 the place). 1 waits for the day, then picks a building for the place (a free one of category 5, else
+    // 1, fitting the whole map rectangle at 0x1BA8D0; no repeat of the first actor's building), 60 minutes at a time,
+    // and marks it (0x200); from 17:00 the place is given up (unmarked, claim timer 1, flag 0x40) and the day set a day
+    // on; from 10:00 actor 3 is told and phase 2 follows. 2 and 11 count 60 minutes down back a phase; 3 points at
+    // actor 0 (within a tile after 180 minutes, else every tenth call when three tiles or more away); 5 and 10 tell
+    // actor 0 or 1 in daytime or after the countdown; 6 to 8 keep actor 0 in place; 9 starts 180 minutes; 12 to 14 and
+    // 18 to 29 move the actors around (13 brings actor 1 to actor 0 between 20:00 and 21:00, 14 starts the chase with
+    // sound 0x46 and the thief's schedule 14 and activity 5, 18 gets actor 2 to the thief, 19 points at the building,
+    // 22 and 23 wait for the place, 28 starts 720 minutes and 29 ends the event).
     void EvThief_Update(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
         const GuestPtr<EvThiefData> ev = data.as<EvThiefData>();
@@ -5118,7 +5124,7 @@ namespace mm
             stay(first);
             if (city->monthCount < ev->nextMonth)
                 break;
-            if (place->object != 0x3F80)
+            if (place->object != kNoObject)
             {
                 if (city->clock < 0xEF10)
                 {
@@ -5133,21 +5139,21 @@ namespace mm
                 given->flags = static_cast<uint16_t>(given->flags & 0xFDFFu);
                 given->claimTimer = 1;
                 given->flags = static_cast<uint16_t>(given->flags | 0x40u);
-                place->person = 0x1770;
-                place->object = 0x3F80;
+                place->person = kNoPerson;
+                place->object = kNoObject;
                 ev->strikes = ev->strikes + 1;
                 ev->nextMonth = city->monthCount + 1;
                 break;
             }
-            ev->searchDelay = ev->searchDelay - 1;
-            if (ev->searchDelay > 0)
+            ev->timer = ev->timer - 1;
+            if (ev->timer > 0)
                 break;
             GuestPtr<MapObject> found = EvThief_FindBuilding(city, 5, GuestPtr<TileRect>{globals::kWholeMapRect});
             if (!found)
                 found = EvThief_FindBuilding(city, 1, GuestPtr<TileRect>{globals::kWholeMapRect});
             if (!found || found->id == first->object)
             {
-                ev->searchDelay = 0x3C;
+                ev->timer = 0x3C;
                 break;
             }
             place->person = Map_FindPersonEntry(city->map, static_cast<int16_t>(found->family), 0)->index;
@@ -5165,18 +5171,18 @@ namespace mm
                 advance(-1);
             break;
         case 3:
-            ev->frames = ev->frames + 1;
-            if (ev->frames >= 0xB4)
+            ev->minutes = ev->minutes + 1;
+            if (ev->minutes >= 0xB4)
             {
                 if (Player_DistanceToPerson(city, first) <= ps2f(1.0f) && EvActor_PointCursor(city, first) != 0)
                 {
                     advance(1);
                     ev->nextMonth = city->monthCount + 1;
-                    ev->frames = 0;
+                    ev->minutes = 0;
                 }
                 break;
             }
-            if (ev->frames % 10 != 0 || Player_DistanceToPerson(city, first) < ps2f(3.0f))
+            if (ev->minutes % 10 != 0 || Player_DistanceToPerson(city, first) < ps2f(3.0f))
                 break;
             EvActor_PointCursor(city, first);
             break;
@@ -5199,14 +5205,14 @@ namespace mm
             stay(first);
             break;
         case 9:
-            ev->searchDelay = 0xB4;
+            ev->timer = 0xB4;
             advance(1);
             stay(first);
             break;
         case 10:
             stay(first);
-            ev->searchDelay = ev->searchDelay - 1;
-            if (ev->searchDelay > 0)
+            ev->timer = ev->timer - 1;
+            if (ev->timer > 0)
                 break;
             if (EvActor_Notify(city, second) != 0)
             {
@@ -5240,20 +5246,20 @@ namespace mm
             break;
         }
         case 18:
-            ev->searchDelay = ev->searchDelay + 1;
-            if (ev->searchDelay >= 10)
+            ev->timer = ev->timer + 1;
+            if (ev->timer >= 10)
             {
                 if (Player_DistanceToBuilding(city, first) < 2 && Player_DistanceToPerson(city, third) <= ps2f(1.0f) &&
                     EvActor_PointCursor(city, third) != 0)
                 {
                     EvActor_MoveTo(city, third, first, 1);
                     advance(1);
-                    ev->searchDelay = 0;
+                    ev->timer = 0;
                     break;
                 }
                 if (!(Player_DistanceToPerson(city, third) < ps2f(3.0f)))
                     EvActor_PointCursor(city, third);
-                ev->searchDelay = 0;
+                ev->timer = 0;
             }
             break;
         case 19:
@@ -5299,11 +5305,11 @@ namespace mm
             break;
         case 28:
             advance(1);
-            ev->searchDelay = 0x2D0;
+            ev->timer = 0x2D0;
             break;
         case 29:
-            ev->searchDelay = ev->searchDelay - 1;
-            if (ev->searchDelay <= 0)
+            ev->timer = ev->timer - 1;
+            if (ev->timer <= 0)
                 Event_Finish(city->events, city, 0);
             break;
         default:

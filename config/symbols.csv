@@ -1724,7 +1724,7 @@ address,name,kind,source
 0x0017F420,mm_WordsFn_FindOutsideAcquaintance,func,manual
 0x0017F530,mm_WordsFn_GetIntroduction,func,manual
 0x0017F5C0,mm_WordsFn_BuildingNeedPartlyMet,func,manual
-0x0017F5F0,mm_WordsFn_ClaimIs50,func,manual
+0x0017F5F0,mm_WordsFn_ClaimIsRoad,func,manual
 0x0017F660,mm_WordsFn_BuildingClaim,func,manual
 0x0017F6D0,mm_WordsFn_BuildingState,func,manual
 0x0017F750,mm_WordsFn_FriendshipTier,func,manual
@@ -1902,7 +1902,7 @@ address,name,kind,source
 0x0018CCA0,mm_Bgm_SetActive,func,manual
 0x0018CD30,mm_Bgm_SetTrackSlot,func,manual
 0x0018CEA0,mm_Bgm_Update,func,manual
-0x0018D150,mm_SoundCmd_WaveClose0,func,manual
+0x0018D150,mm_SoundCmd_WaveCloseBankSet,func,manual
 0x0018D160,mm_Sound_ResetVoices,func,manual
 0x0018D280,mm_Se_BuildAmbienceMap,func,manual
 0x0018D3E0,mm_Sound_InitState,func,manual
@@ -1991,9 +1991,9 @@ address,name,kind,source
 0x00193B30,mm_EvForgetfulGranny_Check,func,manual
 0x00193B60,mm_EvCrazyCult_Answer,func,manual
 0x00193D00,mm_EvCrazyCult_End,func,manual
-0x00193DF0,mm_EvCrazyCult_Phase3,func,manual
-0x00193F40,mm_EvCrazyCult_Phase2,func,manual
-0x00194150,mm_EvCrazyCult_Phase1,func,manual
+0x00193DF0,mm_EvCrazyCult_TellLeader,func,manual
+0x00193F40,mm_EvCrazyCult_TellSecondMember,func,manual
+0x00194150,mm_EvCrazyCult_TellFirstMember,func,manual
 0x001942B0,mm_EvCrazyCult_Update,func,manual
 0x00194690,mm_EvCrazyCult_Start,func,manual
 0x00194720,mm_EvAdoption_Answer,func,manual
