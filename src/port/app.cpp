@@ -162,7 +162,7 @@ namespace mm
             const uint32_t briefing = game->briefing.address;
             if (briefing != 0u)
             {
-                port::callGuest<void>(port::load<uint32_t>(port::load<uint32_t>(briefing + 0x100u) + 0x4Cu), briefing, 1);
+                port::callGuest<void>(game->briefing->vtable->dtor, briefing, 1); // mm_StageScene_dtor, deleting
                 game->briefing = GuestPtr<StageScene>{};
             }
             game->state = 5;

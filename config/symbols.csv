@@ -1011,6 +1011,7 @@ address,name,kind,source
 0x00148A40,mm_CityRender_dtor,func,manual
 0x00148BB0,mm_CityRender_ctor,func,manual
 0x00148D70,mm_TexImage_Convert,func,manual
+0x001490D0,mm_TexImage_Upload,func,manual
 0x001490E0,mm_TexImage_dtor,func,manual
 0x00149150,mm_TexImage_Load,func,manual
 0x001491E0,mm_LayerA_BuildPacket,func,manual
@@ -1041,6 +1042,7 @@ address,name,kind,source
 0x0014C0B0,mm_Frame_GetRect,func,manual
 0x0014C130,mm_Frame_SetCorners,func,manual
 0x0014C1B0,mm_Frame_SetRect,func,manual
+0x0014C200,mm_Frame_Draw,func,manual
 0x0014C210,mm_Frame_DeletingDtor,func,manual
 0x0014C270,mm_Frame_ctor,func,manual
 0x0014C4C0,mm_WaitText_Draw,func,manual

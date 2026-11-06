@@ -62,7 +62,7 @@ Sound on the EE side; the driver is YYSOUND on the IOP.
 | `0x0018D4B0` | `void mm_SoundCmd_CancelWavePlay(char voice)` | 256 | no | drops the unsent WavePlay commands (3) from the ring and closes the gap; matches the voice against byte 3 of the command word (always 0), so called with voice 0 it drops them all |
 | `0x0018D5B0` | `int mm_Sound_IsBusy(void)` | 164 | no | refreshes the status copy (0x20B7C0 -> 0x20B840, merged with pending masks); true if the driver is busy or commands are queued |
 | `0x0018D660` | `int mm_Sound_IsDriverBusy(void)` | 128 | no | like mm_Sound_IsBusy but ignores queued commands |
-| `0x0018D6E0` | `int mm_SoundCmd_SetLoadPause(uint32_t busy)` | 100 | no | queues cmd 0x18, sent as YYSOUND function 0x3001 (its load pause flag) with a0 & 0xFF; the file code sends 1 before waiting on the disc and 0 after |
+| `0x0018D6E0` | `int mm_SoundCmd_SetLoadPause(uint32_t busy)` | 100 | no | (busy) queues cmd 0x18, sent as YYSOUND function 0x3001 (its load pause flag) with busy & 0xFF; the file code sends 1 before waiting on the disc and 0 after |
 | `0x0018D750` | `int mm_SoundCmd_MidiSetTempo(uint8_t voice, uint16_t tempo, uint16_t id)` | 140 | no | (voice, tempo, id) queues cmd 0x11, sent as YYSOUND CmdMidiSetTempo (0x1026, ST_MIDI_TEMPO) |
 | `0x0018D7E0` | `int mm_SoundCmd_MidiSetTrackVolume(uint8_t voice, int volume, uint16_t id)` | 140 | no | (voice, volume, id) queues cmd 0x10, sent as YYSOUND CmdMidiSetTrackVolume (0x1025, ST_TRACK_VOL) |
 | `0x0018D870` | `int mm_SoundCmd_MidiSetVolume(uint8_t voice, int volume, uint16_t id)` | 140 | no | (voice, volume, id) queues cmd 0xF, sent as YYSOUND CmdMidiSetVolume (0x1020, ST_MIDI_VOL) |

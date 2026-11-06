@@ -507,10 +507,10 @@ namespace mm
             if (cell.style == frame->style)
             {
                 const auto in32nds = [](int n) { return fromInt(n) / ps2f(32.0f); };
-                frame->stA[0] = in32nds(cell.s0);
-                frame->stA[1] = in32nds(cell.t0);
-                frame->stB[0] = in32nds(cell.s1);
-                frame->stB[1] = in32nds(cell.t1);
+                frame->sprite.stA.s = in32nds(cell.s0);
+                frame->sprite.stA.t = in32nds(cell.t0);
+                frame->sprite.stB.s = in32nds(cell.s1);
+                frame->sprite.stB.t = in32nds(cell.t1);
                 return;
             }
     }
@@ -667,12 +667,13 @@ namespace mm
         frame->y = y;
         const auto gsXY = [](int gx, int gy)
         { return (static_cast<uint32_t>(gx + 0x6C0) << 4) | (static_cast<uint32_t>(gy + 0x790) << 20); };
-        frame->cornerA = gsXY(x, y);
-        frame->cornerB = gsXY(x + width, y + height);
+        frame->sprite.xyzA.xy = gsXY(x, y);
+        frame->sprite.xyzB.xy = gsXY(x + width, y + height);
     }
 
-    // A window frame: the packet template (0xB0 bytes at 0x1B04B0), then style, position, size and colour.
-    GuestPtr<Frame> Frame_ctor(GuestPtr<Frame> frame, int style, int x, int y, int width, int height, uint32_t colour)
+    // A window frame: the packet template (0xB0 bytes at 0x1B04B0, its sprite and four words over the fields after it),
+    // then the style, place and size, and the corners' depth (their Z).
+    GuestPtr<Frame> Frame_ctor(GuestPtr<Frame> frame, int style, int x, int y, int width, int height, uint32_t depth)
     {
         BaseObject_ctor(static_cast<int>(frame.address));
         for (uint32_t i = 0; i < 0xB0u; i += 4)
@@ -684,10 +685,10 @@ namespace mm
         frame->y = y;
         const auto gsXY = [](int gx, int gy)
         { return (static_cast<uint32_t>(gx + 0x6C0) << 4) | (static_cast<uint32_t>(gy + 0x790) << 20); };
-        frame->cornerA = gsXY(x, y);
-        frame->cornerB = gsXY(x + width, y + height);
-        frame->colourA = colour;
-        frame->colourB = colour;
+        frame->sprite.xyzA.xy = gsXY(x, y);
+        frame->sprite.xyzB.xy = gsXY(x + width, y + height);
+        frame->sprite.xyzA.z = depth;
+        frame->sprite.xyzB.z = depth;
         return frame;
     }
 
@@ -699,11 +700,11 @@ namespace mm
             x0 = x1 = 0;
         if (y0 < 0 || y1 < 0 || y0 > 0xFFFF || y1 > 0xFFFF)
             y0 = y1 = 0;
-        frame->cornerA = static_cast<uint32_t>(x0) | (static_cast<uint32_t>(y0) << 16);
-        frame->cornerB = static_cast<uint32_t>(x1) | (static_cast<uint32_t>(y1) << 16);
+        frame->sprite.xyzA.xy = static_cast<uint32_t>(x0) | (static_cast<uint32_t>(y0) << 16);
+        frame->sprite.xyzB.xy = static_cast<uint32_t>(x1) | (static_cast<uint32_t>(y1) << 16);
     }
 
-    // The cursor's info window for this frame: its packet and info lines, then either the opening sprite (CursorSprite)
+    // The cursor's info window for this frame: its packet and info lines, then either the opening sprite (SpritePacket)
     // over a cleared Z (mode 4) or a dimmed screen with the fade frame (other non-zero modes).
     void CityCursor_Draw(GuestPtr<CityCursor> cursor)
     {
@@ -1690,18 +1691,19 @@ namespace mm
 
     // ---- batch 38
 
-    // The frame's place and size: x and y from cornerA, width and height from cornerB (halfwords each);
-    // y and height go through -0x8000 and back, as the original does.
-    void Frame_GetRect(GuestPtr<Frame> frame, GuestPtr<uint32_t> x, GuestPtr<uint32_t> y, GuestPtr<uint32_t> width, GuestPtr<uint32_t> height)
+    // The frame's corners in GS units (12.4 fixed point with the screen at 0x6C0, 0x790), as mm_Frame_SetCorners takes
+    // them: (x0, y0) the top left, (x1, y1) the bottom right (halfwords each); the y values go through -0x8000 and
+    // back, as the original does.
+    void Frame_GetRect(GuestPtr<Frame> frame, GuestPtr<uint32_t> x0, GuestPtr<uint32_t> y0, GuestPtr<uint32_t> x1, GuestPtr<uint32_t> y1)
     {
-        *x = frame->cornerA & 0xFFFFu;
-        *y = static_cast<uint32_t>(static_cast<int32_t>(frame->cornerA) >> 16) & 0xFFFFu;
-        *width = frame->cornerB & 0xFFFFu;
-        *height = static_cast<uint32_t>(static_cast<int32_t>(frame->cornerB) >> 16) & 0xFFFFu;
-        *y = *y - 0x8000u;
-        *height = *height - 0x8000u;
-        *y = *y + 0x8000u;
-        *height = *height + 0x8000u;
+        *x0 = frame->sprite.xyzA.xy & 0xFFFFu;
+        *y0 = static_cast<uint32_t>(static_cast<int32_t>(frame->sprite.xyzA.xy) >> 16) & 0xFFFFu;
+        *x1 = frame->sprite.xyzB.xy & 0xFFFFu;
+        *y1 = static_cast<uint32_t>(static_cast<int32_t>(frame->sprite.xyzB.xy) >> 16) & 0xFFFFu;
+        *y0 = *y0 - 0x8000u;
+        *y1 = *y1 - 0x8000u;
+        *y0 = *y0 + 0x8000u;
+        *y1 = *y1 + 0x8000u;
     }
 
     PORT_FN(Frame_GetRect);
@@ -2179,8 +2181,8 @@ namespace mm
             rect[3] = 0;
             rect[1] = 0;
         }
-        view->sprite.xyzA.value[0] = static_cast<uint32_t>(rect[0]) | (static_cast<uint32_t>(rect[1]) << 16);
-        view->sprite.xyzB.value[0] = static_cast<uint32_t>(rect[2]) | (static_cast<uint32_t>(rect[3]) << 16);
+        view->sprite.xyzA.xy = static_cast<uint32_t>(rect[0]) | (static_cast<uint32_t>(rect[1]) << 16);
+        view->sprite.xyzB.xy = static_cast<uint32_t>(rect[2]) | (static_cast<uint32_t>(rect[3]) << 16);
     }
 
     PORT_FN(CityCursor_SelectTile);
@@ -3485,7 +3487,7 @@ namespace mm
         const uint32_t s = scene.address;
         Stage_ctor(static_cast<int>(s));
         Widget_ctor(GuestPtr<Widget>::of(scene->widget));
-        scene->vtable = GuestPtr<void>{0x001BCF10u};
+        scene->vtable = GuestPtr<StageSceneVtable>{0x001BCF10u};
         scene->widget.vtable = GuestPtr<WidgetVtable>{0x001BCF18u};
         scene->stage = 0;
         scene->step = 0;
@@ -3763,7 +3765,7 @@ namespace mm
     {
         if (scene)
         {
-            scene->vtable = GuestPtr<void>{0x001BCF10u};
+            scene->vtable = GuestPtr<StageSceneVtable>{0x001BCF10u};
             scene->widget.vtable = GuestPtr<WidgetVtable>{0x001BCF18u};
             lifetime::deleteWith(port::guest(&scene->lights), [](uint32_t o) { LightSet_DeletingDtor(GuestPtr<LightSet>{o}, 1); });
             lifetime::deleteWith(port::guest(&scene->camera), [](uint32_t o) { Camera_DeletingDtor(GuestPtr<Camera>{o}, 1); });
@@ -6101,8 +6103,7 @@ namespace mm
         port::store<uint32_t>(sp + 0x88u, 0xC069999Au);
         port::store<uint32_t>(sp + 0x8Cu, 0x3F800000u);
         for (uint32_t row = 0; row < 4u; ++row)
-            for (uint32_t at = 0; at < 0x10u; at += 4u)
-                port::store<uint32_t>(actor.address + 0x10u + 0x10u * row + at, port::load<uint32_t>(sp + (row == 3u ? 0x80u : 0x50u + 0x10u * row) + at));
+            actor->matrix[row] = *GuestPtr<Vec4>{sp + (row == 3u ? 0x80u : 0x50u + 0x10u * row)};
         A3D_AnimateIfRoom(actor, scene->animation, ps2f(static_cast<float>(scene->animTime)));
         A3DObject_UpdateMatrices(actor);
         Instance_DrawModelEx(actor, GuestPtr<Vec4>{sp + 0x40u}, 0, 0, 0, 0, 0, 4);
@@ -6620,7 +6621,7 @@ namespace mm
     // picking the tile in the placing mode (3) and starting a talk otherwise; Triangle closes it (mode 0, the city mode
     // popped); up (when there is a line above) and down (when the step is above 0) start the step scrolling (modes 2
     // and 3, sound 0). 2 and 3 move the step by one a frame (up, down) for twelve frames (openTimer), then back to 1. 4
-    // clears the picked building: this frame's view's sprite (CursorSprite) opens out around the info frame's position
+    // clears the picked building: this frame's view's sprite (SpritePacket) opens out around the info frame's position
     // as the timer runs down (25 by 100 units a step, at most 15 steps, kept in the 16 bit range), and when the timer
     // (30 at the pick) runs out the picked building is plotted on the minimap, its family removed from the applicants,
     // the approval lowered by 20, the tile area turned to rubble and the mode popped (twice if the city is then in mode
@@ -6727,8 +6728,8 @@ namespace mm
             };
             clamp(0x70u, 0x78u);
             clamp(0x74u, 0x7Cu);
-            view->sprite.xyzA.value[0] = port::load<uint32_t>(sp + 0x70u) | (port::load<uint32_t>(sp + 0x74u) << 16);
-            view->sprite.xyzB.value[0] = port::load<uint32_t>(sp + 0x78u) | (port::load<uint32_t>(sp + 0x7Cu) << 16);
+            view->sprite.xyzA.xy = port::load<uint32_t>(sp + 0x70u) | (port::load<uint32_t>(sp + 0x74u) << 16);
+            view->sprite.xyzB.xy = port::load<uint32_t>(sp + 0x78u) | (port::load<uint32_t>(sp + 0x7Cu) << 16);
             const int32_t left = cursor->openTimer - 1;
             cursor->openTimer = left;
             if (left != 0)
@@ -6761,7 +6762,7 @@ namespace mm
     // The city cursor: the base object, a model loaded (0x1B5EF0) and deleted again at once, the lines and the fade
     // counters cleared, and for each of the two views (0xD0 bytes, one per frame parity) five text boxes (15 by 1,
     // style -1, lines) with five frames (lineFrames, a 24 by 12 box), the info frame (style 0x32) and the fade frame
-    // (0x1E), then the view's opening sprite (CursorSprite): a 128 by 64 texture of 8-bit colours (the sizes as log2 in
+    // (0x1E), then the view's opening sprite (SpritePacket): a 128 by 64 texture of 8-bit colours (the sizes as log2 in
     // TEX0), corners in 12.4 fixed point from (0x6C00, 0x7900) to (0x9400, 0x8000) until mm_CityCursor_Update opens it
     // out.
     GuestPtr<CityCursor> CityCursor_ctor(GuestPtr<CityCursor> cursor)
@@ -6794,7 +6795,7 @@ namespace mm
             }
             view->frame = GuestPtr<Frame>{newFrame(0x32, 0x64, 0x64)};
             view->fadeFrame = GuestPtr<Frame>{newFrame(0x1E, 0x64, 0x64)};
-            CursorSprite &sprite = view->sprite;
+            SpritePacket &sprite = view->sprite;
             packet::putWords(sprite.dmaTag, {packet::kCnt | 8u, 0u});
             packet::putWords(sprite.vifCodes, {0x11000000u, 0x50000008u});         // FLUSH, DIRECT 8
             packet::putWords(sprite.gifTag, {0x8007u, 0x10000000u, 0xEu, 0u});     // 7 loops (EOP) of A+D
@@ -6805,10 +6806,10 @@ namespace mm
                                             .tfx = 0u, .cbp = 0x3EAAu, .cpsm = packet::kPsmCt32, .csm = 0u, .csa = 0u, .cld = 1u}),
                           packet::kGsTex0_1);
             packet::putAd(sprite.prim, 0x16u, 0u, packet::kGsPrim);
-            packet::putAd(sprite.stA, 0u, 0u, packet::kGsSt);
-            packet::putAd(sprite.xyzA, 0x79006C00u, 0x0FFF0000u, packet::kGsXyzf2);
-            packet::putAd(sprite.stB, 0x3F800000u, 0x3F800000u, packet::kGsSt);
-            packet::putAd(sprite.xyzB, 0x80009400u, 0x0FFF0000u, packet::kGsXyzf2);
+            packet::putSt(sprite.stA, 0.0f, 0.0f);
+            packet::putXyz(sprite.xyzA, 0x79006C00u, 0x0FFF0000u, packet::kGsXyzf2);
+            packet::putSt(sprite.stB, 1.0f, 1.0f);
+            packet::putXyz(sprite.xyzB, 0x80009400u, 0x0FFF0000u, packet::kGsXyzf2);
             packet::putWords(sprite.ret, {packet::kRet, 0u, 0u, 0u});
         }
         return cursor;
@@ -6846,7 +6847,7 @@ namespace mm
         // A texture image read, uploaded and freed again through the loader at `buffer`.
         const auto loadImage = [&](uint32_t buffer, uint32_t name, int textureBlock, int clutBlock) {
             TexImage_Load(GuestPtr<TexImage>{buffer}, GuestPtr<char>{name}, textureBlock, clutBlock);
-            Dma_KickVif1Now_1490D0(buffer);
+            TexImage_Upload(GuestPtr<TexImage>{buffer});
             nextStep();
             TexImage_dtor(GuestPtr<TexImage>{buffer}, -1);
         };

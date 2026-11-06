@@ -365,7 +365,7 @@ inline constexpr uint32_t CityRender_DrawTerrain = 0x001489B0u;
 inline constexpr uint32_t CityRender_dtor = 0x00148A40u;
 inline constexpr uint32_t CityRender_ctor = 0x00148BB0u;
 inline constexpr uint32_t TexImage_Convert = 0x00148D70u;
-inline constexpr uint32_t Dma_KickVif1Now_1490D0 = 0x001490D0u;
+inline constexpr uint32_t TexImage_Upload = 0x001490D0u;
 inline constexpr uint32_t TexImage_dtor = 0x001490E0u;
 inline constexpr uint32_t TexImage_Load = 0x00149150u;
 inline constexpr uint32_t LayerA_BuildPacket = 0x001491E0u;
@@ -396,7 +396,7 @@ inline constexpr uint32_t Frame_SetStyle = 0x0014BE20u;
 inline constexpr uint32_t Frame_GetRect = 0x0014C0B0u;
 inline constexpr uint32_t Frame_SetCorners = 0x0014C130u;
 inline constexpr uint32_t Frame_SetRect = 0x0014C1B0u;
-inline constexpr uint32_t Dma_AppendCall_14C200 = 0x0014C200u;
+inline constexpr uint32_t Frame_Draw = 0x0014C200u;
 inline constexpr uint32_t Frame_DeletingDtor = 0x0014C210u;
 inline constexpr uint32_t Frame_ctor = 0x0014C270u;
 inline constexpr uint32_t WaitText_Draw = 0x0014C4C0u;
@@ -1715,7 +1715,7 @@ template <> inline constexpr bool at<0x001458A0u> = true; // MapObjects_dtor
 template <> inline constexpr bool at<0x00145940u> = true; // MapObjects_ctor
 template <> inline constexpr bool at<0x00148A40u> = true; // CityRender_dtor
 template <> inline constexpr bool at<0x00148BB0u> = true; // CityRender_ctor
-template <> inline constexpr bool at<0x001490D0u> = true; // Dma_KickVif1Now_1490D0
+template <> inline constexpr bool at<0x001490D0u> = true; // TexImage_Upload
 template <> inline constexpr bool at<0x001490E0u> = true; // TexImage_dtor
 template <> inline constexpr bool at<0x00149150u> = true; // TexImage_Load
 template <> inline constexpr bool at<0x00149730u> = true; // LayerA_DeletingDtor
@@ -2376,9 +2376,7 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"DmaList_QueueOtherOverlay", addr::DmaList_QueueOtherOverlay},
     {"DmaList_Rewind", addr::DmaList_Rewind},
     {"Dma_AppendCall", addr::Dma_AppendCall},
-    {"Dma_AppendCall_14C200", addr::Dma_AppendCall_14C200},
     {"Dma_KickVif1Now", addr::Dma_KickVif1Now},
-    {"Dma_KickVif1Now_1490D0", addr::Dma_KickVif1Now_1490D0},
     {"EvActor_Detach", addr::EvActor_Detach},
     {"EvActor_FindShop", addr::EvActor_FindShop},
     {"EvActor_Follow", addr::EvActor_Follow},
@@ -2566,6 +2564,7 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Font_GetGlyph", addr::Font_GetGlyph},
     {"Font_Load", addr::Font_Load},
     {"Frame_DeletingDtor", addr::Frame_DeletingDtor},
+    {"Frame_Draw", addr::Frame_Draw},
     {"Frame_GetRect", addr::Frame_GetRect},
     {"Frame_SetCorners", addr::Frame_SetCorners},
     {"Frame_SetRect", addr::Frame_SetRect},
@@ -3283,6 +3282,7 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Terrain_InitParams", addr::Terrain_InitParams},
     {"TexImage_Convert", addr::TexImage_Convert},
     {"TexImage_Load", addr::TexImage_Load},
+    {"TexImage_Upload", addr::TexImage_Upload},
     {"TexImage_dtor", addr::TexImage_dtor},
     {"TexSprite_BuildPacket", addr::TexSprite_BuildPacket},
     {"TexSprite_Draw", addr::TexSprite_Draw},
@@ -4043,7 +4043,7 @@ void CityRender_DrawTerrain(GuestPtr<CityMap> map, GuestPtr<CityScene> city);
 GuestPtr<CityMap> CityRender_dtor(GuestPtr<CityMap> map, int16_t deleteFlag);
 GuestPtr<CityMap> CityRender_ctor(GuestPtr<CityMap> map);
 void TexImage_Convert(GuestPtr<TexImage> image, uint32_t textureBlock, uint32_t clutBlock);
-int Dma_KickVif1Now_1490D0(uint32_t address);
+int TexImage_Upload(GuestPtr<TexImage> image);
 GuestPtr<TexImage> TexImage_dtor(GuestPtr<TexImage> image, int16_t deleteFlag);
 int TexImage_Load(GuestPtr<TexImage> image, GuestPtr<char> name, int textureBlock, int clutBlock);
 GuestPtr<uint32_t> LayerA_BuildPacket(GuestPtr<LayerA> layer, GuestPtr<uint32_t> packet);
@@ -4071,12 +4071,12 @@ GuestPtr<Laptop> Laptop_dtor(GuestPtr<Laptop> laptop, int16_t deleteFlag);
 GuestPtr<Laptop> Laptop_ctor(GuestPtr<Laptop> laptop);
 void Laptop_InitEntries();
 void Frame_SetStyle(GuestPtr<Frame> frame, int style);
-void Frame_GetRect(GuestPtr<Frame> frame, GuestPtr<uint32_t> x, GuestPtr<uint32_t> y, GuestPtr<uint32_t> width, GuestPtr<uint32_t> height);
+void Frame_GetRect(GuestPtr<Frame> frame, GuestPtr<uint32_t> x0, GuestPtr<uint32_t> y0, GuestPtr<uint32_t> x1, GuestPtr<uint32_t> y1);
 void Frame_SetCorners(GuestPtr<Frame> frame, int x0, int y0, int x1, int y1);
 void Frame_SetRect(GuestPtr<Frame> frame, int x, int y, int width, int height);
-void Dma_AppendCall_14C200(int address);
+void Frame_Draw(GuestPtr<Frame> frame);
 GuestPtr<Frame> Frame_DeletingDtor(GuestPtr<Frame> frame, int16_t deleteFlag);
-GuestPtr<Frame> Frame_ctor(GuestPtr<Frame> frame, int style, int x, int y, int width, int height, uint32_t colour);
+GuestPtr<Frame> Frame_ctor(GuestPtr<Frame> frame, int style, int x, int y, int width, int height, uint32_t depth);
 void WaitText_Draw();
 int WaitText_Append(GuestPtr<char> text);
 void WaitText_Set(GuestPtr<char> text);

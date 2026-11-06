@@ -875,9 +875,9 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00136C80,mm_CityCursor_SetTarget,44,game,ui,verified,no,1,0,"the thing under the cursor: object or person index `target`, whether it is a person (`isPerson`), and its position (target, targetIsPerson, targetPos)"
 0x00136CB0,mm_Math_ProjectPoint,60,game,math,verified,no,1,0,projects a 3D point with the given matrices (VU0)
 0x00136CF0,mm_CityCursor_LayoutInfo,536,game,ui,verified,no,1,3,"places the info window next to the projected cursor point (GS units, 4 fraction bits): x kept within 0x7080..0x9140, the lines stacked upwards from 24 pixels above it, or from 12 pixels below it when they would run off the top (y 0x7A60 at least), and kept above y 0x8700 at the bottom"
-0x00136F10,mm_CityCursor_Draw,276,game,ui,verified,no,1,6,"the cursor's info window for this frame: its packet and info lines, then either the opening sprite (CursorSprite) over a cleared Z (mode 4) or a dimmed screen with the fade frame (other non-zero modes)"
+0x00136F10,mm_CityCursor_Draw,276,game,ui,verified,no,1,6,"the cursor's info window for this frame: its packet and info lines, then either the opening sprite (SpritePacket) over a cleared Z (mode 4) or a dimmed screen with the fade frame (other non-zero modes)"
 0x00137030,mm_CityCursor_dtor,268,game,ui,verified,yes,1,4,"two views of 0xD0 bytes: the fade and info frames, then five lines each with the frame behind it"
-0x00137140,mm_CityCursor_ctor,1064,game,ui,verified,yes,1,7,"the city cursor: the base object, a model loaded (0x1B5EF0) and deleted again at once, the lines and the fade counters cleared, and for each of the two views (one per frame parity) five text boxes with their frames, the info frame and the fade frame, then the view's opening sprite (CursorSprite: a 128 by 64 texture of 8-bit colours as an A+D packet)"
+0x00137140,mm_CityCursor_ctor,1064,game,ui,verified,yes,1,7,"the city cursor: the base object, a model loaded (0x1B5EF0) and deleted again at once, the lines and the fade counters cleared, and for each of the two views (one per frame parity) five text boxes with their frames, the info frame and the fade frame, then the view's opening sprite (SpritePacket: a 128 by 64 texture of 8-bit colours)"
 0x00137570,mm_TileLists_LoadState,92,game,map,verified,no,1,1,"reads the tile lists from the save file: the items (0x7F00 bytes), then start and count (0xA0 bytes each)"
 0x001375D0,mm_TileLists_SaveState,92,game,map,verified,no,1,1,writes them
 0x00137630,mm_TileLists_Remove,204,game,map,verified,no,1,0,"removes item a1 from list a2 (shifts the rest down, fixes the starts); 1 if it was there"
@@ -1071,7 +1071,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00148A40,mm_CityRender_dtor,364,game,gfx,verified,yes,1,10,"vtable 0x1BCF00; deletes the seven layers and buffers, people-level destructor"
 0x00148BB0,mm_CityRender_ctor,436,game,gfx,ported,yes,1,16,"people-level constructor, vtable 0x1BCF00; builds the terrain packets and the seven layers in the packet buffer"
 0x00148D70,mm_TexImage_Convert,856,game,gfx,verified,no,1,0,"(image, textureBlock, clutBlock): DMA packet over the start of the image that uploads its palette and texels (PSMT4/PSMT8/32-bit, square) to the given GS blocks"
-0x001490D0,mm_Dma_KickVif1Now,8,game,gfx,verified,yes,1,1,
+0x001490D0,mm_TexImage_Upload,8,game,gfx,verified,yes,1,1,(image) sends the converted image's upload packet at once (a jump to mm_Dma_KickVif1Now)
 0x001490E0,mm_TexImage_dtor,100,game,gfx,verified,yes,1,2,frees the image data (file); delete when the flag is > 0
 0x00149150,mm_TexImage_Load,132,game,gfx,verified,yes,1,4,"(image, name, textureBlock, clutBlock) loads the texture file `name` whole and converts it for upload: the texels to `textureBlock`, the palette to `clutBlock` (mm_TexImage_Convert)"
 0x001491E0,mm_LayerA_BuildPacket,280,game,gfx,verified,no,1,0,"layer A's packets: the start uploads the layer's output offset and colour to VU1 address 0x2A, flushes, calls the chain at 0x1A8330 and sets the VIF base and offset; the end sets ALPHA_1 (0x20_00000044) through the GIF"
@@ -1099,12 +1099,12 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0014BD20,mm_Laptop_ctor,32,game,ui,verified,no,1,0,"model from 0x1F3B08, clears its state"
 0x0014BD40,mm_Laptop_InitEntries,216,game,ui,verified,no,1,0,first-time defaults of the laptop entries (0x1AF640)
 0x0014BE20,mm_Frame_SetStyle,644,game,ui,verified,no,4,0,"sets the frame's style and, from the cell table, its texture coordinates (in 32nds)"
-0x0014C0B0,mm_Frame_GetRect,120,game,ui,verified,no,2,0,frame position and size in screen units (GS offsets removed)
+0x0014C0B0,mm_Frame_GetRect,120,game,ui,verified,no,2,0,"(frame, x0, y0, x1, y1) the frame's two corners in GS units (12.4 fixed point with the screen at 0x6C0, 0x790), as mm_Frame_SetCorners takes them; the y values go through -0x8000 and back"
 0x0014C130,mm_Frame_SetCorners,124,game,ui,verified,no,3,0,GS XY of two corners; a pair outside 0..0xFFFF is zeroed
-0x0014C1B0,mm_Frame_SetRect,72,game,ui,verified,no,4,0,"frame at (a1, a2) size a3 x a4 (GS coordinates)"
-0x0014C200,mm_Dma_AppendCall,8,game,gfx,verified,no,9,1,
+0x0014C1B0,mm_Frame_SetRect,72,game,ui,verified,no,4,0,"(frame, x, y, width, height) the frame's place and size, and its sprite's corners in GS units"
+0x0014C200,mm_Frame_Draw,8,game,gfx,verified,no,9,1,"(frame) queues the frame's sprite packet, which starts the frame (a jump to mm_Dma_AppendCall)"
 0x0014C210,mm_Frame_DeletingDtor,84,game,ui,verified,yes,8,2,"base destructor, then delete"
-0x0014C270,mm_Frame_ctor,580,game,ui,verified,no,8,2,"window frame: position, size, style, colour"
+0x0014C270,mm_Frame_ctor,580,game,ui,verified,no,8,2,"(frame, style, x, y, width, height, depth) a window frame: the sprite packet template (0x1B04B0), then the style, place and size, and the corners' depth (their Z: callers pass 0x10000000, 0xFFF00000, 0xFFFFFFFF, 0xFF0000)"
 0x0014C4C0,mm_WaitText_Draw,68,game,ui,verified,no,1,1,"blinking ""Please wait...."" text box (0x1BDAC4)"
 0x0014C510,mm_WaitText_Append,16,game,ui,verified,no,1,1,appends a0 to the wait text
 0x0014C520,mm_WaitText_Set,16,game,ui,verified,no,1,1,sets the wait text to a0
@@ -1969,7 +1969,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0018D4B0,mm_SoundCmd_CancelWavePlay,256,game,sound,ported,no,2,0,"drops the unsent WavePlay commands (3) from the ring and closes the gap; matches the voice against byte 3 of the command word (always 0), so called with voice 0 it drops them all"
 0x0018D5B0,mm_Sound_IsBusy,164,game,sound,verified,no,10,1,"refreshes the status copy (0x20B7C0 -> 0x20B840, merged with pending masks); true if the driver is busy or commands are queued"
 0x0018D660,mm_Sound_IsDriverBusy,128,game,sound,verified,no,3,1,like mm_Sound_IsBusy but ignores queued commands
-0x0018D6E0,mm_SoundCmd_SetLoadPause,100,game,sound,verified,no,6,0,"queues cmd 0x18, sent as YYSOUND function 0x3001 (its load pause flag) with a0 & 0xFF; the file code sends 1 before waiting on the disc and 0 after"
+0x0018D6E0,mm_SoundCmd_SetLoadPause,100,game,sound,verified,no,6,0,"(busy) queues cmd 0x18, sent as YYSOUND function 0x3001 (its load pause flag) with busy & 0xFF; the file code sends 1 before waiting on the disc and 0 after"
 0x0018D750,mm_SoundCmd_MidiSetTempo,140,game,sound,ported,no,1,0,"(voice, tempo, id) queues cmd 0x11, sent as YYSOUND CmdMidiSetTempo (0x1026, ST_MIDI_TEMPO)"
 0x0018D7E0,mm_SoundCmd_MidiSetTrackVolume,140,game,sound,verified,no,6,0,"(voice, volume, id) queues cmd 0x10, sent as YYSOUND CmdMidiSetTrackVolume (0x1025, ST_TRACK_VOL)"
 0x0018D870,mm_SoundCmd_MidiSetVolume,140,game,sound,verified,no,5,0,"(voice, volume, id) queues cmd 0xF, sent as YYSOUND CmdMidiSetVolume (0x1020, ST_MIDI_VOL)"

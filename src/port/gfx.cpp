@@ -59,7 +59,8 @@ namespace mm
     }
 
     void Dma_AppendCall(int address) { appendDmaCall(static_cast<uint32_t>(address) & 0x7FFFFFFFu); }
-    void Dma_AppendCall_14C200(int address) { Dma_AppendCall(address); } // a thunk to the one above
+    // A frame is drawn by queueing its sprite packet, which starts the frame (a jump to the one above).
+    void Frame_Draw(GuestPtr<Frame> frame) { Dma_AppendCall(static_cast<int>(frame.address)); }
 
     // Full-screen black sprite with the given alpha (written into the static packet's colour first): the first fade
     // packet draws it at Z 0xFFFFF000, the second (`overAll`) at the top Z.
@@ -1098,7 +1099,7 @@ namespace mm
     PORT_FN(DmaList_QueueFade);
     PORT_FN(DmaChain_Next);
     PORT_FN(Dma_AppendCall);
-    PORT_FN(Dma_AppendCall_14C200);
+    PORT_FN(Frame_Draw);
     PORT_FN(DmaList_QueueGsDefaults);
     PORT_FN(DmaList_QueueClearScreen);
     PORT_FN(DmaList_QueueClearZ);
@@ -1976,8 +1977,9 @@ namespace mm
     PORT_FN(InstanceBuf_Init);
     PORT_FN(Dma_KickVif1Now);
 
-    // The same kick, entered from the second copy of the code.
-    int Dma_KickVif1Now_1490D0(uint32_t address) { return Dma_KickVif1Now(address); }
+    // Sends a converted image's upload packet (written over its start by mm_TexImage_Convert) at once: a jump to
+    // mm_Dma_KickVif1Now.
+    int TexImage_Upload(GuestPtr<TexImage> image) { return Dma_KickVif1Now(image.address); }
 
     // The instance base, then the shared draw buffers once for the first model of the run; the model count (0x1BDA2C) grows.
     GuestPtr<A3DObject> InstanceModel_ctor(GuestPtr<A3DObject> model)
@@ -1990,7 +1992,7 @@ namespace mm
         return model;
     }
 
-    PORT_FN(Dma_KickVif1Now_1490D0);
+    PORT_FN(TexImage_Upload);
     PORT_FN(InstanceModel_ctor);
 
     // The constructor of the derived instance model: the base one, nothing more.

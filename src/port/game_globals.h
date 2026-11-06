@@ -57,8 +57,8 @@ namespace mm::globals
     inline constexpr GuestVar<int32_t> listenerTileZ{0x001BDD30u};
     inline constexpr uint32_t kListener = 0x001FC650u;
 
-    // sound: commands for the YYSOUND driver, queued in a ring of 256 entries (0xD0 bytes) and sent by
-    // mm_SoundCmd_Flush. Each entry: +0 command, +4 state, +8 and +0xC words, arguments from +0x10.
+    // sound: commands for the YYSOUND driver, queued in a ring of 256 entries (SoundCmd, 0xD0 bytes) and sent by
+    // mm_SoundCmd_Flush.
     inline constexpr uint32_t kSoundCmds = 0x001FE6C0u;
     inline constexpr GuestVar<int32_t> soundCmdIndex{0x001BDD44u};   // next entry to write
     inline constexpr GuestVar<int32_t> soundCmdSent{0x001BDD48u};    // entries before it have been sent (mm_SoundCmd_Flush)

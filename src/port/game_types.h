@@ -60,7 +60,9 @@ struct Minimap;
 struct CityCursor;
 struct CityCursorView;
 struct GsAdWrite;
-struct CursorSprite;
+struct GsStWrite;
+struct GsXyzWrite;
+struct SpritePacket;
 struct PhoneCalls;
 struct PhoneCallEntry;
 struct EventMgr;
@@ -146,19 +148,44 @@ struct TextBox {
     int32_t columns;           /* +0x38 */
     int32_t rows;              /* +0x3C */
 };
-/* Window frame (0xC0 bytes). */
+/* A GS register write of an A+D packet (16 bytes): the 64-bit value, then the register's address. */
+struct GsAdWrite {
+    uint32_t value[2];         /* +0x00 low and high words */
+    uint32_t reg[2];           /* +0x08 the register (low word) */
+};
+/* An A+D write of ST (16 bytes): the texture coordinates as floats. */
+struct GsStWrite {
+    ps2f s;                   /* +0x00 */
+    ps2f t;                   /* +0x04 */
+    uint32_t reg[2];           /* +0x08 ST (2) */
+};
+/* An A+D write of a vertex (16 bytes): XYZ2 (5) with a 32-bit Z, or XYZF2 (4) with 24 bits of Z and the fog above. */
+struct GsXyzWrite {
+    uint32_t xy;               /* +0x00 X in the low half, Y in the high half (12.4 fixed point) */
+    uint32_t z;                /* +0x04 */
+    uint32_t reg[2];           /* +0x08 */
+};
+/* A textured sprite as its own DMA packet (0xA0 bytes): a CNT tag of 8 quadwords with FLUSH and DIRECT 8, a GIF tag of 7
+   loops of one A+D register (EOP), the seven writes and a RET tag. Frames and the city cursor's opening sprite. */
+struct SpritePacket {
+    uint32_t dmaTag[2];        /* +0x00 CNT 8 */
+    uint32_t vifCodes[2];      /* +0x08 FLUSH, DIRECT 8 */
+    uint32_t gifTag[4];        /* +0x10 */
+    GsAdWrite rgbaq;           /* +0x20 (0x80, 0x80, 0x80, 0x80), Q 1 */
+    GsAdWrite tex0;            /* +0x30 TEX0_1 */
+    GsAdWrite prim;            /* +0x40 0x16: a textured sprite */
+    GsStWrite stA;             /* +0x50 the top left corner's texture coordinates */
+    GsXyzWrite xyzA;           /* +0x60 the top left corner */
+    GsStWrite stB;             /* +0x70 the bottom right corner's */
+    GsXyzWrite xyzB;           /* +0x80 the bottom right corner */
+    uint32_t ret[4];           /* +0x90 RET */
+};
+/* Window frame (0xC0 bytes): a sprite of one cell of the frame texture, then the cell, place and size. */
 struct Frame {
-    uint8_t unk_00[0x50];
-    ps2f stA[2];              /* +0x50 texture S, T of the top left (mm_Frame_SetStyle) */
-    uint8_t unk_58[8];
-    uint32_t cornerA;          /* +0x60 GS XY of the top left (mm_Frame_SetRect, mm_Frame_SetCorners) */
-    uint32_t colourA;          /* +0x64 (mm_Frame_ctor) */
-    uint8_t unk_68[8];
-    ps2f stB[2];              /* +0x70 texture S, T of the bottom right */
-    uint8_t unk_78[8];
-    uint32_t cornerB;          /* +0x80 GS XY of the bottom right */
-    uint32_t colourB;          /* +0x84 */
-    uint8_t unk_88[0x18];
+    SpritePacket sprite;       /* +0x00 copied from the template at 0x1B04B0 (mm_Frame_ctor): the frame texture (256 by 128,
+                                  8-bit with a 32-bit palette: TBP0 0x3F7C, CBP 0x3FFC), ST from the cell
+                                  (mm_Frame_SetStyle), XYZ2 corners from the place and size (mm_Frame_SetRect,
+                                  mm_Frame_SetCorners) at the depth mm_Frame_ctor is given */
     int32_t style;             /* +0xA0 icon cell of the frame texture (mm_Frame_SetStyle) */
     int32_t x;                 /* +0xA4 */
     int32_t y;                 /* +0xA8 */
@@ -367,33 +394,15 @@ struct TerrainPassParams {
     Vec4 stq[12];              /* +0x50 VU1 0x21..0x2C texture coordinates: three sets of four */
     uint32_t mask[4];          /* +0x110 VU1 0x2D: w is the quad flags the pass draws */
 };
-/* A GS register write of an A+D packet (16 bytes): the 64-bit value, then the register's address. */
-struct GsAdWrite {
-    uint32_t value[2];         /* +0x00 low and high words */
-    uint32_t reg[2];           /* +0x08 the register (low word) */
-};
-/* The city cursor's opening sprite (0xA0 bytes, mm_CityCursor_ctor): a CNT tag of 8 quadwords with FLUSH and DIRECT 8,
-   then a GIF tag of 7 loops of one A+D register (EOP), the seven writes and a RET tag. */
-struct CursorSprite {
-    uint32_t dmaTag[2];        /* +0x00 CNT 8 */
-    uint32_t vifCodes[2];      /* +0x08 FLUSH, DIRECT 8 */
-    uint32_t gifTag[4];        /* +0x10 */
-    GsAdWrite rgbaq;           /* +0x20 (0x80, 0x80, 0x80, 0x80), Q 1 */
-    GsAdWrite tex0;            /* +0x30 TEX0_1: 128 by 64, 8-bit with a 32-bit palette (TBP0 0x3E8A, CBP 0x3EAA) */
-    GsAdWrite prim;            /* +0x40 0x16: a textured sprite */
-    GsAdWrite stA;             /* +0x50 ST (0, 0) */
-    GsAdWrite xyzA;            /* +0x60 XYZF2 the top left corner (mm_CityCursor_Update, mm_CityCursor_SelectTile) */
-    GsAdWrite stB;             /* +0x70 ST (1, 1) */
-    GsAdWrite xyzB;            /* +0x80 XYZF2 the bottom right corner */
-    uint32_t ret[4];           /* +0x90 RET */
-};
 /* One parity's half of the city cursor (0xD0 bytes): info lines, packets and the fade frame. */
 struct CityCursorView {
     GuestPtr<TextBox> lines[5];         /* +0x00 */
     GuestPtr<Frame> lineFrames[5];      /* +0x14 a frame behind each line (a frame's packet starts the frame) */
     GuestPtr<Frame> frame;              /* +0x28 the info window's frame */
     GuestPtr<Frame> fadeFrame;          /* +0x2C */
-    CursorSprite sprite;       /* +0x30 drawn in mode 4: it opens out from the info frame */
+    SpritePacket sprite;       /* +0x30 drawn in mode 4, opening out from the info frame (mm_CityCursor_ctor): a 128 by 64
+                                  texture, 8-bit with a 32-bit palette (TBP0 0x3E8A, CBP 0x3EAA), ST (0, 0) to (1, 1),
+                                  XYZF2 corners (mm_CityCursor_Update, mm_CityCursor_SelectTile) */
 };
 /* Light set (0x1B0 bytes): the colour table of the model programs, two groups of twelve, coloured by the clock
    (mm_LightSet_UpdateByClock). Its two packets upload +0x10..+0x1AF to VU1 0x12..0x2B (docs/RENDER_PIPELINE.md). */
@@ -1459,6 +1468,16 @@ struct SeVoice;
 struct SeSound;
 struct ClaimThresholds;
 struct SoundStatus;
+struct SoundCmdWavePlay;
+struct SoundCmdWaveFade;
+struct SoundCmdWaveVolume;
+struct SoundCmdTrackValue;
+struct SoundCmdMidiPlay;
+struct SoundCmdMidiFade;
+struct SoundCmdPair;
+struct SoundCmdWaveOpen;
+struct SoundCmdMidiOpen;
+struct SoundCmd;
 struct BgmTrack;
 struct AmbienceSound;
 struct AmbienceCell;
@@ -2156,6 +2175,104 @@ struct SoundStatus {
     uint8_t unk_1C[0x24];
 };
 
+/* The arguments of the sound commands, from +0x10 of a ring entry (SoundCmd). The commands on one track hold the YYSOUND
+   driver's own argument block (YYSOUND.IRX's ST_* structs, config/iop/yysound_types.h), sent as it is: a request id
+   the driver reports back, the track (an effect voice or a sequence slot), then the command's values. */
+/* ST_WAVE_PLAY, command 3 (0xA bytes). */
+struct SoundCmdWavePlay {
+    uint16_t id;               /* +0x00 */
+    uint8_t track;             /* +0x02 the effect voice */
+    uint8_t file;              /* +0x03 the bank */
+    uint16_t sound;            /* +0x04 the sound in the bank (jno) */
+    uint8_t program;           /* +0x06 */
+    uint8_t note;              /* +0x07 60 plays it as recorded */
+    uint8_t loop;              /* +0x08 times to play it, 0 until stopped */
+};
+/* ST_WAVE_FADE, command 5 (0xC bytes). */
+struct SoundCmdWaveFade {
+    uint16_t id;               /* +0x00 */
+    uint8_t track;             /* +0x02 */
+    uint8_t unk_03;
+    uint16_t leftGoal;         /* +0x04 */
+    uint16_t rightGoal;        /* +0x06 */
+    uint16_t leftStep;         /* +0x08 */
+    uint16_t rightStep;        /* +0x0A */
+};
+/* ST_WAVE_VOL, command 6 (0xC bytes). */
+struct SoundCmdWaveVolume {
+    uint16_t id;               /* +0x00 */
+    uint8_t track;             /* +0x02 */
+    uint8_t unk_03;
+    int32_t left;              /* +0x04 */
+    int32_t right;             /* +0x08 */
+};
+/* One value for a track (8 bytes; ST_TRACK_VOL, ST_WAVE_PITCH, ST_MIDI_VOL, ST_MIDI_TEMPO): commands 7, 8, 0xF, 0x10, 0x11. */
+struct SoundCmdTrackValue {
+    uint16_t id;               /* +0x00 */
+    uint8_t track;             /* +0x02 */
+    uint8_t unk_03;
+    union {
+        int32_t volume;        /* +0x04 commands 7 (a wave track), 0xF (a sequence slot), 0x10 (its track volume) */
+        uint16_t pitch;        /* +0x04 command 8 */
+        uint16_t tempo;        /* +0x04 command 0x11 */
+    };
+};
+/* ST_MIDI_PLAY, command 0xC (6 bytes). */
+struct SoundCmdMidiPlay {
+    uint16_t id;               /* +0x00 */
+    uint8_t track;             /* +0x02 the sequence slot */
+    uint8_t file;              /* +0x03 the bank opened by mm_SoundCmd_MidiOpen */
+    uint8_t loop;              /* +0x04 times to play it, 0 until stopped */
+};
+/* ST_MIDI_FADE, command 0xE (8 bytes). */
+struct SoundCmdMidiFade {
+    uint16_t id;               /* +0x00 */
+    uint8_t track;             /* +0x02 */
+    uint8_t unk_03;
+    uint16_t goal;             /* +0x04 */
+    uint16_t step;             /* +0x06 */
+};
+/* Commands rebuilt when sent (8 bytes): a track or file byte and a request id, each a word here (2, 4, 0xB, 0xD). */
+struct SoundCmdPair {
+    uint32_t target;           /* +0x00 the wave bank (2), effect voice (4), sequence slot (0xB, 0xD); its low byte is sent */
+    uint32_t id;               /* +0x04 its low half is sent */
+};
+/* command 1: built into ST_WAVE_OPEN with the path prefix when sent (0x10 bytes). */
+struct SoundCmdWaveOpen {
+    uint32_t hdName;           /* +0x00 the file names (addresses) */
+    uint32_t bdName;           /* +0x04 */
+    uint32_t id;               /* +0x08 its low half is sent */
+    uint32_t type;             /* +0x0C its low byte is sent */
+};
+/* command 9: built into ST_MIDI_OPEN with the path prefixes when sent (0x10 bytes). */
+struct SoundCmdMidiOpen {
+    uint32_t sqName;           /* +0x00 the file names (addresses) */
+    uint32_t hdName;           /* +0x04 */
+    uint32_t bdName;           /* +0x08 */
+    uint32_t id;               /* +0x0C its low half is sent */
+};
+/* A sound command in the ring at 0x1FE6C0 (0xD0 bytes, 256 of them): queued by mm_SoundCmd_*, sent one a call by
+   mm_SoundCmd_Flush as RPC functions 0x1001 to 0x3001. */
+struct SoundCmd {
+    int32_t command;           /* +0x00 1 to 0x18 (mm_SoundCmd_Flush lists them); 0 once retired */
+    int32_t sent;              /* +0x04 set once sent; the entry is retired when the driver's reply word is set */
+    int32_t kept;              /* +0x08 WavePlay and MidiPlay: 1 for a voice kept until stopped; nothing reads it */
+    uint32_t openFile;         /* +0x0C the bank (WaveOpen) or slot (MidiOpen) the open commands load; its low byte is sent */
+    union {
+        SoundCmdWavePlay wavePlay;     /* +0x10 */
+        SoundCmdWaveFade waveFade;     /* +0x10 */
+        SoundCmdWaveVolume waveVolume; /* +0x10 */
+        SoundCmdTrackValue trackValue; /* +0x10 */
+        SoundCmdMidiPlay midiPlay;     /* +0x10 */
+        SoundCmdMidiFade midiFade;     /* +0x10 */
+        SoundCmdPair pair;             /* +0x10 */
+        SoundCmdWaveOpen waveOpen;     /* +0x10 */
+        SoundCmdMidiOpen midiOpen;     /* +0x10 */
+        uint32_t loadPause;            /* +0x10 command 0x18: 1 while the disc is busy (its low byte is sent) */
+        uint8_t args[0xC0];            /* +0x10 */
+    };
+};
+
 /* A city music track (2 bytes, 13 at 0x1F8120): 0 to 2 the moods' own, 3 to 12 the tracks bought (mm_Bgm_SetTrackSlot). */
 struct BgmTrack {
     uint8_t bank;              /* +0x00 the music bank, 0xFF = free */
@@ -2256,11 +2373,18 @@ struct CityScene {
    data arrays as functions are ported. */
 
 struct StageScene;
+struct StageSceneVtable;
 struct MsgWin;
 struct TalkCard;
 struct TalkMoney;
 struct TalkConv;
 
+/* The stage scene's own vtable (0x1BCF10, 8 bytes before its widget's at 0x1BCF18): only the slot the game calls through
+   it is known (0x50 bytes). */
+struct StageSceneVtable {
+    uint8_t unk_00[0x4C];
+    uint32_t dtor;             /* +0x4C the deleting destructor, mm_StageScene_dtor (mm_GameUpdate deletes the briefing with it) */
+};
 /* The stage scene: the stage transition (0x104 bytes, mm_StageScene_*): title cards, approval rate, the boss's briefing, the mission
    movie and the credits text, one step of the action table 0x1B07C0 at a time. An empty Stage base (padded) with a widget
    at +4. */
@@ -2290,7 +2414,7 @@ struct StageScene {
     GuestPtr<MsgWin> window;            /* +0x58 the briefing's message window */
     char text[0xA0];           /* +0x5C the briefing's text being shown */
     GuestPtr<A3DObject> boss;           /* +0xFC the boss (0x1F3C68) */
-    GuestPtr<void> vtable;              /* +0x100 0x1BCF10 */
+    GuestPtr<StageSceneVtable> vtable;  /* +0x100 0x1BCF10 */
 };
 /* Message window (0x2CC bytes), a widget. */
 struct MsgWin {
@@ -2436,13 +2560,27 @@ static_assert(offsetof(TextBox, sprites) == 0x30, "TextBox.sprites");
 static_assert(offsetof(TextBox, cells) == 0x34, "TextBox.cells");
 static_assert(offsetof(TextBox, columns) == 0x38, "TextBox.columns");
 static_assert(offsetof(TextBox, rows) == 0x3C, "TextBox.rows");
+static_assert(offsetof(GsAdWrite, value) == 0x00, "GsAdWrite.value");
+static_assert(offsetof(GsAdWrite, reg) == 0x08, "GsAdWrite.reg");
+static_assert(offsetof(GsStWrite, s) == 0x00, "GsStWrite.s");
+static_assert(offsetof(GsStWrite, t) == 0x04, "GsStWrite.t");
+static_assert(offsetof(GsStWrite, reg) == 0x08, "GsStWrite.reg");
+static_assert(offsetof(GsXyzWrite, xy) == 0x00, "GsXyzWrite.xy");
+static_assert(offsetof(GsXyzWrite, z) == 0x04, "GsXyzWrite.z");
+static_assert(offsetof(GsXyzWrite, reg) == 0x08, "GsXyzWrite.reg");
+static_assert(offsetof(SpritePacket, dmaTag) == 0x00, "SpritePacket.dmaTag");
+static_assert(offsetof(SpritePacket, vifCodes) == 0x08, "SpritePacket.vifCodes");
+static_assert(offsetof(SpritePacket, gifTag) == 0x10, "SpritePacket.gifTag");
+static_assert(offsetof(SpritePacket, rgbaq) == 0x20, "SpritePacket.rgbaq");
+static_assert(offsetof(SpritePacket, tex0) == 0x30, "SpritePacket.tex0");
+static_assert(offsetof(SpritePacket, prim) == 0x40, "SpritePacket.prim");
+static_assert(offsetof(SpritePacket, stA) == 0x50, "SpritePacket.stA");
+static_assert(offsetof(SpritePacket, xyzA) == 0x60, "SpritePacket.xyzA");
+static_assert(offsetof(SpritePacket, stB) == 0x70, "SpritePacket.stB");
+static_assert(offsetof(SpritePacket, xyzB) == 0x80, "SpritePacket.xyzB");
+static_assert(offsetof(SpritePacket, ret) == 0x90, "SpritePacket.ret");
 static_assert(sizeof(Frame) == 0xC0, "Frame size");
-static_assert(offsetof(Frame, stA) == 0x50, "Frame.stA");
-static_assert(offsetof(Frame, cornerA) == 0x60, "Frame.cornerA");
-static_assert(offsetof(Frame, colourA) == 0x64, "Frame.colourA");
-static_assert(offsetof(Frame, stB) == 0x70, "Frame.stB");
-static_assert(offsetof(Frame, cornerB) == 0x80, "Frame.cornerB");
-static_assert(offsetof(Frame, colourB) == 0x84, "Frame.colourB");
+static_assert(offsetof(Frame, sprite) == 0x00, "Frame.sprite");
 static_assert(offsetof(Frame, style) == 0xA0, "Frame.style");
 static_assert(offsetof(Frame, x) == 0xA4, "Frame.x");
 static_assert(offsetof(Frame, y) == 0xA8, "Frame.y");
@@ -2582,19 +2720,6 @@ static_assert(offsetof(TerrainPassParams, gifTag) == 0x30, "TerrainPassParams.gi
 static_assert(offsetof(TerrainPassParams, prim) == 0x40, "TerrainPassParams.prim");
 static_assert(offsetof(TerrainPassParams, stq) == 0x50, "TerrainPassParams.stq");
 static_assert(offsetof(TerrainPassParams, mask) == 0x110, "TerrainPassParams.mask");
-static_assert(offsetof(GsAdWrite, value) == 0x00, "GsAdWrite.value");
-static_assert(offsetof(GsAdWrite, reg) == 0x08, "GsAdWrite.reg");
-static_assert(offsetof(CursorSprite, dmaTag) == 0x00, "CursorSprite.dmaTag");
-static_assert(offsetof(CursorSprite, vifCodes) == 0x08, "CursorSprite.vifCodes");
-static_assert(offsetof(CursorSprite, gifTag) == 0x10, "CursorSprite.gifTag");
-static_assert(offsetof(CursorSprite, rgbaq) == 0x20, "CursorSprite.rgbaq");
-static_assert(offsetof(CursorSprite, tex0) == 0x30, "CursorSprite.tex0");
-static_assert(offsetof(CursorSprite, prim) == 0x40, "CursorSprite.prim");
-static_assert(offsetof(CursorSprite, stA) == 0x50, "CursorSprite.stA");
-static_assert(offsetof(CursorSprite, xyzA) == 0x60, "CursorSprite.xyzA");
-static_assert(offsetof(CursorSprite, stB) == 0x70, "CursorSprite.stB");
-static_assert(offsetof(CursorSprite, xyzB) == 0x80, "CursorSprite.xyzB");
-static_assert(offsetof(CursorSprite, ret) == 0x90, "CursorSprite.ret");
 static_assert(sizeof(CityCursorView) == 0xD0, "CityCursorView size");
 static_assert(offsetof(CityCursorView, lines) == 0x00, "CityCursorView.lines");
 static_assert(offsetof(CityCursorView, lineFrames) == 0x14, "CityCursorView.lineFrames");
@@ -3683,6 +3808,66 @@ static_assert(offsetof(SoundStatus, busy) == 0x0C, "SoundStatus.busy");
 static_assert(offsetof(SoundStatus, lastId) == 0x10, "SoundStatus.lastId");
 static_assert(offsetof(SoundStatus, checkResult) == 0x14, "SoundStatus.checkResult");
 static_assert(offsetof(SoundStatus, speechTracks) == 0x18, "SoundStatus.speechTracks");
+static_assert(sizeof(SoundCmdWavePlay) == 0xA, "SoundCmdWavePlay size");
+static_assert(offsetof(SoundCmdWavePlay, id) == 0x00, "SoundCmdWavePlay.id");
+static_assert(offsetof(SoundCmdWavePlay, track) == 0x02, "SoundCmdWavePlay.track");
+static_assert(offsetof(SoundCmdWavePlay, file) == 0x03, "SoundCmdWavePlay.file");
+static_assert(offsetof(SoundCmdWavePlay, sound) == 0x04, "SoundCmdWavePlay.sound");
+static_assert(offsetof(SoundCmdWavePlay, program) == 0x06, "SoundCmdWavePlay.program");
+static_assert(offsetof(SoundCmdWavePlay, note) == 0x07, "SoundCmdWavePlay.note");
+static_assert(offsetof(SoundCmdWavePlay, loop) == 0x08, "SoundCmdWavePlay.loop");
+static_assert(sizeof(SoundCmdWaveFade) == 0xC, "SoundCmdWaveFade size");
+static_assert(offsetof(SoundCmdWaveFade, id) == 0x00, "SoundCmdWaveFade.id");
+static_assert(offsetof(SoundCmdWaveFade, track) == 0x02, "SoundCmdWaveFade.track");
+static_assert(offsetof(SoundCmdWaveFade, leftGoal) == 0x04, "SoundCmdWaveFade.leftGoal");
+static_assert(offsetof(SoundCmdWaveFade, rightGoal) == 0x06, "SoundCmdWaveFade.rightGoal");
+static_assert(offsetof(SoundCmdWaveFade, leftStep) == 0x08, "SoundCmdWaveFade.leftStep");
+static_assert(offsetof(SoundCmdWaveFade, rightStep) == 0x0A, "SoundCmdWaveFade.rightStep");
+static_assert(sizeof(SoundCmdWaveVolume) == 0xC, "SoundCmdWaveVolume size");
+static_assert(offsetof(SoundCmdWaveVolume, id) == 0x00, "SoundCmdWaveVolume.id");
+static_assert(offsetof(SoundCmdWaveVolume, track) == 0x02, "SoundCmdWaveVolume.track");
+static_assert(offsetof(SoundCmdWaveVolume, left) == 0x04, "SoundCmdWaveVolume.left");
+static_assert(offsetof(SoundCmdWaveVolume, right) == 0x08, "SoundCmdWaveVolume.right");
+static_assert(offsetof(SoundCmdTrackValue, id) == 0x00, "SoundCmdTrackValue.id");
+static_assert(offsetof(SoundCmdTrackValue, track) == 0x02, "SoundCmdTrackValue.track");
+static_assert(offsetof(SoundCmdTrackValue, volume) == 0x04, "SoundCmdTrackValue.volume");
+static_assert(offsetof(SoundCmdTrackValue, pitch) == 0x04, "SoundCmdTrackValue.pitch");
+static_assert(offsetof(SoundCmdTrackValue, tempo) == 0x04, "SoundCmdTrackValue.tempo");
+static_assert(offsetof(SoundCmdMidiPlay, id) == 0x00, "SoundCmdMidiPlay.id");
+static_assert(offsetof(SoundCmdMidiPlay, track) == 0x02, "SoundCmdMidiPlay.track");
+static_assert(offsetof(SoundCmdMidiPlay, file) == 0x03, "SoundCmdMidiPlay.file");
+static_assert(offsetof(SoundCmdMidiPlay, loop) == 0x04, "SoundCmdMidiPlay.loop");
+static_assert(offsetof(SoundCmdMidiFade, id) == 0x00, "SoundCmdMidiFade.id");
+static_assert(offsetof(SoundCmdMidiFade, track) == 0x02, "SoundCmdMidiFade.track");
+static_assert(offsetof(SoundCmdMidiFade, goal) == 0x04, "SoundCmdMidiFade.goal");
+static_assert(offsetof(SoundCmdMidiFade, step) == 0x06, "SoundCmdMidiFade.step");
+static_assert(offsetof(SoundCmdPair, target) == 0x00, "SoundCmdPair.target");
+static_assert(offsetof(SoundCmdPair, id) == 0x04, "SoundCmdPair.id");
+static_assert(sizeof(SoundCmdWaveOpen) == 0x10, "SoundCmdWaveOpen size");
+static_assert(offsetof(SoundCmdWaveOpen, hdName) == 0x00, "SoundCmdWaveOpen.hdName");
+static_assert(offsetof(SoundCmdWaveOpen, bdName) == 0x04, "SoundCmdWaveOpen.bdName");
+static_assert(offsetof(SoundCmdWaveOpen, id) == 0x08, "SoundCmdWaveOpen.id");
+static_assert(offsetof(SoundCmdWaveOpen, type) == 0x0C, "SoundCmdWaveOpen.type");
+static_assert(sizeof(SoundCmdMidiOpen) == 0x10, "SoundCmdMidiOpen size");
+static_assert(offsetof(SoundCmdMidiOpen, sqName) == 0x00, "SoundCmdMidiOpen.sqName");
+static_assert(offsetof(SoundCmdMidiOpen, hdName) == 0x04, "SoundCmdMidiOpen.hdName");
+static_assert(offsetof(SoundCmdMidiOpen, bdName) == 0x08, "SoundCmdMidiOpen.bdName");
+static_assert(offsetof(SoundCmdMidiOpen, id) == 0x0C, "SoundCmdMidiOpen.id");
+static_assert(offsetof(SoundCmd, command) == 0x00, "SoundCmd.command");
+static_assert(offsetof(SoundCmd, sent) == 0x04, "SoundCmd.sent");
+static_assert(offsetof(SoundCmd, kept) == 0x08, "SoundCmd.kept");
+static_assert(offsetof(SoundCmd, openFile) == 0x0C, "SoundCmd.openFile");
+static_assert(offsetof(SoundCmd, wavePlay) == 0x10, "SoundCmd.wavePlay");
+static_assert(offsetof(SoundCmd, waveFade) == 0x10, "SoundCmd.waveFade");
+static_assert(offsetof(SoundCmd, waveVolume) == 0x10, "SoundCmd.waveVolume");
+static_assert(offsetof(SoundCmd, trackValue) == 0x10, "SoundCmd.trackValue");
+static_assert(offsetof(SoundCmd, midiPlay) == 0x10, "SoundCmd.midiPlay");
+static_assert(offsetof(SoundCmd, midiFade) == 0x10, "SoundCmd.midiFade");
+static_assert(offsetof(SoundCmd, pair) == 0x10, "SoundCmd.pair");
+static_assert(offsetof(SoundCmd, waveOpen) == 0x10, "SoundCmd.waveOpen");
+static_assert(offsetof(SoundCmd, midiOpen) == 0x10, "SoundCmd.midiOpen");
+static_assert(offsetof(SoundCmd, loadPause) == 0x10, "SoundCmd.loadPause");
+static_assert(offsetof(SoundCmd, args) == 0x10, "SoundCmd.args");
 static_assert(offsetof(BgmTrack, bank) == 0x00, "BgmTrack.bank");
 static_assert(offsetof(BgmTrack, enabled) == 0x01, "BgmTrack.enabled");
 static_assert(sizeof(AmbienceSound) == 0x1C, "AmbienceSound size");
@@ -3751,6 +3936,7 @@ static_assert(offsetof(CityScene, fadeLevel) == 0xC8, "CityScene.fadeLevel");
 static_assert(offsetof(CityScene, fade) == 0xCC, "CityScene.fade");
 static_assert(offsetof(CityScene, fadeSpeed) == 0xD0, "CityScene.fadeSpeed");
 static_assert(offsetof(CityScene, fadeOverAll) == 0xD4, "CityScene.fadeOverAll");
+static_assert(offsetof(StageSceneVtable, dtor) == 0x4C, "StageSceneVtable.dtor");
 static_assert(offsetof(StageScene, stageBase) == 0x00, "StageScene.stageBase");
 static_assert(offsetof(StageScene, widget) == 0x04, "StageScene.widget");
 static_assert(offsetof(StageScene, camera) == 0x10, "StageScene.camera");

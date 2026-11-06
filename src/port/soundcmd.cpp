@@ -1,19 +1,21 @@
-// The sound command queue: each function fills the next entry of the ring for the YYSOUND driver and
-// returns that entry's index. Arguments go to +0x10 onwards; which fields a command uses, and their widths,
-// differ per command, so each writes exactly its own. From +0x10 most entries are the driver's own argument block
-// (YYSOUND.IRX's ST_* structs, config/iop/yysound_types.h), sent as they are: the request id the driver reports
-// back, then the track (an effect voice or a sequence slot) and the file (a bank) where the command has them.
+// The sound command queue: each function fills the next entry of the ring for the YYSOUND driver (SoundCmd) and
+// returns that entry's index. Which fields a command uses, and their widths, differ per command, so each writes exactly
+// its own. From +0x10 the commands on one track hold the driver's own argument block (YYSOUND.IRX's ST_* structs,
+// config/iop/yysound_types.h), sent as it is: the request id the driver reports back, then the track (an effect voice
+// or a sequence slot) and the file (a bank) where the command has them; the others are rebuilt when sent.
 
 #include "game_functions.h"
 #include "game_globals.h"
 #include "sdk.h"
 
+#include <cstddef>
+
 namespace mm
 {
     namespace
     {
-        // Address of the entry at the write index.
-        uint32_t entryAt(int32_t index) { return globals::kSoundCmds + 0xD0u * static_cast<uint32_t>(index); }
+        // The ring's entry `index`.
+        GuestPtr<SoundCmd> entryAt(int32_t index) { return GuestPtr<SoundCmd>{globals::kSoundCmds} + index; }
 
         // Moves the write index on (wrapping at 256) and returns the old one, as the original does in v0.
         int advance(int32_t index)
@@ -23,58 +25,56 @@ namespace mm
             return index;
         }
 
-        template <typename T>
-        void put(uint32_t entry, uint32_t offset, T value) { port::store<T>(entry + offset, value); }
-
         // The common start of most commands: the command, and the state and both words at +8/+0xC cleared.
-        void begin(uint32_t entry, int32_t command)
+        void begin(GuestPtr<SoundCmd> cmd, int32_t command)
         {
-            put<int32_t>(entry, 0x0, command);
-            put<int32_t>(entry, 0x4, 0);
-            put<int32_t>(entry, 0xC, 0);
-            put<int32_t>(entry, 0x8, 0);
+            cmd->command = command;
+            cmd->sent = 0;
+            cmd->openFile = 0;
+            cmd->kept = 0;
         }
 
-        // Commands with a voice byte at +0x12, a halfword at +0x10 and a word (or halfword) at +0x14.
-        template <typename T>
-        int voiceCommand(int32_t command, uint8_t voice, T value, uint16_t extra)
+        // Commands with one value for a track (SoundCmdTrackValue): the track, the value `set` writes, the request id.
+        template <typename Set>
+        int trackCommand(int32_t command, uint8_t track, uint16_t id, Set set)
         {
             const int32_t index = globals::soundCmdIndex.get();
-            const uint32_t entry = entryAt(index);
-            begin(entry, command);
-            put<uint8_t>(entry, 0x12, voice);
-            put<T>(entry, 0x14, value);
-            put<uint16_t>(entry, 0x10, extra);
+            const GuestPtr<SoundCmd> cmd = entryAt(index);
+            begin(cmd, command);
+            cmd->trackValue.track = track;
+            set(cmd->trackValue);
+            cmd->trackValue.id = id;
             return advance(index);
         }
 
-        // Commands with two masked words at +0x10 and +0x14.
-        int pairCommand(int32_t command, uint32_t first, uint32_t second)
+        // Commands rebuilt when sent (SoundCmdPair): the target's low byte and the id's low half, each kept as a word.
+        int pairCommand(int32_t command, uint32_t target, uint32_t id)
         {
             const int32_t index = globals::soundCmdIndex.get();
-            const uint32_t entry = entryAt(index);
-            put<int32_t>(entry, 0x0, command);
-            put<int32_t>(entry, 0x4, 0);
-            put<int32_t>(entry, 0xC, 0);
-            put<uint32_t>(entry, 0x10, first & 0xFFu);
-            put<uint32_t>(entry, 0x14, second & 0xFFFFu);
-            put<int32_t>(entry, 0x8, 0);
+            const GuestPtr<SoundCmd> cmd = entryAt(index);
+            cmd->command = command;
+            cmd->sent = 0;
+            cmd->openFile = 0;
+            cmd->pair.target = target & 0xFFu;
+            cmd->pair.id = id & 0xFFFFu;
+            cmd->kept = 0;
             return advance(index);
         }
     }
 
+    // Loads a wave bank: its HD and BD file names into bank `bank`; `id` is the request id.
     int SoundCmd_WaveOpen(uint32_t bank, uint32_t type, int hdName, int bdName, uint32_t id)
     {
         const int32_t index = globals::soundCmdIndex.get();
-        const uint32_t entry = entryAt(index);
-        put<int32_t>(entry, 0x0, 1);
-        put<int32_t>(entry, 0x4, 0);
-        put<uint32_t>(entry, 0xC, bank & 0xFFu);
-        put<int32_t>(entry, 0x10, hdName);
-        put<int32_t>(entry, 0x14, bdName);
-        put<uint32_t>(entry, 0x18, id & 0xFFFFu);
-        put<uint32_t>(entry, 0x1C, type & 0xFFu);
-        put<int32_t>(entry, 0x8, 0);
+        const GuestPtr<SoundCmd> cmd = entryAt(index);
+        cmd->command = 1;
+        cmd->sent = 0;
+        cmd->openFile = bank & 0xFFu;
+        cmd->waveOpen.hdName = static_cast<uint32_t>(hdName);
+        cmd->waveOpen.bdName = static_cast<uint32_t>(bdName);
+        cmd->waveOpen.id = id & 0xFFFFu;
+        cmd->waveOpen.type = type & 0xFFu;
+        cmd->kept = 0;
         return advance(index);
     }
 
@@ -87,18 +87,19 @@ namespace mm
     int SoundCmd_WavePlay(uint32_t voice, uint8_t bank, uint16_t sound, uint8_t program, uint8_t note, uint8_t loop, int kept, uint16_t id)
     {
         const int32_t index = globals::soundCmdIndex.get();
-        const uint32_t entry = entryAt(index);
-        put<int32_t>(entry, 0x0, 3);
-        put<int32_t>(entry, 0x4, 0);
-        put<int32_t>(entry, 0xC, 0);
-        put<int32_t>(entry, 0x8, kept);
-        put<uint8_t>(entry, 0x12, static_cast<uint8_t>(voice));
-        put<uint8_t>(entry, 0x13, bank);
-        put<uint8_t>(entry, 0x16, program);
-        put<uint8_t>(entry, 0x17, note);
-        put<uint8_t>(entry, 0x18, loop);
-        put<uint16_t>(entry, 0x10, id);
-        put<uint16_t>(entry, 0x14, sound);
+        const GuestPtr<SoundCmd> cmd = entryAt(index);
+        cmd->command = 3;
+        cmd->sent = 0;
+        cmd->openFile = 0;
+        cmd->kept = kept;
+        SoundCmdWavePlay &play = cmd->wavePlay;
+        play.track = static_cast<uint8_t>(voice);
+        play.file = bank;
+        play.program = program;
+        play.note = note;
+        play.loop = loop;
+        play.id = id;
+        play.sound = sound;
         globals::soundVoicesQueued.set(globals::soundVoicesQueued.get() | (1u << (voice & 31u)));
         return advance(index);
     }
@@ -108,45 +109,53 @@ namespace mm
     int SoundCmd_WaveFade(uint8_t voice, uint16_t leftGoal, uint16_t rightGoal, uint16_t leftStep, uint16_t rightStep, uint16_t id)
     {
         const int32_t index = globals::soundCmdIndex.get();
-        const uint32_t entry = entryAt(index);
-        begin(entry, 5);
-        put<uint8_t>(entry, 0x12, voice);
-        put<uint16_t>(entry, 0x14, leftGoal);
-        put<uint16_t>(entry, 0x16, rightGoal);
-        put<uint16_t>(entry, 0x18, leftStep);
-        put<uint16_t>(entry, 0x1A, rightStep);
-        put<uint16_t>(entry, 0x10, id);
+        const GuestPtr<SoundCmd> cmd = entryAt(index);
+        begin(cmd, 5);
+        SoundCmdWaveFade &fade = cmd->waveFade;
+        fade.track = voice;
+        fade.leftGoal = leftGoal;
+        fade.rightGoal = rightGoal;
+        fade.leftStep = leftStep;
+        fade.rightStep = rightStep;
+        fade.id = id;
         return advance(index);
     }
 
     int SoundCmd_WaveSetVolume(uint8_t voice, int left, int right, uint16_t id)
     {
         const int32_t index = globals::soundCmdIndex.get();
-        const uint32_t entry = entryAt(index);
-        begin(entry, 6);
-        put<uint8_t>(entry, 0x12, voice);
-        put<int32_t>(entry, 0x14, left);
-        put<int32_t>(entry, 0x18, right);
-        put<uint16_t>(entry, 0x10, id);
+        const GuestPtr<SoundCmd> cmd = entryAt(index);
+        begin(cmd, 6);
+        cmd->waveVolume.track = voice;
+        cmd->waveVolume.left = left;
+        cmd->waveVolume.right = right;
+        cmd->waveVolume.id = id;
         return advance(index);
     }
 
-    int SoundCmd_WaveSetTrackVolume(uint8_t voice, int volume, uint16_t id) { return voiceCommand<int32_t>(7, voice, volume, id); }
-    int SoundCmd_WaveSetPitch(uint8_t voice, uint16_t pitch, uint16_t id) { return voiceCommand<uint16_t>(8, voice, pitch, id); }
+    int SoundCmd_WaveSetTrackVolume(uint8_t voice, int volume, uint16_t id)
+    {
+        return trackCommand(7, voice, id, [&](SoundCmdTrackValue &value) { value.volume = volume; });
+    }
+
+    int SoundCmd_WaveSetPitch(uint8_t voice, uint16_t pitch, uint16_t id)
+    {
+        return trackCommand(8, voice, id, [&](SoundCmdTrackValue &value) { value.pitch = pitch; });
+    }
 
     // Loads a sound bank: SQ, HD and BD file names into slot `slot`; `id` is the request id.
     int SoundCmd_MidiOpen(uint32_t slot, int sqName, int hdName, int bdName, uint32_t id)
     {
         const int32_t index = globals::soundCmdIndex.get();
-        const uint32_t entry = entryAt(index);
-        put<int32_t>(entry, 0x0, 9);
-        put<int32_t>(entry, 0x4, 0);
-        put<uint32_t>(entry, 0xC, slot & 0xFFu);
-        put<int32_t>(entry, 0x10, sqName);
-        put<int32_t>(entry, 0x14, hdName);
-        put<int32_t>(entry, 0x18, bdName);
-        put<uint32_t>(entry, 0x1C, id & 0xFFFFu);
-        put<int32_t>(entry, 0x8, 0);
+        const GuestPtr<SoundCmd> cmd = entryAt(index);
+        cmd->command = 9;
+        cmd->sent = 0;
+        cmd->openFile = slot & 0xFFu;
+        cmd->midiOpen.sqName = static_cast<uint32_t>(sqName);
+        cmd->midiOpen.hdName = static_cast<uint32_t>(hdName);
+        cmd->midiOpen.bdName = static_cast<uint32_t>(bdName);
+        cmd->midiOpen.id = id & 0xFFFFu;
+        cmd->kept = 0;
         return advance(index);
     }
 
@@ -157,15 +166,15 @@ namespace mm
     int SoundCmd_MidiPlay(uint32_t slot, uint8_t file, uint8_t loop, int kept, uint16_t id)
     {
         const int32_t index = globals::soundCmdIndex.get();
-        const uint32_t entry = entryAt(index);
-        put<int32_t>(entry, 0x0, 0xC);
-        put<int32_t>(entry, 0x4, 0);
-        put<int32_t>(entry, 0xC, 0);
-        put<int32_t>(entry, 0x8, kept);
-        put<uint8_t>(entry, 0x12, static_cast<uint8_t>(slot));
-        put<uint8_t>(entry, 0x13, file);
-        put<uint8_t>(entry, 0x14, loop);
-        put<uint16_t>(entry, 0x10, id);
+        const GuestPtr<SoundCmd> cmd = entryAt(index);
+        cmd->command = 0xC;
+        cmd->sent = 0;
+        cmd->openFile = 0;
+        cmd->kept = kept;
+        cmd->midiPlay.track = static_cast<uint8_t>(slot);
+        cmd->midiPlay.file = file;
+        cmd->midiPlay.loop = loop;
+        cmd->midiPlay.id = id;
         globals::soundSlotsQueued.set(globals::soundSlotsQueued.get() | (1u << (slot & 31u)));
         return advance(index);
     }
@@ -175,49 +184,56 @@ namespace mm
     int SoundCmd_MidiFade(uint8_t voice, uint16_t target, uint16_t time, uint16_t id)
     {
         const int32_t index = globals::soundCmdIndex.get();
-        const uint32_t entry = entryAt(index);
-        begin(entry, 0xE);
-        put<uint8_t>(entry, 0x12, voice);
-        put<uint16_t>(entry, 0x14, target);
-        put<uint16_t>(entry, 0x16, time);
-        put<uint16_t>(entry, 0x10, id);
+        const GuestPtr<SoundCmd> cmd = entryAt(index);
+        begin(cmd, 0xE);
+        cmd->midiFade.track = voice;
+        cmd->midiFade.goal = target;
+        cmd->midiFade.step = time;
+        cmd->midiFade.id = id;
         return advance(index);
     }
 
-    int SoundCmd_MidiSetVolume(uint8_t voice, int volume, uint16_t id) { return voiceCommand<int32_t>(0xF, voice, volume, id); }
-    int SoundCmd_MidiSetTrackVolume(uint8_t voice, int volume, uint16_t id) { return voiceCommand<int32_t>(0x10, voice, volume, id); }
-    int SoundCmd_MidiSetTempo(uint8_t voice, uint16_t tempo, uint16_t id) { return voiceCommand<uint16_t>(0x11, voice, tempo, id); }
+    int SoundCmd_MidiSetVolume(uint8_t voice, int volume, uint16_t id)
+    {
+        return trackCommand(0xF, voice, id, [&](SoundCmdTrackValue &value) { value.volume = volume; });
+    }
 
-    // Tells the driver the disc is busy (1) or free (0); only the command and that byte are written.
+    int SoundCmd_MidiSetTrackVolume(uint8_t voice, int volume, uint16_t id)
+    {
+        return trackCommand(0x10, voice, id, [&](SoundCmdTrackValue &value) { value.volume = volume; });
+    }
+
+    int SoundCmd_MidiSetTempo(uint8_t voice, uint16_t tempo, uint16_t id)
+    {
+        return trackCommand(0x11, voice, id, [&](SoundCmdTrackValue &value) { value.tempo = tempo; });
+    }
+
+    // Tells the driver the disc is busy (1) or free (0); only the command and that word are written.
     int SoundCmd_SetLoadPause(uint32_t busy)
     {
         const int32_t index = globals::soundCmdIndex.get();
-        const uint32_t entry = entryAt(index);
-        put<int32_t>(entry, 0x0, 0x18);
-        put<uint32_t>(entry, 0x10, busy & 0xFFu);
+        const GuestPtr<SoundCmd> cmd = entryAt(index);
+        cmd->command = 0x18;
+        cmd->loadPause = busy & 0xFFu;
         return advance(index);
     }
 
     // Removes the WavePlay commands (3) not yet sent from the ring, moving the later entries up over them, and sets
     // the write index after the last one kept. It matches the voice against byte 3 of the command word, which is
-    // 0 for every command, rather than the voice byte at +0x12: called with 0, it drops every queued WavePlay.
+    // 0 for every command, rather than the voice byte (wavePlay.track): called with 0, it drops every queued WavePlay.
     void SoundCmd_CancelWavePlay(char voice)
     {
         const int32_t end = globals::soundCmdIndex.get();
         int32_t kept = globals::soundCmdSent.get();
         for (int32_t index = kept; index != end;)
         {
-            const uint32_t entry = entryAt(index);
-            const int32_t command = port::load<int32_t>(entry);
-            const bool cancel = command == 3 && port::load<uint8_t>(entry + 3u) == static_cast<uint8_t>(voice);
+            const GuestPtr<SoundCmd> cmd = entryAt(index);
+            const uint8_t commandByte3 = static_cast<uint8_t>(static_cast<uint32_t>(cmd->command) >> 24);
+            const bool cancel = cmd->command == 3 && commandByte3 == static_cast<uint8_t>(voice);
             if (!cancel)
             {
                 if (kept != index)
-                {
-                    const uint32_t to = entryAt(kept);
-                    for (uint32_t offset = 0; offset < 0xD0u; offset += 4u)
-                        port::store<uint32_t>(to + offset, port::load<uint32_t>(entry + offset));
-                }
+                    *entryAt(kept) = *cmd;
                 if (!(++kept < 0x100))
                     kept = 0;
             }
@@ -251,17 +267,16 @@ namespace mm
     // the driver's status block (SoundStatus at 0x20B7C0) reports in use, sequence slots (midiPlaying), wave voices
     // (wavePlaying) and the tracks spoken voices use (speechTracks), leave the queued masks (the driver has taken those
     // commands); with the queue empty the counters restart (and the masks clear, unless the driver reports itself
-    // busy). A command is a 0xD0-byte entry of the ring at 0x1FE6C0 (256 entries; command at +0, "sent" flag at +4, the
-    // arguments from +0x10; the next to send is 0x1BDD48 and the next free 0x1BDD44): a sent one waits for the driver's
-    // reply word (0x20B800) and is then retired; a new one is copied (or, for the commands with names, built with the
-    // path prefixes of 0x1B9D50 to 0x1B9DB0 and ".." at 0x1B9D68) into the send buffer at 0x20B6C0 and called as RPC
-    // function 0x1001 to 0x3001 (command 0x17: function 2). With 192 commands or more waiting, the ring is compacted to
-    // the commands that must not be lost (1, 2, 4, 5, 7, 9 to 0x10, 0x17 and 0x18) with a log line, and a second line
-    // says when it is still that full.
+    // busy). A command is a SoundCmd entry of the ring (the next to send is 0x1BDD48 and the next free 0x1BDD44): a sent
+    // one waits for the driver's reply word (0x20B800) and is then retired; a new one is copied (or, for the commands
+    // with names, built with the path prefixes of 0x1B9D50 to 0x1B9DB0 and ".." at 0x1B9D68) into the send buffer at
+    // 0x20B6C0 and called as RPC function 0x1001 to 0x3001 (command 0x17: function 2). None of the queue functions
+    // above writes commands 10 or 0x12 to 0x17; their arguments are read as words from +0x10. With 192 commands or more
+    // waiting, the ring is compacted to the commands that must not be lost (1, 2, 4, 5, 7, 9 to 0x10, 0x17 and 0x18) with
+    // a log line, and a second line says when it is still that full.
     void SoundCmd_Flush()
     {
-        constexpr uint32_t kRing = 0x001FE6C0u, kClient = 0x001FE690u, kStatus = 0x0020B7C0u, kSend = 0x0020B6C0u, kReply = 0x0020B800u;
-        const auto entryOf = [&](int32_t index) { return kRing + 0xD0u * static_cast<uint32_t>(index); };
+        constexpr uint32_t kClient = 0x001FE690u, kStatus = 0x0020B7C0u, kSend = 0x0020B6C0u, kReply = 0x0020B800u;
         const auto waiting = [&]() {
             int32_t count = globals::soundCmdIndex.get() - globals::soundCmdSent.get();
             if (count < 0)
@@ -288,14 +303,14 @@ namespace mm
         }
         if (sdk::sceSifCheckStatRpc(kClient) == 0)
         {
-            const uint32_t entry = entryOf(globals::soundCmdSent.get());
-            if (port::load<int32_t>(entry + 4u) != 0)
+            const GuestPtr<SoundCmd> cmd = entryAt(globals::soundCmdSent.get());
+            if (cmd->sent != 0)
             {
                 sdk::FlushCache(0);
                 if (port::load<uint32_t>(kReply) != 0)
                 {
-                    port::store<uint32_t>(entry, 0u);
-                    port::store<uint32_t>(entry + 4u, 0u);
+                    cmd->command = 0;
+                    cmd->sent = 0;
                     globals::soundCmdSent.set(globals::soundCmdSent.get() + 1);
                     if (globals::soundCmdSent.get() > 0xFF)
                         globals::soundCmdSent.set(0);
@@ -303,49 +318,50 @@ namespace mm
             }
             else
             {
+                const uint32_t args = cmd.address + static_cast<uint32_t>(offsetof(SoundCmd, args));
                 const auto call = [&](int number) {
                     sdk::FlushCache(0);
                     sdk::FlushCache(0);
                     sdk::sceSifCallRpc(kClient, number, 1, kSend, 0x100, kReply, 0x40, 0u, 0u);
                 };
                 const auto copyArguments = [&](uint32_t bytes, int number) {
-                    sdk::memcpy(kSend, entry + 0x10u, static_cast<int>(bytes));
+                    sdk::memcpy(kSend, args, static_cast<int>(bytes));
                     call(number);
                 };
-                // A byte at +2 and a halfword at +0 of the send buffer, from the entry's byte and halfword at the offsets given.
-                const auto byteAndHalf = [&](uint32_t byteAt, uint32_t halfAt, int number) {
-                    port::store<uint8_t>(kSend + 2u, port::load<uint8_t>(entry + byteAt));
-                    port::store<uint16_t>(kSend, port::load<uint16_t>(entry + halfAt));
+                // The track or file byte at +2 and the request id at +0 of the send buffer, from a SoundCmdPair.
+                const auto sendPair = [&](int number) {
+                    port::store<uint8_t>(kSend + 2u, static_cast<uint8_t>(cmd->pair.target));
+                    port::store<uint16_t>(kSend, static_cast<uint16_t>(cmd->pair.id));
                     call(number);
                 };
-                // A path: prefix, then the entry's name string, then "..".
-                const auto path = [&](uint32_t at, uint32_t prefix, uint32_t nameAt) {
+                // A path: prefix, then the name string, then "..".
+                const auto path = [&](uint32_t at, uint32_t prefix, uint32_t name) {
                     sdk::strcpy(at, prefix);
-                    sdk::strcat(at, port::load<uint32_t>(entry + nameAt));
+                    sdk::strcat(at, name);
                     sdk::strcat(at, 0x001B9D68u);
                 };
-                switch (port::load<uint32_t>(entry))
+                switch (static_cast<uint32_t>(cmd->command))
                 {
                 case 1:
                     sdk::strcpy(kSend + 4u, 0x001B9DB0u);
                     sdk::strcpy(kSend + 0x44u, 0x001B9DB0u);
-                    sdk::strcat(kSend + 4u, port::load<uint32_t>(entry + 0x10u));
-                    sdk::strcat(kSend + 0x44u, port::load<uint32_t>(entry + 0x14u));
+                    sdk::strcat(kSend + 4u, cmd->waveOpen.hdName);
+                    sdk::strcat(kSend + 0x44u, cmd->waveOpen.bdName);
                     sdk::strcat(kSend + 4u, 0x001B9D68u);
                     sdk::strcat(kSend + 0x44u, 0x001B9D68u);
-                    port::store<uint8_t>(kSend + 2u, port::load<uint8_t>(entry + 0xCu));
-                    port::store<uint16_t>(kSend, port::load<uint16_t>(entry + 0x18u));
-                    port::store<uint8_t>(kSend + 3u, port::load<uint8_t>(entry + 0x1Cu));
+                    port::store<uint8_t>(kSend + 2u, static_cast<uint8_t>(cmd->openFile));
+                    port::store<uint16_t>(kSend, static_cast<uint16_t>(cmd->waveOpen.id));
+                    port::store<uint8_t>(kSend + 3u, static_cast<uint8_t>(cmd->waveOpen.type));
                     call(0x2001);
                     break;
                 case 2:
-                    byteAndHalf(0x10u, 0x14u, 0x2003);
+                    sendPair(0x2003);
                     break;
                 case 3:
                     copyArguments(10, 0x2010);
                     break;
                 case 4:
-                    byteAndHalf(0x10u, 0x14u, 0x2011);
+                    sendPair(0x2011);
                     break;
                 case 5:
                     copyArguments(12, 0x2021);
@@ -363,31 +379,31 @@ namespace mm
                     sdk::strcpy(kSend + 3u, 0x001B9D50u);
                     sdk::strcpy(kSend + 0x43u, 0x001B9D70u);
                     sdk::strcpy(kSend + 0x83u, 0x001B9D90u);
-                    sdk::strcat(kSend + 3u, port::load<uint32_t>(entry + 0x10u));
-                    sdk::strcat(kSend + 0x43u, port::load<uint32_t>(entry + 0x14u));
-                    sdk::strcat(kSend + 0x83u, port::load<uint32_t>(entry + 0x18u));
+                    sdk::strcat(kSend + 3u, cmd->midiOpen.sqName);
+                    sdk::strcat(kSend + 0x43u, cmd->midiOpen.hdName);
+                    sdk::strcat(kSend + 0x83u, cmd->midiOpen.bdName);
                     sdk::strcat(kSend + 3u, 0x001B9D68u);
                     sdk::strcat(kSend + 0x43u, 0x001B9D68u);
                     sdk::strcat(kSend + 0x83u, 0x001B9D68u);
-                    port::store<uint8_t>(kSend + 2u, port::load<uint8_t>(entry + 0xCu));
+                    port::store<uint8_t>(kSend + 2u, static_cast<uint8_t>(cmd->openFile));
                     port::store<uint8_t>(kSend + 0xC4u, 0);
-                    port::store<uint16_t>(kSend, port::load<uint16_t>(entry + 0x1Cu));
+                    port::store<uint16_t>(kSend, static_cast<uint16_t>(cmd->midiOpen.id));
                     call(0x1001);
                     break;
                 case 10:
-                    path(kSend + 3u, 0x001B9D50u, 0x10u);
-                    port::store<uint8_t>(kSend + 0x43u, port::load<uint8_t>(entry + 0x14u));
-                    port::store<uint16_t>(kSend, port::load<uint16_t>(entry + 0x18u));
+                    path(kSend + 3u, 0x001B9D50u, port::load<uint32_t>(args));
+                    port::store<uint8_t>(kSend + 0x43u, port::load<uint8_t>(args + 4u));
+                    port::store<uint16_t>(kSend, port::load<uint16_t>(args + 8u));
                     call(0x2002);
                     break;
                 case 11:
-                    byteAndHalf(0x10u, 0x14u, 0x1003);
+                    sendPair(0x1003);
                     break;
                 case 12:
                     copyArguments(6, 0x1010);
                     break;
                 case 13:
-                    byteAndHalf(0x10u, 0x14u, 0x1011);
+                    sendPair(0x1011);
                     break;
                 case 14:
                     copyArguments(8, 0x1021);
@@ -402,7 +418,7 @@ namespace mm
                     copyArguments(6, 0x1026);
                     break;
                 case 18:
-                    port::store<uint16_t>(kSend, port::load<uint16_t>(entry + 0x10u));
+                    port::store<uint16_t>(kSend, port::load<uint16_t>(args));
                     call(0x3000);
                     break;
                 case 19:
@@ -418,17 +434,17 @@ namespace mm
                     copyArguments(6, 0x2201);
                     break;
                 case 23:
-                    port::store<uint8_t>(kSend, port::load<uint8_t>(entry + 0x10u));
+                    port::store<uint8_t>(kSend, port::load<uint8_t>(args));
                     call(2);
                     break;
                 case 24:
-                    port::store<uint8_t>(kSend, port::load<uint8_t>(entry + 0x10u));
+                    port::store<uint8_t>(kSend, static_cast<uint8_t>(cmd->loadPause));
                     call(0x3001);
                     break;
                 default:
                     break;
                 }
-                port::store<int32_t>(entryOf(globals::soundCmdSent.get()) + 4u, 1);
+                entryAt(globals::soundCmdSent.get())->sent = 1;
             }
         }
         if (waiting() >= 0xC0)
@@ -438,20 +454,13 @@ namespace mm
             int32_t read = start, write = start;
             while (read != globals::soundCmdIndex.get())
             {
-                const uint32_t from = entryOf(read);
-                const uint32_t cmd = port::load<uint32_t>(from);
-                if (cmd == 1 || cmd == 2 || cmd - 4u < 2u || cmd == 0x18 || cmd == 7 || cmd - 9u < 8u || cmd == 0x17)
+                const GuestPtr<SoundCmd> from = entryAt(read);
+                const uint32_t command = static_cast<uint32_t>(from->command);
+                if (command == 1 || command == 2 || command - 4u < 2u || command == 0x18 || command == 7 || command - 9u < 8u ||
+                    command == 0x17)
                 {
                     if (write != read)
-                    {
-                        const uint32_t to = entryOf(write);
-                        port::store<uint32_t>(to, cmd);
-                        port::store<uint32_t>(to + 4u, port::load<uint32_t>(from + 4u));
-                        port::store<uint32_t>(to + 8u, port::load<uint32_t>(from + 8u));
-                        port::store<uint32_t>(to + 0xCu, port::load<uint32_t>(from + 0xCu));
-                        for (uint32_t offset = 0x10u; offset < 0xD0u; offset += 8u)
-                            port::store<uint64_t>(to + offset, port::load<uint64_t>(from + offset));
-                    }
+                        *entryAt(write) = *from;
                     ++write;
                     if (write > 0xFF)
                         write = 0;

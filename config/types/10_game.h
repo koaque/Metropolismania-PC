@@ -40,6 +40,16 @@ typedef struct SeVoice SeVoice;
 typedef struct SeSound SeSound;
 typedef struct ClaimThresholds ClaimThresholds;
 typedef struct SoundStatus SoundStatus;
+typedef struct SoundCmdWavePlay SoundCmdWavePlay;
+typedef struct SoundCmdWaveFade SoundCmdWaveFade;
+typedef struct SoundCmdWaveVolume SoundCmdWaveVolume;
+typedef struct SoundCmdTrackValue SoundCmdTrackValue;
+typedef struct SoundCmdMidiPlay SoundCmdMidiPlay;
+typedef struct SoundCmdMidiFade SoundCmdMidiFade;
+typedef struct SoundCmdPair SoundCmdPair;
+typedef struct SoundCmdWaveOpen SoundCmdWaveOpen;
+typedef struct SoundCmdMidiOpen SoundCmdMidiOpen;
+typedef struct SoundCmd SoundCmd;
 typedef struct BgmTrack BgmTrack;
 typedef struct AmbienceSound AmbienceSound;
 typedef struct AmbienceCell AmbienceCell;
@@ -735,6 +745,104 @@ struct SoundStatus {
     uint32_t speechTracks;     /* +0x18 bit per wave track a spoken voice uses, from its start to its end mark; merged with the
                                   queued mask at 0x1BDD54, which nothing sets */
     uint8_t unk_1C[0x24];
+};
+
+/* The arguments of the sound commands, from +0x10 of a ring entry (SoundCmd). The commands on one track hold the YYSOUND
+   driver's own argument block (YYSOUND.IRX's ST_* structs, config/iop/yysound_types.h), sent as it is: a request id
+   the driver reports back, the track (an effect voice or a sequence slot), then the command's values. */
+/* ST_WAVE_PLAY, command 3 (0xA bytes). */
+struct SoundCmdWavePlay {
+    uint16_t id;               /* +0x00 */
+    uint8_t track;             /* +0x02 the effect voice */
+    uint8_t file;              /* +0x03 the bank */
+    uint16_t sound;            /* +0x04 the sound in the bank (jno) */
+    uint8_t program;           /* +0x06 */
+    uint8_t note;              /* +0x07 60 plays it as recorded */
+    uint8_t loop;              /* +0x08 times to play it, 0 until stopped */
+};
+/* ST_WAVE_FADE, command 5 (0xC bytes). */
+struct SoundCmdWaveFade {
+    uint16_t id;               /* +0x00 */
+    uint8_t track;             /* +0x02 */
+    uint8_t unk_03;
+    uint16_t leftGoal;         /* +0x04 */
+    uint16_t rightGoal;        /* +0x06 */
+    uint16_t leftStep;         /* +0x08 */
+    uint16_t rightStep;        /* +0x0A */
+};
+/* ST_WAVE_VOL, command 6 (0xC bytes). */
+struct SoundCmdWaveVolume {
+    uint16_t id;               /* +0x00 */
+    uint8_t track;             /* +0x02 */
+    uint8_t unk_03;
+    int32_t left;              /* +0x04 */
+    int32_t right;             /* +0x08 */
+};
+/* One value for a track (8 bytes; ST_TRACK_VOL, ST_WAVE_PITCH, ST_MIDI_VOL, ST_MIDI_TEMPO): commands 7, 8, 0xF, 0x10, 0x11. */
+struct SoundCmdTrackValue {
+    uint16_t id;               /* +0x00 */
+    uint8_t track;             /* +0x02 */
+    uint8_t unk_03;
+    union {
+        int32_t volume;        /* +0x04 commands 7 (a wave track), 0xF (a sequence slot), 0x10 (its track volume) */
+        uint16_t pitch;        /* +0x04 command 8 */
+        uint16_t tempo;        /* +0x04 command 0x11 */
+    };
+};
+/* ST_MIDI_PLAY, command 0xC (6 bytes). */
+struct SoundCmdMidiPlay {
+    uint16_t id;               /* +0x00 */
+    uint8_t track;             /* +0x02 the sequence slot */
+    uint8_t file;              /* +0x03 the bank opened by mm_SoundCmd_MidiOpen */
+    uint8_t loop;              /* +0x04 times to play it, 0 until stopped */
+};
+/* ST_MIDI_FADE, command 0xE (8 bytes). */
+struct SoundCmdMidiFade {
+    uint16_t id;               /* +0x00 */
+    uint8_t track;             /* +0x02 */
+    uint8_t unk_03;
+    uint16_t goal;             /* +0x04 */
+    uint16_t step;             /* +0x06 */
+};
+/* Commands rebuilt when sent (8 bytes): a track or file byte and a request id, each a word here (2, 4, 0xB, 0xD). */
+struct SoundCmdPair {
+    uint32_t target;           /* +0x00 the wave bank (2), effect voice (4), sequence slot (0xB, 0xD); its low byte is sent */
+    uint32_t id;               /* +0x04 its low half is sent */
+};
+/* command 1: built into ST_WAVE_OPEN with the path prefix when sent (0x10 bytes). */
+struct SoundCmdWaveOpen {
+    uint32_t hdName;           /* +0x00 the file names (addresses) */
+    uint32_t bdName;           /* +0x04 */
+    uint32_t id;               /* +0x08 its low half is sent */
+    uint32_t type;             /* +0x0C its low byte is sent */
+};
+/* command 9: built into ST_MIDI_OPEN with the path prefixes when sent (0x10 bytes). */
+struct SoundCmdMidiOpen {
+    uint32_t sqName;           /* +0x00 the file names (addresses) */
+    uint32_t hdName;           /* +0x04 */
+    uint32_t bdName;           /* +0x08 */
+    uint32_t id;               /* +0x0C its low half is sent */
+};
+/* A sound command in the ring at 0x1FE6C0 (0xD0 bytes, 256 of them): queued by mm_SoundCmd_*, sent one a call by
+   mm_SoundCmd_Flush as RPC functions 0x1001 to 0x3001. */
+struct SoundCmd {
+    int32_t command;           /* +0x00 1 to 0x18 (mm_SoundCmd_Flush lists them); 0 once retired */
+    int32_t sent;              /* +0x04 set once sent; the entry is retired when the driver's reply word is set */
+    int32_t kept;              /* +0x08 WavePlay and MidiPlay: 1 for a voice kept until stopped; nothing reads it */
+    uint32_t openFile;         /* +0x0C the bank (WaveOpen) or slot (MidiOpen) the open commands load; its low byte is sent */
+    union {
+        SoundCmdWavePlay wavePlay;     /* +0x10 */
+        SoundCmdWaveFade waveFade;     /* +0x10 */
+        SoundCmdWaveVolume waveVolume; /* +0x10 */
+        SoundCmdTrackValue trackValue; /* +0x10 */
+        SoundCmdMidiPlay midiPlay;     /* +0x10 */
+        SoundCmdMidiFade midiFade;     /* +0x10 */
+        SoundCmdPair pair;             /* +0x10 */
+        SoundCmdWaveOpen waveOpen;     /* +0x10 */
+        SoundCmdMidiOpen midiOpen;     /* +0x10 */
+        uint32_t loadPause;            /* +0x10 command 0x18: 1 while the disc is busy (its low byte is sent) */
+        uint8_t args[0xC0];            /* +0x10 */
+    };
 };
 
 /* A city music track (2 bytes, 13 at 0x1F8120): 0 to 2 the moods' own, 3 to 12 the tracks bought (mm_Bgm_SetTrackSlot). */

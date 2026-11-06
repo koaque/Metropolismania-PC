@@ -805,7 +805,7 @@ namespace mm
         turn[0] = playerMatrix[0];
         turn[1] = playerMatrix[1];
         turn[2] = playerMatrix[2];
-        store(GuestPtr<Vec4>{turn.address + 0x30u}, vf(0));
+        store(turn + 3, vf(0));
         *position = playerMatrix[3];
         const int zoom = camera->zoomLevel;
         *wanted = levels[zoom];

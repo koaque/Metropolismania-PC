@@ -1701,7 +1701,7 @@ namespace mm
         TextBox_Draw(card->lowerText);
         DmaList_QueueClearZ();
         TalkCard_DrawGauges(card);
-        Dma_AppendCall_14C200(static_cast<int>(card->frame.address));
+        Frame_Draw(card->frame);
     }
 
     PORT_FN(Talk_Update);
@@ -1889,7 +1889,8 @@ namespace mm
                 const GuestPtr<CityScene> city{conv->city.address};
                 const int32_t arg5 = conv->arg5;
                 const auto points = [](uint32_t charType) {
-                    return static_cast<int>((port::load<uint32_t>(port::load<uint32_t>(globals::charClassTable.get() + 4u * charType) + 0x1Cu) & 0xE00000u) >> 21) + 4;
+                    const GuestPtr<CharClass> cls{port::load<uint32_t>(globals::charClassTable.get() + 4u * charType)};
+                    return static_cast<int>((cls->traits & 0xE00000u) >> 21) + 4;
                 };
                 if (conv->byFamily == 0)
                 {
@@ -2407,7 +2408,7 @@ namespace mm
                 const int left = screenX(0x6EE0), top = (row + 0x790) * 16;
                 Frame_SetCorners(frameObject, left, top, left + 0x180, top + 0xC0);
                 Frame_SetStyle(frameObject, band + 9);
-                Dma_AppendCall_14C200(static_cast<int>(frameObject.address));
+                Frame_Draw(frameObject);
             }
         };
 

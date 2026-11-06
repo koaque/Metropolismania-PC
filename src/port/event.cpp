@@ -972,7 +972,7 @@ namespace mm
     void PartyPopup_Draw(int popup, int pass)
     {
         if (pass == 2)
-            Dma_AppendCall_14C200(static_cast<int>(port::load<uint32_t>(static_cast<uint32_t>(popup) + 4u)));
+            Frame_Draw(GuestPtr<Frame>{port::load<uint32_t>(static_cast<uint32_t>(popup) + 4u)}); // the popup's frame
     }
 
     // Shows notice 1 and closes on Circle (0x40).

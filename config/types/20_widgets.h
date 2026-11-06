@@ -2,11 +2,18 @@
    data arrays as functions are ported. */
 
 typedef struct StageScene StageScene;
+typedef struct StageSceneVtable StageSceneVtable;
 typedef struct MsgWin MsgWin;
 typedef struct TalkCard TalkCard;
 typedef struct TalkMoney TalkMoney;
 typedef struct TalkConv TalkConv;
 
+/* The stage scene's own vtable (0x1BCF10, 8 bytes before its widget's at 0x1BCF18): only the slot the game calls through
+   it is known (0x50 bytes). */
+struct StageSceneVtable {
+    uint8_t unk_00[0x4C];
+    uint32_t dtor;             /* +0x4C the deleting destructor, mm_StageScene_dtor (mm_GameUpdate deletes the briefing with it) */
+};
 /* The stage scene: the stage transition (0x104 bytes, mm_StageScene_*): title cards, approval rate, the boss's briefing, the mission
    movie and the credits text, one step of the action table 0x1B07C0 at a time. An empty Stage base (padded) with a widget
    at +4. */
@@ -36,7 +43,7 @@ struct StageScene {
     MsgWin *window;            /* +0x58 the briefing's message window */
     char text[0xA0];           /* +0x5C the briefing's text being shown */
     A3DObject *boss;           /* +0xFC the boss (0x1F3C68) */
-    void *vtable;              /* +0x100 0x1BCF10 */
+    StageSceneVtable *vtable;  /* +0x100 0x1BCF10 */
 };
 /* Message window (0x2CC bytes), a widget. */
 struct MsgWin {

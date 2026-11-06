@@ -66,7 +66,7 @@ Rendering below the scene level.
 | `0x00148A40` | `CityMap *mm_CityRender_dtor(CityMap *map, int16_t deleteFlag)` | 364 | yes | vtable 0x1BCF00; deletes the seven layers and buffers, people-level destructor |
 | `0x00148BB0` | `CityMap *mm_CityRender_ctor(CityMap *map)` | 436 | yes | people-level constructor, vtable 0x1BCF00; builds the terrain packets and the seven layers in the packet buffer |
 | `0x00148D70` | `void mm_TexImage_Convert(TexImage *image, uint32_t textureBlock, uint32_t clutBlock)` | 856 | no | (image, textureBlock, clutBlock): DMA packet over the start of the image that uploads its palette and texels (PSMT4/PSMT8/32-bit, square) to the given GS blocks |
-| `0x001490D0` | `int mm_Dma_KickVif1Now(uint32_t address)` | 8 | yes |  |
+| `0x001490D0` | `int mm_TexImage_Upload(TexImage *image)` | 8 | yes | (image) sends the converted image's upload packet at once (a jump to mm_Dma_KickVif1Now) |
 | `0x001490E0` | `TexImage *mm_TexImage_dtor(TexImage *image, int16_t deleteFlag)` | 100 | yes | frees the image data (file); delete when the flag is > 0 |
 | `0x00149150` | `int mm_TexImage_Load(TexImage *image, char *name, int textureBlock, int clutBlock)` | 132 | yes | (image, name, textureBlock, clutBlock) loads the texture file `name` whole and converts it for upload: the texels to `textureBlock`, the palette to `clutBlock` (mm_TexImage_Convert) |
 | `0x001491E0` | `uint32_t *mm_LayerA_BuildPacket(LayerA *layer, uint32_t *packet)` | 280 | no | layer A's packets: the start uploads the layer's output offset and colour to VU1 address 0x2A, flushes, calls the chain at 0x1A8330 and sets the VIF base and offset; the end sets ALPHA_1 (0x20_00000044) through the GIF |
@@ -75,7 +75,7 @@ Rendering below the scene level.
 | `0x00149720` | `void mm_LayerA_BeginFrame(LayerA *layer, int source)` | 12 | no | picks the buffer layer A fills this frame (by the frame parity) and empties it |
 | `0x00149730` | `LayerA *mm_LayerA_DeletingDtor(LayerA *layer, int16_t deleteFlag)` | 84 | yes | base destructor, then delete |
 | `0x00149790` | `LayerA *mm_LayerA_ctor(LayerA *layer)` | 512 | no | base constructor, builds its packet in the packet buffer |
-| `0x0014C200` | `void mm_Dma_AppendCall(int address)` | 8 | no |  |
+| `0x0014C200` | `void mm_Frame_Draw(Frame *frame)` | 8 | no | (frame) queues the frame's sprite packet, which starts the frame (a jump to mm_Dma_AppendCall) |
 | `0x0014C620` | `void mm_LightSet_UpdateByClock(LightSet *lights, int clock, int weather)` | 508 | no | interpolates the light colours over the day (2-hour segments, tables 0x1B0550/0x1B0670) |
 | `0x0014C820` | `LightSet *mm_LightSet_DeletingDtor(LightSet *lights, int16_t deleteFlag)` | 84 | yes | base destructor, then delete |
 | `0x0014C880` | `LightSet *mm_LightSet_ctor(LightSet *lights)` | 40 | no | mm_LightSet_Init |

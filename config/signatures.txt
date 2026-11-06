@@ -358,7 +358,7 @@
 0x00148A40 CityMap *mm_CityRender_dtor(CityMap *map, int16_t deleteFlag);
 0x00148BB0 CityMap *mm_CityRender_ctor(CityMap *map);
 0x00148D70 void mm_TexImage_Convert(TexImage *image, uint32_t textureBlock, uint32_t clutBlock);
-0x001490D0 int mm_Dma_KickVif1Now(uint32_t address);
+0x001490D0 int mm_TexImage_Upload(TexImage *image);
 0x001490E0 TexImage *mm_TexImage_dtor(TexImage *image, int16_t deleteFlag);
 0x00149150 int mm_TexImage_Load(TexImage *image, char *name, int textureBlock, int clutBlock);
 0x001491E0 uint32_t *mm_LayerA_BuildPacket(LayerA *layer, uint32_t *packet);
@@ -386,12 +386,12 @@
 0x0014BD20 Laptop *mm_Laptop_ctor(Laptop *laptop);
 0x0014BD40 void mm_Laptop_InitEntries(void);
 0x0014BE20 void mm_Frame_SetStyle(Frame *frame, int style);
-0x0014C0B0 void mm_Frame_GetRect(Frame *frame, uint32_t *x, uint32_t *y, uint32_t *width, uint32_t *height);
+0x0014C0B0 void mm_Frame_GetRect(Frame *frame, uint32_t *x0, uint32_t *y0, uint32_t *x1, uint32_t *y1);
 0x0014C130 void mm_Frame_SetCorners(Frame *frame, int x0, int y0, int x1, int y1);
 0x0014C1B0 void mm_Frame_SetRect(Frame *frame, int x, int y, int width, int height);
-0x0014C200 void mm_Dma_AppendCall(int address);
+0x0014C200 void mm_Frame_Draw(Frame *frame);
 0x0014C210 Frame *mm_Frame_DeletingDtor(Frame *frame, int16_t deleteFlag);
-0x0014C270 Frame *mm_Frame_ctor(Frame *frame, int style, int x, int y, int width, int height, uint32_t colour);
+0x0014C270 Frame *mm_Frame_ctor(Frame *frame, int style, int x, int y, int width, int height, uint32_t depth);
 0x0014C4C0 void mm_WaitText_Draw(void);
 0x0014C510 int mm_WaitText_Append(char *text);
 0x0014C520 void mm_WaitText_Set(char *text);

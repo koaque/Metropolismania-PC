@@ -711,11 +711,11 @@ namespace mm
             return memory != 0u ? TextBox_Init(GuestPtr<TextBox>{memory}, columns, rows, style).address : 0u;
         }
 
-        // A frame of the given style, place, size and colour, or 0 when the allocation fails.
-        uint32_t makeFrame(int style, int x, int y, int width, int height, uint32_t colour)
+        // A frame of the given style, place, size and depth, or 0 when the allocation fails.
+        uint32_t makeFrame(int style, int x, int y, int width, int height, uint32_t depth)
         {
             const uint32_t memory = sdk::operator_new(0xC0u);
-            return memory != 0u ? Frame_ctor(GuestPtr<Frame>{memory}, style, x, y, width, height, colour).address : 0u;
+            return memory != 0u ? Frame_ctor(GuestPtr<Frame>{memory}, style, x, y, width, height, depth).address : 0u;
         }
 
         // The bag model's place slides between two points by t = time / 120: the place is (1 - t) * from + t * to (the products added
@@ -730,7 +730,7 @@ namespace mm
                 const ps2f a = ps2f(std::bit_cast<float>(port::load<uint32_t>(from + 4u * axis)));
                 const ps2f b = ps2f(std::bit_cast<float>(port::load<uint32_t>(kTo + 4u * axis)));
                 const ps2f place = (rest * a) + (t * b);
-                port::store<uint32_t>(port::load<uint32_t>(bag + 0x198u) + 0x30u + 4u * axis, std::bit_cast<uint32_t>(place.v));
+                port::store<uint32_t>(port::guest(&GuestPtr<Bag>{bag}->matrix[3].x) + 4u * axis, std::bit_cast<uint32_t>(place.v));
             }
         }
     }
@@ -855,9 +855,9 @@ namespace mm
         {
             const uint32_t question = bag->question.address;
             port::callGuest<void>(widgetMethod(question, &WidgetVtable::update), question);
-            if (port::callGuest<int>(port::load<uint32_t>(bag->question->base.vtable.address + 0x24u), bag->question.address) == 0)
+            if (port::callGuest<int>(widgetMethod(question, &WidgetVtable::isIdle), question) == 0)
                 break;
-            const int32_t answer = port::load<int32_t>(bag->question.address + 0x18u);
+            const int32_t answer = bag->question->choice;
             setState(2);
             lifetime::deleteVirtual(b + 0x178u, 8);
             if (answer == 0)
@@ -1094,18 +1094,19 @@ namespace mm
                     const uint32_t slot = kind >= 4u ? (kind < 8u ? 1u : 0u) : 0u;
                     const uint32_t nodeAt = 0x001B7A18u + slot;
                     const uint32_t node = port::load<uint8_t>(nodeAt);
-                    const uint32_t matrix = port::load<uint32_t>(port::load<uint32_t>(iconModel().address) + 8u) + 0xC0u * node + 0x70u;
-                    Mat4_Copy(GuestPtr<Vec4>{matrix}, GuestPtr<Vec4>{0x001B2550u});
+                    const GuestPtr<Vec4> world = GuestPtr<Vec4>::of(iconModel()->model->nodes[static_cast<int32_t>(node)].slot.matrix[0]);
+                    Mat4_Copy(world, GuestPtr<Vec4>{0x001B2550u});
+                    const Vec4 &card = applicants->cardMatrix[3];
                     const ps2f place = ps2f(static_cast<float>(i)) * spacing;
-                    storeF(matrix + 0x30u, (loadF(applicants->cardMatrix.address + 0x30u) + place) - constant(0x3F866666u));
-                    storeF(matrix + 0x34u, constant(0xBF3AE148u) + loadF(applicants->cardMatrix.address + 0x34u));
+                    storeF(port::guest(&world[3].x), (loadF(port::guest(&card.x)) + place) - constant(0x3F866666u));
+                    storeF(port::guest(&world[3].y), constant(0xBF3AE148u) + loadF(port::guest(&card.y)));
                     const int32_t cursor = applicants->sliding != 0 ? applicants->savedTop : applicants->cursor;
                     if (cursor == i)
-                        storeF(matrix + 0x38u, loadF(applicants->cardMatrix.address + 0x38u) - constant(0x3D8F5C29u));
+                        storeF(port::guest(&world[3].z), loadF(port::guest(&card.z)) - constant(0x3D8F5C29u));
                     else
                     {
                         const int32_t distance = std::abs(cursor - i);
-                        storeF(matrix + 0x38u, (loadF(applicants->cardMatrix.address + 0x38u) + constant(0x3A83126Fu) * ps2f(static_cast<float>(distance))) - constant(0x3CF5C28Fu));
+                        storeF(port::guest(&world[3].z), (loadF(port::guest(&card.z)) + constant(0x3A83126Fu) * ps2f(static_cast<float>(distance))) - constant(0x3CF5C28Fu));
                     }
                     entryColour(i, sp + 0x90u);
                     Instance_DrawNode(iconModel(), GuestPtr<Vec4>{sp + 0x90u}, static_cast<int>(node), 0);
@@ -1115,9 +1116,11 @@ namespace mm
                 {
                     const uint32_t markerMatrix = applicants->cardNodeB.address;
                     Mat4_Copy(GuestPtr<Vec4>{markerMatrix}, GuestPtr<Vec4>{0x001B2550u});
-                    storeF(applicants->cardNodeB.address + 0x30u, loadF(applicants->frameMatrix.address + 0x30u) + loadF(0x001B7A20u + 4u * marker));
-                    port::store<uint32_t>(applicants->cardNodeB.address + 0x34u, port::load<uint32_t>(applicants->frameMatrix.address + 0x34u));
-                    port::store<uint32_t>(applicants->cardNodeB.address + 0x38u, port::load<uint32_t>(applicants->frameMatrix.address + 0x38u));
+                    Vec4 &markerAt = applicants->cardNodeB[3];
+                    const Vec4 &frameAt = applicants->frameMatrix[3];
+                    storeF(port::guest(&markerAt.x), loadF(port::guest(&frameAt.x)) + loadF(0x001B7A20u + 4u * marker));
+                    port::store<uint32_t>(port::guest(&markerAt.y), port::load<uint32_t>(port::guest(&frameAt.y)));
+                    port::store<uint32_t>(port::guest(&markerAt.z), port::load<uint32_t>(port::guest(&frameAt.z)));
                     Instance_DrawNode(iconModel(), GuestPtr<Vec4>{sp + 0x90u}, 2, 0);
                 }
             }

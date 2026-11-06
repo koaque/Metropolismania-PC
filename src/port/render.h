@@ -77,8 +77,8 @@ namespace mm::packet
     inline constexpr uint32_t kPsmCt32 = 0x00u, kPsmT8 = 0x13u, kPsmT4 = 0x14u;
 
     // GS register addresses, as A+D writes name them.
-    inline constexpr uint32_t kGsPrim = 0x00u, kGsRgbaq = 0x01u, kGsSt = 0x02u, kGsXyzf2 = 0x04u, kGsTex0_1 = 0x06u,
-                              kGsTest1 = 0x47u;
+    inline constexpr uint32_t kGsPrim = 0x00u, kGsRgbaq = 0x01u, kGsSt = 0x02u, kGsXyzf2 = 0x04u, kGsXyz2 = 0x05u,
+                              kGsTex0_1 = 0x06u, kGsTest1 = 0x47u;
 
     // One A+D write: the register's value (low word, high word), then its address.
     inline void putAd(GsAdWrite &write, uint32_t low, uint32_t high, uint32_t reg)
@@ -90,6 +90,22 @@ namespace mm::packet
     inline void putAd(GsAdWrite &write, uint64_t value, uint32_t reg)
     {
         putAd(write, static_cast<uint32_t>(value), static_cast<uint32_t>(value >> 32), reg);
+    }
+
+    // An ST write: the texture coordinates, then the register.
+    inline void putSt(GsStWrite &write, float s, float t)
+    {
+        write.s = s;
+        write.t = t;
+        putWords(write.reg, {kGsSt, 0u});
+    }
+
+    // A vertex write (XYZ2 or XYZF2): X and Y, Z, then the register.
+    inline void putXyz(GsXyzWrite &write, uint32_t xy, uint32_t z, uint32_t reg)
+    {
+        write.xy = xy;
+        write.z = z;
+        putWords(write.reg, {reg, 0u});
     }
 
     // A CALL tag to `target` and, in the next quadword, an END tag (which the next call written over it replaces).

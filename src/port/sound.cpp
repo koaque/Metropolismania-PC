@@ -1880,8 +1880,8 @@ namespace mm
     // Brings the sound driver up: the IOP modules are loaded, the RPC layer started, and the client at 0x1FE690 bound to the
     // driver's server (0x12346) until the server has registered (a pause of 10000 empty turns after each bind; a refused bind prints
     // 0x1B9EA0 and hangs). The status block address 0x20B7C0 is stored at 0x20B6C0 and sent with function 1 (the answer comes back
-    // in 0x20B800), then the answer word, the command queue counters and masks, and the first word of each of the 256 voice
-    // records (0xD0 bytes from 0x1FE6C0) are cleared.
+    // in 0x20B800), then the answer word, the command queue counters and masks, and the command word of each of the 256
+    // entries of the command ring (SoundCmd at 0x1FE6C0) are cleared.
     void Sound_Init()
     {
         Sound_LoadModules();
@@ -1905,8 +1905,8 @@ namespace mm
         globals::soundSlotsQueued.set(0);
         globals::soundSpeechQueued.set(0);
         port::store<uint32_t>(0x0020B800u, 0u);
-        for (uint32_t voice = 0; voice < 0x100; ++voice)
-            port::store<uint32_t>(0x001FE6C0u + 0xD0u * voice, 0u);
+        for (int32_t entry = 0; entry < 0x100; ++entry)
+            (GuestPtr<SoundCmd>{globals::kSoundCmds} + entry)->command = 0;
     }
 
     PORT_FN(Sound_Init);

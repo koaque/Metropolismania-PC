@@ -36,7 +36,9 @@ typedef struct Minimap Minimap;
 typedef struct CityCursor CityCursor;
 typedef struct CityCursorView CityCursorView;
 typedef struct GsAdWrite GsAdWrite;
-typedef struct CursorSprite CursorSprite;
+typedef struct GsStWrite GsStWrite;
+typedef struct GsXyzWrite GsXyzWrite;
+typedef struct SpritePacket SpritePacket;
 typedef struct PhoneCalls PhoneCalls;
 typedef struct PhoneCallEntry PhoneCallEntry;
 typedef struct EventMgr EventMgr;
@@ -122,19 +124,44 @@ struct TextBox {
     int32_t columns;           /* +0x38 */
     int32_t rows;              /* +0x3C */
 };
-/* Window frame (0xC0 bytes). */
+/* A GS register write of an A+D packet (16 bytes): the 64-bit value, then the register's address. */
+struct GsAdWrite {
+    uint32_t value[2];         /* +0x00 low and high words */
+    uint32_t reg[2];           /* +0x08 the register (low word) */
+};
+/* An A+D write of ST (16 bytes): the texture coordinates as floats. */
+struct GsStWrite {
+    float s;                   /* +0x00 */
+    float t;                   /* +0x04 */
+    uint32_t reg[2];           /* +0x08 ST (2) */
+};
+/* An A+D write of a vertex (16 bytes): XYZ2 (5) with a 32-bit Z, or XYZF2 (4) with 24 bits of Z and the fog above. */
+struct GsXyzWrite {
+    uint32_t xy;               /* +0x00 X in the low half, Y in the high half (12.4 fixed point) */
+    uint32_t z;                /* +0x04 */
+    uint32_t reg[2];           /* +0x08 */
+};
+/* A textured sprite as its own DMA packet (0xA0 bytes): a CNT tag of 8 quadwords with FLUSH and DIRECT 8, a GIF tag of 7
+   loops of one A+D register (EOP), the seven writes and a RET tag. Frames and the city cursor's opening sprite. */
+struct SpritePacket {
+    uint32_t dmaTag[2];        /* +0x00 CNT 8 */
+    uint32_t vifCodes[2];      /* +0x08 FLUSH, DIRECT 8 */
+    uint32_t gifTag[4];        /* +0x10 */
+    GsAdWrite rgbaq;           /* +0x20 (0x80, 0x80, 0x80, 0x80), Q 1 */
+    GsAdWrite tex0;            /* +0x30 TEX0_1 */
+    GsAdWrite prim;            /* +0x40 0x16: a textured sprite */
+    GsStWrite stA;             /* +0x50 the top left corner's texture coordinates */
+    GsXyzWrite xyzA;           /* +0x60 the top left corner */
+    GsStWrite stB;             /* +0x70 the bottom right corner's */
+    GsXyzWrite xyzB;           /* +0x80 the bottom right corner */
+    uint32_t ret[4];           /* +0x90 RET */
+};
+/* Window frame (0xC0 bytes): a sprite of one cell of the frame texture, then the cell, place and size. */
 struct Frame {
-    uint8_t unk_00[0x50];
-    float stA[2];              /* +0x50 texture S, T of the top left (mm_Frame_SetStyle) */
-    uint8_t unk_58[8];
-    uint32_t cornerA;          /* +0x60 GS XY of the top left (mm_Frame_SetRect, mm_Frame_SetCorners) */
-    uint32_t colourA;          /* +0x64 (mm_Frame_ctor) */
-    uint8_t unk_68[8];
-    float stB[2];              /* +0x70 texture S, T of the bottom right */
-    uint8_t unk_78[8];
-    uint32_t cornerB;          /* +0x80 GS XY of the bottom right */
-    uint32_t colourB;          /* +0x84 */
-    uint8_t unk_88[0x18];
+    SpritePacket sprite;       /* +0x00 copied from the template at 0x1B04B0 (mm_Frame_ctor): the frame texture (256 by 128,
+                                  8-bit with a 32-bit palette: TBP0 0x3F7C, CBP 0x3FFC), ST from the cell
+                                  (mm_Frame_SetStyle), XYZ2 corners from the place and size (mm_Frame_SetRect,
+                                  mm_Frame_SetCorners) at the depth mm_Frame_ctor is given */
     int32_t style;             /* +0xA0 icon cell of the frame texture (mm_Frame_SetStyle) */
     int32_t x;                 /* +0xA4 */
     int32_t y;                 /* +0xA8 */
@@ -343,33 +370,15 @@ struct TerrainPassParams {
     Vec4 stq[12];              /* +0x50 VU1 0x21..0x2C texture coordinates: three sets of four */
     uint32_t mask[4];          /* +0x110 VU1 0x2D: w is the quad flags the pass draws */
 };
-/* A GS register write of an A+D packet (16 bytes): the 64-bit value, then the register's address. */
-struct GsAdWrite {
-    uint32_t value[2];         /* +0x00 low and high words */
-    uint32_t reg[2];           /* +0x08 the register (low word) */
-};
-/* The city cursor's opening sprite (0xA0 bytes, mm_CityCursor_ctor): a CNT tag of 8 quadwords with FLUSH and DIRECT 8,
-   then a GIF tag of 7 loops of one A+D register (EOP), the seven writes and a RET tag. */
-struct CursorSprite {
-    uint32_t dmaTag[2];        /* +0x00 CNT 8 */
-    uint32_t vifCodes[2];      /* +0x08 FLUSH, DIRECT 8 */
-    uint32_t gifTag[4];        /* +0x10 */
-    GsAdWrite rgbaq;           /* +0x20 (0x80, 0x80, 0x80, 0x80), Q 1 */
-    GsAdWrite tex0;            /* +0x30 TEX0_1: 128 by 64, 8-bit with a 32-bit palette (TBP0 0x3E8A, CBP 0x3EAA) */
-    GsAdWrite prim;            /* +0x40 0x16: a textured sprite */
-    GsAdWrite stA;             /* +0x50 ST (0, 0) */
-    GsAdWrite xyzA;            /* +0x60 XYZF2 the top left corner (mm_CityCursor_Update, mm_CityCursor_SelectTile) */
-    GsAdWrite stB;             /* +0x70 ST (1, 1) */
-    GsAdWrite xyzB;            /* +0x80 XYZF2 the bottom right corner */
-    uint32_t ret[4];           /* +0x90 RET */
-};
 /* One parity's half of the city cursor (0xD0 bytes): info lines, packets and the fade frame. */
 struct CityCursorView {
     TextBox *lines[5];         /* +0x00 */
     Frame *lineFrames[5];      /* +0x14 a frame behind each line (a frame's packet starts the frame) */
     Frame *frame;              /* +0x28 the info window's frame */
     Frame *fadeFrame;          /* +0x2C */
-    CursorSprite sprite;       /* +0x30 drawn in mode 4: it opens out from the info frame */
+    SpritePacket sprite;       /* +0x30 drawn in mode 4, opening out from the info frame (mm_CityCursor_ctor): a 128 by 64
+                                  texture, 8-bit with a 32-bit palette (TBP0 0x3E8A, CBP 0x3EAA), ST (0, 0) to (1, 1),
+                                  XYZF2 corners (mm_CityCursor_Update, mm_CityCursor_SelectTile) */
 };
 /* Light set (0x1B0 bytes): the colour table of the model programs, two groups of twelve, coloured by the clock
    (mm_LightSet_UpdateByClock). Its two packets upload +0x10..+0x1AF to VU1 0x12..0x2B (docs/RENDER_PIPELINE.md). */
