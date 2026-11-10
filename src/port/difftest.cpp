@@ -503,9 +503,10 @@ namespace port
             }
             else if (p.name == "Movie_StrFileOpen")
                 ignoreLow = (object + 0x2Cu) & PS2_RAM_MASK;
-            // Sound_Init binds the sound driver's RPC client: the runtime numbers the binds (the client's id at +4) and keeps the server
-            // descriptor it made on the first bind (its sid at 0x1F10000) outside the replay's reset, so the ported run sees them differ.
-            else if (p.name == "Sound_Init")
+            // Sound_Init (and App_ctor, which calls it) binds the sound driver's RPC client: the runtime numbers the binds (the client's
+            // id at +4) and keeps the server descriptor it made on the first bind (its sid at 0x1F10000) outside the replay's reset, so the
+            // ported run sees them differ.
+            else if (p.name == "Sound_Init" || p.name == "App_ctor")
             {
                 ignoreLow = 0x001FE694u;
                 ignoreLow2 = 0x01F10000u;
@@ -528,14 +529,19 @@ namespace port
                 ignoreLow2 = name + 0x14u;
                 ignoreHigh2 = ignoreLow2 + 4u;
             }
-            // McSave_WriteIconSys (and the save state that calls it) opens a file on the card: the runtime's descriptor counter (kept outside RDRAM and not reset between the
-            // two runs) gives the ported run the next number, which the game keeps in three words.
-            else if (p.name == "McSave_WriteIconSys" || p.name == "PauseMenu_StateSave")
+            // McSave_WriteIconSys (and the save state and SaveFile_WriteIconSys, which call it) opens a file on the card: the runtime's
+            // descriptor counter (kept outside RDRAM and not reset between the two runs) gives the ported run the next number, which the game
+            // keeps in three words: 0x1BDCDC, and the first argument of the write and the close it queues in the two card queue slots after
+            // the open's (64 slots of 0x24 bytes at 0x1F5CF0; the open goes in at the queue's tail, the word at 0x1BDCD4).
+            else if (p.name == "McSave_WriteIconSys" || p.name == "PauseMenu_StateSave" || p.name == "SaveFile_WriteIconSys")
             {
+                uint32_t tail = 0;
+                std::memcpy(&tail, rec.rdram.data() + 0x001BDCD4u, sizeof(tail));
+                const auto fileWord = [tail](uint32_t after) { return 0x001F5CF0u + ((tail + after) % 64u) * 0x24u + 0x10u; };
                 ignoreLow = 0x001BDCDCu;
-                ignoreLow2 = 0x001F63E4u;
+                ignoreLow2 = fileWord(1);
                 ignoreHigh2 = ignoreLow2 + 4u;
-                ignoreLow3 = 0x001F6408u;
+                ignoreLow3 = fileWord(2);
                 ignoreHigh3 = ignoreLow3 + 4u;
             }
             if (ignoreLow != 0)

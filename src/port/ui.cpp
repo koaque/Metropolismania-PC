@@ -4520,8 +4520,9 @@ namespace mm
     }
 
     // Back to the pause menu's first page: the list cleared and its cursor put at (0x58, 0x31), the message text restored (0x1B73C0),
-    // the Cross press consumed, the slot select state run once, the list scrolled to the item that was waiting (pendingChoice), and the
-    // 16 slot marks (one byte in each of slotTexts) cleared.
+    // the Cross press consumed, the slot select state run once, the list scrolled to the item that was waiting (pendingChoice) or,
+    // with none waiting, to the newest save (the slot select's result), and the 16 slot marks (one byte in each of slotTexts)
+    // cleared.
     void PauseMenu_Reset(GuestPtr<PauseMenu> pause)
     {
         const auto list = [&] { return pause->slotMenu; };
@@ -4530,11 +4531,10 @@ namespace mm
         pause->itemsListed = 0;
         TextBox_SetText(pause->message, GuestPtr<char>{globals::kPauseEmptyText}, 0);
         Pad_SwallowCross();
-        PauseMenu_StateSlotSelect(pause);
+        const int newest = PauseMenu_StateSlotSelect(pause);
         const int32_t waiting = pause->pendingChoice;
         pause->pendingChoice = -1;
-        if (waiting != -1)
-            ListMenu_ScrollTo(list(), waiting);
+        ListMenu_ScrollTo(list(), waiting != -1 ? waiting : newest);
         for (uint32_t i = 0; i < 0x10u; ++i)
             pause->slotTexts[i].text[0] = 0;
     }
