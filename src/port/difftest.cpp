@@ -3,6 +3,7 @@
 // Capture: MMPC_CAPTURE=<names or 0xADDRs, comma separated, or "ported"> during a normal run records
 // MMPC_CAPTURE_MAX calls (default 8) of each listed function, every MMPC_CAPTURE_EVERY-th call (default 1,
 // so the first ones; "exp" takes calls 1, 8, 64, 512 ... so busy and rare functions both spread over the run),
+// counted from call MMPC_CAPTURE_FROM (0-based, default 0: the calls before it are not recorded),
 // into MMPC_CAPTURE_DIR/<name>/<n>.mmdt:
 // the CPU context at entry, all of RDRAM (deflate) and the scratchpad. Ported functions are not installed
 // during a capture, so the records show the original code at work. Records are game-derived: they stay
@@ -168,9 +169,13 @@ namespace port
         std::filesystem::path g_captureDir;
         uint32_t g_captureMax = 8;
         uint32_t g_captureEvery = 1; // 0: exponential, calls 1, 8, 64, 512 ...
+        uint64_t g_captureFrom = 0;  // MMPC_CAPTURE_FROM: calls before this one (0-based) are not recorded
 
         bool sampleCall(uint64_t call)
         {
+            if (call < g_captureFrom)
+                return false;
+            call -= g_captureFrom;
             if (g_captureEvery != 0)
                 return call % g_captureEvery == 0;
             // call is 0-based: record calls 1, 8, 64 ... (counted from 1), the powers of 8.
@@ -1359,6 +1364,8 @@ namespace port
             g_captureMax = static_cast<uint32_t>(std::strtoul(max, nullptr, 0));
         if (const char *every = env("MMPC_CAPTURE_EVERY"))
             g_captureEvery = std::strcmp(every, "exp") == 0 ? 0u : std::max<uint32_t>(1u, static_cast<uint32_t>(std::strtoul(every, nullptr, 0)));
+        if (const char *from = env("MMPC_CAPTURE_FROM"))
+            g_captureFrom = std::strtoull(from, nullptr, 0);
         std::vector<uint32_t> addresses;
         for (const std::string &item : splitList(list))
         {
