@@ -197,8 +197,8 @@ friendship changed. A is the person talked to.
 | `0x0017B9F0` | `int mm_WordsFn_FinishSystemEvent(WordsCtx *ctx)` | 16 | indirect | #132 act: finishes the system event (talks[1], group 6: paydays, hunger, population milestones) |
 | `0x0017BA00` | `int mm_WordsFn_AbortSystemEvent(WordsCtx *ctx)` | 16 | indirect | #131 act: abandons the system event (talks[1]: handler End, tiles, requeue by kind) |
 | `0x0017BA10` | `int mm_WordsFn_SetSystemEventVar(WordsCtx *ctx)` | 24 | no | #130 act: the system event's variable (+10) = arg |
-| `0x0017BA30` | `int mm_WordsFn_SelectEventPersonB(WordsCtx *ctx)` | 100 | no | #129 act: subject B = the event's second person |
-| `0x0017BAA0` | `int mm_WordsFn_SelectEventPersonA(WordsCtx *ctx)` | 100 | no | #128 act: subject B = the event's first person |
+| `0x0017BA30` | `int mm_WordsFn_SelectEventSecondPerson(WordsCtx *ctx)` | 100 | no | #129 act: subject B = the event's second person |
+| `0x0017BAA0` | `int mm_WordsFn_SelectEventFirstPerson(WordsCtx *ctx)` | 100 | no | #128 act: subject B = the event's first person |
 | `0x0017BB10` | `int mm_WordsFn_EventQueueShift(WordsCtx *ctx)` | 12 | no | #127 act: requeues the event manager's first event (mm_EventMgr_RequeueFirst) |
 | `0x0017BB20` | `int mm_WordsFn_PlaySe(WordsCtx *ctx)` | 24 | no | #126 act: sound effect arg |
 | `0x0017BB40` | `int mm_WordsFn_GiveBagItem(WordsCtx *ctx)` | 332 | no | #125 act: gives the selected bag item, friendship by its price |

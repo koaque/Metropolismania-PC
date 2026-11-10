@@ -1,0 +1,24 @@
+# Button script (MMPC_AUTOPLAY=script) that saves the city over the first save slot, for difftest records of the
+# save path (McQueue_*, SaveFile_*, PauseMenu_*). Back up original/mc0 before the run and restore it after: the script
+# writes a save onto the runner's card.
+#   python tools/pipeline.py capture --script tools/autoplay/coverage_capture.txt --functions LIST --timeout 150
+# Laptop (Square) opens on entry 0, the laptop computer ("Save or quit the game"); Cross opens its menu (Resume, Save,
+# Quit), Down and Cross pick Save; after the card check the slot list opens, Cross picks the first slot, Cross answers
+# the overwrite question; the save takes a few seconds; Cross closes the message. The frame counts are first guesses:
+# check the shots and adjust them.
+# Lines: FRAMES BUTTONS_HEX [shot NAME] (format in render_capture.txt; Cross 0x40, Square 0x80, Down 0x4000).
+60 0 shot city
+4 80
+120 0 shot laptop
+4 40
+90 0 shot menu
+4 4000
+20 0
+4 40
+300 0 shot slots
+4 40
+90 0 shot overwrite
+4 40
+600 0 shot saving
+4 40
+120 0 shot after

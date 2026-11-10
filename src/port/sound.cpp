@@ -184,7 +184,7 @@ namespace mm
     {
         for (uint32_t slot = 0; slot < 4; ++slot)
         {
-            const int names = static_cast<int>(0x001B2E20u + 0x30u * slot);
+            const int names = static_cast<int>(globals::kPlaylandBankSq + 0x30u * slot);
             SoundCmd_MidiOpen(slot & 0xFFu, names, names + 0x10, names + 0x20, 0);
         }
     }
@@ -1865,7 +1865,7 @@ namespace mm
     void Sound_Shutdown()
     {
         sdk::FlushCache(0);
-        sdk::sceSifCallRpc(0x001FE690u, 0, 0, 0x0020B6C0u, 0x100, 0x0020B800u, 0x40, 0u, 0u);
+        sdk::sceSifCallRpc(globals::kSoundRpcClient, 0, 0, globals::kSoundRpcSend, 0x100, globals::kSoundRpcReply, 0x40, 0u, 0u);
     }
 
     PORT_FN(Sound_Shutdown);
@@ -1873,7 +1873,8 @@ namespace mm
     // Loads the six IOP modules the sound driver needs, in order, repeating each load (with a log line) until it succeeds.
     void Sound_LoadModules()
     {
-        for (const uint32_t path : {0x001B9EC0u, 0x001B9F00u, 0x001B9F40u, 0x001B9F80u, 0x001B9FC0u, 0x001BA000u})
+        for (const uint32_t path : {globals::kPathLibsdIrx, globals::kPathSdrdrvIrx, globals::kPathModmidiIrx,
+                                    globals::kPathModhsynIrx, globals::kPathModseinIrx, globals::kPathYysoundIrx})
             while (sdk::sceSifLoadModule(path, 0, 0) < 0)
                 sdk::printf(path + 0x20u);
     }
@@ -1891,23 +1892,23 @@ namespace mm
         sdk::sceSifInitRpc(0);
         do
         {
-            if (sdk::sceSifBindRpc(0x001FE690u, 0x12346, 0) < 0)
+            if (sdk::sceSifBindRpc(globals::kSoundRpcClient, 0x12346, 0) < 0)
             {
-                sdk::printf(0x001B9EA0u);
+                sdk::printf(globals::kTextSifBindFailed);
                 for (volatile int spin = 0;;)
                     spin = spin + 1;
             }
             port::accountCycles(0x2711u * 32u); // the original's 10000 empty turns: the IOP runs meanwhile and registers the server
-        } while (port::load<uint32_t>(0x001FE6B4u) == 0u);
-        port::store<uint32_t>(0x0020B6C0u, 0x0020B7C0u);
+        } while (port::load<uint32_t>(globals::kSoundRpcClient + 0x24u) == 0u);
+        port::store<uint32_t>(globals::kSoundRpcSend, globals::kSoundStatus);
         sdk::FlushCache(0);
-        sdk::sceSifCallRpc(0x001FE690u, 1, 0, 0x0020B6C0u, 0x100, 0x0020B800u, 0x40, 0u, 0u);
+        sdk::sceSifCallRpc(globals::kSoundRpcClient, 1, 0, globals::kSoundRpcSend, 0x100, globals::kSoundRpcReply, 0x40, 0u, 0u);
         globals::soundCmdIndex.set(0);
         globals::soundCmdSent.set(0);
         globals::soundVoicesQueued.set(0);
         globals::soundSlotsQueued.set(0);
         globals::soundSpeechQueued.set(0);
-        port::store<uint32_t>(0x0020B800u, 0u);
+        port::store<uint32_t>(globals::kSoundRpcReply, 0u);
         for (int32_t entry = 0; entry < 0x100; ++entry)
             (GuestPtr<SoundCmd>{globals::kSoundCmds} + entry)->command = 0;
     }

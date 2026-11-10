@@ -751,8 +751,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00128CF0,mm_MsgWin_SetMessage,136,game,ui,verified,no,2,2,"(msgwin, message, sound) starts message `message` with sound code `sound`: resets buffers and cursors, clears the text box"
 0x00128D80,mm_MsgWin_dtor,148,game,ui,verified,yes,1,4,"vtable 0x1BCE10; deletes the frame (0x14C210) and the text box, base destructor 0x173560"
 0x00128E20,mm_MsgWin_ctor,184,game,ui,verified,yes,2,5,"vtable 0x1BCE10; text box 18x4 (style -2) at 0x7240,0x8240 and a 0xC0-byte window frame (0x14C270)"
-0x00128EE0,mm_LightSet_BuildPackets,432,game,gfx,verified,no,1,2,"two VU1 packets (packetA, packetB): the set's 26 quadwords from groupA to VU1 0x12, a call of the program chain (0x1A3C80 / 0x1A4780), VIF base and offset"
-0x00129090,mm_Packet2_Draw,48,game,gfx,verified,no,9,1,"(packets, second) queues packet `packets`[0], or `packets`[1] when `second` != 0"
+0x00128EE0,mm_LightSet_BuildPackets,432,game,gfx,verified,no,1,2,"the two model programs' packets (packets[0] for 0x1A3C80, packets[1] for 0x1A4780): the set's 26 quadwords from groupA to VU1 0x12, a call of the program's upload packet, VIF base and offset"
+0x00129090,mm_LightSet_SelectProgram,48,game,gfx,verified,no,9,1,"(lights, buildings) queues the light set's packet for the model program that follows: packets[1] (0x1A4780, which also clips walls next to the camera) when `buildings` != 0, else packets[0] (0x1A3C80, people, the player and the menus' models)"
 0x001290C0,mm_A3DObjectBase_DeletingDtor,84,game,gfx,verified,yes,2,2,"base destructor 0x12AB40, then delete when the flag is > 0"
 0x00129120,mm_LightSet_Init,228,game,gfx,verified,no,2,2,"light set base setup: the two programs' output offsets (0x110 and 0xE0), every colour of both groups and the instance colour set to 1, then its packets. Returns the set"
 0x00129210,mm_A3D_GetAnimLength,24,game,gfx,verified,no,9,0,the length of a model's animation (its first track's last word)
@@ -898,7 +898,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00139700,mm_Event_StartFromScript,460,game,event,verified,indirect,1,4,"a talk script starts an event for the person: with fewer than five events running and none of them waiting on the person's character type (the type's charTypes[0]), the first event waiting at level 2 whose condition holds takes the first running slot (the others move up), with the person as actor A and the actor of the third talk event (talks[2]) as B"
 0x001398D0,mm_Event_FormatText,296,game,event,verified,yes,2,4,"the title text of an event slot: the event type's title, or with a second family in the slot (familyB) the title followed by that member's name, cut to fit 24 characters and ended with a 0xC4 byte when it is cut. Built at 0x1C5990"
 0x00139A00,mm_Event_CountActive,56,game,event,verified,no,2,0,"talk slots in use (EventMgr +4, 0x20 bytes each, up to 5; counting stops at the first free one)"
-0x00139A40,mm_Event_ReleaseTiles,264,game,event,verified,no,2,3,"after an event's claims are removed (mm_Event_RemoveClaims): the buildings in the 80 tile lists whose chosen claim now has id 0 (the removed one) drop it: meter 0, claim slot 0x18 (none), flags 8 and 0x40 cleared"
+0x00139A40,mm_Event_DropRemovedClaims,264,game,event,verified,no,2,3,"after an event's claims are removed (mm_Event_RemoveClaims): the buildings in the 80 tile lists whose chosen claim now has id 0 (the removed one) drop it: meter 0, no claim (slot 0x18), flags 8 (met) and 0x40 (maxed) cleared"
 0x00139B50,mm_Event_Finish,356,game,event,verified,indirect,19,4,"(events, city, index) ends active event `index`: releases its tiles, calls its handler, removes it (called by the event handlers)"
 0x00139CC0,mm_Event_Abort,272,game,event,verified,indirect,3,4,"the talk event in slot `index` is cut short: its handler ends it, and it goes back to the waiting queue (level 3 for a type with level 4) as it was"
 0x00139DD0,mm_Event_Trigger,820,game,event,verified,indirect,4,5,"an event id (the position in the event list of the loaded EVENT.BIN) is triggered from outside (a script, a talk): the waiting entries of that id in bucket 5 are tried; the first whose condition holds takes the talk slot (1 for id 6, else 0) when that is free or its event has a higher priority value (it is aborted for slot 1, else finished first), runs its Start slot and the call returns 1"
@@ -1064,8 +1064,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00148260,mm_CityRender_UpdatePeople,568,game,gfx,verified,indirect,1,2,"every object in view that is not drawn yet this frame (flag 4 marks it) has its type's drawPeople slot called with the footprint's middle and the ground height, the facing, the city, the object, a part word (0) and the draw mode (2, fog, when the camera distance + 1 is past the fog start, else 0)"
 0x001484A0,mm_CityRender_DrawWeather,96,game,gfx,verified,no,1,2,"(map, city, pass, view) the weather: pass 0 the rain, other passes the snow (passed `view`), each with this frame's chunk packet; the city calls it only in rain (2) or snow (3)"
 0x00148500,mm_CityRender_CollectObjects,1088,game,gfx,verified,indirect,1,3,"the same walk for drawing the buildings: objects not marked yet and without flag 0x80 go through every object of their stack (bottom up, 0.8 higher for each above the first; heights grow downwards) with the type's draw slot (btype, facing, city, object, part word, draw mode, x, y, z). The part word: 1 for the bottom object, 2 for each above it, 3 for the top of a full stack (maxStack), 4 for the top of a lower one, 0 for a lone object; bit 3 is kept. The draw mode: 2 (fog) when the camera is more than 10 above the ground or the object is past the fog start, 1 (clipped against the view volume) when the camera is within the footprint's reach, else 0"
-0x00148950,mm_CityRender_DrawWater,20,game,gfx,verified,no,1,1,the water layer (mm_LayerG_Draw) for this frame's parity at the city's water level
-0x00148970,mm_CityRender_DrawInstanceLayer,8,game,gfx,verified,no,1,1,draws the instance layer (instances)
+0x00148950,mm_CityRender_DrawWater,20,game,gfx,verified,no,1,1,the water layer (mm_WaterLayer_Draw) for this frame's parity at the city's water level
+0x00148970,mm_CityRender_DrawClaimMet,8,game,gfx,verified,no,1,1,(map) draws the claim-met layer (mm_ClaimMetLayer_Draw of CityMap.claimMet)
 0x00148980,mm_CityRender_DrawPlacement,36,game,gfx,verified,no,1,1,"the placement layer's pass (0 the highlighted rectangle, 1 the marker) with this frame's chunk packet; it draws only while a building is being placed"
 0x001489B0,mm_CityRender_DrawTerrain,136,game,gfx,verified,no,1,3,"the terrain: the base ground pass over this frame's chunk packet, the cliff sides, then layers B and F over the same chunk packet"
 0x00148A40,mm_CityRender_dtor,364,game,gfx,verified,yes,1,10,"vtable 0x1BCF00; deletes the seven layers and buffers, people-level destructor"
@@ -1074,12 +1074,12 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001490D0,mm_TexImage_Upload,8,game,gfx,verified,yes,1,1,(image) sends the converted image's upload packet at once (a jump to mm_Dma_KickVif1Now)
 0x001490E0,mm_TexImage_dtor,100,game,gfx,verified,yes,1,2,frees the image data (file); delete when the flag is > 0
 0x00149150,mm_TexImage_Load,132,game,gfx,verified,yes,1,4,"(image, name, textureBlock, clutBlock) loads the texture file `name` whole and converts it for upload: the texels to `textureBlock`, the palette to `clutBlock` (mm_TexImage_Convert)"
-0x001491E0,mm_LayerA_BuildPacket,280,game,gfx,verified,no,1,0,"layer A's packets: the start uploads the layer's output offset and colour to VU1 address 0x2A, flushes, calls the chain at 0x1A8330 and sets the VIF base and offset; the end sets ALPHA_1 (0x20_00000044) through the GIF"
-0x00149300,mm_LayerA_Draw,256,game,gfx,verified,no,1,2,"layer A: the start packet, then for each of this frame's instances its packet (ALPHA_1 with its fade) and its two meshes (2n and 2n + 1) under its matrix, then the end packet"
-0x00149400,mm_LayerA_AddInstance,800,game,gfx,verified,no,1,2,"(layer, size, age, x, y, z) one more instance in this frame's buffer (at most 32) for a building of `size`, `age` frames into its effect (1 to 45, mm_CityRender_CollectObjects), its step being age - 1: meshes 2(size - 1) and the next; its matrix a turn about y of step / 100 times a scale in y of 0.08 per step (growing from nothing, up to 24 steps), then x, y and z, 0.12 higher for each step past 24 (heights grow downwards); its fade 0x40 less 1.5 per step, not below 0"
-0x00149720,mm_LayerA_BeginFrame,12,game,gfx,verified,no,1,0,picks the buffer layer A fills this frame (by the frame parity) and empties it
-0x00149730,mm_LayerA_DeletingDtor,84,game,gfx,verified,yes,1,2,"base destructor, then delete"
-0x00149790,mm_LayerA_ctor,512,game,gfx,verified,no,1,4,"base constructor, builds its packet in the packet buffer"
+0x001491E0,mm_ClaimMetLayer_BuildPacket,280,game,gfx,verified,no,1,0,"layer A's packets: the start uploads the layer's output offset and colour to VU1 address 0x2A, flushes, calls the chain at 0x1A8330 and sets the VIF base and offset; the end sets ALPHA_1 (0x20_00000044) through the GIF"
+0x00149300,mm_ClaimMetLayer_Draw,256,game,gfx,verified,no,1,2,"layer A: the start packet, then for each of this frame's instances its packet (ALPHA_1 0x68 with its fade as FIX: added to the frame) and its two meshes (2n and 2n + 1) under its matrix, drawn unlit by 0x1A8330, then the end packet"
+0x00149400,mm_ClaimMetLayer_AddInstance,800,game,gfx,verified,no,1,2,"(layer, size, age, x, y, z) one more instance in this frame's buffer (at most 32) for a building of `size`, `age` frames into its effect (1 to 45, mm_CityRender_CollectObjects), its step being age - 1: meshes 2(size - 1) and the next; its matrix a turn about y of step / 100 times a scale in y of 0.08 per step (growing from nothing, up to 24 steps), then x, y and z, 0.12 higher for each step past 24 (heights grow downwards); its fade 0x40 less 1.5 per step, not below 0"
+0x00149720,mm_ClaimMetLayer_BeginFrame,12,game,gfx,verified,no,1,0,picks the buffer layer A fills this frame (by the frame parity) and empties it
+0x00149730,mm_ClaimMetLayer_DeletingDtor,84,game,gfx,verified,yes,1,2,"base destructor, then delete"
+0x00149790,mm_ClaimMetLayer_ctor,512,game,gfx,verified,no,1,4,"base constructor, builds its packet in the packet buffer"
 0x00149990,mm_StatusPanel_BuildPacket,828,game,ui,verified,no,1,1,"status panel packet (texture sizes via mm_Math_Log2, table 0x1AF3B0)"
 0x00149CD0,mm_StatusPanel_Update,2232,game,ui,verified,yes,2,12,"status text: ""STATUS"", population vs target, theme share, salary, money, digits"
 0x0014A590,mm_StatusPanel_Draw,492,game,ui,verified,no,1,6,panel models and its four text boxes
@@ -1114,11 +1114,11 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0014C820,mm_LightSet_DeletingDtor,84,game,gfx,verified,yes,2,2,"base destructor, then delete"
 0x0014C880,mm_LightSet_ctor,40,game,gfx,verified,no,2,1,mm_LightSet_Init
 0x0014C8B0,mm_Map_BottomHeight,40,game,map,verified,no,2,0,(height) the drawn bottom's height over lowered ground: 0.08 + 0.6 x `height` (the copy layer B draws; people and goods there stand on it)
-0x0014C8E0,mm_LayerB_BuildPacket,372,game,gfx,verified,no,1,0,"layer B's packets: the first calls the chain at 0x1AA340, uploads the layer's parameters (19 quadwords) to VU1 0x1C, sets the VIF base and offset and starts the program; the second uploads the second pass's texture and mask to 0x1D and 0x2D and starts the program again"
-0x0014CA60,mm_LayerB_InitParams,428,game,gfx,verified,no,1,0,"layer B's two passes: the first over the quads with flag 0x20, the second (its own texture) over those with 0x40"
-0x0014CC10,mm_LayerB_Draw,76,game,gfx,verified,no,1,1,"layer B: its two passes (packets A and B), each followed by a call of the terrain chunk packet"
-0x0014CC60,mm_LayerB_DeletingDtor,84,game,gfx,verified,yes,1,2,"base destructor, then delete"
-0x0014CCC0,mm_LayerB_ctor,72,game,gfx,verified,no,1,5,"base constructor, parameters, packet"
+0x0014C8E0,mm_WaterBottomLayer_BuildPacket,372,game,gfx,verified,no,1,0,"the water bottom's packets (layer B): the first calls the chain at 0x1AA340, uploads the layer's parameters (19 quadwords) to VU1 0x1C, sets the VIF base and offset and starts the program (the sea's pass); the second uploads the lakes' texture and mask to 0x1D and 0x2D and starts the program again"
+0x0014CA60,mm_WaterBottomLayer_InitParams,428,game,gfx,verified,no,1,0,"the water bottom's two passes: the sea's sand over the quads with flag 0x20, then the lakes' rock (its own texture) over those with 0x40"
+0x0014CC10,mm_WaterBottomLayer_Draw,76,game,gfx,verified,no,1,1,"the water bottom (the sand of the sea, the rock of the lakes, seen through the water): its two passes, each followed by a call of the terrain chunk packet"
+0x0014CC60,mm_WaterBottomLayer_DeletingDtor,84,game,gfx,verified,yes,1,2,"base destructor, then delete"
+0x0014CCC0,mm_WaterBottomLayer_ctor,72,game,gfx,verified,no,1,5,"base constructor, parameters, packet"
 0x0014CD10,mm_PlacementLayer_InTileRect,108,game,gfx,verified,no,1,0,"(layer, x, z) 1 when the layer's block is active (rectActive == 1) and holds tile (`x`, `z`) (rect, x1 and z1 inside); mm_Terrain_DrawPatch then sets flag 4 on the patch (was mm_Terrain_Nop14CD10, not empty)"
 0x0014CD80,mm_PlacementLayer_Set,28,game,gfx,verified,no,1,0,"the placement highlight: its colour, its rectangle (x0, z0, x1, z1) and its mode (1 the highlight, 2 the marker)"
 0x0014CDA0,mm_PlacementLayer_BuildPacket,584,game,gfx,verified,no,1,0,packets of the placement highlight (microcode 0x1A7B30) and the marker (0x1A8330)
@@ -1136,17 +1136,17 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0014EDB0,mm_SnowLayer_Draw,752,game,gfx,verified,no,1,4,"the snow by the time of day: the flake count and alpha and the ground pass alpha from the clock, the turns advance 0.03, the flakes fall 0.03 a frame within 40; then its packets are queued"
 0x0014F0A0,mm_SnowLayer_DeletingDtor,84,game,gfx,verified,yes,1,2,"base destructor, then delete"
 0x0014F100,mm_SnowLayer_ctor,88,game,gfx,verified,no,1,5,"base constructor, parameters, packet"
-0x0014F160,mm_LayerF_BuildPacket,296,game,gfx,verified,no,1,0,"layer F's packet: ALPHA_1 (0x30_00000048) through the GIF, then like layer B's first packet with the chain at 0x1A91C0"
-0x0014F290,mm_LayerF_InitParams,356,game,gfx,verified,no,1,0,"layer F's pass parameters: colour 128 in every lane, its GS words, and a mask whose last word is 0x10"
-0x0014F400,mm_LayerF_Draw,48,game,gfx,verified,no,1,1,"layer F: its packet, then a call of the terrain chunk packet"
-0x0014F430,mm_LayerF_DeletingDtor,84,game,gfx,verified,yes,1,2,"base destructor, then delete"
-0x0014F490,mm_LayerF_ctor,72,game,gfx,verified,no,1,5,"base constructor, parameters, packet"
-0x0014F4E0,mm_LayerG_AnimateWaves,776,game,gfx,verified,no,1,1,"(layer, waterLevel) the water's phase and direction (wave height 0.06 along z around the water level, computed by the program 0x1A6440) and the sway and scroll of its two textures' coordinates"
-0x0014F7F0,mm_LayerG_BuildPacket,1796,game,gfx,verified,no,1,0,"layer G (the water): two sections, one per terrain buffer. Each starts with the GS state for both contexts (ALPHA_1 and ALPHA_2, TEX0_1 and TEX0_2), the program 0x1A6440 and the layer's parameters, then the buffer's quads in 39 chunks of 0x400 bytes (4 groups of 8, then 7 singles) and a RET. Returns the end"
-0x0014FF00,mm_LayerG_InitParams,392,game,gfx,verified,no,1,0,layer G (the water) keeps its texture coordinates at rest (waveBase) and copies them to both wave sets
-0x00150090,mm_LayerG_Draw,64,game,gfx,verified,no,1,2,"(layer, pass, waterLevel) the water: the waves move on around the water level, then this frame's packet (one per terrain buffer) is queued"
-0x001500D0,mm_LayerG_DeletingDtor,84,game,gfx,verified,yes,1,2,"base destructor, then delete"
-0x00150130,mm_LayerG_ctor,88,game,gfx,verified,no,1,5,"base constructor, parameters, packet"
+0x0014F160,mm_LitRoadLayer_BuildPacket,296,game,gfx,verified,no,1,0,"the lit roads' packet (layer F): ALPHA_1 (0x30_00000048) through the GIF, then like the water bottom's first packet with the chain at 0x1A91C0"
+0x0014F290,mm_LitRoadLayer_InitParams,356,game,gfx,verified,no,1,0,"the lit roads' pass parameters: colour 128 in every lane, its GS words, and a mask whose last word is 0x10 (road tiles whose piece has its street lamps on)"
+0x0014F400,mm_LitRoadLayer_Draw,48,game,gfx,verified,no,1,1,"the lit roads (an additive pass over the road tiles whose street lamps are on): its packet, then a call of the terrain chunk packet"
+0x0014F430,mm_LitRoadLayer_DeletingDtor,84,game,gfx,verified,yes,1,2,"base destructor, then delete"
+0x0014F490,mm_LitRoadLayer_ctor,72,game,gfx,verified,no,1,5,"base constructor, parameters, packet"
+0x0014F4E0,mm_WaterLayer_AnimateWaves,776,game,gfx,verified,no,1,1,"(layer, waterLevel) the water's phase and direction (wave height 0.06 along z around the water level, computed by the program 0x1A6440) and the sway and scroll of its two textures' coordinates"
+0x0014F7F0,mm_WaterLayer_BuildPacket,1796,game,gfx,verified,no,1,0,"the water (layer G): two sections, one per terrain buffer. Each starts with the GS state for both contexts (ALPHA_1 and ALPHA_2, TEX0_1 and TEX0_2), the program 0x1A6440 and the layer's parameters, then the buffer's quads in 39 chunks of 0x400 bytes (4 groups of 8, then 7 singles) and a RET. Returns the end"
+0x0014FF00,mm_WaterLayer_InitParams,392,game,gfx,verified,no,1,0,the water keeps its texture coordinates at rest (texCoordsRest) and copies them to both wave sets
+0x00150090,mm_WaterLayer_Draw,64,game,gfx,verified,no,1,2,"(layer, pass, waterLevel) the water: the waves move on around the water level, then this frame's packet (one per terrain buffer) is queued"
+0x001500D0,mm_WaterLayer_DeletingDtor,84,game,gfx,verified,yes,1,2,"base destructor, then delete"
+0x00150130,mm_WaterLayer_ctor,88,game,gfx,verified,no,1,5,"base constructor, parameters, packet"
 0x00150190,mm_Wants_RemoveEventHold,272,game,city,verified,no,9,0,"(wants, eventId, value) removes the holds of event `eventId` (EventType.id) with `value`, the hold's number (events ending); as in the original, the entry that moves into a removed one's place is skipped"
 0x001502A0,mm_Wants_AddEventHold,172,game,city,verified,no,1,0,"(wants, eventId, value) a one-word entry held by event `eventId` (EventType.id) with `value`, the hold's number, when an entry and a word are free"
 0x00150350,mm_Wants_CheckEntry,208,game,city,ported,no,2,2,"a want's state: 2 no longer holds (family gone, claim changed, meter not above the low threshold), 1 met (flags 0x48), 3 meter above the high threshold and not phoned yet, else 0"
@@ -1480,7 +1480,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0016E270,mm_Title_DrawCommon,456,game,scene,verified,no,4,6,"title screen layers, logo animation and fades"
 0x0016E440,mm_Title_LoadMenu,1024,game,scene,verified,yes,1,16,load game screen: memory card slots and their info
 0x0016E840,mm_Title_PressStart,260,game,scene,verified,no,1,5,"title idle screen (""[SELECT]SoundTest"")"
-0x0016E950,mm_TitleScene_StartGame,764,game,scene,verified,yes,1,27,"(scene, newGame) the start of a game, one step a call (pressStep) while the city's asset loader is stepped: the title faded and drawn, the camera placed, the loading bar shown until the loader is done, the loading screen faded, the title music stopped; then a new game (afterGame clear) loads the character types, families, claims, words, goods, stamina, bag and event types, a loaded one resets the stage, families, stamina and bag, and the laptop entries are made; 1, or 2 with `newGame`, once done, else 0"
+0x0016E950,mm_TitleScene_StartGame,764,game,scene,verified,yes,1,27,"(scene, loaded) the start of a game, one step a call (pressStep) while the city's asset loader is stepped: the title faded and drawn, the camera placed, the loading bar shown until the loader is done, the loading screen faded, the title music stopped; then the first time since start-up (afterGame clear) it loads the character types, families, claims, words, goods, stamina, bag and event types, after a game (afterGame set) it resets the stage, families, stamina and bag, and the laptop entries are made; `loaded` is 1 when the load menu chose a save; 1 for a new game, 2 for a loaded one, once done, else 0"
 0x0016EC50,mm_Title_NewGameIntro,1300,game,scene,verified,no,1,8,new game intro scene with town models and loading text
 0x0016F170,mm_Title_RandomCharParts,248,game,scene,verified,no,1,2,random character parts for the intro
 0x0016F270,mm_Title_OpeningMovieStep,424,game,scene,verified,yes,1,9,"plays the opening movie, then loads TITLE.SQ/HD/BD"
@@ -1670,8 +1670,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0017B9F0,mm_WordsFn_FinishSystemEvent,16,game,talk,verified,indirect,0,1,"#132 act: finishes the system event (talks[1], group 6: paydays, hunger, population milestones)"
 0x0017BA00,mm_WordsFn_AbortSystemEvent,16,game,talk,verified,indirect,0,1,"#131 act: abandons the system event (talks[1]: handler End, tiles, requeue by kind)"
 0x0017BA10,mm_WordsFn_SetSystemEventVar,24,game,talk,verified,no,0,0,#130 act: the system event's variable (+10) = arg
-0x0017BA30,mm_WordsFn_SelectEventPersonB,100,game,talk,verified,no,0,1,#129 act: subject B = the event's second person
-0x0017BAA0,mm_WordsFn_SelectEventPersonA,100,game,talk,verified,no,0,1,#128 act: subject B = the event's first person
+0x0017BA30,mm_WordsFn_SelectEventSecondPerson,100,game,talk,verified,no,0,1,#129 act: subject B = the event's second person
+0x0017BAA0,mm_WordsFn_SelectEventFirstPerson,100,game,talk,verified,no,0,1,#128 act: subject B = the event's first person
 0x0017BB10,mm_WordsFn_EventQueueShift,12,game,talk,verified,no,0,1,#127 act: requeues the event manager's first event (mm_EventMgr_RequeueFirst)
 0x0017BB20,mm_WordsFn_PlaySe,24,game,talk,verified,no,0,1,#126 act: sound effect arg
 0x0017BB40,mm_WordsFn_GiveBagItem,332,game,talk,verified,no,0,3,"#125 act: gives the selected bag item, friendship by its price"
@@ -2245,6 +2245,6 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001AC688,sdk_kpatch_CopyOsdConfig,192,sdk,sdk:libkernl,named,no,0,0,(provisional) kernel patch: copies 0x26 bytes of OSD config into kernel RAM
 0x001AC868,sdk_kpatch_ResetHardware,208,sdk,sdk:libkernl,named,indirect,0,0,"(provisional) kernel patch: waits for the timer interrupt, then resets through kernel calls"
 0x001AC938,sdk_kpatch_TerminateThreads,484,sdk,sdk:libkernl,named,indirect,0,0,(provisional) kernel patch: terminates and deletes threads 1..255
-0x001BAEA0,mm_StaticInit_StatusBytes,32,game,core,verified,no,0,1,constructs the 256 status bytes at 0x1F32F0
+0x001BAEA0,mm_StaticInit_MemberStatus,32,game,core,verified,no,0,1,constructs the 256 member status entries (kMemberStatus): mm_TalkStatus_ctor on each 4-byte entry
 0x001BAEC0,mm_StaticInit_WordsTable,7884,game,talk,verified,no,0,0,copies the WORDS member function table template (0x1B1B48) to 0x1B9100
 0x001BCD90,mm_StaticInit_Words,52,game,talk,verified,yes,0,2,constructs the WORDS object (0x1BDDF0) and registers its destructor

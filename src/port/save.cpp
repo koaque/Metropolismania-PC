@@ -28,7 +28,7 @@ namespace mm
     // descriptor arrives in mc->fd.
     int SaveFile_Open(GuestPtr<McManager> mc, int mode)
     {
-        return McQueue_Open(queueOf(mc), port::load<int32_t>(0x001BDB94u), port::load<int32_t>(0x001BDB98u), mode,
+        return McQueue_Open(queueOf(mc), globals::saveFilePort.get(), globals::saveFileName.get(), mode,
                             GuestPtr<int32_t>::of(mc->fd));
     }
 
@@ -523,14 +523,15 @@ namespace mm
     {
         if (mc->state == 0)
         {
-            mc->request = McQueue_Format(static_cast<int>(mc->queue.address), port, GuestPtr<int32_t>{0x001BDBA8u});
+            mc->request = McQueue_Format(static_cast<int>(mc->queue.address), port,
+                                         GuestPtr<int32_t>{globals::formatResult.address});
             ++mc->state;
             return 0;
         }
         if (mc->state != 1 || McQueue_IsDone(static_cast<int>(mc->queue.address), mc->request) == 0)
             return 0;
         mc->state = 0;
-        return port::load<int32_t>(0x001BDBA8u) != 0 ? 2 : 1;
+        return globals::formatResult.get() != 0 ? 2 : 1;
     }
 
     PORT_FN(SaveFile_Write);
@@ -718,10 +719,8 @@ namespace mm
     // is not a PS2 card or the directory is missing and may not be made.
     int SaveFile_PrepareDir(GuestPtr<McManager> mc, int portNumber, int name, int allowCreate)
     {
-        constexpr uint32_t kCardType = 0x001BDB60u, kCardFree = 0x001BDB68u, kCardFormat = 0x001BDB70u;
-        constexpr uint32_t kKnownType0 = 0x001BDB78u, kKnownType1 = 0x001BDB7Cu;
-        port::store<int32_t>(0x001BDB94u, portNumber);
-        port::store<int32_t>(0x001BDB98u, name);
+        globals::saveFilePort.set(portNumber);
+        globals::saveFileName.set(name);
         const int queue = static_cast<int>(mc->queue.address);
         const uint32_t at = 4u * static_cast<uint32_t>(portNumber);
         const GuestPtr<int32_t> result = GuestPtr<int32_t>::of(mc->result);
@@ -731,8 +730,8 @@ namespace mm
         {
         case 0:
         case 5:
-            mc->request = McQueue_GetInfo(queue, portNumber, static_cast<int>(kCardType + at), static_cast<int>(kCardFree + at),
-                                          static_cast<int>(kCardFormat + at), GuestPtr<int32_t>{0u});
+            mc->request = McQueue_GetInfo(queue, portNumber, static_cast<int>(globals::kCardType + at), static_cast<int>(globals::kCardFree + at),
+                                          static_cast<int>(globals::kCardFormatted + at), GuestPtr<int32_t>{0u});
             advance();
             break;
         case 1:
@@ -741,7 +740,7 @@ namespace mm
                 advance();
             break;
         case 2:
-            if (port::load<int32_t>(kCardType + at) != 2)
+            if (port::load<int32_t>(globals::kCardType + at) != 2)
             {
                 mc->state = 0;
                 return 2;
@@ -769,11 +768,11 @@ namespace mm
             }
             break;
         case 7:
-            if (port::load<int32_t>(kCardType) != port::load<int32_t>(kKnownType0))
-                port::store<int32_t>(kKnownType0, -1);
-            if (port::load<int32_t>(kCardType + 4u) != port::load<int32_t>(kKnownType1))
-                port::store<int32_t>(kKnownType1, -1);
-            if (port::load<int32_t>(kCardType + at) != 2)
+            if (port::load<int32_t>(globals::kCardType) != port::load<int32_t>(globals::kCardTypeChecked))
+                port::store<int32_t>(globals::kCardTypeChecked, -1);
+            if (port::load<int32_t>(globals::kCardType + 4u) != port::load<int32_t>(globals::kCardTypeChecked + 0x4u))
+                port::store<int32_t>(globals::kCardTypeChecked + 0x4u, -1);
+            if (port::load<int32_t>(globals::kCardType + at) != 2)
             {
                 mc->state = 0;
                 return 2;
@@ -795,7 +794,7 @@ namespace mm
             break;
         case 9:
             mc->iconBuffer = sdk::malloc(0x13968u);
-            mc->request = File_Open(mc->file, GuestPtr<char>{0x001B7E30u});
+            mc->request = File_Open(mc->file, GuestPtr<char>{globals::kPathStaticIco});
             mc->request = File_Read(mc->file, static_cast<int>(mc->iconBuffer), 1, 0x13968, 0);
             advance();
             break;
@@ -804,7 +803,8 @@ namespace mm
                 advance();
             break;
         case 11:
-            mc->request = McQueue_Open(queue, portNumber, 0x001B7E40, 0x202, GuestPtr<int32_t>::of(mc->fd));
+            mc->request = McQueue_Open(queue, portNumber, static_cast<int>(globals::kStaticIcoName), 0x202,
+                                       GuestPtr<int32_t>::of(mc->fd));
             advance();
             [[fallthrough]];
         case 12:
@@ -891,10 +891,10 @@ namespace mm
         const auto append = [&](uint32_t format) {
             sdk::sprintf(out.address + static_cast<uint32_t>(sdk::strlen(out.address)), format, number);
         };
-        sdk::strcat(out.address, 0x001B7DA0u);
+        sdk::strcat(out.address, globals::kSlotLineStage);
         Text_FormatPadded(GuestPtr<char>{number}, remainder(titleStage(title) + 1, 100), 2);
         blankLeadingZeros(number, 1);
-        append(0x001B7DA8u);
+        append(globals::kSlotLineName);
         uint32_t dst = out.address + static_cast<uint32_t>(sdk::strlen(out.address));
         const uint32_t nameStart = title.address + static_cast<uint32_t>(sdk::strlen(globals::kSaveTitlePrefix));
         for (uint32_t src = nameStart; port::load<int8_t>(src) != 0; src += 2u)
@@ -906,10 +906,10 @@ namespace mm
             ++dst;
         }
         port::store<uint8_t>(dst, 0);
-        append(0x001B7DB0u);
+        append(globals::kSlotLinePopulation);
         Text_FormatPadded(GuestPtr<char>{number}, remainder(titlePopulation(title), 10000), 4);
         blankLeadingZeros(number, 3);
-        append(0x001B7DC0u);
+        append(globals::kSlotLineApproval);
         const int32_t approval = title->approval;
         if (approval < 0)
         {
@@ -923,9 +923,9 @@ namespace mm
             Text_FormatPadded(GuestPtr<char>{number}, approval, 3);
             blankLeadingZeros(number, 2);
         }
-        append(0x001B7DD0u);
+        append(globals::kSlotLinePercent);
         if (marked != 0)
-            sdk::strcat(out.address, 0x001B7DE0u);
+            sdk::strcat(out.address, globals::kSlotLineNewest);
     }
 
     PORT_FN(McManager_FormatSlotLine);
@@ -950,7 +950,7 @@ namespace mm
             value = decimal(6) * 0x28DE80u + decimal(5) * 0x15180u + decimal(3) * 0xE10u + decimal(2) * 0x3Cu + decimal(1);
         }
         const uint32_t name = globals::saveSlotFolder(card & 0xFFu);
-        const uint32_t prefix = port::load<uint32_t>(0x001BD9A0u);
+        const uint32_t prefix = globals::saveFolderPrefix.get();
         sdk::strcpy(name, prefix);
         const uint32_t length = static_cast<uint32_t>(sdk::strlen(prefix));
         for (uint32_t digit = length + 7u; digit >= length; --digit)
@@ -993,18 +993,18 @@ namespace mm
         const auto append = [&](uint32_t format) {
             sdk::sprintf(out.address + static_cast<uint32_t>(sdk::strlen(out.address)), format, number);
         };
-        sdk::strcpy(out.address, 0x001B7D40u);
+        sdk::strcpy(out.address, globals::kSaveInfoStage);
         Text_FormatPadded(GuestPtr<char>{number}, remainder(titleStage(title) + 1, 100), 2);
         blankLeadingZeros(number, 1);
         sdk::strcat(out.address, number);
-        sdk::strcat(out.address, 0x001B7D48u);
+        sdk::strcat(out.address, globals::kSaveInfoIndent);
         const int32_t months = titleMonths(title);
         Text_FormatPadded(GuestPtr<char>{number}, remainder(months, 12) + 1, 2);
         blankLeadingZeros(number, 1);
-        append(0x001B7D50u);
+        append(globals::kSaveInfoMonth);
         Text_FormatPadded(GuestPtr<char>{number}, remainder(divide(months, 12), 1000) + 1, 3);
         blankLeadingZeros(number, 2);
-        append(0x001B7D60u);
+        append(globals::kSaveInfoYear);
         uint32_t dst = out.address + static_cast<uint32_t>(sdk::strlen(out.address));
         const uint32_t nameStart = title.address + static_cast<uint32_t>(sdk::strlen(globals::kSaveTitlePrefix));
         for (uint32_t src = nameStart; port::load<int8_t>(src) != 0; src += 2u)
@@ -1016,11 +1016,11 @@ namespace mm
             ++dst;
         }
         port::store<uint8_t>(dst, 0);
-        sdk::strcat(out.address, 0x001B7D70u);
+        sdk::strcat(out.address, globals::kSaveInfoPopulation);
         Text_FormatPadded(GuestPtr<char>{number}, remainder(titlePopulation(title), 10000), 4);
         blankLeadingZeros(number, 3);
         sdk::strcat(out.address, number);
-        sdk::strcat(out.address, 0x001B7D80u);
+        sdk::strcat(out.address, globals::kSaveInfoApproval);
         const int32_t approval = title->approval;
         if (approval < 0)
         {
@@ -1035,7 +1035,7 @@ namespace mm
             blankLeadingZeros(number, 2);
         }
         sdk::strcat(out.address, number);
-        sdk::strcat(out.address, 0x001B7D98u);
+        sdk::strcat(out.address, globals::kSaveInfoPercent);
     }
 
     PORT_FN(McManager_FormatSaveInfo);
@@ -1063,8 +1063,8 @@ namespace mm
     void SaveFile_WriteIconSys(GuestPtr<McManager> mc, int port, int title, int result)
     {
         mc->request = McSave_WriteIconSys(static_cast<int>(mc->queue.address), port, title, result);
-        port::store<int32_t>(0x001BDB78u, -1);
-        port::store<int32_t>(0x001BDB7Cu, -1);
+        port::store<int32_t>(globals::kCardTypeChecked, -1);
+        port::store<int32_t>(globals::kCardTypeChecked + 0x4u, -1);
     }
 
     PORT_FN(SaveFile_WriteIconSys);
@@ -1150,7 +1150,7 @@ namespace mm
             }
         }
         const CardTime &saved = globals::saveSlotEntry(static_cast<uint32_t>(slot))->modified;
-        frame->clock = *GuestPtr<BcdClock>{0x001BDBA0u};
+        frame->clock = *GuestPtr<BcdClock>{globals::kSaveClock};
         const auto toBcd = [](uint32_t value) { return static_cast<uint8_t>((value / 10u) * 16u + value % 10u); };
         const auto fromBcd = [](uint8_t value) { return static_cast<int32_t>(value & 0xFu) + static_cast<int32_t>(value >> 4) * 10; };
         BcdClock &clock = frame->clock;
@@ -1185,8 +1185,9 @@ namespace mm
             break;
         }
         const int32_t month = fromBcd(clock.month);
-        sdk::sprintf(text.address, 0x001B7EA0u, *cursor < 8 ? 1 : 2, port::load<uint32_t>(0x001B0B8Cu + 4u * static_cast<uint32_t>(month)),
-                     dayText, port::load<uint32_t>(0x001B0BC0u + 4u * suffix), yearText, hourText, minuteText);
+        sdk::sprintf(text.address, globals::kSlotTextFormat, *cursor < 8 ? 1 : 2,
+                     port::load<uint32_t>(globals::kMonthNames + 4u * static_cast<uint32_t>(month)), dayText,
+                     port::load<uint32_t>(globals::kNumberSuffixes + 4u * suffix), yearText, hourText, minuteText);
         *isNewest = *cursor == newest ? 1u : 0u;
         McManager_FormatSlotLine(mc, *cursor, text, *cursor == newest ? 1 : 0);
         *cursor = *cursor + 1;
@@ -1205,11 +1206,10 @@ namespace mm
     // `result`. The result is the queue position after the close.
     int McSave_WriteIconSys(int queue, int port, int title, int result)
     {
-        constexpr uint32_t kImage = 0x001F65F0u, kFileNumber = 0x001BDCDCu;
-        sdk::memset(kImage, 0, 0x3C4u);
-        sdk::strcpy(kImage, 0x001B9C60u);
-        port::store<uint16_t>(kImage + 6u, static_cast<uint16_t>(sdk::strlen(0x001B9C40u)));
-        port::store<uint32_t>(kImage + 0xCu, 0x80u);
+        sdk::memset(globals::kIconSysImage, 0, 0x3C4u);
+        sdk::strcpy(globals::kIconSysImage, globals::kIconSysMagic);
+        port::store<uint16_t>(globals::kIconSysImage + 6u, static_cast<uint16_t>(sdk::strlen(globals::kIconSysTitle)));
+        port::store<uint32_t>(globals::kIconSysImage + 0xCu, 0x80u);
         // Light directions (0x1F6640), light colours (0x1F6670) and the ambient colour (0x1F66A0), four floats each.
         static constexpr uint32_t kLights[] = {
             0x00000000u, 0x3FC00000u, 0x3F000000u, 0x3F800000u, 0x3FC00000u, 0xBF000000u, 0x3F000000u, 0x3F800000u,
@@ -1217,19 +1217,20 @@ namespace mm
             0x3E4CCCCDu, 0x3E4CCCCDu, 0x3E4CCCCDu, 0x3F800000u, 0x3E4CCCCDu, 0x3E4CCCCDu, 0x3E4CCCCDu, 0x3F800000u,
             0x3EE66666u, 0x3EE66666u, 0x3EE66666u, 0x3F800000u};
         for (uint32_t i = 0; i < 28; ++i)
-            port::store<uint32_t>(kImage + 0x50u + 4u * i, kLights[i]);
-        sdk::memcpy(kImage + 0xC0u, static_cast<uint32_t>(title), 0x44u);
-        sdk::strcpy(kImage + 0x104u, 0x001B9C68u);
-        sdk::strcpy(kImage + 0x144u, 0x001B9C68u);
-        sdk::strcpy(kImage + 0x184u, 0x001B9C68u);
-        const int opened = McQueue_Open(0, port, 0x001B9C78, 0x203, GuestPtr<int32_t>{kFileNumber});
+            port::store<uint32_t>(globals::kIconSysImage + 0x50u + 4u * i, kLights[i]);
+        sdk::memcpy(globals::kIconSysImage + 0xC0u, static_cast<uint32_t>(title), 0x44u);
+        sdk::strcpy(globals::kIconSysImage + 0x104u, globals::kIconSysIconName);
+        sdk::strcpy(globals::kIconSysImage + 0x144u, globals::kIconSysIconName);
+        sdk::strcpy(globals::kIconSysImage + 0x184u, globals::kIconSysIconName);
+        const int opened = McQueue_Open(0, port, static_cast<int>(globals::kIconSysFileName), 0x203,
+                                        GuestPtr<int32_t>{globals::kIconSysFile});
         while (McQueue_IsDone(queue, opened) == 0)
         {
             McQueue_Pump();
             port::checkpoint();
         }
-        const int fd = port::load<int32_t>(kFileNumber);
-        McQueue_Write(0, fd, static_cast<int>(kImage), 0x3C4, GuestPtr<int32_t>{0});
+        const int fd = port::load<int32_t>(globals::kIconSysFile);
+        McQueue_Write(0, fd, static_cast<int>(globals::kIconSysImage), 0x3C4, GuestPtr<int32_t>{0});
         McQueue_Close(0, fd, GuestPtr<int32_t>{static_cast<uint32_t>(result)});
         return globals::mcQueueTail.get();
     }

@@ -1,4 +1,5 @@
-// Render layer A (instances over built objects whose claim was met) and the snow layer; the rest are in gfx.cpp.
+// The claim-met layer (layer A: instances over built objects whose claim was met) and the snow layer; the rest are in
+// gfx.cpp.
 
 #include "game_functions.h"
 #include "game_globals.h"
@@ -23,13 +24,13 @@ namespace mm
     // The layer: its base object, its packets at the packet buffer (which then moves past them), its model (0x1F3B70), and
     // the two buffers of 32 instances, each instance's packet set up (a CNT tag with FLUSH and DIRECT 2, a GIF tag of one
     // A+D register, ALPHA_1 0x80_00000068, a RET); then the output offset and the colour the program gets.
-    GuestPtr<LayerA> LayerA_ctor(GuestPtr<LayerA> layer)
+    GuestPtr<ClaimMetLayer> ClaimMetLayer_ctor(GuestPtr<ClaimMetLayer> layer)
     {
         BaseObject_ctor(static_cast<int>(layer.address));
         const int packet = PacketBuf_Tell();
-        PacketBuf_Seek(static_cast<int>(LayerA_BuildPacket(layer, GuestPtr<uint32_t>{static_cast<uint32_t>(packet)}).address));
-        layer->model = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B70u)};
-        for (LayerAInstance &instance : layer->instances)
+        PacketBuf_Seek(static_cast<int>(ClaimMetLayer_BuildPacket(layer, GuestPtr<uint32_t>{static_cast<uint32_t>(packet)}).address));
+        layer->model = globals::claimMetModel.get();
+        for (ClaimMetInstance &instance : layer->instances)
         {
             putWords(instance.packet, {0x10000002u, 0, 0x11000000u, 0x50000002u, 0x8001u, 0x10000000u, 0xEu, 0});
             instance.alpha = 0x68;
@@ -46,7 +47,7 @@ namespace mm
     // 45, mm_CityRender_CollectObjects), its step being age - 1: meshes 2(size - 1) and the next; its matrix a turn
     // about y of step / 100 times a scale in y of 0.08 per step (growing from nothing, up to 24 steps), then x, y and z,
     // 0.12 higher for each step past 24 (heights grow downwards); its fade 0x40 less 1.5 per step, not below 0.
-    void LayerA_AddInstance(GuestPtr<LayerA> layer, int size, int age, ps2f x, ps2f y, ps2f z)
+    void ClaimMetLayer_AddInstance(GuestPtr<ClaimMetLayer> layer, int size, int age, ps2f x, ps2f y, ps2f z)
     {
         using namespace vu0;
         port::GuestFrame<0x90> frame; // the scale matrix at +0x50
@@ -54,7 +55,7 @@ namespace mm
         if (!(layer->count < 0x20))
             return;
         // The instance is looked up again for every use, as in the original.
-        const auto instance = [&] { return layerAInstance(layer, layer->count); };
+        const auto instance = [&] { return claimMetInstance(layer, layer->count); };
         const ps2f step = fromInt(age - 1);
         instance()->meshPair = size - 1;
         sdk::sceVu0RotMatrixY(addressOf(instance()->matrix), globals::kIdentityMatrix, F(0x3C23D70Au) * step);
@@ -205,8 +206,8 @@ namespace mm
 
     PORT_FN(SnowLayer_Draw);
 
-    PORT_FN(LayerA_ctor);
-    PORT_FN(LayerA_AddInstance);
+    PORT_FN(ClaimMetLayer_ctor);
+    PORT_FN(ClaimMetLayer_AddInstance);
 
     namespace
     {
@@ -223,14 +224,14 @@ namespace mm
         }
     }
 
-    GuestPtr<LayerA> LayerA_DeletingDtor(GuestPtr<LayerA> layer, int16_t deleteFlag)
+    GuestPtr<ClaimMetLayer> ClaimMetLayer_DeletingDtor(GuestPtr<ClaimMetLayer> layer, int16_t deleteFlag)
     {
-        return GuestPtr<LayerA>{layerDeletingDtor(layer.address, deleteFlag)};
+        return GuestPtr<ClaimMetLayer>{layerDeletingDtor(layer.address, deleteFlag)};
     }
 
-    GuestPtr<LayerB> LayerB_DeletingDtor(GuestPtr<LayerB> layer, int16_t deleteFlag)
+    GuestPtr<WaterBottomLayer> WaterBottomLayer_DeletingDtor(GuestPtr<WaterBottomLayer> layer, int16_t deleteFlag)
     {
-        return GuestPtr<LayerB>{layerDeletingDtor(layer.address, deleteFlag)};
+        return GuestPtr<WaterBottomLayer>{layerDeletingDtor(layer.address, deleteFlag)};
     }
 
     GuestPtr<PlacementLayer> PlacementLayer_DeletingDtor(GuestPtr<PlacementLayer> layer, int16_t deleteFlag)
@@ -248,21 +249,21 @@ namespace mm
         return GuestPtr<SnowLayer>{layerDeletingDtor(layer.address, deleteFlag)};
     }
 
-    GuestPtr<LayerF> LayerF_DeletingDtor(GuestPtr<LayerF> layer, int16_t deleteFlag)
+    GuestPtr<LitRoadLayer> LitRoadLayer_DeletingDtor(GuestPtr<LitRoadLayer> layer, int16_t deleteFlag)
     {
-        return GuestPtr<LayerF>{layerDeletingDtor(layer.address, deleteFlag)};
+        return GuestPtr<LitRoadLayer>{layerDeletingDtor(layer.address, deleteFlag)};
     }
 
-    GuestPtr<LayerG> LayerG_DeletingDtor(GuestPtr<LayerG> layer, int16_t deleteFlag)
+    GuestPtr<WaterLayer> WaterLayer_DeletingDtor(GuestPtr<WaterLayer> layer, int16_t deleteFlag)
     {
-        return GuestPtr<LayerG>{layerDeletingDtor(layer.address, deleteFlag)};
+        return GuestPtr<WaterLayer>{layerDeletingDtor(layer.address, deleteFlag)};
     }
 
-    PORT_FN(LayerA_DeletingDtor);
-    PORT_FN(LayerB_DeletingDtor);
+    PORT_FN(ClaimMetLayer_DeletingDtor);
+    PORT_FN(WaterBottomLayer_DeletingDtor);
     PORT_FN(PlacementLayer_DeletingDtor);
     PORT_FN(RainLayer_DeletingDtor);
     PORT_FN(SnowLayer_DeletingDtor);
-    PORT_FN(LayerF_DeletingDtor);
-    PORT_FN(LayerG_DeletingDtor);
+    PORT_FN(LitRoadLayer_DeletingDtor);
+    PORT_FN(WaterLayer_DeletingDtor);
 }

@@ -27,13 +27,13 @@ From the city scene's draw step, in the order the GS sees it:
 | `mm_Sky_Draw` | the three sky packets in the city camera (+0x310, +0x470, +0x3D0) | none (GIF) |
 | `mm_Packet_Draw(camera)` | the camera block to VU1 0x00-0x11 | none |
 | `mm_Terrain_Draw` | fills the terrain quad and cliff-side buffers for this frame (CPU) | none yet |
-| `mm_CityRender_DrawTerrain` | terrain passes: base ground, cliff sides, layer B, layer F | 0x1A5EB0, 0x1A76F0, 0x1AA340, 0x1A91C0 |
+| `mm_CityRender_DrawTerrain` | terrain passes: base ground, cliff sides, the water bottom (layer B), the lit roads (layer F) | 0x1A5EB0, 0x1A76F0, 0x1AA340, 0x1A91C0 |
 | light set packet 1, `mm_CityRender_CollectObjects` | buildings and objects on visible tiles, as model instances | 0x1A4780 |
 | light set packet 0, `mm_CityRender_UpdatePeople`, `mm_Player_Draw` | people and the player, as model instances | 0x1A3C80 |
 | `mm_CityRender_DrawWater` | the water (layer G) | 0x1A6440 |
 | `mm_CityRender_DrawWeather` (weather 2 or 3 only) | rain (layer D) or snow (layer E) | 0x1A8A00 + 0x1A8E20, or 0x1A9A90 + 0x1A9F10 |
 | `mm_CityRender_DrawPlacement` x2 | the placement highlight and marker (layer C), only while placing | 0x1A7B30, 0x1A8330 |
-| `mm_CityRender_DrawInstanceLayer` | layer A's instances | 0x1A8330 |
+| `mm_CityRender_DrawClaimMet` | the claim-met layer's instances (layer A) | 0x1A8330 |
 | HUD, minimap, windows | sprites and text | none (GIF) |
 
 Several of the names in that table are older guesses that this map corrects (see "Names to fix" at the end).
@@ -72,7 +72,7 @@ Used for everything built from `.A3D` models: buildings, objects, people, the pl
 |---|---|---|
 | 0x1A3C80 (light set packet 0) | recorded (entries 0, 0x188, 0x718, 0xAD0) | two copies of the loop, chosen by the instance flags: non-zero computes fog per vertex (0x308), zero does not (0x728); 0x718 and 0xAD0 follow their stops (the captured runs at 0x718 write a fog value per vertex, those at 0xAD0 write 0) |
 | 0x1A4780 (light set packet 1) | recorded (entries 0, 0x188, 0x718, 0xAD8, 0xD68) | the same two loops (mode 2 fog, mode 0 none) and a third for mode 1 (0xAE8): no fog; a triangle wholly outside one plane of the clip volume is dropped, one wholly inside is drawn as usual, and one that crosses it is clipped (0xD78 saves the registers to VU1 0xAC onward; 0x13F0 clips the polygon against one plane, called for -z, -x, +x, -y and +y but not +z; 0x1628 interpolates a crossing edge) and the corners left (at least three) are drawn as their own GIF packet, from two output buffers at 0x32 and 0x4B used in turn. The batch's qword 1 carries two more tag words: .y is the strip's tag (qword 0 .y) without the fog bit, and .w the same as a triangle fan (PRIM type 5). The fog loop sends the strip under qword 0's tag; the other loops send it under qword 1 .y, and the clipped polygons each as a packet of their own under qword 1 .w with NLOOP the corner count (3 or 4 in the captures) |
-| 0x1A8330 (layers A and C) | read only | the same setup code as the other two; its batch loop is smaller and has not run in any capture |
+| 0x1A8330 (layers A and C) | read only | the same setup code as the other two and one batch loop: 0x1A3C80's loop without fog (the strip under qword 1 .y, the same facing test and strip shortening; the instance's draw mode at 0x2F.w is not read), made unlit. The light is still computed, then replaced: a vertex's colour is its own colour times the batch's colour-table entry in red, green and blue only, so its alpha is the vertex's own. The strip's last vertex is the exception: it keeps the lit colour (0x5D0 multiplies the light by its colour, as 0x1A3C80 does), then the batch's red, green and blue. Read from the code; no capture has run it |
 
 The fog and no-fog loops of both programs also shorten a strip: after the back-face product they take the facing test's result (FMEQ on the MAC flags, 0x340 and 0x760 in 0x1A4780), and a vertex is not written when the test failed for the triangle it ends and the two before it (`IBNE vi15` falls through to the branch past the stores). The tag's NLOOP is the count of vertices written (vi11, stored at the end of the batch), so a strip seen partly from behind goes out with fewer vertices than the batch holds (captured runs at 0xAD8: 21 of 35, 37 of 48). The clipping loop does not do this.
 
@@ -120,8 +120,8 @@ Heights grow downwards (y points down): 0 is ground level, the water surface is 
 | Program | Pass | Checked | What it does per quad |
 |---|---|---|---|
 | 0x1A5EB0 | base ground (terrain packet B) | recorded | transform and divide; two face normals (one per triangle), each normalized, lit with the light matrices and scaled by 0x1C, so each half of the quad has one flat colour; fog; the whole quad is skipped (ADC) when any corner fails the clip test or the mask does not match |
-| 0x1AA340 | layer B | recorded | the same lighting and fog with the layer's own texture; mask 0x20, then a second pass (`LayerB.packetB`) that uploads another TEX0 to 0x1D and mask 0x40 to 0x2D and runs again; none of the captured chunks had a matching quad |
-| 0x1A91C0 | layer F | recorded | unlit, alpha blended (the packet sets ALPHA_1 to 0x30_00000048 first); mask 0x10; no matching quad in the captures |
+| 0x1AA340 | layer B | recorded | the same lighting and fog with the layer's own texture; mask 0x20, then a second pass (`WaterBottomLayer.lakePacket`) that uploads another TEX0 to 0x1D and mask 0x40 to 0x2D and runs again; none of the captured chunks had a matching quad |
+| 0x1A91C0 | the lit roads (layer F) | recorded | unlit, added to the frame (the packet sets ALPHA_1 to 0x30_00000048 first: the source times its alpha, plus the frame); mask 0x10; no matching quad in the captures |
 | 0x1A76F0 | cliff sides (terrain packet A) | recorded | the same for triangles: 3 quadwords each (TEX0 low word, texture-coordinate set, 1), 36 per chunk of 108 quadwords, one TEX0 per triangle |
 
 The cliff sides are double-buffered like the quads (`CityMap.sideBuffers`, filled by frame parity), but `mm_Terrain_BuildSidePackets` stores the start of the first buffer's packet in both of the map's side packet slots (checked against the decompile), so odd frames draw the triangles of the frame before. A port that wants both buffers drawn would store the second section's start there.
@@ -130,7 +130,7 @@ The cliff sides are double-buffered like the quads (`CityMap.sideBuffers`, fille
 
 | Program | Layer, when | Checked | Data and work |
 |---|---|---|---|
-| 0x1A6440 | water (layer G), every frame | recorded (entries 0, 0x68, 0x1280) | the layer's 33 quadwords to 0x1C (`mm_LayerG_AnimateWaves`), then the terrain buffer in chunks of 64 quadwords (16 quads). Only quads with flag 2 (mask at 0x3A.w): each corner's height becomes the water level plus 0.06 sin((\|z\| mod pi) + phase - pi/2) (ESIN; the parameters at 0x3B and 0x3C, the sign flipping every half period), a wave along z; one face normal per triangle (ESADD, ERSQRT), lit like the ground and times the layer's colour (alpha 60). Each quad is drawn twice as a blended strip: in GS context 2 (PRIM at 0x20) with texture coordinates from 0x22-0x2D and in context 1 (0x21) with 0x2E-0x39, the set picked by the quad's coordinate-set word as for the ground (the header sets ALPHA and TEX0 for both contexts); a quad with a corner outside the clip volume is dropped. 0x1D is not read |
+| 0x1A6440 | water (layer G), every frame | recorded (entries 0, 0x68, 0x1280) | the layer's 33 quadwords to 0x1C (`mm_WaterLayer_AnimateWaves`), then the terrain buffer in chunks of 64 quadwords (16 quads). Only quads with flag 2 (mask at 0x3A.w): each corner's height becomes the water level plus 0.06 sin((\|z\| mod pi) + phase - pi/2) (ESIN; the parameters at 0x3B and 0x3C, the sign flipping every half period), a wave along z; one face normal per triangle (ESADD, ERSQRT), lit like the ground and times the layer's colour (alpha 60). Each quad is drawn twice as a blended strip: in GS context 2 (PRIM at 0x20) with texture coordinates from 0x22-0x2D and in context 1 (0x21) with 0x2E-0x39, the set picked by the quad's coordinate-set word as for the ground (the header sets ALPHA and TEX0 for both contexts); a quad with a corner outside the clip volume is dropped. 0x1D is not read |
 | 0x1A8A00 | rain (layer D), weather 2 | recorded (entries 0, 0x90, 0x3C0; captured runs: 96 lines a batch, white, the lower end's alpha 40 and the upper end's 0 at that hour, the ends that fail the clip test with ADC) | its 44 quadwords to 0x12 (a GIF tag of 96 blended lines, PRIM 0x69; the colours of a streak's lower and upper end, both times the ambient light (0x0F) and clamped at 255, the lower one's alpha 0..40 by the clock and the upper one's 0; the quad mask 8 at 0x15.x; 16 drop offsets that move 0.4 a frame and wrap at 40; twelve streaks as pairs of end points), then the terrain buffer in chunks of 32 quadwords (8 quads): on every quad, the twelve streaks at the quad's x and z, moved down by the drop that a hash of the quad's position picks, wrapped into the 40 above the ground, and dropped (ADC) when an end fails the clip test |
 | 0x1A8E20 | rain ground pass, weather 2 | recorded (entries 0, 0x68, 0x380; PRIM 0x7C, blended and textured, the colour (148, 148, 148, 60) at that hour) | a terrain pass with mask 1 whose TEX0 steps through six texture pages every two frames (likely splashes); it loads 0x2E but does not use it; its fixed alpha (ALPHA_1 FIX) follows the clock |
 | 0x1A9A90 | snow (layer E), weather 3 | recorded (entries 0, 0x98, 0x420; 104 sprites a batch, 13 points on each of 8 quads, ST 0 to 1) | its 86 quadwords to 0x12 (a GIF tag of blended sprites, PRIM 0x76, 8 per flake; the sprite's corner ST at 0x13 and 0x14 and its size (10, 5) at 0x15; 13 points; 8 rotation matrices that turn 0.03 a frame; 32 flake offsets whose y goes from -40 to 0 by 0.03 a frame, falling, since y points down; a projection matrix; the flakes per quad (1 to 13, from the clock) and the quad mask 8 at 0x67), then the terrain buffer in chunks of 32 quadwords (8 quads): on every quad, the first n points turned by one matrix and moved by one offset (a hash of the quad's position picks both), wrapped into the 40 above the ground, each drawn as a sprite 10 x 5 times 10 / w; a 32 x 32 sprite texture (PSMT4 at GS block 0x3F70) whose alpha (in the start packet's RGBAQ) follows the clock |
@@ -142,10 +142,10 @@ The snowflakes that land in other places than in PCSX2 (docs/STATUS.md, line 37)
 
 | Program | Layer | Checked | Notes |
 |---|---|---|---|
-| 0x1A7B30 | placement highlight (layer C, pass 0, while a building or a bag item is being placed) | ran (entries 0, 0x58, 0x7D8; the captured batches hold no quad with flag 4, so they show only every quad skipped) | a terrain pass, unlit, with its own seven quadwords at 0x1C: two colours (255, 0, 0, 128) and (0, 0, 0, 128), the output offset, a GIF tag of 26 loops of 14 registers, PRIM 0x44 (blended triangle strip) and 0x82 (antialiased line strip), and mask 4 at 0x22.w, which the program tests against each quad's flags; most likely a red fill and an outline of each highlighted tile |
-| 0x1A8330 | placement marker (layer C, pass 1) and layer A | read only | a model program (see above); the marker is node 0 or 1 of the marker model at the footprint's centre |
+| 0x1A7B30 | placement highlight (layer C, pass 0, while a building or a bag item is being placed) | ran (entries 0, 0x58, 0x7D8; the captured batches hold no quad with flag 4, so they show only every quad skipped) | a terrain pass, unlit, with its own seven quadwords at 0x1C: two colours (255, 0, 0, 128) and (0, 0, 0, 128), the output offset, a GIF tag of 26 loops of 14 registers, PRIM 0x44 (blended triangle strip) and 0x82 (antialiased line strip), and mask 4 at 0x22.w, which the program tests against each quad's flags. Read from the code: each quad with flag 4 becomes 14 registers, PRIM 0x44 (flat, blended triangle strip), the first colour and corners 0, 1, 3 and 2 (two triangles over the tile), then PRIM 0x82 (antialiased line strip), the second colour and corners 0, 1, 2, 3 and 0 (the tile's outline). Each corner is lifted 0.2 and kept no deeper than 0.2 (SUBi and MINIi on y; heights grow downwards), so over water the highlight stays above the surface. A tile with a corner outside the clip volume, and every quad without flag 4, gets ADC on the vertices that would draw. The first colour is the caller's (`mm_PlacementLayer_Set`): blue (0, 0, 255, 64) where the building or item fits, red (255, 0, 0, 64) where it does not. The second stays black (0, 0, 0, 128), and under the packet's ALPHA_1 0x48 (the source times its alpha, plus the frame) a blended black line adds nothing, so the outline shows only if the GS draws this AA1 line without blending (not checked) |
+| 0x1A8330 | placement marker (layer C, pass 1) and the claim-met layer (A) | read only | an unlit model program (see above): the meshes keep their own colours. Both are added to the frame. The marker is node 0 or 1 of the marker model at the footprint's centre, under ALPHA_1 0x48 (the source times its own alpha, plus the frame). The claim-met layer's instances each set ALPHA_1 0x68 (the source times FIX / 128, plus the frame), FIX being their fade, so they brighten what is behind them and fade out |
 
-Layer A holds instances added by `mm_CityRender_CollectObjects` for built objects whose claim was met and whose variant byte counts up (object flags 0x20 built and 8 claim met; the byte starts at 1 when the claim is met, counts to 0x2D and starts over): meshes 2n and 2n + 1 of the layer's model for a building of size n + 1, turned and squashed in y by the count, fading as it grows. What they show in the game is not confirmed; the timing points to a short effect when a building's claim is met.
+Layer A, the claim-met layer (`ClaimMetLayer`, `CityMap.claimMet`), holds instances added by `mm_CityRender_CollectObjects` for built objects whose claim was met and whose variant byte counts up (object flags 0x20 built and 8 claim met; the byte starts at 1 when the claim is met, counts to 0x2D and starts over): meshes 2n and 2n + 1 of the layer's model for a building of size n + 1, turned and squashed in y by the count, fading as it grows. They are drawn unlit (0x1A8330) and added to the frame (ALPHA_1 0x68, FIX the fade), so each one brightens what is behind it while it grows, turns and fades, then starts again while the claim stays met. What they show in the game is not confirmed by a capture; the timing points to a short effect when a building's claim is met.
 
 ## .A3D models
 
@@ -168,7 +168,7 @@ Read from the loader (`mm_A3DObject_Load`, `mm_A3DObject_LoadAsync`, `mm_A3D_Rel
 
 ## Not checked yet
 
-* 0x1A8330's batch loop: no capture has drawn layer A (a building whose claim gets met during the capture) or the placement marker (an applicant's building whose spot is taken). None of the saves at hand has an applicant waiting to be placed; new ones come from talks.
+* 0x1A8330's output (its loop is read from the code, above): no capture has drawn the claim-met layer (a building whose claim gets met during the capture) or the placement marker (an applicant's building whose spot is taken). None of the saves at hand has an applicant waiting to be placed; new ones come from talks.
 * 0x1A7B30's output for the highlighted quads. The capture keys runs by the whole micro memory and skips a resume that starts with a busy pipeline, so it keeps mostly the first batch after a setup, and the highlighted tiles came later in the buffer.
 * Which triangles exactly the strip shortening below drops: read from the code only, not traced in a run.
 
@@ -177,12 +177,13 @@ Read from the loader (`mm_A3DObject_Load`, `mm_A3DObject_LoadAsync`, `mm_A3D_Rel
 Renamed after this map: layer C is `PlacementLayer`, D `RainLayer` and E `SnowLayer` (`mm_*Layer_*`);
 `mm_CityRender_DrawTerrain` (was DrawOverlays), `mm_CityRender_DrawWeather` (DrawSky), `mm_CityRender_DrawPlacement`
 (DrawBuildings), `mm_RainLayer_Draw` (LayerD_DrawSkyByClock), `mm_PlacementLayer_Draw` (LayerC_DrawBuildings),
-`mm_PlacementLayer_Set` (Terrain_SetVec), `mm_A3D_GetAnimLength` (A3D_GetMeshField0C), `mm_LayerA_BeginFrame`
+`mm_PlacementLayer_Set` (Terrain_SetVec), `mm_A3D_GetAnimLength` (A3D_GetMeshField0C), `mm_ClaimMetLayer_BeginFrame`
 (LayerA_SetSource), `mm_Camera_SetFogColour` (LightSet_SetField20: word 8 of the camera's packet, the GS FOGCOL data).
 
-Still to name:
+Then (R27): layer B is `WaterBottomLayer` (`CityMap.waterBottom`; its passes `seaPacket` and `lakePacket`), F
+`LitRoadLayer` (`CityMap.litRoads`) and G `WaterLayer` (`mm_*Layer_*`); the light set's two packets are
+`LightSet.packets`, picked by `mm_LightSet_SelectProgram` (was Packet2_Draw; 1 for buildings).
 
-| Now | What it is |
-|---|---|
-| `mm_LightSet_BuildPackets`' packets A and B | the two model programs' set-up packets (with and without the second part), chosen by `mm_Packet2_Draw` |
-| layers A, B and F | what A's instances show is not known; B is the bottom of the water, sand in the sea and rock in lakes; F is a blended pass over road tiles whose street lamps are lit (object flag 0x10) |
+Then (R28): layer A is `ClaimMetLayer` (`mm_ClaimMetLayer_*`, `CityMap.claimMet`, `mm_CityRender_DrawClaimMet`, was
+DrawInstanceLayer), named by when it draws: the claim check's `claimMet` sets the count to 1 (city.cpp). What its
+instances look like still waits for a capture.

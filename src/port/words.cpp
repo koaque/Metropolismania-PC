@@ -186,7 +186,6 @@ namespace mm
         // Bit `index` of a bitset of 32-bit words, with C's signed division for the word.
         uint32_t bitWord(uint32_t bitset, int index) { return bitset + static_cast<uint32_t>(4 * (index / 32)); }
         uint32_t bitMask(int index) { return 1u << (static_cast<uint32_t>(index) & 31u); }
-        constexpr uint32_t kTextBuffer = 0x001F4EB0u;  // shared output of the formatting texts
         int32_t lowWord(int64_t value) { return static_cast<int32_t>(value); }
         // The EE's remainder (the dividend itself for a zero divisor).
         int32_t eeRemainder(int32_t value, int32_t divisor) { return divisor == 0 ? value : (divisor == -1 ? 0 : value % divisor); }
@@ -436,15 +435,15 @@ namespace mm
     // slot 1), with thousands separators.
     GuestPtr<char> WordsFn_TextNewBuildings(GuestPtr<WordsCtx> ctx)
     {
-        Text_FormatThousands(GuestPtr<char>{kTextBuffer}, ctx->city->map->newBuildings[1]);
-        return GuestPtr<char>{kTextBuffer};
+        Text_FormatThousands(GuestPtr<char>{globals::kWordsTextBuffer}, ctx->city->map->newBuildings[1]);
+        return GuestPtr<char>{globals::kWordsTextBuffer};
     }
 
     GuestPtr<char> WordsFn_TextOpenHours(GuestPtr<WordsCtx> ctx)
     {
         const GuestPtr<BuildingType> type = typeAt(Family_GetTypeIndex(ctx->familyA));
-        Text_FormatTimeRange(GuestPtr<char>{kTextBuffer}, type->openMinute, type->closeMinute);
-        return GuestPtr<char>{kTextBuffer};
+        Text_FormatTimeRange(GuestPtr<char>{globals::kWordsTextBuffer}, type->openMinute, type->closeMinute);
+        return GuestPtr<char>{globals::kWordsTextBuffer};
     }
 
     GuestPtr<char> WordsFn_TextClaimLine(GuestPtr<WordsCtx> ctx)
@@ -542,7 +541,7 @@ namespace mm
     }
 
     // Person B becomes the first (A) or second (B) person of the talk's event slot.
-    int WordsFn_SelectEventPersonA(GuestPtr<WordsCtx> ctx)
+    int WordsFn_SelectEventFirstPerson(GuestPtr<WordsCtx> ctx)
     {
         const EventSlot &slot = eventsOf(ctx)->slots[ctx->eventSlot];
         const GuestPtr<MapPerson> person = findPerson(ctx, slot.familyA, slot.memberA);
@@ -552,7 +551,7 @@ namespace mm
         return static_cast<int>(person.address);
     }
 
-    int WordsFn_SelectEventPersonB(GuestPtr<WordsCtx> ctx)
+    int WordsFn_SelectEventSecondPerson(GuestPtr<WordsCtx> ctx)
     {
         const EventSlot &slot = eventsOf(ctx)->slots[ctx->eventSlot];
         const GuestPtr<MapPerson> person = findPerson(ctx, slot.familyB, slot.memberB);
@@ -1159,8 +1158,8 @@ namespace mm
     PORT_FN(WordsFn_EventRemoveWant);
     PORT_FN(WordsFn_EventAddWant);
     PORT_FN(WordsFn_SelectMemberB);
-    PORT_FN(WordsFn_SelectEventPersonA);
-    PORT_FN(WordsFn_SelectEventPersonB);
+    PORT_FN(WordsFn_SelectEventFirstPerson);
+    PORT_FN(WordsFn_SelectEventSecondPerson);
     PORT_FN(WordsFn_TalkOrigin);
     PORT_FN(WordsFn_FewChoicesLeft);
     PORT_FN(WordsFn_False);
@@ -1266,12 +1265,12 @@ namespace mm
             const bool joined = last == '\n' || last == '\r' || last == '(' || last == '<' || first == '\n' || first == '\r' ||
                                 first == '.' || first == '?' || first == ',' || first == ')' || first == '>' || first == '\'';
             if (!joined)
-                sdk::strcat(buffer.address, 0x001BAD78u); // " "
+                sdk::strcat(buffer.address, globals::kWordsTextSpace); // " "
             else if (last == '.' && first == '.')
                 port::store<int8_t>(lastAt, 0);
             else if (first == '\'' && last == 's' && port::load<int8_t>(from + 1u) == 's')
             {
-                sdk::strcat(buffer.address, 0x001BAD80u); // "'"
+                sdk::strcat(buffer.address, globals::kWordsTextApostrophe); // "'"
                 from += 2u;
             }
         }
@@ -1445,7 +1444,8 @@ namespace mm
                 bool fits = false;
                 if (arg < 0)
                 {
-                    for (uint32_t type = port::load<uint32_t>(0x001BE950u + 4u * static_cast<uint32_t>(arg)); port::load<uint8_t>(type) != 0; ++type)
+                    for (uint32_t type = port::load<uint32_t>(globals::kResidentTypeLists + 4u * static_cast<uint32_t>(arg));
+                         port::load<uint8_t>(type) != 0; ++type)
                         if (person->charType == port::load<uint8_t>(type))
                         {
                             fits = true;
@@ -1714,7 +1714,7 @@ namespace mm
         const int32_t z0 = building->tile >> 7;
         const int32_t size = globals::buildingType(building->type)->size;
         const GuestPtr<Family> family = Family_Get(ctx->familyA, 0);
-        const int32_t range = port::load<int32_t>(0x001B97F0u + 4u * memberAt(family, ctx->memberA)->look);
+        const int32_t range = port::load<int32_t>(globals::kLookRanges + 4u * memberAt(family, ctx->memberA)->look);
         const int32_t xStart = x0 - range, xEnd = x0 + size + range, zEnd = z0 + size + range;
         uint16_t homes[80];
         int32_t found = 0;
@@ -1933,8 +1933,8 @@ namespace mm
                 holder.set(GuestPtr<GameFile>{file});
                 File_Open(GuestPtr<GameFile>{file}, GuestPtr<char>{path});
             };
-            open(globals::wordsFile, 0x001BAD90u);
-            open(globals::wordsEventFile, 0x001BADB0u);
+            open(globals::wordsFile, globals::kPathWordsBin);
+            open(globals::wordsEventFile, globals::kPathWordsEveBin);
             FileQueue_WaitAll(0);
         }
         globals::wordsFileUsers.set(globals::wordsFileUsers.get() + 1);
@@ -1982,7 +1982,7 @@ namespace mm
     void StaticInit_Words()
     {
         const GuestPtr<Words> words = Words_ctor(globals::words());
-        sdk::mw_register_global_object(words.address, 0x00180490u, 0x007181B0u);
+        sdk::mw_register_global_object(words.address, globals::kWordsDtor, 0x007181B0u);
     }
 
     PORT_FN(WordsBlock_ctor);
@@ -2153,11 +2153,10 @@ namespace mm
             month += 3;
         const GuestPtr<GoodsRecord> record{static_cast<uint32_t>(Goods_GetRecordOffset(ctx->buildingTypeB, ctx->familyB, month >> 2, GuestPtr<int32_t>{offsetAt}))};
         const int32_t price = Goods_GetPrice(static_cast<int>(record.address));
-        constexpr uint32_t kMoney = 0x001C5540u;
-        const int32_t money = static_cast<int32_t>(port::load<uint32_t>(kMoney) - static_cast<uint32_t>(price));
-        port::store<int32_t>(kMoney, money);
+        const int32_t money = static_cast<int32_t>(static_cast<uint32_t>(globals::stageState()->money) - static_cast<uint32_t>(price));
+        globals::stageState()->money = money;
         if (money < 0)
-            port::store<int32_t>(kMoney, static_cast<int32_t>(0u - static_cast<uint32_t>(price)) > 0 ? 0x7FFFFFFF : 0);
+            globals::stageState()->money = static_cast<int32_t>(0u - static_cast<uint32_t>(price)) > 0 ? 0x7FFFFFFF : 0;
         int points;
         if (price < 0xB)
             points = 2;
@@ -2201,7 +2200,7 @@ namespace mm
         case 0x1C:
             if (port::load<uint16_t>(bag) == 0)
                 Laptop_AddEntry(laptop, 6);
-            Bag_AddItem(GuestPtr<Bag>{bag}, ctx->buildingTypeB, port::load<int32_t>(offsetAt), static_cast<int16_t>(port::load<int32_t>(0x001C5548u)),
+            Bag_AddItem(GuestPtr<Bag>{bag}, ctx->buildingTypeB, port::load<int32_t>(offsetAt), static_cast<int16_t>(globals::stageState()->stage),
                         city->monthCount, static_cast<int16_t>(ctx->buildingB->family), 0xFF, 0);
             break;
         case 0x12:
@@ -2234,7 +2233,7 @@ namespace mm
         const uint32_t building = ctx->buildingA.address;
         const GuestPtr<ClaimEntry> entry = Claim_GetList(globals::buildingType(port::load<uint16_t>(building))->claimB) +
                                            GuestPtr<MapObject>{building}->claimSlot;
-        port::store<uint32_t>(local, port::load<uint32_t>(0x001BDC20u));
+        port::store<uint32_t>(local, globals::acquaintanceSupplyStart.get());
         port::store<uint16_t>(local, entry->id);
         uint32_t claims = local;
         if (entry->id >= 0x8000)
@@ -2422,23 +2421,23 @@ namespace mm
         // stringRemap), then bank 2.
         const GuestPtr<uint32_t> bank1 = globals::wordsBank(1).as<uint32_t>(), bank2 = globals::wordsBank(2).as<uint32_t>();
         const GuestPtr<uint32_t> remaps = globals::wordsTables().field(&WordsTables::typeBases).as<uint32_t>();
-        readWhole(0x001BADD0u, words->commonData);
+        readWhole(globals::kPathWordsComBin, words->commonData);
         for (int32_t i = 0; i < 6; ++i)
         {
             const uint32_t block = words->commonData.address;
             bank1[i] = block + port::load<uint32_t>(block + 4u * static_cast<uint32_t>(i));
         }
-        readWhole(0x001BADF0u, words->typeData);
+        readWhole(globals::kPathWordsTenBin, words->typeData);
         for (int32_t i = 0; i < 11; ++i)
         {
             const uint32_t block = words->typeData.address;
             (i < 5 ? remaps[i] : bank2[i - 5]) = block + port::load<uint32_t>(block + 4u * static_cast<uint32_t>(i));
         }
-        File_Open(file, GuestPtr<char>{0x001BADB0u});
+        File_Open(file, GuestPtr<char>{globals::kPathWordsEveBin});
         File_Read(file, static_cast<int>(globals::wordsEventBlockSize.address), 1, 4, 0);
         File_Close(file);
         words->eventBlock = GuestPtr<void>{sdk::mw_NewArray(static_cast<uint32_t>(globals::wordsEventBlockSize.get()))};
-        File_Open(file, GuestPtr<char>{0x001BAD90u});
+        File_Open(file, GuestPtr<char>{globals::kPathWordsBin});
         File_Read(file, static_cast<int>(globals::wordsBlockSize.address), 1, 4, 0);
         for (uint32_t i = 0; i < 8; ++i)
         {
@@ -2555,7 +2554,7 @@ namespace mm
             return defaultText(1);
         }
         if (index >= 4)
-            return GuestPtr<char>{0x001BAD68u};
+            return GuestPtr<char>{globals::kWordsTextDontBuy};
         const uint32_t goods = static_cast<uint32_t>(Words_GetGoods(globals::words(), index));
         sdk::strcpy(globals::kWordsGoodsText, globals::goodsSectionC.get() + GuestPtr<GoodsRecord>{goods}->name);
         const uint32_t length = static_cast<uint32_t>(sdk::strlen(globals::kWordsGoodsText));
@@ -2638,7 +2637,7 @@ namespace mm
                       offsetof(Locals, object) == 0xAC && sizeof(Locals) == 0xB0);
         port::GuestFrameOf<Locals> frame;
         const uint32_t local = frame.at(&Locals::oneClaim).address;
-        port::store<uint32_t>(local, port::load<uint32_t>(0x001BDC24u));
+        port::store<uint32_t>(local, globals::wantBodyStart.get());
         frame->iterator = 0;
         uint32_t claims = local;
         for (int index = 0; Wants_Find(ctx->city->wants, ctx->city, frame.at(&Locals::claimSlot), frame.at(&Locals::object),
@@ -2729,7 +2728,7 @@ namespace mm
         Words_CollectNearbyHomes(ctx, ctx->buildingA);
         if (ctx->candidateCount == 0)
             return 0;
-        port::store<uint32_t>(local, port::load<uint32_t>(0x001BDC1Cu));
+        port::store<uint32_t>(local, globals::claimResidentStart.get());
         want->iterator = 0;
         uint32_t claims = local;
         int result = 0;
@@ -2891,7 +2890,7 @@ namespace mm
                 bool separated = false;
                 if (length != 0)
                 {
-                    sdk::strcat(buffer.address, 0x001BAD88u);
+                    sdk::strcat(buffer.address, globals::kWordsTextNewline);
                     separated = true;
                 }
                 result = Words_ExpandLine(script, token - 0x1388, buffer);
@@ -2950,17 +2949,17 @@ namespace mm
     // 0x1B9570 and 0x1B9100) called on the script's context (the first word of the object).
     void Words_CallCond(GuestPtr<Words> words, int index)
     {
-        callMember(0x001B9630u, static_cast<uint32_t>(index), words->ctx.address);
+        callMember(globals::kWordsConds, static_cast<uint32_t>(index), words->ctx.address);
     }
 
     int Words_CallText(GuestPtr<Words> words, int index)
     {
-        return callMember(0x001B9570u, static_cast<uint32_t>(index), words->ctx.address);
+        return callMember(globals::kWordsTexts, static_cast<uint32_t>(index), words->ctx.address);
     }
 
     int Words_CallAct(GuestPtr<Words> words, int index)
     {
-        return callMember(0x001B9100u, static_cast<uint32_t>(index), words->ctx.address);
+        return callMember(globals::kWordsActs, static_cast<uint32_t>(index), words->ctx.address);
     }
 
     PORT_FN(Words_CallCond);

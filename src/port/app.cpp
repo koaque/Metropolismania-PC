@@ -12,8 +12,6 @@ namespace mm
 {
     namespace
     {
-        constexpr uint32_t kAppVtable = 0x001BD8D0u;
-        constexpr uint32_t kGameVtable = 0x001BCE60u;
         constexpr uint32_t kTimer0Count = 0x10000000u;
         constexpr uint32_t kTimer0Mode = 0x10000010u;
         // The App's virtual functions: slot +8 starts it, slot +0xC runs a frame.
@@ -54,9 +52,9 @@ namespace mm
         Heap_Probe();
         sdk::crt0_InitCpp();
         App_ctor(app);
-        app->vtable = GuestPtr<void>{kGameVtable};
+        app->vtable = GuestPtr<void>{globals::kGameVtable};
         MainLoop(app);
-        app->vtable = GuestPtr<void>{kGameVtable};
+        app->vtable = GuestPtr<void>{globals::kGameVtable};
         App_dtor(app, 0);
         sdk::destroy_global_chain();
         return 0;
@@ -77,7 +75,7 @@ namespace mm
         port::GuestFrame<0x30> frame;
         port::callGuest<void>(slotOf(app, kSlotStart), app);
         Gs_InitDisplay(0x280, 0x1C0);
-        port::store<uint32_t>(globals::kFrameParity, 0u);
+        globals::frameParity.set(0u);
         sdk::sceGsSyncV(0);
         for (;;)
         {
@@ -100,11 +98,11 @@ namespace mm
             globals::timerAfterSync.set(port::readHardware32(kTimer0Count));
             globals::frameLoad.set(static_cast<float>(ps2f(100.0f) * floatOfUnsigned(globals::timerAfterSync.get()) / ps2f(9765.625f)));
             const int field = sdk::sceGsSyncV(0) == 0 ? 1 : 0;
-            const auto parity = [] { return port::load<uint32_t>(globals::kFrameParity) & 1u; };
-            sdk::sceGsSetHalfOffset(parity() == 0u ? 0x001F57F0u : 0x001F5960u, 0x800, 0x800, field);
-            sdk::sceGsSetHalfOffset2(parity() == 0u ? 0x001F5870u : 0x001F59E0u, 0x800, 0x800, field);
-            sdk::sceGsSwapDBuffDc(0x001F5790u, static_cast<int>(parity()));
-            port::store<uint32_t>(globals::kFrameParity, port::load<uint32_t>(globals::kFrameParity) + 1u);
+            const auto parity = [] { return globals::frameParity.get() & 1u; };
+            sdk::sceGsSetHalfOffset(parity() == 0u ? globals::kHalfOffsetA0 : globals::kHalfOffsetA1, 0x800, 0x800, field);
+            sdk::sceGsSetHalfOffset2(parity() == 0u ? globals::kHalfOffsetB0 : globals::kHalfOffsetB1, 0x800, 0x800, field);
+            sdk::sceGsSwapDBuffDc(globals::kDisplayBuffers, static_cast<int>(parity()));
+            globals::frameParity.set(globals::frameParity.get() + 1u);
             port::checkpoint();
         }
     }
@@ -209,10 +207,10 @@ namespace mm
     GuestPtr<App> App_ctor(GuestPtr<App> app)
     {
         port::GuestFrame<0x20> frame;
-        app->vtable = GuestPtr<void>{kAppVtable};
+        app->vtable = GuestPtr<void>{globals::kAppVtable};
         sdk::sceCdInit(0);
         sdk::sceCdMmode(1);
-        while (sdk::sceSifRebootIop(0x001B9C20u) == 0)
+        while (sdk::sceSifRebootIop(globals::kPathIoprpImg) == 0)
             port::checkpoint();
         while (sdk::sceSifSyncIop() == 0)
             port::checkpoint();
@@ -224,18 +222,18 @@ namespace mm
         sdk::sceSifInitIopHeap();
         Random_Seed(0x3039);
         FileQueue_Init();
-        loadModule(0x001B9B20u, 0x001B9B40u); // SIO2MAN.IRX
-        loadModule(0x001B9B60u, 0x001B9B80u); // MCMAN.IRX
-        loadModule(0x001B9BA0u, 0x001B9BC0u); // MCSERV.IRX
-        loadModule(0x001B9BE0u, 0x001B9C00u); // PADMAN.IRX
+        loadModule(globals::kPathSio2manIrx, globals::kTextNoSio2man);
+        loadModule(globals::kPathMcmanIrx, globals::kTextNoMcman);
+        loadModule(globals::kPathMcservIrx, globals::kTextNoMcserv);
+        loadModule(globals::kPathPadmanIrx, globals::kTextNoPadman);
         McQueue_Init();
         Sound_Init();
         sdk::sceGsResetPath();
         sdk::sceDmaReset(1);
         sdk::sceGsResetGraph(0, 1, 2, 1);
-        sdk::sceGsSetDefDBuffDc(0x001F5790u, 0, 0x280, 0xE0, 3, 0x30, 1);
-        port::store<uint64_t>(0x001F5910u, 0x3F80000000000000ull);
-        port::store<uint64_t>(0x001F5A80u, 0x3F80000000000000ull);
+        sdk::sceGsSetDefDBuffDc(globals::kDisplayBuffers, 0, 0x280, 0xE0, 3, 0x30, 1);
+        port::store<uint64_t>(globals::kClearQ0, 0x3F80000000000000ull);
+        port::store<uint64_t>(globals::kClearQ1, 0x3F80000000000000ull);
         sdk::FlushCache(0);
         port::writeHardware32(kTimer0Mode, 0x82u);
         PadInit();

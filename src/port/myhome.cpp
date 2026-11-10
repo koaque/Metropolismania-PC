@@ -302,8 +302,8 @@ namespace mm
         const GuestPtr<Vec4> step = frame.at(&HomeCtorFrame::step), turn = frame.at(&HomeCtorFrame::turn);
         const GuestPtr<MyHomeView> view = home(talkView);
         TalkView_ctor(talkView, city);
-        view->base.base.vtable = GuestPtr<WidgetVtable>{0x001BD810u};
-        view->collision = GuestPtr<void>{port::load<uint32_t>(0x001F3CE0u)};
+        view->base.base.vtable = globals::kMyHomeVtable;
+        view->collision = GuestPtr<void>{port::load<uint32_t>(globals::kMyHomeBlocks)};
         view->base.targetObject = object;
         const GuestPtr<MapObject> record = Map_GetRecord(view->base.city->map, view->base.targetObject);
         const GuestPtr<BuildingType> btype{globals::buildingTypeAddress(record->type)};
@@ -338,7 +338,8 @@ namespace mm
     // above the terrain (heights grow downwards); the facing is that direction's angle.
     namespace
     {
-        GuestPtr<TalkView> personViewCtor(GuestPtr<TalkView> talkView, GuestPtr<CityScene> city, int person, uint32_t vtable)
+        GuestPtr<TalkView> personViewCtor(GuestPtr<TalkView> talkView, GuestPtr<CityScene> city, int person,
+                                          GuestPtr<WidgetVtable> vtable)
         {
             using namespace vu0;
             port::GuestFrameOf<PersonViewFrame> frame;
@@ -346,7 +347,7 @@ namespace mm
             const GuestPtr<Vec4> step = frame.at(&PersonViewFrame::step), turn = frame.at(&PersonViewFrame::turn);
             const GuestPtr<TalkPersonView> view{talkView.address};
             TalkView_ctor(talkView, city);
-            view->base.base.vtable = GuestPtr<WidgetVtable>{vtable};
+            view->base.base.vtable = vtable;
             view->base.targetObject = person;
             const GuestPtr<MapPerson> who = city->map->people + view->base.targetObject;
             who->y = Map_SampleHeight(city->map, who->x, who->z);
@@ -395,12 +396,12 @@ namespace mm
 
     GuestPtr<TalkView> TalkPersonFar_ctor(GuestPtr<TalkView> view, GuestPtr<CityScene> city, int person)
     {
-        return personViewCtor(view, city, person, 0x001BD680u);
+        return personViewCtor(view, city, person, globals::kTalkPersonFarVtable);
     }
 
     GuestPtr<TalkView> TalkPersonNear_ctor(GuestPtr<TalkView> view, GuestPtr<CityScene> city, int person)
     {
-        return personViewCtor(view, city, person, 0x001BD6D0u);
+        return personViewCtor(view, city, person, globals::kTalkPersonNearVtable);
     }
 
     PORT_FN(TalkPersonFar_ctor);

@@ -69,13 +69,13 @@ namespace mm
         const uint32_t colour = static_cast<uint32_t>(alpha) << 24;
         if (overAll == 0)
         {
-            port::store<uint32_t>(0x001B2830u, colour);
-            appendDmaCall(0x001B2800u);
+            port::store<uint32_t>(globals::kFadeColourA, colour);
+            appendDmaCall(globals::kFadePacketA);
         }
         else
         {
-            port::store<uint32_t>(0x001B28A0u, colour);
-            appendDmaCall(0x001B2870u);
+            port::store<uint32_t>(globals::kFadeColourB, colour);
+            appendDmaCall(globals::kFadePacketB);
         }
     }
 
@@ -106,9 +106,9 @@ namespace mm
     }
 
     // Static GS packets queued as calls.
-    void DmaList_QueueGsDefaults() { appendDmaCall(0x001B2760u); }  // standard alpha blend, texture and test state
-    void DmaList_QueueClearScreen() { appendDmaCall(0x001B28E0u); } // full-screen sprite writing colour 0
-    void DmaList_QueueClearZ() { appendDmaCall(0x001B26D0u); }      // full-screen sprite writing only Z
+    void DmaList_QueueGsDefaults() { appendDmaCall(globals::kGsDefaultsPacket); }   // standard alpha blend, texture and test state
+    void DmaList_QueueClearScreen() { appendDmaCall(globals::kClearScreenPacket); } // full-screen sprite writing colour 0
+    void DmaList_QueueClearZ() { appendDmaCall(globals::kClearZPacket); }           // full-screen sprite writing only Z
 
     // Start of a frame's drawing: the packet buffer rewinds and the list begins with the GS defaults.
     void DmaList_BeginScene()
@@ -120,11 +120,11 @@ namespace mm
     // ---- city render layers: each constructor sets its parameters and builds its VU1 packet in the packet
     // buffer, which then moves past it. D, E and G also get the city map's vertex buffers.
 
-    GuestPtr<LayerB> LayerB_ctor(GuestPtr<LayerB> layer)
+    GuestPtr<WaterBottomLayer> WaterBottomLayer_ctor(GuestPtr<WaterBottomLayer> layer)
     {
         BaseObject_ctor(static_cast<int>(layer.address));
-        LayerB_InitParams(layer);
-        PacketBuf_Seek(static_cast<int>(LayerB_BuildPacket(layer, GuestPtr<uint32_t>{static_cast<uint32_t>(PacketBuf_Tell())}).address));
+        WaterBottomLayer_InitParams(layer);
+        PacketBuf_Seek(static_cast<int>(WaterBottomLayer_BuildPacket(layer, GuestPtr<uint32_t>{static_cast<uint32_t>(PacketBuf_Tell())}).address));
         return layer;
     }
 
@@ -133,7 +133,7 @@ namespace mm
         BaseObject_ctor(static_cast<int>(layer.address));
         PlacementLayer_InitParams(layer);
         PacketBuf_Seek(static_cast<int>(PlacementLayer_BuildPacket(layer, GuestPtr<uint32_t>{static_cast<uint32_t>(PacketBuf_Tell())}).address));
-        layer->marker = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B1Cu)};
+        layer->marker = globals::placementMarkerModel.get();
         return layer;
     }
 
@@ -155,31 +155,31 @@ namespace mm
         return layer;
     }
 
-    GuestPtr<LayerF> LayerF_ctor(GuestPtr<LayerF> layer)
+    GuestPtr<LitRoadLayer> LitRoadLayer_ctor(GuestPtr<LitRoadLayer> layer)
     {
         BaseObject_ctor(static_cast<int>(layer.address));
-        LayerF_InitParams(layer);
-        PacketBuf_Seek(static_cast<int>(LayerF_BuildPacket(layer, GuestPtr<uint32_t>{static_cast<uint32_t>(PacketBuf_Tell())}).address));
+        LitRoadLayer_InitParams(layer);
+        PacketBuf_Seek(static_cast<int>(LitRoadLayer_BuildPacket(layer, GuestPtr<uint32_t>{static_cast<uint32_t>(PacketBuf_Tell())}).address));
         return layer;
     }
 
-    GuestPtr<LayerG> LayerG_ctor(GuestPtr<LayerG> layer, int buffers)
+    GuestPtr<WaterLayer> WaterLayer_ctor(GuestPtr<WaterLayer> layer, int buffers)
     {
         BaseObject_ctor(static_cast<int>(layer.address));
-        LayerG_InitParams(layer);
+        WaterLayer_InitParams(layer);
         const GuestPtr<uint32_t> packet{static_cast<uint32_t>(PacketBuf_Tell())};
-        PacketBuf_Seek(static_cast<int>(LayerG_BuildPacket(layer, packet, GuestPtr<int32_t>{static_cast<uint32_t>(buffers)}).address));
+        PacketBuf_Seek(static_cast<int>(WaterLayer_BuildPacket(layer, packet, GuestPtr<int32_t>{static_cast<uint32_t>(buffers)}).address));
         return layer;
     }
 
-    // The water waves (layer G). A phase runs from -pi/2 to pi/2 in steps of 0.05, then starts over with the
+    // The water's waves (layer G). A phase runs from -pi/2 to pi/2 in steps of 0.05, then starts over with the
     // direction flipped. The program (0x1A6440) moves each corner of a quad under the water to the water level plus
     // 0.06 * direction * sin((|z| mod pi) + phase - pi/2), a wave along z (waveParams). sin(phase) and
     // sin(phase + pi/2) (wrapped, flipping its own direction) give two sway offsets of up to 0.05 for the two textures'
     // coordinates: the first set's s sways by one and its t scrolls forward 0.002 a frame, the second's (1.2 times
     // the sway, 0.7 to the side) by the other and scrolls back 0.001; corners at s 0.5 take the other offset. Both
     // scrolls wrap at 1.
-    void LayerG_AnimateWaves(GuestPtr<LayerG> layer, ps2f waterLevel)
+    void WaterLayer_AnimateWaves(GuestPtr<WaterLayer> layer, ps2f waterLevel)
     {
         const auto initOnce = [](uint32_t address, uint32_t bits) {
             if (port::load<int8_t>(address + 4u) == 0)
@@ -263,7 +263,12 @@ namespace mm
     // ---- drawing: queue an object's prebuilt packet on the DMA list
 
     void Packet_Draw(GuestPtr<uint32_t> packets) { Dma_AppendCall(static_cast<int>(*packets)); }
-    void Packet2_Draw(GuestPtr<uint32_t> packets, int second) { Dma_AppendCall(static_cast<int>(packets[second == 0 ? 0 : 1])); }
+    // The model program for what follows: the light set's packet for 0x1A4780 (buildings and objects, `buildings` != 0)
+    // or for 0x1A3C80 (people, the player, the menus' models).
+    void LightSet_SelectProgram(GuestPtr<LightSet> lights, int buildings)
+    {
+        Dma_AppendCall(static_cast<int>(lights->packets[buildings == 0 ? 0 : 1]));
+    }
     void TexSprite_Draw(GuestPtr<TexSprite> sprite) { Dma_AppendCall(static_cast<int>(sprite->packet)); }
 
     namespace
@@ -496,17 +501,17 @@ namespace mm
         return TexSprite_BuildPacket(sprite);
     }
 
-    void LayerF_Draw(GuestPtr<LayerF> layer, int packet)
+    void LitRoadLayer_Draw(GuestPtr<LitRoadLayer> layer, int packet)
     {
         Dma_AppendCall(static_cast<int>(layer->packet));
         Dma_AppendCall(packet);
     }
 
-    void LayerB_Draw(GuestPtr<LayerB> layer, int packet)
+    void WaterBottomLayer_Draw(GuestPtr<WaterBottomLayer> layer, int packet)
     {
-        Dma_AppendCall(static_cast<int>(layer->packetA));
+        Dma_AppendCall(static_cast<int>(layer->seaPacket));
         Dma_AppendCall(packet);
-        Dma_AppendCall(static_cast<int>(layer->packetB));
+        Dma_AppendCall(static_cast<int>(layer->lakePacket));
         Dma_AppendCall(packet);
     }
 
@@ -519,16 +524,16 @@ namespace mm
     }
 
     // City render passes; the frame parity (0x1BDCD0) picks one of two packet sets.
-    void CityRender_DrawInstanceLayer(GuestPtr<CityMap> map) { LayerA_Draw(map->instances); }
+    void CityRender_DrawClaimMet(GuestPtr<CityMap> map) { ClaimMetLayer_Draw(map->claimMet); }
 
     void CityRender_DrawWater(GuestPtr<CityMap> map, GuestPtr<CityScene> city)
     {
-        LayerG_Draw(map->water, static_cast<int>(port::load<uint32_t>(0x001BDCD0u) & 1u), city->waterLevel);
+        WaterLayer_Draw(map->water, static_cast<int>(globals::frameParity.get() & 1u), city->waterLevel);
     }
 
     void CityRender_DrawPlacement(GuestPtr<CityMap> map, int pass)
     {
-        const uint32_t parity = port::load<uint32_t>(0x001BDCD0u) & 1u;
+        const uint32_t parity = globals::frameParity.get() & 1u;
         PlacementLayer_Draw(map->placement, static_cast<int>(map->chunkPackets[parity]), map, pass);
     }
 
@@ -537,17 +542,17 @@ namespace mm
         PlacementLayer_Set(map->placement, mode, rect, colour);
     }
 
-    // The terrain: the base ground pass over this frame's chunk packet, the cliff sides, then layers B and F over the
-    // same chunk packet.
+    // The terrain: the base ground pass over this frame's chunk packet, the cliff sides, then the water bottom
+    // (layer B) and the lit roads (layer F) over the same chunk packet.
     void CityRender_DrawTerrain(GuestPtr<CityMap> map, GuestPtr<CityScene>)
     {
-        const uint32_t parity = port::load<uint32_t>(0x001BDCD0u) & 1u;
+        const uint32_t parity = globals::frameParity.get() & 1u;
         const int packet = static_cast<int>(map->chunkPackets[parity]);
         Dma_AppendCall(static_cast<int>(map->groundPacket));
         Dma_AppendCall(packet);
         Dma_AppendCall(static_cast<int>(map->sidePackets[parity]));
-        LayerB_Draw(map->layerB, packet);
-        LayerF_Draw(map->layerF, packet);
+        WaterBottomLayer_Draw(map->waterBottom, packet);
+        LitRoadLayer_Draw(map->litRoads, packet);
     }
 
     // ---- model instances
@@ -641,7 +646,7 @@ namespace mm
     GuestPtr<A3DObject> InstanceBase_ctor(GuestPtr<A3DObject> model)
     {
         BaseObject_ctor(static_cast<int>(model.address));
-        port::store<uint32_t>(0x001BDA10u, 0);
+        globals::modelLoadState.set(0);
         return model;
     }
 
@@ -851,8 +856,8 @@ namespace mm
             queueTableMesh(model, matrix(1), colour, meshOf(1) + offset1, mode);
         if (attach != 0)
         {
-            const uint32_t part = port::load<uint32_t>(0x001F3B80u);
-            port::store<uint32_t>(0x001BDA38u, part);
+            const uint32_t part = globals::attachedPartModel.get().address;
+            globals::lastAttachedPart.set(GuestPtr<A3DObject>{part});
             Instance_DrawMesh(GuestPtr<A3DObject>{part}, matrix(2), colour, 0, mode);
         }
         queueTableMesh(model, matrix(3), colour, meshOf(3) + offset3, mode);
@@ -893,8 +898,8 @@ namespace mm
             PacketBuf_Seek(static_cast<int>((p + 20).address));
             return p.address;
         };
-        lights->packetA = build(0x001A3C80u, 0x42, 0x1DF);
-        lights->packetB = build(0x001A4780u, 0xEA, 0x18B);
+        lights->packets[0] = build(globals::kVu1PeopleProgram, 0x42, 0x1DF);
+        lights->packets[1] = build(globals::kVu1BuildingProgram, 0xEA, 0x18B);
     }
 
     // Light set base setup: the two programs' output offsets (0x110 and 0xE0), every colour of both groups and the
@@ -953,7 +958,7 @@ namespace mm
         uint32_t cursor = globals::dmaListPtr.get();
         if (static_cast<int32_t>(cursor - start) / 4 < 0x4000)
         {
-            packet::putCallThenEnd(cursor, 0x001B2760u & 0x7FFFFFFFu);
+            packet::putCallThenEnd(cursor, globals::kGsDefaultsPacket & 0x7FFFFFFFu);
             cursor += 0x10u;
             globals::dmaListPtr.set(cursor);
         }
@@ -1007,8 +1012,8 @@ namespace mm
     void PacketBuf_Seek(int address) { globals::packetBufPos.set(address); }
     int PacketBuf_Tell() { return globals::packetBufPos.get(); }
 
-    // The buffer layer A fills this frame, empty.
-    void LayerA_BeginFrame(GuestPtr<LayerA> layer, int buffer)
+    // The buffer the claim-met layer fills this frame, empty.
+    void ClaimMetLayer_BeginFrame(GuestPtr<ClaimMetLayer> layer, int buffer)
     {
         layer->buffer = buffer;
         layer->count = 0;
@@ -1055,30 +1060,30 @@ namespace mm
     PORT_FN(DmaList_BeginScene);
     PORT_FN(DmaList_KickFrame);
     PORT_FN(Camera_BuildPacket);
-    PORT_FN(LayerB_ctor);
+    PORT_FN(WaterBottomLayer_ctor);
     PORT_FN(PlacementLayer_ctor);
     PORT_FN(RainLayer_ctor);
     PORT_FN(SnowLayer_ctor);
-    PORT_FN(LayerF_ctor);
-    PORT_FN(LayerG_ctor);
-    PORT_FN(LayerG_AnimateWaves);
+    PORT_FN(LitRoadLayer_ctor);
+    PORT_FN(WaterLayer_ctor);
+    PORT_FN(WaterLayer_AnimateWaves);
     PORT_FN(CityRender_DrawTerrain);
     PORT_FN(A3DObject_DrawNode);
     PORT_FN(A3DObject_Draw);
     PORT_FN(A3DObject_UpdateNodeMatrix);
     PORT_FN(A3DObject_UpdateMatrices);
     PORT_FN(Packet_Draw);
-    PORT_FN(Packet2_Draw);
+    PORT_FN(LightSet_SelectProgram);
     PORT_FN(TexSprite_Draw);
     PORT_FN(TexSprite_BuildPacket);
     PORT_FN(TexImage_Convert);
     PORT_FN(DmaList_InitPackets);
     PORT_FN(TexSprite_SetFrame);
     PORT_FN(TexSprite_SetClip);
-    PORT_FN(LayerF_Draw);
-    PORT_FN(LayerB_Draw);
+    PORT_FN(LitRoadLayer_Draw);
+    PORT_FN(WaterBottomLayer_Draw);
     PORT_FN(Sky_Draw);
-    PORT_FN(CityRender_DrawInstanceLayer);
+    PORT_FN(CityRender_DrawClaimMet);
     PORT_FN(CityRender_DrawWater);
     PORT_FN(CityRender_DrawPlacement);
     PORT_FN(Map_SetPlacementHighlight);
@@ -1109,7 +1114,7 @@ namespace mm
     PORT_FN(DmaList_Flip);
     PORT_FN(PacketBuf_Seek);
     PORT_FN(PacketBuf_Tell);
-    PORT_FN(LayerA_BeginFrame);
+    PORT_FN(ClaimMetLayer_BeginFrame);
     PORT_FN(Camera_SetFogColour);
     PORT_FN(LightSet_UpdateByClock);
 
@@ -1124,7 +1129,7 @@ namespace mm
     // 0x1BDCD0). The city calls it only in rain (2) or snow (3).
     void CityRender_DrawWeather(GuestPtr<CityMap> map, GuestPtr<CityScene> city, int pass, GuestPtr<Vec4> view)
     {
-        const uint32_t parity = port::load<uint32_t>(0x001BDCD0u) & 1u;
+        const uint32_t parity = globals::frameParity.get() & 1u;
         const int packet = static_cast<int>(map->chunkPackets[parity]);
         if (pass != 0)
             SnowLayer_Draw(map->snow, static_cast<int>(parity), packet, city->clock, view);
@@ -1138,25 +1143,25 @@ namespace mm
 
     // The water: the waves move on (around the water level), then this frame's packet (one per terrain buffer) is
     // queued.
-    void LayerG_Draw(GuestPtr<LayerG> layer, int pass, ps2f waterLevel)
+    void WaterLayer_Draw(GuestPtr<WaterLayer> layer, int pass, ps2f waterLevel)
     {
-        LayerG_AnimateWaves(layer, waterLevel);
+        WaterLayer_AnimateWaves(layer, waterLevel);
         Dma_AppendCall(static_cast<int>(layer->packets[pass]));
     }
 
-    PORT_FN(LayerG_Draw);
+    PORT_FN(WaterLayer_Draw);
 
     // ---- layer packets and draw parameter templates (batch 38)
 
-    // Layer A's packets: the start uploads the layer's output offset and colour to VU1 address 0x2A, flushes, calls
+    // The claim-met layer's packets: the start uploads the layer's output offset and colour to VU1 address 0x2A, flushes, calls
     // the chain at 0x1A8330 and sets the VIF base and offset; the end sets ALPHA_1 (0x20_00000044) through the GIF.
-    GuestPtr<uint32_t> LayerA_BuildPacket(GuestPtr<LayerA> layer, GuestPtr<uint32_t> packet)
+    GuestPtr<uint32_t> ClaimMetLayer_BuildPacket(GuestPtr<ClaimMetLayer> layer, GuestPtr<uint32_t> packet)
     {
         layer->startPacket = packet.address;
         putWords(packet.address, {
             0x30000002u, tagAddress(layer->outputOffset), 0x01000101u, 0x6C02002Au, // ref 2 quadwords; stcycl, unpack v4-32 to 0x2A
             0x10000000u, 0, 0, 0x11000000u,                                         // cnt 0; VIF flush
-            0x50000000u, 0x001A8330u, 0, 0,                                         // call
+            0x50000000u, globals::kVu1UnlitProgram, 0, 0,                           // call
             0x60000000u, 0, 0x03000042u, 0x020001DFu,                               // ret; VIF base 0x42, offset 0x1DF
         });
         layer->endPacket = packet.address + 0x40u;
@@ -1169,9 +1174,9 @@ namespace mm
         return packet + 0x20;
     }
 
-    // Layer A: the start packet, then for each of this frame's instances its packet (ALPHA_1 with its fade) and its
+    // The claim-met layer: the start packet, then for each of this frame's instances its packet (ALPHA_1 with its fade) and its
     // two meshes (2n and 2n + 1) under its matrix, then the end packet.
-    void LayerA_Draw(GuestPtr<LayerA> layer)
+    void ClaimMetLayer_Draw(GuestPtr<ClaimMetLayer> layer)
     {
         if (layer->count == 0)
             return;
@@ -1179,7 +1184,7 @@ namespace mm
         for (int i = 0; i < layer->count; ++i)
         {
             // The buffer and the model are read again for every use, as in the original.
-            const auto instance = [&] { return layerAInstance(layer, i); };
+            const auto instance = [&] { return claimMetInstance(layer, i); };
             Dma_AppendCall(static_cast<int>(addressOf(instance()->packet)));
             const GuestPtr<Vec4> matrix = GuestPtr<Vec4>::of(instance()->matrix[0]);
             Instance_DrawMesh(layer->model, matrix, GuestPtr<Vec4>{globals::kDefaultColour}, instance()->meshPair * 2, 0);
@@ -1189,34 +1194,34 @@ namespace mm
         Dma_AppendCall(static_cast<int>(layer->endPacket));
     }
 
-    // Layer B's packets: the first calls the chain at 0x1AA340, uploads the layer's parameters (19 quadwords) to VU1
-    // 0x1C, sets the VIF base and offset and starts the program; the second uploads the second pass's texture and mask
-    // to 0x1D and 0x2D and starts the program again.
-    GuestPtr<uint32_t> LayerB_BuildPacket(GuestPtr<LayerB> layer, GuestPtr<uint32_t> packet)
+    // The water bottom's packets: the first calls the chain at 0x1AA340, uploads the layer's parameters (19 quadwords)
+    // to VU1 0x1C, sets the VIF base and offset and starts the program (the sea); the second uploads the lakes' texture
+    // and mask to 0x1D and 0x2D and starts the program again.
+    GuestPtr<uint32_t> WaterBottomLayer_BuildPacket(GuestPtr<WaterBottomLayer> layer, GuestPtr<uint32_t> packet)
     {
-        layer->packetA = packet.address;
+        layer->seaPacket = packet.address;
         putWords(packet.address, {
             0x10000000u, 0, 0, 0x11000000u,                                  // cnt 0; VIF flush
-            0x50000000u, 0x001AA340u, 0, 0,                                  // call
+            0x50000000u, globals::kVu1WaterBottomProgram, 0, 0,                                  // call
             0x30000013u, tagAddress(layer->params), 0x01000101u, 0x6C13001Cu, // ref 19 quadwords; unpack to 0x1C
             0x10000000u, 0, 0x03000056u, 0x020001D5u,                        // VIF base 0x56, offset 0x1D5
             0x10000000u, 0, 0x14000000u, 0x11000000u,                        // mscal; flush
             0x60000000u, 0, 0, 0,                                            // ret
         });
-        layer->packetB = packet.address + 0x60u;
+        layer->lakePacket = packet.address + 0x60u;
         putWords(packet.address + 0x60u, {
             0x10000000u, 0, 0, 0x11000000u,                                  // cnt 0; flush
-            0x30000001u, tagAddress(layer->tex0B), 0x01000101u, 0x6C01001Du, // ref 1 quadword; unpack to 0x1D
-            0x30000001u, tagAddress(layer->maskB), 0x01000101u, 0x6C01002Du, // ref 1 quadword; unpack to 0x2D
+            0x30000001u, tagAddress(layer->lakeTex0), 0x01000101u, 0x6C01001Du, // ref 1 quadword; unpack to 0x1D
+            0x30000001u, tagAddress(layer->lakeMask), 0x01000101u, 0x6C01002Du, // ref 1 quadword; unpack to 0x2D
             0x10000000u, 0, 0x14000000u, 0x11000000u,                        // mscal; flush
             0x60000000u, 0, 0, 0,                                            // ret
         });
         return packet + 0x2C;
     }
 
-    // Layer F's packet: ALPHA_1 (0x30_00000048) through the GIF, then like layer B's first packet with the chain at
-    // 0x1A91C0.
-    GuestPtr<uint32_t> LayerF_BuildPacket(GuestPtr<LayerF> layer, GuestPtr<uint32_t> packet)
+    // The lit roads' packet: ALPHA_1 (0x30_00000048) through the GIF, then like the water bottom's first packet with
+    // the chain at 0x1A91C0.
+    GuestPtr<uint32_t> LitRoadLayer_BuildPacket(GuestPtr<LitRoadLayer> layer, GuestPtr<uint32_t> packet)
     {
         layer->packet = packet.address;
         putWords(packet.address, {
@@ -1224,7 +1229,7 @@ namespace mm
             0x8001u, 0x10000000u, 0xEu, 0,                                   // GIF tag: one A+D register
             0x48u, 0x30u, 0x42u, 0,                                          // ALPHA_1
             0x10000000u, 0, 0, 0x11000000u,                                  // cnt 0; flush
-            0x50000000u, 0x001A91C0u, 0, 0,                                  // call
+            0x50000000u, globals::kVu1LitRoadProgram, 0, 0,                                  // call
             0x30000013u, tagAddress(layer->params), 0x01000101u, 0x6C13001Cu, // ref 19 quadwords; unpack to 0x1C
             0x10000000u, 0, 0x03000056u, 0x020001D5u,                        // VIF base 0x56, offset 0x1D5
             0x10000000u, 0, 0x14000000u, 0x11000000u,                        // mscal; flush
@@ -1238,8 +1243,8 @@ namespace mm
     // output offset 0x110 and the instance colour).
     void PlacementLayer_InitParams(GuestPtr<PlacementLayer> layer)
     {
-        putFloats(layer->colourA, 255.0f, 0, 0, 128.0f);
-        putFloats(layer->colourB, 0, 0, 0, 128.0f);
+        putFloats(layer->fillColour, 255.0f, 0, 0, 128.0f);
+        putFloats(layer->outlineColour, 0, 0, 0, 128.0f);
         putWords(layer->outputOffset, {0x68u, 0, 0, 0});
         putWords(layer->gifTag, {0x801Au, 0xE0000000u, 0x04144410u, 0x00444441u});
         putWords(layer->primA, {0x44u, 0, 0, 0});
@@ -1251,14 +1256,14 @@ namespace mm
         putFloats(layer->instanceColour, 1.0f, 1.0f, 1.0f, 1.0f);
     }
 
-    void LayerF_InitParams(GuestPtr<LayerF> layer)
+    void LitRoadLayer_InitParams(GuestPtr<LitRoadLayer> layer)
     {
         packet::putPassParams(layer->params, {128.0f, 128.0f, 128.0f, 128.0f}, 0x9930A7A4u, 0x4004F405u, 0x7Cu);
         putWords(layer->params.mask, {0, 0, 0, 0x10u});
     }
 
-    // Layer G (the water) keeps its texture coordinates at rest (texCoordsRest) and copies them to both textures' sets.
-    void LayerG_InitParams(GuestPtr<LayerG> layer)
+    // The water keeps its texture coordinates at rest (texCoordsRest) and copies them to both textures' sets.
+    void WaterLayer_InitParams(GuestPtr<WaterLayer> layer)
     {
         putFloats(layer->colour, 128.0f, 128.0f, 128.0f, 60.0f);
         putWords(layer->outputOffsets, {0x40u, 0x10u, 0, 0});
@@ -1294,27 +1299,28 @@ namespace mm
             putFloats(map->sideStq[i], kS[i], 0, 1.0f, 0);
     }
 
-    PORT_FN(LayerA_BuildPacket);
-    PORT_FN(LayerA_Draw);
-    PORT_FN(LayerB_BuildPacket);
-    PORT_FN(LayerF_BuildPacket);
+    PORT_FN(ClaimMetLayer_BuildPacket);
+    PORT_FN(ClaimMetLayer_Draw);
+    PORT_FN(WaterBottomLayer_BuildPacket);
+    PORT_FN(LitRoadLayer_BuildPacket);
     PORT_FN(PlacementLayer_InitParams);
-    PORT_FN(LayerF_InitParams);
-    PORT_FN(LayerG_InitParams);
+    PORT_FN(LitRoadLayer_InitParams);
+    PORT_FN(WaterLayer_InitParams);
     PORT_FN(CityRender_InitParams);
     PORT_FN(Terrain_InitParams);
 
-    // Layer B, the bottom of the water: its program draws each quad again with the corners' heights at 0.6 y + 0.08
-    // (extra). Heights grow downwards, so the copy lies above the ground only where that is deeper than 0.2: the sand or
-    // rock covers the bottom and the low strip of shore, seen through the water. The first pass lays sand (GROUND.TEX
-    // part 17) over the quads with flag 0x20 (the sea), the second rock (part 24, tex0B) over those with 0x40 (a lake).
-    void LayerB_InitParams(GuestPtr<LayerB> layer)
+    // The water bottom (layer B): its program draws each quad again with the corners' heights at 0.6 y + 0.08 (extra).
+    // Heights grow downwards, so the copy lies above the ground only where that is deeper than 0.2: the sand or rock
+    // covers the bottom and the low strip of shore, seen through the water. The first pass lays sand (GROUND.TEX part
+    // 17) over the quads with flag 0x20 (the sea), the second rock (part 24, lakeTex0) over those with 0x40 (the
+    // lakes).
+    void WaterBottomLayer_InitParams(GuestPtr<WaterBottomLayer> layer)
     {
         packet::putPassParams(layer->params, {128.0f, 128.0f, 128.0f, 128.0f}, 0x9930a698u, 0x4004b085u, 0x3cu);
         putWords(layer->params.mask, {0x0u, 0x0u, 0x0u, 0x20u});
         putFloats(layer->extra, 0.6f, 0.08f, 0.0f, 0.0f);
-        putWords(layer->maskB, {0x0u, 0x0u, 0x0u, 0x40u});
-        putWords(layer->tex0B, {0x9930a708u, 0x4004b085u, 0x0u, 0x0u});
+        putWords(layer->lakeMask, {0x0u, 0x0u, 0x0u, 0x40u});
+        putWords(layer->lakeTex0, {0x9930a708u, 0x4004b085u, 0x0u, 0x0u});
     }
 
     // The rain's parameters: the GIF tag of the streaks (96 loops of RGBAQ, XYZF2 twice, blended lines), the colours
@@ -1324,8 +1330,8 @@ namespace mm
     void RainLayer_InitParams(GuestPtr<RainLayer> layer)
     {
         putWords(layer->gifTag, {0x8060u, 0x4034c000u, 0x4141u, 0x0u});
-        putFloats(layer->colourA, 765.0f, 765.0f, 765.0f, 40.0f);
-        putFloats(layer->colourB, 765.0f, 765.0f, 765.0f, 0.0f);
+        putFloats(layer->lowerColour, 765.0f, 765.0f, 765.0f, 40.0f);
+        putFloats(layer->upperColour, 765.0f, 765.0f, 765.0f, 0.0f);
         layer->mask[0] = 8;
         static constexpr float kDropY[16] = {0.1f, 35.4f, 9.6f, 15.8f, 1.3f, 24.6f, 13.3f, 8.7f,
                                              36.8f, 18.1f, 28.0f, 11.6f, 28.8f, 31.5f, 4.2f, 7.9f};
@@ -1352,7 +1358,7 @@ namespace mm
         putFloats(layer->groundExtra, 0.0f, -0.01f, 0.0f, 1.0f);
     }
 
-    PORT_FN(LayerB_InitParams);
+    PORT_FN(WaterBottomLayer_InitParams);
     PORT_FN(RainLayer_InitParams);
 
     // The placement layer's three packets, one after the other: the highlight (ALPHA_1 set to 0x30_00000048, the chain at 0x1A7B30
@@ -1370,7 +1376,7 @@ namespace mm
         putWords(p + 0x20u, {0x8001u, 0x10000000u, 0xeu, 0x0u});
         putWords(p + 0x30u, {0x48u, 0x30u, 0x42u, 0x0u});
         putWords(p + 0x40u, {0x50000000u, 0x1a7b30u, 0x0u, 0x0u});
-        putWords(p + 0x50u, {0x30000007u, tagAddress(layer->colourA), 0x1000101u, 0x6c07001cu});
+        putWords(p + 0x50u, {0x30000007u, tagAddress(layer->fillColour), 0x1000101u, 0x6c07001cu});
         putWords(p + 0x60u, {0x10000000u, 0x0u, 0x3000056u, 0x20001d5u});
         putWords(p + 0x70u, {0x60000000u, 0x0u, 0x14000000u, 0x11000000u});
         putWords(p + 0x80u, {0x10000002u, 0x0u, 0x11000000u, 0x50000002u});
@@ -1519,10 +1525,10 @@ namespace mm
 
     PORT_FN(SnowLayer_BuildPacket);
 
-    // Layer G (the water): two sections, one per terrain buffer. Each starts with the GS state for both contexts (ALPHA_1
-    // and ALPHA_2, TEX0_1 and TEX0_2), the program 0x1A6440 and the layer's parameters, then the buffer's quads in 39
+    // The water: two sections, one per terrain buffer. Each starts with the GS state for both contexts (ALPHA_1 and
+    // ALPHA_2, TEX0_1 and TEX0_2), the program 0x1A6440 and the layer's parameters, then the buffer's quads in 39
     // chunks of 0x400 bytes (4 groups of 8, then 7 singles) and a RET. Returns the end.
-    GuestPtr<uint32_t> LayerG_BuildPacket(GuestPtr<LayerG> layer, GuestPtr<uint32_t> packet, GuestPtr<int32_t> buffers)
+    GuestPtr<uint32_t> WaterLayer_BuildPacket(GuestPtr<WaterLayer> layer, GuestPtr<uint32_t> packet, GuestPtr<int32_t> buffers)
     {
         const uint32_t layerTag = tagAddress(*layer);
         const auto header = [&](uint32_t at) {
@@ -1572,7 +1578,7 @@ namespace mm
         return GuestPtr<uint32_t>{at};
     }
 
-    PORT_FN(LayerG_BuildPacket);
+    PORT_FN(WaterLayer_BuildPacket);
 
     // ---- the terrain's VU1 packets (batch 41): the same shape as the layers' packets, two sections of vertex chunks
 
@@ -1720,10 +1726,10 @@ namespace mm
         }
         else
             clock = std::abs(clock - 0x15180);
-        layer->colourA.w = fromInt(clock) / ps2f(450.0f);
-        port::store<uint32_t>(addressOf(layer->colourA.z), 0x443F4000u); // 765.0
-        port::store<uint32_t>(addressOf(layer->colourA.y), 0x443F4000u);
-        port::store<uint32_t>(addressOf(layer->colourA.x), 0x443F4000u);
+        layer->lowerColour.w = fromInt(clock) / ps2f(450.0f);
+        port::store<uint32_t>(addressOf(layer->lowerColour.z), 0x443F4000u); // 765.0
+        port::store<uint32_t>(addressOf(layer->lowerColour.y), 0x443F4000u);
+        port::store<uint32_t>(addressOf(layer->lowerColour.x), 0x443F4000u);
         port::store<int32_t>(layer->groundPackets[pass] + 0x24u, clock / 600); // ALPHA_1's FIX in the packet
         for (Vec4 &drop : layer->drops)
         {
@@ -1732,13 +1738,13 @@ namespace mm
             if (ps2f(40.0f) <= y)
                 drop.y = y - ps2f(40.0f);
         }
-        if (port::load<int8_t>(0x001BDAD4u) == 0)
+        if (globals::rainStarted.get() == 0)
         {
-            port::store<int32_t>(0x001BDAD0u, 0);
-            port::store<int8_t>(0x001BDAD4u, 1);
+            globals::rainFrames.set(0);
+            globals::rainStarted.set(1);
         }
-        port::store<int32_t>(0x001BDAD0u, port::load<int32_t>(0x001BDAD0u) + 1);
-        int32_t cycle = ((port::load<int32_t>(0x001BDAD0u) >> 1) % 6) * 0x40;
+        globals::rainFrames.set(globals::rainFrames.get() + 1);
+        int32_t cycle = ((globals::rainFrames.get() >> 1) % 6) * 0x40;
         if (cycle < 0)
             cycle += 3;
         uint32_t (&tex0)[4] = layer->ground.tex0;
@@ -1798,7 +1804,7 @@ namespace mm
         const GuestPtr<A3DModel> data = model->model;
         const GuestPtr<A3DNode> nodes = data->nodes;
         if (!(index < static_cast<int>(data->nodeCount)))
-            return port::callGuest<int64_t>(sdk::addr::printf, 0x001B5A90u);
+            return port::callGuest<int64_t>(sdk::addr::printf, globals::kChangeLuminosityError);
         const GuestPtr<A3DNode> node = nodes + index;
         if (node->mesh)
             node->slot.colour = *colour;
@@ -1836,7 +1842,7 @@ namespace mm
     {
         if (sprite)
         {
-            port::store<uint32_t>(sprite.address, 0x001BCFD8u);
+            port::store<uint32_t>(sprite.address, globals::kTexSpriteVtable);
             if (sprite->packet != 0u)
             {
                 sdk::free(sprite->packet);
@@ -1857,7 +1863,7 @@ namespace mm
     // shows the whole image from its origin and builds the packet; a2 nonzero: alpha blended.
     int TexSprite_Load(GuestPtr<TexSprite> sprite, int file, int blend)
     {
-        port::store<uint32_t>(sprite.address, 0x001BCFD8u);
+        port::store<uint32_t>(sprite.address, globals::kTexSpriteVtable);
         port::GuestLocal<GameFile> local;
         File_ctor(local, 0);
         sprite->image = GuestPtr<TexFileHeader>{static_cast<uint32_t>(File_LoadWhole(local, GuestPtr<char>{static_cast<uint32_t>(file)}, GuestPtr<int32_t>{0u}))};
@@ -1947,9 +1953,9 @@ namespace mm
     void InstanceBuf_Init()
     {
         const uint32_t first = sdk::mw_NewArray(0x31380u);
-        port::store<uint32_t>(0x001BDA20u, first);
+        port::store<uint32_t>(globals::kInstanceBuffers, first);
         const uint32_t second = sdk::mw_NewArray(0x31380u);
-        port::store<uint32_t>(0x001BDA24u, second);
+        port::store<uint32_t>(globals::kInstanceBuffers + 0x4u, second);
         for (int i = 0; i < 0x708; ++i)
             for (const uint32_t base : {first, second})
             {
@@ -1963,12 +1969,11 @@ namespace mm
     // GS path waited for, the channel started (CHCR 0x145) and the GS path waited for again; returns that last wait.
     int Dma_KickVif1Now(uint32_t address)
     {
-        constexpr uint32_t kChain = 0x001F8100u;
         constexpr uint32_t kQwc = 0x10009020u, kTadr = 0x10009030u, kChcr = 0x10009000u, kStat = 0x1000E010u;
-        packet::putCallThenEnd(kChain, address & 0x7FFFFFFFu);
+        packet::putCallThenEnd(globals::kDmaKickChain, address & 0x7FFFFFFFu);
         sdk::sceGsSyncPath(0, 0);
         port::writeHardware32(kQwc, 0u);
-        port::writeHardware32(kTadr, kChain & 0x7FFFFFFFu);
+        port::writeHardware32(kTadr, globals::kDmaKickChain & 0x7FFFFFFFu);
         port::writeHardware32(kStat, 2u);
         sdk::FlushCache(0);
         port::writeHardware32(kChcr, 0x145u);
@@ -1986,10 +1991,9 @@ namespace mm
     GuestPtr<A3DObject> InstanceModel_ctor(GuestPtr<A3DObject> model)
     {
         InstanceBase_ctor(model);
-        constexpr uint32_t kModelCount = 0x001BDA2Cu;
-        if (port::load<int32_t>(kModelCount) == 0)
+        if (globals::modelCount.get() == 0)
             InstanceBuf_Init();
-        port::store<int32_t>(kModelCount, port::load<int32_t>(kModelCount) + 1);
+        globals::modelCount.set(globals::modelCount.get() + 1);
         return model;
     }
 
@@ -2015,7 +2019,7 @@ namespace mm
     GuestPtr<CityMap> CityRender_ctor(GuestPtr<CityMap> map)
     {
         MapPeople_ctor(map);
-        map->vtable = GuestPtr<CityMapVtable>{0x001BCF00u};
+        map->vtable = globals::kCityRenderVtable;
         map->sideBuffers[0] = GuestPtr<void>{sdk::malloc(0x8700u)};
         map->sideBuffers[1] = GuestPtr<void>{sdk::malloc(0x8700u)};
         map->terrainBuffers[0] = GuestPtr<void>{sdk::malloc(0x9C00u)};
@@ -2031,11 +2035,11 @@ namespace mm
         };
         make(0x410, map->rain, [&](uint32_t o) { return RainLayer_ctor(GuestPtr<RainLayer>{o}, buffers).address; });
         make(0x6E0, map->snow, [&](uint32_t o) { return SnowLayer_ctor(GuestPtr<SnowLayer>{o}, buffers).address; });
-        make(0x140, map->layerF, [&](uint32_t o) { return LayerF_ctor(GuestPtr<LayerF>{o}).address; });
-        make(0x2E0, map->water, [&](uint32_t o) { return LayerG_ctor(GuestPtr<LayerG>{o}, buffers).address; });
+        make(0x140, map->litRoads, [&](uint32_t o) { return LitRoadLayer_ctor(GuestPtr<LitRoadLayer>{o}).address; });
+        make(0x2E0, map->water, [&](uint32_t o) { return WaterLayer_ctor(GuestPtr<WaterLayer>{o}, buffers).address; });
         make(0x240, map->placement, [&](uint32_t o) { return PlacementLayer_ctor(GuestPtr<PlacementLayer>{o}).address; });
-        make(0x230, map->layerB, [&](uint32_t o) { return LayerB_ctor(GuestPtr<LayerB>{o}).address; });
-        make(0x2440, map->instances, [&](uint32_t o) { return LayerA_ctor(GuestPtr<LayerA>{o}).address; });
+        make(0x230, map->waterBottom, [&](uint32_t o) { return WaterBottomLayer_ctor(GuestPtr<WaterBottomLayer>{o}).address; });
+        make(0x2440, map->claimMet, [&](uint32_t o) { return ClaimMetLayer_ctor(GuestPtr<ClaimMetLayer>{o}).address; });
         return map;
     }
 
@@ -2044,14 +2048,14 @@ namespace mm
     {
         if (map)
         {
-            map->vtable = GuestPtr<CityMapVtable>{0x001BCF00u};
-            lifetime::deleteWith(addressOf(map->instances), [](uint32_t o) { LayerA_DeletingDtor(GuestPtr<LayerA>{o}, 1); });
+            map->vtable = globals::kCityRenderVtable;
+            lifetime::deleteWith(addressOf(map->claimMet), [](uint32_t o) { ClaimMetLayer_DeletingDtor(GuestPtr<ClaimMetLayer>{o}, 1); });
             lifetime::deleteWith(addressOf(map->rain), [](uint32_t o) { RainLayer_DeletingDtor(GuestPtr<RainLayer>{o}, 1); });
             lifetime::deleteWith(addressOf(map->snow), [](uint32_t o) { SnowLayer_DeletingDtor(GuestPtr<SnowLayer>{o}, 1); });
-            lifetime::deleteWith(addressOf(map->layerF), [](uint32_t o) { LayerF_DeletingDtor(GuestPtr<LayerF>{o}, 1); });
-            lifetime::deleteWith(addressOf(map->water), [](uint32_t o) { LayerG_DeletingDtor(GuestPtr<LayerG>{o}, 1); });
+            lifetime::deleteWith(addressOf(map->litRoads), [](uint32_t o) { LitRoadLayer_DeletingDtor(GuestPtr<LitRoadLayer>{o}, 1); });
+            lifetime::deleteWith(addressOf(map->water), [](uint32_t o) { WaterLayer_DeletingDtor(GuestPtr<WaterLayer>{o}, 1); });
             lifetime::deleteWith(addressOf(map->placement), [](uint32_t o) { PlacementLayer_DeletingDtor(GuestPtr<PlacementLayer>{o}, 1); });
-            lifetime::deleteWith(addressOf(map->layerB), [](uint32_t o) { LayerB_DeletingDtor(GuestPtr<LayerB>{o}, 1); });
+            lifetime::deleteWith(addressOf(map->waterBottom), [](uint32_t o) { WaterBottomLayer_DeletingDtor(GuestPtr<WaterBottomLayer>{o}, 1); });
             for (const uint32_t field : {addressOf(map->terrainBuffers[0]), addressOf(map->terrainBuffers[1]), addressOf(map->sideBuffers[0]),
                                          addressOf(map->sideBuffers[1])})
                 lifetime::deleteWith(field, [](uint32_t o) { sdk::free(o); });
@@ -2066,7 +2070,7 @@ namespace mm
     GuestPtr<CityMap> CityMap_ctor(GuestPtr<CityMap> map)
     {
         CityRender_ctor(map);
-        map->vtable = GuestPtr<CityMapVtable>{0x001BCED0u};
+        map->vtable = globals::kCityMapVtable;
         return map;
     }
 
@@ -2074,7 +2078,7 @@ namespace mm
     {
         if (map)
         {
-            map->vtable = GuestPtr<CityMapVtable>{0x001BCED0u};
+            map->vtable = globals::kCityMapVtable;
             CityRender_dtor(map, 0);
             if (0 < deleteFlag)
                 sdk::operator_delete(map.address);
@@ -2097,7 +2101,7 @@ namespace mm
         const uint32_t packet = frame.ptr().address + 0x10u;
         uint32_t model = sdk::operator_new(0x60u);
         if (model != 0u)
-            model = A3DObject_Load(GuestPtr<A3DObject>{model}, 0x001B7F50, 1).address;
+            model = A3DObject_Load(GuestPtr<A3DObject>{model}, static_cast<int>(globals::kPathSkyA3d), 1).address;
         A3DObject_dtor(GuestPtr<A3DObject>{model}, 1);
         const uint32_t words[] = {0x10000006u, 0u, 0x11000000u, 0x50000006u,
                                   4u, 0x10000000u, 0xEu, 0u,
@@ -2106,7 +2110,7 @@ namespace mm
                                   0u, 0x13F2Eu, 0x50u, 0u,
                                   0u, 0u, 0x53u, 0u,
                                   0x8004u, 0x08000000u, 0u, 0u,
-                                  0x30000004u, 0x001B0DD0u, 0u, 0x50000004u,
+                                  0x30000004u, globals::kSkyUpload, 0u, 0x50000004u,
                                   0x60000000u, 0u, 0u, 0u};
         for (uint32_t i = 0; i < 36u; ++i)
             port::store<uint32_t>(packet + 4u * i, words[i]);
@@ -2276,39 +2280,39 @@ namespace mm
     // still busy.
     int A3DObject_LoadAsync(GuestPtr<A3DObject> model, GuestPtr<GameFile> file, int indexed)
     {
-        const GuestPtr<A3DModel> header{0x001C5100u};
-        const GuestVar<int32_t> state{0x001BDA10u}, request{0x001BDA14u};
-        const auto done = [&]() { return FileQueue_IsDone(static_cast<int>(file.address), request.get()) != 0; };
-        switch (static_cast<uint32_t>(state.get()))
+        const GuestPtr<A3DModel> header{globals::kAsyncModelHeader};
+        const auto done = [&]() { return FileQueue_IsDone(static_cast<int>(file.address), globals::modelLoadRequest.get()) != 0; };
+        switch (static_cast<uint32_t>(globals::modelLoadState.get()))
         {
         case 0:
             model->model = GuestPtr<A3DModel>{0u};
             model->textures = GuestPtr<void>{0u};
             model->animations = GuestPtr<uint32_t>{0u};
-            request.set(File_Read(file, static_cast<int>(header.address), 1, 0x10, 0));
-            state.set(state.get() + 1);
+            globals::modelLoadRequest.set(File_Read(file, static_cast<int>(header.address), 1, 0x10, 0));
+            globals::modelLoadState.set(globals::modelLoadState.get() + 1);
             return 0;
         case 1:
             if (!done())
                 return 0;
             if (header->sizeWords == 0)
             {
-                state.set(0);
+                globals::modelLoadState.set(0);
                 return -1;
             }
-            state.set(state.get() + 1);
+            globals::modelLoadState.set(globals::modelLoadState.get() + 1);
             return 0;
         case 2:
             model->model = GuestPtr<A3DModel>{sdk::malloc(header->sizeWords << 2)};
             sdk::memcpy(model->model.address, header.address, 0x10);
-            request.set(File_Read(file, static_cast<int>(model->model.address) + 0x10, static_cast<int32_t>(header->sizeWords) - 4, 4, 0));
-            state.set(state.get() + 1);
+            globals::modelLoadRequest.set(File_Read(file, static_cast<int>(model->model.address) + 0x10,
+                                                    static_cast<int32_t>(header->sizeWords) - 4, 4, 0));
+            globals::modelLoadState.set(globals::modelLoadState.get() + 1);
             return 0;
         case 3:
         case 5:
             if (!done())
                 return 0;
-            state.set(state.get() + 1);
+            globals::modelLoadState.set(globals::modelLoadState.get() + 1);
             return 0;
         case 4:
         {
@@ -2316,8 +2320,9 @@ namespace mm
             if (animations != 0)
                 model->animations = GuestPtr<uint32_t>{sdk::mw_NewArray(static_cast<uint32_t>(animations) << 2)};
             model->textures = GuestPtr<void>{sdk::malloc(header->textureWords << 2)};
-            request.set(File_Read(file, static_cast<int>(model->textures.address), static_cast<int32_t>(header->textureWords), 4, 0));
-            state.set(state.get() + 1);
+            globals::modelLoadRequest.set(File_Read(file, static_cast<int>(model->textures.address),
+                                                    static_cast<int32_t>(header->textureWords), 4, 0));
+            globals::modelLoadState.set(globals::modelLoadState.get() + 1);
             return 0;
         }
         case 6:
@@ -2329,8 +2334,8 @@ namespace mm
                 sdk::free(textures);
                 model->textures = GuestPtr<void>{0u};
             }
-            Mat4_Copy(GuestPtr<Vec4>::of(model->matrix[0]), GuestPtr<Vec4>{0x001B2550u});
-            state.set(0);
+            Mat4_Copy(GuestPtr<Vec4>::of(model->matrix[0]), GuestPtr<Vec4>{globals::kIdentityMatrix});
+            globals::modelLoadState.set(0);
             return 1;
         }
         default:
@@ -2349,25 +2354,28 @@ namespace mm
         port::GuestFrame<0x80> frame;
         const uint32_t sp = frame.ptr().address;
         const uint32_t tag = sp + 0x60u, packet = sp + 0x70u;
-        port::store<uint64_t>(tag, port::load<uint64_t>(0x001B2540u));
-        port::store<uint64_t>(tag + 8u, port::load<uint64_t>(0x001B2548u));
+        port::store<uint64_t>(tag, port::load<uint64_t>(globals::kDisplayGifTagA));
+        port::store<uint64_t>(tag + 8u, port::load<uint64_t>(globals::kDisplayGifTagB));
         const uint32_t block = sdk::memalign(0x10, 0x60);
         const int channel = sdk::sceDmaGetChan(2);
-        constexpr uint32_t kDisplay = 0x001F5B10u, kDraw = 0x001F5B20u, kBuffer = 0x001F5AC0u;
-        port::store<uint64_t>(kDisplay, 0u);
-        port::store<uint64_t>(kDisplay + 8u, 0u);
-        port::store<uint16_t>(kDisplay, static_cast<uint16_t>((port::load<uint16_t>(kDisplay) & 0x8000u) | 0x8u));
-        port::store<uint8_t>(kDisplay + 1u, static_cast<uint8_t>((port::load<uint8_t>(kDisplay + 1u) & ~0x80u) | 0x80u));
-        port::store<uint8_t>(kDisplay + 7u, static_cast<uint8_t>((port::load<uint8_t>(kDisplay + 7u) & 0x0Fu) | 0x10u));
-        port::store<uint8_t>(kDisplay + 8u, static_cast<uint8_t>((port::load<uint8_t>(kDisplay + 8u) & 0xF0u) | 0xEu));
+        port::store<uint64_t>(globals::kGsDisplaySetup, 0u);
+        port::store<uint64_t>(globals::kGsDisplaySetup + 8u, 0u);
+        port::store<uint16_t>(globals::kGsDisplaySetup,
+                              static_cast<uint16_t>((port::load<uint16_t>(globals::kGsDisplaySetup) & 0x8000u) | 0x8u));
+        port::store<uint8_t>(globals::kGsDisplaySetup + 1u,
+                             static_cast<uint8_t>((port::load<uint8_t>(globals::kGsDisplaySetup + 1u) & ~0x80u) | 0x80u));
+        port::store<uint8_t>(globals::kGsDisplaySetup + 7u,
+                             static_cast<uint8_t>((port::load<uint8_t>(globals::kGsDisplaySetup + 7u) & 0x0Fu) | 0x10u));
+        port::store<uint8_t>(globals::kGsDisplaySetup + 8u,
+                             static_cast<uint8_t>((port::load<uint8_t>(globals::kGsDisplaySetup + 8u) & 0xF0u) | 0xEu));
         const int16_t wide = static_cast<int16_t>(width);
         const int half = height / 2;
         const int pages = ((half + 0x1F) / 32 + (height + 0x1F) / 32) << 6;
-        sdk::sceGsSetDefDrawEnv(kDraw, 0, wide, static_cast<int16_t>(pages), 0, 0);
-        port::store<uint64_t>(kDisplay + 0x30u, 0u);
+        sdk::sceGsSetDefDrawEnv(globals::kGsDrawEnv, 0, wide, static_cast<int16_t>(pages), 0, 0);
+        port::store<uint64_t>(globals::kGsDisplaySetup + 0x30u, 0u);
         sdk::FlushCache(0);
         sdk::sceGsSyncPath(0, 0);
-        sdk::sceGsPutDispEnv(kDisplay);
+        sdk::sceGsPutDispEnv(globals::kGsDisplaySetup);
         sdk::sceGifPkInit(packet, block);
         sdk::sceGifPkReset(packet);
         sdk::sceGifPkEnd(packet);
@@ -2383,7 +2391,7 @@ namespace mm
         sdk::sceDmaSend(channel, port::load<uint32_t>(packet + 4u));
         sdk::sceGsSyncPath(0, 0);
         sdk::free(block);
-        sdk::sceGsSetDefDBuff(kBuffer, 0, wide, static_cast<int16_t>(half), 0, 0, 1);
+        sdk::sceGsSetDefDBuff(globals::kGsSetupBuffer, 0, wide, static_cast<int16_t>(half), 0, 0, 1);
         sdk::FlushCache(0);
     }
 
@@ -2421,7 +2429,7 @@ namespace mm
             sdk::free(model->textures.address);
             model->textures = GuestPtr<void>{0u};
         }
-        Mat4_Copy(GuestPtr<Vec4>::of(model->matrix[0]), GuestPtr<Vec4>{0x001B2550u});
+        Mat4_Copy(GuestPtr<Vec4>::of(model->matrix[0]), GuestPtr<Vec4>{globals::kIdentityMatrix});
         File_dtor(file, -1);
         return GuestPtr<int32_t>{model.address};
     }

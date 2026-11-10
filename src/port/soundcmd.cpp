@@ -277,7 +277,6 @@ namespace mm
     // a log line, and a second line says when it is still that full.
     void SoundCmd_Flush()
     {
-        constexpr uint32_t kClient = 0x001FE690u, kStatus = 0x0020B7C0u, kSend = 0x0020B6C0u, kReply = 0x0020B800u;
         const auto waiting = [&]() {
             int32_t count = globals::soundCmdIndex.get() - globals::soundCmdSent.get();
             if (count < 0)
@@ -286,7 +285,7 @@ namespace mm
         };
         sdk::FlushCache(0);
         const uint32_t slots = globals::soundSlotsQueued.get(), voices = globals::soundVoicesQueued.get(), speech = globals::soundSpeechQueued.get();
-        const GuestPtr<SoundStatus> status{kStatus};
+        const GuestPtr<SoundStatus> status{globals::kSoundStatus};
         globals::soundSlotsQueued.set(slots & (slots ^ status->midiPlaying));
         globals::soundSpeechQueued.set(speech & (speech ^ status->speechTracks));
         globals::soundVoicesQueued.set(voices & (voices ^ status->wavePlaying));
@@ -302,13 +301,13 @@ namespace mm
             globals::soundSpeechQueued.set(0);
             return;
         }
-        if (sdk::sceSifCheckStatRpc(kClient) == 0)
+        if (sdk::sceSifCheckStatRpc(globals::kSoundRpcClient) == 0)
         {
             const GuestPtr<SoundCmd> cmd = entryAt(globals::soundCmdSent.get());
             if (cmd->sent != 0)
             {
                 sdk::FlushCache(0);
-                if (port::load<uint32_t>(kReply) != 0)
+                if (port::load<uint32_t>(globals::kSoundRpcReply) != 0)
                 {
                     cmd->command = 0;
                     cmd->sent = 0;
@@ -323,36 +322,37 @@ namespace mm
                 const auto call = [&](int number) {
                     sdk::FlushCache(0);
                     sdk::FlushCache(0);
-                    sdk::sceSifCallRpc(kClient, number, 1, kSend, 0x100, kReply, 0x40, 0u, 0u);
+                    sdk::sceSifCallRpc(globals::kSoundRpcClient, number, 1, globals::kSoundRpcSend, 0x100,
+                                       globals::kSoundRpcReply, 0x40, 0u, 0u);
                 };
                 const auto copyArguments = [&](uint32_t bytes, int number) {
-                    sdk::memcpy(kSend, args, static_cast<int>(bytes));
+                    sdk::memcpy(globals::kSoundRpcSend, args, static_cast<int>(bytes));
                     call(number);
                 };
                 // The track or file byte at +2 and the request id at +0 of the send buffer, from a SoundCmdPair.
                 const auto sendPair = [&](int number) {
-                    port::store<uint8_t>(kSend + 2u, static_cast<uint8_t>(cmd->pair.target));
-                    port::store<uint16_t>(kSend, static_cast<uint16_t>(cmd->pair.id));
+                    port::store<uint8_t>(globals::kSoundRpcSend + 2u, static_cast<uint8_t>(cmd->pair.target));
+                    port::store<uint16_t>(globals::kSoundRpcSend, static_cast<uint16_t>(cmd->pair.id));
                     call(number);
                 };
                 // A path: prefix, then the name string, then "..".
                 const auto path = [&](uint32_t at, uint32_t prefix, uint32_t name) {
                     sdk::strcpy(at, prefix);
                     sdk::strcat(at, name);
-                    sdk::strcat(at, 0x001B9D68u);
+                    sdk::strcat(at, globals::kSoundPathVersion);
                 };
                 switch (static_cast<uint32_t>(cmd->command))
                 {
                 case 1:
-                    sdk::strcpy(kSend + 4u, 0x001B9DB0u);
-                    sdk::strcpy(kSend + 0x44u, 0x001B9DB0u);
-                    sdk::strcat(kSend + 4u, cmd->waveOpen.hdName);
-                    sdk::strcat(kSend + 0x44u, cmd->waveOpen.bdName);
-                    sdk::strcat(kSend + 4u, 0x001B9D68u);
-                    sdk::strcat(kSend + 0x44u, 0x001B9D68u);
-                    port::store<uint8_t>(kSend + 2u, static_cast<uint8_t>(cmd->openFile));
-                    port::store<uint16_t>(kSend, static_cast<uint16_t>(cmd->waveOpen.id));
-                    port::store<uint8_t>(kSend + 3u, static_cast<uint8_t>(cmd->waveOpen.type));
+                    sdk::strcpy(globals::kSoundRpcSend + 4u, globals::kSoundPathRoot);
+                    sdk::strcpy(globals::kSoundRpcSend + 0x44u, globals::kSoundPathRoot);
+                    sdk::strcat(globals::kSoundRpcSend + 4u, cmd->waveOpen.hdName);
+                    sdk::strcat(globals::kSoundRpcSend + 0x44u, cmd->waveOpen.bdName);
+                    sdk::strcat(globals::kSoundRpcSend + 4u, globals::kSoundPathVersion);
+                    sdk::strcat(globals::kSoundRpcSend + 0x44u, globals::kSoundPathVersion);
+                    port::store<uint8_t>(globals::kSoundRpcSend + 2u, static_cast<uint8_t>(cmd->openFile));
+                    port::store<uint16_t>(globals::kSoundRpcSend, static_cast<uint16_t>(cmd->waveOpen.id));
+                    port::store<uint8_t>(globals::kSoundRpcSend + 3u, static_cast<uint8_t>(cmd->waveOpen.type));
                     call(0x2001);
                     break;
                 case 2:
@@ -377,24 +377,24 @@ namespace mm
                     copyArguments(6, 0x2022);
                     break;
                 case 9:
-                    sdk::strcpy(kSend + 3u, 0x001B9D50u);
-                    sdk::strcpy(kSend + 0x43u, 0x001B9D70u);
-                    sdk::strcpy(kSend + 0x83u, 0x001B9D90u);
-                    sdk::strcat(kSend + 3u, cmd->midiOpen.sqName);
-                    sdk::strcat(kSend + 0x43u, cmd->midiOpen.hdName);
-                    sdk::strcat(kSend + 0x83u, cmd->midiOpen.bdName);
-                    sdk::strcat(kSend + 3u, 0x001B9D68u);
-                    sdk::strcat(kSend + 0x43u, 0x001B9D68u);
-                    sdk::strcat(kSend + 0x83u, 0x001B9D68u);
-                    port::store<uint8_t>(kSend + 2u, static_cast<uint8_t>(cmd->openFile));
-                    port::store<uint8_t>(kSend + 0xC4u, 0);
-                    port::store<uint16_t>(kSend, static_cast<uint16_t>(cmd->midiOpen.id));
+                    sdk::strcpy(globals::kSoundRpcSend + 3u, globals::kSoundPathSq);
+                    sdk::strcpy(globals::kSoundRpcSend + 0x43u, globals::kSoundPathHd);
+                    sdk::strcpy(globals::kSoundRpcSend + 0x83u, globals::kSoundPathBd);
+                    sdk::strcat(globals::kSoundRpcSend + 3u, cmd->midiOpen.sqName);
+                    sdk::strcat(globals::kSoundRpcSend + 0x43u, cmd->midiOpen.hdName);
+                    sdk::strcat(globals::kSoundRpcSend + 0x83u, cmd->midiOpen.bdName);
+                    sdk::strcat(globals::kSoundRpcSend + 3u, globals::kSoundPathVersion);
+                    sdk::strcat(globals::kSoundRpcSend + 0x43u, globals::kSoundPathVersion);
+                    sdk::strcat(globals::kSoundRpcSend + 0x83u, globals::kSoundPathVersion);
+                    port::store<uint8_t>(globals::kSoundRpcSend + 2u, static_cast<uint8_t>(cmd->openFile));
+                    port::store<uint8_t>(globals::kSoundRpcSend + 0xC4u, 0);
+                    port::store<uint16_t>(globals::kSoundRpcSend, static_cast<uint16_t>(cmd->midiOpen.id));
                     call(0x1001);
                     break;
                 case 10:
-                    path(kSend + 3u, 0x001B9D50u, port::load<uint32_t>(args));
-                    port::store<uint8_t>(kSend + 0x43u, port::load<uint8_t>(args + 4u));
-                    port::store<uint16_t>(kSend, port::load<uint16_t>(args + 8u));
+                    path(globals::kSoundRpcSend + 3u, globals::kSoundPathSq, port::load<uint32_t>(args));
+                    port::store<uint8_t>(globals::kSoundRpcSend + 0x43u, port::load<uint8_t>(args + 4u));
+                    port::store<uint16_t>(globals::kSoundRpcSend, port::load<uint16_t>(args + 8u));
                     call(0x2002);
                     break;
                 case 11:
@@ -419,7 +419,7 @@ namespace mm
                     copyArguments(6, 0x1026);
                     break;
                 case 18:
-                    port::store<uint16_t>(kSend, port::load<uint16_t>(args));
+                    port::store<uint16_t>(globals::kSoundRpcSend, port::load<uint16_t>(args));
                     call(0x3000);
                     break;
                 case 19:
@@ -435,11 +435,11 @@ namespace mm
                     copyArguments(6, 0x2201);
                     break;
                 case 23:
-                    port::store<uint8_t>(kSend, port::load<uint8_t>(args));
+                    port::store<uint8_t>(globals::kSoundRpcSend, port::load<uint8_t>(args));
                     call(2);
                     break;
                 case 24:
-                    port::store<uint8_t>(kSend, static_cast<uint8_t>(cmd->loadPause));
+                    port::store<uint8_t>(globals::kSoundRpcSend, static_cast<uint8_t>(cmd->loadPause));
                     call(0x3001);
                     break;
                 default:
@@ -450,7 +450,7 @@ namespace mm
         }
         if (waiting() >= 0xC0)
         {
-            sdk::printf(0x001B9DD0u);
+            sdk::printf(globals::kSoundTextUrgentCut);
             const int32_t start = globals::soundCmdSent.get();
             int32_t read = start, write = start;
             while (read != globals::soundCmdIndex.get())
@@ -474,10 +474,10 @@ namespace mm
             if (kept < 0)
                 kept += 0x100;
             globals::soundCmdIndex.set(write);
-            sdk::printf(0x001B9DF0u, kept);
+            sdk::printf(globals::kSoundTextNumber, kept);
         }
         if (waiting() >= 0xC0)
-            sdk::printf(0x001B9E00u);
+            sdk::printf(globals::kSoundTextManyRequests);
     }
 
     PORT_FN(SoundCmd_Flush);

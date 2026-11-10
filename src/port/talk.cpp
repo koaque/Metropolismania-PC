@@ -38,7 +38,7 @@ namespace mm
         uint32_t animTimes(GuestPtr<TalkView> view, int slot) { return (GuestPtr<ps2f>::of(view->animTime[0]) + slot).address; }
 
         // The business card's x by its slot (the table at 0x1B1B38).
-        float cardX(int32_t slot) { return GuestPtr<float>{0x001B1B38u}[slot]; }
+        float cardX(int32_t slot) { return GuestPtr<float>{globals::kTalkCardX}[slot]; }
     }
 
     // The pose stored for a family member in the session's 32-entry table; 0 when there is none.
@@ -56,7 +56,7 @@ namespace mm
     GuestPtr<TalkSession> Talk_ctor(GuestPtr<TalkSession> talk)
     {
         Widget_ctor(GuestPtr<Widget>::of(talk->base));
-        talk->base.vtable = GuestPtr<WidgetVtable>{0x001BD770u};
+        talk->base.vtable = globals::kTalkVtable;
         talk->city = GuestPtr<CityScene>{0};
         talk->view = GuestPtr<TalkView>{0};
         talk->conversation = GuestPtr<Widget>{0};
@@ -69,15 +69,15 @@ namespace mm
     GuestPtr<TalkView> TalkView_ctor(GuestPtr<TalkView> view, GuestPtr<CityScene> city)
     {
         Widget_ctor(GuestPtr<Widget>::of(view->base));
-        view->base.vtable = GuestPtr<WidgetVtable>{0x001BD450u};
+        view->base.vtable = globals::kTalkViewVtable;
         view->forcedChoice = -1;
         view->forceLit = 0;
         view->city = city;
         const GuestPtr<Camera> camera{view->city->cityCamera.address};
         view->eye = camera->eye;
         view->target = camera->target;
-        view->buildingModel = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B2Cu)};
-        view->personModel = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B7Cu)};
+        view->buildingModel = globals::talkSceneModel.get();
+        view->personModel = globals::talkPersonModel.get();
         view->color[0] = 0.5f;
         view->color[1] = 0.5f;
         view->color[2] = 0.5f;
@@ -590,7 +590,7 @@ namespace mm
     GuestPtr<TalkView> TalkOccupantNear_ctor(GuestPtr<TalkView> view, GuestPtr<CityScene> city, int object, int person)
     {
         TalkView_ctor(view, city);
-        view->base.vtable = GuestPtr<WidgetVtable>{0x001BD630u};
+        view->base.vtable = globals::kTalkOccupantNearVtable;
         view->targetObject = object;
         view->targetPerson = person;
         TalkView_PersonCamera(view, object, ownTarget(view), ownEye(view));
@@ -602,7 +602,7 @@ namespace mm
     GuestPtr<TalkView> TalkOccupantFar_ctor(GuestPtr<TalkView> view, GuestPtr<CityScene> city, int object, int person)
     {
         TalkView_ctor(view, city);
-        view->base.vtable = GuestPtr<WidgetVtable>{0x001BD5E0u};
+        view->base.vtable = globals::kTalkOccupantFarVtable;
         view->targetObject = object;
         view->targetPerson = person;
         const uint32_t camera = city->cityCamera.address;
@@ -719,7 +719,7 @@ namespace mm
     GuestPtr<TalkView> TalkPhoneMember_ctor(GuestPtr<TalkView> view, GuestPtr<CityScene> city, int family, int member)
     {
         TalkView_ctor(view, city);
-        view->base.vtable = GuestPtr<WidgetVtable>{0x001BD4F0u};
+        view->base.vtable = globals::kTalkPhoneMemberVtable;
         view->targetObject = family;
         view->targetPerson = member;
         return view;
@@ -862,7 +862,7 @@ namespace mm
         card->family = family;
         card->member = member;
         card->slot = slot;
-        const int column = GuestPtr<int32_t>{0x001B1B28u}[card->slot]; // the card's screen column by slot
+        const int column = GuestPtr<int32_t>{globals::kTalkCardColumns}[card->slot]; // the card's screen column by slot
         TextBox_SetPos(card->upperText, (column + 0x6C0) * 0x10, 0x7C00, -0x100000);
         TextBox_SetPos(card->lowerText, (column + 0x6C0) * 0x10, 0x7D60, -0x100000);
         Frame_SetRect(card->frame, column + 0xB0, 0x45, 0x18, 0xC);
@@ -1230,7 +1230,7 @@ namespace mm
     {
         if (money)
         {
-            money->base.vtable = GuestPtr<WidgetVtable>{0x001BD7C0u};
+            money->base.vtable = globals::kTalkMoneyVtable;
             lifetime::deleteTextBox(money.field(&TalkMoney::text).address);
             Widget_dtor(GuestPtr<Widget>{money.address}, 0);
             if (0 < deleteFlag)
@@ -1243,7 +1243,7 @@ namespace mm
     {
         if (card)
         {
-            card->base.vtable = GuestPtr<WidgetVtable>{0x001BD720u};
+            card->base.vtable = globals::kTalkCardVtable;
             lifetime::deleteTextBox(card.field(&TalkCard::lowerText).address);
             lifetime::deleteTextBox(card.field(&TalkCard::upperText).address);
             lifetime::deleteFrame(card.field(&TalkCard::frame).address);
@@ -1259,7 +1259,7 @@ namespace mm
     {
         if (talk)
         {
-            talk->base.vtable = GuestPtr<WidgetVtable>{0x001BD770u};
+            talk->base.vtable = globals::kTalkVtable;
             lifetime::deleteVirtual(talk.field(&TalkSession::conversation).address, 8);
             lifetime::deleteVirtual(talk.field(&TalkSession::view).address, 8);
             Widget_dtor(GuestPtr<Widget>{talk.address}, 0);
@@ -1274,7 +1274,7 @@ namespace mm
     {
         if (view)
         {
-            view->base.vtable = GuestPtr<WidgetVtable>{0x001BD450u};
+            view->base.vtable = globals::kTalkViewVtable;
             for (uint32_t i = 0; i < 4u; ++i)
             {
                 lifetime::deleteTextBox((view.field(&TalkView::nameBoxes) + i).address);
@@ -1325,11 +1325,11 @@ namespace mm
     namespace
     {
         // Each view class sets its own vtable (at +8), then runs the base view's destructor without deleting.
-        GuestPtr<TalkView> talkViewDtor(GuestPtr<TalkView> view, int16_t deleteFlag, uint32_t vtable)
+        GuestPtr<TalkView> talkViewDtor(GuestPtr<TalkView> view, int16_t deleteFlag, GuestPtr<WidgetVtable> vtable)
         {
             if (view)
             {
-                view->base.vtable = GuestPtr<WidgetVtable>{vtable};
+                view->base.vtable = vtable;
                 TalkView_dtor(view, 0);
                 if (0 < deleteFlag)
                     sdk::operator_delete(view.address);
@@ -1338,15 +1338,50 @@ namespace mm
         }
     }
 
-    GuestPtr<TalkView> TalkPhoneFamily_dtor(GuestPtr<TalkView> view, int16_t deleteFlag) { return talkViewDtor(view, deleteFlag, 0x001BD4A0u); }
-    GuestPtr<TalkView> TalkPhoneMember_dtor(GuestPtr<TalkView> view, int16_t deleteFlag) { return talkViewDtor(view, deleteFlag, 0x001BD4F0u); }
-    GuestPtr<TalkView> TalkBldgFar_dtor(GuestPtr<TalkView> view, int16_t deleteFlag) { return talkViewDtor(view, deleteFlag, 0x001BD540u); }
-    GuestPtr<TalkView> TalkBldgNear_dtor(GuestPtr<TalkView> view, int16_t deleteFlag) { return talkViewDtor(view, deleteFlag, 0x001BD590u); }
-    GuestPtr<TalkView> TalkOccupantFar_dtor(GuestPtr<TalkView> view, int16_t deleteFlag) { return talkViewDtor(view, deleteFlag, 0x001BD5E0u); }
-    GuestPtr<TalkView> TalkOccupantNear_dtor(GuestPtr<TalkView> view, int16_t deleteFlag) { return talkViewDtor(view, deleteFlag, 0x001BD630u); }
-    GuestPtr<TalkView> TalkPersonFar_dtor(GuestPtr<TalkView> view, int16_t deleteFlag) { return talkViewDtor(view, deleteFlag, 0x001BD680u); }
-    GuestPtr<TalkView> TalkPersonNear_dtor(GuestPtr<TalkView> view, int16_t deleteFlag) { return talkViewDtor(view, deleteFlag, 0x001BD6D0u); }
-    GuestPtr<TalkView> MyHome_dtor(GuestPtr<TalkView> view, int16_t deleteFlag) { return talkViewDtor(view, deleteFlag, 0x001BD810u); }
+    GuestPtr<TalkView> TalkPhoneFamily_dtor(GuestPtr<TalkView> view, int16_t deleteFlag)
+    {
+        return talkViewDtor(view, deleteFlag, globals::kTalkPhoneFamilyVtable);
+    }
+
+    GuestPtr<TalkView> TalkPhoneMember_dtor(GuestPtr<TalkView> view, int16_t deleteFlag)
+    {
+        return talkViewDtor(view, deleteFlag, globals::kTalkPhoneMemberVtable);
+    }
+
+    GuestPtr<TalkView> TalkBldgFar_dtor(GuestPtr<TalkView> view, int16_t deleteFlag)
+    {
+        return talkViewDtor(view, deleteFlag, globals::kTalkBldgFarVtable);
+    }
+
+    GuestPtr<TalkView> TalkBldgNear_dtor(GuestPtr<TalkView> view, int16_t deleteFlag)
+    {
+        return talkViewDtor(view, deleteFlag, globals::kTalkBldgNearVtable);
+    }
+
+    GuestPtr<TalkView> TalkOccupantFar_dtor(GuestPtr<TalkView> view, int16_t deleteFlag)
+    {
+        return talkViewDtor(view, deleteFlag, globals::kTalkOccupantFarVtable);
+    }
+
+    GuestPtr<TalkView> TalkOccupantNear_dtor(GuestPtr<TalkView> view, int16_t deleteFlag)
+    {
+        return talkViewDtor(view, deleteFlag, globals::kTalkOccupantNearVtable);
+    }
+
+    GuestPtr<TalkView> TalkPersonFar_dtor(GuestPtr<TalkView> view, int16_t deleteFlag)
+    {
+        return talkViewDtor(view, deleteFlag, globals::kTalkPersonFarVtable);
+    }
+
+    GuestPtr<TalkView> TalkPersonNear_dtor(GuestPtr<TalkView> view, int16_t deleteFlag)
+    {
+        return talkViewDtor(view, deleteFlag, globals::kTalkPersonNearVtable);
+    }
+
+    GuestPtr<TalkView> MyHome_dtor(GuestPtr<TalkView> view, int16_t deleteFlag)
+    {
+        return talkViewDtor(view, deleteFlag, globals::kMyHomeVtable);
+    }
 
     // The conversation window: its business card, menu window and money panel (card, menu, panel) and the name entry
     // (nameEntry) delete themselves through their vtables, then the message window below it.
@@ -1354,7 +1389,7 @@ namespace mm
     {
         if (conv)
         {
-            conv->base.base.vtable = GuestPtr<WidgetVtable>{0x001BD860u};
+            conv->base.base.vtable = globals::kTalkConvVtable;
             lifetime::deleteVirtual(conv.field(&TalkConv::card).address, 8);
             lifetime::deleteVirtual(conv.field(&TalkConv::menu).address, 8);
             lifetime::deleteVirtual(conv.field(&TalkConv::panel).address, 8);
@@ -1383,10 +1418,10 @@ namespace mm
     GuestPtr<TalkMoney> TalkMoney_ctor(GuestPtr<TalkMoney> money, int amount)
     {
         Widget_ctor(GuestPtr<Widget>{money.address});
-        money->base.vtable = GuestPtr<WidgetVtable>{0x001BD7C0u};
+        money->base.vtable = globals::kTalkMoneyVtable;
         money->amount = amount;
         money->shown = amount;
-        money->model = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B2Cu)};
+        money->model = globals::talkSceneModel.get();
         const uint32_t box = sdk::operator_new(0x40u);
         money->text = box != 0u ? TextBox_Init(GuestPtr<TextBox>{box}, 8, 1, -2) : GuestPtr<TextBox>{0u};
         TextBox_SetPos(money->text, 0x8040, 0x85A0, -0x100000);
@@ -1406,9 +1441,9 @@ namespace mm
             return memory != 0u ? TextBox_Init(GuestPtr<TextBox>{memory}, columns, rows, -1).address : 0u;
         };
         Widget_ctor(GuestPtr<Widget>{c});
-        card->base.vtable = GuestPtr<WidgetVtable>{0x001BD720u};
+        card->base.vtable = globals::kTalkCardVtable;
         card->city = city;
-        card->model = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B2Cu)};
+        card->model = globals::talkSceneModel.get();
         card->lowerText = GuestPtr<TextBox>{newBox(9, 6)};
         card->upperText = GuestPtr<TextBox>{newBox(0xE, 2)};
         const uint32_t memory = sdk::operator_new(0xC0u);
@@ -1438,7 +1473,7 @@ namespace mm
         }
         const uint32_t cursor = sdk::operator_new(0xC0u);
         view->cursorFrame = cursor != 0u ? Frame_ctor(GuestPtr<Frame>{cursor}, 0x33, 0x64, 0x64, 0x18, 0xC, 0x10000000u) : GuestPtr<Frame>{0u};
-        view->awayModel = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B40u)};
+        view->awayModel = globals::awayModel.get();
         view->rowX = std::bit_cast<float>(0xBE99999Au);
         view->idleTime = 0.0f;
         view->scrollMode = 0;
@@ -1460,7 +1495,7 @@ namespace mm
     GuestPtr<TalkView> TalkPhoneFamily_ctor(GuestPtr<TalkView> view, GuestPtr<CityScene> city, int family)
     {
         TalkView_ctor(view, city);
-        view->base.vtable = GuestPtr<WidgetVtable>{0x001BD4A0u};
+        view->base.vtable = globals::kTalkPhoneFamilyVtable;
         view->targetObject = family;
         TalkView_SetTarget(view, 0x3F80, family);
         return view;
@@ -1470,7 +1505,7 @@ namespace mm
     GuestPtr<TalkView> TalkBldgNear_ctor(GuestPtr<TalkView> view, GuestPtr<CityScene> city, int object)
     {
         TalkView_ctor(view, city);
-        view->base.vtable = GuestPtr<WidgetVtable>{0x001BD590u};
+        view->base.vtable = globals::kTalkBldgNearVtable;
         view->targetObject = object;
         TalkView_PersonCamera(view, object, ownTarget(view), ownEye(view));
         TalkView_SetTarget(view, view->targetObject, 0);
@@ -1483,7 +1518,7 @@ namespace mm
     GuestPtr<TalkView> TalkBldgFar_ctor(GuestPtr<TalkView> view, GuestPtr<CityScene> city, int object)
     {
         TalkView_ctor(view, city);
-        view->base.vtable = GuestPtr<WidgetVtable>{0x001BD540u};
+        view->base.vtable = globals::kTalkBldgFarVtable;
         view.as<TalkFarView>()->building = object;
         TalkView_SetTarget(view, farBuilding(view), 0);
         TalkView_CollectOccupants(view);
@@ -1499,7 +1534,7 @@ namespace mm
     {
         const uint32_t c = conv.address;
         MsgWin_ctor(GuestPtr<MsgWin>{c});
-        conv->base.base.vtable = GuestPtr<WidgetVtable>{0x001BD860u};
+        conv->base.base.vtable = globals::kTalkConvVtable;
         conv->city = city;
         uint32_t memory = sdk::operator_new(0x20u);
         if (memory != 0u)
@@ -1548,17 +1583,20 @@ namespace mm
         const int friendship = sdk::fptosi(card->friendship);
         const uint32_t tier = friendship <= 0 ? 0u : (friendship < 0x18 ? 1u : (friendship < 0x30 ? 2u : (friendship < 100 ? 3u : 4u)));
         Text_FormatPadded(GuestPtr<char>{number}, member->age, 2);
-        sdk::sprintf(line, 0x001B9048u, GuestPtr<char>::of(member->givenName[0]).address,
+        sdk::sprintf(line, globals::kTalkCardName, GuestPtr<char>::of(member->givenName[0]).address,
                      GuestPtr<char>::of(member->surname[0]).address, number);
         TextBox_SetText(card->upperText, GuestPtr<char>{line}, 0);
-        sdk::sprintf(line, 0x001B9058u, port::load<uint32_t>(0x001B1B10u + 4u * tier));
-        const uint32_t table = port::load<uint32_t>(0x001F3CE8u);
-        sdk::sprintf(line + static_cast<uint32_t>(sdk::strlen(line)), 0x001B9058u, table + port::load<uint16_t>(table + 2u * (variant + charType * 3u)));
+        sdk::sprintf(line, globals::kTalkCardLine, port::load<uint32_t>(globals::kTalkTierTexts + 4u * tier));
+        const uint32_t table = globals::profileBlock.get();
+        sdk::sprintf(line + static_cast<uint32_t>(sdk::strlen(line)), globals::kTalkCardLine,
+                     table + port::load<uint16_t>(table + 2u * (variant + charType * 3u)));
         if (card->person == 6000)
-            sdk::strcat(line, 0x001B9060u);
+            sdk::strcat(line, globals::kTalkCardNextTown);
         else
         {
-            constexpr uint32_t kMoodText[] = {0x001B9080u, 0x001B90A0u, 0x001B90B8u, 0x001B90D0u, 0x001B90E8u};
+            constexpr uint32_t kMoodText[] = {globals::kTalkCardJustIntroduced, globals::kTalkCardMetMomentAgo,
+                                              globals::kTalkCardMetToday, globals::kTalkCardFirstToday,
+                                              globals::kTalkCardBeenAwhile};
             if (card->mood >= 0 && card->mood <= 4)
                 sdk::strcat(line, kMoodText[card->mood]);
         }
@@ -1685,7 +1723,7 @@ namespace mm
         if (pass != 2 || card->base.state != 3)
             return;
         const uint32_t node = worldMatrix(modelNode(card->model, 8)).address;
-        Mat4_Copy(GuestPtr<Vec4>{node}, GuestPtr<Vec4>{0x001B2550u});
+        Mat4_Copy(GuestPtr<Vec4>{node}, GuestPtr<Vec4>{globals::kIdentityMatrix});
         const GuestPtr<Vec4> place = GuestPtr<Vec4>{node} + 3;
         place->x = cardX(card->slot);
         place->y = std::bit_cast<float>(0xBD79DB23u); // -0.0608
@@ -1944,18 +1982,18 @@ namespace mm
         const GuestPtr<CharClass> cls = globals::charClass(record->members[member].charType);
         Dma_AppendCall(static_cast<int>(GuestPtr<uint8_t>::of(view->packet[0]).address));
         const GuestPtr<Vec4> matrix{sp + 0xA0u};
-        Mat4_Copy(matrix, GuestPtr<Vec4>{0x001B2550u});
+        Mat4_Copy(matrix, GuestPtr<Vec4>{globals::kIdentityMatrix});
         setTalkPlace(matrix[3]);
         if ((cls->flags & 2u) != 0)
         {
             const GuestPtr<A3DObject> model = view->personModel;
-            Mat4_Copy(GuestPtr<Vec4>::of(model->matrix[0]), GuestPtr<Vec4>{0x001B2550u});
+            Mat4_Copy(GuestPtr<Vec4>::of(model->matrix[0]), GuestPtr<Vec4>{globals::kIdentityMatrix});
             copyPlace(model->matrix[3], matrix[3]);
-            Instance_DrawModel(view->personModel, GuestPtr<Vec4>{0x001B26C0u}, 0, 0);
+            Instance_DrawModel(view->personModel, GuestPtr<Vec4>{globals::kDefaultColour}, 0, 0);
             const ps2f dropped = ps2f(matrix[3].y) - ps2f(std::bit_cast<float>(0x3E19999Au));
             matrix[3].y = dropped.v;
         }
-        port::callGuest<void>(cls->vtable->drawAt, cls.address, view->city, 0, family, member, matrix.address, 0x001B26C0u,
+        port::callGuest<void>(cls->vtable->drawAt, cls.address, view->city, 0, family, member, matrix.address, globals::kDefaultColour,
                               animSlots(view, 0), animTimes(view, 0));
         if (view->animTime[0] == ps2f(0.0f) && view->anim[0] != 7)
             view->anim[0] = 7;
@@ -2210,20 +2248,22 @@ namespace mm
             }
             const GuestPtr<NameEntry> entry{conv->nameEntry.address};
             if (conv->code < -0x7A8)
-                NameEntry_Setup(entry, 0, 0xF, 0, 0, GuestPtr<char>{0x001C5380u + (static_cast<uint32_t>(conv->code + 0x7D0) << 4)});
+                NameEntry_Setup(entry, 0, 0xF, 0, 0,
+                                GuestPtr<char>{globals::kStageState + (static_cast<uint32_t>(conv->code + 0x7D0) << 4)});
             else
             {
-                constexpr uint32_t kBuffer = 0x001F4E90u, kBlank = 0x001B90F8u;
                 const GuestPtr<char> text = Words_GetEntryDefault();
-                sdk::strcpy(kBuffer, text.address);
-                for (uint32_t last = kBuffer + static_cast<uint32_t>(sdk::strlen(kBuffer)) - 1u; last >= kBuffer; --last)
+                sdk::strcpy(globals::kTalkNameBuffer, text.address);
+                for (uint32_t last = globals::kTalkNameBuffer + static_cast<uint32_t>(sdk::strlen(globals::kTalkNameBuffer)) - 1u;
+                     last >= globals::kTalkNameBuffer; --last)
                 {
-                    if (sdk::strncmp(last, kBlank, 1) != 0)
+                    if (sdk::strncmp(last, globals::kTalkTextBlank, 1) != 0)
                         break;
                     port::store<uint8_t>(last, 0);
                 }
                 const uint32_t mode = static_cast<uint32_t>(Words_GetEntryMode()) & 0xFFu;
-                NameEntry_Setup(entry, mode, static_cast<uint8_t>(sdk::strlen(text.address)), 0, 0, GuestPtr<char>{kBuffer});
+                NameEntry_Setup(entry, mode, static_cast<uint8_t>(sdk::strlen(text.address)), 0, 0,
+                                GuestPtr<char>{globals::kTalkNameBuffer});
             }
             conv->base.base.state = 8;
             return;
@@ -2240,7 +2280,7 @@ namespace mm
         {
             uint32_t panel = sdk::operator_new(0x1Cu);
             if (panel != 0u)
-                panel = TalkMoney_ctor(GuestPtr<TalkMoney>{panel}, port::load<int32_t>(0x001C5540u)).address;
+                panel = TalkMoney_ctor(GuestPtr<TalkMoney>{panel}, globals::stageState()->money).address;
             conv->panel = GuestPtr<Widget>{panel};
         }
         callSlot(conv->panel.address, &WidgetVtable::open);
@@ -2287,7 +2327,9 @@ namespace mm
         const auto drawNode = [&](uint32_t node) {
             const GuestPtr<A3DObject> model{view->buildingModel.address};
             const bool allAsleep = TalkView_AllAsleep(view, byFamily, target) != 0;
-            A3DObject_ChangeLuminosity(model, GuestPtr<Vec4>{allAsleep ? 0x001B1B00u : 0x001B26C0u}, static_cast<int>(node));
+            A3DObject_ChangeLuminosity(model,
+                                       GuestPtr<Vec4>{allAsleep ? globals::kTalkAsleepColour : globals::kDefaultColour},
+                                       static_cast<int>(node));
             const GuestPtr<Vec4> matrix = worldMatrix(modelNode(model, static_cast<int>(node)));
             Mat4_Copy(matrix, GuestPtr<Vec4>{globals::kIdentityMatrix});
             matrix[3].x = 0.0f;
@@ -2307,10 +2349,10 @@ namespace mm
             frame->place[3].x = btype->talkEye.x;
             frame->place[3].y = btype->talkEye.y;
             frame->place[3].z = btype->talkEye.z;
-            Packet2_Draw(GuestPtr<uint32_t>{city->lights.address}, 1);
+            LightSet_SelectProgram(city->lights, 1);
             Instance_DrawMesh(globals::businessModel.get(), place, GuestPtr<Vec4>{globals::kDefaultColour},
                               btype->builtMesh, 1);
-            Packet2_Draw(GuestPtr<uint32_t>{city->lights.address}, 0);
+            LightSet_SelectProgram(city->lights, 0);
         }
         else if ((flags & 0x4000u) != 0)
         {
@@ -2342,7 +2384,6 @@ namespace mm
         const uint32_t sp = frame.ptr().address;
         const GuestPtr<Vec4> matrix{sp + 0xB0u}, pos{sp + 0xF0u}, colour{sp + 0x100u};
         Vec4 &row3 = matrix[3];
-        constexpr uint32_t kDimAway = 0x001B1AD0u, kDimPerson = 0x001B1AE0u, kSeparator = 0x001B8FF8u;
         const ps2f step = std::bit_cast<float>(0x3E99999Au); // 0.3
         const ps2f leftEdge = std::bit_cast<float>(0xBF4CCCCDu), rightEdge = std::bit_cast<float>(0x3F4CCCCDu);
         const ps2f cullEdge = -1.0f;
@@ -2385,7 +2426,7 @@ namespace mm
             if (!(phase < ps2f(180.0f)))
                 phase = phase - ps2f(180.0f);
             A3D_AnimateIfRoom(view->awayModel, 0, phase);
-            Instance_DrawModel(view->awayModel, GuestPtr<Vec4>{allAsleep ? kDimAway : globals::kDefaultColour}, 0, 0);
+            Instance_DrawModel(view->awayModel, GuestPtr<Vec4>{allAsleep ? globals::kTalkDimAway : globals::kDefaultColour}, 0, 0);
         };
         // Someone there: the class draws it (for a family member the person is 0 and the family and member are given, for a person on
         // the map it is the record).
@@ -2406,7 +2447,7 @@ namespace mm
                 const GuestPtr<A3DObject> model = view->personModel;
                 Mat4_Copy(GuestPtr<Vec4>::of(model->matrix[0]), GuestPtr<Vec4>{globals::kIdentityMatrix});
                 copyPlace(model->matrix[3], *pos);
-                Instance_DrawModel(model, GuestPtr<Vec4>{allAsleep ? kDimPerson : globals::kDefaultColour}, 0, 0);
+                Instance_DrawModel(model, GuestPtr<Vec4>{allAsleep ? globals::kTalkDimPerson : globals::kDefaultColour}, 0, 0);
                 const ps2f lowered = ps2f(row3.y) - ps2f(std::bit_cast<float>(0x3E19999Au));
                 row3.y = lowered.v;
             }
@@ -2421,7 +2462,7 @@ namespace mm
             const GuestPtr<FamilyMember> who{record};
             TextBox_SetPos(box, screenX(0x7060), (row + 0x790) * 16, depth);
             TextBox_SetText(box, GuestPtr<char>::of(who->givenName[0]), 0);
-            TextBox_AppendText(box, GuestPtr<char>{kSeparator}, 0);
+            TextBox_AppendText(box, GuestPtr<char>{globals::kTalkTextSeparator}, 0);
             TextBox_AppendText(box, GuestPtr<char>::of(who->surname[0]), 0);
             TextBox_Draw(box);
             const int band = Family_GetFriendshipBand(family, member);

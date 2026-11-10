@@ -248,7 +248,7 @@ namespace mm
     // After an event's claims are removed (mm_Event_RemoveClaims): the buildings in the 80 tile lists whose chosen claim
     // now has id 0 (the removed one) drop it: meter 0, claim slot 0x18 (none), flags 8 and 0x40 cleared. Those already
     // at slot 0x18 are left.
-    void Event_ReleaseTiles(GuestPtr<CityScene> city)
+    void Event_DropRemovedClaims(GuestPtr<CityScene> city)
     {
         port::GuestFrame<0x70> frame;
         const GuestPtr<uint32_t> count{frame.ptr().address + 0x6Cu};
@@ -259,12 +259,12 @@ namespace mm
             for (GuestPtr<uint16_t> item = items; item < end; ++item)
             {
                 const GuestPtr<MapObject> building = Map_GetRecord(city->map, *item);
-                if (building->claimSlot == 0x18)
+                if (building->claimSlot == kNoClaim)
                     continue;
                 if (Claim_GetList(typeOf(building)->claimB)[building->claimSlot].id != 0)
                     continue;
                 building->claimMeter = 0;
-                building->claimSlot = 0x18;
+                building->claimSlot = kNoClaim;
                 building->flags &= 0xFFF7u;
                 building->flags &= 0xFFBFu;
             }
@@ -1022,7 +1022,7 @@ namespace mm
     PORT_FN(EvActor_Follow);
     PORT_FN(EvActor_Release);
     PORT_FN(EvActor_Notify);
-    PORT_FN(Event_ReleaseTiles);
+    PORT_FN(Event_DropRemovedClaims);
     PORT_FN(EvMissingChildren_End);
     PORT_FN(EvNoodles_End);
     PORT_FN(EvBodyguard_Check);
@@ -2546,7 +2546,7 @@ namespace mm
                 for (GuestPtr<uint16_t> item = items; item < end; ++item)
                 {
                     const GuestPtr<MapObject> building = Map_GetRecord(city->map, *item);
-                    if (building->claimSlot == 0x18 || ClaimMeter_Level(building->claimMeter) == 0)
+                    if (building->claimSlot == kNoClaim || ClaimMeter_Level(building->claimMeter) == 0)
                         continue;
                     const GuestPtr<ClaimEntry> claim = Claim_GetList(typeOf(building)->claimB) + building->claimSlot;
                     if (claim->wish != 0)
@@ -2596,8 +2596,10 @@ namespace mm
     namespace
     {
         // Event handlers: the table 0x1AF0D0 points at one EventHandler per handler id (EventType.handler, 0 = none).
-        constexpr uint32_t kEventHandlers = 0x001AF0D0u;
-        GuestPtr<EventHandler> eventHandler(uint32_t id) { return GuestPtr<EventHandler>{port::load<uint32_t>(kEventHandlers + 4u * id)}; }
+        GuestPtr<EventHandler> eventHandler(uint32_t id)
+        {
+            return GuestPtr<EventHandler>{port::load<uint32_t>(globals::kEventHandlers + 4u * id)};
+        }
 
         // The handler slot `slot` of the event's type; 0 when the type has no handler or the handler lacks the slot.
         uint32_t handlerSlot(GuestPtr<EventData> data, uint32_t EventHandler::*slot)
@@ -2699,8 +2701,7 @@ namespace mm
     // for each left). Other values give an empty text.
     GuestPtr<char> EvPayday_Text(GuestPtr<EventData>, GuestPtr<CityScene> city, uint32_t value)
     {
-        constexpr uint32_t kEventText = 0x0020B890u;
-        const GuestPtr<char> out{kEventText};
+        const GuestPtr<char> out{globals::kEventText};
         switch (value)
         {
         case 0:
@@ -2727,7 +2728,7 @@ namespace mm
                                                        4u * static_cast<uint32_t>(globals::familiesLeftEvent.get())));
             break;
         default:
-            port::store<uint8_t>(kEventText, 0);
+            port::store<uint8_t>(globals::kEventText, 0);
             break;
         }
         return out;
@@ -3013,7 +3014,8 @@ namespace mm
                 port::callGuest<void>(function, talk, city, third);
         }
 
-        // The event type's own ending (its handler's End slot), its claims removed and released.
+        // The event type's own ending (its handler's End slot), its claims removed, and dropped by the buildings
+        // that had chosen them.
         void endEventHandler(GuestPtr<EventType> row, GuestPtr<EventData> talk, GuestPtr<CityScene> city)
         {
             callHandler(row, &EventHandler::end, talk, city, talk->kind); // a2 is the type byte the original had just loaded
@@ -3021,7 +3023,7 @@ namespace mm
             if (claimList != 0)
             {
                 Event_RemoveClaims(static_cast<int>(claimList) - 1);
-                Event_ReleaseTiles(city);
+                Event_DropRemovedClaims(city);
             }
         }
 
@@ -3799,13 +3801,12 @@ namespace mm
         data->actor.object = person->home;
         data->actor.family = person->family;
         data->actor.member = person->member;
-        constexpr uint32_t kSerial = 0x001BDD5Cu, kShopCount = 0x001BDAB0u;
-        const int32_t serial = port::load<int32_t>(kSerial);
+        const int32_t serial = globals::shoppingSerial.get();
         shopping->shop = serial;
         const GuestPtr<ShoppingList> list = globals::shoppingList(serial);
-        port::store<int32_t>(kSerial, serial + 1);
-        if (!(serial + 1 < port::load<int32_t>(kShopCount)))
-            port::store<int32_t>(kSerial, 0);
+        globals::shoppingSerial.set(serial + 1);
+        if (!(serial + 1 < globals::goodsTextCount.get()))
+            globals::shoppingSerial.set(0);
         sdk::memcpy(frame.at(&Locals::wanted).address, GuestPtr<uint16_t>::of(list->goods[0]).address, 8);
         int remaining = 0;
         while (remaining < 4 && frame->wanted[remaining] != 0)
@@ -3878,7 +3879,7 @@ namespace mm
             const uint32_t object = sdk::operator_new(size);
             if (object == 0u)
                 return 0u;
-            port::store<uint32_t>(object, 0x001BD908u);
+            port::store<uint32_t>(object, globals::kTalkEventBaseVtable);
             port::store<uint8_t>(object + 8u, 0);
             port::store<uint8_t>(object + 9u, 0);
             const uint32_t dataSize = port::callGuest<uint32_t>(port::load<uint32_t>(port::load<uint32_t>(object) + 8u), object);
@@ -3886,7 +3887,7 @@ namespace mm
             if (derived)
             {
                 // The talk event the script works with: the derived class (vtable 0x1BD8F8) with 0x60 more bytes cleared.
-                port::store<uint32_t>(object, 0x001BD8F8u);
+                port::store<uint32_t>(object, globals::kTalkEventVtable);
                 sdk::memset(object + 0x24u, 0, 0x60);
             }
             return object;
@@ -3939,7 +3940,7 @@ namespace mm
     {
         port::GuestLocal<GameFile> file;
         File_ctor(file, 0);
-        if (File_Open(file, GuestPtr<char>{0x001B6370u}) >= 0)
+        if (File_Open(file, GuestPtr<char>{globals::kPathEventBin}) >= 0)
         {
             const uint32_t size = static_cast<uint32_t>(File_Seek(file, 0, 2, 0));
             globals::eventTypeCount.set(static_cast<int32_t>(size / 0x4Cu));
@@ -3994,7 +3995,7 @@ namespace mm
         if (popup != 0)
         {
             const uint32_t object = static_cast<uint32_t>(popup);
-            port::store<uint32_t>(object, 0x001BD8E0u);
+            port::store<uint32_t>(object, globals::kPartyPopupVtable);
             sdk::sceGsSyncPath(0, 0);
             const uint32_t frame = port::load<uint32_t>(object + 4u);
             if (frame != 0u)
@@ -4002,7 +4003,7 @@ namespace mm
                 Frame_DeletingDtor(GuestPtr<Frame>{frame}, 1);
                 port::store<uint32_t>(object + 4u, 0u);
             }
-            port::store<uint32_t>(object, 0x001BD8B0u);
+            port::store<uint32_t>(object, globals::kPartyPopupBaseVtable);
             if (0 < deleteFlag)
                 sdk::operator_delete(object);
         }
@@ -4021,21 +4022,20 @@ namespace mm
         const uint32_t title = GuestPtr<char>::of(globals::eventType(kind)->name[0]).address;
         if (familyB == 0)
             return GuestPtr<char>{title};
-        constexpr uint32_t kBuffer = 0x001C5990u;
         const GuestPtr<Family> family = Family_Get(static_cast<int>(familyB), 0);
-        sdk::strcpy(kBuffer, title);
+        sdk::strcpy(globals::kEventTextBuffer, title);
         const uint32_t name = GuestPtr<char>::of(family->members[entry->memberB].surname[0]).address;
-        const int length = sdk::strlen(kBuffer);
+        const int length = sdk::strlen(globals::kEventTextBuffer);
         const int nameLength = sdk::strlen(name);
         if (static_cast<uint32_t>(length + nameLength) < 0x19u)
-            sdk::strcpy(kBuffer + static_cast<uint32_t>(length), name);
+            sdk::strcpy(globals::kEventTextBuffer + static_cast<uint32_t>(length), name);
         else
         {
-            sdk::memcpy(kBuffer + static_cast<uint32_t>(length), name, 0x17 - length);
-            port::store<uint8_t>(0x001C59A7u, 0xC4);
-            port::store<uint8_t>(0x001C59A8u, 0);
+            sdk::memcpy(globals::kEventTextBuffer + static_cast<uint32_t>(length), name, 0x17 - length);
+            port::store<uint8_t>(globals::kEventTextBuffer + 0x17u, 0xC4);
+            port::store<uint8_t>(globals::kEventTextBuffer + 0x18u, 0);
         }
-        return GuestPtr<char>{kBuffer};
+        return GuestPtr<char>{globals::kEventTextBuffer};
     }
 
     PORT_FN(Event_FormatText);
@@ -4948,10 +4948,9 @@ namespace mm
         static_assert(offsetof(Locals, playerMatrix) == 0x40 && offsetof(Locals, cursor) == 0x8E && sizeof(Locals) == 0x90);
         port::GuestFrameOf<Locals> frame;
         const GuestPtr<EvPartyData> party = data.as<EvPartyData>();
-        constexpr uint32_t kVoiceA = 0x001BDD14u, kVoiceB = 0x001BDD18u, kPartyFlag = 0x001BDD24u;
         const auto setVoices = [&]() {
-            port::store<uint8_t>(kVoiceA, 100);
-            port::store<uint8_t>(kVoiceB, 100);
+            globals::bgmFadeCounter.set(static_cast<int8_t>(100));
+            globals::seFadeCounter.set(static_cast<int8_t>(100));
         };
         switch (data->var)
         {
@@ -4987,8 +4986,8 @@ namespace mm
                 uint32_t overlay = sdk::operator_new(8u);
                 if (overlay != 0u)
                 {
-                    port::store<uint32_t>(overlay, 0x001BD8B0u);
-                    port::store<uint32_t>(overlay, 0x001BD8E0u);
+                    port::store<uint32_t>(overlay, globals::kPartyPopupBaseVtable);
+                    port::store<uint32_t>(overlay, globals::kPartyPopupVtable);
                     uint32_t window = sdk::operator_new(0xC0u);
                     if (window != 0u)
                         window = Frame_ctor(GuestPtr<Frame>{window}, 0x14, 0x21C, 0xC0, 0x18, 0xC, 0xFFFFFFFFu).address;
@@ -4999,7 +4998,7 @@ namespace mm
                 party->stageStep = party->stageStep + 1;
                 Bgm_SetPlaying(0, 1);
                 Se_SetEnabled(1, 1);
-                port::store<int32_t>(kPartyFlag, 0);
+                globals::ambienceEnabled.set(0);
                 break;
             }
             case 2:
@@ -5019,7 +5018,7 @@ namespace mm
                     city->overlay = GuestPtr<void>{0u};
                 }
                 data->var = 4;
-                port::store<int32_t>(kPartyFlag, 1);
+                globals::ambienceEnabled.set(1);
                 break;
             }
             default:
@@ -5059,7 +5058,7 @@ namespace mm
         }
         case 5:
         {
-            const uint32_t which = port::load<int32_t>(0x001C5548u) == 4 ? 0u : 1u;
+            const uint32_t which = globals::stageState()->stage == 4 ? 0u : 1u;
             const GuestPtr<ActorRef> actor = actorAt(data, static_cast<int>(which));
             const bool night = city->clock >= 0x13560 || city->clock < 0x5460;
             if ((night ? EvActor_PointCursor(city, actor) : EvActor_Notify(city, actor)) != 0)
@@ -5092,7 +5091,7 @@ namespace mm
                 city->flags = city->flags & ~8u;
                 Se_SetEnabled(1, 1);
                 Bgm_SetPlaying(0, 1);
-                port::store<int32_t>(kPartyFlag, 0);
+                globals::ambienceEnabled.set(0);
                 Event_Finish(city->events, city, 0);
             }
             break;

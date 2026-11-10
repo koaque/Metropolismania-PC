@@ -271,13 +271,13 @@ struct CityMap {
     uint32_t groundPacket;     /* +0x2F68 the program 0x1A5EB0 and groundParams */
     uint32_t sidePackets[2];   /* +0x2F6C per side buffer: the program 0x1A76F0, the parameters and the triangles. The game stores the
                                   first's address in both (mm_Terrain_BuildSidePackets), so odd frames draw the even frame's buffer */
-    RainLayer *rain;              /* +0x2F74 */
-    SnowLayer *snow;              /* +0x2F78 */
-    LayerF *layerF;            /* +0x2F7C */
-    LayerG *water;             /* +0x2F80 */
-    LayerB *layerB;            /* +0x2F84 */
-    PlacementLayer *placement;         /* +0x2F88 */
-    LayerA *instances;         /* +0x2F8C */
+    RainLayer *rain;           /* +0x2F74 */
+    SnowLayer *snow;           /* +0x2F78 */
+    LitRoadLayer *litRoads;    /* +0x2F7C */
+    WaterLayer *water;         /* +0x2F80 */
+    WaterBottomLayer *waterBottom; /* +0x2F84 */
+    PlacementLayer *placement; /* +0x2F88 */
+    ClaimMetLayer *claimMet;          /* +0x2F8C the claim-met effects (layer A) */
 };
 
 /* A building type's record in DATA\BIN\STRTYPE.BIN (0x9C bytes): mm_BldgType_BaseCtor copies it into the type object, and
@@ -674,7 +674,8 @@ struct ClaimThresholds {
 struct ClaimEntry {
     uint8_t wish;              /* +0x00 0: what the neighbours supply counts down from the value (a need, met at 0);
                                   else it counts up from minus the value, up to 0xFF (mm_BldgClaims_CountNearby) */
-    uint8_t unk_01;
+    uint8_t unk_01;            /* +0x01 0 to 100 in steps of ten on the disc (100 in every event claim); no code
+                                  reads it */
     uint16_t id;               /* +0x02 the item claimed, or from 0x8000 a group of items (mm_Claim_GetGroup) */
     uint16_t value;            /* +0x04 the starting value; for id 0x32 the weight while the building has no entrance */
     uint16_t reach;            /* +0x06 tiles around the footprint the neighbours count in */
@@ -949,7 +950,7 @@ struct CityScene {
                                   bad cops and teachers) */
     int32_t conductCount;      /* +0xAC */
     float waterLevel;          /* +0xB0 height of the water surface, 0.5 (heights grow downwards: deeper tiles are under
-                                  water; mm_LayerG_Draw, mm_Se_PickTerrainAmbience) */
+                                  water; mm_WaterLayer_Draw, mm_Se_PickTerrainAmbience) */
     uint32_t flags;            /* +0xB4 1 buildings tinted by claim (set at construction), 2 holiday month, 4 popular
                                   (approval 118+), 8 a farewell party is on, 0x10 the city scene ends, 0x20 a cold going
                                   round: rolled each month from October to March (1 in 4), more people fall ill

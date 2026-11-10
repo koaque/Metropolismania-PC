@@ -92,14 +92,14 @@ typedef struct StageName StageName;
 typedef struct StageState StageState;
 typedef struct TexImage TexImage;
 typedef struct TexImageFile TexImageFile;
-typedef struct LayerA LayerA;
-typedef struct LayerB LayerB;
+typedef struct ClaimMetLayer ClaimMetLayer;
+typedef struct WaterBottomLayer WaterBottomLayer;
 typedef struct PlacementLayer PlacementLayer;
 typedef struct RainLayer RainLayer;
 typedef struct SnowLayer SnowLayer;
-typedef struct LayerF LayerF;
-typedef struct LayerG LayerG;
-typedef struct LayerAInstance LayerAInstance;
+typedef struct LitRoadLayer LitRoadLayer;
+typedef struct WaterLayer WaterLayer;
+typedef struct ClaimMetInstance ClaimMetInstance;
 typedef struct CharPartModel CharPartModel;
 typedef struct TerrainPassParams TerrainPassParams;
 typedef struct A3DModel A3DModel;
@@ -389,8 +389,9 @@ struct CityCursorView {
 /* Light set (0x1B0 bytes): the colour table of the model programs, two groups of twelve, coloured by the clock
    (mm_LightSet_UpdateByClock). Its two packets upload +0x10..+0x1AF to VU1 0x12..0x2B (docs/RENDER_PIPELINE.md). */
 struct LightSet {
-    uint32_t packetA;          /* +0x00 for program 0x1A3C80 (mm_LightSet_BuildPackets) */
-    uint32_t packetB;          /* +0x04 for program 0x1A4780 */
+    uint32_t packets[2];       /* +0x00 the model programs' packets (mm_LightSet_BuildPackets), picked by
+                                  mm_LightSet_SelectProgram: 0x1A3C80 for people, the player and the menus' models,
+                                  0x1A4780 for buildings and objects (it also clips walls next to the camera) */
     uint8_t unk_08[8];
     Vec4 groupA[12];           /* +0x10 VU1 0x12..0x1D: entry 1 the colour from the table 0x1B0550, entry 3 (4, 1, 1, 2) */
     Vec4 groupB[12];           /* +0xD0 VU1 0x1E..0x29: entries 1 and 2 the colour from the table 0x1B0670, entry 3 (4, 1, 1, 2) */
@@ -1023,7 +1024,7 @@ struct EventSlot {
     uint8_t kind;              /* +0x00 row of the event table, 0 = free (mm_Event_CountActive, mm_WordsFn_EventStage) */
     int8_t stage;              /* +0x01 days left; talk scripts read 3 - stage (mm_WordsFn_EventCountdown) */
     uint8_t unk_02[2];
-    uint16_t familyA;          /* +0x04 the persons a talk script selects (mm_WordsFn_SelectEventPersonA/B) */
+    uint16_t familyA;          /* +0x04 the persons a talk script selects (mm_WordsFn_SelectEventFirstPerson/B) */
     uint16_t memberA;          /* +0x06 */
     uint16_t familyB;          /* +0x08 */
     uint16_t memberB;          /* +0x0A */
@@ -1244,7 +1245,9 @@ struct TownPages {
 struct StageName { char text[0x10]; };
 /* Stage state at 0x1C5380, saved with the city (0x284 bytes). */
 struct StageState {
-    StageName names[26];       /* +0x000 the city's name, the mayor's name, ... (cleared by mm_Stage_Reset) */
+    StageName names[26];       /* +0x000 0 the city, 1 the mayor as typed, 2 printed before it where a given name goes
+                                  (empty in the saves at hand); talk code -2000 + n types names[n] (mm_TalkConv_Active);
+                                  cleared by mm_Stage_Reset */
     uint32_t storyFlagsA[4];   /* +0x1A0 bits the talk scripts test (mm_WordsFn_StoryFlagA); no code sets them */
     uint32_t storyFlagsB[4];   /* +0x1B0 bits the talk scripts set, clear and test (mm_WordsFn_StoryFlagB) */
     int32_t money;             /* +0x1C0 3000 at reset; goods are affordable up to it (mm_WordsFn_CanAfford) */
@@ -1329,42 +1332,46 @@ struct TexImageFile {
    whose flags match its mask. A: claim-met instances (0x2440); B: two passes over raised ground (0x230); C: the
    placement highlight and marker (0x240); D: rain (0x410); E: snow (0x6E0); F: a blended pass (0x140); G: the water (0x2E0). */
 
-/* An instance of layer A (0x90 bytes, mm_LayerA_AddInstance). Its draw packet's RET tag (+0x80) is the next instance's
-   first quadword (layer A's first word, the model, sits in the unused quadword before the first instance). */
-struct LayerAInstance {
+/* An instance of the claim-met layer (0x90 bytes, mm_ClaimMetLayer_AddInstance). Its draw packet's RET tag (+0x80) is the next instance's
+   first quadword (the layer's first word, the model, sits in the unused quadword before the first instance). */
+struct ClaimMetInstance {
     int32_t meshPair;          /* +0x00 draws meshes 2n and 2n + 1 of the layer's model */
     uint8_t unk_04[0xC];
     Vec4 matrix[4];            /* +0x10 a turn about y times a scale in y that grows the effect, then the position */
     uint32_t packet[8];        /* +0x50 CNT 2 tag with FLUSH and DIRECT 2, then a GIF tag of one A+D register */
-    uint32_t alpha;            /* +0x70 ALPHA_1 (0x68: blend with a fixed alpha) */
+    uint32_t alpha;            /* +0x70 ALPHA_1 0x68: the source times FIX / 128, added to the frame */
     int32_t fade;              /* +0x74 ALPHA_1's FIX: 0x40 less 1.5 per step, not below 0 */
     uint32_t alphaRegister[2]; /* +0x78 register 0x42 */
     uint32_t ret[4];           /* +0x80 the packet's RET tag */
 };
-struct LayerA {
+struct ClaimMetLayer {
     A3DObject *model;          /* +0x0000 the model (0x1F3B70) */
     uint8_t unk_0004[0xC];
-    LayerAInstance instances[64]; /* +0x0010 two buffers of 32, the one filled picked by buffer */
+    ClaimMetInstance instances[64]; /* +0x0010 two buffers of 32, the one filled picked by buffer */
     int32_t outputOffset[4];   /* +0x2410 VU1 0x2A (0x110) */
     Vec4 colour;               /* +0x2420 VU1 0x2B (1, 1, 1, 1) */
     int32_t count;             /* +0x2430 instances this frame */
-    uint32_t startPacket;      /* +0x2434 uploads +0x2410 to VU1 0x2A and the program 0x1A8330 (mm_LayerA_BuildPacket) */
+    uint32_t startPacket;      /* +0x2434 uploads +0x2410 to VU1 0x2A and the program 0x1A8330 (mm_ClaimMetLayer_BuildPacket) */
     uint32_t endPacket;        /* +0x2438 ALPHA_1 back to 0x20_00000044 */
-    int32_t buffer;            /* +0x243C the buffer being filled (mm_LayerA_BeginFrame) */
+    int32_t buffer;            /* +0x243C the buffer being filled (mm_ClaimMetLayer_BeginFrame) */
 };
-struct LayerB {
-    TerrainPassParams params;  /* +0x000 to VU1 0x1C by the first packet: mask 0x20 */
-    Vec4 extra;                /* +0x120 VU1 0x2E (0.6, 0.08, 0, 0) */
-    uint32_t packetA;          /* +0x130 the program 0x1AA340 with these parameters */
+/* The water bottom (0x230 bytes; layer B, CityMap.waterBottom): the terrain's quads drawn again at 0.6 of their depth
+   plus 0.08, so that sand (the sea) or rock (the lakes) shows through the water (docs/RENDER_PIPELINE.md). */
+struct WaterBottomLayer {
+    TerrainPassParams params;  /* +0x000 to VU1 0x1C by the first packet: mask 0x20 (the sea), GROUND.TEX's sand */
+    Vec4 extra;                /* +0x120 VU1 0x2E (0.6, 0.08, 0, 0): each corner's height becomes 0.6 y + 0.08 */
+    uint32_t seaPacket;        /* +0x130 the program 0x1AA340 with these parameters */
     uint8_t unk_134[0xCC];
-    uint32_t maskB[4];         /* +0x200 to VU1 0x2D by the second packet: mask 0x40 */
-    uint32_t tex0B[4];         /* +0x210 to VU1 0x1D by the second packet: its texture */
-    uint32_t packetB;          /* +0x220 the second pass */
+    uint32_t lakeMask[4];      /* +0x200 to VU1 0x2D by the second packet: mask 0x40 (the lakes) */
+    uint32_t lakeTex0[4];      /* +0x210 to VU1 0x1D by the second packet: GROUND.TEX's rock */
+    uint32_t lakePacket;       /* +0x220 the second pass, the lakes */
     uint8_t unk_224[0xC];
 };
 struct PlacementLayer {
-    Vec4 colourA;              /* +0x000 VU1 0x1C (255, 0, 0, 128) */
-    Vec4 colourB;              /* +0x010 VU1 0x1D (0, 0, 0, 128) */
+    Vec4 fillColour;           /* +0x000 VU1 0x1C: each highlighted tile's two triangles; (255, 0, 0, 128) at first,
+                                  then the caller's (mm_PlacementLayer_Set): blue (0, 0, 255, 64) where it fits, red
+                                  (255, 0, 0, 64) where not */
+    Vec4 outlineColour;        /* +0x010 VU1 0x1D (0, 0, 0, 128): each tile's outline (an antialiased line strip) */
     uint32_t outputOffset[4];  /* +0x020 VU1 0x1E (0x68) */
     uint32_t gifTag[4];        /* +0x030 VU1 0x1F: 26 loops of 14 registers */
     uint32_t primA[4];         /* +0x040 VU1 0x20 PRIM 0x44: blended triangle strip */
@@ -1383,9 +1390,9 @@ struct PlacementLayer {
 };
 struct RainLayer {
     uint32_t gifTag[4];        /* +0x000 VU1 0x12: 96 loops of RGBAQ, XYZF2 twice, PRIM 0x69 (blended lines) */
-    Vec4 colourA;              /* +0x010 VU1 0x13 (765, 765, 765, 0..40 by the clock): a streak's lower end, times the ambient
+    Vec4 lowerColour;          /* +0x010 VU1 0x13 (765, 765, 765, 0..40 by the clock): a streak's lower end, times the ambient
                                   light and clamped at 255; its w is the alpha */
-    Vec4 colourB;              /* +0x020 VU1 0x14 (765, 765, 765, 0): the upper end, clear */
+    Vec4 upperColour;          /* +0x020 VU1 0x14 (765, 765, 765, 0): the upper end, clear */
     uint32_t mask[4];          /* +0x030 VU1 0x15: x 8, the quad flag mask (every quad has flag 8) */
     Vec4 drops[16];            /* +0x040 VU1 0x16..0x25 (40, y): y falls 0.4 a frame and wraps at 40; a hash of each quad's
                                   position picks one, added to its streaks' heights (wrapped into -40..0) */
@@ -1420,13 +1427,17 @@ struct SnowLayer {
     uint8_t unk_6AC[0x14];
     float angles[8];           /* +0x6C0 of the turns: +0.03 a frame, kept within -pi..pi */
 };
-struct LayerF {
+/* The lit roads (0x140 bytes; layer F, CityMap.litRoads): an additive pass over the road tiles whose piece has its
+   street lamps on (quad flag 0x10: tile flag 0x10 and object flag 0x10). */
+struct LitRoadLayer {
     TerrainPassParams params;  /* +0x000 to VU1 0x1C: mask 0x10, PRIM 0x7C (blended) */
     Vec4 extra;                /* +0x120 VU1 0x2E (not set) */
     uint32_t packet;           /* +0x130 ALPHA_1 0x30_00000048, the program 0x1A91C0 and the parameters */
     uint8_t unk_134[0xC];
 };
-struct LayerG {
+/* The water (0x2E0 bytes; layer G, CityMap.water): the quads with a corner under the water, at the water level with
+   a wave along z, drawn twice with two textures (docs/RENDER_PIPELINE.md). */
+struct WaterLayer {
     Vec4 colour;               /* +0x000 VU1 0x1C (128, 128, 128, 60): times each triangle's light */
     uint8_t unk_010[0x10];     /* +0x010 VU1 0x1D, which the program does not read */
     uint32_t outputOffsets[4]; /* +0x020 VU1 0x1E (0x40, 0x10): the output offset and 16 quads per chunk */
@@ -1434,7 +1445,7 @@ struct LayerG {
     uint32_t primB[4];         /* +0x040 VU1 0x20 PRIM 0x27C: blended strip in GS context 2, with texCoordsA */
     uint32_t primA[4];         /* +0x050 VU1 0x21 PRIM 0x7C: the same in context 1, with texCoordsB */
     Vec4 texCoordsA[12];       /* +0x060 VU1 0x22..0x2D: three sets of four corners' ST, picked like the ground's by the quad's
-                                  set word; s sways, t scrolls (mm_LayerG_AnimateWaves) */
+                                  set word; s sways, t scrolls (mm_WaterLayer_AnimateWaves) */
     Vec4 texCoordsB[12];       /* +0x120 VU1 0x2E..0x39: the second texture's, swaying the other way, scrolling back */
     uint32_t mask[4];          /* +0x1E0 VU1 0x3A: w 2, the quad flag mask (a corner under the water) */
     Vec4 waveParamsA;          /* +0x1F0 VU1 0x3B (1, phase - pi/2, 1/pi, pi): the wave's z scale and phase, and pi for

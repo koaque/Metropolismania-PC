@@ -128,9 +128,9 @@ namespace mm
         while (sdk::sceCdDiskReady(0) != 2)
         {
         }
-        sdk::strcpy(buffer, 0x001B9AE8u);
+        sdk::strcpy(buffer, globals::kDiscPrefix);
         sdk::strcat(buffer, path.address);
-        sdk::strcat(buffer, 0x001B9AF8u);
+        sdk::strcat(buffer, globals::kDiscVersion);
         if (file->async == 0)
             drainQueue();
         file->fd = sdk::sceOpen(buffer, file->async | 1);
@@ -261,7 +261,7 @@ namespace mm
             request->state = 1;
             return v0;
         }
-        v0 = sdk::sceIoctl(request->fd, 1, 0x001BDC94u);
+        v0 = sdk::sceIoctl(request->fd, 1, globals::fileQueueIoctl.address);
         if (request->op == 2 || v0 >= 0)
         {
             if (globals::fileQueueIoctl.get() == 0)
@@ -319,10 +319,10 @@ namespace mm
         const uint32_t base = frame.ptr().address;
         const GuestPtr<GameFile> file{base + 0xB8u};
         File_ctor(file, 0);
-        sdk::sprintf(base + 0x90u, 0x001B9B00u, 0x2BD6);
-        sdk::strcpy(base + 0x10u, 0x001B9B08u);
+        sdk::sprintf(base + 0x90u, globals::kFontPathNumber, 0x2BD6);
+        sdk::strcpy(base + 0x10u, globals::kFontPathStart);
         sdk::strcat(base + 0x10u, base + 0x91u);
-        sdk::strcat(base + 0x10u, 0x001B9B18u);
+        sdk::strcat(base + 0x10u, globals::kFontPathEnd);
         globals::fontData.set(static_cast<uint32_t>(File_LoadWhole(file, GuestPtr<char>{base + 0x10u}, GuestPtr<int32_t>{0u})));
         File_dtor(file, -1);
         return 1;

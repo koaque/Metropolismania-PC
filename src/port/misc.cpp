@@ -1218,7 +1218,7 @@ namespace mm
     int TalkEventData_DataSize() { return 0x7C; }
 
     // Static constructor: the 256 member status bytes (4 bytes apart; __construct_array in the original).
-    void StaticInit_StatusBytes()
+    void StaticInit_MemberStatus()
     {
         for (uint32_t i = 0; i < 0x100; ++i)
             TalkStatus_ctor(static_cast<int>(globals::kMemberStatus + 4u * i));
@@ -1245,7 +1245,7 @@ namespace mm
     GuestPtr<CharClass> Vehicle_ctor(GuestPtr<CharClass> cls, GuestPtr<CharTypeRecord> record)
     {
         CharType_ctor(cls, record);
-        cls->vtable = GuestPtr<CharClassVtable>{0x001BCE90u};
+        cls->vtable = globals::kVehicleVtable;
         return cls;
     }
 
@@ -1328,7 +1328,7 @@ namespace mm
     // laptop
     GuestPtr<Laptop> Laptop_ctor(GuestPtr<Laptop> laptop)
     {
-        laptop->model = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B08u)};
+        laptop->model = globals::menuWindowModel.get();
         laptop->state = 0;
         laptop->text = GuestPtr<TextBox>{0u};
         laptop->selected = 0;
@@ -1379,7 +1379,7 @@ namespace mm
     GuestPtr<CharClass> CharType_ctor(GuestPtr<CharClass> cls, GuestPtr<CharTypeRecord> record)
     {
         const auto part = [](uint8_t index) { return GuestPtr<void>{port::load<uint32_t>(globals::kCharParts + 4u * index)}; };
-        cls->vtable = GuestPtr<CharClassVtable>{0x001BCE70u};
+        cls->vtable = globals::kCharTypeVtable;
         cls->parts[0] = part(record->parts[0]);
         cls->parts[1] = part(record->parts[1]);
         cls->parts[2] = part(record->parts[2]);
@@ -1399,7 +1399,7 @@ namespace mm
     int16_t Person_FindBuildingInList(GuestPtr<CityScene> city, int list, int x, int z, int mode, int16_t skipA, int16_t skipB)
     {
         uint16_t best = 0x3F80;
-        int bestDistance = port::load<uint16_t>(0x001B0D30u + 2u * static_cast<uint32_t>(list));
+        int bestDistance = port::load<uint16_t>(globals::kBuildingListRanges + 2u * static_cast<uint32_t>(list));
         port::GuestLocal<uint32_t> count;
         const GuestPtr<uint16_t> items = Map_GetTileList(city->map, list, count);
         for (int i = 0; i < static_cast<int>(*count); ++i)
@@ -1468,7 +1468,7 @@ namespace mm
             {
                 const GuestPtr<MapObject> obj = Map_GetRecord(city->map, *item);
                 const GuestPtr<BuildingType> btype{globals::buildingTypeAddress(obj->type)};
-                if ((btype->flags & 8u) == 0 || obj->claimSlot == 0x18 || ClaimMeter_Level(obj->claimMeter) == 0)
+                if ((btype->flags & 8u) == 0 || obj->claimSlot == kNoClaim || ClaimMeter_Level(obj->claimMeter) == 0)
                     continue;
                 const int8_t kind = static_cast<int8_t>(Claim_GetList(btype->claimB)[obj->claimSlot].wish);
                 if (first == 0)
@@ -1534,8 +1534,8 @@ namespace mm
         const int x = home->tile & 0x7F, z = home->tile >> 7;
         for (int i = 0; i < 24; ++i)
         {
-            const int bx = x + port::load<int32_t>(0x001B0C50u + 4u * i);
-            const int bz = z + port::load<int32_t>(0x001B0CB0u + 4u * i);
+            const int bx = x + port::load<int32_t>(globals::kFieldBlockStepX + 4u * i);
+            const int bz = z + port::load<int32_t>(globals::kFieldBlockStepZ + 4u * i);
             const GuestPtr<MapObject> here = Map_GetTileObject(city->map, bx, bz);
             if (homeOfFamily(here, 60))
             {
@@ -1545,8 +1545,8 @@ namespace mm
             bool open = true;
             for (int k = 0; k < 4 && open; ++k)
             {
-                const int tx = bx + port::load<int32_t>(0x001B0D10u + 4u * k);
-                const int tz = bz + port::load<int32_t>(0x001B0D20u + 4u * k);
+                const int tx = bx + port::load<int32_t>(globals::kFieldTileStepX + 4u * k);
+                const int tz = bz + port::load<int32_t>(globals::kFieldTileStepZ + 4u * k);
                 const uint16_t type = Map_GetTileObject(city->map, tx, tz)->type;
                 if (type != 2 && type != 3 && type != 10)
                 {
@@ -1578,7 +1578,7 @@ namespace mm
     GuestPtr<PersonClass> Person_ctor(GuestPtr<PersonClass> cls, GuestPtr<CharTypeRecord> record)
     {
         CharType_ctor(GuestPtr<CharClass>::of(cls->base), record);
-        cls->base.vtable = GuestPtr<CharClassVtable>{0x001BCEB0u};
+        cls->base.vtable = globals::kPersonVtable;
         cls->walkSpeed = fromInt(record->walkSpeed) / ps2f(1000000.0f);
         return cls;
     }
@@ -1596,7 +1596,7 @@ namespace mm
     // char: the player starts in mode 0 at the origin, with its model from 0x1F3CD4.
     GuestPtr<Player> Player_ctor(GuestPtr<Player> player)
     {
-        player->model = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3CD4u)};
+        player->model = globals::playerModel.get();
         player->mode = 0;
         player->previousMode = 0;
         player->step = 0;
@@ -1641,7 +1641,7 @@ namespace mm
 
     GuestPtr<PhoneCalls> PhoneCall_ctor(GuestPtr<PhoneCalls> phone)
     {
-        phone->iconModel = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B08u)};
+        phone->iconModel = globals::menuWindowModel.get();
         for (PhoneCallEntry &call : phone->calls)
             call.family = 0;
         phone->state = 0;
@@ -1658,13 +1658,13 @@ namespace mm
             slot.group = 0;
         for (BagMusicTrack &music : bag->musicTracks)
             music.track = -1;
-        bag->model = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B24u)};
+        bag->model = globals::bagModel.get();
         bag->state = 0;
         bag->matrix = GuestPtr<Vec4>::of(bag->model->matrix[0]);
         bag->matrix[2].z = 7.0f;
         bag->matrix[1].y = 7.0f;
         bag->matrix[0].x = 7.0f;
-        const GuestPtr<Vec4> place{0x001AEF10u};
+        const GuestPtr<Vec4> place{globals::kBagShown};
         bag->matrix[3].x = place->x;
         bag->matrix[3].y = place->y;
         bag->matrix[3].z = place->z;
@@ -1686,18 +1686,18 @@ namespace mm
     // markers: four marker matrices, identity moved to the offsets at 0x1B0DB0 and 0.1 down.
     GuestPtr<Markers> Markers_ctor(GuestPtr<Markers> markers)
     {
-        markers->vtable = GuestPtr<void>{0x001BCFC8u};
-        markers->model = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B28u)};
-        markers->markerModel = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B08u)};
+        markers->vtable = globals::kMarkersVtable;
+        markers->model = globals::markersModel.get();
+        markers->markerModel = globals::menuWindowModel.get();
         markers->nodes[0] = 1;
         markers->nodes[1] = 2;
         markers->nodes[2] = 3;
         markers->nodes[3] = -1;
-        const GuestPtr<ps2f> offsets{0x001B0DB0u};
+        const GuestPtr<ps2f> offsets{globals::kMarkerOffsets};
         for (int i = 0; i < 4; ++i)
         {
             const GuestPtr<Vec4> matrix = GuestPtr<Vec4>::of(markers->matrices[4 * i]);
-            Mat4_Copy(matrix, GuestPtr<Vec4>{0x001B2550u}); // identity
+            Mat4_Copy(matrix, GuestPtr<Vec4>{globals::kIdentityMatrix}); // identity
             matrix[3].x = offsets[2 * i];
             matrix[3].y = offsets[2 * i + 1];
             matrix[3].z = -0.1f;
@@ -2712,7 +2712,7 @@ namespace mm
     PORT_FN(EventData_DataSize);
     PORT_FN(TalkEventData_DataSize);
     PORT_FN(Stage_ctor);
-    PORT_FN(StaticInit_StatusBytes);
+    PORT_FN(StaticInit_MemberStatus);
     PORT_FN(StaticInit_EventTypeIds);
     PORT_FN(GameInit);
     PORT_FN(Vehicle_ctor);
@@ -3452,7 +3452,7 @@ namespace mm
             port::store<uint8_t>(at + 4u, 0);
         };
         put(out.address, fromMinute);
-        sdk::strcat(out.address, 0x001B9AD8u);
+        sdk::strcat(out.address, globals::kTimeRangeDash);
         put(out.address + static_cast<uint32_t>(sdk::strlen(out.address)), toMinute);
     }
 
@@ -3536,7 +3536,7 @@ namespace mm
     {
         if (cls)
         {
-            cls->vtable = GuestPtr<CharClassVtable>{0x001BCE70u};
+            cls->vtable = globals::kCharTypeVtable;
             if (0 < deleteFlag)
                 sdk::operator_delete(cls.address);
         }
@@ -3547,7 +3547,7 @@ namespace mm
     {
         if (markers)
         {
-            markers->vtable = GuestPtr<void>{0x001BCFC8u};
+            markers->vtable = globals::kMarkersVtable;
             if (0 < deleteFlag)
                 sdk::operator_delete(markers.address);
         }
@@ -3559,7 +3559,7 @@ namespace mm
     {
         if (btype)
         {
-            btype->vtable = GuestPtr<BuildingTypeVtable>{0x001BD000u};
+            btype->vtable = globals::kBldgTypeVtable;
             globals::buildingTypeInstances.set(globals::buildingTypeInstances.get() - 1);
             if (globals::buildingTypeInstances.get() == 0 && globals::buildingTypeShared.get() != 0u)
             {
@@ -3643,7 +3643,8 @@ namespace mm
     {
         port::GuestLocal<GameFile> file;
         File_ctor(file, 0);
-        globals::scheduleData.set(static_cast<uint32_t>(File_LoadWhole(file, GuestPtr<char>{0x001B7F30u}, GuestPtr<int32_t>{0u})));
+        globals::scheduleData.set(static_cast<uint32_t>(File_LoadWhole(file, GuestPtr<char>{globals::kPathScheduleBin},
+                GuestPtr<int32_t>{0u})));
         File_dtor(file, -1);
     }
 
@@ -3652,7 +3653,8 @@ namespace mm
     {
         port::GuestLocal<GameFile> file;
         File_ctor(file, 0);
-        globals::claimData.set(static_cast<uint32_t>(File_LoadWhole(file, GuestPtr<char>{0x001B5BB0u}, GuestPtr<int32_t>{0u})));
+        globals::claimData.set(static_cast<uint32_t>(File_LoadWhole(file, GuestPtr<char>{globals::kPathClaimBin},
+                                                                    GuestPtr<int32_t>{0u})));
         struct Section
         {
             uint32_t global;
@@ -3676,7 +3678,8 @@ namespace mm
     {
         port::GuestLocal<GameFile> file;
         File_ctor(file, 0);
-        globals::goodsData.set(static_cast<uint32_t>(File_LoadWhole(file, GuestPtr<char>{0x001B63D0u}, GuestPtr<int32_t>{0u})));
+        globals::goodsData.set(static_cast<uint32_t>(File_LoadWhole(file, GuestPtr<char>{globals::kPathGoodsBin},
+                                                                    GuestPtr<int32_t>{0u})));
         const auto word = [](uint32_t index) { return port::load<int32_t>(globals::goodsData.get() + 4u * index); };
         const auto section = [&](uint32_t index) { return globals::goodsData.get() + static_cast<uint32_t>(word(index)) * 4u; };
         globals::goodsSectionA.set(globals::goodsData.get() + static_cast<uint32_t>(word(0)) * 4u);
@@ -3709,7 +3712,7 @@ namespace mm
         state->stage = stage;
         port::GuestLocal<GameFile> file;
         File_ctor(file, 0);
-        File_Open(file, GuestPtr<char>{0x001B5D50u});
+        File_Open(file, GuestPtr<char>{globals::kPathStageBin});
         File_Seek(file, (stage % 0x19) * 0xB4, 0, 0);
         File_Read(file, static_cast<int>(kStageRecord), 1, 0xB4, 0);
         File_Close(file);
@@ -3730,13 +3733,14 @@ namespace mm
     void Stage_FormatTargetText(int, GuestPtr<char> out)
     {
         const GuestPtr<StageState> state = globals::stageState();
-        sdk::sprintf(out.address, 0x001B5E70u, GuestPtr<uint32_t>{0x001B5C90u}[state->missionKind], static_cast<uint32_t>(state->quota));
+        sdk::sprintf(out.address, globals::kTargetTextPeople,
+                     GuestPtr<uint32_t>{globals::kGoalTowns}[state->missionKind], static_cast<uint32_t>(state->quota));
         const int32_t theme = state->missionKind;
         if (state->missionKind != 0)
         {
             const int length = sdk::strlen(out.address);
-            sdk::sprintf(out.address + static_cast<uint32_t>(length), 0x001B5EB0u, static_cast<uint32_t>(state->missionTarget),
-                         GuestPtr<uint32_t>{0x001B5D30u}[theme]);
+            sdk::sprintf(out.address + static_cast<uint32_t>(length), globals::kTargetTextThemeShare, static_cast<uint32_t>(state->missionTarget),
+                         GuestPtr<uint32_t>{globals::kGoalThemes}[theme]);
         }
     }
 
@@ -3744,28 +3748,29 @@ namespace mm
     void Stage_FormatGoalText(int, GuestPtr<char> out)
     {
         const GuestPtr<StageState> state = globals::stageState();
-        sdk::sprintf(out.address, 0x001B5D68u, static_cast<uint32_t>(state->quota));
+        sdk::sprintf(out.address, globals::kGoalTextPeople, static_cast<uint32_t>(state->quota));
         if (state->missionKind != 0)
         {
             const int length = sdk::strlen(out.address);
-            sdk::sprintf(out.address + static_cast<uint32_t>(length), 0x001B5D80u, static_cast<uint32_t>(state->missionTarget));
+            sdk::sprintf(out.address + static_cast<uint32_t>(length), globals::kGoalTextThemeShare,
+                         static_cast<uint32_t>(state->missionTarget));
             const int32_t theme = state->missionKind;
             uint32_t ending;
             if (theme == 5)
-                ending = 0x001B5C40u;
+                ending = globals::kGoalTextRich;
             else if (theme == 4)
-                ending = 0x001B5E20u;
+                ending = globals::kGoalTextFarming;
             else if (theme == 3)
-                ending = 0x001B5E00u;
+                ending = globals::kGoalTextFishing;
             else if (theme == 2)
-                ending = 0x001B5DD0u;
+                ending = globals::kGoalTextLeisure;
             else if (theme == 1)
-                ending = 0x001B5DB0u;
+                ending = globals::kGoalTextBusiness;
             else
-                ending = 0x001B5E40u;
+                ending = globals::kGoalTextIndustry;
             sdk::strcat(out.address, ending);
         }
-        sdk::strcat(out.address, 0x001B5E60u);
+        sdk::strcat(out.address, globals::kGoalTextEnd);
     }
 
     PORT_FN(Stage_FormatTargetText);
@@ -3791,7 +3796,7 @@ namespace mm
     {
         if (cls)
         {
-            cls->vtable = GuestPtr<CharClassVtable>{0x001BCE90u};
+            cls->vtable = globals::kVehicleVtable;
             CharType_dtor(cls, 0);
             if (0 < deleteFlag)
                 sdk::operator_delete(cls.address);
@@ -3803,7 +3808,7 @@ namespace mm
     {
         if (cls)
         {
-            cls->vtable = GuestPtr<CharClassVtable>{0x001BCEB0u};
+            cls->vtable = globals::kPersonVtable;
             CharType_dtor(cls, 0);
             if (0 < deleteFlag)
                 sdk::operator_delete(cls.address);
@@ -3861,7 +3866,7 @@ namespace mm
     {
         if (app)
         {
-            app->vtable = GuestPtr<void>{0x001BD8D0u};
+            app->vtable = GuestPtr<void>{globals::kAppVtable};
             Sound_Shutdown();
             DmaList_Free();
             Font_Free();
@@ -3887,13 +3892,14 @@ namespace mm
         port::GuestLocal<GameFile> file;
         port::GuestLocal<uint32_t> size;
         File_ctor(file, 0);
-        const uint32_t data = static_cast<uint32_t>(File_LoadWhole(file, GuestPtr<char>{0x001B5B90u}, GuestPtr<int32_t>{size.ptr().address}));
+        const uint32_t data = static_cast<uint32_t>(File_LoadWhole(file, GuestPtr<char>{globals::kPathCharTypeBin},
+                                                                   GuestPtr<int32_t>{size.ptr().address}));
         const uint32_t count = *size / 0x18u;
-        port::store<uint32_t>(0x001BDA40u, count);
+        globals::charClassCount.set(count);
         const uint32_t table = sdk::mw_NewArray(count << 2);
-        port::store<uint32_t>(0x001BDA3Cu, table);
+        globals::charClassTable.set(table);
         uint32_t cls = port::guestS2();
-        for (int32_t i = 0; i < static_cast<int32_t>(port::load<uint32_t>(0x001BDA40u)); ++i)
+        for (int32_t i = 0; i < static_cast<int32_t>(globals::charClassCount.get()); ++i)
         {
             const GuestPtr<CharTypeRecord> record = GuestPtr<CharTypeRecord>{data} + i;
             const uint8_t kind = record->kind;
@@ -3912,7 +3918,7 @@ namespace mm
                 const uint32_t memory = sdk::operator_new(0x24u);
                 cls = memory != 0u ? CharType_ctor(GuestPtr<CharClass>{memory}, record).address : 0u;
             }
-            port::store<uint32_t>(port::load<uint32_t>(0x001BDA3Cu) + 4u * static_cast<uint32_t>(i), cls);
+            port::store<uint32_t>(globals::charClassTable.get() + 4u * static_cast<uint32_t>(i), cls);
         }
         if (data != 0u)
             sdk::free(data);
@@ -3929,7 +3935,6 @@ namespace mm
     // under 24 in Student Accom, type 0xB3).
     uint8_t Schedule_Evaluate(uint32_t family, int member)
     {
-        constexpr uint32_t kTableA4 = 0x001BD9A4u, kTableA8 = 0x001BD9A8u, kTableAC = 0x001BD9ACu;
         const GuestPtr<Family> record = Family_Get(static_cast<int>(family), 0);
         const GuestPtr<FamilyMember> self = GuestPtr<FamilyMember>::of(record->members[0]) + member;
         const uint8_t age = self->age;
@@ -3952,8 +3957,9 @@ namespace mm
             if (children == 2)
                 return 0xA;
             if (!flagged)
-                return port::load<uint8_t>(kTableA8 + ((family + static_cast<uint32_t>(member)) & 1u));
-            return port::load<uint8_t>(kTableA4 + static_cast<uint32_t>(remainder(static_cast<int32_t>(family + static_cast<uint32_t>(member)), 3)));
+                return port::load<uint8_t>(globals::kScheduleRowsOthers + ((family + static_cast<uint32_t>(member)) & 1u));
+            return port::load<uint8_t>(globals::kScheduleRowsFlagged +
+                                       static_cast<uint32_t>(remainder(static_cast<int32_t>(family + static_cast<uint32_t>(member)), 3)));
         };
         if (age < 4)
             return 1;
@@ -3973,7 +3979,8 @@ namespace mm
                 return type == 0xB3 ? 6 : 0xF;
             if (member == 1)
                 return second();
-            return port::load<uint8_t>(kTableAC + static_cast<uint32_t>(remainder(static_cast<int32_t>(family + static_cast<uint32_t>(member)), 3)));
+            return port::load<uint8_t>(globals::kScheduleRowsYoung +
+                                       static_cast<uint32_t>(remainder(static_cast<int32_t>(family + static_cast<uint32_t>(member)), 3)));
         }
         if (age < 0x3C)
         {
@@ -3981,7 +3988,8 @@ namespace mm
                 return 0xF;
             if (member == 1)
                 return second();
-            return port::load<uint8_t>(kTableA8 + static_cast<uint32_t>(remainder(static_cast<int32_t>(family + static_cast<uint32_t>(member)), 3)));
+            return port::load<uint8_t>(globals::kScheduleRowsOthers +
+                                       static_cast<uint32_t>(remainder(static_cast<int32_t>(family + static_cast<uint32_t>(member)), 3)));
         }
         if ((typeFlags & 0x400u) != 0 || member == 0)
             return 0xF;
@@ -4080,7 +4088,7 @@ namespace mm
         {
             const int list = (person->flags & 0x400u) != 0
                                  ? 0x24
-                                 : port::load<uint8_t>(0x001B0BD0u + 8u * person->schedState + static_cast<uint32_t>(timer & 7));
+                                 : port::load<uint8_t>(globals::kScheduleDestinations + 8u * person->schedState + static_cast<uint32_t>(timer & 7));
             destination = list == 0 ? person->home : findIn(list, 1, skip);
             break;
         }
@@ -4281,15 +4289,15 @@ namespace mm
                 if (record != 0u)
                 {
                     if (Family_GetTypeIndex(static_cast<int>(family)) == 0xB2)
-                        sdk::sprintf(caller, 0x001B8198u);
+                        sdk::sprintf(caller, globals::kPhoneTextBoss);
                     else if (Family_GetFriendship(static_cast<int>(family), entry->member) == 0)
-                        sdk::sprintf(caller, 0x001B81B0u);
+                        sdk::sprintf(caller, globals::kPhoneTextStranger);
                     else
-                        sdk::sprintf(caller, 0x001B81C8u, record + 0x48u * entry->member + 0x4Cu); // the member's name
+                        sdk::sprintf(caller, globals::kPhoneTextCaller, record + 0x48u * entry->member + 0x4Cu); // the member's name
                 }
             }
             if (phone->caller[0] != 0)
-                Notice_ShowCentered(city->notice, GuestPtr<char>{caller}, 0x001B8170);
+                Notice_ShowCentered(city->notice, GuestPtr<char>{caller}, static_cast<int>(globals::kPhoneTextButtons));
             if ((Pad_Pressed(1) & 0x20u) != 0)
             {
                 phone->frames = 0;
@@ -4356,7 +4364,7 @@ namespace mm
             int variant = (city->flags & 2u) != 0 ? 2 : 0;
             if (city->weatherToday != 0)
                 variant += 1;
-            return port::load<uint8_t>(port::load<uint32_t>(0x001BDBACu) + 96u * row + static_cast<uint32_t>(shifted / 3600 + 24 * variant));
+            return port::load<uint8_t>(globals::scheduleData.get() + 96u * row + static_cast<uint32_t>(shifted / 3600 + 24 * variant));
         }
 
         // The row of a family type's own schedule: the entry (the schedule state), or for 0xF the type's own row after row 15.
@@ -4440,13 +4448,14 @@ namespace mm
         bool withinDrawBudget(uint32_t model)
         {
             const int32_t cost = GuestPtr<A3DObject>{model}->model->nodeCount;
-            return cost + port::load<int32_t>(0x001BDA28u) < 0x708 && cost + port::load<int32_t>(0x001BDA34u) < port::load<int32_t>(0x001BD980u);
+            return cost + globals::instanceCount.get() < 0x708 && cost + globals::instanceLimitedCount.get() < globals::instanceLimit.get();
         }
 
         // Whether the claim meter of the person's home has reached the first threshold of the table at 0x1BDA50 (+2).
         int homeClaimed(GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
         {
-            return Map_GetRecord(city->map, person->home)->claimMeter >= port::load<uint16_t>(port::load<uint32_t>(0x001BDA50u) + 2u) ? 1 : 0;
+            return Map_GetRecord(city->map,
+                                 person->home)->claimMeter >= port::load<uint16_t>(globals::claimData.get() + 2u) ? 1 : 0;
         }
 
         float floatAt(uint32_t address) { return std::bit_cast<float>(port::load<uint32_t>(address)); }
@@ -4495,7 +4504,7 @@ namespace mm
             return;
         const GuestPtr<A3DObject> drawn{model};
         const GuestPtr<Vec4> place = position.as<Vec4>(); // x, y, z and the heading
-        sdk::sceVu0RotMatrixY(port::guest(drawn->matrix), 0x001B2550u, place->w);
+        sdk::sceVu0RotMatrixY(port::guest(drawn->matrix), globals::kIdentityMatrix, place->w);
         drawn->matrix[3].x = place->x;
         drawn->matrix[3].y = place->y;
         drawn->matrix[3].z = place->z;
@@ -4508,10 +4517,11 @@ namespace mm
                 port::store<uint16_t>(frameAt, 0);
         }
         const int length = sdk::fptosi(A3D_GetAnimLength(GuestPtr<A3DObject>{model}, animation));
-        port::store<uint16_t>(frameAt, static_cast<uint16_t>(port::load<uint16_t>(frameAt) + port::load<uint16_t>(0x001AF080u + 4u * static_cast<uint32_t>(animation))));
+        port::store<uint16_t>(frameAt, static_cast<uint16_t>(port::load<uint16_t>(frameAt) +
+                                                             port::load<uint16_t>(globals::kAnimFrameSteps + 4u * static_cast<uint32_t>(animation))));
         if (!(static_cast<int32_t>(port::load<uint16_t>(frameAt)) < length))
         {
-            const int32_t restart = port::load<int32_t>(0x001AF050u + 4u * static_cast<uint32_t>(animation));
+            const int32_t restart = port::load<int32_t>(globals::kAnimRestarts + 4u * static_cast<uint32_t>(animation));
             if (restart == -1)
                 port::store<uint16_t>(frameAt, static_cast<uint16_t>(length / 5));
             else if (restart == -2)
@@ -4835,7 +4845,7 @@ namespace mm
             Stamina_Tick(city->stamina, city);
         *before = player->position;
         const GuestPtr<Vec4> matrix = GuestPtr<Vec4>::of(player->model->matrix[0]);
-        sdk::sceVu0RotMatrixY(matrix.address, 0x001B2550u, player->heading);
+        sdk::sceVu0RotMatrixY(matrix.address, globals::kIdentityMatrix, player->heading);
         sdk::sceVu0ApplyMatrix(move.address, matrix.address, move.address);
         {
             using namespace vu0;

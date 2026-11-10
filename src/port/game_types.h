@@ -126,14 +126,14 @@ struct StageName;
 struct StageState;
 struct TexImage;
 struct TexImageFile;
-struct LayerA;
-struct LayerB;
+struct ClaimMetLayer;
+struct WaterBottomLayer;
 struct PlacementLayer;
 struct RainLayer;
 struct SnowLayer;
-struct LayerF;
-struct LayerG;
-struct LayerAInstance;
+struct LitRoadLayer;
+struct WaterLayer;
+struct ClaimMetInstance;
 struct CharPartModel;
 struct TerrainPassParams;
 struct A3DModel;
@@ -423,8 +423,9 @@ struct CityCursorView {
 /* Light set (0x1B0 bytes): the colour table of the model programs, two groups of twelve, coloured by the clock
    (mm_LightSet_UpdateByClock). Its two packets upload +0x10..+0x1AF to VU1 0x12..0x2B (docs/RENDER_PIPELINE.md). */
 struct LightSet {
-    uint32_t packetA;          /* +0x00 for program 0x1A3C80 (mm_LightSet_BuildPackets) */
-    uint32_t packetB;          /* +0x04 for program 0x1A4780 */
+    uint32_t packets[2];       /* +0x00 the model programs' packets (mm_LightSet_BuildPackets), picked by
+                                  mm_LightSet_SelectProgram: 0x1A3C80 for people, the player and the menus' models,
+                                  0x1A4780 for buildings and objects (it also clips walls next to the camera) */
     uint8_t unk_08[8];
     Vec4 groupA[12];           /* +0x10 VU1 0x12..0x1D: entry 1 the colour from the table 0x1B0550, entry 3 (4, 1, 1, 2) */
     Vec4 groupB[12];           /* +0xD0 VU1 0x1E..0x29: entries 1 and 2 the colour from the table 0x1B0670, entry 3 (4, 1, 1, 2) */
@@ -1057,7 +1058,7 @@ struct EventSlot {
     uint8_t kind;              /* +0x00 row of the event table, 0 = free (mm_Event_CountActive, mm_WordsFn_EventStage) */
     int8_t stage;              /* +0x01 days left; talk scripts read 3 - stage (mm_WordsFn_EventCountdown) */
     uint8_t unk_02[2];
-    uint16_t familyA;          /* +0x04 the persons a talk script selects (mm_WordsFn_SelectEventPersonA/B) */
+    uint16_t familyA;          /* +0x04 the persons a talk script selects (mm_WordsFn_SelectEventFirstPerson/B) */
     uint16_t memberA;          /* +0x06 */
     uint16_t familyB;          /* +0x08 */
     uint16_t memberB;          /* +0x0A */
@@ -1278,7 +1279,9 @@ struct TownPages {
 struct StageName { char text[0x10]; };
 /* Stage state at 0x1C5380, saved with the city (0x284 bytes). */
 struct StageState {
-    StageName names[26];       /* +0x000 the city's name, the mayor's name, ... (cleared by mm_Stage_Reset) */
+    StageName names[26];       /* +0x000 0 the city, 1 the mayor as typed, 2 printed before it where a given name goes
+                                  (empty in the saves at hand); talk code -2000 + n types names[n] (mm_TalkConv_Active);
+                                  cleared by mm_Stage_Reset */
     uint32_t storyFlagsA[4];   /* +0x1A0 bits the talk scripts test (mm_WordsFn_StoryFlagA); no code sets them */
     uint32_t storyFlagsB[4];   /* +0x1B0 bits the talk scripts set, clear and test (mm_WordsFn_StoryFlagB) */
     int32_t money;             /* +0x1C0 3000 at reset; goods are affordable up to it (mm_WordsFn_CanAfford) */
@@ -1363,42 +1366,46 @@ struct TexImageFile {
    whose flags match its mask. A: claim-met instances (0x2440); B: two passes over raised ground (0x230); C: the
    placement highlight and marker (0x240); D: rain (0x410); E: snow (0x6E0); F: a blended pass (0x140); G: the water (0x2E0). */
 
-/* An instance of layer A (0x90 bytes, mm_LayerA_AddInstance). Its draw packet's RET tag (+0x80) is the next instance's
-   first quadword (layer A's first word, the model, sits in the unused quadword before the first instance). */
-struct LayerAInstance {
+/* An instance of the claim-met layer (0x90 bytes, mm_ClaimMetLayer_AddInstance). Its draw packet's RET tag (+0x80) is the next instance's
+   first quadword (the layer's first word, the model, sits in the unused quadword before the first instance). */
+struct ClaimMetInstance {
     int32_t meshPair;          /* +0x00 draws meshes 2n and 2n + 1 of the layer's model */
     uint8_t unk_04[0xC];
     Vec4 matrix[4];            /* +0x10 a turn about y times a scale in y that grows the effect, then the position */
     uint32_t packet[8];        /* +0x50 CNT 2 tag with FLUSH and DIRECT 2, then a GIF tag of one A+D register */
-    uint32_t alpha;            /* +0x70 ALPHA_1 (0x68: blend with a fixed alpha) */
+    uint32_t alpha;            /* +0x70 ALPHA_1 0x68: the source times FIX / 128, added to the frame */
     int32_t fade;              /* +0x74 ALPHA_1's FIX: 0x40 less 1.5 per step, not below 0 */
     uint32_t alphaRegister[2]; /* +0x78 register 0x42 */
     uint32_t ret[4];           /* +0x80 the packet's RET tag */
 };
-struct LayerA {
+struct ClaimMetLayer {
     GuestPtr<A3DObject> model;          /* +0x0000 the model (0x1F3B70) */
     uint8_t unk_0004[0xC];
-    LayerAInstance instances[64]; /* +0x0010 two buffers of 32, the one filled picked by buffer */
+    ClaimMetInstance instances[64]; /* +0x0010 two buffers of 32, the one filled picked by buffer */
     int32_t outputOffset[4];   /* +0x2410 VU1 0x2A (0x110) */
     Vec4 colour;               /* +0x2420 VU1 0x2B (1, 1, 1, 1) */
     int32_t count;             /* +0x2430 instances this frame */
-    uint32_t startPacket;      /* +0x2434 uploads +0x2410 to VU1 0x2A and the program 0x1A8330 (mm_LayerA_BuildPacket) */
+    uint32_t startPacket;      /* +0x2434 uploads +0x2410 to VU1 0x2A and the program 0x1A8330 (mm_ClaimMetLayer_BuildPacket) */
     uint32_t endPacket;        /* +0x2438 ALPHA_1 back to 0x20_00000044 */
-    int32_t buffer;            /* +0x243C the buffer being filled (mm_LayerA_BeginFrame) */
+    int32_t buffer;            /* +0x243C the buffer being filled (mm_ClaimMetLayer_BeginFrame) */
 };
-struct LayerB {
-    TerrainPassParams params;  /* +0x000 to VU1 0x1C by the first packet: mask 0x20 */
-    Vec4 extra;                /* +0x120 VU1 0x2E (0.6, 0.08, 0, 0) */
-    uint32_t packetA;          /* +0x130 the program 0x1AA340 with these parameters */
+/* The water bottom (0x230 bytes; layer B, CityMap.waterBottom): the terrain's quads drawn again at 0.6 of their depth
+   plus 0.08, so that sand (the sea) or rock (the lakes) shows through the water (docs/RENDER_PIPELINE.md). */
+struct WaterBottomLayer {
+    TerrainPassParams params;  /* +0x000 to VU1 0x1C by the first packet: mask 0x20 (the sea), GROUND.TEX's sand */
+    Vec4 extra;                /* +0x120 VU1 0x2E (0.6, 0.08, 0, 0): each corner's height becomes 0.6 y + 0.08 */
+    uint32_t seaPacket;        /* +0x130 the program 0x1AA340 with these parameters */
     uint8_t unk_134[0xCC];
-    uint32_t maskB[4];         /* +0x200 to VU1 0x2D by the second packet: mask 0x40 */
-    uint32_t tex0B[4];         /* +0x210 to VU1 0x1D by the second packet: its texture */
-    uint32_t packetB;          /* +0x220 the second pass */
+    uint32_t lakeMask[4];      /* +0x200 to VU1 0x2D by the second packet: mask 0x40 (the lakes) */
+    uint32_t lakeTex0[4];      /* +0x210 to VU1 0x1D by the second packet: GROUND.TEX's rock */
+    uint32_t lakePacket;       /* +0x220 the second pass, the lakes */
     uint8_t unk_224[0xC];
 };
 struct PlacementLayer {
-    Vec4 colourA;              /* +0x000 VU1 0x1C (255, 0, 0, 128) */
-    Vec4 colourB;              /* +0x010 VU1 0x1D (0, 0, 0, 128) */
+    Vec4 fillColour;           /* +0x000 VU1 0x1C: each highlighted tile's two triangles; (255, 0, 0, 128) at first,
+                                  then the caller's (mm_PlacementLayer_Set): blue (0, 0, 255, 64) where it fits, red
+                                  (255, 0, 0, 64) where not */
+    Vec4 outlineColour;        /* +0x010 VU1 0x1D (0, 0, 0, 128): each tile's outline (an antialiased line strip) */
     uint32_t outputOffset[4];  /* +0x020 VU1 0x1E (0x68) */
     uint32_t gifTag[4];        /* +0x030 VU1 0x1F: 26 loops of 14 registers */
     uint32_t primA[4];         /* +0x040 VU1 0x20 PRIM 0x44: blended triangle strip */
@@ -1417,9 +1424,9 @@ struct PlacementLayer {
 };
 struct RainLayer {
     uint32_t gifTag[4];        /* +0x000 VU1 0x12: 96 loops of RGBAQ, XYZF2 twice, PRIM 0x69 (blended lines) */
-    Vec4 colourA;              /* +0x010 VU1 0x13 (765, 765, 765, 0..40 by the clock): a streak's lower end, times the ambient
+    Vec4 lowerColour;          /* +0x010 VU1 0x13 (765, 765, 765, 0..40 by the clock): a streak's lower end, times the ambient
                                   light and clamped at 255; its w is the alpha */
-    Vec4 colourB;              /* +0x020 VU1 0x14 (765, 765, 765, 0): the upper end, clear */
+    Vec4 upperColour;          /* +0x020 VU1 0x14 (765, 765, 765, 0): the upper end, clear */
     uint32_t mask[4];          /* +0x030 VU1 0x15: x 8, the quad flag mask (every quad has flag 8) */
     Vec4 drops[16];            /* +0x040 VU1 0x16..0x25 (40, y): y falls 0.4 a frame and wraps at 40; a hash of each quad's
                                   position picks one, added to its streaks' heights (wrapped into -40..0) */
@@ -1454,13 +1461,17 @@ struct SnowLayer {
     uint8_t unk_6AC[0x14];
     ps2f angles[8];           /* +0x6C0 of the turns: +0.03 a frame, kept within -pi..pi */
 };
-struct LayerF {
+/* The lit roads (0x140 bytes; layer F, CityMap.litRoads): an additive pass over the road tiles whose piece has its
+   street lamps on (quad flag 0x10: tile flag 0x10 and object flag 0x10). */
+struct LitRoadLayer {
     TerrainPassParams params;  /* +0x000 to VU1 0x1C: mask 0x10, PRIM 0x7C (blended) */
     Vec4 extra;                /* +0x120 VU1 0x2E (not set) */
     uint32_t packet;           /* +0x130 ALPHA_1 0x30_00000048, the program 0x1A91C0 and the parameters */
     uint8_t unk_134[0xC];
 };
-struct LayerG {
+/* The water (0x2E0 bytes; layer G, CityMap.water): the quads with a corner under the water, at the water level with
+   a wave along z, drawn twice with two textures (docs/RENDER_PIPELINE.md). */
+struct WaterLayer {
     Vec4 colour;               /* +0x000 VU1 0x1C (128, 128, 128, 60): times each triangle's light */
     uint8_t unk_010[0x10];     /* +0x010 VU1 0x1D, which the program does not read */
     uint32_t outputOffsets[4]; /* +0x020 VU1 0x1E (0x40, 0x10): the output offset and 16 quads per chunk */
@@ -1468,7 +1479,7 @@ struct LayerG {
     uint32_t primB[4];         /* +0x040 VU1 0x20 PRIM 0x27C: blended strip in GS context 2, with texCoordsA */
     uint32_t primA[4];         /* +0x050 VU1 0x21 PRIM 0x7C: the same in context 1, with texCoordsB */
     Vec4 texCoordsA[12];       /* +0x060 VU1 0x22..0x2D: three sets of four corners' ST, picked like the ground's by the quad's
-                                  set word; s sways, t scrolls (mm_LayerG_AnimateWaves) */
+                                  set word; s sways, t scrolls (mm_WaterLayer_AnimateWaves) */
     Vec4 texCoordsB[12];       /* +0x120 VU1 0x2E..0x39: the second texture's, swaying the other way, scrolling back */
     uint32_t mask[4];          /* +0x1E0 VU1 0x3A: w 2, the quad flag mask (a corner under the water) */
     Vec4 waveParamsA;          /* +0x1F0 VU1 0x3B (1, phase - pi/2, 1/pi, pi): the wave's z scale and phase, and pi for
@@ -1754,13 +1765,13 @@ struct CityMap {
     uint32_t groundPacket;     /* +0x2F68 the program 0x1A5EB0 and groundParams */
     uint32_t sidePackets[2];   /* +0x2F6C per side buffer: the program 0x1A76F0, the parameters and the triangles. The game stores the
                                   first's address in both (mm_Terrain_BuildSidePackets), so odd frames draw the even frame's buffer */
-    GuestPtr<RainLayer> rain;              /* +0x2F74 */
-    GuestPtr<SnowLayer> snow;              /* +0x2F78 */
-    GuestPtr<LayerF> layerF;            /* +0x2F7C */
-    GuestPtr<LayerG> water;             /* +0x2F80 */
-    GuestPtr<LayerB> layerB;            /* +0x2F84 */
-    GuestPtr<PlacementLayer> placement;         /* +0x2F88 */
-    GuestPtr<LayerA> instances;         /* +0x2F8C */
+    GuestPtr<RainLayer> rain;           /* +0x2F74 */
+    GuestPtr<SnowLayer> snow;           /* +0x2F78 */
+    GuestPtr<LitRoadLayer> litRoads;    /* +0x2F7C */
+    GuestPtr<WaterLayer> water;         /* +0x2F80 */
+    GuestPtr<WaterBottomLayer> waterBottom; /* +0x2F84 */
+    GuestPtr<PlacementLayer> placement; /* +0x2F88 */
+    GuestPtr<ClaimMetLayer> claimMet;          /* +0x2F8C the claim-met effects (layer A) */
 };
 
 /* A building type's record in DATA\BIN\STRTYPE.BIN (0x9C bytes): mm_BldgType_BaseCtor copies it into the type object, and
@@ -2157,7 +2168,8 @@ struct ClaimThresholds {
 struct ClaimEntry {
     uint8_t wish;              /* +0x00 0: what the neighbours supply counts down from the value (a need, met at 0);
                                   else it counts up from minus the value, up to 0xFF (mm_BldgClaims_CountNearby) */
-    uint8_t unk_01;
+    uint8_t unk_01;            /* +0x01 0 to 100 in steps of ten on the disc (100 in every event claim); no code
+                                  reads it */
     uint16_t id;               /* +0x02 the item claimed, or from 0x8000 a group of items (mm_Claim_GetGroup) */
     uint16_t value;            /* +0x04 the starting value; for id 0x32 the weight while the building has no entrance */
     uint16_t reach;            /* +0x06 tiles around the footprint the neighbours count in */
@@ -2432,7 +2444,7 @@ struct CityScene {
                                   bad cops and teachers) */
     int32_t conductCount;      /* +0xAC */
     ps2f waterLevel;          /* +0xB0 height of the water surface, 0.5 (heights grow downwards: deeper tiles are under
-                                  water; mm_LayerG_Draw, mm_Se_PickTerrainAmbience) */
+                                  water; mm_WaterLayer_Draw, mm_Se_PickTerrainAmbience) */
     uint32_t flags;            /* +0xB4 1 buildings tinted by claim (set at construction), 2 holiday month, 4 popular
                                   (approval 118+), 8 a farewell party is on, 0x10 the city scene ends, 0x20 a cold going
                                   round: rolled each month from October to March (1 in 4), more people fall ill
@@ -2815,8 +2827,7 @@ static_assert(offsetof(CityCursorView, frame) == 0x28, "CityCursorView.frame");
 static_assert(offsetof(CityCursorView, fadeFrame) == 0x2C, "CityCursorView.fadeFrame");
 static_assert(offsetof(CityCursorView, sprite) == 0x30, "CityCursorView.sprite");
 static_assert(sizeof(LightSet) == 0x1B0, "LightSet size");
-static_assert(offsetof(LightSet, packetA) == 0x00, "LightSet.packetA");
-static_assert(offsetof(LightSet, packetB) == 0x04, "LightSet.packetB");
+static_assert(offsetof(LightSet, packets) == 0x00, "LightSet.packets");
 static_assert(offsetof(LightSet, groupA) == 0x10, "LightSet.groupA");
 static_assert(offsetof(LightSet, groupB) == 0xD0, "LightSet.groupB");
 static_assert(offsetof(LightSet, outputOffsets) == 0x190, "LightSet.outputOffsets");
@@ -3440,30 +3451,31 @@ static_assert(offsetof(TexImageFile, paletteEntries) == 0x08, "TexImageFile.pale
 static_assert(offsetof(TexImageFile, hasTexels) == 0x0C, "TexImageFile.hasTexels");
 static_assert(offsetof(TexImageFile, side) == 0x14, "TexImageFile.side");
 static_assert(offsetof(TexImageFile, uploadSpan) == 0x18, "TexImageFile.uploadSpan");
-static_assert(sizeof(LayerAInstance) == 0x90, "LayerAInstance size");
-static_assert(offsetof(LayerAInstance, meshPair) == 0x00, "LayerAInstance.meshPair");
-static_assert(offsetof(LayerAInstance, matrix) == 0x10, "LayerAInstance.matrix");
-static_assert(offsetof(LayerAInstance, packet) == 0x50, "LayerAInstance.packet");
-static_assert(offsetof(LayerAInstance, alpha) == 0x70, "LayerAInstance.alpha");
-static_assert(offsetof(LayerAInstance, fade) == 0x74, "LayerAInstance.fade");
-static_assert(offsetof(LayerAInstance, alphaRegister) == 0x78, "LayerAInstance.alphaRegister");
-static_assert(offsetof(LayerAInstance, ret) == 0x80, "LayerAInstance.ret");
-static_assert(offsetof(LayerA, model) == 0x0000, "LayerA.model");
-static_assert(offsetof(LayerA, instances) == 0x0010, "LayerA.instances");
-static_assert(offsetof(LayerA, outputOffset) == 0x2410, "LayerA.outputOffset");
-static_assert(offsetof(LayerA, colour) == 0x2420, "LayerA.colour");
-static_assert(offsetof(LayerA, count) == 0x2430, "LayerA.count");
-static_assert(offsetof(LayerA, startPacket) == 0x2434, "LayerA.startPacket");
-static_assert(offsetof(LayerA, endPacket) == 0x2438, "LayerA.endPacket");
-static_assert(offsetof(LayerA, buffer) == 0x243C, "LayerA.buffer");
-static_assert(offsetof(LayerB, params) == 0x000, "LayerB.params");
-static_assert(offsetof(LayerB, extra) == 0x120, "LayerB.extra");
-static_assert(offsetof(LayerB, packetA) == 0x130, "LayerB.packetA");
-static_assert(offsetof(LayerB, maskB) == 0x200, "LayerB.maskB");
-static_assert(offsetof(LayerB, tex0B) == 0x210, "LayerB.tex0B");
-static_assert(offsetof(LayerB, packetB) == 0x220, "LayerB.packetB");
-static_assert(offsetof(PlacementLayer, colourA) == 0x000, "PlacementLayer.colourA");
-static_assert(offsetof(PlacementLayer, colourB) == 0x010, "PlacementLayer.colourB");
+static_assert(sizeof(ClaimMetInstance) == 0x90, "ClaimMetInstance size");
+static_assert(offsetof(ClaimMetInstance, meshPair) == 0x00, "ClaimMetInstance.meshPair");
+static_assert(offsetof(ClaimMetInstance, matrix) == 0x10, "ClaimMetInstance.matrix");
+static_assert(offsetof(ClaimMetInstance, packet) == 0x50, "ClaimMetInstance.packet");
+static_assert(offsetof(ClaimMetInstance, alpha) == 0x70, "ClaimMetInstance.alpha");
+static_assert(offsetof(ClaimMetInstance, fade) == 0x74, "ClaimMetInstance.fade");
+static_assert(offsetof(ClaimMetInstance, alphaRegister) == 0x78, "ClaimMetInstance.alphaRegister");
+static_assert(offsetof(ClaimMetInstance, ret) == 0x80, "ClaimMetInstance.ret");
+static_assert(offsetof(ClaimMetLayer, model) == 0x0000, "ClaimMetLayer.model");
+static_assert(offsetof(ClaimMetLayer, instances) == 0x0010, "ClaimMetLayer.instances");
+static_assert(offsetof(ClaimMetLayer, outputOffset) == 0x2410, "ClaimMetLayer.outputOffset");
+static_assert(offsetof(ClaimMetLayer, colour) == 0x2420, "ClaimMetLayer.colour");
+static_assert(offsetof(ClaimMetLayer, count) == 0x2430, "ClaimMetLayer.count");
+static_assert(offsetof(ClaimMetLayer, startPacket) == 0x2434, "ClaimMetLayer.startPacket");
+static_assert(offsetof(ClaimMetLayer, endPacket) == 0x2438, "ClaimMetLayer.endPacket");
+static_assert(offsetof(ClaimMetLayer, buffer) == 0x243C, "ClaimMetLayer.buffer");
+static_assert(sizeof(WaterBottomLayer) == 0x230, "WaterBottomLayer size");
+static_assert(offsetof(WaterBottomLayer, params) == 0x000, "WaterBottomLayer.params");
+static_assert(offsetof(WaterBottomLayer, extra) == 0x120, "WaterBottomLayer.extra");
+static_assert(offsetof(WaterBottomLayer, seaPacket) == 0x130, "WaterBottomLayer.seaPacket");
+static_assert(offsetof(WaterBottomLayer, lakeMask) == 0x200, "WaterBottomLayer.lakeMask");
+static_assert(offsetof(WaterBottomLayer, lakeTex0) == 0x210, "WaterBottomLayer.lakeTex0");
+static_assert(offsetof(WaterBottomLayer, lakePacket) == 0x220, "WaterBottomLayer.lakePacket");
+static_assert(offsetof(PlacementLayer, fillColour) == 0x000, "PlacementLayer.fillColour");
+static_assert(offsetof(PlacementLayer, outlineColour) == 0x010, "PlacementLayer.outlineColour");
 static_assert(offsetof(PlacementLayer, outputOffset) == 0x020, "PlacementLayer.outputOffset");
 static_assert(offsetof(PlacementLayer, gifTag) == 0x030, "PlacementLayer.gifTag");
 static_assert(offsetof(PlacementLayer, primA) == 0x040, "PlacementLayer.primA");
@@ -3479,8 +3491,8 @@ static_assert(offsetof(PlacementLayer, rectActive) == 0x21C, "PlacementLayer.rec
 static_assert(offsetof(PlacementLayer, rect) == 0x220, "PlacementLayer.rect");
 static_assert(offsetof(PlacementLayer, marker) == 0x230, "PlacementLayer.marker");
 static_assert(offsetof(RainLayer, gifTag) == 0x000, "RainLayer.gifTag");
-static_assert(offsetof(RainLayer, colourA) == 0x010, "RainLayer.colourA");
-static_assert(offsetof(RainLayer, colourB) == 0x020, "RainLayer.colourB");
+static_assert(offsetof(RainLayer, lowerColour) == 0x010, "RainLayer.lowerColour");
+static_assert(offsetof(RainLayer, upperColour) == 0x020, "RainLayer.upperColour");
 static_assert(offsetof(RainLayer, mask) == 0x030, "RainLayer.mask");
 static_assert(offsetof(RainLayer, drops) == 0x040, "RainLayer.drops");
 static_assert(offsetof(RainLayer, streaks) == 0x140, "RainLayer.streaks");
@@ -3504,22 +3516,24 @@ static_assert(offsetof(SnowLayer, groundExtra) == 0x690, "SnowLayer.groundExtra"
 static_assert(offsetof(SnowLayer, groundPackets) == 0x6A0, "SnowLayer.groundPackets");
 static_assert(offsetof(SnowLayer, endPacket) == 0x6A8, "SnowLayer.endPacket");
 static_assert(offsetof(SnowLayer, angles) == 0x6C0, "SnowLayer.angles");
-static_assert(offsetof(LayerF, params) == 0x000, "LayerF.params");
-static_assert(offsetof(LayerF, extra) == 0x120, "LayerF.extra");
-static_assert(offsetof(LayerF, packet) == 0x130, "LayerF.packet");
-static_assert(offsetof(LayerG, colour) == 0x000, "LayerG.colour");
-static_assert(offsetof(LayerG, unk_010) == 0x010, "LayerG.unk_010");
-static_assert(offsetof(LayerG, outputOffsets) == 0x020, "LayerG.outputOffsets");
-static_assert(offsetof(LayerG, gifTag) == 0x030, "LayerG.gifTag");
-static_assert(offsetof(LayerG, primB) == 0x040, "LayerG.primB");
-static_assert(offsetof(LayerG, primA) == 0x050, "LayerG.primA");
-static_assert(offsetof(LayerG, texCoordsA) == 0x060, "LayerG.texCoordsA");
-static_assert(offsetof(LayerG, texCoordsB) == 0x120, "LayerG.texCoordsB");
-static_assert(offsetof(LayerG, mask) == 0x1E0, "LayerG.mask");
-static_assert(offsetof(LayerG, waveParamsA) == 0x1F0, "LayerG.waveParamsA");
-static_assert(offsetof(LayerG, waveParamsB) == 0x200, "LayerG.waveParamsB");
-static_assert(offsetof(LayerG, packets) == 0x210, "LayerG.packets");
-static_assert(offsetof(LayerG, texCoordsRest) == 0x220, "LayerG.texCoordsRest");
+static_assert(sizeof(LitRoadLayer) == 0x140, "LitRoadLayer size");
+static_assert(offsetof(LitRoadLayer, params) == 0x000, "LitRoadLayer.params");
+static_assert(offsetof(LitRoadLayer, extra) == 0x120, "LitRoadLayer.extra");
+static_assert(offsetof(LitRoadLayer, packet) == 0x130, "LitRoadLayer.packet");
+static_assert(sizeof(WaterLayer) == 0x2E0, "WaterLayer size");
+static_assert(offsetof(WaterLayer, colour) == 0x000, "WaterLayer.colour");
+static_assert(offsetof(WaterLayer, unk_010) == 0x010, "WaterLayer.unk_010");
+static_assert(offsetof(WaterLayer, outputOffsets) == 0x020, "WaterLayer.outputOffsets");
+static_assert(offsetof(WaterLayer, gifTag) == 0x030, "WaterLayer.gifTag");
+static_assert(offsetof(WaterLayer, primB) == 0x040, "WaterLayer.primB");
+static_assert(offsetof(WaterLayer, primA) == 0x050, "WaterLayer.primA");
+static_assert(offsetof(WaterLayer, texCoordsA) == 0x060, "WaterLayer.texCoordsA");
+static_assert(offsetof(WaterLayer, texCoordsB) == 0x120, "WaterLayer.texCoordsB");
+static_assert(offsetof(WaterLayer, mask) == 0x1E0, "WaterLayer.mask");
+static_assert(offsetof(WaterLayer, waveParamsA) == 0x1F0, "WaterLayer.waveParamsA");
+static_assert(offsetof(WaterLayer, waveParamsB) == 0x200, "WaterLayer.waveParamsB");
+static_assert(offsetof(WaterLayer, packets) == 0x210, "WaterLayer.packets");
+static_assert(offsetof(WaterLayer, texCoordsRest) == 0x220, "WaterLayer.texCoordsRest");
 static_assert(sizeof(CityMapVtable) == 0x10, "CityMapVtable size");
 static_assert(offsetof(CityMapVtable, tick) == 0x08, "CityMapVtable.tick");
 static_assert(offsetof(CityMapVtable, clearObject) == 0x0C, "CityMapVtable.clearObject");
@@ -3643,11 +3657,11 @@ static_assert(offsetof(CityMap, groundPacket) == 0x2F68, "CityMap.groundPacket")
 static_assert(offsetof(CityMap, sidePackets) == 0x2F6C, "CityMap.sidePackets");
 static_assert(offsetof(CityMap, rain) == 0x2F74, "CityMap.rain");
 static_assert(offsetof(CityMap, snow) == 0x2F78, "CityMap.snow");
-static_assert(offsetof(CityMap, layerF) == 0x2F7C, "CityMap.layerF");
+static_assert(offsetof(CityMap, litRoads) == 0x2F7C, "CityMap.litRoads");
 static_assert(offsetof(CityMap, water) == 0x2F80, "CityMap.water");
-static_assert(offsetof(CityMap, layerB) == 0x2F84, "CityMap.layerB");
+static_assert(offsetof(CityMap, waterBottom) == 0x2F84, "CityMap.waterBottom");
 static_assert(offsetof(CityMap, placement) == 0x2F88, "CityMap.placement");
-static_assert(offsetof(CityMap, instances) == 0x2F8C, "CityMap.instances");
+static_assert(offsetof(CityMap, claimMet) == 0x2F8C, "CityMap.claimMet");
 static_assert(sizeof(BuildingRecord) == 0x9C, "BuildingRecord size");
 static_assert(offsetof(BuildingRecord, name) == 0x00, "BuildingRecord.name");
 static_assert(offsetof(BuildingRecord, typeClass) == 0x20, "BuildingRecord.typeClass");
@@ -3887,6 +3901,7 @@ static_assert(offsetof(ClaimThresholds, switchFactor) == 0x05, "ClaimThresholds.
 static_assert(offsetof(ClaimThresholds, spreadStep) == 0x06, "ClaimThresholds.spreadStep");
 static_assert(offsetof(ClaimThresholds, holdTime) == 0x07, "ClaimThresholds.holdTime");
 static_assert(offsetof(ClaimEntry, wish) == 0x00, "ClaimEntry.wish");
+static_assert(offsetof(ClaimEntry, unk_01) == 0x01, "ClaimEntry.unk_01");
 static_assert(offsetof(ClaimEntry, id) == 0x02, "ClaimEntry.id");
 static_assert(offsetof(ClaimEntry, value) == 0x04, "ClaimEntry.value");
 static_assert(offsetof(ClaimEntry, reach) == 0x06, "ClaimEntry.reach");

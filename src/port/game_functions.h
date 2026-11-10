@@ -53,7 +53,7 @@ inline constexpr uint32_t MsgWin_SetMessage = 0x00128CF0u;
 inline constexpr uint32_t MsgWin_dtor = 0x00128D80u;
 inline constexpr uint32_t MsgWin_ctor = 0x00128E20u;
 inline constexpr uint32_t LightSet_BuildPackets = 0x00128EE0u;
-inline constexpr uint32_t Packet2_Draw = 0x00129090u;
+inline constexpr uint32_t LightSet_SelectProgram = 0x00129090u;
 inline constexpr uint32_t A3DObjectBase_DeletingDtor = 0x001290C0u;
 inline constexpr uint32_t LightSet_Init = 0x00129120u;
 inline constexpr uint32_t A3D_GetAnimLength = 0x00129210u;
@@ -199,7 +199,7 @@ inline constexpr uint32_t EventMgr_RequeueFirst = 0x00139680u;
 inline constexpr uint32_t Event_StartFromScript = 0x00139700u;
 inline constexpr uint32_t Event_FormatText = 0x001398D0u;
 inline constexpr uint32_t Event_CountActive = 0x00139A00u;
-inline constexpr uint32_t Event_ReleaseTiles = 0x00139A40u;
+inline constexpr uint32_t Event_DropRemovedClaims = 0x00139A40u;
 inline constexpr uint32_t Event_Finish = 0x00139B50u;
 inline constexpr uint32_t Event_Abort = 0x00139CC0u;
 inline constexpr uint32_t Event_Trigger = 0x00139DD0u;
@@ -359,7 +359,7 @@ inline constexpr uint32_t CityRender_UpdatePeople = 0x00148260u;
 inline constexpr uint32_t CityRender_DrawWeather = 0x001484A0u;
 inline constexpr uint32_t CityRender_CollectObjects = 0x00148500u;
 inline constexpr uint32_t CityRender_DrawWater = 0x00148950u;
-inline constexpr uint32_t CityRender_DrawInstanceLayer = 0x00148970u;
+inline constexpr uint32_t CityRender_DrawClaimMet = 0x00148970u;
 inline constexpr uint32_t CityRender_DrawPlacement = 0x00148980u;
 inline constexpr uint32_t CityRender_DrawTerrain = 0x001489B0u;
 inline constexpr uint32_t CityRender_dtor = 0x00148A40u;
@@ -368,12 +368,12 @@ inline constexpr uint32_t TexImage_Convert = 0x00148D70u;
 inline constexpr uint32_t TexImage_Upload = 0x001490D0u;
 inline constexpr uint32_t TexImage_dtor = 0x001490E0u;
 inline constexpr uint32_t TexImage_Load = 0x00149150u;
-inline constexpr uint32_t LayerA_BuildPacket = 0x001491E0u;
-inline constexpr uint32_t LayerA_Draw = 0x00149300u;
-inline constexpr uint32_t LayerA_AddInstance = 0x00149400u;
-inline constexpr uint32_t LayerA_BeginFrame = 0x00149720u;
-inline constexpr uint32_t LayerA_DeletingDtor = 0x00149730u;
-inline constexpr uint32_t LayerA_ctor = 0x00149790u;
+inline constexpr uint32_t ClaimMetLayer_BuildPacket = 0x001491E0u;
+inline constexpr uint32_t ClaimMetLayer_Draw = 0x00149300u;
+inline constexpr uint32_t ClaimMetLayer_AddInstance = 0x00149400u;
+inline constexpr uint32_t ClaimMetLayer_BeginFrame = 0x00149720u;
+inline constexpr uint32_t ClaimMetLayer_DeletingDtor = 0x00149730u;
+inline constexpr uint32_t ClaimMetLayer_ctor = 0x00149790u;
 inline constexpr uint32_t StatusPanel_BuildPacket = 0x00149990u;
 inline constexpr uint32_t StatusPanel_Update = 0x00149CD0u;
 inline constexpr uint32_t StatusPanel_Draw = 0x0014A590u;
@@ -408,11 +408,11 @@ inline constexpr uint32_t LightSet_UpdateByClock = 0x0014C620u;
 inline constexpr uint32_t LightSet_DeletingDtor = 0x0014C820u;
 inline constexpr uint32_t LightSet_ctor = 0x0014C880u;
 inline constexpr uint32_t Map_BottomHeight = 0x0014C8B0u;
-inline constexpr uint32_t LayerB_BuildPacket = 0x0014C8E0u;
-inline constexpr uint32_t LayerB_InitParams = 0x0014CA60u;
-inline constexpr uint32_t LayerB_Draw = 0x0014CC10u;
-inline constexpr uint32_t LayerB_DeletingDtor = 0x0014CC60u;
-inline constexpr uint32_t LayerB_ctor = 0x0014CCC0u;
+inline constexpr uint32_t WaterBottomLayer_BuildPacket = 0x0014C8E0u;
+inline constexpr uint32_t WaterBottomLayer_InitParams = 0x0014CA60u;
+inline constexpr uint32_t WaterBottomLayer_Draw = 0x0014CC10u;
+inline constexpr uint32_t WaterBottomLayer_DeletingDtor = 0x0014CC60u;
+inline constexpr uint32_t WaterBottomLayer_ctor = 0x0014CCC0u;
 inline constexpr uint32_t PlacementLayer_InTileRect = 0x0014CD10u;
 inline constexpr uint32_t PlacementLayer_Set = 0x0014CD80u;
 inline constexpr uint32_t PlacementLayer_BuildPacket = 0x0014CDA0u;
@@ -430,17 +430,17 @@ inline constexpr uint32_t SnowLayer_InitParams = 0x0014E8B0u;
 inline constexpr uint32_t SnowLayer_Draw = 0x0014EDB0u;
 inline constexpr uint32_t SnowLayer_DeletingDtor = 0x0014F0A0u;
 inline constexpr uint32_t SnowLayer_ctor = 0x0014F100u;
-inline constexpr uint32_t LayerF_BuildPacket = 0x0014F160u;
-inline constexpr uint32_t LayerF_InitParams = 0x0014F290u;
-inline constexpr uint32_t LayerF_Draw = 0x0014F400u;
-inline constexpr uint32_t LayerF_DeletingDtor = 0x0014F430u;
-inline constexpr uint32_t LayerF_ctor = 0x0014F490u;
-inline constexpr uint32_t LayerG_AnimateWaves = 0x0014F4E0u;
-inline constexpr uint32_t LayerG_BuildPacket = 0x0014F7F0u;
-inline constexpr uint32_t LayerG_InitParams = 0x0014FF00u;
-inline constexpr uint32_t LayerG_Draw = 0x00150090u;
-inline constexpr uint32_t LayerG_DeletingDtor = 0x001500D0u;
-inline constexpr uint32_t LayerG_ctor = 0x00150130u;
+inline constexpr uint32_t LitRoadLayer_BuildPacket = 0x0014F160u;
+inline constexpr uint32_t LitRoadLayer_InitParams = 0x0014F290u;
+inline constexpr uint32_t LitRoadLayer_Draw = 0x0014F400u;
+inline constexpr uint32_t LitRoadLayer_DeletingDtor = 0x0014F430u;
+inline constexpr uint32_t LitRoadLayer_ctor = 0x0014F490u;
+inline constexpr uint32_t WaterLayer_AnimateWaves = 0x0014F4E0u;
+inline constexpr uint32_t WaterLayer_BuildPacket = 0x0014F7F0u;
+inline constexpr uint32_t WaterLayer_InitParams = 0x0014FF00u;
+inline constexpr uint32_t WaterLayer_Draw = 0x00150090u;
+inline constexpr uint32_t WaterLayer_DeletingDtor = 0x001500D0u;
+inline constexpr uint32_t WaterLayer_ctor = 0x00150130u;
 inline constexpr uint32_t Wants_RemoveEventHold = 0x00150190u;
 inline constexpr uint32_t Wants_AddEventHold = 0x001502A0u;
 inline constexpr uint32_t Wants_CheckEntry = 0x00150350u;
@@ -956,8 +956,8 @@ inline constexpr uint32_t WordsFn_SetTalkEventVar = 0x0017B9D0u;
 inline constexpr uint32_t WordsFn_FinishSystemEvent = 0x0017B9F0u;
 inline constexpr uint32_t WordsFn_AbortSystemEvent = 0x0017BA00u;
 inline constexpr uint32_t WordsFn_SetSystemEventVar = 0x0017BA10u;
-inline constexpr uint32_t WordsFn_SelectEventPersonB = 0x0017BA30u;
-inline constexpr uint32_t WordsFn_SelectEventPersonA = 0x0017BAA0u;
+inline constexpr uint32_t WordsFn_SelectEventSecondPerson = 0x0017BA30u;
+inline constexpr uint32_t WordsFn_SelectEventFirstPerson = 0x0017BAA0u;
 inline constexpr uint32_t WordsFn_EventQueueShift = 0x0017BB10u;
 inline constexpr uint32_t WordsFn_PlaySe = 0x0017BB20u;
 inline constexpr uint32_t WordsFn_GiveBagItem = 0x0017BB40u;
@@ -1487,7 +1487,7 @@ inline constexpr uint32_t Words_LoadForPerson = 0x001A2DF0u;
 inline constexpr uint32_t Words_ReadBlock = 0x001A3050u;
 inline constexpr uint32_t WordsBlock_ctor = 0x001A31A0u;
 inline constexpr uint32_t Words_Init = 0x001A3250u;
-inline constexpr uint32_t StaticInit_StatusBytes = 0x001BAEA0u;
+inline constexpr uint32_t StaticInit_MemberStatus = 0x001BAEA0u;
 inline constexpr uint32_t StaticInit_WordsTable = 0x001BAEC0u;
 inline constexpr uint32_t StaticInit_Words = 0x001BCD90u;
 inline constexpr uint32_t sdk_abs = 0x0011E810u;
@@ -1718,7 +1718,7 @@ template <> inline constexpr bool at<0x00148BB0u> = true; // CityRender_ctor
 template <> inline constexpr bool at<0x001490D0u> = true; // TexImage_Upload
 template <> inline constexpr bool at<0x001490E0u> = true; // TexImage_dtor
 template <> inline constexpr bool at<0x00149150u> = true; // TexImage_Load
-template <> inline constexpr bool at<0x00149730u> = true; // LayerA_DeletingDtor
+template <> inline constexpr bool at<0x00149730u> = true; // ClaimMetLayer_DeletingDtor
 template <> inline constexpr bool at<0x00149CD0u> = true; // StatusPanel_Update
 template <> inline constexpr bool at<0x0014A780u> = true; // StatusPanel_dtor
 template <> inline constexpr bool at<0x0014A840u> = true; // StatusPanel_ctor
@@ -1729,12 +1729,12 @@ template <> inline constexpr bool at<0x0014C210u> = true; // Frame_DeletingDtor
 template <> inline constexpr bool at<0x0014C530u> = true; // WaitText_Delete
 template <> inline constexpr bool at<0x0014C560u> = true; // WaitText_Create
 template <> inline constexpr bool at<0x0014C820u> = true; // LightSet_DeletingDtor
-template <> inline constexpr bool at<0x0014CC60u> = true; // LayerB_DeletingDtor
+template <> inline constexpr bool at<0x0014CC60u> = true; // WaterBottomLayer_DeletingDtor
 template <> inline constexpr bool at<0x0014D320u> = true; // PlacementLayer_DeletingDtor
 template <> inline constexpr bool at<0x0014E0E0u> = true; // RainLayer_DeletingDtor
 template <> inline constexpr bool at<0x0014F0A0u> = true; // SnowLayer_DeletingDtor
-template <> inline constexpr bool at<0x0014F430u> = true; // LayerF_DeletingDtor
-template <> inline constexpr bool at<0x001500D0u> = true; // LayerG_DeletingDtor
+template <> inline constexpr bool at<0x0014F430u> = true; // LitRoadLayer_DeletingDtor
+template <> inline constexpr bool at<0x001500D0u> = true; // WaterLayer_DeletingDtor
 template <> inline constexpr bool at<0x00150C20u> = true; // ListMenu_AddItems
 template <> inline constexpr bool at<0x001512A0u> = true; // ListMenu_dtor
 template <> inline constexpr bool at<0x00151350u> = true; // ListMenu_ctor
@@ -2307,7 +2307,7 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"CityMap_SumNewBuildings", addr::CityMap_SumNewBuildings},
     {"CityMap_ctor", addr::CityMap_ctor},
     {"CityRender_CollectObjects", addr::CityRender_CollectObjects},
-    {"CityRender_DrawInstanceLayer", addr::CityRender_DrawInstanceLayer},
+    {"CityRender_DrawClaimMet", addr::CityRender_DrawClaimMet},
     {"CityRender_DrawPlacement", addr::CityRender_DrawPlacement},
     {"CityRender_DrawTerrain", addr::CityRender_DrawTerrain},
     {"CityRender_DrawWater", addr::CityRender_DrawWater},
@@ -2342,6 +2342,12 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"CityScene_ctor", addr::CityScene_ctor},
     {"CityScene_dtor", addr::CityScene_dtor},
     {"ClaimIcon_GetColor", addr::ClaimIcon_GetColor},
+    {"ClaimMetLayer_AddInstance", addr::ClaimMetLayer_AddInstance},
+    {"ClaimMetLayer_BeginFrame", addr::ClaimMetLayer_BeginFrame},
+    {"ClaimMetLayer_BuildPacket", addr::ClaimMetLayer_BuildPacket},
+    {"ClaimMetLayer_DeletingDtor", addr::ClaimMetLayer_DeletingDtor},
+    {"ClaimMetLayer_Draw", addr::ClaimMetLayer_Draw},
+    {"ClaimMetLayer_ctor", addr::ClaimMetLayer_ctor},
     {"ClaimMeter_Level", addr::ClaimMeter_Level},
     {"Claim_GetGroup", addr::Claim_GetGroup},
     {"Claim_GetLine", addr::Claim_GetLine},
@@ -2502,13 +2508,13 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Event_CallText", addr::Event_CallText},
     {"Event_CheckCondition", addr::Event_CheckCondition},
     {"Event_CountActive", addr::Event_CountActive},
+    {"Event_DropRemovedClaims", addr::Event_DropRemovedClaims},
     {"Event_FindForFamily", addr::Event_FindForFamily},
     {"Event_Finish", addr::Event_Finish},
     {"Event_FormatText", addr::Event_FormatText},
     {"Event_InitForCity", addr::Event_InitForCity},
     {"Event_LoadState", addr::Event_LoadState},
     {"Event_LoadTypes", addr::Event_LoadTypes},
-    {"Event_ReleaseTiles", addr::Event_ReleaseTiles},
     {"Event_RemoveClaims", addr::Event_RemoveClaims},
     {"Event_SaveState", addr::Event_SaveState},
     {"Event_StartFromScript", addr::Event_StartFromScript},
@@ -2593,31 +2599,10 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Laptop_Update", addr::Laptop_Update},
     {"Laptop_ctor", addr::Laptop_ctor},
     {"Laptop_dtor", addr::Laptop_dtor},
-    {"LayerA_AddInstance", addr::LayerA_AddInstance},
-    {"LayerA_BeginFrame", addr::LayerA_BeginFrame},
-    {"LayerA_BuildPacket", addr::LayerA_BuildPacket},
-    {"LayerA_DeletingDtor", addr::LayerA_DeletingDtor},
-    {"LayerA_Draw", addr::LayerA_Draw},
-    {"LayerA_ctor", addr::LayerA_ctor},
-    {"LayerB_BuildPacket", addr::LayerB_BuildPacket},
-    {"LayerB_DeletingDtor", addr::LayerB_DeletingDtor},
-    {"LayerB_Draw", addr::LayerB_Draw},
-    {"LayerB_InitParams", addr::LayerB_InitParams},
-    {"LayerB_ctor", addr::LayerB_ctor},
-    {"LayerF_BuildPacket", addr::LayerF_BuildPacket},
-    {"LayerF_DeletingDtor", addr::LayerF_DeletingDtor},
-    {"LayerF_Draw", addr::LayerF_Draw},
-    {"LayerF_InitParams", addr::LayerF_InitParams},
-    {"LayerF_ctor", addr::LayerF_ctor},
-    {"LayerG_AnimateWaves", addr::LayerG_AnimateWaves},
-    {"LayerG_BuildPacket", addr::LayerG_BuildPacket},
-    {"LayerG_DeletingDtor", addr::LayerG_DeletingDtor},
-    {"LayerG_Draw", addr::LayerG_Draw},
-    {"LayerG_InitParams", addr::LayerG_InitParams},
-    {"LayerG_ctor", addr::LayerG_ctor},
     {"LightSet_BuildPackets", addr::LightSet_BuildPackets},
     {"LightSet_DeletingDtor", addr::LightSet_DeletingDtor},
     {"LightSet_Init", addr::LightSet_Init},
+    {"LightSet_SelectProgram", addr::LightSet_SelectProgram},
     {"LightSet_UpdateByClock", addr::LightSet_UpdateByClock},
     {"LightSet_ctor", addr::LightSet_ctor},
     {"ListMenu_AddItems", addr::ListMenu_AddItems},
@@ -2629,6 +2614,11 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"ListMenu_SetItemText", addr::ListMenu_SetItemText},
     {"ListMenu_ctor", addr::ListMenu_ctor},
     {"ListMenu_dtor", addr::ListMenu_dtor},
+    {"LitRoadLayer_BuildPacket", addr::LitRoadLayer_BuildPacket},
+    {"LitRoadLayer_DeletingDtor", addr::LitRoadLayer_DeletingDtor},
+    {"LitRoadLayer_Draw", addr::LitRoadLayer_Draw},
+    {"LitRoadLayer_InitParams", addr::LitRoadLayer_InitParams},
+    {"LitRoadLayer_ctor", addr::LitRoadLayer_ctor},
     {"LoadingScreen_SetSpritePos", addr::LoadingScreen_SetSpritePos},
     {"LoadingScreen_SetText", addr::LoadingScreen_SetText},
     {"LoadingScreen_SetTextPos", addr::LoadingScreen_SetTextPos},
@@ -2894,7 +2884,6 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Notice_Tick", addr::Notice_Tick},
     {"Notice_ctor", addr::Notice_ctor},
     {"Notice_dtor", addr::Notice_dtor},
-    {"Packet2_Draw", addr::Packet2_Draw},
     {"PacketBuf_Seek", addr::PacketBuf_Seek},
     {"PacketBuf_Tell", addr::PacketBuf_Tell},
     {"Packet_Draw", addr::Packet_Draw},
@@ -3116,7 +3105,7 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Stamina_Tick", addr::Stamina_Tick},
     {"Stamina_Zero", addr::Stamina_Zero},
     {"StaticInit_EventTypeIds", addr::StaticInit_EventTypeIds},
-    {"StaticInit_StatusBytes", addr::StaticInit_StatusBytes},
+    {"StaticInit_MemberStatus", addr::StaticInit_MemberStatus},
     {"StaticInit_Words", addr::StaticInit_Words},
     {"StaticInit_WordsTable", addr::StaticInit_WordsTable},
     {"StatusPanel_BuildPacket", addr::StatusPanel_BuildPacket},
@@ -3362,6 +3351,17 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Wants_RemoveEventHold", addr::Wants_RemoveEventHold},
     {"Wants_SaveState", addr::Wants_SaveState},
     {"Wants_ctor", addr::Wants_ctor},
+    {"WaterBottomLayer_BuildPacket", addr::WaterBottomLayer_BuildPacket},
+    {"WaterBottomLayer_DeletingDtor", addr::WaterBottomLayer_DeletingDtor},
+    {"WaterBottomLayer_Draw", addr::WaterBottomLayer_Draw},
+    {"WaterBottomLayer_InitParams", addr::WaterBottomLayer_InitParams},
+    {"WaterBottomLayer_ctor", addr::WaterBottomLayer_ctor},
+    {"WaterLayer_AnimateWaves", addr::WaterLayer_AnimateWaves},
+    {"WaterLayer_BuildPacket", addr::WaterLayer_BuildPacket},
+    {"WaterLayer_DeletingDtor", addr::WaterLayer_DeletingDtor},
+    {"WaterLayer_Draw", addr::WaterLayer_Draw},
+    {"WaterLayer_InitParams", addr::WaterLayer_InitParams},
+    {"WaterLayer_ctor", addr::WaterLayer_ctor},
     {"Widget_Active", addr::Widget_Active},
     {"Widget_Close", addr::Widget_Close},
     {"Widget_Closed", addr::Widget_Closed},
@@ -3479,8 +3479,8 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"WordsFn_ScriptVar", addr::WordsFn_ScriptVar},
     {"WordsFn_SelectBuildingB", addr::WordsFn_SelectBuildingB},
     {"WordsFn_SelectEventActor", addr::WordsFn_SelectEventActor},
-    {"WordsFn_SelectEventPersonA", addr::WordsFn_SelectEventPersonA},
-    {"WordsFn_SelectEventPersonB", addr::WordsFn_SelectEventPersonB},
+    {"WordsFn_SelectEventFirstPerson", addr::WordsFn_SelectEventFirstPerson},
+    {"WordsFn_SelectEventSecondPerson", addr::WordsFn_SelectEventSecondPerson},
     {"WordsFn_SelectMemberB", addr::WordsFn_SelectMemberB},
     {"WordsFn_SetCancelAllowed", addr::WordsFn_SetCancelAllowed},
     {"WordsFn_SetPose", addr::WordsFn_SetPose},
@@ -3731,7 +3731,7 @@ int MsgWin_SetMessage(GuestPtr<MsgWin> msgwin, int message, uint8_t sound);
 GuestPtr<MsgWin> MsgWin_dtor(GuestPtr<MsgWin> msgwin, int16_t deleteFlag);
 GuestPtr<MsgWin> MsgWin_ctor(GuestPtr<MsgWin> msgwin);
 void LightSet_BuildPackets(GuestPtr<LightSet> lights);
-void Packet2_Draw(GuestPtr<uint32_t> packets, int second);
+void LightSet_SelectProgram(GuestPtr<LightSet> lights, int buildings);
 GuestPtr<A3DObject> A3DObjectBase_DeletingDtor(GuestPtr<A3DObject> model, int16_t deleteFlag);
 int LightSet_Init(GuestPtr<LightSet> lights);
 ps2f A3D_GetAnimLength(GuestPtr<A3DObject> model, int animation);
@@ -3877,7 +3877,7 @@ void EventMgr_RequeueFirst(GuestPtr<EventMgr> events);
 int Event_StartFromScript(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
 GuestPtr<char> Event_FormatText(GuestPtr<EventMgr> events, int slot);
 int Event_CountActive(GuestPtr<EventMgr> events);
-void Event_ReleaseTiles(GuestPtr<CityScene> city);
+void Event_DropRemovedClaims(GuestPtr<CityScene> city);
 void Event_Finish(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, int index);
 void Event_Abort(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, int index);
 int Event_Trigger(GuestPtr<EventMgr> events, int16_t id, GuestPtr<CityScene> city, GuestPtr<MapPerson> person);
@@ -4037,7 +4037,7 @@ void CityRender_UpdatePeople(GuestPtr<CityMap> map, GuestPtr<CityScene> city);
 void CityRender_DrawWeather(GuestPtr<CityMap> map, GuestPtr<CityScene> city, int pass, GuestPtr<Vec4> view);
 void CityRender_CollectObjects(GuestPtr<CityMap> map, GuestPtr<CityScene> city);
 void CityRender_DrawWater(GuestPtr<CityMap> map, GuestPtr<CityScene> city);
-void CityRender_DrawInstanceLayer(GuestPtr<CityMap> map);
+void CityRender_DrawClaimMet(GuestPtr<CityMap> map);
 void CityRender_DrawPlacement(GuestPtr<CityMap> map, int pass);
 void CityRender_DrawTerrain(GuestPtr<CityMap> map, GuestPtr<CityScene> city);
 GuestPtr<CityMap> CityRender_dtor(GuestPtr<CityMap> map, int16_t deleteFlag);
@@ -4046,12 +4046,12 @@ void TexImage_Convert(GuestPtr<TexImage> image, uint32_t textureBlock, uint32_t 
 int TexImage_Upload(GuestPtr<TexImage> image);
 GuestPtr<TexImage> TexImage_dtor(GuestPtr<TexImage> image, int16_t deleteFlag);
 int TexImage_Load(GuestPtr<TexImage> image, GuestPtr<char> name, int textureBlock, int clutBlock);
-GuestPtr<uint32_t> LayerA_BuildPacket(GuestPtr<LayerA> layer, GuestPtr<uint32_t> packet);
-void LayerA_Draw(GuestPtr<LayerA> layer);
-void LayerA_AddInstance(GuestPtr<LayerA> layer, int size, int age, ps2f x, ps2f y, ps2f z);
-void LayerA_BeginFrame(GuestPtr<LayerA> layer, int source);
-GuestPtr<LayerA> LayerA_DeletingDtor(GuestPtr<LayerA> layer, int16_t deleteFlag);
-GuestPtr<LayerA> LayerA_ctor(GuestPtr<LayerA> layer);
+GuestPtr<uint32_t> ClaimMetLayer_BuildPacket(GuestPtr<ClaimMetLayer> layer, GuestPtr<uint32_t> packet);
+void ClaimMetLayer_Draw(GuestPtr<ClaimMetLayer> layer);
+void ClaimMetLayer_AddInstance(GuestPtr<ClaimMetLayer> layer, int size, int age, ps2f x, ps2f y, ps2f z);
+void ClaimMetLayer_BeginFrame(GuestPtr<ClaimMetLayer> layer, int source);
+GuestPtr<ClaimMetLayer> ClaimMetLayer_DeletingDtor(GuestPtr<ClaimMetLayer> layer, int16_t deleteFlag);
+GuestPtr<ClaimMetLayer> ClaimMetLayer_ctor(GuestPtr<ClaimMetLayer> layer);
 GuestPtr<uint32_t> StatusPanel_BuildPacket(GuestPtr<StatusPanel> panel, GuestPtr<uint32_t> packet);
 void StatusPanel_Update(GuestPtr<StatusPanel> panel, GuestPtr<CityScene> city);
 void StatusPanel_Draw(GuestPtr<StatusPanel> panel);
@@ -4086,11 +4086,11 @@ void LightSet_UpdateByClock(GuestPtr<LightSet> lights, int clock, int weather);
 GuestPtr<LightSet> LightSet_DeletingDtor(GuestPtr<LightSet> lights, int16_t deleteFlag);
 GuestPtr<LightSet> LightSet_ctor(GuestPtr<LightSet> lights);
 ps2f Map_BottomHeight(ps2f height);
-GuestPtr<uint32_t> LayerB_BuildPacket(GuestPtr<LayerB> layer, GuestPtr<uint32_t> packet);
-void LayerB_InitParams(GuestPtr<LayerB> layer);
-void LayerB_Draw(GuestPtr<LayerB> layer, int packet);
-GuestPtr<LayerB> LayerB_DeletingDtor(GuestPtr<LayerB> layer, int16_t deleteFlag);
-GuestPtr<LayerB> LayerB_ctor(GuestPtr<LayerB> layer);
+GuestPtr<uint32_t> WaterBottomLayer_BuildPacket(GuestPtr<WaterBottomLayer> layer, GuestPtr<uint32_t> packet);
+void WaterBottomLayer_InitParams(GuestPtr<WaterBottomLayer> layer);
+void WaterBottomLayer_Draw(GuestPtr<WaterBottomLayer> layer, int packet);
+GuestPtr<WaterBottomLayer> WaterBottomLayer_DeletingDtor(GuestPtr<WaterBottomLayer> layer, int16_t deleteFlag);
+GuestPtr<WaterBottomLayer> WaterBottomLayer_ctor(GuestPtr<WaterBottomLayer> layer);
 int PlacementLayer_InTileRect(GuestPtr<PlacementLayer> layer, int x, int z);
 void PlacementLayer_Set(GuestPtr<PlacementLayer> layer, int mode, GuestPtr<TileRect> rect, GuestPtr<Vec4> colour);
 GuestPtr<uint32_t> PlacementLayer_BuildPacket(GuestPtr<PlacementLayer> layer, GuestPtr<uint32_t> packet);
@@ -4108,17 +4108,17 @@ void SnowLayer_InitParams(GuestPtr<SnowLayer> layer);
 void SnowLayer_Draw(GuestPtr<SnowLayer> layer, int pass, int packet, int clock, GuestPtr<Vec4> view);
 GuestPtr<SnowLayer> SnowLayer_DeletingDtor(GuestPtr<SnowLayer> layer, int16_t deleteFlag);
 GuestPtr<SnowLayer> SnowLayer_ctor(GuestPtr<SnowLayer> layer, int buffers);
-GuestPtr<uint32_t> LayerF_BuildPacket(GuestPtr<LayerF> layer, GuestPtr<uint32_t> packet);
-void LayerF_InitParams(GuestPtr<LayerF> layer);
-void LayerF_Draw(GuestPtr<LayerF> layer, int packet);
-GuestPtr<LayerF> LayerF_DeletingDtor(GuestPtr<LayerF> layer, int16_t deleteFlag);
-GuestPtr<LayerF> LayerF_ctor(GuestPtr<LayerF> layer);
-void LayerG_AnimateWaves(GuestPtr<LayerG> layer, ps2f waterLevel);
-GuestPtr<uint32_t> LayerG_BuildPacket(GuestPtr<LayerG> layer, GuestPtr<uint32_t> packet, GuestPtr<int32_t> buffers);
-void LayerG_InitParams(GuestPtr<LayerG> layer);
-void LayerG_Draw(GuestPtr<LayerG> layer, int pass, ps2f waterLevel);
-GuestPtr<LayerG> LayerG_DeletingDtor(GuestPtr<LayerG> layer, int16_t deleteFlag);
-GuestPtr<LayerG> LayerG_ctor(GuestPtr<LayerG> layer, int buffers);
+GuestPtr<uint32_t> LitRoadLayer_BuildPacket(GuestPtr<LitRoadLayer> layer, GuestPtr<uint32_t> packet);
+void LitRoadLayer_InitParams(GuestPtr<LitRoadLayer> layer);
+void LitRoadLayer_Draw(GuestPtr<LitRoadLayer> layer, int packet);
+GuestPtr<LitRoadLayer> LitRoadLayer_DeletingDtor(GuestPtr<LitRoadLayer> layer, int16_t deleteFlag);
+GuestPtr<LitRoadLayer> LitRoadLayer_ctor(GuestPtr<LitRoadLayer> layer);
+void WaterLayer_AnimateWaves(GuestPtr<WaterLayer> layer, ps2f waterLevel);
+GuestPtr<uint32_t> WaterLayer_BuildPacket(GuestPtr<WaterLayer> layer, GuestPtr<uint32_t> packet, GuestPtr<int32_t> buffers);
+void WaterLayer_InitParams(GuestPtr<WaterLayer> layer);
+void WaterLayer_Draw(GuestPtr<WaterLayer> layer, int pass, ps2f waterLevel);
+GuestPtr<WaterLayer> WaterLayer_DeletingDtor(GuestPtr<WaterLayer> layer, int16_t deleteFlag);
+GuestPtr<WaterLayer> WaterLayer_ctor(GuestPtr<WaterLayer> layer, int buffers);
 void Wants_RemoveEventHold(GuestPtr<WantsWin> wants, uint16_t eventId, int value);
 int Wants_AddEventHold(GuestPtr<WantsWin> wants, uint16_t eventId, int value);
 int Wants_CheckEntry(GuestPtr<WantsWin> wants, GuestPtr<CityScene> city, GuestPtr<uint16_t> entry);
@@ -4450,7 +4450,7 @@ void SoundTest_SeText(GuestPtr<TitleScene> scene);
 int Title_DrawCommon(GuestPtr<TitleScene> scene, int layers);
 int Title_LoadMenu(GuestPtr<TitleScene> scene);
 int Title_PressStart(GuestPtr<TitleScene> scene);
-int TitleScene_StartGame(GuestPtr<TitleScene> scene, int newGame);
+int TitleScene_StartGame(GuestPtr<TitleScene> scene, int loaded);
 void Title_NewGameIntro(GuestPtr<TitleScene> scene);
 int Title_RandomCharParts(GuestPtr<TitleScene> scene);
 int Title_OpeningMovieStep(GuestPtr<TitleScene> scene);
@@ -4634,8 +4634,8 @@ int WordsFn_SetTalkEventVar(GuestPtr<WordsCtx> ctx);
 int WordsFn_FinishSystemEvent(GuestPtr<WordsCtx> ctx);
 int WordsFn_AbortSystemEvent(GuestPtr<WordsCtx> ctx);
 int WordsFn_SetSystemEventVar(GuestPtr<WordsCtx> ctx);
-int WordsFn_SelectEventPersonB(GuestPtr<WordsCtx> ctx);
-int WordsFn_SelectEventPersonA(GuestPtr<WordsCtx> ctx);
+int WordsFn_SelectEventSecondPerson(GuestPtr<WordsCtx> ctx);
+int WordsFn_SelectEventFirstPerson(GuestPtr<WordsCtx> ctx);
 int WordsFn_EventQueueShift(GuestPtr<WordsCtx> ctx);
 int WordsFn_PlaySe(GuestPtr<WordsCtx> ctx);
 int WordsFn_GiveBagItem(GuestPtr<WordsCtx> ctx);
@@ -5165,7 +5165,7 @@ int Words_LoadForPerson(GuestPtr<MapPerson> person, int origin, GuestPtr<CitySce
 GuestPtr<uint32_t> Words_ReadBlock(int block);
 GuestPtr<WordsBlock> WordsBlock_ctor(GuestPtr<WordsBlock> entry);
 void Words_Init();
-void StaticInit_StatusBytes();
+void StaticInit_MemberStatus();
 void StaticInit_WordsTable();
 void StaticInit_Words();
 int sdk_abs(int value);

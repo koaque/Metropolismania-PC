@@ -9,7 +9,6 @@ namespace mm
 {
     namespace
     {
-        constexpr uint32_t kPowersOfTen = 0x001B9AB0u; // nine int32_t
 
         // Calls emit(digit, leadingBlank) for the last `count` of the nine high digits (the ones digit is
         // left in `value`). A value below zero gives all zeros and a wrapped last digit, like the original.
@@ -19,7 +18,7 @@ namespace mm
             bool leading = true;
             for (int i = 0; i < 9; ++i)
             {
-                const int32_t power = port::load<int32_t>(kPowersOfTen + 4u * static_cast<uint32_t>(i));
+                const int32_t power = port::load<int32_t>(globals::kPowersOfTen + 4u * static_cast<uint32_t>(i));
                 int digit = 0;
                 for (; power <= value; value -= power)
                     ++digit;

@@ -175,7 +175,7 @@ namespace mm
         const uint16_t group = slot->group;
         if (group == 0)
         {
-            TextBox_SetText(nameBox, GuestPtr<char>{0x001B5B10u}, 0);
+            TextBox_SetText(nameBox, GuestPtr<char>{globals::kBagTextEmpty}, 0);
             return;
         }
         const GuestPtr<GoodsRecord> record = globals::goodsAt(group, slot->index);
@@ -188,19 +188,19 @@ namespace mm
         case 0x1B:
         case 0x1A:
         case 0x17:
-            action = 0x001B5B40u;
+            action = globals::kBagTextSetUp;
             break;
         case 0x15:
-            action = 0x001B5B30u;
+            action = globals::kBagTextClothes;
             break;
         case 0x13:
-            action = 0x001B5B28u;
+            action = globals::kBagTextDrink;
             break;
         case 0x11:
-            action = 0x001B5B20u;
+            action = globals::kBagTextEat;
             break;
         case 0x10:
-            action = 0x001B5B00u;
+            action = globals::kBagNoAction;
             usable = 0;
             break;
         default:
@@ -257,7 +257,7 @@ namespace mm
     // packets and texts (the item name and, with the usable flag, its description) and the closing widget are drawn.
     void BagMenu_Draw(GuestPtr<Bag> bag)
     {
-        const GuestPtr<A3DObject> frameModel{port::load<uint32_t>(0x001F3B08u)};
+        const GuestPtr<A3DObject> frameModel = globals::menuWindowModel.get();
         A3DObject_UpdateMatrices(bag->model);
         int node = bag->size + 5;
         const GuestPtr<Vec4> source = worldMatrix(modelNode(bag->model, 0));
@@ -343,7 +343,7 @@ namespace mm
         const uint32_t line = frame.ptr().address + 0x50u;
         const auto list = [&] { return bag->list; };
         ListMenu_ClearItem(list(), -1);
-        for (int i = 0; i < port::load<uint8_t>(0x001B5B08u + bag->size); ++i)
+        for (int i = 0; i < port::load<uint8_t>(globals::kBagSlotsBySize + bag->size); ++i)
         {
             const GuestPtr<BagSlot> slot{bag.address + 4u + 0x10u * static_cast<uint32_t>(i)};
             if (slot->group == 0)
@@ -355,7 +355,7 @@ namespace mm
             {
                 const uint32_t count = static_cast<uint8_t>(slot->count);
                 if (static_cast<int32_t>(count) >= 2)
-                    sdk::sprintf(line + static_cast<uint32_t>(sdk::strlen(line)), 0x001B5B48u, count);
+                    sdk::sprintf(line + static_cast<uint32_t>(sdk::strlen(line)), globals::kBagTextCount, count);
             }
             ListMenu_SetItemText(list(), GuestPtr<char>{line}, -1);
         }
@@ -713,7 +713,7 @@ namespace mm
         // as the FPU's accumulator does), and the model's animation is set to that time.
         void slideBag(GuestPtr<Bag> bag, ps2f time, uint32_t from)
         {
-            const GuestPtr<Vec4> start{from}, end{0x001AEF00u};
+            const GuestPtr<Vec4> start{from}, end{globals::kApplicantsEnd};
             const ps2f t = time / ps2f(120.0f);
             const ps2f rest = ps2f(1.0f) - t;
             Vec4 &place = bag->matrix[3];
@@ -762,7 +762,7 @@ namespace mm
         case 1:
         {
             bag->slide = bag->slide + ps2f(10.0f);
-            slideBag(bag, bag->slide, 0x001AEF10u);
+            slideBag(bag, bag->slide, globals::kBagShown);
             A3D_Animate(model(), 0, bag->slide);
             if (bag->slide < ps2f(120.0f))
                 break;
@@ -787,9 +787,9 @@ namespace mm
             TextBox_SetPos(bag->labels[0], 0x8820, 0x8200, 0xFF0000);
             TextBox_SetPos(bag->labels[2], 0x8820, 0x82C0, 0xFF0000);
             TextBox_SetPos(bag->labels[1], 0x8820, 0x8380, 0xFF0000);
-            TextBox_SetText(bag->labels[0], GuestPtr<char>{0x001B5B40u}, 0);
-            TextBox_SetText(bag->labels[1], GuestPtr<char>{0x001B5B50u}, 0);
-            TextBox_SetText(bag->labels[2], GuestPtr<char>{0x001B5B58u}, 0);
+            TextBox_SetText(bag->labels[0], GuestPtr<char>{globals::kBagTextSetUp}, 0);
+            TextBox_SetText(bag->labels[1], GuestPtr<char>{globals::kBagTextClose}, 0);
+            TextBox_SetText(bag->labels[2], GuestPtr<char>{globals::kBagTextDiscard}, 0);
             break;
         }
         case 2:
@@ -810,8 +810,8 @@ namespace mm
                         question = MenuWin_ctor(GuestPtr<MenuWin>{question}).address;
                     bag->question = GuestPtr<MenuWin>{question};
                     MenuWin_Open(bag->question, 0, 2);
-                    MenuWin_FillItems(bag->question, GuestPtr<char>{0x001B5B58u});
-                    MenuWin_FillItems(bag->question, GuestPtr<char>{0x001B5B60u});
+                    MenuWin_FillItems(bag->question, GuestPtr<char>{globals::kBagTextDiscard});
+                    MenuWin_FillItems(bag->question, GuestPtr<char>{globals::kBagTextKeep});
                 }
             }
             else if ((Pad_Pressed(0) & 0x10u) != 0)
@@ -832,7 +832,7 @@ namespace mm
         case 3:
             bag->slide = bag->slide - ps2f(10.0f);
             A3D_Animate(model(), 0, bag->slide);
-            slideBag(bag, bag->slide, 0x001AEF10u);
+            slideBag(bag, bag->slide, globals::kBagShown);
             if (bag->slide <= ps2f(0.0f))
             {
                 setState(0);
@@ -872,7 +872,7 @@ namespace mm
                 {
                     const uint32_t count = static_cast<uint8_t>(selected()->count);
                     if (static_cast<int32_t>(count) >= 2)
-                        sdk::sprintf(buffer + static_cast<uint32_t>(sdk::strlen(buffer)), 0x001B5B48u, count);
+                        sdk::sprintf(buffer + static_cast<uint32_t>(sdk::strlen(buffer)), globals::kBagTextCount, count);
                 }
             }
             Notice_ShowText(city->notice, GuestPtr<char>{buffer});
@@ -880,7 +880,7 @@ namespace mm
         }
         case 6:
             bag->slide = bag->slide - ps2f(10.0f);
-            slideBag(bag, bag->slide, 0x001AEF20u);
+            slideBag(bag, bag->slide, globals::kBagAway);
             A3D_Animate(model(), 0, bag->slide);
             if (bag->slide <= ps2f(0.0f))
             {
@@ -892,7 +892,7 @@ namespace mm
             break;
         case 7:
             bag->slide = bag->slide + ps2f(10.0f);
-            slideBag(bag, bag->slide, 0x001AEF20u);
+            slideBag(bag, bag->slide, globals::kBagAway);
             A3D_Animate(model(), 0, bag->slide);
             if (bag->slide < ps2f(120.0f))
                 break;
@@ -961,7 +961,7 @@ namespace mm
         const auto model = [&]() { return applicants->frameModel; };
         const auto lightAll = [&](GuestPtr<Vec4> colour) {
             for (uint32_t node = 0; node < 8; ++node)
-                A3DObject_ChangeLuminosity(model(), colour, port::load<uint8_t>(0x001B7A10u + node));
+                A3DObject_ChangeLuminosity(model(), colour, port::load<uint8_t>(globals::kApplicantNodeGroups + node));
         };
         const auto lightFirst = [&](GuestPtr<Vec4> colour) { A3DObject_ChangeLuminosity(model(), colour, 0); };
         const GuestPtr<Vec4> forward = frame.at(&Locals::forward), backward = frame.at(&Locals::backward);
@@ -1067,7 +1067,7 @@ namespace mm
                     entryColour(applicants, applicants->top, relit);
                     A3DObject_ChangeLuminosity(cardModel(), relit, 0);
                     for (uint32_t node = 0; node < 8; ++node)
-                        A3DObject_ChangeLuminosity(cardModel(), relit, port::load<uint8_t>(0x001B7A10u + node));
+                        A3DObject_ChangeLuminosity(cardModel(), relit, port::load<uint8_t>(globals::kApplicantNodeGroups + node));
                 }
                 A3DObject_Draw(cardModel());
                 const int32_t shown = applicants->count;
@@ -1086,10 +1086,10 @@ namespace mm
                         continue;
                     const uint32_t kind = static_cast<uint16_t>(applicants->entries[i].state);
                     const uint32_t slot = kind >= 4u ? (kind < 8u ? 1u : 0u) : 0u;
-                    const uint32_t nodeAt = 0x001B7A18u + slot;
+                    const uint32_t nodeAt = globals::kApplicantFrameNodes + slot;
                     const uint32_t node = port::load<uint8_t>(nodeAt);
                     const GuestPtr<Vec4> world = GuestPtr<Vec4>::of(iconModel()->model->nodes[static_cast<int32_t>(node)].slot.matrix[0]);
-                    Mat4_Copy(world, GuestPtr<Vec4>{0x001B2550u});
+                    Mat4_Copy(world, GuestPtr<Vec4>{globals::kIdentityMatrix});
                     const Vec4 &card = applicants->cardMatrix[3];
                     const ps2f place = ps2f(static_cast<float>(i)) * spacing;
                     world[3].x = (card.x + place) - constant(0x3F866666u);
@@ -1109,10 +1109,10 @@ namespace mm
                 if (marker != 0xFF)
                 {
                     const uint32_t markerMatrix = applicants->cardNodeB.address;
-                    Mat4_Copy(GuestPtr<Vec4>{markerMatrix}, GuestPtr<Vec4>{0x001B2550u});
+                    Mat4_Copy(GuestPtr<Vec4>{markerMatrix}, GuestPtr<Vec4>{globals::kIdentityMatrix});
                     Vec4 &markerAt = applicants->cardNodeB[3];
                     const Vec4 &frameAt = applicants->frameMatrix[3];
-                    markerAt.x = frameAt.x + GuestPtr<ps2f>{0x001B7A20u}[marker];
+                    markerAt.x = frameAt.x + GuestPtr<ps2f>{globals::kApplicantMarkerX}[marker];
                     markerAt.y = frameAt.y;
                     markerAt.z = frameAt.z;
                     Instance_DrawNode(iconModel(), colour, 2, 0);

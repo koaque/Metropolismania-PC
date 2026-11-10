@@ -10,7 +10,7 @@ namespace mm
     {
         // The collision blob: a table of (first, last) vertex indices per mesh, then the triangles, 12 floats each
         // (three vertices of four).
-        uint32_t collisionBlob() { return port::load<uint32_t>(0x001BDBDCu); }
+        uint32_t collisionBlob() { return globals::collisionData.get(); }
 
         void transformVertex(GuestPtr<Vec4> matrix, uint32_t vertex, uint32_t out)
         {

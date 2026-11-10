@@ -208,14 +208,14 @@ namespace mm
         }
         if (slot == -1)
             return 0;
-        const uint32_t request = 0x001F2EE0u + 4u * static_cast<uint32_t>(slot);
+        const uint32_t request = globals::kFamilyTableC + 4u * static_cast<uint32_t>(slot);
         if (port::load<int32_t>(request) != -1)
         {
-            if (FileQueue_IsDone(static_cast<int>(port::load<uint32_t>(0x001BDA94u)), port::load<int32_t>(request)) == 0)
+            if (FileQueue_IsDone(static_cast<int>(globals::familyFile.get()), port::load<int32_t>(request)) == 0)
                 return 0;
             port::store<int32_t>(request, -1);
         }
-        return static_cast<int>(0x001D52E0u + 0x1D4u * static_cast<uint32_t>(slot));
+        return static_cast<int>(globals::kFamilyRecords + 0x1D4u * static_cast<uint32_t>(slot));
     }
 
     // A new stage: no family lives in the city or has left, and the three counters are cleared.
@@ -373,12 +373,12 @@ namespace mm
         if (memory != 0u)
             file = File_ctor(GuestPtr<GameFile>{memory}, 0x8000).address;
         globals::familyFile.set(file);
-        File_Open(GuestPtr<GameFile>{globals::familyFile.get()}, GuestPtr<char>{0x001B6390u});
+        File_Open(GuestPtr<GameFile>{globals::familyFile.get()}, GuestPtr<char>{globals::kPathFamilyBin});
         FileQueue_WaitAll(0);
         port::GuestLocal<GameFile> local;
         port::GuestLocal<int32_t> size;
         File_ctor(local, 0);
-        globals::familyTypeTable.set(static_cast<uint32_t>(File_LoadWhole(local, GuestPtr<char>{0x001B63B0u}, size)));
+        globals::familyTypeTable.set(static_cast<uint32_t>(File_LoadWhole(local, GuestPtr<char>{globals::kPathEachStrBin}, size)));
         int32_t length = *size;
         if (length < 0)
             length += 1;

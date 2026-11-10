@@ -4,6 +4,7 @@
 #pragma once
 
 #include "game_types.h"
+#include "game_text.h"
 
 #include <cstdint>
 
@@ -12,6 +13,8 @@ namespace mm
     // Index sentinels: no person (MapPerson), no object (MapObject; also "outside" and "none" in object fields).
     inline constexpr uint16_t kNoPerson = 6000;
     inline constexpr uint16_t kNoObject = 0x3F80;
+    // MapObject.claimSlot of a building without a claim (past the end of every type's claim list).
+    inline constexpr uint8_t kNoClaim = 0x18;
     // The object table (CityMap.objects): its records, kNoObject being one past them, and its size in bytes (saved
     // whole).
     inline constexpr int32_t kObjectSlots = 0x3F80;
@@ -568,8 +571,6 @@ namespace mm::globals
     inline constexpr uint32_t kTerrainFarB = 0x001AF2F0u;
     inline constexpr uint32_t kTerrainZoomHeightsA = 0x001AF340u;
     inline constexpr uint32_t kTerrainZoomHeightsB = 0x001AF350u;
-    // The frame counter whose low bit picks the double buffers (0x1BDCD0).
-    inline constexpr uint32_t kFrameParity = 0x001BDCD0u;
     // talk: the eye's offset from a building object still being built (no flag 0x20; 1.01, -0.59, 0.01, 1), turned
     // by the tile's facing (mm_TalkView_BuildingCamera).
     inline constexpr uint32_t kTalkEyeOffset = 0x001B1AF0u;
@@ -593,4 +594,396 @@ namespace mm::globals
     inline constexpr GuestVar<int32_t> laptopDefaultCount{0x001BDABCu};
     inline constexpr GuestVar<int8_t> laptopDefaultSet{0x001BDAC0u};
     inline constexpr uint32_t kLaptopTemplate = 0x001AF640u;
+
+    // models: OBJECT.A3D's models (kObjectModels, one pointer each) by what draws them.
+    inline constexpr GuestVar<GuestPtr<A3DObject>> statusAlertModel{0x001F3B00u};  // model 0: the status panel's alert
+    inline constexpr GuestVar<GuestPtr<A3DObject>> wantsModel{0x001F3B04u};        // model 1: the wants window
+    inline constexpr GuestVar<GuestPtr<A3DObject>> statusPanelModel{0x001F3B0Cu};  // model 3
+    // Model 4: the applicant cards' frame
+    inline constexpr GuestVar<GuestPtr<A3DObject>> applicantFrameModel{0x001F3B10u};
+    inline constexpr GuestVar<GuestPtr<A3DObject>> minimapModel{0x001F3B14u};      // model 5
+    inline constexpr GuestVar<GuestPtr<A3DObject>> minimapFrameModel{0x001F3B18u}; // model 6
+    // Model 7: the marker of a building being placed
+    inline constexpr GuestVar<GuestPtr<A3DObject>> placementMarkerModel{0x001F3B1Cu};
+    inline constexpr GuestVar<GuestPtr<A3DObject>> townPagesModel{0x001F3B20u};    // model 8: the Town's Pages book
+    inline constexpr GuestVar<GuestPtr<A3DObject>> bagModel{0x001F3B24u};          // model 9
+    inline constexpr GuestVar<GuestPtr<A3DObject>> markersModel{0x001F3B28u};      // model 10: the circle markers
+    // Model 11: message and menu windows, talk cards, the money panel, the talk building, the briefing's office
+    inline constexpr GuestVar<GuestPtr<A3DObject>> talkSceneModel{0x001F3B2Cu};
+    inline constexpr GuestVar<GuestPtr<A3DObject>> statusDetailModel{0x001F3B34u}; // model 13
+
+    // models: CHAROBJ.A3D's models (kCharObjectModels), the building types' copies of them (BldgType_BaseCtor and the
+    // farm and park constructors), the talk's person model and the part drawn at a model's third node.
+    // Model 0: drawn for someone away (TalkView.awayModel)
+    inline constexpr GuestVar<GuestPtr<A3DObject>> awayModel{0x001F3B40u};
+    inline constexpr GuestVar<GuestPtr<A3DObject>> charObjBusiness{0x001F3B44u};    // model 1, copied to businessModel
+    inline constexpr GuestVar<GuestPtr<A3DObject>> charObjBlock{0x001F3B48u};       // model 2, copied to blockModel
+    inline constexpr GuestVar<GuestPtr<A3DObject>> charObjParkRide{0x001F3B4Cu};    // model 3, copied to parkRideModel
+    // Models 4 to 6, copied to ranchModelA to C
+    inline constexpr GuestVar<GuestPtr<A3DObject>> charObjRanchA{0x001F3B50u};
+    inline constexpr GuestVar<GuestPtr<A3DObject>> charObjRanchB{0x001F3B54u};
+    inline constexpr GuestVar<GuestPtr<A3DObject>> charObjRanchC{0x001F3B58u};
+    inline constexpr GuestVar<GuestPtr<A3DObject>> charObjPigFarm{0x001F3B5Cu};     // model 7, copied to pigFarmModel
+    inline constexpr GuestVar<GuestPtr<A3DObject>> charObjCityParts{0x001F3B60u};   // model 8, copied to cityPartsModel
+    inline constexpr GuestVar<GuestPtr<A3DObject>> charObjWasteland{0x001F3B64u};   // model 9, copied to wastelandModel
+    inline constexpr GuestVar<GuestPtr<A3DObject>> applicantCardModel{0x001F3B68u}; // model 10: the applicant cards
+    inline constexpr GuestVar<GuestPtr<A3DObject>> nameEntryModel{0x001F3B6Cu};     // model 11: the name entry window
+    // Model 12: the claim-met layer's two meshes per building size
+    inline constexpr GuestVar<GuestPtr<A3DObject>> claimMetModel{0x001F3B70u};
+    inline constexpr GuestVar<GuestPtr<A3DObject>> charObjProps{0x001F3B74u};       // model 13, copied to propsModel
+    inline constexpr GuestVar<GuestPtr<A3DObject>> charObjField{0x001F3B78u};       // model 14, copied to fieldModel
+    inline constexpr GuestVar<GuestPtr<A3DObject>> talkPersonModel{0x001F3B7Cu};    // model 15 (TalkView.personModel)
+    // Model 16: drawn at node 2 by mm_Instance_DrawModelEx when asked
+    inline constexpr GuestVar<GuestPtr<A3DObject>> attachedPartModel{0x001F3B80u};
+    // Mm_Instance_DrawModelEx stores the part it draws; nothing reads it
+    inline constexpr GuestVar<GuestPtr<A3DObject>> lastAttachedPart{0x001BDA38u};
+
+    // models: the player and the boss (entries 81 and 54 of kCharParts) and the MYHOME files' blocks after the first
+    // (kMyHomeBlocks: MYHOME.A3L, COLLI.A3L, PROFILE.BIN); the building types keep the collision block
+    // (mm_BldgType_BaseCtor; collide.cpp reads it).
+    inline constexpr GuestVar<GuestPtr<A3DObject>> playerModel{0x001F3CD4u};
+    // Entry 54 of kCharParts: the boss in the briefing
+    inline constexpr GuestVar<GuestPtr<A3DObject>> bossModel{0x001F3C68u};
+    inline constexpr GuestVar<uint32_t> colliBlock{0x001F3CE4u};             // COLLI.A3L
+    // PROFILE.BIN: per character type three profile texts (halfword offsets), mm_TalkCard_FillText
+    inline constexpr GuestVar<uint32_t> profileBlock{0x001F3CE8u};
+    // The building collision meshes (COLLI.A3L): per mesh its first and last triangle, then the triangles
+    inline constexpr GuestVar<uint32_t> collisionData{0x001BDBDCu};
+
+    // city: the park ride's and the ranch's animation times (drawRide's function statics).
+    inline constexpr GuestVar<float> parkRideTime{0x001BDBE4u};
+    inline constexpr GuestVar<float> ranchTime{0x001BDBF4u};
+
+    // vtables: widgets (WidgetVtable) and other classes, from the constructors that store them.
+    inline constexpr GuestPtr<WidgetVtable> kWidgetVtable{0x001BD400u}; // the base widget (mm_Widget_ctor)
+    inline constexpr GuestPtr<WidgetVtable> kMsgWinVtable{0x001BCE10u};
+    inline constexpr GuestPtr<WidgetVtable> kMenuWinVtable{0x001BCF80u};
+    inline constexpr GuestPtr<StageSceneVtable> kStageSceneVtable{0x001BCF10u};
+    inline constexpr GuestPtr<WidgetVtable> kStageSceneWidgetVtable{0x001BCF18u}; // the stage scene's widget part
+    inline constexpr GuestPtr<void> kApplicantsBaseVtable{0x001BCF60u};
+    inline constexpr GuestPtr<void> kApplicantsVtable{0x001BCF70u};
+    inline constexpr GuestPtr<void> kNameEntryVtable{0x001BCFE8u};
+    inline constexpr GuestPtr<void> kMarkersVtable{0x001BCFC8u};
+    inline constexpr uint32_t kTexSpriteVtable = 0x001BCFD8u; // stored as a word (mm_TexSprite_Load)
+    inline constexpr GuestPtr<WidgetVtable> kTalkViewVtable{0x001BD450u};
+    inline constexpr GuestPtr<WidgetVtable> kTalkPhoneFamilyVtable{0x001BD4A0u};
+    inline constexpr GuestPtr<WidgetVtable> kTalkPhoneMemberVtable{0x001BD4F0u};
+    inline constexpr GuestPtr<WidgetVtable> kTalkBldgFarVtable{0x001BD540u};
+    inline constexpr GuestPtr<WidgetVtable> kTalkBldgNearVtable{0x001BD590u};
+    inline constexpr GuestPtr<WidgetVtable> kTalkOccupantFarVtable{0x001BD5E0u};
+    inline constexpr GuestPtr<WidgetVtable> kTalkOccupantNearVtable{0x001BD630u};
+    inline constexpr GuestPtr<WidgetVtable> kTalkPersonFarVtable{0x001BD680u};
+    inline constexpr GuestPtr<WidgetVtable> kTalkPersonNearVtable{0x001BD6D0u};
+    inline constexpr GuestPtr<WidgetVtable> kTalkCardVtable{0x001BD720u};
+    inline constexpr GuestPtr<WidgetVtable> kTalkVtable{0x001BD770u};
+    inline constexpr GuestPtr<WidgetVtable> kTalkMoneyVtable{0x001BD7C0u};
+    inline constexpr GuestPtr<WidgetVtable> kMyHomeVtable{0x001BD810u};
+    inline constexpr GuestPtr<WidgetVtable> kTalkConvVtable{0x001BD860u};
+    inline constexpr GuestPtr<CharClassVtable> kCharTypeVtable{0x001BCE70u}; // the base character class
+    inline constexpr GuestPtr<CharClassVtable> kVehicleVtable{0x001BCE90u};
+    inline constexpr GuestPtr<CharClassVtable> kPersonVtable{0x001BCEB0u};
+    inline constexpr GuestPtr<CityMapVtable> kCityMapVtable{0x001BCED0u};
+    inline constexpr GuestPtr<CityMapVtable> kMapPeopleVtable{0x001BCEE0u};
+    inline constexpr GuestPtr<CityMapVtable> kMapObjectsVtable{0x001BCEF0u};
+    inline constexpr GuestPtr<CityMapVtable> kCityRenderVtable{0x001BCF00u};
+    inline constexpr GuestPtr<BuildingTypeVtable> kBldgTypeVtable{0x001BD000u}; // the base building type
+    inline constexpr uint32_t kBldgVtable = 0x001BD100u; // building types (stored as words by constructBuildingType)
+    inline constexpr uint32_t kBldgBusinessVtable = 0x001BD1C0u;
+    inline constexpr uint32_t kBldgAmusementParkVtable = 0x001BD040u;
+    inline constexpr uint32_t kBldgOfficeVtable = 0x001BD080u;
+    inline constexpr uint32_t kBldgRanchVtable = 0x001BD0C0u;
+    inline constexpr uint32_t kBldgFieldVtable = 0x001BD140u;
+    inline constexpr uint32_t kBldgPortVtable = 0x001BD180u;
+    inline constexpr uint32_t kBldgKeepOutVtable = 0x001BD200u;
+    inline constexpr uint32_t kBldgLeveledVtable = 0x001BD240u;
+    inline constexpr uint32_t kBldgHousingVtable = 0x001BD280u;
+    inline constexpr uint32_t kBldgMyHomeVtable = 0x001BD2C0u;
+    inline constexpr uint32_t kBldgPigFarmVtable = 0x001BD300u;
+    inline constexpr uint32_t kBldgRoadVtable = 0x001BD340u;
+    inline constexpr uint32_t kBldgSmallGoodsVtable = 0x001BD380u;
+    inline constexpr uint32_t kBldgWastelandVtable = 0x001BD3C0u;
+    inline constexpr uint32_t kGameVtable = 0x001BCE60u;
+    inline constexpr uint32_t kAppVtable = 0x001BD8D0u;
+    inline constexpr uint32_t kPartyPopupBaseVtable = 0x001BD8B0u; // the farewell party's popup, base class
+    inline constexpr uint32_t kPartyPopupVtable = 0x001BD8E0u;
+    // The talk event the shopping script works with, base class
+    inline constexpr uint32_t kTalkEventBaseVtable = 0x001BD908u;
+    inline constexpr uint32_t kTalkEventVtable = 0x001BD8F8u; // its derived class (0x60 more bytes)
+
+    // words: the static constructor's registration (mm_StaticInit_Words), and the script function tables (member
+    // pointers by function number: acts, texts, conditions).
+    inline constexpr uint32_t kWordsDtor = 0x00180490u; // the destructor registered for the WORDS object
+    inline constexpr uint32_t kWordsActs = 0x001B9100u;
+    inline constexpr uint32_t kWordsTexts = 0x001B9570u;
+    inline constexpr uint32_t kWordsConds = 0x001B9630u;
+    // Int per member look: how far mm_Words_CollectNearbyHomes looks
+    inline constexpr uint32_t kLookRanges = 0x001B97F0u;
+    // Per argument a pointer to a zero-ended list of character types (mm_Words_PickResidentByType)
+    inline constexpr uint32_t kResidentTypeLists = 0x001BE950u;
+    // The starting word the want iterators copy into their locals (gp statics)
+    inline constexpr GuestVar<uint32_t> claimResidentStart{0x001BDC1Cu};
+    inline constexpr GuestVar<uint32_t> acquaintanceSupplyStart{0x001BDC20u};
+    inline constexpr GuestVar<uint32_t> wantBodyStart{0x001BDC24u};
+    inline constexpr uint32_t kWordsTextBuffer = 0x001F4EB0u; // the shared output of the formatting texts
+
+    // ui: the message window: the blink counter of its "more" mark and the typing delay counter, each with its started
+    // byte (function statics).
+    inline constexpr GuestVar<int32_t> msgWinBlinkFrames{0x001BDA00u};
+    inline constexpr GuestVar<int8_t> msgWinBlinkStarted{0x001BDA04u};
+    inline constexpr GuestVar<int32_t> msgWinTypeFrames{0x001BDA08u};
+    inline constexpr GuestVar<int8_t> msgWinTypeStarted{0x001BDA0Cu};
+
+    // ui: the wait text (mm_WaitText_*): its box, the blink counter and whether it was made.
+    inline constexpr GuestVar<uint32_t> waitTextBox{0x001BDAC4u};
+    inline constexpr GuestVar<int32_t> waitTextFrames{0x001BDAC8u};
+    inline constexpr GuestVar<int32_t> waitTextMade{0x001BDACCu};
+
+    // ui: the sound test's function static (word and started byte; mm_SoundTest_Update).
+    inline constexpr GuestVar<int32_t> soundTestStatic{0x001BDC14u};
+    inline constexpr GuestVar<int8_t> soundTestStarted{0x001BDC18u};
+
+    // ui: the status panel: four sprites' screen corners inside kStatusPanelSprites (the XY pairs at +0x10 and +0x18 of
+    // sprites 8, 9 and 10), the digit glyphs after the sprites, and the theme words by mission kind.
+    inline constexpr uint32_t kStatusPanelGlyphs = 0x001AF610u; // the digit glyphs' sprite words
+    inline constexpr uint32_t kThemeNames = 0x001B6470u;        // pointers by mission kind ("", offices, ..., up-scale)
+
+    // ui: the laptop: the selected and other entries' colours (Vec4), and each entry's description (0x80 bytes per
+    // line).
+    inline constexpr uint32_t kLaptopSelectedColour = 0x001AF690u;
+    inline constexpr uint32_t kLaptopOtherColour = 0x001AF6A0u;
+    inline constexpr uint32_t kLaptopItemTexts = 0x001AF6B0u;
+
+    // ui: the frame packet template (0xB0 bytes, mm_Frame_ctor).
+    inline constexpr uint32_t kFrameTemplate = 0x001B04B0u;
+
+    // ui: the minimap's packet: the chain it calls (its texture upload) and the two blinking colour words in it.
+    inline constexpr uint32_t kMinimapUpload = 0x001AF180u;
+    inline constexpr uint32_t kMinimapBlinkA = 0x001AF1A4u;
+    inline constexpr uint32_t kMinimapBlinkB = 0x001AF1A8u;
+
+    // ui: the stage scene: the friendship level names (pointers, Stranger to Best friend) and the members counted at
+    // each level 1 to 4 (mm_MemberMeters_Reset), shown on the approval rate page; the telops' texts, music volumes and
+    // scroll ends by kind; the per-stage briefing words (25) and the extra briefing texts with their stage ids
+    // (zero-ended); the actions per row and step (mm_StageScene_Update); the camera's eye and target.
+    inline constexpr uint32_t kFriendshipNames = 0x001B0790u;
+    inline constexpr uint32_t kFriendshipCounts = 0x001C5780u;    // int[4]
+    inline constexpr uint32_t kTelopTexts = 0x001B0800u;
+    inline constexpr uint32_t kTelopVolumes = 0x001B07A8u;
+    inline constexpr uint32_t kTelopScrollEnds = 0x001B0810u;
+    inline constexpr uint32_t kBriefingStageTexts = 0x001B0820u;
+    inline constexpr uint32_t kBriefingExtraTexts = 0x001B0890u;
+    inline constexpr uint32_t kBriefingExtraStages = 0x001B71F0u;
+    inline constexpr uint32_t kStageSceneActions = 0x001B07C0u;
+    inline constexpr uint32_t kStageSceneEye = 0x001B08D0u;
+    inline constexpr uint32_t kStageSceneTarget = 0x001B08E0u;
+    // The telop bank's three file names built at run time (0x20 bytes each)
+    inline constexpr uint32_t kTelopBankSqName = 0x001F3730u;
+    inline constexpr uint32_t kTelopBankHdName = 0x001F3750u;
+    inline constexpr uint32_t kTelopBankBdName = 0x001F3770u;
+
+    // stage: the stage state's names (StageState.names): 1 the mayor's name as typed, 2 printed before it where a
+    // member's given name goes (the applicant card's "%s %s"; the ending telop puts no space between); empty in every
+    // save at hand.
+    inline constexpr uint32_t kMayorName = 0x001C5390u;
+    inline constexpr uint32_t kMayorGivenName = 0x001C53A0u;
+
+    // ui: the wants window's open and closed places (Vec4, mm_WantsWin_Update), also its starting place
+    // (mm_WantsWin_ctor).
+    inline constexpr uint32_t kWantsWinOpen = 0x001B08F0u;
+    inline constexpr uint32_t kWantsWinClosed = 0x001B0900u;
+
+    // ui: the name entry's key sets (a pointer per set).
+    inline constexpr uint32_t kNameEntryKeySets = 0x001B13E0u;
+
+    // title: the camera (eye, target), the new game's camera, the character preview's turn steps (float) and texts.
+    inline constexpr uint32_t kTitleEye = 0x001B17C0u;
+    inline constexpr uint32_t kTitleTarget = 0x001B17D0u;
+    inline constexpr uint32_t kNewGameEye = 0x001B19F0u;
+    inline constexpr uint32_t kNewGameTarget = 0x001B1A00u;
+    inline constexpr uint32_t kPreviewTurnSteps = 0x001B1870u;
+    inline constexpr uint32_t kPreviewTexts = 0x001B1930u;
+
+    // ui: the Town's Pages book's open and closed places (Vec4, slid between in mm_TownPages_Update).
+    inline constexpr uint32_t kTownPagesOpen = 0x001B1A50u;
+    inline constexpr uint32_t kTownPagesClosed = 0x001B1A60u;
+
+    // ui: the text box styles (mm_TextBox_Init: -1 the default palette, -2 the second).
+    inline constexpr uint32_t kTextBoxStyleDefault = 0x001B24A0u;
+    inline constexpr uint32_t kTextBoxStyleAlternate = 0x001B24E0u;
+
+    // ui: the applicant card: the state colours (byte per entry state below 8), the frame's node per card kind and the
+    // markers' x offsets, the card nodes' luminosity groups (bytes per node), its text buffer and the bytes it cuts.
+    inline constexpr uint32_t kApplicantStateColours = 0x001BD998u;
+    inline constexpr uint32_t kApplicantNodeGroups = 0x001B7A10u;
+    inline constexpr uint32_t kApplicantFrameNodes = 0x001B7A18u;
+    inline constexpr uint32_t kApplicantMarkerX = 0x001B7A20u;
+    inline constexpr uint32_t kApplicantText = 0x001F3790u;
+
+    // bag: the bag's places (Vec4): shown, and slid away; and the applicants' end place (mm_Applicants_Update).
+    inline constexpr uint32_t kApplicantsEnd = 0x001AEF00u;
+    inline constexpr uint32_t kBagShown = 0x001AEF10u;
+    inline constexpr uint32_t kBagAway = 0x001AEF20u;
+    inline constexpr uint32_t kBagNoAction = 0x001B5B00u;   // the empty action text of goods kind 0x10
+
+    // city: housing unit shapes from neighbours (bytes, 7 per row and 6 per row), field ground textures by unit shape
+    // (halfwords), the road's signal meshes by traffic phase, the road corner places and headings by shape, the
+    // wasteland's spot steps, the office collision mesh tables (floor and nearest hit), the scene's camera.
+    inline constexpr uint32_t kHousingShapeByPair = 0x001B1480u;
+    inline constexpr uint32_t kHousingShapeByFirst = 0x001B14C0u;
+    inline constexpr uint32_t kFieldGroundByShape = 0x001B1520u;
+    inline constexpr uint32_t kRoadSignalMeshes = 0x001B1540u;
+    inline constexpr uint32_t kRoadCornerX = 0x001B15E0u;
+    inline constexpr uint32_t kRoadCornerZ = 0x001B1610u;
+    inline constexpr uint32_t kRoadCornerHeadings = 0x001B1640u;
+    inline constexpr uint32_t kRoadShapeCorners = 0x001B1670u;
+    // Vec4: the first two members' spots, the rest share the second
+    inline constexpr uint32_t kFieldPeopleSpots = 0x001B1460u;
+    inline constexpr uint32_t kWastelandStepX = 0x001B1770u;
+    inline constexpr uint32_t kWastelandStepZ = 0x001B1780u;
+    inline constexpr uint32_t kOfficeHitMeshes = 0x001B1408u;
+    inline constexpr uint32_t kOfficeFloorMeshes = 0x001B1428u;
+    inline constexpr uint32_t kCityEye = 0x001B2480u;
+    inline constexpr uint32_t kCityTarget = 0x001B2490u;
+    // The claim spread weights by distance (mm_BldgClaims_Spread, mm_BldgClaims_WeighNeighbours)
+    inline constexpr uint32_t kClaimWeights = 0x001B8060u;
+    inline constexpr uint32_t kClaimTallies = 0x001F4B90u;        // ClaimTally[], cleared each pass (0x300 bytes)
+
+    // city: function statics of the save, approval and load steps (mm_CityScene_SaveStep, mm_CityScene_UpdateApproval,
+    // mm_CityScene_LoadGame): state, started byte, ticks, request, the card, the texts, sprite, fade, timer and handle.
+    inline constexpr GuestVar<int32_t> saveStepState{0x001BDC5Cu};
+    inline constexpr GuestVar<int8_t> saveStepStarted{0x001BDC60u};
+    inline constexpr GuestVar<int32_t> saveStepRequest{0x001BDC64u};
+    inline constexpr GuestVar<int32_t> approvalTicks{0x001BDC54u};
+    inline constexpr GuestVar<int8_t> approvalStarted{0x001BDC58u};
+    inline constexpr GuestVar<int32_t> loadGameState{0x001BDC68u};
+    inline constexpr GuestVar<int8_t> loadGameStarted{0x001BDC6Cu};
+    // The card port of the save chosen (mm_McManager_GetSaveEntry in the load menu)
+    inline constexpr GuestVar<int32_t> loadGameCard{0x001BDA78u};
+    // 1 when the title started a loaded game (mm_TitleScene_StartGame); the load's first step then shows the save's
+    // description and clears it
+    inline constexpr GuestVar<int32_t> loadGameFromTitle{0x001BDA7Cu};
+    inline constexpr GuestVar<uint32_t> loadGameInfoText{0x001BDC7Cu};  // the box with the save's description
+    inline constexpr GuestVar<uint32_t> loadGameRetryText{0x001BDC78u}; // the retry question's box
+    inline constexpr GuestVar<uint32_t> loadGameSprite{0x001BDC80u};
+    inline constexpr GuestVar<int32_t> loadGameFade{0x001BDC84u};
+    inline constexpr GuestVar<int32_t> loadGameTimer{0x001BDC70u};
+    inline constexpr GuestVar<int32_t> loadGameHandle{0x001BDC74u};
+
+    // char: people: an animation's frame step and restart frame (by animation), the schedule's destinations (8 bytes
+    // per schedule state), the farm fields' block steps and tile steps, the building list's first distance (halfword
+    // per list).
+    inline constexpr uint32_t kAnimFrameSteps = 0x001AF080u;
+    inline constexpr uint32_t kAnimRestarts = 0x001AF050u;
+    inline constexpr uint32_t kScheduleDestinations = 0x001B0BD0u;
+    inline constexpr uint32_t kFieldBlockStepX = 0x001B0C50u;
+    inline constexpr uint32_t kFieldBlockStepZ = 0x001B0CB0u;
+    inline constexpr uint32_t kFieldTileStepX = 0x001B0D10u;
+    inline constexpr uint32_t kFieldTileStepZ = 0x001B0D20u;
+    inline constexpr uint32_t kBuildingListRanges = 0x001B0D30u;
+    inline constexpr uint32_t kMarkerOffsets = 0x001B0DB0u;        // the circle markers' offsets (mm_Markers_ctor)
+    // Pointers to the town texts by mission kind (mm_Stage_FormatTargetText)
+    inline constexpr uint32_t kGoalTowns = 0x001B5C90u;
+    inline constexpr uint32_t kGoalThemes = 0x001B5D30u;           // pointers by theme
+    // Mm_Schedule_Evaluate's row bytes: the second member with flag 1, by (family + member) % 3
+    inline constexpr uint32_t kScheduleRowsFlagged = 0x001BD9A4u;
+    // The second member without the flag (by parity), and adults past the second (% 3)
+    inline constexpr uint32_t kScheduleRowsOthers = 0x001BD9A8u;
+    inline constexpr uint32_t kScheduleRowsYoung = 0x001BD9ACu;    // members past the second under age group 0x18 (% 3)
+    // The CHARTYPE.BIN record count (mm_CharType_LoadAll)
+    inline constexpr GuestVar<uint32_t> charClassCount{0x001BDA40u};
+
+    // talk: the dimming colours (Vec4) for someone away and for a person, the asleep building colour, the friendship
+    // tier words on the card (pointers), the cards' columns by slot (int) and x places (float), the name entry buffer.
+    inline constexpr uint32_t kTalkDimAway = 0x001B1AD0u;
+    inline constexpr uint32_t kTalkDimPerson = 0x001B1AE0u;
+    inline constexpr uint32_t kTalkAsleepColour = 0x001B1B00u;
+    inline constexpr uint32_t kTalkTierTexts = 0x001B1B10u;
+    inline constexpr uint32_t kTalkCardColumns = 0x001B1B28u;
+    inline constexpr uint32_t kTalkCardX = 0x001B1B38u;
+    inline constexpr uint32_t kTalkNameBuffer = 0x001F4E90u;
+
+    // save: the month names and number suffixes the slot text uses (pointers), the scan's clock, the save file's port
+    // and name (mm_SaveFile_PrepareDir, mm_SaveFile_Open), the format result, the icon image buffer and the file
+    // number.
+    inline constexpr uint32_t kMonthNames = 0x001B0B8Cu;
+    inline constexpr uint32_t kNumberSuffixes = 0x001B0BC0u;
+    inline constexpr uint32_t kSaveClock = 0x001BDBA0u;           // BcdClock
+    inline constexpr GuestVar<int32_t> saveFilePort{0x001BDB94u};
+    inline constexpr GuestVar<int32_t> saveFileName{0x001BDB98u};
+    inline constexpr GuestVar<int32_t> formatResult{0x001BDBA8u};
+    inline constexpr uint32_t kIconSysImage = 0x001F65F0u;        // the icon.sys written with a save (0x3C4 bytes)
+    inline constexpr uint32_t kIconSysFile = 0x001BDCDCu;         // its file number (McQueue_Open)
+
+    // gfx: the frame counter whose low bit picks the double buffers (counted by mm_MainLoop).
+    inline constexpr GuestVar<uint32_t> frameParity{0x001BDCD0u};
+
+    // gfx: the GS packets queued by name (mm_DmaList_Queue*: defaults, clear Z, clear the screen, the two fades and
+    // their colour words), the display setup's two GIF tag words, the asset loader's function statics, the instance
+    // buffers' second half, the model count, the rain's frame counter (with its started byte), the async model header.
+    inline constexpr uint32_t kGsDefaultsPacket = 0x001B2760u;
+    inline constexpr uint32_t kClearZPacket = 0x001B26D0u;
+    inline constexpr uint32_t kClearScreenPacket = 0x001B28E0u;
+    inline constexpr uint32_t kFadePacketA = 0x001B2800u;
+    inline constexpr uint32_t kFadeColourA = 0x001B2830u;
+    inline constexpr uint32_t kFadePacketB = 0x001B2870u;
+    inline constexpr uint32_t kFadeColourB = 0x001B28A0u;
+    inline constexpr uint32_t kDisplayGifTagA = 0x001B2540u;
+    inline constexpr uint32_t kDisplayGifTagB = 0x001B2548u;
+    // Mm_A3DObject_LoadAsync's step (mm_InstanceBase_ctor clears it)
+    inline constexpr GuestVar<int32_t> modelLoadState{0x001BDA10u};
+    inline constexpr GuestVar<int32_t> modelLoadRequest{0x001BDA14u};
+    // CharPartModel/InstanceModel objects made; the first sets up the instance buffers
+    inline constexpr GuestVar<int32_t> modelCount{0x001BDA2Cu};
+    inline constexpr GuestVar<int32_t> rainFrames{0x001BDAD0u};
+    inline constexpr GuestVar<int8_t> rainStarted{0x001BDAD4u};
+    inline constexpr uint32_t kAsyncModelHeader = 0x001C5100u;        // A3DModel
+    inline constexpr uint32_t kSkyUpload = 0x001B0DD0u;               // the chain the sky packet calls
+    // Mm_Gs_InitDisplay's blocks: the setup packet, the display settings, the draw environment
+    inline constexpr uint32_t kGsSetupBuffer = 0x001F5AC0u;
+    inline constexpr uint32_t kGsDisplaySetup = 0x001F5B10u;
+    inline constexpr uint32_t kGsDrawEnv = 0x001F5B20u;
+    inline constexpr uint32_t kDmaKickChain = 0x001F8100u;            // the two-tag chain mm_Dma_KickVif1Now sends
+    // The VU1 programs' upload packets (docs/RENDER_PIPELINE.md)
+    inline constexpr uint32_t kVu1PeopleProgram = 0x001A3C80u;
+    inline constexpr uint32_t kVu1BuildingProgram = 0x001A4780u;
+    inline constexpr uint32_t kVu1UnlitProgram = 0x001A8330u;
+    inline constexpr uint32_t kVu1LitRoadProgram = 0x001A91C0u;
+    inline constexpr uint32_t kVu1WaterBottomProgram = 0x001AA340u;
+
+    // app: the double buffer settings and the two half-offset blocks per field parity (sceGsSetDefDBuffDc), and the two
+    // words App_ctor sets to 1.0 (Q of the clear colours).
+    inline constexpr uint32_t kDisplayBuffers = 0x001F5790u;
+    inline constexpr uint32_t kHalfOffsetA0 = 0x001F57F0u;
+    inline constexpr uint32_t kHalfOffsetA1 = 0x001F5960u;
+    inline constexpr uint32_t kHalfOffsetB0 = 0x001F5870u;
+    inline constexpr uint32_t kHalfOffsetB1 = 0x001F59E0u;
+    inline constexpr uint32_t kClearQ0 = 0x001F5910u;
+    inline constexpr uint32_t kClearQ1 = 0x001F5A80u;
+
+    // sound: the RPC client, send and reply buffers (YYSOUND), and the bound client's server word.
+    inline constexpr uint32_t kSoundRpcClient = 0x001FE690u;
+    inline constexpr uint32_t kSoundRpcSend = 0x0020B6C0u;
+    inline constexpr uint32_t kSoundRpcReply = 0x0020B800u;
+
+    // event: the handler table (a pointer per EventType.handler), the shopping serial, the text buffers.
+    inline constexpr uint32_t kEventHandlers = 0x001AF0D0u;
+    inline constexpr GuestVar<int32_t> shoppingSerial{0x001BDD5Cu};
+    inline constexpr uint32_t kEventTextBuffer = 0x001C5990u;
+    inline constexpr uint32_t kEventText = 0x0020B890u;
+
+    // map: the terrain quad words (mm_Terrain_AddQuad): the first word's high bits and the texture coordinate sets.
+    inline constexpr uint32_t kTerrainQuadWord = 0x001BD990u;
+    inline constexpr uint32_t kTerrainCoordSets = 0x001AF360u;
+
+    // pad: the frame counters, the fault flag and the unused word (mm_Pad_TakeFocus's statics), the act align data, the
+    // library's DMA buffers (0x100 bytes per port).
+    inline constexpr uint32_t kPadLastFrame = 0x001BDB10u;
+    inline constexpr uint32_t kPadFrame = 0x001BDB18u;
+    inline constexpr uint32_t kPadFault = 0x001BDB20u;
+    inline constexpr uint32_t kPadUnused = 0x001BDB30u;
+    inline constexpr uint32_t kPadActAlignData = 0x001BDB28u; // the 6 bytes handed to scePadSetActAlign
+    inline constexpr uint32_t kPadPortBuffers = 0x001F38C0u;  // 0x100 bytes per port for the library's DMA
+
+    // text: the powers of ten (nine int32_t).
+    inline constexpr uint32_t kPowersOfTen = 0x001B9AB0u; // nine int32_t
 }

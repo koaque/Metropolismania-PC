@@ -144,9 +144,9 @@ namespace mm
 
     // Instance `index` of the buffer layer A fills this frame. The buffer is read on every call, and the arithmetic is on
     // the 32-bit guest address, as in the original.
-    inline GuestPtr<LayerAInstance> layerAInstance(GuestPtr<LayerA> layer, int index)
+    inline GuestPtr<ClaimMetInstance> claimMetInstance(GuestPtr<ClaimMetLayer> layer, int index)
     {
         const uint32_t slot = 32u * static_cast<uint32_t>(layer->buffer) + static_cast<uint32_t>(index);
-        return GuestPtr<LayerAInstance>{packet::addressOf(layer->instances[0]) + static_cast<uint32_t>(sizeof(LayerAInstance)) * slot};
+        return GuestPtr<ClaimMetInstance>{packet::addressOf(layer->instances[0]) + static_cast<uint32_t>(sizeof(ClaimMetInstance)) * slot};
     }
 }

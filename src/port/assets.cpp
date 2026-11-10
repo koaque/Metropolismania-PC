@@ -195,7 +195,7 @@ namespace mm
             if (model != 0u)
                 model = CharPartModel_ctor(GuestPtr<A3DObject>{model}).address;
             globals::assetLoadModel.set(model);
-            assetOpenFile(0x001B7B50u);
+            assetOpenFile(globals::kPathCharA3d);
             break;
         }
         case 1:
@@ -244,7 +244,7 @@ namespace mm
     // Loads DATA\A3D\CHAROBJ.A3D into the table at 0x1F3B40 (models of 0x60 bytes).
     void CityAssets_LoadCharObjs()
     {
-        loadModelList(0x001B7B70u, globals::kCharObjectModels, []() {
+        loadModelList(globals::kPathCharObjA3d, globals::kCharObjectModels, []() {
             uint32_t model = sdk::operator_new(0x60u);
             if (model != 0u)
                 model = InstanceModel_ctor(GuestPtr<A3DObject>{model}).address;
@@ -257,7 +257,7 @@ namespace mm
     // Loads DATA\A3D\OBJECT.A3D into the table at 0x1F3B00 (base objects of 0x60 bytes).
     void CityAssets_LoadObjects()
     {
-        loadModelList(0x001B7B90u, globals::kObjectModels, []() {
+        loadModelList(globals::kPathObjectA3d, globals::kObjectModels, []() {
             uint32_t model = sdk::operator_new(0x60u);
             if (model != 0u)
                 model = InstanceBase_ctor(GuestPtr<A3DObject>{model}).address;

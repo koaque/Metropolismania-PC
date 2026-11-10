@@ -564,10 +564,10 @@ namespace mm
     GuestPtr<WantsWin> WantsWin_ctor(GuestPtr<WantsWin> wants)
     {
         Wants_ctor(wants);
-        wants->model = GuestPtr<A3DObject>{port::load<uint32_t>(0x001F3B04u)};
+        wants->model = globals::wantsModel.get();
         wants->state = 0;
         wants->matrix = GuestPtr<Vec4>::of(wants->model->matrix[0]);
-        const GuestPtr<Vec4> place{0x001B0900u};
+        const GuestPtr<Vec4> place{globals::kWantsWinClosed};
         wants->matrix[3].x = place->x;
         wants->matrix[3].y = place->y;
         wants->matrix[3].z = place->z;
@@ -733,8 +733,8 @@ namespace mm
                 if (roll >= 6 && roll < 11 && BldgWasteland_FindSpot(btype, city, static_cast<int>(obj.address), static_cast<uint32_t>(x),
                                                                      static_cast<uint32_t>(z), spot) != 0)
                 {
-                    const int sx = x + port::load<int32_t>(0x001B1770u + 4u * *spot);
-                    const int sz = z + port::load<int32_t>(0x001B1780u + 4u * *spot);
+                    const int sx = x + port::load<int32_t>(globals::kWastelandStepX + 4u * *spot);
+                    const int sz = z + port::load<int32_t>(globals::kWastelandStepZ + 4u * *spot);
                     if (Map_TileWalkable(city->map, sx, sz) != 0 || Map_TileIsLeveled(city->map, sx, sz) != 0)
                         Map_PlaceObject(city->map, 0, 3, x, z, city);
                 }
@@ -911,7 +911,7 @@ namespace mm
             return;
         }
         drawLit();
-        const uint32_t signals = 0x001B1540u + 4u * static_cast<uint32_t>(city->trafficPhase * 2 + (obj->roadMesh - lights()) * 8);
+        const uint32_t signals = globals::kRoadSignalMeshes + 4u * static_cast<uint32_t>(city->trafficPhase * 2 + (obj->roadMesh - lights()) * 8);
         Instance_DrawMesh(globals::cityPartsModel.get(), matrix, colour, lights() + port::load<int32_t>(signals), mode);
         const GuestPtr<Vec4> second = facingMatrix(3);
         second[3].x = x;
@@ -1426,10 +1426,10 @@ namespace mm
         }
         const uint8_t shapeA = BldgHousing_UnitAt(btype, facing, xA, zA, count, own->rule, city, isUnitA, height);
         const uint8_t shapeB = BldgHousing_UnitAt(btype, facing, xB, zB, count, own->rule, city, isUnitB, height);
-        setShape(obj, port::load<uint8_t>(0x001B1480u + 7u * shapeB + shapeA));
+        setShape(obj, port::load<uint8_t>(globals::kHousingShapeByPair + 7u * shapeB + shapeA));
         const GuestPtr<MapObject> first = Map_GetTileObject(city->map, x, z);
         if (shapeOf(first) != shapeOf(obj))
-            setShape(obj, port::load<uint8_t>(0x001B14C0u + 6u * shapeOf(obj) + shapeOf(first)));
+            setShape(obj, port::load<uint8_t>(globals::kHousingShapeByFirst + 6u * shapeOf(obj) + shapeOf(first)));
         if (shapeOf(obj) != oldShape)
         {
             if (*isUnitA != 0)
@@ -1487,20 +1487,20 @@ namespace mm
             if ((obj->flags & 8u) != 0)
             {
                 obj->flags &= 0xFFF7u;
-                obj->claimSlot = 0x18;
+                obj->claimSlot = kNoClaim;
                 return 0;
             }
             BldgClaims_Spread(btype, city, obj);
             obj->flags &= 0xFFBFu;
-            obj->claimSlot = 0x18;
+            obj->claimSlot = kNoClaim;
             --city->pendingApproval;
             return 1;
         }
-        if (city->map->claimRecheck > 0 && obj->claimSlot != 0x18)
+        if (city->map->claimRecheck > 0 && obj->claimSlot != kNoClaim)
             BldgClaims_CheckMet(btype, city, obj);
         if (rise == 0)
             return 0;
-        if (obj->claimSlot == 0x18)
+        if (obj->claimSlot == kNoClaim)
         {
             BldgClaims_Pick(btype, city, obj);
             return 0;
@@ -1619,12 +1619,12 @@ namespace mm
 
     void BldgAmusementPark_DrawAnim(GuestPtr<BuildingType> btype, int time)
     {
-        drawRide(btype, time, globals::parkRideModel, GuestVar<float>{0x001BDBE4u});
+        drawRide(btype, time, globals::parkRideModel, globals::parkRideTime);
     }
 
     void BldgRanch_DrawAnim(GuestPtr<BuildingType> btype, int time)
     {
-        drawRide(btype, time, GuestVar<GuestPtr<A3DObject>>{0x001BDBECu}, GuestVar<float>{0x001BDBF4u});
+        drawRide(btype, time, globals::ranchModelB, globals::ranchTime);
     }
 
     // Building type base class: slots the subclasses override.
@@ -1778,7 +1778,7 @@ namespace mm
 
     // ---- building records and collision slots (batch 38)
 
-    void Bldg_InitRecordBase(GuestPtr<BuildingType>, GuestPtr<MapObject> obj) { obj->claimSlot = 0x18; }
+    void Bldg_InitRecordBase(GuestPtr<BuildingType>, GuestPtr<MapObject> obj) { obj->claimSlot = kNoClaim; }
 
     void Bldg_InitRecord(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj)
     {
@@ -1829,7 +1829,7 @@ namespace mm
         int housingMesh(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, uint32_t part)
         {
             const uint32_t which = part & 7u;
-            const uint32_t shape = 0x001B1520u + 2u * obj->unitShape;
+            const uint32_t shape = globals::kFieldGroundByShape + 2u * obj->unitShape;
             if (which == 0)
             {
                 if ((obj->flags & 0x20u) == 0)
@@ -1881,13 +1881,17 @@ namespace mm
     int BldgOffice_FloorBelow(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
                             GuestPtr<Vec4> hit, GuestPtr<uint32_t> part, ps2f lift)
     {
-        return Collide_MeshFloorBelow(static_cast<int>(btype.address), officeMesh(btype, obj, *part, 0x001B1428u), point, matrix, hit, lift);
+        return Collide_MeshFloorBelow(static_cast<int>(btype.address),
+                                      officeMesh(btype, obj, *part, globals::kOfficeFloorMeshes), point, matrix, hit,
+                                      lift);
     }
 
     int BldgOffice_NearestHit(GuestPtr<BuildingType> btype, GuestPtr<MapObject> obj, GuestPtr<Vec4> point, GuestPtr<Vec4> matrix,
                             GuestPtr<Vec4> hit, GuestPtr<ps2f> distance, GuestPtr<uint32_t> part, ps2f range)
     {
-        return Collide_MeshNearestHit(static_cast<int>(btype.address), officeMesh(btype, obj, *part, 0x001B1408u), point, matrix, hit, distance, range);
+        return Collide_MeshNearestHit(static_cast<int>(btype.address),
+                                      officeMesh(btype, obj, *part, globals::kOfficeHitMeshes), point, matrix, hit,
+                                      distance, range);
     }
 
     // Ports collide 2.5 higher (at ground level over their dug block): 2.5 is taken off the matrix's translation y
@@ -2085,7 +2089,7 @@ namespace mm
     // post group (the type's postGroup), each group an offset table by post.
     GuestPtr<char> BldgType_GetPostName(GuestPtr<BuildingType> btype, int post)
     {
-        const uint32_t names = port::load<uint32_t>(0x001BDBC0u);
+        const uint32_t names = globals::buildingTypeShared.get();
         const uint32_t group = names + port::load<uint16_t>(names + 2u * btype->postGroup);
         return GuestPtr<char>{names + port::load<uint16_t>(group + 2u * static_cast<uint32_t>(post))};
     }
@@ -2479,7 +2483,7 @@ namespace mm
         const GuestPtr<ClaimEntry> claim = Claim_GetList(btype->claimB) + obj->claimSlot;
         const uint16_t tile = obj->tile;
         const int half = btype->size >> 1;
-        uint32_t weight = 0x001B8060u;
+        uint32_t weight = globals::kClaimWeights;
         for (int dz = -12; dz <= 12; dz += 2)
         {
             const int z = (tile >> 7) + half + dz;
@@ -2514,7 +2518,7 @@ namespace mm
                 seen[seenCount++] = other->id;
                 for (;;)
                 {
-                    if (other->claimSlot != 0x18 && limits->low < other->claimMeter && (other->flags & 0x40u) == 0)
+                    if (other->claimSlot != kNoClaim && limits->low < other->claimMeter && (other->flags & 0x40u) == 0)
                     {
                         const GuestPtr<BuildingType> type{globals::buildingTypeAddress(other->type)};
                         const GuestPtr<ClaimEntry> theirs = Claim_GetList(type->claimB) + other->claimSlot;
@@ -2599,7 +2603,7 @@ namespace mm
             if (!(globals::claimThresholds()->low < obj->claimMeter))
             {
                 obj->claimMeter = 0;
-                obj->claimSlot = 0x18;
+                obj->claimSlot = kNoClaim;
             }
             else if (value == 0)
             {
@@ -2643,9 +2647,9 @@ namespace mm
             uint32_t id = entry->id;
             if (id >= 0x8000)
                 id -= 0x7FC0;
-            return GuestPtr<ClaimTally>{0x001F4B90u + 4u * entry->wish + 8u * id};
+            return GuestPtr<ClaimTally>{globals::kClaimTallies + 4u * entry->wish + 8u * id};
         };
-        sdk::memset(0x001F4B90u, 0, 0x300);
+        sdk::memset(globals::kClaimTallies, 0, 0x300);
         const GuestPtr<ClaimEntry> claims = Claim_GetList(btype->claimB);
         uint32_t k = 0;
         for (GuestPtr<ClaimEntry> entry = claims; entry->id != 0; ++entry, ++k)
@@ -2657,7 +2661,7 @@ namespace mm
         int seenCount = 0;
         const uint16_t tile = obj->tile;
         const int half = btype->size >> 1;
-        uint32_t weight = 0x001B8060u;
+        uint32_t weight = globals::kClaimWeights;
         bool full = false;
         for (int dz = -12; dz <= 12 && !full; dz += 2)
         {
@@ -2693,7 +2697,7 @@ namespace mm
                 seen[seenCount++] = other->id;
                 for (;;)
                 {
-                    if (other->id != obj->id && other->claimSlot != 0x18 && limits->low < other->claimMeter)
+                    if (other->id != obj->id && other->claimSlot != kNoClaim && limits->low < other->claimMeter)
                     {
                         const GuestPtr<BuildingType> type{globals::buildingTypeAddress(other->type)};
                         const GuestPtr<ClaimTally> slot = slotOf(Claim_GetList(type->claimB) + other->claimSlot);
@@ -2719,7 +2723,7 @@ namespace mm
         uint32_t bestId = 0, bestFlag = 0, bestMeters = 0, bestWeights = 0;
         for (uint32_t i = 0; i < 0xC0u; ++i)
         {
-            const GuestPtr<ClaimTally> slot = GuestPtr<ClaimTally>{0x001F4B90u} + static_cast<int32_t>(i);
+            const GuestPtr<ClaimTally> slot = GuestPtr<ClaimTally>{globals::kClaimTallies} + static_cast<int32_t>(i);
             if (slot->own == 0 || !(bestMeters < slot->meters))
                 continue;
             bestId = i >> 1;
@@ -3044,7 +3048,7 @@ namespace mm
                 break;
             }
         }
-        TextBox_SetText(laptop->text, GuestPtr<char>{0x001AF6B0u + (line << 7)}, 0);
+        TextBox_SetText(laptop->text, GuestPtr<char>{globals::kLaptopItemTexts + (line << 7)}, 0);
     }
 
     PORT_FN(Laptop_SetItemText);
@@ -3097,7 +3101,7 @@ namespace mm
     {
         port::GuestFrame<0xA0> frame;
         const GuestPtr<Vec4> colour{frame.ptr().address + 0x80u}, position{frame.ptr().address + 0x90u};
-        const GuestPtr<Vec4> spots{0x001B1460u}; // the first two members' spots, the rest share the second
+        const GuestPtr<Vec4> spots{globals::kFieldPeopleSpots}; // the first two members' spots, the rest share the second
         for (GuestPtr<uint16_t> link = GuestPtr<uint16_t>::of(obj->firstPerson); *link != kNoPerson;)
         {
             const GuestPtr<MapPerson> person = people + *link;
@@ -3202,8 +3206,8 @@ namespace mm
         }
         // Each road shape has four corner numbers; by corner, its x and z offsets and its heading number (the headings
         // are the table the building people use by facing).
-        const GuestPtr<uint32_t> shapeCorners{0x001B1670u}, cornerHeading{0x001B1640u};
-        const GuestPtr<float> cornerX{0x001B15E0u}, cornerZ{0x001B1610u}, headings{globals::kFacingHeadings};
+        const GuestPtr<uint32_t> shapeCorners{globals::kRoadShapeCorners}, cornerHeading{globals::kRoadCornerHeadings};
+        const GuestPtr<float> cornerX{globals::kRoadCornerX}, cornerZ{globals::kRoadCornerZ}, headings{globals::kFacingHeadings};
         for (int i = 0; i < count && i < 4; ++i)
         {
             const GuestPtr<MapPerson> person = people + list[i];
@@ -3403,84 +3407,89 @@ namespace mm
             return btype;
         }
 
-        constexpr uint32_t kVtableBldg = 0x001BD100u;
-        constexpr uint32_t kVtableBusiness = 0x001BD1C0u;
     }
 
     GuestPtr<BuildingType> Bldg_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag)
     {
-        return destroyBuildingType(btype, deleteFlag, {kVtableBldg});
+        return destroyBuildingType(btype, deleteFlag, {globals::kBldgVtable});
     }
 
     GuestPtr<BuildingType> BldgField_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag)
     {
-        return destroyBuildingType(btype, deleteFlag, {0x001BD140u});
+        return destroyBuildingType(btype, deleteFlag, {globals::kBldgFieldVtable});
     }
 
     GuestPtr<BuildingType> BldgKeepOut_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag)
     {
-        return destroyBuildingType(btype, deleteFlag, {0x001BD200u});
+        return destroyBuildingType(btype, deleteFlag, {globals::kBldgKeepOutVtable});
     }
 
     GuestPtr<BuildingType> BldgLeveled_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag)
     {
-        return destroyBuildingType(btype, deleteFlag, {0x001BD240u});
+        return destroyBuildingType(btype, deleteFlag, {globals::kBldgLeveledVtable});
     }
 
     GuestPtr<BuildingType> BldgRoad_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag)
     {
-        return destroyBuildingType(btype, deleteFlag, {0x001BD340u});
+        return destroyBuildingType(btype, deleteFlag, {globals::kBldgRoadVtable});
     }
 
     GuestPtr<BuildingType> BldgSmallGoods_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag)
     {
-        return destroyBuildingType(btype, deleteFlag, {0x001BD380u});
+        return destroyBuildingType(btype, deleteFlag, {globals::kBldgSmallGoodsVtable});
     }
 
     GuestPtr<BuildingType> BldgWasteland_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag)
     {
-        return destroyBuildingType(btype, deleteFlag, {0x001BD3C0u});
+        return destroyBuildingType(btype, deleteFlag, {globals::kBldgWastelandVtable});
     }
 
     // The business classes derive from the business base class, which derives from the building base class.
     GuestPtr<BuildingType> BldgBusiness_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag)
     {
-        return destroyBuildingType(btype, deleteFlag, {kVtableBusiness, kVtableBldg});
+        return destroyBuildingType(btype, deleteFlag, {globals::kBldgBusinessVtable, globals::kBldgVtable});
     }
 
     GuestPtr<BuildingType> BldgAmusementPark_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag)
     {
-        return destroyBuildingType(btype, deleteFlag, {0x001BD040u, kVtableBusiness, kVtableBldg});
+        return destroyBuildingType(btype, deleteFlag, {globals::kBldgAmusementParkVtable, globals::kBldgBusinessVtable,
+                                                       globals::kBldgVtable});
     }
 
     GuestPtr<BuildingType> BldgOffice_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag)
     {
-        return destroyBuildingType(btype, deleteFlag, {0x001BD080u, kVtableBusiness, kVtableBldg});
+        return destroyBuildingType(btype, deleteFlag,
+                                   {globals::kBldgOfficeVtable, globals::kBldgBusinessVtable, globals::kBldgVtable});
     }
 
     GuestPtr<BuildingType> BldgRanch_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag)
     {
-        return destroyBuildingType(btype, deleteFlag, {0x001BD0C0u, kVtableBusiness, kVtableBldg});
+        return destroyBuildingType(btype, deleteFlag,
+                                   {globals::kBldgRanchVtable, globals::kBldgBusinessVtable, globals::kBldgVtable});
     }
 
     GuestPtr<BuildingType> BldgPort_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag)
     {
-        return destroyBuildingType(btype, deleteFlag, {0x001BD180u, kVtableBusiness, kVtableBldg});
+        return destroyBuildingType(btype, deleteFlag,
+                                   {globals::kBldgPortVtable, globals::kBldgBusinessVtable, globals::kBldgVtable});
     }
 
     GuestPtr<BuildingType> BldgHousing_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag)
     {
-        return destroyBuildingType(btype, deleteFlag, {0x001BD280u, kVtableBusiness, kVtableBldg});
+        return destroyBuildingType(btype, deleteFlag,
+                                   {globals::kBldgHousingVtable, globals::kBldgBusinessVtable, globals::kBldgVtable});
     }
 
     GuestPtr<BuildingType> BldgMyHome_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag)
     {
-        return destroyBuildingType(btype, deleteFlag, {0x001BD2C0u, kVtableBusiness, kVtableBldg});
+        return destroyBuildingType(btype, deleteFlag,
+                                   {globals::kBldgMyHomeVtable, globals::kBldgBusinessVtable, globals::kBldgVtable});
     }
 
     GuestPtr<BuildingType> BldgPigFarm_dtor(GuestPtr<BuildingType> btype, int16_t deleteFlag)
     {
-        return destroyBuildingType(btype, deleteFlag, {0x001BD300u, kVtableBusiness, kVtableBldg});
+        return destroyBuildingType(btype, deleteFlag,
+                                   {globals::kBldgPigFarmVtable, globals::kBldgBusinessVtable, globals::kBldgVtable});
     }
 
     PORT_FN(Bldg_dtor);
@@ -3561,40 +3570,39 @@ namespace mm
     // and ends with 1 (done) or 2 (the write failed). The other states do nothing. 0 while it is not finished.
     int CityScene_SaveStep(GuestPtr<CityScene> city, GuestPtr<McManager> mc)
     {
-        constexpr uint32_t kStarted = 0x001BDC60u, kState = 0x001BDC5Cu, kRequest = 0x001BDC64u;
-        if (port::load<int8_t>(kStarted) == 0)
+        if (globals::saveStepStarted.get() == 0)
         {
-            port::store<int32_t>(kState, 0);
-            port::store<uint8_t>(kStarted, 1);
+            globals::saveStepState.set(0);
+            globals::saveStepStarted.set(1);
         }
-        const auto advance = [&] { port::store<int32_t>(kState, port::load<int32_t>(kState) + 1); };
-        switch (port::load<int32_t>(kState))
+        const auto advance = [&] { globals::saveStepState.set(globals::saveStepState.get() + 1); };
+        switch (globals::saveStepState.get())
         {
         case 0:
-            port::store<int32_t>(kRequest, SaveFile_Open(mc, 0x203));
+            globals::saveStepRequest.set(SaveFile_Open(mc, 0x203));
             advance();
             return 0;
         case 1:
-            if (SaveFile_IsDone(mc, port::load<int32_t>(kRequest)) == 0)
+            if (SaveFile_IsDone(mc, globals::saveStepRequest.get()) == 0)
                 return 0;
             if (mc->fd < 0)
             {
-                port::store<int32_t>(kState, 0);
+                globals::saveStepState.set(0);
                 return 2;
             }
             advance();
             return 0;
         case 2:
             MapSave_PackTiles(city->map);
-            port::store<int32_t>(kRequest, CityScene_SaveGame(city, mc));
+            globals::saveStepRequest.set(CityScene_SaveGame(city, mc));
             advance();
             return 0;
         case 3:
-            if (SaveFile_IsDone(mc, port::load<int32_t>(kRequest)) == 0)
+            if (SaveFile_IsDone(mc, globals::saveStepRequest.get()) == 0)
                 return 0;
             MapSave_FreeBuffer(city->map);
-            port::store<int32_t>(kState, 0);
-            return SaveFile_GetResult(mc, port::load<int32_t>(kRequest)) < 0 ? 2 : 1;
+            globals::saveStepState.set(0);
+            return SaveFile_GetResult(mc, globals::saveStepRequest.get()) < 0 ? 2 : 1;
         default:
             return 0;
         }
@@ -3626,20 +3634,22 @@ namespace mm
     GuestPtr<BuildingType> BldgType_BaseCtor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, uint16_t id)
     {
         port::GuestFrameOf<BaseCtorFrame> frame;
-        constexpr uint32_t kTypeCount = 0x001BDBBCu;
-        btype->vtable = GuestPtr<BuildingTypeVtable>{0x001BD000u};
-        if (port::load<int32_t>(kTypeCount) == 0)
+        btype->vtable = globals::kBldgTypeVtable;
+        if (globals::buildingTypeInstances.get() == 0)
         {
-            const uint32_t models[] = {0x001F3B44u, 0x001F3B48u, 0x001F3B64u, 0x001F3B60u, 0x001F3B74u, 0x001F3B78u};
+            const uint32_t models[] = {globals::charObjBusiness.address, globals::charObjBlock.address,
+                                       globals::charObjWasteland.address, globals::charObjCityParts.address,
+                                       globals::charObjProps.address, globals::charObjField.address};
             for (uint32_t i = 0; i < 6u; ++i)
-                port::store<uint32_t>(0x001BDBC4u + 4u * i, port::load<uint32_t>(models[i]));
-            port::store<uint32_t>(0x001BDBDCu, port::load<uint32_t>(0x001F3CE4u));
+                port::store<uint32_t>(globals::businessModel.address + 4u * i, port::load<uint32_t>(models[i]));
+            globals::collisionData.set(globals::colliBlock.get());
             const GuestPtr<GameFile> file = frame.at(&BaseCtorFrame::file);
             File_ctor(file, 0);
-            port::store<int32_t>(0x001BDBC0u, File_LoadWhole(file, GuestPtr<char>{0x001B8040u}, frame.at(&BaseCtorFrame::size)));
+            globals::buildingTypeShared.set(static_cast<uint32_t>(File_LoadWhole(file,
+                    GuestPtr<char>{globals::kPathPostNameBin}, frame.at(&BaseCtorFrame::size))));
             File_dtor(file, -1);
         }
-        port::store<int32_t>(kTypeCount, port::load<int32_t>(kTypeCount) + 1);
+        globals::buildingTypeInstances.set(globals::buildingTypeInstances.get() + 1);
         btype->kind = id;
         sdk::strcpy(port::guest(btype->name), port::guest(record->name));
         btype->size = record->size;
@@ -3677,7 +3687,7 @@ namespace mm
             for (int facing = 0; facing < 4; ++facing)
             {
                 const GuestPtr<Vec4> matrix = GuestPtr<Vec4>{globals::kBuildingMatrices} + 4 * facing;
-                matrix[3] = *GuestPtr<Vec4>{0x001B26A0u}; // no translation
+                matrix[3] = *GuestPtr<Vec4>{globals::kOriginPoint}; // no translation
                 const GuestPtr<Vec4> out = GuestPtr<Vec4>::of(btype->peopleSpots[4 * k + facing]);
                 Math_MulMatVecVu0(out, matrix, spot);
                 out->w = spot->w; // the heading stays
@@ -3715,64 +3725,64 @@ namespace mm
 
     GuestPtr<BuildingType> Bldg_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id)
     {
-        return constructBuildingType(btype, record, id, kBaseCtor, 0x001BD100u);
+        return constructBuildingType(btype, record, id, kBaseCtor, globals::kBldgVtable);
     }
 
     GuestPtr<BuildingType> BldgBusiness_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id)
     {
-        return constructBuildingType(btype, record, id, kBldg, 0x001BD1C0u);
+        return constructBuildingType(btype, record, id, kBldg, globals::kBldgBusinessVtable);
     }
 
     GuestPtr<BuildingType> BldgPort_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id)
     {
-        return constructBuildingType(btype, record, id, kBusiness, 0x001BD180u);
+        return constructBuildingType(btype, record, id, kBusiness, globals::kBldgPortVtable);
     }
 
     GuestPtr<BuildingType> BldgKeepOut_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id)
     {
-        return constructBuildingType(btype, record, id, kBaseCtor, 0x001BD200u);
+        return constructBuildingType(btype, record, id, kBaseCtor, globals::kBldgKeepOutVtable);
     }
 
     GuestPtr<BuildingType> BldgHousing_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id)
     {
-        return constructBuildingType(btype, record, id, kBusiness, 0x001BD280u);
+        return constructBuildingType(btype, record, id, kBusiness, globals::kBldgHousingVtable);
     }
 
     GuestPtr<BuildingType> BldgMyHome_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id)
     {
-        return constructBuildingType(btype, record, id, kBusiness, 0x001BD2C0u);
+        return constructBuildingType(btype, record, id, kBusiness, globals::kBldgMyHomeVtable);
     }
 
     GuestPtr<BuildingType> BldgSmallGoods_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id)
     {
-        return constructBuildingType(btype, record, id, kBaseCtor, 0x001BD380u);
+        return constructBuildingType(btype, record, id, kBaseCtor, globals::kBldgSmallGoodsVtable);
     }
 
     GuestPtr<BuildingType> BldgWasteland_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id)
     {
-        return constructBuildingType(btype, record, id, kBaseCtor, 0x001BD3C0u);
+        return constructBuildingType(btype, record, id, kBaseCtor, globals::kBldgWastelandVtable);
     }
 
     // The pig farm shares the model at 0x1F3B5C (kept at 0x1BDC00).
     GuestPtr<BuildingType> BldgPigFarm_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id)
     {
-        constructBuildingType(btype, record, id, kBusiness, 0x001BD300u);
-        port::store<uint32_t>(0x001BDC00u, port::load<uint32_t>(0x001F3B5Cu));
+        constructBuildingType(btype, record, id, kBusiness, globals::kBldgPigFarmVtable);
+        globals::pigFarmModel.set(globals::charObjPigFarm.get());
         return btype;
     }
 
     // The amusement park shares the ride model at 0x1F3B4C (kept at 0x1BDBE0).
     GuestPtr<BuildingType> BldgAmusementPark_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id)
     {
-        constructBuildingType(btype, record, id, kBusiness, 0x001BD040u);
-        port::store<uint32_t>(0x001BDBE0u, port::load<uint32_t>(0x001F3B4Cu));
+        constructBuildingType(btype, record, id, kBusiness, globals::kBldgAmusementParkVtable);
+        globals::parkRideModel.set(globals::charObjParkRide.get());
         return btype;
     }
 
     // The office keeps its extra mesh.
     GuestPtr<BuildingType> BldgOffice_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id)
     {
-        constructBuildingType(btype, record, id, kBusiness, 0x001BD080u);
+        constructBuildingType(btype, record, id, kBusiness, globals::kBldgOfficeVtable);
         btype.as<OfficeType>()->extraMesh = record->extraMesh;
         return btype;
     }
@@ -3780,23 +3790,23 @@ namespace mm
     // The ranch shares the animal models at 0x1F3B50, 0x1F3B54 and 0x1F3B58 (kept at 0x1BDBE8, 0x1BDBEC and 0x1BDBF0).
     GuestPtr<BuildingType> BldgRanch_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id)
     {
-        constructBuildingType(btype, record, id, kBusiness, 0x001BD0C0u);
-        port::store<uint32_t>(0x001BDBE8u, port::load<uint32_t>(0x001F3B50u));
-        port::store<uint32_t>(0x001BDBECu, port::load<uint32_t>(0x001F3B54u));
-        port::store<uint32_t>(0x001BDBF0u, port::load<uint32_t>(0x001F3B58u));
+        constructBuildingType(btype, record, id, kBusiness, globals::kBldgRanchVtable);
+        globals::ranchModelA.set(globals::charObjRanchA.get());
+        globals::ranchModelB.set(globals::charObjRanchB.get());
+        globals::ranchModelC.set(globals::charObjRanchC.get());
         return btype;
     }
 
     GuestPtr<BuildingType> BldgLeveled_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id)
     {
-        constructBuildingType(btype, record, id, kBaseCtor, 0x001BD240u);
+        constructBuildingType(btype, record, id, kBaseCtor, globals::kBldgLeveledVtable);
         btype.as<LeveledType>()->mesh = record->builtMesh;
         return btype;
     }
 
     GuestPtr<BuildingType> BldgRoad_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id)
     {
-        constructBuildingType(btype, record, id, kBaseCtor, 0x001BD340u);
+        constructBuildingType(btype, record, id, kBaseCtor, globals::kBldgRoadVtable);
         const GuestPtr<RoadType> road = btype.as<RoadType>();
         road->lampMesh = record->builtMesh;
         road->lightMesh = record->stageMesh;
@@ -3809,7 +3819,7 @@ namespace mm
     // first two growing meshes; the group spot bytes are its last four growing meshes.
     GuestPtr<BuildingType> BldgField_ctor(GuestPtr<BuildingType> btype, GuestPtr<BuildingRecord> record, int id)
     {
-        constructBuildingType(btype, record, id, kBaseCtor, 0x001BD140u);
+        constructBuildingType(btype, record, id, kBaseCtor, globals::kBldgFieldVtable);
         const GuestPtr<FieldType> field = btype.as<FieldType>();
         const ps2f pi(std::bit_cast<float>(0x40490FDBu));
         const auto meshOf = [](ps2f v) { return static_cast<uint8_t>(sdk::fptoui(v)); };
@@ -3928,7 +3938,9 @@ namespace mm
         port::GuestFrame<0x60> frame;
         const uint32_t file = frame.ptr().address + 0x50u, size = frame.ptr().address + 0x5Cu;
         File_ctor(GuestPtr<GameFile>{file}, 0);
-        const uint32_t data = static_cast<uint32_t>(File_LoadWhole(GuestPtr<GameFile>{file}, GuestPtr<char>{0x001B8150u}, GuestPtr<int32_t>{size}));
+        const uint32_t data = static_cast<uint32_t>(File_LoadWhole(GuestPtr<GameFile>{file},
+                                                                   GuestPtr<char>{globals::kPathStrTypeBin},
+                                                                   GuestPtr<int32_t>{size}));
         const uint32_t count = port::load<uint32_t>(size) / 0x9Cu;
         globals::buildingTypeCount.set(static_cast<int32_t>(count));
         globals::buildingTypeTable.set(sdk::mw_NewArray(static_cast<uint32_t>(globals::buildingTypeCount.get()) << 2));
@@ -3964,17 +3976,16 @@ namespace mm
     // and the status panel is refreshed when it moved.
     void CityScene_UpdateApproval(GuestPtr<CityScene> city)
     {
-        constexpr uint32_t kStarted = 0x001BDC58u, kTicks = 0x001BDC54u;
-        if (port::load<int8_t>(kStarted) == 0)
+        if (globals::approvalStarted.get() == 0)
         {
-            port::store<int32_t>(kTicks, 0);
-            port::store<uint8_t>(kStarted, 1);
+            globals::approvalTicks.set(0);
+            globals::approvalStarted.set(1);
         }
-        const int32_t ticks = port::load<int32_t>(kTicks) + 1;
-        port::store<int32_t>(kTicks, ticks);
+        const int32_t ticks = globals::approvalTicks.get() + 1;
+        globals::approvalTicks.set(ticks);
         if (ticks < 6)
             return;
-        port::store<int32_t>(kTicks, 0);
+        globals::approvalTicks.set(0);
         bool moved = false;
         const int32_t pending = city->pendingApproval;
         if (pending > 0)
@@ -4154,8 +4165,8 @@ namespace mm
         city->talk = GuestPtr<TalkSession>{build(0xC0u, [](uint32_t o) { return Talk_ctor(GuestPtr<TalkSession>{o}).address; })};
         city->statusPanel = GuestPtr<StatusPanel>{build(0xC0u, [](uint32_t o) { return StatusPanel_ctor(GuestPtr<StatusPanel>{o}).address; })};
         city->camera = GuestPtr<Camera>{build(0x310u, [](uint32_t o) { return Camera_ctor(GuestPtr<Camera>{o}).address; })};
-        frame->eye = *GuestPtr<Vec4>{0x001B2480u};
-        frame->target = *GuestPtr<Vec4>{0x001B2490u};
+        frame->eye = *GuestPtr<Vec4>{globals::kCityEye};
+        frame->target = *GuestPtr<Vec4>{globals::kCityTarget};
         Camera_SetEyeTarget(city->camera, frame.at(&SceneCtorFrame::eye), frame.at(&SceneCtorFrame::target));
         Camera_UpdateMatrices(city->camera);
         city->pauseMenu = GuestPtr<PauseMenu>{build(0x99Cu, [](uint32_t o) { return PauseMenu_ctor(GuestPtr<PauseMenu>{o}).address; })};
@@ -4164,8 +4175,8 @@ namespace mm
         city->phoneCalls = GuestPtr<PhoneCalls>{build(0x7Cu, [](uint32_t o) { return PhoneCall_ctor(GuestPtr<PhoneCalls>{o}).address; })};
         city->events = GuestPtr<EventMgr>{build(0xB0u, [](uint32_t o) { return EventMgr_ctor(GuestPtr<EventMgr>{o}).address; })};
         city->wants = GuestPtr<WantsWin>{build(0x544u, [](uint32_t o) { return WantsWin_ctor(GuestPtr<WantsWin>{o}).address; })};
-        city->bag = GuestPtr<Bag>{port::load<uint32_t>(0x001BDA18u)};
-        city->stamina = GuestPtr<Stamina>{port::load<uint32_t>(0x001BDBB8u)};
+        city->bag = GuestPtr<Bag>{globals::bagObject.get()};
+        city->stamina = GuestPtr<Stamina>{globals::staminaObject.get()};
         city->townPages = GuestPtr<TownPages>{build(0x64u, [](uint32_t o) { return TownPages_Init(GuestPtr<TownPages>{o}).address; })};
         city->laptop = GuestPtr<Laptop>{build(0x3E0u, [](uint32_t o) { return Laptop_ctor(GuestPtr<Laptop>{o}).address; })};
         city->cityCamera = GuestPtr<CityCamera>{build(0x540u, [](uint32_t o) { return CityCamera_ctor(GuestPtr<CityCamera>{o}).address; })};
@@ -4364,12 +4375,12 @@ namespace mm
         DmaList_QueueGsDefaults();
         if (city->hudVisible[0] != 0)
         {
-            Packet2_Draw(GuestPtr<uint32_t>::of(city->lights->packetA), 1);
+            LightSet_SelectProgram(city->lights, 1);
             CityRender_CollectObjects(city->map, city);
         }
         if (city->modeStack[0] == 5)
             virtualCall(city->talk.address, 8u, 0x20u, 0); // Draw
-        Packet2_Draw(GuestPtr<uint32_t>::of(city->lights->packetA), 0);
+        LightSet_SelectProgram(city->lights, 0);
         Perf_AdaptDrawRange();
         if (city->hudVisible[1] != 0)
         {
@@ -4386,9 +4397,9 @@ namespace mm
             CityRender_DrawWeather(city->map, city, 1, GuestPtr<Vec4>::of(city->cityCamera->base.view[0]));
         CityRender_DrawPlacement(city->map, 0);
         CityRender_DrawPlacement(city->map, 1);
-        CityRender_DrawInstanceLayer(city->map);
+        CityRender_DrawClaimMet(city->map);
         DmaList_QueueGsDefaults();
-        Packet2_Draw(GuestPtr<uint32_t>::of(city->lights->packetA), 0);
+        LightSet_SelectProgram(city->lights, 0);
         Packet_Draw(GuestPtr<uint32_t>::of(city->camera->packet));
         DmaList_QueueClearZ();
         if (city->hudVisible[3] != 0 && (globals::stageState()->flags & 1u) != 0u)
@@ -4454,7 +4465,7 @@ namespace mm
         if ((city->flags & 0x10u) == 0u)
             return 0;
         Sound_SetCity(GuestPtr<CityScene>{0u});
-        MemberMeters_Reset(GuestPtr<int32_t>{0x001C5780u});
+        MemberMeters_Reset(GuestPtr<int32_t>{globals::kFriendshipCounts});
         return 1;
     }
 
@@ -4475,16 +4486,14 @@ namespace mm
     // while loading goes on, 2 when it ended without a load.
     int CityScene_LoadGame(GuestPtr<CityScene> city)
     {
-        constexpr uint32_t kState = 0x001BDC68u, kStarted = 0x001BDC6Cu, kCard = 0x001BDA78u, kFlag = 0x001BDA7Cu, kTextA = 0x001BDC7Cu,
-                           kTextB = 0x001BDC78u, kSprite = 0x001BDC80u, kFade = 0x001BDC84u, kTimer = 0x001BDC70u, kHandle = 0x001BDC74u;
-        if (port::load<int8_t>(kStarted) == 0)
+        if (globals::loadGameStarted.get() == 0)
         {
-            port::store<int32_t>(kState, 0);
-            port::store<uint8_t>(kStarted, 1);
+            globals::loadGameState.set(0);
+            globals::loadGameStarted.set(1);
         }
         const auto mc = [&]() { return city->loadCard; };
-        const auto nextState = [&]() { port::store<int32_t>(kState, port::load<int32_t>(kState) + 1); };
-        const auto setState = [&](int32_t value) { port::store<int32_t>(kState, value); };
+        const auto nextState = [&]() { globals::loadGameState.set(globals::loadGameState.get() + 1); };
+        const auto setState = [&](int32_t value) { globals::loadGameState.set(value); };
         // A text box of `columns` by `rows` (style `style`), or 0 when the allocation fails.
         const auto newBox = [](int columns, int rows, int style) -> uint32_t {
             const uint32_t memory = sdk::operator_new(0x40u);
@@ -4508,16 +4517,16 @@ namespace mm
             }
         };
         const auto freeSprite = [&]() {
-            const uint32_t sprite = port::load<uint32_t>(kSprite);
+            const uint32_t sprite = globals::loadGameSprite.get();
             if (sprite != 0u)
                 port::callGuest<void>(port::load<uint32_t>(port::load<uint32_t>(sprite) + 8u), sprite, 1);
-            port::store<uint32_t>(kSprite, 0u);
+            globals::loadGameSprite.set(0u);
         };
         bool draw = false;
-        switch (port::load<int32_t>(kState))
+        switch (globals::loadGameState.get())
         {
         case 0:
-            if (port::load<int32_t>(kFlag) == 0)
+            if (globals::loadGameFromTitle.get() == 0)
             {
                 city->modeStack[0] = 0xD;
                 Pad_TakeFocus(2, -1);
@@ -4526,24 +4535,25 @@ namespace mm
             }
             else
             {
-                port::store<int32_t>(kFlag, 0);
-                port::store<uint32_t>(kTextA, newBox(0x14, 3, -2));
-                TextBox_SetText(GuestPtr<TextBox>{port::load<uint32_t>(kTextA)}, GuestPtr<char>{globals::kLoadedSaveInfo}, 0);
-                TextBox_SetPos(GuestPtr<TextBox>{port::load<uint32_t>(kTextA)}, 0x71A0, 0x7C20, 0xFF0000);
-                TextBox_SetCharSize(GuestPtr<TextBox>{port::load<uint32_t>(kTextA)}, 0, 0xB0, 0, 0xE0);
-                port::store<int32_t>(kTextB, 0);
-                WaitText_Create(GuestPtr<char>{0x001B98E0u});
+                globals::loadGameFromTitle.set(0);
+                globals::loadGameInfoText.set(newBox(0x14, 3, -2));
+                TextBox_SetText(GuestPtr<TextBox>{globals::loadGameInfoText.get()}, GuestPtr<char>{globals::kLoadedSaveInfo}, 0);
+                TextBox_SetPos(GuestPtr<TextBox>{globals::loadGameInfoText.get()}, 0x71A0, 0x7C20, 0xFF0000);
+                TextBox_SetCharSize(GuestPtr<TextBox>{globals::loadGameInfoText.get()}, 0, 0xB0, 0, 0xE0);
+                globals::loadGameRetryText.set(0);
+                WaitText_Create(GuestPtr<char>{globals::kLoadTextLoading});
                 uint32_t sprite = sdk::operator_new(0x38u);
                 if (sprite != 0u)
-                    sprite = static_cast<uint32_t>(TexSprite_Load(GuestPtr<TexSprite>{sprite}, 0x001B9940, 1));
-                port::store<uint32_t>(kSprite, sprite);
-                TexSprite_SetPosScale(GuestPtr<TexSprite>{port::load<uint32_t>(kSprite)}, 0, 0, 1, ps2f(2.0f), ps2f(2.0f));
+                    sprite = static_cast<uint32_t>(TexSprite_Load(GuestPtr<TexSprite>{sprite},
+                                                                  static_cast<int>(globals::kPathReportTex), 1));
+                globals::loadGameSprite.set(sprite);
+                TexSprite_SetPosScale(GuestPtr<TexSprite>{globals::loadGameSprite.get()}, 0, 0, 1, ps2f(2.0f), ps2f(2.0f));
                 uint32_t manager = sdk::operator_new(0x28u);
                 if (manager != 0u)
                     manager = McManager_ctor(GuestPtr<McManager>{manager}).address;
                 city->loadCard = GuestPtr<McManager>{manager};
                 McManager_ClearSlots(mc());
-                port::store<int32_t>(kFade, 0x80);
+                globals::loadGameFade.set(0x80);
                 nextState();
                 draw = true;
             }
@@ -4551,13 +4561,13 @@ namespace mm
         case 1:
         {
             McManagerUpdate(mc());
-            if (port::load<int32_t>(kFade) > 0)
+            if (globals::loadGameFade.get() > 0)
             {
-                port::store<int32_t>(kFade, port::load<int32_t>(kFade) - 0x10);
-                if (port::load<int32_t>(kFade) < 0)
-                    port::store<int32_t>(kFade, 0);
+                globals::loadGameFade.set(globals::loadGameFade.get() - 0x10);
+                if (globals::loadGameFade.get() < 0)
+                    globals::loadGameFade.set(0);
             }
-            const int status = McManager_GetCardStatus(mc(), port::load<int32_t>(kCard));
+            const int status = McManager_GetCardStatus(mc(), globals::loadGameCard.get());
             draw = true;
             if (status == 4)
                 break;
@@ -4568,14 +4578,15 @@ namespace mm
             }
             if (status == 2)
             {
-                WaitText_Set(GuestPtr<char>{0x001B9960u});
-                WaitText_Append(GuestPtr<char>{port::load<int32_t>(kCard) != 0 ? 0x001B99B8u : 0x001B99C0u});
-                port::store<int32_t>(kTimer, 0);
+                WaitText_Set(GuestPtr<char>{globals::kLoadTextNoCard});
+                WaitText_Append(GuestPtr<char>{globals::loadGameCard.get() != 0 ? globals::kLoadTextSlot2 : globals::kLoadTextSlot1});
+                globals::loadGameTimer.set(0);
                 setState(0x14);
                 break;
             }
             const GuestPtr<CardDirEntry> loaded = globals::loadedSaveEntry();
-            const GuestPtr<CardDirEntry> entry = McManager_FindSave(mc(), GuestPtr<char>::of(loaded->name[0]), port::load<int32_t>(kCard));
+            const GuestPtr<CardDirEntry> entry = McManager_FindSave(mc(), GuestPtr<char>::of(loaded->name[0]),
+                                                                    globals::loadGameCard.get());
             if (entry.address == 0u)
             {
                 setState(0x15);
@@ -4587,14 +4598,15 @@ namespace mm
                 setState(0x15);
                 break;
             }
-            WaitText_Set(GuestPtr<char>{0x001B98E0u});
+            WaitText_Set(GuestPtr<char>{globals::kLoadTextLoading});
             McManager_ResetState(mc());
             nextState();
             break;
         }
         case 2:
         {
-            const int result = SaveFile_PrepareDir(mc(), port::load<int32_t>(kCard), static_cast<int>(GuestPtr<char>::of(globals::loadedSaveEntry()->name[0]).address), 0);
+            const int result = SaveFile_PrepareDir(mc(), globals::loadGameCard.get(),
+                                                   static_cast<int>(GuestPtr<char>::of(globals::loadedSaveEntry()->name[0]).address), 0);
             if (result == 1)
                 nextState();
             else if (result == 2)
@@ -4603,12 +4615,12 @@ namespace mm
             break;
         }
         case 3:
-            port::store<int32_t>(kHandle, SaveFile_Open(mc(), 1));
+            globals::loadGameHandle.set(SaveFile_Open(mc(), 1));
             nextState();
             draw = true;
             break;
         case 4:
-            if (SaveFile_IsDone(mc(), port::load<int32_t>(kHandle)) != 0)
+            if (SaveFile_IsDone(mc(), globals::loadGameHandle.get()) != 0)
             {
                 if (mc()->fd < 0)
                     setState(0xA);
@@ -4633,13 +4645,13 @@ namespace mm
             Stamina_LoadState(city->stamina, manager);
             Laptop_LoadState(city->laptop, manager);
             Event_LoadState(city->events, manager);
-            port::store<int32_t>(kHandle, SaveFile_Close(manager));
+            globals::loadGameHandle.set(SaveFile_Close(manager));
             nextState();
             draw = true;
             break;
         }
         case 6:
-            if (SaveFile_IsDone(mc(), port::load<int32_t>(kHandle)) != 0)
+            if (SaveFile_IsDone(mc(), globals::loadGameHandle.get()) != 0)
             {
                 MapSave_UnpackTiles(city->map);
                 nextState();
@@ -4648,7 +4660,7 @@ namespace mm
             break;
         case 7:
         {
-            const int result = SaveFile_PrepareDir(mc(), port::load<int32_t>(kCard), 0x001B99C8, 0);
+            const int result = SaveFile_PrepareDir(mc(), globals::loadGameCard.get(), static_cast<int>(globals::kLoadTextDots), 0);
             if (result == 1)
                 nextState();
             else if (result == 2)
@@ -4657,21 +4669,21 @@ namespace mm
             break;
         }
         case 8:
-            if (SaveFile_IsDone(mc(), port::load<int32_t>(kHandle)) != 0)
+            if (SaveFile_IsDone(mc(), globals::loadGameHandle.get()) != 0)
             {
-                if (SaveFile_GetResult(mc(), port::load<int32_t>(kHandle)) != 0)
+                if (SaveFile_GetResult(mc(), globals::loadGameHandle.get()) != 0)
                     setState(0xA);
                 else
                 {
-                    port::store<int32_t>(kFade, 0);
+                    globals::loadGameFade.set(0);
                     nextState();
                 }
             }
             draw = true;
             break;
         case 9:
-            port::store<int32_t>(kFade, port::load<int32_t>(kFade) + 0x10);
-            if (port::load<int32_t>(kFade) <= 0x80)
+            globals::loadGameFade.set(globals::loadGameFade.get() + 0x10);
+            if (globals::loadGameFade.get() <= 0x80)
             {
                 draw = true;
                 break;
@@ -4683,29 +4695,29 @@ namespace mm
             CityScene_StartFade(city, 2);
             freeManager();
             freeSprite();
-            freeBox(kTextA);
+            freeBox(globals::loadGameInfoText.address);
             WaitText_Delete();
             break;
         case 0xA:
         {
-            const int result = SaveFile_PrepareDir(mc(), port::load<int32_t>(kCard), 0x001B99C8, 0);
+            const int result = SaveFile_PrepareDir(mc(), globals::loadGameCard.get(), static_cast<int>(globals::kLoadTextDots), 0);
             if (result != 0)
                 setState(0x15);
             draw = true;
             break;
         }
         case 0x14:
-            port::store<int32_t>(kTimer, port::load<int32_t>(kTimer) + 1);
-            if (!(port::load<int32_t>(kTimer) < 0xC9))
+            globals::loadGameTimer.set(globals::loadGameTimer.get() + 1);
+            if (!(globals::loadGameTimer.get() < 0xC9))
                 setState(0x15);
             draw = true;
             break;
         case 0x15:
             McManager_ClearSlots(mc());
-            port::store<uint32_t>(kTextB, newBox(0x12, 2, -1));
-            TextBox_SetText(GuestPtr<TextBox>{port::load<uint32_t>(kTextB)}, GuestPtr<char>{0x001B99D0u}, 0);
-            TextBox_SetPos(GuestPtr<TextBox>{port::load<uint32_t>(kTextB)}, 0x7420, 0x81C0, 0xFF0000);
-            WaitText_Set(GuestPtr<char>{0x001B9A10u});
+            globals::loadGameRetryText.set(newBox(0x12, 2, -1));
+            TextBox_SetText(GuestPtr<TextBox>{globals::loadGameRetryText.get()}, GuestPtr<char>{globals::kLoadTextRetry}, 0);
+            TextBox_SetPos(GuestPtr<TextBox>{globals::loadGameRetryText.get()}, 0x7420, 0x81C0, 0xFF0000);
+            WaitText_Set(GuestPtr<char>{globals::kLoadTextFailed});
             nextState();
             draw = true;
             break;
@@ -4714,9 +4726,9 @@ namespace mm
             const uint32_t pad = Pad_Pressed(0);
             if (pad == 0x40u)
             {
-                freeBox(kTextB);
+                freeBox(globals::loadGameRetryText.address);
                 Sound_PlaySe(1, 0, 0x3C, 0.0f, 0.0f);
-                WaitText_Set(GuestPtr<char>{0x001B9A30u});
+                WaitText_Set(GuestPtr<char>{globals::kLoadTextChecking});
                 setState(1);
                 draw = true;
             }
@@ -4730,16 +4742,16 @@ namespace mm
             break;
         }
         case 0x17:
-            port::store<int32_t>(kFade, port::load<int32_t>(kFade) + 0x10);
-            if (port::load<int32_t>(kFade) <= 0x80)
+            globals::loadGameFade.set(globals::loadGameFade.get() + 0x10);
+            if (globals::loadGameFade.get() <= 0x80)
             {
                 draw = true;
                 break;
             }
-            freeBox(kTextB);
+            freeBox(globals::loadGameRetryText.address);
             freeManager();
             freeSprite();
-            freeBox(kTextA);
+            freeBox(globals::loadGameInfoText.address);
             WaitText_Delete();
             nextState();
             break;
@@ -4760,15 +4772,15 @@ namespace mm
         if (draw)
         {
             DmaList_QueueClearZ();
-            TexSprite_Draw(GuestPtr<TexSprite>{port::load<uint32_t>(kSprite)});
-            TextBox_Draw(GuestPtr<TextBox>{port::load<uint32_t>(kTextA)});
-            if (port::load<uint32_t>(kTextB) != 0u)
-                TextBox_Draw(GuestPtr<TextBox>{port::load<uint32_t>(kTextB)});
+            TexSprite_Draw(GuestPtr<TexSprite>{globals::loadGameSprite.get()});
+            TextBox_Draw(GuestPtr<TextBox>{globals::loadGameInfoText.get()});
+            if (globals::loadGameRetryText.get() != 0u)
+                TextBox_Draw(GuestPtr<TextBox>{globals::loadGameRetryText.get()});
             WaitText_Draw();
-            if (port::load<int32_t>(kFade) > 0)
+            if (globals::loadGameFade.get() > 0)
             {
                 DmaList_QueueClearZ();
-                DmaList_QueueFade(port::load<int32_t>(kFade), 0);
+                DmaList_QueueFade(globals::loadGameFade.get(), 0);
             }
         }
         return 0;

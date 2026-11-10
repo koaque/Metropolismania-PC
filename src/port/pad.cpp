@@ -97,9 +97,6 @@ namespace mm
         // Per-port words (two ports, 4 bytes each): the state machine's state (kPadPortStates), the frame count the pad
         // library last reported and the one before (the pad is dropped when it changes without being asked to), the fault
         // code of a pad that could not be set up, and one more word that only start-up clears.
-        constexpr uint32_t kPadLastFrame = 0x001BDB10u, kPadFrame = 0x001BDB18u, kPadFault = 0x001BDB20u, kPadUnused = 0x001BDB30u;
-        constexpr uint32_t kPadActAlignData = 0x001BDB28u;  // the 6 bytes handed to scePadSetActAlign
-        constexpr uint32_t kPadPortBuffers = 0x001F38C0u;   // 0x100 bytes per port for the library's DMA
 
         // The pad library's request states: waiting for a request to finish steps the state back one, so the same call
         // is made again until the request is done.
@@ -124,11 +121,11 @@ namespace mm
         for (uint32_t port = 0; port < 2u; ++port)
         {
             port::store<int32_t>(globals::kPadPortStates + 4u * port, 0);
-            port::store<int32_t>(kPadFrame + 4u * port, 0);
-            port::store<int32_t>(kPadLastFrame + 4u * port, 0);
-            port::store<int32_t>(kPadFault + 4u * port, 0);
-            port::store<int32_t>(kPadUnused + 4u * port, 0);
-            sdk::scePadPortOpen(static_cast<int>(port), 0, kPadPortBuffers + 0x100u * port);
+            port::store<int32_t>(globals::kPadFrame + 4u * port, 0);
+            port::store<int32_t>(globals::kPadLastFrame + 4u * port, 0);
+            port::store<int32_t>(globals::kPadFault + 4u * port, 0);
+            port::store<int32_t>(globals::kPadUnused + 4u * port, 0);
+            sdk::scePadPortOpen(static_cast<int>(port), 0, globals::kPadPortBuffers + 0x100u * port);
         }
         sdk::sceGsSyncPath(0, 0);
     }
@@ -142,7 +139,7 @@ namespace mm
         {
             const uint32_t at = 4u * static_cast<uint32_t>(port);
             const uint32_t stateWord = globals::kPadPortStates + at;
-            const uint32_t faultWord = kPadFault + at;
+            const uint32_t faultWord = globals::kPadFault + at;
             const int64_t status = sdk::scePadGetState(port, 0);
             if (status == 0)
                 port::store<int32_t>(stateWord, 0);
@@ -176,11 +173,11 @@ namespace mm
                 }
                 break;
             case ActAlign:
-                port::store<uint8_t>(kPadActAlignData + 0, 0);
-                port::store<uint8_t>(kPadActAlignData + 1, 1);
+                port::store<uint8_t>(globals::kPadActAlignData + 0, 0);
+                port::store<uint8_t>(globals::kPadActAlignData + 1, 1);
                 for (uint32_t i = 2; i < 6u; ++i)
-                    port::store<uint8_t>(kPadActAlignData + i, 0xFF);
-                if (sdk::scePadSetActAlign(0, 0, kPadActAlignData) != 0)
+                    port::store<uint8_t>(globals::kPadActAlignData + i, 0xFF);
+                if (sdk::scePadSetActAlign(0, 0, globals::kPadActAlignData) != 0)
                     port::store<int32_t>(stateWord, port::load<int32_t>(stateWord) + 1);
                 break;
             case SetModeWait:
@@ -232,13 +229,13 @@ namespace mm
                 {
                     port::store<int32_t>(stateWord, Ready);
                     sdk::scePadRead(port, 0, globals::kPadBuffers + 0x20u * static_cast<uint32_t>(port));
-                    const int32_t last = port::load<int32_t>(kPadLastFrame + at);
-                    if (last != 0 && port::load<int32_t>(kPadFrame + at) != last)
+                    const int32_t last = port::load<int32_t>(globals::kPadLastFrame + at);
+                    if (last != 0 && port::load<int32_t>(globals::kPadFrame + at) != last)
                     {
-                        port::store<int32_t>(kPadLastFrame + at, 0);
+                        port::store<int32_t>(globals::kPadLastFrame + at, 0);
                         port::store<int32_t>(stateWord, 0);
                     }
-                    port::store<int32_t>(kPadLastFrame + at, port::load<int32_t>(kPadFrame + at));
+                    port::store<int32_t>(globals::kPadLastFrame + at, port::load<int32_t>(globals::kPadFrame + at));
                 }
                 break;
             }

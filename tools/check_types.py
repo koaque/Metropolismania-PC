@@ -33,6 +33,7 @@ def main() -> None:
     for header in sorted((ROOT / "config/types").glob("*.h")):
         current = None
         last_comment = ""
+        in_comment = False  # inside a block comment that starts a line: its later lines belong to it
         for line in header.read_text(encoding="utf-8").splitlines():
             m = STRUCT.match(line)
             if m:
@@ -42,10 +43,15 @@ def main() -> None:
                     asserts.append(f"_Static_assert(sizeof(struct {current}) == {size.group(1)}, \"{current} size\");")
             elif line.startswith("};"):
                 current = None
-            if line.strip().startswith("/*"):
+            stripped = line.strip()
+            if in_comment:
+                last_comment += " " + stripped
+                in_comment = "*/" not in stripped
+            elif stripped.startswith("/*"):
                 last_comment = line
-            elif line.strip():
-                last_comment = last_comment if line.strip().startswith(("*", "typedef")) else ""
+                in_comment = "*/" not in stripped
+            elif stripped:
+                last_comment = last_comment if stripped.startswith(("*", "typedef")) else ""
             if current:
                 n = NAMED.match(line)
                 if n:

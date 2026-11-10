@@ -75,8 +75,8 @@ namespace mm
 
     ps2f Map_GetHeightAt(GuestPtr<CityMap> map, int x, int z) { return tileAt(map, clampToMap(x), clampToMap(z)).height; }
 
-    // The drawn bottom's height over lowered ground (heights grow downwards): the copy layer B draws, at 0.6 of the depth
-    // plus 0.08. People and goods on lowered ground stand on it (Map_SampleHeight).
+    // The drawn bottom's height over lowered ground (heights grow downwards): the copy the water bottom draws, at 0.6
+    // of the depth plus 0.08. People and goods on lowered ground stand on it (Map_SampleHeight).
     ps2f Map_BottomHeight(ps2f height) { return ps2f(0.08f) + ps2f(0.6f) * height; }
 
     // Clears a size x size square at (x, z): each tile loses its first object (the map's clearObject slot)
@@ -934,8 +934,8 @@ namespace mm
                 port::store<uint32_t>(addressOf(dst->w), *w);
             map->terrainWrite.address += 16u;
         };
-        const uint32_t w0 = port::load<uint32_t>(0x001BD990u) | static_cast<uint32_t>((texture - 1) * 0x40 / 4 + 0x2588);
-        const uint32_t w1 = port::load<uint32_t>(0x001AF360u + 4u * static_cast<uint32_t>(coordSet)) + 0x21u;
+        const uint32_t w0 = port::load<uint32_t>(globals::kTerrainQuadWord) | static_cast<uint32_t>((texture - 1) * 0x40 / 4 + 0x2588);
+        const uint32_t w1 = port::load<uint32_t>(globals::kTerrainCoordSets + 4u * static_cast<uint32_t>(coordSet)) + 0x21u;
         const uint32_t w2 = static_cast<uint32_t>(flags);
         put(a, &w0);
         put(b, &w1);
@@ -963,7 +963,7 @@ namespace mm
             const auto triangle = [&](const Vec4 &v0, const Vec4 &v1, uint32_t w1, const Vec4 &v2) {
                 if (map->sideVertices >= 0x86E)
                     return;
-                const uint32_t w[3] = {port::load<uint32_t>(0x001BD990u) | 0x2698u, w1, 1u};
+                const uint32_t w[3] = {port::load<uint32_t>(globals::kTerrainQuadWord) | 0x2698u, w1, 1u};
                 const Vec4 *v[3] = {&v0, &v1, &v2};
                 for (int i = 0; i < 3; ++i)
                 {
@@ -1025,9 +1025,9 @@ namespace mm
     // mm_Terrain_AddQuad) start at 8: +1 when the object's type gives a texture (groundTexture slot, with the object;
     // passed on as the texture), 2 when a corner lies under the water (above `level`: heights grow downwards), 0x20 or
     // 0x40 (the sea, tile flag 0x20, or a lake) when a corner lies below ground level (above 0) on a type without flag
-    // 1 (layer B, the sand or rock bottom), 4 inside the buildings layer's tile rectangle, 0x10 when the tile is
-    // walkable and its first object lit (both flags 0x10: a road with its street lamps on, layer F). A tile with an
-    // object also gets its cliff sides.
+    // 1 (the water bottom's sand or rock), 4 inside the placement layer's tile rectangle, 0x10 when the tile is
+    // walkable and its first object lit (both flags 0x10: a road with its street lamps on, the lit roads' pass). A tile
+    // with an object also gets its cliff sides.
     void Terrain_DrawPatch(GuestPtr<CityMap> map, int x, int z, int object, ps2f centreX, ps2f centreZ, ps2f level)
     {
         port::GuestFrame<0xE0> frame;
@@ -1680,7 +1680,7 @@ namespace mm
         }
         map->sortedCount = 0;
         map->terrainQuads = 0;
-        const uint32_t parity = port::load<uint32_t>(globals::kFrameParity) & 1u;
+        const uint32_t parity = globals::frameParity.get() & 1u;
         map->terrainWrite = map->terrainBuffers[parity];
         map->sideVertices = 0;
         map->sideWrite = map->sideBuffers[parity];
@@ -1999,10 +1999,11 @@ namespace mm
         SaveFile_Write(mc, static_cast<int>(addressOf(lists->count)), 0xA0);
     }
 
-    // The placement highlight: its colour, its rectangle (x0, z0, x1, z1) and its mode (1 the highlight, 2 the marker).
+    // The placement highlight: its fill colour, its rectangle (x0, z0, x1, z1) and its mode (1 the highlight, 2 the
+    // marker).
     void PlacementLayer_Set(GuestPtr<PlacementLayer> layer, int mode, GuestPtr<TileRect> rect, GuestPtr<Vec4> colour)
     {
-        layer->colourA = *colour;
+        layer->fillColour = *colour;
         layer->rect = *rect;
         layer->rectActive = mode;
     }
@@ -2380,14 +2381,14 @@ namespace mm
     // vertex) when the camera is more than 10 above the ground (y below -10) or the object is past the fog start, 1 (clip
     // the triangles that cross the view volume instead of dropping them) when the camera is within the footprint's reach,
     // else 0. A built object whose claim was met (flags 0x20 and 8) with a counting variant byte (up to 0x2D) also asks
-    // LayerA for an instance at the highest object that counts.
+    // ClaimMetLayer for an instance at the highest object that counts.
     void CityRender_CollectObjects(GuestPtr<CityMap> map, GuestPtr<CityScene> city)
     {
         port::GuestFrame<0xE0> frame; // the flag word at +0xDC
         const uint32_t flagsAt = frame.ptr().address + 0xDCu;
         const GuestPtr<CityCamera> camera = city->cityCamera;
         const ps2f fogNear = camera->base.fogNear;
-        LayerA_BeginFrame(map->instances, static_cast<int>(port::load<uint32_t>(0x001BDCD0u) & 1u));
+        ClaimMetLayer_BeginFrame(map->claimMet, static_cast<int>(globals::frameParity.get() & 1u));
         GuestPtr<BuildingType> lastType;
         ps2f bestHeight = 0.0f;
         GuestPtr<TerrainEntry> node = GuestPtr<TerrainEntry>{addressOf(map->buckets[149])}; // the far end, walked back
@@ -2456,7 +2457,7 @@ namespace mm
                             reached = (map->objects + reached)->nextOnTile;
                         }
                         if (best != 0)
-                            LayerA_AddInstance(map->instances, lastType->size, static_cast<int>(best), x, bestHeight, z);
+                            ClaimMetLayer_AddInstance(map->claimMet, lastType->size, static_cast<int>(best), x, bestHeight, z);
                     }
                 }
             }
@@ -2549,7 +2550,7 @@ namespace mm
     {
         if (map)
         {
-            map->vtable = GuestPtr<CityMapVtable>{0x001BCEF0u};
+            map->vtable = globals::kMapObjectsVtable;
             const uint32_t objects = map->objects.address;
             if (objects != 0u)
             {
@@ -2640,7 +2641,7 @@ namespace mm
     GuestPtr<CityMap> MapObjects_ctor(GuestPtr<CityMap> map)
     {
         MapTiles_ctor(map);
-        map->vtable = GuestPtr<CityMapVtable>{0x001BCEF0u};
+        map->vtable = globals::kMapObjectsVtable;
         map->nextId = 1;
         map->tickSlice = 0;
         map->flag8Objects = 0;
@@ -2683,7 +2684,7 @@ namespace mm
     GuestPtr<CityMap> MapPeople_ctor(GuestPtr<CityMap> map)
     {
         MapObjects_ctor(map);
-        map->vtable = GuestPtr<CityMapVtable>{0x001BCEE0u};
+        map->vtable = globals::kMapPeopleVtable;
         map->freePerson = 0;
         const uint32_t block = sdk::mw_NewArray(0x46510u);
         map->people = GuestPtr<MapPerson>{sdk::construct_new_array(block, addr::MapPerson_ctor, 0u, 0x30u, 6000u)};
@@ -2697,7 +2698,7 @@ namespace mm
     {
         if (map)
         {
-            map->vtable = GuestPtr<CityMapVtable>{0x001BCEE0u};
+            map->vtable = globals::kMapPeopleVtable;
             const uint32_t people = map->people.address;
             if (people != 0u)
             {
