@@ -64,6 +64,7 @@ struct Bag;
 struct BagMusicTrack;
 struct BagSlot;
 struct GoodsRecord;
+struct GoodsGroup;
 struct StatusPanel;
 struct PauseMenu;
 struct Minimap;
@@ -115,6 +116,7 @@ struct EvShoppingTogetherData;
 struct EvMessageData;
 struct EvEscortData;
 struct EvAlienData;
+struct AlienSite;
 struct EvMissingChildrenData;
 struct CharClass;
 struct CharTypeRecord;
@@ -644,6 +646,15 @@ struct GoodsRecord {
     uint8_t unk_07;
     char text[0x80];           /* +0x08 the description (bytes after its end are leftovers) */
 };
+/* A goods group (4 bytes): GOODS.BIN section A, one per building type, the goods its shops sell (globals::goodsGroup,
+   mm_Goods_GetRecordOffset). */
+struct GoodsGroup {
+    uint16_t first;            /* +0x00 the group's first record in section B */
+    uint8_t variants;          /* +0x02 blocks of four records, one picked by the shop's family modulo this; 0: the type
+                                  sells nothing (238 of the disc's 282 types; mm_EvShopping_Check) */
+    uint8_t perVariant;        /* +0x03 the step between those blocks, in fours; from 2 the season (0 to 2) also picks
+                                  one (1 in every group on the disc) */
+};
 /* Bag item slot (0x10 bytes, mm_Bag_AddItem). */
 struct BagSlot {
     uint16_t group;            /* +0x00 the goods group (the building type that sells it), 0 = empty */
@@ -789,7 +800,8 @@ struct EventType {
     uint8_t level;             /* +0x23 the queue bucket it waits in; 1 and 5 ignore the start window, 2 takes one
                                   character type */
     uint8_t handler;           /* +0x24 index into the handler table at 0x1AF0D0 (EventHandler), 0 = none */
-    uint8_t tileFlags;         /* +0x25 1 + the tile flag set while it runs, 0 = none (mm_Event_SetTileFlags) */
+    uint8_t claimList;         /* +0x25 1 + CLAIM.BIN's event claim list the building types get while it runs
+                                  (EventClaimList, mm_Event_AddClaims), 0 = none */
     uint8_t mask;              /* +0x26 tested by mm_EventList_MoveByMask */
     uint8_t ranks;             /* +0x27 the population ranks it runs at (bit rank - 1): below them it waits in bucket 5,
                                   after them it goes to bucket 6 (mm_Event_Update) */
@@ -996,6 +1008,12 @@ struct EvAlienData {
     int32_t month;             /* +0x3C the month count to wait for */
     int32_t time;              /* +0x40 the clock to wait for on that day */
     int32_t minutes;           /* +0x44 counted down between phases, up at the end (720) */
+};
+/* A place the alien can land (4 bytes): a tile list and a building type in it (globals::kAlienSites, ended by list 0,
+   mm_EvAlien_PickTarget). */
+struct AlienSite {
+    uint16_t list;             /* +0x00 */
+    uint16_t type;             /* +0x02 */
 };
 /* A message event's record (mm_EvMsg_*, mm_EvNoRetreat_Update, mm_EvPayday_Update): a phone call from the boss, which
    some types make again. */
@@ -1521,6 +1539,8 @@ struct AmbienceCell;
 struct ClaimEntry;
 struct ClaimSupply;
 struct ClaimTally;
+struct EventClaim;
+struct EventClaimList;
 struct CityMapVtable;
 struct BuildingTypeVtable;
 
@@ -2154,6 +2174,21 @@ struct ClaimTally {
     uint8_t own;               /* +0x00 the building itself has a value for it */
     uint8_t weight;            /* +0x01 the neighbours' weights */
     uint16_t meters;           /* +0x02 their claim meters times their weights */
+};
+/* A claim an event gives building types while it runs (0xC bytes, mm_Event_AddClaims): the claim, and the slot it is
+   copied into, the end (id 0) of a type's claim list in section B, so the claim is added after the type's own. */
+struct EventClaim {
+    uint32_t slot;             /* +0x00 a word offset into the claim data */
+    ClaimEntry claim;          /* +0x04 */
+};
+/* An event's claim list (CLAIM.BIN, globals::eventClaimList, by EventType.claimList - 1). On the disc each gives one
+   need (value 60 to 100, reach 20) to the homes' claim lists, and some also to the offices' or the restaurants':
+   list 0 a culture school (Learning New Things), 1 a travel agency (Overseas Travel Boom), 2 a fortune teller
+   (Fortune Telling Boom), 3 a security firm (no event uses it), 4 pest control (Bug Damage), 5 an employment agency
+   (Increasing Unemployment). */
+struct EventClaimList {
+    uint32_t count;            /* +0x00 */
+    EventClaim claims[1];      /* +0x04 count of them */
 };
 
 /* Sound effect request (0x1C bytes): the frame's requests at 0x1F8710, kept in priority order by
@@ -2947,6 +2982,9 @@ static_assert(offsetof(GoodsRecord, kind) == 0x04, "GoodsRecord.kind");
 static_assert(offsetof(GoodsRecord, value) == 0x05, "GoodsRecord.value");
 static_assert(offsetof(GoodsRecord, count) == 0x06, "GoodsRecord.count");
 static_assert(offsetof(GoodsRecord, text) == 0x08, "GoodsRecord.text");
+static_assert(offsetof(GoodsGroup, first) == 0x00, "GoodsGroup.first");
+static_assert(offsetof(GoodsGroup, variants) == 0x02, "GoodsGroup.variants");
+static_assert(offsetof(GoodsGroup, perVariant) == 0x03, "GoodsGroup.perVariant");
 static_assert(sizeof(BagSlot) == 0x10, "BagSlot size");
 static_assert(offsetof(BagSlot, group) == 0x00, "BagSlot.group");
 static_assert(offsetof(BagSlot, index) == 0x02, "BagSlot.index");
@@ -3047,7 +3085,7 @@ static_assert(offsetof(EventType, number) == 0x21, "EventType.number");
 static_assert(offsetof(EventType, priority) == 0x22, "EventType.priority");
 static_assert(offsetof(EventType, level) == 0x23, "EventType.level");
 static_assert(offsetof(EventType, handler) == 0x24, "EventType.handler");
-static_assert(offsetof(EventType, tileFlags) == 0x25, "EventType.tileFlags");
+static_assert(offsetof(EventType, claimList) == 0x25, "EventType.claimList");
 static_assert(offsetof(EventType, mask) == 0x26, "EventType.mask");
 static_assert(offsetof(EventType, ranks) == 0x27, "EventType.ranks");
 static_assert(offsetof(EventType, wait) == 0x28, "EventType.wait");
@@ -3178,6 +3216,8 @@ static_assert(offsetof(EvAlienData, actors) == 0x0C, "EvAlienData.actors");
 static_assert(offsetof(EvAlienData, month) == 0x3C, "EvAlienData.month");
 static_assert(offsetof(EvAlienData, time) == 0x40, "EvAlienData.time");
 static_assert(offsetof(EvAlienData, minutes) == 0x44, "EvAlienData.minutes");
+static_assert(offsetof(AlienSite, list) == 0x00, "AlienSite.list");
+static_assert(offsetof(AlienSite, type) == 0x02, "AlienSite.type");
 static_assert(offsetof(EvMessageData, header) == 0x00, "EvMessageData.header");
 static_assert(offsetof(EvMessageData, actor) == 0x0C, "EvMessageData.actor");
 static_assert(offsetof(EvMessageData, callMinutes) == 0x14, "EvMessageData.callMinutes");
@@ -3855,6 +3895,11 @@ static_assert(offsetof(ClaimSupply, value) == 0x02, "ClaimSupply.value");
 static_assert(offsetof(ClaimTally, own) == 0x00, "ClaimTally.own");
 static_assert(offsetof(ClaimTally, weight) == 0x01, "ClaimTally.weight");
 static_assert(offsetof(ClaimTally, meters) == 0x02, "ClaimTally.meters");
+static_assert(sizeof(EventClaim) == 0xC, "EventClaim size");
+static_assert(offsetof(EventClaim, slot) == 0x00, "EventClaim.slot");
+static_assert(offsetof(EventClaim, claim) == 0x04, "EventClaim.claim");
+static_assert(offsetof(EventClaimList, count) == 0x00, "EventClaimList.count");
+static_assert(offsetof(EventClaimList, claims) == 0x04, "EventClaimList.claims");
 static_assert(sizeof(SeRequest) == 0x1C, "SeRequest size");
 static_assert(offsetof(SeRequest, sound) == 0x00, "SeRequest.sound");
 static_assert(offsetof(SeRequest, voice) == 0x01, "SeRequest.voice");

@@ -1,0 +1,62 @@
+# Button script (MMPC_AUTOPLAY=script) that reaches the city's rarer VU1 programs for docs/RENDER_PIPELINE.md:
+#   python tools/pipeline.py vu1-capture --script tools/autoplay/render_capture.txt --out work/vu1_aot/records_render \
+#       --env MMPC_WEATHER=2 --timeout 150
+# MMPC_WEATHER=2 holds the weather at rain (3 snow). The script then zooms in to level 0 and walks, so buildings next
+# to the camera are drawn in mode 1 (0x1A4780's clipping loop), zooms out, and places the first bag item with the
+# placement highlight (0x1A7B30): laptop (Square), six entries right to the shopping bag, Cross, Cross on slot 0.
+# It was written for a save whose bag holds an item to place (goods kinds 0x17, 0x1A to 0x1C) in slot 0 and whose
+# laptop has the bag as its seventh entry; other saves need other moves.
+# Lines: FRAMES BUTTONS_HEX [shot NAME], game frames from MMPC_AUTOPLAY_SETTLE after the first city frame; the buttons in
+# the game's bit order (Cross 0x40, Square 0x80, Triangle 0x10, Circle 0x20, Up 0x1000, Right 0x2000, Down 0x4000,
+# Left 0x8000, L2 0x01, R2 0x02, L1 0x04, R1 0x08).
+60 0 shot weather
+# zoom in to level 0 (L2 four times), walk mode (Circle+Left), walk ahead and to the side
+4 01
+10 0
+4 01
+10 0
+4 01
+10 0
+4 01
+60 0 shot zoomed
+4 8020
+10 0
+90 1000
+20 0 shot walked
+90 2000
+20 0 shot walked2
+# zoom out to level 3 (L1 four times)
+4 04
+10 0
+4 04
+10 0
+4 04
+10 0
+4 04
+60 0
+# laptop, six entries right, Cross runs the bag
+4 80
+120 0
+4 2000
+70 0
+4 2000
+70 0
+4 2000
+70 0
+4 2000
+70 0
+4 2000
+70 0
+4 2000
+70 0 shot laptop
+4 40
+150 0 shot bag
+# Cross uses slot 0: the item is placed with the highlight; move it, then Triangle cancels (the item is kept)
+4 40
+150 0 shot placing
+30 1000
+40 0 shot placing2
+30 2000
+40 0 shot placing3
+4 10
+90 0 shot back

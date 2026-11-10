@@ -21,5 +21,5 @@ time of year) are used by the talk script's shopping choices.
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
 | `0x0013E380` | `int mm_Goods_GetPrice(int item)` | 72 | no | (item) price of goods item `item`: byte +2 x 10^(byte +3) |
-| `0x0013E3D0` | `int mm_Goods_GetRecordOffset(int group, int family, int season, int32_t *offset)` | 132 | no | (group, family, season, offset) advances *offset by the group's records per variant for the shop's family (modulo the variants), and by four per season when the group has two or more records per variant; returns the record's address |
+| `0x0013E3D0` | `int mm_Goods_GetRecordOffset(int group, int family, int season, int32_t *offset)` | 132 | no | (group, family, season, offset) advances *offset by four records times the group's perVariant for the shop's family (modulo its variants), and by four per season when perVariant is two or more (GoodsGroup); returns the record's address |
 | `0x0013E460` | `void mm_Goods_Load(void)` | 192 | yes | loads DATA\BIN\GOODS.BIN and resolves its section offsets (0x1BDA9C..0x1BDAB4) |

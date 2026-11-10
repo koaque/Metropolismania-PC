@@ -15,13 +15,6 @@ namespace mm
 {
     namespace
     {
-        // The goods record of a group and index (section A holds each group's first record).
-        GuestPtr<GoodsRecord> goodsRecordOf(uint32_t group, uint32_t index)
-        {
-            const uint32_t first = port::load<uint16_t>(globals::goodsSectionA.get() + 4u * group);
-            return GuestPtr<GoodsRecord>{globals::goodsSectionB.get() + 0x88u * (index + first)};
-        }
-
         uint32_t slotAddress(GuestPtr<Bag> bag, uint32_t slot) { return bag.address + 4u + 16u * slot; }
     }
 
@@ -79,14 +72,14 @@ namespace mm
         slot->seller = static_cast<uint16_t>(seller);
         slot->unk_0E = unk0E;
         slot->unk_0F = unk0F;
-        slot->count = goodsRecordOf(static_cast<uint32_t>(group), static_cast<uint32_t>(index))->count;
+        slot->count = globals::goodsAt(static_cast<uint32_t>(group), static_cast<uint32_t>(index))->count;
     }
 
     // A music goods record puts its track (its value) in the first free music track entry (0xFFFF), unless one has it
     // already, and enables it in the BGM slot table.
     void Bag_AddMusicTrack(GuestPtr<Bag> bag, int group, int index)
     {
-        const uint8_t track = goodsRecordOf(static_cast<uint32_t>(group), static_cast<uint32_t>(index))->value;
+        const uint8_t track = globals::goodsAt(static_cast<uint32_t>(group), static_cast<uint32_t>(index))->value;
         for (const BagMusicTrack &music : bag->musicTracks)
             if (static_cast<uint16_t>(music.track) == track)
                 return;
@@ -121,7 +114,7 @@ namespace mm
             const uint16_t group = GuestPtr<BagSlot>{slot}->group;
             if (group == 0 && !(slot < end))
                 return 0;
-            if (goodsRecordOf(group, GuestPtr<BagSlot>{slot}->index)->name == id)
+            if (globals::goodsAt(group, GuestPtr<BagSlot>{slot}->index)->name == id)
                 return static_cast<int>(slot);
         }
     }
@@ -152,7 +145,7 @@ namespace mm
         if (setup == -1)
             return 0xFFFFFFFFu;
         const GuestPtr<BagSlot> slot{slotAddress(bag, static_cast<uint32_t>(setup))};
-        const GuestPtr<GoodsRecord> record = goodsRecordOf(slot->group, slot->index);
+        const GuestPtr<GoodsRecord> record = globals::goodsAt(slot->group, slot->index);
         switch (record->kind)
         {
         case 0x1C:
@@ -185,7 +178,7 @@ namespace mm
             TextBox_SetText(nameBox, GuestPtr<char>{0x001B5B10u}, 0);
             return;
         }
-        const GuestPtr<GoodsRecord> record = goodsRecordOf(group, slot->index);
+        const GuestPtr<GoodsRecord> record = globals::goodsAt(group, slot->index);
         TextBox_SetText(nameBox, GuestPtr<char>::of(record->text[0]), 0);
         uint32_t action;
         int32_t usable = 1;
@@ -228,17 +221,17 @@ namespace mm
         return static_cast<int>(static_cast<uint32_t>(record->priceDigits) * static_cast<uint32_t>(scale));
     }
 
-    // The goods record of a group: the offset (in and out) advances by the group's records per variant (byte 3) for
-    // the shop's family (modulo the variants, byte 2), and by four per season when the group has two or more records
-    // per variant.
+    // The goods record of a group: the offset (in and out) advances by four records times the group's perVariant for
+    // the shop's family (modulo the group's variants), and by four per season when perVariant is two or more.
     int Goods_GetRecordOffset(int group, int family, int season, GuestPtr<int32_t> offset)
     {
-        const uint32_t entry = port::load<uint32_t>(0x001BDA9Cu) + 4u * static_cast<uint32_t>(group);
-        const uint32_t variants = port::load<uint8_t>(entry + 2u), perVariant = port::load<uint8_t>(entry + 3u);
-        *offset = static_cast<int32_t>(static_cast<uint32_t>(*offset) + perVariant * (static_cast<uint32_t>(remainder(family, static_cast<int32_t>(variants))) * 4u));
-        if (port::load<uint8_t>(entry + 3u) >= 2)
+        const GuestPtr<GoodsGroup> goods = globals::goodsGroup(static_cast<uint32_t>(group));
+        const uint32_t variants = goods->variants, perVariant = goods->perVariant;
+        const uint32_t variant = static_cast<uint32_t>(remainder(family, static_cast<int32_t>(variants)));
+        *offset = static_cast<int32_t>(static_cast<uint32_t>(*offset) + perVariant * (variant * 4u));
+        if (goods->perVariant >= 2)
             *offset = static_cast<int32_t>(static_cast<uint32_t>(*offset) + static_cast<uint32_t>(season) * 4u);
-        return static_cast<int>(port::load<uint32_t>(0x001BDAA0u) + 0x88u * (static_cast<uint32_t>(*offset) + port::load<uint16_t>(entry)));
+        return static_cast<int>(globals::goodsSectionB.get() + 0x88u * (static_cast<uint32_t>(*offset) + goods->first));
     }
 
     PORT_FN(Goods_GetPrice);
@@ -355,7 +348,7 @@ namespace mm
             const GuestPtr<BagSlot> slot{bag.address + 4u + 0x10u * static_cast<uint32_t>(i)};
             if (slot->group == 0)
                 break;
-            const GuestPtr<GoodsRecord> record = goodsRecordOf(slot->group, slot->index);
+            const GuestPtr<GoodsRecord> record = globals::goodsAt(slot->group, slot->index);
             sdk::strcpy(line, globals::goodsSectionC.get() + record->name);
             const uint32_t kind = record->kind;
             if (kind == 0x17 || kind - 0x1Au < 2u || kind == 0x1C)
@@ -478,7 +471,7 @@ namespace mm
     void BagMenu_UseSelected(GuestPtr<Bag> bag, GuestPtr<CityScene> city)
     {
         const GuestPtr<BagSlot> slot = bag.field(&Bag::slots) + bag->cursor;
-        const GuestPtr<GoodsRecord> record = goodsRecordOf(slot->group, slot->index);
+        const GuestPtr<GoodsRecord> record = globals::goodsAt(slot->group, slot->index);
         switch (record->kind)
         {
         case 0x1C:
@@ -872,8 +865,7 @@ namespace mm
             const uint32_t item = slot->group;
             if (item != 0)
             {
-                const uint32_t first = port::load<uint16_t>(globals::goodsSectionA.get() + 4u * item);
-                const GuestPtr<GoodsRecord> record{globals::goodsSectionB.get() + 0x88u * (slot->index + first)};
+                const GuestPtr<GoodsRecord> record = globals::goodsAt(item, slot->index);
                 sdk::strcpy(buffer, globals::goodsSectionC.get() + record->name);
                 const uint32_t kind = record->kind;
                 if (kind == 0x17 || kind - 0x1Au < 2u || kind == 0x1C)

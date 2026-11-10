@@ -30,6 +30,7 @@ typedef struct Bag Bag;
 typedef struct BagMusicTrack BagMusicTrack;
 typedef struct BagSlot BagSlot;
 typedef struct GoodsRecord GoodsRecord;
+typedef struct GoodsGroup GoodsGroup;
 typedef struct StatusPanel StatusPanel;
 typedef struct PauseMenu PauseMenu;
 typedef struct Minimap Minimap;
@@ -81,6 +82,7 @@ typedef struct EvShoppingTogetherData EvShoppingTogetherData;
 typedef struct EvMessageData EvMessageData;
 typedef struct EvEscortData EvEscortData;
 typedef struct EvAlienData EvAlienData;
+typedef struct AlienSite AlienSite;
 typedef struct EvMissingChildrenData EvMissingChildrenData;
 typedef struct CharClass CharClass;
 typedef struct CharTypeRecord CharTypeRecord;
@@ -610,6 +612,15 @@ struct GoodsRecord {
     uint8_t unk_07;
     char text[0x80];           /* +0x08 the description (bytes after its end are leftovers) */
 };
+/* A goods group (4 bytes): GOODS.BIN section A, one per building type, the goods its shops sell (globals::goodsGroup,
+   mm_Goods_GetRecordOffset). */
+struct GoodsGroup {
+    uint16_t first;            /* +0x00 the group's first record in section B */
+    uint8_t variants;          /* +0x02 blocks of four records, one picked by the shop's family modulo this; 0: the type
+                                  sells nothing (238 of the disc's 282 types; mm_EvShopping_Check) */
+    uint8_t perVariant;        /* +0x03 the step between those blocks, in fours; from 2 the season (0 to 2) also picks
+                                  one (1 in every group on the disc) */
+};
 /* Bag item slot (0x10 bytes, mm_Bag_AddItem). */
 struct BagSlot {
     uint16_t group;            /* +0x00 the goods group (the building type that sells it), 0 = empty */
@@ -755,7 +766,8 @@ struct EventType {
     uint8_t level;             /* +0x23 the queue bucket it waits in; 1 and 5 ignore the start window, 2 takes one
                                   character type */
     uint8_t handler;           /* +0x24 index into the handler table at 0x1AF0D0 (EventHandler), 0 = none */
-    uint8_t tileFlags;         /* +0x25 1 + the tile flag set while it runs, 0 = none (mm_Event_SetTileFlags) */
+    uint8_t claimList;         /* +0x25 1 + CLAIM.BIN's event claim list the building types get while it runs
+                                  (EventClaimList, mm_Event_AddClaims), 0 = none */
     uint8_t mask;              /* +0x26 tested by mm_EventList_MoveByMask */
     uint8_t ranks;             /* +0x27 the population ranks it runs at (bit rank - 1): below them it waits in bucket 5,
                                   after them it goes to bucket 6 (mm_Event_Update) */
@@ -962,6 +974,12 @@ struct EvAlienData {
     int32_t month;             /* +0x3C the month count to wait for */
     int32_t time;              /* +0x40 the clock to wait for on that day */
     int32_t minutes;           /* +0x44 counted down between phases, up at the end (720) */
+};
+/* A place the alien can land (4 bytes): a tile list and a building type in it (globals::kAlienSites, ended by list 0,
+   mm_EvAlien_PickTarget). */
+struct AlienSite {
+    uint16_t list;             /* +0x00 */
+    uint16_t type;             /* +0x02 */
 };
 /* A message event's record (mm_EvMsg_*, mm_EvNoRetreat_Update, mm_EvPayday_Update): a phone call from the boss, which
    some types make again. */

@@ -75,10 +75,10 @@ namespace mm
 
     int EventMgr_FindType(GuestPtr<EventMgr>, int16_t id)
     {
-        const uint32_t end = globals::kEventTypeIds + 2u * static_cast<uint32_t>(globals::eventTypeCount.get());
+        const GuestPtr<uint16_t> ids{globals::kEventTypeIds}, end = ids + globals::eventTypeCount.get();
         int position = 0;
-        for (uint32_t entry = globals::kEventTypeIds; entry < end; entry += 2u, ++position)
-            if (port::load<uint16_t>(entry) == static_cast<uint16_t>(id))
+        for (GuestPtr<uint16_t> entry = ids; entry < end; ++entry, ++position)
+            if (*entry == static_cast<uint16_t>(id))
                 return position;
         return position;
     }
@@ -102,37 +102,38 @@ namespace mm
             queue->starts[i] = queue->starts[i] - 1;
     }
 
-    // The tile list of event `list` in the claim data: a count, then (record, 8 bytes) entries of 12 bytes. Setting
-    // copies each entry's 8 bytes over the record's first 8; clearing restores them from the record's second 8.
-    void Event_SetTileFlags(int list)
+    // The claims an event gives building types while it runs (EventType.claimList - 1 into CLAIM.BIN's event claim
+    // lists): adding copies each claim into its slot, the end of a type's claim list, so the type claims it after its
+    // own; removing copies the slot's next 8 bytes (the list's end, as before) back over it. Field by field, as the
+    // original copies them.
+    void Event_AddClaims(int list)
     {
-        uint32_t entry = globals::claimData.get() + 4u * port::load<uint32_t>(globals::eventTileLists.get() + 4u * static_cast<uint32_t>(list));
-        uint32_t count = port::load<uint32_t>(entry);
-        entry += 4u;
-        for (; count != 0; --count, entry += 12u)
+        const GuestPtr<EventClaimList> claims = globals::eventClaimList(list);
+        uint32_t count = claims->count;
+        for (GuestPtr<EventClaim> claim = claims.field(&EventClaimList::claims); count != 0; --count, ++claim)
         {
-            const uint32_t record = globals::claimData.get() + 4u * port::load<uint32_t>(entry);
-            port::store<uint8_t>(record + 0u, port::load<uint8_t>(entry + 4u));
-            port::store<uint8_t>(record + 1u, port::load<uint8_t>(entry + 5u));
-            port::store<uint16_t>(record + 2u, port::load<uint16_t>(entry + 6u));
-            port::store<uint16_t>(record + 4u, port::load<uint16_t>(entry + 8u));
-            port::store<uint16_t>(record + 6u, port::load<uint16_t>(entry + 10u));
+            const GuestPtr<ClaimEntry> slot = globals::claimSlot(claim->slot);
+            slot->wish = claim->claim.wish;
+            slot->unk_01 = claim->claim.unk_01;
+            slot->id = claim->claim.id;
+            slot->value = claim->claim.value;
+            slot->reach = claim->claim.reach;
         }
     }
 
-    void Event_ClearTileFlags(int list)
+    void Event_RemoveClaims(int list)
     {
-        uint32_t entry = globals::claimData.get() + 4u * port::load<uint32_t>(globals::eventTileLists.get() + 4u * static_cast<uint32_t>(list));
-        uint32_t count = port::load<uint32_t>(entry);
-        entry += 4u;
-        for (; count != 0; --count, entry += 12u)
+        const GuestPtr<EventClaimList> claims = globals::eventClaimList(list);
+        uint32_t count = claims->count;
+        for (GuestPtr<EventClaim> claim = claims.field(&EventClaimList::claims); count != 0; --count, ++claim)
         {
-            const uint32_t record = globals::claimData.get() + 4u * port::load<uint32_t>(entry);
-            port::store<uint8_t>(record + 0u, port::load<uint8_t>(record + 8u));
-            port::store<uint8_t>(record + 1u, port::load<uint8_t>(record + 9u));
-            port::store<uint16_t>(record + 2u, port::load<uint16_t>(record + 10u));
-            port::store<uint16_t>(record + 4u, port::load<uint16_t>(record + 12u));
-            port::store<uint16_t>(record + 6u, port::load<uint16_t>(record + 14u));
+            const GuestPtr<ClaimEntry> slot = globals::claimSlot(claim->slot);
+            const GuestPtr<ClaimEntry> next = slot + 1;
+            slot->wish = next->wish;
+            slot->unk_01 = next->unk_01;
+            slot->id = next->id;
+            slot->value = next->value;
+            slot->reach = next->reach;
         }
     }
 
@@ -244,8 +245,9 @@ namespace mm
         return PhoneCall_Post(city->phoneCalls, actor->person, actor->family, actor->member, 0);
     }
 
-    // The buildings in the 80 tile lists whose claim (claim section B entry +2) is 0 drop it: meter 0, claim slot
-    // 0x18 (none), flags 8 and 0x40 cleared. Those already at slot 0x18 are left.
+    // After an event's claims are removed (mm_Event_RemoveClaims): the buildings in the 80 tile lists whose chosen claim
+    // now has id 0 (the removed one) drop it: meter 0, claim slot 0x18 (none), flags 8 and 0x40 cleared. Those already
+    // at slot 0x18 are left.
     void Event_ReleaseTiles(GuestPtr<CityScene> city)
     {
         port::GuestFrame<0x70> frame;
@@ -1013,8 +1015,8 @@ namespace mm
     PORT_FN(EventMgr_FindType);
     PORT_FN(EventMgr_RequeueFirst);
     PORT_FN(EventQueue_RemoveAt);
-    PORT_FN(Event_SetTileFlags);
-    PORT_FN(Event_ClearTileFlags);
+    PORT_FN(Event_AddClaims);
+    PORT_FN(Event_RemoveClaims);
     PORT_FN(EvActor_StopFollowing);
     PORT_FN(EvActor_Detach);
     PORT_FN(EvActor_Follow);
@@ -1130,7 +1132,7 @@ namespace mm
         return GuestPtr<MapObject>{0};
     }
 
-    // The building the alien lands on at (x, z): of the (tile list, type) pairs at 0x1B3760 (ended by list 0), the
+    // The building the alien lands on at (x, z): of the places in globals::kAlienSites (ended by list 0), the
     // first building whose family lives in the city, without a maxed meter, whose footprint widened by 1 holds the
     // point.
     GuestPtr<MapObject> EvAlien_PickTarget(GuestPtr<CityScene> city, int x, int z)
@@ -1145,14 +1147,14 @@ namespace mm
         static_assert(offsetof(Locals, footprint) == 0xA0 && offsetof(Locals, count) == 0xBC && sizeof(Locals) == 0xC0);
         port::GuestFrameOf<Locals> frame;
         const GuestPtr<uint32_t> count = frame.at(&Locals::count);
-        for (uint32_t pair = 0x001B3760u; port::load<uint16_t>(pair) != 0; pair += 4u)
+        for (GuestPtr<AlienSite> site = globals::kAlienSites; site->list != 0; ++site)
         {
-            const GuestPtr<uint16_t> items = Map_GetTileList(city->map, port::load<uint16_t>(pair), count);
+            const GuestPtr<uint16_t> items = Map_GetTileList(city->map, site->list, count);
             const GuestPtr<uint16_t> end = items + static_cast<int32_t>(*count);
             for (GuestPtr<uint16_t> item = items; item < end; ++item)
             {
                 const GuestPtr<MapObject> building = Map_GetRecord(city->map, *item);
-                if (building->type != port::load<uint16_t>(pair + 2u) || Family_InCity(building->family) == 0 || (building->flags & 0x40u) != 0)
+                if (building->type != site->type || Family_InCity(building->family) == 0 || (building->flags & 0x40u) != 0)
                     continue;
                 Building_GetFootprint(building, 1, frame.at(&Locals::footprint));
                 if (holds(frame->footprint, x, z))
@@ -1554,15 +1556,16 @@ namespace mm
                       offsetof(SuitorFrame, cursor) == 0x24 && sizeof(SuitorFrame) == 0x30);
 
         template <typename Suits>
-        int findSuitor(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, uint32_t lists, Suits suits)
+        int findSuitor(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, GuestPtr<int32_t> lists,
+                       Suits suits)
         {
             port::GuestFrameOf<SuitorFrame> frame;
             const GuestPtr<uint32_t> count = frame.at(&SuitorFrame::count);
             const GuestPtr<uint16_t> cursor = frame.at(&SuitorFrame::cursor);
             Building_GetFootprint(Map_GetRecord(city->map, person->home), 5, frame.at(&SuitorFrame::area));
-            for (uint32_t list = lists; port::load<int32_t>(list) != 0; list += 4u)
+            for (GuestPtr<int32_t> list = lists; *list != 0; ++list)
             {
-                const int32_t id = port::load<int32_t>(list);
+                const int32_t id = *list;
                 const GuestPtr<uint16_t> items = Map_GetTileList(city->map, id, count);
                 const GuestPtr<uint16_t> end = items + static_cast<int32_t>(*count);
                 for (GuestPtr<uint16_t> item = items; item < end; ++item)
@@ -1591,26 +1594,26 @@ namespace mm
         }
     }
 
-    // Character types 0x10 to 0x13 (from list 1 only members 2 and up), lists at 0x1B3810.
+    // Character types 0x10 to 0x13 (from list 1 only members 2 and up), in the tile lists of globals::kBoyfriendLists.
     int EvBoyfriend_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
     {
-        return findSuitor(data, city, person, 0x001B3810u, [](int32_t list, GuestPtr<MapPerson> resident) {
+        return findSuitor(data, city, person, globals::kBoyfriendLists, [](int32_t list, GuestPtr<MapPerson> resident) {
             return !(list == 1 && resident->member < 2) && resident->charType >= 0x10 && resident->charType < 0x14;
         });
     }
 
-    // Character types 0xB to 0xE (from list 1 only members 2 and up), lists at 0x1B37F0.
+    // Character types 0xB to 0xE (from list 1 only members 2 and up), in the tile lists of globals::kGirlfriendLists.
     int EvGirlfriend_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
     {
-        return findSuitor(data, city, person, 0x001B37F0u, [](int32_t list, GuestPtr<MapPerson> resident) {
+        return findSuitor(data, city, person, globals::kGirlfriendLists, [](int32_t list, GuestPtr<MapPerson> resident) {
             return !(list == 1 && resident->member < 2) && resident->charType >= 0xB && resident->charType < 0xF;
         });
     }
 
-    // Member 1 of character type 0x10 to 0x13, lists at 0x1BD9E0.
+    // Member 1 of character type 0x10 to 0x13, in the tile lists of globals::kAffairLists.
     int EvAffair_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
     {
-        return findSuitor(data, city, person, 0x001BD9E0u, [](int32_t, GuestPtr<MapPerson> resident) {
+        return findSuitor(data, city, person, globals::kAffairLists, [](int32_t, GuestPtr<MapPerson> resident) {
             return resident->member == 1 && resident->charType >= 0x10 && resident->charType < 0x14;
         });
     }
@@ -1618,8 +1621,8 @@ namespace mm
     // The noodle stand: over every map object with its claim meter at level 0, the first idle worker of character
     // type 0x17 at a building of type 0x28, 0x18 at type 0x29 and 0xC at type 0x2C, until all three are found. With
     // any found, the event's ten actors lose their person and building, the workers become actors 4 to 6 and their
-    // buildings the buildings of actors 7 to 9 (the values for the ones not found come from 0x20B8D0 and 0x1BD9D8,
-    // as in the original).
+    // buildings the buildings of actors 7 to 9 (the ones not found keep the original's starting values,
+    // globals::kNoodleWorkersStart and kNoodleBuildingsStart).
     int EvNoodles_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
         static constexpr uint16_t kTypes[3] = {0x28, 0x29, 0x2C};
@@ -1628,8 +1631,8 @@ namespace mm
         uint16_t buildings[3];
         for (uint32_t k = 0; k < 3; ++k)
         {
-            workers[k] = port::load<uint32_t>(0x0020B8D0u + 4u * k);
-            buildings[k] = port::load<uint16_t>(0x001BD9D8u + 2u * k);
+            workers[k] = globals::kNoodleWorkersStart[static_cast<int32_t>(k)];
+            buildings[k] = globals::kNoodleBuildingsStart[static_cast<int32_t>(k)];
         }
         int found = 0;
         // From record 1, kObjectSlots records: the last is one past the table, as in the original.
@@ -1828,11 +1831,11 @@ namespace mm
 
     }
 
-    // The alien needs four buildings anywhere on the map: of type 0xE7 (tile list 0xB), one of the types at 0x1B3750
-    // (lists 0x12, then 0x13), 0x10A (list 0x18) and 0x104 (list 0x16); and a resident of character type 3 to 6
-    // whose home is none of them, has its claim meter at level 0 and is not taken (flags 0x240). That
-    // resident becomes actor 0 and the families' first members (and buildings) actors 1 to 4, the buildings
-    // marked (0x200); actor 5 is the first Spaceman's Home family, with no person or building.
+    // The alien needs four buildings anywhere on the map: of type 0xE7 (tile list 0xB), one of the types of
+    // globals::kAlienSecondTypes (lists 0x12, then 0x13), 0x10A (list 0x18) and 0x104 (list 0x16); and a resident of
+    // character type 3 to 6 whose home is none of them, has its claim meter at level 0 and is not taken (flags 0x240).
+    // That resident becomes actor 0 and the families' first members (and buildings) actors 1 to 4, the buildings marked
+    // (0x200); actor 5 is the first Spaceman's Home family, with no person or building.
     int EvAlien_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city)
     {
         struct Locals
@@ -1846,18 +1849,18 @@ namespace mm
         *whole = TileRect{0, 0, 128, 128};
         uint32_t found[4];
         for (uint32_t k = 0; k < 4; ++k)
-            found[k] = port::load<uint32_t>(0x0020B880u + 4u * k); // the original's initial values
+            found[k] = globals::kAlienBuildingsStart[static_cast<int32_t>(k)];
         if (!(found[3] = EvAlien_FindBuilding(city, 0x16, 0x104, whole).address))
             return 0;
         if (!(found[2] = EvAlien_FindBuilding(city, 0x18, 0x10A, whole).address))
             return 0;
         if (!(found[0] = EvAlien_FindBuilding(city, 0xB, 0xE7, whole).address))
             return 0;
-        for (uint32_t type = 0x001B3750u; found[1] == 0 && port::load<uint16_t>(type) != 0; type += 2u)
+        for (GuestPtr<uint16_t> type = globals::kAlienSecondTypes; found[1] == 0 && *type != 0; ++type)
         {
-            found[1] = EvAlien_FindBuilding(city, 0x12, port::load<uint16_t>(type), whole).address;
+            found[1] = EvAlien_FindBuilding(city, 0x12, *type, whole).address;
             if (found[1] == 0)
-                found[1] = EvAlien_FindBuilding(city, 0x13, port::load<uint16_t>(type), whole).address;
+                found[1] = EvAlien_FindBuilding(city, 0x13, *type, whole).address;
         }
         if (found[1] == 0)
             return 0;
@@ -1901,7 +1904,8 @@ namespace mm
 
     // The delivery man comes in rain or snow (weather 2 or 3) for a person with a target building of a type in the
     // delivery catalogue (0x1BA090, four entries of 0x184 bytes, the type first). From a random entry of the tile
-    // lists (five at 0x1B3780 in holiday months, else two at 0x1BD9D0) and a random item on, a building outside the
+    // lists (the five of globals::kDeliveryHolidayLists in holiday months, else the two of kDeliveryWorkdayLists) and
+    // a random item on, a building outside the
     // target's footprint widened by 10 but inside it widened by 30, whose family's first member stands on it. That
     // building and person become actor 1; entry takes the catalogue entry and month the month.
     int EvDeliveryMan_Check(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
@@ -1924,7 +1928,7 @@ namespace mm
         port::GuestFrameOf<Locals> frame;
         const GuestPtr<uint32_t> count = frame.at(&Locals::count);
         const bool holiday = (city->flags & 2u) != 0;
-        const uint32_t table = holiday ? 0x001B3780u : 0x001BD9D0u;
+        const GuestPtr<int32_t> table = holiday ? globals::kDeliveryHolidayLists : globals::kDeliveryWorkdayLists;
         const int lists = holiday ? 5 : 2;
         const GuestPtr<MapObject> target = Map_GetRecord(city->map, person->target);
         const uint16_t targetType = target->type;
@@ -1933,12 +1937,12 @@ namespace mm
         frame->wide.z0 = frame->near.z0 - 20;
         frame->wide.x1 = frame->near.x1 + 20;
         frame->wide.z1 = frame->near.z1 + 20;
-        uint32_t list = table + 4u * static_cast<uint32_t>(static_cast<int32_t>(Random_Next()) % lists);
-        for (int tries = 0; tries < lists; ++tries, list += 4u)
+        GuestPtr<int32_t> list = table + static_cast<int32_t>(Random_Next()) % lists;
+        for (int tries = 0; tries < lists; ++tries, ++list)
         {
-            if (list >= table + 4u * static_cast<uint32_t>(lists))
+            if (!(list < table + lists))
                 list = table;
-            const GuestPtr<uint16_t> items = Map_GetTileList(city->map, port::load<int32_t>(list), count);
+            const GuestPtr<uint16_t> items = Map_GetTileList(city->map, *list, count);
             if (*count == 0)
                 continue;
             GuestPtr<uint16_t> item = items + static_cast<int32_t>(Random_Next()) % static_cast<int32_t>(*count);
@@ -2002,12 +2006,12 @@ namespace mm
             return false;
         }
 
-        // The actor numbers at 0x1B37A0 (and 0x1B37B0), zero-ended: 4, 5 and 1.
+        // The actors of a zero-ended table of their numbers (globals::kCultHomesActors and kCultPeopleActors: 4, 5, 1).
         template <typename Each>
-        bool eachCultActor(GuestPtr<EventData> data, uint32_t table, Each each)
+        bool eachCultActor(GuestPtr<EventData> data, GuestPtr<int32_t> table, Each each)
         {
-            for (uint32_t k = table; port::load<int32_t>(k) != 0; k += 4u)
-                if (!each(actorAt(data, port::load<int32_t>(k))))
+            for (GuestPtr<int32_t> k = table; *k != 0; ++k)
+                if (!each(actorAt(data, *k)))
                     return false;
             return true;
         }
@@ -2035,7 +2039,7 @@ namespace mm
             break;
         case 15:
             data->var = 0x10;
-            eachCultActor(data, 0x001B37A0u, [&](GuestPtr<ActorRef> actor) {
+            eachCultActor(data, globals::kCultHomesActors, [&](GuestPtr<ActorRef> actor) {
                 if (actor->object != kNoObject)
                     return true;
                 const GuestPtr<MapObject> home = Map_FindFamilyHome(city->map, actor->family);
@@ -2051,7 +2055,7 @@ namespace mm
             break;
         case 16:
             data->var = 0x11;
-            eachCultActor(data, 0x001B37B0u, [&](GuestPtr<ActorRef> actor) {
+            eachCultActor(data, globals::kCultPeopleActors, [&](GuestPtr<ActorRef> actor) {
                 if (actor->person != kNoPerson)
                     return true;
                 const GuestPtr<MapPerson> person = Map_FindPersonEntry(city->map, static_cast<int16_t>(actor->family), actor->member);
@@ -2641,17 +2645,18 @@ namespace mm
         return port::callGuest<int64_t>(slot, data, city, arg);
     }
 
-    // The talk starts the event's own handler (the Start slot at +4): its tile flags are set, the event's var becomes 1
-    // and the handler runs. Without a handler the result register stays as it was (after the tile flags call).
+    // The talk starts the event's own handler (the Start slot at +4): its claims are added (mm_Event_AddClaims), the
+    // event's var becomes 1 and the handler runs. Without a handler the result register stays as it was (after the
+    // claims call).
     int64_t Event_CallHandlerSlot(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, int index, int arg)
     {
         const uint32_t cell = port::guest(&events->talks[index]);
         const GuestPtr<EventType> row = globals::eventType(GuestPtr<EventData>{port::load<uint32_t>(cell)}->kind);
-        const uint32_t tileFlags = row->tileFlags;
-        if (tileFlags != 0)
+        const uint32_t claimList = row->claimList;
+        if (claimList != 0)
         {
-            port::setGuestV0(static_cast<int32_t>(tileFlags));
-            Event_SetTileFlags(static_cast<int>(tileFlags) - 1);
+            port::setGuestV0(static_cast<int32_t>(claimList));
+            Event_AddClaims(static_cast<int>(claimList) - 1);
         }
         GuestPtr<EventData>{port::load<uint32_t>(cell)}->var = 1;
         const uint32_t id = row->handler;
@@ -2788,7 +2793,7 @@ namespace mm
         case 5:
             for (uint32_t k = 0;; ++k)
             {
-                const int32_t number = port::load<int32_t>(0x001B37C0u + 4u * k);
+                const int32_t number = globals::kCultAnswerActors[static_cast<int32_t>(k)];
                 if (number == 0)
                     return 0;
                 if (actor->family != (GuestPtr<ActorRef>::of(cult->actors[0]) + number)->family)
@@ -2836,10 +2841,10 @@ namespace mm
         case 0:
         {
             bool orphanage = false, special = false;
-            const uint32_t first = Map_GetRecord(city->map, 0).address;
-            for (uint32_t record = first; record < first + kObjectTableBytes; record += static_cast<uint32_t>(sizeof(MapObject)))
+            const GuestPtr<MapObject> first = Map_GetRecord(city->map, 0);
+            for (GuestPtr<MapObject> object = first; object < first + kObjectSlots; ++object)
             {
-                const uint32_t type = port::load<uint16_t>(record);
+                const uint32_t type = object->type;
                 if (!orphanage && type == 4)
                 {
                     orphanage = true;
@@ -2899,7 +2904,7 @@ namespace mm
     int EvShopping_Answer(GuestPtr<EventData> data, GuestPtr<CityScene> city, GuestPtr<ActorRef>, int mode)
     {
         const GuestPtr<EvShoppingData> shopping = data.as<EvShoppingData>();
-        const uint32_t goods = GuestPtr<uint16_t>::of(globals::shoppingList(shopping->shop)->goods[0]).address;
+        const GuestPtr<uint16_t> goods = GuestPtr<uint16_t>::of(globals::shoppingList(shopping->shop)->goods[0]);
         const auto bag = [&] { return city->bag; };
         switch (static_cast<uint32_t>(mode))
         {
@@ -2908,8 +2913,8 @@ namespace mm
         case 1:
         {
             int missing = 0;
-            for (uint32_t entry = goods; port::load<uint16_t>(entry) != 0 && entry < goods + 8u; entry += 2u)
-                if (Bag_FindItem(bag(), port::load<uint16_t>(entry)) == 0)
+            for (GuestPtr<uint16_t> entry = goods; *entry != 0 && entry < goods + 4; ++entry)
+                if (Bag_FindItem(bag(), *entry) == 0)
                     ++missing;
             return missing;
         }
@@ -2917,7 +2922,7 @@ namespace mm
         case 3:
         case 4:
         case 5:
-            return Bag_FindItem(bag(), GuestPtr<uint16_t>{goods}[static_cast<int32_t>(mode - 2)]) != 0 ? 0 : 1;
+            return Bag_FindItem(bag(), goods[static_cast<int32_t>(mode - 2)]) != 0 ? 0 : 1;
         case 6:
             changeMoney(shopping->bill);
             return 0;
@@ -2928,9 +2933,9 @@ namespace mm
             changeMoney(static_cast<int32_t>(0u - (static_cast<uint32_t>(shopping->bill) + static_cast<uint32_t>(shopping->refund))));
             return 0;
         case 9:
-            for (uint32_t entry = goods; entry < goods + 8u; entry += 2u)
+            for (GuestPtr<uint16_t> entry = goods; entry < goods + 4; ++entry)
             {
-                const int found = Bag_FindItem(bag(), port::load<uint16_t>(entry));
+                const int found = Bag_FindItem(bag(), *entry);
                 if (found == 0)
                     continue;
                 const GuestPtr<BagSlot> slot{static_cast<uint32_t>(found)};
@@ -3008,14 +3013,14 @@ namespace mm
                 port::callGuest<void>(function, talk, city, third);
         }
 
-        // The event type's own ending (its handler's End slot), its tile flags cleared and released.
+        // The event type's own ending (its handler's End slot), its claims removed and released.
         void endEventHandler(GuestPtr<EventType> row, GuestPtr<EventData> talk, GuestPtr<CityScene> city)
         {
             callHandler(row, &EventHandler::end, talk, city, talk->kind); // a2 is the type byte the original had just loaded
-            const uint32_t tileFlags = row->tileFlags;
-            if (tileFlags != 0)
+            const uint32_t claimList = row->claimList;
+            if (claimList != 0)
             {
-                Event_ClearTileFlags(static_cast<int>(tileFlags) - 1);
+                Event_RemoveClaims(static_cast<int>(claimList) - 1);
                 Event_ReleaseTiles(city);
             }
         }
@@ -3100,7 +3105,7 @@ namespace mm
     }
 
     // With no event running in the first talk slot, the first event waiting at level 3 whose condition holds for the
-    // person starts there; one that starts at level 3 also sets its tile flags and runs its Start slot. The result is
+    // person starts there; one that starts at level 3 also adds its claims and runs its Start slot. The result is
     // the running event's type.
     uint8_t Event_TryStart(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
     {
@@ -3118,9 +3123,9 @@ namespace mm
                 const GuestPtr<EventType> row = globals::eventType(talk->kind);
                 if (row->level == 3)
                 {
-                    const uint32_t tileFlags = row->tileFlags;
-                    if (tileFlags != 0)
-                        Event_SetTileFlags(static_cast<int>(tileFlags) - 1);
+                    const uint32_t claimList = row->claimList;
+                    if (claimList != 0)
+                        Event_AddClaims(static_cast<int>(claimList) - 1);
                     events->talks[0]->var = 1;
                     callHandler(row, &EventHandler::start, events->talks[0], city, person.address);
                 }
@@ -3135,15 +3140,15 @@ namespace mm
     // takes the first running slot (the others move up), with the person as actor A and the actor of the third talk event (talks[2]) as B.
     int Event_StartFromScript(GuestPtr<EventMgr> events, GuestPtr<CityScene> city, GuestPtr<MapPerson> person)
     {
-        const uint32_t slots = events.address + 4u, slotsEnd = slots + 0xA0u;
+        const GuestPtr<EventSlot> slots = events.field(&EventMgr::slots), slotsEnd = slots + 5;
         int running = 0;
-        for (uint32_t slot = slots; port::load<uint8_t>(slot) != 0 && slot < slotsEnd; slot += 0x20u)
+        for (GuestPtr<EventSlot> slot = slots; slot->kind != 0 && slot < slotsEnd; ++slot)
             ++running;
         if (running >= 5)
             return 0;
         const uint32_t types = globals::eventTypes.get();
-        for (uint32_t slot = slots; port::load<uint8_t>(slot) != 0 && slot < slotsEnd; slot += 0x20u)
-            if (person->charType == (GuestPtr<EventType>{types} + port::load<uint8_t>(slot))->charTypes[0])
+        for (GuestPtr<EventSlot> slot = slots; slot->kind != 0 && slot < slotsEnd; ++slot)
+            if (person->charType == (GuestPtr<EventType>{types} + slot->kind)->charTypes[0])
                 return 0;
         const GuestPtr<EventQueue> queue = globals::eventQueue();
         uint32_t entry = bucketBegin(queue, 2);
@@ -3154,8 +3159,8 @@ namespace mm
         {
             if (Event_CheckCondition(events, city, GuestPtr<uint8_t>{entry}, person) != 0)
             {
-                sdk::memmove((events.field(&EventMgr::slots) + 1).address, slots, 0x80);
-                sdk::memset(slots, 0, 0x20);
+                sdk::memmove((slots + 1).address, slots.address, 0x80);
+                sdk::memset(slots.address, 0, 0x20);
                 queueEntry(entry)->wait = 3;
                 events->slots[0].kind = queueEntry(entry)->type;
                 events->slots[0].stage = queueEntry(entry)->wait;
@@ -3182,15 +3187,15 @@ namespace mm
     {
         const uint32_t index = static_cast<uint8_t>(id) == 6 ? 1u : 0u;
         uint32_t position = 0;
-        const uint32_t list = globals::kEventTypeIds, listEnd = list + 2u * static_cast<uint32_t>(globals::eventTypeCount.get());
+        const GuestPtr<uint16_t> list{globals::kEventTypeIds}, listEnd = list + globals::eventTypeCount.get();
         if (list < listEnd)
         {
-            uint32_t at = list;
+            GuestPtr<uint16_t> at = list;
             do
             {
-                if (port::load<uint16_t>(at) == static_cast<uint16_t>(id))
+                if (*at == static_cast<uint16_t>(id))
                     break;
-                at += 2u;
+                ++at;
                 ++position;
             } while (at < listEnd);
         }
@@ -3228,9 +3233,9 @@ namespace mm
                     fillEvent(GuestPtr<EventData>{port::load<uint32_t>(cell)}, entry, person);
                     EventQueue_RemoveAt(queue, 5, GuestPtr<EventQueueEntry>{entry});
                     const GuestPtr<EventType> row = globals::eventType(GuestPtr<EventData>{port::load<uint32_t>(cell)}->kind);
-                    const uint32_t tileFlags = row->tileFlags;
-                    if (tileFlags != 0)
-                        Event_SetTileFlags(static_cast<int>(tileFlags) - 1);
+                    const uint32_t claimList = row->claimList;
+                    if (claimList != 0)
+                        Event_AddClaims(static_cast<int>(claimList) - 1);
                     GuestPtr<EventData>{port::load<uint32_t>(cell)}->var = 1;
                     callHandler(row, &EventHandler::start, GuestPtr<EventData>{port::load<uint32_t>(cell)}, city, person.address);
                     return 1;
@@ -3423,13 +3428,13 @@ namespace mm
             return false;
         }
 
-        // A running event that has not begun (var 0) begins when its start time has come: its tile flags are set and
+        // A running event that has not begun (var 0) begins when its start time has come: its claims are added and
         // its Start slot runs (with the person slot 0).
         void beginEvent(GuestPtr<EventType> row, GuestPtr<EventData> talk, GuestPtr<CityScene> city)
         {
-            const uint32_t tileFlags = row->tileFlags;
-            if (tileFlags != 0)
-                Event_SetTileFlags(static_cast<int>(tileFlags) - 1);
+            const uint32_t claimList = row->claimList;
+            if (claimList != 0)
+                Event_AddClaims(static_cast<int>(claimList) - 1);
             talk->var = 1;
             callHandler(row, &EventHandler::start, talk, city, 0);
         }
@@ -3621,7 +3626,7 @@ namespace mm
     // (the list at 0x1C5790, one halfword per type record) against the table's. A type that was not in the saved list is
     // put in the waiting queue (by its rank and level) and every stored type number from it on goes up by one; a saved
     // type no longer in the table loses its running event or queue entry and the numbers above it go down. A changed
-    // list is stored again; last, the running events get their Update slot back (and the first its tile flags).
+    // list is stored again; last, the running events get their Update slot back (and the first its claims).
     void Event_InitForCity(GuestPtr<EventMgr> events)
     {
         port::GuestFrame<0x90> frame;
@@ -3753,8 +3758,8 @@ namespace mm
             const GuestPtr<EventType> row = globals::eventType(kind);
             const uint32_t handler = row->handler;
             GuestPtr<EventData>{talk}->update = handler == 0 ? 0u : eventHandler(handler)->update;
-            if (i == 0 && GuestPtr<EventData>{talkAt(0)}->var != 0 && row->tileFlags != 0)
-                Event_SetTileFlags(static_cast<int>(row->tileFlags) - 1);
+            if (i == 0 && GuestPtr<EventData>{talkAt(0)}->var != 0 && row->claimList != 0)
+                Event_AddClaims(static_cast<int>(row->claimList) - 1);
         }
     }
 
@@ -3816,7 +3821,7 @@ namespace mm
             for (GuestPtr<uint16_t> at = items; at < end; ++at)
             {
                 const GuestPtr<MapObject> obj = Map_GetRecord(city->map, *at);
-                if (port::load<uint8_t>(port::load<uint32_t>(0x001BDA9Cu) + 4u * obj->type + 2u) == 0)
+                if (globals::goodsGroup(obj->type)->variants == 0) // sells nothing
                     continue;
                 if ((obj->flags & 0x20u) == 0 || (obj->flags & 0x240u) != 0)
                     continue;

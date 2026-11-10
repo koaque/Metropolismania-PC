@@ -152,8 +152,8 @@ inline constexpr uint32_t Person_Draw = 0x001345E0u;
 inline constexpr uint32_t Person_Update = 0x00134A20u;
 inline constexpr uint32_t Person_dtor = 0x00135600u;
 inline constexpr uint32_t Person_ctor = 0x00135660u;
-inline constexpr uint32_t Event_ClearTileFlags = 0x001356F0u;
-inline constexpr uint32_t Event_SetTileFlags = 0x00135770u;
+inline constexpr uint32_t Event_RemoveClaims = 0x001356F0u;
+inline constexpr uint32_t Event_AddClaims = 0x00135770u;
 inline constexpr uint32_t ClaimIcon_GetColor = 0x001357F0u;
 inline constexpr uint32_t Claim_PickVariant = 0x00135860u;
 inline constexpr uint32_t Claim_GetLine = 0x001358C0u;
@@ -2496,11 +2496,11 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"EventQueue_InsertByPriority", addr::EventQueue_InsertByPriority},
     {"EventQueue_RemoveAt", addr::EventQueue_RemoveAt},
     {"Event_Abort", addr::Event_Abort},
+    {"Event_AddClaims", addr::Event_AddClaims},
     {"Event_CallAnswer", addr::Event_CallAnswer},
     {"Event_CallHandlerSlot", addr::Event_CallHandlerSlot},
     {"Event_CallText", addr::Event_CallText},
     {"Event_CheckCondition", addr::Event_CheckCondition},
-    {"Event_ClearTileFlags", addr::Event_ClearTileFlags},
     {"Event_CountActive", addr::Event_CountActive},
     {"Event_FindForFamily", addr::Event_FindForFamily},
     {"Event_Finish", addr::Event_Finish},
@@ -2509,8 +2509,8 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"Event_LoadState", addr::Event_LoadState},
     {"Event_LoadTypes", addr::Event_LoadTypes},
     {"Event_ReleaseTiles", addr::Event_ReleaseTiles},
+    {"Event_RemoveClaims", addr::Event_RemoveClaims},
     {"Event_SaveState", addr::Event_SaveState},
-    {"Event_SetTileFlags", addr::Event_SetTileFlags},
     {"Event_StartFromScript", addr::Event_StartFromScript},
     {"Event_Trigger", addr::Event_Trigger},
     {"Event_TryStart", addr::Event_TryStart},
@@ -3830,8 +3830,8 @@ void Person_Draw(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<Map
 void Person_Update(GuestPtr<CharClass> cls, GuestPtr<CityScene> city, GuestPtr<MapPerson> person, uint32_t timeFlags);
 GuestPtr<CharClass> Person_dtor(GuestPtr<CharClass> cls, int16_t deleteFlag);
 GuestPtr<PersonClass> Person_ctor(GuestPtr<PersonClass> cls, GuestPtr<CharTypeRecord> record);
-void Event_ClearTileFlags(int listIndex);
-void Event_SetTileFlags(int listIndex);
+void Event_RemoveClaims(int listIndex);
+void Event_AddClaims(int listIndex);
 void ClaimIcon_GetColor(uint32_t icon, int level, GuestPtr<Vec4> colour);
 int Claim_PickVariant(uint32_t claim);
 int Claim_GetLine(int claim, int line);

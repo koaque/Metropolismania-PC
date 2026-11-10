@@ -56,6 +56,8 @@ typedef struct AmbienceCell AmbienceCell;
 typedef struct ClaimEntry ClaimEntry;
 typedef struct ClaimSupply ClaimSupply;
 typedef struct ClaimTally ClaimTally;
+typedef struct EventClaim EventClaim;
+typedef struct EventClaimList EventClaimList;
 typedef struct CityMapVtable CityMapVtable;
 typedef struct BuildingTypeVtable BuildingTypeVtable;
 
@@ -689,6 +691,21 @@ struct ClaimTally {
     uint8_t own;               /* +0x00 the building itself has a value for it */
     uint8_t weight;            /* +0x01 the neighbours' weights */
     uint16_t meters;           /* +0x02 their claim meters times their weights */
+};
+/* A claim an event gives building types while it runs (0xC bytes, mm_Event_AddClaims): the claim, and the slot it is
+   copied into, the end (id 0) of a type's claim list in section B, so the claim is added after the type's own. */
+struct EventClaim {
+    uint32_t slot;             /* +0x00 a word offset into the claim data */
+    ClaimEntry claim;          /* +0x04 */
+};
+/* An event's claim list (CLAIM.BIN, globals::eventClaimList, by EventType.claimList - 1). On the disc each gives one
+   need (value 60 to 100, reach 20) to the homes' claim lists, and some also to the offices' or the restaurants':
+   list 0 a culture school (Learning New Things), 1 a travel agency (Overseas Travel Boom), 2 a fortune teller
+   (Fortune Telling Boom), 3 a security firm (no event uses it), 4 pest control (Bug Damage), 5 an employment agency
+   (Increasing Unemployment). */
+struct EventClaimList {
+    uint32_t count;            /* +0x00 */
+    EventClaim claims[1];      /* +0x04 count of them */
 };
 
 /* Sound effect request (0x1C bytes): the frame's requests at 0x1F8710, kept in priority order by

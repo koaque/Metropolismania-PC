@@ -334,6 +334,20 @@ namespace
         ps2xSetInjectedPadButtons(buttons);
     }
 
+    // ------------------------------------------------------------------ MMPC_WEATHER=0, 2 or 3 Capture aid: the city's
+    // weather today (CityScene +0x90: 0 clear, 2 rain, 3 snow) is set to this value before every city frame, so a run
+    // reaches the rain or snow drawing without the game days the weather rule waits for (mm_CityScene_TickClock turns
+    // it at midnight only, and a new stage starts clear). Off by default.
+    int32_t forcedWeather()
+    {
+        static const int32_t value = []()
+        {
+            const char *text = std::getenv("MMPC_WEATHER");
+            return text && text[0] != '\0' ? static_cast<int32_t>(std::strtol(text, nullptr, 10)) : -1;
+        }();
+        return value;
+    }
+
     void tracedGameUpdate(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
     {
         // Game object layout (from mm_GameUpdate): +4 state, +8 scene C, +0xC scene A, +0x14 scene B.
@@ -344,6 +358,13 @@ namespace
         static auto lastLog = start;
         const uint32_t self = getRegU32(ctx, 4);
         const uint32_t state = guestRead32(rdram, self + 4u);
+        const int32_t weather = forcedWeather();
+        if (weather >= 0 && state == 6u)
+        {
+            const uint32_t city = guestRead32(rdram, self + 8u); // scene C, the city
+            if (city != 0u)
+                std::memcpy(rdram + ((city + 0x90u) & 0x01FFFFFCu), &weather, sizeof(weather));
+        }
         if (autoplayMode() != Autoplay::Off)
             autoplayFrame(rdram, state, guestRead32(rdram, self + 0xCu), guestRead32(rdram, self + 8u), runtime);
         static const bool traceOn = []()
@@ -386,11 +407,13 @@ namespace
     {
         const char *flag = std::getenv("MMPC_TRACE");
         const bool trace = flag && std::strcmp(flag, "1") == 0;
-        if (trace || autoplayMode() != Autoplay::Off)
+        if (trace || autoplayMode() != Autoplay::Off || forcedWeather() >= 0)
         {
             g_originalGameUpdate = runtime.lookupFunction(kGameUpdate);
             runtime.registerFunction(kGameUpdate, tracedGameUpdate);
         }
+        if (forcedWeather() >= 0)
+            std::cerr << "[mm] the city's weather is held at " << forcedWeather() << " (MMPC_WEATHER)" << std::endl;
         if (!trace)
             return;
         g_originalOpenDiscFile = runtime.lookupFunction(kOpenDiscFile);

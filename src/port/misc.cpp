@@ -3660,7 +3660,7 @@ namespace mm
         };
         const Section sections[] = {
             {globals::claimListOffsets.address, 0x08u}, {globals::claimSupplyOffsets.address, 0x0Cu}, {globals::claimGroupOffsets.address, 0x10u},
-            {globals::eventTileLists.address, 0x14u},  {globals::claimIconSets.address, 0x18u},  {globals::claimIconColours.address, 0x1Cu},
+            {globals::eventClaimLists.address, 0x14u},  {globals::claimIconSets.address, 0x18u},  {globals::claimIconColours.address, 0x1Cu},
             {globals::claimTexts.address, 0x20u},
         };
         for (const Section &section : sections)

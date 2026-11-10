@@ -145,8 +145,8 @@
 0x00134A20 void mm_Person_Update(CharClass *cls, CityScene *city, MapPerson *person, uint32_t timeFlags);
 0x00135600 CharClass *mm_Person_dtor(CharClass *cls, int16_t deleteFlag);
 0x00135660 PersonClass *mm_Person_ctor(PersonClass *cls, CharTypeRecord *record);
-0x001356F0 void mm_Event_ClearTileFlags(int listIndex);
-0x00135770 void mm_Event_SetTileFlags(int listIndex);
+0x001356F0 void mm_Event_RemoveClaims(int listIndex);
+0x00135770 void mm_Event_AddClaims(int listIndex);
 0x001357F0 void mm_ClaimIcon_GetColor(uint32_t icon, int level, Vec4 *colour);
 0x00135860 int mm_Claim_PickVariant(uint32_t claim);
 0x001358C0 int mm_Claim_GetLine(int claim, int line);

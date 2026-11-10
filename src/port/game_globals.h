@@ -140,10 +140,14 @@ namespace mm::globals
     inline constexpr GuestVar<uint32_t> goodsSectionD{0x001BDAA8u};
     inline constexpr GuestVar<uint32_t> goodsSectionE{0x001BDAACu};
     inline constexpr GuestVar<int32_t> goodsTextCount{0x001BDAB0u};
-    // The goods record `index` of group `group` (section A holds each group's first record).
+    // The goods group of building type `group` (section A), and its record `index` (from the group's first).
+    inline GuestPtr<GoodsGroup> goodsGroup(uint32_t group)
+    {
+        return GuestPtr<GoodsGroup>{goodsSectionA.get()} + static_cast<int32_t>(group);
+    }
     inline GuestPtr<GoodsRecord> goodsAt(uint32_t group, uint32_t index)
     {
-        const uint32_t first = port::load<uint16_t>(goodsSectionA.get() + 4u * group);
+        const uint32_t first = goodsGroup(group)->first;
         return GuestPtr<GoodsRecord>{goodsSectionB.get() + 0x88u * (index + first)};
     }
     // claim: the offset tables (per list, its offset in words into claimData) of the claim lists and the item groups, and
@@ -466,13 +470,21 @@ namespace mm::globals
     inline GuestPtr<EventType> eventTypeCopy(uint32_t kind) { return GuestPtr<EventType>{eventTypesCopy.get()} + static_cast<int32_t>(kind); }
     inline constexpr GuestVar<int32_t> popularityTicks{0x001BDC50u}; // clock ticks since the last popularity check (every 110)
     // event: each event type's id (group, number; saved with the city, to match the queue with the table of a later
-    // build) and the number of types; the event queue; the offsets (words) into claimData of each event's tile list
-    // (mm_Event_SetTileFlags).
+    // build) and the number of types; the event queue; the offsets (words) into claimData of each event claim list
+    // (EventClaimList, mm_Event_AddClaims), the list `list` and the claim slot at a word offset.
     inline constexpr uint32_t kEventTypeIds = 0x001C5790u;
     inline constexpr GuestVar<int32_t> eventTypeCount{0x001BDA80u};
     inline constexpr GuestVar<uint32_t> eventQueueObject{0x001BDA88u};
     inline GuestPtr<EventQueue> eventQueue() { return GuestPtr<EventQueue>{eventQueueObject.get()}; }
-    inline constexpr GuestVar<uint32_t> eventTileLists{0x001BDA60u};
+    inline constexpr GuestVar<uint32_t> eventClaimLists{0x001BDA60u};
+    inline GuestPtr<EventClaimList> eventClaimList(int32_t list)
+    {
+        return GuestPtr<EventClaimList>{claimData.get() + 4u * GuestPtr<uint32_t>{eventClaimLists.get()}[list]};
+    }
+    inline GuestPtr<ClaimEntry> claimSlot(uint32_t offsetWords)
+    {
+        return GuestPtr<ClaimEntry>{claimData.get() + 4u * offsetWords};
+    }
     // event: the whole map as a block (0, 0, 128, 128), where the thief looks for a building to rob; an ActorRef with
     // no person and no building.
     inline constexpr uint32_t kWholeMapRect = 0x001BA8D0u;
@@ -488,6 +500,27 @@ namespace mm::globals
         return GuestPtr<DeliveryItem>{deliveryCatalogue(entry).address + static_cast<uint32_t>(offsetof(DeliveryCatalogue, items))} + month;
     }
     inline constexpr uint32_t kAdoptionStart = 0x001B37D0u;
+    // event: zero-ended tables in the original's data, each function with its own copy: the tile lists the suitor
+    // events search (Boyfriend and Girlfriend: 1, 6, 5, 0x30; Affair: 1), the cult's member actors (4, 5, 1), the
+    // building types the alien's second building can be (0xF3, 0xF6, 0xFB, 0xFD, four restaurants) and the places it
+    // can land (the same four types, each with its tile list).
+    inline constexpr GuestPtr<int32_t> kBoyfriendLists{0x001B3810u};
+    inline constexpr GuestPtr<int32_t> kGirlfriendLists{0x001B37F0u};
+    inline constexpr GuestPtr<int32_t> kAffairLists{0x001BD9E0u};
+    inline constexpr GuestPtr<int32_t> kCultHomesActors{0x001B37A0u};   // mm_EvCrazyCult_TellSecondMember, phase 15
+    inline constexpr GuestPtr<int32_t> kCultPeopleActors{0x001B37B0u};  // the same, phase 16
+    inline constexpr GuestPtr<int32_t> kCultAnswerActors{0x001B37C0u};  // mm_EvCrazyCult_Answer
+    inline constexpr GuestPtr<uint16_t> kAlienSecondTypes{0x001B3750u};
+    inline constexpr GuestPtr<AlienSite> kAlienSites{0x001B3760u};
+    // event: the tile lists the delivery man picks a house from (not zero-ended): five in holiday months (1, 2, 5, 6,
+    // 7), else two (8, 9) (mm_EvDeliveryMan_Check).
+    inline constexpr GuestPtr<int32_t> kDeliveryHolidayLists{0x001B3780u};
+    inline constexpr GuestPtr<int32_t> kDeliveryWorkdayLists{0x001BD9D0u};
+    // event: the starting values the original copies into some handlers' locals: the noodle stand's three workers
+    // (words in .bss, 0 unless written) and their buildings (kNoObject), the alien's four buildings (.bss words).
+    inline constexpr GuestPtr<uint32_t> kNoodleWorkersStart{0x0020B8D0u};
+    inline constexpr GuestPtr<uint16_t> kNoodleBuildingsStart{0x001BD9D8u};
+    inline constexpr GuestPtr<uint32_t> kAlienBuildingsStart{0x0020B880u};
     inline constexpr uint32_t kEventMoneyTextA = 0x0020B8A0u;
     inline constexpr uint32_t kEventMoneyTextB = 0x0020B8C0u;
     // event: the shopping event's goods texts (0x28 bytes per shop, halfword offsets into the names from +0x20).

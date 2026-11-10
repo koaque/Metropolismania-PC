@@ -625,12 +625,20 @@ VU1_RECORDS = WORK / "vu1_aot" / "records"
 VU1_GEN = WORK / "vu1_aot" / "gen"
 
 
+def autoplay_env(args: argparse.Namespace) -> list:
+    """The autoplay mode for a capture: --script FILE loads the newest save and plays that button script in the city
+    (MMPC_AUTOPLAY=script, the format in src/overrides/metropolismania_overrides.cpp), else --autoplay's mode."""
+    if args.script:
+        return ["MMPC_AUTOPLAY=script", f"MMPC_AUTOPLAY_SCRIPT={Path(args.script).resolve()}"]
+    return [f"MMPC_AUTOPLAY={args.autoplay}"]
+
+
 def cmd_capture(args: argparse.Namespace) -> None:
     """A visible run to the city (a new game, or the newest save with --autoplay load) that records the
     entry state of chosen functions (MMPC_CAPTURE) into work/difftest/ for pipeline.py difftest.
     Ported functions stay unreplaced during a capture."""
     args.env = [f"MMPC_CAPTURE={args.functions}", f"MMPC_CAPTURE_DIR={DIFFTEST}", f"MMPC_CAPTURE_MAX={args.max}",
-                f"MMPC_CAPTURE_EVERY={args.every}", f"MMPC_AUTOPLAY={args.autoplay}", "MMPC_SKIP_MOVIES=1"] + (args.env or [])
+                f"MMPC_CAPTURE_EVERY={args.every}", "MMPC_SKIP_MOVIES=1"] + autoplay_env(args) + (args.env or [])
     args.pad = None
     cmd_run(args)
 
@@ -664,10 +672,11 @@ def cmd_difftest(args: argparse.Namespace) -> None:
 
 
 def cmd_vu1_capture(args: argparse.Namespace) -> None:
-    """A visible run to the city (autoplay) that writes whole VU1 program runs (MSCAL) to work/vu1_aot/records/
-    (PS2X_VU1_CAPTURE, patches/0132): up to --max files for each distinct (code, start PC)."""
-    args.env = [f"PS2X_VU1_CAPTURE={VU1_RECORDS}", f"PS2X_VU1_CAPTURE_MAX={args.max}", f"MMPC_AUTOPLAY={args.autoplay}",
-                "MMPC_SKIP_MOVIES=1"] + (args.env or [])
+    """A visible run to the city (autoplay) that writes whole VU1 program runs (MSCAL) to work/vu1_aot/records/, or to
+    --out (PS2X_VU1_CAPTURE, patches/0132): up to --max files for each distinct (code, start PC)."""
+    out = Path(args.out).resolve() if args.out else VU1_RECORDS
+    args.env = [f"PS2X_VU1_CAPTURE={out}", f"PS2X_VU1_CAPTURE_MAX={args.max}", "MMPC_SKIP_MOVIES=1"] + \
+        autoplay_env(args) + (args.env or [])
     args.pad = None
     cmd_run(args)
 
@@ -769,6 +778,7 @@ def main() -> int:
     p.add_argument("--autoplay", default="city", choices=["city", "load", "explore"],
                    help="city: a new game; load: the newest save in original/mc0 (tools/mc_extract.py); "
                         "explore: that save, then random play in the city")
+    p.add_argument("--script", help="a button script played in the city after loading the newest save (tools/autoplay/)")
     p.add_argument("--timeout", type=int, default=200)
     p.add_argument("--shots", type=int, default=0)
     p.add_argument("--shot-every", type=float, default=45.0)
@@ -785,6 +795,8 @@ def main() -> int:
     p.add_argument("--max", type=int, default=12, help="files per distinct (code, start PC)")
     p.add_argument("--autoplay", default="explore", choices=["city", "load", "explore"],
                    help="city: a new game; load: the newest save in original/mc0; explore: that save, then random play")
+    p.add_argument("--script", help="a button script played in the city after loading the newest save (tools/autoplay/)")
+    p.add_argument("--out", help="the folder for the records (default work/vu1_aot/records)")
     p.add_argument("--timeout", type=int, default=200)
     p.add_argument("--shots", type=int, default=0)
     p.add_argument("--shot-every", type=float, default=45.0)

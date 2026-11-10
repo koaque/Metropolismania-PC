@@ -791,8 +791,8 @@ address,name,kind,source
 0x00134A20,mm_Person_Update,func,manual
 0x00135600,mm_Person_dtor,func,manual
 0x00135660,mm_Person_ctor,func,manual
-0x001356F0,mm_Event_ClearTileFlags,func,manual
-0x00135770,mm_Event_SetTileFlags,func,manual
+0x001356F0,mm_Event_RemoveClaims,func,manual
+0x00135770,mm_Event_AddClaims,func,manual
 0x001357F0,mm_ClaimIcon_GetColor,func,manual
 0x00135860,mm_Claim_PickVariant,func,manual
 0x001358C0,mm_Claim_GetLine,func,manual
