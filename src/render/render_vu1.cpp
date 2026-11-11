@@ -17,6 +17,7 @@ namespace mm::render
 {
     VuProgram *nativeModelProgram0();
     VuProgram *nativeModelProgram1();
+    VuProgram *nativeTerrainProgram(uint32_t uploadPacket);
 
     VuProgram *nativeProgram(uint32_t uploadPacket)
     {
@@ -27,7 +28,7 @@ namespace mm::render
         case 0x001A4780u:
             return nativeModelProgram1();
         default:
-            return nullptr;
+            return nativeTerrainProgram(uploadPacket);
         }
     }
 
@@ -126,67 +127,97 @@ namespace mm::render
             return 0;
         }
 
-        // The packed GIF packet a program's output becomes: the tag, then ST, RGBAQ and XYZF2 for every vertex.
-        std::vector<uint32_t> encode(const VuPacket &p)
+        // One qword of the packed GIF packet a program's output becomes, and what it holds.
+        enum class Slot : uint8_t
         {
-            std::vector<uint32_t> w;
-            w.push_back(static_cast<uint32_t>(p.tagLo));
-            w.push_back(static_cast<uint32_t>(p.tagLo >> 32));
-            w.push_back(static_cast<uint32_t>(p.tagHi));
-            w.push_back(static_cast<uint32_t>(p.tagHi >> 32));
+            Tag,
+            Register, // a 64-bit register value (TEX0_1), compared whole
+            Prim,     // PRIM: the low 11 bits
+            St,
+            Rgbaq,
+            Xyzf,
+            Stale,      // not written by the program: not compared
+            StaleXyzf,  // not written but for the ADC bit (ISW.w of 0x8000)
+        };
+
+        struct Qword
+        {
+            Slot slot;
+            uint32_t w[4];
+        };
+
+        // The tag, then for every vertex the register writes ahead of it and its ST, RGBAQ and XYZF2.
+        std::vector<Qword> encode(const VuPacket &p)
+        {
+            std::vector<Qword> out;
+            out.push_back({Slot::Tag, {static_cast<uint32_t>(p.tagLo), static_cast<uint32_t>(p.tagLo >> 32),
+                                       static_cast<uint32_t>(p.tagHi), static_cast<uint32_t>(p.tagHi >> 32)}});
             for (const VuVertex &v : p.vertices)
             {
+                for (int i = 0; i < v.beforeCount; ++i)
+                {
+                    const VuRegister &r = v.before[i];
+                    const Slot slot = r.stale ? Slot::Stale : r.reg == 0 ? Slot::Prim : Slot::Register;
+                    out.push_back({slot, {static_cast<uint32_t>(r.value), static_cast<uint32_t>(r.value >> 32), 0, 0}});
+                }
                 uint32_t s, t, q;
                 std::memcpy(&s, &v.s, 4);
                 std::memcpy(&t, &v.t, 4);
                 std::memcpy(&q, &v.q, 4);
-                w.insert(w.end(), {s, t, q, 0});
-                w.insert(w.end(), {v.rgba[0], v.rgba[1], v.rgba[2], v.rgba[3]});
-                w.insert(w.end(), {vuFtoi4(v.x), vuFtoi4(v.y), vuFtoi4(v.z), (vuFtoi4(v.fog) & 0xFFFF) | (v.adc ? 0x8000u : 0u)});
+                out.push_back({v.stale ? Slot::Stale : Slot::St, {s, t, q, 0}});
+                out.push_back({v.stale ? Slot::Stale : Slot::Rgbaq, {v.rgba[0], v.rgba[1], v.rgba[2], v.rgba[3]}});
+                out.push_back({v.stale ? (v.adc ? Slot::StaleXyzf : Slot::Stale) : Slot::Xyzf,
+                               {vuFtoi4(v.x), vuFtoi4(v.y), vuFtoi4(v.z), (vuFtoi4(v.fog) & 0xFFFF) | (v.adc ? 0x8000u : 0u)}});
             }
-            return w;
+            return out;
         }
 
-        // How far a native packet is from the real one: 0 the same as the GS reads it, 1 within rounding (a unit of the
-        // last place of a float, one 16th of a pixel, one colour step), 2 different. `where` says where the first worst is.
-        int compare(const std::vector<uint8_t> &real, const std::vector<uint32_t> &native, std::string &where)
+        // How far a native packet is from the real one: 0 the same as the GS reads it, 1 within rounding (float rounding,
+        // one 16th of a pixel, one colour step), 2 different. `where` says where the first worst is.
+        int compare(const std::vector<uint8_t> &real, const std::vector<Qword> &native, std::string &where)
         {
-            const size_t words = real.size() / 4;
-            if (native.size() != words)
+            const size_t qwords = real.size() / 16;
+            if (native.size() != qwords)
             {
-                where = "size " + std::to_string(native.size() / 4) + " vs " + std::to_string(words) + " qwords";
+                where = "size " + std::to_string(native.size()) + " vs " + std::to_string(qwords) + " qwords";
                 return 2;
             }
             int worst = 0;
-            const auto note = [&](int level, size_t qword, const char *what) {
+            const auto note = [&](int level, size_t qword, const std::string &what) {
                 if (level > worst)
                 {
                     worst = level;
-                    where = std::string(what) + " at qword " + std::to_string(qword);
+                    where = what + " at qword " + std::to_string(qword);
                 }
             };
-            const auto realWord = [&](size_t i) {
-                uint32_t v;
-                std::memcpy(&v, real.data() + i * 4, 4);
-                return v;
-            };
-            // the tag: NLOOP, EOP and the PRIM word
-            if ((realWord(0) & 0xFFFF) != (native[0] & 0xFFFF) || realWord(1) != native[1])
+            for (size_t q = 0; q < qwords; ++q)
             {
-                char text[96];
-                std::snprintf(text, sizeof(text), "tag %08x %08x vs native %08x %08x", realWord(0), realWord(1), native[0], native[1]);
-                note(2, 0, text);
-                return worst;
-            }
-            for (size_t q = 1; q < words / 4; ++q)
-            {
-                const uint32_t *n = native.data() + q * 4;
+                const uint32_t *n = native[q].w;
                 uint32_t r[4];
-                for (int i = 0; i < 4; ++i)
-                    r[i] = realWord(q * 4 + i);
-                switch ((q - 1) % 3)
+                std::memcpy(r, real.data() + q * 16, 16);
+                char text[128];
+                switch (native[q].slot)
                 {
-                case 0: // ST: S, T, Q as floats
+                case Slot::Tag: // NLOOP, EOP and the PRIM word
+                    if ((r[0] & 0xFFFF) != (n[0] & 0xFFFF) || r[1] != n[1])
+                    {
+                        std::snprintf(text, sizeof(text), "tag %08x %08x vs native %08x %08x", r[0], r[1], n[0], n[1]);
+                        note(2, q, text);
+                        return worst;
+                    }
+                    break;
+                case Slot::Register:
+                    if (r[0] != n[0] || r[1] != n[1])
+                    {
+                        std::snprintf(text, sizeof(text), "register %08x%08x vs native %08x%08x", r[1], r[0], n[1], n[0]);
+                        note(2, q, text);
+                    }
+                    break;
+                case Slot::Prim:
+                    if ((r[0] & 0x7FF) != (n[0] & 0x7FF))
+                        note(2, q, "PRIM");
+                    break;
+                case Slot::St: // S, T, Q as floats
                     for (int i = 0; i < 3; ++i)
                     {
                         float a, b;
@@ -194,27 +225,32 @@ namespace mm::render
                         std::memcpy(&b, &n[i], 4);
                         if (r[i] != n[i])
                         {
-                            char text[96];
                             std::snprintf(text, sizeof(text), "ST lane %d %.9g vs native %.9g", i, a, b);
                             note(std::fabs(a - b) <= std::max(std::fabs(a), std::fabs(b)) * 3e-5f + 1e-30f ? 1 : 2, q, text);
                         }
                     }
                     break;
-                case 1: // RGBAQ: the bytes the GS takes
+                case Slot::Rgbaq: // the bytes the GS takes
                     for (int i = 0; i < 4; ++i)
                     {
                         const int d = std::abs(static_cast<int>(r[i] & 0xFF) - static_cast<int>(n[i] & 0xFF));
                         if (d != 0)
-                            note(d <= 1 ? 1 : 2, q, "RGBA");
+                        {
+                            std::snprintf(text, sizeof(text), "RGBA lane %d %u vs native %u", i, r[i] & 0xFF, n[i] & 0xFF);
+                            note(d <= 1 ? 1 : 2, q, text);
+                        }
                     }
                     break;
-                default: // XYZF2: X, Y in 1/16 pixels, Z (bits 4-27), F (bits 4-11 of w), ADC
+                case Slot::Xyzf: // X, Y in 1/16 pixels, Z (bits 4-27), F (bits 4-11 of w), ADC
                 {
                     for (int i = 0; i < 2; ++i)
                     {
                         const int d = std::abs(static_cast<int>(static_cast<int16_t>(r[i])) - static_cast<int>(static_cast<int16_t>(n[i])));
                         if (d != 0)
-                            note(d <= 1 ? 1 : 2, q, i == 0 ? "X" : "Y");
+                        {
+                            std::snprintf(text, sizeof(text), "%s %08x vs native %08x", i == 0 ? "X" : "Y", r[i], n[i]);
+                            note(d <= 1 ? 1 : 2, q, text);
+                        }
                     }
                     const int64_t zr = (r[2] >> 4) & 0xFFFFFF, zn = (n[2] >> 4) & 0xFFFFFF;
                     if (zr != zn)
@@ -226,6 +262,12 @@ namespace mm::render
                         note(2, q, "ADC");
                     break;
                 }
+                case Slot::StaleXyzf:
+                    if ((r[3] & 0x8000) != (n[3] & 0x8000))
+                        note(2, q, "ADC of a skipped slot");
+                    break;
+                case Slot::Stale:
+                    break;
                 }
             }
             return worst;

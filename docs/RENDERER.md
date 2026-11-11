@@ -101,6 +101,10 @@ coordinates to float rounding.
 |---|---|---|
 | 0x1A3C80 | people, the player, menus and windows, the title logo, the HUD's clock and phone, the talk scenes | 157 of 158 |
 | 0x1A4780 | buildings and objects, with its clipping mode (triangles that cross the clip volume clipped against five planes and sent as fans) | 103 of 103 |
+| 0x1A5EB0 | the base ground: per quad its TEX0, corners in strip order, two lit faces | 94 of 95 (the other: 2/16 of a pixel on a corner 13,000 pixels off screen) |
+| 0x1AA340 | the water bottom: the ground pass with each height scaled and offset | 105 of 105 |
+| 0x1A91C0 | the lit roads: the ground pass unlit, one colour | 60 of 60 |
+| 0x1A76F0 | the cliff sides: triangles, texture t from the height, one lit face each | 83 of 83 |
 
 The one run that differs is a quirk of the game: that batch of 0x1A3C80 ran without its own setup, on the VI registers
 another program had left (its ADC bits come out different through an IAND with 16 where the setup sets 1). Things learned
@@ -108,5 +112,8 @@ on the way: `ILW` reads only the low 16 bits of a word (the draw mode is stored 
 instances take the no-fog loop), and in a captured batch the instance's matrix in data memory may already be the next
 instance's (the VIF unpacks it while the last batch runs; the setup keeps what it needs at 0x30-0x32 for that reason).
 
-Not drawn natively yet: the terrain passes (ground, cliff sides, water bottom, lit roads), the water, the rain and snow and
-their ground passes, the placement highlight and the unlit model program.
+The terrain passes also leave a skipped quad's slots in their output buffer as they were (only its ADC bits are written),
+and set ADC by storing 0x8000 over a vertex's whole w word (so its F goes to 0); the test compares just those bits there.
+
+Not drawn natively yet: the water, the rain and snow and their ground passes, the placement highlight and the unlit model
+program.

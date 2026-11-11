@@ -31,9 +31,21 @@ namespace mm::render
         void setReal(uint32_t address, int lane, float f) { std::memcpy(qword(address) + lane, &f, 4); }
     };
 
+    // A register write a program puts in its packet before a vertex (the terrain passes' TEX0_1 and PRIM). `stale`: the
+    // program leaves that slot of its output buffer as it was (a quad it skips), so it is not sent here.
+    struct VuRegister
+    {
+        uint32_t reg = 0;
+        uint64_t value = 0;
+        bool stale = false;
+    };
+
     // One vertex as a program sends it: what the GS would get, before the conversion to fixed point.
     struct VuVertex
     {
+        VuRegister before[2]; // register writes ahead of this vertex, in packet order
+        uint8_t beforeCount = 0;
+        bool stale = false;   // a slot the program does not write but for its ADC bit (a skipped quad): not drawn
         float x = 0, y = 0;   // screen position in GS units (pixels, with the GS's 2048 offset)
         float z = 0;          // depth in GS Z units
         float fog = 0;        // 0..255, the GS's F

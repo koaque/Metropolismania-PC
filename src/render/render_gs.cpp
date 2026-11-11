@@ -399,6 +399,11 @@ namespace mm::render
             write(PRIM, (packet.tagLo >> 47) & 0x7FF);
         for (const VuVertex &in : packet.vertices)
         {
+            for (int i = 0; i < in.beforeCount; ++i)
+                if (!in.before[i].stale)
+                    write(in.before[i].reg, in.before[i].value);
+            if (in.stale)
+                continue; // a skipped slot: its kick never draws, and the next PRIM write starts the strip anew
             uint32_t rgba;
             std::memcpy(&rgba, in.rgba, 4);
             uint32_t qbits;
