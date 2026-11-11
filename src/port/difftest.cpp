@@ -57,7 +57,7 @@
 #include "abi.h"
 #include "game_functions.h"
 #include "port.h"
-#include "raylib.h"
+#include "miniz.h"
 #include "sdk.h"
 
 #include <algorithm>
@@ -200,8 +200,10 @@ namespace port
 
         void writeRecord(const PendingRecord &rec)
         {
-            int packedSize = 0;
-            unsigned char *packed = CompressData(rec.rdram.data(), static_cast<int>(rec.rdram.size()), &packedSize);
+            // Raw deflate (no zlib header), as the records have always been written.
+            size_t packedLength = 0;
+            void *packed = tdefl_compress_mem_to_heap(rec.rdram.data(), rec.rdram.size(), &packedLength, TDEFL_DEFAULT_MAX_PROBES);
+            const int packedSize = static_cast<int>(packedLength);
             if (!packed)
             {
                 std::cerr << "[difftest] compression failed for " << rec.path.string() << std::endl;
@@ -218,7 +220,7 @@ namespace port
                 out.write(reinterpret_cast<const char *>(packed), packedSize);
                 out.write(reinterpret_cast<const char *>(rec.scratchpad.data()), PS2_SCRATCHPAD_SIZE);
             }
-            MemFree(packed);
+            mz_free(packed);
             std::error_code ec;
             std::filesystem::rename(temp, rec.path, ec); // a killed run leaves only .part files behind
         }
@@ -307,17 +309,13 @@ namespace port
                 error = "truncated record";
                 return false;
             }
-            int size = 0;
-            unsigned char *raw = DecompressData(packed.data(), static_cast<int>(packed.size()), &size);
-            if (!raw || size != static_cast<int>(PS2_RAM_SIZE))
+            rec.rdram.resize(PS2_RAM_SIZE);
+            const size_t size = tinfl_decompress_mem_to_mem(rec.rdram.data(), rec.rdram.size(), packed.data(), packed.size(), 0);
+            if (size != PS2_RAM_SIZE)
             {
-                if (raw)
-                    MemFree(raw);
                 error = "bad RDRAM image";
                 return false;
             }
-            rec.rdram.assign(raw, raw + size);
-            MemFree(raw);
             return true;
         }
 
@@ -344,9 +342,13 @@ namespace port
         {
             // The runtime keeps the heap's bookkeeping and the open file descriptors outside RDRAM. Every run starts
             // from the same ones, so a call that allocates or opens gets the same block and descriptor each time.
+            // The EE timers too: every run starts from their state before the first replay (a record of the game's start-up,
+            // App_ctor, starts timer 0, which the game reads as a random number; the runtime's own timers keep running).
             static const int32_t baseDescriptor = runtime.vfs().nextDescriptor();
+            static const auto baseTimers = runtime.memory().saveEeTimers();
             runtime.restoreGuestHeapState(heap);
             runtime.vfs().closeFrom(baseDescriptor);
+            runtime.memory().restoreEeTimers(baseTimers);
             std::memcpy(g_rdram, rec.rdram.data(), PS2_RAM_SIZE);
             std::memcpy(g_scratchpad, rec.scratchpad.data(), PS2_SCRATCHPAD_SIZE);
             out.ctx = start;

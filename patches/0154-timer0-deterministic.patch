@@ -1,0 +1,89 @@
+EE timer 0: PS2X_TIMER0=frame makes what the guest reads from the count independent of emulated time. Each read returns a hash of how many times the count has been written (a game resets it once a frame) and of the read's place since then, in 0x100 to 0x10FF; the timer keeps counting underneath, so its interrupts and compare matches are unchanged. Metropolismania takes the count as a random number (people's destinations, sound noise), so with the switch two runs whose code takes different time (the readable port against the recompiled code, a native renderer against the emulated one) make the same choices and can be compared state for state. PS2X_TIMER0_TRACE=1 also prints how many reads the guest made between writes, which shows a run that reads the count more or fewer times than another. Off by default.
+
+diff --git a/ps2xRuntime/src/lib/ps2_memory.cpp b/ps2xRuntime/src/lib/ps2_memory.cpp
+--- a/ps2xRuntime/src/lib/ps2_memory.cpp
++++ b/ps2xRuntime/src/lib/ps2_memory.cpp
+@@ -3,6 +3,8 @@
+ #include "runtime/gs/gs_frontend.h"
+ #include "ps2_log.h"
+ #include <atomic>
++#include <cstdio>
++#include <cstdlib>
+ #include <cstring>
+ #include <limits>
+ #include <stdexcept>
+@@ -186,6 +188,47 @@ namespace
+         return false;
+     }
+ 
++    // PS2X_TIMER0=frame: the guest's reads of timer 0's count no longer depend on emulated time. A game that takes the count
++    // as a random number (Metropolismania does, for people's destinations and sound noise) then makes the same choices however
++    // long its code takes to run, so two runs with different code (a native port, a native renderer) can be compared state for
++    // state. Each read returns a hash of how many times the count has been written (games reset it once a frame) and of the
++    // read's place since that write, in 0x100 to 0x10FF: small enough that a frame-load figure computed from it stays low. The
++    // timer itself keeps counting as before (its interrupts and compare matches are unchanged); only what a read returns differs.
++    // PS2X_TIMER0_TRACE=1 also prints, at each write of the count, how many reads the guest made since the one before, so two
++    // runs can be checked for reading the count the same number of times each frame.
++    struct DeterministicTimer0
++    {
++        bool on = false;
++        bool trace = false;
++        uint32_t writes = 0u;
++        uint32_t reads = 0u;
++    };
++
++    DeterministicTimer0 &deterministicTimer0()
++    {
++        static DeterministicTimer0 state = []
++        {
++            DeterministicTimer0 initial;
++            const char *value = std::getenv("PS2X_TIMER0");
++            initial.on = value != nullptr && std::strcmp(value, "frame") == 0;
++            const char *trace = std::getenv("PS2X_TIMER0_TRACE");
++            initial.trace = trace != nullptr && std::strcmp(trace, "1") == 0;
++            return initial;
++        }();
++        return state;
++    }
++
++    uint32_t deterministicTimer0Count(uint32_t writes, uint32_t reads)
++    {
++        uint32_t x = writes * 0x9E3779B1u ^ (reads + 1u) * 0x85EBCA77u;
++        x ^= x >> 15;
++        x *= 0x2C1B3C6Du;
++        x ^= x >> 12;
++        x *= 0x297A2D39u;
++        x ^= x >> 15;
++        return 0x100u + (x & 0x0FFFu);
++    }
++
+     constexpr uint64_t ticksUntilMatch(uint32_t count, uint32_t target)
+     {
+         const uint32_t distance = (target - count) & 0xFFFFu;
+@@ -1141,6 +1184,14 @@ bool PS2Memory::writeIORegister(uint32_t address, uint32_t value)
+         case kEeTimerCountOffset:
+             timer.count = value & 0xFFFFu;
+             timer.clockRemainder = 0u;
++            if (timerIndex == 0u)
++            {
++                DeterministicTimer0 &fixed = deterministicTimer0();
++                if (fixed.trace)
++                    std::fprintf(stderr, "[timer0] write %u after %u read(s)\n", fixed.writes, fixed.reads);
++                ++fixed.writes;
++                fixed.reads = 0u;
++            }
+             break;
+         case kEeTimerModeOffset:
+         {
+@@ -2379,6 +2430,11 @@ uint32_t PS2Memory::readIORegister(uint32_t address)
+         switch (timerOffset)
+         {
+         case kEeTimerCountOffset:
++            if (timerIndex == 0u && deterministicTimer0().on)
++            {
++                DeterministicTimer0 &fixed = deterministicTimer0();
++                return deterministicTimer0Count(fixed.writes, fixed.reads++);
++            }
+             return timer.count & 0xFFFFu;
+         case kEeTimerModeOffset:
+             return timer.mode & (kEeTimerModeConfigMask | kEeTimerModeStatusMask);

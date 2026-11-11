@@ -4006,7 +4006,7 @@ namespace mm
     // How a building is found depends on it: 0 a farmer's field (mm_Person_TargetField); 1 and 2 a port (list 10) or an office or
     // factory (list 8), kept as the target (its heading count goes up); 3 the target, or home; 4 a school; 5, 6, 11 and 12 home;
     // 7 and 8 a building of lists 11 to 13 or 18 and 19, picked by the count of timer 0; 9 a random target; 10 a list from the
-    // table at 0x1B0BD0 by schedule state and timer (36 with person flag 0x400; none gives home); 13 taking a child to daycare;
+    // table at 0x1B0BD0 by schedule state and a second read of timer 0 (36 with person flag 0x400; none gives home); 13 taking a child to daycare;
     // 14 picking one up; 15 home as the target; 16 a visit; 17 lists 18 and 19 or 13; 18 a hospital (list 20). When nothing was found
     // (0x3F80) the person's target stands if it is on the tile the person is on (and a type with flag 0x80 resets the activity),
     // otherwise home. The result is the building.
@@ -4086,9 +4086,12 @@ namespace mm
             break;
         case 10:
         {
+            // The original reads timer 0 again here (0x15EBE0, in a delay slot, so whatever the flag) and indexes the table
+            // with that second count, not the one read at the top.
+            const int32_t again = static_cast<int32_t>(port::readHardware32(0x10000000u));
             const int list = (person->flags & 0x400u) != 0
                                  ? 0x24
-                                 : port::load<uint8_t>(globals::kScheduleDestinations + 8u * person->schedState + static_cast<uint32_t>(timer & 7));
+                                 : port::load<uint8_t>(globals::kScheduleDestinations + 8u * person->schedState + static_cast<uint32_t>(again & 7));
             destination = list == 0 ? person->home : findIn(list, 1, skip);
             break;
         }

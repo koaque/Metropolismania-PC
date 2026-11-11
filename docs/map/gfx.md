@@ -138,5 +138,5 @@ Rendering below the scene level.
 | `0x00187200` | `void mm_DmaList_BeginScene(void)` | 132 | no | rewinds the 0x8000-byte packet buffer (0x1BDCE4 -> 0x1BDCE8) and queues the default GS state |
 | `0x00187290` | `void mm_DmaList_KickFrame(void)` | 220 | no | appends the default GS state, then starts the current list on VIF1 (chain mode); the city's VU1/GS work happens under this kick |
 | `0x00187370` | `void mm_DmaList_Free(void)` | 92 | yes | frees both lists and the packet buffer |
-| `0x001873D0` | `void mm_DmaList_InitPackets(void)` | 616 | no | builds two static packets at 0x1F69C0 that draw a 640 x 224 picture from GS block 0x8000 (+0x8C0) as 5 x 7 sprites of 128 x 32 |
+| `0x001873D0` | `void mm_DmaList_InitPackets(void)` | 616 | no | builds two static packets at 0x1F69C0 that draw a 640 x 224 field buffer (GS block 0 or 0x8C0) back over the frame as 5 x 7 sprites of 128 x 32 |
 | `0x00187640` | `void mm_DmaList_Init(void)` | 104 | yes | allocates the two 64 KB lists and the 0x8000-byte packet buffer, then builds the overlay packets (0x1873D0) |

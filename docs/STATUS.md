@@ -1,6 +1,6 @@
 # Status
 
-Last updated: 2026-11-06. Upstream PS2Recomp pinned at `eb8688b2` (2026-10-14). The numbered log below keeps the order its items were written in, each dated; the plans that followed the milestones (the readable port and after) are summarised at the end, in [After the milestones](#after-the-milestones).
+Last updated: 2026-11-11. Upstream PS2Recomp pinned at `eb8688b2` (2026-10-14). The numbered log below keeps the order its items were written in, each dated; the plans that followed the milestones (the readable port and after) are summarised at the end, in [After the milestones](#after-the-milestones).
 
 ## Milestones
 
@@ -79,7 +79,7 @@ From 2026-10-16 the work followed plans for a readable source port rather than t
 |---|---|---|
 | P1 Map | Done | Every game function named, classified by subsystem and given a prototype (`config/signatures.txt`), the structs in `config/types/`, one page per subsystem in [map/](map/README.md) |
 | P2 Port infrastructure | Done | `src/port/guest.h` and `abi.h` (guest pointers, calls between rewritten and recompiled code), capture and difftest |
-| P3 Readable port | Done (2026-10-25) | All 1,481 game functions rewritten as readable C++ in `src/port/`, 1,432 of them verified by the differential tests ([PORT_STATUS.md](PORT_STATUS.md)) |
+| P3 Readable port | Done (2026-10-25) | All 1,481 game functions rewritten as readable C++ in `src/port/`, 1,436 of them verified by the differential tests ([PORT_STATUS.md](PORT_STATUS.md)) |
 | P4 VU1 ahead of time | Done | Pre-timed VU1 programs, then the same programs compiled to C++ (items 10 and 21, [VU1_PROGRAMS.md](VU1_PROGRAMS.md)) |
 | P5 IOP | Done (2026-10-28) | The sound driver YYSOUND rewritten as readable C++ and the ten IOP modules translated ahead of time ([IOP.md](IOP.md)) |
 | P6 Code that can block | Done (2026-10-25) | Rewritten functions that can reach a thread switch run on fibers ([FIBERS.md](FIBERS.md)) |
@@ -88,3 +88,4 @@ From 2026-10-16 the work followed plans for a readable source port rather than t
 | G2 Game speed and input | Done for its first steps | The game's 60 Hz timing (item 18), input lag (item 19), frame skip (item 20); full speed is P8's |
 | P8 Performance | Paused (2026-11-04) | Items 21 to 26: the heavy city views from 21.1 to 43.5 fps with frame skip off |
 | R1 Reverse-engineering pass | In progress (since 2026-11-04) | Struct fields by name instead of raw memory offsets (2,736 lines down to 156, 115 of them in the movie player, left as it is on purpose), the game's global variables, tables, vtables and strings by name instead of raw addresses (588 addresses), placeholder functions and structs renamed, and the city's render pipeline mapped down to each of its 13 VU1 programs ([RENDER_PIPELINE.md](RENDER_PIPELINE.md)). A native renderer that replaces the emulated graphics hardware is meant to build on it |
+| N Native renderer | In progress (since 2026-11-11) | Replaces the VU1 programs and the GS with native drawing at the DMA-chain level, at any resolution and without fields ([RENDERER.md](RENDERER.md)). So far: a deterministic timer switch (`PS2X_TIMER0=frame`, `patches/0154`) and `tools/lockstep_compare.py`, under which the rewritten and the recompiled code stay identical state for state over 15,000 frames (only a sound voice counter, the video field bit and leftover bytes of one heap block differ); it found one difference in the port, a second read of timer 0 in `Person_ChooseDestination`, now fixed. The desktop host is SDL3 instead of raylib (`patches/0155`: Direct3D 12 or Vulkan, `PS2X_GPU`), with all 4 MB of VRAM unchanged at the eleven scripted views. `tools/draw_inventory.py` lists what the frames ask of the hardware. The renderer core (`src/render/`, `patches/0156`) draws everything that does not go through the VU1 programs (logos, menus, text, the HUD's 2D parts, the minimap, movies) at any multiple of 640x448, progressive, beside the emulated picture (`MMPC_RENDERER=split`); the VU1 programs are next |

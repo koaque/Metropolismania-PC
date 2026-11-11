@@ -283,10 +283,11 @@ namespace mm
         }
     }
 
-    // Two static packets (at 0x1F69C0) that each draw a 640 x 224 picture held in the GS as 5 x 7 textured
-    // sprites of 128 x 32: a GS state header (A+D: 0x47, 0x14, 0x42, colour 0x60808080, 0x56), the 35 sprites
-    // (TEX0 from block 0x8000, the second picture 0x8C0 blocks on, then ST and XYZ2 of two corners) and a footer
-    // restoring the test and alpha state.
+    // Two static packets (at 0x1F69C0) that each draw one of the two 640 x 224 field buffers back over the frame as
+    // 5 x 7 textured sprites of 128 x 32, each sprite one tile of the buffer at its own place: a GS state header (A+D:
+    // TEST_1 0x5000F, TEX1_1 0 (nearest), ALPHA_1 (Cs - Cd) * FIX + Cd with FIX 0x50, colour 0x60808080, PRIM 0x56),
+    // the 35 sprites (TEX0 128 x 32 CT32 with TBW 2 from the buffer's block 0, the second buffer's 0x8C0, two pages a
+    // tile; then ST and XYZ2 of two corners) and a footer restoring the test and alpha state.
     void DmaList_InitPackets()
     {
         GuestPtr<uint32_t> p{globals::kFramePictures};
@@ -1118,7 +1119,8 @@ namespace mm
     PORT_FN(Camera_SetFogColour);
     PORT_FN(LightSet_UpdateByClock);
 
-    // The other frame's 640 x 224 picture packet (the one not drawn into this frame).
+    // The other field buffer's picture packet (the one not drawn into this frame): the city queues it while a talk
+    // overlay is up, so the previous field shows through at FIX 0x50 (62.5%).
     void DmaList_QueueOtherOverlay() { appendDmaCall(globals::kFramePictures + 0xBA0u * (globals::dmaListIndex.get() ^ 1u)); }
 
     PORT_FN(DmaList_QueueOtherOverlay);

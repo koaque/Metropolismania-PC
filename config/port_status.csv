@@ -1187,7 +1187,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00153E30,mm_PauseMenu_StateFormat,756,game,ui,verified,yes,1,14,"the pause menu's format state, a step machine on its step counter (waitFrames): 0 the card check (as in the wait state), 1 the card's status (4 still being checked: the ""Now checking memory card"" text; 3 goes on after resetting the save file; 2 message 5; else message 2), 2 waits for the card manager to settle, 3 formats the card (mm_SaveFile_Format: 2 failed, message 4; 1 done, back to the save state 6 with the manager reset; 0 still running, the ""Formatting memory card"" text alternating with the do-not-remove text every 16 frames of the blink counter)"
 0x00154130,mm_PauseMenu_StateWait,324,game,ui,verified,yes,1,12,"the pause menu's card check state: the card manager is stepped; when the card in the slot (cardPort) reports 2 the menu shows card message 5. Otherwise the main menu (mainMenu) takes its input: choice 1 or the cancel (-1) gives the pad focus back, resets the menu and goes to state 4 (the slot menu)"
 0x00154280,mm_PauseMenu_StateSlotSelect,1356,game,ui,verified,yes,2,17,"slot list and ""Do you wish to overwrite?"""
-0x001547D0,mm_PauseMenu_Reset,192,game,ui,ported,yes,3,6,back to the top menu
+0x001547D0,mm_PauseMenu_Reset,192,game,ui,verified,yes,3,6,back to the top menu
 0x00154890,mm_PauseMenu_Update,1804,game,ui,verified,yes,1,29,"pause menu state machine (Resume, Save, Quit ""Are you sure you want to quit?"")"
 0x00154FA0,mm_PauseMenu_dtor,172,game,ui,verified,yes,1,4,deletes its menus and the card manager
 0x00155050,mm_PauseMenu_ctor,76,game,ui,verified,no,1,1,"clears state, default name (0x1B73D0)"
@@ -1258,7 +1258,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0015BB60,mm_SaveFile_ResetState,8,game,save,verified,no,1,0,state +4 = 0
 0x0015BB70,mm_SaveFile_PollDone,12,game,save,verified,no,1,1,whether the queued request (request) is done
 0x0015BB80,mm_SaveFile_DeleteIconSys,64,game,save,verified,no,1,1,"(mc, dir) queues delete of icon.sys in directory `dir`"
-0x0015BBC0,mm_SaveFile_WriteIconSys,56,game,save,ported,yes,1,1,"(mc, port, title, result) starts writing icon.sys and the save description (mm_McSave_WriteIconSys on the manager's queue); the request is kept in `request`"
+0x0015BBC0,mm_SaveFile_WriteIconSys,56,game,save,verified,yes,1,1,"(mc, port, title, result) starts writing icon.sys and the save description (mm_McSave_WriteIconSys on the manager's queue); the request is kept in `request`"
 0x0015BC00,mm_SaveFile_PrepareDir,1052,game,save,verified,yes,2,13,"step machine: card info, mkdir/chdir, copies DATA\STATIC.ICO to STATIC.ICO"
 0x0015C020,mm_McManager_ResetState,8,game,save,verified,no,6,0,state +4 = 0
 0x0015C030,mm_McManager_PrepareNewSlot,108,game,save,verified,yes,1,1,"the first free slot of the card (8 per card; a slot is free when the scan found no entry for it) gets a new folder name (McManager_NewSaveName) and that name is the result; 0 when all are used. Both take the slot's number within the card, so a slot on card 1 names the folder of the same number on card 0, as the original does"
@@ -1545,7 +1545,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00175F70,mm_TalkPhoneFamily_Opening,68,game,talk,verified,no,0,2,"waits for the fade, fades again"
 0x00175FC0,mm_TalkPhoneFamily_Open,52,game,talk,verified,no,0,2,starts the fade and opens
 0x00176000,mm_TalkPhoneFamily_dtor,96,game,talk,verified,yes,0,2,vtable 0x1BD4A0
-0x00176060,mm_TalkPhoneFamily_ctor,88,game,talk,ported,yes,1,2,"(view, city, family) vtable 0x1BD4A0, family `family`"
+0x00176060,mm_TalkPhoneFamily_ctor,88,game,talk,verified,yes,1,2,"(view, city, family) vtable 0x1BD4A0, family `family`"
 0x001760C0,mm_TalkPhoneMember_Draw,92,game,talk,verified,yes,0,2,"the phone view of one family member, in its draw pass: the building and the member (mm_TalkView_DrawMember)"
 0x00176120,mm_TalkPhoneMember_Closed,64,game,talk,verified,no,0,1,"waits for the fade, then idle"
 0x00176160,mm_TalkPhoneMember_Closing,68,game,talk,verified,no,0,2,"waits for the fade, fades again"
@@ -1904,7 +1904,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00186310,mm_McQueue_Seek,152,game,save,verified,no,1,0,queues sceMcSeek (command 12); returns the request id
 0x001863B0,mm_McQueue_Write,152,game,save,ported,no,2,0,queues sceMcWrite (command 10)
 0x00186450,mm_McQueue_Read,152,game,save,verified,no,2,0,queues sceMcRead (command 9)
-0x001864F0,mm_McQueue_Delete,136,game,save,ported,no,1,0,queues sceMcDelete (command 8)
+0x001864F0,mm_McQueue_Delete,136,game,save,verified,no,1,0,queues sceMcDelete (command 8)
 0x00186580,mm_McQueue_Close,120,game,save,verified,no,3,0,queues sceMcClose (command 7)
 0x00186600,mm_McQueue_Open,152,game,save,verified,no,3,0,queues sceMcOpen (command 6)
 0x001866A0,mm_McQueue_Chdir,152,game,save,verified,no,2,0,queues sceMcChdir (command 5)
@@ -1932,7 +1932,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00187200,mm_DmaList_BeginScene,132,game,gfx,verified,no,1,0,rewinds the 0x8000-byte packet buffer (0x1BDCE4 -> 0x1BDCE8) and queues the default GS state
 0x00187290,mm_DmaList_KickFrame,220,game,gfx,verified,no,1,1,"appends the default GS state, then starts the current list on VIF1 (chain mode); the city's VU1/GS work happens under this kick"
 0x00187370,mm_DmaList_Free,92,game,gfx,verified,yes,1,1,frees both lists and the packet buffer
-0x001873D0,mm_DmaList_InitPackets,616,game,gfx,verified,no,1,0,builds two static packets at 0x1F69C0 that draw a 640 x 224 picture from GS block 0x8000 (+0x8C0) as 5 x 7 sprites of 128 x 32
+0x001873D0,mm_DmaList_InitPackets,616,game,gfx,verified,no,1,0,builds two static packets at 0x1F69C0 that draw a 640 x 224 field buffer (GS block 0 or 0x8C0) back over the frame as 5 x 7 sprites of 128 x 32
 0x00187640,mm_DmaList_Init,104,game,gfx,verified,yes,1,2,"allocates the two 64 KB lists and the 0x8000-byte packet buffer, then builds the overlay packets (0x1873D0)"
 0x001876B0,mm_Sound_StopAllPlaying,156,game,sound,verified,no,1,3,asks the driver for its status (0x18F200) and stops every voice whose bit is set in the two 16-bit masks at +4 and +8
 0x00187750,mm_Se_SetEnabled,196,game,sound,ported,no,3,4,"(enabled, resetVolumes) 0x1BDD20 = `enabled`; `enabled` == 0 stops all 16 + 15 effect voices; `resetVolumes` != 0 resets their volumes (0xFFF and 0x100)"

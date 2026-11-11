@@ -40,7 +40,7 @@ friendship changed. A is the person talked to.
 
 ## Functions
 
-322 functions (ported 4, verified 318). Blocks: 92 can reach a thread switch, 27 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+322 functions (ported 3, verified 319). Blocks: 92 can reach a thread switch, 27 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|

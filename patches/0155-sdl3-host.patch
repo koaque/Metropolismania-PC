@@ -1,0 +1,1304 @@
+Desktop host on SDL3 instead of raylib: window, presentation, keyboard and gamepads, audio output, debug UI. SDL3 (release-3.4.18, static) and miniz (3.0.2, the raw deflate raylib's CompressData gave game code) are fetched by CMake; imgui gets its own SDL3 and SDL GPU backends in place of rlImGui. include/runtime/ps2_host.h is the host's API: a window placed without focus (PS2X_WINDOW_POS), an SDL GPU device (Direct3D 12 or Vulkan on Windows, Metal on macOS; PS2X_GPU=d3d12|vulkan picks one), the display frame uploaded and blitted at its display aspect with nearest sampling as before, overlay and replacement hooks (the debug UI draws over the frame; a native renderer can draw the whole image), keyboard state by scancode, any gamepad SDL knows (in connection order), and an audio stream pulled by a callback. include/runtime/ps2_host_compat.h keeps the raylib names the pad and audio code was written against (KEY_*, GAMEPAD_*, IsKeyDown, Sound and Wave). The present mode is immediate (else mailbox) without PS2X_VSYNC=1, vsync with it; PS2X_PRESENT=free paces the window loop at 60 Hz by itself, as raylib's frame timer did. The Vita build keeps raylib. Checked in Metropolismania: all 4 MB of VRAM byte-identical to the raylib build at the eleven views of a scripted city camera run (and between two runs); explore autoplay at the same game speed on Direct3D 12 and Vulkan, a frame on its way 8 to 9 ms after the vertical blank on average; 89 s of 48 kHz audio delivered; the debug UI draws over the game.
+
+diff --git a/ps2xRuntime/CMakeLists.txt b/ps2xRuntime/CMakeLists.txt
+--- a/ps2xRuntime/CMakeLists.txt
++++ b/ps2xRuntime/CMakeLists.txt
+@@ -75,13 +75,37 @@ else()
+         set(PLATFORM "Android" CACHE STRING "" FORCE)
+     endif()
+ 
++    # The desktop host (window, GPU presentation, keyboard and gamepads, audio output) is SDL3, built static from a pinned
++    # release, in place of raylib. miniz gives the raw deflate that raylib's CompressData/DecompressData gave game code.
++    set(SDL_SHARED OFF CACHE BOOL "" FORCE)
++    set(SDL_STATIC ON CACHE BOOL "" FORCE)
++    set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
++    set(SDL_TESTS OFF CACHE BOOL "" FORCE)
++    set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
+     FetchContent_Declare(
+-        raylib
+-        GIT_REPOSITORY "https://github.com/raysan5/raylib.git"
+-        GIT_TAG "5.5" # we will migrate to 4.2.0 later, trust me it will be better
++        SDL3
++        GIT_REPOSITORY "https://github.com/libsdl-org/SDL.git"
++        GIT_TAG "release-3.4.18"
++        GIT_SHALLOW TRUE
+         GIT_PROGRESS TRUE
+     )
+-    FetchContent_MakeAvailable(raylib)
++    FetchContent_MakeAvailable(SDL3)
++
++    set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
++    set(BUILD_FUZZERS OFF CACHE BOOL "" FORCE)
++    set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
++    set(INSTALL_PROJECT OFF CACHE BOOL "" FORCE)
++    FetchContent_Declare(
++        miniz
++        GIT_REPOSITORY "https://github.com/richgel999/miniz.git"
++        GIT_TAG "3.0.2"
++        GIT_SHALLOW TRUE
++    )
++    # miniz 3.0.2 still declares a CMake minimum below 3.5, which CMake 4 refuses without this.
++    set(PS2X_SAVED_POLICY_VERSION_MINIMUM "${CMAKE_POLICY_VERSION_MINIMUM}")
++    set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
++    FetchContent_MakeAvailable(miniz)
++    set(CMAKE_POLICY_VERSION_MINIMUM "${PS2X_SAVED_POLICY_VERSION_MINIMUM}")
+ 
+     if(PS2X_ENABLE_DEBUG_UI AND NOT PS2X_IS_ANDROID)
+         FetchContent_Declare(
+@@ -98,34 +122,18 @@ else()
+ 
+         set(PS2X_IMGUI_SOURCE_DIR "${imgui_SOURCE_DIR}")
+ 
++        # imgui with its own SDL3 (events) and SDL GPU (drawing) backends, in place of rlImGui.
+         add_library(imgui STATIC
+             "${PS2X_IMGUI_SOURCE_DIR}/imgui.cpp"
+             "${PS2X_IMGUI_SOURCE_DIR}/imgui_draw.cpp"
+             "${PS2X_IMGUI_SOURCE_DIR}/imgui_tables.cpp"
+             "${PS2X_IMGUI_SOURCE_DIR}/imgui_widgets.cpp"
+             "${PS2X_IMGUI_SOURCE_DIR}/imgui_demo.cpp"
++            "${PS2X_IMGUI_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp"
++            "${PS2X_IMGUI_SOURCE_DIR}/backends/imgui_impl_sdlgpu3.cpp"
+         )
+-        target_include_directories(imgui PUBLIC "${PS2X_IMGUI_SOURCE_DIR}")
+-
+-        FetchContent_Declare(
+-            rlImGui
+-            GIT_REPOSITORY https://github.com/raylib-extras/rlImGui.git
+-            GIT_TAG "Raylib_5_5"
+-            GIT_SHALLOW TRUE
+-        )
+-        FetchContent_GetProperties(rlImGui)
+-
+-        if(NOT rlimgui_POPULATED)
+-            FetchContent_Populate(rlImGui)
+-        endif()
+-
+-        set(PS2X_RLIMGUI_SOURCE_DIR "${rlimgui_SOURCE_DIR}")
+-
+-        add_library(rlImGui STATIC
+-            "${PS2X_RLIMGUI_SOURCE_DIR}/rlImGui.cpp"
+-        )
+-        target_include_directories(rlImGui PUBLIC "${PS2X_RLIMGUI_SOURCE_DIR}")
+-        target_link_libraries(rlImGui PUBLIC raylib imgui)
++        target_include_directories(imgui PUBLIC "${PS2X_IMGUI_SOURCE_DIR}" "${PS2X_IMGUI_SOURCE_DIR}/backends")
++        target_link_libraries(imgui PUBLIC SDL3::SDL3-static)
+     endif()
+ endif()
+ 
+@@ -235,7 +243,7 @@ if(PS2X_IS_VITA)
+         pthread
+     )
+ else()
+-    target_link_libraries(ps2_host_backend INTERFACE raylib)
++    target_link_libraries(ps2_host_backend INTERFACE SDL3::SDL3-static miniz)
+ 
+     if(PS2X_IS_ANDROID)
+         target_link_libraries(ps2_host_backend INTERFACE log android)
+@@ -389,6 +397,7 @@ add_library(ps2_runtime STATIC
+     src/lib/ps2_memory.cpp
+     src/lib/ps2_pad.cpp
+     src/lib/ps2_host_input.cpp
++    src/lib/ps2_host_sdl.cpp
+     src/lib/ps2_frame_skip.cpp
+     src/lib/ps2_rom_device.cpp
+     src/lib/ps2_vfs.cpp
+@@ -528,7 +537,7 @@ if(PS2X_ENABLE_DEBUG_UI AND NOT PS2X_IS_VITA AND NOT PS2X_IS_ANDROID)
+     target_sources(ps2EntryRunner PRIVATE
+         src/lib/ps2_debug_panel.cpp
+     )
+-    target_link_libraries(ps2EntryRunner PRIVATE rlImGui imgui)
++    target_link_libraries(ps2EntryRunner PRIVATE imgui)
+     target_compile_definitions(ps2EntryRunner PRIVATE PS2X_ENABLE_DEBUG_UI=1)
+ endif()
+ 
+diff --git a/ps2xRuntime/include/ps2_host_backend.h b/ps2xRuntime/include/ps2_host_backend.h
+--- a/ps2xRuntime/include/ps2_host_backend.h
++++ b/ps2xRuntime/include/ps2_host_backend.h
+@@ -1,3 +1,9 @@
+ #pragma once
+ 
++#if defined(PLATFORM_VITA)
+ #include "raylib.h"
++#else
++// The desktop host is SDL3 (runtime/ps2_host.h); the raylib names the runtime's pad and audio code uses come from here.
++#include "runtime/ps2_host.h"
++#include "runtime/ps2_host_compat.h"
++#endif
+diff --git a/ps2xRuntime/include/runtime/ps2_host.h b/ps2xRuntime/include/runtime/ps2_host.h
+new file mode 100644
+--- /dev/null
++++ b/ps2xRuntime/include/runtime/ps2_host.h
+@@ -0,0 +1,89 @@
++#pragma once
++
++// The desktop host: window, GPU device and presentation, keyboard and gamepads, audio output. SDL3 underneath (SDL's GPU API,
++// which runs on Direct3D 12 or Vulkan on Windows and on Metal on macOS). One host per process; everything here is called from
++// the window thread (run()'s loop) unless a function says otherwise.
++
++#include <cstdint>
++
++struct SDL_Window;
++struct SDL_GPUDevice;
++struct SDL_GPUCommandBuffer;
++struct SDL_GPURenderPass;
++struct SDL_GPUTexture;
++union SDL_Event;
++
++namespace ps2x::host
++{
++    struct WindowOptions
++    {
++        const char *title = "PS2";
++        int width = 640;
++        int height = 480;
++        bool headless = false;   // no window shown, no GPU device, no audio (tools that run the game without playing it)
++        bool place = false;      // open at (x, y) without taking focus
++        int x = 0;
++        int y = 0;
++        bool waitForMonitor = false; // present with vsync (FIFO) instead of at once
++    };
++
++    // Creates the window and the GPU device (PS2X_GPU=d3d12|vulkan|metal picks the backend; SDL's choice otherwise).
++    bool init(const WindowOptions &options);
++    void shutdown();
++    bool windowReady();
++    bool headless();
++
++    SDL_Window *window();
++    SDL_GPUDevice *device();
++    // The window's native handle (HWND on Windows), or null.
++    void *nativeWindowHandle();
++    // The refresh rate of the monitor the window is on, 0 when unknown.
++    float monitorRefreshRate();
++
++    // Processes pending window and input events. Returns false once the window was asked to close.
++    bool pollEvents();
++    bool closeRequested();
++
++    // A function that sees every event first (the debug UI); it returns true to keep the event from the game's input.
++    using EventHook = bool (*)(void *user, const SDL_Event *event);
++    void setEventHook(EventHook hook, void *user);
++
++    // The frame to show: RGBA8, `width` x `height` pixels, rows of `stride` bytes. Copied; the GPU upload happens at present().
++    void setFrame(const uint8_t *rgba, uint32_t width, uint32_t height, uint32_t stride);
++
++    // Drawing over the frame (the debug UI) or in its place (a native renderer). `prepare` runs before any render pass (uploads),
++    // `draw` inside a pass on the swapchain image after the frame was put there. A replacement draws the whole swapchain image
++    // itself and the frame is not blitted.
++    struct Overlay
++    {
++        void (*prepare)(void *user, SDL_GPUCommandBuffer *commands) = nullptr;
++        void (*draw)(void *user, SDL_GPUCommandBuffer *commands, SDL_GPURenderPass *pass) = nullptr;
++        void *user = nullptr;
++    };
++    void setOverlay(const Overlay &overlay);
++    using Replacement = void (*)(void *user, SDL_GPUCommandBuffer *commands, SDL_GPUTexture *swapchain, uint32_t width,
++                                 uint32_t height);
++    void setReplacement(Replacement replacement, void *user);
++
++    // Shows the frame: the part (0, 0, sourceWidth, sourceHeight) of the last setFrame() scaled to fill (x, y, w, h) of the
++    // window's drawable area with nearest sampling, the rest black, then the overlay. Waits for a swapchain image (with vsync
++    // on, for the monitor). Does nothing while the window is minimized.
++    void present(float sourceWidth, float sourceHeight, float x, float y, float w, float h);
++    // The window's drawable size in pixels.
++    void drawableSize(int &width, int &height);
++
++    // Keyboard state by SDL scancode, and whether a key went down since the previous pollEvents().
++    bool keyDown(int scancode);
++    bool keyPressed(int scancode);
++
++    // Gamepads in the order they were connected (any pad SDL knows: XInput, DualShock, DualSense, Switch, ...).
++    int gamepadCount();
++    bool gamepadButton(int index, int sdlButton);
++    float gamepadAxis(int index, int sdlAxis); // -1..1 for sticks, 0..1 for triggers
++
++    // Audio output: `callback` is called from SDL's audio thread to fill `frames` stereo 16-bit frames at `rate`.
++    using AudioCallback = void (*)(int16_t *samples, uint32_t frames);
++    bool openAudio(int rate, AudioCallback callback);
++    void closeAudio();
++    bool audioReady();
++}
+diff --git a/ps2xRuntime/include/runtime/ps2_host_compat.h b/ps2xRuntime/include/runtime/ps2_host_compat.h
+new file mode 100644
+--- /dev/null
++++ b/ps2xRuntime/include/runtime/ps2_host_compat.h
+@@ -0,0 +1,106 @@
++#pragma once
++
++// The few raylib names the runtime's pad and audio code was written against, kept so that code reads as before, now answered
++// by the SDL3 host (runtime/ps2_host.h): key and gamepad state, the window's state, and short sounds played from WAV data.
++
++#include <SDL3/SDL_gamepad.h>
++#include <SDL3/SDL_scancode.h>
++
++#include <cstdint>
++
++// Keys, as SDL scancodes.
++enum : int
++{
++    KEY_A = SDL_SCANCODE_A,
++    KEY_C = SDL_SCANCODE_C,
++    KEY_D = SDL_SCANCODE_D,
++    KEY_E = SDL_SCANCODE_E,
++    KEY_Q = SDL_SCANCODE_Q,
++    KEY_S = SDL_SCANCODE_S,
++    KEY_V = SDL_SCANCODE_V,
++    KEY_W = SDL_SCANCODE_W,
++    KEY_X = SDL_SCANCODE_X,
++    KEY_Z = SDL_SCANCODE_Z,
++    KEY_ONE = SDL_SCANCODE_1,
++    KEY_THREE = SDL_SCANCODE_3,
++    KEY_UP = SDL_SCANCODE_UP,
++    KEY_DOWN = SDL_SCANCODE_DOWN,
++    KEY_LEFT = SDL_SCANCODE_LEFT,
++    KEY_RIGHT = SDL_SCANCODE_RIGHT,
++    KEY_ENTER = SDL_SCANCODE_RETURN,
++    KEY_ESCAPE = SDL_SCANCODE_ESCAPE,
++    KEY_SPACE = SDL_SCANCODE_SPACE,
++    KEY_TAB = SDL_SCANCODE_TAB,
++    KEY_LEFT_SHIFT = SDL_SCANCODE_LSHIFT,
++    KEY_RIGHT_SHIFT = SDL_SCANCODE_RSHIFT,
++    KEY_LEFT_CONTROL = SDL_SCANCODE_LCTRL,
++    KEY_RIGHT_CONTROL = SDL_SCANCODE_RCTRL,
++    KEY_KP_0 = SDL_SCANCODE_KP_0,
++    KEY_KP_1 = SDL_SCANCODE_KP_1,
++    KEY_F1 = SDL_SCANCODE_F1,
++};
++
++// Gamepad buttons, as SDL gamepad buttons (positions: south is Cross on a PlayStation pad, A on an Xbox pad). The two
++// triggers are axes in SDL; they read as buttons past half way.
++enum : int
++{
++    GAMEPAD_BUTTON_LEFT_FACE_UP = SDL_GAMEPAD_BUTTON_DPAD_UP,
++    GAMEPAD_BUTTON_LEFT_FACE_DOWN = SDL_GAMEPAD_BUTTON_DPAD_DOWN,
++    GAMEPAD_BUTTON_LEFT_FACE_LEFT = SDL_GAMEPAD_BUTTON_DPAD_LEFT,
++    GAMEPAD_BUTTON_LEFT_FACE_RIGHT = SDL_GAMEPAD_BUTTON_DPAD_RIGHT,
++    GAMEPAD_BUTTON_RIGHT_FACE_DOWN = SDL_GAMEPAD_BUTTON_SOUTH,
++    GAMEPAD_BUTTON_RIGHT_FACE_RIGHT = SDL_GAMEPAD_BUTTON_EAST,
++    GAMEPAD_BUTTON_RIGHT_FACE_LEFT = SDL_GAMEPAD_BUTTON_WEST,
++    GAMEPAD_BUTTON_RIGHT_FACE_UP = SDL_GAMEPAD_BUTTON_NORTH,
++    GAMEPAD_BUTTON_LEFT_TRIGGER_1 = SDL_GAMEPAD_BUTTON_LEFT_SHOULDER,
++    GAMEPAD_BUTTON_RIGHT_TRIGGER_1 = SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER,
++    GAMEPAD_BUTTON_MIDDLE_LEFT = SDL_GAMEPAD_BUTTON_BACK,
++    GAMEPAD_BUTTON_MIDDLE_RIGHT = SDL_GAMEPAD_BUTTON_START,
++    GAMEPAD_BUTTON_LEFT_THUMB = SDL_GAMEPAD_BUTTON_LEFT_STICK,
++    GAMEPAD_BUTTON_RIGHT_THUMB = SDL_GAMEPAD_BUTTON_RIGHT_STICK,
++    GAMEPAD_BUTTON_LEFT_TRIGGER_2 = 1000 + SDL_GAMEPAD_AXIS_LEFT_TRIGGER,
++    GAMEPAD_BUTTON_RIGHT_TRIGGER_2 = 1000 + SDL_GAMEPAD_AXIS_RIGHT_TRIGGER,
++};
++
++enum : int
++{
++    GAMEPAD_AXIS_LEFT_X = SDL_GAMEPAD_AXIS_LEFTX,
++    GAMEPAD_AXIS_LEFT_Y = SDL_GAMEPAD_AXIS_LEFTY,
++    GAMEPAD_AXIS_RIGHT_X = SDL_GAMEPAD_AXIS_RIGHTX,
++    GAMEPAD_AXIS_RIGHT_Y = SDL_GAMEPAD_AXIS_RIGHTY,
++};
++
++bool IsKeyDown(int key);
++bool IsKeyPressed(int key);
++bool IsGamepadAvailable(int gamepad);
++bool IsGamepadButtonDown(int gamepad, int button);
++float GetGamepadAxisMovement(int gamepad, int axis);
++bool IsWindowReady();
++void *GetWindowHandle();
++bool IsAudioDeviceReady();
++
++// Short sounds: a WAV file in memory, played on the default output device.
++struct Wave
++{
++    unsigned int frameCount = 0; // sample frames (one sample per channel)
++    void *data = nullptr;
++    uint32_t size = 0;
++    int format = 0;
++    int channels = 0;
++    int rate = 0;
++};
++
++struct Sound
++{
++    void *stream = nullptr; // SDL_AudioStream
++};
++
++Wave LoadWaveFromMemory(const char *fileType, const unsigned char *data, int size);
++void UnloadWave(Wave wave);
++Sound LoadSoundFromWave(Wave wave);
++void UnloadSound(Sound sound);
++void PlaySound(Sound sound);
++void StopSound(Sound sound);
++bool IsSoundPlaying(Sound sound);
++void SetSoundPitch(Sound sound, float pitch);
++void SetSoundVolume(Sound sound, float volume);
+diff --git a/ps2xRuntime/src/lib/ps2_host_sdl.cpp b/ps2xRuntime/src/lib/ps2_host_sdl.cpp
+new file mode 100644
+--- /dev/null
++++ b/ps2xRuntime/src/lib/ps2_host_sdl.cpp
+@@ -0,0 +1,595 @@
++// The desktop host on SDL3: window, GPU device and presentation (SDL's GPU API), keyboard and gamepads, audio output.
++// See runtime/ps2_host.h.
++
++#include "runtime/ps2_host.h"
++#include "runtime/ps2_host_compat.h"
++
++#include <SDL3/SDL.h>
++
++#include <algorithm>
++#include <array>
++#include <atomic>
++#include <cstdlib>
++#include <cstring>
++#include <iostream>
++#include <mutex>
++#include <vector>
++
++namespace ps2x::host
++{
++    namespace
++    {
++        struct State
++        {
++            SDL_Window *window = nullptr;
++            SDL_GPUDevice *device = nullptr;
++            bool headless = false;
++            bool closeRequested = false;
++
++            EventHook eventHook = nullptr;
++            void *eventUser = nullptr;
++            Overlay overlay;
++            Replacement replacement = nullptr;
++            void *replacementUser = nullptr;
++
++            std::mutex frameMutex; // setFrame may come from another thread than present
++            std::vector<uint8_t> frame;
++            uint32_t frameWidth = 0;
++            uint32_t frameHeight = 0;
++            bool frameDirty = false;
++            SDL_GPUTexture *frameTexture = nullptr;
++            uint32_t textureWidth = 0;
++            uint32_t textureHeight = 0;
++            SDL_GPUTransferBuffer *upload = nullptr;
++            uint32_t uploadSize = 0;
++
++            // Keyboard: written by the window thread, read by the game thread at its pad read.
++            std::array<std::atomic<uint8_t>, SDL_SCANCODE_COUNT> keysNow{};
++            std::array<uint8_t, SDL_SCANCODE_COUNT> keysBefore{};
++
++            std::mutex padMutex;
++            std::vector<SDL_Gamepad *> pads;
++
++            SDL_AudioStream *audio = nullptr;
++            AudioCallback audioCallback = nullptr;
++            std::vector<int16_t> audioScratch;
++        };
++
++        State &state()
++        {
++            static State s;
++            return s;
++        }
++
++        const char *backendName()
++        {
++            const char *value = std::getenv("PS2X_GPU");
++            if (value == nullptr || *value == '\0')
++                return nullptr;
++            if (std::strcmp(value, "d3d12") == 0)
++                return "direct3d12";
++            return value; // "vulkan", "metal", or SDL's own names
++        }
++
++        const char *presentModeName(SDL_GPUPresentMode mode)
++        {
++            switch (mode)
++            {
++            case SDL_GPU_PRESENTMODE_VSYNC:
++                return "vsync";
++            case SDL_GPU_PRESENTMODE_IMMEDIATE:
++                return "immediate";
++            case SDL_GPU_PRESENTMODE_MAILBOX:
++                return "mailbox";
++            }
++            return "?";
++        }
++
++        void SDLCALL feedAudio(void *, SDL_AudioStream *stream, int additional, int)
++        {
++            State &s = state();
++            if (s.audioCallback == nullptr || additional <= 0)
++                return;
++            const uint32_t frames = static_cast<uint32_t>(additional) / 4u;
++            if (frames == 0u)
++                return;
++            s.audioScratch.resize(static_cast<size_t>(frames) * 2u);
++            s.audioCallback(s.audioScratch.data(), frames);
++            SDL_PutAudioStreamData(stream, s.audioScratch.data(), static_cast<int>(frames * 4u));
++        }
++
++        bool ensureFrameTexture(State &s, uint32_t width, uint32_t height)
++        {
++            if (s.frameTexture != nullptr && s.textureWidth == width && s.textureHeight == height)
++                return true;
++            if (s.frameTexture != nullptr)
++                SDL_ReleaseGPUTexture(s.device, s.frameTexture);
++            SDL_GPUTextureCreateInfo info{};
++            info.type = SDL_GPU_TEXTURETYPE_2D;
++            info.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
++            info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
++            info.width = width;
++            info.height = height;
++            info.layer_count_or_depth = 1;
++            info.num_levels = 1;
++            s.frameTexture = SDL_CreateGPUTexture(s.device, &info);
++            s.textureWidth = s.frameTexture != nullptr ? width : 0u;
++            s.textureHeight = s.frameTexture != nullptr ? height : 0u;
++            return s.frameTexture != nullptr;
++        }
++
++        // Copies the pending frame into the GPU texture (a copy pass on `commands`).
++        void uploadFrame(State &s, SDL_GPUCommandBuffer *commands)
++        {
++            std::lock_guard<std::mutex> lock(s.frameMutex);
++            if (!s.frameDirty || s.frameWidth == 0u || s.frameHeight == 0u)
++                return;
++            s.frameDirty = false;
++            if (!ensureFrameTexture(s, s.frameWidth, s.frameHeight))
++                return;
++            const uint32_t bytes = s.frameWidth * s.frameHeight * 4u;
++            if (s.upload == nullptr || s.uploadSize < bytes)
++            {
++                if (s.upload != nullptr)
++                    SDL_ReleaseGPUTransferBuffer(s.device, s.upload);
++                SDL_GPUTransferBufferCreateInfo info{};
++                info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
++                info.size = bytes;
++                s.upload = SDL_CreateGPUTransferBuffer(s.device, &info);
++                s.uploadSize = s.upload != nullptr ? bytes : 0u;
++                if (s.upload == nullptr)
++                    return;
++            }
++            void *mapped = SDL_MapGPUTransferBuffer(s.device, s.upload, true);
++            if (mapped == nullptr)
++                return;
++            std::memcpy(mapped, s.frame.data(), bytes);
++            SDL_UnmapGPUTransferBuffer(s.device, s.upload);
++
++            SDL_GPUCopyPass *copy = SDL_BeginGPUCopyPass(commands);
++            SDL_GPUTextureTransferInfo source{};
++            source.transfer_buffer = s.upload;
++            source.pixels_per_row = s.frameWidth;
++            source.rows_per_layer = s.frameHeight;
++            SDL_GPUTextureRegion destination{};
++            destination.texture = s.frameTexture;
++            destination.w = s.frameWidth;
++            destination.h = s.frameHeight;
++            destination.d = 1;
++            SDL_UploadToGPUTexture(copy, &source, &destination, true);
++            SDL_EndGPUCopyPass(copy);
++        }
++    }
++
++    bool init(const WindowOptions &options)
++    {
++        State &s = state();
++        s.headless = options.headless;
++        // Pads keep working while the window is in the background (test runs are shown unfocused).
++        SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
++        SDL_SetHint(SDL_HINT_AUDIO_DEVICE_SAMPLE_FRAMES, "1024");
++        if (options.place)
++            SDL_SetHint(SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN, "0");
++        const SDL_InitFlags flags = options.headless ? SDL_INIT_EVENTS : (SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD);
++        if (!SDL_Init(flags))
++        {
++            std::cerr << "[host] SDL_Init failed: " << SDL_GetError() << std::endl;
++            return false;
++        }
++        if (options.headless)
++            return true;
++
++        s.window = SDL_CreateWindow(options.title, options.width, options.height, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN);
++        if (s.window == nullptr)
++        {
++            std::cerr << "[host] SDL_CreateWindow failed: " << SDL_GetError() << std::endl;
++            return false;
++        }
++        if (options.place)
++            SDL_SetWindowPosition(s.window, options.x, options.y);
++
++        s.device = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL | SDL_GPU_SHADERFORMAT_MSL, false,
++                                       backendName());
++        if (s.device == nullptr || !SDL_ClaimWindowForGPUDevice(s.device, s.window))
++        {
++            std::cerr << "[host] SDL GPU device failed: " << SDL_GetError() << std::endl;
++            return false;
++        }
++        // Without PS2X_VSYNC=1 a frame goes out at once (immediate, else mailbox); with it, at the monitor's refresh.
++        SDL_GPUPresentMode mode = SDL_GPU_PRESENTMODE_VSYNC;
++        if (!options.waitForMonitor)
++        {
++            if (SDL_WindowSupportsGPUPresentMode(s.device, s.window, SDL_GPU_PRESENTMODE_IMMEDIATE))
++                mode = SDL_GPU_PRESENTMODE_IMMEDIATE;
++            else if (SDL_WindowSupportsGPUPresentMode(s.device, s.window, SDL_GPU_PRESENTMODE_MAILBOX))
++                mode = SDL_GPU_PRESENTMODE_MAILBOX;
++        }
++        SDL_SetGPUSwapchainParameters(s.device, s.window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR, mode);
++        std::cerr << "[host] SDL " << SDL_GetVersion() / 1000000 << "." << (SDL_GetVersion() / 1000) % 1000 << "."
++                  << SDL_GetVersion() % 1000 << ", GPU " << SDL_GetGPUDeviceDriver(s.device) << ", present "
++                  << presentModeName(mode) << std::endl;
++        SDL_ShowWindow(s.window);
++        return true;
++    }
++
++    void shutdown()
++    {
++        State &s = state();
++        closeAudio();
++        {
++            std::lock_guard<std::mutex> lock(s.padMutex);
++            for (SDL_Gamepad *pad : s.pads)
++                SDL_CloseGamepad(pad);
++            s.pads.clear();
++        }
++        if (s.device != nullptr)
++        {
++            SDL_WaitForGPUIdle(s.device);
++            if (s.frameTexture != nullptr)
++                SDL_ReleaseGPUTexture(s.device, s.frameTexture);
++            if (s.upload != nullptr)
++                SDL_ReleaseGPUTransferBuffer(s.device, s.upload);
++            s.frameTexture = nullptr;
++            s.upload = nullptr;
++            if (s.window != nullptr)
++                SDL_ReleaseWindowFromGPUDevice(s.device, s.window);
++            SDL_DestroyGPUDevice(s.device);
++            s.device = nullptr;
++        }
++        if (s.window != nullptr)
++        {
++            SDL_DestroyWindow(s.window);
++            s.window = nullptr;
++        }
++        SDL_Quit();
++    }
++
++    bool windowReady() { return state().window != nullptr; }
++    bool headless() { return state().headless; }
++    SDL_Window *window() { return state().window; }
++    SDL_GPUDevice *device() { return state().device; }
++
++    void *nativeWindowHandle()
++    {
++        State &s = state();
++        if (s.window == nullptr)
++            return nullptr;
++        return SDL_GetPointerProperty(SDL_GetWindowProperties(s.window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
++    }
++
++    float monitorRefreshRate()
++    {
++        State &s = state();
++        if (s.window == nullptr)
++            return 0.0f;
++        const SDL_DisplayMode *mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(s.window));
++        return mode != nullptr ? mode->refresh_rate : 0.0f;
++    }
++
++    bool pollEvents()
++    {
++        State &s = state();
++        for (size_t i = 0; i < s.keysBefore.size(); ++i)
++            s.keysBefore[i] = s.keysNow[i].load(std::memory_order_relaxed);
++        SDL_Event event;
++        while (SDL_PollEvent(&event))
++        {
++            if (s.eventHook != nullptr)
++                s.eventHook(s.eventUser, &event);
++            switch (event.type)
++            {
++            case SDL_EVENT_QUIT:
++            case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
++                s.closeRequested = true;
++                break;
++            case SDL_EVENT_GAMEPAD_ADDED:
++                if (SDL_Gamepad *pad = SDL_OpenGamepad(event.gdevice.which))
++                {
++                    std::lock_guard<std::mutex> lock(s.padMutex);
++                    s.pads.push_back(pad);
++                    std::cerr << "[host] gamepad connected: " << (SDL_GetGamepadName(pad) ? SDL_GetGamepadName(pad) : "?") << std::endl;
++                }
++                break;
++            case SDL_EVENT_GAMEPAD_REMOVED:
++            {
++                std::lock_guard<std::mutex> lock(s.padMutex);
++                for (auto it = s.pads.begin(); it != s.pads.end(); ++it)
++                {
++                    if (SDL_GetGamepadID(*it) == event.gdevice.which)
++                    {
++                        SDL_CloseGamepad(*it);
++                        s.pads.erase(it);
++                        break;
++                    }
++                }
++                break;
++            }
++            default:
++                break;
++            }
++        }
++        int count = 0;
++        const bool *keys = SDL_GetKeyboardState(&count);
++        for (int i = 0; i < count && i < static_cast<int>(s.keysNow.size()); ++i)
++            s.keysNow[static_cast<size_t>(i)].store(keys[i] ? 1u : 0u, std::memory_order_relaxed);
++        return !s.closeRequested;
++    }
++
++    bool closeRequested() { return state().closeRequested; }
++
++    void setEventHook(EventHook hook, void *user)
++    {
++        state().eventHook = hook;
++        state().eventUser = user;
++    }
++
++    void setFrame(const uint8_t *rgba, uint32_t width, uint32_t height, uint32_t stride)
++    {
++        State &s = state();
++        std::lock_guard<std::mutex> lock(s.frameMutex);
++        s.frame.resize(static_cast<size_t>(width) * height * 4u);
++        for (uint32_t y = 0; y < height; ++y)
++            std::memcpy(s.frame.data() + static_cast<size_t>(y) * width * 4u, rgba + static_cast<size_t>(y) * stride,
++                        static_cast<size_t>(width) * 4u);
++        s.frameWidth = width;
++        s.frameHeight = height;
++        s.frameDirty = true;
++    }
++
++    void setOverlay(const Overlay &overlay) { state().overlay = overlay; }
++
++    void setReplacement(Replacement replacement, void *user)
++    {
++        state().replacement = replacement;
++        state().replacementUser = user;
++    }
++
++    void drawableSize(int &width, int &height)
++    {
++        State &s = state();
++        width = height = 0;
++        if (s.window != nullptr)
++            SDL_GetWindowSizeInPixels(s.window, &width, &height);
++    }
++
++    void present(float sourceWidth, float sourceHeight, float x, float y, float w, float h)
++    {
++        State &s = state();
++        if (s.device == nullptr || s.window == nullptr)
++            return;
++        SDL_GPUCommandBuffer *commands = SDL_AcquireGPUCommandBuffer(s.device);
++        if (commands == nullptr)
++            return;
++        if (s.replacement == nullptr)
++            uploadFrame(s, commands);
++        if (s.overlay.prepare != nullptr)
++            s.overlay.prepare(s.overlay.user, commands);
++
++        SDL_GPUTexture *swapchain = nullptr;
++        Uint32 swapWidth = 0, swapHeight = 0;
++        if (!SDL_WaitAndAcquireGPUSwapchainTexture(commands, s.window, &swapchain, &swapWidth, &swapHeight) || swapchain == nullptr)
++        {
++            SDL_SubmitGPUCommandBuffer(commands); // minimized: nothing to draw into
++            return;
++        }
++
++        if (s.replacement != nullptr)
++            s.replacement(s.replacementUser, commands, swapchain, swapWidth, swapHeight);
++        else if (s.frameTexture != nullptr)
++        {
++            const float clampedWidth = std::clamp(sourceWidth, 1.0f, static_cast<float>(s.textureWidth));
++            const float clampedHeight = std::clamp(sourceHeight, 1.0f, static_cast<float>(s.textureHeight));
++            const float left = std::clamp(x, 0.0f, static_cast<float>(swapWidth));
++            const float top = std::clamp(y, 0.0f, static_cast<float>(swapHeight));
++            SDL_GPUBlitInfo blit{};
++            blit.source.texture = s.frameTexture;
++            blit.source.w = static_cast<Uint32>(clampedWidth);
++            blit.source.h = static_cast<Uint32>(clampedHeight);
++            blit.destination.texture = swapchain;
++            blit.destination.x = static_cast<Uint32>(left);
++            blit.destination.y = static_cast<Uint32>(top);
++            blit.destination.w = static_cast<Uint32>(std::clamp(w, 1.0f, static_cast<float>(swapWidth) - left));
++            blit.destination.h = static_cast<Uint32>(std::clamp(h, 1.0f, static_cast<float>(swapHeight) - top));
++            blit.load_op = SDL_GPU_LOADOP_CLEAR;
++            blit.clear_color = SDL_FColor{0.0f, 0.0f, 0.0f, 1.0f};
++            blit.filter = SDL_GPU_FILTER_NEAREST;
++            SDL_BlitGPUTexture(commands, &blit);
++        }
++
++        SDL_GPUColorTargetInfo target{};
++        target.texture = swapchain;
++        target.load_op = (s.replacement == nullptr && s.frameTexture == nullptr) ? SDL_GPU_LOADOP_CLEAR : SDL_GPU_LOADOP_LOAD;
++        target.clear_color = SDL_FColor{0.0f, 0.0f, 0.0f, 1.0f};
++        target.store_op = SDL_GPU_STOREOP_STORE;
++        if (s.overlay.draw != nullptr || target.load_op == SDL_GPU_LOADOP_CLEAR)
++        {
++            SDL_GPURenderPass *pass = SDL_BeginGPURenderPass(commands, &target, 1, nullptr);
++            if (s.overlay.draw != nullptr)
++                s.overlay.draw(s.overlay.user, commands, pass);
++            SDL_EndGPURenderPass(pass);
++        }
++        SDL_SubmitGPUCommandBuffer(commands);
++    }
++
++    bool keyDown(int scancode)
++    {
++        State &s = state();
++        return scancode > 0 && scancode < static_cast<int>(s.keysNow.size()) &&
++               s.keysNow[static_cast<size_t>(scancode)].load(std::memory_order_relaxed) != 0u;
++    }
++
++    bool keyPressed(int scancode)
++    {
++        State &s = state();
++        return keyDown(scancode) && s.keysBefore[static_cast<size_t>(scancode)] == 0u;
++    }
++
++    int gamepadCount()
++    {
++        State &s = state();
++        std::lock_guard<std::mutex> lock(s.padMutex);
++        return static_cast<int>(s.pads.size());
++    }
++
++    bool gamepadButton(int index, int sdlButton)
++    {
++        State &s = state();
++        std::lock_guard<std::mutex> lock(s.padMutex);
++        if (index < 0 || index >= static_cast<int>(s.pads.size()))
++            return false;
++        return SDL_GetGamepadButton(s.pads[static_cast<size_t>(index)], static_cast<SDL_GamepadButton>(sdlButton));
++    }
++
++    float gamepadAxis(int index, int sdlAxis)
++    {
++        State &s = state();
++        std::lock_guard<std::mutex> lock(s.padMutex);
++        if (index < 0 || index >= static_cast<int>(s.pads.size()))
++            return 0.0f;
++        const Sint16 value = SDL_GetGamepadAxis(s.pads[static_cast<size_t>(index)], static_cast<SDL_GamepadAxis>(sdlAxis));
++        return std::clamp(static_cast<float>(value) / 32767.0f, -1.0f, 1.0f);
++    }
++
++    bool openAudio(int rate, AudioCallback callback)
++    {
++        State &s = state();
++        if (s.headless || s.audio != nullptr)
++            return s.audio != nullptr;
++        SDL_AudioSpec spec{};
++        spec.format = SDL_AUDIO_S16LE;
++        spec.channels = 2;
++        spec.freq = rate;
++        s.audioCallback = callback;
++        s.audio = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, feedAudio, nullptr);
++        if (s.audio == nullptr)
++        {
++            std::cerr << "[host] audio device failed: " << SDL_GetError() << std::endl;
++            s.audioCallback = nullptr;
++            return false;
++        }
++        SDL_ResumeAudioStreamDevice(s.audio);
++        return true;
++    }
++
++    void closeAudio()
++    {
++        State &s = state();
++        if (s.audio != nullptr)
++        {
++            SDL_DestroyAudioStream(s.audio); // stops the device; the callback is not running afterwards
++            s.audio = nullptr;
++        }
++        s.audioCallback = nullptr;
++    }
++
++    bool audioReady() { return state().audio != nullptr; }
++}
++
++// ---- The raylib names of runtime/ps2_host_compat.h ----
++
++bool IsKeyDown(int key) { return ps2x::host::keyDown(key); }
++bool IsKeyPressed(int key) { return ps2x::host::keyPressed(key); }
++bool IsGamepadAvailable(int gamepad) { return gamepad >= 0 && gamepad < ps2x::host::gamepadCount(); }
++
++bool IsGamepadButtonDown(int gamepad, int button)
++{
++    if (button >= 1000) // a trigger, an axis in SDL
++        return ps2x::host::gamepadAxis(gamepad, button - 1000) > 0.5f;
++    return ps2x::host::gamepadButton(gamepad, button);
++}
++
++float GetGamepadAxisMovement(int gamepad, int axis) { return ps2x::host::gamepadAxis(gamepad, axis); }
++bool IsWindowReady() { return ps2x::host::windowReady(); }
++void *GetWindowHandle() { return ps2x::host::nativeWindowHandle(); }
++bool IsAudioDeviceReady() { return !ps2x::host::headless() && SDL_WasInit(SDL_INIT_AUDIO) != 0; }
++
++namespace
++{
++    SDL_AudioDeviceID soundDevice()
++    {
++        static SDL_AudioDeviceID device = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, nullptr);
++        return device;
++    }
++}
++
++Wave LoadWaveFromMemory(const char *, const unsigned char *data, int size)
++{
++    Wave wave;
++    SDL_AudioSpec spec{};
++    Uint8 *buffer = nullptr;
++    Uint32 length = 0;
++    SDL_IOStream *io = SDL_IOFromConstMem(data, static_cast<size_t>(size));
++    if (io != nullptr && SDL_LoadWAV_IO(io, true, &spec, &buffer, &length))
++    {
++        wave.data = buffer;
++        wave.size = length;
++        wave.format = static_cast<int>(spec.format);
++        wave.channels = spec.channels;
++        wave.rate = spec.freq;
++        const uint32_t frameBytes = static_cast<uint32_t>(SDL_AUDIO_BYTESIZE(spec.format)) * static_cast<uint32_t>(spec.channels);
++        wave.frameCount = frameBytes != 0u ? length / frameBytes : 0u;
++    }
++    return wave;
++}
++
++void UnloadWave(Wave wave) { SDL_free(wave.data); }
++
++Sound LoadSoundFromWave(Wave wave)
++{
++    Sound sound;
++    if (wave.data == nullptr || soundDevice() == 0)
++        return sound;
++    SDL_AudioSpec spec{};
++    spec.format = static_cast<SDL_AudioFormat>(wave.format);
++    spec.channels = wave.channels;
++    spec.freq = wave.rate;
++    SDL_AudioSpec deviceSpec{};
++    SDL_GetAudioDeviceFormat(soundDevice(), &deviceSpec, nullptr);
++    SDL_AudioStream *stream = SDL_CreateAudioStream(&spec, &deviceSpec);
++    if (stream == nullptr)
++        return sound;
++    SDL_PutAudioStreamData(stream, wave.data, static_cast<int>(wave.size));
++    SDL_FlushAudioStream(stream);
++    sound.stream = stream;
++    return sound;
++}
++
++void UnloadSound(Sound sound)
++{
++    if (sound.stream != nullptr)
++        SDL_DestroyAudioStream(static_cast<SDL_AudioStream *>(sound.stream));
++}
++
++void PlaySound(Sound sound)
++{
++    if (sound.stream != nullptr)
++        SDL_BindAudioStream(soundDevice(), static_cast<SDL_AudioStream *>(sound.stream));
++}
++
++void StopSound(Sound sound)
++{
++    if (sound.stream == nullptr)
++        return;
++    SDL_UnbindAudioStream(static_cast<SDL_AudioStream *>(sound.stream));
++    SDL_ClearAudioStream(static_cast<SDL_AudioStream *>(sound.stream));
++}
++
++bool IsSoundPlaying(Sound sound)
++{
++    if (sound.stream == nullptr)
++        return false;
++    auto *stream = static_cast<SDL_AudioStream *>(sound.stream);
++    return SDL_GetAudioStreamDevice(stream) != 0 && SDL_GetAudioStreamAvailable(stream) > 0;
++}
++
++void SetSoundPitch(Sound sound, float pitch)
++{
++    if (sound.stream != nullptr)
++        SDL_SetAudioStreamFrequencyRatio(static_cast<SDL_AudioStream *>(sound.stream), pitch);
++}
++
++void SetSoundVolume(Sound sound, float volume)
++{
++    if (sound.stream != nullptr)
++        SDL_SetAudioStreamGain(static_cast<SDL_AudioStream *>(sound.stream), volume);
++}
+diff --git a/ps2xRuntime/src/lib/ps2_runtime.cpp b/ps2xRuntime/src/lib/ps2_runtime.cpp
+--- a/ps2xRuntime/src/lib/ps2_runtime.cpp
++++ b/ps2xRuntime/src/lib/ps2_runtime.cpp
+@@ -378,7 +378,8 @@ namespace
+     }
+ }
+ 
+-static void UploadFrame(Texture2D &tex, PS2Runtime *rt, uint32_t &outWidth, uint32_t &outHeight)
++// The latched display frame, copied into an FB_WIDTH x FB_HEIGHT RGBA8 image and handed to the host (ps2x::host::setFrame).
++static void UploadFrame(PS2Runtime *rt, uint32_t &outWidth, uint32_t &outHeight)
+ {
+     static uint64_t s_lastPresentationTick = std::numeric_limits<uint64_t>::max();
+     static bool s_hasLatchedInitialFrame = false;
+@@ -419,9 +420,14 @@ static void UploadFrame(Texture2D &tex, PS2Runtime *rt, uint32_t &outWidth, uint
+                                                    &sourceFbp,
+                                                    &usedPreferredDisplaySource))
+     {
+-        Image blank = GenImageColor(FB_WIDTH, FB_HEIGHT, MAGENTA);
+-        UpdateTexture(tex, blank.data);
+-        UnloadImage(blank);
++        for (size_t i = 0; i + 3u < s_uploadBuffer.size(); i += 4u) // magenta: no frame to show
++        {
++            s_uploadBuffer[i] = 255u;
++            s_uploadBuffer[i + 1u] = 0u;
++            s_uploadBuffer[i + 2u] = 255u;
++            s_uploadBuffer[i + 3u] = 255u;
++        }
++        ps2x::host::setFrame(s_uploadBuffer.data(), FB_WIDTH, FB_HEIGHT, FB_WIDTH * 4u);
+         outWidth = FB_WIDTH;
+         outHeight = DEFAULT_DISPLAY_HEIGHT;
+         s_lastWidth = outWidth;
+@@ -476,7 +482,7 @@ static void UploadFrame(Texture2D &tex, PS2Runtime *rt, uint32_t &outWidth, uint
+         }
+     }
+ 
+-    UpdateTexture(tex, s_uploadBuffer.data());
++    ps2x::host::setFrame(s_uploadBuffer.data(), FB_WIDTH, FB_HEIGHT, FB_WIDTH * 4u);
+     outWidth = width;
+     outHeight = height;
+     s_hasUploadedFrame = true;
+@@ -539,7 +545,6 @@ namespace
+     // (PS2X_SPU2_STRETCH=0 plays the samples as they come). PS2X_HOST_AUDIO_WAV=file.wav records
+     // what the host actually plays.
+     ps2x::iop::IopSubsystem *s_spu2Source = nullptr;
+-    AudioStream s_spu2Stream{};
+     bool s_spu2StreamLoaded = false;
+     std::unique_ptr<AudioTimeStretcher> s_spu2Stretcher;
+     std::FILE *s_hostWav = nullptr;
+@@ -556,9 +561,8 @@ namespace
+         std::fflush(s_hostWav);
+     }
+ 
+-    void spu2StreamCallback(void *buffer, unsigned int frames)
++    void spu2StreamCallback(int16_t *out, uint32_t frames)
+     {
+-        int16_t *out = static_cast<int16_t *>(buffer);
+         size_t pulled = 0;
+         if (s_spu2Source && s_spu2Stretcher)
+         {
+@@ -600,19 +604,14 @@ namespace
+             if (s_hostWav)
+                 writeHostWavHeader();
+         }
+-        SetAudioStreamBufferSizeDefault(1024);
+-        s_spu2Stream = LoadAudioStream(48000, 16, 2);
+-        SetAudioStreamCallback(s_spu2Stream, spu2StreamCallback);
+-        PlayAudioStream(s_spu2Stream);
+-        s_spu2StreamLoaded = true;
++        s_spu2StreamLoaded = ps2x::host::openAudio(48000, spu2StreamCallback);
+     }
+ 
+     void stopSpu2Stream()
+     {
+         if (!s_spu2StreamLoaded)
+             return;
+-        StopAudioStream(s_spu2Stream);
+-        UnloadAudioStream(s_spu2Stream); // waits for the mixer, so the callback is no longer running
++        ps2x::host::closeAudio(); // stops the device, so the callback is no longer running
+         s_spu2StreamLoaded = false;
+         s_spu2Source = nullptr;
+         s_spu2Stretcher.reset();
+@@ -640,11 +639,7 @@ PS2Runtime::~PS2Runtime()
+         m_audioBackend.stopAll();
+         m_audioBackend.setAudioReady(false);
+ #else
+-        if (IsAudioDeviceReady())
+-        {
+-            CloseAudioDevice();
+-            m_audioBackend.setAudioReady(false);
+-        }
++        m_audioBackend.setAudioReady(false);
+ #endif
+         if (m_debugUiInitialized && m_debugUiShutdownCallback)
+         {
+@@ -652,10 +647,14 @@ PS2Runtime::~PS2Runtime()
+             m_debugUiInitialized = false;
+         }
+ 
++#if !defined(PLATFORM_VITA)
++        ps2x::host::shutdown();
++#else
+         if (IsWindowReady())
+         {
+             CloseWindow();
+         }
++#endif
+ 
+         m_loadedModules.clear();
+     }
+@@ -936,32 +935,28 @@ bool PS2Runtime::initialize(const char *title)
+         // desktop compositor already prevents it). Off by default: it adds up to a refresh of delay.
+         const char *hostVsync = std::getenv("PS2X_VSYNC");
+         const bool waitForMonitor = hostVsync != nullptr && std::strcmp(hostVsync, "1") == 0;
+-        SetConfigFlags(FLAG_WINDOW_RESIZABLE | ((placeWindow || headless) ? FLAG_WINDOW_HIDDEN : 0u) | (waitForMonitor ? FLAG_VSYNC_HINT : 0u));
+-        InitWindow(HOST_WINDOW_WIDTH, HOST_WINDOW_HEIGHT, title);
+-        if (placeWindow && !headless)
+-        {
+-            SetWindowState(FLAG_WINDOW_UNFOCUSED); // shown below without focus
+-            SetWindowPosition(windowX, windowY);
+-            ClearWindowState(FLAG_WINDOW_HIDDEN);
+-        }
++        ps2x::host::WindowOptions window;
++        window.title = title;
++        window.width = HOST_WINDOW_WIDTH;
++        window.height = HOST_WINDOW_HEIGHT;
++        window.headless = headless;
++        window.place = placeWindow && !headless;
++        window.x = windowX;
++        window.y = windowY;
++        window.waitForMonitor = waitForMonitor;
++        if (!ps2x::host::init(window))
++            return false;
+         if (!headless)
+         {
+-            InitAudioDevice();
+             m_audioBackend.setAudioReady(IsAudioDeviceReady());
+             startSpu2Stream(m_iopSubsystem.get());
+         }
+ #endif
+-        // PS2X_PRESENT=free keeps the old window loop on its own 60 Hz timer; by default it shows each frame right after the
+-        // game's vertical blank (see run()), so it does not sleep here.
+-        {
+-            const char *present = std::getenv("PS2X_PRESENT");
+-            SetTargetFPS((present != nullptr && std::strcmp(present, "free") == 0) ? 60 : 0);
+-        }
+         // PS2X_VSYNC_HZ=host runs the game's vertical blank at the monitor's rate when it is close to the PS2's (58 to 62 Hz:
+         // 60.00 instead of 59.94 on most monitors, so no frame is dropped or shown twice every few seconds); a number sets it.
+         if (const char *rate = std::getenv("PS2X_VSYNC_HZ"))
+         {
+-            double hz = std::strcmp(rate, "host") == 0 ? static_cast<double>(GetMonitorRefreshRate(GetCurrentMonitor())) : std::atof(rate);
++            double hz = std::strcmp(rate, "host") == 0 ? static_cast<double>(ps2x::host::monitorRefreshRate()) : std::atof(rate);
+             if (hz >= 58.0 && hz <= 62.0)
+             {
+                 EeScheduler::setVSyncRate(hz);
+@@ -2618,11 +2613,6 @@ void PS2Runtime::run()
+ 
+     RUNTIME_LOG("Starting execution at address 0x" << std::hex << m_cpuContext.pc << std::dec);
+ 
+-    // A blank image to use as a framebuffer
+-    Image blank = GenImageColor(FB_WIDTH, FB_HEIGHT, BLANK);
+-    Texture2D frameTex = LoadTextureFromImage(blank);
+-    UnloadImage(blank);
+-
+     std::atomic<bool> gameThreadFinished{false};
+ 
+     std::thread gameThread([&]()
+@@ -2661,20 +2651,30 @@ void PS2Runtime::run()
+     double presentDelaySumMs = 0.0, presentDelayWorstMs = 0.0;
+     uint32_t presents = 0;
+     auto statsWindow = std::chrono::steady_clock::now();
++    auto nextFreeFrame = std::chrono::steady_clock::now();
+     while (!isStopRequested() && !gameThreadFinished.load(std::memory_order_acquire))
+     {
+         // Show each frame right after the game's vertical blank instead of on a timer of our own: no beat between 59.94 and 60,
+         // and no wait of up to a display period before a finished frame is shown. The timeout keeps the window responsive
+-        // while the game makes no vertical blank (loading).
++        // while the game makes no vertical blank (loading). PS2X_PRESENT=free keeps the old loop on its own 60 Hz timer.
+         if (presentOnVSync && m_eeScheduler)
+         {
+             m_eeScheduler->waitForVSyncAfter(shownVSyncTick, std::chrono::milliseconds(50));
+             shownVSyncTick = m_eeScheduler->currentVSyncTick();
+-            // Host events (keys, pads that are not XInput) are polled at every vertical blank, which is when the game reads its
+-            // pad, so their state is fresh even while frames take longer than a field to draw.
+-            PollInputEvents();
+-            ps2xNoteHostEventPoll();
+         }
++        else
++        {
++            nextFreeFrame += std::chrono::microseconds(16667);
++            const auto now = std::chrono::steady_clock::now();
++            if (nextFreeFrame > now)
++                std::this_thread::sleep_until(nextFreeFrame);
++            else
++                nextFreeFrame = now;
++        }
++        // Host events (keys, pads) are polled at every vertical blank, which is when the game reads its pad, so their state is
++        // fresh even while frames take longer than a field to draw.
++        ps2x::host::pollEvents();
++        ps2xNoteHostEventPoll();
+         PS2_IF_AGRESSIVE_LOGS({
+             tick++;
+             if ((tick % 120) == 0)
+@@ -2709,14 +2709,14 @@ void PS2Runtime::run()
+         });
+         uint32_t presentWidth = FB_WIDTH;
+         uint32_t presentHeight = DEFAULT_DISPLAY_HEIGHT;
+-        UploadFrame(frameTex, this, presentWidth, presentHeight);
++        UploadFrame(this, presentWidth, presentHeight);
+ 
+-        BeginDrawing();
+-        ClearBackground(BLACK);
+         const float srcWidth = static_cast<float>(std::max<uint32_t>(1u, presentWidth));
+         const float srcHeight = static_cast<float>(std::max<uint32_t>(1u, presentHeight));
+-        const float screenWidth = static_cast<float>(GetScreenWidth());
+-        const float screenHeight = static_cast<float>(GetScreenHeight());
++        int drawableWidth = 0, drawableHeight = 0;
++        ps2x::host::drawableSize(drawableWidth, drawableHeight);
++        const float screenWidth = static_cast<float>(std::max(1, drawableWidth));
++        const float screenHeight = static_cast<float>(std::max(1, drawableHeight));
+         // Fit the PS2 output to the window at the display aspect ratio (4:3 TV by default), not the
+         // frame buffer's raw proportions: interlaced games present 640x224 fields that a TV shows
+         // at full height. PS2X_ASPECT=16:9 for widescreen patches, PS2X_ASPECT=stretch to fill.
+@@ -2740,18 +2740,13 @@ void PS2Runtime::run()
+                 dstWidth = screenHeight * displayAspect;
+             }
+         }
+-        const Rectangle srcRect{0.0f, 0.0f, srcWidth, srcHeight};
+-        const Rectangle dstRect{
+-            (screenWidth - dstWidth) * 0.5f,
+-            (screenHeight - dstHeight) * 0.5f,
+-            dstWidth,
+-            dstHeight};
+-        DrawTexturePro(frameTex, srcRect, dstRect, Vector2{0.0f, 0.0f}, 0.0f, WHITE);
++        // The debug UI builds its frame here; the host draws it over the game's frame in present().
+         if (m_debugUiInitialized && m_debugUiDrawCallback)
+         {
+             m_debugUiDrawCallback(*this, m_debugUiUserData);
+         }
+-        EndDrawing();
++        ps2x::host::present(srcWidth, srcHeight, (screenWidth - dstWidth) * 0.5f, (screenHeight - dstHeight) * 0.5f, dstWidth,
++                            dstHeight);
+         ps2xNoteHostEventPoll();
+ 
+         // PS2X_LATENCY_STATS=1: every 2 s, how long after the game's vertical blank its frame was on its way to the screen
+@@ -2777,7 +2772,7 @@ void PS2Runtime::run()
+             }
+         }
+ 
+-        if (WindowShouldClose())
++        if (ps2x::host::closeRequested())
+         {
+             RUNTIME_LOG("[run] window close requested, breaking out of loop");
+             requestStop();
+@@ -2796,8 +2791,7 @@ void PS2Runtime::run()
+         m_debugUiShutdownCallback(*this, m_debugUiUserData);
+         m_debugUiInitialized = false;
+     }
+-    UnloadTexture(frameTex);
+-    CloseWindow();
++    ps2x::host::shutdown();
+ 
+     RUNTIME_LOG("[run] exiting loop");
+ }
+diff --git a/ps2xRuntime/src/lib/ps2_debug_panel.cpp b/ps2xRuntime/src/lib/ps2_debug_panel.cpp
+--- a/ps2xRuntime/src/lib/ps2_debug_panel.cpp
++++ b/ps2xRuntime/src/lib/ps2_debug_panel.cpp
+@@ -12,8 +12,11 @@
+ 
+ #if defined(PS2X_ENABLE_DEBUG_UI) && !defined(PLATFORM_VITA)
+ #include "imgui.h"
+-#include "rlImGui.h"
+-#include "raylib.h"
++#include "imgui_impl_sdl3.h"
++#include "imgui_impl_sdlgpu3.h"
++#include "runtime/ps2_host.h"
++#include "runtime/ps2_host_compat.h"
++#include <SDL3/SDL.h>
+ #endif
+ 
+ #include <algorithm>
+@@ -2177,12 +2180,55 @@ namespace
+ 
+ #endif
+ }
++#if defined(PS2X_ENABLE_DEBUG_UI) && !defined(PLATFORM_VITA)
++namespace
++{
++    // imgui runs on the host's window and GPU device: its SDL3 backend sees the host's events, and the frame it built in draw()
++    // is uploaded and drawn over the game's frame by the host's overlay pass (ps2x::host::present).
++    bool s_imguiFrameReady = false;
++
++    bool imguiEvent(void *, const SDL_Event *event)
++    {
++        ImGui_ImplSDL3_ProcessEvent(event);
++        return false;
++    }
++
++    void imguiPrepare(void *, SDL_GPUCommandBuffer *commands)
++    {
++        if (s_imguiFrameReady)
++            ImGui_ImplSDLGPU3_PrepareDrawData(ImGui::GetDrawData(), commands);
++    }
++
++    void imguiDraw(void *, SDL_GPUCommandBuffer *commands, SDL_GPURenderPass *pass)
++    {
++        if (s_imguiFrameReady)
++            ImGui_ImplSDLGPU3_RenderDrawData(ImGui::GetDrawData(), commands, pass);
++        s_imguiFrameReady = false;
++    }
++}
++#endif
++
+ void PS2DebugPanel::initialize()
+ {
+ #if defined(PS2X_ENABLE_DEBUG_UI) && !defined(PLATFORM_VITA)
+     if (!m_initialized)
+     {
+-        rlImGuiSetup(true);
++        if (ps2x::host::window() == nullptr || ps2x::host::device() == nullptr)
++            return; // headless: no window to draw in
++        IMGUI_CHECKVERSION();
++        ImGui::CreateContext();
++        ImGui::GetIO().IniFilename = nullptr;
++        ImGui_ImplSDL3_InitForSDLGPU(ps2x::host::window());
++        ImGui_ImplSDLGPU3_InitInfo info{};
++        info.Device = ps2x::host::device();
++        info.ColorTargetFormat = SDL_GetGPUSwapchainTextureFormat(ps2x::host::device(), ps2x::host::window());
++        info.MSAASamples = SDL_GPU_SAMPLECOUNT_1;
++        ImGui_ImplSDLGPU3_Init(&info);
++        ps2x::host::setEventHook(imguiEvent, nullptr);
++        ps2x::host::Overlay overlay;
++        overlay.prepare = imguiPrepare;
++        overlay.draw = imguiDraw;
++        ps2x::host::setOverlay(overlay);
+         m_initialized = true;
+         // Start hidden so the game is visible; F1 toggles. PS2X_DEBUG_UI=1 starts it open.
+         const char *debugUi = std::getenv("PS2X_DEBUG_UI");
+@@ -2196,7 +2242,13 @@ void PS2DebugPanel::shutdown()
+ #if defined(PS2X_ENABLE_DEBUG_UI) && !defined(PLATFORM_VITA)
+     if (m_initialized)
+     {
+-        rlImGuiShutdown();
++        ps2x::host::setOverlay(ps2x::host::Overlay{});
++        ps2x::host::setEventHook(nullptr, nullptr);
++        if (SDL_GPUDevice *device = ps2x::host::device())
++            SDL_WaitForGPUIdle(device);
++        ImGui_ImplSDLGPU3_Shutdown();
++        ImGui_ImplSDL3_Shutdown();
++        ImGui::DestroyContext();
+         m_initialized = false;
+     }
+ #endif
+@@ -2220,7 +2272,9 @@ void PS2DebugPanel::draw(PS2Runtime &runtime)
+         return;
+     }
+ 
+-    rlImGuiBegin();
++    ImGui_ImplSDLGPU3_NewFrame();
++    ImGui_ImplSDL3_NewFrame();
++    ImGui::NewFrame();
+ 
+     ImGui::SetNextWindowSize(ImVec2(780.0f, 620.0f), ImGuiCond_FirstUseEver);
+     if (ImGui::Begin("Runtime Debugger", &m_visible, ImGuiWindowFlags_MenuBar))
+@@ -2307,7 +2361,8 @@ void PS2DebugPanel::draw(PS2Runtime &runtime)
+     }
+     ImGui::End();
+ 
+-    rlImGuiEnd();
++    ImGui::Render();
++    s_imguiFrameReady = true;
+ #else
+     (void)runtime;
+ #endif

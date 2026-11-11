@@ -34,7 +34,7 @@ The approach is the one OpenRCT2 used for RollerCoaster Tycoon 2: keep the game 
 1. **Map everything.** Every function in the game is named, classified by subsystem and given a full C prototype (`config/signatures.txt`), with its structs in `config/types/`. This step is done for all 1,481 game functions.
 2. **Rewrite by hand.** [src/port](src/port/README.md) holds the game's code as readable C++, organised by subsystem (city, families, events, talks, the WORDS script, saves, sound, UI). Each rewritten function takes over from the original at its address.
 3. **Prove it matches.** Every rewritten function is checked against the original by differential tests: calls recorded from a running game are replayed through both versions, and memory, registers and results must come out identical before the function counts as done.
-4. **Understand it.** With every function rewritten, the code is gone over again to give it the names a real source tree would have: struct fields instead of raw memory offsets (about 2,700 such lines when this pass began, about 150 now, most of them in the movie player, which is left as it is on purpose), the game's global variables, tables and strings by name instead of raw addresses, real names for placeholder functions and structs, and a map of how the city is drawn, down to each VU1 microcode program ([docs/RENDER_PIPELINE.md](docs/RENDER_PIPELINE.md)). This is the current phase. A native renderer that replaces the emulated graphics hardware is meant to build on it.
+4. **Understand it.** With every function rewritten, the code is gone over again to give it the names a real source tree would have: struct fields instead of raw memory offsets (about 2,700 such lines when this pass began, about 150 now, most of them in the movie player, which is left as it is on purpose), the game's global variables, tables and strings by name instead of raw addresses, real names for placeholder functions and structs, and a map of how the city is drawn, down to each VU1 microcode program ([docs/RENDER_PIPELINE.md](docs/RENDER_PIPELINE.md)). This is the current phase. A native renderer that replaces the emulated graphics hardware is now being built on it ([docs/RENDERER.md](docs/RENDERER.md)).
 
 Progress per subsystem is tracked in [docs/PORT_STATUS.md](docs/PORT_STATUS.md). As far as we could find, this is the first decompilation or recompilation project for the game ([research notes](docs/RESEARCH.md)).
 
@@ -48,12 +48,13 @@ Progress per subsystem is tracked in [docs/PORT_STATUS.md](docs/PORT_STATUS.md).
 | Movies, music, sound effects | Play, through a new SPU2 emulation (with reverb) |
 | Saves | Memory card check passes; loading a save from a PCSX2 memory card works |
 | Mapping (names, types, prototypes) | Done for every game function |
-| Readable source port | In progress: all 1,481 of the game's functions rewritten, 1,432 of them verified against the original (97%) ([details](docs/PORT_STATUS.md)) |
+| Readable source port | In progress: all 1,481 of the game's functions rewritten, 1,436 of them verified against the original (97%) ([details](docs/PORT_STATUS.md)) |
 | Reverse-engineering pass | In progress: struct fields by name (raw memory offsets down from about 2,700 lines to about 150), global variables, tables and strings by name, placeholder names replaced, the city's render pipeline mapped down to each of its 13 VU1 programs ([details](docs/RENDER_PIPELINE.md)) |
 | Platform layer (SDK and C runtime) | In progress: 123 of the 768 SDK functions rewritten as plain C++ in `src/port/platform/`; 91 verified by replay, 25 numeric ones (soft float, libm) by random-input comparison, 7 not yet shown. No recompiled SDK function is reachable from the ported code, and the explore and new-game runs enter none ([details](docs/PLATFORM_FINDINGS.md)) |
 | VU1 microcode | The city's programs run natively, checked against the interpreter ([details](docs/VU1_PROGRAMS.md)) |
 | Sound driver (IOP) | The game's own driver (YYSOUND, 114 functions) is rewritten as readable C++ in `src/port/iop/` and checked call by call against the original (0 differences, bar a few uninitialized stack bytes that the details list). All ten IOP modules, YYSOUND and the nine Sony modules (memory card, pad, SPU2 library, MIDI and sound-effect synthesizers), run as C++ translated ahead of time from your disc's modules, which matches the interpreter exactly (the same state at every checked point, the same audio, random programs of every instruction form; no instruction of the ten modules is interpreted in the scripted runs). The Sony modules are not rewritten as readable source ([details](docs/IOP.md)) |
-| Widescreen, high refresh rate, hi-res, native controls, Linux | Proposed, not started ([see below](#proposed-patches)) |
+| Native renderer | In progress: everything drawn without the VU1 programs (logos, title menu, text, the HUD's 2D parts, the minimap, movies) is drawn natively at any multiple of 640x448 (3x by default) as one progressive picture per frame, so without fields or interlace jitter, beside the emulated picture for comparison. The 3D models and the terrain (the VU1 programs) are next ([details](docs/RENDERER.md)) |
+| Widescreen, high refresh rate, native controls, Linux | Proposed, not started ([see below](#proposed-patches)) |
 
 ## How it works
 
@@ -68,6 +69,7 @@ The starting point is a static recompilation made with [PS2Recomp](https://githu
 - [docs/map](docs/map/README.md): every subsystem and every function, with notes.
 - [docs/GAME_NOTES.md](docs/GAME_NOTES.md): the disc, the data files and their formats.
 - [docs/RENDER_PIPELINE.md](docs/RENDER_PIPELINE.md): how the city is drawn, from the game's draw calls down to each VU1 microcode program.
+- [docs/RENDERER.md](docs/RENDERER.md): the native renderer being built on that map (plan, graphics API, what the frames use).
 - [docs/VU1_PROGRAMS.md](docs/VU1_PROGRAMS.md): the VU1 programs run natively and compiled to C++.
 - [docs/IOP.md](docs/IOP.md): the sound driver and the IOP modules.
 - [docs/PLATFORM_FINDINGS.md](docs/PLATFORM_FINDINGS.md): what rewriting the SDK layer found out about the runtime and the recompiler.
@@ -117,11 +119,11 @@ The city's VU1 programs run faster as compiled C++, which is made from your disc
 
 ## Proposed patches
 
-Once the port is complete these are the changes it is meant to make possible. None of them exists yet.
+Once the port is complete these are the changes it is meant to make possible. Higher resolution has started with the native renderer; the others do not exist yet.
 
 - **Widescreen.** True 16:9 and wider, with the field of view and the HUD corrected. The needed addresses are already known from the PCSX2 widescreen patch ([docs/GAME_NOTES.md](docs/GAME_NOTES.md)).
 - **High refresh rates (120 Hz).** The game logic steps once per frame at the PS2's field rate (59.94 Hz), so it must stay at that rate to keep its speed; the proposal is to draw in-between frames for 120 Hz and faster displays without changing the logic.
-- **Higher resolution.** Render the city at a multiple of the PS2's 640x448 instead of the fixed output size.
+- **Higher resolution.** Render the city at a multiple of the PS2's 640x448 instead of the fixed output size. In progress: the native renderer draws the 2D parts (menus, text, movies) at any multiple already; the 3D city is next ([docs/RENDERER.md](docs/RENDERER.md)).
 - **Native PC controls.** Keyboard and mouse, any gamepad, and rebinding, instead of a mapped PS2 pad.
 - **And more:** a Linux build, saves in a normal folder instead of a memory card image, display options (fullscreen, borderless, vsync) and fixes for the remaining rendering glitches.
 
@@ -195,7 +197,7 @@ This is a fan preservation project. It is not affiliated with or endorsed by Ind
 1. **すべてを把握する。** ゲームの全関数に名前を付け、サブシステムに分類し、完全なCのプロトタイプ(`config/signatures.txt`)を付けています。構造体は `config/types/` にあります。ゲームの1,481関数すべてについて完了しています。
 2. **手で書き直す。** [src/port](src/port/README.md) にゲームのコードを、サブシステム(街、家族、イベント、会話、WORDSスクリプト、セーブ、サウンド、UI)ごとに読みやすいC++として置いています。書き直した関数は、元の関数のアドレスで元の関数に代わって動きます。
 3. **一致を証明する。** 書き直した関数はすべて、差分テストで元のものと照合されます。実行中のゲームから記録した呼び出しを両方のバージョンで再生し、メモリ、レジスタ、結果がすべて一致して初めて完了となります。
-4. **理解する。** 全関数を書き直したうえで、コードをもう一度見直し、本物のソースコードにあるような名前を付けています。生のメモリオフセットの代わりに構造体のフィールド名(この作業を始めた時点で約2,700行、現在は約150行。その大半は、意図的にそのまま残しているムービー再生部分です)、生のアドレスの代わりにゲームのグローバル変数、テーブル、文字列の名前、仮の名前だった関数や構造体の本当の名前、そして街がどのように描画されるかをVU1マイクロコードの各プログラムまで追った解析([docs/RENDER_PIPELINE.md](docs/RENDER_PIPELINE.md))です。これが現在の段階です。エミュレートしているグラフィックハードウェアを置き換えるネイティブのレンダラーは、この上に作る予定です。
+4. **理解する。** 全関数を書き直したうえで、コードをもう一度見直し、本物のソースコードにあるような名前を付けています。生のメモリオフセットの代わりに構造体のフィールド名(この作業を始めた時点で約2,700行、現在は約150行。その大半は、意図的にそのまま残しているムービー再生部分です)、生のアドレスの代わりにゲームのグローバル変数、テーブル、文字列の名前、仮の名前だった関数や構造体の本当の名前、そして街がどのように描画されるかをVU1マイクロコードの各プログラムまで追った解析([docs/RENDER_PIPELINE.md](docs/RENDER_PIPELINE.md))です。これが現在の段階です。エミュレートしているグラフィックハードウェアを置き換えるネイティブのレンダラーを、この上に作り始めています([docs/RENDERER.md](docs/RENDERER.md))。
 
 サブシステムごとの進捗は [docs/PORT_STATUS.md](docs/PORT_STATUS.md) にあります。調べた限り、このゲームの逆コンパイルまたは再コンパイルのプロジェクトはこれが最初です([調査メモ](docs/RESEARCH.md))。
 
@@ -209,12 +211,13 @@ This is a fan preservation project. It is not affiliated with or endorsed by Ind
 | ムービー、音楽、効果音 | 再生可能(新しく作ったSPU2エミュレーションによる、リバーブ付き) |
 | セーブ | メモリーカードの確認は通過。PCSX2のメモリーカードからのロードは動作 |
 | マッピング(名前、型、プロトタイプ) | ゲームの全関数で完了 |
-| 読みやすいソースへの移植 | 進行中。1,481関数すべてを書き直し済み、うち1,432関数を元のコードとの照合で検証済み(97%)([詳細](docs/PORT_STATUS.md)) |
+| 読みやすいソースへの移植 | 進行中。1,481関数すべてを書き直し済み、うち1,436関数を元のコードとの照合で検証済み(97%)([詳細](docs/PORT_STATUS.md)) |
 | リバースエンジニアリングの見直し | 進行中。生のメモリオフセットを構造体のフィールド名に置き換え(約2,700行から約150行に)、グローバル変数、テーブル、文字列にも名前を付け、仮の名前を本当の名前に変更、街の描画パイプラインを13個のVU1プログラムそれぞれまで解析済み([詳細](docs/RENDER_PIPELINE.md)) |
 | プラットフォーム層(SDKとCランタイム) | 進行中。768個のSDK関数のうち123個を `src/port/platform/` に素のC++で書き直し済み。91個はリプレイで、25個の数値関数(ソフトフロート、libm)はランダム入力との比較で検証済み、7個は未検証。移植済みコードから到達できる再コンパイル済みSDK関数はなく、探索と新規ゲームの実行でも再コンパイル済み関数は実行されません([詳細](docs/PLATFORM_FINDINGS.md)) |
 | VU1マイクロコード | 街のプログラムはネイティブで動作し、インタプリタとの照合済み([詳細](docs/VU1_PROGRAMS.md)) |
 | サウンドドライバ(IOP) | ゲーム自身のドライバ(YYSOUND、114関数)を `src/port/iop/` に読みやすいC++として書き直し済みで、元のコードと呼び出しごとに照合しています(差異は0件。初期化されていないスタックの数バイトを除く。詳細に記載)。YYSOUNDとSony製の9モジュール(メモリーカード、パッド、SPU2ライブラリ、MIDIと効果音のシンセサイザ)を含む10個のIOPモジュールすべてを、ディスクのモジュールから事前に変換したC++で実行しており、インタプリタと完全に一致します(照合した各時点で同じ状態、同じ音声、あらゆる命令形式のランダムなプログラム。スクリプトによる実行では10モジュールの命令をインタプリタで実行することはありません)。Sony製モジュールは読みやすいソースには書き直していません([詳細](docs/IOP.md))|
-| ワイドスクリーン、高リフレッシュレート、高解像度、ネイティブ操作、Linux | 構想中、未着手 |
+| ネイティブレンダラー | 進行中。VU1プログラムを通らない描画(ロゴ、タイトルメニュー、文字、HUDの2D部分、ミニマップ、ムービー)は、640x448の任意の整数倍(既定は3倍)でネイティブに描画します。1フレームを1枚のプログレッシブ画像として描くので、フィールドもインターレースの揺れもありません。比較のためエミュレートした画像と並べて表示できます。3Dモデルと地形(VU1プログラム)が次です([詳細](docs/RENDERER.md)) |
+| ワイドスクリーン、高リフレッシュレート、ネイティブ操作、Linux | 構想中、未着手 |
 
 ### 仕組み
 
@@ -229,6 +232,7 @@ This is a fan preservation project. It is not affiliated with or endorsed by Ind
 - [docs/map](docs/map/README.md): すべてのサブシステムとすべての関数(説明付き)。
 - [docs/GAME_NOTES.md](docs/GAME_NOTES.md): ディスク、データファイルとその形式。
 - [docs/RENDER_PIPELINE.md](docs/RENDER_PIPELINE.md): 街の描画の仕組み。ゲームの描画呼び出しからVU1マイクロコードの各プログラムまで。
+- [docs/RENDERER.md](docs/RENDERER.md): その解析の上に作っているネイティブレンダラー(計画、グラフィックスAPI、フレームが使う機能)。
 - [docs/VU1_PROGRAMS.md](docs/VU1_PROGRAMS.md): ネイティブで動かし、C++にコンパイルしたVU1プログラム。
 - [docs/IOP.md](docs/IOP.md): サウンドドライバとIOPモジュール。
 - [docs/PLATFORM_FINDINGS.md](docs/PLATFORM_FINDINGS.md): SDK層を書き直して分かった、ランタイムと再コンパイラの挙動。
@@ -278,11 +282,11 @@ PCSX2からセーブデータをコピーするには `python tools/mc_extract.p
 
 ### 構想中のパッチ
 
-移植が完成した後に、これらの変更ができるようになることを目指しています。いずれもまだ存在しません。
+移植が完成した後に、これらの変更ができるようになることを目指しています。高解像度はネイティブレンダラーで始まっていますが、ほかはまだ存在しません。
 
 - **ワイドスクリーン。** 16:9以上の本物のワイドスクリーン。視野角とHUDも補正します。必要なアドレスはPCSX2のワイドスクリーンパッチから既に分かっています([docs/GAME_NOTES.md](docs/GAME_NOTES.md))。
 - **高リフレッシュレート(120 Hz)。** ゲームのロジックはPS2のフィールドレート(59.94 Hz)で1フレームごとに進むため、速度を保つにはこのレートのままにする必要があります。ロジックを変えずに中間フレームを描き、120 Hz以上のディスプレイでなめらかに表示することを目指します。
-- **高解像度。** 固定の出力サイズではなく、PS2の640x448の整数倍で街を描画します。
+- **高解像度。** 固定の出力サイズではなく、PS2の640x448の整数倍で街を描画します。進行中:ネイティブレンダラーは2Dの部分(メニュー、文字、ムービー)を既に任意の整数倍で描画しています。3Dの街が次です([docs/RENDERER.md](docs/RENDERER.md))。
 - **PCネイティブの操作。** PS2パッドに割り当てる方式ではなく、キーボードとマウス、あらゆるゲームパッド、キー割り当ての変更に対応します。
 - **その他:** Linux版、メモリーカードイメージではなく通常のフォルダへのセーブ、表示オプション(フルスクリーン、ボーダーレス、垂直同期)、残っている描画の不具合の修正。
 
@@ -332,7 +336,7 @@ Last updated: 2026-11-06.
 - **The game:** Metropolismania (Japanese title 街ingメーカー, *Machi-ing Maker*), a city-building game played on foot, developed by Indi. Published by Media Factory in Japan (27 September 2001) and by Natsume in North America (17 October 2002) and Europe (8 November 2002).
 - **Supported version:** the USA disc only (SLUS-20377, disc VER 1.02). Every address in the project is specific to that build.
 - **How:** a static recompilation made with PS2Recomp keeps the game running while a hand-written, readable C++ port replaces it function by function, and differential tests check that each rewritten function matches the original.
-- **State:** boots, plays its movies, music and sound, loads saves and reaches the city; all 1,481 game functions are rewritten and 1,432 of them verified. Not yet playable from start to finish.
+- **State:** boots, plays its movies, music and sound, loads saves and reaches the city; all 1,481 game functions are rewritten and 1,436 of them verified. Not yet playable from start to finish.
 - **Platform and license:** Windows (MSVC) for now; GNU GPL v3. No game files are included: you need your own disc.
 
 ### What is Metropolismania?
@@ -369,7 +373,7 @@ Translating a program's machine code into source code for another platform ahead
 
 ### Is there a widescreen or HD version?
 
-Not yet. Widescreen (16:9 and wider), higher resolutions, 120 Hz and native controls are planned once the port is complete ([proposed patches](#proposed-patches)). Until then, PCSX2 has a 16:9 patch for the game.
+Not yet. A native renderer for higher resolutions is being built: menus, text and movies already draw at any multiple of 640x448, and the 3D city is next ([docs/RENDERER.md](docs/RENDERER.md)). Widescreen (16:9 and wider), 120 Hz and native controls are planned once the port is complete ([proposed patches](#proposed-patches)). Until then, PCSX2 has a 16:9 patch for the game.
 
 ### Who made Metropolismania?
 
@@ -385,7 +389,7 @@ Indi developed it (Indi Software, as its title screen credits it). Media Factory
 - **ゲーム:** 街ingメーカー(英語版 Metropolismania)。Indiが開発した、自分の足で歩いて遊ぶ街づくりゲームです。日本ではメディアファクトリーが2001年9月27日に、北米とヨーロッパではNatsumeが2002年(北米10月17日、ヨーロッパ11月8日)に発売しました。
 - **対応バージョン:** 北米版のディスクのみ(SLUS-20377、ディスクVER 1.02)。プロジェクト内のアドレスはすべてこのビルド専用です。
 - **方法:** PS2Recompによる静的再コンパイルでゲームを動かし続けながら、手で書いた読みやすいC++の移植で関数ごとに置き換えます。書き直した関数は、差分テストで元のコードと一致することを確かめます。
-- **現状:** 起動し、ムービー、音楽、効果音を再生し、セーブデータを読み込んで街まで進みます。ゲームの1,481関数すべてを書き直し、うち1,432関数を検証済みです。まだ最後まで遊べる状態ではありません。
+- **現状:** 起動し、ムービー、音楽、効果音を再生し、セーブデータを読み込んで街まで進みます。ゲームの1,481関数すべてを書き直し、うち1,436関数を検証済みです。まだ最後まで遊べる状態ではありません。
 - **対応環境とライセンス:** 現在はWindows(MSVC)のみ。GNU GPL v3。ゲームのファイルは含まれていません。ご自身のディスクが必要です。
 
 #### 街ingメーカーとはどんなゲームですか?
@@ -422,7 +426,7 @@ PCSX2はゲーム機全体をエミュレートし、元のディスクをその
 
 #### ワイドスクリーンやHD版はありますか?
 
-まだありません。ワイドスクリーン(16:9以上)、高解像度、120 Hz、PC向けの操作は、移植の完成後に予定しています([構想中のパッチ](#構想中のパッチ))。それまでは、PCSX2にこのゲーム用の16:9パッチがあります。
+まだありません。高解像度のためのネイティブレンダラーを作っているところで、メニュー、文字、ムービーは既に640x448の任意の整数倍で描画できます。3Dの街が次です([docs/RENDERER.md](docs/RENDERER.md))。ワイドスクリーン(16:9以上)、120 Hz、PC向けの操作は、移植の完成後に予定しています([構想中のパッチ](#構想中のパッチ))。それまでは、PCSX2にこのゲーム用の16:9パッチがあります。
 
 #### 誰が作ったゲームですか?
 

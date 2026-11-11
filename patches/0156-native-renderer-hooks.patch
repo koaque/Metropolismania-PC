@@ -1,0 +1,164 @@
+What a native renderer needs from the runtime. PS2Memory::setDmaStartObserver: a callback when the guest starts a VIF1 or GIF DMA transfer (channel, CHCR, MADR, QWC, TADR), before the runtime takes it up, so a renderer can read the same chain from RDRAM in the order the guest sends it. GSFrontend::getContext: a drawing context's registers as the GS has them (an HLE double-buffer setup writes the drawing environment outside the guest's DMA transfers). The host's replacement hook also gets the emulated frame (always uploaded now) and the part present() shows, so a renderer can show its picture beside the emulated one. PS2X_WINDOW_SIZE=WxH opens the window at that size. PS2Memory::saveEeTimers/restoreEeTimers save and put back the four EE timers (a test harness replays each recorded call from the same timer state). Checked in Metropolismania: the native renderer draws the title, menus, text, HUD, minimap and movies from these hooks beside the emulated picture; difftest replays exact with the timers restored.
+
+diff --git a/ps2xRuntime/include/runtime/gs/gs_frontend.h b/ps2xRuntime/include/runtime/gs/gs_frontend.h
+--- a/ps2xRuntime/include/runtime/gs/gs_frontend.h
++++ b/ps2xRuntime/include/runtime/gs/gs_frontend.h
+@@ -124,6 +124,12 @@ public:
+     {
+         return m_ctx[(index != 0) ? 1 : 0].frame;
+     }
++    // A drawing context's registers as the GS has them now (a native renderer takes the drawing environment from here when
++    // the game sets it outside its DMA transfers, as an HLE double-buffer setup does).
++    const GSContext &getContext(int index) const
++    {
++        return m_ctx[(index != 0) ? 1 : 0];
++    }
+     GSDebugSnapshot getDebugSnapshot() const;
+     std::vector<GSDebugHistoryEntry> getDebugHistory() const;
+     void clearDebugHistory();
+diff --git a/ps2xRuntime/include/runtime/ps2_host.h b/ps2xRuntime/include/runtime/ps2_host.h
+--- a/ps2xRuntime/include/runtime/ps2_host.h
++++ b/ps2xRuntime/include/runtime/ps2_host.h
+@@ -61,8 +61,15 @@ namespace ps2x::host
+         void *user = nullptr;
+     };
+     void setOverlay(const Overlay &overlay);
++    // A replacement also gets the emulated frame (the last setFrame(), uploaded; null before the first) and the part of it
++    // present() was asked to show, so it can show that instead or beside its own picture.
++    struct EmulatedFrame
++    {
++        SDL_GPUTexture *texture = nullptr;
++        float sourceWidth = 0, sourceHeight = 0;
++    };
+     using Replacement = void (*)(void *user, SDL_GPUCommandBuffer *commands, SDL_GPUTexture *swapchain, uint32_t width,
+-                                 uint32_t height);
++                                 uint32_t height, const EmulatedFrame &emulated);
+     void setReplacement(Replacement replacement, void *user);
+ 
+     // Shows the frame: the part (0, 0, sourceWidth, sourceHeight) of the last setFrame() scaled to fill (x, y, w, h) of the
+diff --git a/ps2xRuntime/include/runtime/ps2_memory.h b/ps2xRuntime/include/runtime/ps2_memory.h
+--- a/ps2xRuntime/include/runtime/ps2_memory.h
++++ b/ps2xRuntime/include/runtime/ps2_memory.h
+@@ -277,6 +277,16 @@ public:
+     uint8_t *getScratchpad() { return m_scratchpad; }
+     uint8_t *getIOPRAM() { return iop_ram; }
+     uint64_t dmaStartCount() const { return m_dmaStartCount.load(std::memory_order_relaxed); }
++    // Called when the guest starts a VIF1 (0x10009000) or GIF (0x1000A000) DMA transfer, before the runtime takes it up:
++    // the channel, the CHCR value written, and the channel's MADR, QWC and TADR. A native renderer reads the transfer (a
++    // chain from TADR in chain mode, else QWC quadwords at MADR) from RDRAM here, in the order the guest sends them.
++    using DmaStartObserver = void (*)(void *user, uint32_t channelBase, uint32_t chcr, uint32_t madr, uint32_t qwc,
++                                      uint32_t tadr);
++    void setDmaStartObserver(DmaStartObserver observer, void *user)
++    {
++        m_dmaStartObserver = observer;
++        m_dmaStartObserverUser = user;
++    }
+     uint64_t gifCopyCount() const { return m_gifCopyCount.load(std::memory_order_relaxed); }
+     uint64_t gsWriteCount() const { return m_gsWriteCount.load(std::memory_order_relaxed); }
+     uint64_t vifWriteCount() const { return m_vifWriteCount.load(std::memory_order_relaxed); }
+@@ -312,6 +322,14 @@ public:
+     uint32_t advanceEeTimers(uint64_t eeCycles) noexcept;
+     [[nodiscard]] uint64_t cyclesUntilNextEeTimerInterrupt() const noexcept;
+     void resetEeTimers() noexcept;
++    // The four EE timers' state, saved and put back as a whole (a test harness replays calls from the same state).
++    struct EeTimerState
++    {
++        uint32_t count = 0, mode = 0, compare = 0, hold = 0;
++        uint64_t clockRemainder = 0;
++    };
++    std::array<EeTimerState, 4> saveEeTimers() const noexcept;
++    void restoreEeTimers(const std::array<EeTimerState, 4> &state) noexcept;
+ 
+     using GifPacketCallback = std::function<void(const uint8_t *, uint32_t)>;
+     void setGifPacketCallback(GifPacketCallback cb) { m_gifPacketCallback = std::move(cb); }
+@@ -372,6 +390,8 @@ public:
+     uint8_t *iop_ram;
+ 
+     bool m_seenGifCopy;
++    DmaStartObserver m_dmaStartObserver = nullptr;
++    void *m_dmaStartObserverUser = nullptr;
+     std::atomic<uint64_t> m_dmaStartCount{0};
+     std::atomic<uint64_t> m_gifCopyCount{0};
+     std::atomic<uint64_t> m_gsWriteCount{0};
+diff --git a/ps2xRuntime/src/lib/ps2_host_sdl.cpp b/ps2xRuntime/src/lib/ps2_host_sdl.cpp
+--- a/ps2xRuntime/src/lib/ps2_host_sdl.cpp
++++ b/ps2xRuntime/src/lib/ps2_host_sdl.cpp
+@@ -360,8 +360,7 @@ namespace ps2x::host
+         SDL_GPUCommandBuffer *commands = SDL_AcquireGPUCommandBuffer(s.device);
+         if (commands == nullptr)
+             return;
+-        if (s.replacement == nullptr)
+-            uploadFrame(s, commands);
++        uploadFrame(s, commands);
+         if (s.overlay.prepare != nullptr)
+             s.overlay.prepare(s.overlay.user, commands);
+ 
+@@ -374,7 +373,13 @@ namespace ps2x::host
+         }
+ 
+         if (s.replacement != nullptr)
+-            s.replacement(s.replacementUser, commands, swapchain, swapWidth, swapHeight);
++        {
++            EmulatedFrame emulated;
++            emulated.texture = s.frameTexture;
++            emulated.sourceWidth = std::clamp(sourceWidth, 1.0f, static_cast<float>(std::max(1u, s.textureWidth)));
++            emulated.sourceHeight = std::clamp(sourceHeight, 1.0f, static_cast<float>(std::max(1u, s.textureHeight)));
++            s.replacement(s.replacementUser, commands, swapchain, swapWidth, swapHeight, emulated);
++        }
+         else if (s.frameTexture != nullptr)
+         {
+             const float clampedWidth = std::clamp(sourceWidth, 1.0f, static_cast<float>(s.textureWidth));
+diff --git a/ps2xRuntime/src/lib/ps2_memory.cpp b/ps2xRuntime/src/lib/ps2_memory.cpp
+--- a/ps2xRuntime/src/lib/ps2_memory.cpp
++++ b/ps2xRuntime/src/lib/ps2_memory.cpp
+@@ -454,6 +454,20 @@ void PS2Memory::resetEeTimers() noexcept
+     m_eeTimers = {};
+ }
+ 
++std::array<PS2Memory::EeTimerState, 4> PS2Memory::saveEeTimers() const noexcept
++{
++    std::array<EeTimerState, 4> state{};
++    for (size_t i = 0; i < m_eeTimers.size(); ++i)
++        state[i] = {m_eeTimers[i].count, m_eeTimers[i].mode, m_eeTimers[i].compare, m_eeTimers[i].hold, m_eeTimers[i].clockRemainder};
++    return state;
++}
++
++void PS2Memory::restoreEeTimers(const std::array<EeTimerState, 4> &state) noexcept
++{
++    for (size_t i = 0; i < m_eeTimers.size(); ++i)
++        m_eeTimers[i] = {state[i].count, state[i].mode, state[i].compare, state[i].hold, state[i].clockRemainder};
++}
++
+ uint32_t PS2Memory::advanceEeTimers(uint64_t eeCycles) noexcept
+ {
+     if (eeCycles == 0u)
+@@ -1377,6 +1391,8 @@ bool PS2Memory::writeIORegister(uint32_t address, uint32_t value)
+             const uint32_t madr = m_ioRegisters[channelBase + 0x10];
+             const uint32_t qwc = m_ioRegisters[channelBase + 0x20];
+             m_dmaStartCount.fetch_add(1, std::memory_order_relaxed);
++            if (m_dmaStartObserver != nullptr && (channelBase == 0x10009000u || channelBase == 0x1000A000u))
++                m_dmaStartObserver(m_dmaStartObserverUser, channelBase, value, madr, qwc, m_ioRegisters[channelBase + 0x30]);
+ 
+             if (tryProcessScratchpadDma(channelBase, value))
+             {
+diff --git a/ps2xRuntime/src/lib/ps2_runtime.cpp b/ps2xRuntime/src/lib/ps2_runtime.cpp
+--- a/ps2xRuntime/src/lib/ps2_runtime.cpp
++++ b/ps2xRuntime/src/lib/ps2_runtime.cpp
+@@ -939,6 +939,17 @@ bool PS2Runtime::initialize(const char *title)
+         window.title = title;
+         window.width = HOST_WINDOW_WIDTH;
+         window.height = HOST_WINDOW_HEIGHT;
++        // PS2X_WINDOW_SIZE=WxH opens the window at that size instead (a native renderer at a higher resolution, or two
++        // pictures side by side).
++        if (const char *size = std::getenv("PS2X_WINDOW_SIZE"))
++        {
++            int w = 0, h = 0;
++            if (std::sscanf(size, "%dx%d", &w, &h) == 2 && w >= 160 && h >= 120)
++            {
++                window.width = w;
++                window.height = h;
++            }
++        }
+         window.headless = headless;
+         window.place = placeWindow && !headless;
+         window.x = windowX;

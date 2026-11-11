@@ -15,6 +15,7 @@
 #include "iop_port.h"
 #include "port.h"
 #include "ps2_runtime.h"
+#include "render_native.h"
 #include "ps2_stubs.h"
 #include "ps2_syscalls.h"
 #include "runtime/ps2_frame_skip.h"
@@ -597,6 +598,7 @@ namespace
         port::runDifftestIfRequested(runtime); // exits when MMPC_DIFFTEST is set
         port::runVu1TestIfRequested(); // exits when MMPC_VU1_TEST is set
         vu1aot::install(runtime.vu1()); // pre-timed VU1 programs (PS2X_VU1_AOT=0 turns them off)
+        mm::render::install(runtime);   // the native renderer, with MMPC_RENDERER=native or side (docs/RENDERER.md)
         // The game steps its world once per frame, so frames it cannot draw in time are skipped to keep it at full speed
         // (PS2X_FRAMESKIP=0 turns that off; drawn frames are the same either way).
         ps2xFrameSkipSetDefault(true);
