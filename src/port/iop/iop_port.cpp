@@ -1,6 +1,7 @@
 // Registration of the IOP port's native replacements with the IOP emulator (plan P5). See iop_port.h.
 
 #include "iop_port.h"
+#include "modmidi_tempo.h"
 
 #include "yysound_costs.h"
 #include "yysound_functions.h"
@@ -33,6 +34,7 @@ namespace iop
         ps2x::iop::IopSubsystem *subsystem = runtime.iopSubsystem();
         if (subsystem == nullptr)
             return;
+        midi::installTempoPilot(*subsystem);
         subsystem->registerNativeModule(yysound::kModule, yysound::kImageHash, yysound::kImageSize);
         for (const Registration &registration : registry())
         {
