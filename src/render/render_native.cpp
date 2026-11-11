@@ -10,6 +10,7 @@
 #include "render_native.h"
 
 #include "render_gs.h"
+#include "render_vif.h"
 #include "render_shaders.h"
 
 #include "ps2_runtime.h"
@@ -66,6 +67,7 @@ namespace mm::render
             PS2Runtime *runtime = nullptr;
             Vram vram;
             Gs gs{vram};
+            Vif1 vif{gs};
             std::vector<uint8_t> stream;
             // MMPC_RENDER_STATS=1: what each frame held that the native path does not draw yet
             std::map<uint32_t, uint32_t> programCalls; // microcode upload packet -> CALLs this frame
@@ -135,7 +137,16 @@ namespace mm::render
                 const uint32_t tagAddress = static_cast<uint32_t>((lo >> 32) & 0x7FFFFFF0u);
                 if (tagTransfer)
                 {
-                    out.insert(out.end(), 8, 0);
+                    // The two NOPs before the tag's upper half; a CALL of a microcode upload packet gets the packet's
+                    // address in them (render_vif.h), so the VIF knows which program its MPG loads.
+                    uint32_t nops[2] = {0, 0};
+                    if (id == 5 && tagAddress >= kMicrocodeStart && tagAddress < kMicrocodeEnd)
+                    {
+                        nops[0] = (kProgramMarkLow << 16) | (tagAddress & 0xFFFF);
+                        nops[1] = (kProgramMarkHigh << 16) | (tagAddress >> 16);
+                    }
+                    const auto *bytes = reinterpret_cast<const uint8_t *>(nops);
+                    out.insert(out.end(), bytes, bytes + 8);
                     const uint8_t *upper = rdram + (address & kRamMask) + 8;
                     out.insert(out.end(), upper, upper + 8);
                 }
@@ -179,60 +190,6 @@ namespace mm::render
             }
         }
 
-        // The VIF1 command stream: DIRECT payloads go to the GS; the rest is stepped over by its size (the VU1 programs and
-        // their data are plan N4).
-        void parseVif(Renderer &r, const uint8_t *data, size_t size)
-        {
-            size_t pos = 0;
-            uint32_t cl = 1, wl = 1;
-            while (pos + 4 <= size)
-            {
-                uint32_t code;
-                std::memcpy(&code, data + pos, 4);
-                pos += 4;
-                const uint32_t imm = code & 0xFFFF, num = (code >> 16) & 0xFF, cmd = (code >> 24) & 0x7F;
-                if (cmd >= 0x60)
-                {
-                    const uint32_t vn = (cmd >> 2) & 3, vl = cmd & 3;
-                    const uint32_t n = num != 0 ? num : 256;
-                    const uint32_t vectors = wl <= cl ? n : cl * (n / wl) + std::min(n % wl, cl);
-                    const uint32_t bits = vl == 3 ? vectors * 16u : vectors * (vn + 1u) * (32u >> vl);
-                    pos += ((bits + 31u) / 32u) * 4u;
-                    continue;
-                }
-                switch (cmd)
-                {
-                case 0x01: // STCYCL
-                    cl = imm & 0xFF;
-                    wl = (imm >> 8) & 0xFF;
-                    break;
-                case 0x20: // STMASK
-                    pos += 4;
-                    break;
-                case 0x30: // STROW
-                case 0x31: // STCOL
-                    pos += 16;
-                    break;
-                case 0x4A: // MPG
-                    pos += (num != 0 ? num : 256) * 8u;
-                    break;
-                case 0x50: // DIRECT
-                case 0x51: // DIRECTHL
-                {
-                    pos = (pos + 15) & ~static_cast<size_t>(15);
-                    const size_t bytes = static_cast<size_t>(imm != 0 ? imm : 65536) * 16u;
-                    if (pos + bytes > size)
-                        return;
-                    r.gs.gif(data + pos, bytes);
-                    pos += bytes;
-                    break;
-                }
-                default:
-                    break; // NOP, OFFSET, BASE, ITOP, STMOD, MSKPATH3, MARK, FLUSH*, MSCAL*, MSCNT: no data
-                }
-            }
-        }
-
         void publishFrame(Renderer &r)
         {
             Frame frame = r.gs.takeFrame();
@@ -261,9 +218,13 @@ namespace mm::render
                           << " GIF transfers, " << r.otherVifTransfers << " other VIF1 transfers; programs";
                 for (const auto &entry : r.programCalls)
                     std::cerr << " " << std::hex << entry.first << std::dec << " x" << entry.second;
+                std::cerr << "; runs without a native program";
+                for (const auto &entry : r.vif.missingRuns())
+                    std::cerr << " " << std::hex << entry.first << std::dec << " x" << entry.second;
                 std::cerr << std::endl;
             }
             r.programCalls.clear();
+            r.vif.missingRuns().clear();
             r.gifTransfers = r.otherVifTransfers = 0;
             std::lock_guard<std::mutex> lock(r.mutex);
             for (auto &entry : frame.newTextures)
@@ -283,6 +244,11 @@ namespace mm::render
             Renderer &r = *static_cast<Renderer *>(user);
             const uint8_t *rdram = r.runtime->memory().getRDRAM();
             const bool chainMode = ((chcr >> 2) & 3) == 1;
+            if (const char *test = std::getenv("MMPC_RENDER_VU1TEST")) // the game is loaded by its first transfer
+            {
+                runVu1RecordTest(test, rdram);
+                std::exit(0);
+            }
             // The drawing environment as the emulated GS has it now: the game's double-buffer setup writes it directly.
             for (int ctx = 0; ctx < 2; ++ctx)
             {
@@ -313,7 +279,7 @@ namespace mm::render
                     walkChain(rdram, tadr, tagTransfer, r.stream, &r.programCalls);
                 else if ((madr & kRamMask) + qwc * 16u <= 0x02000000u)
                     r.stream.assign(rdram + (madr & kRamMask), rdram + (madr & kRamMask) + qwc * 16u);
-                parseVif(r, r.stream.data(), r.stream.size());
+                r.vif.run(r.stream.data(), r.stream.size());
                 const uint32_t chainStart = tadr & 0x7FFFFFF0u;
                 const bool frameChain = chainMode && (chainStart == (load32(rdram, kDmaLists) & 0x7FFFFFF0u) ||
                                                       chainStart == (load32(rdram, kDmaLists + 4u) & 0x7FFFFFF0u));

@@ -4,6 +4,7 @@
 // list. Fed by GIF packets in the order the game sends them; image transfers go to the renderer's VRAM copy.
 
 #include "render_vram.h"
+#include "render_vu1.h"
 
 #include <cstdint>
 #include <unordered_map>
@@ -97,6 +98,8 @@ namespace mm::render
         void gif(const uint8_t *data, size_t bytes);
         // A register write as A+D.
         void write(uint32_t reg, uint64_t value);
+        // What a native VU1 program sends: its A+D writes, its GIF tag and its vertices, with float positions.
+        void vuPacket(const VuPacket &packet);
         // A context's drawing environment as the emulated GS has it (the game sets it outside its DMA transfers too).
         void setEnvironment(int ctx, uint64_t frame, uint64_t xyoffset, uint64_t scissor, uint64_t zbuf, uint64_t test)
         {
@@ -125,6 +128,7 @@ namespace mm::render
         DrawState finishState(DrawState &s, uint64_t attributes, int ctx);
         bool frameBufferTexture(const Tex0 &t, int ctx, float origin[2]) const;
         Vertex makeVertex(uint64_t xyz, bool withFog);
+        Vertex makeVertex(const VuVertex &v);
         uint64_t textureKey();
 
         Vram &m_vram;

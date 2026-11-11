@@ -372,6 +372,45 @@ namespace mm::render
         return v;
     }
 
+    // A vertex from a native VU1 program: as makeVertex, from the float values the program had before the GS's fixed point.
+    Vertex Gs::makeVertex(const VuVertex &in)
+    {
+        const uint64_t attributes = (m_prmodecont & 1) ? m_prim : m_prmode;
+        const int ctx = static_cast<int>((attributes >> 9) & 1);
+        const float ofx = static_cast<float>(m_xyoffset[ctx] & 0xFFFF) / 16.0f;
+        const float ofy = static_cast<float>(static_cast<uint32_t>((m_xyoffset[ctx] >> 32) & 0xFFFF) & ~0xFu) / 16.0f;
+        Vertex v{};
+        v.x = in.x - ofx;
+        v.y = (in.y - ofy) * 2.0f;
+        v.z = static_cast<float>(static_cast<double>(std::max(in.z, 0.0f)) / 4294967296.0);
+        std::memcpy(&v.rgba, in.rgba, 4);
+        v.s = in.s;
+        v.t = in.t;
+        v.q = in.q != 0.0f ? in.q : 1.0f;
+        v.fog = std::clamp(in.fog, 0.0f, 255.0f) / 255.0f;
+        return v;
+    }
+
+    void Gs::vuPacket(const VuPacket &packet)
+    {
+        for (const auto &reg : packet.registers)
+            write(reg.first, reg.second);
+        if (((packet.tagLo >> 46) & 1) != 0) // PRE
+            write(PRIM, (packet.tagLo >> 47) & 0x7FF);
+        for (const VuVertex &in : packet.vertices)
+        {
+            uint32_t rgba;
+            std::memcpy(&rgba, in.rgba, 4);
+            uint32_t qbits;
+            std::memcpy(&qbits, &in.q, 4);
+            m_q = in.q;
+            m_rgbaq = rgba | (static_cast<uint64_t>(qbits) << 32);
+            if (m_queued < 3)
+                m_queue[m_queued++] = makeVertex(in);
+            kick(!in.adc);
+        }
+    }
+
     void Gs::kick(bool draw)
     {
         const uint32_t type = static_cast<uint32_t>(m_prim & 7);

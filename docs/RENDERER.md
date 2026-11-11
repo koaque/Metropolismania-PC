@@ -28,7 +28,7 @@ and audio, so it replaced raylib as the runtime's desktop host (`patches/0155`).
 | N1 | SDL3 host instead of raylib (`patches/0155`) | Done |
 | N2 | `tools/draw_inventory.py`: what the frames ask of the hardware (below) | Done for the city, new game and rain |
 | N3 | Renderer core: chain walker, GS state, texture cache, 2D primitives, progressive output, resolution scale (`src/render/`, below) | Done: everything drawn without VU1 |
-| N4 | The 13 VU1 programs as native code and shaders, compared image by image with the emulated output | |
+| N4 | The 13 VU1 programs as native code and shaders, compared image by image with the emulated output | In progress: the two model programs done (below) |
 | N5 | Native-only mode (the emulated VU1 and GS drawing skipped), the game state checked unchanged with `PS2X_TIMER0=frame` | |
 | N6 | 4K and MSAA, filtering, widescreen, frame pacing; then PC controls | |
 
@@ -82,5 +82,31 @@ The records and the inventory's output are game-derived and stay in `work/`.
   out as half of one texel and half of the next; here it stays sharp.
 * A draw whose texture lies in a field buffer drawn in an earlier frame (the talk overlay above) reads the previous native
   frame at the same place.
-* Not drawn yet, all VU1 model draws (N4): the 3D city, people and vehicles, the title logo, the HUD clock and phone, the
-  meter at the bottom, the laptop, the book and most window panels.
+
+## The VU1 programs (N4)
+
+The renderer keeps its own copy of VU1 data memory, filled from the VIF1 stream as the hardware fills it (`render_vif.cpp`:
+UNPACK with the write cycle, mask and row modes, the double buffer's TOP and TOPS). The chain walker marks each DMA CALL of
+a microcode upload packet, so the VIF knows which program the next MPG loads; MSCAL and MSCNT then run the native version
+of that program, which hands its primitives to the renderer's GS as float vertices where the VU1 would have sent a
+fixed-point GIF packet. The math runs on the CPU for now, in the programs' own order, so the output can be checked against
+the real programs; moving it into shaders is a later step.
+
+Each program is written from the microcode and checked with `MMPC_RENDER_VU1TEST=<folder>`, which replays captured runs
+(`.vu1r`, from `pipeline.py vu1-capture`) through the native program and compares its packets with the ones the real
+program sent: the vertex count and every ADC bit exactly, positions to a 16th of a pixel, colours to one step, texture
+coordinates to float rounding.
+
+| Program | Draws | Captured runs matching |
+|---|---|---|
+| 0x1A3C80 | people, the player, menus and windows, the title logo, the HUD's clock and phone, the talk scenes | 157 of 158 |
+| 0x1A4780 | buildings and objects, with its clipping mode (triangles that cross the clip volume clipped against five planes and sent as fans) | 103 of 103 |
+
+The one run that differs is a quirk of the game: that batch of 0x1A3C80 ran without its own setup, on the VI registers
+another program had left (its ADC bits come out different through an IAND with 16 where the setup sets 1). Things learned
+on the way: `ILW` reads only the low 16 bits of a word (the draw mode is stored as a float, whose low half is 0, so those
+instances take the no-fog loop), and in a captured batch the instance's matrix in data memory may already be the next
+instance's (the VIF unpacks it while the last batch runs; the setup keeps what it needs at 0x30-0x32 for that reason).
+
+Not drawn natively yet: the terrain passes (ground, cliff sides, water bottom, lit roads), the water, the rain and snow and
+their ground passes, the placement highlight and the unlit model program.
