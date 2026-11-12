@@ -48,7 +48,7 @@ Progress per subsystem is tracked in [docs/PORT_STATUS.md](docs/PORT_STATUS.md).
 | Movies, music, sound effects | Play, through a new SPU2 emulation (with reverb); a movie watched to its end hands over to the game (it froze there until 2026-11-12) |
 | Saves | Memory card check passes; loading a save from a PCSX2 memory card works |
 | Mapping (names, types, prototypes) | Done for every game function |
-| Readable source port | In progress: all 1,481 of the game's functions rewritten, 1,436 of them verified against the original (97%) ([details](docs/PORT_STATUS.md)) |
+| Readable source port | In progress: all 1,481 of the game's functions rewritten, 1,438 of them verified against the original (97%) ([details](docs/PORT_STATUS.md)) |
 | Reverse-engineering pass | In progress: struct fields by name (raw memory offsets down from about 2,700 lines to about 150), global variables, tables and strings by name, placeholder names replaced, the city's render pipeline mapped down to each of its 13 VU1 programs ([details](docs/RENDER_PIPELINE.md)) |
 | Platform layer (SDK and C runtime) | In progress: 120 of the 768 SDK functions rewritten as plain C++ in `src/port/platform/`; 88 verified by replay, 25 numeric ones (soft float, libm) by random-input comparison, 7 not yet shown. No recompiled SDK function is reachable from the ported code, and the explore and new-game runs enter none ([details](docs/PLATFORM_FINDINGS.md)) |
 | VU1 microcode | The city's programs run natively, checked against the interpreter ([details](docs/VU1_PROGRAMS.md)) |
@@ -216,7 +216,7 @@ This is a fan preservation project. It is not affiliated with or endorsed by Ind
 | ムービー、音楽、効果音 | 再生可能(新しく作ったSPU2エミュレーションによる、リバーブ付き)。ムービーを最後まで見るとゲームが続きます(2026-11-12まではそこで止まっていました) |
 | セーブ | メモリーカードの確認は通過。PCSX2のメモリーカードからのロードは動作 |
 | マッピング(名前、型、プロトタイプ) | ゲームの全関数で完了 |
-| 読みやすいソースへの移植 | 進行中。1,481関数すべてを書き直し済み、うち1,436関数を元のコードとの照合で検証済み(97%)([詳細](docs/PORT_STATUS.md)) |
+| 読みやすいソースへの移植 | 進行中。1,481関数すべてを書き直し済み、うち1,438関数を元のコードとの照合で検証済み(97%)([詳細](docs/PORT_STATUS.md)) |
 | リバースエンジニアリングの見直し | 進行中。生のメモリオフセットを構造体のフィールド名に置き換え(約2,700行から約150行に)、グローバル変数、テーブル、文字列にも名前を付け、仮の名前を本当の名前に変更、街の描画パイプラインを13個のVU1プログラムそれぞれまで解析済み([詳細](docs/RENDER_PIPELINE.md)) |
 | プラットフォーム層(SDKとCランタイム) | 進行中。768個のSDK関数のうち120個を `src/port/platform/` に素のC++で書き直し済み。88個はリプレイで、25個の数値関数(ソフトフロート、libm)はランダム入力との比較で検証済み、7個は未検証。移植済みコードから到達できる再コンパイル済みSDK関数はなく、探索と新規ゲームの実行でも再コンパイル済み関数は実行されません([詳細](docs/PLATFORM_FINDINGS.md)) |
 | VU1マイクロコード | 街のプログラムはネイティブで動作し、インタプリタとの照合済み([詳細](docs/VU1_PROGRAMS.md)) |
@@ -346,7 +346,7 @@ Last updated: 2026-11-06.
 - **The game:** Metropolismania (Japanese title 街ingメーカー, *Machi-ing Maker*), a city-building game played on foot, developed by Indi. Published by Media Factory in Japan (27 September 2001) and by Natsume in North America (17 October 2002) and Europe (8 November 2002).
 - **Supported version:** the USA disc only (SLUS-20377, disc VER 1.02). Every address in the project is specific to that build.
 - **How:** a static recompilation made with PS2Recomp keeps the game running while a hand-written, readable C++ port replaces it function by function, and differential tests check that each rewritten function matches the original.
-- **State:** boots, plays its movies, music and sound, loads saves and reaches the city; all 1,481 game functions are rewritten and 1,436 of them verified. Not yet playable from start to finish.
+- **State:** boots, plays its movies, music and sound, loads saves and reaches the city; all 1,481 game functions are rewritten and 1,438 of them verified. Not yet playable from start to finish.
 - **Platform and license:** Windows (MSVC) for now; GNU GPL v3. No game files are included: you need your own disc.
 
 ### What is Metropolismania?
@@ -399,7 +399,7 @@ Indi developed it (Indi Software, as its title screen credits it). Media Factory
 - **ゲーム:** 街ingメーカー(英語版 Metropolismania)。Indiが開発した、自分の足で歩いて遊ぶ街づくりゲームです。日本ではメディアファクトリーが2001年9月27日に、北米とヨーロッパではNatsumeが2002年(北米10月17日、ヨーロッパ11月8日)に発売しました。
 - **対応バージョン:** 北米版のディスクのみ(SLUS-20377、ディスクVER 1.02)。プロジェクト内のアドレスはすべてこのビルド専用です。
 - **方法:** PS2Recompによる静的再コンパイルでゲームを動かし続けながら、手で書いた読みやすいC++の移植で関数ごとに置き換えます。書き直した関数は、差分テストで元のコードと一致することを確かめます。
-- **現状:** 起動し、ムービー、音楽、効果音を再生し、セーブデータを読み込んで街まで進みます。ゲームの1,481関数すべてを書き直し、うち1,436関数を検証済みです。まだ最後まで遊べる状態ではありません。
+- **現状:** 起動し、ムービー、音楽、効果音を再生し、セーブデータを読み込んで街まで進みます。ゲームの1,481関数すべてを書き直し、うち1,438関数を検証済みです。まだ最後まで遊べる状態ではありません。
 - **対応環境とライセンス:** 現在はWindows(MSVC)のみ。GNU GPL v3。ゲームのファイルは含まれていません。ご自身のディスクが必要です。
 
 #### 街ingメーカーとはどんなゲームですか?

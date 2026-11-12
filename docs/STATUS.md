@@ -80,7 +80,7 @@ From 2026-10-16 the work followed plans for a readable source port rather than t
 |---|---|---|
 | P1 Map | Done | Every game function named, classified by subsystem and given a prototype (`config/signatures.txt`), the structs in `config/types/`, one page per subsystem in [map/](map/README.md) |
 | P2 Port infrastructure | Done | `src/port/guest.h` and `abi.h` (guest pointers, calls between rewritten and recompiled code), capture and difftest |
-| P3 Readable port | Done (2026-10-25) | All 1,481 game functions rewritten as readable C++ in `src/port/`, 1,436 of them verified by the differential tests ([PORT_STATUS.md](PORT_STATUS.md)) |
+| P3 Readable port | Done (2026-10-25) | All 1,481 game functions rewritten as readable C++ in `src/port/`, 1,438 of them verified by the differential tests ([PORT_STATUS.md](PORT_STATUS.md)) |
 | P4 VU1 ahead of time | Done | Pre-timed VU1 programs, then the same programs compiled to C++ (items 10 and 21, [VU1_PROGRAMS.md](VU1_PROGRAMS.md)) |
 | P5 IOP | Done (2026-10-28) | The sound driver YYSOUND rewritten as readable C++ and the ten IOP modules translated ahead of time ([IOP.md](IOP.md)) |
 | P6 Code that can block | Done (2026-10-25) | Rewritten functions that can reach a thread switch run on fibers ([FIBERS.md](FIBERS.md)) |

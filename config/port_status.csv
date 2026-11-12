@@ -1941,7 +1941,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001884E0,mm_Se_UpdateListener,1092,game,sound,verified,no,2,1,copies the city camera's eye and target into the listener vectors at 0x1FC650 and derives its orientation
 0x00188930,mm_Se_BuildingSoundState,1144,game,sound,verified,indirect,1,1,"a building object's ambient sound this frame: low byte the sound (0xFF none), 0x100 after the lead of its window, 0x200 built, 0x400 the type's own (ambientSound); one being built plays sound 6 in its third stage of work; each object once per frame (flag 4, again 0x4FF); the sound's schedule (SeSound schedule) decides"
 0x00188DB0,mm_Se_InTimeWindow,300,game,sound,verified,no,1,0,"(obj, start, length) checks the game clock (seconds of day mod 3600, 0x1BDD34) against a window [`start`, `length`) offset per object; 0xFF = outside, 0x100 = inside"
-0x00188EE0,mm_Se_RequestTileSounds,468,game,sound,ported,no,1,4,"the vehicles on map tile (x, z) unless its object already has a request: engine 0x18 pitched by speed; the horn 0x1A at one-in-four while still allowed; returns what is left of the horn flag"
+0x00188EE0,mm_Se_RequestTileSounds,468,game,sound,verified,no,1,4,"the vehicles on map tile (x, z) unless its object already has a request: engine 0x18 pitched by speed; the horn 0x1A at one-in-four while still allowed; returns what is left of the horn flag"
 0x001890C0,mm_Se_PickTerrainAmbience,508,game,sound,verified,no,1,3,"ambient sound id for a position: above the city's water level picks 0x1C/0x1D, else from the 5-byte table at 0x1B35F0 through mm_Se_MatchSchedule"
 0x001892D0,mm_Se_MatchSchedule,912,game,sound,verified,no,1,0,1 when the current month (monthCount mod 12) and hour/minute (0x1BDD34) fall inside the given month and time ranges
 0x00189660,mm_Se_Request,1244,game,sound,verified,no,7,2,"(owner, group, sound, updateOnly, cooldown, pitch, note, hold, angle, distance) adds a sound request (position, sound id, priority, volume, pitch, note) to the request list at 0x1F8710 (count at gp 0x1BDD08); ids look up the 16-byte sound table 0x1B2EE0"
@@ -2128,7 +2128,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0019C080,mm_Movie_AudioDecReset,192,game,movie,verified,yes,1,1,"(audioDecReset) stops AutoDMA, records the play position, plays the zero buffer, clears all counters"
 0x0019C140,mm_Movie_AudioDecStart,136,game,movie,verified,yes,1,1,"(audioDecStart) full volume and starts AutoDMA looping over the IOP buffer, state 2 (play)"
 0x0019C1D0,mm_Movie_AudioDecResume,136,game,movie,verified,yes,1,1,"same as mm_Movie_AudioDecStart, used after a pause"
-0x0019C260,mm_Movie_AudioDecDelete,52,game,movie,ported,yes,1,1,(audioDecDelete) frees the IOP buffers
+0x0019C260,mm_Movie_AudioDecDelete,52,game,movie,verified,yes,1,1,(audioDecDelete) frees the IOP buffers
 0x0019C2A0,mm_Movie_AudioDecCreate,376,game,movie,verified,yes,1,8,"(audioDecCreate) EE ring a1/a2, allocates the IOP buffer (a3 bytes) and a 0x800-byte zero buffer on the IOP"
 0x0019C420,mm_Movie_DisplayStop,12,game,movie,verified,no,1,0,"clears the display-running flags (0x1BDD68, 0x1BDD9C)"
 0x0019C430,mm_Movie_DisplayStart,76,game,movie,ported,yes,2,1,"waits for the field a0 to pass, then sets the display-running flag"

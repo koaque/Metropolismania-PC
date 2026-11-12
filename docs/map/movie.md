@@ -10,7 +10,7 @@ stream file `0x00717C40`, video decoder `0x00717C80` (sceMpeg plus the video buf
 
 ## Functions
 
-80 functions (ported 11, verified 69). Blocks: 49 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+80 functions (ported 10, verified 70). Blocks: 49 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
