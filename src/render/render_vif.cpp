@@ -195,7 +195,7 @@ namespace mm::render
             return;
         }
         m_packets.clear();
-        program->run(m_memory, entry, top, itop, m_packets);
+        runVuProgram(*program, m_memory, entry, top, itop, m_packets);
         for (const VuPacket &packet : m_packets)
             m_gs.vuPacket(packet);
     }

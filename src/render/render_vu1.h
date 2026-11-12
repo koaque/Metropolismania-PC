@@ -46,6 +46,8 @@ namespace mm::render
         VuRegister before[2]; // register writes ahead of this vertex, in packet order
         uint8_t beforeCount = 0;
         bool stale = false;   // a slot the program does not write but for its ADC bit (a skipped quad): not drawn
+        bool hasSt = true;    // the packet gives this vertex an ST (the rain's lines do not)
+        bool hasRgba = true;  // and an RGBAQ (the snow's sprites do not: their colour is the packet before's)
         float x = 0, y = 0;   // screen position in GS units (pixels, with the GS's 2048 offset)
         float z = 0;          // depth in GS Z units
         float fog = 0;        // 0..255, the GS's F
@@ -70,13 +72,17 @@ namespace mm::render
         // MSCAL `entry` (a byte address in micro memory) and MSCNT (`entry` = -1): one run, from TOP and ITOP as the VIF set
         // them. Primitives go to `out`; the program may also write VU1 data memory, as the microcode does.
         virtual void run(VuMemory &memory, int32_t entry, uint32_t top, uint32_t itop, std::vector<VuPacket> &out) = 0;
-        // For the record test: what the program's setup left in the VU's float registers, taken from a captured run's
-        // state (the setup's input in data memory may already be the next instance's). False when not needed.
-        virtual bool takeRegisters(const float (&vf)[32][4]) { return false; }
+        // For the record test: what the program's setup left in the VU's registers, taken from a captured run's state (the
+        // setup's input in data memory may already be the next instance's or the next pass's). False when not needed.
+        virtual bool takeRegisters(const float (&vf)[32][4], const int32_t (&vi)[16]) { return false; }
     };
 
     // The native version of the program a microcode upload packet (its address in the ELF) loads, or null.
     VuProgram *nativeProgram(uint32_t uploadPacket);
+
+    // Runs a program as the VU does its arithmetic: rounding toward zero (as the runtime's VU1 does).
+    void runVuProgram(VuProgram &program, VuMemory &memory, int32_t entry, uint32_t top, uint32_t itop,
+                      std::vector<VuPacket> &out);
 
     // MMPC_RENDER_VU1TEST=<folder of .vu1r records>: every record's run through the native program, its packets compared
     // with the ones the real program sent. Needs the ELF in RDRAM (the programs are told apart by its upload packets).

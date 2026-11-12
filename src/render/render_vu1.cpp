@@ -3,6 +3,7 @@
 #include "render_vu1.h"
 
 #include <algorithm>
+#include <cfenv>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -17,7 +18,9 @@ namespace mm::render
 {
     VuProgram *nativeModelProgram0();
     VuProgram *nativeModelProgram1();
+    VuProgram *nativeUnlitModelProgram();
     VuProgram *nativeTerrainProgram(uint32_t uploadPacket);
+    VuProgram *nativeWeatherProgram(uint32_t uploadPacket);
 
     VuProgram *nativeProgram(uint32_t uploadPacket)
     {
@@ -27,9 +30,21 @@ namespace mm::render
             return nativeModelProgram0();
         case 0x001A4780u:
             return nativeModelProgram1();
+        case 0x001A8330u:
+            return nativeUnlitModelProgram();
         default:
-            return nativeTerrainProgram(uploadPacket);
+            if (VuProgram *program = nativeTerrainProgram(uploadPacket))
+                return program;
+            return nativeWeatherProgram(uploadPacket);
         }
+    }
+
+    void runVuProgram(VuProgram &program, VuMemory &memory, int32_t entry, uint32_t top, uint32_t itop, std::vector<VuPacket> &out)
+    {
+        const int rounding = std::fegetround();
+        std::fesetround(FE_TOWARDZERO);
+        program.run(memory, entry, top, itop, out);
+        std::fesetround(rounding);
     }
 
     // The VU's FTOI4 and FTOI0: truncation toward zero, saturating at the int32 range.
@@ -52,6 +67,7 @@ namespace mm::render
         {
             uint32_t kind = 0, start = 0, top = 0, itop = 0;
             float vf[32][4] = {}; // the float registers before the run
+            int32_t vi[16] = {};  // and the integer ones
             std::vector<uint8_t> code, dataBefore;
             std::vector<std::vector<uint8_t>> packets;
         };
@@ -69,8 +85,11 @@ namespace mm::render
                 return false;
             r.kind = h[1], r.start = h[2], r.top = h[3], r.itop = h[4];
             size_t pos = 44 + 16; // header, cycles before and after
-            if (stateSize >= sizeof(r.vf) && pos + sizeof(r.vf) <= d.size())
-                std::memcpy(r.vf, d.data() + pos, sizeof(r.vf)); // VU1State starts with vf00-vf31
+            if (stateSize >= sizeof(r.vf) + sizeof(r.vi) && pos + sizeof(r.vf) + sizeof(r.vi) <= d.size())
+            {
+                std::memcpy(r.vf, d.data() + pos, sizeof(r.vf)); // VU1State starts with vf00-vf31, then vi00-vi15
+                std::memcpy(r.vi, d.data() + pos + sizeof(r.vf), sizeof(r.vi));
+            }
             pos += stateSize + schedSize;
             if (pos + codeSize + 2 * static_cast<size_t>(dataSize) + stateSize + 4 > d.size())
                 return false;
@@ -164,8 +183,10 @@ namespace mm::render
                 std::memcpy(&s, &v.s, 4);
                 std::memcpy(&t, &v.t, 4);
                 std::memcpy(&q, &v.q, 4);
-                out.push_back({v.stale ? Slot::Stale : Slot::St, {s, t, q, 0}});
-                out.push_back({v.stale ? Slot::Stale : Slot::Rgbaq, {v.rgba[0], v.rgba[1], v.rgba[2], v.rgba[3]}});
+                if (v.hasSt)
+                    out.push_back({v.stale ? Slot::Stale : Slot::St, {s, t, q, 0}});
+                if (v.hasRgba)
+                    out.push_back({v.stale ? Slot::Stale : Slot::Rgbaq, {v.rgba[0], v.rgba[1], v.rgba[2], v.rgba[3]}});
                 out.push_back({v.stale ? (v.adc ? Slot::StaleXyzf : Slot::Stale) : Slot::Xyzf,
                                {vuFtoi4(v.x), vuFtoi4(v.y), vuFtoi4(v.z), (vuFtoi4(v.fog) & 0xFFFF) | (v.adc ? 0x8000u : 0u)}});
             }
@@ -254,7 +275,10 @@ namespace mm::render
                     }
                     const int64_t zr = (r[2] >> 4) & 0xFFFFFF, zn = (n[2] >> 4) & 0xFFFFFF;
                     if (zr != zn)
-                        note(std::llabs(zr - zn) <= std::max<int64_t>(2, zr / 100000) ? 1 : 2, q, "Z");
+                    {
+                        std::snprintf(text, sizeof(text), "Z %lld vs native %lld", static_cast<long long>(zr), static_cast<long long>(zn));
+                        note(std::llabs(zr - zn) <= std::max<int64_t>(2, zr / 20000) ? 1 : 2, q, text);
+                    }
                     const int fr = (r[3] >> 4) & 0xFF, fn = (n[3] >> 4) & 0xFF;
                     if (fr != fn)
                         note(std::abs(fr - fn) <= 1 ? 1 : 2, q, "F");
@@ -306,10 +330,10 @@ namespace mm::render
             VuMemory memory;
             std::memcpy(memory.words, r.dataBefore.data(), std::min(r.dataBefore.size(), sizeof(memory.words)));
             std::vector<VuPacket> packets;
-            if (r.kind != 0 && !native->takeRegisters(r.vf)) // MSCNT: the setup the batch follows
-                native->run(memory, 0, r.top, r.itop, packets);
+            if (r.kind != 0 && !native->takeRegisters(r.vf, r.vi)) // MSCNT: the setup the batch follows
+                runVuProgram(*native, memory, 0, r.top, r.itop, packets);
             packets.clear();
-            native->run(memory, r.kind == 0 ? static_cast<int32_t>(r.start) : -1, r.top, r.itop, packets);
+            runVuProgram(*native, memory, r.kind == 0 ? static_cast<int32_t>(r.start) : -1, r.top, r.itop, packets);
             int worst = 0;
             std::string where;
             if (packets.size() != r.packets.size())

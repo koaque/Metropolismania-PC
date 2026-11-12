@@ -588,16 +588,21 @@ namespace mm::render
             // Draw into the other target: the one shown until now becomes the previous frame (read by kPreviousFrame draws).
             r.target ^= 1;
             SDL_GPUTexture *previous = r.colors[r.target ^ 1];
+            // The GS keeps a frame buffer's contents from one use to the next, and the game counts on it (while a talk
+            // overlay is up it blends the other buffer over a frame it does not draw again), so the targets keep theirs:
+            // the one drawn now holds the frame before last, as the PS2's other field buffer does. The Z buffer is one
+            // for both, as on the GS. Only their first use starts from black.
+            const bool fresh = r.framesDrawn <= 2;
             SDL_GPUColorTargetInfo colorTarget{};
             colorTarget.texture = r.colors[r.target];
-            colorTarget.load_op = SDL_GPU_LOADOP_CLEAR;
+            colorTarget.load_op = fresh ? SDL_GPU_LOADOP_CLEAR : SDL_GPU_LOADOP_LOAD;
             colorTarget.clear_color = SDL_FColor{0, 0, 0, 1};
             colorTarget.store_op = SDL_GPU_STOREOP_STORE;
             SDL_GPUDepthStencilTargetInfo depthTarget{};
             depthTarget.texture = r.depth;
-            depthTarget.load_op = SDL_GPU_LOADOP_CLEAR;
+            depthTarget.load_op = fresh ? SDL_GPU_LOADOP_CLEAR : SDL_GPU_LOADOP_LOAD;
             depthTarget.clear_depth = 0.0f;
-            depthTarget.store_op = SDL_GPU_STOREOP_DONT_CARE;
+            depthTarget.store_op = SDL_GPU_STOREOP_STORE;
             depthTarget.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
             depthTarget.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
             SDL_GPURenderPass *pass = SDL_BeginGPURenderPass(commands, &colorTarget, 1, &depthTarget);

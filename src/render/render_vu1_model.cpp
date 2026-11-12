@@ -106,7 +106,12 @@ namespace mm::render
         public:
             // `modeAddress`: where the setup keeps the draw mode qword; `clipping`: the program has 0x1A4780's three loops
             // (mode 1 clips, mode 0 no fog, others fog) rather than 0x1A3C80's two (mode 0 no fog, others fog).
-            ModelProgram(uint32_t modeAddress, bool clipping) : m_modeAddress(modeAddress), m_clipping(clipping) {}
+            // `unlit`: 0x1A8330, 0x1A3C80's no-fog loop with the light replaced by the vertex's own colour (times the batch's
+            // red, green and blue only), but for the strip's last vertex, which keeps the lit colour; the draw mode not read.
+            ModelProgram(uint32_t modeAddress, bool clipping, bool unlit = false)
+                : m_modeAddress(modeAddress), m_clipping(clipping), m_unlit(unlit)
+            {
+            }
 
             void run(VuMemory &memory, int32_t entry, uint32_t top, uint32_t /*itop*/, std::vector<VuPacket> &out) override
             {
@@ -116,7 +121,7 @@ namespace mm::render
                     batch(memory, top, out);
             }
 
-            bool takeRegisters(const float (&vf)[32][4]) override
+            bool takeRegisters(const float (&vf)[32][4], const int32_t (&)[16]) override
             {
                 for (int i = 0; i < 4; ++i)
                 {
@@ -174,7 +179,7 @@ namespace mm::render
                 std::copy(m.qword(colourEntry), m.qword(colourEntry) + 4, m.qword(48));
                 for (int i = 0; i < 4; ++i)
                     m_lightColour[i] = load(m, 12 + i);
-                const int32_t mode = vi(m_modeAddress, 3);
+                const int32_t mode = m_unlit ? 0 : vi(m_modeAddress, 3);
                 if (m_clipping && mode == 1)
                     clippingBatch(m, top, out);
                 else
@@ -246,8 +251,15 @@ namespace mm::render
                     o.t = m.real(v + 3, 1) * m_q[j];
                     o.q = m.real(v + 3, 2) * m_q[j];
                     const Vec4 lit = light(m, v + 1), colour = integers(m, v + 2);
-                    for (int i = 0; i < 4; ++i)
-                        o.rgba[i] = toByte(std::min(lit[i] * colour[i] * m_batchColour[i], 255.0f));
+                    if (m_unlit)
+                        for (int i = 0; i < 4; ++i)
+                        {
+                            const float own = j == count - 1 ? lit[i] * colour[i] : colour[i];
+                            o.rgba[i] = toByte(std::min(i < 3 ? own * m_batchColour[i] : own, 255.0f));
+                        }
+                    else
+                        for (int i = 0; i < 4; ++i)
+                            o.rgba[i] = toByte(std::min(lit[i] * colour[i] * m_batchColour[i], 255.0f));
                     o.adc = (clipHistory & 0x3FFFF) != 0 || !facing(j - 2);
                     packet.vertices.push_back(o);
                 }
@@ -395,7 +407,7 @@ namespace mm::render
             }
 
             uint32_t m_modeAddress;
-            bool m_clipping;
+            bool m_clipping, m_unlit;
             Vec4 m_screen[4], m_clip[4], m_light[3];
             Vec4 m_lightColour[4], m_batchColour;
             bool m_ready = false;
@@ -416,6 +428,12 @@ namespace mm::render
     VuProgram *nativeModelProgram1()
     {
         static ModelProgram s_program(0xC0, true);
+        return &s_program;
+    }
+
+    VuProgram *nativeUnlitModelProgram()
+    {
+        static ModelProgram s_program(0x32, false, true);
         return &s_program;
     }
 }

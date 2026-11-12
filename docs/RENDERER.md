@@ -28,7 +28,7 @@ and audio, so it replaced raylib as the runtime's desktop host (`patches/0155`).
 | N1 | SDL3 host instead of raylib (`patches/0155`) | Done |
 | N2 | `tools/draw_inventory.py`: what the frames ask of the hardware (below) | Done for the city, new game and rain |
 | N3 | Renderer core: chain walker, GS state, texture cache, 2D primitives, progressive output, resolution scale (`src/render/`, below) | Done: everything drawn without VU1 |
-| N4 | The 13 VU1 programs as native code and shaders, compared image by image with the emulated output | In progress: the two model programs done (below) |
+| N4 | The 13 VU1 programs as native code and shaders, compared image by image with the emulated output | All 13 native, checked against captured runs (below); their math still on the CPU |
 | N5 | Native-only mode (the emulated VU1 and GS drawing skipped), the game state checked unchanged with `PS2X_TIMER0=frame` | |
 | N6 | 4K and MSAA, filtering, widescreen, frame pacing; then PC controls | |
 
@@ -81,7 +81,9 @@ The records and the inventory's output are game-derived and stay in `work/`.
   upscales without its neighbours bleeding into its edges. On the GS the game's text, drawn bilinear from texel edges, comes
   out as half of one texel and half of the next; here it stays sharp.
 * A draw whose texture lies in a field buffer drawn in an earlier frame (the talk overlay above) reads the previous native
-  frame at the same place.
+  frame at the same place. The two render targets keep their contents from one use to the next, as the GS's two field
+  buffers do (the game counts on it: under a talk overlay it blends the other buffer over a frame it does not draw again),
+  and share one Z buffer.
 
 ## The VU1 programs (N4)
 
@@ -99,21 +101,31 @@ coordinates to float rounding.
 
 | Program | Draws | Captured runs matching |
 |---|---|---|
-| 0x1A3C80 | people, the player, menus and windows, the title logo, the HUD's clock and phone, the talk scenes | 157 of 158 |
-| 0x1A4780 | buildings and objects, with its clipping mode (triangles that cross the clip volume clipped against five planes and sent as fans) | 103 of 103 |
-| 0x1A5EB0 | the base ground: per quad its TEX0, corners in strip order, two lit faces | 94 of 95 (the other: 2/16 of a pixel on a corner 13,000 pixels off screen) |
+| 0x1A3C80 | people, the player, menus and windows, the title logo, the HUD's clock and phone, the talk scenes | 190 of 193 (165 bit for bit) |
+| 0x1A4780 | buildings and objects, with its clipping mode (triangles that cross the clip volume clipped against five planes and sent as fans) | 103 of 103 (89 bit for bit) |
+| 0x1A5EB0 | the base ground: per quad its TEX0, corners in strip order, two lit faces | 94 of 94 |
 | 0x1AA340 | the water bottom: the ground pass with each height scaled and offset | 105 of 105 |
 | 0x1A91C0 | the lit roads: the ground pass unlit, one colour | 60 of 60 |
 | 0x1A76F0 | the cliff sides: triangles, texture t from the height, one lit face each | 83 of 83 |
+| 0x1A6440 | the water: each corner's height a wave along z (the VU's ESIN), every quad drawn twice in two contexts | 48 of 48 |
+| 0x1A8A00 | the rain: twelve streaks a quad, as lines, dropped by a hash of the quad's position | 8 of 8 |
+| 0x1A8E20 | the rain's ground pass | 8 of 8 |
+| 0x1A9A90 | the snow: flakes as sprites, turned and moved by tables a hash picks | 17 of 17 |
+| 0x1A9F10 | the snowy ground: the ground pass untextured, lifted 0.01 | 14 of 14 |
+| 0x1A7B30 | the placement highlight: each quad as a filled strip and a closed outline | 6 of 6 |
+| 0x1A8330 | the unlit model program (the claim-met effect, the placement marker) | no captured run; written from the code |
 
-The one run that differs is a quirk of the game: that batch of 0x1A3C80 ran without its own setup, on the VI registers
-another program had left (its ADC bits come out different through an IAND with 16 where the setup sets 1). Things learned
-on the way: `ILW` reads only the low 16 bits of a word (the draw mode is stored as a float, whose low half is 0, so those
-instances take the no-fog loop), and in a captured batch the instance's matrix in data memory may already be the next
-instance's (the VIF unpacks it while the last batch runs; the setup keeps what it needs at 0x30-0x32 for that reason).
+The counts are over the six capture folders, in which some runs appear more than once; every match but the model
+programs' is bit for bit, and theirs differ only within float rounding. The native programs round as the VU does
+(toward zero, as the runtime's VU1); the rain and snow pick their tables from the low bits of a float's bit pattern, so
+nothing less would do. The three runs that differ are one run of 0x1A3C80, a quirk of the game: that batch ran without
+its own setup, on the VI registers another program had left (its ADC bits come out different through an IAND with 16
+where the setup sets 1).
 
-The terrain passes also leave a skipped quad's slots in their output buffer as they were (only its ADC bits are written),
-and set ADC by storing 0x8000 over a vertex's whole w word (so its F goes to 0); the test compares just those bits there.
-
-Not drawn natively yet: the water, the rain and snow and their ground passes, the placement highlight and the unlit model
-program.
+Things learned on the way: `ILW` reads only the low 16 bits of a word (the draw mode is stored as a float, whose low half
+is 0, so those instances take the no-fog loop); in a captured batch the instance's matrix in data memory may already be
+the next instance's (the VIF unpacks it while the last batch runs; the setup keeps what it needs at 0x30-0x32 for that
+reason); the terrain passes leave a skipped quad's slots in their output buffer as they were (only its ADC bits are
+written) and set ADC by storing 0x8000 over a vertex's whole w word, so its F goes to 0; and the rain's ground pass
+multiplies its second and fourth corners' texture coordinates by the next corner's 1 / w, because its software pipelining
+issues those multiplies after the next DIV has landed (kept, as the game draws it).

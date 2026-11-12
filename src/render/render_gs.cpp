@@ -404,14 +404,29 @@ namespace mm::render
                     write(in.before[i].reg, in.before[i].value);
             if (in.stale)
                 continue; // a skipped slot: its kick never draws, and the next PRIM write starts the strip anew
-            uint32_t rgba;
-            std::memcpy(&rgba, in.rgba, 4);
-            uint32_t qbits;
-            std::memcpy(&qbits, &in.q, 4);
-            m_q = in.q;
-            m_rgbaq = rgba | (static_cast<uint64_t>(qbits) << 32);
+            if (in.hasSt)
+                m_q = in.q;
+            if (in.hasRgba)
+            {
+                uint32_t rgba, qbits;
+                std::memcpy(&rgba, in.rgba, 4);
+                std::memcpy(&qbits, &m_q, 4);
+                m_rgbaq = rgba | (static_cast<uint64_t>(qbits) << 32);
+            }
             if (m_queued < 3)
-                m_queue[m_queued++] = makeVertex(in);
+            {
+                VuVertex v = in;
+                if (!in.hasRgba) // the colour the packet before set
+                    std::memcpy(v.rgba, &m_rgbaq, 4);
+                if (!in.hasSt)
+                {
+                    std::memcpy(&v.s, &m_st, 4);
+                    const uint32_t t = static_cast<uint32_t>(m_st >> 32);
+                    std::memcpy(&v.t, &t, 4);
+                    v.q = m_q;
+                }
+                m_queue[m_queued++] = makeVertex(v);
+            }
             kick(!in.adc);
         }
     }
