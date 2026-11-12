@@ -60,6 +60,9 @@ namespace mm::render
 
         // A number that changes whenever a page in [first, first + count) is written.
         uint64_t version(uint32_t firstPage, uint32_t pageCount) const;
+        // A hash of the bytes of the pages in [first, first + count): the same bytes give the same hash, whatever was written
+        // in between (the game uploads its glyphs and palettes again every frame). A page is hashed again only after a write.
+        uint64_t contentHash(uint32_t firstPage, uint32_t pageCount) const;
         // The pages a texture (and its palette) lies in.
         static void texturePages(const Tex0 &tex, uint32_t width, uint32_t height, uint32_t &first, uint32_t &count);
 
@@ -72,6 +75,8 @@ namespace mm::render
 
         std::vector<uint8_t> m_memory;
         std::array<uint64_t, kPages> m_pageVersion{};
+        mutable std::array<uint64_t, kPages> m_pageHash{};        // contentHash's per page
+        mutable std::array<uint64_t, kPages> m_pageHashVersion{}; // the version m_pageHash was taken at (~0: none yet)
         uint64_t m_clock = 1;
 
         uint64_t m_bitbltbuf = 0, m_trxpos = 0, m_trxreg = 0;

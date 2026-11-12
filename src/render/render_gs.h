@@ -127,6 +127,7 @@ namespace mm::render
             for (uint64_t key : keys)
                 m_decoded.erase(key);
             m_contentOf.clear();
+            m_contentOfBytes.clear();
         }
         Frame &frame() { return m_frame; }
 
@@ -180,5 +181,14 @@ namespace mm::render
 
         std::unordered_map<uint64_t, bool> m_decoded;       // texture contents decoded since start
         std::unordered_map<uint64_t, uint64_t> m_contentOf; // a texture's place and page versions -> its content key
+        std::unordered_map<uint64_t, uint64_t> m_contentOfBytes; // a texture's place and its pages' bytes -> its content key
+        // 8-bit palettes as loaded from a place with given bytes: the 256 entries and their hash (the game loads its palettes
+        // again every frame)
+        struct LoadedClut
+        {
+            uint32_t entries[256];
+            uint64_t hash;
+        };
+        std::unordered_map<uint64_t, LoadedClut> m_cluts;
     };
 }

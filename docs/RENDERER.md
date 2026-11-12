@@ -95,7 +95,11 @@ The records and the inventory's output are game-derived and stay in `work/`.
   runs (movies), at the first transfer after a vertical blank.
 * Textures are decoded from that memory into RGBA8 and kept by content: a texture whose pages were written but whose texels
   did not change keeps its GPU copy, so the city uploads no textures in a steady frame although the game uploads its
-  glyphs and palettes again every frame. Textures up to 256 x 256 live in cells of atlas pages (square cells of 16 to 256
+  glyphs and palettes again every frame. Telling that needs no decode: the bytes of each memory page are hashed once after
+  a write, a texture whose pages hold bytes already seen at its place takes the content found then, and an 8-bit palette
+  loaded from bytes already seen is taken from that load (the render thread's time per frame in the explore autoplay went
+  from 7.0 to 5.2 ms; the frames are the same bit for bit at the eleven camera views, the menus and the town pages).
+  Textures up to 256 x 256 live in cells of atlas pages (square cells of 16 to 256
   texels, a page per cell size, made once and kept; a texture unused for 600 frames gives its cell back), since creating a
   GPU texture costs about half a millisecond on D3D12 whatever its size: as the view moved, dozens of new small textures
   in one frame held the window thread up (40 made a 25 ms hitch, a few times a minute in the explore autoplay; at loads 100

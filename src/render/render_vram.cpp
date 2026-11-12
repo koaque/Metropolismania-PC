@@ -74,7 +74,7 @@ namespace mm::render
         return t;
     }
 
-    Vram::Vram() : m_memory(kBytes, 0u) {}
+    Vram::Vram() : m_memory(kBytes, 0u) { m_pageHashVersion.fill(~0ull); }
 
     void Vram::touch(uint32_t byteAddress) { m_pageVersion[(byteAddress & (kBytes - 1u)) >> 13] = m_clock; }
 
@@ -353,5 +353,30 @@ namespace mm::render
         for (uint32_t i = 0; i < pageCount; ++i)
             v = std::max(v, m_pageVersion[(firstPage + i) % kPages]);
         return v;
+    }
+
+    uint64_t Vram::contentHash(uint32_t firstPage, uint32_t pageCount) const
+    {
+        uint64_t h = 0x9E3779B97F4A7C15ull ^ pageCount;
+        for (uint32_t i = 0; i < pageCount; ++i)
+        {
+            const uint32_t page = (firstPage + i) % kPages;
+            if (m_pageHashVersion[page] != m_pageVersion[page])
+            {
+                const uint8_t *bytes = m_memory.data() + static_cast<size_t>(page) * 8192u;
+                uint64_t p = 0x243F6A8885A308D3ull ^ page;
+                for (uint32_t w = 0; w < 8192u / 8u; ++w)
+                {
+                    uint64_t word;
+                    std::memcpy(&word, bytes + w * 8u, 8);
+                    p ^= word * 0xBF58476D1CE4E5B9ull;
+                    p = ((p << 27) | (p >> 37)) * 0x94D049BB133111EBull;
+                }
+                m_pageHash[page] = p;
+                m_pageHashVersion[page] = m_pageVersion[page];
+            }
+            h ^= m_pageHash[page] + 0x9E3779B97F4A7C15ull + (h << 6) + (h >> 2);
+        }
+        return h;
     }
 }

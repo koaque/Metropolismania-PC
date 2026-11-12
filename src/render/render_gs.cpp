@@ -257,11 +257,36 @@ namespace mm::render
             }
             if (load && t.indexed())
             {
+                // an 8-bit palette fills the whole buffer: loaded before from the same place with the same bytes, its entries
+                // are taken again (a 4-bit one writes 16 entries into what is there, and is cheap)
+                const bool whole = t.psm == 0x13 && (t.cpsm == 0x00 || t.cpsm == 0x01);
+                uint64_t place = 0;
+                if (whole)
+                {
+                    place = mix(mix(mix(mix(0x6C62272E07BB0142ull, t.cbp), t.cpsm), t.psm), t.csm);
+                    place = mix(place, m_vram.contentHash((t.cbp / 32u) % Vram::kPages, 2u));
+                    const auto found = m_cluts.find(place);
+                    if (found != m_cluts.end())
+                    {
+                        std::memcpy(m_clut, found->second.entries, sizeof(m_clut));
+                        m_clutHash = found->second.hash;
+                        break;
+                    }
+                }
                 m_vram.loadClut(t, m_clut);
                 uint64_t h = 0;
                 for (uint32_t c : m_clut)
                     h = mix(h, c);
                 m_clutHash = h;
+                if (whole)
+                {
+                    if (m_cluts.size() > 4096)
+                        m_cluts.clear();
+                    LoadedClut loaded;
+                    std::memcpy(loaded.entries, m_clut, sizeof(m_clut));
+                    loaded.hash = h;
+                    m_cluts.emplace(place, loaded);
+                }
             }
             break;
         }
@@ -586,20 +611,30 @@ namespace mm::render
         // when to decode again; and the one returned, from its size and decoded pixels, so that a texture whose pages were
         // written (the game uploads glyphs and palettes into shared pages every frame) but whose texels did not change keeps
         // its GPU copy.
-        uint64_t where = mix(0, t.tbp);
-        where = mix(where, t.tbw);
-        where = mix(where, t.psm);
-        where = mix(where, t.tw);
-        where = mix(where, t.th);
-        where = mix(where, m_vram.version(first, count));
+        uint64_t place = mix(0, t.tbp);
+        place = mix(place, t.tbw);
+        place = mix(place, t.psm);
+        place = mix(place, t.tw);
+        place = mix(place, t.th);
         if (t.indexed())
         {
-            where = mix(where, t.psm == 0x14 ? t.csa : 0u);
-            where = mix(where, m_clutHash);
+            place = mix(place, t.psm == 0x14 ? t.csa : 0u);
+            place = mix(place, m_clutHash);
         }
+        const uint64_t where = mix(place, m_vram.version(first, count));
         auto known = m_contentOf.find(where);
         if (known != m_contentOf.end())
             return known->second;
+        // Pages written again with the same bytes (the game's per-frame uploads): the content found before, as long as the GPU
+        // side still has it; no decode and no hashing of the texels.
+        const uint64_t bytes = mix(place, m_vram.contentHash(first, count));
+        if (auto same = m_contentOfBytes.find(bytes); same != m_contentOfBytes.end() && m_decoded.count(same->second) != 0)
+        {
+            if (m_contentOf.size() > 50000)
+                m_contentOf.clear();
+            m_contentOf.emplace(where, same->second);
+            return same->second;
+        }
         TextureImage image;
         image.width = width;
         image.height = height;
@@ -615,6 +650,9 @@ namespace mm::render
         if (m_contentOf.size() > 50000) // old places: forget them
             m_contentOf.clear();
         m_contentOf.emplace(where, key);
+        if (m_contentOfBytes.size() > 50000)
+            m_contentOfBytes.clear();
+        m_contentOfBytes[bytes] = key;
         if (m_decoded.find(key) == m_decoded.end())
         {
             m_frame.newTextures.emplace(key, std::move(image));
