@@ -170,8 +170,12 @@ port's first enhancement switch; with it off the port runs as before).
   walk stride), so who walks depends on what is in view, as in the original when the camera turns. With
   `PS2X_TIMER0=frame`, a 4:3 and a 16:9 run under the explore autoplay are the same state up to the city and differ in
   pedestrians within its first 300 frames.
-* Speed at 16:9: 59.9 frames a second in the city (explore autoplay and the camera script, 2x scale), as at 4:3, measured
-  with the first version, which drew the same widened draw lists.
+* Speed at 16:9: 59.9 frames a second in the city at 2x scale, as at 4:3 (152 of 162 two-second windows over a whole
+  evening and the change of day; the lowest 58.0, at the change of day).
+* Checked against 4:3 runs of the same scripts (the middle of each wide frame against the 4:3 frame): the eleven camera
+  views at 16:9 and 21:9, the laptop and its town pages, notebook and bag, the pause menu, a talk scene, an evening into
+  night and the next day, leaving the city (the fade covers the whole width; the title's screens are 4:3 again), and split
+  mode (the emulated half 4:3, the native half wide).
 
 ## Native only (N5)
 
