@@ -61,6 +61,7 @@ cbuffer DrawParams : register(b0, space3)
     float4 FogColor; // FOGCOL / 255
     uint4 Region;    // CLAMP's MINU, MAXU, MINV, MAXV
     float4 SnapX;    // across: render target pixels per frame pixel of this draw, and where its frame x 0 lies on the target
+    uint4 TexRect;   // the texture's corner in the bound texture (a cell of an atlas page) and its size
 };
 
 static const float kScale = 255.0 / 128.0;
@@ -82,7 +83,7 @@ float4 fetch(int2 c, int2 size)
     const uint wms = (Flags >> 12) & 3u, wmt = (Flags >> 14) & 3u;
     const int x = wrap(c.x, wms, size.x, (int)Region.x, (int)Region.y);
     const int y = wrap(c.y, wmt, size.y, (int)Region.z, (int)Region.w);
-    return Texture.Load(int3(x & (size.x - 1), y & (size.y - 1), 0));
+    return Texture.Load(int3(int2(TexRect.xy) + int2(x & (size.x - 1), y & (size.y - 1)), 0));
 }
 
 float4 PSMain(VSOutput input) : SV_Target0
@@ -91,9 +92,7 @@ float4 PSMain(VSOutput input) : SV_Target0
     float3 rgb = vertex.rgb;
     float alpha = vertex.a;
 
-    uint width, height;
-    Texture.GetDimensions(width, height);
-    const int2 size = int2(width, height);
+    const int2 size = int2(TexRect.zw);
     float2 uv = input.stq.xy / input.stq.z * float2(size);
     // Where the texture is read. The GS samples a pixel at its integer position, where the GPU takes the centre, so texture
     // coordinates are taken half a 1x pixel back (at 1x: the GS's texels exactly). A sprite drawn one texel to one frame pixel

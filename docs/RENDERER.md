@@ -94,7 +94,12 @@ The records and the inventory's output are game-derived and stay in `work/`.
   runs (movies), at the first transfer after a vertical blank.
 * Textures are decoded from that memory into RGBA8 and kept by content: a texture whose pages were written but whose texels
   did not change keeps its GPU copy, so the city uploads no textures in a steady frame although the game uploads its
-  glyphs and palettes again every frame.
+  glyphs and palettes again every frame. Textures up to 256 x 256 live in cells of atlas pages (square cells of 16 to 256
+  texels, a page per cell size, made once and kept; a texture unused for 600 frames gives its cell back), since creating a
+  GPU texture costs about half a millisecond on D3D12 whatever its size: as the view moved, dozens of new small textures
+  in one frame held the window thread up (40 made a 25 ms hitch, a few times a minute in the explore autoplay; at loads 100
+  to 400 ms). With the atlas the city shows no late frame there, and the shader reads a texture through its cell's place
+  and size. The frames are the same bit for bit at the eleven camera views.
 * Output is progressive: the field's half-line offset is dropped and the 224-line field coordinates are doubled, so both
   fields' lines come from one draw and nothing is woven.
 * Sampling follows the GS: wrap modes including region clamp and region repeat, its bilinear filter (half a texel back,

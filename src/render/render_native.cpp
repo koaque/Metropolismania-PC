@@ -65,6 +65,7 @@ namespace mm::render
             float fogColor[4];
             uint32_t region[4];
             float snapX[4]; // render pixels per frame pixel across, and where frame x 0 lies
+            uint32_t texRect[4]; // the texture's corner in the bound texture (an atlas page) and its size
         };
 
         struct VertexParams // the shader's VertexParams
@@ -95,10 +96,26 @@ namespace mm::render
             bool wide = false; // the city drew this frame with its widened view
         };
 
+        // A game texture on the GPU: a cell of an atlas page, or a texture of its own when larger than the largest cell.
         struct GpuTexture
         {
             SDL_GPUTexture *texture = nullptr;
+            uint32_t x = 0, y = 0, width = 0, height = 0;
+            int cellClass = -1; // the atlas class (kAtlasCells), or -1 for a texture of its own
+            uint32_t page = 0, cell = 0;
             uint64_t lastUsed = 0;
+        };
+
+        // The atlas: creating a GPU texture costs about half a millisecond on D3D12 whatever its size, and the city brings in
+        // dozens of small textures at a time as the view moves (40 in one frame made a 25 ms hitch). Textures up to 256 x 256
+        // go into square cells of 16 to 256 texels on pages made once and kept; a cell freed by eviction is used again.
+        constexpr uint32_t kAtlasCells[] = {16u, 32u, 64u, 128u, 256u};
+        constexpr int kAtlasClasses = 5;
+        struct AtlasPage
+        {
+            SDL_GPUTexture *texture = nullptr;
+            uint32_t side = 0;              // texels
+            std::vector<uint32_t> freeCells; // cell indices, row by row
         };
 
         struct Renderer
@@ -160,6 +177,9 @@ namespace mm::render
             uint32_t vertexCapacity = 0;
             SDL_GPUTransferBuffer *vertexUpload = nullptr;
             std::unordered_map<uint64_t, GpuTexture> textures;
+            std::vector<AtlasPage> atlas[kAtlasClasses];
+            SDL_GPUTransferBuffer *textureUpload = nullptr; // kept and cycled; made larger when a frame needs more
+            uint32_t textureUploadCapacity = 0;
             Frame current;
             uint64_t framesDrawn = 0;
             bool gpuFailed = false;
@@ -430,7 +450,17 @@ namespace mm::render
             std::unique_lock<std::mutex> lock(r.workMutex);
             if (end)
             {
+                // MMPC_FRAME_PACING=1: a wait of the game thread for the render thread long enough to delay the game's frame
+                static const bool pacing = [] {
+                    const char *v = std::getenv("MMPC_FRAME_PACING");
+                    return v != nullptr && v[0] == '1';
+                }();
+                const auto start = std::chrono::steady_clock::now();
                 r.workDone.wait(lock, [&] { return r.framesQueued < 2; });
+                const double waited = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+                if (pacing && waited > 3.0)
+                    std::cerr << "[pacing] the game thread waited " << waited << " ms for the render thread (two frames queued)"
+                              << std::endl;
                 ++r.framesQueued;
             }
             r.work.push_back(std::move(item));
@@ -740,6 +770,62 @@ namespace mm::render
             return pipeline;
         }
 
+        // A place for a w x h texture: a free atlas cell of the smallest class that holds it (a new page when its class has
+        // none), else a texture of its own.
+        GpuTexture place(Renderer &r, uint32_t w, uint32_t h)
+        {
+            GpuTexture t;
+            t.width = w;
+            t.height = h;
+            const uint32_t side = std::max(w, h);
+            int cls = 0;
+            while (cls < kAtlasClasses && kAtlasCells[cls] < side)
+                ++cls;
+            if (cls == kAtlasClasses)
+            {
+                t.texture = makeTexture(r.device, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREUSAGE_SAMPLER, w, h);
+                return t;
+            }
+            const uint32_t cellSide = kAtlasCells[cls];
+            std::vector<AtlasPage> &pages = r.atlas[cls];
+            size_t page = 0;
+            while (page < pages.size() && pages[page].freeCells.empty())
+                ++page;
+            if (page == pages.size())
+            {
+                AtlasPage fresh;
+                fresh.side = std::min(2048u, cellSide * 32u); // 1024 cells a page, 64 for the largest class
+                fresh.texture = makeTexture(r.device, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREUSAGE_SAMPLER, fresh.side,
+                                            fresh.side);
+                if (fresh.texture == nullptr)
+                    return t;
+                const uint32_t cells = (fresh.side / cellSide) * (fresh.side / cellSide);
+                for (uint32_t c = cells; c-- > 0;) // handed out from the first
+                    fresh.freeCells.push_back(c);
+                pages.push_back(std::move(fresh));
+            }
+            AtlasPage &p = pages[page];
+            const uint32_t cell = p.freeCells.back();
+            p.freeCells.pop_back();
+            const uint32_t perRow = p.side / cellSide;
+            t.texture = p.texture;
+            t.x = (cell % perRow) * cellSide;
+            t.y = (cell / perRow) * cellSide;
+            t.cellClass = cls;
+            t.page = static_cast<uint32_t>(page);
+            t.cell = cell;
+            return t;
+        }
+
+        // Gives a texture's place back: its atlas cell to its page, or its own texture to the device.
+        void release(Renderer &r, const GpuTexture &t)
+        {
+            if (t.cellClass < 0)
+                SDL_ReleaseGPUTexture(r.device, t.texture);
+            else
+                r.atlas[t.cellClass][t.page].freeCells.push_back(t.cell);
+        }
+
         // Uploads the textures that came with the frame and the frame's vertices (one copy pass).
         void upload(Renderer &r, SDL_GPUCommandBuffer *commands, std::unordered_map<uint64_t, TextureImage> &newTextures)
         {
@@ -767,10 +853,17 @@ namespace mm::render
             SDL_GPUTransferBuffer *textureUpload = nullptr;
             if (textureBytes > 0)
             {
-                SDL_GPUTransferBufferCreateInfo up{};
-                up.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-                up.size = static_cast<Uint32>(textureBytes);
-                textureUpload = SDL_CreateGPUTransferBuffer(r.device, &up);
+                if (textureBytes > r.textureUploadCapacity || r.textureUpload == nullptr)
+                {
+                    if (r.textureUpload != nullptr)
+                        SDL_ReleaseGPUTransferBuffer(r.device, r.textureUpload); // released once the GPU is done with it
+                    r.textureUploadCapacity = std::max(static_cast<uint32_t>(textureBytes) * 2u, 4u << 20);
+                    SDL_GPUTransferBufferCreateInfo up{};
+                    up.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+                    up.size = r.textureUploadCapacity;
+                    r.textureUpload = SDL_CreateGPUTransferBuffer(r.device, &up);
+                }
+                textureUpload = r.textureUpload;
             }
             SDL_GPUCopyPass *copy = SDL_BeginGPUCopyPass(commands);
             if (vertexBytes > 0 && r.vertexUpload != nullptr)
@@ -784,15 +877,16 @@ namespace mm::render
             }
             if (textureUpload != nullptr)
             {
-                auto *mapped = static_cast<uint8_t *>(SDL_MapGPUTransferBuffer(r.device, textureUpload, false));
+                // cycled: the GPU may still be reading what the last frame put there
+                auto *mapped = static_cast<uint8_t *>(SDL_MapGPUTransferBuffer(r.device, textureUpload, true));
                 uint32_t offset = 0;
                 for (auto &entry : newTextures)
                 {
                     if (r.textures.find(entry.first) != r.textures.end())
                         continue;
                     const TextureImage &image = entry.second;
-                    SDL_GPUTexture *texture = makeTexture(r.device, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREUSAGE_SAMPLER,
-                                                          image.width, image.height);
+                    GpuTexture placed = place(r, image.width, image.height);
+                    SDL_GPUTexture *texture = placed.texture;
                     if (texture == nullptr)
                         continue;
                     std::memcpy(mapped + offset, image.pixels.data(), image.pixels.size() * 4u);
@@ -803,11 +897,14 @@ namespace mm::render
                     source.rows_per_layer = image.height;
                     SDL_GPUTextureRegion region{};
                     region.texture = texture;
+                    region.x = placed.x;
+                    region.y = placed.y;
                     region.w = image.width;
                     region.h = image.height;
                     region.d = 1;
                     // the copy is recorded now and reads the transfer buffer when the command buffer runs
-                    r.textures[entry.first] = GpuTexture{texture, r.framesDrawn};
+                    placed.lastUsed = r.framesDrawn;
+                    r.textures[entry.first] = placed;
                     SDL_UploadToGPUTexture(copy, &source, &region, false);
                     offset += static_cast<uint32_t>(image.pixels.size() * 4u);
                 }
@@ -833,8 +930,6 @@ namespace mm::render
                 s_whiteDone = true;
             }
             SDL_EndGPUCopyPass(copy);
-            if (textureUpload != nullptr)
-                SDL_ReleaseGPUTransferBuffer(r.device, textureUpload); // released once the GPU is done with it
             if (whiteUpload != nullptr)
                 SDL_ReleaseGPUTransferBuffer(r.device, whiteUpload);
             newTextures.clear();
@@ -919,8 +1014,13 @@ namespace mm::render
                     SDL_SetGPUBlendConstants(pass, SDL_FColor{f, f, f, f});
                 }
                 SDL_GPUTexture *texture = r.white;
+                uint32_t texRect[4] = {0, 0, 1, 1};
                 if (st.textured && st.texture == kPreviousFrame)
+                {
                     texture = previous;
+                    texRect[2] = r.targetWidth;
+                    texRect[3] = r.targetHeight;
+                }
                 else if (st.textured)
                 {
                     auto found = r.textures.find(st.texture);
@@ -928,6 +1028,10 @@ namespace mm::render
                     {
                         texture = found->second.texture;
                         found->second.lastUsed = r.framesDrawn;
+                        texRect[0] = found->second.x;
+                        texRect[1] = found->second.y;
+                        texRect[2] = found->second.width;
+                        texRect[3] = found->second.height;
                     }
                 }
                 SDL_GPUTextureSamplerBinding sampler{texture, r.sampler};
@@ -943,7 +1047,10 @@ namespace mm::render
                 params.snapX[0] = across * xScale;
                 params.snapX[1] = across * xOffset;
                 for (int i = 0; i < 4; ++i)
+                {
                     params.region[i] = st.region[i];
+                    params.texRect[i] = texRect[i];
+                }
                 params.fogColor[0] = static_cast<float>(st.fogColor & 0xFF) / 255.0f;
                 params.fogColor[1] = static_cast<float>((st.fogColor >> 8) & 0xFF) / 255.0f;
                 params.fogColor[2] = static_cast<float>((st.fogColor >> 16) & 0xFF) / 255.0f;
@@ -1056,7 +1163,7 @@ namespace mm::render
                         {
                             if (r.framesDrawn - it->second.lastUsed > 600u)
                             {
-                                SDL_ReleaseGPUTexture(r.device, it->second.texture);
+                                release(r, it->second);
                                 {
                                     std::lock_guard<std::mutex> lock(r.mutex);
                                     r.evicted.push_back(it->first);
