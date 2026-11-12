@@ -117,6 +117,45 @@ namespace mm::render
             address = (address + m_tops) & 0x3FF;
         const bool zeroExtend = (imm & 0x4000) != 0;
 
+        // The common case, without a write mask or the row modes and with a write cycle the same as the read one: each vector
+        // whole into the next qword (V4-32 a plain copy), as the general loop below would write it.
+        if (!masked && m_mode == 0 && cl == wl && !v45)
+        {
+            const uint32_t size = 32u >> vl;
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                uint32_t *lanes = m_memory.qword((address + i) & 0x3FF);
+                const uint8_t *v = data + static_cast<size_t>(i) * vectorBytes;
+                if (vl == 0 && components == 4)
+                {
+                    std::memcpy(lanes, v, 16);
+                    continue;
+                }
+                uint32_t value[4] = {lanes[0], lanes[1], lanes[2], lanes[3]};
+                for (uint32_t c = 0; c < components; ++c)
+                {
+                    if (size == 32)
+                        std::memcpy(&value[c], v + c * 4u, 4);
+                    else if (size == 16)
+                    {
+                        uint16_t raw;
+                        std::memcpy(&raw, v + c * 2u, 2);
+                        value[c] = zeroExtend ? raw : static_cast<uint32_t>(static_cast<int32_t>(static_cast<int16_t>(raw)));
+                    }
+                    else
+                        value[c] = zeroExtend ? v[c] : static_cast<uint32_t>(static_cast<int32_t>(static_cast<int8_t>(v[c])));
+                }
+                if (components == 1)
+                    value[1] = value[2] = value[3] = value[0];
+                else if (components == 2) // the hardware writes x y x y
+                    value[2] = value[0], value[3] = value[1];
+                std::memcpy(lanes, value, 16);
+            }
+            if (m_narrowCamera && address == 0 && count >= 8)
+                narrowCamera();
+            return bytes;
+        }
+
         uint32_t source = 0;
         for (uint32_t i = 0; i < count; ++i)
         {
