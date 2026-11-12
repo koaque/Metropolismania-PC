@@ -18,6 +18,7 @@ Steps, in order:
               the runtime tree
   iop-aot     translate the IOP modules in original/SYS into work/iop_aot (tools/iop_aot.py, plan P5.3); then stage and build
   build       build ps2EntryRunner
+  play        play the game, set up by settings.ini (written with the defaults the first time)
   run         start the runner with a timeout and capture a log in logs/
   capture     visible run that records calls of chosen functions into work/difftest/
   difftest    replay those records through ported and generated code, headless
@@ -643,6 +644,9 @@ def cmd_run(args: argparse.Namespace) -> None:
     shot_dir = LOGS / "shots" / stamp
     exe = tool("ps2EntryRunner")
     env = dict(os.environ)
+    # Test runs leave the player's settings file out (src/overrides/settings.cpp), so captures and comparisons do not change
+    # with it; --env MMPC_SETTINGS=<file> brings one in.
+    env.setdefault("MMPC_SETTINGS", "none")
     # work/local.json "game_window_pos": [x, y] opens the game window there, unfocused (PS2X_WINDOW_POS).
     window_pos = settings().get("game_window_pos")
     if window_pos and "PS2X_WINDOW_POS" not in env:
@@ -694,6 +698,51 @@ def autoplay_env(args: argparse.Namespace) -> list:
     return [f"MMPC_AUTOPLAY={args.autoplay}"]
 
 
+SETTINGS_FILE = ROOT / "settings.ini"
+DEFAULT_SETTINGS = """# Metropolismania PC: your settings, read by `python tools/pipeline.py play` (docs/SETTINGS.md has every key).
+# An environment variable of the same switch wins over this file. Delete the file to get these defaults back.
+
+[display]
+renderer = native        # native (sharp, progressive, any resolution), emulated (the PS2's graphics chip), split
+render_scale = auto      # auto (from the window's height) or 1 to 8 (times 640x448)
+msaa = 1                 # 1, 2, 4 or 8 samples a pixel (native renderer)
+widescreen = off         # off, 16:9 (or on), 21:9, or any W:H (native renderer)
+fullscreen = off         # on: borderless fullscreen (F11 switches while playing)
+# window_size = 1280x960
+# window_position = 100,100
+gpu = auto               # auto, d3d12 or vulkan
+vsync = off              # on: wait for the monitor's refresh (no tearing in exclusive fullscreen)
+game_rate = ps2          # ps2 (59.94 Hz), host (the monitor's rate when within 58 to 62 Hz), or a number
+
+[sound]
+sound = on
+
+[start]
+skip_movies = off        # on: skip the opening movies
+"""
+
+
+def cmd_play(args: argparse.Namespace) -> None:
+    """Play: the game in a window with no time limit, set up by settings.ini in the repository (written with the defaults
+    the first time). The log goes to logs/; the window's own log lines are not shown."""
+    LOGS.mkdir(exist_ok=True)
+    if not SETTINGS_FILE.exists():
+        SETTINGS_FILE.write_text(DEFAULT_SETTINGS, encoding="utf-8")
+        log(f"wrote the default settings to {SETTINGS_FILE}")
+    exe = tool("ps2EntryRunner")
+    env = dict(os.environ)
+    env.setdefault("MMPC_SETTINGS", str(SETTINGS_FILE))
+    for item in args.env or []:
+        key, _, value = item.partition("=")
+        env[key] = value
+    log_path = LOGS / f"play-{dt.datetime.now():%Y%m%d-%H%M%S}.log"
+    log(f"playing with {env['MMPC_SETTINGS']}; log: {log_path}")
+    with log_path.open("w", encoding="utf-8", errors="replace") as fh:
+        code = subprocess.run([str(exe), str(ORIGINAL / ELF_NAME)], stdout=fh, stderr=subprocess.STDOUT, cwd=exe.parent,
+                              env=env).returncode
+    log(f"exit code {code}")
+
+
 def cmd_capture(args: argparse.Namespace) -> None:
     """A visible run to the city (a new game, or the newest save with --autoplay load) that records the
     entry state of chosen functions (MMPC_CAPTURE) into work/difftest/ for pipeline.py difftest.
@@ -712,7 +761,7 @@ def cmd_difftest(args: argparse.Namespace) -> None:
     LOGS.mkdir(exist_ok=True)
     log_path = LOGS / f"difftest-{dt.datetime.now():%Y%m%d-%H%M%S}.log"
     exe = tool("ps2EntryRunner")
-    env = dict(os.environ, MMPC_DIFFTEST=str(DIFFTEST), PS2X_HEADLESS="1")
+    env = dict(os.environ, MMPC_DIFFTEST=str(DIFFTEST), PS2X_HEADLESS="1", MMPC_SETTINGS="none")
     if args.fuzz:
         env["MMPC_DIFFTEST_FUZZ"] = str(args.fuzz)
         env["MMPC_DIFFTEST_FUZZ_FUNCTIONS"] = args.fuzz_functions or "all"
@@ -749,7 +798,7 @@ def cmd_vu1_test(args: argparse.Namespace) -> None:
     LOGS.mkdir(exist_ok=True)
     log_path = LOGS / f"vu1test-{dt.datetime.now():%Y%m%d-%H%M%S}.log"
     exe = tool("ps2EntryRunner")
-    env = dict(os.environ, MMPC_VU1_TEST=str(VU1_RECORDS), PS2X_HEADLESS="1")
+    env = dict(os.environ, MMPC_VU1_TEST=str(VU1_RECORDS), PS2X_HEADLESS="1", MMPC_SETTINGS="none")
     env.setdefault("MMPC_VU1_TEST_REPEAT", str(args.repeat))
     if args.aot:
         env["MMPC_VU1_AOT"] = args.aot
@@ -778,7 +827,7 @@ def cmd_vu1_emit(args: argparse.Namespace) -> None:
     LOGS.mkdir(exist_ok=True)
     log_path = LOGS / f"vu1emit-{dt.datetime.now():%Y%m%d-%H%M%S}.log"
     exe = tool("ps2EntryRunner")
-    env = dict(os.environ, MMPC_VU1_TEST=str(VU1_RECORDS), PS2X_HEADLESS="1", MMPC_VU1_TEST_REPEAT="1", MMPC_VU1_AOT="run",
+    env = dict(os.environ, MMPC_VU1_TEST=str(VU1_RECORDS), PS2X_HEADLESS="1", MMPC_SETTINGS="none", MMPC_VU1_TEST_REPEAT="1", MMPC_VU1_AOT="run",
                MMPC_VU1_EMIT=str(VU1_GEN), MMPC_VU1_FUZZ="1")
     env.pop("PS2X_WINDOW_POS", None)
     with log_path.open("w", encoding="utf-8", errors="replace") as fh:
@@ -823,6 +872,9 @@ def main() -> int:
     sub.add_parser("stage").set_defaults(func=cmd_stage)
     sub.add_parser("build").set_defaults(func=cmd_build)
     sub.add_parser("test", help="build and run the PS2Recomp test suite").set_defaults(func=cmd_test)
+    p = sub.add_parser("play", help="play the game with the settings in settings.ini (no time limit)")
+    p.add_argument("--env", action="append", help="extra environment variable KEY=VALUE (repeatable)")
+    p.set_defaults(func=cmd_play)
     p = sub.add_parser("run")
     p.add_argument("--timeout", type=int, default=20)
     p.add_argument("--shots", type=int, default=0, help="number of window screenshots to take")

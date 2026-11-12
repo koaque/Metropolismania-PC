@@ -71,6 +71,7 @@ The starting point is a static recompilation made with [PS2Recomp](https://githu
 - [docs/GAME_NOTES.md](docs/GAME_NOTES.md): the disc, the data files and their formats.
 - [docs/RENDER_PIPELINE.md](docs/RENDER_PIPELINE.md): how the city is drawn, from the game's draw calls down to each VU1 microcode program.
 - [docs/RENDERER.md](docs/RENDERER.md): the native renderer being built on that map (plan, graphics API, what the frames use).
+- [docs/SETTINGS.md](docs/SETTINGS.md): the settings file `pipeline.py play` reads (renderer, resolution, widescreen, fullscreen, sound).
 - [docs/VU1_PROGRAMS.md](docs/VU1_PROGRAMS.md): the VU1 programs run natively and compiled to C++.
 - [docs/IOP.md](docs/IOP.md): the sound driver and the IOP modules.
 - [docs/PLATFORM_FINDINGS.md](docs/PLATFORM_FINDINGS.md): what rewriting the SDK layer found out about the runtime and the recompiler.
@@ -112,7 +113,10 @@ python tools/pipeline.py iop-aot            # the IOP sound and memory card modu
 python tools/pipeline.py stage              # generated code + overrides + src/port + work/iop_aot -> runtime tree
 python tools/pipeline.py build              # ps2EntryRunner
 python tools/pipeline.py run                # timed run, log in logs/
+python tools/pipeline.py play               # play, with the settings in settings.ini
 ```
+
+`play` starts the game with no time limit, set up by `settings.ini` in the repository, which the first `play` writes with the defaults: the native renderer, the resolution from the window, 4:3. The file holds the display, widescreen, fullscreen, sound and movie options, one `key = value` a line ([docs/SETTINGS.md](docs/SETTINGS.md)).
 
 To copy your saves over from PCSX2: `python tools/mc_extract.py path/to/Mcd001.ps2`. The port's own tests (`capture`, `difftest`) are described in [src/port/README.md](src/port/README.md).
 
@@ -235,6 +239,7 @@ This is a fan preservation project. It is not affiliated with or endorsed by Ind
 - [docs/GAME_NOTES.md](docs/GAME_NOTES.md): ディスク、データファイルとその形式。
 - [docs/RENDER_PIPELINE.md](docs/RENDER_PIPELINE.md): 街の描画の仕組み。ゲームの描画呼び出しからVU1マイクロコードの各プログラムまで。
 - [docs/RENDERER.md](docs/RENDERER.md): その解析の上に作っているネイティブレンダラー(計画、グラフィックスAPI、フレームが使う機能)。
+- [docs/SETTINGS.md](docs/SETTINGS.md): `pipeline.py play` が読む設定ファイル(レンダラー、解像度、ワイドスクリーン、フルスクリーン、サウンド)。
 - [docs/VU1_PROGRAMS.md](docs/VU1_PROGRAMS.md): ネイティブで動かし、C++にコンパイルしたVU1プログラム。
 - [docs/IOP.md](docs/IOP.md): サウンドドライバとIOPモジュール。
 - [docs/PLATFORM_FINDINGS.md](docs/PLATFORM_FINDINGS.md): SDK層を書き直して分かった、ランタイムと再コンパイラの挙動。
@@ -276,7 +281,10 @@ python tools/pipeline.py iop-aot            # the IOP sound and memory card modu
 python tools/pipeline.py stage              # generated code + overrides + src/port + work/iop_aot -> runtime tree
 python tools/pipeline.py build              # ps2EntryRunner
 python tools/pipeline.py run                # timed run, log in logs/
+python tools/pipeline.py play               # play, with the settings in settings.ini
 ```
+
+`play` は時間制限なしでゲームを起動し、リポジトリの `settings.ini` の設定を使います。最初の `play` が既定値(ネイティブレンダラー、ウィンドウに合わせた解像度、4:3)でこのファイルを書き出します。画面、ワイドスクリーン、フルスクリーン、サウンド、ムービーの設定を1行に1つ `key = value` で書きます([docs/SETTINGS.md](docs/SETTINGS.md))。
 
 PCSX2からセーブデータをコピーするには `python tools/mc_extract.py path/to/Mcd001.ps2` を使います。移植版のテスト(`capture`、`difftest`)は [src/port/README.md](src/port/README.md) に説明があります。
 

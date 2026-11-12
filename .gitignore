@@ -53,3 +53,6 @@ __pycache__/
 *.user
 Thumbs.db
 desktop.ini
+
+# The player's settings (pipeline.py play)
+/settings.ini
