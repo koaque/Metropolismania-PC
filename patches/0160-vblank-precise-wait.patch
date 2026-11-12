@@ -1,0 +1,81 @@
+Vertical blanks on time. The game thread paces each vertical blank with a timed wait on a condition variable, which on Windows ends on the system timer's tick (1 ms at best), so the frames shown on the vertical blanks came 14.5 to 18.9 ms apart instead of 16.68 (0.7 to 0.9 ms deviation in the city). Both timed waits of the scheduler now end 1.5 ms before the deadline and yield the rest away, checking for events: the gaps stay within about 15.8 to 17.6 ms (0.16 to 0.28 ms deviation), which matters on a variable refresh display, where each frame is shown when it is presented. PS2X_PRECISE_WAIT=0 keeps the plain wait.
+
+diff --git a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+--- a/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
++++ b/ps2xRuntime/src/lib/Kernel/EeScheduler.cpp
+@@ -11,6 +11,7 @@
+ #include <iostream>
+ #include <limits>
+ #include <stdexcept>
++#include <thread>
+ 
+ namespace
+ {
+@@ -38,6 +39,41 @@ namespace
+     std::atomic<int64_t> g_vblankPeriodNs{16683333};
+     std::chrono::nanoseconds vblankPeriod() { return std::chrono::nanoseconds(g_vblankPeriodNs.load(std::memory_order_relaxed)); }
+     constexpr auto kVBlankDuration = std::chrono::microseconds(500);
++
++    // Timed waits that end on time: a condition variable's timed wait on Windows ends on the system timer's tick (1 ms at
++    // best), so the vertical blanks it paces, and the frames shown on them, came up to about 2 ms early or late. The wait
++    // now ends 1.5 ms before the deadline and yields the rest away, checking the predicate, which keeps the frames 16.68 ms
++    // apart for a variable refresh display. PS2X_PRECISE_WAIT=0 keeps the plain wait.
++    constexpr auto kPreciseWaitMargin = std::chrono::microseconds(1500);
++    bool preciseWaits()
++    {
++        static const bool on = []
++        {
++            const char *value = std::getenv("PS2X_PRECISE_WAIT");
++            return !(value && value[0] == '0');
++        }();
++        return on;
++    }
++
++    template <class Predicate>
++    bool waitUntilPrecise(std::condition_variable &cv, std::unique_lock<std::mutex> &lock,
++                          std::chrono::steady_clock::time_point deadline, Predicate predicate)
++    {
++        if (!preciseWaits() || deadline == std::chrono::steady_clock::time_point::max())
++            return cv.wait_until(lock, deadline, predicate);
++        const auto coarse = deadline - kPreciseWaitMargin;
++        if (std::chrono::steady_clock::now() < coarse && cv.wait_until(lock, coarse, predicate))
++            return true;
++        while (std::chrono::steady_clock::now() < deadline)
++        {
++            if (predicate())
++                return true;
++            lock.unlock();
++            std::this_thread::yield();
++            lock.lock();
++        }
++        return predicate();
++    }
+     constexpr uint64_t kAlarmTickMicroseconds = 64u;
+     constexpr uint32_t kDebugPublishDispatchInterval = 4096u;
+ 
+@@ -2063,9 +2099,9 @@ void EeScheduler::processDueDeadlines()
+ 
+             if (now < pacingDeadline)
+             {
+-                m_eventCv.wait_until(lock, pacingDeadline, [this]()
+-                                     { return !m_events.empty() ||
+-                                              m_stopRequested.load(std::memory_order_acquire); });
++                waitUntilPrecise(m_eventCv, lock, pacingDeadline, [this]()
++                                 { return !m_events.empty() ||
++                                          m_stopRequested.load(std::memory_order_acquire); });
+                 if (!m_events.empty() || m_stopRequested.load(std::memory_order_acquire))
+                 {
+                     updateNextDeadline();
+@@ -2332,9 +2368,9 @@ void EeScheduler::waitForEvent()
+         }
+     }
+ 
+-    const bool signaled = m_eventCv.wait_until(lock, hostDeadline, [this]()
+-                                               { return !m_events.empty() ||
+-                                                        m_stopRequested.load(std::memory_order_acquire); });
++    const bool signaled = waitUntilPrecise(m_eventCv, lock, hostDeadline, [this]()
++                                           { return !m_events.empty() ||
++                                                    m_stopRequested.load(std::memory_order_acquire); });
+     if (!signaled)
+     {
+         const uint64_t elapsed = deadlineCycle > m_eeCycle ? deadlineCycle - m_eeCycle : 0u;

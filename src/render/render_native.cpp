@@ -32,6 +32,7 @@
 #include <string>
 #include <thread>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
@@ -1096,9 +1097,51 @@ namespace mm::render
             SDL_BlitGPUTexture(commands, &blit);
         }
 
+        // MMPC_FRAME_PACING=1: every 2 s, how evenly the window thread presents (the gaps between its presents: a game
+        // frame is 16.68 ms at 59.94 Hz), with the gaps more than 2 ms off counted; to judge pacing on a variable refresh
+        // display, which shows each picture when it is presented.
+        void notePacing()
+        {
+            static const bool on = [] {
+                const char *v = std::getenv("MMPC_FRAME_PACING");
+                return v != nullptr && v[0] == '1';
+            }();
+            if (!on)
+                return;
+            using Clock = std::chrono::steady_clock;
+            static Clock::time_point last{}, windowStart{};
+            static std::vector<double> gaps;
+            const Clock::time_point now = Clock::now();
+            if (last.time_since_epoch().count() != 0)
+                gaps.push_back(std::chrono::duration<double, std::milli>(now - last).count());
+            else
+                windowStart = now;
+            last = now;
+            if (now - windowStart < std::chrono::seconds(2) || gaps.empty())
+                return;
+            double sum = 0.0, squares = 0.0, low = 1e9, high = 0.0;
+            uint32_t early = 0, late = 0;
+            for (const double g : gaps)
+            {
+                sum += g;
+                squares += g * g;
+                low = std::min(low, g);
+                high = std::max(high, g);
+                early += g < 16.68 - 2.0 ? 1u : 0u;
+                late += g > 16.68 + 2.0 ? 1u : 0u;
+            }
+            const double n = static_cast<double>(gaps.size()), mean = sum / n;
+            std::cerr << "[pacing] " << gaps.size() << " presents, gap " << mean << " ms on average (deviation "
+                      << std::sqrt(std::max(0.0, squares / n - mean * mean)) << ", " << low << " to " << high << "), " << early
+                      << " more than 2 ms early, " << late << " more than 2 ms late" << std::endl;
+            gaps.clear();
+            windowStart = now;
+        }
+
         void present(void *user, SDL_GPUCommandBuffer *commands, SDL_GPUTexture *swapchain, uint32_t width, uint32_t height,
                      const ps2x::host::EmulatedFrame &emulated)
         {
+            notePacing();
             Renderer &r = *static_cast<Renderer *>(user);
             bool gpu = initGpu(r);
             if (gpu)
