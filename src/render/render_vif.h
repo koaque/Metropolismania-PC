@@ -16,6 +16,9 @@ namespace mm::render
     // The chain walker marks a DMA CALL into a microcode upload packet with two NOPs that carry the packet's address (VIF
     // NOP ignores its NUM and IMMEDIATE fields), so the VIF knows which program the next MPG loads.
     constexpr uint32_t kProgramMarkLow = 0xA5, kProgramMarkHigh = 0xA6;
+    // And a tag the port marked (port::enhance::markFrameList, widened frames only) with one carrying the span: the HUD or a
+    // backdrop starts.
+    constexpr uint32_t kSpanMark = 0xA7;
 
     class Vif1
     {

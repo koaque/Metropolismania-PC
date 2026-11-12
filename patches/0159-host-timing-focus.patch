@@ -1,0 +1,81 @@
+Timing and focus for the SDL3 host. On Windows the vertical blanks are paced by timed waits, which are only as fine as the system timer: the host now asks for 1 ms (raylib did, SDL3 does not) and opts out of power throttling, including Windows 11's rule that drops a process's timer requests while its window is covered, minimized or out of sight, so the game keeps its full speed in the background (PS2X_POWER_THROTTLING=1 keeps Windows' default). PS2X_WINDOW_FOCUS=1 lets a placed window (test runs) take the focus and raises it, where it otherwise opens without taking it.
+
+diff --git a/ps2xRuntime/src/lib/ps2_host_sdl.cpp b/ps2xRuntime/src/lib/ps2_host_sdl.cpp
+--- a/ps2xRuntime/src/lib/ps2_host_sdl.cpp
++++ b/ps2xRuntime/src/lib/ps2_host_sdl.cpp
+@@ -15,6 +15,24 @@
+ #include <mutex>
+ #include <vector>
+ 
++#ifdef _WIN32
++#ifndef NOMINMAX
++#define NOMINMAX
++#endif
++#ifndef WIN32_LEAN_AND_MEAN
++#define WIN32_LEAN_AND_MEAN // no mmsystem.h: its PlaySound macro would rename the compat PlaySound below
++#endif
++#include <windows.h>
++#include <timeapi.h>
++#pragma comment(lib, "winmm.lib")
++// Windows 11's flag (SDK 10.0.22000): keep honouring the process's timer requests while its window is out of sight.
++#ifdef PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION
++constexpr ULONG kIgnoreTimerResolution = PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION;
++#else
++constexpr ULONG kIgnoreTimerResolution = 0x4;
++#endif
++#endif
++
+ namespace ps2x::host
+ {
+     namespace
+@@ -161,15 +179,40 @@ namespace ps2x::host
+         }
+     }
+ 
++    // Windows: the vertical blanks are paced by timed waits, which are only as fine as the system timer. Ask for 1 ms (raylib
++    // did; SDL3 does not), and keep it and full speed in the background: since Windows 11 a process whose window is covered,
++    // minimized or out of sight gets the default timer (15.6 ms) and may be slowed down for power, unless it opts out.
++    // PS2X_POWER_THROTTLING=1 leaves Windows' default.
++    void keepTimingInBackground()
++    {
++#ifdef _WIN32
++        const char *keep = std::getenv("PS2X_POWER_THROTTLING");
++        if (keep != nullptr && keep[0] == '1')
++            return;
++        timeBeginPeriod(1);
++        PROCESS_POWER_THROTTLING_STATE throttling{};
++        throttling.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
++        throttling.ControlMask = PROCESS_POWER_THROTTLING_EXECUTION_SPEED | kIgnoreTimerResolution;
++        throttling.StateMask = 0; // both off: not throttled, timer requests honoured
++        SetProcessInformation(GetCurrentProcess(), ProcessPowerThrottling, &throttling, sizeof(throttling));
++#endif
++    }
++
+     bool init(const WindowOptions &options)
+     {
+         State &s = state();
+         s.headless = options.headless;
++        keepTimingInBackground();
+         // Pads keep working while the window is in the background (test runs are shown unfocused).
+         SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
+         SDL_SetHint(SDL_HINT_AUDIO_DEVICE_SAMPLE_FRAMES, "1024");
+-        if (options.place)
++        // A placed window (test runs) opens without taking the focus, unless PS2X_WINDOW_FOCUS=1 asks for it.
++        const char *focusValue = std::getenv("PS2X_WINDOW_FOCUS");
++        const bool focus = focusValue != nullptr && focusValue[0] == '1';
++        if (options.place && !focus)
+             SDL_SetHint(SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN, "0");
++        if (focus)
++            SDL_SetHint(SDL_HINT_FORCE_RAISEWINDOW, "1");
+         const SDL_InitFlags flags = options.headless ? SDL_INIT_EVENTS : (SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD);
+         if (!SDL_Init(flags))
+         {
+@@ -212,6 +255,8 @@ namespace ps2x::host
+         // PS2X_FULLSCREEN=1 starts in borderless fullscreen on the window's display; F11 switches it at any time.
+         if (const char *full = std::getenv("PS2X_FULLSCREEN"); full != nullptr && full[0] == '1')
+             SDL_SetWindowFullscreen(s.window, true);
++        if (focus)
++            SDL_RaiseWindow(s.window);
+         return true;
+     }
+ 

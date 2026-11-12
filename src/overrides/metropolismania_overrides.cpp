@@ -220,11 +220,14 @@ namespace
         std::string shot;
     };
 
+    // MMPC_SHOT_NATIVE=<dir>: at each shot the native renderer's next frame goes to <dir>/<NAME>.ppm at its full resolution.
     // MMPC_SHOT_VRAM=<dir>: at each shot the GS is drained and its 4 MB of VRAM written to <dir>/<NAME>.vram (both fields of the
     // frame, in the GS's own layout; LOCAL-AI/tools/vram_frame.py decodes them, as it decodes PCSX2's savestates).
     void logShot(PS2Runtime *runtime, const std::string &name, uint32_t counter)
     {
         std::cerr << "[mm:shot] " << name << " frame=" << counter << std::endl;
+        if (const char *native = std::getenv("MMPC_SHOT_NATIVE")) // the native renderer's next frame (docs/RENDERER.md)
+            mm::render::requestShot(std::string(native) + "/" + name + ".ppm");
         const char *dir = std::getenv("MMPC_SHOT_VRAM");
         if (dir == nullptr || runtime == nullptr)
             return;

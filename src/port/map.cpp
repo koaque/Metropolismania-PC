@@ -1,5 +1,6 @@
 // The city map: 128 x 128 tiles, the placed objects and the per-tile object lists, and the people.
 
+#include "enhance.h"
 #include "game_functions.h"
 #include "game_globals.h"
 #include "render.h"
@@ -1652,6 +1653,10 @@ namespace mm
             reach = t < F(0x3F000000u) ? port::load<int32_t>(globals::kTerrainReach + i)
                                        : port::load<int32_t>(globals::kTerrainReach + i + 4u);
         }
+        // Enhancement, off by default (MMPC_WIDESCREEN, enhance.h): the visibility tests take in the wider view too, or what
+        // the wider picture shows at its sides would be left out.
+        if (const float wide = port::enhance::widescreen(); wide != 1.0f)
+            screen->x = ps2f(screen->x) * ps2f(wide);
         Math_ProjectionMatrix(GuestPtr<ps2f>{projection.address}, GuestPtr<ps2f>{screen.address}, F(0x44400000u), F(0x3DCCCCCDu), farDistance);
         sdk::sceVu0MulMatrix(projection.address, projection.address, view.address);
         screen->x = ps2f(screen->x) + F(0x43480000u);

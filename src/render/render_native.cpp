@@ -1,14 +1,17 @@
-// The native renderer: the game's DMA transfers in, a progressive picture on the GPU out (plan N3). See render_native.h.
+// The native renderer: the game's DMA transfers in, a progressive picture on the GPU out (plan N, docs/RENDERER.md). See
+// render_native.h.
 //
-// The runtime calls onDmaStart for every VIF1 and GIF transfer the game starts, on the game thread, before the emulated
-// hardware takes it up. The renderer walks the transfer (a DMA chain, or plain quadwords), sends the GIF packets in it to its
-// own GS (render_gs.h), and when the transfer was one of the game's two frame lists, hands the frame it built to the window
-// thread. There, the host's present() calls back into present() below, which uploads new textures and vertices, draws the
-// frame into a render target at MMPC_RENDER_SCALE times 640 x 448, and fits that to the window at 4:3. The VU1 programs'
-// output (the 3D) is not drawn natively yet (plan N4): side mode shows the emulated picture beside it.
+// Three threads. The game thread: the runtime calls onDmaStart for every VIF1 and GIF transfer the game starts, before the
+// emulated hardware takes it up; the renderer copies the transfer out of RDRAM (walking a DMA chain, or plain quadwords) with
+// the GS's drawing environment at that moment and queues it, marking where a frame ends. The render thread: takes the
+// transfers in order through its own VIF (render_vif.h, VU1 data memory and the native VU1 programs) and GS (render_gs.h),
+// and hands each finished frame to the window thread. The window thread: the host's present() calls back into present()
+// below, which uploads new textures and vertices, draws the frame into a render target at a multiple of 640 x 448 chosen
+// from the window, and fits that to the window at 4:3.
 
 #include "render_native.h"
 
+#include "enhance.h"
 #include "render_gs.h"
 #include "render_vif.h"
 #include "render_shaders.h"
@@ -25,6 +28,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <deque>
+#include <fstream>
 #include <string>
 #include <thread>
 #include <chrono>
@@ -59,6 +63,12 @@ namespace mm::render
             float scale;
             float fogColor[4];
             uint32_t region[4];
+            float snapX[4]; // render pixels per frame pixel across, and where frame x 0 lies
+        };
+
+        struct VertexParams // the shader's VertexParams
+        {
+            float xScale, xOffset, extend, unused;
         };
 
         // One thing for the render thread to do, in the order the game started its transfers: a VIF1 or GIF transfer's
@@ -79,6 +89,7 @@ namespace mm::render
             std::map<uint32_t, uint32_t> programCalls;
             uint32_t gifTransfers = 0, otherVifTransfers = 0;
             double gameSeconds = 0.0;
+            bool wide = false; // the city drew this frame with its widened view
         };
 
         struct GpuTexture
@@ -100,6 +111,7 @@ namespace mm::render
             uint32_t gifTransfers = 0, otherVifTransfers = 0;
             double gameSeconds = 0.0; // the game thread's time in the renderer this frame (snapshots and chain copies)
             uint64_t lastVsync = 0, frameListVsync = 0; // the vertical blank of the last transfer and of the last frame list
+            uint64_t wideMark = 0;                      // port::enhance::wideFrames() at the last frame's end
 
             // game thread -> render thread: the transfers in order
             std::mutex workMutex;
@@ -112,6 +124,8 @@ namespace mm::render
             double renderSeconds = 0.0, windowGame = 0.0, windowRender = 0.0, worstRender = 0.0;
             uint32_t windowFrames = 0;
             std::atomic<uint32_t> drawnFrames{0}; // native frames drawn (window thread), since the last stats line
+            std::mutex shotMutex;
+            std::string shotRequest; // requestShot: taken by the next frame the render thread finishes
             bool f2Down = false;
             std::atomic<bool> showNative{true};
 
@@ -127,6 +141,9 @@ namespace mm::render
             bool autoScale = true;   // the scale follows the window (MMPC_RENDER_SCALE fixes it)
             uint32_t msaa = 1;       // samples a pixel (MMPC_RENDER_MSAA)
             uint32_t clearFrames = 2; // frames left that start their target from black (after the targets are made)
+            float wideFactor = 1.0f;  // MMPC_WIDESCREEN: how much wider than 4:3 a widened frame is
+            bool targetsWide = false; // the targets are for widened frames
+            uint32_t targetWidth = 0, targetHeight = 0;
             SDL_GPUTexture *msaaColors[2] = {}; // with MSAA: the multisampled targets drawn into, resolved into `colors`
             SDL_GPUDevice *device = nullptr;
             SDL_GPUShader *vertexShader = nullptr, *pixelShader = nullptr;
@@ -141,6 +158,10 @@ namespace mm::render
             Frame current;
             uint64_t framesDrawn = 0;
             bool gpuFailed = false;
+            // a shot recorded into a transfer buffer, written out at the next present (when the GPU is done with it)
+            SDL_GPUTransferBuffer *shotBuffer = nullptr;
+            uint32_t shotWidth = 0, shotHeight = 0;
+            std::string shotPath;
         };
 
         Renderer &renderer()
@@ -166,6 +187,7 @@ namespace mm::render
                        std::map<uint32_t, uint32_t> *programCalls = nullptr)
         {
             uint32_t address = tadr & 0x7FFFFFF0u;
+            const bool marked = tagTransfer && port::enhance::frameListMarked();
             uint32_t stack[2] = {};
             int depth = 0;
             for (int tags = 0; tags < (1 << 20); ++tags)
@@ -187,6 +209,11 @@ namespace mm::render
                     {
                         nops[0] = (kProgramMarkLow << 16) | (tagAddress & 0xFFFF);
                         nops[1] = (kProgramMarkHigh << 16) | (tagAddress >> 16);
+                    }
+                    else if (marked && depth == 0)
+                    {
+                        if (const uint8_t span = port::enhance::takeFrameListMark(address); span != 0)
+                            nops[0] = (kSpanMark << 16) | span;
                     }
                     const auto *bytes = reinterpret_cast<const uint8_t *>(nops);
                     out.insert(out.end(), bytes, bytes + 8);
@@ -237,6 +264,7 @@ namespace mm::render
         void publishFrame(Renderer &r, const Work &end)
         {
             Frame frame = r.gs.takeFrame();
+            frame.wide = end.wide;
             // MMPC_RENDER_STATS=1: every 120 frames, what the last one held (batches, vertices, their extent).
             static const bool s_stats = [] {
                 const char *v = std::getenv("MMPC_RENDER_STATS");
@@ -279,7 +307,13 @@ namespace mm::render
                 std::cerr << std::endl;
             }
             r.vif.missingRuns().clear();
+            {
+                std::lock_guard<std::mutex> lock(r.shotMutex);
+                frame.shot.swap(r.shotRequest);
+            }
             std::lock_guard<std::mutex> lock(r.mutex);
+            if (frame.shot.empty() && !r.latest.shot.empty()) // the frame before was never drawn: its shot goes with this one
+                frame.shot = std::move(r.latest.shot);
             for (auto &entry : frame.newTextures)
                 r.pendingTextures[entry.first] = std::move(entry.second);
             frame.newTextures.clear();
@@ -440,6 +474,9 @@ namespace mm::render
                 return;
             }
             Work end = newWork(r, Work::Kind::EndFrame);
+            const uint64_t mark = port::enhance::wideFrames().load(std::memory_order_relaxed);
+            end.wide = mark != r.wideMark;
+            r.wideMark = mark;
             end.programCalls.swap(r.programCalls);
             end.gifTransfers = r.gifTransfers;
             end.otherVifTransfers = r.otherVifTransfers;
@@ -484,7 +521,7 @@ namespace mm::render
             info.entrypoint = vertex ? "VSMain" : "PSMain";
             info.stage = stage;
             info.num_samplers = vertex ? 0 : 1;
-            info.num_uniform_buffers = vertex ? 0 : 1;
+            info.num_uniform_buffers = 1;
             return SDL_CreateGPUShader(device, &info);
         }
 
@@ -570,7 +607,10 @@ namespace mm::render
                     SDL_ReleaseGPUTexture(r.device, t), t = nullptr;
             if (r.depth != nullptr)
                 SDL_ReleaseGPUTexture(r.device, r.depth), r.depth = nullptr;
-            const uint32_t w = 640u * r.scale, h = 448u * r.scale;
+            const uint32_t h = 448u * r.scale;
+            const uint32_t w = r.targetsWide ? static_cast<uint32_t>(640.0f * static_cast<float>(r.scale) * r.wideFactor + 0.5f) : 640u * r.scale;
+            r.targetWidth = w;
+            r.targetHeight = h;
             bool ok = true;
             for (int i = 0; i < 2; ++i)
             {
@@ -819,7 +859,8 @@ namespace mm::render
             depthTarget.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
             SDL_GPURenderPass *pass = SDL_BeginGPURenderPass(commands, &colorTarget, 1, &depthTarget);
             const float s = static_cast<float>(r.scale);
-            SDL_GPUViewport viewport{0, 0, 640.0f * s, 448.0f * s, 0.0f, 1.0f};
+            const float across = static_cast<float>(r.targetWidth) / 640.0f; // render pixels per frame pixel across
+            SDL_GPUViewport viewport{0, 0, static_cast<float>(r.targetWidth), static_cast<float>(r.targetHeight), 0.0f, 1.0f};
             SDL_SetGPUViewport(pass, &viewport);
             if (r.vertexBuffer != nullptr)
             {
@@ -838,10 +879,26 @@ namespace mm::render
                     SDL_BindGPUGraphicsPipeline(pass, pipeline);
                     bound = pipeline;
                 }
+                // Across a widened frame the HUD keeps its own proportions: drawn 1 / k as wide, in the middle (its frame x 0
+                // put on a whole render pixel, so its 1x pixel grid stays whole and text stays sharp). Everything else fills
+                // the width.
+                float xScale = 1.0f, xOffset = 0.0f;
+                if (r.targetsWide && st.hud)
+                {
+                    xScale = 1.0f / r.wideFactor;
+                    xOffset = std::round(320.0f * (1.0f - xScale) * across) / across;
+                }
+                VertexParams vertexParams{xScale, xOffset, r.targetsWide && st.hud == 2 ? 1.0f : 0.0f, 0.0f};
+                SDL_PushGPUVertexUniformData(commands, 0, &vertexParams, sizeof(vertexParams));
                 // The GS's scissor in 1x pixels, inclusive.
                 const int scale = static_cast<int>(r.scale);
-                const int x0 = st.scissor[0] * scale, y0 = st.scissor[2] * scale;
-                const int x1 = std::min((st.scissor[1] + 1) * scale, 640 * scale), y1 = std::min((st.scissor[3] + 1) * scale, 448 * scale);
+                // (a scissor across the whole frame stays across the whole target)
+                const bool fullWidth = st.scissor[0] == 0 && st.scissor[1] >= 639;
+                const int x0 = fullWidth ? 0 : static_cast<int>(std::round((st.scissor[0] * xScale + xOffset) * across)), y0 = st.scissor[2] * scale;
+                const int x1 = fullWidth ? static_cast<int>(r.targetWidth)
+                                         : std::min(static_cast<int>(std::round(((st.scissor[1] + 1) * xScale + xOffset) * across)),
+                                                    static_cast<int>(r.targetWidth));
+                const int y1 = std::min((st.scissor[3] + 1) * scale, static_cast<int>(r.targetHeight));
                 SDL_Rect scissor{x0, y0, std::max(0, x1 - x0), std::max(0, y1 - y0)};
                 SDL_SetGPUScissor(pass, &scissor);
                 if (st.blend == BlendMixFix || st.blend == BlendAddFix)
@@ -870,6 +927,8 @@ namespace mm::render
                 params.alphaTest = st.alphaTest;
                 params.alphaRef = static_cast<float>(st.alphaRef);
                 params.scale = s;
+                params.snapX[0] = across * xScale;
+                params.snapX[1] = across * xOffset;
                 for (int i = 0; i < 4; ++i)
                     params.region[i] = st.region[i];
                 params.fogColor[0] = static_cast<float>(st.fogColor & 0xFF) / 255.0f;
@@ -882,14 +941,70 @@ namespace mm::render
             SDL_EndGPURenderPass(pass);
         }
 
-        // Fits a w x h picture at 4:3 into the swapchain image.
-        void fit(uint32_t width, uint32_t height, Uint32 &x, Uint32 &y, Uint32 &w, Uint32 &h)
+        // requestShot: the frame just drawn, downloaded into a transfer buffer (recorded in this command buffer, after the draw)
+        void recordShot(Renderer &r, SDL_GPUCommandBuffer *commands, std::string &path)
         {
-            float dw = static_cast<float>(width), dh = dw * 3.0f / 4.0f;
+            if (r.shotBuffer != nullptr) // one at a time; this one goes with the next frame
+                return;
+            const uint32_t w = r.targetWidth, h = r.targetHeight;
+            SDL_GPUTransferBufferCreateInfo info{};
+            info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD;
+            info.size = w * h * 4u;
+            r.shotBuffer = SDL_CreateGPUTransferBuffer(r.device, &info);
+            if (r.shotBuffer == nullptr)
+                return;
+            SDL_GPUCopyPass *copy = SDL_BeginGPUCopyPass(commands);
+            SDL_GPUTextureRegion region{};
+            region.texture = r.colors[r.target];
+            region.w = w;
+            region.h = h;
+            region.d = 1;
+            SDL_GPUTextureTransferInfo destination{};
+            destination.transfer_buffer = r.shotBuffer;
+            destination.pixels_per_row = w;
+            destination.rows_per_layer = h;
+            SDL_DownloadFromGPUTexture(copy, &region, &destination);
+            SDL_EndGPUCopyPass(copy);
+            r.shotWidth = w;
+            r.shotHeight = h;
+            r.shotPath = std::move(path);
+            path.clear();
+        }
+
+        // The shot recorded at the last present, once the GPU is done: a binary PPM.
+        void writeShot(Renderer &r)
+        {
+            if (r.shotBuffer == nullptr)
+                return;
+            SDL_WaitForGPUIdle(r.device);
+            const auto *pixels = static_cast<const uint8_t *>(SDL_MapGPUTransferBuffer(r.device, r.shotBuffer, false));
+            if (pixels != nullptr)
+            {
+                std::ofstream file(r.shotPath, std::ios::binary);
+                file << "P6\n" << r.shotWidth << " " << r.shotHeight << "\n255\n";
+                std::vector<uint8_t> row(static_cast<size_t>(r.shotWidth) * 3u);
+                for (uint32_t y = 0; y < r.shotHeight; ++y)
+                {
+                    const uint8_t *in = pixels + static_cast<size_t>(y) * r.shotWidth * 4u;
+                    for (uint32_t x = 0; x < r.shotWidth; ++x)
+                        std::memcpy(&row[x * 3u], in + x * 4u, 3);
+                    file.write(reinterpret_cast<const char *>(row.data()), static_cast<std::streamsize>(row.size()));
+                }
+                SDL_UnmapGPUTransferBuffer(r.device, r.shotBuffer);
+                std::cerr << "[render] shot " << r.shotPath << (file.good() ? "" : " could not be written") << std::endl;
+            }
+            SDL_ReleaseGPUTransferBuffer(r.device, r.shotBuffer);
+            r.shotBuffer = nullptr;
+        }
+
+        // Fits a picture of the given aspect (4:3 unless widened) into the swapchain image.
+        void fit(uint32_t width, uint32_t height, Uint32 &x, Uint32 &y, Uint32 &w, Uint32 &h, float aspect = 4.0f / 3.0f)
+        {
+            float dw = static_cast<float>(width), dh = dw / aspect;
             if (dh > static_cast<float>(height))
             {
                 dh = static_cast<float>(height);
-                dw = dh * 4.0f / 3.0f;
+                dw = dh * aspect;
             }
             w = static_cast<Uint32>(dw);
             h = static_cast<Uint32>(dh);
@@ -897,29 +1012,31 @@ namespace mm::render
             y = (height - h) / 2u;
         }
 
-        // Draws the newest frame from the game thread into the render target, if one came since the last present.
-        void updateNative(Renderer &r, SDL_GPUCommandBuffer *commands)
+        // The newest frame from the render thread, if one came since the last present.
+        bool takeFrame(Renderer &r, std::unordered_map<uint64_t, TextureImage> &newTextures)
+        {
+            std::lock_guard<std::mutex> lock(r.mutex);
+            if (!r.fresh)
+                return false;
+            r.current = std::move(r.latest);
+            r.latest = Frame{};
+            newTextures.swap(r.pendingTextures);
+            r.fresh = false;
+            return true;
+        }
+
+        // Draws the frame just taken into the render target.
+        void updateNative(Renderer &r, SDL_GPUCommandBuffer *commands, bool fresh, std::unordered_map<uint64_t, TextureImage> &newTextures)
         {
             {
-                bool fresh = false;
-                std::unordered_map<uint64_t, TextureImage> newTextures;
-                {
-                    std::lock_guard<std::mutex> lock(r.mutex);
-                    if (r.fresh)
-                    {
-                        r.current = std::move(r.latest);
-                        r.latest = Frame{};
-                        newTextures.swap(r.pendingTextures);
-                        r.fresh = false;
-                        fresh = true;
-                    }
-                }
                 if (fresh)
                 {
                     ++r.framesDrawn;
                     r.drawnFrames.fetch_add(1, std::memory_order_relaxed);
                     upload(r, commands, newTextures);
                     drawFrame(r, commands);
+                    if (!r.current.shot.empty())
+                        recordShot(r, commands, r.current.shot);
                     // textures no frame has used for a while
                     if (r.framesDrawn % 120u == 0u)
                         for (auto it = r.textures.begin(); it != r.textures.end();)
@@ -945,7 +1062,8 @@ namespace mm::render
                   uint32_t h, bool native, const ps2x::host::EmulatedFrame &emulated, bool clear)
         {
             SDL_GPUBlitInfo blit{};
-            fit(w, h, blit.destination.x, blit.destination.y, blit.destination.w, blit.destination.h);
+            const float aspect = native && r.targetsWide ? 4.0f / 3.0f * r.wideFactor : 4.0f / 3.0f;
+            fit(w, h, blit.destination.x, blit.destination.y, blit.destination.w, blit.destination.h, aspect);
             blit.destination.x += x;
             blit.destination.y += y;
             blit.destination.texture = swapchain;
@@ -954,8 +1072,8 @@ namespace mm::render
             if (native)
             {
                 blit.source.texture = r.colors[r.target];
-                blit.source.w = 640u * r.scale;
-                blit.source.h = 448u * r.scale;
+                blit.source.w = r.targetWidth;
+                blit.source.h = r.targetHeight;
                 blit.filter = SDL_GPU_FILTER_LINEAR;
             }
             else
@@ -976,19 +1094,27 @@ namespace mm::render
             Renderer &r = *static_cast<Renderer *>(user);
             bool gpu = initGpu(r);
             if (gpu)
+                writeShot(r);
+            std::unordered_map<uint64_t, TextureImage> newTextures;
+            const bool fresh = gpu && takeFrame(r, newTextures);
+            if (gpu)
             {
-                // the targets: made at first use, and again when the window asks for another scale
+                // the targets: made at first use, and again when the window asks for another scale or the frame for
+                // another width (widened city frames, MMPC_WIDESCREEN)
+                const bool wide = r.current.wide && r.wideFactor != 1.0f;
                 Uint32 x, y, w, h;
-                fit(r.mode == Mode::Split ? width - width / 2u : width, height, x, y, w, h);
+                fit(r.mode == Mode::Split ? width - width / 2u : width, height, x, y, w, h,
+                    wide ? 4.0f / 3.0f * r.wideFactor : 4.0f / 3.0f);
                 const uint32_t wanted = r.autoScale ? scaleFor(h) : r.scale;
-                if (r.colors[0] == nullptr || wanted != r.scale)
+                if (r.colors[0] == nullptr || wanted != r.scale || wide != r.targetsWide)
                 {
                     r.scale = wanted;
+                    r.targetsWide = wide;
                     gpu = makeTargets(r);
                 }
             }
             if (gpu)
-                updateNative(r, commands);
+                updateNative(r, commands, fresh, newTextures);
             if (r.mode == Mode::Split && gpu)
             {
                 // emulated on the left, native on the right, each fitted at 4:3 into its half
@@ -999,6 +1125,15 @@ namespace mm::render
             const bool native = gpu && (r.mode == Mode::Native || r.showNative);
             show(r, commands, swapchain, 0, 0, width, height, native, emulated, true);
         }
+    }
+
+    void requestShot(const std::string &path)
+    {
+        Renderer &r = renderer();
+        if (r.mode == Mode::Off)
+            return;
+        std::lock_guard<std::mutex> lock(r.shotMutex);
+        r.shotRequest = path;
     }
 
     void install(PS2Runtime &runtime)
@@ -1016,6 +1151,7 @@ namespace mm::render
         else
             return;
         r.runtime = &runtime;
+        r.wideFactor = port::enhance::widescreen();
         if (const char *scale = std::getenv("MMPC_RENDER_SCALE"); scale != nullptr && std::strcmp(scale, "auto") != 0)
         {
             r.scale = static_cast<uint32_t>(std::clamp(std::atoi(scale), 1, 8));

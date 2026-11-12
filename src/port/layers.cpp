@@ -1,6 +1,7 @@
 // The claim-met layer (layer A: instances over built objects whose claim was met) and the snow layer; the rest are in
 // gfx.cpp.
 
+#include "enhance.h"
 #include "game_functions.h"
 #include "game_globals.h"
 #include "render.h"
@@ -181,7 +182,8 @@ namespace mm
                 y = F(0xC2200000u);
             flake.y = y;
         }
-        frame->screen = Vec4{800.0f, 800.0f, 1.0f, 10.0f};
+        // the snow's clip frustum; wider with the enhancement MMPC_WIDESCREEN (enhance.h), or flakes at the sides are dropped
+        frame->screen = Vec4{800.0f * port::enhance::widescreen(), 800.0f, 1.0f, 10.0f};
         const GuestPtr<Vec4> projection = GuestPtr<Vec4>::of(layer->projection[0]);
         Math_ProjectionMatrix(GuestPtr<ps2f>{projection.address}, frame.at(&Locals::screen).as<ps2f>(), F(0x44400000u),
                               F(0x3F800000u), F(0x42480000u));

@@ -1,5 +1,6 @@
 // Windows and their widget base class, text boxes, the city cursor and the notice line.
 
+#include "enhance.h"
 #include "game_functions.h"
 #include "game_globals.h"
 #include "widgets.h"
@@ -924,7 +925,9 @@ namespace mm
         matrix[2].z = 4.0f;
         matrix[1].y = 4.0f;
         matrix[0].x = 4.0f;
+        port::enhance::markFrameList(port::enhance::Span::Backdrop); // enhancement (MMPC_WIDESCREEN): the window covers the screen
         A3DObject_DrawNode(window, 0);
+        port::enhance::markFrameList(port::enhance::Span::Hud);
         if (pause->state == 4 && pause->slotMenu)
             ListMenu_Draw(pause->slotMenu);
         else if (pause->mainMenu)

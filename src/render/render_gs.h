@@ -7,6 +7,7 @@
 #include "render_vu1.h"
 
 #include <cstdint>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -38,6 +39,9 @@ namespace mm::render
         uint8_t wms = 0, wmt = 0;      // CLAMP's wrap modes: 0 repeat, 1 clamp, 2 region clamp, 3 region repeat
         uint8_t snap = 0;              // 1 x, 2 y: a sprite drawn one texel to one frame pixel, sampled at the 1x pixel centre
         uint16_t region[4] = {};       // MINU, MAXU, MINV, MAXV
+        uint8_t hud = 0;               // the city's HUD (Gs::beginSpan), not a frame-buffer read: on a widened frame it keeps
+                                       // its 4:3 proportions. 1 the HUD (2D: not across the whole width), 2 a backdrop, whose
+                                       // points at or past the 4:3 edges go out to the wide edges
         uint8_t blend = 0;             // 0 off, else a BlendMode
         uint8_t fixAlpha = 0;          // FIX of the blend, when it uses one
         uint8_t alphaTest = 1;         // ATST when the test is on, 1 (always) when off
@@ -87,6 +91,8 @@ namespace mm::render
         std::vector<Batch> batches;
         std::unordered_map<uint64_t, TextureImage> newTextures; // decoded this frame, to be uploaded
         uint64_t number = 0;
+        std::string shot; // a file to write the frame to once drawn (requestShot)
+        bool wide = false; // drawn with the city's widened view (MMPC_WIDESCREEN): shown that much wider
     };
 
     class Gs
@@ -112,6 +118,9 @@ namespace mm::render
 
         // The frame being built, handed over and started anew.
         Frame takeFrame();
+        // The frame list reached a span the port marked (render_vif.h kSpanMark, port::enhance::Span): what follows, but for
+        // frame-buffer reads, is marked DrawState::hud. Until the next span or the frame's end.
+        void beginSpan(uint8_t span) { m_span = span; }
         // Texture contents the GPU side let go: they are decoded and sent again if a draw uses them.
         void forget(const std::vector<uint64_t> &keys)
         {
@@ -150,6 +159,8 @@ namespace mm::render
         DrawBuffer m_drawBuffers[4] = {};
         int m_nextDrawBuffer = 0;
         float m_feedbackOrigin[2] = {};
+        uint8_t m_span = 0;    // the span drawn now (beginSpan): 0 the world, 1 the HUD, 2 a backdrop
+        bool m_fromVu = false; // primitives now come from a native VU1 program
         float m_q = 1.0f;
         uint32_t m_clut[256] = {};
         uint32_t m_cbp0 = ~0u, m_cbp1 = ~0u;

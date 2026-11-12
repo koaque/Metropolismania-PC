@@ -1,6 +1,7 @@
 // City scene accessors, the claim meter and clock helpers, and the default slots of the building type
 // classes (mm_BldgType_*: the base class every building type derives from).
 
+#include "enhance.h"
 #include "game_functions.h"
 #include "game_globals.h"
 #include "widgets.h"
@@ -4180,6 +4181,14 @@ namespace mm
         city->townPages = GuestPtr<TownPages>{build(0x64u, [](uint32_t o) { return TownPages_Init(GuestPtr<TownPages>{o}).address; })};
         city->laptop = GuestPtr<Laptop>{build(0x3E0u, [](uint32_t o) { return Laptop_ctor(GuestPtr<Laptop>{o}).address; })};
         city->cityCamera = GuestPtr<CityCamera>{build(0x540u, [](uint32_t o) { return CityCamera_ctor(GuestPtr<CityCamera>{o}).address; })};
+        // Enhancement, off by default (MMPC_WIDESCREEN, enhance.h): the world's camera takes in a wider view, narrowing its
+        // screen x scale so the view still fits the 640 pixels drawn (the renderer shows those frames wider).
+        if (const float wide = port::enhance::widescreen(); wide != 1.0f)
+        {
+            const GuestPtr<Camera> world = GuestPtr<Camera>::of(city->cityCamera->base);
+            world->scaleX = ps2f(1.0f / wide);
+            Camera_UpdateProjection(world);
+        }
         city->lights = GuestPtr<LightSet>{build(0x1B0u, [](uint32_t o) { return LightSet_ctor(GuestPtr<LightSet>{o}).address; })};
         city->player = GuestPtr<Player>{build(0x90u, [](uint32_t o) { return Player_ctor(GuestPtr<Player>{o}).address; })};
         city->applicants = GuestPtr<Applicants>{build(0x350u, [](uint32_t o) { return Applicants_ctor(GuestPtr<Applicants>{o}).address; })};
@@ -4363,6 +4372,8 @@ namespace mm
         if (city->overlay)
             virtualCall(city->overlay.address, 0u, 0xCu, city.address);
         Notice_Tick(city->notice);
+        if (port::enhance::widescreen() != 1.0f) // enhancement: this frame is drawn with the wider view (enhance.h)
+            port::enhance::wideFrames().fetch_add(1, std::memory_order_relaxed);
         DmaList_QueueClearZ();
         Sky_Draw(city->cityCamera);
         Packet_Draw(GuestPtr<uint32_t>::of(city->cityCamera->base.packet));
@@ -4400,6 +4411,7 @@ namespace mm
         CityRender_DrawClaimMet(city->map);
         DmaList_QueueGsDefaults();
         LightSet_SelectProgram(city->lights, 0);
+        port::enhance::markFrameList(port::enhance::Span::Hud); // enhancement (MMPC_WIDESCREEN): the HUD starts here
         Packet_Draw(GuestPtr<uint32_t>::of(city->camera->packet));
         DmaList_QueueClearZ();
         if (city->hudVisible[3] != 0 && (globals::stageState()->flags & 1u) != 0u)

@@ -30,7 +30,7 @@ and audio, so it replaced raylib as the runtime's desktop host (`patches/0155`).
 | N3 | Renderer core: chain walker, GS state, texture cache, 2D primitives, progressive output, resolution scale (`src/render/`, below) | Done: everything drawn without VU1 |
 | N4 | The 13 VU1 programs as native code and shaders, compared image by image with the emulated output | All 13 native, checked against captured runs (below); their math still on the CPU |
 | N5 | Native-only mode (the emulated VU1 and GS drawing skipped), the game state checked unchanged with `PS2X_TIMER0=frame` | Done (below); the faithful build's default is still the emulated picture |
-| N6 | 4K and MSAA, filtering, widescreen, frame pacing; then PC controls | Started: resolution from the window, MSAA, fullscreen |
+| N6 | 4K and MSAA, filtering, widescreen, frame pacing; then PC controls | Started: resolution from the window, MSAA, fullscreen, widescreen (below) |
 
 ## What the frames use (N2)
 
@@ -68,7 +68,9 @@ The records and the inventory's output are game-derived and stay in `work/`.
   least as tall as it is shown; 2x at least, 8x at most; made again when the window changes); `MMPC_RENDER_SCALE` (1 to
   8) fixes it. `MMPC_RENDER_MSAA=2|4|8` draws with that many samples a pixel (the multisampled targets keep their
   contents like the others and are resolved into the ones shown and read back). F11 switches borderless fullscreen and
-  `PS2X_FULLSCREEN=1` starts in it (`patches/0158`).
+  `PS2X_FULLSCREEN=1` starts in it (`patches/0158`). `PS2X_WINDOW_FOCUS=1` lets a placed window (test runs) take the focus;
+  in the background the game keeps its speed, since the host asks Windows for a 1 ms timer and opts out of power
+  throttling (`patches/0159`; `PS2X_POWER_THROTTLING=1` keeps Windows' default).
   `MMPC_RENDER_STATS=1` prints what a frame held every 120 frames (batches, new textures, VU1 programs it ran, program runs
   without a native version, the time per frame on the game thread and on the render thread, frames drawn).
 * A runtime hook (`PS2Memory::setDmaStartObserver`) hands the renderer every VIF1 and GIF DMA start. On the game thread the
@@ -137,6 +139,30 @@ reason); the terrain passes leave a skipped quad's slots in their output buffer 
 written) and set ADC by storing 0x8000 over a vertex's whole w word, so its F goes to 0; and the rain's ground pass
 multiplies its second and fourth corners' texture coordinates by the next corner's 1 / w, because its software pipelining
 issues those multiplies after the next DIV has landed (kept, as the game draws it).
+
+## Widescreen (N6)
+
+`MMPC_WIDESCREEN=1` (16:9) or `W:H` (for example `21:9`) opens the city's view that much wider than 4:3 at the same height
+(Hor+). It needs the native renderer, which shows the wider picture, and is off by default (`src/port/enhance.h`, the
+port's first enhancement switch; with it off the port runs as before).
+
+* In the game: the city's world camera narrows its screen x scale by k = (W/H) / (4/3), 4/3 for 16:9, so the wider view
+  still fits the 640 pixels the game draws (what the PCSX2 widescreen patch does at 0x12A92C). The visibility test behind
+  the city's draw lists and the snow's clip frustum widen by k, so the sides are not left empty.
+* In the renderer: a city frame drawn with the wider view goes to render targets k times as wide and is shown at 4:3 times
+  k. The HUD keeps its 4:3 proportions in the middle. The city marks its frame list where the HUD starts (at the HUD
+  camera's packet) with `port::enhance::markFrameList`; the chain walker turns the mark into a VIF NOP that the renderer's
+  GS reads, and what is drawn from there on is drawn 1/k as wide around the centre, with its x 0 on a whole render pixel so
+  text stays as sharp. 2D primitives across the whole width (fades, the Z clear) and frame-buffer reads still fill the
+  width, and a HUD piece that covers the 4:3 screen (the pause window's frame) is marked as a backdrop: its points at or
+  past the 4:3 edges go out to the wide edges.
+* The centre of the world keeps its 4:3 scale, so HUD pieces placed over the world (the cursor's arrow and info window, the
+  residents of a talk scene) stay over what they belong to. Movies, the title and the scenes outside the city stay 4:3.
+* The town differs from a 4:3 run: the game walks a pedestrian only while it draws them (each draw moves them on by their
+  walk stride), so who walks depends on what is in view, as in the original when the camera turns. With
+  `PS2X_TIMER0=frame`, a 4:3 and a 16:9 run under the explore autoplay are the same state up to the city and differ in
+  pedestrians within its first 300 frames.
+* Speed at 16:9: 59.9 frames a second in the city (explore autoplay and the camera script, 2x scale), as at 4:3.
 
 ## Native only (N5)
 

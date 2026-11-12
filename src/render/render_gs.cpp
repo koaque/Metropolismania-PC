@@ -37,7 +37,8 @@ namespace mm::render
     bool DrawState::operator==(const DrawState &o) const
     {
         return topology == o.topology && textured == o.textured && tfx == o.tfx && tcc == o.tcc && linear == o.linear &&
-               wms == o.wms && wmt == o.wmt && snap == o.snap && std::memcmp(region, o.region, sizeof(region)) == 0 && blend == o.blend && fixAlpha == o.fixAlpha && alphaTest == o.alphaTest &&
+               wms == o.wms && wmt == o.wmt && snap == o.snap && hud == o.hud && std::memcmp(region, o.region, sizeof(region)) == 0 &&
+               blend == o.blend && fixAlpha == o.fixAlpha && alphaTest == o.alphaTest &&
                alphaRef == o.alphaRef && alphaFail == o.alphaFail && depthTest == o.depthTest && depthWrite == o.depthWrite &&
                colorWrite == o.colorWrite && fog == o.fog && fogColor == o.fogColor && texture == o.texture &&
                std::memcmp(scissor, o.scissor, sizeof(scissor)) == 0;
@@ -393,6 +394,12 @@ namespace mm::render
 
     void Gs::vuPacket(const VuPacket &packet)
     {
+        m_fromVu = true;
+        struct Done
+        {
+            bool &flag;
+            ~Done() { flag = false; }
+        } done{m_fromVu};
         for (const auto &reg : packet.registers)
             write(reg.first, reg.second);
         if (((packet.tagLo >> 46) & 1) != 0) // PRE
@@ -745,6 +752,20 @@ namespace mm::render
         DrawState state = currentState(topology);
         if (state.textured && state.texture != kPreviousFrame)
             state.snap = snap;
+        if (m_span != 0 && !(state.textured && state.texture == kPreviousFrame))
+        {
+            if (m_span == 2)
+                state.hud = 2;
+            else if (m_fromVu)
+                state.hud = 1; // a model: the whole of it the same way
+            else
+            {
+                float minX = v[0].x, maxX = v[0].x;
+                for (int i = 1; i < count; ++i)
+                    minX = std::min(minX, v[i].x), maxX = std::max(maxX, v[i].x);
+                state.hud = minX <= 0.5f && maxX >= 639.5f ? 0 : 1; // across the whole width: a background, a fade, the Z clear
+            }
+        }
         if (state.colorWrite == 0 && state.depthWrite == 0)
             return;
         const uint64_t attributes = (m_prmodecont & 1) ? m_prim : m_prmode;
@@ -800,6 +821,7 @@ namespace mm::render
         Frame out = std::move(m_frame);
         m_frame = Frame{};
         m_frame.number = out.number + 1;
+        m_span = 0;
         return out;
     }
 }

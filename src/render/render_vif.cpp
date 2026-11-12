@@ -28,6 +28,8 @@ namespace mm::render
                     m_markLow = imm;
                 else if (num == kProgramMarkHigh)
                     m_pending = (imm << 16) | m_markLow;
+                else if (num == kSpanMark)
+                    m_gs.beginSpan(static_cast<uint8_t>(imm));
                 break;
             case 0x01: // STCYCL
                 m_cl = imm & 0xFF;

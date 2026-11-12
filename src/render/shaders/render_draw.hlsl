@@ -20,10 +20,25 @@ struct VSOutput
     noperspective float fog : TEXCOORD2;
 };
 
+// x in the frame -> x on the target: 1 and 0, except for the HUD on a widened frame (kept at its own proportions in the middle;
+// with Extend, a point at or past the frame's edge goes to the target's edge, so a HUD model that covers the screen still does)
+cbuffer VertexParams : register(b0, space1)
+{
+    float XScale;
+    float XOffset;
+    float Extend;
+    float VertexUnused;
+};
+
 VSOutput VSMain(VSInput input)
 {
     VSOutput output;
-    output.position = float4(input.position.x / 320.0 - 1.0, 1.0 - input.position.y / 224.0, input.depth, 1.0);
+    float x = input.position.x * XScale + XOffset;
+    if (Extend != 0.0 && input.position.x <= 0.5)
+        x = min(x, 0.0);
+    else if (Extend != 0.0 && input.position.x >= 639.5)
+        x = max(x, 640.0);
+    output.position = float4(x / 320.0 - 1.0, 1.0 - input.position.y / 224.0, input.depth, 1.0);
     output.color = input.color;
     output.stq = input.stq;
     output.fog = input.fog;
@@ -41,9 +56,10 @@ cbuffer DrawParams : register(b0, space3)
                      // bits 8-9 the texture function (TFX), 12-13 and 14-15 the wrap modes (WMS, WMT)
     uint AlphaTest;  // ATST: 0 never, 1 always, 2 less, 3 lequal, 4 equal, 5 gequal, 6 greater, 7 notequal
     float AlphaRef;  // AREF, 0..255
-    float Scale;     // render target pixels per frame pixel
+    float Scale;     // render target pixels per frame pixel, down
     float4 FogColor; // FOGCOL / 255
     uint4 Region;    // CLAMP's MINU, MAXU, MINV, MAXV
+    float4 SnapX;    // across: render target pixels per frame pixel of this draw, and where its frame x 0 lies on the target
 };
 
 static const float kScale = 255.0 / 128.0;
@@ -86,8 +102,9 @@ float4 PSMain(VSOutput input) : SV_Target0
     const float2 duvdx = ddx_fine(uv), duvdy = ddy_fine(uv);
     {
         const float2 pos = input.position.xy;
-        const float2 centre = (floor(pos / Scale) + 0.5) * Scale;
-        const float2 shift = float2((Flags & 16u) ? centre.x - pos.x : -0.5 * Scale, (Flags & 32u) ? centre.y - pos.y : -0.5 * Scale);
+        const float2 step = float2(SnapX.x, Scale), origin = float2(SnapX.y, 0.0);
+        const float2 centre = (floor((pos - origin) / step) + 0.5) * step + origin;
+        const float2 shift = float2((Flags & 16u) ? centre.x - pos.x : -0.5 * step.x, (Flags & 32u) ? centre.y - pos.y : -0.5 * step.y);
         uv += duvdx * shift.x + duvdy * shift.y;
     }
 
