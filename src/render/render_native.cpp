@@ -143,6 +143,7 @@ namespace mm::render
             // render thread: the time it spends per frame, for the stats line
             double renderSeconds = 0.0, windowGame = 0.0, windowRender = 0.0, worstRender = 0.0;
             uint32_t windowFrames = 0;
+            uint32_t windowNewTextures = 0; // texture contents first seen since the last stats line
             std::atomic<uint32_t> drawnFrames{0}; // native frames drawn (window thread), since the last stats line
             bool f2Down = false;
             std::atomic<bool> showNative{true};
@@ -301,6 +302,7 @@ namespace mm::render
             r.windowRender += r.renderSeconds;
             r.worstRender = std::max(r.worstRender, r.renderSeconds);
             ++r.windowFrames;
+            r.windowNewTextures += static_cast<uint32_t>(frame.newTextures.size());
             r.renderSeconds = 0.0;
             if (s_stats && frame.number % 120u == 0u)
             {
@@ -325,9 +327,10 @@ namespace mm::render
                 const double n = r.windowFrames != 0 ? static_cast<double>(r.windowFrames) : 1.0;
                 std::cerr << "; a frame: " << r.windowGame * 1000.0 / n << " ms on the game thread, " << r.windowRender * 1000.0 / n
                           << " ms on the render thread (" << r.worstRender * 1000.0 << " worst); " << r.drawnFrames.exchange(0)
-                          << " drawn since the last line";
+                          << " drawn and " << r.windowNewTextures << " new textures since the last line";
                 r.windowGame = r.windowRender = r.worstRender = 0.0;
                 r.windowFrames = 0;
+                r.windowNewTextures = 0;
                 std::cerr << "; runs without a native program";
                 for (const auto &entry : r.vif.missingRuns())
                     std::cerr << " " << std::hex << entry.first << std::dec << " x" << entry.second;
@@ -1240,7 +1243,7 @@ namespace mm::render
             static Clock::time_point last{}, windowStart{};
             static std::vector<double> gaps;
             const Clock::time_point now = Clock::now();
-            static uint64_t lastTick = 0;
+            static uint64_t lastTick = 0, windowStartTick = 0;
             const uint64_t tick = r.runtime != nullptr ? ps2_syscalls::GetCurrentVSyncTick(r.runtime) : 0u;
             if (last.time_since_epoch().count() != 0)
             {
@@ -1252,7 +1255,7 @@ namespace mm::render
                               << tick << std::endl;
             }
             else
-                windowStart = now;
+                windowStart = now, windowStartTick = tick;
             last = now;
             lastTick = tick;
             if (now - windowStart < std::chrono::seconds(2) || gaps.empty())
@@ -1269,11 +1272,14 @@ namespace mm::render
                 late += g > 16.68 + 2.0 ? 1u : 0u;
             }
             const double n = static_cast<double>(gaps.size()), mean = sum / n;
+            const double seconds = std::chrono::duration<double>(now - windowStart).count();
             std::cerr << "[pacing] " << gaps.size() << " presents, gap " << mean << " ms on average (deviation "
                       << std::sqrt(std::max(0.0, squares / n - mean * mean)) << ", " << low << " to " << high << "), " << early
-                      << " more than 2 ms early, " << late << " more than 2 ms late" << std::endl;
+                      << " more than 2 ms early, " << late << " more than 2 ms late; "
+                      << static_cast<double>(tick - windowStartTick) / seconds << " vertical blanks a second" << std::endl;
             gaps.clear();
             windowStart = now;
+            windowStartTick = tick;
         }
 
         void present(void *user, SDL_GPUCommandBuffer *commands, SDL_GPUTexture *swapchain, uint32_t width, uint32_t height,

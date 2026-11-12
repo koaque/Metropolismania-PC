@@ -9,7 +9,7 @@ See `config/port_status.csv` for every function.
 | Origin | Functions | Named | Typed | Ported | Verified |
 |---|---:|---:|---:|---:|---:|
 | game | 1481 | 100.0% | 100.0% | 100.0% | 97.0% |
-| sdk | 768 | 100.0% | 16.0% | 16.0% | 11.8% |
+| sdk | 768 | 100.0% | 15.6% | 15.6% | 11.5% |
 
 Blocking (game and unclassified functions that can reach a thread switch, deferred to native threading): indirect 79, no 987, yes 415
 
@@ -49,10 +49,10 @@ Blocking (game and unclassified functions that can reach a thread switch, deferr
 | sdk:libgraph | 3 | 100.0% | 66.7% | 66.7% | 66.7% |
 | sdk:libkernl | 92 | 100.0% | 6.5% | 6.5% | 5.4% |
 | sdk:libm | 9 | 100.0% | 77.8% | 77.8% | 0.0% |
-| sdk:libmpeg | 16 | 100.0% | 18.8% | 18.8% | 18.8% |
+| sdk:libmpeg | 16 | 100.0% | 12.5% | 12.5% | 12.5% |
 | sdk:libpkt | 8 | 100.0% | 100.0% | 100.0% | 100.0% |
 | sdk:libscf | 2 | 100.0% | 100.0% | 100.0% | 100.0% |
-| sdk:libsif | 13 | 100.0% | 15.4% | 15.4% | 15.4% |
+| sdk:libsif | 13 | 100.0% | 0.0% | 0.0% | 0.0% |
 | sdk:libtty | 1 | 100.0% | 0.0% | 0.0% | 0.0% |
 | sdk:libvu0 | 3 | 100.0% | 100.0% | 100.0% | 100.0% |
 | sdk:mwcpp | 1 | 100.0% | 100.0% | 100.0% | 100.0% |

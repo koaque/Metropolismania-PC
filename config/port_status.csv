@@ -212,7 +212,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0010BFD8,sceMpegGetPictureRAW8,68,sdk,,named,yes,0,1,
 0x0010C020,sceMpegGetPictureRAW8xy,80,sdk,,named,yes,0,1,
 0x0010C088,sceMpegGetDecodeMode,32,sdk,,named,no,0,0,
-0x0010C0A8,sdk_sceMpegIsEnd,12,sdk,sdk:libmpeg,verified,no,1,0,(provisional) the decoder's end flag
+0x0010C0A8,sdk_sceMpegIsEnd,12,sdk,sdk:libmpeg,named,no,1,0,(provisional) the decoder's end flag
 0x0010C0B8,sdk_sceMpegIsRefBuffEmpty,16,sdk,sdk:libmpeg,verified,no,1,0,(provisional) no reference pictures left
 0x0010C0C8,sceMpegReset,80,sdk,,named,no,2,2,
 0x0010C118,sceMpegClearRefBuff,84,sdk,,named,no,1,0,
@@ -445,8 +445,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00114CB8,sceSifInitIopHeap,136,sdk,,named,yes,1,1,
 0x00114D40,sceSifAllocIopHeap,112,sdk,,named,yes,1,1,
 0x00114DB0,sceSifAllocSysMemory,128,sdk,,named,yes,2,1,
-0x00114E30,sdk_sceSifFreeIopHeap,120,sdk,sdk:libsif,verified,yes,1,1,IOP heap RPC (server 0x80000003) function 2
-0x00114EA8,sdk_sceSifFreeSysMemory,28,sdk,sdk:libsif,verified,yes,2,1,frees IOP memory (to sceSifFreeIopHeap)
+0x00114E30,sdk_sceSifFreeIopHeap,120,sdk,sdk:libsif,named,yes,1,1,IOP heap RPC (server 0x80000003) function 2
+0x00114EA8,sdk_sceSifFreeSysMemory,28,sdk,sdk:libsif,named,yes,2,1,frees IOP memory (to sceSifFreeIopHeap)
 0x00114EC8,sceSifLoadIopHeap,240,sdk,,named,yes,0,1,
 0x00114FB8,_lf_bind,256,sdk,,named,yes,9,2,
 0x001150B8,sdk_loadfile_CheckVersion,140,sdk,sdk:libsif,named,no,7,1,"(provisional) compares the LOADFILE module version (""2430"")"

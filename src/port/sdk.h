@@ -368,7 +368,8 @@ namespace mm::sdk
     inline int sceMpegInit() { return port::callGuest<int>(addr::sceMpegInit); }
     inline int sceMpegDemuxPssRing(int mpeg, int data, int size, int ring, int ringSize) { return port::callGuest<int>(addr::sceMpegDemuxPssRing, mpeg, data, size, ring, ringSize); }
     inline int sceMpegGetPicture(int mpeg, int destination, int macroblocks) { return port::callGuest<int>(addr::sceMpegGetPicture, mpeg, destination, macroblocks); }
-    inline int64_t sceMpegIsEnd(int mpeg) { return route<&sdk_sceMpegIsEnd, mm::addr::sdk_sceMpegIsEnd>(mpeg); }
+    // The end test is the runtime's (bound in config/metropolismania.template.toml): the runtime's MPEG library keeps the end.
+    inline int64_t sceMpegIsEnd(int mpeg) { return port::callGuest<int>(addr::sceMpegIsEnd, mpeg); }
     inline int sceMpegReset(int mpeg) { return port::callGuest<int>(addr::sceMpegReset, mpeg); }
     inline int sceSdRemoteInit() { return route<&sdk_sceSdRemoteInit, mm::addr::sdk_sceSdRemoteInit>(); }
     // The double-buffered display of the movie player's graphics environments.
@@ -387,9 +388,10 @@ namespace mm::sdk
         const uint32_t words[6] = {static_cast<uint32_t>(args)...};
         return route<&sdk_sceSdRemote, mm::addr::sdk_sceSdRemote>(mode, command, words[0], words[1], words[2], words[3], words[4], words[5]);
     }
-    // IOP memory through the SIF: allocation returns the IOP address (0 or negative on failure).
+    // IOP memory through the SIF: allocation returns the IOP address (0 or negative on failure). The runtime allocates and frees it
+    // (bound in config/metropolismania.template.toml).
     inline uint32_t sceSifAllocSysMemory(int mode, int size) { return port::callGuest<uint32_t>(addr::sceSifAllocSysMemory, mode, size); }
-    inline int sceSifFreeSysMemory(uint32_t block) { return route<&sdk_sceSifFreeSysMemory, mm::addr::sdk_sceSifFreeSysMemory>(block); }
+    inline int sceSifFreeSysMemory(uint32_t block) { return port::callGuest<int>(addr::sceSifFreeSysMemory, block); }
     inline int sceSifAllocIopHeap(int size) { return port::callGuest<int>(addr::sceSifAllocIopHeap, size); }
     // Waits for the next vertical sync of the given kind and returns the field now shown.
     inline int64_t sceGsSyncV(int mode) { return port::callGuest<int64_t>(addr::sceGsSyncV, mode); }

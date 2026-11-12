@@ -44,16 +44,16 @@ Progress per subsystem is tracked in [docs/PORT_STATUS.md](docs/PORT_STATUS.md).
 |---|---|
 | Boot, logos, title screen, memory card check | Works |
 | Input | Works (keyboard, pad, scripted) |
-| The city | Reached: HUD, cursor and 3D terrain render, about 43 fps on average in the heavy views of the explore autoplay (lowest about 34), 60 (the display rate) on the title and in menus (CPU rendering, compiled VU1 programs, see docs/VU1_PROGRAMS.md). Frame skip keeps the game close to its speed there: 50 to 58 game frames a second, with the frames that cannot be drawn in time left undrawn (`PS2X_FRAMESKIP=0` turns it off) |
-| Movies, music, sound effects | Play, through a new SPU2 emulation (with reverb) |
+| The city | Reached: HUD, cursor and 3D terrain render, about 43 fps on average in the heavy views of the explore autoplay (lowest about 34), 60 (the display rate) on the title and in menus (CPU rendering, compiled VU1 programs, see docs/VU1_PROGRAMS.md). Frame skip keeps the game close to its speed there: 50 to 58 game frames a second, with the frames that cannot be drawn in time left undrawn (`PS2X_FRAMESKIP=0` turns it off). With the native renderer below, 60 with every frame drawn |
+| Movies, music, sound effects | Play, through a new SPU2 emulation (with reverb); a movie watched to its end hands over to the game (it froze there until 2026-11-12) |
 | Saves | Memory card check passes; loading a save from a PCSX2 memory card works |
 | Mapping (names, types, prototypes) | Done for every game function |
 | Readable source port | In progress: all 1,481 of the game's functions rewritten, 1,436 of them verified against the original (97%) ([details](docs/PORT_STATUS.md)) |
 | Reverse-engineering pass | In progress: struct fields by name (raw memory offsets down from about 2,700 lines to about 150), global variables, tables and strings by name, placeholder names replaced, the city's render pipeline mapped down to each of its 13 VU1 programs ([details](docs/RENDER_PIPELINE.md)) |
-| Platform layer (SDK and C runtime) | In progress: 123 of the 768 SDK functions rewritten as plain C++ in `src/port/platform/`; 91 verified by replay, 25 numeric ones (soft float, libm) by random-input comparison, 7 not yet shown. No recompiled SDK function is reachable from the ported code, and the explore and new-game runs enter none ([details](docs/PLATFORM_FINDINGS.md)) |
+| Platform layer (SDK and C runtime) | In progress: 120 of the 768 SDK functions rewritten as plain C++ in `src/port/platform/`; 88 verified by replay, 25 numeric ones (soft float, libm) by random-input comparison, 7 not yet shown. No recompiled SDK function is reachable from the ported code, and the explore and new-game runs enter none ([details](docs/PLATFORM_FINDINGS.md)) |
 | VU1 microcode | The city's programs run natively, checked against the interpreter ([details](docs/VU1_PROGRAMS.md)) |
 | Sound driver (IOP) | The game's own driver (YYSOUND, 114 functions) is rewritten as readable C++ in `src/port/iop/` and checked call by call against the original (0 differences, bar a few uninitialized stack bytes that the details list). All ten IOP modules, YYSOUND and the nine Sony modules (memory card, pad, SPU2 library, MIDI and sound-effect synthesizers), run as C++ translated ahead of time from your disc's modules, which matches the interpreter exactly (the same state at every checked point, the same audio, random programs of every instruction form; no instruction of the ten modules is interpreted in the scripted runs). The Sony modules are not rewritten as readable source ([details](docs/IOP.md)) |
-| Native renderer | In progress, opt-in (`MMPC_RENDERER=native`): the whole picture drawn natively at any multiple of 640x448 (3x by default) as one progressive picture per frame, so without fields or interlace jitter. All 13 of the game's VU1 programs run as native code that matches the original programs' output on the captured runs, and the emulated graphics hardware is skipped: the explore autoplay holds 60 frames a second with every frame drawn (the emulated picture draws about 15 to 25), and the game state stays byte for byte the same. Frames are paced evenly for variable refresh displays, text and the HUD can be enlarged sharp, smooth or as the PS2 drew them, and `pipeline.py play` starts the game with it ([details](docs/RENDERER.md), [settings](docs/SETTINGS.md)) |
+| Native renderer | In progress, opt-in (`MMPC_RENDERER=native`): the whole picture drawn natively at any multiple of 640x448 (by default the largest that fits the window) as one progressive picture per frame, so without fields or interlace jitter. All 13 of the game's VU1 programs run as native code that matches the original programs' output on the captured runs, and the emulated graphics hardware is skipped: the explore autoplay holds 60 frames a second with every frame drawn (the emulated picture draws about 15 to 25), and the game state stays byte for byte the same. Frames are paced evenly for variable refresh displays, text and the HUD can be enlarged sharp, smooth or as the PS2 drew them, and `pipeline.py play` starts the game with it ([details](docs/RENDERER.md), [settings](docs/SETTINGS.md)) |
 | Widescreen | Opt-in with the native renderer (`widescreen = 16:9` in settings.ini, or `21:9` and so on): the city's view opens wider at the same height, and the HUD keeps its proportions; checked against 4:3 across the city, menus, night, rain and scene changes ([details](docs/RENDERER.md#widescreen-n6)) |
 | High refresh rate, native controls, Linux | Proposed, not started ([see below](#proposed-patches)) |
 
@@ -124,13 +124,13 @@ The city's VU1 programs run faster as compiled C++, which is made from your disc
 
 ## Proposed patches
 
-Once the port is complete these are the changes it is meant to make possible. Higher resolution and widescreen have started with the native renderer; the others do not exist yet.
+Once the port is complete these are the changes it is meant to make possible. Higher resolution, widescreen and the display options are done with the native renderer, as opt-ins for now; the others do not exist yet.
 
-- **Widescreen.** True 16:9 and wider, with the field of view and the HUD corrected. In progress: with the native renderer, `MMPC_WIDESCREEN=1` opens the city's view to 16:9 (or any `W:H`) and keeps the HUD at its proportions ([docs/RENDERER.md](docs/RENDERER.md#widescreen-n6)).
+- **Widescreen.** True 16:9 and wider, with the field of view and the HUD corrected. Done (opt-in): with the native renderer, `widescreen = 16:9` in settings.ini (or any `W:H`) opens the city's view wider at the same height and keeps the HUD at its proportions ([docs/RENDERER.md](docs/RENDERER.md#widescreen-n6)).
 - **High refresh rates (120 Hz).** The game logic steps once per frame at the PS2's field rate (59.94 Hz), so it must stay at that rate to keep its speed; the proposal is to draw in-between frames for 120 Hz and faster displays without changing the logic.
-- **Higher resolution.** Render the city at a multiple of the PS2's 640x448 instead of the fixed output size. In progress: the native renderer draws the whole picture at any multiple already (opt-in, [docs/RENDERER.md](docs/RENDERER.md)).
+- **Higher resolution.** Render the city at a multiple of the PS2's 640x448 instead of the fixed output size. Done (opt-in): the native renderer draws the whole picture at any multiple, 4K and above, with optional MSAA ([docs/RENDERER.md](docs/RENDERER.md)).
 - **Native PC controls.** Keyboard and mouse, any gamepad, and rebinding, instead of a mapped PS2 pad.
-- **And more:** a Linux build, saves in a normal folder instead of a memory card image, display options (fullscreen, borderless, vsync) and fixes for the remaining rendering glitches.
+- **And more:** a Linux build, saves in a normal folder instead of a memory card image, and fixes for the remaining rendering glitches. The display options (borderless fullscreen, window size, vsync, the graphics API) are in settings.ini already ([docs/SETTINGS.md](docs/SETTINGS.md)).
 
 ## Support the project
 
@@ -212,16 +212,16 @@ This is a fan preservation project. It is not affiliated with or endorsed by Ind
 |---|---|
 | 起動、ロゴ、タイトル画面、メモリーカード確認 | 動作 |
 | 入力 | 動作(キーボード、パッド、スクリプト) |
-| 街 | 到達済み。HUD、カーソル、3D地形を描画。探索の自動操作の重い場面で平均約43 fps(最低約34 fps)、タイトルとメニューでは表示レートの60 fps。フレームスキップにより、重い場面でもゲームは毎秒50〜58フレーム進み、本来の速度に近づきます(間に合わないフレームは描画を省きます。`PS2X_FRAMESKIP=0`で無効) |
-| ムービー、音楽、効果音 | 再生可能(新しく作ったSPU2エミュレーションによる、リバーブ付き) |
+| 街 | 到達済み。HUD、カーソル、3D地形を描画。探索の自動操作の重い場面で平均約43 fps(最低約34 fps)、タイトルとメニューでは表示レートの60 fps。フレームスキップにより、重い場面でもゲームは毎秒50〜58フレーム進み、本来の速度に近づきます(間に合わないフレームは描画を省きます。`PS2X_FRAMESKIP=0`で無効)。下のネイティブレンダラーでは毎秒60フレームをすべて描画します |
+| ムービー、音楽、効果音 | 再生可能(新しく作ったSPU2エミュレーションによる、リバーブ付き)。ムービーを最後まで見るとゲームが続きます(2026-11-12まではそこで止まっていました) |
 | セーブ | メモリーカードの確認は通過。PCSX2のメモリーカードからのロードは動作 |
 | マッピング(名前、型、プロトタイプ) | ゲームの全関数で完了 |
 | 読みやすいソースへの移植 | 進行中。1,481関数すべてを書き直し済み、うち1,436関数を元のコードとの照合で検証済み(97%)([詳細](docs/PORT_STATUS.md)) |
 | リバースエンジニアリングの見直し | 進行中。生のメモリオフセットを構造体のフィールド名に置き換え(約2,700行から約150行に)、グローバル変数、テーブル、文字列にも名前を付け、仮の名前を本当の名前に変更、街の描画パイプラインを13個のVU1プログラムそれぞれまで解析済み([詳細](docs/RENDER_PIPELINE.md)) |
-| プラットフォーム層(SDKとCランタイム) | 進行中。768個のSDK関数のうち123個を `src/port/platform/` に素のC++で書き直し済み。91個はリプレイで、25個の数値関数(ソフトフロート、libm)はランダム入力との比較で検証済み、7個は未検証。移植済みコードから到達できる再コンパイル済みSDK関数はなく、探索と新規ゲームの実行でも再コンパイル済み関数は実行されません([詳細](docs/PLATFORM_FINDINGS.md)) |
+| プラットフォーム層(SDKとCランタイム) | 進行中。768個のSDK関数のうち120個を `src/port/platform/` に素のC++で書き直し済み。88個はリプレイで、25個の数値関数(ソフトフロート、libm)はランダム入力との比較で検証済み、7個は未検証。移植済みコードから到達できる再コンパイル済みSDK関数はなく、探索と新規ゲームの実行でも再コンパイル済み関数は実行されません([詳細](docs/PLATFORM_FINDINGS.md)) |
 | VU1マイクロコード | 街のプログラムはネイティブで動作し、インタプリタとの照合済み([詳細](docs/VU1_PROGRAMS.md)) |
 | サウンドドライバ(IOP) | ゲーム自身のドライバ(YYSOUND、114関数)を `src/port/iop/` に読みやすいC++として書き直し済みで、元のコードと呼び出しごとに照合しています(差異は0件。初期化されていないスタックの数バイトを除く。詳細に記載)。YYSOUNDとSony製の9モジュール(メモリーカード、パッド、SPU2ライブラリ、MIDIと効果音のシンセサイザ)を含む10個のIOPモジュールすべてを、ディスクのモジュールから事前に変換したC++で実行しており、インタプリタと完全に一致します(照合した各時点で同じ状態、同じ音声、あらゆる命令形式のランダムなプログラム。スクリプトによる実行では10モジュールの命令をインタプリタで実行することはありません)。Sony製モジュールは読みやすいソースには書き直していません([詳細](docs/IOP.md))|
-| ネイティブレンダラー | 進行中、オプトイン(`MMPC_RENDERER=native`)。画面全体を640x448の任意の整数倍(既定は3倍)でネイティブに描画します。1フレームを1枚のプログレッシブ画像として描くので、フィールドもインターレースの揺れもありません。ゲームの13個のVU1プログラムはすべてネイティブコードで動き、記録した実行では元のプログラムと同じ出力になります。エミュレートしたグラフィックハードウェアは描画を省くので、探索の自動操作で毎秒60フレームをすべて描画します(エミュレートした画像では約15〜25)。ゲームの状態はバイト単位で同じままです。可変リフレッシュレートのディスプレイ向けにフレームの間隔を均等にし、文字とHUDの拡大はシャープ、なめらか、PS2どおりから選べます。`pipeline.py play` でこのレンダラーを使って起動します([詳細](docs/RENDERER.md)、[設定](docs/SETTINGS.md)) |
+| ネイティブレンダラー | 進行中、オプトイン(`MMPC_RENDERER=native`)。画面全体を640x448の任意の整数倍(既定はウィンドウに収まる最大の倍率)でネイティブに描画します。1フレームを1枚のプログレッシブ画像として描くので、フィールドもインターレースの揺れもありません。ゲームの13個のVU1プログラムはすべてネイティブコードで動き、記録した実行では元のプログラムと同じ出力になります。エミュレートしたグラフィックハードウェアは描画を省くので、探索の自動操作で毎秒60フレームをすべて描画します(エミュレートした画像では約15〜25)。ゲームの状態はバイト単位で同じままです。可変リフレッシュレートのディスプレイ向けにフレームの間隔を均等にし、文字とHUDの拡大はシャープ、なめらか、PS2どおりから選べます。`pipeline.py play` でこのレンダラーを使って起動します([詳細](docs/RENDERER.md)、[設定](docs/SETTINGS.md)) |
 | ワイドスクリーン | ネイティブレンダラーでオプトイン(settings.ini の `widescreen = 16:9`、`21:9` なども可)。街の視野を同じ高さのまま横に広げ、HUDは元の比率を保ちます。街、メニュー、夜、雨、場面の切り替えで4:3と比べて確認済みです([詳細](docs/RENDERER.md#widescreen-n6)) |
 | 高リフレッシュレート、ネイティブ操作、Linux | 構想中、未着手 |
 
@@ -292,13 +292,13 @@ PCSX2からセーブデータをコピーするには `python tools/mc_extract.p
 
 ### 構想中のパッチ
 
-移植が完成した後に、これらの変更ができるようになることを目指しています。高解像度とワイドスクリーンはネイティブレンダラーで始まっていますが、ほかはまだ存在しません。
+移植が完成した後に、これらの変更ができるようになることを目指しています。高解像度、ワイドスクリーン、表示オプションはネイティブレンダラーで実現済みです(今はオプトイン)。ほかはまだ存在しません。
 
-- **ワイドスクリーン。** 16:9以上の本物のワイドスクリーン。視野角とHUDも補正します。進行中:ネイティブレンダラーでは、`MMPC_WIDESCREEN=1` で街の視野を16:9(または任意の `W:H`)に広げ、HUDは元の比率を保ちます([docs/RENDERER.md](docs/RENDERER.md#widescreen-n6))。
+- **ワイドスクリーン。** 16:9以上の本物のワイドスクリーン。視野角とHUDも補正します。実現済み(オプトイン):ネイティブレンダラーで settings.ini の `widescreen = 16:9`(または任意の `W:H`)にすると、街の視野を同じ高さのまま横に広げ、HUDは元の比率を保ちます([docs/RENDERER.md](docs/RENDERER.md#widescreen-n6))。
 - **高リフレッシュレート(120 Hz)。** ゲームのロジックはPS2のフィールドレート(59.94 Hz)で1フレームごとに進むため、速度を保つにはこのレートのままにする必要があります。ロジックを変えずに中間フレームを描き、120 Hz以上のディスプレイでなめらかに表示することを目指します。
-- **高解像度。** 固定の出力サイズではなく、PS2の640x448の整数倍で街を描画します。進行中:ネイティブレンダラーは既に画面全体を任意の整数倍で描画しています(オプトイン、[docs/RENDERER.md](docs/RENDERER.md))。
+- **高解像度。** 固定の出力サイズではなく、PS2の640x448の整数倍で街を描画します。実現済み(オプトイン):ネイティブレンダラーは画面全体を任意の整数倍(4K以上も可)で描画し、MSAAも使えます([docs/RENDERER.md](docs/RENDERER.md))。
 - **PCネイティブの操作。** PS2パッドに割り当てる方式ではなく、キーボードとマウス、あらゆるゲームパッド、キー割り当ての変更に対応します。
-- **その他:** Linux版、メモリーカードイメージではなく通常のフォルダへのセーブ、表示オプション(フルスクリーン、ボーダーレス、垂直同期)、残っている描画の不具合の修正。
+- **その他:** Linux版、メモリーカードイメージではなく通常のフォルダへのセーブ、残っている描画の不具合の修正。表示オプション(ボーダーレスのフルスクリーン、ウィンドウサイズ、垂直同期、グラフィックスAPI)は既に settings.ini にあります([docs/SETTINGS.md](docs/SETTINGS.md))。
 
 ### プロジェクトを支援する
 
@@ -383,7 +383,7 @@ Translating a program's machine code into source code for another platform ahead
 
 ### Is there a widescreen or HD version?
 
-Not yet as a release. A native renderer for higher resolutions is being built and already draws the whole game at any multiple of 640x448, without interlacing, and the city in 16:9 or wider with the HUD kept at its proportions, as an opt-in for now ([docs/RENDERER.md](docs/RENDERER.md)). 120 Hz and native controls are planned once the port is complete ([proposed patches](#proposed-patches)). Until then, PCSX2 has a 16:9 patch for the game.
+Not yet as a release. The native renderer draws the whole game at any multiple of 640x448 (4K and above), without interlacing, at a steady 59.94 frames a second, and the city in 16:9 or wider with the HUD kept at its proportions; `python tools/pipeline.py play` starts it, as an opt-in for now ([docs/RENDERER.md](docs/RENDERER.md), [docs/SETTINGS.md](docs/SETTINGS.md)). 120 Hz and native controls are planned once the port is complete ([proposed patches](#proposed-patches)). Until then, PCSX2 has a 16:9 patch for the game.
 
 ### Who made Metropolismania?
 
@@ -436,7 +436,7 @@ PCSX2はゲーム機全体をエミュレートし、元のディスクをその
 
 #### ワイドスクリーンやHD版はありますか?
 
-リリースとしてはまだありません。高解像度のためのネイティブレンダラーを作っているところで、既にゲーム全体を640x448の任意の整数倍で、インターレースなしで描画でき、街はHUDの比率を保ったまま16:9以上でも描画できます(今はオプトイン、[docs/RENDERER.md](docs/RENDERER.md))。120 Hz、PC向けの操作は、移植の完成後に予定しています([構想中のパッチ](#構想中のパッチ))。それまでは、PCSX2にこのゲーム用の16:9パッチがあります。
+リリースとしてはまだありません。ネイティブレンダラーはゲーム全体を640x448の任意の整数倍(4K以上も可)で、インターレースなしで、毎秒59.94フレームで安定して描画し、街はHUDの比率を保ったまま16:9以上でも描画できます。`python tools/pipeline.py play` で起動します(今はオプトイン、[docs/RENDERER.md](docs/RENDERER.md)、[docs/SETTINGS.md](docs/SETTINGS.md))。120 Hz、PC向けの操作は、移植の完成後に予定しています([構想中のパッチ](#構想中のパッチ))。それまでは、PCSX2にこのゲーム用の16:9パッチがあります。
 
 #### 誰が作ったゲームですか?
 

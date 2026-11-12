@@ -219,7 +219,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 ### libmpeg
 
-16 functions (named 13, verified 3). Blocks: 5 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+16 functions (named 14, verified 2). Blocks: 5 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|
@@ -266,7 +266,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 
 ### libsif
 
-13 functions (named 11, verified 2). Blocks: 7 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+13 functions (named 13). Blocks: 7 can reach a thread switch, 0 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|

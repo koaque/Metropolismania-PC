@@ -25,7 +25,16 @@ patch_cache = true
 # ExitThread@0x001000C0 is crt0's thread end (a thread whose entry function returns lands there) and ExitThread@0x0010D980 is the SDK's
 # _Exit (the Exit system call, which the runtime handles as ExitThread). A thread exit has to unwind from guest code, so the readable
 # port cannot write them as C++ (plan P7); the runtime's handler does it, like ExitDeleteThread.
-stubs = ["ExitThread@0x001000C0", "ExitThread@0x0010D980"]
+# sceMpegIsEnd@0x0010C0A8: the runtime runs the MPEG library itself (decoding, demux, pictures) and keeps the stream's end in its
+# own state; the library's sceMpegIsEnd reads an end flag in the decoder's state block, which only the real library sets. The
+# function was named sdk_sceMpegIsEnd in the map (e077f29), so it lost the binding by name and a movie played to its end never
+# ended (the game froze; skipping it was fine).
+# sceSifFreeIopHeap@0x00114E30, sceSifFreeSysMemory@0x00114EA8: renamed the same way, so the game's own frees ran; they go through
+# the IOP heap's RPC client, which only the library's sceSifInitIopHeap binds (the runtime handles that one, and the allocations),
+# so they returned at once and the IOP memory a movie takes (about 186 KB) was never given back. Bound to the runtime's handlers,
+# which free what its allocator gave.
+stubs = ["ExitThread@0x001000C0", "ExitThread@0x0010D980", "sceMpegIsEnd@0x0010C0A8", "sceSifFreeIopHeap@0x00114E30",
+         "sceSifFreeSysMemory@0x00114EA8"]
 
 # Extra function starts the analysis misses (for example functions only reached through tables).
 entry_points = []

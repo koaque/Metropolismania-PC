@@ -42,10 +42,7 @@
 0x0010E840 int sdk_DisableIntc(int cause);
 0x0010E978 int sdk_EnableDmac(int channel);
 0x0010E910 int sdk_DisableDmac(int channel);
-0x00114E30 int sdk_sceSifFreeIopHeap(uint32_t address);
-0x00114EA8 int sdk_sceSifFreeSysMemory(uint32_t block);
 0x0010BF60 int sdk_sceMpegDelete(int mpeg);
-0x0010C0A8 int sdk_sceMpegIsEnd(int mpeg);
 0x0010C0B8 int sdk_sceMpegIsRefBuffEmpty(int mpeg);
 0x00116C90 int sdk_sceSdRemoteInit(void);
 0x00116DD0 int64_t sdk_sceSdRemote(int mode, int command, uint32_t arg0, uint32_t arg1, uint32_t arg2, uint32_t arg3, uint32_t arg4, uint32_t arg5);

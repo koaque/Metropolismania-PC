@@ -376,6 +376,32 @@ namespace
             const char *flag = std::getenv("MMPC_TRACE");
             return flag && std::strcmp(flag, "1") == 0;
         }();
+        // MMPC_FRAME_PACING=1: a game frame that takes long enough to make the next vertical blank late (more than 12 ms
+        // in GameUpdate, or more than 25 ms from one GameUpdate to the next), with the game state and the city's mode.
+        static const bool pacingOn = []()
+        {
+            const char *flag = std::getenv("MMPC_FRAME_PACING");
+            return flag && flag[0] == '1';
+        }();
+        if (pacingOn)
+        {
+            using Clock = std::chrono::steady_clock;
+            static Clock::time_point lastStart{};
+            const Clock::time_point begin = Clock::now();
+            const double sinceLast =
+                lastStart.time_since_epoch().count() != 0 ? std::chrono::duration<double, std::milli>(begin - lastStart).count() : 0.0;
+            lastStart = begin;
+            const uint32_t city = state == 6u ? guestRead32(rdram, self + 8u) : 0u;
+            const uint32_t cityMode = city != 0u ? guestRead32(rdram, city + 0x10u) : 0xFFFFFFFFu;
+            if (!traceOn)
+                g_originalGameUpdate(rdram, ctx, runtime);
+            const double took = std::chrono::duration<double, std::milli>(Clock::now() - begin).count();
+            if (took > 12.0 || sinceLast > 25.0)
+                std::cerr << "[pacing] GameUpdate " << took << " ms, " << sinceLast << " ms after the one before (state " << state
+                          << ", city mode " << static_cast<int32_t>(cityMode) << ")" << std::endl;
+            if (!traceOn)
+                return;
+        }
         if (!traceOn)
         {
             g_originalGameUpdate(rdram, ctx, runtime);
@@ -432,11 +458,37 @@ namespace
     constexpr uint32_t kSearchFile = 0x0011A8F8u; // sceCdSearchFile(record, path): 0 when the file is not on the disc
     PS2Runtime::RecompiledFunction g_originalSearchFile = nullptr;
 
+    // MMPC_MOVIE=<name> (test aid, for example MISSION2 or ENDING): every movie the game looks for is that one instead
+    // (\DATA\MPEG\<name>.PSS), so a new game's briefing tests how any movie plays and ends. The path is rewritten in
+    // the game's own buffer before the search.
+    const char *movieInstead()
+    {
+        static const char *name = []() -> const char *
+        {
+            const char *value = std::getenv("MMPC_MOVIE");
+            return value && value[0] != '\0' && std::strlen(value) <= 8 ? value : nullptr;
+        }();
+        return name;
+    }
+
     void skipMovieSearch(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
     {
         const std::string path = guestString(rdram, getRegU32(ctx, 5));
-        if (path.size() >= 4 && path.find(".PSS") != std::string::npos)
+        const size_t pss = path.find(".PSS");
+        if (path.size() >= 4 && pss != std::string::npos)
         {
+            if (const char *name = movieInstead())
+            {
+                const size_t slash = path.rfind('\\', pss);
+                const std::string instead = path.substr(0, slash == std::string::npos ? 0 : slash + 1) + name + path.substr(pss);
+                if (instead.size() <= path.size())
+                {
+                    std::memcpy(rdram + (getRegU32(ctx, 5) & 0x01FFFFFFu), instead.c_str(), instead.size() + 1);
+                    std::cerr << "[mm] movie " << path << " played as " << instead << " (MMPC_MOVIE)" << std::endl;
+                }
+                g_originalSearchFile(rdram, ctx, runtime);
+                return;
+            }
             std::cerr << "[mm] skipped movie (MMPC_SKIP_MOVIES=1): " << path << std::endl;
             setReturnS32(ctx, 0);
             ctx->pc = getRegU32(ctx, 31);
@@ -448,11 +500,15 @@ namespace
     void installMovieSkip(PS2Runtime &runtime)
     {
         const char *flag = std::getenv("MMPC_SKIP_MOVIES");
-        if (!flag || std::strcmp(flag, "1") != 0)
+        const bool skip = flag && std::strcmp(flag, "1") == 0;
+        if (!skip && movieInstead() == nullptr)
             return;
         g_originalSearchFile = runtime.lookupFunction(kSearchFile);
         runtime.registerFunction(kSearchFile, skipMovieSearch);
-        std::cerr << "[mm] movies will be skipped (MMPC_SKIP_MOVIES=1)" << std::endl;
+        if (movieInstead() != nullptr)
+            std::cerr << "[mm] every movie is played as " << movieInstead() << " (MMPC_MOVIE)" << std::endl;
+        else
+            std::cerr << "[mm] movies will be skipped (MMPC_SKIP_MOVIES=1)" << std::endl;
     }
 
     // ------------------------------------------------------------------ MMPC_TRACE_GS=1

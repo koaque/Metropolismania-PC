@@ -1525,10 +1525,7 @@ inline constexpr uint32_t sdk_EnableIntc = 0x0010E8A8u;
 inline constexpr uint32_t sdk_DisableIntc = 0x0010E840u;
 inline constexpr uint32_t sdk_EnableDmac = 0x0010E978u;
 inline constexpr uint32_t sdk_DisableDmac = 0x0010E910u;
-inline constexpr uint32_t sdk_sceSifFreeIopHeap = 0x00114E30u;
-inline constexpr uint32_t sdk_sceSifFreeSysMemory = 0x00114EA8u;
 inline constexpr uint32_t sdk_sceMpegDelete = 0x0010BF60u;
-inline constexpr uint32_t sdk_sceMpegIsEnd = 0x0010C0A8u;
 inline constexpr uint32_t sdk_sceMpegIsRefBuffEmpty = 0x0010C0B8u;
 inline constexpr uint32_t sdk_sceSdRemoteInit = 0x00116C90u;
 inline constexpr uint32_t sdk_sceSdRemote = 0x00116DD0u;
@@ -1635,8 +1632,6 @@ template <> inline constexpr bool at<0x001004C0u> = true; // sdk_mw_NewArray
 template <> inline constexpr bool at<0x001005B0u> = true; // sdk_operator_new
 template <> inline constexpr bool at<0x00100990u> = true; // sdk_destroy_global_chain
 template <> inline constexpr bool at<0x00100A10u> = true; // sdk_initialize_cpp_rts
-template <> inline constexpr bool at<0x00114E30u> = true; // sdk_sceSifFreeIopHeap
-template <> inline constexpr bool at<0x00114EA8u> = true; // sdk_sceSifFreeSysMemory
 template <> inline constexpr bool at<0x00116118u> = true; // sdk_InitTLBFunctions
 template <> inline constexpr bool at<0x001169C0u> = true; // sdk_InitSys
 template <> inline constexpr bool at<0x00116AD0u> = true; // sdk_InitExecPS2
@@ -3640,15 +3635,12 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"sdk_sceGsSetHalfOffset", addr::sdk_sceGsSetHalfOffset},
     {"sdk_sceGsSetHalfOffset2", addr::sdk_sceGsSetHalfOffset2},
     {"sdk_sceMpegDelete", addr::sdk_sceMpegDelete},
-    {"sdk_sceMpegIsEnd", addr::sdk_sceMpegIsEnd},
     {"sdk_sceMpegIsRefBuffEmpty", addr::sdk_sceMpegIsRefBuffEmpty},
     {"sdk_sceScfGetLocalTimefromRTC", addr::sdk_sceScfGetLocalTimefromRTC},
     {"sdk_sceScfGetSummerTime", addr::sdk_sceScfGetSummerTime},
     {"sdk_sceScfGetTimeZone", addr::sdk_sceScfGetTimeZone},
     {"sdk_sceSdRemote", addr::sdk_sceSdRemote},
     {"sdk_sceSdRemoteInit", addr::sdk_sceSdRemoteInit},
-    {"sdk_sceSifFreeIopHeap", addr::sdk_sceSifFreeIopHeap},
-    {"sdk_sceSifFreeSysMemory", addr::sdk_sceSifFreeSysMemory},
     {"sdk_sceVu0ApplyMatrix", addr::sdk_sceVu0ApplyMatrix},
     {"sdk_sceVu0CameraMatrix", addr::sdk_sceVu0CameraMatrix},
     {"sdk_sceVu0CopyVector", addr::sdk_sceVu0CopyVector},
@@ -5203,10 +5195,7 @@ int sdk_EnableIntc(int cause);
 int sdk_DisableIntc(int cause);
 int sdk_EnableDmac(int channel);
 int sdk_DisableDmac(int channel);
-int sdk_sceSifFreeIopHeap(uint32_t address);
-int sdk_sceSifFreeSysMemory(uint32_t block);
 int sdk_sceMpegDelete(int mpeg);
-int sdk_sceMpegIsEnd(int mpeg);
 int sdk_sceMpegIsRefBuffEmpty(int mpeg);
 int sdk_sceSdRemoteInit();
 int64_t sdk_sceSdRemote(int mode, int command, uint32_t arg0, uint32_t arg1, uint32_t arg2, uint32_t arg3, uint32_t arg4, uint32_t arg5);
