@@ -66,6 +66,7 @@ namespace mm::render
             uint32_t region[4];
             float snapX[4]; // render pixels per frame pixel across, and where frame x 0 lies
             uint32_t texRect[4]; // the texture's corner in the bound texture (an atlas page) and its size
+            uint32_t mip[4];     // anisotropic filtering: the most samples (1: off) and the texture's mip levels
         };
 
         struct VertexParams // the shader's VertexParams
@@ -105,6 +106,7 @@ namespace mm::render
             uint32_t page = 0, cell = 0;
             uint64_t lastUsed = 0;
             bool proposed = false; // unused for long and offered to the GS to forget; let go once the GS has
+            uint32_t levels = 1;   // mip levels made for it (anisotropic filtering)
         };
 
         // The atlas: creating a GPU texture costs about half a millisecond on D3D12 whatever its size, and the city brings in
@@ -165,6 +167,9 @@ namespace mm::render
             // MMPC_RENDER_FILTER_2D: how 2D drawn one texel to one frame pixel (text, the HUD, movies) is enlarged: 0 sharp
             // (each frame pixel's texel whole), 1 smooth (bilinear between the texels), 2 ps2 (the GS's own 1x picture)
             uint32_t filter2d = 0;
+            // MMPC_RENDER_ANISO: anisotropic filtering, the most samples along a pixel's footprint (1 is off: the GS's one
+            // bilinear sample); the textures get mip levels made from their own texels
+            uint32_t anisotropy = 16;
             uint32_t clearFrames = 2; // frames left that start their target from black (after the targets are made)
             float wideFactor = 1.0f;  // MMPC_WIDESCREEN: how much wider than 4:3 a widened frame is
             bool targetsWide = false; // the targets are for widened frames
@@ -602,7 +607,7 @@ namespace mm::render
         }
 
         SDL_GPUTexture *makeTexture(SDL_GPUDevice *device, SDL_GPUTextureFormat format, SDL_GPUTextureUsageFlags usage, uint32_t w,
-                                    uint32_t h)
+                                    uint32_t h, uint32_t levels = 1)
         {
             SDL_GPUTextureCreateInfo info{};
             info.type = SDL_GPU_TEXTURETYPE_2D;
@@ -611,8 +616,62 @@ namespace mm::render
             info.width = w;
             info.height = h;
             info.layer_count_or_depth = 1;
-            info.num_levels = 1;
+            info.num_levels = levels;
             return SDL_CreateGPUTexture(device, &info);
+        }
+
+        // Mip levels for a texture of w x h (powers of two): down to 1 texel on its longer side.
+        uint32_t mipLevels(uint32_t w, uint32_t h)
+        {
+            uint32_t levels = 1;
+            for (uint32_t side = std::max(w, h); side > 1u; side >>= 1)
+                ++levels;
+            return levels;
+        }
+
+        // The levels after the first, one after the other in `out`: each texel the mean of the (up to) four below it, its
+        // colour weighted by their alpha, so that transparent texels (often black) do not darken the edges at a distance.
+        void buildMips(const TextureImage &image, uint32_t levels, std::vector<uint32_t> &out)
+        {
+            out.clear();
+            uint32_t w = image.width, h = image.height;
+            const uint32_t *from = image.pixels.data();
+            size_t fromAt = 0;
+            std::vector<uint32_t> &level = out;
+            for (uint32_t l = 1; l < levels; ++l)
+            {
+                const uint32_t nw = std::max(1u, w >> 1), nh = std::max(1u, h >> 1);
+                const size_t at = level.size();
+                level.resize(at + static_cast<size_t>(nw) * nh);
+                const uint32_t *src = l == 1 ? from : level.data() + fromAt;
+                for (uint32_t y = 0; y < nh; ++y)
+                    for (uint32_t x = 0; x < nw; ++x)
+                    {
+                        const uint32_t x0 = std::min(2u * x, w - 1u), x1 = std::min(2u * x + 1u, w - 1u);
+                        const uint32_t y0 = std::min(2u * y, h - 1u), y1 = std::min(2u * y + 1u, h - 1u);
+                        const uint32_t t[4] = {src[y0 * w + x0], src[y0 * w + x1], src[y1 * w + x0], src[y1 * w + x1]};
+                        uint32_t alpha = 0, sum[3] = {0, 0, 0}, plain[3] = {0, 0, 0};
+                        for (uint32_t texel : t)
+                        {
+                            const uint32_t a = texel >> 24;
+                            alpha += a;
+                            for (int c = 0; c < 3; ++c)
+                            {
+                                const uint32_t v = (texel >> (8 * c)) & 0xFFu;
+                                sum[c] += v * a;
+                                plain[c] += v;
+                            }
+                        }
+                        uint32_t texel = ((alpha + 2u) / 4u) << 24;
+                        for (int c = 0; c < 3; ++c)
+                            texel |= (alpha != 0 ? (sum[c] + alpha / 2u) / alpha : (plain[c] + 2u) / 4u) << (8 * c);
+                        level[at + static_cast<size_t>(y) * nw + x] = texel;
+                    }
+                // `src` may point into `level`, which grew: the next level reads this one by its offset
+                fromAt = at;
+                w = nw;
+                h = nh;
+            }
         }
 
         bool initGpu(Renderer &r)
@@ -823,7 +882,9 @@ namespace mm::render
                     spare.pop_back();
                 }
                 else
-                    t.texture = makeTexture(r.device, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREUSAGE_SAMPLER, w, h);
+                    t.texture = makeTexture(r.device, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREUSAGE_SAMPLER, w, h,
+                                            r.anisotropy > 1 ? mipLevels(w, h) : 1u);
+                t.levels = r.anisotropy > 1 ? mipLevels(w, h) : 1u;
                 return t;
             }
             const uint32_t cellSide = kAtlasCells[cls];
@@ -835,8 +896,10 @@ namespace mm::render
             {
                 AtlasPage fresh;
                 fresh.side = std::min(2048u, cellSide * 32u); // 1024 cells a page, 64 for the largest class
+                // with anisotropic filtering, levels down to a texel a cell: a cell's texels at level l lie at its place >> l,
+                // made from its own texture only, so no level mixes neighbours
                 fresh.texture = makeTexture(r.device, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREUSAGE_SAMPLER, fresh.side,
-                                            fresh.side);
+                                            fresh.side, r.anisotropy > 1 ? mipLevels(cellSide, cellSide) : 1u);
                 if (fresh.texture == nullptr)
                     return t;
                 const uint32_t cells = (fresh.side / cellSide) * (fresh.side / cellSide);
@@ -854,6 +917,7 @@ namespace mm::render
             t.cellClass = cls;
             t.page = static_cast<uint32_t>(page);
             t.cell = cell;
+            t.levels = r.anisotropy > 1 ? mipLevels(w, h) : 1u;
             return t;
         }
 
@@ -880,8 +944,8 @@ namespace mm::render
             for (auto &entry : newTextures)
             {
                 auto found = r.textures.find(entry.first);
-                if (found == r.textures.end())
-                    textureBytes += entry.second.pixels.size() * 4u;
+                if (found == r.textures.end()) // with its mip levels: at most a third more
+                    textureBytes += entry.second.pixels.size() * 4u * (r.anisotropy > 1 ? 2u : 1u);
                 else // the GS forgot it and a frame uses it again: kept
                     found->second.proposed = false;
             }
@@ -950,24 +1014,36 @@ namespace mm::render
                     SDL_GPUTexture *texture = placed.texture;
                     if (texture == nullptr)
                         continue;
-                    std::memcpy(mapped + offset, image.pixels.data(), image.pixels.size() * 4u);
-                    SDL_GPUTextureTransferInfo source{};
-                    source.transfer_buffer = textureUpload;
-                    source.offset = offset;
-                    source.pixels_per_row = image.width;
-                    source.rows_per_layer = image.height;
-                    SDL_GPUTextureRegion region{};
-                    region.texture = texture;
-                    region.x = placed.x;
-                    region.y = placed.y;
-                    region.w = image.width;
-                    region.h = image.height;
-                    region.d = 1;
-                    // the copy is recorded now and reads the transfer buffer when the command buffer runs
+                    static std::vector<uint32_t> mips;
+                    if (placed.levels > 1)
+                        buildMips(image, placed.levels, mips);
+                    size_t mipAt = 0;
+                    for (uint32_t l = 0; l < placed.levels; ++l)
+                    {
+                        const uint32_t w = std::max(1u, image.width >> l), h = std::max(1u, image.height >> l);
+                        const uint32_t *pixels = l == 0 ? image.pixels.data() : mips.data() + mipAt;
+                        if (l > 0)
+                            mipAt += static_cast<size_t>(w) * h;
+                        std::memcpy(mapped + offset, pixels, static_cast<size_t>(w) * h * 4u);
+                        SDL_GPUTextureTransferInfo source{};
+                        source.transfer_buffer = textureUpload;
+                        source.offset = offset;
+                        source.pixels_per_row = w;
+                        source.rows_per_layer = h;
+                        SDL_GPUTextureRegion region{};
+                        region.texture = texture;
+                        region.mip_level = l;
+                        region.x = placed.x >> l;
+                        region.y = placed.y >> l;
+                        region.w = w;
+                        region.h = h;
+                        region.d = 1;
+                        // the copy is recorded now and reads the transfer buffer when the command buffer runs
+                        SDL_UploadToGPUTexture(copy, &source, &region, false);
+                        offset += w * h * 4u;
+                    }
                     placed.lastUsed = r.framesDrawn;
                     r.textures[entry.first] = placed;
-                    SDL_UploadToGPUTexture(copy, &source, &region, false);
-                    offset += static_cast<uint32_t>(image.pixels.size() * 4u);
                 }
                 if (mapped != nullptr)
                     SDL_UnmapGPUTransferBuffer(r.device, textureUpload);
@@ -1079,6 +1155,7 @@ namespace mm::render
                 SDL_SetGPUBlendConstants(pass, SDL_FColor{f, f, f, 128.0f / 255.0f});
                 SDL_GPUTexture *texture = r.white;
                 uint32_t texRect[4] = {0, 0, 1, 1};
+                uint32_t levels = 0; // 0: no mip levels, filtered as the GS does
                 if (st.textured && st.texture == kPreviousFrame)
                 {
                     texture = previous;
@@ -1096,6 +1173,7 @@ namespace mm::render
                         texRect[1] = found->second.y;
                         texRect[2] = found->second.width;
                         texRect[3] = found->second.height;
+                        levels = found->second.levels;
                     }
                 }
                 SDL_GPUTextureSamplerBinding sampler{texture, r.sampler};
@@ -1115,6 +1193,8 @@ namespace mm::render
                     params.region[i] = st.region[i];
                     params.texRect[i] = texRect[i];
                 }
+                params.mip[0] = levels > 0 ? r.anisotropy : 1u;
+                params.mip[1] = std::max(levels, 1u);
                 params.fogColor[0] = static_cast<float>(st.fogColor & 0xFF) / 255.0f;
                 params.fogColor[1] = static_cast<float>((st.fogColor >> 8) & 0xFF) / 255.0f;
                 params.fogColor[2] = static_cast<float>((st.fogColor >> 16) & 0xFF) / 255.0f;
@@ -1438,6 +1518,11 @@ namespace mm::render
         }
         if (const char *msaa = std::getenv("MMPC_RENDER_MSAA"))
             r.msaa = static_cast<uint32_t>(std::clamp(std::atoi(msaa), 1, 8));
+        if (const char *aniso = std::getenv("MMPC_RENDER_ANISO"))
+        {
+            const int n = std::atoi(aniso);
+            r.anisotropy = n >= 16 ? 16u : n >= 8 ? 8u : n >= 4 ? 4u : n >= 2 ? 2u : 1u;
+        }
         if (const char *filter = std::getenv("MMPC_RENDER_FILTER_2D"))
             r.filter2d = std::strcmp(filter, "smooth") == 0 ? 1u : std::strcmp(filter, "ps2") == 0 ? 2u : 0u;
         std::thread(renderThread, &r).detach();

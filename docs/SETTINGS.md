@@ -14,6 +14,7 @@ lists the lines it did not understand.
 | `renderer` | `native`, `emulated`, `split` | `native` | `MMPC_RENDERER` ([RENDERER.md](RENDERER.md)): native draws the game at any resolution as one progressive picture a frame; emulated is the PS2's graphics chip, as the original draws; split shows both side by side |
 | `render_scale` | `auto`, `1` to `8` | `auto` | `MMPC_RENDER_SCALE`: the native picture is 640x448 times this; auto takes the largest that fits the window's height |
 | `msaa` | `1`, `2`, `4`, `8` | `1` | `MMPC_RENDER_MSAA`: samples a pixel (native renderer) |
+| `anisotropic` | `1` (or `off`), `2`, `4`, `8`, `16` | `16` | `MMPC_RENDER_ANISO`: anisotropic filtering, the most texture samples a pixel along a slanted or distant surface (native renderer); `1` samples as the PS2 does, once a pixel, which makes distant ground and roofs shimmer ([details](RENDERER.md)) |
 | `filter_2d` | `sharp`, `smooth`, `ps2` | `sharp` | `MMPC_RENDER_FILTER_2D`: how the 2D drawn one texel to one pixel (text, the HUD, movies) is enlarged (native renderer): sharp keeps each texel crisp; smooth blends between texels where the PS2 does (its text and pictures); ps2 shows the PS2's own 640x448 picture of it, enlarged |
 | `widescreen` | `off`, `on` (16:9), `16:9`, `21:9`, any `W:H` | `off` | `MMPC_WIDESCREEN`: the city's view opened wider at the same height, the HUD at its proportions (native renderer; [details](RENDERER.md#widescreen-n6)) |
 | `fullscreen` | `on`, `off` | `off` | `PS2X_FULLSCREEN`: borderless fullscreen; F11 switches while playing |

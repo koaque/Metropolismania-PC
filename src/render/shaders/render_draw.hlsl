@@ -62,6 +62,7 @@ cbuffer DrawParams : register(b0, space3)
     uint4 Region;    // CLAMP's MINU, MAXU, MINV, MAXV
     float4 SnapX;    // across: render target pixels per frame pixel of this draw, and where its frame x 0 lies on the target
     uint4 TexRect;   // the texture's corner in the bound texture (a cell of an atlas page) and its size
+    uint4 Mip;       // anisotropic filtering: the most samples (1: off) and the texture's mip levels
 };
 
 // One texel coordinate through the GS's wrap mode: 0 repeat, 1 clamp, 2 region clamp, 3 region repeat.
@@ -90,6 +91,64 @@ float4 fetch(int2 c, int2 size)
     const int x = wrap(c.x, wms, size.x, (int)Region.x, (int)Region.y);
     const int y = wrap(c.y, wmt, size.y, (int)Region.z, (int)Region.w);
     return Texture.Load(int3(int2(TexRect.xy) + int2(inside(x, size.x), inside(y, size.y)), 0));
+}
+
+// The same at mip level `level` (anisotropic filtering): the texture there is its size >> level, at its place >> level; the
+// wrap modes act as at the first level (region bounds shifted down with it).
+float4 fetchLevel(int2 c, int2 size0, int level)
+{
+    const int2 size = max(size0 >> level, int2(1, 1));
+    const uint wms = (Flags >> 12) & 3u, wmt = (Flags >> 14) & 3u;
+    int x, y;
+    if (wms == 3u)
+        x = (((c.x << level) & (int)Region.x) | (int)Region.y) >> level;
+    else
+        x = wrap(c.x, wms, size.x, (int)Region.x >> level, (int)Region.y >> level);
+    if (wmt == 3u)
+        y = (((c.y << level) & (int)Region.z) | (int)Region.w) >> level;
+    else
+        y = wrap(c.y, wmt, size.y, (int)Region.z >> level, (int)Region.w >> level);
+    return Texture.Load(int3((int2(TexRect.xy) >> level) + int2(inside(x, size.x), inside(y, size.y)), level));
+}
+
+// The GS's bilinear filter (half a texel back, four texels) at a mip level; uv in texels of the first level.
+float4 bilinearLevel(float2 uv, int2 size0, int level)
+{
+    const float2 p = uv / float(1u << (uint)level) - 0.5;
+    const float2 base = floor(p);
+    const float2 f = p - base;
+    const int2 i = int2(base);
+    const float4 a = fetchLevel(i, size0, level), b = fetchLevel(i + int2(1, 0), size0, level);
+    const float4 c = fetchLevel(i + int2(0, 1), size0, level), d = fetchLevel(i + int2(1, 1), size0, level);
+    return lerp(lerp(a, b, f.x), lerp(c, d, f.x), f.y);
+}
+
+// Anisotropic filtering (an enhancement; the GS takes one sample a pixel however many texels the pixel covers, which is what
+// makes distant and slanted textures shimmer): up to Mip.x bilinear samples spread along the long axis of the pixel's
+// footprint in the texture, from the mip level that makes each sample cover about a texel across the short axis, blended
+// with the next level down (trilinear). `axisX`/`axisY` are the texel steps of one render pixel across and down.
+float4 anisotropic(float2 uv, float2 axisX, float2 axisY, int2 size0)
+{
+    const float lenX = length(axisX), lenY = length(axisY);
+    const float major = max(lenX, lenY), minor = max(min(lenX, lenY), 1e-4);
+    const float2 axis = lenX >= lenY ? axisX : axisY;
+    const float n = clamp(ceil(major / minor), 1.0, float(Mip.x));
+    const float lod = clamp(log2(major / n), 0.0, float(Mip.y - 1u));
+    const int l0 = int(floor(lod));
+    const int l1 = min(l0 + 1, int(Mip.y) - 1);
+    const float t = lod - float(l0);
+    float4 sum = 0.0;
+    for (int k = 0; k < 16; ++k)
+    {
+        if (float(k) >= n)
+            break;
+        const float2 at = uv + axis * ((float(k) + 0.5) / n - 0.5);
+        float4 tap = bilinearLevel(at, size0, l0);
+        if (l1 != l0 && t > 0.0)
+            tap = lerp(tap, bilinearLevel(at, size0, l1), t);
+        sum += tap;
+    }
+    return sum / n;
 }
 
 float4 PSMain(VSOutput input) : SV_Target0
@@ -135,10 +194,17 @@ float4 PSMain(VSOutput input) : SV_Target0
         }
     }
 
+    // The texel steps of a render pixel across and down, for anisotropic filtering: used where a texture with mip levels is
+    // drawn smaller than its texels (more than one texel a pixel), but never for 2D drawn one texel to a pixel.
+    const float2 axisX = ddx_fine(uv), axisY = ddy_fine(uv);
+    const bool minified = Mip.x > 1u && Mip.y > 1u && (Flags & 48u) == 0u && max(length(axisX), length(axisY)) > 1.0;
+
     if (Flags & 1u)
     {
         float4 texel;
-        if (Flags & 8u) // the GS's bilinear filter: half a texel back, then the four texels around
+        if (minified)
+            texel = anisotropic(uv, axisX, axisY, size);
+        else if (Flags & 8u) // the GS's bilinear filter: half a texel back, then the four texels around
         {
             const float2 p = uv - 0.5;
             const float2 base = floor(p);

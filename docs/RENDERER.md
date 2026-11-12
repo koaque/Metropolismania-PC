@@ -67,7 +67,7 @@ The records and the inventory's output are game-derived and stay in `work/`.
   them drawing); `side`: either picture, F2 switches; `split`: the emulated picture on the left and the native one on the
   right. The internal resolution is a multiple of 640x448 chosen from the window (enough that the picture is drawn at
   least as tall as it is shown; 2x at least, 8x at most; made again when the window changes); `MMPC_RENDER_SCALE` (1 to
-  8) fixes it. `MMPC_RENDER_MSAA=2|4|8` draws with that many samples a pixel (the multisampled targets keep their
+  8) fixes it. Anisotropic filtering (`MMPC_RENDER_ANISO`, below). `MMPC_RENDER_MSAA=2|4|8` draws with that many samples a pixel (the multisampled targets keep their
   contents like the others and are resolved into the ones shown and read back). F11 switches borderless fullscreen and
   `PS2X_FULLSCREEN=1` starts in it (`patches/0158`). `PS2X_WINDOW_FOCUS=1` lets a placed window (test runs) take the focus;
   in the background the game keeps its speed, since the host asks Windows for a 1 ms timer and opts out of power
@@ -181,6 +181,20 @@ reason); the terrain passes leave a skipped quad's slots in their output buffer 
 written) and set ADC by storing 0x8000 over a vertex's whole w word, so its F goes to 0; and the rain's ground pass
 multiplies its second and fourth corners' texture coordinates by the next corner's 1 / w, because its software pipelining
 issues those multiplies after the next DIV has landed (kept, as the game draws it).
+
+## Anisotropic filtering (N6)
+
+The PS2 game has no mipmaps: the GS takes one bilinear sample a pixel however many texels the pixel covers, so distant
+ground, roofs and slanted walls shimmer and show moire. `MMPC_RENDER_ANISO=1|2|4|8|16` (settings `anisotropic`, 16 by
+default) gives every texture mip levels made from its own texels (each texel the mean of the four below it, the colour
+weighted by alpha so that transparent texels do not darken the edges) and, where a texture is drawn smaller than its
+texels, takes up to that many bilinear samples along the long axis of the pixel's footprint, from the level where each
+covers about a texel across the short axis, blended with the next level (trilinear). Everything else is sampled as before:
+a texture drawn at or above its size, 2D drawn one texel to a pixel (text, the HUD, movies) and the previous frame. The
+GS's wrap modes hold at every level. An atlas cell keeps its texels at its place shifted down at each level (the pages
+have levels down to a texel a cell), so no level mixes neighbouring textures. With `1` the frames are the same bit for bit
+as without it (the eleven camera views). At 3840x2688 (scale 6) in the explore autoplay every frame is still drawn with 16
+samples, and the pacing is the same as without them.
 
 ## Widescreen (N6)
 

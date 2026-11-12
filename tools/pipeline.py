@@ -706,6 +706,7 @@ DEFAULT_SETTINGS = """# Metropolismania PC: your settings, read by `python tools
 renderer = native        # native (sharp, progressive, any resolution), emulated (the PS2's graphics chip), split
 render_scale = auto      # auto (from the window's height) or 1 to 8 (times 640x448)
 msaa = 1                 # 1, 2, 4 or 8 samples a pixel (native renderer)
+anisotropic = 16         # anisotropic filtering: 1 (off, as the PS2), 2, 4, 8 or 16 (native renderer)
 filter_2d = sharp        # text, HUD and movies enlarged: sharp (crisp), smooth, or ps2 (the PS2's own picture, enlarged)
 widescreen = off         # off, 16:9 (or on), 21:9, or any W:H (native renderer)
 fullscreen = off         # on: borderless fullscreen (F11 switches while playing)
