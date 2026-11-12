@@ -75,7 +75,9 @@ The records and the inventory's output are game-derived and stay in `work/`.
   16.68 ms after the one before. The vertical blanks themselves are timed to about a quarter of a millisecond: the
   scheduler's timed waits end 1.5 ms early and yield the rest away (`patches/0160`; in the city the gaps between presents
   went from 14.5 to 18.9 ms, deviation 0.7 to 0.9, to 15.8 to 17.6 ms, deviation 0.16 to 0.28; `PS2X_PRECISE_WAIT=0` keeps
-  the plain wait). `MMPC_FRAME_PACING=1` prints those gaps every 2 s. On a fixed refresh display at another rate than
+  the plain wait). `MMPC_FRAME_PACING=1` prints those gaps every 2 s, and each gap over 22.7 ms with the number of
+  vertical blanks in it: one means the game's own vertical blank came late (a game frame took about 25 ms; about 3 in
+  800 city frames under the explore autoplay), more means a present was missed. On a fixed refresh display at another rate than
   59.94 Hz (144 Hz, say) each frame stays up for a whole number of refreshes, 2 or 3 at 144 Hz.
   `MMPC_RENDER_STATS=1` prints what a frame held every 120 frames (batches, new textures, VU1 programs it ran, program runs
   without a native version, the time per frame on the game thread and on the render thread, frames drawn).

@@ -1100,7 +1100,7 @@ namespace mm::render
         // MMPC_FRAME_PACING=1: every 2 s, how evenly the window thread presents (the gaps between its presents: a game
         // frame is 16.68 ms at 59.94 Hz), with the gaps more than 2 ms off counted; to judge pacing on a variable refresh
         // display, which shows each picture when it is presented.
-        void notePacing()
+        void notePacing(Renderer &r)
         {
             static const bool on = [] {
                 const char *v = std::getenv("MMPC_FRAME_PACING");
@@ -1112,11 +1112,21 @@ namespace mm::render
             static Clock::time_point last{}, windowStart{};
             static std::vector<double> gaps;
             const Clock::time_point now = Clock::now();
+            static uint64_t lastTick = 0;
+            const uint64_t tick = r.runtime != nullptr ? ps2_syscalls::GetCurrentVSyncTick(r.runtime) : 0u;
             if (last.time_since_epoch().count() != 0)
-                gaps.push_back(std::chrono::duration<double, std::milli>(now - last).count());
+            {
+                const double gap = std::chrono::duration<double, std::milli>(now - last).count();
+                gaps.push_back(gap);
+                // a late one: whether the game's vertical blank came late (one blank in the gap) or a present was missed
+                if (gap > 16.68 + 6.0)
+                    std::cerr << "[pacing] " << gap << " ms gap, " << (tick - lastTick) << " vertical blank(s) in it, at blank "
+                              << tick << std::endl;
+            }
             else
                 windowStart = now;
             last = now;
+            lastTick = tick;
             if (now - windowStart < std::chrono::seconds(2) || gaps.empty())
                 return;
             double sum = 0.0, squares = 0.0, low = 1e9, high = 0.0;
@@ -1141,8 +1151,8 @@ namespace mm::render
         void present(void *user, SDL_GPUCommandBuffer *commands, SDL_GPUTexture *swapchain, uint32_t width, uint32_t height,
                      const ps2x::host::EmulatedFrame &emulated)
         {
-            notePacing();
             Renderer &r = *static_cast<Renderer *>(user);
+            notePacing(r);
             bool gpu = initGpu(r);
             if (gpu)
                 writeShot(r);
