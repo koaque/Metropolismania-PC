@@ -64,8 +64,6 @@ cbuffer DrawParams : register(b0, space3)
     uint4 TexRect;   // the texture's corner in the bound texture (a cell of an atlas page) and its size
 };
 
-static const float kScale = 255.0 / 128.0;
-
 // One texel coordinate through the GS's wrap mode: 0 repeat, 1 clamp, 2 region clamp, 3 region repeat.
 int wrap(int c, uint mode, int size, int lo, int hi)
 {
@@ -78,42 +76,63 @@ int wrap(int c, uint mode, int size, int lo, int hi)
     return (c & lo) | hi;
 }
 
+// A texture from GS memory has a power-of-two size, and the region modes can name texels past it (the GS reads on into
+// memory; here they wrap within the texture, so as not to read a neighbour in the atlas). The previous frame (any size,
+// 640 x 448 times the scale) is only ever clamped, so its coordinates are in range already and must not be masked.
+int inside(int c, int size)
+{
+    return (size & (size - 1)) == 0 ? c & (size - 1) : clamp(c, 0, size - 1);
+}
+
 float4 fetch(int2 c, int2 size)
 {
     const uint wms = (Flags >> 12) & 3u, wmt = (Flags >> 14) & 3u;
     const int x = wrap(c.x, wms, size.x, (int)Region.x, (int)Region.y);
     const int y = wrap(c.y, wmt, size.y, (int)Region.z, (int)Region.w);
-    return Texture.Load(int3(int2(TexRect.xy) + int2(x & (size.x - 1), y & (size.y - 1)), 0));
+    return Texture.Load(int3(int2(TexRect.xy) + int2(inside(x, size.x), inside(y, size.y)), 0));
 }
 
 float4 PSMain(VSOutput input) : SV_Target0
 {
-    float4 vertex = input.color;
-    float3 rgb = vertex.rgb;
-    float alpha = vertex.a;
+    // Colours as the GS computes them, in bytes: the vertex colour, the texture function (modulate is (texel x vertex) >> 7),
+    // fog ((colour x F + FOGCOL x (255 - F)) >> 8), each truncated and clamped to 255 as the GS does.
+    const float3 vrgb = round(input.color.rgb * 255.0);
+    const float va = round(input.color.a * 255.0);
+    float3 rgb = vrgb;
+    float alpha = va;
 
     const int2 size = int2(TexRect.zw);
-    float2 uv = input.stq.xy / input.stq.z * float2(size);
+    // S, T and Q are linear across the screen (the divide is per pixel), so moving the point read is done on them before the
+    // divide: exact under perspective too.
+    const float3 dstqdx = ddx_fine(input.stq), dstqdy = ddy_fine(input.stq);
+    float2 uv;
     // Where the texture is read. The GS samples a pixel at its integer position, where the GPU takes the centre, so texture
     // coordinates are taken half a 1x pixel back (at 1x: the GS's texels exactly). A sprite drawn one texel to one frame pixel
-    // instead takes each 1x pixel's texel whole, at the texel's centre, so that it upscales exactly with no bleeding of the
-    // neighbouring texels into its edges. (The game draws its text bilinear from texel edges, so on the GS each pixel is half
-    // of one texel and half of the next; sampled at the centres it stays sharp.) That is the "sharp" way of enlarging such
-    // 2D. "smooth" reads the 2D the GS filters bilinear (the text, pictures) as other draws are read, at every render pixel's
-    // own place half a 1x pixel back: in between the GS's own sample points, so no texel the GS does not read; 2D the GS
-    // reads nearest stays sharp. "ps2" reads it where the GS does, once a 1x pixel, with the GS's own filter: the GS's 1x
-    // picture enlarged.
-    const float2 duvdx = ddx_fine(uv), duvdy = ddy_fine(uv);
+    // instead takes, for each 1x pixel, the texel under the GS's sample point whole (read at the texel's centre), so that it
+    // upscales exactly with no bleeding of the neighbouring texels into its edges. (The game draws its text bilinear from
+    // texel edges, so on the GS each pixel is half of one texel and half of the next; the texel under the sample point is the
+    // second, sharp. A sprite whose coordinates carry the half-texel offset already gets exactly the texel the GS reads.) That
+    // is the "sharp" way of enlarging such 2D. "smooth" reads the 2D the GS filters bilinear (the text, pictures) as other
+    // draws are read, at every render pixel's own place half a 1x pixel back: in between the GS's own sample points, so no
+    // texel the GS does not read; 2D the GS reads nearest stays sharp. "ps2" reads it where the GS does, once a 1x pixel, with
+    // the GS's own filter: the GS's 1x picture enlarged.
     const uint filter2d = (Flags >> 16) & 3u;
     const bool smooth = filter2d == 1u && (Flags & 8u) != 0u;
     {
         const float2 pos = input.position.xy;
         const float2 step = float2(SnapX.x, Scale), origin = float2(SnapX.y, 0.0);
-        const float2 cell = floor((pos - origin) / step) * step + origin;
-        const float2 snap = filter2d == 2u ? cell : cell + 0.5 * step;
-        const float2 shift = float2((Flags & 16u) && !smooth ? snap.x - pos.x : -0.5 * step.x,
-                                    (Flags & 32u) && !smooth ? snap.y - pos.y : -0.5 * step.y);
-        uv += duvdx * shift.x + duvdy * shift.y;
+        const float2 cell = floor((pos - origin) / step) * step + origin; // the 1x pixel's GS sample point
+        const bool snapX = (Flags & 16u) != 0u && !smooth, snapY = (Flags & 32u) != 0u && !smooth;
+        const float2 shift = float2(snapX ? cell.x - pos.x : -0.5 * step.x, snapY ? cell.y - pos.y : -0.5 * step.y);
+        const float3 stq = input.stq + dstqdx * shift.x + dstqdy * shift.y;
+        uv = stq.xy / stq.z * float2(size);
+        if (filter2d != 2u) // the texel under it, at its centre (the GS's coordinates land on texel edges: a hair lifted)
+        {
+            if (snapX)
+                uv.x = floor(uv.x + 1.0 / 64.0) + 0.5;
+            if (snapY)
+                uv.y = floor(uv.y + 1.0 / 64.0) + 0.5;
+        }
     }
 
     if (Flags & 1u)
@@ -131,31 +150,35 @@ float4 PSMain(VSOutput input) : SV_Target0
         }
         else // nearest; the GS's fixed-point coordinates land exactly on texel edges, so a float a hair below one is lifted
             texel = fetch(int2(floor(uv + 1.0 / 64.0)), size);
+        const float4 t = round(texel * 255.0);
         const uint tfx = (Flags >> 8) & 3u;
         const bool tcc = (Flags & 2u) != 0u;
         if (tfx == 0u) // modulate
         {
-            rgb = texel.rgb * vertex.rgb * kScale;
-            alpha = tcc ? texel.a * vertex.a * kScale : vertex.a;
+            rgb = floor(t.rgb * vrgb / 128.0);
+            alpha = tcc ? floor(t.a * va / 128.0) : va;
         }
         else if (tfx == 1u) // decal
         {
-            rgb = texel.rgb;
-            alpha = tcc ? texel.a : vertex.a;
+            rgb = t.rgb;
+            alpha = tcc ? t.a : va;
         }
         else // highlight, highlight2
         {
-            rgb = texel.rgb * vertex.rgb * kScale + vertex.a;
-            alpha = tcc ? (tfx == 2u ? texel.a + vertex.a : texel.a) : vertex.a;
+            rgb = floor(t.rgb * vrgb / 128.0) + va;
+            alpha = tcc ? (tfx == 2u ? t.a + va : t.a) : va;
         }
     }
-    rgb = saturate(rgb);
-    alpha = saturate(alpha);
+    rgb = min(rgb, 255.0);
+    alpha = min(alpha, 255.0);
     if (Flags & 4u)
-        rgb = lerp(FogColor.rgb, rgb, input.fog);
+    {
+        const float f = round(saturate(input.fog) * 255.0);
+        rgb = floor((rgb * f + round(FogColor.rgb * 255.0) * (255.0 - f)) / 256.0);
+    }
 
-    // The alpha test compares the byte the GS would have.
-    const float a = round(alpha * 255.0);
+    // The alpha test compares the byte the GS has.
+    const float a = alpha;
     bool pass = true;
     switch (AlphaTest)
     {
@@ -170,6 +193,7 @@ float4 PSMain(VSOutput input) : SV_Target0
     }
     if (!pass)
         discard;
-    // Blending reads alpha as the GS does (0x80 is 1.0).
-    return float4(rgb, saturate(alpha * kScale));
+    // Blending reads alpha as the GS does (0x80 is 1.0); the target keeps the GS's byte (the pipelines store alpha x 128 / 255,
+    // render_native.cpp), which a later frame reading this one back as a texture sees.
+    return float4(rgb / 255.0, saturate(alpha / 128.0));
 }

@@ -104,6 +104,7 @@ namespace mm::render
             int cellClass = -1; // the atlas class (kAtlasCells), or -1 for a texture of its own
             uint32_t page = 0, cell = 0;
             uint64_t lastUsed = 0;
+            bool proposed = false; // unused for long and offered to the GS to forget; let go once the GS has
         };
 
         // The atlas: creating a GPU texture costs about half a millisecond on D3D12 whatever its size, and the city brings in
@@ -148,13 +149,14 @@ namespace mm::render
             bool f2Down = false;
             std::atomic<bool> showNative{true};
 
-            // handoff, game thread -> window thread
+            // handoff, render thread -> window thread: every finished frame, drawn in order (the targets keep the frames before,
+            // which the game reads back and counts on), and the newest presented
             std::mutex mutex;
-            Frame latest;
-            bool fresh = false;
+            std::deque<Frame> ready;
             std::string shotNow; // a shot of the frame the window thread has already drawn (still in the render target)
             std::unordered_map<uint64_t, TextureImage> pendingTextures;
-            std::vector<uint64_t> evicted; // window thread -> game thread: texture contents the GPU side let go
+            // window thread -> render thread: texture contents unused for long, for the GS to forget before they are let go
+            std::vector<uint64_t> proposed;
 
             // window thread
             uint32_t scale = 3;
@@ -192,10 +194,11 @@ namespace mm::render
             std::string shotPath;
         };
 
+        // Made once and never destroyed: the render thread is detached and may still run while the program exits.
         Renderer &renderer()
         {
-            static Renderer r;
-            return r;
+            static Renderer *r = new Renderer;
+            return *r;
         }
 
         uint32_t load32(const uint8_t *rdram, uint32_t address)
@@ -337,19 +340,41 @@ namespace mm::render
                 std::cerr << std::endl;
             }
             r.vif.missingRuns().clear();
+            // MMPC_SHOT_FEEDBACK=<folder>: the first 16 frames that read the frame before (the game's blends of its other
+            // field buffer), written there as fb_<frame>.ppm, to look at those draws.
+            static const char *s_feedbackShots = std::getenv("MMPC_SHOT_FEEDBACK");
+            static uint32_t s_feedbackTaken = 0;
+            if (s_feedbackShots != nullptr && s_feedbackTaken < 16 && frame.shot.empty() &&
+                std::any_of(frame.batches.begin(), frame.batches.end(),
+                            [](const Batch &b) { return b.state.textured && b.state.texture == kPreviousFrame; }))
+            {
+                frame.shot = std::string(s_feedbackShots) + "/fb_" + std::to_string(frame.number) + ".ppm";
+                ++s_feedbackTaken;
+            }
             std::lock_guard<std::mutex> lock(r.mutex);
-            if (frame.shot.empty() && !r.latest.shot.empty()) // the frame before was never drawn: its shot goes with this one
-                frame.shot = std::move(r.latest.shot);
             for (auto &entry : frame.newTextures)
                 r.pendingTextures[entry.first] = std::move(entry.second);
             frame.newTextures.clear();
-            r.latest = std::move(frame);
-            if (!r.evicted.empty())
+            // Textures the window thread offered: forgotten from here on, so every later frame that uses one sends its pixels
+            // again; the window thread lets them go once it has drawn this frame (the last that may use them without).
+            if (!r.proposed.empty())
             {
-                r.gs.forget(r.evicted);
-                r.evicted.clear();
+                r.gs.forget(r.proposed);
+                frame.forgotten = std::move(r.proposed);
+                r.proposed.clear();
             }
-            r.fresh = true;
+            r.ready.push_back(std::move(frame));
+            // While the window thread does not present (a minimized window), the oldest frames go undrawn rather than holding
+            // up the game; what they carry goes with the next.
+            constexpr size_t kMaxReady = 4;
+            while (r.ready.size() > kMaxReady)
+            {
+                Frame &dropped = r.ready.front(), &next = r.ready[1];
+                if (next.shot.empty())
+                    next.shot = std::move(dropped.shot);
+                next.forgotten.insert(next.forgotten.end(), dropped.forgotten.begin(), dropped.forgotten.end());
+                r.ready.pop_front();
+            }
         }
 
         // The render thread: the transfers in the order the game started them, through the VIF, the native programs and
@@ -370,8 +395,8 @@ namespace mm::render
                     // the frame published last: still waiting for the window thread, or already drawn (then still in the
                     // render target, since the next frame cannot be published before this item)
                     std::lock_guard<std::mutex> lock(r->mutex);
-                    if (r->fresh)
-                        r->latest.shot = std::move(item.shot);
+                    if (!r->ready.empty())
+                        r->ready.back().shot = std::move(item.shot);
                     else
                         r->shotNow = std::move(item.shot);
                     continue;
@@ -488,8 +513,7 @@ namespace mm::render
             const bool chainMode = ((chcr >> 2) & 3) == 1;
             if (const char *test = std::getenv("MMPC_RENDER_VU1TEST")) // the game is loaded by its first transfer
             {
-                runVu1RecordTest(test, rdram);
-                std::exit(0);
+                std::exit(std::min(runVu1RecordTest(test, rdram), 125));
             }
             // A picture drawn outside the frame lists (the movie player draws each field from its vertical blank handler) is closed
             // at the first transfer after a vertical blank; while frame lists run, they close their own frames.
@@ -712,11 +736,15 @@ namespace mm::render
             SDL_GPUColorTargetDescription target{};
             target.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
             SDL_GPUColorTargetBlendState &blend = target.blend_state;
-            blend.enable_blend = s.blend != BlendNone;
+            // The shader's alpha is the blend factor (the GS's 0x80 is 1.0); the target keeps the GS's alpha byte, as the GS
+            // writes the source alpha unblended: alpha x the blend constant's alpha (128 / 255, set with every draw).
+            blend.enable_blend = true;
             blend.color_blend_op = SDL_GPU_BLENDOP_ADD;
             blend.alpha_blend_op = SDL_GPU_BLENDOP_ADD;
-            blend.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
+            blend.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_CONSTANT_COLOR;
             blend.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ZERO;
+            blend.src_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
+            blend.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ZERO;
             switch (s.blend)
             {
             case BlendMix:
@@ -850,8 +878,13 @@ namespace mm::render
         {
             size_t textureBytes = 0;
             for (auto &entry : newTextures)
-                if (r.textures.find(entry.first) == r.textures.end())
+            {
+                auto found = r.textures.find(entry.first);
+                if (found == r.textures.end())
                     textureBytes += entry.second.pixels.size() * 4u;
+                else // the GS forgot it and a frame uses it again: kept
+                    found->second.proposed = false;
+            }
             const uint32_t vertexBytes = static_cast<uint32_t>(r.current.vertices.size() * sizeof(Vertex));
             if (vertexBytes > r.vertexCapacity)
             {
@@ -887,12 +920,14 @@ namespace mm::render
             SDL_GPUCopyPass *copy = SDL_BeginGPUCopyPass(commands);
             if (vertexBytes > 0 && r.vertexUpload != nullptr)
             {
-                void *mapped = SDL_MapGPUTransferBuffer(r.device, r.vertexUpload, true);
-                std::memcpy(mapped, r.current.vertices.data(), vertexBytes);
-                SDL_UnmapGPUTransferBuffer(r.device, r.vertexUpload);
-                SDL_GPUTransferBufferLocation from{r.vertexUpload, 0};
-                SDL_GPUBufferRegion to{r.vertexBuffer, 0, vertexBytes};
-                SDL_UploadToGPUBuffer(copy, &from, &to, true);
+                if (void *mapped = SDL_MapGPUTransferBuffer(r.device, r.vertexUpload, true); mapped != nullptr)
+                {
+                    std::memcpy(mapped, r.current.vertices.data(), vertexBytes);
+                    SDL_UnmapGPUTransferBuffer(r.device, r.vertexUpload);
+                    SDL_GPUTransferBufferLocation from{r.vertexUpload, 0};
+                    SDL_GPUBufferRegion to{r.vertexBuffer, 0, vertexBytes};
+                    SDL_UploadToGPUBuffer(copy, &from, &to, true);
+                }
             }
             if (textureUpload != nullptr)
             {
@@ -901,6 +936,13 @@ namespace mm::render
                 uint32_t offset = 0;
                 for (auto &entry : newTextures)
                 {
+                    if (mapped == nullptr) // not uploaded: the GS forgets them, so a frame that uses one sends it again
+                    {
+                        std::lock_guard<std::mutex> lock(r.mutex);
+                        if (r.textures.find(entry.first) == r.textures.end())
+                            r.proposed.push_back(entry.first);
+                        continue;
+                    }
                     if (r.textures.find(entry.first) != r.textures.end())
                         continue;
                     const TextureImage &image = entry.second;
@@ -927,7 +969,8 @@ namespace mm::render
                     SDL_UploadToGPUTexture(copy, &source, &region, false);
                     offset += static_cast<uint32_t>(image.pixels.size() * 4u);
                 }
-                SDL_UnmapGPUTransferBuffer(r.device, textureUpload);
+                if (mapped != nullptr)
+                    SDL_UnmapGPUTransferBuffer(r.device, textureUpload);
             }
             static const uint32_t kWhite = 0xFFFFFFFFu;
             static bool s_whiteDone = false;
@@ -938,15 +981,19 @@ namespace mm::render
                 up.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
                 up.size = 4;
                 whiteUpload = SDL_CreateGPUTransferBuffer(r.device, &up);
-                std::memcpy(SDL_MapGPUTransferBuffer(r.device, whiteUpload, false), &kWhite, 4);
-                SDL_UnmapGPUTransferBuffer(r.device, whiteUpload);
-                SDL_GPUTextureTransferInfo source{};
-                source.transfer_buffer = whiteUpload;
-                SDL_GPUTextureRegion region{};
-                region.texture = r.white;
-                region.w = region.h = region.d = 1;
-                SDL_UploadToGPUTexture(copy, &source, &region, false);
-                s_whiteDone = true;
+                void *mapped = whiteUpload != nullptr ? SDL_MapGPUTransferBuffer(r.device, whiteUpload, false) : nullptr;
+                if (mapped != nullptr)
+                {
+                    std::memcpy(mapped, &kWhite, 4);
+                    SDL_UnmapGPUTransferBuffer(r.device, whiteUpload);
+                    SDL_GPUTextureTransferInfo source{};
+                    source.transfer_buffer = whiteUpload;
+                    SDL_GPUTextureRegion region{};
+                    region.texture = r.white;
+                    region.w = region.h = region.d = 1;
+                    SDL_UploadToGPUTexture(copy, &source, &region, false);
+                    s_whiteDone = true;
+                }
             }
             SDL_EndGPUCopyPass(copy);
             if (whiteUpload != nullptr)
@@ -1027,11 +1074,9 @@ namespace mm::render
                 const int y1 = std::min((st.scissor[3] + 1) * scale, static_cast<int>(r.targetHeight));
                 SDL_Rect scissor{x0, y0, std::max(0, x1 - x0), std::max(0, y1 - y0)};
                 SDL_SetGPUScissor(pass, &scissor);
-                if (st.blend == BlendMixFix || st.blend == BlendAddFix)
-                {
-                    const float f = std::min(1.0f, st.fixAlpha / 128.0f);
-                    SDL_SetGPUBlendConstants(pass, SDL_FColor{f, f, f, f});
-                }
+                // the FIX modes' colour factor, and the alpha byte kept (pipelineFor)
+                const float f = st.blend == BlendMixFix || st.blend == BlendAddFix ? std::min(1.0f, st.fixAlpha / 128.0f) : 0.0f;
+                SDL_SetGPUBlendConstants(pass, SDL_FColor{f, f, f, 128.0f / 255.0f});
                 SDL_GPUTexture *texture = r.white;
                 uint32_t texRect[4] = {0, 0, 1, 1};
                 if (st.textured && st.texture == kPreviousFrame)
@@ -1152,47 +1197,61 @@ namespace mm::render
         }
 
         // The newest frame from the render thread, if one came since the last present.
-        bool takeFrame(Renderer &r, std::unordered_map<uint64_t, TextureImage> &newTextures)
+        // Every frame finished since the last present, oldest first, and the textures that came with them.
+        void takeFrames(Renderer &r, std::vector<Frame> &frames, std::unordered_map<uint64_t, TextureImage> &newTextures)
         {
             std::lock_guard<std::mutex> lock(r.mutex);
-            if (!r.fresh)
-                return false;
-            r.current = std::move(r.latest);
-            r.latest = Frame{};
+            for (Frame &frame : r.ready)
+                frames.push_back(std::move(frame));
+            r.ready.clear();
             newTextures.swap(r.pendingTextures);
-            r.fresh = false;
-            return true;
         }
 
-        // Draws the frame just taken into the render target.
-        void updateNative(Renderer &r, SDL_GPUCommandBuffer *commands, bool fresh, std::unordered_map<uint64_t, TextureImage> &newTextures)
+        // How long a texture stays on the GPU unused: 600 frames for an atlas cell, 60 for a texture of its own (large, mostly
+        // a movie's pictures, each used for one field; far more frames than the GPU has in flight).
+        bool unusedForLong(const Renderer &r, const GpuTexture &t)
         {
+            return r.framesDrawn - t.lastUsed > (t.cellClass < 0 ? 60u : 600u);
+        }
+
+        // Draws the frame in r.current into the render target (the textures of all the frames taken are uploaded with the
+        // first). Textures unused for long are offered to the GS to forget; they are let go after the frame that says the GS
+        // has (no frame after it draws with them without sending them again), unless a frame used them in between.
+        void updateNative(Renderer &r, SDL_GPUCommandBuffer *commands, std::unordered_map<uint64_t, TextureImage> &newTextures)
+        {
+            ++r.framesDrawn;
+            r.drawnFrames.fetch_add(1, std::memory_order_relaxed);
+            upload(r, commands, newTextures);
+            newTextures.clear();
+            drawFrame(r, commands);
+            if (!r.current.shot.empty())
+                recordShot(r, commands, r.current.shot);
+            for (uint64_t key : r.current.forgotten)
             {
-                if (fresh)
+                auto it = r.textures.find(key);
+                if (it == r.textures.end() || !it->second.proposed)
+                    continue;
+                if (unusedForLong(r, it->second))
                 {
-                    ++r.framesDrawn;
-                    r.drawnFrames.fetch_add(1, std::memory_order_relaxed);
-                    upload(r, commands, newTextures);
-                    drawFrame(r, commands);
-                    if (!r.current.shot.empty())
-                        recordShot(r, commands, r.current.shot);
-                    // textures no frame has used for a while: 600 frames for an atlas cell, 60 for a texture of its own (large,
-                    // mostly a movie's pictures, each used for one field; far more frames than the GPU has in flight)
-                    if (r.framesDrawn % 30u == 0u)
-                        for (auto it = r.textures.begin(); it != r.textures.end();)
-                        {
-                            if (r.framesDrawn - it->second.lastUsed > (it->second.cellClass < 0 ? 60u : 600u))
-                            {
-                                release(r, it->second);
-                                {
-                                    std::lock_guard<std::mutex> lock(r.mutex);
-                                    r.evicted.push_back(it->first);
-                                }
-                                it = r.textures.erase(it);
-                            }
-                            else
-                                ++it;
-                        }
+                    release(r, it->second);
+                    r.textures.erase(it);
+                }
+                else
+                    it->second.proposed = false;
+            }
+            if (r.framesDrawn % 30u == 0u)
+            {
+                std::vector<uint64_t> offer;
+                for (auto &entry : r.textures)
+                    if (!entry.second.proposed && unusedForLong(r, entry.second))
+                    {
+                        entry.second.proposed = true;
+                        offer.push_back(entry.first);
+                    }
+                if (!offer.empty())
+                {
+                    std::lock_guard<std::mutex> lock(r.mutex);
+                    r.proposed.insert(r.proposed.end(), offer.begin(), offer.end());
                 }
             }
         }
@@ -1291,12 +1350,13 @@ namespace mm::render
             if (gpu)
                 writeShot(r);
             std::unordered_map<uint64_t, TextureImage> newTextures;
-            const bool fresh = gpu && takeFrame(r, newTextures);
+            std::vector<Frame> frames;
             if (gpu)
-            {
-                // the targets: made at first use, and again when the window asks for another scale or the frame for
-                // another width (widened city frames, MMPC_WIDESCREEN)
-                const bool wide = r.current.wide && r.wideFactor != 1.0f;
+                takeFrames(r, frames, newTextures);
+            // the targets: made at first use, and again when the window asks for another scale or a frame for another width
+            // (widened city frames, MMPC_WIDESCREEN)
+            const auto targetsFor = [&](const Frame &frame) {
+                const bool wide = frame.wide && r.wideFactor != 1.0f;
                 Uint32 x, y, w, h;
                 fit(r.mode == Mode::Split ? width - width / 2u : width, height, x, y, w, h,
                     wide ? 4.0f / 3.0f * r.wideFactor : 4.0f / 3.0f);
@@ -1305,12 +1365,13 @@ namespace mm::render
                 {
                     r.scale = wanted;
                     r.targetsWide = wide;
-                    gpu = makeTargets(r);
+                    return makeTargets(r);
                 }
-            }
+                return true;
+            };
             if (gpu)
             {
-                // a shot of the frame drawn before this one: downloaded before the new frame is drawn over it
+                // a shot of the frame drawn before: downloaded before a new frame is drawn over it
                 std::string now;
                 {
                     std::lock_guard<std::mutex> lock(r.mutex);
@@ -1318,7 +1379,17 @@ namespace mm::render
                 }
                 if (!now.empty())
                     recordShot(r, commands, now);
-                updateNative(r, commands, fresh, newTextures);
+                if (frames.empty())
+                    gpu = targetsFor(r.current);
+                // every frame finished since the last present, in order; the last is shown
+                for (Frame &frame : frames)
+                {
+                    r.current = std::move(frame);
+                    gpu = targetsFor(r.current);
+                    if (!gpu)
+                        break;
+                    updateNative(r, commands, newTextures);
+                }
             }
             if (r.mode == Mode::Split && gpu)
             {

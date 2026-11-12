@@ -219,10 +219,11 @@ namespace mm::render
                 char text[128];
                 switch (native[q].slot)
                 {
-                case Slot::Tag: // NLOOP, EOP and the PRIM word
-                    if ((r[0] & 0xFFFF) != (n[0] & 0xFFFF) || r[1] != n[1])
+                case Slot::Tag: // NLOOP, EOP, the PRIM word, NREG and the register list (REGS)
+                    if ((r[0] & 0xFFFF) != (n[0] & 0xFFFF) || r[1] != n[1] || r[2] != n[2] || r[3] != n[3])
                     {
-                        std::snprintf(text, sizeof(text), "tag %08x %08x vs native %08x %08x", r[0], r[1], n[0], n[1]);
+                        std::snprintf(text, sizeof(text), "tag %08x %08x %08x %08x vs native %08x %08x %08x %08x", r[0], r[1],
+                                      r[2], r[3], n[0], n[1], n[2], n[3]);
                         note(2, q, text);
                         return worst;
                     }
@@ -298,8 +299,9 @@ namespace mm::render
         }
     }
 
-    void runVu1RecordTest(const char *dir, const uint8_t *rdram)
+    int runVu1RecordTest(const char *dir, const uint8_t *rdram)
     {
+        int unreadable = 0;
         std::vector<std::filesystem::path> files;
         for (const auto &entry : std::filesystem::directory_iterator(dir))
             if (entry.path().extension() == ".vu1r")
@@ -316,6 +318,7 @@ namespace mm::render
             if (!loadRecord(file, r))
             {
                 std::cerr << "[render-vu1] " << file.filename().string() << ": not read" << std::endl;
+                ++unreadable;
                 continue;
             }
             const uint32_t program = programOf(r, rdram);
@@ -354,10 +357,17 @@ namespace mm::render
                 std::cerr << "[render-vu1] " << file.filename().string() << " (" << std::hex << program << std::dec
                           << "): different, " << where << std::endl;
         }
+        int different = 0;
         for (const auto &entry : tallies)
+        {
             std::cerr << "[render-vu1] program " << std::hex << entry.first << std::dec << ": " << entry.second.records
                       << " records, " << entry.second.exact << " exact, " << entry.second.rounding << " within rounding, "
                       << entry.second.different << " different, " << entry.second.skipped << " without a native program"
                       << std::endl;
+            different += entry.second.different;
+        }
+        if (files.empty())
+            std::cerr << "[render-vu1] no records in " << dir << std::endl;
+        return different + unreadable + (files.empty() ? 1 : 0);
     }
 }

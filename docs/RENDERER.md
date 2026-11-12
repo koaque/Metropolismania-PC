@@ -81,18 +81,22 @@ The records and the inventory's output are game-derived and stay in `work/`.
   800 city frames under the explore autoplay), more means a present was missed. On a fixed refresh display at another rate than
   59.94 Hz (144 Hz, say) each frame stays up for a whole number of refreshes, 2 or 3 at 144 Hz.
   `MMPC_RENDER_FILTER_2D` picks how 2D drawn one texel to one frame pixel (text, the HUD, movies) is enlarged: `sharp`
-  (the default: each 1x pixel's texel whole, at its centre), `smooth` (the 2D the GS filters bilinear is read in between
+  (the default: for each 1x pixel the texel under the GS's sample point, whole), `smooth` (the 2D the GS filters bilinear is read in between
   the GS's own sample points, so it blends without reading a texel the GS does not; what the GS reads nearest stays
   sharp), `ps2` (read where and as the GS reads it, once a 1x pixel: the GS's 1x picture enlarged, with the half-texel
   blend of the game's text).
   `MMPC_RENDER_STATS=1` prints what a frame held every 120 frames (batches, new textures, VU1 programs it ran, program runs
   without a native version, the time per frame on the game thread and on the render thread, frames drawn).
+  `MMPC_SHOT_FEEDBACK=<folder>` writes the first 16 frames that read the frame before (below) there, to look at them.
 * A runtime hook (`PS2Memory::setDmaStartObserver`) hands the renderer every VIF1 and GIF DMA start. On the game thread the
   renderer only copies the transfer's data out of RDRAM (walking the chain) with the GS's drawing environment at that
   moment; a render thread then takes the transfers in order, sends DIRECT payloads to its GS state machine
   (`render_gs.cpp`), image transfers to its own copy of GS memory (`render_vram.cpp`) and VU1 data to the native programs.
-  The game thread waits only when two frames are still queued. A frame ends when the game starts its frame list (`kDmaLists`); while no frame list
-  runs (movies), at the first transfer after a vertical blank.
+  The game thread waits only when two frames are still queued. A frame ends when the game starts its frame list
+  (`kDmaLists`); while no frame list runs (movies), at the first transfer after a vertical blank. The window thread draws
+  every finished frame, in order, and shows the newest: a frame drawn late still leaves the right picture in the targets
+  for the frames after it (below). Only while it presents nothing at all (a minimized window) do the oldest of more than
+  four waiting frames go undrawn.
 * Textures are decoded from that memory into RGBA8 and kept by content: a texture whose pages were written but whose texels
   did not change keeps its GPU copy, so the city uploads no textures in a steady frame although the game uploads its
   glyphs and palettes again every frame. Telling that needs no decode: the bytes of each memory page are hashed once after
@@ -107,16 +111,28 @@ The records and the inventory's output are game-derived and stay in `work/`.
   and size. The frames are the same bit for bit at the eleven camera views. A larger texture has a GPU texture of its own;
   given back after 60 unused frames, it is kept (up to 8 a size) for the next one of its size: a movie brings a new 1024 x
   512 picture every field, and making each one moved its frames 7 to 26 ms apart (now 15 to 18, as in the city).
+  A texture is let go in two steps, so that no frame draws with one the GPU no longer has: the window thread offers the
+  textures unused for that long, the render thread's GS forgets them as it hands over its next frame (every frame after
+  that one sends a texture's pixels again if it uses it), and the window thread lets them go once it has drawn that frame,
+  unless a frame used them in between.
 * Output is progressive: the field's half-line offset is dropped and the 224-line field coordinates are doubled, so both
   fields' lines come from one draw and nothing is woven.
 * Sampling follows the GS: wrap modes including region clamp and region repeat, its bilinear filter (half a texel back,
   four texels), texture coordinates taken half a 1x pixel back (the GS samples a pixel at its integer position, the GPU at
-  its centre), and sprite corners rounded up to whole pixels as the GS fills them. One deliberate difference: a sprite drawn
-  one texel to one frame pixel (the text, the HUD, the movie picture) takes each 1x pixel's texel whole at its centre, so it
-  upscales without its neighbours bleeding into its edges. On the GS the game's text, drawn bilinear from texel edges, comes
-  out as half of one texel and half of the next; here it stays sharp.
-* A draw whose texture lies in a field buffer drawn in an earlier frame (the talk overlay above) reads the previous native
-  frame at the same place. The two render targets keep their contents from one use to the next, as the GS's two field
+  its centre; moved on S, T and Q before the divide, so exact under perspective too), and sprite corners rounded up to
+  whole pixels as the GS fills them. One deliberate difference: a sprite drawn one texel to one frame pixel (the text, the
+  HUD, the movie picture) takes, for each 1x pixel, the texel under the GS's sample point whole, so it upscales without its
+  neighbours bleeding into its edges. On the GS the game's text, drawn bilinear from texel edges, comes out as half of one
+  texel and half of the next; here it stays sharp (`MMPC_RENDER_FILTER_2D=ps2` keeps the GS's blend).
+* Colours are computed as the GS computes them, in bytes: modulate as (texel x vertex) >> 7, fog as (colour x F + FOGCOL
+  x (255 - F)) >> 8, each truncated and clamped; the alpha test compares the GS's byte. The targets keep the GS's alpha
+  byte (the shader's alpha is the blend factor, 0x80 = 1.0, and the pipelines store it times 128/255), which a frame that
+  reads the one before sees. Against the emulated GS at the eleven camera views the mean difference went from 6.83 to 6.23
+  (0..255), in the menus from 5.83 to 5.42, and Direct3D 12 and Vulkan now give the same pixels there (1 pixel off by one
+  step in two of the views).
+* A draw whose texture lies in a field buffer drawn in an earlier frame (the talk overlay above, the fade into a talk)
+  reads the previous native frame at the same place (clamped to it; its size is not a power of two, so it is never
+  masked as the game's textures are). The two render targets keep their contents from one use to the next, as the GS's two field
   buffers do (the game counts on it: under a talk overlay it blends the other buffer over a frame it does not draw again),
   and share one Z buffer.
 
@@ -131,8 +147,9 @@ the real programs; moving it into shaders is a later step.
 
 Each program is written from the microcode and checked with `MMPC_RENDER_VU1TEST=<folder>`, which replays captured runs
 (`.vu1r`, from `pipeline.py vu1-capture`) through the native program and compares its packets with the ones the real
-program sent: the vertex count and every ADC bit exactly, positions to a 16th of a pixel, colours to one step, texture
-coordinates to float rounding.
+program sent: the GIF tags whole (with their register lists), the vertex count and every ADC bit exactly, positions to
+a 16th of a pixel, colours to one step, texture coordinates to float rounding. Its exit status is the number of runs
+that differ or could not be read (1 for a folder without runs), so a script can tell.
 
 | Program | Draws | Captured runs matching |
 |---|---|---|

@@ -93,6 +93,9 @@ namespace mm::render
         uint64_t number = 0;
         std::string shot; // a file to write the frame to once drawn (requestShot)
         bool wide = false; // drawn with the city's widened view (MMPC_WIDESCREEN): shown that much wider
+        // Texture contents the GS forgot when this frame was handed over (the window thread asked to let them go). This frame
+        // and those before it may still draw with them without their pixels; every frame after it sends them again.
+        std::vector<uint64_t> forgotten;
     };
 
     class Gs

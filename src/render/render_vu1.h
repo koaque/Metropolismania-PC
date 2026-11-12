@@ -86,7 +86,8 @@ namespace mm::render
 
     // MMPC_RENDER_VU1TEST=<folder of .vu1r records>: every record's run through the native program, its packets compared
     // with the ones the real program sent. Needs the ELF in RDRAM (the programs are told apart by its upload packets).
-    void runVu1RecordTest(const char *folder, const uint8_t *rdram);
+    // Returns the records that were different or could not be read (1 when the folder has none): the exit status.
+    int runVu1RecordTest(const char *folder, const uint8_t *rdram);
 
     // The fixed-point values a vertex becomes in a packed GIF packet (for comparisons with the real programs).
     uint32_t vuFtoi4(float f);

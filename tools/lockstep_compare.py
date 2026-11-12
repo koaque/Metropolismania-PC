@@ -15,8 +15,8 @@ Typical use (the deterministic timer keeps the game's timer-based randomness out
 
 Options: --stack-from HEX (default 1E00000: the stack area left out), --ignore HEX:LEN,... (ranges known to differ),
 --detail NAME (list the ranges of that record; by default those of the first pair that differs), --max-ranges N.
-Exit status 0 when every pair is identical outside the stack and the ignored ranges, 1 otherwise. The records are
-game-derived and stay in work/.
+Exit status 0 when every pair is identical outside the stack and the ignored ranges and neither run has records the other
+lacks, 1 otherwise. The records are game-derived and stay in work/.
 """
 import argparse
 import bisect
@@ -118,9 +118,16 @@ def main():
         ignored.append((int(address, 16), int(length or '4', 0)))
     labels = load_labels()
 
-    pairs = sorted(p for p in args.a.glob('*.mmdt') if (args.b / p.name).exists())
+    names_a = {p.name for p in args.a.glob('*.mmdt')}
+    names_b = {p.name for p in args.b.glob('*.mmdt')}
+    pairs = sorted(args.a / name for name in names_a & names_b)
     if not pairs:
         sys.exit(f'no records with the same name in {args.a} and {args.b}')
+    # A run that stopped early (or took more records) is a difference too: the frames it lacks were not compared.
+    only_a, only_b = sorted(names_a - names_b), sorted(names_b - names_a)
+    for side, folder, names in (('A', args.a, only_a), ('B', args.b, only_b)):
+        if names:
+            print(f'{len(names)} record(s) only in {side} ({folder}): {", ".join(names[:8])}{" ..." if len(names) > 8 else ""}')
     identical, shown = 0, False
     for path in pairs:
         ra, sa, game = load_record(path)
@@ -138,8 +145,8 @@ def main():
                       f'A {ra[start:min(end + 1, start + 12)].hex()}  B {rb[start:min(end + 1, start + 12)].hex()}')
             if len(ranges) > args.max_ranges:
                 print(f'    ... {len(ranges) - args.max_ranges} more')
-    print(f'{identical} of {len(pairs)} pairs identical')
-    return 0 if identical == len(pairs) else 1
+    print(f'{identical} of {len(pairs)} pairs identical' + (', and records missing on one side' if only_a or only_b else ''))
+    return 0 if identical == len(pairs) and not only_a and not only_b else 1
 
 
 if __name__ == '__main__':

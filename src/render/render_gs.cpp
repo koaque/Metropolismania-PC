@@ -413,7 +413,7 @@ namespace mm::render
         v.s = in.s;
         v.t = in.t;
         v.q = in.q != 0.0f ? in.q : 1.0f;
-        v.fog = std::clamp(in.fog, 0.0f, 255.0f) / 255.0f;
+        v.fog = std::floor(std::clamp(in.fog, 0.0f, 255.0f)) / 255.0f; // the GS takes F whole (bits 4-11 of the fixed-point value)
         return v;
     }
 
