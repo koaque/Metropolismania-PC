@@ -82,7 +82,9 @@ namespace mm::render
                 Gif,
                 EndFrame,          // a frame list started: the frame is complete
                 EndFrameIfDrawn,   // a vertical blank passed while no frame list runs (the movie player)
+                Shot,              // requestShot: the frame completed last (the one the emulated GS has just drawn)
             } kind = Kind::Vif;
+            std::string shot; // Shot: the file
             uint64_t environment[2][5] = {}; // per context: FRAME, XYOFFSET, SCISSOR, ZBUF, TEST
             std::vector<uint8_t> data;
             // EndFrame: the stats of the frame on the game thread
@@ -124,8 +126,6 @@ namespace mm::render
             double renderSeconds = 0.0, windowGame = 0.0, windowRender = 0.0, worstRender = 0.0;
             uint32_t windowFrames = 0;
             std::atomic<uint32_t> drawnFrames{0}; // native frames drawn (window thread), since the last stats line
-            std::mutex shotMutex;
-            std::string shotRequest; // requestShot: taken by the next frame the render thread finishes
             bool f2Down = false;
             std::atomic<bool> showNative{true};
 
@@ -133,6 +133,7 @@ namespace mm::render
             std::mutex mutex;
             Frame latest;
             bool fresh = false;
+            std::string shotNow; // a shot of the frame the window thread has already drawn (still in the render target)
             std::unordered_map<uint64_t, TextureImage> pendingTextures;
             std::vector<uint64_t> evicted; // window thread -> game thread: texture contents the GPU side let go
 
@@ -307,10 +308,6 @@ namespace mm::render
                 std::cerr << std::endl;
             }
             r.vif.missingRuns().clear();
-            {
-                std::lock_guard<std::mutex> lock(r.shotMutex);
-                frame.shot.swap(r.shotRequest);
-            }
             std::lock_guard<std::mutex> lock(r.mutex);
             if (frame.shot.empty() && !r.latest.shot.empty()) // the frame before was never drawn: its shot goes with this one
                 frame.shot = std::move(r.latest.shot);
@@ -338,6 +335,17 @@ namespace mm::render
                     r->workReady.wait(lock, [&] { return !r->work.empty(); });
                     item = std::move(r->work.front());
                     r->work.pop_front();
+                }
+                if (item.kind == Work::Kind::Shot)
+                {
+                    // the frame published last: still waiting for the window thread, or already drawn (then still in the
+                    // render target, since the next frame cannot be published before this item)
+                    std::lock_guard<std::mutex> lock(r->mutex);
+                    if (r->fresh)
+                        r->latest.shot = std::move(item.shot);
+                    else
+                        r->shotNow = std::move(item.shot);
+                    continue;
                 }
                 const auto start = std::chrono::steady_clock::now();
                 for (int ctx = 0; ctx < 2; ++ctx)
@@ -1114,7 +1122,17 @@ namespace mm::render
                 }
             }
             if (gpu)
+            {
+                // a shot of the frame drawn before this one: downloaded before the new frame is drawn over it
+                std::string now;
+                {
+                    std::lock_guard<std::mutex> lock(r.mutex);
+                    now.swap(r.shotNow);
+                }
+                if (!now.empty())
+                    recordShot(r, commands, now);
                 updateNative(r, commands, fresh, newTextures);
+            }
             if (r.mode == Mode::Split && gpu)
             {
                 // emulated on the left, native on the right, each fitted at 4:3 into its half
@@ -1132,8 +1150,11 @@ namespace mm::render
         Renderer &r = renderer();
         if (r.mode == Mode::Off)
             return;
-        std::lock_guard<std::mutex> lock(r.shotMutex);
-        r.shotRequest = path;
+        // in order with the transfers (game thread): the shot is of the frame completed last, the one the emulated GS has
+        // drawn by now (MMPC_SHOT_VRAM at the same shot), whichever frame the render thread is on
+        Work item = newWork(r, Work::Kind::Shot);
+        item.shot = path;
+        queueWork(r, std::move(item));
     }
 
     void install(PS2Runtime &runtime)
