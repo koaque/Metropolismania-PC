@@ -25,6 +25,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <deque>
+#include <string>
 #include <thread>
 #include <chrono>
 #include <cstdlib>
@@ -123,6 +124,10 @@ namespace mm::render
 
             // window thread
             uint32_t scale = 3;
+            bool autoScale = true;   // the scale follows the window (MMPC_RENDER_SCALE fixes it)
+            uint32_t msaa = 1;       // samples a pixel (MMPC_RENDER_MSAA)
+            uint32_t clearFrames = 2; // frames left that start their target from black (after the targets are made)
+            SDL_GPUTexture *msaaColors[2] = {}; // with MSAA: the multisampled targets drawn into, resolved into `colors`
             SDL_GPUDevice *device = nullptr;
             SDL_GPUShader *vertexShader = nullptr, *pixelShader = nullptr;
             std::unordered_map<uint32_t, SDL_GPUGraphicsPipeline *> pipelines;
@@ -483,6 +488,11 @@ namespace mm::render
             return SDL_CreateGPUShader(device, &info);
         }
 
+        SDL_GPUSampleCount sampleCount(uint32_t samples)
+        {
+            return samples >= 8 ? SDL_GPU_SAMPLECOUNT_8 : samples >= 4 ? SDL_GPU_SAMPLECOUNT_4 : samples >= 2 ? SDL_GPU_SAMPLECOUNT_2 : SDL_GPU_SAMPLECOUNT_1;
+        }
+
         SDL_GPUTexture *makeTexture(SDL_GPUDevice *device, SDL_GPUTextureFormat format, SDL_GPUTextureUsageFlags usage, uint32_t w,
                                     uint32_t h)
         {
@@ -518,19 +528,79 @@ namespace mm::render
                 info.address_mode_u = info.address_mode_v = info.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
                 r.sampler = SDL_CreateGPUSampler(r.device, &info);
             }
-            const uint32_t w = 640u * r.scale, h = 448u * r.scale;
-            for (SDL_GPUTexture *&color : r.colors)
-                color = makeTexture(r.device, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
-                                    SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER, w, h);
-            r.depth = makeTexture(r.device, SDL_GPU_TEXTUREFORMAT_D32_FLOAT, SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET, w, h);
             r.white = makeTexture(r.device, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREUSAGE_SAMPLER, 1, 1);
-            if (r.colors[0] == nullptr || r.colors[1] == nullptr || r.depth == nullptr || r.white == nullptr)
+            if (r.white == nullptr)
+                return !(r.gpuFailed = true);
+            if (r.msaa > 1)
+            {
+                const SDL_GPUSampleCount count = sampleCount(r.msaa);
+                if (!SDL_GPUTextureSupportsSampleCount(r.device, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, count) ||
+                    !SDL_GPUTextureSupportsSampleCount(r.device, SDL_GPU_TEXTUREFORMAT_D32_FLOAT, count))
+                {
+                    std::cerr << "[render] " << r.msaa << "x MSAA not supported here, drawn without" << std::endl;
+                    r.msaa = 1;
+                }
+            }
+            return true;
+        }
+
+        SDL_GPUTexture *makeTarget(SDL_GPUDevice *device, SDL_GPUTextureFormat format, SDL_GPUTextureUsageFlags usage, uint32_t w,
+                                   uint32_t h, uint32_t samples)
+        {
+            SDL_GPUTextureCreateInfo info{};
+            info.type = SDL_GPU_TEXTURETYPE_2D;
+            info.format = format;
+            info.usage = usage;
+            info.width = w;
+            info.height = h;
+            info.layer_count_or_depth = 1;
+            info.num_levels = 1;
+            info.sample_count = sampleCount(samples);
+            return SDL_CreateGPUTexture(device, &info);
+        }
+
+        // The two colour targets (and, with MSAA, the multisampled ones drawn into) and the Z buffer, at the current scale.
+        bool makeTargets(Renderer &r)
+        {
+            for (SDL_GPUTexture *&t : r.colors)
+                if (t != nullptr)
+                    SDL_ReleaseGPUTexture(r.device, t), t = nullptr;
+            for (SDL_GPUTexture *&t : r.msaaColors)
+                if (t != nullptr)
+                    SDL_ReleaseGPUTexture(r.device, t), t = nullptr;
+            if (r.depth != nullptr)
+                SDL_ReleaseGPUTexture(r.device, r.depth), r.depth = nullptr;
+            const uint32_t w = 640u * r.scale, h = 448u * r.scale;
+            bool ok = true;
+            for (int i = 0; i < 2; ++i)
+            {
+                r.colors[i] = makeTarget(r.device, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
+                                         SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER, w, h, 1);
+                ok = ok && r.colors[i] != nullptr;
+                if (r.msaa > 1)
+                {
+                    r.msaaColors[i] = makeTarget(r.device, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREUSAGE_COLOR_TARGET, w, h, r.msaa);
+                    ok = ok && r.msaaColors[i] != nullptr;
+                }
+            }
+            r.depth = makeTarget(r.device, SDL_GPU_TEXTUREFORMAT_D32_FLOAT, SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET, w, h, r.msaa);
+            ok = ok && r.depth != nullptr;
+            if (!ok)
             {
                 std::cerr << "[render] render targets failed: " << SDL_GetError() << std::endl;
-                return !(r.gpuFailed = true);
+                r.gpuFailed = true;
+                return false;
             }
-            std::cerr << "[render] native renderer at " << w << " x " << h << std::endl;
+            r.clearFrames = 2;
+            std::cerr << "[render] native renderer at " << w << " x " << h << (r.msaa > 1 ? ", MSAA " : "")
+                      << (r.msaa > 1 ? std::to_string(r.msaa) + "x" : std::string()) << std::endl;
             return true;
+        }
+
+        // The scale for a picture `height` pixels high on the window: enough that the target is at least that tall.
+        uint32_t scaleFor(uint32_t height)
+        {
+            return std::clamp((height + 447u) / 448u, 2u, 8u);
         }
 
         SDL_GPUGraphicsPipeline *pipelineFor(Renderer &r, const DrawState &s)
@@ -606,6 +676,7 @@ namespace mm::render
             static const SDL_GPUCompareOp kDepth[4] = {SDL_GPU_COMPAREOP_NEVER, SDL_GPU_COMPAREOP_ALWAYS,
                                                        SDL_GPU_COMPAREOP_GREATER_OR_EQUAL, SDL_GPU_COMPAREOP_GREATER};
             info.depth_stencil_state.compare_op = kDepth[s.depthTest & 3];
+            info.multisample_state.sample_count = sampleCount(r.msaa);
             info.target_info.color_target_descriptions = &target;
             info.target_info.num_color_targets = 1;
             info.target_info.depth_stencil_format = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
@@ -726,12 +797,19 @@ namespace mm::render
             // overlay is up it blends the other buffer over a frame it does not draw again), so the targets keep theirs:
             // the one drawn now holds the frame before last, as the PS2's other field buffer does. The Z buffer is one
             // for both, as on the GS. Only their first use starts from black.
-            const bool fresh = r.framesDrawn <= 2;
+            const bool fresh = r.clearFrames > 0;
+            if (fresh)
+                --r.clearFrames;
             SDL_GPUColorTargetInfo colorTarget{};
-            colorTarget.texture = r.colors[r.target];
+            colorTarget.texture = r.msaa > 1 ? r.msaaColors[r.target] : r.colors[r.target];
             colorTarget.load_op = fresh ? SDL_GPU_LOADOP_CLEAR : SDL_GPU_LOADOP_LOAD;
             colorTarget.clear_color = SDL_FColor{0, 0, 0, 1};
             colorTarget.store_op = SDL_GPU_STOREOP_STORE;
+            if (r.msaa > 1) // kept multisampled for the next use, resolved into the target shown and read back
+            {
+                colorTarget.store_op = SDL_GPU_STOREOP_RESOLVE_AND_STORE;
+                colorTarget.resolve_texture = r.colors[r.target];
+            }
             SDL_GPUDepthStencilTargetInfo depthTarget{};
             depthTarget.texture = r.depth;
             depthTarget.load_op = fresh ? SDL_GPU_LOADOP_CLEAR : SDL_GPU_LOADOP_LOAD;
@@ -896,7 +974,19 @@ namespace mm::render
                      const ps2x::host::EmulatedFrame &emulated)
         {
             Renderer &r = *static_cast<Renderer *>(user);
-            const bool gpu = initGpu(r);
+            bool gpu = initGpu(r);
+            if (gpu)
+            {
+                // the targets: made at first use, and again when the window asks for another scale
+                Uint32 x, y, w, h;
+                fit(r.mode == Mode::Split ? width - width / 2u : width, height, x, y, w, h);
+                const uint32_t wanted = r.autoScale ? scaleFor(h) : r.scale;
+                if (r.colors[0] == nullptr || wanted != r.scale)
+                {
+                    r.scale = wanted;
+                    gpu = makeTargets(r);
+                }
+            }
             if (gpu)
                 updateNative(r, commands);
             if (r.mode == Mode::Split && gpu)
@@ -926,8 +1016,13 @@ namespace mm::render
         else
             return;
         r.runtime = &runtime;
-        if (const char *scale = std::getenv("MMPC_RENDER_SCALE"))
+        if (const char *scale = std::getenv("MMPC_RENDER_SCALE"); scale != nullptr && std::strcmp(scale, "auto") != 0)
+        {
             r.scale = static_cast<uint32_t>(std::clamp(std::atoi(scale), 1, 8));
+            r.autoScale = false;
+        }
+        if (const char *msaa = std::getenv("MMPC_RENDER_MSAA"))
+            r.msaa = static_cast<uint32_t>(std::clamp(std::atoi(msaa), 1, 8));
         std::thread(renderThread, &r).detach();
         runtime.memory().setDmaStartObserver(onDmaStart, &r);
         ps2x::host::setReplacement(present, &r);
@@ -936,6 +1031,7 @@ namespace mm::render
         const char *emulated = std::getenv("MMPC_RENDER_EMULATED");
         if (r.mode == Mode::Native && (emulated == nullptr || emulated[0] != '1'))
             ps2xFrameSkipSetAlways(true);
-        std::cerr << "[render] native renderer installed (" << value << ", scale " << r.scale << ")" << std::endl;
+        std::cerr << "[render] native renderer installed (" << value << ", scale " << (r.autoScale ? std::string("from the window") : std::to_string(r.scale))
+                  << ")" << std::endl;
     }
 }

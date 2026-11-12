@@ -1,0 +1,27 @@
+Fullscreen for the SDL3 host: F11 switches the window between a window and borderless fullscreen on its display, and PS2X_FULLSCREEN=1 starts in fullscreen. F11 is not one of the pad keys. The host already fits the picture at its display aspect into whatever size the window has, so a renderer that draws the whole picture (Metropolismania's native renderer) follows the new size.
+
+diff --git a/ps2xRuntime/src/lib/ps2_host_sdl.cpp b/ps2xRuntime/src/lib/ps2_host_sdl.cpp
+--- a/ps2xRuntime/src/lib/ps2_host_sdl.cpp
++++ b/ps2xRuntime/src/lib/ps2_host_sdl.cpp
+@@ -209,6 +209,9 @@ namespace ps2x::host
+                   << SDL_GetVersion() % 1000 << ", GPU " << SDL_GetGPUDeviceDriver(s.device) << ", present "
+                   << presentModeName(mode) << std::endl;
+         SDL_ShowWindow(s.window);
++        // PS2X_FULLSCREEN=1 starts in borderless fullscreen on the window's display; F11 switches it at any time.
++        if (const char *full = std::getenv("PS2X_FULLSCREEN"); full != nullptr && full[0] == '1')
++            SDL_SetWindowFullscreen(s.window, true);
+         return true;
+     }
+ 
+@@ -282,6 +285,11 @@ namespace ps2x::host
+             case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
+                 s.closeRequested = true;
+                 break;
++            case SDL_EVENT_KEY_DOWN:
++                // F11: borderless fullscreen on and off (F11 is not one of the pad keys)
++                if (event.key.scancode == SDL_SCANCODE_F11 && !event.key.repeat && s.window != nullptr)
++                    SDL_SetWindowFullscreen(s.window, (SDL_GetWindowFlags(s.window) & SDL_WINDOW_FULLSCREEN) == 0);
++                break;
+             case SDL_EVENT_GAMEPAD_ADDED:
+                 if (SDL_Gamepad *pad = SDL_OpenGamepad(event.gdevice.which))
+                 {

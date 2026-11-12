@@ -30,7 +30,7 @@ and audio, so it replaced raylib as the runtime's desktop host (`patches/0155`).
 | N3 | Renderer core: chain walker, GS state, texture cache, 2D primitives, progressive output, resolution scale (`src/render/`, below) | Done: everything drawn without VU1 |
 | N4 | The 13 VU1 programs as native code and shaders, compared image by image with the emulated output | All 13 native, checked against captured runs (below); their math still on the CPU |
 | N5 | Native-only mode (the emulated VU1 and GS drawing skipped), the game state checked unchanged with `PS2X_TIMER0=frame` | Done (below); the faithful build's default is still the emulated picture |
-| N6 | 4K and MSAA, filtering, widescreen, frame pacing; then PC controls | |
+| N6 | 4K and MSAA, filtering, widescreen, frame pacing; then PC controls | Started: resolution from the window, MSAA, fullscreen |
 
 ## What the frames use (N2)
 
@@ -64,7 +64,11 @@ The records and the inventory's output are game-derived and stay in `work/`.
 
 * `native`: the native picture only, with the emulated VU1 and GS drawing nothing (below; `MMPC_RENDER_EMULATED=1` keeps
   them drawing); `side`: either picture, F2 switches; `split`: the emulated picture on the left and the native one on the
-  right. `MMPC_RENDER_SCALE` (1 to 8, default 3) sets the internal resolution as a multiple of 640x448.
+  right. The internal resolution is a multiple of 640x448 chosen from the window (enough that the picture is drawn at
+  least as tall as it is shown; 2x at least, 8x at most; made again when the window changes); `MMPC_RENDER_SCALE` (1 to
+  8) fixes it. `MMPC_RENDER_MSAA=2|4|8` draws with that many samples a pixel (the multisampled targets keep their
+  contents like the others and are resolved into the ones shown and read back). F11 switches borderless fullscreen and
+  `PS2X_FULLSCREEN=1` starts in it (`patches/0158`).
   `MMPC_RENDER_STATS=1` prints what a frame held every 120 frames (batches, new textures, VU1 programs it ran, program runs
   without a native version, the time per frame on the game thread and on the render thread, frames drawn).
 * A runtime hook (`PS2Memory::setDmaStartObserver`) hands the renderer every VIF1 and GIF DMA start. On the game thread the
