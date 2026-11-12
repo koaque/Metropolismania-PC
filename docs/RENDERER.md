@@ -79,6 +79,11 @@ The records and the inventory's output are game-derived and stay in `work/`.
   vertical blanks in it: one means the game's own vertical blank came late (a game frame took about 25 ms; about 3 in
   800 city frames under the explore autoplay), more means a present was missed. On a fixed refresh display at another rate than
   59.94 Hz (144 Hz, say) each frame stays up for a whole number of refreshes, 2 or 3 at 144 Hz.
+  `MMPC_RENDER_FILTER_2D` picks how 2D drawn one texel to one frame pixel (text, the HUD, movies) is enlarged: `sharp`
+  (the default: each 1x pixel's texel whole, at its centre), `smooth` (the 2D the GS filters bilinear is read in between
+  the GS's own sample points, so it blends without reading a texel the GS does not; what the GS reads nearest stays
+  sharp), `ps2` (read where and as the GS reads it, once a 1x pixel: the GS's 1x picture enlarged, with the half-texel
+  blend of the game's text).
   `MMPC_RENDER_STATS=1` prints what a frame held every 120 frames (batches, new textures, VU1 programs it ran, program runs
   without a native version, the time per frame on the game thread and on the render thread, frames drawn).
 * A runtime hook (`PS2Memory::setDmaStartObserver`) hands the renderer every VIF1 and GIF DMA start. On the game thread the

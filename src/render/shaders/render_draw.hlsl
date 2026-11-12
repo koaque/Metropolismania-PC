@@ -52,8 +52,9 @@ SamplerState Sampler : register(s0, space2);
 
 cbuffer DrawParams : register(b0, space3)
 {
-    uint Flags;      // 1 textured, 2 texture alpha (TCC), 4 fog, 8 bilinear, 16/32 sample x/y at the 1x pixel's centre;
-                     // bits 8-9 the texture function (TFX), 12-13 and 14-15 the wrap modes (WMS, WMT)
+    uint Flags;      // 1 textured, 2 texture alpha (TCC), 4 fog, 8 bilinear, 16/32 drawn one texel to one frame pixel in x/y;
+                     // bits 8-9 the texture function (TFX), 12-13 and 14-15 the wrap modes (WMS, WMT), 16-17 how such 2D is
+                     // enlarged (MMPC_RENDER_FILTER_2D: 0 sharp, 1 smooth, 2 ps2)
     uint AlphaTest;  // ATST: 0 never, 1 always, 2 less, 3 lequal, 4 equal, 5 gequal, 6 greater, 7 notequal
     float AlphaRef;  // AREF, 0..255
     float Scale;     // render target pixels per frame pixel, down
@@ -98,13 +99,21 @@ float4 PSMain(VSOutput input) : SV_Target0
     // coordinates are taken half a 1x pixel back (at 1x: the GS's texels exactly). A sprite drawn one texel to one frame pixel
     // instead takes each 1x pixel's texel whole, at the texel's centre, so that it upscales exactly with no bleeding of the
     // neighbouring texels into its edges. (The game draws its text bilinear from texel edges, so on the GS each pixel is half
-    // of one texel and half of the next; sampled at the centres it stays sharp.)
+    // of one texel and half of the next; sampled at the centres it stays sharp.) That is the "sharp" way of enlarging such
+    // 2D. "smooth" reads the 2D the GS filters bilinear (the text, pictures) as other draws are read, at every render pixel's
+    // own place half a 1x pixel back: in between the GS's own sample points, so no texel the GS does not read; 2D the GS
+    // reads nearest stays sharp. "ps2" reads it where the GS does, once a 1x pixel, with the GS's own filter: the GS's 1x
+    // picture enlarged.
     const float2 duvdx = ddx_fine(uv), duvdy = ddy_fine(uv);
+    const uint filter2d = (Flags >> 16) & 3u;
+    const bool smooth = filter2d == 1u && (Flags & 8u) != 0u;
     {
         const float2 pos = input.position.xy;
         const float2 step = float2(SnapX.x, Scale), origin = float2(SnapX.y, 0.0);
-        const float2 centre = (floor((pos - origin) / step) + 0.5) * step + origin;
-        const float2 shift = float2((Flags & 16u) ? centre.x - pos.x : -0.5 * step.x, (Flags & 32u) ? centre.y - pos.y : -0.5 * step.y);
+        const float2 cell = floor((pos - origin) / step) * step + origin;
+        const float2 snap = filter2d == 2u ? cell : cell + 0.5 * step;
+        const float2 shift = float2((Flags & 16u) && !smooth ? snap.x - pos.x : -0.5 * step.x,
+                                    (Flags & 32u) && !smooth ? snap.y - pos.y : -0.5 * step.y);
         uv += duvdx * shift.x + duvdy * shift.y;
     }
 

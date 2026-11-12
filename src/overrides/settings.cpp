@@ -105,6 +105,13 @@ namespace mmpc_settings
             put("MMPC_RENDER_SCALE", v);
         else if (k == "msaa")
             put("MMPC_RENDER_MSAA", v);
+        else if (k == "filter_2d")
+        {
+            if (v == "sharp" || v == "smooth" || v == "ps2")
+                put("MMPC_RENDER_FILTER_2D", v);
+            else
+                out.unknown.push_back(key + " = " + value);
+        }
         else if (k == "widescreen")
         {
             const int f = flag(value);

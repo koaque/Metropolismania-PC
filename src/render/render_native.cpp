@@ -142,6 +142,9 @@ namespace mm::render
             uint32_t scale = 3;
             bool autoScale = true;   // the scale follows the window (MMPC_RENDER_SCALE fixes it)
             uint32_t msaa = 1;       // samples a pixel (MMPC_RENDER_MSAA)
+            // MMPC_RENDER_FILTER_2D: how 2D drawn one texel to one frame pixel (text, the HUD, movies) is enlarged: 0 sharp
+            // (each frame pixel's texel whole), 1 smooth (bilinear between the texels), 2 ps2 (the GS's own 1x picture)
+            uint32_t filter2d = 0;
             uint32_t clearFrames = 2; // frames left that start their target from black (after the targets are made)
             float wideFactor = 1.0f;  // MMPC_WIDESCREEN: how much wider than 4:3 a widened frame is
             bool targetsWide = false; // the targets are for widened frames
@@ -932,7 +935,8 @@ namespace mm::render
                 DrawParams params{};
                 params.flags = (st.textured ? 1u : 0u) | (st.tcc ? 2u : 0u) | (st.fog ? 4u : 0u) | (st.linear ? 8u : 0u) |
                                (static_cast<uint32_t>(st.snap & 3) << 4) | (static_cast<uint32_t>(st.tfx) << 8) |
-                               (static_cast<uint32_t>(st.wms & 3) << 12) | (static_cast<uint32_t>(st.wmt & 3) << 14);
+                               (static_cast<uint32_t>(st.wms & 3) << 12) | (static_cast<uint32_t>(st.wmt & 3) << 14) |
+                               (r.filter2d << 16);
                 params.alphaTest = st.alphaTest;
                 params.alphaRef = static_cast<float>(st.alphaRef);
                 params.scale = s;
@@ -1233,6 +1237,8 @@ namespace mm::render
         }
         if (const char *msaa = std::getenv("MMPC_RENDER_MSAA"))
             r.msaa = static_cast<uint32_t>(std::clamp(std::atoi(msaa), 1, 8));
+        if (const char *filter = std::getenv("MMPC_RENDER_FILTER_2D"))
+            r.filter2d = std::strcmp(filter, "smooth") == 0 ? 1u : std::strcmp(filter, "ps2") == 0 ? 2u : 0u;
         std::thread(renderThread, &r).detach();
         runtime.memory().setDmaStartObserver(onDmaStart, &r);
         ps2x::host::setReplacement(present, &r);
