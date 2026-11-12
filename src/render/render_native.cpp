@@ -178,6 +178,8 @@ namespace mm::render
             SDL_GPUTransferBuffer *vertexUpload = nullptr;
             std::unordered_map<uint64_t, GpuTexture> textures;
             std::vector<AtlasPage> atlas[kAtlasClasses];
+            // textures of their own given back, by size, to be used again: a movie brings a new 1024 x 512 picture a field
+            std::map<std::pair<uint32_t, uint32_t>, std::vector<SDL_GPUTexture *>> spareTextures;
             SDL_GPUTransferBuffer *textureUpload = nullptr; // kept and cycled; made larger when a frame needs more
             uint32_t textureUploadCapacity = 0;
             Frame current;
@@ -783,7 +785,14 @@ namespace mm::render
                 ++cls;
             if (cls == kAtlasClasses)
             {
-                t.texture = makeTexture(r.device, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREUSAGE_SAMPLER, w, h);
+                std::vector<SDL_GPUTexture *> &spare = r.spareTextures[{w, h}];
+                if (!spare.empty())
+                {
+                    t.texture = spare.back();
+                    spare.pop_back();
+                }
+                else
+                    t.texture = makeTexture(r.device, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREUSAGE_SAMPLER, w, h);
                 return t;
             }
             const uint32_t cellSide = kAtlasCells[cls];
@@ -817,13 +826,20 @@ namespace mm::render
             return t;
         }
 
-        // Gives a texture's place back: its atlas cell to its page, or its own texture to the device.
+        // Gives a texture's place back: its atlas cell to its page, or its own texture to the spares of its size (a few kept,
+        // the rest to the device).
         void release(Renderer &r, const GpuTexture &t)
         {
-            if (t.cellClass < 0)
-                SDL_ReleaseGPUTexture(r.device, t.texture);
-            else
+            if (t.cellClass >= 0)
+            {
                 r.atlas[t.cellClass][t.page].freeCells.push_back(t.cell);
+                return;
+            }
+            std::vector<SDL_GPUTexture *> &spare = r.spareTextures[{t.width, t.height}];
+            if (spare.size() < 8)
+                spare.push_back(t.texture);
+            else
+                SDL_ReleaseGPUTexture(r.device, t.texture);
         }
 
         // Uploads the textures that came with the frame and the frame's vertices (one copy pass).
@@ -1157,11 +1173,12 @@ namespace mm::render
                     drawFrame(r, commands);
                     if (!r.current.shot.empty())
                         recordShot(r, commands, r.current.shot);
-                    // textures no frame has used for a while
-                    if (r.framesDrawn % 120u == 0u)
+                    // textures no frame has used for a while: 600 frames for an atlas cell, 60 for a texture of its own (large,
+                    // mostly a movie's pictures, each used for one field; far more frames than the GPU has in flight)
+                    if (r.framesDrawn % 30u == 0u)
                         for (auto it = r.textures.begin(); it != r.textures.end();)
                         {
-                            if (r.framesDrawn - it->second.lastUsed > 600u)
+                            if (r.framesDrawn - it->second.lastUsed > (it->second.cellClass < 0 ? 60u : 600u))
                             {
                                 release(r, it->second);
                                 {

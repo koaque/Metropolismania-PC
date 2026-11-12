@@ -99,7 +99,9 @@ The records and the inventory's output are game-derived and stay in `work/`.
   GPU texture costs about half a millisecond on D3D12 whatever its size: as the view moved, dozens of new small textures
   in one frame held the window thread up (40 made a 25 ms hitch, a few times a minute in the explore autoplay; at loads 100
   to 400 ms). With the atlas the city shows no late frame there, and the shader reads a texture through its cell's place
-  and size. The frames are the same bit for bit at the eleven camera views.
+  and size. The frames are the same bit for bit at the eleven camera views. A larger texture has a GPU texture of its own;
+  given back after 60 unused frames, it is kept (up to 8 a size) for the next one of its size: a movie brings a new 1024 x
+  512 picture every field, and making each one moved its frames 7 to 26 ms apart (now 15 to 18, as in the city).
 * Output is progressive: the field's half-line offset is dropped and the 224-line field coordinates are doubled, so both
   fields' lines come from one draw and nothing is woven.
 * Sampling follows the GS: wrap modes including region clamp and region repeat, its bilinear filter (half a texel back,
