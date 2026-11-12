@@ -4,7 +4,8 @@
 //
 // Where: the file named by MMPC_SETTINGS (MMPC_SETTINGS=none: no file; tools/pipeline.py sets that for its test runs and
 // points `pipeline.py play` at settings.ini in the repository), else settings.ini beside the executable. A missing file
-// means the defaults. `[section]` lines and comments (# or ;) are skipped; keys are in docs/SETTINGS.md.
+// means the defaults, the native renderer among them; test runs (MMPC_SETTINGS=none) keep the emulated one unless they
+// set MMPC_RENDERER. `[section]` lines and comments (# or ;) are skipped; keys are in docs/SETTINGS.md.
 
 #include <algorithm>
 #include <cctype>
@@ -96,9 +97,9 @@ namespace mmpc_settings
         const std::string k = lower(key), v = lower(value);
         if (k == "renderer")
         {
-            if (v == "native" || v == "split" || v == "side")
+            if (v == "native" || v == "split" || v == "side" || v == "emulated")
                 put("MMPC_RENDERER", v);
-            else if (v != "emulated")
+            else
                 out.unknown.push_back(key + " = " + value);
         }
         else if (k == "render_scale")
@@ -164,11 +165,9 @@ namespace mmpc_settings
         else
             path = executableFolder() / "settings.ini";
         std::ifstream file(path);
-        if (!file)
-            return false;
         Applied applied;
         std::string line;
-        while (std::getline(file, line))
+        while (file && std::getline(file, line))
         {
             line = trim(line);
             if (line.empty() || line[0] == '#' || line[0] == ';' || line[0] == '[')
@@ -186,7 +185,13 @@ namespace mmpc_settings
             if (!value.empty())
                 apply(key, value, applied);
         }
-        std::cerr << "[settings] " << path.string() << ":";
+        // The native renderer unless the file or the environment says otherwise (renderer = emulated).
+        if (std::getenv("MMPC_RENDERER") == nullptr)
+        {
+            setVariable("MMPC_RENDERER", "native");
+            applied.set.push_back("MMPC_RENDERER=native (the default)");
+        }
+        std::cerr << "[settings] " << path.string() << (file.is_open() ? ":" : " (none, the defaults):");
         for (const std::string &s : applied.set)
             std::cerr << " " << s;
         if (!applied.kept.empty())

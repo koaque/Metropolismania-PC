@@ -28,5 +28,7 @@ lists the lines it did not understand.
 
 Where the file is read from: the file named by `MMPC_SETTINGS` (`play` sets it to the repository's `settings.ini`), or
 else `settings.ini` beside the executable. `MMPC_SETTINGS=none` reads no file; the test commands of `tools/pipeline.py`
-(`run`, `capture`, `difftest`, the VU1 tests) set that, so a capture or a comparison never depends on someone's settings.
-Without a file the game starts as it always has: the emulated renderer, 4:3, in a window.
+(`run`, `capture`, `difftest`, the VU1 tests) set that, so a capture or a comparison never depends on someone's settings;
+those runs also keep the emulated renderer unless they set `MMPC_RENDERER`. Without a file (and without the switch in
+the environment) the game starts with the defaults above: the native renderer at the window's scale, 4:3, in a window.
+`renderer = emulated` (or `MMPC_RENDERER=emulated`) brings back the PS2's graphics chip, as the original draws.
