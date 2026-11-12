@@ -146,23 +146,32 @@ issues those multiplies after the next DIV has landed (kept, as the game draws i
 (Hor+). It needs the native renderer, which shows the wider picture, and is off by default (`src/port/enhance.h`, the
 port's first enhancement switch; with it off the port runs as before).
 
-* In the game: the city's world camera narrows its screen x scale by k = (W/H) / (4/3), 4/3 for 16:9, so the wider view
-  still fits the 640 pixels the game draws (what the PCSX2 widescreen patch does at 0x12A92C). The visibility test behind
-  the city's draw lists and the snow's clip frustum widen by k, so the sides are not left empty.
-* In the renderer: a city frame drawn with the wider view goes to render targets k times as wide and is shown at 4:3 times
-  k. The HUD keeps its 4:3 proportions in the middle. The city marks its frame list where the HUD starts (at the HUD
-  camera's packet) with `port::enhance::markFrameList`; the chain walker turns the mark into a VIF NOP that the renderer's
-  GS reads, and what is drawn from there on is drawn 1/k as wide around the centre, with its x 0 on a whole render pixel so
-  text stays as sharp. 2D primitives across the whole width (fades, the Z clear) and frame-buffer reads still fill the
+* In the game: the visibility test behind the city's draw lists and the snow's clip frustum widen by k = (W/H) / (4/3),
+  4/3 for 16:9, so the sides are not left empty. The game's camera is not changed: its projection (screen scale and
+  matrices) is part of what a save keeps, so a save made with widescreen on is the same as one made without.
+* In the renderer: the city marks its frame list at the world camera's packet (`port::enhance::markFrameList`), and as that
+  packet's camera block reaches the renderer's VU1 memory, the screen matrix and the clip matrix are narrowed in x by k
+  about the screen centre, so every program (models, terrain, water, weather) draws the wider view into the 640 pixels
+  (the effect of the PCSX2 widescreen patch, which changes the camera's x scale at 0x12A92C). A city frame drawn that way
+  goes to render targets k times as wide and is shown at 4:3 times k. The HUD keeps its 4:3 proportions in the middle:
+  the city marks where the HUD starts (at the HUD camera's packet), the chain walker turns each mark into a VIF NOP, and
+  what is drawn from there on is drawn 1/k as wide around the centre, with its x 0 on a whole render pixel so text stays
+  as sharp. 2D primitives across the whole width (the sky, fades, the Z clear) and frame-buffer reads still fill the
   width, and a HUD piece that covers the 4:3 screen (the pause window's frame) is marked as a backdrop: its points at or
   past the 4:3 edges go out to the wide edges.
-* The centre of the world keeps its 4:3 scale, so HUD pieces placed over the world (the cursor's arrow and info window, the
-  residents of a talk scene) stay over what they belong to. Movies, the title and the scenes outside the city stay 4:3.
+* The centre of the world keeps its 4:3 scale (the middle of a 16:9 frame matches the 4:3 frame at the same render scale),
+  and HUD pieces placed over the world by the game's own 4:3 projection (the cursor's arrow and info window) stay over what
+  they belong to; talk scenes show their residents at their proportions and more of the room.
+  Movies, the title and the scenes outside the city stay 4:3.
+* A first version (fb0f304) changed the game's camera instead, once, as the city was built: loading a save restores the
+  camera's projection, so after a load the city was the 4:3 view stretched to 16:9 (people and buildings a third too wide),
+  and saving with it on would have written the changed projection into the save.
 * The town differs from a 4:3 run: the game walks a pedestrian only while it draws them (each draw moves them on by their
   walk stride), so who walks depends on what is in view, as in the original when the camera turns. With
   `PS2X_TIMER0=frame`, a 4:3 and a 16:9 run under the explore autoplay are the same state up to the city and differ in
   pedestrians within its first 300 frames.
-* Speed at 16:9: 59.9 frames a second in the city (explore autoplay and the camera script, 2x scale), as at 4:3.
+* Speed at 16:9: 59.9 frames a second in the city (explore autoplay and the camera script, 2x scale), as at 4:3, measured
+  with the first version, which drew the same widened draw lists.
 
 ## Native only (N5)
 

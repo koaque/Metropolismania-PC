@@ -17,7 +17,7 @@ namespace mm::render
     // NOP ignores its NUM and IMMEDIATE fields), so the VIF knows which program the next MPG loads.
     constexpr uint32_t kProgramMarkLow = 0xA5, kProgramMarkHigh = 0xA6;
     // And a tag the port marked (port::enhance::markFrameList, widened frames only) with one carrying the span: the HUD or a
-    // backdrop starts.
+    // backdrop starts, or the world camera's packet follows (its upload is narrowed, see m_narrowCamera).
     constexpr uint32_t kSpanMark = 0xA7;
 
     class Vif1
@@ -42,6 +42,11 @@ namespace mm::render
         uint32_t m_base = 0, m_ofst = 0, m_tops = 0, m_itops = 0;
         bool m_dbf = false;
         uint32_t m_markLow = 0, m_pending = 0, m_program = 0;
+        // Widescreen (port::enhance::Span::WorldCamera): the next upload of the camera block to VU1 0 gets its screen matrix
+        // (0x00-0x03) and clip matrix (0x04-0x07) narrowed in x by the widescreen factor k about the screen centre, so the
+        // programs draw the k times wider view into the 640 pixels the renderer then shows k times as wide.
+        bool m_narrowCamera = false;
+        void narrowCamera();
         std::vector<VuPacket> m_packets;
         std::map<uint32_t, uint32_t> m_missing;
     };

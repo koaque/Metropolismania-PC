@@ -2,6 +2,8 @@
 
 #include "render_vif.h"
 
+#include "enhance.h"
+
 #include <algorithm>
 #include <cstring>
 
@@ -28,6 +30,8 @@ namespace mm::render
                     m_markLow = imm;
                 else if (num == kProgramMarkHigh)
                     m_pending = (imm << 16) | m_markLow;
+                else if (num == kSpanMark && imm == static_cast<uint32_t>(port::enhance::Span::WorldCamera))
+                    m_narrowCamera = true;
                 else if (num == kSpanMark)
                     m_gs.beginSpan(static_cast<uint8_t>(imm));
                 break;
@@ -181,7 +185,29 @@ namespace mm::render
                 // 3: write-protected
             }
         }
+        if (m_narrowCamera && address == 0 && count >= 8)
+            narrowCamera();
         return bytes;
+    }
+
+    // A matrix row maps a world point to (x, y, z, w) by the sum of the rows times its coordinates; the screen matrix's x
+    // is the camera space x times the screen scale plus the screen centre (2048, mm_Camera_ctor) times w, the clip
+    // matrix's x has no centre. A view k times as wide at the same height: the scale part divided by k in both.
+    void Vif1::narrowCamera()
+    {
+        m_narrowCamera = false;
+        constexpr float kScreenCentre = 2048.0f;
+        const float a = 1.0f / port::enhance::widescreen(), b = kScreenCentre * (1.0f - a);
+        const auto lane = [&](uint32_t q, int i) {
+            float f;
+            std::memcpy(&f, &m_memory.qword(q)[i], 4);
+            return f;
+        };
+        const auto setX = [&](uint32_t q, float x) { std::memcpy(&m_memory.qword(q)[0], &x, 4); };
+        for (uint32_t row = 0; row < 4; ++row)
+            setX(row, lane(row, 0) * a + lane(row, 3) * b);
+        for (uint32_t row = 4; row < 8; ++row)
+            setX(row, lane(row, 0) * a);
     }
 
     // MSCAL / MSCNT: the run gets TOPS as TOP, then the double buffer flips.

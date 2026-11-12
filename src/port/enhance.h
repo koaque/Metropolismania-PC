@@ -9,9 +9,10 @@
 namespace port::enhance
 {
     // MMPC_WIDESCREEN=1 (16:9) or W:H (21:9, say): how many times wider than 4:3 the city's view opens; 1 when off, and
-    // without the native renderer (MMPC_RENDERER), which is what shows the wider picture. The city's world camera narrows its
-    // screen x scale by it (so the wider view fits the 640 pixels the game draws, as the PCSX2 widescreen patch does) and
-    // its visibility tests widen by it; the native renderer shows those frames that much wider.
+    // without the native renderer (MMPC_RENDERER), which is what shows the wider picture. The city's visibility tests (and
+    // the snow's) widen by it. The game's camera is left as it is, since saves keep it: the native renderer narrows the
+    // world camera's screen and clip matrices by it where they reach VU1 (Span::WorldCamera), so the wider view fits the
+    // 640 pixels drawn, and shows those frames that much wider.
     float widescreen();
 
     // Counts the city frames drawn with the wider view (the native renderer shows a frame wide when this moved since the
@@ -23,6 +24,7 @@ namespace port::enhance
     {
         Hud = 1,      // the HUD (minimap, phone, markers, windows, text): kept at 4:3 proportions in the middle
         Backdrop = 2, // a HUD piece that covers the 4:3 screen (a menu's frame): the same, its edges out to the wide edges
+        WorldCamera = 3, // the world camera's packet: its screen and clip matrices, narrowed as they reach VU1
     };
 
     // Marks the current end of the frame list (the next DMA tag the game appends) as the start of `span`, until the next

@@ -4181,14 +4181,6 @@ namespace mm
         city->townPages = GuestPtr<TownPages>{build(0x64u, [](uint32_t o) { return TownPages_Init(GuestPtr<TownPages>{o}).address; })};
         city->laptop = GuestPtr<Laptop>{build(0x3E0u, [](uint32_t o) { return Laptop_ctor(GuestPtr<Laptop>{o}).address; })};
         city->cityCamera = GuestPtr<CityCamera>{build(0x540u, [](uint32_t o) { return CityCamera_ctor(GuestPtr<CityCamera>{o}).address; })};
-        // Enhancement, off by default (MMPC_WIDESCREEN, enhance.h): the world's camera takes in a wider view, narrowing its
-        // screen x scale so the view still fits the 640 pixels drawn (the renderer shows those frames wider).
-        if (const float wide = port::enhance::widescreen(); wide != 1.0f)
-        {
-            const GuestPtr<Camera> world = GuestPtr<Camera>::of(city->cityCamera->base);
-            world->scaleX = ps2f(1.0f / wide);
-            Camera_UpdateProjection(world);
-        }
         city->lights = GuestPtr<LightSet>{build(0x1B0u, [](uint32_t o) { return LightSet_ctor(GuestPtr<LightSet>{o}).address; })};
         city->player = GuestPtr<Player>{build(0x90u, [](uint32_t o) { return Player_ctor(GuestPtr<Player>{o}).address; })};
         city->applicants = GuestPtr<Applicants>{build(0x350u, [](uint32_t o) { return Applicants_ctor(GuestPtr<Applicants>{o}).address; })};
@@ -4376,6 +4368,8 @@ namespace mm
             port::enhance::wideFrames().fetch_add(1, std::memory_order_relaxed);
         DmaList_QueueClearZ();
         Sky_Draw(city->cityCamera);
+        // enhancement (MMPC_WIDESCREEN): the renderer takes in the wider view through this camera's upload (enhance.h)
+        port::enhance::markFrameList(port::enhance::Span::WorldCamera);
         Packet_Draw(GuestPtr<uint32_t>::of(city->cityCamera->base.packet));
         const GuestPtr<CityCamera> camera = city->cityCamera;
         const int zoom = CityCamera_GetZoomLevel(camera, city);
