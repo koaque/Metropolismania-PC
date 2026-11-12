@@ -1,0 +1,67 @@
+Frame skip, always: ps2xFrameSkipSetAlways(true) skips every frame whatever the timing and the PS2X_FRAMESKIP setting, and vertical blanks no thread waited for no longer end a skip (ps2xFrameSkipSuspend still draws the frames it asks for). A skipped frame runs no VU1 programs and draws no primitives while VIF unpacks, MPG, image transfers, CLUT loads and GS register writes all still happen (patch 0145), so a renderer that draws the game's picture itself from its DMA chains keeps the GS state it reads and saves the emulated VU1 and GS work; the vertical blanks keep their place in real time as with frame skip on (FrameSkipMode::Always). Checked in Metropolismania with its native renderer: the explore autoplay at 59.9-61 game frames a second in most two-second windows with every VU1 run skipped.
+
+diff --git a/ps2xRuntime/include/runtime/ps2_frame_skip.h b/ps2xRuntime/include/runtime/ps2_frame_skip.h
+--- a/ps2xRuntime/include/runtime/ps2_frame_skip.h
++++ b/ps2xRuntime/include/runtime/ps2_frame_skip.h
+@@ -19,12 +19,16 @@ enum class FrameSkipMode
+     Off,
+     Auto,
+     Alternate,
++    Always, // every frame: the picture is drawn elsewhere (a native renderer reads the game's DMA chains itself)
+ };
+ 
+ inline constexpr uint32_t kMaxBacklogFields = 4u;
+ inline constexpr uint32_t kMaxSkippedInARow = 3u;
+ 
+ void ps2xFrameSkipSetDefault(bool on);
++// Every frame skipped, whatever the timing and the setting (ps2xFrameSkipSuspend still draws the frames it asks for): for a
++// renderer that draws the game's picture itself, so the emulated VU1 and GS need not.
++void ps2xFrameSkipSetAlways(bool on);
+ FrameSkipMode ps2xFrameSkipMode();
+ 
+ // The next `frames` frames are drawn whatever the timing (for example around a screenshot).
+diff --git a/ps2xRuntime/src/lib/ps2_frame_skip.cpp b/ps2xRuntime/src/lib/ps2_frame_skip.cpp
+--- a/ps2xRuntime/src/lib/ps2_frame_skip.cpp
++++ b/ps2xRuntime/src/lib/ps2_frame_skip.cpp
+@@ -12,6 +12,7 @@ namespace
+ {
+     std::atomic<bool> g_defaultOn{false};
+     std::atomic<bool> g_skipping{false};
++    std::atomic<bool> g_always{false};
+     std::atomic<uint32_t> g_suspended{0};
+     uint32_t g_skippedInARow = 0;
+     uint32_t g_unwaitedVBlanks = 0; // since the last frame boundary
+@@ -65,8 +66,15 @@ void ps2xFrameSkipSetDefault(bool on)
+     g_defaultOn.store(on, std::memory_order_relaxed);
+ }
+ 
++void ps2xFrameSkipSetAlways(bool on)
++{
++    g_always.store(on, std::memory_order_relaxed);
++}
++
+ FrameSkipMode ps2xFrameSkipMode()
+ {
++    if (g_always.load(std::memory_order_relaxed))
++        return FrameSkipMode::Always;
+     const char *value = setting();
+     if (value != nullptr && value[0] != '\0')
+     {
+@@ -93,6 +101,8 @@ bool ps2xFrameSkipBoundary(bool behind)
+         skip = !g_skipping.load(std::memory_order_relaxed);
+     else if (mode == FrameSkipMode::Auto)
+         skip = behind && g_skippedInARow < kMaxSkippedInARow;
++    else if (mode == FrameSkipMode::Always)
++        skip = true;
+     uint32_t suspended = g_suspended.load(std::memory_order_relaxed);
+     while (suspended != 0u && !g_suspended.compare_exchange_weak(suspended, suspended - 1u, std::memory_order_relaxed))
+     {
+@@ -125,7 +135,7 @@ bool ps2xFrameSkipUnwaitedVBlank()
+         g_vblanks.fetch_add(1, std::memory_order_relaxed);
+         maybeReport();
+     }
+-    if (!g_skipping.load(std::memory_order_acquire) || g_unwaitedVBlanks < 2u)
++    if (!g_skipping.load(std::memory_order_acquire) || g_unwaitedVBlanks < 2u || g_always.load(std::memory_order_relaxed))
+         return false;
+     g_skipping.store(false, std::memory_order_release);
+     g_skippedInARow = 0;

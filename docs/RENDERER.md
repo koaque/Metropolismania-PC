@@ -29,7 +29,7 @@ and audio, so it replaced raylib as the runtime's desktop host (`patches/0155`).
 | N2 | `tools/draw_inventory.py`: what the frames ask of the hardware (below) | Done for the city, new game and rain |
 | N3 | Renderer core: chain walker, GS state, texture cache, 2D primitives, progressive output, resolution scale (`src/render/`, below) | Done: everything drawn without VU1 |
 | N4 | The 13 VU1 programs as native code and shaders, compared image by image with the emulated output | All 13 native, checked against captured runs (below); their math still on the CPU |
-| N5 | Native-only mode (the emulated VU1 and GS drawing skipped), the game state checked unchanged with `PS2X_TIMER0=frame` | |
+| N5 | Native-only mode (the emulated VU1 and GS drawing skipped), the game state checked unchanged with `PS2X_TIMER0=frame` | Done (below); the faithful build's default is still the emulated picture |
 | N6 | 4K and MSAA, filtering, widescreen, frame pacing; then PC controls | |
 
 ## What the frames use (N2)
@@ -62,12 +62,16 @@ The records and the inventory's output are game-derived and stay in `work/`.
 
 `src/render/` (staged into the runner like `src/port/`; switched on with `MMPC_RENDERER`):
 
-* `native`: the native picture only; `side`: either picture, F2 switches; `split`: the emulated picture on the left and the
-  native one on the right. `MMPC_RENDER_SCALE` (1 to 8, default 3) sets the internal resolution as a multiple of 640x448.
-  `MMPC_RENDER_STATS=1` prints what a frame held every 120 frames (batches, new textures, VU1 programs it ran).
-* A runtime hook (`PS2Memory::setDmaStartObserver`) hands the renderer every VIF1 and GIF DMA start. The renderer walks the
-  chain itself, sends the DIRECT payloads to its GS state machine (`render_gs.cpp`) and the image transfers to its own copy
-  of GS memory (`render_vram.cpp`). A frame ends when the game starts its frame list (`kDmaLists`); while no frame list
+* `native`: the native picture only, with the emulated VU1 and GS drawing nothing (below; `MMPC_RENDER_EMULATED=1` keeps
+  them drawing); `side`: either picture, F2 switches; `split`: the emulated picture on the left and the native one on the
+  right. `MMPC_RENDER_SCALE` (1 to 8, default 3) sets the internal resolution as a multiple of 640x448.
+  `MMPC_RENDER_STATS=1` prints what a frame held every 120 frames (batches, new textures, VU1 programs it ran, program runs
+  without a native version, the time per frame on the game thread and on the render thread, frames drawn).
+* A runtime hook (`PS2Memory::setDmaStartObserver`) hands the renderer every VIF1 and GIF DMA start. On the game thread the
+  renderer only copies the transfer's data out of RDRAM (walking the chain) with the GS's drawing environment at that
+  moment; a render thread then takes the transfers in order, sends DIRECT payloads to its GS state machine
+  (`render_gs.cpp`), image transfers to its own copy of GS memory (`render_vram.cpp`) and VU1 data to the native programs.
+  The game thread waits only when two frames are still queued. A frame ends when the game starts its frame list (`kDmaLists`); while no frame list
   runs (movies), at the first transfer after a vertical blank.
 * Textures are decoded from that memory into RGBA8 and kept by content: a texture whose pages were written but whose texels
   did not change keeps its GPU copy, so the city uploads no textures in a steady frame although the game uploads its
@@ -129,3 +133,17 @@ reason); the terrain passes leave a skipped quad's slots in their output buffer 
 written) and set ADC by storing 0x8000 over a vertex's whole w word, so its F goes to 0; and the rain's ground pass
 multiplies its second and fourth corners' texture coordinates by the next corner's 1 / w, because its software pipelining
 issues those multiplies after the next DIV has landed (kept, as the game draws it).
+
+## Native only (N5)
+
+`MMPC_RENDERER=native` also turns on a frame skip that skips every frame (`patches/0157`, `ps2xFrameSkipSetAlways`): the
+emulated VU1 runs no program and the emulated GS draws no primitive, while VIF unpacks, image transfers, CLUT loads and
+GS register writes all still happen (patch 0145's machinery), and the vertical blanks keep their place in real time.
+
+* The game state is unchanged by it: with the deterministic timer (`PS2X_TIMER0=frame`), 20 snapshots of a loaded city
+  under the explore autoplay (GameUpdate every 300 frames, 6,000 frames) are byte for byte the same in RDRAM and the
+  scratchpad with the native renderer alone and with the emulated picture (`tools/lockstep_compare.py`).
+* Speed, explore autoplay in a snowy city: the game holds 59.5 to 60 frames a second and the native renderer draws 113 to
+  120 of every 120 (the game thread spends about 0.5 to 1.3 ms of a frame in the renderer, the render thread about 10 ms).
+  The emulated build in the same run keeps the game near its speed by frame skip but draws 28 to 50 frames in every 120,
+  each taking 28 to 49 ms.

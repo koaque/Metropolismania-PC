@@ -53,7 +53,7 @@ Progress per subsystem is tracked in [docs/PORT_STATUS.md](docs/PORT_STATUS.md).
 | Platform layer (SDK and C runtime) | In progress: 123 of the 768 SDK functions rewritten as plain C++ in `src/port/platform/`; 91 verified by replay, 25 numeric ones (soft float, libm) by random-input comparison, 7 not yet shown. No recompiled SDK function is reachable from the ported code, and the explore and new-game runs enter none ([details](docs/PLATFORM_FINDINGS.md)) |
 | VU1 microcode | The city's programs run natively, checked against the interpreter ([details](docs/VU1_PROGRAMS.md)) |
 | Sound driver (IOP) | The game's own driver (YYSOUND, 114 functions) is rewritten as readable C++ in `src/port/iop/` and checked call by call against the original (0 differences, bar a few uninitialized stack bytes that the details list). All ten IOP modules, YYSOUND and the nine Sony modules (memory card, pad, SPU2 library, MIDI and sound-effect synthesizers), run as C++ translated ahead of time from your disc's modules, which matches the interpreter exactly (the same state at every checked point, the same audio, random programs of every instruction form; no instruction of the ten modules is interpreted in the scripted runs). The Sony modules are not rewritten as readable source ([details](docs/IOP.md)) |
-| Native renderer | In progress: everything drawn without the VU1 programs (logos, title menu, text, the HUD's 2D parts, the minimap, movies) is drawn natively at any multiple of 640x448 (3x by default) as one progressive picture per frame, so without fields or interlace jitter, beside the emulated picture for comparison. The 3D models and the terrain (the VU1 programs) are next ([details](docs/RENDERER.md)) |
+| Native renderer | In progress, opt-in (`MMPC_RENDERER=native`): the whole picture drawn natively at any multiple of 640x448 (3x by default) as one progressive picture per frame, so without fields or interlace jitter. All 13 of the game's VU1 programs run as native code that matches the original programs' output on the captured runs, and the emulated graphics hardware is skipped: the explore autoplay holds 60 frames a second with every frame drawn (the emulated picture draws about 15 to 25), and the game state stays byte for byte the same ([details](docs/RENDERER.md)) |
 | Widescreen, high refresh rate, native controls, Linux | Proposed, not started ([see below](#proposed-patches)) |
 
 ## How it works
@@ -123,7 +123,7 @@ Once the port is complete these are the changes it is meant to make possible. Hi
 
 - **Widescreen.** True 16:9 and wider, with the field of view and the HUD corrected. The needed addresses are already known from the PCSX2 widescreen patch ([docs/GAME_NOTES.md](docs/GAME_NOTES.md)).
 - **High refresh rates (120 Hz).** The game logic steps once per frame at the PS2's field rate (59.94 Hz), so it must stay at that rate to keep its speed; the proposal is to draw in-between frames for 120 Hz and faster displays without changing the logic.
-- **Higher resolution.** Render the city at a multiple of the PS2's 640x448 instead of the fixed output size. In progress: the native renderer draws the 2D parts (menus, text, movies) at any multiple already; the 3D city is next ([docs/RENDERER.md](docs/RENDERER.md)).
+- **Higher resolution.** Render the city at a multiple of the PS2's 640x448 instead of the fixed output size. In progress: the native renderer draws the whole picture at any multiple already (opt-in, [docs/RENDERER.md](docs/RENDERER.md)).
 - **Native PC controls.** Keyboard and mouse, any gamepad, and rebinding, instead of a mapped PS2 pad.
 - **And more:** a Linux build, saves in a normal folder instead of a memory card image, display options (fullscreen, borderless, vsync) and fixes for the remaining rendering glitches.
 
@@ -216,7 +216,7 @@ This is a fan preservation project. It is not affiliated with or endorsed by Ind
 | プラットフォーム層(SDKとCランタイム) | 進行中。768個のSDK関数のうち123個を `src/port/platform/` に素のC++で書き直し済み。91個はリプレイで、25個の数値関数(ソフトフロート、libm)はランダム入力との比較で検証済み、7個は未検証。移植済みコードから到達できる再コンパイル済みSDK関数はなく、探索と新規ゲームの実行でも再コンパイル済み関数は実行されません([詳細](docs/PLATFORM_FINDINGS.md)) |
 | VU1マイクロコード | 街のプログラムはネイティブで動作し、インタプリタとの照合済み([詳細](docs/VU1_PROGRAMS.md)) |
 | サウンドドライバ(IOP) | ゲーム自身のドライバ(YYSOUND、114関数)を `src/port/iop/` に読みやすいC++として書き直し済みで、元のコードと呼び出しごとに照合しています(差異は0件。初期化されていないスタックの数バイトを除く。詳細に記載)。YYSOUNDとSony製の9モジュール(メモリーカード、パッド、SPU2ライブラリ、MIDIと効果音のシンセサイザ)を含む10個のIOPモジュールすべてを、ディスクのモジュールから事前に変換したC++で実行しており、インタプリタと完全に一致します(照合した各時点で同じ状態、同じ音声、あらゆる命令形式のランダムなプログラム。スクリプトによる実行では10モジュールの命令をインタプリタで実行することはありません)。Sony製モジュールは読みやすいソースには書き直していません([詳細](docs/IOP.md))|
-| ネイティブレンダラー | 進行中。VU1プログラムを通らない描画(ロゴ、タイトルメニュー、文字、HUDの2D部分、ミニマップ、ムービー)は、640x448の任意の整数倍(既定は3倍)でネイティブに描画します。1フレームを1枚のプログレッシブ画像として描くので、フィールドもインターレースの揺れもありません。比較のためエミュレートした画像と並べて表示できます。3Dモデルと地形(VU1プログラム)が次です([詳細](docs/RENDERER.md)) |
+| ネイティブレンダラー | 進行中、オプトイン(`MMPC_RENDERER=native`)。画面全体を640x448の任意の整数倍(既定は3倍)でネイティブに描画します。1フレームを1枚のプログレッシブ画像として描くので、フィールドもインターレースの揺れもありません。ゲームの13個のVU1プログラムはすべてネイティブコードで動き、記録した実行では元のプログラムと同じ出力になります。エミュレートしたグラフィックハードウェアは描画を省くので、探索の自動操作で毎秒60フレームをすべて描画します(エミュレートした画像では約15〜25)。ゲームの状態はバイト単位で同じままです([詳細](docs/RENDERER.md)) |
 | ワイドスクリーン、高リフレッシュレート、ネイティブ操作、Linux | 構想中、未着手 |
 
 ### 仕組み
@@ -286,7 +286,7 @@ PCSX2からセーブデータをコピーするには `python tools/mc_extract.p
 
 - **ワイドスクリーン。** 16:9以上の本物のワイドスクリーン。視野角とHUDも補正します。必要なアドレスはPCSX2のワイドスクリーンパッチから既に分かっています([docs/GAME_NOTES.md](docs/GAME_NOTES.md))。
 - **高リフレッシュレート(120 Hz)。** ゲームのロジックはPS2のフィールドレート(59.94 Hz)で1フレームごとに進むため、速度を保つにはこのレートのままにする必要があります。ロジックを変えずに中間フレームを描き、120 Hz以上のディスプレイでなめらかに表示することを目指します。
-- **高解像度。** 固定の出力サイズではなく、PS2の640x448の整数倍で街を描画します。進行中:ネイティブレンダラーは2Dの部分(メニュー、文字、ムービー)を既に任意の整数倍で描画しています。3Dの街が次です([docs/RENDERER.md](docs/RENDERER.md))。
+- **高解像度。** 固定の出力サイズではなく、PS2の640x448の整数倍で街を描画します。進行中:ネイティブレンダラーは既に画面全体を任意の整数倍で描画しています(オプトイン、[docs/RENDERER.md](docs/RENDERER.md))。
 - **PCネイティブの操作。** PS2パッドに割り当てる方式ではなく、キーボードとマウス、あらゆるゲームパッド、キー割り当ての変更に対応します。
 - **その他:** Linux版、メモリーカードイメージではなく通常のフォルダへのセーブ、表示オプション(フルスクリーン、ボーダーレス、垂直同期)、残っている描画の不具合の修正。
 
@@ -373,7 +373,7 @@ Translating a program's machine code into source code for another platform ahead
 
 ### Is there a widescreen or HD version?
 
-Not yet. A native renderer for higher resolutions is being built: menus, text and movies already draw at any multiple of 640x448, and the 3D city is next ([docs/RENDERER.md](docs/RENDERER.md)). Widescreen (16:9 and wider), 120 Hz and native controls are planned once the port is complete ([proposed patches](#proposed-patches)). Until then, PCSX2 has a 16:9 patch for the game.
+Not yet as a release. A native renderer for higher resolutions is being built and already draws the whole game at any multiple of 640x448, without interlacing, as an opt-in for now ([docs/RENDERER.md](docs/RENDERER.md)). Widescreen (16:9 and wider), 120 Hz and native controls are planned once the port is complete ([proposed patches](#proposed-patches)). Until then, PCSX2 has a 16:9 patch for the game.
 
 ### Who made Metropolismania?
 
@@ -426,7 +426,7 @@ PCSX2はゲーム機全体をエミュレートし、元のディスクをその
 
 #### ワイドスクリーンやHD版はありますか?
 
-まだありません。高解像度のためのネイティブレンダラーを作っているところで、メニュー、文字、ムービーは既に640x448の任意の整数倍で描画できます。3Dの街が次です([docs/RENDERER.md](docs/RENDERER.md))。ワイドスクリーン(16:9以上)、120 Hz、PC向けの操作は、移植の完成後に予定しています([構想中のパッチ](#構想中のパッチ))。それまでは、PCSX2にこのゲーム用の16:9パッチがあります。
+リリースとしてはまだありません。高解像度のためのネイティブレンダラーを作っているところで、既にゲーム全体を640x448の任意の整数倍で、インターレースなしで描画できます(今はオプトイン、[docs/RENDERER.md](docs/RENDERER.md))。ワイドスクリーン(16:9以上)、120 Hz、PC向けの操作は、移植の完成後に予定しています([構想中のパッチ](#構想中のパッチ))。それまでは、PCSX2にこのゲーム用の16:9パッチがあります。
 
 #### 誰が作ったゲームですか?
 

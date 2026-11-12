@@ -16,12 +16,17 @@
 #include "ps2_runtime.h"
 #include "ps2_syscalls.h"
 #include "runtime/gs/gs_frontend.h"
+#include "runtime/ps2_frame_skip.h"
 #include "runtime/ps2_host.h"
 
 #include <SDL3/SDL.h>
 
 #include <algorithm>
 #include <atomic>
+#include <condition_variable>
+#include <deque>
+#include <thread>
+#include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
@@ -55,6 +60,26 @@ namespace mm::render
             uint32_t region[4];
         };
 
+        // One thing for the render thread to do, in the order the game started its transfers: a VIF1 or GIF transfer's
+        // data (copied out of RDRAM by the game thread, with the GS's drawing environment at that moment), or the end of a
+        // frame.
+        struct Work
+        {
+            enum class Kind : uint8_t
+            {
+                Vif,
+                Gif,
+                EndFrame,          // a frame list started: the frame is complete
+                EndFrameIfDrawn,   // a vertical blank passed while no frame list runs (the movie player)
+            } kind = Kind::Vif;
+            uint64_t environment[2][5] = {}; // per context: FRAME, XYOFFSET, SCISSOR, ZBUF, TEST
+            std::vector<uint8_t> data;
+            // EndFrame: the stats of the frame on the game thread
+            std::map<uint32_t, uint32_t> programCalls;
+            uint32_t gifTransfers = 0, otherVifTransfers = 0;
+            double gameSeconds = 0.0;
+        };
+
         struct GpuTexture
         {
             SDL_GPUTexture *texture = nullptr;
@@ -68,11 +93,24 @@ namespace mm::render
             Vram vram;
             Gs gs{vram};
             Vif1 vif{gs};
-            std::vector<uint8_t> stream;
-            // MMPC_RENDER_STATS=1: what each frame held that the native path does not draw yet
-            std::map<uint32_t, uint32_t> programCalls; // microcode upload packet -> CALLs this frame
+
+            // game thread: what it hands the render thread, and its own bookkeeping
+            std::map<uint32_t, uint32_t> programCalls; // MMPC_RENDER_STATS: microcode upload packet -> CALLs this frame
             uint32_t gifTransfers = 0, otherVifTransfers = 0;
+            double gameSeconds = 0.0; // the game thread's time in the renderer this frame (snapshots and chain copies)
             uint64_t lastVsync = 0, frameListVsync = 0; // the vertical blank of the last transfer and of the last frame list
+
+            // game thread -> render thread: the transfers in order
+            std::mutex workMutex;
+            std::condition_variable workReady, workDone;
+            std::deque<Work> work;
+            std::vector<std::vector<uint8_t>> spareBuffers;
+            uint32_t framesQueued = 0;
+
+            // render thread: the time it spends per frame, for the stats line
+            double renderSeconds = 0.0, windowGame = 0.0, windowRender = 0.0, worstRender = 0.0;
+            uint32_t windowFrames = 0;
+            std::atomic<uint32_t> drawnFrames{0}; // native frames drawn (window thread), since the last stats line
             bool f2Down = false;
             std::atomic<bool> showNative{true};
 
@@ -190,7 +228,8 @@ namespace mm::render
             }
         }
 
-        void publishFrame(Renderer &r)
+        // The render thread: the frame built so far goes to the window thread.
+        void publishFrame(Renderer &r, const Work &end)
         {
             Frame frame = r.gs.takeFrame();
             // MMPC_RENDER_STATS=1: every 120 frames, what the last one held (batches, vertices, their extent).
@@ -198,6 +237,11 @@ namespace mm::render
                 const char *v = std::getenv("MMPC_RENDER_STATS");
                 return v != nullptr && v[0] == '1';
             }();
+            r.windowGame += end.gameSeconds;
+            r.windowRender += r.renderSeconds;
+            r.worstRender = std::max(r.worstRender, r.renderSeconds);
+            ++r.windowFrames;
+            r.renderSeconds = 0.0;
             if (s_stats && frame.number % 120u == 0u)
             {
                 float minX = 1e9f, maxX = -1e9f, minY = 1e9f, maxY = -1e9f;
@@ -214,18 +258,22 @@ namespace mm::render
                 }
                 std::cerr << "[render] frame " << frame.number << ": " << frame.batches.size() << " batches (" << textured
                           << " textured, " << previous << " from the previous frame), " << frame.vertices.size() << " vertices, x " << minX << ".." << maxX << ", y " << minY
-                          << ".." << maxY << ", " << frame.newTextures.size() << " new textures; " << r.gifTransfers
-                          << " GIF transfers, " << r.otherVifTransfers << " other VIF1 transfers; programs";
-                for (const auto &entry : r.programCalls)
+                          << ".." << maxY << ", " << frame.newTextures.size() << " new textures; " << end.gifTransfers
+                          << " GIF transfers, " << end.otherVifTransfers << " other VIF1 transfers; programs";
+                for (const auto &entry : end.programCalls)
                     std::cerr << " " << std::hex << entry.first << std::dec << " x" << entry.second;
+                const double n = r.windowFrames != 0 ? static_cast<double>(r.windowFrames) : 1.0;
+                std::cerr << "; a frame: " << r.windowGame * 1000.0 / n << " ms on the game thread, " << r.windowRender * 1000.0 / n
+                          << " ms on the render thread (" << r.worstRender * 1000.0 << " worst); " << r.drawnFrames.exchange(0)
+                          << " drawn since the last line";
+                r.windowGame = r.windowRender = r.worstRender = 0.0;
+                r.windowFrames = 0;
                 std::cerr << "; runs without a native program";
                 for (const auto &entry : r.vif.missingRuns())
                     std::cerr << " " << std::hex << entry.first << std::dec << " x" << entry.second;
                 std::cerr << std::endl;
             }
-            r.programCalls.clear();
             r.vif.missingRuns().clear();
-            r.gifTransfers = r.otherVifTransfers = 0;
             std::lock_guard<std::mutex> lock(r.mutex);
             for (auto &entry : frame.newTextures)
                 r.pendingTextures[entry.first] = std::move(entry.second);
@@ -239,9 +287,117 @@ namespace mm::render
             r.fresh = true;
         }
 
+        // The render thread: the transfers in the order the game started them, through the VIF, the native programs and
+        // the GS.
+        void renderThread(Renderer *r)
+        {
+            for (;;)
+            {
+                Work item;
+                {
+                    std::unique_lock<std::mutex> lock(r->workMutex);
+                    r->workReady.wait(lock, [&] { return !r->work.empty(); });
+                    item = std::move(r->work.front());
+                    r->work.pop_front();
+                }
+                const auto start = std::chrono::steady_clock::now();
+                for (int ctx = 0; ctx < 2; ++ctx)
+                {
+                    const uint64_t *e = item.environment[ctx];
+                    r->gs.setEnvironment(ctx, e[0], e[1], e[2], e[3], e[4]);
+                }
+                bool ended = false;
+                switch (item.kind)
+                {
+                case Work::Kind::Vif:
+                    r->vif.run(item.data.data(), item.data.size());
+                    break;
+                case Work::Kind::Gif:
+                    r->gs.gif(item.data.data(), item.data.size());
+                    break;
+                case Work::Kind::EndFrameIfDrawn:
+                    if (r->gs.frame().batches.empty())
+                        break;
+                    [[fallthrough]];
+                case Work::Kind::EndFrame:
+                    r->renderSeconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+                    publishFrame(*r, item);
+                    ended = true;
+                    break;
+                }
+                if (!ended)
+                    r->renderSeconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+                std::lock_guard<std::mutex> lock(r->workMutex);
+                if (item.data.capacity() != 0 && r->spareBuffers.size() < 64)
+                {
+                    item.data.clear();
+                    r->spareBuffers.push_back(std::move(item.data));
+                }
+                if (item.kind == Work::Kind::EndFrame || item.kind == Work::Kind::EndFrameIfDrawn)
+                {
+                    --r->framesQueued;
+                    r->workDone.notify_all();
+                }
+            }
+        }
+
+        // The game thread: a work item with the GS's drawing environment as it is now (the game's double-buffer setup
+        // writes it outside its transfers).
+        Work newWork(Renderer &r, Work::Kind kind)
+        {
+            Work item;
+            item.kind = kind;
+            for (int ctx = 0; ctx < 2; ++ctx)
+            {
+                const GSContext &c = r.runtime->gs().getContext(ctx);
+                uint64_t *e = item.environment[ctx];
+                e[0] = static_cast<uint64_t>(c.frame.fbp) | (static_cast<uint64_t>(c.frame.fbw) << 16) |
+                       (static_cast<uint64_t>(c.frame.psm) << 24) | (static_cast<uint64_t>(c.frame.fbmsk) << 32);
+                e[1] = static_cast<uint64_t>(c.xyoffset.ofx) | (static_cast<uint64_t>(c.xyoffset.ofy) << 32);
+                e[2] = static_cast<uint64_t>(c.scissor.x0) | (static_cast<uint64_t>(c.scissor.x1) << 16) |
+                       (static_cast<uint64_t>(c.scissor.y0) << 32) | (static_cast<uint64_t>(c.scissor.y1) << 48);
+                e[3] = static_cast<uint64_t>(c.zbuf.zbp) | (static_cast<uint64_t>(c.zbuf.psm) << 24) |
+                       (static_cast<uint64_t>(c.zbuf.zmask ? 1u : 0u) << 32);
+                e[4] = c.test;
+            }
+            if (kind == Work::Kind::Vif || kind == Work::Kind::Gif)
+            {
+                std::lock_guard<std::mutex> lock(r.workMutex);
+                if (!r.spareBuffers.empty())
+                {
+                    item.data = std::move(r.spareBuffers.back());
+                    r.spareBuffers.pop_back();
+                }
+            }
+            return item;
+        }
+
+        // Queues an item; at the end of a frame, waits while two frames are still ahead of the render thread.
+        void queueWork(Renderer &r, Work &&item)
+        {
+            const bool end = item.kind == Work::Kind::EndFrame || item.kind == Work::Kind::EndFrameIfDrawn;
+            std::unique_lock<std::mutex> lock(r.workMutex);
+            if (end)
+            {
+                r.workDone.wait(lock, [&] { return r.framesQueued < 2; });
+                ++r.framesQueued;
+            }
+            r.work.push_back(std::move(item));
+            r.workReady.notify_one();
+        }
+
+        void handleDmaStart(Renderer &r, uint32_t channel, uint32_t chcr, uint32_t madr, uint32_t qwc, uint32_t tadr);
+
         void onDmaStart(void *user, uint32_t channel, uint32_t chcr, uint32_t madr, uint32_t qwc, uint32_t tadr)
         {
             Renderer &r = *static_cast<Renderer *>(user);
+            const auto start = std::chrono::steady_clock::now();
+            handleDmaStart(r, channel, chcr, madr, qwc, tadr);
+            r.gameSeconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+        }
+
+        void handleDmaStart(Renderer &r, uint32_t channel, uint32_t chcr, uint32_t madr, uint32_t qwc, uint32_t tadr)
+        {
             const uint8_t *rdram = r.runtime->memory().getRDRAM();
             const bool chainMode = ((chcr >> 2) & 3) == 1;
             if (const char *test = std::getenv("MMPC_RENDER_VU1TEST")) // the game is loaded by its first transfer
@@ -249,75 +405,53 @@ namespace mm::render
                 runVu1RecordTest(test, rdram);
                 std::exit(0);
             }
-            // The drawing environment as the emulated GS has it now: the game's double-buffer setup writes it directly.
-            for (int ctx = 0; ctx < 2; ++ctx)
-            {
-                const GSContext &c = r.runtime->gs().getContext(ctx);
-                const uint64_t xyoffset = static_cast<uint64_t>(c.xyoffset.ofx) | (static_cast<uint64_t>(c.xyoffset.ofy) << 32);
-                const uint64_t scissor = static_cast<uint64_t>(c.scissor.x0) | (static_cast<uint64_t>(c.scissor.x1) << 16) |
-                                         (static_cast<uint64_t>(c.scissor.y0) << 32) | (static_cast<uint64_t>(c.scissor.y1) << 48);
-                const uint64_t zbuf = static_cast<uint64_t>(c.zbuf.zbp) | (static_cast<uint64_t>(c.zbuf.psm) << 24) |
-                                      (static_cast<uint64_t>(c.zbuf.zmask ? 1u : 0u) << 32);
-                const uint64_t frame = static_cast<uint64_t>(c.frame.fbp) | (static_cast<uint64_t>(c.frame.fbw) << 16) |
-                                       (static_cast<uint64_t>(c.frame.psm) << 24) | (static_cast<uint64_t>(c.frame.fbmsk) << 32);
-                r.gs.setEnvironment(ctx, frame, xyoffset, scissor, zbuf, c.test);
-            }
             // A picture drawn outside the frame lists (the movie player draws each field from its vertical blank handler) is closed
             // at the first transfer after a vertical blank; while frame lists run, they close their own frames.
             const uint64_t vsync = ps2_syscalls::GetCurrentVSyncTick(r.runtime);
             if (vsync != r.lastVsync)
             {
-                if (vsync > r.frameListVsync + 2u && !r.gs.frame().batches.empty())
-                    publishFrame(r);
+                if (vsync > r.frameListVsync + 2u)
+                    queueWork(r, newWork(r, Work::Kind::EndFrameIfDrawn));
                 r.lastVsync = vsync;
             }
-            r.stream.clear();
-            if (channel == 0x10009000u) // VIF1
-            {
-                const bool tagTransfer = ((chcr >> 6) & 1) != 0;
-                if (chainMode)
-                    walkChain(rdram, tadr, tagTransfer, r.stream, &r.programCalls);
-                else if ((madr & kRamMask) + qwc * 16u <= 0x02000000u)
-                    r.stream.assign(rdram + (madr & kRamMask), rdram + (madr & kRamMask) + qwc * 16u);
-                r.vif.run(r.stream.data(), r.stream.size());
-                const uint32_t chainStart = tadr & 0x7FFFFFF0u;
-                const bool frameChain = chainMode && (chainStart == (load32(rdram, kDmaLists) & 0x7FFFFFF0u) ||
-                                                      chainStart == (load32(rdram, kDmaLists + 4u) & 0x7FFFFFF0u));
-                static const bool s_stats = [] {
-                    const char *v = std::getenv("MMPC_RENDER_STATS");
-                    return v != nullptr && v[0] == '1';
-                }();
-                if (s_stats && !frameChain && r.otherVifTransfers % 300u == 299u)
-                    std::cerr << "[render] no frame list for " << (r.otherVifTransfers + 1) << " VIF1 transfers: last chcr "
-                              << std::hex << chcr << " madr " << madr << " qwc " << qwc << " tadr " << tadr << ", lists "
-                              << load32(rdram, kDmaLists) << " " << load32(rdram, kDmaLists + 4u) << std::dec << std::endl;
-                if (frameChain)
-                {
-                    publishFrame(r);
-                    r.frameListVsync = vsync;
-                    r.otherVifTransfers = static_cast<uint32_t>(-1); // this one is counted below, so the next frame starts at 0
-                    if (r.mode == Mode::Side) // F2 switches the picture shown
-                    {
-                        const bool down = ps2x::host::keyDown(SDL_SCANCODE_F2);
-                        if (down && !r.f2Down)
-                        {
-                            r.showNative = !r.showNative;
-                            std::cerr << "[render] showing the " << (r.showNative ? "native" : "emulated") << " picture" << std::endl;
-                        }
-                        r.f2Down = down;
-                    }
-                }
-            }
-            if (channel == 0x10009000u)
-                ++r.otherVifTransfers;
-            else // GIF
+            const bool vif1 = channel == 0x10009000u;
+            Work item = newWork(r, vif1 ? Work::Kind::Vif : Work::Kind::Gif);
+            if (chainMode)
+                walkChain(rdram, tadr, vif1 && ((chcr >> 6) & 1) != 0, item.data, vif1 ? &r.programCalls : nullptr);
+            else if ((madr & kRamMask) + qwc * 16u <= 0x02000000u)
+                item.data.assign(rdram + (madr & kRamMask), rdram + (madr & kRamMask) + qwc * 16u);
+            queueWork(r, std::move(item));
+            if (!vif1)
             {
                 ++r.gifTransfers;
-                if (chainMode)
-                    walkChain(rdram, tadr, false, r.stream);
-                else if ((madr & kRamMask) + qwc * 16u <= 0x02000000u)
-                    r.stream.assign(rdram + (madr & kRamMask), rdram + (madr & kRamMask) + qwc * 16u);
-                r.gs.gif(r.stream.data(), r.stream.size());
+                return;
+            }
+            const uint32_t chainStart = tadr & 0x7FFFFFF0u;
+            const bool frameChain = chainMode && (chainStart == (load32(rdram, kDmaLists) & 0x7FFFFFF0u) ||
+                                                  chainStart == (load32(rdram, kDmaLists + 4u) & 0x7FFFFFF0u));
+            if (!frameChain)
+            {
+                ++r.otherVifTransfers;
+                return;
+            }
+            Work end = newWork(r, Work::Kind::EndFrame);
+            end.programCalls.swap(r.programCalls);
+            end.gifTransfers = r.gifTransfers;
+            end.otherVifTransfers = r.otherVifTransfers;
+            end.gameSeconds = r.gameSeconds;
+            r.gifTransfers = r.otherVifTransfers = 0;
+            r.gameSeconds = 0.0;
+            queueWork(r, std::move(end));
+            r.frameListVsync = vsync;
+            if (r.mode == Mode::Side) // F2 switches the picture shown
+            {
+                const bool down = ps2x::host::keyDown(SDL_SCANCODE_F2);
+                if (down && !r.f2Down)
+                {
+                    r.showNative = !r.showNative;
+                    std::cerr << "[render] showing the " << (r.showNative ? "native" : "emulated") << " picture" << std::endl;
+                }
+                r.f2Down = down;
             }
         }
 
@@ -705,6 +839,7 @@ namespace mm::render
                 if (fresh)
                 {
                     ++r.framesDrawn;
+                    r.drawnFrames.fetch_add(1, std::memory_order_relaxed);
                     upload(r, commands, newTextures);
                     drawFrame(r, commands);
                     // textures no frame has used for a while
@@ -793,8 +928,14 @@ namespace mm::render
         r.runtime = &runtime;
         if (const char *scale = std::getenv("MMPC_RENDER_SCALE"))
             r.scale = static_cast<uint32_t>(std::clamp(std::atoi(scale), 1, 8));
+        std::thread(renderThread, &r).detach();
         runtime.memory().setDmaStartObserver(onDmaStart, &r);
         ps2x::host::setReplacement(present, &r);
+        // Native only: the emulated VU1 and GS draw nothing (frame skip on every frame: uploads, CLUT loads and register
+        // writes still happen, so the GS state the renderer reads stays right). MMPC_RENDER_EMULATED=1 keeps them drawing.
+        const char *emulated = std::getenv("MMPC_RENDER_EMULATED");
+        if (r.mode == Mode::Native && (emulated == nullptr || emulated[0] != '1'))
+            ps2xFrameSkipSetAlways(true);
         std::cerr << "[render] native renderer installed (" << value << ", scale " << r.scale << ")" << std::endl;
     }
 }
