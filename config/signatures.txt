@@ -966,8 +966,8 @@
 0x0017C1E0 int mm_WordsFn_SelectMemberB(WordsCtx *ctx);
 0x0017C230 int mm_WordsFn_SelectBuildingB(WordsCtx *ctx);
 0x0017C3E0 int mm_WordsFn_SetCancelAllowed(WordsCtx *ctx);
-0x0017C3F0 int mm_WordsFn_SetStoryFlagB(WordsCtx *ctx);
-0x0017C440 int mm_WordsFn_ClearStoryFlagB(WordsCtx *ctx);
+0x0017C3F0 int mm_WordsFn_SetScriptFlagB(WordsCtx *ctx);
+0x0017C440 int mm_WordsFn_ClearScriptFlagB(WordsCtx *ctx);
 0x0017C4A0 int mm_WordsFn_SetScriptVar(WordsCtx *ctx);
 0x0017C4B0 int mm_WordsFn_TalkEventText(WordsCtx *ctx);
 0x0017C4D0 char *mm_WordsFn_TextTalkEventName(WordsCtx *ctx);
@@ -1048,8 +1048,8 @@
 0x0017EFE0 int mm_WordsFn_Month(WordsCtx *ctx);
 0x0017F010 int mm_WordsFn_StaminaZero(WordsCtx *ctx);
 0x0017F020 int mm_WordsFn_StaminaTier(WordsCtx *ctx);
-0x0017F030 int mm_WordsFn_StoryFlagB(WordsCtx *ctx);
-0x0017F080 int mm_WordsFn_StoryFlagA(WordsCtx *ctx);
+0x0017F030 int mm_WordsFn_ScriptFlagB(WordsCtx *ctx);
+0x0017F080 int mm_WordsFn_ScriptFlagA(WordsCtx *ctx);
 0x0017F0D0 int mm_WordsFn_ScriptVar(WordsCtx *ctx);
 0x0017F0E0 int mm_WordsFn_FewChoicesLeft(WordsCtx *ctx);
 0x0017F0F0 int mm_WordsFn_RandomN(WordsCtx *ctx);
@@ -1082,9 +1082,9 @@
 0x0017FF20 int mm_WordsFn_RecentTalks(WordsCtx *ctx);
 0x0017FF80 int mm_WordsFn_FriendLevelHigh(WordsCtx *ctx);
 0x00180020 int mm_WordsFn_NameSlotSet(WordsCtx *ctx);
-0x00180050 void mm_Words_CallCond(Words *words, int index);
+0x00180050 void mm_Words_CallAct(Words *words, int index);
 0x00180070 int mm_Words_CallText(Words *words, int index);
-0x00180090 int mm_Words_CallAct(Words *words, int index);
+0x00180090 int mm_Words_CallCond(Words *words, int index);
 0x001800B0 void mm_Words_SetFewChoicesLeft(Words *words);
 0x001800C0 void mm_Words_SelectBagItem(Words *words, int index);
 0x00180180 void mm_Words_SetWantIndex(Words *words, uint16_t index);

@@ -711,11 +711,11 @@ namespace mm::globals
     inline constexpr uint32_t kTalkEventVtable = 0x001BD8F8u; // its derived class (0x60 more bytes)
 
     // words: the static constructor's registration (mm_StaticInit_Words), and the script function tables (member
-    // pointers by function number: acts, texts, conditions).
+    // pointers by function number: conditions, texts, actions).
     inline constexpr uint32_t kWordsDtor = 0x00180490u; // the destructor registered for the WORDS object
-    inline constexpr uint32_t kWordsActs = 0x001B9100u;
+    inline constexpr uint32_t kWordsConds = 0x001B9100u;
     inline constexpr uint32_t kWordsTexts = 0x001B9570u;
-    inline constexpr uint32_t kWordsConds = 0x001B9630u;
+    inline constexpr uint32_t kWordsActs = 0x001B9630u;
     // Int per member look: how far mm_Words_CollectNearbyHomes looks
     inline constexpr uint32_t kLookRanges = 0x001B97F0u;
     // Per argument a pointer to a zero-ended list of character types (mm_Words_PickResidentByType)

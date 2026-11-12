@@ -1,5 +1,5 @@
 // Talk script callbacks (WORDS): the conditions, texts and actions a talk script calls through the tables at
-// 0x1B9630, 0x1B9570 and 0x1B9100 (mm_Words_CallCond, mm_Words_CallText, mm_Words_CallAct). The interpreter uses
+// 0x1B9100, 0x1B9570 and 0x1B9630 (mm_Words_CallCond, mm_Words_CallText, mm_Words_CallAct). The interpreter uses
 // each call's v0, so every callback returns what the original leaves there: its own value, the value of the
 // function it hands on to, or v0 as it came in. Callbacks that reach blocking code (mm_Family_Get,
 // mm_Event_FormatText, mm_WordsFn_SuppliesWantBody) wait for the threading phase.
@@ -273,26 +273,27 @@ namespace mm
         return sum < 11 ? 1 : 2;
     }
 
-    // The story flags: two bitsets of the stage state (any bit number, by guest address as the original). The tests
-    // return the masked word.
+    // The script flags: two bitsets of the stage state (any bit number, by guest address as the original), saved with
+    // the city. The tests return the masked word. No script on the disc (WORDS, WORDSEVE, WORDSCOM, WORDSTEN) tests,
+    // sets or clears either set, and no code sets A.
     namespace
     {
-        uint32_t storyFlagsA() { return GuestPtr<uint32_t>::of(globals::stageState()->storyFlagsA[0]).address; }
-        uint32_t storyFlagsB() { return GuestPtr<uint32_t>::of(globals::stageState()->storyFlagsB[0]).address; }
+        uint32_t scriptFlagsA() { return GuestPtr<uint32_t>::of(globals::stageState()->scriptFlagsA[0]).address; }
+        uint32_t scriptFlagsB() { return GuestPtr<uint32_t>::of(globals::stageState()->scriptFlagsB[0]).address; }
     }
-    int WordsFn_StoryFlagA(GuestPtr<WordsCtx> ctx) { return static_cast<int>(port::load<uint32_t>(bitWord(storyFlagsA(), ctx->arg)) & bitMask(ctx->arg)); }
-    int WordsFn_StoryFlagB(GuestPtr<WordsCtx> ctx) { return static_cast<int>(port::load<uint32_t>(bitWord(storyFlagsB(), ctx->arg)) & bitMask(ctx->arg)); }
+    int WordsFn_ScriptFlagA(GuestPtr<WordsCtx> ctx) { return static_cast<int>(port::load<uint32_t>(bitWord(scriptFlagsA(), ctx->arg)) & bitMask(ctx->arg)); }
+    int WordsFn_ScriptFlagB(GuestPtr<WordsCtx> ctx) { return static_cast<int>(port::load<uint32_t>(bitWord(scriptFlagsB(), ctx->arg)) & bitMask(ctx->arg)); }
 
-    int WordsFn_SetStoryFlagB(GuestPtr<WordsCtx> ctx)
+    int WordsFn_SetScriptFlagB(GuestPtr<WordsCtx> ctx)
     {
-        const uint32_t word = bitWord(storyFlagsB(), ctx->arg);
+        const uint32_t word = bitWord(scriptFlagsB(), ctx->arg);
         port::store<uint32_t>(word, port::load<uint32_t>(word) | bitMask(ctx->arg));
         return port::guestV0();
     }
 
-    int WordsFn_ClearStoryFlagB(GuestPtr<WordsCtx> ctx)
+    int WordsFn_ClearScriptFlagB(GuestPtr<WordsCtx> ctx)
     {
-        const uint32_t word = bitWord(storyFlagsB(), ctx->arg);
+        const uint32_t word = bitWord(scriptFlagsB(), ctx->arg);
         port::store<uint32_t>(word, port::load<uint32_t>(word) & ~bitMask(ctx->arg));
         return port::guestV0();
     }
@@ -1130,10 +1131,10 @@ namespace mm
     PORT_FN(WordsFn_LaptopHasBit);
     PORT_FN(WordsFn_EventActorIs);
     PORT_FN(WordsFn_NewBuildingsTier);
-    PORT_FN(WordsFn_StoryFlagA);
-    PORT_FN(WordsFn_StoryFlagB);
-    PORT_FN(WordsFn_SetStoryFlagB);
-    PORT_FN(WordsFn_ClearStoryFlagB);
+    PORT_FN(WordsFn_ScriptFlagA);
+    PORT_FN(WordsFn_ScriptFlagB);
+    PORT_FN(WordsFn_SetScriptFlagB);
+    PORT_FN(WordsFn_ClearScriptFlagB);
     PORT_FN(WordsFn_TalkEventIsRequestOrVisit);
     PORT_FN(WordsFn_SystemEventNumber);
     PORT_FN(WordsFn_TimeOfDay);
@@ -2819,12 +2820,12 @@ namespace mm
     // words from scriptPos on until one gives a result other than -6009 ("go on") and returns it. While the banks are not
     // bound it first waits for a read still queued, binds bank 0 to the script block and, with event words, bank 3 to the
     // event block (WordsTables, from the blocks' header offsets), and picks the script's words as mm_Words_LoadForWants
-    // does. Words: below -9010 the context's argument is set (word + 10000); -9010 up to -8001 an action through its
-    // pointer, whose result says how many words to skip (from -8900 on the action is word + 8927; from -8960 the argument
-    // is the word's 26ths from -8960 and the action the remainder + 1; below that the argument is word + 9000 and the
-    // action 0); 5000 and up a line of text, added to the buffer after a separator unless it adds nothing (its result is
-    // returned at once when the line was left part-way, Words column not 0); 0 to 4999 jump to that word; -6010 up to -1
-    // that result; -6011 starts the script over; below that a condition call (word + 7000).
+    // does. Words: below -9010 the context's argument is set (word + 10000); -9010 up to -8001 a condition through its
+    // pointer, whose result says how many words to skip (from -8900 on the condition is word + 8927; from -8960 the
+    // argument is the word's 26ths from -8960 and the condition the remainder + 1; below that the argument is
+    // word + 9000 and the condition 0); 5000 and up a line of text, added to the buffer after a separator unless it adds
+    // nothing (its result is returned at once when the line was left part-way, Words column not 0); 0 to 4999 jump to
+    // that word; -6010 up to -1 that result; -6011 starts the script over; below that an action (word + 7000).
     int16_t Words_StepImpl(GuestPtr<int32_t> script, GuestPtr<char> buffer)
     {
         const GuestPtr<WordsBlock> entry{script.address};
@@ -2862,7 +2863,7 @@ namespace mm
         for (;;)
         {
             const int32_t token = words->scriptWords[words->scriptPos];
-            const auto act = [&](int index) { return port::callGuest<int>(addr::Words_CallAct, words, index); };
+            const auto cond = [&](int index) { return port::callGuest<int>(addr::Words_CallCond, words, index); };
             const auto skip = [&](int count) {
                 words->scriptPos = static_cast<uint16_t>(words->scriptPos + (static_cast<uint32_t>(count) & 0xFFFFu));
             };
@@ -2871,17 +2872,17 @@ namespace mm
             else if (token < -0x1F40)
             {
                 if (token >= -0x22C4)
-                    skip(act(token + 0x22DF));
+                    skip(cond(token + 0x22DF));
                 else if (token >= -0x2300)
                 {
                     const int32_t relative = token + 0x2300;
                     Words_SetArg(words, static_cast<uint16_t>(relative / 26));
-                    skip(act(relative % 26 + 1));
+                    skip(cond(relative % 26 + 1));
                 }
                 else
                 {
                     Words_SetArg(words, static_cast<uint16_t>(token + 0x2328));
-                    skip(act(0));
+                    skip(cond(0));
                 }
             }
             else if (token >= 0x1388)
@@ -2904,7 +2905,7 @@ namespace mm
             else if (token >= -0x177A)
                 result = token;
             else if (token != -0x177B)
-                port::callGuest<int>(addr::Words_CallCond, words, token + 0x1B58);
+                port::callGuest<int>(addr::Words_CallAct, words, token + 0x1B58);
             else
             {
                 const uint32_t data = entry->data.address;
@@ -2947,9 +2948,9 @@ namespace mm
 
     // A script's condition, text getter or action number `index`: the member function in the table (12 bytes an entry, at 0x1B9630,
     // 0x1B9570 and 0x1B9100) called on the script's context (the first word of the object).
-    void Words_CallCond(GuestPtr<Words> words, int index)
+    void Words_CallAct(GuestPtr<Words> words, int index)
     {
-        callMember(globals::kWordsConds, static_cast<uint32_t>(index), words->ctx.address);
+        callMember(globals::kWordsActs, static_cast<uint32_t>(index), words->ctx.address);
     }
 
     int Words_CallText(GuestPtr<Words> words, int index)
@@ -2957,28 +2958,28 @@ namespace mm
         return callMember(globals::kWordsTexts, static_cast<uint32_t>(index), words->ctx.address);
     }
 
-    int Words_CallAct(GuestPtr<Words> words, int index)
+    int Words_CallCond(GuestPtr<Words> words, int index)
     {
-        return callMember(globals::kWordsActs, static_cast<uint32_t>(index), words->ctx.address);
+        return callMember(globals::kWordsConds, static_cast<uint32_t>(index), words->ctx.address);
     }
 
-    PORT_FN(Words_CallCond);
-    PORT_FN(Words_CallText);
     PORT_FN(Words_CallAct);
+    PORT_FN(Words_CallText);
+    PORT_FN(Words_CallCond);
 
     // Expands one line of script text (`code` = bank * 1000 + line) into `out`, from the column the script has reached
     // (Words column) until a word ends the step. `script` is not used. The words of a line, read from the bank's line
     // codes (bank 2 through the building type's remap):
     //   10000 and up   a string of the bank (bank = (word - 10000) / 1000), appended to the output like a spoken word
     //   5000 to 9999   an answer (bank = (word - 5000) / 1000): its selector picks which of the answer record's strings is added;
-    //                  below -9000 a random one, otherwise the result of an action (the same ranges as below)
+    //                  below -9000 a random one, otherwise the result of a condition (the same ranges as below)
     //   below -9010    the context's argument is set to word + 10000
-    //   -9010 to -8001 an action through its pointer, whose result moves the column on (from -8900 the action is word + 8927; from
-    //                  -8960 the argument is (word + 8960) / 26 and the action the remainder + 1; below that the argument is
-    //                  word + 9000 and the action 0)
+    //   -9010 to -8001 a condition through its pointer, whose result moves the column on (from -8900 the condition is word + 8927;
+    //                  from -8960 the argument is (word + 8960) / 26 and the condition the remainder + 1; below that the argument
+    //                  is word + 9000 and the condition 0)
     //   -8000 to -7001 a text getter, added to the output (the same three ranges: word + 7907; arguments in sixes from -7960;
     //                  word + 8000 and getter 0)
-    //   -7000 to -6011 a condition call (word + 7000)
+    //   -7000 to -6011 an action (word + 7000)
     //   -6010, -6000 to -1   the step ends with that word, the column left after it
     //   -6009 to -6001 the step ends with that word, the column back at 0
     //   0 to 4999      jump to that column
@@ -2992,7 +2993,7 @@ namespace mm
                                             : globals::wordsBank(bank)->lineOffsets[index];
             return static_cast<int32_t>(globals::wordsBank(bank)->lineCodes[static_cast<int32_t>(column + line)]);
         };
-        const auto act = [&](int number) { return port::callGuest<int>(addr::Words_CallAct, words, number); };
+        const auto cond = [&](int number) { return port::callGuest<int>(addr::Words_CallCond, words, number); };
         const auto getText = [&](int number) { return port::callGuest<uint32_t>(addr::Words_CallText, words, number); };
         uint32_t column = words->column;
         int32_t token = word(column);
@@ -3019,16 +3020,16 @@ namespace mm
                     choice = count != 0 ? eeRemainder(lowWord(Random_Next()), count) : 0;
                 }
                 else if (selector >= -8900)
-                    choice = act(selector + 8927);
+                    choice = cond(selector + 8927);
                 else if (selector >= -8960)
                 {
                     Words_SetArg(words, static_cast<uint16_t>((selector + 8960) / 26));
-                    choice = act((selector + 8960) % 26 + 1);
+                    choice = cond((selector + 8960) % 26 + 1);
                 }
                 else
                 {
                     Words_SetArg(words, static_cast<uint16_t>(selector + 9000));
-                    choice = act(0);
+                    choice = cond(0);
                 }
                 const uint32_t first = answerRecord(token)->first;
                 Words_AppendClipped(out, GuestPtr<char>{bankString(answerBank, static_cast<uint32_t>(choice) + first)});
@@ -3039,16 +3040,16 @@ namespace mm
             {
                 int moved;
                 if (token >= -8900)
-                    moved = act(token + 8927);
+                    moved = cond(token + 8927);
                 else if (token >= -8960)
                 {
                     Words_SetArg(words, static_cast<uint16_t>((token + 8960) / 26));
-                    moved = act((token + 8960) % 26 + 1);
+                    moved = cond((token + 8960) % 26 + 1);
                 }
                 else
                 {
                     Words_SetArg(words, static_cast<uint16_t>(token + 9000));
-                    moved = act(0);
+                    moved = cond(0);
                 }
                 column += static_cast<uint32_t>(moved);
             }
@@ -3076,7 +3077,7 @@ namespace mm
                     words->column = static_cast<uint16_t>(column + 1u);
                     return static_cast<int16_t>(token);
                 }
-                port::callGuest<int>(addr::Words_CallCond, words, token + 7000);
+                port::callGuest<int>(addr::Words_CallAct, words, token + 7000);
             }
             else
                 column = static_cast<uint32_t>(token) - 1u;

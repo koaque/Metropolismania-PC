@@ -1248,8 +1248,10 @@ struct StageState {
     StageName names[26];       /* +0x000 0 the city, 1 the mayor as typed, 2 printed before it where a given name goes
                                   (empty in the saves at hand); talk code -2000 + n types names[n] (mm_TalkConv_Active);
                                   cleared by mm_Stage_Reset */
-    uint32_t storyFlagsA[4];   /* +0x1A0 bits the talk scripts test (mm_WordsFn_StoryFlagA); no code sets them */
-    uint32_t storyFlagsB[4];   /* +0x1B0 bits the talk scripts set, clear and test (mm_WordsFn_StoryFlagB) */
+    uint32_t scriptFlagsA[4];   /* +0x1A0 bits a talk script can test (mm_WordsFn_ScriptFlagA); no code sets them and no
+                                  script on the disc tests them */
+    uint32_t scriptFlagsB[4];   /* +0x1B0 bits a talk script can set, clear and test (mm_WordsFn_ScriptFlagB); no script
+                                  on the disc does */
     int32_t money;             /* +0x1C0 3000 at reset; goods are affordable up to it (mm_WordsFn_CanAfford) */
     int32_t salary;            /* +0x1C4 2500 at reset; added to the money each payday, 1250 more after a good month (mm_EvPayday_Update) */
     int32_t stage;             /* +0x1C8 stage number, -1 = none */

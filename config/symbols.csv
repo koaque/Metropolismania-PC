@@ -1627,8 +1627,8 @@ address,name,kind,source
 0x0017C1E0,mm_WordsFn_SelectMemberB,func,manual
 0x0017C230,mm_WordsFn_SelectBuildingB,func,manual
 0x0017C3E0,mm_WordsFn_SetCancelAllowed,func,manual
-0x0017C3F0,mm_WordsFn_SetStoryFlagB,func,manual
-0x0017C440,mm_WordsFn_ClearStoryFlagB,func,manual
+0x0017C3F0,mm_WordsFn_SetScriptFlagB,func,manual
+0x0017C440,mm_WordsFn_ClearScriptFlagB,func,manual
 0x0017C4A0,mm_WordsFn_SetScriptVar,func,manual
 0x0017C4B0,mm_WordsFn_TalkEventText,func,manual
 0x0017C4D0,mm_WordsFn_TextTalkEventName,func,manual
@@ -1709,8 +1709,8 @@ address,name,kind,source
 0x0017EFE0,mm_WordsFn_Month,func,manual
 0x0017F010,mm_WordsFn_StaminaZero,func,manual
 0x0017F020,mm_WordsFn_StaminaTier,func,manual
-0x0017F030,mm_WordsFn_StoryFlagB,func,manual
-0x0017F080,mm_WordsFn_StoryFlagA,func,manual
+0x0017F030,mm_WordsFn_ScriptFlagB,func,manual
+0x0017F080,mm_WordsFn_ScriptFlagA,func,manual
 0x0017F0D0,mm_WordsFn_ScriptVar,func,manual
 0x0017F0E0,mm_WordsFn_FewChoicesLeft,func,manual
 0x0017F0F0,mm_WordsFn_RandomN,func,manual
@@ -1743,9 +1743,9 @@ address,name,kind,source
 0x0017FF20,mm_WordsFn_RecentTalks,func,manual
 0x0017FF80,mm_WordsFn_FriendLevelHigh,func,manual
 0x00180020,mm_WordsFn_NameSlotSet,func,manual
-0x00180050,mm_Words_CallCond,func,manual
+0x00180050,mm_Words_CallAct,func,manual
 0x00180070,mm_Words_CallText,func,manual
-0x00180090,mm_Words_CallAct,func,manual
+0x00180090,mm_Words_CallCond,func,manual
 0x001800B0,mm_Words_SetFewChoicesLeft,func,manual
 0x001800C0,mm_Words_SelectBagItem,func,manual
 0x00180180,mm_Words_SetWantIndex,func,manual
@@ -2568,9 +2568,9 @@ address,name,kind,source
 0x001B90D0,kTalkCardFirstToday,label,manual
 0x001B90E8,kTalkCardBeenAwhile,label,manual
 0x001B90F8,kTalkTextBlank,label,manual
-0x001B9100,kWordsActs,label,manual
+0x001B9100,kWordsConds,label,manual
 0x001B9570,kWordsTexts,label,manual
-0x001B9630,kWordsConds,label,manual
+0x001B9630,kWordsActs,label,manual
 0x001B97F0,kLookRanges,label,manual
 0x001B98E0,kLoadTextLoading,label,manual
 0x001B9940,kPathReportTex,label,manual

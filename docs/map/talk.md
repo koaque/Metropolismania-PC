@@ -28,8 +28,11 @@ table). `DATA\BIN\WORDS.BIN`, `WORDSEVE.BIN`, `WORDSCOM.BIN` and `WORDSTEN.BIN` 
 their table descriptors live at `0x007181C0`. Script codes: `5000 + file * 1000 + index` select texts (file 2 is
 indexed by building type); -6000 .. -2001 open a choice menu (-2001 also shows the money panel); -2000 and up open
 name entry; -6007 ends the talk and applies the friendship gain. Conditions, text getters and actions are the 147
-`mm_WordsFn_*` member functions (the notes give each one's table index `#N`), called through `__ptmf_scall`; the
-table template at `0x001B1B4C` is copied to `0x001B9100` by `mm_StaticInit_WordsTable`.
+`mm_WordsFn_*` member functions (the notes give each one's number `#N`), called through `__ptmf_scall`: `#0` to `#93`
+are conditions (the table at `0x001B9100`, called by `mm_Words_CallCond`; the result is how many script words to
+skip), `#94` to `#109` text getters (`0x001B9570`, `mm_Words_CallText`) and `#110` to `#146` actions (`0x001B9630`,
+`mm_Words_CallAct`; the result is not used). `mm_StaticInit_WordsTable` fills the three tables from the template at
+`0x001B1B48` (16 bytes an entry).
 
 Script context (0x140 bytes): `+0` city, `+8` family A, `+0xA` member A, `+0xC` person A, `+0x10` building A,
 `+0x14` building type B, `+0x16` family B, `+0x18` member B, `+0x1C` person B, `+0x20` building B, `+0x24` bag slot,
@@ -214,8 +217,8 @@ friendship changed. A is the person talked to.
 | `0x0017C1E0` | `int mm_WordsFn_SelectMemberB(WordsCtx *ctx)` | 72 | no | #115 act: subject B = member memberIndex of family A |
 | `0x0017C230` | `int mm_WordsFn_SelectBuildingB(WordsCtx *ctx)` | 432 | no | #114 act: building B = A's (0), home (1), under the person (2), current (3), destination (4), result (5) |
 | `0x0017C3E0` | `int mm_WordsFn_SetCancelAllowed(WordsCtx *ctx)` | 12 | no | #113 act: cancelAllowed = arg (cancel button allowed) |
-| `0x0017C3F0` | `int mm_WordsFn_SetStoryFlagB(WordsCtx *ctx)` | 80 | no | #112 act: sets bit arg of 0x1C5530 |
-| `0x0017C440` | `int mm_WordsFn_ClearStoryFlagB(WordsCtx *ctx)` | 84 | no | #111 act: clears bit arg of 0x1C5530 |
+| `0x0017C3F0` | `int mm_WordsFn_SetScriptFlagB(WordsCtx *ctx)` | 80 | no | #112 act: sets bit arg of 0x1C5530 (StageState.scriptFlagsB); not used by any script on the disc |
+| `0x0017C440` | `int mm_WordsFn_ClearScriptFlagB(WordsCtx *ctx)` | 84 | no | #111 act: clears bit arg of 0x1C5530 (StageState.scriptFlagsB); not used by any script on the disc |
 | `0x0017C4A0` | `int mm_WordsFn_SetScriptVar(WordsCtx *ctx)` | 16 | no | #110 act: the talk scripts' own variable (the stage state's scriptVar) = arg |
 | `0x0017C4B0` | `int mm_WordsFn_TalkEventText(WordsCtx *ctx)` | 20 | indirect | #109 act: the talk event's handler Text with arg |
 | `0x0017C4D0` | `char *mm_WordsFn_TextTalkEventName(WordsCtx *ctx)` | 48 | no | #108 text: the talk event's title (EVENT.BIN name) |
@@ -296,8 +299,8 @@ friendship changed. A is the person talked to.
 | `0x0017EFE0` | `int mm_WordsFn_Month(WordsCtx *ctx)` | 36 | no | #36 cond: month (monthCount mod 12) |
 | `0x0017F010` | `int mm_WordsFn_StaminaZero(WordsCtx *ctx)` | 12 | no | #35 cond: tail call mm_Stamina_Zero(city->stamina), always 0 (was mm_WordsFn_Nop35) |
 | `0x0017F020` | `int mm_WordsFn_StaminaTier(WordsCtx *ctx)` | 12 | no | #34 cond: player stamina below 100000, below 1800001, or higher |
-| `0x0017F030` | `int mm_WordsFn_StoryFlagB(WordsCtx *ctx)` | 76 | no | #33 cond: bit arg of 0x1C5530 (set/cleared by #112/#111) |
-| `0x0017F080` | `int mm_WordsFn_StoryFlagA(WordsCtx *ctx)` | 76 | no | #32 cond: bit arg of 0x1C5520 |
+| `0x0017F030` | `int mm_WordsFn_ScriptFlagB(WordsCtx *ctx)` | 76 | no | #33 cond: bit arg of 0x1C5530 (StageState.scriptFlagsB, set/cleared by #112/#111); no script on the disc uses #33, #111 or #112 |
+| `0x0017F080` | `int mm_WordsFn_ScriptFlagA(WordsCtx *ctx)` | 76 | no | #32 cond: bit arg of 0x1C5520 (StageState.scriptFlagsA, saved with the city); no code sets these bits and no script on the disc tests them |
 | `0x0017F0D0` | `int mm_WordsFn_ScriptVar(WordsCtx *ctx)` | 12 | no | #31 cond: the talk scripts' own variable (the stage state's scriptVar, set by #110) |
 | `0x0017F0E0` | `int mm_WordsFn_FewChoicesLeft(WordsCtx *ctx)` | 8 | no | #30 cond: fewer than two unused entries are left in the script's menu (mm_Words_ApplyChoice) |
 | `0x0017F0F0` | `int mm_WordsFn_RandomN(WordsCtx *ctx)` | 60 | no | #29 cond: random mod arg |
@@ -330,9 +333,9 @@ friendship changed. A is the person talked to.
 | `0x0017FF20` | `int mm_WordsFn_RecentTalks(WordsCtx *ctx)` | 96 | no | #2 cond: talks with the person in the last twenty minutes |
 | `0x0017FF80` | `int mm_WordsFn_FriendLevelHigh(WordsCtx *ctx)` | 148 | no | #1 cond: friendship level above 13 for A/B (2 when not acquainted) |
 | `0x00180020` | `int mm_WordsFn_NameSlotSet(WordsCtx *ctx)` | 48 | no | #0 cond: name slot (0x1C5380 + arg*16) is not empty |
-| `0x00180050` | `void mm_Words_CallCond(Words *words, int index)` | 32 | no | calls a condition through its member function pointer (__ptmf_scall) |
+| `0x00180050` | `void mm_Words_CallAct(Words *words, int index)` | 32 | no | calls an action (#110 to #146, the table at 0x1B9630; its result is not used) through its member function pointer (__ptmf_scall) |
 | `0x00180070` | `int mm_Words_CallText(Words *words, int index)` | 32 | no | calls a text getter through its member function pointer |
-| `0x00180090` | `int mm_Words_CallAct(Words *words, int index)` | 32 | no | calls an action through its member function pointer |
+| `0x00180090` | `int mm_Words_CallCond(Words *words, int index)` | 32 | no | calls a condition (#0 to #93, the table at 0x1B9100) through its member function pointer; its result is how many script words to skip |
 | `0x001800B0` | `void mm_Words_SetFewChoicesLeft(Words *words)` | 16 | no | the script's menu has fewer than two unused entries left (fewChoicesLeft = 1) |
 | `0x001800C0` | `void mm_Words_SelectBagItem(Words *words, int index)` | 192 | no | (words, index) bagSlot = the `index`-th bag item of kinds 0x10/0x11/0x13 |
 | `0x00180180` | `void mm_Words_SetWantIndex(Words *words, uint16_t index)` | 12 | no | (words, index) wantIndex = `index` (the chosen want) |

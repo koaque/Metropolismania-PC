@@ -973,8 +973,8 @@ inline constexpr uint32_t WordsFn_FriendshipUp = 0x0017C150u;
 inline constexpr uint32_t WordsFn_SelectMemberB = 0x0017C1E0u;
 inline constexpr uint32_t WordsFn_SelectBuildingB = 0x0017C230u;
 inline constexpr uint32_t WordsFn_SetCancelAllowed = 0x0017C3E0u;
-inline constexpr uint32_t WordsFn_SetStoryFlagB = 0x0017C3F0u;
-inline constexpr uint32_t WordsFn_ClearStoryFlagB = 0x0017C440u;
+inline constexpr uint32_t WordsFn_SetScriptFlagB = 0x0017C3F0u;
+inline constexpr uint32_t WordsFn_ClearScriptFlagB = 0x0017C440u;
 inline constexpr uint32_t WordsFn_SetScriptVar = 0x0017C4A0u;
 inline constexpr uint32_t WordsFn_TalkEventText = 0x0017C4B0u;
 inline constexpr uint32_t WordsFn_TextTalkEventName = 0x0017C4D0u;
@@ -1055,8 +1055,8 @@ inline constexpr uint32_t WordsFn_HolidayMonth = 0x0017EFC0u;
 inline constexpr uint32_t WordsFn_Month = 0x0017EFE0u;
 inline constexpr uint32_t WordsFn_StaminaZero = 0x0017F010u;
 inline constexpr uint32_t WordsFn_StaminaTier = 0x0017F020u;
-inline constexpr uint32_t WordsFn_StoryFlagB = 0x0017F030u;
-inline constexpr uint32_t WordsFn_StoryFlagA = 0x0017F080u;
+inline constexpr uint32_t WordsFn_ScriptFlagB = 0x0017F030u;
+inline constexpr uint32_t WordsFn_ScriptFlagA = 0x0017F080u;
 inline constexpr uint32_t WordsFn_ScriptVar = 0x0017F0D0u;
 inline constexpr uint32_t WordsFn_FewChoicesLeft = 0x0017F0E0u;
 inline constexpr uint32_t WordsFn_RandomN = 0x0017F0F0u;
@@ -1089,9 +1089,9 @@ inline constexpr uint32_t WordsFn_TalksToday = 0x0017FEC0u;
 inline constexpr uint32_t WordsFn_RecentTalks = 0x0017FF20u;
 inline constexpr uint32_t WordsFn_FriendLevelHigh = 0x0017FF80u;
 inline constexpr uint32_t WordsFn_NameSlotSet = 0x00180020u;
-inline constexpr uint32_t Words_CallCond = 0x00180050u;
+inline constexpr uint32_t Words_CallAct = 0x00180050u;
 inline constexpr uint32_t Words_CallText = 0x00180070u;
-inline constexpr uint32_t Words_CallAct = 0x00180090u;
+inline constexpr uint32_t Words_CallCond = 0x00180090u;
 inline constexpr uint32_t Words_SetFewChoicesLeft = 0x001800B0u;
 inline constexpr uint32_t Words_SelectBagItem = 0x001800C0u;
 inline constexpr uint32_t Words_SetWantIndex = 0x00180180u;
@@ -3398,7 +3398,7 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"WordsFn_CanAfford", addr::WordsFn_CanAfford},
     {"WordsFn_CanApply", addr::WordsFn_CanApply},
     {"WordsFn_ClaimIsRoad", addr::WordsFn_ClaimIsRoad},
-    {"WordsFn_ClearStoryFlagB", addr::WordsFn_ClearStoryFlagB},
+    {"WordsFn_ClearScriptFlagB", addr::WordsFn_ClearScriptFlagB},
     {"WordsFn_ConductTier", addr::WordsFn_ConductTier},
     {"WordsFn_EventActorIs", addr::WordsFn_EventActorIs},
     {"WordsFn_EventAddWant", addr::WordsFn_EventAddWant},
@@ -3471,6 +3471,8 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"WordsFn_ReleasePerson", addr::WordsFn_ReleasePerson},
     {"WordsFn_ScheduleIs", addr::WordsFn_ScheduleIs},
     {"WordsFn_ScheduleState", addr::WordsFn_ScheduleState},
+    {"WordsFn_ScriptFlagA", addr::WordsFn_ScriptFlagA},
+    {"WordsFn_ScriptFlagB", addr::WordsFn_ScriptFlagB},
     {"WordsFn_ScriptVar", addr::WordsFn_ScriptVar},
     {"WordsFn_SelectBuildingB", addr::WordsFn_SelectBuildingB},
     {"WordsFn_SelectEventActor", addr::WordsFn_SelectEventActor},
@@ -3479,16 +3481,14 @@ inline constexpr GameFunction kGameFunctions[] = {
     {"WordsFn_SelectMemberB", addr::WordsFn_SelectMemberB},
     {"WordsFn_SetCancelAllowed", addr::WordsFn_SetCancelAllowed},
     {"WordsFn_SetPose", addr::WordsFn_SetPose},
+    {"WordsFn_SetScriptFlagB", addr::WordsFn_SetScriptFlagB},
     {"WordsFn_SetScriptVar", addr::WordsFn_SetScriptVar},
-    {"WordsFn_SetStoryFlagB", addr::WordsFn_SetStoryFlagB},
     {"WordsFn_SetSystemEventVar", addr::WordsFn_SetSystemEventVar},
     {"WordsFn_SetTalkEventVar", addr::WordsFn_SetTalkEventVar},
     {"WordsFn_StaminaTier", addr::WordsFn_StaminaTier},
     {"WordsFn_StaminaZero", addr::WordsFn_StaminaZero},
     {"WordsFn_StartEvent", addr::WordsFn_StartEvent},
     {"WordsFn_StartTalkEvent", addr::WordsFn_StartTalkEvent},
-    {"WordsFn_StoryFlagA", addr::WordsFn_StoryFlagA},
-    {"WordsFn_StoryFlagB", addr::WordsFn_StoryFlagB},
     {"WordsFn_SuppliesWantBody", addr::WordsFn_SuppliesWantBody},
     {"WordsFn_SystemEventAnswer", addr::WordsFn_SystemEventAnswer},
     {"WordsFn_SystemEventNumber", addr::WordsFn_SystemEventNumber},
@@ -4643,8 +4643,8 @@ int WordsFn_FriendshipUp(GuestPtr<WordsCtx> ctx);
 int WordsFn_SelectMemberB(GuestPtr<WordsCtx> ctx);
 int WordsFn_SelectBuildingB(GuestPtr<WordsCtx> ctx);
 int WordsFn_SetCancelAllowed(GuestPtr<WordsCtx> ctx);
-int WordsFn_SetStoryFlagB(GuestPtr<WordsCtx> ctx);
-int WordsFn_ClearStoryFlagB(GuestPtr<WordsCtx> ctx);
+int WordsFn_SetScriptFlagB(GuestPtr<WordsCtx> ctx);
+int WordsFn_ClearScriptFlagB(GuestPtr<WordsCtx> ctx);
 int WordsFn_SetScriptVar(GuestPtr<WordsCtx> ctx);
 int WordsFn_TalkEventText(GuestPtr<WordsCtx> ctx);
 GuestPtr<char> WordsFn_TextTalkEventName(GuestPtr<WordsCtx> ctx);
@@ -4725,8 +4725,8 @@ int WordsFn_HolidayMonth(GuestPtr<WordsCtx> ctx);
 int WordsFn_Month(GuestPtr<WordsCtx> ctx);
 int WordsFn_StaminaZero(GuestPtr<WordsCtx> ctx);
 int WordsFn_StaminaTier(GuestPtr<WordsCtx> ctx);
-int WordsFn_StoryFlagB(GuestPtr<WordsCtx> ctx);
-int WordsFn_StoryFlagA(GuestPtr<WordsCtx> ctx);
+int WordsFn_ScriptFlagB(GuestPtr<WordsCtx> ctx);
+int WordsFn_ScriptFlagA(GuestPtr<WordsCtx> ctx);
 int WordsFn_ScriptVar(GuestPtr<WordsCtx> ctx);
 int WordsFn_FewChoicesLeft(GuestPtr<WordsCtx> ctx);
 int WordsFn_RandomN(GuestPtr<WordsCtx> ctx);
@@ -4759,9 +4759,9 @@ int WordsFn_TalksToday(GuestPtr<WordsCtx> ctx);
 int WordsFn_RecentTalks(GuestPtr<WordsCtx> ctx);
 int WordsFn_FriendLevelHigh(GuestPtr<WordsCtx> ctx);
 int WordsFn_NameSlotSet(GuestPtr<WordsCtx> ctx);
-void Words_CallCond(GuestPtr<Words> words, int index);
+void Words_CallAct(GuestPtr<Words> words, int index);
 int Words_CallText(GuestPtr<Words> words, int index);
-int Words_CallAct(GuestPtr<Words> words, int index);
+int Words_CallCond(GuestPtr<Words> words, int index);
 void Words_SetFewChoicesLeft(GuestPtr<Words> words);
 void Words_SelectBagItem(GuestPtr<Words> words, int index);
 void Words_SetWantIndex(GuestPtr<Words> words, uint16_t index);

@@ -25,7 +25,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00100990,__destroy_global_chain,68,sdk,,verified,indirect,1,0,
 0x001009E0,sdk_mw_register_global_object,36,sdk,sdk:mwrt,verified,no,1,0,links a global object and its destructor into the exit list (0x1BDFC8)
 0x00100A10,__initialize_cpp_rts,84,sdk,,verified,indirect,1,0,
-0x00100A70,__ptmf_scall,52,sdk,,verified,indirect,3,0,"inlined into mm_Words_CallCond, mm_Words_CallText, mm_Words_CallAct"
+0x00100A70,__ptmf_scall,52,sdk,,verified,indirect,3,0,"inlined into mm_Words_CallAct, mm_Words_CallText, mm_Words_CallCond"
 0x00100AB0,__DecodeUnsignedNumber__FPcPUi,156,sdk,,named,no,7,0,
 0x00100B50,__DecodeSignedNumber__FPcPi,156,sdk,,named,no,5,0,
 0x00100BF0,__end__catch,52,sdk,,named,indirect,0,0,
@@ -1687,8 +1687,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0017C1E0,mm_WordsFn_SelectMemberB,72,game,talk,verified,no,0,1,#115 act: subject B = member memberIndex of family A
 0x0017C230,mm_WordsFn_SelectBuildingB,432,game,talk,verified,no,0,4,"#114 act: building B = A's (0), home (1), under the person (2), current (3), destination (4), result (5)"
 0x0017C3E0,mm_WordsFn_SetCancelAllowed,12,game,talk,verified,no,0,0,#113 act: cancelAllowed = arg (cancel button allowed)
-0x0017C3F0,mm_WordsFn_SetStoryFlagB,80,game,talk,verified,no,0,0,#112 act: sets bit arg of 0x1C5530
-0x0017C440,mm_WordsFn_ClearStoryFlagB,84,game,talk,verified,no,0,0,#111 act: clears bit arg of 0x1C5530
+0x0017C3F0,mm_WordsFn_SetScriptFlagB,80,game,talk,verified,no,0,0,#112 act: sets bit arg of 0x1C5530 (StageState.scriptFlagsB); not used by any script on the disc
+0x0017C440,mm_WordsFn_ClearScriptFlagB,84,game,talk,verified,no,0,0,#111 act: clears bit arg of 0x1C5530 (StageState.scriptFlagsB); not used by any script on the disc
 0x0017C4A0,mm_WordsFn_SetScriptVar,16,game,talk,verified,no,0,0,#110 act: the talk scripts' own variable (the stage state's scriptVar) = arg
 0x0017C4B0,mm_WordsFn_TalkEventText,20,game,talk,verified,indirect,0,1,#109 act: the talk event's handler Text with arg
 0x0017C4D0,mm_WordsFn_TextTalkEventName,48,game,talk,verified,no,0,0,#108 text: the talk event's title (EVENT.BIN name)
@@ -1769,8 +1769,8 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0017EFE0,mm_WordsFn_Month,36,game,talk,verified,no,0,0,#36 cond: month (monthCount mod 12)
 0x0017F010,mm_WordsFn_StaminaZero,12,game,talk,verified,no,0,1,"#35 cond: tail call mm_Stamina_Zero(city->stamina), always 0 (was mm_WordsFn_Nop35)"
 0x0017F020,mm_WordsFn_StaminaTier,12,game,talk,verified,no,0,1,"#34 cond: player stamina below 100000, below 1800001, or higher"
-0x0017F030,mm_WordsFn_StoryFlagB,76,game,talk,verified,no,0,0,#33 cond: bit arg of 0x1C5530 (set/cleared by #112/#111)
-0x0017F080,mm_WordsFn_StoryFlagA,76,game,talk,verified,no,0,0,#32 cond: bit arg of 0x1C5520
+0x0017F030,mm_WordsFn_ScriptFlagB,76,game,talk,verified,no,0,0,"#33 cond: bit arg of 0x1C5530 (StageState.scriptFlagsB, set/cleared by #112/#111); no script on the disc uses #33, #111 or #112"
+0x0017F080,mm_WordsFn_ScriptFlagA,76,game,talk,verified,no,0,0,"#32 cond: bit arg of 0x1C5520 (StageState.scriptFlagsA, saved with the city); no code sets these bits and no script on the disc tests them"
 0x0017F0D0,mm_WordsFn_ScriptVar,12,game,talk,verified,no,0,0,"#31 cond: the talk scripts' own variable (the stage state's scriptVar, set by #110)"
 0x0017F0E0,mm_WordsFn_FewChoicesLeft,8,game,talk,verified,no,0,0,#30 cond: fewer than two unused entries are left in the script's menu (mm_Words_ApplyChoice)
 0x0017F0F0,mm_WordsFn_RandomN,60,game,talk,verified,no,0,1,#29 cond: random mod arg
@@ -1803,9 +1803,9 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0017FF20,mm_WordsFn_RecentTalks,96,game,talk,verified,no,0,2,#2 cond: talks with the person in the last twenty minutes
 0x0017FF80,mm_WordsFn_FriendLevelHigh,148,game,talk,verified,no,0,3,#1 cond: friendship level above 13 for A/B (2 when not acquainted)
 0x00180020,mm_WordsFn_NameSlotSet,48,game,talk,verified,no,0,1,#0 cond: name slot (0x1C5380 + arg*16) is not empty
-0x00180050,mm_Words_CallCond,32,game,talk,verified,no,2,1,calls a condition through its member function pointer (__ptmf_scall)
+0x00180050,mm_Words_CallAct,32,game,talk,verified,no,2,1,"calls an action (#110 to #146, the table at 0x1B9630; its result is not used) through its member function pointer (__ptmf_scall)"
 0x00180070,mm_Words_CallText,32,game,talk,verified,no,1,1,calls a text getter through its member function pointer
-0x00180090,mm_Words_CallAct,32,game,talk,verified,no,2,1,calls an action through its member function pointer
+0x00180090,mm_Words_CallCond,32,game,talk,verified,no,2,1,"calls a condition (#0 to #93, the table at 0x1B9100) through its member function pointer; its result is how many script words to skip"
 0x001800B0,mm_Words_SetFewChoicesLeft,16,game,talk,verified,no,1,0,the script's menu has fewer than two unused entries left (fewChoicesLeft = 1)
 0x001800C0,mm_Words_SelectBagItem,192,game,talk,verified,no,1,0,"(words, index) bagSlot = the `index`-th bag item of kinds 0x10/0x11/0x13"
 0x00180180,mm_Words_SetWantIndex,12,game,talk,verified,no,1,0,"(words, index) wantIndex = `index` (the chosen want)"

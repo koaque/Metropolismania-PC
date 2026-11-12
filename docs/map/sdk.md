@@ -347,7 +347,7 @@ they never bind to the runtime's HLE handlers. P7 replaces whatever is still on 
 | `0x00100670` | `__throw_catch_compare` | 608 | no |  |
 | `0x00100990` | `__destroy_global_chain` | 68 | indirect |  |
 | `0x00100A10` | `__initialize_cpp_rts` | 84 | indirect |  |
-| `0x00100A70` | `__ptmf_scall` | 52 | indirect | inlined into mm_Words_CallCond, mm_Words_CallText, mm_Words_CallAct |
+| `0x00100A70` | `__ptmf_scall` | 52 | indirect | inlined into mm_Words_CallAct, mm_Words_CallText, mm_Words_CallCond |
 | `0x00100AB0` | `__DecodeUnsignedNumber__FPcPUi` | 156 | no |  |
 | `0x00100B50` | `__DecodeSignedNumber__FPcPi` | 156 | no |  |
 | `0x00100BF0` | `__end__catch` | 52 | indirect |  |

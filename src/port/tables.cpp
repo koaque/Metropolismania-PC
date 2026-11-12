@@ -4,9 +4,11 @@
 
 namespace mm
 {
-    // The start-up copy of 147 three-float vectors (12 bytes each, 16 apart in the constants at 0x1B1B48 to 0x1B2478) into a
-    // packed array at 0x1B9100 to 0x1B97EC. (The symbol name, a words table, was a guess from its size; it holds no text.)
-    // The original does it as 147 x 3 loads and stores in a straight line; the copies here are in its order.
+    // The start-up copy of the talk scripts' 147 callbacks, member function pointers (the delta added to `this`, the
+    // vtable offset or -1, the function: 12 bytes each, 16 apart in the template at 0x1B1B48 to 0x1B2478), into the
+    // tables at 0x1B9100 (conditions #0 to #93), 0x1B9570 (text getters #94 to #109) and 0x1B9630 (actions #110 to
+    // #146; mm_Words_CallCond, mm_Words_CallText and mm_Words_CallAct call through them). The original does it as
+    // 147 x 3 loads and stores in a straight line; the copies here are in its order.
     void StaticInit_WordsTable()
     {
         struct Copy
