@@ -15,7 +15,8 @@ the same for the N64's microcode. The render path itself is mapped in [RENDER_PI
 ## Graphics API
 
 SDL3's GPU API (SDL 3.4, linked statically): one renderer on Direct3D 12 or Vulkan on Windows (`PS2X_GPU=d3d12|vulkan`;
-SDL's choice by default) and Metal on macOS, with shaders written in HLSL. It was chosen over Direct3D 11 or 12 alone
+SDL's choice by default) and Metal on macOS, with shaders written in HLSL. The native renderer draws the same frames on
+both (at the eleven camera views at most nine pixels a frame differ, by one level in 255) and paces them the same. It was chosen over Direct3D 11 or 12 alone
 (Windows only, so Linux and macOS would need a second renderer), raw Vulkan (the same reach as SDL's Vulkan backend with far
 more code), and OpenGL (simple to add, but deprecated on macOS). SDL3 also gives the window, keyboard and mouse, gamepads
 and audio, so it replaced raylib as the runtime's desktop host (`patches/0155`).
