@@ -170,8 +170,7 @@ namespace mm::render
                     {
                         ends[0].stale = ends[1].stale = true;
                         ends[1].adc = true;
-                        for (int streak = 0; streak < 12; ++streak)
-                            packet.vertices.insert(packet.vertices.end(), ends, ends + 2);
+                        appendRepeated(packet.vertices, ends, 2, 12); // one pair a streak
                         continue;
                     }
                     const Vec4 corner = load(m, q);
@@ -268,8 +267,7 @@ namespace mm::render
                     {
                         corners[0].stale = corners[1].stale = true;
                         corners[1].adc = true;
-                        for (int32_t f = 0; f < flakes; ++f)
-                            packet.vertices.insert(packet.vertices.end(), corners, corners + 2);
+                        appendRepeated(packet.vertices, corners, 2, static_cast<size_t>(flakes)); // one pair a flake
                         continue;
                     }
                     const Vec4 corner = load(m, q);

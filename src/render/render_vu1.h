@@ -82,6 +82,17 @@ namespace mm::render
         return vertices.data() + at;
     }
 
+    // `times` copies of the `length` vertices at `pattern` at the end of `vertices` (a skipped quad's slots, one pair a flake).
+    inline void appendRepeated(std::vector<VuVertex> &vertices, const VuVertex *pattern, size_t length, size_t times)
+    {
+        const size_t at = vertices.size();
+        vertices.resize(at + length * times, pattern[0]);
+        VuVertex *out = vertices.data() + at;
+        for (size_t i = 0; i < times; ++i)
+            for (size_t k = 1; k < length; ++k)
+                out[i * length + k] = pattern[k];
+    }
+
     // The packets of one program run. The packets and their buffers are kept from run to run (clear() only forgets them), so
     // once the list has grown to the busiest run's size a run allocates nothing: with a long view distance thousands of runs a
     // frame allocated and freed their packets, and the heap calls took a quarter of the render thread. A packet stays where it

@@ -60,6 +60,8 @@ namespace mm::render
 
         // A number that changes whenever a page in [first, first + count) is written.
         uint64_t version(uint32_t firstPage, uint32_t pageCount) const;
+        // A number that changes whenever anything is written.
+        uint64_t clock() const { return m_clock; }
         // A hash of the bytes of the pages in [first, first + count): the same bytes give the same hash, whatever was written
         // in between (the game uploads its glyphs and palettes again every frame). A page is hashed again only after a write.
         uint64_t contentHash(uint32_t firstPage, uint32_t pageCount) const;

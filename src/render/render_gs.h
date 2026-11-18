@@ -140,6 +140,7 @@ namespace mm::render
                 m_decoded.erase(key);
             m_contentOf.clear();
             m_contentOfBytes.clear();
+            m_lastStateValid = false; // a texture the last state uses may be among them: looked up (and sent) again
         }
         Frame &frame() { return m_frame; }
 
@@ -147,6 +148,7 @@ namespace mm::render
         void kick(bool draw);
         void emit(const Vertex *v, int count, Topology topology, uint8_t snap = 0);
         DrawState currentState(Topology topology);
+        DrawState computeState(Topology topology);
         DrawState finishState(DrawState &s, uint64_t attributes, int ctx);
         bool frameBufferTexture(const Tex0 &t, int ctx, float origin[2]) const;
         Vertex makeVertex(uint64_t xyz, bool withFog);
@@ -163,6 +165,17 @@ namespace mm::render
         uint64_t m_xyoffset[2] = {}, m_scissor[2] = {0x000001BF0000027Full, 0x000001BF0000027Full}, m_fba[2] = {};
         uint64_t m_fogcol = 0, m_texa = 0, m_texclut = 0;
         uint64_t m_frameReg[2] = {};
+
+        // currentState's last answer, and what it was worked out from. A primitive drawn with the same registers, palette and
+        // texture memory gets it again without its texture being looked up (a terrain program writes TEX0 and PRIM before every
+        // quad, mostly with the values already there). Any write of another value to a register that is not vertex data, a VRAM
+        // write (its clock), a palette load, a new frame or forgotten textures make it be worked out again.
+        DrawState m_lastState{};
+        Topology m_lastTopology = Topology::Triangles;
+        uint64_t m_lastClutHash = 0, m_lastVramClock = 0;
+        bool m_lastStateValid = false;
+        uint64_t m_written[0x80] = {}; // the last value written to each register below 0x80
+        bool m_writtenOnce[0x80] = {};
 
         // the frame buffers drawn into in earlier frames (pages, width in pages, height in page rows)
         struct DrawBuffer

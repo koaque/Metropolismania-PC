@@ -195,6 +195,18 @@ namespace mm::render
 
     void Gs::write(uint32_t reg, uint64_t value)
     {
+        // a register that is not vertex data written with another value: the draw state is worked out again
+        if (reg != RGBAQ && reg != ST && reg != UV && reg != FOG && reg != XYZF2 && reg != XYZ2 && reg != XYZF3 && reg != XYZ3)
+        {
+            if (reg >= 0x80)
+                m_lastStateValid = false;
+            else if (!m_writtenOnce[reg] || m_written[reg] != value)
+            {
+                m_written[reg] = value;
+                m_writtenOnce[reg] = true;
+                m_lastStateValid = false;
+            }
+        }
         switch (reg)
         {
         case PRIM:
@@ -669,6 +681,19 @@ namespace mm::render
 
     DrawState Gs::currentState(Topology topology)
     {
+        const uint64_t clock = m_vram.clock();
+        if (m_lastStateValid && topology == m_lastTopology && m_clutHash == m_lastClutHash && clock == m_lastVramClock)
+            return m_lastState;
+        m_lastState = computeState(topology);
+        m_lastTopology = topology;
+        m_lastClutHash = m_clutHash;
+        m_lastVramClock = clock;
+        m_lastStateValid = true;
+        return m_lastState;
+    }
+
+    DrawState Gs::computeState(Topology topology)
+    {
         const uint64_t attributes = (m_prmodecont & 1) ? m_prim : m_prmode;
         const int ctx = static_cast<int>((attributes >> 9) & 1);
         DrawState s;
@@ -867,6 +892,7 @@ namespace mm::render
         m_frame.number = out.number + 1;
         m_span = 0;
         m_tintExtras = false;
+        m_lastStateValid = false; // the frame buffers drawn into changed
         return out;
     }
 
