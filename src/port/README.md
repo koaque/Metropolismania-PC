@@ -98,6 +98,10 @@ Do not edit the two generated headers; `pipeline.py stage` rewrites them.
    (pointers unchanged), which reaches cases the recorded calls never take. Leave out functions whose
    integer arguments are loop bounds, sizes or table indexes (the building draws' layer index sends
    writes into hardware space, which the port refuses).
+   A pass over every function at once (2026-11-18: two records of each, six mutated variants of each record, 645 functions with
+   arguments to mutate, 7,158 mutated runs) found differences only on inputs the game cannot produce: the port refusing a wild
+   pointer the recompiled code reads through, the original calling a garbage function pointer, a garbage pointer's high bits, stack
+   leftovers in VU0 lanes with an index that names no one. Its 80 hangs were all in the original's run, none in the port's.
    A pure numeric function (the soft float routines and libm of the platform layer: arguments and result in registers, nothing in
    memory) needs no records: `MMPC_DIFFTEST=<any directory> MMPC_DIFFTEST_NUMERIC=<cases> [MMPC_DIFFTEST_NUMERIC_FUNCTIONS=<names>]`
    (with `PS2X_HEADLESS=1`) calls each with that many random bit patterns, as the recompiled function and as the port, and compares the
@@ -143,7 +147,7 @@ passes but changes nothing (and returns nothing compared) proves nothing, and re
 return the same value may all take the same path. `--only <Names>` replays just those functions (results.json is then left
 alone), and a replay that does not return within 60 s (`MMPC_DIFFTEST_HANG_SECONDS`) is reported as
 HANG and ends the run: a made state can send the original into a wait that never ends, for instance
-when it reaches blocking code. To find why a record fails: `MMPC_DIFFTEST_RANGES=<n>` lists more of the differing
+when it reaches blocking code. The HANG line ends with the run that did not return, `(original)` or `(port)`. To find why a record fails: `MMPC_DIFFTEST_RANGES=<n>` lists more of the differing
 RDRAM ranges (and more of the ranges `--changes` lists), `MMPC_DIFFTEST_DUMP=<hex address>:<words>` prints those words of both runs, and
 `MMPC_DIFFTEST_TRACE=<function names>` prints the argument registers of every call to those functions in the original run
 and in the ported one, which shows what the two hand a callee.

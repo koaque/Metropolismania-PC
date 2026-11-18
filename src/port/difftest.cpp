@@ -36,7 +36,8 @@
 // The ones that talk to the running driver at the program's end (Sound_Shutdown, App_dtor) are too, and their child first starts
 // the driver from Sound_Init's first record.
 // A replay that does not return within MMPC_DIFFTEST_HANG_SECONDS (default 60) is reported as HANG and ends the
-// run: a record edited into a state the game never reaches can leave the original waiting forever.
+// run: a record edited into a state the game never reaches can leave the original waiting forever. The HANG line ends
+// with the run that did not return, "(original)" or "(port)"; a fuzzed one also names its variant.
 // MMPC_DIFFTEST_FROM=<function>:<record file> then resumes that function after the record that hung (it is moved away) by leaving
 // out the records that sort before the file. MMPC_DIFFTEST_ORIGINAL_ONLY=1 runs only the generated function (to see that a record
 // that hangs hangs in the original too, not in the port).
@@ -1836,6 +1837,8 @@ namespace port
                             keepFiles(runtime, rec);
                     }
                 }
+                // Each run is watched on its own, so a HANG line says which one did not return.
+                watchStart(std::string(p.name) + " " + file.filename().string() + " (original)");
                 useGenerated(runtime, true);
                 runOnce(runtime, p.original, p.address, rec, rec.ctx, original, heap);
                 // MMPC_DIFFTEST_ORIGINAL_ONLY=1 skips the port run: a record that hangs in the replay and returns here hung in the
@@ -1846,6 +1849,7 @@ namespace port
                     std::cout << "[difftest] " << p.name << " " << file.filename().string() << ": the original returned" << std::endl;
                     continue;
                 }
+                watchStart(std::string(p.name) + " " + file.filename().string() + " (port)");
                 useGenerated(runtime, false);
                 runOnce(runtime, p.wrapper, p.address, rec, rec.ctx, portedRun, heap);
                 watchStop();
@@ -1878,9 +1882,10 @@ namespace port
                     R5900Context start = rec.ctx;
                     p.mutate(&start, 0x9E3779B9u * static_cast<uint32_t>((&file - files.data()) * 1009 + variant + 1));
                     Outcome a, b;
-                    watchStart(std::string(p.name) + " " + file.filename().string() + " fuzz " + std::to_string(variant));
+                    watchStart(std::string(p.name) + " " + file.filename().string() + " fuzz " + std::to_string(variant) + " (original)");
                     useGenerated(runtime, true);
                     runOnce(runtime, p.original, p.address, rec, start, a, heap);
+                    watchStart(std::string(p.name) + " " + file.filename().string() + " fuzz " + std::to_string(variant) + " (port)");
                     useGenerated(runtime, false);
                     runOnce(runtime, p.wrapper, p.address, rec, start, b, heap);
                     watchStop();
