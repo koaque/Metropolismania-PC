@@ -14,8 +14,9 @@ GPR = {n: i for i, n in enumerate("zero at v0 v1 a0 a1 a2 a3 t0 t1 t2 t3 t4 t5 t
 
 
 class Scratchpad(bytes):
-    """The scratchpad image. `files` holds what follows it in a record: the disc files the game had open (the VFS1
-    section of src/port/difftest.cpp, empty in older records). save() writes it back, so a made record keeps them."""
+    """The scratchpad image. `files` holds what follows it in a record: the disc files the game had open and the guest
+    heap's bookkeeping (the VFS1 and HEP1 sections of src/port/difftest.cpp, absent from older records). save() writes it
+    back, so a made record keeps them."""
     files = b""
 
 

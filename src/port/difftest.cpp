@@ -5,10 +5,12 @@
 // so the first ones; "exp" takes calls 1, 8, 64, 512 ... so busy and rare functions both spread over the run),
 // counted from call MMPC_CAPTURE_FROM (0-based, default 0: the calls before it are not recorded),
 // into MMPC_CAPTURE_DIR/<name>/<n>.mmdt:
-// the CPU context at entry, all of RDRAM (deflate), the scratchpad and the disc files the game has open (a VFS1
-// section: each file's descriptor, path and offset, and the next descriptor; older records end at the scratchpad).
+// the CPU context at entry, all of RDRAM (deflate), the scratchpad, the disc files the game has open (a VFS1
+// section: each file's descriptor, path and offset, and the next descriptor) and the guest heap's bookkeeping (a HEP1
+// section: its limits and every block; older records end at the scratchpad or after VFS1).
 // The replay opens those files again under the same descriptors at the same offsets before each run, so a call
-// that reads the disc (a family record not in the cache) reads what it read in the game. Ported functions are not installed
+// that reads the disc (a family record not in the cache) reads what it read in the game, and starts from the record's heap,
+// so a call that allocates gets the block the game would have given it. Ported functions are not installed
 // during a capture, so the records show the original code at work. Records are game-derived: they stay
 // in work/difftest/ and are never committed.
 //
@@ -29,6 +31,8 @@
 // compares the result register, sp, ra and the callee-saved registers. It needs no records and runs millions of cases in seconds.
 //
 // Subset: MMPC_DIFFTEST_ONLY=<names> replays only those functions (results.json is then left as it was).
+// The functions that load the sound driver's IOP modules (Sound_LoadModules, Sound_Init, App_ctor) are replayed by a child process
+// (this program again, with MMPC_DIFFTEST_ONLY set to the function and MMPC_DIFFTEST_CHILD=1), which starts with an empty IOP.
 // A replay that does not return within MMPC_DIFFTEST_HANG_SECONDS (default 60) is reported as HANG and ends the
 // run: a record edited into a state the game never reaches can leave the original waiting forever.
 // MMPC_DIFFTEST_FROM=<function>:<record file> then resumes that function after the record that hung (it is moved away) by leaving
@@ -196,7 +200,11 @@ namespace port
             int64_t offset = 0;
             std::string path;
         };
-        constexpr char kFilesMagic[4] = {'V', 'F', 'S', '1'}; // the optional section after the scratchpad
+        constexpr char kFilesMagic[4] = {'V', 'F', 'S', '1'}; // the optional sections after the scratchpad
+        // The guest heap's bookkeeping is host-side too: without it a replayed call allocates from the replay process's own heap,
+        // whose free blocks can lie on objects that were live in the game (a constructor's big allocation then overwrites the
+        // building types it reads next). HEP1 carries the heap's limits and every block.
+        constexpr char kHeapMagic[4] = {'H', 'E', 'P', '1'};
 
         bool readOnlyDevice(const std::string &device)
         {
@@ -213,6 +221,7 @@ namespace port
             std::vector<uint8_t> scratchpad;
             std::vector<OpenDiscFile> files;
             int32_t nextDescriptor = 0;
+            PS2Runtime::GuestHeapState heap;
         };
 
         std::mutex g_queueMutex;
@@ -252,6 +261,16 @@ namespace port
                     out.write(reinterpret_cast<const char *>(&file.offset), sizeof(file.offset));
                     out.write(reinterpret_cast<const char *>(&length), sizeof(length));
                     out.write(file.path.data(), length);
+                }
+                // HEP1: base, end, limit, suggested base, configured, the block count, then per block its address, size and free flag.
+                const uint32_t limits[6] = {rec.heap.base, rec.heap.end, rec.heap.limit, rec.heap.suggestedBase,
+                                            rec.heap.configured ? 1u : 0u, static_cast<uint32_t>(rec.heap.blocks.size())};
+                out.write(kHeapMagic, 4);
+                out.write(reinterpret_cast<const char *>(limits), sizeof(limits));
+                for (const PS2Runtime::GuestHeapBlock &block : rec.heap.blocks)
+                {
+                    const uint32_t words[3] = {block.addr, block.size, block.free ? 1u : 0u};
+                    out.write(reinterpret_cast<const char *>(words), sizeof(words));
                 }
             }
             mz_free(packed);
@@ -293,6 +312,7 @@ namespace port
                 }
             std::sort(rec->files.begin(), rec->files.end(),
                       [](const OpenDiscFile &a, const OpenDiscFile &b) { return a.descriptor < b.descriptor; });
+            rec->heap = runtime.saveGuestHeapState();
             std::unique_lock<std::mutex> lock(g_queueMutex);
             g_queueChanged.wait(lock, [] { return g_queue.size() < kMaxPending; });
             g_queue.push_back(std::move(rec));
@@ -329,16 +349,44 @@ namespace port
             std::vector<OpenDiscFile> files; // records captured before the VFS1 section have none
             int32_t nextDescriptor = 0;
             bool hasFiles = false;
+            PS2Runtime::GuestHeapState heap; // records captured before the HEP1 section start from the replay's own heap
+            bool hasHeap = false;
         };
 
-        // The optional VFS1 section after the scratchpad (absent from older records; a file that ends there has none).
+        // The HEP1 section (its magic already read).
+        bool readHeap(std::ifstream &in, Record &rec, std::string &error)
+        {
+            uint32_t limits[6];
+            if (!in.read(reinterpret_cast<char *>(limits), sizeof(limits)) || limits[5] > (1u << 20))
+            {
+                error = "bad heap section";
+                return false;
+            }
+            rec.heap.base = limits[0];
+            rec.heap.end = limits[1];
+            rec.heap.limit = limits[2];
+            rec.heap.suggestedBase = limits[3];
+            rec.heap.configured = limits[4] != 0;
+            rec.heap.blocks.resize(limits[5]);
+            for (PS2Runtime::GuestHeapBlock &block : rec.heap.blocks)
+            {
+                uint32_t words[3];
+                if (!in.read(reinterpret_cast<char *>(words), sizeof(words)))
+                {
+                    error = "bad heap section";
+                    return false;
+                }
+                block = {words[0], words[1], words[2] != 0};
+            }
+            rec.hasHeap = true;
+            return true;
+        }
+
+        // The optional VFS1 section (its magic already read).
         bool readFiles(std::ifstream &in, Record &rec, std::string &error)
         {
-            char magic[4];
-            if (!in.read(magic, 4))
-                return true;
             uint32_t counts[2];
-            if (std::memcmp(magic, kFilesMagic, 4) != 0 || !in.read(reinterpret_cast<char *>(counts), sizeof(counts)) || counts[1] > 4096)
+            if (!in.read(reinterpret_cast<char *>(counts), sizeof(counts)) || counts[1] > 4096)
             {
                 error = "bad open-file section";
                 return false;
@@ -394,8 +442,18 @@ namespace port
                 error = "truncated record";
                 return false;
             }
-            if (!readFiles(in, rec, error))
-                return false;
+            // The optional sections after the scratchpad, in any order (older records end at the scratchpad, or after VFS1).
+            for (char section[4]; in.read(section, 4);)
+            {
+                const bool files = std::memcmp(section, kFilesMagic, 4) == 0, heap = std::memcmp(section, kHeapMagic, 4) == 0;
+                if (!files && !heap)
+                {
+                    error = "unknown section after the scratchpad";
+                    return false;
+                }
+                if (!(files ? readFiles(in, rec, error) : readHeap(in, rec, error)))
+                    return false;
+            }
             rec.rdram.resize(PS2_RAM_SIZE);
             const size_t size = tinfl_decompress_mem_to_mem(rec.rdram.data(), rec.rdram.size(), packed.data(), packed.size(), 0);
             if (size != PS2_RAM_SIZE)
@@ -1582,6 +1640,7 @@ namespace port
             }
         }
         std::set<std::string> onlyNames;
+        const bool childReplay = env("MMPC_DIFFTEST_CHILD") != nullptr; // started by replayInChildProcess for one function
         if (const char *names = env("MMPC_DIFFTEST_ONLY"))
         {
             std::stringstream list(names);
@@ -1679,6 +1738,22 @@ namespace port
                 continue;
             }
             ++functions;
+            // The functions that load the sound driver's IOP modules (App_ctor through Sound_Init) are replayed in a child process of
+            // their own: the replay does not reset the IOP, and every load takes new room in its module arena (the loaded modules'
+            // threads and RPC servers stay too), so after a few runs the loads fail and the game retries them forever. A child starts
+            // with an empty IOP.
+            if (!childReplay && (std::strcmp(p.name, "Sound_LoadModules") == 0 || std::strcmp(p.name, "Sound_Init") == 0 ||
+                                 std::strcmp(p.name, "App_ctor") == 0))
+            {
+                const int code = replayInChildProcess(p.name);
+                if (code < 0)
+                    std::cout << "[difftest] " << p.name << ": the child process did not start" << std::endl;
+                const size_t bad = code == 0 ? 0 : code < 0 ? files.size() : std::min(static_cast<size_t>(code), files.size());
+                records += files.size();
+                failed += bad;
+                addResult(p, files.size(), bad);
+                continue;
+            }
             size_t ok = 0, fuzzRuns = 0, fuzzOk = 0, fuzzReported = 0;
             const size_t failedBefore = failed;
             const bool fuzzThis = fuzzCount > 0 && p.mutate && (fuzzAll || fuzzNames.count(p.name) != 0);
@@ -1699,7 +1774,7 @@ namespace port
                 watchStart(std::string(p.name) + " " + file.filename().string());
                 // A record named warm<N>_... is first advanced by N calls of the original with its arguments: the state a function that
                 // works in steps over many frames reaches by itself (memory and heap bookkeeping carry over from call to call).
-                PS2Runtime::GuestHeapState heap = baseHeapState(runtime);
+                PS2Runtime::GuestHeapState heap = rec.hasHeap ? rec.heap : baseHeapState(runtime);
                 {
                     const std::string recordName = file.filename().string();
                     const size_t warmCalls = recordName.rfind("warm", 0) == 0 ? std::strtoul(recordName.c_str() + 4, nullptr, 10) : 0;
@@ -1794,8 +1869,9 @@ namespace port
         results += "\n}\n";
         if (onlyNames.empty())
             std::ofstream(dir / "results.json", std::ios::binary) << results;
-        std::cout << "[difftest] " << functions << " function(s) tested, " << untested << " without records; " << records
-                  << " record(s), " << failed << " failed" << std::endl;
+        if (!childReplay) // a child's records are counted in its parent's line
+            std::cout << "[difftest] " << functions << " function(s) tested, " << untested << " without records; " << records
+                      << " record(s), " << failed << " failed" << std::endl;
         std::cout.flush();
         std::exit(static_cast<int>(std::min<size_t>(failed, 125)));
     }

@@ -19,7 +19,7 @@ Rendering below the scene level.
 
 ## Functions
 
-117 functions (ported 1, verified 116). Blocks: 30 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+117 functions (verified 117). Blocks: 30 can reach a thread switch, 2 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|

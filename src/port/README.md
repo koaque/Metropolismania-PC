@@ -162,12 +162,21 @@ and the ported one's: the guest heap and the file descriptors are saved and rest
 RPC bind counter and server descriptors of the sound driver and the memory card's file numbers are not.
 Records that depend on them differ in a few bytes the game only keeps (`Sound_Init`, `McSave_WriteIconSys`,
 `PauseMenu_StateSave`: ignore rules in `difftest.cpp`).
+The IOP is not reset either, and each load of the sound driver's six modules takes new room in its module arena (the
+loaded copies keep their threads and RPC servers), so after a few replayed loads every load fails and the game retries
+forever. The functions that load them (`Sound_LoadModules`, `Sound_Init`, `App_ctor`) are therefore replayed by a child
+process of their own (the runner started again for that one function), which begins with an empty IOP.
 The disc files the game has open are part of a record since 2026-11-17: each file's descriptor, path and offset
 (a section after the scratchpad), opened again under the same descriptor at the same offset before each run.
 The family file is opened at the start and stays open, and a family not in the cache is read from it, so a
 call that reads a family (`Family_Get`, `Words_LoadForFamily`, the event checks) now reads what it read in the
 game. Records captured before that have no such section and hang in the original too when they read the disc
 (the ones parked in `work/difftest_hung`). `tools/record_patch.py` keeps the section in the records it makes.
+The guest heap's bookkeeping is part of a record too (a second section: the heap's limits and every block). Older
+records start every run from the heap the replay process had when the first replay began, whose free blocks can lie
+on objects the game still used: a call that allocates then overwrites them in both runs alike (the two runs still
+agree, but on a state the game never had), and the map constructors' large blocks landed on the building
+types (`MapObj_Init` then jumped through a null slot). A record with the section starts from the game's own heap.
 The movie decoder's hardware (IPU, DMA channels, the MPEG library's ring state) is the same kind of state:
 `Movie_ReadAndDemux` record 002 passes alone and fails after record 001 ran first, so it is parked in
 `work/difftest_hung`.
@@ -176,21 +185,20 @@ scratch values (`Person_ChooseDestination`, `CityCursor_Update`, `Person_Update`
 A new save's name carries the console clock in seconds, which ticks between the two runs: the last digits of the sixteen
 name slots are not compared for `McManager_NewSaveName`, `McManager_PrepareNewSlot` and the pause menu's slot list.
 
-Functions with no record the replay can finish stay at "ported" in `docs/PORT_STATUS.md` (18 of the game's
-1,481 now): the four map and city constructors (`CityMap_ctor`, `MapPeople_ctor`, `MapObjects_ctor`,
-`CityRender_ctor`: the original side stops at a null jump in `MapObj_Init`'s slot call, so they were only
-checked in live runs), `Sound_Init` (its record passes only when replayed alone: the sound driver's RPC state
-is not reset between records), the movie and sound shutdown paths that switch threads (`Movie_DisplayStart`,
+Functions with no record the replay can finish stay at "ported" in `docs/PORT_STATUS.md` (12 of the game's
+1,481 now): the movie and sound shutdown paths that switch threads (`Movie_DisplayStart`,
 `Movie_ResumeAll`, `Sound_Shutdown`), the movie decoder's thread and setup code (`Movie_VideoDecMain`,
 `Movie_DecodeLoop`, `Movie_PlayPss`, `Movie_InitAll`, `Movie_ClearScreen`: the original exits or hangs in the
 replay, or the replay switches thread; `PlayOpeningMovie` never runs in a capture) and the program's frame
-(`Main`, `MainLoop`, `App_ctor`, `App_dtor`); `config/port_status.csv` has the full list.
+(`Main`, `MainLoop`, `App_dtor`); `config/port_status.csv` has the full list. The four map and city constructors
+(`CityMap_ctor`, `MapPeople_ctor`, `MapObjects_ctor`, `CityRender_ctor`) are verified from records with the heap section
+(a new game and a loaded save), and `Sound_Init` and `App_ctor` from records replayed in their own process.
 The rest of the functions no autoplay reaches were verified from made records (real captured states with the
 arguments and a few words changed, as above). `Movie_Error` and `Movie_CbError` only print, which
 the difftest does not compare: their records show the same memory and result, and their printf arguments were
 checked against the generated code. `GameUpdate` is verified (58 records: the states that make and run the title and the briefing, running the city, the answers of the
-title, briefing and city; the two records that make the city scene hang the original too, so that step is not covered). `Main`, `MainLoop` and `App_ctor` can not be replayed (the loop never returns,
-the constructor restarts the IOP): they were checked by live runs with every function ported, new game and explore, and they stay "ported".
+title, briefing and city; the two records that make the city scene hang the original too, so that step is not covered). `Main` and `MainLoop` can not be replayed (the loop never
+returns): they were checked by live runs with every function ported, new game and explore, and they stay "ported".
 
 ## The IOP port (`src/port/iop/`)
 

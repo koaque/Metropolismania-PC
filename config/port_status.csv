@@ -987,7 +987,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00140490,mm_TerrainGen_River,1732,game,map,verified,no,1,10,"terrain generation: one river. It starts on the map's edge at a point set by `start` and walks in steps. Each step moves the position by (0, 0, 1.5 + width) turned by two Y rotations, one swaying with sin(phase) and one turning with cos(heading), and drops a mode 3 bump of reach 1.5 + width + |cos(phase)| (and 1.4 times that for height, at least 3.2) at the tile the position falls on"
 0x00140B60,mm_TerrainGen_Generate,1180,game,map,verified,no,1,7,"terrain generation: builds the whole map from a 10 x 10 grid of cells (16 tiles each) behind a 4-byte river header (`params`). A cell byte holds the terrain type in bits 0..2 (1 to 4: hills of four heights, mm_TerrainGen_Hill; 6 a lake and 7 the sea, mm_TerrainGen_Basin) and a plant style in bits 4..6"
 0x00141010,mm_CityMap_DeletingDtor,96,game,map,verified,yes,1,2,"vtable 0x1BCED0, then the render-level destructor"
-0x00141070,mm_CityMap_ctor,52,game,map,ported,yes,1,1,"render-level constructor, vtable 0x1BCED0"
+0x00141070,mm_CityMap_ctor,52,game,map,verified,yes,1,1,"render-level constructor, vtable 0x1BCED0"
 0x001410B0,mm_Map_TileIsSea,92,game,map,verified,no,1,0,"(map, x, z) whether tile (`x`, `z`) belongs to the sea (tile flag 0x20: lowered by a type 7 terrain cell, mm_TerrainGen_Basin; layer B draws its bed with GROUND.TEX's sand, part 17, where a lake gets rock, part 24; ambience 0x1C instead of 0x1D); 0 off the map"
 0x00141110,mm_Map_TileIsCorner,92,game,map,verified,no,1,0,"tile flag 1: the corner tile an object was placed from (mm_Map_PlaceObject), 0 off the map"
 0x00141170,mm_Map_TileIsLeveled,92,game,map,verified,no,1,0,"(map, x, z) whether tile (`x`, `z`) is leveled ground (tile flag 8: leveled land or anything standing on it, a type with flag 1); 0 off the map"
@@ -1022,7 +1022,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00142F90,mm_Family_AssignHome,1004,game,family,verified,yes,1,5,"moves a family in: a person record for each member at the middle of the building's tile (their home, MapPerson.home), with a schedule state, the member's look as its flags (8 added for drivers) and an introduction, each scored for its character class; drivers bring the family's car (character type 0x34) unless the building's schedule is 9 or 0xB. The population rises and the family is flagged (mm_Family_MoveIn)"
 0x00143380,mm_MapPeople_Tick,408,game,map,verified,indirect,0,3,"people level slot +8: ticks each person's class with time flags (1 every 600 s, 2 hourly, 4 daily, 8 yearly), member status, then the object level"
 0x00143520,mm_MapPeople_dtor,132,game,map,verified,yes,1,3,"vtable 0x1BCEE0, frees the people array, object-level destructor"
-0x001435B0,mm_MapPeople_ctor,124,game,map,ported,yes,1,3,"object-level constructor, vtable 0x1BCEE0, 6000 people of 0x30 bytes"
+0x001435B0,mm_MapPeople_ctor,124,game,map,verified,yes,1,3,"object-level constructor, vtable 0x1BCEE0, 6000 people of 0x30 bytes"
 0x00143690,mm_MapObj_GetHeight,192,game,map,verified,no,4,1,"(map, object) height of object `object`: its tile's height less 0.8 (0.8 higher) for each object stacked under it"
 0x00143750,mm_CityMap_PushNewBuildings,52,game,map,verified,no,1,1,"new month: the six monthly counts of new buildings for families (newBuildings, type flag 8) move on by one, this month's starting at 0"
 0x00143790,mm_CityMap_SumNewBuildings,56,game,map,verified,no,1,0,the new buildings for families in the last six months (the sum of newBuildings)
@@ -1051,7 +1051,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00145630,mm_MapObjects_ClearObject,8,game,map,verified,no,0,0,the clearObject slot at the object level: empty
 0x00145640,mm_MapObjects_Tick,608,game,map,verified,indirect,1,4,"every object that stands in the scan's current column of 128 (tickSlice, stepping through 128 stripes; the scan is 0x3F80 records) asks its building type (tick slot, with the ""any flag-8 object"" word) whether it falls down; if so, a sound is requested (unless the type is flag 0x80), the minimap plots the lot, the object is removed (the map's clearObject slot) and rubble is laid where it stood"
 0x001458A0,mm_MapObjects_dtor,156,game,map,verified,yes,1,3,"vtable 0x1BCEF0, frees objects and lists, tile-level destructor"
-0x00145940,mm_MapObjects_ctor,680,game,map,ported,yes,1,8,"tile-level constructor, vtable 0x1BCEF0, object records and tile lists"
+0x00145940,mm_MapObjects_ctor,680,game,map,verified,yes,1,8,"tile-level constructor, vtable 0x1BCEF0, object records and tile lists"
 0x00145C00,mm_Map_SetPlacementHighlight,8,game,map,verified,no,3,1,"the placement layer's highlight (mm_PlacementLayer_Set) for `mode` over the rectangle, in `colour`"
 0x00145C10,mm_Terrain_AddQuad,204,game,map,verified,no,1,0,"(map, a, b, c, d, texture, coordSet, flags) appends a quad (four vertices) to the terrain buffer while there is room (0x9BD vertices). The w words carry draw data (docs/RENDER_PIPELINE.md): the first TEX0's low word from `texture` (1 on, the base at 0x1BD990), the second the VU1 address of texture-coordinate set `coordSet` (0x21 plus its entry of the table at 0x1AF360), the third the quad's flags; the fourth vertex is copied whole"
 0x00145CE0,mm_Terrain_BuildStrip,2592,game,map,verified,no,1,0,"the cliff sides of terrain tile (x, z): towards each neighbour whose facing corners stand higher, up to two triangles into the side buffer (sideWrite, 0x86E vertices)"
@@ -1069,7 +1069,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00148980,mm_CityRender_DrawPlacement,36,game,gfx,verified,no,1,1,"the placement layer's pass (0 the highlighted rectangle, 1 the marker) with this frame's chunk packet; it draws only while a building is being placed"
 0x001489B0,mm_CityRender_DrawTerrain,136,game,gfx,verified,no,1,3,"the terrain: the base ground pass over this frame's chunk packet, the cliff sides, then layers B and F over the same chunk packet"
 0x00148A40,mm_CityRender_dtor,364,game,gfx,verified,yes,1,10,"vtable 0x1BCF00; deletes the seven layers and buffers, people-level destructor"
-0x00148BB0,mm_CityRender_ctor,436,game,gfx,ported,yes,1,16,"people-level constructor, vtable 0x1BCF00; builds the terrain packets and the seven layers in the packet buffer"
+0x00148BB0,mm_CityRender_ctor,436,game,gfx,verified,yes,1,16,"people-level constructor, vtable 0x1BCF00; builds the terrain packets and the seven layers in the packet buffer"
 0x00148D70,mm_TexImage_Convert,856,game,gfx,verified,no,1,0,"(image, textureBlock, clutBlock): DMA packet over the start of the image that uploads its palette and texels (PSMT4/PSMT8/32-bit, square) to the given GS blocks"
 0x001490D0,mm_TexImage_Upload,8,game,gfx,verified,yes,1,1,(image) sends the converted image's upload packet at once (a jump to mm_Dma_KickVif1Now)
 0x001490E0,mm_TexImage_dtor,100,game,gfx,verified,yes,1,2,frees the image data (file); delete when the flag is > 0
@@ -1895,7 +1895,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001854E0,mm_MainLoop,460,game,app,ported,yes,1,13,"calls app vtable +8 once, sets up the display (640x448), then per frame: pad, file queue, memory card queue, sound, kick the DMA list, flip it, app vtable +0xC (the game update), swap buffers on vsync"
 0x001856C0,mm_App_OnInit,8,game,app,verified,no,0,0,App base class (vtable 0x1BD8D0) slot +8; empty
 0x001856D0,mm_App_dtor,108,game,app,ported,yes,1,4,"vtable 0x1BD8D0; shuts down sound (0x18F450), frees the DMA lists and the font; deletes this when the flag is > 0"
-0x00185740,mm_App_ctor,644,game,app,ported,yes,1,21,"(was mm_InitSystemModules) vtable 0x1BD8D0; boots the IOP with IOPRP243.IMG, inits CD/SIF/file system, seeds the random generator with 12345, loads SIO2MAN/MCMAN/MCSERV/PADMAN, inits pad, file queue, font, memory card queue, DMA lists and sound"
+0x00185740,mm_App_ctor,644,game,app,verified,yes,1,21,"(was mm_InitSystemModules) vtable 0x1BD8D0; boots the IOP with IOPRP243.IMG, inits CD/SIF/file system, seeds the random generator with 12345, loads SIO2MAN/MCMAN/MCSERV/PADMAN, inits pad, file queue, font, memory card queue, DMA lists and sound"
 0x001859D0,mm_Math_LinePlaneIntersect,724,game,math,verified,no,3,0,"(point, out, dx, dy, dz, a, b, c, d) where the line through `point` with direction (`dx`, `dy`, `dz`) meets the plane a x + b y + c z + d = 0: *`out` = (x, y, z, 1) and 1, or 0 when the line runs parallel to it; zero direction components take their own formulas"
 0x00185CB0,mm_Math_RayPlaneDistance,228,game,math,verified,no,1,1,"(from, to, planePoint, hit, *distance): where the ray from `from` towards `to` meets the plane through planePoint facing along it; returns (f0) and stores the distance from planePoint to that point, v0 = 1"
 0x00185DA0,mm_Math_ProjectionMatrix,204,game,math,verified,no,2,1,"(matrix, screen, distance, zNear, zFar) a perspective matrix into `matrix`: m0 = 2n / w and m5 = 2n / h, w and h being twice `screen`[0] and `screen`[1] scaled by `zNear` / `distance`; m10 = (f + n) / (f - n), m14 = -2fn / (f - n), m11 = 1, m15 = 0, with n = `zNear` and f = `zFar`"
@@ -1990,7 +1990,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0018F200,mm_Sound_GetStatus,124,game,sound,verified,no,5,1,refreshes the status copy at 0x20B840 (merged with the pending masks) and returns it
 0x0018F280,mm_Sound_LoadModules,452,game,sound,verified,yes,1,2,"(was mm_LoadSoundModules) loads LIBSD, SDRDRV, MODMIDI, MODHSYN, MODSEIN, YYSOUND, retrying each until it loads"
 0x0018F450,mm_Sound_Shutdown,80,game,sound,ported,yes,1,2,YYSound RPC function 0
-0x0018F4A0,mm_Sound_Init,300,game,sound,ported,yes,1,6,"(was mm_InitSound) loads the modules, binds RPC 0x12346, sends function 1 with the status block address, clears the command ring"
+0x0018F4A0,mm_Sound_Init,300,game,sound,verified,yes,1,6,"(was mm_InitSound) loads the modules, binds RPC 0x12346, sends function 1 with the status block address, clears the command ring"
 0x0018F5D0,mm_EvShoppingTogether_Answer,32,game,event,verified,no,0,0,"(data, city, actor, mode) type 1: Answer (returns the outcome when `mode` == 0)"
 0x0018F5F0,mm_EvShoppingTogether_Update,900,game,event,verified,yes,0,7,type 1: Update
 0x0018F980,mm_EvShoppingTogether_End,192,game,event,verified,no,0,3,type 1: End (clears the building marks)

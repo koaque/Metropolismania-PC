@@ -16,4 +16,7 @@ namespace port
     void installGeneratedAudit(PS2Runtime &runtime);
     // With MMPC_DIFFTEST set: replays the records, prints the results and exits the process.
     void runDifftestIfRequested(PS2Runtime &runtime);
+    // Runs this program again with MMPC_DIFFTEST_ONLY=<name> (and MMPC_DIFFTEST_CHILD=1) on the same output and waits for it:
+    // its exit code (the records that failed, 124 for a hang), or -1 when it could not be started (difftest_process.cpp).
+    int replayInChildProcess(const char *name);
 }
