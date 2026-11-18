@@ -34,29 +34,34 @@ namespace mm::render
     };
 
     // A register write a program puts in its packet before a vertex (the terrain passes' TEX0_1 and PRIM). `stale`: the
-    // program leaves that slot of its output buffer as it was (a quad it skips), so it is not sent here.
+    // program leaves that slot of its output buffer as it was (a quad it skips), so it is not sent here. Packed to 16 bytes
+    // (the value unaligned), and the vertex's flags kept together, so a vertex is 72 bytes rather than 88: programs build and
+    // copy hundreds of thousands of them a frame at a long view distance.
+#pragma pack(push, 4)
     struct VuRegister
     {
         uint32_t reg = 0;
         uint64_t value = 0;
         bool stale = false;
     };
+#pragma pack(pop)
 
     // One vertex as a program sends it: what the GS would get, before the conversion to fixed point.
     struct VuVertex
     {
         VuRegister before[2]; // register writes ahead of this vertex, in packet order
-        uint8_t beforeCount = 0;
-        bool stale = false;   // a slot the program does not write but for its ADC bit (a skipped quad): not drawn
-        bool hasSt = true;    // the packet gives this vertex an ST (the rain's lines do not)
-        bool hasRgba = true;  // and an RGBAQ (the snow's sprites do not: their colour is the packet before's)
         float x = 0, y = 0;   // screen position in GS units (pixels, with the GS's 2048 offset)
         float z = 0;          // depth in GS Z units
         float fog = 0;        // 0..255, the GS's F
         float s = 0, t = 0, q = 1;
         uint8_t rgba[4] = {};
+        uint8_t beforeCount = 0;
+        bool stale = false;   // a slot the program does not write but for its ADC bit (a skipped quad): not drawn
+        bool hasSt = true;    // the packet gives this vertex an ST (the rain's lines do not)
+        bool hasRgba = true;  // and an RGBAQ (the snow's sprites do not: their colour is the packet before's)
         bool adc = false;     // drawing kick off: the vertex only moves the strip on
     };
+    static_assert(sizeof(VuRegister) == 16 && sizeof(VuVertex) == 72, "VuVertex's packing");
 
     // What one program run sends: GIF packets of a tag, its A+D writes, and vertices. `tag` is the GIF tag as the program
     // writes it (NLOOP filled in); the packet's registers per vertex are the tag's (ST, RGBAQ, XYZF2 in every program here).
@@ -71,8 +76,9 @@ namespace mm::render
     // them aside and copy them in: the first of them. Valid until the next vertex is added.
     inline VuVertex *appendVertices(std::vector<VuVertex> &vertices, size_t count)
     {
+        static const VuVertex kDefault{}; // copied in: cheaper than constructing each member by member
         const size_t at = vertices.size();
-        vertices.resize(at + count);
+        vertices.resize(at + count, kDefault);
         return vertices.data() + at;
     }
 
