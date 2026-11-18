@@ -1,0 +1,305 @@
+Undoable guest writes. PS2Memory::beginGuestSnapshot / endGuestSnapshot let code run on the side (an enhancement that draws more with the game's own draw code) and leave guest memory as it was: RDRAM is allocated page-aligned, and between the two calls the first write to each page saves it (Windows: pages made read-only, a vectored exception handler saves and opens a page at its first write, so the cost follows the pages written; elsewhere the whole block is copied); the scratchpad and the deterministic timer 0 state (patch 0154) are kept too. endGuestSnapshot puts it all back. Only the thread that began it may write meanwhile (a write from another thread waits until the end). runtime/ps2_guest_snapshot.h has the tracking itself.
+
+diff --git a/ps2xRuntime/include/runtime/ps2_memory.h b/ps2xRuntime/include/runtime/ps2_memory.h
+--- a/ps2xRuntime/include/runtime/ps2_memory.h
++++ b/ps2xRuntime/include/runtime/ps2_memory.h
+@@ -275,6 +275,12 @@ public:
+     // Memory access methods
+     uint8_t *getRDRAM() { return m_rdram; }
+     uint8_t *getScratchpad() { return m_scratchpad; }
++    // Undoable guest writes (runtime/ps2_guest_snapshot.h): from beginGuestSnapshot, the first write to each RDRAM page saves
++    // it, and the scratchpad and the deterministic timer 0 state (PS2X_TIMER0=frame) are kept; endGuestSnapshot puts all of
++    // them back and returns the RDRAM pages it restored. For guest code run on the side (an enhancement drawing more with the
++    // game's own draw code) that must leave no trace. Same thread only; false when one is already open.
++    bool beginGuestSnapshot();
++    size_t endGuestSnapshot();
+     uint8_t *getIOPRAM() { return iop_ram; }
+     uint64_t dmaStartCount() const { return m_dmaStartCount.load(std::memory_order_relaxed); }
+     // Called when the guest starts a VIF1 (0x10009000) or GIF (0x1000A000) DMA transfer, before the runtime takes it up:
+@@ -380,8 +386,11 @@ public:
+     uint8_t *getGSVRAM() { return m_gsVRAM; }
+     const uint8_t *getGSVRAM() const { return m_gsVRAM; }
+     bool hasSeenGifCopy() const { return m_seenGifCopy; }
+-    // Main RAM (32MB)
++    // Main RAM (32MB), page-aligned so its writes can be tracked
+     uint8_t *m_rdram;
++    size_t m_rdramSize = 0;
++    std::vector<uint8_t> m_snapshotScratchpad;
++    uint32_t m_snapshotTimer0[2] = {};
+ 
+     // Scratchpad memory (16KB)
+     uint8_t *m_scratchpad;
+diff --git a/ps2xRuntime/src/lib/ps2_memory.cpp b/ps2xRuntime/src/lib/ps2_memory.cpp
+--- a/ps2xRuntime/src/lib/ps2_memory.cpp
++++ b/ps2xRuntime/src/lib/ps2_memory.cpp
+@@ -1,4 +1,5 @@
+ #include "runtime/ps2_memory.h"
++#include "runtime/ps2_guest_snapshot.h"
+ #include "runtime/ps2_address.h"
+ #include "runtime/gs/gs_frontend.h"
+ #include "ps2_log.h"
+@@ -291,7 +292,7 @@ PS2Memory::~PS2Memory()
+ {
+     if (m_rdram)
+     {
+-        delete[] m_rdram;
++        ps2x::snapshot::freeTrackable(m_rdram, m_rdramSize);
+         m_rdram = nullptr;
+     }
+ 
+@@ -336,11 +337,34 @@ PS2Memory::~PS2Memory()
+     }
+ }
+ 
++bool PS2Memory::beginGuestSnapshot()
++{
++    if (m_rdram == nullptr || !ps2x::snapshot::begin(m_rdram, m_rdramSize))
++        return false;
++    m_snapshotScratchpad.assign(m_scratchpad, m_scratchpad + PS2_SCRATCHPAD_SIZE);
++    const DeterministicTimer0 &timer = deterministicTimer0();
++    m_snapshotTimer0[0] = timer.writes;
++    m_snapshotTimer0[1] = timer.reads;
++    return true;
++}
++
++size_t PS2Memory::endGuestSnapshot()
++{
++    if (!ps2x::snapshot::active())
++        return 0;
++    const size_t pages = ps2x::snapshot::end();
++    std::memcpy(m_scratchpad, m_snapshotScratchpad.data(), PS2_SCRATCHPAD_SIZE);
++    DeterministicTimer0 &timer = deterministicTimer0();
++    timer.writes = m_snapshotTimer0[0];
++    timer.reads = m_snapshotTimer0[1];
++    return pages;
++}
++
+ bool PS2Memory::initialize(size_t ramSize)
+ {
+     auto cleanup = [this]()
+     {
+-        delete[] m_rdram;
++        ps2x::snapshot::freeTrackable(m_rdram, m_rdramSize);
+         delete[] m_scratchpad;
+         delete[] iop_ram;
+         delete[] m_gsVRAM;
+@@ -386,7 +410,10 @@ bool PS2Memory::initialize(size_t ramSize)
+     try
+     {
+         // Allocate main RAM
+-        m_rdram = new uint8_t[ramSize];
++        m_rdram = ps2x::snapshot::allocateTrackable(ramSize);
++        m_rdramSize = ramSize;
++        if (m_rdram == nullptr)
++            throw std::bad_alloc();
+         std::memset(m_rdram, 0, ramSize);
+ 
+         // Allocate scratchpad
+diff --git a/ps2xRuntime/CMakeLists.txt b/ps2xRuntime/CMakeLists.txt
+--- a/ps2xRuntime/CMakeLists.txt
++++ b/ps2xRuntime/CMakeLists.txt
+@@ -395,6 +395,7 @@ add_library(ps2_runtime STATIC
+     src/lib/gs/gs_threaded_backend.cpp
+     src/lib/ps2_iop_host.cpp
+     src/lib/ps2_memory.cpp
++    src/lib/ps2_guest_snapshot.cpp
+     src/lib/ps2_pad.cpp
+     src/lib/ps2_host_input.cpp
+     src/lib/ps2_host_sdl.cpp
+diff --git a/ps2xRuntime/include/runtime/ps2_guest_snapshot.h b/ps2xRuntime/include/runtime/ps2_guest_snapshot.h
+new file mode 100644
+--- /dev/null
++++ b/ps2xRuntime/include/runtime/ps2_guest_snapshot.h
+@@ -0,0 +1,25 @@
++#pragma once
++
++// Undoable writes to a block of guest memory (RDRAM): after begin(), the first write to each page saves that page; end()
++// puts every saved page back. Used to draw extra things with the guest's own code and then leave the guest's memory as if
++// it had not run (an enhancement that must not change the game's logic). Only the thread that called begin() may write
++// the block meanwhile; another thread that writes it waits until end().
++//
++// Windows: the pages are made read-only and a vectored exception handler saves and opens each one at its first write, so
++// the cost follows the pages written. Elsewhere the whole block is copied at begin() and back at end().
++
++#include <cstddef>
++#include <cstdint>
++
++namespace ps2x::snapshot
++{
++    // A block whose pages can be tracked (page-aligned, whole pages), zeroed; freed with freeTrackable.
++    uint8_t *allocateTrackable(size_t bytes);
++    void freeTrackable(uint8_t *block, size_t bytes);
++
++    // Starts tracking writes to the block (made with allocateTrackable). False when tracking is already on.
++    bool begin(uint8_t *block, size_t bytes);
++    // Puts back every page written since begin() and stops tracking. Returns the pages it restored.
++    size_t end();
++    bool active();
++}
+diff --git a/ps2xRuntime/src/lib/ps2_guest_snapshot.cpp b/ps2xRuntime/src/lib/ps2_guest_snapshot.cpp
+new file mode 100644
+--- /dev/null
++++ b/ps2xRuntime/src/lib/ps2_guest_snapshot.cpp
+@@ -0,0 +1,162 @@
++// See runtime/ps2_guest_snapshot.h. Kept in its own file: windows.h stays out of the rest of the runtime.
++
++#include "runtime/ps2_guest_snapshot.h"
++
++#include <algorithm>
++#include <atomic>
++#include <cstdlib>
++#include <cstring>
++#include <thread>
++#include <vector>
++
++#if defined(_WIN32)
++#define NOMINMAX
++#define WIN32_LEAN_AND_MEAN
++#include <windows.h>
++#endif
++
++namespace ps2x::snapshot
++{
++    namespace
++    {
++        constexpr size_t kPage = 4096;
++
++        struct State
++        {
++            std::atomic<bool> on{false};
++            uint8_t *block = nullptr;
++            size_t bytes = 0;
++            std::vector<uint8_t> saved;    // pages saved, in the order written
++            std::vector<uint32_t> pages;   // their indexes in the block
++            std::vector<uint8_t> written;  // per page: saved already
++#if defined(_WIN32)
++            DWORD owner = 0;
++#else
++            std::vector<uint8_t> whole;    // the whole block, at begin()
++#endif
++        };
++
++        State &state()
++        {
++            static State s;
++            return s;
++        }
++
++#if defined(_WIN32)
++        LONG CALLBACK onFault(EXCEPTION_POINTERS *info)
++        {
++            State &s = state();
++            const EXCEPTION_RECORD *record = info->ExceptionRecord;
++            if (record->ExceptionCode != EXCEPTION_ACCESS_VIOLATION || record->NumberParameters < 2 ||
++                record->ExceptionInformation[0] != 1 || !s.on.load(std::memory_order_acquire))
++                return EXCEPTION_CONTINUE_SEARCH;
++            const auto *address = reinterpret_cast<const uint8_t *>(record->ExceptionInformation[1]);
++            if (address < s.block || address >= s.block + s.bytes)
++                return EXCEPTION_CONTINUE_SEARCH;
++            if (GetCurrentThreadId() != s.owner)
++            {
++                // Not expected (the guest's code runs on one thread): wait for end(), which opens every page again.
++                while (s.on.load(std::memory_order_acquire))
++                    std::this_thread::yield();
++                return EXCEPTION_CONTINUE_EXECUTION;
++            }
++            // The page written, and the next one when the write may run into it (a store that crosses the page end can be
++            // reported at its first byte).
++            const size_t offset = static_cast<size_t>(address - s.block);
++            const size_t first = offset / kPage;
++            const size_t last = std::min((offset + 63) / kPage, s.bytes / kPage - 1);
++            for (size_t page = first; page <= last; ++page)
++            {
++                uint8_t *start = s.block + page * kPage;
++                if (s.written[page])
++                    continue;
++                s.written[page] = 1;
++                const size_t at = s.saved.size();
++                s.saved.resize(at + kPage);
++                std::memcpy(s.saved.data() + at, start, kPage);
++                s.pages.push_back(static_cast<uint32_t>(page));
++                DWORD old = 0;
++                VirtualProtect(start, kPage, PAGE_READWRITE, &old);
++            }
++            return EXCEPTION_CONTINUE_EXECUTION;
++        }
++#endif
++    }
++
++    uint8_t *allocateTrackable(size_t bytes)
++    {
++#if defined(_WIN32)
++        return static_cast<uint8_t *>(VirtualAlloc(nullptr, bytes, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE));
++#else
++        const size_t rounded = (bytes + kPage - 1) / kPage * kPage;
++        void *block = std::aligned_alloc(kPage, rounded);
++        if (block != nullptr)
++            std::memset(block, 0, rounded);
++        return static_cast<uint8_t *>(block);
++#endif
++    }
++
++    void freeTrackable(uint8_t *block, size_t bytes)
++    {
++        (void)bytes;
++        if (block == nullptr)
++            return;
++#if defined(_WIN32)
++        VirtualFree(block, 0, MEM_RELEASE);
++#else
++        std::free(block);
++#endif
++    }
++
++    bool begin(uint8_t *block, size_t bytes)
++    {
++        State &s = state();
++        if (s.on.load(std::memory_order_acquire) || block == nullptr || bytes % kPage != 0)
++            return false;
++        s.block = block;
++        s.bytes = bytes;
++        s.saved.clear();
++        s.pages.clear();
++        s.written.assign(bytes / kPage, 0);
++#if defined(_WIN32)
++        static PVOID handler = AddVectoredExceptionHandler(1, onFault);
++        if (handler == nullptr)
++            return false;
++        if (s.saved.capacity() < 1024 * kPage)
++            s.saved.reserve(1024 * kPage);
++        s.owner = GetCurrentThreadId();
++        s.on.store(true, std::memory_order_release);
++        DWORD old = 0;
++        if (!VirtualProtect(block, bytes, PAGE_READONLY, &old))
++        {
++            s.on.store(false, std::memory_order_release);
++            return false;
++        }
++#else
++        s.whole.assign(block, block + bytes);
++        s.on.store(true, std::memory_order_release);
++#endif
++        return true;
++    }
++
++    size_t end()
++    {
++        State &s = state();
++        if (!s.on.load(std::memory_order_acquire))
++            return 0;
++#if defined(_WIN32)
++        DWORD old = 0;
++        VirtualProtect(s.block, s.bytes, PAGE_READWRITE, &old);
++        for (size_t i = 0; i < s.pages.size(); ++i)
++            std::memcpy(s.block + static_cast<size_t>(s.pages[i]) * kPage, s.saved.data() + i * kPage, kPage);
++        const size_t restored = s.pages.size();
++#else
++        std::memcpy(s.block, s.whole.data(), s.bytes);
++        const size_t restored = s.bytes / kPage;
++#endif
++        s.on.store(false, std::memory_order_release);
++        return restored;
++    }
++
++    bool active() { return state().on.load(std::memory_order_acquire); }
++}

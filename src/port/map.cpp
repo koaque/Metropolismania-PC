@@ -1653,10 +1653,11 @@ namespace mm
             reach = t < F(0x3F000000u) ? port::load<int32_t>(globals::kTerrainReach + i)
                                        : port::load<int32_t>(globals::kTerrainReach + i + 4u);
         }
-        // Enhancement, off by default (MMPC_WIDESCREEN, enhance.h): the visibility tests take in the wider view too, or what
-        // the wider picture shows at its sides would be left out.
-        if (const float wide = port::enhance::widescreen(); wide != 1.0f)
-            screen->x = ps2f(screen->x) * ps2f(wide);
+        // Enhancements (widescreen, view distance) leave this walk as the original's, so the game's logic stays the PS2's:
+        // they record its tiles here, and the extras pass draws the rest of the wider or longer view (extras.cpp).
+        const bool record = port::enhance::extrasOn();
+        if (record)
+            port::enhance::clearPs2Tiles();
         Math_ProjectionMatrix(GuestPtr<ps2f>{projection.address}, GuestPtr<ps2f>{screen.address}, F(0x44400000u), F(0x3DCCCCCDu), farDistance);
         sdk::sceVu0MulMatrix(projection.address, projection.address, view.address);
         screen->x = ps2f(screen->x) + F(0x43480000u);
@@ -1775,6 +1776,8 @@ namespace mm
                 node.prev = head.prev;
                 head.prev = at;
                 Terrain_DrawPatch(map, col, row, static_cast<int>(object), here->x, here->z, level);
+                if (record)
+                    port::enhance::notePs2Tile(col, row);
                 map->sortedCount = entry + 1;
                 if (map->sortedCount >= 600 || map->terrainQuads >= 0x9C0)
                 {
@@ -2376,7 +2379,10 @@ namespace mm
             node = GuestPtr<TerrainEntry>{node->next};
         } while (node);
         clearDrawnFlags(map);
-        CharType_TickSlots();
+        // Enhancement (extras.cpp): the head-turn slot timers count down once a frame, not again for each extras batch
+        // (the pass is undone either way)
+        if (!port::enhance::inSidePass())
+            CharType_TickSlots();
     }
 
     // The same walk for drawing the buildings: objects not marked yet and without flag 0x80 go through every object of

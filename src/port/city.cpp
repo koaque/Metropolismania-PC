@@ -4406,6 +4406,8 @@ namespace mm
         DmaList_QueueGsDefaults();
         LightSet_SelectProgram(city->lights, 0);
         port::enhance::markFrameList(port::enhance::Span::Hud); // enhancement (MMPC_WIDESCREEN): the HUD starts here
+        if (port::enhance::extrasOn()) // enhancement: the extras pass draws the rest of a wider or longer view (extras.cpp)
+            port::enhance::noteCityWorld(city.address);
         Packet_Draw(GuestPtr<uint32_t>::of(city->camera->packet));
         DmaList_QueueClearZ();
         if (city->hudVisible[3] != 0 && (globals::stageState()->flags & 1u) != 0u)

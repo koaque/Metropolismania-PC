@@ -202,9 +202,10 @@ samples, and the pacing is the same as without them.
 (Hor+). It needs the native renderer, which shows the wider picture, and is off by default (`src/port/enhance.h`, the
 port's first enhancement switch; with it off the port runs as before).
 
-* In the game: the visibility test behind the city's draw lists and the snow's clip frustum widen by k = (W/H) / (4/3),
-  4/3 for 16:9, so the sides are not left empty. The game's camera is not changed: its projection (screen scale and
-  matrices) is part of what a save keeps, so a save made with widescreen on is the same as one made without.
+* In the game: nothing changes. The city's own visibility test, draw lists and camera stay the PS2's (the camera's
+  projection is part of what a save keeps, so a save made with widescreen on is the same as one made without). What the
+  sides add, k = (W/H) / (4/3) times the width (4/3 for 16:9), is drawn by the extras pass (below), so the game's logic
+  is the same with widescreen on as off.
 * In the renderer: the city marks its frame list at the world camera's packet (`port::enhance::markFrameList`), and as that
   packet's camera block reaches the renderer's VU1 memory, the screen matrix and the clip matrix are narrowed in x by k
   about the screen centre, so every program (models, terrain, water, weather) draws the wider view into the 640 pixels
@@ -222,16 +223,47 @@ port's first enhancement switch; with it off the port runs as before).
 * A first version (fb0f304) changed the game's camera instead, once, as the city was built: loading a save restores the
   camera's projection, so after a load the city was the 4:3 view stretched to 16:9 (people and buildings a third too wide),
   and saving with it on would have written the changed projection into the save.
-* The town differs from a 4:3 run: the game walks a pedestrian only while it draws them (each draw moves them on by their
-  walk stride), so who walks depends on what is in view, as in the original when the camera turns. With
-  `PS2X_TIMER0=frame`, a 4:3 and a 16:9 run under the explore autoplay are the same state up to the city and differ in
-  pedestrians within its first 300 frames.
+* The town is the same as in a 4:3 run. The first versions widened the game's own visibility test, and since the game
+  walks a pedestrian only while it draws them, a 16:9 run's pedestrians differed from a 4:3 run's within the city's first
+  300 frames; with the extras pass, guest memory is the same at every record of the explore autoplay (below).
 * Speed at 16:9: 59.9 frames a second in the city at 2x scale, as at 4:3 (152 of 162 two-second windows over a whole
-  evening and the change of day; the lowest 58.0, at the change of day).
+  evening and the change of day; the lowest 58.0, at the change of day), measured before the extras pass, which adds about
+  1 ms of game thread time a frame at 16:9.
 * Checked against 4:3 runs of the same scripts (the middle of each wide frame against the 4:3 frame): the eleven camera
   views at 16:9 and 21:9, the laptop and its town pages, notebook and bag, the pause menu, a talk scene, an evening into
   night and the next day, leaving the city (the fade covers the whole width; the title's screens are 4:3 again), and split
   mode (the emulated half 4:3, the native half wide).
+
+## View distance and the extras pass (N6)
+
+`MMPC_VIEW_DISTANCE=<factor>` (`1.5`, `2`, `3`, up to `8`) or `max` (8, the whole map from anywhere on it; settings
+`view_distance`, off by default) draws the city that many times as far as the PS2 does, with the fog moved out by the same
+factor. Like widescreen it needs the native renderer.
+
+The rule for both: the game's logic stays the PS2's. Drawing more the plain way would change the town, since the game's
+draw code also moves pedestrians on, steps their animation, turns them to the player and ticks counters. So what a wider
+or longer view adds is drawn by the extras pass (`src/port/extras.cpp`), with the game's own draw code, and then undone:
+
+* When frame N's list is about to be sent (`DmaList_KickFrame`) and the city drew its world in it, guest memory is
+  snapshotted (`patches/0161`: each RDRAM page saved at its first write, plus the scratchpad and the timer state), with
+  the processor's registers; no time is charged and no thread switch happens meanwhile.
+* The tiles the larger view sees are found with `Terrain_Draw`'s own test (its projection widened by k, its reach and far
+  distance times the view distance), less the tiles the game's own walk drew that frame, and drawn near to far in batches
+  of up to 96 through the game's passes (terrain, buildings, people, water, weather, claim marks) into the other DMA list,
+  made the current one meanwhile (the game's appends measure the room left from the current list's start, so one lying
+  above it would look full). The renderer copies each batch out and draws it in frame N's stream where the HUD starts,
+  after the game's world. The layers that move on in their draw (waves, rain, snow, the head-turn timers) are not stepped
+  again for each batch, so the extras show them as the frame has them.
+* `MMPC_EXTRAS_DEBUG=1` draws what the pass adds in flat magenta, without fog and whatever is in front, to see it.
+* Then guest memory and the registers are put back. People outside the PS2's view are thus drawn where the game has them,
+  standing: their step, pose and flags are undone every frame. They walk once they come into the PS2's own view.
+* In the renderer, the world camera's upload gets its far plane moved out by the view distance as well, in the clip matrix
+  and in the depth the screen matrix gives (`render_vif.cpp`, `moveFarPlane`): the city camera's far plane is at 50 while
+  the game's terrain stops at 28 to 35, and the programs drop a triangle with a corner past it. The fog moves out the same
+  way: the programs take fog = a + b / w, so b times the factor puts every fog level that many times farther.
+* Checked: with `PS2X_TIMER0=frame`, the explore autoplay off, at 16:9, at view distance 2 and with both, all 32 MB of RDRAM
+  and the scratchpad are identical at each of 24 records (`MMPC_CAPTURE_KEEP_PORTS=1`, so the ported code ran).
+  `MMPC_EXTRAS_STATS=1` logs the pass's tiles, batches, pages put back and game thread time.
 
 ## Native only (N5)
 

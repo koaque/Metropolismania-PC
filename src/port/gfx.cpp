@@ -1,5 +1,7 @@
 // Graphics helpers: DMA lists and the packet buffer, model accessors, render layer and light state.
 
+#include "enhance.h"
+#include "extras.h"
 #include "game_functions.h"
 #include "game_globals.h"
 #include "lifetime.h"
@@ -964,6 +966,7 @@ namespace mm
             globals::dmaListPtr.set(cursor);
         }
         sdk::FlushCache(0);
+        Extras_Run(); // enhancement (extras.h): a wider or longer view drawn on the side and undone; nothing when off
         port::writeHardware32(kQwc, 0u);
         port::writeHardware32(kTadr, start & 0x7FFFFFFFu);
         port::writeHardware32(kStat, 2u);
@@ -1147,7 +1150,10 @@ namespace mm
     // queued.
     void WaterLayer_Draw(GuestPtr<WaterLayer> layer, int pass, ps2f waterLevel)
     {
-        WaterLayer_AnimateWaves(layer, waterLevel);
+        // Enhancement (extras.cpp): the extras pass draws its batches with the frame's waves, so they line up with the
+        // game's own water instead of running a step ahead each batch (the pass is undone either way).
+        if (!port::enhance::inSidePass())
+            WaterLayer_AnimateWaves(layer, waterLevel);
         Dma_AppendCall(static_cast<int>(layer->packets[pass]));
     }
 
@@ -1733,19 +1739,24 @@ namespace mm
         port::store<uint32_t>(addressOf(layer->lowerColour.y), 0x443F4000u);
         port::store<uint32_t>(addressOf(layer->lowerColour.x), 0x443F4000u);
         port::store<int32_t>(layer->groundPackets[pass] + 0x24u, clock / 600); // ALPHA_1's FIX in the packet
-        for (Vec4 &drop : layer->drops)
+        // Enhancement (extras.cpp): the extras pass's batches take the frame's drops and splash page as they are, so they
+        // match the game's own rain instead of running a step ahead each batch (the pass is undone either way).
+        if (!port::enhance::inSidePass())
         {
-            ps2f y = drop.y + ps2f(0.4f);
-            drop.y = y;
-            if (ps2f(40.0f) <= y)
-                drop.y = y - ps2f(40.0f);
+            for (Vec4 &drop : layer->drops)
+            {
+                ps2f y = drop.y + ps2f(0.4f);
+                drop.y = y;
+                if (ps2f(40.0f) <= y)
+                    drop.y = y - ps2f(40.0f);
+            }
+            if (globals::rainStarted.get() == 0)
+            {
+                globals::rainFrames.set(0);
+                globals::rainStarted.set(1);
+            }
+            globals::rainFrames.set(globals::rainFrames.get() + 1);
         }
-        if (globals::rainStarted.get() == 0)
-        {
-            globals::rainFrames.set(0);
-            globals::rainStarted.set(1);
-        }
-        globals::rainFrames.set(globals::rainFrames.get() + 1);
         int32_t cycle = ((globals::rainFrames.get() >> 1) % 6) * 0x40;
         if (cycle < 0)
             cycle += 3;

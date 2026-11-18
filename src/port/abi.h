@@ -60,12 +60,22 @@ namespace port
     // drives the timers and the IOP (a module starting, an RPC server registering) from the cycles it is told of, so a polling or
     // delay loop that never accounts any waits for ever on what only time can bring. The generated code accounts 32 cycles at
     // every checkpoint (a loop's back branch).
-    inline void accountCycles(uint32_t cycles) { g_call.runtime->eeScheduler().accountCycles(cycles); }
+    // True while guest code runs on the side and is undone afterwards (extras.cpp: an enhancement drawing more with the
+    // game's own draw code). Then no time is charged and no thread switch happens, so the emulated machine moves on as if
+    // that code had not run.
+    inline bool g_sidePass = false;
+    inline void accountCycles(uint32_t cycles)
+    {
+        if (!g_sidePass)
+            g_call.runtime->eeScheduler().accountCycles(cycles);
+    }
     // What the original does at a loop's back branch: 32 cycles charged, and the processor handed over when a checkpoint is
     // due (an interrupt to deliver, a thread ready, the time slice used up). Without it a native loop that waits for time or
     // for another thread never lets either happen.
     inline void checkpoint()
     {
+        if (g_sidePass)
+            return;
         EeScheduler &ee = g_call.runtime->eeScheduler();
         ee.accountCycles(32u);
         ee.yieldIfDue();

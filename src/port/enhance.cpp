@@ -38,6 +38,70 @@ namespace port::enhance
         return factor;
     }
 
+    float viewDistance()
+    {
+        static const float factor = [] {
+            const char *value = std::getenv("MMPC_VIEW_DISTANCE");
+            if (value == nullptr || value[0] == '\0' || std::strcmp(value, "off") == 0 || std::strcmp(value, "1") == 0)
+                return 1.0f;
+            const char *renderer = std::getenv("MMPC_RENDERER");
+            if (renderer == nullptr || (std::strcmp(renderer, "native") != 0 && std::strcmp(renderer, "split") != 0 &&
+                                        std::strcmp(renderer, "side") != 0))
+            {
+                std::cerr << "[mm] view distance: off, it needs the native renderer (MMPC_RENDERER=native)" << std::endl;
+                return 1.0f;
+            }
+            // max: far enough for the whole map (128 tiles a side) from any place on it
+            const float f = std::strcmp(value, "max") == 0 ? 8.0f : std::clamp(static_cast<float>(std::atof(value)), 1.0f, 8.0f);
+            std::cerr << "[mm] view distance: the city drawn " << f << " times as far (MMPC_VIEW_DISTANCE=" << value << ")"
+                      << std::endl;
+            return f;
+        }();
+        return factor;
+    }
+
+    bool extrasOn()
+    {
+        static const bool on = widescreen() != 1.0f || viewDistance() != 1.0f;
+        return on;
+    }
+
+    namespace
+    {
+        bool s_sidePass = false;
+        uint32_t s_cityWorld = 0;
+        // tiles from -64 to 191 on both axes (the walk's window reaches past the map's edges)
+        constexpr int kTileOrigin = 64, kTileSide = 256;
+        std::vector<uint8_t> &ps2Tiles()
+        {
+            static std::vector<uint8_t> tiles(kTileSide * kTileSide, 0);
+            return tiles;
+        }
+        int tileIndex(int col, int row)
+        {
+            col += kTileOrigin;
+            row += kTileOrigin;
+            return col < 0 || row < 0 || col >= kTileSide || row >= kTileSide ? -1 : row * kTileSide + col;
+        }
+    }
+
+    bool inSidePass() { return s_sidePass; }
+    void setSidePass(bool on) { s_sidePass = on; }
+    void noteCityWorld(uint32_t city) { s_cityWorld = city; }
+    uint32_t takeCityWorld() { return std::exchange(s_cityWorld, 0u); }
+
+    void clearPs2Tiles() { std::fill(ps2Tiles().begin(), ps2Tiles().end(), uint8_t{0}); }
+    void notePs2Tile(int col, int row)
+    {
+        if (const int i = tileIndex(col, row); i >= 0)
+            ps2Tiles()[static_cast<size_t>(i)] = 1;
+    }
+    bool isPs2Tile(int col, int row)
+    {
+        const int i = tileIndex(col, row);
+        return i >= 0 && ps2Tiles()[static_cast<size_t>(i)] != 0;
+    }
+
     std::atomic<uint64_t> &wideFrames()
     {
         static std::atomic<uint64_t> frames{0};
@@ -57,7 +121,7 @@ namespace port::enhance
 
     void markFrameList(Span span)
     {
-        if (widescreen() == 1.0f)
+        if (!extrasOn())
             return;
         auto &list = marks();
         const uint32_t address = mm::globals::dmaListPtr.get() & 0x7FFFFFF0u;

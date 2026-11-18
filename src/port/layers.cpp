@@ -167,23 +167,29 @@ namespace mm
         layer->gifTag[2] = 0x4242;
         layer->gifTag[1] = 0x403B4000u;
         layer->gifTag[0] = (static_cast<uint32_t>(layer->flakesPerQuad) << 3) | 0x8000u;
-        for (int i = 0; i < 8; ++i)
+        // Enhancement (extras.cpp): the extras pass's batches take the frame's flakes and turns as they are, so they match
+        // the game's own snow instead of running a step ahead each batch (the pass is undone either way).
+        if (!port::enhance::inSidePass())
         {
-            ps2f angle = layer->angles[i] + F(0x3CF5C28Fu);
-            layer->angles[i] = angle;
-            if (!(angle <= F(0x40490FDBu)))
-                layer->angles[i] = angle - F(0x40C90FDBu);
-            sdk::sceVu0RotMatrixY(addressOf(layer->turns[4 * i]), globals::kIdentityMatrix, layer->angles[i]);
+            for (int i = 0; i < 8; ++i)
+            {
+                ps2f angle = layer->angles[i] + F(0x3CF5C28Fu);
+                layer->angles[i] = angle;
+                if (!(angle <= F(0x40490FDBu)))
+                    layer->angles[i] = angle - F(0x40C90FDBu);
+                sdk::sceVu0RotMatrixY(addressOf(layer->turns[4 * i]), globals::kIdentityMatrix, layer->angles[i]);
+            }
+            for (Vec4 &flake : layer->flakes)
+            {
+                ps2f y = flake.y + F(0x3CF5C28Fu);
+                if (!(y < ps2f(0.0f)))
+                    y = F(0xC2200000u);
+                flake.y = y;
+            }
         }
-        for (Vec4 &flake : layer->flakes)
-        {
-            ps2f y = flake.y + F(0x3CF5C28Fu);
-            if (!(y < ps2f(0.0f)))
-                y = F(0xC2200000u);
-            flake.y = y;
-        }
-        // the snow's clip frustum; wider with the enhancement MMPC_WIDESCREEN (enhance.h), or flakes at the sides are dropped
-        frame->screen = Vec4{800.0f * port::enhance::widescreen(), 800.0f, 1.0f, 10.0f};
+        // the snow's clip frustum; with widescreen (enhance.h) wider only in the extras pass, which draws the sides (the game's
+        // own pass stays the original's)
+        frame->screen = Vec4{800.0f * (port::enhance::inSidePass() ? port::enhance::widescreen() : 1.0f), 800.0f, 1.0f, 10.0f};
         const GuestPtr<Vec4> projection = GuestPtr<Vec4>::of(layer->projection[0]);
         Math_ProjectionMatrix(GuestPtr<ps2f>{projection.address}, frame.at(&Locals::screen).as<ps2f>(), F(0x44400000u),
                               F(0x3F800000u), F(0x42480000u));

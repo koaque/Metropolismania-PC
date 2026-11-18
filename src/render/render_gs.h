@@ -123,7 +123,13 @@ namespace mm::render
         Frame takeFrame();
         // The frame list reached a span the port marked (render_vif.h kSpanMark, port::enhance::Span): what follows, but for
         // frame-buffer reads, is marked DrawState::hud. Until the next span or the frame's end.
-        void beginSpan(uint8_t span) { m_span = span; }
+        void beginSpan(uint8_t span)
+        {
+            m_span = span;
+            m_tintExtras = false;
+        }
+        // MMPC_EXTRAS_DEBUG: the extras pass's batches start here; until the next span they are drawn magenta and without fog.
+        void tintExtras(bool on) { m_tintExtras = on; }
         // Texture contents the GPU side let go: they are decoded and sent again if a draw uses them.
         void forget(const std::vector<uint64_t> &keys)
         {
@@ -164,6 +170,7 @@ namespace mm::render
         int m_nextDrawBuffer = 0;
         float m_feedbackOrigin[2] = {};
         uint8_t m_span = 0;    // the span drawn now (beginSpan): 0 the world, 1 the HUD, 2 a backdrop
+        bool m_tintExtras = false;
         bool m_fromVu = false; // primitives now come from a native VU1 program
         float m_q = 1.0f;
         uint32_t m_clut[256] = {};

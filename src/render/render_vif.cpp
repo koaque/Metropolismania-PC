@@ -5,7 +5,9 @@
 #include "enhance.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
+#include <iostream>
 
 namespace mm::render
 {
@@ -31,7 +33,9 @@ namespace mm::render
                 else if (num == kProgramMarkHigh)
                     m_pending = (imm << 16) | m_markLow;
                 else if (num == kSpanMark && imm == static_cast<uint32_t>(port::enhance::Span::WorldCamera))
-                    m_narrowCamera = true;
+                    m_adjustCamera = true;
+                else if (num == kSpanMark && imm == static_cast<uint32_t>(port::enhance::Span::Extras))
+                    m_gs.tintExtras(true);
                 else if (num == kSpanMark)
                     m_gs.beginSpan(static_cast<uint8_t>(imm));
                 break;
@@ -151,8 +155,8 @@ namespace mm::render
                     value[2] = value[0], value[3] = value[1];
                 std::memcpy(lanes, value, 16);
             }
-            if (m_narrowCamera && address == 0 && count >= 8)
-                narrowCamera();
+            if (m_adjustCamera && address == 0 && count >= 8)
+                adjustWorldCamera(count);
             return bytes;
         }
 
@@ -224,29 +228,81 @@ namespace mm::render
                 // 3: write-protected
             }
         }
-        if (m_narrowCamera && address == 0 && count >= 8)
-            narrowCamera();
+        if (m_adjustCamera && address == 0 && count >= 8)
+            adjustWorldCamera(count);
         return bytes;
     }
 
     // A matrix row maps a world point to (x, y, z, w) by the sum of the rows times its coordinates; the screen matrix's x
     // is the camera space x times the screen scale plus the screen centre (2048, mm_Camera_ctor) times w, the clip
     // matrix's x has no centre. A view k times as wide at the same height: the scale part divided by k in both.
-    void Vif1::narrowCamera()
+    // With a longer view distance (MMPC_VIEW_DISTANCE, factor d) the far plane moves out by d (moveFarPlane), and so does
+    // the fog: the programs take fog = a + b / w, so b (0x11.w, in the same upload) times d gives at distance d x what was
+    // had at x.
+    void Vif1::adjustWorldCamera(uint32_t count)
     {
-        m_narrowCamera = false;
-        constexpr float kScreenCentre = 2048.0f;
-        const float a = 1.0f / port::enhance::widescreen(), b = kScreenCentre * (1.0f - a);
-        const auto lane = [&](uint32_t q, int i) {
-            float f;
-            std::memcpy(&f, &m_memory.qword(q)[i], 4);
-            return f;
+        m_adjustCamera = false;
+        if (const float d = port::enhance::viewDistance(); d != 1.0f)
+        {
+            moveFarPlane(d);
+            if (count >= 0x12)
+                m_memory.setReal(0x11, 3, m_memory.real(0x11, 3) * d);
+        }
+        if (const float k = port::enhance::widescreen(); k != 1.0f)
+        {
+            constexpr float kScreenCentre = 2048.0f;
+            const float a = 1.0f / k, b = kScreenCentre * (1.0f - a);
+            for (uint32_t row = 0; row < 4; ++row)
+                m_memory.setReal(row, 0, m_memory.real(row, 0) * a + m_memory.real(row, 3) * b);
+            for (uint32_t row = 4; row < 8; ++row)
+                m_memory.setReal(row, 0, m_memory.real(row, 0) * a);
+        }
+    }
+
+    // The far plane d times farther. The programs drop a triangle when a corner fails the clip test, +z included, and the
+    // depth past the far plane falls below the far depth (the renderer takes it as 0), so what the extras pass draws past
+    // the camera's far plane (50 for the city camera, while the game's own terrain stops at 28 to 35) would not show.
+    // The clip matrix's z is P z + Q of the camera space z (its w), with P = (f + n) / (f - n) and Q = -2 f n / (f - n);
+    // the screen matrix's z is A + B z, so after the divide by w = z the depth is A / z + B: the near depth at n and the far
+    // depth at f (Camera_UpdateProjection). Under a camera's view (affine) rows 0 to 2 have z = P w and z = B w, and row 3
+    // gives Q and A; n, f and the two depths follow. Both are rebuilt for d f and applied to each row as z' = alpha z +
+    // beta w, which keeps the rest of the matrices as the game made them.
+    void Vif1::moveFarPlane(float d)
+    {
+        // z / w of the row among rows 0 to 2 with the largest w (the view direction's largest component)
+        const auto ratio = [&](uint32_t first) {
+            uint32_t best = first;
+            for (uint32_t row = first + 1; row < first + 3; ++row)
+                if (std::fabs(m_memory.real(row, 3)) > std::fabs(m_memory.real(best, 3)))
+                    best = row;
+            return static_cast<double>(m_memory.real(best, 2)) / m_memory.real(best, 3);
         };
-        const auto setX = [&](uint32_t q, float x) { std::memcpy(&m_memory.qword(q)[0], &x, 4); };
-        for (uint32_t row = 0; row < 4; ++row)
-            setX(row, lane(row, 0) * a + lane(row, 3) * b);
-        for (uint32_t row = 4; row < 8; ++row)
-            setX(row, lane(row, 0) * a);
+        const auto constant = [&](uint32_t first, double r) {
+            return static_cast<double>(m_memory.real(first + 3, 2)) - r * m_memory.real(first + 3, 3);
+        };
+        const double p = ratio(4), q = constant(4, p);
+        const double n = -q / (p + 1.0), f = -q / (p - 1.0);
+        const double b = ratio(0), a = constant(0, b);
+        const double nearDepth = a / n + b, farDepth = a / f + b;
+        static bool s_logged = false; // the first camera's values, once, to see what the upload holds
+        if (!s_logged)
+        {
+            s_logged = true;
+            std::cerr << "[render] view distance: the world camera's near " << n << ", far " << f << " (depth " << nearDepth << " to "
+                      << farDepth << "), far moved to " << f * d << std::endl;
+        }
+        if (!(n > 0.0 && f > n && std::isfinite(f)) || a == 0.0)
+            return; // not a perspective camera of this kind: left as it is
+        const double far = f * static_cast<double>(d);
+        const double p2 = (far + n) / (far - n), q2 = -2.0 * far * n / (far - n);
+        const double a2 = far * n * (nearDepth - farDepth) / (far - n), b2 = (farDepth * far - nearDepth * n) / (far - n);
+        const auto apply = [&](uint32_t first, double alpha, double beta) {
+            for (uint32_t row = first; row < first + 4; ++row)
+                m_memory.setReal(row, 2, static_cast<float>(alpha * m_memory.real(row, 2) + beta * m_memory.real(row, 3)));
+        };
+        const double alphaClip = q2 / q, alphaScreen = a2 / a;
+        apply(4, alphaClip, p2 - alphaClip * p);
+        apply(0, alphaScreen, b2 - alphaScreen * b);
     }
 
     // MSCAL / MSCNT: the run gets TOPS as TOP, then the double buffer flips.

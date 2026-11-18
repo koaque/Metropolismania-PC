@@ -395,6 +395,8 @@ namespace mm::render
             v.q = q != 0.0f ? q : 1.0f;
         }
         v.fog = static_cast<float>((m_fog >> 56) & 0xFF) / 255.0f;
+        if (m_tintExtras) // MMPC_EXTRAS_DEBUG: what the extras pass draws, magenta and without fog
+            v.rgba = (v.rgba & 0xFF000000u) | 0x00FF00FFu, v.fog = 1.0f;
         return v;
     }
 
@@ -414,6 +416,8 @@ namespace mm::render
         v.t = in.t;
         v.q = in.q != 0.0f ? in.q : 1.0f;
         v.fog = std::floor(std::clamp(in.fog, 0.0f, 255.0f)) / 255.0f; // the GS takes F whole (bits 4-11 of the fixed-point value)
+        if (m_tintExtras) // MMPC_EXTRAS_DEBUG: what the extras pass draws, magenta and without fog
+            v.rgba = (v.rgba & 0xFF000000u) | 0x00FF00FFu, v.fog = 1.0f;
         return v;
     }
 
@@ -804,6 +808,8 @@ namespace mm::render
                 state.hud = minX <= 0.5f && maxX >= 639.5f ? 0 : 1; // across the whole width: a background, a fade, the Z clear
             }
         }
+        if (m_tintExtras) // MMPC_EXTRAS_DEBUG: flat magenta, shown whatever the depth and alpha tests would say
+            state.depthTest = 1, state.alphaTest = 1, state.textured = 0, state.fog = 0, state.blend = 0;
         if (state.colorWrite == 0 && state.depthWrite == 0)
             return;
         const uint64_t attributes = (m_prmodecont & 1) ? m_prim : m_prmode;
@@ -860,6 +866,7 @@ namespace mm::render
         m_frame = Frame{};
         m_frame.number = out.number + 1;
         m_span = 0;
+        m_tintExtras = false;
         return out;
     }
 }

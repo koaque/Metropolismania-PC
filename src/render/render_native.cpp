@@ -135,6 +135,8 @@ namespace mm::render
             double gameSeconds = 0.0; // the game thread's time in the renderer this frame (snapshots and chain copies)
             uint64_t lastVsync = 0, frameListVsync = 0; // the vertical blank of the last transfer and of the last frame list
             uint64_t wideMark = 0;                      // port::enhance::wideFrames() at the last frame's end
+            // the extras pass's batches for the frame list about to start (takeExtras), spliced in where its HUD starts
+            std::vector<uint8_t> pendingExtras;
 
             // game thread -> render thread: the transfers in order
             std::mutex workMutex;
@@ -219,8 +221,11 @@ namespace mm::render
         // upper half goes first as two VIF codes, after two NOPs that keep the transfer's quadword alignment.
         constexpr uint32_t kMicrocodeStart = 0x001A3C80u, kMicrocodeEnd = 0x001AB1C0u; // the 13 VU1 program upload packets
 
+        // MMPC_EXTRAS_STATS: the extras pass's batches taken and spliced into frames, for its stat line (takeExtras)
+        std::atomic<uint64_t> s_extrasTaken{0}, s_extrasTakenBytes{0}, s_extrasSpliced{0};
+
         void walkChain(const uint8_t *rdram, uint32_t tadr, bool tagTransfer, std::vector<uint8_t> &out,
-                       std::map<uint32_t, uint32_t> *programCalls = nullptr)
+                       std::map<uint32_t, uint32_t> *programCalls = nullptr, std::vector<uint8_t> *spliceAtHud = nullptr)
         {
             uint32_t address = tadr & 0x7FFFFFF0u;
             const bool marked = tagTransfer && port::enhance::frameListMarked();
@@ -249,7 +254,28 @@ namespace mm::render
                     else if (marked && depth == 0)
                     {
                         if (const uint8_t span = port::enhance::takeFrameListMark(address); span != 0)
+                        {
                             nops[0] = (kSpanMark << 16) | span;
+                            // the extras pass's batches: after the game's world, before its HUD
+                            if (span == static_cast<uint8_t>(port::enhance::Span::Hud) && spliceAtHud != nullptr &&
+                                !spliceAtHud->empty())
+                            {
+                                // MMPC_EXTRAS_DEBUG=1: a mark before them, so the GS draws them tinted and without fog
+                                static const bool s_debug = [] {
+                                    const char *v = std::getenv("MMPC_EXTRAS_DEBUG");
+                                    return v != nullptr && v[0] == '1';
+                                }();
+                                if (s_debug)
+                                {
+                                    const uint32_t mark[4] = {(kSpanMark << 16) | static_cast<uint32_t>(port::enhance::Span::Extras), 0, 0, 0};
+                                    const auto *markBytes = reinterpret_cast<const uint8_t *>(mark);
+                                    out.insert(out.end(), markBytes, markBytes + sizeof(mark));
+                                }
+                                out.insert(out.end(), spliceAtHud->begin(), spliceAtHud->end());
+                                s_extrasSpliced.fetch_add(1, std::memory_order_relaxed);
+                                spliceAtHud->clear();
+                            }
+                        }
                     }
                     const auto *bytes = reinterpret_cast<const uint8_t *>(nops);
                     out.insert(out.end(), bytes, bytes + 8);
@@ -530,20 +556,23 @@ namespace mm::render
                 r.lastVsync = vsync;
             }
             const bool vif1 = channel == 0x10009000u;
+            const uint32_t chainStart = tadr & 0x7FFFFFF0u;
+            const bool frameChain = vif1 && chainMode && (chainStart == (load32(rdram, kDmaLists) & 0x7FFFFFF0u) ||
+                                                          chainStart == (load32(rdram, kDmaLists + 4u) & 0x7FFFFFF0u));
             Work item = newWork(r, vif1 ? Work::Kind::Vif : Work::Kind::Gif);
             if (chainMode)
-                walkChain(rdram, tadr, vif1 && ((chcr >> 6) & 1) != 0, item.data, vif1 ? &r.programCalls : nullptr);
+                walkChain(rdram, tadr, vif1 && ((chcr >> 6) & 1) != 0, item.data, vif1 ? &r.programCalls : nullptr,
+                          frameChain ? &r.pendingExtras : nullptr);
             else if ((madr & kRamMask) + qwc * 16u <= 0x02000000u)
                 item.data.assign(rdram + (madr & kRamMask), rdram + (madr & kRamMask) + qwc * 16u);
+            if (frameChain)
+                r.pendingExtras.clear(); // a list without a HUD mark: its extras are not drawn later in another
             queueWork(r, std::move(item));
             if (!vif1)
             {
                 ++r.gifTransfers;
                 return;
             }
-            const uint32_t chainStart = tadr & 0x7FFFFFF0u;
-            const bool frameChain = chainMode && (chainStart == (load32(rdram, kDmaLists) & 0x7FFFFFF0u) ||
-                                                  chainStart == (load32(rdram, kDmaLists + 4u) & 0x7FFFFFF0u));
             if (!frameChain)
             {
                 ++r.otherVifTransfers;
@@ -1481,6 +1510,25 @@ namespace mm::render
             const bool native = gpu && (r.mode == Mode::Native || r.showNative);
             show(r, commands, swapchain, 0, 0, width, height, native, emulated, true);
         }
+    }
+
+    bool extrasWanted() { return renderer().mode != Mode::Off; }
+
+    void takeExtras(uint32_t tagAddress)
+    {
+        Renderer &r = renderer();
+        if (r.mode == Mode::Off)
+            return;
+        const size_t before = r.pendingExtras.size();
+        walkChain(r.runtime->memory().getRDRAM(), tagAddress, true, r.pendingExtras);
+        s_extrasTakenBytes.fetch_add(r.pendingExtras.size() - before, std::memory_order_relaxed);
+        static const bool s_stats = [] {
+            const char *v = std::getenv("MMPC_EXTRAS_STATS");
+            return v != nullptr && v[0] == '1';
+        }();
+        if (s_stats && s_extrasTaken.fetch_add(1, std::memory_order_relaxed) % 1000u == 999u)
+            std::cerr << "[render] extras: " << s_extrasTaken.load() << " batches taken (" << s_extrasTakenBytes.load() / s_extrasTaken.load()
+                      << " bytes each), " << s_extrasSpliced.load() << " frames spliced" << std::endl;
     }
 
     void requestShot(const std::string &path)

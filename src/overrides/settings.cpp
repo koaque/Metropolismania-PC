@@ -108,6 +108,8 @@ namespace mmpc_settings
             put("MMPC_RENDER_MSAA", v);
         else if (k == "anisotropic")
             put("MMPC_RENDER_ANISO", v == "off" ? std::string("1") : v);
+        else if (k == "view_distance")
+            put("MMPC_VIEW_DISTANCE", v);
         else if (k == "filter_2d")
         {
             if (v == "sharp" || v == "smooth" || v == "ps2")
