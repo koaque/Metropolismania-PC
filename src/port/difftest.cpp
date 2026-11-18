@@ -5,7 +5,10 @@
 // so the first ones; "exp" takes calls 1, 8, 64, 512 ... so busy and rare functions both spread over the run),
 // counted from call MMPC_CAPTURE_FROM (0-based, default 0: the calls before it are not recorded),
 // into MMPC_CAPTURE_DIR/<name>/<n>.mmdt:
-// the CPU context at entry, all of RDRAM (deflate) and the scratchpad. Ported functions are not installed
+// the CPU context at entry, all of RDRAM (deflate), the scratchpad and the disc files the game has open (a VFS1
+// section: each file's descriptor, path and offset, and the next descriptor; older records end at the scratchpad).
+// The replay opens those files again under the same descriptors at the same offsets before each run, so a call
+// that reads the disc (a family record not in the cache) reads what it read in the game. Ported functions are not installed
 // during a capture, so the records show the original code at work. Records are game-derived: they stay
 // in work/difftest/ and are never committed.
 //
@@ -183,6 +186,23 @@ namespace port
             return (n & (n - 1)) == 0 && std::countr_zero(n) % 3 == 0;
         }
 
+        // A disc file the game had open when a record was captured: the descriptor the runtime gave it, its path and where it
+        // was. The family file is opened at the start and stays open, its reads queued and issued a frame later, so a replayed
+        // call that reads a family seeks and reads a descriptor the replay process never opened (the original then loops on
+        // sceLseek's failure). Only the read-only devices are kept; a memory card file is never opened again by a replay.
+        struct OpenDiscFile
+        {
+            int32_t descriptor = -1;
+            int64_t offset = 0;
+            std::string path;
+        };
+        constexpr char kFilesMagic[4] = {'V', 'F', 'S', '1'}; // the optional section after the scratchpad
+
+        bool readOnlyDevice(const std::string &device)
+        {
+            return device == "cdrom0" || device == "cdrom" || device == "rom0";
+        }
+
         // A record waiting to be compressed and written. The game thread only copies memory (a few ms);
         // a writer thread does the slow part, so captures barely slow the game down.
         struct PendingRecord
@@ -191,6 +211,8 @@ namespace port
             R5900Context ctx;
             std::vector<uint8_t> rdram;
             std::vector<uint8_t> scratchpad;
+            std::vector<OpenDiscFile> files;
+            int32_t nextDescriptor = 0;
         };
 
         std::mutex g_queueMutex;
@@ -219,6 +241,18 @@ namespace port
                 out.write(reinterpret_cast<const char *>(&rec.ctx), sizeof(R5900Context));
                 out.write(reinterpret_cast<const char *>(packed), packedSize);
                 out.write(reinterpret_cast<const char *>(rec.scratchpad.data()), PS2_SCRATCHPAD_SIZE);
+                // VFS1: the next descriptor, the count, then per file its descriptor, offset, path length and path.
+                const uint32_t counts[2] = {static_cast<uint32_t>(rec.nextDescriptor), static_cast<uint32_t>(rec.files.size())};
+                out.write(kFilesMagic, 4);
+                out.write(reinterpret_cast<const char *>(counts), sizeof(counts));
+                for (const OpenDiscFile &file : rec.files)
+                {
+                    const uint32_t length = static_cast<uint32_t>(file.path.size());
+                    out.write(reinterpret_cast<const char *>(&file.descriptor), sizeof(file.descriptor));
+                    out.write(reinterpret_cast<const char *>(&file.offset), sizeof(file.offset));
+                    out.write(reinterpret_cast<const char *>(&length), sizeof(length));
+                    out.write(file.path.data(), length);
+                }
             }
             mz_free(packed);
             std::error_code ec;
@@ -241,13 +275,24 @@ namespace port
             }
         }
 
-        void queueRecord(const std::filesystem::path &path, const R5900Context &ctx)
+        void queueRecord(const std::filesystem::path &path, const R5900Context &ctx, PS2Runtime &runtime)
         {
             auto rec = std::make_unique<PendingRecord>();
             rec->path = path;
             rec->ctx = ctx;
             rec->rdram.assign(g_rdram, g_rdram + PS2_RAM_SIZE);
             rec->scratchpad.assign(g_scratchpad, g_scratchpad + PS2_SCRATCHPAD_SIZE);
+            PS2Vfs &vfs = runtime.vfs();
+            rec->nextDescriptor = vfs.nextDescriptor();
+            for (const PS2VfsDescriptorInfo &open : vfs.descriptors())
+                if (readOnlyDevice(open.device))
+                {
+                    const int64_t offset = vfs.seek(open.descriptor, 0, SEEK_CUR);
+                    if (offset >= 0)
+                        rec->files.push_back({open.descriptor, offset, open.path});
+                }
+            std::sort(rec->files.begin(), rec->files.end(),
+                      [](const OpenDiscFile &a, const OpenDiscFile &b) { return a.descriptor < b.descriptor; });
             std::unique_lock<std::mutex> lock(g_queueMutex);
             g_queueChanged.wait(lock, [] { return g_queue.size() < kMaxPending; });
             g_queue.push_back(std::move(rec));
@@ -267,7 +312,7 @@ namespace port
                 std::filesystem::create_directories(dir);
                 char file[32];
                 std::snprintf(file, sizeof(file), "%03u.mmdt", target.taken);
-                queueRecord(dir / file, *ctx);
+                queueRecord(dir / file, *ctx, *runtime);
                 ++target.taken;
                 std::cerr << "[difftest] captured " << target.name << " #" << target.taken << std::endl;
             }
@@ -281,7 +326,47 @@ namespace port
             R5900Context ctx;
             std::vector<uint8_t> rdram;
             std::vector<uint8_t> scratchpad;
+            std::vector<OpenDiscFile> files; // records captured before the VFS1 section have none
+            int32_t nextDescriptor = 0;
+            bool hasFiles = false;
         };
+
+        // The optional VFS1 section after the scratchpad (absent from older records; a file that ends there has none).
+        bool readFiles(std::ifstream &in, Record &rec, std::string &error)
+        {
+            char magic[4];
+            if (!in.read(magic, 4))
+                return true;
+            uint32_t counts[2];
+            if (std::memcmp(magic, kFilesMagic, 4) != 0 || !in.read(reinterpret_cast<char *>(counts), sizeof(counts)) || counts[1] > 4096)
+            {
+                error = "bad open-file section";
+                return false;
+            }
+            rec.nextDescriptor = static_cast<int32_t>(counts[0]);
+            for (uint32_t i = 0; i < counts[1]; ++i)
+            {
+                OpenDiscFile file;
+                uint32_t length = 0;
+                in.read(reinterpret_cast<char *>(&file.descriptor), sizeof(file.descriptor));
+                in.read(reinterpret_cast<char *>(&file.offset), sizeof(file.offset));
+                in.read(reinterpret_cast<char *>(&length), sizeof(length));
+                if (!in || length > 4096)
+                {
+                    error = "bad open-file section";
+                    return false;
+                }
+                file.path.resize(length);
+                if (!in.read(file.path.data(), length))
+                {
+                    error = "bad open-file section";
+                    return false;
+                }
+                rec.files.push_back(std::move(file));
+            }
+            rec.hasFiles = true;
+            return true;
+        }
 
         bool readRecord(const std::filesystem::path &path, Record &rec, std::string &error)
         {
@@ -309,6 +394,8 @@ namespace port
                 error = "truncated record";
                 return false;
             }
+            if (!readFiles(in, rec, error))
+                return false;
             rec.rdram.resize(PS2_RAM_SIZE);
             const size_t size = tinfl_decompress_mem_to_mem(rec.rdram.data(), rec.rdram.size(), packed.data(), packed.size(), 0);
             if (size != PS2_RAM_SIZE)
@@ -317,6 +404,47 @@ namespace port
                 return false;
             }
             return true;
+        }
+
+        // Opens the record's disc files again under their own descriptors (open() hands out the counter, which closeFrom sets)
+        // and moves each to where it was, then sets the counter to the game's. Descriptors the replay process itself holds
+        // (below `base`) are never touched; a file that cannot be put back is reported once.
+        void restoreFiles(PS2Runtime &runtime, const Record &rec, int32_t base)
+        {
+            PS2Vfs &vfs = runtime.vfs();
+            const PS2Runtime::IoPaths &paths = PS2Runtime::getIoPaths();
+            const PS2VfsMounts mounts{paths.hostRoot, paths.cdRoot, paths.mcRoot};
+            static std::set<std::string> reported;
+            for (const OpenDiscFile &file : rec.files)
+            {
+                int32_t got = -1;
+                if (file.descriptor >= base)
+                {
+                    vfs.closeFrom(file.descriptor);
+                    got = vfs.open(file.path, PS2_FIO_O_RDONLY, mounts, runtime.romDevice());
+                }
+                if (got != file.descriptor || vfs.seek(got, file.offset, SEEK_SET) != file.offset)
+                {
+                    if (reported.insert(file.path).second)
+                        std::cout << "[difftest] could not open " << file.path << " again as descriptor " << file.descriptor << std::endl;
+                    if (got >= 0)
+                        vfs.closeFrom(got);
+                }
+            }
+            vfs.closeFrom(std::max(rec.nextDescriptor, base));
+        }
+
+        // After a warm call: the files' offsets and the counter as that call left them, so the next call starts there.
+        void keepFiles(PS2Runtime &runtime, Record &rec)
+        {
+            PS2Vfs &vfs = runtime.vfs();
+            for (OpenDiscFile &file : rec.files)
+            {
+                const int64_t offset = vfs.seek(file.descriptor, 0, SEEK_CUR);
+                if (offset >= 0)
+                    file.offset = offset;
+            }
+            rec.nextDescriptor = vfs.nextDescriptor();
         }
 
         struct Outcome
@@ -348,6 +476,8 @@ namespace port
             static const auto baseTimers = runtime.memory().saveEeTimers();
             runtime.restoreGuestHeapState(heap);
             runtime.vfs().closeFrom(baseDescriptor);
+            if (rec.hasFiles)
+                restoreFiles(runtime, rec, baseDescriptor);
             runtime.memory().restoreEeTimers(baseTimers);
             std::memcpy(g_rdram, rec.rdram.data(), PS2_RAM_SIZE);
             std::memcpy(g_scratchpad, rec.scratchpad.data(), PS2_SCRATCHPAD_SIZE);
@@ -1581,6 +1711,8 @@ namespace port
                         rec.rdram = warmed.rdram;
                         rec.scratchpad = warmed.scratchpad;
                         heap = runtime.saveGuestHeapState();
+                        if (rec.hasFiles)
+                            keepFiles(runtime, rec);
                     }
                 }
                 useGenerated(runtime, true);

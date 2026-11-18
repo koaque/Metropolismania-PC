@@ -48,7 +48,7 @@ City events (visitors, requests, incidents, paydays).
 
 ## Functions
 
-148 functions (ported 1, verified 147). Blocks: 20 can reach a thread switch, 21 make indirect calls that were not followed; both wait for native threading (P6) before porting.
+148 functions (verified 148). Blocks: 20 can reach a thread switch, 21 make indirect calls that were not followed; both wait for native threading (P6) before porting.
 
 | Address | Function | Size | Blocks | Notes |
 |---|---|---:|---|---|

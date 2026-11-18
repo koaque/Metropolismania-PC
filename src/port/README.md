@@ -159,10 +159,15 @@ original too (a state the replay cannot reach: a family or file that is not load
 
 Some state lives in the runtime, outside RDRAM, and the replay does not reset it between the original's run
 and the ported one's: the guest heap and the file descriptors are saved and restored (patch 0138), but the
-RPC bind counter and server descriptors of the sound driver, the memory card's file numbers and the family
-record cache are not. Records that depend on them differ in a few bytes the game only keeps (`Sound_Init`,
-`McSave_WriteIconSys`, `PauseMenu_StateSave`: ignore rules in `difftest.cpp`) or hang in the original too
-(a family not in the cache is read from the disc, which the replay never finishes: `Words_LoadForFamily`).
+RPC bind counter and server descriptors of the sound driver and the memory card's file numbers are not.
+Records that depend on them differ in a few bytes the game only keeps (`Sound_Init`, `McSave_WriteIconSys`,
+`PauseMenu_StateSave`: ignore rules in `difftest.cpp`).
+The disc files the game has open are part of a record since 2026-11-17: each file's descriptor, path and offset
+(a section after the scratchpad), opened again under the same descriptor at the same offset before each run.
+The family file is opened at the start and stays open, and a family not in the cache is read from it, so a
+call that reads a family (`Family_Get`, `Words_LoadForFamily`, the event checks) now reads what it read in the
+game. Records captured before that have no such section and hang in the original too when they read the disc
+(the ones parked in `work/difftest_hung`). `tools/record_patch.py` keeps the section in the records it makes.
 The movie decoder's hardware (IPU, DMA channels, the MPEG library's ring state) is the same kind of state:
 `Movie_ReadAndDemux` record 002 passes alone and fails after record 001 ran first, so it is parked in
 `work/difftest_hung`.
@@ -171,15 +176,19 @@ scratch values (`Person_ChooseDestination`, `CityCursor_Update`, `Person_Update`
 A new save's name carries the console clock in seconds, which ticks between the two runs: the last digits of the sixteen
 name slots are not compared for `McManager_NewSaveName`, `McManager_PrepareNewSlot` and the pause menu's slot list.
 
-Functions with no record the replay can finish stay at "ported" in `docs/PORT_STATUS.md` (49 of the game's
+Functions with no record the replay can finish stay at "ported" in `docs/PORT_STATUS.md` (18 of the game's
 1,481 now): the four map and city constructors (`CityMap_ctor`, `MapPeople_ctor`, `MapObjects_ctor`,
 `CityRender_ctor`: the original side stops at a null jump in `MapObj_Init`'s slot call, so they were only
-checked in live runs), the movie and sound shutdown paths that switch threads (`Movie_DisplayStart`,
+checked in live runs), `Sound_Init` (its record passes only when replayed alone: the sound driver's RPC state
+is not reset between records), the movie and sound shutdown paths that switch threads (`Movie_DisplayStart`,
 `Movie_ResumeAll`, `Sound_Shutdown`), the movie decoder's thread and setup code (`Movie_VideoDecMain`,
 `Movie_DecodeLoop`, `Movie_PlayPss`, `Movie_InitAll`, `Movie_ClearScreen`: the original exits or hangs in the
-replay, or the replay switches thread; `Movie_PlayOpeningMovie` never runs in a capture), the memory card
-queue calls, and callees that only run inside others (`File_Seek`, `Font_Free`); `config/port_status.csv` has
-the full list. `GameUpdate` is verified (58 records: the states that make and run the title and the briefing, running the city, the answers of the
+replay, or the replay switches thread; `PlayOpeningMovie` never runs in a capture) and the program's frame
+(`Main`, `MainLoop`, `App_ctor`, `App_dtor`); `config/port_status.csv` has the full list.
+The rest of the functions no autoplay reaches were verified from made records (real captured states with the
+arguments and a few words changed, as above). `Movie_Error` and `Movie_CbError` only print, which
+the difftest does not compare: their records show the same memory and result, and their printf arguments were
+checked against the generated code. `GameUpdate` is verified (58 records: the states that make and run the title and the briefing, running the city, the answers of the
 title, briefing and city; the two records that make the city scene hang the original too, so that step is not covered). `Main`, `MainLoop` and `App_ctor` can not be replayed (the loop never returns,
 the constructor restarts the IOP): they were checked by live runs with every function ported, new game and explore, and they stay "ported".
 

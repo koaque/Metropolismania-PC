@@ -1738,7 +1738,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0017DBC0,mm_WordsFn_PickClaimResident,1116,game,talk,verified,yes,0,14,"#65 cond: picks the resident a claim script talks about. The homes around building A are collected (candidates, candidateCount), and the claims the selected want asks for are worked out as in WordsFn_SuppliesWantBody"
 0x0017E020,mm_WordsFn_PickTestableResident,564,game,talk,verified,yes,0,7,"#64 cond: a resident of a candidate home who agrees (mm_Family_FriendAgrees: 3), else a random resident (1)"
 0x0017E260,mm_WordsFn_PickByCandidates,48,game,talk,verified,yes,0,2,#63 cond: collects candidate buildings and picks (0x17E3A0)
-0x0017E290,mm_WordsFn_PickRandomResident,264,game,talk,ported,yes,0,5,"#62 cond: collects candidate buildings, picks a random resident as B"
+0x0017E290,mm_WordsFn_PickRandomResident,264,game,talk,verified,yes,0,5,"#62 cond: collects candidate buildings, picks a random resident as B"
 0x0017E3A0,mm_Words_PickResidentByType,488,game,talk,verified,no,2,3,random resident of a candidate home whose character type matches arg (type or list 0x1BE950)
 0x0017E590,mm_Words_CollectNearbyHomes,768,game,talk,verified,yes,4,5,"homes with known families around a building, radius by the member's range (table 0x1B97F0), up to 80"
 0x0017E890,mm_WordsFn_PickOtherResident,248,game,talk,verified,yes,0,3,#61 cond: picks another resident of building B as subject B
@@ -1864,13 +1864,13 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00183F00,mm_TextBox_Init,300,game,ui,verified,yes,23,2,"(textbox, columns, rows, style) grid of (`columns`*2) cols x `rows` rows; default pos 0x6C00,0x7900 z 16000000, glyph 0xC0 x 0xB0; `style` = style table (-1 -> 0x1B24A0, -2 -> 0x1B24E0, 0 none) in clut; mallocs the packet"
 0x00184030,mm_DmaChain_Next,208,game,gfx,verified,no,1,0,"steps a DMA chain reader (tag: the current tag): CNT skips qwc+1, END stays, RET returns 0; caches the tag's id, qwc, address, VIF words and data"
 0x00184100,mm_DmaChain_Begin,20,game,gfx,verified,no,1,0,"(reader, chain) reader starts at `chain` with an END marker so the first mm_DmaChain_Next reads the first tag"
-0x00184120,mm_File_Seek,388,game,file,ported,yes,10,5,"(file, offset, whence, readyMode) sceLseek; a synchronous file first waits for the request queue to drain, an asynchronous one queues the seek (with sceCdDiskReady's mode for when it is issued)"
+0x00184120,mm_File_Seek,388,game,file,verified,yes,10,5,"(file, offset, whence, readyMode) sceLseek; a synchronous file first waits for the request queue to drain, an asynchronous one queues the seek (with sceCdDiskReady's mode for when it is issued)"
 0x001842B0,mm_File_Read,408,game,file,verified,yes,13,5,"(file, buffer, count, size, readyMode) sceRead of count x size bytes; synchronous files wait for the queue first, asynchronous ones queue the request (0x1F4ED0) with sceCdDiskReady's mode"
 0x00184450,mm_File_Close,320,game,file,verified,yes,10,5,"sceClose, fd (+0) = -1; synchronous files wait for the queue first"
 0x00184590,mm_File_Open,384,game,file,verified,yes,12,8,"waits for the disc, builds ""cdrom0:\"" + path + "";1"" (0x1B9AF8), sceOpen"
 0x00184710,mm_File_LoadWhole,164,game,file,verified,yes,11,5,"(file, path, size) opens `path`, mallocs the file size, reads it all, closes; size to *`size` if given; returns the buffer"
 0x001847C0,mm_FileQueue_IsDone,72,game,file,verified,no,8,0,"(queue, request) 1 when request `request` is no longer in the 64-entry queue (head 0x1BDC88, tail 0x1BDC8C)"
-0x00184810,mm_FileQueue_WaitFor,212,game,file,ported,yes,1,4,"(queue, request, quiet) pumps the queue until request `request` is done"
+0x00184810,mm_FileQueue_WaitFor,212,game,file,verified,yes,1,4,"(queue, request, quiet) pumps the queue until request `request` is done"
 0x001848F0,mm_FileQueue_WaitAll,140,game,file,verified,yes,5,4,pumps the queue until it is empty
 0x00184980,mm_FileQueue_Init,76,game,file,verified,no,1,0,clears the 64 request slots (0x1C bytes each at 0x1F4ED0) and the head/tail counters
 0x001849D0,mm_FileQueue_Pump,396,game,file,verified,yes,7,5,runs the request at the queue tail (open/read/seek/close/ioctl) once the disc is ready
@@ -2069,7 +2069,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00195420,mm_EvMissingChildren_End,252,game,event,verified,no,0,3,type 6: End
 0x00195520,mm_EvMissingChildren_Update,1452,game,event,verified,yes,0,14,type 6: Update
 0x00195AD0,mm_EvMissingChildren_Start,48,game,event,verified,no,0,1,type 6: Start
-0x00195B00,mm_EvMissingChildren_Check,380,game,event,ported,yes,0,3,"type 6 ""Finds missing children"": Check"
+0x00195B00,mm_EvMissingChildren_Check,380,game,event,verified,yes,0,3,"type 6 ""Finds missing children"": Check"
 0x00195C80,mm_EvAdvertise_ClaimsMatch,284,game,event,verified,no,1,4,"whether an active entry (first byte 0) of building A's claim section B names an id, or a section D group of ids (0x8000 and up), that building B's section C lists"
 0x00195DA0,mm_EvAdvertise_Answer,800,game,event,verified,no,0,6,type 9: Answer
 0x001960C0,mm_EvAdvertise_End,140,game,event,verified,no,0,2,type 9: End
@@ -2143,7 +2143,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0019DE10,mm_PlayMissionMovie,400,game,movie,verified,yes,1,10,"plays DATA\MPEG\MISSION<n>.PSS with its .BIN subtitles (n = a0), or ENDING.PSS for 6, once the sound driver is idle"
 0x0019DFA0,mm_PlayOpeningMovie,116,game,movie,ported,yes,1,3,plays DATA\MPEG\OPENING.PSS at 640x448 once the sound driver is idle
 0x0019E020,mm_Movie_SetSubtitleState,8,game,movie,verified,no,1,0,0x1BDD80 = a0
-0x0019E030,mm_Movie_Error,16,game,movie,ported,yes,2,1,"(ErrMessage) prints ""[ Error ] %s"""
+0x0019E030,mm_Movie_Error,16,game,movie,verified,yes,2,1,"(ErrMessage) prints ""[ Error ] %s"""
 0x0019E060,mm_Movie_SwitchThread,8,game,movie,verified,yes,2,1,(switchThread) RotateThreadReadyQueue syscall (0x2B)
 0x0019E070,mm_Movie_TermAll,348,game,movie,verified,yes,1,18,"(termAll) waits for the decoder to drain, stops audio, removes the handlers, deletes the threads and closes the stream"
 0x0019E1D0,mm_Movie_Update,172,game,movie,verified,yes,1,3,"one step of playback: pumps the demux until the decoder reports the end, then terminates"
@@ -2178,7 +2178,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001A01B0,mm_Movie_CbRestartDma,36,game,movie,verified,yes,0,1,(mpegRestartDMA) libmpeg callback
 0x001A01E0,mm_Movie_CbStopDma,36,game,movie,verified,yes,0,1,(mpegStopDMA) libmpeg callback
 0x001A0210,mm_Movie_CbNoData,44,game,movie,verified,yes,0,2,"(mpegNodata) libmpeg callback: switch threads, then queue more input"
-0x001A0240,mm_Movie_CbError,40,game,movie,ported,yes,0,1,(mpegError) libmpeg callback: prints the message
+0x001A0240,mm_Movie_CbError,40,game,movie,verified,yes,0,1,(mpegError) libmpeg callback: prints the message
 0x001A0270,mm_Movie_DecodeLoop,692,game,movie,ported,yes,1,10,"(decBs0) decode thread loop: sceMpegGetPicture into the picture queue, builds image and subtitle packets, ends on sceMpegIsEnd (""decode thread: aborted"")"
 0x001A0530,mm_Movie_VideoDecMain,96,game,movie,ported,yes,0,3,"(videoDecMain) decode thread entry: resets the buffers, runs the loop, waits for the queue to drain, state 3 (done)"
 0x001A0590,mm_Movie_VideoDecIsDone,84,game,movie,verified,yes,1,2,input buffer empty and libmpeg has no more pictures
@@ -2212,7 +2212,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001A29C0,mm_Words_FriendshipChanged,8,game,talk,verified,no,1,1,the global context's friendshipChanged
 0x001A29D0,mm_Words_CancelAllowed,8,game,talk,verified,no,1,1,the global context's cancelAllowed
 0x001A29E0,mm_Words_LoadForWants,596,game,talk,verified,yes,1,7,"script for a wants window line (event or default), reads its block"
-0x001A2C40,mm_Words_LoadForFamily,424,game,talk,ported,yes,1,6,"(family, member, origin, city) the script of family `family` member `member` (a talk by phone): the subject set, the -2005 menu's entries hidden by age and friendship, the member's block read, the event words loaded; returns the block's cache slot"
+0x001A2C40,mm_Words_LoadForFamily,424,game,talk,verified,yes,1,6,"(family, member, origin, city) the script of family `family` member `member` (a talk by phone): the subject set, the -2005 menu's entries hidden by age and friendship, the member's block read, the event words loaded; returns the block's cache slot"
 0x001A2DF0,mm_Words_LoadForPerson,604,game,talk,verified,yes,1,7,"(person, origin, city) the script of person `person`: its character type's block, the event words of the event it starts (when `origin` is 0: the player walked up) or the city's, the menus marked; returns the block's cache slot"
 0x001A3050,mm_Words_ReadBlock,336,game,talk,verified,yes,3,3,"(block) finds a script block in the cache of eight (most recently used first), reading it from WORDS.BIN into the last entry when it is not there; returns the first slot's word"
 0x001A31A0,mm_WordsBlock_ctor,172,game,talk,verified,yes,1,5,"(entry) a script block cache entry (WordsBlock): block 0 and a buffer of one block; the first one made opens WORDS.BIN and WORDSEVE.BIN, and each is counted"

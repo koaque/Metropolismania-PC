@@ -8,7 +8,7 @@ See `config/port_status.csv` for every function.
 
 | Origin | Functions | Named | Typed | Ported | Verified |
 |---|---:|---:|---:|---:|---:|
-| game | 1481 | 100.0% | 100.0% | 100.0% | 98.3% |
+| game | 1481 | 100.0% | 100.0% | 100.0% | 98.8% |
 | sdk | 768 | 100.0% | 15.6% | 15.6% | 11.5% |
 
 Blocking (game and unclassified functions that can reach a thread switch, deferred to native threading): indirect 79, no 987, yes 415
@@ -26,9 +26,9 @@ Blocking (game and unclassified functions that can reach a thread switch, deferr
 | city | 185 | 100.0% | 100.0% | 100.0% | 100.0% |
 | claim | 6 | 100.0% | 100.0% | 100.0% | 100.0% |
 | core | 4 | 100.0% | 100.0% | 100.0% | 100.0% |
-| event | 148 | 100.0% | 100.0% | 100.0% | 99.3% |
+| event | 148 | 100.0% | 100.0% | 100.0% | 100.0% |
 | family | 36 | 100.0% | 100.0% | 100.0% | 100.0% |
-| file | 12 | 100.0% | 100.0% | 100.0% | 83.3% |
+| file | 12 | 100.0% | 100.0% | 100.0% | 100.0% |
 | font | 3 | 100.0% | 100.0% | 100.0% | 100.0% |
 | game | 3 | 100.0% | 100.0% | 100.0% | 66.7% |
 | gfx | 117 | 100.0% | 100.0% | 100.0% | 99.1% |
@@ -36,7 +36,7 @@ Blocking (game and unclassified functions that can reach a thread switch, deferr
 | map | 98 | 100.0% | 100.0% | 100.0% | 96.9% |
 | math | 14 | 100.0% | 100.0% | 100.0% | 100.0% |
 | mem | 1 | 100.0% | 100.0% | 100.0% | 100.0% |
-| movie | 80 | 100.0% | 100.0% | 100.0% | 87.5% |
+| movie | 80 | 100.0% | 100.0% | 100.0% | 90.0% |
 | pad | 10 | 100.0% | 100.0% | 100.0% | 100.0% |
 | random | 4 | 100.0% | 100.0% | 100.0% | 100.0% |
 | save | 48 | 100.0% | 100.0% | 100.0% | 100.0% |
@@ -59,6 +59,6 @@ Blocking (game and unclassified functions that can reach a thread switch, deferr
 | sdk:mwrt | 15 | 100.0% | 33.3% | 33.3% | 33.3% |
 | sound | 57 | 100.0% | 100.0% | 100.0% | 96.5% |
 | stage | 8 | 100.0% | 100.0% | 100.0% | 100.0% |
-| talk | 322 | 100.0% | 100.0% | 100.0% | 99.4% |
+| talk | 322 | 100.0% | 100.0% | 100.0% | 100.0% |
 | text | 5 | 100.0% | 100.0% | 100.0% | 100.0% |
 | ui | 168 | 100.0% | 100.0% | 100.0% | 100.0% |
