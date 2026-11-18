@@ -239,6 +239,12 @@ namespace mm::render
         case TEX0_1:
         case TEX0_2:
         {
+            // The same write as the TEX0 write before it, with VRAM unchanged since: nothing to do (a palette load it asks for would
+            // read the same bytes into the palette buffer, which only TEX0 writes fill). Terrain programs repeat it every quad.
+            const uint64_t clock = m_vram.clock();
+            if (reg == m_lastTex0Reg && value == m_lastTex0Value && clock == m_lastTex0Clock)
+                break;
+            m_lastTex0Reg = reg, m_lastTex0Value = value, m_lastTex0Clock = clock;
             const int ctx = reg == TEX0_2 ? 1 : 0;
             m_tex0[ctx] = value;
             const Tex0 t = Tex0::fromRegister(value);
@@ -463,17 +469,22 @@ namespace mm::render
             }
             if (m_queued < 3)
             {
-                VuVertex v = in;
-                if (!in.hasRgba) // the colour the packet before set
-                    std::memcpy(v.rgba, &m_rgbaq, 4);
-                if (!in.hasSt)
+                if (in.hasRgba && in.hasSt)
+                    m_queue[m_queued++] = makeVertex(in);
+                else
                 {
-                    std::memcpy(&v.s, &m_st, 4);
-                    const uint32_t t = static_cast<uint32_t>(m_st >> 32);
-                    std::memcpy(&v.t, &t, 4);
-                    v.q = m_q;
+                    VuVertex v = in;
+                    if (!in.hasRgba) // the colour the packet before set
+                        std::memcpy(v.rgba, &m_rgbaq, 4);
+                    if (!in.hasSt)
+                    {
+                        std::memcpy(&v.s, &m_st, 4);
+                        const uint32_t t = static_cast<uint32_t>(m_st >> 32);
+                        std::memcpy(&v.t, &t, 4);
+                        v.q = m_q;
+                    }
+                    m_queue[m_queued++] = makeVertex(v);
                 }
-                m_queue[m_queued++] = makeVertex(v);
             }
             kick(!in.adc);
         }

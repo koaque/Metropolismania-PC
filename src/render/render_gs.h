@@ -176,6 +176,9 @@ namespace mm::render
         bool m_lastStateValid = false;
         uint64_t m_written[0x80] = {}; // the last value written to each register below 0x80
         bool m_writtenOnce[0x80] = {};
+        // the last TEX0 write (either context) and the VRAM clock then: a repeat of it does nothing
+        uint32_t m_lastTex0Reg = 0;
+        uint64_t m_lastTex0Value = 0, m_lastTex0Clock = 0;
 
         // the frame buffers drawn into in earlier frames (pages, width in pages, height in page rows)
         struct DrawBuffer
