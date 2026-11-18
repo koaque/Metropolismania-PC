@@ -945,7 +945,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0013CB40,mm_Family_AddFriendship,648,game,family,verified,no,6,1,"(family, member, approval, points) adds `points` (eighths of a level) to member (`family`, `member`)'s meter, kept within 0..120; a member who is not a friend yet and gains a step becomes one with a chance of the larger of the level and *`approval` in 120, and *`approval` moves by the change of the friendship band"
 0x0013CDF0,mm_Family_AddFriendshipScaled,8,game,family,verified,no,2,1,"(family, member, approval, points, sign) mm_Family_AddFriendship with `points` x `sign` (+1 a gain, -1 a loss)"
 0x0013CE00,mm_Family_GetFriendship,60,game,family,verified,no,11,0,"(family, member) member (`family`, `member`)'s meter value, capped at 120"
-0x0013CE40,mm_Family_MoveAway,164,game,family,ported,no,1,0,"(family) family `family` leaves: bitset A -> C, families in the city - 1, families left + 1"
+0x0013CE40,mm_Family_MoveAway,164,game,family,verified,no,1,0,"(family) family `family` leaves: bitset A -> C, families in the city - 1, families left + 1"
 0x0013CEF0,mm_Family_ClearMemberFlag,44,game,family,verified,no,1,0,"(family, member) clears bit 7 of member byte (`family`, `member`)"
 0x0013CF20,mm_Family_PickIntroduction,480,game,family,verified,yes,5,3,"(family, member, city) an acquaintance of member (`family`, `member`) who can apply (type limit from 0x1C5548); 0 when none"
 0x0013D110,mm_Family_CanApply,364,game,family,verified,no,9,2,"(family, city) family `family` is not in the city, has not left, is not already applying, and there is room for its people"
@@ -969,7 +969,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0013E520,mm_MapSave_UnpackTiles,1164,game,map,verified,yes,1,2,"after loading: unpacks the 6-byte-per-tile save buffer (height/2048, first object, flags) into the tiles, then rebuilds"
 0x0013E9B0,mm_MapSave_AllocBuffer,48,game,map,verified,yes,1,1,allocates the 0x18000-byte packed tile buffer at CityMap +0
 0x0013E9E0,mm_MapSave_FreeBuffer,56,game,map,verified,yes,1,1,frees the packed tile buffer
-0x0013EA20,mm_MapSave_PackTiles,808,game,map,ported,yes,1,2,"before saving: packs every tile into 6 bytes (height * 2048, first object, flags)"
+0x0013EA20,mm_MapSave_PackTiles,808,game,map,verified,yes,1,2,"before saving: packs every tile into 6 bytes (height * 2048, first object, flags)"
 0x0013ED50,mm_Map_LoadState,148,game,map,verified,no,1,2,"reads the tile data, objects (0x6F200), tile lists, people (0x46500) and counters from the save file"
 0x0013EDF0,mm_Map_SaveState,148,game,map,verified,no,1,2,writes them
 0x0013EE90,mm_TerrainGen_ScatterObjects,780,game,map,verified,no,1,3,"marks the objects of low tiles (height <= 0.1) within a radius with a weed row (look[4]): 2 where unset, 0 clears, others by a distance-weighted random chance"
@@ -1015,7 +1015,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001429A0,mm_Map_FindVehicleOnTile,200,game,map,verified,no,1,0,"(map, home, tile) a vehicle (class flag 1) of building `home` among the people listed at the objects of the tile; 0 for none (a person with a car looks for it, mm_Person_Update)"
 0x00142A70,mm_People_RemoveChain,68,game,map,verified,no,1,0,"(map, head) marks every person in the chain from *`head` removed (flag 0x800) and clears the head"
 0x00142AC0,mm_People_Next,64,game,map,verified,no,24,0,"(map, cursor) *`cursor` = the next person in its list (nextHere), unless it is 6000"
-0x00142B00,mm_People_UnlinkFromList,96,game,map,ported,no,2,0,"(map, head, person) unlinks person `person` from the list starting at *`head` and flags it 0x800; 1 if found"
+0x00142B00,mm_People_UnlinkFromList,96,game,map,verified,no,2,0,"(map, head, person) unlinks person `person` from the list starting at *`head` and flags it 0x800; 1 if found"
 0x00142B60,mm_MapObj_AddPerson,68,game,map,verified,no,3,0,"(map, object, person) pushes person `person` onto object `object`'s person list"
 0x00142BB0,mm_Map_UnlinkPersonFromTile,204,game,map,verified,no,7,1,"(map, tile, person) removes person `person` from the tile's person list, flags it 0x800"
 0x00142C90,mm_MapPeople_RemoveForObject,760,game,map,verified,no,1,5,"(map, object) deletes the people whose home is object `object` (counters, headingHere of the building they head for, occupants of the one they are in, residents), puts everyone else in it outside; if one of its own went, its family moves away"
@@ -1149,7 +1149,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00150130,mm_WaterLayer_ctor,88,game,gfx,verified,no,1,5,"base constructor, parameters, packet"
 0x00150190,mm_Wants_RemoveEventHold,272,game,city,verified,no,9,0,"(wants, eventId, value) removes the holds of event `eventId` (EventType.id) with `value`, the hold's number (events ending); as in the original, the entry that moves into a removed one's place is skipped"
 0x001502A0,mm_Wants_AddEventHold,172,game,city,verified,no,1,0,"(wants, eventId, value) a one-word entry held by event `eventId` (EventType.id) with `value`, the hold's number, when an entry and a word are free"
-0x00150350,mm_Wants_CheckEntry,208,game,city,ported,no,2,2,"a want's state: 2 no longer holds (family gone, claim changed, meter not above the low threshold), 1 met (flags 0x48), 3 meter above the high threshold and not phoned yet, else 0"
+0x00150350,mm_Wants_CheckEntry,208,game,city,verified,no,2,2,"a want's state: 2 no longer holds (family gone, claim changed, meter not above the low threshold), 1 met (flags 0x48), 3 meter above the high threshold and not phoned yet, else 0"
 0x00150420,mm_Wants_Find,292,game,city,verified,no,8,1,"(wants, city, claimSlot, object, person, iterator) the next want (from *`iterator` on, which it advances) that still holds or is pressing: its claim slot, building and person into *`claimSlot`, *`object` and *`person`; event holds are passed over; 0 when none is left"
 0x00150550,mm_Wants_AddForPerson,256,game,city,verified,no,1,1,"(wants, city, person, claimSlot) records person `person`'s want (claim slot `claimSlot`) when an entry and four words are free"
 0x00150650,mm_Wants_LoadState,20,game,city,verified,no,1,1,reads the 0x504-byte list from the save file
@@ -1170,7 +1170,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001516C0,mm_StageScene_ShowStageTitle,256,game,scene,verified,yes,1,12,"""STAGE n"" title card"
 0x001517C0,mm_StageScene_ShowApprovalRate,596,game,scene,verified,yes,1,16,"""Your Approval Rate"" screen"
 0x00151A20,mm_StageScene_MissionBriefing,1064,game,scene,verified,yes,1,19,the boss explains the mission in the message window
-0x00151E50,mm_StageScene_BuildBriefingText,452,game,scene,ported,yes,1,4,"""Let me explain Mission %d to you."" + the goal text + ""That's all. Good luck to you!"""
+0x00151E50,mm_StageScene_BuildBriefingText,452,game,scene,verified,yes,1,4,"""Let me explain Mission %d to you."" + the goal text + ""That's all. Good luck to you!"""
 0x00152020,mm_StageScene_ShowTelop,1204,game,scene,verified,yes,1,25,"the scrolling telop of the briefing. The kind of telop follows the stage: 0 for stage 1, 1 for stage 5, 2 for the others (which also name the city and its mayor). Phase 0 loads the sound bank and writes the text into a box of 17 by 20, 1 starts the music once the sound driver is idle, 2 scrolls the box up (scroll grows by 2 a frame; on stage 6 by 1, and by 2 every seventh frame) until Start or Cross is pressed (not on stage 6) or the scroll has gone far enough, then the fade takes the picture out, the music is stopped, the box and the picture are deleted and the phase restarts with the step counted on"
 0x001524E0,mm_StageScene_Update,884,game,scene,verified,yes,1,20,"stage transition scene: title cards, approval, briefing, mission movie, ending roll (END_ROLL.TEX)"
 0x00152860,mm_StageScene_dtor,172,game,scene,verified,yes,0,5,"vtables 0x1BCF10/0x1BCF18; deletes camera, stage object, lights"
@@ -1336,7 +1336,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00162EE0,mm_NameEntry_Update,240,game,ui,verified,no,1,1,"states 3 and 4 slide the panel in (26 frames, then input) and out (to closed); state 1 takes input. Returns the state"
 0x00162FD0,mm_NameEntry_Close,48,game,ui,verified,no,1,0,"closes the name entry: unless it is closed already it slides out over 25 frames (state 4), or closes at once (state 0) when it does not slide"
 0x00163000,mm_NameEntry_Setup,912,game,ui,verified,no,1,5,"(entry, mode, maxLength, noSlide, hint, text) opens the name entry: the keyboard set (`mode`, the text pointer table at 0x1B13E0), the name length (up to 24, maxLength) with the name cleared or taken from `text`, the scrolling hint (`hint`, else empty; scrolled when longer than 10 characters), the cursor at the end of the name, the state (3 when ``noSlide`` is 0, else 1) with the board model placed (0.3 lower in state 3), the keyboard text from its first line (6 characters a line) and the arrows for more lines above and below (moreAbove, moreBelow)"
-0x00163390,mm_NameEntry_dtor,184,game,ui,ported,yes,0,2,"the name entry's destructor: its four text boxes (hintText, keysText, nameText, lineText) deleted, then the object when asked"
+0x00163390,mm_NameEntry_dtor,184,game,ui,verified,yes,0,2,"the name entry's destructor: its four text boxes (hintText, keysText, nameText, lineText) deleted, then the object when asked"
 0x00163450,mm_NameEntry_CreateTexts,424,game,ui,verified,yes,1,5,"the four text boxes of the name entry window (hintText 16 by 1, keysText 3 by 4 with larger glyphs, nameText 12 by 1 and lineText 16 by 1, all at depth 0x10001000), and the model it shows: the shared model (0x1F3B6C, model), its matrix (boardMatrix) and the world matrix of its node 1 (markerMatrix), set to the one at 0x1B2550 moved to markerX, markerY and the board's z"
 0x00163600,mm_NameEntry_ctor,136,game,ui,verified,yes,1,1,"the name entry window: its texts, then the board placed at restHeight and z -4.4 (the marker takes the same z) and the place kept in boardPlace"
 0x00163690,mm_Collide_MeshFloorBelow,436,game,city,verified,no,5,1,whether the segment from the point up by `lift` (to y - lift; heights grow downwards) crosses a triangle of the mesh (the matrix places it); the highest crossing (smallest y) goes to *hit
@@ -1459,7 +1459,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0016C360,mm_BldgWasteland_ctor,52,game,city,verified,yes,1,1,"base constructor, vtable 0x1BD3C0"
 0x0016C3A0,mm_PhoneCall_Next,204,game,ui,verified,no,1,3,shifts the call queue and drops input focus
 0x0016C470,mm_PhoneCall_Remove,372,game,ui,verified,no,1,4,"(phone, city, family, member) removes the queued call for (`family`, `member`)"
-0x0016C5F0,mm_PhoneCall_Post,124,game,ui,ported,no,3,0,"(phone, person, family, member, familyOnly) queues a call from a family member (4 entries; none when the family already has one); 1 when queued"
+0x0016C5F0,mm_PhoneCall_Post,124,game,ui,verified,no,3,0,"(phone, person, family, member, familyOnly) queues a call from a family member (4 entries; none when the family already has one); 1 when queued"
 0x0016C670,mm_PhoneCall_Draw,364,game,ui,verified,yes,1,5,"phone model, ringing light and sound"
 0x0016C7E0,mm_PhoneCall_Update,1940,game,ui,verified,yes,1,13,"ringing phone: ""Call from boss"", ""Call from stranger"", ""Call from %s"", answering, input focus"
 0x0016CF80,mm_PhoneCall_DeletingDtor,68,game,ui,verified,yes,1,1,delete when the flag is > 0
@@ -1630,7 +1630,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001794A0,mm_TalkMoney_Closing,68,game,talk,verified,indirect,0,0,"Step(0.1), then idle"
 0x001794F0,mm_TalkMoney_Active,100,game,talk,verified,no,0,0,"(money) the amount shown counts 100 a frame towards the real one, never past it"
 0x00179560,mm_TalkMoney_Opening,68,game,talk,verified,indirect,0,0,"Step(0.1), then active"
-0x001795B0,mm_TalkMoney_dtor,124,game,talk,ported,yes,0,3,vtable 0x1BD7C0
+0x001795B0,mm_TalkMoney_dtor,124,game,talk,verified,yes,0,3,vtable 0x1BD7C0
 0x00179630,mm_TalkMoney_ctor,188,game,talk,verified,yes,1,5,"(money, amount) vtable 0x1BD7C0, amount `amount` (player money 0x1C5540)"
 0x001796F0,mm_MyHome_EntranceRect,360,game,talk,verified,no,1,0,"tile rectangle in front of a building by facing (0-3), clamped to the map"
 0x00179860,mm_MyHome_MarkEntrance,300,game,talk,verified,no,2,4,"(view, set) sets (`set` 1) or clears tile flag 0x80 in front of the home"
@@ -1877,7 +1877,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00184B60,mm_File_dtor,112,game,file,verified,yes,17,2,closes a synchronous open file; deletes this when the flag is > 0
 0x00184BD0,mm_File_ctor,20,game,file,verified,no,18,0,"fd = -1, +4 = asynchronous flag"
 0x00184BF0,mm_Font_GetGlyph,28,game,font,verified,no,3,0,font data (gp global) + (char & 0xFF) * 0x90
-0x00184C10,mm_Font_Free,44,game,font,ported,yes,1,1,frees the loaded font
+0x00184C10,mm_Font_Free,44,game,font,verified,yes,1,1,frees the loaded font
 0x00184C40,mm_Font_Load,132,game,font,verified,yes,1,6,"loads DATA\FONT1222.GF (sprintf ""%d"" of 11222 with the first digit skipped) with mm_File_LoadWhole"
 0x00184CD0,mm_Heap_Probe,84,game,mem,verified,yes,1,2,malloc(0x17E5D70) then free; returns that size (checks the heap can hold it)
 0x00184D30,mm_Random_TimerMix,164,game,random,verified,no,9,0,"steps a five-word cascade at 0x1B2520 and adds timer 0 (T0_COUNT) into its first word, which it returns: noise for sound variations"
@@ -1902,14 +1902,14 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00185E70,mm_Math_Log2,56,game,math,verified,no,5,0,(value) floor(log2(`value`)) for `value` >= 1
 0x00185EB0,mm_McSave_WriteIconSys,1120,game,save,verified,yes,1,7,"builds the icon.sys header ('PS2D', title, STATIC.ICO icons) in 0x1F65F0 and writes it through the memory card queue"
 0x00186310,mm_McQueue_Seek,152,game,save,verified,no,1,0,queues sceMcSeek (command 12); returns the request id
-0x001863B0,mm_McQueue_Write,152,game,save,ported,no,2,0,queues sceMcWrite (command 10)
+0x001863B0,mm_McQueue_Write,152,game,save,verified,no,2,0,queues sceMcWrite (command 10)
 0x00186450,mm_McQueue_Read,152,game,save,verified,no,2,0,queues sceMcRead (command 9)
 0x001864F0,mm_McQueue_Delete,136,game,save,verified,no,1,0,queues sceMcDelete (command 8)
 0x00186580,mm_McQueue_Close,120,game,save,verified,no,3,0,queues sceMcClose (command 7)
 0x00186600,mm_McQueue_Open,152,game,save,verified,no,3,0,queues sceMcOpen (command 6)
 0x001866A0,mm_McQueue_Chdir,152,game,save,verified,no,2,0,queues sceMcChdir (command 5)
-0x00186740,mm_McQueue_Mkdir,136,game,save,ported,no,1,0,queues sceMcMkdir (command 4)
-0x001867D0,mm_McQueue_Format,120,game,save,ported,no,1,0,queues sceMcFormat (command 3)
+0x00186740,mm_McQueue_Mkdir,136,game,save,verified,no,1,0,queues sceMcMkdir (command 4)
+0x001867D0,mm_McQueue_Format,120,game,save,verified,no,1,0,queues sceMcFormat (command 3)
 0x00186850,mm_McQueue_GetDir,184,game,save,verified,no,1,0,queues sceMcGetDir (command 2)
 0x00186910,mm_McQueue_GetInfo,168,game,save,verified,no,2,0,queues sceMcGetInfo (command 1)
 0x001869C0,mm_McQueue_GetResult,48,game,save,verified,no,2,0,"(queue, request) result word of request `request` (64 slots of 0x24 bytes at 0x1F5CF0, result at +0xC)"
@@ -1935,7 +1935,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001873D0,mm_DmaList_InitPackets,616,game,gfx,verified,no,1,0,builds two static packets at 0x1F69C0 that draw a 640 x 224 field buffer (GS block 0 or 0x8C0) back over the frame as 5 x 7 sprites of 128 x 32
 0x00187640,mm_DmaList_Init,104,game,gfx,verified,yes,1,2,"allocates the two 64 KB lists and the 0x8000-byte packet buffer, then builds the overlay packets (0x1873D0)"
 0x001876B0,mm_Sound_StopAllPlaying,156,game,sound,verified,no,1,3,asks the driver for its status (0x18F200) and stops every voice whose bit is set in the two 16-bit masks at +4 and +8
-0x00187750,mm_Se_SetEnabled,196,game,sound,ported,no,3,4,"(enabled, resetVolumes) 0x1BDD20 = `enabled`; `enabled` == 0 stops all 16 + 15 effect voices; `resetVolumes` != 0 resets their volumes (0xFFF and 0x100)"
+0x00187750,mm_Se_SetEnabled,196,game,sound,verified,no,3,4,"(enabled, resetVolumes) 0x1BDD20 = `enabled`; `enabled` == 0 stops all 16 + 15 effect voices; `resetVolumes` != 0 resets their volumes (0xFFF and 0x100)"
 0x00187820,mm_Bgm_SetPlaying,76,game,sound,verified,no,1,2,"the music (voice 15) on or off, and its volume back to 0xC0 when asked"
 0x00187870,mm_Se_UpdateCityAmbience,3152,game,sound,verified,no,1,8,"one quarter of the 2x2 blocks within 16 tiles of the listener per frame: building sounds (group 2), terrain sounds (group 3) and, within 8 tiles, vehicles; VU0 bearings from the listener; 17:00 chime 0x3B for busy cities"
 0x001884E0,mm_Se_UpdateListener,1092,game,sound,verified,no,2,1,copies the city camera's eye and target into the listener vectors at 0x1FC650 and derives its orientation
@@ -1966,11 +1966,11 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0018D160,mm_Sound_ResetVoices,284,game,sound,verified,no,4,3,"queues cmd 1, resets all voice volumes (0xFFF group A, 0x100 group B, 0xC0 voice 15) and clears the effect voice tables"
 0x0018D280,mm_Se_BuildAmbienceMap,348,game,sound,verified,no,2,0,clears the 4096-entry ambience grid at 0x1FC690 and fills it from the city map and the table at 0x1B35F0
 0x0018D3E0,mm_Sound_InitState,196,game,sound,verified,no,1,0,called by mm_GameInit: marks all 31 effect voices free (0xFF) and clears the sound globals
-0x0018D4B0,mm_SoundCmd_CancelWavePlay,256,game,sound,ported,no,2,0,"drops the unsent WavePlay commands (3) from the ring and closes the gap; matches the voice against byte 3 of the command word (always 0), so called with voice 0 it drops them all"
+0x0018D4B0,mm_SoundCmd_CancelWavePlay,256,game,sound,verified,no,2,0,"drops the unsent WavePlay commands (3) from the ring and closes the gap; matches the voice against byte 3 of the command word (always 0), so called with voice 0 it drops them all"
 0x0018D5B0,mm_Sound_IsBusy,164,game,sound,verified,no,10,1,"refreshes the status copy (0x20B7C0 -> 0x20B840, merged with pending masks); true if the driver is busy or commands are queued"
 0x0018D660,mm_Sound_IsDriverBusy,128,game,sound,verified,no,3,1,like mm_Sound_IsBusy but ignores queued commands
 0x0018D6E0,mm_SoundCmd_SetLoadPause,100,game,sound,verified,no,6,0,"(busy) queues cmd 0x18, sent as YYSOUND function 0x3001 (its load pause flag) with busy & 0xFF; the file code sends 1 before waiting on the disc and 0 after"
-0x0018D750,mm_SoundCmd_MidiSetTempo,140,game,sound,ported,no,1,0,"(voice, tempo, id) queues cmd 0x11, sent as YYSOUND CmdMidiSetTempo (0x1026, ST_MIDI_TEMPO)"
+0x0018D750,mm_SoundCmd_MidiSetTempo,140,game,sound,verified,no,1,0,"(voice, tempo, id) queues cmd 0x11, sent as YYSOUND CmdMidiSetTempo (0x1026, ST_MIDI_TEMPO)"
 0x0018D7E0,mm_SoundCmd_MidiSetTrackVolume,140,game,sound,verified,no,6,0,"(voice, volume, id) queues cmd 0x10, sent as YYSOUND CmdMidiSetTrackVolume (0x1025, ST_TRACK_VOL)"
 0x0018D870,mm_SoundCmd_MidiSetVolume,140,game,sound,verified,no,5,0,"(voice, volume, id) queues cmd 0xF, sent as YYSOUND CmdMidiSetVolume (0x1020, ST_MIDI_VOL)"
 0x0018D900,mm_SoundCmd_MidiFade,144,game,sound,verified,no,10,0,"(voice, target, time, id) queues cmd 0xE, sent as YYSOUND CmdMidiFade (0x1021, ST_MIDI_FADE: goal and step)"
@@ -1982,9 +1982,9 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0018DD00,mm_SoundCmd_WaveSetTrackVolume,140,game,sound,verified,no,2,0,"(voice, volume, id) queues cmd 7, sent as YYSOUND CmdWaveSetTrackVolume (0x2025)"
 0x0018DD90,mm_SoundCmd_WaveSetVolume,144,game,sound,verified,no,1,0,"(voice, left, right, id) queues cmd 6, sent as YYSOUND CmdWaveSetVolume (0x2020, ST_WAVE_VOL)"
 0x0018DE20,mm_SoundCmd_WaveFade,152,game,sound,verified,no,3,0,"(voice, leftGoal, rightGoal, leftStep, rightStep, id) queues cmd 5, sent as YYSOUND CmdWaveFade (0x2021, ST_WAVE_FADE)"
-0x0018DEC0,mm_SoundCmd_WaveStop,168,game,sound,ported,no,2,0,"(voice, id) queues cmd 4, sent as YYSOUND CmdWaveStop (0x2011)"
+0x0018DEC0,mm_SoundCmd_WaveStop,168,game,sound,verified,no,2,0,"(voice, id) queues cmd 4, sent as YYSOUND CmdWaveStop (0x2011)"
 0x0018DF70,mm_SoundCmd_WavePlay,180,game,sound,verified,no,1,0,"(voice, bank, sound, program, note, loop, kept, id) queues cmd 3, sent as YYSOUND CmdWavePlay (0x2010, ST_WAVE_PLAY): sound `sound` of bank `bank` with `program`, at `note` (60 as recorded), `loop` times (0 until stopped); `kept` stays on the EE side (+8, nothing reads it); sets the voice's bit in the pending mask (gp)"
-0x0018E030,mm_SoundCmd_WaveClose,168,game,sound,ported,no,1,0,"(bank, id) queues cmd 2, sent as YYSOUND CmdWaveClose (0x2003)"
+0x0018E030,mm_SoundCmd_WaveClose,168,game,sound,verified,no,1,0,"(bank, id) queues cmd 2, sent as YYSOUND CmdWaveClose (0x2003)"
 0x0018E0E0,mm_SoundCmd_WaveOpen,204,game,sound,verified,no,1,0,"(bank, type, hdName, bdName, id) queues cmd 1, sent as YYSOUND CmdWaveOpen (0x2001): the HD and BD file names (with the path prefix) into bank `bank`"
 0x0018E1B0,mm_SoundCmd_Flush,4164,game,sound,verified,yes,7,7,"(was mm_SetSoundDataPaths) sends the queued commands to YYSOUND over SIF RPC 0x12346 (paths cdrom0:\DATA\SOUND\SQ|HD|BD\), drops commands when too many are pending (""URGENT CUT"", ""ManyRequest"") and refreshes the status block"
 0x0018F200,mm_Sound_GetStatus,124,game,sound,verified,no,5,1,refreshes the status copy at 0x20B840 (merged with the pending masks) and returns it
@@ -2043,7 +2043,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x001930C0,mm_EventQueue_InsertByPriority,340,game,event,verified,no,7,1,"(queue, entry, bucket, start) inserts id *`entry` into level `bucket` keeping the type priority order (the type's priority)"
 0x00193220,mm_PartyPopup_Draw,36,game,event,verified,no,0,1,in draw pass 2 the popup frame packet (+4) is called
 0x00193250,mm_PartyPopup_Update,72,game,event,verified,no,0,3,shows notice 1 and closes on Circle (0x40)
-0x001932A0,mm_PartyPopup_dtor,144,game,event,ported,yes,0,3,the vtable steps down to the derived class's destructor state and back to the base class's; the GS is waited for before the frame it may still draw is deleted
+0x001932A0,mm_PartyPopup_dtor,144,game,event,verified,yes,0,3,the vtable steps down to the derived class's destructor state and back to the base class's; the GS is waited for before the frame it may still draw is deleted
 0x00193330,mm_EvFarewellParty_Answer,60,game,event,verified,no,0,0,type 19: Answer
 0x00193370,mm_EvFarewellParty_End,104,game,event,verified,indirect,0,1,type 19: End
 0x001933E0,mm_EvFarewellParty_Update,1344,game,event,verified,yes,0,19,type 19: Update
