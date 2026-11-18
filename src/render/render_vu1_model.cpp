@@ -113,7 +113,7 @@ namespace mm::render
             {
             }
 
-            void run(VuMemory &memory, int32_t entry, uint32_t top, uint32_t /*itop*/, std::vector<VuPacket> &out) override
+            void run(VuMemory &memory, int32_t entry, uint32_t top, uint32_t /*itop*/, VuPacketList &out) override
             {
                 if (entry == 0)
                     setup(memory);
@@ -167,7 +167,7 @@ namespace mm::render
                 m_ready = true;
             }
 
-            void batch(VuMemory &m, uint32_t top, std::vector<VuPacket> &out)
+            void batch(VuMemory &m, uint32_t top, VuPacketList &out)
             {
                 if (!m_ready)
                     setup(m);
@@ -204,7 +204,7 @@ namespace mm::render
             // product of its edges on screen, times the sign in its last vertex's normal w). A vertex is written unless all
             // three triangles it belongs to face away (the last two always are); a written vertex's drawing kick is off
             // when the triangle it ends faces away or one of the last three written vertices failed the clip test.
-            void stripBatch(VuMemory &m, uint32_t top, bool fog, std::vector<VuPacket> &out)
+            void stripBatch(VuMemory &m, uint32_t top, bool fog, VuPacketList &out)
             {
                 const int32_t count = static_cast<int16_t>(m.word(top + 1, 0));
                 if (count < 3)
@@ -231,7 +231,7 @@ namespace mm::render
                 }
                 const auto facing = [&](int32_t k) { return k >= 0 ? m_facing[k] : 0; };
 
-                VuPacket packet;
+                VuPacket &packet = out.add();
                 packet.tagLo = tagWords(m.word(top, 0), fog ? m.word(top, 1) : m.word(top + 1, 1)); // no fog: qword 1's tag word
                 packet.tagHi = tagWords(m.word(top, 2), m.word(top, 3));
                 packet.vertices.reserve(static_cast<size_t>(count));
@@ -265,7 +265,6 @@ namespace mm::render
                 }
                 packet.tagLo = (packet.tagLo & ~0xFFFFFFFFull) | 0x8000u | static_cast<uint32_t>(packet.vertices.size()); // NLOOP, EOP
                 m_clipFlags = clipHistory;
-                out.push_back(std::move(packet));
             }
 
             // 0x1A4780's mode 1: every vertex is written (no shortening); its drawing kick is off when the triangle it ends
@@ -273,13 +272,15 @@ namespace mm::render
             // test and is not wholly outside one plane of the clip volume is clipped against -z, -x, +x, -y and +y, and
             // the polygon left goes out at once as a triangle fan of its own; the strip goes out at the end, with all its
             // vertices and qword 1's tag word.
-            void clippingBatch(VuMemory &m, uint32_t top, std::vector<VuPacket> &out)
+            void clippingBatch(VuMemory &m, uint32_t top, VuPacketList &out)
             {
                 const int32_t count = static_cast<int16_t>(m.word(top + 1, 0));
                 if (count < 1)
                     return;
                 const uint32_t base = top + 2;
-                VuPacket strip;
+                VuPacket &strip = m_strip; // sent after the fans this batch adds: swapped into the list at the end
+                strip.registers.clear();
+                strip.vertices.clear();
                 strip.tagLo = tagWords(m.word(top, 0), m.word(top + 1, 1));
                 strip.tagHi = tagWords(m.word(top, 2), m.word(top, 3));
                 strip.vertices.reserve(static_cast<size_t>(count));
@@ -332,7 +333,7 @@ namespace mm::render
                         clipTriangle(m, top, corners, out);
                 }
                 m_clipFlags = clipHistory;
-                out.push_back(std::move(strip));
+                std::swap(out.add(), m_strip);
             }
 
             // Sutherland-Hodgman against one plane of the clip volume: `lane` 0 x, 1 y, 2 z; `sign` -1 for the lower plane
@@ -374,7 +375,7 @@ namespace mm::render
                 }
             }
 
-            void clipTriangle(const VuMemory &m, uint32_t top, const Corner (&corners)[3], std::vector<VuPacket> &out)
+            void clipTriangle(const VuMemory &m, uint32_t top, const Corner (&corners)[3], VuPacketList &out)
             {
                 m_polygon.assign({corners[2], corners[1], corners[0]}); // oldest first
                 static const struct
@@ -389,7 +390,7 @@ namespace mm::render
                     if (m_polygon.size() < 3)
                         return;
                 }
-                VuPacket fan;
+                VuPacket &fan = out.add();
                 fan.tagLo = tagWords(0x8000u | static_cast<uint32_t>(m_polygon.size()), m.word(top + 1, 3));
                 fan.tagHi = tagWords(m.word(top, 2), m.word(top, 3));
                 for (const Corner &c : m_polygon)
@@ -403,7 +404,6 @@ namespace mm::render
                         o.rgba[i] = toByte(c.colour[i]);
                     fan.vertices.push_back(o);
                 }
-                out.push_back(std::move(fan));
             }
 
             uint32_t m_modeAddress;
@@ -412,6 +412,7 @@ namespace mm::render
             Vec4 m_lightColour[4], m_batchColour;
             bool m_ready = false;
             uint32_t m_clipFlags = 0; // the VU's clip flag register carries over from run to run
+            VuPacket m_strip;         // clippingBatch's strip while the fans it clips go out first
             std::vector<Vec4> m_screenPos;
             std::vector<float> m_q;
             std::vector<uint8_t> m_facing;

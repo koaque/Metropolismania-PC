@@ -49,7 +49,7 @@ namespace mm::render
         bool m_adjustCamera = false;
         void adjustWorldCamera(uint32_t count);
         void moveFarPlane(float d);
-        std::vector<VuPacket> m_packets;
+        VuPacketList m_packets;
         std::map<uint32_t, uint32_t> m_missing;
     };
 }

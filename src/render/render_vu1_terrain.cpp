@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <span>
 
 namespace mm::render
 {
@@ -171,7 +172,7 @@ namespace mm::render
         public:
             explicit QuadPass(const QuadConfig &config) : m_config(config) {}
 
-            void run(VuMemory &m, int32_t entry, uint32_t top, uint32_t /*itop*/, std::vector<VuPacket> &out) override
+            void run(VuMemory &m, int32_t entry, uint32_t top, uint32_t /*itop*/, VuPacketList &out) override
             {
                 if (entry == 0)
                     setup(m);
@@ -212,19 +213,19 @@ namespace mm::render
                 m_setupOffset = m.real(46, 1);
             }
 
-            void batch(VuMemory &m, uint32_t top, std::vector<VuPacket> &out)
+            void batch(VuMemory &m, uint32_t top, VuPacketList &out)
             {
                 const int32_t count = vi16(m, 31, 0) & 0x7FFF;
                 const int32_t mask = m_config.maskAtSetup ? m_setupMask : vi16(m, 45, 3);
                 const uint32_t prim = static_cast<uint16_t>(m.word(32, 0));
-                VuPacket packet;
+                VuPacket &packet = out.add();
                 packet.tagLo = tagWord(m, 31, 0);
                 packet.tagHi = tagWord(m, 31, 2);
                 packet.vertices.reserve(static_cast<size_t>(count) * 4);
                 for (int32_t i = 0; i < count; ++i)
                 {
                     const uint32_t q = top + 4u * static_cast<uint32_t>(i);
-                    VuVertex corner[4]; // in strip order
+                    const std::span<VuVertex, 4> corner(appendVertices(packet.vertices, 4), 4); // in strip order, built in place
                     corner[0].beforeCount = 2;
                     corner[0].before[1] = {0x00, prim, false}; // PRIM, written for every quad
                     if ((vi16(m, q + 2, 3) & mask) == 0)
@@ -233,7 +234,6 @@ namespace mm::render
                         for (VuVertex &v : corner)
                             v.stale = true;
                         corner[2].adc = corner[3].adc = true;
-                        packet.vertices.insert(packet.vertices.end(), corner, corner + 4);
                         continue;
                     }
                     Vec4 c[4];
@@ -284,9 +284,7 @@ namespace mm::render
                         corner[2].adc = corner[3].adc = true;
                         corner[2].fog = corner[3].fog = 0.0f;
                     }
-                    packet.vertices.insert(packet.vertices.end(), corner, corner + 4);
                 }
-                out.push_back(std::move(packet));
             }
 
             QuadConfig m_config;
@@ -302,7 +300,7 @@ namespace mm::render
         class SidePass final : public TerrainProgram
         {
         public:
-            void run(VuMemory &m, int32_t entry, uint32_t top, uint32_t /*itop*/, std::vector<VuPacket> &out) override
+            void run(VuMemory &m, int32_t entry, uint32_t top, uint32_t /*itop*/, VuPacketList &out) override
             {
                 if (entry == 0)
                 {
@@ -331,17 +329,17 @@ namespace mm::render
                 m_heightScale = m.real(32, 1);
             }
 
-            void batch(VuMemory &m, uint32_t top, std::vector<VuPacket> &out)
+            void batch(VuMemory &m, uint32_t top, VuPacketList &out)
             {
                 const int32_t count = vi16(m, 31, 0) & 0x7FFF;
-                VuPacket packet;
+                VuPacket &packet = out.add();
                 packet.tagLo = tagWord(m, 31, 0);
                 packet.tagHi = tagWord(m, 31, 2);
                 packet.vertices.reserve(static_cast<size_t>(count) * 3);
                 for (int32_t i = 0; i < count; ++i)
                 {
                     const uint32_t t = top + 3u * static_cast<uint32_t>(i);
-                    VuVertex corner[3];
+                    const std::span<VuVertex, 3> corner(appendVertices(packet.vertices, 3), 3); // built in place
                     corner[0].beforeCount = 1;
                     if (vi16(m, t + 2, 3) == 0)
                     {
@@ -349,7 +347,6 @@ namespace mm::render
                         for (VuVertex &v : corner)
                             v.stale = true;
                         corner[2].adc = true;
-                        packet.vertices.insert(packet.vertices.end(), corner, corner + 3);
                         continue;
                     }
                     Vec4 c[3], s[3];
@@ -383,9 +380,7 @@ namespace mm::render
                         corner[2].adc = true;
                         corner[2].fog = 0.0f;
                     }
-                    packet.vertices.insert(packet.vertices.end(), corner, corner + 3);
                 }
-                out.push_back(std::move(packet));
             }
 
             float m_heightScale = 0;
@@ -399,7 +394,7 @@ namespace mm::render
         class PlacementPass final : public TerrainProgram
         {
         public:
-            void run(VuMemory &m, int32_t entry, uint32_t top, uint32_t /*itop*/, std::vector<VuPacket> &out) override
+            void run(VuMemory &m, int32_t entry, uint32_t top, uint32_t /*itop*/, VuPacketList &out) override
             {
                 if (entry == 0)
                     setupCamera(m);
@@ -418,7 +413,7 @@ namespace mm::render
             }
 
         private:
-            void batch(VuMemory &m, uint32_t top, std::vector<VuPacket> &out)
+            void batch(VuMemory &m, uint32_t top, VuPacketList &out)
             {
                 const int32_t count = vi16(m, 31, 0) & 0x7FFF;
                 const int32_t mask = vi16(m, 34, 3);
@@ -429,7 +424,7 @@ namespace mm::render
                     fill[i] = toByte(m.real(28, i));
                     outline[i] = toByte(m.real(29, i));
                 }
-                VuPacket packet;
+                VuPacket &packet = out.add();
                 packet.tagLo = tagWord(m, 31, 0);
                 packet.tagHi = tagWord(m, 31, 2);
                 for (int32_t i = 0; i < count; ++i)
@@ -438,7 +433,7 @@ namespace mm::render
                     // the nine vertices in packet order: the strip's 0, 1, 3, 2, then the outline's 0, 1, 2, 3, 0
                     static const int kCorner[9] = {0, 1, 3, 2, 0, 1, 2, 3, 0};
                     static const bool kDraws[9] = {false, false, true, true, false, true, true, true, true};
-                    VuVertex v[9];
+                    const std::span<VuVertex, 9> v(appendVertices(packet.vertices, 9), 9); // built in place
                     for (VuVertex &x : v)
                         x.hasSt = false, x.hasRgba = false;
                     v[0].beforeCount = 1, v[0].before[0] = {0x00, prims[0], false}; // PRIM
@@ -476,9 +471,7 @@ namespace mm::render
                         for (int n = 0; n < 9; ++n)
                             if (kDraws[n])
                                 v[n].adc = true, v[n].fog = 0.0f;
-                    packet.vertices.insert(packet.vertices.end(), v, v + 9);
                 }
-                out.push_back(std::move(packet));
             }
         };
 
@@ -500,7 +493,7 @@ namespace mm::render
         class WaterPass final : public TerrainProgram
         {
         public:
-            void run(VuMemory &m, int32_t entry, uint32_t top, uint32_t /*itop*/, std::vector<VuPacket> &out) override
+            void run(VuMemory &m, int32_t entry, uint32_t top, uint32_t /*itop*/, VuPacketList &out) override
             {
                 if (entry == 0)
                     setupCamera(m);
@@ -519,7 +512,7 @@ namespace mm::render
             }
 
         private:
-            void batch(VuMemory &m, uint32_t top, std::vector<VuPacket> &out)
+            void batch(VuMemory &m, uint32_t top, VuPacketList &out)
             {
                 const int32_t count = vi16(m, 30, 1);
                 const int32_t mask = vi16(m, 58, 3);
@@ -530,13 +523,14 @@ namespace mm::render
                     const float r = t - std::trunc(t * p.z) * p.w;
                     return vuSin(r + p.y) * a.x + a.y;
                 };
-                VuPacket packet;
+                VuPacket &packet = out.add();
                 packet.tagLo = tagWord(m, 31, 0);
                 packet.tagHi = tagWord(m, 31, 2);
                 for (int32_t i = 0; i < std::max(count, 0); ++i)
                 {
                     const uint32_t q = top + 4u * static_cast<uint32_t>(i);
-                    VuVertex corner[2][4];
+                    // the two strips, built in place one after the other (the order they go out in)
+                    VuVertex(&corner)[2][4] = *reinterpret_cast<VuVertex(*)[2][4]>(appendVertices(packet.vertices, 8));
                     for (int strip = 0; strip < 2; ++strip)
                     {
                         corner[strip][0].beforeCount = 1;
@@ -549,7 +543,6 @@ namespace mm::render
                             for (VuVertex &v : strip)
                                 v.stale = true;
                             strip[2].adc = strip[3].adc = true;
-                            packet.vertices.insert(packet.vertices.end(), strip, strip + 4);
                         }
                         continue;
                     }
@@ -591,10 +584,8 @@ namespace mm::render
                             strip[2].adc = strip[3].adc = true;
                             strip[2].fog = strip[3].fog = 0.0f;
                         }
-                        packet.vertices.insert(packet.vertices.end(), strip, strip + 4);
                     }
                 }
-                out.push_back(std::move(packet));
             }
         };
     }

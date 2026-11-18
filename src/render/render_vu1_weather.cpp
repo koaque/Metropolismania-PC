@@ -113,7 +113,7 @@ namespace mm::render
         class RainProgram final : public WeatherProgram
         {
         public:
-            void run(VuMemory &m, int32_t entry, uint32_t top, uint32_t /*itop*/, std::vector<VuPacket> &out) override
+            void run(VuMemory &m, int32_t entry, uint32_t top, uint32_t /*itop*/, VuPacketList &out) override
             {
                 if (entry == 0)
                     setup(m);
@@ -155,9 +155,9 @@ namespace mm::render
                 m_mask = vi16(m, 21, 0);
             }
 
-            void batch(VuMemory &m, uint32_t top, std::vector<VuPacket> &out)
+            void batch(VuMemory &m, uint32_t top, VuPacketList &out)
             {
-                VuPacket packet;
+                VuPacket &packet = out.add();
                 packet.tagLo = static_cast<uint64_t>(m.word(18, 0)) | (static_cast<uint64_t>(m.word(18, 1)) << 32);
                 packet.tagHi = static_cast<uint64_t>(m.word(18, 2)) | (static_cast<uint64_t>(m.word(18, 3)) << 32);
                 packet.vertices.reserve(8 * 12 * 2);
@@ -187,7 +187,7 @@ namespace mm::render
                             a.y -= drop.x;
                             b.y -= drop.x;
                         }
-                        VuVertex v[2];
+                        VuVertex *const v = appendVertices(packet.vertices, 2); // built in place
                         v[0].hasSt = v[1].hasSt = false;
                         project(a, v[0]);
                         project(b, v[1]);
@@ -198,10 +198,8 @@ namespace mm::render
                             v[1].adc = true; // ISW.w of 0x8000 over the whole word
                             v[1].fog = 0.0f;
                         }
-                        packet.vertices.insert(packet.vertices.end(), v, v + 2);
                     }
                 }
-                out.push_back(std::move(packet));
             }
 
             uint8_t m_colour[2][4] = {};
@@ -217,7 +215,7 @@ namespace mm::render
         class SnowProgram final : public WeatherProgram
         {
         public:
-            void run(VuMemory &m, int32_t entry, uint32_t top, uint32_t /*itop*/, std::vector<VuPacket> &out) override
+            void run(VuMemory &m, int32_t entry, uint32_t top, uint32_t /*itop*/, VuPacketList &out) override
             {
                 if (entry == 0)
                     setup(m);
@@ -249,9 +247,9 @@ namespace mm::render
                 m_mask = vi16(m, 103, 1);
             }
 
-            void batch(VuMemory &m, uint32_t top, std::vector<VuPacket> &out)
+            void batch(VuMemory &m, uint32_t top, VuPacketList &out)
             {
-                VuPacket packet;
+                VuPacket &packet = out.add();
                 packet.tagLo = static_cast<uint64_t>(m.word(18, 0)) | (static_cast<uint64_t>(m.word(18, 1)) << 32);
                 packet.tagHi = static_cast<uint64_t>(m.word(18, 2)) | (static_cast<uint64_t>(m.word(18, 3)) << 32);
                 for (uint32_t quad = 0; quad < 8; ++quad)
@@ -290,7 +288,8 @@ namespace mm::render
                         if (!(r.y < 0.0f)) // not above the ground: wrapped up
                             r.y -= 40.0f;
                         r.x += corner.x, r.z += corner.z;
-                        VuVertex v[2] = {corners[0], corners[1]};
+                        VuVertex *const v = appendVertices(packet.vertices, 2); // built in place
+                        v[0] = corners[0], v[1] = corners[1];
                         const float w = project(r, v[0]);
                         Vec4 extent;
                         for (int i = 0; i < 4; ++i)
@@ -302,10 +301,8 @@ namespace mm::render
                             v[1].adc = true; // ISW.w of 0x8000 over the whole word
                             v[1].fog = 0.0f;
                         }
-                        packet.vertices.insert(packet.vertices.end(), v, v + 2);
                     }
                 }
-                out.push_back(std::move(packet));
             }
 
             Vec4 m_size, m_st[2];

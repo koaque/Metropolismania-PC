@@ -869,4 +869,18 @@ namespace mm::render
         m_tintExtras = false;
         return out;
     }
+
+    void Gs::reuseBuffers(std::vector<Vertex> &&vertices, std::vector<Batch> &&batches)
+    {
+        if (m_frame.vertices.empty() && vertices.capacity() > m_frame.vertices.capacity())
+        {
+            vertices.clear();
+            m_frame.vertices = std::move(vertices);
+        }
+        if (m_frame.batches.empty() && batches.capacity() > m_frame.batches.capacity())
+        {
+            batches.clear();
+            m_frame.batches = std::move(batches);
+        }
+    }
 }

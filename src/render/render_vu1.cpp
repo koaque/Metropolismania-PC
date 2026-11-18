@@ -39,7 +39,7 @@ namespace mm::render
         }
     }
 
-    void runVuProgram(VuProgram &program, VuMemory &memory, int32_t entry, uint32_t top, uint32_t itop, std::vector<VuPacket> &out)
+    void runVuProgram(VuProgram &program, VuMemory &memory, int32_t entry, uint32_t top, uint32_t itop, VuPacketList &out)
     {
         const int rounding = std::fegetround();
         std::fesetround(FE_TOWARDZERO);
@@ -332,7 +332,7 @@ namespace mm::render
             }
             VuMemory memory;
             std::memcpy(memory.words, r.dataBefore.data(), std::min(r.dataBefore.size(), sizeof(memory.words)));
-            std::vector<VuPacket> packets;
+            VuPacketList packets;
             if (r.kind != 0 && !native->takeRegisters(r.vf, r.vi)) // MSCNT: the setup the batch follows
                 runVuProgram(*native, memory, 0, r.top, r.itop, packets);
             packets.clear();

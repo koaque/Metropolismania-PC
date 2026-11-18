@@ -161,6 +161,13 @@ namespace mm::render
             std::unordered_map<uint64_t, TextureImage> pendingTextures;
             // window thread -> render thread: texture contents unused for long, for the GS to forget before they are let go
             std::vector<uint64_t> proposed;
+            // window thread -> render thread: the vertex and batch arrays of frames already drawn, for later frames to be built in
+            struct SpareArrays
+            {
+                std::vector<Vertex> vertices;
+                std::vector<Batch> batches;
+            };
+            std::vector<SpareArrays> spareArrays;
 
             // window thread
             uint32_t scale = 3;
@@ -395,6 +402,12 @@ namespace mm::render
                 r.proposed.clear();
             }
             r.ready.push_back(std::move(frame));
+            // the next frame is built in the arrays of one already drawn
+            if (!r.spareArrays.empty())
+            {
+                r.gs.reuseBuffers(std::move(r.spareArrays.back().vertices), std::move(r.spareArrays.back().batches));
+                r.spareArrays.pop_back();
+            }
             // While the window thread does not present (a minimized window), the oldest frames go undrawn rather than holding
             // up the game; what they carry goes with the next.
             constexpr size_t kMaxReady = 4;
@@ -1493,6 +1506,13 @@ namespace mm::render
                 // every frame finished since the last present, in order; the last is shown
                 for (Frame &frame : frames)
                 {
+                    // the frame drawn before is done with (its vertices went to the GPU): its arrays back to the render thread
+                    if (r.current.vertices.capacity() != 0)
+                    {
+                        std::lock_guard<std::mutex> lock(r.mutex);
+                        if (r.spareArrays.size() < 2)
+                            r.spareArrays.push_back({std::move(r.current.vertices), std::move(r.current.batches)});
+                    }
                     r.current = std::move(frame);
                     gpu = targetsFor(r.current);
                     if (!gpu)

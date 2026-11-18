@@ -121,6 +121,9 @@ namespace mm::render
 
         // The frame being built, handed over and started anew.
         Frame takeFrame();
+        // The vertex and batch arrays of a frame the window thread is done with: the frame being built takes them over (emptied),
+        // so it does not grow its arrays from nothing (a long view distance sends hundreds of thousands of vertices a frame).
+        void reuseBuffers(std::vector<Vertex> &&vertices, std::vector<Batch> &&batches);
         // The frame list reached a span the port marked (render_vif.h kSpanMark, port::enhance::Span): what follows, but for
         // frame-buffer reads, is marked DrawState::hud. Until the next span or the frame's end.
         void beginSpan(uint8_t span)

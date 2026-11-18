@@ -6,8 +6,10 @@
 // precision, where the VU1 would have sent fixed-point GIF packets (XGKICK). Each program is written from what the
 // microcode does (docs/RENDER_PIPELINE.md) and checked against captured runs of the real one (render_vu1_test.cpp).
 
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <deque>
 #include <vector>
 
 namespace mm::render
@@ -65,13 +67,51 @@ namespace mm::render
         std::vector<VuVertex> vertices;
     };
 
+    // `count` new vertices (as VuVertex{} makes them) at the end of `vertices`, for a program to fill in place rather than build
+    // them aside and copy them in: the first of them. Valid until the next vertex is added.
+    inline VuVertex *appendVertices(std::vector<VuVertex> &vertices, size_t count)
+    {
+        const size_t at = vertices.size();
+        vertices.resize(at + count);
+        return vertices.data() + at;
+    }
+
+    // The packets of one program run. The packets and their buffers are kept from run to run (clear() only forgets them), so
+    // once the list has grown to the busiest run's size a run allocates nothing: with a long view distance thousands of runs a
+    // frame allocated and freed their packets, and the heap calls took a quarter of the render thread. A packet stays where it
+    // is while later ones are added (a deque), so a program may keep a reference to one it is still filling.
+    class VuPacketList
+    {
+    public:
+        void clear() { m_used = 0; }
+        // A new, empty packet at the end.
+        VuPacket &add()
+        {
+            if (m_used == m_packets.size())
+                m_packets.emplace_back();
+            VuPacket &packet = m_packets[m_used++];
+            packet.tagLo = packet.tagHi = 0;
+            packet.registers.clear();
+            packet.vertices.clear();
+            return packet;
+        }
+        size_t size() const { return m_used; }
+        const VuPacket &operator[](size_t i) const { return m_packets[i]; }
+        std::deque<VuPacket>::const_iterator begin() const { return m_packets.begin(); }
+        std::deque<VuPacket>::const_iterator end() const { return m_packets.begin() + static_cast<std::ptrdiff_t>(m_used); }
+
+    private:
+        std::deque<VuPacket> m_packets;
+        size_t m_used = 0;
+    };
+
     class VuProgram
     {
     public:
         virtual ~VuProgram() = default;
         // MSCAL `entry` (a byte address in micro memory) and MSCNT (`entry` = -1): one run, from TOP and ITOP as the VIF set
         // them. Primitives go to `out`; the program may also write VU1 data memory, as the microcode does.
-        virtual void run(VuMemory &memory, int32_t entry, uint32_t top, uint32_t itop, std::vector<VuPacket> &out) = 0;
+        virtual void run(VuMemory &memory, int32_t entry, uint32_t top, uint32_t itop, VuPacketList &out) = 0;
         // For the record test: what the program's setup left in the VU's registers, taken from a captured run's state (the
         // setup's input in data memory may already be the next instance's or the next pass's). False when not needed.
         virtual bool takeRegisters(const float (&vf)[32][4], const int32_t (&vi)[16]) { return false; }
@@ -82,7 +122,7 @@ namespace mm::render
 
     // Runs a program as the VU does its arithmetic: rounding toward zero (as the runtime's VU1 does).
     void runVuProgram(VuProgram &program, VuMemory &memory, int32_t entry, uint32_t top, uint32_t itop,
-                      std::vector<VuPacket> &out);
+                      VuPacketList &out);
 
     // MMPC_RENDER_VU1TEST=<folder of .vu1r records>: every record's run through the native program, its packets compared
     // with the ones the real program sent. Needs the ELF in RDRAM (the programs are told apart by its upload packets).
