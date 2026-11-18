@@ -17,7 +17,7 @@ lists the lines it did not understand.
 | `anisotropic` | `1` (or `off`), `2`, `4`, `8`, `16` | `16` | `MMPC_RENDER_ANISO`: anisotropic filtering, the most texture samples a pixel along a slanted or distant surface (native renderer); `1` samples as the PS2 does, once a pixel, which makes distant ground and roofs shimmer ([details](RENDERER.md)) |
 | `filter_2d` | `sharp`, `smooth`, `ps2` | `sharp` | `MMPC_RENDER_FILTER_2D`: how the 2D drawn one texel to one pixel (text, the HUD, movies) is enlarged (native renderer): sharp keeps each texel crisp; smooth blends between texels where the PS2 does (its text and pictures); ps2 shows the PS2's own 640x448 picture of it, enlarged |
 | `widescreen` | `off`, `on` (16:9), `16:9`, `21:9`, any `W:H` | `off` | `MMPC_WIDESCREEN`: the city's view opened wider at the same height, the HUD at its proportions (native renderer; [details](RENDERER.md#widescreen-n6)) |
-| `view_distance` | `off`, `1.5`, `2`, `3` (up to `8`), `max` | `off` | `MMPC_VIEW_DISTANCE`: the city drawn that many times as far, with the fog moved out as far; the town's logic stays the PS2's (native renderer; [details](RENDERER.md#view-distance-and-the-extras-pass-n6)) |
+| `view_distance` | `off`, `1.5`, `2`, `3`, `4` (`max`) | `off` | `MMPC_VIEW_DISTANCE`: the city drawn that many times as far, with the fog moved out as far; the town's logic stays the PS2's (native renderer; [details](RENDERER.md#view-distance-and-the-extras-pass-n6)) |
 | `fullscreen` | `on`, `off` | `off` | `PS2X_FULLSCREEN`: borderless fullscreen; F11 switches while playing |
 | `window_size` | `WxH` | 640x448 | `PS2X_WINDOW_SIZE` |
 | `window_position` | `X,Y` | centred | `PS2X_WINDOW_POS` |

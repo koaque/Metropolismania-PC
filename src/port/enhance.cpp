@@ -51,10 +51,13 @@ namespace port::enhance
                 std::cerr << "[mm] view distance: off, it needs the native renderer (MMPC_RENDERER=native)" << std::endl;
                 return 1.0f;
             }
-            // max: far enough for the whole map (128 tiles a side) from any place on it
-            const float f = std::strcmp(value, "max") == 0 ? 8.0f : std::clamp(static_cast<float>(std::atof(value)), 1.0f, 8.0f);
-            std::cerr << "[mm] view distance: the city drawn " << f << " times as far (MMPC_VIEW_DISTANCE=" << value << ")"
-                      << std::endl;
+            // 4 at most (max): farther, the render thread could not keep 60 frames a second looking along the streets
+            // (measured 2026-11-18: 8 times, which reached the whole map from anywhere, ran at 13 to 24).
+            constexpr float kMost = 4.0f;
+            const float asked = std::strcmp(value, "max") == 0 ? kMost : static_cast<float>(std::atof(value));
+            const float f = std::clamp(asked, 1.0f, kMost);
+            std::cerr << "[mm] view distance: the city drawn " << f << " times as far (MMPC_VIEW_DISTANCE=" << value
+                      << (asked > kMost ? ", 4 at most" : "") << ")" << std::endl;
             return f;
         }();
         return factor;

@@ -236,9 +236,15 @@ port's first enhancement switch; with it off the port runs as before).
 
 ## View distance and the extras pass (N6)
 
-`MMPC_VIEW_DISTANCE=<factor>` (`1.5`, `2`, `3`, up to `8`) or `max` (8, the whole map from anywhere on it; settings
-`view_distance`, off by default) draws the city that many times as far as the PS2 does, with the fog moved out by the same
-factor. Like widescreen it needs the native renderer.
+`MMPC_VIEW_DISTANCE=<factor>` (`1.5`, `2`, `3`, up to `4`) or `max` (4; settings `view_distance`, off by default) draws
+the city that many times as far as the PS2 does, with the fog moved out by the same factor. Like widescreen it needs the
+native renderer.
+
+The top is 4 because of speed, which the native render thread sets. At street level (zoomed in, looking along the streets,
+where a longer view draws the most) the game holds 60 frames a second at 2, and runs at 31 to 47 at 3 and 24 to 38 at 4.
+Farther, 8 (which reached the whole map from anywhere on it) ran at 13 to 24. In the explore autoplay 2 stays at 60 (57 at
+its lowest), and 3 and 4 run at 60 most of the time and drop to about 32 and 23 at worst. Fully zoomed out the camera looks
+down and every setting holds 60.
 
 The rule for both: the game's logic stays the PS2's. Drawing more the plain way would change the town, since the game's
 draw code also moves pedestrians on, steps their animation, turns them to the player and ticks counters. So what a wider

@@ -15,9 +15,9 @@ namespace port::enhance
     // it where they reach VU1 (Span::WorldCamera), so the wider view fits the 640 pixels drawn, and shows those frames
     // that much wider.
     float widescreen();
-    // MMPC_VIEW_DISTANCE=<factor> (1.5, 2, 3...) or max: how many times farther than the PS2 the city is drawn; 1 when off
-    // or without the native renderer. The extra distance is drawn by the extras pass, and the native renderer moves the
-    // fog out by the same factor.
+    // MMPC_VIEW_DISTANCE=<factor> (1.5, 2, 3, up to 4) or max (4): how many times farther than the PS2 the city is drawn;
+    // 1 when off or without the native renderer. The extra distance is drawn by the extras pass, and the native renderer
+    // moves the fog out by the same factor.
     float viewDistance();
     // Whether the extras pass runs (widescreen or a longer view distance): the city then records its own visible tiles.
     bool extrasOn();
