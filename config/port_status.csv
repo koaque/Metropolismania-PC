@@ -1894,7 +1894,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x00185350,mm_Pad_Update,400,game,pad,verified,yes,1,2,"reads the pad (0x1578E0/0x1578A0), stores buttons active-high in 0x1BDCA0; in analog mode (id 0x7_) the left stick past 0x40/0xC0 adds direction bits 0x100000-0x800000; then derives pressed (0x1BDCA4)"
 0x001854E0,mm_MainLoop,460,game,app,ported,yes,1,13,"calls app vtable +8 once, sets up the display (640x448), then per frame: pad, file queue, memory card queue, sound, kick the DMA list, flip it, app vtable +0xC (the game update), swap buffers on vsync"
 0x001856C0,mm_App_OnInit,8,game,app,verified,no,0,0,App base class (vtable 0x1BD8D0) slot +8; empty
-0x001856D0,mm_App_dtor,108,game,app,ported,yes,1,4,"vtable 0x1BD8D0; shuts down sound (0x18F450), frees the DMA lists and the font; deletes this when the flag is > 0"
+0x001856D0,mm_App_dtor,108,game,app,verified,yes,1,4,"vtable 0x1BD8D0; shuts down sound (0x18F450), frees the DMA lists and the font; deletes this when the flag is > 0"
 0x00185740,mm_App_ctor,644,game,app,verified,yes,1,21,"(was mm_InitSystemModules) vtable 0x1BD8D0; boots the IOP with IOPRP243.IMG, inits CD/SIF/file system, seeds the random generator with 12345, loads SIO2MAN/MCMAN/MCSERV/PADMAN, inits pad, file queue, font, memory card queue, DMA lists and sound"
 0x001859D0,mm_Math_LinePlaneIntersect,724,game,math,verified,no,3,0,"(point, out, dx, dy, dz, a, b, c, d) where the line through `point` with direction (`dx`, `dy`, `dz`) meets the plane a x + b y + c z + d = 0: *`out` = (x, y, z, 1) and 1, or 0 when the line runs parallel to it; zero direction components take their own formulas"
 0x00185CB0,mm_Math_RayPlaneDistance,228,game,math,verified,no,1,1,"(from, to, planePoint, hit, *distance): where the ray from `from` towards `to` meets the plane through planePoint facing along it; returns (f0) and stores the distance from planePoint to that point, v0 = 1"
@@ -1989,7 +1989,7 @@ address,name,size,origin,subsystem,status,blocking,callers,callees,notes
 0x0018E1B0,mm_SoundCmd_Flush,4164,game,sound,verified,yes,7,7,"(was mm_SetSoundDataPaths) sends the queued commands to YYSOUND over SIF RPC 0x12346 (paths cdrom0:\DATA\SOUND\SQ|HD|BD\), drops commands when too many are pending (""URGENT CUT"", ""ManyRequest"") and refreshes the status block"
 0x0018F200,mm_Sound_GetStatus,124,game,sound,verified,no,5,1,refreshes the status copy at 0x20B840 (merged with the pending masks) and returns it
 0x0018F280,mm_Sound_LoadModules,452,game,sound,verified,yes,1,2,"(was mm_LoadSoundModules) loads LIBSD, SDRDRV, MODMIDI, MODHSYN, MODSEIN, YYSOUND, retrying each until it loads"
-0x0018F450,mm_Sound_Shutdown,80,game,sound,ported,yes,1,2,YYSound RPC function 0
+0x0018F450,mm_Sound_Shutdown,80,game,sound,verified,yes,1,2,YYSound RPC function 0
 0x0018F4A0,mm_Sound_Init,300,game,sound,verified,yes,1,6,"(was mm_InitSound) loads the modules, binds RPC 0x12346, sends function 1 with the status block address, clears the command ring"
 0x0018F5D0,mm_EvShoppingTogether_Answer,32,game,event,verified,no,0,0,"(data, city, actor, mode) type 1: Answer (returns the outcome when `mode` == 0)"
 0x0018F5F0,mm_EvShoppingTogether_Update,900,game,event,verified,yes,0,7,type 1: Update

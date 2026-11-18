@@ -8,7 +8,7 @@ See `config/port_status.csv` for every function.
 
 | Origin | Functions | Named | Typed | Ported | Verified |
 |---|---:|---:|---:|---:|---:|
-| game | 1481 | 100.0% | 100.0% | 100.0% | 99.2% |
+| game | 1481 | 100.0% | 100.0% | 100.0% | 99.3% |
 | sdk | 768 | 100.0% | 15.6% | 15.6% | 11.5% |
 
 Blocking (game and unclassified functions that can reach a thread switch, deferred to native threading): indirect 79, no 987, yes 415
@@ -18,7 +18,7 @@ Blocking (game and unclassified functions that can reach a thread switch, deferr
 | Subsystem | Functions | Named | Typed | Ported | Verified |
 |---|---:|---:|---:|---:|---:|
 | (unclassified) | 558 | 100.0% | 12.4% | 12.4% | 8.4% |
-| app | 4 | 100.0% | 100.0% | 100.0% | 50.0% |
+| app | 4 | 100.0% | 100.0% | 100.0% | 75.0% |
 | bag | 16 | 100.0% | 100.0% | 100.0% | 100.0% |
 | boot | 2 | 100.0% | 100.0% | 100.0% | 100.0% |
 | camera | 18 | 100.0% | 100.0% | 100.0% | 100.0% |
@@ -57,7 +57,7 @@ Blocking (game and unclassified functions that can reach a thread switch, deferr
 | sdk:libvu0 | 3 | 100.0% | 100.0% | 100.0% | 100.0% |
 | sdk:mwcpp | 1 | 100.0% | 100.0% | 100.0% | 100.0% |
 | sdk:mwrt | 15 | 100.0% | 33.3% | 33.3% | 33.3% |
-| sound | 57 | 100.0% | 100.0% | 100.0% | 98.2% |
+| sound | 57 | 100.0% | 100.0% | 100.0% | 100.0% |
 | stage | 8 | 100.0% | 100.0% | 100.0% | 100.0% |
 | talk | 322 | 100.0% | 100.0% | 100.0% | 100.0% |
 | text | 5 | 100.0% | 100.0% | 100.0% | 100.0% |

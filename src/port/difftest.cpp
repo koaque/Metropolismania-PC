@@ -33,6 +33,8 @@
 // Subset: MMPC_DIFFTEST_ONLY=<names> replays only those functions (results.json is then left as it was).
 // The functions that load the sound driver's IOP modules (Sound_LoadModules, Sound_Init, App_ctor) are replayed by a child process
 // (this program again, with MMPC_DIFFTEST_ONLY set to the function and MMPC_DIFFTEST_CHILD=1), which starts with an empty IOP.
+// The ones that talk to the running driver at the program's end (Sound_Shutdown, App_dtor) are too, and their child first starts
+// the driver from Sound_Init's first record.
 // A replay that does not return within MMPC_DIFFTEST_HANG_SECONDS (default 60) is reported as HANG and ends the
 // run: a record edited into a state the game never reaches can leave the original waiting forever.
 // MMPC_DIFFTEST_FROM=<function>:<record file> then resumes that function after the record that hung (it is moved away) by leaving
@@ -623,6 +625,39 @@ namespace port
             }
         }
 
+        // The functions that talk to the sound driver only at the program's end, when it has run since start-up (Sound_Shutdown,
+        // App_dtor, which calls it; Main's loop never ends, so their records are made): replayed in a child process that first
+        // starts the driver (startSoundDriver), so their RPC reaches it as in the game rather than finding no server.
+        const std::set<std::string> &afterSoundInit()
+        {
+            static const std::set<std::string> names = {"Sound_Shutdown", "App_dtor"};
+            return names;
+        }
+
+        // Sound_Init's first record through the original code: it loads the driver's modules into the IOP and starts the driver
+        // over its RPC. For a child process, whose IOP is empty. True when that call returned.
+        bool startSoundDriver(PS2Runtime &runtime, const std::filesystem::path &dir)
+        {
+            const auto init = std::find_if(ported().begin(), ported().end(),
+                                           [](const Ported &p) { return std::strcmp(p.name, "Sound_Init") == 0; });
+            const std::filesystem::path sub = dir / "Sound_Init";
+            if (init == ported().end() || !std::filesystem::is_directory(sub))
+                return false;
+            std::vector<std::filesystem::path> files;
+            for (const auto &entry : std::filesystem::directory_iterator(sub))
+                if (entry.path().extension() == ".mmdt")
+                    files.push_back(entry.path());
+            std::sort(files.begin(), files.end());
+            Record rec;
+            std::string error;
+            if (files.empty() || !readRecord(files.front(), rec, error))
+                return false;
+            Outcome out;
+            useGenerated(runtime, true);
+            runOnce(runtime, init->original, init->address, rec, rec.ctx, out, rec.hasHeap ? rec.heap : baseHeapState(runtime));
+            return out.returned;
+        }
+
         bool sameReg(const R5900Context &a, const R5900Context &b, int reg)
         {
             return std::memcmp(&a.r[reg], &b.r[reg], sizeof(a.r[reg])) == 0;
@@ -672,8 +707,16 @@ namespace port
             static const std::set<std::string> kVu0FromLeftovers = {"TalkPersonFar_ctor", "TalkPersonNear_ctor", "Person_ChooseDestination", "CityCursor_Update",
                                                                     "Person_Update"};
             const bool vu0Compared = kVu0FromLeftovers.count(p.name) == 0;
+            // Narrower: only vf4's x for functions whose last VU0 work is the square root of a schedule's spread
+            // (Math_SqrtBits, inlined in Schedule_MemberActivity): it converts a 16-byte stack slot of which only x is
+            // written, so vf4's y, z and w are what lay on the stack there. In a deeper call that is what the generated
+            // callees' register saves left (an sq writes a register's upper half, 0), and the ported callees save nothing
+            // on the guest stack. TalkView_DrawBuilding reaches it by family, through TalkView_AllAsleep after Family_Get.
+            // The VU0 liveness scan found no function that reads vf4 before writing it.
+            static const std::set<std::string> kVf4FromSqrtSlot = {"TalkView_DrawBuilding"};
+            const size_t vf4Bytes = kVf4FromSqrtSlot.count(p.name) != 0 ? 4 : sizeof(a.ctx.vu0_vf[4]);
             for (int v = 1; v < 32 && vu0Compared; ++v)
-                if (std::memcmp(&a.ctx.vu0_vf[v], &b.ctx.vu0_vf[v], sizeof(a.ctx.vu0_vf[v])) != 0)
+                if (std::memcmp(&a.ctx.vu0_vf[v], &b.ctx.vu0_vf[v], v == 4 ? vf4Bytes : sizeof(a.ctx.vu0_vf[v])) != 0)
                     diffs.push_back("vf" + std::to_string(v) + " differs: " + lanes(a.ctx.vu0_vf[v]) + " vs " + lanes(b.ctx.vu0_vf[v]));
             if (vu0Compared && std::memcmp(&a.ctx.vu0_acc, &b.ctx.vu0_acc, sizeof(a.ctx.vu0_acc)) != 0)
                 diffs.push_back("ACC differs: " + lanes(a.ctx.vu0_acc) + " vs " + lanes(b.ctx.vu0_acc));
@@ -1741,9 +1784,9 @@ namespace port
             // The functions that load the sound driver's IOP modules (App_ctor through Sound_Init) are replayed in a child process of
             // their own: the replay does not reset the IOP, and every load takes new room in its module arena (the loaded modules'
             // threads and RPC servers stay too), so after a few runs the loads fail and the game retries them forever. A child starts
-            // with an empty IOP.
+            // with an empty IOP. So are the functions that need the driver running (afterSoundInit): their child starts it first.
             if (!childReplay && (std::strcmp(p.name, "Sound_LoadModules") == 0 || std::strcmp(p.name, "Sound_Init") == 0 ||
-                                 std::strcmp(p.name, "App_ctor") == 0))
+                                 std::strcmp(p.name, "App_ctor") == 0 || afterSoundInit().count(p.name) != 0))
             {
                 const int code = replayInChildProcess(p.name);
                 if (code < 0)
@@ -1754,6 +1797,9 @@ namespace port
                 addResult(p, files.size(), bad);
                 continue;
             }
+            if (childReplay && afterSoundInit().count(p.name) != 0 && !startSoundDriver(runtime, dir))
+                std::cout << "[difftest] " << p.name << ": the sound driver could not be started (no Sound_Init record that returns)"
+                          << std::endl;
             size_t ok = 0, fuzzRuns = 0, fuzzOk = 0, fuzzReported = 0;
             const size_t failedBefore = failed;
             const bool fuzzThis = fuzzCount > 0 && p.mutate && (fuzzAll || fuzzNames.count(p.name) != 0);
