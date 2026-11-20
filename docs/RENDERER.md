@@ -244,7 +244,10 @@ The top is 4 because of speed, which the native render thread sets. At street le
 where a longer view draws the most) the game holds 60 frames a second at 2, and runs at 31 to 47 at 3 and 24 to 38 at 4.
 Farther, 8 (which reached the whole map from anywhere on it) ran at 13 to 24. In the explore autoplay 2 stays at 60 (57 at
 its lowest), and 3 and 4 run at 60 most of the time and drop to about 32 and 23 at worst. Fully zoomed out the camera looks
-down and every setting holds 60.
+down and every setting holds 60. These figures are the same in a 640x448 window (scale 2) and in borderless fullscreen at
+2560x1440 (scale 4, 2560x1792, anisotropic 16): within 0.1 frames a second at every setting. The GPU (a Radeon RX 6900 XT)
+is not what limits them: at 4 it was at most 62% busy, about 10 ms a frame at 60, and 15 to 40% while the game waited on
+the render thread.
 
 The rule for both: the game's logic stays the PS2's. Drawing more the plain way would change the town, since the game's
 draw code also moves pedestrians on, steps their animation, turns them to the player and ticks counters. So what a wider
