@@ -14,6 +14,7 @@
 // point, 12 fraction bits), colour (integers), and texture coordinates (floats).
 
 #include "render_vu1.h"
+#include "render_vu1_math.h"
 
 #include <algorithm>
 #include <cmath>
@@ -22,12 +23,11 @@ namespace mm::render
 {
     namespace
     {
-        struct Vec4
-        {
-            float x = 0, y = 0, z = 0, w = 0;
-            float &operator[](int i) { return (&x)[i]; }
-            float operator[](int i) const { return (&x)[i]; }
-        };
+        // Vec4, transform (v.x * m[0] + v.y * m[1] + v.z * m[2] + v.w * m[3] in the VU's MULA / MADDA order) and transform3:
+        // render_vu1_math.h, four lanes at once on x64.
+        using vumath::Vec4;
+        using vumath::transform;
+        using vumath::transform3;
 
         Vec4 load(const VuMemory &m, uint32_t address)
         {
@@ -35,34 +35,9 @@ namespace mm::render
         }
 
         // The VU's ITOF12 and ITOF0: integers to floats, with 12 fraction bits or none.
-        Vec4 fixed12(const VuMemory &m, uint32_t address)
-        {
-            const float k = 1.0f / 4096.0f;
-            return {m.integer(address, 0) * k, m.integer(address, 1) * k, m.integer(address, 2) * k, m.integer(address, 3) * k};
-        }
+        Vec4 fixed12(const VuMemory &m, uint32_t address) { return vumath::fixed12(m.qword(address)); }
 
-        Vec4 integers(const VuMemory &m, uint32_t address)
-        {
-            return {static_cast<float>(m.integer(address, 0)), static_cast<float>(m.integer(address, 1)),
-                    static_cast<float>(m.integer(address, 2)), static_cast<float>(m.integer(address, 3))};
-        }
-
-        // v.x * m[0] + v.y * m[1] + v.z * m[2] + v.w * m[3], in the order the VU's MULA / MADDA chain adds them.
-        Vec4 transform(const Vec4 &v, const Vec4 m[4])
-        {
-            Vec4 r;
-            for (int i = 0; i < 4; ++i)
-                r[i] = ((m[0][i] * v.x + m[1][i] * v.y) + m[2][i] * v.z) + m[3][i] * v.w;
-            return r;
-        }
-
-        Vec4 transform3(const Vec4 &v, const Vec4 m[3])
-        {
-            Vec4 r;
-            for (int i = 0; i < 4; ++i)
-                r[i] = (m[0][i] * v.x + m[1][i] * v.y) + m[2][i] * v.z;
-            return r;
-        }
+        Vec4 integers(const VuMemory &m, uint32_t address) { return vumath::integers(m.qword(address)); }
 
         // CLIPw.xyz: six bits (+x, -x, +y, -y, +z, -z), set when x, y or z lies outside -|w| .. +|w|.
         uint32_t clipBits(const Vec4 &v)
@@ -190,14 +165,8 @@ namespace mm::render
             // plus the ambient.
             Vec4 light(const VuMemory &m, uint32_t normalAddress) const
             {
-                Vec4 terms = transform3(fixed12(m, normalAddress), m_light);
-                for (int i = 0; i < 4; ++i)
-                    terms[i] = std::max(terms[i], 0.0f);
-                Vec4 lit;
-                for (int i = 0; i < 4; ++i)
-                    lit[i] = ((m_lightColour[0][i] * terms.x + m_lightColour[1][i] * terms.y) + m_lightColour[2][i] * terms.z) +
-                             m_lightColour[3][i];
-                return lit;
+                // ((colour 0 x term x + colour 1 x term y) + colour 2 x term z) + ambient, a lane at a time
+                return vumath::lightSum(vumath::atLeastZero(transform3(fixed12(m, normalAddress), m_light)), m_lightColour);
             }
 
             // The fog and no-fog loops (both programs). Every vertex to the screen, every triangle's facing (the cross
