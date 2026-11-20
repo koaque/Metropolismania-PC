@@ -55,8 +55,8 @@ namespace mm::render
 
         // Loads the palette buffer the way a TEX0 write with a load request does: a 32-bit palette in CSM1 from CBP, 256
         // entries for 8-bit textures (stored 16 x 16, entries 8-15 and 16-23 of every 32 swapped), 16 for 4-bit ones (8 x 2)
-        // placed at CSA * 16.
-        void loadClut(const Tex0 &tex, uint32_t *clut) const;
+        // placed at CSA * 16. Returns the blocks of 16 entries it wrote (bit n: entries 16n to 16n + 15).
+        uint16_t loadClut(const Tex0 &tex, uint32_t *clut) const;
 
         // A number that changes whenever a page in [first, first + count) is written.
         uint64_t version(uint32_t firstPage, uint32_t pageCount) const;

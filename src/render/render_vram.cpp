@@ -270,10 +270,10 @@ namespace mm::render
         (void)groupPixels;
     }
 
-    void Vram::loadClut(const Tex0 &tex, uint32_t *clut) const
+    uint16_t Vram::loadClut(const Tex0 &tex, uint32_t *clut) const
     {
         if (tex.cpsm != kPsmCt32 && tex.cpsm != kPsmCt24)
-            return; // 16-bit palettes: not used by this game
+            return 0; // 16-bit palettes: not used by this game
         if (tex.psm == kPsmT8)
         {
             for (uint32_t i = 0; i < 256; ++i)
@@ -281,13 +281,16 @@ namespace mm::render
                 const uint32_t swizzled = (i & 0xE7u) | ((i & 0x08u) << 1) | ((i & 0x10u) >> 1);
                 clut[i] = readPixel(kPsmCt32, tex.cbp, 1, swizzled & 0xFu, swizzled >> 4);
             }
+            return 0xFFFFu;
         }
         else if (tex.psm == kPsmT4)
         {
             const uint32_t base = (tex.csa & 0xFu) * 16u;
             for (uint32_t i = 0; i < 16; ++i)
                 clut[(base + i) & 0xFFu] = readPixel(kPsmCt32, tex.cbp, 1, i & 7u, i >> 3);
+            return static_cast<uint16_t>(1u << (tex.csa & 0xFu));
         }
+        return 0;
     }
 
     bool Vram::decode(const Tex0 &tex, uint32_t width, uint32_t height, const uint32_t *clut, std::vector<uint32_t> &out) const

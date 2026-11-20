@@ -296,11 +296,11 @@ namespace mm::render
                     {
                         std::memcpy(m_clut, found->second.entries, sizeof(m_clut));
                         m_clutHash = found->second.hash;
+                        m_clutUnchecked = 0xFFFFu; // every block may differ from its copy now
                         break;
                     }
                 }
-                m_vram.loadClut(t, m_clut);
-                const uint64_t h = hashClut();
+                const uint64_t h = hashClut(m_vram.loadClut(t, m_clut));
                 m_clutHash = h;
                 if (whole)
                 {
@@ -804,11 +804,17 @@ namespace mm::render
         return key;
     }
 
-    uint64_t Gs::hashClut()
+    // `written`: the blocks a palette load just wrote (Vram::loadClut). Only those, and any the cached copy replaced, can
+    // differ from their copies; the fold is made again only when a block's hash changed.
+    uint64_t Gs::hashClut(uint16_t written)
     {
-        uint64_t h = 0;
+        const uint16_t check = m_clutShadowValid ? static_cast<uint16_t>(written | m_clutUnchecked) : 0xFFFFu;
+        m_clutUnchecked = 0;
+        bool changed = !m_clutShadowValid;
         for (uint32_t b = 0; b < 16; ++b)
         {
+            if (((check >> b) & 1u) == 0)
+                continue;
             const uint32_t *entries = m_clut + b * 16u;
             uint32_t *shadow = m_clutShadow + b * 16u;
             if (!m_clutShadowValid || std::memcmp(entries, shadow, 16u * sizeof(uint32_t)) != 0)
@@ -818,11 +824,18 @@ namespace mm::render
                     block = mix(block, entries[i]);
                 m_clutBlockHash[b] = block;
                 std::memcpy(shadow, entries, 16u * sizeof(uint32_t));
+                changed = true;
             }
-            h = mix(h, m_clutBlockHash[b]);
         }
         m_clutShadowValid = true;
-        return h;
+        if (changed)
+        {
+            uint64_t h = 0;
+            for (uint32_t b = 0; b < 16; ++b)
+                h = mix(h, m_clutBlockHash[b]);
+            m_clutFold = h;
+        }
+        return m_clutFold;
     }
 
     DrawState Gs::currentState(Topology topology)
