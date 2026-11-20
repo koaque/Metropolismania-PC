@@ -151,8 +151,13 @@ namespace mm::render
         void putVertices(const Vertex *v, int count, const DrawState &state);
         void addToBatch(const DrawState &state, uint32_t first, uint32_t count);
         bool vuStrip(const VuPacket &packet);
+        void stripRun(const VuVertex *v, size_t n);
         void vuVertices(const VuPacket &packet);
+        void vuDirect(const VuPacket &packet);
+        void writeBefore(const VuVertex &in);
+        void vuVertex(const VuVertex &in);
         void verifyStrip(const VuPacket &packet);
+        static uint64_t frameHash(const Frame &frame);
         std::vector<Vertex> m_strip; // vuStrip's vertices, kept for reuse
         DrawState currentState(Topology topology);
         DrawState computeState(Topology topology);
@@ -160,6 +165,7 @@ namespace mm::render
         bool frameBufferTexture(const Tex0 &t, int ctx, float origin[2]) const;
         Vertex makeVertex(uint64_t xyz, bool withFog);
         Vertex makeVertex(const VuVertex &v);
+        Vertex makeFilledVertex(const VuVertex &in);
         uint64_t textureKey();
 
         Vram &m_vram;

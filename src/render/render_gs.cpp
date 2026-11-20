@@ -9,6 +9,14 @@
 #include <cstring>
 #include <iostream>
 
+// The per-vertex steps of a VU1 packet: inlined into their loops (a call per vertex, with the stack check a copied VuVertex
+// brings, cost more than the drawing they do).
+#if defined(_MSC_VER)
+#define MM_GS_INLINE __forceinline
+#else
+#define MM_GS_INLINE inline __attribute__((always_inline))
+#endif
+
 namespace mm::render
 {
     namespace
@@ -417,7 +425,7 @@ namespace mm::render
     }
 
     // A vertex from a native VU1 program: as makeVertex, from the float values the program had before the GS's fixed point.
-    Vertex Gs::makeVertex(const VuVertex &in)
+    MM_GS_INLINE Vertex Gs::makeVertex(const VuVertex &in)
     {
         const uint64_t attributes = (m_prmodecont & 1) ? m_prim : m_prmode;
         const int ctx = static_cast<int>((attributes >> 9) & 1);
@@ -449,14 +457,21 @@ namespace mm::render
             write(reg.first, reg.second);
         if (((packet.tagLo >> 46) & 1) != 0) // PRE
             write(PRIM, (packet.tagLo >> 47) & 0x7FF);
+        // MMPC_GS_DIRECT=0: every packet vertex by vertex (to compare with, MMPC_FRAME_HASH)
+        static const bool direct = [] {
+            const char *value = std::getenv("MMPC_GS_DIRECT");
+            return value == nullptr || value[0] != '0';
+        }();
         static const bool verify = [] {
             const char *value = std::getenv("MMPC_STRIP_VERIFY");
             return value != nullptr && value[0] == '1';
         }();
-        if (verify)
-            verifyStrip(packet);
-        else if (!vuStrip(packet))
+        if (!direct)
             vuVertices(packet);
+        else if (verify)
+            verifyStrip(packet);
+        else
+            vuDirect(packet);
     }
 
     // MMPC_STRIP_VERIFY=1: a packet vuStrip takes is drawn by it, put back, and drawn again vertex by vertex, which is kept;
@@ -516,41 +531,77 @@ namespace mm::render
     {
         for (const VuVertex &in : packet.vertices)
         {
-            for (int i = 0; i < in.beforeCount; ++i)
-                if (!in.before[i].stale)
-                    write(in.before[i].reg, in.before[i].value);
-            if (in.stale)
-                continue; // a skipped slot: its kick never draws, and the next PRIM write starts the strip anew
-            if (in.hasSt)
-                m_q = in.q;
-            if (in.hasRgba)
-            {
-                uint32_t rgba, qbits;
-                std::memcpy(&rgba, in.rgba, 4);
-                std::memcpy(&qbits, &m_q, 4);
-                m_rgbaq = rgba | (static_cast<uint64_t>(qbits) << 32);
-            }
-            if (m_queued < 3)
-            {
-                if (in.hasRgba && in.hasSt)
-                    m_queue[m_queued++] = makeVertex(in);
-                else
-                {
-                    VuVertex v = in;
-                    if (!in.hasRgba) // the colour the packet before set
-                        std::memcpy(v.rgba, &m_rgbaq, 4);
-                    if (!in.hasSt)
-                    {
-                        std::memcpy(&v.s, &m_st, 4);
-                        const uint32_t t = static_cast<uint32_t>(m_st >> 32);
-                        std::memcpy(&v.t, &t, 4);
-                        v.q = m_q;
-                    }
-                    m_queue[m_queued++] = makeVertex(v);
-                }
-            }
-            kick(!in.adc);
+            writeBefore(in);
+            vuVertex(in);
         }
+    }
+
+    // The register writes a vertex carries ahead of it.
+    MM_GS_INLINE void Gs::writeBefore(const VuVertex &in)
+    {
+        for (int i = 0; i < in.beforeCount; ++i)
+            if (!in.before[i].stale)
+                write(in.before[i].reg, in.before[i].value);
+    }
+
+    // The packets as vuVertices takes them, but each plain stretch of a triangle strip (from a vertex whose writes leave
+    // the queue empty, through the vertices after it with no writes of their own, each with ST and RGBAQ) drawn in one go
+    // by stripRun: the terrain's quads (TEX0 and PRIM ahead of each) as well as the models' strips.
+    void Gs::vuDirect(const VuPacket &packet)
+    {
+        const VuVertex *v = packet.vertices.data();
+        const size_t n = packet.vertices.size();
+        size_t i = 0;
+        while (i < n)
+        {
+            writeBefore(v[i]);
+            if (!v[i].stale && v[i].hasSt && v[i].hasRgba && (m_prim & 7) == 4 && m_queued == 0 && !m_tintExtras)
+            {
+                size_t end = i + 1;
+                while (end < n && v[end].beforeCount == 0 && !v[end].stale && v[end].hasSt && v[end].hasRgba)
+                    ++end;
+                stripRun(v + i, end - i);
+                i = end;
+                continue;
+            }
+            vuVertex(v[i]);
+            ++i;
+        }
+    }
+
+    // One vertex after its writes: into the queue, then the drawing kick.
+    MM_GS_INLINE void Gs::vuVertex(const VuVertex &in)
+    {
+        if (in.stale)
+            return; // a skipped slot: its kick never draws, and the next PRIM write starts the strip anew
+        if (in.hasSt)
+            m_q = in.q;
+        if (in.hasRgba)
+        {
+            uint32_t rgba, qbits;
+            std::memcpy(&rgba, in.rgba, 4);
+            std::memcpy(&qbits, &m_q, 4);
+            m_rgbaq = rgba | (static_cast<uint64_t>(qbits) << 32);
+        }
+        if (m_queued < 3)
+            m_queue[m_queued++] = in.hasRgba && in.hasSt ? makeVertex(in) : makeFilledVertex(in);
+        kick(!in.adc);
+    }
+
+    // A vertex without its own RGBAQ or ST takes the ones the GS has (kept out of line: the copy is the rare case).
+    Vertex Gs::makeFilledVertex(const VuVertex &in)
+    {
+        VuVertex v = in;
+        if (!in.hasRgba) // the colour the packet before set
+            std::memcpy(v.rgba, &m_rgbaq, 4);
+        if (!in.hasSt)
+        {
+            std::memcpy(&v.s, &m_st, 4);
+            const uint32_t t = static_cast<uint32_t>(m_st >> 32);
+            std::memcpy(&v.t, &t, 4);
+            v.q = m_q;
+        }
+        return makeVertex(v);
     }
 
     void Gs::kick(bool draw)
@@ -1001,12 +1052,20 @@ namespace mm::render
         for (const VuVertex &in : packet.vertices)
             if (in.beforeCount != 0 || in.stale || !in.hasSt || !in.hasRgba)
                 return false;
+        stripRun(packet.vertices.data(), n);
+        return true;
+    }
+
+    // n vertices of a triangle strip, the queue empty before them, none with writes, stale or without ST or RGBAQ: the
+    // triangles vertex by vertex through the queue would draw, then the queue and registers as they would leave them.
+    void Gs::stripRun(const VuVertex *v, size_t n)
+    {
         m_strip.resize(n);
         bool drawn = false;
         for (size_t j = 0; j < n; ++j)
         {
-            m_strip[j] = makeVertex(packet.vertices[j]);
-            drawn = drawn || (j >= 2 && !packet.vertices[j].adc);
+            m_strip[j] = makeVertex(v[j]);
+            drawn = drawn || (j >= 2 && !v[j].adc);
         }
         if (drawn)
         {
@@ -1016,7 +1075,7 @@ namespace mm::render
                 const uint32_t first = static_cast<uint32_t>(m_frame.vertices.size());
                 uint32_t count = 0;
                 for (size_t j = 2; j < n; ++j)
-                    if (!packet.vertices[j].adc)
+                    if (!v[j].adc)
                     {
                         putVertices(&m_strip[j - 2], 3, state);
                         count += 3;
@@ -1025,7 +1084,7 @@ namespace mm::render
             }
         }
         // the queue and registers as the last vertices left them
-        const VuVertex &last = packet.vertices.back();
+        const VuVertex &last = v[n - 1];
         m_q = last.q;
         uint32_t rgba, qbits;
         std::memcpy(&rgba, last.rgba, 4);
@@ -1044,7 +1103,48 @@ namespace mm::render
                 m_queue[j] = m_strip[j];
             m_queued = static_cast<int>(n);
         }
-        return true;
+    }
+
+    // MMPC_FRAME_HASH=1: what a frame draws (its vertices, and each batch's range and state, field by field) as one number,
+    // logged per frame, so two runs of the same script with the deterministic timer (PS2X_TIMER0=frame) can be compared
+    // frame for frame. Not the textures' pixels: a batch's texture key is a hash of them.
+    uint64_t Gs::frameHash(const Frame &frame)
+    {
+        uint64_t h = 0x84222325CBF29CE4ull;
+        const auto word = [&h](uint64_t v) { h = (h ^ v) * 0x100000001B3ull; h ^= h >> 29; };
+        const auto bytes = [&word](const void *data, size_t size) {
+            const uint8_t *p = static_cast<const uint8_t *>(data);
+            size_t i = 0;
+            for (; i + 8 <= size; i += 8)
+            {
+                uint64_t v;
+                std::memcpy(&v, p + i, 8);
+                word(v);
+            }
+            for (; i < size; ++i)
+                word(p[i]);
+        };
+        bytes(frame.vertices.data(), frame.vertices.size() * sizeof(Vertex));
+        for (const Batch &b : frame.batches)
+        {
+            const DrawState &s = b.state;
+            word(b.first);
+            word(b.count);
+            word(static_cast<uint64_t>(s.topology) | (uint64_t{s.textured} << 8) | (uint64_t{s.tfx} << 16) |
+                 (uint64_t{s.tcc} << 24) | (uint64_t{s.linear} << 32) | (uint64_t{s.wms} << 40) | (uint64_t{s.wmt} << 48) |
+                 (uint64_t{s.snap} << 56));
+            for (uint16_t r : s.region)
+                word(r);
+            word(uint64_t{s.hud} | (uint64_t{s.blend} << 8) | (uint64_t{s.fixAlpha} << 16) | (uint64_t{s.alphaTest} << 24) |
+                 (uint64_t{s.alphaRef} << 32) | (uint64_t{s.alphaFail} << 40) | (uint64_t{s.depthTest} << 48) |
+                 (uint64_t{s.depthWrite} << 56));
+            word(uint64_t{s.colorWrite} | (uint64_t{s.fog} << 8) | (uint64_t{s.fogColor} << 16));
+            word(s.texture);
+            for (uint16_t c : s.scissor)
+                word(c);
+        }
+        word(frame.wide ? 1u : 0u);
+        return h;
     }
 
     Frame Gs::takeFrame()
@@ -1067,6 +1167,13 @@ namespace mm::render
                 m_nextDrawBuffer = (m_nextDrawBuffer + 1) % 4;
             }
         }
+        static const bool logHash = [] {
+            const char *value = std::getenv("MMPC_FRAME_HASH");
+            return value != nullptr && value[0] == '1';
+        }();
+        if (logHash)
+            std::cerr << "[render] frame " << m_frame.number << " hash " << std::hex << frameHash(m_frame) << std::dec
+                      << " vertices " << m_frame.vertices.size() << " batches " << m_frame.batches.size() << std::endl;
         Frame out = std::move(m_frame);
         m_frame = Frame{};
         m_frame.number = out.number + 1;
